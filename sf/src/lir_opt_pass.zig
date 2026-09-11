@@ -397,6 +397,12 @@ fn defInfoPure(inst: LirInst) u8 {
         .load_index => return @intCast(u8, 1),
         .load_local => return @intCast(u8, 1),
         .load_global => return @intCast(u8, 1),
+        .add_with_overflow => return @intCast(u8, 1),
+        .sub_with_overflow => return @intCast(u8, 1),
+        .mul_with_overflow => return @intCast(u8, 1),
+        .shl_with_overflow => return @intCast(u8, 1),
+        .neg_with_overflow => return @intCast(u8, 1),
+        .overflow_flag => return @intCast(u8, 1),
         else => return @intCast(u8, 0),
     }
 }
@@ -453,6 +459,12 @@ fn defResultTemp(inst: LirInst, lir_fn: *LirFunction) u32 {
         },
         .va_arg => |va| { return va.result; },
         .builtin_get_char => |bgc| { return bgc.result; },
+        .add_with_overflow => |o| { return o.result; },
+        .sub_with_overflow => |o| { return o.result; },
+        .mul_with_overflow => |o| { return o.result; },
+        .shl_with_overflow => |o| { return o.result; },
+        .neg_with_overflow => |o| { return o.result; },
+        .overflow_flag => |o| { return o.result; },
         else => return INVALID,
     }
 }
@@ -493,6 +505,12 @@ fn scanInst(c: *Ctx, inst: LirInst, bb_idx: u32, ii: u32) void {
             markRead(c, b.rhs, bb_idx, ii);
         },
         .unary => |u| { markRead(c, u.operand, bb_idx, ii); },
+        .add_with_overflow => |o| { markRead(c, o.lhs, bb_idx, ii); markRead(c, o.rhs, bb_idx, ii); },
+        .sub_with_overflow => |o| { markRead(c, o.lhs, bb_idx, ii); markRead(c, o.rhs, bb_idx, ii); },
+        .mul_with_overflow => |o| { markRead(c, o.lhs, bb_idx, ii); markRead(c, o.rhs, bb_idx, ii); },
+        .shl_with_overflow => |o| { markRead(c, o.lhs, bb_idx, ii); markRead(c, o.rhs, bb_idx, ii); },
+        .neg_with_overflow => |o| { markRead(c, o.value, bb_idx, ii); },
+        .overflow_flag => |o| { markRead(c, o.lhs, bb_idx, ii); markRead(c, o.rhs, bb_idx, ii); },
         .call => |cl| {
             markRead(c, cl.callee, bb_idx, ii);
             var ai: u32 = @intCast(u32, 0);
@@ -609,9 +627,9 @@ fn scanInst(c: *Ctx, inst: LirInst, bb_idx: u32, ii: u32) void {
             recordConst(c, bc.result, @intCast(u64, bc.value));
         },
         .check_trap => |ct| {
-            if (ct.kind != @intCast(u8, 6)) { markRead(c, ct.cond, bb_idx, ii); }
-            markRead(c, ct.aux, bb_idx, ii);
-            if (ct.kind == @intCast(u8, 2) or ct.kind == @intCast(u8, 6)) { markRead(c, @intCast(u32, ct.imm), bb_idx, ii); }
+            markRead(c, ct.cond, bb_idx, ii);
+            if (ct.kind != @intCast(u8, 6)) { markRead(c, ct.aux, bb_idx, ii); }
+            if (ct.kind == @intCast(u8, 2)) { markRead(c, @intCast(u32, ct.imm), bb_idx, ii); }
         },
         else => {},
     }
@@ -1157,6 +1175,41 @@ fn rewriteInstOperands(c: *Ctx, inst: LirInst) LirInst {
             nc.value = maybeR(c, nc.value);
             return LirInst{ .check_error = nc };
         },
+        .add_with_overflow => |o| {
+            var no = o;
+            no.lhs = maybeR(c, no.lhs);
+            no.rhs = maybeR(c, no.rhs);
+            return LirInst{ .add_with_overflow = no };
+        },
+        .sub_with_overflow => |o| {
+            var no = o;
+            no.lhs = maybeR(c, no.lhs);
+            no.rhs = maybeR(c, no.rhs);
+            return LirInst{ .sub_with_overflow = no };
+        },
+        .mul_with_overflow => |o| {
+            var no = o;
+            no.lhs = maybeR(c, no.lhs);
+            no.rhs = maybeR(c, no.rhs);
+            return LirInst{ .mul_with_overflow = no };
+        },
+        .shl_with_overflow => |o| {
+            var no = o;
+            no.lhs = maybeR(c, no.lhs);
+            no.rhs = maybeR(c, no.rhs);
+            return LirInst{ .shl_with_overflow = no };
+        },
+        .neg_with_overflow => |o| {
+            var no = o;
+            no.value = maybeR(c, no.value);
+            return LirInst{ .neg_with_overflow = no };
+        },
+        .overflow_flag => |o| {
+            var no = o;
+            no.lhs = maybeR(c, no.lhs);
+            no.rhs = maybeR(c, no.rhs);
+            return LirInst{ .overflow_flag = no };
+        },
         .make_slice => |ms| {
             var nm = ms;
             nm.ptr = maybeR(c, nm.ptr);
@@ -1249,9 +1302,9 @@ fn rewriteInstOperands(c: *Ctx, inst: LirInst) LirInst {
         },
         .check_trap => |ct| {
             var nc = ct;
-            if (nc.kind != @intCast(u8, 6)) { nc.cond = maybeR(c, nc.cond); }
-            nc.aux = maybeR(c, nc.aux);
-            if (nc.kind == @intCast(u8, 2) or nc.kind == @intCast(u8, 6)) { nc.imm = @intCast(u64, maybeR(c, @intCast(u32, nc.imm))); }
+            nc.cond = maybeR(c, nc.cond);
+            if (nc.kind != @intCast(u8, 6)) { nc.aux = maybeR(c, nc.aux); }
+            if (nc.kind == @intCast(u8, 2)) { nc.imm = @intCast(u64, maybeR(c, @intCast(u32, nc.imm))); }
             return LirInst{ .check_trap = nc };
         },
         else => return inst,

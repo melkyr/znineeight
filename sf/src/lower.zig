@@ -639,22 +639,71 @@ fn emitSafeCheckShift(self: *LirLowerer, lhs: u32, rhs: u32) void {
     emitInst(self, LirInst{ .check_trap = .{ .cond = cond, .kind = @intCast(u8, 3), .aux = rhs, .imm = @intCast(u64, width) } });
 }
 
-// A6F `-fsafe` integer-overflow guard. Emits `check_trap{kind=6}` immediately
-// before a guarded add/sub/mul/`<<`/unary-neg. `op` is a lir_mod.CHECK_OP_*;
-// the emitter renders the short-circuit C guard from `aux` (lhs/operand) and
-// `imm` (rhs; unused for unary neg) using `result_type`'s bound literals.
-// Gated at lowering so `-ffast` emits nothing new; non-integer results
-// (float/pointer/slice/bool) and width-0 types are skipped.
-fn emitSafeCheckOverflow(self: *LirLowerer, op: u8, lhs: u32, rhs: u32, result_type: u32) void {
-    if (!self.ctx.safe_checks) return;
-    if (result_type == type_mod.TYPE_UNDEFINED or result_type == type_mod.TYPE_VOID) return;
-    if (!type_mod.typeRegistryIsInteger(self.ctx.registry, result_type)) return;
-    if (type_mod.typeRegistryIntWidthBits(self.ctx.registry, result_type) == @intCast(u8, 0)) return;
-    emitInst(self, LirInst{ .check_trap = .{ .imm = @intCast(u64, rhs), .cond = @intCast(u32, 0), .aux = lhs, .result_type = result_type, .kind = @intCast(u8, 6), .op = op } });
+
+// A15 `-fsafe` integer-overflow guard. `result_type`'s integer width/signedness
+// are lowered once here and carried in the LIR op, so the emitter does no type
+// inspection. Returns 0 for non-integer / zero-width results (float, pointer,
+// slice, bool, undefined) so the caller emits the plain binary op.
+fn ovfTypeInfo(self: *LirLowerer, result_type: u32, out_w: *u8, out_s: *u8) u8 {
+    if (result_type == type_mod.TYPE_UNDEFINED or result_type == type_mod.TYPE_VOID) return @intCast(u8, 0);
+    if (!type_mod.typeRegistryIsInteger(self.ctx.registry, result_type)) return @intCast(u8, 0);
+    var w = type_mod.typeRegistryIntWidthBits(self.ctx.registry, result_type);
+    if (w == 0) return @intCast(u8, 0);
+    out_w.* = @intCast(u8, w);
+    if (type_mod.typeRegistryIntIsSigned(self.ctx.registry, result_type)) {
+        out_s.* = @intCast(u8, 1);
+    } else {
+        out_s.* = @intCast(u8, 0);
+    }
+    return @intCast(u8, 1);
 }
 
-fn emitSafeCheckNegate(self: *LirLowerer, operand: u32, result_type: u32) void {
-    emitSafeCheckOverflow(self, lir_mod.CHECK_OP_NEG, operand, @intCast(u32, 0), result_type);
+// Emits the flag predicate (single-result `overflow_flag`), the `flag == 0`
+// success temp, and the neutral `check_trap{kind=6}`. Shared by the binary and
+// unary overflow paths.
+fn emitOverflowTrap(self: *LirLowerer, op: u8, lhs: u32, rhs: u32, result_type: u32, w: u8, s: u8) void {
+    var flag = nextTemp(self, type_mod.TYPE_U32);
+    emitInst(self, LirInst{ .overflow_flag = .{ .lhs = lhs, .rhs = rhs, .result = flag, .result_type = result_type, .op = op, .width = w, .is_signed = s } });
+    var zero = nextTemp(self, type_mod.TYPE_U32);
+    emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = zero } });
+    var ok = nextTemp(self, type_mod.TYPE_BOOL);
+    emitInst(self, LirInst{ .binary = .{ .op = BIN_EQ, .lhs = flag, .rhs = zero, .result = ok } });
+    emitInst(self, LirInst{ .check_trap = .{ .cond = ok, .kind = @intCast(u8, 6), .aux = @intCast(u32, 0), .imm = @intCast(u64, 0), .result_type = @intCast(u32, 0), .op = @intCast(u8, 0) } });
+}
+
+// Checked `+ - * <<`. Under `-fsafe` writes `result` via the backend-neutral
+// `*_with_overflow` value op and then emits the neutral trap; otherwise emits
+// the original `binary` op (no new `-ffast` emission).
+fn emitArith(self: *LirLowerer, check_op: u8, bin_op: u8, lhs: u32, rhs: u32, result: u32, result_type: u32) void {
+    var w: u8 = @intCast(u8, 0);
+    var s: u8 = @intCast(u8, 0);
+    if (!self.ctx.safe_checks or ovfTypeInfo(self, result_type, &w, &s) == @intCast(u8, 0)) {
+        emitInst(self, LirInst{ .binary = .{ .op = bin_op, .lhs = lhs, .rhs = rhs, .result = result } });
+        return;
+    }
+    if (check_op == lir_mod.CHECK_OP_ADD) {
+        emitInst(self, LirInst{ .add_with_overflow = .{ .lhs = lhs, .rhs = rhs, .result = result, .result_type = result_type, .width = w, .is_signed = s } });
+    } else if (check_op == lir_mod.CHECK_OP_SUB) {
+        emitInst(self, LirInst{ .sub_with_overflow = .{ .lhs = lhs, .rhs = rhs, .result = result, .result_type = result_type, .width = w, .is_signed = s } });
+    } else if (check_op == lir_mod.CHECK_OP_MUL) {
+        emitInst(self, LirInst{ .mul_with_overflow = .{ .lhs = lhs, .rhs = rhs, .result = result, .result_type = result_type, .width = w, .is_signed = s } });
+    } else {
+        emitInst(self, LirInst{ .shl_with_overflow = .{ .lhs = lhs, .rhs = rhs, .result = result, .result_type = result_type, .width = w, .is_signed = s } });
+    }
+    emitOverflowTrap(self, check_op, lhs, rhs, result_type, w, s);
+}
+
+// Checked unary negate. Under `-fsafe` writes `result` via `neg_with_overflow`
+// + `overflow_flag{op=NEG}`; otherwise the original `unary` op.
+fn emitArithNeg(self: *LirLowerer, operand: u32, result: u32, result_type: u32) void {
+    var w: u8 = @intCast(u8, 0);
+    var s: u8 = @intCast(u8, 0);
+    if (!self.ctx.safe_checks or ovfTypeInfo(self, result_type, &w, &s) == @intCast(u8, 0)) {
+        emitInst(self, LirInst{ .unary = .{ .op = UN_NEG, .operand = operand, .result = result } });
+        return;
+    }
+    emitInst(self, LirInst{ .neg_with_overflow = .{ .value = operand, .result = result, .result_type = result_type, .width = w, .is_signed = s } });
+    emitOverflowTrap(self, lir_mod.CHECK_OP_NEG, operand, @intCast(u32, 0), result_type, w, s);
 }
 
 // A6F review-fix: a shift whose left operand is an integer literal lowers to a
@@ -2305,8 +2354,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var m4a_m: []const u8 = "M4a:r"; pal.markerWrite(m4a_m);
         var m4a_b: [20]u8 = undefined; var m4a_l = itoa_mod.itoa(rtype, m4a_b[0..]); var m4a_s: usize = @intCast(usize, 19) - @intCast(usize, m4a_l); pal.markerWrite(m4a_b[m4a_s..@intCast(usize, 19)]);
         var m4a_nl: []const u8 = "\n"; pal.markerWrite(m4a_nl);
-        emitSafeCheckOverflow(self, lir_mod.CHECK_OP_ADD, lhs, rhs, rtype);
-        emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = lhs, .rhs = rhs, .result = tid } });
+        emitArith(self, lir_mod.CHECK_OP_ADD, BIN_ADD, lhs, rhs, tid, rtype);
         return tid;
     } else if (node.kind == AstKind.sub) {
         var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
@@ -2324,8 +2372,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var m4s_m: []const u8 = "M4s:r"; pal.markerWrite(m4s_m);
         var m4s_b: [20]u8 = undefined; var m4s_l = itoa_mod.itoa(rtype, m4s_b[0..]); var m4s_s: usize = @intCast(usize, 19) - @intCast(usize, m4s_l); pal.markerWrite(m4s_b[m4s_s..@intCast(usize, 19)]);
         var m4s_nl: []const u8 = "\n"; pal.markerWrite(m4s_nl);
-        emitSafeCheckOverflow(self, lir_mod.CHECK_OP_SUB, lhs, rhs, rtype);
-        emitInst(self, LirInst{ .binary = .{ .op = BIN_SUB, .lhs = lhs, .rhs = rhs, .result = tid } });
+        emitArith(self, lir_mod.CHECK_OP_SUB, BIN_SUB, lhs, rhs, tid, rtype);
         return tid;
     } else if (node.kind == AstKind.mul) {
         var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
@@ -2343,8 +2390,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var m4m_m: []const u8 = "M4m:r"; pal.markerWrite(m4m_m);
         var m4m_b: [20]u8 = undefined; var m4m_l = itoa_mod.itoa(rtype, m4m_b[0..]); var m4m_s: usize = @intCast(usize, 19) - @intCast(usize, m4m_l); pal.markerWrite(m4m_b[m4m_s..@intCast(usize, 19)]);
         var m4m_nl: []const u8 = "\n"; pal.markerWrite(m4m_nl);
-        emitSafeCheckOverflow(self, lir_mod.CHECK_OP_MUL, lhs, rhs, rtype);
-        emitInst(self, LirInst{ .binary = .{ .op = BIN_MUL, .lhs = lhs, .rhs = rhs, .result = tid } });
+        emitArith(self, lir_mod.CHECK_OP_MUL, BIN_MUL, lhs, rhs, tid, rtype);
         return tid;
     } else if (node.kind == AstKind.wrap_add or node.kind == AstKind.wrap_sub or node.kind == AstKind.wrap_mul) {
         var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
@@ -2482,8 +2528,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         lhs = materializeShiftLhs(self, node_idx, lhs, rtype);
         var tid = nextTemp(self, rtype);
         emitSafeCheckShift(self, lhs, rhs);
-        emitSafeCheckOverflow(self, lir_mod.CHECK_OP_SHL, lhs, rhs, getTempType(self, lhs));
-        emitInst(self, LirInst{ .binary = .{ .op = BIN_SHL, .lhs = lhs, .rhs = rhs, .result = tid } });
+        emitArith(self, lir_mod.CHECK_OP_SHL, BIN_SHL, lhs, rhs, tid, getTempType(self, lhs));
         return tid;
     } else if (node.kind == AstKind.shr) {
         var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
@@ -2620,8 +2665,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         }
         var val = lowerExpr(self, node.child_0);
         var tid = nextTemp(self, ng_box[0]);
-        emitSafeCheckNegate(self, val, ng_box[0]);
-        emitInst(self, LirInst{ .unary = .{ .op = UN_NEG, .operand = val, .result = tid } });
+        emitArithNeg(self, val, tid, ng_box[0]);
         return tid;
     } else if (node.kind == AstKind.wrap_negate) {
         var rt_wn = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
@@ -4828,8 +4872,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (op_rt) |t| { op_r_box[0] = t; }
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
-        emitSafeCheckOverflow(self, lir_mod.CHECK_OP_ADD, lhs_val, rhs_val, getTempType(self, lhs_val));
-        emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+        emitArith(self, lir_mod.CHECK_OP_ADD, BIN_ADD, lhs_val, rhs_val, op_r, getTempType(self, lhs_val));
         lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
         return op_r;
     } else if (node.kind == AstKind.sub_assign) {
@@ -4840,8 +4883,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (op_rt) |t| { op_r_box[0] = t; }
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
-        emitSafeCheckOverflow(self, lir_mod.CHECK_OP_SUB, lhs_val, rhs_val, getTempType(self, lhs_val));
-        emitInst(self, LirInst{ .binary = .{ .op = BIN_SUB, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+        emitArith(self, lir_mod.CHECK_OP_SUB, BIN_SUB, lhs_val, rhs_val, op_r, getTempType(self, lhs_val));
         lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
         return op_r;
     } else if (node.kind == AstKind.mul_assign) {
@@ -4852,8 +4894,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (op_rt) |t| { op_r_box[0] = t; }
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
-        emitSafeCheckOverflow(self, lir_mod.CHECK_OP_MUL, lhs_val, rhs_val, getTempType(self, lhs_val));
-        emitInst(self, LirInst{ .binary = .{ .op = BIN_MUL, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+        emitArith(self, lir_mod.CHECK_OP_MUL, BIN_MUL, lhs_val, rhs_val, op_r, getTempType(self, lhs_val));
         lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
         return op_r;
     } else if (node.kind == AstKind.wrap_add_assign or node.kind == AstKind.wrap_sub_assign or node.kind == AstKind.wrap_mul_assign) {
@@ -4925,8 +4966,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
         emitSafeCheckShift(self, lhs_val, rhs_val);
-        emitSafeCheckOverflow(self, lir_mod.CHECK_OP_SHL, lhs_val, rhs_val, getTempType(self, lhs_val));
-        emitInst(self, LirInst{ .binary = .{ .op = BIN_SHL, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+        emitArith(self, lir_mod.CHECK_OP_SHL, BIN_SHL, lhs_val, rhs_val, op_r, getTempType(self, lhs_val));
         lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
         return op_r;
     } else if (node.kind == AstKind.shr_assign) {
@@ -5815,8 +5855,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (op_rt) |t| { op_r_box[0] = t; }
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
-        emitSafeCheckOverflow(self, lir_mod.CHECK_OP_ADD, lhs_val, rhs_val, getTempType(self, lhs_val));
-        emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+        emitArith(self, lir_mod.CHECK_OP_ADD, BIN_ADD, lhs_val, rhs_val, op_r, getTempType(self, lhs_val));
         var bio_m: []const u8 = "BIO:r"; pal.markerWrite(bio_m);
         var bio_rb: [10]u8 = undefined; var bio_rl = itoa_mod.itoa(op_r, bio_rb[0..]); var bio_rs: usize = @intCast(usize, 9) - @intCast(usize, bio_rl); pal.markerWrite(bio_rb[bio_rs..@intCast(usize, 9)]);
         var bio_om: []const u8 = "o"; pal.markerWrite(bio_om);
@@ -5831,8 +5870,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (op_rt) |t| { op_r_box[0] = t; }
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
-        emitSafeCheckOverflow(self, lir_mod.CHECK_OP_SUB, lhs_val, rhs_val, getTempType(self, lhs_val));
-        emitInst(self, LirInst{ .binary = .{ .op = BIN_SUB, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+        emitArith(self, lir_mod.CHECK_OP_SUB, BIN_SUB, lhs_val, rhs_val, op_r, getTempType(self, lhs_val));
         lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
     } else if (node.kind == AstKind.mul_assign) {
         var lhs_val = lowerExpr(self, node.child_0);
@@ -5842,8 +5880,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (op_rt) |t| { op_r_box[0] = t; }
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
-        emitSafeCheckOverflow(self, lir_mod.CHECK_OP_MUL, lhs_val, rhs_val, getTempType(self, lhs_val));
-        emitInst(self, LirInst{ .binary = .{ .op = BIN_MUL, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+        emitArith(self, lir_mod.CHECK_OP_MUL, BIN_MUL, lhs_val, rhs_val, op_r, getTempType(self, lhs_val));
         lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
     } else if (node.kind == AstKind.wrap_add_assign or node.kind == AstKind.wrap_sub_assign or node.kind == AstKind.wrap_mul_assign) {
         var lhs_val = lowerExpr(self, node.child_0);
@@ -5910,8 +5947,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
         emitSafeCheckShift(self, lhs_val, rhs_val);
-        emitSafeCheckOverflow(self, lir_mod.CHECK_OP_SHL, lhs_val, rhs_val, getTempType(self, lhs_val));
-        emitInst(self, LirInst{ .binary = .{ .op = BIN_SHL, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+        emitArith(self, lir_mod.CHECK_OP_SHL, BIN_SHL, lhs_val, rhs_val, op_r, getTempType(self, lhs_val));
         lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
     } else if (node.kind == AstKind.shr_assign) {
         var lhs_val = lowerExpr(self, node.child_0);

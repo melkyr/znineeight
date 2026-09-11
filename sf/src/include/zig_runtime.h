@@ -13,6 +13,123 @@ extern int pal_f64_to_str(double val, char* buf, int bufsize);
 /* -fsafe undefined poison: byte-exact 0xAA fill (emitted only under -fsafe). */
 void zig_poison_fill(void* p, unsigned int n);
 
+/* -fsafe integer-overflow helpers (A15). The UB-free wrap/flag math lives
+   here (header-static, like the __bootstrap_* cast helpers) so every
+   emitted module is self-sufficient; the C89 emitter only maps the LIR
+   *_with_overflow / overflow_flag ops to these calls. Emitted under -fsafe
+   only, so -ffast output is byte-unchanged. */
+static long long zig_ovf_sext(unsigned long long x, unsigned int w) {
+    unsigned long long m;
+    if (w == 0u) return 0;
+    if (w >= 64u) return (long long)x;
+    m = (1ULL << w) - 1ULL;
+    x = x & m;
+    if ((x & (1ULL << (w - 1u))) != 0ULL) x = x | (~m);
+    return (long long)x;
+}
+static unsigned long long zig_ovf_mask(unsigned long long x, unsigned int w) {
+    if (w == 0u) return 0;
+    if (w >= 64u) return x;
+    return x & ((1ULL << w) - 1ULL);
+}
+static unsigned long long zig_ovf_maxu(unsigned int w) {
+    if (w >= 64u) return ~0ULL;
+    return (1ULL << w) - 1ULL;
+}
+static long long zig_ovf_maxs(unsigned int w) {
+    if (w >= 64u) return 9223372036854775807LL;
+    return (long long)((1ULL << (w - 1u)) - 1ULL);
+}
+static long long zig_ovf_mins(unsigned int w) {
+    if (w >= 64u) return -9223372036854775807LL - 1LL;
+    return -(long long)(1ULL << (w - 1u));
+}
+static long long zig_wrap_add_s(long long a, long long b, unsigned int w) {
+    return zig_ovf_sext((unsigned long long)a + (unsigned long long)b, w);
+}
+static long long zig_wrap_sub_s(long long a, long long b, unsigned int w) {
+    return zig_ovf_sext((unsigned long long)a - (unsigned long long)b, w);
+}
+static long long zig_wrap_mul_s(long long a, long long b, unsigned int w) {
+    return zig_ovf_sext((unsigned long long)a * (unsigned long long)b, w);
+}
+static long long zig_wrap_shl_s(long long a, long long b, unsigned int w) {
+    return zig_ovf_sext(((unsigned long long)a) << (((unsigned long long)b) & 63ULL), w);
+}
+static long long zig_wrap_neg_s(long long a, unsigned int w) {
+    return zig_ovf_sext((unsigned long long)0 - (unsigned long long)a, w);
+}
+static unsigned long long zig_wrap_add_u(unsigned long long a, unsigned long long b, unsigned int w) {
+    return zig_ovf_mask(a + b, w);
+}
+static unsigned long long zig_wrap_sub_u(unsigned long long a, unsigned long long b, unsigned int w) {
+    return zig_ovf_mask(a - b, w);
+}
+static unsigned long long zig_wrap_mul_u(unsigned long long a, unsigned long long b, unsigned int w) {
+    return zig_ovf_mask(a * b, w);
+}
+static unsigned long long zig_wrap_shl_u(unsigned long long a, unsigned long long b, unsigned int w) {
+    return zig_ovf_mask(a << (b & 63ULL), w);
+}
+static unsigned long long zig_wrap_neg_u(unsigned long long a, unsigned int w) {
+    return zig_ovf_mask((unsigned long long)0 - a, w);
+}
+static int zig_overflow_flag_add_s(long long a, long long b, unsigned int w) {
+    long long maxs = zig_ovf_maxs(w);
+    long long mins = zig_ovf_mins(w);
+    if (b > 0 && a > maxs - b) return 1;
+    if (b < 0 && a < mins - b) return 1;
+    return 0;
+}
+static int zig_overflow_flag_add_u(unsigned long long a, unsigned long long b, unsigned int w) {
+    return a > zig_ovf_maxu(w) - b;
+}
+static int zig_overflow_flag_sub_s(long long a, long long b, unsigned int w) {
+    long long maxs = zig_ovf_maxs(w);
+    long long mins = zig_ovf_mins(w);
+    if (b < 0 && a > maxs + b) return 1;
+    if (b > 0 && a < mins + b) return 1;
+    return 0;
+}
+static int zig_overflow_flag_sub_u(unsigned long long a, unsigned long long b, unsigned int w) {
+    (void)w;
+    return a < b;
+}
+static int zig_overflow_flag_mul_s(long long a, long long b, unsigned int w) {
+    long long maxs = zig_ovf_maxs(w);
+    long long mins = zig_ovf_mins(w);
+    if (a == 0 || b == 0) return 0;
+    if (a > 0) {
+        if (b > 0) return a > maxs / b;
+        return b < mins / a;
+    }
+    if (b > 0) return a < mins / b;
+    return a < maxs / b;
+}
+static int zig_overflow_flag_mul_u(unsigned long long a, unsigned long long b, unsigned int w) {
+    if (b == 0ULL) return 0;
+    return a > zig_ovf_maxu(w) / b;
+}
+static int zig_overflow_flag_shl_s(long long a, long long b, unsigned int w) {
+    long long maxs = zig_ovf_maxs(w);
+    long long mins = zig_ovf_mins(w);
+    if (a == 0 || b <= 0) return 0;
+    if (b >= (long long)w) return 1;
+    return a > (maxs >> b) || a < (mins >> b);
+}
+static int zig_overflow_flag_shl_u(unsigned long long a, unsigned long long b, unsigned int w) {
+    if (a == 0ULL || b == 0ULL) return 0;
+    if (b >= (unsigned long long)w) return 1;
+    return a > (zig_ovf_maxu(w) >> b);
+}
+static int zig_overflow_flag_neg_s(long long a, unsigned int w) {
+    return a == zig_ovf_mins(w);
+}
+static int zig_overflow_flag_neg_u(unsigned long long a, unsigned int w) {
+    (void)w;
+    return a != 0ULL;
+}
+
 /* Backward compat aliases __bootstrap_print* / __bootstrap_write /
    __bootstrap_sleep_ms / __bootstrap_panic REMOVED (F4, 2026-08-08) — the
    examples migrated to std.io (std_io.zig); the cast helpers below now call

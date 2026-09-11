@@ -101,14 +101,30 @@ pub const LirInst = union(enum) {
     // A4F/A5F/A6F `-fsafe` cheap runtime check. `cond` is the success-condition
     // temp (the emitter traps when it is false). `kind`: 2 = div/mod (zero), 3 =
     // shift (count >= width), 4 = null-unwrap, 5 = index OOB, 6 = integer
-    // overflow. `aux`/`imm` carry the guarded operands (kind-dependent; imm is a
-    // literal width for kind 3, a literal length for kind 5, and a temp id for
-    // kinds 2 and 6). For kind 6, `cond` is unused (the emitter renders the
-    // short-circuit guard from `aux`/`imm`), `op` selects the guarded operation
-    // (CHECK_OP_*) and `result_type` supplies the bound width/signedness.
-    // Non-terminating. Field order is packed (u64 first, then the u32s, then the
-    // u8s) so the Z98-folded `@sizeOf(LirInst)` that lir_stream writes stays 32 B.
+    // overflow. `aux`/`imm` carry the guarded operands for kinds 2/3/5 (imm is a
+    // literal width for kind 3, a literal length for kind 5, a temp id for kind
+    // 2). A15 moved kind 6 fully to the ops below: the success condition is
+    // computed in lowering as `overflow_flag == 0` and carried in `cond`, so
+    // `aux`/`imm`/`result_type`/`op` are unused for kind 6 (retained until the
+    // A16/A18 shrink phases). Non-terminating. Field order is packed (u64 first,
+    // then the u32s, then the u8s) so the Z98-folded `@sizeOf(LirInst)` that
+    // lir_stream writes stays 32 B.
     check_trap: struct { imm: u64, cond: u32, aux: u32, result_type: u32, kind: u8, op: u8 },
+    // A15 integer-overflow guard ops (AMENDMENT 4). Each `*_with_overflow` op
+    // yields the WRAPPED value as its sole result (mirrors AIR `@addWithOverflow`
+    // value half); `overflow_flag` yields the boolean overflow predicate (1 =
+    // overflow) consuming the same operands. Splitting the value/flag halves keeps
+    // the single-result-per-inst LIR/DCE model (`dceResultPos`/`defResultTemp`).
+    // `result_type` + `width`/`is_signed` are lowering-computed so the emitter
+    // performs no type inspection. Appended after `check_trap` so tag ordinals and
+    // the streamed `@sizeOf(LirInst)` stay stable; payloads <= 20 B (< the 24 B
+    // `check_trap` max) keep the folded size at 32 B.
+    add_with_overflow: struct { lhs: u32, rhs: u32, result: u32, result_type: u32, width: u8, is_signed: u8 },
+    sub_with_overflow: struct { lhs: u32, rhs: u32, result: u32, result_type: u32, width: u8, is_signed: u8 },
+    mul_with_overflow: struct { lhs: u32, rhs: u32, result: u32, result_type: u32, width: u8, is_signed: u8 },
+    shl_with_overflow: struct { lhs: u32, rhs: u32, result: u32, result_type: u32, width: u8, is_signed: u8 },
+    neg_with_overflow: struct { value: u32, result: u32, result_type: u32, width: u8, is_signed: u8 },
+    overflow_flag: struct { lhs: u32, rhs: u32, result: u32, result_type: u32, op: u8, width: u8, is_signed: u8 },
 };
 
 pub const CallDirectData = struct {
