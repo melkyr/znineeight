@@ -608,6 +608,11 @@ fn scanInst(c: *Ctx, inst: LirInst, bb_idx: u32, ii: u32) void {
         .bool_const => |bc| {
             recordConst(c, bc.result, @intCast(u64, bc.value));
         },
+        .check_trap => |ct| {
+            markRead(c, ct.cond, bb_idx, ii);
+            markRead(c, ct.aux, bb_idx, ii);
+            if (ct.kind == @intCast(u8, 2)) { markRead(c, @intCast(u32, ct.imm), bb_idx, ii); }
+        },
         else => {},
     }
 }
@@ -1241,6 +1246,13 @@ fn rewriteInstOperands(c: *Ctx, inst: LirInst) LirInst {
             nb.fg = maybeR(c, nb.fg);
             nb.bg = maybeR(c, nb.bg);
             return LirInst{ .builtin_console_set_color = nb };
+        },
+        .check_trap => |ct| {
+            var nc = ct;
+            nc.cond = maybeR(c, nc.cond);
+            nc.aux = maybeR(c, nc.aux);
+            if (nc.kind == @intCast(u8, 2)) { nc.imm = @intCast(u64, maybeR(c, @intCast(u32, nc.imm))); }
+            return LirInst{ .check_trap = nc };
         },
         else => return inst,
     }

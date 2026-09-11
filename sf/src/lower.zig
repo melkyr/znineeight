@@ -5712,6 +5712,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (op_rt) |t| { op_r_box[0] = t; }
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
+        emitSafeCheckDivMod(self, lhs_val, rhs_val);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_MOD, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
         lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
     } else if (node.kind == AstKind.shl_assign) {
@@ -5722,6 +5723,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (op_rt) |t| { op_r_box[0] = t; }
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
+        emitSafeCheckShift(self, lhs_val, rhs_val);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_SHL, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
         lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
     } else if (node.kind == AstKind.shr_assign) {
@@ -5732,6 +5734,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (op_rt) |t| { op_r_box[0] = t; }
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
+        emitSafeCheckShift(self, lhs_val, rhs_val);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_SHR, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
         lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
     } else if (node.kind == AstKind.and_assign) {
