@@ -614,6 +614,31 @@ pub fn nextTemp(self: *LirLowerer, type_id: TypeId) u32 {
     return tid;
 }
 
+// A4F `-fsafe` cheap-check helpers. Each emits a backend-neutral
+// `check_trap { cond, kind, aux, imm }` immediately before the guarded op; the
+// emitter renders the concrete C guard. Gate at lowering so `-ffast` is
+// unaffected (no new emission for div/shift/null).
+fn emitSafeCheckDivMod(self: *LirLowerer, lhs: u32, rhs: u32) void {
+    if (!self.ctx.safe_checks) return;
+    var zt = nextTemp(self, type_mod.TYPE_U32);
+    emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = zt } });
+    var cond = nextTemp(self, type_mod.TYPE_BOOL);
+    emitInst(self, LirInst{ .binary = .{ .op = BIN_NE, .lhs = rhs, .rhs = zt, .result = cond } });
+    emitInst(self, LirInst{ .check_trap = .{ .cond = cond, .kind = @intCast(u8, 2), .aux = lhs, .imm = @intCast(u64, rhs) } });
+}
+
+fn emitSafeCheckShift(self: *LirLowerer, lhs: u32, rhs: u32) void {
+    if (!self.ctx.safe_checks) return;
+    var lhs_ty = getTempType(self, lhs);
+    var width = intCastTypeBits(self.ctx.registry, lhs_ty);
+    if (width == @intCast(u32, 0)) return;
+    var wt = nextTemp(self, type_mod.TYPE_USIZE);
+    emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, width), .result = wt } });
+    var cond = nextTemp(self, type_mod.TYPE_BOOL);
+    emitInst(self, LirInst{ .binary = .{ .op = BIN_LT, .lhs = rhs, .rhs = wt, .result = cond } });
+    emitInst(self, LirInst{ .check_trap = .{ .cond = cond, .kind = @intCast(u8, 3), .aux = rhs, .imm = @intCast(u64, width) } });
+}
+
 pub fn createBlock(self: *LirLowerer) u32 {
     var id = self.func.blocks.len;
     var bb = BasicBlock{
@@ -2203,6 +2228,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
         var tid = nextTemp(self, rtype);
+        emitSafeCheckDivMod(self, lhs, rhs);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_DIV, .lhs = lhs, .rhs = rhs, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.mod_op) {
@@ -2218,6 +2244,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
         var tid = nextTemp(self, rtype);
+        emitSafeCheckDivMod(self, lhs, rhs);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_MOD, .lhs = lhs, .rhs = rhs, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.bit_and) {
@@ -2278,6 +2305,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
         var tid = nextTemp(self, rtype);
+        emitSafeCheckShift(self, lhs, rhs);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_SHL, .lhs = lhs, .rhs = rhs, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.shr) {
@@ -2293,6 +2321,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
         var tid = nextTemp(self, rtype);
+        emitSafeCheckShift(self, lhs, rhs);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_SHR, .lhs = lhs, .rhs = rhs, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.cmp_eq or node.kind == AstKind.cmp_ne) {
@@ -3851,7 +3880,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var src_bits = intCastTypeBits(self.ctx.registry, src_ty);
             var dst_bits = intCastTypeBits(self.ctx.registry, t_target);
             var chk: u8 = @intCast(u8, 0);
-            if (src_bits > @intCast(u32, 0) and dst_bits > @intCast(u32, 0)) {
+            if (self.ctx.safe_checks and src_bits > @intCast(u32, 0) and dst_bits > @intCast(u32, 0)) {
                 if (src_bits > dst_bits) {
                     chk = @intCast(u8, 1);
                 } else if (src_bits == dst_bits) {
@@ -4689,6 +4718,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (op_rt) |t| { op_r_box[0] = t; }
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
+        emitSafeCheckDivMod(self, lhs_val, rhs_val);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_DIV, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
         lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
         return op_r;
@@ -4700,6 +4730,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (op_rt) |t| { op_r_box[0] = t; }
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
+        emitSafeCheckDivMod(self, lhs_val, rhs_val);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_MOD, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
         lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
         return op_r;
@@ -4711,6 +4742,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (op_rt) |t| { op_r_box[0] = t; }
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
+        emitSafeCheckShift(self, lhs_val, rhs_val);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_SHL, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
         lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
         return op_r;
@@ -4722,6 +4754,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (op_rt) |t| { op_r_box[0] = t; }
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
+        emitSafeCheckShift(self, lhs_val, rhs_val);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_SHR, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
         lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
         return op_r;
@@ -5668,6 +5701,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (op_rt) |t| { op_r_box[0] = t; }
         if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
         var op_r = nextTemp(self, op_r_box[0]);
+        emitSafeCheckDivMod(self, lhs_val, rhs_val);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_DIV, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
         lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
     } else if (node.kind == AstKind.mod_assign) {

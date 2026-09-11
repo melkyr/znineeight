@@ -91,6 +91,13 @@ pub const LirInst = union(enum) {
     load_bitfield: struct { base: u32, result: u32, name_id: u32, bit_offset: u32, bit_width: u32 },
     store_bitfield: struct { base: u32, value: u32, bit_offset: u32, bit_width: u32 },
     trap: void,
+    // A4F `-fsafe` cheap runtime check. `cond` is the success-condition temp
+    // (the emitter traps when it is false). `kind`: 2 = div/mod (zero), 3 =
+    // shift (count >= width), 4 = null-unwrap. `aux`/`imm` carry the guarded
+    // operands (kind-dependent; imm is a literal width for kind 3 and a temp id
+    // for kind 2). Non-terminating; appended after `trap` so existing tag
+    // ordinals and the 24-byte streamed `@sizeOf(LirInst)` stay stable.
+    check_trap: struct { cond: u32, kind: u8, aux: u32, imm: u64 },
 };
 
 pub const CallDirectData = struct {
