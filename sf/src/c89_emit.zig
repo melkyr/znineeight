@@ -4393,19 +4393,21 @@ fn nestWriteIntConstRvalue(emitter: *C89Emitter, value: u64, result_temp: u32) v
                 magnitude = @intCast(u64, 0) - masked;
             }
             neg_magnitude = @intCast(u8, 1);
-            var cname = getCTypeName(emitter.registry, emitter.mangler, temp_type_id);
-            var lp: []const u8 = "(";
-            bufferedWriterWrite(&emitter.writer, lp);
-            bufferedWriterWrite(&emitter.writer, cname);
-            var rp: []const u8 = ")-";
-            bufferedWriterWrite(&emitter.writer, rp);
-            var il = itoa_mod.itoa64(magnitude, ib[0..]);
-            var is_idx = @intCast(u32, @intCast(u32, 31) - il);
-            var is_start: usize = @intCast(usize, is_idx);
-            var is_end: usize = @intCast(usize, 31);
-            bufferedWriterWrite(&emitter.writer, ib[is_start..is_end]);
-            var nsuf = intLitSuffixNeg(magnitude);
-            bufferedWriterWrite(&emitter.writer, nsuf);
+            if (!writeMinSignedIntLiteral(emitter, temp_type_id, width_bits, magnitude)) {
+                var cname = getCTypeName(emitter.registry, emitter.mangler, temp_type_id);
+                var lp: []const u8 = "(";
+                bufferedWriterWrite(&emitter.writer, lp);
+                bufferedWriterWrite(&emitter.writer, cname);
+                var rp: []const u8 = ")-";
+                bufferedWriterWrite(&emitter.writer, rp);
+                var il = itoa_mod.itoa64(magnitude, ib[0..]);
+                var is_idx = @intCast(u32, @intCast(u32, 31) - il);
+                var is_start: usize = @intCast(usize, is_idx);
+                var is_end: usize = @intCast(usize, 31);
+                bufferedWriterWrite(&emitter.writer, ib[is_start..is_end]);
+                var nsuf = intLitSuffixNeg(magnitude);
+                bufferedWriterWrite(&emitter.writer, nsuf);
+            }
         }
     }
     if (neg_magnitude == @intCast(u8, 0)) {
@@ -4619,6 +4621,27 @@ fn satMinLitBound(width_bits: u32, buf: []u8) []const u8 {
         sb = @intCast(u64, 1) << @intCast(u64, width_bits - @intCast(u32, 1));
     }
     return writeSatNegDecimal(sb, buf);
+}
+
+// A16F: render a signed integer whose magnitude is the type minimum
+// (2^(width-1)). `-<magnitude>` is not representable in the signed type, and
+// the width-64 magnitude literal (9223372036854775808) is not C89-clean, so
+// emit the portable `(<type>)(-<max> - 1)` form (the same form the -fsafe
+// bound helpers use). Writes the value and returns true when handled.
+fn writeMinSignedIntLiteral(emitter: *C89Emitter, temp_type_id: u32, width_bits: u32, magnitude: u64) bool {
+    if (width_bits < @intCast(u32, 1) or width_bits > @intCast(u32, 64)) return false;
+    var min_mag = @intCast(u64, 1) << @intCast(u64, width_bits - @intCast(u32, 1));
+    if (magnitude != min_mag) return false;
+    var cname = getCTypeName(emitter.registry, emitter.mangler, temp_type_id);
+    var lp: []const u8 = "(";
+    bufferedWriterWrite(&emitter.writer, lp);
+    bufferedWriterWrite(&emitter.writer, cname);
+    var rp: []const u8 = ")";
+    bufferedWriterWrite(&emitter.writer, rp);
+    var min_buf: [40]u8 = undefined;
+    var min_lit = satMinLitBound(width_bits, min_buf[0..]);
+    bufferedWriterWrite(&emitter.writer, min_lit);
+    return true;
 }
 
 fn satMinMagLitBound(width_bits: u32, buf: []u8) []const u8 {
@@ -6955,19 +6978,21 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                         magnitude = @intCast(u64, 0) - masked;
                     }
                     neg_magnitude = @intCast(u8, 1);
-                    var cname = getCTypeName(emitter.registry, emitter.mangler, temp_type_id);
-                    var lp: []const u8 = "(";
-                    bufferedWriterWrite(&emitter.writer, lp);
-                    bufferedWriterWrite(&emitter.writer, cname);
-                    var rp: []const u8 = ")-";
-                    bufferedWriterWrite(&emitter.writer, rp);
-                    var il = itoa_mod.itoa64(magnitude, ib[0..]);
-                    var is_idx = @intCast(u32, @intCast(u32, 31) - il);
-                    var is_start: usize = @intCast(usize, is_idx);
-                    var is_end: usize = @intCast(usize, 31);
-                    bufferedWriterWrite(&emitter.writer, ib[is_start..is_end]);
-                    var nsuf = intLitSuffixNeg(magnitude);
-                    bufferedWriterWrite(&emitter.writer, nsuf);
+                    if (!writeMinSignedIntLiteral(emitter, temp_type_id, width_bits, magnitude)) {
+                        var cname = getCTypeName(emitter.registry, emitter.mangler, temp_type_id);
+                        var lp: []const u8 = "(";
+                        bufferedWriterWrite(&emitter.writer, lp);
+                        bufferedWriterWrite(&emitter.writer, cname);
+                        var rp: []const u8 = ")-";
+                        bufferedWriterWrite(&emitter.writer, rp);
+                        var il = itoa_mod.itoa64(magnitude, ib[0..]);
+                        var is_idx = @intCast(u32, @intCast(u32, 31) - il);
+                        var is_start: usize = @intCast(usize, is_idx);
+                        var is_end: usize = @intCast(usize, 31);
+                        bufferedWriterWrite(&emitter.writer, ib[is_start..is_end]);
+                        var nsuf = intLitSuffixNeg(magnitude);
+                        bufferedWriterWrite(&emitter.writer, nsuf);
+                    }
                 }
             }
             if (neg_magnitude == @intCast(u8, 0)) {
