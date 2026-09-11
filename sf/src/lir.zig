@@ -101,12 +101,14 @@ pub const LirInst = union(enum) {
     // A4F/A5F/A6F `-fsafe` cheap runtime check. `cond` is the success-condition
     // temp (the emitter traps when it is false). `kind`: 2 = div/mod (zero), 3 =
     // shift (count >= width), 4 = null-unwrap, 5 = index OOB, 6 = integer
-    // overflow. `aux`/`imm` carry the guarded operands for kinds 2/3/5 (imm is a
-    // literal width for kind 3, a literal length for kind 5, a temp id for kind
-    // 2). A15 moved kind 6 fully to the ops below: the success condition is
-    // computed in lowering as `overflow_flag == 0` and carried in `cond`, so
-    // `aux`/`imm`/`result_type`/`op` are unused for kind 6 (retained until the
-    // A16/A18 shrink phases). Non-terminating. Field order is packed (u64 first,
+    // overflow. `aux`/`imm` carry the guarded operands for kinds 3/5 (imm is a
+    // literal width for kind 3, a literal length for kind 5). A15 moved kind 6
+    // fully to the ops below: the success condition is computed in lowering as
+    // `overflow_flag == 0` and carried in `cond`, so `aux`/`imm`/`result_type`/
+    // `op` are unused for kind 6. A16 moved kind 2 (div/mod zero+`INT_MIN/-1`)
+    // likewise: `cond` is built in lowering from `int_const`+`binary` comparisons
+    // and only `cond`/`kind` are read. The now-unused fields are retained until
+    // the A18 shrink phase. Non-terminating. Field order is packed (u64 first,
     // then the u32s, then the u8s) so the Z98-folded `@sizeOf(LirInst)` that
     // lir_stream writes stays 32 B.
     check_trap: struct { imm: u64, cond: u32, aux: u32, result_type: u32, kind: u8, op: u8 },
@@ -125,6 +127,14 @@ pub const LirInst = union(enum) {
     shl_with_overflow: struct { lhs: u32, rhs: u32, result: u32, result_type: u32, width: u8, is_signed: u8 },
     neg_with_overflow: struct { value: u32, result: u32, result_type: u32, width: u8, is_signed: u8 },
     overflow_flag: struct { lhs: u32, rhs: u32, result: u32, result_type: u32, op: u8, width: u8, is_signed: u8 },
+    // A16 null-unwrap guard op (AMENDMENT 4). Safe optional payload read: the
+    // emitter maps it to `if (!(<value>.has_value)) { pal_trap(); }` followed by
+    // `result = <value>.value;`. Lowering emits it only under `-fsafe` and only
+    // for non-void payloads (the `optional(void)` skip is preserved by emitting
+    // the plain `unwrap_optional` there); it is never emitted under `-ffast`, so
+    // the fast-path bytes are unchanged. Appended after `overflow_flag`; the 8 B
+    // payload keeps the Z98-folded `@sizeOf(LirInst)` at 32 B.
+    unwrap_optional_checked: struct { value: u32, result: u32 },
 };
 
 pub const CallDirectData = struct {

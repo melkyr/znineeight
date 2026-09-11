@@ -3835,6 +3835,7 @@ fn nestDefTempId(inst: lir_mod.LirInst) u32 {
         .wrap_error_ok => |w| { t = w.result; },
         .wrap_error_err => |w| { t = w.result; },
         .unwrap_optional => |u| { t = u.result; },
+        .unwrap_optional_checked => |u| { t = u.result; },
         .unwrap_optional_abi => |u| { t = u.result; },
         .check_optional => |c| { t = c.result; },
         .unwrap_error_payload => |u| { t = u.result; },
@@ -5871,29 +5872,6 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             bufferedWriterWrite(&emitter.writer, ct_c);
             var ct_c2: []const u8 = ")) { pal_trap(); }\n";
             bufferedWriterWrite(&emitter.writer, ct_c2);
-            if (ct.kind == @intCast(u8, 2)) {
-                var ct_ty: u32 = @intCast(u32, 0);
-                var ct_sgn: u8 = @intCast(u8, 0);
-                if (getTempEffType(emitter, ct.aux, &ct_ty, &ct_sgn) != @intCast(u8, 0)) {
-                    if (ct_sgn != @intCast(u8, 0)) {
-                        var ct_w = type_mod.typeRegistryIntWidthBits(emitter.registry, ct_ty);
-                        var ct_min_buf: [24]u8 = undefined;
-                        var ct_min = satMinLitBound(@intCast(u32, ct_w), ct_min_buf[0..]);
-                        bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-                        var ct_m1: []const u8 = "if (";
-                        bufferedWriterWrite(&emitter.writer, ct_m1);
-                        emitValueExpr(emitter, ct.aux, @intCast(u32, 0));
-                        var ct_m2: []const u8 = " == ";
-                        bufferedWriterWrite(&emitter.writer, ct_m2);
-                        bufferedWriterWrite(&emitter.writer, ct_min);
-                        var ct_m3: []const u8 = " && ";
-                        bufferedWriterWrite(&emitter.writer, ct_m3);
-                        emitValueExpr(emitter, @intCast(u32, ct.imm), @intCast(u32, 0));
-                        var ct_m4: []const u8 = " == -1) { pal_trap(); }\n";
-                        bufferedWriterWrite(&emitter.writer, ct_m4);
-                    }
-                }
-            }
         },
         .ret_void => {
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
@@ -7942,14 +7920,6 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                 }
             }
             if (uo_pay_void == @intCast(u8, 0)) {
-                if (emitter.safe_checks) {
-                    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-                    var uo_g1: []const u8 = "if (!(";
-                    bufferedWriterWrite(&emitter.writer, uo_g1);
-                    bufferedWriterWrite(&emitter.writer, src);
-                    var uo_g2: []const u8 = ".has_value)) { pal_trap(); }\n";
-                    bufferedWriterWrite(&emitter.writer, uo_g2);
-                }
                 bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                 bufferedWriterWrite(&emitter.writer, dst);
                 var s1: []const u8 = " = ";
@@ -7958,6 +7928,23 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                 var s2: []const u8 = ".value;\n";
                 bufferedWriterWrite(&emitter.writer, s2);
             }
+        },
+        .unwrap_optional_checked => |e| {
+            var dst = resolveTempName(emitter, e.result);
+            var src = resolveTempName(emitter, e.value);
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            var uoc_g1: []const u8 = "if (!(";
+            bufferedWriterWrite(&emitter.writer, uoc_g1);
+            bufferedWriterWrite(&emitter.writer, src);
+            var uoc_g2: []const u8 = ".has_value)) { pal_trap(); }\n";
+            bufferedWriterWrite(&emitter.writer, uoc_g2);
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            bufferedWriterWrite(&emitter.writer, dst);
+            var uoc_s1: []const u8 = " = ";
+            bufferedWriterWrite(&emitter.writer, uoc_s1);
+            bufferedWriterWrite(&emitter.writer, src);
+            var uoc_s2: []const u8 = ".value;\n";
+            bufferedWriterWrite(&emitter.writer, uoc_s2);
         },
         .unwrap_optional_abi => |e| {
             var dst = resolveTempName(emitter, e.result);
@@ -8242,9 +8229,10 @@ fn dceMarkAllReads(lir_fn: *LirFunction, max_temp: u32, tid_to_pos: [*]u32, read
                 .va_end => |ve| { dceMarkReadPos(max_temp, tid_to_pos, read_count, ve.va_list_temp); },
                 .tail_call => |tc_slot| { var tc = lir_mod.lirSideGetTailCall(lir_fn, tc_slot); if (tc.is_indirect != @intCast(u8, 0)) { dceMarkReadPos(max_temp, tid_to_pos, read_count, tc.callee); } var ai: u32 = @intCast(u32, 0); while (ai < tc.args_count) : (ai += @intCast(u32, 1)) { dceMarkReadPos(max_temp, tid_to_pos, read_count, tc.args_start + ai); } dceProtectPos(max_temp, tid_to_pos, protected_arr, tc.result); },
                 .unwrap_optional => |u| { dceMarkReadPos(max_temp, tid_to_pos, read_count, u.value); },
+                .unwrap_optional_checked => |u| { dceMarkReadPos(max_temp, tid_to_pos, read_count, u.value); },
                 .unwrap_optional_abi => |u| { dceMarkReadPos(max_temp, tid_to_pos, read_count, u.value); },
                 .check_optional => |c| { dceMarkReadPos(max_temp, tid_to_pos, read_count, c.value); },
-                .check_trap => |ct| { dceMarkReadPos(max_temp, tid_to_pos, read_count, ct.cond); if (ct.kind != @intCast(u8, 6)) { dceMarkReadPos(max_temp, tid_to_pos, read_count, ct.aux); } if (ct.kind == @intCast(u8, 2)) { dceMarkReadPos(max_temp, tid_to_pos, read_count, @intCast(u32, ct.imm)); } },
+                .check_trap => |ct| { dceMarkReadPos(max_temp, tid_to_pos, read_count, ct.cond); if (ct.kind != @intCast(u8, 6) and ct.kind != @intCast(u8, 2)) { dceMarkReadPos(max_temp, tid_to_pos, read_count, ct.aux); } },
                 .wrap_error_ok => |w| { dceMarkReadPos(max_temp, tid_to_pos, read_count, w.value); },
                 .wrap_error_err => |w| { dceMarkReadPos(max_temp, tid_to_pos, read_count, w.value); },
                 .unwrap_error_payload => |u| { dceMarkReadPos(max_temp, tid_to_pos, read_count, u.value); },
@@ -8322,6 +8310,7 @@ fn dceResultPos(max_temp: u32, tid_to_pos: [*]u32, inst: lir_mod.LirInst) u32 {
         .wrap_error_ok => |w| { t = w.result; },
         .wrap_error_err => |w| { t = w.result; },
         .unwrap_optional => |u| { t = u.result; },
+        .unwrap_optional_checked => |u| { t = u.result; },
         .unwrap_optional_abi => |u| { t = u.result; },
         .check_optional => |c| { t = c.result; },
         .unwrap_error_payload => |u| { t = u.result; },
@@ -8372,9 +8361,10 @@ fn dceReleaseOperands(max_temp: u32, tid_to_pos: [*]u32, read_count: [*]u32, ins
         .wrap_error_ok => |w| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, w.value); },
         .wrap_error_err => |w| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, w.value); },
         .unwrap_optional => |u| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, u.value); },
+        .unwrap_optional_checked => |u| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, u.value); },
         .unwrap_optional_abi => |u| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, u.value); },
         .check_optional => |c| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, c.value); },
-        .check_trap => |ct| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, ct.cond); if (ct.kind != @intCast(u8, 6)) { dceReleaseReadPos(max_temp, tid_to_pos, read_count, ct.aux); } if (ct.kind == @intCast(u8, 2)) { dceReleaseReadPos(max_temp, tid_to_pos, read_count, @intCast(u32, ct.imm)); } },
+        .check_trap => |ct| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, ct.cond); if (ct.kind != @intCast(u8, 6) and ct.kind != @intCast(u8, 2)) { dceReleaseReadPos(max_temp, tid_to_pos, read_count, ct.aux); } },
         .unwrap_error_payload => |u| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, u.value); },
         .unwrap_error_code => |u| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, u.value); },
         .check_error => |c| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, c.value); },

@@ -615,16 +615,68 @@ pub fn nextTemp(self: *LirLowerer, type_id: TypeId) u32 {
 }
 
 // A4F `-fsafe` cheap-check helpers. Each emits a backend-neutral
-// `check_trap { cond, kind, aux, imm }` immediately before the guarded op; the
-// emitter renders the concrete C guard. Gate at lowering so `-ffast` is
-// unaffected (no new emission for div/shift/null).
+// `check_trap { cond, kind }` immediately before the guarded op; the emitter
+// renders the concrete C guard. Gate at lowering so `-ffast` is unaffected (no
+// new emission for div/shift/null). A16: the div/mod half is now a fully
+// lowering-computed success condition `(rhs != 0) && !(lhs == MIN && rhs == -1)`
+// for a signed lhs (just `rhs != 0` otherwise), so the emitter holds no
+// MIN/signedness logic.
 fn emitSafeCheckDivMod(self: *LirLowerer, lhs: u32, rhs: u32) void {
     if (!self.ctx.safe_checks) return;
     var zt = nextTemp(self, type_mod.TYPE_U32);
     emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = zt } });
-    var cond = nextTemp(self, type_mod.TYPE_BOOL);
-    emitInst(self, LirInst{ .binary = .{ .op = BIN_NE, .lhs = rhs, .rhs = zt, .result = cond } });
-    emitInst(self, LirInst{ .check_trap = .{ .cond = cond, .kind = @intCast(u8, 2), .aux = lhs, .imm = @intCast(u64, rhs) } });
+    var rhs_nz = nextTemp(self, type_mod.TYPE_BOOL);
+    emitInst(self, LirInst{ .binary = .{ .op = BIN_NE, .lhs = rhs, .rhs = zt, .result = rhs_nz } });
+    var cond = rhs_nz;
+    var lhs_ty = getTempType(self, lhs);
+    if (intCastTypeIsSigned(self.ctx.registry, lhs_ty) != @intCast(u8, 0)) {
+        var width = intCastTypeBits(self.ctx.registry, lhs_ty);
+        if (width > @intCast(u32, 0) and width <= @intCast(u32, 64)) {
+            // two's-complement MIN for the lhs width; the `int_const` arm renders
+            // the exact signed minimum literal (no emitter bound math).
+            var min_val = @intCast(u64, 1) << @intCast(u64, width - @intCast(u32, 1));
+            var min_t = nextTemp(self, lhs_ty);
+            emitInst(self, LirInst{ .int_const = .{ .value = min_val, .result = min_t } });
+            var lhs_ne_min = nextTemp(self, type_mod.TYPE_BOOL);
+            emitInst(self, LirInst{ .binary = .{ .op = BIN_NE, .lhs = lhs, .rhs = min_t, .result = lhs_ne_min } });
+            var neg1_t = nextTemp(self, getTempType(self, rhs));
+            emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0xFFFFFFFFFFFFFFFF), .result = neg1_t } });
+            var rhs_ne_m1 = nextTemp(self, type_mod.TYPE_BOOL);
+            emitInst(self, LirInst{ .binary = .{ .op = BIN_NE, .lhs = rhs, .rhs = neg1_t, .result = rhs_ne_m1 } });
+            var not_both = nextTemp(self, type_mod.TYPE_BOOL);
+            emitInst(self, LirInst{ .binary = .{ .op = BIN_OR, .lhs = lhs_ne_min, .rhs = rhs_ne_m1, .result = not_both } });
+            cond = nextTemp(self, type_mod.TYPE_BOOL);
+            emitInst(self, LirInst{ .binary = .{ .op = BIN_AND, .lhs = rhs_nz, .rhs = not_both, .result = cond } });
+        }
+    }
+    emitInst(self, LirInst{ .check_trap = .{ .cond = cond, .kind = @intCast(u8, 2), .aux = @intCast(u32, 0), .imm = @intCast(u64, 0), .result_type = @intCast(u32, 0), .op = @intCast(u8, 0) } });
+}
+
+// A16 null-unwrap guard. Under `-fsafe` a non-void optional payload read goes
+// through the backend-neutral `unwrap_optional_checked` op (emitter maps it to
+// `if (!(<opt>.has_value)) { pal_trap(); }` + `.value`); otherwise, or for a
+// void payload, the plain `unwrap_optional` op is emitted (the emitter skips
+// the guard+read for void, matching the pre-A16 `optional(void)` behaviour).
+// The payload type is derived from the source optional temp exactly as the old
+// emitter's void check did.
+fn emitUnwrapOptional(self: *LirLowerer, opt_temp: u32, result: u32) void {
+    var pay_void: u8 = @intCast(u8, 0);
+    var src_ty = getTempType(self, opt_temp);
+    if (@intCast(usize, src_ty) < self.ctx.registry.types_len) {
+        if (self.ctx.registry.types_items[@intCast(usize, src_ty)].kind == type_mod.TypeKind.optional_type) {
+            var opt = self.ctx.registry.opt_items[@intCast(usize, self.ctx.registry.types_items[@intCast(usize, src_ty)].payload_idx)];
+            if (@intCast(usize, opt.payload) < self.ctx.registry.types_len) {
+                if (self.ctx.registry.types_items[@intCast(usize, opt.payload)].kind == type_mod.TypeKind.void_type) {
+                    pay_void = @intCast(u8, 1);
+                }
+            }
+        }
+    }
+    if (self.ctx.safe_checks and pay_void == @intCast(u8, 0)) {
+        emitInst(self, LirInst{ .unwrap_optional_checked = .{ .value = opt_temp, .result = result } });
+    } else {
+        emitInst(self, LirInst{ .unwrap_optional = .{ .value = opt_temp, .result = result } });
+    }
 }
 
 fn emitSafeCheckShift(self: *LirLowerer, lhs: u32, rhs: u32) void {
@@ -2100,7 +2152,7 @@ fn bindOptionalCapture(self: *LirLowerer, capture_node: u32, cond_temp: u32) voi
     if (ct.kind == type_mod.TypeKind.optional_type) {
         var opt_pay = self.ctx.registry.opt_items[@intCast(usize, ct.payload_idx)].payload;
         var unwrapped = nextTemp(self, opt_pay);
-        emitInst(self, LirInst{ .unwrap_optional = .{ .value = cond_temp, .result = unwrapped } });
+        emitUnwrapOptional(self, cond_temp, unwrapped);
         cap_type = opt_pay;
         cap_temp = unwrapped;
     } else if (ct.kind == type_mod.TypeKind.tagged_union_type) {
@@ -4302,7 +4354,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         self.current_bb = ok_bb;
         var rt2 = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var ok_val = nextTemp(self, if (rt2) |t| t else type_mod.TYPE_UNDEFINED);
-        emitInst(self, LirInst{ .unwrap_optional = .{ .value = lhs_temp, .result = ok_val } });
+        emitUnwrapOptional(self, lhs_temp, ok_val);
         emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = join_temp, .src = ok_val } });
         var omg_k_m: []const u8 = "OMG:okT"; pal.markerWriteInt(omg_k_m, ok_val);
         var omg_ku_m: []const u8 = "OMG:KUNDEF\n"; pal.markerWrite(omg_ku_m);
@@ -6348,6 +6400,8 @@ fn hasOtherConsumers(self: *LirLowerer, call_result: u32, ret_temp: u32) bool {
                 if (inst.wrap_optional.value == call_result) return true;
             } else if (tg == @enumToInt(LirInst.unwrap_optional)) {
                 if (inst.unwrap_optional.value == call_result) return true;
+            } else if (tg == @enumToInt(LirInst.unwrap_optional_checked)) {
+                if (inst.unwrap_optional_checked.value == call_result) return true;
             } else if (tg == @enumToInt(LirInst.check_optional)) {
                 if (inst.check_optional.value == call_result) return true;
             } else if (tg == @enumToInt(LirInst.int_cast)) {

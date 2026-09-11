@@ -386,6 +386,7 @@ fn defInfoPure(inst: LirInst) u8 {
         .wrap_error_ok => return @intCast(u8, 1),
         .wrap_error_err => return @intCast(u8, 1),
         .unwrap_optional => return @intCast(u8, 1),
+        .unwrap_optional_checked => return @intCast(u8, 1),
         .unwrap_optional_abi => return @intCast(u8, 1),
         .check_optional => return @intCast(u8, 1),
         .unwrap_error_payload => return @intCast(u8, 1),
@@ -434,6 +435,7 @@ fn defResultTemp(inst: LirInst, lir_fn: *LirFunction) u32 {
         .wrap_error_ok => |w| { return w.result; },
         .wrap_error_err => |w| { return w.result; },
         .unwrap_optional => |u| { return u.result; },
+        .unwrap_optional_checked => |u| { return u.result; },
         .unwrap_optional_abi => |u| { return u.result; },
         .check_optional => |ch| { return ch.result; },
         .unwrap_error_payload => |u| { return u.result; },
@@ -574,6 +576,7 @@ fn scanInst(c: *Ctx, inst: LirInst, bb_idx: u32, ii: u32) void {
             }
         },
         .unwrap_optional => |u| { markRead(c, u.value, bb_idx, ii); },
+        .unwrap_optional_checked => |u| { markRead(c, u.value, bb_idx, ii); },
         .unwrap_optional_abi => |u| { markRead(c, u.value, bb_idx, ii); },
         .check_optional => |ch| { markRead(c, ch.value, bb_idx, ii); },
         .wrap_error_ok => |w| { markRead(c, w.value, bb_idx, ii); },
@@ -628,8 +631,7 @@ fn scanInst(c: *Ctx, inst: LirInst, bb_idx: u32, ii: u32) void {
         },
         .check_trap => |ct| {
             markRead(c, ct.cond, bb_idx, ii);
-            if (ct.kind != @intCast(u8, 6)) { markRead(c, ct.aux, bb_idx, ii); }
-            if (ct.kind == @intCast(u8, 2)) { markRead(c, @intCast(u32, ct.imm), bb_idx, ii); }
+            if (ct.kind != @intCast(u8, 6) and ct.kind != @intCast(u8, 2)) { markRead(c, ct.aux, bb_idx, ii); }
         },
         else => {},
     }
@@ -758,6 +760,7 @@ fn maxOperandDepth(c: *Ctx, inst: LirInst) u8 {
         .wrap_error_ok => |w| { mx = depthOfTemp(c, w.value); },
         .wrap_error_err => |w| { mx = depthOfTemp(c, w.value); },
         .unwrap_optional => |u| { mx = depthOfTemp(c, u.value); },
+        .unwrap_optional_checked => |u| { mx = depthOfTemp(c, u.value); },
         .unwrap_optional_abi => |u| { mx = depthOfTemp(c, u.value); },
         .check_optional => |ch| { mx = depthOfTemp(c, ch.value); },
         .unwrap_error_payload => |u| { mx = depthOfTemp(c, u.value); },
@@ -899,6 +902,7 @@ fn instOperandsReachGlobalAlias(c: *Ctx, inst: LirInst) u8 {
         .wrap_error_ok => |w| { return tempReachesGlobalAlias(c, w.value); },
         .wrap_error_err => |w| { return tempReachesGlobalAlias(c, w.value); },
         .unwrap_optional => |u| { return tempReachesGlobalAlias(c, u.value); },
+        .unwrap_optional_checked => |u| { return tempReachesGlobalAlias(c, u.value); },
         .unwrap_optional_abi => |u| { return tempReachesGlobalAlias(c, u.value); },
         .check_optional => |ch| { return tempReachesGlobalAlias(c, ch.value); },
         .unwrap_error_payload => |u| { return tempReachesGlobalAlias(c, u.value); },
@@ -1187,6 +1191,11 @@ fn rewriteInstOperands(c: *Ctx, inst: LirInst) LirInst {
             nu.value = maybeR(c, nu.value);
             return LirInst{ .unwrap_optional = nu };
         },
+        .unwrap_optional_checked => |u| {
+            var nu = u;
+            nu.value = maybeR(c, nu.value);
+            return LirInst{ .unwrap_optional_checked = nu };
+        },
         .unwrap_optional_abi => |u| {
             var nu = u;
             nu.value = maybeR(c, nu.value);
@@ -1350,8 +1359,7 @@ fn rewriteInstOperands(c: *Ctx, inst: LirInst) LirInst {
         .check_trap => |ct| {
             var nc = ct;
             nc.cond = maybeR(c, nc.cond);
-            if (nc.kind != @intCast(u8, 6)) { nc.aux = maybeR(c, nc.aux); }
-            if (nc.kind == @intCast(u8, 2)) { nc.imm = @intCast(u64, maybeR(c, @intCast(u32, nc.imm))); }
+            if (nc.kind != @intCast(u8, 6) and nc.kind != @intCast(u8, 2)) { nc.aux = maybeR(c, nc.aux); }
             return LirInst{ .check_trap = nc };
         },
         else => return inst,
@@ -1468,6 +1476,7 @@ fn retargetDefResult(inst: LirInst, newr: u32, ok: *u8) LirInst {
         .wrap_error_ok => |w| { var nw = w; nw.result = newr; return LirInst{ .wrap_error_ok = nw }; },
         .wrap_error_err => |w| { var nw = w; nw.result = newr; return LirInst{ .wrap_error_err = nw }; },
         .unwrap_optional => |u| { var nu = u; nu.result = newr; return LirInst{ .unwrap_optional = nu }; },
+        .unwrap_optional_checked => |u| { var nu = u; nu.result = newr; return LirInst{ .unwrap_optional_checked = nu }; },
         .unwrap_optional_abi => |u| { var nu = u; nu.result = newr; return LirInst{ .unwrap_optional_abi = nu }; },
         .check_optional => |ch| { var nc = ch; nc.result = newr; return LirInst{ .check_optional = nc }; },
         .unwrap_error_payload => |u| { var nu = u; nu.result = newr; return LirInst{ .unwrap_error_payload = nu }; },
