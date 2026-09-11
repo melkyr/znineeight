@@ -518,3 +518,15 @@ operator approval of A12.
 - **Shift:** `1 << 40` const-folds to `0`; left-shift **overflow** is A6's, only the count-≥-width guard
   is A4's.
 
+### A5I STOP-present — operator rulings (2026-09-10)
+
+- **Scope:** A5F guards **read and write `arr[i]`** only (the `load_index` / `assign_index` forms). The
+  other index-through-BIN_ADD forms (`&arr[i]` at `lowerLValueAddr:1029-1039`; `base[i].field = v` at
+  `lowerFieldStore:1375-1382`) are **documented as unchecked**; so are `[*]T`, `@ptrCast` aliases, and
+  multi-dim `[R][C]T` (which already emits invalid C — pre-existing).
+- **Signed index:** confirmed — normalize so a signed index wider than `usize` (e.g. `i64` on `-m32`)
+  cannot pass a negative index (add the `idx >= 0` conjunct / unsigned form).
+- **Length source:** arrays = compile-time `array_items[…].length` (`array_to_slice` `lower.zig:5893-5911`);
+  slices = runtime `SLICE_FIELD_LEN` off `li_orig_base`/`ai_orig_base`. Runtime-only (no constant-OOB fold);
+  `-ffast` gains no new emission.
+
