@@ -554,3 +554,18 @@ operator approval of A12.
   temp has width 0; materialize a typed temp so the LHS has a real width and the `<<`/`<<=` guard applies.
 - **All new repros under `repro/mi_matrix/`.**
 
+### A7I STOP-present — operator rulings (2026-09-10)
+
+- **Missing-return (A): BUILD THE REACHABILITY MODEL.** Implement a real "definitely-returns" predicate
+  over block/`if`/`switch` (with `return`/`unreachable`/`@panic` as terminators) instead of the unsound
+  `block_terminated` flag. Zig-faithful: a non-void function that can fall off the end, or a bare `return;`
+  in a non-void function, is an error. The `if/else` both-return sites (21 `sf/src` + 8 `std_net` + corpus)
+  are correct and must NOT be flagged.
+- **Uninit (B): KEEP THE ERROR.** Real Zig requires initialization (`var x: T;` is a compile error;
+  `= undefined` is the escape) — spec §3.4 is Zig-faithful. No change.
+- **Ignored value (C):** scope stays **error-union-only** per spec §3.4. Real Zig is stricter (ignoring any
+  non-void value is an error); record this as a documented deviation — do not broaden in A7F.
+- **Unsigned unary `-` (D):** stays A6F's `-fsafe` runtime trap (Zig treats plain `-` as overflow-checked,
+  not a blanket compile error; the compile-error proposal is unadopted). Compile-time rejection for
+  comptime-known values is out of A7F scope.
+
