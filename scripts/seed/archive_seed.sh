@@ -151,7 +151,7 @@ Rebuild recipe 1 (primary, forward path) - from the seed binary
 ----------------------------------------------------------------
 From the repo root (current sf/src):
 
-  timeout 120 ./zig1-seed/zig1 --dump-c89 --output-dir <fresh-dir> sf/src/main.zig
+  timeout 120 ./zig1-seed/zig1 -ffast --dump-c89 --output-dir <fresh-dir> sf/src/main.zig
 
   (run from the repo root with the RELATIVE sf/src/main.zig path: module
   basename-hash tokens depend on the resolved source path; --output-dir must
@@ -164,9 +164,11 @@ From the repo root (current sf/src):
   gcc -m32 -O0 *.o <repo>/sf/src/include/zig_runtime.c \
       <repo>/sf/src/include/zig_pal.c <repo>/sf/src/c_exit.c -o zig1_next
 
-Verify two-hop fixed-point closure: dump sf/src/main.zig with zig1_next into a
-fresh dir, gcc the same way, link -> binary md5 must equal the fixed point
-$FP_MD5. (scripts/seed/build_from_seed.sh automates this.)
+Verify two-hop fixed-point closure: dump sf/src/main.zig with zig1_next -ffast
+into a fresh dir, gcc the same way, link -> binary md5 must equal the fixed
+point $FP_MD5. (The compiler self-build always passes -ffast; the recorded
+fixed point is the -ffast binary. scripts/seed/build_from_seed.sh automates
+this.)
 
 Rebuild recipe 2 (fallback) - seed binary lost, rebuild from C only
 -------------------------------------------------------------------
@@ -239,8 +241,10 @@ emitted \`zig_special_types.h\`, $GEN_BYTES bytes), \`c_exit.c\` (top level),
 Provenance note: the archived binary (md5 $BIN_MD5) was captured by
 scripts/seed/archive_seed.sh at HEAD $HEAD; gcc of the archive's self-emission
 C reproduces the self-emission fixed point \`$FP_MD5\` — both are the same
-compiler state at HEAD $HEAD. Rebuild recipes + full canonical flag-set
-requirement (\`gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
+compiler state at HEAD $HEAD. The compiler self-build uses \`-ffast\` (user
+programs default to \`-fsafe\`), so the recorded fixed point is the \`-ffast\`
+binary. Rebuild recipes + full canonical flag-set requirement (\`gcc -m32
+-std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 -Wno-implicit-function-declaration\`; the fixed point reproduces ONLY with
 \`-Wall\` present) are recorded in \`zig1-seed/SEED_README.txt\`.
 EOF

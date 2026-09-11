@@ -84,7 +84,7 @@ fi
 build_hop() {
     local compiler="$1" dumpdir="$2" binout="$3"
     mkdir -p "$dumpdir"
-    ( cd "$ROOT" && timeout 120 "$compiler" --dump-c89 --output-dir "$dumpdir" sf/src/main.zig ) \
+    ( cd "$ROOT" && timeout 120 "$compiler" -ffast --dump-c89 --output-dir "$dumpdir" sf/src/main.zig ) \
         || die "self-emission dump failed (compiler '$compiler')"
     if [ -f "$dumpdir/zig_runtime.c" ]; then
         ( cd "$dumpdir" && gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign \

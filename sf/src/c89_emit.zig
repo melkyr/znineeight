@@ -595,9 +595,10 @@ pub fn nameManglerMangleGlobal(self: *NameMangler, registry: *TypeRegistry, name
       ts_ref_set: U32ToU32Map,
       global_decls: [*]lir_mod.ModuleGlobalDecl,
       global_decls_len: u32,
+      safe_checks: bool,
    };
 
-pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *NameMangler, diag: *DiagnosticCollector, sc: *SwitchCaseArrayList, ca: *U32ArrayList, alloc: *Sand, persist_alloc: *Sand, error_code_reg: *hash_mod.U32ToU32Map, pointer_only_len: u32) C89Emitter {
+pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *NameMangler, diag: *DiagnosticCollector, sc: *SwitchCaseArrayList, ca: *U32ArrayList, alloc: *Sand, persist_alloc: *Sand, error_code_reg: *hash_mod.U32ToU32Map, pointer_only_len: u32, safe_checks: bool) C89Emitter {
     return C89Emitter{
         .writer = bufferedWriterInit(),
         .indent = @intCast(u32, 0),
@@ -647,6 +648,7 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
            .ts_ref_set = hash_mod.u32ToU32MapInit(persist_alloc),
            .global_decls = undefined,
            .global_decls_len = @intCast(u32, 0),
+           .safe_checks = safe_checks,
        };
 }
 
@@ -948,7 +950,7 @@ pub fn emitSupportFiles(emitter: *C89Emitter, dir_path: []const u8) void {
 
     var fd1: usize = openSupportOutputFile(dir_path, "zig_runtime.h");
     var w1: BufferedWriter = bufferedWriterInitFd(fd1);
-    emit_support.emitZigRuntimeHSupport(&w1);
+    emit_support.emitZigRuntimeHSupport(&w1, emitter.safe_checks);
     bufferedWriterFlush(&w1);
     pal.fileClose(fd1);
 
@@ -966,7 +968,7 @@ pub fn emitSupportFiles(emitter: *C89Emitter, dir_path: []const u8) void {
 
     var fd3: usize = openSupportOutputFile(dir_path, "zig_runtime.c");
     var w3: BufferedWriter = bufferedWriterInitFd(fd3);
-    emit_support.emitZigRuntimeCSupport(&w3);
+    emit_support.emitZigRuntimeCSupport(&w3, emitter.safe_checks);
     bufferedWriterFlush(&w3);
     pal.fileClose(fd3);
 
@@ -2876,6 +2878,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     var raw_pp = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, 1) * max_temp, @intCast(usize, 1)) catch unreachable;
     var raw_nd = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, 1) * max_temp, @intCast(usize, 1)) catch unreachable;
     var raw_wa = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, 1) * max_temp, @intCast(usize, 1)) catch unreachable;
+    var raw_pz = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, 1) * max_temp, @intCast(usize, 1)) catch unreachable;
     var tid_to_pos = @ptrCast([*]u32, raw_t2p);
     var written_type = @ptrCast([*]u32, raw_wt);
     var written_flag = @ptrCast([*]u8, raw_wf);
@@ -2885,6 +2888,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     var protected_arr = @ptrCast([*]u8, raw_pp);
     var no_decl_arr = @ptrCast([*]u8, raw_nd);
     var written_arr = @ptrCast([*]u8, raw_wa);
+    var poison_arr = @ptrCast([*]u8, raw_pz);
     var tp: u32 = 0;
     while (tp < max_temp) : (tp += @intCast(u32, 1)) {
         tid_to_pos[@intCast(usize, tp)] = @intCast(u32, 0xFFFFFFFF);
@@ -2896,6 +2900,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
         protected_arr[@intCast(usize, tp)] = @intCast(u8, 0);
         no_decl_arr[@intCast(usize, tp)] = @intCast(u8, 0);
         written_arr[@intCast(usize, tp)] = @intCast(u8, 0);
+        poison_arr[@intCast(usize, tp)] = @intCast(u8, 0);
     }
     hti = @intCast(usize, 0);
     while (hti < lir_fn.hoisted_temps.len) : (hti += @intCast(usize, 1)) {
@@ -3701,25 +3706,47 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
         var sp: []const u8 = " ";
         bufferedWriterWrite(&emitter.writer, sp);
          bufferedWriterWrite(&emitter.writer, tn);
-         if (written_arr[@intCast(usize, i)] == @intCast(u8, 0)) {
-             if (retTypeIsScalarC(emitter.registry, eff_type) == @intCast(u8, 1)) {
-                 var sm: []const u8 = " = 0;\n";
-                 bufferedWriterWrite(&emitter.writer, sm);
-             } else {
-                 var sm: []const u8 = " = {0};\n";
-                 bufferedWriterWrite(&emitter.writer, sm);
-             }
-         } else {
-             var sm: []const u8 = ";\n";
-             bufferedWriterWrite(&emitter.writer, sm);
-         }
+          if (written_arr[@intCast(usize, i)] == @intCast(u8, 0)) {
+              if (emitter.safe_checks) {
+                  poison_arr[@intCast(usize, i)] = @intCast(u8, 1);
+                  var sm: []const u8 = ";\n";
+                  bufferedWriterWrite(&emitter.writer, sm);
+              } else if (retTypeIsScalarC(emitter.registry, eff_type) == @intCast(u8, 1)) {
+                  var sm: []const u8 = " = 0;\n";
+                  bufferedWriterWrite(&emitter.writer, sm);
+              } else {
+                  var sm: []const u8 = " = {0};\n";
+                  bufferedWriterWrite(&emitter.writer, sm);
+              }
+          } else {
+              var sm: []const u8 = ";\n";
+              bufferedWriterWrite(&emitter.writer, sm);
+          }
         } else {
             var mtp_m: []const u8 = "MTP:ti"; pal.markerWrite(mtp_m);
             var mtp_tb: [10]u8 = undefined; var mtp_tl = itoa_mod.itoa(td.temp_id, mtp_tb[0..]); var mtp_ts: usize = @intCast(usize, 9) - @intCast(usize, mtp_tl); pal.markerWrite(mtp_tb[mtp_ts..@intCast(usize, 9)]);
             var mtp_dm: []const u8 = "T"; pal.markerWriteInt(mtp_dm, eff_type);
             var mtp_nl: []const u8 = " "; pal.markerWrite(mtp_nl);
         }
-    }
+     }
+     if (emitter.safe_checks) {
+         var pi: usize = @intCast(usize, 0);
+         while (pi < lir_fn.hoisted_temps.len) : (pi += @intCast(usize, 1)) {
+             if (poison_arr[@intCast(usize, pi)] != @intCast(u8, 0)) {
+                 var ptd = lir_fn.hoisted_temps.items[pi];
+                 var ptn = mangleTempName(emitter.interner, ptd.temp_id);
+                 bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                 var pf0: []const u8 = "zig_poison_fill((void*)&";
+                 bufferedWriterWrite(&emitter.writer, pf0);
+                 bufferedWriterWrite(&emitter.writer, ptn);
+                 var pf1: []const u8 = ", (unsigned int)sizeof ";
+                 bufferedWriterWrite(&emitter.writer, pf1);
+                 bufferedWriterWrite(&emitter.writer, ptn);
+                 var pf2: []const u8 = ");\n";
+                 bufferedWriterWrite(&emitter.writer, pf2);
+             }
+         }
+     }
 }
 
 // ----- T4b: emitValueExpr recursive renderer + C89 materialization guard -----
@@ -6941,7 +6968,17 @@ fn emitPackedLoadBitfield(emitter: *C89Emitter, result_c: []const u8, base_c: []
             var uct_tb: [10]u8 = undefined; var uct_tl = itoa_mod.itoa(uc.type_id, uct_tb[0..]); var uct_ts: usize = @intCast(usize, 9) - @intCast(usize, uct_tl); pal.markerWrite(uct_tb[uct_ts..@intCast(usize, 9)]);
             var uct_nl: []const u8 = "\n"; pal.markerWrite(uct_nl);
             var uct_ty = emitter.registry.types_items[@intCast(usize, uc.type_id)];
-             if (uct_ty.kind == type_mod.TypeKind.array_type) {
+            if (emitter.safe_checks) {
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                var pz0: []const u8 = "zig_poison_fill((void*)&";
+                bufferedWriterWrite(&emitter.writer, pz0);
+                bufferedWriterWrite(&emitter.writer, result);
+                var pz1: []const u8 = ", (unsigned int)sizeof ";
+                bufferedWriterWrite(&emitter.writer, pz1);
+                bufferedWriterWrite(&emitter.writer, result);
+                var pz2: []const u8 = ");\n";
+                bufferedWriterWrite(&emitter.writer, pz2);
+            } else if (uct_ty.kind == type_mod.TypeKind.array_type) {
                  var uap = emitter.registry.array_items[@intCast(usize, uct_ty.payload_idx)];
                  var loop_begin: []const u8 = "{\n";
                  bufferedWriterWriteIndent(&emitter.writer, emitter.indent);

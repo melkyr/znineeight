@@ -94,7 +94,7 @@ pub fn emitCExitCSupport(writer: *BufferedWriter) void {
     c89_mod.bufferedWriterWrite(writer, "void c_exit(int code) { exit(code); }\n");
 }
 
-pub fn emitZigRuntimeHSupport(writer: *BufferedWriter) void {
+pub fn emitZigRuntimeHSupport(writer: *BufferedWriter, safe_checks: bool) void {
     c89_mod.bufferedWriterWrite(writer, "#ifndef ZIG_RUNTIME_H\n");
     c89_mod.bufferedWriterWrite(writer, "#define ZIG_RUNTIME_H\n");
     c89_mod.bufferedWriterWrite(writer, "\n");
@@ -106,6 +106,11 @@ pub fn emitZigRuntimeHSupport(writer: *BufferedWriter) void {
     c89_mod.bufferedWriterWrite(writer, "extern int pal_i64_to_str(long long val, char* buf, int bufsize);\n");
     c89_mod.bufferedWriterWrite(writer, "extern int pal_u64_to_str(unsigned long long val, char* buf, int bufsize);\n");
     c89_mod.bufferedWriterWrite(writer, "extern int pal_f64_to_str(double val, char* buf, int bufsize);\n");
+    if (safe_checks) {
+        c89_mod.bufferedWriterWrite(writer, "\n");
+        c89_mod.bufferedWriterWrite(writer, "/* -fsafe undefined poison: byte-exact 0xAA fill (emitted only under -fsafe). */\n");
+        c89_mod.bufferedWriterWrite(writer, "void zig_poison_fill(void* p, unsigned int n);\n");
+    }
     c89_mod.bufferedWriterWrite(writer, "\n");
     c89_mod.bufferedWriterWrite(writer, "/* Backward compat aliases __bootstrap_print* / __bootstrap_write /\n");
     c89_mod.bufferedWriterWrite(writer, "   __bootstrap_sleep_ms / __bootstrap_panic REMOVED (F4, 2026-08-08) — the\n");
@@ -228,7 +233,7 @@ pub fn emitZigRuntimeHSupport(writer: *BufferedWriter) void {
     c89_mod.bufferedWriterWrite(writer, "#endif\n");
 }
 
-pub fn emitZigRuntimeCSupport(writer: *BufferedWriter) void {
+pub fn emitZigRuntimeCSupport(writer: *BufferedWriter, safe_checks: bool) void {
     c89_mod.bufferedWriterWrite(writer, "/* zig_runtime.c - Z98 Runtime Library (generated) */\n");
     c89_mod.bufferedWriterWrite(writer, "#include \"zig_compat.h\"\n");
     c89_mod.bufferedWriterWrite(writer, "#include <string.h>\n");
@@ -496,6 +501,17 @@ pub fn emitZigRuntimeCSupport(writer: *BufferedWriter) void {
     c89_mod.bufferedWriterWrite(writer, "c_char __bootstrap_c_char_from_u8(u8 x) {\n");
     c89_mod.bufferedWriterWrite(writer, "    return (c_char)x;\n");
     c89_mod.bufferedWriterWrite(writer, "}\n");
+    if (safe_checks) {
+        c89_mod.bufferedWriterWrite(writer, "\n");
+        c89_mod.bufferedWriterWrite(writer, "/* -fsafe undefined poison: byte-exact 0xAA fill. */\n");
+        c89_mod.bufferedWriterWrite(writer, "void zig_poison_fill(void* p, unsigned int n) {\n");
+        c89_mod.bufferedWriterWrite(writer, "    unsigned char* b = (unsigned char*)p;\n");
+        c89_mod.bufferedWriterWrite(writer, "    unsigned int i;\n");
+        c89_mod.bufferedWriterWrite(writer, "    for (i = 0; i < n; i++) {\n");
+        c89_mod.bufferedWriterWrite(writer, "        b[i] = (unsigned char)0xAAu;\n");
+        c89_mod.bufferedWriterWrite(writer, "    }\n");
+        c89_mod.bufferedWriterWrite(writer, "}\n");
+    }
 }
 
 pub fn emitZigPalCSupport(writer: *BufferedWriter) void {

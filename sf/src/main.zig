@@ -82,6 +82,7 @@ pub const CompilerCli = struct {
     no_null_check: bool,
     no_lifetime_check: bool,
     no_leak_check: bool,
+    safe_checks: bool,
      warn_all: bool,
      warn_error: bool,
      show_markers: bool,
@@ -665,6 +666,7 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
         .call_arg_types = &ctx.call_arg_types,
         .comptime_values = &ctx.comptime_values,
         .source_file_id = @intCast(u32, 0),
+        .safe_checks = ctx.cli.safe_checks,
     };
     var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
     var mi: usize = 0;
@@ -893,6 +895,7 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
         &ctx.alloc.emission,
         &ctx.error_code_registry,
         ctx.pointer_only_len,
+        ctx.cli.safe_checks,
     );
     emitter.module_reg = ctx.module_reg;
     errorCodeRegistryFinalize(ctx);
@@ -1202,6 +1205,7 @@ fn parseArgs() CompilerCli {
         .no_null_check = false,
         .no_lifetime_check = false,
         .no_leak_check = false,
+        .safe_checks = true,
          .warn_all = false,
          .warn_error = false,
          .show_markers = false,
@@ -1244,6 +1248,8 @@ fn parseArgs() CompilerCli {
     const s_osl: []const u8 = "-osl";
     const s_osw: []const u8 = "-osw";
     const s_target: []const u8 = "--target";
+    const s_fsafe: []const u8 = "-fsafe";
+    const s_ffast: []const u8 = "-ffast";
     while (i < argc) {
         var arg_ptr = pal.argGet(i);
         var arg = cstrToSlice(arg_ptr);
@@ -1321,6 +1327,12 @@ fn parseArgs() CompilerCli {
                  if (i < argc) {
                      cli.target_is_windows = parseTargetIsWindows(pal.argGet(i));
                  }
+             } else if (matchFlag(arg, s_ffast)) {
+                 // -ffast: disable the -fsafe runtime checks + undefined poison.
+                 cli.safe_checks = false;
+             } else if (matchFlag(arg, s_fsafe)) {
+                 // -fsafe (default): enable runtime checks + undefined poison.
+                 cli.safe_checks = true;
              } else {
                  cli.input_file = cstrToSlice(arg_ptr);
              }

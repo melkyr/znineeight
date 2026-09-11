@@ -265,3 +265,12 @@ i32 __bootstrap_i32_from_i64(i64 x) {
 c_char __bootstrap_c_char_from_u8(u8 x) {
     return (c_char)x;
 }
+
+/* -fsafe undefined poison: byte-exact 0xAA fill. */
+void zig_poison_fill(void* p, unsigned int n) {
+    unsigned char* b = (unsigned char*)p;
+    unsigned int i;
+    for (i = 0; i < n; i++) {
+        b[i] = (unsigned char)0xAAu;
+    }
+}

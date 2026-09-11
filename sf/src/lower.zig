@@ -96,6 +96,7 @@ pub const SemanticContext = struct {
     call_arg_types: *hash_mod.U32ToU32Map,
     comptime_values: *hash_mod.U32ToU64Map,
     source_file_id: u32,
+    safe_checks: bool,
 };
 
 pub const DeferActionArrayList = struct {
@@ -5529,7 +5530,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                     emitInst(self, LirInst{ .assign = .{ .name_id = c_name_id, .dst = dl_temp, .src = arr_temp } });
                 } else if (init_node.kind == AstKind.undefined_literal) {
                     var arr_temp = nextTemp(self, decl_type);
-                    if (is_array_type == @intCast(u8, 1)) {
+                    if (is_array_type == @intCast(u8, 1) or self.ctx.safe_checks) {
                         emitInst(self, LirInst{ .undefined_const = .{ .result = arr_temp, .type_id = decl_type } });
                     }
                     emitInst(self, LirInst{ .assign = .{ .name_id = c_name_id, .dst = dl_temp, .src = arr_temp } });

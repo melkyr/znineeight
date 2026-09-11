@@ -10,6 +10,9 @@ extern int pal_i64_to_str(long long val, char* buf, int bufsize);
 extern int pal_u64_to_str(unsigned long long val, char* buf, int bufsize);
 extern int pal_f64_to_str(double val, char* buf, int bufsize);
 
+/* -fsafe undefined poison: byte-exact 0xAA fill (emitted only under -fsafe). */
+void zig_poison_fill(void* p, unsigned int n);
+
 /* Backward compat aliases __bootstrap_print* / __bootstrap_write /
    __bootstrap_sleep_ms / __bootstrap_panic REMOVED (F4, 2026-08-08) — the
    examples migrated to std.io (std_io.zig); the cast helpers below now call
