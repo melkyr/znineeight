@@ -639,6 +639,129 @@ fn emitSafeCheckShift(self: *LirLowerer, lhs: u32, rhs: u32) void {
     emitInst(self, LirInst{ .check_trap = .{ .cond = cond, .kind = @intCast(u8, 3), .aux = rhs, .imm = @intCast(u64, width) } });
 }
 
+// A5F `-fsafe` index out-of-bounds guard. Emits `check_trap{kind=5}` with
+// `cond = idx < len` before a user `.load_index`/`.assign_index`. The length is
+// compile-time `array_items[…].length` for arrays and `*[N]T` pointers-to-array,
+// and a runtime `SLICE_FIELD_LEN` load from the *original* base temp (before
+// `maybeExtractSlicePtr` drops the `.len`) for slices. `[*]T`/scalar pointers
+// have no length and stay unchecked. A signed index wider than `usize` (e.g.
+// i64 on -m32) additionally requires `idx >= 0`. Gated on `safe_checks` at
+// lowering so `-ffast` emits nothing new.
+fn indexStaticLenForType(reg: *type_mod.TypeRegistry, tid: u32) ?u32 {
+    if (@intCast(usize, tid) >= reg.types_len) return null;
+    var ty = reg.types_items[@intCast(usize, tid)];
+    if (ty.kind == type_mod.TypeKind.array_type) {
+        return reg.array_items[@intCast(usize, ty.payload_idx)].length;
+    }
+    if (ty.kind == type_mod.TypeKind.ptr_type) {
+        var pointee = reg.ptr_items[@intCast(usize, ty.payload_idx)].base;
+        if (@intCast(usize, pointee) < reg.types_len) {
+            var pty = reg.types_items[@intCast(usize, pointee)];
+            if (pty.kind == type_mod.TypeKind.array_type) {
+                return reg.array_items[@intCast(usize, pty.payload_idx)].length;
+            }
+        }
+    }
+    return null;
+}
+
+// Recovers the compile-time array length of a `field_access` base whose temp
+// decayed to a bare pointer (e.g. `s.arr` in `s.arr[i]`): resolve the
+// container's declared type and the named field's declared type.
+fn fieldStaticLenForBase(self: *LirLowerer, base_node: u32) ?u32 {
+    var store = self.ctx.store;
+    var bn = ast_mod.astStoreNodeAt(store, base_node);
+    if (bn.kind != AstKind.field_access) return null;
+    var field_name_id: u32 = ast_mod.astStoreNodePayload(store, base_node);
+    var cid: u32 = undefined;
+    if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, bn.child_0)) |ctv| {
+        cid = ctv;
+    } else return null;
+    if (cid == type_mod.TYPE_UNDEFINED or cid == type_mod.TYPE_VOID) return null;
+    if (@intCast(usize, cid) >= self.ctx.registry.types_len) return null;
+    var cty = self.ctx.registry.types_items[@intCast(usize, cid)];
+    if (cty.kind == type_mod.TypeKind.ptr_type or cty.kind == type_mod.TypeKind.many_ptr_type) {
+        cid = self.ctx.registry.ptr_items[@intCast(usize, cty.payload_idx)].base;
+        if (@intCast(usize, cid) >= self.ctx.registry.types_len) return null;
+        cty = self.ctx.registry.types_items[@intCast(usize, cid)];
+    }
+    if (cty.kind != type_mod.TypeKind.struct_type and cty.kind != type_mod.TypeKind.union_type and cty.kind != type_mod.TypeKind.packed_union_type) return null;
+    var fields: []FieldEntry = undefined;
+    if (cty.kind == type_mod.TypeKind.union_type or cty.kind == type_mod.TypeKind.packed_union_type) {
+        type_mod.typeRegistryGetUnionFields(self.ctx.registry, cid, &fields);
+    } else {
+        type_mod.typeRegistryGetStructFields(self.ctx.registry, cid, &fields);
+    }
+    var fi: usize = 0;
+    while (fi < fields.len) : (fi += 1) {
+        if (fields[fi].name_id == field_name_id) {
+            return indexStaticLenForType(self.ctx.registry, fields[fi].type_id);
+        }
+    }
+    return null;
+}
+
+fn emitSafeCheckIndex(self: *LirLowerer, orig_base: u32, base_node: u32, idx_temp: u32) void {
+    if (!self.ctx.safe_checks) return;
+    var reg = self.ctx.registry;
+    var base_ty = getTempType(self, orig_base);
+    var len_temp: u32 = @intCast(u32, 0);
+    var len_static: u32 = @intCast(u32, 0);
+    var have_len: u8 = @intCast(u8, 0);
+    if (base_ty != type_mod.TYPE_UNDEFINED and base_ty != type_mod.TYPE_VOID and @intCast(usize, base_ty) < reg.types_len and reg.types_items[@intCast(usize, base_ty)].kind == type_mod.TypeKind.slice_type) {
+        have_len = @intCast(u8, 1);
+        len_temp = nextTemp(self, type_mod.TYPE_USIZE);
+        var bnid = nameMapGet(self, orig_base);
+        emitInst(self, LirInst{ .load_field = .{ .name_id = bnid, .base = orig_base, .field_id = type_mod.SLICE_FIELD_LEN, .result = len_temp } });
+    } else if (indexStaticLenForType(reg, base_ty)) |sl| {
+        have_len = @intCast(u8, 1);
+        len_static = sl;
+    } else if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, base_node)) |rt| {
+        // An array-valued base (e.g. the field `s.arr` in `s.arr[i]`) can decay
+        // to a bare pointer temp, losing its length; recover it from the base
+        // node's declared type or the container's field declaration.
+        // `[*]T`/scalar pointers still resolve to no length.
+        if (indexStaticLenForType(reg, rt)) |sl2| {
+            have_len = @intCast(u8, 1);
+            len_static = sl2;
+        } else if (fieldStaticLenForBase(self, base_node)) |fl| {
+            have_len = @intCast(u8, 1);
+            len_static = fl;
+        }
+    } else if (fieldStaticLenForBase(self, base_node)) |fl2| {
+        have_len = @intCast(u8, 1);
+        len_static = fl2;
+    }
+    if (have_len == @intCast(u8, 0)) return;
+    var len_ref = len_temp;
+    if (len_ref == @intCast(u32, 0)) {
+        len_ref = nextTemp(self, type_mod.TYPE_USIZE);
+        emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, len_static), .result = len_ref } });
+    }
+    var lt = nextTemp(self, type_mod.TYPE_BOOL);
+    emitInst(self, LirInst{ .binary = .{ .op = BIN_LT, .lhs = idx_temp, .rhs = len_ref, .result = lt } });
+    var cond = lt;
+    var idx_ty = getTempType(self, idx_temp);
+    var idx_bits = intCastTypeBits(reg, idx_ty);
+    var usize_bits = intCastTypeBits(reg, type_mod.TYPE_USIZE);
+    if (intCastTypeIsSigned(reg, idx_ty) != @intCast(u8, 0) and idx_bits > usize_bits) {
+        var zero = nextTemp(self, idx_ty);
+        emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = zero } });
+        var nonneg = nextTemp(self, type_mod.TYPE_BOOL);
+        emitInst(self, LirInst{ .binary = .{ .op = BIN_GE, .lhs = idx_temp, .rhs = zero, .result = nonneg } });
+        cond = nextTemp(self, type_mod.TYPE_BOOL);
+        emitInst(self, LirInst{ .binary = .{ .op = BIN_AND, .lhs = nonneg, .rhs = lt, .result = cond } });
+    }
+    var aux: u32 = @intCast(u32, 0);
+    var imm: u64 = 0;
+    if (len_temp != @intCast(u32, 0)) {
+        aux = len_temp;
+    } else {
+        imm = @intCast(u64, len_static);
+    }
+    emitInst(self, LirInst{ .check_trap = .{ .cond = cond, .kind = @intCast(u8, 5), .aux = aux, .imm = imm } });
+}
+
 pub fn createBlock(self: *LirLowerer) u32 {
     var id = self.func.blocks.len;
     var bb = BasicBlock{
@@ -1156,6 +1279,7 @@ fn lowerAssignLValue(self: *LirLowerer, lv_node_idx: u32, value_temp: u32, diag_
         var ai_orig_base = base_temp;
         base_temp = maybeExtractSlicePtr(self, lv_node.child_0, base_temp);
         var idx_temp = lowerExpr(self, lv_node.child_1);
+        emitSafeCheckIndex(self, ai_orig_base, lv_node.child_0, idx_temp);
         var ai_ni: u32 = @intCast(u32, 0);
         var src_ni = resolved_mod.resolvedSourceTableGet(self.ctx.resolved_types, lv_node.child_0);
         if (src_ni) |sn| {
@@ -2534,6 +2658,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var msp2b: [10]u8 = undefined; var msp2l = itoa_mod.itoa(base_temp, msp2b[0..]); var msp2s: usize = @intCast(usize, 9) - @intCast(usize, msp2l); pal.markerWrite(msp2b[msp2s..@intCast(usize, 9)]);
         var msp_nl2: []const u8 = "\n"; pal.markerWrite(msp_nl2);
         var idx_temp = lowerExpr(self, node.child_1);
+        emitSafeCheckIndex(self, li_orig_base, node.child_0, idx_temp);
          var elem_type: [1]u32 = [1]u32{type_mod.TYPE_U32};
          var rt_ix = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
          if (rt_ix) |t| { if (t != type_mod.TYPE_UNDEFINED) { elem_type[0] = t; var ixh: []const u8 = "IXH"; pal.markerWrite(ixh); var ixhtb: [10]u8 = undefined; var ixhtl = itoa_mod.itoa(t, ixhtb[0..]); var ixhts: usize = @intCast(usize, 9) - @intCast(usize, ixhtl); pal.markerWrite(ixhtb[ixhts..@intCast(usize, 9)]); } }
