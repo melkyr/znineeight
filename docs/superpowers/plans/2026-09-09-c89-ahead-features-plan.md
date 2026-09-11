@@ -530,3 +530,16 @@ operator approval of A12.
   slices = runtime `SLICE_FIELD_LEN` off `li_orig_base`/`ai_orig_base`. Runtime-only (no constant-OOB fold);
   `-ffast` gains no new emission.
 
+### A6I STOP-present — operator rulings (2026-09-10)
+
+- **Left-shift value overflow:** **INCLUDED** in A6F (resolves the plan:518 vs Task-A6-body conflict toward
+  plan:518). Guard `<<` / `<<=` value overflow (A4 keeps only the count-≥-width guard). Extend the
+  `repro/mi_matrix/` fixtures to cover the shift-overflow cases.
+- **`check_trap{kind=6}` contract:** **APPROVED** — expand the LIR op with `op`/`result_type` fields
+  (packed to keep the streamed 32-byte size), render the signed short-circuit guards in the emitter from
+  `aux`/`imm`, and extend the `kind==2`-only DCE/opt-pass `imm`-read arms. **Repros required** (under
+  `repro/mi_matrix/`) for the short-circuit guard behaviors.
+- **Unsigned unary `-`:** **prefer compile-time rejection** (a `-unsigned` diagnostic) if not too
+  complicated; otherwise fall back to the runtime trap. Either way, ship a `repro/mi_matrix/` repro.
+- **All new repros stay under `repro/mi_matrix/`.**
+
