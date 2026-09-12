@@ -1436,7 +1436,12 @@ fn semanticAnalyzerResolveOrelseExpr(self: *SemanticAnalyzer, node_idx: u32) u32
         return type_mod.TYPE_VOID;
     }
     if (ty.kind != type_mod.TypeKind.optional_type) {
-        return type_mod.TYPE_VOID;
+        if (ty.kind == type_mod.TypeKind.null_type or ty.kind == type_mod.TypeKind.undefined_type or inner == type_mod.TYPE_NORETURN) {
+            return type_mod.TYPE_VOID;
+        }
+        var oe_msg: []const u8 = "orelse requires an optional operand; use 'catch' for error unions";
+        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3016_ORELSE_REQUIRES_OPTIONAL)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), oe_msg);
+        return type_mod.TYPE_UNDEFINED;
     }
     var opt = self.registry.opt_items[@intCast(usize, ty.payload_idx)];
     coercion_mod.coercionTableAdd(self.coercion_table, node.child_0, coercion_mod.CoercionKind.unwrap_optional, opt.payload);
