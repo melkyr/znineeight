@@ -682,3 +682,45 @@ RED repros first (all under `repro/mi_matrix/`), implement in `lower.zig`, GREEN
 `feat: c89-ahead — lower noreturn-valued if/switch expressions (C89AHEAD)`. Report `## A19` + one ledger
 line + mnemoria entry per convention.
 
+---
+
+## AMENDMENT 6 — Arena error-union rulings + `orelse` type guard (A8F / A20) (2026-09-10)
+
+> Operator rulings on the A8I STOP-present (2026-09-10): (a) named `ArenaError`; (b) append `OutOfMemory` to
+> `FileError`; (c) add task **A20** for the latent `orelse`-on-non-optional sema guard; plus add a new
+> OOM-GREEN fixture. A8I's census/migration table (report `## A8I`) is the implementation map.
+
+### A8F — `std.arena.alloc` returns `error.OutOfMemory` (binding rulings)
+
+- **Signature (named set, `Allocator.Error` idiom):** in `sf/src/std_arena.zig` add
+  `pub const ArenaError = error{OutOfMemory};` and change `alloc` to
+  `pub fn alloc(self: *Arena, size: usize) ArenaError![*]u8` (keep the `[*]u8` payload; `init`/`reset`
+  unchanged). On exhaustion `return error.OutOfMemory;`.
+- **`FileError` (×3: `examples/z98/json_parser{,_upgraded,_workaround}/file.zig`):** append `OutOfMemory`
+  **last** (existing member ordinals stay stable); `file.zig`'s alloc becomes `try`.
+- **Migrate all 26 sites** per the A8I table: json sites `try std.arena.alloc(...)` (`ParseError` already has
+  `OutOfMemory`); `stdlib_arena_xmod` `catch ZERO` (byte-identical); `extern_runtime_symbol_xmod/lib.zig:7`
+  `catch @ptrCast([*]u8,0)` (signature unchanged); dead `json_parser*/arena.zig` `alloc_bytes` → `ArenaError![]u8`
+  + `try` (keep the file, stay consistent); `trap_arena_exhaustion_xmod:16` → `catch unreachable`
+  (preserves A2 trap `rc133`). No `orelse unreachable` may remain.
+- **New OOM-GREEN fixture** under `repro/mi_matrix/` pinning the exhaustion path (graceful handler), in
+  addition to the existing `stdlib_arena_xmod` coverage.
+- std_arena is a **user std module** (absent from the compiler graph) → self-emission fixed point does NOT
+  move; std-importing 4-MD5 rows move (runtime-identical) → **recorded-not-rebaselined**, re-baseline at
+  A12/A13. Commit: `feat: c89-ahead — std.arena error.OutOfMemory + consumer migration (C89AHEAD)`.
+
+### Task A20 (F) — reject `orelse` on a non-optional operand (sema type rule)
+
+- **Defect:** `semantic_analyzer.zig:1438-1440` silently returns `TYPE_VOID` for an `orelse` whose operand is
+  not optional; lowering then unconditionally emits optional unwrap → rc0 bad C / void-var errors.
+- **Fix (correct layer = sema):** when the `orelse` operand type is not `optional_type`, emit a clean
+  diagnostic (reuse `ERR_3000_TYPE_MISMATCH`, or add `ERR_3016_ORELSE_REQUIRES_OPTIONAL`) instead of
+  returning `TYPE_VOID`. This is Zig- and spec-faithful (§3.1: `orelse` is for optionals; error unions use
+  `catch`). Do **not** make `orelse` accept error unions.
+- RED fixture(s) under `repro/mi_matrix/` (valid optional `orelse` must still compile and run; non-optional
+  operand must be cleanly rejected). Sema-only change → fixed point moves → run an N-hop. Commit:
+  `feat: c89-ahead — orelse requires an optional operand (C89AHEAD)`.
+
+**Order:** A8F first, then A20, before A9I. Spec §6.1's `std.arena.alloc(...) orelse unreachable` example and
+the arena/`orelse` docs are now stale → update in **A11F**.
+
