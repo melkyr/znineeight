@@ -2790,19 +2790,21 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
          var coe_nm: []const u8 = "n"; pal.markerWrite(coe_nm);
          var coe_nb: [10]u8 = undefined; var coe_nl = itoa_mod.itoa(node_idx, coe_nb[0..]); var coe_ns: usize = @intCast(usize, 9) - @intCast(usize, coe_nl); pal.markerWrite(coe_nb[coe_ns..@intCast(usize, 9)]);
          var coe_nl2: []const u8 = "\n"; pal.markerWrite(coe_nl2);
-          var src = lowerExpr(self, node.child_1);
-          if (src == TEMP_NONE) {
-              var rhs_node = ast_mod.astStoreNodeAt(store, node.child_1);
-              var is_resolved: u8 = @intCast(u8, 0);
-              if (rhs_node.kind == AstKind.ident_expr) {
-                  var rhs_name = ast_mod.astStoreIdentifier(store, node.child_1);
-                  if (findLocalTemp(self, rhs_name) != null) { is_resolved = @intCast(u8, 1); }
-              }
-              if (is_resolved == @intCast(u8, 0)) {
-                  var vfpa0_m: []const u8 = "VFLOW:paS0\n"; pal.markerWrite(vfpa0_m);
-                  return @intCast(u32, 0);
-              }
-          }
+          var bd_before_assign: u8 = self.block_terminated;
+           var src = lowerExpr(self, node.child_1);
+           if (src == TEMP_NONE) {
+               var rhs_node = ast_mod.astStoreNodeAt(store, node.child_1);
+               var is_resolved: u8 = @intCast(u8, 0);
+               if (rhs_node.kind == AstKind.ident_expr) {
+                   var rhs_name = ast_mod.astStoreIdentifier(store, node.child_1);
+                   if (findLocalTemp(self, rhs_name) != null) { is_resolved = @intCast(u8, 1); }
+               }
+               if (is_resolved == @intCast(u8, 0)) {
+                   var vfpa0_m: []const u8 = "VFLOW:paS0\n"; pal.markerWrite(vfpa0_m);
+                   return @intCast(u32, 0);
+               }
+           }
+           if (self.block_terminated != 0 and bd_before_assign == 0) { return src; }
            if (src != TEMP_NONE and getTempType(self, src) == type_mod.TYPE_VOID) {
              var t4u_ds_m: []const u8 = "T4U:dS\n"; pal.markerWrite(t4u_ds_m);
          }
@@ -4452,7 +4454,14 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         }
         var rt3 = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var ie_rtype: u32 = if (rt3) |t| t else type_mod.TYPE_UNDEFINED;
-        var result = nextTemp(self, ie_rtype);
+        // A19: a noreturn-valued if_expr (both arms diverge) is a divergence
+        // construct, not a value producer. Its arms emit their own terminators
+        // and the enclosing block is marked terminated; no result temp is
+        // materialized for a value that can never be produced.
+        var ie_noreturn: u8 = @intCast(u8, 0);
+        if (ie_rtype == type_mod.TYPE_NORETURN) { ie_noreturn = @intCast(u8, 1); }
+        var result: u32 = @intCast(u32, 0);
+        if (ie_noreturn == @intCast(u8, 0)) { result = nextTemp(self, ie_rtype); }
         var und_ie_m: []const u8 = "UND:ieRt"; pal.markerWrite(und_ie_m);
         var und_ie_tb: [10]u8 = undefined; var und_ie_tl = itoa_mod.itoa(result, und_ie_tb[0..]); var und_ie_ts: usize = @intCast(usize, 9) - @intCast(usize, und_ie_tl); pal.markerWrite(und_ie_tb[und_ie_ts..@intCast(usize, 9)]);
         var und_ie_nl: []const u8 = "\n"; pal.markerWrite(und_ie_nl);
@@ -4469,29 +4478,35 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             }
         }
         pushScopeDepth(self);
-        var then_val = lowerExpr(self, node.child_1);
-        if (self.block_terminated == @intCast(u8, 0)) {
+        var then_val = lowerIfArmValue(self, node.child_1);
+        if (self.block_terminated == @intCast(u8, 0) and ie_noreturn == @intCast(u8, 0)) {
             then_val = materializeInto(self, then_val, ie_rtype, srcIntentForNode(self, node.child_1));
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = result, .src = then_val } });
         }
         popScopeDepth(self);
-        if (self.block_terminated == @intCast(u8, 0)) {
+        if (self.block_terminated == @intCast(u8, 0) and ie_noreturn == @intCast(u8, 0)) {
             emitInst(self, LirInst{ .jump = join_bb });
         }
         self.current_bb = else_bb;
         self.block_terminated = @intCast(u8, 0);
-        var else_val = lowerExpr(self, node.child_2);
-        if (self.block_terminated == @intCast(u8, 0)) {
+        var else_val = lowerIfArmValue(self, node.child_2);
+        if (self.block_terminated == @intCast(u8, 0) and ie_noreturn == @intCast(u8, 0)) {
             else_val = materializeInto(self, else_val, ie_rtype, srcIntentForNode(self, node.child_2));
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = result, .src = else_val } });
         }
-        if (self.block_terminated == @intCast(u8, 0)) {
+        if (self.block_terminated == @intCast(u8, 0) and ie_noreturn == @intCast(u8, 0)) {
             emitInst(self, LirInst{ .jump = join_bb });
         }
         self.current_bb = join_bb;
-        self.block_terminated = @intCast(u8, 0);
+        if (ie_noreturn != @intCast(u8, 0)) {
+            self.block_terminated = @intCast(u8, 1);
+            result = @intCast(u32, 0);
+        } else {
+            self.block_terminated = @intCast(u8, 0);
+        }
         self.capture_shadow.count = @intCast(usize, 0);
         return result;
+
       } else if (node.kind == AstKind.array_init) {
          var ec = ast_mod.astStoreNodeExtraChildren(store, node_idx);
          var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
@@ -4769,7 +4784,13 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var swrt_nl: []const u8 = "\n"; pal.markerWrite(swrt_nl);
         }
         var result_tid: u32 = if (sw_rt) |t| (if (t != type_mod.TYPE_UNDEFINED and t != type_mod.TYPE_VOID) t else type_mod.TYPE_VOID) else type_mod.TYPE_VOID;
-        var result_temp = nextTemp(self, result_tid);
+        // A19: keep the result temp allocation at its historical position for
+        // value-producing switches (byte-identity); a noreturn-typed result
+        // (all prongs diverge) must not materialize a result temp at all, so it
+        // is created lazily below only if a prong actually falls through.
+        var result_temp: u32 = TEMP_NONE;
+        if (result_tid != type_mod.TYPE_NORETURN) { result_temp = nextTemp(self, result_tid); }
+        var sw_all_terminated: u8 = @intCast(u8, 1);
         var prong_ec = ast_mod.astStoreNodeExtraChildren(store, node_idx);
         var switch_bb = self.current_bb;
         var prong_start = @intCast(u32, self.func.blocks.len);
@@ -4862,14 +4883,26 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 popScopeDepth(self);
                 prong_val = @intCast(u32, 0);
             } else {
-                prong_val = lowerExpr(self, prong_node.child_0);
-                var sw_int: SrcIntent = SrcIntent.value;
-                if (body_node.kind == AstKind.null_literal) { sw_int = SrcIntent.null_src; }
-                if (body_node.kind == AstKind.error_literal) { sw_int = SrcIntent.error_src; }
-                prong_val = materializeInto(self, prong_val, result_tid, sw_int);
+                var arm_nd = body_node;
+                if (arm_nd.kind == AstKind.return_stmt or arm_nd.kind == AstKind.break_stmt or arm_nd.kind == AstKind.continue_stmt) {
+                    lowerStmt(self, prong_node.child_0);
+                    prong_val = @intCast(u32, 0);
+                } else {
+                    prong_val = lowerExpr(self, prong_node.child_0);
+                    if (self.block_terminated == @intCast(u8, 0)) {
+                        var sw_int: SrcIntent = SrcIntent.value;
+                        if (body_node.kind == AstKind.null_literal) { sw_int = SrcIntent.null_src; }
+                        if (body_node.kind == AstKind.error_literal) { sw_int = SrcIntent.error_src; }
+                        prong_val = materializeInto(self, prong_val, result_tid, sw_int);
+                    }
+                }
             }
             self.pending_scope = TEMP_NONE;
 
+            if (self.block_terminated == @intCast(u8, 0)) {
+                sw_all_terminated = @intCast(u8, 0);
+                if (result_temp == TEMP_NONE) { result_temp = nextTemp(self, result_tid); }
+            }
             var swp_m: []const u8 = "SWP:p"; pal.markerWrite(swp_m);
             var swp_pb: [10]u8 = undefined; var swp_pl = itoa_mod.itoa(prong_val, swp_pb[0..]); var swp_ps: usize = @intCast(usize, 9) - @intCast(usize, swp_pl); pal.markerWrite(swp_pb[swp_ps..@intCast(usize, 9)]);
             var swp_rb: [10]u8 = undefined; var swp_rl = itoa_mod.itoa(result_temp, swp_rb[0..]); var swp_rs: usize = @intCast(usize, 9) - @intCast(usize, swp_rl); pal.markerWrite(swp_rb[swp_rs..@intCast(usize, 9)]);
@@ -4886,8 +4919,13 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             self.capture_shadow.count = @intCast(usize, 0);
         }
         var swx_m: []const u8 = "SWEXIT:bt"; pal.markerWriteInt(swx_m, @intCast(u32, self.block_terminated));
-        self.block_terminated = @intCast(u8, 0);
         self.current_bb = exit_bb;
+        if (sw_all_terminated != @intCast(u8, 0) and else_target != else_bb) {
+            self.block_terminated = @intCast(u8, 1);
+            return @intCast(u32, 0);
+        }
+        if (result_temp == TEMP_NONE) { result_temp = nextTemp(self, result_tid); }
+        self.block_terminated = @intCast(u8, 0);
         return result_temp;
      } else if (node.kind == AstKind.slice_expr) {
          var se_base = lowerExpr(self, node.child_0);
@@ -5155,6 +5193,19 @@ fn lowerIsNoValueStmtKind(kind: AstKind) bool {
     if (kind == AstKind.while_stmt) return true;
     if (kind == AstKind.for_stmt) return true;
     return false;
+}
+
+// A19: lower an if/switch arm that sits in a value position. A bare
+// return/break/continue arm is a statement, not a value: lower it through
+// lowerStmt so its terminator is emitted (lowerExpr would silently drop it).
+// Block arms and value expressions keep the existing lowerExpr path.
+fn lowerIfArmValue(self: *LirLowerer, node_idx: u32) u32 {
+    var nd = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    if (nd.kind == AstKind.return_stmt or nd.kind == AstKind.break_stmt or nd.kind == AstKind.continue_stmt) {
+        lowerStmt(self, node_idx);
+        return @intCast(u32, 0);
+    }
+    return lowerExpr(self, node_idx);
 }
 
 fn lowerExprOrBlock(self: *LirLowerer, node_idx: u32) u32 {
@@ -5698,6 +5749,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (self.block_terminated == @intCast(u8, 0)) {
             if (node.child_0 != 0) {
                 var val = lowerExpr(self, node.child_0);
+                if (self.block_terminated != 0) { return; }
                 var retm: []const u8 = "RET:v="; pal.markerWrite(retm); dbgPrintU32(val); var rett: []const u8 = " t="; pal.markerWrite(rett); dbgPrintU32(self.hoisted_temps.items[@intCast(usize, val)].type_id); var retn: []const u8 = "\n"; pal.markerWrite(retn);
                 if (self.func.return_type != type_mod.TYPE_VOID) {
                     var vt = getTempType(self, val);
@@ -5858,6 +5910,15 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                 }
             }
         }
+        // A19: an inferred declaration whose initializer can never produce a
+        // value (noreturn) has no C type. The declaration itself is
+        // unreachable; keep the binding for later (unreachable) references but
+        // give its storage a concrete placeholder type and skip the store.
+        var noreturn_local: u8 = @intCast(u8, 0);
+        if (decl_type == type_mod.TYPE_NORETURN) {
+            noreturn_local = @intCast(u8, 1);
+            decl_type = type_mod.TYPE_I32;
+        }
         if (decl_type == type_mod.TYPE_VOID) {
             var instb_vd_m: []const u8 = "INSTB:vd\n"; pal.markerWrite(instb_vd_m);
             var vfvd_m: []const u8 = "VFLOW:vdecl\n"; pal.markerWrite(vfvd_m);
@@ -5908,7 +5969,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                     if (sn_x == @intCast(u8, 0)) {
                     var init_val = lowerExpr(self, node.child_1);
 
-                    if (decl_type != type_mod.TYPE_VOID) {
+                    if (decl_type != type_mod.TYPE_VOID and (self.block_terminated == 0 or noreturn_local == 0)) {
                     emitInst(self, LirInst{ .assign = .{ .name_id = c_name_id, .dst = dl_temp, .src = init_val } });
                     var reg: u32 = @intCast(u32, 0);
                     if (findLocalTemp(self, c_name_id)) |r| { reg = r; }
