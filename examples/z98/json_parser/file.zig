@@ -25,6 +25,7 @@ pub const FileError = error{
     ReadFailed,
     SeekFailed,
     TooLarge,
+    OutOfMemory,
 };
 
 pub fn readFile(arena: *void, path: []const u8) FileError![]u8 {
@@ -38,7 +39,7 @@ pub fn readFile(arena: *void, path: []const u8) FileError![]u8 {
     if (fseek(f, 0, SEEK_SET) != 0) { return error.SeekFailed; }
 
     const usize_size = @intCast(usize, size);
-    const buffer = @ptrCast([*]u8, (std.arena.alloc(&g_arena, usize_size) orelse return error.TooLarge));
+    const buffer = @ptrCast([*]u8, try std.arena.alloc(&g_arena, usize_size));
     const bytes_read = fread(buffer, 1, usize_size, f);
     if (bytes_read != usize_size) { return error.ReadFailed; }
     if (ferror(f) != 0) { return error.ReadFailed; }

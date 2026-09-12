@@ -9,8 +9,10 @@ pub fn init(data: []u8) Arena {
     return a;
 }
 
-pub fn alloc(self: *Arena, size: usize) ?[*]u8 {
-    if (self.used + size > self.capacity) return null;
+pub const ArenaError = error{OutOfMemory};
+
+pub fn alloc(self: *Arena, size: usize) ArenaError![*]u8 {
+    if (self.used + size > self.capacity) return error.OutOfMemory;
     var result: [*]u8 = self.data + self.used;
     self.used += size;
     return result;

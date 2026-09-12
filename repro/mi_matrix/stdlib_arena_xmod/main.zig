@@ -70,24 +70,24 @@ fn findIndex(s: []const u8, m: u8) ?usize {
 
 pub fn main() void {
     // A = 16-byte buffer, B = 32-byte buffer.
-    var a0 = std.arena.alloc(&arenaA, 8) orelse ZERO;
-    var b0 = std.arena.alloc(&arenaB, 8) orelse ZERO;
+    var a0 = std.arena.alloc(&arenaA, 8) catch ZERO;
+    var b0 = std.arena.alloc(&arenaB, 8) catch ZERO;
     a0[0] = 0xA0;
     b0[0] = 0xB0;
     pb(a0 != ZERO);
     pb(b0 != ZERO);
 
     // A now has 8 bytes left; the second 8-byte alloc exactly fills it.
-    var a1 = std.arena.alloc(&arenaA, 8) orelse ZERO;
+    var a1 = std.arena.alloc(&arenaA, 8) catch ZERO;
     pb(a1 != ZERO);
 
     // A is exhausted -> null. The shared-global stub would still hand out
     // another 1 MiB; per-arena must return null here.
-    var a2 = std.arena.alloc(&arenaA, 1) orelse ZERO;
+    var a2 = std.arena.alloc(&arenaA, 1) catch ZERO;
     pb(a2 == ZERO);
 
     // B is independent: A's exhaustion does not touch B.
-    var b1 = std.arena.alloc(&arenaB, 8) orelse ZERO;
+    var b1 = std.arena.alloc(&arenaB, 8) catch ZERO;
     pb(b1 != ZERO);
 
     // Store a u32 marker little-endian into B's second block.
@@ -103,7 +103,7 @@ pub fn main() void {
 
     // reset frees ONLY A.
     std.arena.reset(&arenaA);
-    var a3 = std.arena.alloc(&arenaA, 16) orelse ZERO;
+    var a3 = std.arena.alloc(&arenaA, 16) catch ZERO;
     pb(a3 != ZERO);
     pb(b0[0] == 0xB0);
     pb(b1[0] == 0x04);
