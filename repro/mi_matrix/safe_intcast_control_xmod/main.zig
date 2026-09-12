@@ -1,8 +1,12 @@
-// safe_intcast_control_xmod — A18 lossless `@intCast` control (must NOT trap).
+// safe_intcast_control_xmod — A18 in-range `@intCast` control (must NOT trap).
 //
-// All casts here are widening or same-width/same-sign, so no `int_cast_checked`
-// op is emitted (the plain `int_cast` suffices) and both modes print the same
-// `100 -100 300` (rc 0). Pins that A18 does not over-check lossless casts.
+// The `i8 -> i32`, `i32 -> i64` and `u16 -> u32` steps are widening, and the
+// last is same-sign, so they use the plain `int_cast`. The `i16 -> u16` step on
+// line 18 is a same-width sign change, so it DOES emit `int_cast_checked`
+// (`zig_cast_checked_u` under `-fsafe`); its value (300) is in range, so it does
+// not trap. Both modes print the same `100 -100 300` (rc 0). Pins that A18 does
+// not over-check lossless widening casts and does not false-trap an in-range
+// equal-width sign change.
 const std = @import("std");
 
 pub fn main() void {

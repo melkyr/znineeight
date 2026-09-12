@@ -4193,10 +4193,14 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             if (self.ctx.safe_checks and src_bits > @intCast(u32, 0) and dst_bits > @intCast(u32, 0)) {
                 if (src_bits > dst_bits) {
                     chk = @intCast(u8, 1);
-                } else if (src_bits == dst_bits) {
+                } else {
                     var src_s = intCastTypeIsSigned(self.ctx.registry, src_ty);
                     var dst_s = intCastTypeIsSigned(self.ctx.registry, t_target);
-                    if (src_s != dst_s) { chk = @intCast(u8, 1); }
+                    if (src_bits == dst_bits) {
+                        if (src_s != dst_s) { chk = @intCast(u8, 1); }
+                    } else if (src_s and !dst_s) {
+                        chk = @intCast(u8, 1);
+                    }
                 }
             }
             if (chk != @intCast(u8, 0)) {

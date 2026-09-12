@@ -115,8 +115,9 @@ pub const LirInst = union(enum) {
     // the single-result-per-inst LIR/DCE model (`dceResultPos`/`defResultTemp`).
     // `result_type` + `width`/`is_signed` are lowering-computed so the emitter
     // performs no type inspection. Appended after `check_trap` so tag ordinals and
-    // the streamed `@sizeOf(LirInst)` stay stable; payloads <= 20 B (< the 24 B
-    // `check_trap` max) keep the folded size at 32 B.
+    // the streamed `@sizeOf(LirInst)` stay stable; the largest payload is now
+    // `enum_const` (20 B) padded to its 24 B union slot, so these <= 20 B
+    // payloads keep the folded size at 32 B.
     add_with_overflow: struct { lhs: u32, rhs: u32, result: u32, result_type: u32, width: u8, is_signed: u8 },
     sub_with_overflow: struct { lhs: u32, rhs: u32, result: u32, result_type: u32, width: u8, is_signed: u8 },
     mul_with_overflow: struct { lhs: u32, rhs: u32, result: u32, result_type: u32, width: u8, is_signed: u8 },
