@@ -2303,10 +2303,11 @@ fn fnReturnRequiresValue(self: *SemanticAnalyzer, ty: u32) bool {
 }
 
 // A7F definitely-returns reachability predicate over the AST (block / if /
-// switch). Terminators: explicit `return`, plus any node whose resolved type is
-// noreturn (`unreachable`, `@panic`, or noreturn-propagating expressions). It
-// deliberately does NOT reuse the lowering `block_terminated` flag (reset at
-// joins; unsound for this purpose).
+// if-expression / switch / switch-expression / while(true) / declarations and
+// assignments whose initializer terminates). Terminators: explicit `return`,
+// plus any node whose resolved type is noreturn (`unreachable`, `@panic`, or
+// noreturn-propagating expressions). It deliberately does NOT reuse the lowering
+// `block_terminated` flag (reset at joins; unsound for this purpose).
 fn astTerminates(self: *SemanticAnalyzer, node_idx: u32) bool {
     if (node_idx == @intCast(u32, 0)) return false;
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
@@ -2322,17 +2323,33 @@ fn astTerminates(self: *SemanticAnalyzer, node_idx: u32) bool {
         }
         return false;
     }
-    if (node.kind == AstKind.if_stmt) {
+    if (node.kind == AstKind.if_stmt or node.kind == AstKind.if_expr) {
         if (node.child_2 == @intCast(u32, 0)) return false;
         return astTerminates(self, node.child_1) and astTerminates(self, node.child_2);
     }
     if (node.kind == AstKind.expr_stmt) {
         if (node.child_0 == @intCast(u32, 0)) return false;
-        var inner = ast_mod.astStoreNodeAt(self.store, node.child_0);
-        if (inner.kind == AstKind.swt_ex) return astSwitchTerminates(self, node.child_0);
-        return false;
+        return astTerminates(self, node.child_0);
     }
     if (node.kind == AstKind.swt_ex) return astSwitchTerminates(self, node_idx);
+    if (node.kind == AstKind.while_stmt) return astWhileTerminates(self, node_idx);
+    if (node.kind == AstKind.var_decl) {
+        if (node.child_1 == @intCast(u32, 0)) return false;
+        return astTerminates(self, node.child_1);
+    }
+    if (node.kind == AstKind.plain_assign or
+        node.kind == AstKind.add_assign or node.kind == AstKind.sub_assign or
+        node.kind == AstKind.mul_assign or node.kind == AstKind.div_assign or
+        node.kind == AstKind.mod_assign or node.kind == AstKind.shl_assign or
+        node.kind == AstKind.shr_assign or node.kind == AstKind.and_assign or
+        node.kind == AstKind.or_assign or node.kind == AstKind.xor_assign or
+        node.kind == AstKind.wrap_add_assign or node.kind == AstKind.wrap_sub_assign or
+        node.kind == AstKind.wrap_mul_assign or node.kind == AstKind.sat_add_assign or
+        node.kind == AstKind.sat_sub_assign or node.kind == AstKind.sat_mul_assign or
+        node.kind == AstKind.sat_shl_assign) {
+        if (node.child_1 == @intCast(u32, 0)) return false;
+        return astTerminates(self, node.child_1);
+    }
     return false;
 }
 
@@ -2374,6 +2391,40 @@ fn astSwitchExhaustive(self: *SemanticAnalyzer, cond_idx: u32, prongs: []const u
         covered += @intCast(u32, items.len);
     }
     return covered >= member_count;
+}
+
+// A7F: `while (true) { ... }` whose condition is the literal `true` and whose
+// body terminates can never complete normally -- provided the loop has no way
+// to `break` out. Conservative on purpose: any `break` anywhere in the body
+// (even one in a nested loop that cannot target this loop) disqualifies it, so
+// the predicate never accepts a loop that can actually fall out. False
+// negatives here only mean we keep diagnosing some valid programs, never that
+// we accept an invalid one.
+fn astWhileTerminates(self: *SemanticAnalyzer, node_idx: u32) bool {
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    if (node.child_0 == @intCast(u32, 0) or node.child_1 == @intCast(u32, 0)) return false;
+    var cond = ast_mod.astStoreNodeAt(self.store, node.child_0);
+    if (cond.kind != AstKind.bool_literal) return false;
+    if ((cond.flags & @intCast(u8, 1)) == @intCast(u8, 0)) return false;
+    if (astSubtreeHasBreak(self, node.child_1)) return false;
+    return astTerminates(self, node.child_1);
+}
+
+fn astSubtreeHasBreak(self: *SemanticAnalyzer, node_idx: u32) bool {
+    if (node_idx == @intCast(u32, 0)) return false;
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    if (node.kind == AstKind.break_stmt) return true;
+    if (node.child_0 != @intCast(u32, 0) and astSubtreeHasBreak(self, node.child_0)) return true;
+    if (node.child_1 != @intCast(u32, 0) and astSubtreeHasBreak(self, node.child_1)) return true;
+    if (node.child_2 != @intCast(u32, 0) and astSubtreeHasBreak(self, node.child_2)) return true;
+    if (ast_mod.nodeHasExtraChildren(node.kind) and ast_mod.astStoreNodePayload(self.store, node_idx) != @intCast(u32, 0)) {
+        var ec = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
+        var ei: usize = @intCast(usize, 0);
+        while (ei < ec.len) : (ei += 1) {
+            if (astSubtreeHasBreak(self, ec[ei])) return true;
+        }
+    }
+    return false;
 }
 
 fn semanticAnalyzerStmtWorkPush(self: *SemanticAnalyzer, node_idx: u32) void {
