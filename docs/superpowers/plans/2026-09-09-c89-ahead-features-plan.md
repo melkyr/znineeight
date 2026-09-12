@@ -644,3 +644,41 @@ Each of A8I/A9I/A10I/A11I must, as an explicit part of its question set: (a) sta
 implementation uses **semantically-complete LIR ops** (no emitter-side Zig semantics); (c) list the LIR-op
 plumbing needed. A12 (closeout) must verify the leak inventory is empty.
 
+---
+
+## AMENDMENT 5 — Lower noreturn-valued `if`/`switch` expressions (A7F follow-up) (2026-09-10)
+
+> Operator ruling (option a): keep the A7F reachability widening (`f224177f`) and fix the **real layer** by
+> adding task **A19** — make lowering handle noreturn-typed value expressions instead of emitting
+> uncompilable C. No corner-cutting: do not narrow the predicate back.
+
+### Context / defect (verified by the A7F re-review)
+
+A7F's definitely-returns predicate (`f224177f`) now correctly accepts expression-position `if`/`switch` whose
+arms all terminate, e.g. `const x = if (c) return 1 else return 2;` and
+`const x = if (c) { return 1; } else { return 2; };`. Before `f224177f` those shapes were hard-rejected
+`error[3003]`. Now the resolver accepts them, but `lower.zig` lowers a noreturn-typed `if_expr`/`switch_expr`
+in a value position by materializing a result temp whose type is noreturn — which has no C type — so the
+compiler exits `rc=0` while emitting uncompilable C (`error: unknown type name 'zT_…'`). This turns a clean
+diagnostic into **silent bad output**.
+
+### Binding rules
+
+- The fix lives in **lowering/LIR** (the architecturally-correct layer per AMENDMENT 4), **not** the emitter;
+  no emitter-side Zig semantics.
+- A noreturn-valued expression must lower like the existing divergence constructs: its arms emit their own
+  terminators (`return` / `unreachable` / `@panic` / `trap`) and the enclosing block is marked terminated;
+  **no result temp is materialized** for a value that can never be produced.
+- Cover every value position the resolver accepts: initializer (`var_decl`), assignment RHS, `return`
+  operand, call argument, nested `if`/`switch`, optional/error-union contexts — verify each and pin the ones
+  that work with fixtures; STOP-present if any accepted shape needs a design decision.
+- `-ffast` byte-identity is re-established (the intended, recorded move only); run the A1x gate set
+  (fixtures, battery golden 9/9 + matrix 21/21, corpus sweep, `check_emit_support.sh` 5/5, 4-MD5 recorded
+  not re-baselined) and an N-hop; record the new fixed-point chain.
+
+### Task A19 (F) — lower noreturn-valued `if`/`switch` expressions
+
+RED repros first (all under `repro/mi_matrix/`), implement in `lower.zig`, GREEN, full gates, ONE commit:
+`feat: c89-ahead — lower noreturn-valued if/switch expressions (C89AHEAD)`. Report `## A19` + one ledger
+line + mnemoria entry per convention.
+
