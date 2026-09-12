@@ -58,9 +58,10 @@ tr*
 zig0.exe
 
 # Zig self-hosted compiler spill files
-.zig1_ast.tmp
-.zig1_hash.tmp
-.zig1_lir.tmp
+.zig1_*.tmp
+
+# Mnemoria memory store (runtime state, not source)
+mnemoria/
 
 # Generated C89 files
 temp_codegen_*.c
