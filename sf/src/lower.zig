@@ -2311,7 +2311,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var und_ud_m: []const u8 = "UND:udLt"; pal.markerWrite(und_ud_m);
         var und_ud_tb: [10]u8 = undefined; var und_ud_tl = itoa_mod.itoa(tid, und_ud_tb[0..]); var und_ud_ts: usize = @intCast(usize, 9) - @intCast(usize, und_ud_tl); pal.markerWrite(und_ud_tb[und_ud_ts..@intCast(usize, 9)]);
         var und_ud_nl: []const u8 = "\n"; pal.markerWrite(und_ud_nl);
-        emitInst(self, LirInst{ .undefined_const = .{ .result = tid, .type_id = type_mod.TYPE_UNDEFINED } });
+        if (self.ctx.safe_checks) {
+            emitInst(self, LirInst{ .poison_init = .{ .result = tid } });
+        } else {
+            emitInst(self, LirInst{ .undefined_const = .{ .result = tid, .type_id = type_mod.TYPE_UNDEFINED } });
+        }
         var uds_m: []const u8 = "UDS:t"; pal.markerWrite(uds_m);
         var uds_tb: [10]u8 = undefined; var uds_tl = itoa_mod.itoa(tid, uds_tb[0..]); var uds_ts: usize = @intCast(usize, 9) - @intCast(usize, uds_tl); pal.markerWrite(uds_tb[uds_ts..@intCast(usize, 9)]);
         var uds_nl: []const u8 = "\n"; pal.markerWrite(uds_nl);
@@ -5838,7 +5842,9 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                     emitInst(self, LirInst{ .assign = .{ .name_id = c_name_id, .dst = dl_temp, .src = arr_temp } });
                 } else if (init_node.kind == AstKind.undefined_literal) {
                     var arr_temp = nextTemp(self, decl_type);
-                    if (is_array_type == @intCast(u8, 1) or self.ctx.safe_checks) {
+                    if (self.ctx.safe_checks) {
+                        emitInst(self, LirInst{ .poison_init = .{ .result = arr_temp } });
+                    } else if (is_array_type == @intCast(u8, 1)) {
                         emitInst(self, LirInst{ .undefined_const = .{ .result = arr_temp, .type_id = decl_type } });
                     }
                     emitInst(self, LirInst{ .assign = .{ .name_id = c_name_id, .dst = dl_temp, .src = arr_temp } });
@@ -6497,6 +6503,7 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
     func_ptr.is_extern = @intCast(u8, if ((node.flags & @intCast(u8, 0x04)) != 0) 1 else 0);
     func_ptr.is_pub = @intCast(u8, if ((node.flags & @intCast(u8, 0x02)) != 0) 1 else 0);
     func_ptr.is_variadic = @intCast(u8, 0);
+    func_ptr.poison_uninit = @intCast(u8, if (self.ctx.safe_checks) 1 else 0);
     var frt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, fn_node);
     if (frt) |frt_id| {
         var fty = self.ctx.registry.types_items[@intCast(usize, frt_id)];
@@ -6595,6 +6602,7 @@ pub fn lowerModuleInit(self: *LirLowerer, decls: []const u32, mod_id: u32) LirFu
     func_ptr.is_extern = @intCast(u8, 0);
     func_ptr.is_pub = @intCast(u8, 0);
     func_ptr.is_variadic = @intCast(u8, 0);
+    func_ptr.poison_uninit = @intCast(u8, if (self.ctx.safe_checks) 1 else 0);
     self.func = func_ptr;
     self.current_bb = createBlock(self);
     emitInst(self, LirInst{ .loop_header = @intCast(u32, 0) });

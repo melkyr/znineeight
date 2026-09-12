@@ -420,6 +420,7 @@ fn defResultTemp(inst: LirInst, lir_fn: *LirFunction) u32 {
         .set_optional_null => |sn| { return sn.result; },
         .bool_const => |bc| { return bc.result; },
         .undefined_const => |uc| { return uc.result; },
+        .poison_init => |pi| { return pi.result; },
         .enum_const => |ec| { return ec.result; },
         .int_cast => |ic| { return ic.result; },
         .float_cast => |fc| { return fc.result; },

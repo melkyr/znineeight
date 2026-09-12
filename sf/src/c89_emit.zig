@@ -3712,11 +3712,11 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
         var sp: []const u8 = " ";
         bufferedWriterWrite(&emitter.writer, sp);
          bufferedWriterWrite(&emitter.writer, tn);
-          if (written_arr[@intCast(usize, i)] == @intCast(u8, 0)) {
-              if (emitter.safe_checks) {
-                  poison_arr[@intCast(usize, i)] = @intCast(u8, 1);
-                  var sm: []const u8 = ";\n";
-                  bufferedWriterWrite(&emitter.writer, sm);
+           if (written_arr[@intCast(usize, i)] == @intCast(u8, 0)) {
+               if (lir_fn.poison_uninit != @intCast(u8, 0)) {
+                   poison_arr[@intCast(usize, i)] = @intCast(u8, 1);
+                   var sm: []const u8 = ";\n";
+                   bufferedWriterWrite(&emitter.writer, sm);
               } else if (retTypeIsScalarC(emitter.registry, eff_type) == @intCast(u8, 1)) {
                   var sm: []const u8 = " = 0;\n";
                   bufferedWriterWrite(&emitter.writer, sm);
@@ -3735,7 +3735,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
             var mtp_nl: []const u8 = " "; pal.markerWrite(mtp_nl);
         }
      }
-     if (emitter.safe_checks) {
+     if (lir_fn.poison_uninit != @intCast(u8, 0)) {
          var pi: usize = @intCast(usize, 0);
          while (pi < lir_fn.hoisted_temps.len) : (pi += @intCast(usize, 1)) {
              if (poison_arr[@intCast(usize, pi)] != @intCast(u8, 0)) {
@@ -3820,6 +3820,7 @@ fn nestDefTempId(inst: lir_mod.LirInst) u32 {
         .set_optional_null => |sn| { t = sn.result; },
         .bool_const => |bc| { t = bc.result; },
         .undefined_const => |uc| { t = uc.result; },
+        .poison_init => |pi| { t = pi.result; },
         .enum_const => |ec| { t = ec.result; },
         .int_cast => |ic| { t = ic.result; },
         .float_cast => |fc| { t = fc.result; },
@@ -7120,17 +7121,9 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             var uct_tb: [10]u8 = undefined; var uct_tl = itoa_mod.itoa(uc.type_id, uct_tb[0..]); var uct_ts: usize = @intCast(usize, 9) - @intCast(usize, uct_tl); pal.markerWrite(uct_tb[uct_ts..@intCast(usize, 9)]);
             var uct_nl: []const u8 = "\n"; pal.markerWrite(uct_nl);
             var uct_ty = emitter.registry.types_items[@intCast(usize, uc.type_id)];
-            if (emitter.safe_checks) {
-                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-                var pz0: []const u8 = "zig_poison_fill((void*)&";
-                bufferedWriterWrite(&emitter.writer, pz0);
-                bufferedWriterWrite(&emitter.writer, result);
-                var pz1: []const u8 = ", (unsigned int)sizeof ";
-                bufferedWriterWrite(&emitter.writer, pz1);
-                bufferedWriterWrite(&emitter.writer, result);
-                var pz2: []const u8 = ");\n";
-                bufferedWriterWrite(&emitter.writer, pz2);
-            } else if (uct_ty.kind == type_mod.TypeKind.array_type) {
+            // A17: the `-fsafe` poison decision moved to lowering (`poison_init`);
+            // this arm only renders the historical `-ffast` deterministic zeroing.
+            if (uct_ty.kind == type_mod.TypeKind.array_type) {
                  var uap = emitter.registry.array_items[@intCast(usize, uct_ty.payload_idx)];
                  var loop_begin: []const u8 = "{\n";
                  bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
@@ -7195,6 +7188,23 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                 var s: []const u8 = " = 0;\n";
                 bufferedWriterWrite(&emitter.writer, s);
             }
+        },
+        .poison_init => |pi| {
+            // A17: dumb mapping of the lowering-set `-fsafe` poison decision to
+            // the runtime helper (no emitter-side mode read).
+            var result = resolveTempName(emitter, pi.result);
+            var uct_m: []const u8 = "UCT:r"; pal.markerWrite(uct_m);
+            var uct_rb: [10]u8 = undefined; var uct_rl = itoa_mod.itoa(pi.result, uct_rb[0..]); var uct_rs: usize = @intCast(usize, 9) - @intCast(usize, uct_rl); pal.markerWrite(uct_rb[uct_rs..@intCast(usize, 9)]);
+            var uct_nl: []const u8 = "\n"; pal.markerWrite(uct_nl);
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            var pz0: []const u8 = "zig_poison_fill((void*)&";
+            bufferedWriterWrite(&emitter.writer, pz0);
+            bufferedWriterWrite(&emitter.writer, result);
+            var pz1: []const u8 = ", (unsigned int)sizeof ";
+            bufferedWriterWrite(&emitter.writer, pz1);
+            bufferedWriterWrite(&emitter.writer, result);
+            var pz2: []const u8 = ");\n";
+            bufferedWriterWrite(&emitter.writer, pz2);
         },
          .call => |c| {
             var result = resolveTempName(emitter, c.result);
@@ -8320,6 +8330,7 @@ fn dceResultPos(max_temp: u32, tid_to_pos: [*]u32, inst: lir_mod.LirInst) u32 {
         .set_optional_null => |sn| { t = sn.result; },
         .bool_const => |bc| { t = bc.result; },
         .undefined_const => |uc| { t = uc.result; },
+        .poison_init => |pi| { t = pi.result; },
         .enum_const => |ec| { t = ec.result; },
         .int_cast => |ic| { t = ic.result; },
         .float_cast => |fc| { t = fc.result; },

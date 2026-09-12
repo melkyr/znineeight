@@ -135,6 +135,15 @@ pub const LirInst = union(enum) {
     // the fast-path bytes are unchanged. Appended after `overflow_flag`; the 8 B
     // payload keeps the Z98-folded `@sizeOf(LirInst)` at 32 B.
     unwrap_optional_checked: struct { value: u32, result: u32 },
+    // A17 `undefined` poison op (AMENDMENT 4). Initializes the storage of
+    // `result` to the byte-exact 0xAA poison; the emitter maps it to
+    // `zig_poison_fill((void*)&<result>, (unsigned int)sizeof <result>)`. Lowering
+    // emits it only under `-fsafe`; `-ffast` keeps the deterministic zeroing
+    // (`undefined_const` array loops / `= 0` / the hoisted declaration), so the
+    // fast-path bytes are unchanged. The poison length is `sizeof <result>` (no
+    // type_id). Appended after `unwrap_optional_checked`; the 4 B payload keeps
+    // the Z98-folded `@sizeOf(LirInst)` at 32 B.
+    poison_init: struct { result: u32 },
 };
 
 pub const CallDirectData = struct {
@@ -474,6 +483,12 @@ pub const LirFunction = struct {
     is_extern: u8,
     is_pub: u8,
     is_variadic: u8,
+    // A17: transports the `-fsafe` `undefined` poison-net decision to the
+    // emitter (the "statically-unwritten hoisted temp" dataflow itself stays in
+    // the emitter; only the mode decision moves to lowering). Serialized in the
+    // `lir_stream.zig` function header via the repurposed `pad0` byte, so the
+    // 16-byte header / `expected_len` are unchanged.
+    poison_uninit: u8,
 };
 
 pub fn lirSideAppendCallDirect(lfn: *LirFunction, d: CallDirectData) u32 {
