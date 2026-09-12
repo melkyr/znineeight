@@ -724,3 +724,50 @@ line + mnemoria entry per convention.
 **Order:** A8F first, then A20, before A9I. Spec §6.1's `std.arena.alloc(...) orelse unreachable` example and
 the arena/`orelse` docs are now stale → update in **A11F**.
 
+---
+
+## AMENDMENT 7 — Type-alias rulings + A9F split (A9F-a / A9F-b) (2026-09-10)
+
+> Operator rulings on the A9I STOP-present (2026-09-10): **all 7 confirmed.** A9I report `## A9I` is the
+> investigation of record (form × position table, spurious-warning root cause, missing sites).
+
+### Binding rulings
+
+1. **Split A9F.** `A9F-a` = the already-parseable forms (`[N]T`, `[]T`, `[*]T`, arbitrary-width ints,
+   alias chains, cross-module `pub` aggregate aliases) — **no parser change**. `A9F-b` = parser support for
+   `*T`, `?T`, `E!T`, `fn(...)` aliases (separate follow-up task, executed after A9F-a).
+2. **Q2 fix shape = (b):** in sema `semanticAnalyzerResolveArrayInit` derive the element type from the
+   annotation, **and** add array→array structural assignability to `typeRegistryIsAssignable` /
+   `classifyCoercion` (also covers the many-ptr `&array` spurious `warning[3000]`). The `warning[3000]` for
+   `[_]T{…}` is **not alias-specific** and is fixed by this shape.
+3. **Fixtures:** approve the A9I Q4 RED set; the plan's original `typealias_prim_xmod`/`typealias_agg_xmod`
+   are GREEN guards, not RED — keep them as guards.
+4. **Cross-module aggregate alias is in A9F-a scope** (silent bad C: imported module not emitted, copy loop
+   references phantom `x`).
+5. **Re-baseline policy:** if any 4-MD5 gate row moves, **STOP-present the moved rows**; do **not**
+   re-baseline in A9F-a.
+6. **Alias-name in diagnostics:** **accept erasure** to the underlying type for now (do not preserve the
+   alias identifier); record as a documented limitation for A11F.
+7. **`const B = A` chain:** fix by having `constAliasPrepass` set `sym.kind` (**preferred**) or a `main.zig`
+   classification guard; pin with the `r_fallback_constalias*` fixtures first and record the blast radius
+   over all `const X = Y` module globals.
+
+### Task A9F-a (F) — parseable type-alias forms + spurious-warning fix
+
+- **Deliverable:** (i) `[_]T{…}` / annotated-array init no longer emits the spurious `warning[3000]`
+  (shape b); (ii) cross-module `pub` array/slice/many-ptr aliases emit and link correctly; (iii) `const B = A`
+  alias chain fixed (ruling 7). No parser change.
+- RED fixtures first under `repro/mi_matrix/` (from A9I Q4); green guards for valid aliases; confirm correct
+  programs (`const E = enum`/`const S = struct`, existing alias users) stay byte-identical.
+- Gates: fixtures + existing alias users byte-identical; battery golden 9/9 + matrix 21/21; corpus sweep
+  zero unexpected fallout; strict `-Wall -Wextra -O3 -fsyntax-only` 0 errors; `check_emit_support.sh` 5/5;
+  4-MD5 recorded-not-rebaselined **unless moved → STOP-present** (ruling 5); N-hop with the new fixed point.
+- ONE commit: `feat: c89-ahead — type-alias forms + array-init warning fix (C89AHEAD)`.
+
+### Task A9F-b (F) — parser support for pointer/optional/error-union/function aliases
+
+- **Deliverable:** `const T = *U` / `?U` / `E!U` / `fn(...)...` aliases parse and resolve (A9I `parser.zig`
+  sites). RED fixtures first; same gate set; ONE commit:
+  `feat: c89-ahead — pointer/optional/error-union/function type aliases (C89AHEAD)`.
+- STOP-present if the parser change proves larger/non-mechanical than a targeted addition.
+
