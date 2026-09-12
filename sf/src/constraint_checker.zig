@@ -13,8 +13,8 @@ pub fn checkReturnType(store: *AstStore, reg: *TypeRegistry, diag: *DiagnosticCo
     if (node.kind != AstKind.return_stmt) return;
     if (node.child_0 == @intCast(u32, 0)) {
         if (current_fn_return != type_mod.TYPE_VOID and current_fn_return != type_mod.TYPE_NORETURN) {
-            var msg: []const u8 = "return with no value";
-            diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0), @intCast(u16, 0),
+            var msg: []const u8 = "return with no value in function returning non-void";
+            diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0), @intCast(u16, 3003),
                 @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), msg);
         }
     } else {

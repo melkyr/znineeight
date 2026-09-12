@@ -1234,6 +1234,15 @@ fn errLitSrcType(self: *SemanticAnalyzer, child_0: u32, target_ty: u32, ret_val:
 
 fn resolveReturnStmt(self: *SemanticAnalyzer, node_idx: u32) void {
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    if (node.child_0 == @intCast(u32, 0)) {
+        if (fnReturnRequiresValue(self, self.current_fn_return)) {
+            var brsp = node.span_start;
+            var brep = brsp + @intCast(u32, node.span_len);
+            var br_msg: []const u8 = "return with no value in function returning non-void";
+            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3003), self.source_file_id, brsp, brep, br_msg);
+        }
+        return;
+    }
     if (node.child_0 != @intCast(u32, 0)) {
         pushExpectedType(self, self.current_fn_return);
         var ret_val = semanticAnalyzerResolveExpr(self, node.child_0);
@@ -1825,7 +1834,7 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
 }
 
 pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
-    var result: u32;
+    var result: u32 = @intCast(u32, 0);
     result = @intCast(u32, 0);
     if (node_idx == @intCast(u32, 0)) return result;
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
@@ -2262,9 +2271,109 @@ pub fn semanticAnalyzerResolveFnBody(self: *SemanticAnalyzer, fn_decl_node: u32)
         self.current_fn_return = frt;
     }
     semanticAnalyzerResolveStmt(self, decl.child_0);
+    if (fnReturnRequiresValue(self, self.current_fn_return) and
+        !astTerminates(self, decl.child_0)) {
+        var mrsp = decl.span_start;
+        var mrep = mrsp + @intCast(u32, decl.span_len);
+        var mr_msg: []const u8 = "missing return: not all control paths return a value";
+        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3003), self.source_file_id, mrsp, mrep, mr_msg);
+    }
     var evcap = self.enum_value_table.capacity; var evcnt = self.enum_value_table.count;
     var vm: []const u8 = "EVC:N"; pal_mod.markerWriteInt(vm, @intCast(u32, evcnt));
     var vcm: []const u8 = "EVC:C"; pal_mod.markerWriteInt(vcm, @intCast(u32, evcap));
+}
+
+// A7F: a function must produce a value on every path only when its result type
+// carries actual data. `void`/`noreturn`, and the void-payload forms of error
+// unions and optionals (`!void`, `?void`, `E!void`) implicitly succeed by
+// falling off the end (Zig-faithful); a bare `return;` is likewise valid there.
+fn fnReturnRequiresValue(self: *SemanticAnalyzer, ty: u32) bool {
+    if (ty == @intCast(u32, 0) or ty == type_mod.TYPE_VOID or ty == type_mod.TYPE_NORETURN) return false;
+    if (@intCast(usize, ty) >= self.registry.types_len) return false;
+    var t = self.registry.types_items[@intCast(usize, ty)];
+    if (t.kind == type_mod.TypeKind.error_union_type) {
+        var eu = self.registry.eu_items[@intCast(usize, t.payload_idx)];
+        if (eu.payload == type_mod.TYPE_VOID) return false;
+    }
+    if (t.kind == type_mod.TypeKind.optional_type) {
+        var op = self.registry.opt_items[@intCast(usize, t.payload_idx)];
+        if (op.payload == type_mod.TYPE_VOID) return false;
+    }
+    return true;
+}
+
+// A7F definitely-returns reachability predicate over the AST (block / if /
+// switch). Terminators: explicit `return`, plus any node whose resolved type is
+// noreturn (`unreachable`, `@panic`, or noreturn-propagating expressions). It
+// deliberately does NOT reuse the lowering `block_terminated` flag (reset at
+// joins; unsound for this purpose).
+fn astTerminates(self: *SemanticAnalyzer, node_idx: u32) bool {
+    if (node_idx == @intCast(u32, 0)) return false;
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    if (node.kind == AstKind.return_stmt) return true;
+    if (rtt_mod.resolvedTypeTableGet(self.type_table, node_idx)) |t| {
+        if (t == type_mod.TYPE_NORETURN) return true;
+    }
+    if (node.kind == AstKind.block) {
+        var ch = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
+        var bi: usize = @intCast(usize, 0);
+        while (bi < ch.len) : (bi += 1) {
+            if (astTerminates(self, ch[bi])) return true;
+        }
+        return false;
+    }
+    if (node.kind == AstKind.if_stmt) {
+        if (node.child_2 == @intCast(u32, 0)) return false;
+        return astTerminates(self, node.child_1) and astTerminates(self, node.child_2);
+    }
+    if (node.kind == AstKind.expr_stmt) {
+        if (node.child_0 == @intCast(u32, 0)) return false;
+        var inner = ast_mod.astStoreNodeAt(self.store, node.child_0);
+        if (inner.kind == AstKind.swt_ex) return astSwitchTerminates(self, node.child_0);
+        return false;
+    }
+    if (node.kind == AstKind.swt_ex) return astSwitchTerminates(self, node_idx);
+    return false;
+}
+
+fn astSwitchTerminates(self: *SemanticAnalyzer, node_idx: u32) bool {
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    var prongs = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
+    if (prongs.len == @intCast(usize, 0)) return false;
+    var has_else: bool = false;
+    var pi: usize = @intCast(usize, 0);
+    while (pi < prongs.len) : (pi += 1) {
+        var pr = ast_mod.astStoreNodeAt(self.store, prongs[pi]);
+        if ((pr.flags & @intCast(u8, 1)) != @intCast(u8, 0)) has_else = true;
+        if (!astTerminates(self, pr.child_0)) return false;
+    }
+    if (has_else) return true;
+    return astSwitchExhaustive(self, node.child_0, prongs);
+}
+
+fn astSwitchExhaustive(self: *SemanticAnalyzer, cond_idx: u32, prongs: []const u32) bool {
+    var ct = rtt_mod.resolvedTypeTableGet(self.type_table, cond_idx) orelse return false;
+    if (ct == @intCast(u32, 0) or @intCast(usize, ct) >= self.registry.types_len) return false;
+    var ty = self.registry.types_items[@intCast(usize, ct)];
+    var member_count: u32 = @intCast(u32, 0);
+    if (ty.kind == type_mod.TypeKind.enum_type) {
+        member_count = @intCast(u32, self.registry.en_items[@intCast(usize, ty.payload_idx)].members_count);
+    } else if (ty.kind == type_mod.TypeKind.tagged_union_type) {
+        member_count = @intCast(u32, self.registry.tu_items[@intCast(usize, ty.payload_idx)].fields_count);
+    } else if (ty.kind == type_mod.TypeKind.error_set_type) {
+        member_count = @intCast(u32, self.registry.es_items[@intCast(usize, ty.payload_idx)].tags_count);
+    } else if (ty.kind == type_mod.TypeKind.bool_type) {
+        member_count = @intCast(u32, 2);
+    } else {
+        return false;
+    }
+    var covered: u32 = @intCast(u32, 0);
+    var pi: usize = @intCast(usize, 0);
+    while (pi < prongs.len) : (pi += 1) {
+        var items = ast_mod.astStoreNodeExtraChildren(self.store, prongs[pi]);
+        covered += @intCast(u32, items.len);
+    }
+    return covered >= member_count;
 }
 
 fn semanticAnalyzerStmtWorkPush(self: *SemanticAnalyzer, node_idx: u32) void {
@@ -2451,6 +2560,12 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                 var b1tb: [10]u8 = undefined; var b1tl = itoa_mod.itoa(decl_type, b1tb[0..]); var b1ts: usize = @intCast(usize, 9) - @intCast(usize, b1tl); pal_mod.markerWrite(b1tb[b1ts..@intCast(usize, 9)]);
                 var b1nl2: []const u8 = "\n"; pal_mod.markerWrite(b1nl2);
             }
+            if (node.child_1 == @intCast(u32, 0) and decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED)) {
+                var uisp = node.span_start;
+                var uiep = uisp + @intCast(u32, node.span_len);
+                var ui_msg: []const u8 = "variable must be initialized; use '= undefined' to opt out";
+                _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3014_USE_OF_UNDEFINED_VARIABLE)), self.source_file_id, uisp, uiep, ui_msg);
+            }
             if (node.child_1 != @intCast(u32, 0)) {
                 var init_node = ast_mod.astStoreNodeAt(self.store, node.child_1);
                 var ik_m: []const u8 = "I:K"; pal_mod.markerWriteInt(ik_m, @intCast(u32, @enumToInt(init_node.kind)));
@@ -2578,7 +2693,14 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
             var els_nm: []const u8 = "ELS:n"; pal_mod.markerWriteInt(els_nm, node_idx);
             var els_km: []const u8 = "ELS:k"; pal_mod.markerWriteInt(els_km, @intCast(u32, @enumToInt(node.kind)));
             if (node.child_0 != @intCast(u32, 0)) { var els_c0m: []const u8 = "ELS:c"; pal_mod.markerWriteInt(els_c0m, node.child_0); }
-            _ = semanticAnalyzerResolveExpr(self, node_idx);
+            var els_r = semanticAnalyzerResolveExpr(self, node_idx);
+            if (els_r != @intCast(u32, 0) and @intCast(usize, els_r) < self.registry.types_len and
+                self.registry.types_items[@intCast(usize, els_r)].kind == type_mod.TypeKind.error_union_type) {
+                var eisp = node.span_start;
+                var eiep = eisp + @intCast(u32, node.span_len);
+                var ei_msg: []const u8 = "error union result is ignored; use 'try', 'catch', or assign the result";
+                _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3015_ERROR_IGNORED)), self.source_file_id, eisp, eiep, ei_msg);
+            }
         }
         if (node.child_0 != @intCast(u32, 0)) {
             var nc = ast_mod.astStoreNodeAt(self.store, node.child_0);
