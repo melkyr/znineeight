@@ -3174,6 +3174,24 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                         }
                     }
                 },
+                .int_cast_checked => |ic| {
+                    if (ic.result < max_temp) {
+                        var dp = tid_to_pos[@intCast(usize, ic.result)];
+                        if (dp != @intCast(u32, 0xFFFFFFFF)) {
+                            written_type[@intCast(usize, dp)] = ic.target;
+                            written_flag[@intCast(usize, dp)] = @intCast(u8, 1);
+                        }
+                    }
+                },
+                .width_wrap => |ww| {
+                    if (ww.result < max_temp) {
+                        var dp = tid_to_pos[@intCast(usize, ww.result)];
+                        if (dp != @intCast(u32, 0xFFFFFFFF)) {
+                            written_type[@intCast(usize, dp)] = ww.result_type;
+                            written_flag[@intCast(usize, dp)] = @intCast(u8, 1);
+                        }
+                    }
+                },
                 .int_to_float => |itf| {
                     if (itf.result < max_temp) {
                         var dp = tid_to_pos[@intCast(usize, itf.result)];
@@ -3880,7 +3898,6 @@ fn nestShapeOk(emitter: *C89Emitter, inst: lir_mod.LirInst, result_t: u32) u8 {
             return @intCast(u8, 1);
         },
         .int_cast => |c| {
-            if (c.is_checked != @intCast(u8, 0)) return @intCast(u8, 0);
             if (intTypeNeedsWidthWrap(emitter.registry, c.target) != @intCast(u8, 0)) return @intCast(u8, 0);
             return @intCast(u8, 1);
         },
@@ -3926,7 +3943,6 @@ fn nestConsumerWired(emitter: *C89Emitter, t: u32) u8 {
         },
         .unary => |u| { if (u.operand == t) return @intCast(u8, 1); },
         .int_cast => |c| {
-            if (c.is_checked != @intCast(u8, 0)) return @intCast(u8, 0);
             if (c.value == t) return @intCast(u8, 1);
             return @intCast(u8, 0);
         },
@@ -4703,89 +4719,7 @@ fn writeWidthSignBitString(writer: *BufferedWriter, width_bits: u32) void {
     bufferedWriterWrite(writer, sfx);
 }
 
-fn emitWidthWrapStmt(emitter: *C89Emitter, name: []const u8, tyid: u32) void {
-    var ty = emitter.registry.types_items[@intCast(usize, tyid)];
-    var w = type_mod.typeRegistryIntWidthBits(emitter.registry, tyid);
-    if (@intCast(u32, w) < @intCast(u32, 1)) return;
-    var is_signed: u8 = @intCast(u8, 0);
-    if (ty.kind == TypeKind.arb_int_type) { is_signed = @intCast(u8, 1); }
-    var ctype = getCTypeName(emitter.registry, emitter.mangler, tyid);
-    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-    bufferedWriterWrite(&emitter.writer, name);
-    var eqs: []const u8 = " = (";
-    bufferedWriterWrite(&emitter.writer, eqs);
-    bufferedWriterWrite(&emitter.writer, ctype);
-    if (is_signed != @intCast(u8, 0)) {
-        var cp: []const u8 = ")(((";
-        bufferedWriterWrite(&emitter.writer, cp);
-    } else {
-        var cp: []const u8 = ")(";
-        bufferedWriterWrite(&emitter.writer, cp);
-    }
-    bufferedWriterWrite(&emitter.writer, name);
-    var amp: []const u8 = " & ";
-    bufferedWriterWrite(&emitter.writer, amp);
-    writeWidthMaskString(&emitter.writer, w);
-    if (is_signed != @intCast(u8, 0)) {
-        var xor_s: []const u8 = ") ^ ";
-        bufferedWriterWrite(&emitter.writer, xor_s);
-        writeWidthSignBitString(&emitter.writer, w);
-        var sub_s: []const u8 = ") - ";
-        bufferedWriterWrite(&emitter.writer, sub_s);
-        writeWidthSignBitString(&emitter.writer, w);
-    }
-    var end_s: []const u8 = ");\n";
-    bufferedWriterWrite(&emitter.writer, end_s);
-}
 
-fn emitWidthCheckedCheckStmt(emitter: *C89Emitter, src: []const u8, tyid: u32) void {
-    var w = type_mod.typeRegistryIntWidthBits(emitter.registry, tyid);
-    if (@intCast(u32, w) < @intCast(u32, 1)) return;
-    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-    if (!type_mod.typeRegistryIntIsSigned(emitter.registry, tyid)) {
-        var pf: []const u8 = "if ((unsigned long long)(";
-        bufferedWriterWrite(&emitter.writer, pf);
-        bufferedWriterWrite(&emitter.writer, src);
-        var pm: []const u8 = ") > ";
-        bufferedWriterWrite(&emitter.writer, pm);
-        writeWidthMaskString(&emitter.writer, w);
-        var pe: []const u8 = ") std_panic(\"integer cast overflow in @intCast\");\n";
-        bufferedWriterWrite(&emitter.writer, pe);
-    } else {
-        var pf: []const u8 = "if ((long long)(";
-        bufferedWriterWrite(&emitter.writer, pf);
-        bufferedWriterWrite(&emitter.writer, src);
-        var pm: []const u8 = ") < (long long)(";
-        bufferedWriterWrite(&emitter.writer, pm);
-        var ib: [24]u8 = undefined;
-        var mag: u64 = @intCast(u64, 1) << @intCast(u64, w - @intCast(u32, 1));
-        var nm: []const u8 = "-";
-        bufferedWriterWrite(&emitter.writer, nm);
-        var il = itoa_mod.itoa64(mag, ib[0..]);
-        var is_idx = @intCast(u32, @intCast(u32, 23) - il);
-        var is_start: usize = @intCast(usize, is_idx);
-        var is_end: usize = @intCast(usize, 23);
-        bufferedWriterWrite(&emitter.writer, ib[is_start..is_end]);
-        var nsfx = intLitSuffixNeg(mag);
-        bufferedWriterWrite(&emitter.writer, nsfx);
-        var po: []const u8 = ") || (long long)(";
-        bufferedWriterWrite(&emitter.writer, po);
-        bufferedWriterWrite(&emitter.writer, src);
-        var pz: []const u8 = ") > (long long)(";
-        bufferedWriterWrite(&emitter.writer, pz);
-        var maxv: u64 = (@intCast(u64, 1) << @intCast(u64, w - @intCast(u32, 1))) - @intCast(u64, 1);
-        var mib: [24]u8 = undefined;
-        var mil = itoa_mod.itoa64(maxv, mib[0..]);
-        var mis_idx = @intCast(u32, @intCast(u32, 23) - mil);
-        var mis_start: usize = @intCast(usize, mis_idx);
-        var mis_end: usize = @intCast(usize, 23);
-        bufferedWriterWrite(&emitter.writer, mib[mis_start..mis_end]);
-        var msfx = intLitSuffixUns(maxv);
-        bufferedWriterWrite(&emitter.writer, msfx);
-        var pe: []const u8 = ")) std_panic(\"integer cast overflow in @intCast\");\n";
-        bufferedWriterWrite(&emitter.writer, pe);
-    }
-}
 
 fn intTypeByteWidth(reg: *TypeRegistry, tyid: u32) u32 {
     if (tyid == type_mod.TYPE_VOID) { return @intCast(u32, 0); }
@@ -5318,66 +5252,7 @@ fn getCheckedCastFnName(reg: *TypeRegistry, tid: u32) []const u8 {
     { var s: []const u8 = "std_checked_cast_u32"; return s; }
 }
 
-fn getCastTypeSuffix(reg: *TypeRegistry, tid: u32) []const u8 {
-    var ty = reg.types_items[@intCast(usize, tid)];
-    if (ty.kind == TypeKind.i8_type) { var s: []const u8 = "i8"; return s; }
-    if (ty.kind == TypeKind.i16_type) { var s: []const u8 = "i16"; return s; }
-    if (ty.kind == TypeKind.i32_type) { var s: []const u8 = "i32"; return s; }
-    if (ty.kind == TypeKind.i64_type) { var s: []const u8 = "i64"; return s; }
-    if (ty.kind == TypeKind.u8_type) { var s: []const u8 = "u8"; return s; }
-    if (ty.kind == TypeKind.u16_type) { var s: []const u8 = "u16"; return s; }
-    if (ty.kind == TypeKind.u32_type) { var s: []const u8 = "u32"; return s; }
-    if (ty.kind == TypeKind.u64_type) { var s: []const u8 = "u64"; return s; }
-    if (ty.kind == TypeKind.isize_type) { var s: []const u8 = "isize"; return s; }
-    if (ty.kind == TypeKind.usize_type) { var s: []const u8 = "usize"; return s; }
-    if (ty.kind == TypeKind.c_char_type) { var s: []const u8 = "c_char"; return s; }
-    if (ty.kind == TypeKind.bool_type) { var s: []const u8 = "bool"; return s; }
-    if (ty.kind == TypeKind.f32_type) { var s: []const u8 = "f32"; return s; }
-    if (ty.kind == TypeKind.f64_type) { var s: []const u8 = "f64"; return s; }
-    { var s: []const u8 = "u32"; return s; }
-}
 
-fn isBootstrapHelperDefined(fn_name: []const u8) bool {
-    var h1: []const u8 = "__bootstrap_usize_from_i64";
-    if (mem_mod.mem_eql(fn_name, h1)) { return true; }
-    var h2: []const u8 = "__bootstrap_i32_from_u32";
-    if (mem_mod.mem_eql(fn_name, h2)) { return true; }
-    var h3: []const u8 = "__bootstrap_u32_from_u64";
-    if (mem_mod.mem_eql(fn_name, h3)) { return true; }
-    var h4: []const u8 = "__bootstrap_u32_from_i32";
-    if (mem_mod.mem_eql(fn_name, h4)) { return true; }
-    var h5: []const u8 = "__bootstrap_usize_from_i32";
-    if (mem_mod.mem_eql(fn_name, h5)) { return true; }
-    var h6: []const u8 = "__bootstrap_i32_from_usize";
-    if (mem_mod.mem_eql(fn_name, h6)) { return true; }
-    var h7: []const u8 = "__bootstrap_u8_from_usize";
-    if (mem_mod.mem_eql(fn_name, h7)) { return true; }
-    var h8: []const u8 = "__bootstrap_u8_from_bool";
-    if (mem_mod.mem_eql(fn_name, h8)) { return true; }
-    var h9: []const u8 = "__bootstrap_f32_from_f64";
-    if (mem_mod.mem_eql(fn_name, h9)) { return true; }
-    var h10: []const u8 = "__bootstrap_i32_from_u8";
-    if (mem_mod.mem_eql(fn_name, h10)) { return true; }
-    var h11: []const u8 = "__bootstrap_u8_from_i32";
-    if (mem_mod.mem_eql(fn_name, h11)) { return true; }
-    var h12: []const u8 = "__bootstrap_u8_from_u32";
-    if (mem_mod.mem_eql(fn_name, h12)) { return true; }
-    var h13: []const u8 = "__bootstrap_u16_from_i32";
-    if (mem_mod.mem_eql(fn_name, h13)) { return true; }
-    var h14: []const u8 = "__bootstrap_u32_from_i64";
-    if (mem_mod.mem_eql(fn_name, h14)) { return true; }
-    var h15: []const u8 = "__bootstrap_u64_from_i64";
-    if (mem_mod.mem_eql(fn_name, h15)) { return true; }
-    var h16: []const u8 = "__bootstrap_i8_from_i32";
-    if (mem_mod.mem_eql(fn_name, h16)) { return true; }
-    var h17: []const u8 = "__bootstrap_i16_from_i32";
-    if (mem_mod.mem_eql(fn_name, h17)) { return true; }
-    var h18: []const u8 = "__bootstrap_i32_from_i64";
-    if (mem_mod.mem_eql(fn_name, h18)) { return true; }
-    var h19: []const u8 = "__bootstrap_c_char_from_u8";
-    if (mem_mod.mem_eql(fn_name, h19)) { return true; }
-    return false;
-}
 
 fn getPrintFnName(reg: *TypeRegistry, tid: u32, fmt: u8) []const u8 {
     var ty = reg.types_items[@intCast(usize, tid)];
@@ -6869,12 +6744,8 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             var s2: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, s2);
             }
-            var bin_wt: u32 = getTempTypeByIndex(emitter, b.result);
-            if (bin_wt != @intCast(u32, 0xFFFFFFFF)) {
-                if (intTypeNeedsWidthWrap(emitter.registry, bin_wt) != @intCast(u8, 0)) {
-                    emitWidthWrapStmt(emitter, result, bin_wt);
-                }
-            }
+            // A18: arbitrary-width normalization moved to a separate
+            // `width_wrap` LIR op emitted by lowering (byte-identical text).
         },
         .unary => |u| {
             var result = resolveTempName(emitter, u.result);
@@ -6914,12 +6785,8 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             var s2: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, s2);
             }
-            var un_wt: u32 = getTempTypeByIndex(emitter, u.result);
-            if (un_wt != @intCast(u32, 0xFFFFFFFF)) {
-                if (intTypeNeedsWidthWrap(emitter.registry, un_wt) != @intCast(u8, 0)) {
-                    emitWidthWrapStmt(emitter, result, un_wt);
-                }
-            }
+            // A18: arbitrary-width normalization moved to a separate
+            // `width_wrap` LIR op emitted by lowering (byte-identical text).
         },
         .int_const => |ic| {
             var result = resolveTempName(emitter, ic.result);
@@ -7540,100 +7407,82 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             }
         },
         .int_cast => |c| {
+            // A18: plain (unchecked) cast. All bound/sign decisions moved to
+            // lowering; the checked form is the separate `int_cast_checked` op.
+            var dst = resolveTempName(emitter, c.result);
+            var ctype = getCTypeName(emitter.registry, emitter.mangler, c.target);
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            bufferedWriterWrite(&emitter.writer, dst);
+            var s1: []const u8 = " = (";
+            bufferedWriterWrite(&emitter.writer, s1);
+            bufferedWriterWrite(&emitter.writer, ctype);
+            var s2: []const u8 = ")";
+            bufferedWriterWrite(&emitter.writer, s2);
+            emitValueExpr(emitter, c.value, @intCast(u32, 0));
+            var s3: []const u8 = ";\n";
+            bufferedWriterWrite(&emitter.writer, s3);
+        },
+        .int_cast_checked => |c| {
+            // A18: dumb map to the signed-aware runtime bound helper. The
+            // op carries src/dst signedness+width, so no type inspection here.
             var dst = resolveTempName(emitter, c.result);
             var src = resolveTempName(emitter, c.value);
-            var icm: []const u8 = "IC:v"; pal.markerWrite(icm);
-            var icvb: [10]u8 = undefined; var icvl = itoa_mod.itoa(c.value, icvb[0..]); var icvs: usize = @intCast(usize, 9) - @intCast(usize, icvl); pal.markerWrite(icvb[icvs..@intCast(usize, 9)]);
-            var ictm: []const u8 = "t"; pal.markerWrite(ictm);
-            var ictb: [10]u8 = undefined; var ictl = itoa_mod.itoa(c.target, ictb[0..]); var icts: usize = @intCast(usize, 9) - @intCast(usize, ictl); pal.markerWrite(ictb[icts..@intCast(usize, 9)]);
-            var icrm: []const u8 = "r"; pal.markerWrite(icrm);
-            var icrb: [10]u8 = undefined; var icrl = itoa_mod.itoa(c.result, icrb[0..]); var icrs: usize = @intCast(usize, 9) - @intCast(usize, icrl); pal.markerWrite(icrb[icrs..@intCast(usize, 9)]);
-            var icnl: []const u8 = "\n"; pal.markerWrite(icnl);
             var ctype = getCTypeName(emitter.registry, emitter.mangler, c.target);
-            var dst_is_arb: u8 = intTypeNeedsWidthWrap(emitter.registry, c.target);
-            if (c.is_checked != @intCast(u8, 0)) {
-                var src_tid = getTempTypeByIndex(emitter, c.value);
-                var needs_width_check: u8 = dst_is_arb;
-                if (src_tid != @intCast(u32, 0xFFFFFFFF)) {
-                    if (intTypeNeedsWidthWrap(emitter.registry, src_tid) != @intCast(u8, 0)) { needs_width_check = @intCast(u8, 1); }
-                }
-                if (needs_width_check == @intCast(u8, 0)) {
-                if (src_tid != @intCast(u32, 0xFFFFFFFF)) {
-                    var dst_suffix = getCastTypeSuffix(emitter.registry, c.target);
-                    var src_suffix = getCastTypeSuffix(emitter.registry, src_tid);
-                    var fn_buf: [64]u8 = undefined;
-                    var fn_idx: usize = 0;
-                    var boot_s: []const u8 = "__bootstrap_";
-                    format_mod.copyStr(fn_buf[0..], &fn_idx, boot_s);
-                    format_mod.copyStr(fn_buf[0..], &fn_idx, dst_suffix);
-                    var from_s: []const u8 = "_from_";
-                    format_mod.copyStr(fn_buf[0..], &fn_idx, from_s);
-                    format_mod.copyStr(fn_buf[0..], &fn_idx, src_suffix);
-                    var fn_name = fn_buf[0..fn_idx];
-                    if (isBootstrapHelperDefined(fn_name)) {
-                        bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-                        bufferedWriterWrite(&emitter.writer, dst);
-                        var s1: []const u8 = " = ";
-                        bufferedWriterWrite(&emitter.writer, s1);
-                        bufferedWriterWrite(&emitter.writer, fn_name);
-                        var s2: []const u8 = "(";
-                        bufferedWriterWrite(&emitter.writer, s2);
-                        bufferedWriterWrite(&emitter.writer, src);
-                        var s3: []const u8 = ");\n";
-                        bufferedWriterWrite(&emitter.writer, s3);
-                    } else {
-                        emitWidthCheckedCheckStmt(emitter, src, c.target);
-                        bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-                        bufferedWriterWrite(&emitter.writer, dst);
-                        var s1: []const u8 = " = (";
-                        bufferedWriterWrite(&emitter.writer, s1);
-                        bufferedWriterWrite(&emitter.writer, ctype);
-                        var s2: []const u8 = ")";
-                        bufferedWriterWrite(&emitter.writer, s2);
-                        bufferedWriterWrite(&emitter.writer, src);
-                        var s3: []const u8 = ";\n";
-                        bufferedWriterWrite(&emitter.writer, s3);
-                    }
-                } else {
-                    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-                    bufferedWriterWrite(&emitter.writer, dst);
-                    var s1: []const u8 = " = (";
-                    bufferedWriterWrite(&emitter.writer, s1);
-                    bufferedWriterWrite(&emitter.writer, ctype);
-                    var s2: []const u8 = ")";
-                    bufferedWriterWrite(&emitter.writer, s2);
-                    bufferedWriterWrite(&emitter.writer, src);
-                    var s3: []const u8 = ";\n";
-                    bufferedWriterWrite(&emitter.writer, s3);
-                }
-                } else {
-                    emitWidthCheckedCheckStmt(emitter, src, c.target);
-                    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-                    bufferedWriterWrite(&emitter.writer, dst);
-                    var s1: []const u8 = " = (";
-                    bufferedWriterWrite(&emitter.writer, s1);
-                    bufferedWriterWrite(&emitter.writer, ctype);
-                    var s2: []const u8 = ")";
-                    bufferedWriterWrite(&emitter.writer, s2);
-                    bufferedWriterWrite(&emitter.writer, src);
-                    var s3: []const u8 = ";\n";
-                    bufferedWriterWrite(&emitter.writer, s3);
-                }
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            bufferedWriterWrite(&emitter.writer, dst);
+            var s1: []const u8 = " = (";
+            bufferedWriterWrite(&emitter.writer, s1);
+            bufferedWriterWrite(&emitter.writer, ctype);
+            var s2: []const u8 = ")";
+            bufferedWriterWrite(&emitter.writer, s2);
+            if (c.dst_signed != @intCast(u8, 0)) { var fn_s: []const u8 = "zig_cast_checked_s("; bufferedWriterWrite(&emitter.writer, fn_s); } else { var fn_u: []const u8 = "zig_cast_checked_u("; bufferedWriterWrite(&emitter.writer, fn_u); }
+            var ul: []const u8 = "(unsigned long long)";
+            bufferedWriterWrite(&emitter.writer, ul);
+            bufferedWriterWrite(&emitter.writer, src);
+            var cm: []const u8 = ", ";
+            bufferedWriterWrite(&emitter.writer, cm);
+            var su: []const u8 = "u, ";
+            emitUintLiteral(emitter, @intCast(u32, c.src_width));
+            bufferedWriterWrite(&emitter.writer, su);
+            emitUintLiteral(emitter, @intCast(u32, c.src_signed));
+            bufferedWriterWrite(&emitter.writer, su);
+            emitUintLiteral(emitter, @intCast(u32, c.dst_width));
+            var tr: []const u8 = "u);\n";
+            bufferedWriterWrite(&emitter.writer, tr);
+        },
+        .width_wrap => |c| {
+            // A18: arbitrary-width normalize. Byte-identical to the former
+            // emitWidthWrapStmt; the op carries width/signedness so the emitter
+            // only maps (no type inspection).
+            var dst = resolveTempName(emitter, c.result);
+            var src = resolveTempName(emitter, c.value);
+            var ctype = getCTypeName(emitter.registry, emitter.mangler, c.result_type);
+            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+            bufferedWriterWrite(&emitter.writer, dst);
+            var eqs: []const u8 = " = (";
+            bufferedWriterWrite(&emitter.writer, eqs);
+            bufferedWriterWrite(&emitter.writer, ctype);
+            if (c.is_signed != @intCast(u8, 0)) {
+                var cp: []const u8 = ")(((";
+                bufferedWriterWrite(&emitter.writer, cp);
             } else {
-                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-                bufferedWriterWrite(&emitter.writer, dst);
-                var s1: []const u8 = " = (";
-                bufferedWriterWrite(&emitter.writer, s1);
-                bufferedWriterWrite(&emitter.writer, ctype);
-                var s2: []const u8 = ")";
-                bufferedWriterWrite(&emitter.writer, s2);
-                emitValueExpr(emitter, c.value, @intCast(u32, 0));
-                var s3: []const u8 = ";\n";
-                bufferedWriterWrite(&emitter.writer, s3);
+                var cp: []const u8 = ")(";
+                bufferedWriterWrite(&emitter.writer, cp);
             }
-            if (dst_is_arb != @intCast(u8, 0)) {
-                emitWidthWrapStmt(emitter, dst, c.target);
+            bufferedWriterWrite(&emitter.writer, src);
+            var amp: []const u8 = " & ";
+            bufferedWriterWrite(&emitter.writer, amp);
+            writeWidthMaskString(&emitter.writer, @intCast(u32, c.width));
+            if (c.is_signed != @intCast(u8, 0)) {
+                var xor_s: []const u8 = ") ^ ";
+                bufferedWriterWrite(&emitter.writer, xor_s);
+                writeWidthSignBitString(&emitter.writer, @intCast(u32, c.width));
+                var sub_s: []const u8 = ") - ";
+                bufferedWriterWrite(&emitter.writer, sub_s);
+                writeWidthSignBitString(&emitter.writer, @intCast(u32, c.width));
             }
+            var end_s: []const u8 = ");\n";
+            bufferedWriterWrite(&emitter.writer, end_s);
         },
         .int_to_float => |c| {
             var dst = resolveTempName(emitter, c.result);
@@ -8267,7 +8116,7 @@ fn dceMarkAllReads(lir_fn: *LirFunction, max_temp: u32, tid_to_pos: [*]u32, read
                 .unwrap_optional_checked => |u| { dceMarkReadPos(max_temp, tid_to_pos, read_count, u.value); },
                 .unwrap_optional_abi => |u| { dceMarkReadPos(max_temp, tid_to_pos, read_count, u.value); },
                 .check_optional => |c| { dceMarkReadPos(max_temp, tid_to_pos, read_count, c.value); },
-                .check_trap => |ct| { dceMarkReadPos(max_temp, tid_to_pos, read_count, ct.cond); if (ct.kind != @intCast(u8, 6) and ct.kind != @intCast(u8, 2)) { dceMarkReadPos(max_temp, tid_to_pos, read_count, ct.aux); } },
+                .check_trap => |ct| { dceMarkReadPos(max_temp, tid_to_pos, read_count, ct.cond); },
                 .wrap_error_ok => |w| { dceMarkReadPos(max_temp, tid_to_pos, read_count, w.value); },
                 .wrap_error_err => |w| { dceMarkReadPos(max_temp, tid_to_pos, read_count, w.value); },
                 .unwrap_error_payload => |u| { dceMarkReadPos(max_temp, tid_to_pos, read_count, u.value); },
@@ -8275,6 +8124,8 @@ fn dceMarkAllReads(lir_fn: *LirFunction, max_temp: u32, tid_to_pos: [*]u32, read
                 .check_error => |c| { dceMarkReadPos(max_temp, tid_to_pos, read_count, c.value); },
                 .make_slice => |ms| { dceMarkReadPos(max_temp, tid_to_pos, read_count, ms.ptr); dceMarkReadPos(max_temp, tid_to_pos, read_count, ms.len); },
                 .int_cast => |ic| { dceMarkReadPos(max_temp, tid_to_pos, read_count, ic.value); },
+                .int_cast_checked => |ic| { dceMarkReadPos(max_temp, tid_to_pos, read_count, ic.value); },
+                .width_wrap => |ww| { dceMarkReadPos(max_temp, tid_to_pos, read_count, ww.value); },
                 .float_cast => |fc| { dceMarkReadPos(max_temp, tid_to_pos, read_count, fc.value); },
                 .ptr_cast => |pc| { dceMarkReadPos(max_temp, tid_to_pos, read_count, pc.value); },
                 .int_to_float => |itf| { dceMarkReadPos(max_temp, tid_to_pos, read_count, itf.value); },
@@ -8333,6 +8184,8 @@ fn dceResultPos(max_temp: u32, tid_to_pos: [*]u32, inst: lir_mod.LirInst) u32 {
         .poison_init => |pi| { t = pi.result; },
         .enum_const => |ec| { t = ec.result; },
         .int_cast => |ic| { t = ic.result; },
+        .int_cast_checked => |ic| { t = ic.result; },
+        .width_wrap => |ww| { t = ww.result; },
         .float_cast => |fc| { t = fc.result; },
         .ptr_cast => |pc| { t = pc.result; },
         .int_to_float => |itf| { t = itf.result; },
@@ -8385,6 +8238,8 @@ fn dceReleaseOperands(max_temp: u32, tid_to_pos: [*]u32, read_count: [*]u32, ins
         .neg_with_overflow => |o| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, o.value); },
         .overflow_flag => |o| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, o.lhs); dceReleaseReadPos(max_temp, tid_to_pos, read_count, o.rhs); },
         .int_cast => |ic| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, ic.value); },
+        .int_cast_checked => |ic| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, ic.value); },
+        .width_wrap => |ww| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, ww.value); },
         .float_cast => |fc| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, fc.value); },
         .ptr_cast => |pc| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, pc.value); },
         .int_to_float => |itf| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, itf.value); },
@@ -8400,7 +8255,7 @@ fn dceReleaseOperands(max_temp: u32, tid_to_pos: [*]u32, read_count: [*]u32, ins
         .unwrap_optional_checked => |u| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, u.value); },
         .unwrap_optional_abi => |u| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, u.value); },
         .check_optional => |c| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, c.value); },
-        .check_trap => |ct| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, ct.cond); if (ct.kind != @intCast(u8, 6) and ct.kind != @intCast(u8, 2)) { dceReleaseReadPos(max_temp, tid_to_pos, read_count, ct.aux); } },
+        .check_trap => |ct| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, ct.cond); },
         .unwrap_error_payload => |u| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, u.value); },
         .unwrap_error_code => |u| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, u.value); },
         .check_error => |c| { dceReleaseReadPos(max_temp, tid_to_pos, read_count, c.value); },

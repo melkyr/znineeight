@@ -65,7 +65,7 @@ pub const LirInst = union(enum) {
     unwrap_error_code: struct { value: u32, result: u32 },
     check_error: struct { value: u32, result: u32 },
     make_slice: struct { ptr: u32, len: u32, result: u32, type_id: TypeId },
-    int_cast: struct { value: u32, target: TypeId, result: u32, is_checked: u8 },
+    int_cast: struct { value: u32, target: TypeId, result: u32 },
     float_cast: struct { value: u32, target: TypeId, result: u32 },
     ptr_cast: struct { value: u32, target: TypeId, result: u32 },
     int_to_float: struct { value: u32, target: TypeId, result: u32 },
@@ -99,19 +99,15 @@ pub const LirInst = union(enum) {
     store_bitfield: struct { base: u32, value: u32, bit_offset: u32, bit_width: u32 },
     trap: void,
     // A4F/A5F/A6F `-fsafe` cheap runtime check. `cond` is the success-condition
-    // temp (the emitter traps when it is false). `kind`: 2 = div/mod (zero), 3 =
-    // shift (count >= width), 4 = null-unwrap, 5 = index OOB, 6 = integer
-    // overflow. `aux`/`imm` carry the guarded operands for kinds 3/5 (imm is a
-    // literal width for kind 3, a literal length for kind 5). A15 moved kind 6
-    // fully to the ops below: the success condition is computed in lowering as
-    // `overflow_flag == 0` and carried in `cond`, so `aux`/`imm`/`result_type`/
-    // `op` are unused for kind 6. A16 moved kind 2 (div/mod zero+`INT_MIN/-1`)
-    // likewise: `cond` is built in lowering from `int_const`+`binary` comparisons
-    // and only `cond`/`kind` are read. The now-unused fields are retained until
-    // the A18 shrink phase. Non-terminating. Field order is packed (u64 first,
-    // then the u32s, then the u8s) so the Z98-folded `@sizeOf(LirInst)` that
-    // lir_stream writes stays 32 B.
-    check_trap: struct { imm: u64, cond: u32, aux: u32, result_type: u32, kind: u8, op: u8 },
+    // temp (the emitter traps when it is false). `kind`: 2 = div/mod (zero),
+    // 3 = shift (count >= width), 4 = null-unwrap, 5 = index OOB, 6 = integer
+    // overflow. Every kind's success condition is now computed in lowering
+    // (A15 kind 6 `overflow_flag == 0`; A16 kind 2 div/mod zero+`INT_MIN/-1`;
+    // kinds 3/5 already did), so A18 shrank the payload to `{cond,kind}`: the
+    // old `aux`/`imm`/`result_type`/`op` fields are gone. Non-terminating. The
+    // 5 B payload is below `enum_const` (20 B → 24 B padded), so the
+    // Z98-folded `@sizeOf(LirInst)` that lir_stream writes stays 32 B.
+    check_trap: struct { cond: u32, kind: u8 },
     // A15 integer-overflow guard ops (AMENDMENT 4). Each `*_with_overflow` op
     // yields the WRAPPED value as its sole result (mirrors AIR `@addWithOverflow`
     // value half); `overflow_flag` yields the boolean overflow predicate (1 =
@@ -144,6 +140,30 @@ pub const LirInst = union(enum) {
     // type_id). Appended after `unwrap_optional_checked`; the 4 B payload keeps
     // the Z98-folded `@sizeOf(LirInst)` at 32 B.
     poison_init: struct { result: u32 },
+    // A18 checked `@intCast` op (AMENDMENT 4). Safe narrowing/sign-change cast:
+    // the emitter maps it to `result = (<target Ctype>)zig_cast_checked_<s|u>(
+    // (unsigned long long)value, src_width, src_signed, dst_width)`; the helper
+    // recovers the source value from `src_signed`/`src_width` and bound-checks it
+    // against `dst_signed`/`dst_width`, so no backend type inspection is needed
+    // (the `target` TypeId is only the C type name). Lowering emits it only under
+    // `-fsafe` and only when a check is required (narrowing or same-width sign
+    // change); `-ffast` and lossless casts keep the plain `int_cast`. This
+    // replaces the emitter's `__bootstrap_<dst>_from_<src>` helper selection and
+    // `emitWidthCheckedCheckStmt`, and gives every target class (fixed widths and
+    // arbitrary `iN/uN`) the same signed-aware bounds. Appended after
+    // `poison_init`; the 16 B payload keeps the Z98-folded `@sizeOf(LirInst)` at
+    // 32 B.
+    int_cast_checked: struct { value: u32, target: TypeId, result: u32, src_signed: u8, src_width: u8, dst_signed: u8, dst_width: u8 },
+    // A18 arbitrary-width normalization op (AMENDMENT 4). Maps the emitter's
+    // former `emitWidthWrapStmt` inline mask/sign-extend into backend-neutral
+    // LIR: `result = (<Ctype>)((value & <width mask>) [^ signbit] [- signbit])`.
+    // Lowering computes `result_type`/`width`/`is_signed` from the result temp's
+    // type, so the emitter does no type inspection. It is emitted in both modes
+    // (it is wrapping semantics, not a safety check) but writes the exact same
+    // in-place C text as before (`value == result`), so `-ffast` bytes are
+    // unchanged. Appended after `int_cast_checked`; the 14 B payload keeps the
+    // Z98-folded `@sizeOf(LirInst)` at 32 B.
+    width_wrap: struct { value: u32, result: u32, result_type: u32, width: u8, is_signed: u8 },
 };
 
 pub const CallDirectData = struct {

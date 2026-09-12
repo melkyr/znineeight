@@ -346,6 +346,39 @@ pub fn emitZigRuntimeHSupport(writer: *BufferedWriter, safe_checks: bool) void {
     c89_mod.bufferedWriterWrite(writer, "static c_char __bootstrap_c_char_from_u8(u8 x) {\n");
     c89_mod.bufferedWriterWrite(writer, "    return (c_char)x;\n");
     c89_mod.bufferedWriterWrite(writer, "}\n");
+    if (safe_checks) {
+        c89_mod.bufferedWriterWrite(writer, "\n");
+        c89_mod.bufferedWriterWrite(writer, "/* -fsafe checked @intCast helpers (A18). The `int_cast_checked` LIR op carries\n");
+        c89_mod.bufferedWriterWrite(writer, "   src/dst signedness and widths, so the emitter only maps to these calls; the\n");
+        c89_mod.bufferedWriterWrite(writer, "   helper recovers the source value from (src_width, src_signed) and bound-checks\n");
+        c89_mod.bufferedWriterWrite(writer, "   it against the target width/sign. Header-static (like the __bootstrap_* cast\n");
+        c89_mod.bufferedWriterWrite(writer, "   helpers) so every emitted module is self-sufficient; emitted under -fsafe\n");
+        c89_mod.bufferedWriterWrite(writer, "   only, so -ffast output is byte-unchanged. Covers fixed-width and arbitrary\n");
+        c89_mod.bufferedWriterWrite(writer, "   `iN/uN` targets and the equal-width sign-change cases. */\n");
+        c89_mod.bufferedWriterWrite(writer, "static long long zig_cast_checked_s(unsigned long long v, unsigned int sw, unsigned int ss, unsigned int dw) {\n");
+        c89_mod.bufferedWriterWrite(writer, "    long long r;\n");
+        c89_mod.bufferedWriterWrite(writer, "    if (ss != 0u) r = zig_ovf_sext(v, sw); else r = (long long)zig_ovf_mask(v, sw);\n");
+        c89_mod.bufferedWriterWrite(writer, "    if (dw == 0u || dw > 64u) dw = 64u;\n");
+        c89_mod.bufferedWriterWrite(writer, "    if (dw >= 64u) {\n");
+        c89_mod.bufferedWriterWrite(writer, "        if (ss == 0u && r < 0) std_panic(\"integer cast overflow in @intCast\");\n");
+        c89_mod.bufferedWriterWrite(writer, "        return r;\n");
+        c89_mod.bufferedWriterWrite(writer, "    }\n");
+        c89_mod.bufferedWriterWrite(writer, "    if (r < zig_ovf_mins(dw) || r > zig_ovf_maxs(dw)) std_panic(\"integer cast overflow in @intCast\");\n");
+        c89_mod.bufferedWriterWrite(writer, "    return r;\n");
+        c89_mod.bufferedWriterWrite(writer, "}\n");
+        c89_mod.bufferedWriterWrite(writer, "static unsigned long long zig_cast_checked_u(unsigned long long v, unsigned int sw, unsigned int ss, unsigned int dw) {\n");
+        c89_mod.bufferedWriterWrite(writer, "    long long r;\n");
+        c89_mod.bufferedWriterWrite(writer, "    unsigned long long m;\n");
+        c89_mod.bufferedWriterWrite(writer, "    if (ss != 0u) r = zig_ovf_sext(v, sw); else r = (long long)zig_ovf_mask(v, sw);\n");
+        c89_mod.bufferedWriterWrite(writer, "    if (ss != 0u) m = (unsigned long long)r; else m = zig_ovf_mask(v, sw);\n");
+        c89_mod.bufferedWriterWrite(writer, "    if (dw == 0u || dw >= 64u) {\n");
+        c89_mod.bufferedWriterWrite(writer, "        if (ss != 0u && r < 0) std_panic(\"integer cast overflow in @intCast\");\n");
+        c89_mod.bufferedWriterWrite(writer, "        return m;\n");
+        c89_mod.bufferedWriterWrite(writer, "    }\n");
+        c89_mod.bufferedWriterWrite(writer, "    if (r < 0 || (unsigned long long)r > zig_ovf_maxu(dw)) std_panic(\"integer cast overflow in @intCast\");\n");
+        c89_mod.bufferedWriterWrite(writer, "    return m;\n");
+        c89_mod.bufferedWriterWrite(writer, "}\n");
+    }
     c89_mod.bufferedWriterWrite(writer, "\n");
     c89_mod.bufferedWriterWrite(writer, "#endif\n");
 }

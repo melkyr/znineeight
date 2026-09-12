@@ -1,9 +1,11 @@
 // safe_div_min_i64_neg1_xmod — A16F i64 div `INT64_MIN / -1` guard pin.
 //
-// `INT64_MIN / -1` is signed 64-bit division overflow; in C89 the raw `/` is UB
-// and on x86-32 `idiv` raises SIGFPE. Under `-fsafe` (default) the div/mod guard
-// traps before the division (empty stdout, rc 133 SIGTRAP). Under `-ffast` no
-// guard is emitted, so the raw division is UB (rc 136 SIGFPE).
+// `INT64_MIN / -1` is signed 64-bit division overflow; in C89 the raw `/` is UB.
+// Under `-fsafe` (default) the div/mod guard traps before the division (empty
+// stdout, rc 133 SIGTRAP). Under `-ffast` no guard is emitted: 32-bit gcc lowers
+// the `i64` division to the `__divdi3` runtime helper, which does not raise
+// SIGFPE, so the process exits rc 0 (printing `1`, the wrapped quotient) — the
+// result is still UB, just not a hardware trap.
 //
 // The guard's MIN literal is the width-64 signed minimum. A16 originally routed
 // it through the shared `int_const` magnitude arm, which rendered the

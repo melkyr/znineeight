@@ -373,6 +373,8 @@ fn defInfoPure(inst: LirInst) u8 {
         .enum_const => return @intCast(u8, 1),
         .set_optional_null => return @intCast(u8, 1),
         .int_cast => return @intCast(u8, 1),
+        .int_cast_checked => return @intCast(u8, 1),
+        .width_wrap => return @intCast(u8, 1),
         .float_cast => return @intCast(u8, 1),
         .ptr_cast => return @intCast(u8, 1),
         .int_to_float => return @intCast(u8, 1),
@@ -423,6 +425,8 @@ fn defResultTemp(inst: LirInst, lir_fn: *LirFunction) u32 {
         .poison_init => |pi| { return pi.result; },
         .enum_const => |ec| { return ec.result; },
         .int_cast => |ic| { return ic.result; },
+        .int_cast_checked => |ic| { return ic.result; },
+        .width_wrap => |ww| { return ww.result; },
         .float_cast => |fc| { return fc.result; },
         .ptr_cast => |pc| { return pc.result; },
         .int_to_float => |itf| { return itf.result; },
@@ -590,6 +594,8 @@ fn scanInst(c: *Ctx, inst: LirInst, bb_idx: u32, ii: u32) void {
             markRead(c, ms.len, bb_idx, ii);
         },
         .int_cast => |ic| { markRead(c, ic.value, bb_idx, ii); },
+        .int_cast_checked => |ic| { markRead(c, ic.value, bb_idx, ii); },
+        .width_wrap => |ww| { markRead(c, ww.value, bb_idx, ii); },
         .float_cast => |fc| { markRead(c, fc.value, bb_idx, ii); },
         .ptr_cast => |pc| { markRead(c, pc.value, bb_idx, ii); },
         .int_to_float => |itf| { markRead(c, itf.value, bb_idx, ii); },
@@ -632,7 +638,6 @@ fn scanInst(c: *Ctx, inst: LirInst, bb_idx: u32, ii: u32) void {
         },
         .check_trap => |ct| {
             markRead(c, ct.cond, bb_idx, ii);
-            if (ct.kind != @intCast(u8, 6) and ct.kind != @intCast(u8, 2)) { markRead(c, ct.aux, bb_idx, ii); }
         },
         else => {},
     }
@@ -745,6 +750,8 @@ fn maxOperandDepth(c: *Ctx, inst: LirInst) u8 {
             if (r > mx) mx = r;
         },
         .int_cast => |ic| { mx = depthOfTemp(c, ic.value); },
+        .int_cast_checked => |ic| { mx = depthOfTemp(c, ic.value); },
+        .width_wrap => |ww| { mx = depthOfTemp(c, ww.value); },
         .float_cast => |fc| { mx = depthOfTemp(c, fc.value); },
         .ptr_cast => |pc| { mx = depthOfTemp(c, pc.value); },
         .int_to_float => |itf| { mx = depthOfTemp(c, itf.value); },
@@ -888,6 +895,8 @@ fn instOperandsReachGlobalAlias(c: *Ctx, inst: LirInst) u8 {
             return tempReachesGlobalAlias(c, o.rhs);
         },
         .int_cast => |ic| { return tempReachesGlobalAlias(c, ic.value); },
+        .int_cast_checked => |ic| { return tempReachesGlobalAlias(c, ic.value); },
+        .width_wrap => |ww| { return tempReachesGlobalAlias(c, ww.value); },
         .float_cast => |fc| { return tempReachesGlobalAlias(c, fc.value); },
         .ptr_cast => |pc| { return tempReachesGlobalAlias(c, pc.value); },
         .int_to_float => |itf| { return tempReachesGlobalAlias(c, itf.value); },
@@ -1278,6 +1287,16 @@ fn rewriteInstOperands(c: *Ctx, inst: LirInst) LirInst {
             ni.value = maybeR(c, ni.value);
             return LirInst{ .int_cast = ni };
         },
+        .int_cast_checked => |ic| {
+            var ni = ic;
+            ni.value = maybeR(c, ni.value);
+            return LirInst{ .int_cast_checked = ni };
+        },
+        .width_wrap => |ww| {
+            var nw = ww;
+            nw.value = maybeR(c, nw.value);
+            return LirInst{ .width_wrap = nw };
+        },
         .float_cast => |fc| {
             var nf = fc;
             nf.value = maybeR(c, nf.value);
@@ -1360,7 +1379,6 @@ fn rewriteInstOperands(c: *Ctx, inst: LirInst) LirInst {
         .check_trap => |ct| {
             var nc = ct;
             nc.cond = maybeR(c, nc.cond);
-            if (nc.kind != @intCast(u8, 6) and nc.kind != @intCast(u8, 2)) { nc.aux = maybeR(c, nc.aux); }
             return LirInst{ .check_trap = nc };
         },
         else => return inst,
@@ -1464,6 +1482,8 @@ fn retargetDefResult(inst: LirInst, newr: u32, ok: *u8) LirInst {
         .undefined_const => |uc| { var nu = uc; nu.result = newr; return LirInst{ .undefined_const = nu }; },
         .enum_const => |ec| { var ne = ec; ne.result = newr; return LirInst{ .enum_const = ne }; },
         .int_cast => |ic| { var ni = ic; ni.result = newr; return LirInst{ .int_cast = ni }; },
+        .int_cast_checked => |ic| { var ni = ic; ni.result = newr; return LirInst{ .int_cast_checked = ni }; },
+        .width_wrap => |ww| { var nw = ww; nw.result = newr; nw.value = newr; return LirInst{ .width_wrap = nw }; },
         .float_cast => |fc| { var nf = fc; nf.result = newr; return LirInst{ .float_cast = nf }; },
         .ptr_cast => |pc| { var np = pc; np.result = newr; return LirInst{ .ptr_cast = np }; },
         .int_to_float => |itf| { var nt = itf; nt.result = newr; return LirInst{ .int_to_float = nt }; },
@@ -1932,7 +1952,6 @@ fn tryFoldBinaryOp(c: *Ctx, inst: LirInst, out_value: *u64, out_is_bool: *u8) u8
 fn tryFoldIntCast(c: *Ctx, inst: LirInst, out_value: *u64) u8 {
     switch (inst) {
         .int_cast => |ic| {
-            if (ic.is_checked != @intCast(u8, 0)) return @intCast(u8, 0);
             var res = ic.result;
             var val_t = ic.value;
             var rt = tempDeclTypeId(c, res);

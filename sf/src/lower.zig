@@ -573,6 +573,44 @@ fn markTerminated(blocks: *lir_mod.BasicBlockArrayList, bb_id: u32) void {
 
 pub fn emitInst(self: *LirLowerer, inst: LirInst) void {
     lir_mod.lirInstArrayListAppend(&self.func.blocks.items[self.current_bb].insts, inst);
+    // A18: arbitrary-width `binary`/`unary` results get the former emitter-side
+    // in-place width normalization as a backend-neutral `width_wrap` op. This
+    // mirrors exactly where the emitter used to call `emitWidthWrapStmt`
+    // (the `.binary`/`.unary` arms), so `-ffast` bytes are unchanged.
+    switch (inst) {
+        .binary => |b| { maybeEmitWidthWrap(self, b.result); },
+        .unary => |u| { maybeEmitWidthWrap(self, u.result); },
+        .int_cast => |c| { maybeEmitWidthWrap(self, c.result); },
+        .int_cast_checked => |c| { maybeEmitWidthWrap(self, c.result); },
+        else => {},
+    }
+}
+
+// A18: true iff `tyid` is an arbitrary-width int whose declared bit width is
+// narrower than its C carrier (the emitter's former `intTypeNeedsWidthWrap`).
+fn lowerTypeNeedsWidthWrap(reg: *type_mod.TypeRegistry, tyid: u32) u8 {
+    if (tyid == type_mod.TYPE_VOID or @intCast(usize, tyid) >= reg.types_len) return @intCast(u8, 0);
+    var ty = reg.types_items[@intCast(usize, tyid)];
+    if (ty.kind != type_mod.TypeKind.arb_uint_type and ty.kind != type_mod.TypeKind.arb_int_type) return @intCast(u8, 0);
+    var w = type_mod.typeRegistryIntWidthBits(reg, tyid);
+    var cb: u32 = @intCast(u32, ty.size * @intCast(u32, 8));
+    if (@intCast(u32, w) < @intCast(u32, 1) or @intCast(u32, w) >= cb) return @intCast(u8, 0);
+    return @intCast(u8, 1);
+}
+
+// A18: emit the in-place `width_wrap` op for a value temp that needs arbitrary
+// width normalization. Lowering computes the width/signedness once so the
+// emitter only maps the op to the same mask/sign-extend C text as the former
+// `emitWidthWrapStmt`.
+fn maybeEmitWidthWrap(self: *LirLowerer, tid: u32) void {
+    var t = getTempType(self, tid);
+    if (lowerTypeNeedsWidthWrap(self.ctx.registry, t) == @intCast(u8, 0)) return;
+    var w = type_mod.typeRegistryIntWidthBits(self.ctx.registry, t);
+    var s: u8 = intCastTypeIsSigned(self.ctx.registry, t);
+    emitInst(self, LirInst{ .width_wrap = .{
+        .value = tid, .result = tid, .result_type = t,
+        .width = @intCast(u8, w), .is_signed = s,
+    } });
 }
 
 pub fn nextTemp(self: *LirLowerer, type_id: TypeId) u32 {
@@ -649,7 +687,7 @@ fn emitSafeCheckDivMod(self: *LirLowerer, lhs: u32, rhs: u32) void {
             emitInst(self, LirInst{ .binary = .{ .op = BIN_AND, .lhs = rhs_nz, .rhs = not_both, .result = cond } });
         }
     }
-    emitInst(self, LirInst{ .check_trap = .{ .cond = cond, .kind = @intCast(u8, 2), .aux = @intCast(u32, 0), .imm = @intCast(u64, 0), .result_type = @intCast(u32, 0), .op = @intCast(u8, 0) } });
+    emitInst(self, LirInst{ .check_trap = .{ .cond = cond, .kind = @intCast(u8, 2) } });
 }
 
 // A16 null-unwrap guard. Under `-fsafe` a non-void optional payload read goes
@@ -688,7 +726,7 @@ fn emitSafeCheckShift(self: *LirLowerer, lhs: u32, rhs: u32) void {
     emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, width), .result = wt } });
     var cond = nextTemp(self, type_mod.TYPE_BOOL);
     emitInst(self, LirInst{ .binary = .{ .op = BIN_LT, .lhs = rhs, .rhs = wt, .result = cond } });
-    emitInst(self, LirInst{ .check_trap = .{ .cond = cond, .kind = @intCast(u8, 3), .aux = rhs, .imm = @intCast(u64, width) } });
+    emitInst(self, LirInst{ .check_trap = .{ .cond = cond, .kind = @intCast(u8, 3) } });
 }
 
 
@@ -720,7 +758,7 @@ fn emitOverflowTrap(self: *LirLowerer, op: u8, lhs: u32, rhs: u32, result_type: 
     emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = zero } });
     var ok = nextTemp(self, type_mod.TYPE_BOOL);
     emitInst(self, LirInst{ .binary = .{ .op = BIN_EQ, .lhs = flag, .rhs = zero, .result = ok } });
-    emitInst(self, LirInst{ .check_trap = .{ .cond = ok, .kind = @intCast(u8, 6), .aux = @intCast(u32, 0), .imm = @intCast(u64, 0), .result_type = @intCast(u32, 0), .op = @intCast(u8, 0) } });
+    emitInst(self, LirInst{ .check_trap = .{ .cond = ok, .kind = @intCast(u8, 6) } });
 }
 
 // Checked `+ - * <<`. Under `-fsafe` writes `result` via the backend-neutral
@@ -784,7 +822,7 @@ fn materializeShiftLhs(self: *LirLowerer, node_idx: u32, lhs: u32, rtype: u32) u
     }
     if (target == @intCast(u32, 0)) target = type_mod.TYPE_I32;
     var ct = nextTemp(self, target);
-    emitInst(self, LirInst{ .int_cast = .{ .value = lhs, .target = target, .result = ct, .is_checked = @intCast(u8, 0) } });
+    emitInst(self, LirInst{ .int_cast = .{ .value = lhs, .target = target, .result = ct } });
     return ct;
 }
 
@@ -901,14 +939,7 @@ fn emitSafeCheckIndex(self: *LirLowerer, orig_base: u32, base_node: u32, idx_tem
         cond = nextTemp(self, type_mod.TYPE_BOOL);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_AND, .lhs = nonneg, .rhs = lt, .result = cond } });
     }
-    var aux: u32 = @intCast(u32, 0);
-    var imm: u64 = 0;
-    if (len_temp != @intCast(u32, 0)) {
-        aux = len_temp;
-    } else {
-        imm = @intCast(u64, len_static);
-    }
-    emitInst(self, LirInst{ .check_trap = .{ .cond = cond, .kind = @intCast(u8, 5), .aux = aux, .imm = imm } });
+    emitInst(self, LirInst{ .check_trap = .{ .cond = cond, .kind = @intCast(u8, 5) } });
 }
 
 pub fn createBlock(self: *LirLowerer) u32 {
@@ -1974,7 +2005,7 @@ pub fn materializeInto(self: *LirLowerer, src_temp: u32, expected: u32, intent: 
         var nk = coercion_mod.classifyCoercion(self.ctx.registry, src_ty, cur);
         if (nk == CoercionKind.int_widen or nk == CoercionKind.int_literal_coerce) {
             var ct = nextTemp(self, cur);
-            emitInst(self, LirInst{ .int_cast = .{ .value = val, .target = cur, .result = ct, .is_checked = @intCast(u8, 0) } });
+            emitInst(self, LirInst{ .int_cast = .{ .value = val, .target = cur, .result = ct } });
             val = ct;
         } else if (nk == CoercionKind.float_widen) {
             var ft = nextTemp(self, cur);
@@ -3943,7 +3974,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     if (bc_dst != type_mod.TYPE_UNDEFINED) {
                         var bc_arg = lowerExpr(self, ec[@intCast(usize, 1)]);
                         var bc_res = nextTemp(self, bc_dst);
-                        emitInst(self, LirInst{ .int_cast = .{ .value = bc_arg, .target = bc_dst, .result = bc_res, .is_checked = @intCast(u8, 0) } });
+                        emitInst(self, LirInst{ .int_cast = .{ .value = bc_arg, .target = bc_dst, .result = bc_res } });
                         return bc_res;
                     }
                 }
@@ -4168,10 +4199,19 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     if (src_s != dst_s) { chk = @intCast(u8, 1); }
                 }
             }
-            emitInst(self, LirInst{ .int_cast = .{
-                .value = val_temp, .target = t_target, .result = result,
-                 .is_checked = chk,
-            } });
+            if (chk != @intCast(u8, 0)) {
+                var src_s: u8 = intCastTypeIsSigned(self.ctx.registry, src_ty);
+                var dst_s: u8 = intCastTypeIsSigned(self.ctx.registry, t_target);
+                emitInst(self, LirInst{ .int_cast_checked = .{
+                    .value = val_temp, .target = t_target, .result = result,
+                    .src_signed = src_s, .src_width = @intCast(u8, src_bits),
+                    .dst_signed = dst_s, .dst_width = @intCast(u8, dst_bits),
+                } });
+            } else {
+                emitInst(self, LirInst{ .int_cast = .{
+                    .value = val_temp, .target = t_target, .result = result,
+                } });
+            }
         } else if (node.child_0 == self.inttofloat_name_id) {
             emitInst(self, LirInst{ .int_to_float = .{
                 .value = val_temp, .target = t_target, .result = result,
@@ -4187,12 +4227,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         } else if (node.child_0 == self.inttoenum_name_id) {
             emitInst(self, LirInst{ .int_cast = .{
                 .value = val_temp, .target = t_target, .result = result,
-                .is_checked = @intCast(u8, 0),
             } });
         } else if (node.child_0 == self.as_name_id) {
             emitInst(self, LirInst{ .int_cast = .{
                 .value = val_temp, .target = t_target, .result = result,
-                .is_checked = @intCast(u8, 0),
             } });
         }
         return result;
@@ -6159,7 +6197,7 @@ pub fn applyCoercion(self: *LirLowerer, src_temp: u32, coercion: CoercionEntry) 
         return materializeInto(self, src_temp, coercion.target_type, SrcIntent.error_src);
     } else if (kind == CoercionKind.int_widen) {
         var dst = nextTemp(self, coercion.target_type);
-        emitInst(self, LirInst{ .int_cast = .{ .value = src_temp, .target = coercion.target_type, .result = dst, .is_checked = @intCast(u8, 0) } });
+        emitInst(self, LirInst{ .int_cast = .{ .value = src_temp, .target = coercion.target_type, .result = dst } });
         return dst;
     } else if (kind == CoercionKind.float_widen) {
         var dst = nextTemp(self, coercion.target_type);
@@ -6167,7 +6205,7 @@ pub fn applyCoercion(self: *LirLowerer, src_temp: u32, coercion: CoercionEntry) 
         return dst;
     } else if (kind == CoercionKind.int_literal_coerce) {
         var dst = nextTemp(self, coercion.target_type);
-        emitInst(self, LirInst{ .int_cast = .{ .value = src_temp, .target = coercion.target_type, .result = dst, .is_checked = @intCast(u8, 0) } });
+        emitInst(self, LirInst{ .int_cast = .{ .value = src_temp, .target = coercion.target_type, .result = dst } });
         return dst;
     } else if (kind == CoercionKind.ptr_to_optional_ptr) {
         return materializeInto(self, src_temp, coercion.target_type, srcIntentFor(self, coercion));
@@ -6412,6 +6450,10 @@ fn hasOtherConsumers(self: *LirLowerer, call_result: u32, ret_temp: u32) bool {
                 if (inst.check_optional.value == call_result) return true;
             } else if (tg == @enumToInt(LirInst.int_cast)) {
                 if (inst.int_cast.value == call_result) return true;
+            } else if (tg == @enumToInt(LirInst.int_cast_checked)) {
+                if (inst.int_cast_checked.value == call_result) return true;
+            } else if (tg == @enumToInt(LirInst.width_wrap)) {
+                if (inst.width_wrap.value == call_result) return true;
             } else if (tg == @enumToInt(LirInst.float_cast)) {
                 if (inst.float_cast.value == call_result) return true;
             } else if (tg == @enumToInt(LirInst.ptr_cast)) {

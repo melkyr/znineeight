@@ -248,4 +248,35 @@ static c_char __bootstrap_c_char_from_u8(u8 x) {
     return (c_char)x;
 }
 
+/* -fsafe checked @intCast helpers (A18). The `int_cast_checked` LIR op carries
+   src/dst signedness and widths, so the emitter only maps to these calls; the
+   helper recovers the source value from (src_width, src_signed) and bound-checks
+   it against the target width/sign. Header-static (like the __bootstrap_* cast
+   helpers) so every emitted module is self-sufficient; emitted under -fsafe
+   only, so -ffast output is byte-unchanged. Covers fixed-width and arbitrary
+   `iN/uN` targets and the equal-width sign-change cases. */
+static long long zig_cast_checked_s(unsigned long long v, unsigned int sw, unsigned int ss, unsigned int dw) {
+    long long r;
+    if (ss != 0u) r = zig_ovf_sext(v, sw); else r = (long long)zig_ovf_mask(v, sw);
+    if (dw == 0u || dw > 64u) dw = 64u;
+    if (dw >= 64u) {
+        if (ss == 0u && r < 0) std_panic("integer cast overflow in @intCast");
+        return r;
+    }
+    if (r < zig_ovf_mins(dw) || r > zig_ovf_maxs(dw)) std_panic("integer cast overflow in @intCast");
+    return r;
+}
+static unsigned long long zig_cast_checked_u(unsigned long long v, unsigned int sw, unsigned int ss, unsigned int dw) {
+    long long r;
+    unsigned long long m;
+    if (ss != 0u) r = zig_ovf_sext(v, sw); else r = (long long)zig_ovf_mask(v, sw);
+    if (ss != 0u) m = (unsigned long long)r; else m = zig_ovf_mask(v, sw);
+    if (dw == 0u || dw >= 64u) {
+        if (ss != 0u && r < 0) std_panic("integer cast overflow in @intCast");
+        return m;
+    }
+    if (r < 0 || (unsigned long long)r > zig_ovf_maxu(dw)) std_panic("integer cast overflow in @intCast");
+    return m;
+}
+
 #endif
