@@ -827,3 +827,26 @@ report `## A10F` + ledger + mnemoria per convention.
    battery/N-hop/4-MD5 gate; those run once in **A12**. A11F may still run `check_emit_support.sh` or a
    targeted doc/build-script sanity check if the docs it edits touch a recipe, but no compiler-wide battery.
 
+---
+
+## AMENDMENT 10 — Documentation (A11F) scope ruling (2026-09-10)
+
+> Operator rulings on the A11I STOP-present (2026-09-10). A11I report `## A11I` is the edit list of record.
+
+- **A11F is doc-only** (AMENDMENT 9) and covers **9 docs**:
+  `docs/reference/Language_Spec_Z98.md`, `docs/reference/Caveats_and_Workarounds.md`, `README.md`,
+  `docs/reference/z98_bootstrap_manual.md`, `docs/sf/QUICK_REF.md`, `docs/sf/AGENTS.md`, plus the
+  **extended** adjacent stale docs `docs/reference/c89_emission.md`, `docs/reference/builtins.md`,
+  `docs/reference/runtime_api.md` (the latter two cite the **removed** `__bootstrap_panic`).
+- **`Caveats_and_Workarounds.md`:** add a zig1 runtime-safety section — it currently has **zero** zig1
+  content (zig0-era header).
+- **Fix the A11I Minor anchor:** the `try`-on-non-error-union latent gap is at
+  `semantic_analyzer.zig:1525-1531` (not `:1411-1413`).
+- **Don't overstate:** do not document `std.debug` as a reliable *printed* abort (stdout is buffered and can
+  be lost before the trap; `@panic` uses stderr); do not repeat the design spec's inaccurate "`-ffast` keeps
+  deterministic zeroing for locals".
+- Apply the landed-implementation corrections from A11I (arena `ArenaError![*]u8`; `@panic`/`unreachable`
+  trap; `-fsafe`/`-ffast` + six checks + `undefined` 0xAA; diagnostics `3014/3015/3003/3016`; alias forms +
+  erasure; `*volatile T`/`@volatileCast` + qualifier safety; `static`/`do…while` idioms). ONE commit:
+  `docs: c89-ahead — documentation update (volatile/safety/diagnostics/arena/aliases) (C89AHEAD)`.
+
