@@ -2882,11 +2882,29 @@ fn semanticAnalyzerResolveArrayInit(self: *SemanticAnalyzer, node_idx: u32) u32 
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var saved = self._stub_0;
     var annot_tid: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
+    var annot_elem_tid: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
     if (node.child_0 != @intCast(u32, 0)) {
         var rt = rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0);
         if (rt) |t| {
             var tt = self.registry.types_items[@intCast(usize, t)];
             if (tt.kind == type_mod.TypeKind.array_type) { annot_tid = t; }
+        }
+        if (annot_tid == @intCast(u32, type_mod.TYPE_UNDEFINED)) {
+            var annot_node = ast_mod.astStoreNodeAt(self.store, node.child_0);
+            var inferred_len: bool = false;
+            if (annot_node.kind == AstKind.array_type and annot_node.child_1 != @intCast(u32, 0)) {
+                var sz_node = ast_mod.astStoreNodeAt(self.store, annot_node.child_1);
+                if (sz_node.kind == AstKind.ident_expr) {
+                    var sz_name = ast_mod.astStoreIdentifier(self.store, annot_node.child_1);
+                    var sz_text = interner_mod.stringInternerGet(self.interner, sz_name);
+                    if (sz_text.len == @intCast(usize, 1) and sz_text[0] == @intCast(u8, '_')) { inferred_len = true; }
+                }
+            }
+            if (inferred_len and annot_node.child_0 != @intCast(u32, 0)) {
+                var tre_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id };
+                var et = type_resolver.resolveTypeExprFull(&tre_env, annot_node.child_0, @intCast(u32, 0));
+                if (et != @intCast(u32, type_mod.TYPE_UNDEFINED)) { annot_elem_tid = et; }
+            }
         }
     }
      var ec = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
@@ -2903,6 +2921,7 @@ fn semanticAnalyzerResolveArrayInit(self: *SemanticAnalyzer, node_idx: u32) u32 
          if (aei == @intCast(usize, 0)) { arr_elem_tid = el_tid; }
      }
      if (annot_tid != @intCast(u32, type_mod.TYPE_UNDEFINED)) { self._stub_0 = saved; return annot_tid; }
+     if (annot_elem_tid != @intCast(u32, type_mod.TYPE_UNDEFINED)) { self._stub_0 = saved; return type_mod.typeRegistryGetOrCreateArray(self.registry, annot_elem_tid, @intCast(u32, ec.len)); }
      var arr_tid = type_mod.typeRegistryGetOrCreateArray(self.registry, arr_elem_tid, @intCast(u32, ec.len));
      self._stub_0 = saved;
      return arr_tid;

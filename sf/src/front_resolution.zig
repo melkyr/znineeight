@@ -96,6 +96,14 @@ pub fn frontResolveModuleInits(ct: *FrontResCtx) void {
                                 var ck: u64 = @intCast(u64, mods[mi].id) * @intCast(u64, 4294967296) + @intCast(u64, ast_mod.astStoreNodePayload(ct.store, decls[di]));
                                 type_mod.nameCachePut(ct.typereg, ck, init_type);
                             }
+                            var ref_name = ast_mod.astStoreIdentifier(ct.store, decl.child_1);
+                            var ref_sym = sym_mod.symbolRegistryQualifiedLookup(ct.symbol_reg, mods[mi].id, ref_name);
+                            if (ref_sym) |rs| {
+                                if (rs.kind == sym_mod.SymbolKind.type_alias) {
+                                    var own_sym = sym_mod.symbolRegistryQualifiedLookup(ct.symbol_reg, mods[mi].id, ast_mod.astStoreNodePayload(ct.store, decls[di]));
+                                    if (own_sym) |os| { os.kind = sym_mod.SymbolKind.type_alias; }
+                                }
+                            }
                         }
                         var vd_existing = resolved_type_table.resolvedTypeTableGet(ct.resolved_types, decls[di]);
                         if (init_type != type_mod.TYPE_VOID and init_type != type_mod.TYPE_UNDEFINED and init_type != type_mod.TYPE_TYPE and vd_existing == null) {

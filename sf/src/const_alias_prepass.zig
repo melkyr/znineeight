@@ -184,6 +184,7 @@ pub fn constAliasPrepass(symbol_reg: *SymbolRegistry, registry: *type_mod.TypeRe
 
             if (resolved != type_mod.TYPE_UNDEFINED) {
                 sym.type_id = resolved;
+                sym.kind = sym_mod.SymbolKind.type_alias;
                 var ckey = @intCast(u64, mod_id) * @intCast(u64, 4294967296) + @intCast(u64, dep_name);
                 type_mod.nameCachePut(registry, ckey, resolved);
                 wl[@intCast(usize, wl_len)] = ai;
@@ -218,6 +219,7 @@ pub fn constAliasPrepass(symbol_reg: *SymbolRegistry, registry: *type_mod.TypeRe
 
             if (dep_sym.type_id == 0) {
                 dep_sym.type_id = rt;
+                dep_sym.kind = sym_mod.SymbolKind.type_alias;
                 var dep_name = alias_name[@intCast(usize, dep_alias_idx)];
                 var dkey = @intCast(u64, dep_mod) * @intCast(u64, 4294967296) + @intCast(u64, dep_name);
                 type_mod.nameCachePut(registry, dkey, rt);

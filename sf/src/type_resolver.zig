@@ -1193,6 +1193,8 @@ fn resolveNamedTypeExpressions(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry)
                     if (cdtype != type_mod.TYPE_UNDEFINED) {
                         var ck: u64 = @intCast(u64, mods[ci].id) * @intCast(u64, 4294967296) + @intCast(u64, ast_mod.astStoreNodePayload(env.store, cd[cdi]));
                         type_mod.nameCachePut(env.typereg, ck, cdtype);
+                        var cdsym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, mods[ci].id, ast_mod.astStoreNodePayload(env.store, cd[cdi]));
+                        if (cdsym) |sp| { sp.type_id = cdtype; }
                     }
                 }
             }

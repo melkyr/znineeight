@@ -1218,6 +1218,21 @@ pub fn typeRegistryIsAssignable(self: *TypeRegistry, source: TypeId, target: Typ
         var pp: PtrPayload = self.ptr_items[@intCast(usize, tgt.payload_idx)];
         if (arr.elem == pp.base) return true;
     }
+    if (src.kind == TypeKind.ptr_type and tgt.kind == TypeKind.many_ptr_type) {
+        var sp: PtrPayload = self.ptr_items[@intCast(usize, src.payload_idx)];
+        var tp: PtrPayload = self.ptr_items[@intCast(usize, tgt.payload_idx)];
+        if (sp.base == tp.base) return true;
+        var spo = self.types_items[@intCast(usize, sp.base)];
+        if (spo.kind == TypeKind.array_type) {
+            var arr: ArrayPayload = self.array_items[@intCast(usize, spo.payload_idx)];
+            if (arr.elem == tp.base) return true;
+        }
+    }
+    if (src.kind == TypeKind.array_type and tgt.kind == TypeKind.array_type) {
+        var s_arr: ArrayPayload = self.array_items[@intCast(usize, src.payload_idx)];
+        var t_arr: ArrayPayload = self.array_items[@intCast(usize, tgt.payload_idx)];
+        if (s_arr.elem == t_arr.elem and s_arr.length == t_arr.length) return true;
+    }
     if (src.kind == TypeKind.slice_type and tgt.kind == TypeKind.many_ptr_type) {
         var sl: SlicePayload = self.slice_items[@intCast(usize, src.payload_idx)];
         var pp: PtrPayload = self.ptr_items[@intCast(usize, tgt.payload_idx)];
