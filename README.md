@@ -82,7 +82,7 @@ C89** and rebuild **byte-identical binaries** — the self-compile fixed point i
 - **Self-compile fixed point:** self-compiled `zig1` binary md5 `1467d932a876402f40a56316dfcad0e5`
   (42 module `.c` + 43 module `.h`, 0 `error[`, 0 PANIC; hop1 == hop2 closure). Operator-approved
   closeout 2026-09-13 (C89-AHEAD). Committed seed **v10**.
-- **N-hop chain (seed model):** committed seed v9 `4da59bb1…` → hop1 `a3e1c410…` → hop2 `1467d932…`
+- **N-hop chain (seed model):** previous seed v9 `4da59bb1…` → hop1 `a3e1c410…` → hop2 `1467d932…`
   (two-hop closure; 42 module `.c` + 43 module `.h`). zig0 is retired;
   the seed model (`scripts/seed/build_from_seed.sh`) is the only rebuild path.
 - **Self-emission byte-identity:** the 42-module `.c` + 43 `.h` self-emission set is byte-identical on

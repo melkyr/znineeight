@@ -17,10 +17,14 @@ set -euo pipefail
 #               three support .c are staged from runtime/ (+ top-level c_exit.c)
 #               and would double-link if left in gen/, while net_prelude.h is
 #               deliberately NOT shipped in runtime/ — see :74-75)
-#   c_exit.c    repo sf/src/c_exit.c (top level, per spec layout)
-#   runtime/    repo sf/src/include/{zig_compat.h, zig_runtime.h,
-#               zig_special_types.h, zig_runtime.c, zig_pal.c}  (net_prelude.h
-#               excluded — 0 references in a linux -osl self-emission dump)
+#   c_exit.c    from the gen dir's emitted support when the gen dir is
+#               self-contained (gen/zig_runtime.c present), else repo
+#               sf/src/c_exit.c (top level) as a pre-EMITEMIT fallback
+#   runtime/    from the gen dir's emitted mode-specific support when
+#               self-contained (zig_compat.h, zig_runtime.h, zig_runtime.c,
+#               zig_pal.c; zig_special_types.h already in gen/), else the
+#               canonical repo sf/src/include/{…} as a pre-EMITEMIT fallback
+#               (net_prelude.h excluded — 0 references in a linux -osl dump)
 #   lib/        repo sf/src/{std.zig, std_io.zig, std_arena.zig, std_net.zig,
 #               std_str.zig, std_mem.zig, std_math.zig, std_debug.zig}
 #   SEED_README.txt  provenance + rebuild recipes + canonical flag-set rule
