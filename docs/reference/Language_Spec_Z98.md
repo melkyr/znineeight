@@ -292,7 +292,7 @@ Builtins are invoked as `@name(...)` and are recognized by name; an unknown or u
 | `@bitCast(T, expr)` | Same-size integer-to-integer bit reinterpretation |
 | `@volatileCast(T, expr)` | Remove the `volatile` qualifier; source must be a volatile pointer and target the same base type |
 | `@intCast(T, expr)` | Checked integer conversion / width change |
-| `@floatCast(T, expr)` | Checked float conversion |
+| `@floatCast(T, expr)` | Float conversion (not runtime-checked; narrowing may lose precision) |
 | `@intToFloat(T, expr)` | Integer to float |
 | `@intToEnum(T, expr)` | Integer to enum |
 | `@enumToInt(expr)` | Enum to integer |
@@ -336,7 +336,7 @@ To maintain C89 compatibility and compiler simplicity, Z98 has the following lim
 - **Strict Coercion**: There is no implicit coercion between `i32` and `usize`. Use `@intCast(usize, ...)` or `@intCast(i32, ...)` when mixing these types in assignments or initializers.
 - **No Method Syntax**: `struct.func()` is not supported; use `func(struct)`. (Exception: a call whose callee is named `print` gets format-string lowering; see §4.)
 - **AST Lifting**: Most control-flow expressions (`if`, `switch`, `try`, `catch`, `orelse`) are automatically transformed into statement blocks using temporary variables. This enables their use in complex expressions while maintaining C89 compatibility.
-- **Runtime Safety (`-fsafe` / `-ffast`)**: `-fsafe` is the **default** and enables six runtime checks — checked cast (`@intCast`/`@floatCast`), division/modulo-by-zero, shift-count, null-unwrap, index out-of-bounds, and integer overflow (`+`, `-`, `*`, unary `-`). A failed check calls `pal_trap()`. `-ffast` disables all six checks (the compiler self-build uses `-ffast`; user programs default to `-fsafe`). `unreachable`/`@panic` trap in **both** modes. Under `-fsafe`, storage initialized with `undefined` is byte-filled with `0xAA` to make reads visible; `-ffast` emits no poison fill (and does not zero it).
+- **Runtime Safety (`-fsafe` / `-ffast`)**: `-fsafe` is the **default** and enables six runtime checks — checked cast (`@intCast`), division/modulo-by-zero, shift-count, null-unwrap, index out-of-bounds, and integer overflow (`+`, `-`, `*`, unary `-`). A failed check calls `pal_trap()`. `-ffast` disables all six checks (the compiler self-build uses `-ffast`; user programs default to `-fsafe`). `unreachable`/`@panic` trap in **both** modes. Under `-fsafe`, storage initialized with `undefined` is byte-filled with `0xAA` to make reads visible; `-ffast` emits no poison fill (and does not zero it).
 - **Compile-time Diagnostics**: `var x: T;` with no initializer is `error[3014]` (write `= undefined` to opt out). A statement whose result is an error union and is discarded is `error[3015]`. A non-void function that can fall off its end, or a bare `return;` in a non-void function, is `error[3003]` (real reachability; an `if`/`else` where both arms return is not flagged). `orelse` on a non-optional operand is `error[3016]` (see §3.1). All are mode-independent.
 
 ## 6. Z98 Idioms and Best Practices
