@@ -434,7 +434,8 @@ pub fn parserParsePrimary(self: *Parser) ParserError!u32 {
     if (tok.kind == TokenKind.lbracket) return parserParseArrayLiteral(self);
     if (tok.kind == TokenKind.star) return parserParsePtrType(self);
     if (tok.kind == TokenKind.question_mark) return parserParseOptionalType(self);
-    if (tok.kind == TokenKind.kw_fn) return parserParseFnType(self);
+    if (tok.kind == TokenKind.kw_extern) return parserParseExternFnType(self);
+    if (tok.kind == TokenKind.kw_fn) return parserParseFnType(self, CALL_CONV_CDECL);
     if (tok.kind == TokenKind.kw_struct) return parserParseStructType(self, 0);
     if (tok.kind == TokenKind.kw_enum) return parserParseEnumType(self);
     if (tok.kind == TokenKind.kw_union) return parserParseUnionType(self, 0);
@@ -1075,7 +1076,8 @@ pub fn parserParseType(self: *Parser) ParserError!u32 {
     if (tok.kind == TokenKind.lbracket) return parserParseBracketType(self);
     if (tok.kind == TokenKind.question_mark) return parserParseOptionalType(self);
     if (tok.kind == TokenKind.bang) return parserParseErrorUnionType(self);
-    if (tok.kind == TokenKind.kw_fn) return parserParseFnType(self);
+    if (tok.kind == TokenKind.kw_extern) return parserParseExternFnType(self);
+    if (tok.kind == TokenKind.kw_fn) return parserParseFnType(self, CALL_CONV_CDECL);
     if (tok.kind == TokenKind.kw_error) {
         var es = try parserParseErrorSetDecl(self);
         if (parserPeek(self).kind == TokenKind.bang) {
@@ -1185,7 +1187,29 @@ fn parserParseErrorUnionType(self: *Parser) ParserError!u32 {
         0, payload, 0, 0);
 }
 
-fn parserParseFnType(self: *Parser) ParserError!u32 {
+fn parserParseExternFnType(self: *Parser) ParserError!u32 {
+    _ = parserAdvance(self); // extern
+    var call_conv: u8 = CALL_CONV_CDECL;
+    if (parserPeek(self).kind == TokenKind.string_literal) {
+        var str_tok = parserAdvance(self);
+        var text = string_interner_mod.stringInternerGet(self.interner, str_tok.value.string_id);
+        call_conv = parserClassifyCallConv(self, text);
+        if (call_conv == CALL_CONV_INVALID) {
+            var ucv: []const u8 = "unknown calling convention in `extern`";
+            parserAddErrorCode(self, str_tok, 3045, ucv);
+            call_conv = CALL_CONV_CDECL;
+        }
+    }
+    var nt = parserPeek(self);
+    if (nt.kind != TokenKind.kw_fn) {
+        var efm: []const u8 = "expected 'fn' after extern calling convention";
+        parserAddError(self, nt, efm);
+        return error.UnexpectedToken;
+    }
+    return parserParseFnType(self, call_conv);
+}
+
+fn parserParseFnType(self: *Parser, call_conv: u8) ParserError!u32 {
     var tok = parserAdvance(self);
     _ = try parserExpect(self, TokenKind.lparen);
     var param_buf: [*]u32 = undefined;
@@ -1223,7 +1247,9 @@ fn parserParseFnType(self: *Parser) ParserError!u32 {
     if (param_count > 0) {
         payload = ast_mod.astStoreAddExtraChildren(self.store, param_buf[0..param_count]);
     }
-    return ast_mod.astStoreAddNode(self.store, AstKind.fn_type, 0,
+    var fn_flags: u8 = 0;
+    if (call_conv == CALL_CONV_STDCALL) { fn_flags = fn_flags | @intCast(u8, 0x01); }
+    return ast_mod.astStoreAddNode(self.store, AstKind.fn_type, fn_flags,
         tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
         ret_type, 0, 0, payload);
 }

@@ -1799,6 +1799,7 @@ fn semanticAnalyzerResolveAssign(self: *SemanticAnalyzer, node_idx: u32) u32 {
             var sk = self.registry.types_items[@intCast(usize, eff_src)].kind;
             var tk = self.registry.types_items[@intCast(usize, lhs)].kind;
             var level: u8 = 1;
+            if (semanticAnalyzerFnPtrConvMismatch(self, eff_src, lhs)) level = 0;
             if (sk == type_mod.TypeKind.error_union_type and tk == type_mod.TypeKind.error_union_type) {
                 var eu_src = self.registry.eu_items[@intCast(usize, self.registry.types_items[@intCast(usize, eff_src)].payload_idx)];
                 var eu_tgt = self.registry.eu_items[@intCast(usize, self.registry.types_items[@intCast(usize, lhs)].payload_idx)];
@@ -2370,6 +2371,27 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     return result;
 }
 
+fn semanticAnalyzerFnPtrConvMismatch(self: *SemanticAnalyzer, src: u32, tgt: u32) bool {
+    if (src == tgt) return false;
+    if (@intCast(usize, src) >= self.registry.types_len or @intCast(usize, tgt) >= self.registry.types_len) return false;
+    var s = src;
+    var t = tgt;
+    var st = self.registry.types_items[@intCast(usize, s)];
+    if (st.kind == type_mod.TypeKind.ptr_type) {
+        s = self.registry.ptr_items[@intCast(usize, st.payload_idx)].base;
+        st = self.registry.types_items[@intCast(usize, s)];
+    }
+    var tt = self.registry.types_items[@intCast(usize, t)];
+    if (tt.kind == type_mod.TypeKind.ptr_type) {
+        t = self.registry.ptr_items[@intCast(usize, tt.payload_idx)].base;
+        tt = self.registry.types_items[@intCast(usize, t)];
+    }
+    if (st.kind != type_mod.TypeKind.fn_type or tt.kind != type_mod.TypeKind.fn_type) return false;
+    var sfp = self.registry.fn_items[@intCast(usize, st.payload_idx)];
+    var tfp = self.registry.fn_items[@intCast(usize, tt.payload_idx)];
+    return (sfp.flags_packed & type_mod.FN_FLAG_STDCALL) != (tfp.flags_packed & type_mod.FN_FLAG_STDCALL);
+}
+
 pub fn semanticAnalyzerResolveFnBody(self: *SemanticAnalyzer, fn_decl_node: u32) void {
      var fb: []const u8 = "FB"; pal_mod.markerWrite(fb);
      self.local_decl_count = @intCast(usize, 0);
@@ -2377,6 +2399,20 @@ pub fn semanticAnalyzerResolveFnBody(self: *SemanticAnalyzer, fn_decl_node: u32)
     if (decl.kind != AstKind.fn_decl) return;
     var store = self.store;
     var proto = store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(self.store, fn_decl_node))];
+    var vsc_tt = rtt_mod.resolvedTypeTableGet(self.type_table, fn_decl_node);
+    if (vsc_tt) |vsc_tid| {
+        if (@intCast(usize, vsc_tid) < self.registry.types_len) {
+            var vsc_ty = self.registry.types_items[@intCast(usize, vsc_tid)];
+            if (vsc_ty.kind == type_mod.TypeKind.fn_type) {
+                var vsc_fp = self.registry.fn_items[@intCast(usize, vsc_ty.payload_idx)];
+                if ((vsc_fp.flags_packed & @intCast(u8, 1)) != @intCast(u8, 0) and
+                    (vsc_fp.flags_packed & type_mod.FN_FLAG_STDCALL) != @intCast(u8, 0)) {
+                    var vs_msg: []const u8 = "variadic functions cannot use the stdcall calling convention";
+                    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3012_VARARGS_INVALID)), self.source_file_id, decl.span_start, decl.span_start + @intCast(u32, decl.span_len), vs_msg);
+                }
+            }
+        }
+    }
     if (decl.child_0 == @intCast(u32, 0)) return;
     if (proto.params_count > @intCast(u16, 0)) {
         var p_payload: u64 = (@intCast(u64, proto.params_start) << @intCast(u64, 32)) | @intCast(u64, proto.params_count);
@@ -2801,6 +2837,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                         var sk = self.registry.types_items[@intCast(usize, it)].kind;
                         var tk = self.registry.types_items[@intCast(usize, decl_type)].kind;
                         var level: u8 = 1;
+                        if (semanticAnalyzerFnPtrConvMismatch(self, it, decl_type)) level = 0;
                         if (sk == type_mod.TypeKind.error_union_type and tk == type_mod.TypeKind.error_union_type) {
                             var eu_src = self.registry.eu_items[@intCast(usize, self.registry.types_items[@intCast(usize, it)].payload_idx)];
                             var eu_tgt = self.registry.eu_items[@intCast(usize, self.registry.types_items[@intCast(usize, decl_type)].payload_idx)];

@@ -985,7 +985,9 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
         while (fnt_a < fnt_pc) : (fnt_a += @intCast(usize, 1)) {
             type_mod.xtAppend(env.typereg, fnt_ptypes[fnt_a]);
         }
-        var fnt_tid = type_mod.typeRegistryGetOrCreateFn(env.typereg, fnt_name_id, @intCast(u32, 0), @intCast(u8, 0), @intCast(u8, 0), @intCast(u32, fnt_pstart), @intCast(u16, fnt_pc), fnt_ret_box[0], @intCast(u8, 0));
+        var fnt_conv: u8 = @intCast(u8, 0);
+        if ((node.flags & @intCast(u8, 1)) != @intCast(u8, 0)) fnt_conv = @intCast(u8, 1);
+        var fnt_tid = type_mod.typeRegistryGetOrCreateFn(env.typereg, fnt_name_id, @intCast(u32, 0), @intCast(u8, 0), @intCast(u8, 0), @intCast(u32, fnt_pstart), @intCast(u16, fnt_pc), fnt_ret_box[0], fnt_conv);
         var opm3_m: []const u8 = "OPTVOID:fntT"; pal_mod.markerWriteInt(opm3_m, fnt_tid);
         type_mod.typeRegistryMarkFnPtrUsed(env.typereg, fnt_tid);
         return type_mod.typeRegistryGetOrCreatePtr(env.typereg, fnt_tid, false);

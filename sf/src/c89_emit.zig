@@ -1886,7 +1886,12 @@ fn emitFnPtrType(emitter: *C89Emitter, tid: u32) void {
     var s_td: []const u8 = "typedef "; bufferedWriterWrite(&emitter.writer, s_td);
     var ret_c = getCTypeName(reg, emitter.mangler, fp.return_type);
     bufferedWriterWrite(&emitter.writer, ret_c);
-    var s_op: []const u8 = " (*"; bufferedWriterWrite(&emitter.writer, s_op);
+    var s_op: []const u8 = " ("; bufferedWriterWrite(&emitter.writer, s_op);
+    if ((fp.flags_packed & type_mod.FN_FLAG_STDCALL) != @intCast(u8, 0)) {
+        var cc: []const u8 = "Z98_STDCALL ";
+        bufferedWriterWrite(&emitter.writer, cc);
+    }
+    var s_star: []const u8 = "*"; bufferedWriterWrite(&emitter.writer, s_star);
     var name_c = getCTypeName(reg, emitter.mangler, tid);
     bufferedWriterWrite(&emitter.writer, name_c);
     var s_cp: []const u8 = ")("; bufferedWriterWrite(&emitter.writer, s_cp);
