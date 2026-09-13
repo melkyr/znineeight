@@ -75,6 +75,9 @@ pub const Type = struct {
 
 pub const VOLATILE_FLAG: u8 = 2;
 
+pub const FN_FLAG_VARIADIC: u8 = 1;
+pub const FN_FLAG_STDCALL: u8 = 2;
+
 pub const PtrPayload = struct { base: TypeId };
 pub const ArrayPayload = struct { elem: TypeId, length: u32 };
 pub const SlicePayload = struct { elem: TypeId };
@@ -585,18 +588,22 @@ pub fn typeRegistryGetOrCreateTuple(self: *TypeRegistry, elems_start: u32, elems
     return tid;
 }
 
- pub fn typeRegistryGetOrCreateFn(self: *TypeRegistry, name_id: u32, module_id: u32, is_extern: u8, is_variadic: u8, params_start: u32, params_count: u16, return_type: TypeId) u32 {
+ pub fn typeRegistryGetOrCreateFn(self: *TypeRegistry, name_id: u32, module_id: u32, is_extern: u8, is_variadic: u8, params_start: u32, params_count: u16, return_type: TypeId, call_conv: u8) u32 {
      var p2m: []const u8 = "P2:n"; pal_mod.markerWrite(p2m);
      var p2nb: [20]u8 = undefined; var p2nl = itoa_mod.itoa(name_id, p2nb[0..]); var p2ns: usize = @intCast(usize, 19) - @intCast(usize, p2nl); pal_mod.markerWrite(p2nb[p2ns..@intCast(usize, 19)]);
+     var conv_bit: u8 = @intCast(u8, 0);
+     if (call_conv == @intCast(u8, 1)) conv_bit = FN_FLAG_STDCALL;
      var i: usize = 0;
      while (i < self.types_len) : (i += 1) {
          var it = self.types_items[i];
-         if (it.kind == TypeKind.fn_type and it.name_id == name_id and self.fn_items[self.types_items[i].payload_idx].module_id == module_id) {
+         if (it.kind == TypeKind.fn_type and it.name_id == name_id
+             and self.fn_items[self.types_items[i].payload_idx].module_id == module_id
+             and (self.fn_items[self.types_items[i].payload_idx].flags_packed & FN_FLAG_STDCALL) == conv_bit) {
              var p2hm: []const u8 = "H"; pal_mod.markerWrite(p2hm);
              return @intCast(u32, i);
          }
      }
-     fnAppend(self, FnPayload{ .name_id = name_id, .module_id = module_id, .is_extern = is_extern, .params_start = params_start, .params_count = params_count, .return_type = return_type, .flags_packed = is_variadic });
+     fnAppend(self, FnPayload{ .name_id = name_id, .module_id = module_id, .is_extern = is_extern, .params_start = params_start, .params_count = params_count, .return_type = return_type, .flags_packed = is_variadic | conv_bit });
     var tid = typeRegistryAppend(self, Type{
         .kind = TypeKind.fn_type, .state = @intCast(u8, 2), .flags = @intCast(u8, 0),
         .is_signed = @intCast(u8, 0), .width_bits = @intCast(u8, 0),
@@ -1153,7 +1160,8 @@ pub fn typeRegistryIsAssignable(self: *TypeRegistry, source: TypeId, target: Typ
             if (src_f.return_type == tgt_f.return_type
                 and src_f.params_count == tgt_f.params_count
                 and src_f.is_extern == tgt_f.is_extern
-                and (src_f.flags_packed & @intCast(u8, 1)) == (tgt_f.flags_packed & @intCast(u8, 1)))
+                and (src_f.flags_packed & @intCast(u8, 1)) == (tgt_f.flags_packed & @intCast(u8, 1))
+                and (src_f.flags_packed & @intCast(u8, 2)) == (tgt_f.flags_packed & @intCast(u8, 2)))
             {
                 var ok: bool = true;
                 var fi: u16 = 0;

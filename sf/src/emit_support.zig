@@ -52,6 +52,14 @@ pub fn emitZigCompatHSupport(writer: *BufferedWriter) void {
     c89_mod.bufferedWriterWrite(writer, "#define NULL ((void*)0)\n");
     c89_mod.bufferedWriterWrite(writer, "#endif\n");
     c89_mod.bufferedWriterWrite(writer, "\n");
+    c89_mod.bufferedWriterWrite(writer, "#if !defined(_WIN32)\n");
+    c89_mod.bufferedWriterWrite(writer, "#define Z98_STDCALL\n");
+    c89_mod.bufferedWriterWrite(writer, "#elif defined(_MSC_VER) || defined(__WATCOMC__)\n");
+    c89_mod.bufferedWriterWrite(writer, "#define Z98_STDCALL __stdcall\n");
+    c89_mod.bufferedWriterWrite(writer, "#else\n");
+    c89_mod.bufferedWriterWrite(writer, "#define Z98_STDCALL __attribute__((stdcall))\n");
+    c89_mod.bufferedWriterWrite(writer, "#endif\n");
+    c89_mod.bufferedWriterWrite(writer, "\n");
     c89_mod.bufferedWriterWrite(writer, "#endif /* ZIG_COMPAT_H */\n");
 }
 

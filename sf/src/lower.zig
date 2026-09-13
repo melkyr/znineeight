@@ -6618,6 +6618,7 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
     func_ptr.is_extern = @intCast(u8, if ((node.flags & @intCast(u8, 0x04)) != 0) 1 else 0);
     func_ptr.is_pub = @intCast(u8, if ((node.flags & @intCast(u8, 0x02)) != 0) 1 else 0);
     func_ptr.is_variadic = @intCast(u8, 0);
+    func_ptr.call_conv = proto.call_conv;
     func_ptr.poison_uninit = @intCast(u8, if (self.ctx.safe_checks) 1 else 0);
     var frt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, fn_node);
     if (frt) |frt_id| {

@@ -504,6 +504,7 @@ pub const LirFunction = struct {
     is_extern: u8,
     is_pub: u8,
     is_variadic: u8,
+    call_conv: u8,
     // A17: transports the `-fsafe` `undefined` poison-net decision to the
     // emitter (the "statically-unwritten hoisted temp" dataflow itself stays in
     // the emitter; only the mode decision moves to lowering). Serialized in the

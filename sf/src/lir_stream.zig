@@ -115,6 +115,7 @@ pub fn lirStreamAppend(s: *LirStream, src_fn: LirFunction) LirSlot {
     wU8(s, src_fn.is_extern);
     wU8(s, src_fn.is_pub);
     wU8(s, src_fn.is_variadic);
+    wU8(s, src_fn.call_conv);
     wU8(s, src_fn.poison_uninit); // A17: was pad0 (keep 4-byte alignment)
     wU32(s, @intCast(u32, src_fn.params.len));
     wU32(s, @intCast(u32, src_fn.blocks.len));
@@ -173,6 +174,7 @@ fn emptyLirFunction(dst: *Sand) LirFunction {
         .is_extern = @intCast(u8, 0),
         .is_pub = @intCast(u8, 0),
         .is_variadic = @intCast(u8, 0),
+        .call_conv = @intCast(u8, 0),
         .poison_uninit = @intCast(u8, 0),
     };
 }
@@ -187,6 +189,7 @@ pub fn lirStreamReadFunction(s: *LirStream, slot: LirSlot, dst: *Sand) LirFuncti
     var is_extern = rU8(s);
     var is_pub = rU8(s);
     var is_variadic = rU8(s);
+    var call_conv = rU8(s);
     var poison_uninit = rU8(s);
     var params_count = rU32(s);
     var blocks_count = rU32(s);
@@ -196,7 +199,7 @@ pub fn lirStreamReadFunction(s: *LirStream, slot: LirSlot, dst: *Sand) LirFuncti
     var tvsf_capacity = rU32(s);
     var tvsf_count = rU32(s);
 
-    var expected_len: u32 = @intCast(u32, 44);
+    var expected_len: u32 = @intCast(u32, 45);
     expected_len += params_count * @intCast(u32, @sizeOf(lir_mod.LirParam));
     expected_len += blocks_count * @intCast(u32, 12);
     expected_len += hoisted_temps_count * @intCast(u32, @sizeOf(lir_mod.TempDecl));
@@ -306,6 +309,7 @@ pub fn lirStreamReadFunction(s: *LirStream, slot: LirSlot, dst: *Sand) LirFuncti
         .is_extern = is_extern,
         .is_pub = is_pub,
         .is_variadic = is_variadic,
+        .call_conv = call_conv,
         .poison_uninit = poison_uninit,
     };
 }

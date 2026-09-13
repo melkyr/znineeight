@@ -35,4 +35,12 @@ typedef int bool;
 #define NULL ((void*)0)
 #endif
 
+#if !defined(_WIN32)
+#define Z98_STDCALL
+#elif defined(_MSC_VER) || defined(__WATCOMC__)
+#define Z98_STDCALL __stdcall
+#else
+#define Z98_STDCALL __attribute__((stdcall))
+#endif
+
 #endif /* ZIG_COMPAT_H */

@@ -2131,6 +2131,13 @@ fn mangleLocalName(mangler: *NameMangler, interner: *StringInterner, name_id: u3
     return name;
 }
 
+fn emitCallConv(emitter: *C89Emitter, call_conv: u8) void {
+    if (call_conv == @intCast(u8, 1)) {
+        var cc: []const u8 = "Z98_STDCALL ";
+        bufferedWriterWrite(&emitter.writer, cc);
+    }
+}
+
 pub fn emitFunctionSignature(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     var orig = interner_mod.stringInternerGet(emitter.interner, lir_fn.name_id);
     var is_main: u8 = @intCast(u8, 0);
@@ -2152,6 +2159,8 @@ pub fn emitFunctionSignature(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     bufferedWriterWrite(&emitter.writer, ret_c);
     var sp: []const u8 = " ";
     bufferedWriterWrite(&emitter.writer, sp);
+
+    emitCallConv(emitter, lir_fn.call_conv);
 
     bufferedWriterWrite(&emitter.writer, fn_name);
 
@@ -2201,6 +2210,7 @@ fn emitFunctionForwardDecl(emitter: *C89Emitter, lir_fn: LirFunction) void {
     bufferedWriterWrite(&emitter.writer, ret_c);
     var sp: []const u8 = " ";
     bufferedWriterWrite(&emitter.writer, sp);
+    emitCallConv(emitter, lir_fn.call_conv);
     var fn_mid = nameManglerMangle(emitter.mangler, lir_fn.name_id, @intCast(u8, 0), lir_fn.module_id);
     var fn_name = interner_mod.stringInternerGet(emitter.interner, fn_mid);
     if (lir_fn.is_extern == @intCast(u8, 1)) {
@@ -2415,7 +2425,7 @@ fn emitModuleHeader(emitter: *C89Emitter, name: []const u8, c_includes: []u32) v
     var i: usize = @intCast(usize, 0);
     while (i < emitter.fn_slots_len) : (i += @intCast(usize, 1)) {
         var f = faultIn(emitter, i);
-        if (f.is_extern == @intCast(u8, 0) or f.is_variadic != @intCast(u8, 0)) {
+        if (f.is_extern == @intCast(u8, 0) or f.is_variadic != @intCast(u8, 0) or f.call_conv != @intCast(u8, 0)) {
             emitFunctionForwardDecl(emitter, f);
         }
     }
@@ -2563,7 +2573,7 @@ pub fn emitModuleHeaderFile(emitter: *C89Emitter, module_id: u32, mod_name: []co
     var fi: usize = @intCast(usize, 0);
     while (fi < emitter.fn_slots_len) : (fi += @intCast(usize, 1)) {
         var f = faultIn(emitter, fi);
-        if (f.is_extern == @intCast(u8, 0) or f.is_variadic != @intCast(u8, 0)) {
+        if (f.is_extern == @intCast(u8, 0) or f.is_variadic != @intCast(u8, 0) or f.call_conv != @intCast(u8, 0)) {
             emitFunctionForwardDecl(emitter, f);
         }
     }
