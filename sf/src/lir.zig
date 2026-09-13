@@ -175,6 +175,10 @@ pub const CallDirectData = struct {
     result: u32,
     return_type: u32,
     is_extern: u8,
+    // Track1 Task 3R: callee calling-convention flag (0 or FN_FLAG_STDCALL).
+    // Applied at the use site as a cast to the convention-qualified fn-ptr
+    // typedef; the extern's own prototype is no longer forced.
+    call_conv: u8,
 };
 
 pub const TailCallData = struct {
@@ -186,6 +190,8 @@ pub const TailCallData = struct {
     return_type: u32,
     is_indirect: u8,
     is_extern: u8,
+    // Track1 Task 3R: callee calling-convention flag (0 or FN_FLAG_STDCALL).
+    call_conv: u8,
 };
 
 // Per-fn side table for the 2 wide LirInst variants. LirInst holds the tag

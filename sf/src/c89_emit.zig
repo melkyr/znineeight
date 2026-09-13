@@ -2145,6 +2145,68 @@ fn emitCallConv(emitter: *C89Emitter, call_conv: u8) void {
     }
 }
 
+// Track1 Task 3R: locate the function type of a direct callee from its
+// declaration name/module so the use site can cast to the convention-qualified
+// fn-pointer typedef (`FS_...`). Convention fn types are marked used when the
+// registry creates them (type_registry.zig), so the typedef is always emitted.
+fn findCalleeFnTypeId(emitter: *C89Emitter, name_id: u32, module_id: u32, call_conv: u8) u32 {
+    if (call_conv == @intCast(u8, 0)) return @intCast(u32, 0xFFFFFFFF);
+    var reg = emitter.registry;
+    var want: u8 = call_conv;
+    var i: usize = @intCast(usize, 0);
+    while (i < reg.types_len) : (i += @intCast(usize, 1)) {
+        var it = reg.types_items[i];
+        if (it.kind == TypeKind.fn_type) {
+            var fp = reg.fn_items[@intCast(usize, it.payload_idx)];
+            if (fp.name_id == name_id and fp.module_id == module_id
+                and (fp.flags_packed & type_mod.FN_FLAG_STDCALL) == want) {
+                return @intCast(u32, i);
+            }
+        }
+    }
+    return @intCast(u32, 0xFFFFFFFF);
+}
+
+// Track1 Task 3R: unwrap a temp holding a fn-pointer value to its fn-type id.
+fn tempFnTypeId(emitter: *C89Emitter, temp_id: u32) u32 {
+    var tid = getTempTypeByIndex(emitter, temp_id);
+    if (tid == @intCast(u32, 0xFFFFFFFF)) return tid;
+    var reg = emitter.registry;
+    var ty = reg.types_items[@intCast(usize, tid)];
+    if (ty.kind == TypeKind.ptr_type) {
+        var pp = reg.ptr_items[@intCast(usize, ty.payload_idx)];
+        var base = reg.types_items[@intCast(usize, pp.base)];
+        if (base.kind == TypeKind.fn_type) return pp.base;
+    }
+    if (ty.kind == TypeKind.fn_type) return tid;
+    return @intCast(u32, 0xFFFFFFFF);
+}
+
+// Track1 Task 3R: write a callee expression, wrapping a stdcall extern in a cast
+// to the `FS_...` fn-pointer typedef (`((FS_x)name)`); plain `name` otherwise.
+fn emitCalleeExpr(emitter: *C89Emitter, fn_type_id: u32, name: []const u8) void {
+    if (fn_type_id != @intCast(u32, 0xFFFFFFFF)) {
+        var reg = emitter.registry;
+        var ty = reg.types_items[@intCast(usize, fn_type_id)];
+        if (ty.kind == TypeKind.fn_type) {
+            var fp = reg.fn_items[@intCast(usize, ty.payload_idx)];
+            if ((fp.flags_packed & type_mod.FN_FLAG_STDCALL) != @intCast(u8, 0)) {
+                var cname = getCTypeName(reg, emitter.mangler, fn_type_id);
+                var o1: []const u8 = "((";
+                bufferedWriterWrite(&emitter.writer, o1);
+                bufferedWriterWrite(&emitter.writer, cname);
+                var o2: []const u8 = ")";
+                bufferedWriterWrite(&emitter.writer, o2);
+                bufferedWriterWrite(&emitter.writer, name);
+                var o3: []const u8 = ")";
+                bufferedWriterWrite(&emitter.writer, o3);
+                return;
+            }
+        }
+    }
+    bufferedWriterWrite(&emitter.writer, name);
+}
+
 pub fn emitFunctionSignature(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     var orig = interner_mod.stringInternerGet(emitter.interner, lir_fn.name_id);
     var is_main: u8 = @intCast(u8, 0);
@@ -2432,7 +2494,7 @@ fn emitModuleHeader(emitter: *C89Emitter, name: []const u8, c_includes: []u32) v
     var i: usize = @intCast(usize, 0);
     while (i < emitter.fn_slots_len) : (i += @intCast(usize, 1)) {
         var f = faultIn(emitter, i);
-        if (f.is_extern == @intCast(u8, 0) or f.is_variadic != @intCast(u8, 0) or f.call_conv != @intCast(u8, 0)) {
+        if (f.is_extern == @intCast(u8, 0) or f.is_variadic != @intCast(u8, 0)) {
             emitFunctionForwardDecl(emitter, f);
         }
     }
@@ -2580,7 +2642,7 @@ pub fn emitModuleHeaderFile(emitter: *C89Emitter, module_id: u32, mod_name: []co
     var fi: usize = @intCast(usize, 0);
     while (fi < emitter.fn_slots_len) : (fi += @intCast(usize, 1)) {
         var f = faultIn(emitter, fi);
-        if (f.is_extern == @intCast(u8, 0) or f.is_variadic != @intCast(u8, 0) or f.call_conv != @intCast(u8, 0)) {
+        if (f.is_extern == @intCast(u8, 0) or f.is_variadic != @intCast(u8, 0)) {
             emitFunctionForwardDecl(emitter, f);
         }
     }
@@ -7174,11 +7236,12 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
              var mangled_id = nameManglerMangle(emitter.mangler, c.name_id, @intCast(u8, 0), c.module_id);
              var fn_name = interner_mod.stringInternerGet(emitter.interner, mangled_id);
               if (c.is_extern == @intCast(u8, 1)) { var orig_c = interner_mod.stringInternerGet(emitter.interner, c.name_id); fn_name = orig_c; }
+              var cd_callee_tid = findCalleeFnTypeId(emitter, c.name_id, c.module_id, c.call_conv);
               if (dceTempIsDead(emitter, c.result)) {
                  bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                  var vp: []const u8 = "(void)";
                  bufferedWriterWrite(&emitter.writer, vp);
-                 bufferedWriterWrite(&emitter.writer, fn_name);
+                 emitCalleeExpr(emitter, cd_callee_tid, fn_name);
                  var sp2: []const u8 = "(";
                  bufferedWriterWrite(&emitter.writer, sp2);
                  var ai2: u32 = @intCast(u32, 0);
@@ -7235,7 +7298,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                                 var cd_c1: []const u8 = ")";
                                 bufferedWriterWrite(&emitter.writer, cd_c1);
                             }
-                            bufferedWriterWrite(&emitter.writer, fn_name);
+                            emitCalleeExpr(emitter, cd_callee_tid, fn_name);
                             var sp: []const u8 = "(";
                             bufferedWriterWrite(&emitter.writer, sp);
                             var ai: u32 = @intCast(u32, 0);
@@ -7258,7 +7321,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                             var l1: []const u8 = ".has_value = 1;\n";
                             bufferedWriterWrite(&emitter.writer, l1);
                             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-                            bufferedWriterWrite(&emitter.writer, fn_name);
+                            emitCalleeExpr(emitter, cd_callee_tid, fn_name);
                             var sp: []const u8 = "(";
                             bufferedWriterWrite(&emitter.writer, sp);
                             var ai: u32 = @intCast(u32, 0);
@@ -7277,9 +7340,9 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                        if (wrap_pay_void == @intCast(u8, 0)) {
                            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                            bufferedWriterWrite(&emitter.writer, result);
-                           var l2: []const u8 = ".data.payload = ";
-                           bufferedWriterWrite(&emitter.writer, l2);
-                           bufferedWriterWrite(&emitter.writer, fn_name);
+                            var l2: []const u8 = ".data.payload = ";
+                            bufferedWriterWrite(&emitter.writer, l2);
+                            emitCalleeExpr(emitter, cd_callee_tid, fn_name);
                            var sp: []const u8 = "(";
                            bufferedWriterWrite(&emitter.writer, sp);
                            var ai: u32 = @intCast(u32, 0);
@@ -7291,7 +7354,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                            bufferedWriterWrite(&emitter.writer, s2);
                        } else {
                            bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-                           bufferedWriterWrite(&emitter.writer, fn_name);
+                           emitCalleeExpr(emitter, cd_callee_tid, fn_name);
                            var sp: []const u8 = "(";
                            bufferedWriterWrite(&emitter.writer, sp);
                            var ai: u32 = @intCast(u32, 0);
@@ -7308,10 +7371,10 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                 var result = resolveTempName(emitter, c.result);
                 bufferedWriterWrite(&emitter.writer, result);
                 var s: []const u8 = " = ";
-                bufferedWriterWrite(&emitter.writer, s);
-            }
-            bufferedWriterWrite(&emitter.writer, fn_name);
-            var sp: []const u8 = "(";
+                 bufferedWriterWrite(&emitter.writer, s);
+             }
+             emitCalleeExpr(emitter, cd_callee_tid, fn_name);
+             var sp: []const u8 = "(";
             bufferedWriterWrite(&emitter.writer, sp);
             var ai: u32 = @intCast(u32, 0);
             while (ai < c.args_count) : (ai += @intCast(u32, 1)) {
@@ -7338,6 +7401,10 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                 var orig_c = interner_mod.stringInternerGet(emitter.interner, tc.callee);
                 fn_name = orig_c;
             }
+            var tc_callee_tid: u32 = @intCast(u32, 0xFFFFFFFF);
+            if (tc.is_indirect == @intCast(u8, 0)) {
+                tc_callee_tid = findCalleeFnTypeId(emitter, tc.callee, tc.module_id, tc.call_conv);
+            }
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             if (tc.return_type != type_mod.TYPE_VOID) {
                 var result = resolveTempName(emitter, tc.result);
@@ -7345,7 +7412,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                 var eq: []const u8 = " = ";
                 bufferedWriterWrite(&emitter.writer, eq);
             }
-            bufferedWriterWrite(&emitter.writer, fn_name);
+            emitCalleeExpr(emitter, tc_callee_tid, fn_name);
             var op: []const u8 = "(";
             bufferedWriterWrite(&emitter.writer, op);
             var ai: u32 = @intCast(u32, 0);
@@ -7910,9 +7977,22 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             bufferedWriterWrite(&emitter.writer, fr_result);
             var fr_eq: []const u8 = " = ";
             bufferedWriterWrite(&emitter.writer, fr_eq);
-            var fr_mangled = nameManglerMangle(emitter.mangler, fr.name_id, @intCast(u8, 0), fr.module_id);
-            var fr_name = interner_mod.stringInternerGet(emitter.interner, fr_mangled);
-            bufferedWriterWrite(&emitter.writer, fr_name);
+            var fr_tid = tempFnTypeId(emitter, fr.result);
+            var fr_is_extern: u8 = @intCast(u8, 0);
+            if (fr_tid != @intCast(u32, 0xFFFFFFFF)) {
+                var fr_ty = emitter.registry.types_items[@intCast(usize, fr_tid)];
+                if (fr_ty.kind == TypeKind.fn_type) {
+                    fr_is_extern = emitter.registry.fn_items[@intCast(usize, fr_ty.payload_idx)].is_extern;
+                }
+            }
+            var fr_name: []const u8 = undefined;
+            if (fr_is_extern != @intCast(u8, 0)) {
+                fr_name = interner_mod.stringInternerGet(emitter.interner, fr.name_id);
+            } else {
+                var fr_mangled = nameManglerMangle(emitter.mangler, fr.name_id, @intCast(u8, 0), fr.module_id);
+                fr_name = interner_mod.stringInternerGet(emitter.interner, fr_mangled);
+            }
+            emitCalleeExpr(emitter, fr_tid, fr_name);
             var fr_semi: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, fr_semi);
         },

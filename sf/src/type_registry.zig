@@ -600,6 +600,7 @@ pub fn typeRegistryGetOrCreateTuple(self: *TypeRegistry, elems_start: u32, elems
              and self.fn_items[self.types_items[i].payload_idx].module_id == module_id
              and (self.fn_items[self.types_items[i].payload_idx].flags_packed & FN_FLAG_STDCALL) == conv_bit) {
              var p2hm: []const u8 = "H"; pal_mod.markerWrite(p2hm);
+             if (conv_bit != @intCast(u8, 0)) { self.types_items[i].flags = self.types_items[i].flags | @intCast(u8, 1); }
              return @intCast(u32, i);
          }
      }
@@ -611,6 +612,7 @@ pub fn typeRegistryGetOrCreateTuple(self: *TypeRegistry, elems_start: u32, elems
         .name_id = name_id, .c_name_id = @intCast(u32, 0),
         .module_id = @intCast(u32, 0), .payload_idx = @intCast(u32, self.fn_len - @intCast(usize, 1)),
     });
+    if (conv_bit != @intCast(u8, 0)) { self.types_items[@intCast(usize, tid)].flags = self.types_items[@intCast(usize, tid)].flags | @intCast(u8, 1); }
     var p2sb: [20]u8 = undefined; var p2sl = itoa_mod.itoa(tid, p2sb[0..]); var p2ss: usize = @intCast(usize, 19) - @intCast(usize, p2sl); pal_mod.markerWrite(p2sb[p2ss..@intCast(usize, 19)]);
     var p2nl2: []const u8 = "\n"; pal_mod.markerWrite(p2nl2);
     return tid;
