@@ -1411,7 +1411,7 @@ pub fn parserParseStatement(self: *Parser) ParserError!u32 {
     if (tok.kind == TokenKind.kw_pub) return parserParsePubDecl(self);
     if (tok.kind == TokenKind.kw_extern) return parserParseExternDecl(self, false);
     if (tok.kind == TokenKind.kw_export) return parserParseExportDecl(self, false);
-    if (tok.kind == TokenKind.kw_fn) return parserParseFnDecl(self, false, false, false, false);
+    if (tok.kind == TokenKind.kw_fn) return parserParseFnDecl(self, false, false, false, false, CALL_CONV_CDECL);
     if (tok.kind == TokenKind.kw_if) return parserParseIfStmt(self);
     if (tok.kind == TokenKind.kw_while) return parserParseWhileStmt(self);
     if (tok.kind == TokenKind.kw_for) return parserParseForStmt(self);
@@ -1539,7 +1539,7 @@ fn parserParseVarDecl(self: *Parser, is_mutable: bool, is_pub: bool, is_extern: 
 fn parserParsePubDecl(self: *Parser) ParserError!u32 {
     _ = parserAdvance(self);
     var tok = parserPeek(self);
-    if (tok.kind == TokenKind.kw_fn) return parserParseFnDecl(self, true, false, false, false);
+    if (tok.kind == TokenKind.kw_fn) return parserParseFnDecl(self, true, false, false, false, CALL_CONV_CDECL);
     if (tok.kind == TokenKind.kw_const) return parserParseVarDecl(self, false, true, false, false);
     if (tok.kind == TokenKind.kw_var) return parserParseVarDecl(self, true, true, false, false);
     if (tok.kind == TokenKind.kw_test) return parserParseTestDecl(self);
@@ -1549,13 +1549,39 @@ fn parserParsePubDecl(self: *Parser) ParserError!u32 {
     parserAddError(self, tok, p_msg);
     return error.UnexpectedToken;
 }
+const CALL_CONV_CDECL: u8 = 0;
+const CALL_CONV_STDCALL: u8 = 1;
+const CALL_CONV_INVALID: u8 = 2;
+
+fn parserClassifyCallConv(self: *Parser, text: []const u8) u8 {
+    if (text.len == 1 and text[0] == 'c') return CALL_CONV_CDECL;
+    if (text.len == 5 and text[0] == 'c' and text[1] == 'd' and text[2] == 'e'
+        and text[3] == 'c' and text[4] == 'l') return CALL_CONV_CDECL;
+    if (text.len == 7 and text[0] == 's' and text[1] == 't' and text[2] == 'd'
+        and text[3] == 'c' and text[4] == 'a' and text[5] == 'l'
+        and text[6] == 'l') return CALL_CONV_STDCALL;
+    return CALL_CONV_INVALID;
+}
+
+pub fn parserAddErrorCode(self: *Parser, tok: Token, code: u16, msg: []const u8) void {
+    diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), code,
+        self.file_id, tok.span_start, tok.span_start + @intCast(u32, tok.span_len), msg);
+}
 fn parserParseExternDecl(self: *Parser, is_pub: bool) ParserError!u32 {
     _ = parserAdvance(self);
+    var call_conv: u8 = CALL_CONV_CDECL;
     if (parserPeek(self).kind == TokenKind.string_literal) {
-        _ = parserAdvance(self);
+        var str_tok = parserAdvance(self);
+        var text = string_interner_mod.stringInternerGet(self.interner, str_tok.value.string_id);
+        call_conv = parserClassifyCallConv(self, text);
+        if (call_conv == CALL_CONV_INVALID) {
+            var ucv: []const u8 = "unknown calling convention in `extern`";
+            parserAddErrorCode(self, str_tok, 3045, ucv);
+            call_conv = CALL_CONV_CDECL;
+        }
     }
     var tok = parserPeek(self);
-    if (tok.kind == TokenKind.kw_fn) return parserParseFnDecl(self, is_pub, true, false, false);
+    if (tok.kind == TokenKind.kw_fn) return parserParseFnDecl(self, is_pub, true, false, false, call_conv);
     if (tok.kind == TokenKind.kw_const) return parserParseVarDecl(self, false, is_pub, true, false);
     if (tok.kind == TokenKind.kw_var) return parserParseVarDecl(self, true, is_pub, true, false);
     var e_msg: []const u8 = "expected fn/const/var after extern";
@@ -1565,14 +1591,14 @@ fn parserParseExternDecl(self: *Parser, is_pub: bool) ParserError!u32 {
 fn parserParseExportDecl(self: *Parser, is_pub: bool) ParserError!u32 {
     _ = parserAdvance(self);
     var tok = parserPeek(self);
-    if (tok.kind == TokenKind.kw_fn) return parserParseFnDecl(self, is_pub, false, false, true);
+    if (tok.kind == TokenKind.kw_fn) return parserParseFnDecl(self, is_pub, false, false, true, CALL_CONV_CDECL);
     if (tok.kind == TokenKind.kw_const) return parserParseVarDecl(self, false, is_pub, false, true);
     if (tok.kind == TokenKind.kw_var) return parserParseVarDecl(self, true, is_pub, false, true);
     var x_msg: []const u8 = "expected fn/const/var after export";
     parserAddError(self, tok, x_msg);
     return error.UnexpectedToken;
 }
-fn parserParseFnDecl(self: *Parser, is_pub: bool, is_extern: bool, is_test: bool, is_export: bool) ParserError!u32 {
+fn parserParseFnDecl(self: *Parser, is_pub: bool, is_extern: bool, is_test: bool, is_export: bool, call_conv: u8) ParserError!u32 {
     var fmsg: []const u8 = "Fv"; pal.markerWrite(fmsg);
     var kw = parserAdvance(self);
     var flags: u8 = 0;
@@ -1645,7 +1671,7 @@ fn parserParseFnDecl(self: *Parser, is_pub: bool, is_extern: bool, is_test: bool
     pal.markerWrite(pa_buf[pa_start .. @intCast(usize, 19)]);
     var pnl: []const u8 = "\n";
     pal.markerWrite(pnl);
-    var proto: FnProto = FnProto{ .name_id = name_id, .params_start = param_start, .params_count = param_count, .return_type_node = ret_type_node };
+    var proto: FnProto = FnProto{ .name_id = name_id, .params_start = param_start, .params_count = param_count, .call_conv = call_conv, .return_type_node = ret_type_node };
     var proto_idx: u32 = ast_mod.astStoreAddFnProto(self.store, proto);
     self.child_buf_len = 0;
     var fok: []const u8 = "Fk"; pal.markerWrite(fok);

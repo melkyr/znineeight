@@ -130,6 +130,7 @@ pub const FnProto = struct {
     name_id: u32,
     params_start: u32,
     params_count: u16,
+    call_conv: u8,
     return_type_node: u32,
 };
 
