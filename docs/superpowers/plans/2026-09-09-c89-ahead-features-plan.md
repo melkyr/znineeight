@@ -813,3 +813,17 @@ byte-identical** and corpus zero-fallout; battery golden 9/9 + matrix 21/21; str
 TokenKind shift). ONE commit: `feat: c89-ahead — volatile pointer qualifier + qualifier safety (C89AHEAD)`;
 report `## A10F` + ledger + mnemoria per convention.
 
+---
+
+## AMENDMENT 9 — Review scope: skip A10F re-review; documentation tasks are doc-only (2026-09-10)
+
+> Operator ruling (2026-09-10).
+
+1. **A10F re-review is SKIPPED.** A10F's review found a Critical (`*volatile [N]T → []T` drop) + Importants;
+   the fix (`60e60df9`) is accepted on the implementer's evidence without a separate re-review. The full
+   battery + whole-branch review at **A12** covers A10F (and A7F/A8F/A9F-a/A9F-b/A10F) retroactively.
+2. **Documentation tasks (A11I/A11F) reviews are DOC-ONLY.** Because A11 changes only docs (no compiler
+   graph), its task reviews verify document accuracy/consistency and must **not** run the full
+   battery/N-hop/4-MD5 gate; those run once in **A12**. A11F may still run `check_emit_support.sh` or a
+   targeted doc/build-script sanity check if the docs it edits touch a recipe, but no compiler-wide battery.
+
