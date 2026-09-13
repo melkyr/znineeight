@@ -164,7 +164,6 @@ pub fn classifyCoercion(reg: *type_mod.TypeRegistry, source: TypeId, target: Typ
     if (src.kind == type_mod.TypeKind.ptr_type and tgt.kind == type_mod.TypeKind.many_ptr_type) {
         var sp = reg.ptr_items[@intCast(usize, src.payload_idx)];
         var tp = reg.ptr_items[@intCast(usize, tgt.payload_idx)];
-        if (sp.base == tp.base) return CoercionKind.none;
         var spo = reg.types_items[@intCast(usize, sp.base)];
         if (spo.kind == type_mod.TypeKind.array_type) {
             var arr = reg.array_items[@intCast(usize, spo.payload_idx)];

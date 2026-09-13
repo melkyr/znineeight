@@ -101,7 +101,12 @@ pub fn frontResolveModuleInits(ct: *FrontResCtx) void {
                             if (ref_sym) |rs| {
                                 if (rs.kind == sym_mod.SymbolKind.type_alias) {
                                     var own_sym = sym_mod.symbolRegistryQualifiedLookup(ct.symbol_reg, mods[mi].id, ast_mod.astStoreNodePayload(ct.store, decls[di]));
-                                    if (own_sym) |os| { os.kind = sym_mod.SymbolKind.type_alias; }
+                                    if (own_sym) |os| {
+                                        if (os.kind != sym_mod.SymbolKind.type_alias) {
+                                            os.kind = sym_mod.SymbolKind.type_alias;
+                                            changed = @intCast(u8, 1);
+                                        }
+                                    }
                                 }
                             }
                         }

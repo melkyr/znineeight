@@ -1221,7 +1221,6 @@ pub fn typeRegistryIsAssignable(self: *TypeRegistry, source: TypeId, target: Typ
     if (src.kind == TypeKind.ptr_type and tgt.kind == TypeKind.many_ptr_type) {
         var sp: PtrPayload = self.ptr_items[@intCast(usize, src.payload_idx)];
         var tp: PtrPayload = self.ptr_items[@intCast(usize, tgt.payload_idx)];
-        if (sp.base == tp.base) return true;
         var spo = self.types_items[@intCast(usize, sp.base)];
         if (spo.kind == TypeKind.array_type) {
             var arr: ArrayPayload = self.array_items[@intCast(usize, spo.payload_idx)];

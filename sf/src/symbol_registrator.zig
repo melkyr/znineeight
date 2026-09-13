@@ -11,6 +11,7 @@ const TypeKind = type_mod.TypeKind;
 const hash_mod = @import("util/hash.zig");
 const pal_mod = @import("pal.zig");
 const itoa_mod = @import("util/itoa.zig");
+const interner_mod = @import("string_interner.zig");
 const type_resolver = @import("type_resolver.zig");
 
 pub const DepEdge = struct { from: u32, to: u32 };
@@ -286,6 +287,23 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                         sym_type_id = ct;
                         sym_kind = sym_mod.SymbolKind.type_alias;
                         sym_mod_id = mod_id;
+                    } else {
+                        // Arbitrary-width integer aliases (`const T = u7`) are not
+                        // cached at registration time — the arb-int TypeId is built
+                        // lazily by resolveTypeExprFull. Resolve it here so the alias
+                        // registers as a type (in-module and cross-module `pub`).
+                        var arb_u: bool = false;
+                        var ident_text = interner_mod.stringInternerGet(type_reg.interner, ident_name_id);
+                        if (type_mod.parseArbIntWidth(ident_text, &arb_u) != @intCast(u32, 0)) {
+                            var arb_tid = type_mod.typeRegistryGetOrCreateArbInt(type_reg, ident_text);
+                            if (arb_tid != type_mod.TYPE_UNDEFINED) {
+                                var atk: u64 = @intCast(u64, mod_id) * @intCast(u64, 4294967296) + @intCast(u64, name_id);
+                                type_mod.nameCachePut(type_reg, atk, arb_tid);
+                                sym_type_id = arb_tid;
+                                sym_kind = sym_mod.SymbolKind.type_alias;
+                                sym_mod_id = mod_id;
+                            }
+                        }
                     }
                 } else if (init_node.kind == AstKind.array_type or init_node.kind == AstKind.slice_type or init_node.kind == AstKind.many_ptr_type) {
                     var at_m: []const u8 = "AT:p"; pal_mod.markerWriteInt(at_m, name_id);
