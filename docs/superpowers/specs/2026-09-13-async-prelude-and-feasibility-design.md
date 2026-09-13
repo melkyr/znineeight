@@ -443,3 +443,27 @@ anchors. None remain open.
    silently ignored), so the async `defer` rule is a new additive check (reuse
    `ERR_3019` or revive `ERR_4002`); the general ban is a separate hardening item, not a
    prerequisite. (Task 2 §6.2)
+
+## 16. Implementation subspecs and plans (execution order)
+
+The feasibility spike (this spec + `docs/superpowers/plans/2026-09-13-async-prelude-and-feasibility-plan.md`) is complete. Implementation is split into four independently testable tracks, each with its own subspec derived from this spec and its own amendable plan. Execute in order; each plan's `Sequence` line names the previous and the next plan.
+
+| # | Subspec | Plan | Depends on |
+|---|---|---|---|
+| 1 | [`2026-09-13-win9x-calling-convention-design.md`](./2026-09-13-win9x-calling-convention-design.md) | [`2026-09-13-win9x-calling-convention-plan.md`](../plans/2026-09-13-win9x-calling-convention-plan.md) | — |
+| 2 | [`2026-09-13-async-compiler-core-design.md`](./2026-09-13-async-compiler-core-design.md) | [`2026-09-13-async-compiler-core-plan.md`](../plans/2026-09-13-async-compiler-core-plan.md) | Track 1 (call-convention surface) |
+| 3 | [`2026-09-13-std-async-design.md`](./2026-09-13-std-async-design.md) | [`2026-09-13-std-async-plan.md`](../plans/2026-09-13-std-async-plan.md) | Track 2 (builtins/frame surface) |
+| 4 | [`2026-09-13-coroutine-integration-design.md`](./2026-09-13-coroutine-integration-design.md) | [`2026-09-13-coroutine-integration-plan.md`](../plans/2026-09-13-coroutine-integration-plan.md) | Track 3 (`std.async`) |
+
+Chain: **1 → 2 → 3 → 4.** Tracks 1 and 2 move the compiler fixed point (N-hop + seed rotation in their closeout tasks); Track 3 changes the seed `lib/` (8 → 9 std files) without moving the fixed point; Track 4 is examples-only (no fixed point / seed movement).
+
+### 16.1 Cross-track reconciliations owed before advancing
+
+Surfaced by the four authoring passes; each must be resolved in the owning subspec/plan (or here) before the dependent track starts. None changes the Go verdict.
+
+1. **`Context` ABI ownership (Track 2 vs Track 3).** Track 2's plan treats `Context` as opaque and emits inline pool reads; Track 3 pins a `{pool, capacity, used, oom}` layout. Decide one owner before Track 3. Preferred: pool primitives as runtime helpers so the compiler does not depend on the `Context` layout (consistent with the backend-neutral helper precedent), with Track 3 `std.async.Context` the caller-facing struct.
+2. **`fn_ptr_struct_field` status.** Spike report §5.2 recorded it as an open gap; Track 3 reports it CLOSED at `1467d932`. Re-verify at the fixed point in force when Track 3 starts and amend the Track-3 `Task.step` decision.
+3. **`std.async` value-position gap.** Bare `@import("std")` + `std.async.Task{...}` / `std.async.TaskState.ready` hits pre-existing `error[3042]` + `warning[3023]`. Track 3 must keep those usages as functions/types only, or a compiler follow-up adds value-position re-export support (operator ruling needed).
+4. **`@asyncInit` `args` ABI.** Track 2 pins a caller struct pointer (`?*const void`, null for zero params); Track 3 must adopt it.
+5. **Shared `ErrorCode` band.** Tracks 1 and 2 both append explicit-valued members (Track 1 `ERR_3045`; Track 2 `ERR_3017/3018/3019/3046`). Order-independent because every member is `= NNNN`; both subspecs keep the explicit-value discipline.
+6. **Track ordering.** Track 3's hand-written step fixtures need no `@async*` builtins, so it may start before Track 2 lands; if Track 2 lands first, Track 3 records the new fixed point/seed at its Task 1. Track 4 depends on Track 3.
