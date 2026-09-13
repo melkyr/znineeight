@@ -824,7 +824,9 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
         var fpos: usize = @intCast(usize, 0);
         fbuf[0] = @intCast(u8, 70);
         fbuf[2] = @intCast(u8, 95);
-        if ((ty.flags & @as(u32, 1)) != @as(u32, 0)) {
+        if ((fpp.flags_packed & type_mod.FN_FLAG_STDCALL) != @intCast(u8, 0)) {
+            fbuf[1] = @intCast(u8, 83);
+        } else if ((ty.flags & @as(u32, 1)) != @as(u32, 0)) {
             fbuf[1] = @intCast(u8, 80);
         } else {
             fbuf[1] = @intCast(u8, 78);
