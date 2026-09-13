@@ -10,8 +10,12 @@ pub fn Random_init(seed: u32) Random {
 }
 
 pub fn Random_next(self: *Random) u32 {
-    // Numerical Recipes constants - C89 safe
-    self.seed = self.seed * 1103515245 + 12345;
+    // A6F (C89-AHEAD) migration: the LCG update `seed * 1103515245 + 12345`
+    // relies on u32 two's-complement wrapping. Under the default `-fsafe` mode
+    // that is an intentional integer-overflow trap, so the expression is
+    // migrated to the explicit wrap ops `*%`/`+%` to preserve the previous
+    // wrapping behavior (mirrors examples/z98/rogue_mud/lib/rng.zig).
+    self.seed = self.seed *% 1103515245 +% 12345;
     return (self.seed >> 16) & 0x7FFF;
 }
 
