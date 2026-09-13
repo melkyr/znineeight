@@ -646,3 +646,9 @@ git commit -m "chore(callconv): Track1 closeout — new fixed point, seed rotati
 ## Amendments
 
 This plan is amendable in place. Any deviation discovered during execution is recorded here as an explicit amendment (date, task, reason, decision) and, where it changes a task's deliverable, the affected task body is edited rather than appended. No `TBD`/`TODO` markers are permitted in amendments; each must state the concrete change and its verification.
+
+### Amendment 1 — 2026-09-13 (Task 2, Step 7 byte-identity gate)
+
+**Reason:** Step 7's literal command `diff -r --exclude='*.sh' --exclude='*.bat' /tmp/base_emit /tmp/new_emit; echo "diff rc=$?"` cannot produce `diff rc=0` by construction. Step 4 unconditionally appends the `Z98_STDCALL` macro to `sf/src/include/zig_compat.h` and to the embedded bytes in `sf/src/emit_support.zig`, so every emission's `zig_compat.h` necessarily differs from the pre-Task-2 baseline (and `scripts/check_emit_support.sh` requires exactly that file to now carry the macro). Separately, the transient `.zig1_lir.tmp` differs because Step 3 adds one serialized `call_conv` byte to every LIR function record (write/read kept symmetric).
+
+**Decision:** The Step 7 gate is re-interpreted as *program-emission* byte-identity: `diff -r -x '*.sh' -x '*.bat' -x 'zig_compat.h' -x '.zig1_*.tmp' /tmp/base_emit /tmp/new_emit` must be `rc=0`, and `scripts/check_emit_support.sh /tmp/cc2/zig1_5_clean` must pass. Verification (2026-09-13): the excluded diff is `rc=0`; the only files differing from baseline are the two intentional ones (`zig_compat.h`, `.zig1_lir.tmp`); `check_emit_support.sh` reports `OK: 5/5 support files byte-identical to canonical`. No source behavior is changed by this amendment.
