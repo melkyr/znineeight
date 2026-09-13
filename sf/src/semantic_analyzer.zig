@@ -1213,6 +1213,13 @@ fn semanticAnalyzerVolatileDrop(self: *SemanticAnalyzer, src_type: u32, dst_type
     if ((s.flags & type_mod.VOLATILE_FLAG) == @intCast(u8, 0)) return false;
     if (s.kind == type_mod.TypeKind.ptr_type) {
         var sp = self.registry.ptr_items[@intCast(usize, s.payload_idx)];
+        var sp_base_eff = sp.base;
+        if (@intCast(usize, sp.base) < self.registry.types_len) {
+            var sp_pointee = self.registry.types_items[@intCast(usize, sp.base)];
+            if (sp_pointee.kind == type_mod.TypeKind.array_type) {
+                sp_base_eff = self.registry.array_items[@intCast(usize, sp_pointee.payload_idx)].elem;
+            }
+        }
         if (d.kind == type_mod.TypeKind.ptr_type) {
             var dp = self.registry.ptr_items[@intCast(usize, d.payload_idx)];
             if ((d.flags & type_mod.VOLATILE_FLAG) != @intCast(u8, 0)) return false;
@@ -1221,12 +1228,12 @@ fn semanticAnalyzerVolatileDrop(self: *SemanticAnalyzer, src_type: u32, dst_type
         if (d.kind == type_mod.TypeKind.many_ptr_type) {
             var dp2 = self.registry.ptr_items[@intCast(usize, d.payload_idx)];
             if ((d.flags & type_mod.VOLATILE_FLAG) != @intCast(u8, 0)) return false;
-            return sp.base == dp2.base;
+            return sp_base_eff == dp2.base;
         }
         if (d.kind == type_mod.TypeKind.slice_type) {
             var ds = self.registry.slice_items[@intCast(usize, d.payload_idx)];
             if ((d.flags & type_mod.VOLATILE_FLAG) != @intCast(u8, 0)) return false;
-            return sp.base == ds.elem or (sp.base == type_mod.TYPE_C_CHAR and ds.elem == type_mod.TYPE_U8) or (sp.base == type_mod.TYPE_U8 and ds.elem == type_mod.TYPE_C_CHAR);
+            return sp_base_eff == ds.elem or (sp_base_eff == type_mod.TYPE_C_CHAR and ds.elem == type_mod.TYPE_U8) or (sp_base_eff == type_mod.TYPE_U8 and ds.elem == type_mod.TYPE_C_CHAR);
         }
         if (d.kind == type_mod.TypeKind.optional_type) {
             var opt = self.registry.opt_items[@intCast(usize, d.payload_idx)];
@@ -1289,6 +1296,22 @@ fn semanticAnalyzerPtrCastDropsVolatile(self: *SemanticAnalyzer, src_type: u32, 
     if (!(d.kind == type_mod.TypeKind.ptr_type or d.kind == type_mod.TypeKind.many_ptr_type)) return false;
     if ((s.flags & type_mod.VOLATILE_FLAG) == @intCast(u8, 0)) return false;
     return (d.flags & type_mod.VOLATILE_FLAG) == @intCast(u8, 0);
+}
+
+fn semanticAnalyzerVolatileCastValid(self: *SemanticAnalyzer, src_type: u32, dst_type: u32) bool {
+    if (src_type == @intCast(u32, 0) or dst_type == @intCast(u32, 0)) return false;
+    if (src_type == type_mod.TYPE_UNDEFINED or dst_type == type_mod.TYPE_UNDEFINED) return false;
+    if (@intCast(usize, src_type) >= self.registry.types_len) return false;
+    if (@intCast(usize, dst_type) >= self.registry.types_len) return false;
+    var s = self.registry.types_items[@intCast(usize, src_type)];
+    var d = self.registry.types_items[@intCast(usize, dst_type)];
+    if (!(s.kind == type_mod.TypeKind.ptr_type or s.kind == type_mod.TypeKind.many_ptr_type)) return false;
+    if (!(d.kind == type_mod.TypeKind.ptr_type or d.kind == type_mod.TypeKind.many_ptr_type)) return false;
+    if ((s.flags & type_mod.VOLATILE_FLAG) == @intCast(u8, 0)) return false;
+    if ((d.flags & type_mod.VOLATILE_FLAG) != @intCast(u8, 0)) return false;
+    var sp = self.registry.ptr_items[@intCast(usize, s.payload_idx)];
+    var dp = self.registry.ptr_items[@intCast(usize, d.payload_idx)];
+    return sp.base == dp.base;
 }
 
 fn tryRecordCoercion(self: *SemanticAnalyzer, src_node: u32, src_type: u32, dst_type: u32) void {
@@ -2161,8 +2184,14 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                 result = type_resolver.resolveTypeExprFull(&tre_env, ec[@intCast(usize, 0)], @intCast(u32, 0));
                 if (node.child_0 == self.ptrcast_name_id and tv_src != type_mod.TYPE_UNDEFINED and result != type_mod.TYPE_UNDEFINED) {
                     if (semanticAnalyzerPtrCastDropsVolatile(self, tv_src, result)) {
-                        var pcq_msg: []const u8 = "cannot implicitly discard 'volatile' qualifier; use @volatileCast to remove it";
+                        var pcq_msg: []const u8 = "@ptrCast cannot discard the 'volatile' qualifier; use @volatileCast to remove it";
                         _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), pcq_msg);
+                    }
+                }
+                if (node.child_0 == self.volatilecast_name_id and tv_src != type_mod.TYPE_UNDEFINED and result != type_mod.TYPE_UNDEFINED) {
+                    if (!semanticAnalyzerVolatileCastValid(self, tv_src, result)) {
+                        var vcc_msg: []const u8 = "@volatileCast requires a volatile pointer source and a destination with the same base type";
+                        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), vcc_msg);
                     }
                 }
             } else {
@@ -2763,7 +2792,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                     } else {
                     var ck = coercion_mod.classifyCoercion(self.registry, it_eff, decl_type);
                     var ckv_m: []const u8 = "CCK:vr"; pal_mod.markerWriteInt(ckv_m, @intCast(u32, @enumToInt(ck)));
-                    if (ck != coercion_mod.CoercionKind.none) {
+                    if (ck != coercion_mod.CoercionKind.none and type_mod.typeRegistryIsAssignable(self.registry, it_eff, decl_type)) {
                         coercion_mod.coercionTableAdd(self.coercion_table, node.child_1, ck, decl_type);
                     } else if (it != type_mod.TYPE_UNDEFINED and !type_mod.typeRegistryIsAssignable(self.registry, it, decl_type)) {
                         var sp = node.span_start;

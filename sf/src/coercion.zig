@@ -126,8 +126,8 @@ pub fn classifyCoercion(reg: *type_mod.TypeRegistry, source: TypeId, target: Typ
         var tgt_pp = reg.ptr_items[@intCast(usize, tgt.payload_idx)];
         var src_pp = reg.ptr_items[@intCast(usize, src.payload_idx)];
         var qok = type_mod.pointerQualifiersMonotone(src.flags, tgt.flags, type_mod.VOLATILE_FLAG);
-        if (tgt_pp.base == type_mod.TYPE_VOID) return CoercionKind.none;
-        if (src_pp.base == type_mod.TYPE_VOID) return CoercionKind.none;
+        if (tgt_pp.base == type_mod.TYPE_VOID and qok) return CoercionKind.none;
+        if (src_pp.base == type_mod.TYPE_VOID and qok) return CoercionKind.none;
         if ((tgt.flags & @intCast(u8, 1)) != @intCast(u8, 0) and (src.flags & @intCast(u8, 1)) == @intCast(u8, 0)) {
             if (src_pp.base == tgt_pp.base and qok) return CoercionKind.const_qualify;
         }
@@ -149,15 +149,17 @@ pub fn classifyCoercion(reg: *type_mod.TypeRegistry, source: TypeId, target: Typ
         }
     }
     if (src.kind == type_mod.TypeKind.array_type and tgt.kind == type_mod.TypeKind.slice_type) {
+        var qok = type_mod.pointerQualifiersMonotone(src.flags, tgt.flags, type_mod.VOLATILE_FLAG);
         var arr = reg.array_items[@intCast(usize, src.payload_idx)];
         var sl = reg.slice_items[@intCast(usize, tgt.payload_idx)];
-        if (arr.elem == sl.elem) return CoercionKind.array_to_slice;
-        if ((tgt.flags & @intCast(u8, 1)) != @intCast(u8, 0) and arr.elem == sl.elem) return CoercionKind.array_to_slice;
+        if (arr.elem == sl.elem and qok) return CoercionKind.array_to_slice;
+        if ((tgt.flags & @intCast(u8, 1)) != @intCast(u8, 0) and arr.elem == sl.elem and qok) return CoercionKind.array_to_slice;
     }
     if (src.kind == type_mod.TypeKind.array_type and tgt.kind == type_mod.TypeKind.many_ptr_type) {
+        var qok = type_mod.pointerQualifiersMonotone(src.flags, tgt.flags, type_mod.VOLATILE_FLAG);
         var arr = reg.array_items[@intCast(usize, src.payload_idx)];
         var pp = reg.ptr_items[@intCast(usize, tgt.payload_idx)];
-        if (arr.elem == pp.base) return CoercionKind.array_to_many_ptr;
+        if (arr.elem == pp.base and qok) return CoercionKind.array_to_many_ptr;
     }
     if (src.kind == type_mod.TypeKind.array_type and tgt.kind == type_mod.TypeKind.array_type) {
         var s_arr = reg.array_items[@intCast(usize, src.payload_idx)];
@@ -165,18 +167,20 @@ pub fn classifyCoercion(reg: *type_mod.TypeRegistry, source: TypeId, target: Typ
         if (s_arr.elem == t_arr.elem and s_arr.length == t_arr.length) return CoercionKind.none;
     }
     if (src.kind == type_mod.TypeKind.ptr_type and tgt.kind == type_mod.TypeKind.many_ptr_type) {
+        var qok = type_mod.pointerQualifiersMonotone(src.flags, tgt.flags, type_mod.VOLATILE_FLAG);
         var sp = reg.ptr_items[@intCast(usize, src.payload_idx)];
         var tp = reg.ptr_items[@intCast(usize, tgt.payload_idx)];
         var spo = reg.types_items[@intCast(usize, sp.base)];
         if (spo.kind == type_mod.TypeKind.array_type) {
             var arr = reg.array_items[@intCast(usize, spo.payload_idx)];
-            if (arr.elem == tp.base) return CoercionKind.none;
+            if (arr.elem == tp.base and qok) return CoercionKind.none;
         }
     }
     if (src.kind == type_mod.TypeKind.slice_type and tgt.kind == type_mod.TypeKind.many_ptr_type) {
+        var qok = type_mod.pointerQualifiersMonotone(src.flags, tgt.flags, type_mod.VOLATILE_FLAG);
         var sl = reg.slice_items[@intCast(usize, src.payload_idx)];
         var pp = reg.ptr_items[@intCast(usize, tgt.payload_idx)];
-        if (sl.elem == pp.base) return CoercionKind.slice_to_many_ptr;
+        if (sl.elem == pp.base and qok) return CoercionKind.slice_to_many_ptr;
     }
     if (src.kind == type_mod.TypeKind.ptr_type and tgt.kind == type_mod.TypeKind.optional_type) {
         var opt2 = reg.opt_items[@intCast(usize, tgt.payload_idx)];
@@ -197,7 +201,7 @@ pub fn classifyCoercion(reg: *type_mod.TypeRegistry, source: TypeId, target: Typ
         var src_pointee = reg.types_items[@intCast(usize, sp2.base)];
         if (src_pointee.kind == type_mod.TypeKind.array_type) {
             var arr = reg.array_items[@intCast(usize, src_pointee.payload_idx)];
-            if (arr.elem == ts2.elem) return CoercionKind.array_to_slice;
+            if (arr.elem == ts2.elem and qok) return CoercionKind.array_to_slice;
         }
     }
 
