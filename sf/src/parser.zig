@@ -404,6 +404,14 @@ pub fn parserParsePrimary(self: *Parser) ParserError!u32 {
         if (parserPeekN(self, 1).kind == TokenKind.colon and parserPeekN(self, 2).kind == TokenKind.lbrace) {
             return parserParseLabeledBlockExpr(self);
         }
+        if (parserPeekN(self, 1).kind == TokenKind.bang) {
+            var eu_base = try parserParseIdentExpr(self);
+            _ = parserAdvance(self);
+            var eu_payload = try parserParseType(self);
+            return ast_mod.astStoreAddNode(self.store, AstKind.error_union_type, 0,
+                tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
+                eu_base, eu_payload, 0, 0);
+        }
         return parserParseIdentExpr(self);
     }
     if (tok.kind == TokenKind.kw_bool) return parserParseIdentExpr(self);
@@ -424,6 +432,9 @@ pub fn parserParsePrimary(self: *Parser) ParserError!u32 {
     if (tok.kind == TokenKind.kw_if) return parserParseIfExpr(self);
     if (tok.kind == TokenKind.kw_switch) return parserParseSwitchExpr(self);
     if (tok.kind == TokenKind.lbracket) return parserParseArrayLiteral(self);
+    if (tok.kind == TokenKind.star) return parserParsePtrType(self);
+    if (tok.kind == TokenKind.question_mark) return parserParseOptionalType(self);
+    if (tok.kind == TokenKind.kw_fn) return parserParseFnType(self);
     if (tok.kind == TokenKind.kw_struct) return parserParseStructType(self, 0);
     if (tok.kind == TokenKind.kw_enum) return parserParseEnumType(self);
     if (tok.kind == TokenKind.kw_union) return parserParseUnionType(self, 0);
@@ -814,7 +825,15 @@ fn parserParseCInclude(self: *Parser) ParserError!u32 {
 fn parserParseErrorLiteral(self: *Parser) ParserError!u32 {
     var kw = parserAdvance(self);
     if (parserPeek(self).kind == TokenKind.lbrace) {
-        return parserParseErrorSetDeclBody(self, kw);
+        var es = try parserParseErrorSetDeclBody(self, kw);
+        if (parserPeek(self).kind == TokenKind.bang) {
+            _ = parserAdvance(self);
+            var eu_payload = try parserParseType(self);
+            return ast_mod.astStoreAddNode(self.store, AstKind.error_union_type, 0,
+                kw.span_start, kw.span_start + @intCast(u32, kw.span_len),
+                es, eu_payload, 0, 0);
+        }
+        return es;
     }
     _ = try parserExpect(self, TokenKind.dot);
     var name_tok = try parserExpect(self, TokenKind.identifier);
