@@ -31,7 +31,7 @@ Track 1 implements the Win9x calling-convention prelude (Prelude A, §8 of the p
 3. Unknown string -> new diagnostic `ERR_3045_UNKNOWN_CALLING_CONVENTION = 3045` (explicit `= 3045`, parent spec §12.7).
 4. **Represent** the convention on the function type (`FnPayload.flags_packed` free bit1) so a `fn(...)T` value and its pointer typedef agree, and thread it into `LirFunction` so the emitter can act on it.
 5. **Emit** the convention on the extern prototype/definition and on the fn-pointer typedef, portably (gcc `__attribute__((stdcall))`, MSVC/Watcom `__stdcall`) and only for `stdcall` (default `cdecl` emits nothing, preserving linux byte-identity).
-6. **Force a prototype** for an extern function when a convention is present (today the predicate `f.is_extern==0 or f.is_variadic!=0` at `sf/src/c89_emit.zig:2418,2566` suppresses the prototype for non-variadic externs).
+6. **Apply the convention at the use site** (Task 3R, operator ruling Option B): do NOT force a second prototype for a convention extern. The C header remains the sole declaration source; the callee's convention is carried in LIR and applied at the call/value site via a cast to the convention-qualified `FS_…` fn-pointer typedef.
 7. Reject variadic `stdcall` (i386 stdcall cannot be variadic).
 8. **Migrate** `sf/src/std_net.zig` and the related Win32 extern std calls to `extern "stdcall"` so they do not conflict with the real `winsock.h` declarations once (6) forces prototypes (m1155-A; exact list in §3.7).
 9. Add the `ERR_3017_SUSPENDING_FUNCTION_POINTER = 3017` diagnostic **code/plumbing only**; the enforcement itself lands in Track 2 (Prelude B), because it depends on `is_suspending`.
@@ -203,19 +203,14 @@ fn emitCallConv(emitter: *C89Emitter, call_conv: u8) void {
 }
 ```
 
-**Forced prototype.** Change the predicate at `c89_emit.zig:2418` and `:2566` from
-
-```zig
-if (f.is_extern == @intCast(u8, 0) or f.is_variadic != @intCast(u8, 0)) {
-```
-
-to
-
-```zig
-if (f.is_extern == @intCast(u8, 0) or f.is_variadic != @intCast(u8, 0) or f.call_conv != @intCast(u8, 0)) {
-```
-
-This is rule A.4 in the parent spec §8: a convention only takes effect if the extern declaration is visible at the call site.
+**Forced prototype (SUPERSEDED by Task 3R / plan Amendment 4 — Option B).** The
+predicate at `c89_emit.zig:2418` and `:2566` is *not* widened; it stays exactly
+`f.is_extern == @intCast(u8, 0) or f.is_variadic != @intCast(u8, 0)`. A
+convention-bearing extern must NOT emit a second, header-conflicting prototype
+(the C header, e.g. `winsock.h`, stays the sole declaration source). The
+convention is instead carried in LIR (`CallDirectData.call_conv` /
+`TailCallData.call_conv`) and applied at the USE SITE via a cast to the `FS_…`
+fn-pointer typedef. See plan Amendment 4.
 
 **Portability (`Z98_STDCALL`).** Add to the `zig_compat.h` compatibility layer, in **both** the canonical header `sf/src/include/zig_compat.h` and its embedded copy in `sf/src/emit_support.zig` (`emitZigCompatHSupport`, `:17-56`; the hand-written bytes verified by `scripts/check_emit_support.sh`):
 
@@ -331,7 +326,7 @@ Fixtures live under `repro/mi_matrix/` so `scripts/corpus/list_corpus_dirs.sh` p
 |---|---|---|
 | `callconv_default_cdecl_xmod` | `extern fn` (no string) | dump rc=0, gcc rc=0, runtime rc=0, no `Z98_STDCALL` |
 | `callconv_explicit_cdecl_xmod` | `extern "c"` / `extern "cdecl"` | dump rc=0, emission byte-equal to the no-string form |
-| `callconv_stdcall_decl_xmod` | `extern "stdcall" fn` | `-osw` dump contains the forced prototype and `Z98_STDCALL`; mingw `-c` rc=0 |
+| `callconv_stdcall_decl_xmod` | `extern "stdcall" fn` | `-osw` dump contains NO forced prototype; the call casts to the `FS_…` typedef (which carries `Z98_STDCALL`); mingw `-c` rc=0 with the OS header |
 | `callconv_stdcall_fnptr_xmod` | `const Cb = extern "stdcall" fn(i32) void` | `-osw` dump typedef is `... (Z98_STDCALL *Cb)(...)`; mingw `-c` rc=0 |
 | `callconv_unknown_green_xmod` | `extern "fastcall"` | clean reject `error[3045]`, 0 `.c` emitted (green-guard) |
 | `callconv_fnptr_mismatch_green_xmod` | assign stdcall fn ptr to cdecl fn ptr | clean reject `error[3000]`, 0 `.c` (green-guard) |
@@ -354,4 +349,4 @@ Gate commands use the binding flag set: `gcc -m32 -std=c89 -O0 -Wall -Wno-long-l
 ## 8. Dependencies
 
 - **Consumes:** nothing from other tracks. Track 1 can start at the current fixed point `1467d932a876402f40a56316dfcad0e5` (seed v10 `ca18fc9f…`).
-- **Produces:** an implemented calling-convention surface — `extern "stdcall"`/`"cdecl"` on extern declarations and fn-pointer types, the `FnPayload.flags_packed` convention bit, the `LirFunction.call_conv`/stream byte, forced extern prototypes, the `Z98_STDCALL` portability macro, and `ERR_3045`. Track 2 relies on this surface (and on the reserved `ERR_3017` code) for the Prelude B ban; the ban's `is_suspending` enforcement lands in Track 2.
+- **Produces:** an implemented calling-convention surface — `extern "stdcall"`/`"cdecl"` on extern declarations and fn-pointer types, the `FnPayload.flags_packed` convention bit, the `LirFunction.call_conv`/stream byte (`CallDirectData`/`TailCallData.call_conv`), use-site convention casts to the `FS_…` fn-pointer typedef (no forced extern prototype), the `Z98_STDCALL` portability macro, and `ERR_3045`. Track 2 relies on this surface (and on the reserved `ERR_3017` code) for the Prelude B ban; the ban's `is_suspending` enforcement lands in Track 2.
