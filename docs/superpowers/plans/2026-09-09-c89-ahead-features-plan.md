@@ -771,3 +771,45 @@ the arena/`orelse` docs are now stale → update in **A11F**.
   `feat: c89-ahead — pointer/optional/error-union/function type aliases (C89AHEAD)`.
 - STOP-present if the parser change proves larger/non-mechanical than a targeted addition.
 
+---
+
+## AMENDMENT 8 — Volatile GO + qualifier-safety scope (A10F) (2026-09-10)
+
+> Operator ruling on the A10I STOP-present (2026-09-10): **GO** on volatile, **Option 1** (full
+> qualifier-safety — close implicit *and* explicit qualifier laundering). A10I report `## A10I` is the
+> implementation sketch of record.
+
+### A10F — volatile (`*volatile T`) per the A10I sketch, plus qualifier safety
+
+**Core (from A10I):** add `kw_volatile` (TokenKind ordinal shift; `token.zig` keyword table 37→38); thread a
+volatile bit in the pointer type (`typeRegistryGetOrCreatePtr` key currently `(base<<1)|is_const`); render the
+qualifier **volatile-only** (const stays dropped for byte-identity) with the **append rule** for multi-level
+(`*volatile *u32` → `unsigned int* volatile*`); make `getCTypeName`'s six flag-blind fast-path returns
+(`c89_emit.zig:733-738`, incl. `u8`/`u32`/`c_char`/`usize`) qualifier-aware; `@volatileCast` on the existing
+`ptr_cast` path; `*volatile fn(...)` out of scope. Layer = sema type-system + thin emitter rendering; **no new
+LIR op** (AMENDMENT 4).
+
+**Qualifier-safety (Option 1, binding):**
+- **A.** One shared helper `pointerQualifiersMonotone(src_flags, tgt_flags, mask)` — the target must contain
+  every qualifier bit the source has (add allowed, drop forbidden). Unifies the A10I finding-#1 superset guard.
+- **B.** Apply it to **every pointer-ish conversion branch** in BOTH `typeRegistryIsAssignable`
+  (`type_registry.zig`: ptr→ptr incl. the `TYPE_VOID` shortcuts `:1172-1173`; ptr→slice `:1204-1209`;
+  array→many `:1216-1219`; ptr→many `:1221-1229`; slice→many `:1235-1239`; ptr→optional `:1240-1244`) and
+  `classifyCoercion` (`coercion.zig` mirrors). Replace unconditional `return true`/`none` with the monotone
+  gate. Non-pointer sources (arrays/ints) have flags=0 → unaffected.
+- **C.** In sema's `@ptrCast` resolution, reject a ptr→ptr cast whose target drops a qualifier the source has.
+  Provide **`@volatileCast(ptr)`** as the only sanctioned remover of the volatile bit (same base; clears just
+  that bit). (`@constCast` optional/not required.)
+- **D.** `*volatile T → *void` drops volatility (C `void` cannot carry it): reject implicitly; document that
+  `@ptrCast` cannot rescue it.
+- **E.** First cut **mask = volatile only** (const behavior unchanged) to guarantee zero non-volatile
+  fallout; extending the mask to const requires a clean corpus census first.
+
+**Tests / gates:** RED→GREEN fixtures for the MMIO `*volatile u32` form AND rejection fixtures for each
+implicit drop path (`*volatile u32` → `*u32` / `[]u32` / `[*]u32` / `?*u32` / fn-param) and the `@ptrCast`
+drop; acceptance for `@volatileCast` and for *adding* volatile. Hard gate: **non-volatile 4-MD5
+byte-identical** and corpus zero-fallout; battery golden 9/9 + matrix 21/21; strict
+`-Wall -Wextra -O3 -fsyntax-only` 0 errors; `check_emit_support.sh` 5/5; N-hop (fixed point moves via the
+TokenKind shift). ONE commit: `feat: c89-ahead — volatile pointer qualifier + qualifier safety (C89AHEAD)`;
+report `## A10F` + ledger + mnemoria per convention.
+
