@@ -73,6 +73,8 @@ pub const Type = struct {
     payload_idx: u32,
 };
 
+pub const VOLATILE_FLAG: u8 = 2;
+
 pub const PtrPayload = struct { base: TypeId };
 pub const ArrayPayload = struct { elem: TypeId, length: u32 };
 pub const SlicePayload = struct { elem: TypeId };
@@ -396,13 +398,18 @@ pub fn nameCachePut(self: *TypeRegistry, key: u64, value: u32) void {
 }
 
 pub fn typeRegistryGetOrCreatePtr(self: *TypeRegistry, base: TypeId, is_const: bool) u32 {
-    var ic: u64 = if (is_const) @intCast(u64, 1) else @intCast(u64, 0);
-    var key: u64 = (@intCast(u64, base) << @intCast(u64, 1)) | ic;
+    return typeRegistryGetOrCreatePtrQ(self, base, is_const, false);
+}
+
+pub fn typeRegistryGetOrCreatePtrQ(self: *TypeRegistry, base: TypeId, is_const: bool, is_volatile: bool) u32 {
+    var q: u64 = if (is_const) @intCast(u64, 1) else @intCast(u64, 0);
+    if (is_volatile) q |= @intCast(u64, 2);
+    var key: u64 = (@intCast(u64, base) << @intCast(u64, 2)) | q;
     if (hash_mod.u64ToU32MapGet(&self.ptr_cache, key)) |existing| return existing;
     ptrAppend(self, PtrPayload{ .base = base });
     var tid = typeRegistryAppend(self, Type{
         .kind = TypeKind.ptr_type, .state = @intCast(u8, 2),
-        .flags = @intCast(u8, if (is_const) 1 else 0),
+        .flags = @intCast(u8, q),
         .is_signed = @intCast(u8, 0), .width_bits = @intCast(u8, 0),
         .size = @intCast(u32, 4), .alignment = @intCast(u32, 4),
         .name_id = @intCast(u32, 0), .c_name_id = @intCast(u32, 0),
@@ -413,13 +420,18 @@ pub fn typeRegistryGetOrCreatePtr(self: *TypeRegistry, base: TypeId, is_const: b
 }
 
 pub fn typeRegistryGetOrCreateManyPtr(self: *TypeRegistry, base: TypeId, is_const: bool) u32 {
-    var ic: u64 = if (is_const) @intCast(u64, 1) else @intCast(u64, 0);
-    var key: u64 = (@intCast(u64, base) << @intCast(u64, 1)) | ic;
+    return typeRegistryGetOrCreateManyPtrQ(self, base, is_const, false);
+}
+
+pub fn typeRegistryGetOrCreateManyPtrQ(self: *TypeRegistry, base: TypeId, is_const: bool, is_volatile: bool) u32 {
+    var q: u64 = if (is_const) @intCast(u64, 1) else @intCast(u64, 0);
+    if (is_volatile) q |= @intCast(u64, 2);
+    var key: u64 = (@intCast(u64, base) << @intCast(u64, 2)) | q;
     if (hash_mod.u64ToU32MapGet(&self.many_ptr_cache, key)) |existing| return existing;
     ptrAppend(self, PtrPayload{ .base = base });
     var tid = typeRegistryAppend(self, Type{
         .kind = TypeKind.many_ptr_type, .state = @intCast(u8, 2),
-        .flags = @intCast(u8, if (is_const) 1 else 0),
+        .flags = @intCast(u8, q),
         .is_signed = @intCast(u8, 0), .width_bits = @intCast(u8, 0),
         .size = @intCast(u32, 4), .alignment = @intCast(u32, 4),
         .name_id = @intCast(u32, 0), .c_name_id = @intCast(u32, 0),
@@ -1113,6 +1125,10 @@ pub fn typeRegistryGetUnionFields(self: *TypeRegistry, tid: u32, out: *[]FieldEn
     out.* = self.fe_items[fstart .. fstart + fcount];
 }
 
+pub fn pointerQualifiersMonotone(src_flags: u8, tgt_flags: u8, mask: u8) bool {
+    return ((src_flags & mask) & ~(tgt_flags & mask)) == @intCast(u8, 0);
+}
+
 pub fn typeRegistryIsAssignable(self: *TypeRegistry, source: TypeId, target: TypeId) bool {
     if (source == target) return true;
     var src = self.types_items[@intCast(usize, source)];
@@ -1169,62 +1185,83 @@ pub fn typeRegistryIsAssignable(self: *TypeRegistry, source: TypeId, target: Typ
     if (src.kind == TypeKind.ptr_type and tgt.kind == TypeKind.ptr_type) {
         var tgt_pp: PtrPayload = self.ptr_items[@intCast(usize, tgt.payload_idx)];
         var src_pp: PtrPayload = self.ptr_items[@intCast(usize, src.payload_idx)];
-        if (tgt_pp.base == TYPE_VOID) return true;
-        if (src_pp.base == TYPE_VOID) return true;
+        var qok: bool = pointerQualifiersMonotone(src.flags, tgt.flags, VOLATILE_FLAG);
+        if (tgt_pp.base == TYPE_VOID) return qok;
+        if (src_pp.base == TYPE_VOID) return qok;
         if ((tgt.flags & @intCast(u8, 1)) != @intCast(u8, 0) and (src.flags & @intCast(u8, 1)) == @intCast(u8, 0)) {
-            if (src_pp.base == tgt_pp.base) return true;
+            if (src_pp.base == tgt_pp.base and qok) return true;
+        }
+        if ((tgt.flags & VOLATILE_FLAG) != @intCast(u8, 0) and (src.flags & VOLATILE_FLAG) == @intCast(u8, 0)) {
+            if (src_pp.base == tgt_pp.base and ((src.flags & @intCast(u8, 1)) == @intCast(u8, 0) or (tgt.flags & @intCast(u8, 1)) != @intCast(u8, 0))) return true;
         }
     }
     if (tgt.kind == TypeKind.slice_type and src.kind == TypeKind.slice_type) {
+        var qok: bool = pointerQualifiersMonotone(src.flags, tgt.flags, VOLATILE_FLAG);
         if ((tgt.flags & @intCast(u8, 1)) != @intCast(u8, 0) and (src.flags & @intCast(u8, 1)) == @intCast(u8, 0)) {
             var s_sl: SlicePayload = self.slice_items[@intCast(usize, src.payload_idx)];
             var t_sl: SlicePayload = self.slice_items[@intCast(usize, tgt.payload_idx)];
-            if (s_sl.elem == t_sl.elem) return true;
+            if (s_sl.elem == t_sl.elem and qok) return true;
+        }
+        if ((tgt.flags & VOLATILE_FLAG) != @intCast(u8, 0) and (src.flags & VOLATILE_FLAG) == @intCast(u8, 0)) {
+            var s_sl2: SlicePayload = self.slice_items[@intCast(usize, src.payload_idx)];
+            var t_sl2: SlicePayload = self.slice_items[@intCast(usize, tgt.payload_idx)];
+            if (s_sl2.elem == t_sl2.elem and ((src.flags & @intCast(u8, 1)) == @intCast(u8, 0) or (tgt.flags & @intCast(u8, 1)) != @intCast(u8, 0))) return true;
         }
     }
     if (tgt.kind == TypeKind.slice_type and src.kind == TypeKind.ptr_type) {
+        var qok: bool = pointerQualifiersMonotone(src.flags, tgt.flags, VOLATILE_FLAG);
         var src_pp: PtrPayload = self.ptr_items[@intCast(usize, src.payload_idx)];
         var sl: SlicePayload = self.slice_items[@intCast(usize, tgt.payload_idx)];
         var src_pointee = self.types_items[@intCast(usize, src_pp.base)];
         if (src_pointee.kind == TypeKind.array_type) {
             var arr: ArrayPayload = self.array_items[@intCast(usize, src_pointee.payload_idx)];
-            if (arr.elem == sl.elem) return true;
+            if (arr.elem == sl.elem and qok) return true;
         }
-        if (src_pp.base == sl.elem) return true;
-        if (src_pp.base == TYPE_C_CHAR and sl.elem == TYPE_U8) return true;
-        if (src_pp.base == TYPE_U8 and sl.elem == TYPE_C_CHAR) return true;
+        if (src_pp.base == sl.elem and qok) return true;
+        if (src_pp.base == TYPE_C_CHAR and sl.elem == TYPE_U8 and qok) return true;
+        if (src_pp.base == TYPE_U8 and sl.elem == TYPE_C_CHAR and qok) return true;
     }
     if (tgt.kind == TypeKind.many_ptr_type and src.kind == TypeKind.many_ptr_type) {
+        var qok: bool = pointerQualifiersMonotone(src.flags, tgt.flags, VOLATILE_FLAG);
         if ((tgt.flags & @intCast(u8, 1)) != @intCast(u8, 0) and (src.flags & @intCast(u8, 1)) == @intCast(u8, 0)) {
             var s_pp: PtrPayload = self.ptr_items[@intCast(usize, src.payload_idx)];
             var t_pp: PtrPayload = self.ptr_items[@intCast(usize, tgt.payload_idx)];
-            if (s_pp.base == t_pp.base) return true;
+            if (s_pp.base == t_pp.base and qok) return true;
+        }
+        if ((tgt.flags & VOLATILE_FLAG) != @intCast(u8, 0) and (src.flags & VOLATILE_FLAG) == @intCast(u8, 0)) {
+            var s_pp2: PtrPayload = self.ptr_items[@intCast(usize, src.payload_idx)];
+            var t_pp2: PtrPayload = self.ptr_items[@intCast(usize, tgt.payload_idx)];
+            if (s_pp2.base == t_pp2.base and ((src.flags & @intCast(u8, 1)) == @intCast(u8, 0) or (tgt.flags & @intCast(u8, 1)) != @intCast(u8, 0))) return true;
         }
     }
     if (src.kind == TypeKind.ptr_type and tgt.kind == TypeKind.slice_type) {
+        var qok: bool = pointerQualifiersMonotone(src.flags, tgt.flags, VOLATILE_FLAG);
         var sp2: PtrPayload = self.ptr_items[@intCast(usize, src.payload_idx)];
         var ts2: SlicePayload = self.slice_items[@intCast(usize, tgt.payload_idx)];
-        if (sp2.base == ts2.elem) return true;
-        if ((sp2.base == TYPE_C_CHAR and ts2.elem == TYPE_U8) or (sp2.base == TYPE_U8 and ts2.elem == TYPE_C_CHAR)) return true;
+        if (sp2.base == ts2.elem and qok) return true;
+        if ((sp2.base == TYPE_C_CHAR and ts2.elem == TYPE_U8 and qok) or (sp2.base == TYPE_U8 and ts2.elem == TYPE_C_CHAR and qok)) return true;
     }
     if (src.kind == TypeKind.array_type and tgt.kind == TypeKind.slice_type) {
+        var qok: bool = pointerQualifiersMonotone(src.flags, tgt.flags, VOLATILE_FLAG);
         var arr: ArrayPayload = self.array_items[@intCast(usize, src.payload_idx)];
         var sl: SlicePayload = self.slice_items[@intCast(usize, tgt.payload_idx)];
-        if (arr.elem == sl.elem) return true;
-        if ((tgt.flags & @intCast(u8, 1)) != @intCast(u8, 0) and arr.elem == sl.elem) return true;
+        if (arr.elem == sl.elem and qok) return true;
+        if ((tgt.flags & @intCast(u8, 1)) != @intCast(u8, 0) and arr.elem == sl.elem and qok) return true;
     }
     if (src.kind == TypeKind.array_type and tgt.kind == TypeKind.many_ptr_type) {
+        var qok: bool = pointerQualifiersMonotone(src.flags, tgt.flags, VOLATILE_FLAG);
         var arr: ArrayPayload = self.array_items[@intCast(usize, src.payload_idx)];
         var pp: PtrPayload = self.ptr_items[@intCast(usize, tgt.payload_idx)];
-        if (arr.elem == pp.base) return true;
+        if (arr.elem == pp.base and qok) return true;
     }
     if (src.kind == TypeKind.ptr_type and tgt.kind == TypeKind.many_ptr_type) {
+        var qok: bool = pointerQualifiersMonotone(src.flags, tgt.flags, VOLATILE_FLAG);
         var sp: PtrPayload = self.ptr_items[@intCast(usize, src.payload_idx)];
         var tp: PtrPayload = self.ptr_items[@intCast(usize, tgt.payload_idx)];
         var spo = self.types_items[@intCast(usize, sp.base)];
         if (spo.kind == TypeKind.array_type) {
             var arr: ArrayPayload = self.array_items[@intCast(usize, spo.payload_idx)];
-            if (arr.elem == tp.base) return true;
+            if (arr.elem == tp.base and qok) return true;
         }
     }
     if (src.kind == TypeKind.array_type and tgt.kind == TypeKind.array_type) {
@@ -1233,9 +1270,10 @@ pub fn typeRegistryIsAssignable(self: *TypeRegistry, source: TypeId, target: Typ
         if (s_arr.elem == t_arr.elem and s_arr.length == t_arr.length) return true;
     }
     if (src.kind == TypeKind.slice_type and tgt.kind == TypeKind.many_ptr_type) {
+        var qok: bool = pointerQualifiersMonotone(src.flags, tgt.flags, VOLATILE_FLAG);
         var sl: SlicePayload = self.slice_items[@intCast(usize, src.payload_idx)];
         var pp: PtrPayload = self.ptr_items[@intCast(usize, tgt.payload_idx)];
-        if (sl.elem == pp.base) return true;
+        if (sl.elem == pp.base and qok) return true;
     }
     if (src.kind == TypeKind.ptr_type and tgt.kind == TypeKind.optional_type) {
         var opt = self.opt_items[@intCast(usize, tgt.payload_idx)];

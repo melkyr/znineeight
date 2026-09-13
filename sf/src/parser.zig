@@ -1111,13 +1111,25 @@ pub fn parserParseType(self: *Parser) ParserError!u32 {
     return base;
 }
 
+fn parserParsePtrQualifiers(self: *Parser) u8 {
+    var flags: u8 = 0;
+    while (true) {
+        if (parserPeek(self).kind == TokenKind.kw_const) {
+            _ = parserAdvance(self);
+            flags |= 1;
+        } else if (parserPeek(self).kind == TokenKind.kw_volatile) {
+            _ = parserAdvance(self);
+            flags |= 2;
+        } else {
+            break;
+        }
+    }
+    return flags;
+}
+
 fn parserParsePtrType(self: *Parser) ParserError!u32 {
     var tok = parserAdvance(self);
-    var flags: u8 = 0;
-    if (parserPeek(self).kind == TokenKind.kw_const) {
-        _ = parserAdvance(self);
-        flags = 1;
-    }
+    var flags = parserParsePtrQualifiers(self);
     var base = try parserParseType(self);
     var end_pos = base;
     _ = end_pos;
@@ -1131,11 +1143,7 @@ fn parserParseBracketType(self: *Parser) ParserError!u32 {
     if (parserPeek(self).kind == TokenKind.star) {
         _ = parserAdvance(self);
         _ = try parserExpect(self, TokenKind.rbracket);
-        var flags: u8 = 0;
-        if (parserPeek(self).kind == TokenKind.kw_const) {
-            _ = parserAdvance(self);
-            flags = 1;
-        }
+        var flags = parserParsePtrQualifiers(self);
         var base = try parserParseType(self);
         return ast_mod.astStoreAddNode(self.store, AstKind.many_ptr_type, flags,
             tok.span_start, tok.span_start + @intCast(u32, tok.span_len),

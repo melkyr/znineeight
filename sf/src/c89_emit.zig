@@ -729,17 +729,32 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
     if (ty.kind == TypeKind.ptr_type or ty.kind == TypeKind.many_ptr_type) {
         var pp = reg.ptr_items[@intCast(usize, ty.payload_idx)];
         var et = reg.types_items[@intCast(usize, pp.base)];
+        var is_vol: bool = (ty.flags & @intCast(u8, 2)) != @intCast(u8, 0);
         if (et.kind == TypeKind.fn_type) { return getCTypeName(reg, mangler, pp.base); }
-        if (et.kind == TypeKind.u8_type) { var s: []const u8 = "unsigned char*"; return s; }
-        if (et.kind == TypeKind.u32_type) { var s: []const u8 = "unsigned int*"; return s; }
-        if (et.kind == TypeKind.i32_type) { var s: []const u8 = "int*"; return s; }
-        if (et.kind == TypeKind.f64_type) { var s: []const u8 = "double*"; return s; }
-        if (et.kind == TypeKind.c_char_type) { var s: []const u8 = "char*"; return s; }
-        if (et.kind == TypeKind.usize_type) { var s: []const u8 = "unsigned int*"; return s; }
+        if (!is_vol) {
+            if (et.kind == TypeKind.u8_type) { var s: []const u8 = "unsigned char*"; return s; }
+            if (et.kind == TypeKind.u32_type) { var s: []const u8 = "unsigned int*"; return s; }
+            if (et.kind == TypeKind.i32_type) { var s: []const u8 = "int*"; return s; }
+            if (et.kind == TypeKind.f64_type) { var s: []const u8 = "double*"; return s; }
+            if (et.kind == TypeKind.c_char_type) { var s: []const u8 = "char*"; return s; }
+            if (et.kind == TypeKind.usize_type) { var s: []const u8 = "unsigned int*"; return s; }
+        }
         var base_cname = getCTypeName(reg, mangler, pp.base);
         var pbuf: [128]u8 = undefined;
         var bi: usize = 0;
-        while (bi < base_cname.len and bi < 126) : (bi += 1) { pbuf[bi] = base_cname[bi]; }
+        var et_is_ptr: bool = et.kind == TypeKind.ptr_type or et.kind == TypeKind.many_ptr_type;
+        if (is_vol and !et_is_ptr) {
+            var vpx: []const u8 = "volatile ";
+            var vpi: usize = 0;
+            while (vpi < vpx.len and bi < 126) : (vpi += 1) { pbuf[bi] = vpx[vpi]; bi += 1; }
+        }
+        var bcj: usize = 0;
+        while (bcj < base_cname.len and bi < 126) : (bcj += 1) { pbuf[bi] = base_cname[bcj]; bi += 1; }
+        if (is_vol and et_is_ptr) {
+            var vpx2: []const u8 = " volatile";
+            var vpi2: usize = 0;
+            while (vpi2 < vpx2.len and bi < 126) : (vpi2 += 1) { pbuf[bi] = vpx2[vpi2]; bi += 1; }
+        }
         pbuf[bi] = '*'; bi += 1;
         pbuf[bi] = 0; bi += 1;
         var ptr_mid = interner_mod.stringInternerIntern(mangler.interner, pbuf[0..bi - @intCast(usize, 1)]);
