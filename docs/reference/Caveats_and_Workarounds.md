@@ -2,6 +2,18 @@
 
 This document tracks known limitations, bugs, and recommended workarounds for the Z98 Stage 0 (C++) bootstrap compiler. These are behaviors that differ from modern Zig or represent temporary compromises made to simplify the bootstrap process.
 
+## 0. Runtime Safety (`-fsafe` / `-ffast`) — self-hosted `zig1`
+
+**Scope:** this section describes the self-hosted `zig1` compiler, **not** the `zig0` (C++) bootstrap. Section 1 onward remains the `zig0`-era body.
+
+- **Safety flag:** `-fsafe` is the **default**; `-ffast` disables all six runtime checks. The compiler self-build (`scripts/seed/build_from_seed.sh`, `scripts/seed/archive_seed.sh`) passes `-ffast`; user programs default to `-fsafe`, so a user's emitted C differs from the compiler's own emission in this respect.
+- **Six runtime checks** (all `-fsafe`-gated): checked cast (`@intCast`/`@floatCast`), division/modulo by zero, shift count, null-unwrap, index out-of-bounds, and integer overflow (`+`, `-`, `*`, unary `-`). A failed check calls `pal_trap()` (x86 `int 3`; non-x86 `pal_abort()`).
+- **Trap semantics (both modes):** `unreachable` and `@panic` now **trap** — they are no longer no-ops. `@panic(msg)` first writes `panic: <msg>\n` to **stderr**, then traps. `std.debug.assert`/`std.debug.panic` also call `pal_trap()`, but their message goes to **stdout**, which is buffered and can be lost before the trap — do not rely on it as a printed abort.
+- **`undefined` poison:** under `-fsafe`, storage initialized with `undefined` is byte-filled with `0xAA` so uninitialized reads are detectable; `-ffast` emits no poison fill (and does not guarantee a zero value).
+- **Compile-time diagnostics (mode-independent):** `error[3014]` uninitialized variable (opt out with `= undefined`), `error[3015]` ignored error-union result, `error[3003]` missing return / bare `return;` in a non-void function, `error[3016]` `orelse` on a non-optional operand.
+- **Arena API:** `std.arena.alloc` returns `ArenaError![*]u8` (`error.OutOfMemory` on exhaustion), so consumers use `try`/`catch` — `orelse` is rejected with `error[3016]`.
+- **Adjacent note:** `try` on a *non*-error-union value is still silently typed `void`; this latent gap is **not** guarded.
+
 ## 1. Language Limitations
 
 ### 1.1 Global Constant Aggregates

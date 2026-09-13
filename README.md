@@ -224,6 +224,8 @@ the build script is `sf/scripts/build_release.sh`. Release binaries (`zig1_linux
 | `-I <dir>` / `--lib-dir <dir>` | Add a module search dir for `@import` (importer dir, then `-I` dirs in order, then `<exe_dir>/lib`, then CWD) |
 | `-osl` / `-osw` | Target OS: linux (default) / windows; folds `@isWindows()` |
 | `--target <linux\|windows>` | Alias for the target OS |
+| `-fsafe` | **Default.** Enable the six runtime checks (cast / div-mod / shift-count / null-unwrap / index-OOB / integer-overflow) and the `undefined` `0xAA` poison fill |
+| `-ffast` | Disable the six runtime checks and poison fill (used for the compiler self-build). `unreachable`/`@panic` still trap in both modes |
 | `-s<N>` | Spill level 0–5 (default `-s0`): how many of the five compiler-state spills live in RAM instead of `.zig1_*.tmp` disk files. Higher `-s` = more RAM, less disk I/O; emission byte-identical in every mode. `-s0` ≈ 14.9 MB pool; `-s1` ≈ 33 MB; `-s2`..`-s5` ≈ 71–73 MB. Bare/non-digit/out-of-range `-s` = error rc=1 |
 | `-mm<N>` | Hard pool budget in MB (default 64). Levels whose pool exceeds the budget abort with `memory limit exceeded` rc=3 (e.g. `-s2`+ need `-mm128`) |
 | `-m <size>` / `--max-mem <size>` | Pool memory budget with k/M/G suffix |
@@ -234,6 +236,8 @@ the build script is `sf/scripts/build_release.sh`. Release binaries (`zig1_linux
 | `--color <mode>`, `--error-format <fmt>` | Diagnostic rendering |
 | `--no-null-check`, `--no-lifetime-check`, `--no-leak-check` | Disable individual static analyzers |
 | `--test`, `--sanity-test` | Compiler self-test / sanity-test mode |
+
+Runtime safety defaults to `-fsafe`. The compiler self-build passes `-ffast`, so the compiler's own emitted C is not check-instrumented; a user program's emitted C (default `-fsafe`) will differ accordingly.
 
 ## Running Tests
 - **Unit/analyzer tests**: the sf test binaries under `sf/src/tests/` (e.g. the analyzer test bin),

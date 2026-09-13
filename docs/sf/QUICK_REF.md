@@ -5,6 +5,8 @@
 **Every subagent doing build/compile/run/gate work MUST read this section first.** These are the
 exact, verified commands. Do not improvise flags or rediscover linking — copy these.
 
+> **C89-AHEAD (2026-09-10):** runtime safety is now `-fsafe` by **default** (six runtime checks — cast / div-mod / shift / null-unwrap / index-OOB / integer-overflow — plus `undefined` `0xAA` poison); `-ffast` disables them. `unreachable`/`@panic` trap in **both** modes (`@panic` prints `panic: <msg>` to **stderr**). `std.arena.alloc` is `ArenaError![*]u8` — use `try`/`catch`, never `orelse` (`error[3016]`). Landed fixed point `1467d932a876402f40a56316dfcad0e5`; seed v9 is **not** rotated (rotation deferred to A13).
+
 ### Build zig1 (the compiler under test)
 ```bash
 cd /workspace/znineeight
@@ -38,6 +40,10 @@ The archived binary and the self-emission fixed point
 `4da59bb11270e3c85638bcbb120afc2d` are the SAME compiler state (HEAD
 `c599b00e`). zig0 is retired; the seed model (`scripts/seed/build_from_seed.sh`)
 is the only rebuild path.
+**Note (C89-AHEAD):** this `4da59bb1…` is the **seed's** fixed point. The
+*working* `sf/src` fixed point has moved to
+`1467d932a876402f40a56316dfcad0e5` (the `-ffast` binary); the committed seed is
+still v9 and its rotation is deferred to **A13**.
 
 **Rebuild recipe 1 (forward — from the seed binary):**
 ```bash
@@ -78,6 +84,9 @@ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
 ```
 - You **must** link `sf/src/include/zig_runtime.c` AND `sf/src/include/zig_pal.c`, and pass
   `-I sf/src/include`. Missing any of these is the #1 cause of wasted turns.
+- **Default safety mode is `-fsafe`.** A user program's emitted C includes the six check guards, so it
+  differs from the `-ffast` compiler self-emission. Pass `-ffast` to `zig1` to reproduce pre-C89-AHEAD
+  emitted C. No new link flags are needed — `pal_trap()` lives in the already-linked `zig_pal.c`.
 - For **mud_server** add `sf/src/include/net_runtime.c` ONLY when building the pre-F6
   `examples/zig0/mud_server` bootstrap example — the migrated `examples/z98/mud_server`
   (std_net) links WITHOUT it (F6).

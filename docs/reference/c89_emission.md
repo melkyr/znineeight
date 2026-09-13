@@ -251,7 +251,7 @@ For local variables, the `const` qualifier is always **dropped** in the generate
 
 ### 8.3 `undefined` Initialization
 
-If a local variable is initialized with `undefined` in Zig, it is emitted as an uninitialized variable in C (e.g., `int x;`). No assignment is generated in Pass 2.
+If a local variable is initialized with `undefined` in Zig, its declaration is emitted, and the initializer depends on the safety mode. Under `-fsafe` (**default**) a `zig_poison_fill((void*)&x, N)` call (byte-exact `0xAA`) is emitted so an uninitialized read is visible; under `-ffast` no assignment is generated (an uninitialized C variable, e.g. `int x;`) — and this is **not** a guaranteed zero value.
 
 ### 8.4 Scoping and Uniquification
 

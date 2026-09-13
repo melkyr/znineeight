@@ -65,7 +65,7 @@ Performs an explicit integer cast with range checking.
   - **Constant cases**: Emitted as raw literals.
   - **Safe widenings** (e.g., `u8` to `i32`): Emitted as a direct C-style cast: `(int)expr`.
   - **Potentially unsafe narrowing/conversion**: Emitted as a call to a runtime helper function: `__bootstrap_<target>_from_<source>(expr)`.
-  - **Runtime Helpers**: These functions (e.g., `__bootstrap_i32_from_i64`) are implemented as `static` functions in `zig_runtime.h`. They perform bounds checks at runtime and call `__bootstrap_panic` if the value is out of range.
+  - **Runtime Helpers**: These functions (e.g., `__bootstrap_i32_from_i64`) are implemented as `static` functions in `zig_runtime.h`. They perform bounds checks at runtime and call `std_panic` (which traps) if the value is out of range. Under `-fsafe` (default) `@intCast` instead lowers to the checked `zig_cast_checked_s` / `zig_cast_checked_u` helpers; `-ffast` omits the check. The `__bootstrap_panic` wrapper has been removed.
 
 ### `@floatCast(T, expr)`
 Performs an explicit floating-point cast with range checking.

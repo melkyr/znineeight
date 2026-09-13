@@ -87,7 +87,7 @@ in sf/docs/tech_docs/:
 | No `comptime` beyond basic folding | Use `@sizeOf`/`@alignOf` only; avoid complex comptime logic. |
 | Strict `i32` ↔ `usize` coercion | Always use `@intCast`. |
 | No pointer captures (`if (opt) \|*p\|`) | Use `if (opt != null) { var p = &opt.value; }` pattern. |
-| Switch requires `else` | Always include `else => unreachable`. |
+| Switch requires `else` | Always include an `else` prong. `else => unreachable` now lowers to a **live trap** (`pal_trap()`, nonzero rc), not a no-op — use it only when the branch is provably unreachable, otherwise supply a real fallback. |
 | No method syntax | Use free functions (`fn foo(self: *T, ...)`) . |
 | `std.debug.print` requires tuple | Always use `.{}` syntax for arguments. |
 | Global aggregate constants | Use `pub var` and initialize in a dedicated `init()` function. |
@@ -173,7 +173,7 @@ If differences exist, the agent must debug `zig1` using the strategies in `DEBUG
 ### 2.4 Code Review & Quality Standards
 
 - **Comments**: Use `//` for single line, `/* */` for multi‑line. Document non‑obvious logic.
-- **Error Handling**: All fallible functions return `!T`. Use `try` and `catch` appropriately. For unrecoverable errors (ICE), use `@panic`.
+- **Error Handling**: All fallible functions return `!T`. Use `try` and `catch` appropriately. For unrecoverable errors (ICE), use `@panic` — it writes `panic: <msg>` to stderr and then traps (it does not return).
 - **Naming Conventions**: Follow Zig style: `snake_case` for functions/variables, `PascalCase` for types.
 - **No Dead Code**: Remove debugging prints before committing unless guarded by a `const DEBUG = false;` flag.
 
@@ -279,9 +279,9 @@ When `zig1` misbehaves, agents **must** consult `DEBUGGING.md`. The debugging py
 
 1. Unit tests
 2. Differential `--dump-*` outputs
-3. `std.debug.print` / `@panic` instrumentation
+3. `std.debug.log` / `std.debug.print` instrumentation (`@panic` terminates — it prints to stderr then traps, so use it only to stop on a fatal path)
 4. GDB on generated C code (with `#line` directives)
-5. `--bootstrap-safe` mode (or equivalent)
+5. `-fsafe` runtime checks (the default) vs `-ffast` (superseded `--bootstrap-safe`)
 6. C++ fallback component (last resort)
 
 Agents should **never** silently guess at a fix. Use the debugging tools to isolate the issue.

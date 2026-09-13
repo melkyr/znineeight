@@ -20,11 +20,12 @@ Z98 is a restricted subset of the Zig programming language compiled by the self-
 | `void` | Empty type | `void` |
 | `noreturn` | Never-returning type | `void` |
 
-Arbitrary-width integers carry an exact compile-time bit width, `u1`..`u64` unsigned and `i1`..`i63` signed. Values are stored in the smallest power-of-two C carrier that holds the width, so `@sizeOf(uN)`/`@alignOf(uN)` report that carrier size (1/2/4/8) while `@bitSizeOf(uN)` reports the declared width. Arithmetic results are masked (unsigned) or sign-extended (signed) back to the declared width, and `@intCast` to an arbitrary width is range-checked. Widths outside the supported ranges are rejected with `error[3000]`. Widths are also accepted as the explicit backing type of an enum (`enum(uN)`, see §1.3).
+Arbitrary-width integers carry an exact compile-time bit width, `u1`..`u64` unsigned and `i1`..`i63` signed. Values are stored in the smallest power-of-two C carrier that holds the width, so `@sizeOf(uN)`/`@alignOf(uN)` report that carrier size (1/2/4/8) while `@bitSizeOf(uN)` reports the declared width. Arithmetic results are masked (unsigned) or sign-extended (signed) back to the declared width, and `@intCast` to an arbitrary width is range-checked. The runtime range check (like the other five runtime checks) is enabled by default (`-fsafe`) and disabled by `-ffast` (see §5). Widths outside the supported ranges are rejected with `error[3000]`. Widths are also accepted as the explicit backing type of an enum (`enum(uN)`, see §1.3).
 
 ### 1.2 Pointers
-- **Single-item pointers**: `*T` and `*const T`.
-- **Many-item pointers**: `[*]T` and `[*]const T`. Supported for C-style array access.
+- **Single-item pointers**: `*T`, `*const T`, and `*volatile T`. `const` and `volatile` may be combined (`*const volatile T`).
+- **Many-item pointers**: `[*]T`, `[*]const T`, and `[*]volatile T`. Supported for C-style array access.
+- **Qualified-pointer scope**: `[]volatile T` slices and `*volatile fn(...)` function pointers are **not** supported; use `*volatile T` / `[*]volatile T` for memory-mapped I/O.
 - **Multi-level pointers**: `**T`, `***T`, etc., are fully supported.
 - **Address-of**: `&variable` produces a pointer.
 - **Dereference**: `pointer.*` accesses the value.
@@ -32,7 +33,8 @@ Arbitrary-width integers carry an exact compile-time bit width, `u1`..`u64` unsi
 - **Arithmetic**: `ptr + i`, `ptr - i`, and `ptr1 - ptr2` are allowed for many-item pointers.
 - **Identifiers**: Identifiers starting with `__` are reserved for the compiler. User-defined identifiers starting with `__` are automatically mangled to avoid collisions with internal compiler symbols.
 - **Auto-dereference**: `ptr.field` is automatically treated as `ptr->field` if `ptr` is a single-level pointer to a struct.
-- **Const Enforcement**: The Z98 frontend strictly enforces `const` qualifiers (e.g., you cannot assign to `*const T`). However, the C89 backend may drop these qualifiers to simplify code generation for complex types.
+- **Const Enforcement**: The Z98 frontend strictly enforces `const` qualifiers (e.g., you cannot assign to `*const T`). The C89 backend still **drops** `const` in emission (it is not rendered), so `const` remains a frontend-only guarantee.
+- **Volatile Enforcement**: `volatile` is enforced by the frontend **and preserved** in C89 emission. A `*volatile T` cannot be implicitly converted to `*T` (`error[3000]`); remove the qualifier only with `@volatileCast`, and `@ptrCast` cannot discard it. `*volatile T` renders as `volatile T*`.
 - **Function Pointers**: `fn(...) T` types are supported.
 - **Pointer Builtins**: Pointer casts and pointer/introspection are provided by builtins — `@ptrCast`, `@ptrToInt`/`@intFromPtr`, `@intToPtr`/`@ptrFromInt`, `@fieldParentPtr`, `@bitCast`, and `@as` (see §4).
 
@@ -91,6 +93,15 @@ Arbitrary-width integers carry an exact compile-time bit width, `u1`..`u64` unsi
   x = 42; // implicitly wrapped
   ```
 
+### 1.7 Type Aliases
+`const T = <type>;` names a type. Supported alias targets include primitive and arbitrary-width integers (`i32`, `u7`), arrays (`[N]T`), slices (`[]T`), many-item pointers (`[*]T`), single-item pointers (`*T`), optionals (`?T`), error unions (`E!T`), function types (`fn(...) T`), and other named aggregate/alias types. Aliases may chain (`const B = A;`) and may be re-exported across modules with `pub const`.
+```zig
+const MyInt = i32;
+const MyArr = [3]i32;
+const Buffer = []u8;
+```
+**Limitation — alias names are erased:** each alias resolves to its underlying type at registration, so diagnostics and emitted C report the underlying type, never the alias name.
+
 ## 2. Memory Management (Arena Pattern)
 
 Z98 relies on **Arena Allocation** for almost all dynamic memory needs. This pattern simplifies memory management and ensures performance on legacy systems.
@@ -99,7 +110,7 @@ Z98 relies on **Arena Allocation** for almost all dynamic memory needs. This pat
 The standard library re-exports an arena allocator as `std.arena` (`sf/src/std_arena.zig`). It wraps caller-provided backing storage:
 
 - `std.arena.init(data: []u8) Arena` — constructs an `Arena` over the given byte buffer.
-- `std.arena.alloc(self: *Arena, size: usize) ?[*]u8` — bumps within the backing storage and returns the raw block, or `null` when the arena is exhausted.
+- `std.arena.alloc(self: *Arena, size: usize) ArenaError![*]u8` — bumps within the backing storage and returns the raw block, or `error.OutOfMemory` when the arena is exhausted. (`pub const ArenaError = error{OutOfMemory};`)
 - `std.arena.reset(self: *Arena) void` — reclaims all allocations by setting the used length back to zero.
 
 Z98 has no method syntax, so these are called as free functions (e.g. `std.arena.alloc(&a, n)`).
@@ -119,13 +130,14 @@ const MyStruct = struct {
     x: i32,
 };
 
-fn MyStruct_init(arena: *std.arena.Arena, x: i32) *MyStruct {
-    const raw = std.arena.alloc(arena, @sizeOf(MyStruct)) orelse unreachable;
+fn MyStruct_init(arena: *std.arena.Arena, x: i32) !*MyStruct {
+    const raw = try std.arena.alloc(arena, @sizeOf(MyStruct));
     const self = @ptrCast(*MyStruct, raw);
     self.x = x;
     return self;
 }
 ```
+`std.arena.alloc` returns an error union (`ArenaError![*]u8`), so `orelse` is rejected with `error[3016]`; use `try`/`catch`. In a helper that cannot propagate the error, `catch unreachable` is the fallback and now traps (rather than falling through) if the arena is exhausted.
 
 ### 2.3 Reclaiming Memory
 Memory is reclaimed by resetting the arena.
@@ -183,7 +195,7 @@ This approach maximizes performance on legacy hardware by minimizing the active 
              |  start '..' end    (exclusive)
     ```
   - **Result Type**: Computed by merging the types of all non-divergent prongs. If all prongs diverge, the result type is `noreturn`.
-  - **Divergent Prongs**: Prongs may contain `return`, `break`, `continue`, or `unreachable`. These prongs have the type `noreturn`.
+  - **Divergent Prongs**: Prongs may contain `return`, `break`, `continue`, or `unreachable`. These prongs have the type `noreturn`. An `unreachable` prong now emits a live trap (`pal_trap()`), not a fall-through no-op (see §4).
   - **Value Blocks**: Switch prongs can use blocks that yield a value (e.g., `=> { var x = 5; x + 1 }`).
   - **Examples**:
     ```zig
@@ -222,6 +234,7 @@ This approach maximizes performance on legacy hardware by minimizing the active 
         return;
     };
     ```
+  - **Operand Requirement**: `orelse` requires an **optional** operand. Applying it to a non-optional value (including an error union) is rejected with `error[3016]: orelse requires an optional operand; use 'catch' for error unions`.
 
 ### 3.2 Labeled Blocks and Loop Control
 - **Labeled Blocks**: A block can be labeled (`blk: { ... }`) and exited early with a value-less `break :blk;`. A labeled block is a statement, not a value-producing expression: yielding a value out of a labeled block (`break :blk value;`) is **not implemented** (see §7).
@@ -277,6 +290,7 @@ Builtins are invoked as `@name(...)` and are recognized by name; an unknown or u
 | `@ptrFromInt(expr)` | Integer to pointer, result type taken from context |
 | `@fieldParentPtr(T, "field", expr)` | Pointer to the containing struct from a pointer to one of its fields |
 | `@bitCast(T, expr)` | Same-size integer-to-integer bit reinterpretation |
+| `@volatileCast(T, expr)` | Remove the `volatile` qualifier; source must be a volatile pointer and target the same base type |
 | `@intCast(T, expr)` | Checked integer conversion / width change |
 | `@floatCast(T, expr)` | Checked float conversion |
 | `@intToFloat(T, expr)` | Integer to float |
@@ -297,7 +311,7 @@ Builtins are invoked as `@name(...)` and are recognized by name; an unknown or u
 - `@sleepMs(ms)`: Sleeps for `ms` milliseconds.
 - `@isWindows()`: Compile-time-folded target predicate (true only for the Windows target).
 - `@consoleClear()`, `@consoleGotoxy(x, y)`, `@consoleSetColor(fg, bg)`: Console control helpers.
-- `@panic(msg)`: Accepted, but **lowers to a no-op** in user programs on this compiler (it is typed as its argument, not `noreturn`). `unreachable` is also accepted and typed as `noreturn`, but likewise **lowers to a no-op**. For real termination, use the printed-abort + trap provided by `std.debug` (see `sf/src/std_debug.zig`), not `@panic`/`unreachable`.
+- `@panic(msg)`: Evaluates `msg`, writes `panic: <msg>\n` to **stderr**, then **traps** (`pal_trap()`; x86 `int 3`, elsewhere `pal_abort()`). It is typed `noreturn` and is **not** a no-op. `unreachable` is likewise a real unconditional trap. Both trap in `-fsafe` and `-ffast`. `std.debug.assert`/`std.debug.panic` also call `pal_trap()`, but their message is written to **stdout**, which is buffered and may be lost before the trap — treat them as terminators, not as a reliable printed abort.
 
 **C varargs**
 - `@cVaStart`, `@cVaArg`, `@cVaEnd`: Access a C variadic argument list (`va_list`).
@@ -322,12 +336,15 @@ To maintain C89 compatibility and compiler simplicity, Z98 has the following lim
 - **Strict Coercion**: There is no implicit coercion between `i32` and `usize`. Use `@intCast(usize, ...)` or `@intCast(i32, ...)` when mixing these types in assignments or initializers.
 - **No Method Syntax**: `struct.func()` is not supported; use `func(struct)`. (Exception: a call whose callee is named `print` gets format-string lowering; see §4.)
 - **AST Lifting**: Most control-flow expressions (`if`, `switch`, `try`, `catch`, `orelse`) are automatically transformed into statement blocks using temporary variables. This enables their use in complex expressions while maintaining C89 compatibility.
+- **Runtime Safety (`-fsafe` / `-ffast`)**: `-fsafe` is the **default** and enables six runtime checks — checked cast (`@intCast`/`@floatCast`), division/modulo-by-zero, shift-count, null-unwrap, index out-of-bounds, and integer overflow (`+`, `-`, `*`, unary `-`). A failed check calls `pal_trap()`. `-ffast` disables all six checks (the compiler self-build uses `-ffast`; user programs default to `-fsafe`). `unreachable`/`@panic` trap in **both** modes. Under `-fsafe`, storage initialized with `undefined` is byte-filled with `0xAA` to make reads visible; `-ffast` emits no poison fill (and does not zero it).
+- **Compile-time Diagnostics**: `var x: T;` with no initializer is `error[3014]` (write `= undefined` to opt out). A statement whose result is an error union and is discarded is `error[3015]`. A non-void function that can fall off its end, or a bare `return;` in a non-void function, is `error[3003]` (real reachability; an `if`/`else` where both arms return is not flagged). `orelse` on a non-optional operand is `error[3016]` (see §3.1). All are mode-independent.
 
 ## 6. Z98 Idioms and Best Practices
 
 ### 6.1 The Arena Pattern
 Dynamic memory should almost exclusively be managed via `std.arena` (`ArenaAllocator` is not the shipped name).
 - **Ownership**: Functions should accept an `*std.arena.Arena` rather than "owning" their memory.
+- **Allocation is fallible**: `std.arena.alloc` returns `ArenaError![*]u8`, so unwrap with `try`/`catch` (see §2.1/§2.2) — never `orelse`, which is rejected with `error[3016]`.
 - **Transient vs Permanent**: Use a dual-arena system to separate short-lived temporary allocations from long-lived application state.
 - **Cleanup**: Call `std.arena.reset(&arena)` at the highest possible level (e.g., end of `main` or after a major processing loop). There is no `deinit`.
 
@@ -348,6 +365,7 @@ fn initRegistry() void {
     // initialize here
 }
 ```
+`undefined` is an opt-out of the `error[3014]` "must be initialized" diagnostic, not a guaranteed zero: under `-fsafe` the storage is filled with `0xAA` so an uninitialized read is detectable, and `-ffast` emits no fill at all.
 
 ## Type Coercions
 
@@ -375,12 +393,31 @@ These coercions are **not** allowed in other contexts, such as arithmetic operat
 
 ## 7. Not Yet Supported
 
-> **DESIGNED, NOT IMPLEMENTED.** The following features appear in design/plan documents for Z98 but are **not implemented** in the current self-hosted `zig1` compiler. Do not rely on them.
+### 7.1 Permanently Dropped Features
 
-- `static` declarations.
-- `do ... while` loops.
+These were considered and are **not** planned for `zig1`; use the documented idiom instead.
+
+- **`static` declarations**: dropped (the `static` keyword is not in the token set; `static var` is `error[2000]`). Use a container-level `var` for persistent state:
+  ```zig
+  var g_count: i32 = 0; // file/container scope, persists across calls
+  fn bump() void { g_count = g_count + 1; }
+  ```
+- **`do ... while` loops**: dropped. Use the equivalent `while (true)` idiom with an early `break`:
+  ```zig
+  while (true) {
+      body();
+      if (!cond) break;
+  }
+  ```
+  Caveat: `continue` in this emulation skips the condition test and re-enters the body, unlike a real `do ... while`.
+
+`volatile` qualifiers are **no longer** dropped: `*volatile T` / `[*]volatile T` and `@volatileCast` are supported (see §1.2/§4).
+
+### 7.2 Designed, Not Implemented
+
+> The following features appear in design/plan documents for Z98 but are **not implemented** in the current self-hosted `zig1` compiler. Do not rely on them.
+
 - Value-producing labeled blocks (`const n = blk: { ... break :blk 1; };`). Only value-less `break :blk;` is supported.
-- `volatile` qualifiers.
 - `@errorName`.
 - `extern struct`, `opaque`, and `vector` types.
 - Generics, `anytype` parameters, `@Type`, `@typeInfo`, and `comptime`.
