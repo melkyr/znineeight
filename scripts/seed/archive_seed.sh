@@ -69,11 +69,12 @@ chmod +x "$SEED/zig1"
 cp "$GENDIR"/*.c "$GENDIR"/*.h "$SEED/gen/"
 # The emitter now copies its runtime/platform support into DIR (emit_support):
 # zig_runtime.c/zig_pal.c/c_exit.c + zig_compat.h/zig_runtime.h/net_prelude.h.
-# Those already live in runtime/ (c_exit.c at top level); the three support .c
-# MUST NOT be duplicated into gen/ or the archive C double-links against the
-# runtime trio (Phase-1 reproduced: link rc=1 multiple definition of std_panic).
-# Keep gen/ = the module emission only (net_prelude.h is deliberately not part
-# of the seed — see SEED_README.txt).
+# Those are staged into runtime/ + top-level c_exit.c from the gen dir itself
+# (the emitted, mode-specific support); the three support .c MUST NOT be
+# duplicated into gen/ or the archive C double-links against the runtime trio
+# (Phase-1 reproduced: link rc=1 multiple definition of std_panic). Keep gen/ =
+# the module emission only (net_prelude.h is deliberately not part of the seed
+# — see SEED_README.txt).
 for f in zig_runtime.c zig_pal.c c_exit.c zig_compat.h zig_runtime.h net_prelude.h; do
     rm -f "$SEED/gen/$f"
 done
@@ -81,10 +82,26 @@ C_COUNT=$(ls "$SEED/gen"/*.c 2>/dev/null | wc -l)
 H_COUNT=$(ls "$SEED/gen"/*.h 2>/dev/null | wc -l)
 [ "$C_COUNT" -gt 0 ] || die "gen dir '$GENDIR' has no module *.c after support exclusion"
 [ "$H_COUNT" -gt 0 ] || die "gen dir '$GENDIR' has no module *.h after support exclusion"
-cp "$ROOT/sf/src/c_exit.c" "$SEED/c_exit.c"
-for f in zig_compat.h zig_runtime.h zig_special_types.h zig_runtime.c zig_pal.c; do
-    cp "$ROOT/sf/src/include/$f" "$SEED/runtime/"
-done
+if [ -f "$GENDIR/zig_runtime.c" ]; then
+    # The gen dir is a self-emission dump and carries the mode-specific support
+    # the compiler emitted (emit_support). Stage THOSE into runtime/ so a
+    # gcc-only rebuild of the archive C reproduces the seed binary's exact
+    # fixed point. Staging the canonical sf/src/include support instead mixes
+    # the -ffast module C with the -fsafe superset runtime (extra static
+    # helpers), which yields a different byte image than the archived binary
+    # (A13 discovery: 8a87ef6c vs 1467d932).
+    cp "$GENDIR/c_exit.c" "$SEED/c_exit.c"
+    for f in zig_compat.h zig_runtime.h zig_special_types.h zig_runtime.c zig_pal.c; do
+        cp "$GENDIR/$f" "$SEED/runtime/"
+    done
+else
+    # Pre-EMITEMIT gen dir (no emitted support) — fall back to the canonical
+    # repo runtime sources.
+    cp "$ROOT/sf/src/c_exit.c" "$SEED/c_exit.c"
+    for f in zig_compat.h zig_runtime.h zig_special_types.h zig_runtime.c zig_pal.c; do
+        cp "$ROOT/sf/src/include/$f" "$SEED/runtime/"
+    done
+fi
 for f in std.zig std_io.zig std_arena.zig std_net.zig std_str.zig std_mem.zig std_math.zig std_debug.zig; do
     cp "$ROOT/sf/src/$f" "$SEED/lib/"
 done
@@ -127,8 +144,11 @@ zig1-seed/gen/        the seed's own self-emission C89 ($C_COUNT .c + $H_COUNT
                       at HEAD $HEAD; $GEN_BYTES bytes)
 zig1-seed/c_exit.c    link source (sf/src/c_exit.c, top level per spec layout)
 zig1-seed/runtime/    link/include sources needed to compile gen/:
-                      zig_compat.h, zig_runtime.h, zig_special_types.h
-                      (canonical 87-B copy), zig_runtime.c, zig_pal.c
+                      zig_compat.h, zig_runtime.h, zig_special_types.h,
+                      zig_runtime.c, zig_pal.c (the compiler's emitted,
+                      mode-specific support so a gcc-only rebuild reproduces
+                      the seed binary's fixed point; canonical repo copies for
+                      pre-EMITEMIT gen dirs)
 zig1-seed/lib/        the 8 std .zig (std.zig, std_io.zig, std_arena.zig,
                       std_net.zig, std_str.zig, std_mem.zig, std_math.zig,
                       std_debug.zig)
@@ -201,10 +221,12 @@ Link rule: self-emission C89 links zig_runtime.c + zig_pal.c + c_exit.c.
 zig_pal.c alone is insufficient (undefined std_panic + c_exit).
 
 Archive inventory (sizes from sf/src at HEAD $HEAD):
-  runtime/: zig_compat.h, zig_runtime.h, zig_special_types.h (canonical 87-B
-  copy; during a from-gen rebuild the emitted gen/zig_special_types.h shadows
-  it), zig_runtime.c, zig_pal.c. c_exit.c is at archive top level (separate
-  from runtime/), per spec layout. Emitted gen set: $C_COUNT .c + $H_COUNT .h
+  runtime/: zig_compat.h, zig_runtime.h, zig_special_types.h, zig_runtime.c,
+  zig_pal.c (staged from the gen dir's emitted, mode-specific support so the
+  gcc-only rebuild reproduces the archived binary's fixed point; canonical repo
+  copies only for pre-EMITEMIT gen dirs). c_exit.c is at archive top level,
+  separate from runtime/, per spec layout. Emitted gen set: $C_COUNT .c +
+  $H_COUNT .h
   = $GEN_BYTES bytes.
 EOF
 

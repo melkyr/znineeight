@@ -1,4 +1,102 @@
-# mi_matrix corpus — expected-fail manifest (v76 2026-09-08)
+# mi_matrix corpus — expected-fail manifest (v77 2026-09-13)
+
+## C89-AHEAD features GREEN/reject + `safe_*` trap contract (v77 2026-09-13)
+
+Plan `2026-09-09-c89-ahead-features-plan.md` is COMPLETE (A1–A13; A12 closeout battery, A13 docs GATE +
+seed rotation). Measurement compiler = the N-hop closure binary `1467d932a876402f40a56316dfcad0e5`
+(`-ffast`), rebuilt from the committed seed v9 `4da59bb1…` (`hop1 a3e1c410… → hop2==hop3 1467d932…`),
+canonical 8-file `lib/`. Corpus `-s0` universe **570 dirs** (`scripts/corpus/list_corpus_dirs.sh`) =
+**541 OK / 29 GREEN / 0 FAIL / 0 ICE / 0 CRASH**, `-ffast`==`-fsafe` **zero-asymmetric**. The 29
+GREEN/reject fixtures below all classify `dump rc=2`, **0 `.c`**, expected diagnostic (verified
+2026-09-13 on `1467d932…`):
+
+| fixture | class | expected diagnostic |
+|---|---|---|
+| `net_builtin_test` | GREEN | `error[3000]` unsupported builtin (removed `@socket*`) |
+| `cleandiag_unknown_builtin_xmod` | GREEN | `error[3000]` unsupported builtin function |
+| `cleandiag_unknown_type_xmod` | GREEN | `error[3000]` unknown type in variable declaration |
+| `packed_union_struct_wholemember_xmod` | GREEN | `error[3000]` whole-member packed-union move reject |
+| `diag_uninit_var_xmod` | GREEN | `error[3014]` uninitialized variable |
+| `diag_ignored_error_xmod` | GREEN | `error[3015]` ignored error |
+| `diag_missing_return_xmod` | GREEN | `error[3003]` missing return |
+| `orelse_requires_optional_xmod` | GREEN | `error[3016]` orelse requires an optional operand |
+| `orelse_error_union_xmod` | GREEN | `error[3016]` orelse requires an optional operand (use `catch`) |
+| `volatile_drop_ptr_xmod` | GREEN | `error[3000]` cannot implicitly discard `volatile` (use `@volatileCast`) |
+| `volatile_drop_manyptr_xmod` | GREEN | `error[3000]` cannot implicitly discard `volatile` |
+| `volatile_drop_slice_xmod` | GREEN | `error[3000]` cannot implicitly discard `volatile` |
+| `volatile_drop_fnparam_xmod` | GREEN | `error[3000]` cannot implicitly discard `volatile` |
+| `volatile_drop_optional_xmod` | GREEN | `error[3000]` cannot implicitly discard `volatile` |
+| `volatile_drop_void_xmod` | GREEN | `error[3000]` cannot implicitly discard `volatile` |
+| `volatile_drop_array_slice_xmod` | GREEN | `error[3000]` cannot implicitly discard `volatile` (`*volatile [N]T → []T`) |
+| `volatile_ptrcast_drop_xmod` | GREEN | `error[3000]` `@ptrCast` cannot discard `volatile` |
+| `volatile_cast_wrong_base_xmod` | GREEN | `error[3000]` `@volatileCast` wrong base type |
+| `volatile_cast_nonvolatile_xmod` | GREEN | `error[3000]` `@volatileCast` source is not volatile |
+| `eu_assign_incompat_payload` | GREEN | `error[3000]` (documented EU green-guard) |
+| `euvoid_val_catch` | GREEN | `error[3000]` (documented EU green-guard) |
+| `field_access_optional` | GREEN | `error[3000]` (documented optional green-guard) |
+| `var_declared_void` | GREEN | `error[3000]` (documented void-decl green-guard) |
+| `parsergap_slice_expr_xmod` | GREEN | `error[2000]` + `error[3000]` (documented scalar-base slice reject) |
+| `strictzig_brace_if_xmod` | GREEN | `error[2000]` (documented brace-less-if reject) |
+| `parsergap_selfblok_xmod` | GREEN | `error[2000]` (documented brace-less-if reject) |
+| `parsergap_strict_comma_xmod` | GREEN | `error[2000]` (documented missing-comma reject) |
+| `self_embed_optional_cycle` | GREEN | `error[24]` circular type (real Zig rejects `?X` value self-ref) |
+| `emission_pal_xmod` | GREEN | `error[20]` (documented compiler-internal import reject) |
+
+29 fixtures total = the 10 documented pre-C89-AHEAD green-guards + 19 C89-AHEAD rejects (9 clean
+diagnostics: `net_builtin_test`, `cleandiag_*`×2, `packed_union_struct_wholemember`, `diag_*`×3,
+`orelse_*`×2; 10 volatile qualifier rejects).
+
+### `safe_*` / `trap_*` RED→GREEN trap contract
+
+Under pre-C89-AHEAD **`-ffast`** (RED) these programs ran with **no runtime guard** — silent bad output
+or raw UB (div/mod-by-zero and `INT_MIN/-1` = SIGFPE **rc=136**). Under C89-AHEAD **default `-fsafe`**
+(GREEN) each guard fires: `pal_trap()` → SIGTRAP **rc=133**, no silent miscompile. Control fixtures
+(bounds in-range, short-circuit, mixed-sign, intcast control, overflow control, undefined poison,
+unwrap guard) stay **rc=0** in both modes; `trap_*` fixtures trap in **both** modes (unconditional
+`pal_trap`).
+
+| fixture (representative) | check | pre-C89-AHEAD `-ffast` (RED) | `-fsafe` (GREEN) |
+|---|---|---|---|
+| `safe_bounds_read_xmod` / `_write` / `_slice` / `_field` | index-OOB | rc=0 (silent) | **rc=133** SIGTRAP |
+| `safe_div_zero_xmod` / `safe_div_min_neg1_xmod` / `safe_mod_min_neg1_xmod` | div/mod zero + `INT_MIN/-1` | **rc=136** SIGFPE (raw UB) | **rc=133** SIGTRAP |
+| `safe_shift_count_xmod` / `safe_int_lit_shl_{count,runtime,value}_xmod` | shift count / left-shift overflow | rc=0 (silent) | **rc=133** SIGTRAP |
+| `safe_cast_overflow_xmod` / `safe_intcast_{subword,widen_sign,u64_i64,i64_u64}_xmod` | checked `@intCast` | rc=0 (silent) | **rc=133** SIGTRAP |
+| `safe_int_{add,sub,mul,neg,shl}_overflow{,_u}_xmod` / `safe_ovf_*_xmod` / `safe_compound_*_xmod` | integer overflow (wrap+flag) | rc=0 (silent) | **rc=133** SIGTRAP |
+| `trap_unreachable_xmod` / `trap_panic_xmod` / `trap_orelse_unreachable_xmod` / `trap_arena_exhaustion_xmod` | unconditional `pal_trap` | **rc=133** | **rc=133** |
+| `safe_bounds_inbounds_xmod` / `safe_divmod_control_xmod` / `safe_int_shortcircuit_xmod` / `safe_int_mixed_sign_xmod` / `safe_intcast_control_xmod` / `safe_ovf_control_xmod` / `safe_ovr_mixsign_boundary_xmod` / `safe_unwrap_guard_xmod` / `safe_undefined_{direct,agg,poison}_xmod` | in-range / guard-prevented controls | rc=0 | rc=0 |
+
+Fixture runtime sweep **180/180** (90 feature dirs × 2 modes) emitted+compiled+linked+ran; `-fsafe`
+**42× rc=133** (38 `safe_*` guards + 4 `trap_*`) + **48× rc=0**; `-ffast` **81× rc=0 + 5× rc=136**
+(SIGFPE raw div) + **4× rc=133** (`trap_*`). Every `safe≠fast` row is an intended guard fixture.
+
+### C89-AHEAD run-GREEN fixture inventory (all class OK; `-ffast`==`-fsafe` unless noted)
+
+- **`noreturn_*`** (7): `noreturn_{assign_rhs,call_arg,if_init,if_init_block,nested,opt_ctx,switch_init}_xmod` — rc=0 both modes.
+- **`trap_*`** (4): `trap_{unreachable,panic,orelse_unreachable,arena_exhaustion}_xmod` — rc=133 both modes.
+- **`typealias_*`** (18): `typealias_{prim,agg,arr,chain_arr,mptr,ptr,opt,eu,fn,slice,aint,pub_arr,pub_slice,pub_mptr,pub_aint,forms_control,arr_elem_mismatch,arr_len_mismatch}_xmod` — rc=0 both modes.
+- **`arena_oom_green_xmod`**: `std.arena.alloc` OOM → `error.OutOfMemory` via `try`/`catch` — rc=0 both modes.
+- **`volatile_*` accept** (4): `volatile_{mmio,fastpaths,cast_accept,add_accept}_xmod` — rc=0 both modes.
+- **`diag_*_ok` / `orelse_optional_control_xmod`**: diagnostics controls (no false positives) — rc=0.
+
+### Re-baselined 4-MD5 gate rows + fixed point (v77)
+
+Gate table re-baselined to the **default `-fsafe`** rows with the pre-C89-AHEAD `-ffast` rows kept as
+the byte anchor (operator-approved A12 STOP; `docs/sf/QUICK_REF.md` carries the same table):
+
+| program | default `-fsafe` | `-ffast` byte-anchor |
+|---|---|---|
+| `examples/z98/game_of_life/main.zig` | `1eed772387ae63205e93e207dae6af52` | `a5b49350583ed79edfc7cce9eb4a6e29` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `6f2267711a61a117ad6aa4a92aced4e9` | `8385ab02cb3094c4f8cb48cf010049d9` |
+| `examples/z98/json_parser/main.zig` | `ccdcb6ef4b7af5be1193a89f34db5143` | `265fa6a8fc752a62b33fea169b24953e` |
+| `examples/z98/mud_server/main.zig` | `5f05df6eb34986a4571e2ae8852887bf` | `c0a2d6773b207e94e1952c2880aa7b0e` |
+
+- **Fixed point `1467d932a876402f40a56316dfcad0e5`** (the `-ffast` binary; N-hop from committed seed v9
+  `4da59bb1…` → hop1 `a3e1c410…` → hop2==hop3 `1467d932…`). Seed rotated **v9 → v10** via
+  `scripts/seed/archive_seed.sh` → archive md5 `ca18fc9f9af55d58147fcb7ff7a662b6`, internal `zig1` md5
+  `1467d932…`, `gen/` 42 `.c` + 43 `.h`; post-rotation `build_from_seed.sh` closure
+  hop1==hop2==`1467d932…`; `check_emit_support.sh` 5/5. `archive_seed.sh` now stages the gen dir's
+  **emitted, mode-specific** support into `runtime/` so a gcc-only rebuild reproduces the archived
+  binary exactly (canonical `-fsafe` runtime previously gave a mismatched `8a87ef6c…`).
 
 ## Packed enum(uN) fields GREEN (v76 2026-09-08) — PACK-B3
 

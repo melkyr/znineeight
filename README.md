@@ -34,13 +34,13 @@ compiles itself to become the fully self-hosted compiler, **zig1** — the subje
 
 ## Current Status
 The **self-hosted milestone is complete**: `zig1` compiles itself, the compilation is
-**deterministic to a fixed point** (self-compile binary md5 `4da59bb1…`; committed seed **v9**,
+**deterministic to a fixed point** (self-compile binary md5 `1467d932…`; committed seed **v10**,
 `release/seed/zig1-seed.tgz`), the 4-program emission gate is byte-identical (see
 [Determinism](#determinism)), and the maintained example matrix is **21/21** dump/gcc/link. The
 mi_matrix corpus at `-s0` is enumerated by the canonical generator
 [`scripts/corpus/list_corpus_dirs.sh`](scripts/corpus/list_corpus_dirs.sh); the documented
 expected-fail / correctly-rejected fixtures are maintained in
-`repro/mi_matrix/EXPECTED_FAIL.md` (v76). No corpus total is asserted here — the generator is the
+`repro/mi_matrix/EXPECTED_FAIL.md` (v77). No corpus total is asserted here — the generator is the
 source of truth. The upgraded showcase gate (`scripts/closeout/verify_upgraded.sh`) passes its full
 A1–B7 battery.
 
@@ -79,11 +79,11 @@ gated by `scripts/closeout/verify_upgraded.sh`.
 The self-hosted compiler is deterministic end-to-end. Successive self-host hops emit **byte-identical
 C89** and rebuild **byte-identical binaries** — the self-compile fixed point is closed.
 
-- **Self-compile fixed point:** self-compiled `zig1` binary md5 `4da59bb11270e3c85638bcbb120afc2d`
+- **Self-compile fixed point:** self-compiled `zig1` binary md5 `1467d932a876402f40a56316dfcad0e5`
   (42 module `.c` + 43 module `.h`, 0 `error[`, 0 PANIC; hop1 == hop2 closure). Operator-approved
-  re-baseline 2026-09-10 (SPECFIX). Committed seed **v9**.
-- **N-hop chain (seed model):** committed seed v8 `31973114…` → hop1 `4da59bb1…` → hop2 `4da59bb1…`
-  (two-hop closure; 42 module `.c`, 245,368 `.c` lines, 7,120,879 B of module `.c`). zig0 is retired;
+  closeout 2026-09-13 (C89-AHEAD). Committed seed **v10**.
+- **N-hop chain (seed model):** committed seed v9 `4da59bb1…` → hop1 `a3e1c410…` → hop2 `1467d932…`
+  (two-hop closure; 42 module `.c` + 43 module `.h`). zig0 is retired;
   the seed model (`scripts/seed/build_from_seed.sh`) is the only rebuild path.
 - **Self-emission byte-identity:** the 42-module `.c` + 43 `.h` self-emission set is byte-identical on
   every successive hop (only hidden `.zig1_*.tmp` spill scratch is non-deterministic — compare
@@ -91,14 +91,15 @@ C89** and rebuild **byte-identical binaries** — the self-compile fixed point i
   both target flavours (linux / `-osw`).
 
 **4-program emission gate** (md5 prefixes of `zig1 --dump-c89 … | md5sum`, repo-root CWD,
-re-verified 2026-09-10 with the reference `zig1` md5 `4da59bb1…`):
+re-baselined 2026-09-13 (C89-AHEAD) with the reference `zig1` md5 `1467d932…`; rows are the default
+`-fsafe` emission — the pre-C89-AHEAD `-ffast` byte-anchor rows are recorded in `docs/sf/QUICK_REF.md`):
 
-| Program | md5 prefix |
+| Program | md5 prefix (default `-fsafe`) |
 |---|---|
-| `examples/z98/game_of_life/main.zig` | `2cf07dea` |
-| `examples/z98/lisp_interpreter_curr/main.zig` | `f13bd982` |
-| `examples/z98/json_parser/main.zig` | `f61bccfd` |
-| `examples/z98/mud_server/main.zig` | `68eee54c` |
+| `examples/z98/game_of_life/main.zig` | `1eed7723` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `6f226771` |
+| `examples/z98/json_parser/main.zig` | `ccdcb6ef` |
+| `examples/z98/mud_server/main.zig` | `5f05df6e` |
 
 All four hashes byte-exact vs the recorded constraints (lisp emits `warning[3037]` diagnostics on
 stderr; they do not contaminate the stdout hash). Corpus/golden summary: the corpus universe is
