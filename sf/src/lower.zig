@@ -32,6 +32,7 @@ const si_mod = @import("string_interner.zig");
 const format_mod = @import("util/format.zig");
 const itoa_mod = @import("util/itoa.zig");
 const hash_mod = @import("util/hash.zig");
+const async_analysis = @import("async_analysis.zig");
 
 pub const SrcIntent = enum(u8) { value, null_src, error_src };
 
@@ -367,6 +368,7 @@ pub const LirLowerer = struct {
     alloc: *Sand,
     scope_depth: u32,
     block_terminated: u8,
+    suppress_fnref_ban: u8,
     module_id: u32,
     module_reg: *ModuleRegistry,
     intcast_name_id: u32,
@@ -518,6 +520,7 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
         .alloc = alloc,
         .scope_depth = @intCast(u32, 0),
         .block_terminated = @intCast(u8, 0),
+        .suppress_fnref_ban = @intCast(u8, 0),
         .module_id = @intCast(u32, 0),
         .module_reg = undefined,
          .intcast_name_id = intcast_id,
@@ -2262,6 +2265,25 @@ fn lowerGlobalRef(self: *LirLowerer, s: sym_mod.Symbol, name_id: u32) u32 {
 }
 
 
+fn materializeFnRef(self: *LirLowerer, sym: *sym_mod.Symbol) u32 {
+    if (self.suppress_fnref_ban == @intCast(u8, 0) and async_analysis.asyncIsSuspending(self.ctx.suspending_fns, sym.module_id, sym.name_id)) {
+        var m317: []const u8 = "taking the address of a suspending function is not allowed";
+        _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0),
+            @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3017_SUSPENDING_FUNCTION_POINTER)),
+            @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), m317);
+        return TEMP_NONE;
+    }
+    var s_t: u32 = sym.type_id;
+    if (s_t == @intCast(u32, 0)) return TEMP_NONE;
+    type_mod.typeRegistryMarkFnPtrUsed(self.ctx.registry, s_t);
+    var fr_pt = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, s_t, false);
+    var fr_mid = self.module_id;
+    if (sym.module_id != @intCast(u32, 0)) { fr_mid = sym.module_id; }
+    var fr_res = nextTemp(self, fr_pt);
+    emitInst(self, LirInst{ .func_ref = .{ .name_id = sym.name_id, .module_id = fr_mid, .result = fr_res } });
+    return fr_res;
+}
+
 fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     self._ctx_node_idx = node_idx;
     self._ctx_node_kind = @intCast(u32, @enumToInt(ast_mod.astStoreNodeAt(self.ctx.store, node_idx).kind));
@@ -3010,18 +3032,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), mam);
                     return TEMP_NONE;
                 } else if (s.kind == sym_mod.SymbolKind.function) {
-                    var s_t: u32 = s.type_id;
-                    if (s_t != @intCast(u32, 0)) {
-                        type_mod.typeRegistryMarkFnPtrUsed(self.ctx.registry, s_t);
-                        var fr_pt2 = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, s_t, false);
-                        var fr_nid = s.name_id;
-                        var fr_mid = self.module_id;
-                        if (s.module_id != @intCast(u32, 0)) { fr_mid = s.module_id; }
-                        var fr_res2 = nextTemp(self, fr_pt2);
-                        emitInst(self, LirInst{ .func_ref = .{ .name_id = fr_nid, .module_id = fr_mid, .result = fr_res2 } });
-                        return fr_res2;
-                    }
-                    return TEMP_NONE;
+                    return materializeFnRef(self, s);
                 } else if (s.kind == sym_mod.SymbolKind.local or s.kind == sym_mod.SymbolKind.param) {
                     if (findLocalTemp(self, name_id)) |fnd| {
                         return fnd;
@@ -3213,14 +3224,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                 return gtemp;
                             }
                         } else if (ts.kind == sym_mod.SymbolKind.function) {
-                            var fn_type_id = ts.type_id;
-                            if (fn_type_id != @intCast(u32, 0)) {
-                                type_mod.typeRegistryMarkFnPtrUsed(self.ctx.registry, fn_type_id);
-                                var fr_pt = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, fn_type_id, false);
-                                var fr_res = nextTemp(self, fr_pt);
-                                emitInst(self, LirInst{ .func_ref = .{ .name_id = ts.name_id, .module_id = target_mod, .result = fr_res } });
-                                return fr_res;
-                            }
+                            return materializeFnRef(self, ts);
                         } else if (ts.kind == sym_mod.SymbolKind.global) {
                             var gbl_type = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, ts.decl_node);
                             var gbl_tid = if (gbl_type) |gt| gt else type_mod.TYPE_UNDEFINED;
@@ -3306,10 +3310,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         var fr_fsym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, fr_tmod, field_name_id);
                         if (fr_fsym) |frfsym| {
                             if (frfsym.kind == @intCast(u8, 3)) {
-                                type_mod.typeRegistryMarkFnPtrUsed(self.ctx.registry, fa_box[0]);
-                                var fr_pt = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, fa_box[0], false);
-                                var fr_res = nextTemp(self, fr_pt);
-                                emitInst(self, LirInst{ .func_ref = .{ .name_id = frfsym.name_id, .module_id = fr_tmod, .result = fr_res } });
+                                var fr_res = materializeFnRef(self, frfsym);
                                 var frm_m: []const u8 = "FREF:n"; pal.markerWrite(frm_m);
                                 var frm_b: [10]u8 = undefined; var frm_l = itoa_mod.itoa(frfsym.name_id, frm_b[0..]); var frm_s: usize = @intCast(usize, 9) - @intCast(usize, frm_l); pal.markerWrite(frm_b[frm_s..@intCast(usize, 9)]);
                                 var frm_nl: []const u8 = "\n"; pal.markerWrite(frm_nl);
@@ -4104,7 +4105,9 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             }
             if (node.child_0 == self.async_frame_size_name_id) {
                 if (ec.len >= @intCast(usize, 1)) {
+                    self.suppress_fnref_ban = @intCast(u8, 1);
                     _ = lowerExpr(self, ec[@intCast(usize, 0)]);
+                    self.suppress_fnref_ban = @intCast(u8, 0);
                 }
                 var afs_res = nextTemp(self, type_mod.TYPE_INT_LIT);
                 emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = afs_res } });

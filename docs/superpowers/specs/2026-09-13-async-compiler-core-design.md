@@ -173,6 +173,16 @@ discharged:**
    appended with `= NNNN` (never a bare auto-increment member), preserving ICE
    `3043` and `ERR_3048_CANNOT_READ_FILE = 3048` (`diagnostics.zig:70-72`).
 
+**Discharge status (Task 4, ASYNCTRACK2).** Concern 1 (`fn_ptr_struct_field`)
+remains a Track 3 constraint: the emission gap is still open, and Track 3 must not
+store a `step` fn-ptr in a struct field. Concerns 2 (module-scope mutable globals)
+and 4 (dynamic-call soundness) are discharged — the analysis is pure compiler state
+(side table, no runtime scheduler global) and `ERR_3017` now forbids materializing a
+suspending function as a value at all three `func_ref` sites (gated by
+`async_fnptr_error_xmod`). The `@asyncFrameSize` argument is a compile-time function
+query, not a value, so the ban is suppressed while lowering it (the `func_ref` edge
+is still emitted for module liveness).
+
 ### 3.2 Stage 2 — frame layout on the LIR CFG
 
 **Structures walked.** `LirFunction { name_id, module_id, return_type, params,
