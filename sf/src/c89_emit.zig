@@ -7979,14 +7979,17 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             bufferedWriterWrite(&emitter.writer, fr_eq);
             var fr_tid = tempFnTypeId(emitter, fr.result);
             var fr_is_extern: u8 = @intCast(u8, 0);
+            var fr_is_stdcall: u8 = @intCast(u8, 0);
             if (fr_tid != @intCast(u32, 0xFFFFFFFF)) {
                 var fr_ty = emitter.registry.types_items[@intCast(usize, fr_tid)];
                 if (fr_ty.kind == TypeKind.fn_type) {
-                    fr_is_extern = emitter.registry.fn_items[@intCast(usize, fr_ty.payload_idx)].is_extern;
+                    var fr_fp = emitter.registry.fn_items[@intCast(usize, fr_ty.payload_idx)];
+                    fr_is_extern = fr_fp.is_extern;
+                    fr_is_stdcall = fr_fp.flags_packed & type_mod.FN_FLAG_STDCALL;
                 }
             }
             var fr_name: []const u8 = undefined;
-            if (fr_is_extern != @intCast(u8, 0)) {
+            if (fr_is_extern != @intCast(u8, 0) and fr_is_stdcall != @intCast(u8, 0)) {
                 fr_name = interner_mod.stringInternerGet(emitter.interner, fr.name_id);
             } else {
                 var fr_mangled = nameManglerMangle(emitter.mangler, fr.name_id, @intCast(u8, 0), fr.module_id);
