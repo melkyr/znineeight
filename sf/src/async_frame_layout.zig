@@ -8,10 +8,11 @@
 // A suspension point is (a) a direct call to a function in `suspending_fns`
 // (implicit await) or (b) the explicit `@asyncSuspend` placeholder (`int_const`
 // 0 whose result temp is a `*void`). A value is live across a suspension point
-// when the first event at or after the point is a READ of that value (the
-// reaching definition is therefore before the point). Reads/writes use the
-// same operand scan as `lir_opt_pass`; named local storage temps are matched by
-// name through `load_local` so mutable locals are accounted for.
+// when it is defined strictly before the point AND read strictly after it; the
+// suspension instruction's own operands are excluded and intervening defs do
+// not stop the scan (conservative superset, no false exclusion). Reads/writes
+// use the same operand scan as `lir_opt_pass`; named local storage temps are
+// matched by name through `load_local` so mutable locals are accounted for.
 //
 // The reader asserts the precise natural-layout size is <= the authoritative
 // `frame_sizes[key]` (ICE otherwise: a caller buffer must never under-size the
@@ -348,22 +349,25 @@ fn hasDefBefore(c: *Scan, v: u32, sbb: u32, sii: u32) bool {
     return false;
 }
 
-// First event at or after (sbb, sii): 1 = read before any def, -1 = def before
-// any read, 0 = neither. Reads are checked before defs (an inst's operands are
-// read before its result is written).
-fn firstEventAfter(c: *Scan, v: u32, sbb: u32, sii: u32) i32 {
+// True when `v` is read somewhere strictly after the suspension instruction
+// (sbb, sii). The suspension instruction's own operands are excluded (so the
+// argument temps of a suspending direct call are not counted as live-across),
+// and intervening defs do NOT stop the scan. This yields a CONSERVATIVE
+// SUPERSET: any value defined before the suspension and read afterwards is
+// included even when redefined in between. Soundness (no false exclusion)
+// matters more than minimality; `layout_size <= frame_sizes[key]` is the guard,
+// with P2's rule (a) the authoritative bound.
+fn hasReadAfter(c: *Scan, v: u32, sbb: u32, sii: u32) bool {
     var bi: usize = @intCast(usize, sbb);
     while (bi < c.lir_fn.blocks.len) : (bi += @intCast(usize, 1)) {
         var bb = &c.lir_fn.blocks.items[bi];
         var ii: usize = @intCast(usize, 0);
-        if (@intCast(u32, bi) == sbb) ii = @intCast(usize, sii);
+        if (@intCast(u32, bi) == sbb) ii = @intCast(usize, sii) + @intCast(usize, 1);
         while (ii < bb.insts.len) : (ii += @intCast(usize, 1)) {
-            var inst = bb.insts.items[ii];
-            if (instReadsTemp(c, inst, v)) return 1;
-            if (instDefsTemp(c, inst, v)) return -1;
+            if (instReadsTemp(c, bb.insts.items[ii], v)) return true;
         }
     }
-    return 0;
+    return false;
 }
 
 fn alignUpU32(v: u32, a: u32) u32 {
@@ -483,7 +487,7 @@ pub fn asyncLayoutFrame(alloc: *Sand, reg: *TypeRegistry, lir_fn: *LirFunction,
                     var tu = @intCast(usize, t);
                     if (is_param[tu] != @intCast(u8, 0)) continue;
                     if (!hasDefBefore(&c, t, @intCast(u32, bi), @intCast(u32, ii))) continue;
-                    if (firstEventAfter(&c, t, @intCast(u32, bi), @intCast(u32, ii)) == 1) {
+                    if (hasReadAfter(&c, t, @intCast(u32, bi), @intCast(u32, ii))) {
                         live[tu] = @intCast(u8, 1);
                     }
                 }
