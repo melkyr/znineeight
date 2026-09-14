@@ -36,6 +36,7 @@ pub const FrontResCtx = struct {
     error_code_registry: *hash_mod.U32ToU32Map,
     call_arg_types: *hash_mod.U32ToU32Map,
     call_param_map: *hash_mod.U32ToU32Map,
+    suspending_fns: *hash_mod.U64ToU32Map,
 };
 
 fn resolveTypeExpr(ct: *FrontResCtx, module_id: u32, node_idx: u32) type_mod.TypeId {
@@ -75,7 +76,7 @@ pub fn frontResolveModuleInits(ct: *FrontResCtx) void {
             var root = ast_mod.astStoreNodeAt(ct.store, ast_root);
             var decls = ast_mod.astStoreNodeExtraChildren(ct.store, ast_root);
             var src_fid = mods[mi].source_file_id;
-            var sa = sa_mod.semanticAnalyzerInit(ct.scratch, ct.resolved_types, ct.diag, ct.typereg, ct.symbol_reg, ct.store, mods[mi].id, src_fid, ct.coercion_table, ct.enum_value_table, ct.error_code_registry, ct.interner, ct.call_arg_types, ct.call_param_map, ct.module_reg);
+            var sa = sa_mod.semanticAnalyzerInit(ct.scratch, ct.resolved_types, ct.diag, ct.typereg, ct.symbol_reg, ct.store, mods[mi].id, src_fid, ct.coercion_table, ct.enum_value_table, ct.error_code_registry, ct.interner, ct.call_arg_types, ct.call_param_map, ct.module_reg, ct.suspending_fns);
             var di: usize = 0;
             while (di < decls.len) : (di += 1) {
                 var decl = ast_mod.astStoreNodeAt(ct.store, decls[di]);

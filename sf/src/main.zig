@@ -492,6 +492,7 @@ fn phase_FrontResolution(ctx: *CompilerContext) void {
         .error_code_registry = &ctx.error_code_registry,
         .call_arg_types = &ctx.call_arg_types,
         .call_param_map = &ctx.call_param_map,
+        .suspending_fns = &ctx.suspending_fns,
     };
     front_res.frontResolveModuleInits(&frc);
 }
@@ -546,6 +547,7 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
         .error_code_registry = &ctx.error_code_registry,
         .call_arg_types = &ctx.call_arg_types,
         .call_param_map = &ctx.call_param_map,
+        .suspending_fns = &ctx.suspending_fns,
     };
     var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
     var mi: usize = 0;
@@ -558,8 +560,7 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
          var ad: []const u8 = "AD"; pal.markerWrite(ad);
          var dse_m: []const u8 = "DSE\n"; pal.markerWrite(dse_m);
          var src_fid = mods[mi].source_file_id;
-         var sa = sa_mod.semanticAnalyzerInit(&ctx.alloc.scratch, ctx.resolved_types, ctx.diag, ctx.typereg, ctx.symbol_reg, ctx.store, mods[mi].id, src_fid, ctx.coercion_table, &ctx.enum_value_table, &ctx.error_code_registry, ctx.interner, &ctx.call_arg_types, &ctx.call_param_map, ctx.module_reg);
-         sa.suspending_fns = &ctx.suspending_fns;
+         var sa = sa_mod.semanticAnalyzerInit(&ctx.alloc.scratch, ctx.resolved_types, ctx.diag, ctx.typereg, ctx.symbol_reg, ctx.store, mods[mi].id, src_fid, ctx.coercion_table, &ctx.enum_value_table, &ctx.error_code_registry, ctx.interner, &ctx.call_arg_types, &ctx.call_param_map, ctx.module_reg, &ctx.suspending_fns);
         var di: usize = 0;
         while (di < decls.len) : (di += 1) {
             var decl = ast_mod.astStoreNodeAt(ctx.store, decls[di]);
