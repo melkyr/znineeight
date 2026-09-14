@@ -15,8 +15,8 @@ pub const fd_set = struct {
 // Public byte-order helpers + extern wrappers. The externs are the real OS
 // htons/htonl (wsock32 on win32, libc elsewhere); the Manual variants are
 // portable byte-swaps for debugging.
-pub extern "c" fn htons(x: u16) u16;
-pub extern "c" fn htonl(x: u32) u32;
+pub extern "stdcall" fn htons(x: u16) u16;
+pub extern "stdcall" fn htonl(x: u32) u32;
 
 pub fn htonsManual(x: u16) u16 {
     return @intCast(u16, ((x & @intCast(u16, 0xFF)) << 8) | (x >> 8));
@@ -32,19 +32,19 @@ pub fn htonlManual(x: u32) u32 {
 // remains the OS header). Select's fd_set/timeval params are *void (the caller
 // blob is byte-layout-identical to the native fd_set at offset 0, so a pointer
 // cast lowers cleanly — S2-I layout probes).
-extern "c" fn socket(af: i32, typ: i32, proto: i32) i32;
-extern "c" fn bind(s: i32, name: *const void, namelen: i32) i32;
-extern "c" fn listen(s: i32, backlog: i32) i32;
-extern "c" fn setsockopt(s: i32, level: i32, optname: i32, optval: *const void, optlen: i32) i32;
-extern "c" fn accept_os(s: i32, addr: *void, addrlen: *void) i32;
-extern "c" fn connect_os(s: i32, name: *const void, namelen: i32) i32;
-extern "c" fn send_os(s: i32, buf: [*]const u8, len: i32, flags: i32) i32;
-extern "c" fn recv_os(s: i32, buf: [*]u8, len: i32, flags: i32) i32;
-extern "c" fn select_os(nfds: i32, readfds: *void, writefds: *void, exceptfds: *void, timeout: *const void) i32;
-extern "c" fn close_os(fd: i32) i32;
-extern "c" fn closesocket(s: i32) i32;
-extern "c" fn WSAStartup(wVersion: u16, lpWSAData: *void) i32;
-extern "c" fn WSACleanup() i32;
+extern "stdcall" fn socket(af: i32, typ: i32, proto: i32) i32;
+extern "stdcall" fn bind(s: i32, name: *const void, namelen: i32) i32;
+extern "stdcall" fn listen(s: i32, backlog: i32) i32;
+extern "stdcall" fn setsockopt(s: i32, level: i32, optname: i32, optval: *const void, optlen: i32) i32;
+extern "stdcall" fn accept_os(s: i32, addr: *void, addrlen: *void) i32;
+extern "stdcall" fn connect_os(s: i32, name: *const void, namelen: i32) i32;
+extern "stdcall" fn send_os(s: i32, buf: [*]const u8, len: i32, flags: i32) i32;
+extern "stdcall" fn recv_os(s: i32, buf: [*]u8, len: i32, flags: i32) i32;
+extern "stdcall" fn select_os(nfds: i32, readfds: *void, writefds: *void, exceptfds: *void, timeout: *const void) i32;
+extern "stdcall" fn close_os(fd: i32) i32;
+extern "stdcall" fn closesocket(s: i32) i32;
+extern "stdcall" fn WSAStartup(wVersion: u16, lpWSAData: *void) i32;
+extern "stdcall" fn WSACleanup() i32;
 
 pub fn init() i32 {
     if (@isWindows()) {
