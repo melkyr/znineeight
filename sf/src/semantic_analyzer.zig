@@ -2247,6 +2247,13 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
             if (ec.len >= @intCast(usize, 1)) { _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]); }
             semanticAnalyzerDiagAsyncOutsideSuspending(self, node_idx);
             result = type_mod.typeRegistryGetOrCreatePtr(self.registry, type_mod.TYPE_VOID, false);
+        } else if (node.child_0 == self.ptrcast_name_id and ec.len != @intCast(usize, 2)) {
+            var pc3049: []const u8 = "@ptrCast requires exactly two arguments: @ptrCast(T, expr)";
+            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0),
+                @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3049_PTRCAST_REQUIRES_TWO_ARGS)),
+                self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), pc3049);
+            if (ec.len >= @intCast(usize, 1)) { _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]); }
+            result = type_mod.TYPE_UNDEFINED;
         } else if (ec.len >= @intCast(usize, 2)) {
             if (semanticAnalyzerIsTypeValueCast(self, node.child_0)) {
                 var tv_src = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 1)]);
