@@ -72,6 +72,12 @@ pub const ErrorCode = enum(u16) {
     ERR_3048_CANNOT_READ_FILE = 3048,
     ERR_3045_UNKNOWN_CALLING_CONVENTION = 3045,
     ERR_3017_SUSPENDING_FUNCTION_POINTER = 3017,
+    // ASYNCTRACK2 - explicit numeric values; never bare auto-increment members.
+    // ERR_3017=3017 and ERR_3045=3045 already exist (Track 1); only absent members below.
+    ERR_3018_ASYNC_SUSPEND_OUTSIDE_SUSPENDING = 3018,
+    ERR_3019_ASYNC_BUILTIN_IN_DEFER = 3019,
+    ERR_3046_ASYNC_FRAME_SIZE_INVALID = 3046,
+    WARN_3047_ASYNC_FRAME_LARGE = 3047,
 };
 
 pub const ERR_1000_UNTERMINATED_STRING: u16 = 0;
