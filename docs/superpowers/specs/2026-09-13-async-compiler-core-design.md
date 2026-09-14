@@ -225,6 +225,25 @@ synthesize fields in this **frozen deterministic order**:
 5. Every `hoisted_temps` entry live across ≥1 suspension point, in `temp_id`
    (declaration) order. Temps not live across any suspension stay ordinary C
    locals and are not in the frame.
+6. `child: *void` — **hidden, pointer-sized, appended at the tail** after
+   `live-across`, present iff `f` contains an implicit-await call to a suspending
+   callee. Written by `f` at the await site (the allocated child-frame pointer);
+   read by `f` on resume (`loop_done_blk`) and at `after_blk`. It is live across
+   the await suspension but does **not** exist in the pre-transform LIR P3 sees,
+   so P2/P3 reserve it explicitly rather than liveness discovering it. It is
+   saved/reloaded with the other hidden fields at every yield.
+7. `result: *void` — **hidden, pointer-sized, appended at the tail**, present iff
+   `f` is the target of an implicit await. It points at the caller's hidden
+   parent `result` slot (kind 7) for a value-returning target, or is written
+   `null` for a void target; the awaited callee's terminal step writes its `.ret`
+   value through it. Written by the caller at the await site; read by the
+   callee's terminal step.
+8. `parent_result: T` — **hidden, value-typed to the awaited call's result type,
+   appended at the tail**, present iff `f` has a **value-returning** implicit
+   await (residual R8: gated on value-return only, so a void await reserves no
+   slot). Written by the awaited callee's terminal step through the child's
+   `result` pointer; read by `f` on resume and assigned to the call's `result`
+   temp. It is saved/reloaded with the other hidden fields across each yield.
 
 Offsets/size follow the single natural-layout path of
 `type_resolver.zig:125-160` (`alignUp` + tail padding): `step`
@@ -236,6 +255,14 @@ params@12..` → **size 20** (was 16 pre-step). Because the step word is
 pointer-sized, the authoritative size is target-dependent. `@asyncFrameSize(fn)`
 is this **flat** size and **excludes** child frames (m1166/m1172). The runtime
 total is the sum of frame sizes along the active call chain.
+
+The gated hidden await fields (kind 5 `child`, kind 6 `result`, kind 7
+`parent_result`) are appended after `live-across` at natural alignment and shift a
+frame's size only when their predicate holds. The `async_frame_xmod` `worker`
+(no await, never awaited) therefore keeps the gated-variant layout **20** and the
+Task-5c marker **`LAYOUT:m0:n22:s20`**; the unconditional variant (all three
+reserved for every suspending function) yields **24/28** (report also cites
+**32** if all three hidden fields are reserved).
 
 **Authoritative size (concern 3, §15.1).** `frame_sizes[key]` is written by the
 Stage 1 pre-lowering pass using the *candidate* field set (**the hidden
@@ -265,6 +292,20 @@ transform consults the Stage 1 `frame_sizes` table (module arena, live until
 `main.zig:321`). Emitter-side post-lowering (the `lirOptRun` position,
 `c89_emit.zig:~2648`) is rejected for v1: the frame struct must be known at C
 declaration time and streamed bytes would need re-patching.
+
+**Two-phase layout pass (Amendment 9; forward references).** `async_layouts` (a
+per-`asyncKey` `AsyncFrameLayout` map on `CompilerContext`) must be **complete for
+every suspending function before any `asyncTransform` runs**, because an await
+reads the callee's param offsets and `result` offset and a caller may be declared
+before its callee. Run **phase A** (`lowerFn` → `asyncLayoutFrame(&lf)` → publish
+the layout into `ctx.async_layouts`; retain the lowered `lf`) for every suspending
+function, then **phase B** (`asyncTransform(&lf)` for every suspending function,
+reading `ctx.async_layouts`/`actx.layout`). A single inline pass that layouts and
+transforms one function at a time cannot resolve a callee declared after its
+caller; today's fixtures happen to be dependency-ordered, which is incidental. The
+transform signals `main.zig` that it consumed `lf` (the step, and for the root
+`main` the driver, are streamed by the transform) so `main.zig` skips appending
+the original.
 
 **Transform.**
 
@@ -301,13 +342,41 @@ declaration time and streamed bytes would need re-patching.
   `int_const next_state = N` (`lir.zig:74`); `store_field state = N`; `ret` a
   null pointer (yield). The resume case for N `load_field`-reloads the live temps
   and `jump`s to the instruction after the suspend.
-- **Implicit await at a call to suspending `g` (atomic; Amendment 7):** the call
-  site reads `ctx` from the **caller's** frame, allocates and initializes a child
-  frame (writing the child's own step word for `g`) from the per-task frame stack,
-  and drives `g`'s `_step` in a loop, updating the caller's live state; the call
-  is itself suspension point N in `f`. The call-site rewrite is part of the same
+- **Implicit await at a call to suspending `g` (atomic; Amendment 7; mechanics
+  pinned by Amendment 9).** The call site is itself suspension point N in `f` and
+  emits a **block-pair per await** (`yield_blk` + `loop_done_blk`), not a linear
+  segment split. In the pre-await segment: read `ctx` from the **caller's** frame;
+  allocate the child at the interim bump offset (below); write `g`'s step word at
+  the child's offset 0; store the child header (`ctx`, `state = 0`); copy the call
+  args into `g`'s param offsets; persist the child pointer in `f`'s hidden `child`
+  field (kind 5); then issue the **first child step**
+  `r = call(g_step, [child, null])`, `hv = check_optional(r)`, and
+  `branch hv → yield_blk, after_blk`. The call-site rewrite is part of the same
   (atomic) Task 6 as the body rewrite — no interim where `f` has no synchronous
   target.
+  - **`yield_blk`:** `store_field` every PARAM+LIVE field **plus the hidden
+    `child` field**; `store_field state = N`; `ret` a non-null optional. This is
+    the only state store at the await.
+  - **`loop_done_blk` is ONLY the resume target (`resume_target[N]`), never a
+    fallthrough:** `load_field`+assign every PARAM+LIVE field **plus `child`**;
+    assign the hidden parent `result` slot (kind 7) into the call's `result` temp;
+    re-issue the child step (`r = call(g_step, [child, null])`,
+    `hv = check_optional(r)`, `branch hv → yield_blk, after_blk`).
+  - **`after_blk`:** the awaited value was written by the child's terminal step
+    into the hidden parent `result` slot (kind 7) and copied into the call's
+    `result` temp in `loop_done_blk`; emit the remainder of the original block
+    after the `call_direct`.
+  - **First-step false branch goes to `after_blk`, NOT `loop_done_blk`:** a child
+    that completes on its very first step returns a null optional; routing it to
+    `loop_done_blk` would re-enter the resume path, re-issue the child step, and —
+    because the terminal block stores no state — restart the child at state 0 and
+    re-run its body (double side effects).
+  - **Interim child allocation (residual R1, pinned; full pool is Task 7):**
+    `ctx[0..4] = used` (4-byte bump counter), pool base `ctx+4`; at an await bump
+    `used` by `frame_sizes[g]` and allocate the child at the **pre-bump** offset
+    (nested `main→f→g` share one `ctx`). **No capacity/`oom` check in Task 6**
+    (Task 7 adds `capacity`/`oom` and the per-task LIFO pool); `ctx` stays the
+    opaque `*void` the fixtures already pass.
 - **Synthesized-step emitted edge (Res 7).** `@asyncInit` on a **cross-module**
   function emits, in the **caller's C89 module**, an **extern decl for
   `__Z98Step_<fn>`** (and for the frame struct tag if any C type is shared). In
@@ -315,8 +384,12 @@ declaration time and streamed bytes would need re-patching.
   (not `static`)**. There is **no user-visible symbol** for the synthesized step;
   the emitted edge is **compiler-managed** (it also keeps the callee module alive
   for the emitter's reachability closure).
-- **Terminal:** store the result through the caller-provided `*void` slot (L3)
-  and `ret` null.
+- **Terminal (Amendment 9).** `remapInst` must **not** map `.ret => ret_void`.
+  For `.ret value` with `return_type != void`: `rp = load_field(frame, result_off,
+  *void)` (the hidden `result` field, kind 6); if `rp != null`, `p =
+  ptr_cast(rp, *T)` and `store p = value`; then terminate with `set_optional_null`
+  then `ret` (null). If `rp` is null (root task) skip the store. The existing
+  terminal block keeps its null-optional return, so only the value store is added.
 
 **Pool semantics (m1172).** `buf` passed to `@asyncInit` is the root frame, is
 **outside** the pool, and is caller-owned. The pool is for **child frames only**;
@@ -441,7 +514,13 @@ pub fn suspensionAnalysisRun(ctx: *CompilerContext) void; // pass body
 ```zig
 pub const AsyncFrameField = struct { name_id: u32, type_id: u32, offset: u32, kind: u8 };
 // kind: 0=ctx, 1=state, 2=param, 3=live temp, 4=step (hidden; offset 0 ALWAYS,
-//       pointer-sized type_id per Amendment 7 — do NOT hard-code 4 bytes)
+//       pointer-sized type_id per Amendment 7 — do NOT hard-code 4 bytes),
+//       5=child (hidden pointer; tail; iff f has an implicit await),
+//       6=result (hidden pointer; tail; iff f is awaited; targets the caller's
+//       parent result slot, or null),
+//       7=parent_result (hidden value-typed; tail; iff f has a value-returning
+//       implicit await; saved/reloaded across yields — residual R8 gates it on
+//       value-return only)
 pub const AsyncFrameLayout = struct {
     frame_size: u32,       // == frame_sizes[key]; authoritative
     layout_size: u32,      // natural-layout size, <= frame_size
@@ -531,7 +610,14 @@ preserved; ICE `3043` (`ERR_9001_ICE`, auto-incremented) must not shift.
   `{step: *void, ctx: *void, state: u8, x: i32, y: i32}` → **20**, was 16); a
   second function with extra non-live temps still reports the same frame size.
   Both pinned gates (Task-5a `Expected`, Task-5c `LAYOUT …`) move with the step
-  word in the same commit as the P2/P3 change.
+  word in the same commit as the P2/P3 change. **Amendment 9 pinned values:**
+  under the **gated** hidden-field variant (`child`/`result`/`parent_result`
+  reserved only where their predicates hold) `async_frame_xmod`'s `worker` has no
+  await and is never awaited, so it **stays 20** and the Task-5c marker **stays
+  `LAYOUT:m0:n22:s20`** (both pinned gates unchanged). Under the **unconditional**
+  variant (all three hidden fields reserved for every suspending function)
+  `worker` becomes **24/28** (the report also cites **32** if all three hidden
+  fields are reserved) and both gates move in the same commit.
 - **Stage 3:** `repro/mi_matrix/async_await_xmod` — a root frame in a caller
   `buf`, an implicit await of a child, deterministic stdout across 3 runs and
   identical md5; plus a `-fsafe` pool-exhaustion probe that returns

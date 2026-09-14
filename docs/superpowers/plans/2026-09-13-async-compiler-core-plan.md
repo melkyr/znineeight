@@ -1119,35 +1119,175 @@ git commit -m "feat: reject 1-arg @ptrCast with ERR_3049 (Res 6, ASYNCTRACK2)"
 
 ---
 
-### Task 6D1: D1 — implicit-await call-site rewrite
+### Task 6D1D3: D1+D3 — child-frame implicit-await + terminal result slot (merged; Amendment 9)
 
-**Goal (acceptance):** a direct call to a suspending `g` becomes suspension point N of `f`: the child frame is initialized with `g`'s step word, driven via its `_step`, `f` yields (`ret null`) when the child suspends, and re-enters on resume. `async_await_xmod` must **genuinely yield** (`caller` suspension_count ≥ 1) and still produce result `10`.
+**Amendment 9 merge.** D1 and D3 are **one commit**: D1's await sequence writes
+the child `result` pointer at child-init, and D3's terminal stores the `.ret`
+value through it into the caller's hidden parent `result` slot. Splitting them
+would emit a child init that writes an offset P3 did not reserve, or a terminal
+that reads an absent field. The merged task lands the hidden-field reservation
+(`child` kind 5 + `result` kind 6 + `parent_result` kind 7), the two-phase layout
+side table, the await rewrite, **and** the `.ret` store together.
 
-**Files (tentative; finalized by Task 6D-I):** `sf/src/async_state_machine.zig`, `sf/src/lower.zig`, `sf/src/main.zig`, fixtures. **Exact steps fixed by Task 6D-I before dispatch.**
+**Goal (acceptance).** A direct call to a suspending `g` becomes suspension point
+N of `f`: the child frame is initialized with `g`'s step word, driven via its
+`_step`, `f` yields (`ret` non-null optional) when the child suspends, and
+re-enters on resume. `async_await_xmod` must **genuinely yield** (`caller`
+suspension_count ≥ 1) and still produce result `10`; `main_*.c` shows a
+child-frame init (`func_ref __Z98Step_callee` stored at child+0) and an indirect
+child-step call, not `zF_..._callee(...)`. A value-returning awaited callee
+delivers its `.ret` value to the caller temp; new fixture `async_await_ret_xmod`
+(value-returning await with a **non-suspending `main`**, keeping D2's main-driver
+out of the D3 proof) checks the value and runs rc=0. An added
+immediately-completing-awaited fixture checks no double execution.
+
+**Files.** Modify `sf/src/async_state_machine.zig`, `sf/src/async_analysis.zig`,
+`sf/src/async_frame_layout.zig`, `sf/src/main.zig` (two-phase pass + skip `lf` +
+`async_layouts` side table). Test `repro/mi_matrix/async_await_xmod`; create
+`repro/mi_matrix/async_await_ret_xmod`; reuse `async_frame_branch_xmod` as the
+main-driver regression (it awaits `worker` and uses the return value).
+
+**Shared infrastructure (lands with D1+D3).**
+- `sf/src/async_analysis.zig` (`asyncFrameSizeRun`, `:416-466`): after the existing
+  header/params/locals, append hidden fields at the **tail**:
+  - kind `child` (pointer-sized) iff the function contains a `fn_call` to a
+    suspending callee (full AST walk, not the early-stop `scanFrameLocals`);
+  - kind `result` (pointer-sized) iff the function is the target of any suspending
+    call (compute a global "awaited" set in the same pass; store in a new
+    `awaited_fns` map / `CompilerContext` field);
+  - kind `parent_result` (value-typed to the awaited call's result; **not**
+    pointer-sized) iff the function has a value-returning implicit await; gate on
+    value-returning targets only so void-awaited callers pay nothing (residual R8).
+- `sf/src/async_frame_layout.zig` (`asyncLayoutFrame`, `:428-531`): mirror kinds
+  `5`/`6`/`7` at the same tail position, gated by the same sets (pass them in), so
+  `precise <= frame_sizes` continues to hold. Publish the returned
+  `AsyncFrameLayout` into the per-key `ctx.async_layouts` side table during **phase
+  A** (all suspending functions), before any **phase B** transform.
+- `sf/src/async_state_machine.zig`:
+  - Change the suspend predicate from `isExplicitSuspend` (`:134-142`) to a
+    both-kinds predicate matching P3 (`async_frame_layout.zig:323-336`) — count
+    explicit `@asyncSuspend` placeholders and `call_direct` to a suspending callee.
+  - Extend `AsyncTransformCtx` with `frame_sizes` + `async_layouts`; look up the
+    callee layout for param offsets and the `result` offset. All layouts are
+    published in phase A, so no forward-reference miss.
+  - New per-await blocks (`yield_blk` + `loop_done_blk`) per the await skeleton;
+    `resume_target[N]` → `loop_done_blk` **only** (the first-step false branch goes
+    to `after_blk`); save/reload PARAM+LIVE **plus the `child` hidden field**, and
+    assign the hidden parent `result` slot to the call's `result` temp on resume.
+  - Keep `@asyncSuspend` numbering; both kinds drive the state counter.
+
+**Await skeleton (Q1 steps 1–10, review-corrected).** At the original
+`call_direct g` in block `bi`, segment `k-1` emits: (1) `load_field` `ctx` from the
+caller frame; (2) allocate the child at the interim bump offset (`ctx[0..4] = used`,
+pool base `ctx+4`, no capacity check — residual R1, Task 7 owns the pool); (3)
+write `g`'s step word at child+0 (`func_ref(asyncStepNameId(g), module_id)` →
+`ptr_to_int` → `store`); (4) child header (`store child+ctx_off = ctx`;
+`int_const 0` → `store child+state_off`); (5) copy call args to `g`'s param offsets
+(same natural-layout walk as `lower.zig:4232-4255`); (6) persist the child pointer:
+`store parent_frame[child_field] = child`; (7) first child step + conditional yield:
+`r = call(g_step, [child, null])`; `hv = check_optional(r)`; `branch hv →
+yield_blk, after_blk`; (8) `yield_blk`: `store_field` every PARAM+LIVE field **plus
+`child`**; `int_const N` → `store_field state`; `wrap_optional(0)` → `ret` (non-null
+optional); (9) `loop_done_blk` (**resume_target[N] and only the resume target**):
+`load_field`+assign every PARAM+LIVE field **plus `child`**; assign the hidden
+parent `result` slot into the call's `result` temp; re-issue the child step
+(`r = call(g_step, [child, null])`; `hv = check_optional(r)`; `branch hv →
+yield_blk, after_blk`); (10) `after_blk`: continue the original block after the
+`call_direct`. **The first-step false branch targets `after_blk`, not
+`loop_done_blk`:** the terminal block stores no state, so a fallthrough would
+restart the child at state 0 and re-run its body (double side effects).
+**0 new `LirInst`**; `call_direct`/`call`, `func_ref`, `ptr_to_int`/`int_to_ptr`,
+`binary` add, `int_const`, `load`/`store`, `load_field`/`store_field`, `addr_of`,
+`ptr_cast`, `check_optional`, `wrap_optional`/`set_optional_null`, `branch`,
+`jump`, `switch_br` all exist (`lir.zig:35-78`).
+
+**D3 terminal result (Q3, review-corrected).** Child frame gains the hidden
+`result: *void` field (kind 6); at the await the parent writes
+`child[result_off] = (parent_frame + parent_result_off)` (the explicit hidden
+parent `result` slot, kind 7), or `null` for a void-returning target. P3 does
+**not** mark the awaited call's result temp live-across
+(`defResultTemp(.call_direct)` is the suspension instruction, so `hasDefBefore`
+never sees it), so D3 **must** reserve the explicit hidden parent `result` slot.
+`remapInst` stops mapping `.ret => ret_void`; for `.ret value` with
+`return_type != void`: `rp = load_field(frame, result_off, *void)`; if
+`rp != null`, `p = ptr_cast(rp, *T)`, `store p = value`; then `set_optional_null`
+then `ret` (null). `@asyncInit` leaves the child's `result` field null (root tasks
+have no result slot; the `@asyncInit(ctx,buf,fn,args)` signature is unchanged).
+Residual R2: `T` aggregate results are not exercised — keep the D3 fixture scalar
+first.
+
+**Pass ordering (Q5, review-corrected).** Phase A (`lowerFn` →
+`asyncLayoutFrame` → publish to `ctx.async_layouts`; retain `lf`) for every
+suspending function, then phase B (`asyncTransform` for every suspending function,
+reading `ctx.async_layouts`/`actx.layout`). `main.zig` skips appending `lf` for
+functions the transform consumed (the transform streams the step, and for root
+`main` the driver). Emission emits every streamed function of a reachable module;
+a dropped original body is simply absent.
+
+**Acceptance gates (all under `timeout 120`, seed path).** Hop closure; the 5
+existing async fixtures plus `async_await_ret_xmod` dump rc=0 / gcc `-m32 -std=c89
+-O0 -Wall … -I $OUT -c` clean / self-contained link / run rc=0; `switch (` ≥1 and
+`__Z98Step_` present; Task-5a `@asyncFrameSize(worker)==20` and Task-5c
+`LAYOUT:m0:n22:s20` **unchanged under the gated variant**;
+`async_callgraph_xmod`/`async_builtin_scope_xmod`/`async_framesize_invalid_xmod`/
+`async_fnptr_error_xmod` guards unchanged; `-fsafe` traps vs `-ffast`.
 
 ---
 
-### Task 6D2: D2 — confine dual-emit to `main`
+### Task 6D2: D2 — confine dual-emit to `main` (strictly AFTER Task 6D1D3)
 
-**Goal (acceptance):** non-`main` suspending functions are rewritten (no retained synchronous body); only the minimal `main` sync entry required by `emitMainWrapper` remains. `async_frame_args_xmod` / `async_frame_branch_xmod` stay green.
+**Ordering dependency (Amendment 9).** D2 is **strictly after** the merged
+`Task 6D1D3`: only D1's rewritten call sites let non-`main` synchronous bodies be
+dropped (D2's enabler).
 
-**Files (tentative; finalized by Task 6D-I):** `sf/src/async_state_machine.zig`, `sf/src/c89_emit.zig` (only if the `emitMainWrapper` constraint requires it). **Exact steps fixed by Task 6D-I.**
+**Goal (acceptance).** Every suspending function is fully rewritten in place to
+`__Z98Step_<f>(frame, arg) ?*void` with **no original synchronous body emitted —
+except the root `pub fn main`.** `main` keeps a minimal synchronous **driver** under
+`main`'s original `name_id`/`module_id` (`is_pub = 1`, same source-level param
+signature) whose body (a) initializes a local root buffer of `frame_sizes[main]`
+bytes, (b) writes `main`'s step word @0, `ctx = &<local pool>` @ctx_off, `state =
+0`, and copies its params to the frame param offsets (`actx.layout`), (c) drives
+`main`'s step to completion (`r = step(root, null); while (has_value(r)) r =
+step(root, null);`), (d) returns. `main`'s step is still emitted by the same
+transform; `emitMainWrapper` wraps the driver unchanged. For every non-main
+suspending fn no original body is streamed; `async_frame_args_xmod` /
+`async_frame_branch_xmod` run rc=0.
+
+**Files.** Modify `sf/src/main.zig` (skip original for suspending fns; signal from
+transform), `sf/src/async_state_machine.zig` (root-`main` driver + `is_pub`),
+`sf/src/lower.zig` (re-point `@asyncFrameSize`/`@asyncInit` dead `func_ref`s at
+`asyncStepNameId(target)`).
+
+**Residual R7 — root-`main` driver pool size is unpinned.** The driver needs a
+local root buffer of `frame_sizes[main]` bytes **and** a local pool buffer for
+`main`'s child frames, but the pool size has no pinned source. It is exercised:
+`async_frame_branch_xmod`'s `main` awaits value-returning `worker`, so the root
+task allocates a child through the R1 bump. Pin the driver pool sizing (e.g.
+`frame_sizes[main]` or a Task-6 fixed constant) as part of this task. Residual R3:
+the `main(argc, argv)` param copy edge is only covered for `pub fn main() void`.
 
 ---
 
-### Task 6D3: D3 — terminal result through the caller slot
+### Task 6D4: D4 — zero the root frame in `@asyncInit` (independent)
 
-**Goal (acceptance):** a driven value-returning suspending function delivers its result through the caller-provided `*void` slot (the original `.ret value` is written before the terminal `ret null`); a value-returning await fixture proves it.
+**Goal (acceptance).** `@asyncInit` zeroes `frame_sizes[(mid,nid)]` bytes at
+`ai_buf` **before** the step/ctx/state stores and the arg copy
+(`lower.zig:4194-4263`); root frame bytes are zero before init; no
+frame-size/marker movement; `async_suspend_store_xmod` + `async_await_xmod`
+unchanged. **Independent:** writes only at runtime into the caller buffer; no P2/P3
+interaction; can land first.
 
-**Files (tentative; finalized by Task 6D-I):** `sf/src/async_state_machine.zig`, `sf/src/lower.zig`, fixtures. **Exact steps fixed by Task 6D-I.**
+**Files.** Modify `sf/src/lower.zig` (`@asyncInit` zero loop).
 
----
-
-### Task 6D4: D4 — zero the root frame in `@asyncInit`
-
-**Goal (acceptance):** `@asyncInit` zeroes the root frame (length = frame size) before writing `step`/`ctx`/`state`; no regression.
-
-**Files (tentative; finalized by Task 6D-I):** `sf/src/lower.zig`. **Exact steps fixed by Task 6D-I.**
+**LIR shape (0 new ops).** Inline byte loop over `frame_size` bytes, reusing the
+raw-byte idiom (`asyncEmitStoreAt` style, `:2327-2340`): `size = int_const
+frame_size`; `i = int_const 0`; `loop_header: cond = binary LT i, size; branch
+cond → body, done`; `body: addr = binary ADD ptr_to_int(ai_buf), i; p =
+int_to_ptr addr → *u8; store p = 0; i2 = binary ADD i, 1; assign i = i2; jump
+loop_header`; `done:`. `branch`/`jump`/`binary`/`int_const`/`ptr_to_int`/
+`int_to_ptr`/`store`/`assign` all exist (`lir.zig:35-49,72-74`). `pal_memcpy`
+exists in emitted C (`c89_emit.zig:1011`) but no zero-fill helper does, so the
+loop is the minimal route.
 
 ---
 
@@ -1520,6 +1660,47 @@ until Task 6 re-dispatches). `async_pool_xmod` likewise in Task 7.
 **Operator directive (m1523).** Create separate load-bearing tasks **D1–D4**; before executing them, run **one investigation task (Task 6D-I, record-only)** to determine how D1–D4 land properly. Task 6 is **INCOMPLETE**; its execution is superseded by **Task 6D-I** followed by **Task 6D1–6D4**.
 
 **Affected tasks.** New **Task 6D-I** (I, record-only), **Task 6D1** (D1), **Task 6D2** (D2), **Task 6D3** (D3), **Task 6D4** (D4) inserted before **Task 7**. Baseline: HEAD `b6b6984b` (Task 6 attempt `3ee4e188`); moving fixed point `b305b0282a981d6cf5ad31ac2280a4af`; seed not rotated; `EXPECTED_FAIL.md` unchanged.
+
+## Amendment 9 (2026-09-14) — fold Task 6D-I landing plan; merge D1+D3; D2 after; R7/R8
+
+**Reason.** Task 6D-I (`## Task 6D-I` in `.superpowers/sdd/task-ASYNCTRACK2-report.md`,
+incl. its `### Task 6D-I — review-fix follow-up`) completed the executable D1–D4
+plan, pass ordering, and pinned values. The operator ruled: **apply these
+amendments** and dispatch in order **D1+D3 merged → D2 → D4** (D4 is independent
+and may land first). This amendment folds the corrected mechanics into the spec and
+plan so D1–D4 are dispatchable.
+
+**Operator ruling.** (a) Apply the amendments below; (b) dispatch order: merged
+D1+D3, then D2, then D4.
+
+**Re-verified baseline.** Branch `zig1_improvements`; HEAD `01a9bd11` (docs-only
+Amendment 8; source identical to Task-6 attempt `3ee4e188`); moving fixed point
+`b305b0282a981d6cf5ad31ac2280a4af`; seed **NOT rotated**;
+`repro/mi_matrix/EXPECTED_FAIL.md` unchanged.
+
+**Report-sourced pinned values (transcribed verbatim).**
+- Hidden frame fields, appended at the **tail** after `live-across`: `child`
+  (kind 5, pointer-sized, iff the fn has an implicit await), `result` (kind 6,
+  pointer-sized, iff the fn is awaited), `parent_result` (kind 7, value-typed to
+  the awaited call's result, iff the fn has a **value-returning** implicit await).
+- `async_frame_xmod` `worker` (no await, never awaited): **20**, Task-5c
+  `LAYOUT:m0:n22:s20` **unchanged** under the gated variant; unconditional variant
+  **24/28** (report also cites **32** if all three hidden fields are reserved).
+- Two-phase layout pass: phase A `lowerFn` → `asyncLayoutFrame` → publish
+  `ctx.async_layouts` (all suspending fns); phase B `asyncTransform` (all) reading
+  the complete table — resolves forward references.
+- Await skeleton: first-step false branch → `after_blk`; `loop_done_blk` is only
+  `resume_target[N]`; terminal stores no state.
+- Interim child allocation (R1, pinned): `ctx[0..4] = used`, pool base `ctx+4`, no
+  capacity check (Task 7 owns the per-task LIFO pool).
+
+**Docs amended in place.** `async-compiler-core-design.md` §3.2/§3.3/§4/§6;
+`async-compiler-core-plan.md` merged `Task 6D1D3`, reordered `Task 6D2` (strictly
+after), independent `Task 6D4`, residuals R7/R8.
+
+**Residuals recorded.** R7 (D2 root-`main` driver local pool size unpinned;
+exercised by `async_frame_branch_xmod`'s `main` awaiting value-returning `worker`);
+R8 (gate the kind-6/kind-7 reservations on value-return only).
 
 ## Amendable note
 
