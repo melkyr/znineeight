@@ -97,6 +97,8 @@ pub const SemanticContext = struct {
     comptime_values: *hash_mod.U32ToU64Map,
     source_file_id: u32,
     safe_checks: bool,
+    suspending_fns: *hash_mod.U64ToU32Map,
+    frame_sizes: *hash_mod.U64ToU32Map,
 };
 
 pub const DeferActionArrayList = struct {

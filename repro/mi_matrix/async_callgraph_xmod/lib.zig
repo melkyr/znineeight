@@ -10,3 +10,10 @@ pub fn top() void {
 pub fn explicit_only() void {
     @asyncSuspend(null);
 }
+pub fn ping() void {
+    leaf();
+    pong();
+}
+pub fn pong() void {
+    ping();
+}

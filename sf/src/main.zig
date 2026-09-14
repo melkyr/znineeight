@@ -43,6 +43,7 @@ const ce_mod = @import("comptime_eval.zig");
 const symbol_registrator = @import("symbol_registrator.zig");
 const const_alias_prepass = @import("const_alias_prepass.zig");
 const front_res = @import("front_resolution.zig");
+const async_analysis = @import("async_analysis.zig");
 const SymbolRegistry = sym_mod.SymbolRegistry;
 const AstKind = ast_mod.AstKind;
 const AstStore = ast_mod.AstStore;
@@ -118,6 +119,9 @@ pub const CompilerContext = struct {
     global_decls: lir_mod.GlobalDeclArrayList,
 
     exported: hash_mod.U64ToU32Map,
+
+    suspending_fns: hash_mod.U64ToU32Map,
+    frame_sizes: hash_mod.U64ToU32Map,
 };
 
 pub fn main(argc: i32, argv: [*]*const u8) void {
@@ -251,6 +255,8 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
      var call_param_map = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
      var comptime_values = hash_mod.u32ToU64MapInit(&compiler_alloc.module);
      var exported = hash_mod.u64ToU32MapInit(&compiler_alloc.emission);
+     var suspending_fns = hash_mod.u64ToU32MapInit(&compiler_alloc.module);
+     var frame_sizes = hash_mod.u64ToU32MapInit(&compiler_alloc.module);
     var ctx = CompilerContext{
         .cli = cli,
         .alloc = &compiler_alloc,
@@ -273,6 +279,8 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         .call_param_map = call_param_map,
         .comptime_values = comptime_values,
         .exported = exported,
+        .suspending_fns = suspending_fns,
+        .frame_sizes = frame_sizes,
         .pointer_only_ids = undefined,
         .pointer_only_len = @intCast(u32, 0),
         .global_decls = lir_mod.globalDeclArrayListInit(&compiler_alloc.emission),
@@ -289,6 +297,7 @@ fn runCompiler(ctx: *CompilerContext) void {
     var z4: []const u8 = "4\n"; pal.markerWrite(z4);
     phase_SymbolRegistration(ctx);
     alloc_mod.checkCombinedPeak(ctx.alloc);
+    async_analysis.suspensionAnalysisRun(&ctx.alloc.module, ctx.store, ctx.symbol_reg, ctx.module_reg, ctx.interner, &ctx.suspending_fns);
     phase_TypeResolution(ctx);
     var t1: []const u8 = "t1\n"; pal.markerWrite(t1);
     alloc_mod.checkCombinedPeak(ctx.alloc);
@@ -550,6 +559,7 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
          var dse_m: []const u8 = "DSE\n"; pal.markerWrite(dse_m);
          var src_fid = mods[mi].source_file_id;
          var sa = sa_mod.semanticAnalyzerInit(&ctx.alloc.scratch, ctx.resolved_types, ctx.diag, ctx.typereg, ctx.symbol_reg, ctx.store, mods[mi].id, src_fid, ctx.coercion_table, &ctx.enum_value_table, &ctx.error_code_registry, ctx.interner, &ctx.call_arg_types, &ctx.call_param_map, ctx.module_reg);
+         sa.suspending_fns = &ctx.suspending_fns;
         var di: usize = 0;
         while (di < decls.len) : (di += 1) {
             var decl = ast_mod.astStoreNodeAt(ctx.store, decls[di]);
@@ -667,6 +677,8 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
         .comptime_values = &ctx.comptime_values,
         .source_file_id = @intCast(u32, 0),
         .safe_checks = ctx.cli.safe_checks,
+        .suspending_fns = &ctx.suspending_fns,
+        .frame_sizes = &ctx.frame_sizes,
     };
     var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
     var mi: usize = 0;

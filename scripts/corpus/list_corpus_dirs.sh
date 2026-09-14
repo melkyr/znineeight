@@ -17,6 +17,11 @@ cd "$REPO_ROOT"
 emit_dir() {
   local rel="$1" name entry
   name="$(basename "$rel")"
+  # Off-corpus evidence fixtures (Task 3 Amendment 3): a directory literally
+  # named `known_excluded` (at any enumeration level) is never a corpus entry.
+  if [ "$name" = "known_excluded" ]; then
+    return
+  fi
   if [ -f "$rel/main.zig" ]; then
     entry="$rel/main.zig"
   elif [ -f "$rel/$name.zig" ]; then
