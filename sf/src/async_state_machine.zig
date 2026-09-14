@@ -31,6 +31,7 @@
 const alloc_mod = @import("allocator.zig");
 const async_analysis = @import("async_analysis.zig");
 const async_frame_layout = @import("async_frame_layout.zig");
+const diag_mod = @import("diagnostics.zig");
 const hash_mod = @import("util/hash.zig");
 const lir_mod = @import("lir.zig");
 const lir_stream = @import("lir_stream.zig");
@@ -59,10 +60,18 @@ pub const AsyncTransformCtx = struct {
     safe_checks: bool,
     frame_sizes: *hash_mod.U64ToU32Map,
     async_layouts: *hash_mod.U64ToU32Map,
+    diag: *diag_mod.DiagnosticCollector,
 };
 
 fn bumpAlloc(alloc: *Sand, size: usize, align: usize) [*]u8 {
     return @ptrCast([*]u8, alloc_mod.sandAlloc(alloc, size, align) catch unreachable);
+}
+
+fn allocPrArray(alloc: *Sand, count: u32) [*]u32 {
+    var c = count;
+    if (c == @intCast(u32, 0)) c = @intCast(u32, 1);
+    var raw = alloc_mod.sandAlloc(alloc, @intCast(usize, c) * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable;
+    return @ptrCast([*]u32, raw);
 }
 
 pub fn asyncStepNameId(interner: *StringInterner, fn_name_id: u32) u32 {
@@ -163,9 +172,10 @@ const Build = struct {
     state_off: u32,
     child_off: u32,
     child_present: bool,
-    parent_result_off: u32,
-    parent_result_type: u32,
-    parent_result_present: bool,
+    pr_off: [*]u32,
+    pr_ty: [*]u32,
+    pr_count: u32,
+    pr_present: bool,
     result_off: u32,
     result_present: bool,
     child_temp: u32,
@@ -385,10 +395,24 @@ fn emitDriveChild(b: *Build, blk: u32, child_temp: u32, yield_blk: u32, after_bl
 // Q1 steps 1-10: rewrite `call_direct g` at the current segment into a
 // child-frame init + first child step + conditional yield, with the resume path
 // in `loop_done` and the continuation in `after`.
-fn emitAwait(b: *Build, blk: u32, cd: lir_mod.CallDirectData, state: u32, yield_blk: u32, loop_done: u32, after: u32) void {
+fn emitAwait(b: *Build, blk: u32, cd: lir_mod.CallDirectData, state: u32, yield_blk: u32, loop_done: u32, after: u32, k: u32) void {
     var reg = b.reg;
     var callee_lay: *const AsyncFrameLayout = b.actx.layout;
     if (async_frame_layout.asyncLayoutLookup(b.actx.async_layouts, cd.module_id, cd.name_id)) |cl| { callee_lay = cl; }
+    // Per-await value gate: a void-returning await reserves no kind-7 slot and
+    // does not advance `k`. Required P4 per-slot type assertion: the k-th
+    // value-returning implicit await's callee return type must equal the k-th
+    // reserved kind-7 slot type, else P2/P3 and P4 disagree (silent frame
+    // corruption). Fail closed with ERR_9001_ICE instead of a mis-typed store.
+    var is_value: bool = cd.return_type != type_mod.TYPE_VOID;
+    var slot_ok: bool = b.pr_present;
+    if (is_value) {
+        if (!b.pr_present or k >= b.pr_count or b.pr_ty[@intCast(usize, k)] != cd.return_type) {
+            var ice_msg: []const u8 = "async parent_result slot type mismatch (P2/P3 vs P4 order desync)";
+            _ = diag_mod.diagnosticCollectorAdd(b.actx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_9001_ICE)), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), ice_msg);
+            slot_ok = false;
+        }
+    }
     // (1) ctx from the caller frame.
     var ctx_off: u32 = @intCast(u32, 0);
     var f: usize = @intCast(usize, 0);
@@ -456,14 +480,14 @@ fn emitAwait(b: *Build, blk: u32, cd: lir_mod.CallDirectData, state: u32, yield_
             arg_i += @intCast(u32, 1);
         }
     }
-    // D3: point the child's hidden `result` at the caller's hidden parent slot
-    // (or null for a void target).
+    // D3: point the child's hidden `result` at the caller's k-th hidden parent
+    // slot (value-returning target only; null otherwise, per the R8 void gate).
     if (c_result_present) {
-        if (b.parent_result_present) {
+        if (is_value and slot_ok) {
             var fi = newTemp(b, type_mod.TYPE_USIZE);
             emit(b, blk, LirInst{ .ptr_to_int = .{ .value = b.frame_temp, .result = fi } });
             var poff = newTemp(b, type_mod.TYPE_USIZE);
-            emit(b, blk, LirInst{ .int_const = .{ .value = @intCast(u64, b.parent_result_off), .result = poff } });
+            emit(b, blk, LirInst{ .int_const = .{ .value = @intCast(u64, b.pr_off[@intCast(usize, k)]), .result = poff } });
             var paddr = newTemp(b, type_mod.TYPE_USIZE);
             emit(b, blk, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = fi, .rhs = poff, .result = paddr } });
             var pr = newTemp(b, ptrVoid(reg));
@@ -497,8 +521,8 @@ fn emitAwait(b: *Build, blk: u32, cd: lir_mod.CallDirectData, state: u32, yield_
     // (10) after: deliver the awaited value to the call's result temp, then the
     // original block continues. (Placed here, not in loop_done, so an
     // immediately-completing child also delivers its value.)
-    if (b.parent_result_present) {
-        var pv = loadField(b, after, b.parent_result_off, b.parent_result_type);
+    if (is_value and slot_ok) {
+        var pv = loadField(b, after, b.pr_off[@intCast(usize, k)], b.pr_ty[@intCast(usize, k)]);
         emit(b, after, LirInst{ .assign = .{ .dst = cd.result + b.base, .src = pv, .name_id = @intCast(u32, 0) } });
     }
 }
@@ -618,9 +642,8 @@ pub fn asyncTransform(lf: *LirFunction, actx: *AsyncTransformCtx) void {
     var state_off: u32 = @intCast(u32, 0);
     var child_off: u32 = @intCast(u32, 0);
     var child_present: bool = false;
-    var parent_result_off: u32 = @intCast(u32, 0);
-    var parent_result_type: u32 = type_mod.TYPE_VOID;
     var parent_result_present: bool = false;
+    var pr_count: u32 = @intCast(u32, 0);
     var result_off: u32 = @intCast(u32, 0);
     var result_present: bool = false;
     var fi: usize = @intCast(usize, 0);
@@ -629,7 +652,22 @@ pub fn asyncTransform(lf: *LirFunction, actx: *AsyncTransformCtx) void {
         if (f.kind == async_frame_layout.ASYNC_FIELD_STATE) { state_off = f.offset; }
         if (f.kind == async_frame_layout.ASYNC_FIELD_CHILD) { child_off = f.offset; child_present = true; }
         if (f.kind == async_frame_layout.ASYNC_FIELD_RESULT) { result_off = f.offset; result_present = true; }
-        if (f.kind == async_frame_layout.ASYNC_FIELD_PARENT_RESULT) { parent_result_off = f.offset; parent_result_type = f.type_id; parent_result_present = true; }
+        if (f.kind == async_frame_layout.ASYNC_FIELD_PARENT_RESULT) { pr_count += @intCast(u32, 1); }
+    }
+    parent_result_present = pr_count > @intCast(u32, 0);
+    // Ordered kind-7 slots in layout order (== P2's program order). P4 indexes
+    // them with a running value-returning-await counter `k`.
+    var pr_off = allocPrArray(actx.alloc, pr_count);
+    var pr_ty = allocPrArray(actx.alloc, pr_count);
+    var pr_i: u32 = @intCast(u32, 0);
+    fi = @intCast(usize, 0);
+    while (fi < actx.layout.fields.len) : (fi += @intCast(usize, 1)) {
+        var f2 = actx.layout.fields.items[fi];
+        if (f2.kind == async_frame_layout.ASYNC_FIELD_PARENT_RESULT) {
+            pr_off[@intCast(usize, pr_i)] = f2.offset;
+            pr_ty[@intCast(usize, pr_i)] = f2.type_id;
+            pr_i += @intCast(u32, 1);
+        }
     }
 
     bi = @intCast(u32, 0);
@@ -654,9 +692,10 @@ pub fn asyncTransform(lf: *LirFunction, actx: *AsyncTransformCtx) void {
         .state_off = state_off,
         .child_off = child_off,
         .child_present = child_present,
-        .parent_result_off = parent_result_off,
-        .parent_result_type = parent_result_type,
-        .parent_result_present = parent_result_present,
+        .pr_off = pr_off,
+        .pr_ty = pr_ty,
+        .pr_count = pr_count,
+        .pr_present = parent_result_present,
         .result_off = result_off,
         .result_present = result_present,
         .child_temp = @intCast(u32, 0),
@@ -722,6 +761,7 @@ pub fn asyncTransform(lf: *LirFunction, actx: *AsyncTransformCtx) void {
         emit(&b, entry_seg, LirInst{ .assign = .{ .dst = b.child_temp, .src = cz, .name_id = @intCast(u32, 0) } });
     }
 
+    var pr_k: u32 = @intCast(u32, 0);
     bi = @intCast(u32, 0);
     while (bi < m) : (bi += @intCast(u32, 1)) {
         var bb = &lf.blocks.items[@intCast(usize, bi)];
@@ -749,7 +789,8 @@ pub fn asyncTransform(lf: *LirFunction, actx: *AsyncTransformCtx) void {
                     continue;
                 }
                 var cd = lir_mod.lirSideGetCallDirect(lf, inst.call_direct);
-                emitAwait(&b, cur, cd, state, state_yield[sidx], state_resume[sidx], state_after[sidx]);
+                emitAwait(&b, cur, cd, state, state_yield[sidx], state_resume[sidx], state_after[sidx], pr_k);
+                if (cd.return_type != type_mod.TYPE_VOID) { pr_k += @intCast(u32, 1); }
                 s += @intCast(u32, 1);
                 cur = state_after[sidx];
                 continue;

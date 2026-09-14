@@ -127,7 +127,9 @@ pub const CompilerContext = struct {
     frame_sizes: hash_mod.U64ToU32Map,
     awaited_fns: hash_mod.U64ToU32Map,
     async_hidden_fns: hash_mod.U64ToU32Map,
-    async_parent_result_types: hash_mod.U64ToU32Map,
+    parent_result_type_list: ga_mod.U32ArrayList,
+    parent_result_start: hash_mod.U64ToU32Map,
+    parent_result_count: hash_mod.U64ToU32Map,
     async_layouts: hash_mod.U64ToU32Map,
 };
 
@@ -266,7 +268,9 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
      var frame_sizes = hash_mod.u64ToU32MapInit(&compiler_alloc.module);
      var awaited_fns = hash_mod.u64ToU32MapInit(&compiler_alloc.module);
      var async_hidden_fns = hash_mod.u64ToU32MapInit(&compiler_alloc.module);
-     var async_parent_result_types = hash_mod.u64ToU32MapInit(&compiler_alloc.module);
+     var parent_result_type_list = ga_mod.u32ArrayListInit(&compiler_alloc.module);
+     var parent_result_start = hash_mod.u64ToU32MapInit(&compiler_alloc.module);
+     var parent_result_count = hash_mod.u64ToU32MapInit(&compiler_alloc.module);
      var async_layouts = hash_mod.u64ToU32MapInit(&compiler_alloc.module);
     var ctx = CompilerContext{
         .cli = cli,
@@ -294,7 +298,9 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         .frame_sizes = frame_sizes,
         .awaited_fns = awaited_fns,
         .async_hidden_fns = async_hidden_fns,
-        .async_parent_result_types = async_parent_result_types,
+        .parent_result_type_list = parent_result_type_list,
+        .parent_result_start = parent_result_start,
+        .parent_result_count = parent_result_count,
         .async_layouts = async_layouts,
         .pointer_only_ids = undefined,
         .pointer_only_len = @intCast(u32, 0),
@@ -652,7 +658,7 @@ fn phase_StaticAnalyzers(ctx: *CompilerContext) void {
 
 fn phase_AsyncFrameSize(ctx: *CompilerContext) void {
     var p_msg: []const u8 = "AFS\n"; pal.markerWrite(p_msg);
-    async_analysis.asyncFrameSizeRun(&ctx.alloc.module, ctx.store, ctx.symbol_reg, ctx.module_reg, ctx.interner, ctx.typereg, ctx.resolved_types, &ctx.suspending_fns, &ctx.frame_sizes, &ctx.awaited_fns, &ctx.async_hidden_fns, &ctx.async_parent_result_types);
+    async_analysis.asyncFrameSizeRun(&ctx.alloc.module, ctx.store, ctx.symbol_reg, ctx.module_reg, ctx.interner, ctx.typereg, ctx.resolved_types, &ctx.suspending_fns, &ctx.frame_sizes, &ctx.awaited_fns, &ctx.async_hidden_fns, &ctx.parent_result_type_list, &ctx.parent_result_start, &ctx.parent_result_count);
 }
 
 fn phase_LIRLowering(ctx: *CompilerContext) void {
@@ -760,7 +766,7 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
                         if (async_analysis.asyncIsSuspending(&ctx.suspending_fns, lf.module_id, lf.name_id)) {
                             // Phase A: compute + publish the layout, retain the LIR
                             // (persistent copy; its arrays live in scratch) for phase B.
-                            var async_layout = async_frame_layout.asyncLayoutFrame(&ctx.alloc.scratch, ctx.typereg, &lf, &ctx.suspending_fns, &ctx.frame_sizes, &ctx.awaited_fns, &ctx.async_hidden_fns, &ctx.async_parent_result_types);
+                            var async_layout = async_frame_layout.asyncLayoutFrame(&ctx.alloc.scratch, ctx.typereg, &lf, &ctx.suspending_fns, &ctx.frame_sizes, &ctx.awaited_fns, &ctx.async_hidden_fns, &ctx.parent_result_type_list, &ctx.parent_result_start, &ctx.parent_result_count);
                             async_frame_layout.asyncLayoutPublish(&ctx.alloc.scratch, &ctx.async_layouts, lf.module_id, lf.name_id, async_layout);
                             var lf_raw = alloc_mod.sandAlloc(&ctx.alloc.scratch, @intCast(usize, @sizeOf(LirFunction)), @intCast(usize, 4)) catch unreachable;
                             var lf_ptr = @ptrCast(*LirFunction, lf_raw);
@@ -872,6 +878,7 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
                 .safe_checks = ctx.cli.safe_checks,
                 .frame_sizes = &ctx.frame_sizes,
                 .async_layouts = &ctx.async_layouts,
+                .diag = ctx.diag,
             };
             async_state_machine.asyncTransform(lf2, &async_ctx2);
         }

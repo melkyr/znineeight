@@ -400,7 +400,8 @@ fn scanImplicitAwaits(store: *ast_mod.AstStore, sym_reg: *sym_mod.SymbolRegistry
     module_id: u32, caller_key: u64, body_idx: u32, stack: *ga_mod.U32ArrayList,
     suspending_fns: *hash_mod.U64ToU32Map, fn_ret_types: *hash_mod.U64ToU32Map,
     awaited_fns: *hash_mod.U64ToU32Map, hidden_fns: *hash_mod.U64ToU32Map,
-    parent_types: *hash_mod.U64ToU32Map) void {
+    parent_type_list: *ga_mod.U32ArrayList, parent_start: *hash_mod.U64ToU32Map,
+    parent_count: *hash_mod.U64ToU32Map) void {
     stack.len = @intCast(usize, 0);
     if (body_idx == @intCast(u32, 0)) return;
     ga_mod.u32ArrayListAppend(stack, body_idx);
@@ -422,7 +423,13 @@ fn scanImplicitAwaits(store: *ast_mod.AstStore, sym_reg: *sym_mod.SymbolRegistry
                         if (hash_mod.u64ToU32MapGet(fn_ret_types, ck)) |r| { rt = r; }
                         if (rt != type_mod.TYPE_VOID) {
                             hf = hf | @intCast(u32, 2);
-                            _ = hash_mod.u64ToU32MapPut(parent_types, caller_key, rt);
+                            var pc: u32 = @intCast(u32, 0);
+                            if (hash_mod.u64ToU32MapGet(parent_count, caller_key)) |oldc| { pc = oldc; }
+                            if (pc == @intCast(u32, 0)) {
+                                _ = hash_mod.u64ToU32MapPut(parent_start, caller_key, @intCast(u32, parent_type_list.len));
+                            }
+                            ga_mod.u32ArrayListAppend(parent_type_list, rt);
+                            _ = hash_mod.u64ToU32MapPut(parent_count, caller_key, pc + @intCast(u32, 1));
                         }
                         _ = hash_mod.u64ToU32MapPut(hidden_fns, caller_key, hf);
                     }
@@ -447,6 +454,26 @@ fn scanImplicitAwaits(store: *ast_mod.AstStore, sym_reg: *sym_mod.SymbolRegistry
             var ec3 = ast_mod.astStoreNodeExtraChildren(store, ni);
             var ei3: usize = @intCast(usize, 0);
             while (ei3 < ec3.len) : (ei3 += 1) { ga_mod.u32ArrayListAppend(stack, ec3[ei3]); }
+        }
+    }
+    // Ordering invariant (Task 6D5): the LIFO walk above visits siblings in
+    // reverse source order and inner call args before their outer call (matching
+    // lowering's evaluation order). Reverse this caller's freshly-appended
+    // segment to recover program order so P2's slot order equals P4's await
+    // order; P3 mirrors P2 exactly.
+    if (hash_mod.u64ToU32MapGet(parent_count, caller_key)) |pc| {
+        if (pc > @intCast(u32, 1)) {
+            if (hash_mod.u64ToU32MapGet(parent_start, caller_key)) |ps| {
+                var lo: usize = @intCast(usize, ps);
+                var hi: usize = parent_type_list.len;
+                while (lo + @intCast(usize, 1) < hi) {
+                    var tmp = parent_type_list.items[lo];
+                    parent_type_list.items[lo] = parent_type_list.items[hi - @intCast(usize, 1)];
+                    parent_type_list.items[hi - @intCast(usize, 1)] = tmp;
+                    lo += @intCast(usize, 1);
+                    hi -= @intCast(usize, 1);
+                }
+            }
         }
     }
 }
@@ -482,7 +509,8 @@ pub fn asyncFrameSizeRun(alloc: *alloc_mod.Sand, store: *ast_mod.AstStore,
     resolved_types: *rtt_mod.ResolvedTypeTable,
     suspending_fns: *hash_mod.U64ToU32Map, frame_sizes: *hash_mod.U64ToU32Map,
     awaited_fns: *hash_mod.U64ToU32Map, async_hidden_fns: *hash_mod.U64ToU32Map,
-    async_parent_result_types: *hash_mod.U64ToU32Map) void {
+    parent_result_type_list: *ga_mod.U32ArrayList, parent_result_start: *hash_mod.U64ToU32Map,
+    parent_result_count: *hash_mod.U64ToU32Map) void {
     var p_msg: []const u8 = "AFS\n"; pal.markerWrite(p_msg);
     var asu_text: []const u8 = "@asyncSuspend";
     var async_suspend_name_id = si_mod.stringInternerIntern(interner, asu_text);
@@ -526,7 +554,7 @@ pub fn asyncFrameSizeRun(alloc: *alloc_mod.Sand, store: *ast_mod.AstStore,
             var pr0b = store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(store, d0b[di0b]))];
             if (!asyncIsSuspending(suspending_fns, mods[mi0b].id, pr0b.name_id)) continue;
             scanImplicitAwaits(store, sym_reg, mods[mi0b].id, asyncKey(mods[mi0b].id, pr0b.name_id), dc0b.child_0, &stack,
-                suspending_fns, &fn_ret_types, awaited_fns, async_hidden_fns, async_parent_result_types);
+                suspending_fns, &fn_ret_types, awaited_fns, async_hidden_fns, parent_result_type_list, parent_result_start, parent_result_count);
         }
     }
 
@@ -564,8 +592,9 @@ pub fn asyncFrameSizeRun(alloc: *alloc_mod.Sand, store: *ast_mod.AstStore,
                 }
             }
             scanFrameLocals(store, sym_reg, mods[mi].id, suspending_fns, async_suspend_name_id, decl.child_0, &stack, typereg, resolved_types, &offset, &max_align);
-            // Amendment 9 hidden tail fields: child (kind 5), result (kind 6),
-            // parent_result (kind 7), appended in that frozen order.
+            // Amendment 9/10 hidden tail fields: child (kind 5), result (kind 6),
+            // then one parent_result (kind 7) per value-returning implicit
+            // await, in program order.
             var hid: u32 = @intCast(u32, 0);
             if (hash_mod.u64ToU32MapGet(async_hidden_fns, key)) |h| { hid = h; }
             if ((hid & @intCast(u32, 1)) != @intCast(u32, 0)) {
@@ -575,9 +604,15 @@ pub fn asyncFrameSizeRun(alloc: *alloc_mod.Sand, store: *ast_mod.AstStore,
                 addFrameField(typereg, asyncPtrVoid(typereg), &offset, &max_align);
             }
             if ((hid & @intCast(u32, 2)) != @intCast(u32, 0)) {
-                var prt: u32 = type_mod.TYPE_VOID;
-                if (hash_mod.u64ToU32MapGet(async_parent_result_types, key)) |pt| { prt = pt; }
-                addFrameField(typereg, prt, &offset, &max_align);
+                var pstart: u32 = @intCast(u32, 0);
+                if (hash_mod.u64ToU32MapGet(parent_result_start, key)) |ps| { pstart = ps; }
+                var pcount: u32 = @intCast(u32, 0);
+                if (hash_mod.u64ToU32MapGet(parent_result_count, key)) |pc| { pcount = pc; }
+                var pk: u32 = @intCast(u32, 0);
+                while (pk < pcount) : (pk += @intCast(u32, 1)) {
+                    var prt = parent_result_type_list.items[@intCast(usize, pstart + pk)];
+                    addFrameField(typereg, prt, &offset, &max_align);
+                }
             }
             var total = alignUpU32(offset, max_align);
             if (total == @intCast(u32, 0)) total = @intCast(u32, 1);

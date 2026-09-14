@@ -24,6 +24,7 @@
 
 const alloc_mod = @import("allocator.zig");
 const async_analysis = @import("async_analysis.zig");
+const ga_mod = @import("growable_array.zig");
 const hash_mod = @import("util/hash.zig");
 const itoa_mod = @import("util/itoa.zig");
 const lir_mod = @import("lir.zig");
@@ -80,7 +81,21 @@ fn fieldArrayListInit(alloc: *Sand, capacity: usize) AsyncFrameFieldArrayList {
     };
 }
 
+fn fieldArrayListEnsureCapacity(self: *AsyncFrameFieldArrayList, new_capacity: usize) void {
+    if (new_capacity <= self.capacity) return;
+    var new_cap = new_capacity;
+    if (new_cap < self.capacity * @intCast(usize, 2)) new_cap = self.capacity * @intCast(usize, 2);
+    if (new_cap < @intCast(usize, 8)) new_cap = @intCast(usize, 8);
+    var raw = alloc_mod.sandAlloc(self.allocator, new_cap * @intCast(usize, @sizeOf(AsyncFrameField)), @intCast(usize, 4)) catch unreachable;
+    var new_items = @ptrCast([*]AsyncFrameField, raw);
+    var i: usize = @intCast(usize, 0);
+    while (i < self.len) : (i += @intCast(usize, 1)) { new_items[i] = self.items[i]; }
+    self.items = new_items;
+    self.capacity = new_cap;
+}
+
 fn fieldArrayListAppend(self: *AsyncFrameFieldArrayList, value: AsyncFrameField) void {
+    fieldArrayListEnsureCapacity(self, self.len + @intCast(usize, 1));
     self.items[self.len] = value;
     self.len += @intCast(usize, 1);
 }
@@ -431,7 +446,8 @@ fn emitLayoutMarker(module_id: u32, name_id: u32, size: u32) void {
 pub fn asyncLayoutFrame(alloc: *Sand, reg: *TypeRegistry, lir_fn: *LirFunction,
     suspending_fns: *hash_mod.U64ToU32Map, frame_sizes: *hash_mod.U64ToU32Map,
     awaited_fns: *hash_mod.U64ToU32Map, async_hidden_fns: *hash_mod.U64ToU32Map,
-    async_parent_result_types: *hash_mod.U64ToU32Map) AsyncFrameLayout {
+    parent_result_type_list: *ga_mod.U32ArrayList, parent_result_start: *hash_mod.U64ToU32Map,
+    parent_result_count: *hash_mod.U64ToU32Map) AsyncFrameLayout {
     var max_temp = maxTempOf(lir_fn);
     var fields = fieldArrayListInit(alloc, lir_fn.params.len + lir_fn.hoisted_temps.len + @intCast(usize, 2));
 
@@ -518,8 +534,9 @@ pub fn asyncLayoutFrame(alloc: *Sand, reg: *TypeRegistry, lir_fn: *LirFunction,
             addField(&fields, reg, ASYNC_FIELD_LIVE, @intCast(u32, 0), t, c.ttype[tu], &offset, &max_align);
         }
     }
-    // Amendment 9 hidden tail fields: child (kind 5), result (kind 6),
-    // parent_result (kind 7), mirroring P2's reservation exactly.
+    // Amendment 9/10 hidden tail fields: child (kind 5), result (kind 6),
+    // then one parent_result (kind 7) per value-returning implicit await, in
+    // program order, mirroring P2's reservation exactly.
     var hid: u32 = @intCast(u32, 0);
     var lay_key = async_analysis.asyncKey(lir_fn.module_id, lir_fn.name_id);
     if (hash_mod.u64ToU32MapGet(async_hidden_fns, lay_key)) |h| { hid = h; }
@@ -531,9 +548,15 @@ pub fn asyncLayoutFrame(alloc: *Sand, reg: *TypeRegistry, lir_fn: *LirFunction,
         addField(&fields, reg, ASYNC_FIELD_RESULT, @intCast(u32, 0), @intCast(u32, 0), lay_ptr_void, &offset, &max_align);
     }
     if ((hid & @intCast(u32, 2)) != @intCast(u32, 0)) {
-        var prt: u32 = type_mod.TYPE_VOID;
-        if (hash_mod.u64ToU32MapGet(async_parent_result_types, lay_key)) |pt| { prt = pt; }
-        addField(&fields, reg, ASYNC_FIELD_PARENT_RESULT, @intCast(u32, 0), @intCast(u32, 0), prt, &offset, &max_align);
+        var pstart: u32 = @intCast(u32, 0);
+        if (hash_mod.u64ToU32MapGet(parent_result_start, lay_key)) |ps| { pstart = ps; }
+        var pcount: u32 = @intCast(u32, 0);
+        if (hash_mod.u64ToU32MapGet(parent_result_count, lay_key)) |pc| { pcount = pc; }
+        var pk: u32 = @intCast(u32, 0);
+        while (pk < pcount) : (pk += @intCast(u32, 1)) {
+            var prt = parent_result_type_list.items[@intCast(usize, pstart + pk)];
+            addField(&fields, reg, ASYNC_FIELD_PARENT_RESULT, @intCast(u32, 0), @intCast(u32, 0), prt, &offset, &max_align);
+        }
     }
     var precise = alignUpU32(offset, max_align);
     if (precise == @intCast(u32, 0)) precise = @intCast(u32, 1);
