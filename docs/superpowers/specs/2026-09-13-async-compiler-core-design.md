@@ -280,6 +280,11 @@ declaration time and streamed bytes would need re-patching.
   name; the original name remains the `@asyncInit` entry. When the frame crosses
   the builtin/API boundary it is `*void`, but the body operates on the typed
   function-local frame.
+- **Step symbol naming (Amendment 7, Res 7).** The synthesized step **symbol** is
+  `__Z98Step_<fn>`; `__async_step_<f>` names the **same** synthesized step
+  function. The two spellings are equivalent — `__async_step_<f>` is the
+  design/source-level name and `__Z98Step_<fn>` is the emitted symbol; they name
+  one function, not two (implementers MUST NOT diverge).
 - **Step word (Amendment 7).** `@asyncInit(ctx, buf, fn, args)` zeroes the root
   frame in `buf`, stores `ctx`, sets `state = 0`, and **writes the step word for
   the target `fn`**; it returns `*void`. `@asyncResume(frame, arg)` **loads the
@@ -507,7 +512,7 @@ owns `3017/3018/3019/3046/3049` (and optionally `3047`); Track 1 owns `3045`.
 | `ERR_3045_UNKNOWN_CALLING_CONVENTION = 3045` | *(Track 1; reserved here)* | Track 1 |
 | `ERR_3046_ASYNC_FRAME_SIZE_INVALID = 3046` | `@asyncFrameSize` on non-suspending/unknown fn | sema `@asyncFrameSize` arm |
 | `WARN_3047_ASYNC_FRAME_LARGE = 3047` | *(optional advisory)* | Stage 2 layout, threshold-gated |
-| `ERR_3049_PTRCAST_REQUIRES_TWO_ARGS = 3049` | **Res 6:** 1-arg `@ptrCast(expr)` rejected | sema `@ptrCast` type-cast path (`lower.zig:4217` guard) |
+| `ERR_3049_PTRCAST_REQUIRES_TWO_ARGS = 3049` | **Res 6:** 1-arg `@ptrCast(expr)` rejected | sema `@ptrCast` arm (sema builtin/type-cast dispatch) — the emitter of `ERR_3049`; `3049` is confirmed free/explicit |
 
 `ERR_3048_CANNOT_READ_FILE = 3048` and every existing explicit value are
 preserved; ICE `3043` (`ERR_9001_ICE`, auto-incremented) must not shift.

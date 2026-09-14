@@ -2,6 +2,14 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **STALE-SCHEDULER MARKER (Amendment 7, 2026-09-14):** this plan's scheduler
+> surface is **stale**: it pins `Task.step`/`StepFn` and the homogeneous step
+> ABI, which Amendment 7 of
+> [`2026-09-13-async-compiler-core-plan.md`](2026-09-13-async-compiler-core-plan.md)
+> removed in favor of hidden-step-word `@asyncResume` self-dispatch. Re-amend
+> (drop `Task.step` and every `step` parameter) **before Track 3 dispatch**; the
+> authoritative deferral record is Amendment 7.
+
 **Goal:** Build the concrete, no-generics `std.async` Z98 library (`Context` per-task LIFO child-frame pool, `Task`, `Scheduler`, and the cooperative scheduler free functions) and wire it into every std-install touchpoint, so Track 4 can drive compiler-synthesized coroutine steps.
 
 **Architecture:** `sf/src/std_async.zig` is a pure-Z98 user module (not in the compiler import graph): plain structs + free functions, no generics, no module-scope mutable globals. `Context` is a per-task frame stack for **child** frames only (bump pointer + mark); the root frame lives in the caller-owned `buf` outside the pool. `Task.step` stores the compiler `__async_step_<f>` pointer (`fn(frame: *void, arg: ?*void) ?*void`); pool exhaustion surfaces as `error.OutOfFrame`, never a crash. The module is re-exported from `std.zig` and added to all seed/self-compile `lib/` install paths; its five corpus fixtures use hand-written step functions so the library is testable without Track 2's builtins.

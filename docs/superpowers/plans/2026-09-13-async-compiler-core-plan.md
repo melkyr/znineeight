@@ -1410,8 +1410,34 @@ state-range trap** (the only new trap), gated exactly like existing `check_trap`
    the step is emitted with **external linkage (not `static`)**; there is **no
    user-visible symbol** and the edge is **compiler-managed** (also keeps the
    callee module alive, A7). Recorded in the async-core spec §3.3 and Task 6.
+   **Name equivalence:** the synthesized step **symbol** is `__Z98Step_<fn>`;
+   `__async_step_<f>` names the **same** synthesized step function. The two
+   spellings are equivalent (`__async_step_<f>` = design/source-level name,
+   `__Z98Step_<fn>` = emitted symbol) — one function, not two; implementers MUST
+   NOT diverge.
 7. **Res 4 — `std.async` value-position gap.** **Document before Track 3; do NOT
    resolve before Track 3** (recorded as a documented-before-Track-3 item).
+
+**Deferred: Track 3 / Track 4 plan re-amendment (cross-plan contradiction).** The
+operator ruling removed the old scheduler (`Task.step`, `tick(s, step)`) from the
+specs, but two consuming plans remain **stale** relative to the ruled
+self-dispatch architecture. They **MUST be re-amended (drop `Task.step` and every
+`step` parameter; align with `@asyncResume` self-dispatch) before Track 3 / Track
+4 dispatch** — the Track-3/4 designs are **NOT** rewritten here:
+
+- `docs/superpowers/plans/2026-09-13-std-async-plan.md` — stale concepts:
+  `Task.step` (the `StepFn` fn-pointer struct field), `StepFn = fn(frame: *void,
+  arg: ?*void) ?*void`, `step: StepFn`, the hand-written step fixtures, and every
+  architecture/consistency line pinning them (e.g. `:7`, `:134`, `:241`, `:255`,
+  `:380`, `:479`, `:901`).
+- `docs/superpowers/plans/2026-09-13-coroutine-integration-plan.md` — stale
+  concepts: `tick(s, step)` / `awaitTask(s, t, step)`, the "step passed
+  explicitly / each scheduler is homogeneous" model, and the pinned-surface /
+  type-consistency lines (e.g. `:23`, `:288`, `:443`, `:460`, `:840`).
+
+This clause is the **authoritative deferral record**; the two plans carry a
+top-of-file pointer marker to this amendment, but their Track-3/4 task bodies are
+not rewritten now.
 
 **Pinned-value churn (owned by Task 5c, landed with the P2/P3 change).** The step
 word changes `@asyncFrameSize(worker)` **16 → 20** and the Task-5a `Expected==16`

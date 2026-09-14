@@ -2,6 +2,14 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **STALE-SCHEDULER MARKER (Amendment 7, 2026-09-14):** this plan's scheduler
+> surface is **stale**: it pins `tick(s, step)`/`awaitTask(s, t, step)` and the
+> homogeneous step ABI, which Amendment 7 of
+> [`2026-09-13-async-compiler-core-plan.md`](2026-09-13-async-compiler-core-plan.md)
+> removed in favor of hidden-step-word `@asyncResume` self-dispatch. Re-amend
+> (drop the `step` parameters) **before Track 4 dispatch**; the authoritative
+> deferral record is Amendment 7.
+
 **Goal:** Convert the `rogue_mud` NPC AI and per-connection broadcast paths and the `mud_server` `select` accept/read loop to cooperative coroutines on the Track 2 builtins and Track 3 `std.async`, with the committed goldens byte-identical.
 
 **Architecture:** One linear track over example sources only. `rogue_mud/lib/combat.zig` grows a suspending `npcCoroutine` (one task per active enemy) whose per-turn driver is `std.async.tick`; `rogue_mud/ui.zig` grows a suspending `drawToSocketCoroutine` that yields between frame rows; `rogue_mud/main.zig` owns the caller-supplied schedulers and task arenas and wires create/schedule/cancel across the three modules. `mud_server/main.zig` replaces the fd-set bookkeeping with one `clientCoroutine` task per accepted socket driven by `@asyncResume` from the select-ready path, with `std.async.awaitTask` on the quit/disconnect path. No `sf/src` file is touched: examples are outside the compiler's import graph, so the fixed point and seed do not move.
