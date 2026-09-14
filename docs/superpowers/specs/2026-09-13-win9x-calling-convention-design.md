@@ -33,7 +33,7 @@ Track 1 implements the Win9x calling-convention prelude (Prelude A, §8 of the p
 5. **Emit** the convention on the extern prototype/definition and on the fn-pointer typedef, portably (gcc `__attribute__((stdcall))`, MSVC/Watcom `__stdcall`) and only for `stdcall` (default `cdecl` emits nothing, preserving linux byte-identity).
 6. **Apply the convention at the use site** (Task 3R, operator ruling Option B): do NOT force a second prototype for a convention extern. The C header remains the sole declaration source; the callee's convention is carried in LIR and applied at the call/value site via a cast to the convention-qualified `FS_…` fn-pointer typedef.
 7. Reject variadic `stdcall` (i386 stdcall cannot be variadic).
-8. **Migrate** `sf/src/std_net.zig` and the related Win32 extern std calls to `extern "stdcall"` so they do not conflict with the real `winsock.h` declarations once (6) forces prototypes (m1155-A; exact list in §3.7).
+8. **Migrate** `sf/src/std_net.zig` and the related Win32 extern std calls to `extern "stdcall"` so their convention matches the real `winsock.h` declarations under the (6) use-site-cast ruling (m1155-A; exact list in §3.7).
 9. Add the `ERR_3017_SUSPENDING_FUNCTION_POINTER = 3017` diagnostic **code/plumbing only**; the enforcement itself lands in Track 2 (Prelude B), because it depends on `is_suspending`.
 
 `extern struct` is out of scope (parent spec §10: Z98 normal layout matches the Win32 i686 ABI). Inline assembly stays documented unsupported (§11).
@@ -252,7 +252,7 @@ and (src_f.flags_packed & @intCast(u8, 2)) == (tgt_f.flags_packed & @intCast(u8,
 
 ### 3.7 `std_net` migration list (operator ruling m1155-A)
 
-Once A.4 forces prototypes, every `std_net` Win32 extern must be declared `extern "stdcall"` or the emitted prototype conflicts with `winsock.h`. Exact edit list in `sf/src/std_net.zig`:
+Every `std_net` Win32 extern must be declared `extern "stdcall"` so its convention matches the real `winsock.h` declarations (Option B use-site cast; no forced prototype). Exact edit list in `sf/src/std_net.zig`:
 
 | Lines | Symbols |
 |---|---|
