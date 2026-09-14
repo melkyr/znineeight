@@ -46,8 +46,25 @@ const StringInterner = si_mod.StringInterner;
 const AsyncFrameLayout = async_frame_layout.AsyncFrameLayout;
 
 const BIN_ADD: u8 = @intCast(u8, 0);
+const BIN_SUB: u8 = @intCast(u8, 1);
+const BIN_OR: u8 = @intCast(u8, 6);
 const BIN_NE: u8 = @intCast(u8, 11);
 const BIN_LE: u8 = @intCast(u8, 13);
+const BIN_GT: u8 = @intCast(u8, 14);
+
+// Task 7 — per-task LIFO child-frame Context layout (compiler-core view). The
+// caller-provided `ctx` points at this header; the child-frame pool bytes follow
+// it. `used` stays at offset 0 (the R1 interim convention) so existing
+// `ctx[0..usize] = used` callers keep working; `capacity` and the sticky `oom`
+// flag are appended before the pool base.
+//   ctx + 0*sizeof(usize) : used      (bump pointer)
+//   ctx + 1*sizeof(usize) : capacity  (pool bytes; test-supplied)
+//   ctx + 2*sizeof(usize) : oom       (u8, sticky)
+//   ctx + 3*sizeof(usize) : pool base (child frames start here)
+pub const CTX_USED_OFF: u32 = @intCast(u32, 0);
+pub const CTX_CAP_OFF: u32 = @intCast(u32, @sizeOf(usize));
+pub const CTX_OOM_OFF: u32 = @intCast(u32, @sizeOf(usize)) * @intCast(u32, 2);
+pub const CTX_POOL_OFF: u32 = @intCast(u32, @sizeOf(usize)) * @intCast(u32, 3);
 
 pub const AsyncTransformCtx = struct {
     alloc: *Sand,
@@ -395,7 +412,7 @@ fn emitDriveChild(b: *Build, blk: u32, child_temp: u32, yield_blk: u32, after_bl
 // Q1 steps 1-10: rewrite `call_direct g` at the current segment into a
 // child-frame init + first child step + conditional yield, with the resume path
 // in `loop_done` and the continuation in `after`.
-fn emitAwait(b: *Build, blk: u32, cd: lir_mod.CallDirectData, state: u32, yield_blk: u32, loop_done: u32, after: u32, k: u32) void {
+fn emitAwait(b: *Build, blk: u32, cd: lir_mod.CallDirectData, state: u32, alloc_blk: u32, yield_blk: u32, loop_done: u32, after: u32, k: u32, terminal_id: u32) void {
     var reg = b.reg;
     var callee_lay: *const AsyncFrameLayout = b.actx.layout;
     if (async_frame_layout.asyncLayoutLookup(b.actx.async_layouts, cd.module_id, cd.name_id)) |cl| { callee_lay = cl; }
@@ -421,39 +438,57 @@ fn emitAwait(b: *Build, blk: u32, cd: lir_mod.CallDirectData, state: u32, yield_
         if (fld.kind == async_frame_layout.ASYNC_FIELD_CTX) { ctx_off = fld.offset; }
     }
     var ctx = loadField(b, blk, ctx_off, ptrVoid(reg));
-    // (2) bump allocation: ctx[0..usize]=used, pool base ctx+usize.
-    var ctx_int = newTemp(b, type_mod.TYPE_USIZE);
-    emit(b, blk, LirInst{ .ptr_to_int = .{ .value = ctx, .result = ctx_int } });
-    var used_p_type = type_mod.typeRegistryGetOrCreatePtr(reg, type_mod.TYPE_USIZE, false);
-    var used_p = newTemp(b, used_p_type);
-    emit(b, blk, LirInst{ .int_to_ptr = .{ .value = ctx_int, .target = used_p_type, .result = used_p } });
-    var used = newTemp(b, type_mod.TYPE_USIZE);
-    emit(b, blk, LirInst{ .load = .{ .ptr = used_p, .result = used } });
-    var psz = newTemp(b, type_mod.TYPE_USIZE);
-    emit(b, blk, LirInst{ .int_const = .{ .value = @intCast(u64, @sizeOf(usize)), .result = psz } });
-    var base_int = newTemp(b, type_mod.TYPE_USIZE);
-    emit(b, blk, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = ctx_int, .rhs = psz, .result = base_int } });
-    var child_int = newTemp(b, type_mod.TYPE_USIZE);
-    emit(b, blk, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = base_int, .rhs = used, .result = child_int } });
-    var child = newTemp(b, ptrVoid(reg));
-    emit(b, blk, LirInst{ .int_to_ptr = .{ .value = child_int, .target = ptrVoid(reg), .result = child } });
+    // (2) Task 7 pool accounting. Inline-read the Context header
+    // (`used@0`, `capacity@1*usize`, sticky `oom@2*usize`; pool base ctx+3*usize).
+    // Exhaustion (`used + size > capacity`) sets `oom` and takes the null/error
+    // terminal path; otherwise the child is bump-allocated in `alloc_blk`.
+    var used = loadFieldBase(b, blk, ctx, CTX_USED_OFF, type_mod.TYPE_USIZE);
+    var capacity = loadFieldBase(b, blk, ctx, CTX_CAP_OFF, type_mod.TYPE_USIZE);
+    var oom_old = loadFieldBase(b, blk, ctx, CTX_OOM_OFF, type_mod.TYPE_U8);
+    // `frame_sizes[callee]` is authoritative (Task 5 sole writer); if absent emit
+    // an ICE rather than silently allocating a zero-sized child.
     var fsz: u64 = @intCast(u64, 0);
-    if (async_analysis.asyncFrameSizeOf(b.actx.frame_sizes, cd.module_id, cd.name_id)) |fs| { fsz = @intCast(u64, fs); }
+    if (async_analysis.asyncFrameSizeOf(b.actx.frame_sizes, cd.module_id, cd.name_id)) |fs| {
+        fsz = @intCast(u64, fs);
+    } else {
+        var ice_msg2: []const u8 = "async frame_sizes missing for implicit-await callee";
+        _ = diag_mod.diagnosticCollectorAdd(b.actx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_9001_ICE)), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), ice_msg2);
+    }
     var fsz_t = newTemp(b, type_mod.TYPE_USIZE);
     emit(b, blk, LirInst{ .int_const = .{ .value = fsz, .result = fsz_t } });
-    var new_used = newTemp(b, type_mod.TYPE_USIZE);
-    emit(b, blk, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = used, .rhs = fsz_t, .result = new_used } });
-    emit(b, blk, LirInst{ .store = .{ .ptr = used_p, .value = new_used } });
-    // (3) g's step word at child+0.
+    var need = newTemp(b, type_mod.TYPE_USIZE);
+    emit(b, blk, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = used, .rhs = fsz_t, .result = need } });
+    var over = newTemp(b, type_mod.TYPE_U8);
+    emit(b, blk, LirInst{ .binary = .{ .op = BIN_GT, .lhs = need, .rhs = capacity, .result = over } });
+    var oom_new = newTemp(b, type_mod.TYPE_U8);
+    emit(b, blk, LirInst{ .binary = .{ .op = BIN_OR, .lhs = oom_old, .rhs = over, .result = oom_new } });
+    storeFieldBase(b, blk, ctx, CTX_OOM_OFF, type_mod.TYPE_U8, oom_new);
+    emit(b, blk, LirInst{ .branch = .{ .cond = over, .then_bb = terminal_id, .else_bb = alloc_blk } });
+    b.step.blocks.items[@intCast(usize, blk)].is_terminated = @intCast(u8, 1);
+    // (3) alloc_blk: bump allocation, child = pool + used; store used = need.
+    // The pool base is the byte region immediately after the Context header.
+    var ctx_int = newTemp(b, type_mod.TYPE_USIZE);
+    emit(b, alloc_blk, LirInst{ .ptr_to_int = .{ .value = ctx, .result = ctx_int } });
+    var pool_off_t = newTemp(b, type_mod.TYPE_USIZE);
+    emit(b, alloc_blk, LirInst{ .int_const = .{ .value = @intCast(u64, CTX_POOL_OFF), .result = pool_off_t } });
+    var pool = newTemp(b, type_mod.TYPE_USIZE);
+    emit(b, alloc_blk, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = ctx_int, .rhs = pool_off_t, .result = pool } });
+    var used_p = fieldPtrBase(b, alloc_blk, ctx, CTX_USED_OFF, type_mod.TYPE_USIZE);
+    emit(b, alloc_blk, LirInst{ .store = .{ .ptr = used_p, .value = need } });
+    var child_int = newTemp(b, type_mod.TYPE_USIZE);
+    emit(b, alloc_blk, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = pool, .rhs = used, .result = child_int } });
+    var child = newTemp(b, ptrVoid(reg));
+    emit(b, alloc_blk, LirInst{ .int_to_ptr = .{ .value = child_int, .target = ptrVoid(reg), .result = child } });
+    // (4) g's step word at child+0.
     var step_name = asyncStepNameId(b.actx.interner, cd.name_id);
     var step_fn = asyncStepFnType(reg, b.actx.interner, step_name, cd.module_id);
     var step_pt = type_mod.typeRegistryGetOrCreatePtr(reg, step_fn, false);
     var fr = newTemp(b, step_pt);
-    emit(b, blk, LirInst{ .func_ref = .{ .name_id = step_name, .module_id = cd.module_id, .result = fr } });
+    emit(b, alloc_blk, LirInst{ .func_ref = .{ .name_id = step_name, .module_id = cd.module_id, .result = fr } });
     var fri = newTemp(b, type_mod.TYPE_USIZE);
-    emit(b, blk, LirInst{ .ptr_to_int = .{ .value = fr, .result = fri } });
-    storeFieldBase(b, blk, child, @intCast(u32, 0), type_mod.TYPE_USIZE, fri);
-    // (4) child header.
+    emit(b, alloc_blk, LirInst{ .ptr_to_int = .{ .value = fr, .result = fri } });
+    storeFieldBase(b, alloc_blk, child, @intCast(u32, 0), type_mod.TYPE_USIZE, fri);
+    // (5) child header.
     var c_ctx_off: u32 = @intCast(u32, 0);
     var c_state_off: u32 = @intCast(u32, 0);
     var c_result_off: u32 = @intCast(u32, 0);
@@ -465,18 +500,18 @@ fn emitAwait(b: *Build, blk: u32, cd: lir_mod.CallDirectData, state: u32, yield_
         if (fld2.kind == async_frame_layout.ASYNC_FIELD_STATE) { c_state_off = fld2.offset; }
         if (fld2.kind == async_frame_layout.ASYNC_FIELD_RESULT) { c_result_off = fld2.offset; c_result_present = true; }
     }
-    storeFieldBase(b, blk, child, c_ctx_off, ptrVoid(reg), ctx);
+    storeFieldBase(b, alloc_blk, child, c_ctx_off, ptrVoid(reg), ctx);
     var zero_st = newTemp(b, type_mod.TYPE_U8);
-    emit(b, blk, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = zero_st } });
-    storeFieldBase(b, blk, child, c_state_off, type_mod.TYPE_U8, zero_st);
-    // (5) copy call args into g's param offsets (natural layout order).
+    emit(b, alloc_blk, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = zero_st } });
+    storeFieldBase(b, alloc_blk, child, c_state_off, type_mod.TYPE_U8, zero_st);
+    // (6) copy call args into g's param offsets (natural layout order).
     var arg_i: u32 = @intCast(u32, 0);
     var f3: usize = @intCast(usize, 0);
     while (f3 < callee_lay.fields.len) : (f3 += @intCast(usize, 1)) {
         var fld3 = callee_lay.fields.items[f3];
         if (fld3.kind == async_frame_layout.ASYNC_FIELD_PARAM) {
             var argt = cd.args_start + arg_i + b.base;
-            storeFieldBase(b, blk, child, fld3.offset, fld3.type_id, argt);
+            storeFieldBase(b, alloc_blk, child, fld3.offset, fld3.type_id, argt);
             arg_i += @intCast(u32, 1);
         }
     }
@@ -485,27 +520,27 @@ fn emitAwait(b: *Build, blk: u32, cd: lir_mod.CallDirectData, state: u32, yield_
     if (c_result_present) {
         if (is_value and slot_ok) {
             var fi = newTemp(b, type_mod.TYPE_USIZE);
-            emit(b, blk, LirInst{ .ptr_to_int = .{ .value = b.frame_temp, .result = fi } });
+            emit(b, alloc_blk, LirInst{ .ptr_to_int = .{ .value = b.frame_temp, .result = fi } });
             var poff = newTemp(b, type_mod.TYPE_USIZE);
-            emit(b, blk, LirInst{ .int_const = .{ .value = @intCast(u64, b.pr_off[@intCast(usize, k)]), .result = poff } });
+            emit(b, alloc_blk, LirInst{ .int_const = .{ .value = @intCast(u64, b.pr_off[@intCast(usize, k)]), .result = poff } });
             var paddr = newTemp(b, type_mod.TYPE_USIZE);
-            emit(b, blk, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = fi, .rhs = poff, .result = paddr } });
+            emit(b, alloc_blk, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = fi, .rhs = poff, .result = paddr } });
             var pr = newTemp(b, ptrVoid(reg));
-            emit(b, blk, LirInst{ .int_to_ptr = .{ .value = paddr, .target = ptrVoid(reg), .result = pr } });
-            storeFieldBase(b, blk, child, c_result_off, ptrVoid(reg), pr);
+            emit(b, alloc_blk, LirInst{ .int_to_ptr = .{ .value = paddr, .target = ptrVoid(reg), .result = pr } });
+            storeFieldBase(b, alloc_blk, child, c_result_off, ptrVoid(reg), pr);
         } else {
             var nptr = newTemp(b, ptrVoid(reg));
-            emit(b, blk, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = nptr } });
-            storeFieldBase(b, blk, child, c_result_off, ptrVoid(reg), nptr);
+            emit(b, alloc_blk, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = nptr } });
+            storeFieldBase(b, alloc_blk, child, c_result_off, ptrVoid(reg), nptr);
         }
     }
-    // (6) persist the child pointer in the caller's hidden child field.
-    emit(b, blk, LirInst{ .assign = .{ .dst = b.child_temp, .src = child, .name_id = @intCast(u32, 0) } });
-    storeField(b, blk, b.child_off, ptrVoid(reg), b.child_temp);
-    // (7) first child step + conditional yield.
-    emitDriveChild(b, blk, b.child_temp, yield_blk, after);
-    b.step.blocks.items[@intCast(usize, blk)].is_terminated = @intCast(u8, 1);
-    // (8) yield block.
+    // (7) persist the child pointer in the caller's hidden child field.
+    emit(b, alloc_blk, LirInst{ .assign = .{ .dst = b.child_temp, .src = child, .name_id = @intCast(u32, 0) } });
+    storeField(b, alloc_blk, b.child_off, ptrVoid(reg), b.child_temp);
+    // (8) first child step + conditional yield.
+    emitDriveChild(b, alloc_blk, b.child_temp, yield_blk, after);
+    b.step.blocks.items[@intCast(usize, alloc_blk)].is_terminated = @intCast(u8, 1);
+    // (9) yield block.
     saveAllFields(b, yield_blk, b.actx.layout);
     var sv = newTemp(b, type_mod.TYPE_U8);
     emit(b, yield_blk, LirInst{ .int_const = .{ .value = @intCast(u64, state), .result = sv } });
@@ -514,13 +549,21 @@ fn emitAwait(b: *Build, blk: u32, cd: lir_mod.CallDirectData, state: u32, yield_
     emit(b, yield_blk, LirInst{ .wrap_optional = .{ .value = @intCast(u32, 0), .result = yld, .type_id = b.opt } });
     emit(b, yield_blk, LirInst{ .ret = yld });
     b.step.blocks.items[@intCast(usize, yield_blk)].is_terminated = @intCast(u8, 1);
-    // (9) loop_done (resume target only): reload + re-drive the child.
+    // (10) loop_done (resume target only): reload + re-drive the child.
     reloadAllFields(b, loop_done, b.actx.layout);
     emitDriveChild(b, loop_done, b.child_temp, yield_blk, after);
     b.step.blocks.items[@intCast(usize, loop_done)].is_terminated = @intCast(u8, 1);
-    // (10) after: deliver the awaited value to the call's result temp, then the
-    // original block continues. (Placed here, not in loop_done, so an
-    // immediately-completing child also delivers its value.)
+    // (11) after: pop the child frame (restore the mark: used -= frame_size),
+    // then deliver the awaited value to the call's result temp and continue.
+    var actx_after = loadField(b, after, ctx_off, ptrVoid(reg));
+    var used_p_after = fieldPtrBase(b, after, actx_after, CTX_USED_OFF, type_mod.TYPE_USIZE);
+    var used_after = newTemp(b, type_mod.TYPE_USIZE);
+    emit(b, after, LirInst{ .load = .{ .ptr = used_p_after, .result = used_after } });
+    var fsz_t2 = newTemp(b, type_mod.TYPE_USIZE);
+    emit(b, after, LirInst{ .int_const = .{ .value = fsz, .result = fsz_t2 } });
+    var mark = newTemp(b, type_mod.TYPE_USIZE);
+    emit(b, after, LirInst{ .binary = .{ .op = BIN_SUB, .lhs = used_after, .rhs = fsz_t2, .result = mark } });
+    emit(b, after, LirInst{ .store = .{ .ptr = used_p_after, .value = mark } });
     if (is_value and slot_ok) {
         var pv = loadField(b, after, b.pr_off[@intCast(usize, k)], b.pr_ty[@intCast(usize, k)]);
         emit(b, after, LirInst{ .assign = .{ .dst = cd.result + b.base, .src = pv, .name_id = @intCast(u32, 0) } });
@@ -640,10 +683,18 @@ fn emitMainDriver(actx: *AsyncTransformCtx, lf: *LirFunction) void {
     var pool = newTemp(&b, ptr_void);
     emit(&b, @intCast(u32, 0), LirInst{ .ptr_cast = .{ .value = pool_ap, .target = ptr_void, .result = pool } });
 
-    // R1 interim bump counter: pool[0..usize] = 0 (pool base is pool+usize).
+    // Task 7 Context header at `__az_pool` (ctx == pool handle): `used = 0`,
+    // `capacity = usable bytes after the header`, `oom = 0`; pool base is
+    // `__az_pool + CTX_POOL_OFF` (derived by the await site).
     var z_usize = newTemp(&b, type_mod.TYPE_USIZE);
     emit(&b, @intCast(u32, 0), LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = z_usize } });
-    storeFieldBase(&b, @intCast(u32, 0), pool, @intCast(u32, 0), type_mod.TYPE_USIZE, z_usize);
+    storeFieldBase(&b, @intCast(u32, 0), pool, CTX_USED_OFF, type_mod.TYPE_USIZE, z_usize);
+    var cap_t = newTemp(&b, type_mod.TYPE_USIZE);
+    emit(&b, @intCast(u32, 0), LirInst{ .int_const = .{ .value = @intCast(u64, ASYNC_ROOT_POOL_BYTES - CTX_POOL_OFF), .result = cap_t } });
+    storeFieldBase(&b, @intCast(u32, 0), pool, CTX_CAP_OFF, type_mod.TYPE_USIZE, cap_t);
+    var z_oom = newTemp(&b, type_mod.TYPE_U8);
+    emit(&b, @intCast(u32, 0), LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = z_oom } });
+    storeFieldBase(&b, @intCast(u32, 0), pool, CTX_OOM_OFF, type_mod.TYPE_U8, z_oom);
 
     // main's step word @ root+0.
     var step_name = asyncStepNameId(actx.interner, lf.name_id);
@@ -749,6 +800,9 @@ pub fn asyncTransform(lf: *LirFunction, actx: *AsyncTransformCtx) bool {
     var state_resume: [*]u32 = @ptrCast([*]u32, bumpAlloc(actx.alloc, @intCast(usize, total_states + @intCast(u32, 2)) * @intCast(usize, 4), @intCast(usize, 4)));
     var state_yield: [*]u32 = @ptrCast([*]u32, bumpAlloc(actx.alloc, @intCast(usize, total_states + @intCast(u32, 2)) * @intCast(usize, 4), @intCast(usize, 4)));
     var state_after: [*]u32 = @ptrCast([*]u32, bumpAlloc(actx.alloc, @intCast(usize, total_states + @intCast(u32, 2)) * @intCast(usize, 4), @intCast(usize, 4)));
+    // Task 7: one extra block per implicit await for the capacity-checked
+    // allocation path (the `over` branch targets the shared terminal block).
+    var state_alloc: [*]u32 = @ptrCast([*]u32, bumpAlloc(actx.alloc, @intCast(usize, total_states + @intCast(u32, 2)) * @intCast(usize, 4), @intCast(usize, 4)));
 
     var next_id: u32 = @intCast(u32, 2);
     var state_cursor: u32 = @intCast(u32, 0);
@@ -776,6 +830,8 @@ pub fn asyncTransform(lf: *LirFunction, actx: *AsyncTransformCtx) bool {
                 state_resume[sidx] = next_id;
                 next_id += @intCast(u32, 1);
                 state_after[sidx] = next_id;
+                next_id += @intCast(u32, 1);
+                state_alloc[sidx] = next_id;
                 next_id += @intCast(u32, 1);
                 cur = state_after[sidx];
             }
@@ -945,7 +1001,7 @@ pub fn asyncTransform(lf: *LirFunction, actx: *AsyncTransformCtx) bool {
                     continue;
                 }
                 var cd = lir_mod.lirSideGetCallDirect(lf, inst.call_direct);
-                emitAwait(&b, cur, cd, state, state_yield[sidx], state_resume[sidx], state_after[sidx], pr_k);
+                emitAwait(&b, cur, cd, state, state_alloc[sidx], state_yield[sidx], state_resume[sidx], state_after[sidx], pr_k, terminal_id);
                 if (cd.return_type != type_mod.TYPE_VOID) { pr_k += @intCast(u32, 1); }
                 s += @intCast(u32, 1);
                 cur = state_after[sidx];

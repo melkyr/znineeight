@@ -17,6 +17,8 @@
 
 const CArgs = struct { o1: *i32, o2: *i64, ob1: *i32, ob2: *i64, cond: bool };
 
+const Ctx = struct { used: u32, capacity: u32, oom: u8 };
+
 fn a() i32 {
     @asyncSuspend(null);
     return 42;
@@ -48,8 +50,10 @@ pub fn main() void {
     var rb1: i32 = 0;
     var rb2: i64 = 0;
     var cbuf: [1024]u8 = undefined;
-    var usedp: *u32 = @ptrCast(*u32, &cbuf);
-    usedp.* = 0;
+    var ctxv: *Ctx = @ptrCast(*Ctx, &cbuf);
+    ctxv.used = 0;
+    ctxv.capacity = 1024;
+    ctxv.oom = 0;
 
     if (@asyncFrameSize(caller) != 64) {
         @panic("caller frame size mismatch");
@@ -76,7 +80,7 @@ pub fn main() void {
 
     var ca2: CArgs = CArgs{ .o1 = &r1, .o2 = &r2, .ob1 = &rb1, .ob2 = &rb2, .cond = false };
     var fbuf2: [256]u8 = undefined;
-    usedp.* = 0;
+    ctxv.used = 0;
     var ctxp2: *void = @ptrCast(*void, &cbuf);
     var args2: *const void = @ptrCast(*const void, &ca2);
     var frame2: *void = @asyncInit(ctxp2, &fbuf2, caller, args2);

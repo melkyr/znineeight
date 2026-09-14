@@ -4223,6 +4223,16 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 }
                 _ = ai_ctx;
                 if (ec.len >= @intCast(usize, 2) and ai_have) {
+                    // Task 7: initialize the caller-provided Context header for a
+                    // fresh task (used = 0 at ctx+0, sticky oom = 0 at ctx+2*usize);
+                    // the caller supplies `capacity` at ctx+1*usize and the pool
+                    // base is derived at ctx+3*usize.
+                    var ai_cz = nextTemp(self, type_mod.TYPE_USIZE);
+                    emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = ai_cz } });
+                    asyncEmitStoreAt(self, ai_ctx, async_state_machine.CTX_USED_OFF, type_mod.TYPE_USIZE, ai_cz);
+                    var ai_coom = nextTemp(self, type_mod.TYPE_U8);
+                    emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = ai_coom } });
+                    asyncEmitStoreAt(self, ai_ctx, async_state_machine.CTX_OOM_OFF, type_mod.TYPE_U8, ai_coom);
                     var ai_fsz: u32 = @intCast(u32, 0);
                     if (async_analysis.asyncFrameSizeOf(self.ctx.frame_sizes, ai_mid, ai_nid)) |fsz| {
                         ai_fsz = @intCast(u32, fsz);
