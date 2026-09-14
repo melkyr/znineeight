@@ -164,6 +164,21 @@ rebuild.) sf/src .zig sources are NOT duplicated in the archive - the pinned
 HEAD sha in release/seed/CHANGELOG.md identifies the source; the source lives
 in git.
 
+About these recipes (fixed-point measurement)
+---------------------------------------------
+These recipes are the fixed-point MEASUREMENT procedure, not merely a way to
+get a working binary. The "fixed point" is the md5 of the exact executable bytes
+this canonical build produces: every translation unit (the emitted modules AND
+the runtime support zig_runtime.c / zig_pal.c / c_exit.c) compiled with the full
+flag set via 'gcc -c', then every object linked together as '*.o'. Two builds of
+the same sources can run identically yet hash differently if they compile with
+different flags, compile a unit implicitly on the link line instead of with
+'gcc -c', or link a different object set/order. Because the fixed point is what
+proves seed self-reproduction and gates rotations, each recipe below (and
+scripts/seed/build_from_seed.sh, scripts/seed/archive_seed.sh) MUST reproduce it
+byte-for-byte. A md5 mismatch is a recipe deviation first - check the flags and
+the object set - not assumed to be a compiler bug.
+
 Binary vs fixed point (provenance)
 ----------------------------------
 The archived binary md5 $BIN_MD5 and the self-emission fixed point $FP_MD5
@@ -172,21 +187,25 @@ state at HEAD $HEAD. A gcc-only rebuild of the archive's C must reproduce
 $FP_MD5.
 
 Rebuild recipe 1 (primary, forward path) - from the seed binary
-----------------------------------------------------------------
+---------------------------------------------------------------
 From the repo root (current sf/src):
 
   timeout 120 ./zig1-seed/zig1 -ffast --dump-c89 --output-dir <fresh-dir> sf/src/main.zig
 
   (run from the repo root with the RELATIVE sf/src/main.zig path: module
   basename-hash tokens depend on the resolved source path; --output-dir must
-  already exist. Exclude the .zig1_*.tmp spill scratch the dump writes into the
-  output dir.)
+  already exist. The dump is self-contained: it contains the emitted runtime
+  support zig_runtime.c / zig_pal.c / c_exit.c alongside the module .c. Exclude
+  only the .zig1_*.tmp spill scratch the dump writes into the output dir.)
 
   cd <fresh-dir>
   gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign \
-      -Wno-implicit-function-declaration -I <repo>/sf/src/include -c *.c
-  gcc -m32 -O0 *.o <repo>/sf/src/include/zig_runtime.c \
-      <repo>/sf/src/include/zig_pal.c <repo>/sf/src/c_exit.c -o zig1_next
+      -Wno-implicit-function-declaration -I . -c *.c
+  gcc -m32 -O0 *.o -o zig1_next
+
+  The emitted support is compiled by this same 'gcc -c *.c' step (with -Wall)
+  and linked as objects. Do NOT also append the repo runtime sources on the link
+  line - that double-links zig_runtime.c/zig_pal.c/c_exit.c.
 
 Verify two-hop fixed-point closure: dump sf/src/main.zig with zig1_next -ffast
 into a fresh dir, gcc the same way, link -> binary md5 must equal the fixed
@@ -196,16 +215,23 @@ this.)
 
 Rebuild recipe 2 (fallback) - seed binary lost, rebuild from C only
 -------------------------------------------------------------------
-Self-contained; no repo include path, no zig0. Run from a scratch copy of the
-unpacked archive (gcc -c writes *.o next to the sources):
+Self-contained; no repo include path, no zig0. The archive keeps the runtime
+support in runtime/ + top-level c_exit.c so gen/ is module-only; compile ALL of
+it together with one 'gcc -c' under the canonical flags, exactly as
+archive_seed.sh's fixed-point check does. Build in a scratch copy so the *.o
+files do not litter the archive:
 
-  cd zig1-seed
+  cp -r zig1-seed /tmp/zig1-seed-build && cd /tmp/zig1-seed-build
   gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign \
-      -Wno-implicit-function-declaration -I zig1-seed/runtime -c zig1-seed/gen/*.c
-  gcc -m32 -O0 *.o zig1-seed/runtime/zig_runtime.c zig1-seed/runtime/zig_pal.c \
-      zig1-seed/c_exit.c -o zig1_fromC
+      -Wno-implicit-function-declaration -I runtime \
+      -c gen/*.c runtime/zig_runtime.c runtime/zig_pal.c c_exit.c
+  gcc -m32 -O0 *.o -o zig1_fromC
 
-Binary md5 must equal the fixed point $FP_MD5.
+Binary md5 must equal the fixed point $FP_MD5. The three runtime support
+translation units MUST be compiled with 'gcc -c' under the same flag set and
+linked as objects; dropping them onto the link line as sources omits the
+canonical flags (notably -Wall) and links a different object set/order, so the
+fixed point is NOT reproduced.
 
 std install: the produced binary needs the std lib next to it (lib/ with the 8
 std .zig) - copied from zig1-seed/lib/ or the binary's lib-dir.
@@ -217,12 +243,18 @@ Every gcc -c command MUST carry the FULL canonical flag set, INCLUDING -Wall:
   gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign \
       -Wno-implicit-function-declaration -I <inc> -c ...
 
-The fixed point reproduces ONLY with -Wall present. Without -Wall the
-deterministic result differs (cosmetic only: assembler local-label numbering,
-.text instruction-identical), so the recorded fixed point is not reproduced.
+The fixed point reproduces ONLY with -Wall present. -Wall does not change the
+generated instructions, but it changes the assembler's local-label numbering in
+the object files, so the linked bytes - and therefore the md5 - differ without
+it (.text stays instruction-identical: the binary is functionally equivalent,
+just not byte-identical). This is why the fixed point is defined by an exact
+recipe, and why EVERY translation unit - support included - must be compiled
+with 'gcc -c' under the full flag set rather than compiled implicitly on a link
+line.
 
-Link rule: self-emission C89 links zig_runtime.c + zig_pal.c + c_exit.c.
-zig_pal.c alone is insufficient (undefined std_panic + c_exit).
+Link rule: the self-emission C89 needs zig_runtime.c + zig_pal.c + c_exit.c
+(all present in the dump/archive and swept into '*.o'). zig_pal.c alone is
+insufficient (undefined std_panic + c_exit).
 
 Archive inventory (sizes from sf/src at HEAD $HEAD):
   runtime/: zig_compat.h, zig_runtime.h, zig_special_types.h, zig_runtime.c,

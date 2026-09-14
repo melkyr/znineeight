@@ -5,7 +5,7 @@
 **Every subagent doing build/compile/run/gate work MUST read this section first.** These are the
 exact, verified commands. Do not improvise flags or rediscover linking — copy these.
 
-> **C89-AHEAD (2026-09-10):** runtime safety is now `-fsafe` by **default** (six runtime checks — cast / div-mod / shift / null-unwrap / index-OOB / integer-overflow — plus `undefined` `0xAA` poison); `-ffast` disables them. `unreachable`/`@panic` trap in **both** modes (`@panic` prints `panic: <msg>` to **stderr**). `std.arena.alloc` is `ArenaError![*]u8` — use `try`/`catch`, never `orelse` (`error[3016]`). Landed fixed point `1467d932a876402f40a56316dfcad0e5` (superseded by the calling-convention fixed point, now `de7137e04d62435c74e7b15281cb4540` after the final-review fix); seed **v13** is rotated (`release/seed/zig1-seed.tgz`, archive md5 `45c6699ff02c534408b8896b284f8b15`). See the **Calling convention** section below.
+> **C89-AHEAD (2026-09-10):** runtime safety is now `-fsafe` by **default** (six runtime checks — cast / div-mod / shift / null-unwrap / index-OOB / integer-overflow — plus `undefined` `0xAA` poison); `-ffast` disables them. `unreachable`/`@panic` trap in **both** modes (`@panic` prints `panic: <msg>` to **stderr**). `std.arena.alloc` is `ArenaError![*]u8` — use `try`/`catch`, never `orelse` (`error[3016]`). Landed fixed point `1467d932a876402f40a56316dfcad0e5` (superseded by the calling-convention fixed point, now `de7137e04d62435c74e7b15281cb4540` after the final-review fix); seed **v14** is rotated (`release/seed/zig1-seed.tgz`, archive md5 `9e6c9faad0536191f28eb60c210a0a25`). See the **Calling convention** section below.
 
 ### Build zig1 (the compiler under test)
 ```bash
@@ -27,7 +27,7 @@ bash sf/scripts/build_release.sh
 **Seed location + contents:** the committed rotating seed is
 `release/seed/zig1-seed.tgz` (git-tracked; provenance + rotation history in
 `release/seed/CHANGELOG.md`, full recipes in `release/seed/SEED_README.txt`).
-Current seed is **seed v13** (archive md5 `45c6699ff02c534408b8896b284f8b15`).
+Current seed is **seed v14** (archive md5 `9e6c9faad0536191f28eb60c210a0a25`; docs-only rotation - SEED_README fixed-point recipe corrected, fixed point unchanged).
 Top-level `zig1-seed/`: `zig1` (reference binary md5
 `de7137e04d62435c74e7b15281cb4540`), `gen/` (its self-emission C89 module set —
 42 `.c` + 43 `.h`, including `zig_special_types.h`; the emitted runtime/support
