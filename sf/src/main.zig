@@ -34,6 +34,7 @@ const LirSlotArrayList = lir_mod.LirSlotArrayList;
 const lir_stream = @import("lir_stream.zig");
 const resolved_type_table = @import("resolved_type_table.zig");
 const hash_mod = @import("util/hash.zig");
+const ga_mod = @import("growable_array.zig");
 const ResolvedTypeTable = resolved_type_table.ResolvedTypeTable;
 const coercion_mod = @import("coercion.zig");
 const CoercionTable = coercion_mod.CoercionTable;
@@ -124,6 +125,10 @@ pub const CompilerContext = struct {
 
     suspending_fns: hash_mod.U64ToU32Map,
     frame_sizes: hash_mod.U64ToU32Map,
+    awaited_fns: hash_mod.U64ToU32Map,
+    async_hidden_fns: hash_mod.U64ToU32Map,
+    async_parent_result_types: hash_mod.U64ToU32Map,
+    async_layouts: hash_mod.U64ToU32Map,
 };
 
 pub fn main(argc: i32, argv: [*]*const u8) void {
@@ -259,6 +264,10 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
      var exported = hash_mod.u64ToU32MapInit(&compiler_alloc.emission);
      var suspending_fns = hash_mod.u64ToU32MapInit(&compiler_alloc.module);
      var frame_sizes = hash_mod.u64ToU32MapInit(&compiler_alloc.module);
+     var awaited_fns = hash_mod.u64ToU32MapInit(&compiler_alloc.module);
+     var async_hidden_fns = hash_mod.u64ToU32MapInit(&compiler_alloc.module);
+     var async_parent_result_types = hash_mod.u64ToU32MapInit(&compiler_alloc.module);
+     var async_layouts = hash_mod.u64ToU32MapInit(&compiler_alloc.module);
     var ctx = CompilerContext{
         .cli = cli,
         .alloc = &compiler_alloc,
@@ -283,6 +292,10 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         .exported = exported,
         .suspending_fns = suspending_fns,
         .frame_sizes = frame_sizes,
+        .awaited_fns = awaited_fns,
+        .async_hidden_fns = async_hidden_fns,
+        .async_parent_result_types = async_parent_result_types,
+        .async_layouts = async_layouts,
         .pointer_only_ids = undefined,
         .pointer_only_len = @intCast(u32, 0),
         .global_decls = lir_mod.globalDeclArrayListInit(&compiler_alloc.emission),
@@ -639,7 +652,7 @@ fn phase_StaticAnalyzers(ctx: *CompilerContext) void {
 
 fn phase_AsyncFrameSize(ctx: *CompilerContext) void {
     var p_msg: []const u8 = "AFS\n"; pal.markerWrite(p_msg);
-    async_analysis.asyncFrameSizeRun(&ctx.alloc.module, ctx.store, ctx.symbol_reg, ctx.module_reg, ctx.interner, ctx.typereg, ctx.resolved_types, &ctx.suspending_fns, &ctx.frame_sizes);
+    async_analysis.asyncFrameSizeRun(&ctx.alloc.module, ctx.store, ctx.symbol_reg, ctx.module_reg, ctx.interner, ctx.typereg, ctx.resolved_types, &ctx.suspending_fns, &ctx.frame_sizes, &ctx.awaited_fns, &ctx.async_hidden_fns, &ctx.async_parent_result_types);
 }
 
 fn phase_LIRLowering(ctx: *CompilerContext) void {
@@ -690,6 +703,12 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
         .frame_sizes = &ctx.frame_sizes,
     };
     var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
+    // Amendment 9 two-phase async lowering: phase A lowers + layouts + publishes
+    // every suspending function (retaining the LIR), phase B transforms them.
+    // Retained LIR lives in scratch, so scratch resets are deferred once any
+    // suspending function is retained.
+    var async_retained = ga_mod.u32ArrayListInit(&ctx.alloc.module);
+    var async_pending: bool = false;
     var mi: usize = 0;
     while (mi < mods.len) : (mi += 1) {
         sem_ctx.source_file_id = mods[mi].source_file_id;
@@ -739,22 +758,19 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
                         lowerer.module_reg = ctx.module_reg;
                         var lf = lower_mod.lowerFn(&lowerer, decls[di]);
                         if (async_analysis.asyncIsSuspending(&ctx.suspending_fns, lf.module_id, lf.name_id)) {
-                            var async_layout = async_frame_layout.asyncLayoutFrame(&ctx.alloc.scratch, ctx.typereg, &lf, &ctx.suspending_fns, &ctx.frame_sizes);
-                            var async_ctx = async_state_machine.AsyncTransformCtx{
-                                .alloc = &ctx.alloc.scratch,
-                                .registry = ctx.typereg,
-                                .interner = ctx.interner,
-                                .lir_stream = &ctx.lir_stream,
-                                .lir_slots = &ctx.lir_slots,
-                                .suspending_fns = &ctx.suspending_fns,
-                                .layout = &async_layout,
-                                .safe_checks = ctx.cli.safe_checks,
-                            };
-                            async_state_machine.asyncTransform(&lf, &async_ctx);
+                            // Phase A: compute + publish the layout, retain the LIR
+                            // (persistent copy; its arrays live in scratch) for phase B.
+                            var async_layout = async_frame_layout.asyncLayoutFrame(&ctx.alloc.scratch, ctx.typereg, &lf, &ctx.suspending_fns, &ctx.frame_sizes, &ctx.awaited_fns, &ctx.async_hidden_fns, &ctx.async_parent_result_types);
+                            async_frame_layout.asyncLayoutPublish(&ctx.alloc.scratch, &ctx.async_layouts, lf.module_id, lf.name_id, async_layout);
+                            var lf_raw = alloc_mod.sandAlloc(&ctx.alloc.scratch, @intCast(usize, @sizeOf(LirFunction)), @intCast(usize, 4)) catch unreachable;
+                            var lf_ptr = @ptrCast(*LirFunction, lf_raw);
+                            lf_ptr.* = lf;
+                            ga_mod.u32ArrayListAppend(&async_retained, @intCast(u32, @ptrToInt(lf_ptr)));
+                            async_pending = true;
                         }
                         var slot = lir_stream.lirStreamAppend(&ctx.lir_stream, lf);
                         lir_mod.lirSlotArrayListAppend(&ctx.lir_slots, slot);
-                        alloc_mod.sandReset(&ctx.alloc.scratch);
+                        if (!async_pending) { alloc_mod.sandReset(&ctx.alloc.scratch); }
                     } else {
                 if (decl.kind == AstKind.var_decl) {
                     if ((@intCast(u16, decl.flags) & @intCast(u16, 0x04)) == @intCast(u16, 0)) {
@@ -814,7 +830,7 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
         var imf = lower_mod.lowerModuleInit(&ilowerer, decls, mods[mi].id);
         var islot = lir_stream.lirStreamAppend(&ctx.lir_stream, imf);
         lir_mod.lirSlotArrayListAppend(&ctx.lir_slots, islot);
-        alloc_mod.sandReset(&ctx.alloc.scratch);
+        if (!async_pending) { alloc_mod.sandReset(&ctx.alloc.scratch); }
     }
     var amods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
     if (amods.len > @intCast(usize, 0) and amods[0].ast_root != @intCast(u32, 0)) {
@@ -838,6 +854,29 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
 }
         }
     }
+    // Phase B (Amendment 9): transform every retained suspending function. Its
+    // layout was published in phase A, so callee layouts resolve regardless of
+    // source order.
+    var arl_i: usize = @intCast(usize, 0);
+    while (arl_i < async_retained.len) : (arl_i += @intCast(usize, 1)) {
+        var lf2 = @intToPtr(*LirFunction, @intCast(usize, async_retained.items[arl_i]));
+        if (async_frame_layout.asyncLayoutLookup(&ctx.async_layouts, lf2.module_id, lf2.name_id)) |lay2| {
+            var async_ctx2 = async_state_machine.AsyncTransformCtx{
+                .alloc = &ctx.alloc.scratch,
+                .registry = ctx.typereg,
+                .interner = ctx.interner,
+                .lir_stream = &ctx.lir_stream,
+                .lir_slots = &ctx.lir_slots,
+                .suspending_fns = &ctx.suspending_fns,
+                .layout = lay2,
+                .safe_checks = ctx.cli.safe_checks,
+                .frame_sizes = &ctx.frame_sizes,
+                .async_layouts = &ctx.async_layouts,
+            };
+            async_state_machine.asyncTransform(lf2, &async_ctx2);
+        }
+    }
+    if (async_pending) { alloc_mod.sandReset(&ctx.alloc.scratch); }
     lir_stream.lirStreamFinishWrite(&ctx.lir_stream);
 }
 

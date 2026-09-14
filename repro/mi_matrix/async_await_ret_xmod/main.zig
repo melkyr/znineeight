@@ -1,15 +1,13 @@
-fn callee(out: *i32) void {
+const CArgs = struct { out: *i32 };
+
+fn worker() i32 {
     @asyncSuspend(null);
-    out.* = 10;
+    return 7;
 }
 
 fn caller(out: *i32) void {
-    var tmp: i32 = 0;
-    callee(&tmp);
-    out.* = tmp;
+    out.* = worker();
 }
-
-const CArgs = struct { out: *i32 };
 
 pub fn main() void {
     var result: i32 = 0;
@@ -25,7 +23,7 @@ pub fn main() void {
     while (more != null) {
         more = @asyncResume(frame, null);
     }
-    if (result != 10) {
-        @panic("await result mismatch");
+    if (result != 7) {
+        @panic("await ret mismatch");
     }
 }

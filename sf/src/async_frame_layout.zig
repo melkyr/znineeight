@@ -42,6 +42,9 @@ pub const ASYNC_FIELD_STATE: u8 = 1;
 pub const ASYNC_FIELD_PARAM: u8 = 2;
 pub const ASYNC_FIELD_LIVE: u8 = 3;
 pub const ASYNC_FIELD_STEP: u8 = 4;
+pub const ASYNC_FIELD_CHILD: u8 = 5;
+pub const ASYNC_FIELD_RESULT: u8 = 6;
+pub const ASYNC_FIELD_PARENT_RESULT: u8 = 7;
 
 pub const AsyncFrameField = struct {
     kind: u8,
@@ -426,7 +429,9 @@ fn emitLayoutMarker(module_id: u32, name_id: u32, size: u32) void {
 }
 
 pub fn asyncLayoutFrame(alloc: *Sand, reg: *TypeRegistry, lir_fn: *LirFunction,
-    suspending_fns: *hash_mod.U64ToU32Map, frame_sizes: *hash_mod.U64ToU32Map) AsyncFrameLayout {
+    suspending_fns: *hash_mod.U64ToU32Map, frame_sizes: *hash_mod.U64ToU32Map,
+    awaited_fns: *hash_mod.U64ToU32Map, async_hidden_fns: *hash_mod.U64ToU32Map,
+    async_parent_result_types: *hash_mod.U64ToU32Map) AsyncFrameLayout {
     var max_temp = maxTempOf(lir_fn);
     var fields = fieldArrayListInit(alloc, lir_fn.params.len + lir_fn.hoisted_temps.len + @intCast(usize, 2));
 
@@ -513,6 +518,23 @@ pub fn asyncLayoutFrame(alloc: *Sand, reg: *TypeRegistry, lir_fn: *LirFunction,
             addField(&fields, reg, ASYNC_FIELD_LIVE, @intCast(u32, 0), t, c.ttype[tu], &offset, &max_align);
         }
     }
+    // Amendment 9 hidden tail fields: child (kind 5), result (kind 6),
+    // parent_result (kind 7), mirroring P2's reservation exactly.
+    var hid: u32 = @intCast(u32, 0);
+    var lay_key = async_analysis.asyncKey(lir_fn.module_id, lir_fn.name_id);
+    if (hash_mod.u64ToU32MapGet(async_hidden_fns, lay_key)) |h| { hid = h; }
+    var lay_ptr_void = type_mod.typeRegistryGetOrCreatePtr(reg, type_mod.TYPE_VOID, false);
+    if ((hid & @intCast(u32, 1)) != @intCast(u32, 0)) {
+        addField(&fields, reg, ASYNC_FIELD_CHILD, @intCast(u32, 0), @intCast(u32, 0), lay_ptr_void, &offset, &max_align);
+    }
+    if (hash_mod.u64ToU32MapGet(awaited_fns, lay_key) != null) {
+        addField(&fields, reg, ASYNC_FIELD_RESULT, @intCast(u32, 0), @intCast(u32, 0), lay_ptr_void, &offset, &max_align);
+    }
+    if ((hid & @intCast(u32, 2)) != @intCast(u32, 0)) {
+        var prt: u32 = type_mod.TYPE_VOID;
+        if (hash_mod.u64ToU32MapGet(async_parent_result_types, lay_key)) |pt| { prt = pt; }
+        addField(&fields, reg, ASYNC_FIELD_PARENT_RESULT, @intCast(u32, 0), @intCast(u32, 0), prt, &offset, &max_align);
+    }
     var precise = alignUpU32(offset, max_align);
     if (precise == @intCast(u32, 0)) precise = @intCast(u32, 1);
 
@@ -528,4 +550,22 @@ pub fn asyncLayoutFrame(alloc: *Sand, reg: *TypeRegistry, lir_fn: *LirFunction,
     }
     emitLayoutMarker(lir_fn.module_id, lir_fn.name_id, padded);
     return AsyncFrameLayout{ .fields = fields, .layout_size = padded };
+}
+
+// Per-`asyncKey` `AsyncFrameLayout` side table (Amendment 9 phase A). Layouts
+// are published for every suspending function before any `asyncTransform`, so a
+// caller declared before its callee can still read the callee's offsets. The
+// layout value is copied into persistent storage and addressed by integer.
+pub fn asyncLayoutPublish(alloc: *Sand, map: *hash_mod.U64ToU32Map, module_id: u32, name_id: u32, layout: AsyncFrameLayout) void {
+    var raw = alloc_mod.sandAlloc(alloc, @intCast(usize, @sizeOf(AsyncFrameLayout)), @intCast(usize, 4)) catch unreachable;
+    var p = @ptrCast(*AsyncFrameLayout, raw);
+    p.* = layout;
+    _ = hash_mod.u64ToU32MapPut(map, async_analysis.asyncKey(module_id, name_id), @intCast(u32, @ptrToInt(p)));
+}
+
+pub fn asyncLayoutLookup(map: *hash_mod.U64ToU32Map, module_id: u32, name_id: u32) ?*const AsyncFrameLayout {
+    if (hash_mod.u64ToU32MapGet(map, async_analysis.asyncKey(module_id, name_id))) |v| {
+        return @intToPtr(*const AsyncFrameLayout, @intCast(usize, v));
+    }
+    return null;
 }

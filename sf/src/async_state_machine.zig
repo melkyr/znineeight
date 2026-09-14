@@ -45,6 +45,7 @@ const StringInterner = si_mod.StringInterner;
 const AsyncFrameLayout = async_frame_layout.AsyncFrameLayout;
 
 const BIN_ADD: u8 = @intCast(u8, 0);
+const BIN_NE: u8 = @intCast(u8, 11);
 const BIN_LE: u8 = @intCast(u8, 13);
 
 pub const AsyncTransformCtx = struct {
@@ -56,6 +57,8 @@ pub const AsyncTransformCtx = struct {
     suspending_fns: *hash_mod.U64ToU32Map,
     layout: *const AsyncFrameLayout,
     safe_checks: bool,
+    frame_sizes: *hash_mod.U64ToU32Map,
+    async_layouts: *hash_mod.U64ToU32Map,
 };
 
 fn bumpAlloc(alloc: *Sand, size: usize, align: usize) [*]u8 {
@@ -131,27 +134,46 @@ fn tempType(lf: *LirFunction, tid: u32) u32 {
     return type_mod.TYPE_UNDEFINED;
 }
 
-fn isExplicitSuspend(reg: *TypeRegistry, lf: *LirFunction, inst: LirInst) bool {
+fn instSuspendKind(reg: *TypeRegistry, lf: *LirFunction, inst: LirInst, suspending_fns: *hash_mod.U64ToU32Map) u8 {
     switch (inst) {
         .int_const => |ic| {
-            if (ic.value != @intCast(u64, 0)) return false;
-            return typeIsPtrVoid(reg, tempType(lf, ic.result));
+            if (ic.value != @intCast(u64, 0)) return @intCast(u8, 0);
+            if (typeIsPtrVoid(reg, tempType(lf, ic.result))) return @intCast(u8, 1);
+            return @intCast(u8, 0);
         },
-        else => return false,
+        .call_direct => |slot| {
+            var cd = lir_mod.lirSideGetCallDirect(lf, slot);
+            if (async_analysis.asyncIsSuspending(suspending_fns, cd.module_id, cd.name_id)) return @intCast(u8, 2);
+            return @intCast(u8, 0);
+        },
+        else => return @intCast(u8, 0),
     }
 }
 
 const Build = struct {
     step: *LirFunction,
     orig: *LirFunction,
+    actx: *AsyncTransformCtx,
     reg: *TypeRegistry,
     base: u32,
     frame_temp: u32,
     opt: u32,
-    seg_base: [*]u32,
-    resume_target: [*]u32,
     block_map: [*]u32,
     nblocks: u32,
+    state_off: u32,
+    child_off: u32,
+    child_present: bool,
+    parent_result_off: u32,
+    parent_result_type: u32,
+    parent_result_present: bool,
+    result_off: u32,
+    result_present: bool,
+    child_temp: u32,
+    ret_val_temp: u32,
+    ret_val_present: bool,
+    ep_store_id: u32,
+    ep_dostore_id: u32,
+    ep_ret_id: u32,
 };
 
 fn newTemp(b: *Build, type_id: u32) u32 {
@@ -164,9 +186,9 @@ fn emit(b: *Build, blk: u32, inst: LirInst) void {
     lir_mod.lirInstArrayListAppend(&b.step.blocks.items[@intCast(usize, blk)].insts, inst);
 }
 
-fn fieldPtr(b: *Build, blk: u32, offset: u32, field_type: u32) u32 {
+fn fieldPtrBase(b: *Build, blk: u32, base_temp: u32, offset: u32, field_type: u32) u32 {
     var pi = newTemp(b, type_mod.TYPE_USIZE);
-    emit(b, blk, LirInst{ .ptr_to_int = .{ .value = b.frame_temp, .result = pi } });
+    emit(b, blk, LirInst{ .ptr_to_int = .{ .value = base_temp, .result = pi } });
     var off = newTemp(b, type_mod.TYPE_USIZE);
     emit(b, blk, LirInst{ .int_const = .{ .value = @intCast(u64, offset), .result = off } });
     var addr = newTemp(b, type_mod.TYPE_USIZE);
@@ -177,16 +199,28 @@ fn fieldPtr(b: *Build, blk: u32, offset: u32, field_type: u32) u32 {
     return pt;
 }
 
-fn loadField(b: *Build, blk: u32, offset: u32, field_type: u32) u32 {
-    var pt = fieldPtr(b, blk, offset, field_type);
+fn fieldPtr(b: *Build, blk: u32, offset: u32, field_type: u32) u32 {
+    return fieldPtrBase(b, blk, b.frame_temp, offset, field_type);
+}
+
+fn loadFieldBase(b: *Build, blk: u32, base_temp: u32, offset: u32, field_type: u32) u32 {
+    var pt = fieldPtrBase(b, blk, base_temp, offset, field_type);
     var v = newTemp(b, field_type);
     emit(b, blk, LirInst{ .load = .{ .ptr = pt, .result = v } });
     return v;
 }
 
-fn storeField(b: *Build, blk: u32, offset: u32, field_type: u32, value: u32) void {
-    var pt = fieldPtr(b, blk, offset, field_type);
+fn loadField(b: *Build, blk: u32, offset: u32, field_type: u32) u32 {
+    return loadFieldBase(b, blk, b.frame_temp, offset, field_type);
+}
+
+fn storeFieldBase(b: *Build, blk: u32, base_temp: u32, offset: u32, field_type: u32, value: u32) void {
+    var pt = fieldPtrBase(b, blk, base_temp, offset, field_type);
     emit(b, blk, LirInst{ .store = .{ .ptr = pt, .value = value } });
+}
+
+fn storeField(b: *Build, blk: u32, offset: u32, field_type: u32, value: u32) void {
+    storeFieldBase(b, blk, b.frame_temp, offset, field_type, value);
 }
 
 fn saveAllFields(b: *Build, blk: u32, lay: *const AsyncFrameLayout) void {
@@ -196,6 +230,9 @@ fn saveAllFields(b: *Build, blk: u32, lay: *const AsyncFrameLayout) void {
         if (fld.kind == async_frame_layout.ASYNC_FIELD_PARAM or fld.kind == async_frame_layout.ASYNC_FIELD_LIVE) {
             storeField(b, blk, fld.offset, fld.type_id, fld.temp_id + b.base);
         }
+    }
+    if (b.child_present) {
+        storeField(b, blk, b.child_off, ptrVoid(b.reg), b.child_temp);
     }
 }
 
@@ -207,6 +244,10 @@ fn reloadAllFields(b: *Build, blk: u32, lay: *const AsyncFrameLayout) void {
             var v = loadField(b, blk, fld.offset, fld.type_id);
             emit(b, blk, LirInst{ .assign = .{ .dst = fld.temp_id + b.base, .src = v, .name_id = @intCast(u32, 0) } });
         }
+    }
+    if (b.child_present) {
+        var cv = loadField(b, blk, b.child_off, ptrVoid(b.reg));
+        emit(b, blk, LirInst{ .assign = .{ .dst = b.child_temp, .src = cv, .name_id = @intCast(u32, 0) } });
     }
 }
 
@@ -321,6 +362,146 @@ fn remapInst(b: *Build, inst: LirInst, sw_off: u32) LirInst {
     }
 }
 
+// Emit the child drive sequence: load the child's step word (child+0), convert
+// it to the generic step fn pointer, and issue `step(child, null)`; branch to
+// `yield_blk` when the child is still suspended, else to `after_blk`.
+fn emitDriveChild(b: *Build, blk: u32, child_temp: u32, yield_blk: u32, after_blk: u32) void {
+    var word = loadFieldBase(b, blk, child_temp, @intCast(u32, 0), type_mod.TYPE_USIZE);
+    var gfn = asyncGenericStepFnType(b.reg, b.actx.interner);
+    var gpt = type_mod.typeRegistryGetOrCreatePtr(b.reg, gfn, false);
+    var pt = newTemp(b, gpt);
+    emit(b, blk, LirInst{ .int_to_ptr = .{ .value = word, .target = gpt, .result = pt } });
+    var a0 = newTemp(b, ptrVoid(b.reg));
+    emit(b, blk, LirInst{ .assign = .{ .dst = a0, .src = child_temp, .name_id = @intCast(u32, 0) } });
+    var a1 = newTemp(b, b.opt);
+    emit(b, blk, LirInst{ .set_optional_null = .{ .result = a1, .type_id = b.opt } });
+    var r = newTemp(b, b.opt);
+    emit(b, blk, LirInst{ .call = .{ .callee = pt, .args_start = a0, .args_count = @intCast(u32, 2), .result = r } });
+    var hv = newTemp(b, type_mod.TYPE_U8);
+    emit(b, blk, LirInst{ .check_optional = .{ .value = r, .result = hv } });
+    emit(b, blk, LirInst{ .branch = .{ .cond = hv, .then_bb = yield_blk, .else_bb = after_blk } });
+}
+
+// Q1 steps 1-10: rewrite `call_direct g` at the current segment into a
+// child-frame init + first child step + conditional yield, with the resume path
+// in `loop_done` and the continuation in `after`.
+fn emitAwait(b: *Build, blk: u32, cd: lir_mod.CallDirectData, state: u32, yield_blk: u32, loop_done: u32, after: u32) void {
+    var reg = b.reg;
+    var callee_lay: *const AsyncFrameLayout = b.actx.layout;
+    if (async_frame_layout.asyncLayoutLookup(b.actx.async_layouts, cd.module_id, cd.name_id)) |cl| { callee_lay = cl; }
+    // (1) ctx from the caller frame.
+    var ctx_off: u32 = @intCast(u32, 0);
+    var f: usize = @intCast(usize, 0);
+    while (f < b.actx.layout.fields.len) : (f += @intCast(usize, 1)) {
+        var fld = b.actx.layout.fields.items[f];
+        if (fld.kind == async_frame_layout.ASYNC_FIELD_CTX) { ctx_off = fld.offset; }
+    }
+    var ctx = loadField(b, blk, ctx_off, ptrVoid(reg));
+    // (2) bump allocation: ctx[0..usize]=used, pool base ctx+usize.
+    var ctx_int = newTemp(b, type_mod.TYPE_USIZE);
+    emit(b, blk, LirInst{ .ptr_to_int = .{ .value = ctx, .result = ctx_int } });
+    var used_p_type = type_mod.typeRegistryGetOrCreatePtr(reg, type_mod.TYPE_USIZE, false);
+    var used_p = newTemp(b, used_p_type);
+    emit(b, blk, LirInst{ .int_to_ptr = .{ .value = ctx_int, .target = used_p_type, .result = used_p } });
+    var used = newTemp(b, type_mod.TYPE_USIZE);
+    emit(b, blk, LirInst{ .load = .{ .ptr = used_p, .result = used } });
+    var psz = newTemp(b, type_mod.TYPE_USIZE);
+    emit(b, blk, LirInst{ .int_const = .{ .value = @intCast(u64, @sizeOf(usize)), .result = psz } });
+    var base_int = newTemp(b, type_mod.TYPE_USIZE);
+    emit(b, blk, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = ctx_int, .rhs = psz, .result = base_int } });
+    var child_int = newTemp(b, type_mod.TYPE_USIZE);
+    emit(b, blk, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = base_int, .rhs = used, .result = child_int } });
+    var child = newTemp(b, ptrVoid(reg));
+    emit(b, blk, LirInst{ .int_to_ptr = .{ .value = child_int, .target = ptrVoid(reg), .result = child } });
+    var fsz: u64 = @intCast(u64, 0);
+    if (async_analysis.asyncFrameSizeOf(b.actx.frame_sizes, cd.module_id, cd.name_id)) |fs| { fsz = @intCast(u64, fs); }
+    var fsz_t = newTemp(b, type_mod.TYPE_USIZE);
+    emit(b, blk, LirInst{ .int_const = .{ .value = fsz, .result = fsz_t } });
+    var new_used = newTemp(b, type_mod.TYPE_USIZE);
+    emit(b, blk, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = used, .rhs = fsz_t, .result = new_used } });
+    emit(b, blk, LirInst{ .store = .{ .ptr = used_p, .value = new_used } });
+    // (3) g's step word at child+0.
+    var step_name = asyncStepNameId(b.actx.interner, cd.name_id);
+    var step_fn = asyncStepFnType(reg, b.actx.interner, step_name, cd.module_id);
+    var step_pt = type_mod.typeRegistryGetOrCreatePtr(reg, step_fn, false);
+    var fr = newTemp(b, step_pt);
+    emit(b, blk, LirInst{ .func_ref = .{ .name_id = step_name, .module_id = cd.module_id, .result = fr } });
+    var fri = newTemp(b, type_mod.TYPE_USIZE);
+    emit(b, blk, LirInst{ .ptr_to_int = .{ .value = fr, .result = fri } });
+    storeFieldBase(b, blk, child, @intCast(u32, 0), type_mod.TYPE_USIZE, fri);
+    // (4) child header.
+    var c_ctx_off: u32 = @intCast(u32, 0);
+    var c_state_off: u32 = @intCast(u32, 0);
+    var c_result_off: u32 = @intCast(u32, 0);
+    var c_result_present: bool = false;
+    var f2: usize = @intCast(usize, 0);
+    while (f2 < callee_lay.fields.len) : (f2 += @intCast(usize, 1)) {
+        var fld2 = callee_lay.fields.items[f2];
+        if (fld2.kind == async_frame_layout.ASYNC_FIELD_CTX) { c_ctx_off = fld2.offset; }
+        if (fld2.kind == async_frame_layout.ASYNC_FIELD_STATE) { c_state_off = fld2.offset; }
+        if (fld2.kind == async_frame_layout.ASYNC_FIELD_RESULT) { c_result_off = fld2.offset; c_result_present = true; }
+    }
+    storeFieldBase(b, blk, child, c_ctx_off, ptrVoid(reg), ctx);
+    var zero_st = newTemp(b, type_mod.TYPE_U8);
+    emit(b, blk, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = zero_st } });
+    storeFieldBase(b, blk, child, c_state_off, type_mod.TYPE_U8, zero_st);
+    // (5) copy call args into g's param offsets (natural layout order).
+    var arg_i: u32 = @intCast(u32, 0);
+    var f3: usize = @intCast(usize, 0);
+    while (f3 < callee_lay.fields.len) : (f3 += @intCast(usize, 1)) {
+        var fld3 = callee_lay.fields.items[f3];
+        if (fld3.kind == async_frame_layout.ASYNC_FIELD_PARAM) {
+            var argt = cd.args_start + arg_i + b.base;
+            storeFieldBase(b, blk, child, fld3.offset, fld3.type_id, argt);
+            arg_i += @intCast(u32, 1);
+        }
+    }
+    // D3: point the child's hidden `result` at the caller's hidden parent slot
+    // (or null for a void target).
+    if (c_result_present) {
+        if (b.parent_result_present) {
+            var fi = newTemp(b, type_mod.TYPE_USIZE);
+            emit(b, blk, LirInst{ .ptr_to_int = .{ .value = b.frame_temp, .result = fi } });
+            var poff = newTemp(b, type_mod.TYPE_USIZE);
+            emit(b, blk, LirInst{ .int_const = .{ .value = @intCast(u64, b.parent_result_off), .result = poff } });
+            var paddr = newTemp(b, type_mod.TYPE_USIZE);
+            emit(b, blk, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = fi, .rhs = poff, .result = paddr } });
+            var pr = newTemp(b, ptrVoid(reg));
+            emit(b, blk, LirInst{ .int_to_ptr = .{ .value = paddr, .target = ptrVoid(reg), .result = pr } });
+            storeFieldBase(b, blk, child, c_result_off, ptrVoid(reg), pr);
+        } else {
+            var nptr = newTemp(b, ptrVoid(reg));
+            emit(b, blk, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = nptr } });
+            storeFieldBase(b, blk, child, c_result_off, ptrVoid(reg), nptr);
+        }
+    }
+    // (6) persist the child pointer in the caller's hidden child field.
+    emit(b, blk, LirInst{ .assign = .{ .dst = b.child_temp, .src = child, .name_id = @intCast(u32, 0) } });
+    storeField(b, blk, b.child_off, ptrVoid(reg), b.child_temp);
+    // (7) first child step + conditional yield.
+    emitDriveChild(b, blk, b.child_temp, yield_blk, after);
+    b.step.blocks.items[@intCast(usize, blk)].is_terminated = @intCast(u8, 1);
+    // (8) yield block.
+    saveAllFields(b, yield_blk, b.actx.layout);
+    var sv = newTemp(b, type_mod.TYPE_U8);
+    emit(b, yield_blk, LirInst{ .int_const = .{ .value = @intCast(u64, state), .result = sv } });
+    storeField(b, yield_blk, b.state_off, type_mod.TYPE_U8, sv);
+    var yld = newTemp(b, b.opt);
+    emit(b, yield_blk, LirInst{ .wrap_optional = .{ .value = @intCast(u32, 0), .result = yld, .type_id = b.opt } });
+    emit(b, yield_blk, LirInst{ .ret = yld });
+    b.step.blocks.items[@intCast(usize, yield_blk)].is_terminated = @intCast(u8, 1);
+    // (9) loop_done (resume target only): reload + re-drive the child.
+    reloadAllFields(b, loop_done, b.actx.layout);
+    emitDriveChild(b, loop_done, b.child_temp, yield_blk, after);
+    b.step.blocks.items[@intCast(usize, loop_done)].is_terminated = @intCast(u8, 1);
+    // (10) after: deliver the awaited value to the call's result temp, then the
+    // original block continues. (Placed here, not in loop_done, so an
+    // immediately-completing child also delivers its value.)
+    if (b.parent_result_present) {
+        var pv = loadField(b, after, b.parent_result_off, b.parent_result_type);
+        emit(b, after, LirInst{ .assign = .{ .dst = cd.result + b.base, .src = pv, .name_id = @intCast(u32, 0) } });
+    }
+}
 
 pub fn asyncTransform(lf: *LirFunction, actx: *AsyncTransformCtx) void {
     if (!async_analysis.asyncIsSuspending(actx.suspending_fns, lf.module_id, lf.name_id)) return;
@@ -364,42 +545,92 @@ pub fn asyncTransform(lf: *LirFunction, actx: *AsyncTransformCtx) void {
     lir_mod.lirParamArrayListAppend(&step.params, lir_mod.LirParam{ .name_id = arg_name, .type_id = opt, .temp_id = @intCast(u32, 1) });
 
     var m: u32 = @intCast(u32, lf.blocks.len);
-    var count_per_block: [*]u32 = @ptrCast([*]u32, bumpAlloc(actx.alloc, @intCast(usize, m + @intCast(u32, 1)) * @intCast(usize, 4), @intCast(usize, 4)));
+    var state_base: [*]u32 = @ptrCast([*]u32, bumpAlloc(actx.alloc, @intCast(usize, m + @intCast(u32, 1)) * @intCast(usize, 4), @intCast(usize, 4)));
+    var seg_first: [*]u32 = @ptrCast([*]u32, bumpAlloc(actx.alloc, @intCast(usize, m + @intCast(u32, 1)) * @intCast(usize, 4), @intCast(usize, 4)));
+    var block_map: [*]u32 = @ptrCast([*]u32, bumpAlloc(actx.alloc, @intCast(usize, m + @intCast(u32, 1)) * @intCast(usize, 4), @intCast(usize, 4)));
     var bi: u32 = @intCast(u32, 0);
+    var total_states: u32 = @intCast(u32, 0);
+    var any_ret: bool = false;
     while (bi < m) : (bi += @intCast(u32, 1)) {
-        count_per_block[@intCast(usize, bi)] = @intCast(u32, 0);
         var bb = &lf.blocks.items[@intCast(usize, bi)];
         var ii: usize = @intCast(usize, 0);
         while (ii < bb.insts.len) : (ii += @intCast(usize, 1)) {
-            if (isExplicitSuspend(reg, lf, bb.insts.items[ii])) {
-                count_per_block[@intCast(usize, bi)] += @intCast(u32, 1);
+            var inst = bb.insts.items[ii];
+            if (instSuspendKind(reg, lf, inst, actx.suspending_fns) != @intCast(u8, 0)) {
+                total_states += @intCast(u32, 1);
+            }
+            switch (inst) {
+                .ret => { any_ret = true; },
+                else => {},
             }
         }
     }
 
-    var total_states: u32 = @intCast(u32, 0);
-    bi = @intCast(u32, 0);
-    while (bi < m) : (bi += @intCast(u32, 1)) { total_states += count_per_block[@intCast(usize, bi)]; }
+    var state_resume: [*]u32 = @ptrCast([*]u32, bumpAlloc(actx.alloc, @intCast(usize, total_states + @intCast(u32, 2)) * @intCast(usize, 4), @intCast(usize, 4)));
+    var state_yield: [*]u32 = @ptrCast([*]u32, bumpAlloc(actx.alloc, @intCast(usize, total_states + @intCast(u32, 2)) * @intCast(usize, 4), @intCast(usize, 4)));
+    var state_after: [*]u32 = @ptrCast([*]u32, bumpAlloc(actx.alloc, @intCast(usize, total_states + @intCast(u32, 2)) * @intCast(usize, 4), @intCast(usize, 4)));
 
-    var seg_base: [*]u32 = @ptrCast([*]u32, bumpAlloc(actx.alloc, @intCast(usize, m + @intCast(u32, 1)) * @intCast(usize, 4), @intCast(usize, 4)));
-    var block_map: [*]u32 = @ptrCast([*]u32, bumpAlloc(actx.alloc, @intCast(usize, m + @intCast(u32, 1)) * @intCast(usize, 4), @intCast(usize, 4)));
-    var resume_target: [*]u32 = @ptrCast([*]u32, bumpAlloc(actx.alloc, @intCast(usize, total_states + @intCast(u32, 2)) * @intCast(usize, 4), @intCast(usize, 4)));
     var next_id: u32 = @intCast(u32, 2);
     var state_cursor: u32 = @intCast(u32, 0);
     bi = @intCast(u32, 0);
     while (bi < m) : (bi += @intCast(u32, 1)) {
-        seg_base[@intCast(usize, bi)] = next_id;
-        block_map[@intCast(usize, bi)] = next_id;
-        var c = count_per_block[@intCast(usize, bi)];
-        var k: u32 = @intCast(u32, 0);
-        while (k < c) : (k += @intCast(u32, 1)) {
+        state_base[@intCast(usize, bi)] = state_cursor;
+        var cur = next_id;
+        next_id += @intCast(u32, 1);
+        seg_first[@intCast(usize, bi)] = cur;
+        block_map[@intCast(usize, bi)] = cur;
+        var bb = &lf.blocks.items[@intCast(usize, bi)];
+        var ii: usize = @intCast(usize, 0);
+        while (ii < bb.insts.len) : (ii += @intCast(usize, 1)) {
+            var kk = instSuspendKind(reg, lf, bb.insts.items[ii], actx.suspending_fns);
+            if (kk == @intCast(u8, 0)) continue;
             state_cursor += @intCast(u32, 1);
-            resume_target[@intCast(usize, state_cursor - @intCast(u32, 1))] = next_id + k + @intCast(u32, 1);
+            var sidx = @intCast(usize, state_cursor - @intCast(u32, 1));
+            if (kk == @intCast(u8, 1)) {
+                state_resume[sidx] = next_id;
+                next_id += @intCast(u32, 1);
+                cur = state_resume[sidx];
+            } else {
+                state_yield[sidx] = next_id;
+                next_id += @intCast(u32, 1);
+                state_resume[sidx] = next_id;
+                next_id += @intCast(u32, 1);
+                state_after[sidx] = next_id;
+                next_id += @intCast(u32, 1);
+                cur = state_after[sidx];
+            }
         }
-        next_id += c + @intCast(u32, 1);
+    }
+
+    var ret_val_present: bool = (lf.return_type != type_mod.TYPE_VOID) and any_ret;
+    var ep_store_id: u32 = @intCast(u32, 0);
+    var ep_dostore_id: u32 = @intCast(u32, 0);
+    var ep_ret_id: u32 = @intCast(u32, 0);
+    if (ret_val_present) {
+        ep_store_id = next_id; next_id += @intCast(u32, 1);
+        ep_dostore_id = next_id; next_id += @intCast(u32, 1);
+        ep_ret_id = next_id; next_id += @intCast(u32, 1);
     }
     var total_blocks: u32 = next_id;
     var terminal_id: u32 = @intCast(u32, 1);
+
+    // Layout-derived hidden offsets.
+    var state_off: u32 = @intCast(u32, 0);
+    var child_off: u32 = @intCast(u32, 0);
+    var child_present: bool = false;
+    var parent_result_off: u32 = @intCast(u32, 0);
+    var parent_result_type: u32 = type_mod.TYPE_VOID;
+    var parent_result_present: bool = false;
+    var result_off: u32 = @intCast(u32, 0);
+    var result_present: bool = false;
+    var fi: usize = @intCast(usize, 0);
+    while (fi < actx.layout.fields.len) : (fi += @intCast(usize, 1)) {
+        var f = actx.layout.fields.items[fi];
+        if (f.kind == async_frame_layout.ASYNC_FIELD_STATE) { state_off = f.offset; }
+        if (f.kind == async_frame_layout.ASYNC_FIELD_CHILD) { child_off = f.offset; child_present = true; }
+        if (f.kind == async_frame_layout.ASYNC_FIELD_RESULT) { result_off = f.offset; result_present = true; }
+        if (f.kind == async_frame_layout.ASYNC_FIELD_PARENT_RESULT) { parent_result_off = f.offset; parent_result_type = f.type_id; parent_result_present = true; }
+    }
 
     bi = @intCast(u32, 0);
     while (bi < total_blocks) : (bi += @intCast(u32, 1)) {
@@ -413,22 +644,30 @@ pub fn asyncTransform(lf: *LirFunction, actx: *AsyncTransformCtx) void {
     var b = Build{
         .step = &step,
         .orig = lf,
+        .actx = actx,
         .reg = reg,
         .base = base,
         .frame_temp = @intCast(u32, 0),
         .opt = opt,
-        .seg_base = seg_base,
-        .resume_target = resume_target,
         .block_map = block_map,
         .nblocks = m,
+        .state_off = state_off,
+        .child_off = child_off,
+        .child_present = child_present,
+        .parent_result_off = parent_result_off,
+        .parent_result_type = parent_result_type,
+        .parent_result_present = parent_result_present,
+        .result_off = result_off,
+        .result_present = result_present,
+        .child_temp = @intCast(u32, 0),
+        .ret_val_temp = @intCast(u32, 0),
+        .ret_val_present = ret_val_present,
+        .ep_store_id = ep_store_id,
+        .ep_dostore_id = ep_dostore_id,
+        .ep_ret_id = ep_ret_id,
     };
-
-    var state_off: u32 = @intCast(u32, 0);
-    var fi: usize = @intCast(usize, 0);
-    while (fi < actx.layout.fields.len) : (fi += @intCast(usize, 1)) {
-        var f = actx.layout.fields.items[fi];
-        if (f.kind == async_frame_layout.ASYNC_FIELD_STATE) { state_off = f.offset; }
-    }
+    if (b.child_present) { b.child_temp = newTemp(&b, ptr_void); }
+    if (b.ret_val_present) { b.ret_val_temp = newTemp(&b, lf.return_type); }
 
     var st = loadField(&b, @intCast(u32, 0), state_off, type_mod.TYPE_U8);
     if (actx.safe_checks) {
@@ -443,7 +682,7 @@ pub fn asyncTransform(lf: *LirFunction, actx: *AsyncTransformCtx) void {
     lir_mod.switchCaseArrayListAppend(&step.switch_cases, lir_mod.SwitchCase{ .value = @intCast(u64, 0), .target_bb = block_map[0] });
     var n2: u32 = @intCast(u32, 1);
     while (n2 <= total_states) : (n2 += @intCast(u32, 1)) {
-        lir_mod.switchCaseArrayListAppend(&step.switch_cases, lir_mod.SwitchCase{ .value = @intCast(u64, n2), .target_bb = resume_target[@intCast(usize, n2 - @intCast(u32, 1))] });
+        lir_mod.switchCaseArrayListAppend(&step.switch_cases, lir_mod.SwitchCase{ .value = @intCast(u64, n2), .target_bb = state_resume[@intCast(usize, n2 - @intCast(u32, 1))] });
     }
     emit(&b, @intCast(u32, 0), LirInst{ .switch_br = .{
         .cond = st,
@@ -462,7 +701,7 @@ pub fn asyncTransform(lf: *LirFunction, actx: *AsyncTransformCtx) void {
         lir_mod.switchCaseArrayListAppend(&step.switch_cases, lir_mod.SwitchCase{ .value = sc.value, .target_bb = remapBb(&b, sc.target_bb) });
     }
 
-    var entry_seg = seg_base[0];
+    var entry_seg = seg_first[0];
     var pi: usize = @intCast(usize, 0);
     while (pi < lf.params.len) : (pi += @intCast(usize, 1)) {
         var p = lf.params.items[pi];
@@ -477,32 +716,57 @@ pub fn asyncTransform(lf: *LirFunction, actx: *AsyncTransformCtx) void {
             emit(&b, entry_seg, LirInst{ .assign = .{ .dst = fld.temp_id + base, .src = v, .name_id = @intCast(u32, 0) } });
         }
     }
+    if (b.child_present) {
+        var cz = newTemp(&b, ptr_void);
+        emit(&b, entry_seg, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = cz } });
+        emit(&b, entry_seg, LirInst{ .assign = .{ .dst = b.child_temp, .src = cz, .name_id = @intCast(u32, 0) } });
+    }
 
     bi = @intCast(u32, 0);
     while (bi < m) : (bi += @intCast(u32, 1)) {
         var bb = &lf.blocks.items[@intCast(usize, bi)];
         var s: u32 = @intCast(u32, 0);
-        var cur = seg_base[@intCast(usize, bi)];
-        var pre: u32 = @intCast(u32, 0);
-        var pb: u32 = @intCast(u32, 0);
-        while (pb < bi) : (pb += @intCast(u32, 1)) { pre += count_per_block[@intCast(usize, pb)]; }
+        var cur = seg_first[@intCast(usize, bi)];
         var ii: usize = @intCast(usize, 0);
         while (ii < bb.insts.len) : (ii += @intCast(usize, 1)) {
             var inst = bb.insts.items[ii];
-            if (isExplicitSuspend(reg, lf, inst)) {
-                var state = pre + s + @intCast(u32, 1);
-                saveAllFields(&b, cur, actx.layout);
-                var sv = newTemp(&b, type_mod.TYPE_U8);
-                emit(&b, cur, LirInst{ .int_const = .{ .value = @intCast(u64, state), .result = sv } });
-                storeField(&b, cur, state_off, type_mod.TYPE_U8, sv);
-                var yld = newTemp(&b, opt);
-                emit(&b, cur, LirInst{ .wrap_optional = .{ .value = @intCast(u32, 0), .result = yld, .type_id = opt } });
-                emit(&b, cur, LirInst{ .ret = yld });
-                step.blocks.items[@intCast(usize, cur)].is_terminated = @intCast(u8, 1);
+            var kk = instSuspendKind(reg, lf, inst, actx.suspending_fns);
+            if (kk != @intCast(u8, 0)) {
+                var state = state_base[@intCast(usize, bi)] + s + @intCast(u32, 1);
+                var sidx = @intCast(usize, state - @intCast(u32, 1));
+                if (kk == @intCast(u8, 1)) {
+                    saveAllFields(&b, cur, actx.layout);
+                    var sv = newTemp(&b, type_mod.TYPE_U8);
+                    emit(&b, cur, LirInst{ .int_const = .{ .value = @intCast(u64, state), .result = sv } });
+                    storeField(&b, cur, state_off, type_mod.TYPE_U8, sv);
+                    var yld = newTemp(&b, opt);
+                    emit(&b, cur, LirInst{ .wrap_optional = .{ .value = @intCast(u32, 0), .result = yld, .type_id = opt } });
+                    emit(&b, cur, LirInst{ .ret = yld });
+                    step.blocks.items[@intCast(usize, cur)].is_terminated = @intCast(u8, 1);
+                    s += @intCast(u32, 1);
+                    cur = state_resume[sidx];
+                    reloadAllFields(&b, cur, actx.layout);
+                    continue;
+                }
+                var cd = lir_mod.lirSideGetCallDirect(lf, inst.call_direct);
+                emitAwait(&b, cur, cd, state, state_yield[sidx], state_resume[sidx], state_after[sidx]);
                 s += @intCast(u32, 1);
-                cur = seg_base[@intCast(usize, bi)] + s;
-                reloadAllFields(&b, cur, actx.layout);
+                cur = state_after[sidx];
                 continue;
+            }
+            if (b.ret_val_present) {
+                var is_ret: bool = false;
+                var ret_v: u32 = @intCast(u32, 0);
+                switch (inst) {
+                    .ret => |rv| { is_ret = true; ret_v = rv; },
+                    else => {},
+                }
+                if (is_ret) {
+                    emit(&b, cur, LirInst{ .assign = .{ .dst = b.ret_val_temp, .src = ret_v + base, .name_id = @intCast(u32, 0) } });
+                    emit(&b, cur, LirInst{ .jump = b.ep_store_id });
+                    step.blocks.items[@intCast(usize, cur)].is_terminated = @intCast(u8, 1);
+                    continue;
+                }
             }
             var remapped = remapInst(&b, inst, sw_off);
             emit(&b, cur, remapped);
@@ -518,6 +782,37 @@ pub fn asyncTransform(lf: *LirFunction, actx: *AsyncTransformCtx) void {
         }
     }
 
+    // D3 terminal result store: shared epilogue, reached from every `.ret value`.
+    if (ret_val_present) {
+        if (result_present) {
+            var rp = loadField(&b, ep_store_id, result_off, ptr_void);
+            var rpi = newTemp(&b, type_mod.TYPE_USIZE);
+            emit(&b, ep_store_id, LirInst{ .ptr_to_int = .{ .value = rp, .result = rpi } });
+            var zero = newTemp(&b, type_mod.TYPE_USIZE);
+            emit(&b, ep_store_id, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = zero } });
+            var nz = newTemp(&b, type_mod.TYPE_U8);
+            emit(&b, ep_store_id, LirInst{ .binary = .{ .op = BIN_NE, .lhs = rpi, .rhs = zero, .result = nz } });
+            emit(&b, ep_store_id, LirInst{ .branch = .{ .cond = nz, .then_bb = ep_dostore_id, .else_bb = ep_ret_id } });
+            step.blocks.items[@intCast(usize, ep_store_id)].is_terminated = @intCast(u8, 1);
+            var pty = type_mod.typeRegistryGetOrCreatePtr(reg, lf.return_type, false);
+            var p = newTemp(&b, pty);
+            emit(&b, ep_dostore_id, LirInst{ .ptr_cast = .{ .value = rp, .target = pty, .result = p } });
+            emit(&b, ep_dostore_id, LirInst{ .store = .{ .ptr = p, .value = b.ret_val_temp } });
+            emit(&b, ep_dostore_id, LirInst{ .jump = ep_ret_id });
+            step.blocks.items[@intCast(usize, ep_dostore_id)].is_terminated = @intCast(u8, 1);
+        } else {
+            emit(&b, ep_store_id, LirInst{ .jump = ep_ret_id });
+            step.blocks.items[@intCast(usize, ep_store_id)].is_terminated = @intCast(u8, 1);
+            emit(&b, ep_dostore_id, LirInst{ .jump = ep_ret_id });
+            step.blocks.items[@intCast(usize, ep_dostore_id)].is_terminated = @intCast(u8, 1);
+        }
+        var o = newTemp(&b, opt);
+        emit(&b, ep_ret_id, LirInst{ .set_optional_null = .{ .result = o, .type_id = opt } });
+        emit(&b, ep_ret_id, LirInst{ .ret = o });
+        step.blocks.items[@intCast(usize, ep_ret_id)].is_terminated = @intCast(u8, 1);
+    }
+
     var slot = lir_stream.lirStreamAppend(actx.lir_stream, step);
     lir_mod.lirSlotArrayListAppend(actx.lir_slots, slot);
 }
+
