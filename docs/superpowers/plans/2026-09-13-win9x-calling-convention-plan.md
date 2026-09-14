@@ -495,17 +495,18 @@ git commit -m "feat(callconv): extern fn-pointer types, typedef emission, cross-
 
 - [ ] **Step 1: Write the failing Windows cross check**
 
-Run the pre-migration cross build to capture the RED (prototype conflict):
+Build the pre-migration compiler from the current HEAD (post-3R) — do NOT use `/tmp/cc3` (stale; Amendment 5):
 ```bash
-rm -rf /tmp/t4_net_red
-timeout 120 /tmp/cc3/zig1_5_clean -osw -o /tmp/t4_net_red repro/mi_matrix/net_bind_startup_xmod/main.zig; echo "emit rc=$?"
-for f in /tmp/t4_net_red/*.c; do i686-w64-mingw32-gcc -m32 -std=c89 -c "$f" -o /dev/null 2>/tmp/t4_net_red/mingw.err || { echo "mingw rc=$?"; cat /tmp/t4_net_red/mingw.err; }; done
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/t4_pre
+rm -rf /tmp/t4_net_red && mkdir -p /tmp/t4_net_red
+timeout 120 /tmp/t4_pre/zig1_5_clean -osw -o /tmp/t4_net_red repro/mi_matrix/net_bind_startup_xmod/main.zig; echo "emit rc=$?"
+for f in /tmp/t4_net_red/*.c; do i686-w64-mingw32-gcc -m32 -std=c89 -I /tmp/t4_net_red -c "$f" -o /dev/null 2>/tmp/t4_net_red/mingw.err || { echo "mingw rc=$?"; cat /tmp/t4_net_red/mingw.err; }; done
 ```
-Expected RED: since Task 2 already forces prototypes for `stdcall` but `std_net` still declares `extern "c"`, either no prototype is forced (no conflict yet) or, once a conflict is provoked, mingw reports a conflicting declaration. Record the observed behavior.
+Expected RED: after Task 3R the forced-prototype clause is reverted, so no Z98 prototype is emitted for `std_net`'s still-`extern "c"` externs and mingw does NOT report a conflicting declaration — the RED is that the emitted call sites carry no convention (no `FS_…` typedef, no use-site cast; `grep -c 'FS_' /tmp/t4_net_red/*.c` = 0). Record the observed behavior. (The pre-3R conflict is historical and no longer reproducible; Amendment 5.)
 
 - [ ] **Step 2: Migrate the declarations**
 
-`sf/src/std_net.zig` — replace `"c"` with `"stdcall"` for exactly these lines: `:18` `htons`, `:19` `htonl`, `:35` `socket`, `:36` `bind`, `:37` `listen`, `:38` `setsockopt`, `:39` `accept_os`, `:40` `connect_os`, `:41` `send_os`, `:42` `recv_os`, `:43` `select_os`, `:44` `close_os`, `:45` `closesocket`, `:46` `WSAStartup`, `:47` `WSACleanup`. Leave `pub extern "c" fn htons` etc. Otherwise unchanged:
+`sf/src/std_net.zig` — replace `"c"` with `"stdcall"` for exactly these lines: `:18` `htons`, `:19` `htonl`, `:35` `socket`, `:36` `bind`, `:37` `listen`, `:38` `setsockopt`, `:39` `accept_os`, `:40` `connect_os`, `:41` `send_os`, `:42` `recv_os`, `:43` `select_os`, `:44` `close_os`, `:45` `closesocket`, `:46` `WSAStartup`, `:47` `WSACleanup`. `htons`/`htonl` ARE migrated (subspec §3.7 `:18-19`); the earlier "Leave `pub extern "c" fn htons`" prose is superseded (Amendment 5). Otherwise unchanged:
 ```zig
 pub extern "stdcall" fn htons(x: u16) u16;
 pub extern "stdcall" fn htonl(x: u32) u32;
@@ -529,26 +530,30 @@ extern "stdcall" fn WSACleanup() i32;
 
 Run:
 ```bash
-bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/cc4
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/t4_post
 rm -rf /tmp/t4_net_new && mkdir -p /tmp/t4_net_new
-timeout 120 /tmp/cc4/zig1_5_clean -osw -o /tmp/t4_net_new repro/mi_matrix/net_bind_startup_xmod/main.zig; echo "emit rc=$?"
-for f in /tmp/t4_net_new/*.c; do i686-w64-mingw32-gcc -m32 -std=c89 -c "$f" -o /dev/null || exit 1; done; echo "mingw -c rc=$?"
-grep -rn 'Z98_STDCALL' /tmp/t4_net_new/ | head
+timeout 120 /tmp/t4_post/zig1_5_clean -osw -o /tmp/t4_net_new repro/mi_matrix/net_bind_startup_xmod/main.zig; echo "emit rc=$?"
+for f in /tmp/t4_net_new/*.c; do i686-w64-mingw32-gcc -m32 -std=c89 -I /tmp/t4_net_new -c "$f" -o /dev/null || exit 1; done; echo "mingw -c rc=$?"
+grep -rn 'FS_' /tmp/t4_net_new/*.c | head
 ```
-Expected: `emit rc=0`; mingw `-c` rc=0 (no conflict with `winsock.h`); `Z98_STDCALL` present on the migrated prototypes.
+Expected: `emit rc=0`; mingw `-c` rc=0 (no conflict with `winsock.h`); every migrated call site carries an `((FS_…)…)` cast, `FS_…` typedefs are emitted, and there is NO forced `Z98_STDCALL` prototype for the migrated externs (only the `Z98_STDCALL` macro in `zig_compat.h` and the typedefs).
 
 - [ ] **Step 4: Verify linux runtime is unchanged**
 
-Run:
+Run (self-contained `-o DIR` output; Amendment 5 — do NOT append the repo runtime trio, the dump dir already contains `zig_runtime.c`/`zig_pal.c`/`c_exit.c`):
 ```bash
-mkdir -p /tmp/t4_lib && cp sf/src/std*.zig /tmp/t4_lib/
+mkdir -p /tmp/t4_mud_pre
+timeout 120 /tmp/t4_pre/zig1_5_clean -o /tmp/t4_mud_pre examples/z98/mud_server/main.zig
+gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I /tmp/t4_mud_pre /tmp/t4_mud_pre/*.c -o /tmp/t4_mud_pre/mud
+timeout -k 2 5 /tmp/t4_mud_pre/mud </dev/null >/tmp/t4_mud_pre/out.txt; md5sum /tmp/t4_mud_pre/out.txt
 rm -rf /tmp/t4_mud && mkdir -p /tmp/t4_mud
-timeout 120 /tmp/cc4/zig1_5_clean -o /tmp/t4_mud examples/z98/mud_server/main.zig
-cd /tmp/t4_mud && gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I /workspace/znineeight/sf/src/include /tmp/t4_mud/*.c /workspace/znineeight/sf/src/include/zig_runtime.c /workspace/znineeight/sf/src/include/zig_pal.c -o /tmp/t4_mud/mud 2>/tmp/t4_mud/link.err; echo "link rc=$?"
-cd /workspace/znineeight && timeout 120 /tmp/t4_mud/mud </dev/null >/tmp/t4_mud/out.txt; echo "run rc=$?"
+timeout 120 /tmp/t4_post/zig1_5_clean -o /tmp/t4_mud examples/z98/mud_server/main.zig
+gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I /tmp/t4_mud /tmp/t4_mud/*.c -o /tmp/t4_mud/mud 2>/tmp/t4_mud/link.err; echo "link rc=$?"
+timeout -k 2 5 /tmp/t4_mud/mud </dev/null >/tmp/t4_mud/out.txt; echo "run rc=$?"
 md5sum /tmp/t4_mud/out.txt
+diff /tmp/t4_mud/out.txt /tmp/t4_mud_pre/out.txt && echo STDOUT-IDENTICAL
 ```
-Expected: link rc=0; the server runs under `timeout 120` (rc=124 with the message-buffering caveat or rc=0) and its stdout is unchanged vs the pre-migration `std_net` (compare against a capture taken with `/tmp/cc3`). If the program is a long-running server, use `timeout -k 2 5` and compare the first N lines rather than a full run.
+Expected: link rc=0; the server runs under `timeout -k 2 5` (rc=124 by design for the long-running server) and its stdout is byte-identical to the pre-migration capture (`MUD server listening on port 4000`).
 
 - [ ] **Step 5: Commit**
 
@@ -689,4 +694,18 @@ This plan is amendable in place. Any deviation discovered during execution is re
 - Default-cdecl byte-identity vs `/tmp/cc4` (`818288fb…`): `extern_fn_eu_return`, `callconv_explicit_cdecl_xmod`, and `callconv_default_cdecl_xmod` all `diff -r -x '*.sh' -x '*.bat' -x 'zig_compat.h' -x '.zig1_*.tmp'` rc=0.
 - `callconv_fnptr_mismatch_green_xmod` rejects `rc=2`, `error[3000]`, 0 `.c`; `callconv_stdcall_variadic_green_xmod` rejects `rc=2`, `error[3012]`, 0 `.c`; `callconv_mixed_fnptr_typedef_xmod` still emits both `FP_` (cdecl) and `FS_` (stdcall) typedefs.
 - `scripts/check_emit_support.sh /tmp/t3r_cc/zig1_5_clean` 5/5.
+
+### Amendment 5 — 2026-09-13 (Task 4: migrate `htons`/`htonl` too; fresh pre/post compilers; self-contained `-o` link)
+
+**Reason:** Three Task 4 body items were stale at execution time. (1) The Step 2 prose "Leave `pub extern "c" fn htons` etc." contradicted the authoritative subspec §3.7 table (`:18-19` lists `htons`/`htonl`) and the step's own code block. (2) Step 1 pinned the RED baseline to `/tmp/cc3` (`77421c72…`, pre-3R), but Task 3R's fixed point is `cd2259dd…`; the pre-3R prototype-conflict RED is no longer reproducible because 3R reverted the forced-prototype clause (Amendment 4). (3) Steps 3–4 pinned the post compiler to `/tmp/cc4` (`818288fb…`, pre-3R) and Step 4 appended the repo runtime trio to the dump dir, which double-defines `zig_runtime.c`/`zig_pal.c`/`c_exit.c` now that `-o DIR` emits them into the dir (EMITEMIT self-contained output).
+
+**Decision:** (a) Migrate all 15 externs in subspec §3.7, including `htons`/`htonl`. (b) Build the pre-migration compiler from current HEAD (post-3R) into `/tmp/t4_pre` and the post-migration compiler into `/tmp/t4_post` (distinct fresh dirs). (c) Link `-o DIR` output self-contained: `gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I DIR DIR/*.c -o DIR/mud`; drop the `/tmp/t4_lib` copy and the repo runtime trio. (d) The Task 4 body is edited in place to these recipes.
+
+**Verification (2026-09-13, compiler fixed point UNCHANGED `cd2259dde73d3a8bc22b25280459edc2`, hop1==hop2 for both `/tmp/t4_pre` and `/tmp/t4_post`; seed NOT rotated — Task 5):**
+- RED (`/tmp/t4_pre`, post-3R): `net_bind_startup_xmod -osw` emit rc=0; every emitted `.c` mingw-compiles rc=0 with `-I /tmp/t4_net_red` (no conflicting declaration — 3R already removed forced prototypes); `grep -c 'FS_' /tmp/t4_net_red/*.c` = 0 and call sites are plain `socket(...)`/`htons(...)` — no convention carried.
+- GREEN (`/tmp/t4_post`): emit rc=0; all 6 emitted `.c` mingw-compile rc=0 (`-I /tmp/t4_net_new`); every migrated call site carries `((FS_…)…)`; `zig_special_types.h` emits the 11 `FS_` typedefs; no forced `Z98_STDCALL` prototype.
+- Linux runtime unchanged: `mud_server -o` link rc=0, run rc=124 under `timeout -k 2 5`, stdout `9545fe1d245293efe978cd27b3f085dc` byte-identical pre↔post.
+- `scripts/check_emit_support.sh /tmp/t4_post/zig1_5_clean` 5/5.
+- Convention fixtures (Task 2/3) pre↔post byte-identical (`callconv_cdecl_fnptr_xmod`, `callconv_stdcall_fnptr_xmod` emit IDENTICAL; `default_cdecl`/`explicit_cdecl`/`stdcall_decl`/`mixed_fnptr_typedef` rc=0 + linux gcc OK; `fnptr_mismatch`/`stdcall_variadic`/`unknown` GREEN rc=2, 0 `.c`).
+- **4-MD5 gate rows MOVE (recorded, NOT re-baselined — Task 5):** pre-migration dumps match the QUICK_REF C89-AHEAD table exactly (`5f05df6e…`/`1eed7723…`/`6f226771…`/`ccdcb6ef…`), post-migration all four move because `std.zig` re-exports `std_net` unconditionally, so every gate program emits `std_net` and gains the `FS_` typedefs + use-site casts: mud `5f05df6e…` → `07ec234e3f0214e2eb01aabad1676e0a`; gol `1eed7723…` → `e6afce418718f4adf2525956e17f6bc9`; lisp `6f226771…` → `a3ba58098357164d644d321015550874`; json `ccdcb6ef…` → `99514d39dcbfddd297ccd12e15a0cb78`. The diff is exclusively `std_net` `FS_` typedefs + call-site casts; runtime stdout unchanged (mud verified byte-identical).
 
