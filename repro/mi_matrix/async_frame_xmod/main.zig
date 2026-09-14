@@ -10,6 +10,7 @@ fn plain() i32 {
 }
 
 const Expected = struct {
+    step: *void,
     ctx: *void,
     state: u8,
     x: i32,

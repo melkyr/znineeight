@@ -45,6 +45,7 @@ const const_alias_prepass = @import("const_alias_prepass.zig");
 const front_res = @import("front_resolution.zig");
 const async_analysis = @import("async_analysis.zig");
 const async_frame_layout = @import("async_frame_layout.zig");
+const async_state_machine = @import("async_state_machine.zig");
 const SymbolRegistry = sym_mod.SymbolRegistry;
 const AstKind = ast_mod.AstKind;
 const AstStore = ast_mod.AstStore;
@@ -738,7 +739,18 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
                         lowerer.module_reg = ctx.module_reg;
                         var lf = lower_mod.lowerFn(&lowerer, decls[di]);
                         if (async_analysis.asyncIsSuspending(&ctx.suspending_fns, lf.module_id, lf.name_id)) {
-                            _ = async_frame_layout.asyncLayoutFrame(&ctx.alloc.scratch, ctx.typereg, &lf, &ctx.suspending_fns, &ctx.frame_sizes);
+                            var async_layout = async_frame_layout.asyncLayoutFrame(&ctx.alloc.scratch, ctx.typereg, &lf, &ctx.suspending_fns, &ctx.frame_sizes);
+                            var async_ctx = async_state_machine.AsyncTransformCtx{
+                                .alloc = &ctx.alloc.scratch,
+                                .registry = ctx.typereg,
+                                .interner = ctx.interner,
+                                .lir_stream = &ctx.lir_stream,
+                                .lir_slots = &ctx.lir_slots,
+                                .suspending_fns = &ctx.suspending_fns,
+                                .layout = &async_layout,
+                                .safe_checks = ctx.cli.safe_checks,
+                            };
+                            async_state_machine.asyncTransform(&lf, &async_ctx);
                         }
                         var slot = lir_stream.lirStreamAppend(&ctx.lir_stream, lf);
                         lir_mod.lirSlotArrayListAppend(&ctx.lir_slots, slot);

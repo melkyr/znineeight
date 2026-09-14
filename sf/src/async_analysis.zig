@@ -440,6 +440,8 @@ pub fn asyncFrameSizeRun(alloc: *alloc_mod.Sand, store: *ast_mod.AstStore,
             var key = asyncKey(mods[mi].id, proto.name_id);
             var offset: u32 = @intCast(u32, 0);
             var max_align: u32 = @intCast(u32, 1);
+            // Amendment 7: hidden pointer-sized step word @ offset 0 ALWAYS.
+            addFrameField(typereg, type_mod.TYPE_USIZE, &offset, &max_align);
             addFrameField(typereg, type_mod.TYPE_USIZE, &offset, &max_align);
             addFrameField(typereg, type_mod.TYPE_U8, &offset, &max_align);
             if (proto.params_count > @intCast(u16, 0)) {

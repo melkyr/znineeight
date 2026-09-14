@@ -41,6 +41,7 @@ pub const ASYNC_FIELD_CTX: u8 = 0;
 pub const ASYNC_FIELD_STATE: u8 = 1;
 pub const ASYNC_FIELD_PARAM: u8 = 2;
 pub const ASYNC_FIELD_LIVE: u8 = 3;
+pub const ASYNC_FIELD_STEP: u8 = 4;
 
 pub const AsyncFrameField = struct {
     kind: u8,
@@ -497,6 +498,7 @@ pub fn asyncLayoutFrame(alloc: *Sand, reg: *TypeRegistry, lir_fn: *LirFunction,
 
     var offset: u32 = @intCast(u32, 0);
     var max_align: u32 = @intCast(u32, 1);
+    addField(&fields, reg, ASYNC_FIELD_STEP, @intCast(u32, 0), @intCast(u32, 0), type_mod.TYPE_USIZE, &offset, &max_align);
     addField(&fields, reg, ASYNC_FIELD_CTX, @intCast(u32, 0), @intCast(u32, 0), type_mod.TYPE_USIZE, &offset, &max_align);
     addField(&fields, reg, ASYNC_FIELD_STATE, @intCast(u32, 0), @intCast(u32, 0), type_mod.TYPE_U8, &offset, &max_align);
     pi = @intCast(usize, 0);

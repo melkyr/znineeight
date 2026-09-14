@@ -2236,14 +2236,12 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                 _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 2)]);
                 _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 3)]);
             }
-            semanticAnalyzerDiagAsyncOutsideSuspending(self, node_idx);
             result = type_mod.typeRegistryGetOrCreatePtr(self.registry, type_mod.TYPE_VOID, false);
         } else if (node.child_0 == self.async_resume_name_id) {
             if (ec.len >= @intCast(usize, 2)) {
                 _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]);
                 _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 1)]);
             }
-            semanticAnalyzerDiagAsyncOutsideSuspending(self, node_idx);
             result = type_mod.typeRegistryGetOrCreateOptional(self.registry, type_mod.typeRegistryGetOrCreatePtr(self.registry, type_mod.TYPE_VOID, false));
         } else if (node.child_0 == self.async_suspend_name_id) {
             if (ec.len >= @intCast(usize, 1)) { _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]); }
