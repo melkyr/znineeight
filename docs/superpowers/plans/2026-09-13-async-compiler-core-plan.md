@@ -1005,6 +1005,19 @@ Substitution for every Track-2 task (replaces all `sf/build/out_release/zig1` an
 - The recorded fixed point moves per task and is re-established at Task 8 (`FIXED_POINT_MD5=` optional gate).
 - Workdir: `/tmp/zt2` (created; `/tmp` swept per operator). Do not use `sf/build/out_release`.
 
+## Amendment 3 (2026-09-14) — Task 3 marker evidence: markers-enabled build + off-corpus `known_excluded` fixture
+
+Operator rulings (Q1/Q2/Q3, m1379):
+
+1. **No marker API substitution.** Keep the plan's `pal.markerWrite("SUSP:m<module_id>:n<name_id>\n")` in `async_analysis.zig`; do NOT use `pal.measureMarkerWrite`.
+2. **Build with markers enabled for the evidence only.** `pal.markerWrite*` is compile-time-dead while `sf/src/pal.zig` `g_markers_debug = 0` (`pal.zig:210`). For Task-3 RED/GREEN evidence, temporarily set `g_markers_debug = 1` (UNCOMMITTED), build the compiler from current `sf/src` via the seed path, capture the `SUSP:` markers, then REVERT `g_markers_debug = 0` before the Task-3 commit. The committed source and the corpus build keep markers off.
+3. **Marker fixture is off-corpus.** Task-3 marker RED/GREEN fixtures live under `repro/mi_matrix/known_excluded/` (committed evidence, excluded from classification). `scripts/corpus/list_corpus_dirs.sh` gains a guard skipping any directory named `known_excluded` (at any of its three enumeration levels), so the corpus count is unchanged. The corpus `async_callgraph_xmod` may still gain the `ping`/`pong` mutual pair (Task-5 value), but no corpus fixture asserts markers.
+4. **Evidence channel.** Markers are written to **stderr**; every marker run uses `--markers` and reads stderr (never stdout).
+
+Consequence for Task 3 Steps 2/4: replace the marker commands with — build a markers-enabled compiler (temporary `g_markers_debug=1`), run the `known_excluded` fixture with `--markers`, read `SUSP:` from stderr. RED = pre-Task-3 marker build → 0 `SUSP:`; GREEN = post-Task-3 marker build → `SUSP:` for `leaf/mid/top/explicit_only/ping/pong`.
+
+Task-3 commit scope therefore adds `scripts/corpus/list_corpus_dirs.sh` (guard) and `repro/mi_matrix/known_excluded/…` (marker fixture), with `sf/src/pal.zig` `g_markers_debug` left `0`.
+
 ## Amendable note
 
 This plan is amendable in place. Amendments record the reason, the affected task, and the re-verified baseline; do not rotate the seed or bump `EXPECTED_FAIL` outside Task 8.
