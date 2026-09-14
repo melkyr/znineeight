@@ -2268,7 +2268,8 @@ fn lowerGlobalRef(self: *LirLowerer, s: sym_mod.Symbol, name_id: u32) u32 {
 
 
 fn materializeFnRef(self: *LirLowerer, sym: *sym_mod.Symbol) u32 {
-    if (self.suppress_fnref_ban == @intCast(u8, 0) and async_analysis.asyncIsSuspending(self.ctx.suspending_fns, sym.module_id, sym.name_id)) {
+    var is_susp = async_analysis.asyncIsSuspending(self.ctx.suspending_fns, sym.module_id, sym.name_id);
+    if (self.suppress_fnref_ban == @intCast(u8, 0) and is_susp) {
         var m317: []const u8 = "taking the address of a suspending function is not allowed";
         _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0),
             @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3017_SUSPENDING_FUNCTION_POINTER)),
@@ -2281,8 +2282,15 @@ fn materializeFnRef(self: *LirLowerer, sym: *sym_mod.Symbol) u32 {
     var fr_pt = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, s_t, false);
     var fr_mid = self.module_id;
     if (sym.module_id != @intCast(u32, 0)) { fr_mid = sym.module_id; }
+    // D2: the `@asyncFrameSize`/`@asyncInit` target-arg func_refs are dead (their
+    // value is discarded) but must not name a dropped original body; re-point
+    // them at the synthesized step under the `suppress_fnref_ban` window.
+    var fr_nid = sym.name_id;
+    if (self.suppress_fnref_ban != @intCast(u8, 0) and is_susp) {
+        fr_nid = async_state_machine.asyncStepNameId(self.ctx.registry.interner, sym.name_id);
+    }
     var fr_res = nextTemp(self, fr_pt);
-    emitInst(self, LirInst{ .func_ref = .{ .name_id = sym.name_id, .module_id = fr_mid, .result = fr_res } });
+    emitInst(self, LirInst{ .func_ref = .{ .name_id = fr_nid, .module_id = fr_mid, .result = fr_res } });
     return fr_res;
 }
 

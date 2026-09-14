@@ -527,8 +527,164 @@ fn emitAwait(b: *Build, blk: u32, cd: lir_mod.CallDirectData, state: u32, yield_
     }
 }
 
-pub fn asyncTransform(lf: *LirFunction, actx: *AsyncTransformCtx) void {
-    if (!async_analysis.asyncIsSuspending(actx.suspending_fns, lf.module_id, lf.name_id)) return;
+// D2: pinned root-`main` driver pool size (residual R7). The root task's
+// children are bump-allocated from `ctx+usize`; the pool has no authoritative
+// size until Task 7 owns the per-task LIFO pool/Context ABI, so pin the interim
+// Task-6 fixed constant (the same 256-byte convention the await fixtures use).
+const ASYNC_ROOT_POOL_BYTES: u32 = 256;
+
+fn isRootMain(actx: *AsyncTransformCtx, lf: *LirFunction) bool {
+    if (lf.module_id != @intCast(u32, 0)) return false;
+    if (lf.is_pub != @intCast(u8, 1)) return false;
+    var nm = si_mod.stringInternerGet(actx.interner, lf.name_id);
+    if (nm.len != @intCast(usize, 4)) return false;
+    return nm[0] == 'm' and nm[1] == 'a' and nm[2] == 'i' and nm[3] == 'n';
+}
+
+// D2: synthesize the root-`main` synchronous driver under `main`'s original
+// name_id/module_id/`is_pub` and source-level param signature. The driver (a)
+// declares a local root buffer of `frame_sizes[main]` bytes and a local pool
+// buffer, (b) writes the step word @0, `ctx = &pool` @ctx_off, `state = 0`, and
+// copies main's params to the frame param offsets, (c) drives main's step to
+// completion (`r = step(root,null); while (has_value(r)) r = step(root,null);`),
+// and (d) returns. `emitMainWrapper` wraps it unchanged. Backend-agnostic; 0 new
+// `LirInst`.
+fn emitMainDriver(actx: *AsyncTransformCtx, lf: *LirFunction) void {
+    var reg = actx.registry;
+    var ptr_void = ptrVoid(reg);
+    var opt = optPtrVoid(reg);
+
+    var driver = LirFunction{
+        .name_id = lf.name_id,
+        .module_id = lf.module_id,
+        .return_type = lf.return_type,
+        .params = lir_mod.lirParamArrayListInit(actx.alloc),
+        .blocks = lir_mod.basicBlockArrayListInit(actx.alloc),
+        .hoisted_temps = lir_mod.tempDeclArrayListInit(actx.alloc),
+        .switch_cases = lir_mod.switchCaseArrayListInit(actx.alloc),
+        .side_table = lir_mod.lirSideEntryArrayListInit(actx.alloc),
+        .temp_variant_sub_field = hash_mod.u32ToU32MapInit(actx.alloc),
+        .is_extern = @intCast(u8, 0),
+        .is_pub = lf.is_pub,
+        .is_variadic = lf.is_variadic,
+        .call_conv = lf.call_conv,
+        .poison_uninit = lf.poison_uninit,
+    };
+    var pi: usize = @intCast(usize, 0);
+    while (pi < lf.params.len) : (pi += @intCast(usize, 1)) {
+        lir_mod.lirParamArrayListAppend(&driver.params, lf.params.items[pi]);
+    }
+    // Preserve the original temp ids (contiguous) so `newTemp` can append after.
+    var hi: usize = @intCast(usize, 0);
+    while (hi < lf.hoisted_temps.len) : (hi += @intCast(usize, 1)) {
+        lir_mod.tempDeclArrayListAppend(&driver.hoisted_temps, lf.hoisted_temps.items[hi]);
+    }
+    var blk_i: u32 = @intCast(u32, 0);
+    while (blk_i < @intCast(u32, 3)) : (blk_i += @intCast(u32, 1)) {
+        lir_mod.basicBlockArrayListAppend(&driver.blocks, lir_mod.BasicBlock{
+            .id = blk_i,
+            .insts = lir_mod.lirInstArrayListInit(actx.alloc),
+            .is_terminated = @intCast(u8, 0),
+        });
+    }
+
+    var root_sz: u32 = actx.layout.layout_size;
+    if (async_analysis.asyncFrameSizeOf(actx.frame_sizes, lf.module_id, lf.name_id)) |fs| root_sz = fs;
+
+    var b = Build{
+        .step = &driver,
+        .orig = lf,
+        .actx = actx,
+        .reg = reg,
+        .base = @intCast(u32, 0),
+        .frame_temp = @intCast(u32, 0),
+        .opt = opt,
+        .block_map = undefined,
+        .nblocks = @intCast(u32, 0),
+        .state_off = @intCast(u32, 0),
+        .child_off = @intCast(u32, 0),
+        .child_present = false,
+        .pr_off = undefined,
+        .pr_ty = undefined,
+        .pr_count = @intCast(u32, 0),
+        .pr_present = false,
+        .result_off = @intCast(u32, 0),
+        .result_present = false,
+        .child_temp = @intCast(u32, 0),
+        .ret_val_temp = @intCast(u32, 0),
+        .ret_val_present = false,
+        .ep_store_id = @intCast(u32, 0),
+        .ep_dostore_id = @intCast(u32, 0),
+        .ep_ret_id = @intCast(u32, 0),
+    };
+
+    var root_name = si_mod.stringInternerIntern(actx.interner, "__az_root");
+    var pool_name = si_mod.stringInternerIntern(actx.interner, "__az_pool");
+    var root_arr_t = type_mod.typeRegistryGetOrCreateArray(reg, type_mod.TYPE_U8, root_sz);
+    var pool_arr_t = type_mod.typeRegistryGetOrCreateArray(reg, type_mod.TYPE_U8, ASYNC_ROOT_POOL_BYTES);
+    var root_arr_pt = type_mod.typeRegistryGetOrCreatePtr(reg, root_arr_t, false);
+    var pool_arr_pt = type_mod.typeRegistryGetOrCreatePtr(reg, pool_arr_t, false);
+
+    var root_arr = newTemp(&b, root_arr_t);
+    emit(&b, @intCast(u32, 0), LirInst{ .decl_local = .{ .name_id = root_name, .type_id = root_arr_t, .temp = root_arr } });
+    var root_ap = newTemp(&b, root_arr_pt);
+    emit(&b, @intCast(u32, 0), LirInst{ .addr_of = .{ .operand = root_arr, .result = root_ap } });
+    var root = newTemp(&b, ptr_void);
+    emit(&b, @intCast(u32, 0), LirInst{ .ptr_cast = .{ .value = root_ap, .target = ptr_void, .result = root } });
+    b.frame_temp = root;
+
+    var pool_arr = newTemp(&b, pool_arr_t);
+    emit(&b, @intCast(u32, 0), LirInst{ .decl_local = .{ .name_id = pool_name, .type_id = pool_arr_t, .temp = pool_arr } });
+    var pool_ap = newTemp(&b, pool_arr_pt);
+    emit(&b, @intCast(u32, 0), LirInst{ .addr_of = .{ .operand = pool_arr, .result = pool_ap } });
+    var pool = newTemp(&b, ptr_void);
+    emit(&b, @intCast(u32, 0), LirInst{ .ptr_cast = .{ .value = pool_ap, .target = ptr_void, .result = pool } });
+
+    // R1 interim bump counter: pool[0..usize] = 0 (pool base is pool+usize).
+    var z_usize = newTemp(&b, type_mod.TYPE_USIZE);
+    emit(&b, @intCast(u32, 0), LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = z_usize } });
+    storeFieldBase(&b, @intCast(u32, 0), pool, @intCast(u32, 0), type_mod.TYPE_USIZE, z_usize);
+
+    // main's step word @ root+0.
+    var step_name = asyncStepNameId(actx.interner, lf.name_id);
+    var step_fn = asyncStepFnType(reg, actx.interner, step_name, lf.module_id);
+    var step_pt = type_mod.typeRegistryGetOrCreatePtr(reg, step_fn, false);
+    var fr = newTemp(&b, step_pt);
+    emit(&b, @intCast(u32, 0), LirInst{ .func_ref = .{ .name_id = step_name, .module_id = lf.module_id, .result = fr } });
+    var fri = newTemp(&b, type_mod.TYPE_USIZE);
+    emit(&b, @intCast(u32, 0), LirInst{ .ptr_to_int = .{ .value = fr, .result = fri } });
+    storeFieldBase(&b, @intCast(u32, 0), root, @intCast(u32, 0), type_mod.TYPE_USIZE, fri);
+
+    // Header ctx/state + param copy from the authoritative layout.
+    var fi: usize = @intCast(usize, 0);
+    while (fi < actx.layout.fields.len) : (fi += @intCast(usize, 1)) {
+        var fld = actx.layout.fields.items[fi];
+        if (fld.kind == async_frame_layout.ASYNC_FIELD_CTX) {
+            storeFieldBase(&b, @intCast(u32, 0), root, fld.offset, ptr_void, pool);
+        } else if (fld.kind == async_frame_layout.ASYNC_FIELD_STATE) {
+            var z8 = newTemp(&b, type_mod.TYPE_U8);
+            emit(&b, @intCast(u32, 0), LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = z8 } });
+            storeFieldBase(&b, @intCast(u32, 0), root, fld.offset, type_mod.TYPE_U8, z8);
+        } else if (fld.kind == async_frame_layout.ASYNC_FIELD_PARAM) {
+            storeFieldBase(&b, @intCast(u32, 0), root, fld.offset, fld.type_id, fld.temp_id);
+        }
+    }
+
+    // Drive to completion: first step in block 0, re-step loop in block 1, done
+    // in block 2. `emitDriveChild` already loads step+0 / calls the generic step.
+    emitDriveChild(&b, @intCast(u32, 0), root, @intCast(u32, 1), @intCast(u32, 2));
+    driver.blocks.items[@intCast(usize, 0)].is_terminated = @intCast(u8, 1);
+    emitDriveChild(&b, @intCast(u32, 1), root, @intCast(u32, 1), @intCast(u32, 2));
+    driver.blocks.items[@intCast(usize, 1)].is_terminated = @intCast(u8, 1);
+    emit(&b, @intCast(u32, 2), LirInst{ .ret_void = {} });
+    driver.blocks.items[@intCast(usize, 2)].is_terminated = @intCast(u8, 1);
+
+    var slot = lir_stream.lirStreamAppend(actx.lir_stream, driver);
+    lir_mod.lirSlotArrayListAppend(actx.lir_slots, slot);
+}
+
+pub fn asyncTransform(lf: *LirFunction, actx: *AsyncTransformCtx) bool {
+    if (!async_analysis.asyncIsSuspending(actx.suspending_fns, lf.module_id, lf.name_id)) return false;
 
     var reg = actx.registry;
     var base: u32 = @intCast(u32, 2);
@@ -855,5 +1011,9 @@ pub fn asyncTransform(lf: *LirFunction, actx: *AsyncTransformCtx) void {
 
     var slot = lir_stream.lirStreamAppend(actx.lir_stream, step);
     lir_mod.lirSlotArrayListAppend(actx.lir_slots, slot);
+    // D2: root `main` also gets a minimal synchronous driver (same name_id /
+    // module_id / is_pub / params) that drives this step to completion.
+    if (isRootMain(actx, lf)) { emitMainDriver(actx, lf); }
+    return true;
 }
 

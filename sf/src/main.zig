@@ -773,10 +773,11 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
                             lf_ptr.* = lf;
                             ga_mod.u32ArrayListAppend(&async_retained, @intCast(u32, @ptrToInt(lf_ptr)));
                             async_pending = true;
+                        } else {
+                            var slot = lir_stream.lirStreamAppend(&ctx.lir_stream, lf);
+                            lir_mod.lirSlotArrayListAppend(&ctx.lir_slots, slot);
+                            if (!async_pending) { alloc_mod.sandReset(&ctx.alloc.scratch); }
                         }
-                        var slot = lir_stream.lirStreamAppend(&ctx.lir_stream, lf);
-                        lir_mod.lirSlotArrayListAppend(&ctx.lir_slots, slot);
-                        if (!async_pending) { alloc_mod.sandReset(&ctx.alloc.scratch); }
                     } else {
                 if (decl.kind == AstKind.var_decl) {
                     if ((@intCast(u16, decl.flags) & @intCast(u16, 0x04)) == @intCast(u16, 0)) {
@@ -880,7 +881,10 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
                 .async_layouts = &ctx.async_layouts,
                 .diag = ctx.diag,
             };
-            async_state_machine.asyncTransform(lf2, &async_ctx2);
+            // The transform consumes the original body (streams the step, plus
+            // the root-`main` driver) and signals "consumed"; phase A already
+            // skipped streaming `lf` for suspending functions.
+            _ = async_state_machine.asyncTransform(lf2, &async_ctx2);
         }
     }
     if (async_pending) { alloc_mod.sandReset(&ctx.alloc.scratch); }
