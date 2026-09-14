@@ -245,7 +245,7 @@ synthesize fields in this **frozen deterministic order**:
    (residual R8: gated on value-return only). Each slot's writer is the awaited
    callee's terminal step, which stores its `.ret` value through the `result`
    pointer the caller placed for **that** await; the reader is the caller, which
-   loads that slot (on resume/`after_blk`) and assigns it to that await's `result`
+   loads that slot (in `after_blk`) and assigns it to that await's `result`
    temp. All slots are saved/reloaded with the other hidden fields across each
    yield. This replaces the Amendment-9 single per-caller slot, which truncated a
    caller with multiple value-returning awaits of different types to the first

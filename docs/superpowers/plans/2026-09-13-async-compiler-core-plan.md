@@ -1129,6 +1129,13 @@ that reads an absent field. The merged task lands the hidden-field reservation
 (`child` kind 5 + `result` kind 6 + `parent_result` kind 7), the two-phase layout
 side table, the await rewrite, **and** the `.ret` store together.
 
+> **Superseded by Task 6D5** (per-await slots). This task's single kind-7
+> `parent_result` slot, its one-slot-per-caller layout, and the parent-result
+> copy at `loop_done_blk` are **Amendment-9 interim wording**. Task 6D5 replaces
+> them with **one kind-7 slot per value-returning implicit await** and moves the
+> parent-result→call-result-temp copy to **`after_blk`** (Amendment 10, I1/M1).
+> Read the kind-7/`loop_done_blk` text below as superseded wherever it conflicts.
+
 **Goal (acceptance).** A direct call to a suspending `g` becomes suspension point
 N of `f`: the child frame is initialized with `g`'s step word, driven via its
 `_step`, `f` yields (`ret` non-null optional) when the child suspends, and
@@ -1158,6 +1165,8 @@ main-driver regression (it awaits `worker` and uses the return value).
   - kind `parent_result` (value-typed to the awaited call's result; **not**
     pointer-sized) iff the function has a value-returning implicit await; gate on
     value-returning targets only so void-awaited callers pay nothing (residual R8).
+    **Superseded by Task 6D5** (per-await slots): one slot **per value-returning
+    implicit await**, not one per caller.
 - `sf/src/async_frame_layout.zig` (`asyncLayoutFrame`, `:428-531`): mirror kinds
   `5`/`6`/`7` at the same tail position, gated by the same sets (pass them in), so
   `precise <= frame_sizes` continues to hold. Publish the returned
@@ -1174,6 +1183,9 @@ main-driver regression (it awaits `worker` and uses the return value).
     `resume_target[N]` → `loop_done_blk` **only** (the first-step false branch goes
     to `after_blk`); save/reload PARAM+LIVE **plus the `child` hidden field**, and
     assign the hidden parent `result` slot to the call's `result` temp on resume.
+    **Superseded by Task 6D5:** the parent-result→call-result-temp copy belongs in
+    **`after_blk`**, not `loop_done_blk` (M1), and slot `k` is per value-returning
+    await, not one slot.
   - Keep `@asyncSuspend` numbering; both kinds drive the state counter.
 
 **Await skeleton (Q1 steps 1–10, review-corrected).** At the original
@@ -1193,7 +1205,8 @@ optional); (9) `loop_done_blk` (**resume_target[N] and only the resume target**)
 parent `result` slot into the call's `result` temp; re-issue the child step
 (`r = call(g_step, [child, null])`; `hv = check_optional(r)`; `branch hv →
 yield_blk, after_blk`); (10) `after_blk`: continue the original block after the
-`call_direct`. **The first-step false branch targets `after_blk`, not
+`call_direct`. **Superseded by Task 6D5** (per-await slots + M1): the parent-result
+slot copy moves to `after_blk` and is indexed per value-returning await. **The first-step false branch targets `after_blk`, not
 `loop_done_blk`:** the terminal block stores no state, so a fallthrough would
 restart the child at state 0 and re-run its body (double side effects).
 **0 new `LirInst`**; `call_direct`/`call`, `func_ref`, `ptr_to_int`/`int_to_ptr`,
@@ -1204,7 +1217,9 @@ restart the child at state 0 and re-run its body (double side effects).
 **D3 terminal result (Q3, review-corrected).** Child frame gains the hidden
 `result: *void` field (kind 6); at the await the parent writes
 `child[result_off] = (parent_frame + parent_result_off)` (the explicit hidden
-parent `result` slot, kind 7), or `null` for a void-returning target. P3 does
+parent `result` slot, kind 7), or `null` for a void-returning target. **Superseded
+by Task 6D5** (per-await slots): the pointer targets **that await's** slot
+`pr_off[k]`, not one caller-wide `parent_result_off`. P3 does
 **not** mark the awaited call's result temp live-across
 (`defResultTemp(.call_direct)` is the suspension instruction, so `hasDefBefore`
 never sees it), so D3 **must** reserve the explicit hidden parent `result` slot.
@@ -1254,7 +1269,13 @@ stores through that pointer; the caller copies **that** slot into **that** await
 `result` temp in `after_blk`. The new fixture `async_await_multi_xmod`
 (`a(): i32` then `b(): i64 = 5000000000`) compiles, links, runs rc=0, and prints
 both values with no truncation/panic; `async_await_xmod` / `async_await_ret_xmod`
-and the 5 existing async fixtures stay green.
+and the 5 existing async fixtures stay green. **Required acceptance (ordering
+coverage):** the fixture **must** also exercise the ordering/`k`-indexing paths
+that a flat pair does not — add **an interleaved void await** (e.g. `a() i32` →
+void `v()` → `b() i64`, exercising residual R8 plus `k` not advancing on the void
+await) **and/or a value-returning await in each branch of an `if`** (so branch and
+loop ordering, not just straight-line order, is exercised). These are required,
+not optional.
 
 **Ordering invariant (load-bearing).** P2/P3 assign the kind-7 slots in **program
 order**; P4 indexes them by the program-order count of value-returning awaits.
@@ -1264,6 +1285,16 @@ up holding the **first** await's type). Task 6D5 must collect value-returning
 awaits in **program order** (e.g. push children in reverse so the pop is source
 order, or collect then reverse) so P2's slot order equals P4's await order. P3
 mirrors P2 exactly.
+
+**Required machine check (P4 per-slot type assertion).** The invariant above is
+otherwise unverified, and a P2/P3-vs-P4 order mismatch is **silent corruption**:
+`emitAwait` `ptr_cast`s `frame + pr_off[k]` to the awaited callee's result type, so
+a slot of the wrong size/type corrupts adjacent frame memory with no diagnostic.
+Task 6D5 **must** add a cheap P4 assertion: for each `k`, the `k`-th value-returning
+implicit await's `CallDirectData.return_type` (`lir.zig:176`, the same predicate P2
+used) must **equal** `pr_ty[k]`; on mismatch emit an ICE (`ERR_9001_ICE`) rather
+than emitting a mis-typed store. This catches order swaps/desync between P2/P3 and
+P4 at compile time. State the assertion as a required acceptance gate.
 
 **Files.** Modify `sf/src/async_analysis.zig` (`scanImplicitAwaits`,
 `asyncFrameSizeRun`), `sf/src/async_frame_layout.zig` (`asyncLayoutFrame`),
@@ -1283,7 +1314,11 @@ wiring at `:655`/`:763`/`:873`). Create `repro/mi_matrix/async_await_multi_xmod`
    `async_hidden_fns` and init them in `main.zig` where those maps are initialized
    (`:266-270`); update the `CompilerContext` literal (`:297`) and the two
    consumer call sites, `asyncFrameSizeRun` (`:655`) and `asyncLayoutFrame`
-   (`:763`).
+   (`:763`). **Threading note:** the new list/start/count must be passed as
+   parameters through `scanImplicitAwaits`, `asyncFrameSizeRun`, and
+   `asyncLayoutFrame` (not merely stored in `CompilerContext`), so P2's scan, P2's
+   reservation, and P3's mirror all read the **same** ordered per-caller list; this
+   threading is implied by steps 2–4 and must land in this task.
 2. **P2 scan (`scanImplicitAwaits`, `async_analysis.zig:399-452`).** Keep the
    `awaited_fns` put and hidden bit 1 (`:418-420`) and the value-returning hidden
    bit 2 (`:423-426`). Replace the single `parent_types` put (`:425`) with: append
@@ -1314,11 +1349,24 @@ wiring at `:655`/`:763`/`:873`). Create `repro/mi_matrix/async_await_multi_xmod`
    for a value-returning callee (`cd.return_type != void`), else `null`; (b) the
    `after_blk` copy (`:497-503`) loads `pr_off[k]`/`pr_ty[k]` and assigns it to
    `cd.result + base`. `loop_done_blk` keeps re-driving the child only (M1).
+   **Per-await gate (required).** BOTH the child `result`-pointer store (6a) AND
+   the `after_blk` parent-result→call-result-temp copy (6b) are emitted **only for
+   a value-returning await** (`cd.return_type != void`); a **void** await must
+   **not** read `pr_off[k]` (it has no slot, and `k` does not advance). The current
+   code gates the copy on the **global** `b.parent_result_present`; the per-await
+   k-scheme **requires a per-await gate** at each `emitAwait`, because a caller can
+   have both void and value-returning awaits and the global flag cannot distinguish
+   them.
 7. **Fixture `repro/mi_matrix/async_await_multi_xmod`.** Mirror
    `async_await_ret_xmod`'s non-suspending `main` driver; add `a() i32` and
    `b() i64` value-returning suspending callees, await `a` then `b` in that order,
    and self-check both results (print/assert `a` and `b == 5000000000`). The second
    await must not be read through the first slot's type/size (no truncation).
+   **Also required:** include an **interleaved void await** (`a` → void `v` → `b`,
+   exercising R8 and `k` not advancing) **and/or a value-returning await in each
+   branch of an `if`** so branch/loop ordering is covered; assert each value.
+   Add a compile-time **P4 per-slot type assertion** check (see the required machine
+   check above) so a slot/order desync fails closed with an ICE.
 8. **Frame-size churn.** Only callers with **≥2 value-returning implicit awaits**
    gain extra kind-7 slots (one per additional await) and change size/marker.
    Zero- and single-value-await callers are byte-identical to Amendment 9:
@@ -1327,9 +1375,13 @@ wiring at `:655`/`:763`/`:873`). Create `repro/mi_matrix/async_await_multi_xmod`
    size/marker.
 
 **Acceptance gates (all under `timeout 120`, seed path per Amendment 2).**
-`async_await_multi_xmod` dumps rc=0 / gcc `-m32 -std=c89 -O0 -Wall … -I $OUT -c`
-clean / self-contained link / run rc=0 printing both values (no panic, no
-truncation); `async_await_xmod`, `async_await_ret_xmod`, `async_frame_xmod`
+`async_await_multi_xmod` (including the **interleaved void await** and/or
+**per-`if`-branch value-returning await** coverage) dumps rc=0 / gcc `-m32 -std=c89
+-O0 -Wall … -I $OUT -c` clean / self-contained link / run rc=0 printing all values
+(no panic, no truncation); the **P4 per-slot type assertion** (`CallDirectData.return_type
+== pr_ty[k]` per `k`, else ICE `ERR_9001_ICE`) is present and exercised by a
+deliberately-order-sensitive fixture; `async_await_xmod`, `async_await_ret_xmod`,
+`async_frame_xmod`
 (Task-5a `Expected==20`, Task-5c `LAYOUT:m0:n22:s20`), `async_suspend_store_xmod`,
 `async_frame_branch_xmod`, `async_frame_args_xmod` stay green;
 `async_callgraph_xmod` / `async_builtin_scope_xmod` /
@@ -1844,12 +1896,46 @@ rotated**; `repro/mi_matrix/EXPECTED_FAIL.md` unchanged.
 items 7/8 + tail paragraph), §3.3 (`loop_done_blk`/`after_blk` + per-await slot
 text), §4 (`AsyncFrameField` kind-7 comment), §6 (Amendment-10 pinned values);
 `async-compiler-core-plan.md` new **Task 6D5** (before Task 6D2) and Task 6D2
-re-ordered after 6D5 (Task 6D4 stays independent).
+re-ordered after 6D5 (Task 6D4 stays independent). **Follow-up:** the
+review-fix follow-up below (P4 per-slot type assertion, per-await gating,
+Task-6D1D3 superseded markers, threading note) refines **Task 6D5** in place and
+does not change the ruling or mechanism.
 
 **Pinned-value churn.** Only callers with **≥2 value-returning implicit awaits**
 gain extra kind-7 slots and move; zero/single-value-await callers are unchanged
 (`async_frame_xmod` `worker` stays **20**; Task-5c stays **`LAYOUT:m0:n22:s20`**).
 The new `async_await_multi_xmod` pins its own size/marker in Task 6D5.
+
+### Amendment 10 — review-fix follow-up
+
+A task review of Amendment 10 returned **Needs fixes** (2 Important + 3 Minor).
+Applied, docs-only, all within **Task 6D5** plus one spec-wording line:
+
+1. **(Important) P4 ordering check + coverage.** Added the **required machine
+   check** that P4 asserts, per `k`, `CallDirectData.return_type == pr_ty[k]`
+   (else ICE `ERR_9001_ICE`), because a P2/P3-vs-P4 order mismatch is silent
+   corruption (`emitAwait` `ptr_cast`s `frame + pr_off[k]`). Extended the required
+   `async_await_multi_xmod` acceptance to include an **interleaved void await**
+   (R8 + `k` indexing) and/or a **value-returning await in each `if` branch**
+   (branch/loop ordering).
+2. **(Important) Per-await gating of the `after_blk` copy.** Stated explicitly in
+   Task 6D5 step 6 that **both** the child `result`-pointer store (6a) **and** the
+   `after_blk` parent-result→call-result-temp copy (6b) are emitted **only for
+   value-returning awaits**; a void await must not read `pr_off[k]`. The old global
+   `b.parent_result_present` gate is insufficient under the k-scheme; a per-await
+   gate is required.
+3. **(Minor) Task 6D1D3 superseded markers.** Added a **Superseded by Task 6D5**
+   (per-await slots) marker at the Task 6D1D3 body and inline at each remaining
+   single-slot / `loop_done_blk`-copy mention.
+4. **(Minor) Spec §3.2 item 8 phrasing.** Changed `(on resume/after_blk)` to
+   `(in after_blk)` to match M1.
+5. **(Minor) Task 6D5 step 1 threading note.** Noted explicitly that the new
+   list/start/count are threaded through `scanImplicitAwaits` /
+   `asyncFrameSizeRun` / `asyncLayoutFrame` parameters (implied by steps 2–4).
+
+None of these change the Amendment-10 operator ruling or mechanism; they pin the
+ordering invariant, gate, and fixture coverage that the Amendment-10 Task 6D5
+already implied.
 
 ## Amendable note
 
