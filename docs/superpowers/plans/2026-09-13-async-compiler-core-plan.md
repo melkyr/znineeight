@@ -553,7 +553,7 @@ git commit -m "feat: ERR_3017 ban on suspending function pointers (ASYNCTRACK2)"
 
 ---
 
-### Task 5: Stage 2 — LIR frame layout, authoritative frame-size table, real `@asyncFrameSize`
+### Task 5: Stage 2 — LIR frame layout, authoritative frame-size table, real `@asyncFrameSize` (SPLIT — superseded by Tasks 5a/5b/5c below)
 
 **Files:**
 - Create: `sf/src/async_frame_layout.zig`
@@ -676,6 +676,150 @@ Expected GREEN: dump rc=0; no `GCCFAIL`; `run rc=0` (no `@panic`); `1` `error[30
 git add sf/src/async_frame_layout.zig sf/src/async_analysis.zig sf/src/lower.zig sf/src/semantic_analyzer.zig \
   repro/mi_matrix/async_frame_xmod repro/mi_matrix/async_framesize_invalid_xmod
 git commit -m "feat: Stage 2 LIR frame layout + authoritative @asyncFrameSize (ASYNCTRACK2)"
+```
+
+---
+
+### Task 5a: P2 async frame-size analysis + authoritative `@asyncFrameSize` value
+
+**Files:**
+- Modify: `sf/src/async_analysis.zig` (add `asyncFrameSizeRun`; leave `suspensionAnalysisRun` unchanged)
+- Modify: `sf/src/main.zig` (register `phase_AsyncFrameSize` immediately after `phase_SemanticAnalysis`, before `phase_LIRLowering`)
+- Modify: `sf/src/lower.zig` (`@asyncFrameSize` arm reads `self.ctx.frame_sizes`)
+- Test: `repro/mi_matrix/async_frame_xmod/main.zig`
+
+**Interfaces:**
+- Consumes: `ctx.suspending_fns` (P1); `ctx.resolved_types` (node→TypeId); `ctx.typereg`; AST; `ctx.frame_sizes` (module arena).
+- Produces: `frame_sizes` populated (sole writer); `FRAME:m<mid>:n<nid>:s<bytes>` markers; real `@asyncFrameSize` `u32`.
+
+- [ ] **Step 1: Create the failing fixture**
+
+Create `repro/mi_matrix/async_frame_xmod/main.zig`:
+
+```zig
+fn worker(x: i32) i32 {
+    var y: i32 = x;
+    @asyncSuspend(null);
+    y = y + 1;
+    return y;
+}
+
+fn plain() i32 {
+    return 7;
+}
+
+const Expected = struct {
+    ctx: *void,
+    state: u8,
+    x: i32,
+    y: i32,
+};
+
+pub fn main() void {
+    var got: u32 = @asyncFrameSize(worker);
+    var want: u32 = @sizeOf(Expected);
+    if (got != want) {
+        @panic("frame size mismatch");
+    }
+}
+```
+
+- [ ] **Step 2: Run to verify it fails (RED)**
+
+Build the measurement compiler via the seed path (Amendment 2): `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/zt2/t5a`; `MC=/tmp/zt2/t5a/hop2/zig1_hop2`. Dump `async_frame_xmod` to a fresh dir, compile every `DIR/*.c` with the binding flags and `-I "$DIR"`, link `gcc -m32 -std=c89 -O0 -I "$DIR" "$DIR"/*.c -o /tmp/zt2/t5a/frame` (the dump is self-contained; do NOT add the repo runtime trio), then run it → the program traps `panic: frame size mismatch` (placeholder value `0`).
+
+- [ ] **Step 3: Implement P2 `asyncFrameSizeRun` + wire `@asyncFrameSize`**
+
+In `sf/src/async_analysis.zig` add `asyncFrameSizeRun` (conservative rule (a), Amendment 4): for each function in `suspending_fns`, fields = field 0 `ctx` (`*void`), field 1 `state` (`u8`), then every parameter and every named local declared before the function's first suspension; size by natural layout (align each field to its type's alignment via `ctx.typereg`, accumulate, tail-pad to the max alignment) using `ctx.resolved_types` for the node→TypeId map. Write `ctx.frame_sizes[async_analysis.asyncKey(module_id, name_id)] = size`; emit `pal.markerWrite("FRAME:m<mid>:n<nid>:s<bytes>\n")`. Register `phase_AsyncFrameSize` in `main.zig` (after `phase_SemanticAnalysis`, before `phase_LIRLowering`).
+
+In `sf/src/lower.zig`, replace the Task-2 placeholder `@asyncFrameSize` arm with the Task-5 Step-3 body: temp `TYPE_INT_LIT`; `async_analysis.asyncFrameSizeOf(self.ctx.frame_sizes, as.module_id, as.name_id)` → `int_const`.
+
+- [ ] **Step 4: Run to verify it passes (GREEN)**
+
+Rebuild `MC` from the seed path. Dump+gcc+link+run `async_frame_xmod` → `run rc=0` (no `@panic`; `got == @sizeOf(Expected) == 16`; natural offsets `ctx` 0 / `state` 4 / `x` 8 / `y` 12, size 16).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add sf/src/async_analysis.zig sf/src/main.zig sf/src/lower.zig repro/mi_matrix/async_frame_xmod
+git commit -m "feat: P2 async frame-size analysis + authoritative @asyncFrameSize (ASYNCTRACK2)"
+```
+
+---
+
+### Task 5b: `ERR_3046` for invalid `@asyncFrameSize`
+
+**Files:**
+- Modify: `sf/src/semantic_analyzer.zig` (`ERR_3046` in the `@asyncFrameSize` arm)
+- Test: `repro/mi_matrix/async_framesize_invalid_xmod/main.zig`
+
+**Interfaces:**
+- Consumes: `ERR_3046_ASYNC_FRAME_SIZE_INVALID` (already in `diagnostics.zig`), `suspending_fns`.
+- Produces: `error[3046]` for a non-suspending/unresolvable argument; result stays `TYPE_INT_LIT`.
+
+- [ ] **Step 1: Create the failing fixture**
+
+Create `repro/mi_matrix/async_framesize_invalid_xmod/main.zig`:
+
+```zig
+fn plain() void {
+}
+
+pub fn main() void {
+    var s: u32 = @asyncFrameSize(plain);
+    _ = s;
+}
+```
+
+- [ ] **Step 2: Run to verify it fails (RED)**
+
+Dump the fixture → `0` occurrences of `error[3046]`.
+
+- [ ] **Step 3: Implement the diagnostic**
+
+In sema's `@asyncFrameSize` arm, resolve the argument to a function symbol; if it is not a known suspending function (or unresolvable), emit `error[3046]` and set `result = TYPE_INT_LIT` so lowering still runs.
+
+- [ ] **Step 4: Run to verify it passes (GREEN)**
+
+Dump the fixture → `rc=2`, exactly `1` `error[3046]`, `0` `.c` files.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add sf/src/semantic_analyzer.zig repro/mi_matrix/async_framesize_invalid_xmod
+git commit -m "feat: ERR_3046 for @asyncFrameSize on non-suspending function (ASYNCTRACK2)"
+```
+
+---
+
+### Task 5c: P3 Stage-2 LIR frame-layout reader (`async_frame_layout.zig`)
+
+**Files:**
+- Create: `sf/src/async_frame_layout.zig`
+- Modify: `sf/src/main.zig` (invoke the layout for each suspending function's LIR after lowering, before `lirStreamAppend`)
+- Test: `repro/mi_matrix/async_frame_xmod/main.zig` (no regression)
+
+**Interfaces:**
+- Consumes: `LirFunction` (`lir.zig:494-513`), `frame_sizes`, `ctx.typereg`; the `lir_opt_pass` Ctx locator pattern (`rc`/`wc`/`df_bb`/`df_ii`/`rd_bb`/`rd_ii`).
+- Produces: `AsyncFrameLayout`, `AsyncFrameField`, `asyncLayoutFrame` (backend-agnostic; NO `c89_*` calls).
+
+- [ ] **Step 1: Implement the layout reader**
+
+Create `sf/src/async_frame_layout.zig`: compute the precise live-across set on LIR (values defined before a suspension and read after it) using the `lir_opt_pass` locator pattern; build `AsyncFrameLayout{ fields, layout_size }` with field order `ctx`, `state`, params, then live-across temps; require `layout_size <= frame_sizes[key]` (ICE if exceeded) and pad to `frame_sizes[key]`. Emit `pal.markerWrite("LAYOUT:m<mid>:n<nid>:s<layout_size>\n")`.
+
+- [ ] **Step 2: Invoke it**
+
+Call the layout for each function whose `(module_id,name_id)` is in `suspending_fns` from `main.zig` in `phase_LIRLowering` (after lowering, before `lirStreamAppend`).
+
+- [ ] **Step 3: Gate**
+
+Temporary markers-enabled build (Amendment 3 recipe: uncommitted `g_markers_debug=1`, revert before commit) → `LAYOUT:m0:n<worker>:s16`; normal build keeps `async_frame_xmod` GREEN (`run rc=0`).
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add sf/src/async_frame_layout.zig sf/src/main.zig
+git commit -m "feat: P3 Stage-2 LIR frame layout reader (ASYNCTRACK2)"
 ```
 
 ---
@@ -1029,6 +1173,16 @@ Operator rulings (m1404/m1406/m1409):
    - **P3 Stage-2 LIR layout** (in `async_frame_layout.zig`, run with the Stage-3 transform in `phase_LIRLowering` between `lowerFn` and `lirStreamAppend`): precise live-across set on LIR; asserts `layout_size <= frame_sizes[key]`; pads to it; reader only.
 2. **Backend-agnostic mandate.** All async lowering runs on LIR and MUST NOT call any emitter (`c89_*`) function. Synthesized names (frame type, `__async_step_<f>`) are registered via the string interner / `TypeRegistry` (backend-neutral); the emitter mangles names generically at emission. This removes Task 6's reference to `nameManglerMangle (c89_emit.zig:455)` from the LIR transform.
 3. **Module split (clarity for this advanced machinery).** The single `async_lowering.zig` is replaced by two backend-agnostic modules: `sf/src/async_frame_layout.zig` (Stage-2 metadata) and `sf/src/async_state_machine.zig` (Stage-3 LIR-to-LIR transform). All Task 5/6/7 Files and git-add references were updated (Task 5 creates `async_frame_layout.zig`; Tasks 6/7 create/modify `async_state_machine.zig`).
+
+## Amendment 5 (2026-09-14) — Task 5 split into Tasks 5a/5b/5c (operator directive)
+
+Operator directed splitting Task 5 into three independently reviewable subtasks to avoid scope creep. Task 5 as written is superseded by the three task bodies inserted before Task 6. Mapping:
+
+1. **Task 5a** — P2 `asyncFrameSizeRun` (sole writer of `frame_sizes`) + authoritative `@asyncFrameSize` value (real `int_const`).
+2. **Task 5b** — `ERR_3046` validation for `@asyncFrameSize` on a non-suspending/invalid function.
+3. **Task 5c** — P3 Stage-2 LIR frame-layout reader (`sf/src/async_frame_layout.zig`).
+
+Binding: Amendment 2's seed-path build/evidence rules apply to all three; the backend-agnostic mandate (Amendment 4) binds all three (no `c89_*` calls from async machinery). P1 is unchanged; P2 is the only writer of `frame_sizes`; P3 only reads, asserts `layout_size <= frame_sizes[key]`, and pads.
 
 ## Amendable note
 
