@@ -5,7 +5,7 @@
 **Every subagent doing build/compile/run/gate work MUST read this section first.** These are the
 exact, verified commands. Do not improvise flags or rediscover linking — copy these.
 
-> **C89-AHEAD (2026-09-10):** runtime safety is now `-fsafe` by **default** (six runtime checks — cast / div-mod / shift / null-unwrap / index-OOB / integer-overflow — plus `undefined` `0xAA` poison); `-ffast` disables them. `unreachable`/`@panic` trap in **both** modes (`@panic` prints `panic: <msg>` to **stderr**). `std.arena.alloc` is `ArenaError![*]u8` — use `try`/`catch`, never `orelse` (`error[3016]`). Landed fixed point `1467d932a876402f40a56316dfcad0e5`; seed **v10** is rotated (`release/seed/zig1-seed.tgz`, archive md5 `ca18fc9f9af55d58147fcb7ff7a662b6`).
+> **C89-AHEAD (2026-09-10):** runtime safety is now `-fsafe` by **default** (six runtime checks — cast / div-mod / shift / null-unwrap / index-OOB / integer-overflow — plus `undefined` `0xAA` poison); `-ffast` disables them. `unreachable`/`@panic` trap in **both** modes (`@panic` prints `panic: <msg>` to **stderr**). `std.arena.alloc` is `ArenaError![*]u8` — use `try`/`catch`, never `orelse` (`error[3016]`). Landed fixed point `1467d932a876402f40a56316dfcad0e5` (superseded by the calling-convention closeout fixed point `cd2259dde73d3a8bc22b25280459edc2`); seed **v11** is rotated (`release/seed/zig1-seed.tgz`, archive md5 `62d8bd40cefd5d604b1c66a80ac0749d`). See the **Calling convention** section below.
 
 ### Build zig1 (the compiler under test)
 ```bash
@@ -27,9 +27,9 @@ bash sf/scripts/build_release.sh
 **Seed location + contents:** the committed rotating seed is
 `release/seed/zig1-seed.tgz` (git-tracked; provenance + rotation history in
 `release/seed/CHANGELOG.md`, full recipes in `release/seed/SEED_README.txt`).
-Current seed is **seed v10** (archive md5 `ca18fc9f9af55d58147fcb7ff7a662b6`).
+Current seed is **seed v11** (archive md5 `62d8bd40cefd5d604b1c66a80ac0749d`).
 Top-level `zig1-seed/`: `zig1` (reference binary md5
-`1467d932a876402f40a56316dfcad0e5`), `gen/` (its self-emission C89 module set —
+`cd2259dde73d3a8bc22b25280459edc2`), `gen/` (its self-emission C89 module set —
 42 `.c` + 43 `.h`, including `zig_special_types.h`; the emitted runtime/support
 sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/` (the emitted 5:
 `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`, `zig_runtime.c`,
@@ -37,8 +37,8 @@ sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/` (the emitted 5:
 `std_arena`, `std_net`, `std_str`, `std_mem`, `std_math`, `std_debug`),
 `SEED_README.txt`.
 The archived binary and the self-emission fixed point
-`1467d932a876402f40a56316dfcad0e5` are the SAME compiler state (HEAD
-`ab2589e6`). zig0 is retired; the seed model (`scripts/seed/build_from_seed.sh`)
+`cd2259dde73d3a8bc22b25280459edc2` are the SAME compiler state (HEAD
+`8c48e5d5`). zig0 is retired; the seed model (`scripts/seed/build_from_seed.sh`)
 is the only rebuild path.
 **C89-AHEAD note (2026-09-13):** `runtime/` now carries the compiler's **emitted,
 mode-specific** support (the `-ffast` self-emission support), not the canonical
@@ -51,8 +51,8 @@ cd /workspace/znineeight
 bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out_dir>
 ```
 - GATE: `=== [seed] Done: <out_dir> ===`; result `<out_dir>/zig1_5_clean` md5 MUST equal the recorded
-  fixed point `1467d932a876402f40a56316dfcad0e5` (hop1 == hop2 closure). Set
-  `FIXED_POINT_MD5=1467d932a876402f40a56316dfcad0e5` to gate on it explicitly.
+  fixed point `cd2259dde73d3a8bc22b25280459edc2` (hop1 == hop2 closure). Set
+  `FIXED_POINT_MD5=cd2259dde73d3a8bc22b25280459edc2` to gate on it explicitly.
 - The dump MUST run from the repo root with the RELATIVE `sf/src/main.zig` path (module basename-hash
   tokens are path-derived). `<out_dir>` MUST be a fresh dir (the script `rm -rf`s it) — never point it
   at `/tmp/fx_subfolder` (the reference compiler lives there).
@@ -62,7 +62,7 @@ bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out_dir>
 **Rebuild recipe 2 (seed binary lost — rebuild from the seed's C only):** self-contained, no repo
 include path, no zig0: `gcc -c -I <seed>/runtime` over `gen/*.c`, link `<seed>/runtime/zig_runtime.c`
 + `<seed>/runtime/zig_pal.c` + `<seed>/c_exit.c`. Exact commands in `release/seed/SEED_README.txt`.
-Binary md5 MUST equal `1467d932…`.
+Binary md5 MUST equal `cd2259dd…`.
 
 **Flag-set rule (binding):** every `gcc -c` MUST be
 `gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc>`
@@ -74,6 +74,13 @@ self-emission fixed point, via
 `bash scripts/seed/archive_seed.sh <zig1_binary> <gen_dir> release/seed/zig1-seed.tgz --update-changelog`
 (gcc-rebuilds the archive C self-contained to the NEW fixed point + prepends the provenance entry to
 `release/seed/CHANGELOG.md`). The seed lives at `release/seed/` (tracked), never `/tmp`.
+### Calling convention (Win9x) — `extern "stdcall"` / `extern "cdecl"`  [added: 2026-09-14 — Track 1 closeout]
+
+- **Surface:** a calling convention may be written on an extern fn declaration and on a function-pointer type — `extern "stdcall" fn(...) T`, `extern "cdecl" fn(...) T`, `extern "c" fn(...) T`; a bare `fn(...) T` is default cdecl. Accepted names: `"c"`/`"cdecl"` → cdecl (byte-identical to no string), `"stdcall"` → stdcall. Unknown → `error[3045]`; variadic `stdcall` → `error[3012]`; assigning a cross-convention fn-pointer → `error[3000]` (all clean: rc=2, 0 `.c`).
+- **`Z98_STDCALL` macro** (emitted in `zig_compat.h`; canonical source `sf/src/include/zig_compat.h` + hand-written bytes in `sf/src/emit_support.zig`): `__attribute__((stdcall))` on Win32 gcc, `__stdcall` on MSVC/Watcom, **empty on non-Windows** — so linux default-cdecl emission is byte-identical.
+- **Option-B use-site-cast rule (operator ruling; SUPERSEDES the earlier forced-prototype rule):** do **NOT** emit a second convention-bearing prototype for a convention extern. The C header remains the **sole declaration source** (this is what lets `std_net` use the real `<winsock.h>`/`windows.h` prototypes without conflict). The convention rides on the fn type/LIR and is applied **at the use site** as a cast to the convention-qualified `FS_…` fn-pointer typedef in `zig_special_types.h`: `((zT_…_FS_…)MessageBoxA)(...)`. `typeRegistryGetOrCreateFn` marks the stdcall fn type used so the `FS_…` typedef is emitted. Standalone (non-header-covered) stdcall fixtures are **emission-inspection only** — the cast names the extern symbol, whose declaration is the C header's responsibility.
+- **`std_net` Win32 externs** are migrated to `extern "stdcall"` (all 15 in `sf/src/std_net.zig`). The migration changes every `std`-importing program's dump (the re-export pulls `std_net` in), so the 4-MD5 gate table moved in both `-fsafe` and `-ffast` modes.
+
 
 ### Compile + RUN a program (repro or example) with zig1  — VERIFIED RECIPE
 ```bash
@@ -444,14 +451,16 @@ sf/build/out_release/zig1 --dump-c89 <ENTRY> > /tmp/new.c
 diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prior gate baseline)
 ```
 
-**C89-AHEAD re-baseline (2026-09-13, HEAD `ab2589e6`):** the gate table is now the **default `-fsafe`** emission (the emission default since C89-AHEAD); the pre-C89-AHEAD `-ffast` rows are kept in-line as the byte anchor. Both row sets reproduce the A12 record exactly; runtime-identical.
+**Win9x calling-convention re-baseline (2026-09-14, Track 1 closeout, HEAD `8c48e5d5`):** the Task-4 `std_net` → `extern "stdcall"` migration changes every gate program's dump (each `@import("std")` re-exports `std_net`, so the emitted set gains `FS_…` typedefs + use-site casts). Unlike the C89-AHEAD split, BOTH the default `-fsafe` rows AND the `-ffast` byte-anchor rows moved and are re-baselined to the new fixed-point compiler `cd2259dd…` (repo-root CWD, stdout-only, dump rc=0 each; deterministic 2×). Runtime output is unchanged (mud verified byte-identical).
 
-| Entry Path | Reference md5 (default `-fsafe`) | `-ffast` byte-anchor (pre-C89-AHEAD) |
+| Entry Path | Reference md5 (default `-fsafe`) | `-ffast` byte-anchor |
 |---|---|---|
-| `examples/z98/mud_server/main.zig` | `5f05df6eb34986a4571e2ae8852887bf` | `c0a2d6773b207e94e1952c2880aa7b0e` |
-| `examples/z98/game_of_life/main.zig` | `1eed772387ae63205e93e207dae6af52` | `a5b49350583ed79edfc7cce9eb4a6e29` |
-| `examples/z98/lisp_interpreter_curr/main.zig` | `6f2267711a61a117ad6aa4a92aced4e9` | `8385ab02cb3094c4f8cb48cf010049d9` |
-| `examples/z98/json_parser/main.zig` | `ccdcb6ef4b7af5be1193a89f34db5143` | `265fa6a8fc752a62b33fea169b24953e` |
+| `examples/z98/mud_server/main.zig` | `07ec234e3f0214e2eb01aabad1676e0a` | `ac1579907ce84efa2f9014187070bf94` |
+| `examples/z98/game_of_life/main.zig` | `e6afce418718f4adf2525956e17f6bc9` | `e023d3cd0bfb23346ac800725c5192f1` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `a3ba58098357164d644d321015550874` | `21747e2acf177947ad499149bb3fdc98` |
+| `examples/z98/json_parser/main.zig` | `99514d39dcbfddd297ccd12e15a0cb78` | `2f08bf260bf2b6813fa4d70ffbc88aa9` |
+
+- **All-four 4-MD5 re-baseline (2026-09-14, Track 1 calling-convention closeout, HEAD `8c48e5d5`; PRIMARY closeout gate):** Task 4 migrated all 15 `std_net` Win32 externs to `extern "stdcall"`; because `std.zig` re-exports `std_net` unconditionally, every gate program emits it and gains the `FS_…` typedefs + use-site casts, moving all four dumps in **both** modes. Rows re-dumped with the fixed-point compiler `cd2259dd…` (repo-root CWD, stdout-only, dump rc=0 each; deterministic 2×). old→new — `-fsafe`: gol `1eed772387ae63205e93e207dae6af52` → `e6afce418718f4adf2525956e17f6bc9`, lisp `6f2267711a61a117ad6aa4a92aced4e9` → `a3ba58098357164d644d321015550874`, json `ccdcb6ef4b7af5be1193a89f34db5143` → `99514d39dcbfddd297ccd12e15a0cb78`, mud `5f05df6eb34986a4571e2ae8852887bf` → `07ec234e3f0214e2eb01aabad1676e0a`; `-ffast`: gol `a5b49350583ed79edfc7cce9eb4a6e29` → `e023d3cd0bfb23346ac800725c5192f1`, lisp `8385ab02cb3094c4f8cb48cf010049d9` → `21747e2acf177947ad499149bb3fdc98`, json `265fa6a8fc752a62b33fea169b24953e` → `2f08bf260bf2b6813fa4d70ffbc88aa9`, mud `c0a2d6773b207e94e1952c2880aa7b0e` → `ac1579907ce84efa2f9014187070bf94`.
 
 - **All-four 4-MD5 re-baseline (2026-09-13, C89-AHEAD, HEAD `ab2589e6`; operator-approved at A12 STOP):** the C89-AHEAD feature set changes every gate program's emitted C and adds the `-fsafe`/`-ffast` split, so the table is re-baselined to the **default `-fsafe`** rows with the pre-C89-AHEAD `-ffast` rows recorded as the byte anchor. Rows dumped with the fixed-point compiler `1467d932…` (repo-root CWD, stdout-only, dump rc=0 each); runtime-identical to the STDLIB-era capture. `-fsafe`: gol `1eed772387ae63205e93e207dae6af52`, lisp `6f2267711a61a117ad6aa4a92aced4e9`, json `ccdcb6ef4b7af5be1193a89f34db5143`, mud `5f05df6eb34986a4571e2ae8852887bf`. `-ffast` byte-anchor: gol `a5b49350583ed79edfc7cce9eb4a6e29`, lisp `8385ab02cb3094c4f8cb48cf010049d9`, json `265fa6a8fc752a62b33fea169b24953e`, mud `c0a2d6773b207e94e1952c2880aa7b0e`.
 

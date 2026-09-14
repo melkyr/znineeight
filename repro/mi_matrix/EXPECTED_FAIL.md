@@ -1,4 +1,64 @@
-# mi_matrix corpus — expected-fail manifest (v77 2026-09-13)
+# mi_matrix corpus — expected-fail manifest (v78 2026-09-14)
+
+## Win9x calling-convention prelude GREEN/reject + corpus re-baseline (v78 2026-09-14)
+
+Plan `2026-09-13-win9x-calling-convention-plan.md` (Track 1) is COMPLETE (Tasks 1–4 + closeout).
+Measurement compiler = the N-hop closure binary `cd2259dde73d3a8bc22b25280459edc2` (`-ffast`), rebuilt from the
+committed seed **v10** `1467d932a876402f40a56316dfcad0e5` (this plan moved the fixed point; the new committed seed is
+**v11**), canonical 8-file `lib/` installed alongside the hop2 binary. Corpus `-s0` universe **579 dirs**
+(`scripts/corpus/list_corpus_dirs.sh`) = **545 OK / 32 GREEN / 2 emission-inspection (expected standalone gcc-FAIL)**.
+Vs the committed v77 baseline (570 = 541 OK / 29 GREEN / 0 FAIL) the **570 common dirs are class-identical — zero
+asymmetric movement**; the 9 new `callconv_*` dirs contribute 4 OK + 3 GREEN + 2 emission-inspection FAIL. The
+classifier resolves each dir's entry (`<dir>/main.zig`, else `<base>.zig`) and treats a frontend `error[NNNN]` with 0
+`.c` as GREEN; "OK" requires every emitted `.c` to `gcc -c` clean.
+
+### New GREEN/reject fixtures (v78)
+
+| fixture | class | expected diagnostic |
+|---|---|---|
+| `callconv_unknown_green_xmod` | GREEN | `error[3045]` unknown calling convention |
+| `callconv_fnptr_mismatch_green_xmod` | GREEN | `error[3000]` cross-convention fn-pointer assignment |
+| `callconv_stdcall_variadic_green_xmod` | GREEN | `error[3012]` variadic `stdcall` |
+
+All three classify `dump rc=2`, **0 `.c`**, the expected diagnostic (verified 2026-09-14 on `cd2259dd…`).
+
+### New emission-inspection fixtures (v78, EXPECTED standalone gcc-FAIL — not compiler gaps)
+
+Under the Option-B ruling (plan Amendment 4) a convention-bearing extern gets **no** emitted `Z98_STDCALL` prototype —
+the C header is the sole declaration source — so a fixture that takes the **address of a convention extern** emits a
+reference to a symbol no emitted header declares. These two fixtures are emission-inspection only (their own comments
+say so): `dump rc=0`, 4 `.c` (incl. the self-contained runtime support), but the emitted `main_*.c` fails `gcc -c` with
+`… undeclared`. They are EXPECTED to fail the standalone gcc corpus check and are documented here deliberately (the
+brief's "7 fixtures → 4 OK / 3 GREEN" expectation predates Task 3R's Option-B revert, which made standalone
+non-header-covered convention fixtures emission-inspection only):
+
+| fixture | dump | gcc | reason |
+|---|---|---|---|
+| `callconv_cdecl_fnptr_xmod` | rc=0, 4 `.c` | FAIL | extern-as-value emitted with the MANGLED name `zF_…_z98_cdecl_probe`; no C declaration (default-cdecl byte-identity regression fixture) |
+| `callconv_stdcall_fnptr_xmod` | rc=0, 4 `.c` | FAIL | extern-as-value emitted as `((FS_…)z98_stdcall_probe)`; no C declaration (declaration is the C header's responsibility per the ruling) |
+
+The remaining new `callconv_*` dirs classify OK: `callconv_default_cdecl_xmod`, `callconv_explicit_cdecl_xmod`,
+`callconv_stdcall_decl_xmod` (`@isWindows()`-pruned on `-osl`, so the call is eliminated), `callconv_mixed_fnptr_typedef_xmod`.
+
+### Re-baselined 4-MD5 gate rows + fixed point (v78)
+
+ALL FOUR rows moved in BOTH modes (Task 4 migrated all 15 `std_net` Win32 externs to `extern "stdcall"`; every gate
+program re-exports `std_net`, so each dump gains the `FS_…` typedefs + use-site casts). Deterministic 2×; runtime
+output unchanged (mud verified byte-identical).
+
+| program | default `-fsafe` | `-ffast` byte-anchor |
+|---|---|---|
+| `examples/z98/game_of_life/main.zig` | `e6afce418718f4adf2525956e17f6bc9` | `e023d3cd0bfb23346ac800725c5192f1` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `a3ba58098357164d644d321015550874` | `21747e2acf177947ad499149bb3fdc98` |
+| `examples/z98/json_parser/main.zig` | `99514d39dcbfddd297ccd12e15a0cb78` | `2f08bf260bf2b6813fa4d70ffbc88aa9` |
+| `examples/z98/mud_server/main.zig` | `07ec234e3f0214e2eb01aabad1676e0a` | `ac1579907ce84efa2f9014187070bf94` |
+
+- **Fixed point `cd2259dde73d3a8bc22b25280459edc2`** (the `-ffast` binary; two-hop closure from the committed seed v10
+  `1467d932…` → hop1==hop2==`cd2259dd…`). Seed rotated **v10 → v11** via `scripts/seed/archive_seed.sh` → archive md5
+  `62d8bd40cefd5d604b1c66a80ac0749d`, internal `zig1` md5 `cd2259dd…`, `gen/` 42 `.c` + 43 `.h`; post-rotation
+  `build_from_seed.sh` closure hop1==hop2==`cd2259dd…`; `check_emit_support.sh` 5/5; `-osw net_bind_startup_xmod`
+  mingw `-c` rc=0 (needs `-I <dump>` for the emitted `net_prelude.h`).
+
 
 ## C89-AHEAD features GREEN/reject + `safe_*` trap contract (v77 2026-09-13)
 
