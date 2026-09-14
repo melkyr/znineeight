@@ -1,4 +1,43 @@
-# mi_matrix corpus — expected-fail manifest (v78 2026-09-14)
+# mi_matrix corpus — expected-fail manifest (v79 2026-09-14)
+
+## Win9x calling-convention final-review fix (v79 2026-09-14)
+
+Plan `2026-09-13-win9x-calling-convention-plan.md` (Track 1) final whole-branch review **Important**
+finding fixed (plan Amendment 7): `sf/src/semantic_analyzer.zig:481/:491/:497` built the fn type for a
+**non-pub** cross-module `extern "stdcall"` value with convention 0 (cdecl) while lowering carried
+stdcall, so `var s: CbS = lib.cc_std;` (with `CbS = extern "stdcall" fn(i32) i32`) raised a false
+`error[3000]` and the same value was silently accepted by the cdecl pointer. All six
+`typeRegistryGetOrCreateFn` sites now pass `proto.call_conv`. New regression fixture
+`callconv_nonpub_stdcall_xmod` (non-pub stdcall + pub cdecl, each assigned to its matching
+fn-pointer type). Measurement compiler = the N-hop closure binary **`b2eda4a50806962db5e0f90625a7da73`**
+(`-ffast`, rebuilt from the committed seed v11 `62d8bd40…`; the new committed seed is **v12**).
+Corpus `-s0` universe **580 dirs** = **545 OK / 32 GREEN / 3 emission-inspection (expected standalone
+gcc-FAIL)**. A per-dir diff against the same classifier run on the pre-fix compiler `cd2259dd…` is
+**exactly one row** (the new fixture: GREEN `error[3000]`/0 `.c` → emission-inspection FAIL); the 579
+committed dirs are class-identical (**zero unexpected asymmetric movement**). All eight 4-MD5 gate rows
+(default `-fsafe` + `-ffast`) are **UNCHANGED** from v78 and deterministic 2×.
+
+### New emission-inspection fixture (v79, EXPECTED standalone gcc-FAIL — not a compiler gap)
+
+Under the Option-B ruling (plan Amendment 4) a convention-bearing extern gets **no** emitted
+`Z98_STDCALL` prototype — the C header is the sole declaration source — so a fixture that takes the
+**address of a convention extern** emits a reference to a symbol no emitted header declares. This
+fixture is emission-inspection only: `dump rc=0`, 5 `.c`, but the emitted `main_*.c` fails `gcc -c`
+with `… undeclared`.
+
+| fixture | dump | gcc | reason |
+|---|---|---|---|
+| `callconv_nonpub_stdcall_xmod` | rc=0, 5 `.c` | FAIL | non-pub stdcall extern-as-value emits `zT_1 = ((zT_6891876A_FS_int_int)cc_std);` (with the `FS_` typedef) and the pub cdecl value emits `zT_3 = zF_C51B80DD_cc_cdecl;`; no C declaration (declaration is the C header's responsibility per the ruling) |
+
+GREEN on the pre-fix compiler (`error[3000]`, 0 `.c`, false positive); it cannot classify OK because
+it takes extern addresses and is not linked.
+
+- **Fixed point `b2eda4a50806962db5e0f90625a7da73`** (the `-ffast` binary; two-hop closure
+  `hop1 == hop2` from the committed seed v11 `62d8bd40…`). Seed rotated **v11 → v12** via
+  `scripts/seed/archive_seed.sh` → archive md5 `b6de9b30646e2d5f6cfa2537121329c0`, internal `zig1` md5
+  `b2eda4a5…`, `gen/` 42 `.c` + 43 `.h` (7,842,184 B), `lib/` 8 std `.zig`; post-rotation
+  `build_from_seed.sh` closure `hop1 == hop2 == b2eda4a5…`; `check_emit_support.sh` 5/5;
+  `-osw net_bind_startup_xmod` mingw `-c` rc=0 (`-I <dump>`).
 
 ## Win9x calling-convention prelude GREEN/reject + corpus re-baseline (v78 2026-09-14)
 

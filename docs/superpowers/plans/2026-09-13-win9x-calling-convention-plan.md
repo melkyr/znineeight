@@ -733,4 +733,5 @@ This plan is amendable in place. Any deviation discovered during execution is re
 - Corpus 580 dirs = **545 OK / 32 GREEN / 3 emission-inspection FAIL**; a per-dir diff against the same classifier run on the pre-fix compiler `cd2259dd…` is **exactly one row** — the new fixture GREEN (`error[3000]`, 0 `.c`) → emission-inspection FAIL — zero unexpected asymmetric movement on the 579 committed dirs.
 - All eight 4-MD5 gate rows (default `-fsafe` + `-ffast`) are UNCHANGED from v78 and deterministic 2× (the fix changes no emitted output for programs that do not use the non-pub cross-module convention-value pattern).
 - `check_emit_support.sh` 5/5; `-osw net_bind_startup_xmod` mingw `-c` rc=0 (`-I <dump>`).
+- Seed rotated **v11 → v12** at HEAD `921e4f76` via `scripts/seed/archive_seed.sh` → archive md5 `b6de9b30646e2d5f6cfa2537121329c0`, internal `zig1` md5 `b2eda4a5…`, `gen/` 42 `.c` + 43 `.h` (7,842,184 B), `lib/` 8 std `.zig`; post-rotation `build_from_seed.sh` closure `hop1 == hop2 == b2eda4a5…`. The `std_net` Option-B use-site-cast rule is unchanged.
 
