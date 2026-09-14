@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- **Baseline (re-verify at Task 1):** branch `zig1_improvements`; HEAD `f755dbed`; compiler fixed point `1467d932a876402f40a56316dfcad0e5`; seed v10 archive md5 `ca18fc9f9af55d58147fcb7ff7a662b6`; corpus 570 = 541 OK / 29 GREEN / 0 FAIL; `repro/mi_matrix/EXPECTED_FAIL.md` header v77.
+- **Baseline (re-verify at Task 1; refreshed by Amendment 1):** branch `zig1_improvements`; HEAD `0c0e81f5`; compiler fixed point `de7137e04d62435c74e7b15281cb4540`; seed v14 archive md5 `9e6c9faad0536191f28eb60c210a0a25`; corpus 580 = 545 OK / 32 GREEN / 3 FAIL (3 `callconv_*` emission-inspection expected FAILs); `repro/mi_matrix/EXPECTED_FAIL.md` header v79. (The pre-Track-1 values are superseded; see Amendment 1.)
 - **`timeout 120` on every binary execution.**
 - **Binding gcc flag set for every `gcc -c`/link:** `gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc>`. The fixed point reproduces only with `-Wall` present.
 - **Compiler builds:** seed/forward path `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <fresh_out>` (gate `=== [seed] Done: <fresh_out> ===`, result `<fresh_out>/zig1_5_clean`); never invoke `zig0`. Current-cycle `bash sf/scripts/build_release.sh` (gate `=== [release] Done: sf/build/out_release/zig1 ===`) is allowed while it still compiles `sf/src`.
@@ -60,7 +60,7 @@ Run:
 cd /workspace/znineeight
 grep -n "ERR_3016\|ERR_3020\|ERR_3048" sf/src/diagnostics.zig
 ```
-Expected: `3016` explicit at line 46, `ERR_3020_UNHANDLED_NODE_KIND = 3020` at line 47, `ERR_3048_CANNOT_READ_FILE = 3048` at line 72; no `3017/3018/3019/3045/3046/3047` members.
+Expected: `3016` explicit at line 46, `ERR_3020_UNHANDLED_NODE_KIND = 3020` at line 47, `ERR_3048_CANNOT_READ_FILE = 3048` at line 72. `ERR_3017_SUSPENDING_FUNCTION_POINTER = 3017` and `ERR_3045_UNKNOWN_CALLING_CONVENTION = 3045` ALREADY EXIST (Track 1, lines 73-74); the absent members to add are `3018/3019/3046/3047` (do NOT re-append `3017`).
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -78,10 +78,8 @@ Append the members at the end of the `ErrorCode` enum, immediately before the cl
 ```zig
     ERR_3048_CANNOT_READ_FILE = 3048,
     // ASYNCTRACK2 — explicit numeric values; never bare auto-increment members.
-    // 3017-3019 are free between ERR_3016=3016 and ERR_3020=3020.
-    // 3045 is reserved for Track 1 (unknown calling convention).
-    // 3046-3047 are free between ERR_9999_TOO_MANY_ERRORS(3044) and ERR_3048=3048.
-    ERR_3017_SUSPENDING_FUNCTION_POINTER = 3017,
+    // Amendment 1: ERR_3017=3017 and ERR_3045=3045 ALREADY EXIST (Track 1);
+    // do NOT re-append them. Add only the absent members below.
     ERR_3018_ASYNC_SUSPEND_OUTSIDE_SUSPENDING = 3018,
     ERR_3019_ASYNC_BUILTIN_IN_DEFER = 3019,
     ERR_3046_ASYNC_FRAME_SIZE_INVALID = 3046,
@@ -981,6 +979,17 @@ Present the gate battery, the N-hop closure (hop md5s), the new fixed point, the
 **Placeholder scan:** no `TBD`/`TODO`/`later`; each task names files, exact anchors, code, commands, and expected evidence. The only deferred items are the explicitly marker-gated placeholders in Task 2 (replaced in Tasks 5–7) and the future precise-shrink layout, both documented as v1 choices.
 
 **Type consistency:** the key formula `(module_id << 32) | name_id`, the four builtin names, `AsyncFrameLayout`/`AsyncFrameField`, `__async_frame_<f>`/`__async_step_<f>`, the `?*void`/`*void`/`u32` result types, and the diagnostic names are identical across spec and plan. `frame_sizes` has exactly one writer (`phase_SuspensionAnalysis`) and the readers agree on `@asyncFrameSize(f) == frame_sizes[f]`.
+
+## Amendments
+
+### Amendment 1 (2026-09-14) — Track-2 pre-flight: refreshed baseline, Task-1 code list, build path
+
+Recorded before Task 1, per operator GO. Four facts:
+
+1. **Baseline drift (Global Constraints refreshed).** At Track-2 start: branch `zig1_improvements`; HEAD `0c0e81f5`; compiler fixed point `de7137e04d62435c74e7b15281cb4540`; seed v14 archive md5 `9e6c9faad0536191f28eb60c210a0a25`; canonical corpus 580 = 545 OK / 32 GREEN / 3 FAIL (the 3 are the `callconv_*` emission-inspection expected FAILs); `repro/mi_matrix/EXPECTED_FAIL.md` header v79. The values originally in Global Constraints (HEAD `f755dbed`, fixed point `1467d932…`, seed v10 `ca18fc9f…`, corpus 570, v77) predate Track 1 and the SCRIPTWARN/seed rotations.
+2. **Task 1 must NOT re-append `3017`.** `sf/src/diagnostics.zig:73-74` already has `ERR_3045_UNKNOWN_CALLING_CONVENTION = 3045` and `ERR_3017_SUSPENDING_FUNCTION_POINTER = 3017` (Track 1), with matching `u16` consts at `:85-86`. Task 1 appends only the absent members `ERR_3018=3018`, `ERR_3019=3019`, `ERR_3046=3046`, `WARN_3047=3047`; re-adding `3017` is a duplicate enum tag.
+3. **Build path.** `sf/build/out_release` did not exist at Track-2 start (verified: no directory, no lock, no running build). Task 1 must first confirm `bash sf/scripts/build_release.sh` still compiles the current `sf/src`; if it does not, use the seed path (`bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out>` → `<out>/zig1_5_clean`) for every task's fixture recipe and record the substitution.
+4. **Tree hygiene.** The v13→v14 seed rotation was uncommitted at Track-2 start; committed as `0c0e81f5` (docs GATE) before Task 1. `scripts/seed/archive_seed.sh` (SEED_README fixed-point recipe fix) is part of that commit.
 
 ## Amendable note
 
