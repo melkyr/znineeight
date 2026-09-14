@@ -4223,6 +4223,46 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 }
                 _ = ai_ctx;
                 if (ec.len >= @intCast(usize, 2) and ai_have) {
+                    var ai_fsz: u32 = @intCast(u32, 0);
+                    if (async_analysis.asyncFrameSizeOf(self.ctx.frame_sizes, ai_mid, ai_nid)) |fsz| {
+                        ai_fsz = @intCast(u32, fsz);
+                    }
+                    if (ai_fsz > @intCast(u32, 0)) {
+                        var ai_size = nextTemp(self, type_mod.TYPE_USIZE);
+                        emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, ai_fsz), .result = ai_size } });
+                        var ai_i = nextTemp(self, type_mod.TYPE_USIZE);
+                        emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = ai_i } });
+                        var ai_hdr_bb = createBlock(self);
+                        var ai_body_bb = createBlock(self);
+                        var ai_done_bb = createBlock(self);
+                        emitInst(self, LirInst{ .jump = ai_hdr_bb });
+                        markTerminated(&self.func.blocks, self.current_bb);
+                        self.current_bb = ai_hdr_bb;
+                        self.block_terminated = @intCast(u8, 0);
+                        var ai_cond = nextTemp(self, type_mod.TYPE_BOOL);
+                        emitInst(self, LirInst{ .binary = .{ .op = BIN_LT, .lhs = ai_i, .rhs = ai_size, .result = ai_cond } });
+                        emitInst(self, LirInst{ .branch = .{ .cond = ai_cond, .then_bb = ai_body_bb, .else_bb = ai_done_bb } });
+                        self.current_bb = ai_body_bb;
+                        self.block_terminated = @intCast(u8, 0);
+                        var ai_pi = nextTemp(self, type_mod.TYPE_USIZE);
+                        emitInst(self, LirInst{ .ptr_to_int = .{ .value = ai_buf, .result = ai_pi } });
+                        var ai_addr = nextTemp(self, type_mod.TYPE_USIZE);
+                        emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = ai_pi, .rhs = ai_i, .result = ai_addr } });
+                        var ai_u8p_t = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, type_mod.TYPE_U8, false);
+                        var ai_u8p = nextTemp(self, ai_u8p_t);
+                        emitInst(self, LirInst{ .int_to_ptr = .{ .value = ai_addr, .target = ai_u8p_t, .result = ai_u8p } });
+                        var ai_byte0 = nextTemp(self, type_mod.TYPE_U8);
+                        emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = ai_byte0 } });
+                        emitInst(self, LirInst{ .store = .{ .ptr = ai_u8p, .value = ai_byte0 } });
+                        var ai_one = nextTemp(self, type_mod.TYPE_USIZE);
+                        emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 1), .result = ai_one } });
+                        var ai_i2 = nextTemp(self, type_mod.TYPE_USIZE);
+                        emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = ai_i, .rhs = ai_one, .result = ai_i2 } });
+                        emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = ai_i, .src = ai_i2 } });
+                        emitInst(self, LirInst{ .jump = ai_hdr_bb });
+                        self.current_bb = ai_done_bb;
+                        self.block_terminated = @intCast(u8, 0);
+                    }
                     var ai_step_name = async_state_machine.asyncStepNameId(self.ctx.registry.interner, ai_nid);
                     var ai_step_fn = async_state_machine.asyncStepFnType(self.ctx.registry, self.ctx.registry.interner, ai_step_name, ai_mid);
                     var ai_step_pt = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, ai_step_fn, false);
