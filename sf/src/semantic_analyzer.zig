@@ -91,6 +91,11 @@ pub const SemanticAnalyzer = struct {
     console_clear_name_id: u32,
     console_gotoxy_name_id: u32,
     console_set_color_name_id: u32,
+    async_frame_size_name_id: u32,
+    async_init_name_id: u32,
+    async_resume_name_id: u32,
+    async_suspend_name_id: u32,
+    async_analysis_ready: bool,
     module_reg: *mr_mod.ModuleRegistry,
 };
 
@@ -157,6 +162,14 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
     var cg_id = interner_mod.stringInternerIntern(interner, cg_s);
     var csc_s: []const u8 = "@consoleSetColor";
     var csc_id = interner_mod.stringInternerIntern(interner, csc_s);
+    var afs_s: []const u8 = "@asyncFrameSize";
+    var afs_id = interner_mod.stringInternerIntern(interner, afs_s);
+    var ain_s: []const u8 = "@asyncInit";
+    var ain_id = interner_mod.stringInternerIntern(interner, ain_s);
+    var ars_s: []const u8 = "@asyncResume";
+    var ars_id = interner_mod.stringInternerIntern(interner, ars_s);
+    var asu_s: []const u8 = "@asyncSuspend";
+    var asu_id = interner_mod.stringInternerIntern(interner, asu_s);
     return SemanticAnalyzer{
     .type_table = type_table,
         .diag = diag,
@@ -228,6 +241,11 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .console_clear_name_id = cc_id,
         .console_gotoxy_name_id = cg_id,
         .console_set_color_name_id = csc_id,
+        .async_frame_size_name_id = afs_id,
+        .async_init_name_id = ain_id,
+        .async_resume_name_id = ars_id,
+        .async_suspend_name_id = asu_id,
+        .async_analysis_ready = false,
         .module_reg = module_reg,
     };
 }
@@ -283,6 +301,10 @@ fn semanticAnalyzerIsBuiltinSupported(self: *SemanticAnalyzer, name_id: u32) boo
     if (name_id == self.console_clear_name_id) return true;
     if (name_id == self.console_gotoxy_name_id) return true;
     if (name_id == self.console_set_color_name_id) return true;
+    if (name_id == self.async_frame_size_name_id) return true;
+    if (name_id == self.async_init_name_id) return true;
+    if (name_id == self.async_resume_name_id) return true;
+    if (name_id == self.async_suspend_name_id) return true;
 
     var l_e2i: []const u8 = "@enumToInt";
     if (semanticAnalyzerBuiltinNameEq(self, name_id, l_e2i)) return true;
@@ -295,6 +317,15 @@ fn semanticAnalyzerIsBuiltinSupported(self: *SemanticAnalyzer, name_id: u32) boo
     var l_pan: []const u8 = "@panic";
     if (semanticAnalyzerBuiltinNameEq(self, name_id, l_pan)) return true;
     return false;
+}
+
+fn semanticAnalyzerDiagAsyncOutsideSuspending(self: *SemanticAnalyzer, node_idx: u32) void {
+    if (!self.async_analysis_ready) return;
+    var a318_node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    var e318: []const u8 = "@asyncSuspend used outside a suspending function";
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0),
+        @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3018_ASYNC_SUSPEND_OUTSIDE_SUSPENDING)),
+        self.source_file_id, a318_node.span_start, a318_node.span_start + @intCast(u32, a318_node.span_len), e318);
 }
 
 fn semanticAnalyzerGrowLocalDecls(self: *SemanticAnalyzer) void {
@@ -2178,6 +2209,29 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                 _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]);
             }
             result = type_mod.TYPE_VOID;
+        } else if (node.child_0 == self.async_frame_size_name_id) {
+            if (ec.len >= @intCast(usize, 1)) { _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]); }
+            result = type_mod.TYPE_INT_LIT;
+        } else if (node.child_0 == self.async_init_name_id) {
+            if (ec.len >= @intCast(usize, 4)) {
+                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]);
+                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 1)]);
+                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 2)]);
+                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 3)]);
+            }
+            semanticAnalyzerDiagAsyncOutsideSuspending(self, node_idx);
+            result = type_mod.typeRegistryGetOrCreatePtr(self.registry, type_mod.TYPE_VOID, false);
+        } else if (node.child_0 == self.async_resume_name_id) {
+            if (ec.len >= @intCast(usize, 2)) {
+                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]);
+                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 1)]);
+            }
+            semanticAnalyzerDiagAsyncOutsideSuspending(self, node_idx);
+            result = type_mod.typeRegistryGetOrCreateOptional(self.registry, type_mod.typeRegistryGetOrCreatePtr(self.registry, type_mod.TYPE_VOID, false));
+        } else if (node.child_0 == self.async_suspend_name_id) {
+            if (ec.len >= @intCast(usize, 1)) { _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]); }
+            semanticAnalyzerDiagAsyncOutsideSuspending(self, node_idx);
+            result = type_mod.typeRegistryGetOrCreatePtr(self.registry, type_mod.TYPE_VOID, false);
         } else if (ec.len >= @intCast(usize, 2)) {
             if (semanticAnalyzerIsTypeValueCast(self, node.child_0)) {
                 var tv_src = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 1)]);

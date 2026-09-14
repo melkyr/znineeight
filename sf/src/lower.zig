@@ -400,6 +400,10 @@ pub const LirLowerer = struct {
     console_clear_name_id: u32,
     console_gotoxy_name_id: u32,
     console_set_color_name_id: u32,
+    async_frame_size_name_id: u32,
+    async_init_name_id: u32,
+    async_resume_name_id: u32,
+    async_suspend_name_id: u32,
     local_decl_names: [*]u32,
     local_decl_src_names: [*]u32,
     local_decl_types: [*]u32,
@@ -492,6 +496,14 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
     var console_gotoxy_id = si_mod.stringInternerIntern(ctx.registry.interner, console_gotoxy_s);
     var console_set_color_s: []const u8 = "@consoleSetColor";
     var console_set_color_id = si_mod.stringInternerIntern(ctx.registry.interner, console_set_color_s);
+    var afs_s: []const u8 = "@asyncFrameSize";
+    var afs_id = si_mod.stringInternerIntern(ctx.registry.interner, afs_s);
+    var ain_s: []const u8 = "@asyncInit";
+    var ain_id = si_mod.stringInternerIntern(ctx.registry.interner, ain_s);
+    var ars_s: []const u8 = "@asyncResume";
+    var ars_id = si_mod.stringInternerIntern(ctx.registry.interner, ars_s);
+    var asu_s: []const u8 = "@asyncSuspend";
+    var asu_id = si_mod.stringInternerIntern(ctx.registry.interner, asu_s);
     var lowerer = LirLowerer{
     .ctx = ctx,
         .func = undefined,
@@ -539,6 +551,10 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
          .console_clear_name_id = console_clear_id,
          .console_gotoxy_name_id = console_gotoxy_id,
          .console_set_color_name_id = console_set_color_id,
+         .async_frame_size_name_id = afs_id,
+         .async_init_name_id = ain_id,
+         .async_resume_name_id = ars_id,
+         .async_suspend_name_id = asu_id,
         .local_decl_names = @ptrCast([*]u32, alloc_mod.sandAlloc(alloc, @intCast(usize, 64) * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable),
         .local_decl_src_names = @ptrCast([*]u32, alloc_mod.sandAlloc(alloc, @intCast(usize, 64) * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable),
         .local_decl_types = @ptrCast([*]u32, alloc_mod.sandAlloc(alloc, @intCast(usize, 64) * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable),
@@ -4083,6 +4099,29 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 var gc_res = nextTemp(self, type_mod.TYPE_U8);
                 emitInst(self, LirInst{ .builtin_get_char = .{ .result = gc_res } });
                 return gc_res;
+            }
+            if (node.child_0 == self.async_frame_size_name_id) {
+                if (ec.len >= @intCast(usize, 1)) {
+                    _ = lowerExpr(self, ec[@intCast(usize, 0)]);
+                }
+                var afs_res = nextTemp(self, type_mod.TYPE_INT_LIT);
+                emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = afs_res } });
+                return afs_res;
+            }
+            if (node.child_0 == self.async_init_name_id) {
+                var ai_res = nextTemp(self, type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, type_mod.TYPE_VOID, false));
+                emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = ai_res } });
+                return ai_res;
+            }
+            if (node.child_0 == self.async_resume_name_id) {
+                var ar_res = nextTemp(self, type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, type_mod.TYPE_VOID, false));
+                emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = ar_res } });
+                return ar_res;
+            }
+            if (node.child_0 == self.async_suspend_name_id) {
+                var as_res = nextTemp(self, type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, type_mod.TYPE_VOID, false));
+                emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = as_res } });
+                return as_res;
             }
             if (node.child_0 == self.exit_name_id) {
                 if (ec.len >= @intCast(usize, 1)) {
