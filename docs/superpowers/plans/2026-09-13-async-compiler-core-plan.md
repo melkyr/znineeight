@@ -824,7 +824,48 @@ git commit -m "feat: P3 Stage-2 LIR frame layout reader (ASYNCTRACK2)"
 
 ---
 
-### Task 6: Stage 3a — `_step` state machine with `switch_br` and save/restore
+### Task 6R: Reconciliation I/F — resume/dispatch, frame typing, scheduler model, safety (record-only; STOP-present)
+
+**Type:** I (record-only investigation/feasibility). **No source edits, no commit.** Ends in a **STOP-present** with a Go/No-Go recommendation. Do **not** implement Task 6 or Task 7.
+
+**Why:** Task 6 returned BLOCKED on B1/B2/B3 (Amendment 6). Umbrella §16.1 items 1–4 were recorded as "reconciliations owed before advancing" and were never resolved; the four async documents disagree on resume dispatch and the scheduler. This task establishes what is in code and what must match before any design is dispatched.
+
+**Files (read-only):** `sf/src/{async_analysis.zig,async_frame_layout.zig,lower.zig,semantic_analyzer.zig,main.zig,lir.zig,lir_opt_pass.zig,lir_stream.zig,c89_emit.zig,type_registry.zig}`; specs `docs/superpowers/specs/2026-09-13-async-compiler-core-design.md`, `docs/superpowers/specs/2026-09-13-async-prelude-and-feasibility-design.md` (§12, §16.1), `docs/superpowers/specs/2026-09-13-std-async-design.md`, `docs/superpowers/specs/2026-09-13-coroutine-integration-design.md`, tracked ideas `docs/superpowers/specs/2026-09-13-z98-coroutine-ideas.md`. **Output:** `.superpowers/sdd/task-ASYNCTRACK2-report.md` (`## Task 6R`), one ledger line, one memory entry.
+
+**Part A — WHAT IS IN PLACE (each answer requires live source anchors; add a read-only probe where cheap, `timeout 120`, no repo edits):**
+- **A1** The four builtins end-to-end today: sema `*_name_id` fields + allow-list + typing arms + `async_analysis_ready` gate; lowering arms (`@asyncFrameSize` real value + `suppress_fnref_ban`; the three placeholders) and the observed `*void` vs `?*void` result-type mismatch at C link.
+- **A2** `materializeFnRef` (Task 4) and the three `func_ref` sites; `suppress_fnref_ban` semantics (is it save/restore?), whether `@asyncInit`'s `fn` argument can reuse the window safely, and whether it leaks to ordinary uses.
+- **A3** LIR ops available for each candidate mechanism: indirect `call`; `load`/`store` (typed via the result temp?); `load_field`/`store_field` (`field_id`/`name_id` resolution); `ptr_cast`; `switch_br`; `int_const`. Confirm the `@sizeOf(LirInst)`/`lir_stream` raw-byte constraints for any added header/op.
+- **A4** Frames today: P2 `asyncFrameSizeRun` candidate rule + sizes (what a frame actually is: `ctx@0/state@…/params/live`); P3 `asyncFrameLayout` live-across + `layout_size <= frame_sizes` + padding; feasibility/owner of adding a fixed header word (single-writer discipline).
+- **A5** Function-pointer reality at the current fixed point: does an indirect call through a value/struct field work now (Track 3 claims the `fn_ptr_struct_field` gap CLOSED at `1467d932`; Track 4 calls it OPEN) — re-verify with a minimal read-only fixture/dump at the current HEAD; and can a raw word `load` of a fn pointer from a byte frame be expressed in LIR/C89 today?
+- **A6** Synthesized-name machinery: `nameManglerMangle` (32-char cap, collision suffix) and how synthesized names (`__async_frame_<f>`/`__async_step_<f>`) are registered so emitter mangling is generic; collision risk across modules/long names.
+- **A7** Module reachability/pruning: can EMITEMIT prune a module whose only reference to a step symbol is a stored pointer (no static `func_ref` edge)? What static edges exist today at `@asyncInit`/child-init/`@asyncFrameSize`?
+- **A8** `-fsafe` surface for frame validation/traps (`check_trap`, `pal_trap`, pool-null checks) and what is currently unchecked.
+- **A9** Scheduler fixtures as they exist: Track 3's hand-written `StepFn` fixtures + `Task.step`; Track 4's `tick(s, step)` homogeneous scheduler; the exact line-level contradiction.
+- **A10** The original intent: quote the tracked ideas doc (function-local frame types; `@asyncResume` "load state; dispatch"; "the step function is never called directly") and umbrella §16.1 items 1–4.
+
+**Part B — WHAT MUST MATCH (invariants to reconcile):**
+- **I1** Frame ABI (field set/order/offsets/size; who writes each; single writer).
+- **I2** Resume dispatch (how a frame selects `__async_step_<f>`; where the binding is created and read).
+- **I3** Scheduler model (homogeneous vs heterogeneous; `Task.step` vs explicit `step` vs `@asyncResume`; how a user legitimately obtains a step without violating Prelude B).
+- **I4** `@asyncInit` `args` ABI + result typing; `@asyncResume`/`@asyncSuspend` result typing.
+- **I5** Prelude-B boundary (what may be materialized; the step pointer's status; `ERR_3017` site(s)).
+- **I6** Transform ordering (body rewrite vs call-site implicit-await; atomic vs dual-emit interim).
+- **I7** Backend-neutrality/safety/maintainability invariants (avoid a code pointer in a data buffer if possible; one shared header descriptor; synthesized-name collision policy; `-fsafe` behavior; module-reachability of synthesized steps).
+
+**Part C — WHAT NEEDS TO HAPPEN (option analysis with tradeoffs, consequences, and a recommendation):**
+- **O1** Frame typing: function-local typed `*__Z98Frame_<f>` (original intent; compiler-resolved resume; smaller frames; type-safe) vs untyped `*void` + self-describing step word (generic heterogeneous scheduler; drift; portability/maintenance cost).
+- **O2** Step dispatch: compiler-resolved (typed frame) vs stored step word vs explicit `step` parameter.
+- **O3** Scheduler + step acquisition: homogeneous `tick(s, step)` (needs a user-nameable step — new builtin `@asyncStep(f)`? descriptor return? allow `f` in step position?) vs heterogeneous `@asyncResume(t.frame, t.arg)` self-dispatch.
+- **O4** B2 ordering: atomic (merge body + call-site into Task 6) vs dual-emit interim (Task 6 keeps sync bodies; Task 7 rewrites call sites and removes them).
+- **O5** B3 resolution: fixture fix (struct-of-params) vs ABI change.
+- For each option: the exact spec/plan amendments, code changes, and fixture/marker impacts (including whether Task-5a `Expected==16` and Task-5c `LAYOUT … s16` change), plus maintenance/safety implications.
+
+**Deliverable / gate:** append `## Task 6R` to the report with every A/I/O answered with live anchors and reproducible read-only probes where feasible; one ledger line and one memory entry; then a **STOP-present** containing (a) the reconciled architecture options with a Go/No-Go recommendation, (b) the exact amendment list, (c) any residual "needs further reconciliation" items. Await the operator's ruling; only then amend the affected documents and re-scope/re-dispatch Task 6.
+
+---
+
+### Task 6: Stage 3a — `_step` state machine with `switch_br` and save/restore (BLOCKED — pending Task 6R reconciliation; do NOT dispatch)
 
 **Files:**
 - Modify: `sf/src/async_state_machine.zig` (`asyncTransform`)
@@ -1183,6 +1224,18 @@ Operator directed splitting Task 5 into three independently reviewable subtasks 
 3. **Task 5c** — P3 Stage-2 LIR frame-layout reader (`sf/src/async_frame_layout.zig`).
 
 Binding: Amendment 2's seed-path build/evidence rules apply to all three; the backend-agnostic mandate (Amendment 4) binds all three (no `c89_*` calls from async machinery). P1 is unchanged; P2 is the only writer of `frame_sizes`; P3 only reads, asserts `layout_size <= frame_sizes[key]`, and pads.
+
+## Amendment 6 (2026-09-14) — Task 6 BLOCKED on cross-document contradictions; Task 6R reconciliation I/F inserted
+
+Task 6 was dispatched and returned **BLOCKED** on three plan-level contradictions (recorded in `.superpowers/sdd/task-ASYNCTRACK2-report.md` `## Task 6`):
+
+- **B1 (resume dispatch).** `@asyncResume(frame, arg) ?*void` is pinned with no step argument and the frame has no step slot (`ctx, state, params, live temps`), so nothing selects `__async_step_<f>` at runtime. Track 3 stores a step in `Task.step`; Track 4 says the step is passed explicitly to `tick`/`awaitTask` and never stored — directly contradicting Track 3.
+- **B2 (transform vs call sites).** §3.3 rewrites `f` into `__async_step_<f>`, so a direct call to a suspending function has no synchronous target; the call-site implicit-await rewrite is deferred to Task 7, yet Task 6 must keep the frame-size regression fixtures (which call suspending functions directly) compiling. The body and call-site transforms are interdependent.
+- **B3 (args ABI).** The Task-6 fixture passes `@ptrCast(&result)` for a single `out: *i32` parameter, contradicting the pinned `args` = caller-struct-of-params contract; `result == 3` is unreachable. Track 4 uses the struct-of-params convention, so the fixture is wrong.
+
+Root cause: umbrella §16.1 items 1–4 (Context/frame ABI ownership, `fn_ptr_struct_field` status, `@asyncInit` args ABI, and the step/scheduler model) were explicitly recorded as "reconciliations owed before advancing" and were never resolved; the async documents disagree on resume dispatch and the scheduler. Dispatching a design without code knowledge is the drift.
+
+Operator directive (m1481): add a **proper record-only I/F (investigation/feasibility) reconciliation task, Task 6R**, that answers (a) what is in code, (b) what must match, and (c) what needs to happen, ending in a **STOP-present** with a Go/No-Go recommendation — so the operator has wider context than the STOP before ruling. Task 6 is marked **BLOCKED** and **must not be re-dispatched** until Task 6R is ruled on and the affected documents are amended. Task 6R is record-only: no source edits, no commit, `timeout 120` on any binary probe.
 
 ## Amendable note
 
