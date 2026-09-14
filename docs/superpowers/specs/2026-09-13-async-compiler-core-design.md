@@ -233,17 +233,23 @@ synthesize fields in this **frozen deterministic order**:
    so P2/P3 reserve it explicitly rather than liveness discovering it. It is
    saved/reloaded with the other hidden fields at every yield.
 7. `result: *void` — **hidden, pointer-sized, appended at the tail**, present iff
-   `f` is the target of an implicit await. It points at the caller's hidden
-   parent `result` slot (kind 7) for a value-returning target, or is written
-   `null` for a void target; the awaited callee's terminal step writes its `.ret`
-   value through it. Written by the caller at the await site; read by the
+   `f` is the target of an implicit await. It points at **that await's** hidden
+   `parent_result` slot (kind 7, Amendment 10) for a value-returning target, or is
+   written `null` for a void target; the awaited callee's terminal step writes its
+   `.ret` value through it. Written by the caller at the await site; read by the
    callee's terminal step.
-8. `parent_result: T` — **hidden, value-typed to the awaited call's result type,
-   appended at the tail**, present iff `f` has a **value-returning** implicit
-   await (residual R8: gated on value-return only, so a void await reserves no
-   slot). Written by the awaited callee's terminal step through the child's
-   `result` pointer; read by `f` on resume and assigned to the call's `result`
-   temp. It is saved/reloaded with the other hidden fields across each yield.
+8. `parent_result: T_k` — **hidden, value-typed, one slot per value-returning
+   implicit await** (Amendment 10, I1), appended at the tail in **source (program)
+   order** after the other hidden fields. Slot `k` is typed to the `k`-th
+   value-returning implicit await's result type. A **void** await reserves no slot
+   (residual R8: gated on value-return only). Each slot's writer is the awaited
+   callee's terminal step, which stores its `.ret` value through the `result`
+   pointer the caller placed for **that** await; the reader is the caller, which
+   loads that slot (on resume/`after_blk`) and assigns it to that await's `result`
+   temp. All slots are saved/reloaded with the other hidden fields across each
+   yield. This replaces the Amendment-9 single per-caller slot, which truncated a
+   caller with multiple value-returning awaits of different types to the first
+   await's type (review finding I1).
 
 Offsets/size follow the single natural-layout path of
 `type_resolver.zig:125-160` (`alignUp` + tail padding): `step`
@@ -258,7 +264,9 @@ total is the sum of frame sizes along the active call chain.
 
 The gated hidden await fields (kind 5 `child`, kind 6 `result`, kind 7
 `parent_result`) are appended after `live-across` at natural alignment and shift a
-frame's size only when their predicate holds. The `async_frame_xmod` `worker`
+frame's size only when their predicate holds. Kind 7 is **one slot per
+value-returning implicit await** (Amendment 10), so only callers with more than one
+value-returning await gain extra slots. The `async_frame_xmod` `worker`
 (no await, never awaited) therefore keeps the gated-variant layout **20** and the
 Task-5c marker **`LAYOUT:m0:n22:s20`**; the unconditional variant (all three
 reserved for every suspending function) yields **24/28** (report also cites
@@ -359,13 +367,17 @@ the original.
     the only state store at the await.
   - **`loop_done_blk` is ONLY the resume target (`resume_target[N]`), never a
     fallthrough:** `load_field`+assign every PARAM+LIVE field **plus `child`**;
-    assign the hidden parent `result` slot (kind 7) into the call's `result` temp;
     re-issue the child step (`r = call(g_step, [child, null])`,
-    `hv = check_optional(r)`, `branch hv → yield_blk, after_blk`).
-  - **`after_blk`:** the awaited value was written by the child's terminal step
-    into the hidden parent `result` slot (kind 7) and copied into the call's
-    `result` temp in `loop_done_blk`; emit the remainder of the original block
-    after the `call_direct`.
+    `hv = check_optional(r)`, `branch hv → yield_blk, after_blk`). It does **not**
+    copy the awaited value (Amendment 10, M1): the terminal stores no state, so the
+    copy must not live here.
+  - **`after_blk` (M1):** the awaited value was written by the child's terminal
+    step into **that await's** hidden `parent_result` slot (kind 7, Amendment 10)
+    and is copied from that slot into the call's `result` temp **here in
+    `after_blk`** — reached by both the first-step false branch and the
+    resume-re-drive false branch. Then emit the remainder of the original block
+    after the `call_direct`. Placing the copy in `after_blk` (not `loop_done_blk`)
+    is what lets an immediately-completing child deliver its value.
   - **First-step false branch goes to `after_blk`, NOT `loop_done_blk`:** a child
     that completes on its very first step returns a null optional; routing it to
     `loop_done_blk` would re-enter the resume path, re-issue the child step, and —
@@ -516,11 +528,13 @@ pub const AsyncFrameField = struct { name_id: u32, type_id: u32, offset: u32, ki
 // kind: 0=ctx, 1=state, 2=param, 3=live temp, 4=step (hidden; offset 0 ALWAYS,
 //       pointer-sized type_id per Amendment 7 — do NOT hard-code 4 bytes),
 //       5=child (hidden pointer; tail; iff f has an implicit await),
-//       6=result (hidden pointer; tail; iff f is awaited; targets the caller's
-//       parent result slot, or null),
-//       7=parent_result (hidden value-typed; tail; iff f has a value-returning
-//       implicit await; saved/reloaded across yields — residual R8 gates it on
-//       value-return only)
+//       6=result (hidden pointer; tail; iff f is awaited; targets that await's
+//       parent_result slot, or null),
+//       7=parent_result (hidden value-typed; tail; ONE slot per value-returning
+//       implicit await, in source order, each typed to that await's result;
+//       saved/reloaded across yields — residual R8 gates it on value-return
+//       only, so a void await reserves no slot; Amendment 10 replaces the
+//       Amendment-9 single per-caller slot)
 pub const AsyncFrameLayout = struct {
     frame_size: u32,       // == frame_sizes[key]; authoritative
     layout_size: u32,      // natural-layout size, <= frame_size
@@ -617,7 +631,13 @@ preserved; ICE `3043` (`ERR_9001_ICE`, auto-incremented) must not shift.
   `LAYOUT:m0:n22:s20`** (both pinned gates unchanged). Under the **unconditional**
   variant (all three hidden fields reserved for every suspending function)
   `worker` becomes **24/28** (the report also cites **32** if all three hidden
-  fields are reserved) and both gates move in the same commit.
+  fields are reserved) and both gates move in the same commit. **Amendment 10
+  pinned values:** per-await kind-7 slots change only callers with **more than one
+  value-returning implicit await** (one extra kind-7 slot per additional such
+  await); a caller with zero or one value-returning await is byte-identical to
+  Amendment 9. `async_frame_xmod`'s `worker` has no await, so it **stays 20** and
+  Task-5c **stays `LAYOUT:m0:n22:s20`**. The new multi-await fixture's caller gains
+  its extra slots and pins the resulting frame size/marker in Task 6D5.
 - **Stage 3:** `repro/mi_matrix/async_await_xmod` — a root frame in a caller
   `buf`, an implicit await of a child, deterministic stdout across 3 runs and
   identical md5; plus a `-fsafe` pool-exhaustion probe that returns

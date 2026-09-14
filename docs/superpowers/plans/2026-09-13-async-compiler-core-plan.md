@@ -1234,11 +1234,117 @@ existing async fixtures plus `async_await_ret_xmod` dump rc=0 / gcc `-m32 -std=c
 
 ---
 
-### Task 6D2: D2 — confine dual-emit to `main` (strictly AFTER Task 6D1D3)
+### Task 6D5: I1 — per-await `parent_result` slots (F; after Task 6D1D3, before Task 6D2)
 
-**Ordering dependency (Amendment 9).** D2 is **strictly after** the merged
-`Task 6D1D3`: only D1's rewritten call sites let non-`main` synchronous bodies be
-dropped (D2's enabler).
+**Amendment 10 (I1).** The D1+D3 review found that Amendment 9 pins **one**
+value-typed `parent_result` (kind-7) slot per caller, so a caller with multiple
+value-returning implicit awaits of different types truncates to the **first**
+await's type (probe `a(): i32` then `b(): i64 = 5000000000` → panic, rc=133). The
+operator ruled **option (A): one kind-7 slot per value-returning implicit await**,
+typed to that await's result, appended in **source (program) order** after the
+other hidden fields. The considered alternative — a **single widest-type slot**
+sized/aligned to the widest awaited result — was rejected: it over-allocates every
+multi-await caller and still needs a per-await offset for the terminal store/read,
+so it does not simplify P4. Void-awaited calls still pay no slot (R8).
+
+**Goal (acceptance).** A caller with N value-returning implicit awaits reserves N
+kind-7 slots, the k-th typed to the k-th await's result. Each await writes the
+child `result` pointer to **its own** slot; each awaited callee's terminal step
+stores through that pointer; the caller copies **that** slot into **that** await's
+`result` temp in `after_blk`. The new fixture `async_await_multi_xmod`
+(`a(): i32` then `b(): i64 = 5000000000`) compiles, links, runs rc=0, and prints
+both values with no truncation/panic; `async_await_xmod` / `async_await_ret_xmod`
+and the 5 existing async fixtures stay green.
+
+**Ordering invariant (load-bearing).** P2/P3 assign the kind-7 slots in **program
+order**; P4 indexes them by the program-order count of value-returning awaits.
+`scanImplicitAwaits` today walks the AST with a **LIFO stack** that pops sibling
+statements in **reverse** source order (which is why the single last-wins slot ends
+up holding the **first** await's type). Task 6D5 must collect value-returning
+awaits in **program order** (e.g. push children in reverse so the pop is source
+order, or collect then reverse) so P2's slot order equals P4's await order. P3
+mirrors P2 exactly.
+
+**Files.** Modify `sf/src/async_analysis.zig` (`scanImplicitAwaits`,
+`asyncFrameSizeRun`), `sf/src/async_frame_layout.zig` (`asyncLayoutFrame`),
+`sf/src/async_state_machine.zig` (`AsyncTransformCtx`, `Build`, `emitAwait`,
+`asyncTransform`), `sf/src/main.zig` (`CompilerContext` fields + map init + pass
+wiring at `:655`/`:763`/`:873`). Create `repro/mi_matrix/async_await_multi_xmod`
+(fixture + self-check).
+
+**Steps.**
+
+1. **Replace the single-slot map.** In `sf/src/main.zig`, replace
+   `async_parent_result_types: U64ToU32Map` (caller_key → one type, `:130`) with an
+   **ordered per-caller list**: a global append-only `parent_result_type_list`
+   (`U32ArrayList`, module arena) plus `parent_result_start: U64ToU32Map`
+   (caller_key → first index) and `parent_result_count: U64ToU32Map`
+   (caller_key → N). Add all three to `CompilerContext` next to `awaited_fns` /
+   `async_hidden_fns` and init them in `main.zig` where those maps are initialized
+   (`:266-270`); update the `CompilerContext` literal (`:297`) and the two
+   consumer call sites, `asyncFrameSizeRun` (`:655`) and `asyncLayoutFrame`
+   (`:763`).
+2. **P2 scan (`scanImplicitAwaits`, `async_analysis.zig:399-452`).** Keep the
+   `awaited_fns` put and hidden bit 1 (`:418-420`) and the value-returning hidden
+   bit 2 (`:423-426`). Replace the single `parent_types` put (`:425`) with: append
+   `rt` to `parent_result_type_list`, record `parent_result_start[caller_key]` on
+   the caller's **first** value-returning await, and increment
+   `parent_result_count[caller_key]`. Collect in **program order** (ordering
+   invariant above). `fn_ret_types` (`:492-511`) already supplies `rt`.
+3. **P2 reservation (`asyncFrameSizeRun`, `async_analysis.zig:567-581`).** In the
+   hidden tail, after `child` (kind 5, `:571-573`) and `result` (kind 6,
+   `:574-576`), replace the single kind-7 `addFrameField` (`:577-581`) with a loop
+   `k = 0 .. parent_result_count[key]` adding one kind-7 field per entry, typed
+   `parent_result_type_list[parent_result_start[key] + k]`, in the same order.
+4. **P3 mirror (`asyncLayoutFrame`, `async_frame_layout.zig:521-537`).** Thread
+   the new list/start/count through the signature (`:431-434`) and replace the
+   single `ASYNC_FIELD_PARENT_RESULT` `addField` (`:533-537`) with the same
+   `k = 0 .. count` loop, same order, so `precise <= frame_sizes[key]` still holds.
+   `main.zig:763` passes the new maps.
+5. **P4 index (`async_state_machine.zig`).** In `asyncTransform` (`:617-633`),
+   collect the layout's kind-7 fields into an ordered `pr_off[]`/`pr_ty[]` array
+   (source order). Replace the single `Build.parent_result_off/type/present`
+   (`:166-168`, `:621-623`, `:657-659`) with a running **value-returning-await
+   index `k`**: pass `k` at each `emitAwait` call (`:751-755`) and increment it
+   only when `cd.return_type != type_mod.TYPE_VOID` (`CallDirectData.return_type`,
+   `lir.zig:176`, set at `lower.zig:3696` — the same predicate P2 uses). Keep
+   `pr_present = (layout has ≥1 kind-7 field)`.
+6. **P4 await (`emitAwait`, `async_state_machine.zig:388-504`).** Use the passed
+   `k`: (a) the child `result` pointer (`:459-477`) points at `frame + pr_off[k]`
+   for a value-returning callee (`cd.return_type != void`), else `null`; (b) the
+   `after_blk` copy (`:497-503`) loads `pr_off[k]`/`pr_ty[k]` and assigns it to
+   `cd.result + base`. `loop_done_blk` keeps re-driving the child only (M1).
+7. **Fixture `repro/mi_matrix/async_await_multi_xmod`.** Mirror
+   `async_await_ret_xmod`'s non-suspending `main` driver; add `a() i32` and
+   `b() i64` value-returning suspending callees, await `a` then `b` in that order,
+   and self-check both results (print/assert `a` and `b == 5000000000`). The second
+   await must not be read through the first slot's type/size (no truncation).
+8. **Frame-size churn.** Only callers with **≥2 value-returning implicit awaits**
+   gain extra kind-7 slots (one per additional await) and change size/marker.
+   Zero- and single-value-await callers are byte-identical to Amendment 9:
+   `async_frame_xmod`'s `worker` stays **20** and Task-5c stays
+   **`LAYOUT:m0:n22:s20`**. Recompute and pin the multi-await fixture's own frame
+   size/marker.
+
+**Acceptance gates (all under `timeout 120`, seed path per Amendment 2).**
+`async_await_multi_xmod` dumps rc=0 / gcc `-m32 -std=c89 -O0 -Wall … -I $OUT -c`
+clean / self-contained link / run rc=0 printing both values (no panic, no
+truncation); `async_await_xmod`, `async_await_ret_xmod`, `async_frame_xmod`
+(Task-5a `Expected==20`, Task-5c `LAYOUT:m0:n22:s20`), `async_suspend_store_xmod`,
+`async_frame_branch_xmod`, `async_frame_args_xmod` stay green;
+`async_callgraph_xmod` / `async_builtin_scope_xmod` /
+`async_framesize_invalid_xmod` / `async_fnptr_error_xmod` guards unchanged;
+`switch (` ≥1 and `__Z98Step_` present; `-fsafe` traps vs `-ffast`; hop closure.
+
+---
+
+### Task 6D2: D2 — confine dual-emit to `main` (strictly AFTER Task 6D5)
+
+**Ordering dependency (Amendment 10).** D2 is **strictly after** the merged
+`Task 6D1D3` **and Task 6D5** (I1): only D1's rewritten call sites let non-`main`
+synchronous bodies be dropped (D2's enabler), and D5's per-await `parent_result`
+slots are an I1 fix to the same child-frame/result-slot machinery D2 builds on, so
+D5 must land first. Dispatch order: **D1+D3 → D5 → D2 → D4**.
 
 **Goal (acceptance).** Every suspending function is fully rewritten in place to
 `__Z98Step_<f>(frame, arg) ?*void` with **no original synchronous body emitted —
@@ -1701,6 +1807,49 @@ after), independent `Task 6D4`, residuals R7/R8.
 **Residuals recorded.** R7 (D2 root-`main` driver local pool size unpinned;
 exercised by `async_frame_branch_xmod`'s `main` awaiting value-returning `worker`);
 R8 (gate the kind-6/kind-7 reservations on value-return only).
+
+## Amendment 10 (2026-09-14) — I1 per-await `parent_result` slots + M1 spec wording
+
+**Reason.** The D1+D3 review (Approved, but) found **I1**: Amendment 9 pins **one**
+value-typed `parent_result` (kind-7) slot per caller, so a caller with multiple
+value-returning implicit awaits of different types truncates to the first await's
+type (probe `a(): i32` then `b(): i64 = 5000000000` → panic rc=133). The review
+also confirmed the **M1** spec-wording defect: the parent-result→call-result-temp
+copy is emitted in **`after_blk`** (the first-step false branch), not
+`loop_done_blk` (which is only the resume target and stores no state).
+
+**Operator ruling.** (a) **I1 = apply option (A):** replace the single
+`parent_result` slot with **one hidden kind-7 `AsyncFrameField` per value-returning
+implicit await**, typed to that await's result, appended in **source order** after
+the other hidden fields. This removes the first-await-wins truncation for
+multi-await callers. (b) **M1 = authorize** the spec wording fix. Dispatch order:
+**D1+D3 → D5 → D2 → D4**; D5 lands before D2.
+
+**Chosen mechanism vs the alternative.** **Per-await slots (chosen):** N kind-7
+slots in program order, each typed/sized/aligned to its own await; P4 selects the
+k-th by the program-order count of value-returning awaits (predicate
+`cd.return_type != void`, matching P2's `fn_ret_types != void`); the child `result`
+pointer for await k targets slot k, and `after_blk` copies slot k into that await's
+`result` temp. **Widest-type single slot (considered, rejected):** one slot sized
+and aligned to the widest awaited result — it over-allocates every multi-await
+caller and still requires a per-await offset (so it does not simplify P4) while
+losing the per-await type for the terminal store/read. Void-awaited calls still pay
+no slot (R8).
+
+**Re-verified baseline.** Branch `zig1_improvements`; HEAD `6da5e3d6` (merged
+D1+D3); compiler fixed point `21e7c475e5afb35cf096212fd752ffad`; seed **NOT
+rotated**; `repro/mi_matrix/EXPECTED_FAIL.md` unchanged.
+
+**Docs amended in place.** `async-compiler-core-design.md` §3.2 (frame record
+items 7/8 + tail paragraph), §3.3 (`loop_done_blk`/`after_blk` + per-await slot
+text), §4 (`AsyncFrameField` kind-7 comment), §6 (Amendment-10 pinned values);
+`async-compiler-core-plan.md` new **Task 6D5** (before Task 6D2) and Task 6D2
+re-ordered after 6D5 (Task 6D4 stays independent).
+
+**Pinned-value churn.** Only callers with **≥2 value-returning implicit awaits**
+gain extra kind-7 slots and move; zero/single-value-await callers are unchanged
+(`async_frame_xmod` `worker` stays **20**; Task-5c stays **`LAYOUT:m0:n22:s20`**).
+The new `async_await_multi_xmod` pins its own size/marker in Task 6D5.
 
 ## Amendable note
 
