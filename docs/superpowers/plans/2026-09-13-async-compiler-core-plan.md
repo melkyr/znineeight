@@ -991,6 +991,20 @@ Recorded before Task 1, per operator GO. Four facts:
 3. **Build path.** `sf/build/out_release` did not exist at Track-2 start (verified: no directory, no lock, no running build). Task 1 must first confirm `bash sf/scripts/build_release.sh` still compiles the current `sf/src`; if it does not, use the seed path (`bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out>` → `<out>/zig1_5_clean`) for every task's fixture recipe and record the substitution.
 4. **Tree hygiene.** The v13→v14 seed rotation was uncommitted at Track-2 start; committed as `0c0e81f5` (docs GATE) before Task 1. `scripts/seed/archive_seed.sh` (SEED_README fixed-point recipe fix) is part of that commit.
 
+## Amendment 2 (2026-09-14) — Build path substitution: seed path (zig0/current-cycle path is dead)
+
+Confirmed at Task-1 pre-flight: `bash sf/scripts/build_release.sh` does NOT build `sf/build/out_release/zig1`. It drives the frozen C++ bootstrap `zig0` (`sf/build/zig0`) and writes `/tmp/fx_subfolder/zig1` (ASAN); against current `sf/src` it aborts with `error: syntax error` at `sf/src/c89_emit.zig:1996` (`@bitCast(...)` unsupported by zig0). The current-cycle/zig0 path is therefore DEAD (as Amendment 1 fact 3 anticipated).
+
+Substitution for every Track-2 task (replaces all `sf/build/out_release/zig1` and `bash sf/scripts/build_release.sh` references):
+
+- Build the measurement compiler from the CURRENT `sf/src` via the seed path:
+  `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/zt2/t<N>`
+  → hop1 `<out>/zig1_5_clean` (new source compiled by the committed seed); the script prints hop1/hop2(/hop3) and the closure. Converged binary is `<out>/hop2/zig1_hop2` when hop1==hop2, else `<out>/hop3/zig1_hop3` when hop2==hop3 (moving point).
+- Fixture recipe: `<measurement_compiler> --dump-c89 --output-dir DIR repro/.../main.zig`, then compile every `DIR/*.c` with the binding flag set; classify by gcc exit code, never by empty stderr.
+- RED baseline = the previously converged compiler (or the extracted seed binary `zig1-seed/zig1`); GREEN = the converged compiler rebuilt from the post-change `sf/src`.
+- The recorded fixed point moves per task and is re-established at Task 8 (`FIXED_POINT_MD5=` optional gate).
+- Workdir: `/tmp/zt2` (created; `/tmp` swept per operator). Do not use `sf/build/out_release`.
+
 ## Amendable note
 
 This plan is amendable in place. Amendments record the reason, the affected task, and the re-verified baseline; do not rotate the seed or bump `EXPECTED_FAIL` outside Task 8.
