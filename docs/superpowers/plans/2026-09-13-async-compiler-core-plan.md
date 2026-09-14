@@ -709,6 +709,7 @@ fn plain() i32 {
 }
 
 const Expected = struct {
+    step: *void,   // Amendment 7: hidden pointer-sized step word @ offset 0
     ctx: *void,
     state: u8,
     x: i32,
@@ -724,19 +725,27 @@ pub fn main() void {
 }
 ```
 
+> **Amendment 7 churn (Step 1/4 values):** with the hidden step word the mirror
+> struct is `{step: *void, ctx: *void, state: u8, x: i32, y: i32}` = **20**
+> (was 16); offsets `step@0 / ctx@4 / state@8 / x@12 / y@16` on the 32-bit
+> fixture target. The actual tracked `async_frame_xmod` fixture update and both
+> pinned gates (this task's `Expected` and Task 5c's `LAYOUT …`) land **in the
+> same commit as the P2/P3 implementation change** (Task 6), per the report's
+> "pinned value churn is exactly what Task 5c owns."
+
 - [ ] **Step 2: Run to verify it fails (RED)**
 
 Build the measurement compiler via the seed path (Amendment 2): `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/zt2/t5a`; `MC=/tmp/zt2/t5a/hop2/zig1_hop2`. Dump `async_frame_xmod` to a fresh dir, compile every `DIR/*.c` with the binding flags and `-I "$DIR"`, link `gcc -m32 -std=c89 -O0 -I "$DIR" "$DIR"/*.c -o /tmp/zt2/t5a/frame` (the dump is self-contained; do NOT add the repo runtime trio), then run it → the program traps `panic: frame size mismatch` (placeholder value `0`).
 
 - [ ] **Step 3: Implement P2 `asyncFrameSizeRun` + wire `@asyncFrameSize`**
 
-In `sf/src/async_analysis.zig` add `asyncFrameSizeRun` (conservative rule (a), Amendment 4): for each function in `suspending_fns`, fields = field 0 `ctx` (`*void`), field 1 `state` (`u8`), then every parameter and every named local declared before the function's first suspension; size by natural layout (align each field to its type's alignment via `ctx.typereg`, accumulate, tail-pad to the max alignment) using `ctx.resolved_types` for the node→TypeId map. Write `ctx.frame_sizes[async_analysis.asyncKey(module_id, name_id)] = size`; emit `pal.markerWrite("FRAME:m<mid>:n<nid>:s<bytes>\n")`. Register `phase_AsyncFrameSize` in `main.zig` (after `phase_SemanticAnalysis`, before `phase_LIRLowering`).
+In `sf/src/async_analysis.zig` add `asyncFrameSizeRun` (conservative rule (a), Amendment 4; field order amended by Amendment 7): for each function in `suspending_fns`, fields = field 0 **`step` (pointer-sized; the target pointer type, offset 0 ALWAYS — `*void` on the 32-bit fixture; do NOT hard-code 4 bytes)**, field 1 `ctx` (`*void`), field 2 `state` (`u8`), then every parameter and every named local declared before the function's first suspension; size by natural layout (align each field to its type's alignment via `ctx.typereg`, accumulate, tail-pad to the max alignment) using `ctx.resolved_types` for the node→TypeId map. Write `ctx.frame_sizes[async_analysis.asyncKey(module_id, name_id)] = size`; emit `pal.markerWrite("FRAME:m<mid>:n<nid>:s<bytes>\n")`. Register `phase_AsyncFrameSize` in `main.zig` (after `phase_SemanticAnalysis`, before `phase_LIRLowering`). **Amendment 7:** the added step word moves every frame size; this P2 writer, the P3 reader (Task 5c), and both pinned gates must move in the same commit.
 
 In `sf/src/lower.zig`, replace the Task-2 placeholder `@asyncFrameSize` arm with the Task-5 Step-3 body: temp `TYPE_INT_LIT`; `async_analysis.asyncFrameSizeOf(self.ctx.frame_sizes, as.module_id, as.name_id)` → `int_const`.
 
 - [ ] **Step 4: Run to verify it passes (GREEN)**
 
-Rebuild `MC` from the seed path. Dump+gcc+link+run `async_frame_xmod` → `run rc=0` (no `@panic`; `got == @sizeOf(Expected) == 16`; natural offsets `ctx` 0 / `state` 4 / `x` 8 / `y` 12, size 16).
+Rebuild `MC` from the seed path. Dump+gcc+link+run `async_frame_xmod` → `run rc=0` (no `@panic`; `got == @sizeOf(Expected) == 20` after Amendment 7; natural offsets `step` 0 / `ctx` 4 / `state` 8 / `x` 12 / `y` 16, size 20). (Pre-step value was 16; the fixture and both gates move when the step word lands in Task 6.)
 
 - [ ] **Step 5: Commit**
 
@@ -805,7 +814,7 @@ git commit -m "feat: ERR_3046 for @asyncFrameSize on non-suspending function (AS
 
 - [ ] **Step 1: Implement the layout reader**
 
-Create `sf/src/async_frame_layout.zig`: compute the precise live-across set on LIR (values defined before a suspension and read after it) using the `lir_opt_pass` locator pattern; build `AsyncFrameLayout{ fields, layout_size }` with field order `ctx`, `state`, params, then live-across temps; require `layout_size <= frame_sizes[key]` (ICE if exceeded) and pad to `frame_sizes[key]`. Emit `pal.markerWrite("LAYOUT:m<mid>:n<nid>:s<layout_size>\n")`.
+Create `sf/src/async_frame_layout.zig`: compute the precise live-across set on LIR (values defined before a suspension and read after it) using the `lir_opt_pass` locator pattern; build `AsyncFrameLayout{ fields, layout_size }` with field order **`step` (pointer-sized, offset 0), `ctx`, `state`, params, then live-across temps** (Amendment 7); require `layout_size <= frame_sizes[key]` (ICE if exceeded) and pad to `frame_sizes[key]`. Emit `pal.markerWrite("LAYOUT:m<mid>:n<nid>:s<layout_size>\n")`. The step field is `AsyncFrameField.kind = 4` (see spec §4).
 
 - [ ] **Step 2: Invoke it**
 
@@ -813,7 +822,7 @@ Call the layout for each function whose `(module_id,name_id)` is in `suspending_
 
 - [ ] **Step 3: Gate**
 
-Temporary markers-enabled build (Amendment 3 recipe: uncommitted `g_markers_debug=1`, revert before commit) → `LAYOUT:m0:n<worker>:s16`; normal build keeps `async_frame_xmod` GREEN (`run rc=0`).
+Temporary markers-enabled build (Amendment 3 recipe: uncommitted `g_markers_debug=1`, revert before commit) → `LAYOUT:m0:n22:s20` (Amendment 7; was `s16` pre-step — this P3 gate is the **pinned-value churn owner** and must land with the P2 change in the same commit); normal build keeps `async_frame_xmod` GREEN (`run rc=0`).
 
 - [ ] **Step 4: Commit**
 
@@ -824,9 +833,11 @@ git commit -m "feat: P3 Stage-2 LIR frame layout reader (ASYNCTRACK2)"
 
 ---
 
-### Task 6R: Reconciliation I/F — resume/dispatch, frame typing, scheduler model, safety (record-only; STOP-present)
+### Task 6R: Reconciliation I/F — resume/dispatch, frame typing, scheduler model, safety (COMPLETE — ruled by Amendment 7)
 
 **Type:** I (record-only investigation/feasibility). **No source edits, no commit.** Ends in a **STOP-present** with a Go/No-Go recommendation. Do **not** implement Task 6 or Task 7.
+
+> **STATUS (Amendment 7): COMPLETE and RULED.** The record-only investigation landed in `.superpowers/sdd/task-ASYNCTRACK2-report.md` `## Task 6R` (A1–A10, I1–I7, O1–O5, STOP-present (a)/(b)/(c)). The operator ruling (hidden pointer-sized step word @ offset 0; heterogeneous self-dispatch; atomic Task 6 = O1/O2/O3/O4/O5 resolved) is recorded in **Amendment 7** below; the affected specs and Tasks 5a/5c/6/7 have been amended in place. Task 6 is **UNBLOCKED** and re-scoped by Amendment 7 — see the rewritten Task 6.
 
 **Why:** Task 6 returned BLOCKED on B1/B2/B3 (Amendment 6). Umbrella §16.1 items 1–4 were recorded as "reconciliations owed before advancing" and were never resolved; the four async documents disagree on resume dispatch and the scheduler. This task establishes what is in code and what must match before any design is dispatched.
 
@@ -865,23 +876,40 @@ git commit -m "feat: P3 Stage-2 LIR frame layout reader (ASYNCTRACK2)"
 
 ---
 
-### Task 6: Stage 3a — `_step` state machine with `switch_br` and save/restore (BLOCKED — pending Task 6R reconciliation; do NOT dispatch)
+### Task 6: Stage 3a+3b-lite — atomic `_step` state machine + implicit-await call-site rewrite (Amendment 7; UNBLOCKED)
+
+**Amendment 7 re-scope (operator ruling).** Task 6 is **atomic**: it includes the
+call-site implicit-await rewrite (previously deferred to Task 7) so there is no
+interim where a suspending function has no synchronous target. It implements the
+ruled architecture: **typed function-local `__Z98Frame_<f>` struct with a hidden
+pointer-sized step word @ offset 0**, `*void` at the builtin/API boundary,
+**heterogeneous self-dispatch** (`@asyncResume` loads the step word; no step
+parameter, no `Task.step`), and it keeps both direct-call frame regression
+fixtures (`async_frame_args_xmod`, `async_frame_branch_xmod`) green. This task
+owns the **pinned-value churn**: the step word changes `@asyncFrameSize(worker)`
+16 → 20 and `LAYOUT … s16` → `s20`, so the `async_frame_xmod` fixture and both
+pinned gates move in the **same commit** as the P2/P3 change (Task 5c owns the
+churn).
 
 **Files:**
 - Modify: `sf/src/async_state_machine.zig` (`asyncTransform`)
 - Modify: `sf/src/main.zig:719-722`
-- Modify: `sf/src/lower.zig` (`@asyncSuspend`/`@asyncResume`/`@asyncInit` real dispatch)
-- Test: `repro/mi_matrix/async_await_xmod/main.zig`, `async_suspend_store_xmod/main.zig`
+- Modify: `sf/src/lower.zig` (`@asyncInit`/`@asyncResume`/`@asyncSuspend` real dispatch)
+- Modify: `sf/src/semantic_analyzer.zig` (Res 3: `ERR_3018` gates `@asyncSuspend` only; `@asyncInit`/`@asyncResume` do not call the helper; keep `async_analysis_ready = false`)
+- Modify: `repro/mi_matrix/async_frame_xmod/main.zig` (+ `step: *void`; `Expected == 20`)
+- Test: `repro/mi_matrix/async_suspend_store_xmod/main.zig`, `async_await_xmod/main.zig`, `async_frame_xmod`, `async_frame_args_xmod`, `async_frame_branch_xmod`
 
 **Interfaces:**
-- Consumes: Tasks 3–5; `switch_br`/`load_field`/`store_field`/`int_const` (`lir.zig:37, 45-46, 74`); `nameManglerMangle` (`c89_emit.zig:455`); `lirStreamAppend` (`main.zig:720`).
-- Produces: `asyncTransform`; `__async_frame_<f>` type; `__async_step_<f>(frame: *void, arg: ?*void) ?*void`; `@asyncSuspend`/`@asyncResume`/`@asyncInit` control flow. 0 mandatory new `LirInst`.
+- Consumes: Tasks 3–5a/5c; `switch_br`/`load_field`/`store_field`/`load`/`store`/`ptr_cast`/`int_const` (`lir.zig:37, 45-46, 48-49, 70, 74`); `func_ref` + the reachability closure (`main.zig:968-977`); `lirStreamAppend` (`main.zig:720`).
+- Produces: `asyncTransform`; the typed `__Z98Frame_<f>` (step@0, pointer-sized); `__async_step_<f>(frame: *void, arg: ?*void) ?*void`; real `@asyncInit`/`@asyncResume`/`@asyncSuspend`; atomic implicit-await call-site rewrite; Res-7 cross-module extern/edge. 0 mandatory new `LirInst`. Backend-agnostic (Amendment 4): no `c89_*` calls.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the failing fixtures (B3-corrected)**
 
-Create `repro/mi_matrix/async_suspend_store_xmod/main.zig` — a single function with one explicit suspend, driven by `@asyncInit`/`@asyncResume`:
+Create `repro/mi_matrix/async_suspend_store_xmod/main.zig` — one explicit suspend, driven by `@asyncInit`/`@asyncResume`. Adopt the pinned **struct-of-params** `args` ABI and the **2-arg** `@ptrCast(T, expr)` form:
 
 ```zig
+const WArgs = struct { out: *i32 };
+
 fn worker(out: *i32) void {
     var acc: i32 = 1;
     @asyncSuspend(null);
@@ -893,8 +921,9 @@ pub fn main() void {
     var result: i32 = 0;
     var cbuf: [64]u8 = undefined;
     var fbuf: [64]u8 = undefined;
-    var ctxp: *void = @ptrCast(&cbuf);
-    var args: *const void = @ptrCast(&result);
+    var wa: WArgs = WArgs{ .out = &result };
+    var ctxp: *void = @ptrCast(*void, &cbuf);
+    var args: *const void = @ptrCast(*const void, &wa);
     var frame: *void = @asyncInit(ctxp, &fbuf, worker, args);
     var more: ?*void = @asyncResume(frame, null);
     while (more != null) {
@@ -906,7 +935,10 @@ pub fn main() void {
 }
 ```
 
-Create `repro/mi_matrix/async_await_xmod/main.zig` — caller awaits callee (child frame from `ctx`; full pool logic completed in Task 7, so this task's RED is the emit shape only):
+Create `repro/mi_matrix/async_await_xmod/main.zig` — caller awaits callee (child
+frame written with its own step word; full per-task LIFO pool accounting remains
+Task 7, so this task's child allocation may use the root `buf`/`ctx` region and
+this task's RED is the emit shape only):
 
 ```zig
 fn callee(out: *i32) void {
@@ -920,12 +952,15 @@ fn caller(out: *i32) void {
     out.* = tmp;
 }
 
+const CArgs = struct { out: *i32 };
+
 pub fn main() void {
     var result: i32 = 0;
     var cbuf: [256]u8 = undefined;
     var fbuf: [64]u8 = undefined;
-    var ctxp: *void = @ptrCast(&cbuf);
-    var args: *const void = @ptrCast(&result);
+    var ca: CArgs = CArgs{ .out = &result };
+    var ctxp: *void = @ptrCast(*void, &cbuf);
+    var args: *const void = @ptrCast(*const void, &ca);
     var frame: *void = @asyncInit(ctxp, &fbuf, caller, args);
     var more: ?*void = @asyncResume(frame, null);
     while (more != null) {
@@ -937,33 +972,47 @@ pub fn main() void {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 2: Run to verify they fail (RED)**
 
-Run:
+Build the measurement compiler from current `sf/src` via the seed path (Amendment 2): `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/zt2/t6`; `MC=/tmp/zt2/t6/hop2/zig1_hop2`. Dump each fixture with `$MC`, grep the emitted `.c` for `switch (`, then compile/link/run.
+
 ```bash
 cd /workspace/znineeight
-bash sf/scripts/build_release.sh 2>&1 | tail -1
+MC=/tmp/zt2/t6/hop2/zig1_hop2
 for d in async_suspend_store_xmod async_await_xmod; do
-  OUT=/tmp/asynct2/t6_$d; rm -rf "$OUT"; mkdir -p "$OUT"
-  timeout 120 sf/build/out_release/zig1 --dump-c89 --output-dir "$OUT" repro/mi_matrix/$d/main.zig 2>&1 | tail -1
+  OUT=/tmp/zt2/t6_$d; rm -rf "$OUT"; mkdir -p "$OUT"
+  timeout 120 "$MC" --dump-c89 --output-dir "$OUT" repro/mi_matrix/$d/main.zig 2>&1 | tail -1
   echo "$d dump rc=$?"
-  grep -c "switch" "$OUT"/*.c 2>/dev/null | head -1
+  grep -c "switch (" "$OUT"/*.c 2>/dev/null | head -1
+  gcc -m32 -std=c89 -O0 -I "$OUT" -I sf/src/include "$OUT"/*.c -o /tmp/zt2/$d.bin 2>&1 | tail -2
 done
 ```
-Expected RED: placeholders return null immediately, so `@asyncInit` yields a frame whose `state` is never advanced and `@asyncSuspend` is a no-op returning null; the linked program either traps or never delivers the result; emitted C has no `_step` function and no `switch (`. `grep -c` is `0`.
 
-- [ ] **Step 3: Write minimal implementation**
+Expected RED: placeholders return `null`/`*void` immediately; `@asyncInit` never writes a step word, `state` never advances, `@asyncSuspend` is a no-op; emitted C has no `_step` function and no `switch (` (`grep -c` = `0`); the linked program never delivers the result. Before the Res-5 fix the `@asyncResume` temp is typed `*void` and the C link also fails (`incompatible types … from type 'void *'`).
 
-Implement `asyncTransform(lf, actx)` in `sf/src/async_state_machine.zig` per subspec §3.3:
+- [ ] **Step 3: Write minimal implementation (ruled architecture)**
 
-1. Synthesize `__async_frame_<f>` (Stage 2 fields) in the `TypeRegistry`.
-2. Renumber suspension points in program order; entry `0`, terminal `K+1`.
-3. Rewrite the function to `__async_step_<f>(frame: *void, arg: ?*void) ?*void`; original name stays the `@asyncInit` entry.
-4. Emit entry `load_field state`, `switch_br { cond, cases_start/count, else_bb=terminate }`, state-0 prologue initializing params/frame from `arg`, `jump` to the post-prologue block.
-5. At each explicit `@asyncSuspend`: `store_field` each live temp, `int_const next_state`, `store_field state`, `ret` null. Resume case reloads and `jump`s past the suspend.
-6. Terminal: write result through the caller slot and `ret` null.
+Implement `asyncTransform(lf, actx)` in `sf/src/async_state_machine.zig` per subspec §3.3 (Amendment 7):
 
-Wire it in `main.zig` between line 719 and 720:
+1. **Synthesize** the typed function-local `__Z98Frame_<f>` in the `TypeRegistry` with the ruled field order: **`step` (pointer-sized, offset 0 ALWAYS), `ctx`, `state`, params, live-across**. Register the name through the interner/`TypeRegistry` (backend-neutral); never call `c89_*`.
+2. **Renumber** suspension points in program order (explicit `@asyncSuspend` plus each implicit-await call site); entry `0`, terminal `K+1`.
+3. **Rewrite** the function body to `__async_step_<f>(frame: *void, arg: ?*void) ?*void`; the original name stays the `@asyncInit` entry. Child frames carry their **own** step word.
+4. **Entry:** `load_field state`; `switch_br { cond, cases_start/count, else_bb=terminate }`; state-0 prologue initializes params/frame from `arg`; `jump` to the post-prologue block.
+5. **At each explicit `@asyncSuspend`:** `store_field` each live temp, `int_const next_state`, `store_field state`, `ret` null. The resume case reloads the live temps and `jump`s past the suspend.
+6. **Atomic implicit await at a call to suspending `g`:** at the call site, read `ctx` from the **caller's** frame, initialize a child frame **writing `g`'s step word into the child's offset 0**, drive the child `_step` in a loop, then continue; the call is itself suspension point N in `f`. This is in the **same** transform as the body rewrite (no dual-emit interim).
+7. **Terminal:** write the result through the caller-provided `*void` slot (L3) and `ret` null.
+
+In `sf/src/lower.zig`:
+
+- **`@asyncInit`:** zero the root frame in `buf`, store `ctx`, set `state = 0`, **write the step word for the target `fn`**, return `*void`. Lower `fn` inside the `suppress_fnref_ban` window (same as `@asyncFrameSize`) so it is a compile-time query and emits **no `ERR_3017`**; still emit the `func_ref`/step edge so the target's module stays reachable.
+- **`@asyncResume` (Res 5):** load the step word from offset 0, dispatch, and **emit/type the result as `?*void`** (`null` = terminal, non-null = suspended). Do **not** emit the `*void` placeholder — that is the Task-6 lowering fix.
+- **`@asyncSuspend`:** the suspend transition of the enclosing function.
+- **`-fsafe` (Amendment 7 trap):** emit `check_trap` for a **null step word** at `@asyncResume` and an **out-of-range `state`**, gated exactly like the existing numeric `check_trap`s; `-ffast` leaves this UB.
+- **Res 7 (cross-module edge):** `@asyncInit` on a cross-module `fn` emits, in the **caller's** C89 module, an **extern decl for `__Z98Step_<fn>`** (and the frame struct tag if any C type is shared); in the **callee's** module the step is emitted with **external linkage (not `static`)**. No user-visible symbol; the edge is compiler-managed (module reachability, A7).
+
+In `sf/src/semantic_analyzer.zig` (Res 3): keep `async_analysis_ready = false`; call the `ERR_3018` helper **only** in the `@asyncSuspend` arm; `@asyncInit`/`@asyncResume` are legal outside a suspending function (e.g. `main`).
+
+Wire the transform in `main.zig` between lines 719 and 720:
 
 ```zig
                         var lf = lower_mod.lowerFn(&lowerer, decls[di]);
@@ -971,47 +1020,104 @@ Wire it in `main.zig` between line 719 and 720:
                         var slot = lir_stream.lirStreamAppend(&ctx.lir_stream, lf);
 ```
 
-Implement real `@asyncInit` (zero the root frame in `buf`, store `ctx`, `state=0`, return frame), real `@asyncSuspend` (suspend transition of the enclosing function), and real `@asyncResume` (the `_step` drive returning non-null while yielded) in `lower.zig`. Do not add any new `LirInst` variant. If a synthetic struct type proves difficult, fall back to an opaque `[N]u8` frame + `load`/`store` at the same natural offsets.
+Do not add any new `LirInst` variant. If the synthetic struct type proves difficult, fall back to an opaque `[N]u8` frame + `load`/`store` at the same natural offsets. **Pinned-value churn:** update `repro/mi_matrix/async_frame_xmod/main.zig` (`Expected` gains `step: *void`; size 20) and re-run the Task-5a `Expected` and Task-5c `LAYOUT:m0:n22:s20` gates in this same commit.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 4: Run to verify they pass (GREEN)**
 
-Run:
 ```bash
 cd /workspace/znineeight
-bash sf/scripts/build_release.sh 2>&1 | tail -1
-for d in async_suspend_store_xmod async_await_xmod; do
-  OUT=/tmp/asynct2/t6_$d; rm -rf "$OUT"; mkdir -p "$OUT"
-  timeout 120 sf/build/out_release/zig1 --dump-c89 --output-dir "$OUT" repro/mi_matrix/$d/main.zig >/dev/null 2>/tmp/asynct2/t6_$d.err
+MC=/tmp/zt2/t6/hop2/zig1_hop2
+for d in async_suspend_store_xmod async_await_xmod async_frame_xmod async_frame_args_xmod async_frame_branch_xmod; do
+  OUT=/tmp/zt2/t6_$d; rm -rf "$OUT"; mkdir -p "$OUT"
+  timeout 120 "$MC" --dump-c89 --output-dir "$OUT" repro/mi_matrix/$d/main.zig >/dev/null 2>/tmp/zt2/t6_$d.err
   echo "$d dump rc=$?"
   for f in "$OUT"/*.c; do gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign \
     -Wno-implicit-function-declaration -I sf/src/include -c "$f" -o /dev/null || echo "GCCFAIL $d $f"; done
   gcc -m32 -std=c89 -O0 -I "$OUT" -I sf/src/include "$OUT"/*.c sf/src/include/zig_runtime.c \
-    sf/src/include/zig_pal.c -o /tmp/asynct2/$d && timeout 120 /tmp/asynct2/$d; echo "$d run rc=$?"
+    sf/src/include/zig_pal.c -o /tmp/zt2/$d && timeout 120 /tmp/zt2/$d; echo "$d run rc=$?"
   grep -c "switch (" "$OUT"/*.c | head -1
 done
 ```
-Expected GREEN: both dump rc=0; no `GCCFAIL`; both `run rc=0` (`@asyncSuspend` result 3, await result 10); emitted C contains a `switch (` dispatch (grep count ≥ 1); 3-run stdout md5 identical for any fixture that prints.
+
+Expected GREEN: all dumps rc=0; no `GCCFAIL`; `async_suspend_store_xmod` run rc=0 (result 3), `async_await_xmod` run rc=0 (result 10), and **both regression fixtures still run rc=0** (`async_frame_args_xmod` f(1)/h() and `async_frame_branch_xmod` worker(true)==1); `async_frame_xmod` run rc=0 (`got == @sizeOf(Expected) == 20`); emitted C contains a real `switch (` dispatch (`grep -c` ≥ 1) and a synthesized `_step`; 3-run stdout md5 identical for any fixture that prints. Under `-fsafe`, a null step word / out-of-range state traps; `-ffast` does not.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add sf/src/async_state_machine.zig sf/src/main.zig sf/src/lower.zig \
-  repro/mi_matrix/async_suspend_store_xmod repro/mi_matrix/async_await_xmod
-git commit -m "feat: Stage 3 LIR-to-LIR _step state machine (ASYNCTRACK2)"
+git add sf/src/async_state_machine.zig sf/src/main.zig sf/src/lower.zig sf/src/semantic_analyzer.zig \
+  repro/mi_matrix/async_frame_xmod repro/mi_matrix/async_suspend_store_xmod repro/mi_matrix/async_await_xmod
+git commit -m "feat: atomic Stage 3 _step state machine + implicit-await (frame step word, self-dispatch) (ASYNCTRACK2)"
 ```
 
 ---
 
-### Task 7: Stage 3b — per-task LIFO child frames, implicit await, `error.OutOfFrame`
+### Task 6b: Reject 1-arg `@ptrCast` with `ERR_3049` (Res 6; compiler change)
+
+**Why:** Res 6 — the 1-arg `@ptrCast(expr)` form is silently accepted and mis-lowered today (`lower.zig:4217` guards the type-value-cast path on `ec.len >= 2`; see report A5iii). It must be **rejected with a diagnostic**; "document 2-arg-only" is **not** the fix. This is the explicit Res-6 work item.
 
 **Files:**
-- Modify: `sf/src/async_state_machine.zig` (child-frame allocation at implicit-await sites)
-- Modify: `sf/src/lower.zig` (`@asyncInit` records the Context pool header; `@asyncSuspend` reads `ctx`)
+- Modify: `sf/src/diagnostics.zig` (append `ERR_3049_PTRCAST_REQUIRES_TWO_ARGS = 3049` with an explicit value)
+- Modify: `sf/src/semantic_analyzer.zig` (`@ptrCast` arm: reject any arity other than 2)
+- Test: `repro/mi_matrix/ptrcast_arity_xmod/main.zig`
+
+**Interfaces:**
+- Consumes: the next free explicit code `3049` (spec §5); the existing explicit-value discipline.
+- Produces: `error[3049]` for 1-arg `@ptrCast`; the 2-arg form `@ptrCast(T, expr)` is unchanged.
+
+- [ ] **Step 1: Write the failing fixture**
+
+Create `repro/mi_matrix/ptrcast_arity_xmod/main.zig` with a 1-arg call and a 2-arg control:
+
+```zig
+pub fn main() void {
+    var n: i32 = 0;
+    var p: *void = @ptrCast(&n);        // 1-arg: must be error[3049]
+    _ = p;
+    var q: *i32 = @ptrCast(*i32, &n);   // 2-arg: must compile
+    q.* = 1;
+}
+```
+
+- [ ] **Step 2: Run to verify it fails (RED)**
+
+Dump the fixture → `0` occurrences of `error[3049]` (the 1-arg form is silently accepted).
+
+- [ ] **Step 3: Implement the diagnostic**
+
+Append `ERR_3049_PTRCAST_REQUIRES_TWO_ARGS = 3049` to `ErrorCode`; in the `@ptrCast` sema arm, emit `error[3049]` when the argument count is not exactly 2. Keep the existing 2-arg typing/lowering path.
+
+- [ ] **Step 4: Run to verify it passes (GREEN)**
+
+Dump the fixture → `rc=2`, exactly `1` `error[3049]`, `0` `.c` files. A 2-arg-only fixture compiles and runs clean.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add sf/src/diagnostics.zig sf/src/semantic_analyzer.zig repro/mi_matrix/ptrcast_arity_xmod
+git commit -m "feat: reject 1-arg @ptrCast with ERR_3049 (Res 6, ASYNCTRACK2)"
+```
+
+---
+
+### Task 7: Stage 3b remainder — per-task LIFO child frames + `error.OutOfFrame` (Amendment 7 re-scope)
+
+**Amendment 7 re-scope.** The **call-site implicit-await rewrite moved into atomic
+Task 6**, so Task 7 no longer rewrites call sites. What remains here is the
+**pool accounting** the Task-6 child frame deferred: the frozen Track-3
+`Context` (`{pool, capacity, used, oom}`, **inline** reads per Res 1) as the
+per-task LIFO child-frame stack (bump + mark), `error.OutOfFrame` on exhaustion,
+and the `async_pool_xmod` `-fsafe` probe. Task 7 must **not** re-do the call-site
+rewrite; `ctx` is read from the caller frame and child frames keep their own
+step word (Task 6).
+
+**Files:**
+- Modify: `sf/src/async_state_machine.zig` (child-frame bump/mark allocation at the Task-6 implicit-await sites)
+- Modify: `sf/src/lower.zig` (`@asyncInit` initializes the Context pool handle; inline `ctx` field reads)
 - Test: `repro/mi_matrix/async_pool_xmod/main.zig` (`-fsafe` OutOfFrame probe)
 
 **Interfaces:**
-- Consumes: Task 6 transform; pinned Context contract (subspec §4: `buf` outside pool; per-task LIFO child-frame stack; bump + mark).
-- Produces: child-frame bump/mark allocation at suspending call sites; `ctx` read from the current frame; `error.OutOfFrame` (no crash) on exhaustion.
+- Consumes: Task 6 transform; pinned Track-3 Context contract (subspec §4: `buf` outside pool; per-task LIFO child-frame stack; inline bump + mark; `{pool, capacity, used, oom}`).
+- Produces: child-frame bump/mark allocation at suspending call sites; inline `ctx` reads from the current frame; `error.OutOfFrame` (no crash) on exhaustion.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1033,48 +1139,48 @@ fn level1(out: *i32) void {
     out.* = t + 1;
 }
 
+const L1Args = struct { out: *i32 };
+
 pub fn main() void {
     var result: i32 = 0;
     var pool: [24]u8 = undefined;      // intentionally too small for 3 child frames
     var cbuf: [64]u8 = undefined;
     var fbuf: [64]u8 = undefined;
-    var ctxp: *void = @ptrCast(&pool);
-    var args: *const void = @ptrCast(&result);
+    var la: L1Args = L1Args{ .out = &result };
+    var ctxp: *void = @ptrCast(*void, &pool);
+    var args: *const void = @ptrCast(*const void, &la);
     var frame: *void = @asyncInit(ctxp, &cbuf, level1, args);
     _ = frame;
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [ ] **Step 2: Run to verify it fails (RED)**
 
-Run:
+Build the measurement compiler from current `sf/src` via the seed path (Amendment 2): `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/zt2/t7`; `MC=/tmp/zt2/t7/hop2/zig1_hop2`.
+
 ```bash
-cd /workspace/znineeight
-bash sf/scripts/build_release.sh 2>&1 | tail -1
-OUT=/tmp/asynct2/t7; rm -rf "$OUT"; mkdir -p "$OUT"
-timeout 120 sf/build/out_release/zig1 --dump-c89 --output-dir "$OUT" repro/mi_matrix/async_pool_xmod/main.zig 2>&1 | tail -1
+OUT=/tmp/zt2/t7_pool; rm -rf "$OUT"; mkdir -p "$OUT"
+timeout 120 "$MC" --dump-c89 --output-dir "$OUT" repro/mi_matrix/async_pool_xmod/main.zig 2>&1 | tail -1
 grep -c "OutOfFrame\|OUT_OF_FRAME" "$OUT"/*.c
 ```
 Expected RED: `0` — no pool/OutOfFrame logic yet.
 
 - [ ] **Step 3: Write minimal implementation**
 
-At each implicit-await site in `asyncTransform`, emit: read `ctx` from the caller frame (`load_field ctx`), read the current bump pointer, compute the child frame address, advance the bump pointer by `frame_sizes[callee]`, store the mark, initialize the child, then drive the child `_step` in a loop and restore the mark when it returns null. On `new_bump > capacity`, return `error.OutOfFrame` rather than writing (the compiler core represents this as the `null`/error path of the builtin drive; Track 3 maps it to the `OutOfFrame` error value). `@asyncInit` must treat `buf` as the root frame (outside the pool) and store `ctx` as the pool handle. Confirm `frame_sizes[callee]` is already in the table (Task 5) before use; if absent, emit an ICE (`ERR_9001_ICE`).
+At the **Task-6 implicit-await sites** in `asyncTransform`, add the pool accounting: read `ctx` from the caller frame (`load_field ctx`), then **inline** read the frozen `{pool, capacity, used}` fields (Res 1), compute the child frame address, advance `used` by `frame_sizes[callee]`, store the mark, initialize the child (its step word was already written by Task 6), then restore the mark when the child `_step` returns null. On `used + size > capacity`, take the `error.OutOfFrame` path instead of writing (the compiler core represents this as the `null`/error path of the builtin drive; Track 3 maps it to the `OutOfFrame` error value and sets the sticky `oom` flag). `@asyncInit` must treat `buf` as the **root** frame (outside the pool) and initialize the `ctx` handle. Confirm `frame_sizes[callee]` is already in the table (Task 5) before use; if absent, emit an ICE (`ERR_9001_ICE`).
 
-- [ ] **Step 4: Run test to verify it passes**
+- [ ] **Step 4: Run to verify it passes (GREEN)**
 
-Run:
+Build `MC` from the seed path as in Step 2, then:
 ```bash
-cd /workspace/znineeight
-bash sf/scripts/build_release.sh 2>&1 | tail -1
-OUT=/tmp/asynct2/t7; rm -rf "$OUT"; mkdir -p "$OUT"
-timeout 120 sf/build/out_release/zig1 --dump-c89 --output-dir "$OUT" repro/mi_matrix/async_pool_xmod/main.zig >/dev/null 2>/tmp/asynct2/t7.err
+OUT=/tmp/zt2/t7_pool; rm -rf "$OUT"; mkdir -p "$OUT"
+timeout 120 "$MC" --dump-c89 --output-dir "$OUT" repro/mi_matrix/async_pool_xmod/main.zig >/dev/null 2>/tmp/zt2/t7.err
 echo "dump rc=$?"
 for f in "$OUT"/*.c; do gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign \
   -Wno-implicit-function-declaration -I sf/src/include -c "$f" -o /dev/null || echo "GCCFAIL $f"; done
-grep -c "mark\|bump\|capacity" "$OUT"/main.c
+grep -c "capacity\|used" "$OUT"/*.c
 ```
-Expected GREEN: dump rc=0; no `GCCFAIL`; emitted C shows the bump/mark/`OutOfFrame` path. Then re-run the Task 6 fixtures with a correctly sized pool: both still `run rc=0` (3 and 10), proving no regression.
+Expected GREEN: dump rc=0; no `GCCFAIL`; emitted C shows the inline bump/mark/`OutOfFrame` path. Then re-run the Task-6 fixtures with a correctly sized pool: all still `run rc=0` (`async_suspend_store_xmod` 3, `async_await_xmod` 10), proving no regression.
 
 - [ ] **Step 5: Commit**
 
@@ -1236,6 +1342,94 @@ Task 6 was dispatched and returned **BLOCKED** on three plan-level contradiction
 Root cause: umbrella §16.1 items 1–4 (Context/frame ABI ownership, `fn_ptr_struct_field` status, `@asyncInit` args ABI, and the step/scheduler model) were explicitly recorded as "reconciliations owed before advancing" and were never resolved; the async documents disagree on resume dispatch and the scheduler. Dispatching a design without code knowledge is the drift.
 
 Operator directive (m1481): add a **proper record-only I/F (investigation/feasibility) reconciliation task, Task 6R**, that answers (a) what is in code, (b) what must match, and (c) what needs to happen, ending in a **STOP-present** with a Go/No-Go recommendation — so the operator has wider context than the STOP before ruling. Task 6 is marked **BLOCKED** and **must not be re-dispatched** until Task 6R is ruled on and the affected documents are amended. Task 6R is record-only: no source edits, no commit, `timeout 120` on any binary probe.
+
+## Amendment 7 (2026-09-14) — Task 6R operator ruling: hidden pointer-sized step word, heterogeneous self-dispatch, atomic Task 6
+
+**Re-verified baseline.** Branch `zig1_improvements`; HEAD `17981456` (docs-only
+Amendment 6; source identical to the Task-5c review-fix); compiler fixed point
+`d6e7cb84e6e9615bc81f3e86ad92ffa5`; seed **NOT rotated** (v14 unchanged);
+`repro/mi_matrix/EXPECTED_FAIL.md` unchanged. Evidence:
+`.superpowers/sdd/task-ASYNCTRACK2-report.md` `## Task 6R` (A1–A10, I1–I7,
+O1–O5, STOP-present (a)/(b)/(c)).
+
+**Task 6R findings (record).** B1 (no resume dispatch: pinned
+`@asyncResume(frame, arg)` with no step slot), B2 (body vs call-site rewrite
+interdependent), B3 (fixture `@ptrCast(&result)` contradicts the struct-of-params
+`args` ABI); Track 3 `Task.step` (`:116`) directly contradicted Track 4's
+"passed, never stored" (`:221-226`) and both contradicted the core
+`@asyncResume(frame, arg)`; `fn_ptr_struct_field` re-verified **CLOSED** at the
+fixed point (A5); the `async_analysis_ready` gate is dead and the `3018` helper
+was (wrongly) wired for `@asyncInit`/`@asyncResume` (A1/I4); 1-arg `@ptrCast` is
+silently mis-lowered (A5iii); a step reached only through a stored pointer can be
+pruned without a static edge (A7); `-fsafe` had no frame/step trap (A8).
+
+**Operator ruling (Option 1 = hidden step word).** Frames are **typed
+function-local `__Z98Frame_<f>` structs, `*void` at the builtin/API boundary,
+with a hidden step word in the frame header.** The step word is **pointer-sized**
+(architecture-dependent; 4 bytes on typical 32-bit, but a DOS real-mode far
+pointer differs — **MUST NOT hard-code 4 bytes**) and is at **offset 0 ALWAYS**;
+**child frames carry their own step word.** Frozen frame-header order:
+`step, ctx, state, params, live-across`. `@asyncInit(ctx, buf, fn, args)` zeroes
+the frame, stores `ctx`, sets `state = 0`, **writes the step word for the target
+`fn`**, and returns `*void`; `@asyncResume(frame, arg)` **loads the step word and
+dispatches**, returning `?*void`. The locked `@asyncResume(frame, arg)` signature
+is retained (no step parameter). The scheduler is **heterogeneous
+self-dispatch**: `std.async.tick(s)`/`waitAll(s)` drive
+`@asyncResume(t.frame, t.arg)`; `Task.step` and every `step` parameter are
+removed. **Task 6 is atomic** (includes the call-site implicit-await rewrite; no
+dual-emit interim) and keeps both frame regression fixtures green. Prelude B:
+`@asyncInit`'s `fn` and the frame step word are compiler-generated/compile-time
+queries (same class as `@asyncFrameSize`) → **no `ERR_3017`**; a synthesized
+`__async_step_*` is not user-materializable. `-fsafe`: add a **null-step /
+state-range trap** (the only new trap), gated exactly like existing `check_trap`s.
+
+**Resolution order and content (apply/record in THIS ORDER).**
+
+1. **Res 5 — `@asyncResume` result typing.** `?*void` is **CORRECT** (`null` =
+   terminal, non-null = suspended); this is **not** a spec gap. The lowering that
+   emits `*void` is **wrong** and is **Task 6 work** (fix it to emit/type
+   `?*void`). Recorded as a Task-6 code-fix item, not a doc/spec change.
+2. **Res 6 — 1-arg `@ptrCast`.** Must be **REJECTED with a diagnostic** (a
+   compiler change); "document 2-arg-only" is **not** the fix. Explicit work item
+   **Task 6b**: new code `ERR_3049_PTRCAST_REQUIRES_TWO_ARGS = 3049` (next free
+   explicit value after `3048`).
+3. **Res 3 — `ERR_3018` scope.** Gate **only `@asyncSuspend`**.
+   `@asyncInit`/`@asyncResume` operate on opaque `*void` frames and do not require
+   the suspension-detection pass; **keep `async_analysis_ready = false`** as the
+   gate.
+4. **Res 2 — step word offset/ownership.** Offset 0 always; child frames carry
+   their own. Update P2/P3 and both size gates together.
+5. **Res 1 — Context ownership = INLINE.** Resolved by the buf-outside-pool rule:
+   `ctx` owns a **slice to the caller-provided pool**; no heap, no fixed array
+   inside the struct, no generics. Pinned caller idiom
+   (`var pool: [4096]u8 = undefined; var ctx = std.async.Context.init(pool[0..]);`)
+   is a **"verify at Track 3"** item (Track 3 is not implemented here).
+6. **Res 7 — synthesized-step emitted edge.** `@asyncInit` on a cross-module `fn`
+   emits, in the **caller's** C89 module, an **extern decl for `__Z98Step_<fn>`**
+   (and the frame struct tag if any C type is shared); in the **callee's** module
+   the step is emitted with **external linkage (not `static`)**; there is **no
+   user-visible symbol** and the edge is **compiler-managed** (also keeps the
+   callee module alive, A7). Recorded in the async-core spec §3.3 and Task 6.
+7. **Res 4 — `std.async` value-position gap.** **Document before Track 3; do NOT
+   resolve before Track 3** (recorded as a documented-before-Track-3 item).
+
+**Pinned-value churn (owned by Task 5c, landed with the P2/P3 change).** The step
+word changes `@asyncFrameSize(worker)` **16 → 20** and the Task-5a `Expected==16`
+self-check, and moves the Task-5c marker **`LAYOUT:m0:n22:s16` → `s20`**. Both
+gates and the `async_frame_xmod` fixture (`Expected` gains `step: *void`) must be
+recomputed and updated **in the same commit** as the P2/P3 implementation change.
+
+**Docs amended in place by this amendment.** `async-compiler-core-design.md`
+§3.2/§3.3/§3.4/§4/§5/§6; `std-async-design.md` §3.1/§3.3/§3.4/§4/§6 (and the
+matching §7 risk bullets); `coroutine-integration-design.md` §3.1/§3.2/§4/§7;
+`async-prelude-and-feasibility-design.md` §5/§6/§16.1. Task 6 is **unblocked** and
+rewritten atomic; Task 7 is re-scoped to pool accounting + `OutOfFrame`; Task 6b
+(Res 6) is inserted; Task 5a/5c gates move to the step-word sizes.
+
+**Fixtures.** `repro/mi_matrix/async_await_xmod/main.zig` and
+`async_suspend_store_xmod/main.zig` are rewritten to the struct-of-params `args`
+ABI and the 2-arg `@ptrCast(T, expr)` form in Task 6 Step 1 (they remain untracked
+until Task 6 re-dispatches). `async_pool_xmod` likewise in Task 7.
 
 ## Amendable note
 

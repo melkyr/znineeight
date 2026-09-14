@@ -93,6 +93,9 @@ pub const TaskState = enum(u8) {
 
 pub const FrameError = error{OutOfFrame};
 
+// The synthesized-step ABI (Track 2 `__async_step_<f>`). It is a type alias for
+// documentation only: the scheduler never stores or passes a StepFn (Amendment 7
+// self-dispatch); it drives `@asyncResume(t.frame, t.arg)` instead.
 pub const StepFn = fn(frame: *void, arg: ?*void) ?*void;
 
 pub const Context = struct {
@@ -108,13 +111,12 @@ pub fn contextMark(ctx: *Context) usize;
 pub fn contextRelease(ctx: *Context, mark: usize) void;
 
 pub const Task = struct {
-    frame: *void,          // root frame in caller-owned buf (outside the pool)
+    frame: *void,          // root frame from @asyncInit (caller-owned buf, outside the pool)
     ctx: *Context,         // this task's child-frame pool
     state: TaskState,
     cancel_requested: bool,
     result: *void,         // caller-provided result slot (L3)
-    step: StepFn,          // compiler-synthesized __async_step_<f>
-    arg: *void,            // resume argument passed to step
+    arg: *void,            // resume argument passed to @asyncResume
     waiting_on: *Task,     // awaitTask dependency (valid iff has_waiting_on)
     has_waiting_on: bool,
 };
@@ -141,6 +143,14 @@ pub fn waitAll(s: *Scheduler) FrameError!void;
 `false` when `count == capacity`. Callers address registered tasks through the
 scheduler (`&s.tasks[i]`) after registration.
 
+**Amendment 7 — heterogeneous self-dispatch.** `Task` has **no `step` field**,
+and there is **no `step` parameter** on any scheduler function. `tick`/`waitAll`
+drive each runnable task with `@asyncResume(t.frame, t.arg)`: the frame's hidden
+step word (offset 0) selects the correct `__async_step_<f>`, so a scheduler may
+hold tasks of different step functions (heterogeneous) with no user-nameable
+step. This is the single scheduler model shared by Track 3 and Track 4 and
+resolves umbrella §16.1's step/scheduler item.
+
 ### 3.2 Context pool semantics (m1166 / m1172)
 
 - **`buf` is outside the pool.** `@asyncInit(ctx, buf, fn, args)` places the
@@ -165,19 +175,20 @@ scheduler (`&s.tasks[i]`) after registration.
 
 `StepFn = fn(frame: *void, arg: ?*void) ?*void` is byte-for-byte the Track 2
 `__async_step_<f>(frame, arg) ?*void` ABI: a **null** result means terminal
-(done); a **non-null** result means still yielded. `tick` calls
-`t.step(t.frame, t.arg)`; `Task.arg` is a plain `*void` that coerces to `?*void`
-at the call.
+(done); a **non-null** result means still yielded.
 
-The step pointer is stored in the `Task.step` **struct field**. The historical
-`fn_ptr_struct_field` emission gap (umbrella §6 concern 1) is **closed** at the
-design fixed point: a `Task`-shaped struct with a
-`fn(frame: *void, arg: ?*void) ?*void` field emits the field as a real fn-pointer
-typedef and indirect-calls it correctly (verified 2026-09-13 on
-`1467d932a876402f40a56316dfcad0e5`; prints the expected value). **Contingency:**
-if a future change reopens the gap, drop `Task.step` and pass the step pointer
-per call (`tick(s, t, step)`, `awaitTask(s, t, step)`) — this preserves
-no-generics and no-fn-ptr-struct-field.
+**Amendment 7 — self-dispatch.** The step is **not stored in `Task` and not
+passed per call**. The compiler writes the step word into the frame header
+(**offset 0, pointer-sized**) at `@asyncInit`; `tick`/`waitAll` drive each task
+with `@asyncResume(t.frame, t.arg)`, which **loads the step word and dispatches**.
+`Task.arg` is a plain `*void` that coerces to `?*void` at the call. The
+synthesized `__async_step_<f>` symbol is compiler-managed and **never
+user-materializable** (Prelude B), so no user code — including `std.async` — can
+name a step. A scheduler is therefore **heterogeneous**: tasks backed by
+different synthesized steps coexist in one scheduler. `StepFn` remains only as
+the documented ABI alias (the `fn_ptr_struct_field` emission gap is no longer a
+dependency of this design, and was re-verified **closed** at the current fixed
+point).
 
 ### 3.4 Scheduler semantics
 
@@ -185,8 +196,9 @@ no-generics and no-fn-ptr-struct-field.
   resumes each currently-runnable task exactly once: skip `done`/`cancelled`;
   honor `cancel_requested` (transition to `cancelled`, do not resume); skip a
   task whose `waiting_on` dependency is not yet `done`/`cancelled`, clearing the
-  dependency once it settles; otherwise set `current`, mark `running`, call the
-  step, and set `done` on a null result or `suspended` on non-null.
+  dependency once it settles; otherwise set `current`, mark `running`, drive
+  `@asyncResume(t.frame, t.arg)` (self-dispatch through the frame step word), and
+  set `done` on a null result or `suspended` on non-null.
 - **`suspend(s, t)`** marks `t` suspended (cooperative-yield bookkeeping).
 - **`awaitTask(s, t)`** suspends the currently-running task (`s.tasks[s.current]`)
   until `t` is `done`/`cancelled`.
@@ -255,14 +267,19 @@ self-emission fixed point are unchanged; only the archive's `lib/` contents move
 - `ctx`-in-frame inheritance and the per-task LIFO child-frame allocation
   contract (`buf` outside the pool).
 
-**Frozen-ABI reconciliation (must be resolved jointly before integration).**
-Track 2 §3.3/§4 calls `Context` "opaque to the compiler core" while the Track 2
-plan (Task 7) emits inline bump/mark reads of `ctx`. The two cannot both hold:
-the field order above is the Track 3 contract. The implementation must pick one
-mechanism — generated inline access at these offsets, **or** a runtime helper with
-`contextAlloc`/`contextMark`/`contextRelease` semantics — and amend the other
-subspec to match. This subspec fixes the **layout and semantics**; the emission
-mechanism is amendable.
+**Frozen-ABI reconciliation (RESOLVED — Amendment 7, Res 1).** Ownership is
+**INLINE**. The `buf`-outside-the-pool rule resolves the Track-2 "opaque" vs
+Track-3 layout tension: `ctx` **owns a slice to the caller-provided pool** — no
+heap, no fixed array inside the struct, no generics needed. The compiler core
+reads the pool fields **inline** at the frozen layout above (bump + mark) rather
+than calling runtime helpers; the Track-2 wording is amended to match (see
+`async-compiler-core-design.md` §4). Pinned caller idiom, marked **"verify at
+Track 3"** (do not implement Track 3 here):
+
+```zig
+var pool: [4096]u8 = undefined;
+var ctx = std.async.Context.init(pool[0..]);
+```
 
 **Seed-lib contract.** The rebuilt compiler's `<exe_dir>/lib/` carries
 `std.zig` + the 8 existing modules + `std_async.zig`; `std.zig` re-exports
@@ -286,7 +303,7 @@ stdout over 3 runs (`-ffast`, `RUNRC=0`):
 | Fixture | Import | Covers | Exact stdout | stdout md5 (3x) |
 |---|---|---|---|---|
 | `stdlib_async_pool_xmod` | `std.async.*` | `contextInit`/`contextAlloc`/`contextMark`/`contextRelease`; LIFO reclaim; `OutOfFrame`; sticky `oom`/`used` | `1 1 1 1 0 1 1` | `38f19e53c09cbb69c1919cb5385c708d` |
-| `stdlib_async_sched_xmod` | `@import("std_async.zig")` | `schedulerInit`/`addTask`/`suspend`/`tick`/`waitAll`; `count`; step fn-ptr struct field | `1 3 2 10 20 30` | `29d3c32a9c1d30152faffca161cccac0` |
+| `stdlib_async_sched_xmod` | `@import("std_async.zig")` | `schedulerInit`/`addTask`/`suspend`/`tick`/`waitAll`; `count`; **heterogeneous self-dispatch** (`@asyncResume(t.frame, t.arg)`, no `Task.step`, no step parameter) | `1 3 2 10 20 30` | `29d3c32a9c1d30152faffca161cccac0` |
 | `stdlib_async_await_xmod` | `@import("std_async.zig")` | `awaitTask` dependency ordering + `cancel` | `10 20 4` | `7bbb0c578b9e01e312325b4d2e5f8c93` |
 | `stdlib_async_cancelall_xmod` | `@import("std_async.zig")` | `cancelAll` at a tick boundary; states settle to `cancelled` | `4 4 4` | `83b80a0f4d19b15f7cb1da65abf557a9` |
 | `stdlib_async_oom_xmod` | `@import("std_async.zig")` | `contextAlloc` exhaustion sets `oom`; `tick` propagates `error.OutOfFrame` (no crash) | `1 1` | `f2160c8ffedf48068f2e1137e0a3a7e7` |
@@ -323,13 +340,15 @@ Gate battery (every task; full sweep at closeout):
 
 ## 7. Risks
 
-- **Frozen Context ABI vs Track 2 "opaque" wording.** The single largest
-  cross-track risk; see §4. Mitigation: the layout/primitive contract is pinned
-  here and the plan's Task 1 states it; either Track 2 amends its wording or
-  adoption of a runtime helper, and no field is added silently.
-- **`fn_ptr_struct_field` regression.** `Task.step` relies on the gap staying
-  closed. Mitigation: a dedicated fixture (`stdlib_async_sched_xmod`) indirect-calls
-  through the field, and §3.3 states the per-call-step fallback.
+- **Frozen Context ABI vs Track 2 "opaque" wording — RESOLVED (Amendment 7, Res
+  1).** Ownership is INLINE at the §4 layout; the Track-2 wording is amended to
+  match, and no field is added silently. Residual: the pinned caller idiom is a
+  **"verify at Track 3"** item.
+- **`fn_ptr_struct_field` regression — no longer a dependency (Amendment 7).**
+  `Task.step` is removed; the scheduler self-dispatches through the frame step
+  word, so this design no longer relies on a fn-ptr struct field. The gap was
+  re-verified **closed** at the current fixed point; `stdlib_async_sched_xmod`
+  now covers heterogeneous self-dispatch instead.
 - **Optional-pointer struct fields + `[N]T = undefined`.** Arrays of a struct with
   an optional pointer field emit invalid C (`field = 0` to an `Opt_` type) at the
   design fixed point. `Task` therefore uses `waiting_on: *Task` plus a
@@ -338,7 +357,8 @@ Gate battery (every task; full sweep at closeout):
 - **Module-scope mutable globals.** The library takes a caller-supplied
   `Scheduler`/`Context` and defines no module state (umbrella §6 concern 2).
   Fixtures keep the OOM path global-free; no fixture of record needs a global.
-- **`std.async` value-position nested access (`error[3042]`).** At the design
+- **`std.async` value-position nested access (`error[3042]`) — DOCUMENT BEFORE
+  TRACK 3, DO NOT RESOLVE BEFORE TRACK 3 (Amendment 7, Res 4).** At the design
   fixed point, a bare `@import("std")` consumer can call `std.async.fn(...)` and
   annotate `*std.async.Context`, but **cannot** write `std.async.Task{...}`,
   `std.async.TaskState.ready`, or `const T = std.async.Task;` — the re-exported

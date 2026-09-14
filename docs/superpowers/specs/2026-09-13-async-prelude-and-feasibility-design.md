@@ -82,7 +82,7 @@ census/anchors, throwaway hand-written C89 prototypes, and a Go/No-Go recommenda
 | # | Decision | Value |
 |---|---|---|
 | L1 | Suspension model | **Implicit await** (doc-literal): `@asyncSuspend` is an explicit yield, and a bare call to a suspending function is a suspension point. |
-| L2 | Builtin surface | `@asyncFrameSize(fn)`, `@asyncInit(ctx: *Context, buf: [*]u8, fn, args) *void`, `@asyncResume(frame: *void, arg: *void) ?*void`, `@asyncSuspend(data: *void) *void`. `ctx` is NEW and stored in the frame; `buf` is the root frame, caller-owned and outside the pool (m1166/m1172). |
+| L2 | Builtin surface | `@asyncFrameSize(fn)`, `@asyncInit(ctx: *Context, buf: [*]u8, fn, args) *void`, `@asyncResume(frame: *void, arg: ?*void) ?*void`, `@asyncSuspend(data: ?*void) *void`. `ctx` is NEW and stored in the frame; `buf` is the root frame, caller-owned and outside the pool (m1166/m1172). **Amendment 7:** the signature stays `@asyncResume(frame, arg)` (no step parameter) — it **self-dispatches via the frame step word** (pointer-sized, offset 0). |
 | L3 | Result delivery | Caller-provided `*void` slot (no generics). |
 | L4 | Prelude A syntax | `extern "<conv>" fn NAME(...) ...;` and `extern "<conv>" fn(params) Ret` as a function-pointer type. Valid strings: `"c"`/`"cdecl"` (= cdecl, default) and `"stdcall"`. Unknown string → new diagnostic. |
 | L5 | Prelude A emission | Emit the convention on the extern prototype/definition and on the fn-pointer typedef. **Force a prototype for an extern function when a convention is present** (today none is emitted). |
@@ -119,14 +119,22 @@ Spike resolutions (evidence in `.superpowers/sdd/task-ASYNCPRELUDE-report.md`):
 - **Error/warning code assignment → explicit numeric values.** `ErrorCode` is an
   auto-incrementing `enum(u16)`; the free codes are `3017-3019` and `3045-3047`; all
   new members must be appended with an explicit `= NNNN` (never a bare member). See
-  §12.7. [§15.7]
+  §12.7. [§15.7] **Amendment 7:** those values are now assigned (`3017/3018/3019`
+  async, `3045` Track 1, `3046` async, `3047` optional advisory); the **next free
+  value is `3049`**, claimed by the Res-6 1-arg `@ptrCast` diagnostic
+  (`ERR_3049_PTRCAST_REQUIRES_TWO_ARGS`).
 
 **Non-negotiable.** The five recorded concerns below MUST be resolved as part of the
 **Prelude B** (suspending-fn-pointer) ban; the async Stage-1 dynamic-call soundness
 argument depends on every one of them:
 
 1. `fn_ptr_struct_field` emission gap (`repro/mi_matrix/fn_ptr_struct_field` emits the
-   field as `void`) — blocks any `step` fn-ptr frame/struct field.
+   field as `void`) — **CLOSED at HEAD (Amendment 7; re-verified 2026-09-14 at the
+   Task-5c review-fix fixed point `d6e7cb84e6e9615bc81f3e86ad92ffa5`: the corpus
+   `fn_ptr_struct_field` and a minimal `struct{f: fn(i32)i32}` probe both emit a real
+   fn-pointer member and indirect-call correctly).** The ruled architecture no longer
+   depends on this (the frame carries a raw pointer-sized step word at offset 0 and
+   `@asyncResume` self-dispatches).
 2. Module-scope mutable globals (`module_pub_var_int` runtime gap) — blocks a global
    scheduler; `std.async` must take a caller-supplied `Scheduler`/`Task`.
 3. Frame-size single source of truth — the pre-lowering size table and the Stage-2
@@ -459,11 +467,11 @@ Chain: **1 → 2 → 3 → 4.** Tracks 1 and 2 move the compiler fixed point (N-
 
 ### 16.1 Cross-track reconciliations owed before advancing
 
-Surfaced by the four authoring passes; each must be resolved in the owning subspec/plan (or here) before the dependent track starts. None changes the Go verdict.
+Surfaced by the four authoring passes; each must be resolved in the owning subspec/plan (or here) before the dependent track starts. None changes the Go verdict. **Status at Amendment 7: items 1, 2 and 4 are RESOLVED; item 3 is DEFERRED (documented before Track 3); items 5–6 are standing coordination notes.**
 
-1. **`Context` ABI ownership (Track 2 vs Track 3).** Track 2's plan treats `Context` as opaque and emits inline pool reads; Track 3 pins a `{pool, capacity, used, oom}` layout. Decide one owner before Track 3. Preferred: pool primitives as runtime helpers so the compiler does not depend on the `Context` layout (consistent with the backend-neutral helper precedent), with Track 3 `std.async.Context` the caller-facing struct.
-2. **`fn_ptr_struct_field` status.** Spike report §5.2 recorded it as an open gap; Track 3 reports it CLOSED at `1467d932`. Re-verify at the fixed point in force when Track 3 starts and amend the Track-3 `Task.step` decision.
-3. **`std.async` value-position gap.** Bare `@import("std")` + `std.async.Task{...}` / `std.async.TaskState.ready` hits pre-existing `error[3042]` + `warning[3023]`. Track 3 must keep those usages as functions/types only, or a compiler follow-up adds value-position re-export support (operator ruling needed).
-4. **`@asyncInit` `args` ABI.** Track 2 pins a caller struct pointer (`?*const void`, null for zero params); Track 3 must adopt it.
-5. **Shared `ErrorCode` band.** Tracks 1 and 2 both append explicit-valued members (Track 1 `ERR_3045`; Track 2 `ERR_3017/3018/3019/3046`). Order-independent because every member is `= NNNN`; both subspecs keep the explicit-value discipline.
+1. **`Context` ABI ownership (Track 2 vs Track 3) — RESOLVED (Amendment 7, Res 1): INLINE.** `ctx` owns a slice to the caller-provided pool (`buf` is outside the pool); no heap, no fixed array inside the struct, no generics. The compiler reads the pool fields inline at the frozen Track-3 layout (bump + mark); the Track-2 "opaque" wording is amended. Pinned caller idiom — `var pool: [4096]u8 = undefined; var ctx = std.async.Context.init(pool[0..]);` — is an explicit **"verify at Track 3"** item.
+2. **`fn_ptr_struct_field` status — RESOLVED (Amendment 7): CLOSED at HEAD.** Re-verified at the Task-5c fixed point `d6e7cb84…`; the ruled architecture does not depend on it (frame step word + self-dispatch). The Track-3 `Task.step` decision is moot: `Task.step` is removed.
+3. **`std.async` value-position gap — DEFERRED (Amendment 7, Res 4).** Bare `@import("std")` + `std.async.Task{...}` / `std.async.TaskState.ready` hits pre-existing `error[3042]` + `warning[3023]`. **Documented before Track 3; NOT resolved before Track 3** (the documented direct-import workaround stands). A compiler follow-up may add value-position re-export later.
+4. **`@asyncInit` `args` ABI — RESOLVED (Amendment 7, B3):** adopt the pinned struct-of-params ABI (`?*const void`, null for zero params) and fix the Task-6 fixtures accordingly (struct-of-params `args` plus the 2-arg `@ptrCast(T, expr)` form). No ABI change.
+5. **Shared `ErrorCode` band.** Tracks 1 and 2 both append explicit-valued members (Track 1 `ERR_3045`; Track 2 `ERR_3017/3018/3019/3046`; **Amendment 7 adds the non-async Res-6 code `ERR_3049_PTRCAST_REQUIRES_TWO_ARGS = 3049`**). Order-independent because every member is `= NNNN`; both subspecs keep the explicit-value discipline.
 6. **Track ordering.** Track 3's hand-written step fixtures need no `@async*` builtins, so it may start before Track 2 lands; if Track 2 lands first, Track 3 records the new fixed point/seed at its Task 1. Track 4 depends on Track 3.

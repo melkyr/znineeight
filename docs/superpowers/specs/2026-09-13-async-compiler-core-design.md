@@ -202,35 +202,54 @@ when it is defined before the suspension and first read at or after it
 function from `ctx.alloc.scratch`, reset per function (`main.zig:722`) — no new
 spill level.
 
-**Frame record.** For each suspending function, synthesize fields in this
-deterministic order:
+**Frame record (Amendment 7, operator ruling).** Frames are **typed
+function-local `__Z98Frame_<f>` structs, `*void` at the builtin/API boundary**,
+with a **hidden step word in the frame header**. For each suspending function,
+synthesize fields in this **frozen deterministic order**:
 
-1. `ctx: *Context` — pointer-sized, set by `@asyncInit`, read from the *current*
+1. `step` — **the hidden step word, at offset 0 ALWAYS.** It is
+   **pointer-sized** (architecture-dependent): 4 bytes on typical 32-bit, and a
+   DOS real-mode far function pointer differs in semantics, so the spec/passes
+   **MUST NOT hard-code 4 bytes**. On the 32-bit fixture target it is `*void`.
+   Written by `@asyncInit` for the target `fn` (and by child-frame init for the
+   callee); read by `@asyncResume` to select the body. **Child frames carry
+   their own step word.** The synthesized `__async_step_*` symbol is never
+   user-materializable (see §3.4, Prelude B).
+2. `ctx: *Context` — pointer-sized, set by `@asyncInit`, read from the *current*
    frame at every child allocation (m1166).
-2. `state: uN` — `u8` when `suspension_count <= 255`, else `u16`, else `u32`,
+3. `state: uN` — `u8` when `suspension_count <= 255`, else `u16`, else `u32`,
    where a suspension point is every explicit `@asyncSuspend` **plus** every
-   implicit-await call to a suspending callee.
-3. Every `LirParam` in `params` order.
-4. Every `hoisted_temps` entry live across ≥1 suspension point, in `temp_id`
+   implicit-await call to a suspending callee. Read by `@asyncResume` for the
+   dispatch; range-checked under `-fsafe` (Amendment 7).
+4. Every `LirParam` in `params` order.
+5. Every `hoisted_temps` entry live across ≥1 suspension point, in `temp_id`
    (declaration) order. Temps not live across any suspension stay ordinary C
    locals and are not in the frame.
 
 Offsets/size follow the single natural-layout path of
-`type_resolver.zig:125-160` (`alignUp` + tail padding): `ctx` (4 B, align 4),
-`state`, then fields at natural alignment; the total is rounded up to
-`max_align`. `@asyncFrameSize(fn)` is this **flat** size and **excludes** child
-frames (m1166/m1172). The runtime total is the sum of frame sizes along the
-active call chain.
+`type_resolver.zig:125-160` (`alignUp` + tail padding): `step`
+(pointer-sized, pointer alignment), `ctx` (pointer-sized, align 4 on the 32-bit
+fixture), `state`, then fields at natural alignment; the total is rounded up to
+`max_align`. On the 32-bit fixture target (`*void` step + `*void` ctx + `u8`
+state + two `i32` params) the layout is `step@0 s4 / ctx@4 s4 / state@8 s1 /
+params@12..` → **size 20** (was 16 pre-step). Because the step word is
+pointer-sized, the authoritative size is target-dependent. `@asyncFrameSize(fn)`
+is this **flat** size and **excludes** child frames (m1166/m1172). The runtime
+total is the sum of frame sizes along the active call chain.
 
 **Authoritative size (concern 3, §15.1).** `frame_sizes[key]` is written by the
-Stage 1 pre-lowering pass using the *candidate* field set (every param plus every
-body local/temp that can be live across a suspension), i.e. a conservative upper
-bound. Stage 2 computes the precise live-across set and the natural-layout
-`layout_size`; it requires `layout_size <= frame_sizes[key]` and pads the emitted
-frame struct up to `frame_sizes[key]`. `@asyncFrameSize` returns
-`frame_sizes[key]`. This guarantees a caller buffer can never under-size the
-frame. A future precise-shrink refinement must move the writer and both readers
-together; it is **not** part of v1.
+Stage 1 pre-lowering pass using the *candidate* field set (**the hidden
+pointer-sized `step` word** plus every param plus every body local/temp that can
+be live across a suspension), i.e. a conservative upper bound. Stage 2 computes
+the precise live-across set and the natural-layout `layout_size`; it requires
+`layout_size <= frame_sizes[key]` and pads the emitted frame struct up to
+`frame_sizes[key]`. `@asyncFrameSize` returns `frame_sizes[key]`. This guarantees
+a caller buffer can never under-size the frame. A future precise-shrink
+refinement must move the writer and both readers together; it is **not** part of
+v1. Adding the step word moves the authoritative size for every frame; P2 (the
+sole writer), P3 (the reader), and both pinned gates (Task-5a `Expected` and
+Task-5c `LAYOUT … s16`) must be updated in the **same commit** (Amendment 7;
+"pinned value churn" is exactly what Task 5c owns).
 
 **`-s<N>` impact.** No new spill level. Async data is runtime/scratch and baked
 into the synthesized frame/emitted C; `SPILL_COUNT = 5`
@@ -249,13 +268,24 @@ declaration time and streamed bytes would need re-patching.
 
 **Transform.**
 
-- **Synthesize** `__async_frame_<f>` in the `TypeRegistry` with the Stage 2
-  fields; access via existing `load_field`/`store_field` (`lir.zig:45-46`),
-  resolved to C member names by the emitter's field logic. The name is mangled
-  through `nameManglerMangle` (`c89_emit.zig:455`).
-- **Rewrite** `f` into `__async_step_<f>(frame: *void, arg: *void) ?*void`
+- **Synthesize** the typed function-local `__Z98Frame_<f>` in the `TypeRegistry`
+  with the Stage 2 fields (`step` first/offset 0, then `ctx`, `state`, params,
+  live-across); access via existing `load_field`/`store_field` (`lir.zig:45-46`),
+  resolved to C member names by the emitter's field logic. The name is registered
+  through the string interner / `TypeRegistry` (backend-neutral; Amendment 4) and
+  the emitter mangles it generically (`nameManglerMangle`, `c89_emit.zig:455`).
+  The type is `*void` at the builtin/API boundary.
+- **Rewrite** `f` into `__async_step_<f>(frame: *void, arg: ?*void) ?*void`
   (non-null result = still yielded, null = done) emitted under the mangled step
-  name; the original name remains the `@asyncInit` entry.
+  name; the original name remains the `@asyncInit` entry. When the frame crosses
+  the builtin/API boundary it is `*void`, but the body operates on the typed
+  function-local frame.
+- **Step word (Amendment 7).** `@asyncInit(ctx, buf, fn, args)` zeroes the root
+  frame in `buf`, stores `ctx`, sets `state = 0`, and **writes the step word for
+  the target `fn`**; it returns `*void`. `@asyncResume(frame, arg)` **loads the
+  step word from offset 0 and dispatches** through it; the locked
+  `@asyncResume(frame, arg)` signature is retained (no step parameter). The step
+  word is pointer-sized and **offset 0 always**; child frames carry their own.
 - **State numbering:** state `0` = fresh entry; states `1..K` assigned in program
   order of suspension points (deterministic, monotonic with `createBlock` ids,
   `lower.zig:949-958`); terminal state `K+1`.
@@ -266,10 +296,20 @@ declaration time and streamed bytes would need re-patching.
   `int_const next_state = N` (`lir.zig:74`); `store_field state = N`; `ret` a
   null pointer (yield). The resume case for N `load_field`-reloads the live temps
   and `jump`s to the instruction after the suspend.
-- **Implicit await at a call to suspending `g`:** the call site reads `ctx` from
-  the **caller's** frame, allocates and initializes a child frame from the
-  per-task frame stack, and drives `g`'s `_step` in a loop, updating the caller's
-  live state; the call is itself suspension point N in `f`.
+- **Implicit await at a call to suspending `g` (atomic; Amendment 7):** the call
+  site reads `ctx` from the **caller's** frame, allocates and initializes a child
+  frame (writing the child's own step word for `g`) from the per-task frame stack,
+  and drives `g`'s `_step` in a loop, updating the caller's live state; the call
+  is itself suspension point N in `f`. The call-site rewrite is part of the same
+  (atomic) Task 6 as the body rewrite — no interim where `f` has no synchronous
+  target.
+- **Synthesized-step emitted edge (Res 7).** `@asyncInit` on a **cross-module**
+  function emits, in the **caller's C89 module**, an **extern decl for
+  `__Z98Step_<fn>`** (and for the frame struct tag if any C type is shared). In
+  the **callee's module** the step function is emitted with **external linkage
+  (not `static`)**. There is **no user-visible symbol** for the synthesized step;
+  the emitted edge is **compiler-managed** (it also keeps the callee module alive
+  for the emitter's reachability closure).
 - **Terminal:** store the result through the caller-provided `*void` slot (L3)
   and `ret` null.
 
@@ -310,15 +350,29 @@ the existing builtin ids (`:64-93`); intern them in `semanticAnalyzerInit`
 | `@asyncResume(frame, arg)` | optional pointer (`?*void`) | `frame` `*void`, `arg` `?*void` |
 | `@asyncSuspend(data)` | `TYPE_PTR_VOID` (`*void`) | `data` `?*void` |
 
-Error-site rules in sema: any `@async*` lexically outside a suspending function
-→ `ERR_3018_ASYNC_SUSPEND_OUTSIDE_SUSPENDING = 3018` (resolved via the Stage 1
-table on the enclosing `fn_decl` symbol); any `@async*` inside `defer`/`errdefer`
-→ `ERR_3019_ASYNC_BUILTIN_IN_DEFER = 3019`, tracked by a new `defer_depth` counter
-mirroring `switch_depth` (`semantic_analyzer.zig:46, 181, 1818`). Reviving the
-dead `ERR_4002_DEFER_IN_INVALID_SCOPE` (`diagnostics.zig:53`) is the sanctioned
+Error-site rules in sema (Amendment 7, Res 3): **only `@asyncSuspend` is
+`ERR_3018`-gated.** An `@asyncSuspend` lexically outside a suspending function →
+`ERR_3018_ASYNC_SUSPEND_OUTSIDE_SUSPENDING = 3018` (resolved via the Stage 1
+table on the enclosing `fn_decl` symbol); the gate remains the
+`async_analysis_ready` flag and it is **kept `false`** — only `@asyncSuspend`
+needs Stage 1 complete. **`@asyncInit`/`@asyncResume` operate on opaque `*void`
+frames, do not require the suspension-detection pass, and are legal outside a
+suspending function (e.g. in `main`); they must not call the `3018` helper.**
+Any `@async*` inside `defer`/`errdefer` → `ERR_3019_ASYNC_BUILTIN_IN_DEFER =
+3019`, tracked by a new `defer_depth` counter mirroring `switch_depth`
+(`semantic_analyzer.zig:46, 181, 1818`). Reviving the dead
+`ERR_4002_DEFER_IN_INVALID_SCOPE` (`diagnostics.zig:53`) is the sanctioned
 alternative for `3019`; v1 uses `3019` and leaves `ERR_4002` for the separate
 general defer hardening item. `@asyncFrameSize` on a non-suspending/unknown
 function → `ERR_3046_ASYNC_FRAME_SIZE_INVALID = 3046`.
+
+**Prelude B at the builtins (Amendment 7).** `@asyncInit`'s `fn` argument and the
+frame step word are **compiler-generated/compile-time queries** (the same class as
+`@asyncFrameSize`), so they produce **no `ERR_3017`**: the `suppress_fnref_ban`
+window applies while lowering `@asyncInit`'s `fn` (and the `func_ref`/step edge is
+still emitted for module liveness). A synthesized `__async_step_<f>` is
+**not user-materializable** — taking its address as an ordinary value is not
+expressible in the language surface.
 
 **Argument contract (pinned for Track 3).** `args` is a caller-declared struct
 whose fields correspond in order and type to the target's parameters;
@@ -336,14 +390,31 @@ intern them in `lowererInit` (`:428-568`), then four dispatch arms:
   comptime constant (the early AST `comptime` pass runs before sema/lowering,
   `main.zig:302`, and cannot see final layout).
 - `@asyncInit` → allocate/zero the root frame in the caller `buf`, store `ctx`,
-  set `state = 0`, and return the frame pointer.
-- `@asyncResume` → the state-machine drive (Stage 3), returning non-null while
-  yielded.
+  set `state = 0`, **write the step word for the target `fn`**, and return the
+  frame pointer (`*void`). For a cross-module target, emit the Res-7 extern
+  step decl/edge in the caller's module.
+- `@asyncResume` → the state-machine drive (Stage 3): **load the step word from
+  offset 0 and dispatch**, returning non-null while yielded. The result is the
+  **optional pointer `?*void`** (`null` = terminal, non-null = suspended).
 - `@asyncSuspend` → the suspend transition of the enclosing function (Stage 3),
   returning the yielded value.
 
+**Res 5 (Task-6 code fix, not a spec change).** The `?*void` result typing above
+is **correct**. The lowering arm that currently emits/types a plain `*void`
+placeholder is **wrong** and must be fixed to emit/type `?*void` as part of
+Task 6 (recorded as a Task-6 work item, not a diagnostic or spec gap).
+
+**Res 6 (`@ptrCast` arity).** The 1-argument `@ptrCast(expr)` form is silently
+accepted and mis-lowered today; it must be **rejected with a new diagnostic**
+(a compiler change, not a documentation-only fix). The explicit code is
+`ERR_3049_PTRCAST_REQUIRES_TWO_ARGS = 3049` (next free value after `3048`);
+the Task-6 fixtures use the 2-arg form `@ptrCast(T, expr)`.
+
 Buffer-too-small / null frame: `-fsafe` traps, `-ffast` is UB (documented).
 Pool exhaustion at a suspension point → `error.OutOfFrame`, not a crash.
+**Amendment 7 `-fsafe` trap (the only new trap):** a **null step word** loaded by
+`@asyncResume` and an out-of-range `state` are trapped, gated exactly like the
+existing `check_trap`s (`lower.zig` numeric traps); `-ffast` leaves this UB.
 
 ## 4. Interfaces
 
@@ -364,7 +435,8 @@ pub fn suspensionAnalysisRun(ctx: *CompilerContext) void; // pass body
 **Frame/reference types (`sf/src/async_lowering.zig`, new).**
 ```zig
 pub const AsyncFrameField = struct { name_id: u32, type_id: u32, offset: u32, kind: u8 };
-// kind: 0=ctx, 1=state, 2=param, 3=live temp
+// kind: 0=ctx, 1=state, 2=param, 3=live temp, 4=step (hidden; offset 0 ALWAYS,
+//       pointer-sized type_id per Amendment 7 — do NOT hard-code 4 bytes)
 pub const AsyncFrameLayout = struct {
     frame_size: u32,       // == frame_sizes[key]; authoritative
     layout_size: u32,      // natural-layout size, <= frame_size
@@ -392,9 +464,25 @@ fn __async_step_<fn>(frame: *void, arg: ?*void) ?*void
 @asyncResume(frame: *void, arg: ?*void) ?*void
 @asyncSuspend(data: ?*void) *void
 ```
-`Context` is opaque to the compiler core: `ctx` is a pointer-sized handle stored
-in every frame and inherited unchanged down a call chain. Track 3 defines
-`Context`'s pool shape (per-task LIFO frame stack, bump + mark) and its size.
+`Context` is **not** heap-allocated and has **no fixed array inside the struct,
+no generics**: under the Res-1 (Amendment 7) resolution, **ownership is INLINE** —
+`ctx` owns a **slice to the caller-provided pool** (`{pool, capacity, used, oom}`
+at the frozen Track-3 layout), is stored in every frame as a pointer-sized handle,
+and is inherited unchanged down a call chain. The compiler emits **inline**
+pool-field reads at those offsets (bump + mark) rather than calling runtime
+helpers. Pinned caller idiom (mark **"verify at Track 3"**; do not implement
+Track 3 here):
+
+```zig
+var pool: [4096]u8 = undefined;
+var ctx = std.async.Context.init(pool[0..]);
+```
+
+The frame **step word** (offset 0) is pointer-sized; its type is the target's
+pointer type on that architecture (never a hard-coded 4-byte integer).
+`@asyncResume(frame, arg)` returns `?*void` (`null` = terminal, non-null =
+suspended); the synthesized `__async_step_<f>` is compiler-managed and not
+user-materializable.
 
 **On-disk contract.** `buf` is the root frame, caller-owned, outside the pool.
 `frame_sizes[key]` is the per-function flat size excluding child frames. A child
@@ -403,21 +491,23 @@ released when the child `_step` returns null.
 
 ## 5. Diagnostics (explicit numeric codes)
 
-All new members are appended to `ErrorCode` (`sf/src/diagnostics.zig:10-73`) with
+All new members are appended to `ErrorCode` (`sf/src/diagnostics.zig:10-81`) with
 an explicit `= NNNN`; never a bare member. `ErrorCode` is an auto-incrementing
-`enum(u16)`: `3017-3019` are free (after `ERR_3016_ORELSE_REQUIRES_OPTIONAL =
-3016`, before `ERR_3020_UNHANDLED_NODE_KIND = 3020`) and `3045-3047` are free
-(before `ERR_3048_CANNOT_READ_FILE = 3048`). This subspec owns `3017/3018/3019/
-3046` (and optionally `3047`); Track 1 owns `3045`.
+`enum(u16)`. Landing status (Amendment 7): `ERR_3017 = 3017` (Track 1), `3018`,
+`3019` and `ERR_3046 = 3046` are **assigned**, `WARN_3047 = 3047` optional, and
+`ERR_3048_CANNOT_READ_FILE = 3048` is preserved. The **next free value is
+`3049`**, claimed by the Res-6 1-arg `@ptrCast` diagnostic (below). This subspec
+owns `3017/3018/3019/3046/3049` (and optionally `3047`); Track 1 owns `3045`.
 
 | Code | Name | Site |
 |---|---|---|
 | `ERR_3017_SUSPENDING_FUNCTION_POINTER = 3017` | Prelude B ban | `lower.zig:2994-3005, 3197, 3290` (function-value materialization) |
-| `ERR_3018_ASYNC_SUSPEND_OUTSIDE_SUSPENDING = 3018` | async builtin outside a suspending function | sema `builtin_call` dispatch |
+| `ERR_3018_ASYNC_SUSPEND_OUTSIDE_SUSPENDING = 3018` | **`@asyncSuspend` only** outside a suspending function (Res 3) | sema `builtin_call` dispatch |
 | `ERR_3019_ASYNC_BUILTIN_IN_DEFER = 3019` | async builtin inside `defer`/`errdefer` | sema `defer_depth` check |
 | `ERR_3045_UNKNOWN_CALLING_CONVENTION = 3045` | *(Track 1; reserved here)* | Track 1 |
 | `ERR_3046_ASYNC_FRAME_SIZE_INVALID = 3046` | `@asyncFrameSize` on non-suspending/unknown fn | sema `@asyncFrameSize` arm |
 | `WARN_3047_ASYNC_FRAME_LARGE = 3047` | *(optional advisory)* | Stage 2 layout, threshold-gated |
+| `ERR_3049_PTRCAST_REQUIRES_TWO_ARGS = 3049` | **Res 6:** 1-arg `@ptrCast(expr)` rejected | sema `@ptrCast` type-cast path (`lower.zig:4217` guard) |
 
 `ERR_3048_CANNOT_READ_FILE = 3048` and every existing explicit value are
 preserved; ICE `3043` (`ERR_9001_ICE`, auto-incremented) must not shift.
@@ -431,14 +521,21 @@ preserved; ICE `3043` (`ERR_9001_ICE`, auto-incremented) must not shift.
   exactly one `error[3017]` and zero `.c` files.
 - **Stage 2:** `repro/mi_matrix/async_frame_xmod` — self-verifying:
   `@asyncFrameSize(f) == @sizeOf(Frame)` for a fixture struct that mirrors the
-  specified field order; a second function with extra non-live temps still
-  reports the same frame size.
+  specified field order **including the hidden pointer-sized step word at offset
+  0** (Amendment 7: on the 32-bit fixture target the mirror is
+  `{step: *void, ctx: *void, state: u8, x: i32, y: i32}` → **20**, was 16); a
+  second function with extra non-live temps still reports the same frame size.
+  Both pinned gates (Task-5a `Expected`, Task-5c `LAYOUT …`) move with the step
+  word in the same commit as the P2/P3 change.
 - **Stage 3:** `repro/mi_matrix/async_await_xmod` — a root frame in a caller
   `buf`, an implicit await of a child, deterministic stdout across 3 runs and
   identical md5; plus a `-fsafe` pool-exhaustion probe that returns
-  `error.OutOfFrame` (no crash).
-- **Stage 4:** `repro/mi_matrix/async_builtin_scope_xmod` — `error[3018]`,
-  `error[3019]`, and `error[3046]` cases; the positive typing case compiles.
+  `error.OutOfFrame` (no crash). `@asyncInit`/`@asyncResume` may appear in the
+  **non-suspending `main`** driver (Res 3): only `@asyncSuspend` is
+  `ERR_3018`-gated.
+- **Stage 4:** `repro/mi_matrix/async_builtin_scope_xmod` — `error[3018]` (only
+  for `@asyncSuspend`), `error[3019]`, and `error[3046]` cases; the positive
+  typing case compiles.
 - **Gate battery (every task):** build via the seed model
   (`scripts/seed/build_from_seed.sh`) or `bash sf/scripts/build_release.sh`;
   compile/run affected fixtures under `timeout 120`; run the corpus classifier
