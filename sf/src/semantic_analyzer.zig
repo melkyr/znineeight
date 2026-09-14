@@ -19,6 +19,7 @@ const itoa_mod = @import("util/itoa.zig");
 const interner_mod = @import("string_interner.zig");
 const type_resolver = @import("type_resolver.zig");
 const mr_mod = @import("module_registry.zig");
+const async_analysis = @import("async_analysis.zig");
 
 pub const SemanticAnalyzer = struct {
     type_table: *ResolvedTypeTable,
@@ -2212,7 +2213,21 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
             }
             result = type_mod.TYPE_VOID;
         } else if (node.child_0 == self.async_frame_size_name_id) {
-            if (ec.len >= @intCast(usize, 1)) { _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]); }
+            if (ec.len >= @intCast(usize, 1)) {
+                _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]);
+                var afs_susp: bool = false;
+                if (async_analysis.resolveCalleeKey(self.store, self.symbols, self.module_id, ec[@intCast(usize, 0)])) |afs_k| {
+                    var afs_mid: u32 = @intCast(u32, afs_k >> @intCast(u64, 32));
+                    var afs_nid: u32 = @intCast(u32, afs_k & @intCast(u64, 0xFFFFFFFF));
+                    if (async_analysis.asyncIsSuspending(self.suspending_fns, afs_mid, afs_nid)) afs_susp = true;
+                }
+                if (!afs_susp) {
+                    var e3046: []const u8 = "@asyncFrameSize argument must be a known suspending function";
+                    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0),
+                        @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3046_ASYNC_FRAME_SIZE_INVALID)),
+                        self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), e3046);
+                }
+            }
             result = type_mod.TYPE_INT_LIT;
         } else if (node.child_0 == self.async_init_name_id) {
             if (ec.len >= @intCast(usize, 4)) {
