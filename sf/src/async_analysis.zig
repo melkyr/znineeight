@@ -26,8 +26,10 @@ const hash_mod = @import("util/hash.zig");
 const itoa_mod = @import("util/itoa.zig");
 const mr_mod = @import("module_registry.zig");
 const pal = @import("pal.zig");
+const rtt_mod = @import("resolved_type_table.zig");
 const si_mod = @import("string_interner.zig");
 const sym_mod = @import("symbol_table.zig");
+const type_mod = @import("type_registry.zig");
 
 pub fn asyncKey(module_id: u32, name_id: u32) u64 {
     return (@intCast(u64, module_id) << @intCast(u64, 32)) | @intCast(u64, name_id);
@@ -53,7 +55,7 @@ fn allocU32(sand: *alloc_mod.Sand, count: usize) [*]u32 {
 // Resolve a `fn_call` callee expression to an absolute (module_id,name_id) key.
 // `ident_expr` -> current-module symbol; `field_access` (optionally chained)
 // -> module-qualified symbol. Any other/unresolved callee yields no static edge.
-fn resolveCalleeKey(store: *ast_mod.AstStore, sym_reg: *sym_mod.SymbolRegistry, module_id: u32, callee_idx: u32) ?u64 {
+pub fn resolveCalleeKey(store: *ast_mod.AstStore, sym_reg: *sym_mod.SymbolRegistry, module_id: u32, callee_idx: u32) ?u64 {
     var cn = ast_mod.astStoreNodeAt(store, callee_idx);
     if (cn.kind == AstKind.ident_expr) {
         var nid = ast_mod.astStoreIdentifier(store, callee_idx);
@@ -301,6 +303,162 @@ pub fn suspensionAnalysisRun(alloc: *alloc_mod.Sand, store: *ast_mod.AstStore,
             if (val2 != @intCast(u32, 0)) {
                 emitSuspMarker(kk2);
             }
+        }
+    }
+}
+
+fn alignUpU32(v: u32, a: u32) u32 {
+    return (v + a - @intCast(u32, 1)) & ~(a - @intCast(u32, 1));
+}
+
+fn addFrameField(reg: *type_mod.TypeRegistry, tid: u32, offset: *u32, max_align: *u32) void {
+    var sz: u32 = @intCast(u32, 4);
+    var al: u32 = @intCast(u32, 4);
+    if (@intCast(usize, tid) < reg.types_len) {
+        var t = reg.types_items[@intCast(usize, tid)];
+        if (t.size != @intCast(u32, 0)) {
+            sz = t.size;
+            if (t.alignment != @intCast(u32, 0)) { al = t.alignment; }
+        }
+    }
+    offset.* = alignUpU32(offset.*, al);
+    offset.* += sz;
+    if (al > max_align.*) { max_align.* = al; }
+}
+
+fn frameLocalTypeId(resolved_types: *rtt_mod.ResolvedTypeTable, n: ast_mod.AstNode) u32 {
+    if (n.child_0 != @intCast(u32, 0)) {
+        if (rtt_mod.resolvedTypeTableGet(resolved_types, n.child_0)) |t| return t;
+    } else if (n.child_1 != @intCast(u32, 0)) {
+        if (rtt_mod.resolvedTypeTableGet(resolved_types, n.child_1)) |t| return t;
+    }
+    return type_mod.TYPE_UNDEFINED;
+}
+
+fn scanFrameLocals(store: *ast_mod.AstStore, sym_reg: *sym_mod.SymbolRegistry, module_id: u32,
+    suspending_fns: *hash_mod.U64ToU32Map, async_suspend_name_id: u32,
+    body_idx: u32, stack: *ga_mod.U32ArrayList, reg: *type_mod.TypeRegistry,
+    resolved_types: *rtt_mod.ResolvedTypeTable, offset: *u32, max_align: *u32) void {
+    stack.len = @intCast(usize, 0);
+    if (body_idx == @intCast(u32, 0)) return;
+    ga_mod.u32ArrayListAppend(stack, body_idx);
+    while (stack.len > @intCast(usize, 0)) {
+        var ni = stack.items[stack.len - @intCast(usize, 1)];
+        stack.len -= @intCast(usize, 1);
+        var n = ast_mod.astStoreNodeAt(store, ni);
+        var k = n.kind;
+        if (k == AstKind.builtin_call) {
+            if (n.child_0 == async_suspend_name_id) return;
+            var ecb = ast_mod.astStoreNodeExtraChildren(store, ni);
+            var bi: usize = ecb.len;
+            while (bi > @intCast(usize, 0)) {
+                bi -= @intCast(usize, 1);
+                ga_mod.u32ArrayListAppend(stack, ecb[bi]);
+            }
+            continue;
+        }
+        if (k == AstKind.fn_call) {
+            if (n.child_0 != @intCast(u32, 0)) {
+                if (resolveCalleeKey(store, sym_reg, module_id, n.child_0)) |ck| {
+                    var fmid = @intCast(u32, ck >> @intCast(u64, 32));
+                    var fnid = @intCast(u32, ck & @intCast(u64, 0xFFFFFFFF));
+                    if (asyncIsSuspending(suspending_fns, fmid, fnid)) return;
+                }
+            }
+            var ecf = ast_mod.astStoreNodeExtraChildren(store, ni);
+            var fi: usize = ecf.len;
+            while (fi > @intCast(usize, 0)) {
+                fi -= @intCast(usize, 1);
+                ga_mod.u32ArrayListAppend(stack, ecf[fi]);
+            }
+            if (n.child_0 != @intCast(u32, 0)) { ga_mod.u32ArrayListAppend(stack, n.child_0); }
+            continue;
+        }
+        if (k == AstKind.var_decl) {
+            var lvt = frameLocalTypeId(resolved_types, n);
+            addFrameField(reg, lvt, offset, max_align);
+        }
+        if (ast_mod.nodeHasExtraChildren(k)) {
+            var ec3 = ast_mod.astStoreNodeExtraChildren(store, ni);
+            var ei3: usize = ec3.len;
+            while (ei3 > @intCast(usize, 0)) {
+                ei3 -= @intCast(usize, 1);
+                ga_mod.u32ArrayListAppend(stack, ec3[ei3]);
+            }
+        }
+        if (n.child_2 != @intCast(u32, 0)) { ga_mod.u32ArrayListAppend(stack, n.child_2); }
+        if (n.child_1 != @intCast(u32, 0)) { ga_mod.u32ArrayListAppend(stack, n.child_1); }
+        if (n.child_0 != @intCast(u32, 0)) { ga_mod.u32ArrayListAppend(stack, n.child_0); }
+    }
+}
+
+fn emitFrameMarker(key: u64, size: u32) void {
+    var module_id: u32 = @intCast(u32, key >> @intCast(u64, 32));
+    var name_id: u32 = @intCast(u32, key & @intCast(u64, 0xFFFFFFFF));
+    var m1: []const u8 = "FRAME:m"; pal.markerWrite(m1);
+    var b1: [12]u8 = undefined;
+    var l1 = itoa_mod.itoa(module_id, b1[0..]);
+    var s1: usize = @intCast(usize, 11) - @intCast(usize, @intCast(usize, l1));
+    pal.markerWrite(b1[s1..@intCast(usize, 11)]);
+    var m2: []const u8 = ":n"; pal.markerWrite(m2);
+    var b2: [12]u8 = undefined;
+    var l2 = itoa_mod.itoa(name_id, b2[0..]);
+    var s2: usize = @intCast(usize, 11) - @intCast(usize, @intCast(usize, l2));
+    pal.markerWrite(b2[s2..@intCast(usize, 11)]);
+    var m3: []const u8 = ":s"; pal.markerWrite(m3);
+    var b3: [12]u8 = undefined;
+    var l3 = itoa_mod.itoa(size, b3[0..]);
+    var s3: usize = @intCast(usize, 11) - @intCast(usize, @intCast(usize, l3));
+    pal.markerWrite(b3[s3..@intCast(usize, 11)]);
+    var m4: []const u8 = "\n"; pal.markerWrite(m4);
+}
+
+pub fn asyncFrameSizeRun(alloc: *alloc_mod.Sand, store: *ast_mod.AstStore,
+    sym_reg: *sym_mod.SymbolRegistry, module_reg: *mr_mod.ModuleRegistry,
+    interner: *si_mod.StringInterner, typereg: *type_mod.TypeRegistry,
+    resolved_types: *rtt_mod.ResolvedTypeTable,
+    suspending_fns: *hash_mod.U64ToU32Map, frame_sizes: *hash_mod.U64ToU32Map) void {
+    var p_msg: []const u8 = "AFS\n"; pal.markerWrite(p_msg);
+    var asu_text: []const u8 = "@asyncSuspend";
+    var async_suspend_name_id = si_mod.stringInternerIntern(interner, asu_text);
+    var stack = ga_mod.u32ArrayListInit(alloc);
+    var mods = mr_mod.moduleRegistryGetModules(module_reg);
+    var mi: usize = @intCast(usize, 0);
+    while (mi < mods.len) : (mi += 1) {
+        var ast_root = mods[mi].ast_root;
+        if (ast_root == @intCast(u32, 0)) continue;
+        var root = ast_mod.astStoreNodeAt(store, ast_root);
+        if (root.kind != AstKind.module_root) continue;
+        var decls = ast_mod.astStoreNodeExtraChildren(store, ast_root);
+        var di: usize = @intCast(usize, 0);
+        while (di < decls.len) : (di += 1) {
+            var decl = ast_mod.astStoreNodeAt(store, decls[di]);
+            if (decl.kind != AstKind.fn_decl) continue;
+            var proto_idx = ast_mod.astStoreNodePayload(store, decls[di]);
+            var proto = store.fn_protos.items[@intCast(usize, proto_idx)];
+            if (!asyncIsSuspending(suspending_fns, mods[mi].id, proto.name_id)) continue;
+            var key = asyncKey(mods[mi].id, proto.name_id);
+            var offset: u32 = @intCast(u32, 0);
+            var max_align: u32 = @intCast(u32, 1);
+            addFrameField(typereg, type_mod.TYPE_USIZE, &offset, &max_align);
+            addFrameField(typereg, type_mod.TYPE_U8, &offset, &max_align);
+            if (proto.params_count > @intCast(u16, 0)) {
+                var p_payload: u64 = (@intCast(u64, proto.params_start) << @intCast(u64, 32)) | @intCast(u64, proto.params_count);
+                var pnodes = ast_mod.astStoreGetExtraChildren(store, p_payload);
+                var pi: usize = @intCast(usize, 0);
+                while (pi < pnodes.len) : (pi += @intCast(usize, 1)) {
+                    var pnode = ast_mod.astStoreNodeAt(store, pnodes[pi]);
+                    if (pnode.child_0 == @intCast(u32, 0)) continue;
+                    var pt: u32 = type_mod.TYPE_UNDEFINED;
+                    if (rtt_mod.resolvedTypeTableGet(resolved_types, pnode.child_0)) |rtp| { pt = rtp; }
+                    addFrameField(typereg, pt, &offset, &max_align);
+                }
+            }
+            scanFrameLocals(store, sym_reg, mods[mi].id, suspending_fns, async_suspend_name_id, decl.child_0, &stack, typereg, resolved_types, &offset, &max_align);
+            var total = alignUpU32(offset, max_align);
+            if (total == @intCast(u32, 0)) total = @intCast(u32, 1);
+            hash_mod.u64ToU32MapPut(frame_sizes, key, total);
+            emitFrameMarker(key, total);
         }
     }
 }

@@ -4104,13 +4104,21 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 return gc_res;
             }
             if (node.child_0 == self.async_frame_size_name_id) {
+                var fs_val: u64 = @intCast(u64, 0);
                 if (ec.len >= @intCast(usize, 1)) {
                     self.suppress_fnref_ban = @intCast(u8, 1);
                     _ = lowerExpr(self, ec[@intCast(usize, 0)]);
                     self.suppress_fnref_ban = @intCast(u8, 0);
+                    if (async_analysis.resolveCalleeKey(self.ctx.store, self.ctx.symbol_tables, self.module_id, ec[@intCast(usize, 0)])) |k| {
+                        var afs_mid: u32 = @intCast(u32, k >> @intCast(u64, 32));
+                        var afs_nid: u32 = @intCast(u32, k & @intCast(u64, 0xFFFFFFFF));
+                        if (async_analysis.asyncFrameSizeOf(self.ctx.frame_sizes, afs_mid, afs_nid)) |fsz| {
+                            fs_val = @intCast(u64, fsz);
+                        }
+                    }
                 }
                 var afs_res = nextTemp(self, type_mod.TYPE_INT_LIT);
-                emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = afs_res } });
+                emitInst(self, LirInst{ .int_const = .{ .value = fs_val, .result = afs_res } });
                 return afs_res;
             }
             if (node.child_0 == self.async_init_name_id) {

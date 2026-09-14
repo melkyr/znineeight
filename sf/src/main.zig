@@ -320,6 +320,7 @@ fn runCompiler(ctx: *CompilerContext) void {
         diag_mod.diagnosticCollectorPrintAll(ctx.diag);
         pal.exit(2);
     }
+    phase_AsyncFrameSize(ctx);
     phase_LIRLowering(ctx);
     alloc_mod.checkCombinedPeak(ctx.alloc);
     if (diag_mod.diagnosticCollectorHasErrors(ctx.diag)) {
@@ -632,6 +633,11 @@ fn phase_StaticAnalyzers(ctx: *CompilerContext) void {
             az_mod.runAllAnalyzers(&ac, ast_root);
         }
     }
+}
+
+fn phase_AsyncFrameSize(ctx: *CompilerContext) void {
+    var p_msg: []const u8 = "AFS\n"; pal.markerWrite(p_msg);
+    async_analysis.asyncFrameSizeRun(&ctx.alloc.module, ctx.store, ctx.symbol_reg, ctx.module_reg, ctx.interner, ctx.typereg, ctx.resolved_types, &ctx.suspending_fns, &ctx.frame_sizes);
 }
 
 fn phase_LIRLowering(ctx: *CompilerContext) void {
