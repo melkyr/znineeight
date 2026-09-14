@@ -1099,6 +1099,58 @@ git commit -m "feat: reject 1-arg @ptrCast with ERR_3049 (Res 6, ASYNCTRACK2)"
 
 ---
 
+### Task 6D-I: Remediation investigation — how to land D1–D4 (record-only; STOP-present)
+
+**Type:** I (record-only investigation/feasibility). **No source edits, no commit.** Ends in a **STOP-present**.
+
+**Why:** The re-scoped Task 6 (`3ee4e188`) review returned **NEEDS FIXES** on **D1–D4**. Before implementing, establish exactly how each lands (LIR mechanics, pass ordering, fixtures, pinned values) so the D1–D4 fix tasks are executable without further discovery.
+
+**Files (read-only):** `sf/src/{async_state_machine.zig,async_frame_layout.zig,async_analysis.zig,lower.zig,semantic_analyzer.zig,main.zig,lir.zig,lir_opt_pass.zig,lir_stream.zig,c89_emit.zig,type_registry.zig}`; report `.superpowers/sdd/task-ASYNCTRACK2-report.md` `## Task 6 (re-scoped, Amendment 7)`; review `.superpowers/sdd/review-b6b6984b..3ee4e188.diff`.
+
+**Questions (each answered with live anchors + read-only probes where cheap, `timeout 120`):**
+- **Q1 (D1)** The LIR mechanics of turning a call to a suspending `g` into suspension point N of `f`: read `ctx` from the caller frame; allocate/initialize the child frame (buf region now; pool in Task 7); write `g`'s step word @ child offset 0; the drive loop (equivalent of `@asyncResume` on the child); how the child's suspension becomes `f`'s state N + live-temp save + `ret null`; how `f` re-enters the child on resume (child-frame pointer must be live-across). Which existing LIR ops suffice (`load_field`/`store_field`/`int_const`/`call`/`branch`/`switch_br`); interactions with P3 `async_frame_layout` liveness and copy-prop/DCE.
+- **Q2 (D2)** The **minimal** dual-emit: enumerate every consumer of a suspending function's original symbol (`emitMainWrapper` `c89_emit.zig:2739-2749`, direct-call regression fixtures, cross-module `func_ref`) and specify the exact rule for which functions keep a synchronous entry (only `main`?) vs full rewrite; what D1 requires so non-`main` sync bodies can be dropped.
+- **Q3 (D3)** Terminal result delivery: how the transformed terminal step stores the original `.ret` value into the caller-provided `*void` result slot (field vs args struct) and how the caller reads it; frame/P3/churn impact.
+- **Q4 (D4)** Where/how `@asyncInit` zeroes the root frame (length = frame size at lowering); P2/P3 interaction.
+- **Q5 (ordering/churn)** Pass ordering (`lowerFn` → P3 `asyncLayoutFrame` → `asyncTransform` → `lirStreamAppend`?) and the resulting pinned-value churn (16→20→?; `LAYOUT … s20`→?); which fixtures/gates move.
+- **Q6 (split)** Confirm the D1–D4 split + dependency order; whether any must merge/split.
+
+**Deliverable / gate:** append `## Task 6D-I` to the report; one ledger line; one memory entry; **STOP-present** with (a) the executable D1–D4 plan, (b) needed plan amendments, (c) residual unknowns. Await the operator ruling before dispatching D1–D4.
+
+---
+
+### Task 6D1: D1 — implicit-await call-site rewrite
+
+**Goal (acceptance):** a direct call to a suspending `g` becomes suspension point N of `f`: the child frame is initialized with `g`'s step word, driven via its `_step`, `f` yields (`ret null`) when the child suspends, and re-enters on resume. `async_await_xmod` must **genuinely yield** (`caller` suspension_count ≥ 1) and still produce result `10`.
+
+**Files (tentative; finalized by Task 6D-I):** `sf/src/async_state_machine.zig`, `sf/src/lower.zig`, `sf/src/main.zig`, fixtures. **Exact steps fixed by Task 6D-I before dispatch.**
+
+---
+
+### Task 6D2: D2 — confine dual-emit to `main`
+
+**Goal (acceptance):** non-`main` suspending functions are rewritten (no retained synchronous body); only the minimal `main` sync entry required by `emitMainWrapper` remains. `async_frame_args_xmod` / `async_frame_branch_xmod` stay green.
+
+**Files (tentative; finalized by Task 6D-I):** `sf/src/async_state_machine.zig`, `sf/src/c89_emit.zig` (only if the `emitMainWrapper` constraint requires it). **Exact steps fixed by Task 6D-I.**
+
+---
+
+### Task 6D3: D3 — terminal result through the caller slot
+
+**Goal (acceptance):** a driven value-returning suspending function delivers its result through the caller-provided `*void` slot (the original `.ret value` is written before the terminal `ret null`); a value-returning await fixture proves it.
+
+**Files (tentative; finalized by Task 6D-I):** `sf/src/async_state_machine.zig`, `sf/src/lower.zig`, fixtures. **Exact steps fixed by Task 6D-I.**
+
+---
+
+### Task 6D4: D4 — zero the root frame in `@asyncInit`
+
+**Goal (acceptance):** `@asyncInit` zeroes the root frame (length = frame size) before writing `step`/`ctx`/`state`; no regression.
+
+**Files (tentative; finalized by Task 6D-I):** `sf/src/lower.zig`. **Exact steps fixed by Task 6D-I.**
+
+---
+
 ### Task 7: Stage 3b remainder — per-task LIFO child frames + `error.OutOfFrame` (Amendment 7 re-scope)
 
 **Amendment 7 re-scope.** The **call-site implicit-await rewrite moved into atomic
@@ -1456,6 +1508,18 @@ rewritten atomic; Task 7 is re-scoped to pool accounting + `OutOfFrame`; Task 6b
 `async_suspend_store_xmod/main.zig` are rewritten to the struct-of-params `args`
 ABI and the 2-arg `@ptrCast(T, expr)` form in Task 6 Step 1 (they remain untracked
 until Task 6 re-dispatches). `async_pool_xmod` likewise in Task 7.
+
+## Amendment 8 (2026-09-14) — Task 6 review NEEDS FIXES (D1–D4); remediation split + investigation-first
+
+**Reason.** The re-scoped Task 6 (`3ee4e188`, review `b6b6984b..3ee4e188`) returned **Spec Compliance NEEDS FIXES**:
+- **D1 (Critical)** — implicit-await call-site rewrite not implemented: a call to a suspending `g` calls the retained synchronous entry; no child frame, no child step word, no drive loop, no yield (Amendment-7 Step 3.6 unmet).
+- **D2 (Critical)** — dual-emit for **all** suspending functions (original body retained + `__Z98Step_<f>` alongside), violating Amendment-7 "no dual-emit interim"; only a synchronous `main` entry is genuinely forced by `emitMainWrapper` (`c89_emit.zig:2739-2749`).
+- **D3 (Important)** — terminal result not written through the caller `*void` slot (`.ret` → `ret_void`).
+- **D4 (Minor)** — `@asyncInit` does not zero the root frame.
+
+**Operator directive (m1523).** Create separate load-bearing tasks **D1–D4**; before executing them, run **one investigation task (Task 6D-I, record-only)** to determine how D1–D4 land properly. Task 6 is **INCOMPLETE**; its execution is superseded by **Task 6D-I** followed by **Task 6D1–6D4**.
+
+**Affected tasks.** New **Task 6D-I** (I, record-only), **Task 6D1** (D1), **Task 6D2** (D2), **Task 6D3** (D3), **Task 6D4** (D4) inserted before **Task 7**. Baseline: HEAD `b6b6984b` (Task 6 attempt `3ee4e188`); moving fixed point `b305b0282a981d6cf5ad31ac2280a4af`; seed not rotated; `EXPECTED_FAIL.md` unchanged.
 
 ## Amendable note
 
