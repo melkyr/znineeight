@@ -223,6 +223,9 @@ pub fn cancelAll(s: *Scheduler) void {
     var i: usize = 0;
     while (i < s.count) : (i += 1) {
         if (s.tasks[i].state != TaskState.done) {
+            // Route the store through a local *Task: a field-store on a
+            // `[*]*Task` element (`s.tasks[i].cancel_requested`) hits the
+            // `error[3043]` ICE (lower.zig unwraps only one ptr level).
             var t: *Task = s.tasks[i];
             t.cancel_requested = true;
         }

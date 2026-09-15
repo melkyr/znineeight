@@ -35,9 +35,9 @@ fn p(v: i32) void {
 }
 
 pub fn main() void {
-    var f0: Frame = Frame{ .step = stepInc, .ticks = 0, .id = 1, .val = 0 };
+    var f0: Frame = Frame{ .step = stepInc, .ticks = 0, .id = 1, .val = 0, .sched = @ptrCast(*sa.Scheduler, @intToPtr(*void, 0)), .do_await = false };
     var f1: Frame = Frame{ .step = stepInc, .ticks = 0, .id = 2, .val = 0, .sched = @ptrCast(*sa.Scheduler, @intToPtr(*void, 0)), .do_await = false };
-    var f2: Frame = Frame{ .step = stepInc, .ticks = 0, .id = 3, .val = 0 };
+    var f2: Frame = Frame{ .step = stepInc, .ticks = 0, .id = 3, .val = 0, .sched = @ptrCast(*sa.Scheduler, @intToPtr(*void, 0)), .do_await = false };
     var r0: i32 = 0;
     var r1: i32 = 0;
     var r2: i32 = 0;
