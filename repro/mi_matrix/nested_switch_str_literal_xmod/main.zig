@@ -1,4 +1,4 @@
-// nested_switch_str_literal_xmod — RUNTIME-gated RED fixture (compile-gate OK, run PANIC).
+// nested_switch_str_literal_xmod — RUNTIME-gated GREEN fixture (compile-gate OK, run rc=0).
 //
 // Coverage-audit sibling of switch_str_literal_prong_xmod: the SAME slice-length
 // corruption hits a string literal coerced to []const u8 in the prong of a switch
@@ -12,11 +12,12 @@
 // (sf/src/semantic_analyzer.zig:1980-1982), so the byte length is lost at every nesting
 // level.
 //
-// RED today (all 4 compilers share the defect): every nested prong yields a 1-byte slice,
-// so the runtime assert below panics ("panic: ..." on stderr, rc=133).
-// GREEN (after the lowering fix) = deterministic stdout:
+// FIXED in Task 0d: the switch-expression resolver now coerces each string-literal prong
+// directly to the expected []const u8 (recording the coercion on the literal node) at
+// every nesting level, so applyCoercion reads the real byte length instead of defaulting to 1.
+// GREEN (post-fix) = dump rc=0 / gcc-clean / link rc=0 / run rc=0, deterministic stdout:
 //   alpha\r\n ax\r\n beta\r\n
-// (18 bytes: "alpha\r\n" + "ax\r\n" + "beta\r\n"), rc=0, no stderr.
+// (17 bytes: "alpha\r\n" + "ax\r\n" + "beta\r\n"), no stderr.
 //
 // The tags are driven through @intToEnum(C, 0/1) / @intToEnum(D, 0/1) because a bare
 // plain-enum literal in value position is mis-lowered by an UNRELATED pre-existing gap.

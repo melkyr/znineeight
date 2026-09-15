@@ -1,4 +1,4 @@
-// if_expr_str_literal_xmod — RUNTIME-gated RED fixture (compile-gate OK, run PANIC).
+// if_expr_str_literal_xmod — RUNTIME-gated GREEN fixture (compile-gate OK, run rc=0).
 //
 // Coverage-audit sibling of switch_str_literal_prong_xmod: the SAME slice-length
 // corruption hits string literals coerced to []const u8 in an `if`/`else` EXPRESSION
@@ -14,11 +14,12 @@
 // `pick` = `return if (b) "alpha\r\n" else "beta\r\n"`; `direct` exercises the var-init
 // if-expression form.
 //
-// RED today (all 4 compilers share the defect): each branch yields a 1-byte slice, so the
-// runtime assert below panics ("panic: ..." on stderr, rc=133).
-// GREEN (after the lowering fix) = deterministic stdout:
+// FIXED in Task 0d: the if-expression resolver now coerces each string-literal branch
+// directly to the expected []const u8 (recording the coercion on the branch node), so
+// applyCoercion reads the real byte length instead of defaulting to 1.
+// GREEN (post-fix) = dump rc=0 / gcc-clean / link rc=0 / run rc=0, deterministic stdout:
 //   alpha\r\n beta\r\n gamma\r\n
-// (21 bytes: "alpha\r\n" + "beta\r\n" + "gamma\r\n"), rc=0, no stderr.
+// (20 bytes: "alpha\r\n" + "beta\r\n" + "gamma\r\n"), no stderr.
 const std = @import("std");
 
 fn pick(b: bool) []const u8 {

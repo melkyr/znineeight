@@ -1,4 +1,4 @@
-// switch_str_literal_prong_xmod_xmod — RUNTIME-gated RED fixture (compile-gate OK, run PANIC).
+// switch_str_literal_prong_xmod_xmod — RUNTIME-gated GREEN fixture (compile-gate OK, run rc=0).
 //
 // Cross-module complement to switch_str_literal_prong_xmod. The buggy switch-expression
 // with string-literal prongs lives in `mid.zig` — a NON-LAST module: `main.zig` imports
@@ -13,11 +13,12 @@
 // keys its coercion on the prong/wrapper node (sf/src/semantic_analyzer.zig:1980-1982),
 // so the length is lost.
 //
-// RED today (all 4 compilers share the defect): each `mid.pick` result is a 1-byte slice,
-// so the runtime assert below panics ("panic: ..." on stderr, rc=133).
-// GREEN (after the lowering fix) = deterministic stdout:
+// FIXED in Task 0d: the switch-expression resolver now coerces each string-literal prong
+// directly to the expected []const u8 (recording the coercion on the literal node), so
+// applyCoercion reads the real byte length instead of defaulting to 1.
+// GREEN (post-fix) = dump rc=0 / gcc-clean / link rc=0 / run rc=0, deterministic stdout:
 //   alpha\r\n beta\r\n
-// (14 bytes: "alpha\r\n" then "beta\r\n"), rc=0, no stderr.
+// (13 bytes: "alpha\r\n" then "beta\r\n"), no stderr.
 //
 // The tag is driven through @intToEnum(mid.Cmd, 0/1) because a bare plain-enum literal in
 // value position (.A) is mis-lowered by an UNRELATED pre-existing gap; @intToEnum is

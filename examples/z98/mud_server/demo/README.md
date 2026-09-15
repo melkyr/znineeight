@@ -4,18 +4,19 @@
 (`look`, `north`, `quit`) from one client over `bash /dev/tcp`, captures BOTH the
 server stdout (`canonical_expected.txt`) and the bytes the client receives
 (`canonical_client_expected.txt`), kills the server by PID, and verifies the
-port is clear. Both files are the PRE-coroutine-conversion captures (Track 4
-Task 1) and are byte-identity targets for the converted program.
+port is clear. Both files are byte-identity targets for the converted program.
 
-Pre-conversion golden md5s (reference compiler `b844bfb5bedc453c2b385d37af558363`,
-seed v19 `23a16154e83736cf6b636685396a124a`; 3× deterministic):
+Golden md5s (re-captured at the Task-0d fixed point
+`7297eb442d012f6e07b60617c4f8e4e8`, seed v19
+`23a16154e83736cf6b636685396a124a`; 3× deterministic):
 
-- `canonical_expected.txt` — `66c8f0abb926cca7baf9a0d1692ab318` (75 bytes; server stdout: the three lifecycle lines)
-- `canonical_client_expected.txt` — `3db75510fbf0a0e8192da5859eb71a1f` (149 bytes; client-received: welcome + `look` + `north` responses)
+- `canonical_expected.txt` — `66c8f0abb926cca7baf9a0d1692ab318` (75 bytes; server stdout: the three lifecycle lines) — UNCHANGED by the Task-0d fix
+- `canonical_client_expected.txt` — `93147d0f0bbd983a9d844fea8b7a6fa7` (158 bytes; client-received: welcome + `look` + `north` responses + full `Goodbye!\r\n`)
 
-Note: the `quit` response is emitted by the reference compiler with length 1
-(switch-expression string-literal prong emits `zT_5 = 1` in the C), so the
-client receives only `G` of `Goodbye!\r\n`. This is a **pre-existing** emitter
-defect (present before Task 0/0b; reproduced with a minimal `switch`-expression
-fixture), not a conversion regression. The golden faithfully records the
-baseline bytes. See the Task 1 report, Fix round 1.
+Task 0d (Track 4 S19 F) fixed the switch-expression string-literal-prong
+slice-length defect: `applyCoercion` (`sf/src/lower.zig`) defaulted `sllen = 1`
+when the `string_to_slice` coercion was keyed on the wrapper node; the switch/if
+resolver now coerces each string-literal prong directly to the expected
+`[]const u8`. The `quit` response now sends the full `Goodbye!\r\n` (10 bytes)
+instead of the single `G`, so this golden grew 149 → 158 bytes. The server stdout
+is byte-identical. See the Task-1 report (Fix round 1) and the Task-0d report.
