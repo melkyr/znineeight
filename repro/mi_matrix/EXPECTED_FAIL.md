@@ -1,4 +1,32 @@
-# mi_matrix corpus — expected-fail manifest (v85 2026-09-15)
+# mi_matrix corpus — expected-fail manifest (v86 2026-09-15)
+
+## Multi-module `__Z98Step_<f>` emission fix (v86 2026-09-15)
+
+Track-4 Task 0 (S15 emitter fix): synthesized async steps are now emitted in the
+`.c`/`.h` of the module that owns them (matched to `LirFunction.module_id`)
+instead of only in the last-emitted module's contiguous lowering run. The
+per-module (`-o` / `--output-dir`) path stable-groups `lir_slots` by owning
+module before emission; `emitModuleFile`/`emitModuleHeaderFile` additionally skip
+functions not owned by the file's module. The single-file `--dump-c89` path
+already emitted every slot and is unchanged. Self-emission fixed point moved
+`027377296b2e38402ff8470f5c429eb8` → **`b844bfb5bedc453c2b385d37af558363`**
+(two-hop closure `hop1 == hop2`); seed NOT rotated (Task 6).
+
+Corpus `-s0` universe **613 dirs** = **573 OK / 37 GREEN / 3 FAIL / 0 ICE /
+0 CRASH**; `-ffast` == `-fsafe` zero-asymmetric. Vs the same 613-dir universe on
+the pre-fix compiler (571 OK / 37 GREEN / 5 FAIL) exactly **two async dirs flip
+FAIL→OK**:
+- `async_step_nonlast_xmod` (coroutine in a NON-LAST module) — was the v85
+  expected-fail (`'zF_4970EAC2___Z98Step_caller' undeclared`); now OK.
+- `async_step_midmodule_xmod` (NEW; coroutine in the MIDDLE of three modules) —
+  FAIL on the pre-fix compiler, now OK.
+
+The 3 FAILs are the documented `callconv_cdecl_fnptr_xmod` /
+`callconv_nonpub_stdcall_xmod` / `callconv_stdcall_fnptr_xmod`
+emission-inspection set, byte-identical to v85. All 612 v85 dirs are
+class-identical except `async_step_nonlast_xmod` (FAIL→OK); the +1 new dir is
+`async_step_midmodule_xmod` (OK). `async_libctx_mix_xmod` (last-module coroutine)
+stays OK.
 
 ## Async concerns wave (v85 2026-09-15)
 

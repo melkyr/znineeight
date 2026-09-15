@@ -1157,6 +1157,44 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
         pal.fileClose(fd);
         var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
         emitter.prune_active = @intCast(u8, 1);
+        // Track-4 S15: synthesized `__Z98Step_<f>` slots are appended to
+        // `lir_slots` after the per-module lowering pass
+        // (async_state_machine.zig), so a step owned by a non-last module is not
+        // part of that module's contiguous lowering run and the cursor walk below
+        // never emits it. Stable-group every slot by its owning module (ids are
+        // dense: `mods[i].id == i`) so each module's `.c`/`.h` carries its own
+        // originals plus its synthesized steps. The single-file path is untouched
+        // (it emits the whole slot list and needs no grouping).
+        var slot_count: usize = ctx.lir_slots.len;
+        if (slot_count > 0) {
+            var grp_counts = @ptrCast([*]u32, alloc_mod.sandAlloc(&ctx.alloc.emission, @intCast(usize, 4) * mods.len, @intCast(usize, 4)) catch unreachable);
+            var grp_cursor = @ptrCast([*]u32, alloc_mod.sandAlloc(&ctx.alloc.emission, @intCast(usize, 4) * mods.len, @intCast(usize, 4)) catch unreachable);
+            var gci: usize = @intCast(usize, 0);
+            while (gci < mods.len) : (gci += 1) { grp_counts[gci] = @intCast(u32, 0); }
+            var gsi: usize = @intCast(usize, 0);
+            while (gsi < slot_count) : (gsi += 1) {
+                var gsmid = ctx.lir_slots.items[gsi].module_id;
+                if (@intCast(usize, gsmid) < mods.len) { grp_counts[@intCast(usize, gsmid)] += @intCast(u32, 1); }
+            }
+            var gacc: u32 = @intCast(u32, 0);
+            gci = @intCast(usize, 0);
+            while (gci < mods.len) : (gci += 1) {
+                grp_cursor[gci] = gacc;
+                gacc += grp_counts[gci];
+            }
+            var grouped = @ptrCast([*]lir_mod.LirSlot, alloc_mod.sandAlloc(&ctx.alloc.emission, @intCast(usize, @sizeOf(lir_mod.LirSlot)) * slot_count, @intCast(usize, 4)) catch unreachable);
+            gsi = @intCast(usize, 0);
+            while (gsi < slot_count) : (gsi += 1) {
+                var gslot = ctx.lir_slots.items[gsi];
+                var gsmid = gslot.module_id;
+                if (@intCast(usize, gsmid) >= mods.len) continue;
+                var gdst = grp_cursor[@intCast(usize, gsmid)];
+                grouped[@intCast(usize, gdst)] = gslot;
+                grp_cursor[@intCast(usize, gsmid)] = gdst + @intCast(u32, 1);
+            }
+            ctx.lir_slots.items = grouped;
+            emitter.fn_slots = grouped;
+        }
         var fn_cursor: usize = @intCast(usize, 0);
         var mi: usize = @intCast(usize, 0);
         while (mi < mods.len) : (mi += 1) {

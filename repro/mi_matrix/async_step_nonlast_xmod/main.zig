@@ -1,20 +1,18 @@
-// async_step_nonlast_xmod — EXPECTED-FAIL: multi-module step-emission gap.
+// async_step_nonlast_xmod — PASS: multi-module step emission (non-last module).
 //
 // A coroutine in a NON-LAST module. `co.zig` (module 1) owns the suspending
 // `caller`; `last.zig` (module 2) is imported after it, so `co` is NOT the
-// last-emitted module. `@asyncInit` references `__Z98Step_caller`, but the
-// compiler appends every synthesized step to the LIR stream AFTER the module
-// loop and the C emitter consumes only contiguous per-module runs, so the step
-// owned by a non-last module is never emitted.
+// last-emitted module. `@asyncInit` references `__Z98Step_caller`, and the
+// compiler emits that synthesized step in `co`'s own `.c`/`.h` because it is
+// matched to its owning `LirFunction.module_id` (Track-4 S15). Before the fix,
+// every synthesized step was appended to the LIR stream AFTER the module loop
+// and the C emitter consumed only contiguous per-module runs, so the step owned
+// by a non-last module was never emitted and the gcc build failed with
+// `'...___Z98Step_caller' undeclared`.
 //
-// This is the deliberate expected-fail counterpart to `async_libctx_mix_xmod`
-// (which places its coroutine in the LAST-imported module to dodge the gap).
-// The emitter fix is Track 4; this fixture is written now so it lands with it.
-//
-// Documented failure mode: the emitted `main_*.c` takes the address of
-// `__Z98Step_caller` (as a function-pointer initializer) but the step function
-// is never emitted, so the gcc build/link fails with an undeclared
-// identifier / undefined reference (see EXPECTED_FAIL.md).
+// This is the non-last counterpart to `async_libctx_mix_xmod` (LAST-module
+// coroutine, imported last on purpose) and `async_step_midmodule_xmod` (MIDDLE
+// module of three). GREEN: no stdout, RUNRC=0.
 
 const co = @import("co.zig");
 const last = @import("last.zig");

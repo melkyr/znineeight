@@ -2642,6 +2642,7 @@ pub fn emitModuleHeaderFile(emitter: *C89Emitter, module_id: u32, mod_name: []co
     var fi: usize = @intCast(usize, 0);
     while (fi < emitter.fn_slots_len) : (fi += @intCast(usize, 1)) {
         var f = faultIn(emitter, fi);
+        if (f.module_id != module_id) continue;
         if (f.is_extern == @intCast(u8, 0) or f.is_variadic != @intCast(u8, 0)) {
             emitFunctionForwardDecl(emitter, f);
         }
@@ -2921,6 +2922,7 @@ pub fn emitModuleFile(emitter: *C89Emitter, module_id: u32, mod_name: []const u8
     while (i < emitter.fn_slots_len) : (i += @intCast(usize, 1)) {
         alloc_mod.sandReset(emitter.alloc);
         var f = faultIn(emitter, i);
+        if (f.module_id != module_id) continue;
         if (f.is_extern != @intCast(u8, 0)) continue;
         emitter.switch_cases = &f.switch_cases;
         lir_opt_mod.lirOptRun(emitter.alloc, emitter.registry, &f);

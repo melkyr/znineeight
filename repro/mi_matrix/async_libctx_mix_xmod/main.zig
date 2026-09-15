@@ -1,5 +1,11 @@
 // async_libctx_mix_xmod — cross-track ABI Rule A regression (Track 2 + Track 3).
 //
+// LAST-MODULE-COROUTINE FIXTURE: `co.zig` is imported LAST on purpose, so its
+// coroutine is owned by the final module. That placement dodged the multi-module
+// `__Z98Step_<f>` emission gap (fixed by Track-4 S15); the non-last case is now
+// pinned by `async_step_nonlast_xmod` and the middle-module case by
+// `async_step_midmodule_xmod`.
+//
 // The library path (`std.async.contextInit` / `contextAlloc`) and the compiler
 // path (`@asyncInit` + the await-site child-frame allocation) share ONE
 // `Context`. The library's pool base is `ctx + 16`; before Rule A the compiler
@@ -8,14 +14,13 @@
 //
 // `main` imports `std_async.zig` directly (the library path) and drives the
 // coroutine in `co.zig`. `co.zig` is deliberately imported LAST so it is the
-// last-emitted module: the compiler's synthesized `__Z98Step_*` functions are
-// appended to the LIR stream after the module loop, and the C emitter walks
-// functions in contiguous per-module runs, so only a step owned by the final
-// module is emitted. This fixture dodges the multi-module step-emission gap on
-// purpose (it is a Rule A regression, not a multi-module test). The gap itself
-// is pinned by the EXPECTED-FAIL fixture `async_step_nonlast_xmod`, which puts
-// the coroutine in a non-last module and fails to compile. The emitter fix is
-// Track 4.
+// last-emitted module: before Track-4 S15 the compiler's synthesized
+// `__Z98Step_*` functions were appended to the LIR stream after the module loop
+// and the C emitter walked functions in contiguous per-module runs, so only a
+// step owned by the final module was emitted. This fixture therefore exercises
+// the last-module placement on purpose (it is a Rule A regression, not the
+// multi-module test); the non-last and middle-module placements are pinned by
+// `async_step_nonlast_xmod` and `async_step_midmodule_xmod`.
 //
 // Sequence: `contextInit` sizes the pool; `@asyncInit` resets `used`/`oom`;
 // `contextAlloc(8)` hands out the library frame at `ctx+16` and advances `used`
