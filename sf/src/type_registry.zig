@@ -1237,9 +1237,9 @@ pub fn typeRegistryIsAssignable(self: *TypeRegistry, source: TypeId, target: Typ
             var arr: ArrayPayload = self.array_items[@intCast(usize, src_pointee.payload_idx)];
             if (arr.elem == sl.elem and qok) return true;
         }
-        if (src_pp.base == sl.elem and qok) return true;
-        if (src_pp.base == TYPE_C_CHAR and sl.elem == TYPE_U8 and qok) return true;
-        if (src_pp.base == TYPE_U8 and sl.elem == TYPE_C_CHAR and qok) return true;
+        // Track4 S22 F-M4 (A1): only a pointer to a KNOWN-length array is
+        // assignable to a slice; a bare `*const u8`/`*const c_char` is not
+        // (it has no length and must not become a length-1 slice).
     }
     if (tgt.kind == TypeKind.many_ptr_type and src.kind == TypeKind.many_ptr_type) {
         var qok: bool = pointerQualifiersMonotone(src.flags, tgt.flags, VOLATILE_FLAG);

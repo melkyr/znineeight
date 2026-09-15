@@ -1193,6 +1193,12 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
                 grp_cursor[@intCast(usize, gsmid)] = gdst + @intCast(u32, 1);
             }
             ctx.lir_slots.items = grouped;
+            // T0-M2: `grp_counts` counts only slots whose module id is in
+            // range, so `gacc` is exactly the number of slots written into
+            // `grouped`. Advance the length by the WRITTEN count so the
+            // skipped-tail region is never treated as a live slot (it would
+            // otherwise be read uninitialized by the cursor walk below).
+            ctx.lir_slots.len = @intCast(usize, gacc);
             emitter.fn_slots = grouped;
         }
         var fn_cursor: usize = @intCast(usize, 0);

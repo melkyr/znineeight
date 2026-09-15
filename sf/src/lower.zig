@@ -1713,6 +1713,21 @@ fn lowerFieldStore(self: *LirLowerer, fa_node_idx: u32, value_temp: u32, diag_no
         base_temp = nextTemp(self, ptr_type);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = ptr_temp, .rhs = idx_temp, .result = base_temp } });
         resolved_base = ptr_type;
+        // T0b: when the indexed element is itself a pointer (e.g. a `[*]*T`
+        // field indexed as `s.tasks[i]`), `base_temp` is the address of the
+        // pointer slot. Load the element pointer so a following field store
+        // resolves to the pointee struct instead of ICE-ing on a pointer base.
+        if (elem_type) |et| {
+            if (et != type_mod.TYPE_UNDEFINED and et != type_mod.TYPE_VOID and @intCast(usize, et) < self.ctx.registry.types_len) {
+                var ety = self.ctx.registry.types_items[@intCast(usize, et)];
+                if (ety.kind == type_mod.TypeKind.ptr_type or ety.kind == type_mod.TypeKind.many_ptr_type) {
+                    var load_t = nextTemp(self, et);
+                    emitInst(self, LirInst{ .load = .{ .ptr = base_temp, .result = load_t } });
+                    base_temp = load_t;
+                    resolved_base = et;
+                }
+            }
+        }
     } else if (child_0_node.kind == AstKind.field_access or child_0_node.kind == AstKind.deref or child_0_node.kind == AstKind.paren_expr) {
         var nested_base_ty = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, fa_node.child_0);
         var nested_is_ptr: u8 = @intCast(u8, 0);
@@ -2027,12 +2042,14 @@ pub fn materializeInto(self: *LirLowerer, src_temp: u32, expected: u32, intent: 
         break;
     }
     if (nlayers == @intCast(usize, 0)) {
+        var nk0 = coercion_mod.classifyCoercion(self.ctx.registry, src_ty, cur);
         if (intent == SrcIntent.value and cur != src_ty and
-            coercion_mod.classifyCoercion(self.ctx.registry, src_ty, cur) == CoercionKind.string_to_slice) {
-            return applyCoercion(self, src_temp, coercion_mod.CoercionEntry{ .node_idx = src_node, .kind = CoercionKind.string_to_slice, .target_type = cur });
+            (nk0 == CoercionKind.string_to_slice or nk0 == CoercionKind.array_to_slice)) {
+            return applyCoercion(self, src_temp, coercion_mod.CoercionEntry{ .node_idx = src_node, .kind = nk0, .target_type = cur });
         }
         return src_temp;
     }
+
 
     var val = src_temp;
     if (intent == SrcIntent.value and cur != src_ty) {
@@ -2045,8 +2062,8 @@ pub fn materializeInto(self: *LirLowerer, src_temp: u32, expected: u32, intent: 
             var ft = nextTemp(self, cur);
             emitInst(self, LirInst{ .float_cast = .{ .value = val, .target = cur, .result = ft } });
             val = ft;
-        } else if (nk == CoercionKind.string_to_slice) {
-            val = applyCoercion(self, val, coercion_mod.CoercionEntry{ .node_idx = src_node, .kind = CoercionKind.string_to_slice, .target_type = cur });
+        } else if (nk == CoercionKind.string_to_slice or nk == CoercionKind.array_to_slice) {
+            val = applyCoercion(self, val, coercion_mod.CoercionEntry{ .node_idx = src_node, .kind = nk, .target_type = cur });
         }
     }
 
@@ -2405,7 +2422,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return tid;
     } else if (node.kind == AstKind.string_literal) {
         var str_id = store.string_values.items[@intCast(usize, ast_mod.astStoreNodePayload(self.ctx.store, node_idx))];
-        var ptr_type = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, type_mod.TYPE_C_CHAR, true);
+        // Track4 S22 F-M4 (A1): mirror the semantic type `*const [N]u8` so the
+        // length travels in the temp type (the emitter appends the NUL).
+        var sl_bytes = si_mod.stringInternerGet(self.ctx.registry.interner, str_id);
+        var sl_arr = type_mod.typeRegistryGetOrCreateArray(self.ctx.registry, type_mod.TYPE_U8, @intCast(u32, sl_bytes.len));
+        var ptr_type = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, sl_arr, true);
         var tid = nextTemp(self, ptr_type);
         emitInst(self, LirInst{ .string_const = .{ .string_id = str_id, .result = tid } });
         return tid;

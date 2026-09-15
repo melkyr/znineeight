@@ -1,20 +1,17 @@
-// taskptr_field_store_xmod — COMPILE-FAIL fixture (dump rc=3, 0 `.c`, error[3043]).
+// taskptr_field_store_xmod — GREEN fixture (compile + run rc=0).
 //
-// T0b residual. `s.tasks[0].cancel_requested = true` where `s.tasks` is `[*]*Task`:
-// `lowerFieldStore` (sf/src/lower.zig:1740-1831) resolves the field-store base to the
-// `[*]*Task` many-pointer type and unwraps exactly ONE pointer level (:1744-1748),
-// leaving `*Task` — NOT a struct — so none of the struct/slice/tagged-union/union arms
-// match and the final `else` calls `iceFieldStoreUnsupported` (:1827) →
-// `error[3043]: internal: unsupported field-store base (node N)`.
+// T0b residual, FIXED in Task 0h. `s.tasks[0].cancel_requested = true` where
+// `s.tasks` is `[*]*Task`: `lowerFieldStore` (sf/src/lower.zig) now detects that
+// the indexed element (`s.tasks[i]`) is itself a pointer and loads the element
+// pointer, so the field store resolves to the pointee `Task` struct instead of
+// unwrapping one level to `*Task` and hitting
+// `error[3043]: internal: unsupported field-store base`. The in-tree
+// `std.async.cancelAll` local-`*Task` workaround is removed (direct form).
 //
-// Contrast (both compile clean, confirmed): binding the element first
-// (`var p = s.tasks[0]; p.cancel_requested = true;`) works, because the store base is
-// then a single `*Task` whose one-level unwrap yields the `Task` struct.
+// Compile gate: dump rc=0 / gcc-clean / link rc=0 / run rc=0 (no stdout).
+// Removed from `repro/mi_matrix/EXPECTED_FAIL.md`.
 //
-// Compile gate: dump rc=3, exactly ONE `error[3043]`, ZERO `.c` emitted. Declared in
-// `repro/mi_matrix/EXPECTED_FAIL.md`.
-//
-// Declared by Task 0g; the fix (if any) is Task 0h. NOT fixed here.
+// Declared by Task 0g; FIXED by Task 0h.
 const Task = struct {
     id: u32,
     cancel_requested: bool,

@@ -1,6 +1,69 @@
+# mi_matrix corpus — expected-fail manifest (v90 2026-09-15)
+
+## Latent risks CLOSED (v90 2026-09-15) — Task 0h (F)
+
+Track-4 Task 0h closes the residual latent risks declared by Task 0g. **`sf/src`
+change** (`semantic_analyzer.zig` / `lower.zig` / `main.zig` / `std_async.zig`).
+Reference compiler = the post-Task-0g fixed point `97cd5a033156119339ebffc15b575c5d`;
+NEW fixed point `958a5e0f8ce3f4121766789322c8da9b` (two-hop closure, hop1 == hop2).
+Seed NOT rotated (Task 6).
+
+Corpus `-s0` universe **641 dirs** = **599 OK / 37 GREEN / 5 FAIL / 0 ICE / 0 CRASH**.
+Per-dir diff vs the pre-fix baseline (`641 = 599 OK / 37 GREEN / 4 FAIL / 1 ICE`) is
+EXACTLY two rows — both intended:
+
+| dir | pre | post | why |
+|---|---|---|---|
+| `taskptr_field_store_xmod` | ICE | **OK** | T0b `error[3043]` fixed — REMOVED from this manifest |
+| `nonliteral_ptr_to_slice_xmod` | OK | **FAIL** (gcc) | F-M4 A1 — bare pointer→slice now rejected; DECLARED below |
+
+### F-M4 — A1 root-cause fix (string literals typed `*const [N]u8`)
+
+`sf/src/semantic_analyzer.zig` + `sf/src/lower.zig` now type a string literal as
+`*const [N]u8` (the real byte length N is in the type; the emitter supplies the trailing
+NUL). Consequences: `"abc"` AND `const p = "abc"; var s: []const u8 = p;` coerce via
+`array_to_slice` with the REAL length; the bare `*const u8`/`*const c_char` →
+`[]const u8` coercion is removed from `coercion.classifyCoercion` and
+`typeRegistryIsAssignable`, so a bare pointer is no longer silently a length-1 slice.
+`materializeInto`'s synthesis now applies `array_to_slice` (known-length source) only.
+
+`nonliteral_ptr_to_slice_xmod` (the Task-0g runtime-RED pin) is now a **compile-FAIL**:
+the frontend inserts no `make_slice` for the bare `*const u8` params, so the emitted C
+assigns a raw pointer to a `Slice` and gcc rejects it with `error: incompatible types
+when assigning to type 'zT_..._Slice_zT_..._u' from type 'unsigned char *'` (dump rc=0,
+5 `.c`; pre-fix it emitted a hard-coded `len = 1` and ran with the wrong length).
+Declared here as a compile-FAIL.
+
+### T0b — `[*]*Task` element field store (FIXED; GREEN, corpus OK)
+
+`sf/src/lower.zig` `lowerFieldStore` now loads the element pointer when the indexed
+element is itself a pointer (`s.tasks[i]`), so `s.tasks[i].cancel_requested = true`
+resolves to the `Task` struct. The in-tree `sf/src/std_async.zig` `cancelAll`
+local-`*Task` workaround is removed. `taskptr_field_store_xmod`: dump rc=0 / 4 `.c` /
+gcc-clean / link rc=0 / **run rc=0**. **REMOVED from this manifest.**
+
+### F-M1 guard + T0-M2 (no class movement)
+
+- F-M1: `sf/src/semantic_analyzer.zig` guards the `astStoreNodeAt(prong.child_0)` read
+  with `prong.child_0 != 0`.
+- T0-M2: `sf/src/main.zig` advances `ctx.lir_slots.len` only by the WRITTEN count, so
+  the grouped-slot uninitialized tail is impossible.
+
+### F-M3 fixtures stay GREEN
+
+`unannotated_infer_samelength_xmod` and `unannotated_infer_stmtexpr_xmod`: dump rc=0 /
+5 `.c` / gcc-clean / link rc=0 / **run rc=0**, stdout `abc|3` / `xyz|3`. Corpus OK.
+
+### Gates
+
+`check_emit_support.sh` 5/5; `verify_upgraded.sh` → `CLOSEOUT OK` (all goldens
+byte-identical); the 4-MD5 emission rows intentionally re-baselined (the string-literal
+type change moves every dump; runtime unchanged — `verify_upgraded.sh` byte-identical).
+
+
 # mi_matrix corpus — expected-fail manifest (v89 2026-09-15)
 
-## Residual latent risks declared (v89 2026-09-15) — Task 0g (I)
+## Residual latent risks declared (v89 2026-09-15) — Task 0g (I) [SUPERSEDED by v90 for F-M4/T0b]
 
 Track-4 Task 0g declares and pins the residual latent risks the earlier Track-4 reviews
 left unpinned. **No `sf/src` change** (any fix is Task 0h); reference compiler = the
@@ -9,7 +72,7 @@ v88 dirs are class-identical (zero movement). Corpus `-s0` universe **641 dirs**
 **599 OK / 37 GREEN / 4 FAIL / 1 ICE / 0 CRASH**; the delta vs v88 (`637 = 596 OK / 37
 GREEN / 4 FAIL / 0 ICE`) is exactly the four new dirs: +3 OK, +1 ICE.
 
-### F-M4 — non-literal `*const u8` → `[]const u8` silently length-1 (runtime-RED; corpus class OK)
+### F-M4 — non-literal `*const u8` → `[]const u8` silently length-1 (runtime-RED; corpus class OK) [FIXED in v90 — now compile-FAIL]
 
 New dir `nonliteral_ptr_to_slice_xmod`. `sf/src/lower.zig` `materializeInto`'s
 no-wrap-layer path (`:2029-2035`) and error-union/optional payload path (`:2048-2050`)
@@ -25,7 +88,7 @@ if-expr arms are identifier nodes, so the emitted C hard-codes `len = 1`:
 `zT_6 = 1; zT_5.ptr = p; zT_5.len = zT_6;`. RED: dump rc=0 / 5 `.c` / gcc-clean / link rc=0 /
 **run rc=133**, stdout `h|1` then `w|1`. GREEN contract: `hello|5` then `world!!|7`, run rc=0.
 
-### T0b — `[*]*Task` element field store (frontend compile-time reject; classifier ICE-buckets `error[3043]`)
+### T0b — `[*]*Task` element field store (frontend compile-time reject; classifier ICE-buckets `error[3043]`) [FIXED in v90 — now GREEN]
 
 New dir `taskptr_field_store_xmod`. `s.tasks[0].cancel_requested = true` on a `[*]*Task`
 field: `lowerFieldStore` (`sf/src/lower.zig:1740-1831`) unwraps exactly ONE pointer level

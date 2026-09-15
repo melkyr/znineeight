@@ -195,9 +195,9 @@ pub fn classifyCoercion(reg: *type_mod.TypeRegistry, source: TypeId, target: Typ
         var sp2 = reg.ptr_items[@intCast(usize, src.payload_idx)];
         var ts2 = reg.slice_items[@intCast(usize, tgt.payload_idx)];
         var clsb: []const u8 = "CLS:p"; pal.markerWrite(clsb); var clsb2: [10]u8 = undefined; var clsb2l = itoa_mod.itoa(sp2.base, clsb2[0..]); var clsb2s: usize = @intCast(usize, 9) - @intCast(usize, clsb2l); pal.markerWrite(clsb2[clsb2s..@intCast(usize, 9)]); var clse: []const u8 = "e"; pal.markerWrite(clse); var clsb3: [10]u8 = undefined; var clsb3l = itoa_mod.itoa(ts2.elem, clsb3[0..]); var clsb3s: usize = @intCast(usize, 9) - @intCast(usize, clsb3l); pal.markerWrite(clsb3[clsb3s..@intCast(usize, 9)]); var clsnl: []const u8 = "\n"; pal.markerWrite(clsnl);
-        if (sp2.base == ts2.elem and qok) return CoercionKind.string_to_slice;
-        if ((sp2.base == type_mod.TYPE_C_CHAR and ts2.elem == type_mod.TYPE_U8) and qok) return CoercionKind.string_to_slice;
-        if ((sp2.base == type_mod.TYPE_U8 and ts2.elem == type_mod.TYPE_C_CHAR) and qok) return CoercionKind.string_to_slice;
+        // Track4 S22 F-M4 (A1): a bare `*const u8`/`*const c_char` -> slice is
+        // NOT a coercion — it carries no length and must not silently become a
+        // length-1 slice. Only a pointer to a KNOWN-length array decays below.
         var src_pointee = reg.types_items[@intCast(usize, sp2.base)];
         if (src_pointee.kind == type_mod.TypeKind.array_type) {
             var arr = reg.array_items[@intCast(usize, src_pointee.payload_idx)];

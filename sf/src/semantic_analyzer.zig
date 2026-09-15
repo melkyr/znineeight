@@ -1386,6 +1386,13 @@ fn tryRecordCoercion(self: *SemanticAnalyzer, src_node: u32, src_type: u32, dst_
     }
 }
 
+// Track4 S22 F-M4 (A1): a string literal is now typed `*const [N]u8`, so the
+// literal -> slice coercion is `array_to_slice` (pointer-to-array decay).
+// `string_to_slice` is retained for any pre-existing recorded entry.
+fn isStringLiteralSliceCoercion(k: coercion_mod.CoercionKind) bool {
+    return k == coercion_mod.CoercionKind.string_to_slice or k == coercion_mod.CoercionKind.array_to_slice;
+}
+
 fn errLitSrcType(self: *SemanticAnalyzer, child_0: u32, target_ty: u32, ret_val: u32) u32 {
     var rn = ast_mod.astStoreNodeAt(self.store, child_0);
     if (rn.kind == AstKind.error_literal) {
@@ -1634,8 +1641,8 @@ fn semanticAnalyzerResolveIfExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
         if (ie_then_lit or ie_else_lit) { ie_exp = type_mod.typeRegistryGetOrCreateSlice(self.registry, type_mod.TYPE_U8, true); }
     }
     if (ie_exp != @intCast(u32, 0) and ie_exp != type_mod.TYPE_VOID) {
-        var ie_then_str: bool = then_type != type_mod.TYPE_NORETURN and coercion_mod.classifyCoercion(self.registry, then_type, ie_exp) == coercion_mod.CoercionKind.string_to_slice;
-        var ie_else_str: bool = else_type != type_mod.TYPE_NORETURN and coercion_mod.classifyCoercion(self.registry, else_type, ie_exp) == coercion_mod.CoercionKind.string_to_slice;
+        var ie_then_str: bool = then_type != type_mod.TYPE_NORETURN and isStringLiteralSliceCoercion(coercion_mod.classifyCoercion(self.registry, then_type, ie_exp));
+        var ie_else_str: bool = else_type != type_mod.TYPE_NORETURN and isStringLiteralSliceCoercion(coercion_mod.classifyCoercion(self.registry, else_type, ie_exp));
         var ie_then_ok: bool = then_type == ie_exp or then_type == type_mod.TYPE_NORETURN or ie_then_str;
         var ie_else_ok: bool = else_type == ie_exp or else_type == type_mod.TYPE_NORETURN or ie_else_str;
         if ((ie_then_str or ie_else_str) and ie_then_ok and ie_else_ok) {
@@ -1997,12 +2004,13 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
         else if (unified == @intCast(u32, 0)) {
             var sw_exp0 = topExpectedType(self);
             var sw_peer: u32 = sw_exp0;
-            if (ast_mod.astStoreNodeAt(self.store, prong.child_0).kind == AstKind.string_literal and
+            if (prong.child_0 != @intCast(u32, 0) and
+                ast_mod.astStoreNodeAt(self.store, prong.child_0).kind == AstKind.string_literal and
                 (sw_exp0 == @intCast(u32, 0) or sw_exp0 == type_mod.TYPE_VOID)) {
                 sw_peer = type_mod.typeRegistryGetOrCreateSlice(self.registry, type_mod.TYPE_U8, true);
             }
             if (sw_peer != @intCast(u32, 0) and sw_peer != type_mod.TYPE_VOID and
-                coercion_mod.classifyCoercion(self.registry, bt, sw_peer) == coercion_mod.CoercionKind.string_to_slice) {
+                isStringLiteralSliceCoercion(coercion_mod.classifyCoercion(self.registry, bt, sw_peer))) {
                 unified = sw_peer;
                 unified_node = prong.child_0;
                 tryRecordCoercion(self, prong.child_0, bt, sw_peer);
@@ -2062,7 +2070,20 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.unreachable_expr) {
         result = type_mod.TYPE_NORETURN;
     } else if (node.kind == AstKind.string_literal) {
-        result = type_mod.typeRegistryGetOrCreatePtr(self.registry, type_mod.TYPE_C_CHAR, true);
+        // Track4 S22 F-M4 (A1 root cause): a string literal is typed
+        // `*const [N]u8` — the length is IN the type (the emitter supplies the
+        // trailing NUL). A literal AND a variable bound to one therefore carry
+        // the REAL length through `array_to_slice`; a bare `*const u8` has no
+        // length and is no longer silently coerced to a length-1 slice.
+        var sl_len: u32 = @intCast(u32, 0);
+        var sl_payload = ast_mod.astStoreNodePayload(self.store, node_idx);
+        if (@intCast(usize, sl_payload) < self.store.string_values.len) {
+            var sl_str_id = self.store.string_values.items[@intCast(usize, sl_payload)];
+            var sl_bytes = interner_mod.stringInternerGet(self.registry.interner, sl_str_id);
+            sl_len = @intCast(u32, sl_bytes.len);
+        }
+        var sl_arr = type_mod.typeRegistryGetOrCreateArray(self.registry, type_mod.TYPE_U8, sl_len);
+        result = type_mod.typeRegistryGetOrCreatePtr(self.registry, sl_arr, true);
     } else if (node.kind == AstKind.enum_literal) {
         result = semanticAnalyzerResolveEnumLiteral(self, node_idx);
     } else if (node.kind == AstKind.error_literal) {
