@@ -5,3 +5,4 @@ pub const mem = @import("std_mem.zig");
 pub const math = @import("std_math.zig");
 pub const debug = @import("std_debug.zig");
 pub const net = @import("std_net.zig");
+pub const async = @import("std_async.zig");
