@@ -1,3 +1,85 @@
+# mi_matrix corpus — expected-fail manifest (v92 2026-09-15)
+
+## Task 0k (I) — warning classification: valid Z98 vs invalid Zig (v92 2026-09-15)
+
+Track-4 Task 0k exhaustively classifies every warning emitted by the post-A1
+compiler (`958a5e0f8ce3f4121766789322c8da9b`) as **(a) valid Z98 / type-checker
+false positive** or **(b) invalid Zig / must become a hard `error[3000]` (0 `.c`)**.
+**No `sf/src` change; no fixes; no re-baseline** — the fix set is Task 0l. Full
+report: `.superpowers/sdd/2026-09-13-coroutine-integration-plan/task-0k-report.md`.
+
+Corpus universe grows **644 -> 651 dirs** (+7 Task-0k fixtures). Measured class
+map (post-A1 `958a5e0f`): **651 = 608 OK / 37 GREEN / 6 FAIL** (the 644-dir
+baseline was 601/37/6; all 7 new fixtures are OK). FAIL set unchanged:
+`array_of_slices_literal_xmod`, `bareptr_to_slice_ctx_xmod` (GREEN-guard after
+0j), the 3 `callconv_*` emission-inspection dirs, `nonliteral_ptr_to_slice_xmod`.
+
+### `-Wincompatible-pointer-types` (A1, +1360) — type model right, emitter wrong
+
+A1's `*const [N]u8` string-literal type is CORRECT (Zig langref: string literals
+are `*const [N:0]u8`; `docs/reference/Language_Spec_Z98.md:72`). The defect is the
+C emitter (`sf/src/c89_emit.zig:729-761`) rendering that temp as a
+pointer-to-array `unsigned char (*)[N]`; a plain element pointer is the correct C
+model (the array length is carried separately by `array_to_slice`). Two further
+shape pins added (`a1_strlit_ptrarray_warn_xmod`, Task 0i, already pins shapes 1+3):
+
+| fixture | shape | pre-A1 | post-A1 | runtime |
+|---|---|---|---|---|
+| `a1_ptrarray_cchar_xmod` | 2: `(*)[N]` -> `char*` (`[*]const c_char` materialization) | 0 | 2 ptr warns | `97` |
+| `a1_ptrarray_strtod_xmod` | 4: `strtod` arg 2 — **PRE-EXISTING, not A1** | 1 | 3 ptr warns | `1` |
+
+`-Wno-pointer-sign` hides `char*`<->`unsigned char*` but NOT pointer-vs-pointer-to-array,
+so the A1 warnings surface under the binding flag-set.
+
+### `warning[3000]` — every case classified (a) valid Z98 vs (b) invalid Zig
+
+Self-compile `sf/src` = **19 warnings** (11 assignment + 8 var-decl); corpus = **41
+warnings** in 32 dirs (the brief's "~89 across ~51 dirs" = ALL `[3000]` diagnostics
+incl. the 47 already-hard `error[3000]`; the true tolerated-warning count is 60).
+
+- **Self-compile (b) invalid Zig (7):** `semantic_analyzer.zig:1190,1197`,
+  `lower.zig:3093,3618,3768,3771,3892` — bare enum->integer (`var x: u32/u8 =
+  <enum>.kind`) without `@enumToInt`. Must become hard errors + source rewritten.
+- **Self-compile (a) valid Z98 (12):** `main.zig:992` slice `.ptr` -> `[*]`
+  (spec:68); `semantic_analyzer.zig:1639,1640` + `c89_emit.zig:745` `bool` from
+  `and`/`or` (checker returns `void`); `type_registry.zig:340`, `state_map.zig:65`,
+  `module_registry.zig:477-479,482-484` `undefined` -> many-pointer (valid for any
+  type). All 12 are type-checker false positives; the self-hosting compiler proves
+  the code is correct.
+- **Corpus (b) invalid Zig (4):** `eu_assign_incompat_errorset:1` (F!i32 -> E!i32,
+  F not-subset E), `ptr_scalar_to_manyptr_xmod:18` (`*T` -> `[*]T`; spec permits
+  only slice/array -> ptr), `typealias_arr_elem_mismatch_xmod:9` (`[_]u8` ->
+  `[3]i32`), `typealias_arr_len_mismatch_xmod:10` (`[2]i32` -> `[3]i32`). These are
+  genuine mismatches currently only warned -> should be hard `error[3000]`.
+- **Corpus (a) valid Z98 (37):** enum literal with expected enum type, fn item ->
+  fn pointer, `noreturn` initializer/assignment, `if (c) A else B` with expected
+  optional/error-union type, tuple literal -> array, anonymous/named error set ->
+  named error set, `@cVaArg`. All type-checker false positives.
+- **Corpus `error[3000]` (47):** already hard errors — `unsupported builtin`
+  (20), `cannot declare variable of type void` (12), volatile discard (11), unknown
+  type (1), field-on-optional (1), type-mismatch (2: fnptr callconv + EU payload).
+  All invalid Zig / unsupported features; correct rejects.
+
+### New Task-0k fixtures (corpus 644 -> 651)
+
+| fixture | class | construct | verdict |
+|---|---|---|---|
+| `a1_ptrarray_cchar_xmod` | OK | pointer shape 2 | A1 C-model; 0 warns after 0j |
+| `a1_ptrarray_strtod_xmod` | OK | pointer shape 4 (pre-existing) | separate null-optional codegen |
+| `w3000_enum_to_int_xmod` | OK | `var x: u32 = E.B;` | **(b)** invalid -> hard error |
+| `w3000_enumtoint_explicit_xmod` | OK | `var x: u32 = @enumToInt(E.B);` | (a) false positive |
+| `w3000_undefined_manyptr_xmod` | OK | `s.p = undefined;` (many-ptr) | (a) false positive |
+| `w3000_sliceptr_manyptr_xmod` | OK | `var p: [*]u8 = s.ptr;` | (a) false positive |
+| `w3000_bool_or_xmod` | OK | `var b: bool = <cmp> or <cmp>;` | (a) false positive |
+
+**A1-induced vs pre-existing split:** A1 changed the `[3000]` set by REMOVING 11
+`pointer>many-pointer` false-positive warnings (string literal -> `[*]const u8`,
+now valid via `array_to_many_ptr`); it added 0. C1 deletion (`ed206028`) adds 5
+`pointer>slice` warnings (the two `bareptr_to_slice`/`nonliteral` fixtures). The
+47 `error[3000]` and the 19 self-compile warnings are byte-identical across
+pre-A1 `97cd5a03`, post-A1 `958a5e0f`, post-deletion `ed206028`. The `strtod` arg-2
+warning is pre-existing (1 pre, 1 post).
+
 # mi_matrix corpus — expected-fail manifest (v91 2026-09-15)
 
 ## Task 0i (I) residual investigation — fixtures (v91 2026-09-15)
