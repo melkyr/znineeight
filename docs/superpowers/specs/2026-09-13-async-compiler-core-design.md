@@ -614,7 +614,7 @@ calling runtime helpers.
 used      @ ctx+0    (usize)
 capacity  @ ctx+4    (usize)
 oom       @ ctx+8    (u8, sticky)
-padding   @ ctx+9..15 (4 bytes; reserved)
+padding   @ ctx+12..15 (4 bytes; reserved)
 pool_base = ctx+16   (DERIVED — never stored)
 ```
 

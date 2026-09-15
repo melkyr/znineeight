@@ -438,7 +438,7 @@ fn emitAwait(b: *Build, blk: u32, cd: lir_mod.CallDirectData, state: u32, alloc_
     }
     var ctx = loadField(b, blk, ctx_off, ptrVoid(reg));
     // (2) Task 7 pool accounting. Inline-read the Context header
-    // (`used@0`, `capacity@1*usize`, sticky `oom@2*usize`; pool base ctx+3*usize).
+    // (`used@0`, `capacity@1*usize`, sticky `oom@2*usize`; pool base ctx+4*usize).
     // Exhaustion (`used + size > capacity`) sets `oom` and takes the null/error
     // terminal path; otherwise the child is bump-allocated in `alloc_blk`.
     var used = loadFieldBase(b, blk, ctx, CTX_USED_OFF, type_mod.TYPE_USIZE);
