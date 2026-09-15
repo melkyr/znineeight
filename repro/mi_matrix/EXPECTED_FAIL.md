@@ -1,3 +1,67 @@
+# mi_matrix corpus — expected-fail manifest (v91 2026-09-15)
+
+## Task 0i (I) residual investigation — fixtures (v91 2026-09-15)
+
+Track-4 Task 0i exhaustively investigates the Task 0h residuals (C1 duplicate block,
+frontend rejection, A1 warning regression, M4 reachability, 4-MD5 runtime proof) and
+adds THREE corpus fixtures. **No `sf/src` change; no re-baseline** (reference = post-0h
+`958a5e0f8ce3f4121766789322c8da9b`; the fix set is Task 0j). Full report:
+`.superpowers/sdd/2026-09-13-coroutine-integration-plan/task-0i-report.md`.
+
+Corpus universe grows 641 -> 644 dirs (+3 Task-0i fixtures). Measured classes:
+**644 = 601 OK / 37 GREEN / 6 FAIL** (the 641 pre-existing dirs are class-identical —
+the three new fixtures are the only additions; `bareptr_to_slice_ctx_xmod` FAIL,
+`a1_strlit_ptrarray_warn_xmod` OK, `m4_array_to_slice_len_xmod` OK).
+
+### C1 — the duplicate `ptr_type -> slice_type` block is still live
+
+`sf/src/type_registry.zig:1257-1263` is a SECOND `src.ptr_type && tgt.slice_type`
+assignability block (the Task 0h edit at `:1231-1243` removed the bare-pointer returns
+from the FIRST block only). Its `:1261` arm still returns true for a bare
+`*const u8`/`*const c_char` -> `[]const u8`, so Task 0h's edit is a **no-op**: the
+frontend emits NO diagnostic and `lower.zig` inserts no `make_slice`; gcc rejects the
+raw-pointer->Slice assignment. **`:1257-1263` CAN be safely deleted** — evidence in the
+Task 0i report: no tree reliance; the full corpus class map is identical
+(`ed206028` deletion compiler == `958a5e0f` post baseline, 599/37/5, zero per-dir diff);
+the full corpus frontend-diagnostic census changes ONLY `nonliteral_ptr_to_slice_xmod`
+(+1 `[3000]`); the self-compile diagnostics (19) and emitted C are byte-identical.
+
+### Frontend rejection — `bareptr_to_slice_ctx_xmod` (NEW; class FAIL today, GREEN-guard after Task 0j)
+
+Bare `*const u8` -> `[]const u8` in the var-decl / assignment / return / call-arg /
+if-expr / switch-expr contexts. TODAY: dump rc=0 / 5 `.c` / NO frontend diagnostic /
+gcc-FAIL (8 `incompatible types` errors). With the duplicate deleted (`ed206028`):
+var-decl + assignment emit `warning[3000]` **level=1** and emission continues; `return`
+(`resolveReturnStmt`) and call-argument (`:1561 tryRecordCoercion`) emit **no diagnostic
+at all**. Task 0j must raise the mismatch to a hard `error[3000]` (level 0, 0 `.c`) at
+`:2984-2993` (var-decl) and `:1872-1881` (assignment), and ADD one at `resolveReturnStmt`
+and the call-argument site. Declared here: FAIL today, GREEN-guard (frontend reject) after 0j.
+
+### A1 warning regression — `a1_strlit_ptrarray_warn_xmod` (NEW; class OK)
+
+Minimal `var s: []const u8 = "abc";`. Post-0h the string-literal temp is typed
+`*const [N]u8` and emitted as `unsigned char (*)[N]`, so gcc emits 2
+`[-Wincompatible-pointer-types]` warnings (pre-0h: 0). Corpus-wide user-code warning
+census (`gcc -m32 -std=c89 -O0 -Wall -Wextra -fsyntax-only`, 641 dirs): pre 144 -> post
+1504; the entire +1360 delta is `-Wincompatible-pointer-types` in 102 dirs (0 improved);
+every other category is unchanged. Examples: json_parser 1->60, lisp_interpreter_curr
+1->107, mud_server 8->36. Task 0j must restore warning-clean emission (decay the
+`string_const` temp OR cast at the use sites). Runtime byte-identical (4-MD5 proof).
+
+### M4 reachability — `m4_array_to_slice_len_xmod` (NEW; class OK)
+
+`lower.zig:6627` `array_to_slice`'s `arr_len = 1` default is **UNREACHABLE** (Task 0i
+marker compiler `4089cf7c`: 0 fires across 641 corpus dirs + 0 in a targeted stress probe
++ 0 in the self-compile). This fixture is the positive pin: array -> slice in
+var-decl/field/if-expr/call-arg must carry the REAL length (stdout `hello|5`, run rc=0).
+
+### 4-MD5 runtime proof
+
+gol/lisp/json/mud run under pre-0h (`97cd5a03`) and post-0h (`958a5e0f`): stdout
+byte-identical (`gol fcbf7e7c…` / `lisp 8dc783a3…` / `json 8bda3d5a…` /
+`mud_server 66c8f0ab…` / `mud_client 93147d0f…`), all rc=0. A 4-MD5 re-baseline is
+therefore justified (Task 0j Step 4).
+
 # mi_matrix corpus — expected-fail manifest (v90 2026-09-15)
 
 ## Latent risks CLOSED (v90 2026-09-15) — Task 0h (F)
