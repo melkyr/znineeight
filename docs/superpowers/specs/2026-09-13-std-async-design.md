@@ -242,7 +242,10 @@ point).
   set `done` on a null result or `suspended` on non-null.
 - **`suspend(s, t)`** marks `t` suspended (cooperative-yield bookkeeping).
 - **`awaitTask(s, t)`** suspends the currently-running task (`s.tasks[s.current]`)
-  until `t` is `done`/`cancelled`.
+  until `t` is `done`/`cancelled`. If the scheduler has no registered task
+  (`s.count == 0`) it `@panic`s (`std.async: awaitTask called with no registered
+  task`) instead of reading `s.tasks[0]` out of bounds — "forgot `addTask`, then
+  await" is surfaced rather than silently reading OOB.
 - **`cancel(s, t)`** sets `t.cancel_requested`; cancellation is observed at the
   next tick boundary (cooperative, never preemptive). `cancelAll` requests
   cancellation of every non-`done` task.

@@ -762,6 +762,9 @@ Append to `sf/src/std_async.zig`:
 ```zig
 /// Suspend the currently-running task until `t` is done or cancelled.
 pub fn awaitTask(s: *Scheduler, t: *Task) void {
+    if (s.count == 0) {
+        @panic("std.async: awaitTask called with no registered task");
+    }
     var cur: *Task = &s.tasks[s.current];
     cur.state = TaskState.suspended;
     cur.waiting_on = t;
