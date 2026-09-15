@@ -2,13 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-> **STALE-SCHEDULER MARKER (Amendment 7, 2026-09-14):** this plan's scheduler
-> surface is **stale**: it pins `tick(s, step)`/`awaitTask(s, t, step)` and the
-> homogeneous step ABI, which Amendment 7 of
-> [`2026-09-13-async-compiler-core-plan.md`](2026-09-13-async-compiler-core-plan.md)
-> removed in favor of hidden-step-word `@asyncResume` self-dispatch. Re-amend
-> (drop the `step` parameters) **before Track 4 dispatch**; the authoritative
-> deferral record is Amendment 7.
+> **TRACK-4 ALIGNMENT (2026-09-15, operator ruling; supersedes the STALE-SCHEDULER
+> MARKER).** The scheduler surface is aligned to Amendment 7 (heterogeneous
+> `@asyncResume` self-dispatch): `tick(s)`, `awaitTask(s, t)`; no `Task.step` and
+> no `step` parameter — matching the Track-4 spec. The baseline, pinned consumed
+> surface, cross-track ABI closeout check, and the multi-module `__Z98Step_<f>`
+> emission-gap pre-conversion blocker are refreshed in Global Constraints; the
+> full record is **Amendment 1** below. Re-verify at Task 1 before dispatch.
 
 **Goal:** Convert the `rogue_mud` NPC AI and per-connection broadcast paths and the `mud_server` `select` accept/read loop to cooperative coroutines on the Track 2 builtins and Track 3 `std.async`, with the committed goldens byte-identical.
 
@@ -18,7 +18,7 @@
 
 ## Global Constraints
 
-- **Baseline (re-verify at Task 1):** HEAD `f755dbed`; compiler fixed point `1467d932a876402f40a56316dfcad0e5`; seed v10 archive md5 `ca18fc9f9af55d58147fcb7ff7a662b6`; corpus 570 = 541 OK / 29 GREEN / 0 FAIL; `repro/mi_matrix/EXPECTED_FAIL.md` header v77 (2026-09-13). At execution time the compiler fixed point/seed are whatever Tracks 2 and 3 left them at; re-verify with the Task 1 commands and record the observed values.
+- **Baseline (re-verify at Task 1; refreshed 2026-09-15).** HEAD `2dc50be1`; compiler fixed point `027377296b2e38402ff8470f5c429eb8`; seed v19 archive md5 `23a16154e83736cf6b636685396a124a`; corpus 612 = 571 OK / 37 GREEN / 4 FAIL; `repro/mi_matrix/EXPECTED_FAIL.md` header v85 (2026-09-15). Re-verify with the Task 1 commands and record the observed values.
 - **Precondition:** Tracks 2 and 3 are implemented and landed. The four `@async*` builtins work, `sf/src/std_async.zig` exists, and `lib/std_async.zig` is installed next to the compiler under test (`docs/sf/QUICK_REF.md:97-98` recipe plus `std_async.zig`).
 - **Examples-only — fixed point and seed impact: NONE.** No `sf/src` edit; examples are not in `sf/src/main.zig`'s import graph and `scripts/seed/build_from_seed.sh` never compiles them. Do not rotate the seed for this plan. Do not bump `EXPECTED_FAIL.md`.
 - **`timeout 120` on every binary execution.**
@@ -28,7 +28,9 @@
 - **Corpus gate:** `bash scripts/corpus/list_corpus_dirs.sh` must still list both `examples/z98/rogue_mud/` and `examples/z98/mud_server/`; classify by gcc exit code, never empty-stderr (`docs/sf/QUICK_REF.md:134-154`); zero class movement.
 - **Edits only via `edit`/`fastedit`** (no `sed`/`python` on repo files; `/tmp` scratch is unrestricted). Re-read the target region immediately before every `fastedit`.
 - **Never stage** `mnemoria/` or `.zig1_*.tmp`.
-- **Pinned consumed surface.** Track 2 builtins: `@asyncFrameSize(fn) u32`, `@asyncInit(ctx, buf, fn, args: ?*const void) *void`, `@asyncResume(frame: *void, arg: ?*void) ?*void`, `@asyncSuspend(data: ?*void) *void`. Track 3: `Context`, `TaskState`, `Task`, `Scheduler`, `schedulerInit`, `addTask`, `tick(s, step)`, `awaitTask(s, t, step)`, `cancel`, `cancelAll`, `waitAll`. Because the `fn_ptr_struct_field` gap stays open (Track 2 concern 1), the step is passed explicitly and each scheduler is homogeneous. If the landed Track 3 surface differs, amend this plan's call sites mechanically (naming only); the conversion mapping and invariants do not change.
+- **Pinned consumed surface (refreshed 2026-09-15).** Track 2 builtins: `@asyncFrameSize(fn) u32`, `@asyncInit(ctx, buf, fn, args: ?*const void) *void`, `@asyncResume(frame: *void, arg: ?*void) ?*void`, `@asyncSuspend(data: ?*void) *void`. Track 3 `std.async` (Amendment 7 self-dispatch): `Context` (16-byte header, `pool_base = ctx+16`, buffers MUST be 8-aligned), `TaskState`, `Task` (no `step` field), `Scheduler`, `schedulerInit`, `addTask`, `tick(s)`, `suspend`, `awaitTask(s, t)` (empty-scheduler `@panic`), `cancel`, `cancelAll`, `waitAll`. There is no `step` parameter and no `Task.step`; `tick`/`waitAll` self-dispatch via `@asyncResume(t.frame, t.arg)`. `@asyncInit` under `-fsafe` traps when `buf.len < @asyncFrameSize(fn)` for compile-time-known array buffers. If the landed Track 3 surface differs, amend this plan's call sites mechanically (naming only); the conversion mapping and invariants do not change.
+- **Cross-track ABI closeout check (binding).** The `Context` header is 16 bytes (`used@0`, `capacity@4`, `oom@8`, 4-byte pad, `pool_base = ctx+16`); the compiler's `CTX_POOL_OFF` MUST equal 16; every frame size MUST be padded to 8; and buffers passed to `contextInit`/`@asyncInit` MUST be 8-aligned. Task 6's closeout MUST re-verify these agree with the landed Track-2/Track-3 surface (the Track-2 plan Task 8 Step 3b and Track-3 plan Task 5 Step 4b carry the same check).
+- **Pre-conversion blocker — multi-module `__Z98Step_<f>` emission gap (binding).** With >1 module, `@asyncInit` targeting a coroutine in a NON-LAST module references `__Z98Step_<f>` but the emitter never emits it (it walks `lir_slots` in contiguous per-module runs); pinned by `repro/mi_matrix/async_step_nonlast_xmod` (`EXPECTED_FAIL.md` v85). Track 4's `rogue_mud`/`mud_server` are multi-module, so this MUST be resolved before the Task 2–5 conversions — either fix the emitter to emit synthesized steps per-module, or record an explicit fallback decision. Record the resolution/decision in Amendments.
 - **Spec of record:** `docs/superpowers/specs/2026-09-13-coroutine-integration-design.md` (Track 4 subspec); parent `docs/superpowers/specs/2026-09-13-async-prelude-and-feasibility-design.md` §12.6/§13/§14.2.
 
 ---
@@ -78,7 +80,7 @@ md5sum release/seed/zig1-seed.tgz
 bash scripts/corpus/list_corpus_dirs.sh | wc -l
 sed -n '1p' repro/mi_matrix/EXPECTED_FAIL.md
 ```
-Expected: HEAD `f755dbed` (or the post-Track-3 HEAD); tree clean except the two Track 4 docs; archive md5 recorded (v10 `ca18fc9f…` if Tracks 2/3 did not rotate); corpus `570`; header `v77`. Record the observed values; if Tracks 2/3 rotated the seed/fixed point, record the new values and continue.
+Expected: HEAD `2dc50be1` (or later); tree clean except the Track 4 docs; archive md5 `23a16154e83736cf6b636685396a124a` (seed v19); corpus `612`; header `v85`. Record the observed values; if the seed/fixed point moved since, record the new values and continue.
 
 - [ ] **Step 2: Build the reference compiler and install `std_async.zig`**
 
@@ -845,8 +847,35 @@ git commit -m "chore(coroutine): Track4 golden battery + fallback adjudication (
 
 **Placeholder scan:** no `TBD`/`TODO`/"add error handling"/"similar to Task N"; every code step shows the code and every command shows expected evidence. The only enumerated-by-reference item is the landed Track 3 initializer/field-name surface, which the Global Constraints pinned-surface amendment rule covers explicitly (naming-only amendments).
 
-**Type consistency:** `NpcArgs`/`npcMove`/`npcCoroutine`/`spawnEnemies`/`updateEnemies` are defined in Task 2 and consumed with the same names in Task 4. `ClientArgs`/`drawToSocketCoroutine` and `ClientFrameArgs`/`clientFrameCoroutine` are defined in Task 3 and consumed in Task 4. `ClientTaskArgs`/`clientCoroutine` are defined in Task 5. `npc_sched`/`client_sched`/`npc_tasks`/`client_frame_tasks`/`async_ctx`/`async_arena`/`async_buffer` are introduced in Task 2/3/4 and used consistently. `tick(s, step)`/`awaitTask(s, t, step)` signatures match the pinned Track 3 surface in every call site.
+**Type consistency:** `NpcArgs`/`npcMove`/`npcCoroutine`/`spawnEnemies`/`updateEnemies` are defined in Task 2 and consumed with the same names in Task 4. `ClientArgs`/`drawToSocketCoroutine` and `ClientFrameArgs`/`clientFrameCoroutine` are defined in Task 3 and consumed in Task 4. `ClientTaskArgs`/`clientCoroutine` are defined in Task 5. `npc_sched`/`client_sched`/`npc_tasks`/`client_frame_tasks`/`async_ctx`/`async_arena`/`async_buffer` are introduced in Task 2/3/4 and used consistently. `tick(s)`/`awaitTask(s, t)` signatures match the pinned Track 3 surface (Amendment 7 self-dispatch) in every call site.
 
 ## Amendments
 
 This plan is amendable in place. Any deviation discovered during execution — a reverted entry, a Track 3 surface rename, or a harness change — is recorded here as an explicit amendment (date, task, entry, reason, decision) and the affected task body is edited rather than appended. No `TBD`/`TODO` markers are permitted in amendments; each must state the concrete change and its verification. Track 4 is the final plan in the sequence; there is no next plan.
+
+### Amendment 1 — Track-4 alignment (2026-09-15, operator ruling)
+
+Applied before dispatch:
+
+1. **Stale-scheduler marker resolved.** The plan's `tick(s, step)`/`awaitTask(s, t, step)`
+   and homogeneous-step-ABI surface is aligned to Amendment 7 (heterogeneous
+   `@asyncResume` self-dispatch): `tick(s)`, `awaitTask(s, t)`; no `Task.step`,
+   no `step` parameter. This matches the Track-4 spec (already Amendment-7-correct).
+   Global Constraints + the Type-consistency note are updated.
+2. **Baseline refreshed** to the landed post-Track-3 state (HEAD `2dc50be1`;
+   fixed point `027377296b2e38402ff8470f5c429eb8`; seed v19 archive md5
+   `23a16154e83736cf6b636685396a124a`; corpus 612 = 571 OK / 37 GREEN / 4 FAIL;
+   `EXPECTED_FAIL.md` v85).
+3. **Pinned consumed surface refreshed** with the landed Track-3 surface (16-byte
+   `Context` header, 8-aligned buffers, `awaitTask` empty-scheduler `@panic`,
+   `@asyncInit` `-fsafe` frame-size bounds check); the superseded
+   `fn_ptr_struct_field`/homogeneous reasoning is dropped.
+4. **Cross-track ABI closeout check added** (Task 6 must re-verify the `Context`
+   header/`CTX_POOL_OFF` = 16 and 8-padded frames agree across tracks).
+5. **Multi-module `__Z98Step_<f>` emission gap recorded as a binding pre-conversion
+   blocker** (see Global Constraints), pinned by
+   `repro/mi_matrix/async_step_nonlast_xmod` (`EXPECTED_FAIL.md` v85). Track 4's
+   `rogue_mud`/`mud_server` are multi-module, so this MUST be resolved (emitter fix
+   or an explicit, recorded fallback decision) before the Task 2–5 conversions.
+
+No `sf/src` edit is made by this amendment (docs-only).
