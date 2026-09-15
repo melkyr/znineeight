@@ -339,3 +339,26 @@ compile-fail) plus a plan/spec note **before the task is marked complete**. An
 "Approved with a Minor" review verdict is not a declaration. S20 (un-annotated
 `switch`/`if` string-literal prongs) and S21 (`E![]const u8` / `?[]const u8`
 payload string literals) are the first applications.
+
+## 10. Residual-risk dispositions (Task 0g, 2026-09-15)
+
+Task 0g declared and pinned the residual latent risks the Track-4 reviews left
+unpinned (fixtures + `repro/mi_matrix/EXPECTED_FAIL.md` v89). The items that need
+no fixture are recorded here as the plan/spec note:
+
+- **T0b-M1 (`Scheduler.in_task` public) — by-design.** Z98 has no private fields,
+  so the `awaitTask` context guard is advisory to in-tree callers, not an
+  enforced boundary. No fix.
+- **D-M1 / D-M3 — cosmetic / closed.** No action.
+- **D-M2 — fixed in Task 0f.** No further action.
+- **T0-M2 — latent invariant dependency (NOT fixed here).** The multi-module
+  grouped-slot construction in `sf/src/main.zig` relies on module ids being
+  dense, so the uninitialized `grouped` tail is not currently reachable. Task 0h
+  makes the tail impossible (sentinel / advance by written count).
+- **F-M4 — non-literal `*const u8` → `[]const u8` silently length-1
+  (runtime-RED).** Pinned by `nonliteral_ptr_to_slice_xmod`; Task 0h.
+- **T0b `error[3043]` — `[*]*T` element field store (frontend compile-time
+  reject).** Pinned by `taskptr_field_store_xmod`; Task 0h.
+- **F-M3 — un-annotated same-length switch/if now infer `[]const u8`.** Pinned
+  (characterization, GREEN) by `unannotated_infer_samelength_xmod` +
+  `unannotated_infer_stmtexpr_xmod`; regression guards, no fix.

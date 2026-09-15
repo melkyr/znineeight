@@ -1,4 +1,63 @@
-# mi_matrix corpus — expected-fail manifest (v88 2026-09-15)
+# mi_matrix corpus — expected-fail manifest (v89 2026-09-15)
+
+## Residual latent risks declared (v89 2026-09-15) — Task 0g (I)
+
+Track-4 Task 0g declares and pins the residual latent risks the earlier Track-4 reviews
+left unpinned. **No `sf/src` change** (any fix is Task 0h); reference compiler = the
+post-Task-0f fixed point `97cd5a033156119339ebffc15b575c5d`. Four new corpus dirs; the 637
+v88 dirs are class-identical (zero movement). Corpus `-s0` universe **641 dirs** =
+**599 OK / 37 GREEN / 4 FAIL / 1 ICE / 0 CRASH**; the delta vs v88 (`637 = 596 OK / 37
+GREEN / 4 FAIL / 0 ICE`) is exactly the four new dirs: +3 OK, +1 ICE.
+
+### F-M4 — non-literal `*const u8` → `[]const u8` silently length-1 (runtime-RED; corpus class OK)
+
+New dir `nonliteral_ptr_to_slice_xmod`. `sf/src/lower.zig` `materializeInto`'s
+no-wrap-layer path (`:2029-2035`) and error-union/optional payload path (`:2048-2050`)
+synthesize a `string_to_slice` coercion with `.node_idx = src_node` and call
+`applyCoercion`, which sets the slice length from the literal ONLY when `node_idx` is an
+`AstKind.string_literal` — otherwise `sllen = 1` (`:6633`). `classifyCoercion` returns
+`string_to_slice` for ANY `*const u8`/`*const c_char` → `[]const u8` (`coercion.zig:193-200`),
+so a NON-literal pointer coerced to a slice on this path silently becomes a length-1 slice.
+
+Reachable construct (verified): `fn pick(p: *const u8, q: *const u8, c: bool) []const u8 {
+var s: []const u8 = if (c) p else q; return s; }` called with `"hello"` / `"world!!"`. The
+if-expr arms are identifier nodes, so the emitted C hard-codes `len = 1`:
+`zT_6 = 1; zT_5.ptr = p; zT_5.len = zT_6;`. RED: dump rc=0 / 5 `.c` / gcc-clean / link rc=0 /
+**run rc=133**, stdout `h|1` then `w|1`. GREEN contract: `hello|5` then `world!!|7`, run rc=0.
+
+### T0b — `[*]*Task` element field store (frontend compile-time reject; classifier ICE-buckets `error[3043]`)
+
+New dir `taskptr_field_store_xmod`. `s.tasks[0].cancel_requested = true` on a `[*]*Task`
+field: `lowerFieldStore` (`sf/src/lower.zig:1740-1831`) unwraps exactly ONE pointer level
+(`:1744-1748`) leaving `*Task` (not a struct), so the final `else` calls
+`iceFieldStoreUnsupported` (`:1827`). Exact diagnostic: `error[3043]: internal:
+unsupported field-store base (node 64)`; dump rc=3, ZERO `.c`. The canonical corpus
+classifier's ICE regex (`error\[(48|3042|9001|3043)\]`, QUICK_REF.md:151) buckets it as
+**ICE**, not FAIL — recorded here as a frontend compile-time reject with the exact
+diagnostic. Workaround already in-tree: `sf/src/std_async.zig:222-232` routes the store
+through a local `*Task`. Declared, NOT fixed (Task 0h).
+
+### F-M3 — un-annotated same-length switch/if now infer `[]const u8` (characterization; GREEN today)
+
+Two new dirs pin the NEW inference breadth Task 0f gave the un-annotated switch/if
+expressions (both were pointer-to-array pre-Task-0f):
+- `unannotated_infer_samelength_xmod` — `var s = switch (c) { .A => "abc", .B => "xyz" };`
+  (SAME-length literals).
+- `unannotated_infer_stmtexpr_xmod` — `var s = if (c) "abc" else "xyz";` (statement-position
+  literal if-expr).
+
+Both: dump rc=0 / 5 `.c` / gcc-clean / link rc=0 / **run rc=0**, stdout `abc|3` then
+`xyz|3`; the `s.len` direct assertion exercises the slice. Corpus class **OK** (runtime
+GREEN), permanent regression guards. No defect.
+
+### Closed / by-design items recorded (no fixture)
+
+- **T0b-M1** — `Scheduler.in_task` is public: **by-design**; Z98 has no private fields.
+- **D-M1 / D-M3** — cosmetic / closed (no action).
+- **D-M2** — fixed in Task 0f.
+- **T0-M2** — latent invariant dependency: module ids are dense, so the `grouped` tail is
+  not currently reachable; to be made impossible in Task 0h, **NOT fixed here**.
+
 
 ## Residual string->slice gaps CLOSED (v88 2026-09-15) — Task 0f (F)
 
