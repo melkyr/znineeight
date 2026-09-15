@@ -344,6 +344,30 @@ git commit -m "fix(std.async): addTask stores *Task + awaitTask non-suspending g
 - [ ] **Step 5: M4.** Harden the `arr_len = 1` default.
 - [ ] **Step 6: Sweep.** Full corpus (`-s0`) with only intended movements; the warning gate; `check_emit_support.sh` 5/5; 4-MD5 gates; `verify_upgraded.sh` CLOSEOUT OK; two-hop fixed-point closure. Seed rotation is Task 6. Commit.
 
+### Task 0k: Classify every warning — valid Z98 vs invalid (I) — **STOP after this task**
+
+> Operator ruling: do NOT narrow/suppress warnings. First understand what each warning is about and whether the underlying construct is legitimate Z98 or invalid Zig. **No fixes and no re-baseline in this task; STOP and present the classification before Task 0l.**
+
+**Files:**
+- Create (corpus): fixtures pinning each classified construct (the 3 pointer-warning emission shapes; representative `warning[3000]` cases incl. the compiler's own)
+- Modify: `repro/mi_matrix/EXPECTED_FAIL.md` as needed
+- No `sf/src` change; no re-baseline
+
+**Interfaces:**
+- Consumes: Task 0h `5b9208c7`, Task 0i `caa8e56d`.
+- Produces: a per-warning classification, the A1-induced-vs-pre-existing split, the correct C-model decision for `*const [N]u8`, and the Task 0l fix set.
+
+- [ ] **Step 1: `-Wincompatible-pointer-types` (A1, +1360).** For each emission shape (`"abc"`→`unsigned char (*)[N]`; `(*)[N]`→`char*`; `(*)[N]`→`unsigned char*`; the `strtod` arg), state the underlying Zig and confirm it is valid Z98; pin the exact C-emission defect; decide the correct C model for `*const [N]u8` (decay the temp to a plain pointer vs pointer-to-array + casts) and whether A1's type model is right or the emitter must change.
+- [ ] **Step 2: `warning[3000]` — EVERY case (the compiler's 19 + the corpus ~89).** For each, classify **(a) valid Z98, the warning is a type-checker false positive** (fix accuracy) or **(b) invalid Zig that must be a hard `error[3000]`** (0 `.c`). Cite the exact construct and source location. Do NOT mark any as minor.
+- [ ] **Step 3: A1-induced vs pre-existing.** Diff the `[3000]` set between pre-A1 `97cd5a03` and post-A1 `958a5e0f` (and post-deletion `ed206028`) so we know exactly what A1 changed.
+- [ ] **Step 4: Runtime correctness** of each valid-but-warned case — does the tolerated mismatch actually produce correct code?
+- [ ] **Step 5: Fixtures + report + commit.** `git commit -m "test(async): classify warnings valid-vs-invalid Z98 (Track4 S24 I)"`. **STOP and present.**
+
+### Task 0l: Fix per the Task 0k classification (F) — run only after the operator rules on Task 0k
+
+**Files:** `sf/src/{type_registry,semantic_analyzer,lower,c89_emit}.zig` (as Task 0k dictates), Task 0k fixtures, `EXPECTED_FAIL.md`, `QUICK_REF.md` (4-MD5, after runtime proof), affected goldens.
+**Produces:** emission correctness for the pointer warnings; type-checker accuracy for the valid-Z98 false positives; precisely-scoped hard errors (verified against self-compile's 19) for the genuinely invalid cases; self-compile closure + warning gate + corpus sweep; fixed point MOVES; seed rotation at Task 6.
+
 ### Task 1: Baseline, reference compiler, and pre-conversion golden captures
 
 **Files:**
