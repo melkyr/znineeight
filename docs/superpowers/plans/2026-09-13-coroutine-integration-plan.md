@@ -20,7 +20,7 @@
 
 - **Baseline (re-verify at Task 1; the fixed point MOVES in Task 0).** Pre-Task-0 HEAD `0aa5e13d`; pre-Task-0 compiler fixed point `027377296b2e38402ff8470f5c429eb8`; seed v19 archive md5 `23a16154e83736cf6b636685396a124a`; corpus 612 = 571 OK / 37 GREEN / 4 FAIL; `repro/mi_matrix/EXPECTED_FAIL.md` header v85 (2026-09-15). Task 0 (emitter fix) and Task 0b (`std.async` ownership fix) change `sf/src`, so the fixed point and seed move; Task 1 re-verifies and records the post-Task-0/0b values before capturing goldens.
 - **Precondition:** Tracks 2 and 3 are implemented and landed. The four `@async*` builtins work, `sf/src/std_async.zig` exists, and `lib/std_async.zig` is installed next to the compiler under test (`docs/sf/QUICK_REF.md:97-98` recipe plus `std_async.zig`).
-- **`sf/src` scope (operator-authorized 2026-09-15; supersedes the original examples-only constraint).** Authorized `sf/src` changes: **Task 0** (multi-module `__Z98Step_<f>` emission; `sf/src/c89_emit.zig`+`sf/src/main.zig`; fixed point MOVES); **Task 0b** (`std.async` task ownership; `sf/src/std_async.zig`; fixed point UNMOVED but `lib/std_async.zig` changes); **Task 0d** (switch-expression string-literal-prong `string_to_slice` length; `sf/src/semantic_analyzer.zig`; fixed point MOVES); **Task 0f** (residual S20 un-annotated inference + S21 error-union/optional payload string→slice; `sf/src/semantic_analyzer.zig` + `sf/src/lower.zig`; fixed point MOVES). The seed is rotated at Task 6 closeout. No other `sf/src` edit is authorized; Tasks 1-5 touch examples only (the fix tasks re-capture the goldens they change).
+- **`sf/src` scope (operator-authorized 2026-09-15; supersedes the original examples-only constraint).** Authorized `sf/src` changes: **Task 0** (multi-module `__Z98Step_<f>` emission; `sf/src/c89_emit.zig`+`sf/src/main.zig`; fixed point MOVES); **Task 0b** (`std.async` task ownership; `sf/src/std_async.zig`; fixed point UNMOVED but `lib/std_async.zig` changes); **Task 0d** (switch-expression string-literal-prong `string_to_slice` length; `sf/src/semantic_analyzer.zig`; fixed point MOVES); **Task 0f** (S20 un-annotated inference + S21 error-union/optional payload string→slice; `sf/src/semantic_analyzer.zig` + `sf/src/lower.zig`; fixed point MOVES); **Task 0h** (residual latent risks: F-M4 non-literal pointer→slice length-1 default, T0b `error[3043]` `[*]*T` element field store, F-M1 prong guard, T0-M2 grouped tail; `sf/src/lower.zig` + `sf/src/semantic_analyzer.zig` + `sf/src/main.zig`; fixed point MOVES). The seed is rotated at Task 6 closeout. No other `sf/src` edit is authorized; Tasks 1-5 touch examples only (the fix tasks re-capture the goldens they change).
 - **Standing rule — declare every residual gap (binding).** Any gap a fix leaves behind (a construct still affected, a distinct adjacent bug, a known limitation) MUST be declared before its task is marked complete: a tracked fixture (or an `EXPECTED_FAIL.md` entry for a compile-fail) + a plan/spec note. "Approved with a Minor" is NOT a declaration. S20/S21 (Task 0d residuals) are the first application.
 - **`timeout 120` on every binary execution.**
 - **gcc flag-set rule (binding):** every `gcc -c` MUST be `gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc>`. Compiler builds only via the seed model: `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out_dir>`; never invoke `zig0`. `<out_dir>` must be fresh.
@@ -269,6 +269,42 @@ git commit -m "fix(std.async): addTask stores *Task + awaitTask non-suspending g
 - [ ] **Step 3: GREEN.** Flip every Task 0e fixture GREEN; remove the S21 dirs from `EXPECTED_FAIL.md`; re-run the classifier.
 - [ ] **Step 4: Re-capture affected goldens.** If any example output changes, re-capture and update the demo READMEs. Rebuild the two-hop closure; record the NEW fixed point. Seed rotation is Task 6.
 - [ ] **Step 5: Commit.** `git commit -m "fix(lower/sema): close residual string->slice gaps S20/S21 (Track4 S20/S21 F)"`.
+
+### Task 0g: Declare + pin the residual latent risks (F-M4, error[3043], F-M3, T0-M2) (I)
+
+**Files:**
+- Create (runtime-RED, corpus): `repro/mi_matrix/nonliteral_ptr_to_slice_xmod/main.zig` (F-M4)
+- Create (compile-FAIL, corpus): `repro/mi_matrix/taskptr_field_store_xmod/main.zig` (T0b `error[3043]`)
+- Create (characterization, corpus): `repro/mi_matrix/unannotated_infer_samelength_xmod/main.zig`, `repro/mi_matrix/unannotated_infer_stmtexpr_xmod/main.zig` (F-M3)
+- Modify: `repro/mi_matrix/EXPECTED_FAIL.md` (add the `error[3043]` dir; bump header)
+- Modify: plan/spec notes marking T0b-M1 by-design and D-M1/D-M2/D-M3 closed
+
+**Interfaces:**
+- Consumes: nothing.
+- Produces: tracked declarations (fixtures + `EXPECTED_FAIL.md`) of every remaining latent risk. No `sf/src` change; no fix (that is Task 0h).
+
+- [ ] **Step 1: F-M4 fixture (runtime-RED).** Exercise a NON-literal `*const u8` → `[]const u8` coercion through `materializeInto`'s no-layer path (`sf/src/lower.zig:2029-2035`) so `applyCoercion` defaults `sllen = 1`. Print the slice + its `.len` and assert the real length (RED = length 1). Header declares the mechanism + RED/GREEN.
+- [ ] **Step 2: `error[3043]` fixture (compile-FAIL).** `s.tasks[i].cancel_requested = true` on a `[*]*Task` (`lowerFieldStore` unwraps one pointer level → `*Task`, not a struct → `iceFieldStoreUnsupported`). Add to `EXPECTED_FAIL.md` with the exact diagnostic; bump the header.
+- [ ] **Step 3: F-M3 characterization fixtures.** Un-annotated `var s = switch (c) { .A => "abc", .B => "xyz" };` (same-length) and a statement-position literal if-expr; assert the inferred type behaves as a slice (`s.len` works). These are GREEN today — they pin the new inference breadth.
+- [ ] **Step 4: Record the closed/by-design items** in the report: T0b-M1 (`in_task` public) by-design; D-M1/D-M3 cosmetic/closed; D-M2 fixed in Task 0f; T0-M2 is a latent invariant dependency (not currently reachable) to be made impossible in Task 0h.
+- [ ] **Step 5: Corpus + classify + commit.** `git commit -m "test(async): declare residual latent risks F-M4/error3043/F-M3 (Track4 S22 I)"`.
+
+### Task 0h: Fix the residual latent risks (F-M4, error[3043], F-M1, T0-M2) (F)
+
+**Files:**
+- Modify: `sf/src/lower.zig`, `sf/src/semantic_analyzer.zig`, `sf/src/main.zig`
+- Modify: the Task 0g fixtures (RED/FAIL→GREEN); `repro/mi_matrix/EXPECTED_FAIL.md` (remove the `error[3043]` dir)
+- Modify: any golden the fix changes
+
+**Interfaces:**
+- Consumes: Task 0g fixtures.
+- Produces: every latent risk closed; Task 0g fixtures GREEN. Fixed point MOVES.
+
+- [ ] **Step 1: F-M4 fix.** In `sf/src/lower.zig` `materializeInto` (`:2029-2035` no-layer branch and `:2048-2050` payload branch), apply the length-1 default ONLY for literal-keyed coercions; for a non-literal node recover the real length (or leave it uncoerced) so a `*const u8`→`[]const u8` is never silently truncated to 1.
+- [ ] **Step 2: `error[3043]` fix.** In `sf/src/lower.zig` `lowerFieldStore` (`:1740-1831`) handle a `[*]*T` element base (unwrap the element pointer so `s.tasks[i].field = v` resolves to the struct). Remove the `cancelAll` local-`*Task` workaround in `sf/src/std_async.zig` once the direct form works.
+- [ ] **Step 3: F-M1 guard.** In `sf/src/semantic_analyzer.zig:2000`, guard the `astStoreNodeAt(prong.child_0)` read with `prong.child_0 != 0`.
+- [ ] **Step 4: T0-M2.** In `sf/src/main.zig` (grouped-slot construction `:1168-1197`), make the uninitialized-tail impossible (write a sentinel or advance `ctx.lir_slots.len` only by the written count).
+- [ ] **Step 5: GREEN + fixed point + commit.** Flip the Task 0g fixtures GREEN; remove the `error[3043]` dir from `EXPECTED_FAIL.md`; re-capture affected goldens; rebuild the two-hop closure and record the NEW fixed point; run the corpus gate. Seed rotation is Task 6. `git commit -m "fix(lower/sema/emit): close residual latent risks F-M4/error3043/F-M1/T0-M2 (Track4 S22 F)"`.
 
 ### Task 1: Baseline, reference compiler, and pre-conversion golden captures
 
