@@ -1,4 +1,4 @@
-// switch_expr_payload_capture_xmod — RUNTIME-gated RED fixture (compile-gate OK, run CRASH/garbage).
+// switch_expr_payload_capture_xmod — RUNTIME-gated GREEN fixture (compile-gate OK, run rc=0).
 //
 // Bug: a switch used as an EXPRESSION with a payload-capture prong mis-lowers in zig1. In the
 // switch-as-expression lowering (lowerExprImpl, sf/src/lower.zig, site ~4010-4219) the payload
@@ -17,15 +17,17 @@
 //   (b) stmtExtract(kv) helper                                   -- statement-switch sibling
 // k drives the union tag: k=0 -> .A payload "helloA", k=1 -> .B payload "helloB".
 //
-// RED today (all 4 compilers share the defect): run SIGSEGV rc=139 or garbage stdout — the
-// expression-switch result is an uninitialized slice whose whole write crashes or prints garbage.
-// GREEN (after the lowering fix) = deterministic stdout:
+// FIXED (capture-binding placement corrected: the payload binding instructions now land in the
+// prong block after the case label, matching the statement-switch lowering). GREEN now =
+// dump rc=0 / gcc-clean / link rc=0 / run rc=0, deterministic stdout:
 //   helloA
 //   helloA
 //   helloB
 //   helloB
 // (28 bytes; expr-switch line then statement-sibling line for each k — identical evidence,
 // verified byte-equal on the statement-only control green2.)
+// (Header corrected RED→GREEN by Task 0e; the fixture has been GREEN since the capture-placement
+// fix and was only mis-declared.)
 const std = @import("std");
 
 const V = union(enum) {
