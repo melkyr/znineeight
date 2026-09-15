@@ -3090,7 +3090,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     }
                       var gdb_here: []const u8 = "GDB_HERE_SYM"; pal.markerWrite(gdb_here);
                       var gtdb: [20]u8 = undefined; var gtdl = itoa_mod.itoa(s.type_id, gtdb[0..]); var gtds: usize = @intCast(usize, 19) - @intCast(usize, gtdl); pal.markerWrite(gtdb[gtds..@intCast(usize, 19)]);
-                      var gkk: u32 = s.kind;
+                      var gkk: u32 = @intCast(u32, @enumToInt(s.kind));
                       var gkdb: [20]u8 = undefined; var gkdl = itoa_mod.itoa(gkk, gkdb[0..]); var gkds: usize = @intCast(usize, 19) - @intCast(usize, gkdl); pal.markerWrite(gkdb[gkds..@intCast(usize, 19)]);
                       var gdn: []const u8 = "d"; pal.markerWrite(gdn);
                       var gddb: [20]u8 = undefined; var gddl = itoa_mod.itoa(s.decl_node, gddb[0..]); var gdds: usize = @intCast(usize, 19) - @intCast(usize, gddl); pal.markerWrite(gddb[gdds..@intCast(usize, 19)]);
@@ -3615,7 +3615,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.fn_call) {
         var d9m: []const u8 = "D9:FCk"; pal.markerWrite(d9m);
         var callee_head = ast_mod.astStoreNodeAt(store, node.child_0);
-        var ck_val: u8 = callee_head.kind;
+        var ck_val: u8 = @intCast(u8, @enumToInt(callee_head.kind));
         var d9kb: [10]u8 = undefined; var d9kl = itoa_mod.itoa(@intCast(u32, ck_val), d9kb[0..]); var d9ks: usize = @intCast(usize, 9) - @intCast(usize, d9kl); pal.markerWrite(d9kb[d9ks..@intCast(usize, 9)]);
         var d9sp: []const u8 = " "; pal.markerWrite(d9sp);
          var ec = ast_mod.astStoreNodeExtraChildren(store, node_idx);
@@ -3765,10 +3765,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var callee_node = ast_mod.astStoreNodeAt(store, node.child_0);
         if (callee_node.kind == @enumToInt(AstKind.field_access)) {
             var dfa: []const u8 = "DFA:ck="; pal.markerWrite(dfa);
-            var ckv: u8 = callee_node.kind; var dfab: [10]u8 = undefined; var dfal = itoa_mod.itoa(@intCast(u32, ckv), dfab[0..]); var dfas: usize = @intCast(usize, 9) - @intCast(usize, dfal); pal.markerWrite(dfab[dfas..@intCast(usize, 9)]);
+            var ckv: u8 = @intCast(u8, @enumToInt(callee_node.kind)); var dfab: [10]u8 = undefined; var dfal = itoa_mod.itoa(@intCast(u32, ckv), dfab[0..]); var dfas: usize = @intCast(usize, 9) - @intCast(usize, dfal); pal.markerWrite(dfab[dfas..@intCast(usize, 9)]);
             var dfasp: []const u8 = "\n"; pal.markerWrite(dfasp);
             var bnode = ast_mod.astStoreNodeAt(store, callee_node.child_0);
-            var bkv: u8 = bnode.kind; var bfb: [10]u8 = undefined; var bfl = itoa_mod.itoa(@intCast(u32, bkv), bfb[0..]); var bfs: usize = @intCast(usize, 9) - @intCast(usize, bfl); pal.markerWrite(bfb[bfs..@intCast(usize, 9)]); var bfsp: []const u8 = "bk\n"; pal.markerWrite(bfsp);
+            var bkv: u8 = @intCast(u8, @enumToInt(bnode.kind)); var bfb: [10]u8 = undefined; var bfl = itoa_mod.itoa(@intCast(u32, bkv), bfb[0..]); var bfs: usize = @intCast(usize, 9) - @intCast(usize, bfl); pal.markerWrite(bfb[bfs..@intCast(usize, 9)]); var bfsp: []const u8 = "bk\n"; pal.markerWrite(bfsp);
             var base_node = bnode;
             if (base_node.kind == AstKind.ident_expr or base_node.kind == @enumToInt(AstKind.field_access)) {
             var field_name_id: u32 = ast_mod.astStoreNodePayload(store, node.child_0);
@@ -3889,7 +3889,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     var lex_rt_b: [10]u8 = undefined; var lex_rt_l = itoa_mod.itoa(result, lex_rt_b[0..]); var lex_rt_s: usize = @intCast(usize, 9) - @intCast(usize, lex_rt_l); pal.markerWrite(lex_rt_b[lex_rt_s..@intCast(usize, 9)]);
     var lex_rt_nl: []const u8 = "\n"; pal.markerWrite(lex_rt_nl);
     return result;
-                            } else { var fk_val: u8 = fs.kind; var a3f: []const u8 = "F3aKk"; pal.markerWrite(a3f); var a3fkb: [10]u8 = undefined; var a3fkl = itoa_mod.itoa(@intCast(u32, fk_val), a3fkb[0..]); var a3fks: usize = @intCast(usize, 9) - @intCast(usize, a3fkl); pal.markerWrite(a3fkb[a3fks..@intCast(usize, 9)]); var a3fsp: []const u8 = "\n"; pal.markerWrite(a3fsp); }
+                            } else { var fk_val: u8 = @intCast(u8, @enumToInt(fs.kind)); var a3f: []const u8 = "F3aKk"; pal.markerWrite(a3f); var a3fkb: [10]u8 = undefined; var a3fkl = itoa_mod.itoa(@intCast(u32, fk_val), a3fkb[0..]); var a3fks: usize = @intCast(usize, 9) - @intCast(usize, a3fkl); pal.markerWrite(a3fkb[a3fks..@intCast(usize, 9)]); var a3fsp: []const u8 = "\n"; pal.markerWrite(a3fsp); }
                         } else { var a3m: []const u8 = "DZ1:NF"; pal.markerWrite(a3m); var a3mb: [10]u8 = undefined; var a3ml = itoa_mod.itoa(field_name_id, a3mb[0..]); var a3ms: usize = @intCast(usize, 9) - @intCast(usize, a3ml); pal.markerWrite(a3mb[a3ms..@intCast(usize, 9)]); var a3mns: []const u8 = " "; pal.markerWrite(a3mns); }
                     } else { var dz1_fail: []const u8 = "DZ1:MSKIP\n"; pal.markerWrite(dz1_fail); }
                 } else { var a3b: []const u8 = "F3aBn"; pal.markerWrite(a3b); var a3bb: [10]u8 = undefined; var a3bl = itoa_mod.itoa(base_name_id, a3bb[0..]); var a3bs: usize = @intCast(usize, 9) - @intCast(usize, a3bl); pal.markerWrite(a3bb[a3bs..@intCast(usize, 9)]); var a3bns: []const u8 = " "; pal.markerWrite(a3bns); }
