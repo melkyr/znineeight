@@ -45,6 +45,7 @@ pub const SemanticAnalyzer = struct {
     call_param_map: *hash_mod.U32ToU32Map,
     current_switch_cond_tu: u32,
     switch_depth: u32,
+    defer_depth: u32,
     local_decl_names: [*]u32,
     local_decl_types: [*]u32,
     local_decl_count: usize,
@@ -194,6 +195,7 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .error_code_registry = error_code_reg,
         .current_switch_cond_tu = @intCast(u32, 0),
         .switch_depth = @intCast(u32, 0),
+        .defer_depth = @intCast(u32, 0),
         .local_decl_names = undefined,
         .local_decl_types = undefined,
         .local_decl_count = @intCast(usize, 0),
@@ -247,7 +249,7 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .async_init_name_id = ain_id,
         .async_resume_name_id = ars_id,
         .async_suspend_name_id = asu_id,
-        .async_analysis_ready = false,
+        .async_analysis_ready = true,
         .module_reg = module_reg,
         .suspending_fns = suspending_fns,
     };
@@ -324,11 +326,21 @@ fn semanticAnalyzerIsBuiltinSupported(self: *SemanticAnalyzer, name_id: u32) boo
 
 fn semanticAnalyzerDiagAsyncOutsideSuspending(self: *SemanticAnalyzer, node_idx: u32) void {
     if (!self.async_analysis_ready) return;
+    if (async_analysis.asyncIsSuspending(self.suspending_fns, self.module_id, self.current_fn_name)) return;
     var a318_node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var e318: []const u8 = "@asyncSuspend used outside a suspending function";
     _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0),
         @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3018_ASYNC_SUSPEND_OUTSIDE_SUSPENDING)),
         self.source_file_id, a318_node.span_start, a318_node.span_start + @intCast(u32, a318_node.span_len), e318);
+}
+
+fn semanticAnalyzerDiagAsyncBuiltinInDefer(self: *SemanticAnalyzer, node_idx: u32) void {
+    if (self.defer_depth == @intCast(u32, 0)) return;
+    var a319_node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    var e319: []const u8 = "@async builtin used inside a defer/errdefer body";
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0),
+        @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3019_ASYNC_BUILTIN_IN_DEFER)),
+        self.source_file_id, a319_node.span_start, a319_node.span_start + @intCast(u32, a319_node.span_len), e319);
 }
 
 fn semanticAnalyzerGrowLocalDecls(self: *SemanticAnalyzer) void {
@@ -2236,15 +2248,18 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                 _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 2)]);
                 _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 3)]);
             }
+            semanticAnalyzerDiagAsyncBuiltinInDefer(self, node_idx);
             result = type_mod.typeRegistryGetOrCreatePtr(self.registry, type_mod.TYPE_VOID, false);
         } else if (node.child_0 == self.async_resume_name_id) {
             if (ec.len >= @intCast(usize, 2)) {
                 _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]);
                 _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 1)]);
             }
+            semanticAnalyzerDiagAsyncBuiltinInDefer(self, node_idx);
             result = type_mod.typeRegistryGetOrCreateOptional(self.registry, type_mod.typeRegistryGetOrCreatePtr(self.registry, type_mod.TYPE_VOID, false));
         } else if (node.child_0 == self.async_suspend_name_id) {
             if (ec.len >= @intCast(usize, 1)) { _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]); }
+            semanticAnalyzerDiagAsyncBuiltinInDefer(self, node_idx);
             semanticAnalyzerDiagAsyncOutsideSuspending(self, node_idx);
             result = type_mod.typeRegistryGetOrCreatePtr(self.registry, type_mod.TYPE_VOID, false);
         } else if (node.child_0 == self.ptrcast_name_id and ec.len != @intCast(usize, 2)) {
@@ -2519,7 +2534,9 @@ pub fn semanticAnalyzerResolveFnBody(self: *SemanticAnalyzer, fn_decl_node: u32)
     if (fn_rt) |frt| {
         self.current_fn_return = frt;
     }
+    self.current_fn_name = proto.name_id;
     semanticAnalyzerResolveStmt(self, decl.child_0);
+    self.current_fn_name = @intCast(u32, 0);
     if (fnReturnRequiresValue(self, self.current_fn_return) and
         !astTerminates(self, decl.child_0)) {
         var mrsp = decl.span_start;
@@ -2991,7 +3008,9 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
             }
         } else if (node.kind == AstKind.defer_stmt or node.kind == AstKind.errdefer_stmt) {
             if (node.child_0 != @intCast(u32, 0)) {
-                semanticAnalyzerStmtWorkPush(self, node.child_0);
+                self.defer_depth += @intCast(u32, 1);
+                semanticAnalyzerResolveStmtIter(self, node.child_0);
+                self.defer_depth -= @intCast(u32, 1);
             }
         } else if (node.kind == AstKind.break_stmt) {
         } else if (node.kind == AstKind.continue_stmt) {

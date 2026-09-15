@@ -1,4 +1,46 @@
-# mi_matrix corpus — expected-fail manifest (v80 2026-09-15)
+# mi_matrix corpus — expected-fail manifest (v81 2026-09-15)
+
+## Async ERR_3018 gated + ERR_3019 defer ban (v81 2026-09-15)
+
+Track 2 async compiler core final whole-branch review finding #3 (operator ruling: fix in code),
+Fix F3. Measurement compiler = the two-hop closure binary
+**`09c86411f7edf6b259b0ef1dace49b51`** (`-ffast`), rebuilt from the committed seed **v15**
+`eda943dc…` (hop1 == hop2). Seed **NOT** rotated; the new fixed point is recorded.
+
+- **`ERR_3018` is a real check** (`sf/src/semantic_analyzer.zig`): the sema `@asyncSuspend` arm
+  consults `asyncIsSuspending(suspending_fns, module_id, current_fn_name)` and emits only when
+  the enclosing function is not suspending; `async_analysis_ready` is now `true`. It is
+  **reachable** (a module-scope `@asyncSuspend` → exactly one `error[3018]`, 0 `.c`) and cannot
+  false-positive (Stage 1 self-seeds any function whose body directly contains `@asyncSuspend`).
+  All 11 async run fixtures + 4 guards stay green.
+- **`ERR_3019` implemented**: a `defer_depth` counter in the sema statement walk;
+  `@asyncSuspend`/`@asyncInit`/`@asyncResume` inside a `defer`/`errdefer` body emits exactly one
+  `error[3019]` at the builtin's span.
+
+Corpus `-s0` universe **602 dirs** (`scripts/corpus/list_corpus_dirs.sh`) = **562 OK / 37 GREEN /
+3 emission-inspection (expected standalone gcc-FAIL)**, `-ffast` == `-fsafe` **zero-asymmetric**.
+Vs the pre-F3 compiler (`ae5e2f09`, 601 dirs = 562 OK / 36 GREEN / 3 FAIL) the ONLY movement is
+the new fixture `async_defer_error_xmod` GREEN; vs the v80 manifest (599 = 560 OK / 36 GREEN /
+3 FAIL) the 599 common dirs are class-identical and the +3 dirs are the F1 `async_frame_temps_xmod`
+(OK), F2 `async_state_width_xmod` (OK), and F3 `async_defer_error_xmod` (GREEN).
+
+### New GREEN/reject fixture (v81)
+
+| fixture | class | expected diagnostic |
+|---|---|---|
+| `async_defer_error_xmod` | GREEN | `error[3019]` (`@asyncSuspend(null)` inside a `defer` body); rc=2, exactly 1×, 0 `.c` |
+
+### 4-MD5 gate rows + fixed point (v81)
+
+All eight 4-MD5 gate rows (default `-fsafe` + `-ffast`) are **byte-identical PRE↔POST** when both
+compilers resolve the same `lib/` (the Fix F3 change is sema-only and does not touch emission;
+a `defer` body is now resolved by a recursive `semanticAnalyzerResolveStmtIter` call with
+identical ordering). Absolute hashes remain path-derived (module basename-hash tokens), so they
+are not re-baselined here. `check_emit_support.sh` **5/5** byte-identical.
+
+- **Fixed point moved `eda943dc1f77a48eae039e39ea4bfe04` → `09c86411f7edf6b259b0ef1dace49b51`**
+  (the `-ffast` binary; two-hop closure `hop1 == hop2` from the committed seed v15 `eda943dc…`).
+  Seed **NOT** rotated (closeout-only).
 
 ## Track 2 async compiler core closeout (v80 2026-09-15)
 

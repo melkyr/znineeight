@@ -457,21 +457,34 @@ the existing builtin ids (`:64-93`); intern them in `semanticAnalyzerInit`
 | `@asyncResume(frame, arg)` | optional pointer (`?*void`) | `frame` `*void`, `arg` `?*void` |
 | `@asyncSuspend(data)` | `TYPE_PTR_VOID` (`*void`) | `data` `?*void` |
 
-Error-site rules in sema (Amendment 7, Res 3): **only `@asyncSuspend` is
-`ERR_3018`-gated.** An `@asyncSuspend` lexically outside a suspending function →
-`ERR_3018_ASYNC_SUSPEND_OUTSIDE_SUSPENDING = 3018` (resolved via the Stage 1
-table on the enclosing `fn_decl` symbol); the gate remains the
-`async_analysis_ready` flag and it is **kept `false`** — only `@asyncSuspend`
-needs Stage 1 complete. **`@asyncInit`/`@asyncResume` operate on opaque `*void`
-frames, do not require the suspension-detection pass, and are legal outside a
-suspending function (e.g. in `main`); they must not call the `3018` helper.**
-Any `@async*` inside `defer`/`errdefer` → `ERR_3019_ASYNC_BUILTIN_IN_DEFER =
-3019`, tracked by a new `defer_depth` counter mirroring `switch_depth`
-(`semantic_analyzer.zig:46, 181, 1818`). Reviving the dead
-`ERR_4002_DEFER_IN_INVALID_SCOPE` (`diagnostics.zig:53`) is the sanctioned
-alternative for `3019`; v1 uses `3019` and leaves `ERR_4002` for the separate
-general defer hardening item. `@asyncFrameSize` on a non-suspending/unknown
-function → `ERR_3046_ASYNC_FRAME_SIZE_INVALID = 3046`.
+Error-site rules in sema (Amendment 7, Res 3; **[updated: 2026-09-15 — Fix F3]**
+landed): **only `@asyncSuspend` is `ERR_3018`-gated.** An `@asyncSuspend`
+lexically outside a suspending function →
+`ERR_3018_ASYNC_SUSPEND_OUTSIDE_SUSPENDING = 3018`, resolved via the Stage 1
+table on the enclosing `fn_decl` symbol: `semanticAnalyzerResolveFnBody` records
+the enclosing function's `name_id` in `current_fn_name`, and the check consults
+`asyncIsSuspending(suspending_fns, module_id, current_fn_name)`, emitting only
+when the enclosing function is **not** suspending. The `async_analysis_ready`
+gate is now **`true`** (Stage 1 runs before sema), so the check is live and
+**reachable** (a module-scope `@asyncSuspend` — no enclosing function,
+`current_fn_name == 0` — reports exactly one `error[3018]`). It cannot
+false-positive on a legitimate body: Stage 1 self-seeds any function whose body
+directly contains `@asyncSuspend`, so a function the sema walk sees with a
+suspend is by construction already in `suspending_fns`. **`@asyncInit`/
+`@asyncResume` operate on opaque `*void` frames, do not require the
+suspension-detection pass, and are legal outside a suspending function (e.g. in
+`main`); they must not call the `3018` helper.** Any `@asyncSuspend` /
+`@asyncInit` / `@asyncResume` inside a `defer`/`errdefer` body →
+`ERR_3019_ASYNC_BUILTIN_IN_DEFER = 3019`, tracked by a `defer_depth` counter
+mirroring `switch_depth`: the sema statement walk increments `defer_depth`
+around the recursive resolution of a `defer`/`errdefer` body, and each of the
+three builtin arms emits exactly one `3019` at that builtin's span when
+`defer_depth > 0` (`@asyncFrameSize` is a compile-time query and is not
+`3019`-gated). Reviving the dead `ERR_4002_DEFER_IN_INVALID_SCOPE`
+(`diagnostics.zig:53`) was the sanctioned alternative for `3019`; v1 uses `3019`
+and leaves `ERR_4002` for the separate general defer hardening item.
+`@asyncFrameSize` on a non-suspending/unknown function →
+`ERR_3046_ASYNC_FRAME_SIZE_INVALID = 3046`.
 
 **Prelude B at the builtins (Amendment 7).** `@asyncInit`'s `fn` argument and the
 frame step word are **compiler-generated/compile-time queries** (the same class as
@@ -615,8 +628,10 @@ released when the child `_step` returns null.
 
 All new members are appended to `ErrorCode` (`sf/src/diagnostics.zig:10-81`) with
 an explicit `= NNNN`; never a bare member. `ErrorCode` is an auto-incrementing
-`enum(u16)`. Landing status (Amendment 7): `ERR_3017 = 3017` (Track 1), `3018`,
-`3019` and `ERR_3046 = 3046` are **assigned**, `WARN_3047 = 3047` optional, and
+`enum(u16)`. Landing status (Amendment 7; **[updated: 2026-09-15 — Fix F3]**):
+`ERR_3017 = 3017` (Track 1), `3018` and `3019` are **landed** (Fix F3: the
+`3018` gate is live and the `3019` defer ban emits), `ERR_3046 = 3046` is
+**assigned**, `WARN_3047 = 3047` optional, and
 `ERR_3048_CANNOT_READ_FILE = 3048` is preserved. The **next free value is
 `3049`**, claimed by the Res-6 1-arg `@ptrCast` diagnostic (below). This subspec
 owns `3017/3018/3019/3046/3049` (and optionally `3047`); Track 1 owns `3045`.
@@ -624,8 +639,8 @@ owns `3017/3018/3019/3046/3049` (and optionally `3047`); Track 1 owns `3045`.
 | Code | Name | Site |
 |---|---|---|
 | `ERR_3017_SUSPENDING_FUNCTION_POINTER = 3017` | Prelude B ban | `lower.zig:2994-3005, 3197, 3290` (function-value materialization) |
-| `ERR_3018_ASYNC_SUSPEND_OUTSIDE_SUSPENDING = 3018` | **`@asyncSuspend` only** outside a suspending function (Res 3) | sema `builtin_call` dispatch |
-| `ERR_3019_ASYNC_BUILTIN_IN_DEFER = 3019` | async builtin inside `defer`/`errdefer` | sema `defer_depth` check |
+| `ERR_3018_ASYNC_SUSPEND_OUTSIDE_SUSPENDING = 3018` | **`@asyncSuspend` only** outside a suspending function (Res 3) | sema `builtin_call` `@asyncSuspend` arm, gated on `asyncIsSuspending(suspending_fns, module_id, current_fn_name)` |
+| `ERR_3019_ASYNC_BUILTIN_IN_DEFER = 3019` | `@asyncSuspend`/`@asyncInit`/`@asyncResume` inside `defer`/`errdefer` | sema `defer_depth > 0` at each of the three builtin arms |
 | `ERR_3045_UNKNOWN_CALLING_CONVENTION = 3045` | *(Track 1; reserved here)* | Track 1 |
 | `ERR_3046_ASYNC_FRAME_SIZE_INVALID = 3046` | `@asyncFrameSize` on non-suspending/unknown fn | sema `@asyncFrameSize` arm |
 | `WARN_3047_ASYNC_FRAME_LARGE = 3047` | *(optional advisory)* | Stage 2 layout, threshold-gated |
@@ -673,9 +688,17 @@ preserved; ICE `3043` (`ERR_9001_ICE`, auto-incremented) must not shift.
   `error.OutOfFrame` (no crash). `@asyncInit`/`@asyncResume` may appear in the
   **non-suspending `main`** driver (Res 3): only `@asyncSuspend` is
   `ERR_3018`-gated.
-- **Stage 4:** `repro/mi_matrix/async_builtin_scope_xmod` — `error[3018]` (only
-  for `@asyncSuspend`), `error[3019]`, and `error[3046]` cases; the positive
-  typing case compiles.
+- **Stage 4 (Fix F3 landed 2026-09-15):** `repro/mi_matrix/async_defer_error_xmod`
+  — a suspending `worker` with `@asyncSuspend(null)` inside a `defer` block; RED
+  pre-fix (dump rc=0, 0×`error[3019]`), GREEN post-fix (rc=2, exactly one
+  `error[3019]`, 0 `.c`). The `ERR_3018` check is now live and **reachable**: a
+  module-scope `@asyncSuspend` (no enclosing function, `current_fn_name == 0`)
+  reports exactly one `error[3018]`; it does not fire on the existing async
+  bodies because Stage 1 self-seeds their functions. `async_builtin_scope_xmod`
+  is a positive/typing guard (rc=0, 4 `.c`): its `@asyncSuspend` is inside the
+  suspending `plain_caller`, so neither `3018` nor `3019` fires.
+  `async_framesize_invalid_xmod` keeps `error[3046]`; the positive typing cases
+  compile.
 - **Gate battery (every task):** build via the seed model
   (`scripts/seed/build_from_seed.sh`) or `bash sf/scripts/build_release.sh`;
   compile/run affected fixtures under `timeout 120`; run the corpus classifier
