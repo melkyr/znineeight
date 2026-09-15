@@ -113,7 +113,7 @@ pub const Context = struct {
     oom: bool,
 };
 
-pub fn contextInit(pool: []u8) Context;
+pub fn contextInit(buf: []u8) Context;
 pub fn contextAlloc(ctx: *Context, size: usize) FrameError![*]u8;
 pub fn contextMark(ctx: *Context) usize;
 pub fn contextRelease(ctx: *Context, mark: usize) void;
@@ -170,7 +170,8 @@ resolves umbrella §16.1's step/scheduler item.
   gets the same `ctx` pointer from its parent's frame; the compiler-generated
   suspending call site reads `ctx` from the **caller** frame.
 - **LIFO by bump + mark.** `contextMark` returns the current bump (`used`);
-  `contextAlloc` returns `pool + used` and advances `used` by `size`;
+  `contextAlloc` returns the derived pool base (`ctx + 12`) plus `used` and
+  advances `used` by `size`;
   `contextRelease(mark)` restores `used`. A child frame is allocated before
   driving the child `_step` and released exactly when that `_step` returns null
   (terminal), so LIFO holds naturally — no free list, no fragmentation.

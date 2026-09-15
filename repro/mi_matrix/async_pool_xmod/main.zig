@@ -2,10 +2,10 @@
 //
 // A deep chain of suspending calls (level1 -> level2 -> level3, all implicit
 // awaits) is driven with a deliberately small Context pool: the first child
-// frame fits, the second exceeds `capacity`, so the await site sets the sticky
-// `oom` flag and takes the null/error terminal path instead of writing out of
-// bounds. The fixture asserts `oom == 1` (no crash), i.e. pool exhaustion is
-// reported rather than corrupting memory.
+// frame (level2, 28 bytes) already exceeds `capacity = 20`, so the await site
+// sets the sticky `oom` flag and takes the null/error terminal path instead of
+// writing out of bounds. The fixture asserts `oom == 1` (no crash), i.e. pool
+// exhaustion is reported rather than corrupting memory.
 //
 // Context header layout (compiler-core, 32-bit): the caller passes
 // `ctx = &pool`; the header occupies the first bytes of `pool`:

@@ -889,7 +889,7 @@ git add repro/mi_matrix/EXPECTED_FAIL.md release/seed/zig1-seed.tgz \
 git commit -m "docs: GATE — std.async library + 9-file seed lib (ASYNCTRACK3)"
 ```
 
-STOP-present the closeout: corpus counts, fixed-point md5 (unmoved), archive md5, the 9-module `lib/` listing, and the five fixture md5s. Await operator GO; this is the plan's terminal task.
+STOP-present the closeout: corpus counts, fixed-point md5 (unmoved), archive md5, the 9-module `lib/` listing, and the five fixture md5s. Await operator GO; this is the plan's last implementation task (Task 6 is a docs-only Track-3 deferral).
 
 ---
 
@@ -932,8 +932,9 @@ recommendation is **(a)**.
 **Deliverable:** Track 3 amends `2026-09-13-std-async-design.md` §3.1/§4 (and
 the compiler-core spec if (b)) and records the chosen branch before dispatch.
 
-**Ordering:** resolve this **before Task 1**; Task 1's `Context` code block
-pins the old field order and must move to the chosen branch.
+**Ordering:** this deferral is recorded **after Task 5** (Task 6 is docs-only);
+the chosen branch must be applied to Task 1's `Context` code block — which
+pins the old field order — **before Track 3 dispatch**.
 
 ---
 

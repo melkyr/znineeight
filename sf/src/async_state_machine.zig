@@ -445,8 +445,10 @@ fn emitAwait(b: *Build, blk: u32, cd: lir_mod.CallDirectData, state: u32, alloc_
     var used = loadFieldBase(b, blk, ctx, CTX_USED_OFF, type_mod.TYPE_USIZE);
     var capacity = loadFieldBase(b, blk, ctx, CTX_CAP_OFF, type_mod.TYPE_USIZE);
     var oom_old = loadFieldBase(b, blk, ctx, CTX_OOM_OFF, type_mod.TYPE_U8);
-    // `frame_sizes[callee]` is authoritative (Task 5 sole writer); if absent emit
-    // an ICE rather than silently allocating a zero-sized child.
+    // `frame_sizes[callee]` is authoritative (Task 5 P2 is the sole writer and
+    // populates every suspending callee). The absent-entry branch is therefore
+    // unreachable: it records the ICE and the `fsz = 0` placeholder below is
+    // never reached on a successful compile (M5).
     var fsz: u64 = @intCast(u64, 0);
     if (async_analysis.asyncFrameSizeOf(b.actx.frame_sizes, cd.module_id, cd.name_id)) |fs| {
         fsz = @intCast(u64, fs);

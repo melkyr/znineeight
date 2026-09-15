@@ -51,9 +51,7 @@ pub fn main() void {
     var rb2: i64 = 0;
     var cbuf: [1024]u8 = undefined;
     var ctxv: *Ctx = @ptrCast(*Ctx, &cbuf);
-    ctxv.used = 0;
     ctxv.capacity = 1024;
-    ctxv.oom = 0;
 
     if (@asyncFrameSize(caller) != 64) {
         @panic("caller frame size mismatch");
@@ -80,7 +78,6 @@ pub fn main() void {
 
     var ca2: CArgs = CArgs{ .o1 = &r1, .o2 = &r2, .ob1 = &rb1, .ob2 = &rb2, .cond = false };
     var fbuf2: [256]u8 = undefined;
-    ctxv.used = 0;
     var ctxp2: *void = @ptrCast(*void, &cbuf);
     var args2: *const void = @ptrCast(*const void, &ca2);
     var frame2: *void = @asyncInit(ctxp2, &fbuf2, caller, args2);

@@ -22,9 +22,7 @@ pub fn main() void {
     var ca: CArgs = CArgs{ .out = &result };
     var ctxp: *void = @ptrCast(*void, &cbuf);
     var ctxv: *Ctx = @ptrCast(*Ctx, &cbuf);
-    ctxv.used = 0;
     ctxv.capacity = 256;
-    ctxv.oom = 0;
     var args: *const void = @ptrCast(*const void, &ca);
     var frame: *void = @asyncInit(ctxp, &fbuf, caller, args);
     var more: ?*void = @asyncResume(frame, null);
