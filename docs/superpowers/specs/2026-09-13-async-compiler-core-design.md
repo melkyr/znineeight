@@ -777,6 +777,14 @@ preserved; ICE `3043` (`ERR_9001_ICE`, auto-incremented) must not shift.
 **Status: COMPLETE** (spec status stays "draft, amendable in place"). Full gate
 evidence in `.superpowers/sdd/task-ASYNCTRACK2-report.md` `## Task 8 (re-run 2)`.
 
+> **Rule A supersession (2026-09-15).** The cross-track ABI fix moved the
+> compiler Context header **12 → 16 bytes** (`CTX_POOL_OFF = 16`, matching
+> `std.async`'s `HEADER_SIZE`) and pads **every** frame to a multiple of 8. The
+> fixed point recorded below (`f5ee8480…`) is therefore **superseded** by
+> **`7b515420f749604c1765c2b1edd0d654`** (seed **v18**, archive md5
+> `a9ded441846f54f1d02373d3f4da9142`). The §4 header contract above is the
+> canonical cross-track ABI.
+
 - **Fixed point:** `f5ee84800dd32d7c440bb383c10edb55` (the `-ffast` binary;
   two-hop closure `hop1 == hop2` from the committed seed v15
   `eda943dc1f77a48eae039e39ea4bfe04`).

@@ -1,4 +1,23 @@
-# mi_matrix corpus — expected-fail manifest (v83 2026-09-15)
+# mi_matrix corpus — expected-fail manifest (v84 2026-09-15)
+
+## Cross-track async ABI fix — Rule A (v84 2026-09-15)
+
+Track 2 + Track 3 ABI fix (`d2629f9c`): the compiler Context header moved
+**12 → 16 bytes** (`CTX_POOL_OFF = 16`, matching `std.async`'s `HEADER_SIZE`),
+and **every frame size is padded to a multiple of 8**. This moves the
+self-emission fixed point `f5ee84800dd32d7c440bb383c10edb55` →
+**`7b515420f749604c1765c2b1edd0d654`** (two-hop closure `hop1 == hop2`) and
+rotates the seed **v17 → v18** (archive md5 `0f04224c55a948f47bc72ec47e0374fb` →
+`a9ded441846f54f1d02373d3f4da9142`).
+
+Corpus `-s0` universe **611 dirs** = **571 OK / 37 GREEN / 3 FAIL / 0 ICE /
+0 CRASH**; `-ffast` == `-fsafe` zero-asymmetric. Vs the v83 manifest
+(610 = 570 OK / 37 GREEN / 3 FAIL) the **+1 new dir is `async_libctx_mix_xmod`**
+(OK; mixed library + compiler Context path). The 610 common dirs are
+class-identical: the GREEN set and the 3-FAIL emission-inspection set are
+byte-for-byte the same, and the changed fixtures `async_frame_xmod`
+(pin `68 → 72`), `async_await_xmod` (root buffer `64 → 128`; root frame now 72),
+and `async_pool_xmod` (comment only) stay **OK**.
 
 ## std.async 9-module install (v83 2026-09-15)
 
