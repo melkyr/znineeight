@@ -306,6 +306,44 @@ git commit -m "fix(std.async): addTask stores *Task + awaitTask non-suspending g
 - [ ] **Step 4: T0-M2.** In `sf/src/main.zig` (grouped-slot construction `:1168-1197`), make the uninitialized-tail impossible (write a sentinel or advance `ctx.lir_slots.len` only by the written count).
 - [ ] **Step 5: GREEN + FULL corpus regression sweep + fixed point + commit.** Flip the Task 0g GREEN fixtures GREEN; move `nonliteral_ptr_to_slice_xmod` to a compile-reject (`EXPECTED_FAIL.md`) since bare-pointer→slice is now correctly rejected; remove the `error[3043]` dir from `EXPECTED_FAIL.md`; re-capture affected goldens. **Run the FULL corpus sweep at `-s0` (`bash scripts/corpus/list_corpus_dirs.sh`, classify by gcc exit code) and compare the per-dir class map against the pre-fix baseline `641 = 599 OK / 37 GREEN / 4 FAIL / 1 ICE`** — the ONLY acceptable movements are the intended ones (F-M4 fixture FAIL/ICE, `error[3043]` dir OK, plus the `error[3043]`-related flips); ANY other movement is a regression to STOP on. Also run `check_emit_support.sh` (5/5), the 4-MD5 gates, and `verify_upgraded.sh` (`CLOSEOUT OK`). Rebuild the two-hop closure and record the NEW fixed point. Seed rotation is Task 6. `git commit -m "fix(sema/lower): string literals typed *const [N:0]u8; close F-M4/error3043/F-M1/T0-M2 (Track4 S22 F)"`.
 
+### Task 0i: Exhaustive investigation of the Task 0h residuals (I)
+
+> **Task 0h status: NEEDS FIXES** (review Critical C1) — its commit `5b9208c7` is on the branch but incomplete; Task 0i investigates and Task 0j fixes. Do NOT re-baseline anything in Task 0i.
+
+**Files:**
+- Create (corpus): fixtures pinning each confirmed residual (bare-pointer→slice must frontend-reject; the A1 warning-regression repro; the M4 reachability case)
+- Modify: `repro/mi_matrix/EXPECTED_FAIL.md` as needed
+- No `sf/src` change; **no re-baseline applied**
+
+**Interfaces:**
+- Consumes: Task 0h's commit `5b9208c7`.
+- Produces: an exhaustive, evidence-backed investigation (report + fixtures) of every residual; the exact fix set for Task 0j.
+
+- [ ] **Step 1: C1 duplicate block.** Confirm `sf/src/type_registry.zig:1257-1263` is a duplicate ptr→slice assignability block that still returns true for a bare `*const u8`/`*const c_char` → `[]const u8`, making the A1 `:1231-1243` edit a no-op. Determine whether `:1261-1262` can be safely deleted (grep for any reliance, e.g. legacy C-interop `*const c_char`→slice). **If it cannot be deleted, document exactly why in the report — do NOT mark it minor.**
+- [ ] **Step 2: Frontend rejection.** Confirm that after removing the duplicate the mismatch is emitted only as `warning[3000]` (`semantic_analyzer.zig:2993`, `level=1`) and does not stop emission. Identify the exact contexts (var-decl / if / switch / return) that must become a **hard error** (0 `.c`), and build a fixture proving the frontend rejects (not gcc).
+- [ ] **Step 3: A1 warning regression.** Enumerate EVERY emitted-C warning category and count introduced by the A1 string-literal typing across the corpus + the example programs (compare pre-`5b9208c7` vs post). Identify the emission mechanism (the `string_const` temp is now C pointer-to-array `unsigned char (*)[N]`) and the fix options (decay the temp to a plain pointer vs cast at use sites). Quantify per program (e.g. json_parser 1→60).
+- [ ] **Step 4: M4 reachability.** Determine whether `applyCoercion`'s `array_to_slice` `arr_len = 1` default (`lower.zig:6627`) is reachable; if so, pin it.
+- [ ] **Step 5: 4-MD5 runtime proof (MANDATORY before any re-baseline).** Run the four gate programs (gol / lisp / json / mud) under the pre-`5b9208c7` and post-`5b9208c7` compilers and prove their **runtime output is byte-identical** (or document any difference precisely). A new 4-MD5 baseline may only be recorded after this proof.
+- [ ] **Step 6: Commit** the fixtures + report. `git commit -m "test(async): investigate Task 0h residuals C1/frontend/warnings/M4 (Track4 S23 I)"`.
+
+### Task 0j: Fix the Task 0h residuals (F)
+
+**Files:**
+- Modify: `sf/src/type_registry.zig`, `sf/src/semantic_analyzer.zig`, `sf/src/lower.zig`, `sf/src/c89_emit.zig` (as the Task 0i findings dictate)
+- Modify: the Task 0i fixtures; `repro/mi_matrix/EXPECTED_FAIL.md`
+- Modify: `docs/sf/QUICK_REF.md` (4-MD5 re-baseline, only after the Step 5 runtime proof)
+
+**Interfaces:**
+- Consumes: Task 0i findings.
+- Produces: C1 closed; type errors rejected in the **frontend**; A1 warning regression fixed; 4-MD5 re-baselined with runtime proof; M4 hardened. Fixed point MOVES.
+
+- [ ] **Step 1: C1.** Delete/dedupe `type_registry.zig:1261-1262` (or apply the Task 0i-documented alternative if deletion is unsafe). Verify `typeRegistryIsAssignable(*const u8, []const u8) == false`.
+- [ ] **Step 2: Hard frontend error.** Make the impossible-coercion case a hard error (0 `.c`, `error[3000]`) in the Task 0i-identified contexts. Verify the fixture is frontend-rejected.
+- [ ] **Step 3: Warnings.** Fix the emitted-C pointer-type warnings (Task 0i's chosen mechanism). **Gate:** `gcc -m32 -std=c89 -O0 -Wall -Wextra -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc> -fsyntax-only` over the corpus + examples at warning parity with pre-`5b9208c7` (only the 1 pre-authorized `fwrite` carve-out).
+- [ ] **Step 4: 4-MD5.** Record the new baseline in `docs/sf/QUICK_REF.md` ONLY after the Task 0i runtime proof.
+- [ ] **Step 5: M4.** Harden the `arr_len = 1` default.
+- [ ] **Step 6: Sweep.** Full corpus (`-s0`) with only intended movements; the warning gate; `check_emit_support.sh` 5/5; 4-MD5 gates; `verify_upgraded.sh` CLOSEOUT OK; two-hop fixed-point closure. Seed rotation is Task 6. Commit.
+
 ### Task 1: Baseline, reference compiler, and pre-conversion golden captures
 
 **Files:**
