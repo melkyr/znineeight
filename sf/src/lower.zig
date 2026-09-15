@@ -102,6 +102,7 @@ pub const SemanticContext = struct {
     safe_checks: bool,
     suspending_fns: *hash_mod.U64ToU32Map,
     frame_sizes: *hash_mod.U64ToU32Map,
+    state_widths: *hash_mod.U64ToU32Map,
 };
 
 pub const DeferActionArrayList = struct {
@@ -4223,6 +4224,16 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 }
                 _ = ai_ctx;
                 if (ec.len >= @intCast(usize, 2) and ai_have) {
+                    // F2: the frame's `state` field width is P2's authoritative
+                    // choice (u8/u16/u32 by suspension count), so the init store
+                    // and the post-header param offset must use the same width.
+                    var ai_state_type: u32 = type_mod.TYPE_U8;
+                    if (hash_mod.u64ToU32MapGet(self.ctx.state_widths, async_analysis.asyncKey(ai_mid, ai_nid))) |sw| { ai_state_type = sw; }
+                    var ai_state_size: u32 = @intCast(u32, 1);
+                    if (@intCast(usize, ai_state_type) < self.ctx.registry.types_len) {
+                        var ai_stt = self.ctx.registry.types_items[@intCast(usize, ai_state_type)];
+                        if (ai_stt.size != @intCast(u32, 0)) ai_state_size = ai_stt.size;
+                    }
                     // Task 7: initialize the caller-provided Context header for a
                     // fresh task (used = 0 at ctx+0, sticky oom = 0 at ctx+2*usize);
                     // the caller supplies `capacity` at ctx+1*usize and the pool
@@ -4283,12 +4294,12 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     emitInst(self, LirInst{ .ptr_to_int = .{ .value = ai_sf, .result = ai_sf_i } });
                     asyncEmitStoreAt(self, ai_buf, @intCast(u32, 0), type_mod.TYPE_USIZE, ai_sf_i);
                     asyncEmitStoreAt(self, ai_buf, ai_ptr_size, ai_ptr_void, ai_ctx);
-                    var ai_zero_st = nextTemp(self, type_mod.TYPE_U8);
+                    var ai_zero_st = nextTemp(self, ai_state_type);
                     emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = ai_zero_st } });
-                    asyncEmitStoreAt(self, ai_buf, ai_ptr_size * @intCast(u32, 2), type_mod.TYPE_U8, ai_zero_st);
+                    asyncEmitStoreAt(self, ai_buf, ai_ptr_size * @intCast(u32, 2), ai_state_type, ai_zero_st);
                     var ai_proto: ast_mod.FnProto = undefined;
                     if (asyncFindProto(self, ai_mid, ai_nid, &ai_proto)) {
-                        var frame_off: u32 = ai_ptr_size * @intCast(u32, 2) + @intCast(u32, 1);
+                        var frame_off: u32 = ai_ptr_size * @intCast(u32, 2) + ai_state_size;
                         var arg_off: u32 = @intCast(u32, 0);
                         if (ai_proto.params_count > @intCast(u16, 0)) {
                             var ai_payload: u64 = (@intCast(u64, ai_proto.params_start) << @intCast(u64, 32)) | @intCast(u64, ai_proto.params_count);

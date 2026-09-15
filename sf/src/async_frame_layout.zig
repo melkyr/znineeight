@@ -1,9 +1,11 @@
 // async_frame_layout.zig — Stage 2 LIR frame-layout reader (Track 2, Task 5c).
 //
 // For each suspending function this pass reads the lowered LIR and builds the
-// precise frame layout: field 0 `ctx` (pointer-sized), field 1 `state` (u8),
-// every `LirParam` in order, then every hoisted temp that is live across at
-// least one suspension point, in temp_id (declaration) order.
+// precise frame layout: the hidden `step` word (pointer-sized, offset 0), `ctx`
+// (pointer-sized), `state` (the u8/u16/u32 width P2 chose from the
+// suspension-point count; read from `state_widths`), every `LirParam` in order,
+// then every hoisted temp that is live across at least one suspension point, in
+// temp_id (declaration) order.
 //
 // A suspension point is (a) a direct call to a function in `suspending_fns`
 // (implicit await) or (b) the explicit `@asyncSuspend` placeholder (`int_const`
@@ -445,6 +447,7 @@ fn emitLayoutMarker(module_id: u32, name_id: u32, size: u32) void {
 
 pub fn asyncLayoutFrame(alloc: *Sand, reg: *TypeRegistry, lir_fn: *LirFunction,
     suspending_fns: *hash_mod.U64ToU32Map, frame_sizes: *hash_mod.U64ToU32Map,
+    state_widths: *hash_mod.U64ToU32Map,
     awaited_fns: *hash_mod.U64ToU32Map, async_hidden_fns: *hash_mod.U64ToU32Map,
     parent_result_type_list: *ga_mod.U32ArrayList, parent_result_start: *hash_mod.U64ToU32Map,
     parent_result_count: *hash_mod.U64ToU32Map) AsyncFrameLayout {
@@ -519,9 +522,11 @@ pub fn asyncLayoutFrame(alloc: *Sand, reg: *TypeRegistry, lir_fn: *LirFunction,
 
     var offset: u32 = @intCast(u32, 0);
     var max_align: u32 = @intCast(u32, 1);
+    var state_type: u32 = type_mod.TYPE_U8;
+    if (hash_mod.u64ToU32MapGet(state_widths, async_analysis.asyncKey(lir_fn.module_id, lir_fn.name_id))) |sw| { state_type = sw; }
     addField(&fields, reg, ASYNC_FIELD_STEP, @intCast(u32, 0), @intCast(u32, 0), type_mod.TYPE_USIZE, &offset, &max_align);
     addField(&fields, reg, ASYNC_FIELD_CTX, @intCast(u32, 0), @intCast(u32, 0), type_mod.TYPE_USIZE, &offset, &max_align);
-    addField(&fields, reg, ASYNC_FIELD_STATE, @intCast(u32, 0), @intCast(u32, 0), type_mod.TYPE_U8, &offset, &max_align);
+    addField(&fields, reg, ASYNC_FIELD_STATE, @intCast(u32, 0), @intCast(u32, 0), state_type, &offset, &max_align);
     pi = @intCast(usize, 0);
     while (pi < lir_fn.params.len) : (pi += @intCast(usize, 1)) {
         var p = lir_fn.params.items[pi];

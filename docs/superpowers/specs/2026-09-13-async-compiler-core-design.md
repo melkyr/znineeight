@@ -220,7 +220,13 @@ synthesize fields in this **frozen deterministic order**:
 3. `state: uN` — `u8` when `suspension_count <= 255`, else `u16`, else `u32`,
    where a suspension point is every explicit `@asyncSuspend` **plus** every
    implicit-await call to a suspending callee. Read by `@asyncResume` for the
-   dispatch; range-checked under `-fsafe` (Amendment 7).
+   dispatch; range-checked under `-fsafe` (Amendment 7). **Landed (Fix F2):**
+   P2 (`asyncFrameSizeRun`) computes the count and stores the chosen type in the
+   `state_widths` side table (`key -> TYPE_U8|TYPE_U16|TYPE_U32`); P3, the
+   `@asyncInit` lowering, and the Stage-3 transform all read that one source, so
+   the frame field, its stores/loads, the `switch` dispatch, and the `-fsafe`
+   range-check limit share the width. A function with more than `u32` suspension
+   points is out of scope (the count is a `u32`).
 4. Every `LirParam` in `params` order.
 5. Every `hoisted_temps` entry live across ≥1 suspension point, in `temp_id`
    (declaration) order. Temps not live across any suspension stay ordinary C
@@ -257,7 +263,9 @@ Offsets/size follow the single natural-layout path of
 fixture), `state`, then fields at natural alignment; the total is rounded up to
 `max_align`. On the 32-bit fixture target (`*void` step + `*void` ctx + `u8`
 state + two `i32` params) the layout is `step@0 s4 / ctx@4 s4 / state@8 s1 /
-params@12..` → **size 20** (was 16 pre-step). Because the step word is
+params@12..` → **size 20** (was 16 pre-step). A function with >255 suspension
+points widens `state` to `u16` (or `u32` above 65535), shifting the fields that
+follow by the extra bytes. Because the step word is
 pointer-sized, the authoritative size is target-dependent. `@asyncFrameSize(fn)`
 is this **flat** size and **excludes** child frames (m1166/m1172). The runtime
 total is the sum of frame sizes along the active call chain.
@@ -521,6 +529,7 @@ existing `check_trap`s (`lower.zig` numeric traps); `-ffast` leaves this UB.
 ```zig
 suspending_fns: hash_mod.U64ToU32Map, // key=(module_id<<32)|name_id; 0/1
 frame_sizes:    hash_mod.U64ToU32Map, // key=(module_id<<32)|name_id; flat bytes
+state_widths:   hash_mod.U64ToU32Map, // key=(module_id<<32)|name_id; TYPE_U8/U16/U32
 ```
 
 **Analysis module (`sf/src/async_analysis.zig`, new).**
@@ -528,12 +537,16 @@ frame_sizes:    hash_mod.U64ToU32Map, // key=(module_id<<32)|name_id; flat bytes
 pub fn asyncKey(module_id: u32, name_id: u32) u64;
 pub fn asyncIsSuspending(map: *hash_mod.U64ToU32Map, module_id: u32, name_id: u32) bool;
 pub fn asyncFrameSizeOf(map: *hash_mod.U64ToU32Map, module_id: u32, name_id: u32) ?u32;
+// Fix F2: P2 (asyncFrameSizeRun) is the sole writer of `state_widths`; consumers
+// read the chosen type with `u64ToU32MapGet(state_widths, asyncKey(m, n))`.
 pub fn suspensionAnalysisRun(ctx: *CompilerContext) void; // pass body
 ```
 
-**Frame/reference types (`sf/src/async_lowering.zig`, new).**
+**Frame/reference types (`sf/src/async_frame_layout.zig`, landed).**
 ```zig
-pub const AsyncFrameField = struct { name_id: u32, type_id: u32, offset: u32, kind: u8 };
+pub const AsyncFrameField = struct {
+    kind: u8, name_id: u32, temp_id: u32, type_id: u32, offset: u32, size: u32, alignment: u32,
+};
 // kind: 0=ctx, 1=state, 2=param, 3=live temp, 4=step (hidden; offset 0 ALWAYS,
 //       pointer-sized type_id per Amendment 7 — do NOT hard-code 4 bytes),
 //       5=child (hidden pointer; tail; iff f has an implicit await),
@@ -545,14 +558,16 @@ pub const AsyncFrameField = struct { name_id: u32, type_id: u32, offset: u32, ki
 //       only, so a void await reserves no slot; Amendment 10 replaces the
 //       Amendment-9 single per-caller slot)
 pub const AsyncFrameLayout = struct {
-    frame_size: u32,       // == frame_sizes[key]; authoritative
-    layout_size: u32,      // natural-layout size, <= frame_size
-    state_width: u8,       // 8/16/32
-    suspension_count: u32,
-    field_count: u32,
+    fields: AsyncFrameFieldArrayList,
+    layout_size: u32,      // == frame_sizes[key]; padded authoritative size
 };
-pub fn asyncLayoutFrame(lf: *lir_mod.LirFunction, reg: *type_mod.TypeRegistry,
-    scratch: *alloc_mod.Sand, frame_size: u32) AsyncFrameLayout;
+pub fn asyncLayoutFrame(alloc: *alloc_mod.Sand, reg: *type_mod.TypeRegistry,
+    lir_fn: *lir_mod.LirFunction, suspending_fns: *hash_mod.U64ToU32Map,
+    frame_sizes: *hash_mod.U64ToU32Map, state_widths: *hash_mod.U64ToU32Map,
+    awaited_fns: *hash_mod.U64ToU32Map, async_hidden_fns: *hash_mod.U64ToU32Map,
+    parent_result_type_list: *ga_mod.U32ArrayList,
+    parent_result_start: *hash_mod.U64ToU32Map,
+    parent_result_count: *hash_mod.U64ToU32Map) AsyncFrameLayout;
 pub fn asyncTransform(lf: *lir_mod.LirFunction, ctx: *AsyncTransformCtx) void;
 ```
 
@@ -644,6 +659,14 @@ preserved; ICE `3043` (`ERR_9001_ICE`, auto-incremented) must not shift.
   change only callers with **more than one** value-returning implicit await;
   `async_await_multi_xmod`'s `caller` pins **208** under the widened rule (was 64
   pre-Fix-F1, still well under its 1024-byte pool).
+- **State width (Fix F2):** `repro/mi_matrix/async_state_width_xmod` — one
+  suspending function with **300** sequential `@asyncSuspend(null)` points, so
+  `state` is `u16`. RED pre-fix (u8 hard-coded): the emitted `switch` has case
+  labels beyond the `u8` condition (`gcc -Wswitch-outside-range`), the `-fsafe`
+  range-check limit `total_states == 300` truncates to `44` (run traps, rc=133),
+  and under `-ffast` state 256 truncates to 0 so the resume loop never terminates
+  (`timeout` rc=124). GREEN: rc=0 / 4 `.c` / gcc clean / link / run rc=0 with the
+  `out.* == 300` self-check; the emitted state field is `unsigned short`.
 - **Stage 3:** `repro/mi_matrix/async_await_xmod` — a root frame in a caller
   `buf`, an implicit await of a child, deterministic stdout across 3 runs and
   identical md5; plus a `-fsafe` pool-exhaustion probe that returns

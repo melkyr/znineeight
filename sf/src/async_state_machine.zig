@@ -187,6 +187,7 @@ const Build = struct {
     block_map: [*]u32,
     nblocks: u32,
     state_off: u32,
+    state_type: u32,
     child_off: u32,
     child_present: bool,
     pr_off: [*]u32,
@@ -493,19 +494,20 @@ fn emitAwait(b: *Build, blk: u32, cd: lir_mod.CallDirectData, state: u32, alloc_
     // (5) child header.
     var c_ctx_off: u32 = @intCast(u32, 0);
     var c_state_off: u32 = @intCast(u32, 0);
+    var c_state_type: u32 = type_mod.TYPE_U8;
     var c_result_off: u32 = @intCast(u32, 0);
     var c_result_present: bool = false;
     var f2: usize = @intCast(usize, 0);
     while (f2 < callee_lay.fields.len) : (f2 += @intCast(usize, 1)) {
         var fld2 = callee_lay.fields.items[f2];
         if (fld2.kind == async_frame_layout.ASYNC_FIELD_CTX) { c_ctx_off = fld2.offset; }
-        if (fld2.kind == async_frame_layout.ASYNC_FIELD_STATE) { c_state_off = fld2.offset; }
+        if (fld2.kind == async_frame_layout.ASYNC_FIELD_STATE) { c_state_off = fld2.offset; c_state_type = fld2.type_id; }
         if (fld2.kind == async_frame_layout.ASYNC_FIELD_RESULT) { c_result_off = fld2.offset; c_result_present = true; }
     }
     storeFieldBase(b, alloc_blk, child, c_ctx_off, ptrVoid(reg), ctx);
-    var zero_st = newTemp(b, type_mod.TYPE_U8);
+    var zero_st = newTemp(b, c_state_type);
     emit(b, alloc_blk, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = zero_st } });
-    storeFieldBase(b, alloc_blk, child, c_state_off, type_mod.TYPE_U8, zero_st);
+    storeFieldBase(b, alloc_blk, child, c_state_off, c_state_type, zero_st);
     // (6) copy call args into g's param offsets (natural layout order).
     var arg_i: u32 = @intCast(u32, 0);
     var f3: usize = @intCast(usize, 0);
@@ -544,9 +546,9 @@ fn emitAwait(b: *Build, blk: u32, cd: lir_mod.CallDirectData, state: u32, alloc_
     b.step.blocks.items[@intCast(usize, alloc_blk)].is_terminated = @intCast(u8, 1);
     // (9) yield block.
     saveAllFields(b, yield_blk, b.actx.layout);
-    var sv = newTemp(b, type_mod.TYPE_U8);
+    var sv = newTemp(b, b.state_type);
     emit(b, yield_blk, LirInst{ .int_const = .{ .value = @intCast(u64, state), .result = sv } });
-    storeField(b, yield_blk, b.state_off, type_mod.TYPE_U8, sv);
+    storeField(b, yield_blk, b.state_off, b.state_type, sv);
     var yld = newTemp(b, b.opt);
     emit(b, yield_blk, LirInst{ .wrap_optional = .{ .value = @intCast(u32, 0), .result = yld, .type_id = b.opt } });
     emit(b, yield_blk, LirInst{ .ret = yld });
@@ -647,6 +649,7 @@ fn emitMainDriver(actx: *AsyncTransformCtx, lf: *LirFunction) void {
         .block_map = undefined,
         .nblocks = @intCast(u32, 0),
         .state_off = @intCast(u32, 0),
+        .state_type = type_mod.TYPE_U8,
         .child_off = @intCast(u32, 0),
         .child_present = false,
         .pr_off = undefined,
@@ -715,9 +718,10 @@ fn emitMainDriver(actx: *AsyncTransformCtx, lf: *LirFunction) void {
         if (fld.kind == async_frame_layout.ASYNC_FIELD_CTX) {
             storeFieldBase(&b, @intCast(u32, 0), root, fld.offset, ptr_void, pool);
         } else if (fld.kind == async_frame_layout.ASYNC_FIELD_STATE) {
-            var z8 = newTemp(&b, type_mod.TYPE_U8);
+            b.state_type = fld.type_id;
+            var z8 = newTemp(&b, fld.type_id);
             emit(&b, @intCast(u32, 0), LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = z8 } });
-            storeFieldBase(&b, @intCast(u32, 0), root, fld.offset, type_mod.TYPE_U8, z8);
+            storeFieldBase(&b, @intCast(u32, 0), root, fld.offset, fld.type_id, z8);
         } else if (fld.kind == async_frame_layout.ASYNC_FIELD_PARAM) {
             storeFieldBase(&b, @intCast(u32, 0), root, fld.offset, fld.type_id, fld.temp_id);
         }
@@ -854,6 +858,7 @@ pub fn asyncTransform(lf: *LirFunction, actx: *AsyncTransformCtx) bool {
 
     // Layout-derived hidden offsets.
     var state_off: u32 = @intCast(u32, 0);
+    var state_type: u32 = type_mod.TYPE_U8;
     var child_off: u32 = @intCast(u32, 0);
     var child_present: bool = false;
     var parent_result_present: bool = false;
@@ -863,7 +868,7 @@ pub fn asyncTransform(lf: *LirFunction, actx: *AsyncTransformCtx) bool {
     var fi: usize = @intCast(usize, 0);
     while (fi < actx.layout.fields.len) : (fi += @intCast(usize, 1)) {
         var f = actx.layout.fields.items[fi];
-        if (f.kind == async_frame_layout.ASYNC_FIELD_STATE) { state_off = f.offset; }
+        if (f.kind == async_frame_layout.ASYNC_FIELD_STATE) { state_off = f.offset; state_type = f.type_id; }
         if (f.kind == async_frame_layout.ASYNC_FIELD_CHILD) { child_off = f.offset; child_present = true; }
         if (f.kind == async_frame_layout.ASYNC_FIELD_RESULT) { result_off = f.offset; result_present = true; }
         if (f.kind == async_frame_layout.ASYNC_FIELD_PARENT_RESULT) { pr_count += @intCast(u32, 1); }
@@ -904,6 +909,7 @@ pub fn asyncTransform(lf: *LirFunction, actx: *AsyncTransformCtx) bool {
         .block_map = block_map,
         .nblocks = m,
         .state_off = state_off,
+        .state_type = state_type,
         .child_off = child_off,
         .child_present = child_present,
         .pr_off = pr_off,
@@ -922,11 +928,22 @@ pub fn asyncTransform(lf: *LirFunction, actx: *AsyncTransformCtx) bool {
     if (b.child_present) { b.child_temp = newTemp(&b, ptr_void); }
     if (b.ret_val_present) { b.ret_val_temp = newTemp(&b, lf.return_type); }
 
-    var st = loadField(&b, @intCast(u32, 0), state_off, type_mod.TYPE_U8);
+    // F2 guard: the layout's state width must hold the actual LIR suspension
+    // count. P2's AST count is a conservative upper bound, so a mismatch means
+    // P2 undercounted; fail closed with an ICE rather than truncate silently.
+    var state_max: u32 = @intCast(u32, 0xFFFFFFFF);
+    if (state_type == type_mod.TYPE_U8) { state_max = @intCast(u32, 255); }
+    else if (state_type == type_mod.TYPE_U16) { state_max = @intCast(u32, 65535); }
+    if (total_states > state_max) {
+        var ice_st_msg: []const u8 = "async state width too small for suspension count (P2 count underflow)";
+        _ = diag_mod.diagnosticCollectorAdd(actx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_9001_ICE)), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), ice_st_msg);
+    }
+
+    var st = loadField(&b, @intCast(u32, 0), state_off, state_type);
     if (actx.safe_checks) {
-        var lim = newTemp(&b, type_mod.TYPE_U8);
+        var lim = newTemp(&b, state_type);
         emit(&b, @intCast(u32, 0), LirInst{ .int_const = .{ .value = @intCast(u64, total_states), .result = lim } });
-        var stok = newTemp(&b, type_mod.TYPE_U8);
+        var stok = newTemp(&b, state_type);
         emit(&b, @intCast(u32, 0), LirInst{ .binary = .{ .op = BIN_LE, .lhs = st, .rhs = lim, .result = stok } });
         emit(&b, @intCast(u32, 0), LirInst{ .check_trap = .{ .cond = stok, .kind = @intCast(u8, 4) } });
     }
@@ -990,9 +1007,9 @@ pub fn asyncTransform(lf: *LirFunction, actx: *AsyncTransformCtx) bool {
                 var sidx = @intCast(usize, state - @intCast(u32, 1));
                 if (kk == @intCast(u8, 1)) {
                     saveAllFields(&b, cur, actx.layout);
-                    var sv = newTemp(&b, type_mod.TYPE_U8);
+                    var sv = newTemp(&b, state_type);
                     emit(&b, cur, LirInst{ .int_const = .{ .value = @intCast(u64, state), .result = sv } });
-                    storeField(&b, cur, state_off, type_mod.TYPE_U8, sv);
+                    storeField(&b, cur, state_off, state_type, sv);
                     var yld = newTemp(&b, opt);
                     emit(&b, cur, LirInst{ .wrap_optional = .{ .value = @intCast(u32, 0), .result = yld, .type_id = opt } });
                     emit(&b, cur, LirInst{ .ret = yld });

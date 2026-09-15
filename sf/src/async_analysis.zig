@@ -10,7 +10,10 @@
 // seeded when its body directly contains `@asyncSuspend`. Propagation is a
 // monotone worklist over a CSR reverse index (callers of a suspending callee
 // become suspending); mutual recursion is ordinary propagation, never recursive
-// descent. `frame_sizes` is declared alongside but first written in Task 5.
+// descent. `frame_sizes` and `state_widths` are written by `asyncFrameSizeRun`
+// (P2); `state_widths[key]` is the u8/u16/u32 `state` field type chosen from
+// that function's suspension-point count (spec §3.2 item 3) and is the single
+// source of truth read by P3, `@asyncInit` lowering, and the Stage-3 transform.
 //
 // NOTE: this module deliberately does NOT `@import("main.zig")`. Importing the
 // bootstrap root from a submodule makes the self-emitter register main.zig as a
@@ -478,6 +481,71 @@ fn scanImplicitAwaits(store: *ast_mod.AstStore, sym_reg: *sym_mod.SymbolRegistry
     }
 }
 
+// Authoritative state-width rule (spec §3.2 item 3): u8 for <=255 suspension
+// points, u16 for <=65535, else u32. `asyncFrameSizeRun` computes the count and
+// stores the chosen type in `state_widths`; every consumer reads that map.
+fn asyncStateTypeForCount(count: u32) u32 {
+    if (count <= @intCast(u32, 255)) return type_mod.TYPE_U8;
+    if (count <= @intCast(u32, 65535)) return type_mod.TYPE_U16;
+    return type_mod.TYPE_U32;
+}
+
+// Count the suspension points used to choose the `state` width: every explicit
+// `@asyncSuspend` (and the `@asyncInit` placeholder, which shares the
+// `int_const 0` -> `*void` LIR shape) plus every implicit-await call to a
+// suspending callee. This is the single source of truth for the width rule; it
+// is a conservative upper bound on the Stage-3 LIR suspension-point count, so
+// the chosen width can never be too small (no silent truncation).
+fn scanSuspensionCount(store: *ast_mod.AstStore, sym_reg: *sym_mod.SymbolRegistry,
+    module_id: u32, body_idx: u32, stack: *ga_mod.U32ArrayList,
+    suspending_fns: *hash_mod.U64ToU32Map, async_suspend_name_id: u32,
+    async_init_name_id: u32) u32 {
+    var count: u32 = @intCast(u32, 0);
+    stack.len = @intCast(usize, 0);
+    if (body_idx == @intCast(u32, 0)) return count;
+    ga_mod.u32ArrayListAppend(stack, body_idx);
+    while (stack.len > @intCast(usize, 0)) {
+        var ni = stack.items[stack.len - @intCast(usize, 1)];
+        stack.len -= @intCast(usize, 1);
+        var n = ast_mod.astStoreNodeAt(store, ni);
+        var k = n.kind;
+        if (k == AstKind.builtin_call) {
+            if (n.child_0 == async_suspend_name_id or n.child_0 == async_init_name_id) {
+                count += @intCast(u32, 1);
+            }
+            var ecb = ast_mod.astStoreNodeExtraChildren(store, ni);
+            var bi: usize = @intCast(usize, 0);
+            while (bi < ecb.len) : (bi += 1) { ga_mod.u32ArrayListAppend(stack, ecb[bi]); }
+            continue;
+        }
+        if (k == AstKind.fn_call) {
+            if (n.child_0 != @intCast(u32, 0)) {
+                if (resolveCalleeKey(store, sym_reg, module_id, n.child_0)) |ck| {
+                    var cmid = @intCast(u32, ck >> @intCast(u64, 32));
+                    var cnid = @intCast(u32, ck & @intCast(u64, 0xFFFFFFFF));
+                    if (asyncIsSuspending(suspending_fns, cmid, cnid)) {
+                        count += @intCast(u32, 1);
+                    }
+                }
+                ga_mod.u32ArrayListAppend(stack, n.child_0);
+            }
+            var ecf = ast_mod.astStoreNodeExtraChildren(store, ni);
+            var fi: usize = @intCast(usize, 0);
+            while (fi < ecf.len) : (fi += 1) { ga_mod.u32ArrayListAppend(stack, ecf[fi]); }
+            continue;
+        }
+        if (n.child_0 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(k, @intCast(u8, 0))) { ga_mod.u32ArrayListAppend(stack, n.child_0); }
+        if (n.child_1 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(k, @intCast(u8, 1))) { ga_mod.u32ArrayListAppend(stack, n.child_1); }
+        if (n.child_2 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(k, @intCast(u8, 2))) { ga_mod.u32ArrayListAppend(stack, n.child_2); }
+        if (ast_mod.nodeHasNodeExtraChildren(k)) {
+            var ec3 = ast_mod.astStoreNodeExtraChildren(store, ni);
+            var ei3: usize = @intCast(usize, 0);
+            while (ei3 < ec3.len) : (ei3 += 1) { ga_mod.u32ArrayListAppend(stack, ec3[ei3]); }
+        }
+    }
+    return count;
+}
+
 fn asyncPtrVoid(reg: *type_mod.TypeRegistry) u32 {
     return type_mod.typeRegistryGetOrCreatePtr(reg, type_mod.TYPE_VOID, false);
 }
@@ -504,16 +572,22 @@ fn emitFrameMarker(key: u64, size: u32) void {
 }
 
 pub fn asyncFrameSizeRun(alloc: *alloc_mod.Sand, store: *ast_mod.AstStore,
-    sym_reg: *sym_mod.SymbolRegistry, module_reg: *mr_mod.ModuleRegistry,
+    sym_reg: *sym_mod.SymbolRegistry, interner: *si_mod.StringInterner,
+    module_reg: *mr_mod.ModuleRegistry,
     typereg: *type_mod.TypeRegistry,
     resolved_types: *rtt_mod.ResolvedTypeTable,
     suspending_fns: *hash_mod.U64ToU32Map, frame_sizes: *hash_mod.U64ToU32Map,
+    state_widths: *hash_mod.U64ToU32Map,
     awaited_fns: *hash_mod.U64ToU32Map, async_hidden_fns: *hash_mod.U64ToU32Map,
     parent_result_type_list: *ga_mod.U32ArrayList, parent_result_start: *hash_mod.U64ToU32Map,
     parent_result_count: *hash_mod.U64ToU32Map) void {
     var p_msg: []const u8 = "AFS\n"; pal.markerWrite(p_msg);
     var stack = ga_mod.u32ArrayListInit(alloc);
     var mods = mr_mod.moduleRegistryGetModules(module_reg);
+    var asu_text: []const u8 = "@asyncSuspend";
+    var async_suspend_name_id = si_mod.stringInternerIntern(interner, asu_text);
+    var ain_text: []const u8 = "@asyncInit";
+    var async_init_name_id = si_mod.stringInternerIntern(interner, ain_text);
 
     // Pass 0: resolve every top-level function's return type (asyncKey -> tid),
     // needed to type the caller-side hidden parent_result slot.
@@ -571,12 +645,17 @@ pub fn asyncFrameSizeRun(alloc: *alloc_mod.Sand, store: *ast_mod.AstStore,
             var proto = store.fn_protos.items[@intCast(usize, proto_idx)];
             if (!asyncIsSuspending(suspending_fns, mods[mi].id, proto.name_id)) continue;
             var key = asyncKey(mods[mi].id, proto.name_id);
+            // Authoritative state width: one source of truth, read by P3, the
+            // `@asyncInit` lowering, and the Stage-3 transform.
+            var susp_count = scanSuspensionCount(store, sym_reg, mods[mi].id, decl.child_0, &stack, suspending_fns, async_suspend_name_id, async_init_name_id);
+            var state_type = asyncStateTypeForCount(susp_count);
+            _ = hash_mod.u64ToU32MapPut(state_widths, key, state_type);
             var offset: u32 = @intCast(u32, 0);
             var max_align: u32 = @intCast(u32, 1);
             // Amendment 7: hidden pointer-sized step word @ offset 0 ALWAYS.
             addFrameField(typereg, type_mod.TYPE_USIZE, &offset, &max_align);
             addFrameField(typereg, type_mod.TYPE_USIZE, &offset, &max_align);
-            addFrameField(typereg, type_mod.TYPE_U8, &offset, &max_align);
+            addFrameField(typereg, state_type, &offset, &max_align);
             if (proto.params_count > @intCast(u16, 0)) {
                 var p_payload: u64 = (@intCast(u64, proto.params_start) << @intCast(u64, 32)) | @intCast(u64, proto.params_count);
                 var pnodes = ast_mod.astStoreGetExtraChildren(store, p_payload);
