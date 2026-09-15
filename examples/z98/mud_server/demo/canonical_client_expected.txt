@@ -1,0 +1,4 @@
+Welcome to the MUD! Type 'look' to start.
+You are in a dark forest. There is a path to the north.
+A sunny clearing. Exits: south back to forest.
+G
