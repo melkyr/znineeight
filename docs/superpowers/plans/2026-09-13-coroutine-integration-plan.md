@@ -53,9 +53,10 @@
 - `examples/z98/rogue_mud/demo/canonical_expected.txt`, `canonical_move_expected.txt` — Task 1 pre-conversion captures.
 - `examples/z98/rogue_mud/demo/README.md` — records the two golden md5s.
 - `examples/z98/mud_server/demo/canonical_feed.txt` — `look\nnorth\nquit\n`.
-- `examples/z98/mud_server/demo/session.sh` — starts the server on port 4000, drives one client over `bash /dev/tcp`, captures server stdout + client bytes, kills by PID, verifies port clear.
-- `examples/z98/mud_server/demo/canonical_expected.txt` — Task 1 pre-conversion capture.
-- `examples/z98/mud_server/demo/README.md` — records the golden md5.
+- `examples/z98/mud_server/demo/session.sh` — starts the server on port 4000, drives one client over `bash /dev/tcp`, captures BOTH the server stdout (`canonical_expected.txt`) and the client-received bytes (`canonical_client_expected.txt`), kills by PID, verifies port clear.
+- `examples/z98/mud_server/demo/canonical_expected.txt` — Task 1 pre-conversion SERVER-stdout capture.
+- `examples/z98/mud_server/demo/canonical_client_expected.txt` — Task 1 pre-conversion CLIENT-received-bytes capture.
+- `examples/z98/mud_server/demo/README.md` — records both golden md5s.
 
 **Modify (Task 0 / Task 0b — authorized `sf/src` scope):**
 - `sf/src/c89_emit.zig`, `sf/src/main.zig` — emit each `__Z98Step_<f>` in the module that owns `<f>` (Task 0).
@@ -250,10 +251,11 @@ and are the byte-identity target for the converted program.
 # mud_server — coroutine-conversion demo session
 
 `session.sh` starts the server on port 4000, drives `canonical_feed.txt`
-(`look`, `north`, `quit`) from one client over `bash /dev/tcp`, captures the
-server stdout to `canonical_expected.txt`, kills the server by PID, and verifies
-the port is clear. The expected file is the PRE-coroutine-conversion capture
-(Track 4 Task 1).
+(`look`, `north`, `quit`) from one client over `bash /dev/tcp`, captures BOTH the
+server stdout (`canonical_expected.txt`) and the bytes the client receives
+(`canonical_client_expected.txt`), kills the server by PID, and verifies the
+port is clear. Both files are the PRE-coroutine-conversion captures (Track 4
+Task 1) and are byte-identity targets for the converted program.
 ```
 
 Create the feeds:
@@ -266,23 +268,25 @@ printf 'look\nnorth\nquit\n' > examples/z98/mud_server/demo/canonical_feed.txt
 `examples/z98/mud_server/demo/session.sh`:
 ```bash
 #!/usr/bin/env bash
-# session.sh <mud_server_binary> <out_file>
+# session.sh <mud_server_binary> <server_out_file> <client_out_file>
 set -u
-BIN="$1"; OUT="$2"; FEED="$(dirname "$0")/canonical_feed.txt"
-if awk 'NR>1{split($2,a,":"); if(a[2]=="0FA0" && $4=="0A") f=1} END{exit !f}' /proc/net/tcp 2>/dev/null; then
-    echo "port 4000 already listening"; exit 1
-fi
+BIN="$1"; OUT="$2"; COUT="$3"; FEED="$(dirname "$0")/canonical_feed.txt"
+port_busy() { awk 'NR>1{split($2,a,":"); if(a[2]=="0FA0" && $4=="0A") f=1} END{exit !f}' /proc/net/tcp 2>/dev/null; }
+if port_busy; then echo "port 4000 already listening"; exit 1; fi
 "$BIN" >"$OUT" 2>/dev/null &
 SRV=$!
 sleep 0.3
 exec 3<>/dev/tcp/127.0.0.1/4000
+# Capture the bytes the server sends to this client (client-received stream).
+timeout 5 cat <&3 >"$COUT" &
+READER=$!
 while IFS= read -r line; do printf '%s\r\n' "$line" >&3; sleep 0.1; done <"$FEED"
-exec 3<&-; exec 3>&-
+sleep 0.3
+exec 3>&-
+wait "$READER" 2>/dev/null
 sleep 0.2
 kill "$SRV" 2>/dev/null; wait "$SRV" 2>/dev/null
-if awk 'NR>1{split($2,a,":"); if(a[2]=="0FA0" && $4=="0A") f=1} END{exit !f}' /proc/net/tcp 2>/dev/null; then
-    echo "port 4000 still listening"; exit 1
-fi
+if port_busy; then echo "port 4000 still listening"; exit 1; fi
 exit 0
 ```
 
@@ -300,14 +304,14 @@ timeout 30 /tmp/t4_rogue_pre/prog < examples/z98/rogue_mud/demo/canonical_feed.t
 timeout 30 /tmp/t4_rogue_pre/prog < examples/z98/rogue_mud/demo/canonical_move_feed.txt > examples/z98/rogue_mud/demo/canonical_move_expected.txt
 md5sum examples/z98/rogue_mud/demo/canonical_expected.txt examples/z98/rogue_mud/demo/canonical_move_expected.txt
 # mud_server
-rm -rf /tmp/t4_mud_pre && mkdir -p /tmp/t4_mud_pre
+rm -rf /tmp/t4_mud_pre && mkdir -p /tmp/t4_mud_pre/em
 timeout 30 /tmp/t4_ref/zig1_5_clean -o /tmp/t4_mud_pre/em examples/z98/mud_server/main.zig
 for f in /tmp/t4_mud_pre/em/*.c; do gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I /tmp/t4_mud_pre/em -c "$f" -o "${f%.c}.o" || exit 1; done
 gcc -m32 -o /tmp/t4_mud_pre/prog /tmp/t4_mud_pre/em/*.o
-bash examples/z98/mud_server/demo/session.sh /tmp/t4_mud_pre/prog examples/z98/mud_server/demo/canonical_expected.txt; echo "session rc=$?"
-md5sum examples/z98/mud_server/demo/canonical_expected.txt
+bash examples/z98/mud_server/demo/session.sh /tmp/t4_mud_pre/prog examples/z98/mud_server/demo/canonical_expected.txt examples/z98/mud_server/demo/canonical_client_expected.txt; echo "session rc=$?"
+md5sum examples/z98/mud_server/demo/canonical_expected.txt examples/z98/mud_server/demo/canonical_client_expected.txt
 ```
-Expected: each program builds (dump rc=0, gcc+link rc=0); the rogue captures contain the boot banner and are 3× deterministic (re-run and compare); the mud_server session rc=0, the capture contains `MUD server listening on port 4000` and the `look`/`north` responses. Record the three md5s in the respective `README.md` files. If a program does not build at the baseline, STOP and report the Track 2/3 regression.
+Expected: each program builds (dump rc=0, gcc+link rc=0); the rogue captures contain the boot banner and are 3× deterministic (re-run and compare); the mud_server session rc=0, the server-stdout capture contains `MUD server listening on port 4000` and the client-bytes capture contains the `look`/`north` responses (`You are in a dark forest…` / `A sunny clearing…`). Record the FOUR md5s (rogue boot, rogue move, mud server stdout, mud client bytes) in the respective `README.md` files. If a program does not build at the baseline, STOP and report the Track 2/3 regression.
 
 - [ ] **Step 6: Run the corpus gate at baseline**
 
@@ -866,10 +870,10 @@ timeout 30 /tmp/t4_ref/zig1_5_clean -o /tmp/t4_mud_new/em examples/z98/mud_serve
 grep -cE 'error\[(3017|3018|3019|3046)\]|PANIC' /tmp/t4_mud_new/em/stderr.log 2>/dev/null || true
 for f in /tmp/t4_mud_new/em/*.c; do gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I /tmp/t4_mud_new/em -c "$f" -o "${f%.c}.o" || exit 1; done
 gcc -m32 -o /tmp/t4_mud_new/prog /tmp/t4_mud_new/em/*.o
-bash examples/z98/mud_server/demo/session.sh /tmp/t4_mud_new/prog /tmp/t4_mud_new/out.txt; echo "session rc=$?"
-md5sum /tmp/t4_mud_new/out.txt examples/z98/mud_server/demo/canonical_expected.txt
+bash examples/z98/mud_server/demo/session.sh /tmp/t4_mud_new/prog /tmp/t4_mud_new/out.txt /tmp/t4_mud_new/client.txt; echo "session rc=$?"
+md5sum /tmp/t4_mud_new/out.txt examples/z98/mud_server/demo/canonical_expected.txt /tmp/t4_mud_new/client.txt examples/z98/mud_server/demo/canonical_client_expected.txt
 ```
-Expected: emit/gcc/link rc=0; zero `error[3017/3018/3019/3046]`/`PANIC` lines in `em/stderr.log`; session rc=0; the two md5s match (byte-identical `look`/`north`/`quit` responses and disconnect handling). Run the session three times and require identical md5. If it differs, apply the E4 fallback (restore the original `select`/fd-set loop), record an amendment, and continue.
+Expected: emit/gcc/link rc=0; zero `error[3017/3018/3019/3046]`/`PANIC` lines in `em/stderr.log`; session rc=0; BOTH md5 pairs match (server stdout AND client-received bytes byte-identical, including the `look`/`north`/`quit` responses and disconnect handling). Run the session three times and require identical md5s. If either differs, apply the E4 fallback (restore the original `select`/fd-set loop), record an amendment, and continue.
 
 - [ ] **Step 5: Closeout gate + commit**
 
@@ -909,11 +913,11 @@ Run:
 for i in 1 2 3; do
   timeout 30 /tmp/t4_rogue_c/prog < examples/z98/rogue_mud/demo/canonical_feed.txt | md5sum
   timeout 30 /tmp/t4_rogue_c/prog < examples/z98/rogue_mud/demo/canonical_move_feed.txt | md5sum
-  bash examples/z98/mud_server/demo/session.sh /tmp/t4_mud_new/prog /tmp/t4_mud_new/out.$i.txt >/dev/null 2>&1; md5sum /tmp/t4_mud_new/out.$i.txt
+  bash examples/z98/mud_server/demo/session.sh /tmp/t4_mud_new/prog /tmp/t4_mud_new/out.$i.txt /tmp/t4_mud_new/client.$i.txt >/dev/null 2>&1; md5sum /tmp/t4_mud_new/out.$i.txt /tmp/t4_mud_new/client.$i.txt
 done
-md5sum examples/z98/rogue_mud/demo/canonical_expected.txt examples/z98/rogue_mud/demo/canonical_move_expected.txt examples/z98/mud_server/demo/canonical_expected.txt
+md5sum examples/z98/rogue_mud/demo/canonical_expected.txt examples/z98/rogue_mud/demo/canonical_move_expected.txt examples/z98/mud_server/demo/canonical_expected.txt examples/z98/mud_server/demo/canonical_client_expected.txt
 ```
-Expected: every run's md5 matches its expected file; all three mnemonic hashes stable. Record the final table in the plan's Amendments/Closeout note.
+Expected: every run's md5 matches its expected file (both mud_server captures); all hashes stable. Record the final table in the plan's Amendments/Closeout note.
 
 - [ ] **Step 3: Run the corpus gate**
 

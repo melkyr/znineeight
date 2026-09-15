@@ -160,7 +160,9 @@ on a deterministic feed **before** the conversion and require an md5-identical
   has no `i` command, so the `_upgraded` demo feed is not used directly; the feed
   shape mirrors it).
 - `mud_server`: a scripted single client (`look\n`, `north\n`, `quit\n`) over
-  loopback, capturing the server stdout plus the bytes each client receives.
+  loopback, capturing **two** files — the server stdout (`canonical_expected.txt`)
+  and the bytes each client receives (`canonical_client_expected.txt`); both are
+  byte-identity gates.
 
 **Corpus gate.** `bash scripts/corpus/list_corpus_dirs.sh` (rule C enumerates
 `examples/z98/*/`) must still list both example dirs; classify by gcc exit code per
