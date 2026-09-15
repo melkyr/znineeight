@@ -9,7 +9,7 @@ COMPILER="${COMPILER:-${1:-/tmp/fx_subfolder/zig1}}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT=/tmp/zig1_5
 rm -rf "$OUT"; mkdir -p "$OUT/gen" "$OUT/lib"
-cp "$ROOT"/sf/src/std.zig "$ROOT"/sf/src/std_io.zig "$ROOT"/sf/src/std_arena.zig "$ROOT"/sf/src/std_net.zig "$OUT/lib/"
+cp "$ROOT"/sf/src/std.zig "$ROOT"/sf/src/std_io.zig "$ROOT"/sf/src/std_arena.zig "$ROOT"/sf/src/std_net.zig "$ROOT"/sf/src/std_async.zig "$OUT/lib/"
 cd "$ROOT"
 timeout 120 "$COMPILER" -ffast --dump-c89 --output-dir "$OUT/gen" sf/src/main.zig
 # canonical multi-module recipe (QUICK_REF §Multi-Module Build): compile inside DIR, link zig_runtime.c + zig_pal.c.

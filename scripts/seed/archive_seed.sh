@@ -26,7 +26,8 @@ set -euo pipefail
 #               canonical repo sf/src/include/{…} as a pre-EMITEMIT fallback
 #               (net_prelude.h excluded — 0 references in a linux -osl dump)
 #   lib/        repo sf/src/{std.zig, std_io.zig, std_arena.zig, std_net.zig,
-#               std_str.zig, std_mem.zig, std_math.zig, std_debug.zig}
+#               std_str.zig, std_mem.zig, std_math.zig, std_debug.zig,
+#               std_async.zig}
 #   SEED_README.txt  provenance + rebuild recipes + canonical flag-set rule
 #
 # Before packing, the archive's C is gcc-rebuilt self-contained in a scratch dir
@@ -106,7 +107,7 @@ else
         cp "$ROOT/sf/src/include/$f" "$SEED/runtime/"
     done
 fi
-for f in std.zig std_io.zig std_arena.zig std_net.zig std_str.zig std_mem.zig std_math.zig std_debug.zig; do
+for f in std.zig std_io.zig std_arena.zig std_net.zig std_str.zig std_mem.zig std_math.zig std_debug.zig std_async.zig; do
     cp "$ROOT/sf/src/$f" "$SEED/lib/"
 done
 
@@ -153,9 +154,9 @@ zig1-seed/runtime/    link/include sources needed to compile gen/:
                       mode-specific support so a gcc-only rebuild reproduces
                       the seed binary's fixed point; canonical repo copies for
                       pre-EMITEMIT gen dirs)
-zig1-seed/lib/        the 8 std .zig (std.zig, std_io.zig, std_arena.zig,
+zig1-seed/lib/        the 9 std .zig (std.zig, std_io.zig, std_arena.zig,
                       std_net.zig, std_str.zig, std_mem.zig, std_math.zig,
-                      std_debug.zig)
+                      std_debug.zig, std_async.zig)
 zig1-seed/SEED_README.txt  this file
 
 (net_prelude.h / net_runtime.h / net_runtime.c / optstar_repro.h are NOT
@@ -233,7 +234,7 @@ linked as objects; dropping them onto the link line as sources omits the
 canonical flags (notably -Wall) and links a different object set/order, so the
 fixed point is NOT reproduced.
 
-std install: the produced binary needs the std lib next to it (lib/ with the 8
+std install: the produced binary needs the std lib next to it (lib/ with the 9
 std .zig) - copied from zig1-seed/lib/ or the binary's lib-dir.
 
 CRITICAL FLAG SET RULE (operator amendment 2026-09-07)

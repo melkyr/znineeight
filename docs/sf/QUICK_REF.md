@@ -33,8 +33,9 @@ Top-level `zig1-seed/`: `zig1` (reference binary md5
 45 `.c` + 46 `.h`, including `zig_special_types.h`; the emitted runtime/support
 sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/` (the emitted 5:
 `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`, `zig_runtime.c`,
-`zig_pal.c` — NO `net_prelude.h`), `lib/` (the 8 std `.zig`: `std`, `std_io`,
-`std_arena`, `std_net`, `std_str`, `std_mem`, `std_math`, `std_debug`),
+`zig_pal.c` — NO `net_prelude.h`), `lib/` (the 9 std `.zig`: `std`, `std_io`,
+`std_arena`, `std_net`, `std_str`, `std_mem`, `std_math`, `std_debug`,
+`std_async`),
 `SEED_README.txt`.
 The archived binary and the self-emission fixed point
 `f5ee84800dd32d7c440bb383c10edb55` are the SAME compiler state (HEAD
@@ -103,7 +104,7 @@ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
   via the search path: (1) importer's dir, (2) `-I`/`--lib-dir` dirs in CLI order, (3) the default
   install path `<exe_dir>/lib`, (4) CWD. To run a migrated example/repro you must first install the
   canonical std lib next to the compiler under test:
-  `mkdir -p <exe_dir>/lib && cp sf/src/std.zig sf/src/std_io.zig sf/src/std_arena.zig sf/src/std_net.zig sf/src/std_str.zig sf/src/std_mem.zig sf/src/std_math.zig sf/src/std_debug.zig <exe_dir>/lib/`
+  `mkdir -p <exe_dir>/lib && cp sf/src/std.zig sf/src/std_io.zig sf/src/std_arena.zig sf/src/std_net.zig sf/src/std_str.zig sf/src/std_mem.zig sf/src/std_math.zig sf/src/std_debug.zig sf/src/std_async.zig <exe_dir>/lib/`
   (for `/tmp/fx_subfolder/zig1` that is `/tmp/fx_subfolder/lib/`). The local `std*.zig` copies are
   gone from the migrated examples/repros; `std_import_bare_xmod/local/` remains a fixture (the Task R
   `--lib-dir` GREEN test), and the 4 `r_fallback_*` repros (fnret / constalias / constalias_prepass /
