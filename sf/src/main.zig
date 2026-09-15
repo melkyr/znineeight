@@ -658,7 +658,7 @@ fn phase_StaticAnalyzers(ctx: *CompilerContext) void {
 
 fn phase_AsyncFrameSize(ctx: *CompilerContext) void {
     var p_msg: []const u8 = "AFS\n"; pal.markerWrite(p_msg);
-    async_analysis.asyncFrameSizeRun(&ctx.alloc.module, ctx.store, ctx.symbol_reg, ctx.module_reg, ctx.interner, ctx.typereg, ctx.resolved_types, &ctx.suspending_fns, &ctx.frame_sizes, &ctx.awaited_fns, &ctx.async_hidden_fns, &ctx.parent_result_type_list, &ctx.parent_result_start, &ctx.parent_result_count);
+    async_analysis.asyncFrameSizeRun(&ctx.alloc.module, ctx.store, ctx.symbol_reg, ctx.module_reg, ctx.typereg, ctx.resolved_types, &ctx.suspending_fns, &ctx.frame_sizes, &ctx.awaited_fns, &ctx.async_hidden_fns, &ctx.parent_result_type_list, &ctx.parent_result_start, &ctx.parent_result_count);
 }
 
 fn phase_LIRLowering(ctx: *CompilerContext) void {

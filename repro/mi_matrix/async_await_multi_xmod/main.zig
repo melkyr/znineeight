@@ -11,9 +11,10 @@
 // ERR_9001_ICE if P2/P3's slot order ever desyncs from P4's await order; this
 // fixture is order-sensitive because adjacent slots have different types.
 //
-// Frame-size churn (Task 6D5 step 8): `caller` is the only function with >= 2
-// value-returning awaits, so it is the only one that gains extra kind-7 slots;
-// its authoritative P2 frame size is pinned here. `a`/`v`/`b` stay 16.
+// Frame-size churn: `caller`'s authoritative P2 frame size is pinned here.
+// Fix F1 widened P2's reservation to one field per AST node, so the pinned
+// value moved 64 -> 208 (still well under the 1024-byte pool). `a`/`v`/`b`
+// stay small.
 
 const CArgs = struct { o1: *i32, o2: *i64, ob1: *i32, ob2: *i64, cond: bool };
 
@@ -53,7 +54,7 @@ pub fn main() void {
     var ctxv: *Ctx = @ptrCast(*Ctx, &cbuf);
     ctxv.capacity = 1024;
 
-    if (@asyncFrameSize(caller) != 64) {
+    if (@asyncFrameSize(caller) != 208) {
         @panic("caller frame size mismatch");
     }
 

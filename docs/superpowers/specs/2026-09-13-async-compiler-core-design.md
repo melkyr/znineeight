@@ -267,24 +267,33 @@ The gated hidden await fields (kind 5 `child`, kind 6 `result`, kind 7
 frame's size only when their predicate holds. Kind 7 is **one slot per
 value-returning implicit await** (Amendment 10), so only callers with more than one
 value-returning await gain extra slots. The `async_frame_xmod` `worker`
-(no await, never awaited) therefore keeps the gated-variant layout **20** and the
-Task-5c marker **`LAYOUT:m0:n22:s20`**; the unconditional variant (all three
-reserved for every suspending function) yields **24/28** (report also cites
-**32** if all three hidden fields are reserved).
+(no await, never awaited) adds **no** hidden field under the gated variant; its
+frame size is now dominated by the widened rule-(a) per-node reservation (see
+below) rather than the header/param/live core. The unconditional variant (all
+three hidden fields reserved for every suspending function) would add only those
+pointer-sized slots on top.
 
-**Authoritative size (concern 3, §15.1).** `frame_sizes[key]` is written by the
-Stage 1 pre-lowering pass using the *candidate* field set (**the hidden
-pointer-sized `step` word** plus every param plus every body local/temp that can
-be live across a suspension), i.e. a conservative upper bound. Stage 2 computes
-the precise live-across set and the natural-layout `layout_size`; it requires
-`layout_size <= frame_sizes[key]` and pads the emitted frame struct up to
-`frame_sizes[key]`. `@asyncFrameSize` returns `frame_sizes[key]`. This guarantees
-a caller buffer can never under-size the frame. A future precise-shrink
-refinement must move the writer and both readers together; it is **not** part of
-v1. Adding the step word moves the authoritative size for every frame; P2 (the
-sole writer), P3 (the reader), and both pinned gates (Task-5a `Expected` and
-Task-5c `LAYOUT … s16`) must be updated in the **same commit** (Amendment 7;
-"pinned value churn" is exactly what Task 5c owns).
+**Authoritative size (concern 3, §15.1; rule (a) widened by Fix F1).**
+`frame_sizes[key]` is written by the Stage 1 pre-lowering pass using a
+conservative field set: **the hidden pointer-sized `step` word**, every param,
+and **one field for every AST node reachable in the function body** — named
+`var_decl` locals *and* the result of every expression/sub-expression — typed by
+the node's own resolved type (`resolved_types`), walking the **whole** body with
+**no early stop at the first suspension**. This upper-bounds P3's precise
+live-across set: every temp P3 can mark live is the result of a sub-expression
+evaluated before a suspension, and that node's resolved type is the value's type,
+so the per-node reservation covers it. The walk must not stop at the first
+suspension: a value defined after one suspension and read after a later one is
+live across the later suspension. Stage 2 computes the precise live-across set
+and the natural-layout `layout_size`; it requires `layout_size <=
+frame_sizes[key]` and pads the emitted frame struct up to `frame_sizes[key]`.
+`@asyncFrameSize` returns `frame_sizes[key]`. This guarantees a caller buffer can
+never under-size the frame. A future precise-shrink refinement must move the
+writer and both readers together; it is **not** part of v1. Adding the step word
+moved the authoritative size for every frame; P2 (the sole writer), P3 (the
+reader), and both pinned gates (Task-5a `Expected` and Task-5c `LAYOUT …`) moved
+in the **same commit** (Amendment 7; "pinned value churn" is exactly what Task 5c
+owns).
 
 **`-s<N>` impact.** No new spill level. Async data is runtime/scratch and baked
 into the synthesized frame/emitted C; `SPILL_COUNT = 5`
@@ -618,26 +627,23 @@ preserved; ICE `3043` (`ERR_9001_ICE`, auto-incremented) must not shift.
   plain function. `repro/mi_matrix/async_fnptr_error_xmod` — `&yielder` produces
   exactly one `error[3017]` and zero `.c` files.
 - **Stage 2:** `repro/mi_matrix/async_frame_xmod` — self-verifying:
-  `@asyncFrameSize(f) == @sizeOf(Frame)` for a fixture struct that mirrors the
-  specified field order **including the hidden pointer-sized step word at offset
-  0** (Amendment 7: on the 32-bit fixture target the mirror is
-  `{step: *void, ctx: *void, state: u8, x: i32, y: i32}` → **20**, was 16); a
-  second function with extra non-live temps still reports the same frame size.
-  Both pinned gates (Task-5a `Expected`, Task-5c `LAYOUT …`) move with the step
-  word in the same commit as the P2/P3 change. **Amendment 9 pinned values:**
-  under the **gated** hidden-field variant (`child`/`result`/`parent_result`
-  reserved only where their predicates hold) `async_frame_xmod`'s `worker` has no
-  await and is never awaited, so it **stays 20** and the Task-5c marker **stays
-  `LAYOUT:m0:n22:s20`** (both pinned gates unchanged). Under the **unconditional**
-  variant (all three hidden fields reserved for every suspending function)
-  `worker` becomes **24/28** (the report also cites **32** if all three hidden
-  fields are reserved) and both gates move in the same commit. **Amendment 10
-  pinned values:** per-await kind-7 slots change only callers with **more than one
-  value-returning implicit await** (one extra kind-7 slot per additional such
-  await); a caller with zero or one value-returning await is byte-identical to
-  Amendment 9. `async_frame_xmod`'s `worker` has no await, so it **stays 20** and
-  Task-5c **stays `LAYOUT:m0:n22:s20`**. The new multi-await fixture's caller gains
-  its extra slots and pins the resulting frame size/marker in Task 6D5.
+  `@asyncFrameSize(worker) == 68` under the widened rule (a) (Fix F1): the
+  authoritative size is the header (hidden pointer-sized `step` + `ctx` +
+  `state`) + param `x` + one 4-byte slot per body AST node. Before Fix F1 the
+  reservation covered only `var_decl` locals, so `worker` was **20**; the per-node
+  rule now dominates and `worker` is **68**. `repro/mi_matrix/async_frame_temps_xmod`
+  is the Fix F1 regression: `foo(a) + foo(a) + foo(a) + bar(1)` (bar suspends)
+  leaves three call-result temps live across the suspension; RED pre-fix
+  `--dump-c89` rc=133 (`panic: async frame layout exceeds authoritative frame
+  size`, 0 `.c`), GREEN post-fix rc=0 / 4 `.c` / gcc clean / link / run rc=0 with
+  the `46` arithmetic self-check. **Hidden-field pinning (Amendments 9/10):** under
+  the **gated** variant (`child`/`result`/`parent_result` reserved only where
+  their predicates hold) `worker` has no await and is never awaited, so the hidden
+  fields add nothing; under the **unconditional** variant all three add their
+  pointer-sized slots. **Amendment 10 pinned values:** per-await kind-7 slots
+  change only callers with **more than one** value-returning implicit await;
+  `async_await_multi_xmod`'s `caller` pins **208** under the widened rule (was 64
+  pre-Fix-F1, still well under its 1024-byte pool).
 - **Stage 3:** `repro/mi_matrix/async_await_xmod` — a root frame in a caller
   `buf`, an implicit await of a child, deterministic stdout across 3 runs and
   identical md5; plus a `-fsafe` pool-exhaustion probe that returns

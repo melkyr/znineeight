@@ -335,9 +335,17 @@ fn frameLocalTypeId(resolved_types: *rtt_mod.ResolvedTypeTable, n: ast_mod.AstNo
     return type_mod.TYPE_UNDEFINED;
 }
 
-fn scanFrameLocals(store: *ast_mod.AstStore, sym_reg: *sym_mod.SymbolRegistry, module_id: u32,
-    suspending_fns: *hash_mod.U64ToU32Map, async_suspend_name_id: u32,
-    body_idx: u32, stack: *ga_mod.U32ArrayList, reg: *type_mod.TypeRegistry,
+// Conservative rule (a), widened (Fix F1): reserve a frame field for EVERY AST
+// node reachable in the function body — not just `var_decl` — so the
+// authoritative size upper-bounds the temps P3 finds live across a suspension.
+// The walk no longer stops at the first suspension: a value defined after one
+// suspension and read after a later one must be reserved too. Type selection
+// prefers the node's own resolved type (the value's final, post-coercion type
+// as lowering sees it), falling back to the declaration's type node for
+// `var_decl`. Over-reservation is intentional; P3's `precise <= frame_sizes[key]`
+// assert stays the guard.
+fn scanFrameLocals(store: *ast_mod.AstStore, body_idx: u32,
+    stack: *ga_mod.U32ArrayList, reg: *type_mod.TypeRegistry,
     resolved_types: *rtt_mod.ResolvedTypeTable, offset: *u32, max_align: *u32) void {
     stack.len = @intCast(usize, 0);
     if (body_idx == @intCast(u32, 0)) return;
@@ -347,8 +355,11 @@ fn scanFrameLocals(store: *ast_mod.AstStore, sym_reg: *sym_mod.SymbolRegistry, m
         stack.len -= @intCast(usize, 1);
         var n = ast_mod.astStoreNodeAt(store, ni);
         var k = n.kind;
+        var lvt: u32 = type_mod.TYPE_UNDEFINED;
+        if (rtt_mod.resolvedTypeTableGet(resolved_types, ni)) |t| { lvt = t; }
+        if (lvt == type_mod.TYPE_UNDEFINED and k == AstKind.var_decl) { lvt = frameLocalTypeId(resolved_types, n); }
+        addFrameField(reg, lvt, offset, max_align);
         if (k == AstKind.builtin_call) {
-            if (n.child_0 == async_suspend_name_id) return;
             var ecb = ast_mod.astStoreNodeExtraChildren(store, ni);
             var bi: usize = ecb.len;
             while (bi > @intCast(usize, 0)) {
@@ -358,13 +369,6 @@ fn scanFrameLocals(store: *ast_mod.AstStore, sym_reg: *sym_mod.SymbolRegistry, m
             continue;
         }
         if (k == AstKind.fn_call) {
-            if (n.child_0 != @intCast(u32, 0)) {
-                if (resolveCalleeKey(store, sym_reg, module_id, n.child_0)) |ck| {
-                    var fmid = @intCast(u32, ck >> @intCast(u64, 32));
-                    var fnid = @intCast(u32, ck & @intCast(u64, 0xFFFFFFFF));
-                    if (asyncIsSuspending(suspending_fns, fmid, fnid)) return;
-                }
-            }
             var ecf = ast_mod.astStoreNodeExtraChildren(store, ni);
             var fi: usize = ecf.len;
             while (fi > @intCast(usize, 0)) {
@@ -373,10 +377,6 @@ fn scanFrameLocals(store: *ast_mod.AstStore, sym_reg: *sym_mod.SymbolRegistry, m
             }
             if (n.child_0 != @intCast(u32, 0)) { ga_mod.u32ArrayListAppend(stack, n.child_0); }
             continue;
-        }
-        if (k == AstKind.var_decl) {
-            var lvt = frameLocalTypeId(resolved_types, n);
-            addFrameField(reg, lvt, offset, max_align);
         }
         if (ast_mod.nodeHasNodeExtraChildren(k)) {
             var ec3 = ast_mod.astStoreNodeExtraChildren(store, ni);
@@ -505,15 +505,13 @@ fn emitFrameMarker(key: u64, size: u32) void {
 
 pub fn asyncFrameSizeRun(alloc: *alloc_mod.Sand, store: *ast_mod.AstStore,
     sym_reg: *sym_mod.SymbolRegistry, module_reg: *mr_mod.ModuleRegistry,
-    interner: *si_mod.StringInterner, typereg: *type_mod.TypeRegistry,
+    typereg: *type_mod.TypeRegistry,
     resolved_types: *rtt_mod.ResolvedTypeTable,
     suspending_fns: *hash_mod.U64ToU32Map, frame_sizes: *hash_mod.U64ToU32Map,
     awaited_fns: *hash_mod.U64ToU32Map, async_hidden_fns: *hash_mod.U64ToU32Map,
     parent_result_type_list: *ga_mod.U32ArrayList, parent_result_start: *hash_mod.U64ToU32Map,
     parent_result_count: *hash_mod.U64ToU32Map) void {
     var p_msg: []const u8 = "AFS\n"; pal.markerWrite(p_msg);
-    var asu_text: []const u8 = "@asyncSuspend";
-    var async_suspend_name_id = si_mod.stringInternerIntern(interner, asu_text);
     var stack = ga_mod.u32ArrayListInit(alloc);
     var mods = mr_mod.moduleRegistryGetModules(module_reg);
 
@@ -591,7 +589,7 @@ pub fn asyncFrameSizeRun(alloc: *alloc_mod.Sand, store: *ast_mod.AstStore,
                     addFrameField(typereg, pt, &offset, &max_align);
                 }
             }
-            scanFrameLocals(store, sym_reg, mods[mi].id, suspending_fns, async_suspend_name_id, decl.child_0, &stack, typereg, resolved_types, &offset, &max_align);
+            scanFrameLocals(store, decl.child_0, &stack, typereg, resolved_types, &offset, &max_align);
             // Amendment 9/10 hidden tail fields: child (kind 5), result (kind 6),
             // then one parent_result (kind 7) per value-returning implicit
             // await, in program order.
