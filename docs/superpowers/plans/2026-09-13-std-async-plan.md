@@ -27,8 +27,8 @@ ABI) is **removed**; its deferral is now applied here.
   **first field** of their `Frame`.
 - **Baseline refresh.** HEAD `e2a0f30a`; fixed point
   `eda943dc1f77a48eae039e39ea4bfe04`; seed v15
-  (`cd09877cbc373ad5c8801b93faccf188`); corpus 599 = 560 OK / 36 GREEN / 3 FAIL;
-  `EXPECTED_FAIL.md` v80. Target corpus 610 = 570 OK / 37 GREEN / 3 FAIL;
+  (`cd09877cbc373ad5c8801b93faccf188`); corpus 603 = 563 OK / 37 GREEN / 3 FAIL;
+  `EXPECTED_FAIL.md` v82. Target corpus 610 = 570 OK / 37 GREEN / 3 FAIL;
   `EXPECTED_FAIL.md` v82 → v83.
 
 ## Amendment — Option A (2026-09-15, operator ruling)
@@ -51,7 +51,7 @@ baseline value changes.
 
 ## Global Constraints
 
-- **Baseline (re-verify at Task 1):** branch `zig1_improvements`; HEAD `e2a0f30a`; design fixed point `eda943dc1f77a48eae039e39ea4bfe04`; seed v15 archive md5 `cd09877cbc373ad5c8801b93faccf188`; corpus 599 = 560 OK / 36 GREEN / 3 FAIL; `repro/mi_matrix/EXPECTED_FAIL.md` header v82. **Track 2 (`async-compiler-core-plan.md`) is landed and closed**; Track 3 **depends on** its `@asyncResume`/frame surface (dispatch order Track 2 → Track 3). Target corpus after the seven new fixtures: 610 = 570 OK / 37 GREEN / 3 FAIL; `EXPECTED_FAIL.md` v82 → v83.
+- **Baseline (re-verify at Task 1):** branch `zig1_improvements`; HEAD `e2a0f30a`; design fixed point `eda943dc1f77a48eae039e39ea4bfe04`; seed v15 archive md5 `cd09877cbc373ad5c8801b93faccf188`; corpus 603 = 563 OK / 37 GREEN / 3 FAIL; `repro/mi_matrix/EXPECTED_FAIL.md` header v82. **Track 2 (`async-compiler-core-plan.md`) is landed and closed**; Track 3 **depends on** its `@asyncResume`/frame surface (dispatch order Track 2 → Track 3). Target corpus after the seven new fixtures: 610 = 570 OK / 37 GREEN / 3 FAIL; `EXPECTED_FAIL.md` v82 → v83.
 - **`timeout 120` on every binary execution.**
 - **Binding gcc flag set for every `gcc -c`/link:** `gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc>`. The compiler fixed point reproduces only with `-Wall`.
 - **Compiler build:** `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <fresh_out>`; gate `=== [seed] Done: <fresh_out> ===`; result `<fresh_out>/zig1_5_clean` + `<fresh_out>/lib/`. Never invoke `zig0`.

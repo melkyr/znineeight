@@ -4,7 +4,7 @@
 **Branch:** `zig1_improvements`
 **Baseline HEAD:** `e2a0f30a` (Track 2 landed and closed); compiler fixed point
 `eda943dc1f77a48eae039e39ea4bfe04`; seed v15 (archive md5
-`cd09877cbc373ad5c8801b93faccf188`); corpus 599 = 560 OK / 36 GREEN / 3 FAIL;
+`cd09877cbc373ad5c8801b93faccf188`); corpus 603 = 563 OK / 37 GREEN / 3 FAIL;
 `EXPECTED_FAIL.md` v82. **Track 3 depends on Track 2** (dispatch order Track 2 →
 Track 3): the library calls the `@asyncResume` builtin (Amendment 7 self-dispatch)
 and consumes the landed frame/`ctx` layout. Track 3 does **not** modify the
