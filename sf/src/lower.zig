@@ -1982,7 +1982,7 @@ fn srcIntentForNode(self: *LirLowerer, node_idx: u32) SrcIntent {
     return SrcIntent.value;
 }
 
-pub fn materializeInto(self: *LirLowerer, src_temp: u32, expected: u32, intent: SrcIntent) u32 {
+pub fn materializeInto(self: *LirLowerer, src_temp: u32, expected: u32, intent: SrcIntent, src_node: u32) u32 {
     if (expected == @intCast(u32, 0) or expected == type_mod.TYPE_UNDEFINED) return src_temp;
 
 
@@ -2026,7 +2026,13 @@ pub fn materializeInto(self: *LirLowerer, src_temp: u32, expected: u32, intent: 
         }
         break;
     }
-    if (nlayers == @intCast(usize, 0)) return src_temp;
+    if (nlayers == @intCast(usize, 0)) {
+        if (intent == SrcIntent.value and cur != src_ty and
+            coercion_mod.classifyCoercion(self.ctx.registry, src_ty, cur) == CoercionKind.string_to_slice) {
+            return applyCoercion(self, src_temp, coercion_mod.CoercionEntry{ .node_idx = src_node, .kind = CoercionKind.string_to_slice, .target_type = cur });
+        }
+        return src_temp;
+    }
 
     var val = src_temp;
     if (intent == SrcIntent.value and cur != src_ty) {
@@ -2039,6 +2045,8 @@ pub fn materializeInto(self: *LirLowerer, src_temp: u32, expected: u32, intent: 
             var ft = nextTemp(self, cur);
             emitInst(self, LirInst{ .float_cast = .{ .value = val, .target = cur, .result = ft } });
             val = ft;
+        } else if (nk == CoercionKind.string_to_slice) {
+            val = applyCoercion(self, val, coercion_mod.CoercionEntry{ .node_idx = src_node, .kind = CoercionKind.string_to_slice, .target_type = cur });
         }
     }
 
@@ -4381,7 +4389,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 var ar_a1 = nextTemp(self, ar_opt);
                 if (ec.len >= @intCast(usize, 2)) {
                     var ar_av = lowerExpr(self, ec[@intCast(usize, 1)]);
-                    var ar_wrapped = materializeInto(self, ar_av, ar_opt, srcIntentForNode(self, ec[@intCast(usize, 1)]));
+                    var ar_wrapped = materializeInto(self, ar_av, ar_opt, srcIntentForNode(self, ec[@intCast(usize, 1)]), ec[@intCast(usize, 1)]);
                     emitInst(self, LirInst{ .assign = .{ .dst = ar_a1, .src = ar_wrapped, .name_id = @intCast(u32, 0) } });
                 } else {
                     emitInst(self, LirInst{ .set_optional_null = .{ .result = ar_a1, .type_id = ar_opt } });
@@ -4664,7 +4672,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var cexg_m: []const u8 = "CEX:g"; pal.markerWrite(cexg_m); var cexg_b: [10]u8 = undefined; var cexg_l = itoa_mod.itoa(@intCast(u32, self.block_terminated), cexg_b[0..]); var cexg_s: usize = @intCast(usize, 9) - @intCast(usize, cexg_l); pal.markerWrite(cexg_b[cexg_s..@intCast(usize, 9)]); var cexg_nl: []const u8 = "\n"; pal.markerWrite(cexg_nl);
             if (self.block_terminated == @intCast(u8, 0)) {
                 var hit_m: []const u8 = "CEX:HIT\n"; pal.markerWrite(hit_m);
-                err_val = materializeInto(self, err_val, euPayloadOf(self, eu_box[0]), srcIntentForNode(self, node.child_1));
+                err_val = materializeInto(self, err_val, euPayloadOf(self, eu_box[0]), srcIntentForNode(self, node.child_1), node.child_1);
                 emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = join_temp, .src = err_val } });
                 emitInst(self, LirInst{ .jump = join_bb });
             }
@@ -4710,7 +4718,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 var oe_int: SrcIntent = SrcIntent.value;
                 if (oe_an.kind == AstKind.null_literal) { oe_int = SrcIntent.null_src; }
                 if (oe_an.kind == AstKind.error_literal) { oe_int = SrcIntent.error_src; }
-                null_val = materializeInto(self, null_val, if (rt) |t| t else type_mod.TYPE_UNDEFINED, oe_int);
+                null_val = materializeInto(self, null_val, if (rt) |t| t else type_mod.TYPE_UNDEFINED, oe_int, node.child_1);
                 emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = join_temp, .src = null_val } });
             }
         }
@@ -4748,11 +4756,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 var ie_res = nextTemp(self, ie_rtype3);
                 if (ie_fv != @intCast(u64, 0)) {
                     var ie_then = lowerExpr(self, node.child_1);
-                    ie_then = materializeInto(self, ie_then, ie_rtype3, srcIntentForNode(self, node.child_1));
+                    ie_then = materializeInto(self, ie_then, ie_rtype3, srcIntentForNode(self, node.child_1), node.child_1);
                     emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = ie_res, .src = ie_then } });
                 } else {
                     var ie_else = lowerExpr(self, node.child_2);
-                    ie_else = materializeInto(self, ie_else, ie_rtype3, srcIntentForNode(self, node.child_2));
+                    ie_else = materializeInto(self, ie_else, ie_rtype3, srcIntentForNode(self, node.child_2), node.child_2);
                     emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = ie_res, .src = ie_else } });
                 }
                 return ie_res;
@@ -4799,7 +4807,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         pushScopeDepth(self);
         var then_val = lowerIfArmValue(self, node.child_1);
         if (self.block_terminated == @intCast(u8, 0) and ie_noreturn == @intCast(u8, 0)) {
-            then_val = materializeInto(self, then_val, ie_rtype, srcIntentForNode(self, node.child_1));
+            then_val = materializeInto(self, then_val, ie_rtype, srcIntentForNode(self, node.child_1), node.child_1);
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = result, .src = then_val } });
         }
         popScopeDepth(self);
@@ -4810,7 +4818,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         self.block_terminated = @intCast(u8, 0);
         var else_val = lowerIfArmValue(self, node.child_2);
         if (self.block_terminated == @intCast(u8, 0) and ie_noreturn == @intCast(u8, 0)) {
-            else_val = materializeInto(self, else_val, ie_rtype, srcIntentForNode(self, node.child_2));
+            else_val = materializeInto(self, else_val, ie_rtype, srcIntentForNode(self, node.child_2), node.child_2);
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = result, .src = else_val } });
         }
         if (self.block_terminated == @intCast(u8, 0) and ie_noreturn == @intCast(u8, 0)) {
@@ -5212,7 +5220,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         var sw_int: SrcIntent = SrcIntent.value;
                         if (body_node.kind == AstKind.null_literal) { sw_int = SrcIntent.null_src; }
                         if (body_node.kind == AstKind.error_literal) { sw_int = SrcIntent.error_src; }
-                        prong_val = materializeInto(self, prong_val, result_tid, sw_int);
+                        prong_val = materializeInto(self, prong_val, result_tid, sw_int, prong_node.child_0);
                     }
                 }
             }
@@ -6572,13 +6580,13 @@ pub fn applyCoercion(self: *LirLowerer, src_temp: u32, coercion: CoercionEntry) 
     if (kind == CoercionKind.none) {
         return applyNoneCoercion(self, src_temp, coercion);
     } else if (kind == CoercionKind.wrap_optional_null) {
-        return materializeInto(self, src_temp, coercion.target_type, SrcIntent.null_src);
+        return materializeInto(self, src_temp, coercion.target_type, SrcIntent.null_src, coercion.node_idx);
     } else if (kind == CoercionKind.wrap_optional) {
-        return materializeInto(self, src_temp, coercion.target_type, srcIntentFor(self, coercion));
+        return materializeInto(self, src_temp, coercion.target_type, srcIntentFor(self, coercion), coercion.node_idx);
     } else if (kind == CoercionKind.wrap_error_success) {
-        return materializeInto(self, src_temp, coercion.target_type, srcIntentFor(self, coercion));
+        return materializeInto(self, src_temp, coercion.target_type, srcIntentFor(self, coercion), coercion.node_idx);
     } else if (kind == CoercionKind.wrap_error_err) {
-        return materializeInto(self, src_temp, coercion.target_type, SrcIntent.error_src);
+        return materializeInto(self, src_temp, coercion.target_type, SrcIntent.error_src, coercion.node_idx);
     } else if (kind == CoercionKind.int_widen) {
         var dst = nextTemp(self, coercion.target_type);
         emitInst(self, LirInst{ .int_cast = .{ .value = src_temp, .target = coercion.target_type, .result = dst } });
@@ -6592,7 +6600,7 @@ pub fn applyCoercion(self: *LirLowerer, src_temp: u32, coercion: CoercionEntry) 
         emitInst(self, LirInst{ .int_cast = .{ .value = src_temp, .target = coercion.target_type, .result = dst } });
         return dst;
     } else if (kind == CoercionKind.ptr_to_optional_ptr) {
-        return materializeInto(self, src_temp, coercion.target_type, srcIntentFor(self, coercion));
+        return materializeInto(self, src_temp, coercion.target_type, srcIntentFor(self, coercion), coercion.node_idx);
     } else if (kind == CoercionKind.array_to_slice) {
         var dst = nextTemp(self, coercion.target_type);
         var arr_len: u32 = @intCast(u32, 1);

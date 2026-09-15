@@ -1,12 +1,15 @@
-// if_unannotated_str_xmod_xmod — RUNTIME-gated RED fixture (compile-gate OK, run PANIC).
+// if_unannotated_str_xmod_xmod — RUNTIME-gated GREEN fixture (compile-gate OK, run rc=0).
 //
 // Cross-module complement to if_unannotated_str_xmod. The un-annotated
 // `var s = if (b) "alpha\r\n" else "gamma\r\n";` expression lives in `mid.zig` — a
 // NON-LAST module (main.zig imports mid.zig then last.zig). See
 // switch_unannotated_str_xmod for the shared S20 locus.
 //
-// RED today: dump rc=0 / gcc-clean / link rc=0 / run rc=133 (assert trap). GREEN after
-// the Task 0f S20 fix = `alpha\r\n|7` then `gamma\r\n|7`, run rc=0.
+// FIXED in Task 0f (Track4 S20 F): the un-annotated string-literal branches peer-type-
+// resolve to `[]const u8` across the module boundary.
+//
+// GREEN today: dump rc=0 / gcc-clean / link rc=0 / run rc=0; stdout `alpha\r\n|7` then
+// `gamma\r\n|7`.
 const std = @import("std");
 const mid = @import("mid.zig");
 const last = @import("last.zig");

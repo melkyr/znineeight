@@ -1,4 +1,4 @@
-// switch_unannotated_str_xmod_xmod — RUNTIME-gated RED fixture (compile-gate OK, run PANIC).
+// switch_unannotated_str_xmod_xmod — RUNTIME-gated GREEN fixture (compile-gate OK, run rc=0).
 //
 // Cross-module complement to switch_unannotated_str_xmod. The un-annotated
 // `var s = switch (c) { .A => "alpha\r\n", .B => "gamma\r\n" };` expression lives in
@@ -11,8 +11,12 @@
 // result is inferred from the first prong's `*const [N:0]u8` and the `return s`
 // slice coercion loses the byte length (`sllen = 1`).
 //
-// RED today: dump rc=0 / gcc-clean / link rc=0 / run rc=133 (assert trap). GREEN after
-// the Task 0f S20 fix = `alpha\r\n|7` then `gamma\r\n|7`, run rc=0.
+// FIXED in Task 0f (Track4 S20 F): the un-annotated prongs peer-type-resolve to
+// `[]const u8` (recording the string_to_slice coercion on each prong node), so the
+// result is a real slice across the module boundary too.
+//
+// GREEN today: dump rc=0 / gcc-clean / link rc=0 / run rc=0; stdout `alpha\r\n|7` then
+// `gamma\r\n|7`.
 //
 // The tag is driven through @intToEnum (bare plain-enum literals are a separate
 // pre-existing gap pinned by bare_enum_literal_xmod).

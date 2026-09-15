@@ -1,70 +1,61 @@
-# mi_matrix corpus — expected-fail manifest (v87 2026-09-15)
+# mi_matrix corpus — expected-fail manifest (v88 2026-09-15)
 
-## Residual string->slice gaps declared (v87 2026-09-15) — Task 0e (I)
+## Residual string->slice gaps CLOSED (v88 2026-09-15) — Task 0f (F)
 
-Track-4 Task 0e declares the residual gaps Task 0d left behind (S20 un-annotated
-inference, S21 error-union/optional payload) plus the two Task 0c-reported incidental
-gaps, per the standing "declare every residual gap" rule. **No `sf/src` change** (that is
-Task 0f); reference compiler = the post-Task-0d fixed point
-`7297eb442d012f6e07b60617c4f8e4e8`. Corpus `-s0` universe **636 dirs** = **587 OK / 37
-GREEN / 12 FAIL / 0 ICE / 0 CRASH**; the 16 new dirs are the only delta vs the 620-dir
-pre-Task-0e baseline (580 OK / 37 GREEN / 3 FAIL) — **zero class movement on the 620
-common dirs**.
+Track-4 Task 0f closes the two residual string->slice gaps Task 0e declared (S20
+un-annotated inference, S21 error-union/optional payload). **`sf/src` change**:
+`sf/src/semantic_analyzer.zig` (S20) + `sf/src/lower.zig` (S21). Reference compiler =
+the post-Task-0d fixed point `7297eb442d012f6e07b60617c4f8e4e8`; NEW fixed point
+`97cd5a033156119339ebffc15b575c5d` (two-hop closure). The 8 S21 dirs are **REMOVED**
+from this manifest (they are GREEN now, not compile-fails). Corpus `-s0` universe
+**637 dirs** = **596 OK / 37 GREEN / 4 FAIL / 0 ICE / 0 CRASH**; vs the pre-Task-0f
+reference (637 = 587 OK / 37 GREEN / 13 FAIL) the movement is **+9 OK / -9 FAIL** =
+exactly the 8 S21 dirs + the new `switch_unannotated_direct_xmod`, with **zero class
+movement on the 628 common dirs**.
 
-### S20 — un-annotated switch/if expression inference (runtime-RED; corpus class OK)
+### S20 — un-annotated switch/if expression inference (FIXED; GREEN, corpus OK)
 
-6 new dirs: `switch_unannotated_str_xmod`, `switch_unannotated_diffstr_xmod`,
-`if_unannotated_str_xmod`, and the three cross-module `..._xmod_xmod` variants (the
-expression lives in a NON-last module). Each: dump rc=0 (5 `.c`, 7 `.c` for the xmod
-variants) / gcc-clean / link rc=0 / **run rc=133** (assert trap) today. They classify
-**OK** at the compile gate because the classifier does not run binaries — the runtime red
-is visible only at the run gate.
+7 dirs: `switch_unannotated_str_xmod`, `switch_unannotated_diffstr_xmod`,
+`if_unannotated_str_xmod`, the three cross-module `..._xmod_xmod` variants (the
+expression lives in a NON-last module), and the direct-`s.len` facet
+`switch_unannotated_direct_xmod` (added by Task 0f Step 3 — previously declared in prose
+only). Each: dump rc=0 / gcc-clean / link rc=0 / **run rc=0** now. GREEN stdout:
+`alpha\r\n|7` then `gamma\r\n|7` (equal-length), `beta\r\n|6` (diff-length).
 
-Root: with NO expected type on the stack the Task 0d fix (which gates on
-`topExpectedType != 0`, `sf/src/semantic_analyzer.zig:1630-1643` switch / `:1993-2000`
-if) does not fire; the result type is inferred from the first prong's `*const [N:0]u8`
-and coercing the inferred pointer-to-array to `[]const u8` defaults `sllen = 1`
-(differing-length prongs do not unify). A DIRECT `s.len` on the raw inferred
-pointer-to-array is a harder facet of the same gap: it emits a reference to an undeclared
-temp and gcc-FAILs (`'zT_..' undeclared`); the fixtures coerce through a slice so they
-stay a runtime gate. GREEN contract verified by simulating the Task 0f fix (annotate the
-expression `[]const u8`): stdout `alpha\r\n|7` then `gamma\r\n|7` (`beta\r\n|6` for the
-diff-length variant), run rc=0.
+Fix: in `semanticAnalyzerResolveSwitchExpr` / `semanticAnalyzerResolveIfExpr`, when there
+is NO expected type a string-literal prong/branch peer-type-resolves the result to
+`[]const u8` (`typeRegistryGetOrCreateSlice(TYPE_U8, true)`) and the `string_to_slice`
+coercion is recorded on each prong/branch node — not the first prong's `*const [N:0]u8`.
+The direct-`s.len` fixture was a gcc compile-FAIL pre-fix (`'zT_..' undeclared`) and now
+compiles and prints the full string + length.
 
-### S21 — error-union/optional payload string literals (compile-FAIL)
+### S21 — error-union/optional payload string literals (FIXED; 8 dirs REMOVED)
 
-8 new dirs (return + call-arg + var-init + struct-field positions, for both `E![]const u8`
-and `?[]const u8`). Each: dump rc=0 (5 `.c`) but the emitted `main_*.c` fails `gcc -c`.
-Root: `return` records `wrap_error_success` (`sf/src/semantic_analyzer.zig:1420`) but
-`materializeInto`'s payload path (`sf/src/lower.zig:2032-2043`) never applies the inner
-`string_to_slice` before wrapping, so the emitted payload is a bare `char*` assigned to
-the slice field. Task 0f Step 2 fixes the shared payload path.
+The 8 dirs (`errunion_payload_str_xmod`, `opt_payload_str_xmod`,
+`errunion_payload_callarg_xmod`, `opt_payload_callarg_xmod`,
+`errunion_payload_varinit_xmod`, `opt_payload_varinit_xmod`,
+`errunion_payload_field_xmod`, `opt_payload_field_xmod`) now dump rc=0 / gcc-clean /
+link rc=0 / **run rc=0** (stdout `alpha\r\n`). Root was `materializeInto`'s payload path
+(`sf/src/lower.zig`) never applying the inner `string_to_slice` before wrapping; the
+payload path now applies it BEFORE the `wrap_error_ok`/`wrap_optional` layer (and also on
+the no-wrap-layer direct case, e.g. a `catch`/`orelse` RHS payload). **Removed from this
+manifest** (no longer compile-fails).
 
-| fixture | dump | gcc | exact diagnostic |
-|---|---|---|---|
-| `errunion_payload_str_xmod` | rc=0, 5 `.c` | FAIL | `error: incompatible types when assigning to type 'zT_8F083A69_Slice_zT_0B42B2F8_u' from type 'char *'` (×2) |
-| `opt_payload_str_xmod` | rc=0, 5 `.c` | FAIL | `error: incompatible types when assigning to type 'zT_8F083A69_Slice_zT_0B42B2F8_u' from type 'char *'` (×1) |
-| `errunion_payload_callarg_xmod` | rc=0, 5 `.c` | FAIL | `error: incompatible types when assigning to type 'zT_8F083A69_Slice_zT_0B42B2F8_u' from type 'char *'` (×2) |
-| `opt_payload_callarg_xmod` | rc=0, 5 `.c` | FAIL | `error: incompatible types when assigning to type 'zT_8F083A69_Slice_zT_0B42B2F8_u' from type 'char *'` (×1) |
-| `errunion_payload_varinit_xmod` | rc=0, 5 `.c` | FAIL | `error: incompatible types when assigning to type 'zT_8F083A69_Slice_zT_0B42B2F8_u' from type 'char *'` (×2) |
-| `opt_payload_varinit_xmod` | rc=0, 5 `.c` | FAIL | `error: incompatible types when assigning to type 'zT_8F083A69_Slice_zT_0B42B2F8_u' from type 'char *'` (×1) |
-| `errunion_payload_field_xmod` | rc=0, 5 `.c` | FAIL | `error: incompatible types when assigning to type 'zT_8F083A69_Slice_zT_0B42B2F8_u' from type 'char *'` (×2) |
-| `opt_payload_field_xmod` | rc=0, 5 `.c` | FAIL | `error: incompatible types when assigning to type 'zT_8F083A69_Slice_zT_0B42B2F8_u' from type 'char *'` (×1) |
-
-### Task 0c-reported incidental gaps (declared)
+### Task 0c-reported incidental gaps (still declared; out of Task 0f scope)
 
 | fixture | class | evidence |
 |---|---|---|
 | `array_of_slices_literal_xmod` | compile-FAIL | dump rc=0 (5 `.c`), gcc FAIL `error: assignment to expression with array type` (array-of-slices literal `[2][]const u8`) |
 | `bare_enum_literal_xmod` | runtime-RED, corpus OK | dump rc=0 / gcc-clean / link rc=0 / run rc=133; a bare plain-enum literal in value position is mis-lowered (`var c: C = .A` → wrong `@enumToInt`; a switch over a bare-literal global takes the wrong prong). Distinct from S20/S21; out of Task 0f scope. |
 
-Reconciliation: the prior v86 header's `613 = 573/37/3` was stale (Task 0c measured 615;
-the actual pre-Task-0e baseline is the 620 = 580 OK / 37 GREEN / 3 FAIL recorded by Task
-0d). Deltas vs that baseline: **+6 OK** (S20) **+1 OK** (`bare_enum_literal_xmod`)
-**+8 FAIL** (S21) **+1 FAIL** (`array_of_slices_literal_xmod`) = **636 = 587 OK / 37
-GREEN / 12 FAIL / 0 ICE / 0 CRASH**. The 3 pre-existing FAILs remain the documented
-`callconv_cdecl_fnptr_xmod` / `callconv_nonpub_stdcall_xmod` /
-`callconv_stdcall_fnptr_xmod` emission-inspection set.
+Reconciliation: post-Task-0f corpus **637 = 596 OK / 37 GREEN / 4 FAIL / 0 ICE / 0
+CRASH**. The 4 FAILs = `array_of_slices_literal_xmod` (the Task 0c compile-gap above) +
+the 3 documented emission-inspection dirs `callconv_cdecl_fnptr_xmod` /
+`callconv_nonpub_stdcall_xmod` / `callconv_stdcall_fnptr_xmod`. The 37 GREEN set is
+unchanged. The prior v87 section (Task 0e, `636 = 587 OK / 37 GREEN / 12 FAIL`) is
+superseded by this v88 section; the v86 multi-module emission section below is retained
+verbatim as the historical record.
+
 
 ## Multi-module `__Z98Step_<f>` emission fix (v86 2026-09-15)
 

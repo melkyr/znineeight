@@ -1,13 +1,16 @@
-// switch_unannotated_diffstr_xmod_xmod — RUNTIME-gated RED fixture (compile-gate OK,
-// run PANIC).
+// switch_unannotated_diffstr_xmod_xmod — RUNTIME-gated GREEN fixture (compile-gate OK,
+// run rc=0).
 //
 // Cross-module complement to switch_unannotated_diffstr_xmod. The un-annotated
 // `var s = switch (c) { .A => "alpha\r\n", .B => "beta\r\n" };` expression (DIFFERING
 // literal lengths, 7 and 6) lives in `mid.zig` — a NON-LAST module (main.zig imports
 // mid.zig then last.zig). See switch_unannotated_str_xmod for the shared S20 locus.
 //
-// RED today: dump rc=0 / gcc-clean / link rc=0 / run rc=133 (assert trap). GREEN after
-// the Task 0f S20 fix = `alpha\r\n|7` then `beta\r\n|6`, run rc=0.
+// FIXED in Task 0f (Track4 S20 F): the un-annotated differing-length prongs peer-type-
+// resolve to `[]const u8`, so the result is a real slice across the module boundary.
+//
+// GREEN today: dump rc=0 / gcc-clean / link rc=0 / run rc=0; stdout `alpha\r\n|7` then
+// `beta\r\n|6`.
 //
 // The tag is driven through @intToEnum (bare plain-enum literals are a separate
 // pre-existing gap pinned by bare_enum_literal_xmod).

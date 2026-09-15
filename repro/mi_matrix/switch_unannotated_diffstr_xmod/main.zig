@@ -1,18 +1,19 @@
-// switch_unannotated_diffstr_xmod — RUNTIME-gated RED fixture (compile-gate OK, run PANIC).
+// switch_unannotated_diffstr_xmod — RUNTIME-gated GREEN fixture (compile-gate OK, run rc=0).
 //
 // Residual S20, DIFFERING-LENGTH variant of switch_unannotated_str_xmod. A switch
 // EXPRESSION with string-literal prongs of DIFFERENT lengths (7 and 6 bytes) in an
-// UN-ANNOTATED `var s = switch (c) {...}` position. No expected type is on the stack, so
-// the Task 0d fix (topExpectedType != 0 gate) does not fire; the result type is inferred
-// from the FIRST prong's `*const [N:0]u8`, and the differing-length literal cannot unify
-// (in real Zig this is a peer-type-resolution mismatch). zig1 silently keeps the first
-// prong's pointer-to-array type and the later slice coercion loses the length
-// (string_to_slice on a non-literal node defaults `sllen = 1`).
+// UN-ANNOTATED `var s = switch (c) {...}` position. No expected type was on the stack, so
+// the Task 0d fix (topExpectedType != 0 gate) did not fire; the result type was inferred
+// from the FIRST prong's `*const [N:0]u8`, and the differing-length literal could not
+// unify (in real Zig this is a peer-type-resolution mismatch). zig1 silently kept the
+// first prong's pointer-to-array type and the later slice coercion lost the length
+// (string_to_slice on a non-literal node defaulted `sllen = 1`).
 //
-// RED today: dump rc=0 / gcc-clean / link rc=0 / run rc=133 (assert trap). GREEN after
-// the Task 0f S20 fix (peer-type-resolve the prongs to []const u8, recording the
-// string_to_slice coercion on each prong node) = `alpha\r\n|7` then `beta\r\n|6`,
-// run rc=0.
+// FIXED in Task 0f (Track4 S20 F): the un-annotated string-literal prongs peer-type-
+// resolve to `[]const u8`, recording the `string_to_slice` coercion on each prong node.
+//
+// GREEN today: dump rc=0 / gcc-clean / link rc=0 / run rc=0; stdout `alpha\r\n|7` then
+// `beta\r\n|6`.
 //
 // See switch_unannotated_str_xmod for the shared locus and the direct-`s.len` gcc-FAIL
 // facet; the tag is driven through @intToEnum (bare plain-enum literals are a separate

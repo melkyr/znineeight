@@ -1,17 +1,19 @@
-// if_unannotated_str_xmod — RUNTIME-gated RED fixture (compile-gate OK, run PANIC).
+// if_unannotated_str_xmod — RUNTIME-gated GREEN fixture (compile-gate OK, run rc=0).
 //
 // Residual S20, `if`-expression variant of switch_unannotated_str_xmod. An `if`/`else`
 // EXPRESSION with string-literal branches in an UN-ANNOTATED
-// `var s = if (b) "..." else "..."` position. No expected type is on the stack, so the
+// `var s = if (b) "..." else "..."` position. No expected type was on the stack, so the
 // Task 0d if-expression fix (which gates on `topExpectedType != 0`,
-// sf/src/semantic_analyzer.zig:1993-2000) does NOT fire; the result type is inferred
+// sf/src/semantic_analyzer.zig:1993-2000) did NOT fire; the result type was inferred
 // from the first branch's `*const [N:0]u8` and coercing the inferred pointer-to-array to
-// `[]const u8` loses the byte length (`sllen = 1`).
+// `[]const u8` lost the byte length (`sllen = 1`).
 //
-// RED today: dump rc=0 / gcc-clean / link rc=0 / run rc=133 (assert trap). GREEN after
-// the Task 0f S20 fix (peer-type-resolve the branches to []const u8, recording the
-// string_to_slice coercion on each branch node) = `alpha\r\n|7` then `gamma\r\n|7`,
-// run rc=0.
+// FIXED in Task 0f (Track4 S20 F): in `semanticAnalyzerResolveIfExpr`, when there is no
+// expected type, string-literal branches peer-type-resolve to `[]const u8`, recording
+// the `string_to_slice` coercion on each branch node.
+//
+// GREEN today: dump rc=0 / gcc-clean / link rc=0 / run rc=0; stdout `alpha\r\n|7` then
+// `gamma\r\n|7`.
 //
 // See switch_unannotated_str_xmod for the shared locus and the direct-`s.len` gcc-FAIL
 // facet.

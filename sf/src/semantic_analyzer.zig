@@ -1628,6 +1628,11 @@ fn semanticAnalyzerResolveIfExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     if (node.child_2 == @intCast(u32, 0)) { var sif_m: []const u8 = "SIF:0N"; pal_mod.markerWriteInt(sif_m, node_idx); var sif_tm: []const u8 = "T"; pal_mod.markerWriteInt(sif_tm, then_type); var sif_nl: []const u8 = " "; pal_mod.markerWrite(sif_nl); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type; }
     var else_type = semanticAnalyzerResolveExpr(self, node.child_2);
     var ie_exp = topExpectedType(self);
+    if (ie_exp == @intCast(u32, 0) or ie_exp == type_mod.TYPE_VOID) {
+        var ie_then_lit: bool = then_type != type_mod.TYPE_NORETURN and ast_mod.astStoreNodeAt(self.store, node.child_1).kind == AstKind.string_literal;
+        var ie_else_lit: bool = else_type != type_mod.TYPE_NORETURN and ast_mod.astStoreNodeAt(self.store, node.child_2).kind == AstKind.string_literal;
+        if (ie_then_lit or ie_else_lit) { ie_exp = type_mod.typeRegistryGetOrCreateSlice(self.registry, type_mod.TYPE_U8, true); }
+    }
     if (ie_exp != @intCast(u32, 0) and ie_exp != type_mod.TYPE_VOID) {
         var ie_then_str: bool = then_type != type_mod.TYPE_NORETURN and coercion_mod.classifyCoercion(self.registry, then_type, ie_exp) == coercion_mod.CoercionKind.string_to_slice;
         var ie_else_str: bool = else_type != type_mod.TYPE_NORETURN and coercion_mod.classifyCoercion(self.registry, else_type, ie_exp) == coercion_mod.CoercionKind.string_to_slice;
@@ -1991,11 +1996,16 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
         if (bt == type_mod.TYPE_NORETURN) {}
         else if (unified == @intCast(u32, 0)) {
             var sw_exp0 = topExpectedType(self);
-            if (sw_exp0 != @intCast(u32, 0) and
-                coercion_mod.classifyCoercion(self.registry, bt, sw_exp0) == coercion_mod.CoercionKind.string_to_slice) {
-                unified = sw_exp0;
+            var sw_peer: u32 = sw_exp0;
+            if (ast_mod.astStoreNodeAt(self.store, prong.child_0).kind == AstKind.string_literal and
+                (sw_exp0 == @intCast(u32, 0) or sw_exp0 == type_mod.TYPE_VOID)) {
+                sw_peer = type_mod.typeRegistryGetOrCreateSlice(self.registry, type_mod.TYPE_U8, true);
+            }
+            if (sw_peer != @intCast(u32, 0) and sw_peer != type_mod.TYPE_VOID and
+                coercion_mod.classifyCoercion(self.registry, bt, sw_peer) == coercion_mod.CoercionKind.string_to_slice) {
+                unified = sw_peer;
                 unified_node = prong.child_0;
-                tryRecordCoercion(self, prong.child_0, bt, sw_exp0);
+                tryRecordCoercion(self, prong.child_0, bt, sw_peer);
             } else { unified = bt; unified_node = prong.child_0; }
         }
         else if (bt == unified) {}
