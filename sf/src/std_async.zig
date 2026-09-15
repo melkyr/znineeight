@@ -185,3 +185,26 @@ pub fn waitAll(s: *Scheduler) FrameError!void {
         try tick(s);
     }
 }
+
+/// Suspend the currently-running task until `t` is done or cancelled.
+pub fn awaitTask(s: *Scheduler, t: *Task) void {
+    var cur: *Task = &s.tasks[s.current];
+    cur.state = TaskState.suspended;
+    cur.waiting_on = t;
+    cur.has_waiting_on = true;
+}
+
+/// Request cooperative cancellation of `t`; observed at the next tick boundary.
+pub fn cancel(s: *Scheduler, t: *Task) void {
+    _ = s;
+    t.cancel_requested = true;
+}
+
+pub fn cancelAll(s: *Scheduler) void {
+    var i: usize = 0;
+    while (i < s.count) : (i += 1) {
+        if (s.tasks[i].state != TaskState.done) {
+            s.tasks[i].cancel_requested = true;
+        }
+    }
+}
