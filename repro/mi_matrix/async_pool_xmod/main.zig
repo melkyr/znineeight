@@ -36,9 +36,16 @@ fn level1(out: *i32) void {
 const L1Args = struct { out: *i32 };
 
 pub fn main() void {
+    // Verified: @asyncFrameSize(level1) == 80. The root frame buffer `cbuf`
+    // below must be at least that large (the driver zero-fills the whole
+    // frame); it was [64] before the `-fsafe` @asyncInit bounds check exposed
+    // the overrun.
+    if (@asyncFrameSize(level1) != 80) {
+        @panic("async_pool_xmod: level1 frame size changed");
+    }
     var result: i32 = 0;
     var pool: [64]u8 = undefined;
-    var cbuf: [64]u8 = undefined;
+    var cbuf: [80]u8 = undefined;
     var fbuf: [64]u8 = undefined;
     var la: L1Args = L1Args{ .out = &result };
     var ctxp: *void = @ptrCast(*void, &pool);

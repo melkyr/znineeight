@@ -43,6 +43,26 @@ Applied in place to Task 2 (title/Files/Interfaces/Step 3) and Task 3
 baseline value changes.
 
 
+## Concerns wave — Track-3 item landed: `-fsafe` `@asyncInit` bounds check (2026-09-15)
+
+Operator concerns wave (HEAD `d7ea6667`): the `@asyncInit(ctx, buf, fn, args)`
+lowering (`sf/src/lower.zig`, `@asyncInit` arm) now emits, under `-fsafe` only,
+a `check_trap{kind=7}` that traps when `buf.len < @asyncFrameSize(fn)` and the
+buffer length is compile-time known — i.e. the caller passed a pointer to a
+concrete `[N]u8` array (length recovered from the pointee type via
+`type_registry.typeRegistryArrayByteSize`); a `[]u8`/`[*]u8` buffer has no
+compile-time length and the check is skipped. `-ffast` emission is unchanged.
+This is **Track 3 work landed, not deferred further**; the trap kind is
+documented in `sf/src/lir.zig`. The same wave 8-aligns the compiler await-site
+bump (`sf/src/async_state_machine.zig`) to mirror `std.async.contextAlloc`. The
+new check exposed two undersized root buffers, now fixed: `async_pool_xmod`
+(`level1` frame 80, root buf 64→80) and `async_suspend_store_xmod` (`worker`
+frame 80, root buf 64→80); `async_await_xmod` verified
+`@asyncFrameSize(caller)==72` and pinned (buf 128→72). Fixed point
+`027377296b2e38402ff8470f5c429eb8`, seed v19. The multi-module step-emission
+gap remains a **Track 4** item, pinned by the new expected-fail fixture
+`async_step_nonlast_xmod` (no emitter fix in this wave).
+
 **Goal:** Build the concrete, no-generics `std.async` Z98 library (`Context` per-task LIFO child-frame pool, `Task`, `Scheduler`, and the cooperative scheduler free functions) and wire it into every std-install touchpoint, so Track 4 can drive compiler-synthesized coroutine steps.
 
 **Architecture:** `sf/src/std_async.zig` is a plain-Z98 user module (not in the compiler import graph): structs + free functions, no generics, no module-scope mutable globals. It adds **no** compiler-core machinery but **depends on Track 2**: the scheduler **self-dispatches** through the compiler builtin `@asyncResume(t.frame, t.arg)` (Amendment 7), so there is no `Task.step` field and no `step` parameter. `Context` is a per-task frame stack for **child** frames only (bump pointer + mark); the root frame lives in the caller-owned `buf` outside the pool, and the `Context` itself sits at the head of the pool buffer (`contextInit` returns a `*Context`). Pool exhaustion surfaces as `error.OutOfFrame`, never a crash. The module is re-exported from `std.zig` and added to all seed/self-compile `lib/` install paths; its seven corpus fixtures **hand-build frames** (step function pointer as the first struct field at offset 0) and drive them through the library scheduler.

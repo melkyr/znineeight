@@ -1,4 +1,31 @@
-# mi_matrix corpus — expected-fail manifest (v84 2026-09-15)
+# mi_matrix corpus — expected-fail manifest (v85 2026-09-15)
+
+## Async concerns wave (v85 2026-09-15)
+
+Track 2 + Track 3 concerns wave (`d7ea6667`): the compiler await-site child
+bump rounds `used` up to 8 before adding `fsz` (mirrors `std.async.contextAlloc`)
+and `-fsafe` `@asyncInit` now traps when a compile-time-known `buf.len` is below
+`@asyncFrameSize(fn)`. Self-emission fixed point moved
+`7b515420f749604c1765c2b1edd0d654` → **`027377296b2e38402ff8470f5c429eb8`**
+(two-hop closure `hop1 == hop2`); seed **v18 → v19** (archive md5
+`a9ded441846f54f1d02373d3f4da9142` → `23a16154e83736cf6b636685396a124a`).
+
+Corpus `-s0` universe **612 dirs** = **571 OK / 37 GREEN / 4 FAIL / 0 ICE /
+0 CRASH**; `-ffast` == `-fsafe` zero-asymmetric. Vs the v84 manifest
+(611 = 571 OK / 37 GREEN / 3 FAIL) the **+1 new dir is
+`async_step_nonlast_xmod`**, an **expected-fail** (FAIL(gcc)): the coroutine
+lives in a NON-LAST module and `@asyncInit` references `__Z98Step_caller`, which
+the emitter never emits (synthesized steps are appended after the module loop;
+the C emitter consumes only contiguous per-module runs), so `main_*.c` fails gcc
+with `'zF_4970EAC2___Z98Step_caller' undeclared`. The emitter fix is **Track 4**;
+the fixture is written now so it lands with it. The 611 common dirs are
+class-identical (GREEN set + the 3-FAIL emission-inspection set byte-identical).
+
+Changed fixtures (all still OK): `async_pool_xmod` root buffer `64 → 80`
+(`level1` frame 80); `async_suspend_store_xmod` root buffer `64 → 80` (`worker`
+frame 80); `async_await_xmod` root buffer `128 → 72` + `@asyncFrameSize(caller)`
+pin (verified 72); `async_libctx_mix_xmod` comment only (documents the
+last-imported-module placement that dodges the emission gap).
 
 ## Cross-track async ABI fix — Rule A (v84 2026-09-15)
 

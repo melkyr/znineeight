@@ -205,6 +205,16 @@ resolves umbrella §16.1's step/scheduler item.
   `pool_base = ctx + 16` 8-aligned, so allocated child frames holding
   `f64`/`u64` members are correctly aligned. Fixtures back the pool with a
   `[N]u64` array (or equivalent) to guarantee the alignment.
+- **`-fsafe` root-buffer bounds check (Concern 2b, landed 2026-09-15).** Under
+  `-fsafe` the `@asyncInit(ctx, buf, fn, args)` lowering emits
+  `check_trap{kind=7}` that traps when `buf.len < @asyncFrameSize(fn)` and both
+  are compile-time known — the caller passed a pointer to a concrete `[N]u8`
+  array, so the byte length is recovered from the pointee type
+  (`typeRegistryArrayByteSize`). A `[]u8`/`[*]u8` buffer has no compile-time
+  length, so the check is skipped; `-ffast` emission is unchanged. This pins the
+  "`buf` is at least `@asyncFrameSize(fn)`" precondition at runtime for the
+  common array-buffer case. The check exposed and fixed two undersized root
+  buffers (`async_pool_xmod`, `async_suspend_store_xmod`: frame 80, buf 64→80).
 - **Per-task Context reset (M3).** A `Context` is per-task; `@asyncInit` sets
   `used = 0` and `oom = 0` on each call. Because `oom` is sticky for the pool's
   lifetime, reusing a Context after an exhaustion without re-`contextInit` (or

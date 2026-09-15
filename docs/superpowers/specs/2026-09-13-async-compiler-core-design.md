@@ -784,6 +784,13 @@ evidence in `.superpowers/sdd/task-ASYNCTRACK2-report.md` `## Task 8 (re-run 2)`
 > **`7b515420f749604c1765c2b1edd0d654`** (seed **v18**, archive md5
 > `a9ded441846f54f1d02373d3f4da9142`). The §4 header contract above is the
 > canonical cross-track ABI.
+>
+> **Concerns-wave supersession (2026-09-15, HEAD `d7ea6667`).** The compiler
+> await-site bump now rounds `used` up to 8 before adding `fsz` (matching
+> `std.async.contextAlloc`), and `-fsafe` `@asyncInit` traps when a
+> compile-time-known `buf.len` is below `@asyncFrameSize(fn)`. The current fixed
+> point is therefore **`027377296b2e38402ff8470f5c429eb8`** (seed **v19**,
+> archive md5 `23a16154e83736cf6b636685396a124a`).
 
 - **Fixed point:** `f5ee84800dd32d7c440bb383c10edb55` (the `-ffast` binary;
   two-hop closure `hop1 == hop2` from the committed seed v15

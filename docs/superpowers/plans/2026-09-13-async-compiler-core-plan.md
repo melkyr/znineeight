@@ -2144,6 +2144,14 @@ point moved `f5ee84800dd32d7c440bb383c10edb55` → **`7b515420f749604c1765c2b1ed
 (two-hop closure `hop1 == hop2`); seed rotated v17 → **v18**; `EXPECTED_FAIL.md`
 v83 → v84; corpus 610 → 611 = 571 OK / 37 GREEN / 3 FAIL.
 
+**Concerns wave (2026-09-15, HEAD `d7ea6667`).** The fixed point moved again
+`7b515420f749604c1765c2b1edd0d654` → **`027377296b2e38402ff8470f5c429eb8`**
+(compiler await-site 8-aligns `used`; `-fsafe` `@asyncInit` frame-size bounds
+check). Seed rotated v18 → **v19** (archive md5
+`23a16154e83736cf6b636685396a124a`); `EXPECTED_FAIL.md` v84 → v85; corpus
+611 → 612 = 571 OK / 37 GREEN / 4 FAIL — the +1 is the new expected-fail
+`async_step_nonlast_xmod` (the Track-4 multi-module step-emission gap).
+
 ## Amendable note
 
 This plan is amendable in place. Amendments record the reason, the affected task, and the re-verified baseline; do not rotate the seed or bump `EXPECTED_FAIL` outside Task 8.

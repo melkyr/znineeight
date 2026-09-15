@@ -7,12 +7,15 @@
 // allocated from the same bump pointer could overlap.
 //
 // `main` imports `std_async.zig` directly (the library path) and drives the
-// coroutine in `co.zig`. `co.zig` is imported after the std module so it is the
+// coroutine in `co.zig`. `co.zig` is deliberately imported LAST so it is the
 // last-emitted module: the compiler's synthesized `__Z98Step_*` functions are
 // appended to the LIR stream after the module loop, and the C emitter walks
 // functions in contiguous per-module runs, so only a step owned by the final
-// module is emitted. (Single-module @asyncInit also works; a step in a non-last
-// module is dropped — a separate, pre-existing multi-module emission gap.)
+// module is emitted. This fixture dodges the multi-module step-emission gap on
+// purpose (it is a Rule A regression, not a multi-module test). The gap itself
+// is pinned by the EXPECTED-FAIL fixture `async_step_nonlast_xmod`, which puts
+// the coroutine in a non-last module and fails to compile. The emitter fix is
+// Track 4.
 //
 // Sequence: `contextInit` sizes the pool; `@asyncInit` resets `used`/`oom`;
 // `contextAlloc(8)` hands out the library frame at `ctx+16` and advances `used`
