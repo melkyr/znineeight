@@ -97,6 +97,8 @@ pub fn classifyCoercion(reg: *type_mod.TypeRegistry, source: TypeId, target: Typ
     if (source == target) return CoercionKind.none;
     var src = reg.types_items[@intCast(usize, source)];
     var tgt = reg.types_items[@intCast(usize, target)];
+    if (src.kind == type_mod.TypeKind.noreturn_type) return CoercionKind.none;
+    if (src.kind == type_mod.TypeKind.undefined_type) return CoercionKind.none;
 
     if (src.kind == type_mod.TypeKind.integer_literal_type and type_mod.typeRegistryIsNumeric(reg, target)) return CoercionKind.int_literal_coerce;
 

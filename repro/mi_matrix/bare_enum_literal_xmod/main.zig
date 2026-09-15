@@ -1,16 +1,18 @@
-// bare_enum_literal_xmod — RUNTIME-gated RED fixture (compile-gate OK, run PANIC).
+// bare_enum_literal_xmod — RUNTIME-GREEN since Task 0m (was a runtime-RED declared gap).
 //
-// Task 0c-reported residual gap (declared here per the standing declare-every-gap rule):
-// a BARE plain-enum literal in VALUE position is mis-lowered. `var c: C = .A;` followed by
-// `@enumToInt(c)` yields a garbage tag (Task 0c probe p16 printed 2 for .A and 8 for .B;
-// passing .A/.B as arguments printed 8/10), and a switch over a global initialized with a
-// bare literal takes the wrong prong (p20 printed 20 for .A). `@intToEnum(C, 0/1)` is
-// correct, which is why every S19/S20 fixture drives tags through @intToEnum.
+// Task 0c-reported residual gap (originally declared here per the standing
+// declare-every-gap rule): a BARE plain-enum literal in VALUE position was
+// mis-lowered. `var c: C = .A;` followed by `@enumToInt(c)` yielded a garbage tag
+// (Task 0c probe p16 printed 2 for .A and 8 for .B; passing .A/.B as arguments
+// printed 8/10), and a switch over a global initialized with a bare literal took
+// the wrong prong (p20 printed 20 for .A). `@intToEnum(C, 0/1)` was correct, which
+// is why every S19/S20 fixture drives tags through @intToEnum.
 //
-// RED today: dump rc=0 / gcc-clean / link rc=0 / run rc=133 (assert trap). GREEN when the
-// bare-enum-literal value-position lowering is fixed (out of Task 0f's S20/S21 scope).
-//
-// This is a DISTINCT defect from the string->slice gaps; it is declared (not fixed) here.
+// RESOLVED by Task 0m family D: `semanticAnalyzerResolveEnumLiteral` now honors a
+// plain `enum_type` expected type (records the member value in `enum_value_table`
+// and resolves the literal to that enum), so the value-position lowering is
+// correct. Runtime: dump rc=0 / gcc-clean / link rc=0 / run rc=0 (stdout `O`).
+// Previously run rc=133 (assert trap).
 const std = @import("std");
 
 const C = enum { A, B };

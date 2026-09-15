@@ -1152,6 +1152,8 @@ pub fn typeRegistryIsAssignable(self: *TypeRegistry, source: TypeId, target: Typ
     if (source == target) return true;
     var src = self.types_items[@intCast(usize, source)];
     var tgt = self.types_items[@intCast(usize, target)];
+    if (src.kind == TypeKind.undefined_type) return true;
+    if (src.kind == TypeKind.noreturn_type) return true;
     if (src.kind == TypeKind.integer_literal_type and typeRegistryIsNumeric(self, target)) return true;
     if (src.kind == TypeKind.integer_literal_type and target == TYPE_C_CHAR) return true;
     if (typeRegistryIsInteger(self, source) and typeRegistryIsInteger(self, target) and source != TYPE_INT_LIT) {
@@ -1171,7 +1173,6 @@ pub fn typeRegistryIsAssignable(self: *TypeRegistry, source: TypeId, target: Typ
             var tgt_f: FnPayload = self.fn_items[@intCast(usize, bt.payload_idx)];
             if (src_f.return_type == tgt_f.return_type
                 and src_f.params_count == tgt_f.params_count
-                and src_f.is_extern == tgt_f.is_extern
                 and (src_f.flags_packed & @intCast(u8, 1)) == (tgt_f.flags_packed & @intCast(u8, 1))
                 and (src_f.flags_packed & @intCast(u8, 2)) == (tgt_f.flags_packed & @intCast(u8, 2)))
             {
@@ -1193,7 +1194,9 @@ pub fn typeRegistryIsAssignable(self: *TypeRegistry, source: TypeId, target: Typ
     if (src.kind == TypeKind.error_union_type and tgt.kind == TypeKind.error_union_type) {
         var eu_src: EUPayload = self.eu_items[@intCast(usize, src.payload_idx)];
         var eu_tgt: EUPayload = self.eu_items[@intCast(usize, tgt.payload_idx)];
-        if (eu_src.error_set == eu_tgt.error_set) {
+        var es_ok: bool = eu_src.error_set == eu_tgt.error_set;
+        if (!es_ok) es_ok = errorSetIsSubset(self, eu_src.error_set, eu_tgt.error_set);
+        if (es_ok) {
             return typeRegistryIsAssignable(self, eu_src.payload, eu_tgt.payload);
         }
     }
@@ -1301,7 +1304,41 @@ pub fn typeRegistryIsAssignable(self: *TypeRegistry, source: TypeId, target: Typ
         if (opt_ty.kind == TypeKind.ptr_type) return typeRegistryIsAssignable(self, source, opt.payload);
     }
     if ((source == TYPE_U8 and target == TYPE_C_CHAR) or (source == TYPE_C_CHAR and target == TYPE_U8)) return true;
+    if (src.kind == TypeKind.tuple_type and tgt.kind == TypeKind.array_type) {
+        var tup: TuplePayload = self.tup_items[@intCast(usize, src.payload_idx)];
+        var arr: ArrayPayload = self.array_items[@intCast(usize, tgt.payload_idx)];
+        if (@intCast(u32, tup.elems_count) == arr.length) {
+            var ok: bool = true;
+            var k: u16 = 0;
+            while (k < tup.elems_count) : (k += 1) {
+                if (!typeRegistryIsAssignable(self, self.xt_items[@intCast(usize, tup.elems_start + @as(u32, k))], arr.elem)) { ok = false; break; }
+            }
+            if (ok) return true;
+        }
+    }
     return false;
+}
+
+pub fn errorSetIsSubset(self: *TypeRegistry, src: TypeId, tgt: TypeId) bool {
+    if (src == tgt) return true;
+    if (src == @intCast(u32, 0)) return true;
+    if (tgt == @intCast(u32, 0)) return true;
+    if (@intCast(usize, src) >= self.types_len) return false;
+    if (@intCast(usize, tgt) >= self.types_len) return false;
+    var sty = self.types_items[@intCast(usize, src)];
+    var tty = self.types_items[@intCast(usize, tgt)];
+    if (sty.kind != TypeKind.error_set_type) return false;
+    if (tty.kind != TypeKind.error_set_type) return false;
+    if (@intCast(usize, sty.payload_idx) >= self.es_len) return false;
+    var sp = self.es_items[@intCast(usize, sty.payload_idx)];
+    var sstart: usize = @intCast(usize, sp.tags_start);
+    var scount: usize = @intCast(usize, sp.tags_count);
+    if (sstart + scount > self.xn_len) return false;
+    var i: usize = 0;
+    while (i < scount) : (i += 1) {
+        if (typeRegistryErrorSetMemberIndex(self, tgt, self.xn_items[sstart + i]) == @intCast(u32, 0xFFFFFFFF)) return false;
+    }
+    return true;
 }
 
 pub fn canLiteralFitInType(value: i64, target: u32) bool {

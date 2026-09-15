@@ -716,7 +716,7 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
         var ptr_s: []const u8 = "ptr";
         var ptr_id = interner_mod.stringInternerIntern(self.interner, ptr_s);
         if (field_name_id == ptr_id) {
-            var pty = type_mod.typeRegistryGetOrCreatePtr(self.registry, sp.elem, false);
+            var pty = type_mod.typeRegistryGetOrCreateManyPtr(self.registry, sp.elem, (base_ty.flags & @intCast(u8, 1)) != @intCast(u8, 0));
             var fsp: []const u8 = "FSP:PTR\n"; pal_mod.markerWrite(fsp);
             rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, pty);
             return pty;
@@ -1215,6 +1215,8 @@ fn semanticAnalyzerResolveComparison(self: *SemanticAnalyzer, node_idx: u32, op_
     if (lhs == rhs) {
         if (lhs == type_mod.TYPE_BOOL) { var cp5: []const u8 = "CPB"; pal_mod.markerWrite(cp5); return type_mod.TYPE_BOOL; }
         if (type_mod.typeRegistryIsPointer(self.registry, lhs)) { var cp6: []const u8 = "CPB"; pal_mod.markerWrite(cp6); return type_mod.TYPE_BOOL; }
+        var lk = self.registry.types_items[@intCast(usize, lhs)].kind;
+        if (lk == type_mod.TypeKind.enum_type) { var cp7: []const u8 = "CPB"; pal_mod.markerWrite(cp7); return type_mod.TYPE_BOOL; }
     }
     var cpv: []const u8 = "CPVl"; pal_mod.markerWrite(cpv); var cpv_lb: [10]u8 = undefined; var cpv_ll = itoa_mod.itoa(lhs, cpv_lb[0..]); var cpv_ls: usize = @intCast(usize, 9) - @intCast(usize, cpv_ll); pal_mod.markerWrite(cpv_lb[cpv_ls..@intCast(usize, 9)]); var cpv_rh: []const u8 = "r"; pal_mod.markerWrite(cpv_rh); var cpv_rb: [10]u8 = undefined; var cpv_rl = itoa_mod.itoa(rhs, cpv_rb[0..]); var cpv_rs: usize = @intCast(usize, 9) - @intCast(usize, cpv_rl); pal_mod.markerWrite(cpv_rb[cpv_rs..@intCast(usize, 9)]); var cpv_ih: []const u8 = "n"; pal_mod.markerWrite(cpv_ih); var cpv_ib: [10]u8 = undefined; var cpv_il = itoa_mod.itoa(node.child_0, cpv_ib[0..]); var cpv_is: usize = @intCast(usize, 9) - @intCast(usize, cpv_il); pal_mod.markerWrite(cpv_ib[cpv_is..@intCast(usize, 9)]); var cpv_nl: []const u8 = "\n"; pal_mod.markerWrite(cpv_nl);
     return type_mod.TYPE_VOID;
@@ -1643,14 +1645,17 @@ fn semanticAnalyzerResolveIfExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     if (ie_exp != @intCast(u32, 0) and ie_exp != type_mod.TYPE_VOID) {
         var ie_then_str: bool = then_type != type_mod.TYPE_NORETURN and isStringLiteralSliceCoercion(coercion_mod.classifyCoercion(self.registry, then_type, ie_exp));
         var ie_else_str: bool = else_type != type_mod.TYPE_NORETURN and isStringLiteralSliceCoercion(coercion_mod.classifyCoercion(self.registry, else_type, ie_exp));
-        var ie_then_ok: bool = then_type == ie_exp or then_type == type_mod.TYPE_NORETURN or ie_then_str;
-        var ie_else_ok: bool = else_type == ie_exp or else_type == type_mod.TYPE_NORETURN or ie_else_str;
-        if ((ie_then_str or ie_else_str) and ie_then_ok and ie_else_ok) {
-            if (ie_then_str) tryRecordCoercion(self, node.child_1, then_type, ie_exp);
-            if (ie_else_str) tryRecordCoercion(self, node.child_2, else_type, ie_exp);
+        var ie_then_ok: bool = then_type == ie_exp or then_type == type_mod.TYPE_NORETURN or ie_then_str
+                                or type_mod.typeRegistryIsAssignable(self.registry, then_type, ie_exp);
+        var ie_else_ok: bool = else_type == ie_exp or else_type == type_mod.TYPE_NORETURN or ie_else_str
+                                or type_mod.typeRegistryIsAssignable(self.registry, else_type, ie_exp);
+        if (ie_then_ok and ie_else_ok) {
+            if (then_type != ie_exp) tryRecordCoercion(self, node.child_1, then_type, ie_exp);
+            if (else_type != ie_exp) tryRecordCoercion(self, node.child_2, else_type, ie_exp);
             rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, ie_exp);
             return ie_exp;
         }
+
     }
     if (then_type == else_type) { var sif_m: []const u8 = "SIF:1N"; pal_mod.markerWriteInt(sif_m, node_idx); var sif_tm: []const u8 = "T"; pal_mod.markerWriteInt(sif_tm, then_type); var sif_nl: []const u8 = " "; pal_mod.markerWrite(sif_nl); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type; }
     if (then_type == type_mod.TYPE_NORETURN) { var sif2m: []const u8 = "SIF:2N"; pal_mod.markerWriteInt(sif2m, node_idx); var sif2tm: []const u8 = "T"; pal_mod.markerWriteInt(sif2tm, else_type); var sif2nl: []const u8 = " "; pal_mod.markerWrite(sif2nl); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, else_type); return else_type; }
@@ -1733,6 +1738,19 @@ fn semanticAnalyzerResolveEnumLiteral(self: *SemanticAnalyzer, node_idx: u32) u3
                 var elu_msg: []const u8 = "unknown enum literal member";
                 _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3009_UNKNOWN_ENUM_LITERAL_MEMBER)), self.source_file_id, sp, ep, elu_msg);
                 return type_mod.TYPE_VOID;
+            } else if (top_ty.kind == type_mod.TypeKind.enum_type) {
+                var enp2 = self.registry.en_items[@intCast(usize, top_ty.payload_idx)];
+                var estart2: usize = @intCast(usize, enp2.members_start);
+                var ecount2: usize = @intCast(usize, enp2.members_count);
+                var emi2: usize = 0;
+                while (emi2 < ecount2) : (emi2 += 1) {
+                    var member2 = self.registry.em_items[estart2 + emi2];
+                    if (member2.name_id == n) {
+                        hash_mod.u32ToU32MapPut(self.enum_value_table, node_idx, @intCast(u32, member2.value));
+                        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, top);
+                        return top;
+                    }
+                }
             }
         }
     }
@@ -2037,7 +2055,7 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
     self.current_switch_cond_tu = @intCast(u32, 0);
     if (has_else == @intCast(u8, 0)) {
     }
-    if (unified == @intCast(u32, 0)) unified = type_mod.TYPE_VOID;
+    if (unified == @intCast(u32, 0)) unified = type_mod.TYPE_NORETURN;
     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, unified);
     var swu_m: []const u8 = "SWU:n"; pal_mod.markerWriteInt(swu_m, node_idx); var swu_tm: []const u8 = "SWU:t"; pal_mod.markerWriteInt(swu_tm, unified);
     self.switch_depth -= @intCast(u32, 1);
@@ -2185,6 +2203,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
         result = type_mod.TYPE_VOID;
     } else if (node.kind == AstKind.builtin_call) {
         var ec = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
+        var cva: []const u8 = "@cVaArg";
         if (node.child_0 == self.size_of_name_id or node.child_0 == self.align_of_name_id or node.child_0 == self.offset_of_name_id or node.child_0 == self.bit_size_of_name_id or node.child_0 == self.bit_offset_of_name_id) {
             if (ec.len >= @intCast(usize, 1)) {
                 var so_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id };
@@ -2321,6 +2340,12 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                 self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), pc3049);
             if (ec.len >= @intCast(usize, 1)) { _ = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 0)]); }
             result = type_mod.TYPE_UNDEFINED;
+        } else if (semanticAnalyzerBuiltinNameEq(self, node.child_0, cva)) {
+            if (ec.len >= @intCast(usize, 2)) {
+                _ = semanticAnalyzerResolveExpr(self, ec[0]);
+                var cva_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id };
+                result = type_resolver.resolveTypeExprFull(&cva_env, ec[1], @intCast(u32, 0));
+            } else { result = type_mod.TYPE_VOID; }
         } else if (ec.len >= @intCast(usize, 2)) {
             if (semanticAnalyzerIsTypeValueCast(self, node.child_0)) {
                 var tv_src = semanticAnalyzerResolveExpr(self, ec[@intCast(usize, 1)]);
@@ -2349,9 +2374,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                 if (e2i_ty.kind == type_mod.TypeKind.enum_type) {
                     var e2i_bt = type_mod.typeRegistryEnumBackingType(self.registry, e2i_arg);
                     if (e2i_bt != type_mod.TYPE_UNDEFINED and @intCast(usize, e2i_bt) < self.registry.types_len) {
-                        if (type_mod.typeRegistryEnumHasExplicitBacking(self.registry, e2i_arg) and type_mod.typeRegistryIsUnsigned(self.registry, e2i_bt)) {
-                            e2i_res = e2i_bt;
-                        }
+                        e2i_res = e2i_bt;
                     }
                 }
             }

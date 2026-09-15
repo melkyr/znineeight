@@ -1,4 +1,57 @@
-# mi_matrix corpus — expected-fail manifest (v93 2026-09-15)
+# mi_matrix corpus — expected-fail manifest (v94 2026-09-15)
+
+## Task 0m (F) — fix the false-positive `warning[3000]` `(a)` families (v94 2026-09-15)
+
+Track-4 Task 0m applies the Task-0l fix set so the **48** `(a)` valid-Z98
+`warning[3000]` false positives no longer warn. **The 12 `(b)` invalid-Zig cases
+are untouched** (their hard-error promotion is Task 0q, LAST). **No re-baseline;
+seed NOT rotated** (the fixed point MOVES; the 4-MD5/seed re-baseline is a later
+task per the S25 ruling). Full report:
+`.superpowers/sdd/2026-09-13-coroutine-integration-plan/task-0m-report.md`.
+
+Edits: 12 per Task 0l across `sf/src/type_registry.zig` (C, E, F1, H, I + the
+`errorSetIsSubset` helper), `sf/src/coercion.zig` (`undefined`/`noreturn` ->
+`none`), `sf/src/semantic_analyzer.zig` (A, B, D, F2, G, J, K). One correction to
+the 0l plan: the inferred anonymous error set is **not** a real `error_set_type`
+— `!T` is parsed with `error_set == 0` (`type_resolver.zig:920-931`) — so the
+family-I helper treats `error_set == 0` (either side) as an unknown/inferred set
+that is assignable. The `(b)` non-subset `eu_assign_incompat_errorset` keeps real
+sets and still warns.
+
+Measured post-0m (compiler built from the new `sf/src` via the committed seed,
+3-hop closure `e19a843aa9505a35aac1ce3e63bb7e68`):
+
+- pinned census `w3000_census.sh <zig1> repro/mi_matrix/w3000_fp_pins.list`:
+  **39 dirs / 0 `warning[3000]`** (exit 0) — every pinned `(a)` dir cleared.
+- full corpus: **659 dirs / 5 `warning[3000]`** — exactly the 5 `(b)` corpus dirs
+  (`eu_assign_incompat_errorset`, `ptr_scalar_to_manyptr_xmod`,
+  `typealias_arr_elem_mismatch_xmod`, `typealias_arr_len_mismatch_xmod`,
+  `w3000_enum_to_int_xmod`). Pre-0m was 55 (50 in the pinned set).
+- self-compile `warning[3000]`: **19 -> 7** = the 7 `(b)` enum->int sites
+  (`semantic_analyzer.zig:1190,1197`; `lower.zig:3093,3618,3768,3771,3892`).
+- corpus class map: **unchanged** — the new compiler's per-dir class list is
+  byte-identical to the pre-0m reference (`/tmp/t4i_post/zig1_5_clean`) under the
+  same classifier. (The absolute counts read `616 OK / 20 GREEN / 23 FAIL` under
+  `/tmp/corpus_classify.sh`, which labels `nc==0 & no error[3000]` as FAIL; the
+  0l v93 counts `616/37/6` use the GREEN=any-`nc==0` definition. Both agree the
+  6 gcc-fail dirs are unchanged: `array_of_slices_literal_xmod`,
+  `bareptr_to_slice_ctx_xmod`, the 3 `callconv_*` emission-inspection dirs,
+  `nonliteral_ptr_to_slice_xmod`.)
+- runtime: the 39 pinned fixtures were run under both compilers; 34 are
+  byte-identical in rc+stdout, 4 are the `callconv_*` emission-inspection dirs
+  (same build-fail/no-build under both), and **1 changed** — see below.
+
+### Correction to Task 0l: family D also fixes the `bare_enum_literal_xmod` runtime
+
+Task 0l (concern 4) expected the family-D fix to clear only the `warning[3000]`
+and to leave the bare-enum-literal value-position mis-lowering RED. It does not:
+the `enum_type` expected-type arm in `semanticAnalyzerResolveEnumLiteral` now
+records the member value in `enum_value_table` and resolves the literal to the
+expected enum type, so the value-position lowering is correct too.
+`repro/mi_matrix/bare_enum_literal_xmod` is now **runtime-GREEN** (run rc=0,
+stdout `O`) — previously rc=133 (assert trap). This is a strict improvement (the
+fixture was designed to go GREEN when the lowering was fixed); no residual.
+
 
 ## Task 0l (I) — false-positive `warning[3000]` fix set + pin mechanism (v93 2026-09-15)
 
@@ -400,7 +453,7 @@ manifest** (no longer compile-fails).
 | fixture | class | evidence |
 |---|---|---|
 | `array_of_slices_literal_xmod` | compile-FAIL | dump rc=0 (5 `.c`), gcc FAIL `error: assignment to expression with array type` (array-of-slices literal `[2][]const u8`) |
-| `bare_enum_literal_xmod` | runtime-RED, corpus OK | dump rc=0 / gcc-clean / link rc=0 / run rc=133; a bare plain-enum literal in value position is mis-lowered (`var c: C = .A` → wrong `@enumToInt`; a switch over a bare-literal global takes the wrong prong). Distinct from S20/S21; out of Task 0f scope. |
+| `bare_enum_literal_xmod` | **RESOLVED by Task 0m (v94)** — runtime-GREEN | Task 0m family D resolves the bare plain-enum literal to the expected enum type and records its member value, so the value-position lowering is correct: run rc=0, stdout `O` (was run rc=133). The historical v88 text follows: dump rc=0 / gcc-clean / link rc=0 / run rc=133; a bare plain-enum literal in value position is mis-lowered (`var c: C = .A` → wrong `@enumToInt`; a switch over a bare-literal global takes the wrong prong). Distinct from S20/S21; was out of Task 0f scope. |
 
 Reconciliation: post-Task-0f corpus **637 = 596 OK / 37 GREEN / 4 FAIL / 0 ICE / 0
 CRASH**. The 4 FAILs = `array_of_slices_literal_xmod` (the Task 0c compile-gap above) +
