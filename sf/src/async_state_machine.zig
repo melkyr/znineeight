@@ -440,7 +440,7 @@ fn emitAwait(b: *Build, blk: u32, cd: lir_mod.CallDirectData, state: u32, alloc_
     var ctx = loadField(b, blk, ctx_off, ptrVoid(reg));
     // (2) Task 7 pool accounting. Inline-read the Context header
     // (`used@0`, `capacity@1*usize`, sticky `oom@2*usize`; pool base ctx+4*usize).
-    // Exhaustion (`used + size > capacity`) sets `oom` and takes the null/error
+    // Exhaustion (`used_r + size > capacity`, used_r = used rounded to 8) sets `oom` and takes the null/error
     // terminal path; otherwise the child is bump-allocated in `alloc_blk`.
     var used = loadFieldBase(b, blk, ctx, CTX_USED_OFF, type_mod.TYPE_USIZE);
     var capacity = loadFieldBase(b, blk, ctx, CTX_CAP_OFF, type_mod.TYPE_USIZE);
@@ -482,7 +482,7 @@ fn emitAwait(b: *Build, blk: u32, cd: lir_mod.CallDirectData, state: u32, alloc_
     storeFieldBase(b, blk, ctx, CTX_OOM_OFF, type_mod.TYPE_U8, oom_new);
     emit(b, blk, LirInst{ .branch = .{ .cond = over, .then_bb = terminal_id, .else_bb = alloc_blk } });
     b.step.blocks.items[@intCast(usize, blk)].is_terminated = @intCast(u8, 1);
-    // (3) alloc_blk: bump allocation, child = pool + used; store used = need.
+    // (3) alloc_blk: bump allocation, child = pool + used_r (used rounded to 8); store used = need.
     // The pool base is the byte region immediately after the Context header.
     var ctx_int = newTemp(b, type_mod.TYPE_USIZE);
     emit(b, alloc_blk, LirInst{ .ptr_to_int = .{ .value = ctx, .result = ctx_int } });
