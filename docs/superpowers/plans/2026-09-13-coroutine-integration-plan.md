@@ -376,7 +376,7 @@ git commit -m "fix(std.async): addTask stores *Task + awaitTask non-suspending g
 ### Task 0m: Fix the false-positive `warning[3000]` type-checker cases (F)
 
 **Files:** `sf/src/semantic_analyzer.zig` (+ `c89_emit.zig` if the `and`/`or` type is set there) per Task 0l; Task 0l fixtures.
-**Produces:** the 48 `(a)` cases no longer warn (the checker returns the right types). The 11 `(b)` are still tolerated here (promotion is Task 0q, LAST). Self-compile stays gcc-clean with the `[3000]` count reduced by the fixed families; corpus warning census reflects only the fixed families. Fixed point MOVES. No re-baseline yet.
+**Produces:** the 48 `(a)` cases no longer warn (the checker returns the right types). The 12 `(b)` are still tolerated here (promotion is Task 0q, LAST). Self-compile stays gcc-clean with the `[3000]` count reduced by the fixed families; corpus warning census reflects only the fixed families. Fixed point MOVES. No re-baseline yet.
 - [ ] Apply the Task 0l fix; verify each fixture no longer warns; self-compile closure; corpus class map; commit.
 
 ### Task 0n: Migrate the compiler's implicit enum→int sites to `@enumToInt` (F)
@@ -399,12 +399,12 @@ git commit -m "fix(std.async): addTask stores *Task + awaitTask non-suspending g
 **Produces:** the +1360 `-Wincompatible-pointer-types` gone; warning gate back to the pre-`5b9208c7` 144 baseline; runtime byte-identical (Task 0i proved it). Fixed point MOVES.
 - [ ] Decay in emission; warning gate; runtime proof; corpus; commit.
 
-### Task 0q: Promote the 11 `(b)` invalid-Zig cases to hard `error[3000]` (F) — **LAST**
+### Task 0q: Promote the 12 `(b)` invalid-Zig cases to hard `error[3000]` (F) — **LAST**
 
-> Real Zig settles all 11 as invalid (langref coercion test suite: no `*T`→`[*]T`; no array elem/len coercion; no superset→subset error coercion; enum→int only via `@intFromEnum`/`@enumToInt`). This is the FINAL step; it must not precede 0m-0p.
+> Real Zig settles all 12 as invalid (langref coercion test suite: no `*T`→`[*]T`; no array elem/len coercion; no superset→subset error coercion; enum→int only via `@intFromEnum`/`@enumToInt`). This is the FINAL step; it must not precede 0m-0p.
 
 **Files:** `sf/src/semantic_analyzer.zig` (`:2984` var-decl, `:1872` assignment, `:1407-1430` return, `:1561` call-arg) — level 0 for the `(b)` shapes ONLY; `sf/src/type_registry.zig` (dedupe `:1257-1263`); the Task 0k/0i fixtures; `EXPECTED_FAIL.md`; `QUICK_REF.md` (4-MD5, after runtime proof).
-**Produces:** the 11 `(b)` shapes are hard `error[3000]` (0 `.c`); the 48 `(a)` are NOT caught (scoped); self-compile stays green (the 7 enum sites are already `@enumToInt` from 0n); the F-M4 fixture frontend-rejects. Fixed point MOVES; seed rotation at Task 6.
+**Produces:** the 12 `(b)` cases (7 self enum→int sites + 5 corpus dirs) are hard `error[3000]` (0 `.c`); the 48 `(a)` are NOT caught (scoped); self-compile stays green (the 7 enum sites are already `@enumToInt` from 0n); the F-M4 fixture frontend-rejects. Fixed point MOVES; seed rotation at Task 6.
 - [ ] Dedupe `type_registry.zig:1257-1263`; raise the 4 sites to level 0 **scoped to the `(b)` shapes**; verify the `(a)` corpus census is unchanged and self-compile is green; full corpus + warning gate + 4-MD5 + `CLOSEOUT OK`; commit.
 
 ### Task 1: Baseline, reference compiler, and pre-conversion golden captures

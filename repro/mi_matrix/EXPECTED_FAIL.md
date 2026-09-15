@@ -70,7 +70,7 @@ NOT moved to `(b)`.** `repro/field_store_tagged/main.zig` now stores
 fixture links/runs; the old `__bootstrap_print_int` extern was removed from the
 runtime in F4). It is a normal OK fixture (dump/gcc/link/run rc=0) and emits NO
 `warning[3000]`. Consequence: the `(a)` set is **48** (not 49), and Task 0q's
-`(b)` set stays **11**.
+`(b)` set is **12** (7 self enum→int sites + 5 corpus dirs; Task 0k said 11 — `w3000_enum_to_int_xmod` was uncounted).
 
 ## Task 0k (I) — warning classification: valid Z98 vs invalid Zig (v92 2026-09-15)
 
