@@ -120,22 +120,23 @@ pub const Task = struct {
 };
 
 pub const Scheduler = struct {
-    tasks: [*]Task,
+    tasks: [*]*Task,
     capacity: usize,
     count: usize,
     current: usize,
+    in_task: bool,
 };
 
-pub fn schedulerInit(tasks: []Task) Scheduler {
-    var s = Scheduler{ .tasks = tasks.ptr, .capacity = tasks.len, .count = 0, .current = 0 };
+pub fn schedulerInit(tasks: []*Task) Scheduler {
+    var s = Scheduler{ .tasks = tasks.ptr, .capacity = tasks.len, .count = 0, .current = 0, .in_task = false };
     return s;
 }
 
 pub fn addTask(s: *Scheduler, t: *Task) bool {
     if (s.count >= s.capacity) return false;
-    s.tasks[s.count] = t.*;
-    s.tasks[s.count].state = TaskState.ready;
-    s.tasks[s.count].has_waiting_on = false;
+    s.tasks[s.count] = t;
+    t.state = TaskState.ready;
+    t.has_waiting_on = false;
     s.count += 1;
     return true;
 }
@@ -155,7 +156,7 @@ fn allSettled(s: *Scheduler) bool {
 pub fn tick(s: *Scheduler) FrameError!void {
     var i: usize = 0;
     while (i < s.count) : (i += 1) {
-        var t: *Task = &s.tasks[i];
+        var t: *Task = s.tasks[i];
         var active: bool = true;
         if (t.state == TaskState.done) active = false;
         if (t.state == TaskState.cancelled) active = false;
@@ -174,7 +175,9 @@ pub fn tick(s: *Scheduler) FrameError!void {
         if (active) {
             s.current = i;
             t.state = TaskState.running;
+            s.in_task = true;
             var r: ?*void = @asyncResume(t.frame, t.arg);
+            s.in_task = false;
             if (t.ctx.oom) return error.OutOfFrame;
             if (r == null) {
                 t.state = TaskState.done;
@@ -200,10 +203,11 @@ pub fn waitAll(s: *Scheduler) FrameError!void {
 
 /// Suspend the currently-running task until `t` is done or cancelled.
 pub fn awaitTask(s: *Scheduler, t: *Task) void {
+    if (!s.in_task) @panic("std.async: awaitTask called from a non-suspending context");
     if (s.count == 0) {
         @panic("std.async: awaitTask called with no registered task");
     }
-    var cur: *Task = &s.tasks[s.current];
+    var cur: *Task = s.tasks[s.current];
     cur.state = TaskState.suspended;
     cur.waiting_on = t;
     cur.has_waiting_on = true;
@@ -219,7 +223,8 @@ pub fn cancelAll(s: *Scheduler) void {
     var i: usize = 0;
     while (i < s.count) : (i += 1) {
         if (s.tasks[i].state != TaskState.done) {
-            s.tasks[i].cancel_requested = true;
+            var t: *Task = s.tasks[i];
+            t.cancel_requested = true;
         }
     }
 }

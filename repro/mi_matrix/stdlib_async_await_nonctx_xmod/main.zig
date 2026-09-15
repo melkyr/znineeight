@@ -1,7 +1,10 @@
-// stdlib_async_oom_xmod — Track 3 std.async pool-exhaustion fixture.
-// contextAlloc of 1000 into a 16-byte pool sets sticky oom (line 1), and tick
-// surfaces error.OutOfFrame from the running task's context (line 2), not a
-// crash. GREEN: exact stdout 1 1 (RUNRC=0).
+// stdlib_async_await_nonctx_xmod — Track 4 S17 rejection fixture.
+//
+// `awaitTask` is coroutine-internal: calling it from a non-suspending context
+// (here `main`, with `in_task == false`) must trap instead of silently
+// corrupting `s.tasks[s.current]`.
+// Expected: dump rc=0, gcc/link rc=0, run rc!=0 with the panic text
+//   std.async: awaitTask called from a non-suspending context
 const std = @import("std");
 const sa = @import("std_async.zig");
 
@@ -13,11 +16,6 @@ fn stepNoop(f: *void, arg: ?*void) ?*void {
     return null;
 }
 
-fn p(v: i32) void {
-    std.io.printInt(v);
-    std.io.writeByte('\n');
-}
-
 pub fn main() void {
     var fr: Frame = Frame{ .step = stepNoop, .ticks = 0 };
     // [2]u64 is exactly 16 bytes and guarantees 8-alignment; contextInit
@@ -25,17 +23,11 @@ pub fn main() void {
     var storage: [2]u64 = undefined;
     var buf: []u8 = @ptrCast([*]u8, &storage)[0..16];
     var ctx = sa.contextInit(buf);
-    _ = sa.contextAlloc(ctx, 1000) catch 0;
-    p(@intCast(i32, if (ctx.oom) 1 else 0));
 
-    var pt: [1]*sa.Task = undefined;
-    var s = sa.schedulerInit(pt[0..]);
     var t = sa.Task{ .frame = @ptrCast(*void, &fr), .ctx = ctx, .state = sa.TaskState.ready, .cancel_requested = false, .result = @ptrCast(*void, &fr), .arg = @ptrCast(*void, @intToPtr(*void, 0)), .waiting_on = @ptrCast(*sa.Task, @intToPtr(*void, 0)), .has_waiting_on = false };
-    pt[0] = &t;
+    var pt: [1]*sa.Task = [1]*sa.Task{ &t };
+    var s = sa.schedulerInit(pt[0..]);
     _ = sa.addTask(&s, &t);
-    sa.tick(&s) catch {
-        p(1);
-        return;
-    };
-    p(0);
+
+    sa.awaitTask(&s, s.tasks[0]);
 }

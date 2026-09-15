@@ -37,11 +37,14 @@ pub fn main() void {
     var ctx0 = sa.contextInit(buf0);
     var ctx1 = sa.contextInit(buf1);
     var ctx2 = sa.contextInit(buf2);
-    var tasks: [3]sa.Task = undefined;
-    var s = sa.schedulerInit(tasks[0..]);
+    var pt: [3]*sa.Task = undefined;
+    var s = sa.schedulerInit(pt[0..]);
     var t0 = sa.Task{ .frame = @ptrCast(*void, &f0), .ctx = ctx0, .state = sa.TaskState.ready, .cancel_requested = false, .result = @ptrCast(*void, &r0), .arg = @ptrCast(*void, @intToPtr(*void, 0)), .waiting_on = @ptrCast(*sa.Task, @intToPtr(*void, 0)), .has_waiting_on = false };
     var t1 = sa.Task{ .frame = @ptrCast(*void, &f1), .ctx = ctx1, .state = sa.TaskState.ready, .cancel_requested = false, .result = @ptrCast(*void, &r1), .arg = @ptrCast(*void, @intToPtr(*void, 0)), .waiting_on = @ptrCast(*sa.Task, @intToPtr(*void, 0)), .has_waiting_on = false };
     var t2 = sa.Task{ .frame = @ptrCast(*void, &f2), .ctx = ctx2, .state = sa.TaskState.ready, .cancel_requested = false, .result = @ptrCast(*void, &r2), .arg = @ptrCast(*void, @intToPtr(*void, 0)), .waiting_on = @ptrCast(*sa.Task, @intToPtr(*void, 0)), .has_waiting_on = false };
+    pt[0] = &t0;
+    pt[1] = &t1;
+    pt[2] = &t2;
     _ = sa.addTask(&s, &t0);
     _ = sa.addTask(&s, &t1);
     _ = sa.addTask(&s, &t2);
