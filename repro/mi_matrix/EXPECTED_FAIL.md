@@ -1,4 +1,64 @@
-# mi_matrix corpus — expected-fail manifest (v79 2026-09-14)
+# mi_matrix corpus — expected-fail manifest (v80 2026-09-15)
+
+## Track 2 async compiler core closeout (v80 2026-09-15)
+
+Plan `2026-09-13-async-compiler-core-plan.md` (Track 2, async compiler core) is COMPLETE —
+Tasks 1–7 (suspension analysis, frame layout, state-machine lowering, builtins/diagnostics),
+the Task-8-regression I/F series Tasks 9/10 (kind-aware AST generic-walk fix), plus the Task-8
+closeout. Measurement compiler = the N-hop closure binary
+**`eda943dc1f77a48eae039e39ea4bfe04`** (`-ffast`), rebuilt from the committed seed **v14**
+`9e6c9faad0536191f28eb60c210a0a25` (hop1 == hop2). The new committed seed is **v15**
+(archive md5 `cd09877cbc373ad5c8801b93faccf188`, internal `zig1` md5 `eda943dc…`, `gen/`
+45 `.c` + 46 `.h` — the +3 module growth over v14's 42/43 is Track-2's
+`async_analysis`/`async_frame_layout`/`async_state_machine` modules).
+
+Corpus `-s0` universe **599 dirs** (`scripts/corpus/list_corpus_dirs.sh`) =
+**560 OK / 36 GREEN / 3 emission-inspection (expected standalone gcc-FAIL)**,
+`-ffast` == `-fsafe` **zero-asymmetric**. Vs the pre-Task-10 baseline (594 = 555 OK / 35 GREEN /
+4 FAIL) the ONLY class movements are the intended ones: `repro/tu_void_prong` FAIL→OK (the
+Task-3 `scanFunction` AST-walk OOM regression, fixed by Task 10), the three new
+`ast_walk_{capture_prong,error_set,subtree_break}_xmod` FAIL→OK, and
+`analyzer_for_body_xmod` OK→GREEN; the 5 new dirs are the Task-10 fixtures (the fourth,
+`ast_walk_for_index_xmod`, was already OK pre-fix — its interned index id did not collide —
+and stays OK). Zero unexpected movement on the other pre-existing dirs.
+
+### New GREEN/reject fixture (v80)
+
+| fixture | class | expected diagnostic |
+|---|---|---|
+| `analyzer_for_body_xmod` | GREEN | `error[3035]` double free (the enum member `ERR_2005_DOUBLE_FREE`'s auto-incremented value; the analyzer now descends into the `for` body, Task 10 Part 2) |
+
+### New OK fixtures (v80, Task 10)
+
+`ast_walk_capture_prong_xmod`, `ast_walk_for_index_xmod`, `ast_walk_error_set_xmod`,
+`ast_walk_subtree_break_xmod` — all `dump rc=0`, 4 `.c`, gcc `-m32 -std=c89 -O0 -Wall …` clean,
+self-contained link, `run rc=0`. (`repro/tu_void_prong` also returns OK.)
+
+### 4-MD5 gate rows + fixed point (v80)
+
+All eight 4-MD5 gate rows (default `-fsafe` + `-ffast`) are **UNCHANGED** from v79 and
+deterministic: `-fsafe` gol `e6afce418718f4adf2525956e17f6bc9` / lisp
+`a3ba58098357164d644d321015550874` / json `99514d39dcbfddd297ccd12e15a0cb78` / mud
+`07ec234e3f0214e2eb01aabad1676e0a`; `-ffast` gol `e023d3cd0bfb23346ac800725c5192f1` / lisp
+`21747e2acf177947ad499149bb3fdc98` / json `2f08bf260bf2b6813fa4d70ffbc88aa9` / mud
+`ac1579907ce84efa2f9014187070bf94`.
+
+- **Fixed point `eda943dc1f77a48eae039e39ea4bfe04`** (the `-ffast` binary; two-hop closure
+  `hop1 == hop2` from the committed seed v14 `9e6c9faa…`). Seed rotated **v14 → v15** via
+  `scripts/seed/archive_seed.sh` → archive md5 `cd09877cbc373ad5c8801b93faccf188`, internal
+  `zig1` md5 `eda943dc…`, `gen/` 45 `.c` + 46 `.h` (8,337,928 B), `lib/` 8 std `.zig`;
+  post-rotation `build_from_seed.sh` closure `hop1 == hop2 == eda943dc…`;
+  `check_emit_support.sh` 5/5; self-compile `-ffast` rc=0 / 48 `.c` / 0 `error[` / 0 PANIC;
+  strict `gcc -m32 -std=c89 -O3 -Wall -Wextra -fsyntax-only` 0 errors.
+
+### Async fixtures + guards (v80, all GREEN)
+
+9 async run fixtures (`async_await`, `_ret`, `_quick`, `_multi`, `async_suspend_store`,
+`async_frame`, `_branch`, `_args`, `async_pool`): dump rc=0 / 4 `.c` / gcc clean / link rc=0 /
+run rc=0; off-corpus `known_excluded/async_susp_markers` + `async_susp_xmod` likewise. Guards:
+`async_callgraph_xmod` rc=0/5c, `async_builtin_scope_xmod` rc=0/4c,
+`async_framesize_invalid_xmod` rc=2/1×`error[3046]`/0c, `async_fnptr_error_xmod`
+rc=2/1×`error[3017]`/0c.
 
 ## Win9x calling-convention final-review fix (v79 2026-09-14)
 

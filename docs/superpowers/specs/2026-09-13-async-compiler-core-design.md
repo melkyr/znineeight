@@ -699,3 +699,37 @@ preserved; ICE `3043` (`ERR_9001_ICE`, auto-incremented) must not shift.
 - The suspension-analysis pass and `suspending_fns`/`frame_sizes` side tables.
 - New corpus fixtures (`async_*_xmod`) and a moved compiler fixed point + rotated
   seed at closeout.
+
+---
+
+## 9. Closeout record (2026-09-15)
+
+**Status: COMPLETE** (spec status stays "draft, amendable in place"). Full gate
+evidence in `.superpowers/sdd/task-ASYNCTRACK2-report.md` `## Task 8 (re-run)`.
+
+- **Fixed point:** `eda943dc1f77a48eae039e39ea4bfe04` (the `-ffast` binary;
+  two-hop closure `hop1 == hop2` from the committed seed v14
+  `9e6c9faad0536191f28eb60c210a0a25`).
+- **Seed rotated v14 → v15:** archive md5 `cd09877cbc373ad5c8801b93faccf188`,
+  internal `zig1` md5 `eda943dc…`, `gen/` 45 `.c` + 46 `.h` (8,337,928 B), `lib/`
+  8 std `.zig`; post-rotation closure `hop1 == hop2 == eda943dc…`;
+  `check_emit_support.sh` 5/5.
+- **Diagnostics landed:** `ERR_3017 = 3017` (Track 1), `ERR_3018 = 3018`,
+  `ERR_3019 = 3019`, `ERR_3046 = 3046`, `WARN_3047 = 3047`, `ERR_3049 = 3049`
+  (Task 6b); the `@asyncFrameSize` / `@asyncInit` / `@asyncResume` /
+  `@asyncSuspend` builtins; P2 `asyncFrameSizeRun` (sole `frame_sizes` writer),
+  P3 `async_frame_layout`, and the `async_state_machine` LIR-to-LIR transform;
+  per-task LIFO child frames + `error.OutOfFrame`.
+- **Regression I/F series Tasks 9/10:** kind-aware `nodeChildIsNode` /
+  `nodeHasNodeExtraChildren` (`sf/src/ast.zig`) applied to all generic walkers
+  (fixes the `repro/tu_void_prong` OOM), plus the `analyzer.zig` for-loop-body
+  descent (`child_1`).
+- **Corpus `-s0` 599 dirs = 560 OK / 36 GREEN / 3 emission-inspection FAIL**,
+  `-ffast` == `-fsafe` zero-asymmetric; only the intended movements vs the
+  pre-Task-10 594-dir baseline (`tu_void_prong` FAIL→OK + the 5 Task-10 fixtures).
+- **4-MD5 gates unchanged** (all eight rows byte-identical to v79).
+- `repro/mi_matrix/EXPECTED_FAIL.md` bumped **v79 → v80**.
+
+Track 3 (`std.async`) consumes the produced surface; the Track-3/4 plan
+re-amendment (drop `Task.step` and every `step` parameter) remains the recorded
+pre-dispatch deferral (Amendment 7).
