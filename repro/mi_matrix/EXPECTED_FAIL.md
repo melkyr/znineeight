@@ -1,4 +1,68 @@
-# mi_matrix corpus — expected-fail manifest (v92 2026-09-15)
+# mi_matrix corpus — expected-fail manifest (v93 2026-09-15)
+
+## Task 0l (I) — false-positive `warning[3000]` fix set + pin mechanism (v93 2026-09-15)
+
+Track-4 Task 0l investigates the 49 `(a)` valid-Z98 `warning[3000]` false
+positives classified by Task 0k and produces the exact minimal fix set for
+Task 0m. **No `sf/src` change; no re-baseline** (reference = post-A1
+`958a5e0f8ce3f4121766789322c8da9b`). Full report:
+`.superpowers/sdd/2026-09-13-coroutine-integration-plan/task-0l-report.md`.
+
+Corpus universe grows **651 -> 659 dirs** (+8 Task-0l `w3000fp_*` fixtures, all
+OK class). Measured class map (post-A1 `958a5e0f`): **659 = 616 OK / 37 GREEN /
+6 FAIL** (the 651-dir baseline was 608/37/6; all 8 new fixtures are OK). FAIL set
+unchanged.
+
+### Pin mechanism — `scripts/corpus/w3000_census.sh`
+
+The gcc-based classifier keys on the gcc exit code, so a tolerated Z98
+`warning[3000]` (the program still compiles and runs) is invisible to it. Task 0l
+adds a compiler-stderr census:
+
+```
+bash scripts/corpus/w3000_census.sh <zig1> repro/mi_matrix/w3000_fp_pins.list
+```
+
+It runs the compiler under test over the pinned dirs, counts `warning[3000]`, and
+exits nonzero if any pinned dir warns. `repro/mi_matrix/w3000_fp_pins.list` is the
+contract list ("after Task 0m each pinned dir emits ZERO `warning[3000]`").
+Full-corpus mode (no pins arg / a missing pins file) prints the total census.
+
+**Measured pre-0m** (`958a5e0f`): full corpus **659 dirs, 56 `warning[3000]`**;
+the 39 pinned `(a)` dirs hold **50** of them. After Task 0m the pinned set must
+read 0, leaving the 5 `(b)` warnings + `repro/field_store_tagged` = 6.
+
+### Fix set (per `(a)` family — details + evidence in the 0l report)
+
+| family | root cause (file:line) | Task 0m change |
+|---|---|---|
+| A slice `.ptr` -> `[*]T` | `semantic_analyzer.zig:719` builds `*T` | `typeRegistryGetOrCreateManyPtr(..., (base_ty.flags & 1) != 0)` |
+| B `bool` from enum cmp / `and`/`or` | `semantic_analyzer.zig:1215-1218` returns `void` for enum==enum | return `bool` for `lhs == rhs` enum kinds |
+| C `undefined` -> any | `type_registry.zig:1151-1304` no `undefined` arm | `if (src.kind == undefined_type) return true` |
+| D bare enum literal + expected enum | `semantic_analyzer.zig:1706-1737` handles only tagged-union expected types | add `enum_type` expected arm |
+| E fn item -> fn ptr | `type_registry.zig:1174` requires `is_extern` equality | drop the `is_extern` equality term |
+| F1 `noreturn` init/assign | `type_registry.zig` no `noreturn` arm | `if (src.kind == noreturn_type) return true` (+ `classifyCoercion` -> none) |
+| F2 all-`noreturn` switch | `semantic_analyzer.zig:2040` materializes `void` | `if (unified == 0) unified = TYPE_NORETURN` |
+| G `if` with expected optional/EU | `semantic_analyzer.zig:1643-1653` honors expected type only for string prongs | accept any `typeRegistryIsAssignable` prong + record coercions |
+| H tuple literal -> array | `type_registry.zig` no tuple->array arm | element-count + element-wise assignability |
+| I error set -> superset | `type_registry.zig:1193-1199` requires exact set equality | subset check per tag |
+| J `@cVaArg` result type | `semantic_analyzer.zig:2359-2360` types it as arg 0 | resolve arg 1 as the result type |
+| K `@enumToInt` result type | `semantic_analyzer.zig:2350-2355` gated on explicit backing | return `typeRegistryEnumBackingType` for any enum |
+
+**One fix covers several families:** B alone clears both self sites
+(`semantic_analyzer.zig:1639-1640`, `c89_emit.zig:745`); F1 covers every
+`src=noreturn` corpus case; G covers all 12 `if` optional/EU cases.
+
+### `repro/field_store_tagged` — Task 0k classification CORRECTED
+
+Task 0k called this `(a)` and read its `source: type` note as "`@intCast` resolves
+its result as the `type` value". Task 0l disproves that: `source: type` is the
+`typeKindSrcStr`/`typeKindTgtStr` fallback (`diagnostics.zig:540-...`) for the
+unmapped `usize_type`; `@intCast(usize, 1)` is correctly typed `usize`, and
+`u.tag` is `u32` (`symbol_registrator.zig:148`), so the warning is a REAL
+same-width `usize -> u32` mismatch. Declared, not pinned; operator ruling needed
+(fix the fixture to `@intCast(u32, 1)`, or move to `(b)`, or rule `usize`~`u32`
+assignable). See the 0l report.
 
 ## Task 0k (I) — warning classification: valid Z98 vs invalid Zig (v92 2026-09-15)
 
