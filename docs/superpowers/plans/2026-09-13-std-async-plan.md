@@ -891,6 +891,50 @@ STOP-present the closeout: corpus counts, fixed-point md5 (unmoved), archive md5
 
 ---
 
+### Task 6: Track-3 alignment — `Context` layout (both branches; Track 3 decides)
+
+**Type:** decision/deferral (Track 3 owns it; **not** part of the five
+implementation tasks). This task records the Task-7 review finding **I1**
+(Context layout divergence) and the operator ruling: the compiler-core interim
+layout is canon until Track 3 decides. It is **docs-only**; no `sf/src` change.
+
+**Why.** The compiler core (Track 2, Task 7; commit `b23ca20a`) pinned the
+interim pool header `{ used @ ctx+0, capacity @ ctx+4, oom @ ctx+8, pool base
+= ctx+12 (DERIVED) }`. The std-async design originally named `{ pool@0,
+capacity@4, used@8, oom@12 }` (pool as a **stored** slice). The two are
+**incompatible**, and a cross-read silently corrupts memory (see the design §4
+WARNING). Track 3 must choose one before `std.async` interop.
+
+**Branches.**
+
+- **(a) `std.async.Context` adopts the compiler-core inline layout**
+  `{ used, capacity, oom; pool bytes follow }` (pool base derived). **Header
+  = 12 B** (`used` 4 + `capacity` 4 + `oom` 1 + 3 pad); `pool_base = ctx+12` is
+  **derivable**; the caller declares `var buf: [4096]u8 = undefined;` and the
+  Context sits at the **head** of that buffer. **Saves 4 bytes per context.**
+- **(b) the compiler core is revised to `{pool@0, capacity@4, used@8, oom@12}`.**
+  Matches the earlier std.arena-shaped design; the pool is a **stored slice**,
+  not derived. **Header = 16 B** (`pool` 4 + `capacity` 4 + `used` 4 + `oom` 1 +
+  3 pad) → **4 bytes more per context.**
+
+**Size arithmetic (verified).** (a) header 12 B vs (b) header 16 B → **(b) is 4
+bytes more per context**; the operator's claim is **CORRECT**.
+
+**Trade-off.** (a) makes it impossible for `pool_base` to diverge from the
+actual allocation and gives the compiler a fixed header shape it can rely on;
+(b) keeps the pool as a stored, inspectable slice (closer to the std.arena
+shape) at 4 B/context more and with a second source of truth for the pool base.
+**Track 3 decides**; this ruling does **not** decide it. The operator's
+recommendation is **(a)**.
+
+**Deliverable:** Track 3 amends `2026-09-13-std-async-design.md` §3.1/§4 (and
+the compiler-core spec if (b)) and records the chosen branch before dispatch.
+
+**Ordering:** resolve this **before Task 1**; Task 1's `Context` code block
+pins the old field order and must move to the chosen branch.
+
+---
+
 ## Self-Review
 
 **Spec coverage** (against `2026-09-13-std-async-design.md`):
@@ -900,7 +944,7 @@ STOP-present the closeout: corpus counts, fixed-point md5 (unmoved), archive md5
 - §3.4 scheduler semantics -> Task 2 `tick` + Task 3 `awaitTask`/`cancel`/`cancelAll`/`waitAll`; fixtures.
 - §3.5 error model -> Task 2 `stdlib_async_oom_xmod` (`error.OutOfFrame` from `tick`, no crash) and Task 3 `waitAll` returning `FrameError!void`.
 - §3.6 install surface -> Task 1 (`build_from_seed.sh`), Task 4 (`archive_seed.sh`, `build_zig1_5.sh`, `QUICK_REF`), Task 5 (seed rotation).
-- §4 Interfaces -> `StepFn`/`Context` frozen layout in Task 1; the Track 2 reconciliation is documented in the subspec §4/§7 and does not add a task here.
+- §4 Interfaces -> `StepFn`/interim `Context` layout in Task 1; the Track 2 reconciliation is documented in the subspec §4/§7 and is tracked by new Task 6 (Track-3 alignment).
 - §6 Testing -> the five fixtures, corpus sweep, `check_emit_support`, seed rotation (Tasks 1–3, 4, 5).
 - §7 Risks -> guarded by the Global Constraints (no optional struct field, no globals, two-file `sf/src` scope, install enumeration complete).
 
@@ -908,4 +952,4 @@ STOP-present the closeout: corpus counts, fixed-point md5 (unmoved), archive md5
 
 **Type/name consistency:** `TaskState`, `FrameError`, `StepFn`, `Context`, `contextInit`/`contextAlloc`/`contextMark`/`contextRelease`, `Task`, `Scheduler`, `schedulerInit`/`addTask`/`tick`/`suspend`/`awaitTask`/`cancel`/`cancelAll`/`waitAll`, `waiting_on`/`has_waiting_on`, `Task.step`, and the fixture names/paths/md5s are identical across the subspec, the module code blocks, and the commands. The Task 1 + Task 2 + Task 3 code blocks concatenate to the validated 182-line `std_async.zig`.
 
-**Amendable in place.** This plan is amendable: the fixtures use hand-written steps so it gates independently of Track 2; if Track 2's `__async_step_<f>` ABI or its Context access mechanism changes, update `StepFn`/the frozen Context layout and the `stdlib_async_*_xmod` fixtures in lockstep (and the subspec §4 reconciliation note).
+**Amendable in place.** This plan is amendable: the fixtures use hand-written steps so it gates independently of Track 2; if Track 2's `__async_step_<f>` ABI or its Context access mechanism changes, update `StepFn`/the interim Context layout and the `stdlib_async_*_xmod` fixtures in lockstep (and the subspec §4 reconciliation note).

@@ -98,10 +98,18 @@ pub const FrameError = error{OutOfFrame};
 // self-dispatch); it drives `@asyncResume(t.frame, t.arg)` instead.
 pub const StepFn = fn(frame: *void, arg: ?*void) ?*void;
 
+// Context (interim, compiler-core canon — NOT FINAL; see §4). The caller
+// declares `var buf: [4096]u8 = undefined;` and the Context sits at the HEAD
+// of that buffer; the pool bytes follow the 12-byte header:
+//   used     @ ctx+0   (usize)
+//   capacity @ ctx+4   (usize)
+//   oom      @ ctx+8   (u8 or bool)
+//   pool     @ ctx+12  (DERIVED — NOT a stored field; `pool_base = ctx + 12`)
+// `pool_base = ctx+12` being DERIVED (not stored) is itself a design decision:
+// it makes it impossible for the pool base to diverge from the allocation.
 pub const Context = struct {
-    pool: [*]u8,
-    capacity: usize,
     used: usize,
+    capacity: usize,
     oom: bool,
 };
 
@@ -166,10 +174,20 @@ resolves umbrella §16.1's step/scheduler item.
   `contextRelease(mark)` restores `used`. A child frame is allocated before
   driving the child `_step` and released exactly when that `_step` returns null
   (terminal), so LIFO holds naturally — no free list, no fragmentation.
-- **Caller-sized capacity.** `contextInit(pool)` fixes `capacity = pool.len`. The
-  caller chooses the pool size; the static frame size returned by
-  `@asyncFrameSize(fn)` **excludes** child frames (m1166), so the caller budgets
-  for the deepest active chain.
+- **Caller-sized capacity (M1 — usable bytes after the header).** `contextInit`
+  fixes `capacity = region_size - 12`: the usable pool bytes **after** the
+  12-byte Context header, not the whole buffer. The caller chooses the region
+  size; the static frame size returned by `@asyncFrameSize(fn)` **excludes**
+  child frames (m1166), so the caller budgets for the deepest active chain. The
+  pool fixtures must set `size - 12`; any fixture cleanup is a follow-up. M1 is
+  **resolved by this convention** (part of the layout decision, not a standalone
+  minor).
+- **Per-task Context reset (M3).** A `Context` is per-task; `@asyncInit` sets
+  `used = 0` and `oom = 0` on each call. Because `oom` is sticky for the pool's
+  lifetime, reusing a Context after an exhaustion without re-`contextInit` (or
+  `@asyncInit`) would carry the stale `oom` forward — `@asyncInit`'s reset is
+  what clears it on reuse. M3 is **resolved by this convention** (part of the
+  layout decision, not a standalone minor).
 
 ### 3.3 Step ABI (`StepFn`) and the fn-ptr struct-field constraint
 
@@ -247,8 +265,9 @@ self-emission fixed point are unchanged; only the archive's `lib/` contents move
 **Produces (for Track 4 and user programs).**
 - The complete `std.async` API of §3.1, reachable as `std.async.*` through the
   `std.zig` re-export.
-- The frozen `Context` layout `{ pool: [*]u8, capacity: usize, used: usize,
-  oom: bool }` and the bump+mark pool primitive semantics.
+- The **interim** `Context` layout (compiler-core canon, **NOT FINAL** — see the
+  reconciliation below): `{ used @ ctx+0, capacity @ ctx+4, oom @ ctx+8, pool
+  @ ctx+12 (DERIVED) }` and the bump+mark pool primitive semantics.
 - The `StepFn` ABI `fn(frame: *void, arg: ?*void) ?*void` and the `Task`/
   `Scheduler` records.
 
@@ -263,23 +282,33 @@ self-emission fixed point are unchanged; only the archive's `lib/` contents move
 - The `__async_step_<f>(frame: *void, arg: ?*void) ?*void` ABI (identical to
   `StepFn`) and the null=done / non-null=yielded convention.
 - `@asyncFrameSize` **flat** semantics (excludes child frames) for sizing the
-  root `buf` and each `Context.pool`.
+  root `buf` and each Context pool region.
 - `ctx`-in-frame inheritance and the per-task LIFO child-frame allocation
   contract (`buf` outside the pool).
 
-**Frozen-ABI reconciliation (RESOLVED — Amendment 7, Res 1).** Ownership is
-**INLINE**. The `buf`-outside-the-pool rule resolves the Track-2 "opaque" vs
-Track-3 layout tension: `ctx` **owns a slice to the caller-provided pool** — no
-heap, no fixed array inside the struct, no generics needed. The compiler core
-reads the pool fields **inline** at the frozen layout above (bump + mark) rather
-than calling runtime helpers; the Track-2 wording is amended to match (see
-`async-compiler-core-design.md` §4). Pinned caller idiom, marked **"verify at
-Track 3"** (do not implement Track 3 here):
+**Context-layout reconciliation — NOT FINAL.** The earlier "RESOLVED" claim
+(Amendment 7, Res 1, inline at `{pool, capacity, used, oom}`) is **struck**: it
+does not match what landed. The compiler core (Track 2, Task 7) pinned the
+**interim** layout `{ used @ ctx+0, capacity @ ctx+4, oom @ ctx+8, pool base
+= ctx+12 (DERIVED) }`; that interim canon is authoritative **for now**, and
+**Track 3 owns the final decision** (see the Track-3 alignment task in
+`../plans/2026-09-13-std-async-plan.md`). Ownership remains INLINE (no heap, no
+fixed array in the struct, no generics); the compiler core reads the pool fields
+inline (bump + mark) rather than calling runtime helpers. `pool_base` is
+**derived** (`ctx + 12`), not stored. The pinned caller idiom (marked **"verify
+at Track 3"**; do not implement Track 3 here):
 
 ```zig
-var pool: [4096]u8 = undefined;
-var ctx = std.async.Context.init(pool[0..]);
+var buf: [4096]u8 = undefined;
+var ctx = std.async.contextInit(buf[0..]);
 ```
+
+> **WARNING — the two layouts are NOT interchangeable.** A reader that assumes
+> the **stored-pointer** layout `{pool@0, capacity@4, used@8, oom@12}` against
+> the interim inline header would **misread `used` as `pool`, `capacity` as
+> capacity (coincidentally right), `oom` as `used`, and derive the pool base
+> into the wrong region** — silent memory corruption. Do not cross-read the two
+> layouts; Track 3 must pick one.
 
 **Seed-lib contract.** The rebuilt compiler's `<exe_dir>/lib/` carries
 `std.zig` + the 8 existing modules + `std_async.zig`; `std.zig` re-exports
@@ -340,10 +369,12 @@ Gate battery (every task; full sweep at closeout):
 
 ## 7. Risks
 
-- **Frozen Context ABI vs Track 2 "opaque" wording — RESOLVED (Amendment 7, Res
-  1).** Ownership is INLINE at the §4 layout; the Track-2 wording is amended to
-  match, and no field is added silently. Residual: the pinned caller idiom is a
-  **"verify at Track 3"** item.
+- **Context ABI vs Track 2 "opaque" wording — NOT FINAL (Amendment 11).** The
+  earlier "RESOLVED" claim is **struck**. Ownership is INLINE, but the
+  compiler-core interim layout `{used@0, capacity@4, oom@8, pool base ctx+12
+  (DERIVED)}` is **not** the earlier `{pool, capacity, used, oom}` order;
+  **Track 3 owns the final decision** (Track-3 alignment task). Residual: the
+  pinned caller idiom is a **"verify at Track 3"** item.
 - **`fn_ptr_struct_field` regression — no longer a dependency (Amendment 7).**
   `Task.step` is removed; the scheduler self-dispatches through the frame step
   word, so this design no longer relies on a fn-ptr struct field. The gap was
@@ -398,6 +429,6 @@ Gate battery (every task; full sweep at closeout):
 **Produces.**
 - `sf/src/std_async.zig` + `std.zig` re-export + install touchpoints + 5 corpus
   fixtures + seed `lib/` rotation.
-- The `std.async` API and frozen `Context`/`StepFn` ABI that Track 4
-  (`coroutine-integration-design.md`) consumes for the `rogue_mud`/`mud_server`
-  port.
+- The `std.async` API and interim `Context` (**NOT FINAL**; §4) / `StepFn` ABI
+  that Track 4 (`coroutine-integration-design.md`) consumes for the
+  `rogue_mud`/`mud_server` port.

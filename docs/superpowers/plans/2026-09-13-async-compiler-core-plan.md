@@ -1937,6 +1937,74 @@ None of these change the Amendment-10 operator ruling or mechanism; they pin the
 ordering invariant, gate, and fixture coverage that the Amendment-10 Task 6D5
 already implied.
 
+## Amendment 11 (2026-09-15) — Task-7 review I1 operator ruling: compiler-core Context layout is the interim canon; Track-3 alignment task
+
+**Reason.** The Task-7 review (commit `b23ca20a`) returned **I1** (cross-track,
+Important): the compiler-core Context layout `{used@0, capacity@4, oom@8, pool
+base = ctx+12 (DERIVED)}` is **incompatible** with `std-async-design.md` §3.1
+`{pool@0, capacity@4, used@8, oom@12, pool STORED}`, and the std-async §4
+"RESOLVED inline at `{pool,capacity,used,oom}`" claim is now stale/contradicted.
+
+**Operator ruling (option A).** Make the compiler-core layout the **interim
+canon**; strike the stale "RESOLVED" claim; record a **Track-3 alignment task**
+with both branches (Track 3 owns the final decision).
+
+**Compiler-core interim layout canon.**
+
+```
+ctx + 0*sizeof(usize) : used      (usize; bump pointer)  -- R1 offset kept
+ctx + 1*sizeof(usize) : capacity  (usize; usable bytes after the header)
+ctx + 2*sizeof(usize) : oom       (u8; sticky) + 3 pad
+ctx + 3*sizeof(usize) : pool base (DERIVED; child frames start here)
+```
+
+The pool base `pool_base = ctx+12` (32-bit) is **DERIVED, not stored** — itself
+a design decision: it makes it impossible for the pool base to diverge from the
+actual allocation, and the header is a fixed shape the compiler can rely on.
+
+**Track-3 alignment task (branches a/b + trade-off + rec a).** Recorded in
+`2026-09-13-std-async-plan.md` new **Task 6**:
+
+- **(a)** `std.async.Context` adopts the inline layout `{used, capacity, oom;
+  pool bytes follow}` — header **12 B** (`used`4 + `capacity`4 + `oom`1 + 3
+  pad); `pool_base` derivable; caller declares `var buf: [4096]u8`;
+  **saves 4 B per context**.
+- **(b)** core revised to `{pool@0, capacity@4, used@8, oom@12}` — pool is a
+  **stored slice**; header **16 B** (`pool`4 + `capacity`4 + `used`4 + `oom`1 +
+  3 pad) → **4 bytes more per context**. Arithmetic verified; the operator's
+  claim is **CORRECT**.
+
+Trade-off and the operator's recommendation **(a)** are recorded; **Track 3
+decides** (this ruling does not decide it).
+
+**M1/M3 are part of the layout decision (not standalone minors).**
+
+- **M1 (capacity semantics):** `capacity` = usable bytes **after** the 12-byte
+  header (`region_size - 12`); pool fixtures must set `size - 12`. Resolved by
+  this convention; any fixture cleanup is a follow-up.
+- **M3 (`@asyncInit` reset):** per-task Context; `@asyncInit` sets
+  `used = 0`/`oom = 0`; the sticky-`oom`-on-Context-reuse implication is
+  documented (the reset is what clears a stale `oom` on reuse).
+
+**Re-verified baseline.** Branch `zig1_improvements`; HEAD `b23ca20a`; moving
+fixed point `3b6fd1949146d6a6fa651045b23c5fd9` (hop1==hop2); seed **NOT
+rotated**; `repro/mi_matrix/EXPECTED_FAIL.md` untouched.
+
+**Non-blocking review findings — for a Task-8 cleanup pass (do NOT fix here).**
+
+- **M2:** `async_pool_xmod` comment wrong (the first child already exceeds
+  `capacity = 20`; the comment says "the first child frame fits").
+- **M4:** 4 await fixtures redundantly write `used`/`oom`.
+- **M5:** missing-`frame_sizes` ICE path continues with `fsz = 0`
+  (unreachable; P2 always populates the table).
+- **M6:** full corpus classifier not re-run (async-gated edits; verification
+  gap).
+
+**Docs amended in place.** `2026-09-13-std-async-design.md` §3.1 (Context
+interim canon), §3.2 (M1/M3), §4 (NOT FINAL + stored-pointer misread WARNING),
+§7 (risk bullet), §8 ("frozen" -> interim); `2026-09-13-std-async-plan.md` new
+Task 6 (Track-3 alignment). This amendment records the compiler-core side.
+
 ## Amendable note
 
 This plan is amendable in place. Amendments record the reason, the affected task, and the re-verified baseline; do not rotate the seed or bump `EXPECTED_FAIL` outside Task 8.
