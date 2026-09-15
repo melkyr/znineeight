@@ -15,6 +15,14 @@ fn assertEqU64(actual: u64, expected: u64) void {
     if (actual != expected) @panic("assertEqU64 failed");
 }
 
+const ChildAuditEntry = struct {
+    kind: AstKind,
+    m0: bool,
+    m1: bool,
+    m2: bool,
+    extra: bool,
+};
+
 pub fn runAstUnitTests() void {
     testAstKindErrSentinel();
     testAstNodeSize();
@@ -29,6 +37,7 @@ pub fn runAstUnitTests() void {
     testAstStoreAddStringLiteral();
     testAstStoreAddIdentifier();
     testNodeHasExtraChildren();
+    testNodeChildIsNodeAudit();
     testVisitPreOrder();
     testVisitOrder();
     testValidityValid();
@@ -171,6 +180,132 @@ fn testNodeHasExtraChildren() void {
     assertTrue(!ast_mod.nodeHasExtraChildren(AstKind.ident_expr));
     assertTrue(!ast_mod.nodeHasExtraChildren(AstKind.var_decl));
     assertTrue(!ast_mod.nodeHasExtraChildren(AstKind.if_stmt));
+}
+
+fn testNodeChildIsNodeAudit() void {
+    const table = [112]ChildAuditEntry{
+        ChildAuditEntry{ .kind = AstKind.err, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.var_decl, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.fn_decl, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.struct_decl, .m0 = false, .m1 = true, .m2 = true, .extra = true },
+        ChildAuditEntry{ .kind = AstKind.enum_decl, .m0 = false, .m1 = true, .m2 = true, .extra = true },
+        ChildAuditEntry{ .kind = AstKind.union_decl, .m0 = false, .m1 = true, .m2 = true, .extra = true },
+        ChildAuditEntry{ .kind = AstKind.field_decl, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.param_decl, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.test_decl, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.error_set_decl, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.int_literal, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.float_literal, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.string_literal, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.char_literal, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.bool_literal, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.null_literal, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.undefined_literal, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.unreachable_expr, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.enum_literal, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.error_literal, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.tuple_literal, .m0 = true, .m1 = true, .m2 = true, .extra = true },
+        ChildAuditEntry{ .kind = AstKind.struct_init, .m0 = true, .m1 = true, .m2 = true, .extra = true },
+        ChildAuditEntry{ .kind = AstKind.array_init, .m0 = true, .m1 = true, .m2 = true, .extra = true },
+        ChildAuditEntry{ .kind = AstKind.field_init, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.ident_expr, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.field_access, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.index_access, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.slice_expr, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.deref, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.address_of, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.fn_call, .m0 = true, .m1 = true, .m2 = true, .extra = true },
+        ChildAuditEntry{ .kind = AstKind.builtin_call, .m0 = false, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.paren_expr, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.add, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.sub, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.mul, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.div, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.mod_op, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.bit_and, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.bit_or, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.bit_xor, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.shl, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.shr, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.bool_and, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.bool_or, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.cmp_eq, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.cmp_ne, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.cmp_lt, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.cmp_le, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.cmp_gt, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.cmp_ge, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.plain_assign, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.add_assign, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.sub_assign, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.mul_assign, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.div_assign, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.swt_ex, .m0 = true, .m1 = true, .m2 = true, .extra = true },
+        ChildAuditEntry{ .kind = AstKind.shl_assign, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.shr_assign, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.and_assign, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.xor_assign, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.or_assign, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.negate, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.bool_not, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.bit_not, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.try_expr, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.catch_expr, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.orelse_expr, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.if_stmt, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.if_expr, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.if_capture, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.while_stmt, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.while_capture, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.for_stmt, .m0 = true, .m1 = true, .m2 = false, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.mod_assign, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.swt_prong, .m0 = true, .m1 = false, .m2 = true, .extra = true },
+        ChildAuditEntry{ .kind = AstKind.block, .m0 = true, .m1 = true, .m2 = true, .extra = true },
+        ChildAuditEntry{ .kind = AstKind.return_stmt, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.break_stmt, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.continue_stmt, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.defer_stmt, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.errdefer_stmt, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.labeled_stmt, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.expr_stmt, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.ptr_type, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.many_ptr_type, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.array_type, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.slice_type, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.optional_type, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.error_union_type, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.fn_type, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.import_expr, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.module_root, .m0 = true, .m1 = true, .m2 = true, .extra = true },
+        ChildAuditEntry{ .kind = AstKind.payload_capture, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.range_exclusive, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.range_inclusive, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.c_include, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.wrap_add, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.wrap_sub, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.wrap_mul, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.wrap_negate, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.wrap_add_assign, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.wrap_sub_assign, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.wrap_mul_assign, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.sat_add, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.sat_sub, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.sat_mul, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.sat_shl, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.sat_add_assign, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.sat_sub_assign, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.sat_mul_assign, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.sat_shl_assign, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+    };
+    assertEqU32(@intCast(u32, table.len), @intCast(u32, 112));
+    var i: usize = 0;
+    while (i < table.len) : (i += 1) {
+        var e = table[i];
+        assertTrue(ast_mod.nodeChildIsNode(e.kind, @intCast(u8, 0)) == e.m0);
+        assertTrue(ast_mod.nodeChildIsNode(e.kind, @intCast(u8, 1)) == e.m1);
+        assertTrue(ast_mod.nodeChildIsNode(e.kind, @intCast(u8, 2)) == e.m2);
+        assertTrue(ast_mod.nodeHasNodeExtraChildren(e.kind) == e.extra);
+    }
 }
 
 fn testVisitPreOrder() void {

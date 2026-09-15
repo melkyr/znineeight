@@ -2663,10 +2663,10 @@ fn astSubtreeHasBreak(self: *SemanticAnalyzer, node_idx: u32) bool {
     if (node_idx == @intCast(u32, 0)) return false;
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     if (node.kind == AstKind.break_stmt) return true;
-    if (node.child_0 != @intCast(u32, 0) and astSubtreeHasBreak(self, node.child_0)) return true;
-    if (node.child_1 != @intCast(u32, 0) and astSubtreeHasBreak(self, node.child_1)) return true;
-    if (node.child_2 != @intCast(u32, 0) and astSubtreeHasBreak(self, node.child_2)) return true;
-    if (ast_mod.nodeHasExtraChildren(node.kind) and ast_mod.astStoreNodePayload(self.store, node_idx) != @intCast(u32, 0)) {
+    if (node.child_0 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 0)) and astSubtreeHasBreak(self, node.child_0)) return true;
+    if (node.child_1 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 1)) and astSubtreeHasBreak(self, node.child_1)) return true;
+    if (node.child_2 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 2)) and astSubtreeHasBreak(self, node.child_2)) return true;
+    if (ast_mod.nodeHasNodeExtraChildren(node.kind) and ast_mod.astStoreNodePayload(self.store, node_idx) != @intCast(u32, 0)) {
         var ec = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
         var ei: usize = @intCast(usize, 0);
         while (ei < ec.len) : (ei += 1) {

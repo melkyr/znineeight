@@ -88,22 +88,22 @@ pub fn constraintCheckerCheckBreakContinue(store: *AstStore, diag: *DiagnosticCo
                     diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0), @intCast(u16, 0),
                         @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), msg);
                 }
-                if (node.child_0 != @intCast(u32, 0)) { stack_n[sp] = node.child_0; stack_d[sp] = nd; sp += 1; }
-                if (node.child_1 != @intCast(u32, 0)) { stack_n[sp] = node.child_1; stack_d[sp] = nd; sp += 1; }
-                if (node.child_2 != @intCast(u32, 0)) { stack_n[sp] = node.child_2; stack_d[sp] = nd; sp += 1; }
+                if (node.child_0 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 0))) { stack_n[sp] = node.child_0; stack_d[sp] = nd; sp += 1; }
+                if (node.child_1 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 1))) { stack_n[sp] = node.child_1; stack_d[sp] = nd; sp += 1; }
+                if (node.child_2 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 2))) { stack_n[sp] = node.child_2; stack_d[sp] = nd; sp += 1; }
                 var bp = ast_mod.astStoreNodePayloadPacked(store, n, node.kind);
-                if (bp != @intCast(u64, 0)) {
+                if (bp != @intCast(u64, 0) and (ast_mod.nodeHasNodeExtraChildren(node.kind) or node.kind == AstKind.builtin_call)) {
                     var extra = ast_mod.astStoreGetExtraChildren(store, bp);
                     var ei: usize = 0;
                     while (ei < extra.len) : (ei += 1) { stack_n[sp] = extra[ei]; stack_d[sp] = nd; sp += 1; }
                 }
                 continue;
             }
-            if (node.child_0 != @intCast(u32, 0)) { stack_n[sp] = node.child_0; stack_d[sp] = nd; sp += 1; }
-            if (node.child_1 != @intCast(u32, 0)) { stack_n[sp] = node.child_1; stack_d[sp] = nd; sp += 1; }
-            if (node.child_2 != @intCast(u32, 0)) { stack_n[sp] = node.child_2; stack_d[sp] = nd; sp += 1; }
+            if (node.child_0 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 0))) { stack_n[sp] = node.child_0; stack_d[sp] = nd; sp += 1; }
+            if (node.child_1 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 1))) { stack_n[sp] = node.child_1; stack_d[sp] = nd; sp += 1; }
+            if (node.child_2 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 2))) { stack_n[sp] = node.child_2; stack_d[sp] = nd; sp += 1; }
             var gp = ast_mod.astStoreNodePayloadPacked(store, n, node.kind);
-            if (gp != @intCast(u64, 0)) {
+            if (gp != @intCast(u64, 0) and (ast_mod.nodeHasNodeExtraChildren(node.kind) or node.kind == AstKind.builtin_call)) {
                 var extra = ast_mod.astStoreGetExtraChildren(store, gp);
                 var ei: usize = 0;
                 while (ei < extra.len) : (ei += 1) { stack_n[sp] = extra[ei]; stack_d[sp] = nd; sp += 1; }

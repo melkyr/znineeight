@@ -145,10 +145,10 @@ fn scanFunction(store: *ast_mod.AstStore, sym_reg: *sym_mod.SymbolRegistry, modu
             while (ei2 < ec2.len) : (ei2 += 1) { ga_mod.u32ArrayListAppend(stack, ec2[ei2]); }
             continue;
         }
-        if (n.child_0 != @intCast(u32, 0)) { ga_mod.u32ArrayListAppend(stack, n.child_0); }
-        if (n.child_1 != @intCast(u32, 0)) { ga_mod.u32ArrayListAppend(stack, n.child_1); }
-        if (n.child_2 != @intCast(u32, 0)) { ga_mod.u32ArrayListAppend(stack, n.child_2); }
-        if (ast_mod.nodeHasExtraChildren(k)) {
+        if (n.child_0 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(k, @intCast(u8, 0))) { ga_mod.u32ArrayListAppend(stack, n.child_0); }
+        if (n.child_1 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(k, @intCast(u8, 1))) { ga_mod.u32ArrayListAppend(stack, n.child_1); }
+        if (n.child_2 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(k, @intCast(u8, 2))) { ga_mod.u32ArrayListAppend(stack, n.child_2); }
+        if (ast_mod.nodeHasNodeExtraChildren(k)) {
             var ec3 = ast_mod.astStoreNodeExtraChildren(store, ni);
             var ei3: usize = @intCast(usize, 0);
             while (ei3 < ec3.len) : (ei3 += 1) { ga_mod.u32ArrayListAppend(stack, ec3[ei3]); }
@@ -378,7 +378,7 @@ fn scanFrameLocals(store: *ast_mod.AstStore, sym_reg: *sym_mod.SymbolRegistry, m
             var lvt = frameLocalTypeId(resolved_types, n);
             addFrameField(reg, lvt, offset, max_align);
         }
-        if (ast_mod.nodeHasExtraChildren(k)) {
+        if (ast_mod.nodeHasNodeExtraChildren(k)) {
             var ec3 = ast_mod.astStoreNodeExtraChildren(store, ni);
             var ei3: usize = ec3.len;
             while (ei3 > @intCast(usize, 0)) {
@@ -386,9 +386,9 @@ fn scanFrameLocals(store: *ast_mod.AstStore, sym_reg: *sym_mod.SymbolRegistry, m
                 ga_mod.u32ArrayListAppend(stack, ec3[ei3]);
             }
         }
-        if (n.child_2 != @intCast(u32, 0)) { ga_mod.u32ArrayListAppend(stack, n.child_2); }
-        if (n.child_1 != @intCast(u32, 0)) { ga_mod.u32ArrayListAppend(stack, n.child_1); }
-        if (n.child_0 != @intCast(u32, 0)) { ga_mod.u32ArrayListAppend(stack, n.child_0); }
+        if (n.child_2 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(k, @intCast(u8, 2))) { ga_mod.u32ArrayListAppend(stack, n.child_2); }
+        if (n.child_1 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(k, @intCast(u8, 1))) { ga_mod.u32ArrayListAppend(stack, n.child_1); }
+        if (n.child_0 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(k, @intCast(u8, 0))) { ga_mod.u32ArrayListAppend(stack, n.child_0); }
     }
 }
 
@@ -447,10 +447,10 @@ fn scanImplicitAwaits(store: *ast_mod.AstStore, sym_reg: *sym_mod.SymbolRegistry
             while (ei2 < ec2.len) : (ei2 += 1) { ga_mod.u32ArrayListAppend(stack, ec2[ei2]); }
             continue;
         }
-        if (n.child_0 != @intCast(u32, 0)) { ga_mod.u32ArrayListAppend(stack, n.child_0); }
-        if (n.child_1 != @intCast(u32, 0)) { ga_mod.u32ArrayListAppend(stack, n.child_1); }
-        if (n.child_2 != @intCast(u32, 0)) { ga_mod.u32ArrayListAppend(stack, n.child_2); }
-        if (ast_mod.nodeHasExtraChildren(k)) {
+        if (n.child_0 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(k, @intCast(u8, 0))) { ga_mod.u32ArrayListAppend(stack, n.child_0); }
+        if (n.child_1 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(k, @intCast(u8, 1))) { ga_mod.u32ArrayListAppend(stack, n.child_1); }
+        if (n.child_2 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(k, @intCast(u8, 2))) { ga_mod.u32ArrayListAppend(stack, n.child_2); }
+        if (ast_mod.nodeHasNodeExtraChildren(k)) {
             var ec3 = ast_mod.astStoreNodeExtraChildren(store, ni);
             var ei3: usize = @intCast(usize, 0);
             while (ei3 < ec3.len) : (ei3 += 1) { ga_mod.u32ArrayListAppend(stack, ec3[ei3]); }

@@ -909,6 +909,27 @@ pub fn nodeHasExtraChildren(kind: AstKind) bool {
     }
 }
 
+// ast.zig — single source of truth for which fixed slots hold node indices.
+pub fn nodeChildIsNode(kind: AstKind, slot: u8) bool {
+    switch (kind) {
+        AstKind.builtin_call => return slot != 0,   // child_0 = builtin name id
+        AstKind.swt_prong => return slot != 1,       // child_1 = capture name id
+        AstKind.for_stmt => return slot != 2,        // child_2 = index name id
+        // statement-form container decls put the container name id in child_0;
+        // type-form child_0 is 0 (struct/union) or the backing type (enum).
+        // Fail-safe: a dropped type edge is inert; a name id walked as a node
+        // index is fatal.
+        AstKind.struct_decl, AstKind.enum_decl, AstKind.union_decl => return slot != 0,
+        else => return true,
+    }
+}
+
+// ast.zig — extra children hold node indices for every nodeHasExtraChildren kind
+// except error_set_decl (whose pool holds tag name ids).
+pub fn nodeHasNodeExtraChildren(kind: AstKind) bool {
+    return nodeHasExtraChildren(kind) and kind != AstKind.error_set_decl;
+}
+
 pub fn visitPreOrder(store: *AstStore, root: u32, callback: fn(*AstStore, u32) void) void {
     var stack: [512]u32 = undefined;
     var sp: usize = 0;
@@ -920,7 +941,7 @@ pub fn visitPreOrder(store: *AstStore, root: u32, callback: fn(*AstStore, u32) v
         if (node_idx == 0) continue;
         var node = astStoreNodeAt(store, node_idx);
         callback(store, node_idx);
-        if (nodeHasExtraChildren(node.kind) and astStoreNodePayload(store, node_idx) != 0) {
+        if (nodeHasNodeExtraChildren(node.kind) and astStoreNodePayload(store, node_idx) != 0) {
             var ec = astStoreNodeExtraChildren(store, node_idx);
             var ei: usize = 0;
             while (ei < ec.len) {
@@ -929,9 +950,9 @@ pub fn visitPreOrder(store: *AstStore, root: u32, callback: fn(*AstStore, u32) v
                 ei += 1;
             }
         }
-        if (node.child_2 != 0) { stack[sp] = node.child_2; sp += 1; }
-        if (node.child_1 != 0) { stack[sp] = node.child_1; sp += 1; }
-        if (node.child_0 != 0) { stack[sp] = node.child_0; sp += 1; }
+        if (node.child_2 != 0 and nodeChildIsNode(node.kind, @intCast(u8, 2))) { stack[sp] = node.child_2; sp += 1; }
+        if (node.child_1 != 0 and nodeChildIsNode(node.kind, @intCast(u8, 1))) { stack[sp] = node.child_1; sp += 1; }
+        if (node.child_0 != 0 and nodeChildIsNode(node.kind, @intCast(u8, 0))) { stack[sp] = node.child_0; sp += 1; }
     }
 }
 

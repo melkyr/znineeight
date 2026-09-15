@@ -280,9 +280,11 @@ pub fn dumpAst(store: *AstStore, root: u32, interner: *StringInterner) void {
             }
 
             var has_children: u8 = 0;
-            if (node.child_0 != 0 or node.child_1 != 0 or node.child_2 != 0) {
+            if ((node.child_0 != 0 and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 0))) or
+                (node.child_1 != 0 and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 1))) or
+                (node.child_2 != 0 and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 2)))) {
                 has_children = 1;
-            } else if (ast_mod.nodeHasExtraChildren(node.kind) and ast_mod.astStoreNodePayload(store, idx) != 0) {
+            } else if (ast_mod.nodeHasNodeExtraChildren(node.kind) and ast_mod.astStoreNodePayload(store, idx) != 0) {
                 var ec = ast_mod.astStoreNodeExtraChildren(store, idx);
                 if (ec.len > 0) has_children = 1;
             }
@@ -293,10 +295,10 @@ pub fn dumpAst(store: *AstStore, root: u32, interner: *StringInterner) void {
             } else {
                 pal.stdout_write(nl);
                 st_idx[sp] = idx; st_indent[sp] = indent; st_state[sp] = 1; sp += 1;
-                if (node.child_2 != 0) { st_idx[sp] = node.child_2; st_indent[sp] = indent + 1; st_state[sp] = 0; sp += 1; }
-                if (node.child_1 != 0) { st_idx[sp] = node.child_1; st_indent[sp] = indent + 1; st_state[sp] = 0; sp += 1; }
-                if (node.child_0 != 0) { st_idx[sp] = node.child_0; st_indent[sp] = indent + 1; st_state[sp] = 0; sp += 1; }
-                if (ast_mod.nodeHasExtraChildren(node.kind) and ast_mod.astStoreNodePayload(store, idx) != 0) {
+                if (node.child_2 != 0 and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 2))) { st_idx[sp] = node.child_2; st_indent[sp] = indent + 1; st_state[sp] = 0; sp += 1; }
+                if (node.child_1 != 0 and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 1))) { st_idx[sp] = node.child_1; st_indent[sp] = indent + 1; st_state[sp] = 0; sp += 1; }
+                if (node.child_0 != 0 and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 0))) { st_idx[sp] = node.child_0; st_indent[sp] = indent + 1; st_state[sp] = 0; sp += 1; }
+                if (ast_mod.nodeHasNodeExtraChildren(node.kind) and ast_mod.astStoreNodePayload(store, idx) != 0) {
                     var ec = ast_mod.astStoreNodeExtraChildren(store, idx);
                     var ei: usize = 0;
                     while (ei < ec.len) {
