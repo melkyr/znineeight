@@ -364,12 +364,17 @@ pub fn main() void {
     var r0: i32 = 0;
     var r1: i32 = 0;
     var r2: i32 = 0;
-    var buf0: [16]u8 = undefined;
-    var buf1: [16]u8 = undefined;
-    var buf2: [16]u8 = undefined;
-    var ctx0 = sa.contextInit(buf0[0..]);
-    var ctx1 = sa.contextInit(buf1[0..]);
-    var ctx2 = sa.contextInit(buf2[0..]);
+    // [2]u64 is exactly 16 bytes and guarantees 8-alignment; contextInit
+    // requires an 8-aligned buffer.
+    var storage0: [2]u64 = undefined;
+    var storage1: [2]u64 = undefined;
+    var storage2: [2]u64 = undefined;
+    var buf0: []u8 = @ptrCast([*]u8, &storage0)[0..16];
+    var buf1: []u8 = @ptrCast([*]u8, &storage1)[0..16];
+    var buf2: []u8 = @ptrCast([*]u8, &storage2)[0..16];
+    var ctx0 = sa.contextInit(buf0);
+    var ctx1 = sa.contextInit(buf1);
+    var ctx2 = sa.contextInit(buf2);
     var tasks: [3]sa.Task = undefined;
     var s = sa.schedulerInit(tasks[0..]);
     var t0 = sa.Task{ .frame = @ptrCast(*void, &f0), .ctx = ctx0, .state = sa.TaskState.ready, .cancel_requested = false, .result = @ptrCast(*void, &r0), .arg = @ptrCast(*void, @intToPtr(*void, 0)), .waiting_on = @ptrCast(*sa.Task, @intToPtr(*void, 0)), .has_waiting_on = false };
@@ -413,8 +418,11 @@ fn p(v: i32) void {
 
 pub fn main() void {
     var fr: Frame = Frame{ .step = stepNoop, .ticks = 0 };
-    var buf: [16]u8 = undefined;
-    var ctx = sa.contextInit(buf[0..]);
+    // [2]u64 is exactly 16 bytes and guarantees 8-alignment; contextInit
+    // requires an 8-aligned buffer.
+    var storage: [2]u64 = undefined;
+    var buf: []u8 = @ptrCast([*]u8, &storage)[0..16];
+    var ctx = sa.contextInit(buf);
     _ = sa.contextAlloc(ctx, 1000) catch 0;
     p(@intCast(i32, if (ctx.oom) 1 else 0));
 
