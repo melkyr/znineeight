@@ -10,7 +10,7 @@ Track 3): the library calls the `@asyncResume` builtin (Amendment 7 self-dispatc
 and consumes the landed frame/`ctx` layout. Track 3 does **not** modify the
 compiler import graph (`std_async.zig` + `std.zig`; `std.zig` is not imported by
 `sf/src/main.zig`), so it does not move the fixed point. Target corpus after the
-five new fixtures: 604 = 565 OK / 36 GREEN / 3 FAIL; `EXPECTED_FAIL.md` bump
+seven new fixtures: 606 = 567 OK / 36 GREEN / 3 FAIL; `EXPECTED_FAIL.md` bump
 v80 → v81.
 
 **Parent spec:** [`2026-09-13-async-prelude-and-feasibility-design.md`](./2026-09-13-async-prelude-and-feasibility-design.md).
@@ -111,8 +111,9 @@ pub const FrameError = error{OutOfFrame};
 pub const StepFn = fn(frame: *void, arg: ?*void) ?*void;
 
 // Context (DECIDED: branch (a), compiler-core canon; see §4). The caller
-// declares an 8-ALIGNED `var buf: [4096]u8 = undefined;` and the Context sits
-// at the HEAD of that buffer; the pool bytes follow the 16-byte header:
+// declares an 8-ALIGNED buffer (a bare `[N]u8` array is only 1-aligned; use an
+// 8-aligned backing, e.g. a `u64` array cast to `[]u8`); the Context sits at the
+// HEAD of that buffer; the pool bytes follow the 16-byte header:
 //   used     @ ctx+0   (usize)
 //   capacity @ ctx+4   (usize)
 //   oom      @ ctx+8   (u8 or bool)
@@ -329,7 +330,7 @@ impossible for the pool base to diverge from the allocation.
 The decided caller idiom:
 
 ```zig
-var buf: [4096]u8 = undefined;   // MUST be 8-aligned
+var buf: [4096]u8 = undefined;   // MUST be 8-aligned (a [N]u8 array is only 1-aligned; use an 8-aligned backing, e.g. a u64 array)
 var ctx = std.async.contextInit(buf[0..]);   // *Context, points into buf
 // pass `ctx` (not `&ctx`) to contextAlloc/contextMark/contextRelease;
 // read ctx.used / ctx.oom.

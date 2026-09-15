@@ -301,7 +301,9 @@ Expected GREEN: `lib/` = 9 files including `std_async.zig`; `dump rc=0`; no `GCC
 
 ```bash
 git add sf/src/std_async.zig sf/src/std.zig scripts/seed/build_from_seed.sh \
-    repro/mi_matrix/stdlib_async_pool_xmod
+    repro/mi_matrix/stdlib_async_pool_xmod \
+    repro/mi_matrix/stdlib_async_headerexact_xmod \
+    repro/mi_matrix/stdlib_async_f64align_xmod
 git commit -m "feat: std.async — Context pool + std.zig re-export + 9-file lib install (ASYNCTRACK3)"
 ```
 
