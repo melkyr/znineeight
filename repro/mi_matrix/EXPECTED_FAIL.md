@@ -1,4 +1,24 @@
-# mi_matrix corpus — expected-fail manifest (v82 2026-09-15)
+# mi_matrix corpus — expected-fail manifest (v83 2026-09-15)
+
+## std.async 9-module install (v83 2026-09-15)
+
+Track 3 (`2026-09-13-std-async-plan.md`) landed `sf/src/std_async.zig` and its
+`std.zig` re-export, and installed it at every std touchpoint (9-file `lib/`).
+No compiler-graph change: the self-emission fixed point is UNMOVED
+`f5ee84800dd32d7c440bb383c10edb55` (closeout seed rotation v16 → v17 only adds
+the 9th `lib/` module; internal binary unchanged; archive md5
+`e04b4063c554c90a51c34f6736fc1346` → `0f04224c55a948f47bc72ec47e0374fb`).
+Corpus `-s0` universe **610 dirs** = **570 OK / 37 GREEN / 3 FAIL / 0 ICE /
+0 CRASH**; `-ffast` == `-fsafe` zero-asymmetric. Seven new OK dirs:
+`stdlib_async_pool_xmod`, `stdlib_async_headerexact_xmod`,
+`stdlib_async_f64align_xmod`, `stdlib_async_sched_xmod`,
+`stdlib_async_oom_xmod`, `stdlib_async_await_xmod`,
+`stdlib_async_cancelall_xmod`.
+
+Reconciliation: v82 was 603 = 563 OK / 37 GREEN / 3 FAIL; +7 new OK fixtures =
+**610 = 570 OK / 37 GREEN / 3 FAIL**, the 603 common dirs class-identical. (The
+brief/operator target `606 = 567/36/3` predates v82 — it is the stale v80
+baseline 599 = 560/36/3 + 7; the actual v82 baseline is 603 = 563/37/3.)
 
 ## Fix-wave fixtures + seed v16 closeout (v82 2026-09-15)
 

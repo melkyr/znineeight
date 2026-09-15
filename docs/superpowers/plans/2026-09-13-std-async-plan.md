@@ -28,8 +28,8 @@ ABI) is **removed**; its deferral is now applied here.
 - **Baseline refresh.** HEAD `e2a0f30a`; fixed point
   `eda943dc1f77a48eae039e39ea4bfe04`; seed v15
   (`cd09877cbc373ad5c8801b93faccf188`); corpus 599 = 560 OK / 36 GREEN / 3 FAIL;
-  `EXPECTED_FAIL.md` v80. Target corpus 604 = 565 OK / 36 GREEN / 3 FAIL;
-  `EXPECTED_FAIL.md` v80 → v81.
+  `EXPECTED_FAIL.md` v80. Target corpus 610 = 570 OK / 37 GREEN / 3 FAIL;
+  `EXPECTED_FAIL.md` v82 → v83.
 
 ## Amendment — Option A (2026-09-15, operator ruling)
 
@@ -45,13 +45,13 @@ baseline value changes.
 
 **Goal:** Build the concrete, no-generics `std.async` Z98 library (`Context` per-task LIFO child-frame pool, `Task`, `Scheduler`, and the cooperative scheduler free functions) and wire it into every std-install touchpoint, so Track 4 can drive compiler-synthesized coroutine steps.
 
-**Architecture:** `sf/src/std_async.zig` is a plain-Z98 user module (not in the compiler import graph): structs + free functions, no generics, no module-scope mutable globals. It adds **no** compiler-core machinery but **depends on Track 2**: the scheduler **self-dispatches** through the compiler builtin `@asyncResume(t.frame, t.arg)` (Amendment 7), so there is no `Task.step` field and no `step` parameter. `Context` is a per-task frame stack for **child** frames only (bump pointer + mark); the root frame lives in the caller-owned `buf` outside the pool, and the `Context` itself sits at the head of the pool buffer (`contextInit` returns a `*Context`). Pool exhaustion surfaces as `error.OutOfFrame`, never a crash. The module is re-exported from `std.zig` and added to all seed/self-compile `lib/` install paths; its five corpus fixtures **hand-build frames** (step function pointer as the first struct field at offset 0) and drive them through the library scheduler.
+**Architecture:** `sf/src/std_async.zig` is a plain-Z98 user module (not in the compiler import graph): structs + free functions, no generics, no module-scope mutable globals. It adds **no** compiler-core machinery but **depends on Track 2**: the scheduler **self-dispatches** through the compiler builtin `@asyncResume(t.frame, t.arg)` (Amendment 7), so there is no `Task.step` field and no `step` parameter. `Context` is a per-task frame stack for **child** frames only (bump pointer + mark); the root frame lives in the caller-owned `buf` outside the pool, and the `Context` itself sits at the head of the pool buffer (`contextInit` returns a `*Context`). Pool exhaustion surfaces as `error.OutOfFrame`, never a crash. The module is re-exported from `std.zig` and added to all seed/self-compile `lib/` install paths; its seven corpus fixtures **hand-build frames** (step function pointer as the first struct field at offset 0) and drive them through the library scheduler.
 
 **Tech Stack:** Z98/`zig1` self-hosted compiler (C89 emission), gcc `-m32 -std=c89`, bash, git. Compiler builds via the seed/forward path `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out>`; never invoke `zig0`.
 
 ## Global Constraints
 
-- **Baseline (re-verify at Task 1):** branch `zig1_improvements`; HEAD `e2a0f30a`; design fixed point `eda943dc1f77a48eae039e39ea4bfe04`; seed v15 archive md5 `cd09877cbc373ad5c8801b93faccf188`; corpus 599 = 560 OK / 36 GREEN / 3 FAIL; `repro/mi_matrix/EXPECTED_FAIL.md` header v80. **Track 2 (`async-compiler-core-plan.md`) is landed and closed**; Track 3 **depends on** its `@asyncResume`/frame surface (dispatch order Track 2 → Track 3). Target corpus after the five new fixtures: 604 = 565 OK / 36 GREEN / 3 FAIL; `EXPECTED_FAIL.md` v80 → v81.
+- **Baseline (re-verify at Task 1):** branch `zig1_improvements`; HEAD `e2a0f30a`; design fixed point `eda943dc1f77a48eae039e39ea4bfe04`; seed v15 archive md5 `cd09877cbc373ad5c8801b93faccf188`; corpus 599 = 560 OK / 36 GREEN / 3 FAIL; `repro/mi_matrix/EXPECTED_FAIL.md` header v82. **Track 2 (`async-compiler-core-plan.md`) is landed and closed**; Track 3 **depends on** its `@asyncResume`/frame surface (dispatch order Track 2 → Track 3). Target corpus after the seven new fixtures: 610 = 570 OK / 37 GREEN / 3 FAIL; `EXPECTED_FAIL.md` v82 → v83.
 - **`timeout 120` on every binary execution.**
 - **Binding gcc flag set for every `gcc -c`/link:** `gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc>`. The compiler fixed point reproduces only with `-Wall`.
 - **Compiler build:** `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <fresh_out>`; gate `=== [seed] Done: <fresh_out> ===`; result `<fresh_out>/zig1_5_clean` + `<fresh_out>/lib/`. Never invoke `zig0`.
@@ -77,7 +77,7 @@ baseline value changes.
 - `scripts/self_compile/build_zig1_5.sh` — `:12` `lib/` `cp` (Task 4).
 - `docs/sf/QUICK_REF.md` — `:98` install recipe + `:36-37` seed inventory count (Task 4).
 - Fixtures (new dirs, each `main.zig`): `repro/mi_matrix/stdlib_async_pool_xmod/`, `stdlib_async_headerexact_xmod/`, `stdlib_async_f64align_xmod/` (Task 1), `stdlib_async_sched_xmod/`, `stdlib_async_oom_xmod/` (Task 2), `stdlib_async_await_xmod/`, `stdlib_async_cancelall_xmod/` (Task 3).
-- `repro/mi_matrix/EXPECTED_FAIL.md` — header bump v81 with the new corpus counts (Task 5).
+- `repro/mi_matrix/EXPECTED_FAIL.md` — header bump v83 with the new corpus counts (Task 5).
 - `release/seed/zig1-seed.tgz`, `release/seed/CHANGELOG.md` — closeout rotation (Task 5).
 
 ---
@@ -936,21 +936,24 @@ done
 echo "OK=$ok GREEN=$green FAIL=$fail ICE=$ice CRASH=$crash"
 ```
 
-Expected: universe `604` dirs = `OK=565 / GREEN=36 / FAIL=3 / ICE=0 / CRASH=0`. Reconcile the GREEN/FAIL sets against the v80 manifest (see `repro/mi_matrix/EXPECTED_FAIL.md` for the exact sets; the five new async dirs are OK, not GREEN); if the printed `FAIL`/`GREEN` dir names differ from `EXPECTED_FAIL.md`, STOP-present before changing the manifest. Repeat with the default `-fsafe` (omit `-ffast`) and assert the counts are identical (zero-asymmetric).
+Expected: universe `610` dirs = `OK=570 / GREEN=37 / FAIL=3 / ICE=0 / CRASH=0`. Reconcile the GREEN/FAIL sets against the v82 manifest (see `repro/mi_matrix/EXPECTED_FAIL.md` for the exact sets; the seven new async dirs are OK, not GREEN); if the printed `FAIL`/`GREEN` dir names differ from `EXPECTED_FAIL.md`, STOP-present before changing the manifest. Repeat with the default `-fsafe` (omit `-ffast`) and assert the counts are identical (zero-asymmetric).
 
 - [ ] **Step 2: Bump `EXPECTED_FAIL.md`**
 
-Update line 1 `# mi_matrix corpus — expected-fail manifest (v80 2026-09-13)` -> `(v81 2026-09-13)`, and prepend a short section immediately under the header recording the Track 3 movement:
+Update line 1 `# mi_matrix corpus — expected-fail manifest (v82 2026-09-15)` -> `(v83 2026-09-15)`, and prepend a short section immediately under the header recording the Track 3 movement:
 
 ```markdown
-## std.async 9-module install (v81 2026-09-13)
+## std.async 9-module install (v83 2026-09-15)
 
 Track 3 (`2026-09-13-std-async-plan.md`) added `sf/src/std_async.zig` and its
 `std.zig` re-export, and installed it at every std touchpoint (9-file `lib/`).
 No compiler-graph change: the self-emission fixed point is UNMOVED
-`eda943dc1f77a48eae039e39ea4bfe04`. Corpus `-s0` universe **604 dirs** =
-**565 OK / 36 GREEN / 3 FAIL / 0 ICE / 0 CRASH**; `-ffast` == `-fsafe`
-zero-asymmetric. Five new OK dirs: `stdlib_async_{pool,sched,await,cancelall,oom}_xmod`.
+`eda943dc1f77a48eae039e39ea4bfe04`. Corpus `-s0` universe **610 dirs** =
+**570 OK / 37 GREEN / 3 FAIL / 0 ICE / 0 CRASH**; `-ffast` == `-fsafe`
+zero-asymmetric. Seven new OK dirs: `stdlib_async_pool_xmod`,
+`stdlib_async_headerexact_xmod`, `stdlib_async_f64align_xmod`,
+`stdlib_async_sched_xmod`, `stdlib_async_oom_xmod`,
+`stdlib_async_await_xmod`, `stdlib_async_cancelall_xmod`.
 ```
 
 (Track 2's landed fixed point; re-verify at Task 1.)
@@ -973,7 +976,7 @@ Expected: `[archive] gcc-only rebuild of archive C md5 (fixed point): eda943dc1f
 
 - [ ] **Step 4: Docs GATE + report**
 
-Add a newest-first bullet to `docs/sf/QUICK_REF.md`'s baseline list recording: Track 3 `std.async` landed; 9-file lib; fixed point unmoved; corpus 604 = 565/36/3; the five new fixtures and their md5s. Append `## Task 5` to `.superpowers/sdd/task-STDASYNC-report.md` with the measured counts, the archive md5, the fixed point, and the `check_emit_support` result. One ledger line in `.superpowers/sdd/progress.md`.
+Add a newest-first bullet to `docs/sf/QUICK_REF.md`'s baseline list recording: Track 3 `std.async` landed; 9-file lib; fixed point unmoved; corpus 610 = 570/37/3; the seven new fixtures and their md5s. Append `## Task 5` to `.superpowers/sdd/task-STDASYNC-report.md` with the measured counts, the archive md5, the fixed point, and the `check_emit_support` result. One ledger line in `.superpowers/sdd/progress.md`.
 
 - [ ] **Step 5: Commit + STOP-present**
 
@@ -983,7 +986,7 @@ git add repro/mi_matrix/EXPECTED_FAIL.md release/seed/zig1-seed.tgz \
 git commit -m "docs: GATE — std.async library + 9-file seed lib (ASYNCTRACK3)"
 ```
 
-STOP-present the closeout: corpus counts, fixed-point md5 (unmoved), archive md5, the 9-module `lib/` listing, and the five fixture md5s. Await operator GO; this is the plan's last implementation task (Task 6 is the docs-only Track-3 alignment decision record).
+STOP-present the closeout: corpus counts, fixed-point md5 (unmoved), archive md5, the 9-module `lib/` listing, and the seven fixture md5s. Await operator GO; this is the plan's last implementation task (Task 6 is the docs-only Track-3 alignment decision record).
 
 ---
 
@@ -1033,7 +1036,7 @@ branch (a); nothing is deferred to dispatch.
 - §3.5 error model -> Task 2 `stdlib_async_oom_xmod` (`error.OutOfFrame` from `tick`, no crash) and `waitAll` returning `FrameError!void`.
 - §3.6 install surface -> Task 1 (`build_from_seed.sh`), Task 4 (`archive_seed.sh`, `build_zig1_5.sh`, `QUICK_REF`), Task 5 (seed rotation).
 - §4 Interfaces -> `StepFn` in Task 1; the `Context` layout canon is design §3.1 (DECIDED: branch (a)) and is recorded by **Task 6**; the Track 2 reconciliation is documented in the subspec §4/§7.
-- §6 Testing -> the five fixtures, corpus sweep, `check_emit_support`, seed rotation (Tasks 1–3, 4, 5).
+- §6 Testing -> the seven fixtures, corpus sweep, `check_emit_support`, seed rotation (Tasks 1–3, 4, 5).
 - §7 Risks -> guarded by the Global Constraints (no optional struct field, no globals, two-file `sf/src` scope, install enumeration complete).
 
 **Placeholder scan:** no "TBD/TODO/later"; every code step shows the exact module/fixture text; every command carries its expected rc/stdout/md5. The one branch (`EXPECTED_FAIL` GREEN reconciliation) has an explicit STOP-present instruction.

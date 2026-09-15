@@ -5,13 +5,13 @@
 **Baseline HEAD:** `e2a0f30a` (Track 2 landed and closed); compiler fixed point
 `eda943dc1f77a48eae039e39ea4bfe04`; seed v15 (archive md5
 `cd09877cbc373ad5c8801b93faccf188`); corpus 599 = 560 OK / 36 GREEN / 3 FAIL;
-`EXPECTED_FAIL.md` v80. **Track 3 depends on Track 2** (dispatch order Track 2 →
+`EXPECTED_FAIL.md` v82. **Track 3 depends on Track 2** (dispatch order Track 2 →
 Track 3): the library calls the `@asyncResume` builtin (Amendment 7 self-dispatch)
 and consumes the landed frame/`ctx` layout. Track 3 does **not** modify the
 compiler import graph (`std_async.zig` + `std.zig`; `std.zig` is not imported by
 `sf/src/main.zig`), so it does not move the fixed point. Target corpus after the
-seven new fixtures: 606 = 567 OK / 36 GREEN / 3 FAIL; `EXPECTED_FAIL.md` bump
-v80 → v81.
+seven new fixtures: 610 = 570 OK / 37 GREEN / 3 FAIL; `EXPECTED_FAIL.md` bump
+v82 → v83.
 
 **Parent spec:** [`2026-09-13-async-prelude-and-feasibility-design.md`](./2026-09-13-async-prelude-and-feasibility-design.md).
 **Derives from:** umbrella §12.5 (Stage 5 `std.async`), §6 (the five non-negotiable
@@ -401,12 +401,12 @@ Gate battery (every task; full sweep at closeout):
   binding flag set, link/run via the emitted `build_target.sh`, assert the
   byte-exact stdout and md5 across 3 runs.
 - Corpus classifier by gcc exit code (`docs/sf/QUICK_REF.md:134-145`), never by
-  empty stderr: baseline 599 = 560 OK / 36 GREEN / 3 FAIL -> **606 = 567 OK / 36
+  empty stderr: baseline 603 = 563 OK / 37 GREEN / 3 FAIL -> **610 = 570 OK / 37
   GREEN / 3 FAIL / 0 ICE / 0 CRASH**, `-ffast` == `-fsafe` zero-asymmetric.
 - `scripts/check_emit_support.sh <zig1>` -> `[check] OK: 5/5 support files
   byte-identical to canonical` (user-module install does not touch emitted
   support).
-- `EXPECTED_FAIL.md` header bump v80 → v81 with the new universe count (no class
+- `EXPECTED_FAIL.md` header bump v82 → v83 with the new universe count (no class
   movement on pre-existing dirs).
 - Closeout seed rotation via
   `bash scripts/seed/archive_seed.sh <zig1> <gen_dir> release/seed/zig1-seed.tgz --update-changelog`;
@@ -479,7 +479,7 @@ Gate battery (every task; full sweep at closeout):
   `docs/sf/QUICK_REF.md`.
 
 **Produces.**
-- `sf/src/std_async.zig` + `std.zig` re-export + install touchpoints + 5 corpus
+- `sf/src/std_async.zig` + `std.zig` re-export + install touchpoints + 7 corpus
   fixtures + seed `lib/` rotation.
 - The `std.async` API and decided `Context` (branch (a); §4) / `StepFn` ABI
   that Track 4 (`coroutine-integration-design.md`) consumes for the
