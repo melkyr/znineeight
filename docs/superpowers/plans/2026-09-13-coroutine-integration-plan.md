@@ -12,25 +12,25 @@
 
 **Goal:** Convert the `rogue_mud` NPC AI and per-connection broadcast paths and the `mud_server` `select` accept/read loop to cooperative coroutines on the Track 2 builtins and Track 3 `std.async`, with the committed goldens byte-identical.
 
-**Architecture:** One linear track over example sources only. `rogue_mud/lib/combat.zig` grows a suspending `npcCoroutine` (one task per active enemy) whose per-turn driver is `std.async.tick`; `rogue_mud/ui.zig` grows a suspending `drawToSocketCoroutine` that yields between frame rows; `rogue_mud/main.zig` owns the caller-supplied schedulers and task arenas and wires create/schedule/cancel across the three modules. `mud_server/main.zig` replaces the fd-set bookkeeping with one `clientCoroutine` task per accepted socket driven by `@asyncResume` from the select-ready path, with `std.async.awaitTask` on the quit/disconnect path. No `sf/src` file is touched: examples are outside the compiler's import graph, so the fixed point and seed do not move.
+**Architecture:** One linear track. Two operator-authorized `sf/src` changes precede the conversions: **Task 0** fixes the multi-module `__Z98Step_<f>` emission gap in the C emitter (the self-emission fixed point MOVES), and **Task 0b** changes `std.async` task ownership (`addTask` stores `*Task`; not in the compiler import graph, so no fixed-point move, but the seed archive's `lib/std_async.zig` changes). The seed is rotated at Task 6 closeout. Then `rogue_mud/lib/combat.zig` grows a suspending `npcCoroutine` (one task per active enemy) whose per-turn driver is `std.async.tick`; `rogue_mud/ui.zig` grows a suspending `drawToSocketCoroutine` that yields between frame rows; `rogue_mud/main.zig` owns the caller-supplied schedulers and task arenas and wires create/schedule/cancel across the three modules. `mud_server/main.zig` replaces the fd-set bookkeeping with one `clientCoroutine` task per accepted socket driven by `@asyncResume` from the select-ready path, with `std.async.awaitTask` on the quit/disconnect path. The example conversions themselves touch no `sf/src` file.
 
 **Tech Stack:** Z98/`zig1` self-hosted compiler (C89 emission), `std.async` (Track 3), the four `@async*` builtins (Track 2), bash, `gcc -m32`, git.
 
 ## Global Constraints
 
-- **Baseline (re-verify at Task 1; refreshed 2026-09-15).** HEAD `2dc50be1`; compiler fixed point `027377296b2e38402ff8470f5c429eb8`; seed v19 archive md5 `23a16154e83736cf6b636685396a124a`; corpus 612 = 571 OK / 37 GREEN / 4 FAIL; `repro/mi_matrix/EXPECTED_FAIL.md` header v85 (2026-09-15). Re-verify with the Task 1 commands and record the observed values.
+- **Baseline (re-verify at Task 1; the fixed point MOVES in Task 0).** Pre-Task-0 HEAD `0aa5e13d`; pre-Task-0 compiler fixed point `027377296b2e38402ff8470f5c429eb8`; seed v19 archive md5 `23a16154e83736cf6b636685396a124a`; corpus 612 = 571 OK / 37 GREEN / 4 FAIL; `repro/mi_matrix/EXPECTED_FAIL.md` header v85 (2026-09-15). Task 0 (emitter fix) and Task 0b (`std.async` ownership fix) change `sf/src`, so the fixed point and seed move; Task 1 re-verifies and records the post-Task-0/0b values before capturing goldens.
 - **Precondition:** Tracks 2 and 3 are implemented and landed. The four `@async*` builtins work, `sf/src/std_async.zig` exists, and `lib/std_async.zig` is installed next to the compiler under test (`docs/sf/QUICK_REF.md:97-98` recipe plus `std_async.zig`).
-- **Examples-only — fixed point and seed impact: NONE.** No `sf/src` edit; examples are not in `sf/src/main.zig`'s import graph and `scripts/seed/build_from_seed.sh` never compiles them. Do not rotate the seed for this plan. Do not bump `EXPECTED_FAIL.md`.
+- **`sf/src` scope (operator-authorized 2026-09-15; supersedes the original examples-only constraint).** Exactly two `sf/src` changes are authorized: **Task 0** fixes the multi-module `__Z98Step_<f>` emission gap (`sf/src/c89_emit.zig` + `sf/src/main.zig`; the self-emission fixed point MOVES); **Task 0b** changes `std.async` task ownership (`sf/src/std_async.zig` `addTask`/`Scheduler` store `*Task`; not in the compiler import graph, so the fixed point does NOT move, but the seed archive's `lib/std_async.zig` changes). The seed is rotated at Task 6 closeout. No other `sf/src` edit is authorized; Tasks 1-5 touch examples only.
 - **`timeout 120` on every binary execution.**
 - **gcc flag-set rule (binding):** every `gcc -c` MUST be `gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc>`. Compiler builds only via the seed model: `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out_dir>`; never invoke `zig0`. `<out_dir>` must be fresh.
 - **Byte-identity is a hard requirement.** `bash scripts/closeout/verify_upgraded.sh <zig1>` MUST print `CLOSEOUT OK` and exit 0 with lisp canonical `96654b39…`, rogue q `3fb6709e…`, rogue move `b3c5b0e1…`, rogue demo `7361d248…`, rogue net variant `aa40a52e…`. Emitted C is NOT required to be byte-identical; only runtime bytes are.
 - **Per-entry byte-identity + fallback.** Each converted entry has a pre-conversion and post-conversion runtime capture that must be md5-identical (feeds in `File Structure`). If a golden moves, a capture differs, an `error[3017/3018/3019/3046]`/`PANIC` appears, or task ordering changes the post-turn dungeon state, revert **that entry** to its original loop (keep the original `while`/`select` body), record an amendment, and leave the example building. Entries are independently revertable.
-- **Corpus gate:** `bash scripts/corpus/list_corpus_dirs.sh` must still list both `examples/z98/rogue_mud/` and `examples/z98/mud_server/`; classify by gcc exit code, never empty-stderr (`docs/sf/QUICK_REF.md:134-154`); zero class movement.
+- **Corpus gate:** `bash scripts/corpus/list_corpus_dirs.sh` must still list both `examples/z98/rogue_mud/` and `examples/z98/mud_server/`; classify by gcc exit code, never empty-stderr (`docs/sf/QUICK_REF.md:134-154`); zero class movement on the two examples.
 - **Edits only via `edit`/`fastedit`** (no `sed`/`python` on repo files; `/tmp` scratch is unrestricted). Re-read the target region immediately before every `fastedit`.
 - **Never stage** `mnemoria/` or `.zig1_*.tmp`.
-- **Pinned consumed surface (refreshed 2026-09-15).** Track 2 builtins: `@asyncFrameSize(fn) u32`, `@asyncInit(ctx, buf, fn, args: ?*const void) *void`, `@asyncResume(frame: *void, arg: ?*void) ?*void`, `@asyncSuspend(data: ?*void) *void`. Track 3 `std.async` (Amendment 7 self-dispatch): `Context` (16-byte header, `pool_base = ctx+16`, buffers MUST be 8-aligned), `TaskState`, `Task` (no `step` field), `Scheduler`, `schedulerInit`, `addTask`, `tick(s)`, `suspend`, `awaitTask(s, t)` (empty-scheduler `@panic`), `cancel`, `cancelAll`, `waitAll`. There is no `step` parameter and no `Task.step`; `tick`/`waitAll` self-dispatch via `@asyncResume(t.frame, t.arg)`. `@asyncInit` under `-fsafe` traps when `buf.len < @asyncFrameSize(fn)` for compile-time-known array buffers. If the landed Track 3 surface differs, amend this plan's call sites mechanically (naming only); the conversion mapping and invariants do not change.
+- **Pinned consumed surface (landed Track 3, verified 2026-09-15).** Track 2 builtins: `@asyncFrameSize(fn) u32`, `@asyncInit(ctx: *Context, buf: [*]u8, fn, args: ?*const void) *void`, `@asyncResume(frame: *void, arg: ?*void) ?*void`, `@asyncSuspend(data: ?*void) *void`. Track 3 `std.async` as landed in `sf/src/std_async.zig`: `Context` (`HEADER_SIZE = 16`, `pool_base = ctx+16`, `contextInit(buf: []u8) *Context`; buffers MUST be 8-aligned — back them with a `u64` array, never a bare `[N]u8`), `TaskState`, `Task { frame: *void, ctx: *Context, state, cancel_requested, result: *void, arg: *void, waiting_on: *Task, has_waiting_on: bool }` (**no `arena`/`arena_capacity`/`arena_used` fields, no `step` field**), `Scheduler`, `schedulerInit(tasks: []Task) Scheduler`, `addTask(s, t) bool`, `tick(s: *Scheduler) FrameError!void` (**returns an error union — every call site must `try`/`catch`**), `suspend(s, t)`, `awaitTask(s, t) void` (empty-scheduler `@panic`), `cancel(s, t)`, `cancelAll(s)`, `waitAll(s) FrameError!void`. No `step` parameter; `tick`/`waitAll` self-dispatch via `@asyncResume(t.frame, t.arg)`. `@asyncInit` under `-fsafe` traps when `buf.len < @asyncFrameSize(fn)` for compile-time-known array buffers. **Task 0b** changes `Scheduler.tasks` to `[*]*Task` and `schedulerInit(tasks: []*Task)`, so `addTask` stores the caller's `*Task` (no by-value copy) and callers may keep their own `Task` handles.
 - **Cross-track ABI closeout check (binding).** The `Context` header is 16 bytes (`used@0`, `capacity@4`, `oom@8`, 4-byte pad, `pool_base = ctx+16`); the compiler's `CTX_POOL_OFF` MUST equal 16; every frame size MUST be padded to 8; and buffers passed to `contextInit`/`@asyncInit` MUST be 8-aligned. Task 6's closeout MUST re-verify these agree with the landed Track-2/Track-3 surface (the Track-2 plan Task 8 Step 3b and Track-3 plan Task 5 Step 4b carry the same check).
-- **Pre-conversion blocker — multi-module `__Z98Step_<f>` emission gap (binding).** With >1 module, `@asyncInit` targeting a coroutine in a NON-LAST module references `__Z98Step_<f>` but the emitter never emits it (it walks `lir_slots` in contiguous per-module runs); pinned by `repro/mi_matrix/async_step_nonlast_xmod` (`EXPECTED_FAIL.md` v85). Track 4's `rogue_mud`/`mud_server` are multi-module, so this MUST be resolved before the Task 2–5 conversions — either fix the emitter to emit synthesized steps per-module, or record an explicit fallback decision. Record the resolution/decision in Amendments.
+- **Pre-conversion blocker — multi-module `__Z98Step_<f>` emission gap (RESOLVED by Task 0).** With >1 module, `@asyncInit` targeting a coroutine in a NON-LAST module referenced `__Z98Step_<f>` but the emitter never emitted it (it walks `lir_slots` in contiguous per-module runs, and the synthesized steps are appended after the module loop). Task 0 fixes the emitter to emit each step in the module that owns it; `repro/mi_matrix/async_step_nonlast_xmod` flips from EXPECTED-FAIL to PASS. Tasks 2-5 MUST NOT dispatch until Task 0 is complete.
 - **Spec of record:** `docs/superpowers/specs/2026-09-13-coroutine-integration-design.md` (Track 4 subspec); parent `docs/superpowers/specs/2026-09-13-async-prelude-and-feasibility-design.md` §12.6/§13/§14.2.
 
 ---
@@ -38,6 +38,14 @@
 **Sequence:** PREVIOUS plan: `../plans/2026-09-13-std-async-plan.md`. NEXT plan: none — final plan in the sequence. Subspec: [`../specs/2026-09-13-coroutine-integration-design.md`](../specs/2026-09-13-coroutine-integration-design.md).
 
 ## File Structure
+
+**Create (Task 0 emitter fix / Task 0b ownership fix):**
+- `repro/mi_matrix/async_step_midmodule_xmod/` — 3 modules; the suspending coroutine lives in the MIDDLE (non-last) module; PASSES after Task 0.
+- `repro/mi_matrix/stdlib_async_handle_xmod/` — caller-handle task identity (`addTask` stores `*Task`); PASSES after Task 0b.
+
+**Create (Cat 2 real-bug fixtures):**
+- `repro/mi_matrix/async_frame_lifetime_xmod/` — S10: ticks a coroutine across enough turns to prove its root frame survives an arena reset.
+- `repro/mi_matrix/async_client_cells_xmod/` — S11: two yielding writers with separate cells buffers; each captured stream matches its own pattern.
 
 **Create (committed deterministic harness):**
 - `examples/z98/rogue_mud/demo/canonical_feed.txt` — `q\n` (boot + quit).
@@ -49,13 +57,134 @@
 - `examples/z98/mud_server/demo/canonical_expected.txt` — Task 1 pre-conversion capture.
 - `examples/z98/mud_server/demo/README.md` — records the golden md5.
 
-**Modify:**
-- `examples/z98/rogue_mud/lib/combat.zig` — `NpcArgs`, `npcMove`, `npcCoroutine`, `spawnEnemies`, `updateEnemies`.
+**Modify (Task 0 / Task 0b — authorized `sf/src` scope):**
+- `sf/src/c89_emit.zig`, `sf/src/main.zig` — emit each `__Z98Step_<f>` in the module that owns `<f>` (Task 0).
+- `sf/src/std_async.zig` — `Scheduler.tasks: [*]*Task`, `schedulerInit(tasks: []*Task)`, `addTask` stores the caller's `*Task` (Task 0b).
+- `repro/mi_matrix/stdlib_async_{sched,oom,await,cancelall}_xmod/main.zig` — migrate to `[N]*Task` handle arrays (Task 0b).
+- `repro/mi_matrix/async_step_nonlast_xmod/main.zig` — comment update (no longer expected-fail); `async_libctx_mix_xmod/main.zig` — annotate as the last-module-coroutine fixture (Task 0).
+- `repro/mi_matrix/EXPECTED_FAIL.md` — remove `async_step_nonlast_xmod`; bump header (Task 0).
+
+**Modify (example conversions):**
+- `examples/z98/rogue_mud/lib/combat.zig` — `NpcArgs`, `npcStep`, `npcCoroutine`, `spawnEnemies`, `updateEnemies`.
 - `examples/z98/rogue_mud/ui.zig` — `ClientArgs`, `drawToSocketCoroutine`.
-- `examples/z98/rogue_mud/main.zig` — schedulers/task arenas, `ClientFrameArgs`, `clientFrameCoroutine`, broadcast calls, cancel paths.
+- `examples/z98/rogue_mud/main.zig` — schedulers/task arenas, per-client cells buffers, `ClientFrameArgs`, `clientFrameCoroutine`, broadcast calls, cancel paths.
 - `examples/z98/mud_server/main.zig` — `ClientTaskArgs`, `clientCoroutine`, per-client tasks, `awaitTask` on quit/disconnect.
 
 **Runner (unchanged, reused as the gate):** `scripts/closeout/verify_upgraded.sh`, `scripts/closeout/run_upgraded.sh`.
+
+---
+
+### Task 0: Multi-module `__Z98Step_<f>` emission fix (S15)
+
+**Files:**
+- Modify: `sf/src/c89_emit.zig`, `sf/src/main.zig`
+- Modify: `repro/mi_matrix/async_step_nonlast_xmod/main.zig` (comment: no longer expected-fail)
+- Modify: `repro/mi_matrix/async_libctx_mix_xmod/main.zig` (annotate: last-module coroutine)
+- Create: `repro/mi_matrix/async_step_midmodule_xmod/main.zig`, `repro/mi_matrix/async_step_midmodule_xmod/mid.zig`, `repro/mi_matrix/async_step_midmodule_xmod/last.zig`
+- Modify: `repro/mi_matrix/EXPECTED_FAIL.md` (remove `async_step_nonlast_xmod`; bump header)
+
+**Interfaces:**
+- Consumes: nothing.
+- Produces: the C emitter emits `__Z98Step_<f>` in the `.c`/header of the module that owns `<f>`, for every function with `is_suspending` set — not only the last-emitted module. The self-emission fixed point MOVES.
+
+- [ ] **Step 1: RED — confirm the gap**
+
+Run:
+```bash
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/t4_t0
+rm -rf /tmp/t4_t0_dump && mkdir -p /tmp/t4_t0_dump
+/tmp/t4_t0/zig1_5_clean --dump-c89 --output-dir /tmp/t4_t0_dump repro/mi_matrix/async_step_nonlast_xmod/main.zig; echo "dump rc=$?"
+grep -rln "__Z98Step_caller" /tmp/t4_t0_dump/*.c
+for f in /tmp/t4_t0_dump/*.c; do gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I /tmp/t4_t0_dump -c "$f" -o /dev/null || echo "GCCFAIL $f"; done
+```
+Expected: an emitted `.c` references `__Z98Step_caller` but none defines it; gcc fails `undeclared`/`undefined`. Record the exact failure.
+
+- [ ] **Step 2: Fix the emitter**
+
+The synthesized steps are appended to `lir_slots` after the module loop (`sf/src/async_state_machine.zig:754`), so the per-module contiguous-run emission (`sf/src/main.zig:1160-1254`, `emitModuleFile`) and the single-file `emitModule` (`sf/src/c89_emit.zig:2711`) never emit a step whose owning module is not last. Change the emission so each synthesized `__Z98Step_<f>` is emitted in the `.c`/`.h` of its owning module (match the step `LirFunction.module_id`), in BOTH the `-o` per-module path and the `--dump-c89` path. Do not change the frame ABI, `CTX_POOL_OFF`, or the scheduler surface.
+
+- [ ] **Step 3: GREEN — fixtures**
+
+Run (per fixture dir, `--dump-c89` + gcc-clean + link + run):
+```bash
+for d in async_step_nonlast_xmod async_step_midmodule_xmod async_libctx_mix_xmod; do
+  rm -rf /tmp/t4_t0/$d && mkdir -p /tmp/t4_t0/$d
+  /tmp/t4_t0/zig1_5_clean --dump-c89 --output-dir /tmp/t4_t0/$d repro/mi_matrix/$d/main.zig; echo "$d dump rc=$?"
+  for f in /tmp/t4_t0/$d/*.c; do gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I /tmp/t4_t0/$d -c "$f" -o "${f%.c}.o" || echo "GCCFAIL $f"; done
+  gcc -m32 -o /tmp/t4_t0/$d/prog /tmp/t4_t0/$d/*.o && (cd /tmp/t4_t0/$d && timeout 120 ./prog); echo "$d run rc=$?"
+done
+```
+Expected: all three dump rc=0, no GCCFAIL, run rc=0. All other `repro/mi_matrix/async_*` fixtures are unchanged (re-run the corpus gate).
+
+- [ ] **Step 4: Annotate the last-module fixture + add the non-last fixture**
+
+- `async_libctx_mix_xmod/main.zig`: add one line stating this is the **last-module-coroutine** fixture (it imports `co.zig` last on purpose).
+- `async_step_nonlast_xmod/main.zig`: replace the EXPECTED-FAIL header with a PASS note (the gap is fixed).
+- New `async_step_midmodule_xmod`: `main.zig` imports `mid.zig` then `last.zig`; the suspending `caller` lives in `mid.zig` (NON-last of 3); `main` drives it to completion and asserts the result (mirror the `async_step_nonlast_xmod` body, frame size `@asyncFrameSize(mid.caller)`).
+
+- [ ] **Step 5: Re-baseline `EXPECTED_FAIL.md` + fixed point**
+
+Remove `async_step_nonlast_xmod` from the fail list; bump the header. Rebuild the two-hop closure and record the NEW fixed point (`bash scripts/seed/build_from_seed.sh ...`; hop1==hop2). Run the corpus gate and record the class movement (the two async dirs flip FAIL→OK). Seed rotation is Task 6.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add sf/src/c89_emit.zig sf/src/main.zig repro/mi_matrix/async_step_nonlast_xmod repro/mi_matrix/async_step_midmodule_xmod repro/mi_matrix/async_libctx_mix_xmod repro/mi_matrix/EXPECTED_FAIL.md
+git commit -m "fix(emit): emit __Z98Step_<f> per owning module (Track4 S15)"
+```
+
+---
+
+### Task 0b: `std.async` task ownership — `addTask` stores `*Task` (S14)
+
+**Files:**
+- Modify: `sf/src/std_async.zig`
+- Modify: `repro/mi_matrix/stdlib_async_sched_xmod/main.zig`, `repro/mi_matrix/stdlib_async_oom_xmod/main.zig`, `repro/mi_matrix/stdlib_async_await_xmod/main.zig`, `repro/mi_matrix/stdlib_async_cancelall_xmod/main.zig`
+- Create: `repro/mi_matrix/stdlib_async_handle_xmod/main.zig`
+- Create: `repro/mi_matrix/stdlib_async_await_nonctx_xmod/main.zig`
+
+**Interfaces:**
+- Consumes: `std.async`.
+- Produces: `Scheduler { tasks: [*]*Task, capacity: usize, count: usize, current: usize, in_task: bool }`; `schedulerInit(tasks: []*Task) Scheduler`; `addTask(s, t) bool` stores the caller's `t` (no by-value copy); `tick`/`awaitTask` read/write through `s.tasks[i]`; `tick` sets `in_task` true around `@asyncResume`; `awaitTask` `@panic`s when called from a non-suspending context (`!s.in_task`). The compiler fixed point is UNMOVED (`std_async.zig` is not in `sf/src/main.zig`'s import graph); the seed archive's `lib/std_async.zig` changes, so Task 6 rotates the seed.
+
+- [ ] **Step 1: Change `sf/src/std_async.zig`**
+
+```zig
+pub const Scheduler = struct { tasks: [*]*Task, capacity: usize, count: usize, current: usize };
+
+pub fn schedulerInit(tasks: []*Task) Scheduler {
+    var s = Scheduler{ .tasks = tasks.ptr, .capacity = tasks.len, .count = 0, .current = 0 };
+    return s;
+}
+
+pub fn addTask(s: *Scheduler, t: *Task) bool {
+    if (s.count >= s.capacity) return false;
+    s.tasks[s.count] = t;
+    t.state = TaskState.ready;
+    t.has_waiting_on = false;
+    s.count += 1;
+    return true;
+}
+```
+`tick`: `var t: *Task = s.tasks[i];` (was `&s.tasks[i]`). `awaitTask`: `var cur: *Task = s.tasks[s.current];`. `allSettled`/`cancelAll` keep `s.tasks[i].state` (auto-deref through `*Task`). `suspend`/`cancel`/`waitAll` unchanged.
+**`awaitTask` context guard (S17 ruling):** add `in_task: bool` to `Scheduler`; `schedulerInit` sets `in_task = false`; in `tick`, set `s.in_task = true` immediately before `@asyncResume(t.frame, t.arg)` and `s.in_task = false` immediately after; `awaitTask` begins with `if (!s.in_task) @panic("std.async: awaitTask called from a non-suspending context");`. This makes `awaitTask` coroutine-internal: a call from `main`/outside a running task traps instead of silently corrupting `s.tasks[s.current]`.
+
+- [ ] **Step 2: Migrate the four scheduler fixtures** to `var pt: [N]*Task = undefined;` + `pt[i] = &t_i;` + `schedulerInit(pt[0..])`; the existing `&s.tasks[i]` handles become `s.tasks[i]` (still valid). `stdlib_async_pool_xmod` / `headerexact_xmod` / `f64align_xmod` do not use `Scheduler` — unchanged.
+
+- [ ] **Step 3: Add `stdlib_async_handle_xmod`** — caller-handle identity fixture. Build `t0`, `t1`; `var pt: [2]*Task = [2]*Task{ &t0, &t1 };` `var s = schedulerInit(pt[0..]);` `addTask(&s, &t0); addTask(&s, &t1);` `cancel(&s, &t0);` then `waitAll`; assert `t0.state == cancelled` AND `s.tasks[0].state == cancelled` (same object), and that a `t1` that `awaitTask(&s, &t0)`s runs only after `t0` settles. Expected deterministic stdout: `4 4 20` (3× identical md5). This fixture FAILS against the by-value copy and PASSES after Task 0b.
+
+- [ ] **Step 3b: Add `stdlib_async_await_nonctx_xmod`** — the S17 rejection fixture. A program that builds a scheduler with one task and calls `awaitTask(&s, &s.tasks[0])` from `main` (a non-suspending context). Expected: dump rc=0, gcc/link rc=0, run rc≠0 with the message `std.async: awaitTask called from a non-suspending context` (trap). Guard fixture: compiles OK; the rejection IS the assertion.
+
+- [ ] **Step 4: Verify**
+
+Run each `stdlib_async_*` fixture (dump rc=0 / gcc-clean / 3× md5 / run rc=0). Rebuild the seed closure and confirm the compiler fixed point is UNMOVED; run the corpus gate (zero class movement).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add sf/src/std_async.zig repro/mi_matrix/stdlib_async_sched_xmod repro/mi_matrix/stdlib_async_oom_xmod repro/mi_matrix/stdlib_async_await_xmod repro/mi_matrix/stdlib_async_cancelall_xmod repro/mi_matrix/stdlib_async_handle_xmod repro/mi_matrix/stdlib_async_await_nonctx_xmod
+git commit -m "fix(std.async): addTask stores *Task + awaitTask non-suspending guard (Track4 S14/S17)"
+```
 
 ---
 
@@ -80,7 +209,7 @@ md5sum release/seed/zig1-seed.tgz
 bash scripts/corpus/list_corpus_dirs.sh | wc -l
 sed -n '1p' repro/mi_matrix/EXPECTED_FAIL.md
 ```
-Expected: HEAD `2dc50be1` (or later); tree clean except the Track 4 docs; archive md5 `23a16154e83736cf6b636685396a124a` (seed v19); corpus `612`; header `v85`. Record the observed values; if the seed/fixed point moved since, record the new values and continue.
+Expected: HEAD `0aa5e13d` (or later); tree clean except the Track 4 docs; pre-Task-0 archive md5 `23a16154e83736cf6b636685396a124a` (seed v19); corpus `612`; header `v85`. Record the observed values. Tasks 0/0b run first and change `sf/src`, so the committed seed and fixed point will have moved — re-record the post-Task-0/0b fixed point here and in the reference-compiler build below.
 
 - [ ] **Step 2: Build the reference compiler and install `std_async.zig`**
 
@@ -165,7 +294,7 @@ chmod +x examples/z98/mud_server/demo/session.sh
 # rogue boot
 rm -rf /tmp/t4_rogue_pre && mkdir -p /tmp/t4_rogue_pre
 (cd examples/z98/rogue_mud && timeout 30 /tmp/t4_ref/zig1_5_clean -o /tmp/t4_rogue_pre/em main.zig)
-for f in /tmp/t4_rogue_pre/em/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I /tmp/t4_rogue_pre/em -c "$f" -o "${f%.c}.o" || exit 1; done
+for f in /tmp/t4_rogue_pre/em/*.c; do gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I /tmp/t4_rogue_pre/em -c "$f" -o "${f%.c}.o" || exit 1; done
 gcc -m32 -o /tmp/t4_rogue_pre/prog /tmp/t4_rogue_pre/em/*.o
 timeout 30 /tmp/t4_rogue_pre/prog < examples/z98/rogue_mud/demo/canonical_feed.txt > examples/z98/rogue_mud/demo/canonical_expected.txt
 timeout 30 /tmp/t4_rogue_pre/prog < examples/z98/rogue_mud/demo/canonical_move_feed.txt > examples/z98/rogue_mud/demo/canonical_move_expected.txt
@@ -173,7 +302,7 @@ md5sum examples/z98/rogue_mud/demo/canonical_expected.txt examples/z98/rogue_mud
 # mud_server
 rm -rf /tmp/t4_mud_pre && mkdir -p /tmp/t4_mud_pre
 timeout 30 /tmp/t4_ref/zig1_5_clean -o /tmp/t4_mud_pre/em examples/z98/mud_server/main.zig
-for f in /tmp/t4_mud_pre/em/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I /tmp/t4_mud_pre/em -c "$f" -o "${f%.c}.o" || exit 1; done
+for f in /tmp/t4_mud_pre/em/*.c; do gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I /tmp/t4_mud_pre/em -c "$f" -o "${f%.c}.o" || exit 1; done
 gcc -m32 -o /tmp/t4_mud_pre/prog /tmp/t4_mud_pre/em/*.o
 bash examples/z98/mud_server/demo/session.sh /tmp/t4_mud_pre/prog examples/z98/mud_server/demo/canonical_expected.txt; echo "session rc=$?"
 md5sum examples/z98/mud_server/demo/canonical_expected.txt
@@ -214,7 +343,7 @@ git commit -m "test(coroutine): Track4 pre-conversion golden harness (Track4)"
 
 **Interfaces:**
 - Consumes: `std.async.Context`, `std.async.Scheduler`, `std.async.tick`, `@asyncFrameSize`, `@asyncInit`, `@asyncSuspend`, `sand_mod.sand_alloc`.
-- Produces: `NpcArgs`, `npcMove(na)`, `npcCoroutine(ctx, args)`, `spawnEnemies(ctx, tasks, args, dungeon, arena) usize`, `updateEnemies(sched)`.
+- Produces: `NpcArgs`, `npcStep(na)`, `npcCoroutine(ctx, args)`, `spawnEnemies(ctx, sched, tasks, args, dungeon, frame_arena, path_arena) usize`, `updateEnemies(sched) FrameError!void`.
 
 - [ ] **Step 1: Record the pre-conversion capture (RED baseline)**
 
@@ -225,7 +354,7 @@ cat examples/z98/rogue_mud/demo/README.md
 ```
 Expected: the md5 equals `examples/z98/rogue_mud/demo/canonical_move_expected.txt`. This is the invariant the converted program must reproduce.
 
-- [ ] **Step 2: Refactor `updateEnemies` into `npcMove` + `npcCoroutine`**
+- [ ] **Step 2: Refactor `updateEnemies` into `npcStep` + `npcCoroutine`**
 
 In `examples/z98/rogue_mud/lib/combat.zig`, add `const std = @import("std");` after the existing imports (`:1-5`), then append:
 ```zig
@@ -235,7 +364,7 @@ pub const NpcArgs = struct {
     arena: *sand_mod.Sand,
 };
 
-fn npcMove(na: *NpcArgs) void {
+fn npcStep(na: *NpcArgs) void {
     const dungeon = na.dungeon;
     const i = na.entity_idx;
     const player_node = dungeon.entities[0];
@@ -270,35 +399,40 @@ fn npcMove(na: *NpcArgs) void {
 pub fn npcCoroutine(ctx: *std.async.Context, args: *void) void {
     const na = @ptrCast(*NpcArgs, args);
     while (true) {
-        npcMove(na);
+        npcStep(na);
         _ = @asyncSuspend(null);
     }
 }
 
-pub fn spawnEnemies(ctx: *std.async.Context, tasks: []std.async.Task, args: []NpcArgs,
-    dungeon: *scenario.Dungeon_t, arena: *sand_mod.Sand) usize {
+pub fn spawnEnemies(ctx: *std.async.Context, sched: *std.async.Scheduler,
+    tasks: []std.async.Task, args: []NpcArgs, dungeon: *scenario.Dungeon_t,
+    frame_arena: *sand_mod.Sand, path_arena: *sand_mod.Sand) usize {
     var n: usize = 0;
     var i: usize = 1;
     while (i < dungeon.entity_count and n < tasks.len) : (i += 1) {
-        args[n] = NpcArgs{ .dungeon = dungeon, .entity_idx = i, .arena = arena };
+        args[n] = NpcArgs{ .dungeon = dungeon, .entity_idx = i, .arena = path_arena };
         const sz = @intCast(usize, @asyncFrameSize(npcCoroutine));
-        const frame = try sand_mod.sand_alloc(arena, sz, 8);
+        // S10: root frames come from a PERMANENT arena, never the per-turn
+        // temp_arena that sand_reset reclaims.
+        const frame = sand_mod.sand_alloc(frame_arena, sz, 8) catch return n;
         tasks[n].frame = @asyncInit(ctx, @ptrCast([*]u8, frame), npcCoroutine, @ptrCast(?*const void, &args[n]));
-        tasks[n].arena = @ptrCast([*]u8, frame);
-        tasks[n].arena_capacity = sz;
-        tasks[n].arena_used = 0;
-        tasks[n].state = .ready;
+        tasks[n].ctx = ctx;
+        tasks[n].arg = @ptrCast(*void, &args[n]);
+        tasks[n].result = @ptrCast(*void, &args[n]);
         tasks[n].cancel_requested = false;
+        tasks[n].waiting_on = &tasks[n];
+        tasks[n].has_waiting_on = false;
+        _ = std.async.addTask(sched, &tasks[n]);
         n += 1;
     }
     return n;
 }
 
-pub fn updateEnemies(sched: *std.async.Scheduler) void {
-    std.async.tick(sched, npcCoroutine);
+pub fn updateEnemies(sched: *std.async.Scheduler) std.async.FrameError!void {
+    try std.async.tick(sched);
 }
 ```
-Then **delete** the old `updateEnemies` body (`:63-104`); `npcMove` is that body with `na.entity_idx`/`na.arena`/`na.dungeon` substituted for the removed loop. `ctx` is unused by `npcCoroutine` bodies because `npcMove` has no suspending callee; it is retained in the signature so `@asyncFrameSize`/`@asyncInit` share one step ABI.
+Then **delete** the old `updateEnemies` body (`:63-104`); `npcStep` is that body with `na.entity_idx`/`na.arena`/`na.dungeon` substituted for the removed loop. `ctx` is unused by `npcCoroutine` because `npcStep` has no suspending callee; it is retained in the signature so `@asyncFrameSize`/`@asyncInit` share one step ABI.
 
 - [ ] **Step 3: Wire the NPC scheduler in `main.zig`**
 
@@ -308,41 +442,44 @@ const MAX_NPCS: usize = 16;
 var npc_tasks: [MAX_NPCS]std.async.Task = undefined;
 var npc_args: [MAX_NPCS]combat_mod.NpcArgs = undefined;
 var npc_sched: std.async.Scheduler = undefined;
+// S10: root frames live in a PERMANENT arena over this 8-aligned backing,
+// separate from `temp_buffer`, so `sand_reset(&temp_arena)` never reclaims a
+// live coroutine frame. `[K]u64` is 8-aligned; a bare `[N]u8` is 1-aligned and
+// would trip `contextInit`'s alignment @panic.
+var async_storage: [32 * 1024]u64 = undefined;
 ```
-After the enemy-placement loop (`:79-86`), spawn and bind the scheduler:
+After the enemy-placement loop (`:79-86`), bind the permanent arena + context and spawn:
 ```zig
+    var async_arena = sand_mod.sand_init(@ptrCast([*]u8, &async_storage)[0 .. 32 * 1024 * 8], true);
+    var async_ctx: *std.async.Context = std.async.contextInit(@ptrCast([*]u8, &async_storage)[0 .. 32 * 1024 * 8]);
     npc_sched = std.async.schedulerInit(npc_tasks[0..]);
-    const npc_count = combat_mod.spawnEnemies(&async_ctx, npc_tasks[0..], npc_args[0..], &dungeon, &temp_arena);
-    _ = npc_count;
+    _ = combat_mod.spawnEnemies(async_ctx, &npc_sched, npc_tasks[0..], npc_args[0..], &dungeon, &async_arena, &temp_arena);
 ```
 Replace both `combat_mod.updateEnemies(&temp_arena, &dungeon);` calls (`:207`, `:258`) with:
 ```zig
-            combat_mod.updateEnemies(&npc_sched);
+            try combat_mod.updateEnemies(&npc_sched);
 ```
-Add a task/context buffer next to `temp_buffer` (`:25`) so NPC root frames are never reclaimed by `sand_reset(&temp_arena)`:
-```zig
-var async_buffer: [256 * 1024]u8 = undefined;
-```
-and after `temp_arena` (`:32`):
-```zig
-    var async_ctx: std.async.Context = std.async.contextInit(async_buffer[0..]);
-```
-(If the landed Track 3 names this initializer differently, amend the name here per the Global Constraints pinned-surface rule.)
+`spawnEnemies` allocates each NPC root frame from `async_arena` (permanent) and stores `&temp_arena` as the per-NPC pathfinding scratch, so the per-turn `sand_reset(&temp_arena)` at `:208`/`:259` cannot reclaim a live frame.
 
 - [ ] **Step 4: Rebuild, run, and verify the byte-identity invariant**
 
 Run:
 ```bash
 rm -rf /tmp/t4_rogue_new && mkdir -p /tmp/t4_rogue_new
-(cd examples/z98/rogue_mud && timeout 30 /tmp/t4_ref/zig1_5_clean -o /tmp/t4_rogue_new/em main.zig); echo "emit rc=$?"
-for f in /tmp/t4_rogue_new/em/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I /tmp/t4_rogue_new/em -c "$f" -o "${f%.c}.o" || exit 1; done
+(cd examples/z98/rogue_mud && timeout 30 /tmp/t4_ref/zig1_5_clean -o /tmp/t4_rogue_new/em main.zig) >/tmp/t4_rogue_new/em/stderr.log 2>&1; echo "emit rc=$?"
+grep -cE 'error\[(3017|3018|3019|3046)\]|PANIC' /tmp/t4_rogue_new/em/stderr.log 2>/dev/null || true
+for f in /tmp/t4_rogue_new/em/*.c; do gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I /tmp/t4_rogue_new/em -c "$f" -o "${f%.c}.o" || exit 1; done
 gcc -m32 -o /tmp/t4_rogue_new/prog /tmp/t4_rogue_new/em/*.o; echo "link rc=$?"
 for i in 1 2 3; do timeout 30 /tmp/t4_rogue_new/prog < examples/z98/rogue_mud/demo/canonical_move_feed.txt | md5sum; done
 md5sum examples/z98/rogue_mud/demo/canonical_move_expected.txt
 timeout 30 /tmp/t4_rogue_new/prog < examples/z98/rogue_mud/demo/canonical_feed.txt | md5sum
 md5sum examples/z98/rogue_mud/demo/canonical_expected.txt
 ```
-Expected: emit/link rc=0; all three move runs print the same md5 and it equals `canonical_move_expected.txt`; the boot run equals `canonical_expected.txt`; no `error[3017/3018/3019/3046]` and no `PANIC` in `/tmp/t4_rogue_new/em/dump.log`. If the move md5 differs, apply the §Global-Constraints fallback: restore the original `updateEnemies` body and `updateEnemies(&temp_arena, &dungeon)` call sites, record an amendment, and continue to Task 3 with E1 unconverted.
+Expected: emit/link rc=0; zero `error[3017/3018/3019/3046]`/`PANIC` lines in `em/stderr.log` (the compiler writes diagnostics to stderr — there is no `em/dump.log`); all three move runs print the same md5 and it equals `canonical_move_expected.txt`; the boot run equals `canonical_expected.txt`. If the move md5 differs, apply the §Global-Constraints fallback: restore the original `updateEnemies` body and `updateEnemies(&temp_arena, &dungeon)` call sites, record an amendment, and continue to Task 3 with E1 unconverted.
+
+- [ ] **Step 4b: S10 frame-lifetime fixture**
+
+Create `repro/mi_matrix/async_frame_lifetime_xmod/` proving a coroutine's root frame survives an arena reset between ticks (the S10 bug). Shape: a root frame in a PERMANENT backing buffer; a coroutine whose frame holds a monotonically increasing counter across `@asyncSuspend`; the driver resets/zeroes a SEPARATE scratch buffer between ticks (mirroring `sand_reset(&temp_arena)`) and asserts the counter is preserved across N (e.g. 8) ticks. If the frame lived in the reset arena, the counter would be clobbered and the assertion traps. Run `--dump-c89` + gcc-clean + 3× identical stdout/run rc=0; record the expected stdout in the commit. This fixture FAILS if the frame is allocated from the reset arena and PASSES when it is permanent.
 
 - [ ] **Step 5: Re-run the closeout gate**
 
@@ -440,53 +577,41 @@ pub fn clientFrameCoroutine(ctx: *std.async.Context, args: *void) void {
     ui_mod.drawToSocketCoroutine(ctx, @ptrCast(*void, &ca));
 }
 ```
-Extract the existing body of `broadcastOneClient` (`:286-362`) into a plain helper `buildBroadcastCells(dungeon, cells, rows, cols)` that fills `local_cells` exactly as today (the two `ui_mod.drawToSocket`/status-bar steps stay at the end of the original `broadcastOneClient` only for the non-coroutine path; the coroutine path calls `buildBroadcastCells` then `drawToSocketCoroutine`). Keep `broadcastOneClient` as a thin wrapper (`buildBroadcastCells` + `ui_mod.drawToSocket`) for the upgraded-closeout compatibility path, or delete it if Task 3 Step 3 shows it is unused.
+Extract the existing body of `broadcastOneClient` (`:286-362`) into a plain helper `buildBroadcastCells(dungeon: *scenario.Dungeon_t, cells: [*]ui_mod.Cell, rows: usize, cols: usize)` that fills the **passed** `cells` buffer exactly as today (replace every `local_cells[...]` write with `cells[...]`). The coroutine path calls `buildBroadcastCells` then `drawToSocketCoroutine`. Keep `broadcastOneClient` as a thin wrapper over `buildBroadcastCells` + `ui_mod.drawToSocket` for the upgraded-closeout compatibility path, or delete it if Step 3 shows it is unused. **S11:** each client task MUST build into its OWN cells buffer — a single shared `local_cells` is corrupted when two yielding tasks interleave (one task overwrites the other's rows mid-frame). See Step 3.
 
 - [ ] **Step 3: Drive the client scheduler from `broadcastDungeon`**
 
-Replace `broadcastDungeon` (`:277-284`) with:
-```zig
-fn broadcastDungeon(sched: *std.async.Scheduler) void {
-    var i: usize = 0;
-    while (i < @intCast(usize, 5)) : (i += 1) {
-        if (server.clients[i].active) {
-            _ = std.async.tick(sched, clientFrameCoroutine);
-        }
-    }
-}
-```
-Because `server` is a local in `main` today, thread it through: either (a) make `server` and `npc_sched`/`client_sched` module-scope `var`s (matching the existing workaround style at `:24-26`), or (b) pass `&server` and `&client_sched` into `broadcastDungeon(&server, &client_sched)`. Prefer (b) to keep state local:
-```zig
-fn broadcastDungeon(server: *net_mod.Server, sched: *std.async.Scheduler, calls: [*]main.callable) void
-```
-is not expressible without generics; use:
+Replace `broadcastDungeon` (`:277-284`) with a version that takes the server and the client scheduler and ticks ONCE per broadcast (client tasks are bound ONCE — see Task 4 Step 1 — not re-added per broadcast):
 ```zig
 fn broadcastDungeon(server: *net_mod.Server, sched: *std.async.Scheduler) void {
     var i: usize = 0;
     while (i < @intCast(usize, 5)) : (i += 1) {
         if (server.clients[i].active) {
             client_frame_args[i].server = server;
-            _ = std.async.addTask(sched, &client_frame_tasks[i]);
-            std.async.tick(sched, clientFrameCoroutine);
         }
     }
+    std.async.tick(sched) catch {};
 }
 ```
-with module-scope `client_frame_tasks: [5]std.async.Task`, `client_frame_args: [5]ClientFrameArgs`, bound once after `server` is created. Update the two call sites (`:210`, `:260`) to `broadcastDungeon(&server, &client_sched)` and initialize `client_sched` next to `npc_sched` in Task 2's setup block.
+`tick(s)` (landed signature, returns `FrameError!void`) resumes every registered client task once; `catch {}` is acceptable here because the client tasks are bounded and sized from `@asyncFrameSize` (pool exhaustion triggers the §Global-Constraints fallback and is re-checked in Task 6). Module-scope `client_frame_tasks: [5]std.async.Task` and `client_frame_args: [5]ClientFrameArgs` are bound once in Task 4 Step 1. **S11:** `client_frame_args[i].cells` points at a per-client buffer — add `var client_cells: [5][80 * 50]ui_mod.Cell = undefined;` next to `local_cells` and bind `.cells = @ptrCast([*]ui_mod.Cell, &client_cells[i][0])`. Update the two call sites (`:210`, `:260`) to `broadcastDungeon(&server, &client_sched)` and initialize `client_sched` next to `npc_sched` in Task 2's setup block.
 
 - [ ] **Step 4: Verify the broadcast byte-identity**
 
 Run:
 ```bash
 rm -rf /tmp/t4_rogue_b && mkdir -p /tmp/t4_rogue_b
-(cd examples/z98/rogue_mud && timeout 30 /tmp/t4_ref/zig1_5_clean -o /tmp/t4_rogue_b/em main.zig); echo "emit rc=$?"
-grep -cE 'error\[(3017|3018|3019|3046)\]|PANIC' /tmp/t4_rogue_b/em/dump.log 2>/dev/null || true
-for f in /tmp/t4_rogue_b/em/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I /tmp/t4_rogue_b/em -c "$f" -o "${f%.c}.o" || exit 1; done
+(cd examples/z98/rogue_mud && timeout 30 /tmp/t4_ref/zig1_5_clean -o /tmp/t4_rogue_b/em main.zig) >/tmp/t4_rogue_b/em/stderr.log 2>&1; echo "emit rc=$?"
+grep -cE 'error\[(3017|3018|3019|3046)\]|PANIC' /tmp/t4_rogue_b/em/stderr.log 2>/dev/null || true
+for f in /tmp/t4_rogue_b/em/*.c; do gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I /tmp/t4_rogue_b/em -c "$f" -o "${f%.c}.o" || exit 1; done
 gcc -m32 -o /tmp/t4_rogue_b/prog /tmp/t4_rogue_b/em/*.o
 for i in 1 2 3; do timeout 30 /tmp/t4_rogue_b/prog < examples/z98/rogue_mud/demo/canonical_move_feed.txt | md5sum; done
 md5sum examples/z98/rogue_mud/demo/canonical_move_expected.txt
 ```
-Expected: emit/link rc=0; zero diagnostics; all three move runs reproduce `canonical_move_expected.txt`. The local (single-player) path has no connected clients, so the client scheduler is exercised only by the net variant in Task 4; the byte-identity here proves the client-task wiring did not disturb the local turn. If the md5 differs, apply the fallback for E2 (restore `broadcastOneClient`/`drawToSocket` and the original `broadcastDungeon`), record an amendment, and continue.
+Expected: emit/link rc=0; zero `error[3017/3018/3019/3046]`/`PANIC` lines in `em/stderr.log`; all three move runs reproduce `canonical_move_expected.txt`. The local (single-player) path has no connected clients, so the client scheduler is exercised only by the net variant in Task 4; the byte-identity here proves the client-task wiring did not disturb the local turn. If the md5 differs, apply the fallback for E2 (restore `broadcastOneClient`/`drawToSocket` and the original `broadcastDungeon`), record an amendment, and continue.
+
+- [ ] **Step 4b: S11 per-client cells fixture**
+
+Create `repro/mi_matrix/async_client_cells_xmod/` proving two yielding writers with separate cells buffers never observe each other's rows (the S11 bug). Shape: two `ClientArgs`-like tasks, each with its OWN cells buffer filled with a distinct repeating pattern; each task streams its buffer row-by-row with `@asyncSuspend` between rows into a captured output; tick the scheduler to completion; assert each captured stream equals its own pattern (no interleaved bytes). A single shared buffer FAILS (task A's later rows read task B's pattern); per-task buffers PASS. Run `--dump-c89` + gcc-clean + 3× identical stdout/run rc=0; record the expected stdout.
 
 - [ ] **Step 5: Closeout gate + commit**
 
@@ -515,25 +640,27 @@ Expected: `CLOSEOUT OK`.
 In `main.zig`, after `async_ctx` is created, replace the Task 2 spawn block with:
 ```zig
     npc_sched = std.async.schedulerInit(npc_tasks[0..]);
-    _ = combat_mod.spawnEnemies(&async_ctx, npc_tasks[0..], npc_args[0..], &dungeon, &temp_arena);
+    _ = combat_mod.spawnEnemies(async_ctx, &npc_sched, npc_tasks[0..], npc_args[0..], &dungeon, &async_arena, &temp_arena);
 
     client_sched = std.async.schedulerInit(client_frame_tasks[0..]);
     var ci: usize = 0;
     while (ci < @intCast(usize, 5)) : (ci += 1) {
+        // S11: each client builds into its OWN cells buffer.
         client_frame_args[ci] = ClientFrameArgs{ .server = &server, .dungeon = &dungeon,
-            .client_idx = ci, .cells = @ptrCast([*]ui_mod.Cell, &local_cells[0]) };
+            .client_idx = ci, .cells = @ptrCast([*]ui_mod.Cell, &client_cells[ci][0]) };
         const csz = @intCast(usize, @asyncFrameSize(clientFrameCoroutine));
-        const cframe = try sand_mod.sand_alloc(&async_arena, csz, 8);
-        client_frame_tasks[ci].frame = @asyncInit(&async_ctx, @ptrCast([*]u8, cframe), clientFrameCoroutine, @ptrCast(?*const void, &client_frame_args[ci]));
-        client_frame_tasks[ci].arena = @ptrCast([*]u8, cframe);
-        client_frame_tasks[ci].arena_capacity = csz;
-        client_frame_tasks[ci].arena_used = 0;
-        client_frame_tasks[ci].state = .ready;
+        const cframe = sand_mod.sand_alloc(&async_arena, csz, 8) catch return;
+        client_frame_tasks[ci].frame = @asyncInit(async_ctx, @ptrCast([*]u8, cframe), clientFrameCoroutine, @ptrCast(?*const void, &client_frame_args[ci]));
+        client_frame_tasks[ci].ctx = async_ctx;
+        client_frame_tasks[ci].arg = @ptrCast(*void, &client_frame_args[ci]);
+        client_frame_tasks[ci].result = @ptrCast(*void, &client_frame_args[ci]);
         client_frame_tasks[ci].cancel_requested = false;
+        client_frame_tasks[ci].waiting_on = &client_frame_tasks[ci];
+        client_frame_tasks[ci].has_waiting_on = false;
         _ = std.async.addTask(&client_sched, &client_frame_tasks[ci]);
     }
 ```
-`async_arena` is `sand_init(async_buffer[0..], true)` (permanent) so `sand_reset(&temp_arena)` cannot reclaim coroutine frames. Each client task uses its own frame as its arena (the `arena`/`arena_used` fields above) so per-client child frames do not alias.
+`async_arena` is the PERMANENT arena bound in Task 2 Step 3 (`sand_init` over `async_storage`, `true`), so `sand_reset(&temp_arena)` cannot reclaim coroutine root frames. The landed `Task` has **no** `arena`/`arena_capacity`/`arena_used` fields — child frames are allocated from the task's `ctx` pool at await sites; all tasks share the one `async_ctx`.
 
 - [ ] **Step 2: Replace the cancel sites**
 
@@ -559,16 +686,16 @@ At game over (`main.zig:270-273`), cancel all NPC and client tasks before the br
 Run:
 ```bash
 rm -rf /tmp/t4_rogue_c && mkdir -p /tmp/t4_rogue_c
-(cd examples/z98/rogue_mud && timeout 30 /tmp/t4_ref/zig1_5_clean -o /tmp/t4_rogue_c/em main.zig); echo "emit rc=$?"
-grep -cE 'error\[(3017|3018|3019|3046)\]|PANIC' /tmp/t4_rogue_c/em/dump.log 2>/dev/null || true
-for f in /tmp/t4_rogue_c/em/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I /tmp/t4_rogue_c/em -c "$f" -o "${f%.c}.o" || exit 1; done
+(cd examples/z98/rogue_mud && timeout 30 /tmp/t4_ref/zig1_5_clean -o /tmp/t4_rogue_c/em main.zig) >/tmp/t4_rogue_c/em/stderr.log 2>&1; echo "emit rc=$?"
+grep -cE 'error\[(3017|3018|3019|3046)\]|PANIC' /tmp/t4_rogue_c/em/stderr.log 2>/dev/null || true
+for f in /tmp/t4_rogue_c/em/*.c; do gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I /tmp/t4_rogue_c/em -c "$f" -o "${f%.c}.o" || exit 1; done
 gcc -m32 -o /tmp/t4_rogue_c/prog /tmp/t4_rogue_c/em/*.o
 for i in 1 2 3; do timeout 30 /tmp/t4_rogue_c/prog < examples/z98/rogue_mud/demo/canonical_feed.txt | md5sum; done
 md5sum examples/z98/rogue_mud/demo/canonical_expected.txt
 for i in 1 2 3; do timeout 30 /tmp/t4_rogue_c/prog < examples/z98/rogue_mud/demo/canonical_move_feed.txt | md5sum; done
 md5sum examples/z98/rogue_mud/demo/canonical_move_expected.txt
 ```
-Expected: emit/link rc=0; zero diagnostics; both feeds reproduce their expected md5 across 3 runs. `is_suspending` must have propagated `main → combat.npcCoroutine` and `main → ui.drawToSocketCoroutine` (if not, the frame is mis-sized and the run is nondeterministic or traps). Record the observed md5s.
+Expected: emit/link rc=0; zero `error[3017/3018/3019/3046]`/`PANIC` lines in `em/stderr.log`; both feeds reproduce their expected md5 across 3 runs. `is_suspending` must have propagated `main → combat.npcCoroutine` and `main → ui.drawToSocketCoroutine` (if not, the frame is mis-sized and the run is nondeterministic or traps). Record the observed md5s.
 
 - [ ] **Step 4: Closeout gate + commit**
 
@@ -647,12 +774,13 @@ Add module-scope state after `rooms` (`:31`):
 var client_tasks: [MAX_CLIENTS]std.async.Task = undefined;
 var client_args: [MAX_CLIENTS]ClientTaskArgs = undefined;
 var client_sched: std.async.Scheduler = undefined;
-var async_buffer: [256 * 1024]u8 = undefined;
+// 8-aligned backing; a bare [N]u8 is 1-aligned and trips contextInit's @panic.
+var async_storage: [32 * 1024]u64 = undefined;
 ```
-After the `players` initialization loop (`:90-95`), bind the scheduler and context:
+After the `players` initialization loop (`:90-95`), bind the permanent arena + context and pre-mark the slots:
 ```zig
-    var async_arena = std_arena.sand_init(async_buffer[0..], true);
-    var async_ctx = std.async.contextInit(async_buffer[0..]);
+    var async_arena = std_arena.init(@ptrCast([*]u8, &async_storage)[0 .. 32 * 1024 * 8]);
+    var async_ctx: *std.async.Context = std.async.contextInit(@ptrCast([*]u8, &async_storage)[0 .. 32 * 1024 * 8]);
     client_sched = std.async.schedulerInit(client_tasks[0..]);
     i = 0;
     while (i < MAX_CLIENTS) {
@@ -662,13 +790,14 @@ After the `players` initialization loop (`:90-95`), bind the scheduler and conte
         i += 1;
     }
 ```
+`std_arena` is the landed `std.arena` module: add `const std_arena = @import("std_arena");` and read `sf/src/std_arena.zig` for the exact `init`/`alloc` signature (error-union vs optional) before writing the alloc call.
 In the accept path (`:121-150`), when a free slot is found, replace the player assignment with:
 ```zig
                         players[i] = Player{ .socket = client, .room_id = @intCast(u8, 0),
                             .buffer = undefined, .pos = @intCast(usize, 0), .is_active = true };
                         client_args[i] = ClientTaskArgs{ .player = &players[i], .rooms = &rooms };
                         const csz = @intCast(usize, @asyncFrameSize(clientCoroutine));
-                        const cframe = std_arena.sand_alloc(&async_arena, csz, 8) catch {
+                        const cframe = std_arena.alloc(&async_arena, csz) catch {
                             const full2: []const u8 = "Server is full.\r\n";
                             _ = std_net.send(client, full2.ptr, @intCast(i32, full2.len));
                             std_net.close(client);
@@ -676,12 +805,13 @@ In the accept path (`:121-150`), when a free slot is found, replace the player a
                             i += 1;
                             continue;
                         };
-                        client_tasks[i].frame = @asyncInit(&async_ctx, @ptrCast([*]u8, cframe), clientCoroutine, @ptrCast(?*const void, &client_args[i]));
-                        client_tasks[i].arena = @ptrCast([*]u8, cframe);
-                        client_tasks[i].arena_capacity = csz;
-                        client_tasks[i].arena_used = 0;
-                        client_tasks[i].state = .ready;
+                        client_tasks[i].frame = @asyncInit(async_ctx, @ptrCast([*]u8, cframe), clientCoroutine, @ptrCast(?*const void, &client_args[i]));
+                        client_tasks[i].ctx = async_ctx;
+                        client_tasks[i].arg = @ptrCast(*void, &client_args[i]);
+                        client_tasks[i].result = @ptrCast(*void, &client_args[i]);
                         client_tasks[i].cancel_requested = false;
+                        client_tasks[i].waiting_on = &client_tasks[i];
+                        client_tasks[i].has_waiting_on = false;
                         _ = std.async.addTask(&client_sched, &client_tasks[i]);
 ```
 The `welcome` send (`:136-137`) and `found = true` stay. In the `!found` branch (`:144-148`), also mark `players[i].is_active = false` before closing if a slot was tentatively used.
@@ -714,35 +844,32 @@ Replace the whole `select` + "Data on client sockets" section (`:99-196`) with a
             if (players[i].is_active and std_net.fdIsset(players[i].socket, @ptrCast(*u8, &read_fds))) {
                 const step = @asyncResume(client_tasks[i].frame, null);
                 if (step == null) {
-                    // coroutine completed (quit or disconnect): drain with awaitTask, then free the slot
-                    std.async.awaitTask(&client_sched, &client_tasks[i], clientCoroutine);
-                    if (players[i].is_active) {
-                        std_net.send(players[i].socket, rooms[players[i].room_id].desc.ptr, @intCast(i32, rooms[players[i].room_id].desc.len));
-                    }
+                    // coroutine completed (quit or disconnect): free the slot
                     std_net.close(players[i].socket);
                     players[i].is_active = false;
+                    client_tasks[i].state = .done;
                 }
             }
             i += 1;
         }
-        std.async.tick(&client_sched, clientCoroutine);
+        std.async.tick(&client_sched) catch {};
     }
 ```
-`awaitTask` is the completion path for a client task (quit/disconnect); it replaces the manual `p.is_active = false` reasoning that lived in the old recv branch. `@asyncResume` is used (not `tick`) so only the socket that `select` reported ready performs a `recv`.
+`@asyncResume` is used (not `tick`) so only the socket that `select` reported ready performs a `recv`; the trailing `tick` advances the rest. **FLAGGED S17 (operator ruling required):** the spec §3.2/§1 says `main` uses `std.async.awaitTask` on the quit/disconnect path, but the landed `awaitTask(s, t)` only marks the *current* running task as waiting on `t` — it does not "drain" a task from outside the scheduler, and `main` here is not a task. `@asyncResume` returning null already signals completion, so this plan frees the slot directly. If the operator wants the spec's `awaitTask` drain, either `awaitTask` gains drain semantics (`sf/src` change) or the conversion restructures; otherwise the plan's Step 3 stands as written and the spec text is corrected.
 
 - [ ] **Step 4: Build, run the session, and verify byte-identity**
 
 Run:
 ```bash
 rm -rf /tmp/t4_mud_new && mkdir -p /tmp/t4_mud_new
-timeout 30 /tmp/t4_ref/zig1_5_clean -o /tmp/t4_mud_new/em examples/z98/mud_server/main.zig; echo "emit rc=$?"
-grep -cE 'error\[(3017|3018|3019|3046)\]|PANIC' /tmp/t4_mud_new/em/dump.log 2>/dev/null || true
-for f in /tmp/t4_mud_new/em/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I /tmp/t4_mud_new/em -c "$f" -o "${f%.c}.o" || exit 1; done
+timeout 30 /tmp/t4_ref/zig1_5_clean -o /tmp/t4_mud_new/em examples/z98/mud_server/main.zig >/tmp/t4_mud_new/em/stderr.log 2>&1; echo "emit rc=$?"
+grep -cE 'error\[(3017|3018|3019|3046)\]|PANIC' /tmp/t4_mud_new/em/stderr.log 2>/dev/null || true
+for f in /tmp/t4_mud_new/em/*.c; do gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I /tmp/t4_mud_new/em -c "$f" -o "${f%.c}.o" || exit 1; done
 gcc -m32 -o /tmp/t4_mud_new/prog /tmp/t4_mud_new/em/*.o
 bash examples/z98/mud_server/demo/session.sh /tmp/t4_mud_new/prog /tmp/t4_mud_new/out.txt; echo "session rc=$?"
 md5sum /tmp/t4_mud_new/out.txt examples/z98/mud_server/demo/canonical_expected.txt
 ```
-Expected: emit/gcc/link rc=0; zero diagnostics; session rc=0; the two md5s match (byte-identical `look`/`north`/`quit` responses and disconnect handling). Run the session three times and require identical md5. If it differs, apply the E4 fallback (restore the original `select`/fd-set loop), record an amendment, and continue.
+Expected: emit/gcc/link rc=0; zero `error[3017/3018/3019/3046]`/`PANIC` lines in `em/stderr.log`; session rc=0; the two md5s match (byte-identical `look`/`north`/`quit` responses and disconnect handling). Run the session three times and require identical md5. If it differs, apply the E4 fallback (restore the original `select`/fd-set loop), record an amendment, and continue.
 
 - [ ] **Step 5: Closeout gate + commit**
 
@@ -806,14 +933,22 @@ echo "examples OK=$ok GREEN=$green FAIL=$fail"
 ```
 Expected: both dirs listed; `OK=2 GREEN=0 FAIL=0`, matching Task 1's baseline (zero class movement).
 
-- [ ] **Step 4: Verify no `sf/src` drift and no fixed-point/seed movement**
+- [ ] **Step 4: Verify the example conversions touch no new `sf/src`; rotate the seed**
 
 Run:
 ```bash
 git diff --stat HEAD -- sf/src release/seed
 git status --porcelain
 ```
-Expected: empty `sf/src` and `release/seed` diffs; only the example files and the two docs are dirty. Examples are outside the compiler import graph, so no fixed point or seed change is possible from this track.
+Expected: no NEW `sf/src` change beyond the Task 0/0b commits; the only dirty files are the examples and docs. Because Task 0 moved the self-emission fixed point and Task 0b changed `lib/std_async.zig`, **rotate the seed** at closeout (this supersedes the original "do not rotate" constraint):
+```bash
+bash scripts/seed/archive_seed.sh <zig1_binary> <gen_dir> release/seed/zig1-seed.tgz --update-changelog
+```
+Record the new seed version + archive md5; update `docs/sf/QUICK_REF.md` (fixed point, seed version, archive md5) and confirm the rotation prepended the `release/seed/CHANGELOG.md` entry.
+
+- [ ] **Step 4c: Spec-vs-landed reconciliation (standing)**
+
+Re-read `docs/superpowers/specs/2026-09-13-coroutine-integration-design.md` and confirm every claim about the landed surface (types, signatures, field names, call-site semantics) matches `sf/src` and the converted examples. Correct any drift in the spec in place and record it here. S17 (`awaitTask` described as a `main`-side drain vs the landed coroutine-internal function) is the first instance of spec drift WITHOUT plan drift; treat this as a standing item for EVERY track-N closeout, not just Track 4.
 
 - [ ] **Step 5: Update the demo READMEs and record the amendment status**
 
@@ -847,7 +982,7 @@ git commit -m "chore(coroutine): Track4 golden battery + fallback adjudication (
 
 **Placeholder scan:** no `TBD`/`TODO`/"add error handling"/"similar to Task N"; every code step shows the code and every command shows expected evidence. The only enumerated-by-reference item is the landed Track 3 initializer/field-name surface, which the Global Constraints pinned-surface amendment rule covers explicitly (naming-only amendments).
 
-**Type consistency:** `NpcArgs`/`npcMove`/`npcCoroutine`/`spawnEnemies`/`updateEnemies` are defined in Task 2 and consumed with the same names in Task 4. `ClientArgs`/`drawToSocketCoroutine` and `ClientFrameArgs`/`clientFrameCoroutine` are defined in Task 3 and consumed in Task 4. `ClientTaskArgs`/`clientCoroutine` are defined in Task 5. `npc_sched`/`client_sched`/`npc_tasks`/`client_frame_tasks`/`async_ctx`/`async_arena`/`async_buffer` are introduced in Task 2/3/4 and used consistently. `tick(s)`/`awaitTask(s, t)` signatures match the pinned Track 3 surface (Amendment 7 self-dispatch) in every call site.
+**Type consistency:** `NpcArgs`/`npcStep`/`npcCoroutine`/`spawnEnemies`/`updateEnemies` are defined in Task 2 and consumed with the same names in Task 4. `ClientArgs`/`drawToSocketCoroutine` and `ClientFrameArgs`/`clientFrameCoroutine` are defined in Task 3 and consumed in Task 4. `ClientTaskArgs`/`clientCoroutine` are defined in Task 5. `npc_sched`/`client_sched`/`npc_tasks`/`client_frame_tasks`/`async_ctx`/`async_arena`/`async_storage`/`client_cells` are introduced in Task 2/3/4 and used consistently. `tick(s)` (returns `FrameError!void`) / `awaitTask(s, t)` signatures match the landed Track 3 surface in every call site. Tasks 0/0b precede everything; the landed surface is pinned in Global Constraints.
 
 ## Amendments
 
@@ -879,3 +1014,20 @@ Applied before dispatch:
    or an explicit, recorded fallback decision) before the Task 2–5 conversions.
 
 No `sf/src` edit is made by this amendment (docs-only).
+
+### Amendment 2 — pre-flight ruling: Cat 1/2/3 + S15 emitter fix (2026-09-15, operator ruling)
+
+The pre-flight scan (`.superpowers/sdd/2026-09-13-coroutine-integration-plan/progress.md`) found the plan body written against a superseded `std.async` surface. The operator ruled a three-category handling plus a compiler fix; all are applied in place above.
+
+**S15 — multi-module `__Z98Step_<f>` emission gap: FIX THE EMITTER (new Task 0).** `emitModule`/`emitModuleFile` must emit a step for every `is_suspending` function in EVERY module, not only the last. `async_libctx_mix_xmod` is annotated as the last-module-coroutine fixture; a new non-last fixture `async_step_midmodule_xmod` lands in the same commit and passes; `async_step_nonlast_xmod` flips EXPECTED-FAIL → PASS. Fixed point MOVES; seed rotation at Task 6.
+
+**Cat 1 — genuine plan drift (docs-only; corrected in place).** S1-S3 stale 2/3-arg `tick`/`awaitTask`; S4 non-existent `Task.arena*` fields; S5 1-aligned `[N]u8` context buffer; S6 `*Context` vs value; S7 `try sand_alloc` in a non-error fn; S8 `spawnEnemies` never `addTask`; S9 `npcMove`→`npcStep` (spec §4); S12 gcc flag set; S16 `tick` returns `FrameError!void`. Global Constraints pin the landed surface.
+
+**Cat 2 — real bugs (fixed before Task 4).**
+- S10 (Task 2): NPC root frames must live in PERMANENT storage (`async_storage`/`async_arena`), never the per-turn `temp_arena`. Fixture `async_frame_lifetime_xmod` (Task 2 Step 4b).
+- S11 (Task 3): per-client cells buffers (`client_cells[i]`), not a shared `local_cells`. Fixture `async_client_cells_xmod` (Task 3 Step 4b). I-task recommendation: per-client buffers.
+- S14 (Task 0b): `addTask` stores the caller's `*Task` (`Scheduler.tasks: [*]*Task`), not a by-value copy. Fixture `stdlib_async_handle_xmod`. I-task recommendation: pointer storage. Not in the compiler import graph → no fixed-point move; seed archive `lib/std_async.zig` changes.
+
+**Cat 3 — S13 (docs-only).** Compiler diagnostics go to stderr; there is no `em/dump.log`. Every task's evidence now captures `> em/stderr.log 2>&1` and greps `em/stderr.log`. (Operator shorthand `2>&1 > em/stderr.log` reordered to actually capture stderr.)
+
+**S17 — FLAGGED, awaiting ruling.** Task 5 Step 3: the spec says `main` uses `awaitTask` to drain a completed client task, but the landed `awaitTask(s, t)` only marks the current task as waiting. The plan frees the slot directly; a spec/`sf/src` change is required if the drain semantics are wanted.

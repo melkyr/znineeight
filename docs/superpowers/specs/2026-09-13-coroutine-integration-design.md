@@ -31,7 +31,10 @@ module-scope mutable globals), and the umbrella Global Constraints.
 Track 4 is the **integration/port** stage of the async sequence. It converts the
 example event loops of two user programs to cooperative coroutines on top of the
 Track 2 builtins and the Track 3 `std.async` library. It changes **example source
-only** — no `sf/src` module, no builtin, no `std_async.zig` internals.
+only**, with two operator-authorized `sf/src` exceptions — Task 0 (multi-module
+`__Z98Step_<f>` emitter fix) and Task 0b (`std.async` task ownership +
+`awaitTask` non-suspending-context guard) — and no other `sf/src` module, builtin,
+or `std_async.zig` internals.
 
 1. `examples/z98/rogue_mud` NPC AI: `lib/combat.zig:63 updateEnemies` (the per-enemy
    `findPath`/`moveEntity` loop, `:63-104`) becomes a **per-NPC coroutine** driven by
@@ -44,9 +47,11 @@ only** — no `sf/src` module, no builtin, no `std_async.zig` internals.
    creation in `main.zig`, the NPC step in `lib/combat.zig`, and the socket writer in
    `ui.zig` exercise multi-module `is_suspending` propagation and frame synthesis.
 4. `examples/z98/mud_server`: the `select` accept/read loop (`main.zig:100-174`) maps
-   each accepted client to a **per-client task** driven by `std.async`, with
-   `awaitTask` on the client-completion path, replacing the manual fd-set
-   bookkeeping.
+   each accepted client to a **per-client task** driven by `std.async`; `main`
+   (which is not a coroutine) drives and retires completed tasks with
+   `waitAll(s)`/a `tick` loop, replacing the manual fd-set bookkeeping.
+   `std.async.awaitTask` is **coroutine-internal** and MUST NOT be called from a
+   non-suspending context.
 
 **Hard requirement.** The committed goldens stay **byte-identical**:
 `bash scripts/closeout/verify_upgraded.sh <zig1>` must print `CLOSEOUT OK` and exit 0
@@ -56,11 +61,14 @@ with lisp canonical `96654b39…` and rogue `3fb6709e…` (canonical q) /
 
 ## 2. Non-goals
 
-- No `sf/src` change: no parser/type/sema/lowering/emitter/`std_async.zig` edit.
-- No new builtin, diagnostic, or error code. Track 4 emits no diagnostic of its own.
-- No fixed-point movement, no seed rotation, no corpus re-baseline **from this track**
-  (examples are outside the compiler import graph; `build_from_seed.sh` never compiles
-  them). If a prior track moved the point, that rotation belongs to that track.
+- No `sf/src` change beyond the two operator-authorized Track-4 fixes (Task 0
+  emitter step-emission; Task 0b `std.async` ownership + `awaitTask` guard). No
+  other parser/type/sema/lowering/emitter edit.
+- No new builtin or error code. Track 4's `awaitTask` guard is a library-level
+  rejection (`@panic`), not a new diagnostic.
+- The two authorized `sf/src` fixes move the self-emission fixed point (Task 0)
+  and change `lib/std_async.zig` (Task 0b); the seed IS rotated at Track-4
+  closeout. No corpus re-baseline beyond the async fixture class movements.
 - No change to observable program behaviour: stdout, per-socket bytes, input
   handling, and turn ordering are preserved exactly.
 - No new example program and no rewrite of unrelated example logic; only the two
@@ -101,7 +109,7 @@ pub const Scheduler = struct { tasks: [*]Task, capacity: usize, count: usize, cu
 pub fn schedulerInit(tasks: []Task) Scheduler;
 pub fn addTask(s: *Scheduler, t: *Task) bool;
 pub fn tick(s: *Scheduler) void;                 // drives @asyncResume(t.frame, t.arg) once per runnable task
-pub fn awaitTask(s: *Scheduler, t: *Task) void;  // drive until t.state == .done
+pub fn awaitTask(s: *Scheduler, t: *Task) void;  // coroutine-internal: mark the current task waiting on t; reject outside a suspending context
 pub fn cancel(s: *Scheduler, t: *Task) void;     // cooperative cancel_requested
 pub fn cancelAll(s: *Scheduler) void;
 pub fn waitAll(s: *Scheduler) void;
@@ -123,7 +131,7 @@ Each entry is converted independently and is independently revertable (§3.4). T
 | E1 | `rogue_mud` NPC AI | `lib/combat.zig:63-104` `updateEnemies(arena, dungeon)` — `for i in 1..entity_count`, `findPath`, `moveEntity` | `npcCoroutine(ctx, args)` → per active enemy; body `npcStep(na); _ = @asyncSuspend(null);` in a `while (true)`; `npcStep` is the existing per-enemy pathfinding move extracted verbatim | `combat.updateEnemies(sched)` calls `std.async.tick(sched)` (self-dispatch) once per player turn | after each `updateEnemies` call, every entity's `(active, x, y, hp)` equals the pre-conversion state, produced in entity-index order |
 | E2 | `rogue_mud` per-connection broadcast | `main.zig:277-284` `broadcastDungeon`; `main.zig:286-363` `broadcastOneClient`; `ui.zig:61-87` `drawToSocket` | `clientFrameCoroutine(ctx, args)` builds the frame via the existing logic, then `ui.drawToSocketCoroutine(sock, rows, cols, cells)` sends the clear/home bytes, then one row per `@asyncSuspend(null)` | `main` ticks the client scheduler once after each turn that calls `broadcastDungeon` | for each socket, the concatenated byte stream equals the pre-conversion stream (cross-socket interleaving is unobservable) |
 | E3 | `rogue_mud` cross-module lifecycle | calls in `main.zig` game loop; step in `lib/combat.zig`; writer in `ui.zig` | `std.async.addTask`/`tick`/`cancel` invoked across `main.zig` → `lib/combat.zig` → `ui.zig`; the step function is the suspending callee in each module | `main.zig` | task creation order = client-slot / entity-index order; cancel is issued exactly where the original cleared `active` (`main.zig:180-182`, `:270-273`) |
-| E4 | `mud_server` accept/read loop | `main.zig:100-174` `select` + fd-set accept + per-client `recv`/line processing | `clientCoroutine(ctx, args)` does one non-blocking `recv` + line processing then `@asyncSuspend(null)`; `main` accepts a socket, `@asyncInit`s a task, `addTask`s it; on the quit/disconnect path `main` uses `std.async.awaitTask` to drain the client task before freeing its slot | `main.zig` | each client receives the same response bytes; the connect/look/north/quit/disconnect sequence is unchanged; no fd-set bookkeeping remains |
+| E4 | `mud_server` accept/read loop | `main.zig:100-174` `select` + fd-set accept + per-client `recv`/line processing | `clientCoroutine(ctx, args)` does one non-blocking `recv` + line processing then `@asyncSuspend(null)`; `main` accepts a socket, `@asyncInit`s a task, `addTask`s it; on the quit/disconnect path `main` retires the completed task (detected by `@asyncResume` returning null) via a `tick`/`waitAll` drive — `awaitTask` is coroutine-internal and is NOT used from `main` | `main.zig` | each client receives the same response bytes; the connect/look/north/quit/disconnect sequence is unchanged; no fd-set bookkeeping remains |
 
 **Ordering rules (byte-identity prerequisites).**
 
@@ -307,4 +315,17 @@ Classification is by **gcc exit code**, never by empty stderr
   per-client frame coroutine + cross-module task lifecycle) and `mud_server`
   (per-client tasks with `awaitTask`).
 - No downstream consumer: this is the final subspec and plan in the async sequence.
-- No fixed-point, seed, or corpus movement from this track.
+- The two authorized `sf/src` fixes move the self-emission fixed point (Task 0)
+  and require a seed rotation at closeout (Task 0b changes `lib/std_async.zig`);
+  the example conversions themselves move nothing.
+
+## 9. Closeout reconciliation (standing)
+
+Every track-N closeout MUST reconcile this spec's claims about the landed surface
+against the actual `sf/src` (types, signatures, field names, call-site semantics).
+A spec can drift from the landed code without the plan drifting — **S17** is the
+first instance (`awaitTask` was described as a `main`-side "drain" while the
+landed function is coroutine-internal and `main` is not a coroutine). On any
+drift: correct the spec text in place, record the change in the plan's
+Amendments, and re-verify. This is a standing requirement for every track-N
+closeout in the async sequence, not only Track 4.
