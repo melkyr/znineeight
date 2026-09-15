@@ -30,6 +30,18 @@ ABI) is **removed**; its deferral is now applied here.
   `EXPECTED_FAIL.md` v80. Target corpus 604 = 565 OK / 36 GREEN / 3 FAIL;
   `EXPECTED_FAIL.md` v80 → v81.
 
+## Amendment — Option A (2026-09-15, operator ruling)
+
+Pre-flight scan found Task 2's `stdlib_async_sched_xmod` fixture drives
+`sa.suspend(...)` and `sa.waitAll(...)`, which were Task 3 deliverables — so
+Task 2's GREEN gate was unreachable as written. **Operator ruled Option A:**
+`suspend` + `waitAll` move into Task 2's module block (alongside `allSettled`,
+already in Task 2); Task 3 then adds only `awaitTask`/`cancel`/`cancelAll`.
+Applied in place to Task 2 (title/Files/Interfaces/Step 3) and Task 3
+(title/Files/Interfaces/Step 3) and the Self-Review. No fixture, md5, or
+baseline value changes.
+
+
 **Goal:** Build the concrete, no-generics `std.async` Z98 library (`Context` per-task LIFO child-frame pool, `Task`, `Scheduler`, and the cooperative scheduler free functions) and wire it into every std-install touchpoint, so Track 4 can drive compiler-synthesized coroutine steps.
 
 **Architecture:** `sf/src/std_async.zig` is a plain-Z98 user module (not in the compiler import graph): structs + free functions, no generics, no module-scope mutable globals. It adds **no** compiler-core machinery but **depends on Track 2**: the scheduler **self-dispatches** through the compiler builtin `@asyncResume(t.frame, t.arg)` (Amendment 7), so there is no `Task.step` field and no `step` parameter. `Context` is a per-task frame stack for **child** frames only (bump pointer + mark); the root frame lives in the caller-owned `buf` outside the pool, and the `Context` itself sits at the head of the pool buffer (`contextInit` returns a `*Context`). Pool exhaustion surfaces as `error.OutOfFrame`, never a crash. The module is re-exported from `std.zig` and added to all seed/self-compile `lib/` install paths; its five corpus fixtures **hand-build frames** (step function pointer as the first struct field at offset 0) and drive them through the library scheduler.
@@ -270,17 +282,17 @@ git commit -m "feat: std.async — Context pool + std.zig re-export + 9-file lib
 
 ---
 
-### Task 2: `Task` + `Scheduler` + `tick`
+### Task 2: `Task` + `Scheduler` + `tick` + `suspend`/`waitAll`
 
 **Files:**
-- Modify: `sf/src/std_async.zig` (append `Task`/`Scheduler`/`schedulerInit`/`addTask`/`tick`)
+- Modify: `sf/src/std_async.zig` (append `Task`/`Scheduler`/`schedulerInit`/`addTask`/`tick`/`suspend`/`waitAll`)
 - Create: `repro/mi_matrix/stdlib_async_sched_xmod/main.zig`
 - Create: `repro/mi_matrix/stdlib_async_oom_xmod/main.zig`
 - Report: `.superpowers/sdd/task-STDASYNC-report.md` (`## Task 2`)
 
 **Interfaces:**
 - Consumes: Task 1's `TaskState`/`Context`/pool.
-- Produces: `Task`, `Scheduler`, `schedulerInit`, `addTask`, `tick` (including `tick`'s `error.OutOfFrame` propagation from a task's sticky `Context.oom`); self-dispatch through the frame step word (`@asyncResume(t.frame, t.arg)`, no `Task.step`, no `step` parameter) exercised end-to-end.
+- Produces: `Task`, `Scheduler`, `schedulerInit`, `addTask`, `tick`, `suspend`, `waitAll` (including `tick`'s `error.OutOfFrame` propagation from a task's sticky `Context.oom`); self-dispatch through the frame step word (`@asyncResume(t.frame, t.arg)`, no `Task.step`, no `step` parameter) exercised end-to-end.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -490,6 +502,19 @@ pub fn tick(s: *Scheduler) FrameError!void {
         }
     }
 }
+
+/// Mark `t` suspended (cooperative yield bookkeeping).
+pub fn suspend(s: *Scheduler, t: *Task) void {
+    _ = s;
+    t.state = TaskState.suspended;
+}
+
+/// Tick until every task is done or cancelled.
+pub fn waitAll(s: *Scheduler) FrameError!void {
+    while (!allSettled(s)) {
+        try tick(s);
+    }
+}
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
@@ -530,17 +555,17 @@ git commit -m "feat: std.async — Task/Scheduler/tick + OutOfFrame + fixtures (
 
 ---
 
-### Task 3: `suspend` / `awaitTask` / `cancel` / `cancelAll` / `waitAll` + error model
+### Task 3: `awaitTask` / `cancel` / `cancelAll` + error model
 
 **Files:**
-- Modify: `sf/src/std_async.zig` (append `suspend`/`awaitTask`/`cancel`/`cancelAll`/`waitAll`)
+- Modify: `sf/src/std_async.zig` (append `awaitTask`/`cancel`/`cancelAll`)
 - Create: `repro/mi_matrix/stdlib_async_await_xmod/main.zig`
 - Create: `repro/mi_matrix/stdlib_async_cancelall_xmod/main.zig`
 - Report: `.superpowers/sdd/task-STDASYNC-report.md` (`## Task 3`)
 
 **Interfaces:**
 - Consumes: Task 2's `Task`/`Scheduler`/`tick`.
-- Produces: the complete scheduler API (`suspend`/`awaitTask`/`cancel`/`cancelAll`/`waitAll`); `waitAll` returning `error.OutOfFrame` end-to-end.
+- Produces: `awaitTask`/`cancel`/`cancelAll` (with Task 2's `suspend`/`waitAll` completing the scheduler API); `waitAll` returning `error.OutOfFrame` end-to-end.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -690,12 +715,6 @@ Expected RED: `dump rc=2` for each (Task 2's library has no `awaitTask`/`cancel`
 Append to `sf/src/std_async.zig`:
 
 ```zig
-/// Mark `t` suspended (cooperative yield bookkeeping).
-pub fn suspend(s: *Scheduler, t: *Task) void {
-    _ = s;
-    t.state = TaskState.suspended;
-}
-
 /// Suspend the currently-running task until `t` is done or cancelled.
 pub fn awaitTask(s: *Scheduler, t: *Task) void {
     var cur: *Task = &s.tasks[s.current];
@@ -718,14 +737,8 @@ pub fn cancelAll(s: *Scheduler) void {
         }
     }
 }
-
-/// Tick until every task is done or cancelled.
-pub fn waitAll(s: *Scheduler) FrameError!void {
-    while (!allSettled(s)) {
-        try tick(s);
-    }
-}
 ```
+
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -964,11 +977,11 @@ branch (a); nothing is deferred to dispatch.
 ## Self-Review
 
 **Spec coverage** (against `2026-09-13-std-async-design.md`):
-- §3.1 public API -> Task 1 (types/Context/pool), Task 2 (`Task`/`Scheduler`/`tick`), Task 3 (`suspend`/`awaitTask`/`cancel`/`cancelAll`/`waitAll`).
+- §3.1 public API -> Task 1 (types/Context/pool), Task 2 (`Task`/`Scheduler`/`tick`/`suspend`/`waitAll`), Task 3 (`awaitTask`/`cancel`/`cancelAll`).
 - §3.2 Context pool semantics (m1166/m1172) -> Task 1 implementation + `stdlib_async_pool_xmod`.
 - §3.3 Step ABI + self-dispatch (Amendment 7) -> `StepFn` (documented alias only) in Task 1; self-dispatch evidence in Task 2 (`stdlib_async_sched_xmod`).
-- §3.4 scheduler semantics -> Task 2 `tick` + Task 3 `awaitTask`/`cancel`/`cancelAll`/`waitAll`; fixtures.
-- §3.5 error model -> Task 2 `stdlib_async_oom_xmod` (`error.OutOfFrame` from `tick`, no crash) and Task 3 `waitAll` returning `FrameError!void`.
+- §3.4 scheduler semantics -> Task 2 `tick`/`suspend`/`waitAll` + Task 3 `awaitTask`/`cancel`/`cancelAll`; fixtures.
+- §3.5 error model -> Task 2 `stdlib_async_oom_xmod` (`error.OutOfFrame` from `tick`, no crash) and `waitAll` returning `FrameError!void`.
 - §3.6 install surface -> Task 1 (`build_from_seed.sh`), Task 4 (`archive_seed.sh`, `build_zig1_5.sh`, `QUICK_REF`), Task 5 (seed rotation).
 - §4 Interfaces -> `StepFn` in Task 1; the `Context` layout canon is design §3.1 (DECIDED: branch (a)) and is recorded by **Task 6**; the Track 2 reconciliation is documented in the subspec §4/§7.
 - §6 Testing -> the five fixtures, corpus sweep, `check_emit_support`, seed rotation (Tasks 1–3, 4, 5).
