@@ -363,10 +363,49 @@ git commit -m "fix(std.async): addTask stores *Task + awaitTask non-suspending g
 - [ ] **Step 4: Runtime correctness** of each valid-but-warned case — does the tolerated mismatch actually produce correct code?
 - [ ] **Step 5: Fixtures + report + commit.** `git commit -m "test(async): classify warnings valid-vs-invalid Z98 (Track4 S24 I)"`. **STOP and present.**
 
-### Task 0l: Fix per the Task 0k classification (F) — run only after the operator rules on Task 0k
+### Task 0l: Investigate the false-positive `warning[3000]` fix (I)
 
-**Files:** `sf/src/{type_registry,semantic_analyzer,lower,c89_emit}.zig` (as Task 0k dictates), Task 0k fixtures, `EXPECTED_FAIL.md`, `QUICK_REF.md` (4-MD5, after runtime proof), affected goldens.
-**Produces:** emission correctness for the pointer warnings; type-checker accuracy for the valid-Z98 false positives; precisely-scoped hard errors (verified against self-compile's 19) for the genuinely invalid cases; self-compile closure + warning gate + corpus sweep; fixed point MOVES; seed rotation at Task 6.
+> Operator ruling (S25): the 0l work is a SERIES, ordered below; the hard-error promotion is LAST. Do the false-positive fix FIRST. This I task exists because the fix is not yet proven ultra-clear; if it proves trivially clear, collapse it into Task 0m and say so.
+
+**Files:** fixtures + report only. No `sf/src` change; no re-baseline.
+**Consumes:** Task 0k's classification (49 `(a)` valid-Z98 false positives: self 12 — slice `.ptr`→`[*]T` (spec:68), `bool` from `and`/`or` where the checker returns `void` (`semantic_analyzer.zig:1639-1640`, `c89_emit.zig:745`), `undefined`→many-ptr; corpus 37).
+**Produces:** the exact, minimal fix set for each `(a)` family (where the checker mis-types), with evidence, and the Task 0m design.
+- [ ] Per `(a)` family: locate the checker mis-type (e.g. `and`/`or` result type), confirm real Zig accepts the construct, and specify the fix. Determine whether one fix covers several families.
+- [ ] Fixtures pinning each family (GREEN once 0m lands). Report + commit. **No re-baseline.**
+
+### Task 0m: Fix the false-positive `warning[3000]` type-checker cases (F)
+
+**Files:** `sf/src/semantic_analyzer.zig` (+ `c89_emit.zig` if the `and`/`or` type is set there) per Task 0l; Task 0l fixtures.
+**Produces:** the 49 `(a)` cases no longer warn (the checker returns the right types). The 11 `(b)` are still tolerated here (promotion is Task 0q, LAST). Self-compile stays gcc-clean with the `[3000]` count reduced by the fixed families; corpus warning census reflects only the fixed families. Fixed point MOVES. No re-baseline yet.
+- [ ] Apply the Task 0l fix; verify each fixture no longer warns; self-compile closure; corpus class map; commit.
+
+### Task 0n: Migrate the compiler's implicit enum→int sites to `@enumToInt` (F)
+
+> Separate task per the ruling. `@enumToInt` is available (Z98 spec:298; used throughout `sf/src`). Verify the emitted C is accurate for the builtin usage.
+
+**Files:** the 7 self-compile sites (`sf/src/semantic_analyzer.zig:1190,1197`; `sf/src/lower.zig:3093,3618,3768,3771,3892`) — wrap the implicit enum→int reads in `@enumToInt(...)`; plus any other non-self site the classification names.
+**Produces:** no implicit enum→int remains in the compiler source; the explicit `@enumToInt` conversion is used. **Verify the emitted C is correct for the builtin usage** (inspect the emitted `.c` for a representative site and run the affected programs). Self-compile closure; corpus class map. Fixed point MOVES.
+- [ ] Migrate the 7 sites; build; confirm the 7 `[3000]` warnings are gone (they were `(b)`, not fixed by 0m) and nothing else changed; verify emitted C + runtime; commit.
+
+### Task 0o: Fix the pre-existing `strtod` null-optional warning (F)
+
+**Files:** `sf/src/...` (the null-optional `?[*]const c_char` emission path) + a fixture.
+**Produces:** the pre-existing `passing argument 2 of 'strtod'` warning gone (`json_parser` back to its non-strtod baseline). Not A1-caused; independent. Fixed point MOVES.
+- [ ] Fix; verify json_parser warning count; corpus; commit.
+
+### Task 0p: Decay the `string_const` temp emission (F)
+
+**Files:** `sf/src/c89_emit.zig` (emit the `string_const` result temp as a plain element pointer, keeping the LIR/sema type `*const [N]u8` — `materializeInto` classifies on it and the slice length is a separate temp).
+**Produces:** the +1360 `-Wincompatible-pointer-types` gone; warning gate back to the pre-`5b9208c7` 144 baseline; runtime byte-identical (Task 0i proved it). Fixed point MOVES.
+- [ ] Decay in emission; warning gate; runtime proof; corpus; commit.
+
+### Task 0q: Promote the 11 `(b)` invalid-Zig cases to hard `error[3000]` (F) — **LAST**
+
+> Real Zig settles all 11 as invalid (langref coercion test suite: no `*T`→`[*]T`; no array elem/len coercion; no superset→subset error coercion; enum→int only via `@intFromEnum`/`@enumToInt`). This is the FINAL step; it must not precede 0m-0p.
+
+**Files:** `sf/src/semantic_analyzer.zig` (`:2984` var-decl, `:1872` assignment, `:1407-1430` return, `:1561` call-arg) — level 0 for the `(b)` shapes ONLY; `sf/src/type_registry.zig` (dedupe `:1257-1263`); the Task 0k/0i fixtures; `EXPECTED_FAIL.md`; `QUICK_REF.md` (4-MD5, after runtime proof).
+**Produces:** the 11 `(b)` shapes are hard `error[3000]` (0 `.c`); the 49 `(a)` are NOT caught (scoped); self-compile stays green (the 7 enum sites are already `@enumToInt` from 0n); the F-M4 fixture frontend-rejects. Fixed point MOVES; seed rotation at Task 6.
+- [ ] Dedupe `type_registry.zig:1257-1263`; raise the 4 sites to level 0 **scoped to the `(b)` shapes**; verify the `(a)` corpus census is unchanged and self-compile is green; full corpus + warning gate + 4-MD5 + `CLOSEOUT OK`; commit.
 
 ### Task 1: Baseline, reference compiler, and pre-conversion golden captures
 
