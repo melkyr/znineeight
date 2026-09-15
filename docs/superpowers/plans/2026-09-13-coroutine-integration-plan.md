@@ -368,7 +368,7 @@ git commit -m "fix(std.async): addTask stores *Task + awaitTask non-suspending g
 > Operator ruling (S25): the 0l work is a SERIES, ordered below; the hard-error promotion is LAST. Do the false-positive fix FIRST. This I task exists because the fix is not yet proven ultra-clear; if it proves trivially clear, collapse it into Task 0m and say so.
 
 **Files:** fixtures + report only. No `sf/src` change; no re-baseline.
-**Consumes:** Task 0k's classification (49 `(a)` valid-Z98 false positives: self 12 — slice `.ptr`→`[*]T` (spec:68), `bool` from `and`/`or` where the checker returns `void` (`semantic_analyzer.zig:1639-1640`, `c89_emit.zig:745`), `undefined`→many-ptr; corpus 37).
+**Consumes:** Task 0k's classification (48 `(a)` valid-Z98 false positives — Task 0k said 49; `repro/field_store_tagged` was ruled a TRUE POSITIVE in Task 0l and its fixture fixed, so it is not `(a)`: self 12 — slice `.ptr`→`[*]T` (spec:68), `bool` from `and`/`or` where the checker returns `void` (`semantic_analyzer.zig:1639-1640`, `c89_emit.zig:745`), `undefined`→many-ptr; corpus 36).
 **Produces:** the exact, minimal fix set for each `(a)` family (where the checker mis-types), with evidence, and the Task 0m design.
 - [ ] Per `(a)` family: locate the checker mis-type (e.g. `and`/`or` result type), confirm real Zig accepts the construct, and specify the fix. Determine whether one fix covers several families.
 - [ ] Fixtures pinning each family (GREEN once 0m lands). Report + commit. **No re-baseline.**
@@ -376,7 +376,7 @@ git commit -m "fix(std.async): addTask stores *Task + awaitTask non-suspending g
 ### Task 0m: Fix the false-positive `warning[3000]` type-checker cases (F)
 
 **Files:** `sf/src/semantic_analyzer.zig` (+ `c89_emit.zig` if the `and`/`or` type is set there) per Task 0l; Task 0l fixtures.
-**Produces:** the 49 `(a)` cases no longer warn (the checker returns the right types). The 11 `(b)` are still tolerated here (promotion is Task 0q, LAST). Self-compile stays gcc-clean with the `[3000]` count reduced by the fixed families; corpus warning census reflects only the fixed families. Fixed point MOVES. No re-baseline yet.
+**Produces:** the 48 `(a)` cases no longer warn (the checker returns the right types). The 11 `(b)` are still tolerated here (promotion is Task 0q, LAST). Self-compile stays gcc-clean with the `[3000]` count reduced by the fixed families; corpus warning census reflects only the fixed families. Fixed point MOVES. No re-baseline yet.
 - [ ] Apply the Task 0l fix; verify each fixture no longer warns; self-compile closure; corpus class map; commit.
 
 ### Task 0n: Migrate the compiler's implicit enum→int sites to `@enumToInt` (F)
@@ -404,7 +404,7 @@ git commit -m "fix(std.async): addTask stores *Task + awaitTask non-suspending g
 > Real Zig settles all 11 as invalid (langref coercion test suite: no `*T`→`[*]T`; no array elem/len coercion; no superset→subset error coercion; enum→int only via `@intFromEnum`/`@enumToInt`). This is the FINAL step; it must not precede 0m-0p.
 
 **Files:** `sf/src/semantic_analyzer.zig` (`:2984` var-decl, `:1872` assignment, `:1407-1430` return, `:1561` call-arg) — level 0 for the `(b)` shapes ONLY; `sf/src/type_registry.zig` (dedupe `:1257-1263`); the Task 0k/0i fixtures; `EXPECTED_FAIL.md`; `QUICK_REF.md` (4-MD5, after runtime proof).
-**Produces:** the 11 `(b)` shapes are hard `error[3000]` (0 `.c`); the 49 `(a)` are NOT caught (scoped); self-compile stays green (the 7 enum sites are already `@enumToInt` from 0n); the F-M4 fixture frontend-rejects. Fixed point MOVES; seed rotation at Task 6.
+**Produces:** the 11 `(b)` shapes are hard `error[3000]` (0 `.c`); the 48 `(a)` are NOT caught (scoped); self-compile stays green (the 7 enum sites are already `@enumToInt` from 0n); the F-M4 fixture frontend-rejects. Fixed point MOVES; seed rotation at Task 6.
 - [ ] Dedupe `type_registry.zig:1257-1263`; raise the 4 sites to level 0 **scoped to the `(b)` shapes**; verify the `(a)` corpus census is unchanged and self-compile is green; full corpus + warning gate + 4-MD5 + `CLOSEOUT OK`; commit.
 
 ### Task 1: Baseline, reference compiler, and pre-conversion golden captures
