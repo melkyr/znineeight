@@ -978,6 +978,21 @@ Expected: `[archive] gcc-only rebuild of archive C md5 (fixed point): eda943dc1f
 
 Add a newest-first bullet to `docs/sf/QUICK_REF.md`'s baseline list recording: Track 3 `std.async` landed; 9-file lib; fixed point unmoved; corpus 610 = 570/37/3; the seven new fixtures and their md5s. Append `## Task 5` to `.superpowers/sdd/task-STDASYNC-report.md` with the measured counts, the archive md5, the fixed point, and the `check_emit_support` result. One ledger line in `.superpowers/sdd/progress.md`.
 
+- [ ] **Step 4b: Cross-track ABI closeout check (Rule A) — hard STOP on mismatch**
+
+Confirm Track 3's library constants match Track 2's compiler core:
+- **Library** (`sf/src/std_async.zig`): `HEADER_SIZE == 16`, `Context.used@0`,
+  `capacity@4`, `oom@8`, `pool_base = ctx + 16` (DERIVED); `contextAlloc` rounds
+  `used` up to 8 before handing out a frame.
+- **Compiler** (`sf/src/async_state_machine.zig`): `CTX_POOL_OFF == 16`;
+  every `frame_sizes[key]` is a multiple of 8.
+- **Mixed fixture:** `repro/mi_matrix/async_libctx_mix_xmod` is OK (library +
+  compiler paths share one Context without corruption).
+- The seeded `lib/std_async.zig` matches the repo file (already checked in
+  Step 3).
+
+Track 4 (`coroutine-integration-plan.md`) MUST carry the same check.
+
 - [ ] **Step 5: Commit + STOP-present**
 
 ```bash
@@ -996,19 +1011,22 @@ STOP-present the closeout: corpus counts, fixed-point md5 (unmoved), archive md5
 tasks; no `sf/src` change). This records the Task-7 review finding **I1**
 (Context layout divergence) and its resolution.
 
-**Finding (I1).** The compiler core (Track 2, Task 7; commit `b23ca20a`) pinned
-the pool header `{ used @ ctx+0, capacity @ ctx+4, oom @ ctx+8, pool base
-= ctx+16 (DERIVED) }`. The std-async design originally named `{ pool@0,
-capacity@4, used@8, oom@12 }` (pool as a **stored** slice). The two are
-**incompatible**, and a cross-read silently corrupts memory (see the design §4
-WARNING).
+**Finding (I1).** The compiler core (Track 2, Task 7; commit `b23ca20a`)
+**originally** pinned the pool header `{ used @ ctx+0, capacity @ ctx+4, oom @
+ctx+8 }` with a **12-byte** header (`pool base = ctx+12`). The std-async design
+originally named `{ pool@0, capacity@4, used@8, oom@12 }` (pool as a **stored**
+slice). The two are **incompatible**, and a cross-read silently corrupts memory
+(see the design §4 WARNING). **Cross-track ABI fix (Rule A, 2026-09-15):** the
+compiler core was moved to the 16-byte header (`CTX_POOL_OFF = 16`), so Track 2
+and Track 3 now pin the SAME layout `{ used@0, capacity@4, oom@8, 4 bytes
+padding, pool base = ctx+16 (DERIVED) }`; all frame sizes are padded to 8.
 
 **Decision — branch (a) accepted (operator ruling m1662).** `std.async.Context`
 adopts the compiler-core inline layout `{ used, capacity, oom; pool bytes
 follow }`, with the Context at the **head** of the caller's pool buffer and
 `pool_base = ctx+16` **derived** (never stored). **Header = 16 B** (`used` 4 +
-`capacity` 4 + `oom` 1 + 7 reserved), keeping `pool_base = ctx+16` 8-aligned
-when the caller's `buf` is 8-aligned (a documented precondition).
+`capacity` 4 + `oom` 1 + 4 padding + 3 spare), keeping `pool_base = ctx+16`
+8-aligned when the caller's `buf` is 8-aligned (a documented precondition).
 `contextInit(buf: []u8) *Context` returns a pointer into `buf`; callers pass
 `ctx` (not `&ctx`) to `contextAlloc`/`contextMark`/`contextRelease` and read
 `ctx.used`/`ctx.oom`. Applied to the spec §3.1/§4 and to Task 1's `Context` code

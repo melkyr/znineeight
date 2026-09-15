@@ -207,8 +207,8 @@ sh out/build_target.sh          # or: ./out/build_target.sh after the first run
 objects, so no repo include path and no hand-listed runtime trio are needed. `--dump-c89` is now a
 **debug alias**: on its own it writes a single C file to stdout; with `-o <dir>` it writes
 per-module `.c`/`.h` files.
-(Install the **8** std modules — `std.zig`, `std_io.zig`, `std_arena.zig`, `std_net.zig`,
-`std_str.zig`, `std_mem.zig`, `std_math.zig`, `std_debug.zig` — next to the
+(Install the **9** std modules — `std.zig`, `std_io.zig`, `std_arena.zig`, `std_net.zig`,
+`std_str.zig`, `std_mem.zig`, `std_math.zig`, `std_debug.zig`, `std_async.zig` — next to the
 `zig1` binary in a `lib/` dir for `@import("std")`; windows users pass `-I <lib>` explicitly.)
 The authoritative, always-verified command set lives in [docs/sf/QUICK_REF.md](docs/sf/QUICK_REF.md);
 the build script is `sf/scripts/build_release.sh`. Release binaries (`zig1_linux32` /

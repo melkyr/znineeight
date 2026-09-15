@@ -320,11 +320,16 @@ archive's `lib/` contents move.
 
 **Context-layout reconciliation — DECIDED: branch (a).** The earlier "RESOLVED"
 claim (Amendment 7, Res 1, inline at `{pool, capacity, used, oom}`) is **struck**:
-it does not match what landed. The compiler core (Track 2, Task 7) pinned the
-layout `{ used @ ctx+0, capacity @ ctx+4, oom @ ctx+8, pool base = ctx+16
-(DERIVED) }` (16-byte header). **Track 3 accepts that layout (branch (a))**
-(operator ruling m1662): `Context` physically sits at the head of the caller's
-pool buffer and `contextInit` returns a `*Context` pointing into that buffer.
+it does not match what landed. The compiler core (Track 2, Task 7) **originally**
+pinned the inline layout `{ used @ ctx+0, capacity @ ctx+4, oom @ ctx+8 }` with a
+**12-byte** header (`pool base = ctx+12`), which diverged from this design's
+16-byte `std.async` header (`pool base = ctx+16`). The **cross-track ABI fix
+(Rule A, 2026-09-15)** moved the compiler core to the **16-byte** header
+(`CTX_POOL_OFF = 16`), so both tracks now pin `{ used @ ctx+0, capacity @ ctx+4,
+oom @ ctx+8, 4 bytes padding, pool base = ctx+16 (DERIVED) }`. **Track 3 accepts
+that layout (branch (a))** (operator ruling m1662): `Context` physically sits at
+the head of the caller's pool buffer and `contextInit` returns a `*Context`
+pointing into that buffer.
 The caller's `buf` **MUST be 8-aligned**; the 16-byte header then makes
 `pool_base = ctx + 16` 8-aligned. Ownership remains INLINE (no heap, no fixed
 array in the struct, no generics); the compiler reads the pool fields inline

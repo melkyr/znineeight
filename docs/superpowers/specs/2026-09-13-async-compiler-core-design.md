@@ -405,7 +405,9 @@ the original.
     `used` by `frame_sizes[g]` and allocate the child at the **pre-bump** offset
     (nested `main→f→g` share one `ctx`). **No capacity/`oom` check in Task 6**
     (Task 7 adds `capacity`/`oom` and the per-task LIFO pool); `ctx` stays the
-    opaque `*void` the fixtures already pass.
+    opaque `*void` the fixtures already pass. **SUPERSEDED by the landed Task-7 /
+    Rule-A layout**: `{used@0, capacity@4, oom@8}` + 4 bytes padding, pool base
+    `ctx+16` DERIVED (see §4).
 - **Synthesized-step emitted edge (Res 7).** `@asyncInit` on a **cross-module**
   function emits, in the **caller's C89 module**, an **extern decl for
   `__Z98Step_<fn>`** (and for the frame struct tag if any C type is shared). In
@@ -601,16 +603,32 @@ fn __async_step_<fn>(frame: *void, arg: ?*void) ?*void
 ```
 `Context` is **not** heap-allocated and has **no fixed array inside the struct,
 no generics**: under the Res-1 (Amendment 7) resolution, **ownership is INLINE** —
-`ctx` owns a **slice to the caller-provided pool** (`{pool, capacity, used, oom}`
-at the frozen Track-3 layout), is stored in every frame as a pointer-sized handle,
-and is inherited unchanged down a call chain. The compiler emits **inline**
-pool-field reads at those offsets (bump + mark) rather than calling runtime
-helpers. Pinned caller idiom (mark **"verify at Track 3"**; do not implement
-Track 3 here):
+`ctx` owns a **slice to the caller-provided pool**, is stored in every frame as a
+pointer-sized handle, and is inherited unchanged down a call chain. The compiler
+emits **inline** pool-field reads at those offsets (bump + mark) rather than
+calling runtime helpers.
+
+**Context header (cross-track ABI, Rule A — canonical 16-byte layout):**
+
+```
+used      @ ctx+0    (usize)
+capacity  @ ctx+4    (usize)
+oom       @ ctx+8    (u8, sticky)
+padding   @ ctx+9..15 (4 bytes; reserved)
+pool_base = ctx+16   (DERIVED — never stored)
+```
+
+The header is **16 bytes** (not 12) so `pool_base = ctx+16` is 8-aligned whenever
+`ctx` is 8-aligned; the compiler core's `CTX_POOL_OFF` is **16**
+(`sf/src/async_state_machine.zig`), matching `std.async`'s `HEADER_SIZE = 16`.
+The caller's buffer MUST be 8-aligned (a bare `[N]u8` array is only 1-aligned;
+back it with a `u64` array cast to `[]u8`). Every `frame_sizes[key]` is padded to
+a multiple of **8** so consecutive child frames stay 8-aligned. Pinned caller
+idiom:
 
 ```zig
-var pool: [4096]u8 = undefined;
-var ctx = std.async.Context.init(pool[0..]);
+var pool: [512]u64 = undefined;
+var ctx = std.async.contextInit(@ptrCast([*]u8, &pool)[0..4096]);
 ```
 
 The frame **step word** (offset 0) is pointer-sized; its type is the target's

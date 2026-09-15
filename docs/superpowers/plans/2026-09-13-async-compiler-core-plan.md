@@ -1609,6 +1609,23 @@ Expected: successive hops; record the first hop `H1` and confirm `H1 == H2` (N-h
 
 Run the corpus classifier from `docs/sf/QUICK_REF.md:134-145` over `-s0` and the 4-MD5 gate table. Expected: zero asymmetric class movement on the pre-existing 570 dirs; the new `async_*_xmod` dirs classify OK (or GREEN where intentionally a rejection fixture); `EXPECTED_FAIL` v77→v78 only if a class moved.
 
+- [ ] **Step 3b: Cross-track ABI closeout check (Rule A) — hard STOP on mismatch**
+
+Confirm every track agrees on the Context header size/offset and frame padding:
+- **Compiler** (`sf/src/async_state_machine.zig`): `CTX_POOL_OFF == 16`
+  (`@sizeOf(usize) * 4`) and `CTX_USED_OFF/CTX_CAP_OFF/CTX_OOM_OFF == 0/4/8`.
+- **Library** (`sf/src/std_async.zig`): `HEADER_SIZE == 16`, `Context.used@0`,
+  `capacity@4`, `oom@8`, `pool_base = ctx + 16` (DERIVED).
+- **Emitted seed C:** `zG_*_CTX_POOL_OFF == 16` (grep the seed `gen/*.c`).
+- **Frame padding:** every `frame_sizes[key]` is a multiple of 8
+  (`async_analysis.asyncFrameSizeRun` pads to 8; `async_frame_layout`'s
+  `precise` mirrors it), so consecutive pool frames stay 8-aligned.
+- **Mixed fixture:** `repro/mi_matrix/async_libctx_mix_xmod` is OK (library +
+  compiler paths share one Context without corruption).
+
+Track 4 (`coroutine-integration-plan.md`) MUST carry this same check before it
+consumes the ABI.
+
 - [ ] **Step 4: Rotate the seed at closeout**
 
 Only after Step 2's fixed point is recorded:
@@ -2093,6 +2110,39 @@ Tasks 9/10 are inserted immediately before Task 8.
 **Re-verified baseline.** Branch `zig1_improvements`; HEAD `2abefe4a`; moving
 fixed point `3b6fd194…`; corpus 594 = 555 OK / 35 GREEN / 4 FAIL; 4-MD5 gate
 8 rows unchanged; seed **NOT rotated**; Task 8 **BLOCKED** pending the fix.
+
+## Amendment 13 (2026-09-15) — cross-track ABI fix (Rule A): 16-byte Context header + 8-padded frame sizes
+
+**Reason.** The landed Track-2 core used a **12-byte** Context header
+(`CTX_POOL_OFF = 3*sizeof(usize) = 12`; emitted seed C
+`zG_662115F7_CTX_POOL_OFF = 12`) while `std.async` (Track 3) used a **16-byte**
+header (`pool_base = ctx + 16`). In the Track-4 mixed path a library frame at
+`ctx+16` and a compiler await-site child frame at `ctx+12` (same bump pointer)
+**overlap** — silent pool corruption. Additionally, frames were padded only to
+their own `max_align` (often 4), so a 4-aligned frame of size 20 followed by an
+8-aligned frame put the latter at offset 20 (4 mod 8) — misaligned. Same defect
+class: the ABI assumed what callers do not provide.
+
+**Operator ruling (binding, Rule A).**
+- Change the compiler `CTX_POOL_OFF` **12 → 16** (`@sizeOf(usize) * 4`) so it
+  matches `std.async`'s 16-byte header (`HEADER_SIZE = 16`).
+- Pad **every** frame size to **8** in the layout pass (P2 `asyncFrameSizeRun`
+  and P3 `async_frame_layout`).
+- `std.async.contextAlloc` rounds `used` up to 8 (belt-and-suspenders); fix the
+  `Context` doc (`[N]u8` is 1-aligned — callers must use an 8-aligned backing).
+- Add the mixed fixture `repro/mi_matrix/async_libctx_mix_xmod` (library +
+  compiler paths over one Context); it FAILS pre-fix (child frame clobbers the
+  library frame) and PASSES post-fix.
+- Re-baseline the moved fixed point and rotate the seed.
+
+**Cross-track ABI closeout check (Task 8 Step 3b; Track 4 must carry it).**
+Header size/offset and frame padding must agree across the compiler, the
+library, and the emitted seed C; `async_libctx_mix_xmod` must be OK.
+
+**Re-verified baseline.** Branch `zig1_improvements`; HEAD `bdd63b8a`; fixed
+point moved `f5ee84800dd32d7c440bb383c10edb55` → **`7b515420f749604c1765c2b1edd0d654`**
+(two-hop closure `hop1 == hop2`); seed rotated v17 → **v18**; `EXPECTED_FAIL.md`
+v83 → v84; corpus 610 → 611 = 571 OK / 37 GREEN / 3 FAIL.
 
 ## Amendable note
 

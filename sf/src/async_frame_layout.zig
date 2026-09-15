@@ -543,6 +543,10 @@ pub fn asyncLayoutFrame(alloc: *Sand, reg: *TypeRegistry, lir_fn: *LirFunction,
     }
     var precise = async_analysis.alignUpU32(offset, max_align);
     if (precise == @intCast(u32, 0)) precise = @intCast(u32, 1);
+    // Rule A (cross-track ABI): mirror P2's 8-byte frame padding so the
+    // `precise <= frame_sizes[key]` guard and the reported layout size stay
+    // consistent with the authoritative, now-8-aligned frame size.
+    precise = async_analysis.alignUpU32(precise, @intCast(u32, 8));
 
     var frame_size = async_analysis.asyncFrameSizeOf(frame_sizes, lir_fn.module_id, lir_fn.name_id);
     var padded = precise;

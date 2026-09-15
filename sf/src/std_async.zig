@@ -44,10 +44,17 @@ pub const StepFn = fn(frame: *void, arg: ?*void) ?*void;
 // is 16 bytes (not 12) so that `ctx + 16` stays 8-aligned whenever `buf` is
 // 8-aligned; `buf` MUST be 8-aligned (documented precondition), which keeps
 // child frames holding 8-byte-aligned members (e.g. `f64`) correctly aligned.
-/// Per-task child-frame pool. The caller declares `var buf: [N]u8 = undefined;`
-/// (8-aligned) and the Context sits at the HEAD of that buffer; `capacity` is
-/// the usable bytes AFTER the 16-byte header; `oom` is sticky for the pool's
-/// lifetime.
+/// Bytes reserved at the head of the caller's buffer for the Context header.
+/// 16 (not 12) so `pool_base = ctx + HEADER_SIZE` stays 8-aligned whenever
+/// `ctx` is 8-aligned; this is the cross-track ABI Rule A constant that the
+/// compiler core's `CTX_POOL_OFF` must match.
+pub const HEADER_SIZE: usize = 16;
+
+/// Per-task child-frame pool. The Context sits at the HEAD of a caller-supplied
+/// buffer that MUST be 8-aligned: a `[N]u8` array is only 1-aligned, so back
+/// the buffer with an 8-aligned type (e.g. `var storage: [K]u64 = undefined;`
+/// cast to `[]u8`). `capacity` is the usable bytes AFTER the 16-byte header;
+/// `oom` is sticky for the pool's lifetime.
 pub const Context = struct {
     used: usize,       // @ ctx+0
     capacity: usize,   // @ ctx+4 — usable bytes AFTER the 16-byte header
@@ -66,20 +73,25 @@ pub fn contextInit(buf: []u8) *Context {
     // -fsafe: `buf.len - 16` lowers to sub_with_overflow + an integer-overflow
     // check (kind 6), so it TRAPS on `buf.len < 16`; -ffast omits the check and
     // the subtraction wraps. Callers must pass `buf.len >= 16`.
-    c.capacity = buf.len - 16;
+    c.capacity = buf.len - HEADER_SIZE;
     c.used = 0;
     c.oom = false;
     return c;
 }
 
 pub fn contextAlloc(ctx: *Context, size: usize) FrameError![*]u8 {
-    if (ctx.used + size > ctx.capacity) {
+    // Rule A belt-and-suspenders: the bump pointer is rounded up to 8 before
+    // handing out a frame, so every returned pointer is 8-aligned even if a
+    // caller previously advanced `used` by a non-multiple-of-8 size.
+    var aligned: usize = ctx.used & ~@intCast(usize, 7);
+    if (aligned != ctx.used) aligned += 8;
+    if (aligned + size > ctx.capacity) {
         ctx.oom = true;
         return error.OutOfFrame;
     }
-    var base: [*]u8 = @ptrCast([*]u8, ctx) + 16;
-    var p: [*]u8 = base + ctx.used;
-    ctx.used += size;
+    var base: [*]u8 = @ptrCast([*]u8, ctx) + HEADER_SIZE;
+    var p: [*]u8 = base + aligned;
+    ctx.used = aligned + size;
     return p;
 }
 

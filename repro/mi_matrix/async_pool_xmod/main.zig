@@ -9,7 +9,8 @@
 //
 // Context header layout (compiler-core, 32-bit): the caller passes
 // `ctx = &pool`; the header occupies the first bytes of `pool`:
-//   used@0, capacity@4, oom@8; the child-frame pool base is `pool + 12`.
+//   used@0, capacity@4, oom@8, 4 bytes padding; the child-frame pool base is
+//   `pool + 16` (Rule A, cross-track ABI — matches std.async's HEADER_SIZE).
 // `@asyncInit` initializes `used = 0` and `oom = 0`; the test supplies
 // `capacity`. `capacity` counts the usable pool bytes (after the header).
 

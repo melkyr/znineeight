@@ -61,11 +61,16 @@ const BIN_GT: u8 = @intCast(u8, 14);
 //   ctx + 0*sizeof(usize) : used      (bump pointer)
 //   ctx + 1*sizeof(usize) : capacity  (pool bytes; test-supplied)
 //   ctx + 2*sizeof(usize) : oom       (u8, sticky)
-//   ctx + 3*sizeof(usize) : pool base (child frames start here)
+//   ctx + 3*sizeof(usize) : padding   (unused; 4 bytes to match std.async)
+//   ctx + 4*sizeof(usize) : pool base (child frames start here)
+//
+// Rule A (cross-track ABI): the header is 16 bytes on the 32-bit target so the
+// pool base is 8-aligned whenever `ctx` is, matching `std.async`'s
+// `pool_base = ctx + 16` (Track 3). Do NOT shrink back to 12.
 pub const CTX_USED_OFF: u32 = @intCast(u32, 0);
 pub const CTX_CAP_OFF: u32 = @intCast(u32, @sizeOf(usize));
 pub const CTX_OOM_OFF: u32 = @intCast(u32, @sizeOf(usize)) * @intCast(u32, 2);
-pub const CTX_POOL_OFF: u32 = @intCast(u32, @sizeOf(usize)) * @intCast(u32, 3);
+pub const CTX_POOL_OFF: u32 = @intCast(u32, @sizeOf(usize)) * @intCast(u32, 4);
 
 pub const AsyncTransformCtx = struct {
     alloc: *Sand,
@@ -568,7 +573,7 @@ fn emitAwait(b: *Build, blk: u32, cd: lir_mod.CallDirectData, state: u32, alloc_
 }
 
 // D2: pinned root-`main` driver pool size (residual R7). The root task's
-// children are bump-allocated from `ctx+usize`; the pool has no authoritative
+// children are bump-allocated from `ctx+CTX_POOL_OFF` (16); the pool has no
 // size until Task 7 owns the per-task LIFO pool/Context ABI, so pin the interim
 // Task-6 fixed constant (the same 256-byte convention the await fixtures use).
 const ASYNC_ROOT_POOL_BYTES: u32 = 256;

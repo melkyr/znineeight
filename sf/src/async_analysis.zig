@@ -722,8 +722,13 @@ pub fn asyncFrameSizeRun(alloc: *alloc_mod.Sand, store: *ast_mod.AstStore,
                     _ = addFrameField(typereg, prt, &offset, &max_align);
                 }
             }
+            // Rule A (cross-track ABI): pad EVERY frame to 8 so consecutive
+            // pool frames stay 8-aligned given an 8-aligned pool base. A frame
+            // only aligned to its own `max_align` (often 4) would otherwise
+            // start the next frame at a 4-mod-8 offset.
             var total = alignUpU32(offset, max_align);
             if (total == @intCast(u32, 0)) total = @intCast(u32, 1);
+            total = alignUpU32(total, @intCast(u32, 8));
             hash_mod.u64ToU32MapPut(frame_sizes, key, total);
             emitFrameMarker(key, total);
         }
