@@ -20,7 +20,7 @@
 
 - **Baseline (re-verify at Task 1; the fixed point MOVES in Task 0).** Pre-Task-0 HEAD `0aa5e13d`; pre-Task-0 compiler fixed point `027377296b2e38402ff8470f5c429eb8`; seed v19 archive md5 `23a16154e83736cf6b636685396a124a`; corpus 612 = 571 OK / 37 GREEN / 4 FAIL; `repro/mi_matrix/EXPECTED_FAIL.md` header v85 (2026-09-15). Task 0 (emitter fix) and Task 0b (`std.async` ownership fix) change `sf/src`, so the fixed point and seed move; Task 1 re-verifies and records the post-Task-0/0b values before capturing goldens.
 - **Precondition:** Tracks 2 and 3 are implemented and landed. The four `@async*` builtins work, `sf/src/std_async.zig` exists, and `lib/std_async.zig` is installed next to the compiler under test (`docs/sf/QUICK_REF.md:97-98` recipe plus `std_async.zig`).
-- **`sf/src` scope (operator-authorized 2026-09-15; supersedes the original examples-only constraint).** Exactly two `sf/src` changes are authorized: **Task 0** fixes the multi-module `__Z98Step_<f>` emission gap (`sf/src/c89_emit.zig` + `sf/src/main.zig`; the self-emission fixed point MOVES); **Task 0b** changes `std.async` task ownership (`sf/src/std_async.zig` `addTask`/`Scheduler` store `*Task`; not in the compiler import graph, so the fixed point does NOT move, but the seed archive's `lib/std_async.zig` changes). The seed is rotated at Task 6 closeout. No other `sf/src` edit is authorized; Tasks 1-5 touch examples only.
+- **`sf/src` scope (operator-authorized 2026-09-15; supersedes the original examples-only constraint).** Exactly three `sf/src` changes are authorized: **Task 0** fixes the multi-module `__Z98Step_<f>` emission gap (`sf/src/c89_emit.zig` + `sf/src/main.zig`; the self-emission fixed point MOVES); **Task 0b** changes `std.async` task ownership (`sf/src/std_async.zig` `addTask`/`Scheduler` store `*Task`; not in the compiler import graph, so the fixed point does NOT move, but the seed archive's `lib/std_async.zig` changes); **Task 0d** fixes the switch-expression string-literal-prong `string_to_slice` length bug (`sf/src/lower.zig` / `sf/src/semantic_analyzer.zig`; the fixed point MOVES). The seed is rotated at Task 6 closeout. No other `sf/src` edit is authorized; Tasks 1-5 touch examples only (Task 0d re-captures the goldens the fix changes).
 - **`timeout 120` on every binary execution.**
 - **gcc flag-set rule (binding):** every `gcc -c` MUST be `gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc>`. Compiler builds only via the seed model: `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out_dir>`; never invoke `zig0`. `<out_dir>` must be fresh.
 - **Byte-identity is a hard requirement.** `bash scripts/closeout/verify_upgraded.sh <zig1>` MUST print `CLOSEOUT OK` and exit 0 with lisp canonical `96654b39…`, rogue q `3fb6709e…`, rogue move `b3c5b0e1…`, rogue demo `7361d248…`, rogue net variant `aa40a52e…`. Emitted C is NOT required to be byte-identical; only runtime bytes are.
@@ -188,6 +188,50 @@ git commit -m "fix(std.async): addTask stores *Task + awaitTask non-suspending g
 ```
 
 ---
+
+### Task 0c: Pin the switch-expression string-literal-prong slice corruption + coverage (I)
+
+**Files:**
+- Create: `repro/mi_matrix/switch_str_literal_prong_xmod/main.zig` (single-module RED)
+- Create: `repro/mi_matrix/switch_str_literal_prong_xmod_xmod/main.zig`, `.../mid.zig` (cross-module RED)
+- Create: one corpus fixture per OTHER confirmed-affected construct (Step 3)
+- Modify: `repro/mi_matrix/EXPECTED_FAIL.md` only if a fixture is a compile-fail (expected: none)
+
+**Interfaces:**
+- Consumes: nothing.
+- Produces: tracked RED fixtures (part of the corpus) that pin the bug, plus an audit of every construct that can be corrupted/trimmed the same way.
+
+- [ ] **Step 1: Single-module RED fixture.** `switch_str_literal_prong_xmod` — a function returning `switch (tag) { .A => "alpha\r\n", .B => "beta\r\n" }` typed `[]const u8`; print both prongs; the header declares the bug + RED/GREEN (mirror `repro/mi_matrix/switch_expr_payload_capture_xmod`'s header style). RED today: each prong prints only its first byte.
+
+- [ ] **Step 2: Cross-module RED fixture.** `switch_str_literal_prong_xmod_xmod` — the same switch living in a NON-last module (imported then followed by another module), proving after the fix that the failure cannot occur cross-module either. Include a last-module sibling so the coroutine/step grouping is exercised too.
+
+- [ ] **Step 3: Coverage audit.** Enumerate every construct where a string/array literal coerces to a slice and could be trimmed/corrupted the same way — at minimum: string literals in `if`/`else` expressions, in error-union payload positions, in struct-field initializers, as function-call arguments, in nested switches, in payload-capture prongs, and plain `array → slice` coercions. For each CONFIRMED-affected construct, add a corpus fixture (RED header). Record confirmed-UNAFFECTED constructs in the report with evidence. This audit IS the task's main deliverable.
+
+- [ ] **Step 4: Corpus.** All new fixtures are auto-included by `scripts/corpus/list_corpus_dirs.sh`; run the classifier and record the class deltas (expect new compile-clean dirs whose RUNTIME output is wrong — they classify OK at the gcc gate but fail a runtime assert; note that distinction explicitly).
+
+- [ ] **Step 5: Commit.** `git add repro/mi_matrix/switch_str_literal_prong_xmod* ...` + `git commit -m "test(async): pin switch-expression string-prong slice corruption (Track4 S19 I)"`.
+
+### Task 0d: Fix the switch-expression string-prong `string_to_slice` length (F)
+
+**Files:**
+- Modify: `sf/src/lower.zig` (and `sf/src/semantic_analyzer.zig` as needed)
+- Modify: the Task 0c fixtures (RED→GREEN)
+- Modify: `examples/z98/mud_server/demo/canonical_client_expected.txt` + `README.md` (re-captured)
+- Modify: `examples/z98/rogue_mud/demo/*` only if the fix changes the rogue captures
+
+**Interfaces:**
+- Consumes: Task 0c fixtures.
+- Produces: the fix; every Task 0c fixture GREEN; the affected Task 1 goldens re-captured. The self-emission fixed point MOVES.
+
+- [ ] **Step 1: Fix.** In `sf/src/lower.zig` `applyCoercion` → `CoercionKind.string_to_slice` (`:6623-6638`) the slice length is the literal's length ONLY when `coercion.node_idx` is an `AstKind.string_literal`; on the switch-expression prong path the coercion is keyed on the prong/wrapper node (`sf/src/semantic_analyzer.zig:1980` `tryRecordCoercion(self, prong.child_0, bt, unified)`), so it defaults to `sllen = 1`. Fix by keying the coercion on the actual string-literal node (or by recovering the literal length from the prong value in `applyCoercion`). Do NOT change unrelated coercion kinds.
+
+- [ ] **Step 2: GREEN.** Every Task 0c fixture now prints the full strings; re-run each (dump rc=0 / gcc-clean / deterministic) and flip its header RED→GREEN.
+
+- [ ] **Step 3: Re-capture the affected Task 1 goldens.** The fix changes the mud_server client bytes (`G` → `Goodbye!`); re-capture `examples/z98/mud_server/demo/canonical_client_expected.txt` (and `canonical_expected.txt` if the server stdout changes) and update the README md5s. Verify whether the rogue captures change (the feeds may not hit `getDirectionString`); if they do, re-capture and update.
+
+- [ ] **Step 4: Fixed point + corpus.** Rebuild the two-hop closure; record the NEW fixed point; run the corpus gate and record the class movement (the Task 0c RED fixtures flip to GREEN output). Seed rotation is Task 6.
+
+- [ ] **Step 5: Commit.** `git commit -m "fix(lower): recover string-literal length on switch-prong slice coercion (Track4 S19 F)"`.
 
 ### Task 1: Baseline, reference compiler, and pre-conversion golden captures
 
