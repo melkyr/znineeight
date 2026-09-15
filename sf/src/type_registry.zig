@@ -947,6 +947,16 @@ pub fn typeRegistryGetPointeeType(self: *TypeRegistry, tid: u32) ?u32 {
     return self.ptr_items[ty.payload_idx].base;
 }
 
+/// If `tid` is a concrete array type, returns its total size in bytes
+/// (`elem_size * length`); otherwise null. Used by the `-fsafe` `@asyncInit`
+/// buffer-length check to recover a compile-time byte length from `&arr`.
+pub fn typeRegistryArrayByteSize(self: *TypeRegistry, tid: u32) ?u32 {
+    var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.kind != TypeKind.array_type) return null;
+    if (ty.state != @intCast(u8, 2)) return null;
+    return ty.size;
+}
+
 pub fn typeRegistryGetSliceElem(self: *TypeRegistry, tid: u32) ?u32 {
     var ty = self.types_items[tid];
     if (ty.kind != TypeKind.slice_type) return null;

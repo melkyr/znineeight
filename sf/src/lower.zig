@@ -4229,6 +4229,38 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     if (async_analysis.asyncFrameSizeOf(self.ctx.frame_sizes, ai_mid, ai_nid)) |fsz| {
                         ai_fsz = @intCast(u32, fsz);
                     }
+                    // Concern 2(b) / Track 3: `-fsafe` bounds check. When the
+                    // frame size is compile-time known AND the caller passed a
+                    // pointer to a concrete `[N]u8` array (so `buf.len` is
+                    // recoverable from the pointee type), trap if the buffer is
+                    // smaller than the frame. A slice / many-pointer buffer
+                    // (`[]u8`/`[*]u8`) has no compile-time length, so the check
+                    // is skipped. `-ffast` emits nothing.
+                    if (self.ctx.safe_checks and ai_fsz > @intCast(u32, 0)) {
+                        var ai_buf_len: u32 = @intCast(u32, 0);
+                        var ai_len_known: bool = false;
+                        if (ec.len >= @intCast(usize, 2)) {
+                            if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, ec[@intCast(usize, 1)])) |ai_bt| {
+                                if (type_mod.typeRegistryGetPointeeType(self.ctx.registry, ai_bt)) |ai_pointee| {
+                                    if (type_mod.typeRegistryArrayByteSize(self.ctx.registry, ai_pointee)) |ai_al| {
+                                        if (ai_al > @intCast(u32, 0)) {
+                                            ai_buf_len = ai_al;
+                                            ai_len_known = true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if (ai_len_known) {
+                            var ai_lt = nextTemp(self, type_mod.TYPE_USIZE);
+                            emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, ai_buf_len), .result = ai_lt } });
+                            var ai_ft = nextTemp(self, type_mod.TYPE_USIZE);
+                            emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, ai_fsz), .result = ai_ft } });
+                            var ai_ok = nextTemp(self, type_mod.TYPE_U8);
+                            emitInst(self, LirInst{ .binary = .{ .op = BIN_GE, .lhs = ai_lt, .rhs = ai_ft, .result = ai_ok } });
+                            emitInst(self, LirInst{ .check_trap = .{ .cond = ai_ok, .kind = @intCast(u8, 7) } });
+                        }
+                    }
                     if (ai_fsz > @intCast(u32, 0)) {
                         var ai_size = nextTemp(self, type_mod.TYPE_USIZE);
                         emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, ai_fsz), .result = ai_size } });

@@ -48,6 +48,7 @@ const AsyncFrameLayout = async_frame_layout.AsyncFrameLayout;
 
 const BIN_ADD: u8 = @intCast(u8, 0);
 const BIN_SUB: u8 = @intCast(u8, 1);
+const BIN_AND: u8 = @intCast(u8, 5);
 const BIN_OR: u8 = @intCast(u8, 6);
 const BIN_NE: u8 = @intCast(u8, 11);
 const BIN_LE: u8 = @intCast(u8, 13);
@@ -455,10 +456,25 @@ fn emitAwait(b: *Build, blk: u32, cd: lir_mod.CallDirectData, state: u32, alloc_
         var ice_msg2: []const u8 = "async frame_sizes missing for implicit-await callee";
         _ = diag_mod.diagnosticCollectorAdd(b.actx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_9001_ICE)), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), ice_msg2);
     }
+    // Rule A (Concern 3): round the bump pointer up to 8 BEFORE adding `fsz`
+    // and before deriving `child`, mirroring `std.async`'s `contextAlloc`. A
+    // library `contextAlloc` of a non-multiple-of-8 size can leave `used`
+    // unaligned; without this round the compiler's child frame would be
+    // misaligned and could overlap the library frame. `fsz` is itself a
+    // multiple of 8, so the stored `used` (and every later child) stays
+    // 8-aligned. `used_r = (used + 7) & ~7`.
+    var align7 = newTemp(b, type_mod.TYPE_USIZE);
+    emit(b, blk, LirInst{ .int_const = .{ .value = @intCast(u64, 7), .result = align7 } });
+    var used_p7 = newTemp(b, type_mod.TYPE_USIZE);
+    emit(b, blk, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = used, .rhs = align7, .result = used_p7 } });
+    var align_mask = newTemp(b, type_mod.TYPE_USIZE);
+    emit(b, blk, LirInst{ .int_const = .{ .value = ~@intCast(u64, 7), .result = align_mask } });
+    var used_r = newTemp(b, type_mod.TYPE_USIZE);
+    emit(b, blk, LirInst{ .binary = .{ .op = BIN_AND, .lhs = used_p7, .rhs = align_mask, .result = used_r } });
     var fsz_t = newTemp(b, type_mod.TYPE_USIZE);
     emit(b, blk, LirInst{ .int_const = .{ .value = fsz, .result = fsz_t } });
     var need = newTemp(b, type_mod.TYPE_USIZE);
-    emit(b, blk, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = used, .rhs = fsz_t, .result = need } });
+    emit(b, blk, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = used_r, .rhs = fsz_t, .result = need } });
     var over = newTemp(b, type_mod.TYPE_U8);
     emit(b, blk, LirInst{ .binary = .{ .op = BIN_GT, .lhs = need, .rhs = capacity, .result = over } });
     var oom_new = newTemp(b, type_mod.TYPE_U8);
@@ -477,7 +493,7 @@ fn emitAwait(b: *Build, blk: u32, cd: lir_mod.CallDirectData, state: u32, alloc_
     var used_p = fieldPtrBase(b, alloc_blk, ctx, CTX_USED_OFF, type_mod.TYPE_USIZE);
     emit(b, alloc_blk, LirInst{ .store = .{ .ptr = used_p, .value = need } });
     var child_int = newTemp(b, type_mod.TYPE_USIZE);
-    emit(b, alloc_blk, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = pool, .rhs = used, .result = child_int } });
+    emit(b, alloc_blk, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = pool, .rhs = used_r, .result = child_int } });
     var child = newTemp(b, ptrVoid(reg));
     emit(b, alloc_blk, LirInst{ .int_to_ptr = .{ .value = child_int, .target = ptrVoid(reg), .result = child } });
     // (4) g's step word at child+0.

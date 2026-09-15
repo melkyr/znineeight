@@ -101,7 +101,8 @@ pub const LirInst = union(enum) {
     // A4F/A5F/A6F `-fsafe` cheap runtime check. `cond` is the success-condition
     // temp (the emitter traps when it is false). `kind`: 2 = div/mod (zero),
     // 3 = shift (count >= width), 4 = null-unwrap, 5 = index OOB, 6 = integer
-    // overflow. Every kind's success condition is now computed in lowering
+    // overflow, 7 = `@asyncInit` buffer smaller than `@asyncFrameSize` (frame
+    // size compile-time known). Every kind's success condition is now computed in lowering
     // (A15 kind 6 `overflow_flag == 0`; A16 kind 2 div/mod zero+`INT_MIN/-1`;
     // kinds 3/5 already did), so A18 shrank the payload to `{cond,kind}`: the
     // old `aux`/`imm`/`result_type`/`op` fields are gone. Non-terminating. The
