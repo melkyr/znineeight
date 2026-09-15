@@ -111,21 +111,25 @@ pub const FrameError = error{OutOfFrame};
 pub const StepFn = fn(frame: *void, arg: ?*void) ?*void;
 
 // Context (DECIDED: branch (a), compiler-core canon; see §4). The caller
-// declares `var buf: [4096]u8 = undefined;` and the Context sits at the HEAD
-// of that buffer; the pool bytes follow the 12-byte header:
+// declares an 8-ALIGNED `var buf: [4096]u8 = undefined;` and the Context sits
+// at the HEAD of that buffer; the pool bytes follow the 16-byte header:
 //   used     @ ctx+0   (usize)
 //   capacity @ ctx+4   (usize)
 //   oom      @ ctx+8   (u8 or bool)
-//   pool     @ ctx+12  (DERIVED — NOT a stored field; `pool_base = ctx + 12`)
-// `pool_base = ctx+12` being DERIVED (not stored) is itself a design decision:
-// it makes it impossible for the pool base to diverge from the allocation.
+//   reserved @ ctx+9..15 (padding)
+//   pool     @ ctx+16  (DERIVED — NOT a stored field; `pool_base = ctx + 16`)
+// The 16-byte header keeps `pool_base = ctx+16` 8-aligned whenever `buf` is
+// 8-aligned, so child frames holding 8-byte-aligned members (e.g. `f64`) stay
+// aligned. `pool_base = ctx+16` being DERIVED (not stored) is itself a design
+// decision: it makes it impossible for the pool base to diverge from the
+// allocation.
 pub const Context = struct {
     used: usize,
     capacity: usize,
     oom: bool,
 };
 
-pub fn contextInit(buf: []u8) *Context;
+pub fn contextInit(buf: []u8) *Context; // buf MUST be 8-aligned and len >= 16
 pub fn contextAlloc(ctx: *Context, size: usize) FrameError![*]u8;
 pub fn contextMark(ctx: *Context) usize;
 pub fn contextRelease(ctx: *Context, mark: usize) void;
@@ -182,19 +186,24 @@ resolves umbrella §16.1's step/scheduler item.
   gets the same `ctx` pointer from its parent's frame; the compiler-generated
   suspending call site reads `ctx` from the **caller** frame.
 - **LIFO by bump + mark.** `contextMark` returns the current bump (`used`);
-  `contextAlloc` returns the derived pool base (`ctx + 12`) plus `used` and
+  `contextAlloc` returns the derived pool base (`ctx + 16`) plus `used` and
   advances `used` by `size`;
   `contextRelease(mark)` restores `used`. A child frame is allocated before
   driving the child `_step` and released exactly when that `_step` returns null
   (terminal), so LIFO holds naturally — no free list, no fragmentation.
 - **Caller-sized capacity (M1 — usable bytes after the header).** `contextInit`
-  fixes `capacity = region_size - 12`: the usable pool bytes **after** the
-  12-byte Context header, not the whole buffer. The caller chooses the region
+  fixes `capacity = region_size - 16`: the usable pool bytes **after** the
+  16-byte Context header, not the whole buffer. The caller chooses the region
   size; the static frame size returned by `@asyncFrameSize(fn)` **excludes**
   child frames (m1166), so the caller budgets for the deepest active chain. The
-  pool fixtures must set `size - 12`; any fixture cleanup is a follow-up. M1 is
+  pool fixtures must set `size - 16`; any fixture cleanup is a follow-up. M1 is
   **resolved by this convention** (part of the layout decision, not a standalone
   minor).
+- **8-aligned buffers (precondition).** `contextInit` requires `buf.ptr` to be
+  8-aligned and `@panic`s in both modes otherwise; the 16-byte header then keeps
+  `pool_base = ctx + 16` 8-aligned, so allocated child frames holding
+  `f64`/`u64` members are correctly aligned. Fixtures back the pool with a
+  `[N]u64` array (or equivalent) to guarantee the alignment.
 - **Per-task Context reset (M3).** A `Context` is per-task; `@asyncInit` sets
   `used = 0` and `oom = 0` on each call. Because `oom` is sticky for the pool's
   lifetime, reusing a Context after an exhaustion without re-`contextInit` (or
@@ -282,8 +291,11 @@ archive's `lib/` contents move.
   `std.zig` re-export.
 - The **decided** `Context` layout (branch (a), compiler-core canon — see the
   reconciliation below): `{ used @ ctx+0, capacity @ ctx+4, oom @ ctx+8, pool
-  @ ctx+12 (DERIVED) }` and the bump+mark pool primitive semantics;
+  @ ctx+16 (DERIVED) }` and the bump+mark pool primitive semantics;
   `contextInit(buf: []u8) *Context` places the Context at the head of `buf`.
+  **PRECONDITION: `buf` MUST be 8-aligned and `len >= 16`** (`contextInit`
+  traps in both modes on a misaligned buffer; under `-fsafe` it traps on
+  `len < 16`).
 - The `StepFn` ABI `fn(frame: *void, arg: ?*void) ?*void` and the `Task`/
   `Scheduler` records.
 
@@ -305,17 +317,19 @@ archive's `lib/` contents move.
 **Context-layout reconciliation — DECIDED: branch (a).** The earlier "RESOLVED"
 claim (Amendment 7, Res 1, inline at `{pool, capacity, used, oom}`) is **struck**:
 it does not match what landed. The compiler core (Track 2, Task 7) pinned the
-layout `{ used @ ctx+0, capacity @ ctx+4, oom @ ctx+8, pool base = ctx+12
-(DERIVED) }`. **Track 3 accepts that layout (branch (a))** (operator ruling
-m1662): `Context` physically sits at the head of the caller's pool buffer and
-`contextInit` returns a `*Context` pointing into that buffer. Ownership remains
-INLINE (no heap, no fixed array in the struct, no generics); the compiler reads
-the pool fields inline (bump + mark). `pool_base` is **derived** (`ctx + 12`), not
-stored — making it impossible for the pool base to diverge from the allocation.
+layout `{ used @ ctx+0, capacity @ ctx+4, oom @ ctx+8, pool base = ctx+16
+(DERIVED) }` (16-byte header). **Track 3 accepts that layout (branch (a))**
+(operator ruling m1662): `Context` physically sits at the head of the caller's
+pool buffer and `contextInit` returns a `*Context` pointing into that buffer.
+The caller's `buf` **MUST be 8-aligned**; the 16-byte header then makes
+`pool_base = ctx + 16` 8-aligned. Ownership remains INLINE (no heap, no fixed
+array in the struct, no generics); the compiler reads the pool fields inline
+(bump + mark). `pool_base` is **derived** (`ctx + 16`), not stored — making it
+impossible for the pool base to diverge from the allocation.
 The decided caller idiom:
 
 ```zig
-var buf: [4096]u8 = undefined;
+var buf: [4096]u8 = undefined;   // MUST be 8-aligned
 var ctx = std.async.contextInit(buf[0..]);   // *Context, points into buf
 // pass `ctx` (not `&ctx`) to contextAlloc/contextMark/contextRelease;
 // read ctx.used / ctx.oom.
@@ -325,7 +339,7 @@ var ctx = std.async.contextInit(buf[0..]);   // *Context, points into buf
 by-value `Context` returned from `contextInit` plus a separate `pool_base`
 argument/field was **rejected** (operator ruling m1662): it redoes landed Track 2
 work for a smaller safety margin. The landed compiler reads/writes the Context
-inline at `ctx+0/+4/+8` and derives `pool_base = ctx+12`; a stored `pool_base`
+inline at `ctx+0/+4/+8` and derives `pool_base = ctx+16`; a stored `pool_base`
 would be a second source of truth and a cross-read hazard. (Worth a pass after
 the track closeout to re-check.)
 
@@ -352,25 +366,28 @@ new code.
 
 ## 6. Testing
 
-Five new corpus fixtures under `repro/mi_matrix/`, with deterministic byte-exact
+Seven new corpus fixtures under `repro/mi_matrix/`, with deterministic byte-exact
 stdout over 3 runs (`-ffast`, `RUNRC=0`):
 
 | Fixture | Import | Covers | Exact stdout | stdout md5 (3x) |
 |---|---|---|---|---|
-| `stdlib_async_pool_xmod` | `std.async.*` | `contextInit`/`contextAlloc`/`contextMark`/`contextRelease`; LIFO reclaim; `OutOfFrame`; sticky `oom`/`used` | `1 1 1 1 0 1 1` | `38f19e53c09cbb69c1919cb5385c708d` |
+| `stdlib_async_pool_xmod` | `std.async.*` | `contextInit`/`contextAlloc`/`contextMark`/`contextRelease`; LIFO reclaim; `OutOfFrame`; sticky `oom`/`used` | `1 1 1 1 1 0 1 1` | `c16d5048077564d79de58d17c0e6b43e` |
+| `stdlib_async_headerexact_xmod` | `std.async.*` | header-exact (16 B) buffer -> `capacity == 0`; first alloc is `OutOfFrame`, sticky `oom`, `used` stays 0 | `1 1 1 1` | `97b36f60d6c645fe73e654a950d10b72` |
+| `stdlib_async_f64align_xmod` | `std.async.*` | `pool_base = ctx+16` is 8-aligned; `@sizeOf(Frame)` alloc returns an 8-aligned pointer; `f64` field round-trips | `1 1 1` | `280262bb00bfccfa4c24774d8faccde2` |
 | `stdlib_async_sched_xmod` | `@import("std_async.zig")` | `schedulerInit`/`addTask`/`suspend`/`tick`/`waitAll`; `count`; **heterogeneous self-dispatch** (`@asyncResume(t.frame, t.arg)`, no `Task.step`, no step parameter) | `1 3 2 10 20 30` | `29d3c32a9c1d30152faffca161cccac0` |
 | `stdlib_async_await_xmod` | `@import("std_async.zig")` | `awaitTask` dependency ordering + `cancel` | `10 20 4` | `7bbb0c578b9e01e312325b4d2e5f8c93` |
 | `stdlib_async_cancelall_xmod` | `@import("std_async.zig")` | `cancelAll` at a tick boundary; states settle to `cancelled` | `4 4 4` | `83b80a0f4d19b15f7cb1da65abf557a9` |
 | `stdlib_async_oom_xmod` | `@import("std_async.zig")` | `contextAlloc` exhaustion sets `oom`; `tick` propagates `error.OutOfFrame` (no crash) | `1 1` | `f2160c8ffedf48068f2e1137e0a3a7e7` |
 
-`stdlib_async_pool_xmod` exercises the `std.zig` re-export directly (function
-calls and `*std.async.Context` annotations). The other four import the installed
-module file `std_async.zig` through the compiler's `<exe_dir>/lib` search path,
-because `@import("std")` + `std.async.Task{...}` / `std.async.TaskState.ready`
-(value-position nested module access) currently trips the pre-existing compiler
-`error[3042]` "non-value base expression in field access" (see §7). Both import
-forms exercise the same installed module; the direct form is the documented
-workaround.
+`stdlib_async_pool_xmod` (plus `stdlib_async_headerexact_xmod` and
+`stdlib_async_f64align_xmod`) exercises the `std.zig` re-export directly
+(function calls and `*std.async.Context` annotations). The other four import the
+installed module file `std_async.zig` through the compiler's `<exe_dir>/lib`
+search path, because `@import("std")` + `std.async.Task{...}` /
+`std.async.TaskState.ready` (value-position nested module access) currently trips
+the pre-existing compiler `error[3042]` "non-value base expression in field
+access" (see §7). Both import forms exercise the same installed module; the
+direct form is the documented workaround.
 
 Gate battery (every task; full sweep at closeout):
 - Build from the seed model
@@ -380,7 +397,7 @@ Gate battery (every task; full sweep at closeout):
   binding flag set, link/run via the emitted `build_target.sh`, assert the
   byte-exact stdout and md5 across 3 runs.
 - Corpus classifier by gcc exit code (`docs/sf/QUICK_REF.md:134-145`), never by
-  empty stderr: baseline 599 = 560 OK / 36 GREEN / 3 FAIL -> **604 = 565 OK / 36
+  empty stderr: baseline 599 = 560 OK / 36 GREEN / 3 FAIL -> **606 = 567 OK / 36
   GREEN / 3 FAIL / 0 ICE / 0 CRASH**, `-ffast` == `-fsafe` zero-asymmetric.
 - `scripts/check_emit_support.sh <zig1>` -> `[check] OK: 5/5 support files
   byte-identical to canonical` (user-module install does not touch emitted
@@ -396,11 +413,14 @@ Gate battery (every task; full sweep at closeout):
 
 - **Context ABI vs Track 2 "opaque" wording — DECIDED: branch (a) (m1662).** The
   earlier "RESOLVED" claim is **struck**. Ownership is INLINE and Track 3 adopts
-  the compiler-core layout `{used@0, capacity@4, oom@8, pool base ctx+12
-  (DERIVED)}` (not the earlier `{pool, capacity, used, oom}` order);
-  `contextInit` returns a `*Context` pointing into the caller's buffer. The
-  by-value + separate `pool_base` alternative is **rejected** (redoes landed
-  Track 2 work for a smaller safety margin). See §4.
+  the compiler-core layout `{used@0, capacity@4, oom@8, pool base ctx+16
+  (DERIVED)}` (not the earlier `{pool, capacity, used, oom}` order); the header
+  is **16 bytes** so `pool_base = ctx+16` is 8-aligned when the caller's `buf`
+  is 8-aligned (a documented precondition; `contextInit` traps on a misaligned
+  buffer in both modes). `contextInit` returns a `*Context` pointing into the
+  caller's buffer. The by-value + separate `pool_base` alternative is
+  **rejected** (redoes landed Track 2 work; a stored base is a second source of
+  truth). See §4.
 - **`fn_ptr_struct_field` regression — no longer a dependency (Amendment 7).**
   `Task.step` is removed; the scheduler self-dispatches through the frame step
   word, so this design no longer relies on a fn-ptr struct field. The gap was

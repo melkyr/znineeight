@@ -17,7 +17,8 @@ ABI) is **removed**; its deferral is now applied here.
   struct whose first field is the step function pointer at offset 0) and drive
   them through the library scheduler.
 - **B — branch (a) accepted.** `contextInit(buf: []u8) *Context`; the `Context`
-  sits at the head of the caller's pool buffer (`pool_base = ctx + 12`, DERIVED).
+  sits at the head of the caller's pool buffer (`pool_base = ctx + 16`, DERIVED;
+  16-byte header, 8-aligned `buf` precondition).
   The by-value `Context` + separate `pool_base` alternative is **rejected**
   (redoes landed Track 2 work for a smaller safety margin). See Task 6.
 - **Amendment 7 — drop `Task.step`/`step`.** `Task` has no `step` field and no
@@ -75,7 +76,7 @@ baseline value changes.
 - `scripts/seed/archive_seed.sh` — `:109` `lib/` loop + `:28-29`, `:156-158`, `:210-211` std-set comments/counts (Task 4).
 - `scripts/self_compile/build_zig1_5.sh` — `:12` `lib/` `cp` (Task 4).
 - `docs/sf/QUICK_REF.md` — `:98` install recipe + `:36-37` seed inventory count (Task 4).
-- Fixtures (new dirs, each `main.zig`): `repro/mi_matrix/stdlib_async_pool_xmod/` (Task 1), `stdlib_async_sched_xmod/`, `stdlib_async_oom_xmod/` (Task 2), `stdlib_async_await_xmod/`, `stdlib_async_cancelall_xmod/` (Task 3).
+- Fixtures (new dirs, each `main.zig`): `repro/mi_matrix/stdlib_async_pool_xmod/`, `stdlib_async_headerexact_xmod/`, `stdlib_async_f64align_xmod/` (Task 1), `stdlib_async_sched_xmod/`, `stdlib_async_oom_xmod/` (Task 2), `stdlib_async_await_xmod/`, `stdlib_async_cancelall_xmod/` (Task 3).
 - `repro/mi_matrix/EXPECTED_FAIL.md` — header bump v81 with the new corpus counts (Task 5).
 - `release/seed/zig1-seed.tgz`, `release/seed/CHANGELOG.md` — closeout rotation (Task 5).
 
@@ -88,6 +89,8 @@ baseline value changes.
 - Modify: `sf/src/std.zig` (append re-export after `:7`)
 - Modify: `scripts/seed/build_from_seed.sh:24,139`
 - Create: `repro/mi_matrix/stdlib_async_pool_xmod/main.zig`
+- Create: `repro/mi_matrix/stdlib_async_headerexact_xmod/main.zig`
+- Create: `repro/mi_matrix/stdlib_async_f64align_xmod/main.zig`
 - Report: `.superpowers/sdd/task-STDASYNC-report.md` (`## Task 1`)
 
 **Interfaces:**
@@ -104,9 +107,11 @@ Create `repro/mi_matrix/stdlib_async_pool_xmod/main.zig`:
 // Validates the std.async re-export reachable from a bare @import("std"):
 //   contextInit / contextAlloc / contextMark / contextRelease
 //   - 8+8 alloc -> used 16; mark at 16; alloc 8 -> used 24; release -> 16
-//   - alloc 40 -> used 56; alloc 40 -> OutOfFrame (sticky oom), used stays 56
-//   - buf is 80 B; capacity = 80 - 12 = 68 usable bytes after the 12-byte header
-// GREEN: exact stdout 1 1 1 1 0 1 1 (RUNRC=0).
+//   - alloc 40 -> used 56; alloc 8 -> used 64; alloc 8 -> OutOfFrame (sticky
+//     oom), used stays 64
+//   - buf is 80 B (8-aligned); capacity = 80 - 16 = 64 usable bytes after the
+//     16-byte header
+// GREEN: exact stdout 1 1 1 1 1 0 1 1 (RUNRC=0).
 const std = @import("std");
 
 fn tryAlloc(ctx: *std.async.Context, n: usize) bool {
@@ -125,16 +130,20 @@ fn pb(cond: bool) void {
 }
 
 pub fn main() void {
-    var buf: [80]u8 = undefined;
-    var ctx = std.async.contextInit(buf[0..]);
+    // [10]u64 is exactly 80 bytes and guarantees 8-alignment; contextInit
+    // requires an 8-aligned buffer.
+    var storage: [10]u64 = undefined;
+    var buf: []u8 = @ptrCast([*]u8, &storage)[0..80];
+    var ctx = std.async.contextInit(buf);
     pb(tryAlloc(ctx, 8));
     pb(tryAlloc(ctx, 8));
     var mark = std.async.contextMark(ctx);
     pb(tryAlloc(ctx, 8));
     std.async.contextRelease(ctx, mark);
     pb(tryAlloc(ctx, 40));
-    pb(tryAlloc(ctx, 40));
-    pb(ctx.used == 56);
+    pb(tryAlloc(ctx, 8));
+    pb(tryAlloc(ctx, 8));
+    pb(ctx.used == 64);
     pb(ctx.oom);
 }
 ```
@@ -198,24 +207,37 @@ pub const FrameError = error{OutOfFrame};
 /// field so it lands at frame offset 0.
 pub const StepFn = fn(frame: *void, arg: ?*void) ?*void;
 
-// Branch (a) — DECIDED (operator ruling m1662). Context occupies the first 12
+// Branch (a) — DECIDED (operator ruling m1662). Context occupies the first 16
 // bytes of the caller's pool buffer; the pool bytes follow: `pool_base =
-// ctx + 12` (DERIVED — never stored). The by-value Context + separate
-// `pool_base` alternative is REJECTED (redoes landed Track 2 work).
+// ctx + 16` (DERIVED — never stored). The by-value Context + separate
+// `pool_base` alternative is REJECTED (redoes landed Track 2 work). The header
+// is 16 bytes (not 12) so that `ctx + 16` stays 8-aligned whenever `buf` is
+// 8-aligned; `buf` MUST be 8-aligned (documented precondition), which keeps
+// child frames holding 8-byte-aligned members (e.g. `f64`) correctly aligned.
 /// Per-task child-frame pool. The caller declares `var buf: [N]u8 = undefined;`
-/// and the Context sits at the HEAD of that buffer; `capacity` is the usable
-/// bytes AFTER the 12-byte header; `oom` is sticky for the pool's lifetime.
+/// (8-aligned) and the Context sits at the HEAD of that buffer; `capacity` is
+/// the usable bytes AFTER the 16-byte header; `oom` is sticky for the pool's
+/// lifetime.
 pub const Context = struct {
     used: usize,       // @ ctx+0
-    capacity: usize,   // @ ctx+4 — usable bytes AFTER the 12-byte header
+    capacity: usize,   // @ ctx+4 — usable bytes AFTER the 16-byte header
     oom: bool,         // @ ctx+8 — sticky
+    // bytes 9..15 are reserved padding; `pool_base = ctx + 16` (DERIVED).
 };
 
 /// Places the Context at the head of `buf` and returns a pointer into `buf`.
+/// PRECONDITION: `buf.ptr` MUST be 8-aligned (checked below; traps in both
+/// modes) and `buf.len` MUST be >= 16.
 pub fn contextInit(buf: []u8) *Context {
+    if ((@ptrToInt(buf.ptr) & 7) != 0) {
+        @panic("std.async: contextInit buffer must be 8-aligned");
+    }
     var c: *Context = @ptrCast(*Context, buf.ptr);
+    // -fsafe: `buf.len - 16` lowers to sub_with_overflow + an integer-overflow
+    // check (kind 6), so it TRAPS on `buf.len < 16`; -ffast omits the check and
+    // the subtraction wraps. Callers must pass `buf.len >= 16`.
+    c.capacity = buf.len - 16;
     c.used = 0;
-    c.capacity = buf.len - 12;
     c.oom = false;
     return c;
 }
@@ -225,7 +247,7 @@ pub fn contextAlloc(ctx: *Context, size: usize) FrameError![*]u8 {
         ctx.oom = true;
         return error.OutOfFrame;
     }
-    var base: [*]u8 = @ptrCast([*]u8, ctx) + 12;
+    var base: [*]u8 = @ptrCast([*]u8, ctx) + 16;
     var p: [*]u8 = base + ctx.used;
     ctx.used += size;
     return p;
@@ -236,7 +258,10 @@ pub fn contextMark(ctx: *Context) usize {
 }
 
 pub fn contextRelease(ctx: *Context, mark: usize) void {
-    ctx.used = mark;
+    // -fsafe: the subtraction traps (integer-overflow check) when mark > used;
+    // -ffast: it wraps (check omitted). `used - (used - mark) == mark` in both modes.
+    var delta: usize = ctx.used - mark;
+    ctx.used = ctx.used - delta;
 }
 ```
 
@@ -270,7 +295,7 @@ for i in 1 2 3; do timeout 120 /tmp/sa_t1/f1_prog | md5sum; done
 timeout 120 /tmp/sa_t1/f1_prog
 ```
 
-Expected GREEN: `lib/` = 9 files including `std_async.zig`; `dump rc=0`; no `GCCFAIL`; 3 identical stdout md5s `38f19e53c09cbb69c1919cb5385c708d`; stdout exactly `1 1 1 1 0 1 1`; `run rc=0`. Also confirm the compiler fixed point did not move: the build gate prints `two-hop closure OK: hop1 == hop2 == eda943dc1f77a48eae039e39ea4bfe04`.
+Expected GREEN: `lib/` = 9 files including `std_async.zig`; `dump rc=0`; no `GCCFAIL`; 3 identical stdout md5s `c16d5048077564d79de58d17c0e6b43e`; stdout exactly `1 1 1 1 1 0 1 1`; `run rc=0`. Also run the two new fixtures the same way: `stdlib_async_headerexact_xmod` stdout `1 1 1 1` / md5 `97b36f60d6c645fe73e654a950d10b72`, and `stdlib_async_f64align_xmod` stdout `1 1 1` / md5 `280262bb00bfccfa4c24774d8faccde2`. Confirm the compiler fixed point did not move: the build gate prints `two-hop closure OK: hop1 == hop2 == f5ee84800dd32d7c440bb383c10edb55`.
 
 - [ ] **Step 5: Commit**
 
@@ -947,7 +972,7 @@ tasks; no `sf/src` change). This records the Task-7 review finding **I1**
 
 **Finding (I1).** The compiler core (Track 2, Task 7; commit `b23ca20a`) pinned
 the pool header `{ used @ ctx+0, capacity @ ctx+4, oom @ ctx+8, pool base
-= ctx+12 (DERIVED) }`. The std-async design originally named `{ pool@0,
+= ctx+16 (DERIVED) }`. The std-async design originally named `{ pool@0,
 capacity@4, used@8, oom@12 }` (pool as a **stored** slice). The two are
 **incompatible**, and a cross-read silently corrupts memory (see the design §4
 WARNING).
@@ -955,8 +980,9 @@ WARNING).
 **Decision — branch (a) accepted (operator ruling m1662).** `std.async.Context`
 adopts the compiler-core inline layout `{ used, capacity, oom; pool bytes
 follow }`, with the Context at the **head** of the caller's pool buffer and
-`pool_base = ctx+12` **derived** (never stored). **Header = 12 B** (`used` 4 +
-`capacity` 4 + `oom` 1 + 3 pad), saving **4 bytes per context** over branch (b).
+`pool_base = ctx+16` **derived** (never stored). **Header = 16 B** (`used` 4 +
+`capacity` 4 + `oom` 1 + 7 reserved), keeping `pool_base = ctx+16` 8-aligned
+when the caller's `buf` is 8-aligned (a documented precondition).
 `contextInit(buf: []u8) *Context` returns a pointer into `buf`; callers pass
 `ctx` (not `&ctx`) to `contextAlloc`/`contextMark`/`contextRelease` and read
 `ctx.used`/`ctx.oom`. Applied to the spec §3.1/§4 and to Task 1's `Context` code

@@ -37,24 +37,37 @@ pub const FrameError = error{OutOfFrame};
 /// field so it lands at frame offset 0.
 pub const StepFn = fn(frame: *void, arg: ?*void) ?*void;
 
-// Branch (a) — DECIDED (operator ruling m1662). Context occupies the first 12
+// Branch (a) — DECIDED (operator ruling m1662). Context occupies the first 16
 // bytes of the caller's pool buffer; the pool bytes follow: `pool_base =
-// ctx + 12` (DERIVED — never stored). The by-value Context + separate
-// `pool_base` alternative is REJECTED (redoes landed Track 2 work).
+// ctx + 16` (DERIVED — never stored). The by-value Context + separate
+// `pool_base` alternative is REJECTED (redoes landed Track 2 work). The header
+// is 16 bytes (not 12) so that `ctx + 16` stays 8-aligned whenever `buf` is
+// 8-aligned; `buf` MUST be 8-aligned (documented precondition), which keeps
+// child frames holding 8-byte-aligned members (e.g. `f64`) correctly aligned.
 /// Per-task child-frame pool. The caller declares `var buf: [N]u8 = undefined;`
-/// and the Context sits at the HEAD of that buffer; `capacity` is the usable
-/// bytes AFTER the 12-byte header; `oom` is sticky for the pool's lifetime.
+/// (8-aligned) and the Context sits at the HEAD of that buffer; `capacity` is
+/// the usable bytes AFTER the 16-byte header; `oom` is sticky for the pool's
+/// lifetime.
 pub const Context = struct {
     used: usize,       // @ ctx+0
-    capacity: usize,   // @ ctx+4 — usable bytes AFTER the 12-byte header
+    capacity: usize,   // @ ctx+4 — usable bytes AFTER the 16-byte header
     oom: bool,         // @ ctx+8 — sticky
+    // bytes 9..15 are reserved padding; `pool_base = ctx + 16` (DERIVED).
 };
 
 /// Places the Context at the head of `buf` and returns a pointer into `buf`.
+/// PRECONDITION: `buf.ptr` MUST be 8-aligned (checked below; traps in both
+/// modes) and `buf.len` MUST be >= 16.
 pub fn contextInit(buf: []u8) *Context {
+    if ((@ptrToInt(buf.ptr) & 7) != 0) {
+        @panic("std.async: contextInit buffer must be 8-aligned");
+    }
     var c: *Context = @ptrCast(*Context, buf.ptr);
+    // -fsafe: `buf.len - 16` lowers to sub_with_overflow + an integer-overflow
+    // check (kind 6), so it TRAPS on `buf.len < 16`; -ffast omits the check and
+    // the subtraction wraps. Callers must pass `buf.len >= 16`.
+    c.capacity = buf.len - 16;
     c.used = 0;
-    c.capacity = buf.len - 12;
     c.oom = false;
     return c;
 }
@@ -64,7 +77,7 @@ pub fn contextAlloc(ctx: *Context, size: usize) FrameError![*]u8 {
         ctx.oom = true;
         return error.OutOfFrame;
     }
-    var base: [*]u8 = @ptrCast([*]u8, ctx) + 12;
+    var base: [*]u8 = @ptrCast([*]u8, ctx) + 16;
     var p: [*]u8 = base + ctx.used;
     ctx.used += size;
     return p;
@@ -75,5 +88,8 @@ pub fn contextMark(ctx: *Context) usize {
 }
 
 pub fn contextRelease(ctx: *Context, mark: usize) void {
-    ctx.used = mark;
+    // -fsafe: the subtraction traps (integer-overflow check) when mark > used;
+    // -ffast: it wraps (check omitted). `used - (used - mark) == mark` in both modes.
+    var delta: usize = ctx.used - mark;
+    ctx.used = ctx.used - delta;
 }
