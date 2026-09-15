@@ -1,4 +1,29 @@
-# mi_matrix corpus — expected-fail manifest (v94 2026-09-15)
+# mi_matrix corpus — expected-fail manifest (v95 2026-09-15)
+
+## Task 0m fix round 1 (F) — DECLARE family-B relational-enum over-acceptance (v95 2026-09-15)
+
+Operator ruling (fix round 1): **DECLARE, no behavior change.** The Task-0m
+family-B arm (`sf/src/semantic_analyzer.zig:1218-1219`) returns `TYPE_BOOL` for
+`lhs == rhs` enum operands in `semanticAnalyzerResolveComparison`, but it is
+**not gated on `cmp_eq`/`cmp_ne`**, so relational enum comparisons (`<`, `<=`,
+`>`, `>=`) are also accepted. Real Zig rejects relational comparison of enum
+operands (only `==`/`!=` are permitted). This over-acceptance is **inherited
+verbatim from the Task 0l fix set** (applied by Task 0m) and is a **candidate for
+Task 0q / a follow-up** — not fixed here. No `sf/src` change; no re-baseline.
+
+New pin fixture `repro/mi_matrix/relational_enum_overaccept_xmod` (auto-listed by
+`scripts/corpus/list_corpus_dirs.sh`; class OK). Measured with the post-0m
+compiler (`e19a843aa9505a35aac1ce3e63bb7e68`): **dump rc=0 / 0 `warning[3000]` /
+0 errors / gcc-clean / link rc=0 / run rc=0, stdout `12345`**. The emitted C
+compares the enum values with raw C relational operators, e.g.
+`if ((int)(a < b)) goto z_bb_1;` and
+`if ((int)((zT_C00BF080_E)(zT_C00BF080_E_A) < (zT_C00BF080_E)(zT_C00BF080_E_B))) goto z_bb_13;`.
+
+Corpus: **660 dirs = 617 OK / 20 GREEN / 23 FAIL / 0 ICE / 0 CRASH** — the only
+class-map delta vs the post-0m 659-dir run is the new OK dir. Pinned `(a)` census
+unaffected (39 dirs / 0 `warning[3000]`); full-corpus `warning[3000]` total
+unchanged at 5 (the new dir emits none).
+
 
 ## Task 0m (F) — fix the false-positive `warning[3000]` `(a)` families (v94 2026-09-15)
 
