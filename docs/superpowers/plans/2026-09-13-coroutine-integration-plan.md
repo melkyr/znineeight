@@ -20,7 +20,8 @@
 
 - **Baseline (re-verify at Task 1; the fixed point MOVES in Task 0).** Pre-Task-0 HEAD `0aa5e13d`; pre-Task-0 compiler fixed point `027377296b2e38402ff8470f5c429eb8`; seed v19 archive md5 `23a16154e83736cf6b636685396a124a`; corpus 612 = 571 OK / 37 GREEN / 4 FAIL; `repro/mi_matrix/EXPECTED_FAIL.md` header v85 (2026-09-15). Task 0 (emitter fix) and Task 0b (`std.async` ownership fix) change `sf/src`, so the fixed point and seed move; Task 1 re-verifies and records the post-Task-0/0b values before capturing goldens.
 - **Precondition:** Tracks 2 and 3 are implemented and landed. The four `@async*` builtins work, `sf/src/std_async.zig` exists, and `lib/std_async.zig` is installed next to the compiler under test (`docs/sf/QUICK_REF.md:97-98` recipe plus `std_async.zig`).
-- **`sf/src` scope (operator-authorized 2026-09-15; supersedes the original examples-only constraint).** Exactly three `sf/src` changes are authorized: **Task 0** fixes the multi-module `__Z98Step_<f>` emission gap (`sf/src/c89_emit.zig` + `sf/src/main.zig`; the self-emission fixed point MOVES); **Task 0b** changes `std.async` task ownership (`sf/src/std_async.zig` `addTask`/`Scheduler` store `*Task`; not in the compiler import graph, so the fixed point does NOT move, but the seed archive's `lib/std_async.zig` changes); **Task 0d** fixes the switch-expression string-literal-prong `string_to_slice` length bug (`sf/src/lower.zig` / `sf/src/semantic_analyzer.zig`; the fixed point MOVES). The seed is rotated at Task 6 closeout. No other `sf/src` edit is authorized; Tasks 1-5 touch examples only (Task 0d re-captures the goldens the fix changes).
+- **`sf/src` scope (operator-authorized 2026-09-15; supersedes the original examples-only constraint).** Authorized `sf/src` changes: **Task 0** (multi-module `__Z98Step_<f>` emission; `sf/src/c89_emit.zig`+`sf/src/main.zig`; fixed point MOVES); **Task 0b** (`std.async` task ownership; `sf/src/std_async.zig`; fixed point UNMOVED but `lib/std_async.zig` changes); **Task 0d** (switch-expression string-literal-prong `string_to_slice` length; `sf/src/semantic_analyzer.zig`; fixed point MOVES); **Task 0f** (residual S20 un-annotated inference + S21 error-union/optional payload string→slice; `sf/src/semantic_analyzer.zig` + `sf/src/lower.zig`; fixed point MOVES). The seed is rotated at Task 6 closeout. No other `sf/src` edit is authorized; Tasks 1-5 touch examples only (the fix tasks re-capture the goldens they change).
+- **Standing rule — declare every residual gap (binding).** Any gap a fix leaves behind (a construct still affected, a distinct adjacent bug, a known limitation) MUST be declared before its task is marked complete: a tracked fixture (or an `EXPECTED_FAIL.md` entry for a compile-fail) + a plan/spec note. "Approved with a Minor" is NOT a declaration. S20/S21 (Task 0d residuals) are the first application.
 - **`timeout 120` on every binary execution.**
 - **gcc flag-set rule (binding):** every `gcc -c` MUST be `gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc>`. Compiler builds only via the seed model: `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out_dir>`; never invoke `zig0`. `<out_dir>` must be fresh.
 - **Byte-identity is a hard requirement.** `bash scripts/closeout/verify_upgraded.sh <zig1>` MUST print `CLOSEOUT OK` and exit 0 with lisp canonical `96654b39…`, rogue q `3fb6709e…`, rogue move `b3c5b0e1…`, rogue demo `7361d248…`, rogue net variant `aa40a52e…`. Emitted C is NOT required to be byte-identical; only runtime bytes are.
@@ -232,6 +233,42 @@ git commit -m "fix(std.async): addTask stores *Task + awaitTask non-suspending g
 - [ ] **Step 4: Fixed point + corpus.** Rebuild the two-hop closure; record the NEW fixed point; run the corpus gate and record the class movement (the Task 0c RED fixtures flip to GREEN output). Seed rotation is Task 6.
 
 - [ ] **Step 5: Commit.** `git commit -m "fix(lower): recover string-literal length on switch-prong slice coercion (Track4 S19 F)"`.
+
+### Task 0e: Declare + pin the residual string→slice gaps (S20 inference, S21 error-union payload) (I)
+
+**Files:**
+- Create (runtime-RED, corpus): `repro/mi_matrix/switch_unannotated_str_xmod/main.zig`, `repro/mi_matrix/switch_unannotated_diffstr_xmod/main.zig`, `repro/mi_matrix/if_unannotated_str_xmod/main.zig`, plus a cross-module `..._xmod_xmod` variant of each (switch/if in a NON-last module)
+- Create (compile-FAIL, corpus): `repro/mi_matrix/errunion_payload_str_xmod/main.zig`, `repro/mi_matrix/opt_payload_str_xmod/main.zig`, plus call-arg / var-init / struct-field payload variants
+- Modify: `repro/mi_matrix/switch_expr_payload_capture_xmod/main.zig` (header RED→GREEN — it is GREEN now)
+- Modify: `repro/mi_matrix/EXPECTED_FAIL.md` (add the S21 compile-fail dirs; bump the header)
+- Create/declare: a fixture OR an explicit known-issue entry for the Task 0c-reported bare-plain-enum-literal mis-lowering and array-of-slices literal emission gaps
+
+**Interfaces:**
+- Consumes: nothing.
+- Produces: tracked declarations (fixtures + `EXPECTED_FAIL.md`) of EVERY confirmed residual gap. No `sf/src` change; no fix.
+
+- [ ] **Step 1: S20 runtime-RED fixtures.** Un-annotated expression positions: `var s = switch (c) { .A => "alpha\r\n", .B => "beta\r\n" };`, a differing-length variant, and `var s = if (c) "alpha\r\n" else "beta\r\n";`. Each prints `s` + `s.len` and asserts the full string/length (so RED = run rc≠0). Add cross-module variants (expression in a non-last module).
+- [ ] **Step 2: S21 compile-FAIL fixtures.** `fn f() E![]const u8 { return "alpha\r\n"; }` and the `?[]const u8` analogue, plus call-arg / var-init / struct-field payload positions. RED = dump rc≠0 or gcc FAIL; add each to `EXPECTED_FAIL.md` with the exact diagnostic, and bump the header.
+- [ ] **Step 3: Correct stale declarations.** `switch_expr_payload_capture_xmod` header RED→GREEN. Declare the Task 0c-reported enum-literal and array-of-slices gaps (fixture or known-issue entry).
+- [ ] **Step 4: Corpus + classify.** All new dirs are auto-listed; run the classifier and record class deltas (runtime-RED dirs classify OK at the gcc gate; S21 dirs are FAIL/GREEN as declared).
+- [ ] **Step 5: Commit.** `git commit -m "test(async): declare residual string->slice gaps S20/S21 (Track4 S20/S21 I)"`.
+
+### Task 0f: Fix the residual string→slice gaps (S20 un-annotated inference, S21 error-union/optional payload) (F)
+
+**Files:**
+- Modify: `sf/src/semantic_analyzer.zig`, `sf/src/lower.zig`
+- Modify: the Task 0e fixtures (RED→GREEN); `repro/mi_matrix/EXPECTED_FAIL.md` (remove the S21 dirs)
+- Modify: any golden the fix changes
+
+**Interfaces:**
+- Consumes: Task 0e fixtures.
+- Produces: both residual gaps closed; every Task 0e fixture GREEN (or its declared state removed). Fixed point MOVES.
+
+- [ ] **Step 1: S20 fix.** In the `switch`/`if` expression resolvers (`sf/src/semantic_analyzer.zig`), when there is NO expected type, unify string-literal prongs to `[]const u8` (peer-type resolution) and record the `string_to_slice` coercion on each prong node — not the first prong's `*const [N:0]u8`.
+- [ ] **Step 2: S21 fix.** In `sf/src/lower.zig` `materializeInto`'s payload path (`:2032-2043`) apply the inner `string_to_slice` coercion to the payload BEFORE the `wrap_error_ok`/`wrap_optional` layer.
+- [ ] **Step 3: GREEN.** Flip every Task 0e fixture GREEN; remove the S21 dirs from `EXPECTED_FAIL.md`; re-run the classifier.
+- [ ] **Step 4: Re-capture affected goldens.** If any example output changes, re-capture and update the demo READMEs. Rebuild the two-hop closure; record the NEW fixed point. Seed rotation is Task 6.
+- [ ] **Step 5: Commit.** `git commit -m "fix(lower/sema): close residual string->slice gaps S20/S21 (Track4 S20/S21 F)"`.
 
 ### Task 1: Baseline, reference compiler, and pre-conversion golden captures
 

@@ -331,3 +331,11 @@ landed function is coroutine-internal and `main` is not a coroutine). On any
 drift: correct the spec text in place, record the change in the plan's
 Amendments, and re-verify. This is a standing requirement for every track-N
 closeout in the async sequence, not only Track 4.
+
+**Declare every residual gap (standing).** Any gap a fix leaves behind — a
+construct still affected, a distinct adjacent bug, or a known limitation — MUST
+be declared with a tracked fixture (or an `EXPECTED_FAIL.md` entry for a
+compile-fail) plus a plan/spec note **before the task is marked complete**. An
+"Approved with a Minor" review verdict is not a declaration. S20 (un-annotated
+`switch`/`if` string-literal prongs) and S21 (`E![]const u8` / `?[]const u8`
+payload string literals) are the first applications.
