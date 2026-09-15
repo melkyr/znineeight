@@ -1543,7 +1543,35 @@ git commit -m "feat: per-task LIFO child frames + error.OutOfFrame (ASYNCTRACK2)
 
 ---
 
+### Task 9: Regression investigation — AST generic-walk name-id/node-index confusion + architectural fix design (I; record-only; STOP-present)
+
+**Type:** I (record-only). No source edits, no commit. Ends in STOP-present.
+
+**Why:** Task 8 found `repro/tu_void_prong` OK→FAIL (OOM/ICE) from Task 3's `scanFunction` generic walk treating capture/index **name ids** as node indices (cycle → arena blowup). Investigate the proper architectural fix before implementing.
+
+**Files (read-only):** `sf/src/async_analysis.zig` (`scanFunction`), `sf/src/constraint_checker.zig` (mirror generic walker), `sf/src/ast.zig` (AstKind + child semantics), `sf/src/parser.zig` (child assignments), any other generic AST walkers.
+
+**Questions (live anchors + read-only probes, `timeout 120`):**
+
+- Q1: Enumerate **every** `AstKind` child slot that holds a non-node value (capture name ids, index names, flags, literals, etc.) — the exact set a generic "push all children" walk misinterprets.
+- Q2: The correct architectural fix: a kind-aware "node children" accessor/iterator (single source of truth) vs targeted skips; which is safest/minimal and how it composes with the existing walkers.
+- Q3: Do other generic walkers (`constraint_checker.zig`, others) share the defect? Enumerate.
+- Q4: Fixtures: the `tu_void_prong` regression + capture-prong and for-index minimal repros; RED/GREEN plan.
+- Q5: Scope/impact + whether a shared helper module is warranted.
+
+**Deliverable:** append `## Task 9` to `.superpowers/sdd/task-ASYNCTRACK2-report.md`; one ledger line; one memory entry; **STOP-present** with the fix design + fixture plan.
+
+---
+
+### Task 10: Fix the AST generic walk (F; after Task 9)
+
+**Goal (acceptance):** the generic walk(s) no longer treat name-id/flag/literal children as node indices; `repro/tu_void_prong` returns to OK; the capture-prong and for-index repros pass; all async fixtures + guards + battery stay green; no arena blowup on ordinary programs. **Exact steps fixed by Task 9.** After this task, resume Task 8 closeout (fresh N-hop + seed rotation).
+
+---
+
 ### Task 8: Closeout — gates, N-hop fixed-point movement, seed rotation
+
+**BLOCKED — pending Task 9/10 regression fix; do not rotate the seed or bump `EXPECTED_FAIL` until the fix lands and the closeout is re-run.**
 
 **Files:**
 - Modify: `release/seed/zig1-seed.tgz`, `release/seed/CHANGELOG.md` (rotation only)
@@ -1754,7 +1782,7 @@ state-range trap** (the only new trap), gated exactly like existing `check_trap`
 5. **Res 1 — Context ownership = INLINE.** Resolved by the buf-outside-pool rule:
    `ctx` owns a **slice to the caller-provided pool**; no heap, no fixed array
    inside the struct, no generics. Pinned caller idiom
-   (`var pool: [4096]u8 = undefined; var ctx = std.async.Context.init(pool[0..]);`)
+   (`var buf: [4096]u8 = undefined; var ctx = std.async.contextInit(buf[0..]);`)
    is a **"verify at Track 3"** item (Track 3 is not implemented here).
 6. **Res 7 — synthesized-step emitted edge.** `@asyncInit` on a cross-module `fn`
    emits, in the **caller's** C89 module, an **extern decl for `__Z98Step_<fn>`**
@@ -2038,6 +2066,33 @@ Applied, docs-only, within the three Amendment-11 docs:
    "resolve before Task 1" wording; design `contextInit(pool)`/`pool + used`
    naming; compiler-core `std.async.Context.init(pool[0..])` idiom. Added to the
    Task-8 cleanup list as **M7–M9**.
+
+## Amendment 12 (2026-09-15) — Task-8 regression: AST-walk name-id/node-index confusion; I/F remediation series (Tasks 9/10)
+
+**Reason.** Task 8 closeout found a **Critical regression**: `repro/tu_void_prong`
+— a NON-async program (`switch` on `union(enum)` with `|x|` capture prongs) —
+went OK→FAIL. The dump aborts `OOM` / `ICE: out of memory at allocator.zig:28`
+(rc=3, 0 emitted `.c`).
+
+**Bisect.** Task 3 (`0e18fdd4`).
+
+**Root cause.** `sf/src/async_analysis.zig` `scanFunction`'s generic AST walk
+pushes `AstKind.swt_prong.child_1` — a **capture name id** (an interner id, not
+a node index; `parser.zig:1069-1070`) — as a node index, producing a traversal
+cycle → growable-arena blowup. `for_stmt.child_2 = index_name`
+(`parser.zig:1882`) is the same latent pattern. `scanFunction` runs on **every**
+function, so ordinary (non-async) programs are affected.
+
+**Operator ruling.** Dispatch an **I/F series** (investigate first to match a
+proper architectural solution): **Task 9** (I; record-only; STOP-present) then
+**Task 10** (F; fix).
+
+**Affected tasks.** Task 3 introduced the defect; Task 8 is blocked on the fix;
+Tasks 9/10 are inserted immediately before Task 8.
+
+**Re-verified baseline.** Branch `zig1_improvements`; HEAD `2abefe4a`; moving
+fixed point `3b6fd194…`; corpus 594 = 555 OK / 35 GREEN / 4 FAIL; 4-MD5 gate
+8 rows unchanged; seed **NOT rotated**; Task 8 **BLOCKED** pending the fix.
 
 ## Amendable note
 
