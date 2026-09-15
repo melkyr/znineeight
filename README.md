@@ -147,7 +147,7 @@ Supporting data for the `-s0` row: `zig1 -s0 --markers --track-memory` self-comp
 ## Minimum Requirements
 | Requirement | Linux | Windows 9x / MinGW |
 |---|---|---|
-| **RUNNING `zig1`** (compiling a program with a released binary) | `zig1` binary + the 8-file `lib/` std set next to it (auto-discovered); ~16 MB RAM at `-s0` | `zig1_w32.exe` + the std set on the search path (`-I <lib>`; win has no exe-relative auto-discovery); ~16 MB RAM at `-s0` |
+| **RUNNING `zig1`** (compiling a program with a released binary) | `zig1` binary + the 9-file `lib/` std set next to it (auto-discovered); ~16 MB RAM at `-s0` | `zig1_w32.exe` + the std set on the search path (`-I <lib>`; win has no exe-relative auto-discovery); ~16 MB RAM at `-s0` |
 | **BUILDING the compiler from source** | gcc (C89) for the emitted C — gcc backend **~80 MB** peak (measured ~85 MB); + g++ ~182 MB if also rebuilding the `zig0` bootstrap from scratch | mingw gcc for the emitted C — gcc backend dominates (mingw cross measured ~168 MB on the reference machine) |
 
 > **zig1 runs in ~16 MB at `-s0`, but building the compiler from source is dominated by the gcc
@@ -257,8 +257,8 @@ Runtime safety defaults to `-fsafe`. The compiler self-build passes `-ffast`, so
 ## Minimal Distribution
 To build a Z98 program on a target machine you need:
 1. **`zig1`** (or `zig1_w32.exe`) — the self-hosted compiler binary.
-2. **The std modules** — the 8 files `std.zig`, `std_io.zig`, `std_arena.zig`, `std_net.zig`,
-   `std_str.zig`, `std_mem.zig`, `std_math.zig`, `std_debug.zig`
+2. **The std modules** — the 9 files `std.zig`, `std_io.zig`, `std_arena.zig`, `std_net.zig`,
+   `std_str.zig`, `std_mem.zig`, `std_math.zig`, `std_debug.zig`, `std_async.zig`
    (linux: in a `lib/` dir beside the binary; windows: on the `-I` search path).
 3. **Runtime sources & headers** — emitted into the program's output dir by `zig1 -o <dir>`
    (`zig_runtime.c`/`.h`, `zig_pal.c`, `c_exit.c`, `zig_compat.h`, and `net_prelude.h` when

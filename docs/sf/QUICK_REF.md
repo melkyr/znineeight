@@ -33,9 +33,10 @@ Top-level `zig1-seed/`: `zig1` (reference binary md5
 45 `.c` + 46 `.h`, including `zig_special_types.h`; the emitted runtime/support
 sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/` (the emitted 5:
 `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`, `zig_runtime.c`,
-`zig_pal.c` — NO `net_prelude.h`), `lib/` (the 9 std `.zig`: `std`, `std_io`,
-`std_arena`, `std_net`, `std_str`, `std_mem`, `std_math`, `std_debug`,
-`std_async`),
+`zig_pal.c` — NO `net_prelude.h`), `lib/` (the 8 std `.zig` in the current v16
+archive: `std`, `std_io`, `std_arena`, `std_net`, `std_str`, `std_mem`,
+`std_math`, `std_debug`; the 9-module post-closeout set adds `std_async` once
+Task 5 rotates the seed),
 `SEED_README.txt`.
 The archived binary and the self-emission fixed point
 `f5ee84800dd32d7c440bb383c10edb55` are the SAME compiler state (HEAD

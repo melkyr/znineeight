@@ -841,7 +841,7 @@ git commit -m "feat: std.async — await/suspend/cancel/cancelAll/waitAll (ASYNC
 - [ ] **Step 1: Edit every install enumeration**
 
 `scripts/seed/archive_seed.sh`:
-- `:28-29` header comment: add `std_async.zig` to the `lib/` repo list and change `8` to `9`.
+- `:28-29` header comment: append `std_async.zig` to the `lib/` repo list (this comment carries no count literal; the `8` -> `9` counts live in the `:109` `for` loop and the `SEED_README.txt` heredoc lines below).
 - `:109` loop: `for f in std.zig std_io.zig std_arena.zig std_net.zig std_str.zig std_mem.zig std_math.zig std_debug.zig std_async.zig; do`.
 - `:156-158` `SEED_README.txt` heredoc: `zig1-seed/lib/        the 8 std .zig` -> `the 9 std .zig`, listing `std_async.zig`.
 - `:210-211` `SEED_README.txt` heredoc: `lib/ with the 8 std .zig` -> `lib/ with the 9 std .zig`.
