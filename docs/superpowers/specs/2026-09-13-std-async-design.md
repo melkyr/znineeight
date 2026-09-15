@@ -2,11 +2,16 @@
 
 **Date:** 2026-09-13
 **Branch:** `zig1_improvements`
-**Baseline HEAD:** `f755dbed`; compiler fixed point `1467d932a876402f40a56316dfcad0e5`;
-seed v10 (`ca18fc9f9af55d58147fcb7ff7a662b6`); corpus 570 = 541 OK / 29 GREEN / 0 FAIL;
-`EXPECTED_FAIL.md` v77. (Track 3 does not modify the compiler import graph, so it
-does not move the fixed point. If it lands after Track 2, record Track 2's
-closeout fixed point at plan Task 1 and use that value throughout.)
+**Baseline HEAD:** `e2a0f30a` (Track 2 landed and closed); compiler fixed point
+`eda943dc1f77a48eae039e39ea4bfe04`; seed v15 (archive md5
+`cd09877cbc373ad5c8801b93faccf188`); corpus 599 = 560 OK / 36 GREEN / 3 FAIL;
+`EXPECTED_FAIL.md` v80. **Track 3 depends on Track 2** (dispatch order Track 2 →
+Track 3): the library calls the `@asyncResume` builtin (Amendment 7 self-dispatch)
+and consumes the landed frame/`ctx` layout. Track 3 does **not** modify the
+compiler import graph (`std_async.zig` + `std.zig`; `std.zig` is not imported by
+`sf/src/main.zig`), so it does not move the fixed point. Target corpus after the
+five new fixtures: 604 = 565 OK / 36 GREEN / 3 FAIL; `EXPECTED_FAIL.md` bump
+v80 → v81.
 
 **Parent spec:** [`2026-09-13-async-prelude-and-feasibility-design.md`](./2026-09-13-async-prelude-and-feasibility-design.md).
 **Derives from:** umbrella §12.5 (Stage 5 `std.async`), §6 (the five non-negotiable
@@ -49,16 +54,23 @@ compiler:
 4. Seed `lib/` rotation at closeout (the seed `lib/` gains the 9th module; the
    compiler fixed point is unchanged).
 
-**Cross-track contract.** Track 3 **consumes** the builtin/frame surface pinned
-by Track 2 (`@asyncFrameSize`/`@asyncInit`/`@asyncResume`/`@asyncSuspend`, the
-`__async_step_<f>` ABI, `ctx`-in-frame, and the per-task LIFO child-frame
-allocation contract) and **produces** the library that Track 4
+**Cross-track contract (dispatch order: Track 2 → Track 3 → Track 4).** Track 3
+**depends on** the landed Track 2 compiler core and **consumes** its
+builtin/frame surface (`@asyncFrameSize`/`@asyncInit`/`@asyncResume`/
+`@asyncSuspend`, the `__async_step_<f>` ABI, the hidden pointer-sized step word at
+frame offset 0, the frame/`ctx` layout, and the per-task LIFO child-frame
+allocation contract). It **produces** the library that Track 4
 (`coroutine-integration-design.md`) consumes when porting `rogue_mud`/`mud_server`.
 
-**Deliberate independence.** `std_async.zig` is a pure Z98 user module: it uses no
-`@async*` builtin and needs no compiler change. Its fixtures drive hand-written
-state-machine step functions, so the library can be implemented, gated, and landed
-independently of Track 2. The builtins are consumed only by generated steps at
+**Dependency on Track 2 — NOT independent.** `std_async.zig` is a pure Z98 user
+module in the sense that it adds **no** compiler-core machinery, but its scheduler
+**self-dispatches through the compiler builtin `@asyncResume(frame, arg)`**
+(Amendment 7): the compiler must provide `@asyncResume`, the hidden step word at
+frame offset 0, and the frame/`ctx` layout. The library is therefore **not
+independent of Track 2**; Track 2 is landed, so this dependency is satisfied.
+Track 3's own fixtures build frames **by hand** (a struct whose first field is the
+step function pointer at offset 0) and drive them through the library scheduler;
+they do not need `@asyncInit`. Generated steps consume the builtins at
 integration time (Track 4).
 
 ## 2. Non-goals
@@ -98,7 +110,7 @@ pub const FrameError = error{OutOfFrame};
 // self-dispatch); it drives `@asyncResume(t.frame, t.arg)` instead.
 pub const StepFn = fn(frame: *void, arg: ?*void) ?*void;
 
-// Context (interim, compiler-core canon — NOT FINAL; see §4). The caller
+// Context (DECIDED: branch (a), compiler-core canon; see §4). The caller
 // declares `var buf: [4096]u8 = undefined;` and the Context sits at the HEAD
 // of that buffer; the pool bytes follow the 12-byte header:
 //   used     @ ctx+0   (usize)
@@ -113,7 +125,7 @@ pub const Context = struct {
     oom: bool,
 };
 
-pub fn contextInit(buf: []u8) Context;
+pub fn contextInit(buf: []u8) *Context;
 pub fn contextAlloc(ctx: *Context, size: usize) FrameError![*]u8;
 pub fn contextMark(ctx: *Context) usize;
 pub fn contextRelease(ctx: *Context, mark: usize) void;
@@ -256,19 +268,22 @@ enumerates the std module set must include it (exact edits in the plan):
 | 9 | `docs/sf/QUICK_REF.md:36-37` | "the 8 std `.zig`" -> 9 |
 | 10 | `release/seed/zig1-seed.tgz` + `release/seed/CHANGELOG.md` | closeout rotation: the seed `lib/` gains the 9th module |
 
-`std_async.zig` is pure Z98 (`@import`, plain structs/functions) — it needs no
-`net_prelude.h`, `zig_pal.c`, runtime, or `@cInclude` change. Because it is not in
-the compiler import graph (`sf/src/main.zig`), the emitted compiler C and the
-self-emission fixed point are unchanged; only the archive's `lib/` contents move.
+`std_async.zig` is plain Z98 (`@import`, structs, free functions) — it adds no
+`net_prelude.h`, `zig_pal.c`, runtime, or `@cInclude` surface. It does call the
+Track 2 builtin `@asyncResume` (Amendment 7), so it is **not** independent of
+Track 2. Because it is not in the compiler import graph (`sf/src/main.zig`), the
+emitted compiler C and the self-emission fixed point are unchanged; only the
+archive's `lib/` contents move.
 
 ## 4. Interfaces
 
 **Produces (for Track 4 and user programs).**
 - The complete `std.async` API of §3.1, reachable as `std.async.*` through the
   `std.zig` re-export.
-- The **interim** `Context` layout (compiler-core canon, **NOT FINAL** — see the
+- The **decided** `Context` layout (branch (a), compiler-core canon — see the
   reconciliation below): `{ used @ ctx+0, capacity @ ctx+4, oom @ ctx+8, pool
-  @ ctx+12 (DERIVED) }` and the bump+mark pool primitive semantics.
+  @ ctx+12 (DERIVED) }` and the bump+mark pool primitive semantics;
+  `contextInit(buf: []u8) *Context` places the Context at the head of `buf`.
 - The `StepFn` ABI `fn(frame: *void, arg: ?*void) ?*void` and the `Task`/
   `Scheduler` records.
 
@@ -287,33 +302,43 @@ self-emission fixed point are unchanged; only the archive's `lib/` contents move
 - `ctx`-in-frame inheritance and the per-task LIFO child-frame allocation
   contract (`buf` outside the pool).
 
-**Context-layout reconciliation — NOT FINAL.** The earlier "RESOLVED" claim
-(Amendment 7, Res 1, inline at `{pool, capacity, used, oom}`) is **struck**: it
-does not match what landed. The compiler core (Track 2, Task 7) pinned the
-**interim** layout `{ used @ ctx+0, capacity @ ctx+4, oom @ ctx+8, pool base
-= ctx+12 (DERIVED) }`; that interim canon is authoritative **for now**, and
-**Track 3 owns the final decision** (see the Track-3 alignment task in
-`../plans/2026-09-13-std-async-plan.md`). Ownership remains INLINE (no heap, no
-fixed array in the struct, no generics); the compiler core reads the pool fields
-inline (bump + mark) rather than calling runtime helpers. `pool_base` is
-**derived** (`ctx + 12`), not stored. The pinned caller idiom (marked **"verify
-at Track 3"**; do not implement Track 3 here):
+**Context-layout reconciliation — DECIDED: branch (a).** The earlier "RESOLVED"
+claim (Amendment 7, Res 1, inline at `{pool, capacity, used, oom}`) is **struck**:
+it does not match what landed. The compiler core (Track 2, Task 7) pinned the
+layout `{ used @ ctx+0, capacity @ ctx+4, oom @ ctx+8, pool base = ctx+12
+(DERIVED) }`. **Track 3 accepts that layout (branch (a))** (operator ruling
+m1662): `Context` physically sits at the head of the caller's pool buffer and
+`contextInit` returns a `*Context` pointing into that buffer. Ownership remains
+INLINE (no heap, no fixed array in the struct, no generics); the compiler reads
+the pool fields inline (bump + mark). `pool_base` is **derived** (`ctx + 12`), not
+stored — making it impossible for the pool base to diverge from the allocation.
+The decided caller idiom:
 
 ```zig
 var buf: [4096]u8 = undefined;
-var ctx = std.async.contextInit(buf[0..]);
+var ctx = std.async.contextInit(buf[0..]);   // *Context, points into buf
+// pass `ctx` (not `&ctx`) to contextAlloc/contextMark/contextRelease;
+// read ctx.used / ctx.oom.
 ```
+
+**Rejected alternative — by-value `Context` + separate `pool_base`.** Keeping a
+by-value `Context` returned from `contextInit` plus a separate `pool_base`
+argument/field was **rejected** (operator ruling m1662): it redoes landed Track 2
+work for a smaller safety margin. The landed compiler reads/writes the Context
+inline at `ctx+0/+4/+8` and derives `pool_base = ctx+12`; a stored `pool_base`
+would be a second source of truth and a cross-read hazard. (Worth a pass after
+the track closeout to re-check.)
 
 > **WARNING — the two layouts are NOT interchangeable.** A reader that assumes
 > the **stored-pointer** layout `{pool@0, capacity@4, used@8, oom@12}` against
-> the interim inline header would **misread `used` as `pool`, `capacity` as
+> the landed inline header would **misread `used` as `pool`, `capacity` as
 > capacity (coincidentally right), `oom` as `used`, and derive the pool base
 > into the wrong region** — silent memory corruption. Do not cross-read the two
-> layouts; Track 3 must pick one.
+> layouts; Track 3 has picked branch (a).
 
-**Seed-lib contract.** The rebuilt compiler's `<exe_dir>/lib/` carries
-`std.zig` + the 8 existing modules + `std_async.zig`; `std.zig` re-exports
-`async`, so a bare `@import("std")` resolves `std.async`.
+**Seed-lib contract.** The rebuilt compiler's `<exe_dir>/lib/` carries the 8
+existing std `.zig` + `std_async.zig` (9 total); `std.zig` re-exports `async`,
+so a bare `@import("std")` resolves `std.async`.
 
 ## 5. Diagnostics
 
@@ -355,27 +380,27 @@ Gate battery (every task; full sweep at closeout):
   binding flag set, link/run via the emitted `build_target.sh`, assert the
   byte-exact stdout and md5 across 3 runs.
 - Corpus classifier by gcc exit code (`docs/sf/QUICK_REF.md:134-145`), never by
-  empty stderr: baseline 570 = 541 OK / 29 GREEN / 0 FAIL -> **575 = 546 OK / 29
-  GREEN / 0 FAIL / 0 ICE / 0 CRASH**, `-ffast` == `-fsafe` zero-asymmetric.
+  empty stderr: baseline 599 = 560 OK / 36 GREEN / 3 FAIL -> **604 = 565 OK / 36
+  GREEN / 3 FAIL / 0 ICE / 0 CRASH**, `-ffast` == `-fsafe` zero-asymmetric.
 - `scripts/check_emit_support.sh <zig1>` -> `[check] OK: 5/5 support files
   byte-identical to canonical` (user-module install does not touch emitted
   support).
-- `EXPECTED_FAIL.md` header bump to v78 with the new universe count (no class
+- `EXPECTED_FAIL.md` header bump v80 → v81 with the new universe count (no class
   movement on pre-existing dirs).
 - Closeout seed rotation via
   `bash scripts/seed/archive_seed.sh <zig1> <gen_dir> release/seed/zig1-seed.tgz --update-changelog`;
   assert the gcc-only archive fixed-point md5 is still
-  `1467d932a876402f40a56316dfcad0e5` (or Track 2's post-closeout value) and the
-  `lib/` now has 9 modules.
+  `eda943dc1f77a48eae039e39ea4bfe04` and the `lib/` now has 9 modules.
 
 ## 7. Risks
 
-- **Context ABI vs Track 2 "opaque" wording — NOT FINAL (Amendment 11).** The
-  earlier "RESOLVED" claim is **struck**. Ownership is INLINE, but the
-  compiler-core interim layout `{used@0, capacity@4, oom@8, pool base ctx+12
-  (DERIVED)}` is **not** the earlier `{pool, capacity, used, oom}` order;
-  **Track 3 owns the final decision** (Track-3 alignment task). Residual: the
-  pinned caller idiom is a **"verify at Track 3"** item.
+- **Context ABI vs Track 2 "opaque" wording — DECIDED: branch (a) (m1662).** The
+  earlier "RESOLVED" claim is **struck**. Ownership is INLINE and Track 3 adopts
+  the compiler-core layout `{used@0, capacity@4, oom@8, pool base ctx+12
+  (DERIVED)}` (not the earlier `{pool, capacity, used, oom}` order);
+  `contextInit` returns a `*Context` pointing into the caller's buffer. The
+  by-value + separate `pool_base` alternative is **rejected** (redoes landed
+  Track 2 work for a smaller safety margin). See §4.
 - **`fn_ptr_struct_field` regression — no longer a dependency (Amendment 7).**
   `Task.step` is removed; the scheduler self-dispatches through the frame step
   word, so this design no longer relies on a fn-ptr struct field. The gap was
@@ -417,11 +442,13 @@ Gate battery (every task; full sweep at closeout):
 - Umbrella §5 (L1 implicit-await, L2/m1166 `@asyncInit(ctx, buf, fn, args)`, L3
   result slot), §6 non-negotiable concerns, §12.4/§12.5, §15.2, §14.2 Track 2 item
   2; spike report Task 2 §5 and operator rulings m1166/m1172.
-- Track 2 (`async-compiler-core-design.md`): the pinned builtin surface, the
-  `__async_step_<f>` ABI, `ctx`-in-frame inheritance, `@asyncFrameSize` flat
-  semantics, and the LIFO child-frame contract. Track 3's own implementation and
-  fixtures do not require the builtins to exist; only generated steps at
-  integration consume them.
+- Track 2 (`async-compiler-core-design.md`), **landed and closed**: the pinned
+  builtin surface, the `__async_step_<f>` ABI, the hidden step word at frame
+  offset 0, `ctx`-in-frame inheritance, `@asyncFrameSize` flat semantics, and the
+  LIFO child-frame contract. Track 3 **depends on** this surface: the library
+  scheduler calls `@asyncResume(frame, arg)` (Amendment 7) and its fixtures
+  hand-build frames with the step word at offset 0. Dispatch order Track 2 →
+  Track 3.
 - Existing tooling: `scripts/seed/build_from_seed.sh`,
   `scripts/seed/archive_seed.sh`, `scripts/self_compile/build_zig1_5.sh`,
   `scripts/check_emit_support.sh`, `scripts/corpus/list_corpus_dirs.sh`,
@@ -430,6 +457,6 @@ Gate battery (every task; full sweep at closeout):
 **Produces.**
 - `sf/src/std_async.zig` + `std.zig` re-export + install touchpoints + 5 corpus
   fixtures + seed `lib/` rotation.
-- The `std.async` API and interim `Context` (**NOT FINAL**; §4) / `StepFn` ABI
+- The `std.async` API and decided `Context` (branch (a); §4) / `StepFn` ABI
   that Track 4 (`coroutine-integration-design.md`) consumes for the
   `rogue_mud`/`mud_server` port.

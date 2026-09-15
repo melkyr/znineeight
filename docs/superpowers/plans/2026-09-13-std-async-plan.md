@@ -2,23 +2,43 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-> **STALE-SCHEDULER MARKER (Amendment 7, 2026-09-14):** this plan's scheduler
-> surface is **stale**: it pins `Task.step`/`StepFn` and the homogeneous step
-> ABI, which Amendment 7 of
-> [`2026-09-13-async-compiler-core-plan.md`](2026-09-13-async-compiler-core-plan.md)
-> removed in favor of hidden-step-word `@asyncResume` self-dispatch. Re-amend
-> (drop `Task.step` and every `step` parameter) **before Track 3 dispatch**; the
-> authoritative deferral record is Amendment 7.
+## Amendment — Track-3 alignment (2026-09-15, operator ruling m1662)
+
+This plan is amended to the landed Track 2 compiler surface. The previous
+**STALE-SCHEDULER MARKER** (pinning `Task.step`/`StepFn` and the homogeneous step
+ABI) is **removed**; its deferral is now applied here.
+
+- **A — strike Track-3 independence.** The "no builtin / independent" clauses are
+  struck. `std.async`'s scheduler self-dispatches through the compiler builtin
+  `@asyncResume(frame, arg)` (Amendment 7 of
+  [`2026-09-13-async-compiler-core-plan.md`](2026-09-13-async-compiler-core-plan.md)),
+  so the library **depends on Track 2** (landed and closed). Dispatch order:
+  **Track 2 → Track 3 → Track 4**. The fixtures build frames **by hand** (a
+  struct whose first field is the step function pointer at offset 0) and drive
+  them through the library scheduler.
+- **B — branch (a) accepted.** `contextInit(buf: []u8) *Context`; the `Context`
+  sits at the head of the caller's pool buffer (`pool_base = ctx + 12`, DERIVED).
+  The by-value `Context` + separate `pool_base` alternative is **rejected**
+  (redoes landed Track 2 work for a smaller safety margin). See Task 6.
+- **Amendment 7 — drop `Task.step`/`step`.** `Task` has no `step` field and no
+  scheduler function takes a `step` parameter; `tick`/`waitAll` drive each task
+  with `@asyncResume(t.frame, t.arg)`. Fixtures set the step function as the
+  **first field** of their `Frame`.
+- **Baseline refresh.** HEAD `e2a0f30a`; fixed point
+  `eda943dc1f77a48eae039e39ea4bfe04`; seed v15
+  (`cd09877cbc373ad5c8801b93faccf188`); corpus 599 = 560 OK / 36 GREEN / 3 FAIL;
+  `EXPECTED_FAIL.md` v80. Target corpus 604 = 565 OK / 36 GREEN / 3 FAIL;
+  `EXPECTED_FAIL.md` v80 → v81.
 
 **Goal:** Build the concrete, no-generics `std.async` Z98 library (`Context` per-task LIFO child-frame pool, `Task`, `Scheduler`, and the cooperative scheduler free functions) and wire it into every std-install touchpoint, so Track 4 can drive compiler-synthesized coroutine steps.
 
-**Architecture:** `sf/src/std_async.zig` is a pure-Z98 user module (not in the compiler import graph): plain structs + free functions, no generics, no module-scope mutable globals. `Context` is a per-task frame stack for **child** frames only (bump pointer + mark); the root frame lives in the caller-owned `buf` outside the pool. `Task.step` stores the compiler `__async_step_<f>` pointer (`fn(frame: *void, arg: ?*void) ?*void`); pool exhaustion surfaces as `error.OutOfFrame`, never a crash. The module is re-exported from `std.zig` and added to all seed/self-compile `lib/` install paths; its five corpus fixtures use hand-written step functions so the library is testable without Track 2's builtins.
+**Architecture:** `sf/src/std_async.zig` is a plain-Z98 user module (not in the compiler import graph): structs + free functions, no generics, no module-scope mutable globals. It adds **no** compiler-core machinery but **depends on Track 2**: the scheduler **self-dispatches** through the compiler builtin `@asyncResume(t.frame, t.arg)` (Amendment 7), so there is no `Task.step` field and no `step` parameter. `Context` is a per-task frame stack for **child** frames only (bump pointer + mark); the root frame lives in the caller-owned `buf` outside the pool, and the `Context` itself sits at the head of the pool buffer (`contextInit` returns a `*Context`). Pool exhaustion surfaces as `error.OutOfFrame`, never a crash. The module is re-exported from `std.zig` and added to all seed/self-compile `lib/` install paths; its five corpus fixtures **hand-build frames** (step function pointer as the first struct field at offset 0) and drive them through the library scheduler.
 
 **Tech Stack:** Z98/`zig1` self-hosted compiler (C89 emission), gcc `-m32 -std=c89`, bash, git. Compiler builds via the seed/forward path `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out>`; never invoke `zig0`.
 
 ## Global Constraints
 
-- **Baseline (re-verify at Task 1):** branch `zig1_improvements`; HEAD `f755dbed`; design fixed point `1467d932a876402f40a56316dfcad0e5`; seed v10 archive md5 `ca18fc9f9af55d58147fcb7ff7a662b6`; corpus 570 = 541 OK / 29 GREEN / 0 FAIL; `repro/mi_matrix/EXPECTED_FAIL.md` header v77. **If Track 2 (`async-compiler-core-plan.md`) has already landed, record its closeout fixed point and seed archive md5 at Task 1 and use those values for every rotation/closure assertion below.**
+- **Baseline (re-verify at Task 1):** branch `zig1_improvements`; HEAD `e2a0f30a`; design fixed point `eda943dc1f77a48eae039e39ea4bfe04`; seed v15 archive md5 `cd09877cbc373ad5c8801b93faccf188`; corpus 599 = 560 OK / 36 GREEN / 3 FAIL; `repro/mi_matrix/EXPECTED_FAIL.md` header v80. **Track 2 (`async-compiler-core-plan.md`) is landed and closed**; Track 3 **depends on** its `@asyncResume`/frame surface (dispatch order Track 2 → Track 3). Target corpus after the five new fixtures: 604 = 565 OK / 36 GREEN / 3 FAIL; `EXPECTED_FAIL.md` v80 → v81.
 - **`timeout 120` on every binary execution.**
 - **Binding gcc flag set for every `gcc -c`/link:** `gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc>`. The compiler fixed point reproduces only with `-Wall`.
 - **Compiler build:** `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <fresh_out>`; gate `=== [seed] Done: <fresh_out> ===`; result `<fresh_out>/zig1_5_clean` + `<fresh_out>/lib/`. Never invoke `zig0`.
@@ -33,7 +53,7 @@
 
 ---
 
-**Sequence:** Previous plan: [`../plans/2026-09-13-async-compiler-core-plan.md`](../plans/2026-09-13-async-compiler-core-plan.md); Next plan: [`../plans/2026-09-13-coroutine-integration-plan.md`](../plans/2026-09-13-coroutine-integration-plan.md); subspec: [`../specs/2026-09-13-std-async-design.md`](../specs/2026-09-13-std-async-design.md).
+**Sequence:** Previous plan: [`../plans/2026-09-13-async-compiler-core-plan.md`](../plans/2026-09-13-async-compiler-core-plan.md) — **landed and closed** (Track 3 **consumes** its `@asyncResume` builtin / hidden-step-word frame surface); Next plan: [`../plans/2026-09-13-coroutine-integration-plan.md`](../plans/2026-09-13-coroutine-integration-plan.md) — **consumes Track 3**; subspec: [`../specs/2026-09-13-std-async-design.md`](../specs/2026-09-13-std-async-design.md). Dispatch order: **Track 2 → Track 3 → Track 4**.
 
 ## File Structure
 
@@ -44,7 +64,7 @@
 - `scripts/self_compile/build_zig1_5.sh` — `:12` `lib/` `cp` (Task 4).
 - `docs/sf/QUICK_REF.md` — `:98` install recipe + `:36-37` seed inventory count (Task 4).
 - Fixtures (new dirs, each `main.zig`): `repro/mi_matrix/stdlib_async_pool_xmod/` (Task 1), `stdlib_async_sched_xmod/`, `stdlib_async_oom_xmod/` (Task 2), `stdlib_async_await_xmod/`, `stdlib_async_cancelall_xmod/` (Task 3).
-- `repro/mi_matrix/EXPECTED_FAIL.md` — header bump v78 with the new corpus counts (Task 5).
+- `repro/mi_matrix/EXPECTED_FAIL.md` — header bump v81 with the new corpus counts (Task 5).
 - `release/seed/zig1-seed.tgz`, `release/seed/CHANGELOG.md` — closeout rotation (Task 5).
 
 ---
@@ -73,6 +93,7 @@ Create `repro/mi_matrix/stdlib_async_pool_xmod/main.zig`:
 //   contextInit / contextAlloc / contextMark / contextRelease
 //   - 8+8 alloc -> used 16; mark at 16; alloc 8 -> used 24; release -> 16
 //   - alloc 40 -> used 56; alloc 40 -> OutOfFrame (sticky oom), used stays 56
+//   - buf is 80 B; capacity = 80 - 12 = 68 usable bytes after the 12-byte header
 // GREEN: exact stdout 1 1 1 1 0 1 1 (RUNRC=0).
 const std = @import("std");
 
@@ -92,15 +113,15 @@ fn pb(cond: bool) void {
 }
 
 pub fn main() void {
-    var buf: [64]u8 = undefined;
+    var buf: [80]u8 = undefined;
     var ctx = std.async.contextInit(buf[0..]);
-    pb(tryAlloc(&ctx, 8));
-    pb(tryAlloc(&ctx, 8));
-    var mark = std.async.contextMark(&ctx);
-    pb(tryAlloc(&ctx, 8));
-    std.async.contextRelease(&ctx, mark);
-    pb(tryAlloc(&ctx, 40));
-    pb(tryAlloc(&ctx, 40));
+    pb(tryAlloc(ctx, 8));
+    pb(tryAlloc(ctx, 8));
+    var mark = std.async.contextMark(ctx);
+    pb(tryAlloc(ctx, 8));
+    std.async.contextRelease(ctx, mark);
+    pb(tryAlloc(ctx, 40));
+    pb(tryAlloc(ctx, 40));
     pb(ctx.used == 56);
     pb(ctx.oom);
 }
@@ -139,10 +160,12 @@ Create `sf/src/std_async.zig` with exactly:
 //     child so it is reclaimed exactly when it returns. Exhaustion returns
 //     `error.OutOfFrame` and sets the sticky `oom` flag; it is never a crash.
 //
-// The step pointer is stored in the `Task` struct field (`Task.step`); the
-// historical `fn_ptr_struct_field` emission gap is CLOSED at fixed point
-// 1467d932a876402f40a56316dfcad0e5 (a `fn(frame: *void, arg: ?*void) ?*void`
-// field emits and indirect-calls correctly; verified 2026-09-13).
+// Scheduler dispatch (Amendment 7): `Task` stores NO step pointer. `tick`/
+// `waitAll` self-dispatch with `@asyncResume(t.frame, t.arg)`, which loads the
+// hidden pointer-sized step word the compiler writes at frame offset 0. Track 3
+// therefore DEPENDS on the landed Track 2 compiler core for `@asyncResume` and
+// the frame/`ctx` layout. (The historical `fn_ptr_struct_field` gap is CLOSED;
+// `StepFn` remains the documented `__async_step_<f>` ABI alias only.)
 
 /// Cooperative task lifecycle.
 pub const TaskState = enum(u8) {
@@ -156,24 +179,32 @@ pub const TaskState = enum(u8) {
 /// Pool exhaustion, surfaced by the scheduler free functions.
 pub const FrameError = error{OutOfFrame};
 
-/// The state-machine step ABI emitted by the compiler core as
-/// `__async_step_<f>(frame, arg)`. Null result = terminal (done); non-null =
-/// still yielded. Track 2 pins this signature; keep the two in lockstep.
+/// The documented `__async_step_<f>` ABI alias: `fn(frame, arg) ?*void`; null =
+/// terminal (done), non-null = still yielded. Documentation only — the scheduler
+/// never stores or passes a `StepFn` (Amendment 7 self-dispatch via
+/// `@asyncResume(t.frame, t.arg)`); Track 3 fixtures set it as the first `Frame`
+/// field so it lands at frame offset 0.
 pub const StepFn = fn(frame: *void, arg: ?*void) ?*void;
 
-// Superseded by Amendment 11 (interim compiler-core layout
-// `used@0/capacity@4/oom@8`; pool base `ctx+12` derived). Align in Task 6.
-/// Per-task child-frame pool. `pool`/`capacity` are caller-supplied; `used` is
-/// the bump pointer; `oom` is sticky for the task's pool lifetime.
+// Branch (a) — DECIDED (operator ruling m1662). Context occupies the first 12
+// bytes of the caller's pool buffer; the pool bytes follow: `pool_base =
+// ctx + 12` (DERIVED — never stored). The by-value Context + separate
+// `pool_base` alternative is REJECTED (redoes landed Track 2 work).
+/// Per-task child-frame pool. The caller declares `var buf: [N]u8 = undefined;`
+/// and the Context sits at the HEAD of that buffer; `capacity` is the usable
+/// bytes AFTER the 12-byte header; `oom` is sticky for the pool's lifetime.
 pub const Context = struct {
-    pool: [*]u8,
-    capacity: usize,
-    used: usize,
-    oom: bool,
+    used: usize,       // @ ctx+0
+    capacity: usize,   // @ ctx+4 — usable bytes AFTER the 12-byte header
+    oom: bool,         // @ ctx+8 — sticky
 };
 
-pub fn contextInit(pool: []u8) Context {
-    var c = Context{ .pool = pool.ptr, .capacity = pool.len, .used = 0, .oom = false };
+/// Places the Context at the head of `buf` and returns a pointer into `buf`.
+pub fn contextInit(buf: []u8) *Context {
+    var c: *Context = @ptrCast(*Context, buf.ptr);
+    c.used = 0;
+    c.capacity = buf.len - 12;
+    c.oom = false;
     return c;
 }
 
@@ -182,7 +213,8 @@ pub fn contextAlloc(ctx: *Context, size: usize) FrameError![*]u8 {
         ctx.oom = true;
         return error.OutOfFrame;
     }
-    var p: [*]u8 = ctx.pool + ctx.used;
+    var base: [*]u8 = @ptrCast([*]u8, ctx) + 12;
+    var p: [*]u8 = base + ctx.used;
     ctx.used += size;
     return p;
 }
@@ -226,7 +258,7 @@ for i in 1 2 3; do timeout 120 /tmp/sa_t1/f1_prog | md5sum; done
 timeout 120 /tmp/sa_t1/f1_prog
 ```
 
-Expected GREEN: `lib/` = 9 files including `std_async.zig`; `dump rc=0`; no `GCCFAIL`; 3 identical stdout md5s `38f19e53c09cbb69c1919cb5385c708d`; stdout exactly `1 1 1 1 0 1 1`; `run rc=0`. Also confirm the compiler fixed point did not move: the build gate prints `two-hop closure OK: hop1 == hop2 == 1467d932a876402f40a56316dfcad0e5`.
+Expected GREEN: `lib/` = 9 files including `std_async.zig`; `dump rc=0`; no `GCCFAIL`; 3 identical stdout md5s `38f19e53c09cbb69c1919cb5385c708d`; stdout exactly `1 1 1 1 0 1 1`; `run rc=0`. Also confirm the compiler fixed point did not move: the build gate prints `two-hop closure OK: hop1 == hop2 == eda943dc1f77a48eae039e39ea4bfe04`.
 
 - [ ] **Step 5: Commit**
 
@@ -248,7 +280,7 @@ git commit -m "feat: std.async — Context pool + std.zig re-export + 9-file lib
 
 **Interfaces:**
 - Consumes: Task 1's `TaskState`/`Context`/pool.
-- Produces: `Task`, `Scheduler`, `schedulerInit`, `addTask`, `tick` (including `tick`'s `error.OutOfFrame` propagation from a task's sticky `Context.oom`); the `Task.step` fn-pointer struct field exercised end-to-end.
+- Produces: `Task`, `Scheduler`, `schedulerInit`, `addTask`, `tick` (including `tick`'s `error.OutOfFrame` propagation from a task's sticky `Context.oom`); self-dispatch through the frame step word (`@asyncResume(t.frame, t.arg)`, no `Task.step`, no `step` parameter) exercised end-to-end.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -262,12 +294,13 @@ Create `repro/mi_matrix/stdlib_async_sched_xmod/main.zig`:
 // search path. Three tasks each yield twice, then emit id*10:
 //   addTask(&t0) -> true; count -> 3; suspend(t2) -> state 2;
 //   waitAll resumes every task to done -> 10 20 30.
-// GREEN: exact stdout 1 3 2 10 20 30 (RUNRC=0). Pins the Task.step fn-ptr
-// struct field (indirect call) and the Task/Scheduler records.
+// GREEN: exact stdout 1 3 2 10 20 30 (RUNRC=0). Pins self-dispatch: the library
+// `tick` calls `@asyncResume(t.frame, t.arg)` and the hand-built frame's step
+// word at offset 0 is invoked; also the Task/Scheduler records.
 const std = @import("std");
 const sa = @import("std_async.zig");
 
-const Frame = struct { ticks: u32, id: i32, val: i32 };
+const Frame = struct { step: sa.StepFn, ticks: u32, id: i32, val: i32 };
 
 fn stepInc(f: *void, arg: ?*void) ?*void {
     _ = arg;
@@ -286,23 +319,23 @@ fn p(v: i32) void {
 }
 
 pub fn main() void {
-    var f0: Frame = Frame{ .ticks = 0, .id = 1, .val = 0 };
-    var f1: Frame = Frame{ .ticks = 0, .id = 2, .val = 0 };
-    var f2: Frame = Frame{ .ticks = 0, .id = 3, .val = 0 };
+    var f0: Frame = Frame{ .step = stepInc, .ticks = 0, .id = 1, .val = 0 };
+    var f1: Frame = Frame{ .step = stepInc, .ticks = 0, .id = 2, .val = 0 };
+    var f2: Frame = Frame{ .step = stepInc, .ticks = 0, .id = 3, .val = 0 };
     var r0: i32 = 0;
     var r1: i32 = 0;
     var r2: i32 = 0;
-    var buf0: [8]u8 = undefined;
-    var buf1: [8]u8 = undefined;
-    var buf2: [8]u8 = undefined;
+    var buf0: [16]u8 = undefined;
+    var buf1: [16]u8 = undefined;
+    var buf2: [16]u8 = undefined;
     var ctx0 = sa.contextInit(buf0[0..]);
     var ctx1 = sa.contextInit(buf1[0..]);
     var ctx2 = sa.contextInit(buf2[0..]);
     var tasks: [3]sa.Task = undefined;
     var s = sa.schedulerInit(tasks[0..]);
-    var t0 = sa.Task{ .frame = @ptrCast(*void, &f0), .ctx = &ctx0, .state = sa.TaskState.ready, .cancel_requested = false, .result = @ptrCast(*void, &r0), .step = stepInc, .arg = @ptrCast(*void, @intToPtr(*void, 0)), .waiting_on = @ptrCast(*sa.Task, @intToPtr(*void, 0)), .has_waiting_on = false };
-    var t1 = sa.Task{ .frame = @ptrCast(*void, &f1), .ctx = &ctx1, .state = sa.TaskState.ready, .cancel_requested = false, .result = @ptrCast(*void, &r1), .step = stepInc, .arg = @ptrCast(*void, @intToPtr(*void, 0)), .waiting_on = @ptrCast(*sa.Task, @intToPtr(*void, 0)), .has_waiting_on = false };
-    var t2 = sa.Task{ .frame = @ptrCast(*void, &f2), .ctx = &ctx2, .state = sa.TaskState.ready, .cancel_requested = false, .result = @ptrCast(*void, &r2), .step = stepInc, .arg = @ptrCast(*void, @intToPtr(*void, 0)), .waiting_on = @ptrCast(*sa.Task, @intToPtr(*void, 0)), .has_waiting_on = false };
+    var t0 = sa.Task{ .frame = @ptrCast(*void, &f0), .ctx = ctx0, .state = sa.TaskState.ready, .cancel_requested = false, .result = @ptrCast(*void, &r0), .arg = @ptrCast(*void, @intToPtr(*void, 0)), .waiting_on = @ptrCast(*sa.Task, @intToPtr(*void, 0)), .has_waiting_on = false };
+    var t1 = sa.Task{ .frame = @ptrCast(*void, &f1), .ctx = ctx1, .state = sa.TaskState.ready, .cancel_requested = false, .result = @ptrCast(*void, &r1), .arg = @ptrCast(*void, @intToPtr(*void, 0)), .waiting_on = @ptrCast(*sa.Task, @intToPtr(*void, 0)), .has_waiting_on = false };
+    var t2 = sa.Task{ .frame = @ptrCast(*void, &f2), .ctx = ctx2, .state = sa.TaskState.ready, .cancel_requested = false, .result = @ptrCast(*void, &r2), .arg = @ptrCast(*void, @intToPtr(*void, 0)), .waiting_on = @ptrCast(*sa.Task, @intToPtr(*void, 0)), .has_waiting_on = false };
     p(if (sa.addTask(&s, &t0)) 1 else 0);
     _ = sa.addTask(&s, &t1);
     _ = sa.addTask(&s, &t2);
@@ -326,7 +359,7 @@ Also create `repro/mi_matrix/stdlib_async_oom_xmod/main.zig` (pins `tick`'s `err
 const std = @import("std");
 const sa = @import("std_async.zig");
 
-const Frame = struct { ticks: u32 };
+const Frame = struct { step: sa.StepFn, ticks: u32 };
 
 fn stepNoop(f: *void, arg: ?*void) ?*void {
     _ = f;
@@ -340,15 +373,15 @@ fn p(v: i32) void {
 }
 
 pub fn main() void {
-    var fr: Frame = Frame{ .ticks = 0 };
+    var fr: Frame = Frame{ .step = stepNoop, .ticks = 0 };
     var buf: [16]u8 = undefined;
     var ctx = sa.contextInit(buf[0..]);
-    _ = sa.contextAlloc(&ctx, 1000) catch 0;
+    _ = sa.contextAlloc(ctx, 1000) catch 0;
     p(@intCast(i32, if (ctx.oom) 1 else 0));
 
     var tasks: [1]sa.Task = undefined;
     var s = sa.schedulerInit(tasks[0..]);
-    var t = sa.Task{ .frame = @ptrCast(*void, &fr), .ctx = &ctx, .state = sa.TaskState.ready, .cancel_requested = false, .result = @ptrCast(*void, &fr), .step = stepNoop, .arg = @ptrCast(*void, @intToPtr(*void, 0)), .waiting_on = @ptrCast(*sa.Task, @intToPtr(*void, 0)), .has_waiting_on = false };
+    var t = sa.Task{ .frame = @ptrCast(*void, &fr), .ctx = ctx, .state = sa.TaskState.ready, .cancel_requested = false, .result = @ptrCast(*void, &fr), .arg = @ptrCast(*void, @intToPtr(*void, 0)), .waiting_on = @ptrCast(*sa.Task, @intToPtr(*void, 0)), .has_waiting_on = false };
     _ = sa.addTask(&s, &t);
     sa.tick(&s) catch {
         p(1);
@@ -387,7 +420,6 @@ pub const Task = struct {
     state: TaskState,
     cancel_requested: bool,
     result: *void,
-    step: StepFn,
     arg: *void,
     waiting_on: *Task,
     has_waiting_on: bool,
@@ -448,7 +480,7 @@ pub fn tick(s: *Scheduler) FrameError!void {
         if (active) {
             s.current = i;
             t.state = TaskState.running;
-            var r: ?*void = t.step(t.frame, t.arg);
+            var r: ?*void = @asyncResume(t.frame, t.arg);
             if (t.ctx.oom) return error.OutOfFrame;
             if (r == null) {
                 t.state = TaskState.done;
@@ -486,7 +518,7 @@ done
 Expected GREEN:
 - `sched`: `dump rc=0`, no `GCCFAIL`, md5 `29d3c32a9c1d30152faffca161cccac0`, stdout exactly `1 3 2 10 20 30`.
 - `oom`: `dump rc=0`, no `GCCFAIL`, md5 `f2160c8ffedf48068f2e1137e0a3a7e7`, stdout exactly `1 1`.
-Both `run rc=0`. The `sched` emission also pins the `Task.step` fn-ptr struct field: `grep -c "step" /tmp/sa_t1/f2_sched/std_async_*.h` must be >= 1 and the emitted field must be a real typedef, not `void`.
+Both `run rc=0`. The `sched` fixture also pins self-dispatch: the library `tick` calls `@asyncResume(t.frame, t.arg)` and the hand-built `Frame`'s step word at offset 0 is invoked (no `Task.step`, no `step` parameter).
 
 - [ ] **Step 5: Commit**
 
@@ -523,6 +555,7 @@ const std = @import("std");
 const sa = @import("std_async.zig");
 
 const Frame = struct {
+    step: sa.StepFn,
     ticks: u32,
     id: i32,
     val: i32,
@@ -545,9 +578,9 @@ fn p(v: i32) void {
 }
 
 pub fn main() void {
-    var f0: Frame = Frame{ .ticks = 0, .id = 1, .val = 0 };
-    var f1: Frame = Frame{ .ticks = 0, .id = 2, .val = 0 };
-    var f2: Frame = Frame{ .ticks = 0, .id = 3, .val = 0 };
+    var f0: Frame = Frame{ .step = stepInc, .ticks = 0, .id = 1, .val = 0 };
+    var f1: Frame = Frame{ .step = stepInc, .ticks = 0, .id = 2, .val = 0 };
+    var f2: Frame = Frame{ .step = stepInc, .ticks = 0, .id = 3, .val = 0 };
     var r0: i32 = 0;
     var r1: i32 = 0;
     var r2: i32 = 0;
@@ -562,9 +595,9 @@ pub fn main() void {
     var tasks: [3]sa.Task = undefined;
     var s = sa.schedulerInit(tasks[0..]);
 
-    var t0 = sa.Task{ .frame = @ptrCast(*void, &f0), .ctx = &ctx0, .state = sa.TaskState.ready, .cancel_requested = false, .result = @ptrCast(*void, &r0), .step = stepInc, .arg = @ptrCast(*void, @intToPtr(*void, 0)), .waiting_on = @ptrCast(*sa.Task, @intToPtr(*void, 0)), .has_waiting_on = false };
-    var t1 = sa.Task{ .frame = @ptrCast(*void, &f1), .ctx = &ctx1, .state = sa.TaskState.ready, .cancel_requested = false, .result = @ptrCast(*void, &r1), .step = stepInc, .arg = @ptrCast(*void, @intToPtr(*void, 0)), .waiting_on = @ptrCast(*sa.Task, @intToPtr(*void, 0)), .has_waiting_on = false };
-    var t2 = sa.Task{ .frame = @ptrCast(*void, &f2), .ctx = &ctx2, .state = sa.TaskState.ready, .cancel_requested = false, .result = @ptrCast(*void, &r2), .step = stepInc, .arg = @ptrCast(*void, @intToPtr(*void, 0)), .waiting_on = @ptrCast(*sa.Task, @intToPtr(*void, 0)), .has_waiting_on = false };
+    var t0 = sa.Task{ .frame = @ptrCast(*void, &f0), .ctx = ctx0, .state = sa.TaskState.ready, .cancel_requested = false, .result = @ptrCast(*void, &r0), .arg = @ptrCast(*void, @intToPtr(*void, 0)), .waiting_on = @ptrCast(*sa.Task, @intToPtr(*void, 0)), .has_waiting_on = false };
+    var t1 = sa.Task{ .frame = @ptrCast(*void, &f1), .ctx = ctx1, .state = sa.TaskState.ready, .cancel_requested = false, .result = @ptrCast(*void, &r1), .arg = @ptrCast(*void, @intToPtr(*void, 0)), .waiting_on = @ptrCast(*sa.Task, @intToPtr(*void, 0)), .has_waiting_on = false };
+    var t2 = sa.Task{ .frame = @ptrCast(*void, &f2), .ctx = ctx2, .state = sa.TaskState.ready, .cancel_requested = false, .result = @ptrCast(*void, &r2), .arg = @ptrCast(*void, @intToPtr(*void, 0)), .waiting_on = @ptrCast(*sa.Task, @intToPtr(*void, 0)), .has_waiting_on = false };
 
     _ = sa.addTask(&s, &t0);
     _ = sa.addTask(&s, &t1);
@@ -591,7 +624,7 @@ Create `repro/mi_matrix/stdlib_async_cancelall_xmod/main.zig`:
 const std = @import("std");
 const sa = @import("std_async.zig");
 
-const Frame = struct { ticks: u32 };
+const Frame = struct { step: sa.StepFn, ticks: u32 };
 
 fn stepLong(f: *void, arg: ?*void) ?*void {
     _ = arg;
@@ -606,23 +639,23 @@ fn p(v: i32) void {
 }
 
 pub fn main() void {
-    var f0: Frame = Frame{ .ticks = 0 };
-    var f1: Frame = Frame{ .ticks = 0 };
-    var f2: Frame = Frame{ .ticks = 0 };
+    var f0: Frame = Frame{ .step = stepLong, .ticks = 0 };
+    var f1: Frame = Frame{ .step = stepLong, .ticks = 0 };
+    var f2: Frame = Frame{ .step = stepLong, .ticks = 0 };
     var r0: i32 = 0;
     var r1: i32 = 0;
     var r2: i32 = 0;
-    var buf0: [8]u8 = undefined;
-    var buf1: [8]u8 = undefined;
-    var buf2: [8]u8 = undefined;
+    var buf0: [16]u8 = undefined;
+    var buf1: [16]u8 = undefined;
+    var buf2: [16]u8 = undefined;
     var ctx0 = sa.contextInit(buf0[0..]);
     var ctx1 = sa.contextInit(buf1[0..]);
     var ctx2 = sa.contextInit(buf2[0..]);
     var tasks: [3]sa.Task = undefined;
     var s = sa.schedulerInit(tasks[0..]);
-    var t0 = sa.Task{ .frame = @ptrCast(*void, &f0), .ctx = &ctx0, .state = sa.TaskState.ready, .cancel_requested = false, .result = @ptrCast(*void, &r0), .step = stepLong, .arg = @ptrCast(*void, @intToPtr(*void, 0)), .waiting_on = @ptrCast(*sa.Task, @intToPtr(*void, 0)), .has_waiting_on = false };
-    var t1 = sa.Task{ .frame = @ptrCast(*void, &f1), .ctx = &ctx1, .state = sa.TaskState.ready, .cancel_requested = false, .result = @ptrCast(*void, &r1), .step = stepLong, .arg = @ptrCast(*void, @intToPtr(*void, 0)), .waiting_on = @ptrCast(*sa.Task, @intToPtr(*void, 0)), .has_waiting_on = false };
-    var t2 = sa.Task{ .frame = @ptrCast(*void, &f2), .ctx = &ctx2, .state = sa.TaskState.ready, .cancel_requested = false, .result = @ptrCast(*void, &r2), .step = stepLong, .arg = @ptrCast(*void, @intToPtr(*void, 0)), .waiting_on = @ptrCast(*sa.Task, @intToPtr(*void, 0)), .has_waiting_on = false };
+    var t0 = sa.Task{ .frame = @ptrCast(*void, &f0), .ctx = ctx0, .state = sa.TaskState.ready, .cancel_requested = false, .result = @ptrCast(*void, &r0), .arg = @ptrCast(*void, @intToPtr(*void, 0)), .waiting_on = @ptrCast(*sa.Task, @intToPtr(*void, 0)), .has_waiting_on = false };
+    var t1 = sa.Task{ .frame = @ptrCast(*void, &f1), .ctx = ctx1, .state = sa.TaskState.ready, .cancel_requested = false, .result = @ptrCast(*void, &r1), .arg = @ptrCast(*void, @intToPtr(*void, 0)), .waiting_on = @ptrCast(*sa.Task, @intToPtr(*void, 0)), .has_waiting_on = false };
+    var t2 = sa.Task{ .frame = @ptrCast(*void, &f2), .ctx = ctx2, .state = sa.TaskState.ready, .cancel_requested = false, .result = @ptrCast(*void, &r2), .arg = @ptrCast(*void, @intToPtr(*void, 0)), .waiting_on = @ptrCast(*sa.Task, @intToPtr(*void, 0)), .has_waiting_on = false };
     _ = sa.addTask(&s, &t0);
     _ = sa.addTask(&s, &t1);
     _ = sa.addTask(&s, &t2);
@@ -842,24 +875,24 @@ done
 echo "OK=$ok GREEN=$green FAIL=$fail ICE=$ice CRASH=$crash"
 ```
 
-Expected: universe `575` dirs = `OK=546 / GREEN=29 / FAIL=0 / ICE=0 / CRASH=0`. Reconcile the GREEN set against the v77 manifest (29 = the 10 documented pre-C89-AHEAD green-guards + 19 C89-AHEAD rejects; the new async dirs are OK, not GREEN); if the printed `FAIL`/`GREEN` dir names differ from `EXPECTED_FAIL.md`, STOP-present before changing the manifest. Repeat with the default `-fsafe` (omit `-ffast`) and assert the counts are identical (zero-asymmetric).
+Expected: universe `604` dirs = `OK=565 / GREEN=36 / FAIL=3 / ICE=0 / CRASH=0`. Reconcile the GREEN/FAIL sets against the v80 manifest (see `repro/mi_matrix/EXPECTED_FAIL.md` for the exact sets; the five new async dirs are OK, not GREEN); if the printed `FAIL`/`GREEN` dir names differ from `EXPECTED_FAIL.md`, STOP-present before changing the manifest. Repeat with the default `-fsafe` (omit `-ffast`) and assert the counts are identical (zero-asymmetric).
 
 - [ ] **Step 2: Bump `EXPECTED_FAIL.md`**
 
-Update line 1 `# mi_matrix corpus — expected-fail manifest (v77 2026-09-13)` -> `(v78 2026-09-13)`, and prepend a short section immediately under the header recording the Track 3 movement:
+Update line 1 `# mi_matrix corpus — expected-fail manifest (v80 2026-09-13)` -> `(v81 2026-09-13)`, and prepend a short section immediately under the header recording the Track 3 movement:
 
 ```markdown
-## std.async 9-module install (v78 2026-09-13)
+## std.async 9-module install (v81 2026-09-13)
 
 Track 3 (`2026-09-13-std-async-plan.md`) added `sf/src/std_async.zig` and its
 `std.zig` re-export, and installed it at every std touchpoint (9-file `lib/`).
 No compiler-graph change: the self-emission fixed point is UNMOVED
-`1467d932a876402f40a56316dfcad0e5`. Corpus `-s0` universe **575 dirs** =
-**546 OK / 29 GREEN / 0 FAIL / 0 ICE / 0 CRASH**; `-ffast` == `-fsafe`
+`eda943dc1f77a48eae039e39ea4bfe04`. Corpus `-s0` universe **604 dirs** =
+**565 OK / 36 GREEN / 3 FAIL / 0 ICE / 0 CRASH**; `-ffast` == `-fsafe`
 zero-asymmetric. Five new OK dirs: `stdlib_async_{pool,sched,await,cancelall,oom}_xmod`.
 ```
 
-(Adjust the fixed point only if Task 1 recorded a Track 2 post-closeout value.)
+(Track 2's landed fixed point; re-verify at Task 1.)
 
 - [ ] **Step 3: Seed-lib rotation**
 
@@ -867,7 +900,7 @@ Confirm N-hop closure and that the fixed point is unchanged, then rotate:
 
 ```bash
 cd /workspace/znineeight
-md5sum /tmp/sa_close/hop2/zig1_hop2     # expect the fixed point (1467d932...)
+md5sum /tmp/sa_close/hop2/zig1_hop2     # expect the fixed point (eda943dc...)
 bash scripts/seed/archive_seed.sh /tmp/sa_close/hop2/zig1_hop2 /tmp/sa_close/hop2 \
     release/seed/zig1-seed.tgz --update-changelog
 tar tzf release/seed/zig1-seed.tgz | grep 'zig1-seed/lib/' | sort
@@ -875,11 +908,11 @@ tar xzf release/seed/zig1-seed.tgz -O zig1-seed/lib/std_async.zig | md5sum
 md5sum sf/src/std_async.zig
 ```
 
-Expected: `[archive] gcc-only rebuild of archive C md5 (fixed point): 1467d932a876402f40a56316dfcad0e5` (or the recorded Track 2 value); archive `lib/` lists 9 modules including `std_async.zig`; the archived `std_async.zig` md5 equals the repo file's. Then append a one-line note to the new `release/seed/CHANGELOG.md` entry: **"9-file std lib install:** this archive's `lib/` carries all 9 std `.zig` (the 8 existing + `std_async.zig`), self-consistent with `build_from_seed.sh`/`archive_seed.sh`."
+Expected: `[archive] gcc-only rebuild of archive C md5 (fixed point): eda943dc1f77a48eae039e39ea4bfe04`; archive `lib/` lists 9 modules including `std_async.zig`; the archived `std_async.zig` md5 equals the repo file's. Then append a one-line note to the new `release/seed/CHANGELOG.md` entry: **"9-file std lib install:** this archive's `lib/` carries all 9 std `.zig` (the 8 existing + `std_async.zig`), self-consistent with `build_from_seed.sh`/`archive_seed.sh`."
 
 - [ ] **Step 4: Docs GATE + report**
 
-Add a newest-first bullet to `docs/sf/QUICK_REF.md`'s baseline list recording: Track 3 `std.async` landed; 9-file lib; fixed point unmoved; corpus 575 = 546/29/0; the five new fixtures and their md5s. Append `## Task 5` to `.superpowers/sdd/task-STDASYNC-report.md` with the measured counts, the archive md5, the fixed point, and the `check_emit_support` result. One ledger line in `.superpowers/sdd/progress.md`.
+Add a newest-first bullet to `docs/sf/QUICK_REF.md`'s baseline list recording: Track 3 `std.async` landed; 9-file lib; fixed point unmoved; corpus 604 = 565/36/3; the five new fixtures and their md5s. Append `## Task 5` to `.superpowers/sdd/task-STDASYNC-report.md` with the measured counts, the archive md5, the fixed point, and the `check_emit_support` result. One ledger line in `.superpowers/sdd/progress.md`.
 
 - [ ] **Step 5: Commit + STOP-present**
 
@@ -889,52 +922,42 @@ git add repro/mi_matrix/EXPECTED_FAIL.md release/seed/zig1-seed.tgz \
 git commit -m "docs: GATE — std.async library + 9-file seed lib (ASYNCTRACK3)"
 ```
 
-STOP-present the closeout: corpus counts, fixed-point md5 (unmoved), archive md5, the 9-module `lib/` listing, and the five fixture md5s. Await operator GO; this is the plan's last implementation task (Task 6 is a docs-only Track-3 deferral).
+STOP-present the closeout: corpus counts, fixed-point md5 (unmoved), archive md5, the 9-module `lib/` listing, and the five fixture md5s. Await operator GO; this is the plan's last implementation task (Task 6 is the docs-only Track-3 alignment decision record).
 
 ---
 
-### Task 6: Track-3 alignment — `Context` layout (both branches; Track 3 decides)
+### Task 6: Track-3 alignment — `Context` layout (DECIDED: branch (a))
 
-**Type:** decision/deferral (Track 3 owns it; **not** part of the five
-implementation tasks). This task records the Task-7 review finding **I1**
-(Context layout divergence) and the operator ruling: the compiler-core interim
-layout is canon until Track 3 decides. It is **docs-only**; no `sf/src` change.
+**Type:** decision record (docs-only; **not** part of the five implementation
+tasks; no `sf/src` change). This records the Task-7 review finding **I1**
+(Context layout divergence) and its resolution.
 
-**Why.** The compiler core (Track 2, Task 7; commit `b23ca20a`) pinned the
-interim pool header `{ used @ ctx+0, capacity @ ctx+4, oom @ ctx+8, pool base
+**Finding (I1).** The compiler core (Track 2, Task 7; commit `b23ca20a`) pinned
+the pool header `{ used @ ctx+0, capacity @ ctx+4, oom @ ctx+8, pool base
 = ctx+12 (DERIVED) }`. The std-async design originally named `{ pool@0,
 capacity@4, used@8, oom@12 }` (pool as a **stored** slice). The two are
 **incompatible**, and a cross-read silently corrupts memory (see the design §4
-WARNING). Track 3 must choose one before `std.async` interop.
+WARNING).
 
-**Branches.**
+**Decision — branch (a) accepted (operator ruling m1662).** `std.async.Context`
+adopts the compiler-core inline layout `{ used, capacity, oom; pool bytes
+follow }`, with the Context at the **head** of the caller's pool buffer and
+`pool_base = ctx+12` **derived** (never stored). **Header = 12 B** (`used` 4 +
+`capacity` 4 + `oom` 1 + 3 pad), saving **4 bytes per context** over branch (b).
+`contextInit(buf: []u8) *Context` returns a pointer into `buf`; callers pass
+`ctx` (not `&ctx`) to `contextAlloc`/`contextMark`/`contextRelease` and read
+`ctx.used`/`ctx.oom`. Applied to the spec §3.1/§4 and to Task 1's `Context` code
+block and pool fixture in this amendment.
 
-- **(a) `std.async.Context` adopts the compiler-core inline layout**
-  `{ used, capacity, oom; pool bytes follow }` (pool base derived). **Header
-  = 12 B** (`used` 4 + `capacity` 4 + `oom` 1 + 3 pad); `pool_base = ctx+12` is
-  **derivable**; the caller declares `var buf: [4096]u8 = undefined;` and the
-  Context sits at the **head** of that buffer. **Saves 4 bytes per context.**
-- **(b) the compiler core is revised to `{pool@0, capacity@4, used@8, oom@12}`.**
-  Matches the earlier std.arena-shaped design; the pool is a **stored slice**,
-  not derived. **Header = 16 B** (`pool` 4 + `capacity` 4 + `used` 4 + `oom` 1 +
-  3 pad) → **4 bytes more per context.**
+**Rejected — branch (b) (by-value `Context` + separate `pool_base`).** Revising
+the compiler core to `{pool@0, capacity@4, used@8, oom@12}` with a **stored**
+slice (header 16 B, 4 bytes more per context) was **rejected**: it redoes landed
+Track 2 work for a smaller safety margin, and a stored `pool_base` is a second
+source of truth that can diverge from the actual allocation. (Worth a pass after
+the track closeout to re-check.)
 
-**Size arithmetic (verified).** (a) header 12 B vs (b) header 16 B → **(b) is 4
-bytes more per context**; the operator's claim is **CORRECT**.
-
-**Trade-off.** (a) makes it impossible for `pool_base` to diverge from the
-actual allocation and gives the compiler a fixed header shape it can rely on;
-(b) keeps the pool as a stored, inspectable slice (closer to the std.arena
-shape) at 4 B/context more and with a second source of truth for the pool base.
-**Track 3 decides**; this ruling does **not** decide it. The operator's
-recommendation is **(a)**.
-
-**Deliverable:** Track 3 amends `2026-09-13-std-async-design.md` §3.1/§4 (and
-the compiler-core spec if (b)) and records the chosen branch before dispatch.
-
-**Ordering:** this deferral is recorded **after Task 5** (Task 6 is docs-only);
-the chosen branch must be applied to Task 1's `Context` code block — which
-pins the old field order — **before Track 3 dispatch**.
+**Status:** applied here (past tense) — the spec §3.1/§4 and Task 1 already carry
+branch (a); nothing is deferred to dispatch.
 
 ---
 
@@ -943,16 +966,16 @@ pins the old field order — **before Track 3 dispatch**.
 **Spec coverage** (against `2026-09-13-std-async-design.md`):
 - §3.1 public API -> Task 1 (types/Context/pool), Task 2 (`Task`/`Scheduler`/`tick`), Task 3 (`suspend`/`awaitTask`/`cancel`/`cancelAll`/`waitAll`).
 - §3.2 Context pool semantics (m1166/m1172) -> Task 1 implementation + `stdlib_async_pool_xmod`.
-- §3.3 Step ABI + fn-ptr struct field -> `StepFn` in Task 1; indirect-call evidence in Task 2 (`stdlib_async_sched_xmod`).
+- §3.3 Step ABI + self-dispatch (Amendment 7) -> `StepFn` (documented alias only) in Task 1; self-dispatch evidence in Task 2 (`stdlib_async_sched_xmod`).
 - §3.4 scheduler semantics -> Task 2 `tick` + Task 3 `awaitTask`/`cancel`/`cancelAll`/`waitAll`; fixtures.
 - §3.5 error model -> Task 2 `stdlib_async_oom_xmod` (`error.OutOfFrame` from `tick`, no crash) and Task 3 `waitAll` returning `FrameError!void`.
 - §3.6 install surface -> Task 1 (`build_from_seed.sh`), Task 4 (`archive_seed.sh`, `build_zig1_5.sh`, `QUICK_REF`), Task 5 (seed rotation).
-- §4 Interfaces -> `StepFn` in Task 1; the interim `Context` layout canon is design §3.1 (interim, NOT FINAL) and its Track-3 alignment is tracked by **Task 6**; the Track 2 reconciliation is documented in the subspec §4/§7.
+- §4 Interfaces -> `StepFn` in Task 1; the `Context` layout canon is design §3.1 (DECIDED: branch (a)) and is recorded by **Task 6**; the Track 2 reconciliation is documented in the subspec §4/§7.
 - §6 Testing -> the five fixtures, corpus sweep, `check_emit_support`, seed rotation (Tasks 1–3, 4, 5).
 - §7 Risks -> guarded by the Global Constraints (no optional struct field, no globals, two-file `sf/src` scope, install enumeration complete).
 
 **Placeholder scan:** no "TBD/TODO/later"; every code step shows the exact module/fixture text; every command carries its expected rc/stdout/md5. The one branch (`EXPECTED_FAIL` GREEN reconciliation) has an explicit STOP-present instruction.
 
-**Type/name consistency:** `TaskState`, `FrameError`, `StepFn`, `Context`, `contextInit`/`contextAlloc`/`contextMark`/`contextRelease`, `Task`, `Scheduler`, `schedulerInit`/`addTask`/`tick`/`suspend`/`awaitTask`/`cancel`/`cancelAll`/`waitAll`, `waiting_on`/`has_waiting_on`, `Task.step`, and the fixture names/paths/md5s are identical across the subspec, the module code blocks, and the commands. The Task 1 + Task 2 + Task 3 code blocks concatenate to the validated 182-line `std_async.zig`.
+**Type/name consistency:** `TaskState`, `FrameError`, `StepFn`, `Context`, `contextInit`/`contextAlloc`/`contextMark`/`contextRelease`, `Task`, `Scheduler`, `schedulerInit`/`addTask`/`tick`/`suspend`/`awaitTask`/`cancel`/`cancelAll`/`waitAll`, `waiting_on`/`has_waiting_on` (no `Task.step`), and the fixture names/paths/md5s are identical across the subspec, the module code blocks, and the commands. The Task 1 + Task 2 + Task 3 code blocks concatenate to the `std_async.zig` module.
 
-**Amendable in place.** This plan is amendable: the fixtures use hand-written steps so it gates independently of Track 2; if Track 2's `__async_step_<f>` ABI or its Context access mechanism changes, update `StepFn`/the interim Context layout and the `stdlib_async_*_xmod` fixtures in lockstep (and the subspec §4 reconciliation note).
+**Amendable in place.** This plan is amendable: the fixtures hand-build frames (step function first field) and drive them through the library scheduler, which self-dispatches via Track 2's `@asyncResume`; if Track 2's `__async_step_<f>` ABI, `@asyncResume` signature, or Context access mechanism changes, update `StepFn`/the Context layout and the `stdlib_async_*_xmod` fixtures in lockstep (and the subspec §4 reconciliation note).
