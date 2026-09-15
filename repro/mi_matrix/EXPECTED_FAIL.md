@@ -1,4 +1,58 @@
-# mi_matrix corpus — expected-fail manifest (v81 2026-09-15)
+# mi_matrix corpus — expected-fail manifest (v82 2026-09-15)
+
+## Fix-wave fixtures + seed v16 closeout (v82 2026-09-15)
+
+Track 2 async compiler core closeout re-run 2, after the final whole-branch review
+fix wave F1 `7d81effc` / F2 `3181b6a8` / F3 `7f1a2288` / F4 `06c3e195`.
+Measurement compiler = the two-hop closure binary **`f5ee84800dd32d7c440bb383c10edb55`**
+(`-ffast`), rebuilt from the committed seed **v15** `eda943dc…` (hop1 == hop2). Seed
+rotated **v15 → v16** (archive md5 `e04b4063c554c90a51c34f6736fc1346`, internal
+`zig1` md5 `f5ee8480…`, `gen/` 45 `.c` + 46 `.h`).
+
+Corpus `-s0` universe **603 dirs** (`scripts/corpus/list_corpus_dirs.sh`) =
+**563 OK / 37 GREEN / 3 emission-inspection (expected standalone gcc-FAIL)**,
+`-ffast` == `-fsafe` **zero-asymmetric**. Vs the v81 manifest (602 = 562 OK / 37
+GREEN / 3 FAIL) the ONLY change is the new F4 fixture `async_resume_arg_xmod` (OK);
+the 602 common dirs are class-identical. Vs the pre-fix-wave compiler (seed v15
+`eda943dc`, same 603-dir universe) the only class movements are
+`async_frame_temps_xmod` CRASH→OK (F1) and `async_defer_error_xmod` OK→GREEN (F3);
+the F2 (`async_state_width_xmod`) and F4 (`async_resume_arg_xmod`) fixtures are
+**OK** pre and post (their fixes are runtime-only — the compile classifier cannot
+see them). The 3 FAILs remain the documented `callconv_cdecl_fnptr_xmod` /
+`callconv_nonpub_stdcall_xmod` / `callconv_stdcall_fnptr_xmod` emission-inspection
+rows.
+
+### Fix-wave fixtures (v82 classes, from the actual corpus map)
+
+| fixture | class | fix | note |
+|---|---|---|---|
+| `async_frame_temps_xmod` | OK | F1 | was CRASH (frame-layout panic); already recorded at v81 |
+| `async_state_width_xmod` | OK | F2 | runtime-only fix (u8 state truncation); compile class unchanged |
+| `async_defer_error_xmod` | GREEN | F3 | `error[3019]`; already recorded at v81 |
+| `async_resume_arg_xmod` | OK | F4 | new dir at v82; runtime-only fix (`@asyncResume` arg) |
+
+Note: the re-run supplement labels `async_state_width_xmod` / `async_resume_arg_xmod`
+as "new GREEN fixtures"; the actual corpus map classifies both **OK** (dump rc=0,
+4 `.c`, gcc clean), which is also what the required header counts `563 OK / 37
+GREEN` mandate. Recorded as OK (derived from the actual map, not guessed).
+
+### 4-MD5 gate rows + fixed point (v82)
+
+All eight 4-MD5 gate rows (default `-fsafe` + `-ffast`) are byte-identical to v81
+(re-dumped stdout-only from the repo root with `f5ee8480`):
+
+- `-fsafe`: gol `e6afce418718f4adf2525956e17f6bc9`, lisp
+  `a3ba58098357164d644d321015550874`, json `99514d39dcbfddd297ccd12e15a0cb78`,
+  mud `07ec234e3f0214e2eb01aabad1676e0a`.
+- `-ffast`: gol `e023d3cd0bfb23346ac800725c5192f1`, lisp
+  `21747e2acf177947ad499149bb3fdc98`, json `2f08bf260bf2b6813fa4d70ffbc88aa9`,
+  mud `ac1579907ce84efa2f9014187070bf94`.
+
+- **Fixed point moved** `09c86411f7edf6b259b0ef1dace49b51` (v81/F3) →
+  **`f5ee84800dd32d7c440bb383c10edb55`** (`-ffast`; two-hop closure `hop1 == hop2`
+  from the committed seed v15 `eda943dc…`). Seed rotated **v15 → v16** (archive
+  `e04b4063…`, internal `f5ee8480…`); post-rotation closure `hop1 == hop2 ==
+  f5ee8480…`.
 
 ## Async ERR_3018 gated + ERR_3019 defer ban (v81 2026-09-15)
 

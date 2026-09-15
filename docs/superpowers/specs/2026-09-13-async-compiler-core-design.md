@@ -757,30 +757,38 @@ preserved; ICE `3043` (`ERR_9001_ICE`, auto-incremented) must not shift.
 ## 9. Closeout record (2026-09-15)
 
 **Status: COMPLETE** (spec status stays "draft, amendable in place"). Full gate
-evidence in `.superpowers/sdd/task-ASYNCTRACK2-report.md` `## Task 8 (re-run)`.
+evidence in `.superpowers/sdd/task-ASYNCTRACK2-report.md` `## Task 8 (re-run 2)`.
 
-- **Fixed point:** `eda943dc1f77a48eae039e39ea4bfe04` (the `-ffast` binary;
-  two-hop closure `hop1 == hop2` from the committed seed v14
-  `9e6c9faad0536191f28eb60c210a0a25`).
-- **Seed rotated v14 → v15:** archive md5 `cd09877cbc373ad5c8801b93faccf188`,
-  internal `zig1` md5 `eda943dc…`, `gen/` 45 `.c` + 46 `.h` (8,337,928 B), `lib/`
-  8 std `.zig`; post-rotation closure `hop1 == hop2 == eda943dc…`;
+- **Fixed point:** `f5ee84800dd32d7c440bb383c10edb55` (the `-ffast` binary;
+  two-hop closure `hop1 == hop2` from the committed seed v15
+  `eda943dc1f77a48eae039e39ea4bfe04`).
+- **Seed rotated v15 → v16:** archive md5 `e04b4063c554c90a51c34f6736fc1346`,
+  internal `zig1` md5 `f5ee8480…`, `gen/` 45 `.c` + 46 `.h` (8,355,500 B), `lib/`
+  8 std `.zig`; post-rotation closure `hop1 == hop2 == f5ee8480…`;
   `check_emit_support.sh` 5/5.
-- **Diagnostics landed:** `ERR_3017 = 3017` (Track 1), `ERR_3018 = 3018`,
-  `ERR_3019 = 3019`, `ERR_3046 = 3046`, `WARN_3047 = 3047`, `ERR_3049 = 3049`
-  (Task 6b); the `@asyncFrameSize` / `@asyncInit` / `@asyncResume` /
-  `@asyncSuspend` builtins; P2 `asyncFrameSizeRun` (sole `frame_sizes` writer),
-  P3 `async_frame_layout`, and the `async_state_machine` LIR-to-LIR transform;
-  per-task LIFO child frames + `error.OutOfFrame`.
+- **Diagnostics landed:** `ERR_3017 = 3017` (Track 1); **`ERR_3018 = 3018` and
+  `ERR_3019 = 3019` are LANDED** (Fix F3: the `3018` gate is live on
+  `suspending_fns` and the `3019` defer ban emits); `ERR_3046 = 3046`,
+  `WARN_3047 = 3047`, `ERR_3049 = 3049` (Task 6b); the `@asyncFrameSize` /
+  `@asyncInit` / `@asyncResume` / `@asyncSuspend` builtins; P2 `asyncFrameSizeRun`
+  (sole `frame_sizes` writer), P3 `async_frame_layout`, and the
+  `async_state_machine` LIR-to-LIR transform; per-task LIFO child frames +
+  `error.OutOfFrame`.
+- **Final-review fix wave F1–F4** (`7d81effc`, `3181b6a8`, `7f1a2288`,
+  `06c3e195`): P2 reserves every body AST node's resolved type (F1,
+  `async_frame_temps_xmod` CRASH→OK), suspension-count state width u8/u16/u32
+  (F2, `async_state_width_xmod`, runtime-only), the `3018`/`3019` gates (F3,
+  `async_defer_error_xmod` OK→GREEN), and the shared frame-offset helpers +
+  `@asyncResume` arg pass-through (F4, `async_resume_arg_xmod`, runtime-only).
 - **Regression I/F series Tasks 9/10:** kind-aware `nodeChildIsNode` /
   `nodeHasNodeExtraChildren` (`sf/src/ast.zig`) applied to all generic walkers
   (fixes the `repro/tu_void_prong` OOM), plus the `analyzer.zig` for-loop-body
   descent (`child_1`).
-- **Corpus `-s0` 599 dirs = 560 OK / 36 GREEN / 3 emission-inspection FAIL**,
-  `-ffast` == `-fsafe` zero-asymmetric; only the intended movements vs the
-  pre-Task-10 594-dir baseline (`tu_void_prong` FAIL→OK + the 5 Task-10 fixtures).
-- **4-MD5 gates unchanged** (all eight rows byte-identical to v79).
-- `repro/mi_matrix/EXPECTED_FAIL.md` bumped **v79 → v80**.
+- **Corpus `-s0` 603 dirs = 563 OK / 37 GREEN / 3 emission-inspection FAIL**,
+  `-ffast` == `-fsafe` zero-asymmetric; vs the v81 manifest (602 = 562/37/3) the
+  only change is the new F4 fixture `async_resume_arg_xmod` (OK).
+- **4-MD5 gates unchanged** (all eight rows byte-identical to v79/v81).
+- `repro/mi_matrix/EXPECTED_FAIL.md` bumped **v81 → v82**.
 
 Track 3 (`std.async`) consumes the produced surface; the Track-3/4 plan
 re-amendment (drop `Task.step` and every `step` parameter) remains the recorded

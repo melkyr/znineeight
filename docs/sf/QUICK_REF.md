@@ -5,7 +5,7 @@
 **Every subagent doing build/compile/run/gate work MUST read this section first.** These are the
 exact, verified commands. Do not improvise flags or rediscover linking — copy these.
 
-> **C89-AHEAD (2026-09-10):** runtime safety is now `-fsafe` by **default** (six runtime checks — cast / div-mod / shift / null-unwrap / index-OOB / integer-overflow — plus `undefined` `0xAA` poison); `-ffast` disables them. `unreachable`/`@panic` trap in **both** modes (`@panic` prints `panic: <msg>` to **stderr**). `std.arena.alloc` is `ArenaError![*]u8` — use `try`/`catch`, never `orelse` (`error[3016]`). Landed fixed point `1467d932a876402f40a56316dfcad0e5` (superseded by the calling-convention fixed point `de7137e04d62435c74e7b15281cb4540` and then by the async-compiler-core fixed point, now `eda943dc1f77a48eae039e39ea4bfe04` at the Track-2 closeout); seed **v15** is rotated (`release/seed/zig1-seed.tgz`, archive md5 `cd09877cbc373ad5c8801b93faccf188`). See the **Calling convention** section below.
+> **C89-AHEAD (2026-09-10):** runtime safety is now `-fsafe` by **default** (six runtime checks — cast / div-mod / shift / null-unwrap / index-OOB / integer-overflow — plus `undefined` `0xAA` poison); `-ffast` disables them. `unreachable`/`@panic` trap in **both** modes (`@panic` prints `panic: <msg>` to **stderr**). `std.arena.alloc` is `ArenaError![*]u8` — use `try`/`catch`, never `orelse` (`error[3016]`). Landed fixed point `1467d932a876402f40a56316dfcad0e5` (superseded by the calling-convention fixed point `de7137e04d62435c74e7b15281cb4540` and then by the async-compiler-core fixed point, now `f5ee84800dd32d7c440bb383c10edb55` at the Track-2 closeout re-run 2); seed **v16** is rotated (`release/seed/zig1-seed.tgz`, archive md5 `e04b4063c554c90a51c34f6736fc1346`). See the **Calling convention** section below.
 
 ### Build zig1 (the compiler under test)
 ```bash
@@ -27,9 +27,9 @@ bash sf/scripts/build_release.sh
 **Seed location + contents:** the committed rotating seed is
 `release/seed/zig1-seed.tgz` (git-tracked; provenance + rotation history in
 `release/seed/CHANGELOG.md`, full recipes in `release/seed/SEED_README.txt`).
-Current seed is **seed v15** (archive md5 `cd09877cbc373ad5c8801b93faccf188`; async-compiler-core closeout rotation — the fixed point moved to `eda943dc1f77a48eae039e39ea4bfe04`).
+Current seed is **seed v16** (archive md5 `e04b4063c554c90a51c34f6736fc1346`; async-compiler-core closeout re-run 2 rotation — the fixed point moved to `f5ee84800dd32d7c440bb383c10edb55`).
 Top-level `zig1-seed/`: `zig1` (reference binary md5
-`eda943dc1f77a48eae039e39ea4bfe04`), `gen/` (its self-emission C89 module set —
+`f5ee84800dd32d7c440bb383c10edb55`), `gen/` (its self-emission C89 module set —
 45 `.c` + 46 `.h`, including `zig_special_types.h`; the emitted runtime/support
 sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/` (the emitted 5:
 `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`, `zig_runtime.c`,
@@ -37,8 +37,8 @@ sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/` (the emitted 5:
 `std_arena`, `std_net`, `std_str`, `std_mem`, `std_math`, `std_debug`),
 `SEED_README.txt`.
 The archived binary and the self-emission fixed point
-`eda943dc1f77a48eae039e39ea4bfe04` are the SAME compiler state (HEAD
-`9013af94`). zig0 is retired; the seed model (`scripts/seed/build_from_seed.sh`)
+`f5ee84800dd32d7c440bb383c10edb55` are the SAME compiler state (HEAD
+`06c3e195`). zig0 is retired; the seed model (`scripts/seed/build_from_seed.sh`)
 is the only rebuild path.
 **C89-AHEAD note (2026-09-13):** `runtime/` now carries the compiler's **emitted,
 mode-specific** support (the `-ffast` self-emission support), not the canonical
@@ -51,8 +51,8 @@ cd /workspace/znineeight
 bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out_dir>
 ```
 - GATE: `=== [seed] Done: <out_dir> ===`; result `<out_dir>/zig1_5_clean` md5 MUST equal the recorded
-  fixed point `eda943dc1f77a48eae039e39ea4bfe04` (hop1 == hop2 closure). Set
-  `FIXED_POINT_MD5=eda943dc1f77a48eae039e39ea4bfe04` to gate on it explicitly.
+  fixed point `f5ee84800dd32d7c440bb383c10edb55` (hop1 == hop2 closure). Set
+  `FIXED_POINT_MD5=f5ee84800dd32d7c440bb383c10edb55` to gate on it explicitly.
 - The dump MUST run from the repo root with the RELATIVE `sf/src/main.zig` path (module basename-hash
   tokens are path-derived). `<out_dir>` MUST be a fresh dir (the script `rm -rf`s it) — never point it
   at `/tmp/fx_subfolder` (the reference compiler lives there).
@@ -62,7 +62,7 @@ bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out_dir>
 **Rebuild recipe 2 (seed binary lost — rebuild from the seed's C only):** self-contained, no repo
 include path, no zig0: `gcc -c -I <seed>/runtime` over `gen/*.c`, link `<seed>/runtime/zig_runtime.c`
 + `<seed>/runtime/zig_pal.c` + `<seed>/c_exit.c`. Exact commands in `release/seed/SEED_README.txt`.
-Binary md5 MUST equal `eda943dc…`.
+Binary md5 MUST equal `f5ee8480…`.
 
 **Flag-set rule (binding):** every `gcc -c` MUST be
 `gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc>`
