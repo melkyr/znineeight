@@ -35,7 +35,7 @@ so the A1 warnings surface under the binding flag-set.
 
 Self-compile `sf/src` = **19 warnings** (11 assignment + 8 var-decl); corpus = **41
 warnings** in 32 dirs (the brief's "~89 across ~51 dirs" = ALL `[3000]` diagnostics
-incl. the 47 already-hard `error[3000]`; the true tolerated-warning count is 60).
+incl. the 48 already-hard `error[3000]`; the true tolerated-warning count is 60).
 
 - **Self-compile (b) invalid Zig (7):** `semantic_analyzer.zig:1190,1197`,
   `lower.zig:3093,3618,3768,3771,3892` — bare enum->integer (`var x: u32/u8 =
@@ -47,18 +47,28 @@ incl. the 47 already-hard `error[3000]`; the true tolerated-warning count is 60)
   type). All 12 are type-checker false positives; the self-hosting compiler proves
   the code is correct.
 - **Corpus (b) invalid Zig (4):** `eu_assign_incompat_errorset:1` (F!i32 -> E!i32,
-  F not-subset E), `ptr_scalar_to_manyptr_xmod:18` (`*T` -> `[*]T`; spec permits
-  only slice/array -> ptr), `typealias_arr_elem_mismatch_xmod:9` (`[_]u8` ->
-  `[3]i32`), `typealias_arr_len_mismatch_xmod:10` (`[2]i32` -> `[3]i32`). These are
-  genuine mismatches currently only warned -> should be hard `error[3000]`.
+  F not-subset E), `ptr_scalar_to_manyptr_xmod:18` (`*T` -> `[*]T`),
+  `typealias_arr_elem_mismatch_xmod:9` (`[_]u8` -> `[3]i32`),
+  `typealias_arr_len_mismatch_xmod:10` (`[2]i32` -> `[3]i32`). These are genuine
+  mismatches currently only warned -> should be hard `error[3000]`.
+  **JUDGMENT CALL (operator must confirm):** real Zig DOES permit `*T -> [*]T`, so
+  the `ptr_scalar_to_manyptr` verdict rests on the **Z98 spec's enumerated coercion
+  table** (`docs/reference/Language_Spec_Z98.md:380-384`: only slice->ptr and
+  array->ptr), not real-Zig semantics; the A9F-a GREEN-guard fixture already
+  encodes that spec decision. `typealias_arr_elem_mismatch` (`[N]u8` -> `[N]i32`)
+  is likewise a structural mismatch that Zig also rejects, but is listed here as a
+  spec-based judgment call.
 - **Corpus (a) valid Z98 (37):** enum literal with expected enum type, fn item ->
   fn pointer, `noreturn` initializer/assignment, `if (c) A else B` with expected
   optional/error-union type, tuple literal -> array, anonymous/named error set ->
   named error set, `@cVaArg`. All type-checker false positives.
-- **Corpus `error[3000]` (47):** already hard errors — `unsupported builtin`
+- **Corpus `error[3000]` (48):** already hard errors — `unsupported builtin`
   (20), `cannot declare variable of type void` (12), volatile discard (11), unknown
-  type (1), field-on-optional (1), type-mismatch (2: fnptr callconv + EU payload).
-  All invalid Zig / unsupported features; correct rejects.
+  type (1), field-on-optional (1), type-mismatch (2: fnptr callconv + EU payload),
+  `packed_union_struct_wholemember_xmod` (1: "cannot read a whole packed-struct
+  value out of a packed union member" — emitted with **no source location**, so it
+  is easy to miss in a location-parsed census). All invalid Zig / unsupported
+  features; correct rejects.
 
 ### New Task-0k fixtures (corpus 644 -> 651)
 
@@ -67,18 +77,22 @@ incl. the 47 already-hard `error[3000]`; the true tolerated-warning count is 60)
 | `a1_ptrarray_cchar_xmod` | OK | pointer shape 2 | A1 C-model; 0 warns after 0j |
 | `a1_ptrarray_strtod_xmod` | OK | pointer shape 4 (pre-existing) | separate null-optional codegen |
 | `w3000_enum_to_int_xmod` | OK | `var x: u32 = E.B;` | **(b)** invalid -> hard error |
-| `w3000_enumtoint_explicit_xmod` | OK | `var x: u32 = @enumToInt(E.B);` | (a) false positive |
+| `w3000_enumtoint_explicit_xmod` | OK | `var x: u32 = @enumToInt(E.B);` | (a) false positive; actual diagnostic `source: enum / target: u32` (checker resolves the result as the ARGUMENT's enum type, not the backing `u32`) |
 | `w3000_undefined_manyptr_xmod` | OK | `s.p = undefined;` (many-ptr) | (a) false positive |
 | `w3000_sliceptr_manyptr_xmod` | OK | `var p: [*]u8 = s.ptr;` | (a) false positive |
 | `w3000_bool_or_xmod` | OK | `var b: bool = <cmp> or <cmp>;` | (a) false positive |
 
 **A1-induced vs pre-existing split:** A1 changed the `[3000]` set by REMOVING 11
-`pointer>many-pointer` false-positive warnings (string literal -> `[*]const u8`,
-now valid via `array_to_many_ptr`); it added 0. C1 deletion (`ed206028`) adds 5
-`pointer>slice` warnings (the two `bareptr_to_slice`/`nonliteral` fixtures). The
-47 `error[3000]` and the 19 self-compile warnings are byte-identical across
-pre-A1 `97cd5a03`, post-A1 `958a5e0f`, post-deletion `ed206028`. The `strtod` arg-2
-warning is pre-existing (1 pre, 1 post).
+`pointer>many-pointer` false-positive warnings (string literal -> `[*]const u8`).
+The string literal is a pointer-to-array, so `classifyCoercion` handles it at the
+`ptr_type -> many_ptr_type` arm (`sf/src/coercion.zig:169-178`), which returns
+`CoercionKind.none` for an array pointee (a no-op decay) — NOT `array_to_many_ptr`
+(that kind is for an array SOURCE, `coercion.zig:158-163`); it added 0. C1
+deletion (`ed206028`) adds 5 `pointer>slice` warnings (the two
+`bareptr_to_slice`/`nonliteral` fixtures). The 48 `error[3000]` and the 19
+self-compile warnings are byte-identical across pre-A1 `97cd5a03`, post-A1
+`958a5e0f`, post-deletion `ed206028`. The `strtod` arg-2 warning is pre-existing
+(1 pre, 1 post).
 
 # mi_matrix corpus — expected-fail manifest (v91 2026-09-15)
 
