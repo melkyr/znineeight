@@ -310,11 +310,20 @@ pub fn suspensionAnalysisRun(alloc: *alloc_mod.Sand, store: *ast_mod.AstStore,
     }
 }
 
-fn alignUpU32(v: u32, a: u32) u32 {
+// Fix F4 #4: ONE shared, backend-agnostic frame-layout/offset rule. P2
+// (`asyncFrameSizeRun`), P3 (`asyncLayoutFrame`), and the `@asyncInit` lowering
+// all accumulate the frozen layout (step@0, ctx@4, state@8, params, live, hidden
+// tail) through `frameFieldSizeAlign` + `addFrameField`/`alignUpU32` below, so
+// the three sites cannot drift. The result is byte-identical to the previous
+// per-site arithmetic.
+pub fn alignUpU32(v: u32, a: u32) u32 {
     return (v + a - @intCast(u32, 1)) & ~(a - @intCast(u32, 1));
 }
 
-fn addFrameField(reg: *type_mod.TypeRegistry, tid: u32, offset: *u32, max_align: *u32) void {
+// Natural size/alignment of a frame field type. A zero-size or unknown type
+// falls back to 4/4 (conservative pointer-sized upper bound); a zero alignment
+// keeps the default 4.
+pub fn frameFieldSizeAlign(reg: *type_mod.TypeRegistry, tid: u32, out_size: *u32, out_align: *u32) void {
     var sz: u32 = @intCast(u32, 4);
     var al: u32 = @intCast(u32, 4);
     if (@intCast(usize, tid) < reg.types_len) {
@@ -324,9 +333,31 @@ fn addFrameField(reg: *type_mod.TypeRegistry, tid: u32, offset: *u32, max_align:
             if (t.alignment != @intCast(u32, 0)) { al = t.alignment; }
         }
     }
+    out_size.* = sz;
+    out_align.* = al;
+}
+
+// Align `offset` to the field's alignment, return the field's offset, advance
+// `offset` by its size, and fold its alignment into `max_align`.
+pub fn addFrameField(reg: *type_mod.TypeRegistry, tid: u32, offset: *u32, max_align: *u32) u32 {
+    var sz: u32 = @intCast(u32, 4);
+    var al: u32 = @intCast(u32, 4);
+    frameFieldSizeAlign(reg, tid, &sz, &al);
     offset.* = alignUpU32(offset.*, al);
+    var at = offset.*;
     offset.* += sz;
     if (al > max_align.*) { max_align.* = al; }
+    return at;
+}
+
+// True when `tid` is a `*void` pointer type (shared by P3 and the Stage-3
+// transform; the explicit-suspend LIR marker test).
+pub fn typeIsPtrVoid(reg: *type_mod.TypeRegistry, tid: u32) bool {
+    if (@intCast(usize, tid) >= reg.types_len) return false;
+    var t = reg.types_items[@intCast(usize, tid)];
+    if (t.kind != type_mod.TypeKind.ptr_type) return false;
+    var base = reg.ptr_items[@intCast(usize, t.payload_idx)].base;
+    return base == type_mod.TYPE_VOID;
 }
 
 fn frameLocalTypeId(resolved_types: *rtt_mod.ResolvedTypeTable, n: ast_mod.AstNode) u32 {
@@ -361,7 +392,7 @@ fn scanFrameLocals(store: *ast_mod.AstStore, body_idx: u32,
         var lvt: u32 = type_mod.TYPE_UNDEFINED;
         if (rtt_mod.resolvedTypeTableGet(resolved_types, ni)) |t| { lvt = t; }
         if (lvt == type_mod.TYPE_UNDEFINED and k == AstKind.var_decl) { lvt = frameLocalTypeId(resolved_types, n); }
-        addFrameField(reg, lvt, offset, max_align);
+        _ = addFrameField(reg, lvt, offset, max_align);
         if (k == AstKind.builtin_call) {
             var ecb = ast_mod.astStoreNodeExtraChildren(store, ni);
             var bi: usize = ecb.len;
@@ -653,9 +684,9 @@ pub fn asyncFrameSizeRun(alloc: *alloc_mod.Sand, store: *ast_mod.AstStore,
             var offset: u32 = @intCast(u32, 0);
             var max_align: u32 = @intCast(u32, 1);
             // Amendment 7: hidden pointer-sized step word @ offset 0 ALWAYS.
-            addFrameField(typereg, type_mod.TYPE_USIZE, &offset, &max_align);
-            addFrameField(typereg, type_mod.TYPE_USIZE, &offset, &max_align);
-            addFrameField(typereg, state_type, &offset, &max_align);
+            _ = addFrameField(typereg, type_mod.TYPE_USIZE, &offset, &max_align);
+            _ = addFrameField(typereg, type_mod.TYPE_USIZE, &offset, &max_align);
+            _ = addFrameField(typereg, state_type, &offset, &max_align);
             if (proto.params_count > @intCast(u16, 0)) {
                 var p_payload: u64 = (@intCast(u64, proto.params_start) << @intCast(u64, 32)) | @intCast(u64, proto.params_count);
                 var pnodes = ast_mod.astStoreGetExtraChildren(store, p_payload);
@@ -665,7 +696,7 @@ pub fn asyncFrameSizeRun(alloc: *alloc_mod.Sand, store: *ast_mod.AstStore,
                     if (pnode.child_0 == @intCast(u32, 0)) continue;
                     var pt: u32 = type_mod.TYPE_UNDEFINED;
                     if (rtt_mod.resolvedTypeTableGet(resolved_types, pnode.child_0)) |rtp| { pt = rtp; }
-                    addFrameField(typereg, pt, &offset, &max_align);
+                    _ = addFrameField(typereg, pt, &offset, &max_align);
                 }
             }
             scanFrameLocals(store, decl.child_0, &stack, typereg, resolved_types, &offset, &max_align);
@@ -675,10 +706,10 @@ pub fn asyncFrameSizeRun(alloc: *alloc_mod.Sand, store: *ast_mod.AstStore,
             var hid: u32 = @intCast(u32, 0);
             if (hash_mod.u64ToU32MapGet(async_hidden_fns, key)) |h| { hid = h; }
             if ((hid & @intCast(u32, 1)) != @intCast(u32, 0)) {
-                addFrameField(typereg, asyncPtrVoid(typereg), &offset, &max_align);
+                _ = addFrameField(typereg, asyncPtrVoid(typereg), &offset, &max_align);
             }
             if (hash_mod.u64ToU32MapGet(awaited_fns, key) != null) {
-                addFrameField(typereg, asyncPtrVoid(typereg), &offset, &max_align);
+                _ = addFrameField(typereg, asyncPtrVoid(typereg), &offset, &max_align);
             }
             if ((hid & @intCast(u32, 2)) != @intCast(u32, 0)) {
                 var pstart: u32 = @intCast(u32, 0);
@@ -688,7 +719,7 @@ pub fn asyncFrameSizeRun(alloc: *alloc_mod.Sand, store: *ast_mod.AstStore,
                 var pk: u32 = @intCast(u32, 0);
                 while (pk < pcount) : (pk += @intCast(u32, 1)) {
                     var prt = parent_result_type_list.items[@intCast(usize, pstart + pk)];
-                    addFrameField(typereg, prt, &offset, &max_align);
+                    _ = addFrameField(typereg, prt, &offset, &max_align);
                 }
             }
             var total = alignUpU32(offset, max_align);

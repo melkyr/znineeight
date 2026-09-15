@@ -330,14 +330,6 @@ fn instReadsTemp(c: *Scan, inst: LirInst, v: u32) bool {
     return false;
 }
 
-fn typeIsPtrVoid(reg: *TypeRegistry, tid: u32) bool {
-    if (@intCast(usize, tid) >= reg.types_len) return false;
-    var t = reg.types_items[@intCast(usize, tid)];
-    if (t.kind != type_mod.TypeKind.ptr_type) return false;
-    var base = reg.ptr_items[@intCast(usize, t.payload_idx)].base;
-    return base == type_mod.TYPE_VOID;
-}
-
 // A suspension point on LIR: an implicit await (direct call to a suspending
 // callee) or the explicit `@asyncSuspend` placeholder.
 fn instIsSuspendPoint(c: *Scan, inst: LirInst, suspending_fns: *hash_mod.U64ToU32Map) bool {
@@ -349,7 +341,7 @@ fn instIsSuspendPoint(c: *Scan, inst: LirInst, suspending_fns: *hash_mod.U64ToU3
         .int_const => |ic| {
             if (ic.value != @intCast(u64, 0)) return false;
             if (ic.result >= c.max_temp) return false;
-            return typeIsPtrVoid(c.reg, c.ttype[@intCast(usize, ic.result)]);
+            return async_analysis.typeIsPtrVoid(c.reg, c.ttype[@intCast(usize, ic.result)]);
         },
         else => return false,
     }
@@ -391,39 +383,25 @@ fn hasReadAfter(c: *Scan, v: u32, sbb: u32, sii: u32) bool {
     return false;
 }
 
-fn alignUpU32(v: u32, a: u32) u32 {
-    return (v + a - @intCast(u32, 1)) & ~(a - @intCast(u32, 1));
-}
-
-fn typeSizeAlign(reg: *TypeRegistry, tid: u32, out_size: *u32, out_align: *u32) void {
-    var sz: u32 = @intCast(u32, 4);
-    var al: u32 = @intCast(u32, 4);
-    if (@intCast(usize, tid) < reg.types_len) {
-        var t = reg.types_items[@intCast(usize, tid)];
-        if (t.size != @intCast(u32, 0)) sz = t.size;
-        if (t.alignment != @intCast(u32, 0)) al = t.alignment;
-    }
-    out_size.* = sz;
-    out_align.* = al;
-}
-
+// Fix F4 #4: the offset/align accumulation is the shared
+// `async_analysis.frameFieldSizeAlign` + `async_analysis.addFrameField` rule
+// (P2, P3, and `@asyncInit` lowering share one implementation). P3 additionally
+// records the field, so it re-derives size/alignment for the record.
 fn addField(fields: *AsyncFrameFieldArrayList, reg: *TypeRegistry, kind: u8,
     name_id: u32, temp_id: u32, type_id: u32, offset: *u32, max_align: *u32) void {
     var size: u32 = @intCast(u32, 0);
     var alignment: u32 = @intCast(u32, 0);
-    typeSizeAlign(reg, type_id, &size, &alignment);
-    offset.* = alignUpU32(offset.*, alignment);
+    async_analysis.frameFieldSizeAlign(reg, type_id, &size, &alignment);
+    var at = async_analysis.addFrameField(reg, type_id, offset, max_align);
     fieldArrayListAppend(fields, AsyncFrameField{
         .kind = kind,
         .name_id = name_id,
         .temp_id = temp_id,
         .type_id = type_id,
-        .offset = offset.*,
+        .offset = at,
         .size = size,
         .alignment = alignment,
     });
-    offset.* += size;
-    if (alignment > max_align.*) { max_align.* = alignment; }
 }
 
 fn emitLayoutMarker(module_id: u32, name_id: u32, size: u32) void {
@@ -563,7 +541,7 @@ pub fn asyncLayoutFrame(alloc: *Sand, reg: *TypeRegistry, lir_fn: *LirFunction,
             addField(&fields, reg, ASYNC_FIELD_PARENT_RESULT, @intCast(u32, 0), @intCast(u32, 0), prt, &offset, &max_align);
         }
     }
-    var precise = alignUpU32(offset, max_align);
+    var precise = async_analysis.alignUpU32(offset, max_align);
     if (precise == @intCast(u32, 0)) precise = @intCast(u32, 1);
 
     var frame_size = async_analysis.asyncFrameSizeOf(frame_sizes, lir_fn.module_id, lir_fn.name_id);

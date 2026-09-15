@@ -1,11 +1,14 @@
 // async_state_machine.zig — Stage 3 LIR-to-LIR async state-machine transform
-// (Track 2, Task 6; Amendment 7).
+// (Track 2, Tasks 6/D1/D2/D3/D4; Amendment 7).
 //
-// For every suspending function this pass emits a synthesized step function
-// `__Z98Step_<f>` alongside the original (unchanged) synchronous function. The
-// original function stays the synchronous entry (so the C `int main` wrapper and
-// all direct calls keep working); the step is the ruled heterogeneous
-// self-dispatch target reached from `@asyncInit`/`@asyncResume`.
+// For every suspending function this pass emits only the synthesized step
+// function `__Z98Step_<f>`; the original synchronous body is NOT emitted for
+// non-`main` suspending functions (D1/D2). The one exception is the root
+// `pub fn main`: it keeps its original name_id/module_id/is_pub/params plus a
+// minimal synchronous driver (D2) that zero-inits its root frame and drives the
+// step to completion, so the C `int main` wrapper and direct-call regression
+// fixtures keep working. The step is the ruled heterogeneous self-dispatch
+// target reached from `@asyncInit`/`@asyncResume`.
 //
 //   ?*void __Z98Step_<f>(void *frame, ?*void arg)
 //
@@ -15,18 +18,16 @@
 // store every frame field, store state = N, return a non-null pointer. The
 // matching resume segment reloads every frame field and continues.
 //
+// An implicit await (a direct call to a suspending callee) allocates a
+// capacity-checked child frame from the caller's per-task LIFO pool (Task 7:
+// `used`/`capacity`/sticky `oom` header) and drives the child's step through
+// the generic self-dispatch type; pool exhaustion sets `oom` and takes the null
+// terminal path. `@asyncInit` sets up the root frame and `@asyncResume`
+// re-enters it through the same generic dispatch.
+//
 // Backend-agnostic: no `c89_*` / emitter call. The frame is addressed as raw
 // bytes (Amendment 7 fallback) through `ptr_to_int`/`binary`/`int_to_ptr`/
 // `load`/`store`, so 0 new `LirInst` variants and no synthetic struct type.
-//
-// Deviations recorded for Task 6 (see report):
-//   * The synchronous original body is retained (O4 "dual-emit" style) because
-//     the emitter's `int main` wrapper calls the original `main` symbol with its
-//     original signature and because the direct-call frame regression fixtures
-//     call suspending functions synchronously.
-//   * An implicit await (a direct call to a suspending callee) is realized by
-//     calling the callee's synchronous entry; child-frame pool accounting is
-//     Task 7.
 
 const alloc_mod = @import("allocator.zig");
 const async_analysis = @import("async_analysis.zig");
@@ -143,14 +144,6 @@ fn optPtrVoid(reg: *TypeRegistry) u32 {
     return type_mod.typeRegistryGetOrCreateOptional(reg, ptrVoid(reg));
 }
 
-fn typeIsPtrVoid(reg: *TypeRegistry, tid: u32) bool {
-    if (@intCast(usize, tid) >= reg.types_len) return false;
-    var t = reg.types_items[@intCast(usize, tid)];
-    if (t.kind != type_mod.TypeKind.ptr_type) return false;
-    var base = reg.ptr_items[@intCast(usize, t.payload_idx)].base;
-    return base == type_mod.TYPE_VOID;
-}
-
 fn tempType(lf: *LirFunction, tid: u32) u32 {
     var i: usize = @intCast(usize, 0);
     while (i < lf.hoisted_temps.len) : (i += @intCast(usize, 1)) {
@@ -164,7 +157,7 @@ fn instSuspendKind(reg: *TypeRegistry, lf: *LirFunction, inst: LirInst, suspendi
     switch (inst) {
         .int_const => |ic| {
             if (ic.value != @intCast(u64, 0)) return @intCast(u8, 0);
-            if (typeIsPtrVoid(reg, tempType(lf, ic.result))) return @intCast(u8, 1);
+            if (async_analysis.typeIsPtrVoid(reg, tempType(lf, ic.result))) return @intCast(u8, 1);
             return @intCast(u8, 0);
         },
         .call_direct => |slot| {

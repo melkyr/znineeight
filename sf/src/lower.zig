@@ -2316,21 +2316,8 @@ fn asyncFindProto(self: *LirLowerer, module_id: u32, name_id: u32, out_proto: *a
     return false;
 }
 
-fn alignUpAsync(v: u32, a: u32) u32 {
-    return (v + a - @intCast(u32, 1)) & ~(a - @intCast(u32, 1));
-}
-
-fn asyncTypeSizeAlign(reg: *TypeRegistry, tid: u32, out_size: *u32, out_align: *u32) void {
-    var sz: u32 = @intCast(u32, 4);
-    var al: u32 = @intCast(u32, 4);
-    if (@intCast(usize, tid) < reg.types_len) {
-        var t = reg.types_items[@intCast(usize, tid)];
-        if (t.size != @intCast(u32, 0)) sz = t.size;
-        if (t.alignment != @intCast(u32, 0)) al = t.alignment;
-    }
-    out_size.* = sz;
-    out_align.* = al;
-}
+// Fix F4 #4: frame field size/alignment and offset accumulation come from the
+// shared `async_analysis` rule (P2/P3/@asyncInit), not a local copy.
 
 // Task 6: raw byte frame store (`((char*)base)+offset` typed as field_type).
 fn asyncEmitStoreAt(self: *LirLowerer, base_temp: u32, offset: u32, field_type: u32, value: u32) void {
@@ -4202,7 +4189,6 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             }
             if (node.child_0 == self.async_init_name_id) {
                 var ai_ptr_void = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, type_mod.TYPE_VOID, false);
-                var ai_ptr_size: u32 = self.ctx.registry.types_items[@intCast(usize, type_mod.TYPE_USIZE)].size;
                 var ai_ctx: u32 = @intCast(u32, 0);
                 var ai_buf: u32 = @intCast(u32, 0);
                 var ai_args: u32 = @intCast(u32, 0);
@@ -4229,11 +4215,6 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     // and the post-header param offset must use the same width.
                     var ai_state_type: u32 = type_mod.TYPE_U8;
                     if (hash_mod.u64ToU32MapGet(self.ctx.state_widths, async_analysis.asyncKey(ai_mid, ai_nid))) |sw| { ai_state_type = sw; }
-                    var ai_state_size: u32 = @intCast(u32, 1);
-                    if (@intCast(usize, ai_state_type) < self.ctx.registry.types_len) {
-                        var ai_stt = self.ctx.registry.types_items[@intCast(usize, ai_state_type)];
-                        if (ai_stt.size != @intCast(u32, 0)) ai_state_size = ai_stt.size;
-                    }
                     // Task 7: initialize the caller-provided Context header for a
                     // fresh task (used = 0 at ctx+0, sticky oom = 0 at ctx+2*usize);
                     // the caller supplies `capacity` at ctx+1*usize and the pool
@@ -4292,14 +4273,23 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     emitInst(self, LirInst{ .func_ref = .{ .name_id = ai_step_name, .module_id = ai_mid, .result = ai_sf } });
                     var ai_sf_i = nextTemp(self, type_mod.TYPE_USIZE);
                     emitInst(self, LirInst{ .ptr_to_int = .{ .value = ai_sf, .result = ai_sf_i } });
-                    asyncEmitStoreAt(self, ai_buf, @intCast(u32, 0), type_mod.TYPE_USIZE, ai_sf_i);
-                    asyncEmitStoreAt(self, ai_buf, ai_ptr_size, ai_ptr_void, ai_ctx);
+                    // Fix F4 #4: the frozen header (step@0, ctx, state) and the
+                    // post-header param base are derived from the same shared
+                    // frame-field accumulation rule P2/P3 use, not hand-coded
+                    // pointer-size arithmetic.
+                    var ai_hdr_off: u32 = @intCast(u32, 0);
+                    var ai_hdr_align: u32 = @intCast(u32, 1);
+                    var ai_off_step = async_analysis.addFrameField(self.ctx.registry, type_mod.TYPE_USIZE, &ai_hdr_off, &ai_hdr_align);
+                    var ai_off_ctx = async_analysis.addFrameField(self.ctx.registry, type_mod.TYPE_USIZE, &ai_hdr_off, &ai_hdr_align);
+                    var ai_off_state = async_analysis.addFrameField(self.ctx.registry, ai_state_type, &ai_hdr_off, &ai_hdr_align);
+                    asyncEmitStoreAt(self, ai_buf, ai_off_step, type_mod.TYPE_USIZE, ai_sf_i);
+                    asyncEmitStoreAt(self, ai_buf, ai_off_ctx, ai_ptr_void, ai_ctx);
                     var ai_zero_st = nextTemp(self, ai_state_type);
                     emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = ai_zero_st } });
-                    asyncEmitStoreAt(self, ai_buf, ai_ptr_size * @intCast(u32, 2), ai_state_type, ai_zero_st);
+                    asyncEmitStoreAt(self, ai_buf, ai_off_state, ai_state_type, ai_zero_st);
                     var ai_proto: ast_mod.FnProto = undefined;
                     if (asyncFindProto(self, ai_mid, ai_nid, &ai_proto)) {
-                        var frame_off: u32 = ai_ptr_size * @intCast(u32, 2) + ai_state_size;
+                        var frame_off: u32 = ai_hdr_off;
                         var arg_off: u32 = @intCast(u32, 0);
                         if (ai_proto.params_count > @intCast(u16, 0)) {
                             var ai_payload: u64 = (@intCast(u64, ai_proto.params_start) << @intCast(u64, 32)) | @intCast(u64, ai_proto.params_count);
@@ -4312,9 +4302,9 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                 if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, ai_pn.child_0)) |rtp| { ai_pt = rtp; }
                                 var ai_psz: u32 = @intCast(u32, 4);
                                 var ai_pal: u32 = @intCast(u32, 4);
-                                asyncTypeSizeAlign(self.ctx.registry, ai_pt, &ai_psz, &ai_pal);
-                                frame_off = alignUpAsync(frame_off, ai_pal);
-                                arg_off = alignUpAsync(arg_off, ai_pal);
+                                async_analysis.frameFieldSizeAlign(self.ctx.registry, ai_pt, &ai_psz, &ai_pal);
+                                frame_off = async_analysis.alignUpU32(frame_off, ai_pal);
+                                arg_off = async_analysis.alignUpU32(arg_off, ai_pal);
                                 var ai_pv = asyncEmitLoadAt(self, ai_args, arg_off, ai_pt);
                                 asyncEmitStoreAt(self, ai_buf, frame_off, ai_pt, ai_pv);
                                 frame_off += ai_psz;
@@ -4351,8 +4341,19 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 emitInst(self, LirInst{ .int_to_ptr = .{ .value = ar_word, .target = ar_gpt, .result = ar_pt } });
                 var ar_a0 = nextTemp(self, ar_ptr_void);
                 emitInst(self, LirInst{ .assign = .{ .dst = ar_a0, .src = ar_frame, .name_id = @intCast(u32, 0) } });
+                // Fix F4 #6: pass the caller's `arg` (ec[1]) as the step's second
+                // `?*void` argument. `ar_a1` is pre-allocated immediately after
+                // `ar_a0` so the two call args stay contiguous; the lowered value
+                // is coerced into the optional via the existing wrap machinery.
+                // With no second operand, pass a null optional as before.
                 var ar_a1 = nextTemp(self, ar_opt);
-                emitInst(self, LirInst{ .set_optional_null = .{ .result = ar_a1, .type_id = ar_opt } });
+                if (ec.len >= @intCast(usize, 2)) {
+                    var ar_av = lowerExpr(self, ec[@intCast(usize, 1)]);
+                    var ar_wrapped = materializeInto(self, ar_av, ar_opt, srcIntentForNode(self, ec[@intCast(usize, 1)]));
+                    emitInst(self, LirInst{ .assign = .{ .dst = ar_a1, .src = ar_wrapped, .name_id = @intCast(u32, 0) } });
+                } else {
+                    emitInst(self, LirInst{ .set_optional_null = .{ .result = ar_a1, .type_id = ar_opt } });
+                }
                 var ar_res = nextTemp(self, ar_opt);
                 emitInst(self, LirInst{ .call = .{ .callee = ar_pt, .args_start = ar_a0, .args_count = @intCast(u32, 2), .result = ar_res } });
                 return ar_res;
