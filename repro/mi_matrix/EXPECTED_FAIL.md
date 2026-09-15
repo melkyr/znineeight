@@ -2,8 +2,9 @@
 
 ## Task 0l (I) — false-positive `warning[3000]` fix set + pin mechanism (v93 2026-09-15)
 
-Track-4 Task 0l investigates the 49 `(a)` valid-Z98 `warning[3000]` false
-positives classified by Task 0k and produces the exact minimal fix set for
+Track-4 Task 0l investigates the **48** `(a)` valid-Z98 `warning[3000]` false
+positives classified by Task 0k (the count is 48, not 49 — see the
+`field_store_tagged` correction below) and produces the exact minimal fix set for
 Task 0m. **No `sf/src` change; no re-baseline** (reference = post-A1
 `958a5e0f8ce3f4121766789322c8da9b`). Full report:
 `.superpowers/sdd/2026-09-13-coroutine-integration-plan/task-0l-report.md`.
@@ -28,9 +29,10 @@ exits nonzero if any pinned dir warns. `repro/mi_matrix/w3000_fp_pins.list` is t
 contract list ("after Task 0m each pinned dir emits ZERO `warning[3000]`").
 Full-corpus mode (no pins arg / a missing pins file) prints the total census.
 
-**Measured pre-0m** (`958a5e0f`): full corpus **659 dirs, 56 `warning[3000]`**;
-the 39 pinned `(a)` dirs hold **50** of them. After Task 0m the pinned set must
-read 0, leaving the 5 `(b)` warnings + `repro/field_store_tagged` = 6.
+**Measured pre-0m** (`958a5e0f`): full corpus **659 dirs, 55 `warning[3000]`**
+(56 before the `field_store_tagged` fixture fix); the 39 pinned `(a)` dirs hold
+**50** of them. After Task 0m the pinned set must read 0, leaving the 5 `(b)`
+warnings = **5**.
 
 ### Fix set (per `(a)` family — details + evidence in the 0l report)
 
@@ -53,16 +55,22 @@ read 0, leaving the 5 `(b)` warnings + `repro/field_store_tagged` = 6.
 (`semantic_analyzer.zig:1639-1640`, `c89_emit.zig:745`); F1 covers every
 `src=noreturn` corpus case; G covers all 12 `if` optional/EU cases.
 
-### `repro/field_store_tagged` — Task 0k classification CORRECTED
+### `repro/field_store_tagged` — Task 0k classification CORRECTED (true positive, fixture fixed)
 
 Task 0k called this `(a)` and read its `source: type` note as "`@intCast` resolves
 its result as the `type` value". Task 0l disproves that: `source: type` is the
 `typeKindSrcStr`/`typeKindTgtStr` fallback (`diagnostics.zig:540-...`) for the
 unmapped `usize_type`; `@intCast(usize, 1)` is correctly typed `usize`, and
 `u.tag` is `u32` (`symbol_registrator.zig:148`), so the warning is a REAL
-same-width `usize -> u32` mismatch. Declared, not pinned; operator ruling needed
-(fix the fixture to `@intCast(u32, 1)`, or move to `(b)`, or rule `usize`~`u32`
-assignable). See the 0l report.
+same-width `usize -> u32` mismatch.
+
+**OPERATOR RULING (fix round 1): true positive, remedy (A) — fix the fixture.
+NOT moved to `(b)`.** `repro/field_store_tagged/main.zig` now stores
+`u.tag = @intCast(u32, 1);` (the print call was also migrated to `std.io` so the
+fixture links/runs; the old `__bootstrap_print_int` extern was removed from the
+runtime in F4). It is a normal OK fixture (dump/gcc/link/run rc=0) and emits NO
+`warning[3000]`. Consequence: the `(a)` set is **48** (not 49), and Task 0q's
+`(b)` set stays **11**.
 
 ## Task 0k (I) — warning classification: valid Z98 vs invalid Zig (v92 2026-09-15)
 
