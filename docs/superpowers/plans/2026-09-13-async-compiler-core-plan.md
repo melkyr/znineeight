@@ -1454,7 +1454,9 @@ loop is the minimal route.
 **Amendment 7 re-scope.** The **call-site implicit-await rewrite moved into atomic
 Task 6**, so Task 7 no longer rewrites call sites. What remains here is the
 **pool accounting** the Task-6 child frame deferred: the frozen Track-3
-`Context` (`{pool, capacity, used, oom}`, **inline** reads per Res 1) as the
+`Context` (**Superseded by Amendment 11** — interim canon `{used@0, capacity@4,
+oom@8}`, pool base `ctx+12` DERIVED; the old `{pool, capacity, used, oom}`,
+**inline** reads per Res 1) as the
 per-task LIFO child-frame stack (bump + mark), `error.OutOfFrame` on exhaustion,
 and the `async_pool_xmod` `-fsafe` probe. Task 7 must **not** re-do the call-site
 rewrite; `ctx` is read from the caller frame and child frames keep their own
@@ -1466,7 +1468,7 @@ step word (Task 6).
 - Test: `repro/mi_matrix/async_pool_xmod/main.zig` (`-fsafe` OutOfFrame probe)
 
 **Interfaces:**
-- Consumes: Task 6 transform; pinned Track-3 Context contract (subspec §4: `buf` outside pool; per-task LIFO child-frame stack; inline bump + mark; `{pool, capacity, used, oom}`).
+- Consumes: Task 6 transform; pinned Track-3 Context contract (subspec §4: `buf` outside pool; per-task LIFO child-frame stack; inline bump + mark; `{pool, capacity, used, oom}`). **Superseded by Amendment 11:** interim layout `{used@0, capacity@4, oom@8}`, pool base `ctx+12` DERIVED.
 - Produces: child-frame bump/mark allocation at suspending call sites; inline `ctx` reads from the current frame; `error.OutOfFrame` (no crash) on exhaustion.
 
 - [ ] **Step 1: Write the failing test**
@@ -1517,7 +1519,7 @@ Expected RED: `0` — no pool/OutOfFrame logic yet.
 
 - [ ] **Step 3: Write minimal implementation**
 
-At the **Task-6 implicit-await sites** in `asyncTransform`, add the pool accounting: read `ctx` from the caller frame (`load_field ctx`), then **inline** read the frozen `{pool, capacity, used}` fields (Res 1), compute the child frame address, advance `used` by `frame_sizes[callee]`, store the mark, initialize the child (its step word was already written by Task 6), then restore the mark when the child `_step` returns null. On `used + size > capacity`, take the `error.OutOfFrame` path instead of writing (the compiler core represents this as the `null`/error path of the builtin drive; Track 3 maps it to the `OutOfFrame` error value and sets the sticky `oom` flag). `@asyncInit` must treat `buf` as the **root** frame (outside the pool) and initialize the `ctx` handle. Confirm `frame_sizes[callee]` is already in the table (Task 5) before use; if absent, emit an ICE (`ERR_9001_ICE`).
+At the **Task-6 implicit-await sites** in `asyncTransform`, add the pool accounting: read `ctx` from the caller frame (`load_field ctx`), then **inline** read the frozen `{pool, capacity, used}` fields (**Superseded by Amendment 11**: interim `{used@0, capacity@4, oom@8}`, pool base `ctx+12` DERIVED) (Res 1), compute the child frame address, advance `used` by `frame_sizes[callee]`, store the mark, initialize the child (its step word was already written by Task 6), then restore the mark when the child `_step` returns null. On `used + size > capacity`, take the `error.OutOfFrame` path instead of writing (the compiler core represents this as the `null`/error path of the builtin drive; Track 3 maps it to the `OutOfFrame` error value and sets the sticky `oom` flag). `@asyncInit` must treat `buf` as the **root** frame (outside the pool) and initialize the `ctx` handle. Confirm `frame_sizes[callee]` is already in the table (Task 5) before use; if absent, emit an ICE (`ERR_9001_ICE`).
 
 - [ ] **Step 4: Run to verify it passes (GREEN)**
 
@@ -1999,11 +2001,43 @@ rotated**; `repro/mi_matrix/EXPECTED_FAIL.md` untouched.
   (unreachable; P2 always populates the table).
 - **M6:** full corpus classifier not re-run (async-gated edits; verification
   gap).
+- **M7 (Amendment-11 follow-up):** `2026-09-13-std-async-plan.md` calls Task 5
+  "the plan's terminal task" though **Task 6** follows, and Task 6's "resolve
+  this **before Task 1**" ordering wording conflicts with its placement **after
+  Task 5**. Reconcile both wordings.
+- **M8 (Amendment-11 follow-up):** `2026-09-13-std-async-design.md` §3.1
+  `contextInit(pool: []u8)` and §3.2 "`contextAlloc` returns `pool + used`"
+  retain the name `pool` though the pool base is **derived** (`ctx+12`); rename
+  to match the derived canon.
+- **M9 (Amendment-11 follow-up):** `2026-09-13-async-compiler-core-plan.md:1757`
+  stale idiom `std.async.Context.init(pool[0..])`; the design now uses
+  `contextInit(buf[0..])`.
 
 **Docs amended in place.** `2026-09-13-std-async-design.md` §3.1 (Context
 interim canon), §3.2 (M1/M3), §4 (NOT FINAL + stored-pointer misread WARNING),
 §7 (risk bullet), §8 ("frozen" -> interim); `2026-09-13-std-async-plan.md` new
 Task 6 (Track-3 alignment). This amendment records the compiler-core side.
+
+### Amendment 11 — review-fix follow-up
+
+A task review of Amendment 11 returned **Needs fixes** (3 Important + minors).
+Applied, docs-only, within the three Amendment-11 docs:
+
+1. **(Important) Superseded marker on std-async plan Task 1's `Context`.** Added
+   the Amendment-11 marker at the Task-1 `Context`/`contextInit(pool)`
+   definition (stored-pointer layout), pointing at the interim canon
+   (`used@0/capacity@4/oom@8`, pool base `ctx+12` derived) and Task 6.
+2. **(Important) Superseded markers in compiler-core plan Task 7.** Added an
+   inline **Superseded by Amendment 11** marker at each frozen
+   `{pool, capacity, used, oom}` mention (matching the Amendment-10 Task-6D5
+   precedent).
+3. **(Important) Corrected the std-async plan Self-Review pointer.** §4
+   Interfaces now points at the interim canon (design §3.1) and **Task 6**, not
+   Task 1.
+4. **(Minor, recorded for Task 8)** Task-5 "terminal task" vs Task 6; Task-6
+   "resolve before Task 1" wording; design `contextInit(pool)`/`pool + used`
+   naming; compiler-core `std.async.Context.init(pool[0..])` idiom. Added to the
+   Task-8 cleanup list as **M7–M9**.
 
 ## Amendable note
 

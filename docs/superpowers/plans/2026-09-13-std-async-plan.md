@@ -161,6 +161,8 @@ pub const FrameError = error{OutOfFrame};
 /// still yielded. Track 2 pins this signature; keep the two in lockstep.
 pub const StepFn = fn(frame: *void, arg: ?*void) ?*void;
 
+// Superseded by Amendment 11 (interim compiler-core layout
+// `used@0/capacity@4/oom@8`; pool base `ctx+12` derived). Align in Task 6.
 /// Per-task child-frame pool. `pool`/`capacity` are caller-supplied; `used` is
 /// the bump pointer; `oom` is sticky for the task's pool lifetime.
 pub const Context = struct {
@@ -944,7 +946,7 @@ pins the old field order and must move to the chosen branch.
 - §3.4 scheduler semantics -> Task 2 `tick` + Task 3 `awaitTask`/`cancel`/`cancelAll`/`waitAll`; fixtures.
 - §3.5 error model -> Task 2 `stdlib_async_oom_xmod` (`error.OutOfFrame` from `tick`, no crash) and Task 3 `waitAll` returning `FrameError!void`.
 - §3.6 install surface -> Task 1 (`build_from_seed.sh`), Task 4 (`archive_seed.sh`, `build_zig1_5.sh`, `QUICK_REF`), Task 5 (seed rotation).
-- §4 Interfaces -> `StepFn`/interim `Context` layout in Task 1; the Track 2 reconciliation is documented in the subspec §4/§7 and is tracked by new Task 6 (Track-3 alignment).
+- §4 Interfaces -> `StepFn` in Task 1; the interim `Context` layout canon is design §3.1 (interim, NOT FINAL) and its Track-3 alignment is tracked by **Task 6**; the Track 2 reconciliation is documented in the subspec §4/§7.
 - §6 Testing -> the five fixtures, corpus sweep, `check_emit_support`, seed rotation (Tasks 1–3, 4, 5).
 - §7 Risks -> guarded by the Global Constraints (no optional struct field, no globals, two-file `sf/src` scope, install enumeration complete).
 
