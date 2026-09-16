@@ -1058,6 +1058,35 @@ Emit is **rc=0 with 0 target diagnostics** (silent); gcc rejects `assignment to 
 
 ---
 
+### Task 2g: array-to-array class not fully closed — for-loop iteration + pointer-to-array — I then F
+
+**Origin (Task 2f-F review, 2026-09-16).** Task 2f-F fixed direct multi-dimensional fixed-array element access, but the review found the **same array-to-array defect class** is still reachable, and neither residual was declared (fixture + `EXPECTED_FAIL.md` + report) as the standing rule requires:
+- **(a) for-loop iteration:** `for (multiDimArray) |row|` keeps `decay = 0` and an array-typed `item_temp` (`sf/src/lower.zig:6128-6131`) — the array-to-array emission reached through iteration, so the class is not fully closed.
+- **(b) pointer-to-array element access:** genuine `pp: *[4]u8; pp[0][1] = 3;` is broken (pre-existing; BASE `8a322dd9` and fix `7f9afa82` byte-identical) — a separate frontend/lowering quirk.
+
+**Operator ruling (2026-09-16):** fix **both**, via an I task + F task (this pair).
+
+#### Task 2g-I: investigate + pin (no `sf/src` change)
+
+- [ ] **Step 1: Fixture set** (`repro/mi_matrix/`, auto-listed; each documents RED-now + the GREEN contract):
+  - `multiarray_for_iter_xmod/` — `for (g) |row|` over a `[5][4]u8` (and a `[5][4]Cell`), reading/streaming each row; RED (array-to-array emission).
+  - `ptr_to_array_index_xmod/` — `var pp: *[4]u8;` with `pp[0][1] = 3;` and the rvalue `pp[0][1]`; RED.
+  - nested/3-D variants of the for-loop case.
+  - controls: a for-loop over a **flat 1-D** array (already OK); a for-loop that only reads a scalar element.
+- [ ] **Step 2: Questionnaire.** Answer in the report: (Q1) the exact lowering path for a `for`-loop array item (`sf/src/lower.zig:6128-6131`) and why it keeps `decay = 0`; (Q2) the exact lowering for `pp: *[N]T` element access and why it is broken; (Q3) whether the 2f-F `decay` mechanism (`load_index{decay}`, `&(*base)[idx]`/`&base[idx]`) can be reused for both; (Q4) the minimal fix locus for each; (Q5) whether any other array-to-array producer remains (grep the emitter/lowerer for array-typed temp assignment/store); (Q6) corpus/diagnostic delta.
+- [ ] **Step 3: Declare.** Add the fixtures; record the RED in `repro/mi_matrix/EXPECTED_FAIL.md` (v112→v113) or the appropriate known-issue location.
+- [ ] **Step 4: Report + present the fix surface for Task 2g-F.** No `sf/src` change.
+
+#### Task 2g-F: fix both (`sf/src` change; fixed point MOVES)
+
+- [ ] **Step 1: Fix** (a) the for-loop iteration array-to-array emission and (b) the `pp: *[N]T` element access, reusing the 2f-F `decay` mechanism where possible.
+- [ ] **Step 2: Fixtures RED→GREEN**; full corpus sweep (class-map delta = intended dirs only — any other movement is a regression to STOP on); `check_emit_support.sh` 5/5; self-compile closure (48 `.c`, 0 `[3000]`).
+- [ ] **Step 3: Re-verify** the four goldens + `CLOSEOUT OK`; 4-MD5 byte-identical; record the new fixed point. Seed rotation stays at Task 6.
+
+**Sequencing gate:** Task 4 MUST NOT start until Task 2g-F is landed.
+
+---
+
 ### Task 4: `rogue_mud` cross-module task create/schedule/cancel (entry E3)
 
 **Files:**
