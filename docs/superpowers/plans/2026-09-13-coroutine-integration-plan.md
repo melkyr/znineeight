@@ -416,6 +416,15 @@ git commit -m "fix(std.async): addTask stores *Task + awaitTask non-suspending g
 **Produces:** the 12 `(b)` cases (7 self enum→int sites + 5 corpus dirs) are hard `error[3000]` (0 `.c`); the 48 `(a)` are NOT caught (scoped); self-compile stays green (the 7 enum sites are already `@enumToInt` from 0n); the F-M4 fixture frontend-rejects. Fixed point MOVES; seed rotation at Task 6.
 - [ ] Dedupe `type_registry.zig:1257-1263`; raise the 4 sites to level 0 **scoped to the `(b)` shapes**; verify the `(a)` corpus census is unchanged and self-compile is green; full corpus + warning gate + 4-MD5 + `CLOSEOUT OK`; commit.
 
+### Task 0q2: Investigate the enum→int return/call-arg migration feasibility (I)
+
+> Operator S25 (m0480): after Task 0q, do an I task FIRST to determine whether the compiler's own implicit enum→int sites at return/call-arg can be migrated to `@enumToInt` so the shape can be promoted to a hard `error[3000]`. The `*T`→`[*]T` half is **NOT** in scope — its compiler reliance is the valid array→pointer idiom (`&arr[0]`, spec:382, explicitly allowed at call-arg/return), so promoting it risks rejecting legal Z98. The genuine gap is implicit enum→int at return/call-arg.
+
+**Files:** report + fixtures only. No `sf/src` change; no re-baseline.
+**Consumes:** Task 0q's residual (return `:1430` + call-arg `:1509/:1583` promote 3 of 5 shapes; `full=false` excludes `*T`→`[*]T` and enum→int).
+**Produces:** the exact, exhaustive list of the compiler's own implicit enum→int sites at return/call-arg (candidates: `sf/src/lower.zig:4007,5686,5752`; `sf/src/parser.zig:1715,1722,1725` — `itoa(value: u32)` called with bare `AstKind` enum fields; `symbol_registrator.zig` already uses explicit `@enumToInt`), and a determination of whether migrating each to `@enumToInt` (a) is mechanically safe, (b) leaves self-compile green, and (c) enables promoting enum→int at return/call-arg without breaking the valid `&arr[0]` array→pointer idiom. State the exact fix set for a follow-up F task.
+- [ ] Enumerate every self enum→int return/call-arg site (exhaustive, with evidence); test a scratch migration; report whether it is really possible without issue. **No `sf/src` change; no re-baseline.**
+
 ### Task 1: Baseline, reference compiler, and pre-conversion golden captures
 
 **Files:**
