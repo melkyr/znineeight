@@ -3911,7 +3911,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             if (sym) |sm| { var sf: []const u8 = "S"; pal.markerWrite(sf);
                 if (sm.kind == @intCast(u8, 0)) { var d3m: []const u8 = "D3:SKIPn"; pal.markerWrite(d3m); var d3nb: [10]u8 = undefined; var d3nl = itoa_mod.itoa(callee_name_id, d3nb[0..]); var d3ns: usize = @intCast(usize, 9) - @intCast(usize, d3nl); pal.markerWrite(d3nb[d3ns..@intCast(usize, 9)]); var d3kn: []const u8 = "k0"; pal.markerWrite(d3kn); }
                 else if (sm.kind == @intCast(u8, 1)) { var d3m: []const u8 = "D3:SKIPn"; pal.markerWrite(d3m); var d3nb: [10]u8 = undefined; var d3nl = itoa_mod.itoa(callee_name_id, d3nb[0..]); var d3ns: usize = @intCast(usize, 9) - @intCast(usize, d3nl); pal.markerWrite(d3nb[d3ns..@intCast(usize, 9)]); var d3kn: []const u8 = "k1"; pal.markerWrite(d3kn); }
-                else if (sm.kind == @intCast(u8, 2) or sm.kind == @intCast(u8, 3)) { var d3m: []const u8 = "D3:OKn"; pal.markerWrite(d3m); var d3nb: [10]u8 = undefined; var d3nl = itoa_mod.itoa(callee_name_id, d3nb[0..]); var d3ns: usize = @intCast(usize, 9) - @intCast(usize, d3nl); pal.markerWrite(d3nb[d3ns..@intCast(usize, 9)]); var d3kn: []const u8 = "k"; pal.markerWrite(d3kn); var d3kb: [10]u8 = undefined; var d3kl = itoa_mod.itoa(sm.kind, d3kb[0..]); var d3ks: usize = @intCast(usize, 9) - @intCast(usize, d3kl); pal.markerWrite(d3kb[d3ks..@intCast(usize, 9)]);
+                else if (sm.kind == @intCast(u8, 2) or sm.kind == @intCast(u8, 3)) { var d3m: []const u8 = "D3:OKn"; pal.markerWrite(d3m); var d3nb: [10]u8 = undefined; var d3nl = itoa_mod.itoa(callee_name_id, d3nb[0..]); var d3ns: usize = @intCast(usize, 9) - @intCast(usize, d3nl); pal.markerWrite(d3nb[d3ns..@intCast(usize, 9)]); var d3kn: []const u8 = "k"; pal.markerWrite(d3kn); var d3kb: [10]u8 = undefined; var d3kl = itoa_mod.itoa(@intCast(u32, @enumToInt(sm.kind)), d3kb[0..]); var d3ks: usize = @intCast(usize, 9) - @intCast(usize, d3kl); pal.markerWrite(d3kb[d3ks..@intCast(usize, 9)]);
                     var args_start = self.temp_counter;
                     var ai: usize = 0;
                     while (ai < ec.len) : (ai += 1) { _ = nextTemp(self, type_mod.TYPE_UNDEFINED); }
@@ -4004,7 +4004,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var f3pn: []const u8 = "F3P:NULL\n"; pal.markerWrite(f3pn);
         }
         var callee_cn = ast_mod.astStoreNodeAt(self.ctx.store, node.child_0);
-        var a3pt: [20]u8 = undefined; var a3ptl = itoa_mod.itoa(callee_cn.kind, a3pt[0..]); var a3pts: usize = @intCast(usize, 19) - @intCast(usize, a3ptl); pal.markerWrite(a3pt[a3pts..@intCast(usize, 19)]);
+        var a3pt: [20]u8 = undefined; var a3ptl = itoa_mod.itoa(@intCast(u32, @enumToInt(callee_cn.kind)), a3pt[0..]); var a3pts: usize = @intCast(usize, 19) - @intCast(usize, a3ptl); pal.markerWrite(a3pt[a3pts..@intCast(usize, 19)]);
         if (callee_cn.kind == AstKind.ident_expr) {
             var a3pn: []const u8 = "n"; pal.markerWrite(a3pn);
             var a3pnb: [20]u8 = undefined; var a3pnl = itoa_mod.itoa(ast_mod.astStoreIdentifier(self.ctx.store, node.child_0), a3pnb[0..]); var a3pns: usize = @intCast(usize, 19) - @intCast(usize, a3pnl); pal.markerWrite(a3pnb[a3pns..@intCast(usize, 19)]);
@@ -5683,7 +5683,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         var if_kh: []const u8 = " k="; pal.markerWrite(if_kh);
         if (node.child_0 != @intCast(u32, 0)) {
             var cond_n = ast_mod.astStoreNodeAt(self.ctx.store, node.child_0);
-            var if_ckl = itoa_mod.itoa(cond_n.kind, if_c0b[0..]); var if_cks: usize = @intCast(usize, 9) - @intCast(usize, if_ckl); pal.markerWrite(if_c0b[if_cks..@intCast(usize, 9)]);
+            var if_ckl = itoa_mod.itoa(@intCast(u32, @enumToInt(cond_n.kind)), if_c0b[0..]); var if_cks: usize = @intCast(usize, 9) - @intCast(usize, if_ckl); pal.markerWrite(if_c0b[if_cks..@intCast(usize, 9)]);
         } else {
             var if_z: []const u8 = "ZERO"; pal.markerWrite(if_z);
         }
@@ -5749,7 +5749,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         if (@intCast(usize, cond_temp) < self.hoisted_temps.len) {
         var d10m: []const u8 = "D10:k"; pal.markerWrite(d10m);
         var cond_node_k = ast_mod.astStoreNodeAt(self.ctx.store, node.child_0);
-        var d10kb: [20]u8 = undefined; var d10kl = itoa_mod.itoa(cond_node_k.kind, d10kb[0..]); var d10ks: usize = @intCast(usize, 19) - @intCast(usize, d10kl); pal.markerWrite(d10kb[d10ks..@intCast(usize, 19)]);
+        var d10kb: [20]u8 = undefined; var d10kl = itoa_mod.itoa(@intCast(u32, @enumToInt(cond_node_k.kind)), d10kb[0..]); var d10ks: usize = @intCast(usize, 19) - @intCast(usize, d10kl); pal.markerWrite(d10kb[d10ks..@intCast(usize, 19)]);
         var d10mc: []const u8 = "c"; pal.markerWrite(d10mc);
         var d10cb: [20]u8 = undefined; var d10cl = itoa_mod.itoa(cond_temp, d10cb[0..]); var d10cs: usize = @intCast(usize, 19) - @intCast(usize, d10cl); pal.markerWrite(d10cb[d10cs..@intCast(usize, 19)]);
         var d10t: []const u8 = "t"; pal.markerWrite(d10t);

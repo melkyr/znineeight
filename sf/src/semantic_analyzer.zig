@@ -2595,11 +2595,13 @@ fn semanticAnalyzerFnPtrConvMismatch(self: *SemanticAnalyzer, src: u32, tgt: u32
 // `(a)` valid-Z98 cases (cleared by Task 0m) are never caught. Callers must
 // already know the pair is NOT assignable; this is the shape test alone.
 //
-// `full` selects the var-decl/assignment promotion (all five shapes). The
-// return/call-argument promotion passes `full = false`, excluding bare
-// `*T` -> `[*]T` and enum -> integer: the compiler's OWN source relies on
-// those two coercions silently in return/argument positions (34 + 7 sites),
-// so hard-erroring them there would break self-hosting. Declared gap.
+// `full` now selects only the bare `*T` -> `[*]T` promotion at return/
+// call-argument (var-decl/assignment promote all five shapes). The compiler's
+// OWN source relies on that shape silently in return/argument positions via
+// the valid array->pointer `&arr[0]` idiom (spec:382), so hard-erroring it
+// there would break self-hosting; declared residual, out of Task 0q3 scope.
+// enum -> integer is promoted in ALL four contexts (Task 0q3 migrated the 7
+// self enum call-argument sites to `@intCast(u32, @enumToInt(...))`).
 fn isBShapeMismatch(self: *SemanticAnalyzer, src_ty: u32, tgt_ty: u32, full: bool) bool {
     if (src_ty == @intCast(u32, 0) or tgt_ty == @intCast(u32, 0)) return false;
     if (@intCast(usize, src_ty) >= self.registry.types_len or @intCast(usize, tgt_ty) >= self.registry.types_len) return false;
@@ -2609,7 +2611,7 @@ fn isBShapeMismatch(self: *SemanticAnalyzer, src_ty: u32, tgt_ty: u32, full: boo
     if (full and sk == type_mod.TypeKind.ptr_type and tk == type_mod.TypeKind.many_ptr_type) return true;
     if (sk == type_mod.TypeKind.array_type and tk == type_mod.TypeKind.array_type) return true;
     if (sk == type_mod.TypeKind.error_union_type and tk == type_mod.TypeKind.error_union_type) return true;
-    if (full and sk == type_mod.TypeKind.enum_type and type_mod.typeRegistryIsInteger(self.registry, tgt_ty)) return true;
+    if (sk == type_mod.TypeKind.enum_type and type_mod.typeRegistryIsInteger(self.registry, tgt_ty)) return true;
     return false;
 }
 

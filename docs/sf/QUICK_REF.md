@@ -91,6 +91,31 @@ MOVES `3f81ea143da726710ad47b6f08bbb13a` -> `7c12619c276e0989c29f27cb4c81d748`
 - json_parser: `8bda3d5a1ec07d14a301bc343df32bf8`
 - mud_server server stdout: `66c8f0abb926cca7baf9a0d1692ab318` / client bytes: `93147d0f0bbd983a9d844fea8b7a6fa7`
 - `CLOSEOUT OK` (A1-A5, B1-B7 PASS).
+### Track-4 Task 0q3 — enum→int promoted at return/call-argument (v100, 2026-09-16)
+
+Task 0q3 closes the Task-0q residual: enum→integer is now a hard
+`error[3000]` at **return and call-argument** as well as var-decl/assignment.
+The compiler's own 7 enum call-arg sites (`itoa(<enum>.kind, ...)` in
+`sf/src/lower.zig:3914,4007,5686,5752` + `sf/src/parser.zig:1715,1722,1725`)
+were migrated to `@intCast(u32, @enumToInt(<enum>.kind))`, then the `full and`
+guard on the enum shape was dropped (`sf/src/semantic_analyzer.zig`). The fixed
+point MOVES `7c12619c276e0989c29f27cb4c81d748` ->
+`286c9011691ccd39403534019baa12c6` (hop2==hop3); no re-baseline; seed NOT
+rotated (rotation is Task 6). Self-compile: 48 `.c`, rc=0, 0 `[3000]`; pinned
+`(a)` census `39 dirs / 0`; corpus class map unchanged
+(662 = 614 OK / 27 GREEN / 21 FAIL); the 5 `(b)` dirs still hard-error.
+
+**Retained residual (declared, NOT minor):** bare `*T` -> `[*]T` at
+return/call-argument is STILL tolerated (out of Task 0q3 scope — the compiler's
+own source relies on the valid `&arr[0]` array→pointer idiom, spec:382; see the
+Task-0q2 report).
+
+**4-MD5 gate programs (stdout, byte-identical):**
+- game_of_life (100 gens): `fcbf7e7cead5082f0a8caadd5a8f0ff9`
+- lisp_interpreter_curr: `8dc783a3d766430c15993ab08cd0f7ec`
+- json_parser: `8bda3d5a1ec07d14a301bc343df32bf8`
+- mud_server server stdout: `66c8f0abb926cca7baf9a0d1692ab318` / client bytes: `93147d0f0bbd983a9d844fea8b7a6fa7`
+- `CLOSEOUT OK` (A1-A5, B1-B7 PASS).
 ### Calling convention (Win9x) — `extern "stdcall"` / `extern "cdecl"`  [added: 2026-09-14 — Track 1 closeout]
 
 - **Surface:** a calling convention may be written on an extern fn declaration and on a function-pointer type — `extern "stdcall" fn(...) T`, `extern "cdecl" fn(...) T`, `extern "c" fn(...) T`; a bare `fn(...) T` is default cdecl. Accepted names: `"c"`/`"cdecl"` → cdecl (byte-identical to no string), `"stdcall"` → stdcall. Unknown → `error[3045]`; variadic `stdcall` → `error[3012]`; assigning a cross-convention fn-pointer → `error[3000]` (all clean: rc=2, 0 `.c`).

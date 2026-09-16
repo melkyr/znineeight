@@ -1712,17 +1712,17 @@ fn parserParseIfStmt(self: *Parser) ParserError!u32 {
     var pc0b: [10]u8 = undefined; var pc0l = itoa_mod.itoa(cond, pc0b[0..]); var pc0s: usize = @intCast(usize, 9) - @intCast(usize, pc0l); pal.markerWrite(pc0b[pc0s..@intCast(usize, 9)]);
     var pck: []const u8 = "k"; pal.markerWrite(pck);
     var cond_n = ast_mod.astStoreNodeAt(self.store, cond);
-    var pckb: [10]u8 = undefined; var pckl = itoa_mod.itoa(cond_n.kind, pckb[0..]); var pcks: usize = @intCast(usize, 9) - @intCast(usize, pckl); pal.markerWrite(pckb[pcks..@intCast(usize, 9)]);
+    var pckb: [10]u8 = undefined; var pckl = itoa_mod.itoa(@intCast(u32, @enumToInt(cond_n.kind)), pckb[0..]); var pcks: usize = @intCast(usize, 9) - @intCast(usize, pckl); pal.markerWrite(pckb[pcks..@intCast(usize, 9)]);
     var pc1: []const u8 = "c1"; pal.markerWrite(pc1);
     var pc1b: [10]u8 = undefined; var pc1l = itoa_mod.itoa(cond_n.child_0, pc1b[0..]); var pc1s: usize = @intCast(usize, 9) - @intCast(usize, pc1l); pal.markerWrite(pc1b[pc1s..@intCast(usize, 9)]);
     var pc2: []const u8 = "c2"; pal.markerWrite(pc2);
     var pc2b: [10]u8 = undefined; var pc2l = itoa_mod.itoa(cond_n.child_1, pc2b[0..]); var pc2s: usize = @intCast(usize, 9) - @intCast(usize, pc2l); pal.markerWrite(pc2b[pc2s..@intCast(usize, 9)]);
     var pck1: []const u8 = "k1"; pal.markerWrite(pck1);
     var cn1 = ast_mod.astStoreNodeAt(self.store, cond_n.child_0);
-    var pck1b: [10]u8 = undefined; var pck1l = itoa_mod.itoa(cn1.kind, pck1b[0..]); var pck1s: usize = @intCast(usize, 9) - @intCast(usize, pck1l); pal.markerWrite(pck1b[pck1s..@intCast(usize, 9)]);
+    var pck1b: [10]u8 = undefined; var pck1l = itoa_mod.itoa(@intCast(u32, @enumToInt(cn1.kind)), pck1b[0..]); var pck1s: usize = @intCast(usize, 9) - @intCast(usize, pck1l); pal.markerWrite(pck1b[pck1s..@intCast(usize, 9)]);
     var pck2: []const u8 = "k2"; pal.markerWrite(pck2);
     var cn2 = ast_mod.astStoreNodeAt(self.store, cond_n.child_1);
-    var pck2b: [10]u8 = undefined; var pck2l = itoa_mod.itoa(cn2.kind, pck2b[0..]); var pck2s: usize = @intCast(usize, 9) - @intCast(usize, pck2l); pal.markerWrite(pck2b[pck2s..@intCast(usize, 9)]);
+    var pck2b: [10]u8 = undefined; var pck2l = itoa_mod.itoa(@intCast(u32, @enumToInt(cn2.kind)), pck2b[0..]); var pck2s: usize = @intCast(usize, 9) - @intCast(usize, pck2l); pal.markerWrite(pck2b[pck2s..@intCast(usize, 9)]);
     var pknl: []const u8 = "\n"; pal.markerWrite(pknl);
     _ = try parserExpect(self, TokenKind.rparen);
 

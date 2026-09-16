@@ -1,4 +1,54 @@
-# mi_matrix corpus — expected-fail manifest (v99 2026-09-16)
+# mi_matrix corpus — expected-fail manifest (v100 2026-09-16)
+
+## Task 0q3 (F) — promote enum→int at return/call-argument (v100 2026-09-16)
+
+Track-4 Task 0q3 closes the residual declared by Task 0q (its gap #1, enum half).
+enum→integer is now a hard `error[3000]` (rc=2, 0 `.c`) at **return and
+call-argument** positions in addition to var-decl/assignment. Two changes:
+
+- **Migrate the compiler's own 7 enum call-arg sites** (all
+  `itoa(<enum>.kind, ...)`, target `u32`; `sf/src/util/itoa.zig:1`
+  `pub fn itoa(value: u32, buf: []u8) u32`) to
+  `@intCast(u32, @enumToInt(<enum>.kind))` — the established idiom
+  (`symbol_registrator.zig:343`): `sf/src/lower.zig:3914` (`sm.kind`), `:4007`
+  (`callee_cn.kind`), `:5686` (`cond_n.kind`), `:5752` (`cond_node_k.kind`);
+  `sf/src/parser.zig:1715` (`cond_n.kind`), `:1722` (`cn1.kind`), `:1725`
+  (`cn2.kind`).
+- **Drop the `full and` guard** on the enum shape in `isBShapeMismatch`
+  (`sf/src/semantic_analyzer.zig`), so the return (`:1430`) and call-argument
+  (`:1509`/`:1583`) sites promote enum→int. Those sites still pass
+  `full=false`, which now only excludes bare `*T` -> `[*]T`.
+
+**Pins (off-corpus, `repro/mi_matrix/known_excluded/`, excluded from the
+corpus universe by `scripts/corpus/list_corpus_dirs.sh`):**
+- `w3000_enum_return` — `return E.B;` from a `u32` fn → rc=2, 0 `.c`,
+  `error[3000]: type mismatch in return statement` (source: enum / target: u32).
+- `w3000_enum_carg` — `g(E.B)` with `g(x: u32)` → rc=2, 0 `.c`,
+  `error[3000]: type mismatch in function argument` (source: enum / target: u32).
+- `w3000_manyptr_retained` — bare `*u8` -> `[*]u8` at return AND call-argument
+  (plus the valid `&arr[0]` array→pointer idiom) → dump rc=0, gcc-clean,
+  run rc=0, stdout `4` (proves the retained residual below).
+
+**Gates (seed-built compiler `/tmp/t0q3_build/zig1_5_clean`, closure
+`hop2 == hop3 == 286c9011691ccd39403534019baa12c6`):** self-compile 48 `.c`,
+rc=0, 0 `error[3000]` / 0 `warning[3000]`; pinned `(a)` census `39 dirs / 0`
+(exit 0); the 5 `(b)` corpus dirs still hard-error (rc=2, 0 `.c`, 1
+`error[3000]` each); per-dir corpus class map byte-identical to the post-0q
+baseline (`662 = 614 OK / 27 GREEN / 21 FAIL / 0 ICE / 0 CRASH`); 4-MD5 runtime
+byte-identical (gol `fcbf7e7cead5082f0a8caadd5a8f0ff9`, lisp
+`8dc783a3d766430c15993ab08cd0f7ec`, json `8bda3d5a1ec07d14a301bc343df32bf8`,
+mud server `66c8f0abb926cca7baf9a0d1692ab318` / client
+`93147d0f0bbd983a9d844fea8b7a6fa7`); `CLOSEOUT OK`. Fixed point MOVES
+`7c12619c276e0989c29f27cb4c81d748` -> `286c9011691ccd39403534019baa12c6`.
+No re-baseline; seed NOT rotated (Task 6).
+
+**Declared residual (NOT marked minor):** bare `*T` -> `[*]T` remains tolerated
+at **return/call-argument** (var-decl/assignment still promote it). The
+compiler's own source relies on this shape there via the valid `&arr[0]`
+array→pointer idiom (`docs/reference/Language_Spec_Z98.md:382`, explicitly
+allowed at call-arg/return), so promoting it would break self-hosting; it is
+out of Task 0q3 scope (see the Task-0q2/0q3 reports). enum→int is no longer part
+of this residual.
 
 ## Task 0q (F) — promote the 12 `(b)` invalid-Zig cases to hard `error[3000]` (v99 2026-09-16)
 
