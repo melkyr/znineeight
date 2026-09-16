@@ -1,4 +1,67 @@
-# mi_matrix corpus — expected-fail manifest (v117 2026-09-16)
+# mi_matrix corpus — expected-fail manifest (v118 2026-09-16)
+
+## Track-4 Task 4b-I (I) — uninitialized `is_param` frame-layout buffer pinned (v117 -> v118 2026-09-16)
+
+Task 4b-I pins the real defect behind the Task 4a-F "coroutine only advances
+with >=2 tasks" symptom. The original 1-task premise was DISPROVED (the
+single-task fixture is GREEN today); the real root cause is an UNINITIALIZED
+`is_param` predicate buffer in the P3 frame-live analysis. **No `sf/src`
+change; fixed point `5c24305437629da54b4e4de1ed52e0e0` UNMOVED (hop2==hop3).**
+
+**Defect.** `sf/src/async_frame_layout.zig:562` allocates `is_param` with the
+NO-FILL primitive `allocU8Raw` (`:131-136`, a raw `sandAlloc` bump) and sets
+only the parameter entries (`:564-567`). Every non-parameter entry is stale
+heap memory (the compiler's `memory_pool_buf` BSS, reused across phases).
+`is_param` gates the live scan (`:584 if (is_param[tu] != 0) continue;`) and
+the field emitter (`:609`), so when the stale bytes are non-zero a live local
+is silently dropped from the frame. `saveAllFields`/`reloadAllFields`
+(`sf/src/async_state_machine.zig:253-279`) faithfully persist only the given
+fields; the resume segment reloads nothing and the step reads an
+uninitialized C local. `std.async.tick` and the resume routing are correct.
+
+**Deterministic RED form = >=2-coroutine interleave.** A single task alone can
+pass by C stack-slot reuse, so the reproducible form is two scheduler tasks.
+
+**New corpus dirs** (auto-listed; all compile-clean => class OK; the pin is
+RUNTIME-only so the class map moves only by +4):
+
+| fixture | shape | RED now | GREEN contract (Task 4b-F) |
+|---|---|---|---|
+| `async_frame_isparam_xmod` | 2 tasks, `coA` first | stdout `701 800`, run rc=133 (SIGTRAP) `panic: ...a live local was dropped from the frame`; gcc `warning: 'i' may be used uninitialized` in `__Z98Step_coA` | stdout `8 800`, rc=0 |
+| `async_frame_isparam_order_xmod` | 2 tasks, `coB` first | stdout `8 107`, run rc=133; gcc `warning: 'j' may be used uninitialized` in `__Z98Step_coB` | stdout `8 800`, rc=0 |
+| `async_frame_isparam_resume_xmod` | same bodies, direct `@asyncResume`, no `std_async` import | GREEN today: stdout `8 800`, rc=0; `__Z98Step_coA` persists `n`@16/`i`@20 | stays GREEN |
+| `async_frame_isparam_single_xmod` | 1 task, no interleave | GREEN today: stdout `8`, rc=0 (gcc may warn `'i'`) | stays GREEN |
+
+The two RED fixtures are declaration-order mirrors: the drop MOVES from `coA`
+to `coB`, which is the signature of an uninitialized read (a genuine
+data-flow drop would be order-independent). The same order dependence was
+first seen at the single-task level: `m8` (`worker` first) drops `worker`'s
+`i` (`__Z98Step_worker` saves only `out`@12); `m8b` (`other` first) drops
+`other`'s `q` instead and `worker` persists `n`/`i` (`__Z98Step_worker` saves
+offsets 12/16/20/...). Deterministic: re-dumping `async_frame_isparam_xmod`
+3x produces byte-identical emitted C and the same `701 800`.
+
+**Corpus `-ffast` dump+gcc classifier (`/tmp/t4bf_classify.sh`), universe
+705 -> 709:**
+
+| | 4a-F `5c243054` | 4b-I `5c243054` | delta |
+|---|---|---|---|
+| dirs | 705 | 709 | +4 |
+| OK | 652 | 656 | +4 |
+| GREEN | 28 | 28 | 0 |
+| FAIL | 25 | 25 | 0 |
+| ICE | 0 | 0 | 0 |
+| CRASH | 0 | 0 | 0 |
+
+Per-dir movement = exactly the 4 new dirs; all 705 pre-existing dirs
+class-identical (no `sf/src` change). No new diagnostic code. Fix surface for
+Task 4b-F: zero-init `is_param` at `sf/src/async_frame_layout.zig:562-567`
+(add an `allocU8With(alloc, max_temp, 0)` helper mirroring `allocU32With`, or
+an explicit zero loop as at `:569-573`); audit of `allocU8Raw`/`allocU32`
+callers found no other uninitialized read (lir_opt_pass's raw buffers are all
+filled by `resetScratch`; async_analysis's `allocU32` callers all fill before
+use). Frame SIZE (P2) is unaffected — `is_param` is P3-only. Full report:
+`.superpowers/sdd/2026-09-13-coroutine-integration-plan/task-4b-report.md`.
 
 ## Track-4 Task 4a-F (F) — `rogue_mud` client-task wiring FIXED (v116 -> v117 2026-09-16)
 
