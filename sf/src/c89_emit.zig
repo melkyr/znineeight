@@ -731,6 +731,18 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
         var et = reg.types_items[@intCast(usize, pp.base)];
         var is_vol: bool = (ty.flags & @intCast(u8, 2)) != @intCast(u8, 0);
         if (et.kind == TypeKind.fn_type) { return getCTypeName(reg, mangler, pp.base); }
+        // Track4 S25 (Task 0p F): the A1 string-literal type is `*const [N]u8`.
+        // Its C model must be the plain element pointer: a C string literal
+        // decays to `char*`, never to a pointer-to-array. Decay the emitted C
+        // type here (const pointer to a u8 array) so the `string_const` temp,
+        // and any global const bound to a literal, emit as `unsigned char*`.
+        // The LIR/sema type is unchanged (`materializeInto` classifies on it;
+        // the length is a separate temp). Genuine `*[N]T` pointers are not
+        // const and are unaffected.
+        if (!is_vol and (ty.flags & @intCast(u8, 1)) != @intCast(u8, 0) and et.kind == TypeKind.array_type) {
+            var sc_ap = reg.array_items[@intCast(usize, et.payload_idx)];
+            if (sc_ap.elem == type_mod.TYPE_U8) { var s: []const u8 = "unsigned char*"; return s; }
+        }
         if (!is_vol) {
             if (et.kind == TypeKind.u8_type) { var s: []const u8 = "unsigned char*"; return s; }
             if (et.kind == TypeKind.u32_type) { var s: []const u8 = "unsigned int*"; return s; }

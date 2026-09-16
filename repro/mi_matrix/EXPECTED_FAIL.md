@@ -1,4 +1,82 @@
-# mi_matrix corpus — expected-fail manifest (v97 2026-09-16)
+# mi_matrix corpus — expected-fail manifest (v98 2026-09-16)
+
+## Task 0p (F) — decay the A1 `string_const` pointer-to-array emission (v98 2026-09-16)
+
+Track-4 Task 0p fixes the A1 emission defect classified by Task 0k (its fix #1):
+the C emitter rendered the A1 string-literal type `*const [N]u8` as a C
+**pointer-to-array** `unsigned char (*)[N]`, while a C string literal decays to
+`char*`, producing `+1360 -Wincompatible-pointer-types` corpus-wide. The fix is
+**emission-only**: `sf/src/c89_emit.zig` `getCTypeName` (the `ptr_type`/
+`many_ptr_type` arm) now renders a **const pointer to a `u8` array** as the plain
+element pointer `unsigned char*`. The LIR/sema type stays `*const [N]u8`
+(`materializeInto` classifies on it; the slice length is a separate temp). Genuine
+`*[N]T` pointers are non-const and unaffected; there is **no** genuine
+`*const [N]u8` in `sf/src` or the corpus (grep-verified), so the decay is exactly
+the string-literal type. This also fixes the module-level string const
+`ast.zig:127 zzz_astnode_sz` (a global emitted with the same `*const [N]u8`
+type). **No re-baseline; seed NOT rotated; the fixed point MOVES
+`f68e69dbac58d5c8ace9f367e199490c` -> `3f81ea143da726710ad47b6f08bbb13a`**
+(hop2 == hop3). Report:
+`.superpowers/sdd/2026-09-13-coroutine-integration-plan/task-0p-report.md`.
+
+**Warning census (662 dirs, user code, `-Wall -Wextra -fsyntax-only`).** Seed-built
+compiler `/tmp/t4p2/zig1_5_clean` (the only sanctioned build path,
+`scripts/seed/build_from_seed.sh`).
+
+| category | before 0p (post-0o2) | after 0p | Δ |
+|---|---|---|---|
+| `-Wincompatible-pointer-types` | 1382 | **16** | **−1366** |
+| `-Wint-conversion` | 42 | 42 | 0 |
+| `-Wsign-compare` | 17 | 17 | 0 |
+| `-Wunused-but-set-variable` | 8 | 8 | 0 |
+| `-Wparentheses` | 1 | 1 | 0 |
+| `function called through a non-compatible type` | 32 | 32 | 0 |
+| `comparison between pointer and integer` | 9 | 9 | 0 |
+| `this decimal constant is unsigned only in ISO C90` | 9 | 9 | 0 |
+| `integer constant is so large that it is unsigned` | 6 | 6 | 0 |
+| **total** | **1506** | **140** | **−1366** |
+
+Every non-pointer category is byte-identical; the entire delta is the A1
+`-Wincompatible-pointer-types` set.
+
+**The 16 residual pointer warnings are ALL pre-existing (declared, out of scope).**
+They are present in the pre-A1 `97cd5a03` census (pointer = 19) and come from
+**non-literal** pointer-to-array sources (`&array`, `@ptrCast`) — not the
+`string_const` temp — so the A1 decay correctly leaves them: `lisp_interpreter`,
+`lisp_interpreter_adv`, `lisp_interpreter_curr`, `lisp_interpreter_upgraded`
+(1 each, `*[4096]u8 -> []u8`); `rogue_mud`, `rogue_mud_upgraded` (1 each,
+`BspNode**`/`Task**`); `ptroint_arena_offset` (3, `*[64]u8 -> []u8`);
+`safe_bounds_inbounds_xmod`, `safe_bounds_slice_xmod` (1 each, `*[3]i32 -> []i32`);
+`typealias_mptr_xmod`, `typealias_pub_mptr_xmod` (1 each, `*[2]u8 -> [*]u8`);
+`volatile_add_accept_xmod` (1, `*[2]u32`); `repro/ptrcast_manyptr` (1,
+`*[4]u8 -> [*]u8`); plus the Task-0o2 fixture
+`strtod_endptr_wrongdecl_nonnull_xmod` (1, the deliberately-pinned wrong extern).
+Reconciliation: pre-A1 19 − 4 intended strtod deltas (the three
+`json_parser*` examples + `a1_ptrarray_strtod_xmod`, all fixed by 0o/0o2)
++ 1 new 0o2 fixture = **16**. These are pinned by the existing corpus fixtures
+above; not marked minor.
+
+**A1 fixtures (seed-built compiler).** `a1_strlit_ptrarray_warn_xmod` 0 pointer
+warnings, run `abc`; `a1_ptrarray_cchar_xmod` 0, run `97`;
+`a1_ptrarray_strtod_xmod` 0, run `1` (the strtod shape was fixed by 0o).
+
+**Runtime byte-identity (4-MD5 gate, re-verified).** Old (post-0o2) and new (0p)
+compilers produce identical streams; the old compiler reproduces the Task-0i
+goldens exactly:
+
+| program | stdout md5 | bytes |
+|---|---|---|
+| `game_of_life` (100 gens) | `fcbf7e7cead5082f0a8caadd5a8f0ff9` | 83490 |
+| `lisp_interpreter_curr` (feed `(+ 1 2)`/`(cons 1 2)`/`exit`) | `8dc783a3d766430c15993ab08cd0f7ec` | 16 |
+| `json_parser` (test.json CWD) | `8bda3d5a1ec07d14a301bc343df32bf8` | 228 |
+| `mud_server` stdout (demo `session.sh` canonical feed) | `66c8f0abb926cca7baf9a0d1692ab318` | 75 |
+| `mud_server` client bytes | `93147d0f0bbd983a9d844fea8b7a6fa7` | 158 |
+
+**Other gates.** Corpus class map **662 = 619 OK / 20 GREEN / 23 FAIL / 0 ICE /
+0 CRASH** — unchanged vs post-0o2. Self-compile closure `hop2 == hop3 ==
+3f81ea14…`; self emitted `-Wincompatible-pointer-types` **8409 → 0**;
+self `warning[3000]` = 0 (unchanged). `scripts/closeout/verify_upgraded.sh` →
+**CLOSEOUT OK** (all 12 verdict rows A1–A5, B1–B7 PASS).
 
 ## Task 0o2 (F) — fix the `json_parser` `strtod` declaration + pin the offending syntax (v97 2026-09-16)
 
