@@ -1357,6 +1357,22 @@ fn iceAddrOfLValueUnsupported(self: *LirLowerer, node_idx: u32) void {
     diag_mod.diagnosticCollectorFlushAndExit(self.ctx.diag, @intCast(u32, 3));
 }
 
+// Task 2f-F: does `temp` hold a pointer to a fixed array (a decayed
+// multi-dimensional row)? Used by the address-of index arm to decide between
+// `base + idx` (pointer arithmetic, correct for a genuine `*[N]T`) and the
+// element address `&(*base)[idx]` (correct for a decayed row pointer).
+fn tempTypeIsPtrToArray(self: *LirLowerer, temp: u32) u8 {
+    if (@intCast(usize, temp) >= self.hoisted_temps.len) return @intCast(u8, 0);
+    var tid = self.hoisted_temps.items[@intCast(usize, temp)].type_id;
+    if (tid == type_mod.TYPE_UNDEFINED) return @intCast(u8, 0);
+    var ty = self.ctx.registry.types_items[@intCast(usize, tid)];
+    if (ty.kind != type_mod.TypeKind.ptr_type and ty.kind != type_mod.TypeKind.many_ptr_type) return @intCast(u8, 0);
+    var pointee = self.ctx.registry.ptr_items[@intCast(usize, ty.payload_idx)].base;
+    var pty = self.ctx.registry.types_items[@intCast(usize, pointee)];
+    if (pty.kind == type_mod.TypeKind.array_type) return @intCast(u8, 1);
+    return @intCast(u8, 0);
+}
+
 fn lowerLValueAddr(self: *LirLowerer, lv_node_idx: u32, result_type: u32) u32 {
     var store = self.ctx.store;
     var lv_node = ast_mod.astStoreNodeAt(store, lv_node_idx);
@@ -1364,6 +1380,22 @@ fn lowerLValueAddr(self: *LirLowerer, lv_node_idx: u32, result_type: u32) u32 {
         var base_temp = lowerExpr(self, lv_node.child_0);
         base_temp = maybeExtractSlicePtr(self, lv_node.child_0, base_temp);
         var idx_temp = lowerExpr(self, lv_node.child_1);
+        // Task 2f-F: `&g[i][j]` where the base expression `g[i]` is a fixed
+        // array (decayed to a row pointer) must take the element address
+        // `&(*base)[j]`; a plain `base + j` would scale by the whole row.
+        var la_c0_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, lv_node.child_0);
+        var la_c0_is_array: u8 = @intCast(u8, 0);
+        if (la_c0_rt) |la_t| {
+            if (la_t != type_mod.TYPE_UNDEFINED and la_t != type_mod.TYPE_VOID) {
+                var la_c0ty = self.ctx.registry.types_items[@intCast(usize, la_t)];
+                if (la_c0ty.kind == type_mod.TypeKind.array_type) la_c0_is_array = @intCast(u8, 1);
+            }
+        }
+        if (la_c0_is_array != @intCast(u8, 0) and tempTypeIsPtrToArray(self, base_temp) != @intCast(u8, 0)) {
+            var la_atid = nextTemp(self, result_type);
+            emitInst(self, LirInst{ .load_index = .{ .name_id = @intCast(u32, 0), .base = base_temp, .index = idx_temp, .result = la_atid, .decay = @intCast(u8, 1) } });
+            return la_atid;
+        }
         var tid = nextTemp(self, result_type);
         emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = base_temp, .rhs = idx_temp, .result = tid } });
         return tid;
@@ -3113,7 +3145,37 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
              }
          }
          }
-        var tid = nextTemp(self, elem_type[0]);
+        // Task 2f-F: when the indexed element is itself a fixed array (a
+        // multi-dimensional row), materializing an array-typed temp would emit
+        // an illegal array-to-array C assignment. Decay the row to a pointer to
+        // the element array instead; the emitter renders `&base[idx]` (or
+        // `&(*base)[idx]`) and downstream indexing uses `(*base)[idx]`.
+        var ix_decay: u8 = @intCast(u8, 0);
+        var ix_tid_type = elem_type[0];
+        if (elem_type[0] != type_mod.TYPE_UNDEFINED and elem_type[0] != type_mod.TYPE_VOID) {
+            var ix_ety = self.ctx.registry.types_items[@intCast(usize, elem_type[0])];
+            if (ix_ety.kind == type_mod.TypeKind.array_type) {
+                // Base expression is itself a fixed-array value (a decayed
+                // multi-dimensional row) -> index within the pointed-to array
+                // (`&(*base)[idx]`). Otherwise the base's indexed element IS the
+                // array (`&base[idx]`, also correct for a genuine `*[N]T`).
+                var ix_c0_is_array: u8 = @intCast(u8, 0);
+                var ix_c0_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
+                if (ix_c0_rt) |ix_c0_t| {
+                    if (ix_c0_t != type_mod.TYPE_UNDEFINED and ix_c0_t != type_mod.TYPE_VOID) {
+                        var ix_c0_ty = self.ctx.registry.types_items[@intCast(usize, ix_c0_t)];
+                        if (ix_c0_ty.kind == type_mod.TypeKind.array_type) ix_c0_is_array = @intCast(u8, 1);
+                    }
+                }
+                if (ix_c0_is_array != @intCast(u8, 0) and tempTypeIsPtrToArray(self, base_temp) != @intCast(u8, 0)) {
+                    ix_decay = @intCast(u8, 1);
+                } else {
+                    ix_decay = @intCast(u8, 2);
+                }
+                ix_tid_type = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, elem_type[0], false);
+            }
+        }
+        var tid = nextTemp(self, ix_tid_type);
         var li_ni: u32 = @intCast(u32, 0);
         var src_ni = resolved_mod.resolvedSourceTableGet(self.ctx.resolved_types, node.child_0);
         if (src_ni) |sn| {
@@ -3130,7 +3192,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         }
         }
         if (base_temp != li_orig_base) { li_ni = @intCast(u32, 0); }
-        emitInst(self, LirInst{ .load_index = .{ .name_id = li_ni, .base = base_temp, .index = idx_temp, .result = tid } });
+        emitInst(self, LirInst{ .load_index = .{ .name_id = li_ni, .base = base_temp, .index = idx_temp, .result = tid, .decay = ix_decay } });
         var cli_m: []const u8 = "CLI:b"; pal.markerWrite(cli_m);
         var cli_bb: [10]u8 = undefined; var cli_bl = itoa_mod.itoa(base_temp, cli_bb[0..]); var cli_bs: usize = @intCast(usize, 9) - @intCast(usize, cli_bl); pal.markerWrite(cli_bb[cli_bs..@intCast(usize, 9)]);
         var cli_nm: []const u8 = "n"; pal.markerWrite(cli_nm);
@@ -6066,7 +6128,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             emitInst(self, LirInst{ .branch = .{ .cond = cmp_temp, .then_bb = body_bb, .else_bb = exit_bb } });
             self.current_bb = body_bb;
             var item_temp = nextTemp(self, elem_type[0]);
-            emitInst(self, LirInst{ .load_index = .{ .name_id = @intCast(u32, 0), .base = ptr_temp, .index = idx_temp, .result = item_temp } });
+            emitInst(self, LirInst{ .load_index = .{ .name_id = @intCast(u32, 0), .base = ptr_temp, .index = idx_temp, .result = item_temp, .decay = @intCast(u8, 0) } });
             if (ast_mod.astStoreNodePayload(store, node_idx) != @intCast(u32, 0)) { var fcaps = maybeDisambiguateCapture(self, ast_mod.astStoreNodePayload(store, node_idx), elem_type[0]); addLocalDecl(self, fcaps, elem_type[0], item_temp, self.scope_depth + @intCast(u32, 1), @intCast(u8, 1)); emitInst(self, LirInst{ .decl_local = .{ .name_id = fcaps, .type_id = elem_type[0], .temp = item_temp } }); }
             if (node.child_2 != @intCast(u32, 0)) { var icaps = maybeDisambiguateCapture(self, node.child_2, type_mod.TYPE_USIZE); addLocalDecl(self, icaps, type_mod.TYPE_USIZE, idx_temp, self.scope_depth + @intCast(u32, 1), @intCast(u8, 1)); emitInst(self, LirInst{ .decl_local = .{ .name_id = icaps, .type_id = type_mod.TYPE_USIZE, .temp = idx_temp } }); }
             self.block_terminated = @intCast(u8, 0);

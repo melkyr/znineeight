@@ -1,4 +1,100 @@
-# mi_matrix corpus — expected-fail manifest (v111 2026-09-16)
+# mi_matrix corpus — expected-fail manifest (v112 2026-09-16)
+
+## Track-4 Task 2f-F (F) — multi-dimensional fixed-array element access FIXED (v111 -> v112 2026-09-16)
+
+Track-4 Task 2f-F closes the silent-invalid-C defect pinned by Task 2f-I. **`sf/src`
+change** in four files: `sf/src/lir.zig` (new `load_index.decay: u8` field),
+`sf/src/lower.zig` (rvalue `index_access` decay + `lowerLValueAddr` index arm +
+new `tempTypeIsPtrToArray` helper), `sf/src/async_state_machine.zig` (carry the
+field through the coroutine remap), and `sf/src/c89_emit.zig`
+(`emitBaseIdxAccess` decay rendering; multi-dim `undefined`-init byte-wise zero
+and array-copy loops). Full report:
+`.superpowers/sdd/2026-09-13-coroutine-integration-plan/task-2f-report.md`.
+
+**What landed.**
+1. **Decay the multi-dim row to a pointer.** `lowerExpr`'s `index_access` arm
+   (`sf/src/lower.zig:3080`) now types the result of an index whose ELEMENT is a
+   fixed array as a pointer to that array (`*[N]T`) and emits `load_index` with
+   `decay` set, instead of materializing an array-typed temp. The emitter renders
+   `&(*base)[idx]` (decay 1: base is a decayed row pointer) or `&base[idx]`
+   (decay 2: the base's indexed element IS the array — also correct for a genuine
+   `*[N]T`). Downstream indexing uses `(*base)[idx]`, valid C89. This covers the
+   rvalue form and (through the shared base lowering) the store form at all
+   nesting levels.
+2. **Address-of form.** `lowerLValueAddr`'s index arm (`sf/src/lower.zig:1379`)
+   uses the same decay `load_index` when the base expression is a fixed array
+   (a decayed row) and the base temp is a pointer-to-array, so `&g[i][j]` emits
+   `&(*base)[j]` rather than the wrongly-scaled `base + j`. The 1-D `&g[i]` path
+   (array base, `BIN_ADD`) is unchanged.
+3. **Multi-dim `undefined`-init** (`sf/src/c89_emit.zig`): the `undefined_const`
+   array zero-fill and the `assign` array-copy loop now emit a byte-wise
+   `((unsigned char*)&dst)[_i] = ...` loop when the array's element is itself an
+   array (a row-by-row `dst[_i] = src[_i]` / `dst[_i] = 0` is illegal C89). The
+   1-D / struct-element emissions are byte-identical to before.
+4. The `Arr_*` array-typedef path (`getCTypeName` `sf/src/c89_emit.zig:710`) is
+   the (correct) declaration and was NOT changed.
+
+**Build (binding seed model; fixed point MOVES).**
+```
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/t2fF_fix2
+[seed] hop1 binary md5: 86c7f0007a0eb3a3352745f6813f017d
+[seed] hop2 binary md5: 7f9afa82deaa2356633b20a693282cf1
+[seed] hop3 binary md5: 7f9afa82deaa2356633b20a693282cf1
+[seed] three-hop closure OK (moving point): hop2 == hop3 == 7f9afa82deaa2356633b20a693282cf1
+```
+BASE `8a322dd9221077780202e8ac6dd6983a` → **NEW fixed point
+`7f9afa82deaa2356633b20a693282cf1`** (hop2 == hop3; the committed seed predates
+recent `sf/src`, so hop1 differs). Compiler under test =
+`/tmp/t2fF_fix2/zig1_5_clean` (hop1 binary; its sibling `lib/` carries the 9 std
+modules). `zig0` never invoked; seed rotation stays at Task 6.
+
+**Fixtures RED → GREEN** (`-ffast --dump-c89`; gcc `-m32 -std=c89`; link+run):
+
+| fixture | RED (`8a322dd9…`) | GREEN (`7f9afa82…`) |
+|---|---|---|
+| `multiarray_index_xmod` | dump rc=0, 4 `.c`, stderr empty; gcc `assignment to expression with array type` ×2 | dump rc=0, gcc clean, link+run rc=0, no stdout |
+| `multiarray_index_const_xmod` | same (constant `&g[2][0]` / `g[2][3]`) | same |
+| `multiarray_index_local_xmod` | 4 gcc errors (element access + `undefined`-init copy/zero) | dump rc=0, gcc clean, link+run rc=0, no stdout |
+| `multiarray_index_3d_xmod` | 4 gcc errors (two chained array temps) | same |
+| `multiarray_index_struct_control_xmod` | same (`[5][4]Cell`, Task-3/4 shape) | same |
+| `multiarray_index_flat_control_xmod` | **OK** (compile class) | stays **OK** (compile class) |
+
+GREEN emitted evidence (`multiarray_index_xmod`): `zT_8 = &zG_g[i];`
+`zT_10 = &(*zT_8)[zT_9];` `zT_15 = (*zT_14)[j];` (no array-to-array assignment).
+`multiarray_index_3d_xmod`: `zT_12 = &zG_g[i];` `zT_13 = &(*zT_12)[j];`
+`zT_15 = &(*zT_13)[zT_14];` `zT_21 = (*zT_20)[k];`.
+`multiarray_index_local_xmod`: `((unsigned char*)&zT_1)[_i] = 0;` /
+`((unsigned char*)&g)[_i] = ((unsigned char*)&zT_1)[_i];`.
+
+**Flat-control note (pre-existing, NOT a 2f-F regression).** The flat-1D control's
+fixture body passes both `&g[i]` AND `i` to `sink`, whose body does `p[i] = 7`, so
+it writes `g[i + i]` and then asserts `g[i] == 7` — its declared "run rc=0"
+contract is wrong. Measured on BOTH the BASE `8a322dd9` and the fix `7f9afa82`:
+dump rc=0, gcc clean, link rc=0, **run rc=133** (`panic: ... element value
+mismatch`). The control's corpus class stays **OK** (compile-only classifier), as
+required; the fixture body was NOT modified (out of Task 2f-F scope).
+
+**Corpus `-ffast` dump+gcc classifier (`/tmp/t4bf_classify.sh`), 694 dirs** (run
+with `zig1_5_clean` so `<exe_dir>/lib` resolves std):
+
+| | BASE `8a322dd9` | fix `7f9afa82` | delta |
+|---|---|---|---|
+| dirs | 694 | 694 | 0 |
+| OK | 637 | 642 | +5 |
+| GREEN | 27 | 27 | 0 |
+| FAIL | 30 | 25 | −5 |
+| ICE | 0 | 0 | 0 |
+| CRASH | 0 | 0 | 0 |
+
+Per-dir `join` diff = **exactly** the five intended fixtures FAIL→OK. All 689
+other dirs class-identical (zero regression). No new diagnostic code.
+
+**Emit-support / self-compile / goldens.**
+- `bash scripts/check_emit_support.sh /tmp/t2fF_fix2/zig1_5_clean` → **5/5** support files byte-identical.
+- Self-compile: `--markers --dump-c89 sf/src/main.zig` → rc=0, **48 `.c`**, 0 `error[3000]`, 0 errors, 0 PANIC.
+- `bash scripts/closeout/verify_upgraded.sh /tmp/t2fF_fix2/zig1_5_clean` → **`CLOSEOUT OK`** (A1–A5, B1–B7); rogue q `3fb6709e…`, rogue move `b3c5b0e1…`.
+- 4-MD5 runtime byte-identical: gol `fcbf7e7cead5082f0a8caadd5a8f0ff9`, lisp `8dc783a3d766430c15993ab08cd0f7ec`, json `8bda3d5a1ec07d14a301bc343df32bf8`, mud_server stdout `66c8f0abb926cca7baf9a0d1692ab318` / client bytes `93147d0f0bbd983a9d844fea8b7a6fa7`.
+- No seed rotation (Task 6 owns rotation).
 
 ## Track-4 Task 2f-I (I) — multi-dimensional fixed-array element access pinned (v110 -> v111 2026-09-16)
 

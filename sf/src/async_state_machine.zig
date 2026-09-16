@@ -321,7 +321,7 @@ fn remapInst(b: *Build, inst: LirInst, sw_off: u32) LirInst {
         .call => |x| return LirInst{ .call = .{ .callee = x.callee + b.base, .args_start = x.args_start + b.base, .args_count = x.args_count, .result = x.result + b.base } },
         .load_field => |x| return LirInst{ .load_field = .{ .base = x.base + b.base, .field_id = x.field_id, .result = x.result + b.base, .name_id = x.name_id } },
         .store_field => |x| return LirInst{ .store_field = .{ .base = x.base + b.base, .field_id = x.field_id, .value = x.value + b.base, .name_id = x.name_id } },
-        .load_index => |x| return LirInst{ .load_index = .{ .base = x.base + b.base, .index = x.index + b.base, .result = x.result + b.base, .name_id = x.name_id } },
+        .load_index => |x| return LirInst{ .load_index = .{ .base = x.base + b.base, .index = x.index + b.base, .result = x.result + b.base, .name_id = x.name_id, .decay = x.decay } },
         .load => |x| return LirInst{ .load = .{ .ptr = x.ptr + b.base, .result = x.result + b.base } },
         .store => |x| return LirInst{ .store = .{ .ptr = x.ptr + b.base, .value = x.value + b.base } },
         .addr_of => |x| return LirInst{ .addr_of = .{ .operand = x.operand + b.base, .result = x.result + b.base } },

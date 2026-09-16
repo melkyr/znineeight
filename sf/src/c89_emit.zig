@@ -186,7 +186,12 @@ fn isLargeModuleVarArrayType(emitter: *C89Emitter, tid: u32) bool {
 
 /// Emit indexed access in C89: `base[idx]` or `(*base)[idx]` depending on whether base is ptr-to-array.
 /// kind: 0 = load (emit result = X;), 1 = assign (emit X = src;)
-fn emitBaseIdxAccess(emitter: *C89Emitter, base_temp: u32, idx_temp: u32, name_or_src: []const u8, kind: u8) void {
+/// decay: (kind 0 only) the indexed element is itself a fixed array and the
+/// result temp is a pointer to it, so emit the element ADDRESS instead of an
+/// illegal array-to-array copy. 1 = base is a decayed multi-dimensional row
+/// pointer (`&(*base)[idx]`); 2 = base's indexed element is the array itself
+/// (`&base[idx]`, also correct for a genuine `*[N]T`).
+fn emitBaseIdxAccess(emitter: *C89Emitter, base_temp: u32, idx_temp: u32, name_or_src: []const u8, kind: u8, decay: u8) void {
     bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
     var base_name = resolveTempName(emitter, base_temp);
     var idx_name = resolveTempName(emitter, idx_temp);
@@ -196,7 +201,15 @@ fn emitBaseIdxAccess(emitter: *C89Emitter, base_temp: u32, idx_temp: u32, name_o
         bufferedWriterWrite(&emitter.writer, name_or_src);   // result name
         var eq: []const u8 = " = ";
         bufferedWriterWrite(&emitter.writer, eq);
-        if (is_ptr_arr == @intCast(u8, 1)) {
+        if (decay == @intCast(u8, 1)) {
+            var d1a: []const u8 = "&(*"; bufferedWriterWrite(&emitter.writer, d1a);
+            bufferedWriterWrite(&emitter.writer, base_name);
+            var d1b: []const u8 = ")["; bufferedWriterWrite(&emitter.writer, d1b);
+        } else if (decay == @intCast(u8, 2)) {
+            var d2a: []const u8 = "&"; bufferedWriterWrite(&emitter.writer, d2a);
+            bufferedWriterWrite(&emitter.writer, base_name);
+            var d2b: []const u8 = "["; bufferedWriterWrite(&emitter.writer, d2b);
+        } else if (is_ptr_arr == @intCast(u8, 1)) {
             var lp: []const u8 = "(*";  bufferedWriterWrite(&emitter.writer, lp);
             bufferedWriterWrite(&emitter.writer, base_name);
             var rp: []const u8 = ")["; bufferedWriterWrite(&emitter.writer, rp);
@@ -5953,6 +5966,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             }
             var is_arr: u8 = @intCast(u8, 0);
             var arr_len: u32 = @intCast(u32, 0);
+            var arr_elem_is_arr: u8 = @intCast(u8, 0);
             var tj_ca: usize = @intCast(usize, 0);
             while (tj_ca < emitter.current_fn.hoisted_temps.len) : (tj_ca += @intCast(usize, 1)) {
                 var ht_ca = emitter.current_fn.hoisted_temps.items[tj_ca];
@@ -5962,11 +5976,30 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                         is_arr = @intCast(u8, 1);
                         var ap = emitter.registry.array_items[@intCast(usize, dty.payload_idx)];
                         arr_len = ap.length;
+                        var aety = emitter.registry.types_items[@intCast(usize, ap.elem)];
+                        if (aety.kind == type_mod.TypeKind.array_type) { arr_elem_is_arr = @intCast(u8, 1); }
                     }
                     break;
                 }
             }
             if (is_arr == @intCast(u8, 1)) {
+                if (arr_elem_is_arr != @intCast(u8, 0)) {
+                    // Task 2f-F: a multi-dimensional fixed array cannot be
+                    // copied row-by-row in C89 (array-to-array assignment is
+                    // illegal). Copy the whole storage byte-wise instead.
+                    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                    var mdb: []const u8 = "{\n    unsigned int _i = 0;\n    while (_i < sizeof(";
+                    bufferedWriterWrite(&emitter.writer, mdb);
+                    bufferedWriterWrite(&emitter.writer, dst);
+                    var mdm: []const u8 = ")) {\n        ((unsigned char*)&";
+                    bufferedWriterWrite(&emitter.writer, mdm);
+                    bufferedWriterWrite(&emitter.writer, dst);
+                    var mdm2: []const u8 = ")[_i] = ((unsigned char*)&";
+                    bufferedWriterWrite(&emitter.writer, mdm2);
+                    bufferedWriterWrite(&emitter.writer, src);
+                    var mde: []const u8 = ")[_i];\n        _i++;\n    }\n}\n";
+                    bufferedWriterWrite(&emitter.writer, mde);
+                } else {
                 bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                 var loop_begin: []const u8 = "{\n";
                 bufferedWriterWrite(&emitter.writer, loop_begin);
@@ -5986,6 +6019,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                 bufferedWriterWrite(&emitter.writer, src);
                 var rb: []const u8 = "[_i];\n        _i++;\n    }\n}\n";
                 bufferedWriterWrite(&emitter.writer, rb);
+                }
             } else {
                 var as_cast: []const u8 = "";
                 var as_dty: u32 = @intCast(u32, 0xFFFFFFFF);
@@ -6039,7 +6073,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             var idx = resolveTempName(emitter, a.index);
             var src = resolveTempName(emitter, a.src);
             var src_name = resolveTempName(emitter, a.src);
-            emitBaseIdxAccess(emitter, a.base, a.index, src_name, @intCast(u8, 1));
+            emitBaseIdxAccess(emitter, a.base, a.index, src_name, @intCast(u8, 1), @intCast(u8, 0));
         },
         .jump => |bb| {
             var jxp_m: []const u8 = "JXP\n"; pal.markerWrite(jxp_m);
@@ -6576,7 +6610,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
           },
           .load_index => |li| {
             var result = resolveTempName(emitter, li.result);
-            emitBaseIdxAccess(emitter, li.base, li.index, result, @intCast(u8, 0));
+            emitBaseIdxAccess(emitter, li.base, li.index, result, @intCast(u8, 0), li.decay);
         },
         .load => |l| {
             var vflow_ldv: []const u8 = "VFLOW:ldv\n"; pal.markerWrite(vflow_ldv);
@@ -7100,6 +7134,21 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             // this arm only renders the historical `-ffast` deterministic zeroing.
             if (uct_ty.kind == type_mod.TypeKind.array_type) {
                  var uap = emitter.registry.array_items[@intCast(usize, uct_ty.payload_idx)];
+                 var uct_elem_ty = emitter.registry.types_items[@intCast(usize, uap.elem)];
+                 if (uct_elem_ty.kind == type_mod.TypeKind.array_type) {
+                     // Task 2f-F: a multi-dimensional fixed array is zeroed
+                     // byte-wise; a row-by-row `result[_i] = 0;` would assign a
+                     // scalar to an array (illegal C89).
+                     bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                     var uz0: []const u8 = "{\n    unsigned int _i = 0;\n    while (_i < sizeof(";
+                     bufferedWriterWrite(&emitter.writer, uz0);
+                     bufferedWriterWrite(&emitter.writer, result);
+                     var uz1: []const u8 = ")) {\n        ((unsigned char*)&";
+                     bufferedWriterWrite(&emitter.writer, uz1);
+                     bufferedWriterWrite(&emitter.writer, result);
+                     var uz2: []const u8 = ")[_i] = 0;\n        _i++;\n    }\n}\n";
+                     bufferedWriterWrite(&emitter.writer, uz2);
+                 } else {
                  var loop_begin: []const u8 = "{\n";
                  bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                  bufferedWriterWrite(&emitter.writer, loop_begin);
@@ -7152,12 +7201,13 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                           }
                       }
                       bufferedWriterWrite(&emitter.writer, final_ender);
-                  } else {
-                     bufferedWriterWrite(&emitter.writer, result);
-                     var lb: []const u8 = "[_i] = 0;\n        _i++;\n    }\n}\n";
-                     bufferedWriterWrite(&emitter.writer, lb);
-                 }
-            } else {
+                   } else {
+                      bufferedWriterWrite(&emitter.writer, result);
+                      var lb: []const u8 = "[_i] = 0;\n        _i++;\n    }\n}\n";
+                      bufferedWriterWrite(&emitter.writer, lb);
+                  }
+                  }
+             } else {
                 bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                 bufferedWriterWrite(&emitter.writer, result);
                 var s: []const u8 = " = 0;\n";

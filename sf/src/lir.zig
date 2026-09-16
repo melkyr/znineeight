@@ -44,7 +44,7 @@ pub const LirInst = union(enum) {
     call: struct { callee: u32, args_start: u32, args_count: u32, result: u32 },
     load_field: struct { base: u32, field_id: u32, result: u32, name_id: u32 },
     store_field: struct { base: u32, field_id: u32, value: u32, name_id: u32 },
-    load_index: struct { base: u32, index: u32, result: u32, name_id: u32 },
+    load_index: struct { base: u32, index: u32, result: u32, name_id: u32, decay: u8 },
     load: struct { ptr: u32, result: u32 },
     store: struct { ptr: u32, value: u32 },
     addr_of: struct { operand: u32, result: u32 },
