@@ -1702,6 +1702,23 @@ fn lowerFieldStore(self: *LirLowerer, fa_node_idx: u32, value_temp: u32, diag_no
             }
         }
     }
+    // Task 2a-F: a nested module-alias base (or a module-typed global) in store
+    // position is not an l-value to take the address of; resolve the owning
+    // module and store the global directly.
+    if (self.ctx.has_symbols != @intCast(u8, 0)) {
+        var fs_mod = resolveModuleBase(self, fa_node.child_0);
+        if (fs_mod != @intCast(u32, 0)) {
+            var fs_mem = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, fs_mod, field_name_id);
+            if (fs_mem) |fsms| {
+                if (fsms.kind == sym_mod.SymbolKind.global) {
+                    if ((@intCast(u16, fsms.flags) & @intCast(u16, 0x04)) == @intCast(u16, 0)) {
+                        emitInst(self, LirInst{ .store_global = .{ .name_id = fsms.name_id, .module_id = fs_mod, .value = value_temp } });
+                        return;
+                    }
+                }
+            }
+        }
+    }
     var base_temp: u32 = undefined;
     var resolved_base: ?u32 = null;
     if (child_0_node.kind == AstKind.index_access) {
@@ -2373,6 +2390,78 @@ fn asyncEmitLoadAt(self: *LirLowerer, base_temp: u32, offset: u32, field_type: u
     var v = nextTemp(self, field_type);
     emitInst(self, LirInst{ .load = .{ .ptr = pt, .result = v } });
     return v;
+}
+
+// Task 2a-F: resolve a field-access base expression to the module it denotes,
+// if any. A base is a module reference when it is a module symbol (a direct
+// `@import` alias) or when its resolved type is `module_type` (a nested module
+// alias such as `mid.leaf`, or a module-typed global such as `const x =
+// mid.leaf`). Returns the module id, or 0 when the base is not a module.
+fn resolveModuleBase(self: *LirLowerer, base_node_idx: u32) u32 {
+    var store = self.ctx.store;
+    var bn = ast_mod.astStoreNodeAt(store, base_node_idx);
+    if (self.ctx.has_symbols != @intCast(u8, 0) and bn.kind == AstKind.ident_expr) {
+        var nid = ast_mod.astStoreIdentifier(store, base_node_idx);
+        var sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, nid);
+        if (sym) |s| {
+            if (s.kind == sym_mod.SymbolKind.module) return s.module_id;
+            if (s.type_id != @intCast(u32, 0) and @intCast(usize, s.type_id) < self.ctx.registry.types_len) {
+                var sty = self.ctx.registry.types_items[@intCast(usize, s.type_id)];
+                if (sty.kind == type_mod.TypeKind.module_type) return sty.module_id;
+            }
+        }
+    }
+    var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, base_node_idx);
+    if (rt) |t| {
+        if (t != type_mod.TYPE_UNDEFINED and t != type_mod.TYPE_VOID and @intCast(usize, t) < self.ctx.registry.types_len) {
+            var ty = self.ctx.registry.types_items[@intCast(usize, t)];
+            if (ty.kind == type_mod.TypeKind.module_type) return ty.module_id;
+        }
+    }
+    return @intCast(u32, 0);
+}
+
+// Task 2a-F: lower a value-position member of a module reached through an alias
+// chain (the member emit previously only reachable from a direct module ident).
+// Returns TEMP_NONE when the field is absent or is not a value member.
+fn lowerModuleMemberValue(self: *LirLowerer, target_mod: u32, field_name_id: u32) u32 {
+    var res_sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, target_mod, field_name_id);
+    if (res_sym) |ts| {
+        if (ts.kind == sym_mod.SymbolKind.type_alias) {
+            var res_type_id = ts.type_id;
+            if (res_type_id != @intCast(u32, 0)) {
+                var gtemp = nextTemp(self, res_type_id);
+                return gtemp;
+            }
+        } else if (ts.kind == sym_mod.SymbolKind.function) {
+            return materializeFnRef(self, ts);
+        } else if (ts.kind == sym_mod.SymbolKind.global) {
+            var gbl_type = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, ts.decl_node);
+            var gbl_tid = if (gbl_type) |gt| gt else type_mod.TYPE_UNDEFINED;
+            if ((@intCast(u16, ts.flags) & @intCast(u16, 1)) == @intCast(u16, 0)) {
+                var gd_node = ast_mod.astStoreNodeAt(self.ctx.store, ts.decl_node);
+                if (gd_node.child_1 != 0) {
+                    var gi_node = ast_mod.astStoreNodeAt(self.ctx.store, gd_node.child_1);
+                    if (gi_node.kind == AstKind.int_literal or gi_node.kind == AstKind.char_literal) {
+                        var gval = ast_mod.astStoreIntValue(self.ctx.store, gd_node.child_1);
+                        var gtid = nextTemp(self, gbl_tid);
+                        emitInst(self, LirInst{ .int_const = .{ .value = gval, .result = gtid } });
+                        return gtid;
+                    }
+                    if (gi_node.kind == AstKind.float_literal) {
+                        var gval = self.ctx.store.float_values.items[@intCast(usize, ast_mod.astStoreNodePayload(self.ctx.store, gd_node.child_1))];
+                        var gtid = nextTemp(self, gbl_tid);
+                        emitInst(self, LirInst{ .float_const = .{ .value = gval, .result = gtid } });
+                        return gtid;
+                    }
+                }
+            }
+            var gtemp = nextTemp(self, gbl_tid);
+            emitInst(self, LirInst{ .load_global = .{ .name_id = ts.name_id, .module_id = target_mod, .result = gtemp } });
+            return gtemp;
+        }
+    }
+    return TEMP_NONE;
 }
 
 fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
@@ -3310,43 +3399,19 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 }
                 if (s.kind == sym_mod.SymbolKind.module) {
                     var target_mod = s.module_id;
-                    var res_sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, target_mod, field_name_id);
-                    if (res_sym) |ts| {
-                        if (ts.kind == sym_mod.SymbolKind.type_alias) {
-                            var res_type_id = ts.type_id;
-                            if (res_type_id != @intCast(u32, 0)) {
-                                var gtemp = nextTemp(self, res_type_id);
-                                return gtemp;
-                            }
-                        } else if (ts.kind == sym_mod.SymbolKind.function) {
-                            return materializeFnRef(self, ts);
-                        } else if (ts.kind == sym_mod.SymbolKind.global) {
-                            var gbl_type = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, ts.decl_node);
-                            var gbl_tid = if (gbl_type) |gt| gt else type_mod.TYPE_UNDEFINED;
-                            if ((@intCast(u16, ts.flags) & @intCast(u16, 1)) == @intCast(u16, 0)) {
-                                var gd_node = ast_mod.astStoreNodeAt(store, ts.decl_node);
-                                if (gd_node.child_1 != 0) {
-                                    var gi_node = ast_mod.astStoreNodeAt(store, gd_node.child_1);
-                                    if (gi_node.kind == AstKind.int_literal or gi_node.kind == AstKind.char_literal) {
-                                        var gval = ast_mod.astStoreIntValue(store, gd_node.child_1);
-                                        var gtid = nextTemp(self, gbl_tid);
-                                        emitInst(self, LirInst{ .int_const = .{ .value = gval, .result = gtid } });
-                                        return gtid;
-                                    }
-                                    if (gi_node.kind == AstKind.float_literal) {
-                                        var gval = store.float_values.items[@intCast(usize, ast_mod.astStoreNodePayload(store, gd_node.child_1))];
-                                        var gtid = nextTemp(self, gbl_tid);
-                                        emitInst(self, LirInst{ .float_const = .{ .value = gval, .result = gtid } });
-                                        return gtid;
-                                    }
-                                }
-                            }
-                            var gtemp = nextTemp(self, gbl_tid);
-                            emitInst(self, LirInst{ .load_global = .{ .name_id = ts.name_id, .module_id = target_mod, .result = gtemp } });
-                            return gtemp;
-                        }
-                    }
+                    var mod_mem = lowerModuleMemberValue(self, target_mod, field_name_id);
+                    if (mod_mem != TEMP_NONE) return mod_mem;
                 }
+            }
+        }
+        // Task 2a-F: a nested module-alias base (or a module-typed global) is
+        // not a value expression; resolve the owning module and emit the member
+        // directly, mirroring the direct-module ident path above.
+        if (self.ctx.has_symbols != @intCast(u8, 0)) {
+            var mod_base = resolveModuleBase(self, node.child_0);
+            if (mod_base != @intCast(u32, 0)) {
+                var mod_base_mem = lowerModuleMemberValue(self, mod_base, field_name_id);
+                if (mod_base_mem != TEMP_NONE) return mod_base_mem;
             }
         }
         var base_temp = lowerExpr(self, node.child_0);

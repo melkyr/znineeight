@@ -1,4 +1,46 @@
-# mi_matrix corpus — expected-fail manifest (v102 2026-09-16)
+# mi_matrix corpus — expected-fail manifest (v103 2026-09-16)
+
+## Track-4 Task 2a-F (F) — nested module value-position gap FIXED (v103 2026-09-16)
+
+Task 2a-F closes the Task 2a-I gap. **`sf/src` change** (`sf/src/lower.zig` only;
+no sema/type-resolver change): the field-access value path and the field-store
+path now resolve a nested module-alias base (or a module-typed global) to its
+owning module and emit the member, via two new helpers
+`resolveModuleBase` (`sf/src/lower.zig:2400`) and `lowerModuleMemberValue`
+(`:2427`). The existing direct-module ident path is refactored to call the same
+member emit; the call-path chain walk (`:3787-3813`) is unchanged. The l-value
+store is handled in `lowerFieldStore` (`:1708`) by emitting `store_global`
+directly (no address is taken).
+
+**Fixed point MOVED** `286c9011691ccd39403534019baa12c6` →
+**`43d41bfb903d56c153ebf653131aef6d`** (three-hop closure hop2 == hop3 from the
+committed seed; seed rotation stays at Task 6, `zig0` not invoked).
+
+**Nine pinned ICE dirs RED → OK** (dump rc=0, 5 `.c`, gcc -m32 -std=c89 clean,
+link+run rc=0, no stdout):
+`module_value_pos_xmod`, `module_value_scalar_xmod`, `module_value_types_xmod`,
+`module_value_enum_member_xmod`, `module_value_var_xmod`,
+`module_value_varstore_xmod`, `module_value_alias3_xmod`,
+`module_value_alias2alias_xmod`, `module_value_positions_xmod`. The three
+controls (`module_value_direct1_xmod`, `module_value_fncall_xmod`,
+`module_value_local_xmod`) stay OK.
+
+**Residual declared gaps (unchanged):**
+- `module_value_arraysize_xmod` stays **FAIL**: a non-literal / field-access
+  expression in ARRAY-SIZE position is rejected earlier (`error[20]`), which is
+  NESTING-INDEPENDENT (a 1-level direct import fails identically; a module-level
+  named const `[N]u8` is GREEN). Out of 2a-F scope; the fixture header documents
+  the corrected blocker.
+- Address-of a module global through a nested alias (e.g.
+  `&mid.leaf.counter`) is not pinned; no `addr_of_global` LIR instruction
+  exists, so the store is intercepted before the l-value path. Not exercised by
+  any corpus dir.
+
+**Corpus `-s0` sweep (675 dirs, dump classifier):** baseline 621 OK / 27 GREEN /
+18 FAIL / 9 ICE / 0 CRASH → 630 OK / 27 GREEN / 18 FAIL / 0 ICE / 0 CRASH. The
+ONLY per-dir movement is the nine `module_value_*` ICE→OK flips; all 662
+pre-existing dirs are class-identical (zero movement). (`check_emit_support.sh`
+5/5; `verify_upgraded.sh` → `CLOSEOUT OK`.)
 
 ## Track-4 Task 2a-I (I) — nested module value-position access gap pinned (v101; fix round 1 v102 2026-09-16)
 

@@ -5,16 +5,15 @@
 // const` through it (`std.async.HEADER_SIZE`) is a value-position access whose
 // base is a NESTED module reference.
 //
-// RED (current, fixed point 286c9011691ccd39403534019baa12c6):
-//   error[3042]: non-value base expression in field access
-//   warning[3023]: module used as value expression
-//   dump rc=2, 0 `.c`. Corpus classifier: `error[3042]` => ICE (QUICK_REF.md).
-// Root: `sf/src/lower.zig` field_access lowers the base as a value; a nested
-// module alias is not recognized as a module reference (only a DIRECT module
-// ident is, at lower.zig:3400-3416 / sema semantic_analyzer.zig:659).
-//
-// Expected GREEN contract: `n == 16`; dump rc=0, gcc -m32 -std=c89 clean,
-// link+run rc=0, no stdout. Tasks 2/4/5 read `std.async.HEADER_SIZE`.
+// GREEN (Task 2a-F, fixed point 43d41bfb903d56c153ebf653131aef6d): `n == 16`;
+// dump rc=0, 5 `.c`, gcc -m32 -std=c89 clean, link+run rc=0, no stdout.
+// Was RED at 286c9011691ccd39403534019baa12c6: error[3042]: non-value base
+// expression in field access + warning[3023]: module used as value expression,
+// dump rc=2, 0 `.c` (corpus classifier ICE).
+// Fix: `sf/src/lower.zig` field_access now resolves a nested module-alias base
+// (or module-typed global) to its owning module and emits the member
+// (`resolveModuleBase` + `lowerModuleMemberValue`), mirroring the direct-module
+// ident path. Tasks 2/4/5 read `std.async.HEADER_SIZE`.
 //
 // Reference: deferred as "Amendment 7, Res 4" in
 // docs/superpowers/specs/2026-09-13-async-prelude-and-feasibility-design.md:474.

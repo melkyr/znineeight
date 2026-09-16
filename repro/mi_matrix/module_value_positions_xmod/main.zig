@@ -4,13 +4,10 @@
 // All three positions lower the base `mid.leaf` as a value and fail the same
 // way (position does not change the outcome); the lowerer reports all three:
 //
-// RED (current, fixed point 286c9011691ccd39403534019baa12c6):
-//   error[3042]: non-value base expression in field access   (x3)
-//   warning[3023]: module used as value expression           (x3)
-//   dump rc=2, 0 `.c`. Corpus classifier: ICE (`error[3042]`).
-//
-// Expected GREEN contract: all three checks hold; dump rc=0, gcc clean,
-// link+run rc=0, no stdout.
+// GREEN (Task 2a-F, fixed point 43d41bfb903d56c153ebf653131aef6d): all three
+// checks hold; dump rc=0, 5 `.c`, gcc clean, link+run rc=0, no stdout.
+// Was RED at 286c9011691ccd39403534019baa12c6: error[3042] (x3) +
+// warning[3023] (x3), dump rc=2, 0 `.c` (corpus classifier ICE).
 const mid = @import("mid.zig");
 
 fn sink(n: usize) void {

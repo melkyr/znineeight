@@ -4,15 +4,14 @@
 // l-value path (`lowerLValueAddr`, sf/src/lower.zig:1399-1448) cannot resolve a
 // module-typed base, so the field lookup misses and the ICE fires:
 //
-// RED (current, fixed point 286c9011691ccd39403534019baa12c6):
-//   warning[3023]: module used as value expression
-//   error[3043]: internal: unsupported address-of l-value (node N)
-//   dump rc=3, 0 `.c`. Corpus classifier: ICE (`error[3043]`).
-// (Distinct from the read case `error[3042]` — the fix must cover BOTH the
-// value path and the l-value path.)
-//
-// Expected GREEN contract: `counter == 9`; dump rc=0, gcc clean, link+run
-// rc=0, no stdout.
+// GREEN (Task 2a-F, fixed point 43d41bfb903d56c153ebf653131aef6d):
+// `counter == 9`; dump rc=0, 5 `.c`, gcc clean, link+run rc=0, no stdout.
+// Was RED at 286c9011691ccd39403534019baa12c6: warning[3023] + error[3043]:
+// internal: unsupported address-of l-value (node N), dump rc=3, 0 `.c`
+// (corpus classifier ICE).
+// Fix: `lowerFieldStore` resolves a nested module-alias base (or module-typed
+// global) to its owning module and emits `store_global` directly (no l-value
+// address is taken).
 const mid = @import("mid.zig");
 
 pub fn main() void {

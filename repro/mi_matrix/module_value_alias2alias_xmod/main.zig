@@ -5,13 +5,11 @@
 // type is `module_type`, so lowering returns TEMP_NONE at the module/fn-type
 // guard (sf/src/lower.zig:3100-3106) and the field access reports:
 //
-// RED (current, fixed point 286c9011691ccd39403534019baa12c6):
-//   error[3042]: non-value base expression in field access
-//   dump rc=2, 0 `.c` (NOTE: no warning[3023] here — the module is reached
-//   through a typed global, not a bare module ident). Corpus classifier: ICE.
-//
-// Expected GREEN contract: `n == 16`; dump rc=0, gcc clean, link+run rc=0,
-// no stdout.
+// GREEN (Task 2a-F, fixed point 43d41bfb903d56c153ebf653131aef6d): `n == 16`;
+// dump rc=0, 5 `.c`, gcc clean, link+run rc=0, no stdout.
+// Was RED at 286c9011691ccd39403534019baa12c6: error[3042] only (no
+// warning[3023] — the module is reached through a typed global, not a bare
+// module ident), dump rc=2, 0 `.c` (corpus classifier ICE).
 const mid = @import("mid.zig");
 
 pub fn main() void {

@@ -3,10 +3,10 @@
 // `var a: [mid.leaf.HEADER_SIZE]u8 = undefined;` asks the parser/analyzer to use
 // a nested-module `pub const` as an array length.
 //
-// RED (current, fixed point 286c9011691ccd39403534019baa12c6): the construct is
-// blocked EARLIER by an UNRELATED pre-existing gap — a NON-LITERAL /
-// FIELD-ACCESS expression in array-size position is rejected at parse/analyze
-// time:
+// STILL RED at the Task 2a-F fixed point 43d41bfb903d56c153ebf653131aef6d
+// (declared residual gap, out of 2a-F scope): the construct is blocked EARLIER
+// by an UNRELATED pre-existing gap — a NON-LITERAL / FIELD-ACCESS expression in
+// array-size position is rejected at parse/analyze time:
 //   error[20]: identifier 'a' is not declared or imported in this module
 //   dump rc=2, 0 `.c`. Corpus classifier: FAIL (error[20] is not in the ICE
 //   regex).

@@ -5,14 +5,11 @@
 // an enum-member value access on it. The member access lowers the whole base as
 // a value and fails.
 //
-// RED (current, fixed point 286c9011691ccd39403534019baa12c6):
-//   error[3042]: non-value base expression in field access
-//   warning[3023]: module used as value expression
-//   dump rc=2, 0 `.c`. Corpus classifier: ICE (`error[3042]`).
+// GREEN (Task 2a-F, fixed point 43d41bfb903d56c153ebf653131aef6d):
+// `@enumToInt(c) == 1`; dump rc=0, 5 `.c`, gcc clean, link+run rc=0, no stdout.
+// Was RED at 286c9011691ccd39403534019baa12c6: error[3042] + warning[3023],
+// dump rc=2, 0 `.c` (corpus classifier ICE).
 // (`std.async.TaskState.ready` is the real-std instance of this shape.)
-//
-// Expected GREEN contract: `@enumToInt(c) == 1`; dump rc=0, gcc clean,
-// link+run rc=0, no stdout.
 const mid = @import("mid.zig");
 
 pub fn main() void {
