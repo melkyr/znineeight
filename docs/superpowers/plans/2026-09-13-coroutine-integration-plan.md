@@ -1063,8 +1063,11 @@ Emit is **rc=0 with 0 target diagnostics** (silent); gcc rejects `assignment to 
 **Origin (Task 2f-F review, 2026-09-16).** Task 2f-F fixed direct multi-dimensional fixed-array element access, but the review found the **same array-to-array defect class** is still reachable, and neither residual was declared (fixture + `EXPECTED_FAIL.md` + report) as the standing rule requires:
 - **(a) for-loop iteration:** `for (multiDimArray) |row|` keeps `decay = 0` and an array-typed `item_temp` (`sf/src/lower.zig:6128-6131`) — the array-to-array emission reached through iteration, so the class is not fully closed.
 - **(b) pointer-to-array element access:** genuine `pp: *[4]u8; pp[0][1] = 3;` is broken (pre-existing; BASE `8a322dd9` and fix `7f9afa82` byte-identical) — a separate frontend/lowering quirk.
+- **(c) field store through a multi-dim element (SILENT WRONG CODE):** `lowerFieldStore`'s `index_access` base branch (`sf/src/lower.zig:1780-1787`) builds the field base as a raw `ptr + idx` (`BIN_ADD`) on the decayed row pointer, so `gc[1][2].v = 5` scales by the **whole row** (32 B instead of 8). gcc emits only `-Wincompatible-pointer-types` (a warning) → the classifier stays OK. Reachable from the Track-4 `client_cells` (`[5][80*50]Cell`) shape. (Found by Task 2g-I Q5.)
+- **(d) multi-dim array-literal init:** `assign_index` (`sf/src/lower.zig:5048`/`:5254`) assigns element arrays array-to-array. (Q5.)
+- **(e) row store into a multi-dim element:** `assign_index` (`sf/src/lower.zig:1564`); `g[0] = row;` array-to-array. (Q5.)
 
-**Operator ruling (2026-09-16):** fix **both**, via an I task + F task (this pair).
+**Operator rulings (2026-09-16):** (1) fix (a) + (b) via an I task + F task (this pair); (2) for **(b)**, check the official Zig docs — **if Zig rejects it, Z98 must too**. Verified against the Zig langref (master): `pp[0][1]` does **not** compile in real Zig — `*[N]T` supports index syntax `array_ptr[i]` but `pp[0]` yields the **element** (`u8`), not the array; the element is reached via `pp[1]` or `pp.*[1]`. Therefore **(b) is a hard `error[3000]`** (matching real Zig and Z98 spec `Language_Spec_Z98.md:32`), not a compile-clean decay. (3) **fold (c)/(d)/(e) into Task 2g-F.**
 
 #### Task 2g-I: investigate + pin (no `sf/src` change)
 
@@ -1079,8 +1082,8 @@ Emit is **rc=0 with 0 target diagnostics** (silent); gcc rejects `assignment to 
 
 #### Task 2g-F: fix both (`sf/src` change; fixed point MOVES)
 
-- [ ] **Step 1: Fix** (a) the for-loop iteration array-to-array emission and (b) the `pp: *[N]T` element access, reusing the 2f-F `decay` mechanism where possible.
-- [ ] **Step 2: Fixtures RED→GREEN**; full corpus sweep (class-map delta = intended dirs only — any other movement is a regression to STOP on); `check_emit_support.sh` 5/5; self-compile closure (48 `.c`, 0 `[3000]`).
+- [ ] **Step 1: Fix** (a) the for-loop iteration array-to-array emission (reuse the 2f-F `decay` mechanism); **(b) make `pp: *[N]T` element access a hard `error[3000]`** (matching real Zig — the element is reached via `pp[1]`/`pp.*[1]`); **(c) fix the `lowerFieldStore` field-store base** so `gc[i][j].v` scales by the element, not the whole row (silent wrong code); **(d)** the multi-dim array-literal init; **(e)** the row store `g[i] = row`. Do NOT apply an examples-only workaround.
+- [ ] **Step 2: Fixtures RED→GREEN** (the 2g-I fixtures + new (c)/(d)/(e) fixtures; (b) becomes the hard error); full corpus sweep (class-map delta = intended dirs only — any other movement is a regression to STOP on); `check_emit_support.sh` 5/5; self-compile closure (48 `.c`, 0 `[3000]`).
 - [ ] **Step 3: Re-verify** the four goldens + `CLOSEOUT OK`; 4-MD5 byte-identical; record the new fixed point. Seed rotation stays at Task 6.
 
 **Sequencing gate:** Task 4 MUST NOT start until Task 2g-F is landed.
