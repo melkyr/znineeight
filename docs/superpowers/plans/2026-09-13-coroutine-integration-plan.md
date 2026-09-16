@@ -1208,25 +1208,25 @@ Expected: `CLOSEOUT OK`.
 
 ---
 
-### Task 4b: 1-task scheduler root-frame nested-loop suspend quirk — I then F
+### Task 4b: uninitialized `is_param` frame-layout buffer — non-deterministic live-local drops — I then F
 
-**Origin (Task 4a-F, 2026-09-16).** While fixing the `rogue_mud` client-task wiring (option B: inline the row loop), Task 4a-F exposed a pre-existing compiler/runtime quirk: **a coroutine whose nested-loop `@asyncSuspend` lives in the ROOT frame only advances correctly with ≥2 registered tasks (`scheduler.count`); a 1-task scheduler re-sends one row per tick.** The example registers 5 client tasks (and a 5-task probe gives the correct GREEN), so the shipped example is unaffected — but the quirk is real and could bite Task 5 (`mud_server` per-client tasks) or any 1-task scheduler.
+**Origin (Task 4a-F / Task 4b-I, 2026-09-16).** Task 4a-F exposed a coroutine that seemed to advance only with ≥2 registered tasks. Task 4b-I **disproved that premise** (the single-task fixture is GREEN today) and pinned the **real** root cause: an **uninitialized `is_param` buffer** at `sf/src/async_frame_layout.zig:562` (allocated via the no-fill `allocU8Raw`), so the LIVE analysis reads garbage `is_param` bytes and **non-deterministically drops live locals** from coroutine frames. Evidence: `m8` vs `m8b` (the drop follows analysis order), `m11` (two scheduler tasks, deterministic `701 800` vs expected `8 800`), and the same shape via direct `@asyncResume` persists its locals — so `tick`/the state machine are correct; the frame layout's `is_param` read is the bug.
 
-**Operator ruling (2026-09-16):** add a new I/F pair (this task) to investigate + **fix** the quirk before continuing. Task 4a-F stays as implemented (option B).
+**Operator ruling (2026-09-16):** amend this task to the real defect; the I task pins it with a deterministic RED (a ≥2-coroutine interleave, which is the reproducible form — NOT the brief's single-task contract), and Task 4b-F zero-inits `is_param` + audits the alloc primitives. Task 4a-F stays as implemented (option B).
 
 #### Task 4b-I: investigate + pin (no `sf/src` change)
 
-- [ ] **Step 1: Fixture set** (`repro/mi_matrix/`, auto-listed; each documents RED-now + the GREEN contract):
-  - `async_single_task_suspend_xmod/` — ONE registered task whose coroutine has a nested `while`/`for` loop with `@asyncSuspend` in the ROOT frame; tick to completion and assert the correct number of iterations (RED today: re-sends one row per tick).
-  - `async_two_task_suspend_xmod/` — the ≥2-task control (already correct).
-  - variants: suspend inside the loop body vs. at the loop tail; a non-loop single suspend (control); a nested coroutine (child frame) with the same shape.
-- [ ] **Step 2: Questionnaire.** Answer in the report: (Q1) the exact mechanism (how `tick` + `scheduler.count` interact with a root-frame loop suspend — `sf/src/std_async.zig` `tick`, `sf/src/async_state_machine.zig`); (Q2) why ≥2 tasks masks it (the resume/state bookkeeping vs the loop back-edge); (Q3) whether the bug is in the scheduler's `tick` loop, the state machine's resume-block routing, or the frame layout's live analysis; (Q4) the minimal fix locus; (Q5) whether it also affects implicit awaits (not just `@asyncSuspend`) and nested coroutines; (Q6) corpus/diagnostic delta.
+- [ ] **Step 1: Fixture set** (`repro/mi_matrix/`, auto-listed; each documents RED-now + the GREEN contract). The reproducible RED form is a **≥2-coroutine interleave** whose frame layout depends on the garbage `is_param` bytes:
+  - `async_frame_isparam_xmod/` — the deterministic RED (e.g. the `m11` shape: two scheduler tasks, expected `8 800`, observed `701 800`).
+  - `async_frame_isparam_order_xmod/` — the `m8`/`m8b` analysis-order variant (the drop follows the order, proving the garbage-byte cause).
+  - controls: the same shape via direct `@asyncResume` (persists its locals — GREEN); a single-task non-interleaved shape (GREEN).
+- [ ] **Step 2: Questionnaire.** Answer in the report: (Q1) the exact uninitialized-read (`async_frame_layout.zig:562-567` `allocU8Raw` + the `is_param` reads); (Q2) why the drop is non-deterministic (garbage bytes vs analysis order); (Q3) why `@asyncResume` is unaffected; (Q4) the minimal fix (zero-init `is_param`) and whether `allocU8Raw`/`allocU32` are used elsewhere uninitialized (audit); (Q5) whether the frame SIZE (P2) is also affected or only the live-field set; (Q6) corpus/diagnostic delta.
 - [ ] **Step 3: Declare.** Add the fixtures; record the RED in `repro/mi_matrix/EXPECTED_FAIL.md` (v117→v118) or the appropriate known-issue location.
 - [ ] **Step 4: Report + present the fix surface for Task 4b-F.** No `sf/src` change.
 
-#### Task 4b-F: fix the quirk (`sf/src` change; fixed point MOVES)
+#### Task 4b-F: fix (`sf/src` change; fixed point MOVES)
 
-- [ ] **Step 1: Fix** so a 1-task scheduler advances a root-frame nested-loop `@asyncSuspend` coroutine correctly.
+- [ ] **Step 1: Fix** — zero-init `is_param` (`sf/src/async_frame_layout.zig:562-567`) so the LIVE analysis is deterministic; audit the `allocU8Raw`/`allocU32` primitives for other uninitialized reads and fix any found (or declare them).
 - [ ] **Step 2: Fixtures RED→GREEN**; full corpus sweep (class-map delta = intended dirs only — any other movement is a regression to STOP on); `check_emit_support.sh` 5/5; self-compile closure (48 `.c`, 0 `[3000]`).
 - [ ] **Step 3: Re-verify** the four goldens + `CLOSEOUT OK`; 4-MD5 byte-identical; record the new fixed point. Seed rotation stays at Task 6.
 
