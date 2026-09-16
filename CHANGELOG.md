@@ -32,6 +32,25 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Multi-Module Coroutine Steps**: synthesized `__Z98Step_<f>` functions are now emitted in the module that owns the suspending function in the per-module (`--output-dir`) emission path, fixing `undeclared identifier` link failures for coroutines outside the last-imported module.
+- **Coroutine Library (`std.async`)**: `Scheduler.tasks` is now `[*]*Task`; `addTask` stores the caller's task handle (no by-value copy), and `awaitTask` traps when called outside a suspending context.
+
+### Changed
+- **String-Literal Type**: string literals are now typed `*const [N]u8` (the real byte length in the type) instead of a bare `*const c_char`; the C89 emitter decays the temporary to a plain element pointer so generated C stays warning-clean.
+- **Implicit `enum`->`int` Rejected**: converting an enum to an integer without `@enumToInt` is now a hard `error[3000]` in variable declarations, assignments, return statements, and call arguments. The compiler's own sources were migrated to `@enumToInt`.
+- **Invalid-Zig Coercions Rejected**: implicit `*T`->`[*]T` (variable declarations and assignments), array element/length mismatch, error-set subset mismatch, and bare pointer->slice are now hard `error[3000]` (previously tolerated or only caught by the C compiler).
+
+### Fixed
+- **String-Literal Slice Length**: switch-expression and `if`-expression prongs with string-literal bodies now recover the real byte length (previously the coerced slice length was silently 1, truncating strings such as `Goodbye!` to `G`).
+- **Un-Annotated Switch/If Inference**: string-literal prongs/branches of an un-annotated `switch`/`if` expression now infer `[]const u8` instead of the literal pointer type.
+- **Error-Union / Optional Payload Coercion**: string literals assigned to `E![]const u8` / `?[]const u8` payloads now coerce correctly.
+- **False-Positive `warning[3000]`**: removed 48 spurious type-mismatch warnings across 12 checker arms (slice `.ptr`->`[*]T`, enum `==`/`!=`, enum-literal expected type, `is_extern` error-set equality, `noreturn` coercion, tuple->array, error-set subset, `if`-expression expected type, `@cVaArg` argument type, `@enumToInt` backing type, `undefined`/`noreturn`, and bare enum-literal lowering).
+- **`[*]*T` Element Field Store**: fixed an `error[3043]` internal error on stores through an element of a `[*]*T` / `[]*T` base.
+- **Bare Enum Literal**: corrected the runtime lowering of a bare plain-enum literal to its member value.
+- **`strtod` Null Optional**: a direct `null` optional pointer argument is now emitted as `(void*)NULL` instead of a payload-typed temporary.
+- **`strtod` `endptr` Declaration**: the canonical `examples/z98/json_parser*` copies now declare `endptr` as `?*[*]c_char`, matching libc's `char**`.
+
 ## [0.13.0] - "2-Propanol"
 
 ### Added
