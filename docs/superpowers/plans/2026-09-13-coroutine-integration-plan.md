@@ -29,7 +29,7 @@
 - **Corpus gate:** `bash scripts/corpus/list_corpus_dirs.sh` must still list both `examples/z98/rogue_mud/` and `examples/z98/mud_server/`; classify by gcc exit code, never empty-stderr (`docs/sf/QUICK_REF.md:134-154`); zero class movement on the two examples.
 - **Edits only via `edit`/`fastedit`** (no `sed`/`python` on repo files; `/tmp` scratch is unrestricted). Re-read the target region immediately before every `fastedit`.
 - **Never stage** `mnemoria/` or `.zig1_*.tmp`.
-- **Pinned consumed surface (landed Track 3, verified 2026-09-15).** Track 2 builtins: `@asyncFrameSize(fn) u32`, `@asyncInit(ctx: *Context, buf: [*]u8, fn, args: ?*const void) *void`, `@asyncResume(frame: *void, arg: ?*void) ?*void`, `@asyncSuspend(data: ?*void) *void`. Track 3 `std.async` as landed in `sf/src/std_async.zig`: `Context` (`HEADER_SIZE = 16`, `pool_base = ctx+16`, `contextInit(buf: []u8) *Context`; buffers MUST be 8-aligned — back them with a `u64` array, never a bare `[N]u8`), `TaskState`, `Task { frame: *void, ctx: *Context, state, cancel_requested, result: *void, arg: *void, waiting_on: *Task, has_waiting_on: bool }` (**no `arena`/`arena_capacity`/`arena_used` fields, no `step` field**), `Scheduler`, `schedulerInit(tasks: []Task) Scheduler`, `addTask(s, t) bool`, `tick(s: *Scheduler) FrameError!void` (**returns an error union — every call site must `try`/`catch`**), `suspend(s, t)`, `awaitTask(s, t) void` (empty-scheduler `@panic`), `cancel(s, t)`, `cancelAll(s)`, `waitAll(s) FrameError!void`. No `step` parameter; `tick`/`waitAll` self-dispatch via `@asyncResume(t.frame, t.arg)`. `@asyncInit` under `-fsafe` traps when `buf.len < @asyncFrameSize(fn)` for compile-time-known array buffers. **Task 0b** changes `Scheduler.tasks` to `[*]*Task` and `schedulerInit(tasks: []*Task)`, so `addTask` stores the caller's `*Task` (no by-value copy) and callers may keep their own `Task` handles.
+- **Pinned consumed surface (landed Track 3, verified 2026-09-15).** Track 2 builtins: `@asyncFrameSize(fn) u32`, `@asyncInit(ctx: *Context, buf: [*]u8, fn, args: ?*const void) *void`, `@asyncResume(frame: *void, arg: ?*void) ?*void`, `@asyncSuspend(data: ?*void) *void`. Track 3 `std.async` as landed in `sf/src/std_async.zig`: `Context` (`HEADER_SIZE = 16`, `pool_base = ctx+16`, `contextInit(buf: []u8) *Context`; buffers MUST be 8-aligned — back them with a `u64` array, never a bare `[N]u8`), `TaskState`, `Task { frame: *void, ctx: *Context, state, cancel_requested, result: *void, arg: *void, waiting_on: *Task, has_waiting_on: bool }` (**no `arena`/`arena_capacity`/`arena_used` fields, no `step` field**), `Scheduler`, `schedulerInit(tasks: []Task) Scheduler`, `addTask(s, t) bool`, `tick(s: *Scheduler) FrameError!void` (**returns an error union — every call site must `try`/`catch`**), `suspend(s, t)`, `awaitTask(s, t) void` (empty-scheduler `@panic`), `cancel(s, t)`, `cancelAll(s)`, `waitAll(s) FrameError!void`. No `step` parameter; `tick`/`waitAll` self-dispatch via `@asyncResume(t.frame, t.arg)`. `@asyncInit` under `-fsafe` traps when `buf.len < @asyncFrameSize(fn)` for compile-time-known array buffers. **Task 0b** changes `Scheduler.tasks` to `[*]*Task` and `schedulerInit(tasks: []*Task)`, so `addTask` stores the caller's `*Task` (no by-value copy) and callers may keep their own `Task` handles. **Caller-side ABI (Amendment 3, B1/B2/B3):** the `@asyncInit` args argument is `@ptrCast(*const void, &record)` — a plain `*const void`, NEVER `?*const void` (a `?*const void` is a non-scalar optional struct and emits invalid C89; the non-optional `*const void` coerces into the optional parameter). `@asyncInit` copies the record **positionally into the coroutine's parameters** (`sf/src/lower.zig:4362-4386`), so each coroutine's params ARE the record's fields — e.g. `npcCoroutine(na: *NpcArgs)` + record `{ na: *NpcArgs }`, `clientFrameCoroutine(ctx: *std.async.Context, cfa: *ClientFrameArgs)` + record `{ ctx, cfa }`, `clientCoroutine(cta: *ClientTaskArgs)` + record `{ cta }`. Root-frame arenas MUST start at `std.async.HEADER_SIZE` (the 16-byte `Context` header occupies `buf[0..16]`; `pool_base = ctx+16`); a root-frame arena bound at `buf[0..]` aliases the header and corrupts frame 0.
 - **Cross-track ABI closeout check (binding).** The `Context` header is 16 bytes (`used@0`, `capacity@4`, `oom@8`, 4-byte pad, `pool_base = ctx+16`); the compiler's `CTX_POOL_OFF` MUST equal 16; every frame size MUST be padded to 8; and buffers passed to `contextInit`/`@asyncInit` MUST be 8-aligned. Task 6's closeout MUST re-verify these agree with the landed Track-2/Track-3 surface (the Track-2 plan Task 8 Step 3b and Track-3 plan Task 5 Step 4b carry the same check).
 - **Pre-conversion blocker — multi-module `__Z98Step_<f>` emission gap (RESOLVED by Task 0).** With >1 module, `@asyncInit` targeting a coroutine in a NON-LAST module referenced `__Z98Step_<f>` but the emitter never emitted it (it walks `lir_slots` in contiguous per-module runs, and the synthesized steps are appended after the module loop). Task 0 fixes the emitter to emit each step in the module that owns it; `repro/mi_matrix/async_step_nonlast_xmod` flips from EXPECTED-FAIL to PASS. Tasks 2-5 MUST NOT dispatch until Task 0 is complete.
 - **Spec of record:** `docs/superpowers/specs/2026-09-13-coroutine-integration-design.md` (Track 4 subspec); parent `docs/superpowers/specs/2026-09-13-async-prelude-and-feasibility-design.md` §12.6/§13/§14.2.
@@ -591,7 +591,7 @@ git commit -m "test(coroutine): Track4 pre-conversion golden harness (Track4)"
 
 **Interfaces:**
 - Consumes: `std.async.Context`, `std.async.Scheduler`, `std.async.tick`, `@asyncFrameSize`, `@asyncInit`, `@asyncSuspend`, `sand_mod.sand_alloc`.
-- Produces: `NpcArgs`, `npcStep(na)`, `npcCoroutine(ctx, args)`, `spawnEnemies(ctx, sched, tasks: []*std.async.Task, args, dungeon, frame_arena, path_arena) usize`, `updateEnemies(sched) FrameError!void`.
+- Produces: `NpcArgs`, `NpcCoroutineArgs`, `npcStep(na)`, `npcCoroutine(na: *NpcArgs)`, `spawnEnemies(ctx, sched, tasks: []*std.async.Task, args: []NpcArgs, recs: []NpcCoroutineArgs, dungeon, frame_arena, path_arena) usize`, `updateEnemies(sched) FrameError!void`.
 
 **Binding pre-step (post-0-series compiler rebuild).** The `/tmp/t4_ref` compiler built in Task 1 predates the Task 0/0b series, so its `lib/std_async.zig` is pre-0b (value-array scheduler). Rebuild it from the current seed before Task 2:
 ```bash
@@ -654,8 +654,13 @@ fn npcStep(na: *NpcArgs) void {
     }
 }
 
-pub fn npcCoroutine(ctx: *std.async.Context, args: *void) void {
-    const na = @ptrCast(*NpcArgs, args);
+// B3 (option a): `@asyncInit` copies an args record POSITIONALLY into the
+// coroutine's parameters, so the record's fields ARE the coroutine's params
+// (fixtures: `caller(out: *i32)` + `CArgs{ out }`). `npcCoroutine` therefore
+// takes the `NpcArgs` pointer directly, and the record is `{ na: *NpcArgs }`.
+pub const NpcCoroutineArgs = struct { na: *NpcArgs };
+
+pub fn npcCoroutine(na: *NpcArgs) void {
     while (true) {
         npcStep(na);
         _ = @asyncSuspend(null);
@@ -663,20 +668,22 @@ pub fn npcCoroutine(ctx: *std.async.Context, args: *void) void {
 }
 
 pub fn spawnEnemies(ctx: *std.async.Context, sched: *std.async.Scheduler,
-    tasks: []*std.async.Task, args: []NpcArgs, dungeon: *scenario.Dungeon_t,
+    tasks: []*std.async.Task, args: []NpcArgs, recs: []NpcCoroutineArgs,
+    dungeon: *scenario.Dungeon_t,
     frame_arena: *sand_mod.Sand, path_arena: *sand_mod.Sand) usize {
     var n: usize = 0;
     var i: usize = 1;
     while (i < dungeon.entity_count and n < tasks.len) : (i += 1) {
         args[n] = NpcArgs{ .dungeon = dungeon, .entity_idx = i, .arena = path_arena };
+        recs[n] = NpcCoroutineArgs{ .na = &args[n] };
         const sz = @intCast(usize, @asyncFrameSize(npcCoroutine));
         // S10: root frames come from a PERMANENT arena, never the per-turn
         // temp_arena that sand_reset reclaims.
         const frame = sand_mod.sand_alloc(frame_arena, sz, 8) catch return n;
-        tasks[n].frame = @asyncInit(ctx, @ptrCast([*]u8, frame), npcCoroutine, @ptrCast(?*const void, &args[n]));
+        tasks[n].frame = @asyncInit(ctx, @ptrCast([*]u8, frame), npcCoroutine, @ptrCast(*const void, &recs[n]));
         tasks[n].ctx = ctx;
-        tasks[n].arg = @ptrCast(*void, &args[n]);
-        tasks[n].result = @ptrCast(*void, &args[n]);
+        tasks[n].arg = @ptrCast(*void, &recs[n]);
+        tasks[n].result = @ptrCast(*void, &recs[n]);
         tasks[n].cancel_requested = false;
         tasks[n].waiting_on = tasks[n];
         tasks[n].has_waiting_on = false;
@@ -700,10 +707,12 @@ const MAX_NPCS: usize = 16;
 var npc_tasks: [MAX_NPCS]std.async.Task = undefined;
 var npc_task_ptrs: [MAX_NPCS]*std.async.Task = undefined;
 var npc_args: [MAX_NPCS]combat_mod.NpcArgs = undefined;
+var npc_recs: [MAX_NPCS]combat_mod.NpcCoroutineArgs = undefined;
 var npc_sched: std.async.Scheduler = undefined;
 var client_frame_tasks: [5]std.async.Task = undefined;
 var client_frame_task_ptrs: [5]*std.async.Task = undefined;
 var client_frame_args: [5]ClientFrameArgs = undefined;
+var client_frame_recs: [5]ClientFrameCoroutineArgs = undefined;
 var client_cells: [5][80 * 50]ui_mod.Cell = undefined;
 var client_sched: std.async.Scheduler = undefined;
 // S10: root frames live in a PERMANENT arena over this 8-aligned backing,
@@ -718,10 +727,10 @@ After the enemy-placement loop (`:79-86`), bind the permanent arena + context an
     while (k < MAX_NPCS) : (k += 1) {
         npc_task_ptrs[k] = &npc_tasks[k];
     }
-    var async_arena = sand_mod.sand_init(@ptrCast([*]u8, &async_storage)[0 .. 32 * 1024 * 8], true);
+    var async_arena = sand_mod.sand_init(@ptrCast([*]u8, &async_storage)[std.async.HEADER_SIZE .. 32 * 1024 * 8], true);
     var async_ctx: *std.async.Context = std.async.contextInit(@ptrCast([*]u8, &async_storage)[0 .. 32 * 1024 * 8]);
     npc_sched = std.async.schedulerInit(npc_task_ptrs[0..]);
-    _ = combat_mod.spawnEnemies(async_ctx, &npc_sched, npc_task_ptrs[0..], npc_args[0..], &dungeon, &async_arena, &temp_arena);
+    _ = combat_mod.spawnEnemies(async_ctx, &npc_sched, npc_task_ptrs[0..], npc_args[0..], npc_recs[0..], &dungeon, &async_arena, &temp_arena);
 ```
 Replace both `combat_mod.updateEnemies(&temp_arena, &dungeon);` calls (`:207`, `:258`) with:
 ```zig
@@ -831,8 +840,12 @@ pub const ClientFrameArgs = struct {
     cells: [*]ui_mod.Cell,
 };
 
-pub fn clientFrameCoroutine(ctx: *std.async.Context, args: *void) void {
-    const cfa = @ptrCast(*ClientFrameArgs, args);
+// B3 (option a): the `@asyncInit` args record's fields ARE the coroutine's
+// parameters. `clientFrameCoroutine` needs both the task `ctx` (to forward to
+// the socket-writer coroutine) and the frame args.
+pub const ClientFrameCoroutineArgs = struct { ctx: *std.async.Context, cfa: *ClientFrameArgs };
+
+pub fn clientFrameCoroutine(ctx: *std.async.Context, cfa: *ClientFrameArgs) void {
     const sock = cfa.server.clients[cfa.client_idx].socket;
 
     const rows = @intCast(usize, cfa.dungeon.height) + 1;
@@ -912,7 +925,7 @@ In `main.zig`, after `async_ctx` is created, replace the Task 2 spawn block with
         npc_task_ptrs[k] = &npc_tasks[k];
     }
     npc_sched = std.async.schedulerInit(npc_task_ptrs[0..]);
-    _ = combat_mod.spawnEnemies(async_ctx, &npc_sched, npc_task_ptrs[0..], npc_args[0..], &dungeon, &async_arena, &temp_arena);
+    _ = combat_mod.spawnEnemies(async_ctx, &npc_sched, npc_task_ptrs[0..], npc_args[0..], npc_recs[0..], &dungeon, &async_arena, &temp_arena);
 
     var ck: usize = 0;
     while (ck < @intCast(usize, 5)) : (ck += 1) {
@@ -924,12 +937,13 @@ In `main.zig`, after `async_ctx` is created, replace the Task 2 spawn block with
         // S11: each client builds into its OWN cells buffer.
         client_frame_args[ci] = ClientFrameArgs{ .server = &server, .dungeon = &dungeon,
             .client_idx = ci, .cells = @ptrCast([*]ui_mod.Cell, &client_cells[ci][0]) };
+        client_frame_recs[ci] = ClientFrameCoroutineArgs{ .ctx = async_ctx, .cfa = &client_frame_args[ci] };
         const csz = @intCast(usize, @asyncFrameSize(clientFrameCoroutine));
         const cframe = sand_mod.sand_alloc(&async_arena, csz, 8) catch return;
-        client_frame_task_ptrs[ci].frame = @asyncInit(async_ctx, @ptrCast([*]u8, cframe), clientFrameCoroutine, @ptrCast(?*const void, &client_frame_args[ci]));
+        client_frame_task_ptrs[ci].frame = @asyncInit(async_ctx, @ptrCast([*]u8, cframe), clientFrameCoroutine, @ptrCast(*const void, &client_frame_recs[ci]));
         client_frame_task_ptrs[ci].ctx = async_ctx;
-        client_frame_task_ptrs[ci].arg = @ptrCast(*void, &client_frame_args[ci]);
-        client_frame_task_ptrs[ci].result = @ptrCast(*void, &client_frame_args[ci]);
+        client_frame_task_ptrs[ci].arg = @ptrCast(*void, &client_frame_recs[ci]);
+        client_frame_task_ptrs[ci].result = @ptrCast(*void, &client_frame_recs[ci]);
         client_frame_task_ptrs[ci].cancel_requested = false;
         client_frame_task_ptrs[ci].waiting_on = client_frame_task_ptrs[ci];
         client_frame_task_ptrs[ci].has_waiting_on = false;
@@ -1004,8 +1018,11 @@ pub const ClientTaskArgs = struct {
     rooms: [*]Room,
 };
 
-pub fn clientCoroutine(ctx: *std.async.Context, args: *void) void {
-    const cta = @ptrCast(*ClientTaskArgs, args);
+// B3 (option a): the `@asyncInit` args record's fields ARE the coroutine's
+// parameters; the record is `{ cta: *ClientTaskArgs }`.
+pub const ClientCoroutineArgs = struct { cta: *ClientTaskArgs };
+
+pub fn clientCoroutine(cta: *ClientTaskArgs) void {
     const p = cta.player;
     while (true) {
         if (!p.is_active) return;
@@ -1050,13 +1067,14 @@ Add module-scope state after `rooms` (`:31`):
 var client_tasks: [MAX_CLIENTS]std.async.Task = undefined;
 var client_task_ptrs: [MAX_CLIENTS]*std.async.Task = undefined;
 var client_args: [MAX_CLIENTS]ClientTaskArgs = undefined;
+var client_recs: [MAX_CLIENTS]ClientCoroutineArgs = undefined;
 var client_sched: std.async.Scheduler = undefined;
 // 8-aligned backing; a bare [N]u8 is 1-aligned and trips contextInit's @panic.
 var async_storage: [32 * 1024]u64 = undefined;
 ```
 After the `players` initialization loop (`:90-95`), bind the permanent arena + context and pre-mark the slots:
 ```zig
-    var async_arena = std_arena.init(@ptrCast([*]u8, &async_storage)[0 .. 32 * 1024 * 8]);
+    var async_arena = std_arena.init(@ptrCast([*]u8, &async_storage)[std.async.HEADER_SIZE .. 32 * 1024 * 8]);
     var async_ctx: *std.async.Context = std.async.contextInit(@ptrCast([*]u8, &async_storage)[0 .. 32 * 1024 * 8]);
     client_sched = std.async.schedulerInit(client_task_ptrs[0..]);
     i = 0;
@@ -1074,6 +1092,7 @@ In the accept path (`:121-150`), when a free slot is found, replace the player a
                         players[i] = Player{ .socket = client, .room_id = @intCast(u8, 0),
                             .buffer = undefined, .pos = @intCast(usize, 0), .is_active = true };
                         client_args[i] = ClientTaskArgs{ .player = &players[i], .rooms = &rooms };
+                        client_recs[i] = ClientCoroutineArgs{ .cta = &client_args[i] };
                         const csz = @intCast(usize, @asyncFrameSize(clientCoroutine));
                         const cframe = std_arena.alloc(&async_arena, csz) catch {
                             const full2: []const u8 = "Server is full.\r\n";
@@ -1083,10 +1102,10 @@ In the accept path (`:121-150`), when a free slot is found, replace the player a
                             i += 1;
                             continue;
                         };
-                        client_task_ptrs[i].frame = @asyncInit(async_ctx, @ptrCast([*]u8, cframe), clientCoroutine, @ptrCast(?*const void, &client_args[i]));
+                        client_task_ptrs[i].frame = @asyncInit(async_ctx, @ptrCast([*]u8, cframe), clientCoroutine, @ptrCast(*const void, &client_recs[i]));
                         client_task_ptrs[i].ctx = async_ctx;
-                        client_task_ptrs[i].arg = @ptrCast(*void, &client_args[i]);
-                        client_task_ptrs[i].result = @ptrCast(*void, &client_args[i]);
+                        client_task_ptrs[i].arg = @ptrCast(*void, &client_recs[i]);
+                        client_task_ptrs[i].result = @ptrCast(*void, &client_recs[i]);
                         client_task_ptrs[i].cancel_requested = false;
                         client_task_ptrs[i].waiting_on = client_task_ptrs[i];
                         client_task_ptrs[i].has_waiting_on = false;
@@ -1260,7 +1279,7 @@ git commit -m "chore(coroutine): Track4 golden battery + fallback adjudication (
 
 **Placeholder scan:** no `TBD`/`TODO`/"add error handling"/"similar to Task N"; every code step shows the code and every command shows expected evidence. The only enumerated-by-reference item is the landed Track 3 initializer/field-name surface, which the Global Constraints pinned-surface amendment rule covers explicitly (naming-only amendments).
 
-**Type consistency:** `NpcArgs`/`npcStep`/`npcCoroutine`/`spawnEnemies`/`updateEnemies` are defined in Task 2 and consumed with the same names in Task 4. `ClientArgs`/`drawToSocketCoroutine` and `ClientFrameArgs`/`clientFrameCoroutine` are defined in Task 3 and consumed in Task 4. `ClientTaskArgs`/`clientCoroutine` are defined in Task 5. `npc_sched`/`client_sched`/`npc_tasks`/`client_frame_tasks`/`async_ctx`/`async_arena`/`async_storage`/`client_cells` are introduced in Task 2/3/4 and used consistently. `tick(s)` (returns `FrameError!void`) / `awaitTask(s, t)` signatures match the landed Track 3 surface in every call site. Tasks 0/0b precede everything; the landed surface is pinned in Global Constraints.
+**Type consistency:** `NpcArgs`/`npcStep`/`npcCoroutine`/`spawnEnemies`/`updateEnemies` are defined in Task 2 and consumed with the same names in Task 4. `ClientArgs`/`drawToSocketCoroutine` and `ClientFrameArgs`/`clientFrameCoroutine` are defined in Task 3 and consumed in Task 4. `ClientTaskArgs`/`clientCoroutine` are defined in Task 5. `npc_sched`/`client_sched`/`npc_tasks`/`client_frame_tasks`/`async_ctx`/`async_arena`/`async_storage`/`client_cells` are introduced in Task 2/3/4 and used consistently. `tick(s)` (returns `FrameError!void`) / `awaitTask(s, t)` signatures match the landed Track 3 surface in every call site. Tasks 0/0b precede everything; the landed surface is pinned in Global Constraints. Coroutine arg records `NpcCoroutineArgs`/`ClientFrameCoroutineArgs`/`ClientCoroutineArgs` and their `npc_recs`/`client_frame_recs`/`client_recs` storage are introduced in Tasks 2/4/5; each coroutine's params ARE the record's fields (Amendment 3 B3), and every `@asyncInit` caller cast is `@ptrCast(*const void, …)` (B1).
 
 ## Amendments
 
@@ -1309,3 +1328,13 @@ The pre-flight scan (`.superpowers/sdd/2026-09-13-coroutine-integration-plan/pro
 **Cat 3 — S13 (docs-only).** Compiler diagnostics go to stderr; there is no `em/dump.log`. Every task's evidence now captures `> em/stderr.log 2>&1` and greps `em/stderr.log`. (Operator shorthand `2>&1 > em/stderr.log` reordered to actually capture stderr.)
 
 **S17 — FLAGGED, awaiting ruling.** Task 5 Step 3: the spec says `main` uses `awaitTask` to drain a completed client task, but the landed `awaitTask(s, t)` only marks the current task as waiting. The plan frees the slot directly; a spec/`sf/src` change is required if the drain semantics are wanted.
+
+### Amendment 3 — Task 2 blockers: caller-side `@asyncInit` ABI (2026-09-16, operator ruling)
+
+Task 2 dispatch was BLOCKED by three confirmed plan/design defects in the `@asyncInit` caller surface; the operator ruled B1/B2/B3 and all are applied in place above (the dispatch made no commit; its uncommitted edits were reverted).
+
+**B1 — caller cast.** The plan wrote `@ptrCast(?*const void, &args[n])`; a `?*const void` is a non-scalar optional struct in Z98, so the emitted C89 is invalid (`conversion to non-scalar type requested`). Every landed fixture passes a plain `*const void` (`async_await_xmod/main.zig:35`), which coerces into the optional parameter. Fixed at all three call sites (Tasks 2/4/5).
+
+**B2 — root-frame arena vs the `Context` header.** The plan bound `async_arena` and `async_ctx` both at `async_storage[0..]`; the first root frame aliased the 16-byte `Context` header and each `@asyncInit` reset `ctx.used`/`ctx.oom` at +0/+8, clobbering frame 0's step word (tick trap). The root-frame arena now starts at `std.async.HEADER_SIZE` (Tasks 2/5).
+
+**B3 — coroutine parameter ABI (option a).** `@asyncInit` copies the args record POSITIONALLY into the coroutine's parameters (`sf/src/lower.zig:4362-4386`), so a `(ctx: *Context, args: *void)` coroutine maps `ctx ← record.field0`, `args ← record.field1`. Each `@asyncInit` target now takes the record's fields directly and a matching record type is added: `npcCoroutine(na: *NpcArgs)` + `NpcCoroutineArgs{ na }`; `clientFrameCoroutine(ctx, cfa: *ClientFrameArgs)` + `ClientFrameCoroutineArgs{ ctx, cfa }`; `clientCoroutine(cta: *ClientTaskArgs)` + `ClientCoroutineArgs{ cta }`. `drawToSocketCoroutine` is NOT an `@asyncInit` target (called directly) and keeps `(ctx, args)`.
