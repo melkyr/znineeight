@@ -1208,6 +1208,32 @@ Expected: `CLOSEOUT OK`.
 
 ---
 
+### Task 4b: 1-task scheduler root-frame nested-loop suspend quirk — I then F
+
+**Origin (Task 4a-F, 2026-09-16).** While fixing the `rogue_mud` client-task wiring (option B: inline the row loop), Task 4a-F exposed a pre-existing compiler/runtime quirk: **a coroutine whose nested-loop `@asyncSuspend` lives in the ROOT frame only advances correctly with ≥2 registered tasks (`scheduler.count`); a 1-task scheduler re-sends one row per tick.** The example registers 5 client tasks (and a 5-task probe gives the correct GREEN), so the shipped example is unaffected — but the quirk is real and could bite Task 5 (`mud_server` per-client tasks) or any 1-task scheduler.
+
+**Operator ruling (2026-09-16):** add a new I/F pair (this task) to investigate + **fix** the quirk before continuing. Task 4a-F stays as implemented (option B).
+
+#### Task 4b-I: investigate + pin (no `sf/src` change)
+
+- [ ] **Step 1: Fixture set** (`repro/mi_matrix/`, auto-listed; each documents RED-now + the GREEN contract):
+  - `async_single_task_suspend_xmod/` — ONE registered task whose coroutine has a nested `while`/`for` loop with `@asyncSuspend` in the ROOT frame; tick to completion and assert the correct number of iterations (RED today: re-sends one row per tick).
+  - `async_two_task_suspend_xmod/` — the ≥2-task control (already correct).
+  - variants: suspend inside the loop body vs. at the loop tail; a non-loop single suspend (control); a nested coroutine (child frame) with the same shape.
+- [ ] **Step 2: Questionnaire.** Answer in the report: (Q1) the exact mechanism (how `tick` + `scheduler.count` interact with a root-frame loop suspend — `sf/src/std_async.zig` `tick`, `sf/src/async_state_machine.zig`); (Q2) why ≥2 tasks masks it (the resume/state bookkeeping vs the loop back-edge); (Q3) whether the bug is in the scheduler's `tick` loop, the state machine's resume-block routing, or the frame layout's live analysis; (Q4) the minimal fix locus; (Q5) whether it also affects implicit awaits (not just `@asyncSuspend`) and nested coroutines; (Q6) corpus/diagnostic delta.
+- [ ] **Step 3: Declare.** Add the fixtures; record the RED in `repro/mi_matrix/EXPECTED_FAIL.md` (v117→v118) or the appropriate known-issue location.
+- [ ] **Step 4: Report + present the fix surface for Task 4b-F.** No `sf/src` change.
+
+#### Task 4b-F: fix the quirk (`sf/src` change; fixed point MOVES)
+
+- [ ] **Step 1: Fix** so a 1-task scheduler advances a root-frame nested-loop `@asyncSuspend` coroutine correctly.
+- [ ] **Step 2: Fixtures RED→GREEN**; full corpus sweep (class-map delta = intended dirs only — any other movement is a regression to STOP on); `check_emit_support.sh` 5/5; self-compile closure (48 `.c`, 0 `[3000]`).
+- [ ] **Step 3: Re-verify** the four goldens + `CLOSEOUT OK`; 4-MD5 byte-identical; record the new fixed point. Seed rotation stays at Task 6.
+
+**Sequencing gate:** Task 5 MUST NOT start until Task 4b-F is landed.
+
+---
+
 ### Task 5: `mud_server` `select` loop → per-client tasks (entry E4)
 
 **Files:**
