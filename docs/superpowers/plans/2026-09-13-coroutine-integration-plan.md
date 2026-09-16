@@ -838,6 +838,37 @@ git commit -m "feat(rogue): per-NPC coroutine for updateEnemies (Track4 E1)"
 
 ---
 
+### Task 2c: const-expression array sizes — fold + fallback diagnostic — I then F
+
+**Origin (discovered by Task 3, 2026-09-16).** While writing the S11 fixture, Task 3 found a new gap adjacent to Task 2b-F #1 and the declared variant (e): a module-level `const CELLS = ROWS * COLS` (a const whose initializer is an arithmetic expression of other consts) used in **array-size** position is **not folded**; the compiler **silently emits invalid C** (dump rc=0, but the local array is undeclared / struct fields dropped) with no frontend diagnostic. Valid Zig must fold; an unfolable size must be a hard error, never silent invalid C.
+
+**Verified root cause (read-only, `sf/src`):** `resolveTypeExprFull`'s `array_type` arm (`sf/src/type_resolver.zig:1109-1173`) resolves the size via `evalConstU32Full` (`:744`), which handles `int_literal`, `ident_expr`, and (Task 2b-F) `field_access` — **no `binary` case**. `const CELLS = ROWS*COLS` recurses into the initializer (`ROWS*COLS`, a `binary` node) and returns `0xFFFFFFFF`; `arr_resolved` stays false and the resolver returns `TYPE_UNDEFINED` (`:1173`) with no diagnostic. The arm already folds **inline** `add/sub/mul/div/mod` (`:1123-1139`), so only the const-behind-an-expression case is broken. `TypeResolveEnv` (`sf/src/type_resolver.zig:27-33`) has **no diagnostics handle** (`store/typereg/symbol_reg/interner/module_id` only), so the fallback diagnostic must be emitted in sema (where `self.diag` exists) or the handle threaded in.
+
+**Operator rulings (2026-09-16):** (1) fix **variant (e)** (function-local const array size) in the **same F task** — thread the function-local const scope into the type resolver; (2) the fallback diagnostic is a **hard error** (new `ERR_3050_ARRAY_SIZE_NOT_CONSTANT`, explicit numeric per the `diagnostics.zig` convention).
+
+#### Task 2c-I: investigate + pin (no `sf/src` change)
+
+- [ ] **Step 1: Fixture set** (`repro/mi_matrix/`, auto-listed; each documents RED-now + the GREEN contract):
+  - `const_size_arith_xmod/` — module-level `const A: usize = 4; const B: usize = 4; const C = A * B; var x: [C]u8`, plus `+ - / %` and nested (`A * B + 2`) variants.
+  - `const_size_member_xmod/` — `const C = mid.leaf.HEADER_SIZE * 2; var x: [C]u8`.
+  - `const_size_local_xmod/` — function-local `const N = A * B; var x: [N]u8` (variant (e), now IN scope).
+  - `const_size_unfoldable_xmod/` — a non-foldable size (e.g. a runtime value / call) → must be a **hard error**, never silent invalid C.
+  - controls: inline `[A * B]u8` (already folds), a literal, and a direct ident const.
+- [ ] **Step 2: Questionnaire.** Answer in the report: (Q1) the exact failure mode and where `arr_resolved=false` flows; (Q2) why an inline expression folds but the same expression behind a `const` does not; (Q3) the fold locus; (Q4) the **diagnostic** locus (sema `self.diag` vs threading a diagnostics handle into `TypeResolveEnv`) and the code to use; (Q5) the **(e) mechanism** — how the resolver can see the enclosing function's local-const scope (`TypeResolveEnv` has none today); (Q6) the minimal fix surface + risk; (Q7) corpus/diagnostic delta.
+- [ ] **Step 3: Declare.** Add the fixtures to the corpus; bump `repro/mi_matrix/EXPECTED_FAIL.md` (v105→v106) for the RED/FAIL cases; record the corpus delta.
+- [ ] **Step 4: Report + present the fix surface for Task 2c-F.** No `sf/src` change.
+
+#### Task 2c-F: fold + hard-error fallback (`sf/src` change; fixed point MOVES)
+
+- [ ] **Step 1: Fold** arithmetic const expressions (a `binary` case: `add/sub/mul/div/mod`, and `negate`) in `evalConstU32Full` / the array-size path; thread the **function-local const scope** so variant (e) folds.
+- [ ] **Step 2: Add the fallback hard error** — a new `ERR_3050_ARRAY_SIZE_NOT_CONSTANT` emitted when an array-size expression cannot be const-folded (never silent invalid C).
+- [ ] **Step 3: Fixtures RED→GREEN**; full corpus sweep (class map delta = intended dirs only — any other movement is a regression to STOP on); `check_emit_support.sh` 5/5; self-compile closure (48 `.c`, 0 `[3000]`).
+- [ ] **Step 4: Re-verify** the four goldens + `CLOSEOUT OK`; 4-MD5 byte-identical; record the new fixed point. Seed rotation stays at Task 6.
+
+**Sequencing gate:** Task 4 MUST NOT start until Task 2c-F is landed (the plan's array-size family is closed).
+
+---
+
 ### Task 3: `rogue_mud` per-connection broadcast → coroutine (entry E2)
 
 **Files:**
