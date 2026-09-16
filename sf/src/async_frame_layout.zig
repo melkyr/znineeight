@@ -135,6 +135,16 @@ fn allocU8Raw(alloc: *Sand, n: u32) [*]u8 {
     return @ptrCast([*]u8, raw);
 }
 
+fn allocU8With(alloc: *Sand, n: u32, fill: u8) [*]u8 {
+    var count = n;
+    if (count == @intCast(u32, 0)) count = @intCast(u32, 1);
+    var raw = alloc_mod.sandAlloc(alloc, @intCast(usize, count) * @intCast(usize, @sizeOf(u8)), @intCast(usize, 1)) catch unreachable;
+    var a = @ptrCast([*]u8, raw);
+    var i: u32 = @intCast(u32, 0);
+    while (i < count) : (i += @intCast(u32, 1)) { a[@intCast(usize, i)] = fill; }
+    return a;
+}
+
 fn maxTempOf(lir_fn: *LirFunction) u32 {
     var m: u32 = @intCast(u32, 0);
     var i: usize = @intCast(usize, 0);
@@ -559,7 +569,7 @@ pub fn asyncLayoutFrame(alloc: *Sand, reg: *TypeRegistry, lir_fn: *LirFunction,
         }
     }
 
-    var is_param = allocU8Raw(alloc, max_temp);
+    var is_param = allocU8With(alloc, max_temp, @intCast(u8, 0));
     pi = @intCast(usize, 0);
     while (pi < lir_fn.params.len) : (pi += @intCast(usize, 1)) {
         var pt = lir_fn.params.items[pi].temp_id;

@@ -1,4 +1,73 @@
-# mi_matrix corpus — expected-fail manifest (v118 2026-09-16)
+# mi_matrix corpus — expected-fail manifest (v119 2026-09-16)
+
+## Track-4 Task 4b-F (F) — uninitialized `is_param` frame-layout buffer FIXED (v118 -> v119 2026-09-16)
+
+Task 4b-F zero-inits the P3 live-analysis `is_param` predicate buffer pinned by
+Task 4b-I. **`sf/src` change; fixed point MOVES** (see below). The two RED
+fixtures now run GREEN; the two controls stay GREEN.
+
+**Fix (`sf/src/async_frame_layout.zig`).** Added an `allocU8With(alloc, n, fill)`
+helper (`:138-146`, mirrors `allocU32With`) and changed the `is_param`
+allocation (`:572`) from the no-fill `allocU8Raw` to
+`allocU8With(alloc, max_temp, 0)`. Every non-parameter entry is now
+deterministically 0 before the param loop sets the parameter entries, so the
+live scan (`:584`) and field emitter (`:609`) are deterministic. No
+ABI/scheduler/state-machine change; `live`/`visited`/`ttype`/`work` were
+already initialized (unchanged).
+
+**Audit of the raw primitives (no other uninitialized read found).**
+- `async_frame_layout.zig` `allocU8Raw` callers: `visited` (`:533`, cleared at
+  `:456-459` before use), `live` (`:579`, zeroed by the loop that follows),
+  `is_param` (the bug — now filled). `work`/`ttype` use the filling allocators.
+- `lir_opt_pass.zig` raw scratch buffers (`:2070-2086`) are all fully written by
+  `resetScratch` (`:268-289`, called at `:2096` and `:647`) before any read;
+  `ord_pref` (`:956`) / `ord3` (`:1025`) are filled entry-by-entry (`ord[0]=0`
+  then the prefix loop) before reads. The `Ctx` helpers `allocU32`/`allocU64`/
+  `allocU8` (`:242-255`) have no callers.
+- `async_analysis.zig` `allocU32` callers (`:244-271`): `rev_count`/`rev_off`/
+  `rev_pos`/`rev_to`/`queue` are all fully written before any read.
+
+**RED -> GREEN evidence** (fixed compiler `/tmp/t4bf/fixed/zig1_5_clean`,
+`-ffast --dump-c89`, gcc `-m32 -std=c89 -O0 -Wall …`, link `build_target.sh
+linux`, `timeout 120`):
+
+| fixture | RED (BASE `5c243054`) | GREEN (FIXED `18e0de5c`) |
+|---|---|---|
+| `async_frame_isparam_xmod` | stdout `701 800`, run rc=133, `panic: …live local was dropped…`, gcc `warning: 'i' may be used uninitialized` | stdout `8 800`, run rc=0, gcc clean |
+| `async_frame_isparam_order_xmod` | stdout `8 107`, run rc=133, same panic, gcc `warning: 'j' may be used uninitialized` | stdout `8 800`, run rc=0, gcc clean |
+| `async_frame_isparam_resume_xmod` | GREEN: `8 800`, rc=0 | stays GREEN: `8 800`, rc=0 |
+| `async_frame_isparam_single_xmod` | GREEN: `8`, rc=0 | stays GREEN: `8`, rc=0 |
+
+Both `may be used uninitialized` gcc warnings disappear post-fix (the dropped
+locals are now persisted fields).
+
+**Corpus `-ffast` dump+gcc classifier, universe 709 (v118 = 709):**
+
+| | 4b-I `5c243054` | 4b-F `18e0de5c` | delta |
+|---|---|---|---|
+| dirs | 709 | 709 | 0 |
+| OK | 656 | 656 | 0 |
+| GREEN | 28 | 28 | 0 |
+| FAIL | 25 | 25 | 0 |
+| ICE | 0 | 0 | 0 |
+| CRASH | 0 | 0 | 0 |
+
+Per-dir class map **byte-identical** (0 movement): the fix is a runtime-only
+live-set correction, so the compile-only classifier is unchanged; the two
+intended dirs were already class OK (the pin is RUNTIME-only).
+
+**Other gates.** `check_emit_support.sh` 5/5 byte-identical. Self-compile 48
+`.c`, rc=0, 0 `error[3000]` / 0 errors / 0 PANIC. Four goldens byte-identical:
+`rogue_mud` boot `3fb6709e7bbd8964ef12aa9c906c0577`, `rogue_mud` move
+`b3c5b0e1308bc9a4efde238376c14d9f`, `mud_server` stdout
+`66c8f0abb926cca7baf9a0d1692ab318`, `mud_server` client bytes
+`93147d0f0bbd983a9d844fea8b7a6fa7`; 4-MD5 runtime byte-identical (gol
+`fcbf7e7cead5082f0a8caadd5a8f0ff9`, lisp `8dc783a3d766430c15993ab08cd0f7ec`,
+json `8bda3d5a1ec07d14a301bc343df32bf8`); `verify_upgraded.sh` -> `CLOSEOUT OK`.
+**NEW fixed point `18e0de5cf71f4fe0fbf5c560ab24e624`** (moving point hop2==hop3;
+hop1 `c963a76cf3fbe484a5e5780f98b0828a`; BASE `5c24305437629da54b4e4de1ed52e0e0`).
+Seed rotation stays at Task 6. Full report:
+`.superpowers/sdd/2026-09-13-coroutine-integration-plan/task-4b-report.md`.
 
 ## Track-4 Task 4b-I (I) — uninitialized `is_param` frame-layout buffer pinned (v117 -> v118 2026-09-16)
 
