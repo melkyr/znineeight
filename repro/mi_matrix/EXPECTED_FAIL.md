@@ -1,4 +1,73 @@
-# mi_matrix corpus — expected-fail manifest (v110 2026-09-16)
+# mi_matrix corpus — expected-fail manifest (v111 2026-09-16)
+
+## Track-4 Task 2f-I (I) — multi-dimensional fixed-array element access pinned (v110 -> v111 2026-09-16)
+
+Track-4 Task 2f-I pins the SILENT invalid-C defect that blocks Task 4 (E3): an
+element access into a multi-dimensional fixed array lowers the OUTER index into
+an ARRAY-typed temp, and the emitter assigns array-to-array (illegal C89).
+**No `sf/src` change.** Reference compiler = the Task-2e-F fixed point
+`8a322dd9221077780202e8ac6dd6983a`, rebuilt via the binding seed model
+(`bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/t2fI_build`;
+gate `=== [seed] Done: /tmp/t2fI_build ===`). The committed seed predates recent
+`sf/src` work, so the closure is the moving point **hop2 == hop3 ==
+`8a322dd9221077780202e8ac6dd6983a`** (hop1 `9d25d1aa2e993a50311241a69da01b3b`).
+Compiler under test = `/tmp/t2fI_build/hop2/zig1_hop2`. Full report:
+`.superpowers/sdd/2026-09-13-coroutine-integration-plan/task-2f-report.md`.
+
+**Root cause (verified, read-only).** `lowerExpr`'s index_access arm
+(`sf/src/lower.zig:3080`) types the indexed result from the resolved type table:
+for `g[i]` (with `g: [5][4]u8`) that is the ARRAY `[4]u8`, so `nextTemp` allocates
+an array-typed temp (`:3116`) and a `load_index` LIR op is emitted (`:3133`). The
+emitter renders `load_index` via `emitBaseIdxAccess` (`sf/src/c89_emit.zig:189`,
+`kind==0`) as `result = base[idx];` (`:196-208`) — an array-to-array C
+assignment, illegal in C89. The same base lowering is used by the address-of
+path (`lowerLValueAddr` index arm `sf/src/lower.zig:1363-1370`) and the store
+path (`lowerAssignLValue` index arm `:1509-1532`), so all three forms break.
+The `Arr_*` array-typedef path (`getCTypeName` `sf/src/c89_emit.zig:710-728` /
+`emitArrayType` `:1833`) is only the (correct) declaration of the array temp and
+the global — not the defect. Emit is **rc=0 with 0 target diagnostics (SILENT)**;
+only gcc rejects the invalid C.
+
+**Six new corpus dirs** (auto-listed by `scripts/corpus/list_corpus_dirs.sh`):
+
+| dir | class | RED today (`8a322dd9…`) | expected GREEN (Task 2f-F) |
+|---|---|---|---|
+| `multiarray_index_xmod` | **FAIL** | dump rc=0, 4 `.c`, stderr EMPTY; gcc `assignment to expression with array type`; `zT_8 = zG_g[i];` array=array | dump rc=0, gcc clean, link+run rc=0, no stdout |
+| `multiarray_index_const_xmod` | **FAIL** | same; constant `&g[2][0]` / `g[2][3]` | same |
+| `multiarray_index_local_xmod` | **FAIL** | same; function-local `[5][4]u8` — PLUS the `undefined`-init array-copy loop `g[_i] = zT_1[_i];` (`c89_emit.zig:5969-5988`) is a SECOND array-to-array site | same |
+| `multiarray_index_3d_xmod` | **FAIL** | same; 3-level `[3][4][5]u8` (TWO array temps per access) | same |
+| `multiarray_index_struct_control_xmod` | **FAIL** | same; `[5][4]Cell` — the Task-3/Task-4 `client_cells` shape | same |
+| `multiarray_index_flat_control_xmod` | **OK** (control) | flat 1D `[20]u8` already emits `zT = zG_g[i];` (scalar) | stays OK |
+
+Verbatim RED evidence (`multiarray_index_xmod`, fixed point `8a322dd9…`):
+```
+main_B14EE385.c:42:    zT_B5AAF170_Arr_unsigned_char_4 zT_8;
+main_B14EE385.c:62:    zT_8 = zG_E20C2606_g[i];
+main_B14EE385.c:66:    zT_14 = zG_E20C2606_g[i];
+gcc: error: assignment to expression with array type   (x2)
+```
+
+**Corpus `-ffast` dump+gcc classifier (`/tmp/t4bf_classify.sh`), 694 dirs:**
+universe **688 -> 694** (+6). No `sf/src` change, so the 688 pre-existing dirs
+are class-identical by construction. Task-2f-I's own contribution: **+1 OK**
+(`multiarray_index_flat_control_xmod`) and **+5 FAIL**
+(`multiarray_index_xmod`, `multiarray_index_const_xmod`,
+`multiarray_index_local_xmod`, `multiarray_index_3d_xmod`,
+`multiarray_index_struct_control_xmod`). Class map: **637 OK / 27 GREEN /
+30 FAIL / 0 ICE / 0 CRASH**. **No new diagnostic code** — the defect emits NO
+compiler diagnostic at all (silent rc=0); gcc's `assignment to expression with
+array type` is the only signal. This is a SILENT-invalid-C pin.
+
+**Fix surface for Task 2f-F** (presented in the task report; no `sf/src` change
+here): teach the lowerer's index_access base lowering to DECAY a fixed-array
+element to an element pointer (or emit an element address) instead of
+materializing an array-typed value — the single common locus is
+`sf/src/lower.zig` (`lowerExpr:3080` rvalue, `lowerLValueAddr:1363` address-of,
+`lowerAssignLValue:1509` store), covering both index forms and N-level nesting.
+The emitter's `emitBaseIdxAccess` array-result emission (`sf/src/c89_emit.zig:189`)
+is the defective output but is downstream of the array-typed temp. The local
+fixture additionally requires the multi-dim `undefined`-init copy loop
+(`sf/src/c89_emit.zig:5969-5988`) to copy leaf elements instead of rows.
 
 ## Track-4 Task 2e-F (F) — diagnostic excerpt line FIXED (v109 -> v110 2026-09-16)
 
