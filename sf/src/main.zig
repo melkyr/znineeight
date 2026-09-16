@@ -592,7 +592,7 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
             var dn: []const u8 = "DN"; pal.markerWrite(dn);
             if (decl.kind == AstKind.fn_decl) {
                 if (decl.child_0 != 0) {
-                    front_res.resolveStmtTypes(&frc, mods[mi].id, decl.child_0, @intCast(u32, 0));
+                    front_res.resolveStmtTypes(&frc, mods[mi].id, decl.child_0, @intCast(u32, 0), mods[mi].source_file_id);
                 }
                 var sa0: []const u8 = "SA"; pal.markerWrite(sa0);
                 sa_mod.semanticAnalyzerResolveFnBody(&sa, decls[di]);

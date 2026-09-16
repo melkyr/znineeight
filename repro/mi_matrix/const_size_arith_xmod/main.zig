@@ -6,26 +6,20 @@
 // never resolves and the compiler emits no array type. This fixture isolates
 // the `*`, `+`, `-`, `/`, `%` and nested (`A * B + 2`) shapes.
 //
-// RED today (Task 2b-F fixed point 0da3f1391075e3e77c54b626d5550e3b): the size
-// expression recurses through `evalConstU32Full` (`sf/src/type_resolver.zig:744`)
-// into the const's initializer, which is a `binary` node — and `evalConstU32Full`
-// has NO `binary` case, so it returns 0xFFFFFFFF. `arr_resolved` stays false, the
-// array type is `TYPE_UNDEFINED` (`:1173`), the local is never registered, and the
-// first use reports:
-//   error[20]: identifier '<var>' is not declared or imported in this module
-// (dump rc=2, 0 `.c`; corpus classifier FAIL — `error[20]` is not an ICE code).
-// An INLINE `[A * B]u8` already folds: the `array_type` arm handles
-// add/sub/mul/div/mod directly (`:1123-1139`), so only the const-behind-an-
-// expression case is broken. If the arrays are never used, the same shape is
-// SILENTLY emitted as invalid C (dump rc=0) — see `const_size_unfoldable_xmod`.
+// GREEN (Task 2c-F, fixed point 960575b70302c78a19cf6bc0cc129df5): the `binary`
+// (`add/sub/mul/div/mod_op`) and `negate` cases added to `evalConstU32Full`
+// (`sf/src/type_resolver.zig`) fold the const initializer recursively, so every
+// variant resolves. This fixture was RED at the Task-2b-F fixed point
+// 0da3f1391075e3e77c54b626d5550e3b: the size recursed into the const's
+// initializer (a `binary` node) with no `binary` case, returned 0xFFFFFFFF,
+// `arr_resolved` stayed false, and the first use reported
+// `error[20]: identifier '<var>' is not declared or imported in this module`
+// (dump rc=2, 0 `.c`). If the arrays were never used, the same shape was
+// SILENTLY emitted as invalid C (dump rc=0).
 //
-// Expected GREEN contract (Task 2c-F): every variant folds (`C`=16, `D`=8,
-// `E`=0, `F`=1, `G`=0, `H`=18); dump rc=0, gcc -m32 -std=c89 clean, link+run
-// rc=0, no stdout.
-//
-// Fix locus: add a `binary` (and `negate`) case to `evalConstU32Full`
-// (`sf/src/type_resolver.zig:744`) so a const initializer that is an arithmetic
-// expression folds recursively. See report Q3/Q6.
+// GREEN contract: every variant folds (`C`=16, `D`=8, `E`=0, `F`=1, `G`=0,
+// `H`=18); dump rc=0, gcc -m32 -std=c89 clean, link+run rc=0, no stdout.
+
 const A: usize = 4;
 const B: usize = 4;
 const C = A * B;

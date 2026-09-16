@@ -30,6 +30,11 @@ pub const TypeResolveEnv = struct {
     symbol_reg: *SymbolRegistry,
     interner: *StringInterner,
     module_id: u32,
+    // Task 2c-F fix round 1: the source file of the module currently being
+    // resolved, so the array-size hard error carries a real filename/line. The
+    // module-iterating passes set this per module; passes with `diag = null`
+    // leave it 0.
+    source_file_id: u32,
     // Task 2c-F: optional hard-error sink for the array-size fallback. Only
     // passes with a live DiagnosticCollector set this (front_resolution, sema,
     // typeResolverResolveNames); lower/symbol_registrator/comptime_eval pass
@@ -800,7 +805,12 @@ fn evalConstModuleOfExpr(env: *TypeResolveEnv, node_idx: u32) u32 {
     return @intCast(u32, 0);
 }
 
-pub fn evalConstU32Full(env: *TypeResolveEnv, node_idx: u32) u32 {
+pub fn evalConstU32Full(env: *TypeResolveEnv, node_idx: u32, depth: u32) u32 {
+    // Task 2c-F fix round 1: mirror `resolveTypeExprFull`'s depth cap (`:925`)
+    // so a const cycle in array-size position (`const A = A + 1`, or
+    // `const A = B; const B = A`) terminates as an unfoldable value — a clean
+    // hard error via the array-size fallback — never unbounded recursion / ICE.
+    if (depth > @intCast(u32, 16)) return @intCast(u32, 0xFFFFFFFF);
     if (node_idx == @intCast(u32, 0)) return @intCast(u32, 0xFFFFFFFF);
     var node = ast_mod.astStoreNodeAt(env.store, node_idx);
     if (node.kind == AstKind.int_literal) {
@@ -812,8 +822,8 @@ pub fn evalConstU32Full(env: *TypeResolveEnv, node_idx: u32) u32 {
     // (0xFFFFFFFF = unfoldable sentinel; div/mod by zero is unfoldable).
     if (node.kind == AstKind.add or node.kind == AstKind.sub or
         node.kind == AstKind.mul or node.kind == AstKind.div or node.kind == AstKind.mod_op) {
-        var bl = evalConstU32Full(env, node.child_0);
-        var br = evalConstU32Full(env, node.child_1);
+        var bl = evalConstU32Full(env, node.child_0, depth + @intCast(u32, 1));
+        var br = evalConstU32Full(env, node.child_1, depth + @intCast(u32, 1));
         if (bl != @intCast(u32, 0xFFFFFFFF) and br != @intCast(u32, 0xFFFFFFFF)) {
             if (node.kind == AstKind.add) { return bl + br; }
             if (node.kind == AstKind.sub) { return bl - br; }
@@ -829,7 +839,7 @@ pub fn evalConstU32Full(env: *TypeResolveEnv, node_idx: u32) u32 {
     // Task 2c-F: `-v` folds as `0 - v` (mirrors evalConstI64Full's negate arm).
     if (node.kind == AstKind.negate) {
         if (node.child_0 != @intCast(u32, 0)) {
-            var nv = evalConstU32Full(env, node.child_0);
+            var nv = evalConstU32Full(env, node.child_0, depth + @intCast(u32, 1));
             if (nv != @intCast(u32, 0xFFFFFFFF)) {
                 return @intCast(u32, 0) - nv;
             }
@@ -845,7 +855,7 @@ pub fn evalConstU32Full(env: *TypeResolveEnv, node_idx: u32) u32 {
             if (localConstScopeLookup(lcs, name_id)) |l_decl_node| {
                 var l_decl = ast_mod.astStoreNodeAt(env.store, l_decl_node);
                 if (l_decl.child_1 != 0) {
-                    return evalConstU32Full(env, l_decl.child_1);
+                    return evalConstU32Full(env, l_decl.child_1, depth + @intCast(u32, 1));
                 }
             }
         }
@@ -854,7 +864,7 @@ pub fn evalConstU32Full(env: *TypeResolveEnv, node_idx: u32) u32 {
             if ((cs.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
                 var c_decl = ast_mod.astStoreNodeAt(env.store, cs.decl_node);
                 if (c_decl.child_1 != 0) {
-                    return evalConstU32Full(env, c_decl.child_1);
+                    return evalConstU32Full(env, c_decl.child_1, depth + @intCast(u32, 1));
                 }
             }
         }
@@ -871,7 +881,7 @@ pub fn evalConstU32Full(env: *TypeResolveEnv, node_idx: u32) u32 {
                 if ((fa_sym.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
                     var fa_decl = ast_mod.astStoreNodeAt(env.store, fa_sym.decl_node);
                     if (fa_decl.child_1 != 0) {
-                        return evalConstU32Full(env, fa_decl.child_1);
+                        return evalConstU32Full(env, fa_decl.child_1, depth + @intCast(u32, 1));
                     }
                 }
             }
@@ -1221,16 +1231,16 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
                     arr_len = @intCast(u32, ast_mod.astStoreIntValue(env.store, node.child_1));
                     arr_resolved = true;
                 } else if (sz_node.kind == AstKind.add or sz_node.kind == AstKind.sub) {
-                    var lhs = evalConstU32Full(env, sz_node.child_0);
-                    var rhs = evalConstU32Full(env, sz_node.child_1);
+                    var lhs = evalConstU32Full(env, sz_node.child_0, @intCast(u32, 0));
+                    var rhs = evalConstU32Full(env, sz_node.child_1, @intCast(u32, 0));
                     if (lhs != @intCast(u32, 0xFFFFFFFF) and rhs != @intCast(u32, 0xFFFFFFFF)) {
                         arr_resolved = true;
                         if (sz_node.kind == AstKind.add) { arr_len = lhs + rhs; }
                         else { arr_len = lhs - rhs; }
                     }
                 } else if (sz_node.kind == AstKind.mul or sz_node.kind == AstKind.div or sz_node.kind == AstKind.mod_op) {
-                    var lhs = evalConstU32Full(env, sz_node.child_0);
-                    var rhs = evalConstU32Full(env, sz_node.child_1);
+                    var lhs = evalConstU32Full(env, sz_node.child_0, @intCast(u32, 0));
+                    var rhs = evalConstU32Full(env, sz_node.child_1, @intCast(u32, 0));
                     if (lhs != @intCast(u32, 0xFFFFFFFF) and rhs != @intCast(u32, 0xFFFFFFFF) and rhs != @intCast(u32, 0)) {
                         arr_resolved = true;
                         if (sz_node.kind == AstKind.mul) { arr_len = lhs * rhs; }
@@ -1238,7 +1248,7 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
                         else { arr_len = lhs % rhs; }
                     }
                 } else if (sz_node.kind == AstKind.ident_expr) {
-                    var al = evalConstU32Full(env, node.child_1);
+                    var al = evalConstU32Full(env, node.child_1, @intCast(u32, 0));
                     if (al != @intCast(u32, 0xFFFFFFFF)) {
                         arr_len = al;
                         arr_resolved = true;
@@ -1247,7 +1257,7 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
                     // Task 2b-F (#1): any other const-foldable size expression
                     // (notably a module-member `field_access` such as
                     // `[mid.leaf.HEADER_SIZE]`) is folded by the const evaluator.
-                    var alf = evalConstU32Full(env, node.child_1);
+                    var alf = evalConstU32Full(env, node.child_1, @intCast(u32, 0));
                     if (alf != @intCast(u32, 0xFFFFFFFF)) {
                         arr_len = alf;
                         arr_resolved = true;
@@ -1286,7 +1296,7 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
                             var asn_msg: []const u8 = "array size is not a constant expression";
                             _ = diag_mod.diagnosticCollectorAdd(dg, @intCast(u8, 0),
                                 @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3050_ARRAY_SIZE_NOT_CONSTANT)),
-                                @intCast(u32, 0), sz_node.span_start,
+                                env.source_file_id, sz_node.span_start,
                                 sz_node.span_start + @intCast(u32, sz_node.span_len), asn_msg);
                         }
                     }
@@ -1383,6 +1393,7 @@ fn resolveNamedTypeExpressions(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry)
         var cr = mods[ci].ast_root;
         if (cr == @intCast(u32, 0)) continue;
         env.module_id = mods[ci].id;
+        env.source_file_id = mods[ci].source_file_id;
         var crn = ast_mod.astStoreNodeAt(env.store, cr);
         var cd = ast_mod.astStoreNodeExtraChildren(env.store, cr);
         var cdi: usize = 0;
@@ -1460,6 +1471,7 @@ fn resolveAggregateFieldTypesAll(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntr
     while (mi < mods.len) : (mi += 1) {
         var root = mods[mi].ast_root;
         if (root == @intCast(u32, 0)) continue;
+        env.source_file_id = mods[mi].source_file_id;
         var rnode = ast_mod.astStoreNodeAt(env.store, root);
         var decls = ast_mod.astStoreNodeExtraChildren(env.store, root);
         var di: usize = 0;
@@ -1481,6 +1493,7 @@ fn resolveFnSignatures(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry, resolve
         var root = mods[mi].ast_root;
         if (root == @intCast(u32, 0)) continue;
         env.module_id = mods[mi].id;
+        env.source_file_id = mods[mi].source_file_id;
         var rnode = ast_mod.astStoreNodeAt(env.store, root);
         var decls = ast_mod.astStoreNodeExtraChildren(env.store, root);
         var di: usize = 0;
@@ -1554,7 +1567,7 @@ pub fn typeResolverResolveNames(
     perm_alloc: *Sand
 ) void {
     var mods = mr_mod.moduleRegistryGetModules(module_reg);
-    var env = TypeResolveEnv{ .store = store, .typereg = typereg, .symbol_reg = symbol_reg, .interner = interner, .module_id = MODULE_ID_NONE, .diag = diag, .local_consts = null };
+    var env = TypeResolveEnv{ .store = store, .typereg = typereg, .symbol_reg = symbol_reg, .interner = interner, .module_id = MODULE_ID_NONE, .source_file_id = @intCast(u32, 0), .diag = diag, .local_consts = null };
     _ = perm_alloc;
     resolveNamedTypeExpressions(&env, mods);
     resolveImportFieldAliases(&env, mods, module_reg);

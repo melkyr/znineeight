@@ -1,4 +1,77 @@
-# mi_matrix corpus — expected-fail manifest (v107 2026-09-16)
+# mi_matrix corpus — expected-fail manifest (v108 2026-09-16)
+
+## Track-4 Task 2c-F fix round 1 (F) — cycle depth cap + located error[3050] + header drift (v107 -> v108 2026-09-16)
+
+Fix round on the Task-2c-F work (BASE `9155c74a`, fixed point
+`960575b70302c78a19cf6bc0cc129df5`). Closes the two residual gaps found by the
+2c-F review plus the declared fixture-header drift. **`sf/src` change** in
+`sf/src/type_resolver.zig` + the `TypeResolveEnv` construction sites in
+`sf/src/{front_resolution,main,semantic_analyzer,lower,symbol_registrator,comptime_eval}.zig`.
+
+**Finding 1 — const-cycle depth cap.** `evalConstU32Full` gained a `depth: u32`
+parameter and a cap mirroring `resolveTypeExprFull` (`depth > 16` →
+unfoldable sentinel). The Task-2c-F `binary` case newly enabled
+`const A = A + 1` to recurse without bound in array-size position (SIGSEGV,
+rc=139); the direct ident cycle `const A = B; const B = A` hung (rc=124). Both
+now fold to the sentinel and become the existing hard `error[3050]`.
+
+**Finding 2 — located `error[3050]`.** `TypeResolveEnv` gained
+`source_file_id: u32`; the module-iterating passes (`resolveFnSignatures`,
+`resolveAggregateFieldTypesAll`, `resolveNamedTypeExpressions`) set it per
+module, `front_resolution.resolveTypeExpr`/`resolveStmtTypes` thread it (from
+`mods[mi].source_file_id`), and sema sites use `self.source_file_id`. The
+array-size fallback passes `env.source_file_id` instead of the hardcoded `0`, so
+the diagnostic now renders the filename/line/column of the size expression
+(previously `file_id == 0` rendered bare).
+
+**Finding 3 — fixture headers.** All five `const_size_*` fixture headers were
+updated from the 2c-I "RED today" state to the post-fix GREEN contract;
+`const_size_member_xmod` now records the actual **4** `.c` (the 2c-I contract
+line said 5).
+
+**New fixture `const_size_cycle_xmod`** (`const A = A + 1; var x: [A]u8`):
+- RED (BASE `960575b7`): `zig1 -ffast --dump-c89` → **rc=139 SIGSEGV** (ICE), 0 `.c`.
+- GREEN (fix round 1): **rc=2, 0 `.c`**, and (located)
+  `repro/mi_matrix/const_size_cycle_xmod/main.zig:24:8: error[3050]: array size is not a constant expression`.
+  Never `error[3042]`/`error[3043]` (ICE), never silent invalid C.
+
+Located-error evidence (`const_size_unfoldable_xmod`, `[N]u8` at col 8):
+```
+repro/mi_matrix/const_size_unfoldable_xmod/main.zig:24:8: error[3050]: array size is not a constant expression
+```
+
+**Build (fixed point MOVES).** `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/t2cF_fix1_build`:
+hop1 `a57734dbe72082b14d0ad981a6ca8c8a`, hop2 == hop3 ==
+**`14ffe6b3d08bb273d74bb92fd9d07c13`** (three-hop moving-point closure).
+BASE `960575b70302c78a19cf6bc0cc129df5` → **NEW
+`14ffe6b3d08bb273d74bb92fd9d07c13`**. Compiler under test =
+`/tmp/t2cF_fix1_build/zig1_5_clean`.
+
+**Six `const_size_*` fixtures** (all with the fixed compiler): `arith`,
+`member`, `local`, `inline_ctrl` → dump rc=0, 4 `.c`, gcc clean, link+run rc=0,
+no stdout; `unfoldable` and `cycle` → dump rc=2, 0 `.c`, located `error[3050]`.
+
+**Corpus `-ffast` dump+gcc classifier (`/tmp/t4bf_classify.sh`), 685 dirs:**
+
+| | BASE `960575b7` | fix round 1 `14ffe6b3` | delta |
+|---|---|---|---|
+| dirs | 685 | 685 | 0 |
+| OK | 635 | 635 | 0 |
+| GREEN | 27 | 27 | 0 |
+| FAIL | 22 | 23 | +1 |
+| ICE | 0 | 0 | 0 |
+| CRASH | 1 | 0 | −1 |
+
+Per-dir `join` diff = **exactly** `const_size_cycle_xmod` CRASH→FAIL (the new
+fixture's RED→clean-error transition). All 684 other dirs class-identical.
+
+**Emit-support / self-compile / goldens.**
+- `bash scripts/check_emit_support.sh /tmp/t2cF_fix1_build/zig1_5_clean` → **5/5** byte-identical.
+- Self-compile: rc=0, **48 `.c`**, 0 `error[3000]`, 0 errors, 0 PANIC.
+- `bash scripts/closeout/verify_upgraded.sh /tmp/t2cF_fix1_build/zig1_5_clean` → **`CLOSEOUT OK`** (A1–A5, B1–B7).
+- 4-MD5 runtime byte-identical: gol `fcbf7e7cead5082f0a8caadd5a8f0ff9`, lisp `8dc783a3d766430c15993ab08cd0f7ec`, json `8bda3d5a1ec07d14a301bc343df32bf8`, mud_server stdout `66c8f0abb926cca7baf9a0d1692ab318`, client bytes `93147d0f0bbd983a9d844fea8b7a6fa7`; rogue boot `3fb6709e7bbd8964ef12aa9c906c0577`, rogue move `b3c5b0e1308bc9a4efde238376c14d9f`.
+- No seed rotation.
+
 
 ## Track-4 Task 2c-F (F) — const-expression array sizes FIXED (v106 -> v107 2026-09-16)
 
