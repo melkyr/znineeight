@@ -1234,6 +1234,39 @@ Expected: `CLOSEOUT OK`.
 
 ---
 
+### Task 4c: `std.async.waitFor` — drive a task from any context — I then F
+
+**Origin (Task 5 S17 flag, 2026-09-16).** The Task 5 brief flagged a spec-vs-landed-API conflict: the spec (§1/§3.2) says `main` uses `std.async.awaitTask` on the quit/disconnect path, but the landed `awaitTask(s, t)` only marks the **currently-running** task as waiting on `t` and `@panic`s when `!s.in_task` — `main` is not a task, so it cannot drain via `awaitTask`.
+
+**Operator ruling (2026-09-16):** do **NOT** add `awaitTask` drain semantics. Add a **separate primitive** instead:
+```zig
+pub fn waitFor(s: *Scheduler, t: *Task) FrameError!void;
+```
+Contract: drives the scheduler (calls `tick`) until `t` is settled (done/cancelled); returns `t`'s error state if it failed (**`FrameError` = pool overflow `error.OutOfFrame` only** — no per-`Task` error field, operator ruling); valid from **any** context (main, `export fn`, or a non-suspending helper); does **not** suspend and does **not** need a caller frame. `awaitTask` keeps its coroutine-internal semantics (the two contexts stay distinguishable in the code). `waitFor` is a plain std-library function calling `tick` in a loop. Update the spec text alongside the new primitive.
+
+#### Task 4c-I: investigate + pin (no `sf/src` change)
+
+- [ ] **Step 1: Fixture set** (`repro/mi_matrix/`, auto-listed; each documents RED-now + the GREEN contract):
+  - `stdlib_async_waitfor_xmod/` — `waitFor(&s, &s.tasks[0])` from **main** (a non-suspending context): drives the task to `done`; assert its work completed and `state == done`.
+  - `stdlib_async_waitfor_cancel_xmod/` — `waitFor` returns when the task is `cancel`led (settled).
+  - `stdlib_async_waitfor_settled_xmod/` — `waitFor` on an already-settled task returns immediately (no hang).
+  - the pool-overflow error path if reachable (`error.OutOfFrame`).
+  - **extend** the existing `stdlib_async_await_nonctx_xmod/` (the `awaitTask`-from-non-suspending `@panic` err fixture) to cover the operator's requested err case; confirm `awaitTask`'s coroutine-internal semantics are unchanged.
+  - controls: `waitAll` (existing) and a `waitFor` from a non-suspending helper fn (not just main).
+- [ ] **Step 2: Questionnaire.** Answer in the report: (Q1) `waitFor`'s exact semantics vs `waitAll`/`awaitTask`; (Q2) how `FrameError` surfaces the failure (pool `error.OutOfFrame` only) and what "t's error state" means concretely; (Q3) the termination guard when `t` is **not** registered in `s` (must not hang — decide the guard/`@panic`); (Q4) dependency chains (`waitFor` on a task whose `waiting_on` needs another task — does ticking settle both?); (Q5) the minimal fix surface + the exact spec text to change; (Q6) corpus/diagnostic delta.
+- [ ] **Step 3: Declare.** Add the fixtures; bump `repro/mi_matrix/EXPECTED_FAIL.md` (v119→v120) as needed.
+- [ ] **Step 4: Report + present the fix surface for Task 4c-F.** No `sf/src` change.
+
+#### Task 4c-F: add `waitFor` + update the spec (`sf/src` change; fixed point MOVES)
+
+- [ ] **Step 1: Add** `pub fn waitFor(s: *Scheduler, t: *Task) FrameError!void;` (plain `tick` loop until `t` is settled; does not suspend; needs no caller frame; `error.OutOfFrame` only). Leave `awaitTask` unchanged. Update the spec text (`docs/superpowers/specs/2026-09-13-coroutine-integration-design.md` §1/§3.2) alongside the new primitive.
+- [ ] **Step 2: Fixtures RED→GREEN**; full corpus sweep (class-map delta = intended dirs only — any other movement is a regression to STOP on); `check_emit_support.sh` 5/5; self-compile closure (48 `.c`, 0 `[3000]`).
+- [ ] **Step 3: Re-verify** the four goldens + `CLOSEOUT OK`; 4-MD5 byte-identical; record the new fixed point. Seed rotation stays at Task 6.
+
+**Sequencing gate:** Task 5 MUST NOT start until Task 4c-F is landed.
+
+---
+
 ### Task 5: `mud_server` `select` loop → per-client tasks (entry E4)
 
 **Files:**
