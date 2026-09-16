@@ -692,6 +692,55 @@ pub fn typeResolverGetSorted(self: *TypeResolver) []u32 {
     return self.sorted_items[0..self.sorted_len];
 }
 
+// Task 2b-F (#1): resolve the module a field-access base expression denotes,
+// walking a module-alias chain (`mid` -> `mid.leaf` -> ...). A base is a module
+// reference when it is a `SymbolKind.module` symbol (a direct `@import` alias)
+// or when its resolved type is `module_type` (a nested module alias). Returns
+// the module id, or 0 when the expression is not a module reference. Mirrors
+// the module lookup in `resolveTypeExprFull`'s field_access arm.
+fn evalConstModuleOfExpr(env: *TypeResolveEnv, node_idx: u32) u32 {
+    if (node_idx == @intCast(u32, 0)) return @intCast(u32, 0);
+    var node = ast_mod.astStoreNodeAt(env.store, node_idx);
+    if (node.kind == AstKind.ident_expr) {
+        var name_id = ast_mod.astStoreIdentifier(env.store, node_idx);
+        if (env.module_id != MODULE_ID_NONE) {
+            if (sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, env.module_id, name_id)) |s| {
+                if (s.kind == sym_mod.SymbolKind.module) return s.module_id;
+                if (s.type_id != @intCast(u32, 0) and @intCast(usize, s.type_id) < env.typereg.types_len) {
+                    var sty = env.typereg.types_items[@intCast(usize, s.type_id)];
+                    if (sty.kind == type_mod.TypeKind.module_type) return sty.module_id;
+                }
+            }
+        }
+        var si: usize = 0;
+        while (si < @intCast(usize, env.symbol_reg.tables_len)) : (si += 1) {
+            var sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, @intCast(u32, si), name_id);
+            if (sym) |s2| {
+                if (s2.kind == sym_mod.SymbolKind.module) return s2.module_id;
+                if (s2.type_id != @intCast(u32, 0) and @intCast(usize, s2.type_id) < env.typereg.types_len) {
+                    var sty2 = env.typereg.types_items[@intCast(usize, s2.type_id)];
+                    if (sty2.kind == type_mod.TypeKind.module_type) return sty2.module_id;
+                }
+            }
+        }
+        return @intCast(u32, 0);
+    }
+    if (node.kind == AstKind.field_access) {
+        var base_mod = evalConstModuleOfExpr(env, node.child_0);
+        if (base_mod == @intCast(u32, 0)) return @intCast(u32, 0);
+        var field_name_id = ast_mod.astStoreNodePayload(env.store, node_idx);
+        if (sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, base_mod, field_name_id)) |msym| {
+            if (msym.kind == sym_mod.SymbolKind.module) return msym.module_id;
+            if (msym.type_id != @intCast(u32, 0) and @intCast(usize, msym.type_id) < env.typereg.types_len) {
+                var mty = env.typereg.types_items[@intCast(usize, msym.type_id)];
+                if (mty.kind == type_mod.TypeKind.module_type) return mty.module_id;
+            }
+        }
+        return @intCast(u32, 0);
+    }
+    return @intCast(u32, 0);
+}
+
 pub fn evalConstU32Full(env: *TypeResolveEnv, node_idx: u32) u32 {
     if (node_idx == @intCast(u32, 0)) return @intCast(u32, 0xFFFFFFFF);
     var node = ast_mod.astStoreNodeAt(env.store, node_idx);
@@ -706,6 +755,24 @@ pub fn evalConstU32Full(env: *TypeResolveEnv, node_idx: u32) u32 {
                 var c_decl = ast_mod.astStoreNodeAt(env.store, cs.decl_node);
                 if (c_decl.child_1 != 0) {
                     return evalConstU32Full(env, c_decl.child_1);
+                }
+            }
+        }
+    }
+    // Task 2b-F (#1): a field-access const in array-size position
+    // (`[mid.leaf.HEADER_SIZE]`). Resolve the base module through the alias
+    // chain, then fold the member const's initializer recursively. The existing
+    // `ident_expr` recursion above then also covers `const N = <member>`.
+    if (node.kind == AstKind.field_access) {
+        var fa_mod_id = evalConstModuleOfExpr(env, node.child_0);
+        if (fa_mod_id != @intCast(u32, 0)) {
+            var fa_field_id = ast_mod.astStoreNodePayload(env.store, node_idx);
+            if (sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, fa_mod_id, fa_field_id)) |fa_sym| {
+                if ((fa_sym.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
+                    var fa_decl = ast_mod.astStoreNodeAt(env.store, fa_sym.decl_node);
+                    if (fa_decl.child_1 != 0) {
+                        return evalConstU32Full(env, fa_decl.child_1);
+                    }
                 }
             }
         }
@@ -1074,6 +1141,15 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
                     var al = evalConstU32Full(env, node.child_1);
                     if (al != @intCast(u32, 0xFFFFFFFF)) {
                         arr_len = al;
+                        arr_resolved = true;
+                    }
+                } else {
+                    // Task 2b-F (#1): any other const-foldable size expression
+                    // (notably a module-member `field_access` such as
+                    // `[mid.leaf.HEADER_SIZE]`) is folded by the const evaluator.
+                    var alf = evalConstU32Full(env, node.child_1);
+                    if (alf != @intCast(u32, 0xFFFFFFFF)) {
+                        arr_len = alf;
                         arr_resolved = true;
                     }
                 }

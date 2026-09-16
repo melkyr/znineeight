@@ -1,4 +1,63 @@
-# mi_matrix corpus — expected-fail manifest (v104 2026-09-16)
+# mi_matrix corpus — expected-fail manifest (v105 2026-09-16)
+
+## Track-4 Task 2b-F (F) — residual codegen gaps #9/#5/#1 FIXED (v105 2026-09-16)
+
+Track-4 Task 2b-F closes the three residual gaps pinned by Task 2b-I. **`sf/src`
+change** in three files: `sf/src/async_frame_layout.zig` (#9), `sf/src/lower.zig`
+(#5), `sf/src/type_resolver.zig` (#1). No seed rotation (`zig0` never invoked).
+
+**Fixed point MOVED** `43d41bfb903d56c153ebf653131aef6d` →
+**`0da3f1391075e3e77c54b626d5550e3b`** (three-hop closure hop2 == hop3 from the
+committed seed; hop1 `db278e61385ab79b70619a03e89e387f`).
+
+- **#9 — loop-carried local across `@asyncSuspend` now persisted.**
+  `async_frame_layout.zig` `hasReadAfter` is now CFG-aware: it keeps the original
+  linear scan (strictly additive — no narrowing) and adds a successor worklist
+  (`cfgPushSuccessors`, following jump/branch/switch targets and loop back-edges;
+  fallthrough when a block is not terminated). A block reached via a back-edge is
+  scanned in full, so a local read only on the next loop iteration is marked LIVE
+  and added as `ASYNC_FIELD_LIVE`; the existing `saveAllFields`/`reloadAllFields`
+  persist it. `async_live_local_across_suspend_xmod` runtime-RED → **run rc=0**
+  (`out.a == 8`, `out.b == 800`, no stdout). Emitted evidence: `__Z98Step_coA`
+  base saved only `out`@12 / `i`@16; now `n` is saved at frame offset 16 and
+  reloaded on resume. (The fixture's compile-only class stays **OK** — its RED was
+  runtime-only.)
+- **#5 — `&mid.leaf.counter` (address of a module global) now supported.**
+  `lowerLValueAddr`'s `field_access` arm detects a module base via
+  `resolveModuleBase`, looks up the member `SymbolKind.global`, and emits
+  `load_global` + `addr_of` (no new LIR op). `module_value_addr_global_xmod`
+  **ICE → OK** (`error[3043]` gone). Emitted: `zT_2 = &zG_9CACDE23_counter;`.
+- **#1 — field-access const in array-size position now folded.**
+  `type_resolver.zig` `evalConstU32Full` gained a `field_access` arm
+  (`evalConstModuleOfExpr` walks the module-alias chain via
+  `symbolRegistryQualifiedLookup` and folds the member const initializer); the
+  `array_type` arm gained an `else` const-eval fallback. `module_value_arraysize_xmod`
+  **FAIL → OK** (`error[20]` gone; `a.len` folds to 16). Q6 variants a
+  (`[leaf.HEADER_SIZE]`), b (`[mid.leaf.HEADER_SIZE]`), and d (module-level
+  `const N = mid.leaf.HEADER_SIZE`) are GREEN.
+
+**Declared residual (operator-ruled out of Task 2b-F scope, 2026-09-16):**
+function-local `const N = <expr>; [N]` used as an ARRAY SIZE still fails
+`error[20]`. This is **nesting-independent** and **unreachable from the #1 fix
+locus**: the control `const N = 16; var a: [N]u8` (a literal, no module
+involvement) fails `error[20]` identically on both the base `43d41bfb` and the
+fix `0da3f139`; `TypeResolveEnv` (`sf/src/type_resolver.zig:26`) carries no local
+scope and `evalConstU32Full` resolves identifiers via `symbolLookupAllModules`
+(module symbol tables only — a function-local `const` is parsed as a local
+`var_decl` and never registered there). Fixing it needs **local-const scope
+threading into the type resolver**, a separate subsystem. Not to be attempted in
+Task 2b-F. The `module_value_arraysize_xmod` fixture header carries the same
+note. (Q6 variant e; the plan's #1 is specifically the non-literal / field-access
+array-size expression, variants a/b/d.)
+
+**Corpus `-s0` sweep (678 dirs, dump+gcc classifier):** base (43d41bfb) 628 OK /
+27 GREEN / 22 FAIL / 1 ICE / 0 CRASH → fix (0da3f139) 630 OK / 27 GREEN / 21 FAIL
+/ 0 ICE / 0 CRASH. The ONLY per-dir movement is `module_value_addr_global_xmod`
+(ICE→OK) and `module_value_arraysize_xmod` (FAIL→OK); all 676 other dirs are
+class-identical (zero regression). `check_emit_support.sh` 5/5; self-compile
+closure 48 `.c`, 0 `[3000]`, 0 gcc errors; `verify_upgraded.sh` → `CLOSEOUT OK`;
+rogue boot `3fb6709e…` / move `b3c5b0e1…` and mud_server stdout `66c8f0ab…` /
+client bytes `93147d0f…` byte-identical.
 
 ## Track-4 Task 2b-I (I) — residual codegen gaps #9/#5/#1 pinned (v104 2026-09-16)
 

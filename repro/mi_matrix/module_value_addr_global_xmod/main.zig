@@ -24,6 +24,12 @@
 // No new `addr_of_global` LIR op is needed: the emitter aliases a `load_global`
 // result temp to the global's C name, so `addr_of` on it renders `&zG_...` —
 // exactly what the existing same-module `&g` path emits. See report Q5.
+//
+// GREEN (Task 2b-F, fixed point 0da3f1391075e3e77c54b626d5550e3b): dump rc=0,
+// 5 `.c`, gcc -m32 -std=c89 clean, link+run rc=0, no stdout. `lowerLValueAddr`'s
+// field_access arm now detects a module base via `resolveModuleBase`, looks up
+// the member `SymbolKind.global`, and emits `load_global` + `addr_of`. Emitted
+// evidence (`main`): `zT_2 = &zG_9CACDE23_counter;`.
 const mid = @import("mid.zig");
 
 pub fn main() void {

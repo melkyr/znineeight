@@ -109,6 +109,13 @@ const Scan = struct {
     ttype: [*]u32,
     // local name_id -> storage temp_id (decl_local + params; later decls win).
     locals: *hash_mod.U32ToU32Map,
+    // Task 2b-F (#9): CFG-aware live-across scratch. `visited` (one byte per
+    // block) and `work` (a successor worklist, capacity >= total CFG edges) are
+    // allocated once by `asyncLayoutFrame` and reused by `hasReadAfter`.
+    alloc: *Sand,
+    nblocks: u32,
+    visited: [*]u8,
+    work: [*]u32,
 };
 
 fn allocU32With(alloc: *Sand, n: u32, fill: u32) [*]u32 {
@@ -362,6 +369,53 @@ fn hasDefBefore(c: *Scan, v: u32, sbb: u32, sii: u32) bool {
     return false;
 }
 
+// Task 2b-F (#9): push the CFG successors of block `b` onto the worklist at
+// `sp`. Explicit terminator targets (jump/branch/switch_br) plus the implicit
+// fallthrough to `b + 1` when the block is not terminated. Duplicates are
+// allowed; `hasReadAfter` dedups via `visited`.
+fn cfgPushSuccessors(c: *Scan, b: u32, sp: *u32) void {
+    var bb = &c.lir_fn.blocks.items[@intCast(usize, b)];
+    var terminated: u8 = bb.is_terminated;
+    var ii: usize = @intCast(usize, 0);
+    while (ii < bb.insts.len) : (ii += @intCast(usize, 1)) {
+        switch (bb.insts.items[ii]) {
+            .jump => |jb| {
+                c.work[@intCast(usize, sp.*)] = jb;
+                sp.* += @intCast(u32, 1);
+                terminated = @intCast(u8, 1);
+            },
+            .branch => |br| {
+                c.work[@intCast(usize, sp.*)] = br.then_bb;
+                sp.* += @intCast(u32, 1);
+                c.work[@intCast(usize, sp.*)] = br.else_bb;
+                sp.* += @intCast(u32, 1);
+                terminated = @intCast(u8, 1);
+            },
+            .switch_br => |sw| {
+                var si: u32 = sw.cases_start;
+                var se: u32 = sw.cases_start + sw.cases_count;
+                while (si < se) : (si += @intCast(u32, 1)) {
+                    var sc = c.lir_fn.switch_cases.items[@intCast(usize, si)];
+                    c.work[@intCast(usize, sp.*)] = sc.target_bb;
+                    sp.* += @intCast(u32, 1);
+                }
+                c.work[@intCast(usize, sp.*)] = sw.else_bb;
+                sp.* += @intCast(u32, 1);
+                terminated = @intCast(u8, 1);
+            },
+            .ret, .ret_void, .trap => { terminated = @intCast(u8, 1); },
+            else => {},
+        }
+    }
+    if (terminated == @intCast(u8, 0)) {
+        var nxt: u32 = b + @intCast(u32, 1);
+        if (nxt < c.nblocks) {
+            c.work[@intCast(usize, sp.*)] = nxt;
+            sp.* += @intCast(u32, 1);
+        }
+    }
+}
+
 // True when `v` is read somewhere strictly after the suspension instruction
 // (sbb, sii). The suspension instruction's own operands are excluded (so the
 // argument temps of a suspending direct call are not counted as live-across),
@@ -370,6 +424,15 @@ fn hasDefBefore(c: *Scan, v: u32, sbb: u32, sii: u32) bool {
 // included even when redefined in between. Soundness (no false exclusion)
 // matters more than minimality; `layout_size <= frame_sizes[key]` is the guard,
 // with P2's rule (a) the authoritative bound.
+//
+// Task 2b-F (#9): the linear block scan (1) is preserved verbatim so the fix is
+// strictly ADDITIVE (it can never narrow the previous live set). The CFG walk
+// (2) then follows branch/jump/switch targets and loop back-edges, so a local
+// read only on the NEXT loop iteration (e.g. a loop-carried accumulator) is
+// marked live across the suspension. A block reached via a back-edge is scanned
+// in full (from instruction 0); when that block is the suspension block itself,
+// its suspension instruction (sii) is skipped to preserve the operand
+// exclusion.
 fn hasReadAfter(c: *Scan, v: u32, sbb: u32, sii: u32) bool {
     var bi: usize = @intCast(usize, sbb);
     while (bi < c.lir_fn.blocks.len) : (bi += @intCast(usize, 1)) {
@@ -379,6 +442,29 @@ fn hasReadAfter(c: *Scan, v: u32, sbb: u32, sii: u32) bool {
         while (ii < bb.insts.len) : (ii += @intCast(usize, 1)) {
             if (instReadsTemp(c, bb.insts.items[ii], v)) return true;
         }
+    }
+    var z: u32 = @intCast(u32, 0);
+    while (z < c.nblocks) : (z += @intCast(u32, 1)) {
+        c.visited[@intCast(usize, z)] = @intCast(u8, 0);
+    }
+    var sp: u32 = @intCast(u32, 0);
+    cfgPushSuccessors(c, sbb, &sp);
+    while (sp > @intCast(u32, 0)) {
+        sp -= @intCast(u32, 1);
+        var b = c.work[@intCast(usize, sp)];
+        if (b >= c.nblocks) continue;
+        if (c.visited[@intCast(usize, b)] != @intCast(u8, 0)) continue;
+        c.visited[@intCast(usize, b)] = @intCast(u8, 1);
+        var bb2 = &c.lir_fn.blocks.items[@intCast(usize, b)];
+        var ii2: usize = @intCast(usize, 0);
+        while (ii2 < bb2.insts.len) : (ii2 += @intCast(usize, 1)) {
+            if (b == sbb and @intCast(u32, ii2) == sii) {
+                // skip the suspension instruction's own operands
+            } else {
+                if (instReadsTemp(c, bb2.insts.items[ii2], v)) return true;
+            }
+        }
+        cfgPushSuccessors(c, b, &sp);
     }
     return false;
 }
@@ -433,12 +519,19 @@ pub fn asyncLayoutFrame(alloc: *Sand, reg: *TypeRegistry, lir_fn: *LirFunction,
     var fields = fieldArrayListInit(alloc, lir_fn.params.len + lir_fn.hoisted_temps.len + @intCast(usize, 2));
 
     var locals = hash_mod.u32ToU32MapInit(alloc);
+    var nblocks: u32 = @intCast(u32, lir_fn.blocks.len);
+    var visited = allocU8Raw(alloc, nblocks);
+    var work = allocU32With(alloc, nblocks * @intCast(u32, 2) + @intCast(u32, lir_fn.switch_cases.len) + @intCast(u32, 4), @intCast(u32, 0));
     var c = Scan{
         .lir_fn = lir_fn,
         .reg = reg,
         .max_temp = max_temp,
         .ttype = allocU32With(alloc, max_temp, type_mod.TYPE_UNDEFINED),
         .locals = &locals,
+        .alloc = alloc,
+        .nblocks = nblocks,
+        .visited = visited,
+        .work = work,
     };
     var hti: usize = @intCast(usize, 0);
     while (hti < lir_fn.hoisted_temps.len) : (hti += @intCast(usize, 1)) {

@@ -26,6 +26,14 @@
 // (`sf/src/async_frame_layout.zig:481-519`, `hasReadAfter`), NOT P2 sizing
 // (P2's `scanFrameLocals` already over-reserves every node) and NOT the
 // save/reload emission (which faithfully saves the fields it is given).
+//
+// GREEN (Task 2b-F, fixed point 0da3f1391075e3e77c54b626d5550e3b): dump rc=0,
+// 4 `.c`, gcc clean, link rc=0, run rc=0, no stdout. `hasReadAfter` is now
+// CFG-aware (follows branch/jump/switch successors and loop back-edges), so the
+// loop-carried accumulator is marked LIVE and the frame persists it. Emitted
+// evidence (`__Z98Step_coA`): base saved only `out`@12 and `i`@16; now `n` is
+// saved at frame offset 16 (plus the intermediate temps), and reloaded on the
+// resume path.
 const Out = struct { a: i32, b: i32 };
 const AArgs = struct { out: *Out };
 const BArgs = struct { out: *Out };

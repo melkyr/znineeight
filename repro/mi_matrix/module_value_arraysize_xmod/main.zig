@@ -20,6 +20,19 @@
 //
 // Expected GREEN contract (once BOTH gaps are fixed): `a.len == 16`; dump rc=0,
 // gcc clean, link+run rc=0, no stdout.
+//
+// GREEN (Task 2b-F, fixed point 0da3f1391075e3e77c54b626d5550e3b): dump rc=0,
+// 5 `.c`, gcc -m32 -std=c89 clean, link+run rc=0, no stdout. `evalConstU32Full`
+// gained a `field_access` arm that walks the module-alias chain
+// (`evalConstModuleOfExpr`) and folds the member const's initializer; the
+// `array_type` arm also has an `else` const-eval fallback. Emitted evidence:
+// `a.len` folds to the literal 16 (`zT_4 = 16;`). Variants a (`[leaf.HEADER_SIZE]`),
+// b (`[mid.leaf.HEADER_SIZE]`), and d (module-level `const N = mid.leaf.HEADER_SIZE`)
+// are all GREEN. Variant e (function-local `const N = ...; [N]`) stays RED — a
+// separate statement-scope gap (`const N = 16; [N]` fails identically on both
+// base and fix), declared out of this gap by the Task 2b-I investigation and
+// operator-ruled OUT OF SCOPE for Task 2b-F; fixing it needs local-const scope
+// threading into the type resolver. See `repro/mi_matrix/EXPECTED_FAIL.md` v105.
 const mid = @import("mid.zig");
 
 pub fn main() void {

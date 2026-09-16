@@ -1399,6 +1399,30 @@ fn lowerLValueAddr(self: *LirLowerer, lv_node_idx: u32, result_type: u32) u32 {
     if (lv_node.kind == AstKind.field_access) {
         var field_name_id: u32 = ast_mod.astStoreNodePayload(store, lv_node_idx);
         var base_node_idx = lv_node.child_0;
+        // Task 2b-F (#5): address of a module global reached through a module
+        // alias (`&mid.leaf.counter`). The generic struct/union path below has
+        // no module base, so resolve the module via `resolveModuleBase` (handles
+        // both a direct module ident and a nested `module_type` alias), look up
+        // the member global, and emit `load_global` + `addr_of` — the exact
+        // shape the same-module `&g` ident arm emits. The emitter aliases the
+        // `load_global` result temp to the global's C name, so `addr_of`
+        // renders `&zG_...`; no new LIR op is needed.
+        if (self.ctx.has_symbols != @intCast(u8, 0)) {
+            var lva_mod_id = resolveModuleBase(self, base_node_idx);
+            if (lva_mod_id != @intCast(u32, 0)) {
+                if (sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, lva_mod_id, field_name_id)) |lva_msym| {
+                    if (lva_msym.kind == sym_mod.SymbolKind.global) {
+                        var lva_gres = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, lva_msym.decl_node);
+                        var lva_gtype = if (lva_gres) |gt| gt else type_mod.TYPE_UNDEFINED;
+                        var lva_gtemp = nextTemp(self, lva_gtype);
+                        emitInst(self, LirInst{ .load_global = .{ .name_id = lva_msym.name_id, .module_id = lva_mod_id, .result = lva_gtemp } });
+                        var lva_atid = nextTemp(self, result_type);
+                        emitInst(self, LirInst{ .addr_of = .{ .operand = lva_gtemp, .result = lva_atid } });
+                        return lva_atid;
+                    }
+                }
+            }
+        }
         var base_resolved = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, base_node_idx);
         var base_ty = if (base_resolved) |bt| bt else type_mod.TYPE_VOID;
         var base_is_ptr: u8 = @intCast(u8, 0);
