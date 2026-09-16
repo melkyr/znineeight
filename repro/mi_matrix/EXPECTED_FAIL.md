@@ -1,4 +1,91 @@
-# mi_matrix corpus — expected-fail manifest (v96 2026-09-16)
+# mi_matrix corpus — expected-fail manifest (v97 2026-09-16)
+
+## Task 0o2 (F) — fix the `json_parser` `strtod` declaration + pin the offending syntax (v97 2026-09-16)
+
+Track-4 Task 0o2 fixes the ROOT CAUSE left declared by Task 0o (its gap #1): the
+`strtod` extern declaration in the canonical `examples/z98/json_parser*` copies is
+type-WRONG for libc. `endptr: ?[*]const c_char` is C `const char *`, but
+`<stdlib.h>`'s real `strtod` takes `char **`. Task 0o removed the warning only for
+the **statically-null** argument (a null pointer constant is compatible with any
+object-pointer parameter); a **non-null** endptr is a genuine mismatch and still
+emits non-conforming C. Task 0o2 (a) corrects the example declaration and (b)
+pins the offending syntax as an EXPECTED WARNING in the corpus. **No `sf/src`
+change; no re-baseline; seed NOT rotated; the fixed point is UNMOVED at
+`f68e69dbac58d5c8ace9f367e199490c`** (the seed-rebuild closure `hop2 == hop3 ==
+f68e69db…` reproduces Task 0o's point exactly). Report:
+`.superpowers/sdd/2026-09-13-coroutine-integration-plan/task-0o2-report.md`.
+
+**Correct Z98 type (emission-proven).** `?*[*]c_char` — optional single-item
+pointer to a many-item pointer to `c_char` (C `char **`, nullable). Emission test
+with the seed-built compiler (scratch probe `strtod(nptr: [*]const c_char,
+endptr: ?*[*]c_char)`, called with `null` and with `&out` where `out: [*]c_char`):
+dump rc=0, gcc 0 warnings, run rc=0 stdout `1`. Emitted C proves the ABI shape:
+the optional materializes as the standard
+`typedef struct { char** value; int has_value; }` and ABI-unwraps to a `char**`
+temp — `zT_32 = zT_37.has_value ? zT_37.value : NULL;` /
+`strtod(..., zT_32);` — while the null argument stays `(void*)(NULL)`. NOT a
+struct at the call, NOT a single `char*`. (Candidate confirmed; no `sf/src`
+change needed.)
+
+**Example fix (scope ruling B — three canonical copies).** `endptr:
+?[*]const c_char` → `endptr: ?*[*]c_char` in `examples/z98/json_parser/file.zig:18`,
+`examples/z98/json_parser_upgraded/file.zig:18`, and
+`examples/z98/json_parser_workaround/file.zig:19`. Measured with the seed-built
+compiler under the binding gcc flag-set
+(`gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
+-Wno-implicit-function-declaration -I <inc>`):
+
+| example | `passing argument 2 of 'strtod'` | total `-Wall` warns | run | stdout md5 |
+|---|---|---|---|---|
+| `examples/z98/json_parser` | 0 (was 1) | 59 | rc=0 | `8bda3d5a1ec07d14a301bc343df32bf8` (UNCHANGED) |
+| `examples/z98/json_parser_upgraded` | 0 (was 1) | 59 | rc=0 | `8bda3d5a1ec07d14a301bc343df32bf8` |
+| `examples/z98/json_parser_workaround` | 0 (was 1) | 62 | rc=0 | `dc22fa473650bd3dcdf4d8a1559a260b` |
+
+The strtod warning is gone for **both** the null argument (all three examples
+call `strtod(..., null)`) and a **non-null** endptr (the emission probe above).
+`json_parser` runtime stdout is byte-identical to Task 0o (md5 `8bda3d5a…`).
+`bash scripts/closeout/verify_upgraded.sh /tmp/t4o2/zig1_5_clean` → **CLOSEOUT
+OK**.
+
+**New EXPECTED-WARNING fixture** `repro/mi_matrix/strtod_endptr_wrongdecl_nonnull_xmod`
+(auto-listed by `scripts/corpus/list_corpus_dirs.sh`; class OK — gcc exits 0 with
+the warning). It carries the OFFENDING SYNTAX: an extern declared with the wrong
+`endptr: ?[*]const c_char` (`main.zig:26`) and **CALLED with a NON-NULL
+argument** (`main.zig:37`, `endptr` = a pointer into a writable 8-byte slot), so
+the emitted C passes a `char*` where `<stdlib.h>` wants `char**`:
+
+```
+main_1353F197.c:75:67: warning: passing argument 2 of 'strtod' from incompatible pointer type [-Wincompatible-pointer-types]
+   75 |     zT_33 = strtod((char*)((char*)(unsigned char*)(buf + zT_28)), zT_27);
+```
+
+**Rationale.** A wrong extern declaration produces illegal (non-conforming) C.
+The example is FIXED, so this fixture pins the behaviour deliberately: it is an
+EXPECTED WARNING (non-conforming C, gcc rc=0), not a class FAIL and not a
+compiler defect. `nptr` is a non-literal local buffer, so the fixture carries
+**no** Task-0p `string_const` shape-1/2 warning — the endptr mismatch is its only
+warning. It runs memory-safely: run rc=0, stdout `1`.
+
+**`examples/zig0/*` still carry the offending syntax (declared, outside the
+canonical corpus).** `examples/zig0/json_parser/file.zig:10` and
+`examples/zig0/json_parser_workaround/file.zig:11` keep
+`endptr: ?[*]const c_char`; per scope ruling B they are intentionally NOT fixed
+(they are outside the `examples/z98/*` canonical corpus). This is a declared
+gap, NOT marked minor.
+
+**Measured (seed-built compiler `/tmp/t4o2/zig1_5_clean`; sf/src unchanged).**
+
+- Corpus class map: **662 = 619 OK / 20 GREEN / 23 FAIL / 0 ICE / 0 CRASH**; the
+  only delta vs the post-0o 661-dir reference is the new OK fixture.
+- Full-corpus gcc warning census (`-Wall -Wextra`, user code):
+  **1505 → 1506**, `-Wincompatible-pointer-types` **1381 → 1382**. Per-dir diff
+  vs the post-0o census is **exactly the one new dir**
+  (`strtod_endptr_wrongdecl_nonnull_xmod  1  -Wincompatible-pointer-types=1`);
+  no other category moves; no regression. (The example declaration fix itself
+  moves no census row — the examples only call `strtod` with a null endptr, which
+  Task 0o already made clean.)
+- Self-compile fixed point **UNMOVED** `f68e69dbac58d5c8ace9f367e199490c`
+  (hop2 == hop3). No `sf/src` edit.
 
 ## Task 0o (F) — fix the pre-existing `strtod` null-optional warning (v96 2026-09-16)
 
