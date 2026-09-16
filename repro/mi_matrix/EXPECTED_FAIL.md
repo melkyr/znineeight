@@ -1,4 +1,65 @@
-# mi_matrix corpus — expected-fail manifest (v103 2026-09-16)
+# mi_matrix corpus — expected-fail manifest (v104 2026-09-16)
+
+## Track-4 Task 2b-I (I) — residual codegen gaps #9/#5/#1 pinned (v104 2026-09-16)
+
+Track-4 Task 2b-I pins the three residual codegen gaps declared after Task 2a/Task 2
+and presents the fix surface for Task 2b-F. **No `sf/src` change.** Reference compiler =
+the Task-2a-F fixed point `43d41bfb903d56c153ebf653131aef6d`, rebuilt via the seed model
+(`bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/t4b_i_build`; gate
+`=== [seed] Done ===`). The committed seed (v19) predates Task 2a-F, so hop1
+(`zig1_5_clean`) md5 `160bff6f500b8a85762f3f9f45a41092` differs from the closure; the
+compiler under test is the closure binary hop2 == hop3 == `43d41bfb…`
+(`/tmp/t4b_i_build/hop2/zig1_hop2`). Full report:
+`.superpowers/sdd/2026-09-13-coroutine-integration-plan/task-2b-report.md`.
+
+**Two new corpus dirs (auto-listed by `scripts/corpus/list_corpus_dirs.sh`):**
+
+| dir | class | RED today (fixed point 43d41bfb…) | expected GREEN (Task 2b-F) |
+|---|---|---|---|
+| `async_live_local_across_suspend_xmod` | **OK** (compile-clean) — runtime-RED | dump rc=0, 4 `.c`, gcc clean, link rc=0, **run rc=133** (SIGTRAP) stderr `panic: async_live_local_across_suspend_xmod: coA counter not preserved` | run rc=0, `out.a == 8`, `out.b == 800`, no stdout |
+| `module_value_addr_global_xmod` | **ICE** | dump rc=3, 0 `.c`, `warning[3023]: module used as value expression` + `error[3043]: internal: unsupported address-of l-value (node 7)` | dump rc=0, 5 `.c`, gcc clean, link+run rc=0, no stdout |
+
+**#9 (DANGEROUS) — loop-carried local not persisted.**
+`async_live_local_across_suspend_xmod` has two interleaved coroutines, each with a
+loop-carried accumulator (`n`/`m`) mutated and read across an explicit `@asyncSuspend`
+inside a `while`. The accumulator is read only via the loop back-edge, never after the
+suspend in LINEAR block order, so P3 `hasReadAfter` (`sf/src/async_frame_layout.zig:373-384`)
+does not mark it LIVE; it is absent from the P3 layout (`:481-519`) and
+`saveAllFields`/`reloadAllFields` (`sf/src/async_state_machine.zig:253-279`) never persist
+it. The emitted step function saves only `out` (offset 12) and the loop counter `i`
+(offset 16); on resume `n` is an uninitialized C local. **Failure mode = silent value loss
+→ the fixture's own assert panics (rc=133).** NOT a frame mis-size (P2's `scanFrameLocals`
+over-reserves every node, so the frame is large enough) and NOT a save/reload emission bug
+(the emission faithfully persists every field P3 marks LIVE). The interleave is required:
+a SINGLE coroutine alone can pass by stack-slot reuse; the interleaved second coroutine
+(same stack slot) makes the lost accumulator deterministic (5/5 runs panic). See report
+Q1-Q4.
+
+**#5 — `&mid.leaf.counter` (address of a nested module global).** The l-value ADDRESS path
+`lowerLValueAddr` (`sf/src/lower.zig:1360`; field_access arm `:1399-1448`) has no
+module-base handling: the base `mid.leaf` is a `module_type`, the struct/union field lookup
+misses, and `iceAddrOfLValueUnsupported` (`:1341`) fires. The same ICE fires for a 1-level
+DIRECT import `&leaf.counter` (nesting-independent) — the gap is the missing
+address-of-a-module-global path. Same-module `&g` already works via `load_global` +
+`addr_of`. See report Q5.
+
+**#1 — non-literal / field-access array-size expression (KEPT as the #1 pin).**
+`module_value_arraysize_xmod` stays **FAIL**: `var a: [mid.leaf.HEADER_SIZE]u8` is rejected
+at type-resolution time with `error[20]: identifier 'a' is not declared or imported in this
+module` (dump rc=2, 0 `.c`). NESTING-INDEPENDENT (`[leaf.HEADER_SIZE]` direct-import fails
+identically). Root cause: `evalConstU32Full` (`sf/src/type_resolver.zig:695-714`) handles
+only `int_literal` / `ident_expr`; the `array_type` arm (`:1042-1097`) has no `field_access`
+case, so the size never resolves. A module-level literal const `[N]u8` is GREEN;
+`const N = <module member>` is RED (the recursive ident path hits the same missing
+`field_access` arm). See report Q6.
+
+**Corpus delta.** Canonical `scripts/corpus/list_corpus_dirs.sh` universe **676 → 678**
+(+2). The v103 entry's 675 predates Task 2's addition of `async_frame_lifetime_xmod`
+(`a4e2364f`). Class delta vs the 676 pre-existing dirs: **+1 OK** (the #9 fixture is
+compile-clean) and **+1 ICE** (the #5 fixture). No `sf/src` change, so the 676 pre-existing
+dirs are class-identical (zero movement). `error[3043]` is in the classifier ICE regex; the
+#9 fixture's runtime-RED is invisible to the compile-only classifier (recorded here as a
+declared runtime-RED expected-fail).
 
 ## Track-4 Task 2a-F (F) — nested module value-position gap FIXED (v103 2026-09-16)
 
