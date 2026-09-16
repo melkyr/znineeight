@@ -1,4 +1,67 @@
-# mi_matrix corpus — expected-fail manifest (v119 2026-09-16)
+# mi_matrix corpus — expected-fail manifest (v120 2026-09-16)
+
+## Track-4 Task 4c-I (I) — `std.async.waitFor` primitive pinned (v119 -> v120 2026-09-16)
+
+Task 4c-I pins the operator-ruled (S33) `std.async.waitFor` primitive: a
+non-suspending drive primitive `pub fn waitFor(s: *Scheduler, t: *Task)
+FrameError!void` that ticks `s` until `t` is settled. The landed `awaitTask`
+only marks the CURRENTLY-RUNNING task waiting on `t` and `@panic`s when
+`!s.in_task`, so `main` (not a task) cannot use it. **No `sf/src` change; fixed
+point `18e0de5cf71f4fe0fbf5c560ab24e624` UNMOVED (hop2==hop3).**
+
+**New corpus dirs** (auto-listed; each references the ABSENT `sa.waitFor`, so each
+is a compile-time RED today: dump rc=2, 0 `.c`,
+`error[3042]: non-value base expression in field access` +
+`warning[3023]: module used as value expression`). The classifier buckets
+`error[3042]` as ICE (its `ICE_RE` includes 3042), so the 7 new dirs are
+ICE-classified — a clean frontend rejection, NOT a crash. The GREEN contracts
+below are validated against a `/tmp` patched `lib/std_async.zig` carrying the
+proposed `waitFor` (the committed `sf/src/std_async.zig` is unchanged); each was
+run 3x deterministic.
+
+| fixture | shape | RED now (waitFor absent) | GREEN contract (Task 4c-F) |
+|---|---|---|---|
+| `stdlib_async_waitfor_xmod` | `waitFor(&s,&t0)` from main; t0 yields 2x then done | rc=2, 0 `.c`, `error[3042]` | rc=0, link+run rc=0, stdout `10` `3` |
+| `stdlib_async_waitfor_cancel_xmod` | `cancel` before `waitFor`; step never resumed | rc=2, 0 `.c`, `error[3042]` | stdout `0` `4` (ticks 0, state cancelled) |
+| `stdlib_async_waitfor_settled_xmod` | t0 pre-set `done`; t1 ready + unsettleable; `waitFor(&s,&t0)` must not tick/hang | rc=2, 0 `.c`, `error[3042]` | stdout `0` `3` (t1.ticks==0) |
+| `stdlib_async_waitfor_oom_xmod` | step exhausts its pool; `waitFor` propagates `error.OutOfFrame` | rc=2, 0 `.c`, `error[3042]` | stdout `1` `1` `1` |
+| `stdlib_async_waitfor_helper_xmod` | control: `waitFor` from a non-suspending helper fn | rc=2, 0 `.c`, `error[3042]` | stdout `10` `3` |
+| `stdlib_async_waitfor_dep_xmod` | control: `waitFor(&s,&t1)` where t1 `awaitTask`s t0 (chain) | rc=2, 0 `.c`, `error[3042]` | stdout `10` `20` `3` |
+| `stdlib_async_waitfor_unregistered_xmod` | Q3 guard: t0 unregistered + unsettled (no guard => hang) | rc=2, 0 `.c`, `error[3042]` | rc=133 panic `std.async: waitFor called with an unregistered task` |
+
+**Extended `stdlib_async_await_nonctx_xmod`** (stays corpus class **OK**): adds
+Part A (a coroutine-internal `awaitTask` chain driven by `waitAll`; stdout `10`
+`20`, `fflush`-ed before the trap) before the original Part B (`awaitTask` from
+main => `panic: std.async: awaitTask called from a non-suspending context`,
+rc=133). `awaitTask`'s coroutine-internal semantics are unchanged.
+
+**Corpus `-ffast` dump+gcc classifier (`/tmp/t4bf_classify.sh`), universe 709
+-> 716:**
+
+| | 4b-F `18e0de5c` | 4c-I `18e0de5c` | delta |
+|---|---|---|---|
+| dirs | 709 | 716 | +7 |
+| OK | 656 | 656 | 0 |
+| GREEN | 28 | 28 | 0 |
+| FAIL | 25 | 25 | 0 |
+| ICE | 0 | 7 | +7 |
+| CRASH | 0 | 0 | 0 |
+
+Per-dir movement = exactly the 7 new dirs (all ICE); the modified
+`stdlib_async_await_nonctx_xmod` stays OK. No `sf/src` change; no new diagnostic
+code (the RED uses the pre-existing `error[3042]`/`warning[3023]`).
+
+**Fix surface for Task 4c-F** (no `sf/src` change here): add
+`pub fn waitFor(s: *Scheduler, t: *Task) FrameError!void` to
+`sf/src/std_async.zig` (proposed insertion after `waitAll`, `:202`) — a plain
+`tick` loop plus a registration guard — and update
+`docs/superpowers/specs/2026-09-13-coroutine-integration-design.md`
+§1/§3.1/§3.2 (see the task report for the exact text). Note: `std_async.zig` is
+NOT in `sf/src/main.zig`'s import graph, so the self-emission fixed point is
+expected **UNMOVED**, contrary to the 4c-F brief's "fixed point MOVES". Full
+report:
+`.superpowers/sdd/2026-09-13-coroutine-integration-plan/task-4c-report.md`.
+
 
 ## Track-4 Task 4b-F (F) — uninitialized `is_param` frame-layout buffer FIXED (v118 -> v119 2026-09-16)
 
