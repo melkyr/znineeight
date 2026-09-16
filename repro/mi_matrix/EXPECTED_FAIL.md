@@ -1,4 +1,66 @@
-# mi_matrix corpus — expected-fail manifest (v98 2026-09-16)
+# mi_matrix corpus — expected-fail manifest (v99 2026-09-16)
+
+## Task 0q (F) — promote the 12 `(b)` invalid-Zig cases to hard `error[3000]` (v99 2026-09-16)
+
+Track-4 Task 0q is the FINAL step of the `warning[3000]` series (0l-0q). The 48
+`(a)` valid-Z98 false positives were cleared by Task 0m; Task 0n migrated the 7
+self enum->int sites to `@intCast(T, @enumToInt(...))`. This task promotes the
+`(b)` invalid-Zig shapes to a hard `error[3000]` (rc=2, 0 `.c`) **scoped to those
+shapes only** so no `(a)` case is caught.
+
+**Sites** (`sf/src/semantic_analyzer.zig`):
+- var-decl `semanticAnalyzerResolveStmtIter` (the `level` at the `it`/`decl_type` mismatch).
+- assignment `semanticAnalyzerResolveAssign` (the `level` at the `eff_src`/`lhs` mismatch).
+- return `resolveReturnStmt` (new `(b)`-scoped `error[3000]`).
+- call-arg `semanticAnalyzerResolveFnCall` (both the direct-call and fn-pointer paths; new `(b)`-scoped `error[3000]`).
+- The shape test is `isBShapeMismatch(self, src, tgt, full)`: bare `*T`->`[]T`, bare
+  `*T`->`[*]T`, array element/length mismatch, error-set superset->subset, and
+  enum->integer without `@enumToInt`. Callers guard with `!typeRegistryIsAssignable`.
+- **Dedupe**: `sf/src/type_registry.zig` had a DUPLICATE `ptr_type -> slice_type`
+  assignability block (after the array-pointee block) that still accepted a bare
+  `*const u8 -> []const u8`; it is **deleted** (whole block). After deletion the
+  remaining array-pointee block is the only ptr->slice acceptance.
+
+**Promoted corpus dirs (5) — now hard `error[3000]`, 0 `.c`:**
+
+| dir | site | exact diagnostic |
+|---|---|---|
+| `eu_assign_incompat_errorset` | assignment | `main.zig:1:101 error[3000] type mismatch in assignment` — source: error-union / target: error-union (`error{X,Y}` -> `error{X}`) |
+| `ptr_scalar_to_manyptr_xmod` | var-decl | `main.zig:18:4 error[3000] type mismatch in variable declaration` — source: pointer / target: many-pointer |
+| `typealias_arr_elem_mismatch_xmod` | var-decl | `main.zig:9:4 ... variable declaration` — source: array / target: array (`[3]u8` -> `[3]i32`) |
+| `typealias_arr_len_mismatch_xmod` | var-decl | `main.zig:10:4 ... variable declaration` — source: array / target: array (`[2]i32` -> `[3]i32`) |
+| `w3000_enum_to_int_xmod` | var-decl | `main.zig:22:4 ... variable declaration` — source: enum / target: u32 (`E.B` without `@enumToInt`) |
+
+**Frontend-reject fixtures (2) — now hard `error[3000]`, 0 `.c`:**
+- `nonliteral_ptr_to_slice_xmod` (F-M4): previously gcc-only FAIL; now
+  `main.zig:23:4 ... variable declaration` — source: pointer / target: slice.
+- `bareptr_to_slice_ctx_xmod` (Task 0i fixture): all six contexts now reject —
+  var-decl (`:40`, `:59`, `:64`), assignment (`:46`), return (`:51`),
+  call-arg (`:55`), each source: pointer / target: slice.
+
+**Class map (gcc classifier, 662 dirs):** before `619 OK / 20 GREEN / 23 FAIL`;
+after `614 OK / 27 GREEN / 21 FAIL`. The ONLY moves are the 5 `(b)` dirs
+(OK->GREEN) and the 2 frontend-reject fixtures (`nonliteral_ptr_to_slice_xmod`,
+`bareptr_to_slice_ctx_xmod`: FAIL->GREEN). No other dir moves.
+
+**Census / self-compile:** the full-corpus `warning[3000]` census is `5 -> 0`; the
+pinned `(a)` census stays `39 dirs / 0` (no `(a)` case caught); the self-compile
+dumps 48 `.c`, rc=0, `warning[3000]=0`, `error[3000]=0`. Fixed point MOVES
+`3f81ea143da726710ad47b6f08bbb13a` -> `7c12619c276e0989c29f27cb4c81d748`
+(hop2==hop3). No re-baseline; seed NOT rotated.
+
+**4-MD5 runtime proof (byte-identical):** gol `fcbf7e7cead5082f0a8caadd5a8f0ff9`,
+lisp `8dc783a3d766430c15993ab08cd0f7ec`, json `8bda3d5a1ec07d14a301bc343df32bf8`,
+mud server `66c8f0abb926cca7baf9a0d1692ab318` / client
+`93147d0f0bbd983a9d844fea8b7a6fa7`. `CLOSEOUT OK`.
+
+**Declared residual (not minor):** the return/call-argument promotion excludes
+bare `*T`->`[*]T` and enum->integer. The compiler's OWN source relies on those two
+coercions silently in return/argument positions — 34 `*T`->`[*]T` (e.g.
+`fopen(&c_path[0], ...)`) + 7 enum->integer (`itoa(node.kind, ...)`) = 41 sites
+measured by an all-shapes build — so hard-erroring them there would break
+self-hosting. var-decl and assignment promote all five shapes. Report:
+`.superpowers/sdd/2026-09-13-coroutine-integration-plan/task-0q-report.md`.
 
 ## Task 0p (F) — decay the A1 `string_const` pointer-to-array emission (v98 2026-09-16)
 

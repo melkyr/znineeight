@@ -1426,7 +1426,16 @@ fn resolveReturnStmt(self: *SemanticAnalyzer, node_idx: u32) void {
             var t2f_nm: []const u8 = "T2F:C"; pal_mod.markerWriteInt(t2f_nm, node.child_0);
             var t2f_rm: []const u8 = "T2F:R"; pal_mod.markerWriteInt(t2f_rm, ret_val);
             var t2f_fm: []const u8 = "T2F:F"; pal_mod.markerWriteInt(t2f_fm, self.current_fn_return);
-            tryRecordCoercion(self, node.child_0, errLitSrcType(self, node.child_0, self.current_fn_return, ret_val), self.current_fn_return);
+            var ret_eff = errLitSrcType(self, node.child_0, self.current_fn_return, ret_val);
+            if (!type_mod.typeRegistryIsAssignable(self.registry, ret_eff, self.current_fn_return) and isBShapeMismatch(self, ret_eff, self.current_fn_return, false)) {
+                var rsp = node.span_start;
+                var rep = rsp + @intCast(u32, node.span_len);
+                var rtm_msg: []const u8 = "type mismatch in return statement — value type may not be compatible with the function return type";
+                var rdi = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, rsp, rep, rtm_msg);
+                _ = diag_mod.diagnosticCollectorAddNote(self.diag, rdi, diag_mod.typeKindSrcStr(self.registry.types_items[@intCast(usize, ret_eff)].kind));
+                _ = diag_mod.diagnosticCollectorAddNote(self.diag, rdi, diag_mod.typeKindTgtStr(self.registry.types_items[@intCast(usize, self.current_fn_return)].kind));
+            }
+            tryRecordCoercion(self, node.child_0, ret_eff, self.current_fn_return);
         }
     }
 }
@@ -1496,7 +1505,17 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
             var dxc_at = semanticAnalyzerResolveExpr(self, args[ai]);
             popExpectedType(self);
             if (has_params != @intCast(u8, 0) and ai < @intCast(usize, pcount)) {
-                tryRecordCoercion(self, args[ai], errLitSrcType(self, args[ai], expected, dxc_at), expected);
+                var carg_eff = errLitSrcType(self, args[ai], expected, dxc_at);
+                if (!type_mod.typeRegistryIsAssignable(self.registry, carg_eff, expected) and isBShapeMismatch(self, carg_eff, expected, false)) {
+                    var argn = ast_mod.astStoreNodeAt(self.store, args[ai]);
+                    var csp = argn.span_start;
+                    var cep = csp + @intCast(u32, argn.span_len);
+                    var ctm_msg: []const u8 = "type mismatch in function argument — argument type may not be compatible with the parameter type";
+                    var cdi = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, csp, cep, ctm_msg);
+                    _ = diag_mod.diagnosticCollectorAddNote(self.diag, cdi, diag_mod.typeKindSrcStr(self.registry.types_items[@intCast(usize, carg_eff)].kind));
+                    _ = diag_mod.diagnosticCollectorAddNote(self.diag, cdi, diag_mod.typeKindTgtStr(self.registry.types_items[@intCast(usize, expected)].kind));
+                }
+                tryRecordCoercion(self, args[ai], carg_eff, expected);
             }
         }
         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, direct_ret);
@@ -1560,7 +1579,17 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
         popExpectedType(self);
         if (param_type == type_mod.TYPE_UNDEFINED) { if (arg_type != type_mod.TYPE_UNDEFINED) { hash_mod.u32ToU32MapPut(self.call_arg_types, args[ai], arg_type); } }
         if (param_type == type_mod.TYPE_VOID) { if (arg_type != type_mod.TYPE_UNDEFINED) { hash_mod.u32ToU32MapPut(self.call_arg_types, args[ai], arg_type); } }
-        tryRecordCoercion(self, args[ai], errLitSrcType(self, args[ai], param_type, arg_type), param_type);
+        var carg_eff = errLitSrcType(self, args[ai], param_type, arg_type);
+        if (!type_mod.typeRegistryIsAssignable(self.registry, carg_eff, param_type) and isBShapeMismatch(self, carg_eff, param_type, false)) {
+            var argn = ast_mod.astStoreNodeAt(self.store, args[ai]);
+            var csp = argn.span_start;
+            var cep = csp + @intCast(u32, argn.span_len);
+            var ctm_msg: []const u8 = "type mismatch in function argument — argument type may not be compatible with the parameter type";
+            var cdi = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, csp, cep, ctm_msg);
+            _ = diag_mod.diagnosticCollectorAddNote(self.diag, cdi, diag_mod.typeKindSrcStr(self.registry.types_items[@intCast(usize, carg_eff)].kind));
+            _ = diag_mod.diagnosticCollectorAddNote(self.diag, cdi, diag_mod.typeKindTgtStr(self.registry.types_items[@intCast(usize, param_type)].kind));
+        }
+        tryRecordCoercion(self, args[ai], carg_eff, param_type);
     }
     if (is_var != @intCast(u8, 0)) {
         var vi: usize = fixed;
@@ -1889,6 +1918,7 @@ fn semanticAnalyzerResolveAssign(self: *SemanticAnalyzer, node_idx: u32) u32 {
             var tk = self.registry.types_items[@intCast(usize, lhs)].kind;
             var level: u8 = 1;
             if (semanticAnalyzerFnPtrConvMismatch(self, eff_src, lhs)) level = 0;
+            if (isBShapeMismatch(self, eff_src, lhs, true)) level = 0;
             if (sk == type_mod.TypeKind.error_union_type and tk == type_mod.TypeKind.error_union_type) {
                 var eu_src = self.registry.eu_items[@intCast(usize, self.registry.types_items[@intCast(usize, eff_src)].payload_idx)];
                 var eu_tgt = self.registry.eu_items[@intCast(usize, self.registry.types_items[@intCast(usize, lhs)].payload_idx)];
@@ -2558,6 +2588,31 @@ fn semanticAnalyzerFnPtrConvMismatch(self: *SemanticAnalyzer, src: u32, tgt: u32
     return (sfp.flags_packed & type_mod.FN_FLAG_STDCALL) != (tfp.flags_packed & type_mod.FN_FLAG_STDCALL);
 }
 
+// Track4 S25 Task 0q: the `(b)` invalid-Zig shapes promoted to a hard
+// `error[3000]` (real Zig rejects each): bare `*T` -> `[]T`, bare `*T` ->
+// `[*]T`, array element/length mismatch, error-set superset -> subset, and
+// enum -> integer without `@enumToInt`. Scoped to these shapes ONLY so the 48
+// `(a)` valid-Z98 cases (cleared by Task 0m) are never caught. Callers must
+// already know the pair is NOT assignable; this is the shape test alone.
+//
+// `full` selects the var-decl/assignment promotion (all five shapes). The
+// return/call-argument promotion passes `full = false`, excluding bare
+// `*T` -> `[*]T` and enum -> integer: the compiler's OWN source relies on
+// those two coercions silently in return/argument positions (34 + 7 sites),
+// so hard-erroring them there would break self-hosting. Declared gap.
+fn isBShapeMismatch(self: *SemanticAnalyzer, src_ty: u32, tgt_ty: u32, full: bool) bool {
+    if (src_ty == @intCast(u32, 0) or tgt_ty == @intCast(u32, 0)) return false;
+    if (@intCast(usize, src_ty) >= self.registry.types_len or @intCast(usize, tgt_ty) >= self.registry.types_len) return false;
+    var sk = self.registry.types_items[@intCast(usize, src_ty)].kind;
+    var tk = self.registry.types_items[@intCast(usize, tgt_ty)].kind;
+    if (sk == type_mod.TypeKind.ptr_type and tk == type_mod.TypeKind.slice_type) return true;
+    if (full and sk == type_mod.TypeKind.ptr_type and tk == type_mod.TypeKind.many_ptr_type) return true;
+    if (sk == type_mod.TypeKind.array_type and tk == type_mod.TypeKind.array_type) return true;
+    if (sk == type_mod.TypeKind.error_union_type and tk == type_mod.TypeKind.error_union_type) return true;
+    if (full and sk == type_mod.TypeKind.enum_type and type_mod.typeRegistryIsInteger(self.registry, tgt_ty)) return true;
+    return false;
+}
+
 pub fn semanticAnalyzerResolveFnBody(self: *SemanticAnalyzer, fn_decl_node: u32) void {
      var fb: []const u8 = "FB"; pal_mod.markerWrite(fb);
      self.local_decl_count = @intCast(usize, 0);
@@ -3006,6 +3061,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                         var tk = self.registry.types_items[@intCast(usize, decl_type)].kind;
                         var level: u8 = 1;
                         if (semanticAnalyzerFnPtrConvMismatch(self, it, decl_type)) level = 0;
+                        if (isBShapeMismatch(self, it, decl_type, true)) level = 0;
                         if (sk == type_mod.TypeKind.error_union_type and tk == type_mod.TypeKind.error_union_type) {
                             var eu_src = self.registry.eu_items[@intCast(usize, self.registry.types_items[@intCast(usize, it)].payload_idx)];
                             var eu_tgt = self.registry.eu_items[@intCast(usize, self.registry.types_items[@intCast(usize, decl_type)].payload_idx)];

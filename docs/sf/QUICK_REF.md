@@ -75,6 +75,22 @@ self-emission fixed point, via
 `bash scripts/seed/archive_seed.sh <zig1_binary> <gen_dir> release/seed/zig1-seed.tgz --update-changelog`
 (gcc-rebuilds the archive C self-contained to the NEW fixed point + prepends the provenance entry to
 `release/seed/CHANGELOG.md`). The seed lives at `release/seed/` (tracked), never `/tmp`.
+### Track-4 `warning[3000]` series — Task 0q hard-error promotion (v99, 2026-09-16)
+
+The `warning[3000]` classification series (Tasks 0l-0q) is complete. Task 0q
+promotes the `(b)` invalid-Zig shapes to hard `error[3000]` (rc=2, 0 `.c`),
+scoped so the 48 `(a)` valid-Z98 cases are never caught. The full-corpus
+`warning[3000]` census is now `0`; the pinned `(a)` census stays `39 dirs / 0`;
+the self-compile dumps 48 `.c`, rc=0, 0 `[3000]` diagnostics. The fixed point
+MOVES `3f81ea143da726710ad47b6f08bbb13a` -> `7c12619c276e0989c29f27cb4c81d748`
+(hop2==hop3); no re-baseline; seed NOT rotated (rotation is Task 6).
+
+**4-MD5 gate programs (stdout, byte-identical to the pre-Task-0 baselines):**
+- game_of_life (100 gens): `fcbf7e7cead5082f0a8caadd5a8f0ff9`
+- lisp_interpreter_curr: `8dc783a3d766430c15993ab08cd0f7ec`
+- json_parser: `8bda3d5a1ec07d14a301bc343df32bf8`
+- mud_server server stdout: `66c8f0abb926cca7baf9a0d1692ab318` / client bytes: `93147d0f0bbd983a9d844fea8b7a6fa7`
+- `CLOSEOUT OK` (A1-A5, B1-B7 PASS).
 ### Calling convention (Win9x) — `extern "stdcall"` / `extern "cdecl"`  [added: 2026-09-14 — Track 1 closeout]
 
 - **Surface:** a calling convention may be written on an extern fn declaration and on a function-pointer type — `extern "stdcall" fn(...) T`, `extern "cdecl" fn(...) T`, `extern "c" fn(...) T`; a bare `fn(...) T` is default cdecl. Accepted names: `"c"`/`"cdecl"` → cdecl (byte-identical to no string), `"stdcall"` → stdcall. Unknown → `error[3045]`; variadic `stdcall` → `error[3012]`; assigning a cross-convention fn-pointer → `error[3000]` (all clean: rc=2, 0 `.c`).

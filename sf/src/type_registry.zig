@@ -1257,13 +1257,6 @@ pub fn typeRegistryIsAssignable(self: *TypeRegistry, source: TypeId, target: Typ
             if (s_pp2.base == t_pp2.base and ((src.flags & @intCast(u8, 1)) == @intCast(u8, 0) or (tgt.flags & @intCast(u8, 1)) != @intCast(u8, 0))) return true;
         }
     }
-    if (src.kind == TypeKind.ptr_type and tgt.kind == TypeKind.slice_type) {
-        var qok: bool = pointerQualifiersMonotone(src.flags, tgt.flags, VOLATILE_FLAG);
-        var sp2: PtrPayload = self.ptr_items[@intCast(usize, src.payload_idx)];
-        var ts2: SlicePayload = self.slice_items[@intCast(usize, tgt.payload_idx)];
-        if (sp2.base == ts2.elem and qok) return true;
-        if ((sp2.base == TYPE_C_CHAR and ts2.elem == TYPE_U8 and qok) or (sp2.base == TYPE_U8 and ts2.elem == TYPE_C_CHAR and qok)) return true;
-    }
     if (src.kind == TypeKind.array_type and tgt.kind == TypeKind.slice_type) {
         var qok: bool = pointerQualifiersMonotone(src.flags, tgt.flags, VOLATILE_FLAG);
         var arr: ArrayPayload = self.array_items[@intCast(usize, src.payload_idx)];
