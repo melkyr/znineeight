@@ -1200,7 +1200,7 @@ Expected: `CLOSEOUT OK`.
 
 #### Task 4a-F: fix the client-task wiring (`sf/src`-free; fixed point should NOT move)
 
-- [ ] **Step 1: Fix** (1) so a client task never runs against a non-active client, and (2) so a connected client keeps receiving frames across broadcasts (long-lived task or per-connection add/cancel), preserving the per-client cells buffer (S11) and the byte-identity of the local path.
+- [ ] **Step 1: Fix** (1) so a client task never runs against a non-active client; (2) so a connected client keeps receiving frames across broadcasts (long-lived task or per-connection add/cancel); and **(3) the arena/ctx aliasing** — `main.zig:105-106` binds the root-frame `async_arena` and the `async_ctx` pool over the same bytes (`pool_base == async_storage[16]`), so a nested `drawToSocketCoroutine` child frame overwrites the first root frame (Task 4a-I measured the active task stalling, `active_total:74`/`active_state:3`). Give the client root frames their own arena separate from the ctx pool (or the report's option B: inline the row loop). Preserve the per-client cells buffer (S11) and the byte-identity of the local path.
 - [ ] **Step 2: Fixtures/repro RED→GREEN**; full corpus sweep (class-map delta = intended dirs only); `check_emit_support.sh` 5/5; self-compile closure (48 `.c`, 0 `[3000]`).
 - [ ] **Step 3: Re-verify** the four goldens + `CLOSEOUT OK`; record the fixed point (expected UNMOVED). Seed rotation stays at Task 6.
 
