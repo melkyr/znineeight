@@ -190,12 +190,33 @@ fn isLargeModuleVarArrayType(emitter: *C89Emitter, tid: u32) bool {
 /// result temp is a pointer to it, so emit the element ADDRESS instead of an
 /// illegal array-to-array copy. 1 = base is a decayed multi-dimensional row
 /// pointer (`&(*base)[idx]`); 2 = base's indexed element is the array itself
-/// (`&base[idx]`, also correct for a genuine `*[N]T`).
+/// (`&base[idx]`, also correct for a genuine `*[N]T`); 3 = the result temp is
+/// an array value, so byte-copy the element array into it (by-value `for` item).
 fn emitBaseIdxAccess(emitter: *C89Emitter, base_temp: u32, idx_temp: u32, name_or_src: []const u8, kind: u8, decay: u8) void {
     bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
     var base_name = resolveTempName(emitter, base_temp);
     var idx_name = resolveTempName(emitter, idx_temp);
     var is_ptr_arr = isBasePtrToArray(emitter, base_temp);
+    if (kind == @intCast(u8, 0) and decay == @intCast(u8, 3)) {
+        // Task 2g-F fix round 1: copy the indexed fixed-array ELEMENT into the
+        // array-typed result temp (the by-value `for |row|` item). `base[idx]`
+        // is the row for both an array-valued base and a many-pointer/slice
+        // base; `sizeof(result)` bounds the copy so any nesting depth works.
+        bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+        var d3a: []const u8 = "{\n    unsigned int _i = 0;\n    while (_i < sizeof(";
+        bufferedWriterWrite(&emitter.writer, d3a);
+        bufferedWriterWrite(&emitter.writer, name_or_src);   // result
+        var d3b: []const u8 = ")) {\n        ((unsigned char*)&";
+        bufferedWriterWrite(&emitter.writer, d3b);
+        bufferedWriterWrite(&emitter.writer, name_or_src);
+        var d3c: []const u8 = ")[_i] = ((unsigned char*)&";
+        bufferedWriterWrite(&emitter.writer, d3c);
+        bufferedWriterWrite(&emitter.writer, base_name);
+        var d3d: []const u8 = "["; bufferedWriterWrite(&emitter.writer, d3d);
+        bufferedWriterWrite(&emitter.writer, idx_name);
+        var d3e: []const u8 = "])[_i];\n        _i++;\n    }\n}\n"; bufferedWriterWrite(&emitter.writer, d3e);
+        return;
+    }
     if (kind == @intCast(u8, 0)) {
         // load: result = (*base)[idx]; or result = base[idx];
         bufferedWriterWrite(&emitter.writer, name_or_src);   // result name

@@ -6135,28 +6135,19 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             emitInst(self, LirInst{ .binary = .{ .op = BIN_LT, .lhs = idx_temp, .rhs = len_temp, .result = cmp_temp } });
             emitInst(self, LirInst{ .branch = .{ .cond = cmp_temp, .then_bb = body_bb, .else_bb = exit_bb } });
             self.current_bb = body_bb;
-            // Task 2g-F (a): a for-loop item that is itself a fixed array (a
-            // multi-dimensional row) must decay to a pointer-to-array, reusing
-            // the 2f-F `load_index{decay}` mechanism, instead of materializing
-            // an array-typed temp (an illegal array-to-array C assignment).
+            // Task 2g-F (a) + fix round 1: a for-loop item that is itself a
+            // fixed array (a multi-dimensional row) is a BY-VALUE copy (real
+            // Zig `for |row|` semantics). Materialize an array-typed temp and
+            // emit `load_index{decay=3}` (a byte-wise element copy) instead of
+            // an illegal array-to-array C assignment. The item is then a real
+            // array value, so indexing, whole-row copies (`var r: [N]T = row`)
+            // and nested `for` all work.
             var item_decay: u8 = @intCast(u8, 0);
             var item_tid_type = elem_type[0];
             if (elem_type[0] != type_mod.TYPE_UNDEFINED and elem_type[0] != type_mod.TYPE_VOID) {
                 var it_ety = self.ctx.registry.types_items[@intCast(usize, elem_type[0])];
                 if (it_ety.kind == type_mod.TypeKind.array_type) {
-                    var it_pat_is_array: u8 = @intCast(u8, 0);
-                    if (pat_type) |ipt| {
-                        if (ipt != type_mod.TYPE_UNDEFINED and ipt != type_mod.TYPE_VOID) {
-                            var ipt_ty = self.ctx.registry.types_items[@intCast(usize, ipt)];
-                            if (ipt_ty.kind == type_mod.TypeKind.array_type) it_pat_is_array = @intCast(u8, 1);
-                        }
-                    }
-                    if (it_pat_is_array != @intCast(u8, 0) and tempTypeIsPtrToArray(self, ptr_temp) != @intCast(u8, 0)) {
-                        item_decay = @intCast(u8, 1);
-                    } else {
-                        item_decay = @intCast(u8, 2);
-                    }
-                    item_tid_type = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, elem_type[0], false);
+                    item_decay = @intCast(u8, 3);
                 }
             }
             var item_temp = nextTemp(self, item_tid_type);

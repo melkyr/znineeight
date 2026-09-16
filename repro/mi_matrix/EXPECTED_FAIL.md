@@ -1,4 +1,48 @@
-# mi_matrix corpus — expected-fail manifest (v114 2026-09-16)
+# mi_matrix corpus — expected-fail manifest (v115 2026-09-16)
+
+## Track-4 Task 2g-F fix round 1 (F) — `for |row|` by-value array item (v114 -> v115 2026-09-16)
+
+Review finding: the first Task 2g-F cut typed a `for (arr) |row|` item as
+`*[N]T` (a row reference), so a whole-row VALUE use
+(`for (gc) |row| { var r: [4]Cell = row; }`) emitted `r[_i] = row[_i];` with
+`row: Cell(*)[4]` — SILENT invalid C (dump rc=0, stderr EMPTY; gcc
+`incompatible types when assigning to type 'Cell' from type 'Cell *'`).
+Operator ruling: FIX it (real Zig `for` is by-value), not merely declare it.
+
+**Fix:** the item is materialized as an ARRAY-typed temp and the item load is a
+byte-wise element copy via a new `load_index{decay=3}` mode
+(`sf/src/c89_emit.zig` `emitBaseIdxAccess`; `sf/src/lower.zig` `for_stmt` arm).
+`row` is then a real `[N]T` value: indexing, whole-row copies, and nested `for`
+all work. The 2f-F `decay=1`/`2` modes (used by direct element access,
+address-of, and the field-store base) are unchanged.
+
+- New fixture `multiarray_for_iter_value_xmod` (auto-listed): copies each row
+  into a local `[4]Cell`, asserts the copy's full contents, and mutates the copy
+  to prove it does NOT alias the source row. RED at `1e82d6ca` (gcc
+  `incompatible types …`), GREEN at the new fixed point.
+- `multiarray_row_store_xmod` assertions extended (reviewer Minor #4): all four
+  row-0 bytes (incl. the middle) are asserted, and rows 1-2 are asserted
+  untouched.
+- Reference compiler = NEW fixed point `5c24305437629da54b4e4de1ed52e0e0`
+  (seed model; moving point hop2 == hop3 == `5c243054…`, hop1 `76847984…`;
+  previous fixed point `495ceae3…`). Full report:
+  `.superpowers/sdd/2026-09-13-coroutine-integration-plan/task-2g-report.md`.
+
+**Corpus `-ffast` dump+gcc classifier (`/tmp/t4bf_classify.sh`), universe
+702 -> 703:**
+
+| | 2g-F `495ceae3` | fix round 1 `5c243054` | delta |
+|---|---|---|---|
+| dirs | 703 | 703 | 0 |
+| OK | 649 | 650 | +1 |
+| GREEN | 28 | 28 | 0 |
+| FAIL | 26 | 25 | -1 |
+| ICE | 0 | 0 | 0 |
+| CRASH | 0 | 0 | 0 |
+
+Per-dir `join` diff = exactly `multiarray_for_iter_value_xmod` FAIL→OK; zero
+movement among the other 702 dirs. The five 2g-F class-closing dirs and the two
+`for`-iteration controls are unchanged.
 
 ## Track-4 Task 2g-F (F) — array-to-array class fully closed (v113 -> v114 2026-09-16)
 
