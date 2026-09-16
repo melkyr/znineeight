@@ -3670,6 +3670,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                       ai = 0;
                 var is_ex: u8 = fp.is_extern;
                 while (ai < ec.len) : (ai += 1) {
+                    var arg_null_ty: u32 = @intCast(u32, 0);
                     var arg_val = lowerExpr(self, ec[ai]);
                     if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[ai])) |pt| {
                         if (pt != type_mod.TYPE_UNDEFINED and is_ex == @intCast(u8, 0)) {
@@ -3687,7 +3688,16 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                             if (et.kind == type_mod.TypeKind.optional_type) {
                                 var eo = self.ctx.registry.opt_items[@intCast(usize, et.payload_idx)];
                                 self.hoisted_temps.items[@intCast(usize, args_start) + ai].type_id = eo.payload;
-                                if (@intCast(usize, arg_val) < self.hoisted_temps.len and getTempType(self, arg_val) != type_mod.TYPE_NULL) {
+                                if (ast_mod.astStoreNodeAt(store, ec[ai]).kind == AstKind.null_literal) {
+                                    var eo_pay_kind = self.ctx.registry.types_items[@intCast(usize, eo.payload)].kind;
+                                    if (eo_pay_kind == type_mod.TypeKind.ptr_type or eo_pay_kind == type_mod.TypeKind.many_ptr_type) {
+                                        arg_null_ty = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, type_mod.TYPE_VOID, false);
+                                        var nc = nextTemp(self, arg_null_ty);
+                                        emitInst(self, LirInst{ .null_const = .{ .result = nc } });
+                                        arg_val = nc;
+                                    }
+                                }
+                                if (arg_null_ty == @intCast(u32, 0) and @intCast(usize, arg_val) < self.hoisted_temps.len and getTempType(self, arg_val) != type_mod.TYPE_NULL) {
                                     var ua = nextTemp(self, eo.payload);
                                     emitInst(self, LirInst{ .unwrap_optional_abi = .{ .value = arg_val, .result = ua } });
                                     arg_val = ua;
@@ -3699,6 +3709,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     var sbox: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
                     if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[ai])) |pt| { sbox[0] = pt; }
                     else { sbox[0] = self.hoisted_temps.items[@intCast(usize, arg_val)].type_id; }
+                    if (arg_null_ty != @intCast(u32, 0)) { sbox[0] = arg_null_ty; }
                     self.hoisted_temps.items[@intCast(usize, args_start) + ai].type_id = sbox[0];
                     if (is_ex == @intCast(u8, 1) and sbox[0] != type_mod.TYPE_UNDEFINED) {
                         var sti = self.ctx.registry.types_items[@intCast(usize, sbox[0])];

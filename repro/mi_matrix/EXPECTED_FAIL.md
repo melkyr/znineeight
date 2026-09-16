@@ -1,4 +1,82 @@
-# mi_matrix corpus — expected-fail manifest (v95 2026-09-15)
+# mi_matrix corpus — expected-fail manifest (v96 2026-09-16)
+
+## Task 0o (F) — fix the pre-existing `strtod` null-optional warning (v96 2026-09-16)
+
+Track-4 Task 0o removes the pre-existing gcc warning
+`passing argument 2 of 'strtod' from incompatible pointer type` in
+`examples/z98/json_parser` (and its `_upgraded` / `_workaround` copies). It is
+**not** A1-caused (Task 0k classified it PRE-EXISTING: 1 warning pre-A1, and 1 of
+json_parser's 60 post-A1). No re-baseline; seed NOT rotated; the fixed point
+MOVES `c3913a863f0ab6ac843f0bf4672253be` -> `f68e69dbac58d5c8ace9f367e199490c`
+(hop2 == hop3). Report:
+`.superpowers/sdd/2026-09-13-coroutine-integration-plan/task-0o-report.md`.
+
+**Root cause + locus (emitter null-optional ABI path).**
+`examples/z98/json_parser/file.zig:18` declares
+`extern fn strtod(nptr: [*]const c_char, endptr: ?[*]const c_char) f64;` — the
+endptr parameter is the Z98 nullable many-pointer `?[*]const c_char`
+(C `const char *`). `<stdlib.h>` declares the real `strtod` endptr as `char **`.
+For a **statically-null** argument the lowering ABI-unwrapped the optional into a
+payload-typed `char*` temp and passed it:
+
+```c
+char* zT_2;
+zT_4.has_value = 0;
+zT_2 = zT_4.has_value ? zT_4.value : NULL;
+strtod(zT_1, zT_2);   /* warning: passing argument 2 of 'strtod' */
+```
+
+The value is the null pointer, so the correct C is a null pointer constant, which
+is compatible with any object-pointer parameter. **Fix** (`sf/src/lower.zig`,
+extern-call arg loop ~`:3686-3713`): when an extern parameter is `optional_type`
+whose payload is a pointer (`ptr_type` / `many_ptr_type`) and the argument AST
+node is a `null_literal`, emit a `null_const` temp typed as the generic `*void`
+(`typeRegistryGetOrCreatePtr(registry, TYPE_VOID, false)`) instead of the
+`unwrap_optional_abi` payload temp; the hoisted arg slot is typed `*void` too.
+The call now emits `strtod(zT_1, (void*)(NULL))` (or `void* zT_2 = NULL;` when
+materialized) — type-correct for the `<stdlib.h>` prototype. Non-null optionals
+and non-pointer optional payloads are unchanged (guarded).
+
+**New pin fixture** `repro/mi_matrix/null_opt_manyptr_arg_xmod` (auto-listed;
+class OK). It uses `strtod` with a non-literal `nptr` (a local `[8]u8`), so it
+carries **no** `string_const` shape-1/2 warning and is independent of Task 0p.
+Before 0o (`c3913a86`): exactly **1** `-Wincompatible-pointer-types` warning (the
+strtod arg-2). After 0o: **0** warnings; gcc rc=0, link rc=0, run rc=0, stdout `1`.
+
+**Measured** (compiler built from the new `sf/src` via the committed seed;
+3-hop closure hop2 == hop3 == `f68e69dbac58d5c8ace9f367e199490c`):
+
+- `json_parser` 60 -> **59** `-Wincompatible-pointer-types` (strtod warning 0);
+  `json_parser_upgraded` 60 -> 59; `json_parser_workaround` 63 -> 62 — the
+  non-strtod baselines.
+- full-corpus gcc warning census (`-Wall -Wextra`, user code): 1510 -> **1505**.
+  The ONLY per-dir deltas are the 5 strtod sites: `json_parser` 60->59,
+  `json_parser_upgraded` 60->59, `json_parser_workaround` 63->62,
+  `a1_ptrarray_strtod_xmod` 3->2 (shape 4 removed; shapes 1/2 remain, Task 0p's),
+  and the new fixture 1->0. The strtod warning WAS part of the corpus
+  `-Wincompatible-pointer-types` count; no other category moves; no regression.
+- corpus class map: **661 = 618 OK / 20 GREEN / 23 FAIL / 0 ICE / 0 CRASH**; the
+  only delta vs the post-0n 660-dir reference is the new OK fixture (dir-by-dir
+  diff otherwise empty).
+- full-corpus `warning[3000]` census: **unchanged at 5** (the 5 `(b)` dirs);
+  self-compile `warning[3000]` = 0 (post-0n).
+- runtime: `json_parser` stdout byte-identical to the pre-0o compiler
+  (md5 `8bda3d5a1ec07d14a301bc343df32bf8`); `json_parser_upgraded` /
+  `_workaround` run rc=0; `a1_ptrarray_strtod_xmod` and the new fixture run
+  stdout `1`.
+
+**Declared gaps (NOT marked minor).**
+1. The example's `strtod` declaration is itself type-wrong for the real C
+   function: `endptr: ?[*]const c_char` is `const char *`, but libc's `strtod`
+   takes `char **`. Task 0o removes the spurious warning for the **statically
+   null** argument only (where `NULL` / `(void*)0` is valid for both types). A
+   **non-null** `endptr` argument is still a genuine type mismatch and still
+   warns (verified); that is an example-source declaration bug, out of the
+   Track-4 warning-classification scope, and is not fixed here.
+2. The fix recognizes a **direct `null` literal** argument. A null optional held
+   in a variable/expression (e.g. `var p: ?[*]const c_char = null; strtod(s, p)`)
+   is not statically recognized and still warns (verified). No corpus program
+   does this.
 
 ## Task 0m fix round 1 (F) — DECLARE family-B relational-enum over-acceptance (v95 2026-09-15)
 
