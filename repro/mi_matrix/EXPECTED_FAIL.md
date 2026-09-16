@@ -1,4 +1,141 @@
-# mi_matrix corpus — expected-fail manifest (v112 2026-09-16)
+# mi_matrix corpus — expected-fail manifest (v113 2026-09-16)
+
+## Track-4 Task 2g-I (I) — for-loop iteration + pointer-to-array residuals pinned (v112 -> v113 2026-09-16)
+
+Track-4 Task 2g-I pins the two residual members of the array-to-array defect
+class that Task 2f-F did NOT close (found by the 2f-F review; operator ruling
+2026-09-16: fix BOTH in Task 2g-F). **No `sf/src` change.** Reference compiler =
+the Task-2f-F fixed point `7f9afa82deaa2356633b20a693282cf1`, rebuilt via the
+binding seed model (`bash scripts/seed/build_from_seed.sh
+release/seed/zig1-seed.tgz /tmp/t2gI_build`; gate
+`=== [seed] Done: /tmp/t2gI_build ===`). The committed seed predates recent
+`sf/src` work, so the closure is the moving point **hop2 == hop3 ==
+`7f9afa82deaa2356633b20a693282cf1`** (hop1 `86c7f0007a0eb3a3352745f6813f017d`).
+Compiler under test = `/tmp/t2gI_build/zig1_5_clean` (hop1 binary; its sibling
+`lib/` carries the 9 std modules). Full report:
+`.superpowers/sdd/2026-09-13-coroutine-integration-plan/task-2g-report.md`.
+
+**Residual (a) — `for`-loop iteration keeps `decay = 0`.** The `for_stmt` arm
+(`sf/src/lower.zig:6037`) resolves the iterated array's element type
+(`elem_type[0] = [4]u8` for `g: [5][4]u8`, `:6051-6053`) and emits the per-item
+load with a HARDCODED `decay = 0` (`:6130-6131`):
+
+```
+item_temp = nextTemp(self, elem_type[0]);   // ARRAY-typed temp
+load_index{ base=ptr_temp, index=idx, result=item_temp, decay=0 }
+```
+
+The capture is declared array-typed (`:6132`). `emitBaseIdxAccess`
+(`sf/src/c89_emit.zig:194`, kind==0, decay==0) renders `item = base[idx];` — an
+array-to-array C assignment, illegal in C89. The for-loop arm predates the 2f-F
+`decay` field and was never updated (2f-F touched only the `index_access`
+rvalue arm `:3153-3176` and the address-of arm `:1394-1397`), so the decay
+mechanism is bypassed.
+
+**Residual (b) — `pp: *[N]T` element access.** `pp[0]` is typed by
+`typeRegistryIndexedElemType` (`sf/src/type_registry.zig:970`): the
+`ptr_type`/`many_ptr_type` branch (`:978-984`) sees the pointee is an array and
+returns the pointee's ELEMENT (`u8`) instead of the pointee array itself
+(`[4]u8`). `semanticAnalyzerResolveIndexAccess` (`sf/src/semantic_analyzer.zig:3228`)
+therefore types `pp[0]` as `u8`; the lowerer's 2f-F array-decay branch
+(`sf/src/lower.zig:3157`) never fires, so the emitter (base IS ptr-to-array)
+renders `zT = (*pp)[idx];` — a scalar — and the following `[1]` subscripts a
+scalar. Pre-existing: BASE `8a322dd9` and fix `7f9afa82` byte-identical.
+
+**Five new corpus dirs** (auto-listed by `scripts/corpus/list_corpus_dirs.sh`):
+
+| dir | class | RED today (fixed point 7f9afa82…) | expected GREEN (Task 2g-F) |
+|---|---|---|---|
+| `multiarray_for_iter_xmod` | **FAIL** | dump rc=0, 4 `.c`, stderr EMPTY; gcc `assignment to expression with array type` ×2 (`row = zG_g[i];` for `[5][4]u8`, `row_1 = zG_gc[i];` for `[5][4]Cell`) | dump rc=0, gcc clean, link+run rc=0, no stdout |
+| `multiarray_for_iter_3d_xmod` | **FAIL** | same; 3-D `[3][4][5]u8`, nested `for` (TWO array-typed item temps) | same |
+| `multiarray_for_iter_flat_control_xmod` | **OK** (control) | flat 1-D `[20]u8` already emits scalar `x = g[i];` | stays OK |
+| `multiarray_for_iter_scalar_control_xmod` | **OK** (control) | range `for (0..5)` reading scalar `g[i][0]` (2f-F path) | stays OK |
+| `ptr_to_array_index_xmod` | **FAIL** | dump rc=0, 4 `.c`, stderr EMPTY; gcc `subscripted value is neither array nor pointer nor vector` ×2 (`zT_7 = (*pp)[0]; zT_7[1] = 3;`) | see operator decision below |
+
+Verbatim RED evidence (`multiarray_for_iter_xmod`, fixed point `7f9afa82…`):
+```
+main_166F9ACE.c:84:    row = zG_E20C2606_g[zT_29];      /* array = array */
+main_166F9ACE.c:112:   row_1 = zG_3E2070FF_gc[zT_47];   /* array = array */
+gcc: error: assignment to expression with array type   (x2)
+```
+`multiarray_for_iter_3d_xmod`: `plane = zG_E20C2606_g[zT_14];` /
+`row = plane[zT_19];` (x2 `assignment to expression with array type`).
+`ptr_to_array_index_xmod`:
+```
+main_ED1CE020.c:47:    zT_7 = (*pp)[zT_6];   /* zT_7 declared `unsigned char` */
+main_ED1CE020.c:51:    zT_7[zT_8] = zT_5;      /* subscript a scalar */
+gcc: error: subscripted value is neither array nor pointer nor vector   (x2)
+```
+
+**Operator decision required for residual (b) (recorded, NOT resolved here).**
+`docs/reference/Language_Spec_Z98.md:32` states `ptr[i]` is "strictly rejected
+for single-item pointers". The 2f-F comment (`sf/src/lower.zig:3160-3161`)
+instead anticipates a genuine `*[N]T` decaying to valid C. The fixture's GREEN
+contract is therefore one of: **(A)** compile-clean valid C (fix
+`typeRegistryIndexedElemType` to return the pointee array, then the 2f-F
+decay-2 path fires) or **(B)** a hard `error[3000]` (enforce the spec's
+single-item-pointer indexing rejection). Current behavior is neither: silent
+invalid C. The RED pin is valid either way; Task 2g-F must confirm which
+contract the operator wants before landing.
+
+**Q5 — other array-to-array producers remain (grep of emitter/lowerer).**
+`load_index` is emitted at exactly three sites: `lower.zig:1396` (address-of,
+decay 1), `:3195` (`index_access` rvalue, 2f-F `ix_decay`), `:6131` (for-loop,
+residual (a)). But the class is NOT fully closed. Three additional producers
+were found (scratch repros, NOT committed as fixtures — operator to decide
+scope):
+
+- **(c) field store through a multi-dim element** — `lowerFieldStore`'s
+  `index_access` base branch (`sf/src/lower.zig:1780-1787`) computes the field
+  base as a raw `ptr_temp + idx_temp` (BIN_ADD) on the decayed row pointer, so
+  `gc[1][2].v = 5` emits `zT_6 = zT_4 + zT_5;` (`zT_4: Arr_Cell_4*`) — scaled
+  by the WHOLE row. gcc emits only a `-Wincompatible-pointer-types` WARNING
+  (classifier stays OK), so this is SILENT WRONG CODE. Same "fixed-array
+  element access bypasses decay" family; reachable from the Track-4
+  `client_cells` shape. The rvalue read `gc[1][2].v` is already correct
+  (`(*zT_10)[zT_11]`, via 2f-F).
+- **(d) multi-dimensional array literal init** — `assign_index` at
+  `sf/src/lower.zig:5048` / `:5254` assigns each element array-to-array, e.g.
+  `zT_0[zT_8] = zT_1;` (`zT_1: [3]u8`), plus the global-init copy
+  `zG_g[_i] = zT_0[_i];`. Repro `var g: [2][3]u8 = [2][3]u8{ [3]u8{1,2,3}, ... };`
+  → 3 gcc `assignment to expression with array type` errors.
+- **(e) row store into a multi-dim element** — `assign_index` at
+  `sf/src/lower.zig:1564`; `g[0] = row;` → `g[0] = row;` array-to-array
+  (1 gcc error).
+
+The emitter's `assign_index` path (`sf/src/c89_emit.zig:6064-6076`) always
+passes `decay = 0`; any array-typed `src` there is illegal. Task 2g-F's (a)+(b)
+fix does NOT cover (c)/(d)/(e).
+
+**Fix surface for Task 2g-F** (presented in the task report; no `sf/src` change
+here):
+- (a) `sf/src/lower.zig:6130-6132` — decay the for-loop item: type the item
+  temp and the `decl_local` capture as `*[N]T`, and emit
+  `load_index{decay}` choosing 1 vs 2 via `tempTypeIsPtrToArray` (2 when the
+  iterated value is a fixed-array temp, i.e. `&base[idx]`; 1 when the base is
+  already a decayed row pointer). Slice/range patterns stay decay 0.
+- (b) `sf/src/type_registry.zig:978-984` — return the pointee ARRAY type when
+  the pointee is an array (option A), or add the `*T` indexing rejection in
+  `semanticAnalyzerResolveIndexAccess` / `semanticAnalyzerResolveExpr`
+  (option B). No lowerer change under (A).
+
+**Corpus `-ffast` dump+gcc classifier (`/tmp/t4bf_classify.sh`), universe 694
+-> 699:**
+
+| | 2f-F fix `7f9afa82` | 2g-I `7f9afa82` | delta |
+|---|---|---|---|
+| dirs | 694 | 699 | +5 |
+| OK | 642 | 644 | +2 |
+| GREEN | 27 | 27 | 0 |
+| FAIL | 25 | 28 | +3 |
+| ICE | 0 | 0 | 0 |
+| CRASH | 0 | 0 | 0 |
+
+Per-dir `join` diff = exactly the five new dirs (3 FAIL, 2 OK); all 694
+pre-existing dirs class-identical (no `sf/src` change). **No new diagnostic
+code** — the three RED dirs emit NO compiler diagnostic (silent rc=0); gcc's
+`assignment to expression with array type` / `subscripted value …` is the only
+signal. `error[3042]`/`error[3043]` are not involved.
 
 ## Track-4 Task 2f-F (F) — multi-dimensional fixed-array element access FIXED (v111 -> v112 2026-09-16)
 
