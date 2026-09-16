@@ -1000,6 +1000,27 @@ Expected: `CLOSEOUT OK`.
 
 ---
 
+### Task 2e: diagnostic excerpt renders the wrong source line — I then F
+
+**Origin (surfaced by the Task 2c-F fix round, 2026-09-16).** The diagnostic renderer prints the **wrong source line** (or no excerpt). Root cause (read-only): `mem.binary_search` (`sf/src/util/mem.zig:9-25`) already returns the index of the greatest `offsets[i] <= target` (an `upper_bound - 1`), and `source_manager.zig:155` uses it correctly (`line = line_idx + 1`). But `diagnostics.zig:500-501` applies an **extra** `if (line_idx > 0) line_idx -= 1;`, so the excerpt line is one line *before* the line containing the span — observed: a `p3.zig` error at line 3 printed line 2's text, and some fixtures print no excerpt at all. This affects **every** diagnostic's excerpt (not just `error[3050]`).
+
+#### Task 2e-I: investigate + pin (no `sf/src` change)
+
+- [ ] **Step 1: Fixture set.** Create a corpus fixture (or a small driver) that provokes diagnostics whose spans start at various positions — line start, mid-line, column 1, a multi-line span, a span on the first line (line 1, where `line_idx == 0`), and a multi-file (imported-module) diagnostic — and **capture the rendered stderr excerpt** (the source line + caret) verbatim for each. Pin the current WRONG rendering (RED) and the expected correct rendering (GREEN contract). Confirm whether the caret column/count is also off (the renderer uses `loc.col` directly as the space count).
+- [ ] **Step 2: Questionnaire.** Answer in the report: (Q1) the exact off-by-one and why `line_idx -= 1` is a double subtraction; (Q2) whether `loc.line`/`loc.col` (from `sourceManagerGetLocation`) are consistent with the excerpt's `line_idx`/caret (any second off-by-one?); (Q3) why some fixtures print no excerpt (`if (l_start < l_end and l_end <= content.len)`); (Q4) the minimal fix locus; (Q5) whether `mem.binary_search`'s `target < offsets[0]` behavior (returns 0) and `target >= last offset` are correct for both callers; (Q6) corpus/diagnostic delta.
+- [ ] **Step 3: Declare.** Add the fixture(s) to the corpus; record the RED/GREEN in `repro/mi_matrix/EXPECTED_FAIL.md` (v108→v109) or the appropriate known-issue location.
+- [ ] **Step 4: Report + present the fix surface for Task 2e-F.** No `sf/src` change.
+
+#### Task 2e-F: fix the excerpt lookup (`sf/src` change; fixed point MOVES)
+
+- [ ] **Step 1: Fix** the excerpt line lookup (remove/correct the extra decrement; fix the caret column/count if Q2 shows a second off-by-one) so every diagnostic's excerpt shows the source line containing the span, with the caret at the span.
+- [ ] **Step 2: Fixtures RED→GREEN**; full corpus sweep (class-map delta = intended dirs only); `check_emit_support.sh` 5/5; self-compile closure (48 `.c`, 0 `[3000]`).
+- [ ] **Step 3: Re-verify** the four goldens + `CLOSEOUT OK`; 4-MD5 byte-identical; record the new fixed point. Seed rotation stays at Task 6.
+
+**Sequencing gate:** Task 4 MUST NOT start until Task 2e-F is landed.
+
+---
+
 ### Task 4: `rogue_mud` cross-module task create/schedule/cancel (entry E3)
 
 **Files:**
