@@ -613,6 +613,10 @@ git commit -m "test(coroutine): Track4 pre-conversion golden harness (Track4)"
 - [ ] **Step 3: Re-verify** the four goldens + `CLOSEOUT OK`; record the new fixed point. Seed rotation stays at Task 6.
 - [ ] **Step 4: Re-dispatch Task 2** (which then uses `std.async.HEADER_SIZE` as written).
 
+**Declared residual gaps (Task 2a-F, per the standing declare-every-gap rule):** (1) a field-access/compound expression in **array-size** position (`[mid.leaf.HEADER_SIZE]u8`) is rejected with `error[20]` — nesting-independent, pinned by `repro/mi_matrix/module_value_arraysize_xmod`, out of 2a-F scope; (2) address-of a module global through a nested alias (`&mid.leaf.counter`) is unsupported (`error[3043]`, no `addr_of_global` LIR), declared in the manifest, not pinned by a fixture.
+
+**Declared residual gaps (Task 2, per the standing rule):** (1) `main.zig` declares `ClientFrameArgs`/`ClientFrameCoroutineArgs` module-scope vars that are undefined until Tasks 3/4; the compiler tolerates undefined types in unused module-scope declarations (emit rc=0) — latent compiler leniency, recorded here and in the Task-2 report; (2) the current compiler does not persist a loop-carried local live across `@asyncSuspend`; the S10 fixture `async_frame_lifetime_xmod` uses a straight-line (unrolled) counter to avoid that pre-existing codegen gap (`npcCoroutine` is unaffected — its live-across value is the `na` parameter).
+
 ---
 
 ### Task 2: `rogue_mud` NPC AI → per-NPC coroutine (entry E1)
