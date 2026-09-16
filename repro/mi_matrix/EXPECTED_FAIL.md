@@ -1,4 +1,61 @@
-# mi_matrix corpus — expected-fail manifest (v116 2026-09-16)
+# mi_matrix corpus — expected-fail manifest (v117 2026-09-16)
+
+## Track-4 Task 4a-F (F) — `rogue_mud` client-task wiring FIXED (v116 -> v117 2026-09-16)
+
+Task 4a-F fixes all three `rogue_mud` client-task defects (operator ruling
+2026-09-16). **Examples-only: no `sf/src` change; fixed point UNMOVED.**
+
+**Changes (`examples/z98/rogue_mud/`):**
+- `main.zig:433` `clientFrameCoroutine` — (1) self-gates on
+  `cfa.server.clients[cfa.client_idx].active` (a task never touches a non-active
+  client's socket), (2) wraps the body in `while (true)` so a connected client
+  keeps receiving frames across broadcasts (long-lived task per slot; stays
+  `suspended`, never `done`), and (3) INLINES the row loop that was the nested
+  `ui_mod.drawToSocketCoroutine` call, so the root coroutine allocates no CHILD
+  frame and the root-frame arena may safely alias the async ctx pool
+  (`main.zig:105-106`; report finding (3)). S11 preserved: each task still
+  builds into its own `cfa.cells`.
+- `ui.zig:127` `sendColorANSI` promoted to `pub` so the inlined loop reuses it.
+
+**Defect-3 fixture (new):** `repro/mi_matrix/client_task_arena_xmod` —
+imports the REAL example module and drives the REAL `clientFrameCoroutine`
+through the REAL scheduler using the example's ALIASING layout (root arena over
+`async_storage[HEADER_SIZE..]`, ctx pool over `async_storage[0..]`); slot 0
+ACTIVE, slot 1 NON-ACTIVE, real `socketpair(2)` ends, 80 broadcasts. Corpus
+class **OK** (runtime-only pin, so the class map only gains the dir).
+
+**RED -> GREEN (both committed fixtures, `-ffast --dump-c89`, gcc `-m32 -std=c89`
+clean, link rc=0, `timeout 120 ./prog`):**
+
+| fixture | RED (v116 compiler) | GREEN (v117) |
+|---|---|---|
+| `client_task_wiring_xmod` | `active_total:3120 inactive_total:3120 active_last:0 active_state:3` rc=133 | `active_total:8080 inactive_total:0 active_last:142 inactive_last:0 active_state:2` rc=0 |
+| `client_task_arena_xmod` | `active_total:74 inactive_total:3120 active_last:0 active_state:3` rc=133 | `active_total:8080 inactive_total:0 active_last:142 inactive_last:0 active_state:2` rc=0 |
+
+The arena fixture's RED `active_total:74` is the defect-3 signature (the nested
+child frame overwrites the active task's root frame, which dies after one row)
+versus a healthy full-frame stream once the row loop is inlined.
+
+**Corpus `-ffast` dump+gcc classifier (`/tmp/t4bf_classify.sh`), universe 704 -> 705:**
+
+| | 4a-I `5c243054` | 4a-F `5c243054` | delta |
+|---|---|---|---|
+| dirs | 704 | 705 | +1 |
+| OK | 651 | 652 | +1 |
+| GREEN | 28 | 28 | 0 |
+| FAIL | 25 | 25 | 0 |
+| ICE | 0 | 0 | 0 |
+| CRASH | 0 | 0 | 0 |
+
+Per-dir movement = exactly the one new dir (`client_task_arena_xmod` OK); all
+704 pre-existing dirs class-identical (no `sf/src` change). `check_emit_support.sh`
+5/5; self-compile closure 48 `.c`, 0 `error[3000]`. Four goldens byte-identical:
+`rogue_mud` boot `3fb6709e7bbd8964ef12aa9c906c0577`, `rogue_mud` move
+`b3c5b0e1308bc9a4efde238376c14d9f`, `mud_server` stdout
+`66c8f0abb926cca7baf9a0d1692ab318`, `mud_server` client bytes
+`93147d0f0bbd983a9d844fea8b7a6fa7`; `verify_upgraded.sh` -> `CLOSEOUT OK`.
+Fixed point `5c24305437629da54b4e4de1ed52e0e0` UNMOVED (hop2==hop3). Full report:
+`.superpowers/sdd/2026-09-13-coroutine-integration-plan/task-4a-report.md`.
 
 ## Track-4 Task 4a-I (I) — `rogue_mud` client-task wiring pinned (v115 -> v116 2026-09-16)
 

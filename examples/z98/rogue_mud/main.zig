@@ -431,16 +431,48 @@ pub const ClientFrameArgs = struct {
 pub const ClientFrameCoroutineArgs = struct { ctx: *std.async.Context, cfa: *ClientFrameArgs };
 
 pub fn clientFrameCoroutine(ctx: *std.async.Context, cfa: *ClientFrameArgs) void {
-    const sock = cfa.server.clients[cfa.client_idx].socket;
+    // Task 4a-F: one LONG-LIVED task per slot. It self-gates on `.active` (so a
+    // task never reads/writes a non-active client's socket) and loops across
+    // broadcasts (so a connected client keeps receiving frames). The row loop
+    // is INLINED here (was the nested `ui_mod.drawToSocketCoroutine` call) so
+    // this root coroutine allocates no CHILD frame; the root-frame arena may
+    // then safely alias the async ctx pool (`main.zig:105-106`), and each
+    // client still builds into its OWN cells buffer (S11).
+    while (true) {
+        if (!cfa.server.clients[cfa.client_idx].active) {
+            _ = @asyncSuspend(null);
+            continue;
+        }
+        const sock = cfa.server.clients[cfa.client_idx].socket;
 
-    const rows = @intCast(usize, cfa.dungeon.height) + 1;
-    const cols = @intCast(usize, cfa.dungeon.width);
+        const rows = @intCast(usize, cfa.dungeon.height) + 1;
+        const cols = @intCast(usize, cfa.dungeon.width);
 
-    buildBroadcastCells(cfa.dungeon, cfa.cells, rows, cols);
+        buildBroadcastCells(cfa.dungeon, cfa.cells, rows, cols);
 
-    const ca = ui_mod.ClientArgs{ .sock = sock, .rows = rows, .cols = cols,
-        .cells = @ptrCast([*]const ui_mod.Cell, cfa.cells) };
-    ui_mod.drawToSocketCoroutine(ctx, @ptrCast(*void, &ca));
+        const clear_home: []const u8 = "\x1b[2J\x1b[H";
+        _ = net_mod.send(sock, clear_home.ptr, @intCast(i32, clear_home.len));
+
+        var last_fg: u8 = 255;
+        var y: usize = 0;
+        while (y < rows) : (y += 1) {
+            var x: usize = 0;
+            while (x < cols) : (x += 1) {
+                const cell = cfa.cells[y * cols + x];
+                if (cell.fg != last_fg) {
+                    ui_mod.sendColorANSI(sock, cell.fg);
+                    last_fg = cell.fg;
+                }
+                const char_buf: [1]u8 = [1]u8{ cell.ch };
+                _ = net_mod.send(sock, &char_buf[0], 1);
+            }
+            const nl: []const u8 = "\r\n";
+            _ = net_mod.send(sock, nl.ptr, 2);
+            _ = @asyncSuspend(null);
+        }
+        const reset: []const u8 = "\x1b[0m";
+        _ = net_mod.send(sock, reset.ptr, @intCast(i32, reset.len));
+    }
 }
 
 fn renderLocal(arena: *sand_mod.Sand, dungeon: scenario.Dungeon_t) void {

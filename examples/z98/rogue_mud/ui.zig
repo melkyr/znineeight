@@ -124,7 +124,7 @@ pub fn drawToSocketCoroutine(ctx: *std.async.Context, args: *void) void {
     _ = std_net.send(sock, reset.ptr, @intCast(i32, reset.len));
 }
 
-fn sendColorANSI(sock: i32, fg: u8) void {
+pub fn sendColorANSI(sock: i32, fg: u8) void {
     const esc: []const u8 = "\x1b[";
     _ = std_net.send(sock, esc.ptr, 2);
 
