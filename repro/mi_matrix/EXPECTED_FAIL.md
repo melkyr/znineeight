@@ -1,4 +1,68 @@
-# mi_matrix corpus — expected-fail manifest (v113 2026-09-16)
+# mi_matrix corpus — expected-fail manifest (v114 2026-09-16)
+
+## Track-4 Task 2g-F (F) — array-to-array class fully closed (v113 -> v114 2026-09-16)
+
+Task 2g-F closes the five residual members of the array-to-array defect class
+(found by the 2g-I investigation; operator ruling 2026-09-16 folded (c)/(d)/(e)
+into 2g-F). **`sf/src` change** in three files: `sf/src/lower.zig` (for-loop
+item decay; `lowerFieldStore` index base decay), `sf/src/semantic_analyzer.zig`
+(non-indexable base → hard `error[3000]`; array-literal annotation resolution),
+and `sf/src/c89_emit.zig` (`assign_index` and `store_global` byte-wise array
+copies). Reference compiler = the NEW fixed point
+`495ceae32a717cb6dac7caf7146fb67f` (seed model:
+`bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out>`; moving
+point hop2 == hop3 == `495ceae3…`, hop1 `a2013754…`; prior fixed point
+`7f9afa82…`). Full report:
+`.superpowers/sdd/2026-09-13-coroutine-integration-plan/task-2g-report.md`.
+
+- **(a) for-loop iteration.** `sf/src/lower.zig` `for_stmt` non-range arm: when
+  the item is itself a fixed array, the item temp + `decl_local` capture are
+  typed `*[N]T` and the `load_index` carries `decay` (2 for a fixed-array value
+  → `&base[idx]`; 1 for a decayed row pointer → `&(*base)[idx]`), reusing the
+  2f-F mechanism. `multiarray_for_iter_xmod` + `_3d_xmod` FAIL→OK; the two
+  controls stay OK.
+- **(b) `pp: *[N]T` element access → HARD `error[3000]`** (option B; the
+  operator verified real Zig rejects `pp[0][1]`). `semanticAnalyzerResolveIndexAccess`
+  now rejects an index whose base is a concrete non-array/non-pointer/non-tuple
+  value (e.g. the scalar yielded by `pp[0]`). `ptr_to_array_index_xmod` FAIL→GREEN
+  (rc=2, 0 `.c`, located `error[3000]`).
+- **(c) field store through a multi-dim element (SILENT WRONG CODE).**
+  `lowerFieldStore`'s `index_access` base branch now takes the element address
+  `&(*ptr)[idx]` (`load_index{decay=1}`) when the base is a pointer-to-array,
+  instead of a raw `ptr + idx` (which scaled by the whole row). New fixture
+  `multiarray_field_store_xmod` pins the value landing in the correct slot (all
+  20 slots asserted after `gc[1][2].v = 5`); it classifies OK at the gcc gate
+  both pre/post (the defect was silent) but is runtime-RED→GREEN.
+- **(d) multi-dim array-literal init.** The `assign_index` emitter and the
+  `store_global` emitter now copy an array element/whole array byte-wise
+  (`sizeof`-bounded) instead of emitting `base[idx] = src;` / `name[_i] = val[_i];`.
+  New fixture `multiarray_literal_init_xmod` (global `[2][3]u8` literal) FAIL→OK.
+  The nested literal is also typed by its annotation (u8 rows, not inferred u32)
+  via a `resolveTypeExprFull` fallback in `semanticAnalyzerResolveArrayInit`.
+- **(e) row store into a multi-dim element.** `g[i] = row;` now byte-copies via
+  the same `assign_index` path. New fixture `multiarray_row_store_xmod` FAIL→OK.
+
+**New corpus dirs** (auto-listed): `multiarray_field_store_xmod`,
+`multiarray_literal_init_xmod`, `multiarray_row_store_xmod`.
+
+**Corpus `-ffast` dump+gcc classifier (`/tmp/t4bf_classify.sh`), universe
+699 -> 702:**
+
+| | 2g-I `7f9afa82` | 2g-F `495ceae3` | delta |
+|---|---|---|---|
+| dirs | 702 | 702 | 0 |
+| OK | 645 | 649 | +4 |
+| GREEN | 27 | 28 | +1 |
+| FAIL | 30 | 25 | -5 |
+| ICE | 0 | 0 | 0 |
+| CRASH | 0 | 0 | 0 |
+
+Per-dir `join` diff = exactly the five intended dirs (`multiarray_for_iter_xmod`,
+`multiarray_for_iter_3d_xmod`, `multiarray_literal_init_xmod`,
+`multiarray_row_store_xmod` FAIL→OK; `ptr_to_array_index_xmod` FAIL→GREEN);
+`multiarray_field_store_xmod` is OK both (runtime-RED); the two 2g-I controls
+stay OK. Zero movement among the other 697 dirs. No new diagnostic code
+(`error[3042]`/`error[3043]` not involved).
 
 ## Track-4 Task 2g-I (I) — for-loop iteration + pointer-to-array residuals pinned (v112 -> v113 2026-09-16)
 
@@ -50,7 +114,7 @@ scalar. Pre-existing: BASE `8a322dd9` and fix `7f9afa82` byte-identical.
 | `multiarray_for_iter_3d_xmod` | **FAIL** | same; 3-D `[3][4][5]u8`, nested `for` (TWO array-typed item temps) | same |
 | `multiarray_for_iter_flat_control_xmod` | **OK** (control) | flat 1-D `[20]u8` already emits scalar `x = g[i];` | stays OK |
 | `multiarray_for_iter_scalar_control_xmod` | **OK** (control) | range `for (0..5)` reading scalar `g[i][0]` (2f-F path) | stays OK |
-| `ptr_to_array_index_xmod` | **FAIL** | dump rc=0, 4 `.c`, stderr EMPTY; gcc `subscripted value is neither array nor pointer nor vector` ×2 (`zT_7 = (*pp)[0]; zT_7[1] = 3;`) | see operator decision below |
+| `ptr_to_array_index_xmod` | **FAIL** | dump rc=0, 4 `.c`, stderr EMPTY; gcc `subscripted value is neither array nor pointer nor vector` ×2 (`zT_7 = (*pp)[0]; zT_7[1] = 3;`) | **hard `error[3000]`** (option B): rc=2, 0 `.c`, located `cannot index a value of non-array, non-pointer type` — see the 2g-F section |
 
 Verbatim RED evidence (`multiarray_for_iter_xmod`, fixed point `7f9afa82…`):
 ```
@@ -67,16 +131,14 @@ main_ED1CE020.c:51:    zT_7[zT_8] = zT_5;      /* subscript a scalar */
 gcc: error: subscripted value is neither array nor pointer nor vector   (x2)
 ```
 
-**Operator decision required for residual (b) (recorded, NOT resolved here).**
+**Residual (b) contract — RESOLVED by Task 2g-F (option B, hard error).**
 `docs/reference/Language_Spec_Z98.md:32` states `ptr[i]` is "strictly rejected
-for single-item pointers". The 2f-F comment (`sf/src/lower.zig:3160-3161`)
-instead anticipates a genuine `*[N]T` decaying to valid C. The fixture's GREEN
-contract is therefore one of: **(A)** compile-clean valid C (fix
-`typeRegistryIndexedElemType` to return the pointee array, then the 2f-F
-decay-2 path fires) or **(B)** a hard `error[3000]` (enforce the spec's
-single-item-pointer indexing rejection). Current behavior is neither: silent
-invalid C. The RED pin is valid either way; Task 2g-F must confirm which
-contract the operator wants before landing.
+for single-item pointers". The operator verified against the Zig langref
+(2026-09-16) that real Zig REJECTS `pp[0][1]`: `*[N]T` supports index syntax
+`array_ptr[i]`, but `pp[0]` yields the ELEMENT (`u8`), not the array, so
+indexing the resulting scalar is a type error (the element is reached via
+`pp[1]` or `pp.*[1]`). Option **(B)** was chosen: a hard `error[3000]`, not a
+compile-clean decay (A). Task 2g-F implements it — see the 2g-F section below.
 
 **Q5 — other array-to-array producers remain (grep of emitter/lowerer).**
 `load_index` is emitted at exactly three sites: `lower.zig:1396` (address-of,

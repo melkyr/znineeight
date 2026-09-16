@@ -6073,7 +6073,45 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             var idx = resolveTempName(emitter, a.index);
             var src = resolveTempName(emitter, a.src);
             var src_name = resolveTempName(emitter, a.src);
-            emitBaseIdxAccess(emitter, a.base, a.index, src_name, @intCast(u8, 1), @intCast(u8, 0));
+            var ai_src_is_arr: u8 = @intCast(u8, 0);
+            var ai_tj: usize = @intCast(usize, 0);
+            while (ai_tj < emitter.current_fn.hoisted_temps.len) : (ai_tj += @intCast(usize, 1)) {
+                var ai_ht = emitter.current_fn.hoisted_temps.items[ai_tj];
+                if (ai_ht.temp_id == a.src) {
+                    if (ai_ht.type_id != type_mod.TYPE_UNDEFINED and @intCast(usize, ai_ht.type_id) < emitter.registry.types_len) {
+                        var ai_sty = emitter.registry.types_items[@intCast(usize, ai_ht.type_id)];
+                        if (ai_sty.kind == type_mod.TypeKind.array_type) ai_src_is_arr = @intCast(u8, 1);
+                    }
+                    break;
+                }
+            }
+            if (ai_src_is_arr != @intCast(u8, 0)) {
+                // Task 2g-F (d)/(e): storing an array VALUE into an indexed
+                // element (`base[idx] = src;`) is an illegal array-to-array C
+                // assignment (multi-dim array-literal init / row store). Copy
+                // the element storage byte-wise instead (any nesting depth),
+                // matching the 2f-F `.assign` multi-dim path.
+                var ai_is_ptr_arr = isBasePtrToArray(emitter, a.base);
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                var ai_ob: []const u8 = "{\n    unsigned int _i = 0;\n    while (_i < sizeof(";
+                bufferedWriterWrite(&emitter.writer, ai_ob);
+                if (ai_is_ptr_arr != @intCast(u8, 0)) { var ai_op: []const u8 = "(*"; bufferedWriterWrite(&emitter.writer, ai_op); }
+                bufferedWriterWrite(&emitter.writer, base);
+                if (ai_is_ptr_arr != @intCast(u8, 0)) { var ai_cp: []const u8 = ")"; bufferedWriterWrite(&emitter.writer, ai_cp); }
+                var ai_lb: []const u8 = "["; bufferedWriterWrite(&emitter.writer, ai_lb);
+                bufferedWriterWrite(&emitter.writer, idx);
+                var ai_rc: []const u8 = "])) {\n        ((unsigned char*)&"; bufferedWriterWrite(&emitter.writer, ai_rc);
+                if (ai_is_ptr_arr != @intCast(u8, 0)) { var ai_op2: []const u8 = "(*"; bufferedWriterWrite(&emitter.writer, ai_op2); }
+                bufferedWriterWrite(&emitter.writer, base);
+                if (ai_is_ptr_arr != @intCast(u8, 0)) { var ai_cp2: []const u8 = ")"; bufferedWriterWrite(&emitter.writer, ai_cp2); }
+                bufferedWriterWrite(&emitter.writer, ai_lb);
+                bufferedWriterWrite(&emitter.writer, idx);
+                var ai_mid: []const u8 = "])[_i] = ((unsigned char*)&"; bufferedWriterWrite(&emitter.writer, ai_mid);
+                bufferedWriterWrite(&emitter.writer, src);
+                var ai_end: []const u8 = ")[_i];\n        _i++;\n    }\n}\n"; bufferedWriterWrite(&emitter.writer, ai_end);
+            } else {
+                emitBaseIdxAccess(emitter, a.base, a.index, src_name, @intCast(u8, 1), @intCast(u8, 0));
+            }
         },
         .jump => |bb| {
             var jxp_m: []const u8 = "JXP\n"; pal.markerWrite(jxp_m);
@@ -6287,15 +6325,35 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             var name = interner_mod.stringInternerGet(emitter.interner, sgmid);
             var sg_is_arr: u8 = @intCast(u8, 0);
             var sg_arr_len: u32 = @intCast(u32, 0);
+            var sg_elem_is_arr: u8 = @intCast(u8, 0);
             if (sg_tid < @intCast(u32, emitter.registry.types_len)) {
                 var sg_dty = emitter.registry.types_items[@intCast(usize, sg_tid)];
                 if (sg_dty.kind == type_mod.TypeKind.array_type) {
                     sg_is_arr = @intCast(u8, 1);
                     var sg_ap = emitter.registry.array_items[@intCast(usize, sg_dty.payload_idx)];
                     sg_arr_len = sg_ap.length;
+                    var sg_ety = emitter.registry.types_items[@intCast(usize, sg_ap.elem)];
+                    if (sg_ety.kind == type_mod.TypeKind.array_type) sg_elem_is_arr = @intCast(u8, 1);
                 }
             }
             if (sg_is_arr == @intCast(u8, 1)) {
+                if (sg_elem_is_arr != @intCast(u8, 0)) {
+                    // Task 2g-F (d): a multi-dimensional global array initializer
+                    // cannot be copied row-by-row (each row is an array; illegal
+                    // array-to-array C89). Copy the whole storage byte-wise.
+                    bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                    var sg_b0: []const u8 = "{\n    unsigned int _i = 0;\n    while (_i < sizeof(";
+                    bufferedWriterWrite(&emitter.writer, sg_b0);
+                    bufferedWriterWrite(&emitter.writer, name);
+                    var sg_b1: []const u8 = ")) {\n        ((unsigned char*)&";
+                    bufferedWriterWrite(&emitter.writer, sg_b1);
+                    bufferedWriterWrite(&emitter.writer, name);
+                    var sg_b2: []const u8 = ")[_i] = ((unsigned char*)&";
+                    bufferedWriterWrite(&emitter.writer, sg_b2);
+                    bufferedWriterWrite(&emitter.writer, val);
+                    var sg_b3: []const u8 = ")[_i];\n        _i++;\n    }\n}\n";
+                    bufferedWriterWrite(&emitter.writer, sg_b3);
+                } else {
                 bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                 var sg_zi = arrLoopDeclOpenSigned(sg_arr_len);
                 bufferedWriterWrite(&emitter.writer, sg_zi);
@@ -6311,6 +6369,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                 bufferedWriterWrite(&emitter.writer, val);
                 var rb: []const u8 = "[_i];\n        _i++;\n    }\n}\n";
                 bufferedWriterWrite(&emitter.writer, rb);
+                }
             } else {
                 bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                 bufferedWriterWrite(&emitter.writer, name);

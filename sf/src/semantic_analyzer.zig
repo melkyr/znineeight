@@ -3237,6 +3237,35 @@ fn semanticAnalyzerResolveIndexAccess(self: *SemanticAnalyzer, node_idx: u32) u3
         self._stub_0 = saved;
         return r4;
     }
+    // Task 2g-F (b): a base that is neither array, slice, pointer, nor tuple is
+    // not indexable — e.g. the scalar element yielded by `pp[0]` on a genuine
+    // `*[N]T`. Real Zig rejects `pp[0][1]` (the element is reached via `pp[1]`
+    // or `pp.*[1]`); emit a hard error[3000] rather than silently emitting
+    // invalid C. Unresolved/non-value kinds keep their prior fallback.
+    var nidx_bad: u8 = @intCast(u8, 0);
+    if (bt.kind == type_mod.TypeKind.bool_type
+        or bt.kind == type_mod.TypeKind.i8_type or bt.kind == type_mod.TypeKind.i16_type
+        or bt.kind == type_mod.TypeKind.i32_type or bt.kind == type_mod.TypeKind.i64_type
+        or bt.kind == type_mod.TypeKind.u8_type or bt.kind == type_mod.TypeKind.u16_type
+        or bt.kind == type_mod.TypeKind.u32_type or bt.kind == type_mod.TypeKind.u64_type
+        or bt.kind == type_mod.TypeKind.isize_type or bt.kind == type_mod.TypeKind.usize_type
+        or bt.kind == type_mod.TypeKind.c_char_type
+        or bt.kind == type_mod.TypeKind.f32_type or bt.kind == type_mod.TypeKind.f64_type
+        or bt.kind == type_mod.TypeKind.enum_type or bt.kind == type_mod.TypeKind.struct_type
+        or bt.kind == type_mod.TypeKind.union_type or bt.kind == type_mod.TypeKind.packed_union_type
+        or bt.kind == type_mod.TypeKind.tagged_union_type
+        or bt.kind == type_mod.TypeKind.optional_type or bt.kind == type_mod.TypeKind.error_union_type
+        or bt.kind == type_mod.TypeKind.error_set_type
+        or bt.kind == type_mod.TypeKind.fn_type or bt.kind == type_mod.TypeKind.null_type
+        or bt.kind == type_mod.TypeKind.undefined_type
+        or bt.kind == type_mod.TypeKind.arb_uint_type or bt.kind == type_mod.TypeKind.arb_int_type) { nidx_bad = @intCast(u8, 1); }
+    if (nidx_bad != @intCast(u8, 0)) {
+        var nidx_msg: []const u8 = "cannot index a value of non-array, non-pointer type";
+        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), nidx_msg);
+        self._stub_0 = saved;
+        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
+        return type_mod.TYPE_VOID;
+    }
     var ret = self._stub_0;
     self._stub_0 = saved;
     return ret;
@@ -3299,6 +3328,24 @@ fn semanticAnalyzerResolveArrayInit(self: *SemanticAnalyzer, node_idx: u32) u32 
         if (rt) |t| {
             var tt = self.registry.types_items[@intCast(usize, t)];
             if (tt.kind == type_mod.TypeKind.array_type) { annot_tid = t; }
+        }
+        // Task 2g-F (d): an explicit array annotation on a nested array literal
+        // is not always pre-resolved into the resolved-type table; resolve it
+        // here so a multi-dim literal is typed by its annotation instead of
+        // inferring u32 from its integer elements (which mis-sizes the rows).
+        if (annot_tid == @intCast(u32, type_mod.TYPE_UNDEFINED)) {
+            var ann_kind_node = ast_mod.astStoreNodeAt(self.store, node.child_0);
+            if (ann_kind_node.kind == AstKind.array_type) {
+                var tre_env0 = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id, .diag = self.diag, .local_consts = &self.local_consts, .source_file_id = self.source_file_id };
+                var at0 = type_resolver.resolveTypeExprFull(&tre_env0, node.child_0, @intCast(u32, 0));
+                if (at0 != @intCast(u32, type_mod.TYPE_UNDEFINED)) {
+                    var at0ty = self.registry.types_items[@intCast(usize, at0)];
+                    if (at0ty.kind == type_mod.TypeKind.array_type) {
+                        annot_tid = at0;
+                        rtt_mod.resolvedTypeTableSet(self.type_table, node.child_0, at0);
+                    }
+                }
+            }
         }
         if (annot_tid == @intCast(u32, type_mod.TYPE_UNDEFINED)) {
             var annot_node = ast_mod.astStoreNodeAt(self.store, node.child_0);
