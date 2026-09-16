@@ -12,7 +12,7 @@
 
 **Goal:** Convert the `rogue_mud` NPC AI and per-connection broadcast paths and the `mud_server` `select` accept/read loop to cooperative coroutines on the Track 2 builtins and Track 3 `std.async`, with the committed goldens byte-identical.
 
-**Architecture:** One linear track. Two operator-authorized `sf/src` changes precede the conversions: **Task 0** fixes the multi-module `__Z98Step_<f>` emission gap in the C emitter (the self-emission fixed point MOVES), and **Task 0b** changes `std.async` task ownership (`addTask` stores `*Task`; not in the compiler import graph, so no fixed-point move, but the seed archive's `lib/std_async.zig` changes). The seed is rotated at Task 6 closeout. Then `rogue_mud/lib/combat.zig` grows a suspending `npcCoroutine` (one task per active enemy) whose per-turn driver is `std.async.tick`; `rogue_mud/ui.zig` grows a suspending `drawToSocketCoroutine` that yields between frame rows; `rogue_mud/main.zig` owns the caller-supplied schedulers and task arenas and wires create/schedule/cancel across the three modules. `mud_server/main.zig` replaces the fd-set bookkeeping with one `clientCoroutine` task per accepted socket driven by `@asyncResume` from the select-ready path, with `std.async.awaitTask` on the quit/disconnect path. The example conversions themselves touch no `sf/src` file.
+**Architecture:** One linear track. Two operator-authorized `sf/src` changes precede the conversions: **Task 0** fixes the multi-module `__Z98Step_<f>` emission gap in the C emitter (the self-emission fixed point MOVES), and **Task 0b** changes `std.async` task ownership (`addTask` stores `*Task`; not in the compiler import graph, so no fixed-point move, but the seed archive's `lib/std_async.zig` changes). **Task 2a** (a prelude exposed by the Task 2 dispatch) fixes the nested module value-position access gap (`std.async.HEADER_SIZE` → `error[3042]`+`warning[3023]`) that blocks Tasks 2/4/5; I then F, `sf/src` change, fixed point MOVES. The seed is rotated at Task 6 closeout. Then `rogue_mud/lib/combat.zig` grows a suspending `npcCoroutine` (one task per active enemy) whose per-turn driver is `std.async.tick`; `rogue_mud/ui.zig` grows a suspending `drawToSocketCoroutine` that yields between frame rows; `rogue_mud/main.zig` owns the caller-supplied schedulers and task arenas and wires create/schedule/cancel across the three modules. `mud_server/main.zig` replaces the fd-set bookkeeping with one `clientCoroutine` task per accepted socket driven by `@asyncResume` from the select-ready path, with `std.async.awaitTask` on the quit/disconnect path. The example conversions themselves touch no `sf/src` file.
 
 **Tech Stack:** Z98/`zig1` self-hosted compiler (C89 emission), `std.async` (Track 3), the four `@async*` builtins (Track 2), bash, `gcc -m32`, git.
 
@@ -20,7 +20,7 @@
 
 - **Baseline (re-verify at Task 1; the fixed point MOVES in Task 0).** Pre-Task-0 HEAD `0aa5e13d`; pre-Task-0 compiler fixed point `027377296b2e38402ff8470f5c429eb8`; seed v19 archive md5 `23a16154e83736cf6b636685396a124a`; corpus 612 = 571 OK / 37 GREEN / 4 FAIL; `repro/mi_matrix/EXPECTED_FAIL.md` header v85 (2026-09-15). Task 0 (emitter fix) and Task 0b (`std.async` ownership fix) change `sf/src`, so the fixed point and seed move; Task 1 re-verifies and records the post-Task-0/0b values before capturing goldens.
 - **Precondition:** Tracks 2 and 3 are implemented and landed. The four `@async*` builtins work, `sf/src/std_async.zig` exists, and `lib/std_async.zig` is installed next to the compiler under test (`docs/sf/QUICK_REF.md:97-98` recipe plus `std_async.zig`).
-- **`sf/src` scope (operator-authorized 2026-09-15; supersedes the original examples-only constraint).** Authorized `sf/src` changes: **Task 0** (multi-module `__Z98Step_<f>` emission; `sf/src/c89_emit.zig`+`sf/src/main.zig`; fixed point MOVES); **Task 0b** (`std.async` task ownership; `sf/src/std_async.zig`; fixed point UNMOVED but `lib/std_async.zig` changes); **Task 0d** (switch-expression string-literal-prong `string_to_slice` length; `sf/src/semantic_analyzer.zig`; fixed point MOVES); **Task 0f** (S20 un-annotated inference + S21 error-union/optional payload string→slice; `sf/src/semantic_analyzer.zig` + `sf/src/lower.zig`; fixed point MOVES); **Task 0h** (residual latent risks: F-M4 non-literal pointer→slice length-1 default, T0b `error[3043]` `[*]*T` element field store, F-M1 prong guard, T0-M2 grouped tail; `sf/src/lower.zig` + `sf/src/semantic_analyzer.zig` + `sf/src/main.zig`; fixed point MOVES). The seed is rotated at Task 6 closeout. No other `sf/src` edit is authorized; Tasks 1-5 touch examples only (the fix tasks re-capture the goldens they change).
+- **`sf/src` scope (operator-authorized 2026-09-15; supersedes the original examples-only constraint).** Authorized `sf/src` changes: **Task 0** (multi-module `__Z98Step_<f>` emission; `sf/src/c89_emit.zig`+`sf/src/main.zig`; fixed point MOVES); **Task 0b** (`std.async` task ownership; `sf/src/std_async.zig`; fixed point UNMOVED but `lib/std_async.zig` changes); **Task 0d** (switch-expression string-literal-prong `string_to_slice` length; `sf/src/semantic_analyzer.zig`; fixed point MOVES); **Task 0f** (S20 un-annotated inference + S21 error-union/optional payload string→slice; `sf/src/semantic_analyzer.zig` + `sf/src/lower.zig`; fixed point MOVES); **Task 0h** (residual latent risks: F-M4 non-literal pointer→slice length-1 default, T0b `error[3043]` `[*]*T` element field store, F-M1 prong guard, T0-M2 grouped tail; `sf/src/lower.zig` + `sf/src/semantic_analyzer.zig` + `sf/src/main.zig`; fixed point MOVES). **Task 2a-F** (nested module value-position access gap exposed by Task 2; `sf/src/lower.zig` +/or `sf/src/semantic_analyzer.zig`; fixed point MOVES). The seed is rotated at Task 6 closeout. No other `sf/src` edit is authorized; Tasks 1-5 touch examples only (the fix tasks re-capture the goldens they change).
 - **Standing rule — declare every residual gap (binding).** Any gap a fix leaves behind (a construct still affected, a distinct adjacent bug, a known limitation) MUST be declared before its task is marked complete: a tracked fixture (or an `EXPECTED_FAIL.md` entry for a compile-fail) + a plan/spec note. "Approved with a Minor" is NOT a declaration. S20/S21 (Task 0d residuals) are the first application.
 - **`timeout 120` on every binary execution.**
 - **gcc flag-set rule (binding):** every `gcc -c` MUST be `gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc>`. Compiler builds only via the seed model: `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out_dir>`; never invoke `zig0`. `<out_dir>` must be fresh.
@@ -580,6 +580,38 @@ Expected: `OK=2 GREEN=0 FAIL=0`. Record the count.
 git add examples/z98/rogue_mud/demo examples/z98/mud_server/demo
 git commit -m "test(coroutine): Track4 pre-conversion golden harness (Track4)"
 ```
+
+---
+
+### Task 2a: nested module value-position access gap — I then F (prelude exposed by Task 2)
+
+**Origin (prelude on Track 2, exposed by Task 2, 2026-09-16).** The Task 2 Step 3 code uses `std.async.HEADER_SIZE` (Amendment 3 B2); lowering it fails with `error[3042] non-value base expression in field access` + `warning[3023] module used as value expression`. This is the pre-existing `std.async` value-position gap documented as DEFERRED in the Track-1 prelude spec (`docs/superpowers/specs/2026-09-13-async-prelude-and-feasibility-design.md:474`, "Amendment 7, Res 4"; also `2026-09-13-std-async-design.md:407`). It blocks Tasks 2/4/5, which all read `std.async.HEADER_SIZE` (plan lines 730, 1077).
+
+**Verified matrix (compiler fixed point `286c9011691ccd39403534019baa12c6`):**
+
+| construct | result |
+|---|---|
+| `std.async.HEADER_SIZE` (scalar const, 2-level alias) | FAIL `error[3042]` + `warning[3023]` |
+| `std.async.TaskState.ready` (enum member, 2-level alias) | FAIL `error[3042]` + `warning[3023]` |
+| `const x = std.async; x.HEADER_SIZE` (alias-to-alias) | FAIL `error[3042]` |
+| `std.async.schedulerInit(...)` (function, 2-level alias) | OK |
+| `@import("std_async.zig").HEADER_SIZE` (1-level direct import) | OK |
+
+**Preliminary upstream cause:** the lowerer's field-access path lowers the base as a value (`sf/src/lower.zig:3352`); a module base yields `TEMP_NONE` + `warning[3023]` (`:3124-3128`) then `error[3042]` (`:3356`). Module-base handling exists only for a DIRECT module ident (`:3400-3416`, functions only) and `fa_ty.kind == module_type` returns 0 (`:3420-3422`). A nested alias (`std.async`) is itself a member access on `std`, not recognized as a module reference. Sema already has a module-base case (`sf/src/semantic_analyzer.zig:659`) and the type resolver too (`sf/src/type_resolver.zig:892`), so the gap is likely in lowering.
+
+#### Task 2a-I: investigate + pin (no `sf/src` change)
+
+- [ ] **Step 1: Fixture set.** Create `repro/mi_matrix/module_value_pos_xmod/` (the minimal repro) plus a construct matrix covering: scalar `pub const` via 2-level alias; `pub const` of other types (bool/usize/i32/array/slice/struct-value/enum-value/fn-ptr); type via 2-level alias; enum member via 2-level alias; `pub var` via 2-level alias; 3-level alias; alias-to-alias; 1-level direct import (control); module-local `pub const` (control); and positions (var-init, call-arg, return, array-size, arithmetic). Each fixture documents RED (current) + the expected GREEN contract.
+- [ ] **Step 2: Questionnaire.** Answer in the report: (Q1) exact failing constructs + diagnostics; (Q2) full work/fail matrix; (Q3) which pass fails and where; (Q4) why functions work but values do not; (Q5) minimal fix locus; (Q6) related module-as-value / nested-alias failures; (Q7) existing error/warning codes vs a new one; (Q8) dependence on const type / nesting depth / position.
+- [ ] **Step 3: Declare.** Add the fixtures to the corpus; bump `repro/mi_matrix/EXPECTED_FAIL.md` (v100→v101) for the compile-FAIL cases; record the deferred prelude-spec reference.
+- [ ] **Step 4: Report + present the fix surface for Task 2a-F.** No `sf/src` change; corpus/census delta recorded.
+
+#### Task 2a-F: fix the gap (`sf/src` change; fixed point MOVES)
+
+- [ ] **Step 1: Fix** the lowerer (and/or the sema/lower cooperation) so a nested module-alias value-position access resolves to the member, mirroring the direct-module path, without regressing the function path.
+- [ ] **Step 2: Fixtures RED→GREEN**; full corpus sweep; `check_emit_support.sh` 5/5; self-compile closure.
+- [ ] **Step 3: Re-verify** the four goldens + `CLOSEOUT OK`; record the new fixed point. Seed rotation stays at Task 6.
+- [ ] **Step 4: Re-dispatch Task 2** (which then uses `std.async.HEADER_SIZE` as written).
 
 ---
 
@@ -1338,3 +1370,7 @@ Task 2 dispatch was BLOCKED by three confirmed plan/design defects in the `@asyn
 **B2 — root-frame arena vs the `Context` header.** The plan bound `async_arena` and `async_ctx` both at `async_storage[0..]`; the first root frame aliased the 16-byte `Context` header and each `@asyncInit` reset `ctx.used`/`ctx.oom` at +0/+8, clobbering frame 0's step word (tick trap). The root-frame arena now starts at `std.async.HEADER_SIZE` (Tasks 2/5).
 
 **B3 — coroutine parameter ABI (option a).** `@asyncInit` copies the args record POSITIONALLY into the coroutine's parameters (`sf/src/lower.zig:4362-4386`), so a `(ctx: *Context, args: *void)` coroutine maps `ctx ← record.field0`, `args ← record.field1`. Each `@asyncInit` target now takes the record's fields directly and a matching record type is added: `npcCoroutine(na: *NpcArgs)` + `NpcCoroutineArgs{ na }`; `clientFrameCoroutine(ctx, cfa: *ClientFrameArgs)` + `ClientFrameCoroutineArgs{ ctx, cfa }`; `clientCoroutine(cta: *ClientTaskArgs)` + `ClientCoroutineArgs{ cta }`. `drawToSocketCoroutine` is NOT an `@asyncInit` target (called directly) and keeps `(ctx, args)`.
+
+### Amendment 4 — Task 2a: nested module value-position access gap (2026-09-16, operator ruling)
+
+The Task 2 re-dispatch was BLOCKED by a compiler gap: lowering `std.async.HEADER_SIZE` (a scalar `pub const` accessed through a nested module alias) emits `error[3042] non-value base expression in field access` + `warning[3023] module used as value expression` (0 `.c`). The operator ruled this a real gap to be addressed by an I/F pair, added to the plan as **Task 2a** (a prelude on Track 2 exposed by Task 2). It is the pre-existing deferred `std.async` value-position gap (`docs/superpowers/specs/2026-09-13-async-prelude-and-feasibility-design.md:474`, "Amendment 7, Res 4"). Task 2a-I investigates + pins (fixtures + questionnaire + declaration, no `sf/src` change); Task 2a-F fixes it (`sf/src` change; fixed point MOVES). Tasks 2/4/5 read `std.async.HEADER_SIZE` (plan lines 730, 1077), so Task 2a-F must land before Task 2 re-dispatches.
