@@ -637,7 +637,7 @@ cp sf/src/std.zig sf/src/std_io.zig sf/src/std_arena.zig sf/src/std_net.zig \
    sf/src/std_str.zig sf/src/std_mem.zig sf/src/std_math.zig sf/src/std_debug.zig \
    sf/src/std_async.zig /tmp/t4_ref/lib/
 ```
-Gate `=== [seed] Done: /tmp/t4_ref ===`; the current fixed point is `8a322dd9221077780202e8ac6dd6983a` (post-Task-2e-F; was `14ffe6b3…`). The committed goldens are unaffected (runtime byte-identical). **Pointer-array API (Task 0b):** `Scheduler.tasks` is `[*]*Task`, `schedulerInit` takes `[]*Task`, and `addTask` stores the caller's `*Task`; a task set is a `[N]*std.async.Task` pointer array whose slots are bound to `[N]std.async.Task` value storage (`pt[i] = &tasks[i]`), mirroring `repro/mi_matrix/stdlib_async_sched_xmod/main.zig:50-57`.
+Gate `=== [seed] Done: /tmp/t4_ref ===`; the current fixed point is `5c24305437629da54b4e4de1ed52e0e0` (post-Task-2g-F; was `495ceae3…`). The committed goldens are unaffected (runtime byte-identical). **Pointer-array API (Task 0b):** `Scheduler.tasks` is `[*]*Task`, `schedulerInit` takes `[]*Task`, and `addTask` stores the caller's `*Task`; a task set is a `[N]*std.async.Task` pointer array whose slots are bound to `[N]std.async.Task` value storage (`pt[i] = &tasks[i]`), mirroring `repro/mi_matrix/stdlib_async_sched_xmod/main.zig:50-57`.
 
 - [ ] **Step 1: Record the pre-conversion capture (RED baseline)**
 
