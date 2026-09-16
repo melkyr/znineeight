@@ -39,8 +39,8 @@ pub const FrontResCtx = struct {
     suspending_fns: *hash_mod.U64ToU32Map,
 };
 
-fn resolveTypeExpr(ct: *FrontResCtx, module_id: u32, node_idx: u32) type_mod.TypeId {
-    var env = type_resolver.TypeResolveEnv{ .store = ct.store, .typereg = ct.typereg, .symbol_reg = ct.symbol_reg, .interner = ct.interner, .module_id = module_id };
+fn resolveTypeExpr(ct: *FrontResCtx, module_id: u32, node_idx: u32, scope: ?*type_resolver.LocalConstScope) type_mod.TypeId {
+    var env = type_resolver.TypeResolveEnv{ .store = ct.store, .typereg = ct.typereg, .symbol_reg = ct.symbol_reg, .interner = ct.interner, .module_id = module_id, .diag = ct.diag, .local_consts = scope };
     return type_resolver.resolveTypeExprFull(&env, node_idx, @intCast(u32, 0));
 }
 
@@ -82,7 +82,7 @@ pub fn frontResolveModuleInits(ct: *FrontResCtx) void {
                 var decl = ast_mod.astStoreNodeAt(ct.store, decls[di]);
                 if (decl.kind != AstKind.var_decl) continue;
                 if (decl.child_0 != @intCast(u32, 0)) {
-                    var rtype = resolveTypeExpr(ct, mods[mi].id, decl.child_0);
+                    var rtype = resolveTypeExpr(ct, mods[mi].id, decl.child_0, null);
                     if (rtype != type_mod.TYPE_UNDEFINED) {
                         resolved_type_table.resolvedTypeTableSet(ct.resolved_types, decl.child_0, rtype);
                         resolved_type_table.resolvedTypeTableSet(ct.resolved_types, decls[di], rtype);
@@ -143,35 +143,47 @@ pub fn frontResolveModuleInits(ct: *FrontResCtx) void {
 }
 
 pub fn resolveStmtTypes(ct: *FrontResCtx, module_id: u32, node_idx: u32, depth: u32) void {
+    var scope = type_resolver.localConstScopeInit(ct.scratch);
+    resolveStmtTypesRec(ct, module_id, node_idx, depth, &scope);
+}
+
+fn resolveStmtTypesRec(ct: *FrontResCtx, module_id: u32, node_idx: u32, depth: u32, scope: *type_resolver.LocalConstScope) void {
     if (depth > @intCast(u32, 16)) return;
     var node = ast_mod.astStoreNodeAt(ct.store, node_idx);
     if (node.kind == AstKind.var_decl) {
         if (node.child_0 != 0) {
-            var rtype = resolveTypeExpr(ct, module_id, node.child_0);
+            var rtype = resolveTypeExpr(ct, module_id, node.child_0, scope);
             if (rtype != type_mod.TYPE_UNDEFINED) {
                 resolved_type_table.resolvedTypeTableSet(ct.resolved_types, node.child_0, rtype);
                 resolved_type_table.resolvedTypeTableSet(ct.resolved_types, node_idx, rtype);
             }
         }
+        // Task 2c-F (variant (e)): record a function-local `const` so a later
+        // array size `[N]` in the same function body can fold through it.
+        if ((node.flags & @intCast(u8, 1)) == @intCast(u8, 0) and node.child_1 != 0) {
+            type_resolver.localConstScopePush(scope, ast_mod.astStoreNodePayload(ct.store, node_idx), node_idx);
+        }
     }
     if (node.kind == AstKind.array_init or node.kind == AstKind.struct_init or node.kind == AstKind.tuple_literal) {
         if (node.child_0 != 0) {
-            var rtype = resolveTypeExpr(ct, module_id, node.child_0);
+            var rtype = resolveTypeExpr(ct, module_id, node.child_0, scope);
             if (rtype != type_mod.TYPE_UNDEFINED) {
                 resolved_type_table.resolvedTypeTableSet(ct.resolved_types, node.child_0, rtype);
             }
         }
     }
     if (node.kind == AstKind.block) {
+        var scope_base = scope.count;
         var decls = ast_mod.astStoreNodeExtraChildren(ct.store, node_idx);
         var di: usize = 0;
         while (di < decls.len) : (di += 1) {
-            resolveStmtTypes(ct, module_id, decls[di], depth + @intCast(u32, 1));
+            resolveStmtTypesRec(ct, module_id, decls[di], depth + @intCast(u32, 1), scope);
         }
+        scope.count = scope_base;
     }
     var cd = depth + @intCast(u32, 1);
     if (node.kind != AstKind.builtin_call) {
-        if (node.child_0 != 0) { resolveStmtTypes(ct, module_id, node.child_0, cd); }
-        if (node.child_1 != 0) { resolveStmtTypes(ct, module_id, node.child_1, cd); }
+        if (node.child_0 != 0) { resolveStmtTypesRec(ct, module_id, node.child_0, cd, scope); }
+        if (node.child_1 != 0) { resolveStmtTypesRec(ct, module_id, node.child_1, cd, scope); }
     }
 }

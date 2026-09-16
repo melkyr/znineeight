@@ -30,7 +30,66 @@ pub const TypeResolveEnv = struct {
     symbol_reg: *SymbolRegistry,
     interner: *StringInterner,
     module_id: u32,
+    // Task 2c-F: optional hard-error sink for the array-size fallback. Only
+    // passes with a live DiagnosticCollector set this (front_resolution, sema,
+    // typeResolverResolveNames); lower/symbol_registrator/comptime_eval pass
+    // null so they never emit.
+    diag: ?*DiagnosticCollector,
+    // Task 2c-F: the enclosing function's local-const scope (variant (e)),
+    // consulted by `evalConstU32Full`'s ident_expr arm before the module symbol
+    // tables. null outside a function body.
+    local_consts: ?*LocalConstScope,
 };
+
+// Task 2c-F: a name -> var_decl-node scope for function-local `const`s. A local
+// const is a statement (parsed as a `var_decl`), so it is invisible to
+// `symbolLookupAllModules`; this scope lets the array-size evaluator recurse
+// into its initializer. Lookups scan newest -> oldest, so inner declarations
+// shadow outer ones.
+pub const LocalConstScope = struct {
+    names: [*]u32,
+    nodes: [*]u32,
+    count: usize,
+    cap: usize,
+    alloc: *Sand,
+};
+
+pub fn localConstScopeInit(alloc: *Sand) LocalConstScope {
+    return LocalConstScope{
+        .names = undefined,
+        .nodes = undefined,
+        .count = @intCast(usize, 0),
+        .cap = @intCast(usize, 0),
+        .alloc = alloc,
+    };
+}
+
+pub fn localConstScopePush(scope: *LocalConstScope, name_id: u32, decl_node: u32) void {
+    if (scope.count >= scope.cap) {
+        var nc: usize = if (scope.cap < @intCast(usize, 8)) @intCast(usize, 8) else scope.cap * 2;
+        var raw_n = alloc_mod.sandAlloc(scope.alloc, nc * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable;
+        var raw_d = alloc_mod.sandAlloc(scope.alloc, nc * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable;
+        var nn = @ptrCast([*]u32, raw_n);
+        var nd = @ptrCast([*]u32, raw_d);
+        var i: usize = 0;
+        while (i < scope.count) : (i += 1) { nn[i] = scope.names[i]; nd[i] = scope.nodes[i]; }
+        scope.names = nn;
+        scope.nodes = nd;
+        scope.cap = nc;
+    }
+    scope.names[scope.count] = name_id;
+    scope.nodes[scope.count] = decl_node;
+    scope.count += @intCast(usize, 1);
+}
+
+pub fn localConstScopeLookup(scope: *LocalConstScope, name_id: u32) ?u32 {
+    var i: usize = scope.count;
+    while (i > @intCast(usize, 0)) {
+        i -= @intCast(usize, 1);
+        if (scope.names[i] == name_id) return scope.nodes[i];
+    }
+    return null;
+}
 
 pub const ClassificationResult = struct {
     ids: [*]u32,
@@ -747,8 +806,49 @@ pub fn evalConstU32Full(env: *TypeResolveEnv, node_idx: u32) u32 {
     if (node.kind == AstKind.int_literal) {
         return @intCast(u32, ast_mod.astStoreIntValue(env.store, node_idx));
     }
+    // Task 2c-F: fold an arithmetic expression node. A module `const C = A * B`
+    // recurses from the ident_expr arm into its initializer, which is one of
+    // these binary nodes; mirror the array_type arm's inline semantics
+    // (0xFFFFFFFF = unfoldable sentinel; div/mod by zero is unfoldable).
+    if (node.kind == AstKind.add or node.kind == AstKind.sub or
+        node.kind == AstKind.mul or node.kind == AstKind.div or node.kind == AstKind.mod_op) {
+        var bl = evalConstU32Full(env, node.child_0);
+        var br = evalConstU32Full(env, node.child_1);
+        if (bl != @intCast(u32, 0xFFFFFFFF) and br != @intCast(u32, 0xFFFFFFFF)) {
+            if (node.kind == AstKind.add) { return bl + br; }
+            if (node.kind == AstKind.sub) { return bl - br; }
+            if (node.kind == AstKind.mul) { return bl * br; }
+            if (node.kind == AstKind.div) {
+                if (br != @intCast(u32, 0)) { return bl / br; }
+                return @intCast(u32, 0xFFFFFFFF);
+            }
+            if (br != @intCast(u32, 0)) { return bl % br; }
+        }
+        return @intCast(u32, 0xFFFFFFFF);
+    }
+    // Task 2c-F: `-v` folds as `0 - v` (mirrors evalConstI64Full's negate arm).
+    if (node.kind == AstKind.negate) {
+        if (node.child_0 != @intCast(u32, 0)) {
+            var nv = evalConstU32Full(env, node.child_0);
+            if (nv != @intCast(u32, 0xFFFFFFFF)) {
+                return @intCast(u32, 0) - nv;
+            }
+        }
+        return @intCast(u32, 0xFFFFFFFF);
+    }
     if (node.kind == AstKind.ident_expr) {
         var name_id = ast_mod.astStoreIdentifier(env.store, node_idx);
+        // Task 2c-F (variant (e)): consult the enclosing function's local-const
+        // scope before the module symbol tables. A local `const N = <expr>` is a
+        // statement, not a module symbol, so only this scope can see it.
+        if (env.local_consts) |lcs| {
+            if (localConstScopeLookup(lcs, name_id)) |l_decl_node| {
+                var l_decl = ast_mod.astStoreNodeAt(env.store, l_decl_node);
+                if (l_decl.child_1 != 0) {
+                    return evalConstU32Full(env, l_decl.child_1);
+                }
+            }
+        }
         var c_sym = symbolLookupAllModules(env, name_id);
         if (c_sym) |cs| {
             if ((cs.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
@@ -1169,6 +1269,28 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
                     else { var am: []const u8 = "a"; pal_mod.markerWrite(am); }
                     return at;
                 }
+                // Task 2c-F: the size expression could not be const-folded.
+                // Emit a hard error (deduped per node) instead of silently
+                // returning TYPE_UNDEFINED and letting invalid C be emitted
+                // downstream. `[_]T` (inferred length) is handled by the
+                // array-init path, not here, so it is never an error.
+                var sz_is_inferred: bool = false;
+                if (sz_node.kind == AstKind.ident_expr) {
+                    var sz_name = ast_mod.astStoreIdentifier(env.store, node.child_1);
+                    var sz_text = interner_mod.stringInternerGet(env.interner, sz_name);
+                    if (sz_text.len == @intCast(usize, 1) and sz_text[0] == @intCast(u8, '_')) { sz_is_inferred = true; }
+                }
+                if (!sz_is_inferred) {
+                    if (env.diag) |dg| {
+                        if (diag_mod.diagnosticCollectorMarkNodeOnce(dg, node_idx)) {
+                            var asn_msg: []const u8 = "array size is not a constant expression";
+                            _ = diag_mod.diagnosticCollectorAdd(dg, @intCast(u8, 0),
+                                @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3050_ARRAY_SIZE_NOT_CONSTANT)),
+                                @intCast(u32, 0), sz_node.span_start,
+                                sz_node.span_start + @intCast(u32, sz_node.span_len), asn_msg);
+                        }
+                    }
+                }
             }
             return type_mod.TYPE_UNDEFINED;
         }
@@ -1428,10 +1550,11 @@ pub fn typeResolverResolveNames(
     interner: *StringInterner,
     resolved_types: *rtt_mod.ResolvedTypeTable,
     module_reg: *mr_mod.ModuleRegistry,
+    diag: *DiagnosticCollector,
     perm_alloc: *Sand
 ) void {
     var mods = mr_mod.moduleRegistryGetModules(module_reg);
-    var env = TypeResolveEnv{ .store = store, .typereg = typereg, .symbol_reg = symbol_reg, .interner = interner, .module_id = MODULE_ID_NONE };
+    var env = TypeResolveEnv{ .store = store, .typereg = typereg, .symbol_reg = symbol_reg, .interner = interner, .module_id = MODULE_ID_NONE, .diag = diag, .local_consts = null };
     _ = perm_alloc;
     resolveNamedTypeExpressions(&env, mods);
     resolveImportFieldAliases(&env, mods, module_reg);

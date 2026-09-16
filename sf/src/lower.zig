@@ -4153,7 +4153,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             }
             if (node.child_0 == self.field_parent_ptr_name_id) {
                 if (ec.len >= @intCast(usize, 3)) {
-                    var fpp_env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner, .module_id = self.module_id };
+                    var fpp_env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner, .module_id = self.module_id, .diag = null, .local_consts = null };
                     var fpp_outer = type_resolver.resolveTypeExprFull(&fpp_env, ec[@intCast(usize, 0)], @intCast(u32, 0));
                     if (fpp_outer != type_mod.TYPE_UNDEFINED) {
                         var fpp_oty = self.ctx.registry.types_items[@intCast(usize, fpp_outer)];
@@ -4189,7 +4189,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             }
             if (node.child_0 == self.bitcast_name_id) {
                 if (ec.len >= @intCast(usize, 2)) {
-                    var bc_env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner, .module_id = self.module_id };
+                    var bc_env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner, .module_id = self.module_id, .diag = null, .local_consts = null };
                     var bc_dst = type_resolver.resolveTypeExprFull(&bc_env, ec[@intCast(usize, 0)], @intCast(u32, 0));
                     if (bc_dst != type_mod.TYPE_UNDEFINED) {
                         var bc_arg = lowerExpr(self, ec[@intCast(usize, 1)]);
@@ -4210,7 +4210,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         }
                     } else {
                         if (ec.len >= @intCast(usize, 1)) {
-                            var ct_env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner, .module_id = self.module_id };
+                            var ct_env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner, .module_id = self.module_id, .diag = null, .local_consts = null };
                             var ct = type_resolver.resolveTypeExprFull(&ct_env, ec[@intCast(usize, 0)], @intCast(u32, 0));
                             if (ct != type_mod.TYPE_UNDEFINED) {
                                 fold_ty_box[0] = ct;
@@ -4257,7 +4257,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             if (node.child_0 == self.cvaarg_name_id) {
                 if (ec.len >= @intCast(usize, 2)) {
                     var vat = vaListArgTemp(self, ec[@intCast(usize, 0)]);
-                    var ct_env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner, .module_id = self.module_id };
+                    var ct_env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner, .module_id = self.module_id, .diag = null, .local_consts = null };
                     var vatid = type_resolver.resolveTypeExprFull(&ct_env, ec[@intCast(usize, 1)], @intCast(u32, 0));
                     var vares = nextTemp(self, vatid);
                     emitInst(self, LirInst{ .va_arg = .{ .va_list_temp = vat, .type_id = vatid, .result = vares } });
@@ -4611,7 +4611,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var ty_node = ast_mod.astStoreNodeAt(store, ec[@intCast(usize, 0)]);
         t_target = type_mod.TYPE_U32;
         if (ty_node.kind == AstKind.fn_type) {
-            var fc_env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner, .module_id = self.module_id };
+            var fc_env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner, .module_id = self.module_id, .diag = null, .local_consts = null };
             var fc_t = type_resolver.resolveTypeExprFull(&fc_env, ec[@intCast(usize, 0)], @intCast(u32, 0));
             if (fc_t != type_mod.TYPE_UNDEFINED) {
                 t_target = fc_t;
@@ -4625,7 +4625,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 var fcm: []const u8 = "FNT:t"; pal.markerWrite(fcm);
             }
         } else {
-            var ct_env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner, .module_id = self.module_id };
+            var ct_env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner, .module_id = self.module_id, .diag = null, .local_consts = null };
             var ct = type_resolver.resolveTypeExprFull(&ct_env, ec[@intCast(usize, 0)], @intCast(u32, 0));
             if (ct != type_mod.TYPE_UNDEFINED) { t_target = ct; }
         }

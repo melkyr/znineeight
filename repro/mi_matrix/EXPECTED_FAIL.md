@@ -1,4 +1,80 @@
-# mi_matrix corpus — expected-fail manifest (v106 2026-09-16)
+# mi_matrix corpus — expected-fail manifest (v107 2026-09-16)
+
+## Track-4 Task 2c-F (F) — const-expression array sizes FIXED (v106 -> v107 2026-09-16)
+
+Track-4 Task 2c-F closes the array-size const-expression gap pinned by Task 2c-I.
+**`sf/src` change** in four files: `sf/src/type_resolver.zig`, `sf/src/diagnostics.zig`,
+`sf/src/semantic_analyzer.zig`, `sf/src/front_resolution.zig` (+ the `TypeResolveEnv`
+literal-update sites in `main.zig`/`lower.zig`/`symbol_registrator.zig`/`comptime_eval.zig`).
+Full report: `.superpowers/sdd/2026-09-13-coroutine-integration-plan/task-2c-report.md`.
+
+**What landed.**
+1. **Fold** (`evalConstU32Full`): a `binary` case (`add/sub/mul/div/mod_op`, with the
+   `0xFFFFFFFF` unfoldable sentinel and div/mod-by-zero guarded) and a `negate` case
+   (`0 - v`). The existing `ident_expr`/`field_access` recursion then folds
+   `const C = A * B`, nested `A * B + 2`, and `const C = mid.leaf.HEADER_SIZE * 2`.
+2. **Hard-error fallback**: new `ERR_3050_ARRAY_SIZE_NOT_CONSTANT = 3050`
+   (`sf/src/diagnostics.zig`); emitted from the `array_type` arm when `arr_resolved`
+   is still false, via an optional `diag` handle threaded into `TypeResolveEnv`
+   (`[_]T` inferred length is exempt). Emission is deduped per node
+   (`DiagnosticCollector.diag_seen` + `diagnosticCollectorMarkNodeOnce`), because
+   front_resolution and sema both resolve the same size node.
+3. **Variant (e)**: a function-local `const` scope (`LocalConstScope`: name -> decl
+   node) is threaded into `TypeResolveEnv` (`local_consts`), populated in source order
+   by both `front_resolution.resolveStmtTypesRec` (block-scoped push/pop) and the sema
+   var-decl arm, and consulted in `evalConstU32Full`'s `ident_expr` arm before the
+   module symbol tables. A function-body `const N = A * B; var x: [N]u8` now folds.
+
+**Build (binding seed model; fixed point MOVES).**
+```
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/t2cF_build
+[seed] hop1 binary md5: af9d47d6d0e8cf34dd72178535e3ce07
+[seed] hop2 binary md5: 960575b70302c78a19cf6bc0cc129df5
+[seed] hop3 binary md5: 960575b70302c78a19cf6bc0cc129df5
+[seed] three-hop closure OK (moving point): hop2 == hop3 == 960575b70302c78a19cf6bc0cc129df5
+```
+BASE fixed point `0da3f1391075e3e77c54b626d5550e3b` → **NEW fixed point
+`960575b70302c78a19cf6bc0cc129df5`** (hop2 == hop3; the committed seed predates the
+current `sf/src`, so hop1 differs). Compiler under test = `/tmp/t2cF_build/zig1_5_clean`
+(the hop1 binary, whose sibling `lib/` carries the 9 std modules).
+
+**Fixtures RED → GREEN** (`-ffast --dump-c89`; gcc `-m32 -std=c89`; link+run):
+
+| fixture | RED (base `0da3f139…`) | GREEN (fix `960575b7…`) |
+|---|---|---|
+| `const_size_arith_xmod` | dump rc=2, 0 `.c`; `error[20]` ×6 | dump rc=0, 4 `.c`, gcc clean, link+run rc=0, no stdout |
+| `const_size_member_xmod` | dump rc=2, 0 `.c`; `error[20]` | dump rc=0, 4 `.c`, gcc clean, link+run rc=0, no stdout |
+| `const_size_local_xmod` | dump rc=2, 0 `.c`; `error[20]` | dump rc=0, 4 `.c`, gcc clean, link+run rc=0, no stdout |
+| `const_size_unfoldable_xmod` | dump rc=0, 4 `.c`, **stderr empty (SILENT invalid C)**; gcc FAIL | **hard `error[3050]`**, dump rc=2, 0 `.c` |
+| `const_size_inline_ctrl_xmod` | OK | OK (no regression) |
+
+Hard-error evidence: `error[3050]: array size is not a constant expression`
+(dump rc=2, 0 `.c`). No silent invalid C.
+
+**Corpus `-ffast` dump+gcc classifier (`/tmp/t4bf_classify.sh`), 684 dirs:**
+
+| | base `0da3f139…` | fix `960575b7…` | delta |
+|---|---|---|---|
+| dirs | 684 | 684 | 0 |
+| OK | 632 | 635 | +3 |
+| GREEN | 27 | 27 | 0 |
+| FAIL | 25 | 22 | −3 |
+| ICE | 0 | 0 | 0 |
+| CRASH | 0 | 0 | 0 |
+
+**Per-dir movement = exactly the three intended dirs** (`join` diff):
+`const_size_arith_xmod` FAIL→OK, `const_size_local_xmod` FAIL→OK,
+`const_size_member_xmod` FAIL→OK. All 681 other dirs are class-identical (zero
+regression). `const_size_unfoldable_xmod` stays **FAIL** (now a hard frontend
+`error[3050]` instead of gcc-side invalid C) — the intended contract.
+
+**Emit-support / self-compile / goldens.**
+- `bash scripts/check_emit_support.sh /tmp/t2cF_build/zig1_5_clean` → **5/5** support files byte-identical.
+- Self-compile: `zig1_5_clean -ffast --dump-c89 --output-dir … sf/src/main.zig` → rc=0, **48 `.c`**, 0 `error[3000]`, 0 PANIC, 0 errors.
+- `bash scripts/closeout/verify_upgraded.sh /tmp/t2cF_build/zig1_5_clean` → **`CLOSEOUT OK`** (A1–A5, B1–B7; lisp `96654b39`, rogue q `3fb6709e`, rogue move `b3c5b0e1`, rogue demo `7361d248`, net `aa40a52e`).
+- 4-MD5 runtime byte-identical (`/tmp/t4p_rt.sh`): gol `fcbf7e7cead5082f0a8caadd5a8f0ff9`, lisp `8dc783a3d766430c15993ab08cd0f7ec`, json `8bda3d5a1ec07d14a301bc343df32bf8`, mud_server stdout `66c8f0abb926cca7baf9a0d1692ab318`, mud_server client bytes `93147d0f0bbd983a9d844fea8b7a6fa7`.
+- No seed rotation (Task 6 owns rotation).
+
 
 ## Track-4 Task 2c-I (I) — const-expression array sizes pinned (v105 -> v106 2026-09-16)
 

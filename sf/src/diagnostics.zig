@@ -79,6 +79,9 @@ pub const ErrorCode = enum(u16) {
     ERR_3046_ASYNC_FRAME_SIZE_INVALID = 3046,
     WARN_3047_ASYNC_FRAME_LARGE = 3047,
     ERR_3049_PTRCAST_REQUIRES_TWO_ARGS = 3049,
+    // Task 2c-F: an array-size expression that cannot be const-folded (hard
+    // error; never silently emit invalid C for an unresolved array size).
+    ERR_3050_ARRAY_SIZE_NOT_CONSTANT = 3050,
 };
 
 pub const ERR_1000_UNTERMINATED_STRING: u16 = 0;
@@ -251,6 +254,13 @@ pub const DiagnosticCollector = struct {
     error_count: usize,
     warning_count: usize,
     max_diagnostics: usize,
+    // Task 2c-F: per-node "already diagnosed" set. The same array-size node can
+    // be resolved by more than one pass (front_resolution then sema, or
+    // typeResolverResolveNames then a later pass), so emission must be
+    // deduped per node to avoid duplicate diagnostics.
+    diag_seen_items: [*]u32,
+    diag_seen_len: usize,
+    diag_seen_cap: usize,
 };
 
 pub fn diagnosticCollectorInit(allocator: *Sand, source_manager: *SourceManager, interner: *StringInterner) DiagnosticCollector {
@@ -268,6 +278,9 @@ pub fn diagnosticCollectorInit(allocator: *Sand, source_manager: *SourceManager,
         .error_count = @intCast(usize, 0),
         .warning_count = @intCast(usize, 0),
         .max_diagnostics = MAX_DIAGNOSTICS,
+        .diag_seen_items = undefined,
+        .diag_seen_len = @intCast(usize, 0),
+        .diag_seen_cap = @intCast(usize, 0),
     };
 }
 
@@ -317,6 +330,25 @@ pub fn diagnosticCollectorHasErrors(self: *DiagnosticCollector) bool {
 
 pub fn diagnosticCollectorErrorCount(self: *DiagnosticCollector) u32 {
     return @intCast(u32, self.error_count);
+}
+
+pub fn diagnosticCollectorMarkNodeOnce(self: *DiagnosticCollector, node_idx: u32) bool {
+    var i: usize = 0;
+    while (i < self.diag_seen_len) : (i += 1) {
+        if (self.diag_seen_items[i] == node_idx) return false;
+    }
+    if (self.diag_seen_len >= self.diag_seen_cap) {
+        var new_cap: usize = if (self.diag_seen_cap < @intCast(usize, 16)) @intCast(usize, 16) else self.diag_seen_cap * 2;
+        var raw = alloc_mod.sandAlloc(self.allocator, new_cap * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable;
+        var items = @ptrCast([*]u32, raw);
+        var ci: usize = 0;
+        while (ci < self.diag_seen_len) : (ci += 1) { items[ci] = self.diag_seen_items[ci]; }
+        self.diag_seen_items = items;
+        self.diag_seen_cap = new_cap;
+    }
+    self.diag_seen_items[self.diag_seen_len] = node_idx;
+    self.diag_seen_len += 1;
+    return true;
 }
 
 pub fn diagnosticCollectorWarningCount(self: *DiagnosticCollector) u32 {

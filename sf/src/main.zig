@@ -474,7 +474,7 @@ fn phase_TypeResolution(ctx: *CompilerContext) void {
         symbol_registrator.registerModuleSymbols(ctx.module_reg, ctx.symbol_reg, ctx.typereg, ctx.store, mods[mi].id, &dep_graph, false);
     }
     const_alias_prepass.constAliasPrepass(ctx.symbol_reg, ctx.typereg, ctx.interner, ctx.store, &ctx.alloc.permanent);
-    type_resolver.typeResolverResolveNames(ctx.store, ctx.typereg, ctx.symbol_reg, ctx.interner, ctx.resolved_types, ctx.module_reg, &ctx.alloc.permanent);
+    type_resolver.typeResolverResolveNames(ctx.store, ctx.typereg, ctx.symbol_reg, ctx.interner, ctx.resolved_types, ctx.module_reg, ctx.diag, &ctx.alloc.permanent);
     var tr = type_resolver.typeResolverInit(ctx.typereg, ctx.diag, &ctx.alloc.scratch);
     type_resolver.typeResolverBuildDependencyGraph(&tr);
     type_resolver.typeResolverBuild(&tr, &dep_graph);
