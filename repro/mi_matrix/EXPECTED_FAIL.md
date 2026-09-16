@@ -1,4 +1,63 @@
-# mi_matrix corpus — expected-fail manifest (v105 2026-09-16)
+# mi_matrix corpus — expected-fail manifest (v106 2026-09-16)
+
+## Track-4 Task 2c-I (I) — const-expression array sizes pinned (v105 -> v106 2026-09-16)
+
+Track-4 Task 2c-I pins the array-size const-expression gap found by Task 3 (S11).
+**No `sf/src` change.** Reference compiler = the Task-2b-F fixed point
+`0da3f1391075e3e77c54b626d5550e3b`, rebuilt via the binding seed model
+(`bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/t2c_build`;
+gate `=== [seed] Done: /tmp/t2c_build ===`). The committed seed predates the
+Task-2b-F `sf/src` work, so the closure is the moving point
+**hop2 == hop3 == `0da3f1391075e3e77c54b626d5550e3b`** (hop1
+`db278e61385ab79b70619a03e89e387f`). Full report:
+`.superpowers/sdd/2026-09-13-coroutine-integration-plan/task-2c-report.md`.
+
+**Root cause (verified, read-only).** `resolveTypeExprFull`'s `array_type` arm
+(`sf/src/type_resolver.zig:1109-1173`) resolves the size via `evalConstU32Full`
+(`:744`). That evaluator handles `int_literal`, `ident_expr`, and (Task 2b-F)
+`field_access` — **no `binary` case**. A module-level `const C = A * B` recurses
+from the `ident_expr` arm into its initializer (a `binary` node), returns
+`0xFFFFFFFF`, `arr_resolved` stays false, and the arm returns `TYPE_UNDEFINED`
+(`:1173`) with no diagnostic. The arm already folds **inline** add/sub/mul/div/mod
+directly (`:1123-1139`), so only the const-behind-an-expression case is broken.
+Variant (e) (function-local const size) additionally needs the enclosing
+function's local-const scope threaded in: `evalConstU32Full`'s `ident_expr` arm
+resolves via `symbolLookupAllModules` (`:815`) — module symbol tables only; a
+function-local `const` is a local `var_decl` and is never registered there.
+`TypeResolveEnv` (`:26-33`) carries no diagnostics handle, so the fallback error
+must be emitted in sema/front_resolution (where `diag` exists) or the handle
+threaded into `TypeResolveEnv`. Operator ruling (2026-09-16): the fallback is a
+**hard error** `ERR_3050_ARRAY_SIZE_NOT_CONSTANT` (explicit numeric 3050 per
+`sf/src/diagnostics.zig`), and variant (e) is IN scope for Task 2c-F.
+
+**Five new corpus dirs** (auto-listed by `scripts/corpus/list_corpus_dirs.sh`):
+
+| dir | class | RED today (fixed point 0da3f139…) | expected GREEN (Task 2c-F) |
+|---|---|---|---|
+| `const_size_arith_xmod` | **FAIL** | dump rc=2, 0 `.c`; `error[20]: identifier '<xc..xh>' is not declared or imported in this module` ×6 (one per `[C]/[D]/[E]/[F]/[G]/[H]` array) | sizes fold (`C`=16, `D`=8, `E`=0, `F`=1, `G`=0, `H`=18); dump rc=0, gcc clean, link+run rc=0, no stdout |
+| `const_size_member_xmod` | **FAIL** | dump rc=2, 0 `.c`; `error[20]: identifier 'x' is not declared or imported in this module` (`const C = mid.leaf.HEADER_SIZE * 2; [C]u8`) | `C` folds to 32; dump rc=0, 5 `.c`, gcc clean, link+run rc=0, no stdout |
+| `const_size_local_xmod` | **FAIL** | dump rc=2, 0 `.c`; `error[20]: identifier 'x' is not declared or imported in this module` (function-local `const N = A * B; [N]u8`) | `N` folds to 16; dump rc=0, 4 `.c`, gcc clean, link+run rc=0, no stdout |
+| `const_size_unfoldable_xmod` | **FAIL** | dump rc=0, 4 `.c`, **stderr empty (SILENT)**; module global degrades to `int zG_..._g;`; gcc then fails `subscripted value is neither array nor pointer nor vector` + `'zT_4' undeclared` | hard `error[3050]` rc=2, 0 `.c` — never silent invalid C |
+| `const_size_inline_ctrl_xmod` | **OK** (control) | dump rc=0, 4 `.c`, gcc clean, link+run rc=0 (inline `[A*B]u8`, literal `[16]u8`, direct module ident `[N]u8` already fold) | stays OK (no regression) |
+
+The `const_size_unfoldable_xmod` shape is the exact Task-3 S11 observation: the
+size expression does not fold, the array type is `TYPE_UNDEFINED`, the compiler
+emits no frontend diagnostic, and only gcc catches the invalid C. The same shape
+as a function-local array that is later used instead reports `error[20]` on the
+use (a misleading downstream symptom, not the `ERR_3050` contract).
+
+**Corpus `-ffast` dump+gcc classifier (`/tmp/t4bf_classify.sh`, the Task-2b-F
+classifier).** Baseline (678 dirs, v105 = `0da3f139…`): **630 OK / 27 GREEN /
+21 FAIL / 0 ICE / 0 CRASH**. Current working tree (684 dirs): **632 OK /
+27 GREEN / 25 FAIL / 0 ICE / 0 CRASH**. The **678 pre-existing dirs are
+class-identical (zero movement)**; the +6 dirs are Task 3's
+`async_client_cells_xmod` (OK, added after v105) plus the five Task-2c-I dirs.
+Task-2c-I's own contribution: **+1 OK** (`const_size_inline_ctrl_xmod`) and
+**+4 FAIL** (`const_size_arith_xmod`, `const_size_member_xmod`,
+`const_size_local_xmod`, `const_size_unfoldable_xmod`). No `sf/src` change, so
+zero pre-existing movement by construction. **No new diagnostic code is
+introduced by Task 2c-I** (fixtures only); Task 2c-F introduces
+`ERR_3050_ARRAY_SIZE_NOT_CONSTANT`.
 
 ## Track-4 Task 2b-F (F) — residual codegen gaps #9/#5/#1 FIXED (v105 2026-09-16)
 
