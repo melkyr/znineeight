@@ -3,6 +3,7 @@ const entity_mod = @import("entity.zig");
 const point_mod = @import("point.zig");
 const pathfinding = @import("pathfinding.zig");
 const sand_mod = @import("sand.zig");
+const std = @import("std");
 
 pub fn addEntity(dungeon: *scenario.Dungeon_t, typ: entity_mod.EntityType, x: u8, y: u8, hp: i16) void {
     if (dungeon.entity_count >= dungeon.entities.len) return;
@@ -60,45 +61,84 @@ fn resolveCombat(attacker: *entity_mod.Entity, defender: *entity_mod.Entity) voi
     }
 }
 
-pub fn updateEnemies(arena: *sand_mod.Sand, dungeon: *scenario.Dungeon_t) void {
-    if (dungeon.entity_count == 0) return;
+pub const NpcArgs = struct {
+    dungeon: *scenario.Dungeon_t,
+    entity_idx: usize,
+    arena: *sand_mod.Sand,
+};
 
-    // Assume entity 0 is the player
+fn npcStep(na: *NpcArgs) void {
+    const dungeon = na.dungeon;
+    const i = na.entity_idx;
     const player_node = dungeon.entities[0];
+    const enemy = &dungeon.entities[i];
+    if (!enemy.active) return;
+
     const player_pt = point_mod.Point{ .x = player_node.x, .y = player_node.y };
+    const enemy_pt = point_mod.Point{ .x = enemy.x, .y = enemy.y };
 
-    var i: usize = 1;
-    while (i < dungeon.entity_count) : (i += 1) {
-        const enemy = &dungeon.entities[i];
-        if (!enemy.active) continue;
-
-        const enemy_pt = point_mod.Point{ .x = enemy.x, .y = enemy.y };
-
-        // Use A* pathfinding
-        if (pathfinding.findPath(arena, dungeon.*, enemy_pt, player_pt)) |path| {
-            if (path.len > 0) {
-                // path[0] is the first step towards the player
-                const next_step = path[0];
-                const dx = @intCast(i8, @intCast(i32, next_step.x) - @intCast(i32, enemy.x));
-                const dy = @intCast(i8, @intCast(i32, next_step.y) - @intCast(i32, enemy.y));
-                moveEntity(dungeon, i, dx, dy);
-            }
-        } else {
-            // Fallback to simple movement if no path found
-            var dx: i8 = 0;
-            var dy: i8 = 0;
-
-            if (enemy.x < player_node.x) dx = 1
-            else if (enemy.x > player_node.x) dx = -1;
-
-            if (enemy.y < player_node.y) dy = 1
-            else if (enemy.y > player_node.y) dy = -1;
-
-            if (dx != 0) {
-                moveEntity(dungeon, i, dx, 0);
-            } else if (dy != 0) {
-                moveEntity(dungeon, i, 0, dy);
-            }
+    if (pathfinding.findPath(na.arena, dungeon.*, enemy_pt, player_pt)) |path| {
+        if (path.len > 0) {
+            const next_step = path[0];
+            const dx = @intCast(i8, @intCast(i32, next_step.x) - @intCast(i32, enemy.x));
+            const dy = @intCast(i8, @intCast(i32, next_step.y) - @intCast(i32, enemy.y));
+            moveEntity(dungeon, i, dx, dy);
+        }
+    } else {
+        var dx: i8 = 0;
+        var dy: i8 = 0;
+        if (enemy.x < player_node.x) dx = 1
+        else if (enemy.x > player_node.x) dx = -1;
+        if (enemy.y < player_node.y) dy = 1
+        else if (enemy.y > player_node.y) dy = -1;
+        if (dx != 0) {
+            moveEntity(dungeon, i, dx, 0);
+        } else if (dy != 0) {
+            moveEntity(dungeon, i, 0, dy);
         }
     }
 }
+
+// B3 (option a): `@asyncInit` copies an args record POSITIONALLY into the
+// coroutine's parameters, so the record's fields ARE the coroutine's params
+// (fixtures: `caller(out: *i32)` + `CArgs{ out }`). `npcCoroutine` therefore
+// takes the `NpcArgs` pointer directly, and the record is `{ na: *NpcArgs }`.
+pub const NpcCoroutineArgs = struct { na: *NpcArgs };
+
+pub fn npcCoroutine(na: *NpcArgs) void {
+    while (true) {
+        npcStep(na);
+        _ = @asyncSuspend(null);
+    }
+}
+
+pub fn spawnEnemies(ctx: *std.async.Context, sched: *std.async.Scheduler,
+    tasks: []*std.async.Task, args: []NpcArgs, recs: []NpcCoroutineArgs,
+    dungeon: *scenario.Dungeon_t,
+    frame_arena: *sand_mod.Sand, path_arena: *sand_mod.Sand) usize {
+    var n: usize = 0;
+    var i: usize = 1;
+    while (i < dungeon.entity_count and n < tasks.len) : (i += 1) {
+        args[n] = NpcArgs{ .dungeon = dungeon, .entity_idx = i, .arena = path_arena };
+        recs[n] = NpcCoroutineArgs{ .na = &args[n] };
+        const sz = @intCast(usize, @asyncFrameSize(npcCoroutine));
+        // S10: root frames come from a PERMANENT arena, never the per-turn
+        // temp_arena that sand_reset reclaims.
+        const frame = sand_mod.sand_alloc(frame_arena, sz, 8) catch return n;
+        tasks[n].frame = @asyncInit(ctx, @ptrCast([*]u8, frame), npcCoroutine, @ptrCast(*const void, &recs[n]));
+        tasks[n].ctx = ctx;
+        tasks[n].arg = @ptrCast(*void, &recs[n]);
+        tasks[n].result = @ptrCast(*void, &recs[n]);
+        tasks[n].cancel_requested = false;
+        tasks[n].waiting_on = tasks[n];
+        tasks[n].has_waiting_on = false;
+        _ = std.async.addTask(sched, tasks[n]);
+        n += 1;
+    }
+    return n;
+}
+
+pub fn updateEnemies(sched: *std.async.Scheduler) std.async.FrameError!void {
+    try std.async.tick(sched);
+}
+

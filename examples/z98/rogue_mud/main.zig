@@ -24,6 +24,23 @@ extern "c" fn kbhit() i32;
 var buffer: [512 * 1024]u8 = undefined;
 var temp_buffer: [512 * 1024]u8 = undefined;
 var local_cells: [80 * 50]ui_mod.Cell = undefined;
+const MAX_NPCS: usize = 16;
+var npc_tasks: [MAX_NPCS]std.async.Task = undefined;
+var npc_task_ptrs: [MAX_NPCS]*std.async.Task = undefined;
+var npc_args: [MAX_NPCS]combat_mod.NpcArgs = undefined;
+var npc_recs: [MAX_NPCS]combat_mod.NpcCoroutineArgs = undefined;
+var npc_sched: std.async.Scheduler = undefined;
+var client_frame_tasks: [5]std.async.Task = undefined;
+var client_frame_task_ptrs: [5]*std.async.Task = undefined;
+var client_frame_args: [5]ClientFrameArgs = undefined;
+var client_frame_recs: [5]ClientFrameCoroutineArgs = undefined;
+var client_cells: [5][80 * 50]ui_mod.Cell = undefined;
+var client_sched: std.async.Scheduler = undefined;
+// S10: root frames live in a PERMANENT arena over this 8-aligned backing,
+// separate from `temp_buffer`, so `sand_reset(&temp_arena)` never reclaims a
+// live coroutine frame. `[K]u64` is 8-aligned; a bare `[N]u8` is 1-aligned and
+// would trip `contextInit`'s alignment @panic.
+var async_storage: [32 * 1024]u64 = undefined;
 
 pub fn main() !void {
     ui_mod.initUI();
@@ -84,6 +101,15 @@ pub fn main() !void {
         g_typ = .Goblin;
         combat_mod.addEntity(&dungeon, g_typ, ex, ey, @intCast(i16, 5));
     }
+
+    var k: usize = 0;
+    while (k < MAX_NPCS) : (k += 1) {
+        npc_task_ptrs[k] = &npc_tasks[k];
+    }
+    var async_arena = sand_mod.sand_init(@ptrCast([*]u8, &async_storage)[std.async.HEADER_SIZE .. 32 * 1024 * 8], true);
+    var async_ctx: *std.async.Context = std.async.contextInit(@ptrCast([*]u8, &async_storage)[0 .. 32 * 1024 * 8]);
+    npc_sched = std.async.schedulerInit(npc_task_ptrs[0..]);
+    _ = combat_mod.spawnEnemies(async_ctx, &npc_sched, npc_task_ptrs[0..], npc_args[0..], npc_recs[0..], &dungeon, &async_arena, &temp_arena);
 
     std.io.print("Game started! Use WASD to move, Q to quit, L to look, V to save, B to load.\n");
 
@@ -204,7 +230,7 @@ pub fn main() !void {
 
                         if (cdx != 0 or cdy != 0) {
                             combat_mod.moveEntity(&dungeon, client.entity_idx, cdx, cdy);
-                            combat_mod.updateEnemies(&temp_arena, &dungeon);
+                            try combat_mod.updateEnemies(&npc_sched);
                             sand_mod.sand_reset(&temp_arena);
                             // Broadcast update to all clients
                             broadcastDungeon(server, dungeon);
@@ -255,7 +281,7 @@ pub fn main() !void {
 
         if (dx != 0 or dy != 0) {
             combat_mod.moveEntity(&dungeon, @intCast(usize, 0), dx, dy);
-            combat_mod.updateEnemies(&temp_arena, &dungeon);
+            try combat_mod.updateEnemies(&npc_sched);
             sand_mod.sand_reset(&temp_arena);
             broadcastDungeon(server, dungeon);
 
