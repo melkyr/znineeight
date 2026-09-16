@@ -1,4 +1,47 @@
-# mi_matrix corpus — expected-fail manifest (v109 2026-09-16)
+# mi_matrix corpus — expected-fail manifest (v110 2026-09-16)
+
+## Track-4 Task 2e-F (F) — diagnostic excerpt line FIXED (v109 -> v110 2026-09-16)
+
+Track-4 Task 2e-F fixes the excerpt line-selection defect pinned by Task 2e-I.
+**`sf/src` change:** deleted the single extra decrement at
+`sf/src/diagnostics.zig:501` (`if (line_idx > 0) line_idx -= 1;`); `line_idx` is
+now exactly `mem.binary_search`'s upper_bound-minus-one result, so the excerpt
+prints the source line containing `d.span_start`. No change to
+`mem.binary_search` (`sf/src/util/mem.zig`) or `source_manager.zig`; the caret
+column (`loc.col`) and count (`span_end - span_start`) were already correct.
+
+Reference compiler = the new fixed point
+`8a322dd9221077780202e8ac6dd6983a`, rebuilt via the binding seed model
+(`bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz
+/tmp/t2eF_build`). The committed seed predates recent `sf/src` work, so the
+closure is the moving point **hop2 == hop3 == `8a322dd9221077780202e8ac6dd6983a`**
+(hop1 `9d25d1aa2e993a50311241a69da01b3b`). BASE was `14ffe6b3…`. Full report:
+`.superpowers/sdd/2026-09-13-coroutine-integration-plan/task-2e-report.md`.
+
+**Measured GREEN** (fixed compiler) for the three Task-2e-I dirs:
+- `diag_excerpt_positions_xmod` — **FAIL** (dump rc=2, 0 `.c`, unchanged): every
+  excerpt now shows the span's line (`missing_at_col0.x = 1;` for `33:0`,
+  ` missing_at_col1.x = 1;` for `36:1`, `    var y: u32 = middle_line_missing.x;`
+  for `39:4`/`39:17`, `    var z: u32 =` for `42:4`, and the previously-missing
+  `    var w: u32 = blankprev_missing.x;` excerpts now print for `47:4`/`47:17`).
+- `diag_excerpt_line1_xmod` — **FAIL**, RED == GREEN (line-1 control unchanged).
+- `diag_excerpt_multifile_xmod` — **OK** (dump rc=0, 5 `.c`, link+run rc=0);
+  `mod.zig:6:6` excerpt now prints `    y = missing;` with the caret at col 6.
+
+**Corpus `-ffast` dump+gcc classifier (688 dirs):** BASE vs FIX class map is
+**identical** — 636 OK / 27 GREEN / 25 FAIL / 0 ICE / 0 CRASH, per-dir `join`
+diff empty. Zero class movement (stderr-rendering only), as predicted.
+
+**Caret-overrun decision (explicit).** The L42 multi-line span keeps its
+39-caret run on the 16-char excerpt line (`span_end - span_start` includes the
+newline). This is a pre-existing single-line-excerpt cosmetic artifact, identical
+in RED and GREEN, does not mask the line off-by-one, and is explicitly LEFT
+AS-IS (out of scope for Task 2e-F).
+
+**Gates:** `check_emit_support.sh` 5/5; self-compile closure rc=0, 48 `.c`,
+0 `error[`, 0 PANIC; `verify_upgraded.sh` **CLOSEOUT OK**; 4-MD5 runtime
+byte-identical (rogue boot `3fb6709e…`, rogue move `b3c5b0e1…`, mud stdout
+`66c8f0ab…`, mud client `93147d0f…`). Seed rotation stays at Task 6.
 
 ## Track-4 Task 2e-I (I) — diagnostic excerpt wrong-line pinned (v108 -> v109 2026-09-16)
 

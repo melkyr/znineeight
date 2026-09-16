@@ -498,7 +498,6 @@ pub fn diagnosticCollectorPrintAll(self: *DiagnosticCollector) void {
         var content = sm_mod.sourceManagerGetSourceContent(self.source_manager, d.file_id);
         var offsets = sm_mod.sourceManagerGetLineOffsets(self.source_manager, d.file_id);
         var line_idx = mem_mod.binary_search(offsets, d.span_start);
-        if (line_idx > 0) line_idx -= 1;
         var line_start = @intCast(usize, offsets[@intCast(usize, line_idx)]);
         var line_end = content.len;
         var next_line = line_idx + 1;
