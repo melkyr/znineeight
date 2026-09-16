@@ -811,6 +811,33 @@ git commit -m "feat(rogue): per-NPC coroutine for updateEnemies (Track4 E1)"
 
 ---
 
+### Task 2b: residual codegen gaps — I then F (#9 loop-carried local, #5 &nested.global, #1 array-size)
+
+**Origin (exposed by Task 2, 2026-09-16).** Three residual gaps were declared after Task 2a/Task 2. The dangerous one is #9: a loop-carried local live across `@asyncSuspend` is not persisted (the Task-2 S10 fixture dodged it with a straight-line counter). Tasks 3/5 carry locals across suspend (`drawToSocketCoroutine` `last_fg`/`y`/`x`; `clientCoroutine` `j`/`k`), so #9 must be closed before Task 3.
+
+**Declared residual gaps (from Task 2a-F / Task 2, `26a2d78d`):**
+1. **#1** — a non-literal / field-access expression in array-size position (`[mid.leaf.HEADER_SIZE]u8`) is rejected with `error[20]`; nesting-independent (a 1-level direct import fails identically). Pinned by `repro/mi_matrix/module_value_arraysize_xmod` (FAIL). Out of Task 2a-F scope.
+2. **#5** — address-of a nested module global (`&mid.leaf.counter`) is unsupported (`error[3043]`, no `addr_of_global` LIR); declared in the manifest, not pinned by a fixture.
+3. **#9 (DANGEROUS)** — a local that is live across `@asyncSuspend` is not persisted. Read-only loci: P3 `asyncLayoutFrame` (`sf/src/async_frame_layout.zig:481-519`) computes LIVE temps and adds `ASYNC_FIELD_LIVE`; the state machine saves/reloads them (`saveAllFields`/`reloadAllFields`, `sf/src/async_state_machine.zig:253-279`, called at `:562`/`:571` and `:1023`/`:1033`); P2 `asyncFrameSizeRun` (`sf/src/async_analysis.zig:684-732`) sizes the frame (step+ctx+state + params + `scanFrameLocals` at `:702`/`:381-393` + hidden tail). The suspect is the LIVE-ANALYSIS precision (P3), not the save/reload emission. Task 2b-I must pin the exact failure mode (panic vs wrong output vs mis-size).
+
+#### Task 2b-I: investigate + pin (no `sf/src` change)
+
+- [ ] **Step 1: Fixture set.** Create `repro/mi_matrix/async_live_local_across_suspend_xmod/` (a coroutine with a loop-carried local mutated and read across `@asyncSuspend` inside a `while`; assert preservation over N ticks — runtime-RED today) and `repro/mi_matrix/module_value_addr_global_xmod/` (#5; `&mid.leaf.counter`; RED today). Keep `module_value_arraysize_xmod/` (#1) as the #1 pin. Each fixture documents RED (current) + the expected GREEN contract.
+- [ ] **Step 2: Questionnaire.** Answer in the report: (Q1) the exact #9 failure mode and which pass (P2 size / P3 layout / save-reload emission); (Q2) P2-vs-P3 authority for live fields; (Q3) where live locals are computed vs reserved; (Q4) is the save/reload emission correct once the live analysis is fixed; (Q5) #5 fix locus (`addr_of_global` LIR vs the field-access path); (Q6) #1 fix locus (array-size expression handling); (Q7) confirm the Task-2a-F chain-walk vs the sema `module_type` path (#2); (Q8) is `sf/src/lower.zig:1687-1704` safely removable (#6); (Q9) which gaps MUST be fixed before Task 3; (Q10) minimal fix surface + risk.
+- [ ] **Step 3: Declare.** Add the fixtures to the corpus; bump `repro/mi_matrix/EXPECTED_FAIL.md` (v103→v104) for the FAIL/RED cases.
+- [ ] **Step 4: Report + present the fix surface for Task 2b-F.** No `sf/src` change; corpus/census delta recorded.
+
+#### Task 2b-F: fix #9 + #5 + #1 (`sf/src` change; fixed point MOVES)
+
+- [ ] **Step 1: Fix** the live-local persistence (#9) so a loop-carried local across `@asyncSuspend` is preserved; fix `&nested-module-global` (#5); fix the non-literal/field-access array-size expression (#1). No unrelated changes.
+- [ ] **Step 2: Fixtures RED→GREEN**; full corpus sweep (class map delta = intended dirs only); `check_emit_support.sh` 5/5; self-compile closure (48 `.c`, 0 `[3000]`).
+- [ ] **Step 3: Re-verify** the four goldens + `CLOSEOUT OK`; 4-MD5 byte-identical; record the new fixed point. Seed rotation stays at Task 6.
+- [ ] **Step 4: Then Task 3** (which carries locals across suspend).
+
+**Sequencing gate:** Task 3 MUST NOT start until #9 is closed (Task 2b-F landed).
+
+---
+
 ### Task 3: `rogue_mud` per-connection broadcast → coroutine (entry E2)
 
 **Files:**
