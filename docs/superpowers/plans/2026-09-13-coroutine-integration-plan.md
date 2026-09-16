@@ -425,6 +425,14 @@ git commit -m "fix(std.async): addTask stores *Task + awaitTask non-suspending g
 **Produces:** the exact, exhaustive list of the compiler's own implicit enum→int sites at return/call-arg (candidates: `sf/src/lower.zig:4007,5686,5752`; `sf/src/parser.zig:1715,1722,1725` — `itoa(value: u32)` called with bare `AstKind` enum fields; `symbol_registrator.zig` already uses explicit `@enumToInt`), and a determination of whether migrating each to `@enumToInt` (a) is mechanically safe, (b) leaves self-compile green, and (c) enables promoting enum→int at return/call-arg without breaking the valid `&arr[0]` array→pointer idiom. State the exact fix set for a follow-up F task.
 - [ ] Enumerate every self enum→int return/call-arg site (exhaustive, with evidence); test a scratch migration; report whether it is really possible without issue. **No `sf/src` change; no re-baseline.**
 
+### Task 0q3: Migrate the compiler's enum→int call-arg sites + promote enum→int at return/call-arg (F)
+
+> Operator S25 (m0487): proceed with the F task — Task 0q2 proved it feasible (scratch build green, self-compile green, enum→int promotable independently of `*T`→`[*]T`).
+
+**Files:** the 7 compiler call-arg enum→int sites (`sf/src/lower.zig:3914,4007,5686,5752`; `sf/src/parser.zig:1715,1722,1725`) → `@intCast(u32, @enumToInt(...))`; `sf/src/semantic_analyzer.zig:2612` (drop the `full and` guard so enum→int is promoted at return/call-arg); `EXPECTED_FAIL.md`; `QUICK_REF.md` (4-MD5, after runtime proof).
+**Produces:** enum→int is a hard `error[3000]` at return/call-arg (in addition to var-decl/assignment); the compiler's own 7 call-arg sites migrated; self-compile stays green (48 `.c`, 0 `[3000]`); `*T`→`[*]T` stays tolerated at return/call-arg (declared, out of scope — see Task 0q2); the 48 `(a)` remain uncaptured. Fixed point MOVES. No re-baseline; seed rotation at Task 6.
+- [ ] Migrate the 7 sites; drop the `full and` guard at `:2612`; verify self-compile green + closure, the `(a)` census 39/0 unchanged, the `(b)` corpus dirs still hard-error, `*T`→`[*]T` still compiles at return/call-arg, 4-MD5 byte-identical, class map unchanged, `CLOSEOUT OK`; commit.
+
 ### Task 1: Baseline, reference compiler, and pre-conversion golden captures
 
 **Files:**
