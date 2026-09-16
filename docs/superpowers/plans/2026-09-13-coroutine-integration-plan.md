@@ -1021,6 +1021,43 @@ Expected: `CLOSEOUT OK`.
 
 ---
 
+### Task 2f: multi-dimensional fixed-array element access — silent invalid C — I then F
+
+**Origin (blocked Task 4 / E3, 2026-09-16).** Task 4 Step 1 indexes `client_cells: [5][80 * 50]ui_mod.Cell` as `&client_cells[ci][0]`. The compiler lowers the outer index into an **array-typed temp** and the emitter emits an array-to-array C assignment, which is illegal C89:
+
+```c
+zT_80B7AEA1_Arr_zT_E90A7BD5_Cel zT_297;      /* array-typed temp */
+zT_297 = zG_6E96A0B4_client_cells[ci];       /* array = array; invalid C89 */
+```
+
+Emit is **rc=0 with 0 target diagnostics** (silent); gcc rejects `assignment to expression with array type`. The same failure hits the rvalue `arr[i][j]`. Minimal repro: `var g: [5][4]u8; sink(@ptrCast([*]u8, &g[i][0]))` (global or local, dynamic `i`). Flat 1D arrays work. Not in `EXPECTED_FAIL.md`. Baseline HEAD `c8cfd82a` emits/links clean and reproduces both `rogue_mud` goldens ×3, so E3 introduced the failure; `client_cells` was declared in Task 3 but never exercised until Task 4.
+
+**Verified candidate (NOT applied):** the address-of-the-row form `@ptrCast([*]ui_mod.Cell, @ptrCast(*[80 * 50]ui_mod.Cell, &client_cells[ci]))` avoids the array temp and works — but the operator ruled a **compiler fix** (this task), not an examples workaround.
+
+**Operator ruling (2026-09-16):** add a new compiler-fix task (this I/F pair); do NOT apply the examples-only workaround or flatten `client_cells`.
+
+#### Task 2f-I: investigate + pin (no `sf/src` change)
+
+- [ ] **Step 1: Fixture set** (`repro/mi_matrix/`, auto-listed; each documents RED-now + the GREEN contract):
+  - `multiarray_index_xmod/` — `var g: [5][4]u8;` with `&g[i][0]` (dynamic `i`) and the rvalue `g[i][j]`; RED (emit rc=0, gcc FAIL `assignment to expression with array type`).
+  - `multiarray_index_const_xmod/` — the constant-index form `&g[2][0]` / `g[2][3]`.
+  - `multiarray_index_local_xmod/` — a function-local `[5][4]u8`.
+  - `multiarray_index_3d_xmod/` — a 3-level array `[3][4][5]u8`.
+  - controls: a flat 1D `[20]u8` index (already OK), and a 2D array whose element is a struct (`[5][4]Cell`) mirroring the Task 3/4 shape.
+- [ ] **Step 2: Questionnaire.** Answer in the report: (Q1) the exact lowering/emission path that produces the array-typed temp (`sf/src/lower.zig` index_access `:1363`/`:1509`/`:3080` and the emitter's array-temp handling `sf/src/c89_emit.zig`); (Q2) why the outer index yields an array-typed value rather than an address/element pointer; (Q3) the correct C89 shape (decay to a pointer, or emit an element address); (Q4) the minimal fix locus (lowerer vs emitter) + whether `getCTypeName`'s `Arr_*` array typedef path (`c89_emit.zig:710-761`) is involved; (Q5) whether the fix must also cover the address-of and rvalue forms and nested (3D) access; (Q6) corpus/diagnostic delta.
+- [ ] **Step 3: Declare.** Add the fixtures; record the RED in `repro/mi_matrix/EXPECTED_FAIL.md` (v110→v111) or the appropriate known-issue location.
+- [ ] **Step 4: Report + present the fix surface for Task 2f-F.** No `sf/src` change.
+
+#### Task 2f-F: fix the lowering/emission (`sf/src` change; fixed point MOVES)
+
+- [ ] **Step 1: Fix** so a multi-dimensional fixed-array element access lowers/emits valid C89 (the outer index must not produce an array-to-array assignment).
+- [ ] **Step 2: Fixtures RED→GREEN**; full corpus sweep (class-map delta = intended dirs only — any other movement is a regression to STOP on); `check_emit_support.sh` 5/5; self-compile closure (48 `.c`, 0 `[3000]`).
+- [ ] **Step 3: Re-verify** the four goldens + `CLOSEOUT OK`; 4-MD5 byte-identical; record the new fixed point. Seed rotation stays at Task 6.
+
+**Sequencing gate:** Task 4 MUST NOT start until Task 2f-F is landed.
+
+---
+
 ### Task 4: `rogue_mud` cross-module task create/schedule/cancel (entry E3)
 
 **Files:**
