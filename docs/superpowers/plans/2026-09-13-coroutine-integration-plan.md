@@ -591,7 +591,17 @@ git commit -m "test(coroutine): Track4 pre-conversion golden harness (Track4)"
 
 **Interfaces:**
 - Consumes: `std.async.Context`, `std.async.Scheduler`, `std.async.tick`, `@asyncFrameSize`, `@asyncInit`, `@asyncSuspend`, `sand_mod.sand_alloc`.
-- Produces: `NpcArgs`, `npcStep(na)`, `npcCoroutine(ctx, args)`, `spawnEnemies(ctx, sched, tasks, args, dungeon, frame_arena, path_arena) usize`, `updateEnemies(sched) FrameError!void`.
+- Produces: `NpcArgs`, `npcStep(na)`, `npcCoroutine(ctx, args)`, `spawnEnemies(ctx, sched, tasks: []*std.async.Task, args, dungeon, frame_arena, path_arena) usize`, `updateEnemies(sched) FrameError!void`.
+
+**Binding pre-step (post-0-series compiler rebuild).** The `/tmp/t4_ref` compiler built in Task 1 predates the Task 0/0b series, so its `lib/std_async.zig` is pre-0b (value-array scheduler). Rebuild it from the current seed before Task 2:
+```bash
+rm -rf /tmp/t4_ref && bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/t4_ref
+mkdir -p /tmp/t4_ref/lib
+cp sf/src/std.zig sf/src/std_io.zig sf/src/std_arena.zig sf/src/std_net.zig \
+   sf/src/std_str.zig sf/src/std_mem.zig sf/src/std_math.zig sf/src/std_debug.zig \
+   sf/src/std_async.zig /tmp/t4_ref/lib/
+```
+Gate `=== [seed] Done: /tmp/t4_ref ===`; the current fixed point is `286c9011691ccd39403534019baa12c6`. The committed goldens are unaffected (runtime byte-identical). **Pointer-array API (Task 0b):** `Scheduler.tasks` is `[*]*Task`, `schedulerInit` takes `[]*Task`, and `addTask` stores the caller's `*Task`; a task set is a `[N]*std.async.Task` pointer array whose slots are bound to `[N]std.async.Task` value storage (`pt[i] = &tasks[i]`), mirroring `repro/mi_matrix/stdlib_async_sched_xmod/main.zig:50-57`.
 
 - [ ] **Step 1: Record the pre-conversion capture (RED baseline)**
 
@@ -653,7 +663,7 @@ pub fn npcCoroutine(ctx: *std.async.Context, args: *void) void {
 }
 
 pub fn spawnEnemies(ctx: *std.async.Context, sched: *std.async.Scheduler,
-    tasks: []std.async.Task, args: []NpcArgs, dungeon: *scenario.Dungeon_t,
+    tasks: []*std.async.Task, args: []NpcArgs, dungeon: *scenario.Dungeon_t,
     frame_arena: *sand_mod.Sand, path_arena: *sand_mod.Sand) usize {
     var n: usize = 0;
     var i: usize = 1;
@@ -668,9 +678,9 @@ pub fn spawnEnemies(ctx: *std.async.Context, sched: *std.async.Scheduler,
         tasks[n].arg = @ptrCast(*void, &args[n]);
         tasks[n].result = @ptrCast(*void, &args[n]);
         tasks[n].cancel_requested = false;
-        tasks[n].waiting_on = &tasks[n];
+        tasks[n].waiting_on = tasks[n];
         tasks[n].has_waiting_on = false;
-        _ = std.async.addTask(sched, &tasks[n]);
+        _ = std.async.addTask(sched, tasks[n]);
         n += 1;
     }
     return n;
@@ -688,8 +698,14 @@ In `examples/z98/rogue_mud/main.zig`, add module-scope state after `local_cells`
 ```zig
 const MAX_NPCS: usize = 16;
 var npc_tasks: [MAX_NPCS]std.async.Task = undefined;
+var npc_task_ptrs: [MAX_NPCS]*std.async.Task = undefined;
 var npc_args: [MAX_NPCS]combat_mod.NpcArgs = undefined;
 var npc_sched: std.async.Scheduler = undefined;
+var client_frame_tasks: [5]std.async.Task = undefined;
+var client_frame_task_ptrs: [5]*std.async.Task = undefined;
+var client_frame_args: [5]ClientFrameArgs = undefined;
+var client_cells: [5][80 * 50]ui_mod.Cell = undefined;
+var client_sched: std.async.Scheduler = undefined;
 // S10: root frames live in a PERMANENT arena over this 8-aligned backing,
 // separate from `temp_buffer`, so `sand_reset(&temp_arena)` never reclaims a
 // live coroutine frame. `[K]u64` is 8-aligned; a bare `[N]u8` is 1-aligned and
@@ -698,10 +714,14 @@ var async_storage: [32 * 1024]u64 = undefined;
 ```
 After the enemy-placement loop (`:79-86`), bind the permanent arena + context and spawn:
 ```zig
+    var k: usize = 0;
+    while (k < MAX_NPCS) : (k += 1) {
+        npc_task_ptrs[k] = &npc_tasks[k];
+    }
     var async_arena = sand_mod.sand_init(@ptrCast([*]u8, &async_storage)[0 .. 32 * 1024 * 8], true);
     var async_ctx: *std.async.Context = std.async.contextInit(@ptrCast([*]u8, &async_storage)[0 .. 32 * 1024 * 8]);
-    npc_sched = std.async.schedulerInit(npc_tasks[0..]);
-    _ = combat_mod.spawnEnemies(async_ctx, &npc_sched, npc_tasks[0..], npc_args[0..], &dungeon, &async_arena, &temp_arena);
+    npc_sched = std.async.schedulerInit(npc_task_ptrs[0..]);
+    _ = combat_mod.spawnEnemies(async_ctx, &npc_sched, npc_task_ptrs[0..], npc_args[0..], &dungeon, &async_arena, &temp_arena);
 ```
 Replace both `combat_mod.updateEnemies(&temp_arena, &dungeon);` calls (`:207`, `:258`) with:
 ```zig
@@ -841,7 +861,7 @@ fn broadcastDungeon(server: *net_mod.Server, sched: *std.async.Scheduler) void {
     std.async.tick(sched) catch {};
 }
 ```
-`tick(s)` (landed signature, returns `FrameError!void`) resumes every registered client task once; `catch {}` is acceptable here because the client tasks are bounded and sized from `@asyncFrameSize` (pool exhaustion triggers the §Global-Constraints fallback and is re-checked in Task 6). Module-scope `client_frame_tasks: [5]std.async.Task` and `client_frame_args: [5]ClientFrameArgs` are bound once in Task 4 Step 1. **S11:** `client_frame_args[i].cells` points at a per-client buffer — add `var client_cells: [5][80 * 50]ui_mod.Cell = undefined;` next to `local_cells` and bind `.cells = @ptrCast([*]ui_mod.Cell, &client_cells[i][0])`. Update the two call sites (`:210`, `:260`) to `broadcastDungeon(&server, &client_sched)` and initialize `client_sched` next to `npc_sched` in Task 2's setup block.
+`tick(s)` (landed signature, returns `FrameError!void`) resumes every registered client task once; `catch {}` is acceptable here because the client tasks are bounded and sized from `@asyncFrameSize` (pool exhaustion triggers the §Global-Constraints fallback and is re-checked in Task 6). Module-scope `client_frame_tasks: [5]std.async.Task` + `client_frame_task_ptrs: [5]*std.async.Task` and `client_frame_args: [5]ClientFrameArgs` are bound once in Task 4 Step 1. **S11:** `client_frame_args[i].cells` points at a per-client buffer — add `var client_cells: [5][80 * 50]ui_mod.Cell = undefined;` next to `local_cells` and bind `.cells = @ptrCast([*]ui_mod.Cell, &client_cells[i][0])`. Update the two call sites (`:210`, `:260`) to `broadcastDungeon(&server, &client_sched)` and initialize `client_sched` next to `npc_sched` in Task 2's setup block.
 
 - [ ] **Step 4: Verify the broadcast byte-identity**
 
@@ -887,10 +907,18 @@ Expected: `CLOSEOUT OK`.
 
 In `main.zig`, after `async_ctx` is created, replace the Task 2 spawn block with:
 ```zig
-    npc_sched = std.async.schedulerInit(npc_tasks[0..]);
-    _ = combat_mod.spawnEnemies(async_ctx, &npc_sched, npc_tasks[0..], npc_args[0..], &dungeon, &async_arena, &temp_arena);
+    var k: usize = 0;
+    while (k < MAX_NPCS) : (k += 1) {
+        npc_task_ptrs[k] = &npc_tasks[k];
+    }
+    npc_sched = std.async.schedulerInit(npc_task_ptrs[0..]);
+    _ = combat_mod.spawnEnemies(async_ctx, &npc_sched, npc_task_ptrs[0..], npc_args[0..], &dungeon, &async_arena, &temp_arena);
 
-    client_sched = std.async.schedulerInit(client_frame_tasks[0..]);
+    var ck: usize = 0;
+    while (ck < @intCast(usize, 5)) : (ck += 1) {
+        client_frame_task_ptrs[ck] = &client_frame_tasks[ck];
+    }
+    client_sched = std.async.schedulerInit(client_frame_task_ptrs[0..]);
     var ci: usize = 0;
     while (ci < @intCast(usize, 5)) : (ci += 1) {
         // S11: each client builds into its OWN cells buffer.
@@ -898,14 +926,14 @@ In `main.zig`, after `async_ctx` is created, replace the Task 2 spawn block with
             .client_idx = ci, .cells = @ptrCast([*]ui_mod.Cell, &client_cells[ci][0]) };
         const csz = @intCast(usize, @asyncFrameSize(clientFrameCoroutine));
         const cframe = sand_mod.sand_alloc(&async_arena, csz, 8) catch return;
-        client_frame_tasks[ci].frame = @asyncInit(async_ctx, @ptrCast([*]u8, cframe), clientFrameCoroutine, @ptrCast(?*const void, &client_frame_args[ci]));
-        client_frame_tasks[ci].ctx = async_ctx;
-        client_frame_tasks[ci].arg = @ptrCast(*void, &client_frame_args[ci]);
-        client_frame_tasks[ci].result = @ptrCast(*void, &client_frame_args[ci]);
-        client_frame_tasks[ci].cancel_requested = false;
-        client_frame_tasks[ci].waiting_on = &client_frame_tasks[ci];
-        client_frame_tasks[ci].has_waiting_on = false;
-        _ = std.async.addTask(&client_sched, &client_frame_tasks[ci]);
+        client_frame_task_ptrs[ci].frame = @asyncInit(async_ctx, @ptrCast([*]u8, cframe), clientFrameCoroutine, @ptrCast(?*const void, &client_frame_args[ci]));
+        client_frame_task_ptrs[ci].ctx = async_ctx;
+        client_frame_task_ptrs[ci].arg = @ptrCast(*void, &client_frame_args[ci]);
+        client_frame_task_ptrs[ci].result = @ptrCast(*void, &client_frame_args[ci]);
+        client_frame_task_ptrs[ci].cancel_requested = false;
+        client_frame_task_ptrs[ci].waiting_on = client_frame_task_ptrs[ci];
+        client_frame_task_ptrs[ci].has_waiting_on = false;
+        _ = std.async.addTask(&client_sched, client_frame_task_ptrs[ci]);
     }
 ```
 `async_arena` is the PERMANENT arena bound in Task 2 Step 3 (`sand_init` over `async_storage`, `true`), so `sand_reset(&temp_arena)` cannot reclaim coroutine root frames. The landed `Task` has **no** `arena`/`arena_capacity`/`arena_used` fields — child frames are allocated from the task's `ctx` pool at await sites; all tasks share the one `async_ctx`.
@@ -914,7 +942,7 @@ In `main.zig`, after `async_ctx` is created, replace the Task 2 spawn block with
 
 At the client-disconnect branch (`main.zig:178-182`), insert the cooperative cancel before closing:
 ```zig
-                    std.async.cancel(&client_sched, &client_frame_tasks[client_idx]);
+                    std.async.cancel(&client_sched, client_frame_task_ptrs[client_idx]);
                     dungeon.entities[client.entity_idx].active = false;
                     client.active = false;
                     net_mod.close(client.socket);
@@ -1020,6 +1048,7 @@ pub fn clientCoroutine(ctx: *std.async.Context, args: *void) void {
 Add module-scope state after `rooms` (`:31`):
 ```zig
 var client_tasks: [MAX_CLIENTS]std.async.Task = undefined;
+var client_task_ptrs: [MAX_CLIENTS]*std.async.Task = undefined;
 var client_args: [MAX_CLIENTS]ClientTaskArgs = undefined;
 var client_sched: std.async.Scheduler = undefined;
 // 8-aligned backing; a bare [N]u8 is 1-aligned and trips contextInit's @panic.
@@ -1029,12 +1058,13 @@ After the `players` initialization loop (`:90-95`), bind the permanent arena + c
 ```zig
     var async_arena = std_arena.init(@ptrCast([*]u8, &async_storage)[0 .. 32 * 1024 * 8]);
     var async_ctx: *std.async.Context = std.async.contextInit(@ptrCast([*]u8, &async_storage)[0 .. 32 * 1024 * 8]);
-    client_sched = std.async.schedulerInit(client_tasks[0..]);
+    client_sched = std.async.schedulerInit(client_task_ptrs[0..]);
     i = 0;
     while (i < MAX_CLIENTS) {
-        client_tasks[i].frame = @ptrFromInt(*void, 0);
-        client_tasks[i].state = .done;
-        client_tasks[i].cancel_requested = false;
+        client_task_ptrs[i] = &client_tasks[i];
+        client_task_ptrs[i].frame = @ptrFromInt(*void, 0);
+        client_task_ptrs[i].state = .done;
+        client_task_ptrs[i].cancel_requested = false;
         i += 1;
     }
 ```
@@ -1053,14 +1083,14 @@ In the accept path (`:121-150`), when a free slot is found, replace the player a
                             i += 1;
                             continue;
                         };
-                        client_tasks[i].frame = @asyncInit(async_ctx, @ptrCast([*]u8, cframe), clientCoroutine, @ptrCast(?*const void, &client_args[i]));
-                        client_tasks[i].ctx = async_ctx;
-                        client_tasks[i].arg = @ptrCast(*void, &client_args[i]);
-                        client_tasks[i].result = @ptrCast(*void, &client_args[i]);
-                        client_tasks[i].cancel_requested = false;
-                        client_tasks[i].waiting_on = &client_tasks[i];
-                        client_tasks[i].has_waiting_on = false;
-                        _ = std.async.addTask(&client_sched, &client_tasks[i]);
+                        client_task_ptrs[i].frame = @asyncInit(async_ctx, @ptrCast([*]u8, cframe), clientCoroutine, @ptrCast(?*const void, &client_args[i]));
+                        client_task_ptrs[i].ctx = async_ctx;
+                        client_task_ptrs[i].arg = @ptrCast(*void, &client_args[i]);
+                        client_task_ptrs[i].result = @ptrCast(*void, &client_args[i]);
+                        client_task_ptrs[i].cancel_requested = false;
+                        client_task_ptrs[i].waiting_on = client_task_ptrs[i];
+                        client_task_ptrs[i].has_waiting_on = false;
+                        _ = std.async.addTask(&client_sched, client_task_ptrs[i]);
 ```
 The `welcome` send (`:136-137`) and `found = true` stay. In the `!found` branch (`:144-148`), also mark `players[i].is_active = false` before closing if a slot was tentatively used.
 
@@ -1090,12 +1120,12 @@ Replace the whole `select` + "Data on client sockets" section (`:99-196`) with a
         i = 0;
         while (i < MAX_CLIENTS) {
             if (players[i].is_active and std_net.fdIsset(players[i].socket, @ptrCast(*u8, &read_fds))) {
-                const step = @asyncResume(client_tasks[i].frame, null);
+                const step = @asyncResume(client_task_ptrs[i].frame, null);
                 if (step == null) {
                     // coroutine completed (quit or disconnect): free the slot
                     std_net.close(players[i].socket);
                     players[i].is_active = false;
-                    client_tasks[i].state = .done;
+                    client_task_ptrs[i].state = .done;
                 }
             }
             i += 1;
