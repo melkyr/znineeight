@@ -109,6 +109,7 @@ pub fn main() !void {
     var async_arena = sand_mod.sand_init(@ptrCast([*]u8, &async_storage)[std.async.HEADER_SIZE .. 32 * 1024 * 8], true);
     var async_ctx: *std.async.Context = std.async.contextInit(@ptrCast([*]u8, &async_storage)[0 .. 32 * 1024 * 8]);
     npc_sched = std.async.schedulerInit(npc_task_ptrs[0..]);
+    client_sched = std.async.schedulerInit(client_frame_task_ptrs[0..]);
     _ = combat_mod.spawnEnemies(async_ctx, &npc_sched, npc_task_ptrs[0..], npc_args[0..], npc_recs[0..], &dungeon, &async_arena, &temp_arena);
 
     std.io.print("Game started! Use WASD to move, Q to quit, L to look, V to save, B to load.\n");
@@ -233,7 +234,7 @@ pub fn main() !void {
                             try combat_mod.updateEnemies(&npc_sched);
                             sand_mod.sand_reset(&temp_arena);
                             // Broadcast update to all clients
-                            broadcastDungeon(server, dungeon);
+                            broadcastDungeon(&server, &client_sched);
                         }
                     }
                     client.pos = 0;
@@ -283,7 +284,7 @@ pub fn main() !void {
             combat_mod.moveEntity(&dungeon, @intCast(usize, 0), dx, dy);
             try combat_mod.updateEnemies(&npc_sched);
             sand_mod.sand_reset(&temp_arena);
-            broadcastDungeon(server, dungeon);
+            broadcastDungeon(&server, &client_sched);
 
             // Immediate UI update for local player
             if (!@isWindows()) {
@@ -300,20 +301,17 @@ pub fn main() !void {
     }
 }
 
-fn broadcastDungeon(server: net_mod.Server, dungeon: scenario.Dungeon_t) void {
+fn broadcastDungeon(server: *net_mod.Server, sched: *std.async.Scheduler) void {
     var i: usize = 0;
     while (i < @intCast(usize, 5)) : (i += 1) {
         if (server.clients[i].active) {
-            broadcastOneClient(server.clients[i].socket, dungeon);
+            client_frame_args[i].server = server;
         }
     }
+    std.async.tick(sched) catch {};
 }
 
-fn broadcastOneClient(sock: net_mod.PlatSocket, dungeon: scenario.Dungeon_t) void {
-    const rows = @intCast(usize, dungeon.height) + 1;
-    const cols = @intCast(usize, dungeon.width);
-    const cell_count = rows * cols;
-
+fn buildBroadcastCells(dungeon: *scenario.Dungeon_t, cells: [*]ui_mod.Cell, rows: usize, cols: usize) void {
     // Construct the cells for this dungeon state
     // Note: This uses the same logic as renderLocal but doesn't print locally
     var y: u8 = 0;
@@ -361,7 +359,7 @@ fn broadcastOneClient(sock: net_mod.PlatSocket, dungeon: scenario.Dungeon_t) voi
                     else => ui_mod.COLOR_WHITE,
                 };
             }
-            local_cells[idx] = cell;
+            cells[idx] = cell;
         }
     }
 
@@ -370,22 +368,54 @@ fn broadcastOneClient(sock: net_mod.PlatSocket, dungeon: scenario.Dungeon_t) voi
     const status_y = @intCast(usize, dungeon.height);
     var sx: usize = 0;
     while (sx < cols) : (sx += 1) {
-        local_cells[status_y * cols + sx] = ui_mod.Cell{ .ch = ' ', .fg = ui_mod.COLOR_WHITE, .bg = ui_mod.COLOR_BLUE };
+        cells[status_y * cols + sx] = ui_mod.Cell{ .ch = ' ', .fg = ui_mod.COLOR_WHITE, .bg = ui_mod.COLOR_BLUE };
     }
 
     const status_idx = status_y * cols;
-    injectString(@ptrCast([*]ui_mod.Cell, &local_cells[status_idx + 1]), "Pos:(");
-    injectInt(@ptrCast([*]ui_mod.Cell, &local_cells[status_idx + 6]), @intCast(i32, player.x));
-    local_cells[status_idx + 9].ch = ',';
-    injectInt(@ptrCast([*]ui_mod.Cell, &local_cells[status_idx + 10]), @intCast(i32, player.y));
-    local_cells[status_idx + 13].ch = ')';
+    injectString(@ptrCast([*]ui_mod.Cell, &cells[status_idx + 1]), "Pos:(");
+    injectInt(@ptrCast([*]ui_mod.Cell, &cells[status_idx + 6]), @intCast(i32, player.x));
+    cells[status_idx + 9].ch = ',';
+    injectInt(@ptrCast([*]ui_mod.Cell, &cells[status_idx + 10]), @intCast(i32, player.y));
+    cells[status_idx + 13].ch = ')';
 
-    injectString(@ptrCast([*]ui_mod.Cell, &local_cells[status_idx + 15]), "HP:");
-    injectInt(@ptrCast([*]ui_mod.Cell, &local_cells[status_idx + 18]), @intCast(i32, player.hp));
-    local_cells[status_idx + 21].ch = '/';
-    injectInt(@ptrCast([*]ui_mod.Cell, &local_cells[status_idx + 22]), @intCast(i32, player.max_hp));
+    injectString(@ptrCast([*]ui_mod.Cell, &cells[status_idx + 15]), "HP:");
+    injectInt(@ptrCast([*]ui_mod.Cell, &cells[status_idx + 18]), @intCast(i32, player.hp));
+    cells[status_idx + 21].ch = '/';
+    injectInt(@ptrCast([*]ui_mod.Cell, &cells[status_idx + 22]), @intCast(i32, player.max_hp));
+}
 
+fn broadcastOneClient(sock: net_mod.PlatSocket, dungeon: scenario.Dungeon_t) void {
+    const rows = @intCast(usize, dungeon.height) + 1;
+    const cols = @intCast(usize, dungeon.width);
+    const cell_count = rows * cols;
+
+    buildBroadcastCells(&dungeon, @ptrCast([*]ui_mod.Cell, &local_cells[0]), rows, cols);
     ui_mod.drawToSocket(sock, rows, cols, local_cells[0..cell_count]);
+}
+
+pub const ClientFrameArgs = struct {
+    server: *net_mod.Server,
+    dungeon: *scenario.Dungeon_t,
+    client_idx: usize,
+    cells: [*]ui_mod.Cell,
+};
+
+// B3 (option a): the `@asyncInit` args record's fields ARE the coroutine's
+// parameters. `clientFrameCoroutine` needs both the task `ctx` (to forward to
+// the socket-writer coroutine) and the frame args.
+pub const ClientFrameCoroutineArgs = struct { ctx: *std.async.Context, cfa: *ClientFrameArgs };
+
+pub fn clientFrameCoroutine(ctx: *std.async.Context, cfa: *ClientFrameArgs) void {
+    const sock = cfa.server.clients[cfa.client_idx].socket;
+
+    const rows = @intCast(usize, cfa.dungeon.height) + 1;
+    const cols = @intCast(usize, cfa.dungeon.width);
+
+    buildBroadcastCells(cfa.dungeon, cfa.cells, rows, cols);
+
+    const ca = ui_mod.ClientArgs{ .sock = sock, .rows = rows, .cols = cols,
+        .cells = @ptrCast([*]const ui_mod.Cell, cfa.cells) };
+    ui_mod.drawToSocketCoroutine(ctx, @ptrCast(*void, &ca));
 }
 
 fn renderLocal(arena: *sand_mod.Sand, dungeon: scenario.Dungeon_t) void {
