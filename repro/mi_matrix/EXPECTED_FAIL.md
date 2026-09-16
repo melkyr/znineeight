@@ -1,4 +1,92 @@
-# mi_matrix corpus — expected-fail manifest (v115 2026-09-16)
+# mi_matrix corpus — expected-fail manifest (v116 2026-09-16)
+
+## Track-4 Task 4a-I (I) — `rogue_mud` client-task wiring pinned (v115 -> v116 2026-09-16)
+
+Track-4 Task 4a-I pins the two client-task wiring defects found by the Task 4
+review (operator ruling 2026-09-16: fix both via I then F). The multiplayer
+path is dead in-corpus (`examples/z98/rogue_mud/main.zig` `MULTIPLAYER_ENABLED
+= false`), so the pin is a **deterministic runtime repro driver** that imports
+the REAL example module and drives the REAL `clientFrameCoroutine` /
+`drawToSocketCoroutine` through the REAL `std.async` scheduler, with two real
+`socketpair(2)` ends (one ACTIVE, one NON-ACTIVE). **No `sf/src` change.**
+
+Reference compiler = the Task-2g-F fixed point
+`5c24305437629da54b4e4de1ed52e0e0`, rebuilt via the binding seed model
+(`bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz
+/tmp/t4aI_build`; gate `=== [seed] Done: /tmp/t4aI_build ===`). The committed
+seed predates recent `sf/src` work, so the closure is the moving point
+**hop2 == hop3 == `5c243054…`** (hop1 `768479844ce7e64b12f8d871fd918ed0`).
+Compiler under test = `/tmp/t4aI_build/zig1_5_clean` (hop1 binary; its sibling
+`lib/` carries the 9 std modules).
+
+**New corpus dir** (auto-listed by `scripts/corpus/list_corpus_dirs.sh`):
+`repro/mi_matrix/client_task_wiring_xmod` — corpus class **OK** (compile-clean;
+the pin is RUNTIME-only, so the class map does NOT move; mirrors the
+`async_live_local_across_suspend_xmod` runtime-RED idiom).
+
+**Defect (1) — a client task runs against a NON-ACTIVE client.** The example
+adds one task per slot at startup (`main.zig:114-135`) and `tick`s on every
+local move (`broadcastDungeon`), so a task for an inactive slot still reads
+`clients[i].socket` and streams a full frame. In the single-player path the
+slot's `.socket` is `undefined` (only `.active` is initialised), so the send
+target is garbage; the fixture substitutes a valid `socketpair` fd to make the
+write deterministically observable.
+
+**Defect (2) — one-frame lifecycle.** `clientFrameCoroutine` returns after ONE
+pass of `drawToSocketCoroutine`; `tick` marks the task `done` and it is never
+re-added, so after ~`rows` broadcasts the connected client receives nothing.
+
+**RED evidence** (`-ffast --dump-c89`, 23 `.c`, gcc `-m32 -std=c89` clean,
+link rc=0, `timeout 120 ./prog`):
+```
+active_total: 3120        # one full frame to the ACTIVE slot
+inactive_total: 3120      # DEFECT 1: full frame to the NON-ACTIVE slot
+active_last: 0            # DEFECT 2: nothing on the final broadcast
+inactive_last: 0
+active_state: 3           # TaskState.done
+panic: client_task_wiring_xmod: a task wrote to a NON-ACTIVE client socket (defect 1)
+run rc=133 (SIGTRAP)
+```
+
+**GREEN contract** (validated against a `/tmp` patched example where
+`clientFrameCoroutine` self-gates on `.active` and loops `while (true)` across
+broadcasts):
+```
+active_total: 8080  inactive_total: 0  active_last: 142  inactive_last: 0  active_state: 2
+run rc=0
+```
+
+**Finding (3) — root-frame arena / ctx-pool aliasing blocks the nested client
+coroutine (NOT in the Task-4a brief; operator ruling needed).**
+`main.zig:105-106` builds `async_arena` over `async_storage[HEADER_SIZE..]`
+and `async_ctx = contextInit(async_storage[0..])`, whose `pool_base =
+async_storage[16]`. The first `sand_alloc(&async_arena, …)` root frame and the
+first `contextAlloc(async_ctx, …)` child frame land at the SAME address, so the
+nested `drawToSocketCoroutine` child frame overwrites the first task's root
+frame. Measured on the PATCHED example with the example's aliasing layout: the
+active task stalls after one row (`active_total: 74`, `active_state: 3`,
+`active_last: 0`) → defect-2 panic. Task 4a-F must therefore ALSO separate the
+root-frame backing from the ctx pool, or inline the row loop into
+`clientFrameCoroutine` so no child frame is allocated (Task-4 review minor #3
+previously recorded the aliasing as pre-existing/plan-mandated). The committed
+fixture uses a SEPARATE `root_storage` so its RED is attributable to (1)/(2)
+alone.
+
+**Corpus `-ffast` dump+gcc classifier (`/tmp/t4bf_classify.sh`), universe 703 -> 704:**
+
+| | 2g-F `5c243054` | 4a-I `5c243054` | delta |
+|---|---|---|---|
+| dirs | 703 | 704 | +1 |
+| OK | 650 | 651 | +1 |
+| GREEN | 28 | 28 | 0 |
+| FAIL | 25 | 25 | 0 |
+| ICE | 0 | 0 | 0 |
+| CRASH | 0 | 0 | 0 |
+
+Per-dir movement = exactly the one new dir (`client_task_wiring_xmod` OK); all
+703 pre-existing dirs class-identical (no `sf/src` change). No new diagnostic
+code. Full report:
+`.superpowers/sdd/2026-09-13-coroutine-integration-plan/task-4a-report.md`.
 
 ## Track-4 Task 2g-F fix round 1 (F) — `for |row|` by-value array item (v114 -> v115 2026-09-16)
 
