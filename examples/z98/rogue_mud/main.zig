@@ -102,15 +102,37 @@ pub fn main() !void {
         combat_mod.addEntity(&dungeon, g_typ, ex, ey, @intCast(i16, 5));
     }
 
+    var async_arena = sand_mod.sand_init(@ptrCast([*]u8, &async_storage)[std.async.HEADER_SIZE .. 32 * 1024 * 8], true);
+    var async_ctx: *std.async.Context = std.async.contextInit(@ptrCast([*]u8, &async_storage)[0 .. 32 * 1024 * 8]);
     var k: usize = 0;
     while (k < MAX_NPCS) : (k += 1) {
         npc_task_ptrs[k] = &npc_tasks[k];
     }
-    var async_arena = sand_mod.sand_init(@ptrCast([*]u8, &async_storage)[std.async.HEADER_SIZE .. 32 * 1024 * 8], true);
-    var async_ctx: *std.async.Context = std.async.contextInit(@ptrCast([*]u8, &async_storage)[0 .. 32 * 1024 * 8]);
     npc_sched = std.async.schedulerInit(npc_task_ptrs[0..]);
-    client_sched = std.async.schedulerInit(client_frame_task_ptrs[0..]);
     _ = combat_mod.spawnEnemies(async_ctx, &npc_sched, npc_task_ptrs[0..], npc_args[0..], npc_recs[0..], &dungeon, &async_arena, &temp_arena);
+
+    var ck: usize = 0;
+    while (ck < @intCast(usize, 5)) : (ck += 1) {
+        client_frame_task_ptrs[ck] = &client_frame_tasks[ck];
+    }
+    client_sched = std.async.schedulerInit(client_frame_task_ptrs[0..]);
+    var ci: usize = 0;
+    while (ci < @intCast(usize, 5)) : (ci += 1) {
+        // S11: each client builds into its OWN cells buffer.
+        client_frame_args[ci] = ClientFrameArgs{ .server = &server, .dungeon = &dungeon,
+            .client_idx = ci, .cells = @ptrCast([*]ui_mod.Cell, &client_cells[ci][0]) };
+        client_frame_recs[ci] = ClientFrameCoroutineArgs{ .ctx = async_ctx, .cfa = &client_frame_args[ci] };
+        const csz = @intCast(usize, @asyncFrameSize(clientFrameCoroutine));
+        const cframe = sand_mod.sand_alloc(&async_arena, csz, 8) catch return;
+        client_frame_task_ptrs[ci].frame = @asyncInit(async_ctx, @ptrCast([*]u8, cframe), clientFrameCoroutine, @ptrCast(*const void, &client_frame_recs[ci]));
+        client_frame_task_ptrs[ci].ctx = async_ctx;
+        client_frame_task_ptrs[ci].arg = @ptrCast(*void, &client_frame_recs[ci]);
+        client_frame_task_ptrs[ci].result = @ptrCast(*void, &client_frame_recs[ci]);
+        client_frame_task_ptrs[ci].cancel_requested = false;
+        client_frame_task_ptrs[ci].waiting_on = client_frame_task_ptrs[ci];
+        client_frame_task_ptrs[ci].has_waiting_on = false;
+        _ = std.async.addTask(&client_sched, client_frame_task_ptrs[ci]);
+    }
 
     std.io.print("Game started! Use WASD to move, Q to quit, L to look, V to save, B to load.\n");
 
@@ -204,6 +226,7 @@ pub fn main() !void {
                 const n = net_mod.recv(client.socket, &client.buffer[client.pos], @intCast(i32, 1024 - client.pos));
                 if (n <= 0) {
                     // Client disconnected
+                    std.async.cancel(&client_sched, client_frame_task_ptrs[client_idx]);
                     dungeon.entities[client.entity_idx].active = false;
                     client.active = false;
                     net_mod.close(client.socket);
@@ -296,6 +319,8 @@ pub fn main() !void {
         // Simple turn feedback
         if (!dungeon.entities[0].active) {
             std.io.print("You have died. Game Over.\n");
+            std.async.cancelAll(&npc_sched);
+            std.async.cancelAll(&client_sched);
             break :game_loop;
         }
     }
