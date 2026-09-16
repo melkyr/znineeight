@@ -1,4 +1,55 @@
-# mi_matrix corpus — expected-fail manifest (v108 2026-09-16)
+# mi_matrix corpus — expected-fail manifest (v109 2026-09-16)
+
+## Track-4 Task 2e-I (I) — diagnostic excerpt wrong-line pinned (v108 -> v109 2026-09-16)
+
+Track-4 Task 2e-I pins the diagnostic-excerpt line-selection defect found by the
+Task-2c-F fix round. **No `sf/src` change.** Reference compiler = the Task-2c-F
+fix-round-1 fixed point `14ffe6b3d08bb273d74bb92fd9d07c13`, rebuilt via the
+binding seed model (`bash scripts/seed/build_from_seed.sh
+release/seed/zig1-seed.tgz /tmp/t2e_build`; gate `=== [seed] Done: /tmp/t2e_build
+===`). The committed seed predates the recent `sf/src` work, so the closure is
+the moving point **hop2 == hop3 == `14ffe6b3d08bb273d74bb92fd9d07c13`** (hop1
+`a57734dbe72082b14d0ad981a6ca8c8a`). Full report:
+`.superpowers/sdd/2026-09-13-coroutine-integration-plan/task-2e-report.md`.
+
+**Root cause (verified, read-only).** `mem.binary_search`
+(`sf/src/util/mem.zig:9-25`) is an upper_bound-minus-one: it returns the index of
+the greatest `offsets[i] <= target` — already the 0-based line index.
+`sourceManagerGetLocation` (`sf/src/source_manager.zig:155-159`) uses it
+correctly (`line = line_idx + 1`, `col = offset - offsets[line_idx]`), so the
+`file:line:col` header is right. But `sf/src/diagnostics.zig:500-501` recomputes
+`line_idx = binary_search(...)` and then subtracts one again
+(`if (line_idx > 0) line_idx -= 1;`). For a span on file line N (N >= 2) the
+excerpt prints line N-1. On line 1 the `> 0` guard masks the bug (the excerpt is
+correct). When line N-1 is blank the excerpt is skipped entirely
+(`l_start == l_end` fails the `:511` guard). Affects every diagnostic's excerpt.
+
+**Three new corpus dirs** (auto-listed by `scripts/corpus/list_corpus_dirs.sh`):
+
+| dir | class | RED today (`14ffe6b3…`) | expected GREEN (Task 2e-F) |
+|---|---|---|---|
+| `diag_excerpt_positions_xmod` | **FAIL** | dump rc=2, 0 `.c`; col0/col1/mid/multi-line excerpts print the PREVIOUS line; blank-prev diags print NO excerpt | same rc/class; every excerpt = the span's line + caret at `loc.col` |
+| `diag_excerpt_line1_xmod` | **FAIL** | dump rc=2, 0 `.c`; line-1 excerpt CORRECT today (control) | unchanged (RED == GREEN) |
+| `diag_excerpt_multifile_xmod` | **OK** | dump rc=0, 5 `.c`; `mod.zig:6:6` warning excerpt prints `mod.zig` line 5 | same rc/class; excerpt = `mod.zig` line 6 |
+
+RED excerpts (verbatim) and GREEN contracts are in the task report. The
+`line1` fixture keeps its span on file line 1 by putting the explanatory comment
+AFTER the code.
+
+**Corpus `-ffast` dump+gcc classifier:** universe **685 -> 688** (+3). No
+`sf/src` change, so the 685 pre-existing dirs are class-identical by
+construction. Task-2e-I's own contribution: **+2 FAIL**
+(`diag_excerpt_positions_xmod`, `diag_excerpt_line1_xmod`) and **+1 OK**
+(`diag_excerpt_multifile_xmod`). **No new diagnostic code** — all excerpts are
+the pre-existing `error[20]` (`ERR_3001_UNDEFINED_SYMBOL`) / `warning[3000]`
+(type-mismatch); no ICE code is used. This is a **stderr-rendering** pin: the
+corpus class map does NOT move when Task 2e-F fixes the excerpt (the diagnostics
+are real; only the rendered source line changes).
+
+**Fix surface for Task 2e-F:** delete the single extra decrement at
+`sf/src/diagnostics.zig:501`. No change to `mem.binary_search` or
+`source_manager.zig`; `loc.col` (0-based) and `span_end - span_start` are already
+correct (no second off-by-one).
 
 ## Track-4 Task 2c-F fix round 1 (F) — cycle depth cap + located error[3050] + header drift (v107 -> v108 2026-09-16)
 
