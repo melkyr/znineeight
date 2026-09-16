@@ -4,15 +4,19 @@
 // a nested-module `pub const` as an array length.
 //
 // RED (current, fixed point 286c9011691ccd39403534019baa12c6): the construct is
-// blocked EARLIER by an UNRELATED pre-existing gap — a NAMED const as an array
-// size is rejected at parse/analyze time:
+// blocked EARLIER by an UNRELATED pre-existing gap — a NON-LITERAL /
+// FIELD-ACCESS expression in array-size position is rejected at parse/analyze
+// time:
 //   error[20]: identifier 'a' is not declared or imported in this module
 //   dump rc=2, 0 `.c`. Corpus classifier: FAIL (error[20] is not in the ICE
 //   regex).
-// Control: `const N: usize = 16; var a: [N]u8 = undefined;` (a purely LOCAL
-// const, no module alias) fails with the SAME error[20] — so this position
-// cannot currently isolate the nested-module value gap. Only a literal length
-// (`[16]u8`) parses today.
+// The blocker is NESTING-INDEPENDENT: `var a: [leaf.HEADER_SIZE]u8` with a
+// 1-level DIRECT import (`const leaf = @import("leaf.zig")`) fails identically.
+// Control (same compiler): a MODULE-LEVEL named const IS accepted —
+// `const N: usize = 16; var a: [N]u8 = undefined;` (and `const M = N`) → rc=0,
+// 4 `.c` (GREEN). So this position cannot isolate the nested-module value gap.
+// (A function-body `const N` as an array size also errors — a separate
+// statement-scope issue, not this gap.)
 //
 // Expected GREEN contract (once BOTH gaps are fixed): `a.len == 16`; dump rc=0,
 // gcc clean, link+run rc=0, no stdout.

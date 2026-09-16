@@ -1,11 +1,12 @@
-# mi_matrix corpus — expected-fail manifest (v101 2026-09-16)
+# mi_matrix corpus — expected-fail manifest (v102 2026-09-16)
 
-## Track-4 Task 2a-I (I) — nested module value-position access gap pinned (v101 2026-09-16)
+## Track-4 Task 2a-I (I) — nested module value-position access gap pinned (v101; fix round 1 v102 2026-09-16)
 
 Track-4 Task 2a-I pins the pre-existing `std.async` value-position gap that
 blocks Tasks 2/4/5 (which read `std.async.HEADER_SIZE`). **No `sf/src` change.**
 Reference compiler = the Task-0q3 fixed point
-`286c9011691ccd39403534019baa12c6`. The gap is the deferred item **"Amendment 7,
+`286c9011691ccd39403534019baa12c6`; tested binary `/tmp/t4a_ref/zig1_5_clean`
+md5 `8c4900dc8980c00c085049970246500d`. The gap is the deferred item **"Amendment 7,
 Res 4"** in
 `docs/superpowers/specs/2026-09-13-async-prelude-and-feasibility-design.md:474`
 (also `2026-09-13-std-async-design.md:407`). Fix is Task 2a-F (fixed point MOVES).
@@ -19,7 +20,7 @@ reference (`sf/src/lower.zig:3311-3348`/`:3400-3416`; sema
 `warning[3023]` (`:3124-3128`) then `error[3042]` (`:3352-3359`). The l-value
 path (`lowerLValueAddr` `sf/src/lower.zig:1399-1448`) yields `error[3043]`.
 
-**Twelve new corpus dirs** (each has `main.zig`; the fixture-local ones bundle
+**Thirteen new corpus dirs** (each has `main.zig`; the fixture-local ones bundle
 `leaf.zig`/`mid.zig`/`mid2.zig`):
 
 | dir | class | diagnostic (current) |
@@ -33,7 +34,8 @@ path (`lowerLValueAddr` `sf/src/lower.zig:1399-1448`) yields `error[3043]`.
 | `module_value_alias3_xmod` (3-level alias) | **ICE** | `error[3042]` + `warning[3023]` |
 | `module_value_alias2alias_xmod` (`const x = mid.leaf`) | **ICE** | `error[3042]` (no `warning[3023]`) |
 | `module_value_positions_xmod` (call-arg/return/arith) | **ICE** | `error[3042]`×3 + `warning[3023]`×3 |
-| `module_value_arraysize_xmod` (array-size position) | **FAIL** | `error[20]` (UNRELATED named-const array-size gap; reproduces with a purely local const) |
+| `module_value_arraysize_xmod` (array-size position) | **FAIL** | `error[20]` (UNRELATED non-literal / field-access array-size expression gap; NESTING-INDEPENDENT — a 1-level direct import fails identically; a module-level named const `[N]u8` is GREEN) |
+| `module_value_fncall_xmod` (function via 2-level alias control) | **OK** | — (GREEN today) |
 | `module_value_direct1_xmod` (1-level DIRECT import control) | **OK** | — (GREEN today) |
 | `module_value_local_xmod` (module-local `pub const` control) | **OK** | — (GREEN today) |
 
@@ -42,12 +44,15 @@ path (`lowerLValueAddr` `sf/src/lower.zig:1399-1448`) yields `error[3043]`.
 dirs bucket as **ICE**, not FAIL; `module_value_arraysize_xmod` is an ordinary
 **FAIL** (`error[20]`, not in the ICE regex). The nine ICE dirs are expected
 compile-fails that MUST flip to **OK** in Task 2a-F; the arraysize dir additionally
-needs the unrelated named-const array-size gap closed.
+needs the unrelated non-literal / field-access array-size expression gap closed
+(NOT a named-const gap — a module-level named const is accepted).
 
-**Corpus `-s0` universe 662 → 674 dirs = 616 OK / 27 GREEN / 22 FAIL / 9 ICE /
+**Corpus `-s0` universe 662 → 675 dirs = 617 OK / 27 GREEN / 22 FAIL / 9 ICE /
 0 CRASH.** Delta vs v100 (`662 = 614 OK / 27 GREEN / 21 FAIL / 0 ICE / 0 CRASH`)
-is EXACTLY the twelve new dirs: +2 OK, +1 FAIL, +9 ICE; the 662 baseline dirs are
-class-identical (zero movement).
+is EXACTLY the thirteen new dirs: +3 OK, +1 FAIL, +9 ICE; the 662 baseline dirs
+are class-identical (zero movement). Fix round 1 corrected the array-size wording
+and added the `module_value_fncall_xmod` control (v101 recorded 674 dirs /
+616 OK before that control).
 
 ## Task 0q3 (F) — promote enum→int at return/call-argument (v100 2026-09-16)
 
