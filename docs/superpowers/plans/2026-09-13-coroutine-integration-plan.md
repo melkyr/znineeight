@@ -1183,6 +1183,31 @@ Expected: `CLOSEOUT OK`.
 
 ---
 
+### Task 4a: `rogue_mud` client-task wiring — uninitialized socket + one-frame lifecycle — I then F
+
+**Origin (Task 4 review, 2026-09-16).** Task 4 landed E3, but its review found two plan-mandated client-task defects (both in the currently-disabled multiplayer path, `MULTIPLAYER_ENABLED = false`, so the goldens are unaffected):
+- **(1) uninitialized socket:** the 5 client tasks are added at startup (`main.zig:114-135`) and `tick(client_sched)` fires on every local move (`broadcastDungeon`), so `clientFrameCoroutine` reads `cfa.server.clients[ci].socket` while it is still `undefined` in single-player, and `drawToSocketCoroutine` calls `std_net.send()` on it (Linux `ENOTSOCK`, no write — UB-dependent but harmless today).
+- **(2) one-frame lifecycle:** each client frame task completes after ONE frame (`drawToSocketCoroutine` returns after one pass of `rows`; `tick` then marks the task `done`) and is never re-added, so after ~`rows` moves no further frames reach a connected client.
+
+**Operator ruling (2026-09-16):** fix **both**, via an I task + F task (this pair), before Task 5.
+
+#### Task 4a-I: investigate + pin (no `sf/src` change)
+
+- [ ] **Step 1: Fixture set / capture.** Determine the correct wiring and pin the current defect(s). Since `MULTIPLAYER_ENABLED = false` makes the path dead in-corpus, pin via a **deterministic repro** (a small driver or a corpus fixture that enables the client path / simulates an active client) that demonstrates (a) a client task running against a non-active client (uninitialized socket) and (b) a client task going `done` after one frame and never re-rendering. Capture the exact behavior + the expected GREEN contract. If a corpus fixture cannot exercise it, say so and propose the closest pinnable form (do NOT leave it prose-only — the standing rule requires a fixture or an explicit, justified declaration).
+- [ ] **Step 2: Questionnaire.** Answer in the report: (Q1) the exact current lifecycle of a client task (add → tick → done) and where it goes wrong; (Q2) whether the correct design is to add a task only when a client becomes active (and remove/cancel it on disconnect) or to keep one long-lived task per slot that loops; (Q3) how `broadcastDungeon`/`tick` should gate on `server.clients[i].active`; (Q4) how `clientFrameCoroutine` should loop across broadcasts (what `@asyncSuspend`/`tick` shape keeps it alive) while preserving the per-client cells buffer (S11); (Q5) whether `client_sched`/task-set binding must move from startup to per-connection; (Q6) the minimal fix surface + risk; (Q7) corpus/diagnostic delta.
+- [ ] **Step 3: Declare.** Add the fixture(s)/repro; record the RED in `repro/mi_matrix/EXPECTED_FAIL.md` (v115→v116) or the appropriate known-issue location.
+- [ ] **Step 4: Report + present the fix surface for Task 4a-F.** No `sf/src` change.
+
+#### Task 4a-F: fix the client-task wiring (`sf/src`-free; fixed point should NOT move)
+
+- [ ] **Step 1: Fix** (1) so a client task never runs against a non-active client, and (2) so a connected client keeps receiving frames across broadcasts (long-lived task or per-connection add/cancel), preserving the per-client cells buffer (S11) and the byte-identity of the local path.
+- [ ] **Step 2: Fixtures/repro RED→GREEN**; full corpus sweep (class-map delta = intended dirs only); `check_emit_support.sh` 5/5; self-compile closure (48 `.c`, 0 `[3000]`).
+- [ ] **Step 3: Re-verify** the four goldens + `CLOSEOUT OK`; record the fixed point (expected UNMOVED). Seed rotation stays at Task 6.
+
+**Sequencing gate:** Task 5 MUST NOT start until Task 4a-F is landed.
+
+---
+
 ### Task 5: `mud_server` `select` loop → per-client tasks (entry E4)
 
 **Files:**
