@@ -1,4 +1,44 @@
-# mi_matrix corpus — expected-fail manifest (v127 2026-09-17)
+# mi_matrix corpus — expected-fail manifest (v128 2026-09-17)
+
+## Track-4 Task 8-I — suspending `export fn` synthesized-driver gap (v127 -> v128 2026-09-17)
+
+A suspending `export fn` keeps **no synchronous export entry**: the async transform
+replaces its LIR with the `__Z98Step_<f>` step and never streams the original
+(`sf/src/main.zig:770-779`), and only root `pub fn main` is a driver target
+(`sf/src/async_state_machine.zig:597` `isRootMain` requires module 0 + `is_pub` +
+`"main"`). The emitted C therefore has no source-named external symbol for the
+`export fn` — only the temp-mangled step. Task 8-F will generalize the driver to
+`isDriverTarget = isRootMain || is_export`; Task 8-I pins the RED with two new
+auto-listed fixtures and makes **no `sf/src` change** (fixed point UNMOVED
+`18e0de5cf71f4fe0fbf5c560ab24e624`).
+
+| fixture | RED today (fixed point `18e0de5c`) | GREEN contract (Task 8-F) |
+|---|---|---|
+| `async_export_fn_xmod` | dump/gcc/link rc=0, 5 `.c`, run rc=0, stdout `6\n`; `nm prog` shows only `T zF_<hash>___Z98Step_bump` and no `bump` definition (`grep -E '\bbump\b' main_*.c` = no match) | `bump` non-static source-named definition present; stdout `6\n` (value `n+1` round-trips) |
+| `async_export_fn_void_xmod` | dump/gcc/link rc=0, 5 `.c`, run rc=0, stdout `5\n`; only `T zF_<hash>___Z98Step_notify`, no `notify` definition | `notify` non-static source-named void definition present; stdout `5\n` |
+
+Note: because `bump`/`notify` are suspending, `main`'s direct call is an implicit
+await, so the awaited value already round-trips *within* main and the runtime
+stdout is identical in RED and GREEN — the RED is the absent source-named external
+symbol (the missing sync entry), not a runtime-output difference. The corpus
+`-ffast` compile classifier therefore buckets both new dirs as `OK` (they compile
+clean); the RED is the symbol gate, recorded here.
+
+**Corpus `-ffast` dump+gcc classifier (`scripts/corpus/classify`):**
+
+| | v127 `18e0de5c` | v128 `18e0de5c` | delta |
+|---|---|---|---|
+| dirs | 723 | 725 | +2 |
+| OK | 670 | 672 | +2 |
+| GREEN | 28 | 28 | 0 |
+| FAIL | 25 | 25 | 0 |
+| ICE | 0 | 0 | 0 |
+| CRASH | 0 | 0 | 0 |
+
+Per-dir movement = exactly the two new dirs (both compile-clean -> OK); no
+`sf/src` change, so no other class movement. No new diagnostic code.
+
+---
 
 ## Final whole-branch review fix — `addTask` clears `cancel_requested` + spec scope (v126 -> v127 2026-09-17)
 
