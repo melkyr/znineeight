@@ -1,4 +1,44 @@
-# mi_matrix corpus — expected-fail manifest (v123 2026-09-17)
+# mi_matrix corpus — expected-fail manifest (v124 2026-09-17)
+
+## Track-4 Task 5a-I fix round 1 — `removeTask` fixtures (operator ruling) (v123 -> v124 2026-09-17)
+
+Operator ruling on the Task 5a-I Q2/Q5 concerns: hazard (1) is fixed by **two** `std.async`
+primitives — an **idempotent `addTask`** (re-adding an already-registered `*Task` is a
+no-op) plus a new **`removeTask(s, t)`** — with one fixture per primitive. This round adds
+the `removeTask` half (the idempotent-`addTask` half is `stdlib_async_addtask_reuse_xmod`,
+v123). No `sf/src` change in this round (pins only).
+
+**`removeTask` contract pinned:** after `removeTask(s, t)`, `t` is no longer registered
+(`s.count` drops; a subsequent `tick` does not resume it); a later `addTask(s, t)` of the
+same task succeeds and the slot is reusable; `removeTask` of an already-removed or
+never-added task is a no-op (`count` unchanged).
+
+| fixture | shape | RED today (fixed point `18e0de5c`) | GREEN contract (Task 5a-F) |
+|---|---|---|---|
+| `stdlib_async_removetask_xmod` | add `t0`; remove `t0`; tick; re-add `t0`; remove twice; remove never-added `t1`; add `t1`; tick | dump rc=2, **0 `.c`**, `error[3042]` non-value base expression in field access (`removeTask` does not exist) + `warning[3023]` | dump/gcc/link/run rc=0, 6 `.c`, stdout `1 1 0 0 1 1 0 0 1 1 1` (MEASURED with a scratch `removeTask`) |
+| `stdlib_async_removetask_noop_xmod` | remove on an empty scheduler; remove the same task twice; remove a never-added task | dump rc=2, **0 `.c`**, `error[3042]` + `warning[3023]` | dump/gcc/link/run rc=0, 6 `.c`, stdout `0 1 0 0 0` (no-op leaves `count` at 0; MEASURED) |
+
+**Corpus `-ffast` dump+gcc classifier (`scripts/corpus/classify`):**
+
+| | 5a-I `18e0de5c` (v123) | 5a-I fix round 1 `18e0de5c` (v124) | delta |
+|---|---|---|---|
+| dirs | 720 | 722 | +2 |
+| OK | 667 | 667 | 0 |
+| GREEN | 28 | 28 | 0 |
+| FAIL | 25 | 27 | +2 |
+| ICE | 0 | 0 | 0 |
+| CRASH | 0 | 0 | 0 |
+
+Per-dir movement = exactly the 2 new `removeTask` dirs (compile-RED → FAIL, the intended
+class for a not-yet-existing primitive); every pre-existing dir is class-identical. No new
+diagnostic code (the RED uses the pre-existing `error[3042]`/`warning[3023]`).
+
+**Fixed point UNMOVED `18e0de5cf71f4fe0fbf5c560ab24e624`** (operator-ruled): a
+`std_async.zig`-only change is not in `sf/src/main.zig`'s import graph (Task 0b/4c
+precedent), so it leaves the compiler fixed point UNMOVED; only the emitted
+`lib/std_async.zig` changes (seed rotation at Task 6).
+
+---
 
 ## Track-4 Task 5a-I (I) — pinned RED: `mud_server` duplicate addTask on slot reuse + blocking trailing tick (v122 -> v123 2026-09-17)
 
