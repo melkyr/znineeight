@@ -17,6 +17,11 @@
 extern "c" fn pal_trap() noreturn;
 
 const io = @import("std_io.zig");
+// The single documented L1->L2 import (R3 exception, operator ruling m1243):
+// the blueprint fixes `backtrace(ctx, out: *std.buf.Buf)`, so std_debug reaches
+// up to std_buf for that one function. `std_buf` imports only `std_arena`, so
+// the graph stays cycle-free.
+const buf_mod = @import("std_buf.zig");
 
 pub fn log(msg: []const u8) void {
     @stdoutWrite(msg.ptr, msg.len);
@@ -114,10 +119,22 @@ pub fn setTrapHandler(h: ?fn(*TrapContext) void) void {
     pal_set_trap_handler(h);
 }
 
-// NOTE (Plan A Task 4): the blueprint's `backtrace(ctx, out: *std.buf.Buf)`
-// is deferred. It consumes `std_buf` (Plan A Task 5, L2); importing it here
-// would be an L1->L2 R3 violation, and the module does not exist yet. It must
-// land with (or after) Task 5.
+// Walk the x86 `ebp` frame chain starting at `ctx.ebp`, appending each frame
+// pointer to `out` in walk order. The walk stops at a null successor or a
+// non-increasing frame pointer (the stack grows down, so a caller frame is
+// always at a higher address). This is the blueprint §3 L1 signature; it is the
+// single documented L1->L2 import of std_buf (R3 exception, ruling m1243).
+pub fn backtrace(ctx: *const TrapContext, out: *buf_mod.Buf) !void {
+    var fp: u32 = ctx.ebp;
+    while (fp != 0) {
+        try buf_mod.appendU32LE(out, fp);
+        var p: *const u32 = @intToPtr(*const u32, @intCast(usize, fp));
+        var next: u32 = p.*;
+        if (next == 0) break;
+        if (next <= fp) break;
+        fp = next;
+    }
+}
 
 // Default handler: write `core.dump` in the CWD, then abort. A failed dump
 // (open/write) still terminates — the trap path must never return.

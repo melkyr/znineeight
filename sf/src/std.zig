@@ -9,3 +9,4 @@ pub const async = @import("std_async.zig");
 pub const bits = @import("std_bits.zig");
 pub const os = @import("std_os.zig");
 pub const time = @import("std_time.zig");
+pub const buf = @import("std_buf.zig");
