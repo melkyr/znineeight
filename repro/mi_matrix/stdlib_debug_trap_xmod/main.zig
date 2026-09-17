@@ -40,7 +40,8 @@ fn trapHandler(ctx: *std.debug.TrapContext) void {
 }
 
 pub fn main() void {
-    // Install the handler through the wrapper (extern setter under the hood).
+    // Install the handler through the blueprint setter
+    // (`?fn(*TrapContext) void`; the extern setter is under the hood).
     std.debug.setTrapHandler(trapHandler);
 
     // A real trap: assert(false) writes its message then calls pal_trap().

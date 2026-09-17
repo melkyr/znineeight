@@ -1,11 +1,16 @@
-// stdlib_debug_cleartrap_xmod — STDLIB std_debug clearTrapHandler GREEN fixture.
+// stdlib_debug_cleartrap_xmod — STDLIB std_debug null-uninstall GREEN fixture.
 //
-// R7 coverage for the public `clearTrapHandler()`. Installs a handler, clears
-// it, re-installs the handler, then triggers a real trap; the handler prints
-// the contract line and exits 0 (pal_abort is never reached). The clear call
-// is exercised end-to-end (the setter extern is invoked with NULL). The
+// R7 coverage for the null-uninstall path of `setTrapHandler`. Installs a
+// handler, clears it via `setTrapHandler(null)`, re-installs the handler, then
+// triggers a real trap; the handler prints the contract line and exits 0
+// (pal_abort is never reached). The null-install call is exercised end-to-end
+// (the setter extern is invoked with a null function pointer). The
 // abort-after-clear consequence cannot be a GREEN run (it terminates the
 // process); it is proven by a scratch probe recorded in the Task 4 fix report.
+//
+// Plan A Task 4c: `clearTrapHandler` was dropped (non-blueprint) once Task 4b-F
+// made the blueprint's `?fn(*TrapContext) void` signature lower correctly;
+// `setTrapHandler(null)` is the null-uninstall.
 //
 // Deterministic stdout contract (RUNRC=0):
 //   assertion failed
@@ -21,7 +26,7 @@ fn handler(ctx: *std.debug.TrapContext) void {
 
 pub fn main() void {
     std.debug.setTrapHandler(handler);
-    std.debug.clearTrapHandler();
+    std.debug.setTrapHandler(null);
     std.debug.setTrapHandler(handler);
     std.debug.assert(false);
 }

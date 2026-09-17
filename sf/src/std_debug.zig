@@ -102,20 +102,16 @@ pub const TrapContext = struct {
 // One error set per module (R2); writeCoreDump is the only fallible function.
 pub const DebugError = error{CoreDumpWriteFailed};
 
-// R7.4 realized: the current compiler cannot lower an optional function
-// pointer as a parameter (`?fn(*TrapContext) void` emits a struct at the
-// signature but a pointer in the body). The operator-sanctioned fallback is
-// used: the extern takes a plain `*void` and the wrapper casts the handler.
-// `clearTrapHandler` restores the blueprint's null-install capability.
-extern "c" fn pal_set_trap_handler(h: *void) void;
+// Plan A Task 4c: the blueprint §3 L1 signature is restored now that Task 4b-F
+// fixed the optional-fn-pointer C emission (`?fn` extern parameters no longer
+// materialize an `int`). The extern takes the optional function pointer
+// directly; `setTrapHandler(null)` is the null-uninstall, so the redundant
+// `clearTrapHandler` helper (non-blueprint) is dropped.
+extern "c" fn pal_set_trap_handler(h: ?fn(*TrapContext) void) void;
 extern "c" fn pal_abort() noreturn;
 
-pub fn setTrapHandler(h: fn(*TrapContext) void) void {
-    pal_set_trap_handler(@ptrCast(*void, h));
-}
-
-pub fn clearTrapHandler() void {
-    pal_set_trap_handler(@intToPtr(*void, 0));
+pub fn setTrapHandler(h: ?fn(*TrapContext) void) void {
+    pal_set_trap_handler(h);
 }
 
 // NOTE (Plan A Task 4): the blueprint's `backtrace(ctx, out: *std.buf.Buf)`
