@@ -177,8 +177,8 @@ S-RES → S-SIDE → S-EXTRA** — `-s1` moves AST to RAM, `-s2` also LIR, ... `
 files). S-EXTRA is the AST index-side `extra_children`/`extra_ranges` write-through pool pair
 (`.zig1_extra_ec.tmp` / `.zig1_extra_er.tmp`). Higher `-s` = more RAM, less disk I/O; emission is
 **byte-identical in every mode** (same data, different storage). Measured self-compile `pool=`
-(self-hosted binary, `--markers --track-memory`): `-s0` 16.6 M (all disk), `-s5` 78.6 M (S-EXTRA
-still on disk), `-s6` 81.7 M (all RAM). `-s0`/`-s1` fit the 64 MB `-mm` default; `-s2`+ **exceed the
+(self-hosted binary, `--markers --track-memory`): `-s0` 13.8 M (all disk), `-s1` 33.1 M, `-s2`/`-s3` 70.0 M,
+`-s4` 73.0 M, `-s5` 74.0 M (S-EXTRA still on disk), `-s6` 77.0 M (all RAM). `-s0`/`-s1` fit the 64 MB `-mm` default; `-s2`+ **exceed the
 default and must be paired with `-mm128`** (else `memory limit exceeded`, rc=3). Range 0..6; bare
 `-s` / non-digit / out-of-range (`-s7`) error rc=1. Per-level smoke: `.zig1_ast.tmp` absent at
 `-s1`, `.zig1_lir.tmp` absent at `-s2`, ..., `.zig1_extra_ec.tmp`/`.zig1_extra_er.tmp` absent at
@@ -509,10 +509,12 @@ diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prio
 
 | Entry Path | Reference md5 (default `-fsafe`) | `-ffast` byte-anchor |
 |---|---|---|
-| `examples/z98/mud_server/main.zig` | `07ec234e3f0214e2eb01aabad1676e0a` | `ac1579907ce84efa2f9014187070bf94` |
-| `examples/z98/game_of_life/main.zig` | `e6afce418718f4adf2525956e17f6bc9` | `e023d3cd0bfb23346ac800725c5192f1` |
-| `examples/z98/lisp_interpreter_curr/main.zig` | `a3ba58098357164d644d321015550874` | `21747e2acf177947ad499149bb3fdc98` |
-| `examples/z98/json_parser/main.zig` | `99514d39dcbfddd297ccd12e15a0cb78` | `2f08bf260bf2b6813fa4d70ffbc88aa9` |
+| `examples/z98/mud_server/main.zig` | `b9321f7c36de500bbf69790c64e79929` | `ac1579907ce84efa2f9014187070bf94` |
+| `examples/z98/game_of_life/main.zig` | `75c09bd8a3169d40c23666ec2248e3f6` | `e023d3cd0bfb23346ac800725c5192f1` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `cad5f49152060d41961c0bd38da153d2` | `21747e2acf177947ad499149bb3fdc98` |
+| `examples/z98/json_parser/main.zig` | `6cb272d1572dc2cbcbbfc065c3638e04` | `2f08bf260bf2b6813fa4d70ffbc88aa9` |
+
+- **4-MD5 `-fsafe` re-baseline (2026-09-17; fixed point `553a39b4…`, seed v27):** the Track-3/4 wave moves all four default `-fsafe` dumps — A1 string-literal typing (`char*` → `unsigned char*`) + type-registry token shifts (gol/lisp/json/mud), the Track-3 `std_async` re-export (mud only, needed-only module pruning), and the `json_parser/file.zig` `strtod` signature update (json). Runtime-identical (json stdout md5 `8bda3d5a…`, rc=0). old→new `-fsafe`: gol `e6afce41…` → `75c09bd8…`, lisp `a3ba5809…` → `cad5f491…`, json `99514d39…` → `6cb272d1…`, mud `07ec234e…` → `b9321f7c…`. The `-ffast` byte-anchor column was **not** re-measured in this round (no values in the Task 9-F-I/9-J reports) and retains the last recorded Track-1 values.
 
 - **All-four 4-MD5 re-baseline (2026-09-14, Track 1 calling-convention closeout, HEAD `8c48e5d5`; PRIMARY closeout gate):** Task 4 migrated all 15 `std_net` Win32 externs to `extern "stdcall"`; because `std.zig` re-exports `std_net` unconditionally, every gate program emits it and gains the `FS_…` typedefs + use-site casts, moving all four dumps in **both** modes. Rows re-dumped with the fixed-point compiler `cd2259dd…` (repo-root CWD, stdout-only, dump rc=0 each; deterministic 2×). old→new — `-fsafe`: gol `1eed772387ae63205e93e207dae6af52` → `e6afce418718f4adf2525956e17f6bc9`, lisp `6f2267711a61a117ad6aa4a92aced4e9` → `a3ba58098357164d644d321015550874`, json `ccdcb6ef4b7af5be1193a89f34db5143` → `99514d39dcbfddd297ccd12e15a0cb78`, mud `5f05df6eb34986a4571e2ae8852887bf` → `07ec234e3f0214e2eb01aabad1676e0a`; `-ffast`: gol `a5b49350583ed79edfc7cce9eb4a6e29` → `e023d3cd0bfb23346ac800725c5192f1`, lisp `8385ab02cb3094c4f8cb48cf010049d9` → `21747e2acf177947ad499149bb3fdc98`, json `265fa6a8fc752a62b33fea169b24953e` → `2f08bf260bf2b6813fa4d70ffbc88aa9`, mud `c0a2d6773b207e94e1952c2880aa7b0e` → `ac1579907ce84efa2f9014187070bf94`.
 
