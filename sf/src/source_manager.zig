@@ -75,6 +75,7 @@ pub const SourceManager = struct {
     files: *SourceFileArrayList,
     allocator: *Sand,
     fault: *alloc_mod.GrowableSand,
+    fault_ready: bool,
 };
 
 pub fn sourceManagerInit(allocator: *Sand) SourceManager {
@@ -83,12 +84,11 @@ pub fn sourceManagerInit(allocator: *Sand) SourceManager {
     f_ptr.* = sourceFileArrayListInit(allocator);
     var gs_raw = alloc_mod.sandAlloc(allocator, @intCast(usize, @sizeOf(alloc_mod.GrowableSand)), @intCast(usize, 4)) catch unreachable;
     var gs_ptr = @ptrCast(*alloc_mod.GrowableSand, gs_raw);
-    var gs_name: []const u8 = "diag_read";
-    alloc_mod.growableSandInit(gs_ptr, alloc_mod.poolPtr(), 4096, gs_name);
     return SourceManager{
         .files = f_ptr,
         .allocator = allocator,
         .fault = gs_ptr,
+        .fault_ready = false,
     };
 }
 
@@ -150,6 +150,11 @@ fn sourceManagerFaultIn(self: *SourceManager, file_id: u32) void {
     if (fid > @intCast(u32, files_slice.len)) fid = @intCast(u32, 1);
     var file = &files_slice[@intCast(usize, fid - 1)];
     if (file.loaded) return;
+    if (!self.fault_ready) {
+        var gs_name: []const u8 = "diag_read";
+        alloc_mod.growableSandInit(self.fault, alloc_mod.poolPtr(), 4096, gs_name);
+        self.fault_ready = true;
+    }
     var content_opt = pal_mod.readFile(file.filename, &self.fault.view);
     if (content_opt) |content| {
         var lo_raw = alloc_mod.sandAlloc(&self.fault.view, @intCast(usize, 16), @intCast(usize, 4)) catch unreachable;
@@ -168,6 +173,7 @@ fn sourceManagerFaultIn(self: *SourceManager, file_id: u32) void {
 }
 
 pub fn sourceManagerResetFaults(self: *SourceManager) void {
+    if (!self.fault_ready) return;
     alloc_mod.sandReset(&self.fault.view);
     var files_slice = sourceFileArrayListGetSlice(self.files);
     var i: usize = @intCast(usize, 0);
