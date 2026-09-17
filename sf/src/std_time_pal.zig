@@ -34,8 +34,18 @@ pub extern "stdcall" fn QueryPerformanceFrequency(lpFrequency: *i64) i32;
 // success, -1 on failure. tv is *void (the caller's TimeVal blob is byte-exact
 // vs the native struct timeval at offset 0, so a pointer cast lowers cleanly
 // without a type-mismatch warning — the same S2-I layout probe std_net uses);
-// tz is obsolete and passed null.
+// tz is obsolete and passed null. Used by ticksMs (wall-clock ms).
 pub extern "c" fn gettimeofday(tv: *void, tz: *void) i32;
+
+// POSIX (Plan A Task 3 fix): the monotonic read, compile-time selected in
+// std_time_prelude.h — clock_gettime(CLOCK_MONOTONIC) when the target defines
+// it, else gettimeofday. A static __inline__ helper, so the `#if` happens at C
+// compile time. Never called on win32 (QueryPerformanceCounter there).
+pub extern "c" fn z98_time_monotonic_ns() i64;
+
+// POSIX: the compile-time availability probe; a function-like macro in the
+// prelude, so the emitted call folds to the integer constant 1/0.
+pub extern "c" fn z98_time_clock_monotonic_available() i32;
 
 // Portable CRT: UTC seconds since the epoch; t is obsolete and passed null.
 pub extern "c" fn time(t: *void) i64;
