@@ -4,7 +4,7 @@
 
 **Goal:** Land the L0-L2 std-lib foundation from the blueprint — `std_bits`, `std_os`, `std_time`, the `std_debug` extension, `std_buf`, and the `std_str` extension — with fixtures, the R7b usage programs under `stdlib_test/`, and the layering/dependency gate green.
 
-**Architecture:** One plan, six module tasks plus a usage-program task, ordered by the blueprint's construction order (L0 → L1 → L2). Each module is authored in `sf/src/std_<name>.zig` with the blueprint's exact signatures, gets `repro/mi_matrix/stdlib_<module>_<name>_xmod` fixtures, and is validated by the six gates; the band's usage programs (R7b) compose the modules and are gated the same way. **This plan runs after Task 0 (separation audit); its successor is Plan B (L3 + L6).**
+**Architecture:** One plan, six module tasks plus a usage-program task, ordered by the blueprint's construction order (L0 → L1 → L2). Each module is authored in `sf/src/std_<name>.zig` with the blueprint's exact signatures, gets `repro/mi_matrix/stdlib_<module>_<name>_xmod` fixtures, and is validated by the six gates; the band's usage programs (R7b) compose the modules and are gated the same way. Task 4 is followed by the optional-fn-pointer C-emission defect I/F pair (Task 4b-I investigate/pin, Task 4b-F fix, Task 4c revert `std_debug.setTrapHandler` to the blueprint's `?fn` signature) — operator ruling m1243. **This plan runs after Task 0 (separation audit); its successor is Plan B (L3 + L6).**
 
 **Tech Stack:** Z98/`zig1` self-hosted compiler (C89 emission), `std.arena`, bash, `gcc -m32`, git.
 
@@ -15,11 +15,11 @@
 ## Global Constraints
 
 - **Precondition:** Task 0 complete (the compiler↔std separation audit; the dead std-importing files deleted; the blueprint §6 claim corrected).
-- **Baseline (re-verify at Task 1).** Record HEAD, the self-compile fixed point, the seed version/archive md5, and the corpus `EXPECTED_FAIL.md` header at dispatch. The compiler's import graph reaches no std module, so adding std modules MUST NOT move the fixed point. **Exception (operator ruling 2026-09-17): exactly two authorized compiler-graph changes move the fixed point — the per-OS prelude work (Tasks 2-3: `std_os_prelude.h`/`std_time_prelude.h`, the `net_prelude.h` analog) and Task 4's `std_debug` trap hook. Re-baseline at Task 2 Step 6, Task 3 Step 6, and Task 4 Step 6. Tasks 1,5,6,7,8 MUST leave it unmoved — if it moves, STOP (a std module or an unauthorized PAL edit leaked into the compiler graph).**
-- **PAL boundary (operator ruling 2026-09-17).** The std lib MUST NOT wrap or edit the compiler PAL for OS primitives. OS specifics live in std-side PAL modules (`sf/src/std_os_pal.zig`, `sf/src/std_time_pal.zig`) using the `std_net.zig` `@cInclude`+`extern`+`@isWindows()` pattern, with per-OS C prototypes supplied by the authorized prelude headers. The only authorized compiler edits in this plan are the prelude work (Tasks 2-3) and the Task 4 trap hook (see each task's Files list). The compiler's cost is what it imports; the library's cost is what emits.
+- **Baseline (re-verify at Task 1).** Record HEAD, the self-compile fixed point, the seed version/archive md5, and the corpus `EXPECTED_FAIL.md` header at dispatch. The compiler's import graph reaches no std module, so adding std modules MUST NOT move the fixed point. **Exception (operator rulings 2026-09-17 / m1243): the authorized compiler-graph changes that move the fixed point are the per-OS prelude work (Tasks 2-3: `std_os_prelude.h`/`std_time_prelude.h`, the `net_prelude.h` analog), Task 4's `std_debug` trap hook, and the optional-fn-pointer C-emission defect fix (Task 4b-F; Task 4c is std-only). Re-baseline at Task 2 Step 6, Task 3 Step 6, Task 4 Step 6, Task 4b-F Step 5, and Task 4c Step 4. Tasks 1,5,6,7,8 MUST leave it unmoved — if it moves, STOP (a std module or an unauthorized PAL edit leaked into the compiler graph). Task 4b-I is investigation-only (no `sf/src` change) and MUST leave it unmoved; Task 5's `backtrace` is std-only and MUST leave it unmoved.**
+- **PAL boundary (operator ruling 2026-09-17).** The std lib MUST NOT wrap or edit the compiler PAL for OS primitives. OS specifics live in std-side PAL modules (`sf/src/std_os_pal.zig`, `sf/src/std_time_pal.zig`) using the `std_net.zig` `@cInclude`+`extern`+`@isWindows()` pattern, with per-OS C prototypes supplied by the authorized prelude headers. The only authorized compiler edits in this plan are the prelude work (Tasks 2-3), the Task 4 trap hook, and the optional-fn-pointer emission fix (Task 4b-F; operator ruling m1243 — Task 4c is std-only) (see each task's Files list). The compiler's cost is what it imports; the library's cost is what emits.
 - **Build only via the seed model:** `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <fresh_out>`; never invoke `zig0`.
 - **gcc flag-set (binding):** `gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc>`. `timeout 120` on every binary.
-- **Layering (R3):** a module may import only lower layers — never siblings, never higher. The dependency-graph check (one pass) is part of every module task's gate.
+- **Layering (R3):** a module may import only lower layers — never siblings, never higher. The dependency-graph check (one pass) is part of every module task's gate. **Single exception (operator ruling m1243):** `std_debug.backtrace(ctx, out: *std.buf.Buf)` (blueprint §3 L1) takes a `std_buf.Buf`, so `std_debug` (L1) imports `std_buf` (L2) for this one function; it is cycle-free (`std_buf` imports only `std_arena`) and sanctioned because the blueprint fixes the public API name/signature. No other L1→L2 import is permitted.
 - **Arena (R1):** allocating functions take `arena: *std.arena.Arena` first; `OutOfMemory` in the error set.
 - **Errors (R2):** one error set per module; no `catch unreachable`.
 - **Determinism (R6):** no output may depend on addresses, the wall clock, or the PID unless the contract says so.
@@ -43,7 +43,7 @@
 - `sf/src/std_buf.zig` — L2, growable byte buffer over an arena.
 
 **Modify (modules):**
-- `sf/src/std_debug.zig` — add `TrapContext` + `setTrapHandler`/`defaultTrapHandler`/`writeCoreDump`/`backtrace`.
+- `sf/src/std_debug.zig` — add `TrapContext` + `setTrapHandler`/`defaultTrapHandler`/`writeCoreDump` (Task 4; `setTrapHandler` reverted to the blueprint's `?fn(*TrapContext) void` in Task 4c) and `backtrace` (Task 5, with `std_buf`).
 - `sf/src/std_str.zig` — add `split`/`splitLines`/`join`/`trim*`/`indexOf`/`lastIndexOf`/`eqIgnoreCase`/`replace`/`count`/`repeat`.
 - `sf/src/std.zig` — add re-exports for `bits`/`os`/`time`/`buf` (per the blueprint §6 distribution; `debug`/`str` already re-exported).
 
@@ -51,7 +51,8 @@
 - `stdlib_bits_<name>_xmod/` (table-driven; the blueprint allows one fixture for the whole module — use `stdlib_bits_table_xmod`).
 - `stdlib_os_argc_xmod/`, `stdlib_os_env_xmod/`, `stdlib_os_cwd_xmod/`.
 - `stdlib_time_monotonic_xmod/`, `stdlib_time_sleep_xmod/`.
-- `stdlib_debug_trap_xmod/`.
+- `stdlib_debug_trap_xmod/`, `stdlib_debug_backtrace_xmod/` (the latter in Task 5, with `std_buf`).
+- `opt_fnptr_extern_xmod/`, `opt_void_extern_xmod/` (Task 4b-I/4b-F; optional-fn-pointer C-emission defect probes).
 - `stdlib_buf_growth_xmod/`, `stdlib_buf_endian_xmod/`, `stdlib_buf_clear_xmod/`.
 - one `stdlib_str_<name>_xmod/` per new `std_str` function.
 
@@ -193,27 +194,100 @@ git commit -m "feat(std): add std_bits (L0) + fixture + lib/ copy list (Plan A T
 - [ ] **Step 3: Implement `std_time.zig`.** `ticksMs`/`highRes`/`highResFreq`/`wallClockUnix` are `@isWindows()`-guarded wrappers over `std_time_pal.zig` externs (`GetTickCount`/`QueryPerformanceCounter`/`QueryPerformanceFrequency`; `gettimeofday`/`time`), whose prototypes come from the authorized `std_time_prelude.h` (option B). `sleepMs` calls the `@sleepMs` builtin directly (do **not** import `std_io`; R3). Note R6: `ticksMs` wraps; `highRes` falls back to `ticksMs * 1000` on hardware without a high-res timer (documented, deterministic). The monotonicity fixture must be robust to the fallback.
 - [ ] **Step 4: Re-export + GREEN.**
 - [ ] **Step 5: Safety/determinism gates.**
-- [ ] **Step 6: Fixed point MOVED (authorized prelude work) + commit.** Adding `std_time_prelude.h` + its emitter wiring is the prelude half of the two authorized compiler-graph changes; rebuild via the seed model and record the new fixed point md5. Stage `sf/src/std_time.zig`, `sf/src/std_time_pal.zig`, `sf/src/std.zig`, the prelude/emitter files, the fixtures, and both seed scripts.
+- [ ] **Step 6: Fixed point MOVED (authorized prelude work) + commit.** Adding `std_time_prelude.h` + its emitter wiring is the prelude half of the authorized compiler-graph changes; rebuild via the seed model and record the new fixed point md5. Stage `sf/src/std_time.zig`, `sf/src/std_time_pal.zig`, `sf/src/std.zig`, the prelude/emitter files, the fixtures, and both seed scripts.
 
 ---
 
 ### Task 4: `std_debug` extension (L1)
 
 **Files:**
-- Modify: `sf/src/std_debug.zig` (add `TrapContext`, `setTrapHandler`, `defaultTrapHandler`, `writeCoreDump`, `backtrace`; declare `extern "c" fn pal_set_trap_handler(...)`). **`TrapContext` field order MUST match `sf/src/include/zig_pal.c` exactly: `eip, esp, ebp, eflags, eax, ebx, ecx, edx, esi, edi` (10 × u32).**
+- Modify: `sf/src/std_debug.zig` (add `TrapContext`, `setTrapHandler`, `defaultTrapHandler`, `writeCoreDump`; declare `extern "c" fn pal_set_trap_handler(...)`). **`TrapContext` field order MUST match `sf/src/include/zig_pal.c` exactly: `eip, esp, ebp, eflags, eax, ebx, ecx, edx, esi, edi` (10 × u32).** `backtrace` is **not** a Task 4 deliverable — it is deferred to Task 5 (forward-pointer below); `setTrapHandler`'s non-optional `*void` fallback is reverted to the blueprint's `?fn(*TrapContext) void` in Task 4c.
 - Create: `repro/mi_matrix/stdlib_debug_trap_xmod/`
 - Modify (authorized compiler change): `sf/src/include/zig_pal.c` (canonical), `sf/src/emit_support.zig` (`emitZigPalCSupport`), `sf/src/c89_emit.zig` (`emitZigPalC` dead mirror) — add `g_trap_handler`/`TrapContext`/`pal_set_trap_handler` and make `pal_trap()` call the handler. The canonical and emitted copies MUST stay byte-identical (`check_emit_support.sh`). **No other compiler file changes.**
 
 **Interfaces:**
-- Consumes: `std_os`, `std_buf` (for `backtrace`).
-- Produces: the blueprint §3 L1 `std_debug` surface.
+- Consumes: `std_os` (optional).
+- Produces: the blueprint §3 L1 `std_debug` surface **except `backtrace`**.
+- **Forward-pointer (`backtrace` → Task 5).** `backtrace` consumes `std_buf` (L2), which Task 4 does not create; it lands in Task 5 with `std_buf`. The deferral is because `std_debug` (L1) must not import L2 under R3 — so either `backtrace` moves to where `std_buf` lives or the layering is handled explicitly. **Decision:** keep the blueprint's public API `std_debug.backtrace` (its name/signature are fixed by blueprint §3 L1 and consumed by Plans B/C and the debugger) and handle the layering as the single documented R3 exception (`std_debug` imports `std_buf` for this one function; cycle-free — see Global Constraints). Moving it to `std_buf` would silently break the blueprint contract.
 
-- [ ] **Step 1: Boundary resolved by operator ruling (2026-09-17).** The trap hook IS an authorized compiler-graph change (see Files above); implement it. Do not STOP. Any compiler-graph change beyond the two authorized ones (the Tasks 2-3 per-OS preludes and this trap hook) requires a fresh operator ruling.
+- [ ] **Step 1: Boundary resolved by operator ruling (2026-09-17).** The trap hook IS an authorized compiler-graph change (see Files above); implement it. Do not STOP. Any compiler-graph change beyond the authorized ones (the Tasks 2-3 per-OS preludes, this trap hook, and Task 4b-F's optional-fn-pointer fix per ruling m1243) requires a fresh operator ruling.
 - [ ] **Step 2: Write the failing fixture** (install a handler, trigger a trap, verify `ctx.eip != 0`).
 - [ ] **Step 3: RED.**
 - [ ] **Step 4: Implement the extension.**
 - [ ] **Step 5: GREEN + safety/determinism gates.**
-- [ ] **Step 6: Fixed point MOVED ONCE (authorized) + commit.** Rebuild via the seed model, record the new fixed point md5 as the Plan A baseline for Tasks 5-7 and for Plans B/C. If it did **not** move, the hook is not actually compiled into `zig_pal` — STOP and diagnose.
+- [ ] **Step 6: Fixed point MOVED ONCE (authorized) + commit.** Rebuild via the seed model, record the new fixed point md5 as the Plan A baseline for Tasks 4b-7 and for Plans B/C. If it did **not** move, the hook is not actually compiled into `zig_pal` — STOP and diagnose.
+
+---
+
+### Task 4b-I: Optional-fn-pointer C emission — investigate + pin (I)
+
+**Files:**
+- Create: `repro/mi_matrix/opt_fnptr_extern_xmod/main.zig`, `repro/mi_matrix/opt_void_extern_xmod/main.zig`
+- Modify: `repro/mi_matrix/EXPECTED_FAIL.md` (classify/declare the two new dirs)
+- **No `sf/src` change.** No STOP unless the premise below is disproved.
+
+**Interfaces:**
+- Consumes: the landed `std_debug.setTrapHandler` fallback (Task 4) and the Task 4 reviewer's probe.
+- Produces: a pinned statement of exactly what the compiler emits for an optional function-pointer parameter and an optional `*void` in an `extern "c"` declaration, plus the fix surface for Task 4b-F.
+
+**Premise (operator ruling m1243).** The landed `setTrapHandler` diverged from the blueprint's `setTrapHandler(h: ?fn(*TrapContext) void)` because `?fn`/`?*void` was believed not to lower. The reviewer's probe shows it **does** lower but emits `-Wincompatible-pointer-types` warnings — valid Zig compiling to incorrect C is a **compiler bug**. Do not revert the signature before this task pins the emission.
+
+- [ ] **Step 1: Write the two probe fixtures**
+  - `opt_fnptr_extern_xmod/main.zig`: `extern "c" fn take_fn(h: ?fn(i32) void) void;` (plus a local `?fn` parameter round-trip) called with a real function and with `null`.
+  - `opt_void_extern_xmod/main.zig`: `extern "c" fn take_void(p: ?*void) void;` called with a non-null pointer and with `null`.
+  Each prints a deterministic contract line; the GREEN target is warning-free C89 from the fixed compiler.
+- [ ] **Step 2: Emit + inspect — pin the exact C.** Build with the Task 4 fixed-point compiler and read the emitted C and every gcc warning:
+
+```bash
+cd /workspace/znineeight
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/planA_4b_base   # expect the Task 4 fixed point 0d3e5560…
+/tmp/planA_4b_base/zig1_5_clean -o /tmp/opt_fnptr repro/mi_matrix/opt_fnptr_extern_xmod/main.zig
+cd /tmp/opt_fnptr && sh build_target.sh linux opt_fnptr_extern   # capture warnings
+```
+
+  Record for both fixtures: the emitted prototype (plain `void (*)(int)` / `void*`, or a struct-wrapped optional?), the call site (does `null` emit `0` or a compound literal?), and every gcc diagnostic.
+- [ ] **Step 3: Classify + declare.** Correct C (`void (*)(…)`/`void*`, null = `0`, no warnings) ⇒ premise disproved, STOP and report. Incorrect C (struct-wrapped optional, wrong call convention, or `-Wincompatible-pointer-types`) ⇒ premise confirmed; pin the defect to a file/function/line in the emitter and classify both dirs in `EXPECTED_FAIL.md`.
+- [ ] **Step 4: Present the fix surface.** Name the emitter locus (e.g. optional/pointer C-type rendering in `sf/src/c89_emit.zig` and/or its C-type helper), the minimal change, and the blast radius. No `sf/src` change in this task.
+- [ ] **Step 5: Commit** (`test(std): pin the optional-fn-pointer C-emission defect (Plan A Task 4b-I)`), staging the two fixtures + `EXPECTED_FAIL.md`.
+
+---
+
+### Task 4b-F: Fix the optional-fn-pointer C-emission defect (F)
+
+**Files:**
+- Modify: the emitter locus pinned by Task 4b-I (expected `sf/src/c89_emit.zig` and/or its C-type helper; confirm before editing) — **authorized compiler change (operator ruling m1243)**.
+- Modify: `repro/mi_matrix/opt_fnptr_extern_xmod/main.zig`, `repro/mi_matrix/opt_void_extern_xmod/main.zig`; declassify both in `repro/mi_matrix/EXPECTED_FAIL.md`.
+- **Forbidden:** any change beyond the pinned locus; no `sf/src/pal.zig`.
+
+**Interfaces:**
+- Consumes: Task 4b-I's pinned classification + fix surface.
+- Produces: correct C for optional function pointers / optional `*void`; a MOVED fixed point.
+
+- [ ] **Step 1: Implement the fix** at the pinned locus: render `?fn(…)` as a plain C function pointer (null = `0`) and `?*void` as `void*` (null = `0`) in `extern "c"` prototypes, parameters, and call sites.
+- [ ] **Step 2: Fixtures RED → GREEN** — both probes compile warning-free and run with the documented stdout; the `null` case emits `0`.
+- [ ] **Step 3: Safety/determinism gates** — 3× emission md5 stable; `-fsafe`/`-ffast` parity.
+- [ ] **Step 4: Declassify** both dirs in `EXPECTED_FAIL.md`.
+- [ ] **Step 5: Fixed point MOVES (authorized) + re-baseline.** Rebuild via the seed model; record the new fixed point as the Plan A baseline for Tasks 4c/5-7 and Plans B/C. Declare any residual (e.g. other optional-pointer shapes left unfixed) in the report + a tracked note.
+- [ ] **Step 6: Commit** (`fix(compiler): correct C emission for optional fn-pointers / optional *void (Plan A Task 4b-F)`).
+
+---
+
+### Task 4c: Revert `std_debug.setTrapHandler` to the blueprint signature
+
+**Files:**
+- Modify: `sf/src/std_debug.zig` — restore `pub fn setTrapHandler(h: ?fn(*TrapContext) void) void`; **drop** `clearTrapHandler` (the `?fn` signature makes `setTrapHandler(null)` the null-uninstall, so the helper is redundant and non-blueprint).
+- Modify: `repro/mi_matrix/stdlib_debug_trap_xmod/main.zig` (pass the handler directly).
+- Modify: `repro/mi_matrix/EXPECTED_FAIL.md` if the fixture's classification changes.
+
+**Interfaces:**
+- Consumes: Task 4b-F's fixed optional-fn-pointer emission.
+- Produces: the blueprint §3 L1 `std_debug` surface exactly; fixed point UNMOVED.
+
+- [ ] **Step 1: Revert the signature** to `?fn(*TrapContext) void`; delete `clearTrapHandler` (rationale in Files); the extern setter takes the optional function pointer directly (null = `0`).
+- [ ] **Step 2: Update the trap fixture** to the reverted API; keep the deterministic `assertion failed` / `debug trap ok` contract.
+- [ ] **Step 3: Re-run the Task 4 gates** — dump/build/run rc=0, 3× emission md5, `-fsafe`/`-ffast` parity, `check_emit_support.sh` 5/5.
+- [ ] **Step 4: Record the fixed point** — `std_debug` is not compiler-imported, so it MUST equal Task 4b-F's re-baseline; if it moves, STOP.
+- [ ] **Step 5: Commit** (`refactor(std): restore the blueprint ?fn setTrapHandler signature (Plan A Task 4c)`).
 
 ---
 
@@ -221,20 +295,22 @@ git commit -m "feat(std): add std_bits (L0) + fixture + lib/ copy list (Plan A T
 
 **Files:**
 - Create: `sf/src/std_buf.zig`
-- Create: `repro/mi_matrix/stdlib_buf_growth_xmod/`, `stdlib_buf_endian_xmod/`, `stdlib_buf_clear_xmod/`
+- Create: `repro/mi_matrix/stdlib_buf_growth_xmod/`, `stdlib_buf_endian_xmod/`, `stdlib_buf_clear_xmod/`, `stdlib_debug_backtrace_xmod/`
+- Modify: `sf/src/std_debug.zig` (add `backtrace`; the single documented L1→L2 import of `std_buf` — see Global Constraints)
 - Modify: `sf/src/std.zig`
 - Modify: `scripts/seed/build_from_seed.sh`, `scripts/seed/archive_seed.sh` (append `std_buf.zig` to both `lib/` copy lists — same commit)
 
 **Interfaces:**
-- Consumes: `std_arena`.
-- Produces: `std_buf` (`Buf`, `init`, `initCapacity`, `append*`, `reserve`, `clear`, `slice`, `capacity`) — blueprint §3 L2.
+- Consumes: `std_arena`; `std_debug` (`TrapContext`) for `backtrace`.
+- Produces: `std_buf` (`Buf`, `init`, `initCapacity`, `append*`, `reserve`, `clear`, `slice`, `capacity`) — blueprint §3 L2; and `std_debug.backtrace(ctx: *const TrapContext, out: *std.buf.Buf) !void` (blueprint §3 L1), folded here because it consumes `std_buf`.
 
-- [ ] **Step 1: Write the failing fixtures** (growth across 3 doublings; endian round-trips; clear-and-reuse with capacity retained).
+- [ ] **Step 1: Write the failing fixtures** (growth across 3 doublings; endian round-trips; clear-and-reuse with capacity retained) **and the `backtrace` fixture** `repro/mi_matrix/stdlib_debug_backtrace_xmod/` (build a `TrapContext` with a valid `ebp` chain, call `std_debug.backtrace(ctx, &buf)`, assert the `Buf` holds the frame addresses in walk order; a null/non-increasing `ebp` terminates the walk).
 - [ ] **Step 2: RED.**
 - [ ] **Step 3: Implement `std_buf.zig`.** Doubling growth; `slice()` valid until the next growing append; `clear` retains capacity; no `deinit`.
-- [ ] **Step 4: GREEN.**
-- [ ] **Step 5: Arena gate** — a fixture that exhausts the arena; `append` returns `OutOfMemory`; no memory written outside the arena.
-- [ ] **Step 6: Safety/determinism gates + fixed point UNMOVED + commit** (stage `sf/src/std_buf.zig`, `sf/src/std.zig`, the fixtures, and both seed scripts).
+- [ ] **Step 4: Implement `std_debug.backtrace`.** Walk `ebp` frames from `ctx.ebp`; stop at null or a non-increasing frame pointer (blueprint §3 L1); append each frame address to `out` via `std_buf.append*`. This is the single documented L1→L2 import (Global Constraints); keep it confined to `backtrace`.
+- [ ] **Step 5: GREEN** (all four fixtures).
+- [ ] **Step 6: Arena gate** — a fixture that exhausts the arena; `append` returns `OutOfMemory`; no memory written outside the arena.
+- [ ] **Step 7: Safety/determinism gates + fixed point UNMOVED + commit** (stage `sf/src/std_buf.zig`, `sf/src/std_debug.zig`, `sf/src/std.zig`, the four fixtures, and both seed scripts). `std_debug` is not compiler-imported, so the fixed point MUST equal Task 4b-F's re-baseline.
 
 ---
 
@@ -285,10 +361,10 @@ git commit -m "feat(std): add std_bits (L0) + fixture + lib/ copy list (Plan A T
 - Modify: `docs/sf/QUICK_REF.md` (std-module inventory)
 
 **Interfaces:**
-- Consumes: Tasks 1-7.
+- Consumes: Tasks 1-7 (including the Task 4b/4c optional-fn-pointer I/F pair).
 - Produces: the Plan B pointer.
 
-- [ ] **Step 1: Verify the seed scripts' `lib/` copy list is complete** — the module-adding tasks (1/2/3/5) each appended their module in the same commit; confirm `std_bits.zig`/`std_os.zig`/`std_os_pal.zig`/`std_time.zig`/`std_time_pal.zig`/`std_buf.zig` are all present in both `scripts/seed/build_from_seed.sh` and `scripts/seed/archive_seed.sh` (the same touchpoints as the existing 9). Add any missing entry here; do not leave the list incomplete.
+- [ ] **Step 1: Verify the seed scripts' `lib/` copy list is complete** — the module-adding tasks (1/2/3/5) each appended their module in the same commit; confirm `std_bits.zig`/`std_os.zig`/`std_os_pal.zig`/`std_time.zig`/`std_time_pal.zig`/`std_buf.zig` are all present in both `scripts/seed/build_from_seed.sh` and `scripts/seed/archive_seed.sh` (the same touchpoints as the existing 9). Add any missing entry here; do not leave the list incomplete. Also confirm the `opt_fnptr_extern_xmod`/`opt_void_extern_xmod` dirs were declassified by Task 4b-F.
 - [ ] **Step 2: Run the full corpus + gates.**
 
 ```bash
@@ -316,6 +392,6 @@ Plan A complete. NEXT: `docs/superpowers/plans/2026-09-17-std-lib-plan-b-resourc
 
 ## Self-Review
 
-- **Spec coverage:** spec §4 Plan A (all six modules) → Tasks 1-6; §5 R1-R7 → every module task's gates; §5 R7b → Task 7; §6 gates → Tasks 1-7 Step gates + Task 8; §7 distribution → Task 8 Step 1; §10 index → the `Sequence:` line + Task 8 Step 5.
+- **Spec coverage:** spec §4 Plan A (all six modules) → Tasks 1-6; §5 R1-R7 → every module task's gates; §5 R7b → Task 7; §6 gates → Tasks 1-7 (+ 4b/4c) Step gates + Task 8; §7 distribution → Task 8 Step 1; §10 index → the `Sequence:` line + Task 8 Step 5. The optional-fn-pointer compiler defect (operator ruling m1243) → Tasks 4b-I/4b-F + 4c; `backtrace` (blueprint §3 L1, the single R3 L1→L2 exception) → Task 5.
 - **Placeholder scan:** module signatures are referenced to the blueprint (§3 L0-L2) rather than duplicated — the blueprint is the exact-signature source of record and travels with the plan. Every step has a concrete command/expected output.
-- **Type consistency:** the module names (`std_bits`/`std_os`/`std_time`/`std_buf`) and re-export names (`bits`/`os`/`time`/`buf`) are used identically across tasks.
+- **Type consistency:** the module names (`std_bits`/`std_os`/`std_time`/`std_buf`) and re-export names (`bits`/`os`/`time`/`buf`) are used identically across tasks. `std_debug.setTrapHandler` is `?fn(*TrapContext) void` after Task 4c (non-optional `*void` fallback only between Tasks 4 and 4c); `std_debug.backtrace` takes `*std.buf.Buf` and is delivered in Task 5.
