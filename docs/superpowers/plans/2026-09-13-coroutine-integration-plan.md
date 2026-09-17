@@ -1448,6 +1448,36 @@ Expected: `CLOSEOUT OK`.
 
 ---
 
+### Task 5a: `mud_server` task-lifecycle hazards — duplicate addTask on slot reuse + blocking trailing tick — I then F
+
+**Origin (Task 5 review, 2026-09-16).** Task 5 (E4) landed `mud_server`'s per-client coroutine tasks; the review Approved but returned two **Important, plan-mandated, latent** findings (the canonical single-client gate is unaffected):
+- **(1) duplicate scheduler registration on slot reuse:** `addTask` appends unconditionally (`sf/src/std_async.zig:135-142`) and nothing removes a task when a slot is freed (`state=.done`), so a reconnecting client re-adds the same `*Task` → duplicate tick entries → `count` saturates at capacity 10, after which `addTask` silently returns false.
+- **(2) blocking trailing tick:** accepted sockets are not `O_NONBLOCK`, so `tick` (which resumes every non-done task, including the one `@asyncResume` just suspended) stalls `main` for idle/multi clients.
+
+Minors (also plan-mandated): a disconnect observed inside `tick` leaks the fd; the accept OOM path can double-close/send on a closed fd; the root-frame arena is never reclaimed.
+
+**Operator ruling (2026-09-16):** fix **(1)** and **(2)** via an I task + F task (this pair), before Task 6 closeout.
+
+#### Task 5a-I: investigate + pin (no `sf/src` change)
+
+- [ ] **Step 1: Fixture set / repro** (auto-listed where possible; each documents RED-now + the GREEN contract):
+  - **slot reuse:** a `std.async`-level fixture (or a `mud_server` driver) that reuses a freed slot and demonstrates the duplicate `addTask` / `count` saturation (RED today). Pin the exact behavior (duplicate tick entries, `addTask` returning false at capacity).
+  - **blocking tick:** a repro showing the trailing `tick` blocking on a non-ready socket (RED today), or a deterministic characterization if a runtime repro is not feasible in-corpus.
+  - controls: the canonical single-client path (unchanged); a two-client path.
+- [ ] **Step 2: Questionnaire.** Answer in the report: (Q1) the exact `addTask`/slot-free lifecycle and where the duplicate arises; (Q2) whether the fix needs a `std.async` `removeTask`/`reset` primitive (`sf/src` change; fixed point MOVES) or can be done examples-only (e.g. only add on a fresh accept, guard against re-adding a non-done task, or re-init the task in place); (Q3) the exact blocking-`tick` mechanism and the correct drive (only resume select-ready tasks; avoid the trailing `tick` blocking on `recv`; `O_NONBLOCK` vs a readiness-gated drive); (Q4) whether the minors (fd leak, double-close, arena reclaim) are in scope; (Q5) the minimal fix surface + risk; (Q6) corpus/diagnostic delta.
+- [ ] **Step 3: Declare.** Add the fixtures/repro; record the RED in `repro/mi_matrix/EXPECTED_FAIL.md` (v122→v123) or the appropriate known-issue location.
+- [ ] **Step 4: Report + present the fix surface for Task 5a-F.** No `sf/src` change.
+
+#### Task 5a-F: fix both (`sf/src` and/or examples; fixed point MOVES only if `sf/src` changes)
+
+- [ ] **Step 1: Fix** (1) the duplicate-registration/slot-reuse lifecycle and (2) the blocking trailing tick, at the locus the I task identifies. If a `std.async` primitive is needed (e.g. `removeTask`/reset), add it and update the spec text.
+- [ ] **Step 2: Fixtures/repro RED→GREEN**; full corpus sweep (class-map delta = intended dirs only); `check_emit_support.sh` 5/5; self-compile closure (48 `.c`, 0 `[3000]`).
+- [ ] **Step 3: Re-verify** the four goldens + `CLOSEOUT OK` (both `mud_server` pairs byte-identical); record the fixed point (MOVES only if `sf/src` changed). Seed rotation stays at Task 6.
+
+**Sequencing gate:** Task 6 MUST NOT start until Task 5a-F is landed.
+
+---
+
 ### Task 6: Full golden battery, fallback adjudication, and closeout
 
 **Files:**
