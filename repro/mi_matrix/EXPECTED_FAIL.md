@@ -1,4 +1,72 @@
-# mi_matrix corpus — expected-fail manifest (v121 2026-09-16)
+# mi_matrix corpus — expected-fail manifest (v122 2026-09-17)
+
+## Track-4 Task 4c-F (F) — `std.async.waitFor` non-suspending drive primitive LANDED (v121 -> v122 2026-09-17)
+
+Task 4c-F adds the operator-ruled (S33) non-suspending drive primitive
+`pub fn waitFor(s: *Scheduler, t: *Task) FrameError!void` to
+`sf/src/std_async.zig` (inserted after `waitAll`, `:204-221`): a plain `tick`
+loop that drives the scheduler until `t` is settled (done/cancelled), returns
+`error.OutOfFrame` when a resumed task's pool overflowed (`FrameError` =
+`error{OutOfFrame}` only), and `@panic`s if `t` is neither registered nor
+already settled (the Q3 hang guard). It does NOT suspend and needs no caller
+frame, so it is valid from any non-suspending context (main, `export fn`, a
+plain helper). `awaitTask` is UNCHANGED (coroutine-internal). The spec
+`docs/superpowers/specs/2026-09-13-coroutine-integration-design.md`
+§1/§2/§3.1/§3.2/§4/§8 now document `FrameError` + `waitFor` and list Task 4c as
+the third authorized `sf/src` exception.
+
+**RED -> GREEN** (`-ffast --dump-c89`, gcc `-m32 -std=c89 -O0 -Wall …`, link
+`build_target.sh linux`, `timeout 120`; RED = pre-change lib, GREEN =
+seed-built `/tmp/t4cF_build/zig1_5_clean`):
+
+| fixture | RED (waitFor absent) | GREEN (Task 4c-F) |
+|---|---|---|
+| `stdlib_async_waitfor_xmod` | rc=2, 0 `.c`, `error[3042]` | dump/link/run rc=0, stdout `10` `3` |
+| `stdlib_async_waitfor_cancel_xmod` | rc=2, 0 `.c`, `error[3042]` | rc=0, stdout `0` `4` |
+| `stdlib_async_waitfor_settled_xmod` | rc=2, 0 `.c`, `error[3042]` | rc=0, stdout `0` `3` |
+| `stdlib_async_waitfor_oom_xmod` | rc=2, 0 `.c`, `error[3042]` | rc=0, stdout `1` `1` `1` |
+| `stdlib_async_waitfor_helper_xmod` | rc=2, 0 `.c`, `error[3042]` | rc=0, stdout `10` `3` |
+| `stdlib_async_waitfor_dep_xmod` | rc=2, 0 `.c`, `error[3042]` | rc=0, stdout `10` `20` `3` |
+| `stdlib_async_waitfor_unregistered_xmod` | rc=2, 0 `.c`, `error[3042]` | rc=0, run rc=133, panic `std.async: waitFor called with an unregistered task` |
+| `stdlib_async_await_nonctx_xmod` (extended) | (already OK) | rc=0, run rc=133, stdout `10` `20`, panic `awaitTask called from a non-suspending context` |
+
+**Corpus `-ffast` dump+gcc classifier (`scripts/corpus/classify`), universe
+716 (unchanged):**
+
+| | 4c-I `18e0de5c` (v121) | 4c-F `18e0de5c` (v122) | delta |
+|---|---|---|---|
+| dirs | 716 | 716 | 0 |
+| OK | 656 | 663 | +7 |
+| GREEN | 28 | 28 | 0 |
+| FAIL | 32 | 25 | -7 |
+| ICE | 0 | 0 | 0 |
+| CRASH | 0 | 0 | 0 |
+
+Per-dir movement = **exactly** the 7 `stdlib_async_waitfor_*` dirs (FAIL -> OK);
+`stdlib_async_await_nonctx_xmod` stays OK and all other 708 dirs are
+class-identical. No new diagnostic code (the RED used the pre-existing
+`error[3042]`/`warning[3023]`).
+
+**Fixed point UNMOVED `18e0de5cf71f4fe0fbf5c560ab24e624`** (seed-built moving
+point hop1 `c963a76c…`, hop2 == hop3 == `18e0de5c…`): `std_async.zig` is not in
+`sf/src/main.zig`'s import graph (the Task 0b precedent), so the compiler
+self-emission is byte-identical. Seed rotation stays at Task 6.
+
+**Gates:** `check_emit_support.sh` 5/5 byte-identical; self-compile closure
+48 `.c` / 0 `error[3000]` / 0 errors / 0 PANIC; four goldens byte-identical
+(rogue boot `3fb6709e…` 221 B, rogue move `b3c5b0e1…` 31071 B, mud stdout
+`66c8f0ab…` 75 B, mud client `93147d0f…` 158 B); 4-MD5 **runtime** byte-identical
+(gol `fcbf7e7c…`, lisp `8dc783a3…`, json `8bda3d5a…`, mud as above);
+`verify_upgraded.sh` -> `CLOSEOUT OK`.
+
+**Declared (not a gate):** adding `waitFor` to the `std`-re-exported
+`std_async.zig` changes the emitted C of any program importing `std` (an extra
+`ZIG_FNPTR_…` typedef + module ordering) even though `std_async` itself is not
+emitted; §3.3 explicitly does NOT gate emitted C, and the runtime bytes are
+unchanged. The `docs/sf/QUICK_REF.md` emission-4-MD5 table is path-derived and
+was already not reproducible from an arbitrary build dir; it is not re-baselined
+here (runtime 4-MD5 is the plan's gate). Full report:
+`.superpowers/sdd/2026-09-13-coroutine-integration-plan/task-4c-report.md`.
 
 ## Track-4 Task 4c-I (I) — `std.async.waitFor` primitive pinned (v119 -> v120; classifier fix round 1 v121 2026-09-16)
 

@@ -201,6 +201,25 @@ pub fn waitAll(s: *Scheduler) FrameError!void {
     }
 }
 
+/// Drive the scheduler until `t` is settled (done/cancelled). Valid from any
+/// non-suspending context (main, `export fn`, or a plain helper): it does not
+/// suspend and needs no caller frame. Returns `error.OutOfFrame` if a resumed
+/// task's child-frame pool overflowed (`FrameError` = `error{OutOfFrame}` only).
+/// Panics if `t` is neither registered nor already settled (hang guard).
+pub fn waitFor(s: *Scheduler, t: *Task) FrameError!void {
+    if (t.state != TaskState.done and t.state != TaskState.cancelled) {
+        var found: bool = false;
+        var i: usize = 0;
+        while (i < s.count) : (i += 1) {
+            if (s.tasks[i] == t) found = true;
+        }
+        if (!found) @panic("std.async: waitFor called with an unregistered task");
+    }
+    while (t.state != TaskState.done and t.state != TaskState.cancelled) {
+        try tick(s);
+    }
+}
+
 /// Suspend the currently-running task until `t` is done or cancelled.
 pub fn awaitTask(s: *Scheduler, t: *Task) void {
     if (!s.in_task) @panic("std.async: awaitTask called from a non-suspending context");
