@@ -88,8 +88,9 @@ The self-hosted compiler is deterministic end-to-end. Successive self-host hops 
 C89** and rebuild **byte-identical binaries** — the self-compile fixed point is closed.
 
 - **Self-compile fixed point:** self-compiled `zig1` binary md5 `553a39b42983ce72459698a7aa5817e1`
-  (45 module `.c` + 46 module `.h`, 0 `error[`, 0 PANIC; hop1 == hop2 closure). Operator-approved
-  closeout 2026-09-13 (C89-AHEAD). Committed seed **v27**.
+  (45 module `.c` + 46 module `.h`, 0 `error[`, 0 PANIC; hop1 == hop2 closure), committed seed **v27**
+  — the current fixed point, advanced by post-C89-AHEAD source fixes. The operator-approved C89-AHEAD
+  closeout (2026-09-13) was at the earlier fixed point `1467d932…` / seed v10.
 - **N-hop chain (seed model):** previous seed v26 `f03d8485…` → hop1 `553a39b4…` → hop2 `553a39b4…`
   (two-hop closure; 45 module `.c` + 46 module `.h`). zig0 is retired;
   the seed model (`scripts/seed/build_from_seed.sh`) is the only rebuild path.
@@ -98,9 +99,10 @@ C89** and rebuild **byte-identical binaries** — the self-compile fixed point i
   emitted `.c`/`.h` only). Output is byte-identical at every `-s0`…`-s6` spill level and under
   both target flavours (linux / `-osw`).
 
-**4-program emission gate** (md5 prefixes of `zig1 --dump-c89 … | md5sum`, repo-root CWD,
-re-baselined 2026-09-17 with the reference `zig1` md5 `553a39b4…`; rows are the default
-`-fsafe` emission — the pre-C89-AHEAD `-ffast` byte-anchor rows are recorded in `docs/sf/QUICK_REF.md`):
+**4-program emission gate** (md5 prefixes of `zig1 --dump-c89 … | md5sum`, repo-root CWD;
+re-baselined 2026-09-17 — a post-C89-AHEAD re-measure, not the 2026-09-13 C89-AHEAD baseline — with
+the reference `zig1` md5 `553a39b4…`; rows are the default `-fsafe` emission — the historical
+`-ffast` byte-anchor rows are recorded in `docs/sf/QUICK_REF.md`):
 
 | Program | md5 prefix (default `-fsafe`) |
 |---|---|
