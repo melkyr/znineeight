@@ -78,33 +78,30 @@ else
     fi
 fi
 
-# std_os_prelude.h is emitted when std_os is reachable. The hello program
-# imports std, and std_os owns a runtime-init global (saved_argc), so std_os is
-# a reachability root and the prelude must be present and byte-identical to its
-# canonical source (the authorized prelude work).
+# std_os_prelude.h is emitted ONLY when a program actually reaches std_os
+# (use-gating: std_os has no runtime-init global). hello imports std but uses
+# only std.io, so it must NOT emit the prelude.
 if [ -e "$DIR/std_os_prelude.h" ]; then
-    if cmp -s "$DIR/std_os_prelude.h" "$ROOT/sf/src/include/std_os_prelude.h"; then
+    echo "[check] FAIL std_os_prelude.h emitted though std_os is not used" >&2
+    fail=1
+else
+    echo "[check] std_os_prelude.h correctly absent (std_os not used)"
+fi
+
+# ... and a std_os-using fixture must emit it byte-identical to canonical.
+( cd "$ROOT" && timeout 120 "$ZIG1" -o "$DIR2" repro/mi_matrix/stdlib_os_cwd_xmod/main.zig ) \
+    || { echo "error: std_os fixture dump failed (zig1 '$ZIG1')" >&2; exit 1; }
+if [ -e "$DIR2/std_os_prelude.h" ]; then
+    if cmp -s "$DIR2/std_os_prelude.h" "$ROOT/sf/src/include/std_os_prelude.h"; then
         echo "[check] emitted std_os_prelude.h == $ROOT/sf/src/include/std_os_prelude.h"
     else
         echo "[check] FAIL emitted std_os_prelude.h != canonical" >&2
-        cmp "$DIR/std_os_prelude.h" "$ROOT/sf/src/include/std_os_prelude.h" >&2 || true
+        cmp "$DIR2/std_os_prelude.h" "$ROOT/sf/src/include/std_os_prelude.h" >&2 || true
         fail=1
     fi
 else
-    echo "[check] FAIL std_os_prelude.h missing though std_os is reachable" >&2
+    echo "[check] FAIL std_os_prelude.h missing though std_os is used" >&2
     fail=1
-fi
-
-# ... and it must NOT be emitted for a program that never loads std (the
-# conditional rule: the prelude is present iff a std_os_*.c module is emitted).
-printf 'pub fn main() void {}\n' > "$DIR2/nostd.zig"
-( cd "$ROOT" && timeout 120 "$ZIG1" -o "$DIR2" "$DIR2/nostd.zig" ) \
-    || { echo "error: no-std dump failed (zig1 '$ZIG1')" >&2; exit 1; }
-if [ -e "$DIR2/std_os_prelude.h" ]; then
-    echo "[check] FAIL std_os_prelude.h emitted though std_os was not loaded" >&2
-    fail=1
-else
-    echo "[check] std_os_prelude.h correctly absent (std not loaded)"
 fi
 
 [ "$fail" = 0 ] || { echo "error: emitted support files differ from canonical" >&2; exit 1; }

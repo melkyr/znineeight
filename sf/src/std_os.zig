@@ -28,7 +28,13 @@ const CWD_BUF: usize = 4096;
 // stack-local). Names >= ENV_NAME_MAX are rejected as unset, not truncated.
 const ENV_NAME_MAX: usize = 256;
 
-var saved_argc: i32 = 0;
+// Both saved values are `undefined`-initialized on purpose: a module-scope
+// mutable global with a concrete initializer is a runtime-init root
+// (main.zig reachability seeding), which would force std_os + std_os_pal +
+// std_os_prelude.h into EVERY std program. `undefined` restores use-gating:
+// std_os is emitted only when a program actually calls it. initArgs must run
+// before argc()/argv(i) (the user calls it from main).
+var saved_argc: i32 = undefined;
 var saved_argv: [*]*const u8 = undefined;
 
 // NOTE: the initArgs parameter names are arg_count/arg_values, not
