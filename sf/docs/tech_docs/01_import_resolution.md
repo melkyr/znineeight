@@ -460,8 +460,9 @@ byte-identical copy is a candidate for deletion once the search path works: 19
 total) plus 1 nested copy in `std_import_bare_xmod/local/`; 82 `std.zig` and 75 `std_io.zig` files
 exist tree-wide outside `sf/`. A committed `sf/lib/std.zig` stub already exists (tracked, "Z98
 Standard Library stub" — currently only `debug.print`/`mem.eql`/`io.Writer`/`ArrayList` placeholders,
-dormant; it is `std.zig` not a bare `std` file, and the `@import("std")` in `semantic.zig:65`/
-`c89_types.zig:16` is dead code not in the compile graph).
+dormant; it is `std.zig` not a bare `std` file). The two files that carried a dead
+`@import("std")` (`semantic.zig`, `c89_types.zig`) were proven unreferenced and outside the
+compile graph by the Task 0 separation audit and deleted (commit `a9ab9415`).
 
 **D1 fully resolved — migration complete [updated: 2026-08-14].** Task F-MIGRATE deleted all 181
 local `std*.zig` copies under `examples/z98/*/` + `repro/mi_matrix/*/` (kept

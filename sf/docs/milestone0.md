@@ -127,7 +127,7 @@ Runs the full pipeline: build zig0 if needed → `zig0 -o /tmp/out/ sf/src/main.
 
 ## 5. Stub Files (Future Milestones)
 
-10 files contain `std.ArrayList` or other `std.*` references:
+10 files contained `std.ArrayList` or other `std.*` references (2 since deleted by the Task 0 separation audit):
 
 | File | Lines | Status |
 |------|-------|--------|
@@ -135,12 +135,12 @@ Runs the full pipeline: build zig0 if needed → `zig0 -o /tmp/out/ sf/src/main.
 | `sf/src/c89_emit.zig` | 59 | Full method signatures, all empty |
 | `sf/src/lir.zig` | 86 | Types only, no methods |
 | `sf/src/lower.zig` | 44 | Full signatures, all empty |
-| `sf/src/semantic.zig` | 73 | Full types+signatures, all empty |
+| `sf/src/semantic.zig` | 73 | Deleted (Task 0 separation audit — proven unreferenced/dead) |
 | `sf/src/symbol_table.zig` | 47 | Full types+signatures, all empty |
 | `sf/src/type_registry.zig` | 123 | Full types+enums+payloads, methods empty |
 | `sf/src/type_resolver.zig` | 23 | Full signatures, all empty |
 | `sf/src/comptime_eval.zig` | 33 | Full signatures, all empty |
-| `sf/src/c89_types.zig` | 22 | Full signatures, all empty |
+| `sf/src/c89_types.zig` | 22 | Deleted (Task 0 separation audit — proven unreferenced/dead) |
 
 **None of these are imported by `main.zig`** — they don't block compilation. Each must be converted from `std.*` generics to inline specializations when their milestone is reached.
 
