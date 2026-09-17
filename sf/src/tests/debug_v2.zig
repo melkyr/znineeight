@@ -38,11 +38,11 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     var node = ast_mod.astStoreNodeAt(&store, root);
     var child_count: u32 = @intCast(u32, ast_mod.astStoreNodePayloadPacked(&store, root, node.kind) & @intCast(u64, 0xFFFF));
     if (child_count != 2) @panic("NOT-2-CHILDREN");
-    var ec = ast_mod.astStoreNodeExtraChildren(&store, root);
+    var ec_n = ast_mod.astStoreNodeExtraChildCount(&store, root);
     var errs: u32 = 0;
     var i: usize = 0;
-    while (i < ec.len) {
-        var child = ast_mod.astStoreNodeAt(&store, ec[i]);
+    while (i < @intCast(usize, ec_n)) {
+        var child = ast_mod.astStoreNodeAt(&store, ast_mod.astStoreNodeExtraChildAt(&store, root, @intCast(u32, i)));
         if (child.kind == AstKind.err) errs += 1;
         i += 1;
     }

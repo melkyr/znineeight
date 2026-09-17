@@ -102,12 +102,12 @@ fn testAstStoreAddExtraChildren() void {
     children[1] = @intCast(u32, 20);
     children[2] = @intCast(u32, 30);
     var payload = ast_mod.astStoreAddExtraChildren(&store, children[0..3]);
-    assertEqU32(store.extra_children.len, @intCast(usize, 3));
-    var retrieved = ast_mod.astStoreGetExtraChildren(&store, store.extra_ranges.items[@intCast(usize, payload)]);
-    assertEqU32(retrieved.len, @intCast(usize, 3));
-    assertEqU32(retrieved[0], @intCast(u32, 10));
-    assertEqU32(retrieved[1], @intCast(u32, 20));
-    assertEqU32(retrieved[2], @intCast(u32, 30));
+    assertEqU32(@intCast(u32, store.extra_children.len), @intCast(u32, 3));
+    var packed = ast_mod.astStoreExtraRangeAt(&store, payload);
+    assertEqU32(ast_mod.astStoreGetExtraChildCount(&store, packed), @intCast(u32, 3));
+    assertEqU32(ast_mod.astStoreGetExtraChildAt(&store, packed, @intCast(u32, 0)), @intCast(u32, 10));
+    assertEqU32(ast_mod.astStoreGetExtraChildAt(&store, packed, @intCast(u32, 1)), @intCast(u32, 20));
+    assertEqU32(ast_mod.astStoreGetExtraChildAt(&store, packed, @intCast(u32, 2)), @intCast(u32, 30));
 }
 
 fn testAstStoreGetExtraChildren() void {
@@ -116,8 +116,8 @@ fn testAstStoreGetExtraChildren() void {
     var store = ast_mod.astStoreInit(&sand);
     var empty: []const u32 = undefined;
     var payload = ast_mod.astStoreAddExtraChildren(&store, empty[0..0]);
-    var retrieved = ast_mod.astStoreGetExtraChildren(&store, store.extra_ranges.items[@intCast(usize, payload)]);
-    assertEqU32(retrieved.len, @intCast(usize, 0));
+    var packed = ast_mod.astStoreExtraRangeAt(&store, payload);
+    assertEqU32(ast_mod.astStoreGetExtraChildCount(&store, packed), @intCast(u32, 0));
 }
 
 fn testAstStoreAddIntLiteral() void {

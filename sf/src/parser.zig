@@ -1659,7 +1659,7 @@ fn parserParseFnDecl(self: *Parser, is_pub: bool, is_extern: bool, is_test: bool
     var param_count: u16 = @intCast(u16, 0);
     if (self.child_buf_len > @intCast(usize, 0)) {
         var pp = ast_mod.astStoreAddExtraChildren(self.store, self.child_buf_items[0..self.child_buf_len]);
-        param_start = @intCast(u32, self.store.extra_ranges.items[@intCast(usize, pp)] >> 32);
+        param_start = @intCast(u32, ast_mod.astStoreExtraRangeAt(self.store, pp) >> @intCast(u64, 32));
         param_count = @intCast(u16, self.child_buf_len);
         self.child_buf_len = 0;
     }

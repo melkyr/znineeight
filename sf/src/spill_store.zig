@@ -13,7 +13,7 @@ const panic_mod = @import("panic.zig");
 // arena supplied at spillOpen (per-spill lifetime: module arena for spills
 // dead at the module reset, emission arena for LIR which is read after it).
 
-pub const SPILL_COUNT: u32 = 5;
+pub const SPILL_COUNT: u32 = 6;
 pub const SPILL_SEEK_MAX: u32 = 0x7FFFFFFF; // uniform i32-seek guard (I-FMT carry-over)
 
 pub const SpillBackend = enum(u8) {
@@ -27,19 +27,21 @@ pub const SpillId = enum(u8) {
     s_hash = 2, // S-HASH module maps
     s_res = 3, // S-RES resolved types
     s_side = 4, // S-SIDE value pools
+    s_extra = 5, // AST index side: extra_children + extra_ranges
 };
 
 // Immutable-after-init prefix mask; deactivation order = index order
-// (S-AST=0 -> S-LIR=1 -> S-HASH=2 -> S-RES=3 -> S-SIDE=4). Default all-Disk
-// (u8 globals zero-init). -s<N> (parsed in F-S) sets indices < N to Ram via
-// spillSetLevel. One scalar per spill: the Z98/zig0 emitter does not support
+// (S-AST=0 -> S-LIR=1 -> S-HASH=2 -> S-RES=3 -> S-SIDE=4 -> S-EXTRA=5). Default
+// all-Disk (u8 globals zero-init). -s<N> (parsed in F-S) sets indices < N to Ram
+// via spillSetLevel. One scalar per spill: the Z98/zig0 emitter does not support
 // subscripted stores into module-level global arrays (they are dropped), so
-// the flag is 5 scalar module vars, not one array.
+// the flag is 6 scalar module vars, not one array.
 var g_s_ast: u8 = 0;
 var g_s_lir: u8 = 0;
 var g_s_hash: u8 = 0;
 var g_s_res: u8 = 0;
 var g_s_side: u8 = 0;
+var g_s_extra: u8 = 0;
 
 pub fn spillSetLevel(level: u32) void {
     var n = level;
@@ -49,6 +51,7 @@ pub fn spillSetLevel(level: u32) void {
     if (n >= @intCast(u32, 3)) g_s_hash = @intCast(u8, 1);
     if (n >= @intCast(u32, 4)) g_s_res = @intCast(u8, 1);
     if (n >= @intCast(u32, 5)) g_s_side = @intCast(u8, 1);
+    if (n >= @intCast(u32, 6)) g_s_extra = @intCast(u8, 1);
 }
 
 pub fn spillBackendFor(id: SpillId) SpillBackend {
@@ -68,7 +71,11 @@ pub fn spillBackendFor(id: SpillId) SpillBackend {
         if (g_s_res != @intCast(u8, 0)) return SpillBackend.ram;
         return SpillBackend.disk;
     }
-    if (g_s_side != @intCast(u8, 0)) return SpillBackend.ram;
+    if (id == SpillId.s_side) {
+        if (g_s_side != @intCast(u8, 0)) return SpillBackend.ram;
+        return SpillBackend.disk;
+    }
+    if (g_s_extra != @intCast(u8, 0)) return SpillBackend.ram;
     return SpillBackend.disk;
 }
 

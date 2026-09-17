@@ -724,12 +724,14 @@ pub fn moduleRegistryVerifyOrder(reg: *ModuleRegistry) void {
     }
 }
 
-pub fn moduleRegistryCollectIncludes(store: *AstStore, decls: []u32, c_includes: *U32ArrayList) void {
+pub fn moduleRegistryCollectIncludes(store: *AstStore, root_idx: u32, c_includes: *U32ArrayList) void {
+    var decls_n = ast_mod.astStoreNodeExtraChildCount(store, root_idx);
     var di: usize = @intCast(usize, 0);
-    while (di < decls.len) : (di += @intCast(usize, 1)) {
-        var decl = ast_mod.astStoreNodeAt(store, decls[di]);
+    while (di < @intCast(usize, decls_n)) : (di += @intCast(usize, 1)) {
+        var decl_idx = ast_mod.astStoreNodeExtraChildAt(store, root_idx, @intCast(u32, di));
+        var decl = ast_mod.astStoreNodeAt(store, decl_idx);
         if (decl.kind == AstKind.c_include) {
-            ga_mod.u32ArrayListAppend(c_includes, ast_mod.astStoreNodePayload(store, decls[di]));
+            ga_mod.u32ArrayListAppend(c_includes, ast_mod.astStoreNodePayload(store, decl_idx));
         } else if (decl.kind == AstKind.var_decl and decl.child_1 != @intCast(u32, 0)) {
             var init = ast_mod.astStoreNodeAt(store, decl.child_1);
             if (init.kind == AstKind.c_include) {

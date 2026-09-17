@@ -1001,17 +1001,18 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
             type_mod.typeRegistrySetPacked(env.typereg, sd_tid);
         }
         if (ast_mod.astStoreNodePayload(env.store, node_idx) != @intCast(u32, 0)) {
-            var sd_children = ast_mod.astStoreNodeExtraChildren(env.store, node_idx);
+            var sd_children_n = ast_mod.astStoreNodeExtraChildCount(env.store, node_idx);
             var sd_fty: [32]u32 = undefined;
             var sd_fnm: [32]u32 = undefined;
             var sd_fc: usize = 0;
             var sd_i: usize = 0;
-            while (sd_i < sd_children.len and sd_fc < @intCast(usize, 32)) : (sd_i += 1) {
-                var sd_fd = ast_mod.astStoreNodeAt(env.store, sd_children[sd_i]);
+            while (sd_i < @intCast(usize, sd_children_n) and sd_fc < @intCast(usize, 32)) : (sd_i += 1) {
+                var sd_child = ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, sd_i));
+                var sd_fd = ast_mod.astStoreNodeAt(env.store, sd_child);
                 if (sd_fd.kind == AstKind.field_decl) {
                     var sd_ft = resolveTypeExprFull(env, sd_fd.child_0, depth + @intCast(u32, 1));
                     sd_fty[sd_fc] = sd_ft;
-                    sd_fnm[sd_fc] = ast_mod.astStoreNodePayload(env.store, sd_children[sd_i]);
+                    sd_fnm[sd_fc] = ast_mod.astStoreNodePayload(env.store, sd_child);
                     sd_fc += 1;
                 }
             }
@@ -1085,11 +1086,11 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
         var esd_start_box: [1]u32 = [1]u32{ @intCast(u32, env.typereg.xn_len) };
         var esd_count_box: [1]u16 = [1]u16{ @intCast(u16, 0) };
         if (ast_mod.astStoreNodePayload(env.store, node_idx) != @intCast(u32, 0)) {
-            var esd_children = ast_mod.astStoreNodeExtraChildren(env.store, node_idx);
-            esd_count_box[0] = @intCast(u16, esd_children.len);
+            var esd_children_n = ast_mod.astStoreNodeExtraChildCount(env.store, node_idx);
+            esd_count_box[0] = @intCast(u16, esd_children_n);
             var esd_i: usize = 0;
-            while (esd_i < esd_children.len) : (esd_i += 1) {
-                type_mod.xnAppend(env.typereg, esd_children[esd_i]);
+            while (esd_i < @intCast(usize, esd_children_n)) : (esd_i += 1) {
+                type_mod.xnAppend(env.typereg, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, esd_i)));
             }
         }
         return type_mod.typeRegistryGetOrCreateErrorSet(env.typereg, esd_start_box[0], esd_count_box[0]);
@@ -1118,10 +1119,10 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
         var fnt_ptypes: [16]u32 = undefined;
         var fnt_pc: usize = @intCast(usize, 0);
         if (ast_mod.astStoreNodePayload(env.store, node_idx) != @intCast(u32, 0)) {
-            var fnt_extra = ast_mod.astStoreNodeExtraChildren(env.store, node_idx);
+            var fnt_extra_n = ast_mod.astStoreNodeExtraChildCount(env.store, node_idx);
             var fnt_i: usize = @intCast(usize, 0);
-            while (fnt_i < fnt_extra.len and fnt_pc < @intCast(usize, 16)) : (fnt_i += @intCast(usize, 1)) {
-                var fnt_pt = resolveTypeExprFull(env, fnt_extra[fnt_i], depth + @intCast(u32, 1));
+            while (fnt_i < @intCast(usize, fnt_extra_n) and fnt_pc < @intCast(usize, 16)) : (fnt_i += @intCast(usize, 1)) {
+                var fnt_pt = resolveTypeExprFull(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, fnt_i)), depth + @intCast(u32, 1));
                 if (fnt_pt == type_mod.TYPE_UNDEFINED) return type_mod.TYPE_UNDEFINED;
                 fnt_ptypes[fnt_pc] = fnt_pt;
                 fnt_pc += @intCast(usize, 1);
@@ -1317,16 +1318,17 @@ pub fn resolveDeclAggregateFieldTypes(env: *TypeResolveEnv, mod_id: u32, decl_id
     var spid = type_mod.nameCacheGet(env.typereg, (@intCast(u64, mod_id) << @intCast(u64, 32)) | @intCast(u64, ast_mod.astStoreNodePayload(env.store, decl_idx)));
     if (spid) |stid| {
         var sty = env.typereg.types_items[@intCast(usize, stid)];
-        var fchildren = ast_mod.astStoreNodeExtraChildren(env.store, decl.child_1);
+        var fchildren_n = ast_mod.astStoreNodeExtraChildCount(env.store, decl.child_1);
         var fi2: usize = 0;
         if (sty.kind == type_mod.TypeKind.struct_type) {
             var sp = env.typereg.st_items[@intCast(usize, sty.payload_idx)];
             while (fi2 < @intCast(usize, sp.fields_count)) : (fi2 += 1) {
-                var fd = ast_mod.astStoreNodeAt(env.store, fchildren[fi2]);
+                var fchild = ast_mod.astStoreNodeExtraChildAt(env.store, decl.child_1, @intCast(u32, fi2));
+                var fd = ast_mod.astStoreNodeAt(env.store, fchild);
                 if (fd.kind == AstKind.field_decl and fd.child_0 != 0) {
                     var ft = resolveTypeExprFull(env, fd.child_0, @intCast(u32, 0));
                     var b2_pn: []const u8 = "B2:p"; pal_mod.markerWrite(b2_pn);
-                    var b2_pb: [20]u8 = undefined; var b2_pl = itoa_mod.itoa(ast_mod.astStoreNodePayload(env.store, fchildren[fi2]), b2_pb[0..]); var b2_ps: usize = @intCast(usize, 19) - @intCast(usize, b2_pl); pal_mod.markerWrite(b2_pb[b2_ps..@intCast(usize, 19)]);
+                    var b2_pb: [20]u8 = undefined; var b2_pl = itoa_mod.itoa(ast_mod.astStoreNodePayload(env.store, fchild), b2_pb[0..]); var b2_ps: usize = @intCast(usize, 19) - @intCast(usize, b2_pl); pal_mod.markerWrite(b2_pb[b2_ps..@intCast(usize, 19)]);
                     var b2_tn: []const u8 = "t"; pal_mod.markerWrite(b2_tn);
                     var b2_tb: [20]u8 = undefined; var b2_tl = itoa_mod.itoa(ft, b2_tb[0..]); var b2_ts: usize = @intCast(usize, 19) - @intCast(usize, b2_tl); pal_mod.markerWrite(b2_tb[b2_ts..@intCast(usize, 19)]);
                     if (ft != type_mod.TYPE_UNDEFINED) {
@@ -1341,13 +1343,13 @@ pub fn resolveDeclAggregateFieldTypes(env: *TypeResolveEnv, mod_id: u32, decl_id
             var tui_fsm: []const u8 = "TUI:fs"; pal_mod.markerWriteInt(tui_fsm, @intCast(u32, tp.fields_start));
             var tui_fcm: []const u8 = "TUI:fc"; pal_mod.markerWriteInt(tui_fcm, @intCast(u32, tp.fields_count));
             while (fi2 < @intCast(usize, tp.fields_count)) : (fi2 += 1) {
-                var fd = ast_mod.astStoreNodeAt(env.store, fchildren[fi2]);
+                var fd = ast_mod.astStoreNodeAt(env.store, ast_mod.astStoreNodeExtraChildAt(env.store, decl.child_1, @intCast(u32, fi2)));
                 if (fd.kind == AstKind.field_decl and fd.child_0 != 0) {
                     var ft = resolveTypeExprFull(env, fd.child_0, @intCast(u32, 0));
                     var dft_nm: []const u8 = "DFT:n"; pal_mod.markerWriteInt(dft_nm, @intCast(u32, fi2));
                     var dft_tm: []const u8 = "DFT:t"; pal_mod.markerWriteInt(dft_tm, ft);
                     var b2_pn: []const u8 = "B2:p"; pal_mod.markerWrite(b2_pn);
-                    var b2_pb: [20]u8 = undefined; var b2_pl = itoa_mod.itoa(ast_mod.astStoreNodePayload(env.store, fchildren[fi2]), b2_pb[0..]); var b2_ps: usize = @intCast(usize, 19) - @intCast(usize, b2_pl); pal_mod.markerWrite(b2_pb[b2_ps..@intCast(usize, 19)]);
+                    var b2_pb: [20]u8 = undefined; var b2_pl = itoa_mod.itoa(ast_mod.astStoreNodePayload(env.store, ast_mod.astStoreNodeExtraChildAt(env.store, decl.child_1, @intCast(u32, fi2))), b2_pb[0..]); var b2_ps: usize = @intCast(usize, 19) - @intCast(usize, b2_pl); pal_mod.markerWrite(b2_pb[b2_ps..@intCast(usize, 19)]);
                     var b2_tn: []const u8 = "t"; pal_mod.markerWrite(b2_tn);
                     var b2_tb: [20]u8 = undefined; var b2_tl = itoa_mod.itoa(ft, b2_tb[0..]); var b2_ts: usize = @intCast(usize, 19) - @intCast(usize, b2_tl); pal_mod.markerWrite(b2_tb[b2_ts..@intCast(usize, 19)]);
                     var dtwr_m: []const u8 = "DTWR\n"; pal_mod.markerWrite(dtwr_m);
@@ -1363,7 +1365,7 @@ pub fn resolveDeclAggregateFieldTypes(env: *TypeResolveEnv, mod_id: u32, decl_id
         } else if (sty.kind == type_mod.TypeKind.union_type or sty.kind == type_mod.TypeKind.packed_union_type) {
             var up = env.typereg.un_items[@intCast(usize, sty.payload_idx)];
             while (fi2 < @intCast(usize, up.fields_count)) : (fi2 += 1) {
-                var fd = ast_mod.astStoreNodeAt(env.store, fchildren[fi2]);
+                var fd = ast_mod.astStoreNodeAt(env.store, ast_mod.astStoreNodeExtraChildAt(env.store, decl.child_1, @intCast(u32, fi2)));
                 if (fd.kind == AstKind.field_decl and fd.child_0 != 0) {
                     var ft = resolveTypeExprFull(env, fd.child_0, @intCast(u32, 0));
                     if (ft != type_mod.TYPE_UNDEFINED) {
@@ -1395,18 +1397,19 @@ fn resolveNamedTypeExpressions(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry)
         env.module_id = mods[ci].id;
         env.source_file_id = mods[ci].source_file_id;
         var crn = ast_mod.astStoreNodeAt(env.store, cr);
-        var cd = ast_mod.astStoreNodeExtraChildren(env.store, cr);
+        var cd_n = ast_mod.astStoreNodeExtraChildCount(env.store, cr);
         var cdi: usize = 0;
-        while (cdi < cd.len) : (cdi += 1) {
-            var cdcl = ast_mod.astStoreNodeAt(env.store, cd[cdi]);
+        while (cdi < @intCast(usize, cd_n)) : (cdi += 1) {
+            var cd_i = ast_mod.astStoreNodeExtraChildAt(env.store, cr, @intCast(u32, cdi));
+            var cdcl = ast_mod.astStoreNodeAt(env.store, cd_i);
             if (cdcl.kind == AstKind.var_decl and cdcl.child_1 != @intCast(u32, 0)) {
                 var cdinit = ast_mod.astStoreNodeAt(env.store, cdcl.child_1);
                 if (varDeclInitNeedsNameCache(cdinit.kind)) {
                     var cdtype = resolveTypeExprFull(env, cdcl.child_1, @intCast(u32, 0));
                     if (cdtype != type_mod.TYPE_UNDEFINED) {
-                        var ck: u64 = @intCast(u64, mods[ci].id) * @intCast(u64, 4294967296) + @intCast(u64, ast_mod.astStoreNodePayload(env.store, cd[cdi]));
+                        var ck: u64 = @intCast(u64, mods[ci].id) * @intCast(u64, 4294967296) + @intCast(u64, ast_mod.astStoreNodePayload(env.store, cd_i));
                         type_mod.nameCachePut(env.typereg, ck, cdtype);
-                        var cdsym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, mods[ci].id, ast_mod.astStoreNodePayload(env.store, cd[cdi]));
+                        var cdsym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, mods[ci].id, ast_mod.astStoreNodePayload(env.store, cd_i));
                         if (cdsym) |sp| { sp.type_id = cdtype; }
                     }
                 }
@@ -1439,10 +1442,11 @@ fn resolveImportFieldAliases(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry, m
         var root = mods[mi].ast_root;
         if (root == @intCast(u32, 0)) continue;
         var rnode = ast_mod.astStoreNodeAt(env.store, root);
-        var decls = ast_mod.astStoreNodeExtraChildren(env.store, root);
+        var decls_n = ast_mod.astStoreNodeExtraChildCount(env.store, root);
         var di: usize = 0;
-        while (di < decls.len) : (di += 1) {
-            var decl = ast_mod.astStoreNodeAt(env.store, decls[di]);
+        while (di < @intCast(usize, decls_n)) : (di += 1) {
+            var decl_idx = ast_mod.astStoreNodeExtraChildAt(env.store, root, @intCast(u32, di));
+            var decl = ast_mod.astStoreNodeAt(env.store, decl_idx);
             if (decl.kind != AstKind.var_decl) { continue; }
             if (decl.child_1 == @intCast(u32, 0)) { continue; }
             var init = ast_mod.astStoreNodeAt(env.store, decl.child_1);
@@ -1453,11 +1457,11 @@ fn resolveImportFieldAliases(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry, m
             if (target) |mtid| {
                 var resolved = resolveImportFieldAlias(env, module_reg, mods[mi].id, mtid, ast_mod.astStoreNodePayload(env.store, decl.child_1), @intCast(u32, 0));
                 if (resolved != type_mod.TYPE_UNDEFINED) {
-                    var sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, mods[mi].id, ast_mod.astStoreNodePayload(env.store, decls[di]));
+                    var sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, mods[mi].id, ast_mod.astStoreNodePayload(env.store, decl_idx));
                     if (sym) |sp| {
                         sp.type_id = resolved;
                     }
-                    var ck: u64 = @intCast(u64, mods[mi].id) * @intCast(u64, 4294967296) + @intCast(u64, ast_mod.astStoreNodePayload(env.store, decls[di]));
+                    var ck: u64 = @intCast(u64, mods[mi].id) * @intCast(u64, 4294967296) + @intCast(u64, ast_mod.astStoreNodePayload(env.store, decl_idx));
                     type_mod.nameCachePut(env.typereg, ck, resolved);
                 }
             }
@@ -1473,14 +1477,15 @@ fn resolveAggregateFieldTypesAll(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntr
         if (root == @intCast(u32, 0)) continue;
         env.source_file_id = mods[mi].source_file_id;
         var rnode = ast_mod.astStoreNodeAt(env.store, root);
-        var decls = ast_mod.astStoreNodeExtraChildren(env.store, root);
+        var decls_n = ast_mod.astStoreNodeExtraChildCount(env.store, root);
         var di: usize = 0;
-        while (di < decls.len) : (di += 1) {
-            var decl = ast_mod.astStoreNodeAt(env.store, decls[di]);
+        while (di < @intCast(usize, decls_n)) : (di += 1) {
+            var decl_idx = ast_mod.astStoreNodeExtraChildAt(env.store, root, @intCast(u32, di));
+            var decl = ast_mod.astStoreNodeAt(env.store, decl_idx);
             if (decl.kind == AstKind.var_decl and decl.child_1 != 0) {
                 var init = ast_mod.astStoreNodeAt(env.store, decl.child_1);
                 if (init.kind == AstKind.struct_decl or init.kind == AstKind.union_decl) {
-                    resolveDeclAggregateFieldTypes(env, mods[mi].id, decls[di]);
+                    resolveDeclAggregateFieldTypes(env, mods[mi].id, decl_idx);
                 }
             }
         }
@@ -1495,12 +1500,13 @@ fn resolveFnSignatures(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry, resolve
         env.module_id = mods[mi].id;
         env.source_file_id = mods[mi].source_file_id;
         var rnode = ast_mod.astStoreNodeAt(env.store, root);
-        var decls = ast_mod.astStoreNodeExtraChildren(env.store, root);
+        var decls_n = ast_mod.astStoreNodeExtraChildCount(env.store, root);
         var di: usize = 0;
-        while (di < decls.len) : (di += 1) {
-            var decl = ast_mod.astStoreNodeAt(env.store, decls[di]);
+        while (di < @intCast(usize, decls_n)) : (di += 1) {
+            var decl_idx = ast_mod.astStoreNodeExtraChildAt(env.store, root, @intCast(u32, di));
+            var decl = ast_mod.astStoreNodeAt(env.store, decl_idx);
             if (decl.kind == AstKind.fn_decl) {
-                var proto = env.store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(env.store, decls[di]))];
+                var proto = env.store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(env.store, decl_idx))];
                 {
                     var sym_check = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, mods[mi].id, proto.name_id);
                     if (sym_check) |sc| {
@@ -1522,10 +1528,10 @@ fn resolveFnSignatures(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry, resolve
                 var fn_start: u32 = @intCast(u32, env.typereg.xt_len);
                 if (proto.params_count > @intCast(u16, 0)) {
                     var p_payload: u64 = (@intCast(u64, proto.params_start) << @intCast(u64, 32)) | @intCast(u64, proto.params_count);
-                    var pnodes = ast_mod.astStoreGetExtraChildren(env.store, p_payload);
+                    var pnodes_n = ast_mod.astStoreGetExtraChildCount(env.store, p_payload);
                     var pi: usize = 0;
-                    while (pi < pnodes.len) : (pi += 1) {
-                        var pnode = ast_mod.astStoreNodeAt(env.store, pnodes[pi]);
+                    while (pi < @intCast(usize, pnodes_n)) : (pi += 1) {
+                        var pnode = ast_mod.astStoreNodeAt(env.store, ast_mod.astStoreGetExtraChildAt(env.store, p_payload, @intCast(u32, pi)));
                         if (pnode.child_0 != 0) {
                             var ptype = resolveTypeExprFull(env, pnode.child_0, @intCast(u32, 0));
                             type_mod.xtAppend(env.typereg, ptype);
@@ -1536,7 +1542,7 @@ fn resolveFnSignatures(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry, resolve
                     }
                 }
                 var tid = type_mod.typeRegistryGetOrCreateFn(env.typereg, proto.name_id, mods[mi].id, is_ext, is_variadic, fn_start, proto.params_count, rt_box[0], proto.call_conv);
-                rtt_mod.resolvedTypeTableSet(resolved_types, decls[di], tid);
+                rtt_mod.resolvedTypeTableSet(resolved_types, decl_idx, tid);
                 var sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, mods[mi].id, proto.name_id);
                 if (sym) |sp| {
                     sp.type_id = tid;
@@ -1545,8 +1551,8 @@ fn resolveFnSignatures(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry, resolve
                 var vtype = resolveTypeExprFull(env, decl.child_0, @intCast(u32, 0));
                 if (vtype != type_mod.TYPE_UNDEFINED) {
                     rtt_mod.resolvedTypeTableSet(resolved_types, decl.child_0, vtype);
-                    rtt_mod.resolvedTypeTableSet(resolved_types, decls[di], vtype);
-                    var sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, mods[mi].id, ast_mod.astStoreNodePayload(env.store, decls[di]));
+                    rtt_mod.resolvedTypeTableSet(resolved_types, decl_idx, vtype);
+                    var sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, mods[mi].id, ast_mod.astStoreNodePayload(env.store, decl_idx));
                     if (sym) |sp| {
                         sp.type_id = vtype;
                     }

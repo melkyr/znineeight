@@ -285,8 +285,8 @@ pub fn dumpAst(store: *AstStore, root: u32, interner: *StringInterner) void {
                 (node.child_2 != 0 and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 2)))) {
                 has_children = 1;
             } else if (ast_mod.nodeHasNodeExtraChildren(node.kind) and ast_mod.astStoreNodePayload(store, idx) != 0) {
-                var ec = ast_mod.astStoreNodeExtraChildren(store, idx);
-                if (ec.len > 0) has_children = 1;
+                var ec_n = ast_mod.astStoreNodeExtraChildCount(store, idx);
+                if (ec_n > 0) has_children = 1;
             }
 
             if (has_children == 0) {
@@ -299,10 +299,10 @@ pub fn dumpAst(store: *AstStore, root: u32, interner: *StringInterner) void {
                 if (node.child_1 != 0 and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 1))) { st_idx[sp] = node.child_1; st_indent[sp] = indent + 1; st_state[sp] = 0; sp += 1; }
                 if (node.child_0 != 0 and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 0))) { st_idx[sp] = node.child_0; st_indent[sp] = indent + 1; st_state[sp] = 0; sp += 1; }
                 if (ast_mod.nodeHasNodeExtraChildren(node.kind) and ast_mod.astStoreNodePayload(store, idx) != 0) {
-                    var ec = ast_mod.astStoreNodeExtraChildren(store, idx);
+                    var ec_n = ast_mod.astStoreNodeExtraChildCount(store, idx);
                     var ei: usize = 0;
-                    while (ei < ec.len) {
-                        var c = ec[ec.len - 1 - ei];
+                    while (ei < @intCast(usize, ec_n)) {
+                        var c = ast_mod.astStoreNodeExtraChildAt(store, idx, ec_n - @intCast(u32, ei) - @intCast(u32, 1));
                         if (c != 0) { st_idx[sp] = c; st_indent[sp] = indent + 1; st_state[sp] = 0; sp += 1; }
                         ei += 1;
                     }

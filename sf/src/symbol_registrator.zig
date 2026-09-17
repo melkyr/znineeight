@@ -82,10 +82,10 @@ pub fn depGraphFinalize(self: *DepGraph, max_type_id: u32) void {
 fn addTypeDependencies(store: *AstStore, decl_idx: u32, tid: u32, g: *DepGraph) void {
     var node = ast_mod.astStoreNodeAt(store, decl_idx);
     if (ast_mod.astStoreNodePayload(store, decl_idx) == @intCast(u32, 0)) return;
-    var children = ast_mod.astStoreNodeExtraChildren(store, decl_idx);
+    var children_n = ast_mod.astStoreNodeExtraChildCount(store, decl_idx);
     var i: usize = 0;
-    while (i < children.len) {
-        var field_node = ast_mod.astStoreNodeAt(store, children[i]);
+    while (i < children_n) {
+        var field_node = ast_mod.astStoreNodeAt(store, ast_mod.astStoreNodeExtraChildAt(store, decl_idx, @intCast(u32, i)));
         if (field_node.kind == AstKind.field_decl) {
             depGraphAddEdge(g, @intCast(u32, 0), tid);
         }
@@ -96,18 +96,18 @@ fn addTypeDependencies(store: *AstStore, decl_idx: u32, tid: u32, g: *DepGraph) 
 fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, decl_kind: AstKind, decl_idx: u32, sym_reg: *SymbolRegistry) void {
     var node = ast_mod.astStoreNodeAt(store, decl_idx);
     if (ast_mod.astStoreNodePayload(store, decl_idx) == @intCast(u32, 0)) return;
-    var children = ast_mod.astStoreNodeExtraChildren(store, decl_idx);
-    if (children.len == 0) return;
+    var children_n = ast_mod.astStoreNodeExtraChildCount(store, decl_idx);
+    if (children_n == 0) return;
 
     if (decl_kind == AstKind.struct_decl) {
         var fstart: u32 = @intCast(u32, type_reg.fe_len);
         var fcount: u32 = 0;
         var i: usize = 0;
-        while (i < children.len) {
-            var fd = ast_mod.astStoreNodeAt(store, children[i]);
+        while (i < children_n) {
+            var fd = ast_mod.astStoreNodeAt(store, ast_mod.astStoreNodeExtraChildAt(store, decl_idx, @intCast(u32, i)));
             if (fd.kind == AstKind.field_decl) {
                 type_mod.feAppend(type_reg, type_mod.FieldEntry{
-                    .name_id = ast_mod.astStoreNodePayload(store, children[i]),
+                    .name_id = ast_mod.astStoreNodePayload(store, ast_mod.astStoreNodeExtraChildAt(store, decl_idx, @intCast(u32, i))),
                     .type_id = type_mod.TYPE_VOID,
                     .offset = @intCast(u32, 0),
                 });
@@ -131,11 +131,11 @@ fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, decl_
         var fstart: u32 = @intCast(u32, type_reg.fe_len);
         var fcount: u32 = 0;
         var i: usize = 0;
-        while (i < children.len) {
-            var fd = ast_mod.astStoreNodeAt(store, children[i]);
+        while (i < children_n) {
+            var fd = ast_mod.astStoreNodeAt(store, ast_mod.astStoreNodeExtraChildAt(store, decl_idx, @intCast(u32, i)));
             if (fd.kind == AstKind.field_decl) {
                 type_mod.feAppend(type_reg, type_mod.FieldEntry{
-                    .name_id = ast_mod.astStoreNodePayload(store, children[i]),
+                    .name_id = ast_mod.astStoreNodePayload(store, ast_mod.astStoreNodeExtraChildAt(store, decl_idx, @intCast(u32, i))),
                     .type_id = type_mod.TYPE_VOID,
                     .offset = @intCast(u32, 0),
                 });
@@ -181,15 +181,15 @@ fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, decl_
         var mcount: u32 = 0;
         var auto_val: i64 = @intCast(i64, 0);
         var i: usize = 0;
-        while (i < children.len) {
-            var mnode = ast_mod.astStoreNodeAt(store, children[i]);
+        while (i < children_n) {
+            var mnode = ast_mod.astStoreNodeAt(store, ast_mod.astStoreNodeExtraChildAt(store, decl_idx, @intCast(u32, i)));
             if (mnode.kind == AstKind.field_decl) {
                 var mval: i64 = auto_val;
                 if (mnode.child_1 != 0) {
                     var ev_opt = type_resolver.evalConstI64Full(&tre_env, mnode.child_1);
                     if (ev_opt) |ev| { mval = ev; }
                 }
-                type_mod.emAppend(type_reg, type_mod.EnumMember{ .name_id = ast_mod.astStoreNodePayload(store, children[i]), .value = mval });
+                type_mod.emAppend(type_reg, type_mod.EnumMember{ .name_id = ast_mod.astStoreNodePayload(store, ast_mod.astStoreNodeExtraChildAt(store, decl_idx, @intCast(u32, i))), .value = mval });
                 mcount += 1;
                 auto_val = mval + @intCast(i64, 1);
             }
@@ -210,12 +210,12 @@ fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, decl_
     if (decl_kind == AstKind.error_set_decl) {
         var tags_start_idx: u32 = @intCast(u32, type_reg.xn_len);
         var i: usize = 0;
-        while (i < children.len) : (i += 1) {
-            type_mod.xnAppend(type_reg, children[i]);
+        while (i < children_n) : (i += 1) {
+            type_mod.xnAppend(type_reg, ast_mod.astStoreNodeExtraChildAt(store, decl_idx, @intCast(u32, i)));
         }
         type_mod.esAppend(type_reg, type_mod.ErrorSetPayload{
             .tags_start = tags_start_idx,
-            .tags_count = @intCast(u16, children.len),
+            .tags_count = @intCast(u16, children_n),
         });
         var es_last: usize = type_reg.es_len - @intCast(usize, 1);
         var es_idx: u32 = @intCast(u32, es_last);
@@ -449,7 +449,7 @@ pub fn registerModuleSymbols(reg: *mr_mod.ModuleRegistry, sym_reg: *SymbolRegist
     if ((entry.state != mr_mod.ModuleState.parsed and entry.state != mr_mod.ModuleState.resolved) or entry.ast_root == 0) return;
     var root = ast_mod.astStoreNodeAt(store, entry.ast_root);
     if (root.kind != AstKind.module_root) return;
-    var decls = ast_mod.astStoreNodeExtraChildren(store, entry.ast_root);
+    var decls_n = ast_mod.astStoreNodeExtraChildCount(store, entry.ast_root);
     if (module_id == @intCast(u32, 0)) {
         var dg: []const u8 = "RS"; pal_mod.markerWrite(dg);
         var pb: [20]u8 = undefined;
@@ -458,13 +458,13 @@ pub fn registerModuleSymbols(reg: *mr_mod.ModuleRegistry, sym_reg: *SymbolRegist
         pal_mod.markerWrite(pb[ps..@intCast(usize, 19)]);
         var sc: []const u8 = ":"; pal_mod.markerWrite(sc);
         var i2: usize = 0;
-        while (i2 < decls.len) : (i2 += 1) {
+        while (i2 < @intCast(usize, decls_n)) : (i2 += 1) {
             var ii_buf: [20]u8 = undefined;
-            var ii_len = itoa_mod.itoa(decls[i2], ii_buf[0..]);
+            var ii_len = itoa_mod.itoa(ast_mod.astStoreNodeExtraChildAt(store, entry.ast_root, @intCast(u32, i2)), ii_buf[0..]);
             var ii_start: usize = @intCast(usize, 19) - @intCast(usize, ii_len);
             pal_mod.markerWrite(ii_buf[ii_start..@intCast(usize, 19)]);
             var ss: []const u8 = "="; pal_mod.markerWrite(ss);
-            var dc = ast_mod.astStoreNodeAt(store, decls[i2]);
+            var dc = ast_mod.astStoreNodeAt(store, ast_mod.astStoreNodeExtraChildAt(store, entry.ast_root, @intCast(u32, i2)));
             var dk: u32 = @intCast(u32, @enumToInt(dc.kind));
             var db: [20]u8 = undefined;
             var dl = itoa_mod.itoa(dk, db[0..]);
@@ -475,8 +475,8 @@ pub fn registerModuleSymbols(reg: *mr_mod.ModuleRegistry, sym_reg: *SymbolRegist
         var dn: []const u8 = "\n"; pal_mod.markerWrite(dn);
     }
     var i: usize = 0;
-    while (i < decls.len) {
-        registerDecl(sym_reg, type_reg, store, module_id, decls[i], g, reg, populate);
+    while (i < @intCast(usize, decls_n)) {
+        registerDecl(sym_reg, type_reg, store, module_id, ast_mod.astStoreNodeExtraChildAt(store, entry.ast_root, @intCast(u32, i)), g, reg, populate);
         i += 1;
     }
 }

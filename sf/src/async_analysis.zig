@@ -134,27 +134,27 @@ fn scanFunction(store: *ast_mod.AstStore, sym_reg: *sym_mod.SymbolRegistry, modu
                 }
                 ga_mod.u32ArrayListAppend(stack, n.child_0);
             }
-            var ec = ast_mod.astStoreNodeExtraChildren(store, ni);
+            var ec_n = ast_mod.astStoreNodeExtraChildCount(store, ni);
             var ei: usize = @intCast(usize, 0);
-            while (ei < ec.len) : (ei += 1) { ga_mod.u32ArrayListAppend(stack, ec[ei]); }
+            while (ei < @intCast(usize, ec_n)) : (ei += 1) { ga_mod.u32ArrayListAppend(stack, ast_mod.astStoreNodeExtraChildAt(store, ni, @intCast(u32, ei))); }
             continue;
         }
         if (k == AstKind.builtin_call) {
             if (n.child_0 == async_suspend_name_id) {
                 direct.items[@intCast(usize, caller_idx)] = @intCast(u8, 1);
             }
-            var ec2 = ast_mod.astStoreNodeExtraChildren(store, ni);
+            var ec2_n = ast_mod.astStoreNodeExtraChildCount(store, ni);
             var ei2: usize = @intCast(usize, 0);
-            while (ei2 < ec2.len) : (ei2 += 1) { ga_mod.u32ArrayListAppend(stack, ec2[ei2]); }
+            while (ei2 < @intCast(usize, ec2_n)) : (ei2 += 1) { ga_mod.u32ArrayListAppend(stack, ast_mod.astStoreNodeExtraChildAt(store, ni, @intCast(u32, ei2))); }
             continue;
         }
         if (n.child_0 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(k, @intCast(u8, 0))) { ga_mod.u32ArrayListAppend(stack, n.child_0); }
         if (n.child_1 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(k, @intCast(u8, 1))) { ga_mod.u32ArrayListAppend(stack, n.child_1); }
         if (n.child_2 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(k, @intCast(u8, 2))) { ga_mod.u32ArrayListAppend(stack, n.child_2); }
         if (ast_mod.nodeHasNodeExtraChildren(k)) {
-            var ec3 = ast_mod.astStoreNodeExtraChildren(store, ni);
+            var ec3_n = ast_mod.astStoreNodeExtraChildCount(store, ni);
             var ei3: usize = @intCast(usize, 0);
-            while (ei3 < ec3.len) : (ei3 += 1) { ga_mod.u32ArrayListAppend(stack, ec3[ei3]); }
+            while (ei3 < @intCast(usize, ec3_n)) : (ei3 += 1) { ga_mod.u32ArrayListAppend(stack, ast_mod.astStoreNodeExtraChildAt(store, ni, @intCast(u32, ei3))); }
         }
     }
 }
@@ -198,12 +198,13 @@ pub fn suspensionAnalysisRun(alloc: *alloc_mod.Sand, store: *ast_mod.AstStore,
         if (ast_root == @intCast(u32, 0)) continue;
         var root = ast_mod.astStoreNodeAt(store, ast_root);
         if (root.kind != AstKind.module_root) continue;
-        var decls = ast_mod.astStoreNodeExtraChildren(store, ast_root);
+        var decls_n = ast_mod.astStoreNodeExtraChildCount(store, ast_root);
         var di: usize = @intCast(usize, 0);
-        while (di < decls.len) : (di += 1) {
-            var decl = ast_mod.astStoreNodeAt(store, decls[di]);
+        while (di < @intCast(usize, decls_n)) : (di += 1) {
+            var decl_idx = ast_mod.astStoreNodeExtraChildAt(store, ast_root, @intCast(u32, di));
+            var decl = ast_mod.astStoreNodeAt(store, decl_idx);
             if (decl.kind != AstKind.fn_decl) continue;
-            var proto_idx = ast_mod.astStoreNodePayload(store, decls[di]);
+            var proto_idx = ast_mod.astStoreNodePayload(store, decl_idx);
             var proto = store.fn_protos.items[@intCast(usize, proto_idx)];
             var key = asyncKey(mods[mi].id, proto.name_id);
             if (hash_mod.u64ToU32MapGet(&fn_index, key) == null) {
@@ -222,12 +223,13 @@ pub fn suspensionAnalysisRun(alloc: *alloc_mod.Sand, store: *ast_mod.AstStore,
         if (ast_root2 == @intCast(u32, 0)) continue;
         var root2 = ast_mod.astStoreNodeAt(store, ast_root2);
         if (root2.kind != AstKind.module_root) continue;
-        var decls2 = ast_mod.astStoreNodeExtraChildren(store, ast_root2);
+        var decls2_n = ast_mod.astStoreNodeExtraChildCount(store, ast_root2);
         var di2: usize = @intCast(usize, 0);
-        while (di2 < decls2.len) : (di2 += 1) {
-            var decl2 = ast_mod.astStoreNodeAt(store, decls2[di2]);
+        while (di2 < @intCast(usize, decls2_n)) : (di2 += 1) {
+            var decl2_idx = ast_mod.astStoreNodeExtraChildAt(store, ast_root2, @intCast(u32, di2));
+            var decl2 = ast_mod.astStoreNodeAt(store, decl2_idx);
             if (decl2.kind != AstKind.fn_decl) continue;
-            var proto_idx2 = ast_mod.astStoreNodePayload(store, decls2[di2]);
+            var proto_idx2 = ast_mod.astStoreNodePayload(store, decl2_idx);
             var proto2 = store.fn_protos.items[@intCast(usize, proto_idx2)];
             var key2 = asyncKey(mods[mi].id, proto2.name_id);
             var cidx = hash_mod.u64ToU32MapGet(&fn_index, key2);
@@ -394,30 +396,30 @@ fn scanFrameLocals(store: *ast_mod.AstStore, body_idx: u32,
         if (lvt == type_mod.TYPE_UNDEFINED and k == AstKind.var_decl) { lvt = frameLocalTypeId(resolved_types, n); }
         _ = addFrameField(reg, lvt, offset, max_align);
         if (k == AstKind.builtin_call) {
-            var ecb = ast_mod.astStoreNodeExtraChildren(store, ni);
-            var bi: usize = ecb.len;
+            var ecb_n = ast_mod.astStoreNodeExtraChildCount(store, ni);
+            var bi: usize = @intCast(usize, ecb_n);
             while (bi > @intCast(usize, 0)) {
                 bi -= @intCast(usize, 1);
-                ga_mod.u32ArrayListAppend(stack, ecb[bi]);
+                ga_mod.u32ArrayListAppend(stack, ast_mod.astStoreNodeExtraChildAt(store, ni, @intCast(u32, bi)));
             }
             continue;
         }
         if (k == AstKind.fn_call) {
-            var ecf = ast_mod.astStoreNodeExtraChildren(store, ni);
-            var fi: usize = ecf.len;
+            var ecf_n = ast_mod.astStoreNodeExtraChildCount(store, ni);
+            var fi: usize = @intCast(usize, ecf_n);
             while (fi > @intCast(usize, 0)) {
                 fi -= @intCast(usize, 1);
-                ga_mod.u32ArrayListAppend(stack, ecf[fi]);
+                ga_mod.u32ArrayListAppend(stack, ast_mod.astStoreNodeExtraChildAt(store, ni, @intCast(u32, fi)));
             }
             if (n.child_0 != @intCast(u32, 0)) { ga_mod.u32ArrayListAppend(stack, n.child_0); }
             continue;
         }
         if (ast_mod.nodeHasNodeExtraChildren(k)) {
-            var ec3 = ast_mod.astStoreNodeExtraChildren(store, ni);
-            var ei3: usize = ec3.len;
+            var ec3_n = ast_mod.astStoreNodeExtraChildCount(store, ni);
+            var ei3: usize = @intCast(usize, ec3_n);
             while (ei3 > @intCast(usize, 0)) {
                 ei3 -= @intCast(usize, 1);
-                ga_mod.u32ArrayListAppend(stack, ec3[ei3]);
+                ga_mod.u32ArrayListAppend(stack, ast_mod.astStoreNodeExtraChildAt(store, ni, @intCast(u32, ei3)));
             }
         }
         if (n.child_2 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(k, @intCast(u8, 2))) { ga_mod.u32ArrayListAppend(stack, n.child_2); }
@@ -470,24 +472,24 @@ fn scanImplicitAwaits(store: *ast_mod.AstStore, sym_reg: *sym_mod.SymbolRegistry
                 }
                 ga_mod.u32ArrayListAppend(stack, n.child_0);
             }
-            var ec = ast_mod.astStoreNodeExtraChildren(store, ni);
+            var ec_n = ast_mod.astStoreNodeExtraChildCount(store, ni);
             var ei: usize = @intCast(usize, 0);
-            while (ei < ec.len) : (ei += 1) { ga_mod.u32ArrayListAppend(stack, ec[ei]); }
+            while (ei < @intCast(usize, ec_n)) : (ei += 1) { ga_mod.u32ArrayListAppend(stack, ast_mod.astStoreNodeExtraChildAt(store, ni, @intCast(u32, ei))); }
             continue;
         }
         if (k == AstKind.builtin_call) {
-            var ec2 = ast_mod.astStoreNodeExtraChildren(store, ni);
+            var ec2_n = ast_mod.astStoreNodeExtraChildCount(store, ni);
             var ei2: usize = @intCast(usize, 0);
-            while (ei2 < ec2.len) : (ei2 += 1) { ga_mod.u32ArrayListAppend(stack, ec2[ei2]); }
+            while (ei2 < @intCast(usize, ec2_n)) : (ei2 += 1) { ga_mod.u32ArrayListAppend(stack, ast_mod.astStoreNodeExtraChildAt(store, ni, @intCast(u32, ei2))); }
             continue;
         }
         if (n.child_0 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(k, @intCast(u8, 0))) { ga_mod.u32ArrayListAppend(stack, n.child_0); }
         if (n.child_1 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(k, @intCast(u8, 1))) { ga_mod.u32ArrayListAppend(stack, n.child_1); }
         if (n.child_2 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(k, @intCast(u8, 2))) { ga_mod.u32ArrayListAppend(stack, n.child_2); }
         if (ast_mod.nodeHasNodeExtraChildren(k)) {
-            var ec3 = ast_mod.astStoreNodeExtraChildren(store, ni);
+            var ec3_n = ast_mod.astStoreNodeExtraChildCount(store, ni);
             var ei3: usize = @intCast(usize, 0);
-            while (ei3 < ec3.len) : (ei3 += 1) { ga_mod.u32ArrayListAppend(stack, ec3[ei3]); }
+            while (ei3 < @intCast(usize, ec3_n)) : (ei3 += 1) { ga_mod.u32ArrayListAppend(stack, ast_mod.astStoreNodeExtraChildAt(store, ni, @intCast(u32, ei3))); }
         }
     }
     // Ordering invariant (Task 6D5): the LIFO walk above visits siblings in
@@ -544,9 +546,9 @@ fn scanSuspensionCount(store: *ast_mod.AstStore, sym_reg: *sym_mod.SymbolRegistr
             if (n.child_0 == async_suspend_name_id or n.child_0 == async_init_name_id) {
                 count += @intCast(u32, 1);
             }
-            var ecb = ast_mod.astStoreNodeExtraChildren(store, ni);
+            var ecb_n = ast_mod.astStoreNodeExtraChildCount(store, ni);
             var bi: usize = @intCast(usize, 0);
-            while (bi < ecb.len) : (bi += 1) { ga_mod.u32ArrayListAppend(stack, ecb[bi]); }
+            while (bi < @intCast(usize, ecb_n)) : (bi += 1) { ga_mod.u32ArrayListAppend(stack, ast_mod.astStoreNodeExtraChildAt(store, ni, @intCast(u32, bi))); }
             continue;
         }
         if (k == AstKind.fn_call) {
@@ -560,18 +562,18 @@ fn scanSuspensionCount(store: *ast_mod.AstStore, sym_reg: *sym_mod.SymbolRegistr
                 }
                 ga_mod.u32ArrayListAppend(stack, n.child_0);
             }
-            var ecf = ast_mod.astStoreNodeExtraChildren(store, ni);
+            var ecf_n = ast_mod.astStoreNodeExtraChildCount(store, ni);
             var fi: usize = @intCast(usize, 0);
-            while (fi < ecf.len) : (fi += 1) { ga_mod.u32ArrayListAppend(stack, ecf[fi]); }
+            while (fi < @intCast(usize, ecf_n)) : (fi += 1) { ga_mod.u32ArrayListAppend(stack, ast_mod.astStoreNodeExtraChildAt(store, ni, @intCast(u32, fi))); }
             continue;
         }
         if (n.child_0 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(k, @intCast(u8, 0))) { ga_mod.u32ArrayListAppend(stack, n.child_0); }
         if (n.child_1 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(k, @intCast(u8, 1))) { ga_mod.u32ArrayListAppend(stack, n.child_1); }
         if (n.child_2 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(k, @intCast(u8, 2))) { ga_mod.u32ArrayListAppend(stack, n.child_2); }
         if (ast_mod.nodeHasNodeExtraChildren(k)) {
-            var ec3 = ast_mod.astStoreNodeExtraChildren(store, ni);
+            var ec3_n = ast_mod.astStoreNodeExtraChildCount(store, ni);
             var ei3: usize = @intCast(usize, 0);
-            while (ei3 < ec3.len) : (ei3 += 1) { ga_mod.u32ArrayListAppend(stack, ec3[ei3]); }
+            while (ei3 < @intCast(usize, ec3_n)) : (ei3 += 1) { ga_mod.u32ArrayListAppend(stack, ast_mod.astStoreNodeExtraChildAt(store, ni, @intCast(u32, ei3))); }
         }
     }
     return count;
@@ -630,12 +632,13 @@ pub fn asyncFrameSizeRun(alloc: *alloc_mod.Sand, store: *ast_mod.AstStore,
         if (ar0 == @intCast(u32, 0)) continue;
         var r0 = ast_mod.astStoreNodeAt(store, ar0);
         if (r0.kind != AstKind.module_root) continue;
-        var d0 = ast_mod.astStoreNodeExtraChildren(store, ar0);
+        var d0_n = ast_mod.astStoreNodeExtraChildCount(store, ar0);
         var di0: usize = @intCast(usize, 0);
-        while (di0 < d0.len) : (di0 += 1) {
-            var dc0 = ast_mod.astStoreNodeAt(store, d0[di0]);
+        while (di0 < @intCast(usize, d0_n)) : (di0 += 1) {
+            var d0_idx = ast_mod.astStoreNodeExtraChildAt(store, ar0, @intCast(u32, di0));
+            var dc0 = ast_mod.astStoreNodeAt(store, d0_idx);
             if (dc0.kind != AstKind.fn_decl) continue;
-            var pr0 = store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(store, d0[di0]))];
+            var pr0 = store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(store, d0_idx))];
             var rt0: u32 = type_mod.TYPE_VOID;
             if (rtt_mod.resolvedTypeTableGet(resolved_types, pr0.return_type_node)) |rr0| { rt0 = rr0; }
             _ = hash_mod.u64ToU32MapPut(&fn_ret_types, asyncKey(mods[mi0].id, pr0.name_id), rt0);
@@ -650,12 +653,13 @@ pub fn asyncFrameSizeRun(alloc: *alloc_mod.Sand, store: *ast_mod.AstStore,
         if (ar0b == @intCast(u32, 0)) continue;
         var r0b = ast_mod.astStoreNodeAt(store, ar0b);
         if (r0b.kind != AstKind.module_root) continue;
-        var d0b = ast_mod.astStoreNodeExtraChildren(store, ar0b);
+        var d0b_n = ast_mod.astStoreNodeExtraChildCount(store, ar0b);
         var di0b: usize = @intCast(usize, 0);
-        while (di0b < d0b.len) : (di0b += 1) {
-            var dc0b = ast_mod.astStoreNodeAt(store, d0b[di0b]);
+        while (di0b < @intCast(usize, d0b_n)) : (di0b += 1) {
+            var d0b_idx = ast_mod.astStoreNodeExtraChildAt(store, ar0b, @intCast(u32, di0b));
+            var dc0b = ast_mod.astStoreNodeAt(store, d0b_idx);
             if (dc0b.kind != AstKind.fn_decl) continue;
-            var pr0b = store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(store, d0b[di0b]))];
+            var pr0b = store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(store, d0b_idx))];
             if (!asyncIsSuspending(suspending_fns, mods[mi0b].id, pr0b.name_id)) continue;
             scanImplicitAwaits(store, sym_reg, mods[mi0b].id, asyncKey(mods[mi0b].id, pr0b.name_id), dc0b.child_0, &stack,
                 suspending_fns, &fn_ret_types, awaited_fns, async_hidden_fns, parent_result_type_list, parent_result_start, parent_result_count);
@@ -668,12 +672,13 @@ pub fn asyncFrameSizeRun(alloc: *alloc_mod.Sand, store: *ast_mod.AstStore,
         if (ast_root == @intCast(u32, 0)) continue;
         var root = ast_mod.astStoreNodeAt(store, ast_root);
         if (root.kind != AstKind.module_root) continue;
-        var decls = ast_mod.astStoreNodeExtraChildren(store, ast_root);
+        var decls_n = ast_mod.astStoreNodeExtraChildCount(store, ast_root);
         var di: usize = @intCast(usize, 0);
-        while (di < decls.len) : (di += 1) {
-            var decl = ast_mod.astStoreNodeAt(store, decls[di]);
+        while (di < @intCast(usize, decls_n)) : (di += 1) {
+            var decl_idx = ast_mod.astStoreNodeExtraChildAt(store, ast_root, @intCast(u32, di));
+            var decl = ast_mod.astStoreNodeAt(store, decl_idx);
             if (decl.kind != AstKind.fn_decl) continue;
-            var proto_idx = ast_mod.astStoreNodePayload(store, decls[di]);
+            var proto_idx = ast_mod.astStoreNodePayload(store, decl_idx);
             var proto = store.fn_protos.items[@intCast(usize, proto_idx)];
             if (!asyncIsSuspending(suspending_fns, mods[mi].id, proto.name_id)) continue;
             var key = asyncKey(mods[mi].id, proto.name_id);
@@ -700,10 +705,10 @@ pub fn asyncFrameSizeRun(alloc: *alloc_mod.Sand, store: *ast_mod.AstStore,
             _ = addFrameField(typereg, state_type, &offset, &max_align);
             if (proto.params_count > @intCast(u16, 0)) {
                 var p_payload: u64 = (@intCast(u64, proto.params_start) << @intCast(u64, 32)) | @intCast(u64, proto.params_count);
-                var pnodes = ast_mod.astStoreGetExtraChildren(store, p_payload);
+                var pnodes_n = ast_mod.astStoreGetExtraChildCount(store, p_payload);
                 var pi: usize = @intCast(usize, 0);
-                while (pi < pnodes.len) : (pi += @intCast(usize, 1)) {
-                    var pnode = ast_mod.astStoreNodeAt(store, pnodes[pi]);
+                while (pi < @intCast(usize, pnodes_n)) : (pi += @intCast(usize, 1)) {
+                    var pnode = ast_mod.astStoreNodeAt(store, ast_mod.astStoreGetExtraChildAt(store, p_payload, @intCast(u32, pi)));
                     if (pnode.child_0 == @intCast(u32, 0)) continue;
                     var pt: u32 = type_mod.TYPE_UNDEFINED;
                     if (rtt_mod.resolvedTypeTableGet(resolved_types, pnode.child_0)) |rtp| { pt = rtp; }

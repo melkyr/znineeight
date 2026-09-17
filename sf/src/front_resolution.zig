@@ -74,34 +74,35 @@ pub fn frontResolveModuleInits(ct: *FrontResCtx) void {
             var ast_root = mods[mi].ast_root;
             if (ast_root == @intCast(u32, 0)) continue;
             var root = ast_mod.astStoreNodeAt(ct.store, ast_root);
-            var decls = ast_mod.astStoreNodeExtraChildren(ct.store, ast_root);
+            var decls_n = ast_mod.astStoreNodeExtraChildCount(ct.store, ast_root);
             var src_fid = mods[mi].source_file_id;
             var sa = sa_mod.semanticAnalyzerInit(ct.scratch, ct.resolved_types, ct.diag, ct.typereg, ct.symbol_reg, ct.store, mods[mi].id, src_fid, ct.coercion_table, ct.enum_value_table, ct.error_code_registry, ct.interner, ct.call_arg_types, ct.call_param_map, ct.module_reg, ct.suspending_fns);
             var di: usize = 0;
-            while (di < decls.len) : (di += 1) {
-                var decl = ast_mod.astStoreNodeAt(ct.store, decls[di]);
+            while (di < @intCast(usize, decls_n)) : (di += 1) {
+                var decl_idx = ast_mod.astStoreNodeExtraChildAt(ct.store, ast_root, @intCast(u32, di));
+                var decl = ast_mod.astStoreNodeAt(ct.store, decl_idx);
                 if (decl.kind != AstKind.var_decl) continue;
                 if (decl.child_0 != @intCast(u32, 0)) {
                     var rtype = resolveTypeExpr(ct, mods[mi].id, decl.child_0, null, src_fid);
                     if (rtype != type_mod.TYPE_UNDEFINED) {
                         resolved_type_table.resolvedTypeTableSet(ct.resolved_types, decl.child_0, rtype);
-                        resolved_type_table.resolvedTypeTableSet(ct.resolved_types, decls[di], rtype);
+                        resolved_type_table.resolvedTypeTableSet(ct.resolved_types, decl_idx, rtype);
                     }
                 }
                 if (decl.child_1 != @intCast(u32, 0)) {
                     var init = ast_mod.astStoreNodeAt(ct.store, decl.child_1);
                     if (init.kind != AstKind.struct_decl and init.kind != AstKind.union_decl) {
-                        var init_type = sa_mod.semanticAnalyzerResolveModuleVarDecl(&sa, decls[di]);
+                        var init_type = sa_mod.semanticAnalyzerResolveModuleVarDecl(&sa, decl_idx);
                         if (init.kind == AstKind.ident_expr) {
                             if (init_type != type_mod.TYPE_UNDEFINED) {
-                                var ck: u64 = @intCast(u64, mods[mi].id) * @intCast(u64, 4294967296) + @intCast(u64, ast_mod.astStoreNodePayload(ct.store, decls[di]));
+                                var ck: u64 = @intCast(u64, mods[mi].id) * @intCast(u64, 4294967296) + @intCast(u64, ast_mod.astStoreNodePayload(ct.store, decl_idx));
                                 type_mod.nameCachePut(ct.typereg, ck, init_type);
                             }
                             var ref_name = ast_mod.astStoreIdentifier(ct.store, decl.child_1);
                             var ref_sym = sym_mod.symbolRegistryQualifiedLookup(ct.symbol_reg, mods[mi].id, ref_name);
                             if (ref_sym) |rs| {
                                 if (rs.kind == sym_mod.SymbolKind.type_alias) {
-                                    var own_sym = sym_mod.symbolRegistryQualifiedLookup(ct.symbol_reg, mods[mi].id, ast_mod.astStoreNodePayload(ct.store, decls[di]));
+                                    var own_sym = sym_mod.symbolRegistryQualifiedLookup(ct.symbol_reg, mods[mi].id, ast_mod.astStoreNodePayload(ct.store, decl_idx));
                                     if (own_sym) |os| {
                                         if (os.kind != sym_mod.SymbolKind.type_alias) {
                                             os.kind = sym_mod.SymbolKind.type_alias;
@@ -111,9 +112,9 @@ pub fn frontResolveModuleInits(ct: *FrontResCtx) void {
                                 }
                             }
                         }
-                        var vd_existing = resolved_type_table.resolvedTypeTableGet(ct.resolved_types, decls[di]);
+                        var vd_existing = resolved_type_table.resolvedTypeTableGet(ct.resolved_types, decl_idx);
                         if (init_type != type_mod.TYPE_VOID and init_type != type_mod.TYPE_UNDEFINED and init_type != type_mod.TYPE_TYPE and vd_existing == null) {
-                            resolved_type_table.resolvedTypeTableSet(ct.resolved_types, decls[di], init_type);
+                            resolved_type_table.resolvedTypeTableSet(ct.resolved_types, decl_idx, init_type);
                         }
                         if (init_type == type_mod.TYPE_INT_LIT and decl.child_0 != @intCast(u32, 0)) {
                             var mdt2 = resolved_type_table.resolvedTypeTableGet(ct.resolved_types, decl.child_0);
@@ -124,7 +125,7 @@ pub fn frontResolveModuleInits(ct: *FrontResCtx) void {
                             }
                         }
                         if (init_type != @intCast(u32, 0) and init_type != type_mod.TYPE_VOID and init_type != type_mod.TYPE_UNDEFINED and init_type != type_mod.TYPE_TYPE) {
-                            var name_id: u32 = ast_mod.astStoreNodePayload(ct.store, decls[di]);
+                            var name_id: u32 = ast_mod.astStoreNodePayload(ct.store, decl_idx);
                             var sym = sym_mod.symbolRegistryQualifiedLookup(ct.symbol_reg, mods[mi].id, name_id);
                             if (sym) |s| {
                                 if (s.type_id == @intCast(u32, 0)) {
@@ -174,10 +175,10 @@ fn resolveStmtTypesRec(ct: *FrontResCtx, module_id: u32, node_idx: u32, depth: u
     }
     if (node.kind == AstKind.block) {
         var scope_base = scope.count;
-        var decls = ast_mod.astStoreNodeExtraChildren(ct.store, node_idx);
+        var decls_n = ast_mod.astStoreNodeExtraChildCount(ct.store, node_idx);
         var di: usize = 0;
-        while (di < decls.len) : (di += 1) {
-            resolveStmtTypesRec(ct, module_id, decls[di], depth + @intCast(u32, 1), source_file_id, scope);
+        while (di < @intCast(usize, decls_n)) : (di += 1) {
+            resolveStmtTypesRec(ct, module_id, ast_mod.astStoreNodeExtraChildAt(ct.store, node_idx, @intCast(u32, di)), depth + @intCast(u32, 1), source_file_id, scope);
         }
         scope.count = scope_base;
     }

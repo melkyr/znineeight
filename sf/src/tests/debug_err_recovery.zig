@@ -46,18 +46,18 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     while (dc < 4) { nc[dc] = @intCast(u8, 48 + v % 10); dc += 1; v = v / 10; }
     pal.stderr_write(nc[dc-3..dc+1]);
     pal.stderr_write("\n");
-    var ec = ast_mod.astStoreNodeExtraChildren(&store, root);
+    var ec_n = ast_mod.astStoreNodeExtraChildCount(&store, root);
     var ds: []const u8 = "ec_len=";
     pal.stderr_write(ds);
     var el: [4]u8 = undefined;
-    v = @intCast(u32, ec.len);
+    v = @intCast(u32, ec_n);
     dc = 0;
     while (dc < 4) { el[dc] = @intCast(u8, 48 + v % 10); dc += 1; v = v / 10; }
     pal.stderr_write(el[dc-3..dc+1]);
     pal.stderr_write("\n");
     var i: usize = 0;
-    while (i < ec.len) {
-        var ci = ec[i];
+    while (i < @intCast(usize, ec_n)) {
+        var ci = ast_mod.astStoreNodeExtraChildAt(&store, root, @intCast(u32, i));
         var ckind = @enumToInt(ast_mod.astStoreNodeAt(&store, ci).kind);
         var ml: []const u8 = "  kind=";
         pal.stderr_write(ml);

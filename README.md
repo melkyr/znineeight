@@ -73,7 +73,7 @@ the `std.async` library: a per-task child-frame `Context` pool, `Task`/`Schedule
 tasks) examples exercise it. See `sf/docs/tech_docs/12_async_coroutines.md` and the language spec
 §4.1.
 
-**Spill management** — `-s<N>` trades RAM for disk I/O (default `-s0` = all five compiler-state
+**Spill management** — `-s<N>` trades RAM for disk I/O (default `-s0` = all six compiler-state
 spills on disk, lowest `pool=`); `-mm<N>` sets the hard pool budget (default 64 MB). Compiler
 output is byte-identical in every `-s` mode.
 
@@ -95,7 +95,7 @@ C89** and rebuild **byte-identical binaries** — the self-compile fixed point i
   the seed model (`scripts/seed/build_from_seed.sh`) is the only rebuild path.
 - **Self-emission byte-identity:** the 42-module `.c` + 43 `.h` self-emission set is byte-identical on
   every successive hop (only hidden `.zig1_*.tmp` spill scratch is non-deterministic — compare
-  emitted `.c`/`.h` only). Output is byte-identical at every `-s0`…`-s5` spill level and under
+  emitted `.c`/`.h` only). Output is byte-identical at every `-s0`…`-s6` spill level and under
   both target flavours (linux / `-osw`).
 
 **4-program emission gate** (md5 prefixes of `zig1 --dump-c89 … | md5sum`, repo-root CWD,
@@ -235,7 +235,7 @@ the build script is `sf/scripts/build_release.sh`. Release binaries (`zig1_linux
 | `--target <linux\|windows>` | Alias for the target OS |
 | `-fsafe` | **Default.** Enable the six runtime checks (cast / div-mod / shift-count / null-unwrap / index-OOB / integer-overflow) and the `undefined` `0xAA` poison fill |
 | `-ffast` | Disable the six runtime checks and poison fill (used for the compiler self-build). `unreachable`/`@panic` still trap in both modes |
-| `-s<N>` | Spill level 0–5 (default `-s0`): how many of the five compiler-state spills live in RAM instead of `.zig1_*.tmp` disk files. Higher `-s` = more RAM, less disk I/O; emission byte-identical in every mode. `-s0` ≈ 14.9 MB pool; `-s1` ≈ 33 MB; `-s2`..`-s5` ≈ 71–73 MB. Bare/non-digit/out-of-range `-s` = error rc=1 |
+| `-s<N>` | Spill level 0–6 (default `-s0`): how many of the six compiler-state spills live in RAM instead of `.zig1_*.tmp` disk files. Deactivation order S-AST → S-LIR → S-HASH → S-RES → S-SIDE → S-EXTRA. Higher `-s` = more RAM, less disk I/O; emission byte-identical in every mode. `-s0` ≈ 16.6 MB pool (all disk); `-s5` ≈ 78.6 MB (S-EXTRA still on disk); `-s6` ≈ 81.7 MB (all RAM). Bare/non-digit/out-of-range `-s` = error rc=1 |
 | `-mm<N>` | Hard pool budget in MB (default 64). Levels whose pool exceeds the budget abort with `memory limit exceeded` rc=3 (e.g. `-s2`+ need `-mm128`) |
 | `-m <size>` / `--max-mem <size>` | Pool memory budget with k/M/G suffix |
 | `--track-memory`, `--markers` | Memory tracking / pipeline markers (e.g. the `pool=` report line) |

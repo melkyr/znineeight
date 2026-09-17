@@ -205,10 +205,11 @@ pub fn isFreeCall(ctx: *AnalyzerContext, expr_idx: u32) ?u32 {
     var s_sand_free: []const u8 = "sandFree";
     var sand_free_nid = interner_mod.stringInternerIntern(ctx.interner, s_sand_free);
     if (name_id != arena_free_nid and name_id != sand_free_nid) return null;
-    var args = ast_mod.astStoreNodeExtraChildren(ctx.store, expr_idx);
-    if (args.len < @intCast(usize, 2)) return null;
-    var ptr_arg = ast_mod.astStoreNodeAt(ctx.store, args[1]);
-    if (ptr_arg.kind == AstKind.ident_expr) return identNameId(ctx.store, args[1]);
+    var args_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, expr_idx);
+    if (args_n < @intCast(u32, 2)) return null;
+    var args1 = ast_mod.astStoreNodeExtraChildAt(ctx.store, expr_idx, @intCast(u32, 1));
+    var ptr_arg = ast_mod.astStoreNodeAt(ctx.store, args1);
+    if (ptr_arg.kind == AstKind.ident_expr) return identNameId(ctx.store, args1);
     return null;
 }
 
@@ -334,12 +335,13 @@ pub fn handleOwnershipPass(ctx: *AnalyzerContext, state: *StateMap, fn_call_idx:
     if (fn_call_idx == @intCast(u32, 0)) return;
     var node = ast_mod.astStoreNodeAt(ctx.store, fn_call_idx);
     if (node.kind != AstKind.fn_call) return;
-    var args = ast_mod.astStoreNodeExtraChildren(ctx.store, fn_call_idx);
+    var args_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, fn_call_idx);
     var ai: usize = 0;
-    while (ai < args.len) : (ai += 1) {
-        var arg_node = ast_mod.astStoreNodeAt(ctx.store, args[ai]);
+    while (ai < @intCast(usize, args_n)) : (ai += 1) {
+        var args_i = ast_mod.astStoreNodeExtraChildAt(ctx.store, fn_call_idx, @intCast(u32, ai));
+        var arg_node = ast_mod.astStoreNodeAt(ctx.store, args_i);
         if (arg_node.kind != AstKind.ident_expr) continue;
-        var arg_name_id = identNameId(ctx.store, args[ai]);
+        var arg_name_id = identNameId(ctx.store, args_i);
         var current = smap_mod.stateMapGet(state, arg_name_id);
         if (current) |c| {
             if (c == @enumToInt(AllocState.allocated)) {
@@ -405,10 +407,10 @@ pub fn analyzeSignature(ctx: *AnalyzerContext, fn_node_idx: u32) void {
     var proto_idx = ast_mod.astStoreNodePayload(ctx.store, fn_node_idx);
     var proto = ctx.store.fn_protos.items[@intCast(usize, proto_idx)];
     var param_payload: u64 = (@intCast(u64, proto.params_start) << @intCast(u64, 32)) | @intCast(u64, proto.params_count);
-    var params = ast_mod.astStoreGetExtraChildren(ctx.store, param_payload);
+    var params_n = ast_mod.astStoreGetExtraChildCount(ctx.store, param_payload);
     var pi: usize = 0;
-    while (pi < params.len) : (pi += 1) {
-        var pnode = ast_mod.astStoreNodeAt(ctx.store, params[pi]);
+    while (pi < @intCast(usize, params_n)) : (pi += 1) {
+        var pnode = ast_mod.astStoreNodeAt(ctx.store, ast_mod.astStoreGetExtraChildAt(ctx.store, param_payload, @intCast(u32, pi)));
         var type_expr = pnode.child_0;
         if (type_expr != @intCast(u32, 0)) validateSignatureType(ctx, type_expr, @intCast(u32, 0));
     }
@@ -485,18 +487,18 @@ pub fn analyzeExpr(ctx: *AnalyzerContext, state: *StateMap, expr_idx: u32) void 
         return;
     }
     if (kind == AstKind.fn_call) {
-        var args = ast_mod.astStoreNodeExtraChildren(ctx.store, expr_idx);
+        var args_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, expr_idx);
         var ai: usize = 0;
-        while (ai < args.len) : (ai += 1) {
-            analyzeExpr(ctx, state, args[ai]);
+        while (ai < @intCast(usize, args_n)) : (ai += 1) {
+            analyzeExpr(ctx, state, ast_mod.astStoreNodeExtraChildAt(ctx.store, expr_idx, @intCast(u32, ai)));
         }
         return;
     }
     if (kind == AstKind.builtin_call) {
-        var bargs = ast_mod.astStoreNodeExtraChildren(ctx.store, expr_idx);
+        var bargs_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, expr_idx);
         var bi: usize = 0;
-        while (bi < bargs.len) : (bi += 1) {
-            analyzeExpr(ctx, state, bargs[bi]);
+        while (bi < @intCast(usize, bargs_n)) : (bi += 1) {
+            analyzeExpr(ctx, state, ast_mod.astStoreNodeExtraChildAt(ctx.store, expr_idx, @intCast(u32, bi)));
         }
         return;
     }
@@ -644,10 +646,10 @@ pub fn walkBlock(ctx: *AnalyzerContext, state: *StateMap, block_idx: u32, visit_
     }
     var saved_depth = ctx.current_depth;
     ctx.current_depth += 1;
-    var children = ast_mod.astStoreNodeExtraChildren(ctx.store, block_idx);
+    var children_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, block_idx);
     var i: usize = 0;
-    while (i < children.len) : (i += 1) {
-        visit_fn(ctx, state, children[i]);
+    while (i < @intCast(usize, children_n)) : (i += 1) {
+        visit_fn(ctx, state, ast_mod.astStoreNodeExtraChildAt(ctx.store, block_idx, @intCast(u32, i)));
     }
     executeDeferQueue(ctx, state, saved_depth, @intCast(u8, 0), visit_fn);
     if (ctx.doublefree_analysis_mode != @intCast(u8, 0)) {
@@ -682,10 +684,10 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
         walkBlock(ctx, body_state, node.child_1, visit_fn);
         smap_mod.stateMapMergeStates(state, state, body_state, @intCast(u8, 99));
     } else if (kind == AstKind.swt_ex) {
-        var prongs = ast_mod.astStoreNodeExtraChildren(ctx.store, node_idx);
+        var prongs_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, node_idx);
         var si: usize = 0;
-        while (si < prongs.len) : (si += 1) {
-            var prong = ast_mod.astStoreNodeAt(ctx.store, prongs[si]);
+        while (si < @intCast(usize, prongs_n)) : (si += 1) {
+            var prong = ast_mod.astStoreNodeAt(ctx.store, ast_mod.astStoreNodeExtraChildAt(ctx.store, node_idx, @intCast(u32, si)));
             var ps = smap_mod.stateMapFork(state, ctx.alloc);
             walkBlock(ctx, ps, prong.child_0, visit_fn);
             smap_mod.stateMapMergeStates(state, state, ps, @intCast(u8, 99));
@@ -782,12 +784,12 @@ pub fn runLifetimeAnalyzer(ctx: *AnalyzerContext, fn_decl_idx: u32, fn_body_idx:
     if (ast_mod.astStoreNodePayload(ctx.store, fn_decl_idx) != @intCast(u32, 0)) {
         var proto = ctx.store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(ctx.store, fn_decl_idx))];
         var pp: u64 = (@intCast(u64, proto.params_start) << @intCast(u64, 32)) | @intCast(u64, proto.params_count);
-        var params = ast_mod.astStoreGetExtraChildren(ctx.store, pp);
+        var params_n = ast_mod.astStoreGetExtraChildCount(ctx.store, pp);
         var pi: usize = 0;
-        while (pi < params.len) : (pi += 1) {
-            var pn = ast_mod.astStoreNodeAt(ctx.store, params[pi]);
-            if (pn.kind == AstKind.param_decl) {
-                smap_mod.stateMapSet(&state, ast_mod.astStoreNodePayload(ctx.store, params[pi]), @intCast(u8, @enumToInt(Provenance.param)));
+        while (pi < @intCast(usize, params_n)) : (pi += 1) {
+            var pnode = ast_mod.astStoreNodeAt(ctx.store, ast_mod.astStoreGetExtraChildAt(ctx.store, pp, @intCast(u32, pi)));
+            if (pnode.kind == AstKind.param_decl) {
+                smap_mod.stateMapSet(&state, ast_mod.astStoreNodePayload(ctx.store, ast_mod.astStoreGetExtraChildAt(ctx.store, pp, @intCast(u32, pi))), @intCast(u8, @enumToInt(Provenance.param)));
             }
         }
     }
@@ -810,22 +812,23 @@ pub const PER_FUNC_BUDGET: usize = 512 * 1024;
 pub fn runAllAnalyzers(ctx: *AnalyzerContext, module_root_idx: u32) void {
     var root = ast_mod.astStoreNodeAt(ctx.store, module_root_idx);
     if (root.kind != AstKind.module_root) return;
-    var decls = ast_mod.astStoreNodeExtraChildren(ctx.store, module_root_idx);
+    var decls_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, module_root_idx);
     var di: usize = 0;
-    while (di < decls.len) : (di += 1) {
-        var decl = ast_mod.astStoreNodeAt(ctx.store, decls[di]);
+    while (di < @intCast(usize, decls_n)) : (di += 1) {
+        var decl_idx = ast_mod.astStoreNodeExtraChildAt(ctx.store, module_root_idx, @intCast(u32, di));
+        var decl = ast_mod.astStoreNodeAt(ctx.store, decl_idx);
         if (decl.kind != AstKind.fn_decl) continue;
         if (decl.child_0 == @intCast(u32, 0)) continue;
         alloc_mod.sandResetPeak(ctx.alloc);
-        ctx.current_fn_name = ctx.store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(ctx.store, decls[di]))].name_id;
-        runSignatureAnalyzer(ctx, decls[di]);
+        ctx.current_fn_name = ctx.store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(ctx.store, decl_idx))].name_id;
+        runSignatureAnalyzer(ctx, decl_idx);
         alloc_mod.sandReset(ctx.alloc);
         if (ctx.skip_null_check == @intCast(u8, 0)) {
             runNullAnalyzer(ctx, decl.child_0);
             alloc_mod.sandReset(ctx.alloc);
         }
         if (ctx.skip_lifetime_check == @intCast(u8, 0)) {
-            runLifetimeAnalyzer(ctx, decls[di], decl.child_0);
+            runLifetimeAnalyzer(ctx, decl_idx, decl.child_0);
             alloc_mod.sandReset(ctx.alloc);
         }
         if (ctx.skip_doublefree_check == @intCast(u8, 0)) {

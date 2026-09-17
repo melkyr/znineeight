@@ -21,23 +21,23 @@ fn moduleRegistryParseModule(reg: *mr_mod.ModuleRegistry, mod_id: u32, content: 
     parser_mod.parserSetModuleContext(&p, reg, mod_id);
     parser_mod.parserSetImportScratch(&p, import_scratch);
     var ecb0: u32 = @intCast(u32, 0); var ecb1: u32 = @intCast(u32, 0); var ecb2: u32 = @intCast(u32, 0); var ecb3: u32 = @intCast(u32, 0); var ecb4: u32 = @intCast(u32, 0); var ecb5: u32 = @intCast(u32, 0);
-    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 0)) { ecb0 = shared_store.extra_children.items[@intCast(usize, 0)]; }
-    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 1)) { ecb1 = shared_store.extra_children.items[@intCast(usize, 1)]; }
-    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 2)) { ecb2 = shared_store.extra_children.items[@intCast(usize, 2)]; }
-    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 3)) { ecb3 = shared_store.extra_children.items[@intCast(usize, 3)]; }
-    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 4)) { ecb4 = shared_store.extra_children.items[@intCast(usize, 4)]; }
-    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 5)) { ecb5 = shared_store.extra_children.items[@intCast(usize, 5)]; }
+    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 0)) { ecb0 = ast_mod.astStoreExtraChildAtRaw(shared_store, @intCast(u32, 0)); }
+    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 1)) { ecb1 = ast_mod.astStoreExtraChildAtRaw(shared_store, @intCast(u32, 1)); }
+    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 2)) { ecb2 = ast_mod.astStoreExtraChildAtRaw(shared_store, @intCast(u32, 2)); }
+    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 3)) { ecb3 = ast_mod.astStoreExtraChildAtRaw(shared_store, @intCast(u32, 3)); }
+    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 4)) { ecb4 = ast_mod.astStoreExtraChildAtRaw(shared_store, @intCast(u32, 4)); }
+    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 5)) { ecb5 = ast_mod.astStoreExtraChildAtRaw(shared_store, @intCast(u32, 5)); }
     var se0: []const u8 = "ECB0:"; pal_mod.markerWriteInt(se0, ecb0);
     var se1: []const u8 = "ECB1:"; pal_mod.markerWriteInt(se1, ecb1);
     var se2: []const u8 = "ECB2:"; pal_mod.markerWriteInt(se2, ecb2);
     var ast_root = parser_mod.parserParseModuleRoot(&p) catch return null;
     var ecd0: u32 = @intCast(u32, 0); var ecd1: u32 = @intCast(u32, 0); var ecd2: u32 = @intCast(u32, 0); var ecd3: u32 = @intCast(u32, 0); var ecd4: u32 = @intCast(u32, 0); var ecd5: u32 = @intCast(u32, 0);
-    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 0)) { ecd0 = shared_store.extra_children.items[@intCast(usize, 0)]; }
-    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 1)) { ecd1 = shared_store.extra_children.items[@intCast(usize, 1)]; }
-    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 2)) { ecd2 = shared_store.extra_children.items[@intCast(usize, 2)]; }
-    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 3)) { ecd3 = shared_store.extra_children.items[@intCast(usize, 3)]; }
-    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 4)) { ecd4 = shared_store.extra_children.items[@intCast(usize, 4)]; }
-    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 5)) { ecd5 = shared_store.extra_children.items[@intCast(usize, 5)]; }
+    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 0)) { ecd0 = ast_mod.astStoreExtraChildAtRaw(shared_store, @intCast(u32, 0)); }
+    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 1)) { ecd1 = ast_mod.astStoreExtraChildAtRaw(shared_store, @intCast(u32, 1)); }
+    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 2)) { ecd2 = ast_mod.astStoreExtraChildAtRaw(shared_store, @intCast(u32, 2)); }
+    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 3)) { ecd3 = ast_mod.astStoreExtraChildAtRaw(shared_store, @intCast(u32, 3)); }
+    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 4)) { ecd4 = ast_mod.astStoreExtraChildAtRaw(shared_store, @intCast(u32, 4)); }
+    if (@intCast(usize, shared_store.extra_children.len) > @intCast(usize, 5)) { ecd5 = ast_mod.astStoreExtraChildAtRaw(shared_store, @intCast(u32, 5)); }
     var sd0: []const u8 = "ECD0:"; pal_mod.markerWriteInt(sd0, ecd0);
     var sd1: []const u8 = "ECD1:"; pal_mod.markerWriteInt(sd1, ecd1);
     var sd2: []const u8 = "ECD2:"; pal_mod.markerWriteInt(sd2, ecd2);
@@ -98,11 +98,11 @@ pub fn moduleRegistryResolveImports(reg: *mr_mod.ModuleRegistry, module_arena: *
                 var p1: []const u8 = "IRP:m"; pal_mod.measureMarkerWriteInt(p1, mod_id);
                 var p2: []const u8 = "IRP:n"; pal_mod.measureMarkerWriteInt(p2, ast_root);
                 var p3: []const u8 = "IRP:p"; pal_mod.measureMarkerWriteInt(p3, @intCast(u32, ast_mod.astStoreNodePayloadPacked(shared_store, ast_root, root.kind) & @intCast(u64, 0xFFFFFFFF)));
-                var decls = ast_mod.astStoreNodeExtraChildren(shared_store, ast_root);
-                var p4: []const u8 = "IRD:c"; pal_mod.markerWriteInt(p4, @intCast(u32, decls.len));
+                var decls_n = ast_mod.astStoreNodeExtraChildCount(shared_store, ast_root);
+                var p4: []const u8 = "IRD:c"; pal_mod.markerWriteInt(p4, @intCast(u32, decls_n));
                 var di2: usize = @intCast(usize, 0);
-                while (di2 < decls.len) : (di2 += @intCast(usize, 1)) {
-                    var p5: []const u8 = "IRD:n"; pal_mod.markerWriteInt(p5, decls[di2]);
+                while (di2 < @intCast(usize, decls_n)) : (di2 += @intCast(usize, 1)) {
+                    var p5: []const u8 = "IRD:n"; pal_mod.markerWriteInt(p5, ast_mod.astStoreNodeExtraChildAt(shared_store, ast_root, @intCast(u32, di2)));
                 }
                 var nl: []const u8 = "\n"; pal_mod.markerWrite(nl);
             }
@@ -129,11 +129,11 @@ pub fn moduleRegistryResolveImports(reg: *mr_mod.ModuleRegistry, module_arena: *
             var vr = ast_mod.astStoreNodeAt(shared_store, ve.ast_root);
             if (vr.kind == AstKind.module_root) {
                 var v1: []const u8 = "IRV:m"; pal_mod.markerWriteInt(v1, vmi);
-                var vdecls = ast_mod.astStoreNodeExtraChildren(shared_store, ve.ast_root);
-                var v2: []const u8 = "IRV:c"; pal_mod.markerWriteInt(v2, @intCast(u32, vdecls.len));
+                var vdecls_n = ast_mod.astStoreNodeExtraChildCount(shared_store, ve.ast_root);
+                var v2: []const u8 = "IRV:c"; pal_mod.markerWriteInt(v2, @intCast(u32, vdecls_n));
                 var vdi: usize = @intCast(usize, 0);
-                while (vdi < vdecls.len) : (vdi += @intCast(usize, 1)) {
-                    var v3: []const u8 = "IRV:n"; pal_mod.markerWriteInt(v3, vdecls[vdi]);
+                while (vdi < @intCast(usize, vdecls_n)) : (vdi += @intCast(usize, 1)) {
+                    var v3: []const u8 = "IRV:n"; pal_mod.markerWriteInt(v3, ast_mod.astStoreNodeExtraChildAt(shared_store, ve.ast_root, @intCast(u32, vdi)));
                 }
                 var vnl: []const u8 = "\n";
                 pal_mod.markerWrite(vnl);

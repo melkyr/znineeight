@@ -169,17 +169,20 @@ cd <dump> && timeout 120 sh build_target.sh mingw
 ```
 - Harness wrapper: `scripts/win32_cross/cross_build_run.sh <zig1> <entry> <workdir> <exe> [-lwsock32]` — pass `-lwsock32` only for a net-using program.
 
-### Spill level switch (`-s<N>`) — RAM/I-O tradeoff  [added: 2026-09-02 — spill-backend-config F-S]
+### Spill level switch (`-s<N>`) — RAM/I-O tradeoff  [added: 2026-09-02 — spill-backend-config F-S; 2026-09-17 Task 9-M-F adds S-EXTRA]
 
-`-s<N>` picks how many of the five spills live in RAM instead of the `.zig1_*.tmp` disk files.
+`-s<N>` picks how many of the six spills live in RAM instead of the `.zig1_*.tmp` disk files.
 Default `-s0` = all on disk. Deactivation order (oldest-spill-first): **S-AST → S-LIR → S-HASH →
-S-RES → S-SIDE** — `-s1` moves AST to RAM, `-s2` also LIR, ... `-s5` = all RAM (no spill files).
-Higher `-s` = more RAM, less disk I/O; emission is **byte-identical in every mode** (same data,
-different storage). Measured self-compile `pool=` (self-hosted binary, `--markers --track-memory`):
-`-s0` ~14.9 M, `-s1` ~33.3 M (both fit the 64 MB `-mm` default); `-s2`..`-s5` ~71-73 M → **exceed
-the default and must be paired with `-mm128`** (else `memory limit exceeded`, rc=3). Range 0..5;
-bare `-s` / non-digit / out-of-range (`-s6`) error rc=1. Per-level smoke: `.zig1_ast.tmp` absent at
-`-s1`, `.zig1_lir.tmp` absent at `-s2`, etc. — the spill-file ladder is the mode marker.
+S-RES → S-SIDE → S-EXTRA** — `-s1` moves AST to RAM, `-s2` also LIR, ... `-s6` = all RAM (no spill
+files). S-EXTRA is the AST index-side `extra_children`/`extra_ranges` write-through pool pair
+(`.zig1_extra_ec.tmp` / `.zig1_extra_er.tmp`). Higher `-s` = more RAM, less disk I/O; emission is
+**byte-identical in every mode** (same data, different storage). Measured self-compile `pool=`
+(self-hosted binary, `--markers --track-memory`): `-s0` 16.6 M (all disk), `-s5` 78.6 M (S-EXTRA
+still on disk), `-s6` 81.7 M (all RAM). `-s0`/`-s1` fit the 64 MB `-mm` default; `-s2`+ **exceed the
+default and must be paired with `-mm128`** (else `memory limit exceeded`, rc=3). Range 0..6; bare
+`-s` / non-digit / out-of-range (`-s7`) error rc=1. Per-level smoke: `.zig1_ast.tmp` absent at
+`-s1`, `.zig1_lir.tmp` absent at `-s2`, ..., `.zig1_extra_ec.tmp`/`.zig1_extra_er.tmp` absent at
+`-s6` — the spill-file ladder is the mode marker.
 
 ### Corpus gate (330 dirs in `repro/mi_matrix/*/`, all with `main.zig`)  — classify by gcc EXIT CODE  [updated: 2026-09-02 — spill backend config plan GATE; the full gate sweep is the corpus at `-s0`, 404 dirs = 330 mi_matrix + 53 top-level repro + 21 z98 (`slice_matrix` skipped)]
 For each `repro/mi_matrix/*/main.zig`: run `zig1 --dump-c89 --output-dir DIR`, then compile

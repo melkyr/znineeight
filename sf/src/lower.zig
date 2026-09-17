@@ -981,22 +981,7 @@ pub fn createBlock(self: *LirLowerer) u32 {
     return @intCast(u32, id);
 }
 
-fn lowerPrintCall(self: *LirLowerer, ec: []const u32) u32 {
-    var store = self.ctx.store;
-    var fmt_node = ast_mod.astStoreNodeAt(store, ec[0]);
-    var string_id: u32 = ast_mod.astStoreNodePayload(store, ec[0]);
-    emitInst(self, LirInst{ .print_str = .{ .string_id = string_id } });
-    var tuple_node = ast_mod.astStoreNodeAt(store, ec[1]);
-    var tuple_ec = ast_mod.astStoreNodeExtraChildren(store, ec[1]);
-    var i: usize = 0;
-    while (i < tuple_ec.len) : (i += 1) {
-        var val = lowerExpr(self, tuple_ec[i]);
-        emitInst(self, LirInst{ .print_val = .{ .value = val, .type_id = type_mod.TYPE_I32, .fmt = @intCast(u8, 'd') } });
-    }
-    return @intCast(u32, 0);
-}
-
-fn lowerPrintFmt(self: *LirLowerer, fmt_node_idx: u32, fmt: []const u8, arg_ec: []const u32) void {
+fn lowerPrintFmt(self: *LirLowerer, fmt_node_idx: u32, fmt: []const u8, tuple_node_idx: u32) void {
     var seg_start: usize = @intCast(usize, 0);
     var ai: usize = @intCast(usize, 0);
     var i: usize = @intCast(usize, 0);
@@ -1020,8 +1005,8 @@ fn lowerPrintFmt(self: *LirLowerer, fmt_node_idx: u32, fmt: []const u8, arg_ec: 
                     var sid2 = si_mod.stringInternerIntern(self.ctx.registry.interner, sg2);
                     emitInst(self, LirInst{ .print_str = .{ .string_id = sid2 } });
                 }
-                if (ai < arg_ec.len) {
-                    var pv = lowerExpr(self, arg_ec[ai]);
+                if (ai < @intCast(usize, ast_mod.astStoreNodeExtraChildCount(self.ctx.store, tuple_node_idx))) {
+                    var pv = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(self.ctx.store, tuple_node_idx, @intCast(u32, ai)));
                     var pvt = self.hoisted_temps.items[@intCast(usize, pv)].type_id;
                     var spec_fmt: u8 = @intCast(u8, 'd');
                     var spec_i: usize = i + @intCast(usize, 1);
@@ -2410,12 +2395,13 @@ fn asyncFindProto(self: *LirLowerer, module_id: u32, name_id: u32, out_proto: *a
         if (mods[i].ast_root == @intCast(u32, 0)) continue;
         var root = ast_mod.astStoreNodeAt(self.ctx.store, mods[i].ast_root);
         if (root.kind != AstKind.module_root) continue;
-        var decls = ast_mod.astStoreNodeExtraChildren(self.ctx.store, mods[i].ast_root);
+        var decls_n = ast_mod.astStoreNodeExtraChildCount(self.ctx.store, mods[i].ast_root);
         var di: usize = @intCast(usize, 0);
-        while (di < decls.len) : (di += @intCast(usize, 1)) {
-            var dn = ast_mod.astStoreNodeAt(self.ctx.store, decls[di]);
+        while (di < @intCast(usize, decls_n)) : (di += @intCast(usize, 1)) {
+            var decl_idx = ast_mod.astStoreNodeExtraChildAt(self.ctx.store, mods[i].ast_root, @intCast(u32, di));
+            var dn = ast_mod.astStoreNodeAt(self.ctx.store, decl_idx);
             if (dn.kind != AstKind.fn_decl) continue;
-            var proto = self.ctx.store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(self.ctx.store, decls[di]))];
+            var proto = self.ctx.store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(self.ctx.store, decl_idx))];
             if (proto.name_id == name_id) { out_proto.* = proto; return true; }
         }
     }
@@ -3777,12 +3763,12 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var ck_val: u8 = @intCast(u8, @enumToInt(callee_head.kind));
         var d9kb: [10]u8 = undefined; var d9kl = itoa_mod.itoa(@intCast(u32, ck_val), d9kb[0..]); var d9ks: usize = @intCast(usize, 9) - @intCast(usize, d9kl); pal.markerWrite(d9kb[d9ks..@intCast(usize, 9)]);
         var d9sp: []const u8 = " "; pal.markerWrite(d9sp);
-         var ec = ast_mod.astStoreNodeExtraChildren(store, node_idx);
+         var ec_n = @intCast(usize, ast_mod.astStoreNodeExtraChildCount(store, node_idx));
          var prt2_m: []const u8 = "PRT2:l"; pal.markerWrite(prt2_m);
-         var prt2_lb: [10]u8 = undefined; var prt2_ll = itoa_mod.itoa(@intCast(u32, ec.len), prt2_lb[0..]); var prt2_ls: usize = @intCast(usize, 9) - @intCast(usize, prt2_ll); pal.markerWrite(prt2_lb[prt2_ls..@intCast(usize, 9)]);
+         var prt2_lb: [10]u8 = undefined; var prt2_ll = itoa_mod.itoa(@intCast(u32, ec_n), prt2_lb[0..]); var prt2_ls: usize = @intCast(usize, 9) - @intCast(usize, prt2_ll); pal.markerWrite(prt2_lb[prt2_ls..@intCast(usize, 9)]);
          var ei2: usize = @intCast(usize, 0);
-         while (ei2 < ec.len and ei2 < @intCast(usize, 4)) : (ei2 += @intCast(usize, 1)) {
-             var ck2: u32 = @intCast(u32, @enumToInt(ast_mod.astStoreNodeAt(store, ec[ei2]).kind));
+         while (ei2 < ec_n and ei2 < @intCast(usize, 4)) : (ei2 += @intCast(usize, 1)) {
+             var ck2: u32 = @intCast(u32, @enumToInt(ast_mod.astStoreNodeAt(store, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ei2))).kind));
              var p2m: []const u8 = "k"; pal.markerWrite(p2m);
              var p2b: [10]u8 = undefined; var p2l = itoa_mod.itoa(ck2, p2b[0..]); var p2s: usize = @intCast(usize, 9) - @intCast(usize, p2l); pal.markerWrite(p2b[p2s..@intCast(usize, 9)]);
          }
@@ -3797,47 +3783,46 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                  var fp = self.ctx.registry.fn_items[@intCast(usize, crt_ty.payload_idx)];
                   var fnt_nm: []const u8 = "FNT:N"; pal.markerWriteInt(fnt_nm, fp.name_id);
                   var fnt_rm: []const u8 = "FNT:R"; pal.markerWriteInt(fnt_rm, fp.return_type);
-                   if (fp.name_id == self.print_fn_id and ec.len >= @intCast(usize, 2)) {
+                   if (fp.name_id == self.print_fn_id and ec_n >= @intCast(usize, 2)) {
                       var prn_m: []const u8 = "PRN:c"; pal.markerWrite(prn_m);
-                      var prn_cb: [10]u8 = undefined; var prn_cl = itoa_mod.itoa(@intCast(u32, ec.len), prn_cb[0..]); var prn_cs: usize = @intCast(usize, 9) - @intCast(usize, prn_cl); pal.markerWrite(prn_cb[prn_cs..@intCast(usize, 9)]);
+                      var prn_cb: [10]u8 = undefined; var prn_cl = itoa_mod.itoa(@intCast(u32, ec_n), prn_cb[0..]); var prn_cs: usize = @intCast(usize, 9) - @intCast(usize, prn_cl); pal.markerWrite(prn_cb[prn_cs..@intCast(usize, 9)]);
                       var prn_nm: []const u8 = "n"; pal.markerWrite(prn_nm);
                       var prn_nb: [10]u8 = undefined; var prn_nl = itoa_mod.itoa(fp.name_id, prn_nb[0..]); var prn_ns: usize = @intCast(usize, 9) - @intCast(usize, prn_nl); pal.markerWrite(prn_nb[prn_ns..@intCast(usize, 9)]);
                       var prn_xl: []const u8 = "\n"; pal.markerWrite(prn_xl);
-                      if (ec.len > @intCast(usize, 0)) {
+                      if (ec_n > @intCast(usize, 0)) {
                       var e0m: []const u8 = "E0:p"; pal.markerWrite(e0m);
-                      var e0b: [10]u8 = undefined; var e0l = itoa_mod.itoa(@intCast(u32, @enumToInt(ast_mod.astStoreNodeAt(store, ec[0]).kind)), e0b[0..]); var e0s: usize = @intCast(usize, 9) - @intCast(usize, e0l); pal.markerWrite(e0b[e0s..@intCast(usize, 9)]);
+                      var e0b: [10]u8 = undefined; var e0l = itoa_mod.itoa(@intCast(u32, @enumToInt(ast_mod.astStoreNodeAt(store, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0))).kind)), e0b[0..]); var e0s: usize = @intCast(usize, 9) - @intCast(usize, e0l); pal.markerWrite(e0b[e0s..@intCast(usize, 9)]);
                       var e01m: []const u8 = "n"; pal.markerWrite(e01m);
-                      var e01b: [10]u8 = undefined; var e01l = itoa_mod.itoa(ast_mod.astStoreNodePayload(store, ec[0]), e01b[0..]); var e01s: usize = @intCast(usize, 9) - @intCast(usize, e01l); pal.markerWrite(e01b[e01s..@intCast(usize, 9)]);
+                      var e01b: [10]u8 = undefined; var e01l = itoa_mod.itoa(ast_mod.astStoreNodePayload(store, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0))), e01b[0..]); var e01s: usize = @intCast(usize, 9) - @intCast(usize, e01l); pal.markerWrite(e01b[e01s..@intCast(usize, 9)]);
                       var e02m: []const u8 = "i"; pal.markerWrite(e02m);
-                      var e02b: [10]u8 = undefined; var e02l = itoa_mod.itoa(ast_mod.astStoreIdentifier(store, ec[0]), e02b[0..]); var e02s: usize = @intCast(usize, 9) - @intCast(usize, e02l); pal.markerWrite(e02b[e02s..@intCast(usize, 9)]);
+                      var e02b: [10]u8 = undefined; var e02l = itoa_mod.itoa(ast_mod.astStoreIdentifier(store, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0))), e02b[0..]); var e02s: usize = @intCast(usize, 9) - @intCast(usize, e02l); pal.markerWrite(e02b[e02s..@intCast(usize, 9)]);
                       var e0nl: []const u8 = "\n"; pal.markerWrite(e0nl);
                       }
-                       var pfmtn = ast_mod.astStoreNodeAt(store, ec[0]);
+                       var pfmtn = ast_mod.astStoreNodeAt(store, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)));
                        if (pfmtn.kind == AstKind.string_literal) {
-                           var pfsid: u32 = ast_mod.astStoreNodePayload(store, ec[0]);
-                           if (@intCast(usize, ast_mod.astStoreNodePayload(store, ec[0])) < store.string_values.len) { pfsid = store.string_values.items[@intCast(usize, ast_mod.astStoreNodePayload(store, ec[0]))]; }
+                           var pfsid: u32 = ast_mod.astStoreNodePayload(store, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)));
+                           if (@intCast(usize, ast_mod.astStoreNodePayload(store, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)))) < store.string_values.len) { pfsid = store.string_values.items[@intCast(usize, ast_mod.astStoreNodePayload(store, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0))))]; }
                            var pfbytes = si_mod.stringInternerGet(self.ctx.registry.interner, pfsid);
-                           var pan = ast_mod.astStoreNodeAt(store, ec[ec.len - @intCast(usize, 1)]);
-                           var pae = ast_mod.astStoreNodeExtraChildren(store, ec[ec.len - @intCast(usize, 1)]);
-                           lowerPrintFmt(self, ec[0], pfbytes, pae);
+                           var pan = ast_mod.astStoreNodeAt(store, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ec_n - @intCast(usize, 1))));
+                           lowerPrintFmt(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)), pfbytes, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ec_n - @intCast(usize, 1))));
                        }
                         return @intCast(u32, 0);
                    }
                         var args_start = self.temp_counter;
                       var ai: usize = 0;
-                      while (ai < ec.len) : (ai += 1) { _ = nextTemp(self, type_mod.TYPE_UNDEFINED); }
+                      while (ai < ec_n) : (ai += 1) { _ = nextTemp(self, type_mod.TYPE_UNDEFINED); }
                       ai = 0;
                 var is_ex: u8 = fp.is_extern;
-                while (ai < ec.len) : (ai += 1) {
+                while (ai < ec_n) : (ai += 1) {
                     var arg_null_ty: u32 = @intCast(u32, 0);
-                    var arg_val = lowerExpr(self, ec[ai]);
-                    if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[ai])) |pt| {
+                    var arg_val = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ai)));
+                    if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ai)))) |pt| {
                         if (pt != type_mod.TYPE_UNDEFINED and is_ex == @intCast(u8, 0)) {
                             var st = getTempType(self, arg_val);
                             if (st == type_mod.TYPE_NULL) { var cs5_m: []const u8 = "CS5\n"; pal.markerWrite(cs5_m); }
                             var ck = coercion_mod.classifyCoercion(self.ctx.registry, st, pt);
                             var ce: CoercionEntry = undefined;
-                            ce.node_idx = ec[ai];
+                            ce.node_idx = ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ai));
                             ce.kind = ck;
                             ce.target_type = pt;
                             arg_val = applyCoercion(self, arg_val, ce);
@@ -3847,7 +3832,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                             if (et.kind == type_mod.TypeKind.optional_type) {
                                 var eo = self.ctx.registry.opt_items[@intCast(usize, et.payload_idx)];
                                 self.hoisted_temps.items[@intCast(usize, args_start) + ai].type_id = eo.payload;
-                                if (ast_mod.astStoreNodeAt(store, ec[ai]).kind == AstKind.null_literal) {
+                                if (ast_mod.astStoreNodeAt(store, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ai))).kind == AstKind.null_literal) {
                                     var eo_pay_kind = self.ctx.registry.types_items[@intCast(usize, eo.payload)].kind;
                                     if (eo_pay_kind == type_mod.TypeKind.ptr_type or eo_pay_kind == type_mod.TypeKind.many_ptr_type) {
                                         arg_null_ty = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, type_mod.TYPE_VOID, false);
@@ -3866,7 +3851,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     }
                     emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = args_start + @intCast(u32, ai), .src = arg_val } });
                     var sbox: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
-                    if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[ai])) |pt| { sbox[0] = pt; }
+                    if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ai)))) |pt| { sbox[0] = pt; }
                     else { sbox[0] = self.hoisted_temps.items[@intCast(usize, arg_val)].type_id; }
                     if (arg_null_ty != @intCast(u32, 0)) { sbox[0] = arg_null_ty; }
                     self.hoisted_temps.items[@intCast(usize, args_start) + ai].type_id = sbox[0];
@@ -3888,7 +3873,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                  var fnr_rm: []const u8 = "FNR:R"; pal.markerWriteInt(fnr_rm, fp.return_type);
                  var fnr_tm: []const u8 = "FNR:T"; pal.markerWriteInt(fnr_tm, result);
                   var call_name: u32 = fp.name_id;
-                 var cd_slot = lir_mod.lirSideAppendCallDirect(self.func, .{ .name_id = call_name, .module_id = fp.module_id, .args_start = args_start, .args_count = @intCast(u32, ec.len), .result = result, .return_type = fp.return_type, .is_extern = fp.is_extern, .call_conv = fp.flags_packed & type_mod.FN_FLAG_STDCALL });
+                 var cd_slot = lir_mod.lirSideAppendCallDirect(self.func, .{ .name_id = call_name, .module_id = fp.module_id, .args_start = args_start, .args_count = @intCast(u32, ec_n), .result = result, .return_type = fp.return_type, .is_extern = fp.is_extern, .call_conv = fp.flags_packed & type_mod.FN_FLAG_STDCALL });
                  emitInst(self, LirInst{ .call_direct = cd_slot });
                  return result;
                }
@@ -3900,17 +3885,17 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                      var fpi_callee = lowerExpr(self, node.child_0);
                      var fpi_args_start = self.temp_counter;
                      var fpi_ai: usize = @intCast(usize, 0);
-                     while (fpi_ai < ec.len) : (fpi_ai += @intCast(usize, 1)) { _ = nextTemp(self, type_mod.TYPE_UNDEFINED); }
+                     while (fpi_ai < ec_n) : (fpi_ai += @intCast(usize, 1)) { _ = nextTemp(self, type_mod.TYPE_UNDEFINED); }
                      fpi_ai = @intCast(usize, 0);
-                     while (fpi_ai < ec.len) : (fpi_ai += @intCast(usize, 1)) {
-                         var fpi_arg = lowerExpr(self, ec[fpi_ai]);
-                         if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[fpi_ai])) |fpi_pt| {
+                     while (fpi_ai < ec_n) : (fpi_ai += @intCast(usize, 1)) {
+                         var fpi_arg = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, fpi_ai)));
+                         if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, fpi_ai)))) |fpi_pt| {
                              if (fpi_pt != type_mod.TYPE_UNDEFINED) {
                                  var st = getTempType(self, fpi_arg);
                                   if (st == type_mod.TYPE_NULL) { var cs6_m: []const u8 = "CS6\n"; pal.markerWrite(cs6_m); }
                                   var ck = coercion_mod.classifyCoercion(self.ctx.registry, st, fpi_pt);
                                  var ce: CoercionEntry = undefined;
-                                 ce.node_idx = ec[fpi_ai];
+                                 ce.node_idx = ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, fpi_ai));
                                  ce.kind = ck;
                                  ce.target_type = fpi_pt;
                                  fpi_arg = applyCoercion(self, fpi_arg, ce);
@@ -3918,7 +3903,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                          }
                          emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = fpi_args_start + @intCast(u32, fpi_ai), .src = fpi_arg } });
                          var fpi_slot: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
-                         if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[fpi_ai])) |fpi_pt| { fpi_slot[0] = fpi_pt; }
+                         if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, fpi_ai)))) |fpi_pt| { fpi_slot[0] = fpi_pt; }
                          else { fpi_slot[0] = self.hoisted_temps.items[@intCast(usize, fpi_arg)].type_id; }
                          self.hoisted_temps.items[@intCast(usize, fpi_args_start) + fpi_ai].type_id = fpi_slot[0];
                      }
@@ -3927,7 +3912,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                          fpi_result = nextTemp(self, fpfp.return_type);
                      }
                      var fpim: []const u8 = "FNI:t"; pal.markerWriteInt(fpim, fpi_result);
-                     emitInst(self, LirInst{ .call = .{ .callee = fpi_callee, .args_start = fpi_args_start, .args_count = @intCast(u32, ec.len), .result = fpi_result } });
+                     emitInst(self, LirInst{ .call = .{ .callee = fpi_callee, .args_start = fpi_args_start, .args_count = @intCast(u32, ec_n), .result = fpi_result } });
                      return fpi_result;
                  }
              }
@@ -3987,18 +3972,18 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                             if (fs.kind == @intCast(u8, 3)) {
                                  var call_ns: u32 = self.temp_counter;
                                  var ai: usize = 0;
-                                 while (ai < ec.len) : (ai += 1) { _ = nextTemp(self, type_mod.TYPE_UNDEFINED); }
+                                 while (ai < ec_n) : (ai += 1) { _ = nextTemp(self, type_mod.TYPE_UNDEFINED); }
                                  ai = 0;
                                   var is_ex: u8 = @intCast(u8, if ((fs.flags & @intCast(u16, 4)) != @intCast(u16, 0)) @intCast(usize, 1) else @intCast(usize, 0));
-                                  while (ai < ec.len) : (ai += 1) {
-                                       var call_val = lowerExpr(self, ec[ai]);
-                                       if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[ai])) |pt| {
+                                  while (ai < ec_n) : (ai += 1) {
+                                       var call_val = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ai)));
+                                       if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ai)))) |pt| {
                                            if (pt != type_mod.TYPE_UNDEFINED and is_ex == @intCast(u8, 0)) {
                                                var st = getTempType(self, call_val);
                                                 if (st == type_mod.TYPE_NULL) { var cs7_m: []const u8 = "CS7\n"; pal.markerWrite(cs7_m); }
                                                 var ck = coercion_mod.classifyCoercion(self.ctx.registry, st, pt);
                                                var ce: CoercionEntry = undefined;
-                                               ce.node_idx = ec[ai];
+                                               ce.node_idx = ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ai));
                                                ce.kind = ck;
                                                ce.target_type = pt;
                                                call_val = applyCoercion(self, call_val, ce);
@@ -4017,7 +4002,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         }
                                        emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = call_ns + @intCast(u32, ai), .src = call_val } });
                                        var slot_tid_a: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
-                                       if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[ai])) |pt2| { slot_tid_a[0] = pt2; var hx: []const u8 = "H"; pal.markerWrite(hx); }
+                                       if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ai)))) |pt2| { slot_tid_a[0] = pt2; var hx: []const u8 = "H"; pal.markerWrite(hx); }
                                        else { slot_tid_a[0] = self.hoisted_temps.items[@intCast(usize, call_val)].type_id; var mx: []const u8 = "M"; pal.markerWrite(mx); }
                                        self.hoisted_temps.items[@intCast(usize, call_ns) + ai].type_id = slot_tid_a[0];
                                        if (is_ex == @intCast(u8, 1) and slot_tid_a[0] != type_mod.TYPE_UNDEFINED) {
@@ -4028,7 +4013,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                            }
                                        }
                                   }
-                                 var args_count: u32 = @intCast(u32, ec.len);
+                                 var args_count: u32 = @intCast(u32, ec_n);
                                  self._fn_ret_type = type_mod.TYPE_UNDEFINED;
                                  if (fs.decl_node != 0) {
                                      var dn = ast_mod.astStoreNodeAt(store, fs.decl_node);
@@ -4073,18 +4058,18 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 else if (sm.kind == @intCast(u8, 2) or sm.kind == @intCast(u8, 3)) { var d3m: []const u8 = "D3:OKn"; pal.markerWrite(d3m); var d3nb: [10]u8 = undefined; var d3nl = itoa_mod.itoa(callee_name_id, d3nb[0..]); var d3ns: usize = @intCast(usize, 9) - @intCast(usize, d3nl); pal.markerWrite(d3nb[d3ns..@intCast(usize, 9)]); var d3kn: []const u8 = "k"; pal.markerWrite(d3kn); var d3kb: [10]u8 = undefined; var d3kl = itoa_mod.itoa(@intCast(u32, @enumToInt(sm.kind)), d3kb[0..]); var d3ks: usize = @intCast(usize, 9) - @intCast(usize, d3kl); pal.markerWrite(d3kb[d3ks..@intCast(usize, 9)]);
                     var args_start = self.temp_counter;
                     var ai: usize = 0;
-                    while (ai < ec.len) : (ai += 1) { _ = nextTemp(self, type_mod.TYPE_UNDEFINED); }
+                    while (ai < ec_n) : (ai += 1) { _ = nextTemp(self, type_mod.TYPE_UNDEFINED); }
                     ai = 0;
                     var is_ex: u8 = @intCast(u8, if ((sm.flags & @intCast(u16, 4)) != @intCast(u16, 0)) @intCast(usize, 1) else @intCast(usize, 0));
-                    while (ai < ec.len) : (ai += 1) {
-                        var arg_val = lowerExpr(self, ec[ai]);
-                        if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[ai])) |pt| {
+                    while (ai < ec_n) : (ai += 1) {
+                        var arg_val = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ai)));
+                        if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ai)))) |pt| {
                             if (pt != type_mod.TYPE_UNDEFINED and is_ex == @intCast(u8, 0)) {
                                 var st = getTempType(self, arg_val);
                                 if (st == type_mod.TYPE_NULL) { var cs8_m: []const u8 = "CS8\n"; pal.markerWrite(cs8_m); }
                                 var ck = coercion_mod.classifyCoercion(self.ctx.registry, st, pt);
                                 var ce: CoercionEntry = undefined;
-                                ce.node_idx = ec[ai];
+                                ce.node_idx = ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ai));
                                 ce.kind = ck;
                                 ce.target_type = pt;
                                 arg_val = applyCoercion(self, arg_val, ce);
@@ -4103,7 +4088,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         }
                         emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = args_start + @intCast(u32, ai), .src = arg_val } });
                         var slot_tid_b: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
-                        if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ec[ai])) |pt2| { slot_tid_b[0] = pt2; var hx2: u32 = 1; if (hx2 == 1) { var px: usize = 999999; hx2 = 0; } }
+                        if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ai)))) |pt2| { slot_tid_b[0] = pt2; var hx2: u32 = 1; if (hx2 == 1) { var px: usize = 999999; hx2 = 0; } }
                         else { slot_tid_b[0] = getTempType(self, arg_val); var mx2: u32 = 2; if (mx2 == 2) { var qx: usize = 999998; mx2 = 0; } }
                         self.hoisted_temps.items[@intCast(usize, args_start) + ai].type_id = slot_tid_b[0];
                         if (is_ex == @intCast(u8, 1) and slot_tid_b[0] != type_mod.TYPE_UNDEFINED) {
@@ -4114,7 +4099,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                             }
                         }
                     }
-                    var args_count: u32 = @intCast(u32, ec.len);
+                    var args_count: u32 = @intCast(u32, ec_n);
                     self._fn_ret_type = type_mod.TYPE_UNDEFINED;
                     if (sm.decl_node != 0) {
                         var dn = ast_mod.astStoreNodeAt(store, sm.decl_node);
@@ -4172,15 +4157,15 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var callee_temp = lowerExpr(self, node.child_0);
         var args_start = self.temp_counter;
         var ai2: usize = 0;
-        while (ai2 < ec.len) : (ai2 += 1) { _ = nextTemp(self, type_mod.TYPE_UNDEFINED); }
+        while (ai2 < ec_n) : (ai2 += 1) { _ = nextTemp(self, type_mod.TYPE_UNDEFINED); }
         ai2 = 0;
-        while (ai2 < ec.len) : (ai2 += 1) {
-            var arg_val = lowerExpr(self, ec[ai2]);
+        while (ai2 < ec_n) : (ai2 += 1) {
+            var arg_val = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ai2)));
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = args_start + @intCast(u32, ai2), .src = arg_val } });
         }
         var d2s3: []const u8 = "D2I:ns="; pal.markerWrite(d2s3);
         dbgPrintU32(args_start); var d2n3: []const u8 = " nc="; pal.markerWrite(d2n3);
-        dbgPrintU32(@intCast(u32, ec.len)); var d2nl3: []const u8 = "\n"; pal.markerWrite(d2nl3);
+        dbgPrintU32(@intCast(u32, ec_n)); var d2nl3: []const u8 = "\n"; pal.markerWrite(d2nl3);
          var result = nextTemp(self, type_mod.TYPE_UNDEFINED);
         var und_ic_m: []const u8 = "UND:icRt"; pal.markerWrite(und_ic_m);
         var und_ic_tb: [10]u8 = undefined; var und_ic_tl = itoa_mod.itoa(result, und_ic_tb[0..]); var und_ic_ts: usize = @intCast(usize, 9) - @intCast(usize, und_ic_tl); pal.markerWrite(und_ic_tb[und_ic_ts..@intCast(usize, 9)]);
@@ -4188,15 +4173,15 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         emitInst(self, LirInst{ .call = .{
             .callee = callee_temp,
             .args_start = args_start,
-            .args_count = @intCast(u32, ec.len),
+            .args_count = @intCast(u32, ec_n),
             .result = result,
         } });
         return result;
         } else if (node.kind == AstKind.builtin_call) {
-         var ec = ast_mod.astStoreNodeExtraChildren(store, node_idx);
+         var ec_n = @intCast(usize, ast_mod.astStoreNodeExtraChildCount(store, node_idx));
             if (node.child_0 == self.ptrtoint_name_id or node.child_0 == self.int_from_ptr_name_id) {
-                if (ec.len >= 1) {
-                    var arg_val = lowerExpr(self, ec[@intCast(usize, 0)]);
+                if (ec_n >= 1) {
+                    var arg_val = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)));
                     var result2 = nextTemp(self, type_mod.TYPE_USIZE);
                     emitInst(self, LirInst{ .ptr_to_int = .{ .value = arg_val, .result = result2 } });
                     return result2;
@@ -4213,8 +4198,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         pfi_t = prt;
                     }
                 }
-                if (ec.len >= @intCast(usize, 1)) {
-                    var pfi_arg = lowerExpr(self, ec[@intCast(usize, 0)]);
+                if (ec_n >= @intCast(usize, 1)) {
+                    var pfi_arg = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)));
                     var pfi_res = nextTemp(self, pfi_t);
                     emitInst(self, LirInst{ .int_to_ptr = .{ .value = pfi_arg, .target = pfi_t, .result = pfi_res } });
                     return pfi_res;
@@ -4222,23 +4207,23 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 return nextTemp(self, pfi_t);
             }
             if (node.child_0 == self.field_parent_ptr_name_id) {
-                if (ec.len >= @intCast(usize, 3)) {
+                if (ec_n >= @intCast(usize, 3)) {
                     var fpp_env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner, .module_id = self.module_id, .source_file_id = @intCast(u32, 0), .diag = null, .local_consts = null };
-                    var fpp_outer = type_resolver.resolveTypeExprFull(&fpp_env, ec[@intCast(usize, 0)], @intCast(u32, 0));
+                    var fpp_outer = type_resolver.resolveTypeExprFull(&fpp_env, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)), @intCast(u32, 0));
                     if (fpp_outer != type_mod.TYPE_UNDEFINED) {
                         var fpp_oty = self.ctx.registry.types_items[@intCast(usize, fpp_outer)];
                         if (fpp_oty.state == @intCast(u8, 2) and fpp_oty.kind == type_mod.TypeKind.struct_type) {
                             var fpp_fields: []type_mod.FieldEntry = undefined;
                             type_mod.typeRegistryGetStructFields(self.ctx.registry, fpp_outer, &fpp_fields);
-                            var fpp_fnode = ast_mod.astStoreNodeAt(self.ctx.store, ec[@intCast(usize, 1)]);
+                            var fpp_fnode = ast_mod.astStoreNodeAt(self.ctx.store, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 1)));
                             if (fpp_fnode.kind == AstKind.string_literal) {
-                                var fpp_sv = ast_mod.astStoreNodePayload(self.ctx.store, ec[@intCast(usize, 1)]);
+                                var fpp_sv = ast_mod.astStoreNodePayload(self.ctx.store, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 1)));
                                 var fpp_want = self.ctx.store.string_values.items[@intCast(usize, fpp_sv)];
                                 var fpp_i: usize = 0;
                                 while (fpp_i < fpp_fields.len) : (fpp_i += 1) {
                                     if (fpp_fields[fpp_i].name_id == fpp_want) {
                                         var fpp_off: u64 = @intCast(u64, fpp_fields[fpp_i].offset);
-                                        var fpp_base = lowerExpr(self, ec[@intCast(usize, 2)]);
+                                        var fpp_base = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 2)));
                                         var fpp_t1 = nextTemp(self, type_mod.TYPE_USIZE);
                                         emitInst(self, LirInst{ .ptr_to_int = .{ .value = fpp_base, .result = fpp_t1 } });
                                         var fpp_t2 = nextTemp(self, type_mod.TYPE_USIZE);
@@ -4258,11 +4243,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 return nextTemp(self, type_mod.TYPE_VOID);
             }
             if (node.child_0 == self.bitcast_name_id) {
-                if (ec.len >= @intCast(usize, 2)) {
+                if (ec_n >= @intCast(usize, 2)) {
                     var bc_env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner, .module_id = self.module_id, .source_file_id = @intCast(u32, 0), .diag = null, .local_consts = null };
-                    var bc_dst = type_resolver.resolveTypeExprFull(&bc_env, ec[@intCast(usize, 0)], @intCast(u32, 0));
+                    var bc_dst = type_resolver.resolveTypeExprFull(&bc_env, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)), @intCast(u32, 0));
                     if (bc_dst != type_mod.TYPE_UNDEFINED) {
-                        var bc_arg = lowerExpr(self, ec[@intCast(usize, 1)]);
+                        var bc_arg = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 1)));
                         var bc_res = nextTemp(self, bc_dst);
                         emitInst(self, LirInst{ .int_cast = .{ .value = bc_arg, .target = bc_dst, .result = bc_res } });
                         return bc_res;
@@ -4279,9 +4264,9 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                             fold_ty_box[0] = t;
                         }
                     } else {
-                        if (ec.len >= @intCast(usize, 1)) {
+                        if (ec_n >= @intCast(usize, 1)) {
                             var ct_env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner, .module_id = self.module_id, .source_file_id = @intCast(u32, 0), .diag = null, .local_consts = null };
-                            var ct = type_resolver.resolveTypeExprFull(&ct_env, ec[@intCast(usize, 0)], @intCast(u32, 0));
+                            var ct = type_resolver.resolveTypeExprFull(&ct_env, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)), @intCast(u32, 0));
                             if (ct != type_mod.TYPE_UNDEFINED) {
                                 fold_ty_box[0] = ct;
                             }
@@ -4303,8 +4288,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             }
             if (node.child_0 == self.enumtoint_name_id) {
                 var bm: []const u8 = "E"; pal.markerWrite(bm);
-                if (ec.len >= 1) {
-                    return lowerExpr(self, ec[@intCast(usize, 0)]);
+                if (ec_n >= 1) {
+                    return lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)));
                 } else { return nextTemp(self, type_mod.TYPE_VOID); }
             }
             if (node.child_0 == self.cvastart_name_id) {
@@ -4314,8 +4299,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     return nextTemp(self, type_mod.TYPE_VOID);
                 }
                 var vst: u32 = TEMP_NONE;
-                if (ec.len >= @intCast(usize, 1)) {
-                    vst = vaListArgTemp(self, ec[@intCast(usize, 0)]);
+                if (ec_n >= @intCast(usize, 1)) {
+                    vst = vaListArgTemp(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)));
                 }
                 var vsp: u32 = TEMP_NONE;
                 if (self.func.params.len > @intCast(usize, 0)) {
@@ -4325,10 +4310,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 return nextTemp(self, type_mod.TYPE_VOID);
             }
             if (node.child_0 == self.cvaarg_name_id) {
-                if (ec.len >= @intCast(usize, 2)) {
-                    var vat = vaListArgTemp(self, ec[@intCast(usize, 0)]);
+                if (ec_n >= @intCast(usize, 2)) {
+                    var vat = vaListArgTemp(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)));
                     var ct_env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner, .module_id = self.module_id, .source_file_id = @intCast(u32, 0), .diag = null, .local_consts = null };
-                    var vatid = type_resolver.resolveTypeExprFull(&ct_env, ec[@intCast(usize, 1)], @intCast(u32, 0));
+                    var vatid = type_resolver.resolveTypeExprFull(&ct_env, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 1)), @intCast(u32, 0));
                     var vares = nextTemp(self, vatid);
                     emitInst(self, LirInst{ .va_arg = .{ .va_list_temp = vat, .type_id = vatid, .result = vares } });
                     return vares;
@@ -4338,23 +4323,23 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             }
             if (node.child_0 == self.cvaend_name_id) {
                 var vet: u32 = TEMP_NONE;
-                if (ec.len >= @intCast(usize, 1)) {
-                    vet = vaListArgTemp(self, ec[@intCast(usize, 0)]);
+                if (ec_n >= @intCast(usize, 1)) {
+                    vet = vaListArgTemp(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)));
                 }
                 emitInst(self, LirInst{ .va_end = .{ .va_list_temp = vet } });
                 return nextTemp(self, type_mod.TYPE_VOID);
             }
             if (node.child_0 == self.putchar_name_id) {
-                if (ec.len >= @intCast(usize, 1)) {
-                    var pc_val = lowerExpr(self, ec[@intCast(usize, 0)]);
+                if (ec_n >= @intCast(usize, 1)) {
+                    var pc_val = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)));
                     emitInst(self, LirInst{ .builtin_put_char = .{ .value = pc_val } });
                 }
                 return nextTemp(self, type_mod.TYPE_VOID);
             }
             if (node.child_0 == self.stdout_write_name_id or node.child_0 == self.stderr_write_name_id) {
-                if (ec.len >= @intCast(usize, 2)) {
-                    var so_ptr = lowerExpr(self, ec[@intCast(usize, 0)]);
-                    var so_len = lowerExpr(self, ec[@intCast(usize, 1)]);
+                if (ec_n >= @intCast(usize, 2)) {
+                    var so_ptr = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)));
+                    var so_len = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 1)));
                     if (node.child_0 == self.stdout_write_name_id) {
                         emitInst(self, LirInst{ .builtin_stdout_write = .{ .ptr = so_ptr, .len = so_len } });
                     } else {
@@ -4370,11 +4355,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             }
             if (node.child_0 == self.async_frame_size_name_id) {
                 var fs_val: u64 = @intCast(u64, 0);
-                if (ec.len >= @intCast(usize, 1)) {
+                if (ec_n >= @intCast(usize, 1)) {
                     self.suppress_fnref_ban = @intCast(u8, 1);
-                    _ = lowerExpr(self, ec[@intCast(usize, 0)]);
+                    _ = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)));
                     self.suppress_fnref_ban = @intCast(u8, 0);
-                    if (async_analysis.resolveCalleeKey(self.ctx.store, self.ctx.symbol_tables, self.module_id, ec[@intCast(usize, 0)])) |k| {
+                    if (async_analysis.resolveCalleeKey(self.ctx.store, self.ctx.symbol_tables, self.module_id, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)))) |k| {
                         var afs_mid: u32 = @intCast(u32, k >> @intCast(u64, 32));
                         var afs_nid: u32 = @intCast(u32, k & @intCast(u64, 0xFFFFFFFF));
                         if (async_analysis.asyncFrameSizeOf(self.ctx.frame_sizes, afs_mid, afs_nid)) |fsz| {
@@ -4391,24 +4376,24 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 var ai_ctx: u32 = @intCast(u32, 0);
                 var ai_buf: u32 = @intCast(u32, 0);
                 var ai_args: u32 = @intCast(u32, 0);
-                if (ec.len >= @intCast(usize, 1)) { ai_ctx = lowerExpr(self, ec[@intCast(usize, 0)]); }
-                if (ec.len >= @intCast(usize, 2)) { ai_buf = lowerExpr(self, ec[@intCast(usize, 1)]); }
-                if (ec.len >= @intCast(usize, 4)) { ai_args = lowerExpr(self, ec[@intCast(usize, 3)]); }
+                if (ec_n >= @intCast(usize, 1)) { ai_ctx = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0))); }
+                if (ec_n >= @intCast(usize, 2)) { ai_buf = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 1))); }
+                if (ec_n >= @intCast(usize, 4)) { ai_args = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 3))); }
                 var ai_have: bool = false;
                 var ai_mid: u32 = @intCast(u32, 0);
                 var ai_nid: u32 = @intCast(u32, 0);
-                if (ec.len >= @intCast(usize, 3)) {
+                if (ec_n >= @intCast(usize, 3)) {
                     self.suppress_fnref_ban = @intCast(u8, 1);
-                    _ = lowerExpr(self, ec[@intCast(usize, 2)]);
+                    _ = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 2)));
                     self.suppress_fnref_ban = @intCast(u8, 0);
-                    if (async_analysis.resolveCalleeKey(self.ctx.store, self.ctx.symbol_tables, self.module_id, ec[@intCast(usize, 2)])) |k| {
+                    if (async_analysis.resolveCalleeKey(self.ctx.store, self.ctx.symbol_tables, self.module_id, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 2)))) |k| {
                         ai_have = true;
                         ai_mid = @intCast(u32, k >> @intCast(u64, 32));
                         ai_nid = @intCast(u32, k & @intCast(u64, 0xFFFFFFFF));
                     }
                 }
                 _ = ai_ctx;
-                if (ec.len >= @intCast(usize, 2) and ai_have) {
+                if (ec_n >= @intCast(usize, 2) and ai_have) {
                     // F2: the frame's `state` field width is P2's authoritative
                     // choice (u8/u16/u32 by suspension count), so the init store
                     // and the post-header param offset must use the same width.
@@ -4438,8 +4423,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     if (self.ctx.safe_checks and ai_fsz > @intCast(u32, 0)) {
                         var ai_buf_len: u32 = @intCast(u32, 0);
                         var ai_len_known: bool = false;
-                        if (ec.len >= @intCast(usize, 2)) {
-                            if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, ec[@intCast(usize, 1)])) |ai_bt| {
+                        if (ec_n >= @intCast(usize, 2)) {
+                            if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 1)))) |ai_bt| {
                                 if (type_mod.typeRegistryGetPointeeType(self.ctx.registry, ai_bt)) |ai_pointee| {
                                     if (type_mod.typeRegistryArrayByteSize(self.ctx.registry, ai_pointee)) |ai_al| {
                                         if (ai_al > @intCast(u32, 0)) {
@@ -4480,10 +4465,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         var ai_frame_off: u32 = ai_hdr.end_off;
                         var ai_arg_off: u32 = @intCast(u32, 0);
                         var ai_payload: u64 = (@intCast(u64, ai_proto.params_start) << @intCast(u64, 32)) | @intCast(u64, ai_proto.params_count);
-                        var ai_pnodes = ast_mod.astStoreGetExtraChildren(self.ctx.store, ai_payload);
+                        var ai_pnodes_n = ast_mod.astStoreGetExtraChildCount(self.ctx.store, ai_payload);
                         var ai_pi: usize = @intCast(usize, 0);
-                        while (ai_pi < ai_pnodes.len) : (ai_pi += @intCast(usize, 1)) {
-                            var ai_pn = ast_mod.astStoreNodeAt(self.ctx.store, ai_pnodes[ai_pi]);
+                        while (ai_pi < @intCast(usize, ai_pnodes_n)) : (ai_pi += @intCast(usize, 1)) {
+                            var ai_pn = ast_mod.astStoreNodeAt(self.ctx.store, ast_mod.astStoreGetExtraChildAt(self.ctx.store, ai_payload, @intCast(u32, ai_pi)));
                             if (ai_pn.child_0 == @intCast(u32, 0)) continue;
                             var ai_pt: u32 = type_mod.TYPE_UNDEFINED;
                             if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, ai_pn.child_0)) |rtp| { ai_pt = rtp; }
@@ -4506,7 +4491,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     self.temp_counter = @intCast(u32, self.hoisted_temps.len);
                 }
                 var ai_res = nextTemp(self, ai_ptr_void);
-                if (ec.len >= @intCast(usize, 2)) {
+                if (ec_n >= @intCast(usize, 2)) {
                     emitInst(self, LirInst{ .assign = .{ .dst = ai_res, .src = ai_buf, .name_id = @intCast(u32, 0) } });
                 } else {
                     emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = ai_res } });
@@ -4517,7 +4502,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 var ar_ptr_void = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, type_mod.TYPE_VOID, false);
                 var ar_opt = type_mod.typeRegistryGetOrCreateOptional(self.ctx.registry, ar_ptr_void);
                 var ar_frame: u32 = @intCast(u32, 0);
-                if (ec.len >= @intCast(usize, 1)) { ar_frame = lowerExpr(self, ec[@intCast(usize, 0)]); }
+                if (ec_n >= @intCast(usize, 1)) { ar_frame = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0))); }
                 var ar_word = asyncEmitLoadAt(self, ar_frame, @intCast(u32, 0), type_mod.TYPE_USIZE);
                 if (self.ctx.safe_checks) {
                     var ar_zero = nextTemp(self, type_mod.TYPE_USIZE);
@@ -4539,9 +4524,9 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 // is coerced into the optional via the existing wrap machinery.
                 // With no second operand, pass a null optional as before.
                 var ar_a1 = nextTemp(self, ar_opt);
-                if (ec.len >= @intCast(usize, 2)) {
-                    var ar_av = lowerExpr(self, ec[@intCast(usize, 1)]);
-                    var ar_wrapped = materializeInto(self, ar_av, ar_opt, srcIntentForNode(self, ec[@intCast(usize, 1)]), ec[@intCast(usize, 1)]);
+                if (ec_n >= @intCast(usize, 2)) {
+                    var ar_av = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 1)));
+                    var ar_wrapped = materializeInto(self, ar_av, ar_opt, srcIntentForNode(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 1))), ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 1)));
                     emitInst(self, LirInst{ .assign = .{ .dst = ar_a1, .src = ar_wrapped, .name_id = @intCast(u32, 0) } });
                 } else {
                     emitInst(self, LirInst{ .set_optional_null = .{ .result = ar_a1, .type_id = ar_opt } });
@@ -4556,8 +4541,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 return as_res;
             }
             if (node.child_0 == self.exit_name_id) {
-                if (ec.len >= @intCast(usize, 1)) {
-                    var ex_val = lowerExpr(self, ec[@intCast(usize, 0)]);
+                if (ec_n >= @intCast(usize, 1)) {
+                    var ex_val = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)));
                     emitInst(self, LirInst{ .builtin_exit = .{ .value = ex_val } });
                 }
                 self.block_terminated = @intCast(u8, 1);
@@ -4572,11 +4557,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 var pr_pref_l = nextTemp(self, type_mod.TYPE_U32);
                 emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 7), .result = pr_pref_l } });
                 emitInst(self, LirInst{ .builtin_stderr_write = .{ .ptr = pr_pref_t, .len = pr_pref_l } });
-                if (ec.len >= @intCast(usize, 1)) {
-                    var pr_node = ast_mod.astStoreNodeAt(self.ctx.store, ec[@intCast(usize, 0)]);
+                if (ec_n >= @intCast(usize, 1)) {
+                    var pr_node = ast_mod.astStoreNodeAt(self.ctx.store, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)));
                     if (pr_node.kind == AstKind.string_literal) {
-                        var pr_sid: u32 = ast_mod.astStoreNodePayload(self.ctx.store, ec[@intCast(usize, 0)]);
-                        if (@intCast(usize, ast_mod.astStoreNodePayload(self.ctx.store, ec[@intCast(usize, 0)])) < self.ctx.store.string_values.len) { pr_sid = self.ctx.store.string_values.items[@intCast(usize, ast_mod.astStoreNodePayload(self.ctx.store, ec[@intCast(usize, 0)]))]; }
+                        var pr_sid: u32 = ast_mod.astStoreNodePayload(self.ctx.store, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)));
+                        if (@intCast(usize, ast_mod.astStoreNodePayload(self.ctx.store, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)))) < self.ctx.store.string_values.len) { pr_sid = self.ctx.store.string_values.items[@intCast(usize, ast_mod.astStoreNodePayload(self.ctx.store, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0))))]; }
                         var pr_str = si_mod.stringInternerGet(self.ctx.registry.interner, pr_sid);
                         var pr_mt = nextTemp(self, pr_pt);
                         emitInst(self, LirInst{ .string_const = .{ .string_id = pr_sid, .result = pr_mt } });
@@ -4584,7 +4569,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, pr_str.len), .result = pr_ml } });
                         emitInst(self, LirInst{ .builtin_stderr_write = .{ .ptr = pr_mt, .len = pr_ml } });
                     } else {
-                        var pr_val = lowerExpr(self, ec[@intCast(usize, 0)]);
+                        var pr_val = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)));
                         var pr_vt = getTempType(self, pr_val);
                         if (@intCast(usize, pr_vt) < self.ctx.registry.types_len and self.ctx.registry.types_items[@intCast(usize, pr_vt)].kind == type_mod.TypeKind.slice_type) {
                             var pr_ptr = nextTemp(self, pr_pt);
@@ -4607,8 +4592,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 return nextTemp(self, type_mod.TYPE_VOID);
             }
             if (node.child_0 == self.sleep_ms_name_id) {
-                if (ec.len >= @intCast(usize, 1)) {
-                    var sm_val = lowerExpr(self, ec[@intCast(usize, 0)]);
+                if (ec_n >= @intCast(usize, 1)) {
+                    var sm_val = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)));
                     emitInst(self, LirInst{ .builtin_sleep_ms = .{ .value = sm_val } });
                 }
                 return nextTemp(self, type_mod.TYPE_VOID);
@@ -4618,32 +4603,32 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 return nextTemp(self, type_mod.TYPE_VOID);
             }
             if (node.child_0 == self.console_gotoxy_name_id) {
-                if (ec.len >= @intCast(usize, 2)) {
-                    var cgx = lowerExpr(self, ec[@intCast(usize, 0)]);
-                    var cgy = lowerExpr(self, ec[@intCast(usize, 1)]);
+                if (ec_n >= @intCast(usize, 2)) {
+                    var cgx = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)));
+                    var cgy = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 1)));
                     emitInst(self, LirInst{ .builtin_console_gotoxy = .{ .x = cgx, .y = cgy } });
                 }
                 return nextTemp(self, type_mod.TYPE_VOID);
             }
             if (node.child_0 == self.console_set_color_name_id) {
-                if (ec.len >= @intCast(usize, 2)) {
-                    var csf = lowerExpr(self, ec[@intCast(usize, 0)]);
-                    var csb = lowerExpr(self, ec[@intCast(usize, 1)]);
+                if (ec_n >= @intCast(usize, 2)) {
+                    var csf = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)));
+                    var csb = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 1)));
                     emitInst(self, LirInst{ .builtin_console_set_color = .{ .fg = csf, .bg = csb } });
                 }
                 return nextTemp(self, type_mod.TYPE_VOID);
             }
-            if (ec.len >= 2) {
+            if (ec_n >= 2) {
                 var elm: []const u8 = "B"; pal.markerWrite(elm);
                 if (node.child_0 == self.intcast_name_id) { var bm: []const u8 = "I"; pal.markerWrite(bm); }
                 else if (node.child_0 == self.ptrcast_name_id) { var bm: []const u8 = "P"; pal.markerWrite(bm); }
                 else { var bm: []const u8 = "F"; pal.markerWrite(bm); }
-                var val_temp = lowerExpr(self, ec[@intCast(usize, 1)]);
-        var ty_node = ast_mod.astStoreNodeAt(store, ec[@intCast(usize, 0)]);
+                var val_temp = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 1)));
+        var ty_node = ast_mod.astStoreNodeAt(store, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)));
         t_target = type_mod.TYPE_U32;
         if (ty_node.kind == AstKind.fn_type) {
             var fc_env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner, .module_id = self.module_id, .source_file_id = @intCast(u32, 0), .diag = null, .local_consts = null };
-            var fc_t = type_resolver.resolveTypeExprFull(&fc_env, ec[@intCast(usize, 0)], @intCast(u32, 0));
+            var fc_t = type_resolver.resolveTypeExprFull(&fc_env, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)), @intCast(u32, 0));
             if (fc_t != type_mod.TYPE_UNDEFINED) {
                 t_target = fc_t;
                 var fc_inner = self.ctx.registry.types_items[@intCast(usize, fc_t)];
@@ -4657,7 +4642,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             }
         } else {
             var ct_env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner, .module_id = self.module_id, .source_file_id = @intCast(u32, 0), .diag = null, .local_consts = null };
-            var ct = type_resolver.resolveTypeExprFull(&ct_env, ec[@intCast(usize, 0)], @intCast(u32, 0));
+            var ct = type_resolver.resolveTypeExprFull(&ct_env, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)), @intCast(u32, 0));
             if (ct != type_mod.TYPE_UNDEFINED) { t_target = ct; }
         }
         if (t_target == type_mod.TYPE_U32) { var cdm: []const u8 = "CASTDFLT:n"; pal.markerWriteInt(cdm, node_idx); var cdk: []const u8 = "CASTDFLT:k"; pal.markerWriteInt(cdk, @intCast(u32, @enumToInt(ty_node.kind))); }
@@ -4987,12 +4972,12 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return result;
 
       } else if (node.kind == AstKind.array_init) {
-         var ec = ast_mod.astStoreNodeExtraChildren(store, node_idx);
+         var ec_n = ast_mod.astStoreNodeExtraChildCount(store, node_idx);
          var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
          var arr_tid: u32 = if (rt) |it| it else @intCast(u32, 0);
          if (arr_tid == @intCast(u32, 0)) {
-             var aelem: u32 = if (ec.len > @intCast(usize, 0)) if (ast_mod.astStoreNodeAt(store, ec[@intCast(usize, 0)]).kind == AstKind.char_literal) type_mod.TYPE_U8 else type_mod.TYPE_U32 else type_mod.TYPE_U32;
-               arr_tid = type_mod.typeRegistryGetOrCreateArray(self.ctx.registry, aelem, @intCast(u32, ec.len));
+             var aelem: u32 = if (ec_n > @intCast(u32, 0)) if (ast_mod.astStoreNodeAt(store, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0))).kind == AstKind.char_literal) type_mod.TYPE_U8 else type_mod.TYPE_U32 else type_mod.TYPE_U32;
+               arr_tid = type_mod.typeRegistryGetOrCreateArray(self.ctx.registry, aelem, ec_n);
            }
            var elem_t: u32 = arr_tid;
            var aty = self.ctx.registry.types_items[@intCast(usize, arr_tid)];
@@ -5001,17 +4986,17 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                elem_t = ap.elem;
            }
            var bei: usize = @intCast(usize, 0);
-           while (bei < ec.len) : (bei += @intCast(usize, 1)) {
-               var cn = ast_mod.astStoreNodeAt(store, ec[bei]);
+           while (bei < @intCast(usize, ec_n)) : (bei += @intCast(usize, 1)) {
+               var cn = ast_mod.astStoreNodeAt(store, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, bei)));
                if (cn.kind == AstKind.struct_init) {
-                   var exi = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, ec[bei]);
-                   if (exi == null) { resolved_mod.resolvedTypeTableSet(self.ctx.resolved_types, ec[bei], elem_t); }
+                   var exi = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, bei)));
+                   if (exi == null) { resolved_mod.resolvedTypeTableSet(self.ctx.resolved_types, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, bei)), elem_t); }
                }
            }
            var base_temp = nextTemp(self, arr_tid);
         var ei: usize = @intCast(usize, 0);
-        while (ei < ec.len) : (ei += @intCast(usize, 1)) {
-            var val_temp = lowerExpr(self, ec[ei]);
+        while (ei < @intCast(usize, ec_n)) : (ei += @intCast(usize, 1)) {
+            var val_temp = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ei)));
             var ix_temp = nextTemp(self, type_mod.TYPE_U32);
             emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, ei), .result = ix_temp } });
             emitInst(self, LirInst{ .assign_index = .{ .name_id = @intCast(u32, 0), .base = base_temp, .index = ix_temp, .src = val_temp } });
@@ -5036,10 +5021,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var sin2_mm: []const u8 = "M"; pal.markerWrite(sin2_mm);
         }
         var sin2_nl3: []const u8 = "\n"; pal.markerWrite(sin2_nl3);
-        var ec = ast_mod.astStoreNodeExtraChildren(store, node_idx);
+        var ec_n = ast_mod.astStoreNodeExtraChildCount(store, node_idx);
         var ei: usize = @intCast(usize, 0);
-        while (ei < ec.len) : (ei += @intCast(usize, 1)) {
-             var fi_node = ast_mod.astStoreNodeAt(store, ec[ei]);
+        while (ei < @intCast(usize, ec_n)) : (ei += @intCast(usize, 1)) {
+             var fi_node = ast_mod.astStoreNodeAt(store, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ei)));
             var vfi_m: []const u8 = "VFI:n"; pal.markerWrite(vfi_m);
             var vfi_nb: [10]u8 = undefined; var vfi_nl = itoa_mod.itoa(node_idx, vfi_nb[0..]); var vfi_ns: usize = @intCast(usize, 9) - @intCast(usize, vfi_nl); pal.markerWrite(vfi_nb[vfi_ns..@intCast(usize, 9)]);
             var vfi_0m: []const u8 = "0"; pal.markerWrite(vfi_0m);
@@ -5049,7 +5034,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var vfi_em: []const u8 = "e"; pal.markerWrite(vfi_em);
             var vfi_eb: [10]u8 = undefined; var vfi_el = itoa_mod.itoa(@intCast(u32, ei), vfi_eb[0..]); var vfi_es: usize = @intCast(usize, 9) - @intCast(usize, vfi_el); pal.markerWrite(vfi_eb[vfi_es..@intCast(usize, 9)]);
             var vfi_nl2: []const u8 = "\n"; pal.markerWrite(vfi_nl2);
-            var fi_name_id: u32 = ast_mod.astStoreNodePayload(store, ec[ei]);
+            var fi_name_id: u32 = ast_mod.astStoreNodePayload(store, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ei)));
             var sti_m: []const u8 = "STI:t"; pal.markerWrite(sti_m);
             var sti_tb: [10]u8 = undefined; var sti_tl = itoa_mod.itoa(self.temp_counter, sti_tb[0..]); var sti_ts: usize = @intCast(usize, 9) - @intCast(usize, sti_tl); pal.markerWrite(sti_tb[sti_ts..@intCast(usize, 9)]);
             var sti_em: []const u8 = "e"; pal.markerWrite(sti_em);
@@ -5203,9 +5188,9 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         }
         return base_temp;
     } else if (node.kind == AstKind.tuple_literal) {
-        var ec = ast_mod.astStoreNodeExtraChildren(store, node_idx);
+        var ec_n = ast_mod.astStoreNodeExtraChildCount(store, node_idx);
         var tupm: []const u8 = "TUP\n"; pal.markerWrite(tupm);
-        if (ec.len == 0) {
+        if (ec_n == 0) {
             return nextTemp(self, type_mod.TYPE_VOID);
         }
         var trt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
@@ -5216,8 +5201,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 var ap = self.ctx.registry.array_items[@intCast(usize, trt_ty.payload_idx)];
                 var base_temp = nextTemp(self, trt_id);
                 var ei: usize = @intCast(usize, 0);
-                while (ei < ec.len) : (ei += @intCast(usize, 1)) {
-                    var val_temp = lowerExpr(self, ec[ei]);
+                while (ei < @intCast(usize, ec_n)) : (ei += @intCast(usize, 1)) {
+                    var val_temp = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ei)));
                     var ix_temp = nextTemp(self, type_mod.TYPE_U32);
                     emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, ei), .result = ix_temp } });
                     emitInst(self, LirInst{ .assign_index = .{ .name_id = @intCast(u32, 0), .base = base_temp, .index = ix_temp, .src = val_temp } });
@@ -5225,7 +5210,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 return base_temp;
             }
         }
-        return lowerExpr(self, ec[0]);
+        return lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)));
     } else if (node.kind == AstKind.swt_ex) {
         var swe_m: []const u8 = "SWE:s\n"; pal.markerWrite(swe_m);
         var cond_temp = lowerExpr(self, node.child_0);
@@ -5270,31 +5255,32 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var result_temp: u32 = TEMP_NONE;
         if (result_tid != type_mod.TYPE_NORETURN) { result_temp = nextTemp(self, result_tid); }
         var sw_all_terminated: u8 = @intCast(u8, 1);
-        var prong_ec = ast_mod.astStoreNodeExtraChildren(store, node_idx);
+        var prong_n = ast_mod.astStoreNodeExtraChildCount(store, node_idx);
         var switch_bb = self.current_bb;
         var prong_start = @intCast(u32, self.func.blocks.len);
         var pi: usize = 0;
-        while (pi < prong_ec.len) : (pi += 1) { _ = createBlock(self); }
+        while (pi < @intCast(usize, prong_n)) : (pi += 1) { _ = createBlock(self); }
         var else_bb = createBlock(self);
         var exit_bb = createBlock(self);
         var cases_start = @intCast(u32, self.func.switch_cases.len);
         pi = 0;
-        while (pi < prong_ec.len) : (pi += 1) {
-            var prong_node = ast_mod.astStoreNodeAt(store, prong_ec[pi]);
+        while (pi < @intCast(usize, prong_n)) : (pi += 1) {
+            var prong_idx = ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, pi));
+            var prong_node = ast_mod.astStoreNodeAt(store, prong_idx);
             if ((prong_node.flags & @intCast(u8, 1)) != @intCast(u8, 0)) { continue; }
             var prong_bb_id = prong_start + @intCast(u32, pi);
-            var case_ec = ast_mod.astStoreNodeExtraChildren(store, prong_ec[pi]);
+            var case_n = ast_mod.astStoreNodeExtraChildCount(store, prong_idx);
             var ci: usize = 0;
-            while (ci < case_ec.len) : (ci += 1) {
-                lowerAppendSwitchCaseItem(self, case_ec[ci], prong_bb_id, cond_ty_id);
+            while (ci < @intCast(usize, case_n)) : (ci += 1) {
+                lowerAppendSwitchCaseItem(self, ast_mod.astStoreNodeExtraChildAt(store, prong_idx, @intCast(u32, ci)), prong_bb_id, cond_ty_id);
             }
         }
         var sc_len = @intCast(u32, self.func.switch_cases.len);
         var cases_count: u32 = sc_len - cases_start;
         var else_target = else_bb;
         pi = 0;
-        while (pi < prong_ec.len) : (pi += 1) {
-            var prong_node = ast_mod.astStoreNodeAt(store, prong_ec[pi]);
+        while (pi < @intCast(usize, prong_n)) : (pi += 1) {
+            var prong_node = ast_mod.astStoreNodeAt(store, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, pi)));
             if ((prong_node.flags & @intCast(u8, 1)) != @intCast(u8, 0)) {
                 else_target = prong_start + @intCast(u32, pi);
                 break;
@@ -5309,8 +5295,9 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         }
 
         pi = 0;
-        while (pi < prong_ec.len) : (pi += 1) {
-            var prong_node = ast_mod.astStoreNodeAt(store, prong_ec[pi]);
+        while (pi < @intCast(usize, prong_n)) : (pi += 1) {
+            var prong_idx = ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, pi));
+            var prong_node = ast_mod.astStoreNodeAt(store, prong_idx);
             var lf16_m: []const u8 = "LF16:n"; pal.markerWrite(lf16_m);
             var lf16_fb: [10]u8 = undefined; var lf16_fl = itoa_mod.itoa(@intCast(u32, prong_node.flags), lf16_fb[0..]); var lf16_fs: usize = @intCast(usize, 9) - @intCast(usize, lf16_fl); pal.markerWrite(lf16_fb[lf16_fs..@intCast(usize, 9)]);
             var lf16_cm: []const u8 = "c1="; pal.markerWrite(lf16_cm);
@@ -5327,14 +5314,14 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     var cap1_m: []const u8 = "CAP1\n"; pal.markerWrite(cap1_m);
                     var tu_ty = self.ctx.registry.types_items[@intCast(usize, tu_type_box[0])];
                     var tp = self.ctx.registry.tu_items[@intCast(usize, tu_ty.payload_idx)];
-                    var case_ec = ast_mod.astStoreNodeExtraChildren(store, prong_ec[pi]);
+                    var case_n = ast_mod.astStoreNodeExtraChildCount(store, prong_idx);
                     var capy_m: []const u8 = "CAPY:n"; pal.markerWrite(capy_m);
-                    var capy_pb: [10]u8 = undefined; var capy_pl = itoa_mod.itoa(@intCast(u32, ast_mod.astStoreNodePayloadPacked(store, prong_ec[pi], prong_node.kind) & @intCast(u64, 0xFFFFFFFF)), capy_pb[0..]); var capy_ps: usize = @intCast(usize, 9) - @intCast(usize, capy_pl); pal.markerWrite(capy_pb[capy_ps..@intCast(usize, 9)]);
+                    var capy_pb: [10]u8 = undefined; var capy_pl = itoa_mod.itoa(@intCast(u32, ast_mod.astStoreNodePayloadPacked(store, prong_idx, prong_node.kind) & @intCast(u64, 0xFFFFFFFF)), capy_pb[0..]); var capy_ps: usize = @intCast(usize, 9) - @intCast(usize, capy_pl); pal.markerWrite(capy_pb[capy_ps..@intCast(usize, 9)]);
                     var capy_lm: []const u8 = "l"; pal.markerWrite(capy_lm);
-                    var capy_lb: [10]u8 = undefined; var capy_ll = itoa_mod.itoa(@intCast(u32, case_ec.len), capy_lb[0..]); var capy_ls: usize = @intCast(usize, 9) - @intCast(usize, capy_ll); pal.markerWrite(capy_lb[capy_ls..@intCast(usize, 9)]);
+                    var capy_lb: [10]u8 = undefined; var capy_ll = itoa_mod.itoa(@intCast(u32, case_n), capy_lb[0..]); var capy_ls: usize = @intCast(usize, 9) - @intCast(usize, capy_ll); pal.markerWrite(capy_lb[capy_ls..@intCast(usize, 9)]);
                     var capy_n: []const u8 = "\n"; pal.markerWrite(capy_n);
-                    if (case_ec.len > @intCast(usize, 0)) {
-                        var ev3 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, case_ec[0]);
+                    if (@intCast(usize, case_n) > @intCast(usize, 0)) {
+                        var ev3 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, ast_mod.astStoreNodeExtraChildAt(store, prong_idx, @intCast(u32, 0)));
                         if (ev3) |idx| {
                         var fe: type_mod.FieldEntry = self.ctx.registry.fe_items[@intCast(usize, tp.fields_start) + @intCast(usize, idx)];
                         capture_name = maybeDisambiguateCapture(self, capture_name, fe.type_id);
@@ -5354,10 +5341,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var prong_val: u32 = @intCast(u32, 0);
             if (body_node.kind == AstKind.block) {
                 pushScopeDepth(self);
-                var block_ec = ast_mod.astStoreNodeExtraChildren(store, prong_node.child_0);
+                var block_n = ast_mod.astStoreNodeExtraChildCount(store, prong_node.child_0);
                 var bj: usize = 0;
-                while (bj < block_ec.len) : (bj += 1) {
-                    lowerStmt(self, block_ec[bj]);
+                while (bj < @intCast(usize, block_n)) : (bj += 1) {
+                    lowerStmt(self, ast_mod.astStoreNodeExtraChildAt(store, prong_node.child_0, @intCast(u32, bj)));
                 }
                 popScopeDepth(self);
                 prong_val = @intCast(u32, 0);
@@ -5630,16 +5617,16 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
         return op_r;
     } else if (node.kind == AstKind.block) {
-        var blk_ec = ast_mod.astStoreNodeExtraChildren(self.ctx.store, node_idx);
-        if (blk_ec.len > @intCast(usize, 0)) {
-            var blk_last = blk_ec[blk_ec.len - 1];
+        var blk_n = ast_mod.astStoreNodeExtraChildCount(self.ctx.store, node_idx);
+        if (blk_n > @intCast(u32, 0)) {
+            var blk_last = ast_mod.astStoreNodeExtraChildAt(self.ctx.store, node_idx, blk_n - @intCast(u32, 1));
             var blk_last_nd = ast_mod.astStoreNodeAt(self.ctx.store, blk_last);
             if (!lowerIsNoValueStmtKind(blk_last_nd.kind)) {
                 pushScopeDepth(self);
                 var blj: usize = 0;
-                while (blj < blk_ec.len - 1) : (blj += 1) {
+                while (blj < @intCast(usize, blk_n) - 1) : (blj += 1) {
                     self.block_terminated = @intCast(u8, 0);
-                    lowerStmt(self, blk_ec[blj]);
+                    lowerStmt(self, ast_mod.astStoreNodeExtraChildAt(self.ctx.store, node_idx, @intCast(u32, blj)));
                 }
                 self.block_terminated = @intCast(u8, 0);
                 var blk_val = lowerExpr(self, blk_last);
@@ -5690,21 +5677,21 @@ fn lowerIfArmValue(self: *LirLowerer, node_idx: u32) u32 {
 fn lowerExprOrBlock(self: *LirLowerer, node_idx: u32) u32 {
     var body_node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
     if (body_node.kind == AstKind.block) {
-        var block_ec = ast_mod.astStoreNodeExtraChildren(self.ctx.store, node_idx);
-        if (block_ec.len > @intCast(usize, 0)) {
-            var blk_last = block_ec[block_ec.len - 1];
+        var block_n = ast_mod.astStoreNodeExtraChildCount(self.ctx.store, node_idx);
+        if (block_n > @intCast(u32, 0)) {
+            var blk_last = ast_mod.astStoreNodeExtraChildAt(self.ctx.store, node_idx, block_n - @intCast(u32, 1));
             var blk_last_nd = ast_mod.astStoreNodeAt(self.ctx.store, blk_last);
             if (!lowerIsNoValueStmtKind(blk_last_nd.kind)) {
                 var bj: usize = 0;
-                while (bj < block_ec.len - 1) : (bj += 1) {
-                    lowerStmt(self, block_ec[bj]);
+                while (bj < @intCast(usize, block_n) - 1) : (bj += 1) {
+                    lowerStmt(self, ast_mod.astStoreNodeExtraChildAt(self.ctx.store, node_idx, @intCast(u32, bj)));
                 }
                 return lowerExpr(self, blk_last);
             }
         }
         var bj: usize = 0;
-        while (bj < block_ec.len) : (bj += 1) {
-            lowerStmt(self, block_ec[bj]);
+        while (bj < @intCast(usize, block_n)) : (bj += 1) {
+            lowerStmt(self, ast_mod.astStoreNodeExtraChildAt(self.ctx.store, node_idx, @intCast(u32, bj)));
         }
         return @intCast(u32, 0);
     }
@@ -5719,17 +5706,18 @@ fn lowerStmtBody(self: *LirLowerer, node_idx: u32) void {
     pushScopeDepth(self);
     var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
     if (node.kind == AstKind.block) {
-        var ec = ast_mod.astStoreNodeExtraChildren(self.ctx.store, node_idx);
+        var ec_n = ast_mod.astStoreNodeExtraChildCount(self.ctx.store, node_idx);
         var i: usize = 0;
-        while (i < ec.len) : (i += 1) {
-            var blc_node = ast_mod.astStoreNodeAt(self.ctx.store, ec[i]);
+        while (i < @intCast(usize, ec_n)) : (i += 1) {
+            var ec_i = ast_mod.astStoreNodeExtraChildAt(self.ctx.store, node_idx, @intCast(u32, i));
+            var blc_node = ast_mod.astStoreNodeAt(self.ctx.store, ec_i);
             var blc_m: []const u8 = "BLC:n"; pal.markerWrite(blc_m);
-            var blc_nb: [10]u8 = undefined; var blc_nl = itoa_mod.itoa(ec[i], blc_nb[0..]); var blc_ns: usize = @intCast(usize, 9) - @intCast(usize, blc_nl); pal.markerWrite(blc_nb[blc_ns..@intCast(usize, 9)]);
+            var blc_nb: [10]u8 = undefined; var blc_nl = itoa_mod.itoa(ec_i, blc_nb[0..]); var blc_ns: usize = @intCast(usize, 9) - @intCast(usize, blc_nl); pal.markerWrite(blc_nb[blc_ns..@intCast(usize, 9)]);
             var blc_km: []const u8 = "k"; pal.markerWrite(blc_km);
             var blc_kb: [10]u8 = undefined; var blc_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(blc_node.kind)), blc_kb[0..]); var blc_ks: usize = @intCast(usize, 9) - @intCast(usize, blc_kl); pal.markerWrite(blc_kb[blc_ks..@intCast(usize, 9)]);
             var blc_nl2: []const u8 = "\n"; pal.markerWrite(blc_nl2);
             self.block_terminated = @intCast(u8, 0);
-            lowerStmt(self, ec[i]);
+            lowerStmt(self, ec_i);
         }
     } else {
         lowerStmt(self, node_idx);
@@ -5750,10 +5738,10 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
     var store = self.ctx.store;
     if (node.kind == AstKind.block) {
         pushScopeDepth(self);
-        var ec = ast_mod.astStoreNodeExtraChildren(store, node_idx);
+        var ec_n = ast_mod.astStoreNodeExtraChildCount(store, node_idx);
         var i: usize = 0;
-        while (i < ec.len) : (i += 1) {
-            lowerStmt(self, ec[i]);
+        while (i < @intCast(usize, ec_n)) : (i += 1) {
+            lowerStmt(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, i)));
         }
         expandDefers(self, self.scope_depth, @intCast(u8, 0), @intCast(u8, 1));
         popScopeDepth(self);
@@ -6148,31 +6136,32 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                 cond_temp = tag_temp;
             }
          }
-        var prong_ec = ast_mod.astStoreNodeExtraChildren(store, node_idx);
+        var prong_n = ast_mod.astStoreNodeExtraChildCount(store, node_idx);
         var switch_bb = self.current_bb;
         var prong_start = @intCast(u32, self.func.blocks.len);
         var pi: usize = 0;
-        while (pi < prong_ec.len) : (pi += 1) { _ = createBlock(self); }
+        while (pi < @intCast(usize, prong_n)) : (pi += 1) { _ = createBlock(self); }
         var else_bb = createBlock(self);
         var exit_bb = createBlock(self);
         var cases_start = @intCast(u32, self.func.switch_cases.len);
         pi = 0;
-        while (pi < prong_ec.len) : (pi += 1) {
-            var prong_node = ast_mod.astStoreNodeAt(store, prong_ec[pi]);
+        while (pi < @intCast(usize, prong_n)) : (pi += 1) {
+            var prong_idx = ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, pi));
+            var prong_node = ast_mod.astStoreNodeAt(store, prong_idx);
             if ((prong_node.flags & @intCast(u8, 1)) != @intCast(u8, 0)) { continue; }
             var prong_bb_id = prong_start + @intCast(u32, pi);
-            var case_ec = ast_mod.astStoreNodeExtraChildren(store, prong_ec[pi]);
+            var case_n = ast_mod.astStoreNodeExtraChildCount(store, prong_idx);
             var ci: usize = 0;
-            while (ci < case_ec.len) : (ci += 1) {
-                lowerAppendSwitchCaseItem(self, case_ec[ci], prong_bb_id, cond_ty_id);
+            while (ci < @intCast(usize, case_n)) : (ci += 1) {
+                lowerAppendSwitchCaseItem(self, ast_mod.astStoreNodeExtraChildAt(store, prong_idx, @intCast(u32, ci)), prong_bb_id, cond_ty_id);
             }
         }
         var sc_len = @intCast(u32, self.func.switch_cases.len);
         var cases_count: u32 = sc_len - cases_start;
         var else_target = else_bb;
         pi = 0;
-        while (pi < prong_ec.len) : (pi += 1) {
-            var prong_node = ast_mod.astStoreNodeAt(store, prong_ec[pi]);
+        while (pi < @intCast(usize, prong_n)) : (pi += 1) {
+            var prong_node = ast_mod.astStoreNodeAt(store, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, pi)));
             if ((prong_node.flags & @intCast(u8, 1)) != @intCast(u8, 0)) {
                 else_target = prong_start + @intCast(u32, pi);
                 break;
@@ -6188,8 +6177,9 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         var exit_preds: u32 = @intCast(u32, 0);
 
         pi = 0;
-        while (pi < prong_ec.len) : (pi += 1) {
-             var prong_node = ast_mod.astStoreNodeAt(store, prong_ec[pi]);
+        while (pi < @intCast(usize, prong_n)) : (pi += 1) {
+             var prong_idx = ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, pi));
+             var prong_node = ast_mod.astStoreNodeAt(store, prong_idx);
              var prong_bb_id = prong_start + @intCast(u32, pi);
              self.current_bb = prong_bb_id;
              self.block_terminated = @intCast(u8, 0);
@@ -6199,9 +6189,9 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                      var scap2_n: []const u8 = "SCAP2:n"; pal.markerWriteInt(scap2_n, capture_name);
                      var tu_ty2 = self.ctx.registry.types_items[@intCast(usize, tu_type_box2[0])];
                      var tp2 = self.ctx.registry.tu_items[@intCast(usize, tu_ty2.payload_idx)];
-                     var case_ec2 = ast_mod.astStoreNodeExtraChildren(store, prong_ec[pi]);
-                     if (case_ec2.len > @intCast(usize, 0)) {
-                         var ev4 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, case_ec2[0]);
+                     var case_n2 = ast_mod.astStoreNodeExtraChildCount(store, prong_idx);
+                     if (@intCast(usize, case_n2) > @intCast(usize, 0)) {
+                         var ev4 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, ast_mod.astStoreNodeExtraChildAt(store, prong_idx, @intCast(u32, 0)));
                          if (ev4) |idx| {
                              var fe2: type_mod.FieldEntry = self.ctx.registry.fe_items[@intCast(usize, tp2.fields_start) + @intCast(usize, idx)];
                               capture_name = maybeDisambiguateCapture(self, capture_name, fe2.type_id);
@@ -7135,12 +7125,12 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
     }
     var p_payload: u64 = (@intCast(u64, proto.params_start) << @intCast(u64, 32)) | @intCast(u64, proto.params_count);
     if (proto.params_count > @intCast(u16, 0)) {
-        var pnodes = ast_mod.astStoreGetExtraChildren(store, p_payload);
+        var pnodes_n = ast_mod.astStoreGetExtraChildCount(store, p_payload);
         var pi: usize = @intCast(usize, 0);
-        while (pi < pnodes.len) : (pi += @intCast(usize, 1)) {
-            var pnode = ast_mod.astStoreNodeAt(store, pnodes[pi]);
+        while (pi < @intCast(usize, pnodes_n)) : (pi += @intCast(usize, 1)) {
+            var pnode = ast_mod.astStoreNodeAt(store, ast_mod.astStoreGetExtraChildAt(store, p_payload, @intCast(u32, pi)));
             if (pnode.child_0 != @intCast(u32, 0)) {
-                var p_name_id: u32 = ast_mod.astStoreNodePayload(store, pnodes[pi]);
+                var p_name_id: u32 = ast_mod.astStoreNodePayload(store, ast_mod.astStoreGetExtraChildAt(store, p_payload, @intCast(u32, pi)));
                 var p_type = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, pnode.child_0);
                 if (p_type) |_| { var dp: []const u8 = "HP"; pal.markerWrite(dp); } else { var dp: []const u8 = "MP"; pal.markerWrite(dp); }
                 var p_tid = if (p_type) |pt| pt else type_mod.TYPE_UNDEFINED;
@@ -7199,7 +7189,7 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
     return func_ptr.*;
 }
 
-pub fn lowerModuleInit(self: *LirLowerer, decls: []const u32, mod_id: u32) LirFunction {
+pub fn lowerModuleInit(self: *LirLowerer, root_idx: u32, mod_id: u32) LirFunction {
     var store = self.ctx.store;
     var init_s: []const u8 = "__module_init";
     var init_name_id = si_mod.stringInternerIntern(self.ctx.registry.interner, init_s);
@@ -7226,13 +7216,15 @@ pub fn lowerModuleInit(self: *LirLowerer, decls: []const u32, mod_id: u32) LirFu
     self.scope_depth = @intCast(u32, 0);
     self.cur_scope = @intCast(u32, 0);
     self.temp_counter = @intCast(u32, 0);
+    var decls_n = ast_mod.astStoreNodeExtraChildCount(store, root_idx);
     var di: usize = @intCast(usize, 0);
-    while (di < decls.len) : (di += @intCast(usize, 1)) {
-        var dcl = ast_mod.astStoreNodeAt(store, decls[di]);
+    while (di < @intCast(usize, decls_n)) : (di += @intCast(usize, 1)) {
+        var decl_idx = ast_mod.astStoreNodeExtraChildAt(store, root_idx, @intCast(u32, di));
+        var dcl = ast_mod.astStoreNodeAt(store, decl_idx);
         if (dcl.kind != AstKind.var_decl) continue;
         if ((@intCast(u16, dcl.flags) & @intCast(u16, 0x04)) != @intCast(u16, 0)) continue;
         if (dcl.child_1 == @intCast(u32, 0)) continue;
-        var g_name_id: u32 = ast_mod.astStoreNodePayload(store, decls[di]);
+        var g_name_id: u32 = ast_mod.astStoreNodePayload(store, decl_idx);
         var g_sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, mod_id, g_name_id);
         if (g_sym) |gss| {
             if (gss.kind != sym_mod.SymbolKind.global) continue;

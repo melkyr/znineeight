@@ -240,6 +240,36 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
       var ivi: usize = @intCast(usize, 0);
       while (ivi < iv_tmp_name.len and ivp_len < @intCast(usize, 511)) : (ivi += @intCast(usize, 1)) { iv_spill_path[ivp_len] = iv_tmp_name[ivi]; ivp_len += @intCast(usize, 1); }
       ast_mod.astStoreSetValuePoolSpillPath(&store, @intCast(u32, 1), iv_spill_path[0..ivp_len]);
+      var ec_spill_path: [512]u8 = undefined;
+      var ecp_len: usize = @intCast(usize, 0);
+      if (cli.output_dir_set) {
+          var od6 = cli.output_dir;
+          var oi6: usize = @intCast(usize, 0);
+          while (oi6 < od6.len and ecp_len < @intCast(usize, 511)) : (oi6 += @intCast(usize, 1)) { ec_spill_path[ecp_len] = od6[oi6]; ecp_len += @intCast(usize, 1); }
+          ec_spill_path[ecp_len] = @intCast(u8, '/'); ecp_len += @intCast(usize, 1);
+      } else {
+          ec_spill_path[ecp_len] = @intCast(u8, '.'); ecp_len += @intCast(usize, 1);
+          ec_spill_path[ecp_len] = @intCast(u8, '/'); ecp_len += @intCast(usize, 1);
+      }
+      var ec_tmp_name: []const u8 = ".zig1_extra_ec.tmp";
+      var eci: usize = @intCast(usize, 0);
+      while (eci < ec_tmp_name.len and ecp_len < @intCast(usize, 511)) : (eci += @intCast(usize, 1)) { ec_spill_path[ecp_len] = ec_tmp_name[eci]; ecp_len += @intCast(usize, 1); }
+      ast_mod.astStoreSetValuePoolSpillPath(&store, @intCast(u32, 2), ec_spill_path[0..ecp_len]);
+      var er_spill_path: [512]u8 = undefined;
+      var erp_len: usize = @intCast(usize, 0);
+      if (cli.output_dir_set) {
+          var od7 = cli.output_dir;
+          var oi7: usize = @intCast(usize, 0);
+          while (oi7 < od7.len and erp_len < @intCast(usize, 511)) : (oi7 += @intCast(usize, 1)) { er_spill_path[erp_len] = od7[oi7]; erp_len += @intCast(usize, 1); }
+          er_spill_path[erp_len] = @intCast(u8, '/'); erp_len += @intCast(usize, 1);
+      } else {
+          er_spill_path[erp_len] = @intCast(u8, '.'); erp_len += @intCast(usize, 1);
+          er_spill_path[erp_len] = @intCast(u8, '/'); erp_len += @intCast(usize, 1);
+      }
+      var er_tmp_name: []const u8 = ".zig1_extra_er.tmp";
+      var eri: usize = @intCast(usize, 0);
+      while (eri < er_tmp_name.len and erp_len < @intCast(usize, 511)) : (eri += @intCast(usize, 1)) { er_spill_path[erp_len] = er_tmp_name[eri]; erp_len += @intCast(usize, 1); }
+      ast_mod.astStoreSetValuePoolSpillPath(&store, @intCast(u32, 3), er_spill_path[0..erp_len]);
       var symbol_reg = sym_mod.symbolRegistryInit(&compiler_alloc.permanent);
     var resolved_types = resolved_type_table.resolvedTypeTableInit(&compiler_alloc.module);
     var rtt_spill_path: [512]u8 = undefined;
@@ -449,11 +479,11 @@ fn phase_SymbolRegistration(ctx: *CompilerContext) void {
     if (smods.len > @intCast(usize, 0) and smods[0].ast_root != @intCast(u32, 0)) {
         var sr = ast_mod.astStoreNodeAt(ctx.store, smods[0].ast_root);
         if (sr.kind == AstKind.module_root) {
-            var sdl = ast_mod.astStoreNodeExtraChildren(ctx.store, smods[0].ast_root);
+            var sdl_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, smods[0].ast_root);
             var sdi: usize = @intCast(usize, 0);
             var sl: []const u8 = "S0"; pal.markerWrite(sl);
-            while (sdi < sdl.len) : (sdi += @intCast(usize, 1)) {
-                var sd = ast_mod.astStoreNodeAt(ctx.store, sdl[sdi]);
+            while (sdi < @intCast(usize, sdl_n)) : (sdi += @intCast(usize, 1)) {
+                var sd = ast_mod.astStoreNodeAt(ctx.store, ast_mod.astStoreNodeExtraChildAt(ctx.store, smods[0].ast_root, @intCast(u32, sdi)));
                 var sk: u32 = @intCast(u32, @enumToInt(sd.kind));
                 var sb: [20]u8 = undefined;
                 var slen = itoa_mod.itoa(sk, sb[0..]);
@@ -488,11 +518,11 @@ fn phase_TypeResolution(ctx: *CompilerContext) void {
     if (mods.len > @intCast(usize, 0) and mods[0].ast_root != @intCast(u32, 0)) {
         var tr2 = ast_mod.astStoreNodeAt(ctx.store, mods[0].ast_root);
         if (tr2.kind == AstKind.module_root) {
-            var tdl = ast_mod.astStoreNodeExtraChildren(ctx.store, mods[0].ast_root);
+            var tdl_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, mods[0].ast_root);
             var tdi: usize = @intCast(usize, 0);
             var tl: []const u8 = "T0"; pal.markerWrite(tl);
-            while (tdi < tdl.len) : (tdi += @intCast(usize, 1)) {
-                var td = ast_mod.astStoreNodeAt(ctx.store, tdl[tdi]);
+            while (tdi < @intCast(usize, tdl_n)) : (tdi += @intCast(usize, 1)) {
+                var td = ast_mod.astStoreNodeAt(ctx.store, ast_mod.astStoreNodeExtraChildAt(ctx.store, mods[0].ast_root, @intCast(u32, tdi)));
                 var tk: u32 = @intCast(u32, @enumToInt(td.kind));
                 var tb: [20]u8 = undefined;
                 var tlen = itoa_mod.itoa(tk, tb[0..]);
@@ -584,35 +614,36 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
         var ast_root = mods[mi].ast_root;
         if (ast_root == @intCast(u32, 0)) { var mz: []const u8 = "MZ"; pal.markerWrite(mz); continue; }
         var root = ast_mod.astStoreNodeAt(ctx.store, ast_root);
-        var decls = ast_mod.astStoreNodeExtraChildren(ctx.store, ast_root);
+        var decls_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, ast_root);
          var ad: []const u8 = "AD"; pal.markerWrite(ad);
          var dse_m: []const u8 = "DSE\n"; pal.markerWrite(dse_m);
          var src_fid = mods[mi].source_file_id;
          var sa = sa_mod.semanticAnalyzerInit(&ctx.alloc.scratch, ctx.resolved_types, ctx.diag, ctx.typereg, ctx.symbol_reg, ctx.store, mods[mi].id, src_fid, ctx.coercion_table, &ctx.enum_value_table, &ctx.error_code_registry, ctx.interner, &ctx.call_arg_types, &ctx.call_param_map, ctx.module_reg, &ctx.suspending_fns);
         var di: usize = 0;
-        while (di < decls.len) : (di += 1) {
-            var decl = ast_mod.astStoreNodeAt(ctx.store, decls[di]);
+        while (di < @intCast(usize, decls_n)) : (di += 1) {
+            var decl_idx = ast_mod.astStoreNodeExtraChildAt(ctx.store, ast_root, @intCast(u32, di));
+            var decl = ast_mod.astStoreNodeAt(ctx.store, decl_idx);
             var dn: []const u8 = "DN"; pal.markerWrite(dn);
             if (decl.kind == AstKind.fn_decl) {
                 if (decl.child_0 != 0) {
                     front_res.resolveStmtTypes(&frc, mods[mi].id, decl.child_0, @intCast(u32, 0), mods[mi].source_file_id);
                 }
                 var sa0: []const u8 = "SA"; pal.markerWrite(sa0);
-                sa_mod.semanticAnalyzerResolveFnBody(&sa, decls[di]);
+                sa_mod.semanticAnalyzerResolveFnBody(&sa, decl_idx);
                 var sa1: []const u8 = "sA"; pal.markerWrite(sa1);
             } else if (decl.kind == AstKind.var_decl and decl.child_1 != @intCast(u32, 0)) {
                 var di_inn = ast_mod.astStoreNodeAt(ctx.store, decl.child_1);
                 if (di_inn.kind == AstKind.struct_decl) {
-                    sa_mod.semanticAnalyzerGateModulePackedDecl(&sa, decls[di]);
+                    sa_mod.semanticAnalyzerGateModulePackedDecl(&sa, decl_idx);
                 }
                 if (di_inn.kind == AstKind.union_decl and (di_inn.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
-                    sa_mod.semanticAnalyzerGateModulePackedDecl(&sa, decls[di]);
+                    sa_mod.semanticAnalyzerGateModulePackedDecl(&sa, decl_idx);
                 }
                 if (di_inn.kind == AstKind.enum_decl) {
-                    sa_mod.semanticAnalyzerGateEnumModuleDecl(&sa, decls[di]);
+                    sa_mod.semanticAnalyzerGateEnumModuleDecl(&sa, decl_idx);
                 }
             } else if (decl.kind == AstKind.enum_decl) {
-                sa_mod.semanticAnalyzerGateEnumModuleDecl(&sa, decls[di]);
+                sa_mod.semanticAnalyzerGateEnumModuleDecl(&sa, decl_idx);
             }
         }
     }
@@ -740,18 +771,19 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
             var root = ast_mod.astStoreNodeAt(ctx.store, mods[mi].ast_root);
             if (root.kind == AstKind.module_root) {
                 var mr: []const u8 = "R"; pal.markerWrite(mr);
-                var decls = ast_mod.astStoreNodeExtraChildren(ctx.store, mods[mi].ast_root);
-                var decl_len: u32 = @intCast(u32, decls.len);
+                var decls_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, mods[mi].ast_root);
+                var decl_len: u32 = @intCast(u32, decls_n);
                 var dcount_buf: [20]u8 = undefined;
                 var dcount_len = itoa_mod.itoa(decl_len, dcount_buf[0..]);
                 var dstart: usize = @intCast(usize, 19) - @intCast(usize, dcount_len);
                 pal.markerWrite(dcount_buf[dstart..@intCast(usize, 19)]);
                 pal.markerWrite(msep);
-                mr_mod.moduleRegistryCollectIncludes(ctx.store, decls, &mods[mi].c_includes);
+                mr_mod.moduleRegistryCollectIncludes(ctx.store, mods[mi].ast_root, &mods[mi].c_includes);
                 var mod_has_ri: u8 = @intCast(u8, 0);
                 var di: usize = @intCast(usize, 0);
-                while (di < decls.len) : (di += @intCast(usize, 1)) {
-                    var decl = ast_mod.astStoreNodeAt(ctx.store, decls[di]);
+                while (di < @intCast(usize, decls_n)) : (di += @intCast(usize, 1)) {
+                    var decl_idx = ast_mod.astStoreNodeExtraChildAt(ctx.store, mods[mi].ast_root, @intCast(u32, di));
+                    var decl = ast_mod.astStoreNodeAt(ctx.store, decl_idx);
                     var raw_k: u32 = @intCast(u32, @enumToInt(decl.kind));
                     var rbuf: [20]u8 = undefined;
                     var rlen = itoa_mod.itoa(raw_k, rbuf[0..]);
@@ -762,14 +794,14 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
             if (decl.kind == AstKind.fn_decl) {
                         var mf: []const u8 = "F"; pal.markerWrite(mf);
                         if ((@intCast(u16, decl.flags) & @intCast(u16, 0x08)) != @intCast(u16, 0)) {
-                            var fexp_proto = ctx.store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(ctx.store, decls[di]))];
+                            var fexp_proto = ctx.store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(ctx.store, decl_idx))];
                             var fexp_key: u64 = (@intCast(u64, mods[mi].id) << @intCast(u64, 35)) | (@intCast(u64, 0) << @intCast(u64, 32)) | @intCast(u64, fexp_proto.name_id);
                             _ = hash_mod.u64ToU32MapPut(&ctx.exported, fexp_key, @intCast(u32, 1));
                         }
                         var lowerer = lower_mod.lowererInit(&sem_ctx, &ctx.alloc.scratch);
                         lowerer.module_id = mods[mi].id;
                         lowerer.module_reg = ctx.module_reg;
-                        var lf = lower_mod.lowerFn(&lowerer, decls[di]);
+                        var lf = lower_mod.lowerFn(&lowerer, decl_idx);
                         if (async_analysis.asyncIsSuspending(&ctx.suspending_fns, lf.module_id, lf.name_id)) {
                             // Phase A: compute + publish the layout, retain the LIR
                             // (persistent copy; its arrays live in scratch) for phase B.
@@ -788,7 +820,7 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
                     } else {
                 if (decl.kind == AstKind.var_decl) {
                     if ((@intCast(u16, decl.flags) & @intCast(u16, 0x04)) == @intCast(u16, 0)) {
-                        var gv_name: u32 = ast_mod.astStoreNodePayload(ctx.store, decls[di]);
+                        var gv_name: u32 = ast_mod.astStoreNodePayload(ctx.store, decl_idx);
                         var gv_sym = sym_mod.symbolRegistryQualifiedLookup(ctx.symbol_reg, mods[mi].id, gv_name);
                         if (gv_sym) |gvs| {
                             if (gvs.kind == sym_mod.SymbolKind.global) {
@@ -822,7 +854,7 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
                                         if (gv_init2.kind != AstKind.undefined_literal) { gv_has_ri = @intCast(u8, 1); }
                                     }
                                     if (gv_has_ri == @intCast(u8, 1)) { mod_has_ri = @intCast(u8, 1); }
-                                    var gv_rt = resolved_type_table.resolvedTypeTableGet(ctx.resolved_types, decls[di]);
+                                    var gv_rt = resolved_type_table.resolvedTypeTableGet(ctx.resolved_types, decl_idx);
                                     var gv_tid: u32 = if (gv_rt) |grt| grt else type_mod.TYPE_UNDEFINED;
                                     lir_mod.globalDeclArrayListAppend(&ctx.global_decls, lir_mod.ModuleGlobalDecl{
                                         .name_id = gv_name,
@@ -841,7 +873,7 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
         var ilowerer = lower_mod.lowererInit(&sem_ctx, &ctx.alloc.scratch);
         ilowerer.module_id = mods[mi].id;
         ilowerer.module_reg = ctx.module_reg;
-        var imf = lower_mod.lowerModuleInit(&ilowerer, decls, mods[mi].id);
+        var imf = lower_mod.lowerModuleInit(&ilowerer, mods[mi].ast_root, mods[mi].id);
         var islot = lir_stream.lirStreamAppend(&ctx.lir_stream, imf);
         lir_mod.lirSlotArrayListAppend(&ctx.lir_slots, islot);
         if (!async_pending) { alloc_mod.sandReset(&ctx.alloc.scratch); }
@@ -850,11 +882,11 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
     if (amods.len > @intCast(usize, 0) and amods[0].ast_root != @intCast(u32, 0)) {
         var ar = ast_mod.astStoreNodeAt(ctx.store, amods[0].ast_root);
         if (ar.kind == AstKind.module_root) {
-            var adl = ast_mod.astStoreNodeExtraChildren(ctx.store, amods[0].ast_root);
+            var adl_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, amods[0].ast_root);
             var adi: usize = @intCast(usize, 0);
             var al: []const u8 = "A0"; pal.markerWrite(al);
-            while (adi < adl.len) : (adi += @intCast(usize, 1)) {
-                var ad = ast_mod.astStoreNodeAt(ctx.store, adl[adi]);
+            while (adi < @intCast(usize, adl_n)) : (adi += @intCast(usize, 1)) {
+                var ad = ast_mod.astStoreNodeAt(ctx.store, ast_mod.astStoreNodeExtraChildAt(ctx.store, amods[0].ast_root, @intCast(u32, adi)));
                 var ak: u32 = @intCast(u32, @enumToInt(ad.kind));
                 var ab: [20]u8 = undefined;
                 var alen = itoa_mod.itoa(ak, ab[0..]);
@@ -1401,8 +1433,8 @@ fn parseArgs() CompilerCli {
                 // -mm<N>: N MB hard pool budget in one token (e.g. -mm64). Folded into cli.max_mem (KB).
                 cli.max_mem = parseMMBytes(arg[3..]);
             } else if (matchSFlag(arg)) {
-                // -s<N>: decremental spill level 0..5 (default 0 = all on disk). Level N deactivates
-                // the first N spills (order AST,LIR,HASH,RES,SIDE) to Ram; higher -s = more RAM.
+                // -s<N>: decremental spill level 0..6 (default 0 = all on disk). Level N deactivates
+                // the first N spills (order AST,LIR,HASH,RES,SIDE,EXTRA) to Ram; higher -s = more RAM.
                 cli.spill_level = parseSLevel(arg[2..]);
             } else if (matchFlag(arg, s_max_errors) or matchFlag(arg, s_e)) {
                 i += 1;
@@ -1583,7 +1615,7 @@ fn matchSFlag(arg: []const u8) bool {
 
 // -s<N>: parse the decimal level suffix already stripped of the "-s" prefix.
 // Level 0 (default) = all spills on disk; level N deactivates the first N
-// spills (order AST,LIR,HASH,RES,SIDE) to Ram. Valid range 0..SPILL_COUNT.
+// spills (order AST,LIR,HASH,RES,SIDE,EXTRA) to Ram. Valid range 0..SPILL_COUNT.
 // Bare -s / non-digit / out-of-range all error rc=1 (mirror -mm discipline).
 fn parseSLevel(rest: []const u8) u32 {
     var i: usize = 0;
@@ -1596,7 +1628,7 @@ fn parseSLevel(rest: []const u8) u32 {
         n += 1;
         if (over == 0) {
             var d = @intCast(u32, c - '0');
-            var nl = level * @intCast(u32, 10) + d; // level <= 5 here, so no u32 overflow
+            var nl = level * @intCast(u32, 10) + d; // level <= 6 here, so no u32 overflow
             if (nl > spill_store_mod.SPILL_COUNT) {
                 over = 1;
             } else {
@@ -1606,13 +1638,13 @@ fn parseSLevel(rest: []const u8) u32 {
         i += 1;
     }
     if (n == 0 or i != rest.len) {
-        const em: []const u8 = "error: -s<N> requires a decimal level 0..5 (e.g. -s0 all on disk, -s5 all in RAM)\n";
+        const em: []const u8 = "error: -s<N> requires a decimal level 0..6 (e.g. -s0 all on disk, -s6 all in RAM)\n";
         pal.stderr_write(em);
         pal.exit(@intCast(u8, 1));
         return @intCast(u32, 0);
     }
     if (over != 0) {
-        const em: []const u8 = "error: -s<N> spill level out of range (0..5: 0 = all on disk, 5 = all in RAM)\n";
+        const em: []const u8 = "error: -s<N> spill level out of range (0..6: 0 = all on disk, 6 = all in RAM)\n";
         pal.stderr_write(em);
         pal.exit(@intCast(u8, 1));
         return @intCast(u32, 0);
@@ -1674,11 +1706,11 @@ fn printUsage() void {
     pal.stderr_write(msg);
     const mm_help: []const u8 = "  -mm<N>    hard pool budget in MB (default 64; pool.peak over budget -> ICE rc=3)\n";
     pal.stderr_write(mm_help);
-    const s_help: []const u8 = "  -s<N>     spill level 0..5 (default 0 = all spills on disk; -s1..-s5 deactivate the\n";
+    const s_help: []const u8 = "  -s<N>     spill level 0..6 (default 0 = all spills on disk; -s1..-s6 deactivate the\n";
     pal.stderr_write(s_help);
-    const s_help2: []const u8 = "            first N spills to RAM in order AST,LIR,HASH,RES,SIDE: higher -s = more RAM,\n";
+    const s_help2: []const u8 = "            first N spills to RAM in order AST,LIR,HASH,RES,SIDE,EXTRA: higher -s = more RAM,\n";
     pal.stderr_write(s_help2);
-    const s_help3: []const u8 = "            less disk I/O (pool= rises; -s5 = all in RAM ~71 MB -> pair with -mm128)\n";
+    const s_help3: []const u8 = "            less disk I/O (pool= rises; -s6 = all in RAM -> pair with -mm128)\n";
     pal.stderr_write(s_help3);
     const os_help: []const u8 = "  -osl       compile target = linux (default); -osw = windows\n";
     pal.stderr_write(os_help);

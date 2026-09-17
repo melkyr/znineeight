@@ -44,16 +44,17 @@ pub fn checkSwitchExhaust(store: *AstStore, reg: *TypeRegistry, diag: *Diagnosti
             var tp = reg.tu_items[@intCast(usize, ty.payload_idx)];
             member_count = tp.fields_count;
         }
-        var prongs = ast_mod.astStoreNodeExtraChildren(store, node_idx);
+        var prongs_n = ast_mod.astStoreNodeExtraChildCount(store, node_idx);
         var covered_count: u16 = 0;
         var has_else: u8 = 0;
         var pi: usize = 0;
-        while (pi < prongs.len) : (pi += 1) {
-            var prong = ast_mod.astStoreNodeAt(store, prongs[pi]);
+        while (pi < @intCast(usize, prongs_n)) : (pi += 1) {
+            var prong_idx = ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, pi));
+            var prong = ast_mod.astStoreNodeAt(store, prong_idx);
             if ((prong.flags & @intCast(u8, 1)) != @intCast(u8, 0)) { has_else = 1; } else {
-                if (ast_mod.astStoreNodePayload(store, prongs[pi]) != @intCast(u32, 0)) {
-                    var items = ast_mod.astStoreNodeExtraChildren(store, prongs[pi]);
-                    var count: u16 = @intCast(u16, items.len);
+                if (ast_mod.astStoreNodePayload(store, prong_idx) != @intCast(u32, 0)) {
+                    var items_n = ast_mod.astStoreNodeExtraChildCount(store, prong_idx);
+                    var count: u16 = @intCast(u16, items_n);
                     covered_count += count;
                 }
             }
@@ -93,9 +94,9 @@ pub fn constraintCheckerCheckBreakContinue(store: *AstStore, diag: *DiagnosticCo
                 if (node.child_2 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 2))) { stack_n[sp] = node.child_2; stack_d[sp] = nd; sp += 1; }
                 var bp = ast_mod.astStoreNodePayloadPacked(store, n, node.kind);
                 if (bp != @intCast(u64, 0) and (ast_mod.nodeHasNodeExtraChildren(node.kind) or node.kind == AstKind.builtin_call)) {
-                    var extra = ast_mod.astStoreGetExtraChildren(store, bp);
+                    var extra_n = ast_mod.astStoreGetExtraChildCount(store, bp);
                     var ei: usize = 0;
-                    while (ei < extra.len) : (ei += 1) { stack_n[sp] = extra[ei]; stack_d[sp] = nd; sp += 1; }
+                    while (ei < @intCast(usize, extra_n)) : (ei += 1) { stack_n[sp] = ast_mod.astStoreGetExtraChildAt(store, bp, @intCast(u32, ei)); stack_d[sp] = nd; sp += 1; }
                 }
                 continue;
             }
@@ -104,9 +105,9 @@ pub fn constraintCheckerCheckBreakContinue(store: *AstStore, diag: *DiagnosticCo
             if (node.child_2 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 2))) { stack_n[sp] = node.child_2; stack_d[sp] = nd; sp += 1; }
             var gp = ast_mod.astStoreNodePayloadPacked(store, n, node.kind);
             if (gp != @intCast(u64, 0) and (ast_mod.nodeHasNodeExtraChildren(node.kind) or node.kind == AstKind.builtin_call)) {
-                var extra = ast_mod.astStoreGetExtraChildren(store, gp);
+                var extra_n = ast_mod.astStoreGetExtraChildCount(store, gp);
                 var ei: usize = 0;
-                while (ei < extra.len) : (ei += 1) { stack_n[sp] = extra[ei]; stack_d[sp] = nd; sp += 1; }
+                while (ei < @intCast(usize, extra_n)) : (ei += 1) { stack_n[sp] = ast_mod.astStoreGetExtraChildAt(store, gp, @intCast(u32, ei)); stack_d[sp] = nd; sp += 1; }
             }
     }
 }

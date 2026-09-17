@@ -129,15 +129,16 @@ fn testLower() void {
     var lowerer = lower_mod.lowererInit(&ctx, &scratch);
 
     var root = ast_mod.astStoreNodeAt(&store, ast_root);
-    var decls = ast_mod.astStoreNodeExtraChildren(&store, ast_root);
+    var decls_n = ast_mod.astStoreNodeExtraChildCount(&store, ast_root);
     var di: usize = 0;
     var found_count: u32 = @intCast(u32, 0);
     var no_blocks: []const u8 = "function has no blocks";
     var expected_5: []const u8 = "expected at least 5 functions in lower_test/main.zig";
-    while (di < decls.len) : (di += @intCast(usize, 1)) {
-        var decl = ast_mod.astStoreNodeAt(&store, decls[di]);
+    while (di < @intCast(usize, decls_n)) : (di += @intCast(usize, 1)) {
+        var decl_idx = ast_mod.astStoreNodeExtraChildAt(&store, ast_root, @intCast(u32, di));
+        var decl = ast_mod.astStoreNodeAt(&store, decl_idx);
         if (decl.kind == AstKind.fn_decl) {
-            var lf = lower_mod.lowerFn(&lowerer, decls[di]);
+            var lf = lower_mod.lowerFn(&lowerer, decl_idx);
             found_count = found_count + @intCast(u32, 1);
             if (lf.blocks.len == @intCast(usize, 0)) {
                 fail(no_blocks);

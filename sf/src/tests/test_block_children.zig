@@ -66,15 +66,16 @@ pub fn main() void {
         pal.exit(1);
         return;
     }
-    var decls = ast_mod.astStoreNodeExtraChildren(&store, ast_root);
+    var decls_n = ast_mod.astStoreNodeExtraChildCount(&store, ast_root);
     var fm: []const u8 = "decls.len=";
     pal.stderr_write(fm);
-    writeU32(decls.len);
+    writeU32(@intCast(usize, decls_n));
     var nl2: []const u8 = "\n";
     pal.stderr_write(nl2);
     var di: usize = 0;
-    while (di < decls.len) : (di += 1) {
-        var d = ast_mod.astStoreNodeAt(&store, decls[di]);
+    while (di < @intCast(usize, decls_n)) : (di += 1) {
+        var decl_idx = ast_mod.astStoreNodeExtraChildAt(&store, ast_root, @intCast(u32, di));
+        var d = ast_mod.astStoreNodeAt(&store, decl_idx);
         if (d.kind == AstKind.fn_decl) {
             var body_idx = d.child_0;
             var body = ast_mod.astStoreNodeAt(&store, body_idx);
@@ -87,10 +88,10 @@ pub fn main() void {
             var nl: []const u8 = "\n";
             pal.stderr_write(nl);
             if (body.kind == AstKind.block) {
-                var ec = ast_mod.astStoreNodeExtraChildren(&store, body_idx);
+                var ec_n = ast_mod.astStoreNodeExtraChildCount(&store, body_idx);
                 var fm4: []const u8 = "block children count=";
                 pal.stderr_write(fm4);
-                writeU32(ec.len);
+                writeU32(@intCast(usize, ec_n));
                 var nl3: []const u8 = "\n";
                 pal.stderr_write(nl3);
             }

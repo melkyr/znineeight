@@ -1,4 +1,27 @@
-# mi_matrix corpus — expected-fail manifest (v129 2026-09-17)
+# mi_matrix corpus — expected-fail manifest (v130 2026-09-17)
+
+## Track-4 Task 9-M-F — AST index-side write-through spill (v129 -> v130 2026-09-17)
+
+Task 9-M-F replaces the two plain `extra_children` / `extra_ranges` arrays with two
+`AstValuePool` write-through block pools (EC 1024 elems/block, ER 512 elems/block,
+4096 B blocks, 1 resident head + 8-block read cache each), spilled under the new
+`SpillId.s_extra` (LAST slot; `SPILL_COUNT` 5 -> 6; `-s0`..`-s5` Disk, `-s6` all RAM;
+deactivation order AST -> LIR -> HASH -> RES -> SIDE -> EXTRA). The per-element getter
+(`astStoreNodeExtraChildCount` / `astStoreNodeExtraChildAt`) replaces the removed
+slice-returning accessors (no shared transient buffer: 7 direct-retaining + ~47
+recursive-retaining call sites, all now value-safe). Three new fixtures pin
+block-boundary crossing and the packed-range high half. Fixed point MOVED
+`b981bc80290bfde5ed5383cd0927e124` -> `dd43612912662fc06a25a10eb194c665` (hop1 == hop2);
+seed **v23 -> v24**. Corpus 728 dirs **class-identical** (675 OK / 28 GREEN / 25 FAIL);
+`-s0` self-compile `pool=` 19,653 K -> 16,622 K. Runtime stdout md5 stable x3.
+
+| fixture | GREEN (fixed point `dd436129`) |
+|---|---|
+| `ec_xmod_crossmodule_xmod` | dump rc=0, 6 `.c`, gcc-clean, link+run rc=0, stdout `76` (md5 `fbd7939d…`); module_root / fn_call / block / struct_decl / struct_init extra children across the module boundary |
+| `ec_deep_nested_xmod` | dump rc=0, 5 `.c`, gcc-clean, link+run rc=0, stdout `1539` (md5 `17e23e50…`); >1024 EC / >512 ER, crosses both pool block boundaries |
+| `ec_packed_range_xmod` | dump rc=0, 5 `.c`, gcc-clean, link+run rc=0, stdout `17` (md5 `70efdf2e…`); late range `start` = 65,600 > 2^16 pins the packed-range u32 high half |
+
+---
 
 ## Track-4 Task 8-F — suspending `export fn` synthesized driver landed (v128 -> v129 2026-09-17)
 

@@ -124,8 +124,7 @@ fn comptimeEvalResolveTypeArg(self: *ComptimeEval, node_idx: u32) ?u32 {
 fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?ComptimeVal {
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     if (node.child_0 == self.size_of_id) {
-        var ec: []const u32 = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
-        var tid = comptimeEvalResolveTypeArg(self, ec[@intCast(usize, 0)]);
+        var tid = comptimeEvalResolveTypeArg(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)));
         if (tid) |t| {
             var ty = self.registry.types_items[@intCast(usize, t)];
             if (ty.state == @intCast(u8, 2)) return ComptimeVal{ .bits = @intCast(u64, ty.size), .width_bits = @intCast(u32, 0), .sig = false };
@@ -133,8 +132,7 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
         return null;
     }
     if (node.child_0 == self.align_of_id) {
-        var ec: []const u32 = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
-        var tid = comptimeEvalResolveTypeArg(self, ec[@intCast(usize, 0)]);
+        var tid = comptimeEvalResolveTypeArg(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)));
         if (tid) |t| {
             var ty = self.registry.types_items[@intCast(usize, t)];
             if (ty.state == @intCast(u8, 2)) return ComptimeVal{ .bits = @intCast(u64, ty.alignment), .width_bits = @intCast(u32, 0), .sig = false };
@@ -142,9 +140,9 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
         return null;
     }
     if (node.child_0 == self.offset_of_id or node.child_0 == self.bit_offset_of_id) {
-        var ec2: []const u32 = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
-        if (ec2.len >= @intCast(usize, 2)) {
-            var tid = comptimeEvalResolveTypeArg(self, ec2[@intCast(usize, 0)]);
+        var ec2_n = ast_mod.astStoreNodeExtraChildCount(self.store, node_idx);
+        if (ec2_n >= @intCast(u32, 2)) {
+            var tid = comptimeEvalResolveTypeArg(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)));
             if (tid) |t| {
                 var ty = self.registry.types_items[@intCast(usize, t)];
                 if (ty.state == @intCast(u8, 2) and ty.kind == type_mod.TypeKind.struct_type) {
@@ -152,9 +150,9 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
                     type_mod.typeRegistryGetStructFields(self.registry, t, &fields);
                     var packed_fields: []type_mod.PackedBitField = undefined;
                     var has_pk = type_mod.typeRegistryGetPackedBitFields(self.registry, t, &packed_fields);
-                    var fname_node = ast_mod.astStoreNodeAt(self.store, ec2[@intCast(usize, 1)]);
+                    var fname_node = ast_mod.astStoreNodeAt(self.store, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 1)));
                     if (fname_node.kind == AstKind.string_literal) {
-                        var sv_idx = ast_mod.astStoreNodePayload(self.store, ec2[@intCast(usize, 1)]);
+                        var sv_idx = ast_mod.astStoreNodePayload(self.store, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 1)));
                         var want_id = self.store.string_values.items[@intCast(usize, sv_idx)];
                         var fi: usize = 0;
                         while (fi < fields.len) : (fi += 1) {
@@ -182,9 +180,9 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
                 } else if (ty.state == @intCast(u8, 2) and ty.kind == type_mod.TypeKind.packed_union_type) {
                     var u_fields: []type_mod.FieldEntry = undefined;
                     type_mod.typeRegistryGetUnionFields(self.registry, t, &u_fields);
-                    var fname_node2 = ast_mod.astStoreNodeAt(self.store, ec2[@intCast(usize, 1)]);
+                    var fname_node2 = ast_mod.astStoreNodeAt(self.store, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 1)));
                     if (fname_node2.kind == AstKind.string_literal) {
-                        var sv_idx2 = ast_mod.astStoreNodePayload(self.store, ec2[@intCast(usize, 1)]);
+                        var sv_idx2 = ast_mod.astStoreNodePayload(self.store, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 1)));
                         var want_id2 = self.store.string_values.items[@intCast(usize, sv_idx2)];
                         var fi2: usize = 0;
                         while (fi2 < u_fields.len) : (fi2 += 1) {
@@ -203,9 +201,9 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
         return null;
     }
     if (node.child_0 == self.bit_size_of_id) {
-        var ec3: []const u32 = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
-        if (ec3.len >= @intCast(usize, 1)) {
-            var tid2 = comptimeEvalResolveTypeArg(self, ec3[@intCast(usize, 0)]);
+        var ec3_n = ast_mod.astStoreNodeExtraChildCount(self.store, node_idx);
+        if (ec3_n >= @intCast(u32, 1)) {
+            var tid2 = comptimeEvalResolveTypeArg(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)));
             if (tid2) |t2| {
                 var ty2 = self.registry.types_items[@intCast(usize, t2)];
                 if (ty2.state == @intCast(u8, 2)) {
@@ -233,9 +231,8 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
         return null;
     }
     if (node.child_0 == self.int_cast_id) {
-        var ec = ast_mod.astStoreNodeExtraChildren(self.store, node_idx);
-        var tid = comptimeEvalResolveTypeArg(self, ec[@intCast(usize, 0)]);
-        var inner = comptimeEvalEvaluateDepth(self, ec[@intCast(usize, 1)], depth);
+        var tid = comptimeEvalResolveTypeArg(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)));
+        var inner = comptimeEvalEvaluateDepth(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 1)), depth);
         if (tid) |t| {
             if (inner) |cv| {
                 var ty = self.registry.types_items[@intCast(usize, t)];

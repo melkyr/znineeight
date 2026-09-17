@@ -321,6 +321,7 @@ const AstValuePool = struct {
     spill: spill_mod.SpillStore, // per-pool spill (Disk/Ram backend, lazily opened)
     spill_path: [512]u8,
     spill_path_len: usize,
+    is_extra: u8, // 1 = opens under SpillId.s_extra (index side), 0 = s_side
 };
 
 pub const AstStore = struct {
@@ -329,11 +330,7 @@ pub const AstStore = struct {
         // blocks (astStoreNodeAt), the contiguous items/capacity array is gone.
         len: usize,
     },
-    extra_children: struct {
-        items: [*]u32,
-        len: usize,
-        capacity: usize,
-    },
+    extra_children: AstValuePool,
     identifiers: AstValuePool,
     int_values: AstValuePool,
     float_values: struct {
@@ -356,11 +353,7 @@ pub const AstStore = struct {
         // the same disk-backed blocks as nodes (astStoreNodePayload).
         len: usize,
     },
-    extra_ranges: struct {
-        items: [*]u64,
-        len: usize,
-        capacity: usize,
-    },
+    extra_ranges: AstValuePool,
     allocator: *Sand,
     block_table: struct {
         items: [*]NodeBlockInfo,
@@ -405,14 +398,14 @@ pub fn astStoreInit(arena: *Sand) AstStore {
     };
     var store = AstStore{
         .nodes = .{ .len = @intCast(usize, 0) },
-        .extra_children = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
-        .identifiers = .{ .len = @intCast(usize, 0), .elem_bytes = @intCast(u32, 0), .elems_per_block = @intCast(u32, 0), .block_shift = @intCast(u32, 0), .block_mask = @intCast(u32, 0), .head_buf = undefined, .head_cap = @intCast(usize, 0), .head_elems = @intCast(u32, 0), .cur_block = @intCast(u32, 0), .cache_buf = undefined, .cache_allocated = @intCast(u8, 0), .slot_block = undefined, .ring_next = @intCast(u32, 0), .spill = spill_mod.spillStoreInit(), .spill_path = undefined, .spill_path_len = @intCast(usize, 0) },
-        .int_values = .{ .len = @intCast(usize, 0), .elem_bytes = @intCast(u32, 0), .elems_per_block = @intCast(u32, 0), .block_shift = @intCast(u32, 0), .block_mask = @intCast(u32, 0), .head_buf = undefined, .head_cap = @intCast(usize, 0), .head_elems = @intCast(u32, 0), .cur_block = @intCast(u32, 0), .cache_buf = undefined, .cache_allocated = @intCast(u8, 0), .slot_block = undefined, .ring_next = @intCast(u32, 0), .spill = spill_mod.spillStoreInit(), .spill_path = undefined, .spill_path_len = @intCast(usize, 0) },
+        .extra_children = .{ .len = @intCast(usize, 0), .elem_bytes = @intCast(u32, 0), .elems_per_block = @intCast(u32, 0), .block_shift = @intCast(u32, 0), .block_mask = @intCast(u32, 0), .head_buf = undefined, .head_cap = @intCast(usize, 0), .head_elems = @intCast(u32, 0), .cur_block = @intCast(u32, 0), .cache_buf = undefined, .cache_allocated = @intCast(u8, 0), .slot_block = undefined, .ring_next = @intCast(u32, 0), .spill = spill_mod.spillStoreInit(), .spill_path = undefined, .spill_path_len = @intCast(usize, 0), .is_extra = @intCast(u8, 1) },
+        .identifiers = .{ .len = @intCast(usize, 0), .elem_bytes = @intCast(u32, 0), .elems_per_block = @intCast(u32, 0), .block_shift = @intCast(u32, 0), .block_mask = @intCast(u32, 0), .head_buf = undefined, .head_cap = @intCast(usize, 0), .head_elems = @intCast(u32, 0), .cur_block = @intCast(u32, 0), .cache_buf = undefined, .cache_allocated = @intCast(u8, 0), .slot_block = undefined, .ring_next = @intCast(u32, 0), .spill = spill_mod.spillStoreInit(), .spill_path = undefined, .spill_path_len = @intCast(usize, 0), .is_extra = @intCast(u8, 0) },
+        .int_values = .{ .len = @intCast(usize, 0), .elem_bytes = @intCast(u32, 0), .elems_per_block = @intCast(u32, 0), .block_shift = @intCast(u32, 0), .block_mask = @intCast(u32, 0), .head_buf = undefined, .head_cap = @intCast(usize, 0), .head_elems = @intCast(u32, 0), .cur_block = @intCast(u32, 0), .cache_buf = undefined, .cache_allocated = @intCast(u8, 0), .slot_block = undefined, .ring_next = @intCast(u32, 0), .spill = spill_mod.spillStoreInit(), .spill_path = undefined, .spill_path_len = @intCast(usize, 0), .is_extra = @intCast(u8, 0) },
         .float_values = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
         .fn_protos = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
         .string_values = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
         .payload = .{ .len = @intCast(usize, 0) },
-        .extra_ranges = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
+        .extra_ranges = .{ .len = @intCast(usize, 0), .elem_bytes = @intCast(u32, 0), .elems_per_block = @intCast(u32, 0), .block_shift = @intCast(u32, 0), .block_mask = @intCast(u32, 0), .head_buf = undefined, .head_cap = @intCast(usize, 0), .head_elems = @intCast(u32, 0), .cur_block = @intCast(u32, 0), .cache_buf = undefined, .cache_allocated = @intCast(u8, 0), .slot_block = undefined, .ring_next = @intCast(u32, 0), .spill = spill_mod.spillStoreInit(), .spill_path = undefined, .spill_path_len = @intCast(usize, 0), .is_extra = @intCast(u8, 1) },
         .allocator = arena,
         .block_table = .{ .items = undefined, .len = @intCast(usize, 0), .capacity = @intCast(usize, 0) },
         .slots = undefined,
@@ -452,14 +445,30 @@ pub fn astStoreInit(arena: *Sand) AstStore {
         store.int_values.spill_path[dvi] = d_iv[dvi];
     }
     store.int_values.spill_path_len = d_iv.len;
+    var d_ec: []const u8 = ".zig1_extra_ec.tmp";
+    var deci: usize = 0;
+    while (deci < d_ec.len) : (deci += 1) {
+        store.extra_children.spill_path[deci] = d_ec[deci];
+    }
+    store.extra_children.spill_path_len = d_ec.len;
+    var d_er: []const u8 = ".zig1_extra_er.tmp";
+    var deri: usize = 0;
+    while (deri < d_er.len) : (deri += 1) {
+        store.extra_ranges.spill_path[deri] = d_er[deri];
+    }
+    store.extra_ranges.spill_path_len = d_er.len;
     astStoreNodeAppend(&store, null_node, @intCast(u32, 0));
-    u64ArrayListAppendInner(&store.extra_ranges.items, &store.extra_ranges.len, &store.extra_ranges.capacity, arena, @intCast(u64, 0));
+    _ = valuePoolAppend(&store, &store.extra_ranges, @intCast(u64, 0));
     return store;
 }
 
 fn astStoreInitValuePools(store: *AstStore) void {
     valuePoolInit(&store.identifiers, @intCast(u32, 4));
     valuePoolInit(&store.int_values, @intCast(u32, 8));
+    valuePoolInit(&store.extra_children, @intCast(u32, 4));
+    valuePoolInit(&store.extra_ranges, @intCast(u32, 8));
+    store.extra_children.is_extra = @intCast(u8, 1);
+    store.extra_ranges.is_extra = @intCast(u8, 1);
 }
 
 pub fn astStoreSetSpillPath(store: *AstStore, path: []const u8) void {
@@ -475,6 +484,8 @@ pub fn astStoreCloseSpill(store: *AstStore) void {
     spill_mod.spillClose(&store.spill);
     valuePoolClose(store, &store.identifiers);
     valuePoolClose(store, &store.int_values);
+    valuePoolClose(store, &store.extra_children);
+    valuePoolClose(store, &store.extra_ranges);
 }
 
 fn valuePoolInit(p: *AstValuePool, elem_bytes: u32) void {
@@ -498,14 +509,19 @@ fn valuePoolInit(p: *AstValuePool, elem_bytes: u32) void {
     p.ring_next = @intCast(u32, 0);
     p.spill = spill_mod.spillStoreInit();
     p.spill_path_len = @intCast(usize, 0);
+    p.is_extra = @intCast(u8, 0);
 }
 
 pub fn astStoreSetValuePoolSpillPath(store: *AstStore, which: u32, path: []const u8) void {
     var p: *AstValuePool = undefined;
     if (which == @intCast(u32, 0)) {
         p = &store.identifiers;
-    } else {
+    } else if (which == @intCast(u32, 1)) {
         p = &store.int_values;
+    } else if (which == @intCast(u32, 2)) {
+        p = &store.extra_children;
+    } else {
+        p = &store.extra_ranges;
     }
     var i: usize = 0;
     while (i < path.len and i < @intCast(usize, 511)) : (i += 1) {
@@ -517,7 +533,13 @@ pub fn astStoreSetValuePoolSpillPath(store: *AstStore, which: u32, path: []const
 
 fn valuePoolOpen(store: *AstStore, p: *AstValuePool) void {
     if (p.spill.opened != @intCast(u8, 0)) return;
-    spill_mod.spillOpen(&p.spill, spill_mod.spillBackendFor(spill_mod.SpillId.s_side), p.spill_path[0..p.spill_path_len], store.allocator, "w+b");
+    var backend: spill_mod.SpillBackend = spill_mod.SpillBackend.disk;
+    if (p.is_extra != @intCast(u8, 0)) {
+        backend = spill_mod.spillBackendFor(spill_mod.SpillId.s_extra);
+    } else {
+        backend = spill_mod.spillBackendFor(spill_mod.SpillId.s_side);
+    }
+    spill_mod.spillOpen(&p.spill, backend, p.spill_path[0..p.spill_path_len], store.allocator, "w+b");
 }
 
 fn valuePoolEnsureHead(store: *AstStore, p: *AstValuePool) void {
@@ -806,18 +828,39 @@ pub fn astStoreAddExtraChildren(store: *AstStore, children: []const u32) u32 {
     var start = @intCast(u32, store.extra_children.len);
     var i: usize = 0;
     while (i < children.len) {
-        u32ArrayListAppendInner(&store.extra_children.items, &store.extra_children.len, &store.extra_children.capacity, store.allocator, children[i]);
+        _ = valuePoolAppend(store, &store.extra_children, @intCast(u64, children[i]));
         i += 1;
     }
-    var range_idx = @intCast(u32, store.extra_ranges.len);
-    u64ArrayListAppendInner(&store.extra_ranges.items, &store.extra_ranges.len, &store.extra_ranges.capacity, store.allocator, (@intCast(u64, start) << @intCast(u64, 32)) | @intCast(u64, children.len));
+    var range_idx = valuePoolAppend(store, &store.extra_ranges, (@intCast(u64, start) << @intCast(u64, 32)) | @intCast(u64, children.len));
     return range_idx;
 }
 
-pub fn astStoreGetExtraChildren(store: *AstStore, payload: u64) []const u32 {
-    var start: usize = @intCast(usize, payload >> 32);
-    var count: usize = @intCast(usize, payload & @intCast(u64, 0xFFFFFFFF));
-    return store.extra_children.items[start .. start + count];
+pub fn astStoreGetExtraChildCount(store: *AstStore, payload: u64) u32 {
+    return @intCast(u32, payload & @intCast(u64, 0xFFFFFFFF));
+}
+
+pub fn astStoreGetExtraChildAt(store: *AstStore, payload: u64, i: u32) u32 {
+    var start = @intCast(u32, payload >> @intCast(u64, 32));
+    return @intCast(u32, valuePoolGetValue(store, &store.extra_children, start + i));
+}
+
+pub fn astStoreGetExtraChildrenCopy(store: *AstStore, payload: u64, out: []u32) u32 {
+    var count = astStoreGetExtraChildCount(store, payload);
+    var n = count;
+    if (@intCast(usize, n) > out.len) n = @intCast(u32, out.len);
+    var i: u32 = 0;
+    while (i < n) : (i += 1) {
+        out[@intCast(usize, i)] = astStoreGetExtraChildAt(store, payload, i);
+    }
+    return count;
+}
+
+pub fn astStoreExtraChildAtRaw(store: *AstStore, idx: u32) u32 {
+    return @intCast(u32, valuePoolGetValue(store, &store.extra_children, idx));
+}
+
+pub fn astStoreExtraRangeAt(store: *AstStore, range_idx: u32) u64 {
+    return valuePoolGetValue(store, &store.extra_ranges, range_idx);
 }
 
 pub fn astStoreNodePayload(store: *AstStore, node_idx: u32) u32 {
@@ -835,20 +878,34 @@ pub fn astStoreNodePayloadPacked(store: *AstStore, node_idx: u32, kind: AstKind)
     var v = astStoreNodePayload(store, node_idx);
     if (v == @intCast(u32, 0)) return @intCast(u64, 0);
     if (nodeHasExtraChildren(kind) or kind == AstKind.builtin_call) {
-        return store.extra_ranges.items[@intCast(usize, v)];
+        return valuePoolGetValue(store, &store.extra_ranges, v);
     }
     return @intCast(u64, v);
 }
 
-pub fn astStoreNodeExtraChildren(store: *AstStore, node_idx: u32) []const u32 {
+pub fn astStoreNodeExtraChildCount(store: *AstStore, node_idx: u32) u32 {
     var range_idx = astStoreNodePayload(store, node_idx);
-    if (range_idx == @intCast(u32, 0)) {
-        return store.extra_children.items[0..0];
+    if (range_idx == @intCast(u32, 0)) return @intCast(u32, 0);
+    var packed_range = valuePoolGetValue(store, &store.extra_ranges, range_idx);
+    return @intCast(u32, packed_range & @intCast(u64, 0xFFFFFFFF));
+}
+
+pub fn astStoreNodeExtraChildAt(store: *AstStore, node_idx: u32, i: u32) u32 {
+    var range_idx = astStoreNodePayload(store, node_idx);
+    var packed_range = valuePoolGetValue(store, &store.extra_ranges, range_idx);
+    var start = @intCast(u32, packed_range >> @intCast(u64, 32));
+    return @intCast(u32, valuePoolGetValue(store, &store.extra_children, start + i));
+}
+
+pub fn astStoreNodeExtraChildrenCopy(store: *AstStore, node_idx: u32, out: []u32) u32 {
+    var count = astStoreNodeExtraChildCount(store, node_idx);
+    var n = count;
+    if (@intCast(usize, n) > out.len) n = @intCast(u32, out.len);
+    var i: u32 = 0;
+    while (i < n) : (i += 1) {
+        out[@intCast(usize, i)] = astStoreNodeExtraChildAt(store, node_idx, i);
     }
-    var packed_range = store.extra_ranges.items[@intCast(usize, range_idx)];
-    var start: usize = @intCast(usize, packed_range >> 32);
-    var count: usize = @intCast(usize, packed_range & @intCast(u64, 0xFFFFFFFF));
-    return store.extra_children.items[start .. start + count];
+    return count;
 }
 
 pub fn astStoreAddIntLiteral(store: *AstStore, value: u64, span_start: u32, span_end: u32) u32 {
@@ -942,10 +999,10 @@ pub fn visitPreOrder(store: *AstStore, root: u32, callback: fn(*AstStore, u32) v
         var node = astStoreNodeAt(store, node_idx);
         callback(store, node_idx);
         if (nodeHasNodeExtraChildren(node.kind) and astStoreNodePayload(store, node_idx) != 0) {
-            var ec = astStoreNodeExtraChildren(store, node_idx);
+            var ec_count = astStoreNodeExtraChildCount(store, node_idx);
             var ei: usize = 0;
-            while (ei < ec.len) {
-                stack[sp] = ec[ec.len - 1 - ei];
+            while (ei < @intCast(usize, ec_count)) {
+                stack[sp] = astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ec_count - @intCast(u32, ei) - @intCast(u32, 1)));
                 sp += 1;
                 ei += 1;
             }
@@ -967,11 +1024,11 @@ pub fn astStoreComputeMemory(store: *AstStore) u64 {
     }
     total += @intCast(u64, resident_blocks) * @intCast(u64, AST_BLOCK_REC_SIZE);
     total += @intCast(u64, store.block_table.len) * @sizeOf(NodeBlockInfo);
-    total += @intCast(u64, store.extra_children.len) * @sizeOf(u32);
     total += @intCast(u64, store.float_values.len) * @sizeOf(f64);
     total += @intCast(u64, store.string_values.len) * @sizeOf(u32);
     total += @intCast(u64, store.fn_protos.len) * @sizeOf(FnProto);
-    total += @intCast(u64, store.extra_ranges.len) * @sizeOf(u64);
+    total += valuePoolResident(store, &store.extra_children);
+    total += valuePoolResident(store, &store.extra_ranges);
     total += valuePoolResident(store, &store.identifiers);
     total += valuePoolResident(store, &store.int_values);
     return total;
