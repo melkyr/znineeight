@@ -7216,7 +7216,9 @@ pub fn lowerModuleInit(self: *LirLowerer, decls: []const u32, mod_id: u32) LirFu
     func_ptr.temp_variant_sub_field = hash_mod.u32ToU32MapInit(self.alloc);
     func_ptr.is_extern = @intCast(u8, 0);
     func_ptr.is_pub = @intCast(u8, 0);
+    func_ptr.is_export = @intCast(u8, 0);
     func_ptr.is_variadic = @intCast(u8, 0);
+    func_ptr.call_conv = @intCast(u8, 0);
     func_ptr.poison_uninit = @intCast(u8, if (self.ctx.safe_checks) 1 else 0);
     self.func = func_ptr;
     self.current_bb = createBlock(self);
