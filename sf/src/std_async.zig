@@ -134,16 +134,18 @@ pub fn schedulerInit(tasks: []*Task) Scheduler {
 
 /// Register `t` with `s`. IDEMPOTENT: re-adding an already-registered `*Task`
 /// never appends a duplicate entry. If `t` is registered and settled
-/// (done/cancelled) it is reset in place to `ready` and `true` is returned; if
-/// it is registered and still active (ready/running/suspended) it is left
-/// untouched and `false` is returned. Otherwise `t` is appended and `true` is
-/// returned (or `false` when the scheduler is at capacity).
+/// (done/cancelled) it is reset in place to `ready` (clearing `cancel_requested`
+/// and `has_waiting_on`) and `true` is returned; if it is registered and still
+/// active (ready/running/suspended) it is left untouched and `false` is
+/// returned. Otherwise `t` is appended and `true` is returned (or `false` when
+/// the scheduler is at capacity).
 pub fn addTask(s: *Scheduler, t: *Task) bool {
     var i: usize = 0;
     while (i < s.count) : (i += 1) {
         if (s.tasks[i] == t) {
             if (t.state != TaskState.done and t.state != TaskState.cancelled) return false;
             t.state = TaskState.ready;
+            t.cancel_requested = false;
             t.has_waiting_on = false;
             return true;
         }
@@ -151,6 +153,7 @@ pub fn addTask(s: *Scheduler, t: *Task) bool {
     if (s.count >= s.capacity) return false;
     s.tasks[s.count] = t;
     t.state = TaskState.ready;
+    t.cancel_requested = false;
     t.has_waiting_on = false;
     s.count += 1;
     return true;

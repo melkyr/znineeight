@@ -1,4 +1,56 @@
-# mi_matrix corpus — expected-fail manifest (v126 2026-09-17)
+# mi_matrix corpus — expected-fail manifest (v127 2026-09-17)
+
+## Final whole-branch review fix — `addTask` clears `cancel_requested` + spec scope (v126 -> v127 2026-09-17)
+
+The final whole-branch review found that `addTask`'s idempotent reset never cleared
+`t.cancel_requested`. `cancel_requested` is only ever set true (`cancel`/`cancelAll`), so a
+re-added **cancelled** `*Task` was immediately re-cancelled by the next `tick` and never
+ran — contradicting the doc comment and the landed declaration, which advertise "settled
+(done/**cancelled**) -> reset in place to `ready`". The operator ruled to fix it in the same
+round as the spec scope reconciliation.
+
+**Changes:** `sf/src/std_async.zig` `addTask` now clears `t.cancel_requested = false` on BOTH
+the reset-in-place path (`:148`) and the append path (`:156`); the `addTask` doc comment
+states it (`:137`). New auto-listed fixture
+`stdlib_async_addtask_restart_cancel_xmod` pins restart-after-cancel on both paths.
+`docs/superpowers/specs/2026-09-13-coroutine-integration-design.md` §1/§2/§3.3/§8 now state
+the true Track-4 `sf/src` scope (three primary exceptions + the operator-ruled compiler-gap
+fix series + the `std.async` additions) instead of the false "example source only ... no
+other `sf/src` module" claim. `sf/src/std_async.zig` is not in `main.zig`'s import graph, so
+the compiler fixed point is UNMOVED; the seed is NOT re-rotated (v20 stays; a
+`std.async`-only change leaves the archive's `lib/std_async.zig` one revision behind
+`sf/src`, declared below).
+
+| fixture | RED (fixed point `18e0de5c`, pre-fix lib) | GREEN (post-fix lib) |
+|---|---|---|
+| `stdlib_async_addtask_restart_cancel_xmod` | dump/gcc/link rc=0, 6 `.c`; run rc=133 (SIGTRAP), stdout `1 1 1 2 1 1 4 1 1 1 1 4 1 4 1 1 2 1 0 4`, panic `restart-after-cancel re-cancelled a reset task` | run rc=0, stdout `1 1 1 2 1 1 4 1 1 0 2 2 3 3 1 1 2 0 1 3` |
+
+Phase A (reset-in-place) restarts a cancelled registered task to completion; Phase B
+(append) restarts a task cancelled before registration. All other 22 `stdlib_async_*`
+fixtures re-run unchanged (the two intentional-panic fixtures stay rc=133).
+
+**Corpus `-ffast` dump+gcc classifier (`scripts/corpus/classify`):**
+
+| | v126 `18e0de5c` | v127 `18e0de5c` | delta |
+|---|---|---|---|
+| dirs | 722 | 723 | +1 |
+| OK | 669 | 670 | +1 |
+| GREEN | 28 | 28 | 0 |
+| FAIL | 25 | 25 | 0 |
+| ICE | 0 | 0 | 0 |
+| CRASH | 0 | 0 | 0 |
+
+Per-dir movement = exactly the new `stdlib_async_addtask_restart_cancel_xmod` dir
+(compile-clean -> OK); the pre-fix and post-fix class maps are byte-identical (the fix is
+runtime-only for the compile classifier). No new diagnostic code.
+
+**Fixed point UNMOVED `18e0de5cf71f4fe0fbf5c560ab24e624`** (post-edit seed-built closure
+hop1 == hop2 == `18e0de5c…`): `check_emit_support.sh` 5/5; self-compile 48 `.c`, rc=0, 0
+`[3000]`; 4-MD5 runtime byte-identical (gol `fcbf7e7c…` / lisp `8dc783a3…` / json
+`8bda3d5a…` / mud `66c8f0ab…` + client `93147d0f…`); four goldens + `CLOSEOUT OK`. Seed NOT
+re-rotated (operator ruling).
+
+---
 
 ## Track-4 Task 5a-F fix round 1 — drop `waitFor` on the mud_server disconnect path (v125 -> v126 2026-09-17)
 

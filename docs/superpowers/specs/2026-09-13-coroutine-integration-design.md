@@ -30,12 +30,16 @@ module-scope mutable globals), and the umbrella Global Constraints.
 
 Track 4 is the **integration/port** stage of the async sequence. It converts the
 example event loops of two user programs to cooperative coroutines on top of the
-Track 2 builtins and the Track 3 `std.async` library. It changes **example source
-only**, with three operator-authorized `sf/src` exceptions — Task 0 (multi-module
-`__Z98Step_<f>` emitter fix), Task 0b (`std.async` task ownership +
-`awaitTask` non-suspending-context guard), and Task 4c (`std.async.waitFor`
-non-suspending drive primitive) — and no other `sf/src` module, builtin, or
-`std_async.zig` internals.
+Track 2 builtins and the Track 3 `std.async` library. It is primarily an
+**example-source** change, with three operator-authorized "primary" `sf/src`
+exceptions — Task 0 (multi-module `__Z98Step_<f>` emitter fix), Task 0b
+(`std.async` task ownership + `awaitTask` non-suspending-context guard), and
+Task 2a (nested-module value-position access: `std.async.HEADER_SIZE`) — plus a
+series of operator-ruled compiler-gap fixes the conversions exposed
+(Tasks 0d/0f/0h/0m/0n/0o/0p/0q/0q3/2b/2c/2e/2f/2g/4b) and the operator-ruled
+Track-3 `std.async` additions (`waitFor`, Task 4c; idempotent `addTask` reset +
+`removeTask`, Task 5a). Each is recorded in the plan's Amendment series and its
+per-task report; no other `sf/src` module, builtin, or error code is touched.
 
 1. `examples/z98/rogue_mud` NPC AI: `lib/combat.zig:63 updateEnemies` (the per-enemy
    `findPath`/`moveEntity` loop, `:63-104`) becomes a **per-NPC coroutine** driven by
@@ -67,17 +71,20 @@ with lisp canonical `96654b39…` and rogue `3fb6709e…` (canonical q) /
 
 ## 2. Non-goals
 
-- No `sf/src` change beyond the three operator-authorized Track-4 fixes (Task 0
-  emitter step-emission; Task 0b `std.async` ownership + `awaitTask` guard; Task 4c
-  `std.async.waitFor` non-suspending drive primitive). No
-  other parser/type/sema/lowering/emitter edit.
+- No `sf/src` change beyond the operator-authorized Track-4 fixes named in §1:
+  the three primary exceptions (Task 0 emitter step-emission; Task 0b `std.async`
+  ownership + `awaitTask` guard; Task 2a nested-module value-position access), the
+  operator-ruled compiler-gap fixes the conversions exposed
+  (Tasks 0d/0f/0h/0m/0n/0o/0p/0q/0q3/2b/2c/2e/2f/2g/4b), and the operator-ruled
+  `std.async` additions (`waitFor`, Task 4c; idempotent `addTask` reset +
+  `removeTask`, Task 5a). No other parser/type/sema/lowering/emitter edit.
 - No new builtin or error code. Track 4's `awaitTask` guard is a library-level
   rejection (`@panic`), not a new diagnostic.
-- The authorized `sf/src` fixes move the self-emission fixed point (Task 0) and
-  change `lib/std_async.zig` (Task 0b `awaitTask` guard; Task 4c adds `waitFor`
-  but does NOT move the fixed point — `std_async.zig` is not in `main.zig`'s
-  import graph); the seed IS rotated at Track-4 closeout. No corpus re-baseline
-  beyond the async fixture class movements.
+- The authorized `sf/src` compiler fixes move the self-emission fixed point
+  (Tasks 0/0d/0f/0h/0m/0n/0o/0p/0q/0q3/2a/2b/2c/2e/2f/2g/4b); the `std.async`
+  additions (Tasks 0b/4c/5a) change `lib/std_async.zig` but NOT the fixed point
+  (`std_async.zig` is not in `main.zig`'s import graph). The seed IS rotated at
+  Track-4 closeout. No corpus re-baseline beyond the async fixture class movements.
 - No change to observable program behaviour: stdout, per-socket bytes, input
   handling, and turn ordering are preserved exactly.
 - No new example program and no rewrite of unrelated example logic; only the two
@@ -163,9 +170,10 @@ Each entry is converted independently and is independently revertable (§3.4). T
 
 **Authoritative gate.** `bash scripts/closeout/verify_upgraded.sh <zig1>`:
 `CLOSEOUT OK`, exit 0, hashes lisp `96654b39…`, rogue q `3fb6709e…`, move
-`b3c5b0e1…`, demo `7361d248…`, net `aa40a52e…`. Because Track 4 touches no `sf/src`
-module, this gate cannot move from Track 4 alone; it is the cross-track regression bar
-that proves Tracks 2–3 did not disturb the committed goldens.
+`b3c5b0e1…`, demo `7361d248…`, net `aa40a52e…`. Track 4 does touch `sf/src` (§1),
+so this gate can move from Track 4; every authorized fix is required to leave it
+byte-identical. It is the cross-track regression bar that proves Tracks 2–3 plus
+the Track-4 compiler fixes did not disturb the committed goldens.
 
 **Per-entry gate.** For every converted entry, capture the program's runtime output
 on a deterministic feed **before** the conversion and require an md5-identical
@@ -341,10 +349,10 @@ Classification is by **gcc exit code**, never by empty stderr
   directly on the null-return completion signal; no `awaitTask`/`waitFor` on the
   completion path).
 - No downstream consumer: this is the final subspec and plan in the async sequence.
-- The authorized `sf/src` fixes move the self-emission fixed point (Task 0)
-  and require a seed rotation at closeout (Task 0b changes `lib/std_async.zig`;
-  Task 4c adds `waitFor` there too but does not move the fixed point); the
-  example conversions themselves move nothing.
+- The authorized `sf/src` compiler fixes move the self-emission fixed point (§1)
+  and require a seed rotation at closeout; the `std.async` additions (Tasks
+  0b/4c/5a) change `lib/std_async.zig` only; the example conversions themselves
+  move nothing.
 
 ## 9. Closeout reconciliation (standing)
 
