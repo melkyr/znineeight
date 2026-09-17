@@ -1555,7 +1555,10 @@ For every entry that passed, append the post-conversion md5 to the demo `README.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add examples/z98/rogue_mud/demo examples/z98/mud_server/demo docs/superpowers/plans/2026-09-13-coroutine-integration-plan.md
+git add examples/z98/rogue_mud/demo examples/z98/mud_server/demo \
+  docs/superpowers/plans/2026-09-13-coroutine-integration-plan.md \
+  docs/superpowers/specs/2026-09-13-coroutine-integration-design.md \
+  docs/sf/QUICK_REF.md release/seed/CHANGELOG.md release/seed/zig1-seed.tgz
 git commit -m "chore(coroutine): Track4 golden battery + fallback adjudication (Track4)"
 ```
 
@@ -1679,7 +1682,7 @@ Task 6 is the final Track-4 task. All four entries passed their per-entry gates;
 
 **Step 3 — corpus gate.** `examples/z98/rogue_mud` and `examples/z98/mud_server` both listed; `OK=2 GREEN=0 FAIL=0` (matches the Task 1 baseline; zero class movement).
 
-**Step 4 — no new `sf/src`; seed rotation.** `git diff --stat HEAD -- sf/src release/seed` and `git status --porcelain` clean at HEAD `6ef08661`; the only `sf/src` commits in `2dc50be1..HEAD` are the authorized Track-4 fixes (S15, S14/S17, S19, S20/S21, S22, S25, Tasks 2a-F, 2b-F, 2c-F, 2e-F, 2f-F, 2g-F, 4b-F, 4c-F, 5a-F). Seed rotated at the fixed-point binary (`/tmp/t4_ref/hop3/zig1_hop3`, md5 `18e0de5cf71f4fe0fbf5c560ab24e624`) over its own deterministic self-emission (48 `.c` + 48 `.h`; two identical emissions): `bash scripts/seed/archive_seed.sh /tmp/t4_ref/hop3/zig1_hop3 /tmp/t4_seed_gen release/seed/zig1-seed.tgz --update-changelog` → **seed v20**, archive md5 `f2175ae48d8174afad02294ee08bb5ef`, gcc-only rebuild of the archive C = `18e0de5c…`; `release/seed/CHANGELOG.md` entry prepended. Post-rotation forward closure `build_from_seed.sh release/seed/zig1-seed.tgz` with `FIXED_POINT_MD5=18e0de5c…` → hop1 == hop2 == `18e0de5c…`. `docs/sf/QUICK_REF.md` updated (fixed point, seed v20, archive md5, HEAD `6ef08661`).
+**Step 4 — no new `sf/src`; seed rotation.** `git diff --stat HEAD -- sf/src release/seed` and `git status --porcelain` clean at HEAD `6ef08661`; the only `sf/src` commits in `2dc50be1..HEAD` are the authorized Track-4 fixes (S15, S14/S17, S19, S20/S21, S22, S25, Tasks 2a-F, 2b-F, 2c-F, 2e-F, 2f-F, 2g-F, 4b-F, 4c-F, 5a-F). Seed rotated at the fixed-point binary (`/tmp/t4_ref/hop3/zig1_hop3`, md5 `18e0de5cf71f4fe0fbf5c560ab24e624`) over its own deterministic self-emission (the self-compile dump is 48 `.c` + 48 `.h`; `archive_seed.sh` excludes the emitted runtime support — `zig_runtime.c`/`zig_pal.c`/`c_exit.c` + `zig_compat.h`/`zig_runtime.h` — so the seed's `gen/` is 45 `.c` + 46 `.h`, matching CHANGELOG/QUICK_REF; two identical emissions): `bash scripts/seed/archive_seed.sh /tmp/t4_ref/hop3/zig1_hop3 /tmp/t4_seed_gen release/seed/zig1-seed.tgz --update-changelog` → **seed v20**, archive md5 `f2175ae48d8174afad02294ee08bb5ef`, gcc-only rebuild of the archive C = `18e0de5c…`; `release/seed/CHANGELOG.md` entry prepended. Post-rotation forward closure `build_from_seed.sh release/seed/zig1-seed.tgz` with `FIXED_POINT_MD5=18e0de5c…` → hop1 == hop2 == `18e0de5c…`. `docs/sf/QUICK_REF.md` updated (fixed point, seed v20, archive md5, HEAD `6ef08661`).
 
 **Step 4c — spec-vs-landed reconciliation (standing).** Re-read `2026-09-13-coroutine-integration-design.md` against `sf/src/std_async.zig` + the converted examples; corrected the following spec drift in place (the plan had not drifted — the S17 pattern):
 - §3.1 `Task` gained `waiting_on: *Task` + `has_waiting_on: bool`; `Scheduler.tasks` `[*]Task` → `[*]*Task`; `Scheduler` gained `in_task: bool`; `schedulerInit(tasks: []Task)` → `[]*Task`; `tick` `void` → `FrameError!void`; `waitAll` `void` → `FrameError!void`; added `suspend(s, t)`.

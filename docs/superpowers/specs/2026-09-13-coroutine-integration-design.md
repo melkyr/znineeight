@@ -327,7 +327,7 @@ Classification is by **gcc exit code**, never by empty stderr
   signatures; `frame_sizes`/`@asyncFrameSize`; `ctx`-in-frame; the per-task LIFO
   child-frame contract; `ERR_3017/3018/3019/3046`.
 - Track 3 (`std-async-design.md`): `Context`/`Task`/`Scheduler` and
-  `schedulerInit`/`addTask`/`removeTask`/`tick`/`awaitTask`/`waitFor`/`cancel`/`cancelAll`/`waitAll`, plus the
+  `schedulerInit`/`addTask`/`removeTask`/`tick`/`suspend`/`awaitTask`/`waitFor`/`cancel`/`cancelAll`/`waitAll`, plus the
   install-surface change that puts `std_async.zig` in the compiler's `lib/`.
 - Track 1 (`win9x-calling-convention-design.md`): the `std_net` stdcall migration is a
   prerequisite for the `mud_server`/net-variant Windows build; the linux path is
