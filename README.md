@@ -65,6 +65,14 @@ A1–B7 battery.
 `createTcpClient(port: u16) i32`. The old `@socket*` builtins were removed — direct callers get a
 clean `error[3000]: unsupported builtin function`.
 
+**Async / coroutines** — cooperative `@async*` builtins (`@asyncInit` / `@asyncSuspend` /
+`@asyncResume` / `@asyncFrameSize`) compile every suspending function into a step machine, driven by
+the `std.async` library: a per-task child-frame `Context` pool, `Task`/`Scheduler`, and
+`tick` / `addTask` / `removeTask` / `awaitTask` / `waitFor` / `cancel`. The converted `rogue_mud`
+(NPC AI, per-client broadcast, cross-module create/schedule/cancel) and `mud_server` (per-client
+tasks) examples exercise it. See `sf/docs/tech_docs/12_async_coroutines.md` and the language spec
+§4.1.
+
 **Spill management** — `-s<N>` trades RAM for disk I/O (default `-s0` = all five compiler-state
 spills on disk, lowest `pool=`); `-mm<N>` sets the hard pool budget (default 64 MB). Compiler
 output is byte-identical in every `-s` mode.
@@ -271,6 +279,8 @@ To build a Z98 program on a target machine you need:
   authoritative build/compile/gate commands.
 - [docs/reference/Language_Spec_Z98.md](docs/reference/Language_Spec_Z98.md) — the Z98 language
   specification.
+- [sf/docs/tech_docs/12_async_coroutines.md](sf/docs/tech_docs/12_async_coroutines.md) — the
+  async/coroutine deep-dive (`@async*` builtins, step machine, `Context` ABI, `std.async`).
 - [docs/superpowers/](docs/superpowers/) — plan/spec/design history for the self-hosted era.
 - [repro/mi_matrix/EXPECTED_FAIL.md](repro/mi_matrix/EXPECTED_FAIL.md) — the mi_matrix corpus
   manifest (v76), paired with the canonical generator
@@ -286,9 +296,9 @@ complete programs that exercise the language-wins features and the PAL/networkin
   interpreter with tagged unions, deep switches and arena GC (upgraded edition adds committed
   canonical/demo goldens under `demo/`).
 - **`json_parser`** — JSON parser exercising optional types and error handling.
-- **`mud_server`** — non-blocking telnet server over `std_net`.
+- **`mud_server`** — non-blocking telnet server over `std_net`, with one coroutine task per client.
 - **`rogue_mud`** and the upgraded **`rogue_mud_upgraded`** — a networked roguelike (A* pathfinding,
-  BSP maps, export symbols, and a `demo/` client/server pair
+  BSP maps, export symbols, coroutine NPC AI / per-client broadcast, and a `demo/` client/server pair
   `net_main.zig` / `net_demo_client.zig` using `std_net.createTcpClient`).
 - Plus the classic single/multi-module programs (`hello`, `prime`, `fibonacci`, `days_in_month`,
   `heapsort`, `quicksort`, `sort_strings`, `mandelbrot`, `lzw`, `func_ptr_return`, `tco_*`).

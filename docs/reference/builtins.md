@@ -103,5 +103,36 @@ The following built-ins are supported for low-level type conversions:
 
 ---
 
+## Async / Coroutine Built-ins
+
+These built-ins implement cooperative, stackless coroutines. A function is *suspending* when it contains `@asyncSuspend` or calls a suspending function; every suspending function is compiled to a step machine (`__Z98Step_<f>`) instead of its original body. The scheduler and per-task child-frame pool are provided by the `std.async` library. See `Language_Spec_Z98.md` §4.1 and `sf/docs/tech_docs/12_async_coroutines.md`.
+
+### `@asyncFrameSize(fn)`
+Compile-time-evaluated: returns the byte size of the root frame `fn` needs.
+- **Syntax:** `@asyncFrameSize(suspending_fn)`
+- **Constraints:** `fn` must resolve to a known suspending function, else `error[3046]`.
+- **C89 Emission:** Emitted directly as the integer literal.
+
+### `@asyncInit(ctx, buf, fn, args)`
+Initializes a coroutine root frame in `buf` for the suspending function `fn` and returns it as `*void`.
+- **Syntax:** `@asyncInit(ctx, buf, fn, @ptrCast(*const void, &args_record))`
+- **Behavior:** zero-fills the frame, writes the `__Z98Step_<fn>` step word at frame offset 0, stores `ctx` and `state = 0`, resets the context header (`used = 0`, sticky `oom = 0`), and copies the `args` record **positionally** into `fn`'s parameters (the record's fields are the coroutine's parameters).
+- **Constraints:** `args` must be a plain `*const void` (a `?*const void` is a non-scalar optional and emits invalid C89).
+- **C89 Emission:** `-fsafe` traps when the frame size is compile-time known and `buf` is a concrete `[N]u8` array with `N < @asyncFrameSize(fn)`; `-ffast` omits the check.
+
+### `@asyncSuspend(data)`
+An explicit suspension point inside a suspending function.
+- **Syntax:** `@asyncSuspend(data)`
+- **Constraints:** Only valid inside a suspending function (`error[3018]` otherwise); rejected inside `defer`/`errdefer` (`error[3019]`).
+- **C89 Emission:** The step saves its live frame fields, records the next state, and returns a non-`null` `?*void` sentinel. The `data` operand is type-checked but not propagated.
+
+### `@asyncResume(frame, arg)`
+Resumes the coroutine rooted at `frame`.
+- **Syntax:** `@asyncResume(frame, arg)`
+- **Result Type:** `?*void` — `null` when the coroutine has finished, non-`null` while it is still suspended.
+- **C89 Emission:** Loads the step word at `frame + 0`, calls `__Z98Step_<f>(frame, arg)`, and returns its result. `-fsafe` traps if the step word is zero; `-ffast` is undefined behavior.
+
+---
+
 ## Unsupported Built-ins
 Most other Zig built-ins (e.g., `@typeInfo`, `@as`, `@typeName`) are currently **REJECTED** by the bootstrap compiler to maintain simplicity and C89 compatibility.

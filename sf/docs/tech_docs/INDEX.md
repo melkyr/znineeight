@@ -1,6 +1,6 @@
 # zig1 Pipeline — Master Index
 
-> Source-files: `sf/src/*.zig` | Cross-reference for all 13 tech docs
+> Source-files: `sf/src/*.zig` | Cross-reference for all 14 tech docs
 
 ## zig0 vs zig1: Oracle Relationship
 
@@ -980,3 +980,4 @@ Reset at the start of each phase. Temporary per-phase data.
 | 11 | `09_pipeline_orchestration.md` | main.zig, main_dump.zig | Orchestration |
 | 12 | `10_c_runtime.md` | sf/src/include/* | C runtime |
 | 13 | `11_build_system.md` | sf/scripts/* | Build system |
+| 14 | `12_async_coroutines.md` | async_analysis.zig, async_frame_layout.zig, async_state_machine.zig, std_async.zig | Async |

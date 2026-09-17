@@ -316,6 +316,12 @@ Builtins are invoked as `@name(...)` and are recognized by name; an unknown or u
 **C varargs**
 - `@cVaStart`, `@cVaArg`, `@cVaEnd`: Access a C variadic argument list (`va_list`).
 
+**Async / coroutines**
+- `@asyncInit(ctx, buf, fn, args)`: Initialize a coroutine root frame in `buf` (returns the frame as `*void`). See §4.1.
+- `@asyncSuspend(data)`: Explicit suspension point; valid only inside a suspending function. See §4.1.
+- `@asyncResume(frame, arg)`: Resume a coroutine step; returns `null` when the coroutine has finished. See §4.1.
+- `@asyncFrameSize(fn)`: Compile-time byte size of a suspending function's frame. See §4.1.
+
 **Declarations**
 - `@import("file.zig")`: Includes another module. The standard library is imported as `@import("std")`; `sf/src/std.zig` re-exports `io`, `arena`, `str`, `mem`, `math`, `debug`, and `net`.
 - `@cInclude("header.h")`: Emits a C header `#include` (used by the extern OS bindings, e.g. `std.net`).
@@ -325,6 +331,30 @@ Builtins are invoked as `@name(...)` and are recognized by name; an unknown or u
     - **Format Specifiers**: Supports `{}` (default, decimal), `{d}` (decimal), `{x}` (hex), `{c}` (character), and `{s}` (string). Any other specifier is rejected with `error[3013]`.
     - **Arguments**: The arguments **must** be a tuple literal (e.g., `.{arg1, arg2}`) or a tuple variable. The compiler decomposes the format string and emits individual print calls for each tuple element.
     - This is the only variadic form Z98 supports; there is no `anytype`. The shipped wrapper is `std.io.print(s: [*]const c_char, ...) void`.
+
+### 4.1 Async / coroutines
+
+Z98 supports cooperative, stackless coroutines through four `@async*` builtins and the `std.async` library. There is no `async`/`await` keyword and no `Future(T)` type: coroutine state is type-erased to `*void`, and the scheduler/root driver is the ordinary library module `std.async`.
+
+**Suspending functions.** A function is *suspending* when its body directly contains `@asyncSuspend`, or directly calls a suspending function (the property propagates over the direct-call graph; mutual recursion is ordinary propagation). The compiler computes this set once, before type resolution. Every suspending function is compiled to a *step machine* named `__Z98Step_<f>` with the signature
+
+```zig
+fn __Z98Step_<f>(frame: *void, arg: ?*void) ?*void
+```
+
+and the original synchronous body is not emitted. The step loads its hidden `state` word, jumps to the resume segment for the current suspension point, runs to the next suspension or to completion, and returns `null` at completion (non-`null` means "still suspended"). The exception is the root `pub fn main`: it keeps its source name/signature plus a minimal synchronous driver that zero-initializes its root frame and drives its own step to completion, so the C `int main` wrapper and direct calls keep working. `main` and `export fn` are ordinary functions for suspension analysis, so either may be suspending; the root `pub fn main` additionally gets the synthesized driver above, and a `main`/`export fn`/helper that is *not* itself suspending can host a `std.async` scheduler loop. A suspending function's address may **not** be taken (`error[3017]`).
+
+**Frame / step ABI.** Each coroutine owns one root *frame* in a caller-supplied buffer. The frame header is `{ step @0 (pointer-sized), ctx (pointer-sized), state (u8/u16/u32) }`, followed by the coroutine's parameters in order, then any locals live across a suspension, then hidden tail slots for child awaits. The `state` width is chosen from the suspension-point count (`u8` ≤ 255, `u16` ≤ 65535, else `u32`). Every frame is padded to 8 bytes. The `step` word is the address of the synthesized `__Z98Step_<f>`; `@asyncResume(frame, arg)` loads that word, calls the step with `(frame, arg)`, and returns its `?*void` result. A direct call to a suspending callee inside a suspending function is an *implicit await*: the step allocates a child frame from the caller's per-task pool, copies the arguments into it, drives the child to completion, and yields to its own driver while the child is still suspended.
+
+**The four builtins.**
+- `@asyncInit(ctx, buf, fn, args) *void` — initialize a fresh coroutine root frame in `buf` for the suspending function `fn`, using the per-task `ctx` pool, and return the frame as `*void`. It zero-fills the frame, writes the `__Z98Step_<fn>` word at offset 0, stores `ctx` and `state = 0`, resets the context header (`used = 0`, sticky `oom = 0`), and copies the `args` record **positionally** into `fn`'s parameters (so the record's fields *are* the coroutine's parameters). Pass the record as `@ptrCast(*const void, &record)` — a plain `*const void`, never `?*const void`.
+- `@asyncSuspend(data) *void` — an explicit suspension point. Only valid inside a suspending function (`error[3018]` otherwise) and rejected inside `defer`/`errdefer` (`error[3019]`). The `data` operand is accepted and type-checked but is not propagated by the landed step machine: the driver resumes through `@asyncResume`, and a suspended step returns a non-`null` `?*void` sentinel.
+- `@asyncResume(frame, arg) ?*void` — resume the coroutine rooted at `frame`, passing `arg` as the step's second argument. Returns `null` when the coroutine has finished and a non-`null` value while it is still suspended. It does not update any scheduler state; the caller (e.g. `std.async`) owns that.
+- `@asyncFrameSize(fn) u32` — the compile-time byte size of the root frame `fn` needs. `fn` must resolve to a known suspending function, else `error[3046]`.
+
+**`-fsafe` checks.** Under the default `-fsafe` mode, `@asyncResume` traps if the frame's step word is zero, and `@asyncInit` traps when the frame size is compile-time known **and** the `buf` argument points at a concrete `[N]u8` array whose `N < @asyncFrameSize(fn)`. A slice / many-pointer buffer (`[]u8` / `[*]u8`) has no compile-time length, so the `@asyncInit` bounds check is skipped. `-ffast` emits neither check (a bad frame is undefined behavior). Independently of the mode, `contextInit` (below) traps if the context buffer is not 8-aligned.
+
+**The `std.async` root driver.** The scheduler and per-task child-frame pool live in `std.async`, not in the language. A task is a `Task { frame, ctx, state, cancel_requested, result, arg, waiting_on, has_waiting_on }`; a `Scheduler` holds `[*]*Task`. `@asyncInit` sets up the frame, `addTask` registers the task, and `tick` resumes every runnable task once via `@asyncResume(t.frame, t.arg)`, marking it `done` when the step returns `null`. `Context` owns a per-task LIFO child-frame pool: its 16-byte header is `{ used@0, capacity@4, oom@8, pad@9..15 }`, the pool bytes start at `ctx + 16`, and the caller's buffer must be 8-aligned (back it with a `[K]u64` array, never a bare `[N]u8`). `contextAlloc` rounds `used` up to 8 and returns `error.OutOfFrame` (setting a sticky `oom`) on exhaustion rather than crashing. See `sf/docs/tech_docs/12_async_coroutines.md` for the full API and the converted `rogue_mud` / `mud_server` examples.
 
 ## 5. Known Limitations and Workarounds
 
@@ -423,3 +453,4 @@ These were considered and are **not** planned for `zig1`; use the documented idi
 - Generics, `anytype` parameters, `@Type`, `@typeInfo`, and `comptime`.
 - The `anyerror` type (use explicit error sets or `!T`).
 - `@cImport` (use bare `extern` declarations plus `@cInclude`).
+- `std.Io` / an event-loop interface, preemption, threads, and typed futures (`Future(T)`): the `@async*` coroutines (§4.1) are cooperative and round-robin only, and coroutine state is type-erased to `*void`.
