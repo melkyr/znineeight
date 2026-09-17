@@ -1757,3 +1757,13 @@ The Task-7 docs recorded a limitation: a suspending `export fn` keeps **no synch
 The generalization is mechanical — `isDriverTarget = isRootMain || is_export` (`is_export` = the AST `fn_decl` flag bit3 `0x08`, added to `LirFunction`). The step stays `is_pub=0`/cdecl; the sync entry inherits `lf.call_conv` and the source name via the existing `ctx.exported` map.
 
 Task 8-I investigates + pins (`repro/mi_matrix/async_export_fn_xmod` — suspending `export fn bump(n: i32) i32` that suspends then returns `n+1`; `repro/mi_matrix/async_export_fn_void_xmod` — void control; no `sf/src` change). Task 8-F implements it (`sf/src` change; fixed point MOVES; seed rotation bundled; spec §4 + `sf/docs/tech_docs/12_async_coroutines.md` §8 + `CHANGELOG.md` updated).
+
+### Amendment 8 — Task 8-F fix round 1: `is_export` initialization + sibling audit (2026-09-17, operator ruling S38)
+
+Task 8-F landed (`66446667` + seed v22 `b7c04a30`; fixed point `9b3075b1…`). Its review (Approved) raised one **Important** finding: `sf/src/lower.zig` `lowerModuleInit` (the `__module_init` LIR constructor, ~`:7206-7220`) allocates a `LirFunction` via `sandAlloc` and sets `is_extern`/`is_pub`/`is_variadic` but **not** the newly-added `is_export`; `sandAlloc` does not zero, so a garbage byte is serialized into the committed LIR stream (`sf/src/main.zig:845`). The impact is currently inert (`__module_init` is never suspending; the emitter never reads `is_export`), which is why every gate passed.
+
+**Operator ruling (S38):** fix it **and audit siblings** that could carry the same bug and the same future failure mode — i.e. every `LirFunction` construction site must initialize the new `is_export` (and the audit covers the same class of uninitialized-field omission for the other fields). Then re-verify (fixtures RED→GREEN; the S37 emitted-C assertion; the main-based fixtures + four goldens keep observable behavior; corpus; `check_emit_support.sh` 5/5; self-compile closure) and **re-rotate the seed to v23**.
+
+- [ ] **Step 1: Fix** `lowerModuleInit` — set `func_ptr.is_export = @intCast(u8, 0);`.
+- [ ] **Step 2: Audit** every `LirFunction` construction site (`lower.zig`, `async_state_machine.zig`, `lir_stream.zig`) for uninitialized fields, especially `is_export`; fix any sibling omission found and record the audit in the report.
+- [ ] **Step 3: Re-verify** (the Task 8-F gates) and **re-rotate the seed to v23**; update `docs/sf/QUICK_REF.md` and `release/seed/CHANGELOG.md`.
