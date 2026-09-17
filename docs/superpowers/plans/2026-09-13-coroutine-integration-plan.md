@@ -1456,7 +1456,7 @@ Expected: `CLOSEOUT OK`.
 
 Minors (also plan-mandated): a disconnect observed inside `tick` leaks the fd; the accept OOM path can double-close/send on a closed fd; the root-frame arena is never reclaimed.
 
-**Operator ruling (2026-09-16):** fix **(1)** and **(2)** via an I task + F task (this pair), before Task 6 closeout.
+**Operator ruling (2026-09-16):** fix **(1)** and **(2)** via an I task + F task (this pair), before Task 6 closeout. For (1), add **two** `std.async` primitives — an **idempotent `addTask`** (re-adding an already-registered `*Task` is a no-op) and a new **`removeTask(s, t)`** — plus **2 fixtures** (one per primitive). Since this changes `std_async.zig` (not in the compiler import graph), the fixed point stays **UNMOVED** (the Task 0b/4c precedent).
 
 #### Task 5a-I: investigate + pin (no `sf/src` change)
 
@@ -1470,9 +1470,9 @@ Minors (also plan-mandated): a disconnect observed inside `tick` leaks the fd; t
 
 #### Task 5a-F: fix both (`sf/src` and/or examples; fixed point MOVES only if `sf/src` changes)
 
-- [ ] **Step 1: Fix** (1) the duplicate-registration/slot-reuse lifecycle and (2) the blocking trailing tick, at the locus the I task identifies. If a `std.async` primitive is needed (e.g. `removeTask`/reset), add it and update the spec text.
+- [ ] **Step 1: Fix** (1) the duplicate-registration/slot-reuse lifecycle by making `addTask` **idempotent** and adding a **`removeTask(s, t)`** primitive (plus the 2 fixtures), and (2) the blocking trailing tick (readiness-gated drive / non-blocking). Update the spec text for the two new/changed primitives.
 - [ ] **Step 2: Fixtures/repro RED→GREEN**; full corpus sweep (class-map delta = intended dirs only); `check_emit_support.sh` 5/5; self-compile closure (48 `.c`, 0 `[3000]`).
-- [ ] **Step 3: Re-verify** the four goldens + `CLOSEOUT OK` (both `mud_server` pairs byte-identical); record the fixed point (MOVES only if `sf/src` changed). Seed rotation stays at Task 6.
+- [ ] **Step 3: Re-verify** the four goldens + `CLOSEOUT OK` (both `mud_server` pairs byte-identical); record the fixed point (**UNMOVED** — `std_async.zig` is not in the compiler import graph). Seed rotation stays at Task 6.
 
 **Sequencing gate:** Task 6 MUST NOT start until Task 5a-F is landed.
 
