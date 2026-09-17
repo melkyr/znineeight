@@ -1,4 +1,34 @@
-# mi_matrix corpus — expected-fail manifest (v130 2026-09-17)
+# mi_matrix corpus — expected-fail manifest (v131 2026-09-17)
+
+## Plan A Task 4b-I — optional-fn-pointer C-emission defect pinned (v130 -> v131 2026-09-17)
+
+Task 4b-I investigates the optional-fn-pointer C-emission defect behind the Task 4
+`std_debug.setTrapHandler` signature divergence (operator ruling m1243). **No `sf/src`
+change; fixed point UNMOVED `0d3e556036ab4df8eb98899291671d3c`.** Two new emission-only
+fixtures (auto-listed; the C definitions of `take_fn`/`take_void` live on the C side, so
+the gate is gcc compiling the emitted C, not link/run):
+
+| fixture | class | emitted C today (fixed point `0d3e5560`) |
+|---|---|---|
+| `opt_fnptr_extern_xmod` | **FAIL** | extern call `take_fn(zT_0)` where `zT_0` is an `int` temp (`zT_0 = zT_1;`, `zT_1: void (*)(int)`); the local `?fn` parameter call `localRound(zT_5)` passes an `int` to an `Opt_65` parameter → gcc `error: incompatible type for argument 1 of 'zF_FD3BB730_localRound'`. The bound C prototype must be `void take_fn(void (*)(int))` (null = `0`). |
+| `opt_void_extern_xmod` | **OK** (control) | extern call ABI-unwraps correctly: `zT_6 = zT_7.has_value ? zT_7.value : NULL; take_void(zT_6);` and `take_void((void*)(NULL));` — gcc clean. Confirms `?*void` lowers correctly. |
+
+**Root cause (pinned).** `sf/src/type_resolver.zig` `resolveFnSignatures` (`:1528`)
+snapshots `fn_start = env.typereg.xt_len` BEFORE resolving the parameter types, but
+resolving a `fn(...)`/`?fn(...)` parameter recursively appends the nested fn type's own
+parameters to the shared `xt_items` (`type_resolver.zig:1164-1168`). The recorded
+`params_start` therefore points at the nested fn's first parameter (`i32`) instead of the
+function's own parameter, so `call_arg_types` (`semantic_analyzer.zig:1504`) types the
+call-argument temp as `i32` and the extern call passes an `int` where a function pointer is
+required. The same wrong `params_start` drives indirect-call parameter typing
+(`semantic_analyzer.zig:1555`) and fn-type compatibility (`type_registry.zig:1182`). Fix
+surface for Task 4b-F: resolve all parameter types into a buffer, THEN snapshot
+`params_start` and append to `xt` (mirror the `AstKind.fn_type` path at
+`type_resolver.zig:1119-1168`); fixed point MOVES (authorized). Corpus 739 → **741**
+(+1 FAIL, +1 OK; the only tree change is the two new dirs). Full report:
+`.superpowers/sdd/2026-09-17-std-lib-plan-a-foundation/task-4b-I-report.md`.
+
+---
 
 ## Track-4 Task 9-M-F — AST index-side write-through spill (v129 -> v130 2026-09-17)
 
