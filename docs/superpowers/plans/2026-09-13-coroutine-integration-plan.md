@@ -1254,14 +1254,14 @@ Contract: drives the scheduler (calls `tick`) until `t` is settled (done/cancell
   - **extend** the existing `stdlib_async_await_nonctx_xmod/` (the `awaitTask`-from-non-suspending `@panic` err fixture) to cover the operator's requested err case; confirm `awaitTask`'s coroutine-internal semantics are unchanged.
   - controls: `waitAll` (existing) and a `waitFor` from a non-suspending helper fn (not just main).
 - [ ] **Step 2: Questionnaire.** Answer in the report: (Q1) `waitFor`'s exact semantics vs `waitAll`/`awaitTask`; (Q2) how `FrameError` surfaces the failure (pool `error.OutOfFrame` only) and what "t's error state" means concretely; (Q3) the termination guard when `t` is **not** registered in `s` (must not hang — decide the guard/`@panic`); (Q4) dependency chains (`waitFor` on a task whose `waiting_on` needs another task — does ticking settle both?); (Q5) the minimal fix surface + the exact spec text to change; (Q6) corpus/diagnostic delta.
-- [ ] **Step 3: Declare.** Add the fixtures; bump `repro/mi_matrix/EXPECTED_FAIL.md` (v119→v120) as needed.
+- [ ] **Step 3: Declare.** Add the fixtures; bump `repro/mi_matrix/EXPECTED_FAIL.md` (v119→v120) as needed. **Classifier refinement (operator ruling):** a clean frontend rejection of an undefined module member (`error[3042]` with 0 `.c` and no genuine ICE marker) must bucket as **FAIL**, not ICE; genuine internal-compiler-error cases stay ICE. Refine `scripts/corpus/`'s ICE regex accordingly and re-run the sweep so the 7 `waitFor` dirs report FAIL.
 - [ ] **Step 4: Report + present the fix surface for Task 4c-F.** No `sf/src` change.
 
-#### Task 4c-F: add `waitFor` + update the spec (`sf/src` change; fixed point MOVES)
+#### Task 4c-F: add `waitFor` + update the spec (`sf/src` change; fixed point UNMOVED)
 
 - [ ] **Step 1: Add** `pub fn waitFor(s: *Scheduler, t: *Task) FrameError!void;` (plain `tick` loop until `t` is settled; does not suspend; needs no caller frame; `error.OutOfFrame` only). Leave `awaitTask` unchanged. Update the spec text (`docs/superpowers/specs/2026-09-13-coroutine-integration-design.md` §1/§3.2) alongside the new primitive.
 - [ ] **Step 2: Fixtures RED→GREEN**; full corpus sweep (class-map delta = intended dirs only — any other movement is a regression to STOP on); `check_emit_support.sh` 5/5; self-compile closure (48 `.c`, 0 `[3000]`).
-- [ ] **Step 3: Re-verify** the four goldens + `CLOSEOUT OK`; 4-MD5 byte-identical; record the new fixed point. Seed rotation stays at Task 6.
+- [ ] **Step 3: Re-verify** the four goldens + `CLOSEOUT OK`; 4-MD5 byte-identical; record the fixed point (**UNMOVED** at `18e0de5c…` — `std_async.zig` is not in `main.zig`'s import graph, exactly like the Task 0b precedent). Seed rotation stays at Task 6.
 
 **Sequencing gate:** Task 5 MUST NOT start until Task 4c-F is landed.
 
