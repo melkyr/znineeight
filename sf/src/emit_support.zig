@@ -114,6 +114,23 @@ pub fn emitStdOsPreludeHSupport(writer: *BufferedWriter) void {
     c89_mod.bufferedWriterWrite(writer, "#include <stdlib.h>        /* getenv, exit */\n");
 }
 
+pub fn emitStdTimePreludeHSupport(writer: *BufferedWriter) void {
+    c89_mod.bufferedWriterWrite(writer, "/* std_time_prelude.h — target-neutral time include prelude for std_time extern\n");
+    c89_mod.bufferedWriterWrite(writer, "   calls (Plan A Task 3; the net_prelude.h / std_os_prelude.h analog). Whichever\n");
+    c89_mod.bufferedWriterWrite(writer, "   C toolchain compiles the dump (gcc -m32 / i686-w64-mingw32-gcc) selects the\n");
+    c89_mod.bufferedWriterWrite(writer, "   branch, so the only prototype source for every std_time extern is the matching\n");
+    c89_mod.bufferedWriterWrite(writer, "   OS header. The compiler PAL (zig_pal.c) is untouched; std_time's OS specifics\n");
+    c89_mod.bufferedWriterWrite(writer, "   live in the std-side std_time_pal.zig (R8: the compiler's cost is what it\n");
+    c89_mod.bufferedWriterWrite(writer, "   imports, the library's cost is what emits). */\n");
+    c89_mod.bufferedWriterWrite(writer, "#ifdef _WIN32\n");
+    c89_mod.bufferedWriterWrite(writer, "#define WIN32_LEAN_AND_MEAN\n");
+    c89_mod.bufferedWriterWrite(writer, "#include <windows.h>   /* GetTickCount, QueryPerformanceCounter/Frequency */\n");
+    c89_mod.bufferedWriterWrite(writer, "#else\n");
+    c89_mod.bufferedWriterWrite(writer, "#include <sys/time.h>  /* gettimeofday */\n");
+    c89_mod.bufferedWriterWrite(writer, "#endif\n");
+    c89_mod.bufferedWriterWrite(writer, "#include <time.h>          /* time */\n");
+}
+
 pub fn emitCExitCSupport(writer: *BufferedWriter) void {
     c89_mod.bufferedWriterWrite(writer, "#include <stdlib.h>\n");
     c89_mod.bufferedWriterWrite(writer, "void c_exit(int code) { exit(code); }\n");

@@ -30,7 +30,8 @@ fi
 
 DIR="$(mktemp -d "${TMPDIR:-/tmp}/check_emit_support.XXXXXX")"
 DIR2="$(mktemp -d "${TMPDIR:-/tmp}/check_emit_support_os.XXXXXX")"
-trap 'rm -rf "$DIR" "$DIR2"' EXIT
+DIR3="$(mktemp -d "${TMPDIR:-/tmp}/check_emit_support_time.XXXXXX")"
+trap 'rm -rf "$DIR" "$DIR2" "$DIR3"' EXIT
 
 ( cd "$ROOT" && timeout 120 "$ZIG1" -o "$DIR" examples/z98/hello/main.zig ) \
     || { echo "error: dump failed (zig1 '$ZIG1')" >&2; exit 1; }
@@ -101,6 +102,32 @@ if [ -e "$DIR2/std_os_prelude.h" ]; then
     fi
 else
     echo "[check] FAIL std_os_prelude.h missing though std_os is used" >&2
+    fail=1
+fi
+
+# std_time_prelude.h is emitted ONLY when a program actually reaches std_time
+# (use-gating: std_time has no runtime-init global). hello imports std but uses
+# only std.io, so it must NOT emit the prelude.
+if [ -e "$DIR/std_time_prelude.h" ]; then
+    echo "[check] FAIL std_time_prelude.h emitted though std_time is not used" >&2
+    fail=1
+else
+    echo "[check] std_time_prelude.h correctly absent (std_time not used)"
+fi
+
+# ... and a std_time-using fixture must emit it byte-identical to canonical.
+( cd "$ROOT" && timeout 120 "$ZIG1" -o "$DIR3" repro/mi_matrix/stdlib_time_monotonic_xmod/main.zig ) \
+    || { echo "error: std_time fixture dump failed (zig1 '$ZIG1')" >&2; exit 1; }
+if [ -e "$DIR3/std_time_prelude.h" ]; then
+    if cmp -s "$DIR3/std_time_prelude.h" "$ROOT/sf/src/include/std_time_prelude.h"; then
+        echo "[check] emitted std_time_prelude.h == $ROOT/sf/src/include/std_time_prelude.h"
+    else
+        echo "[check] FAIL emitted std_time_prelude.h != canonical" >&2
+        cmp "$DIR3/std_time_prelude.h" "$ROOT/sf/src/include/std_time_prelude.h" >&2 || true
+        fail=1
+    fi
+else
+    echo "[check] FAIL std_time_prelude.h missing though std_time is used" >&2
     fail=1
 fi
 

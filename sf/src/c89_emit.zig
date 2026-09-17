@@ -1040,6 +1040,18 @@ pub fn emitSupportFiles(emitter: *C89Emitter, dir_path: []const u8) void {
         pal.fileClose(fd6);
     }
 
+    // std_time_prelude.h is emitted only when std_time is reachable (the module
+    // carrying the `<std_time_prelude.h>` c-include). Same conditional rule as
+    // net_prelude.h / std_os_prelude.h: self-contained output means present iff
+    // referenced.
+    if (scriptStdTimeEmitted(emitter) != @intCast(u8, 0)) {
+        var fd7: usize = openSupportOutputFile(dir_path, "std_time_prelude.h");
+        var w7: BufferedWriter = bufferedWriterInitFd(fd7);
+        emit_support.emitStdTimePreludeHSupport(&w7);
+        bufferedWriterFlush(&w7);
+        pal.fileClose(fd7);
+    }
+
     var fd3: usize = openSupportOutputFile(dir_path, "zig_runtime.c");
     var w3: BufferedWriter = bufferedWriterInitFd(fd3);
     emit_support.emitZigRuntimeCSupport(&w3, emitter.safe_checks);
@@ -8976,6 +8988,11 @@ fn scriptNetEmitted(emitter: *C89Emitter) u8 {
 
 fn scriptStdOsEmitted(emitter: *C89Emitter) u8 {
     var target: []const u8 = "<std_os_prelude.h>";
+    return scriptIncludeEmitted(emitter, target);
+}
+
+fn scriptStdTimeEmitted(emitter: *C89Emitter) u8 {
+    var target: []const u8 = "<std_time_prelude.h>";
     return scriptIncludeEmitted(emitter, target);
 }
 
