@@ -1661,3 +1661,31 @@ spec's consumed-surface lists. Fixture `stdlib_async_blocking_tick_two_xmod` is 
 to model the disconnect-while-peer-idle path (RED under the pre-fix `waitFor` drive, GREEN under
 the corrected drive). Fixed point UNMOVED `18e0de5cf71f4fe0fbf5c560ab24e624`; `EXPECTED_FAIL.md`
 v125 → v126. Docs + example + fixture only; no seed rotation (Task 6).
+
+### Amendment 6 — Task 6 closeout: golden battery, corpus gate, seed rotation, spec reconciliation (2026-09-17)
+
+Task 6 is the final Track-4 task. All four entries passed their per-entry gates; **no fallback/revert was needed**.
+
+**Step 1 — authoritative closeout.** `bash scripts/closeout/verify_upgraded.sh /tmp/t4_ref/zig1_5_clean` → `CLOSEOUT OK`, rc=0. Verdict table: A1 lisp build PASS; A2 canonical feed (`96654b39`) PASS; A3 demo feed (masked `(address)`) PASS; A4 export symbol gate PASS; A5 zig0 note PASS; B1 rogue build PASS; B2 canonical q (`3fb6709e`) PASS; B3 canonical move (`b3c5b0e1`) PASS; B4 demo feed (`7361d248`) PASS; B5 export symbol gates PASS; B6 net variant (`aa40a52e`) PASS; B7 zig0 note PASS.
+
+**Step 2 — per-entry byte-identity battery 3×.** Both `rogue_mud` feeds via `/tmp/t4_rogue_c/prog` and both `mud_server` captures via `/tmp/t4_mud_new/prog` (built fresh with the reference compiler from `examples/z98/mud_server/main.zig`; emit rc=0, 9 `.c`, link rc=0). Every run matched its committed golden; `session.sh` rc=0 each run.
+
+| entry | capture | golden md5 | run1 | run2 | run3 |
+|---|---|---|---|---|---|
+| E1/E3 | rogue boot | `3fb6709e7bbd8964ef12aa9c906c0577` | = | = | = |
+| E1/E3 | rogue move | `b3c5b0e1308bc9a4efde238376c14d9f` | = | = | = |
+| E4 | mud server stdout | `66c8f0abb926cca7bab9a0d1692ab318` | = | = | = |
+| E4 | mud client bytes | `93147d0f0bbd983a9d844fea8b7a6fa7` | = | = | = |
+
+**Step 3 — corpus gate.** `examples/z98/rogue_mud` and `examples/z98/mud_server` both listed; `OK=2 GREEN=0 FAIL=0` (matches the Task 1 baseline; zero class movement).
+
+**Step 4 — no new `sf/src`; seed rotation.** `git diff --stat HEAD -- sf/src release/seed` and `git status --porcelain` clean at HEAD `6ef08661`; the only `sf/src` commits in `2dc50be1..HEAD` are the authorized Track-4 fixes (S15, S14/S17, S19, S20/S21, S22, S25, Tasks 2a-F, 2b-F, 2c-F, 2e-F, 2f-F, 2g-F, 4b-F, 4c-F, 5a-F). Seed rotated at the fixed-point binary (`/tmp/t4_ref/hop3/zig1_hop3`, md5 `18e0de5cf71f4fe0fbf5c560ab24e624`) over its own deterministic self-emission (48 `.c` + 48 `.h`; two identical emissions): `bash scripts/seed/archive_seed.sh /tmp/t4_ref/hop3/zig1_hop3 /tmp/t4_seed_gen release/seed/zig1-seed.tgz --update-changelog` → **seed v20**, archive md5 `f2175ae48d8174afad02294ee08bb5ef`, gcc-only rebuild of the archive C = `18e0de5c…`; `release/seed/CHANGELOG.md` entry prepended. Post-rotation forward closure `build_from_seed.sh release/seed/zig1-seed.tgz` with `FIXED_POINT_MD5=18e0de5c…` → hop1 == hop2 == `18e0de5c…`. `docs/sf/QUICK_REF.md` updated (fixed point, seed v20, archive md5, HEAD `6ef08661`).
+
+**Step 4c — spec-vs-landed reconciliation (standing).** Re-read `2026-09-13-coroutine-integration-design.md` against `sf/src/std_async.zig` + the converted examples; corrected the following spec drift in place (the plan had not drifted — the S17 pattern):
+- §3.1 `Task` gained `waiting_on: *Task` + `has_waiting_on: bool`; `Scheduler.tasks` `[*]Task` → `[*]*Task`; `Scheduler` gained `in_task: bool`; `schedulerInit(tasks: []Task)` → `[]*Task`; `tick` `void` → `FrameError!void`; `waitAll` `void` → `FrameError!void`; added `suspend(s, t)`.
+- §3.2 E1/E2/E4 target shape updated to the landed B3 records (`npcCoroutine(na: *NpcArgs)` + `NpcCoroutineArgs`; `clientFrameCoroutine(ctx, cfa: *ClientFrameArgs)` + `ClientFrameCoroutineArgs`; `clientCoroutine(cta: *ClientTaskArgs)` + `ClientCoroutineArgs`); `updateEnemies` returns `FrameError!void`; `clientFrameCoroutine` inlines the row loop.
+- §4 Produced signatures replaced with the landed ones (incl. `spawnEnemies(..., tasks: []*std.async.Task, args, recs, dungeon, frame_arena, path_arena)`, `fn npcStep` module-local, the three `@asyncInit` records); consumed list gained `suspend`.
+- §4 self-dispatch note: `tick`/`waitAll`/`waitFor` drive `@asyncResume`; `awaitTask` only parks on `waiting_on`.
+- §8 Produces: `mud_server` now describes the readiness-gated `@asyncResume` drive with direct slot free (no `awaitTask`/`waitFor` on the completion path), superseding the stale "per-client tasks with `awaitTask`" text.
+
+**Step 5 — demo READMEs.** Post-conversion md5s recorded in `examples/z98/rogue_mud/demo/README.md` and `examples/z98/mud_server/demo/README.md` as the authoritative goldens; no `TBD`/`TODO`.

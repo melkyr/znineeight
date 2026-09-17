@@ -113,18 +113,21 @@ pub const Task = struct {
     cancel_requested: bool,
     result: *void,         // caller-provided result slot (L3)
     arg: *void,            // resume argument to @asyncResume
+    waiting_on: *Task,     // awaitTask dependency
+    has_waiting_on: bool,  // true while parked on `waiting_on`
 };
-pub const Scheduler = struct { tasks: [*]Task, capacity: usize, count: usize, current: usize };
+pub const Scheduler = struct { tasks: [*]*Task, capacity: usize, count: usize, current: usize, in_task: bool };
 
-pub fn schedulerInit(tasks: []Task) Scheduler;
+pub fn schedulerInit(tasks: []*Task) Scheduler;
 pub fn addTask(s: *Scheduler, t: *Task) bool;      // IDEMPOTENT: re-adding a registered `*Task` never appends a duplicate (settled -> reset in place, active -> false)
 pub fn removeTask(s: *Scheduler, t: *Task) void;   // retire `t` (compact it out; `count` drops); no-op if `t` is not registered
-pub fn tick(s: *Scheduler) void;                 // drives @asyncResume(t.frame, t.arg) once per runnable task
+pub fn tick(s: *Scheduler) FrameError!void;      // drives @asyncResume(t.frame, t.arg) once per runnable task; error.OutOfFrame on pool exhaustion
+pub fn suspend(s: *Scheduler, t: *Task) void;    // mark `t` suspended (cooperative yield bookkeeping)
 pub fn awaitTask(s: *Scheduler, t: *Task) void;  // coroutine-internal: mark the current task waiting on t; reject outside a suspending context (non-suspending callers use waitFor)
 pub fn waitFor(s: *Scheduler, t: *Task) FrameError!void;  // non-suspending: drive `t` to settled from any context; no caller frame (ticks EVERY registered task — not for a scheduler holding idle blocking tasks)
 pub fn cancel(s: *Scheduler, t: *Task) void;     // cooperative cancel_requested
 pub fn cancelAll(s: *Scheduler) void;
-pub fn waitAll(s: *Scheduler) void;
+pub fn waitAll(s: *Scheduler) FrameError!void;
 ```
 
 **Amendment rule.** This design pins the Track 3 surface as the spike report §5.2
@@ -140,10 +143,10 @@ Each entry is converted independently and is independently revertable (§3.4). T
 
 | # | Entry | Current site | Target coroutine shape | Driver | Invariant |
 |---|---|---|---|---|---|
-| E1 | `rogue_mud` NPC AI | `lib/combat.zig:63-104` `updateEnemies(arena, dungeon)` — `for i in 1..entity_count`, `findPath`, `moveEntity` | `npcCoroutine(ctx, args)` → per active enemy; body `npcStep(na); _ = @asyncSuspend(null);` in a `while (true)`; `npcStep` is the existing per-enemy pathfinding move extracted verbatim | `combat.updateEnemies(sched)` calls `std.async.tick(sched)` (self-dispatch) once per player turn | after each `updateEnemies` call, every entity's `(active, x, y, hp)` equals the pre-conversion state, produced in entity-index order |
-| E2 | `rogue_mud` per-connection broadcast | `main.zig:277-284` `broadcastDungeon`; `main.zig:286-363` `broadcastOneClient`; `ui.zig:61-87` `drawToSocket` | `clientFrameCoroutine(ctx, args)` builds the frame via the existing logic, then `ui.drawToSocketCoroutine(sock, rows, cols, cells)` sends the clear/home bytes, then one row per `@asyncSuspend(null)` | `main` ticks the client scheduler once after each turn that calls `broadcastDungeon` | for each socket, the concatenated byte stream equals the pre-conversion stream (cross-socket interleaving is unobservable) |
+| E1 | `rogue_mud` NPC AI | `lib/combat.zig:63-104` `updateEnemies(arena, dungeon)` — `for i in 1..entity_count`, `findPath`, `moveEntity` | `npcCoroutine(na: *NpcArgs)` (record `NpcCoroutineArgs{ na }`) → per active enemy; body `npcStep(na); _ = @asyncSuspend(null);` in a `while (true)`; `npcStep` is the existing per-enemy pathfinding move extracted verbatim | `combat.updateEnemies(sched)` (returns `FrameError!void`) calls `try std.async.tick(sched)` (self-dispatch) once per player turn | after each `updateEnemies` call, every entity's `(active, x, y, hp)` equals the pre-conversion state, produced in entity-index order |
+| E2 | `rogue_mud` per-connection broadcast | `main.zig:277-284` `broadcastDungeon`; `main.zig:286-363` `broadcastOneClient`; `ui.zig:61-87` `drawToSocket` | `clientFrameCoroutine(ctx: *std.async.Context, cfa: *ClientFrameArgs)` (record `ClientFrameCoroutineArgs{ ctx, cfa }`) builds the frame via the existing logic and inlines the clear/home + row-per-yield loop, then one row per `@asyncSuspend(null)` (`ui.drawToSocketCoroutine(ctx, args)` remains the direct-call helper) | `main` ticks the client scheduler once after each turn that calls `broadcastDungeon` | for each socket, the concatenated byte stream equals the pre-conversion stream (cross-socket interleaving is unobservable) |
 | E3 | `rogue_mud` cross-module lifecycle | calls in `main.zig` game loop; step in `lib/combat.zig`; writer in `ui.zig` | `std.async.addTask`/`tick`/`cancel` invoked across `main.zig` → `lib/combat.zig` → `ui.zig`; the step function is the suspending callee in each module | `main.zig` | task creation order = client-slot / entity-index order; cancel is issued exactly where the original cleared `active` (`main.zig:180-182`, `:270-273`) |
-| E4 | `mud_server` accept/read loop | `main.zig:100-174` `select` + fd-set accept + per-client `recv`/line processing | `clientCoroutine(ctx, args)` does one non-blocking `recv` + line processing then `@asyncSuspend(null)`; `main` accepts a socket, `@asyncInit`s a task, `addTask`s it; on the quit/disconnect path the `@asyncResume` null return IS the completion signal — `main` frees the slot directly (close socket, `is_active=false`, `state=.done`, `removeTask`), NOT via a `waitFor`/`tick` drive (ticking resumes every registered, possibly idle, task) — `awaitTask` is coroutine-internal and is NOT used from `main` | `main.zig` | each client receives the same response bytes; the connect/look/north/quit/disconnect sequence is unchanged; no fd-set bookkeeping remains |
+| E4 | `mud_server` accept/read loop | `main.zig:100-174` `select` + fd-set accept + per-client `recv`/line processing | `clientCoroutine(cta: *ClientTaskArgs)` (record `ClientCoroutineArgs{ cta }`) does one non-blocking `recv` + line processing then `@asyncSuspend(null)`; `main` accepts a socket, `@asyncInit`s a task, `addTask`s it; on the quit/disconnect path the `@asyncResume` null return IS the completion signal — `main` frees the slot directly (close socket, `is_active=false`, `state=.done`, `removeTask`), NOT via a `waitFor`/`tick` drive (ticking resumes every registered, possibly idle, task) — `awaitTask` is coroutine-internal and is NOT used from `main` | `main.zig` | each client receives the same response bytes; the connect/look/north/quit/disconnect sequence is unchanged; no fd-set bookkeeping remains |
 
 **Ordering rules (byte-identity prerequisites).**
 
@@ -208,39 +211,46 @@ never touch a file outside the entry's own sites.
 `@asyncFrameSize` semantics and `ctx`-in-frame inheritance (Track 2 §3.2/§4).
 
 **Consumed (Track 3).** `Context`, `TaskState`, `Task`, `Scheduler` and
-`schedulerInit`/`addTask`/`removeTask`/`tick`/`awaitTask`/`waitFor`/`cancel`/`cancelAll`/`waitAll` of §3.1.
+`schedulerInit`/`addTask`/`removeTask`/`tick`/`suspend`/`awaitTask`/`waitFor`/`cancel`/`cancelAll`/`waitAll` of §3.1.
 
 **Produced (example-local; no cross-track consumer).**
 
 ```zig
 // examples/z98/rogue_mud/lib/combat.zig
 pub const NpcArgs = struct { dungeon: *scenario.Dungeon_t, entity_idx: usize, arena: *sand_mod.Sand };
-pub fn npcStep(na: *NpcArgs) void;                          // extracted from updateEnemies body
-pub fn npcCoroutine(ctx: *std.async.Context, args: *void) void;  // suspending (contains @asyncSuspend)
-pub fn spawnEnemies(ctx: *std.async.Context, tasks: []std.async.Task,
-    args: []NpcArgs, dungeon: *scenario.Dungeon_t, arena: *sand_mod.Sand) usize;
-pub fn updateEnemies(sched: *std.async.Scheduler) void;      // std.async.tick(sched) (self-dispatch)
+fn npcStep(na: *NpcArgs) void;                              // extracted from updateEnemies body (module-local)
+pub const NpcCoroutineArgs = struct { na: *NpcArgs };       // @asyncInit record (B3 option a)
+pub fn npcCoroutine(na: *NpcArgs) void;                     // suspending (contains @asyncSuspend)
+pub fn spawnEnemies(ctx: *std.async.Context, sched: *std.async.Scheduler,
+    tasks: []*std.async.Task, args: []NpcArgs, recs: []NpcCoroutineArgs,
+    dungeon: *scenario.Dungeon_t, frame_arena: *sand_mod.Sand,
+    path_arena: *sand_mod.Sand) usize;
+pub fn updateEnemies(sched: *std.async.Scheduler) std.async.FrameError!void;  // try std.async.tick(sched) (self-dispatch)
 
 // examples/z98/rogue_mud/ui.zig
 pub const ClientArgs = struct { sock: i32, rows: usize, cols: usize, cells: [*]const Cell };
-pub fn drawToSocketCoroutine(ctx: *std.async.Context, args: *void) void;  // suspending; one row per yield
+pub fn drawToSocketCoroutine(ctx: *std.async.Context, args: *void) void;  // suspending; one row per yield (direct-call helper)
 
 // examples/z98/rogue_mud/main.zig
 pub const ClientFrameArgs = struct {
     server: *net_mod.Server, dungeon: *scenario.Dungeon_t, client_idx: usize,
     cells: [*]ui_mod.Cell,
 };
-pub fn clientFrameCoroutine(ctx: *std.async.Context, args: *void) void;   // suspending; calls drawToSocketCoroutine
+pub const ClientFrameCoroutineArgs = struct { ctx: *std.async.Context, cfa: *ClientFrameArgs };  // @asyncInit record
+pub fn clientFrameCoroutine(ctx: *std.async.Context, cfa: *ClientFrameArgs) void;   // suspending; inlines the row loop
 
 // examples/z98/mud_server/main.zig
 pub const ClientTaskArgs = struct { player: *Player, rooms: [*]Room };
-pub fn clientCoroutine(ctx: *std.async.Context, args: *void) void;        // suspending; one recv + line processing per yield
+pub const ClientCoroutineArgs = struct { cta: *ClientTaskArgs };  // @asyncInit record
+pub fn clientCoroutine(cta: *ClientTaskArgs) void;        // suspending; one recv + line processing per yield
 ```
 
 **Frame self-dispatch (Amendment 7).** The step is **never passed and never stored
 in `Task`**. The compiler writes a pointer-sized step word into each frame header
-(offset 0) at `@asyncInit`; `tick`/`awaitTask`/`waitAll` drive
-`@asyncResume(t.frame, t.arg)`, which loads the step word and dispatches. The
+(offset 0) at `@asyncInit`; `tick`/`waitAll`/`waitFor` drive
+`@asyncResume(t.frame, t.arg)`, which loads the step word and dispatches;
+`awaitTask` only parks the current task on a dependency (`waiting_on`) and does
+not drive. The
 synthesized `__async_step_<f>` is compiler-managed and not user-nameable
 (Prelude B), so a scheduler is **heterogeneous**: `rogue_mud` may drive its NPC
 and client tasks — and `mud_server` its client tasks — through one scheduler
@@ -327,7 +337,9 @@ Classification is by **gcc exit code**, never by empty stderr
 **Produces.**
 - Two converted user programs (Stage 6 complete): `rogue_mud` (per-NPC coroutine +
   per-client frame coroutine + cross-module task lifecycle) and `mud_server`
-  (per-client tasks with `awaitTask`).
+  (per-client tasks driven readiness-gated by `@asyncResume`, freeing each slot
+  directly on the null-return completion signal; no `awaitTask`/`waitFor` on the
+  completion path).
 - No downstream consumer: this is the final subspec and plan in the async sequence.
 - The authorized `sf/src` fixes move the self-emission fixed point (Task 0)
   and require a seed rotation at closeout (Task 0b changes `lib/std_async.zig`;

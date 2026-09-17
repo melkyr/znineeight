@@ -6,9 +6,10 @@ server stdout (`canonical_expected.txt`) and the bytes the client receives
 (`canonical_client_expected.txt`), kills the server by PID, and verifies the
 port is clear. Both files are byte-identity targets for the converted program.
 
-Golden md5s (re-captured at the Task-0d fixed point
-`7297eb442d012f6e07b60617c4f8e4e8`, seed v19
-`23a16154e83736cf6b636685396a124a`; 3× deterministic):
+Golden md5s (**authoritative post-coroutine-conversion**, re-verified 3×
+deterministic at Task 6 closeout; compiler fixed point
+`18e0de5cf71f4fe0fbf5c560ab24e624`, seed v20
+`f2175ae48d8174afad02294ee08bb5ef`):
 
 - `canonical_expected.txt` — `66c8f0abb926cca7baf9a0d1692ab318` (75 bytes; server stdout: the three lifecycle lines) — UNCHANGED by the Task-0d fix
 - `canonical_client_expected.txt` — `93147d0f0bbd983a9d844fea8b7a6fa7` (158 bytes; client-received: welcome + `look` + `north` responses + full `Goodbye!\r\n`)
