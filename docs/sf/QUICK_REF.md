@@ -46,6 +46,13 @@ mode-specific** support (the `-ffast` self-emission support), not the canonical
 `-fsafe` `sf/src/include` files, so a gcc-only rebuild of the archive C
 reproduces the archived binary's fixed point exactly.
 
+- **Compiler↔std separation (Task 0 audit, 2026-09-17):** the compiler's import graph reaches
+  **no std module** — the transitive `@import` closure from `sf/src/main.zig` is zero std modules.
+  The std lib is **user-side `.zig`, compiled on demand** from `<exe_dir>/lib/`; the self-emission
+  fixed point is therefore **independent of the std lib** (adding or removing std modules does not
+  move it). Verified by the Task 0 separation audit
+  (`docs/superpowers/plans/2026-09-17-std-lib-task0-separation-plan.md`).
+
 **Rebuild recipe 1 (forward — from the seed binary):**
 ```bash
 cd /workspace/znineeight
