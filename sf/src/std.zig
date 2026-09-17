@@ -7,3 +7,4 @@ pub const debug = @import("std_debug.zig");
 pub const net = @import("std_net.zig");
 pub const async = @import("std_async.zig");
 pub const bits = @import("std_bits.zig");
+pub const os = @import("std_os.zig");

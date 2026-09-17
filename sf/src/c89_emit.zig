@@ -1029,6 +1029,17 @@ pub fn emitSupportFiles(emitter: *C89Emitter, dir_path: []const u8) void {
         pal.fileClose(fd2);
     }
 
+    // std_os_prelude.h is emitted only when std_os is reachable (the module
+    // carrying the `<std_os_prelude.h>` c-include). Same conditional rule as
+    // net_prelude.h: self-contained output means present iff referenced.
+    if (scriptStdOsEmitted(emitter) != @intCast(u8, 0)) {
+        var fd6: usize = openSupportOutputFile(dir_path, "std_os_prelude.h");
+        var w6: BufferedWriter = bufferedWriterInitFd(fd6);
+        emit_support.emitStdOsPreludeHSupport(&w6);
+        bufferedWriterFlush(&w6);
+        pal.fileClose(fd6);
+    }
+
     var fd3: usize = openSupportOutputFile(dir_path, "zig_runtime.c");
     var w3: BufferedWriter = bufferedWriterInitFd(fd3);
     emit_support.emitZigRuntimeCSupport(&w3, emitter.safe_checks);
@@ -8930,10 +8941,9 @@ pub fn emitZigRuntimeC(writer: *BufferedWriter) void {
 // links the runtime set, and adds the winsock link library iff a
 // `net_prelude.h` c-include was emitted. build_target.sh is emitted always;
 // the MSVC `cl` and OpenWatcom scripts only for the windows target (-osw).
-fn moduleHasNetPrelude(emitter: *C89Emitter, module_id: u32) u8 {
+fn moduleHasInclude(emitter: *C89Emitter, module_id: u32, target: []const u8) u8 {
     var mods = mr_mod.moduleRegistryGetModules(emitter.module_reg);
     var m = mods[@intCast(usize, module_id)];
-    var target: []const u8 = "<net_prelude.h>";
     var i: usize = @intCast(usize, 0);
     while (i < m.c_includes.len) : (i += @intCast(usize, 1)) {
         var inc_str = interner_mod.stringInternerGet(emitter.interner, m.c_includes.items[i]);
@@ -8948,15 +8958,25 @@ fn moduleHasNetPrelude(emitter: *C89Emitter, module_id: u32) u8 {
     return @intCast(u8, 0);
 }
 
-fn scriptNetEmitted(emitter: *C89Emitter) u8 {
+fn scriptIncludeEmitted(emitter: *C89Emitter, target: []const u8) u8 {
     var mods = mr_mod.moduleRegistryGetModules(emitter.module_reg);
     var i: usize = @intCast(usize, 0);
     while (i < mods.len) : (i += @intCast(usize, 1)) {
         var m = mods[i];
         if (hash_mod.u32ToU32MapGet(&emitter.reachable, m.id) == null) continue;
-        if (moduleHasNetPrelude(emitter, m.id) != @intCast(u8, 0)) return @intCast(u8, 1);
+        if (moduleHasInclude(emitter, m.id, target) != @intCast(u8, 0)) return @intCast(u8, 1);
     }
     return @intCast(u8, 0);
+}
+
+fn scriptNetEmitted(emitter: *C89Emitter) u8 {
+    var target: []const u8 = "<net_prelude.h>";
+    return scriptIncludeEmitted(emitter, target);
+}
+
+fn scriptStdOsEmitted(emitter: *C89Emitter) u8 {
+    var target: []const u8 = "<std_os_prelude.h>";
+    return scriptIncludeEmitted(emitter, target);
 }
 
 fn writeModuleStem(writer: *BufferedWriter, emitter: *C89Emitter, module_id: u32) void {

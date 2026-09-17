@@ -29,7 +29,8 @@ fi
 [ -x "$ZIG1" ] || { echo "error: zig1 '$ZIG1' is not executable" >&2; exit 1; }
 
 DIR="$(mktemp -d "${TMPDIR:-/tmp}/check_emit_support.XXXXXX")"
-trap 'rm -rf "$DIR"' EXIT
+DIR2="$(mktemp -d "${TMPDIR:-/tmp}/check_emit_support_os.XXXXXX")"
+trap 'rm -rf "$DIR" "$DIR2"' EXIT
 
 ( cd "$ROOT" && timeout 120 "$ZIG1" -o "$DIR" examples/z98/hello/main.zig ) \
     || { echo "error: dump failed (zig1 '$ZIG1')" >&2; exit 1; }
@@ -77,5 +78,34 @@ else
     fi
 fi
 
+# std_os_prelude.h is emitted when std_os is reachable. The hello program
+# imports std, and std_os owns a runtime-init global (saved_argc), so std_os is
+# a reachability root and the prelude must be present and byte-identical to its
+# canonical source (the authorized prelude work).
+if [ -e "$DIR/std_os_prelude.h" ]; then
+    if cmp -s "$DIR/std_os_prelude.h" "$ROOT/sf/src/include/std_os_prelude.h"; then
+        echo "[check] emitted std_os_prelude.h == $ROOT/sf/src/include/std_os_prelude.h"
+    else
+        echo "[check] FAIL emitted std_os_prelude.h != canonical" >&2
+        cmp "$DIR/std_os_prelude.h" "$ROOT/sf/src/include/std_os_prelude.h" >&2 || true
+        fail=1
+    fi
+else
+    echo "[check] FAIL std_os_prelude.h missing though std_os is reachable" >&2
+    fail=1
+fi
+
+# ... and it must NOT be emitted for a program that never loads std (the
+# conditional rule: the prelude is present iff a std_os_*.c module is emitted).
+printf 'pub fn main() void {}\n' > "$DIR2/nostd.zig"
+( cd "$ROOT" && timeout 120 "$ZIG1" -o "$DIR2" "$DIR2/nostd.zig" ) \
+    || { echo "error: no-std dump failed (zig1 '$ZIG1')" >&2; exit 1; }
+if [ -e "$DIR2/std_os_prelude.h" ]; then
+    echo "[check] FAIL std_os_prelude.h emitted though std_os was not loaded" >&2
+    fail=1
+else
+    echo "[check] std_os_prelude.h correctly absent (std not loaded)"
+fi
+
 [ "$fail" = 0 ] || { echo "error: emitted support files differ from canonical" >&2; exit 1; }
-echo "[check] OK: 5/5 support files byte-identical to canonical"
+echo "[check] OK: 5/5 support files byte-identical to canonical (+ conditional preludes)"

@@ -97,6 +97,23 @@ pub fn emitNetPreludeHSupport(writer: *BufferedWriter) void {
     c89_mod.bufferedWriterWrite(writer, "#define select_os select\n");
 }
 
+pub fn emitStdOsPreludeHSupport(writer: *BufferedWriter) void {
+    c89_mod.bufferedWriterWrite(writer, "/* std_os_prelude.h — target-neutral OS include prelude for std_os extern calls\n");
+    c89_mod.bufferedWriterWrite(writer, "   (Plan A Task 2; the net_prelude.h analog). Whichever C toolchain compiles the\n");
+    c89_mod.bufferedWriterWrite(writer, "   dump (gcc -m32 / i686-w64-mingw32-gcc) selects the branch, so the only\n");
+    c89_mod.bufferedWriterWrite(writer, "   prototype source for every std_os extern is the matching OS header. The\n");
+    c89_mod.bufferedWriterWrite(writer, "   compiler PAL (zig_pal.c) is untouched; std_os's OS specifics live in the\n");
+    c89_mod.bufferedWriterWrite(writer, "   std-side std_os_pal.zig (R8: the compiler's cost is what it imports, the\n");
+    c89_mod.bufferedWriterWrite(writer, "   library's cost is what emits). */\n");
+    c89_mod.bufferedWriterWrite(writer, "#ifdef _WIN32\n");
+    c89_mod.bufferedWriterWrite(writer, "#define WIN32_LEAN_AND_MEAN\n");
+    c89_mod.bufferedWriterWrite(writer, "#include <windows.h>   /* GetCurrentDirectoryA */\n");
+    c89_mod.bufferedWriterWrite(writer, "#else\n");
+    c89_mod.bufferedWriterWrite(writer, "#include <unistd.h>    /* getcwd */\n");
+    c89_mod.bufferedWriterWrite(writer, "#endif\n");
+    c89_mod.bufferedWriterWrite(writer, "#include <stdlib.h>        /* getenv, exit */\n");
+}
+
 pub fn emitCExitCSupport(writer: *BufferedWriter) void {
     c89_mod.bufferedWriterWrite(writer, "#include <stdlib.h>\n");
     c89_mod.bufferedWriterWrite(writer, "void c_exit(int code) { exit(code); }\n");
