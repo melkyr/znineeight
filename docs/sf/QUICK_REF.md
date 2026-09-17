@@ -189,9 +189,14 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
 ```
 - **Classify by gcc EXIT CODE, never by empty-stderr** (warnings are nonzero-length but rc=0; a
   stderr-emptiness classifier gives false counts like 68/63).
-- `dump` rc≥128 = CRASH; stderr matching `error\[(48|3042|9001|3043)\]|AddressSanitizer` = ICE; gcc rc==0 = OK; else FAIL.
+- `dump` rc≥128 = CRASH; stderr matching `error\[(48|9001|3043)\]|AddressSanitizer` = ICE; gcc rc==0 = OK; else FAIL.
   (Note: `error[3048]` is deliberately NOT in the ICE regex — the F-S10 file diagnostics must
-  classify as ordinary FAIL, not ICE.)
+  classify as ordinary FAIL, not ICE. `error[3042]` — a clean undefined-module-member reject with
+  0 `.c` — was REMOVED from the ICE regex by the Task 4c-I operator ruling (2026-09-16): it is a
+  frontend rejection, not an internal compiler error, so it classifies as ordinary FAIL. Genuine
+  ICE markers `error[48]`/`error[9001]`/`error[3043]`/`AddressSanitizer` stay ICE. The canonical
+  classifier is `scripts/corpus/classify`.)
+
 - **A repro that fails the frontend (dump emits 0 `.c` files with a `error[NNNN]` diagnostic) is a
   FAILURE — a real compiler gap — NOT "OK".** Do NOT count an empty output dir as OK. The per-file
   gcc loop above is only the emission check; a frontend error must be checked separately:
