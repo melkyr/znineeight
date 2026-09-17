@@ -1,32 +1,26 @@
-// stdlib_async_blocking_tick_xmod — the trailing `tick` blocks on a non-ready
-// socket.
+// stdlib_async_blocking_tick_xmod — readiness-gated drive (no trailing `tick`).
 //
-// `mud_server` (Task 5, E4) drives each ready socket with a direct
-// `@asyncResume` and then calls `std.async.tick(&client_sched)` at the bottom
-// of every select iteration. `tick` (`sf/src/std_async.zig:156-189`) resumes
-// EVERY non-done task, not just the select-ready ones. Accepted sockets are
-// blocking (never `O_NONBLOCK`), so when `tick` resumes a client task whose
-// socket has no pending data its `recv` blocks and stalls `main`.
+// Task 5 (E4) `mud_server` originally drove each ready socket with a direct
+// `@asyncResume` and then called `std.async.tick(&client_sched)` at the bottom
+// of every select iteration. `tick` (`sf/src/std_async.zig`) resumes EVERY
+// non-done task, not just the select-ready ones. Accepted sockets are blocking
+// (never `O_NONBLOCK`), so when the trailing `tick` resumed a client task whose
+// socket had no pending data its `recv` blocked and stalled `main`.
 //
-// This fixture is the minimal real-socket repro: one client connects and sends
-// a single line, then stays idle. The drive mirrors `mud_server`'s
-// (select -> direct `@asyncResume` -> trailing `tick`). On the trailing tick
-// the task re-enters `recv` and blocks forever; `alarm(2)` bounds the stall.
+// This fixture is the minimal real-socket characterization: one client
+// connects and sends a single line, then stays idle. Task 5a-F fixes the drive
+// to be readiness-gated (resume only select-ready fds; no trailing `tick`).
 //
-// RED today (fixed point 18e0de5c): dump rc=0, 7 `.c`, gcc/link rc=0, run
-// rc=142 (SIGALRM) with stdout `accepted` — the trailing `tick` blocked on the
-// idle socket.
+// RED (pre-5a-F drive, fixed point 18e0de5c): dump rc=0, 7 `.c`, gcc/link rc=0,
+// run rc=142 (SIGALRM) with stdout `accepted` — the trailing `tick` blocked on
+// the idle socket.
 //
-// GREEN contract (Task 5a-F: drop the trailing `tick`; resume only
-// select-ready tasks — the readiness-gated drive): the bounded loop times out
-// on `select` for the idle socket, prints `accepted` then `ok`, and exits rc=0.
-// (The same fixture with the trailing `tick` removed was measured GREEN rc=0,
-// stdout `accepted\nok`.)
+// GREEN (5a-F readiness-gated drive): the bounded loop times out on `select`
+// for the idle socket, prints `accepted` then `ok`, and exits rc=0.
 const std = @import("std");
 const std_net = @import("std_net");
 const sa = @import("std_async.zig");
 
-extern "stdcall" fn alarm(seconds: u32) u32;
 extern "c" fn fflush(f: *void) i32;
 
 const PORT: u16 = 4137;
@@ -89,10 +83,8 @@ pub fn main() !void {
         if (rc > 0 and std_net.fdIsset(accepted, @ptrCast(*u8, &fds))) {
             _ = @asyncResume(task.frame, null);
         }
-        // The mud_server trailing tick: resumes the just-suspended idle task.
-        alarm(2);
-        sa.tick(&s) catch {};
-        alarm(0);
+        // Readiness-gated drive: no trailing `tick`; the idle task is not
+        // resumed, so `recv` is never entered for a non-ready socket.
     }
     std.io.print("ok\n", .{});
     _ = fflush(@ptrCast(*void, @intToPtr(*void, 0)));

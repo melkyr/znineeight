@@ -1,4 +1,62 @@
-# mi_matrix corpus — expected-fail manifest (v124 2026-09-17)
+# mi_matrix corpus — expected-fail manifest (v125 2026-09-17)
+
+## Track-4 Task 5a-F (F) — idempotent addTask + removeTask + readiness-gated mud_server drive LANDED (v124 -> v125 2026-09-17)
+
+`sf/src/std_async.zig` gained the two operator-ruled primitives and
+`examples/z98/mud_server/main.zig` dropped the blocking trailing `tick` (readiness-gated
+drive) and now retires finished tasks with `removeTask`. All six fixtures are GREEN; the
+corpus delta is exactly the 2 `removeTask` dirs FAIL -> OK.
+
+**Primitives (`sf/src/std_async.zig`):**
+- `addTask(s, t)` is IDEMPOTENT: it scans the list; an already-registered `t` is never
+  appended again — if `t` is settled (done/cancelled) it is reset in place to `ready`
+  (`has_waiting_on=false`) and `true` is returned; if `t` is active it is left untouched and
+  `false` is returned; otherwise `t` is appended (capacity permitting) as before.
+- `removeTask(s, t)` retires `t`: compacts the tail over the matching entry, decrements
+  `count`, keeps `current` in range; no-op when `t` is not registered (never added or already
+  removed). Valid from a non-suspending context; `t`'s own state is unchanged.
+
+**mud_server drive (`examples/z98/mud_server/main.zig`):** the trailing
+`std.async.tick(&client_sched)` is DELETED (readiness-gated drive: only select-ready fds are
+resumed; level-triggered `select` re-reports buffered data next iteration) and the
+completed-slot path calls `std.async.removeTask(&client_sched, client_task_ptrs[i])` after
+`state=.done`.
+
+| fixture | RED (fixed point `18e0de5c`) | GREEN (Task 5a-F) |
+|---|---|---|
+| `stdlib_async_addtask_reuse_xmod` | dump/gcc/link rc=0, 6 `.c`; run rc=133 (SIGTRAP), stdout `1 1 1 2 2 2 0 2`, panic `addTask registered the same *Task twice` | run rc=0, stdout `1 1 1 1 1 1 1 2` |
+| `stdlib_async_removetask_xmod` | dump rc=2, 0 `.c`, `error[3042]` (primitive absent) | dump/gcc/link rc=0, 6 `.c`, run rc=0, stdout `1 1 0 0 1 1 0 0 1 1 1` |
+| `stdlib_async_removetask_noop_xmod` | dump rc=2, 0 `.c`, `error[3042]` | dump/gcc/link rc=0, 6 `.c`, run rc=0, stdout `0 1 0 0 0` |
+| `stdlib_async_blocking_tick_xmod` | pre-5a-F drive: run rc=142 (SIGALRM), stdout `accepted` | readiness-gated drive: run rc=0, stdout `accepted` `ok` |
+| `stdlib_async_blocking_tick_two_xmod` | pre-5a-F drive: run rc=142 (SIGALRM), stdout `accepted 2` | readiness-gated drive: run rc=0, stdout `accepted 2` `ok` |
+| `stdlib_async_addtask_single_xmod` (control) | GREEN today, stdout `1 1 3 3` | stays GREEN |
+
+All GREEN rows re-run 3x deterministic. The two blocking fixtures were updated to the
+readiness-gated drive; their RED is the pre-5a-F committed fixture source run under the new
+compiler (rc=142).
+
+**Corpus `-ffast` dump+gcc classifier (`scripts/corpus/classify`):**
+
+| | 5a-I `18e0de5c` (v124) | 5a-F `18e0de5c` (v125) | delta |
+|---|---|---|---|
+| dirs | 722 | 722 | 0 |
+| OK | 667 | 669 | +2 |
+| GREEN | 28 | 28 | 0 |
+| FAIL | 27 | 25 | -2 |
+| ICE | 0 | 0 | 0 |
+| CRASH | 0 | 0 | 0 |
+
+Per-dir movement = exactly the 2 `removeTask` dirs FAIL -> OK; every other dir is
+class-identical.
+
+**Fixed point UNMOVED `18e0de5cf71f4fe0fbf5c560ab24e624`** (seed-built moving point hop1
+`c963a76c…`, hop2 == hop3 == `18e0de5c…`): `std_async.zig` is not in `sf/src/main.zig`'s
+import graph (Task 0b/4c precedent). `check_emit_support.sh` 5/5; self-compile 48 `.c`,
+rc=0, 0 `[3000]`; 4-MD5 runtime byte-identical (gol `fcbf7e7c…` / lisp `8dc783a3…` / json
+`8bda3d5a…` / mud `66c8f0ab…` + client `93147d0f…`); `CLOSEOUT OK`. Seed rotation stays at
+Task 6.
+
+---
 
 ## Track-4 Task 5a-I fix round 1 — `removeTask` fixtures (operator ruling) (v123 -> v124 2026-09-17)
 

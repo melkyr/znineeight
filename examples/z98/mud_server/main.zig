@@ -176,6 +176,11 @@ pub fn main() !void {
                 }
             }
         }
+        // Readiness-gated drive: resume ONLY the sockets `select` reported
+        // ready. There is deliberately no trailing `tick`: accepted sockets are
+        // blocking (never O_NONBLOCK), so resuming an idle client's task would
+        // stall `main` in `recv`. `select` is level-triggered, so a task with
+        // buffered data is re-reported on the next iteration.
         i = 0;
         while (i < MAX_CLIENTS) {
             if (players[i].is_active and std_net.fdIsset(players[i].socket, @ptrCast(*u8, &read_fds))) {
@@ -186,11 +191,14 @@ pub fn main() !void {
                     std_net.close(players[i].socket);
                     players[i].is_active = false;
                     client_task_ptrs[i].state = .done;
+                    // Retire the finished task so slot reuse re-registers
+                    // cleanly (addTask is idempotent, but removal keeps the
+                    // scheduler holding only live clients).
+                    std.async.removeTask(&client_sched, client_task_ptrs[i]);
                 }
             }
             i += 1;
         }
-        std.async.tick(&client_sched) catch {};
     }
 
     std_net.close(server);

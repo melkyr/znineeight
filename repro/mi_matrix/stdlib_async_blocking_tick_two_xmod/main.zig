@@ -1,25 +1,23 @@
-// stdlib_async_blocking_tick_two_xmod — an IDLE client stalls `main` while
-// another client is active (two-client path).
+// stdlib_async_blocking_tick_two_xmod — readiness-gated two-client drive.
 //
-// Same trailing-`tick` mechanism as `stdlib_async_blocking_tick_xmod`, but
-// with two accepted clients. Client B connects first and stays idle (slot 0);
-// client A connects second and sends one line (slot 1). `select` reports A
-// ready; the drive direct-resumes A (which consumes the line and suspends),
-// then the trailing `tick` reaches slot 0 (idle B) and blocks in `recv`.
-// Because B never sends, `main` is stuck and A can never be serviced again —
-// the exact multi-client hazard.
+// Same mechanism as `stdlib_async_blocking_tick_xmod`, but with two accepted
+// clients. Client B connects first and stays idle (slot 0); client A connects
+// second and sends one line (slot 1). The pre-5a-F drive direct-resumed the
+// ready fd A (which consumed the line and suspended), then the trailing `tick`
+// reached slot 0 (idle B) and blocked in `recv`. Because B never sends, `main`
+// was stuck and A could never be serviced again — the exact multi-client
+// hazard.
 //
-// RED today (fixed point 18e0de5c): dump rc=0, 8 `.c`, gcc/link rc=0, run
-// rc=142 (SIGALRM) with stdout `accepted 2`.
+// RED (pre-5a-F drive, fixed point 18e0de5c): dump rc=0, 8 `.c`, gcc/link
+// rc=0, run rc=142 (SIGALRM) with stdout `accepted 2`.
 //
-// GREEN contract (Task 5a-F: readiness-gated drive, no trailing `tick`): the
-// bounded select loop times out for the idle slot, prints `accepted 2` then
-// `ok`, and exits rc=0.
+// GREEN (5a-F readiness-gated drive, no trailing `tick`): the bounded select
+// loop times out for the idle slot, prints `accepted 2` then `ok`, and exits
+// rc=0.
 const std = @import("std");
 const std_net = @import("std_net");
 const sa = @import("std_async.zig");
 
-extern "stdcall" fn alarm(seconds: u32) u32;
 extern "c" fn fflush(f: *void) i32;
 
 const PORT: u16 = 4138;
@@ -107,9 +105,8 @@ pub fn main() !void {
                 _ = @asyncResume(tB.frame, null);
             }
         }
-        alarm(2);
-        sa.tick(&s) catch {};
-        alarm(0);
+        // Readiness-gated drive: no trailing `tick`; the idle slot is never
+        // resumed, so `main` cannot stall in `recv`.
     }
     std.io.print("ok\n", .{});
     _ = fflush(@ptrCast(*void, @intToPtr(*void, 0)));

@@ -113,7 +113,8 @@ pub const Task = struct {
 pub const Scheduler = struct { tasks: [*]Task, capacity: usize, count: usize, current: usize };
 
 pub fn schedulerInit(tasks: []Task) Scheduler;
-pub fn addTask(s: *Scheduler, t: *Task) bool;
+pub fn addTask(s: *Scheduler, t: *Task) bool;      // IDEMPOTENT: re-adding a registered `*Task` never appends a duplicate (settled -> reset in place, active -> false)
+pub fn removeTask(s: *Scheduler, t: *Task) void;   // retire `t` (compact it out; `count` drops); no-op if `t` is not registered
 pub fn tick(s: *Scheduler) void;                 // drives @asyncResume(t.frame, t.arg) once per runnable task
 pub fn awaitTask(s: *Scheduler, t: *Task) void;  // coroutine-internal: mark the current task waiting on t; reject outside a suspending context (non-suspending callers use waitFor)
 pub fn waitFor(s: *Scheduler, t: *Task) FrameError!void;  // non-suspending: drive `t` to settled from any context; no caller frame

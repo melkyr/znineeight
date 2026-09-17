@@ -132,13 +132,49 @@ pub fn schedulerInit(tasks: []*Task) Scheduler {
     return s;
 }
 
+/// Register `t` with `s`. IDEMPOTENT: re-adding an already-registered `*Task`
+/// never appends a duplicate entry. If `t` is registered and settled
+/// (done/cancelled) it is reset in place to `ready` and `true` is returned; if
+/// it is registered and still active (ready/running/suspended) it is left
+/// untouched and `false` is returned. Otherwise `t` is appended and `true` is
+/// returned (or `false` when the scheduler is at capacity).
 pub fn addTask(s: *Scheduler, t: *Task) bool {
+    var i: usize = 0;
+    while (i < s.count) : (i += 1) {
+        if (s.tasks[i] == t) {
+            if (t.state != TaskState.done and t.state != TaskState.cancelled) return false;
+            t.state = TaskState.ready;
+            t.has_waiting_on = false;
+            return true;
+        }
+    }
     if (s.count >= s.capacity) return false;
     s.tasks[s.count] = t;
     t.state = TaskState.ready;
     t.has_waiting_on = false;
     s.count += 1;
     return true;
+}
+
+/// Retire `t` from `s`. Compacts the tail down over the matching entry so
+/// `count` drops by one; `current` is adjusted to stay in range. No-op when `t`
+/// is not registered (never added, or already removed). `t`'s own state is not
+/// modified. Valid from any non-suspending context (main/`export fn`/helper);
+/// do not call it for a task that a coroutine is currently awaiting.
+pub fn removeTask(s: *Scheduler, t: *Task) void {
+    var i: usize = 0;
+    while (i < s.count) : (i += 1) {
+        if (s.tasks[i] == t) {
+            var j: usize = i;
+            while (j + 1 < s.count) : (j += 1) {
+                s.tasks[j] = s.tasks[j + 1];
+            }
+            s.count -= 1;
+            if (i < s.current) s.current -= 1;
+            if (s.current >= s.count) s.current = 0;
+            return;
+        }
+    }
 }
 
 fn allSettled(s: *Scheduler) bool {
