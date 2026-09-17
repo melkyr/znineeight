@@ -5,7 +5,7 @@
 **Every subagent doing build/compile/run/gate work MUST read this section first.** These are the
 exact, verified commands. Do not improvise flags or rediscover linking — copy these.
 
-> **C89-AHEAD (2026-09-10):** runtime safety is now `-fsafe` by **default** (six runtime checks — cast / div-mod / shift / null-unwrap / index-OOB / integer-overflow — plus `undefined` `0xAA` poison); `-ffast` disables them. `unreachable`/`@panic` trap in **both** modes (`@panic` prints `panic: <msg>` to **stderr**). `std.arena.alloc` is `ArenaError![*]u8` — use `try`/`catch`, never `orelse` (`error[3016]`). Landed fixed point `1467d932a876402f40a56316dfcad0e5` (superseded by the calling-convention fixed point `de7137e04d62435c74e7b15281cb4540`, then by the async-compiler-core fixed point `f5ee84800dd32d7c440bb383c10edb55`, now moved by the cross-track ABI fix (Rule A) to `7b515420f749604c1765c2b1edd0d654`, then by the concerns wave (await-site 8-alignment + `-fsafe` `@asyncInit` bounds check) to `027377296b2e38402ff8470f5c429eb8`, then by the Track-4 coroutine-integration wave (multi-module step emission + `@asyncInit` ABI/arena + array/type fixes) to `18e0de5cf71f4fe0fbf5c560ab24e624`, then by the Task-8-F suspending-`export fn` driver to `9b3075b105ff544f3541d5a621d00d40`, then by the Task-8-F fix round 1 (`is_export`/`call_conv` init in `lowerModuleInit`) to **`b981bc80290bfde5ed5383cd0927e124`**); seed **v23** is rotated (`release/seed/zig1-seed.tgz`, archive md5 `deb4f0fbd4853283a1c11c225d714bd8`). See the **Calling convention** section below.
+> **C89-AHEAD (2026-09-10):** runtime safety is now `-fsafe` by **default** (six runtime checks — cast / div-mod / shift / null-unwrap / index-OOB / integer-overflow — plus `undefined` `0xAA` poison); `-ffast` disables them. `unreachable`/`@panic` trap in **both** modes (`@panic` prints `panic: <msg>` to **stderr**). `std.arena.alloc` is `ArenaError![*]u8` — use `try`/`catch`, never `orelse` (`error[3016]`). Landed fixed point `1467d932a876402f40a56316dfcad0e5` (superseded by the calling-convention fixed point `de7137e04d62435c74e7b15281cb4540`, then by the async-compiler-core fixed point `f5ee84800dd32d7c440bb383c10edb55`, now moved by the cross-track ABI fix (Rule A) to `7b515420f749604c1765c2b1edd0d654`, then by the concerns wave (await-site 8-alignment + `-fsafe` `@asyncInit` bounds check) to `027377296b2e38402ff8470f5c429eb8`, then by the Track-4 coroutine-integration wave (multi-module step emission + `@asyncInit` ABI/arena + array/type fixes) to `18e0de5cf71f4fe0fbf5c560ab24e624`, then by the Task-8-F suspending-`export fn` driver to `9b3075b105ff544f3541d5a621d00d40`, then by the Task-8-F fix round 1 (`is_export`/`call_conv` init in `lowerModuleInit`) to `b981bc80290bfde5ed5383cd0927e124`, then by the Task 9-M-F AST index-side write-through spill (`extra_children`/`extra_ranges` → `s_extra` pools) to **`dd43612912662fc06a25a10eb194c665`**); seed **v24** is rotated (`release/seed/zig1-seed.tgz`, archive md5 `3f00a9724db95a0199917ca9c84de37b`). See the **Calling convention** section below.
 
 ### Build zig1 (the compiler under test)
 ```bash
@@ -27,19 +27,19 @@ bash sf/scripts/build_release.sh
 **Seed location + contents:** the committed rotating seed is
 `release/seed/zig1-seed.tgz` (git-tracked; provenance + rotation history in
 `release/seed/CHANGELOG.md`, full recipes in `release/seed/SEED_README.txt`).
-Current seed is **seed v23** (archive md5 `deb4f0fbd4853283a1c11c225d714bd8`; Track-4 Task-8-F fix round 1 initializing `is_export`/`call_conv` in `lowerModuleInit`, moving the fixed point to `b981bc80290bfde5ed5383cd0927e124`).
+Current seed is **seed v24** (archive md5 `3f00a9724db95a0199917ca9c84de37b`; Track-4 Task 9-M-F AST index-side write-through spill (`extra_children`/`extra_ranges` → `s_extra` pools), moving the fixed point to `dd43612912662fc06a25a10eb194c665`).
 Top-level `zig1-seed/`: `zig1` (reference binary md5
-`b981bc80290bfde5ed5383cd0927e124`), `gen/` (its self-emission C89 module set —
+`dd43612912662fc06a25a10eb194c665`), `gen/` (its self-emission C89 module set —
 45 `.c` + 46 `.h`, including `zig_special_types.h`; the emitted runtime/support
 sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/` (the emitted 5:
 `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`, `zig_runtime.c`,
-`zig_pal.c` — NO `net_prelude.h`), `lib/` (the 9 std `.zig` in the current v23
+`zig_pal.c` — NO `net_prelude.h`), `lib/` (the 9 std `.zig` in the current v24
 archive: `std`, `std_io`, `std_arena`, `std_net`, `std_str`, `std_mem`,
 `std_math`, `std_debug`, `std_async`),
 `SEED_README.txt`.
 The archived binary and the self-emission fixed point
-`b981bc80290bfde5ed5383cd0927e124` are the SAME compiler state (HEAD
-`f2657957`). zig0 is retired; the seed model (`scripts/seed/build_from_seed.sh`)
+`dd43612912662fc06a25a10eb194c665` are the SAME compiler state (HEAD
+`8d9d33fc`). zig0 is retired; the seed model (`scripts/seed/build_from_seed.sh`)
 is the only rebuild path.
 **C89-AHEAD note (2026-09-13):** `runtime/` now carries the compiler's **emitted,
 mode-specific** support (the `-ffast` self-emission support), not the canonical
@@ -52,8 +52,8 @@ cd /workspace/znineeight
 bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out_dir>
 ```
 - GATE: `=== [seed] Done: <out_dir> ===`; result `<out_dir>/zig1_5_clean` md5 MUST equal the recorded
-  fixed point `b981bc80290bfde5ed5383cd0927e124` (hop1 == hop2 closure). Set
-  `FIXED_POINT_MD5=b981bc80290bfde5ed5383cd0927e124` to gate on it explicitly.
+  fixed point `dd43612912662fc06a25a10eb194c665` (hop1 == hop2 closure). Set
+  `FIXED_POINT_MD5=dd43612912662fc06a25a10eb194c665` to gate on it explicitly.
 - The dump MUST run from the repo root with the RELATIVE `sf/src/main.zig` path (module basename-hash
   tokens are path-derived). `<out_dir>` MUST be a fresh dir (the script `rm -rf`s it) — never point it
   at `/tmp/fx_subfolder` (the reference compiler lives there).
@@ -63,7 +63,7 @@ bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out_dir>
 **Rebuild recipe 2 (seed binary lost — rebuild from the seed's C only):** self-contained, no repo
 include path, no zig0: `gcc -c -I <seed>/runtime` over `gen/*.c`, link `<seed>/runtime/zig_runtime.c`
 + `<seed>/runtime/zig_pal.c` + `<seed>/c_exit.c`. Exact commands in `release/seed/SEED_README.txt`.
-Binary md5 MUST equal `b981bc80290bfde5ed5383cd0927e124`.
+Binary md5 MUST equal `dd43612912662fc06a25a10eb194c665`.
 
 **Flag-set rule (binding):** every `gcc -c` MUST be
 `gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc>`
