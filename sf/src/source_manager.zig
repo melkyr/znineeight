@@ -4,11 +4,14 @@ const ga_mod = @import("growable_array.zig");
 const U32ArrayList = ga_mod.U32ArrayList;
 const mem_mod = @import("util/mem.zig");
 const util_mod = @import("util/util.zig");
+const pal_mod = @import("pal.zig");
 
 pub const SourceFile = struct {
     filename: []const u8,
     content: []const u8,
     line_offsets: *U32ArrayList,
+    len: usize,
+    loaded: bool,
 };
 
 const SourceFileArrayList = struct {
@@ -71,15 +74,21 @@ pub const Location = struct {
 pub const SourceManager = struct {
     files: *SourceFileArrayList,
     allocator: *Sand,
+    fault: *alloc_mod.GrowableSand,
 };
 
 pub fn sourceManagerInit(allocator: *Sand) SourceManager {
     var f_raw = alloc_mod.sandAlloc(allocator, @intCast(usize, 16), @intCast(usize, 4)) catch unreachable;
     var f_ptr = @ptrCast(*SourceFileArrayList, f_raw);
     f_ptr.* = sourceFileArrayListInit(allocator);
+    var gs_raw = alloc_mod.sandAlloc(allocator, @intCast(usize, @sizeOf(alloc_mod.GrowableSand)), @intCast(usize, 4)) catch unreachable;
+    var gs_ptr = @ptrCast(*alloc_mod.GrowableSand, gs_raw);
+    var gs_name: []const u8 = "diag_read";
+    alloc_mod.growableSandInit(gs_ptr, alloc_mod.poolPtr(), 4096, gs_name);
     return SourceManager{
         .files = f_ptr,
         .allocator = allocator,
+        .fault = gs_ptr,
     };
 }
 
@@ -109,8 +118,62 @@ pub fn sourceManagerAddFile(self: *SourceManager, filename: []const u8, content:
         .filename = fname_copy,
         .content = content,
         .line_offsets = lo_ptr,
+        .len = content.len,
+        .loaded = true,
     });
     return @intCast(u32, self.files.len);
+}
+
+pub fn sourceManagerAddFileTransient(self: *SourceManager, filename: []const u8, content: []const u8) u32 {
+    var fname_raw = sourceManagerCopyToArena(self, filename);
+    var fname_copy = fname_raw[0..filename.len];
+
+    var dummy_raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, 16), @intCast(usize, 4)) catch unreachable;
+    var dummy_ptr = @ptrCast(*U32ArrayList, dummy_raw);
+    dummy_ptr.* = ga_mod.u32ArrayListInit(self.allocator);
+
+    sourceFileArrayListAppend(self.files, SourceFile{
+        .filename = fname_copy,
+        .content = content,
+        .line_offsets = dummy_ptr,
+        .len = content.len,
+        .loaded = false,
+    });
+    return @intCast(u32, self.files.len);
+}
+
+fn sourceManagerFaultIn(self: *SourceManager, file_id: u32) void {
+    if (file_id == @intCast(u32, 0)) return;
+    var files_slice = sourceFileArrayListGetSlice(self.files);
+    if (files_slice.len == @intCast(usize, 0)) return;
+    var fid = file_id;
+    if (fid > @intCast(u32, files_slice.len)) fid = @intCast(u32, 1);
+    var file = &files_slice[@intCast(usize, fid - 1)];
+    if (file.loaded) return;
+    var content_opt = pal_mod.readFile(file.filename, &self.fault.view);
+    if (content_opt) |content| {
+        var lo_raw = alloc_mod.sandAlloc(&self.fault.view, @intCast(usize, 16), @intCast(usize, 4)) catch unreachable;
+        var lo_ptr = @ptrCast(*U32ArrayList, lo_raw);
+        lo_ptr.* = ga_mod.u32ArrayListInit(&self.fault.view);
+        var cap: u32 = @intCast(u32, content.len / 8) + 64;
+        ga_mod.u32ArrayListEnsureCapacity(lo_ptr, cap);
+        ga_mod.u32ArrayListAppend(lo_ptr, 0);
+        for (content) |c, i| {
+            if (c == '\n') { ga_mod.u32ArrayListAppend(lo_ptr, @intCast(u32, i) + 1); }
+        }
+        file.content = content;
+        file.line_offsets = lo_ptr;
+        file.loaded = true;
+    }
+}
+
+pub fn sourceManagerResetFaults(self: *SourceManager) void {
+    alloc_mod.sandReset(&self.fault.view);
+    var files_slice = sourceFileArrayListGetSlice(self.files);
+    var i: usize = @intCast(usize, 0);
+    while (i < files_slice.len) : (i += 1) {
+        files_slice[i].loaded = false;
+    }
 }
 
 pub fn sourceManagerGetFileName(self: *SourceManager, file_id: u32) []const u8 {
@@ -128,6 +191,7 @@ pub fn sourceManagerGetSourceContent(self: *SourceManager, file_id: u32) []const
     if (files_slice.len == @intCast(usize, 0)) { var dummy: []const u8 = ""; return dummy; }
     var fid = file_id;
     if (fid > @intCast(u32, files_slice.len)) fid = @intCast(u32, 1);
+    sourceManagerFaultIn(self, fid);
     return files_slice[@intCast(usize, fid - 1)].content;
 }
 
@@ -137,6 +201,7 @@ pub fn sourceManagerGetLineOffsets(self: *SourceManager, file_id: u32) []u32 {
     if (files_slice.len == @intCast(usize, 0)) { var dummy: [0]u32 = undefined; return dummy[0..]; }
     var fid = file_id;
     if (fid > @intCast(u32, files_slice.len)) fid = @intCast(u32, 1);
+    sourceManagerFaultIn(self, fid);
     return ga_mod.u32ArrayListGetSlice(files_slice[@intCast(usize, fid - 1)].line_offsets);
 }
 
@@ -150,6 +215,7 @@ pub fn sourceManagerGetLocation(self: *SourceManager, file_id: u32, offset: u32)
         return Location{ .file_id = @intCast(u32, 0), .line = @intCast(u32, 0), .col = @intCast(u32, 0) };
     }
     if (fid > @intCast(u32, files_slice.len)) fid = @intCast(u32, 1);
+    sourceManagerFaultIn(self, fid);
     var file = &files_slice[@intCast(usize, fid - 1)];
     var offsets = ga_mod.u32ArrayListGetSlice(file.line_offsets);
     var line_idx = mem_mod.binary_search(offsets, offset);

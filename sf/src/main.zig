@@ -173,7 +173,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     var compiler_alloc = alloc_mod.initCompilerAlloc();
     compiler_alloc.max_mem = cli.max_mem;
     spill_store_mod.spillSetLevel(cli.spill_level); // set the immutable spill flag prefix before runCompiler
-    var source = pal.readFile(cli.input_file, &compiler_alloc.permanent) orelse {
+    var source = pal.readFile(cli.input_file, &compiler_alloc.scratch) orelse {
         const msg: []const u8 = "error: could not read input file\n";
         pal.stderr_write(msg);
         pal.exit(@intCast(u8, 1));

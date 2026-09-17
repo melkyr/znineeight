@@ -439,6 +439,7 @@ pub fn diagnosticBuilderMakeMsg(interner: *StringInterner, parts: [*]const []con
 pub fn diagnosticCollectorPrintAll(self: *DiagnosticCollector) void {
     if (self.diagnostics.len == 0) return;
 
+    sm_mod.sourceManagerResetFaults(self.source_manager);
     var diags = diagnosticArrayListGetSlice(self.diagnostics);
     sortDiagnostics(diags);
     var i: usize = 0;

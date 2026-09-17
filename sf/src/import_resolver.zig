@@ -13,7 +13,7 @@ const AstKind = @import("ast.zig").AstKind;
 
 fn moduleRegistryParseModule(reg: *mr_mod.ModuleRegistry, mod_id: u32, content: []const u8, module_arena: *Sand, scratch: *Sand, shared_store: *ast_mod.AstStore, p_arena: *Sand, import_scratch: *Sand) ?u32 {
     var path_s = interner_mod.stringInternerGet(reg.interner, reg.modules.items[mod_id].path_id);
-    var file_id = sm_mod.sourceManagerAddFile(reg.source_man, path_s, content);
+    var file_id = sm_mod.sourceManagerAddFileTransient(reg.source_man, path_s, content);
     reg.modules.items[mod_id].source_file_id = file_id;
 
     var lex = lexer_mod.lexerInit(content, file_id, reg.interner, reg.diag, scratch);
@@ -60,6 +60,10 @@ pub fn moduleRegistryResolveImports(reg: *mr_mod.ModuleRegistry, module_arena: *
     var import_scratch_name: []const u8 = "import_scratch";
     alloc_mod.growableSandInit(&import_scratch_gs, alloc_mod.poolPtr(), 256, import_scratch_name);
 
+    var src_arena: alloc_mod.GrowableSand = undefined;
+    var src_name: []const u8 = "source";
+    alloc_mod.growableSandInit(&src_arena, alloc_mod.poolPtr(), 4096, src_name);
+
     while (true) {
         var mod_id_opt = mr_mod.importQueueDequeue(&reg.import_queue);
         if (mod_id_opt) |mod_id| {
@@ -68,12 +72,13 @@ pub fn moduleRegistryResolveImports(reg: *mr_mod.ModuleRegistry, module_arena: *
 
             alloc_mod.sandReset(scratch);
             alloc_mod.sandReset(&parser_arena.view);
+            alloc_mod.sandReset(&src_arena.view);
 
             entry.state = mr_mod.ModuleState.parsing;
             reg.modules.items[mod_id] = entry;
 
             var path_s = interner_mod.stringInternerGet(reg.interner, entry.path_id);
-            var content = pal_mod.readFile(path_s, reg.alloc) orelse {
+            var content = pal_mod.readFile(path_s, &src_arena.view) orelse {
                 var p1: []const u8 = "could not read imported file '";
                 var p2: []const u8 = "'";
                 var parts: [3][]const u8 = [3][]const u8{ p1, path_s, p2 };
