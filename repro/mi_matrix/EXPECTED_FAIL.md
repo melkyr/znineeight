@@ -1,4 +1,61 @@
-# mi_matrix corpus — expected-fail manifest (v131 2026-09-17)
+# mi_matrix corpus — expected-fail manifest (v132 2026-09-17)
+
+## Plan A Task 4b-F — optional-fn-pointer C-emission defect fixed (v131 -> v132 2026-09-17)
+
+Task 4b-F fixes the compiler defect pinned by Task 4b-I (operator ruling m1243): an
+`extern "c"` parameter of type `?fn(...)` now materializes the correct function-pointer
+argument type instead of an `int`. **Authorized compiler change; fixed point MOVES
+`0d3e556036ab4df8eb98899291671d3c` -> `c733d60aa88114118e346ea05d75a2fc`.**
+
+**Locus + change.** `sf/src/type_resolver.zig` `resolveFnSignatures` (`:1528`): the
+`fn_start = env.typereg.xt_len` snapshot was taken BEFORE the parameter-type resolution
+loop, but resolving a `fn(...)`/`?fn(...)` parameter recurses into the `AstKind.fn_type`
+branch and appends the nested fn type's own parameters to the shared `xt_items`
+(`type_resolver.zig:1164-1168`), so the recorded `params_start` pointed at the nested
+`i32`. The fix buffers every resolved parameter type (`ptypes_buf[64]`), THEN snapshots
+`fn_start`, THEN appends the buffer contiguously (mirroring the already-correct
+`AstKind.fn_type` path at `:1119-1168`). The resolved-type-table writes are unchanged.
+Minimal change, pinned locus only; no other `sf/src` file touched.
+
+**Fixtures declassified (both now OK).** RED → GREEN under the canonical classifier
+(`scripts/corpus/classify`, full universe 741):
+
+| fixture | v131 class | v132 class | emitted C now (fixed point `c733d60a`) |
+|---|---|---|---|
+| `opt_fnptr_extern_xmod` | **FAIL** | **OK** | extern call `take_fn(zT_0)` where `zT_0: zT_430A6DAC_FP_void_int` (`zT_1 = note; zT_2.has_value = 1; zT_2.value = zT_1; zT_3 = zT_2.has_value ? zT_2.value : NULL; zT_0 = zT_3;`); local `?fn` round-trip `localRound(zT_8)` passes the `Opt_65` correctly; gcc clean (only the expected emission-only implicit `take_fn` declaration under the classifier's `-Wno-implicit-function-declaration`). Linked against a conforming C `void take_fn(void (*)(int))`, stdout `1\n` rc=0. |
+| `opt_void_extern_xmod` | **OK** (control) | **OK** | unchanged: `zT_6 = zT_7.has_value ? zT_7.value : NULL; take_void(zT_6);` and `take_void((void*)(NULL));` — gcc clean. |
+
+**Corpus class-map delta (pre-fix `0d3e5560` vs post-fix `c733d60a`, 741 dirs):**
+
+| | v131 | v132 | delta |
+|---|---|---|---|
+| dirs | 741 | 741 | 0 |
+| OK | 687 | 688 | +1 |
+| GREEN | 28 | 28 | 0 |
+| FAIL | 26 | 25 | -1 |
+| ICE | 0 | 0 | 0 |
+| CRASH | 0 | 0 | 0 |
+
+Per-dir `join` diff = exactly `repro/mi_matrix/opt_fnptr_extern_xmod` FAIL -> OK; every
+other dir class-identical (the `?*void` control included).
+
+**Gates.** 3× `-ffast` emission md5 stable (`main_578EE027.c`
+`1f55fdfe97b8a98503e88383a88c3cd7`); `-fsafe`/`-ffast` parity (both dump/build/run rc=0,
+identical stdout `1\n`; `-fsafe` adds only the expected `pal_trap()`/`zig_poison_fill`
+checks); `check_emit_support.sh` **5/5** byte-identical; `verify_upgraded.sh` **CLOSEOUT
+OK** (A1-A5/B1-B7, all goldens byte-identical — no closeout program uses a fn-pointer
+parameter); self-compile dump rc=0, 0 `error[`, 0 PANIC (48 `.c` + 48 `.h`).
+No seed rotation in this task. Full report:
+`.superpowers/sdd/2026-09-17-std-lib-plan-a-foundation/task-4b-F-report.md`.
+
+**Residual (declared).** The null payload still renders `NULL` (and a direct `null`
+argument to a `?fn` extern parameter renders `(void*)(NULL)`), not the plan's stricter
+literal `0`; this is gcc-clean under the project flag set and ABI-identical (all-bits-zero
+null pointer), and the `unwrap_optional_abi` `0`-rendering (`c89_emit.zig:8100-8113`)
+noted by Task 4b-I is outside the pinned `type_resolver.zig` locus, so it was not applied
+here.
+
+---
 
 ## Plan A Task 4b-I — optional-fn-pointer C-emission defect pinned (v130 -> v131 2026-09-17)
 

@@ -1525,7 +1525,8 @@ fn resolveFnSignatures(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry, resolve
                 if ((decl.flags & @intCast(u8, 4)) != @intCast(u8, 0)) { is_ext = @intCast(u8, 1); }
                 var is_variadic: u8 = @intCast(u8, 0);
                 if ((decl.flags & @intCast(u8, 1)) != @intCast(u8, 0)) { is_variadic = @intCast(u8, 1); }
-                var fn_start: u32 = @intCast(u32, env.typereg.xt_len);
+                var ptypes_buf: [64]u32 = undefined;
+                var ptypes_n: usize = @intCast(usize, 0);
                 if (proto.params_count > @intCast(u16, 0)) {
                     var p_payload: u64 = (@intCast(u64, proto.params_start) << @intCast(u64, 32)) | @intCast(u64, proto.params_count);
                     var pnodes_n = ast_mod.astStoreGetExtraChildCount(env.store, p_payload);
@@ -1534,12 +1535,20 @@ fn resolveFnSignatures(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry, resolve
                         var pnode = ast_mod.astStoreNodeAt(env.store, ast_mod.astStoreGetExtraChildAt(env.store, p_payload, @intCast(u32, pi)));
                         if (pnode.child_0 != 0) {
                             var ptype = resolveTypeExprFull(env, pnode.child_0, @intCast(u32, 0));
-                            type_mod.xtAppend(env.typereg, ptype);
+                            if (ptypes_n < @intCast(usize, 64)) {
+                                ptypes_buf[ptypes_n] = ptype;
+                                ptypes_n += @intCast(usize, 1);
+                            }
                             if (ptype != type_mod.TYPE_UNDEFINED) {
                                 rtt_mod.resolvedTypeTableSet(resolved_types, pnode.child_0, ptype);
                             }
                         }
                     }
+                }
+                var fn_start: u32 = @intCast(u32, env.typereg.xt_len);
+                var pf: usize = @intCast(usize, 0);
+                while (pf < ptypes_n) : (pf += 1) {
+                    type_mod.xtAppend(env.typereg, ptypes_buf[pf]);
                 }
                 var tid = type_mod.typeRegistryGetOrCreateFn(env.typereg, proto.name_id, mods[mi].id, is_ext, is_variadic, fn_start, proto.params_count, rt_box[0], proto.call_conv);
                 rtt_mod.resolvedTypeTableSet(resolved_types, decl_idx, tid);
