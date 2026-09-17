@@ -1,4 +1,62 @@
-# mi_matrix corpus — expected-fail manifest (v122 2026-09-17)
+# mi_matrix corpus — expected-fail manifest (v123 2026-09-17)
+
+## Track-4 Task 5a-I (I) — pinned RED: `mud_server` duplicate addTask on slot reuse + blocking trailing tick (v122 -> v123 2026-09-17)
+
+Task 5a-I investigates the two Important, plan-mandated Task 5 review findings and pins
+them with fixtures. **No `sf/src` change and no example change in this task** — the REDs
+below are the contract Task 5a-F must turn GREEN. The four new fixture dirs are
+compile-clean (dump rc=0, gcc rc=0, link rc=0), so each classifies **OK**; the RED is
+RUNTIME-only and lives here as documented evidence.
+
+**Finding (1) — duplicate scheduler registration on slot reuse.** `addTask`
+(`sf/src/std_async.zig:135-142`) appends unconditionally and nothing removes a task when
+`mud_server` frees a slot (`state=.done`, `examples/z98/mud_server/main.zig:181-190`), so a
+reconnecting client re-adds the SAME `*Task`: the list holds the pointer twice, `count`
+grows one per reconnect, `tick` resumes that task once per duplicate entry, and at
+capacity 10 `addTask` silently returns false. Fix locus for 5a-F: make `addTask`
+idempotent (reset a settled task in place) or add a `removeTask`/reset primitive —
+`sf/src/std_async.zig` is NOT in `sf/src/main.zig`'s import graph, so this does **not**
+move the compiler fixed point (Task 4c-F precedent).
+
+**Finding (2) — blocking trailing `tick`.** Accepted sockets are blocking (never
+`O_NONBLOCK`, `sf/src/std_net.zig:145-155`); the trailing `std.async.tick`
+(`examples/z98/mud_server/main.zig:192`) resumes every non-done task, so resuming an idle
+client blocks `main` in `recv`. Fix locus for 5a-F: readiness-gated drive (drop the
+trailing `tick`, resume only select-ready fds); `O_NONBLOCK` alone is insufficient because
+`clientCoroutine` treats `n <= 0` as disconnect. Examples-only, fixed point UNMOVED.
+
+| fixture | shape | RED today (fixed point `18e0de5c`) | GREEN contract (Task 5a-F) |
+|---|---|---|---|
+| `stdlib_async_addtask_reuse_xmod` | std.async: add `t0`, mark done, re-add `t0`, tick, then add `t1` at capacity 2 | dump/gcc/link rc=0, 6 `.c`; run rc=133 (SIGTRAP), stdout `1 1 1 2 2 2 0 2`, stderr `panic: … addTask registered the same *Task twice` (duplicate entry; count 1→2; one tick resumes `t0` twice; `t1` rejected at capacity) | idempotent `addTask`: stdout `1 1 1 1 1 1 1 2`, run rc=0 (no duplicate; `count` stays 1; one resume; `t1` admitted) — MEASURED with a scratch `addTask` guard |
+| `stdlib_async_addtask_single_xmod` | std.async control: one task, registered once, no reuse | **GREEN today**: dump/gcc/link/run rc=0, stdout `1 1 3 3` | stays GREEN (canonical single-client lifecycle) |
+| `stdlib_async_blocking_tick_xmod` | real socket: one client sends one line then idles; select → direct `@asyncResume` → trailing `tick`; `alarm(2)` | dump/gcc/link rc=0, 7 `.c`; run rc=142 (SIGALRM), stdout `accepted` (trailing `tick` blocked in `recv`) | readiness-gated drive (no trailing `tick`): stdout `accepted` `ok`, run rc=0 — MEASURED |
+| `stdlib_async_blocking_tick_two_xmod` | real sockets: idle client in slot 0, active client in slot 1; same drive | dump/gcc/link rc=0, 7 `.c`; run rc=142 (SIGALRM), stdout `accepted 2` (idle client stalls `main`) | readiness-gated drive: stdout `accepted 2` `ok`, run rc=0 |
+
+The canonical single-client path is the unchanged control: `examples/z98/mud_server`
+rebuilt with the same compiler and driven by `demo/session.sh` is **byte-identical** to
+both goldens (server stdout `66c8f0abb926cca7baf9a0d1692ab318`, client bytes
+`93147d0f0bbd983a9d844fea8b7a6fa7`).
+
+**Corpus `-ffast` dump+gcc classifier (`scripts/corpus/classify`):**
+
+| | 5a-I baseline `18e0de5c` (v122) | 5a-I `18e0de5c` (v123) | delta |
+|---|---|---|---|
+| dirs | 716 | 720 | +4 |
+| OK | 663 | 667 | +4 |
+| GREEN | 28 | 28 | 0 |
+| FAIL | 25 | 25 | 0 |
+| ICE | 0 | 0 | 0 |
+| CRASH | 0 | 0 | 0 |
+
+Per-dir movement = exactly the 4 new dirs (all OK); every pre-existing dir is
+class-identical (the only tree change is the 4 new dirs, and the compiler is the canonical
+fixed point). No new diagnostic code (the runtime REDs emit no compiler diagnostic).
+
+**Fixed point UNMOVED `18e0de5cf71f4fe0fbf5c560ab24e624`** (seed-built moving point hop1
+`c963a76c…`, hop2 == hop3 == `18e0de5c…`): no `sf/src` change. Seed rotation stays at
+Task 6.
+
+---
 
 ## Track-4 Task 4c-F (F) — `std.async.waitFor` non-suspending drive primitive LANDED (v121 -> v122 2026-09-17)
 
