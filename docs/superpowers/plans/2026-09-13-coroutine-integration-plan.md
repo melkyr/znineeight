@@ -1586,6 +1586,39 @@ git commit -m "chore(coroutine): Track4 golden battery + fallback adjudication (
 
 ---
 
+### Task 8: suspending `export fn` — synthesized synchronous driver — I then F
+
+**Origin (operator ruling, 2026-09-17).** The Task-7 docs record a limitation: a suspending `export fn` keeps **no synchronous export entry** — only root `pub fn main` gets a synthesized driver (`sf/src/async_state_machine.zig:597` `isRootMain` requires module 0 + `is_pub` + `"main"`; `asyncTransform` replaces the original LIR with the step, `sf/src/main.zig:770-779` never streams the original). The operator ruled: fix it. A suspending `export fn` gets a synthesized sync driver **same as `main`**; the generalization is mechanical — `isDriverTarget = isRootMain || is_export`.
+
+**Operator design rulings (2026-09-17):**
+1. **Result plumbing.** The layout gains `ASYNC_FIELD_RESULT` when `is_awaited || is_driver_target` (mirroring the `awaited_fns` condition) in **both** P2 (`sf/src/async_analysis.zig:711`) and P3 (`sf/src/async_frame_layout.zig:633`). `emitMainDriver` allocates a local result buffer of `lf.return_type` alongside the local root frame buffer, points `ASYNC_FIELD_RESULT` at it, drives the child, then `ret`s the value from the result buffer for a **value-returning** driver-target; `ret_void` as today for a **void** one.
+2. **`@asyncInit`-based driver.** Extract the frame-init LIR the `@asyncInit` lowering already emits (`sf/src/lower.zig:4411-4545`: zero-fill frame → step word@0 → ctx → state=0 → param copy) into a **shared LIR helper** that takes **exactly the arguments the current `emitMainDriver` manual sequence already needs** (build, buf temp, ctx temp, step fn name/module, state type, params/args source). `emitMainDriver` and the `@asyncInit` builtin lowering both call it — one source of truth. No new general interface.
+3. **Byte diff expected.** Changing LIR/temp numbering means emitted C for main-based fixtures changes; the gate is **observable behavior**, not byte-identity. All existing main-based fixtures and goldens MUST keep the same observable behavior (runtime output / golden md5s).
+4. **Seed rotation bundled** (not deferred).
+
+**Step stays** `is_pub=0`, `call_conv=0` (cdecl). The driver inherits `lf.call_conv` (`sf/src/async_state_machine.zig:631`) and the source name via the existing `ctx.exported` map (`sf/src/main.zig:761-764`).
+
+#### Task 8-I: investigate + pin (no `sf/src` change)
+
+- [ ] **Step 1: Fixtures** (`repro/mi_matrix/`, auto-listed; each documents RED-now + the GREEN contract):
+  - `async_export_fn_xmod/` — a suspending `export fn bump(n: i32) i32` that suspends then returns `n+1`, driven by `pub fn main` (which calls it and prints the result). RED today: the emitted C lacks the external `bump` symbol and the value is dropped.
+  - `async_export_fn_void_xmod/` — a suspending `export fn` returning void (control).
+- [ ] **Step 2: Questionnaire.** Answer in the report: (Q1) the exact current behavior of a suspending `export fn` (symbol absent; value dropped) and the loci; (Q2) the `isDriverTarget` predicate + where `is_export` comes from (AST bit3; no `LirFunction` field today); (Q3) the shared-helper argument list (exactly the current manual sequence's inputs) and the `@asyncInit` LIR it must emit; (Q4) the `ASYNC_FIELD_RESULT` layout condition (`is_awaited || is_driver_target`) in P2/P3 and the driver-target set's keying; (Q5) the result-buffer mechanism + the void vs value-return driver tail; (Q6) the call-conv split (sync entry inherits `lf.call_conv`; internal step cdecl) and the source-name/exported-map path; (Q7) the byte-diff expectation + the behavior-only gate for main-based fixtures; (Q8) minimal fix surface + risk.
+- [ ] **Step 3: Declare.** Add the fixtures to the corpus; bump `repro/mi_matrix/EXPECTED_FAIL.md` for the RED cases; record the corpus delta.
+- [ ] **Step 4: Report + present the fix surface for Task 8-F.** No `sf/src` change.
+
+#### Task 8-F: synthesize the driver (`sf/src` change; fixed point MOVES; seed rotation bundled)
+
+- [ ] **Step 1: `is_export` on LIR.** Add `is_export: u8` to `LirFunction` (`sf/src/lir.zig`) + stream ser/de (`sf/src/lir_stream.zig`) + set it from the AST flag bit3 (`0x08`) at `sf/src/lower.zig:7156`.
+- [ ] **Step 2: Driver-target predicate.** `isRootMain` → `isDriverTarget` = root `main` (module 0 + `is_pub` + `"main"`) **or** `is_export`; update the call site `sf/src/async_state_machine.zig:1105`.
+- [ ] **Step 3: Shared LIR helper.** Extract the `@asyncInit` frame-init sequence (`sf/src/lower.zig:4411-4545`) into the shared helper (arguments per ruling 2); call it from both the `@asyncInit` builtin lowering and `emitMainDriver`.
+- [ ] **Step 4: Result plumbing.** P2 + P3 add `ASYNC_FIELD_RESULT` when `is_awaited || is_driver_target`; `emitMainDriver` allocates the local result buffer, points the field at it, and `ret`s the value / `ret_void`.
+- [ ] **Step 5: Fixtures RED→GREEN**; all existing main-based fixtures + the four goldens keep the **same observable behavior** (byte diffs expected); full corpus sweep (class map delta = intended dirs only); `check_emit_support.sh` 5/5; self-compile closure (48 `.c`, 0 `[3000]`).
+- [ ] **Step 6: Docs.** Update spec §4 + `sf/docs/tech_docs/12_async_coroutines.md` §8 (replace the "suspending `export fn` keeps no synchronous entry" limitation with the landed behavior) + `CHANGELOG.md`.
+- [ ] **Step 7: Closeout + seed rotation.** `verify_upgraded.sh` → `CLOSEOUT OK`; record the new fixed point; **rotate the seed** (`scripts/seed/archive_seed.sh … --update-changelog`) and update `docs/sf/QUICK_REF.md`.
+
+---
+
 ## Self-Review
 
 **Spec coverage:**
@@ -1714,3 +1747,13 @@ Task 6 is the final Track-4 task. All four entries passed their per-entry gates;
 - §8 Produces: `mud_server` now describes the readiness-gated `@asyncResume` drive with direct slot free (no `awaitTask`/`waitFor` on the completion path), superseding the stale "per-client tasks with `awaitTask`" text.
 
 **Step 5 — demo READMEs.** Post-conversion md5s recorded in `examples/z98/rogue_mud/demo/README.md` and `examples/z98/mud_server/demo/README.md` as the authoritative goldens; no `TBD`/`TODO`.
+
+### Amendment 7 — Task 8: suspending `export fn` driver (2026-09-17, operator ruling)
+
+The Task-7 docs recorded a limitation: a suspending `export fn` keeps **no synchronous export entry** (only root `pub fn main` is a driver target — `sf/src/async_state_machine.zig:597` `isRootMain` requires module 0 + `is_pub` + `"main"`; the transform replaces the original LIR with the step and never streams the original, `sf/src/main.zig:770-779`). The operator ruled this a real gap to fix, added to the plan as **Task 8** (I then F).
+
+**Operator design rulings:** (1) **result plumbing** — `ASYNC_FIELD_RESULT` is added to the layout when `is_awaited || is_driver_target` (both P2 `sf/src/async_analysis.zig:711` and P3 `sf/src/async_frame_layout.zig:633`); the driver allocates a local result buffer of `lf.return_type`, points the field at it, drives the child, then `ret`s the value (value-returning target) or `ret_void` (void, as `main` does today); (2) the driver switches to the `@asyncInit` frame-init via a **shared LIR helper** that takes exactly the arguments the current `emitMainDriver` manual sequence already needs and emits the LIR the `@asyncInit` lowering already emits (`sf/src/lower.zig:4411-4545`); (3) **byte diffs on main-based fixtures/goldens are expected** (LIR/temp numbering changes) — the gate is **observable behavior**, not byte-identity; (4) the seed rotation is **bundled**, not deferred.
+
+The generalization is mechanical — `isDriverTarget = isRootMain || is_export` (`is_export` = the AST `fn_decl` flag bit3 `0x08`, added to `LirFunction`). The step stays `is_pub=0`/cdecl; the sync entry inherits `lf.call_conv` and the source name via the existing `ctx.exported` map.
+
+Task 8-I investigates + pins (`repro/mi_matrix/async_export_fn_xmod` — suspending `export fn bump(n: i32) i32` that suspends then returns `n+1`; `repro/mi_matrix/async_export_fn_void_xmod` — void control; no `sf/src` change). Task 8-F implements it (`sf/src` change; fixed point MOVES; seed rotation bundled; spec §4 + `sf/docs/tech_docs/12_async_coroutines.md` §8 + `CHANGELOG.md` updated).
