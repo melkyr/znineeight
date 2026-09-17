@@ -12,6 +12,7 @@ pub const SourceFile = struct {
     line_offsets: *U32ArrayList,
     len: usize,
     loaded: bool,
+    transient: bool,
 };
 
 const SourceFileArrayList = struct {
@@ -120,6 +121,7 @@ pub fn sourceManagerAddFile(self: *SourceManager, filename: []const u8, content:
         .line_offsets = lo_ptr,
         .len = content.len,
         .loaded = true,
+        .transient = false,
     });
     return @intCast(u32, self.files.len);
 }
@@ -138,6 +140,7 @@ pub fn sourceManagerAddFileTransient(self: *SourceManager, filename: []const u8,
         .line_offsets = dummy_ptr,
         .len = content.len,
         .loaded = false,
+        .transient = true,
     });
     return @intCast(u32, self.files.len);
 }
@@ -160,7 +163,14 @@ fn sourceManagerFaultIn(self: *SourceManager, file_id: u32) void {
         var lo_raw = alloc_mod.sandAlloc(&self.fault.view, @intCast(usize, 16), @intCast(usize, 4)) catch unreachable;
         var lo_ptr = @ptrCast(*U32ArrayList, lo_raw);
         lo_ptr.* = ga_mod.u32ArrayListInit(&self.fault.view);
-        var cap: u32 = @intCast(u32, content.len / 8) + 64;
+        var scan_len: usize = file.len;
+        if (scan_len > content.len) scan_len = content.len;
+        var line_count: u32 = @intCast(u32, 0);
+        var si: usize = @intCast(usize, 0);
+        while (si < scan_len) : (si += 1) {
+            if (content[si] == '\n') line_count += 1;
+        }
+        var cap: u32 = line_count + 1;
         ga_mod.u32ArrayListEnsureCapacity(lo_ptr, cap);
         ga_mod.u32ArrayListAppend(lo_ptr, 0);
         for (content) |c, i| {
@@ -168,6 +178,15 @@ fn sourceManagerFaultIn(self: *SourceManager, file_id: u32) void {
         }
         file.content = content;
         file.line_offsets = lo_ptr;
+        file.loaded = true;
+    } else {
+        var empty_content: []const u8 = "";
+        var lo_raw2 = alloc_mod.sandAlloc(&self.fault.view, @intCast(usize, 16), @intCast(usize, 4)) catch unreachable;
+        var lo_ptr2 = @ptrCast(*U32ArrayList, lo_raw2);
+        lo_ptr2.* = ga_mod.u32ArrayListInit(&self.fault.view);
+        ga_mod.u32ArrayListAppend(lo_ptr2, 0);
+        file.content = empty_content;
+        file.line_offsets = lo_ptr2;
         file.loaded = true;
     }
 }
@@ -178,7 +197,7 @@ pub fn sourceManagerResetFaults(self: *SourceManager) void {
     var files_slice = sourceFileArrayListGetSlice(self.files);
     var i: usize = @intCast(usize, 0);
     while (i < files_slice.len) : (i += 1) {
-        files_slice[i].loaded = false;
+        if (files_slice[i].transient) files_slice[i].loaded = false;
     }
 }
 
