@@ -523,6 +523,7 @@ pub fn asyncLayoutFrame(alloc: *Sand, reg: *TypeRegistry, lir_fn: *LirFunction,
     suspending_fns: *hash_mod.U64ToU32Map, frame_sizes: *hash_mod.U64ToU32Map,
     state_widths: *hash_mod.U64ToU32Map,
     awaited_fns: *hash_mod.U64ToU32Map, async_hidden_fns: *hash_mod.U64ToU32Map,
+    driver_targets: *hash_mod.U64ToU32Map,
     parent_result_type_list: *ga_mod.U32ArrayList, parent_result_start: *hash_mod.U64ToU32Map,
     parent_result_count: *hash_mod.U64ToU32Map) AsyncFrameLayout {
     var max_temp = maxTempOf(lir_fn);
@@ -630,7 +631,7 @@ pub fn asyncLayoutFrame(alloc: *Sand, reg: *TypeRegistry, lir_fn: *LirFunction,
     if ((hid & @intCast(u32, 1)) != @intCast(u32, 0)) {
         addField(&fields, reg, ASYNC_FIELD_CHILD, @intCast(u32, 0), @intCast(u32, 0), lay_ptr_void, &offset, &max_align);
     }
-    if (hash_mod.u64ToU32MapGet(awaited_fns, lay_key) != null) {
+    if (hash_mod.u64ToU32MapGet(awaited_fns, lay_key) != null or hash_mod.u64ToU32MapGet(driver_targets, lay_key) != null) {
         addField(&fields, reg, ASYNC_FIELD_RESULT, @intCast(u32, 0), @intCast(u32, 0), lay_ptr_void, &offset, &max_align);
     }
     if ((hid & @intCast(u32, 2)) != @intCast(u32, 0)) {

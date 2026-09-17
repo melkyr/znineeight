@@ -85,12 +85,17 @@ the matching resume segment reloads the fields and continues. Returning `null` i
    resume it re-drives the child until the child returns `null`, then pops the child frame
    (`used -= child_frame_size`) and delivers the awaited value to the call result.
 
-**Root `main`.** The single exception is the root `pub fn main`: it keeps its source name, module,
-`is_pub`, and params, plus a minimal synchronous driver (`emitMainDriver`,
-`sf/src/async_state_machine.zig:613`) that declares a local root buffer and a fixed 256-byte pool
-(`ASYNC_ROOT_POOL_BYTES`, `sf/src/async_state_machine.zig:595`), initializes the context header,
-writes the step word, copies params, and drives its own step to completion. This keeps the C
-`int main` wrapper and direct-call regression fixtures working.
+**Synchronous driver targets.** A suspending function keeps its source name, module, `is_pub`, and
+params, plus a minimal synchronous driver (`emitMainDriver`, `sf/src/async_state_machine.zig`) when it
+is root `pub fn main` **or** an `export fn` (`isDriverTarget = isRootMain || lf.is_export`, where
+`LirFunction.is_export` carries the AST `fn_decl` bit3 `0x08`). The driver declares a local root
+buffer and a fixed 256-byte pool (`ASYNC_ROOT_POOL_BYTES`, `sf/src/async_state_machine.zig`),
+initializes the context header, frame-inits via the shared `asyncEmitFrameInit` helper (zero-fill →
+step word → ctx → state=0 → param copy — the same helper the `@asyncInit` builtin lowering calls),
+points the hidden `result` slot at a local buffer for a value-returning target, drives its own step to
+completion, and `ret`s the stored value (or `ret_void`s). This keeps the C `int main` wrapper,
+direct-call regression fixtures, and the source-named external entry for a suspending `export fn`
+working.
 
 ---
 
@@ -265,9 +270,12 @@ normal `(ctx, args)` signature.
   function → `error[3046]`; taking the address of a suspending function → `error[3017]`.
 - **`-fsafe` only.** The `@asyncInit` frame-size bounds check and the `@asyncResume` null-step check
   exist only under `-fsafe`; `-ffast` omits them (bad input is UB).
-- **Only root `main` keeps a synchronous entry.** A non-`main` suspending function (including an
-  `export fn`) is replaced by its `__Z98Step_<f>` and keeps no synchronous/export entry; the root
-  `pub fn main` is the sole function for which the compiler synthesizes a driver.
+- **Only driver targets keep a synchronous entry.** A suspending function keeps a synthesized
+  synchronous/export entry iff it is root `pub fn main` or an `export fn` (Task 8-F
+  `isDriverTarget = isRootMain || lf.is_export`); every other non-`main` suspending function is
+  replaced by its `__Z98Step_<f>` and keeps no synchronous entry. A value-returning `export fn`
+  driver allocates a local result buffer, points the hidden `result` slot at it, and returns the
+  value stored through that slot by the step's terminal `.ret value` path.
 - **Root-`main` pool is fixed.** The synthesized `main` driver's child-frame pool is a fixed 256
   bytes (`ASYNC_ROOT_POOL_BYTES`), so a suspending `main` whose implicit awaits need larger child
   frames overflows. Use an explicit task + `std.async` pool for larger needs.

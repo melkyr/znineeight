@@ -610,6 +610,7 @@ pub fn asyncFrameSizeRun(alloc: *alloc_mod.Sand, store: *ast_mod.AstStore,
     suspending_fns: *hash_mod.U64ToU32Map, frame_sizes: *hash_mod.U64ToU32Map,
     state_widths: *hash_mod.U64ToU32Map,
     awaited_fns: *hash_mod.U64ToU32Map, async_hidden_fns: *hash_mod.U64ToU32Map,
+    driver_targets: *hash_mod.U64ToU32Map,
     parent_result_type_list: *ga_mod.U32ArrayList, parent_result_start: *hash_mod.U64ToU32Map,
     parent_result_count: *hash_mod.U64ToU32Map) void {
     var p_msg: []const u8 = "AFS\n"; pal.markerWrite(p_msg);
@@ -676,6 +677,16 @@ pub fn asyncFrameSizeRun(alloc: *alloc_mod.Sand, store: *ast_mod.AstStore,
             var proto = store.fn_protos.items[@intCast(usize, proto_idx)];
             if (!asyncIsSuspending(suspending_fns, mods[mi].id, proto.name_id)) continue;
             var key = asyncKey(mods[mi].id, proto.name_id);
+            // Task 8-F: root `main` (module 0 + AST pub bit) or any `export fn`
+            // (AST bit3) is a synchronous-driver target; it needs the hidden
+            // result field so the driver can return the value.
+            var is_driver_target: bool = false;
+            if ((@intCast(u16, decl.flags) & @intCast(u16, 0x08)) != @intCast(u16, 0)) { is_driver_target = true; }
+            if (mods[mi].id == @intCast(u32, 0) and (@intCast(u16, decl.flags) & @intCast(u16, 0x02)) != @intCast(u16, 0)) {
+                var dm = si_mod.stringInternerGet(interner, proto.name_id);
+                if (dm.len == @intCast(usize, 4) and dm[0] == 'm' and dm[1] == 'a' and dm[2] == 'i' and dm[3] == 'n') { is_driver_target = true; }
+            }
+            if (is_driver_target) { _ = hash_mod.u64ToU32MapPut(driver_targets, key, @intCast(u32, 1)); }
             // Authoritative state width: one source of truth, read by P3, the
             // `@asyncInit` lowering, and the Stage-3 transform.
             var susp_count = scanSuspensionCount(store, sym_reg, mods[mi].id, decl.child_0, &stack, suspending_fns, async_suspend_name_id, async_init_name_id);
@@ -708,7 +719,7 @@ pub fn asyncFrameSizeRun(alloc: *alloc_mod.Sand, store: *ast_mod.AstStore,
             if ((hid & @intCast(u32, 1)) != @intCast(u32, 0)) {
                 _ = addFrameField(typereg, asyncPtrVoid(typereg), &offset, &max_align);
             }
-            if (hash_mod.u64ToU32MapGet(awaited_fns, key) != null) {
+            if (hash_mod.u64ToU32MapGet(awaited_fns, key) != null or hash_mod.u64ToU32MapGet(driver_targets, key) != null) {
                 _ = addFrameField(typereg, asyncPtrVoid(typereg), &offset, &max_align);
             }
             if ((hid & @intCast(u32, 2)) != @intCast(u32, 0)) {

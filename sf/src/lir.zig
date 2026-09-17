@@ -518,6 +518,9 @@ pub const LirFunction = struct {
     // `lir_stream.zig` function header via the repurposed `pad0` byte, so the
     // 16-byte header / `expected_len` are unchanged.
     poison_uninit: u8,
+    // Task 8-F: the AST `fn_decl` export flag (bit3 `0x08`). A suspending
+    // `export fn` is a synchronous-driver target exactly like root `main`.
+    is_export: u8,
 };
 
 pub fn lirSideAppendCallDirect(lfn: *LirFunction, d: CallDirectData) u32 {

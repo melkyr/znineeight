@@ -265,6 +265,18 @@ and client tasks — and `mud_server` its client tasks — through one scheduler
 surface with no per-step plumbing. The earlier explicit-step/homogeneous-scheduler
 workaround is superseded.
 
+**Synchronous driver targets (Task 8-F).** A suspending function keeps a synthesized
+synchronous entry when it is root `main` **or** an `export fn`
+(`isDriverTarget = isRootMain || lf.is_export`, with `is_export` = the AST `fn_decl`
+bit3 `0x08` carried on `LirFunction`). The driver is emitted under the function's
+source name / `call_conv` / param signature and drives the step to completion; a
+value-returning target allocates a local result buffer, points the hidden
+`ASYNC_FIELD_RESULT` slot at it, and `ret`s the value stored by the step's terminal
+`.ret value` path; a void target `ret_void`s. The frame-init LIR is the shared
+`asyncEmitFrameInit` helper (also called by the `@asyncInit` builtin lowering), so
+the driver and `@asyncInit` share one zero-fill / header-offset / param-copy source
+of truth.
+
 ## 5. Diagnostics
 
 Track 4 introduces **no diagnostic and no error code.**

@@ -4460,89 +4460,50 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                             emitInst(self, LirInst{ .check_trap = .{ .cond = ai_ok, .kind = @intCast(u8, 7) } });
                         }
                     }
-                    if (ai_fsz > @intCast(u32, 0)) {
-                        var ai_size = nextTemp(self, type_mod.TYPE_USIZE);
-                        emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, ai_fsz), .result = ai_size } });
-                        var ai_i = nextTemp(self, type_mod.TYPE_USIZE);
-                        emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = ai_i } });
-                        var ai_hdr_bb = createBlock(self);
-                        var ai_body_bb = createBlock(self);
-                        var ai_done_bb = createBlock(self);
-                        emitInst(self, LirInst{ .jump = ai_hdr_bb });
-                        markTerminated(&self.func.blocks, self.current_bb);
-                        self.current_bb = ai_hdr_bb;
-                        self.block_terminated = @intCast(u8, 0);
-                        var ai_cond = nextTemp(self, type_mod.TYPE_BOOL);
-                        emitInst(self, LirInst{ .binary = .{ .op = BIN_LT, .lhs = ai_i, .rhs = ai_size, .result = ai_cond } });
-                        emitInst(self, LirInst{ .branch = .{ .cond = ai_cond, .then_bb = ai_body_bb, .else_bb = ai_done_bb } });
-                        self.current_bb = ai_body_bb;
-                        self.block_terminated = @intCast(u8, 0);
-                        var ai_pi = nextTemp(self, type_mod.TYPE_USIZE);
-                        emitInst(self, LirInst{ .ptr_to_int = .{ .value = ai_buf, .result = ai_pi } });
-                        var ai_addr = nextTemp(self, type_mod.TYPE_USIZE);
-                        emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = ai_pi, .rhs = ai_i, .result = ai_addr } });
-                        var ai_u8p_t = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, type_mod.TYPE_U8, false);
-                        var ai_u8p = nextTemp(self, ai_u8p_t);
-                        emitInst(self, LirInst{ .int_to_ptr = .{ .value = ai_addr, .target = ai_u8p_t, .result = ai_u8p } });
-                        var ai_byte0 = nextTemp(self, type_mod.TYPE_U8);
-                        emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = ai_byte0 } });
-                        emitInst(self, LirInst{ .store = .{ .ptr = ai_u8p, .value = ai_byte0 } });
-                        var ai_one = nextTemp(self, type_mod.TYPE_USIZE);
-                        emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 1), .result = ai_one } });
-                        var ai_i2 = nextTemp(self, type_mod.TYPE_USIZE);
-                        emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = ai_i, .rhs = ai_one, .result = ai_i2 } });
-                        emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = ai_i, .src = ai_i2 } });
-                        emitInst(self, LirInst{ .jump = ai_hdr_bb });
-                        self.current_bb = ai_done_bb;
-                        self.block_terminated = @intCast(u8, 0);
-                    }
-                    var ai_step_name = async_state_machine.asyncStepNameId(self.ctx.registry.interner, ai_nid);
-                    var ai_step_fn = async_state_machine.asyncStepFnType(self.ctx.registry, self.ctx.registry.interner, ai_step_name, ai_mid);
-                    var ai_step_pt = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, ai_step_fn, false);
-                    type_mod.typeRegistryMarkFnPtrUsed(self.ctx.registry, ai_step_fn);
-                    var ai_sf = nextTemp(self, ai_step_pt);
-                    emitInst(self, LirInst{ .func_ref = .{ .name_id = ai_step_name, .module_id = ai_mid, .result = ai_sf } });
-                    var ai_sf_i = nextTemp(self, type_mod.TYPE_USIZE);
-                    emitInst(self, LirInst{ .ptr_to_int = .{ .value = ai_sf, .result = ai_sf_i } });
-                    // Fix F4 #4: the frozen header (step@0, ctx, state) and the
-                    // post-header param base are derived from the same shared
-                    // frame-field accumulation rule P2/P3 use, not hand-coded
-                    // pointer-size arithmetic.
-                    var ai_hdr_off: u32 = @intCast(u32, 0);
-                    var ai_hdr_align: u32 = @intCast(u32, 1);
-                    var ai_off_step = async_analysis.addFrameField(self.ctx.registry, type_mod.TYPE_USIZE, &ai_hdr_off, &ai_hdr_align);
-                    var ai_off_ctx = async_analysis.addFrameField(self.ctx.registry, type_mod.TYPE_USIZE, &ai_hdr_off, &ai_hdr_align);
-                    var ai_off_state = async_analysis.addFrameField(self.ctx.registry, ai_state_type, &ai_hdr_off, &ai_hdr_align);
-                    asyncEmitStoreAt(self, ai_buf, ai_off_step, type_mod.TYPE_USIZE, ai_sf_i);
-                    asyncEmitStoreAt(self, ai_buf, ai_off_ctx, ai_ptr_void, ai_ctx);
-                    var ai_zero_st = nextTemp(self, ai_state_type);
-                    emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = ai_zero_st } });
-                    asyncEmitStoreAt(self, ai_buf, ai_off_state, ai_state_type, ai_zero_st);
+                    // Task 8-F: frame-init is the shared helper the synthesized
+                    // synchronous driver also uses (zero-fill -> step word@0 ->
+                    // ctx -> state=0 -> param copy). The Context-header init and
+                    // the `-fsafe` bounds check above stay caller-side. Param
+                    // offsets derive from the shared header rule, so the driver
+                    // and `@asyncInit` cannot disagree.
+                    var ai_hdr = async_state_machine.asyncFrameHeader(self.ctx.registry, ai_state_type);
                     var ai_proto: ast_mod.FnProto = undefined;
-                    if (asyncFindProto(self, ai_mid, ai_nid, &ai_proto)) {
-                        var frame_off: u32 = ai_hdr_off;
-                        var arg_off: u32 = @intCast(u32, 0);
-                        if (ai_proto.params_count > @intCast(u16, 0)) {
-                            var ai_payload: u64 = (@intCast(u64, ai_proto.params_start) << @intCast(u64, 32)) | @intCast(u64, ai_proto.params_count);
-                            var ai_pnodes = ast_mod.astStoreGetExtraChildren(self.ctx.store, ai_payload);
-                            var ai_pi: usize = @intCast(usize, 0);
-                            while (ai_pi < ai_pnodes.len) : (ai_pi += @intCast(usize, 1)) {
-                                var ai_pn = ast_mod.astStoreNodeAt(self.ctx.store, ai_pnodes[ai_pi]);
-                                if (ai_pn.child_0 == @intCast(u32, 0)) continue;
-                                var ai_pt: u32 = type_mod.TYPE_UNDEFINED;
-                                if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, ai_pn.child_0)) |rtp| { ai_pt = rtp; }
-                                var ai_psz: u32 = @intCast(u32, 4);
-                                var ai_pal: u32 = @intCast(u32, 4);
-                                async_analysis.frameFieldSizeAlign(self.ctx.registry, ai_pt, &ai_psz, &ai_pal);
-                                frame_off = async_analysis.alignUpU32(frame_off, ai_pal);
-                                arg_off = async_analysis.alignUpU32(arg_off, ai_pal);
-                                var ai_pv = asyncEmitLoadAt(self, ai_args, arg_off, ai_pt);
-                                asyncEmitStoreAt(self, ai_buf, frame_off, ai_pt, ai_pv);
-                                frame_off += ai_psz;
-                                arg_off += ai_psz;
-                            }
+                    var ai_have_proto = asyncFindProto(self, ai_mid, ai_nid, &ai_proto);
+                    var ai_fi_total: u32 = @intCast(u32, 0);
+                    if (ai_have_proto) { ai_fi_total = @intCast(u32, ai_proto.params_count); }
+                    var ai_fi_cap: u32 = ai_fi_total;
+                    if (ai_fi_cap == @intCast(u32, 0)) ai_fi_cap = @intCast(u32, 1);
+                    var ai_fi_raw = alloc_mod.sandAlloc(self.alloc, @intCast(usize, ai_fi_cap) * @intCast(usize, @sizeOf(async_state_machine.FrameInitParam)), @intCast(usize, 4)) catch unreachable;
+                    var ai_fi = @ptrCast([*]async_state_machine.FrameInitParam, ai_fi_raw);
+                    var ai_fi_n: u32 = @intCast(u32, 0);
+                    if (ai_have_proto and ai_proto.params_count > @intCast(u16, 0)) {
+                        var ai_frame_off: u32 = ai_hdr.end_off;
+                        var ai_arg_off: u32 = @intCast(u32, 0);
+                        var ai_payload: u64 = (@intCast(u64, ai_proto.params_start) << @intCast(u64, 32)) | @intCast(u64, ai_proto.params_count);
+                        var ai_pnodes = ast_mod.astStoreGetExtraChildren(self.ctx.store, ai_payload);
+                        var ai_pi: usize = @intCast(usize, 0);
+                        while (ai_pi < ai_pnodes.len) : (ai_pi += @intCast(usize, 1)) {
+                            var ai_pn = ast_mod.astStoreNodeAt(self.ctx.store, ai_pnodes[ai_pi]);
+                            if (ai_pn.child_0 == @intCast(u32, 0)) continue;
+                            var ai_pt: u32 = type_mod.TYPE_UNDEFINED;
+                            if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, ai_pn.child_0)) |rtp| { ai_pt = rtp; }
+                            var ai_psz: u32 = @intCast(u32, 4);
+                            var ai_pal: u32 = @intCast(u32, 4);
+                            async_analysis.frameFieldSizeAlign(self.ctx.registry, ai_pt, &ai_psz, &ai_pal);
+                            ai_frame_off = async_analysis.alignUpU32(ai_frame_off, ai_pal);
+                            ai_arg_off = async_analysis.alignUpU32(ai_arg_off, ai_pal);
+                            var ai_pv = asyncEmitLoadAt(self, ai_args, ai_arg_off, ai_pt);
+                            ai_fi[@intCast(usize, ai_fi_n)] = async_state_machine.FrameInitParam{ .offset = ai_frame_off, .type_id = ai_pt, .value_temp = ai_pv };
+                            ai_fi_n += @intCast(u32, 1);
+                            ai_frame_off += ai_psz;
+                            ai_arg_off += ai_psz;
                         }
                     }
+                    var ai_step_name = async_state_machine.asyncStepNameId(self.ctx.registry.interner, ai_nid);
+                    var ai_ret_bb = async_state_machine.asyncEmitFrameInit(self.func, &self.hoisted_temps, self.temp_counter, self.current_bb, self.ctx.registry, ai_buf, ai_ctx, ai_step_name, ai_mid, ai_state_type, ai_fsz, ai_fi[0..@intCast(usize, ai_fi_n)]);
+                    self.current_bb = ai_ret_bb;
+                    self.block_terminated = @intCast(u8, 0);
+                    self.temp_counter = @intCast(u32, self.hoisted_temps.len);
                 }
                 var ai_res = nextTemp(self, ai_ptr_void);
                 if (ec.len >= @intCast(usize, 2)) {
@@ -7154,6 +7115,7 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
     func_ptr.temp_variant_sub_field = hash_mod.u32ToU32MapInit(self.alloc);
     func_ptr.is_extern = @intCast(u8, if ((node.flags & @intCast(u8, 0x04)) != 0) 1 else 0);
     func_ptr.is_pub = @intCast(u8, if ((node.flags & @intCast(u8, 0x02)) != 0) 1 else 0);
+    func_ptr.is_export = @intCast(u8, if ((node.flags & @intCast(u8, 0x08)) != 0) 1 else 0);
     func_ptr.is_variadic = @intCast(u8, 0);
     func_ptr.call_conv = proto.call_conv;
     func_ptr.poison_uninit = @intCast(u8, if (self.ctx.safe_checks) 1 else 0);

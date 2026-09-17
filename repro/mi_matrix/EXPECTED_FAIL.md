@@ -1,4 +1,47 @@
-# mi_matrix corpus — expected-fail manifest (v128 2026-09-17)
+# mi_matrix corpus — expected-fail manifest (v129 2026-09-17)
+
+## Track-4 Task 8-F — suspending `export fn` synthesized driver landed (v128 -> v129 2026-09-17)
+
+Task 8-F generalizes the synthesized synchronous driver to
+`isDriverTarget = isRootMain || lf.is_export` (`sf/src/async_state_machine.zig`), with
+`LirFunction.is_export` set from the AST `fn_decl` bit3 `0x08` (`sf/src/lower.zig`,
+`sf/src/lir.zig`, `sf/src/lir_stream.zig`). The driver frame-inits through the shared
+`asyncEmitFrameInit` helper (also called by the `@asyncInit` builtin lowering), and a
+value-returning driver target allocates a local result buffer, points the hidden
+`ASYNC_FIELD_RESULT` slot at it, and returns the value stored by the step's terminal
+`.ret value` path. `ASYNC_FIELD_RESULT` is now added when
+`is_awaited || is_driver_target` in both P2 (`async_analysis.zig`) and P3
+(`async_frame_layout.zig`).
+
+The two Task 8-I fixtures flip RED -> GREEN (the absent source-named external symbol is
+now emitted; runtime stdout unchanged):
+
+| fixture | GREEN (fixed point `9b3075b1`) |
+|---|---|
+| `async_export_fn_xmod` | dump/gcc/link rc=0, 5 `.c`, run rc=0, stdout `6\n`; `int bump(int n)` source-named definition present; driver stores `&__az_result` into the frame result slot and `return`s the loaded value |
+| `async_export_fn_void_xmod` | dump/gcc/link rc=0, 5 `.c`, run rc=0, stdout `5\n`; `void notify(int n)` source-named definition present; driver ends `return;` |
+
+**Emitted-C assertion (operator ruling S37).** For `bump` the emitted driver must contain
+both the source-named external symbol and the result-buffer store/load value path; the
+fixture runtime stdout does not exercise it. Evidence in the Task 8-F report.
+
+**Corpus `-ffast` dump+gcc classifier (`scripts/corpus/classify`):**
+
+| | v128 `18e0de5c` | v129 `9b3075b1` | delta |
+|---|---|---|---|
+| dirs | 725 | 725 | 0 |
+| OK | 672 | 672 | 0 |
+| GREEN | 28 | 28 | 0 |
+| FAIL | 25 | 25 | 0 |
+| ICE | 0 | 0 | 0 |
+| CRASH | 0 | 0 | 0 |
+
+Per-dir class map is byte-identical to v128 (zero class movement): the fixtures compile
+clean both before and after (the RED/GREEN distinction is the source-symbol gate, not the
+corpus compile class). No new diagnostic code. Fixed point MOVED to
+`9b3075b105ff544f3541d5a621d00d40`; seed rotated (v22).
+
+---
 
 ## Track-4 Task 8-I — suspending `export fn` synthesized-driver gap (v127 -> v128 2026-09-17)
 
