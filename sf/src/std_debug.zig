@@ -16,6 +16,8 @@
 
 extern "c" fn pal_trap() noreturn;
 
+const io = @import("std_io.zig");
+
 pub fn log(msg: []const u8) void {
     @stdoutWrite(msg.ptr, msg.len);
 }
@@ -81,4 +83,99 @@ pub fn panic(msg: []const u8) noreturn {
 // with no C-runtime or PAL dependency. Callers must not expect it to return.
 fn trap() noreturn {
     pal_trap();
+}
+
+// --- Trap handling (blueprint §3 L1; operator trap hook 2026-09-17) ---------
+//
+// The single authorized compiler<->std crossing in Plan A: the emitted
+// zig_pal.c owns `TrapContext`/`g_trap_handler`, exposes
+// `pal_set_trap_handler`, and `pal_trap()` populates the context and invokes
+// the installed handler before terminating. The C struct layout is fixed
+// (10 x unsigned int); the field names AND order below MUST match
+// sf/src/include/zig_pal.c exactly.
+pub const TrapContext = struct {
+    eip: u32, esp: u32, ebp: u32, eflags: u32,
+    eax: u32, ebx: u32, ecx: u32, edx: u32,
+    esi: u32, edi: u32,
+};
+
+// One error set per module (R2); writeCoreDump is the only fallible function.
+pub const DebugError = error{CoreDumpWriteFailed};
+
+// R7.4 realized: the current compiler cannot lower an optional function
+// pointer as a parameter (`?fn(*TrapContext) void` emits a struct at the
+// signature but a pointer in the body). The operator-sanctioned fallback is
+// used: the extern takes a plain `*void` and the wrapper casts the handler.
+// `clearTrapHandler` restores the blueprint's null-install capability.
+extern "c" fn pal_set_trap_handler(h: *void) void;
+extern "c" fn pal_abort() noreturn;
+
+pub fn setTrapHandler(h: fn(*TrapContext) void) void {
+    pal_set_trap_handler(@ptrCast(*void, h));
+}
+
+pub fn clearTrapHandler() void {
+    pal_set_trap_handler(@intToPtr(*void, 0));
+}
+
+// NOTE (Plan A Task 4): the blueprint's `backtrace(ctx, out: *std.buf.Buf)`
+// is deferred. It consumes `std_buf` (Plan A Task 5, L2); importing it here
+// would be an L1->L2 R3 violation, and the module does not exist yet. It must
+// land with (or after) Task 5.
+
+// Default handler: write `core.dump` in the CWD, then abort. A failed dump
+// (open/write) still terminates — the trap path must never return.
+pub fn defaultTrapHandler(ctx: *TrapContext) noreturn {
+    _ = writeCoreDump(ctx, "core.dump") catch {};
+    pal_abort();
+}
+
+// Dump the captured register context to `path` as one `name=decimal` line per
+// field (struct order). Pure std: std_io file I/O only, no cstdio.
+pub fn writeCoreDump(ctx: *const TrapContext, path: []const u8) DebugError!void {
+    var fd = io.fileOpen(path, true) orelse return error.CoreDumpWriteFailed;
+    writeField(fd, "eip", ctx.eip);
+    writeField(fd, "esp", ctx.esp);
+    writeField(fd, "ebp", ctx.ebp);
+    writeField(fd, "eflags", ctx.eflags);
+    writeField(fd, "eax", ctx.eax);
+    writeField(fd, "ebx", ctx.ebx);
+    writeField(fd, "ecx", ctx.ecx);
+    writeField(fd, "edx", ctx.edx);
+    writeField(fd, "esi", ctx.esi);
+    writeField(fd, "edi", ctx.edi);
+    io.fileClose(fd);
+}
+
+// writeField/writeU32: tiny decimal formatter for the core dump. No cstdio,
+// no allocation (stack buffers only).
+fn writeField(fd: usize, name: []const u8, v: u32) void {
+    io.fileWrite(fd, name);
+    var eq: []const u8 = "=";
+    io.fileWrite(fd, eq);
+    writeU32(fd, v);
+    var nl: []const u8 = "\n";
+    io.fileWrite(fd, nl);
+}
+
+fn writeU32(fd: usize, v: u32) void {
+    var tmp: [10]u8 = undefined;
+    var len: usize = 0;
+    if (v == 0) {
+        tmp[0] = '0';
+        len = 1;
+    } else {
+        var x = v;
+        while (x > 0) {
+            tmp[len] = '0' + @intCast(u8, x % 10);
+            len += 1;
+            x = x / 10;
+        }
+    }
+    var out: [10]u8 = undefined;
+    var i: usize = 0;
+    while (i < len) : (i += 1) {
+        out[i] = tmp[len - 1 - i];
+    }
+    io.fileWrite(fd, out[0..len]);
 }

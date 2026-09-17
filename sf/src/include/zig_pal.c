@@ -112,6 +112,16 @@ void pal_print_stdout(const char* msg, usize len)
 #endif
 }
 
+/* Trap handler hook (std_debug). A Z98-installed handler is invoked before the
+ * trap instruction. The struct layout MUST match std_debug.zig TrapContext
+ * (10 x unsigned int). */
+typedef struct {
+    unsigned int eip, esp, ebp, eflags;
+    unsigned int eax, ebx, ecx, edx, esi, edi;
+} TrapContext;
+static void (*g_trap_handler)(TrapContext*) = 0;
+void pal_set_trap_handler(void (*h)(TrapContext*)) { g_trap_handler = h; }
+
 void pal_abort(void)
 {
 #ifdef _WIN32
@@ -123,15 +133,21 @@ void pal_abort(void)
 
 void pal_trap(void)
 {
-#ifdef _MSC_VER
-    __asm { int 3 }
-#elif defined(__WATCOMC__)
-    __asm { int 3 }
-#elif defined(__i386__) || defined(__x86_64__)
-    __asm__ __volatile__("int3");
-#else
+    if (g_trap_handler) {
+        TrapContext ctx;
+        __asm__ volatile ("movl %%eax, %0" : "=m"(ctx.eax));
+        __asm__ volatile ("movl %%ebx, %0" : "=m"(ctx.ebx));
+        __asm__ volatile ("movl %%ecx, %0" : "=m"(ctx.ecx));
+        __asm__ volatile ("movl %%edx, %0" : "=m"(ctx.edx));
+        __asm__ volatile ("movl %%esi, %0" : "=m"(ctx.esi));
+        __asm__ volatile ("movl %%edi, %0" : "=m"(ctx.edi));
+        __asm__ volatile ("movl %%esp, %0" : "=m"(ctx.esp));
+        __asm__ volatile ("movl %%ebp, %0" : "=m"(ctx.ebp));
+        __asm__ volatile ("pushfl; popl %0" : "=m"(ctx.eflags));
+        ctx.eip = (unsigned int)__builtin_return_address(0);
+        g_trap_handler(&ctx);
+    }
     pal_abort();
-#endif
 }
 
 int pal_i64_to_str(i64 value, char* buf, int bufsize)
