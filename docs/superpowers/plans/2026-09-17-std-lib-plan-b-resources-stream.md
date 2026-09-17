@@ -37,7 +37,7 @@
 **Modify (modules):**
 - `sf/src/std_net.zig` — add the UDP surface (`IpAddr`, `udpBind`, `udpSendTo`, `udpRecvFrom`, `udpSetTimeout`).
 - `sf/src/std.zig` — add re-exports if the blueprint's §6 distribution requires them (L3/L6 are by-path imports; confirm against §6).
-- `sf/src/pal.zig` / `sf/src/include/zig_pal.c` — only if a required PAL wrapper is missing (a compiler-graph change → the fixed point MOVES; STOP for an operator ruling first).
+- Create `sf/src/std_file_pal.zig` / `sf/src/std_stdin_pal.zig` as needed (std-side extern "c" bindings, `std_net.zig` pattern). **Forbidden:** any edit to `sf/src/pal.zig`/`sf/src/include/zig_pal.c`. If an OS primitive is missing, add it to the std-side PAL module, not the compiler.
 
 **Create (fixtures):** one dir per public function under `repro/mi_matrix/`:
 - `stdlib_file_<name>_xmod/` (open/read/write/seek/EOF/size/flush/exists/remove/rename/readAll/writeAll; the binary round-trip uses `\r\n\0`).
@@ -67,7 +67,7 @@
 - [ ] **Step 1: Record the baseline** (HEAD; fixed point via a fresh seed build; seed md5; EXPECTED_FAIL header).
 - [ ] **Step 2: Write the failing fixtures** (read, write, seek, EOF, binary round-trip with `\r\n\0`, exists/remove).
 - [ ] **Step 3: RED** (`error[3048]`).
-- [ ] **Step 4: Implement `std_file.zig`.** Win32 opens through `CreateFileA` (never `fopen`); `size` uses `GetFileSizeEx` (never `ftell`); `read` returns 0 at EOF (not an error); `write` may return fewer bytes (callers loop). Route through `pal.zig`; if a PAL wrapper is missing, STOP (compiler-graph change).
+- [ ] **Step 4: Implement `std_file.zig`.** Win32 opens through `CreateFileA` (never `fopen`); `size` uses `GetFileSizeEx` (never `ftell`); `read` returns 0 at EOF (not an error); `write` may return fewer bytes (callers loop). Route through the std-side `std_file_pal.zig` (`@cInclude` + `extern`, `@isWindows()` guards). The existing `pal_file_open/read/write/close` symbols in the emitted `zig_pal.c` are compiler-PAL; do **not** add to them. (`std_io.zig:62-70` declares those four as bare externs — the `std_file` design must not extend that surface.)
 - [ ] **Step 5: GREEN** + the safety/determinism gates.
 - [ ] **Step 6: Assert the async-isolation gate** — `grep -n 'std.async' sf/src/std_file.zig` is empty.
 - [ ] **Step 7: Fixed point UNMOVED + commit.**
@@ -81,7 +81,7 @@
 - Create: the `stdlib_stdin_*_xmod` fixtures
 
 **Interfaces:**
-- Consumes: `std_file`/PAL.
+- Consumes: `std_file`, `std_file_pal`.
 - Produces: `readLine(buf: []u8) ?[]u8` (strips `\n` and `\r\n`; returns a slice into `buf`; `null` at EOF with no partial line) and `readAll(arena) ![]u8`.
 
 - [ ] **Step 1: Write the failing fixtures** (multi-line; EOF with no trailing newline; buffer-overflow behavior).

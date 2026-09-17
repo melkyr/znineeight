@@ -15,7 +15,8 @@
 ## Global Constraints
 
 - **Precondition:** Task 0 complete (the compiler↔std separation audit; the dead std-importing files deleted; the blueprint §6 claim corrected).
-- **Baseline (re-verify at Task 1).** Record HEAD, the self-compile fixed point, the seed version/archive md5, and the corpus `EXPECTED_FAIL.md` header at dispatch. The compiler's import graph reaches no std module, so adding std modules MUST NOT move the fixed point — if it does, STOP (a std module leaked into the compiler graph).
+- **Baseline (re-verify at Task 1).** Record HEAD, the self-compile fixed point, the seed version/archive md5, and the corpus `EXPECTED_FAIL.md` header at dispatch. The compiler's import graph reaches no std module, so adding std modules MUST NOT move the fixed point. **Exception (operator ruling 2026-09-17): exactly two authorized compiler-graph changes move the fixed point — the per-OS prelude work (Tasks 2-3: `std_os_prelude.h`/`std_time_prelude.h`, the `net_prelude.h` analog) and Task 4's `std_debug` trap hook. Re-baseline at Task 2 Step 6, Task 3 Step 6, and Task 4 Step 6. Tasks 1,5,6,7 MUST leave it unmoved — if it moves, STOP (a std module or an unauthorized PAL edit leaked into the compiler graph).**
+- **PAL boundary (operator ruling 2026-09-17).** The std lib MUST NOT wrap or edit the compiler PAL for OS primitives. OS specifics live in std-side PAL modules (`sf/src/std_os_pal.zig`, `sf/src/std_time_pal.zig`) using the `std_net.zig` `@cInclude`+`extern`+`@isWindows()` pattern, with per-OS C prototypes supplied by the authorized prelude headers. The only authorized compiler edits in this plan are the prelude work (Tasks 2-3) and the Task 4 trap hook (see each task's Files list). The compiler's cost is what it imports; the library's cost is what emits.
 - **Build only via the seed model:** `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <fresh_out>`; never invoke `zig0`.
 - **gcc flag-set (binding):** `gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc>`. `timeout 120` on every binary.
 - **Layering (R3):** a module may import only lower layers — never siblings, never higher. The dependency-graph check (one pass) is part of every module task's gate.
@@ -33,8 +34,10 @@
 
 **Create (modules):**
 - `sf/src/std_bits.zig` — L0, pure bit manipulation.
-- `sf/src/std_os.zig` — L1, process info (wraps PAL).
-- `sf/src/std_time.zig` — L1, monotonic + wall-clock (wraps PAL).
+- `sf/src/std_os.zig` — L1, process info; **imports the std-side PAL `sf/src/std_os_pal.zig`** (OS externs; never `sf/src/pal.zig`).
+- `sf/src/std_os_pal.zig` — L1 private impl unit, `@cInclude`+`extern`+`@isWindows()` (the `std_net.zig` pattern).
+- `sf/src/std_time.zig` — L1, monotonic + wall-clock; **imports the std-side PAL `sf/src/std_time_pal.zig`**.
+- `sf/src/std_time_pal.zig` — L1 private impl unit, `@cInclude`+`extern`+`@isWindows()`.
 - `sf/src/std_buf.zig` — L2, growable byte buffer over an arena.
 
 **Modify (modules):**
@@ -136,8 +139,12 @@ git commit -m "feat(std): add std_bits (L0) + fixture (Plan A Task 1)"
 
 **Files:**
 - Create: `sf/src/std_os.zig`
+- Create: `sf/src/std_os_pal.zig` (std-side OS externs — the `std_net.zig` pattern)
 - Create: `repro/mi_matrix/stdlib_os_argc_xmod/`, `stdlib_os_env_xmod/`, `stdlib_os_cwd_xmod/`
-- Modify: `sf/src/std.zig`, `sf/src/pal.zig` (only if a PAL wrapper is missing — see blueprint §3 L1)
+- Create (authorized compiler change): `sf/src/include/std_os_prelude.h` (per-OS C prototypes; the `net_prelude.h` analog)
+- Modify (authorized compiler change): `sf/src/emit_support.zig` (emit the prelude), `sf/src/c89_emit.zig` (conditional emission), `scripts/check_emit_support.sh` (prelude entry)
+- Modify: `sf/src/std.zig` (re-export `os`)
+- **Forbidden:** any edit to `sf/src/pal.zig` / `sf/src/include/zig_pal.c` (compiler PAL). A missing primitive is added to `std_os_pal.zig`.
 
 **Interfaces:**
 - Consumes: `std_bits` (optional).
@@ -145,10 +152,10 @@ git commit -m "feat(std): add std_bits (L0) + fixture (Plan A Task 1)"
 
 - [ ] **Step 1: Write the failing fixtures** (`argc`/`argv` round-trip; env unset/set; cwd non-empty).
 - [ ] **Step 2: Run them — RED** (`error[3048]`).
-- [ ] **Step 3: Implement `std_os.zig`** with the blueprint signatures; `argv` slices alias C runtime storage; `env` returns an empty slice for an empty value; `cwd` allocates from the arena.
+- [ ] **Step 3: Implement `std_os.zig`** with the blueprint signatures; `env` via `getenv` (`<stdlib.h>`); `cwd` allocates from the arena and fills via `GetCurrentDirectoryA`/`getcwd` (prototypes from the authorized `std_os_prelude.h`); `exit` via `@exit`. **`argc`/`argv` (operator ruling 2026-09-17): expose `std_os.initArgs(argc: i32, argv: [*]*const u8) void` mirroring `sf/src/pal.zig:184-195`, which the user calls from their `main`; `argc()`/`argv(i)` read the saved values. The compiler is untouched for this — no capture hook in the emitted `main` wrapper.**
 - [ ] **Step 4: Re-export + run — GREEN** (all three fixtures rc=0, documented stdout).
 - [ ] **Step 5: Safety/determinism gates** (`-fsafe`/`-ffast` parity, 3× md5).
-- [ ] **Step 6: Fixed point UNMOVED + commit** (`feat(std): add std_os (L1) + fixtures (Plan A Task 2)`).
+- [ ] **Step 6: Fixed point MOVED (authorized prelude work) + commit** (`feat(std): add std_os (L1) + fixtures (Plan A Task 2)`). Adding `std_os_prelude.h` + its emitter wiring is part of the authorized prelude work; rebuild via the seed model and record the new fixed point md5.
 
 ---
 
@@ -156,8 +163,12 @@ git commit -m "feat(std): add std_bits (L0) + fixture (Plan A Task 1)"
 
 **Files:**
 - Create: `sf/src/std_time.zig`
+- Create: `sf/src/std_time_pal.zig` (std-side OS externs — the `std_net.zig` pattern)
 - Create: `repro/mi_matrix/stdlib_time_monotonic_xmod/`, `stdlib_time_sleep_xmod/`
-- Modify: `sf/src/std.zig`, `sf/src/pal.zig` (if a timer wrapper is missing)
+- Create (authorized compiler change): `sf/src/include/std_time_prelude.h` (per-OS C prototypes; the `net_prelude.h` analog)
+- Modify (authorized compiler change): `sf/src/emit_support.zig` (emit the prelude), `sf/src/c89_emit.zig` (conditional emission), `scripts/check_emit_support.sh` (prelude entry)
+- Modify: `sf/src/std.zig` (re-export `time`)
+- **Forbidden:** any edit to `sf/src/pal.zig` / `sf/src/include/zig_pal.c`.
 
 **Interfaces:**
 - Consumes: `std_os`.
@@ -165,30 +176,30 @@ git commit -m "feat(std): add std_bits (L0) + fixture (Plan A Task 1)"
 
 - [ ] **Step 1: Write the failing fixtures** (monotonicity over 100 calls; sleep-with-tolerance).
 - [ ] **Step 2: RED.**
-- [ ] **Step 3: Implement `std_time.zig`.** Note R6: `ticksMs` wraps; `highRes` falls back to `ticksMs * 1000` on hardware without a high-res timer (documented, deterministic). The monotonicity fixture must be robust to the fallback.
+- [ ] **Step 3: Implement `std_time.zig`.** `ticksMs`/`highRes`/`highResFreq`/`wallClockUnix` are `@isWindows()`-guarded wrappers over `std_time_pal.zig` externs (`GetTickCount`/`QueryPerformanceCounter`/`QueryPerformanceFrequency`; `gettimeofday`/`time`), whose prototypes come from the authorized `std_time_prelude.h` (option B). `sleepMs` calls the `@sleepMs` builtin directly (do **not** import `std_io`; R3). Note R6: `ticksMs` wraps; `highRes` falls back to `ticksMs * 1000` on hardware without a high-res timer (documented, deterministic). The monotonicity fixture must be robust to the fallback.
 - [ ] **Step 4: Re-export + GREEN.**
 - [ ] **Step 5: Safety/determinism gates.**
-- [ ] **Step 6: Fixed point UNMOVED + commit.**
+- [ ] **Step 6: Fixed point MOVED (authorized prelude work) + commit.** Adding `std_time_prelude.h` + its emitter wiring is the prelude half of the two authorized compiler-graph changes; rebuild via the seed model and record the new fixed point md5.
 
 ---
 
 ### Task 4: `std_debug` extension (L1)
 
 **Files:**
-- Modify: `sf/src/std_debug.zig` (add `TrapContext`, `setTrapHandler`, `defaultTrapHandler`, `writeCoreDump`, `backtrace`)
+- Modify: `sf/src/std_debug.zig` (add `TrapContext`, `setTrapHandler`, `defaultTrapHandler`, `writeCoreDump`, `backtrace`; declare `extern "c" fn pal_set_trap_handler(...)`). **`TrapContext` field order MUST match `sf/src/include/zig_pal.c` exactly: `eip, esp, ebp, eflags, eax, ebx, ecx, edx, esi, edi` (10 × u32).**
 - Create: `repro/mi_matrix/stdlib_debug_trap_xmod/`
-- Modify: `sf/src/emit_support.zig` ONLY if the trap handler must be runtime-installed (see the risk below)
+- Modify (authorized compiler change): `sf/src/include/zig_pal.c` (canonical), `sf/src/emit_support.zig` (`emitZigPalCSupport`), `sf/src/c89_emit.zig` (`emitZigPalC` dead mirror) — add `g_trap_handler`/`TrapContext`/`pal_set_trap_handler` and make `pal_trap()` call the handler. The canonical and emitted copies MUST stay byte-identical (`check_emit_support.sh`). **No other compiler file changes.**
 
 **Interfaces:**
 - Consumes: `std_os`, `std_buf` (for `backtrace`).
 - Produces: the blueprint §3 L1 `std_debug` surface.
 
-- [ ] **Step 1: Resolve the boundary risk (STOP if needed).** The blueprint's `defaultTrapHandler` writes `core.dump` and calls `pal_abort`; the emitted runtime already owns a trap path. Determine whether this is pure std (a user-installed handler via the existing trap mechanism) or crosses into the compiler's emitted runtime. If it crosses, STOP and present the boundary to the operator before implementing.
+- [ ] **Step 1: Boundary resolved by operator ruling (2026-09-17).** The trap hook IS an authorized compiler-graph change (see Files above); implement it. Do not STOP. Any compiler-graph change beyond the two authorized ones (the Tasks 2-3 per-OS preludes and this trap hook) requires a fresh operator ruling.
 - [ ] **Step 2: Write the failing fixture** (install a handler, trigger a trap, verify `ctx.eip != 0`).
 - [ ] **Step 3: RED.**
 - [ ] **Step 4: Implement the extension.**
 - [ ] **Step 5: GREEN + safety/determinism gates.**
-- [ ] **Step 6: Fixed point UNMOVED + commit.**
+- [ ] **Step 6: Fixed point MOVED ONCE (authorized) + commit.** Rebuild via the seed model, record the new fixed point md5 as the Plan A baseline for Tasks 5-7 and for Plans B/C. If it did **not** move, the hook is not actually compiled into `zig_pal` — STOP and diagnose.
 
 ---
 

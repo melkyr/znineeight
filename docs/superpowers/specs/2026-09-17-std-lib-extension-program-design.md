@@ -125,6 +125,14 @@ its fixtures GREEN and the dependency-graph check passing.
   `repro/mi_matrix/stdlib_<module>_<name>_xmod` fixture. A module is
   complete when its fixtures are GREEN and the dependency-graph check
   passes.
+- **R8 — PAL boundary.** The std lib never edits
+  `sf/src/pal.zig`/`sf/src/include/zig_pal.c`/`sf/src/emit_support.zig`,
+  except for the two authorized compiler-graph changes (the per-OS prelude
+  headers in Plan A Tasks 2-3 and the `std_debug` trap hook in Task 4).
+  Per-OS primitives live in `sf/src/std_<module>_pal.zig`, a private
+  implementation unit of that module (exempt from the R3 sibling rule),
+  using `@cInclude` + `extern` declarations and `@isWindows()` guards. The
+  compiler PAL carries only what the compiler itself imports.
 - **§6 correction.** "The compiler imports no std module; its fixed point
   is independent of the std lib." (replaces the false blueprint claim).
 
@@ -153,12 +161,31 @@ proves.
 
 ## §8 Risks
 
-- **`std_debug` TrapContext (L1)** adds `TrapContext` + `setTrapHandler` +
-  `defaultTrapHandler`, which touch the emitted-runtime trap handler — a
-  surface that may cross the compiler↔std boundary Task 0 audits. Plan A
-  resolves the boundary explicitly.
+- **`std_debug` TrapContext (L1) — RESOLVED (operator, 2026-09-17).** The
+  trap hook is an authorized compiler↔std crossing: `zig_pal` gains a
+  `static void(*g_trap_handler)(TrapContext*)`, `pal_trap()` calls it,
+  `emit_support.zig` emits the setter, and `std_debug.zig` declares the
+  extern and wraps it. It moves the fixed point. No compiler-graph change
+  beyond the two authorized ones (this hook and the per-OS preludes) is
+  permitted in the program.
+- **L1 OS externs — RESOLVED (operator, 2026-09-17).** `std_os`/`std_time`
+  MUST NOT wrap the compiler PAL. They own std-side PAL modules
+  (`std_os_pal.zig`/`std_time_pal.zig`) built with `@cInclude`+`extern`+
+  `@isWindows()` (the `std_net.zig` pattern); per-OS C prototypes come from
+  the authorized `std_os_prelude.h`/`std_time_prelude.h` preludes (the
+  `net_prelude.h` analog). The compiler's cost is what it imports; the
+  library's cost is what emits.
 - **Win32-specific L1** (`QueryPerformanceCounter`, `CreateFileA`,
   `GetFileSizeEx`) needs `-osw` + wine evidence, not just linux.
+- **Per-OS C prototypes — RESOLVED (operator, 2026-09-17: option B).**
+  win9x `GetTickCount`/`QueryPerformance*`/`GetCurrentDirectoryA` need
+  `<windows.h>`; linux `getcwd`/`gettimeofday` need `<unistd.h>`/
+  `<sys/time.h>`. A single unconditional `@cInclude` cannot serve both.
+  Plan A adds `net_prelude.h`-style per-OS prelude headers
+  (`std_os_prelude.h`/`std_time_prelude.h`: canonical header +
+  `emit_support.zig` emitter + conditional emission in `c89_emit.zig` + a
+  `check_emit_support.sh` entry) — an authorized compiler-graph change that
+  moves the fixed point.
 - **R4 `*Async` discipline.** A sync function accidentally calling a
   `*Async` sibling would pull the async runtime into programs that do not
   use it (C3 violation). Plan B asserts this in the import graph.
