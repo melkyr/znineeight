@@ -27,7 +27,7 @@ set -euo pipefail
 #               (net_prelude.h excluded — 0 references in a linux -osl dump)
 #   lib/        repo sf/src/{std.zig, std_io.zig, std_arena.zig, std_net.zig,
 #               std_str.zig, std_mem.zig, std_math.zig, std_debug.zig,
-#               std_async.zig}
+#               std_async.zig, std_bits.zig}
 #   SEED_README.txt  provenance + rebuild recipes + canonical flag-set rule
 #
 # Before packing, the archive's C is gcc-rebuilt self-contained in a scratch dir
@@ -107,7 +107,7 @@ else
         cp "$ROOT/sf/src/include/$f" "$SEED/runtime/"
     done
 fi
-for f in std.zig std_io.zig std_arena.zig std_net.zig std_str.zig std_mem.zig std_math.zig std_debug.zig std_async.zig; do
+for f in std.zig std_io.zig std_arena.zig std_net.zig std_str.zig std_mem.zig std_math.zig std_debug.zig std_async.zig std_bits.zig; do
     cp "$ROOT/sf/src/$f" "$SEED/lib/"
 done
 
@@ -154,9 +154,9 @@ zig1-seed/runtime/    link/include sources needed to compile gen/:
                       mode-specific support so a gcc-only rebuild reproduces
                       the seed binary's fixed point; canonical repo copies for
                       pre-EMITEMIT gen dirs)
-zig1-seed/lib/        the 9 std .zig (std.zig, std_io.zig, std_arena.zig,
+zig1-seed/lib/        the 10 std .zig (std.zig, std_io.zig, std_arena.zig,
                       std_net.zig, std_str.zig, std_mem.zig, std_math.zig,
-                      std_debug.zig, std_async.zig)
+                      std_debug.zig, std_async.zig, std_bits.zig)
 zig1-seed/SEED_README.txt  this file
 
 (net_prelude.h / net_runtime.h / net_runtime.c / optstar_repro.h are NOT

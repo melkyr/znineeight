@@ -136,7 +136,7 @@ if [ ! -x "$DUMP_COMPILER" ]; then
 fi
 
 # std lib for the produced compiler (binary-relative lib/)
-cp "$ROOT"/sf/src/std.zig "$ROOT"/sf/src/std_io.zig "$ROOT"/sf/src/std_arena.zig "$ROOT"/sf/src/std_net.zig "$ROOT"/sf/src/std_str.zig "$ROOT"/sf/src/std_mem.zig "$ROOT"/sf/src/std_math.zig "$ROOT"/sf/src/std_debug.zig "$ROOT"/sf/src/std_async.zig "$OUT/lib/"
+cp "$ROOT"/sf/src/std.zig "$ROOT"/sf/src/std_io.zig "$ROOT"/sf/src/std_arena.zig "$ROOT"/sf/src/std_net.zig "$ROOT"/sf/src/std_str.zig "$ROOT"/sf/src/std_mem.zig "$ROOT"/sf/src/std_math.zig "$ROOT"/sf/src/std_debug.zig "$ROOT"/sf/src/std_async.zig "$ROOT"/sf/src/std_bits.zig "$OUT/lib/"
 
 build_hop "$DUMP_COMPILER" "$OUT/gen" "$OUT/zig1_5_clean"
 HOP1_MD5=$(md5sum "$OUT/zig1_5_clean" | cut -d' ' -f1)
