@@ -1420,7 +1420,7 @@ Replace the whole `select` + "Data on client sockets" section (`:99-196`) with a
         std.async.tick(&client_sched) catch {};
     }
 ```
-`@asyncResume` is used (not `tick`) so only the socket that `select` reported ready performs a `recv`; the trailing `tick` advances the rest. **FLAGGED S17 (operator ruling required):** the spec §3.2/§1 says `main` uses `std.async.awaitTask` on the quit/disconnect path, but the landed `awaitTask(s, t)` only marks the *current* running task as waiting on `t` — it does not "drain" a task from outside the scheduler, and `main` here is not a task. `@asyncResume` returning null already signals completion, so this plan frees the slot directly. If the operator wants the spec's `awaitTask` drain, either `awaitTask` gains drain semantics (`sf/src` change) or the conversion restructures; otherwise the plan's Step 3 stands as written and the spec text is corrected.
+`@asyncResume` is used (not `tick`) so only the socket that `select` reported ready performs a `recv`; the trailing `tick` advances the rest. **RESOLVED (operator ruling, Task 4c):** the spec's quit/disconnect `awaitTask` drain is provided by the new **`std.async.waitFor(s, t)`** primitive (added in Task 4c-F), which drives `tick` until `t` is settled from any non-suspending context (`main`). `awaitTask` keeps its coroutine-internal semantics. Use `waitFor(&client_sched, client_task_ptrs[i])` on the quit/disconnect path (the `@asyncResume`-returns-null slot-free below still applies for the completion signal); the spec §1/§3.2 text was corrected in Task 4c-F.
 
 - [ ] **Step 4: Build, run the session, and verify byte-identity**
 
