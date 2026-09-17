@@ -23,6 +23,12 @@ const hash_mod = @import("util/hash.zig");
 
 pub const MODULE_ID_NONE: u32 = @intCast(u32, 0xFFFFFFFF);
 
+// Maximum number of parameters a function type may carry. Module scope (next to
+// the other file-wide consts) so `resolveFnSignatures`' parameter buffer size
+// and its overflow guard share this one source of truth. Exceeding it is a hard
+// `@panic` in `resolveFnSignatures`, never a silent truncation.
+const MAX_FN_PARAMS: usize = 64;
+
 pub const TypeResolveEnv = struct {
 
     store: *AstStore,
@@ -1525,8 +1531,15 @@ fn resolveFnSignatures(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry, resolve
                 if ((decl.flags & @intCast(u8, 4)) != @intCast(u8, 0)) { is_ext = @intCast(u8, 1); }
                 var is_variadic: u8 = @intCast(u8, 0);
                 if ((decl.flags & @intCast(u8, 1)) != @intCast(u8, 0)) { is_variadic = @intCast(u8, 1); }
-                var ptypes_buf: [64]u32 = undefined;
+                var ptypes_buf: [MAX_FN_PARAMS]u32 = undefined;
                 var ptypes_n: usize = @intCast(usize, 0);
+                // Loud guard: never silently truncate a function's parameter
+                // list. `typeRegistryGetOrCreateFn` below still receives the
+                // true `proto.params_count`, so a truncated buffer would build a
+                // wrong function type.
+                if (@intCast(usize, proto.params_count) > MAX_FN_PARAMS) {
+                    @panic("async/type_resolver: function parameter count exceeds MAX_FN_PARAMS (64)");
+                }
                 if (proto.params_count > @intCast(u16, 0)) {
                     var p_payload: u64 = (@intCast(u64, proto.params_start) << @intCast(u64, 32)) | @intCast(u64, proto.params_count);
                     var pnodes_n = ast_mod.astStoreGetExtraChildCount(env.store, p_payload);
@@ -1535,10 +1548,14 @@ fn resolveFnSignatures(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry, resolve
                         var pnode = ast_mod.astStoreNodeAt(env.store, ast_mod.astStoreGetExtraChildAt(env.store, p_payload, @intCast(u32, pi)));
                         if (pnode.child_0 != 0) {
                             var ptype = resolveTypeExprFull(env, pnode.child_0, @intCast(u32, 0));
-                            if (ptypes_n < @intCast(usize, 64)) {
-                                ptypes_buf[ptypes_n] = ptype;
-                                ptypes_n += @intCast(usize, 1);
+                            // Belt-and-braces: unreachable given the pre-loop
+                            // guard, but an overflow here would still yield a
+                            // wrong function type, so fail loud.
+                            if (ptypes_n >= MAX_FN_PARAMS) {
+                                @panic("async/type_resolver: function parameter count exceeds MAX_FN_PARAMS (64)");
                             }
+                            ptypes_buf[ptypes_n] = ptype;
+                            ptypes_n += @intCast(usize, 1);
                             if (ptype != type_mod.TYPE_UNDEFINED) {
                                 rtt_mod.resolvedTypeTableSet(resolved_types, pnode.child_0, ptype);
                             }
