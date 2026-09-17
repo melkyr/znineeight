@@ -1564,6 +1564,28 @@ git commit -m "chore(coroutine): Track4 golden battery + fallback adjudication (
 
 ---
 
+### Task 7: Document the async/coroutine feature (docs-only)
+
+**Origin (operator ruling, 2026-09-17).** The async/coroutine feature is undocumented in every canonical reference: `docs/reference/Language_Spec_Z98.md` has **zero** async/coroutine coverage (the `@async*` builtins are absent from §4 Built-in Functions); `docs/reference/builtins.md` and `docs/reference/c89_emission.md` are silent; `README.md` mentions only `std_async.zig` in the std-module inventory. The operator ruled: document it in **(A)** the Z98 language spec, **(B)** the README, **(C)** a new design/tech doc, and **(D)** `builtins.md`.
+
+**Placement (operator):** the deep-dive tech docs live in `sf/docs/tech_docs/` (numbered `00_lexer_parser.md` … `11_build_system.md` + `INDEX.md`); `sf/docs/corroutines.txt` is the pre-implementation formal plan. The new coroutine doc goes in `sf/docs/tech_docs/` as the next numbered entry.
+
+**Docs-only: no `sf/src` change, no seed change.** Fixed point stays `18e0de5c…`; seed stays v21.
+
+- [ ] **Step 1 (A): `docs/reference/Language_Spec_Z98.md`.** Add the async builtins to §4 Built-in Functions (`@asyncInit(ctx, frame, fn, args)`, `@asyncSuspend(v)`, `@asyncResume(frame, arg)`, `@asyncFrameSize(fn)`) with signatures/semantics, plus a new subsection (e.g. §4.x "Async / coroutines") covering: the suspending-function model (a function containing `@asyncSuspend`, or calling one, is compiled to a step machine driven by `@asyncResume`); the frame/step ABI; the `-fsafe` `@asyncFrameSize` bounds check; that the scheduler/root driver is `std.async`; and that `main`/`export fn` may be suspending (driven via a scheduler loop). Update §7.2 if an async limitation belongs there.
+- [ ] **Step 2 (D): `docs/reference/builtins.md`.** Add the same four async builtins for consistency with spec §4.
+- [ ] **Step 3 (B): `README.md`.** Add a short "Async / coroutines" feature section: the `std.async` scheduler + the `@async*` builtins, the two converted examples (`rogue_mud`, `mud_server`), and a pointer to the new design doc (Step 4).
+- [ ] **Step 4 (C): new `sf/docs/tech_docs/12_async_coroutines.md`** (the next numbered deep-dive), and add it to `sf/docs/tech_docs/INDEX.md`. Content:
+  - The `@async*` builtins and the compiled step-machine model; `is_suspending` propagation; the multi-module `__Z98Step_<f>` emission (each suspending fn's step emitted in its owning module).
+  - The `Context` ABI: the 16-byte header `{used@0, capacity@4, oom@8, pad@12..15}`, `pool_base = ctx+16`, `capacity = buf.len - 16`, 8-aligned buffers, 8-padded frames.
+  - The `std.async` API: `Context` (`contextInit`/`contextAlloc`/`contextMark`/`contextRelease`), `Task`, `Scheduler`, `schedulerInit`/`addTask` (idempotent)/`removeTask`/`tick`/`suspend`/`awaitTask`/`waitFor`/`waitAll`/`cancel`/`cancelAll`; the two contexts — `awaitTask` is coroutine-internal, `waitFor` is valid from any context.
+  - The `@asyncInit` coroutine-param ABI (the args record's fields ARE the coroutine's params; the record is cast `*const void`).
+  - The examples (`rogue_mud` E1–E3, `mud_server` E4) and the per-client-cells / permanent-arena rules.
+  - Known limitations / declared residuals (e.g. `*T→[*]T` at return/call-arg; the `for`-loop by-value copy; the `removeTask` mid-drive edge; single-task-scheduler caveats).
+- [ ] **Step 5: Verify + commit.** Re-check every claim against `sf/src/std_async.zig`, the `@async*` lowering, and the converted examples (accuracy over prose). Confirm no `sf/src`/seed change (`git diff --stat -- sf/src release/seed` empty). Commit `docs(coroutine): document the async/coroutine feature (Track4 Task 7)`.
+
+---
+
 ## Self-Review
 
 **Spec coverage:**
