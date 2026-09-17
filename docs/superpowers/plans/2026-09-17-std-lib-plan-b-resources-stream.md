@@ -1,0 +1,160 @@
+# Z98 std-lib Plan B — L3 resources + L6 `std_stream` Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Land the L3 resource modules (`std_file`, `std_stdin`, the `std_net` UDP extension) and the L6 capstone `std_stream` — the coroutine-aware composition layer that composes L3 resources over `std.async`.
+
+**Architecture:** One plan, five module tasks, ordered by the blueprint's construction order (L3 file/stdin → L3 UDP → L6 stream). Each module is authored in `sf/src/std_<name>.zig` with the blueprint's exact signatures, gets `repro/mi_matrix/stdlib_<module>_<name>_xmod` fixtures, and is validated by the six gates. **This plan runs after Plan A (L0-L2); its successor is Plan C (L4 + L5).**
+
+**Tech Stack:** Z98/`zig1` self-hosted compiler (C89 emission), `std.arena`, `std.async` (Track 3), bash, `gcc -m32`, git.
+
+**Spec:** `docs/superpowers/specs/2026-09-17-std-lib-extension-program-design.md` §4 (Plan B), §5, §6; module signatures in `sf/docs/std_lib_extension.txt` §3 (L3, L6) and §4.
+
+**Sequence:** PREVIOUS plan: [`2026-09-17-std-lib-plan-a-foundation.md`](2026-09-17-std-lib-plan-a-foundation.md) (L0-L2). NEXT plan: [`2026-09-17-std-lib-plan-c-data-codecs.md`](2026-09-17-std-lib-plan-c-data-codecs.md) (L4 + L5).
+
+## Global Constraints
+
+- **Precondition:** Task 0 + Plan A complete.
+- **Baseline (re-verify at Task 1).** Record HEAD, the fixed point, the seed version/archive md5, the corpus `EXPECTED_FAIL.md` header. Adding std modules MUST NOT move the fixed point — if it does, STOP.
+- **Build only via the seed model:** `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <fresh_out>`; never invoke `zig0`.
+- **gcc flag-set (binding):** `gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc>`. `timeout 120` on every binary.
+- **Layering (R3):** L3 imports L0-L2; L6 imports L0-L5 + `std.async`. No sibling imports.
+- **Coroutine rules (blueprint §4):** C1 — a `*Async` function is the same module, same error set, same return type as its sync sibling; only the body may call `std.async.wait`. C2 — no std module calls `std.async.tick`/`waitFor`/`waitAll` (those are `main`-level). C3 — a synchronous function never calls a `*Async` function.
+- **Async isolation gate (binding, Plan B only):** a program that does not use `std_stream` MUST NOT link the async runtime. Assert this in the import graph for every new L3 module (none may import `std.async`).
+- **`std.async` API (landed):** `TaskState`, `FrameError{OutOfFrame}`, `Context` (16-byte header, `pool_base=ctx+16`, 8-aligned buffers), `Task`, `Scheduler`, `schedulerInit/addTask/removeTask/tick/suspend/awaitTask/waitFor/waitAll/cancel/cancelAll`.
+- **Fixtures (R7):** one `repro/mi_matrix/stdlib_<module>_<name>_xmod` per public function; L6 fixtures suspend at least twice per call.
+- **Edits only via `edit`/`fastedit`**; never stage `mnemoria/` or `.zig1_*.tmp`; declare every residual gap.
+
+---
+
+## File Structure
+
+**Create (modules):**
+- `sf/src/std_file.zig` — L3, binary-safe file I/O (owns the OS handle).
+- `sf/src/std_stdin.zig` — L3, line-based stdin.
+- `sf/src/std_stream.zig` — L6, coroutine-aware composition (`LineReader`, `MsgReader`).
+
+**Modify (modules):**
+- `sf/src/std_net.zig` — add the UDP surface (`IpAddr`, `udpBind`, `udpSendTo`, `udpRecvFrom`, `udpSetTimeout`).
+- `sf/src/std.zig` — add re-exports if the blueprint's §6 distribution requires them (L3/L6 are by-path imports; confirm against §6).
+- `sf/src/pal.zig` / `sf/src/include/zig_pal.c` — only if a required PAL wrapper is missing (a compiler-graph change → the fixed point MOVES; STOP for an operator ruling first).
+
+**Create (fixtures):** one dir per public function under `repro/mi_matrix/`:
+- `stdlib_file_<name>_xmod/` (open/read/write/seek/EOF/size/flush/exists/remove/rename/readAll/writeAll; the binary round-trip uses `\r\n\0`).
+- `stdlib_stdin_<name>_xmod/` (multi-line; EOF with no trailing newline; buffer overflow).
+- `stdlib_net_udp_<name>_xmod/` (loopback send/recv; timeout; zero-length datagram; truncation behavior).
+- `stdlib_stream_<name>_xmod/` (readLineAsync on a small file; no trailing newline; empty file; interleaved with a second reader).
+
+**Modify (closeout):**
+- `repro/mi_matrix/EXPECTED_FAIL.md` — bump once at Plan B closeout.
+- `scripts/seed/build_from_seed.sh`, `scripts/seed/archive_seed.sh` — extend the `lib/` copy list.
+
+**Reference (read-only):** `sf/docs/std_lib_extension.txt` §3 (L3/L6) + §4, `sf/docs/tech_docs/12_async_coroutines.md`, `docs/sf/QUICK_REF.md`.
+
+---
+
+### Task 1: Baseline + `std_file` (L3)
+
+**Files:**
+- Create: `sf/src/std_file.zig`
+- Create: the `stdlib_file_*_xmod` fixtures
+- Modify: `sf/src/std.zig` (per §6)
+
+**Interfaces:**
+- Consumes: `std_arena`, `std_buf`, `std_str`.
+- Produces: `File`, `Mode`, `SeekWhence`, `FileError` + the blueprint §3 L3 surface (`open`/`close`/`read`/`write`/`seek`/`size`/`flush`/`exists`/`remove`/`rename`/`readAll`/`writeAll`).
+
+- [ ] **Step 1: Record the baseline** (HEAD; fixed point via a fresh seed build; seed md5; EXPECTED_FAIL header).
+- [ ] **Step 2: Write the failing fixtures** (read, write, seek, EOF, binary round-trip with `\r\n\0`, exists/remove).
+- [ ] **Step 3: RED** (`error[3048]`).
+- [ ] **Step 4: Implement `std_file.zig`.** Win32 opens through `CreateFileA` (never `fopen`); `size` uses `GetFileSizeEx` (never `ftell`); `read` returns 0 at EOF (not an error); `write` may return fewer bytes (callers loop). Route through `pal.zig`; if a PAL wrapper is missing, STOP (compiler-graph change).
+- [ ] **Step 5: GREEN** + the safety/determinism gates.
+- [ ] **Step 6: Assert the async-isolation gate** — `grep -n 'std.async' sf/src/std_file.zig` is empty.
+- [ ] **Step 7: Fixed point UNMOVED + commit.**
+
+---
+
+### Task 2: `std_stdin` (L3)
+
+**Files:**
+- Create: `sf/src/std_stdin.zig`
+- Create: the `stdlib_stdin_*_xmod` fixtures
+
+**Interfaces:**
+- Consumes: `std_file`/PAL.
+- Produces: `readLine(buf: []u8) ?[]u8` (strips `\n` and `\r\n`; returns a slice into `buf`; `null` at EOF with no partial line) and `readAll(arena) ![]u8`.
+
+- [ ] **Step 1: Write the failing fixtures** (multi-line; EOF with no trailing newline; buffer-overflow behavior).
+- [ ] **Step 2: RED.**
+- [ ] **Step 3: Implement `std_stdin.zig`.**
+- [ ] **Step 4: GREEN + safety/determinism gates.**
+- [ ] **Step 5: Async-isolation gate + fixed point UNMOVED + commit.**
+
+---
+
+### Task 3: `std_net` UDP extension (L3)
+
+**Files:**
+- Modify: `sf/src/std_net.zig` (add `IpAddr` + `udpBind`/`udpSendTo`/`udpRecvFrom`/`udpSetTimeout`)
+- Create: the `stdlib_net_udp_*_xmod` fixtures
+
+**Interfaces:**
+- Consumes: the existing TCP socket surface (unchanged).
+- Produces: the blueprint §3 L3 UDP surface.
+
+- [ ] **Step 1: Write the failing fixtures** (loopback send/recv; timeout; zero-length datagram; truncation behavior).
+- [ ] **Step 2: RED.**
+- [ ] **Step 3: Implement the UDP surface.** `udpRecvFrom` returns 0 for zero-length datagrams; datagram truncation is not detectable under WinSock (documented).
+- [ ] **Step 4: GREEN + safety/determinism gates.**
+- [ ] **Step 5: Windows cross-check** — the existing `-osw` path + wine evidence for the UDP externs (the blueprint's L3 net is target-selected).
+- [ ] **Step 6: Async-isolation gate + fixed point UNMOVED + commit.**
+
+---
+
+### Task 4: `std_stream` (L6) — the capstone
+
+**Files:**
+- Create: `sf/src/std_stream.zig`
+- Create: the `stdlib_stream_*_xmod` fixtures
+- Modify: `sf/src/std.zig` (per §6)
+
+**Interfaces:**
+- Consumes: `std_file` (L3), `std_net` (L3), `std.async`.
+- Produces: `LineReader`, `MsgReader`, `initLineReader`, `readLine` (sync), `readLineAsync` (coroutine) — blueprint §3 L6 + §4.
+
+- [ ] **Step 1: Resolve the async boundary.** Confirm `std_stream` is the only module importing `std.async` transitively, and that it uses only `std.async.wait` (never `tick`/`waitFor`/`waitAll`) — C2. If the landed `std.async` has no `wait` primitive (the current surface has `awaitTask` coroutine-internal + `waitFor`/`waitAll` main-level), STOP and present the gap to the operator before implementing.
+- [ ] **Step 2: Write the failing fixtures** (readLineAsync on a small file; no trailing newline; empty file; interleaved with a second reader; each suspends ≥2× per call).
+- [ ] **Step 3: RED.**
+- [ ] **Step 4: Implement `std_stream.zig`.** `readLineAsync` suspends when no complete line is buffered; the underlying reads go through the appropriate L3 source inside `std_stream`, not exposed to the caller. No callbacks, no state enum in user code.
+- [ ] **Step 5: GREEN + safety/determinism gates + the async gate** (suspend ≥2× per call).
+- [ ] **Step 6: Graph assertion** — a program that imports `std_stream` links the async runtime; a program that imports only `std_file`/`std_net`/`std_stdin` does NOT. Emit both and compare the module set.
+- [ ] **Step 7: Fixed point UNMOVED + commit.**
+
+---
+
+### Task 5: Plan B closeout
+
+**Files:**
+- Modify: `scripts/seed/build_from_seed.sh`, `scripts/seed/archive_seed.sh`, `repro/mi_matrix/EXPECTED_FAIL.md`, `docs/sf/QUICK_REF.md`
+
+- [ ] **Step 1: Extend the seed scripts' `lib/` copy list** with `std_file.zig`/`std_stdin.zig`/`std_stream.zig` (UDP is a `std_net` edit, already listed).
+- [ ] **Step 2: Run the full corpus + gates** (count; `check_emit_support` 5/5; `CLOSEOUT OK`; zero class movement on pre-existing dirs).
+- [ ] **Step 3: Bump `EXPECTED_FAIL.md`** once (header + a Plan B section).
+- [ ] **Step 4: Update the QUICK_REF std-module inventory.**
+- [ ] **Step 5: Record the next-plan pointer.**
+
+```markdown
+## Next plan
+Plan B complete. NEXT: `docs/superpowers/plans/2026-09-17-std-lib-plan-c-data-codecs.md`
+(L4 data structures + L5 encoders/decoders).
+```
+
+- [ ] **Step 6: Commit** (`chore(std-lib): Plan B closeout — L3 resources + std_stream landed`).
+
+---
+
+## Self-Review
+
+- **Spec coverage:** spec §4 Plan B (L3 + L6) → Tasks 1-4; §5 R4/C1-C3 → the coroutine rules + Task 4 Steps 1/6; §6 async gate → Task 4 Step 5; §7 distribution → Task 5 Step 1; §8 async-isolation risk → Task 1 Step 6 + Task 4 Step 6; §10 index → the `Sequence:` line + Task 5 Step 5.
+- **Placeholder scan:** module signatures are referenced to the blueprint (§3 L3/L6) as the exact-signature source of record. Every step has a concrete command/expected output.
+- **Type consistency:** `std_file`/`std_stdin`/`std_stream` and the UDP additions to `std_net` are named identically across tasks and the file structure.
