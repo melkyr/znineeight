@@ -1,6 +1,7 @@
 const std = @import("std");
 const util = @import("util.zig");
 const std_net = @import("std_net");
+const std_arena = @import("std_arena");
 
 @cInclude("zig_runtime.h");
 
@@ -29,6 +30,14 @@ const Room = struct {
 
 // Workaround for global constant array of aggregates
 var rooms: [2]Room = undefined;
+
+var client_tasks: [MAX_CLIENTS]std.async.Task = undefined;
+var client_task_ptrs: [MAX_CLIENTS]*std.async.Task = undefined;
+var client_args: [MAX_CLIENTS]ClientTaskArgs = undefined;
+var client_recs: [MAX_CLIENTS]ClientCoroutineArgs = undefined;
+var client_sched: std.async.Scheduler = undefined;
+// 8-aligned backing; a bare [N]u8 is 1-aligned and trips contextInit's @panic.
+var async_storage: [32 * 1024]u64 = undefined;
 
 fn initRooms() void {
     rooms[0] = Room {
@@ -94,12 +103,23 @@ pub fn main() !void {
         i += 1;
     }
 
+    var async_arena = std_arena.init(@ptrCast([*]u8, &async_storage)[std.async.HEADER_SIZE .. 32 * 1024 * 8]);
+    var async_ctx: *std.async.Context = std.async.contextInit(@ptrCast([*]u8, &async_storage)[0 .. 32 * 1024 * 8]);
+    client_sched = std.async.schedulerInit(client_task_ptrs[0..]);
+    i = 0;
+    while (i < MAX_CLIENTS) {
+        client_task_ptrs[i] = &client_tasks[i];
+        client_task_ptrs[i].frame = @ptrFromInt(*void, 0);
+        client_task_ptrs[i].state = .done;
+        client_task_ptrs[i].cancel_requested = false;
+        i += 1;
+    }
+
     var read_fds: std_net.fd_set = undefined;
 
     while (true) {
         std_net.fdZero(@ptrCast(*u8, &read_fds));
         std_net.fdSet(server, @ptrCast(*u8, &read_fds));
-
         var max_fd = server;
         i = 0;
         while (i < MAX_CLIENTS) {
@@ -109,15 +129,9 @@ pub fn main() !void {
             }
             i += 1;
         }
-
         const ready_count = std_net.select(max_fd + 1, @ptrCast(*u8, &read_fds), null, null, 100);
-        if (ready_count < 0) {
-            std.io.print("select error\n", .{});
-            break;
-        }
-        if (ready_count == 0) continue; // timeout
-
-        // Check server socket for new connection
+        if (ready_count < 0) { std.io.print("select error\n", .{}); break; }
+        if (ready_count == 0) continue;
         if (std_net.fdIsset(server, @ptrCast(*u8, &read_fds))) {
             const client = std_net.accept(server);
             if (client >= 0) {
@@ -126,13 +140,27 @@ pub fn main() !void {
                 i = 0;
                 while (i < MAX_CLIENTS) {
                     if (!players[i].is_active) {
-                        players[i] = Player{
-                            .socket = client,
-                            .room_id = @intCast(u8, 0),
-                            .buffer = undefined,
-                            .pos = @intCast(usize, 0),
-                            .is_active = true,
+                        players[i] = Player{ .socket = client, .room_id = @intCast(u8, 0),
+                            .buffer = undefined, .pos = @intCast(usize, 0), .is_active = true };
+                        client_args[i] = ClientTaskArgs{ .player = &players[i], .rooms = &rooms };
+                        client_recs[i] = ClientCoroutineArgs{ .cta = &client_args[i] };
+                        const csz = @intCast(usize, @asyncFrameSize(clientCoroutine));
+                        const cframe = std_arena.alloc(&async_arena, csz) catch {
+                            const full2: []const u8 = "Server is full.\r\n";
+                            _ = std_net.send(client, full2.ptr, @intCast(i32, full2.len));
+                            std_net.close(client);
+                            players[i].is_active = false;
+                            i += 1;
+                            continue;
                         };
+                        client_task_ptrs[i].frame = @asyncInit(async_ctx, @ptrCast([*]u8, cframe), clientCoroutine, @ptrCast(*const void, &client_recs[i]));
+                        client_task_ptrs[i].ctx = async_ctx;
+                        client_task_ptrs[i].arg = @ptrCast(*void, &client_recs[i]);
+                        client_task_ptrs[i].result = @ptrCast(*void, &client_recs[i]);
+                        client_task_ptrs[i].cancel_requested = false;
+                        client_task_ptrs[i].waiting_on = client_task_ptrs[i];
+                        client_task_ptrs[i].has_waiting_on = false;
+                        _ = std.async.addTask(&client_sched, client_task_ptrs[i]);
                         const welcome: []const u8 = "Welcome to the MUD! Type 'look' to start.\r\n";
                         _ = std_net.send(client, welcome.ptr, @intCast(i32, welcome.len));
                         found = true;
@@ -148,51 +176,21 @@ pub fn main() !void {
                 }
             }
         }
-
-        // Data on client sockets
         i = 0;
         while (i < MAX_CLIENTS) {
             if (players[i].is_active and std_net.fdIsset(players[i].socket, @ptrCast(*u8, &read_fds))) {
-                var p = &players[i];
-                const n = std_net.recv(p.socket, &p.buffer[p.pos], @intCast(i32, BUFFER_SIZE - p.pos));
-                if (n <= 0) {
-                    // client disconnected
-                    std.io.print("Client disconnected\n", .{});
-                    std_net.close(p.socket);
-                    p.is_active = false;
-                } else {
-                    p.pos += @intCast(usize, n);
-                    // Process complete lines (ending with \n)
-                    var j: usize = 0;
-                    while (j < p.pos) {
-                        if (p.buffer[j] == '\n') {
-                            var end = j;
-                            if (end > 0 and p.buffer[end-1] == '\r') end -= 1;
-
-                            const cmd_line = p.buffer[0..end];
-                            const cmd = parseCommand(cmd_line);
-                            const response = processCommand(p, cmd);
-                            _ = std_net.send(p.socket, response.ptr, @intCast(i32, response.len));
-
-                            // move remaining data
-                            if (j + 1 < p.pos) {
-                                var k: usize = 0;
-                                while (k < p.pos - (j + 1)) {
-                                    p.buffer[k] = p.buffer[j + 1 + k];
-                                    k += 1;
-                                }
-                                p.pos -= (j + 1);
-                            } else {
-                                p.pos = 0;
-                            }
-                            break;
-                        }
-                        j += 1;
-                    }
+                const step = @asyncResume(client_task_ptrs[i].frame, null);
+                if (step == null) {
+                    // coroutine completed (quit or disconnect): free the slot
+                    std.async.waitFor(&client_sched, client_task_ptrs[i]) catch {};
+                    std_net.close(players[i].socket);
+                    players[i].is_active = false;
+                    client_task_ptrs[i].state = .done;
                 }
             }
             i += 1;
         }
+        std.async.tick(&client_sched) catch {};
     }
 
     std_net.close(server);
@@ -221,4 +219,50 @@ fn processCommand(player: *Player, cmd: Command) []const u8 {
         .Unknown => "Unknown command.\r\n",
         else => "Error\r\n",
     };
+}
+
+pub const ClientTaskArgs = struct {
+    player: *Player,
+    rooms: [*]Room,
+};
+
+// B3 (option a): the `@asyncInit` args record's fields ARE the coroutine's
+// parameters; the record is `{ cta: *ClientTaskArgs }`.
+pub const ClientCoroutineArgs = struct { cta: *ClientTaskArgs };
+
+pub fn clientCoroutine(cta: *ClientTaskArgs) void {
+    const p = cta.player;
+    while (true) {
+        if (!p.is_active) return;
+        const n = std_net.recv(p.socket, &p.buffer[p.pos], @intCast(i32, BUFFER_SIZE - p.pos));
+        if (n <= 0) {
+            std.io.print("Client disconnected\n", .{});
+            p.is_active = false;
+            return;
+        }
+        p.pos += @intCast(usize, n);
+        var j: usize = 0;
+        while (j < p.pos) {
+            if (p.buffer[j] == '\n') {
+                var end = j;
+                if (end > 0 and p.buffer[end - 1] == '\r') end -= 1;
+                const cmd = parseCommand(p.buffer[0..end]);
+                const response = processCommand(p, cmd);
+                _ = std_net.send(p.socket, response.ptr, @intCast(i32, response.len));
+                if (j + 1 < p.pos) {
+                    var k: usize = 0;
+                    while (k < p.pos - (j + 1)) {
+                        p.buffer[k] = p.buffer[j + 1 + k];
+                        k += 1;
+                    }
+                    p.pos -= (j + 1);
+                } else {
+                    p.pos = 0;
+                }
+                break;
+            }
+            j += 1;
+        }
+        _ = @asyncSuspend(null);
+    }
 }
