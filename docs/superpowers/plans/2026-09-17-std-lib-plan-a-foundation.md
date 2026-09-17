@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Land the L0-L2 std-lib foundation from the blueprint — `std_bits`, `std_os`, `std_time`, the `std_debug` extension, `std_buf`, and the `std_str` extension — with fixtures and the layering/dependency gate green.
+**Goal:** Land the L0-L2 std-lib foundation from the blueprint — `std_bits`, `std_os`, `std_time`, the `std_debug` extension, `std_buf`, and the `std_str` extension — with fixtures, the R7b usage programs under `stdlib_test/`, and the layering/dependency gate green.
 
-**Architecture:** One plan, six module tasks, ordered by the blueprint's construction order (L0 → L1 → L2). Each module is authored in `sf/src/std_<name>.zig` with the blueprint's exact signatures, gets `repro/mi_matrix/stdlib_<module>_<name>_xmod` fixtures, and is validated by the six gates. **This plan runs after Task 0 (separation audit); its successor is Plan B (L3 + L6).**
+**Architecture:** One plan, six module tasks plus a usage-program task, ordered by the blueprint's construction order (L0 → L1 → L2). Each module is authored in `sf/src/std_<name>.zig` with the blueprint's exact signatures, gets `repro/mi_matrix/stdlib_<module>_<name>_xmod` fixtures, and is validated by the six gates; the band's usage programs (R7b) compose the modules and are gated the same way. **This plan runs after Task 0 (separation audit); its successor is Plan B (L3 + L6).**
 
 **Tech Stack:** Z98/`zig1` self-hosted compiler (C89 emission), `std.arena`, bash, `gcc -m32`, git.
 
@@ -15,7 +15,7 @@
 ## Global Constraints
 
 - **Precondition:** Task 0 complete (the compiler↔std separation audit; the dead std-importing files deleted; the blueprint §6 claim corrected).
-- **Baseline (re-verify at Task 1).** Record HEAD, the self-compile fixed point, the seed version/archive md5, and the corpus `EXPECTED_FAIL.md` header at dispatch. The compiler's import graph reaches no std module, so adding std modules MUST NOT move the fixed point. **Exception (operator ruling 2026-09-17): exactly two authorized compiler-graph changes move the fixed point — the per-OS prelude work (Tasks 2-3: `std_os_prelude.h`/`std_time_prelude.h`, the `net_prelude.h` analog) and Task 4's `std_debug` trap hook. Re-baseline at Task 2 Step 6, Task 3 Step 6, and Task 4 Step 6. Tasks 1,5,6,7 MUST leave it unmoved — if it moves, STOP (a std module or an unauthorized PAL edit leaked into the compiler graph).**
+- **Baseline (re-verify at Task 1).** Record HEAD, the self-compile fixed point, the seed version/archive md5, and the corpus `EXPECTED_FAIL.md` header at dispatch. The compiler's import graph reaches no std module, so adding std modules MUST NOT move the fixed point. **Exception (operator ruling 2026-09-17): exactly two authorized compiler-graph changes move the fixed point — the per-OS prelude work (Tasks 2-3: `std_os_prelude.h`/`std_time_prelude.h`, the `net_prelude.h` analog) and Task 4's `std_debug` trap hook. Re-baseline at Task 2 Step 6, Task 3 Step 6, and Task 4 Step 6. Tasks 1,5,6,7,8 MUST leave it unmoved — if it moves, STOP (a std module or an unauthorized PAL edit leaked into the compiler graph).**
 - **PAL boundary (operator ruling 2026-09-17).** The std lib MUST NOT wrap or edit the compiler PAL for OS primitives. OS specifics live in std-side PAL modules (`sf/src/std_os_pal.zig`, `sf/src/std_time_pal.zig`) using the `std_net.zig` `@cInclude`+`extern`+`@isWindows()` pattern, with per-OS C prototypes supplied by the authorized prelude headers. The only authorized compiler edits in this plan are the prelude work (Tasks 2-3) and the Task 4 trap hook (see each task's Files list). The compiler's cost is what it imports; the library's cost is what emits.
 - **Build only via the seed model:** `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <fresh_out>`; never invoke `zig0`.
 - **gcc flag-set (binding):** `gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc>`. `timeout 120` on every binary.
@@ -24,6 +24,8 @@
 - **Errors (R2):** one error set per module; no `catch unreachable`.
 - **Determinism (R6):** no output may depend on addresses, the wall clock, or the PID unless the contract says so.
 - **Fixtures (R7):** every public function gets a `repro/mi_matrix/stdlib_<module>_<name>_xmod` fixture.
+- **Usage programs (R7b):** each layer band ships usage programs under `stdlib_test/`; every module in this band is complete only when its usage program is GREEN.
+- **Seed `lib/` copy lists:** each task that adds a module extends both `scripts/seed/build_from_seed.sh` and `scripts/seed/archive_seed.sh` `lib/` copy lists in the same commit (so that task's own GREEN is reproducible). The closeout verifies the lists are complete. `scripts/self_compile/build_zig1_5.sh:12` keeps its legacy 5-module list on the retired zig0 path — a known divergence; do not silently change it.
 - **Edits only via `edit`/`fastedit`** (no `sed`/`python` on repo files; `/tmp` scratch is unrestricted). Re-read the region immediately before every `fastedit`.
 - **Never stage** `mnemoria/` or `.zig1_*.tmp`.
 - **Declare every residual gap** (report + docs + a tracked note).
@@ -53,9 +55,16 @@
 - `stdlib_buf_growth_xmod/`, `stdlib_buf_endian_xmod/`, `stdlib_buf_clear_xmod/`.
 - one `stdlib_str_<name>_xmod/` per new `std_str` function.
 
+**Create (usage programs, R7b):**
+- `stdlib_test/bits_buf_str_usage/main.zig` — composes `std_bits` + `std_buf` + `std_str`.
+- `stdlib_test/os_time_usage/main.zig` — composes `std_os` + `std_time` + `std_debug`.
+
+**Modify (harness):**
+- `scripts/corpus/list_corpus_dirs.sh` — container rule (D) for `stdlib_test/`.
+
 **Modify (closeout):**
 - `repro/mi_matrix/EXPECTED_FAIL.md` — bump the header once at Plan A closeout.
-- `scripts/seed/build_from_seed.sh`, `scripts/seed/archive_seed.sh` — extend the `lib/` copy list with the new modules (same touchpoints as the existing 9).
+- `scripts/seed/build_from_seed.sh`, `scripts/seed/archive_seed.sh` — the `lib/` copy list is extended per-task (one module per task commit); the closeout verifies it is complete (same touchpoints as the existing 9).
 
 **Reference (read-only):** `sf/docs/std_lib_extension.txt` §3 (L0-L2), `docs/sf/QUICK_REF.md`, `docs/sf/AGENTS.md`.
 
@@ -67,6 +76,7 @@
 - Create: `sf/src/std_bits.zig`
 - Create: `repro/mi_matrix/stdlib_bits_table_xmod/main.zig`
 - Modify: `sf/src/std.zig` (add `pub const bits = @import("std_bits.zig");`)
+- Modify: `scripts/seed/build_from_seed.sh`, `scripts/seed/archive_seed.sh` (append `std_bits.zig` to both `lib/` copy lists — same commit)
 
 **Interfaces:**
 - Consumes: nothing.
@@ -100,12 +110,13 @@ Expected: FAIL — `error[3048]` / unresolved import (the module does not exist 
 
 Write `sf/src/std_bits.zig` with the blueprint's exact signatures and the documented traps (`extract`/`insert` trap on out-of-range offsets via `unreachable`; all others total). No imports (L0).
 
-- [ ] **Step 5: Add the re-export + run the fixture — GREEN**
+- [ ] **Step 5: Extend both `lib/` copy lists + re-export + run the fixture — GREEN**
 
-Add `pub const bits = @import("std_bits.zig");` to `sf/src/std.zig`, then:
+Extend the `lib/` copy lists in `scripts/seed/build_from_seed.sh` and `scripts/seed/archive_seed.sh` with `std_bits.zig` (convention: every Plan A task that adds a module extends both lists in the same commit, so this task's GREEN is reproducible). Add `pub const bits = @import("std_bits.zig");` to `sf/src/std.zig`, then rebuild the compiler so its `lib/` carries the module and run the fixture:
 
 ```bash
 cd /workspace/znineeight
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/planA_build
 /tmp/planA_build/zig1_5_clean -o /tmp/planA_bits repro/mi_matrix/stdlib_bits_table_xmod/main.zig
 cd /tmp/planA_bits && sh build_target.sh linux stdlib_bits_table && timeout 120 ./stdlib_bits_table; echo rc=$?
 ```
@@ -129,8 +140,9 @@ Expected: both modes emit; run each 3× and confirm identical stdout. Record the
 cd /workspace/znineeight
 bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/planA_build2
 md5sum /tmp/planA_build2/zig1_5_clean   # MUST equal Step 1
-git add sf/src/std_bits.zig sf/src/std.zig repro/mi_matrix/stdlib_bits_table_xmod
-git commit -m "feat(std): add std_bits (L0) + fixture (Plan A Task 1)"
+git add sf/src/std_bits.zig sf/src/std.zig repro/mi_matrix/stdlib_bits_table_xmod \
+  scripts/seed/build_from_seed.sh scripts/seed/archive_seed.sh
+git commit -m "feat(std): add std_bits (L0) + fixture + lib/ copy list (Plan A Task 1)"
 ```
 
 ---
@@ -144,6 +156,7 @@ git commit -m "feat(std): add std_bits (L0) + fixture (Plan A Task 1)"
 - Create (authorized compiler change): `sf/src/include/std_os_prelude.h` (per-OS C prototypes; the `net_prelude.h` analog)
 - Modify (authorized compiler change): `sf/src/emit_support.zig` (emit the prelude), `sf/src/c89_emit.zig` (conditional emission), `scripts/check_emit_support.sh` (prelude entry)
 - Modify: `sf/src/std.zig` (re-export `os`)
+- Modify: `scripts/seed/build_from_seed.sh`, `scripts/seed/archive_seed.sh` (append `std_os.zig` + `std_os_pal.zig` to both `lib/` copy lists — same commit)
 - **Forbidden:** any edit to `sf/src/pal.zig` / `sf/src/include/zig_pal.c` (compiler PAL). A missing primitive is added to `std_os_pal.zig`.
 
 **Interfaces:**
@@ -155,7 +168,7 @@ git commit -m "feat(std): add std_bits (L0) + fixture (Plan A Task 1)"
 - [ ] **Step 3: Implement `std_os.zig`** with the blueprint signatures; `env` via `getenv` (`<stdlib.h>`); `cwd` allocates from the arena and fills via `GetCurrentDirectoryA`/`getcwd` (prototypes from the authorized `std_os_prelude.h`); `exit` via `@exit`. **`argc`/`argv` (operator ruling 2026-09-17): expose `std_os.initArgs(argc: i32, argv: [*]*const u8) void` mirroring `sf/src/pal.zig:184-195`, which the user calls from their `main`; `argc()`/`argv(i)` read the saved values. The compiler is untouched for this — no capture hook in the emitted `main` wrapper.**
 - [ ] **Step 4: Re-export + run — GREEN** (all three fixtures rc=0, documented stdout).
 - [ ] **Step 5: Safety/determinism gates** (`-fsafe`/`-ffast` parity, 3× md5).
-- [ ] **Step 6: Fixed point MOVED (authorized prelude work) + commit** (`feat(std): add std_os (L1) + fixtures (Plan A Task 2)`). Adding `std_os_prelude.h` + its emitter wiring is part of the authorized prelude work; rebuild via the seed model and record the new fixed point md5.
+- [ ] **Step 6: Fixed point MOVED (authorized prelude work) + commit** (`feat(std): add std_os (L1) + fixtures + lib/ copy list (Plan A Task 2)`). Adding `std_os_prelude.h` + its emitter wiring is part of the authorized prelude work; rebuild via the seed model and record the new fixed point md5. Stage `sf/src/std_os.zig`, `sf/src/std_os_pal.zig`, `sf/src/std.zig`, the prelude/emitter files, the fixtures, and both seed scripts.
 
 ---
 
@@ -168,6 +181,7 @@ git commit -m "feat(std): add std_bits (L0) + fixture (Plan A Task 1)"
 - Create (authorized compiler change): `sf/src/include/std_time_prelude.h` (per-OS C prototypes; the `net_prelude.h` analog)
 - Modify (authorized compiler change): `sf/src/emit_support.zig` (emit the prelude), `sf/src/c89_emit.zig` (conditional emission), `scripts/check_emit_support.sh` (prelude entry)
 - Modify: `sf/src/std.zig` (re-export `time`)
+- Modify: `scripts/seed/build_from_seed.sh`, `scripts/seed/archive_seed.sh` (append `std_time.zig` + `std_time_pal.zig` to both `lib/` copy lists — same commit)
 - **Forbidden:** any edit to `sf/src/pal.zig` / `sf/src/include/zig_pal.c`.
 
 **Interfaces:**
@@ -179,7 +193,7 @@ git commit -m "feat(std): add std_bits (L0) + fixture (Plan A Task 1)"
 - [ ] **Step 3: Implement `std_time.zig`.** `ticksMs`/`highRes`/`highResFreq`/`wallClockUnix` are `@isWindows()`-guarded wrappers over `std_time_pal.zig` externs (`GetTickCount`/`QueryPerformanceCounter`/`QueryPerformanceFrequency`; `gettimeofday`/`time`), whose prototypes come from the authorized `std_time_prelude.h` (option B). `sleepMs` calls the `@sleepMs` builtin directly (do **not** import `std_io`; R3). Note R6: `ticksMs` wraps; `highRes` falls back to `ticksMs * 1000` on hardware without a high-res timer (documented, deterministic). The monotonicity fixture must be robust to the fallback.
 - [ ] **Step 4: Re-export + GREEN.**
 - [ ] **Step 5: Safety/determinism gates.**
-- [ ] **Step 6: Fixed point MOVED (authorized prelude work) + commit.** Adding `std_time_prelude.h` + its emitter wiring is the prelude half of the two authorized compiler-graph changes; rebuild via the seed model and record the new fixed point md5.
+- [ ] **Step 6: Fixed point MOVED (authorized prelude work) + commit.** Adding `std_time_prelude.h` + its emitter wiring is the prelude half of the two authorized compiler-graph changes; rebuild via the seed model and record the new fixed point md5. Stage `sf/src/std_time.zig`, `sf/src/std_time_pal.zig`, `sf/src/std.zig`, the prelude/emitter files, the fixtures, and both seed scripts.
 
 ---
 
@@ -209,6 +223,7 @@ git commit -m "feat(std): add std_bits (L0) + fixture (Plan A Task 1)"
 - Create: `sf/src/std_buf.zig`
 - Create: `repro/mi_matrix/stdlib_buf_growth_xmod/`, `stdlib_buf_endian_xmod/`, `stdlib_buf_clear_xmod/`
 - Modify: `sf/src/std.zig`
+- Modify: `scripts/seed/build_from_seed.sh`, `scripts/seed/archive_seed.sh` (append `std_buf.zig` to both `lib/` copy lists — same commit)
 
 **Interfaces:**
 - Consumes: `std_arena`.
@@ -219,7 +234,7 @@ git commit -m "feat(std): add std_bits (L0) + fixture (Plan A Task 1)"
 - [ ] **Step 3: Implement `std_buf.zig`.** Doubling growth; `slice()` valid until the next growing append; `clear` retains capacity; no `deinit`.
 - [ ] **Step 4: GREEN.**
 - [ ] **Step 5: Arena gate** — a fixture that exhausts the arena; `append` returns `OutOfMemory`; no memory written outside the arena.
-- [ ] **Step 6: Safety/determinism gates + fixed point UNMOVED + commit.**
+- [ ] **Step 6: Safety/determinism gates + fixed point UNMOVED + commit** (stage `sf/src/std_buf.zig`, `sf/src/std.zig`, the fixtures, and both seed scripts).
 
 ---
 
@@ -242,18 +257,38 @@ git commit -m "feat(std): add std_bits (L0) + fixture (Plan A Task 1)"
 
 ---
 
-### Task 7: Plan A closeout
+### Task 7: Usage programs + corpus container (R7b)
 
 **Files:**
-- Modify: `scripts/seed/build_from_seed.sh`, `scripts/seed/archive_seed.sh` (extend the `lib/` copy list)
+- Modify: `scripts/corpus/list_corpus_dirs.sh` (add container rule D for `stdlib_test/`)
+- Create: `stdlib_test/bits_buf_str_usage/main.zig`
+- Create: `stdlib_test/os_time_usage/main.zig`
+
+**Interfaces:**
+- Consumes: `std_bits`/`std_buf`/`std_str` (Tasks 1/5/6), `std_os`/`std_time`/`std_debug` (Tasks 2/3/4).
+- Produces: the Plan A usage programs; the `stdlib_test/` corpus container.
+
+- [ ] **Step 1: Add container rule (D)** to `scripts/corpus/list_corpus_dirs.sh` — enumerate every immediate subdir of `stdlib_test/` via the existing `emit_dir` resolution (`main.zig` → `<basename>.zig` → first `*.zig`), mirroring rule (C) for `examples/z98/`; update the header universe list.
+- [ ] **Step 2: Create `stdlib_test/bits_buf_str_usage/main.zig`** — a real program composing `std_bits` + `std_buf` + `std_str` in an intended workflow (e.g. build a bit field, append formatted bytes to a `Buf`, then split/trim/join the result), with a deterministic stdout contract.
+- [ ] **Step 3: Create `stdlib_test/os_time_usage/main.zig`** — a real program composing `std_os` + `std_time` + `std_debug` (e.g. `initArgs`, print cwd, sample `highRes`/`ticksMs`, route a diagnostic through `std_debug`), deterministic except for the documented time contract.
+- [ ] **Step 4: Compile and run both under the fixture gates** — 3× emission md5 identical; `-fsafe`/`-ffast` parity; documented stdout matches.
+- [ ] **Step 5: Verify the harness enumerates both dirs** (`bash scripts/corpus/list_corpus_dirs.sh | grep stdlib_test`).
+- [ ] **Step 6: Commit** (`feat(std): add Plan A usage programs + stdlib_test corpus container (Plan A Task 7)`).
+
+---
+
+### Task 8: Plan A closeout
+
+**Files:**
+- Modify: `scripts/seed/build_from_seed.sh`, `scripts/seed/archive_seed.sh` (verify the `lib/` copy list is complete)
 - Modify: `repro/mi_matrix/EXPECTED_FAIL.md` (bump the header once)
 - Modify: `docs/sf/QUICK_REF.md` (std-module inventory)
 
 **Interfaces:**
-- Consumes: Tasks 1-6.
+- Consumes: Tasks 1-7.
 - Produces: the Plan B pointer.
 
-- [ ] **Step 1: Extend the seed scripts' `lib/` copy list** with `std_bits.zig`/`std_os.zig`/`std_time.zig`/`std_buf.zig` (the same touchpoints as the existing 9).
+- [ ] **Step 1: Verify the seed scripts' `lib/` copy list is complete** — the module-adding tasks (1/2/3/5) each appended their module in the same commit; confirm `std_bits.zig`/`std_os.zig`/`std_os_pal.zig`/`std_time.zig`/`std_time_pal.zig`/`std_buf.zig` are all present in both `scripts/seed/build_from_seed.sh` and `scripts/seed/archive_seed.sh` (the same touchpoints as the existing 9). Add any missing entry here; do not leave the list incomplete.
 - [ ] **Step 2: Run the full corpus + gates.**
 
 ```bash
@@ -281,6 +316,6 @@ Plan A complete. NEXT: `docs/superpowers/plans/2026-09-17-std-lib-plan-b-resourc
 
 ## Self-Review
 
-- **Spec coverage:** spec §4 Plan A (all six modules) → Tasks 1-6; §5 R1-R7 → every module task's gates; §6 gates → Tasks 1-6 Step gates + Task 7; §7 distribution → Task 7 Step 1; §10 index → the `Sequence:` line + Task 7 Step 5.
+- **Spec coverage:** spec §4 Plan A (all six modules) → Tasks 1-6; §5 R1-R7 → every module task's gates; §5 R7b → Task 7; §6 gates → Tasks 1-7 Step gates + Task 8; §7 distribution → Task 8 Step 1; §10 index → the `Sequence:` line + Task 8 Step 5.
 - **Placeholder scan:** module signatures are referenced to the blueprint (§3 L0-L2) rather than duplicated — the blueprint is the exact-signature source of record and travels with the plan. Every step has a concrete command/expected output.
 - **Type consistency:** the module names (`std_bits`/`std_os`/`std_time`/`std_buf`) and re-export names (`bits`/`os`/`time`/`buf`) are used identically across tasks.

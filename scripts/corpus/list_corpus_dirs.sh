@@ -5,6 +5,7 @@
 #   - every immediate subdir of repro/mi_matrix/
 #   - every immediate subdir of repro/ EXCEPT the containers mi_matrix and slice_matrix
 #   - every immediate subdir of examples/z98/
+#   - every immediate subdir of stdlib_test/
 # A candidate dir is kept only if it has a resolvable entry, resolved as:
 #   <dir>/main.zig, else <dir>/<basename>.zig, else the first *.zig directly under <dir>.
 # Prints sorted repo-relative dir paths, one per line, with a trailing slash.
@@ -55,6 +56,12 @@ emit_dir() {
 
   # C. every immediate subdir of examples/z98/
   for d in examples/z98/*/; do
+    [ -d "$d" ] || continue
+    emit_dir "${d%/}"
+  done
+
+  # D. every immediate subdir of stdlib_test/ (usage programs; R7b)
+  for d in stdlib_test/*/; do
     [ -d "$d" ] || continue
     emit_dir "${d%/}"
   done

@@ -4,7 +4,7 @@
 
 **Goal:** Land the L3 resource modules (`std_file`, `std_stdin`, the `std_net` UDP extension) and the L6 capstone `std_stream` — the coroutine-aware composition layer that composes L3 resources over `std.async`.
 
-**Architecture:** One plan, five module tasks, ordered by the blueprint's construction order (L3 file/stdin → L3 UDP → L6 stream). Each module is authored in `sf/src/std_<name>.zig` with the blueprint's exact signatures, gets `repro/mi_matrix/stdlib_<module>_<name>_xmod` fixtures, and is validated by the six gates. **This plan runs after Plan A (L0-L2); its successor is Plan C (L4 + L5).**
+**Architecture:** One plan, five module tasks plus the band's R7b usage programs in the closeout, ordered by the blueprint's construction order (L3 file/stdin → L3 UDP → L6 stream). Each module is authored in `sf/src/std_<name>.zig` with the blueprint's exact signatures, gets `repro/mi_matrix/stdlib_<module>_<name>_xmod` fixtures, and is validated by the six gates. **This plan runs after Plan A (L0-L2); its successor is Plan C (L4 + L5).**
 
 **Tech Stack:** Z98/`zig1` self-hosted compiler (C89 emission), `std.arena`, `std.async` (Track 3), bash, `gcc -m32`, git.
 
@@ -23,6 +23,8 @@
 - **Async isolation gate (binding, Plan B only):** a program that does not use `std_stream` MUST NOT link the async runtime. Assert this in the import graph for every new L3 module (none may import `std.async`).
 - **`std.async` API (landed):** `TaskState`, `FrameError{OutOfFrame}`, `Context` (16-byte header, `pool_base=ctx+16`, 8-aligned buffers), `Task`, `Scheduler`, `schedulerInit/addTask/removeTask/tick/suspend/awaitTask/waitFor/waitAll/cancel/cancelAll`.
 - **Fixtures (R7):** one `repro/mi_matrix/stdlib_<module>_<name>_xmod` per public function; L6 fixtures suspend at least twice per call.
+- **Usage programs (R7b):** each layer band ships usage programs under `stdlib_test/`; every module in this band is complete only when its usage program is GREEN.
+- **Seed `lib/` copy lists:** each task that adds a module extends both `scripts/seed/build_from_seed.sh` and `scripts/seed/archive_seed.sh` `lib/` copy lists in the same commit; the closeout verifies the lists are complete. (`scripts/self_compile/build_zig1_5.sh:12` keeps its legacy 5-module list on the retired zig0 path — a known divergence; do not silently change it.)
 - **Edits only via `edit`/`fastedit`**; never stage `mnemoria/` or `.zig1_*.tmp`; declare every residual gap.
 
 ---
@@ -45,9 +47,13 @@
 - `stdlib_net_udp_<name>_xmod/` (loopback send/recv; timeout; zero-length datagram; truncation behavior).
 - `stdlib_stream_<name>_xmod/` (readLineAsync on a small file; no trailing newline; empty file; interleaved with a second reader).
 
+**Create (usage programs, R7b):**
+- `stdlib_test/file_stdin_usage/main.zig` — composes `std_file` + `std_stdin`.
+- `stdlib_test/net_stream_usage/main.zig` — composes `std_net` + `std_stream` + `std.async`.
+
 **Modify (closeout):**
 - `repro/mi_matrix/EXPECTED_FAIL.md` — bump once at Plan B closeout.
-- `scripts/seed/build_from_seed.sh`, `scripts/seed/archive_seed.sh` — extend the `lib/` copy list.
+- `scripts/seed/build_from_seed.sh`, `scripts/seed/archive_seed.sh` — the `lib/` copy list is extended per-task (one module per task commit); the closeout verifies it is complete.
 
 **Reference (read-only):** `sf/docs/std_lib_extension.txt` §3 (L3/L6) + §4, `sf/docs/tech_docs/12_async_coroutines.md`, `docs/sf/QUICK_REF.md`.
 
@@ -59,6 +65,7 @@
 - Create: `sf/src/std_file.zig`
 - Create: the `stdlib_file_*_xmod` fixtures
 - Modify: `sf/src/std.zig` (per §6)
+- Modify: `scripts/seed/build_from_seed.sh`, `scripts/seed/archive_seed.sh` (append `std_file.zig` + any `std_file_pal.zig` to both `lib/` copy lists — same commit)
 
 **Interfaces:**
 - Consumes: `std_arena`, `std_buf`, `std_str`.
@@ -70,7 +77,7 @@
 - [ ] **Step 4: Implement `std_file.zig`.** Win32 opens through `CreateFileA` (never `fopen`); `size` uses `GetFileSizeEx` (never `ftell`); `read` returns 0 at EOF (not an error); `write` may return fewer bytes (callers loop). Route through the std-side `std_file_pal.zig` (`@cInclude` + `extern`, `@isWindows()` guards). The existing `pal_file_open/read/write/close` symbols in the emitted `zig_pal.c` are compiler-PAL; do **not** add to them. (`std_io.zig:62-70` declares those four as bare externs — the `std_file` design must not extend that surface.)
 - [ ] **Step 5: GREEN** + the safety/determinism gates.
 - [ ] **Step 6: Assert the async-isolation gate** — `grep -n 'std.async' sf/src/std_file.zig` is empty.
-- [ ] **Step 7: Fixed point UNMOVED + commit.**
+- [ ] **Step 7: Fixed point UNMOVED + commit** (stage `sf/src/std_file.zig`, any `std_file_pal.zig`, `sf/src/std.zig`, the fixtures, and both seed scripts).
 
 ---
 
@@ -79,6 +86,7 @@
 **Files:**
 - Create: `sf/src/std_stdin.zig`
 - Create: the `stdlib_stdin_*_xmod` fixtures
+- Modify: `scripts/seed/build_from_seed.sh`, `scripts/seed/archive_seed.sh` (append `std_stdin.zig` + any `std_stdin_pal.zig` to both `lib/` copy lists — same commit)
 
 **Interfaces:**
 - Consumes: `std_file`, `std_file_pal`.
@@ -88,7 +96,7 @@
 - [ ] **Step 2: RED.**
 - [ ] **Step 3: Implement `std_stdin.zig`.**
 - [ ] **Step 4: GREEN + safety/determinism gates.**
-- [ ] **Step 5: Async-isolation gate + fixed point UNMOVED + commit.**
+- [ ] **Step 5: Async-isolation gate + fixed point UNMOVED + commit** (stage `sf/src/std_stdin.zig`, any `std_stdin_pal.zig`, the fixtures, and both seed scripts).
 
 ---
 
@@ -117,6 +125,7 @@
 - Create: `sf/src/std_stream.zig`
 - Create: the `stdlib_stream_*_xmod` fixtures
 - Modify: `sf/src/std.zig` (per §6)
+- Modify: `scripts/seed/build_from_seed.sh`, `scripts/seed/archive_seed.sh` (append `std_stream.zig` to both `lib/` copy lists — same commit)
 
 **Interfaces:**
 - Consumes: `std_file` (L3), `std_net` (L3), `std.async`.
@@ -128,20 +137,22 @@
 - [ ] **Step 4: Implement `std_stream.zig`.** `readLineAsync` suspends when no complete line is buffered; the underlying reads go through the appropriate L3 source inside `std_stream`, not exposed to the caller. No callbacks, no state enum in user code.
 - [ ] **Step 5: GREEN + safety/determinism gates + the async gate** (suspend ≥2× per call).
 - [ ] **Step 6: Graph assertion** — a program that imports `std_stream` links the async runtime; a program that imports only `std_file`/`std_net`/`std_stdin` does NOT. Emit both and compare the module set.
-- [ ] **Step 7: Fixed point UNMOVED + commit.**
+- [ ] **Step 7: Fixed point UNMOVED + commit** (stage `sf/src/std_stream.zig`, `sf/src/std.zig`, the fixtures, and both seed scripts).
 
 ---
 
 ### Task 5: Plan B closeout
 
 **Files:**
-- Modify: `scripts/seed/build_from_seed.sh`, `scripts/seed/archive_seed.sh`, `repro/mi_matrix/EXPECTED_FAIL.md`, `docs/sf/QUICK_REF.md`
+- Modify: `scripts/seed/build_from_seed.sh`, `scripts/seed/archive_seed.sh` (verify the `lib/` copy list is complete), `repro/mi_matrix/EXPECTED_FAIL.md`, `docs/sf/QUICK_REF.md`
+- Create: `stdlib_test/file_stdin_usage/main.zig`, `stdlib_test/net_stream_usage/main.zig` (R7b usage programs)
 
-- [ ] **Step 1: Extend the seed scripts' `lib/` copy list** with `std_file.zig`/`std_stdin.zig`/`std_stream.zig` (UDP is a `std_net` edit, already listed).
-- [ ] **Step 2: Run the full corpus + gates** (count; `check_emit_support` 5/5; `CLOSEOUT OK`; zero class movement on pre-existing dirs).
-- [ ] **Step 3: Bump `EXPECTED_FAIL.md`** once (header + a Plan B section).
-- [ ] **Step 4: Update the QUICK_REF std-module inventory.**
-- [ ] **Step 5: Record the next-plan pointer.**
+- [ ] **Step 1: Verify the seed scripts' `lib/` copy list is complete** — Tasks 1/2/4 each appended their module in the same commit; confirm `std_file.zig`/`std_stdin.zig`/`std_stream.zig` (plus any `std_file_pal.zig`/`std_stdin_pal.zig` created) are present in both scripts (UDP is a `std_net` edit, already listed). Add any missing entry here.
+- [ ] **Step 2: Create the Plan B usage programs (R7b)** — `stdlib_test/file_stdin_usage/main.zig` composes `std_file` + `std_stdin`; `stdlib_test/net_stream_usage/main.zig` composes `std_net` + `std_stream` + `std.async`. Each has a deterministic stdout contract and is compiled/run under the fixture gates (3× emission md5, `-fsafe`/`-ffast` parity). Confirm `scripts/corpus/list_corpus_dirs.sh | grep stdlib_test` enumerates both.
+- [ ] **Step 3: Run the full corpus + gates** (count; `check_emit_support` 5/5; `CLOSEOUT OK`; zero class movement on pre-existing dirs).
+- [ ] **Step 4: Bump `EXPECTED_FAIL.md`** once (header + a Plan B section).
+- [ ] **Step 5: Update the QUICK_REF std-module inventory.**
+- [ ] **Step 6: Record the next-plan pointer.**
 
 ```markdown
 ## Next plan
@@ -149,12 +160,12 @@ Plan B complete. NEXT: `docs/superpowers/plans/2026-09-17-std-lib-plan-c-data-co
 (L4 data structures + L5 encoders/decoders).
 ```
 
-- [ ] **Step 6: Commit** (`chore(std-lib): Plan B closeout — L3 resources + std_stream landed`).
+- [ ] **Step 7: Commit** (`chore(std-lib): Plan B closeout — L3 resources + std_stream landed`).
 
 ---
 
 ## Self-Review
 
-- **Spec coverage:** spec §4 Plan B (L3 + L6) → Tasks 1-4; §5 R4/C1-C3 → the coroutine rules + Task 4 Steps 1/6; §6 async gate → Task 4 Step 5; §7 distribution → Task 5 Step 1; §8 async-isolation risk → Task 1 Step 6 + Task 4 Step 6; §10 index → the `Sequence:` line + Task 5 Step 5.
+- **Spec coverage:** spec §4 Plan B (L3 + L6) → Tasks 1-4; §5 R4/C1-C3 → the coroutine rules + Task 4 Steps 1/6; §5 R7b → Task 5 Step 2; §6 async gate → Task 4 Step 5; §7 distribution → Task 5 Step 1; §8 async-isolation risk → Task 1 Step 6 + Task 4 Step 6; §10 index → the `Sequence:` line + Task 5 Step 6.
 - **Placeholder scan:** module signatures are referenced to the blueprint (§3 L3/L6) as the exact-signature source of record. Every step has a concrete command/expected output.
 - **Type consistency:** `std_file`/`std_stdin`/`std_stream` and the UDP additions to `std_net` are named identically across tasks and the file structure.

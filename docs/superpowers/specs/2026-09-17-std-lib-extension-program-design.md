@@ -125,6 +125,12 @@ its fixtures GREEN and the dependency-graph check passing.
   `repro/mi_matrix/stdlib_<module>_<name>_xmod` fixture. A module is
   complete when its fixtures are GREEN and the dependency-graph check
   passes.
+- **R7b — Usage programs.** Each layer band ships usage programs under
+  `stdlib_test/` — real programs that compose the band's modules in the
+  intended workflows, each with a deterministic stdout contract, compiled
+  and run under the same gates as a fixture (3× emission md5, `-fsafe`/`-ffast`
+  parity). A module is complete only when its R7 unit fixture AND its band's
+  usage programs are GREEN.
 - **R8 — PAL boundary.** The std lib never edits
   `sf/src/pal.zig`/`sf/src/include/zig_pal.c`/`sf/src/emit_support.zig`,
   except for the two authorized compiler-graph changes (the per-OS prelude
@@ -157,7 +163,10 @@ plan at its closeout.
 unchanged (the 8 names above). Higher layers are imported by path. The
 compiler's `lib/` gains the new `.zig` modules; the self-compile fixed point
 stays flat because the compiler imports none of them — the property Task 0
-proves.
+proves. `stdlib_test/` is a corpus container: the harness
+(`scripts/corpus/list_corpus_dirs.sh`) enumerates every immediate subdir of
+`stdlib_test/` as a usage program (container rule D), distinct from the
+per-function `repro/mi_matrix/` fixtures.
 
 ## §8 Risks
 
