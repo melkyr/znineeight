@@ -35,6 +35,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 - **Multi-Module Coroutine Steps**: synthesized `__Z98Step_<f>` functions are now emitted in the module that owns the suspending function in the per-module (`--output-dir`) emission path, fixing `undeclared identifier` link failures for coroutines outside the last-imported module.
 - **Coroutine Library (`std.async`)**: `Scheduler.tasks` is now `[*]*Task`; `addTask` stores the caller's task handle (no by-value copy), and `awaitTask` traps when called outside a suspending context.
+- **Async/Coroutine Documentation**: the `@async*` builtins and the `std.async` cooperative scheduler are now documented in the language spec (§4/§4.1), `docs/reference/builtins.md`, the README, and a new deep-dive `sf/docs/tech_docs/12_async_coroutines.md` (step machine, frame/step ABI, `Context` layout, multi-module `__Z98Step_<f>` emission, and the `rogue_mud`/`mud_server` conversions).
 
 ### Changed
 - **String-Literal Type**: string literals are now typed `*const [N]u8` (the real byte length in the type) instead of a bare `*const c_char`; the C89 emitter decays the temporary to a plain element pointer so generated C stays warning-clean.

@@ -97,18 +97,19 @@ writes the step word, copies params, and drives its own step to completion. This
 ## 3. Frame layout / step ABI
 
 `asyncLayoutFrame` (`sf/src/async_frame_layout.zig:522`) reads the lowered LIR and builds the exact
-frame layout. Field kinds (`sf/src/async_frame_layout.zig:43-50`):
+frame layout. The rows below are in **layout order** (offset order); the `Kind` column is the source
+`ASYNC_FIELD_*` numeric value (`sf/src/async_frame_layout.zig:43-50`):
 
-| Kind | Field | Notes |
-|------|-------|-------|
-| 0 | `step` | Pointer-sized step word at offset **0** |
-| 1 | `ctx` | Pointer-sized per-task pool pointer |
-| 2 | `state` | `u8` / `u16` / `u32` chosen from the suspension-point count |
-| 3 | `param` | Each `LirParam`, in order |
-| 4 | `live` | Hoisted temps live across ≥ 1 suspension, in temp-id order |
-| 5 | `child` | One `*void` child-frame slot (when the function awaits) |
-| 6 | `result` | One `*void` slot for the value returned through an await |
-| 7 | `parent_result` | One slot per value-returning implicit await, in program order |
+| Order | Kind | Field | Notes |
+|-------|------|-------|-------|
+| 0 | 4 (`ASYNC_FIELD_STEP`) | `step` | Pointer-sized step word at offset **0** |
+| 1 | 0 (`ASYNC_FIELD_CTX`) | `ctx` | Pointer-sized per-task pool pointer |
+| 2 | 1 (`ASYNC_FIELD_STATE`) | `state` | `u8` / `u16` / `u32` chosen from the suspension-point count |
+| 3 | 2 (`ASYNC_FIELD_PARAM`) | `param` | Each `LirParam`, in order |
+| 4 | 3 (`ASYNC_FIELD_LIVE`) | `live` | Hoisted temps live across ≥ 1 suspension, in temp-id order |
+| 5 | 5 (`ASYNC_FIELD_CHILD`) | `child` | One `*void` child-frame slot (when the function awaits) |
+| 6 | 6 (`ASYNC_FIELD_RESULT`) | `result` | One `*void` slot for the value returned through an await |
+| 7 | 7 (`ASYNC_FIELD_PARENT_RESULT`) | `parent_result` | One slot per value-returning implicit await, in program order |
 
 The state width is the single source of truth written by `asyncFrameSizeRun`
 (`sf/src/async_analysis.zig:605`): `u8` for ≤ 255 suspension points, `u16` for ≤ 65535, else `u32`
@@ -203,7 +204,7 @@ removed through the same object.
 | `contextAlloc(ctx, size)` | any | 8-aligned bump alloc; `error.OutOfFrame` + sticky `oom` on exhaustion |
 | `contextMark(ctx)` / `contextRelease(ctx, mark)` | any | LIFO child-frame reclaim |
 | `schedulerInit(tasks) Scheduler` | any | Wrap a caller-owned `[]*Task` |
-| `addTask(s, t) bool` | any | **Idempotent**: a registered active task returns `false`; a registered settled task is reset in place to `ready` (clearing `cancel_requested`/`has_waiting_on`) and returns `true`; otherwise appended |
+| `addTask(s, t) bool` | any | **Idempotent**: a registered active task returns `false`; a registered settled task is reset in place to `ready` (clearing `cancel_requested`/`has_waiting_on`) and returns `true`; otherwise appended, or `false` when the scheduler is already at `capacity` |
 | `removeTask(s, t)` | any non-suspending | Compact `t` out of the scheduler; no-op if absent; does not change `t.state` |
 | `tick(s) FrameError!void` | any | Resume every ready/suspended task once; observes `cancel_requested`; skips tasks parked on `waiting_on`; returns `error.OutOfFrame` if a resumed task's pool overflowed |
 | `suspend(s, t)` | any | Mark `t` suspended (yield bookkeeping) |
