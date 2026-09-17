@@ -1,4 +1,42 @@
-# mi_matrix corpus — expected-fail manifest (v125 2026-09-17)
+# mi_matrix corpus — expected-fail manifest (v126 2026-09-17)
+
+## Track-4 Task 5a-F fix round 1 — drop `waitFor` on the mud_server disconnect path (v125 -> v126 2026-09-17)
+
+The Task 5a-F review found the blocking-tick fix incomplete: the quit/disconnect path still
+called `std.async.waitFor(&client_sched, client_task_ptrs[i])`. The direct `@asyncResume` never
+updates `Task.state`, so `waitFor` saw the task unsettled and ran `tick`, which resumes EVERY
+registered non-done task — including idle clients blocked in `recv` — so a disconnect by one
+client while another is idle still stalled `main`. Operator ruling: **drop the `waitFor` call on
+this hot completion path**; the `@asyncResume` null return IS the completion signal, so the slot
+is freed directly (close socket, `is_active=false`, `state=.done`, `removeTask`) with no
+`waitFor`/`tick`. `std.async.waitFor` itself stays (the correct non-suspending drive for a
+genuinely single-task wait).
+
+**Changes:** `examples/z98/mud_server/main.zig` (drop `waitFor` + comment);
+`docs/superpowers/specs/2026-09-13-coroutine-integration-design.md` §1/§3.1/§3.2 + the
+consumed-surface lists (`removeTask`); the plan Task 5 Step 3 body + Amendment 5;
+`repro/mi_matrix/stdlib_async_blocking_tick_two_xmod/main.zig` re-characterized to model the
+disconnect-while-peer-idle path. No `sf/src` change.
+
+| fixture | RED (pre-fix `waitFor` drive) | GREEN (corrected drive) |
+|---|---|---|
+| `stdlib_async_blocking_tick_two_xmod` | run rc=142 (SIGALRM), stdout `accepted 2` (idle peer B resumed by `waitFor`->`tick` and blocks in `recv`) | run rc=0, stdout `accepted 2` `ok`; A resumed once (EOF), B never resumed |
+| `stdlib_async_blocking_tick_xmod` | (unchanged) pre-5a-F trailing-tick drive: rc=142 | rc=0, `accepted` `ok` |
+| `stdlib_async_addtask_reuse_xmod` | (unchanged) rc=133 | rc=0, `1 1 1 1 1 1 1 2` |
+| `stdlib_async_removetask_xmod` | (unchanged) dump rc=2, `error[3042]` | rc=0, `1 1 0 0 1 1 0 0 1 1 1` |
+| `stdlib_async_removetask_noop_xmod` | (unchanged) dump rc=2, `error[3042]` | rc=0, `0 1 0 0 0` |
+| `stdlib_async_addtask_single_xmod` (control) | GREEN | GREEN `1 1 3 3` |
+
+**Corpus `-ffast` dump+gcc classifier:** v126 = 722 = 669 OK / 28 GREEN / 25 FAIL; the per-dir
+map is IDENTICAL to v125 (the two-client fixture source change is class-neutral; no `sf/src`
+change).
+
+**Fixed point UNMOVED `18e0de5cf71f4fe0fbf5c560ab24e624`** (hop2 == hop3). `check_emit_support`
+5/5; self-compile 48 `.c`, rc=0, 0 `[3000]`; 4-MD5 runtime byte-identical (gol `fcbf7e7c…` /
+lisp `8dc783a3…` / json `8bda3d5a…` / mud `66c8f0ab…` + client `93147d0f…`); `CLOSEOUT OK`.
+Seed rotation stays at Task 6.
+
+---
 
 ## Track-4 Task 5a-F (F) — idempotent addTask + removeTask + readiness-gated mud_server drive LANDED (v124 -> v125 2026-09-17)
 

@@ -186,8 +186,11 @@ pub fn main() !void {
             if (players[i].is_active and std_net.fdIsset(players[i].socket, @ptrCast(*u8, &read_fds))) {
                 const step = @asyncResume(client_task_ptrs[i].frame, null);
                 if (step == null) {
-                    // coroutine completed (quit or disconnect): free the slot
-                    std.async.waitFor(&client_sched, client_task_ptrs[i]) catch {};
+                    // coroutine completed (quit or disconnect): the null return
+                    // IS the completion signal — free the slot directly. Do NOT
+                    // route it through `waitFor`/`tick`: `tick` resumes EVERY
+                    // registered non-done task, including idle clients whose
+                    // blocking `recv` would stall `main`.
                     std_net.close(players[i].socket);
                     players[i].is_active = false;
                     client_task_ptrs[i].state = .done;

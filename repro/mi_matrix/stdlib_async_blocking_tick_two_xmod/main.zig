@@ -1,19 +1,22 @@
-// stdlib_async_blocking_tick_two_xmod — readiness-gated two-client drive.
+// stdlib_async_blocking_tick_two_xmod — readiness-gated two-client drive with
+// a disconnect while a peer is idle.
 //
 // Same mechanism as `stdlib_async_blocking_tick_xmod`, but with two accepted
 // clients. Client B connects first and stays idle (slot 0); client A connects
-// second and sends one line (slot 1). The pre-5a-F drive direct-resumed the
-// ready fd A (which consumed the line and suspended), then the trailing `tick`
-// reached slot 0 (idle B) and blocked in `recv`. Because B never sends, `main`
-// was stuck and A could never be serviced again — the exact multi-client
-// hazard.
+// second and then disconnects (slot 1). The pre-5a-F example resumed the ready
+// fd A (whose coroutine returns on EOF) and then routed the null completion
+// through `waitFor`/`tick`; `tick` resumes EVERY registered non-done task,
+// reaching the idle slot 0 (B) and blocking `main` in `recv` — the exact
+// multi-client hazard. Task 5a-F fix round 1 frees the completed slot directly
+// (no `waitFor`/`tick`), so only select-ready fds are resumed.
 //
-// RED (pre-5a-F drive, fixed point 18e0de5c): dump rc=0, 8 `.c`, gcc/link
-// rc=0, run rc=142 (SIGALRM) with stdout `accepted 2`.
+// RED (pre-5a-F disconnect path, fixed point 18e0de5c): the drive calls
+// `waitFor` on A's null return; `tick` resumes idle B and blocks; `alarm(2)`
+// bounds the stall -> run rc=142 (SIGALRM) with stdout `accepted 2`.
 //
-// GREEN (5a-F readiness-gated drive, no trailing `tick`): the bounded select
-// loop times out for the idle slot, prints `accepted 2` then `ok`, and exits
-// rc=0.
+// GREEN (5a-F readiness-gated drive, no waitFor/tick): the bounded select loop
+// times out for the idle slot, prints `accepted 2` then `ok`, and exits rc=0.
+// A is resumed exactly once (EOF), B is never resumed.
 const std = @import("std");
 const std_net = @import("std_net");
 const sa = @import("std_async.zig");
@@ -51,12 +54,10 @@ pub fn main() !void {
     if (server < 0) { std.io.print("server fail\n", .{}); return; }
     if (std_net.bindListen(server, 5) < 0) { std.io.print("listen fail\n", .{}); return; }
 
-    // B connects first (idle); A connects second and sends one line.
+    // B connects first (idle); A connects second and then disconnects.
     const clientB = std_net.createTcpClient(PORT);
     const clientA = std_net.createTcpClient(PORT);
     if (clientB < 0 or clientA < 0) { std.io.print("client fail\n", .{}); return; }
-    const msg: []const u8 = "look\n";
-    _ = std_net.send(clientA, msg.ptr, @intCast(i32, msg.len));
 
     var accepted: [2]i32 = undefined;
     accepted[0] = -1;
@@ -70,9 +71,12 @@ pub fn main() !void {
     if (got < 2) { std.io.print("accept fail\n", .{}); return; }
     std.io.print("accepted 2\n", .{});
 
+    // A disconnects before the server resumes it: its `recv` will see EOF.
+    std_net.close(clientA);
+
     var storage: [32 * 1024]u64 = undefined;
     var ctx = sa.contextInit(@ptrCast([*]u8, &storage)[0..32 * 1024 * 8]);
-    // slot 0 = idle B, slot 1 = active A.
+    // slot 0 = idle B, slot 1 = disconnecting A.
     var cB = Ctx{ .fd = accepted[0], .buf = undefined, .recvs = 0 };
     var cA = Ctx{ .fd = accepted[1], .buf = undefined, .recvs = 0 };
     var recB = CArgs{ .cta = &cB };
@@ -90,24 +94,37 @@ pub fn main() !void {
     _ = sa.addTask(&s, &tB);
     _ = sa.addTask(&s, &tA);
 
+    var activeB: bool = true;
+    var activeA: bool = true;
+    var maxfd = accepted[0];
+    if (accepted[1] > maxfd) { maxfd = accepted[1]; }
     var fds: std_net.fd_set = undefined;
     var iter: usize = 0;
     while (iter < 3) : (iter += 1) {
         std_net.fdZero(@ptrCast(*u8, &fds));
-        std_net.fdSet(accepted[0], @ptrCast(*u8, &fds));
-        std_net.fdSet(accepted[1], @ptrCast(*u8, &fds));
-        const rc = std_net.select(accepted[1] + 1, @ptrCast(*u8, &fds), null, null, 100);
+        if (activeB) { std_net.fdSet(accepted[0], @ptrCast(*u8, &fds)); }
+        if (activeA) { std_net.fdSet(accepted[1], @ptrCast(*u8, &fds)); }
+        const rc = std_net.select(maxfd + 1, @ptrCast(*u8, &fds), null, null, 100);
         if (rc > 0) {
-            if (std_net.fdIsset(accepted[1], @ptrCast(*u8, &fds))) {
-                _ = @asyncResume(tA.frame, null);
+            if (activeA and std_net.fdIsset(accepted[1], @ptrCast(*u8, &fds))) {
+                const step = @asyncResume(tA.frame, null);
+                if (step == null) {
+                    // 5a-F fix round 1: the null return IS completion; free the
+                    // slot directly (no waitFor/tick, which would resume idle B).
+                    std_net.close(accepted[1]);
+                    activeA = false;
+                    tA.state = sa.TaskState.done;
+                    sa.removeTask(&s, &tA);
+                }
             }
-            if (std_net.fdIsset(accepted[0], @ptrCast(*u8, &fds))) {
+            if (activeB and std_net.fdIsset(accepted[0], @ptrCast(*u8, &fds))) {
                 _ = @asyncResume(tB.frame, null);
             }
         }
-        // Readiness-gated drive: no trailing `tick`; the idle slot is never
-        // resumed, so `main` cannot stall in `recv`.
     }
     std.io.print("ok\n", .{});
     _ = fflush(@ptrCast(*void, @intToPtr(*void, 0)));
+    if (cA.recvs != 1 or cB.recvs != 0 or s.count != 1 or activeA) {
+        @panic("stdlib_async_blocking_tick_two_xmod: disconnect-while-idle-peer drive broken");
+    }
 }

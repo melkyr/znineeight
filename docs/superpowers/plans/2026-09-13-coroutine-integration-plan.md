@@ -1410,17 +1410,20 @@ Replace the whole `select` + "Data on client sockets" section (`:99-196`) with a
                 const step = @asyncResume(client_task_ptrs[i].frame, null);
                 if (step == null) {
                     // coroutine completed (quit or disconnect): free the slot
+                    // directly — the null return IS the completion signal; do
+                    // NOT route it through waitFor/tick (tick resumes every
+                    // other registered, possibly idle, client and stalls `main`).
                     std_net.close(players[i].socket);
                     players[i].is_active = false;
                     client_task_ptrs[i].state = .done;
+                    std.async.removeTask(&client_sched, client_task_ptrs[i]);
                 }
             }
             i += 1;
         }
-        std.async.tick(&client_sched) catch {};
     }
 ```
-`@asyncResume` is used (not `tick`) so only the socket that `select` reported ready performs a `recv`; the trailing `tick` advances the rest. **RESOLVED (operator ruling, Task 4c):** the spec's quit/disconnect `awaitTask` drain is provided by the new **`std.async.waitFor(s, t)`** primitive (added in Task 4c-F), which drives `tick` until `t` is settled from any non-suspending context (`main`). `awaitTask` keeps its coroutine-internal semantics. Use `waitFor(&client_sched, client_task_ptrs[i])` on the quit/disconnect path (the `@asyncResume`-returns-null slot-free below still applies for the completion signal); the spec §1/§3.2 text was corrected in Task 4c-F.
+`@asyncResume` is used (not `tick`) so only the socket that `select` reported ready performs a `recv`. **Task 5a-F fix round 1 (2026-09-17, operator ruling): the trailing `tick` AND the quit/disconnect `waitFor` drive were REMOVED.** The `@asyncResume` null return IS the completion signal: the slot is freed directly (close socket, `is_active=false`, `state=.done`, `removeTask`) without calling `waitFor`/`tick`. `tick` resumes EVERY registered non-done task, so even `waitFor` on the just-completed task would resume other registered (possibly idle) clients and stall `main` in blocking `recv`; the drive is therefore strictly readiness-gated (only `select`-ready fds are resumed). `std.async.waitFor` remains the correct non-suspending drive for a genuinely single-task wait; it is just not used on this hot completion path. `awaitTask` keeps its coroutine-internal semantics.
 
 - [ ] **Step 4: Build, run the session, and verify byte-identity**
 
@@ -1640,3 +1643,21 @@ Task 2 dispatch was BLOCKED by three confirmed plan/design defects in the `@asyn
 ### Amendment 4 — Task 2a: nested module value-position access gap (2026-09-16, operator ruling)
 
 The Task 2 re-dispatch was BLOCKED by a compiler gap: lowering `std.async.HEADER_SIZE` (a scalar `pub const` accessed through a nested module alias) emits `error[3042] non-value base expression in field access` + `warning[3023] module used as value expression` (0 `.c`). The operator ruled this a real gap to be addressed by an I/F pair, added to the plan as **Task 2a** (a prelude on Track 2 exposed by Task 2). It is the pre-existing deferred `std.async` value-position gap (`docs/superpowers/specs/2026-09-13-async-prelude-and-feasibility-design.md:474`, "Amendment 7, Res 4"). Task 2a-I investigates + pins (fixtures + questionnaire + declaration, no `sf/src` change); Task 2a-F fixes it (`sf/src` change; fixed point MOVES). Tasks 2/4/5 read `std.async.HEADER_SIZE` (plan lines 730, 1077), so Task 2a-F must land before Task 2 re-dispatches.
+
+### Amendment 5 — Task 5a-F fix round 1: drop `waitFor` on the mud_server disconnect path (2026-09-17, operator ruling)
+
+The Task 5a-F review found the blocking-tick fix incomplete: the quit/disconnect path still
+called `std.async.waitFor(&client_sched, client_task_ptrs[i])`. The direct `@asyncResume`
+never updates `Task.state`, so `waitFor` saw the task unsettled and ran `tick`, which resumes
+EVERY registered non-done task — including idle clients blocked in `recv` — so a disconnect by
+one client while another is idle still stalled `main` exactly like the removed trailing `tick`.
+The operator ruled: **drop the `waitFor` call on this hot completion path**; the
+`@asyncResume` null return IS the completion signal, so free the slot directly (close socket,
+`is_active=false`, `state=.done`, `removeTask`) with no `waitFor`/`tick`. The
+`std.async.waitFor` primitive itself stays (correct non-suspending drive for a genuinely
+single-task wait). The Task 5 Step 3 code block and its explanatory paragraph above are edited
+in place; the spec §1/§3.2 E4 text is corrected to match, and `removeTask` is added to the
+spec's consumed-surface lists. Fixture `stdlib_async_blocking_tick_two_xmod` is re-characterized
+to model the disconnect-while-peer-idle path (RED under the pre-fix `waitFor` drive, GREEN under
+the corrected drive). Fixed point UNMOVED `18e0de5cf71f4fe0fbf5c560ab24e624`; `EXPECTED_FAIL.md`
+v125 → v126. Docs + example + fixture only; no seed rotation (Task 6).

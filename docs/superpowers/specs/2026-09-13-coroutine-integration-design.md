@@ -49,11 +49,15 @@ non-suspending drive primitive) — and no other `sf/src` module, builtin, or
    `ui.zig` exercise multi-module `is_suspending` propagation and frame synthesis.
 4. `examples/z98/mud_server`: the `select` accept/read loop (`main.zig:100-174`) maps
    each accepted client to a **per-client task** driven by `std.async`; `main`
-   (which is not a coroutine) drives and retires tasks with
-   `std.async.waitFor(s, t)` (drive ONE task to settled) and `waitAll(s)`,
-   replacing the manual fd-set bookkeeping. `std.async.awaitTask` is
-   **coroutine-internal** and MUST NOT be called from a non-suspending context;
-   `std.async.waitFor` is the non-suspending drive primitive.
+   (which is not a coroutine) drives ONLY the `select`-ready fds (readiness-gated:
+   no trailing `tick`) and frees a completed slot directly on the
+   `@asyncResume`-returns-null completion signal (close socket, `is_active=false`,
+   `state=.done`, `removeTask`), replacing the manual fd-set bookkeeping.
+   `std.async.awaitTask` is **coroutine-internal** and MUST NOT be called from a
+   non-suspending context; `std.async.waitFor` remains the non-suspending drive
+   primitive for a genuinely single-task wait (it is NOT used on the mud_server
+   completion path, where ticking every registered task would stall on idle
+   clients).
 
 **Hard requirement.** The committed goldens stay **byte-identical**:
 `bash scripts/closeout/verify_upgraded.sh <zig1>` must print `CLOSEOUT OK` and exit 0
@@ -117,7 +121,7 @@ pub fn addTask(s: *Scheduler, t: *Task) bool;      // IDEMPOTENT: re-adding a re
 pub fn removeTask(s: *Scheduler, t: *Task) void;   // retire `t` (compact it out; `count` drops); no-op if `t` is not registered
 pub fn tick(s: *Scheduler) void;                 // drives @asyncResume(t.frame, t.arg) once per runnable task
 pub fn awaitTask(s: *Scheduler, t: *Task) void;  // coroutine-internal: mark the current task waiting on t; reject outside a suspending context (non-suspending callers use waitFor)
-pub fn waitFor(s: *Scheduler, t: *Task) FrameError!void;  // non-suspending: drive `t` to settled from any context; no caller frame
+pub fn waitFor(s: *Scheduler, t: *Task) FrameError!void;  // non-suspending: drive `t` to settled from any context; no caller frame (ticks EVERY registered task — not for a scheduler holding idle blocking tasks)
 pub fn cancel(s: *Scheduler, t: *Task) void;     // cooperative cancel_requested
 pub fn cancelAll(s: *Scheduler) void;
 pub fn waitAll(s: *Scheduler) void;
@@ -139,7 +143,7 @@ Each entry is converted independently and is independently revertable (§3.4). T
 | E1 | `rogue_mud` NPC AI | `lib/combat.zig:63-104` `updateEnemies(arena, dungeon)` — `for i in 1..entity_count`, `findPath`, `moveEntity` | `npcCoroutine(ctx, args)` → per active enemy; body `npcStep(na); _ = @asyncSuspend(null);` in a `while (true)`; `npcStep` is the existing per-enemy pathfinding move extracted verbatim | `combat.updateEnemies(sched)` calls `std.async.tick(sched)` (self-dispatch) once per player turn | after each `updateEnemies` call, every entity's `(active, x, y, hp)` equals the pre-conversion state, produced in entity-index order |
 | E2 | `rogue_mud` per-connection broadcast | `main.zig:277-284` `broadcastDungeon`; `main.zig:286-363` `broadcastOneClient`; `ui.zig:61-87` `drawToSocket` | `clientFrameCoroutine(ctx, args)` builds the frame via the existing logic, then `ui.drawToSocketCoroutine(sock, rows, cols, cells)` sends the clear/home bytes, then one row per `@asyncSuspend(null)` | `main` ticks the client scheduler once after each turn that calls `broadcastDungeon` | for each socket, the concatenated byte stream equals the pre-conversion stream (cross-socket interleaving is unobservable) |
 | E3 | `rogue_mud` cross-module lifecycle | calls in `main.zig` game loop; step in `lib/combat.zig`; writer in `ui.zig` | `std.async.addTask`/`tick`/`cancel` invoked across `main.zig` → `lib/combat.zig` → `ui.zig`; the step function is the suspending callee in each module | `main.zig` | task creation order = client-slot / entity-index order; cancel is issued exactly where the original cleared `active` (`main.zig:180-182`, `:270-273`) |
-| E4 | `mud_server` accept/read loop | `main.zig:100-174` `select` + fd-set accept + per-client `recv`/line processing | `clientCoroutine(ctx, args)` does one non-blocking `recv` + line processing then `@asyncSuspend(null)`; `main` accepts a socket, `@asyncInit`s a task, `addTask`s it; on the quit/disconnect path `main` retires the completed task (detected by `@asyncResume` returning null) via a `waitFor(s, t)`/`waitAll` drive — `awaitTask` is coroutine-internal and is NOT used from `main` | `main.zig` | each client receives the same response bytes; the connect/look/north/quit/disconnect sequence is unchanged; no fd-set bookkeeping remains |
+| E4 | `mud_server` accept/read loop | `main.zig:100-174` `select` + fd-set accept + per-client `recv`/line processing | `clientCoroutine(ctx, args)` does one non-blocking `recv` + line processing then `@asyncSuspend(null)`; `main` accepts a socket, `@asyncInit`s a task, `addTask`s it; on the quit/disconnect path the `@asyncResume` null return IS the completion signal — `main` frees the slot directly (close socket, `is_active=false`, `state=.done`, `removeTask`), NOT via a `waitFor`/`tick` drive (ticking resumes every registered, possibly idle, task) — `awaitTask` is coroutine-internal and is NOT used from `main` | `main.zig` | each client receives the same response bytes; the connect/look/north/quit/disconnect sequence is unchanged; no fd-set bookkeeping remains |
 
 **Ordering rules (byte-identity prerequisites).**
 
@@ -204,7 +208,7 @@ never touch a file outside the entry's own sites.
 `@asyncFrameSize` semantics and `ctx`-in-frame inheritance (Track 2 §3.2/§4).
 
 **Consumed (Track 3).** `Context`, `TaskState`, `Task`, `Scheduler` and
-`schedulerInit`/`addTask`/`tick`/`awaitTask`/`waitFor`/`cancel`/`cancelAll`/`waitAll` of §3.1.
+`schedulerInit`/`addTask`/`removeTask`/`tick`/`awaitTask`/`waitFor`/`cancel`/`cancelAll`/`waitAll` of §3.1.
 
 **Produced (example-local; no cross-track consumer).**
 
@@ -313,7 +317,7 @@ Classification is by **gcc exit code**, never by empty stderr
   signatures; `frame_sizes`/`@asyncFrameSize`; `ctx`-in-frame; the per-task LIFO
   child-frame contract; `ERR_3017/3018/3019/3046`.
 - Track 3 (`std-async-design.md`): `Context`/`Task`/`Scheduler` and
-  `schedulerInit`/`addTask`/`tick`/`awaitTask`/`waitFor`/`cancel`/`cancelAll`/`waitAll`, plus the
+  `schedulerInit`/`addTask`/`removeTask`/`tick`/`awaitTask`/`waitFor`/`cancel`/`cancelAll`/`waitAll`, plus the
   install-surface change that puts `std_async.zig` in the compiler's `lib/`.
 - Track 1 (`win9x-calling-convention-design.md`): the `std_net` stdcall migration is a
   prerequisite for the `mud_server`/net-variant Windows build; the linux path is
