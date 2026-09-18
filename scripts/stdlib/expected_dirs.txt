@@ -98,4 +98,6 @@ repro/mi_matrix/stdlib_time_monotonic_avail_xmod
 repro/mi_matrix/stdlib_time_monotonic_xmod
 repro/mi_matrix/stdlib_time_sleep_xmod
 stdlib_test/bits_buf_str_usage
+stdlib_test/file_stdin_usage
+stdlib_test/file_stream_usage
 stdlib_test/os_time_usage

@@ -1,4 +1,52 @@
-# mi_matrix corpus — expected-fail manifest (v139 2026-09-18)
+# mi_matrix corpus — expected-fail manifest (v140 2026-09-18)
+
+## Plan B closeout — L3 resources + std_stream landed (v139 -> v140 2026-09-18)
+
+Plan B (`docs/superpowers/plans/2026-09-17-std-lib-plan-b-resources-stream.md`) is
+**COMPLETE**. The L3 resources and the L6 capstone landed: `std_file` + `std_file_pal`
+(binary-safe file I/O; win32 `CreateFileA`/`GetFileSizeEx`, POSIX `open`/`read`/`write`);
+`std_stdin` + `std_stdin_pal` (line-based stdin over a `std_file.File`); the `std_net` UDP
+extension (`Socket` alias, 8-member `NetError` (no OOM), `IpAddr`,
+`udpBind`/`udpSendTo`/`udpRecvFrom`/`udpSetTimeout`); and the file-only `std_stream`
+(`FileLineReader`/`initFileLineReader`/`readLineSync`/`readLineAsync` — Model C
+cooperative-yield, a separate chunked async implementation over the `@asyncSuspend`
+builtin). `SocketLineReader`/`MsgReader`, the non-blocking socket primitives, and
+`std.async.wait(handle)` are Plan D (recorded, not scheduled). This closeout commit is
+**docs/scripts/fixtures only — no `sf/src` change**; the self-emission fixed point is
+**UNMOVED `414cccee639bdb61c7a9f1f2ddddb166`** and the seed stays **v29** (archive md5
+`910a4d673f0fa95f8473c08e143ceb54`). No seed rotation (the fixed point did not move).
+
+**New modules (5):** `sf/src/std_file.zig`, `sf/src/std_file_pal.zig`,
+`sf/src/std_stdin.zig`, `sf/src/std_stdin_pal.zig`, `sf/src/std_stream.zig`; the
+`sf/src/std_net.zig` UDP extension (edit). Both seed `lib/` copy lists
+(`scripts/seed/build_from_seed.sh` + `scripts/seed/archive_seed.sh`) carry all 20 std
+`.zig` (Tasks 1/2/4 appended theirs in-commit; Task 5 verified them and fixed the stale
+`17`-module inventory comment).
+
+**New fixtures (28) + usage programs (2):** 12 `stdlib_file_*_xmod`; 5
+`stdlib_stdin_*_xmod`; 7 `stdlib_net_udp_*_xmod`; 4 `stdlib_stream_*_xmod`; and the R7b
+usage programs `stdlib_test/file_stdin_usage` (`std_file` + `std_stdin`) and
+`stdlib_test/file_stream_usage` (`std_file` + `std_stream` + `std.async`; per-call
+`max-suspends 3`). `scripts/stdlib/expected_dirs.txt` pins the discovered set
+**96 -> 98** (68 at the Plan A hardening closeout; +28 Plan B fixtures +2 usage programs).
+
+| field | value |
+|---|---|
+| fixed point | `414cccee639bdb61c7a9f1f2ddddb166` (UNMOVED) |
+| seed | v29 (archive md5 `910a4d673f0fa95f8473c08e143ceb54`); NOT rotated |
+| corpus (`-ffast` dump+gcc classifier) | 800 dirs = **747 OK / 28 GREEN / 25 FAIL / 0 ICE / 0 CRASH** |
+| runtime gate | **98/98 PASS** (3x determinism internal) |
+| `check_emit_support.sh` | **7/7** byte-identical |
+| self-compile `-ffast --dump-c89` | rc=0, 48 `.c` + 48 `.h`, 0 `error[`, 0 PANIC |
+| `scripts/closeout/verify_upgraded.sh` | **CLOSEOUT OK** (A1-A5 / B1-B7 / C1) |
+
+**Corpus delta through Plan B.** The Plan A hardening closeout was **770** dirs
+(EXPECTED_FAIL v138); the Plan B closeout corpus is **800** (+30: the 28 fixtures + the 2
+usage programs). Per-dir class movement on the 770 pre-existing dirs is **ZERO** (no
+`sf/src` change, fixed point unmoved); all 30 new dirs classify **OK**. Full report:
+`.superpowers/sdd/2026-09-17-std-lib-plan-b-resources-stream/task-5-report.md`.
+
+---
 
 ## Plan B Task 4 fix round 1 — async frame-layout residual declared (v138 -> v139 2026-09-18)
 
@@ -122,9 +170,9 @@ out of the current plan scope. No ruling yet.
 
 ## Next plan
 
-Plan A hardening complete. NEXT: write `docs/superpowers/plans/2026-09-18-plan-B-test-hardening.md`
-(reusing this harness for the L3/L6 goldens + stress tier), then execute
-`docs/superpowers/plans/2026-09-17-std-lib-plan-b-resources-stream.md`.
+Plan B complete. NEXT: `docs/superpowers/plans/2026-09-17-std-lib-plan-c-data-codecs.md`
+(L4 data structures + L5 encoders/decoders). Plan D (network async) is recorded at
+`docs/superpowers/plans/2026-09-18-plan-D-network-async.md` and scheduled after A/B/C.
 
 ---
 

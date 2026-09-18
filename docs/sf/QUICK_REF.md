@@ -33,11 +33,18 @@ Top-level `zig1-seed/`: `zig1` (reference binary md5
 45 `.c` + 46 `.h`, including `zig_special_types.h`; the emitted runtime/support
 sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/` (the emitted 5:
 `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`, `zig_runtime.c`,
-`zig_pal.c` — NO `net_prelude.h`), `lib/` (the 15 std `.zig` in the current v29
-archive: `std`, `std_io`, `std_arena`, `std_net`, `std_str`, `std_mem`,
+`zig_pal.c` — NO `net_prelude.h`), `lib/` (the 15 std `.zig` the v29 archive
+carries: `std`, `std_io`, `std_arena`, `std_net`, `std_str`, `std_mem`,
 `std_math`, `std_debug`, `std_async`, `std_bits`, `std_os`, `std_os_pal`,
 `std_time`, `std_time_pal`, `std_buf`),
 `SEED_README.txt`.
+**Std-module inventory (Plan B closeout, 2026-09-18):** the CURRENT `sf/src` std set is
+**20** `.zig` — the v29 list above plus `std_file`/`std_file_pal`,
+`std_stdin`/`std_stdin_pal`, and `std_stream` (L3 resources + L6 capstone;
+`std_net` also gained the UDP surface). `scripts/seed/build_from_seed.sh` installs all
+20 into the rebuilt compiler's `lib/`; the un-rotated v29 archive still carries the 15
+it was built with (the Plan B fixed point `414cccee…` did not move, so the seed was NOT
+rotated). See `repro/mi_matrix/EXPECTED_FAIL.md` v140.
 The archived binary and the self-emission fixed point
 `414cccee639bdb61c7a9f1f2ddddb166` are the SAME compiler state (HEAD
 `7c2b2445`). zig0 is retired; the seed model (`scripts/seed/build_from_seed.sh`)
@@ -153,7 +160,7 @@ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
   via the search path: (1) importer's dir, (2) `-I`/`--lib-dir` dirs in CLI order, (3) the default
   install path `<exe_dir>/lib`, (4) CWD. To run a migrated example/repro you must first install the
   canonical std lib next to the compiler under test:
-  `mkdir -p <exe_dir>/lib && cp sf/src/std.zig sf/src/std_io.zig sf/src/std_arena.zig sf/src/std_net.zig sf/src/std_str.zig sf/src/std_mem.zig sf/src/std_math.zig sf/src/std_debug.zig sf/src/std_async.zig sf/src/std_bits.zig sf/src/std_os.zig sf/src/std_os_pal.zig sf/src/std_time.zig sf/src/std_time_pal.zig sf/src/std_buf.zig <exe_dir>/lib/`
+  `mkdir -p <exe_dir>/lib && cp sf/src/std.zig sf/src/std_io.zig sf/src/std_arena.zig sf/src/std_net.zig sf/src/std_str.zig sf/src/std_mem.zig sf/src/std_math.zig sf/src/std_debug.zig sf/src/std_async.zig sf/src/std_bits.zig sf/src/std_os.zig sf/src/std_os_pal.zig sf/src/std_time.zig sf/src/std_time_pal.zig sf/src/std_buf.zig sf/src/std_file.zig sf/src/std_file_pal.zig sf/src/std_stdin.zig sf/src/std_stdin_pal.zig sf/src/std_stream.zig <exe_dir>/lib/`
   (for `/tmp/fx_subfolder/zig1` that is `/tmp/fx_subfolder/lib/`). The local `std*.zig` copies are
   gone from the migrated examples/repros; `std_import_bare_xmod/local/` remains a fixture (the Task R
   `--lib-dir` GREEN test), and the 4 `r_fallback_*` repros (fnret / constalias / constalias_prepass /
@@ -992,9 +999,9 @@ CWD. A fixture passes only when all 3 stdouts are byte-identical, stdout
 
 **Discovery pin + port guard (binding):**
 - In discovery mode the harness asserts the discovered dir set EQUALS the
-  committed baseline `scripts/stdlib/expected_dirs.txt` (68 dirs today: the 61
-  Plan-A-foundation fixtures + the 3 expected-failure probes + the 4 stress
-  fixtures added by Plan A hardening Tasks 3-4), so a dropped/renamed/added
+  committed baseline `scripts/stdlib/expected_dirs.txt` (98 dirs today: the 68
+  Plan A fixtures + the 28 Plan B L3/L6 fixtures + the 2 Plan B R7b usage
+  programs), so a dropped/renamed/added
   fixture FAILS the gate instead of silently shrinking coverage. Update the pin
   intentionally when a band adds/removes fixtures. Explicit `<dir>` runs skip
   the pin.
