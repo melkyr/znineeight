@@ -138,7 +138,7 @@
 - [ ] **Step 3: RED.**
 - [ ] **Step 4: Implement `std_stream.zig`.** `FileLineReader` over a `*std.file.File` + a caller buffer; `readLineSync` blocks; `readLineAsync` is a separate chunked implementation that yields per incomplete read. No callbacks, no state enum in user code.
 - [ ] **Step 5: GREEN + safety/determinism gates + the async gate** (suspend ≥2× per call).
-- [ ] **Step 6: Graph assertion** — a program that imports `std_stream` links the async runtime; a program that imports only `std_file`/`std_net`/`std_stdin` does NOT. Emit both and compare the module set.
+- [ ] **Step 6: Graph assertion (C3 isolation)** — `std_stream` does NOT source-import `std.async` (it reaches async only via the `@asyncSuspend` builtin), so the assertion actually proved is: a program that imports only `std_file`/`std_net`/`std_stdin` does NOT link the async runtime. Emit an L3-only program and an L3+`std_stream` program and compare the module set to confirm the async runtime is absent unless the program itself imports `std.async`.
 - [ ] **Step 7: Docs amendments (folded in)** — program spec §2 (add Plan D), §4 (L6 file-only), §5 R4 (Model C + the asset-loading idiom), §7 (`std_stream` = `FileLineReader`), §8 (the deferrals), §10 (Plan D entry); blueprint §3 L6 (two-reader surface, `readLineSync`/`readLineAsync` as separate implementations, `MsgReader` deferred) and §4 C2 (Model C; `wait(handle)` deferred).
 - [ ] **Step 8: Fixed point UNMOVED + commit** (stage `sf/src/std_stream.zig`, the fixtures, both seed scripts, the spec, and the blueprint).
 ---

@@ -18,6 +18,11 @@
 // line-accumulation buffer and `pending` is the unconsumed slice into it. The
 // returned line aliases `buf` and is valid until the next call.
 //
+// Contract quirk (Plan B final review): the overflow path (a line longer than
+// `buf`) hands back a full buffer WITHOUT stripping a trailing `\r`; a CRLF
+// straddling the buffer boundary can therefore yield a spurious empty line on
+// the next call. Documented, not fixed (behavior unchanged).
+//
 // One error set at the top (R2), aliased from the source's error set. No
 // `catch unreachable`; every file error is propagated.
 

@@ -129,6 +129,14 @@ its fixtures GREEN and the dependency-graph check passing.
   core `std_io` module (no imports of its own) for `log`/`writeCoreDump`.
   It is cycle-free and operator-authorized; no other L1→L2 import is
   permitted.
+  **Exception 3 (Plan B final review, 2026-09-18):** `std_stdin` (L3) imports
+  `std_file` (L3) for the stdin-handle read path — it wraps the stdin
+  fd/HANDLE in a `std_file.File` so the win32/POSIX handle logic is shared and
+  the compiler-PAL `pal_file_*` surface stays untouched
+  (`sf/src/std_stdin.zig:14`). It is cycle-free (`std_file` imports only
+  `std_arena` + its private `std_file_pal`) and sanctioned by the Plan B plan
+  Task 2 "Consumes: `std_file`, `std_file_pal`" line. No other L3→L3 import is
+  permitted.
 - **R4 — Coroutines.** Three flavors where all three are meaningful: pure
   (`fn foo(...) T`), sync (`fn read(...) !usize`), async
   (`fn readAsync(...) !usize`, same signature + `Async` suffix, same
