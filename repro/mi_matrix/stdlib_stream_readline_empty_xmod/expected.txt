@@ -1,4 +1,4 @@
 empty ok
 aaaaaaaaaa
 bbbbbbbbbb
-suspends 6
+max-suspends 3

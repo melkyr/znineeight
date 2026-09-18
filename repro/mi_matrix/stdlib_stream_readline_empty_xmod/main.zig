@@ -20,30 +20,42 @@ const arena_mod = @import("std_arena.zig");
 var g_storage: [65536]u8 = undefined;
 var g_arena = arena_mod.init(g_storage[0..]);
 
+// Per-call gate: the driver's completed-tick delta around each readLineAsync
+// call IS that call's suspension count; `max_suspends` is asserted >= 2. The
+// empty-file call legitimately suspends 0 times (nothing to read); the
+// non-empty call in the same coroutine supplies the gate evidence.
 const CoCtx = struct {
     empty: *st.FileLineReader,
     nonempty: *st.FileLineReader,
     empty_ok: bool,
     lines: u32,
     err: bool,
+    ticks: *u32,
+    max_suspends: u32,
 };
 const CArgs = struct { c: *CoCtx };
 
 fn co(c: *CoCtx) void {
+    const e0 = c.ticks.*;
     const e = st.readLineAsync(c.empty) catch {
         c.err = true;
         return;
     };
+    const n0 = c.ticks.* - e0;
+    if (n0 > c.max_suspends) c.max_suspends = n0;
     if (e) |_| {
         c.err = true;
         return;
     }
     c.empty_ok = true;
     while (true) {
+        const before = c.ticks.*;
         const m = st.readLineAsync(c.nonempty) catch {
             c.err = true;
             return;
         };
+        const n = c.ticks.* - before;
+        if (n > c.max_suspends) c.max_suspends = n;
         if (m) |line| {
             io.write(line);
             io.writeByte('\n');
@@ -63,7 +75,8 @@ pub fn main() void {
     var nbuf: [16]u8 = undefined;
     var elr = st.initFileLineReader(&empty, ebuf[0..]);
     var nlr = st.initFileLineReader(&nonempty, nbuf[0..]);
-    var cc = CoCtx{ .empty = &elr, .nonempty = &nlr, .empty_ok = false, .lines = 0, .err = false };
+    var ticks: u32 = 0;
+    var cc = CoCtx{ .empty = &elr, .nonempty = &nlr, .empty_ok = false, .lines = 0, .err = false, .ticks = &ticks, .max_suspends = 0 };
     var ca = CArgs{ .c = &cc };
 
     io.write("empty ok\n");
@@ -84,21 +97,20 @@ pub fn main() void {
     var s = sa.schedulerInit(pt[0..]);
     _ = sa.addTask(&s, &task);
 
-    var suspends: u32 = 0;
     while (task.state != sa.TaskState.done and task.state != sa.TaskState.cancelled) {
         sa.tick(&s) catch @panic("tick");
-        if (task.state == sa.TaskState.suspended) suspends += 1;
+        ticks += 1;
     }
     if (cc.err) @panic("readLineAsync error");
     if (!cc.empty_ok) @panic("empty file did not return null");
     if (cc.lines != 2) @panic("line count");
-    if (suspends < 2) @panic("async gate: fewer than 2 suspensions");
+    if (cc.max_suspends < 2) @panic("async gate: a readLineAsync call suspended fewer than 2 times");
 
     f.close(&empty);
     f.close(&nonempty);
     f.remove("t_stream_c.txt") catch {};
     f.remove("t_stream_d.txt") catch {};
-    io.write("suspends ");
-    io.printInt(@intCast(i32, suspends));
+    io.write("max-suspends ");
+    io.printInt(@intCast(i32, cc.max_suspends));
     io.writeByte('\n');
 }

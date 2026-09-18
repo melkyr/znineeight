@@ -16,15 +16,26 @@ const arena_mod = @import("std_arena.zig");
 var g_storage: [65536]u8 = undefined;
 var g_arena = arena_mod.init(g_storage[0..]);
 
-const CoCtx = struct { lr: *st.FileLineReader, lines: u32, err: bool };
+// Per-call gate: the driver's completed-tick delta around each readLineAsync
+// call IS that call's suspension count; `max_suspends` is asserted >= 2.
+const CoCtx = struct {
+    lr: *st.FileLineReader,
+    lines: u32,
+    err: bool,
+    ticks: *u32,
+    max_suspends: u32,
+};
 const CArgs = struct { c: *CoCtx };
 
 fn co(c: *CoCtx) void {
     while (true) {
+        const before = c.ticks.*;
         const m = st.readLineAsync(c.lr) catch {
             c.err = true;
             return;
         };
+        const n = c.ticks.* - before;
+        if (n > c.max_suspends) c.max_suspends = n;
         if (m) |line| {
             io.write(line);
             io.writeByte('\n');
@@ -40,7 +51,8 @@ pub fn main() void {
     var file = f.open(&g_arena, "t_stream_b.txt", f.Mode.Read) catch @panic("open");
     var rbuf: [16]u8 = undefined;
     var lr = st.initFileLineReader(&file, rbuf[0..]);
-    var cc = CoCtx{ .lr = &lr, .lines = 0, .err = false };
+    var ticks: u32 = 0;
+    var cc = CoCtx{ .lr = &lr, .lines = 0, .err = false, .ticks = &ticks, .max_suspends = 0 };
     var ca = CArgs{ .c = &cc };
 
     var storage: [4096]u64 = undefined;
@@ -59,18 +71,17 @@ pub fn main() void {
     var s = sa.schedulerInit(pt[0..]);
     _ = sa.addTask(&s, &task);
 
-    var suspends: u32 = 0;
     while (task.state != sa.TaskState.done and task.state != sa.TaskState.cancelled) {
         sa.tick(&s) catch @panic("tick");
-        if (task.state == sa.TaskState.suspended) suspends += 1;
+        ticks += 1;
     }
     if (cc.err) @panic("readLineAsync error");
     if (cc.lines != 2) @panic("line count");
-    if (suspends < 2) @panic("async gate: fewer than 2 suspensions");
+    if (cc.max_suspends < 2) @panic("async gate: a readLineAsync call suspended fewer than 2 times");
 
     f.close(&file);
     f.remove("t_stream_b.txt") catch {};
-    io.write("suspends ");
-    io.printInt(@intCast(i32, suspends));
+    io.write("max-suspends ");
+    io.printInt(@intCast(i32, cc.max_suspends));
     io.writeByte('\n');
 }

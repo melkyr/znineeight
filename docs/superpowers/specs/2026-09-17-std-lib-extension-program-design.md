@@ -269,6 +269,16 @@ per-function `repro/mi_matrix/` fixtures.
   None are Plan B work: Plan B's `std_stream` is file-only (`FileLineReader`,
   `readLineSync` + `readLineAsync`). Recorded in
   `docs/superpowers/plans/2026-09-18-plan-D-network-async.md`.
+- **Async frame-layout residual — DECLARED (Plan B Task 4 fix round 1).** A
+  suspending function with a `while` loop that returns `!?[]u8` trips the
+  P2/P3 async frame-layout size guard
+  (`sf/src/async_frame_layout.zig:659`,
+  `panic: async frame layout exceeds authoritative frame size`). The trigger is
+  the **loop + error-union + optional-slice return** in one function;
+  `std_stream.readLineAsync` works around it with the internal `awaitLine`
+  scalar-status helper. Pinning it with an I/F fixture pair and fixing the
+  layout is a recorded follow-up — the fix moves the fixed point and needs
+  operator authorization. Declared in `repro/mi_matrix/EXPECTED_FAIL.md` v139.
 
 ## §9 Out of scope
 

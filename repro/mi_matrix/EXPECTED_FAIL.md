@@ -1,4 +1,29 @@
-# mi_matrix corpus — expected-fail manifest (v138 2026-09-18)
+# mi_matrix corpus — expected-fail manifest (v139 2026-09-18)
+
+## Plan B Task 4 fix round 1 — async frame-layout residual declared (v138 -> v139 2026-09-18)
+
+Plan B Task 4 review Important finding #1 (declare the latent compiler gap). **Docs/manifest
+only — no `sf/src` change; fixed point UNMOVED `414cccee639bdb61c7a9f1f2ddddb166`; corpus dirs
+unchanged.** A suspending function that contains a `while` loop **and** returns `!?[]u8` (an
+error union whose payload is an optional slice) trips the P2/P3 async frame-layout size guard at
+`sf/src/async_frame_layout.zig:659` with the exact diagnostic
+`panic: async frame layout exceeds authoritative frame size` (the compiler traps during
+`-ffast --dump-c89`; no `.c` is emitted).
+
+Minimal trigger shape:
+`fn f(lr: *T) FileError!?[]u8 { while (true) { ...; _ = @asyncSuspend(null); } return null; }`.
+Bisection on the seed-built compiler (`414cccee`): `loop + !usize` is OK, `non-loop + !?[]u8` is
+OK, `loop + !?[]u8` panics — the trigger is the **loop + error-union + optional-slice return** in
+one suspending function. `std_stream.readLineAsync` avoids it by keeping the loop on an internal
+scalar-status helper (`awaitLine` returning `!u8`) and the `!?[]u8` return loop-free. Full report:
+`.superpowers/sdd/2026-09-17-std-lib-plan-b-resources-stream/task-4-report.md`.
+
+**Recorded follow-up (not this round).** Pin the shape with an I/F fixture pair
+(`async_frame_loop_eu_opt_slice_xmod` + classifier row) and fix the P2/P3 layout. Fixing the
+compiler moves the fixed point and needs operator authorization, so no fixture/compiler change is
+made here.
+
+---
 
 ## Plan A test-hardening closeout — runtime gate + probes + stress tier (v137 -> v138 2026-09-18)
 
