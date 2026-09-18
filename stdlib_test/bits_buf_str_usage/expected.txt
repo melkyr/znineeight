@@ -1,0 +1,5 @@
+packed: 11217674
+pop: 11
+trimmed: alpha,beta,gamma
+joined: alpha:beta:gamma
+bits_buf_str ok

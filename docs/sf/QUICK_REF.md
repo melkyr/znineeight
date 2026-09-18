@@ -964,6 +964,48 @@ cd /workspace/znineeight && ./sf/scripts/build_test.sh
 Note: `build_test.sh` links `sf/src/include/zig_pal.c` into each test binary (required since
 `pal.zig` gained the `pal_file_*` file-I/O externs; without it every test binary fails to link).
 
+## Std-lib Runtime Gate (Plan A hardening)
+
+Runtime-behavior gate for the std-lib fixtures (spec
+`docs/superpowers/specs/2026-09-18-std-lib-test-hardening-design.md` §2). The
+corpus classifier stays compile-only; this gate builds, links, RUNS, and
+golden-diffs each fixture.
+
+```bash
+# full discovered std set (repro/mi_matrix/stdlib_*_xmod/ + stdlib_test/*/)
+bash scripts/stdlib/run_fixtures.sh <seed-built-zig1_5_clean>
+
+# restrict to explicit dirs (repo-relative or absolute)
+bash scripts/stdlib/run_fixtures.sh <zig1> repro/mi_matrix/stdlib_bits_table_xmod
+
+# closeout wrapper (full discovered set; nonzero + STDLIB GATE FAILED on any fail)
+bash scripts/stdlib/verify_stdlib.sh <zig1>
+```
+
+Per fixture the harness: `zig1 -ffast -o <tmp> <entry>` → gcc every emitted
+`.c` with the binding flag-set (`-m32 -std=c89 -O0 -Wall -Wno-long-long
+-Wno-pointer-sign -Wno-implicit-function-declaration -I .`) → `sh
+<tmp>/build_target.sh linux <prog>` → run 3× under `timeout 120` from a scratch
+CWD. A fixture passes only when all 3 stdouts are byte-identical, stdout
+`cmp`-equals `<dir>/expected.txt`, and rc equals `<dir>/expected.rc`
+(whitespace-trimmed).
+
+**Golden convention (binding):**
+- `<dir>/expected.txt` = exact stdout bytes; `<dir>/expected.rc` = expected exit code.
+- A missing golden is a FAIL (no silent skips).
+- Goldens are runtime-only (stdout+rc), never emitted-C bytes; captured from a
+  known-good compiler at the plan baseline and re-captured only on an intentional
+  behavior change.
+- Capture only after confirming the observed output matches the fixture's
+  documented GREEN contract in its `main.zig` header (never freeze a wrong output).
+- Expected-failure probes (e.g. `stdlib_debug_defaulttrap_xmod` rc=134,
+  `stdlib_async_waitfor_unregistered_xmod` rc=133) ship an `expected.rc` of the
+  signal code and an empty `expected.txt` — the expected failure is itself asserted.
+- `.gitignore` carries `!expected.txt` so the stdout goldens are committable source.
+
+`scripts/closeout/verify_upgraded.sh` phase C runs this gate, so `CLOSEOUT OK`
+requires it to pass.
+
 
 ## Debug with GDB on zig1
 

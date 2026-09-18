@@ -7,6 +7,9 @@
 #   feed (masked (address) line)  A4 export symbol gate  A5 zig0 note (echo)
 #   phase B (rogue_mud_upgraded):         B1 build  B2 q feed  B3 move feed
 #   B4 demo feed  B5 export symbol gates  B6 net variant  B7 zig0 note (echo)
+#   phase C (std-lib runtime gate):       C1 all discovered stdlib_*_xmod /
+#   stdlib_test/* fixtures build+link+run and match their committed
+#   expected.txt/expected.rc goldens (scripts/stdlib/verify_stdlib.sh)
 #
 # Every dump for the rogue program (and the net variant) runs from the rogue
 # program's own directory CWD (its module resolution is CWD-relative — dumping
@@ -310,6 +313,13 @@ echo "    (tag ==; would not parse under zig0)."
 echo "PASS B7 (documented zig0-incompatibility note)"
 
 # ---------------------------------------------------------------------------
+echo "== phase C: std-lib runtime gate (all discovered fixtures) =="
+if ! bash "$ROOT/scripts/stdlib/verify_stdlib.sh" "$ZIG1"; then
+    phase_fail "C(stdlib-runtime-gate)"
+fi
+echo "PASS C (std-lib runtime gate: every discovered fixture golden-clean)"
+
+# ---------------------------------------------------------------------------
 echo
 echo "== verdict table =="
 echo "A1 lisp build ................ PASS"
@@ -324,5 +334,6 @@ echo "B4 demo feed (7361d248) ...... PASS"
 echo "B5 export symbol gates ....... PASS"
 echo "B6 net variant (aa40a52e) .... PASS"
 echo "B7 zig0 note (echo-only) ..... PASS"
+echo "C1 stdlib runtime gate ....... PASS"
 echo "CLOSEOUT OK"
 exit 0
