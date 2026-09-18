@@ -2945,6 +2945,14 @@ fn semanticAnalyzerResolveWhileHeader(self: *SemanticAnalyzer, node_idx: u32) vo
             registerLocalDecl(self, ast_mod.astStoreNodePayload(self.store, wcap_idx), semanticAnalyzerCaptureType(self, wcond_t));
         }
     }
+    // Plan C Task 1b-F (nested extension): resolve the `while` continue
+    // expression. The stmt walker's `while_stmt` arm pushes only the body, so
+    // child_2 never gets resolved-type entries; lowering a nested field store
+    // there then ICEs. Resolving it here (after the capture is registered) gives
+    // every sub-expression a resolved type, matching the body form.
+    if (node.child_2 != @intCast(u32, 0)) {
+        _ = semanticAnalyzerResolveExpr(self, node.child_2);
+    }
 }
 
 pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) void {

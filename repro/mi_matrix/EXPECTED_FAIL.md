@@ -1,4 +1,35 @@
-# mi_matrix corpus — expected-fail manifest (v146 2026-09-18)
+# mi_matrix corpus — expected-fail manifest (v147 2026-09-18)
+
+## Plan C Task 1b-F (nested extension) — nested field-store continue-expr fixed (v146 -> v147 2026-09-18)
+
+Operator-ruled extension of Task 1b-F. The v146 lowering fallback fixed the
+single-level shape but a **nested** field store as a `while` continue expression
+(`while (o.inner.n < 56) : (o.inner.n += 1)`) still ICEd
+(`error[3043]: internal: unsupported address-of l-value`) because the nested
+base branch (`lowerFieldStore` `child_0_node.kind == field_access`) calls
+`lowerLValueAddr`, which also reads the resolved-type table. Root cause is the
+analyzer never visiting `while` `child_2`; the extension resolves it in
+`semanticAnalyzerResolveWhileHeader` (`sf/src/semantic_analyzer.zig`), after the
+capture is registered, so every continue-expression sub-expression gets a
+resolved type. The v146 `lower.zig` fallbacks are kept (harmless; now usually a
+no-op). This is still the ONE authorized Plan C `sf/src` change class. The
+self-emission fixed point **MOVES again**
+`6d704d2265096513cf1706f5b414bd27` -> **`ab7187cc988e39dc5907b95ccc182f9f`**
+(hop2 == hop3, moving point) and the seed rotates **v31 -> v32** (archive md5
+`2eb158f3f24363968e9bf0f085461de8`).
+
+| dir | class (v146) | class (v147) | evidence |
+|---|---|---|---|
+| `field_store_continue_nested_xmod` | **ICE** (pre-extension) | **OK** | dump rc=0, 5 `.c`; gcc clean; link+run rc=0; stdout `nested field store continue ok` (3x deterministic) |
+
+**Corpus delta.** Universe **816 -> 817** (+1, the new nested pin). Class delta
+vs v146: **+1 OK** and the new dir ICE -> OK
+(763 OK / 28 GREEN / 25 FAIL / 0 ICE -> **764 OK / 28 GREEN / 25 FAIL / 0
+ICE**); all 816 pre-existing dirs are class-identical (full-classifier diff over
+the 817-dir universe: exactly one line — the new nested dir ICE -> OK; the
+original `field_store_continue_xmod` stays OK). Runtime gate **113 PASS / 0 FAIL
+over 113 dirs**; `check_emit_support.sh` **7/7**; self-compile **48 `.c`, rc=0, 0
+errors, 0 PANIC**; `CLOSEOUT OK` (A1-A5, B1-B6, C1 PASS).
 
 ## Plan C Task 1b-F (F) — field-store-as-continue-expression ICE fixed (v145 -> v146 2026-09-18)
 
