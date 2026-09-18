@@ -113,8 +113,9 @@ void pal_print_stdout(const char* msg, usize len)
 }
 
 /* Trap handler hook (std_debug). A Z98-installed handler is invoked before the
- * trap instruction. The struct layout MUST match std_debug.zig TrapContext
- * (10 x unsigned int). */
+ * trap instruction; the register capture is GCC/x86-only, so other compilers
+ * get a zero-filled context (the handler still receives a valid pointer). The
+ * struct layout MUST match std_debug.zig TrapContext (10 x unsigned int). */
 typedef struct {
     unsigned int eip, esp, ebp, eflags;
     unsigned int eax, ebx, ecx, edx, esi, edi;
@@ -135,6 +136,7 @@ void pal_trap(void)
 {
     if (g_trap_handler) {
         TrapContext ctx;
+#if defined(__GNUC__) && (defined(__i386__) || defined(__x86_64__))
         __asm__ volatile ("movl %%eax, %0" : "=m"(ctx.eax));
         __asm__ volatile ("movl %%ebx, %0" : "=m"(ctx.ebx));
         __asm__ volatile ("movl %%ecx, %0" : "=m"(ctx.ecx));
@@ -145,9 +147,22 @@ void pal_trap(void)
         __asm__ volatile ("movl %%ebp, %0" : "=m"(ctx.ebp));
         __asm__ volatile ("pushfl; popl %0" : "=m"(ctx.eflags));
         ctx.eip = (unsigned int)__builtin_return_address(0);
+#else
+        ctx.eip = 0; ctx.esp = 0; ctx.ebp = 0; ctx.eflags = 0;
+        ctx.eax = 0; ctx.ebx = 0; ctx.ecx = 0; ctx.edx = 0;
+        ctx.esi = 0; ctx.edi = 0;
+#endif
         g_trap_handler(&ctx);
     }
+#ifdef _MSC_VER
+    __asm { int 3 }
+#elif defined(__WATCOMC__)
+    __asm { int 3 }
+#elif defined(__i386__) || defined(__x86_64__)
+    __asm__ __volatile__("int3");
+#else
     pal_abort();
+#endif
 }
 
 int pal_i64_to_str(i64 value, char* buf, int bufsize)

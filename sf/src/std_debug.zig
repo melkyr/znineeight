@@ -2,8 +2,9 @@
 //
 // Output routes ONLY through the @stdoutWrite / @putChar builtins (no cstdio,
 // no externs, no C-runtime dependence). `panic` is a PRINTED abort followed by
-// a real divergence trap: `assert(false)`/`panic()` call `pal_trap()` (x86
-// `int3`; `pal_abort()` on non-x86), which never returns.
+// a real divergence trap: `assert(false)`/`panic()` call `pal_trap()`, which
+// raises `int3` (SIGTRAP) on the MSVC/Watcom/x86-GCC targets and falls back to
+// `pal_abort()` elsewhere; it never returns.
 //
 //   log(msg)        writes msg bytes verbatim
 //   logInt(tag, n)  writes tag, ':', ' ', the signed decimal n, '\n'
