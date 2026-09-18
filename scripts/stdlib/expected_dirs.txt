@@ -36,6 +36,10 @@ repro/mi_matrix/stdlib_buf_endian_xmod
 repro/mi_matrix/stdlib_buf_growth_xmod
 repro/mi_matrix/stdlib_buf_oom_xmod
 repro/mi_matrix/stdlib_buf_stress_xmod
+repro/mi_matrix/stdlib_crypto_crc32_xmod
+repro/mi_matrix/stdlib_crypto_md5_xmod
+repro/mi_matrix/stdlib_crypto_sha1_xmod
+repro/mi_matrix/stdlib_crypto_sha256_xmod
 repro/mi_matrix/stdlib_debug_backtrace_xmod
 repro/mi_matrix/stdlib_debug_cleartrap_xmod
 repro/mi_matrix/stdlib_debug_coredump_xmod

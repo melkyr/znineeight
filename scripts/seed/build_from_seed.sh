@@ -136,7 +136,7 @@ if [ ! -x "$DUMP_COMPILER" ]; then
 fi
 
 # std lib for the produced compiler (binary-relative lib/)
-cp "$ROOT"/sf/src/std.zig "$ROOT"/sf/src/std_io.zig "$ROOT"/sf/src/std_arena.zig "$ROOT"/sf/src/std_net.zig "$ROOT"/sf/src/std_str.zig "$ROOT"/sf/src/std_mem.zig "$ROOT"/sf/src/std_math.zig "$ROOT"/sf/src/std_debug.zig "$ROOT"/sf/src/std_async.zig "$ROOT"/sf/src/std_bits.zig "$ROOT"/sf/src/std_os.zig "$ROOT"/sf/src/std_os_pal.zig "$ROOT"/sf/src/std_time.zig "$ROOT"/sf/src/std_time_pal.zig "$ROOT"/sf/src/std_buf.zig "$ROOT"/sf/src/std_file.zig "$ROOT"/sf/src/std_file_pal.zig "$ROOT"/sf/src/std_stdin.zig "$ROOT"/sf/src/std_stdin_pal.zig "$ROOT"/sf/src/std_stream.zig "$OUT/lib/"
+cp "$ROOT"/sf/src/std.zig "$ROOT"/sf/src/std_io.zig "$ROOT"/sf/src/std_arena.zig "$ROOT"/sf/src/std_net.zig "$ROOT"/sf/src/std_str.zig "$ROOT"/sf/src/std_mem.zig "$ROOT"/sf/src/std_math.zig "$ROOT"/sf/src/std_debug.zig "$ROOT"/sf/src/std_async.zig "$ROOT"/sf/src/std_bits.zig "$ROOT"/sf/src/std_os.zig "$ROOT"/sf/src/std_os_pal.zig "$ROOT"/sf/src/std_time.zig "$ROOT"/sf/src/std_time_pal.zig "$ROOT"/sf/src/std_buf.zig "$ROOT"/sf/src/std_file.zig "$ROOT"/sf/src/std_file_pal.zig "$ROOT"/sf/src/std_stdin.zig "$ROOT"/sf/src/std_stdin_pal.zig "$ROOT"/sf/src/std_stream.zig "$ROOT"/sf/src/std_crypto.zig "$OUT/lib/"
 
 build_hop "$DUMP_COMPILER" "$OUT/gen" "$OUT/zig1_5_clean"
 HOP1_MD5=$(md5sum "$OUT/zig1_5_clean" | cut -d' ' -f1)
