@@ -1,4 +1,54 @@
-# mi_matrix corpus — expected-fail manifest (v144 2026-09-18)
+# mi_matrix corpus — expected-fail manifest (v145 2026-09-18)
+
+## Plan C Task 1b-I (I) — field-store-as-continue-expression ICE pinned (v144 -> v145 2026-09-18)
+
+Plan C Task 1 found a pre-existing compiler ICE; the operator ruled it a pin+fix
+I/F pair (m1670). This task is the **I** half (pin only). **No `sf/src` change**:
+the self-emission fixed point stays **UNMOVED `414cccee639bdb61c7a9f1f2ddddb166`**
+(seed v30 archive md5 `c0a218c5e7a74afb11435abe20c7d990`). Task 1b-F (the F half)
+fixes the lowering and MOVES the fixed point.
+
+**New corpus dir** (auto-listed by `scripts/corpus/list_corpus_dirs.sh`):
+
+| dir | class | RED today (fixed point 414cccee…) | expected GREEN (Task 1b-F) |
+|---|---|---|---|
+| `field_store_continue_xmod` | **ICE** | dump rc=3, 0 `.c`; `error[3043]: internal: unsupported field-store base (node 42)` | dump rc=0, gcc clean, link+run rc=0, stdout `field store continue ok` |
+
+**Trigger.** A compound assignment to a struct field used as the continue
+expression of a `while` loop:
+
+```zig
+pub const S = struct { buf: [64]u8, buf_len: usize };
+pub fn fill(s: *S) void {
+    while (s.buf_len < 56) : (s.buf_len += 1) {   // <-- continue expression
+        s.buf[s.buf_len] = 0;
+    }
+}
+```
+
+The continue-expression lowering has no field-store base and ICEs. The body form
+(`s.buf_len += 1;` inside the loop) lowers correctly; `sf/src/std_crypto.zig`
+uses that workaround in all three `Final` padding loops (a local counter is used
+for the message-schedule loops).
+
+**RED -> GREEN contract (Task 1b-F).** The continue-expression form lowers like
+the body form; the fixture runs and prints exactly `field store continue ok`
+(rc 0). The committed `expected.txt`/`expected.rc` encode this DESIRED GREEN
+behaviour, so the pin is RED until Task 1b-F. `error[3043]` is in the canonical
+classifier's ICE regex (`scripts/corpus/classify`), so this dir buckets **ICE**.
+
+**Corpus delta.** Universe **815 -> 816** (+1). Class delta vs the 815
+pre-existing dirs: **+1 ICE** (761 OK / 28 GREEN / 25 FAIL / 0 ICE -> 762 OK /
+28 GREEN / 25 FAIL / 1 ICE); all 815 pre-existing dirs are class-identical (no
+`sf/src` change). (The v144 header's 810 predates five dirs: Task 1's four
+`stdlib_crypto_*_xmod` and the Plan B final-review `stdlib_stream_multiple_async_xmod`.)
+This dir is deliberately **not** added to
+`scripts/stdlib/expected_dirs.txt`: that pin drives the std-lib runtime gate's
+discovery (`repro/mi_matrix/stdlib_*/` + `stdlib_test/*/`, all-GREEN), and an
+ICE pin would both break the discovery-set equality and make the gate fail. The
+corpus manifest + classifier are the pin mechanism for compiler-class dirs
+(cf. `module_value_addr_global_xmod`, `taskptr_field_store_xmod`).
+
 
 ## Plan B hardening closeout — harness hardening + probes + stress tier (v143 -> v144 2026-09-18)
 
