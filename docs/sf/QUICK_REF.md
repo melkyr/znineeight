@@ -992,10 +992,12 @@ CWD. A fixture passes only when all 3 stdouts are byte-identical, stdout
 
 **Discovery pin + port guard (binding):**
 - In discovery mode the harness asserts the discovered dir set EQUALS the
-  committed baseline `scripts/stdlib/expected_dirs.txt` (61 dirs today), so a
-  dropped/renamed/added fixture FAILS the gate instead of silently shrinking
-  coverage. Update the pin intentionally when a band adds/removes fixtures.
-  Explicit `<dir>` runs skip the pin.
+  committed baseline `scripts/stdlib/expected_dirs.txt` (68 dirs today: the 61
+  Plan-A-foundation fixtures + the 3 expected-failure probes + the 4 stress
+  fixtures added by Plan A hardening Tasks 3-4), so a dropped/renamed/added
+  fixture FAILS the gate instead of silently shrinking coverage. Update the pin
+  intentionally when a band adds/removes fixtures. Explicit `<dir>` runs skip
+  the pin.
 - A fixture that binds TCP ports ships `<dir>/ports.txt` (one port per line,
   `#` comments allowed). The harness fails `PORT-IN-USE:<port>` if a LISTEN
   socket already exists on a declared port before the run.

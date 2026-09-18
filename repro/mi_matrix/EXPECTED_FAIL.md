@@ -1,4 +1,45 @@
-# mi_matrix corpus — expected-fail manifest (v137 2026-09-18)
+# mi_matrix corpus — expected-fail manifest (v138 2026-09-18)
+
+## Plan A test-hardening closeout — runtime gate + probes + stress tier (v137 -> v138 2026-09-18)
+
+Plan A test-hardening (`docs/superpowers/plans/2026-09-18-plan-A-test-hardening.md`) is
+**COMPLETE**. Docs/scripts/fixtures only — **no `sf/src` change**; the self-emission fixed point
+is **UNMOVED `414cccee639bdb61c7a9f1f2ddddb166`** and the seed stays **v29** (archive md5
+`910a4d673f0fa95f8473c08e143ceb54`). The Plan A std-module runtime behavior is now an automated
+gate: `scripts/stdlib/run_fixtures.sh <seed-built-zig1> [<dir>...]` emits (`zig1 -ffast -o`),
+gcc-compiles every emitted `.c` with the binding flag-set, links via `build_target.sh linux`,
+runs 3x under `timeout 120` from a scratch CWD, and byte-diffs stdout+rc to committed per-fixture
+goldens. `scripts/stdlib/verify_stdlib.sh` is the closeout wrapper, wired as **phase C** of
+`scripts/closeout/verify_upgraded.sh`, so `CLOSEOUT OK` requires it.
+
+**Golden convention (binding).** Each fixture dir carries `expected.txt` (exact stdout bytes) +
+`expected.rc` (exit code). A missing golden is a FAIL (no silent skips);
+`scripts/stdlib/expected_dirs.txt` pins the discovered set (68 dirs) so coverage cannot silently
+shrink; a fixture that binds TCP ships `ports.txt`. Goldens are runtime-only (stdout+rc),
+captured only after the observed output matched the fixture's documented GREEN contract, and
+re-captured only on an intentional behavior change.
+
+**New fixtures (7):**
+
+| fixture | kind | contract |
+|---|---|---|
+| `stdlib_bits_extract_trap_xmod` | expected-failure probe | `extract(0, 28, 8)`, off+len>32 -> SIGTRAP, rc **133**, empty stdout |
+| `stdlib_bits_insert_trap_xmod` | expected-failure probe | `insert(0, 0, 28, 8)`, off+len>32 -> SIGTRAP, rc **133**, empty stdout |
+| `stdlib_os_exit_xmod` | expected-failure probe | `std.os.exit(42)` -> rc **42**, empty stdout |
+| `stdlib_bits_stress_xmod` | stress | 24-row extract/insert field sweep + rotl/rotr inverse (n=0/31/32/33) + mask 0..32; stdout `bits stress ok` |
+| `stdlib_buf_stress_xmod` | stress | 1000 appends through every doubling + all 6 encoders byte-decoded + exact-fit arena max; stdout `buf stress ok` |
+| `stdlib_str_stress_xmod` | stress | join/split identity over adversarial separators/empties/long inputs + replace aliasing + trim; stdout `str stress ok` |
+| `stdlib_debug_stress_xmod` | stress | 32-frame backtrace + 3 writeCoreDump contexts + logInt i32 boundaries; 5 logInt lines + `debug stress ok` |
+
+**Gates (seed-built fixed-point compiler `414cccee`).** Corpus `-ffast` dump+gcc classifier
+**770 dirs = 717 OK / 28 GREEN / 25 FAIL / 0 ICE / 0 CRASH** (763 -> 770: the 7 new dirs all
+classify OK; every pre-existing dir class-identical). Runtime gate **68/68 PASS** (61 -> 64 -> 68
+through Tasks 2/3/4; 3x determinism internal). `scripts/check_emit_support.sh` **7/7**
+byte-identical (5 core + 2 conditional preludes). Self-compile `-ffast --dump-c89` rc=0,
+48 `.c`, 0 `error[`, 0 PANIC. `scripts/closeout/verify_upgraded.sh` **CLOSEOUT OK**
+(A1-A5 / B1-B7 / C1). Seed v29 round-trip re-verified (two-hop closure hop1 == hop2 ==
+`414cccee`). Full report:
+`.superpowers/sdd/2026-09-18-plan-A-test-hardening/task-5-report.md`.
 
 ## Plan A closeout — L0-L2 std-lib foundation landed (v135 -> v136 2026-09-18; re-rotated v136 -> v137 2026-09-18)
 
@@ -56,8 +97,9 @@ out of the current plan scope. No ruling yet.
 
 ## Next plan
 
-Plan A complete. NEXT: `docs/superpowers/plans/2026-09-17-std-lib-plan-b-resources-stream.md`
-(L3 resources + L6 std_stream).
+Plan A hardening complete. NEXT: write `docs/superpowers/plans/2026-09-18-plan-B-test-hardening.md`
+(reusing this harness for the L3/L6 goldens + stress tier), then execute
+`docs/superpowers/plans/2026-09-17-std-lib-plan-b-resources-stream.md`.
 
 ---
 
