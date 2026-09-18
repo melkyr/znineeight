@@ -4,7 +4,7 @@
 
 **Goal:** Land the L4 data-structure/algorithm modules (`std_map`, `std_sort`, `std_heap`, `std_rle`) and the L5 encoder/decoder modules (`std_crypto`, `std_parse`, `std_base64`, `std_hex`, `std_utf8`) with fixtures and the layering gate green.
 
-**Architecture:** One plan, nine module tasks plus the band's R7b usage programs in the closeout, ordered by the blueprint's construction order (L5 crypto early — it is pure and vector-gated — then L4, then the remaining L5 codecs). Each module is authored in `sf/src/std_<name>.zig` with the blueprint's exact signatures, gets `repro/mi_matrix/stdlib_<module>_<name>_xmod` fixtures, and is validated by the six gates. **This plan runs after Plan B; it is the last plan in the std-lib extension program.**
+**Architecture:** One plan, nine module tasks plus the band's R7b usage programs in the closeout, ordered by the blueprint's construction order (L5 crypto early — it is pure and vector-gated — then L4, then the remaining L5 codecs). Each module is authored in `sf/src/std_<name>.zig` with the blueprint's exact signatures, gets `repro/mi_matrix/stdlib_<module>_<name>_xmod` fixtures, and is validated by the six gates. A Task 1b I/F pair (added by the operator ruling m1670) pins and fixes a found compiler ICE (a compound field-store as a `while` continue expression); it is the one `sf/src` change and it moves the fixed point. **This plan runs after Plan B; it is the last plan in the std-lib extension program.**
 
 **Tech Stack:** Z98/`zig1` self-hosted compiler (C89 emission), `std.arena`, bash, `gcc -m32`, git.
 
@@ -15,7 +15,7 @@
 ## Global Constraints
 
 - **Precondition:** Task 0 + Plan A + Plan B complete.
-- **Baseline (re-verify at Task 1).** Record HEAD, the fixed point, the seed version/archive md5, the corpus `EXPECTED_FAIL.md` header. Adding std modules MUST NOT move the fixed point — if it does, STOP.
+- **Baseline (re-verify at Task 1).** Record HEAD, the fixed point, the seed version/archive md5, the corpus `EXPECTED_FAIL.md` header. Adding std modules MUST NOT move the fixed point — if it does, STOP. **Exception (operator ruling m1670):** Task 1b-F (the found field-store-as-continue-expression ICE fix) is the ONE authorized `sf/src` change in this plan; it MOVES the fixed point and rotates the seed. (The FramePool / `@asyncFrameSize` const-evaluator work is a separate authorized task.)
 - **Build only via the seed model:** `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <fresh_out>`; never invoke `zig0`.
 - **gcc flag-set (binding):** `gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc>`. `timeout 120` on every binary.
 - **Layering (R3):** L4 and L5 both import L0-L2 only — never siblings, never each other. Plan C is independent of Plan B.
@@ -60,6 +60,11 @@
 - `stdlib_test/map_sort_heap_usage/main.zig` — composes `std_map` + `std_sort` + `std_heap`.
 - `stdlib_test/crypto_codec_usage/main.zig` — composes `std_crypto` + `std_base64`/`std_hex` + `std_utf8` + `std_buf`.
 
+**Create (the found-ICE pin — Task 1b-I):**
+- `repro/mi_matrix/field_store_continue_xmod/` — the compound field-store as a `while` continue expression (ICE before Task 1b-F).
+
+**Modify (Task 1b-F):** `sf/src/lower.zig` (the field-store / continue-expression lowering) — the fix (the fixed point MOVES; the seed rotates).
+
 **Modify (closeout):**
 - `repro/mi_matrix/EXPECTED_FAIL.md` — bump once at Plan C closeout.
 - `scripts/seed/build_from_seed.sh`, `scripts/seed/archive_seed.sh` — the `lib/` copy list is extended per-task (one module per task commit); the closeout verifies it is complete.
@@ -86,6 +91,41 @@
 - [ ] **Step 5: GREEN** — the KAT vectors must match byte-for-byte.
 - [ ] **Step 6: Safety/determinism gates.**
 - [ ] **Step 7: Fixed point UNMOVED + commit** (stage `sf/src/std_crypto.zig`, the fixtures, and both seed scripts).
+
+---
+
+### Task 1b-I: Pin the field-store-as-continue-expression ICE (I)
+
+**Files:**
+- Create: `repro/mi_matrix/field_store_continue_xmod/`
+- Modify: `repro/mi_matrix/EXPECTED_FAIL.md`
+
+**Interfaces:**
+- Consumes: the corpus classifier.
+- Produces: a RED pin for the found compiler ICE.
+
+**Context (operator ruling m1670):** Plan C Task 1 found a pre-existing compiler ICE — a compound assignment to a struct field used as a `while` continue expression lowers to `error[3043]: internal: unsupported field-store base`. Minimal repro: `while (s.buf_len < 56) : (s.buf_len += 1) { ... }`. A workaround exists (move the increment into the loop body / use a local counter); `std_crypto.zig` uses it. The operator ruled: pin + fix as a separate I/F pair.
+
+- [ ] **Step 1: Add the RED pin** — `repro/mi_matrix/field_store_continue_xmod/main.zig` with the continue-expr shape; the current compiler ICEs (`error[3043]`, 0 `.c`), so it classifies ICE (RED).
+- [ ] **Step 2: Declare it** in `EXPECTED_FAIL.md` (the ICE, the trigger, the workaround); bump the header once.
+- [ ] **Step 3: Commit** (`test(repro): pin the field-store continue-expression ICE (Plan C Task 1b-I)`). No `sf/src` change.
+
+---
+
+### Task 1b-F: Fix the field-store-as-continue-expression ICE (F)
+
+**Files:**
+- Modify: `sf/src/lower.zig` (the field-store / continue-expression lowering); the Task 1b-I fixture.
+- Modify: `release/seed/zig1-seed.tgz`, `release/seed/CHANGELOG.md`, `docs/sf/QUICK_REF.md` (the seed rotation).
+
+**Interfaces:**
+- Consumes: the Task 1b-I RED pin.
+- Produces: the fix; the fixed point MOVES; the seed rotates.
+
+- [ ] **Step 1: Fix the lowering** so a compound field-store used as a `while` continue expression lowers correctly (the same field-store base handling the body form uses).
+- [ ] **Step 2: Flip the pin RED -> GREEN**; run the full corpus + gates.
+- [ ] **Step 3: Re-verify** (`check_emit_support.sh` 7/7; the self-compile; the corpus class map; `CLOSEOUT OK`); confirm the fixed point MOVED.
+- [ ] **Step 4: Rotate the seed** and commit (`fix(lower): field-store base in a while continue expression (Plan C Task 1b-F)`).
 
 ---
 
@@ -249,6 +289,7 @@ No successor plan. Program spec: `docs/superpowers/specs/2026-09-17-std-lib-exte
 
 ## Self-Review
 
-- **Spec coverage:** spec §4 Plan C (all nine modules) → Tasks 1-8; §5 R1/R3/R6 → the constraints; §5 R7b → Task 9 Step 2; §6 crypto gate → Task 1 Step 5; §7 distribution → Task 9 Steps 1/5/6; §10 index → the `Sequence:` line + Task 9 Step 7.
+- **Spec coverage:** spec §4 Plan C (all nine modules) → Tasks 1-8; §5 R1/R3/R6 → the constraints; §5 R7b → Task 9 Step 2; §6 crypto gate → Task 1 Step 5; §7 distribution → Task 9 Steps 1/5/6; §10 index → the `Sequence:` line + Task 9 Step 7; the Task 1b I/F pair (the found field-store ICE) → Tasks 1b-I/1b-F.
+- **Fixed point:** Tasks 1-9 (std modules + fixtures) leave it UNMOVED; Task 1b-F (the field-store ICE fix) MOVES it and rotates the seed. (The FramePool / `@asyncFrameSize` const-evaluator work, if scheduled, is a separate authorized task.)
 - **Placeholder scan:** module signatures are referenced to the blueprint (§3 L4/L5) as the exact-signature source of record. Every step has a concrete command/expected output.
 - **Type consistency:** module names and re-export names are used identically across tasks and the file structure; the `Map32x32`/`Map32Ptr`/`MapStrPtr` and `Sha1`/`Sha256`/`Md5` names match the blueprint.
