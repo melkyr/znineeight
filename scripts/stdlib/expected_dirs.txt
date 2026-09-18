@@ -62,6 +62,11 @@ repro/mi_matrix/stdlib_os_argc_xmod
 repro/mi_matrix/stdlib_os_cwd_xmod
 repro/mi_matrix/stdlib_os_env_xmod
 repro/mi_matrix/stdlib_os_exit_xmod
+repro/mi_matrix/stdlib_stdin_eof_notrailing_xmod
+repro/mi_matrix/stdlib_stdin_multiline_xmod
+repro/mi_matrix/stdlib_stdin_overflow_xmod
+repro/mi_matrix/stdlib_stdin_readall_xmod
+repro/mi_matrix/stdlib_stdin_readline_xmod
 repro/mi_matrix/stdlib_str_count_xmod
 repro/mi_matrix/stdlib_str_eqignorecase_xmod
 repro/mi_matrix/stdlib_str_indexof_xmod
