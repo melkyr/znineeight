@@ -4,7 +4,7 @@
 
 **Goal:** Land the L0-L2 std-lib foundation from the blueprint — `std_bits`, `std_os`, `std_time`, the `std_debug` extension, `std_buf`, and the `std_str` extension — with fixtures, the R7b usage programs under `stdlib_test/`, and the layering/dependency gate green.
 
-**Architecture:** One plan, six module tasks plus a usage-program task, ordered by the blueprint's construction order (L0 → L1 → L2). Each module is authored in `sf/src/std_<name>.zig` with the blueprint's exact signatures, gets `repro/mi_matrix/stdlib_<module>_<name>_xmod` fixtures, and is validated by the six gates; the band's usage programs (R7b) compose the modules and are gated the same way. Task 4 is followed by the optional-fn-pointer C-emission defect I/F pair (Task 4b-I investigate/pin, Task 4b-F fix, Task 4c revert `std_debug.setTrapHandler` to the blueprint's `?fn` signature) — operator ruling m1243. **This plan runs after Task 0 (separation audit); its successor is Plan B (L3 + L6).**
+**Architecture:** One plan, six module tasks plus a usage-program task, ordered by the blueprint's construction order (L0 → L1 → L2). Each module is authored in `sf/src/std_<name>.zig` with the blueprint's exact signatures, gets `repro/mi_matrix/stdlib_<module>_<name>_xmod` fixtures, and is validated by the six gates; the band's usage programs (R7b) compose the modules and are gated the same way. Task 4 is followed by the optional-fn-pointer C-emission defect I/F pair (Task 4b-I investigate/pin, Task 4b-F fix, Task 4c revert `std_debug.setTrapHandler` to the blueprint's `?fn` signature) — operator ruling m1243. Task 6 is followed by the `-ffast` undefined slice-array emission defect I/F pair (Task 6b-I investigate/pin, Task 6b-F fix) — operator ruling m1277. **This plan runs after Task 0 (separation audit); its successor is Plan B (L3 + L6).**
 
 **Tech Stack:** Z98/`zig1` self-hosted compiler (C89 emission), `std.arena`, bash, `gcc -m32`, git.
 
@@ -15,8 +15,8 @@
 ## Global Constraints
 
 - **Precondition:** Task 0 complete (the compiler↔std separation audit; the dead std-importing files deleted; the blueprint §6 claim corrected).
-- **Baseline (re-verify at Task 1).** Record HEAD, the self-compile fixed point, the seed version/archive md5, and the corpus `EXPECTED_FAIL.md` header at dispatch. The compiler's import graph reaches no std module, so adding std modules MUST NOT move the fixed point. **Exception (operator rulings 2026-09-17 / m1243): the authorized compiler-graph changes that move the fixed point are the per-OS prelude work (Tasks 2-3: `std_os_prelude.h`/`std_time_prelude.h`, the `net_prelude.h` analog), Task 4's `std_debug` trap hook, and the optional-fn-pointer C-emission defect fix (Task 4b-F; Task 4c is std-only). Re-baseline at Task 2 Step 6, Task 3 Step 6, Task 4 Step 6, Task 4b-F Step 5, and Task 4c Step 4. Tasks 1,5,6,7,8 MUST leave it unmoved — if it moves, STOP (a std module or an unauthorized PAL edit leaked into the compiler graph). Task 4b-I is investigation-only (no `sf/src` change) and MUST leave it unmoved; Task 5's `backtrace` is std-only and MUST leave it unmoved.**
-- **PAL boundary (operator ruling 2026-09-17).** The std lib MUST NOT wrap or edit the compiler PAL for OS primitives. OS specifics live in std-side PAL modules (`sf/src/std_os_pal.zig`, `sf/src/std_time_pal.zig`) using the `std_net.zig` `@cInclude`+`extern`+`@isWindows()` pattern, with per-OS C prototypes supplied by the authorized prelude headers. The only authorized compiler edits in this plan are the prelude work (Tasks 2-3), the Task 4 trap hook, and the optional-fn-pointer emission fix (Task 4b-F; operator ruling m1243 — Task 4c is std-only) (see each task's Files list). The compiler's cost is what it imports; the library's cost is what emits.
+- **Baseline (re-verify at Task 1).** Record HEAD, the self-compile fixed point, the seed version/archive md5, and the corpus `EXPECTED_FAIL.md` header at dispatch. The compiler's import graph reaches no std module, so adding std modules MUST NOT move the fixed point. **Exception (operator rulings 2026-09-17 / m1243 / m1277): the authorized compiler-graph changes that move the fixed point are the per-OS prelude work (Tasks 2-3: `std_os_prelude.h`/`std_time_prelude.h`, the `net_prelude.h` analog), Task 4's `std_debug` trap hook, the optional-fn-pointer C-emission defect fix (Task 4b-F; Task 4c is std-only), and the `-ffast` undefined slice-array emission defect fix (Task 6b-F). Re-baseline at Task 2 Step 6, Task 3 Step 6, Task 4 Step 6, Task 4b-F Step 5, Task 4c Step 4, and Task 6b-F Step 5. Tasks 1,5,6,7,8 MUST leave it unmoved — if it moves, STOP (a std module or an unauthorized PAL edit leaked into the compiler graph). Tasks 4b-I and 6b-I are investigation-only (no `sf/src` change) and MUST leave it unmoved; Task 5's `backtrace` is std-only and MUST leave it unmoved.**
+- **PAL boundary (operator ruling 2026-09-17).** The std lib MUST NOT wrap or edit the compiler PAL for OS primitives. OS specifics live in std-side PAL modules (`sf/src/std_os_pal.zig`, `sf/src/std_time_pal.zig`) using the `std_net.zig` `@cInclude`+`extern`+`@isWindows()` pattern, with per-OS C prototypes supplied by the authorized prelude headers. The only authorized compiler edits in this plan are the prelude work (Tasks 2-3), the Task 4 trap hook, the optional-fn-pointer emission fix (Task 4b-F; operator ruling m1243 — Task 4c is std-only), and the `-ffast` undefined slice-array emission fix (Task 6b-F; operator ruling m1277) (see each task's Files list). The compiler's cost is what it imports; the library's cost is what emits.
 - **Build only via the seed model:** `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <fresh_out>`; never invoke `zig0`.
 - **gcc flag-set (binding):** `gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc>`. `timeout 120` on every binary.
 - **Layering (R3):** a module may import only lower layers — never siblings, never higher. The dependency-graph check (one pass) is part of every module task's gate. **Single exception (operator ruling m1243):** `std_debug.backtrace(ctx, out: *std.buf.Buf)` (blueprint §3 L1) takes a `std_buf.Buf`, so `std_debug` (L1) imports `std_buf` (L2) for this one function; it is cycle-free (`std_buf` imports only `std_arena`) and sanctioned because the blueprint fixes the public API name/signature. No other L1→L2 import is permitted.
@@ -53,6 +53,7 @@
 - `stdlib_time_monotonic_xmod/`, `stdlib_time_sleep_xmod/`.
 - `stdlib_debug_trap_xmod/`, `stdlib_debug_backtrace_xmod/` (the latter in Task 5, with `std_buf`).
 - `opt_fnptr_extern_xmod/`, `opt_void_extern_xmod/` (Task 4b-I/4b-F; optional-fn-pointer C-emission defect probes).
+- `undefined_slice_array_xmod/` (the `-ffast`-only failure) and `known_excluded/undefined_slice_array_safe_xmod/` (the off-corpus `-fsafe`/default control) (Task 6b-I/6b-F; `-ffast` undefined slice-array emission defect probes).
 - `stdlib_buf_growth_xmod/`, `stdlib_buf_endian_xmod/`, `stdlib_buf_clear_xmod/`.
 - one `stdlib_str_<name>_xmod/` per new `std_str` function.
 
@@ -333,6 +334,62 @@ cd /tmp/opt_fnptr && sh build_target.sh linux opt_fnptr_extern   # capture warni
 
 ---
 
+### Task 6b-I: `-ffast` undefined slice-array emission — investigate + pin (I)
+
+**Files:**
+- Create: `repro/mi_matrix/undefined_slice_array_xmod/main.zig` (the `-ffast`-only failure; auto-listed, so the `-ffast` corpus classifier pins it)
+- Create: `repro/mi_matrix/known_excluded/undefined_slice_array_safe_xmod/main.zig` (the `-fsafe`/default control; `known_excluded` is never enumerated by `scripts/corpus/list_corpus_dirs.sh`, so it is not run through the `-ffast` classifier)
+- Modify: `repro/mi_matrix/EXPECTED_FAIL.md` (classify/declare the new dirs)
+- **No `sf/src` change.** No STOP unless the premise below is disproved.
+
+**Interfaces:**
+- Consumes: the landed `std_str` extension (Task 6) and its `[N][]const u8` fixtures.
+- Produces: a pinned statement of exactly what the compiler emits under `-ffast` for a 1-D array of slices initialized `undefined`, plus the fix surface for Task 6b-F.
+
+**Premise (operator ruling m1277).** Under `-ffast`, a 1-D array of slices initialized `undefined` (`var arr: [N][]const u8 = undefined;`) mis-emits the element fill as `arr[_i] = 0;`, which gcc rejects (assigning `int` to a slice). The default/`-fsafe` paths avoid it because `undefined` lowers to `poison_init` (`sf/src/c89_emit.zig:7329`); the `-ffast` path reaches the `.undefined_const` else-arm at `sf/src/c89_emit.zig:7308-7311`, whose scalar zero-fill is correct for scalar element kinds but wrong for a slice element kind (neither `array_type`/`struct_type`/`tagged_union_type`). This is a real, pre-existing compiler defect; it is mode-specific, not a frontend gap.
+
+- [ ] **Step 1: Write the probe + control fixtures**
+  - `undefined_slice_array_xmod/main.zig`: a function-local `var arr: [N][]const u8 = undefined;`, partially assigned, then printed with a deterministic contract line. This is the `-ffast`-only failure; the corpus classifier runs `-ffast`, so this dir pins the failure (FAIL pre-fix → OK post-fix).
+  - `known_excluded/undefined_slice_array_safe_xmod/main.zig`: the SAME program as the off-corpus `-fsafe`/default control. Compiled manually under `-fsafe` and the default mode; it MUST build/run clean (classify OK) before and after the fix.
+- [ ] **Step 2: Emit + inspect — pin the exact C.** Build with the Task 6 fixed-point compiler and read the emitted C and every gcc diagnostic in BOTH modes:
+
+```bash
+cd /workspace/znineeight
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/planA_6b_base   # expect the Task 6 fixed point 4b1c029d…
+# -ffast pin: expect the defect
+/tmp/planA_6b_base/zig1_5_clean -ffast -o /tmp/undefined_slice_array repro/mi_matrix/undefined_slice_array_xmod/main.zig
+cd /tmp/undefined_slice_array && sh build_target.sh linux undefined_slice_array   # capture gcc diagnostics
+# -fsafe/default control: expect clean
+/tmp/planA_6b_base/zig1_5_clean -fsafe -o /tmp/undefined_slice_array_safe repro/mi_matrix/known_excluded/undefined_slice_array_safe_xmod/main.zig
+```
+
+  Record for both: the emitted init loop (is the fill `arr[_i] = 0;` — an `int` to a slice — or a per-element poison/zero?), and every gcc diagnostic. Confirm the control is clean under `-fsafe`/default and the pin fails only under `-ffast`.
+- [ ] **Step 3: Classify + declare.** Correct C (a slice-aware zero/poison fill, no warnings) ⇒ premise disproved, STOP and report. Incorrect C (`arr[_i] = 0;`, gcc `-Wint-conversion` / "assignment to … from int") ⇒ premise confirmed; pin the defect to `sf/src/c89_emit.zig:7308-7311` and classify the auto-listed `undefined_slice_array_xmod` in `EXPECTED_FAIL.md`. **Mode-specific gate:** the corpus classifier is `-ffast`-based, so the pin MUST classify **FAIL** pre-fix and **OK** post-fix; the `-fsafe`/default control (off-corpus) MUST build/run clean both pre- and post-fix. State explicitly that a `-fsafe`-only defect would be invisible to the `-ffast` classifier — this one is not, because the defect lives in the `-ffast` path.
+- [ ] **Step 4: Present the fix surface.** Name the emitter locus (`sf/src/c89_emit.zig:7308-7311`, the `.undefined_const` else-arm), the minimal change (add a `slice_type` element arm that zero-fills the `{ptr, len}` fields — or route slice elements to the same `poison_init`/byte-fill path the safe mode uses), and the blast radius. No `sf/src` change in this task.
+- [ ] **Step 5: Commit** (`test(std): pin the -ffast undefined slice-array emission defect (Plan A Task 6b-I)`), staging the two fixtures + `EXPECTED_FAIL.md`.
+
+---
+
+### Task 6b-F: Fix the `-ffast` undefined slice-array emission (F)
+
+**Files:**
+- Modify: the emitter locus pinned by Task 6b-I (`sf/src/c89_emit.zig:7308-7311`, the `.undefined_const` else-arm; confirm before editing) — **authorized compiler change (operator ruling m1277)**.
+- Modify: `repro/mi_matrix/undefined_slice_array_xmod/main.zig` if needed; declassify the dir in `repro/mi_matrix/EXPECTED_FAIL.md`.
+- **Forbidden:** any change beyond the pinned locus; no `sf/src/pal.zig`.
+
+**Interfaces:**
+- Consumes: Task 6b-I's pinned classification + fix surface.
+- Produces: correct C for a 1-D array of slices initialized `undefined` under `-ffast`; a MOVED fixed point.
+
+- [ ] **Step 1: Implement the fix** at the pinned locus: give the `.undefined_const` else-arm a slice element-kind path that zero-fills the element's `{ptr, len}` fields (or reuse the `poison_init`/byte-fill path the default/`-fsafe` modes use) instead of emitting `arr[_i] = 0;`.
+- [ ] **Step 2: Fixtures RED → GREEN** — the `-ffast` pin compiles warning-free and runs with the documented stdout; the `-fsafe`/default control stays clean.
+- [ ] **Step 3: Safety/determinism gates** — 3× emission md5 stable; `-fsafe`/`-ffast` parity.
+- [ ] **Step 4: Declassify** the `undefined_slice_array_xmod` dir in `EXPECTED_FAIL.md`.
+- [ ] **Step 5: Fixed point MOVES (authorized) + re-baseline.** Rebuild via the seed model; record the new fixed point as the Plan A baseline for Tasks 7/8 and Plans B/C. Declare any residual (e.g. other `undefined` element kinds — many-pointer/optional — left unfixed) in the report + a tracked note.
+- [ ] **Step 6: Commit** (`fix(compiler): correct -ffast emission for an undefined 1-D array of slices (Plan A Task 6b-F)`).
+
+---
+
 ### Task 7: Usage programs + corpus container (R7b)
 
 **Files:**
@@ -361,10 +418,10 @@ cd /tmp/opt_fnptr && sh build_target.sh linux opt_fnptr_extern   # capture warni
 - Modify: `docs/sf/QUICK_REF.md` (std-module inventory)
 
 **Interfaces:**
-- Consumes: Tasks 1-7 (including the Task 4b/4c optional-fn-pointer I/F pair).
+- Consumes: Tasks 1-7 (including the Task 4b/4c optional-fn-pointer I/F pair and the Task 6b-I/6b-F `-ffast` undefined slice-array I/F pair).
 - Produces: the Plan B pointer.
 
-- [ ] **Step 1: Verify the seed scripts' `lib/` copy list is complete** — the module-adding tasks (1/2/3/5) each appended their module in the same commit; confirm `std_bits.zig`/`std_os.zig`/`std_os_pal.zig`/`std_time.zig`/`std_time_pal.zig`/`std_buf.zig` are all present in both `scripts/seed/build_from_seed.sh` and `scripts/seed/archive_seed.sh` (the same touchpoints as the existing 9). Add any missing entry here; do not leave the list incomplete. Also confirm the `opt_fnptr_extern_xmod`/`opt_void_extern_xmod` dirs were declassified by Task 4b-F.
+- [ ] **Step 1: Verify the seed scripts' `lib/` copy list is complete** — the module-adding tasks (1/2/3/5) each appended their module in the same commit; confirm `std_bits.zig`/`std_os.zig`/`std_os_pal.zig`/`std_time.zig`/`std_time_pal.zig`/`std_buf.zig` are all present in both `scripts/seed/build_from_seed.sh` and `scripts/seed/archive_seed.sh` (the same touchpoints as the existing 9). Add any missing entry here; do not leave the list incomplete. Also confirm the `opt_fnptr_extern_xmod`/`opt_void_extern_xmod` dirs were declassified by Task 4b-F and the `undefined_slice_array_xmod` dir by Task 6b-F.
 - [ ] **Step 2: Run the full corpus + gates.**
 
 ```bash
@@ -392,6 +449,6 @@ Plan A complete. NEXT: `docs/superpowers/plans/2026-09-17-std-lib-plan-b-resourc
 
 ## Self-Review
 
-- **Spec coverage:** spec §4 Plan A (all six modules) → Tasks 1-6; §5 R1-R7 → every module task's gates; §5 R7b → Task 7; §6 gates → Tasks 1-7 (+ 4b/4c) Step gates + Task 8; §7 distribution → Task 8 Step 1; §10 index → the `Sequence:` line + Task 8 Step 5. The optional-fn-pointer compiler defect (operator ruling m1243) → Tasks 4b-I/4b-F + 4c; `backtrace` (blueprint §3 L1, the single R3 L1→L2 exception) → Task 5.
+- **Spec coverage:** spec §4 Plan A (all six modules) → Tasks 1-6; §5 R1-R7 → every module task's gates; §5 R7b → Task 7; §6 gates → Tasks 1-7 (+ 4b/4c and 6b) Step gates + Task 8; §7 distribution → Task 8 Step 1; §10 index → the `Sequence:` line + Task 8 Step 5. The optional-fn-pointer compiler defect (operator ruling m1243) → Tasks 4b-I/4b-F + 4c; the `-ffast` undefined slice-array compiler defect (operator ruling m1277) → Tasks 6b-I/6b-F; `backtrace` (blueprint §3 L1, the single R3 L1→L2 exception) → Task 5.
 - **Placeholder scan:** module signatures are referenced to the blueprint (§3 L0-L2) rather than duplicated — the blueprint is the exact-signature source of record and travels with the plan. Every step has a concrete command/expected output.
 - **Type consistency:** the module names (`std_bits`/`std_os`/`std_time`/`std_buf`) and re-export names (`bits`/`os`/`time`/`buf`) are used identically across tasks. `std_debug.setTrapHandler` is `?fn(*TrapContext) void` after Task 4c (non-optional `*void` fallback only between Tasks 4 and 4c); `std_debug.backtrace` takes `*std.buf.Buf` and is delivered in Task 5.
