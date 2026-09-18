@@ -4,7 +4,7 @@
 
 **Goal:** Extend the runtime gate to the Plan B (L3 + L6) modules, harden the harness with the three Important items carried from Plan A's final review, and add the Plan B stress/adversarial and expected-failure fixtures.
 
-**Architecture:** One plan, six tasks, no `sf/src` change except Task 5a-F (the operator-ruled I/F fix; the fixed point is UNMOVED through Tasks 1-4 + 5a-I, MOVED by 5a-F, and the seed rotates at 5a-F). Task 1 hardens the harness (capture mode + broadened discovery + gcc/link diagnostics) and re-verifies the existing goldens. Task 2 verifies the Plan B goldens (already captured with Plan B). Task 3 adds the one missing Plan B expected-failure probe. Task 4 adds the Plan B stress tier. Task 5a-I/5a-F pin and fix the exact-multiple long-line defect. Task 5 is the closeout + the Plan C hardening pointer.
+**Architecture:** One plan, six tasks, no `sf/src` change except Task 5a-F (the operator-ruled I/F fix; the fixed point stays UNMOVED throughout — a std-only change cannot move it — but the seed rotates at 5a-F because the archive embeds `lib/`). Task 1 hardens the harness (capture mode + broadened discovery + gcc/link diagnostics) and re-verifies the existing goldens. Task 2 verifies the Plan B goldens (already captured with Plan B). Task 3 adds the one missing Plan B expected-failure probe. Task 4 adds the Plan B stress tier. Task 5a-I/5a-F pin and fix the exact-multiple long-line defect. Task 5 is the closeout + the Plan C hardening pointer.
 
 **Tech Stack:** Z98/`zig1` self-hosted compiler (C89 emission), bash, `gcc -m32`, git.
 
@@ -15,7 +15,7 @@
 ## Global Constraints
 
 - **Baseline (re-verify at Task 1).** Record HEAD, the self-compile fixed point, the seed version/archive md5, the corpus `EXPECTED_FAIL.md` header. Expected at execution (refreshed after Plan B landed): HEAD `796f20d3`; fixed point `414cccee639bdb61c7a9f1f2ddddb166`; seed v29 archive md5 `910a4d673f0fa95f8473c08e143ceb54`; corpus 803; `EXPECTED_FAIL.md` v141; runtime gate 101/101 (pin 101).
-- **No `sf/src` change — EXCEPT Task 5a-F** (the operator-ruled I/F fix for the exact-multiple long-line defect). Tasks 1-4 + 5a-I MUST leave the fixed point at Plan B's baseline (recorded at Task 1); Task 5a-F moves it by design. If it moves anywhere else, STOP.
+- **No `sf/src` change — EXCEPT Task 5a-F** (the operator-ruled I/F fix for the exact-multiple long-line defect). The fixed point MUST stay `414cccee639bdb61c7a9f1f2ddddb166` throughout — a std-only change cannot move it (the compiler's import graph reaches no std module). If it moves anywhere, STOP. Task 5a-F still rotates the seed, because the seed archive embeds `lib/`.
 - **Build only via the seed model.** Never invoke `zig0`. Binding gcc flag-set; `timeout 120`.
 - **Determinism (R6):** every fixture's stdout must be identical across 3 runs and equal to its committed `expected.txt`.
 - **No silent skips:** every discovered std fixture MUST have a committed golden + be in `scripts/stdlib/expected_dirs.txt`.
@@ -46,7 +46,7 @@
 - `repro/mi_matrix/stdlib_stdin_multiple_xmod/` — a `std_stdin.readLine` exact-multiple long line (RED before Task 5a-F).
 - `repro/mi_matrix/stdlib_stream_multiple_xmod/` — a `std_stream.readLineSync` exact-multiple long line (RED before Task 5a-F).
 
-**Modify (Task 5a-F):** `sf/src/std_stdin.zig` (`readLine`), `sf/src/std_stream.zig` (`readLineSync`) — the fix (the fixed point MOVES; the seed rotates).
+**Modify (Task 5a-F):** `sf/src/std_stdin.zig` (`readLine`), `sf/src/std_stream.zig` (`readLineSync`) — the fix (the fixed point stays UNMOVED — a std-only change cannot move it; the seed rotates because the archive embeds `lib/`).
 
 **Modify (closeout):** `repro/mi_matrix/EXPECTED_FAIL.md` (bump once), `docs/sf/QUICK_REF.md` (counts).
 
@@ -156,12 +156,12 @@ gap is the `std_file` open-failure (`FileError`) probe.
 
 **Interfaces:**
 - Consumes: the Task 5a-I RED pins.
-- Produces: the fix; the fixed point MOVES; the seed rotates.
+- Produces: the fix; the fixed point stays UNMOVED (a std-only change cannot move it); the seed rotates.
 
 - [ ] **Step 1: Fix `std_stdin.readLine`** so a line whose length is an exact multiple of `buf.len` does not emit a trailing empty line.
 - [ ] **Step 2: Fix `std_stream.readLineSync`** the same way.
-- [ ] **Step 3: Flip the Task 5a-I pins RED -> GREEN**; re-capture their goldens; run the full gate; confirm 3× determinism.
-- [ ] **Step 4: Re-verify the gates** (`check_emit_support.sh` 7/7; the self-compile; the corpus class map; `CLOSEOUT OK`); confirm the fixed point MOVED.
+- [ ] **Step 3: Flip the Task 5a-I pins RED -> GREEN.** Run the full gate; the two pins must PASS and all other dirs stay PASS. Confirm 3× determinism. (The goldens are already the desired values — do not re-capture unless the observed output disagrees with the documented GREEN contract.)
+- [ ] **Step 4: Re-verify the gates** (`check_emit_support.sh` 7/7; the self-compile; the corpus class map; `CLOSEOUT OK`); confirm the fixed point stayed UNMOVED (expected — a std-only change cannot move it).
 - [ ] **Step 5: Rotate the seed** (`bash scripts/seed/archive_seed.sh <zig1> <gen_dir> release/seed/zig1-seed.tgz --update-changelog`) and commit (`fix(std): no spurious empty line for an exact-multiple long line (Plan B hardening Task 5a-F)`).
 
 ---
@@ -193,6 +193,6 @@ Plan B hardening complete. NEXT: author `docs/superpowers/plans/2026-09-18-plan-
 ## Self-Review
 
 - **Spec coverage:** spec §2 (the runtime gate) → Tasks 1-2; §3 (the stress tier + expected-failure pins) → Tasks 3-4; the found exact-multiple long-line defect → Task 5a-I/5a-F (the operator-ruled I/F pair); §4 (the sequence) → the `Sequence:` line + Task 5 Step 4; §5 (the conventions) → the Global Constraints; the 3 carried Important items → Task 1 Steps 2-4.
-- **Fixed point:** Tasks 1-4 + 5a-I leave it UNMOVED; Task 5a-F MOVES it (an `sf/src` fix) and rotates the seed; Task 5 re-verifies the rotated seed.
+- **Fixed point:** the fixed point stays UNMOVED throughout (Tasks 1-4 + 5a-I + 5a-F) — a std-only `sf/src` change cannot move it, because the compiler's import graph reaches no std module (the std lib is user-side `.zig` resolved from `<exe_dir>/lib/`). Task 5a-F still rotates the seed, because the seed archive embeds `lib/`; Task 5 re-verifies the rotated seed.
 - **Placeholder scan:** every step names concrete files + the observable result.
 - **Type consistency:** the `--capture` CLI, the `expected.txt`/`expected.rc` convention, and the `scripts/stdlib/*` paths are used identically across tasks.
