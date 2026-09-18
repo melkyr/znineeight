@@ -50,6 +50,8 @@ test_runner_batch*
 
 # App outputs
 *.txt
+# Runtime-gate goldens (scripts/stdlib/run_fixtures.sh) are source, not output.
+!expected.txt
 
 # Temporary binaries
 test_multi_file
