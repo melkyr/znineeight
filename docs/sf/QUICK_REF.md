@@ -27,28 +27,28 @@ bash sf/scripts/build_release.sh
 **Seed location + contents:** the committed rotating seed is
 `release/seed/zig1-seed.tgz` (git-tracked; provenance + rotation history in
 `release/seed/CHANGELOG.md`, full recipes in `release/seed/SEED_README.txt`).
-Current seed is **seed v30** (archive md5 `c0a218c5e7a74afb11435abe20c7d990`; std-lib Plan B Task 5a-F exact-multiple long-line fix — the fixed point stays **UNMOVED** at `414cccee639bdb61c7a9f1f2ddddb166`; the seed rotates because the archive embeds `lib/`).
+Current seed is **seed v31** (archive md5 `7ae31cec80cc3726dba042d694c11c25`; Plan C Task 1b-F field-store-as-continue-expression lowering fix — the fixed point **MOVES** to `6d704d2265096513cf1706f5b414bd27`).
 Top-level `zig1-seed/`: `zig1` (reference binary md5
-`414cccee639bdb61c7a9f1f2ddddb166`), `gen/` (its self-emission C89 module set —
+`6d704d2265096513cf1706f5b414bd27`), `gen/` (its self-emission C89 module set —
 45 `.c` + 46 `.h`, including `zig_special_types.h`; the emitted runtime/support
 sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/` (the emitted 5:
 `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`, `zig_runtime.c`,
-`zig_pal.c` — NO `net_prelude.h`), `lib/` (the 20 std `.zig` the v30 archive
+`zig_pal.c` — NO `net_prelude.h`), `lib/` (the 21 std `.zig` the v31 archive
 carries: `std`, `std_io`, `std_arena`, `std_net`, `std_str`, `std_mem`,
 `std_math`, `std_debug`, `std_async`, `std_bits`, `std_os`, `std_os_pal`,
 `std_time`, `std_time_pal`, `std_buf`, `std_file`, `std_file_pal`, `std_stdin`,
-`std_stdin_pal`, `std_stream`),
+`std_stdin_pal`, `std_stream`, `std_crypto`),
 `SEED_README.txt`.
-**Std-module inventory (Plan B closeout, 2026-09-18):** the CURRENT `sf/src` std set is
-**20** `.zig` (the list above; L3 resources + L6 capstone; `std_net` also gained
-the UDP surface). `scripts/seed/build_from_seed.sh` installs all 20 into the
-rebuilt compiler's `lib/`, and the rotated **v30** archive carries all 20 (the
-Plan B Task 5a-F seed rotation). See `repro/mi_matrix/EXPECTED_FAIL.md` v144.
+**Std-module inventory (Plan C Task 1b-F, 2026-09-18):** the CURRENT `sf/src` std set is
+**21** `.zig` (the list above; L3 resources + L6 capstone + Plan C Task 1
+`std_crypto`; `std_net` also gained the UDP surface). `scripts/seed/build_from_seed.sh` installs all 21 into the
+rebuilt compiler's `lib/`, and the rotated **v31** archive carries all 21 (Plan B
+std set + Plan C Task 1 `std_crypto`; Task 1b-F rotated the seed). See `repro/mi_matrix/EXPECTED_FAIL.md` v146.
 The archived binary and the self-emission fixed point
-`414cccee639bdb61c7a9f1f2ddddb166` are the SAME compiler state (the v30
-provenance entry in `release/seed/CHANGELOG.md` records HEAD `69066336`; the
-archive's `lib/` carries the Task 5a-F exact-multiple fix, which did not move
-the fixed point). zig0 is retired; the seed model
+`6d704d2265096513cf1706f5b414bd27` are the SAME compiler state (the v31
+provenance entry in `release/seed/CHANGELOG.md` records HEAD `1bd0d0d6`; the
+archive carries the Task 1b-F `sf/src/lower.zig` fix, which MOVED the fixed
+point). zig0 is retired; the seed model
 (`scripts/seed/build_from_seed.sh`) is the only rebuild path.
 **C89-AHEAD note (2026-09-13):** `runtime/` now carries the compiler's **emitted,
 mode-specific** support (the `-ffast` self-emission support), not the canonical
@@ -68,8 +68,8 @@ cd /workspace/znineeight
 bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out_dir>
 ```
 - GATE: `=== [seed] Done: <out_dir> ===`; result `<out_dir>/zig1_5_clean` md5 MUST equal the recorded
-  fixed point `414cccee639bdb61c7a9f1f2ddddb166` (hop1 == hop2 closure). Set
-  `FIXED_POINT_MD5=414cccee639bdb61c7a9f1f2ddddb166` to gate on it explicitly.
+  fixed point `6d704d2265096513cf1706f5b414bd27` (hop1 == hop2 closure). Set
+  `FIXED_POINT_MD5=6d704d2265096513cf1706f5b414bd27` to gate on it explicitly.
 - The dump MUST run from the repo root with the RELATIVE `sf/src/main.zig` path (module basename-hash
   tokens are path-derived). `<out_dir>` MUST be a fresh dir (the script `rm -rf`s it) — never point it
   at `/tmp/fx_subfolder` (the reference compiler lives there).
@@ -79,7 +79,7 @@ bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out_dir>
 **Rebuild recipe 2 (seed binary lost — rebuild from the seed's C only):** self-contained, no repo
 include path, no zig0: `gcc -c -I <seed>/runtime` over `gen/*.c`, link `<seed>/runtime/zig_runtime.c`
 + `<seed>/runtime/zig_pal.c` + `<seed>/c_exit.c`. Exact commands in `release/seed/SEED_README.txt`.
-Binary md5 MUST equal `414cccee639bdb61c7a9f1f2ddddb166`.
+Binary md5 MUST equal `6d704d2265096513cf1706f5b414bd27`.
 
 **Flag-set rule (binding):** every `gcc -c` MUST be
 `gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc>`
@@ -226,6 +226,7 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
   documented `error[3000]` diagnostic and 0 `.c` emitted is a green-guard (correct rejection matching
   the zig0 oracle), counted SEPARATELY from FAIL; a green-guard moving to OK/FAIL is a regression.
   (See EXPECTED_FAIL.md "Green-guards" section.)
+- **Plan C Task 1b-F — field-store-as-continue-expression lowering fix (GATE/docs, 2026-09-18, HEAD `1bd0d0d6` + the fix commit): the ONE authorized `sf/src` change in Plan C (operator ruling m1670) — the I/F pair F half.** `sf/src/lower.zig` now falls back to the lowered base temp's declared type when a field-access base has no resolved-type entry; a `while` continue expression is never visited by the semantic analyzer (`semantic_analyzer.zig:3128` pushes only the body), so both the field-store path (`lowerFieldStore`) and the field-access read path use the fallback and a compound field-store there lowers like the body form. Fixed point **MOVES** `414cccee639bdb61c7a9f1f2ddddb166` → **`6d704d2265096513cf1706f5b414bd27`** (hop1==hop2); seed **v30 → v31** (archive md5 `c0a218c5e7a74afb11435abe20c7d990` → `7ae31cec80cc3726dba042d694c11c25`; gen 45 `.c` + 46 `.h`, 8742372 bytes). Corpus **816 dirs = 763 OK / 28 GREEN / 25 FAIL / 0 ICE**; the full-classifier diff is exactly one line — `field_store_continue_xmod` ICE → OK; all 815 other dirs class-identical. Runtime gate **113 PASS / 0 FAIL over 113 dirs**; `check_emit_support.sh` **7/7**; self-compile **48 `.c`, rc=0, 0 errors, 0 PANIC**; `CLOSEOUT OK` (A1-A5, B1-B6, C1). `EXPECTED_FAIL.md` **v145 → v146**.
 - **Async concerns wave (GATE/docs, 2026-09-15, HEAD `d7ea6667`): Concern 3 + Concern 2b compiler changes + Concern 2a/1 fixtures.** (C3) the compiler await-site child-frame bump now rounds `used` up to 8 before adding `fsz` and deriving `child` (mirrors `std.async.contextAlloc`), so a library non-multiple-of-8 allocation followed by a compiler await site stays 8-aligned; `used` is stored rounded-and-advanced. (C2b) `-fsafe` `@asyncInit(ctx, buf, fn, args)` now traps (`check_trap{kind=7}`) when `buf.len < @asyncFrameSize(fn)` and both are compile-time known (buf is a pointer to a concrete `[N]u8`; `[]u8`/`[*]u8` has no compile-time length and skips) — `-ffast` emission unchanged. Fixed point MOVED `7b515420f749604c1765c2b1edd0d654` → **`027377296b2e38402ff8470f5c429eb8`** (hop1==hop2); seed **v18 → v19** (archive md5 `a9ded441846f54f1d02373d3f4da9142` → `23a16154e83736cf6b636685396a124a`; `lib/` 9 modules). Corpus `-s0` **612 dirs = 571 OK / 37 GREEN / 4 FAIL / 0 ICE / 0 CRASH**, `-ffast` == `-fsafe` zero-asymmetric; vs v84 (611 = 571/37/3) the +1 dir is the new expected-fail `async_step_nonlast_xmod` (multi-module step-emission gap: coroutine in a non-last module, gcc `undeclared` FAIL); the 611 common dirs are class-identical. (C2a) the `-fsafe` check exposed two undersized root buffers — `async_pool_xmod` (`level1` frame 80, root buf 64→80) and `async_suspend_store_xmod` (`worker` frame 80, root buf 64→80); `async_await_xmod` verified `@asyncFrameSize(caller)==72` (128 was sufficient, pinned to 72). `check_emit_support.sh` 5/5. `EXPECTED_FAIL.md` **v84 → v85**.
 - **Cross-track async ABI fix — Rule A baseline (GATE/docs, 2026-09-15, HEAD `d2629f9c`):** the Track-2/Track-3 Context-header divergence is fixed — compiler `CTX_POOL_OFF` 12 → 16 (matches `std.async` `HEADER_SIZE`), every `frame_sizes[key]` padded to a multiple of 8, `contextAlloc` rounds `used` up to 8. New mixed fixture `async_libctx_mix_xmod` (library + compiler paths over one Context) FAILS pre-fix / PASSES post-fix. Fixed point MOVED `f5ee84800dd32d7c440bb383c10edb55` → **`7b515420f749604c1765c2b1edd0d654`** (hop1==hop2); seed **v17 → v18** (archive md5 `0f04224c55a948f47bc72ec47e0374fb` → `a9ded441846f54f1d02373d3f4da9142`; `lib/` 9 modules). Corpus `-s0` **611 dirs = 571 OK / 37 GREEN / 3 FAIL / 0 ICE / 0 CRASH**, `-ffast` == `-fsafe` zero-asymmetric; vs v83 (610 = 570/37/3) the +1 dir is `async_libctx_mix_xmod` (OK) and the 610 common dirs are class-identical (GREEN set + 3-FAIL set byte-identical). Changed fixtures: `async_frame_xmod` pin 68 → 72; `async_await_xmod` root buffer 64 → 128 (root frame now 72); `async_pool_xmod` comment only — all OK. `check_emit_support.sh` 5/5. `EXPECTED_FAIL.md` **v83 → v84**.
 - **std.async 9-module install baseline (GATE/docs, 2026-09-15, HEAD `5daab707`): Track 3 (`2026-09-13-std-async-plan.md`) COMPLETE — `sf/src/std_async.zig` + `std.zig` re-export landed and installed at every std touchpoint (9-file `lib/`).** No compiler-graph change: the self-emission fixed point is **UNMOVED `f5ee84800dd32d7c440bb383c10edb55`** (seed **v17**, archive md5 `0f04224c55a948f47bc72ec47e0374fb`; post-rotation `build_from_seed.sh` closure hop1==hop2==`f5ee8480…`). Corpus `-s0` **610 dirs = 570 OK / 37 GREEN / 3 FAIL / 0 ICE / 0 CRASH**, `-ffast` == `-fsafe` zero-asymmetric; vs the v82 manifest (603 = 563 OK / 37 GREEN / 3 FAIL) the 603 common dirs are class-identical and the +7 new dirs are all OK. Seven new fixtures (dump rc=0 / gcc clean / link+run rc=0 / stdout md5 3×): `stdlib_async_pool_xmod` `c16d5048…`, `stdlib_async_headerexact_xmod` `97b36f60…`, `stdlib_async_f64align_xmod` `280262bb…`, `stdlib_async_sched_xmod` `29d3c32a…`, `stdlib_async_oom_xmod` `f2160c8f…`, `stdlib_async_await_xmod` `7bbb0c57…`, `stdlib_async_cancelall_xmod` `83b80a0f…`; `check_emit_support.sh` 5/5. `EXPECTED_FAIL.md` **v82 → v83**.

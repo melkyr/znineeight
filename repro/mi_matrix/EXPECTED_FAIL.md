@@ -1,4 +1,29 @@
-# mi_matrix corpus — expected-fail manifest (v145 2026-09-18)
+# mi_matrix corpus — expected-fail manifest (v146 2026-09-18)
+
+## Plan C Task 1b-F (F) — field-store-as-continue-expression ICE fixed (v145 -> v146 2026-09-18)
+
+The **F** half of the operator-ruled I/F pair (m1670). `sf/src/lower.zig` now
+falls back to the lowered base temp's declared type when a field-access base has
+no resolved-type entry — which is exactly the state of a `while` continue
+expression, because the semantic analyzer never visits `child_2`
+(`semantic_analyzer.zig:3128` pushes only the body). Both the field-store path
+(`lowerFieldStore`) and the field-access read path now use that fallback, so a
+compound field-store in a continue expression lowers like the body form. This is
+the ONE authorized `sf/src` change in Plan C; the self-emission fixed point
+**MOVES** `414cccee639bdb61c7a9f1f2ddddb166` -> **`6d704d2265096513cf1706f5b414bd27`**
+(hop1 == hop2) and the seed rotates **v30 -> v31** (archive md5
+`7ae31cec80cc3726dba042d694c11c25`).
+
+| dir | class (v145) | class (v146) | evidence |
+|---|---|---|---|
+| `field_store_continue_xmod` | **ICE** | **OK** | dump rc=0, 5 `.c`; gcc clean; link+run rc=0; stdout `field store continue ok` (3x deterministic) |
+
+**Corpus delta.** Universe **816 dirs** unchanged. Class delta vs v145:
+**-1 ICE / +1 OK** (762 OK / 28 GREEN / 25 FAIL / 1 ICE -> **763 OK / 28 GREEN /
+25 FAIL / 0 ICE**); all 815 other dirs are class-identical (full-classifier diff:
+exactly one line). Runtime gate **113 PASS / 0 FAIL over 113 dirs**;
+`check_emit_support.sh` **7/7**; self-compile **48 `.c`, rc=0, 0 errors, 0
+PANIC**; `CLOSEOUT OK` (A1-A5, B1-B6, C1 PASS).
 
 ## Plan C Task 1b-I (I) — field-store-as-continue-expression ICE pinned (v144 -> v145 2026-09-18)
 
