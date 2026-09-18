@@ -1,4 +1,68 @@
-# mi_matrix corpus — expected-fail manifest (v147 2026-09-18)
+# mi_matrix corpus — expected-fail manifest (v148 2026-09-18)
+
+## Plan C Task 2b-I (I) — 64-bit/f64 literal limitations pinned (v147 -> v148 2026-09-18)
+
+Plan C Task 2 found two pre-existing compiler limitations; the operator ruled
+(m1703) each becomes an I/F pair. This task is the **I** half (pin only). **No
+`sf/src` change**: the self-emission fixed point stays **UNMOVED
+`ab7187cc988e39dc5907b95ccc182f9f`** (seed v32 archive md5
+`2eb158f3f24363968e9bf0f085461de8`); no seed rotation. Task 2b-F (the F half)
+fixes both and MOVES the fixed point.
+
+**New corpus dirs** (auto-listed by `scripts/corpus/list_corpus_dirs.sh`):
+
+| dir | class | RED today (fixed point ab7187cc…) | expected GREEN (Task 2b-F) |
+|---|---|---|---|
+| `lit64_decimal_xmod` | **OK** (compile-clean) | dump rc=0, 5 `.c`, gcc clean; link+run rc=133 (SIGTRAP); stdout empty, panic `64-bit decimal literal survives widening` | run rc=0, stdout `lit64 ok` |
+| `f64_literal_precision_xmod` | **OK** (compile-clean) | dump rc=0, 5 `.c`, gcc clean; link+run rc=133 (SIGTRAP); stdout empty, panic `f64 literal carries full precision` | run rc=0, stdout `f64 lit ok` |
+
+**Trigger (1).** A decimal integer literal that does not fit in 32 bits,
+declared at container scope and assigned to a u64:
+
+```zig
+const TWO63: u64 = 9223372036854775808;   // 2^63
+...
+var lim: u64 = TWO63;
+```
+
+**Mis-lowering (1).** The literal materializes in a 32-bit (`unsigned int`) temp
+and truncates before being widened, so `lim` is 0 (2^63 mod 2^32). Emitted C:
+`unsigned int zT_1; zT_1 = 9223372036854775808ULL; lim = zT_1;`. The
+`ck(lim == @intCast(u64, 0x8000000000000000))` assert traps. `sf/src/std_parse.zig`
+works around it with `@intCast(u64, 0x8000000000000000)`.
+
+**Trigger (2).** An f64 literal whose value needs more than ~6 significant
+digits, compared against the same value computed at runtime:
+
+```zig
+var lit: f64 = 0.3333333333333333;   // 16 sig digits
+var third: f64 = 1.0 / 3.0;          // same value, computed at runtime
+```
+
+**Mis-lowering (2).** The literal emits at ~6 significant digits
+(`(double)(3.33333e-1)`), so `lit - (1.0/3.0)` is ~3.33e-7 and the
+`ck(d < 1e-15)` assert traps. `sf/src/std_parse.zig` works around it by avoiding
+an f64-max literal (`1.7976931348623157e308` -> `(double)(1.79769)`).
+
+**RED -> GREEN contract (Task 2b-F).** Both literals lower/emit with full
+width/precision; `lit64_decimal_xmod` runs and prints exactly `lit64 ok` (rc 0)
+and `f64_literal_precision_xmod` prints exactly `f64 lit ok` (rc 0). The
+committed `expected.txt`/`expected.rc` encode this DESIRED GREEN behaviour, so
+both pins are RED until Task 2b-F. The emitted C is gcc-clean in both cases, so
+the corpus `-ffast` dump+gcc classifier buckets both dirs **OK**; the RED is
+RUNTIME-only (the assert trap).
+
+**Corpus delta.** Universe **827 -> 829** (+2). Class delta vs the 827
+pre-existing dirs: **+2 OK** (774 OK / 28 GREEN / 25 FAIL / 0 ICE -> 776 OK /
+28 GREEN / 25 FAIL / 0 ICE); all 827 pre-existing dirs are class-identical (no
+`sf/src` change). (The v147 header's 817 predates the 10 Task-2 `stdlib_parse_*`
+dirs, committed at `5561e4f1` without a manifest bump; 817 + 10 = 827.) Neither
+dir is added to `scripts/stdlib/expected_dirs.txt`: that pin drives the std-lib
+runtime gate's discovery (`repro/mi_matrix/stdlib_*/` + `stdlib_test/*/`,
+all-GREEN), and a runtime-RED compiler pin would both break the discovery-set
+equality and make the gate fail. The corpus manifest + classifier are the pin
+mechanism for compiler-class dirs (cf. `field_store_continue_xmod`,
+`undefined_slice_array_xmod`).
 
 ## Plan C Task 1b-F (nested extension) — nested field-store continue-expr fixed (v146 -> v147 2026-09-18)
 
