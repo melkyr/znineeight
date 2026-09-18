@@ -42,6 +42,7 @@ it.
 | **Plan A** | impl | L0-L2 foundation: `std_bits`, `std_os`, `std_time`, `std_debug` ext, `std_buf`, `std_str` ext; plus the optional-fn-pointer compiler-defect I/F pair (Tasks 4b-I/4b-F/4c) and the `-ffast` undefined slice/optional/struct-field compiler-defect I/F pair (Tasks 6b-I/6b-F). | `2026-09-17-std-lib-plan-a-foundation.md` |
 | **Plan B** | impl | L3 resources + L6 capstone: `std_file`, `std_stdin`, `std_net` UDP ext, then `std_stream`. | `2026-09-17-std-lib-plan-b-resources-stream.md` |
 | **Plan C** | impl | L4 + L5: `std_map`, `std_sort`, `std_heap`, `std_rle`; `std_crypto`, `std_parse`, `std_base64`, `std_hex`, `std_utf8`. | `2026-09-17-std-lib-plan-c-data-codecs.md` |
+| **Plan D** | impl | Network async: non-blocking socket primitives in `std_net` (`recvNonBlocking`/`sendNonBlocking`/`setNonBlocking`), `std_stream.SocketLineReader`, `MsgReader`, and an optional `std.async.wait(handle)`. Deferred from Plan B (Model C ruling). | `2026-09-18-plan-D-network-async.md` |
 
 **Sequencing is binding:** Task 0 → Plan A → Plan B → Plan C. Each plan's
 header carries a `Sequence:` line naming its predecessor and successor, so
@@ -93,11 +94,16 @@ its fixtures GREEN and the dependency-graph check passing.
 
 - **Plan A (L0-L2)** validates the layering rule and the arena rule before
   anything depends on them. No L3+, no async.
-- **Plan B (L3 + L6)** is where R4 (the `*Async` flavor) and C2
-  (`std.async.wait`; no `tick`/`waitFor` in std) are exercised.
-  `std_stream` is the only module that imports `std.async` transitively; a
-  program that does not use `std_stream` must not link the async runtime
-  (C3). Plan B carries a graph assertion for this.
+- **Plan B (L3 + L6)** is where R4 (the `*Async` flavor) and C2 (no
+  `tick`/`waitFor`/`waitAll` in std) are exercised. Under the operator's
+  Model C ruling (`sf/docs/answerT4.txt`, m1449/m1451), Plan B's L6 is
+  **file-only**: `std_stream.FileLineReader` with `readLineSync` (blocking)
+  and `readLineAsync` (a separate chunked implementation that yields via the
+  `@asyncSuspend` builtin once per incomplete read). `SocketLineReader`,
+  `MsgReader`, the non-blocking socket primitives, and `std.async.wait(handle)`
+  are deferred to Plan D. `std_stream` is the only module that pulls in the
+  async facility; a program that does not use `std_stream` must not link the
+  async runtime (C3). Plan B carries a graph assertion for this.
 - **Plan C (L4 + L5)** imports L0-L2 only and is independent of Plan B.
 
 ## §5 Conventions (binding; inherited from the blueprint)
@@ -127,6 +133,21 @@ its fixtures GREEN and the dependency-graph check passing.
   (`fn foo(...) T`), sync (`fn read(...) !usize`), async
   (`fn readAsync(...) !usize`, same signature + `Async` suffix, same
   module). No transitive coloring.
+  **Model C clarification (operator, m1449/m1451).** Z98 is
+  cooperative-yield: the caller drives `std.async.tick`; there is no
+  executor and no `poll` loop. A `*Async` function is a **separate
+  implementation** from its sync sibling — it does its own I/O and calls the
+  `@asyncSuspend` builtin when it has nothing more to do right now; it is not
+  a wrapper over the sync path. `std_stream.readLineAsync` reads a bounded
+  chunk and yields once per incomplete read.
+  **Asset-loading idiom (the Model C answer to "background loading").** The
+  frame loop runs every tick and draws a *placeholder*; a loading coroutine
+  reads one chunk per tick and yields, then swaps in the decoded asset and
+  sets a ready flag. The render path never waits — it draws the placeholder
+  until the flag flips. Chunk size is the tuning knob (bigger = faster load,
+  longer per-tick pause; 64 KB is a reasonable default for a PII/local disk).
+  There is no "wait for I/O" anywhere in the model, only "do work, yield,
+  do more next tick."
 - **R5 — Single-threaded.** No locking/atomics/concurrency.
 - **R6 — Determinism.** No output may depend on addresses, the wall clock,
   or the PID unless the contract says so. `-fsafe`'s `0xAA` fill is not a
@@ -179,7 +200,9 @@ the 12 names above
 2026-09-18 authorized the growth from 8). Higher layers are imported by path.
 The compiler's `lib/` gains the new `.zig` modules; the self-compile fixed point
 stays flat because the compiler imports none of them — the property Task 0
-proves. `stdlib_test/` is a corpus container: the harness
+proves. `std_stream` (L6) ships as `FileLineReader` only in Plan B;
+`SocketLineReader` and `MsgReader` are **deferred to Plan D** and are not part
+of the Plan B distribution. `stdlib_test/` is a corpus container: the harness
 (`scripts/corpus/list_corpus_dirs.sh`) enumerates every immediate subdir of
 `stdlib_test/` as a usage program (container rule D), distinct from the
 per-function `repro/mi_matrix/` fixtures.
@@ -238,6 +261,14 @@ per-function `repro/mi_matrix/` fixtures.
   use it (C3 violation). Plan B asserts this in the import graph.
 - **Fixture volume (~60 dirs).** Corpus growth per plan; each plan
   re-baselines `EXPECTED_FAIL.md` once at closeout.
+- **Network async — DEFERRED to Plan D (operator, m1449/m1451).** Z98 is
+  Model C cooperative-yield, so there is no runtime-mediated wakeup.
+  `SocketLineReader`/`MsgReader` need non-blocking sockets
+  (`recvNonBlocking`/`sendNonBlocking`/`setNonBlocking`) in `std_net`, and an
+  optional `std.async.wait(handle)` needs an executor or a `poll()` loop.
+  None are Plan B work: Plan B's `std_stream` is file-only (`FileLineReader`,
+  `readLineSync` + `readLineAsync`). Recorded in
+  `docs/superpowers/plans/2026-09-18-plan-D-network-async.md`.
 
 ## §9 Out of scope
 
@@ -253,6 +284,7 @@ beyond the three maps and one heap, a testing framework) are out of scope.
 2. `docs/superpowers/plans/2026-09-17-std-lib-plan-a-foundation.md` — L0-L2.
 3. `docs/superpowers/plans/2026-09-17-std-lib-plan-b-resources-stream.md` — L3 + L6.
 4. `docs/superpowers/plans/2026-09-17-std-lib-plan-c-data-codecs.md` — L4 + L5.
+5. `docs/superpowers/plans/2026-09-18-plan-D-network-async.md` — network async: non-blocking sockets in `std_net`, `std_stream.SocketLineReader`, `MsgReader`, optional `std.async.wait(handle)`. **Deferred from Plan B** (Model C ruling); not in the Task 0 → A → B → C sequence.
 
 Each plan's header `Sequence:` line names its predecessor and successor;
 the successor plan is the "next plan to follow up" for the plan just

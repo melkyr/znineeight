@@ -21,7 +21,7 @@ set -euo pipefail
 #   gcc -m32 -O0 *.o <repo>/sf/src/include/zig_runtime.c
 #     <repo>/sf/src/include/zig_pal.c <repo>/sf/src/c_exit.c
 #     -o <out>/zig1_5_clean
-#   std lib: 19 std .zig copied into <out>/lib/
+#   std lib: 20 std .zig copied into <out>/lib/
 # Two-hop fixed-point closure is verified: <out>/zig1_5_clean (hop1) dumps
 # sf/src/main.zig again -> gcc -> hop2 binary; md5(hop1) must equal
 # md5(hop2) (== recorded fixed point when sf/src matches the seed's era; both
@@ -136,7 +136,7 @@ if [ ! -x "$DUMP_COMPILER" ]; then
 fi
 
 # std lib for the produced compiler (binary-relative lib/)
-cp "$ROOT"/sf/src/std.zig "$ROOT"/sf/src/std_io.zig "$ROOT"/sf/src/std_arena.zig "$ROOT"/sf/src/std_net.zig "$ROOT"/sf/src/std_str.zig "$ROOT"/sf/src/std_mem.zig "$ROOT"/sf/src/std_math.zig "$ROOT"/sf/src/std_debug.zig "$ROOT"/sf/src/std_async.zig "$ROOT"/sf/src/std_bits.zig "$ROOT"/sf/src/std_os.zig "$ROOT"/sf/src/std_os_pal.zig "$ROOT"/sf/src/std_time.zig "$ROOT"/sf/src/std_time_pal.zig "$ROOT"/sf/src/std_buf.zig "$ROOT"/sf/src/std_file.zig "$ROOT"/sf/src/std_file_pal.zig "$ROOT"/sf/src/std_stdin.zig "$ROOT"/sf/src/std_stdin_pal.zig "$OUT/lib/"
+cp "$ROOT"/sf/src/std.zig "$ROOT"/sf/src/std_io.zig "$ROOT"/sf/src/std_arena.zig "$ROOT"/sf/src/std_net.zig "$ROOT"/sf/src/std_str.zig "$ROOT"/sf/src/std_mem.zig "$ROOT"/sf/src/std_math.zig "$ROOT"/sf/src/std_debug.zig "$ROOT"/sf/src/std_async.zig "$ROOT"/sf/src/std_bits.zig "$ROOT"/sf/src/std_os.zig "$ROOT"/sf/src/std_os_pal.zig "$ROOT"/sf/src/std_time.zig "$ROOT"/sf/src/std_time_pal.zig "$ROOT"/sf/src/std_buf.zig "$ROOT"/sf/src/std_file.zig "$ROOT"/sf/src/std_file_pal.zig "$ROOT"/sf/src/std_stdin.zig "$ROOT"/sf/src/std_stdin_pal.zig "$ROOT"/sf/src/std_stream.zig "$OUT/lib/"
 
 build_hop "$DUMP_COMPILER" "$OUT/gen" "$OUT/zig1_5_clean"
 HOP1_MD5=$(md5sum "$OUT/zig1_5_clean" | cut -d' ' -f1)

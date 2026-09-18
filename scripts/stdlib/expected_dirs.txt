@@ -90,6 +90,10 @@ repro/mi_matrix/stdlib_str_trim_xmod
 repro/mi_matrix/stdlib_str_trimleft_xmod
 repro/mi_matrix/stdlib_str_trimright_xmod
 repro/mi_matrix/stdlib_str_xmod
+repro/mi_matrix/stdlib_stream_readline_empty_xmod
+repro/mi_matrix/stdlib_stream_readline_noeof_xmod
+repro/mi_matrix/stdlib_stream_readline_xmod
+repro/mi_matrix/stdlib_stream_readlinesync_xmod
 repro/mi_matrix/stdlib_time_monotonic_avail_xmod
 repro/mi_matrix/stdlib_time_monotonic_xmod
 repro/mi_matrix/stdlib_time_sleep_xmod
