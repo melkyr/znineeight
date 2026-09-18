@@ -27,13 +27,13 @@ bash sf/scripts/build_release.sh
 **Seed location + contents:** the committed rotating seed is
 `release/seed/zig1-seed.tgz` (git-tracked; provenance + rotation history in
 `release/seed/CHANGELOG.md`, full recipes in `release/seed/SEED_README.txt`).
-Current seed is **seed v33** (archive md5 `799dbca38d211f6a3d962f3773215adf`; Plan C Task 2b-F 64-bit decimal + f64 literal precision fix — the fixed point **MOVES** to `417c435cec303378b224ecdff3f64f26`).
+Current seed is **seed v34** (archive md5 `a4d4de3cc7ff131da3a01865b3622ed7`; Plan C Task 2b-F self-contained f64 formatting (no gcvt) — the fixed point **MOVES** to `b0e7042a26e74d7b744a0a49546149b4`).
 Top-level `zig1-seed/`: `zig1` (reference binary md5
-`417c435cec303378b224ecdff3f64f26`), `gen/` (its self-emission C89 module set —
+`b0e7042a26e74d7b744a0a49546149b4`), `gen/` (its self-emission C89 module set —
 45 `.c` + 46 `.h`, including `zig_special_types.h`; the emitted runtime/support
 sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/` (the emitted 5:
 `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`, `zig_runtime.c`,
-`zig_pal.c` — NO `net_prelude.h`), `lib/` (the 21 std `.zig` the v33 archive
+`zig_pal.c` — NO `net_prelude.h`), `lib/` (the 21 std `.zig` the v34 archive
 carries: `std`, `std_io`, `std_arena`, `std_net`, `std_str`, `std_mem`,
 `std_math`, `std_debug`, `std_async`, `std_bits`, `std_os`, `std_os_pal`,
 `std_time`, `std_time_pal`, `std_buf`, `std_file`, `std_file_pal`, `std_stdin`,
@@ -42,13 +42,13 @@ carries: `std`, `std_io`, `std_arena`, `std_net`, `std_str`, `std_mem`,
 **Std-module inventory (Plan C Task 2b-F, 2026-09-18):** the CURRENT `sf/src` std set is
 **21** `.zig` (the list above; L3 resources + L6 capstone + Plan C Task 1
 `std_crypto`; `std_net` also gained the UDP surface). `scripts/seed/build_from_seed.sh` installs all 21 into the
-rebuilt compiler's `lib/`, and the rotated **v33** archive carries all 21 (Plan B
-std set + Plan C Task 1 `std_crypto`; Task 2b-F rotated the seed). See `repro/mi_matrix/EXPECTED_FAIL.md` v149.
+rebuilt compiler's `lib/`, and the rotated **v34** archive carries all 21 (Plan B
+std set + Plan C Task 1 `std_crypto`; Task 2b-F rotated the seed). See `repro/mi_matrix/EXPECTED_FAIL.md` v150.
 The archived binary and the self-emission fixed point
-`417c435cec303378b224ecdff3f64f26` are the SAME compiler state (the v33
-provenance entry in `release/seed/CHANGELOG.md` records HEAD `a9b515d9`; the
+`b0e7042a26e74d7b744a0a49546149b4` are the SAME compiler state (the v34
+provenance entry in `release/seed/CHANGELOG.md` records HEAD `2b7acb2d`; the
 archive carries the Task 2b-F `sf/src` fix (lower.zig literal-width temp type +
-`util/format.zig` `gcvt` 17-digit emission), which MOVED the fixed
+`util/format.zig` self-contained 17-digit dtoa, no libc), which MOVED the fixed
 point). zig0 is retired; the seed model
 (`scripts/seed/build_from_seed.sh`) is the only rebuild path.
 **C89-AHEAD note (2026-09-13):** `runtime/` now carries the compiler's **emitted,
@@ -69,8 +69,8 @@ cd /workspace/znineeight
 bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out_dir>
 ```
 - GATE: `=== [seed] Done: <out_dir> ===`; result `<out_dir>/zig1_5_clean` md5 MUST equal the recorded
-  fixed point `417c435cec303378b224ecdff3f64f26` (hop1 == hop2 closure). Set
-  `FIXED_POINT_MD5=417c435cec303378b224ecdff3f64f26` to gate on it explicitly.
+  fixed point `b0e7042a26e74d7b744a0a49546149b4` (hop1 == hop2 closure). Set
+  `FIXED_POINT_MD5=b0e7042a26e74d7b744a0a49546149b4` to gate on it explicitly.
 - The dump MUST run from the repo root with the RELATIVE `sf/src/main.zig` path (module basename-hash
   tokens are path-derived). `<out_dir>` MUST be a fresh dir (the script `rm -rf`s it) — never point it
   at `/tmp/fx_subfolder` (the reference compiler lives there).
@@ -80,7 +80,7 @@ bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out_dir>
 **Rebuild recipe 2 (seed binary lost — rebuild from the seed's C only):** self-contained, no repo
 include path, no zig0: `gcc -c -I <seed>/runtime` over `gen/*.c`, link `<seed>/runtime/zig_runtime.c`
 + `<seed>/runtime/zig_pal.c` + `<seed>/c_exit.c`. Exact commands in `release/seed/SEED_README.txt`.
-Binary md5 MUST equal `417c435cec303378b224ecdff3f64f26`.
+Binary md5 MUST equal `b0e7042a26e74d7b744a0a49546149b4`.
 
 **Flag-set rule (binding):** every `gcc -c` MUST be
 `gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc>`
@@ -227,7 +227,7 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
   documented `error[3000]` diagnostic and 0 `.c` emitted is a green-guard (correct rejection matching
   the zig0 oracle), counted SEPARATELY from FAIL; a green-guard moving to OK/FAIL is a regression.
   (See EXPECTED_FAIL.md "Green-guards" section.)
-- **Plan C Task 2b-F — 64-bit decimal + f64 literal precision fixed (GATE/docs, 2026-09-18, HEAD `a9b515d9`; operator ruling m1703).** The F half of the Task 2b-I/F pair. (1) Root cause of the 64-bit decimal truncation: the global-`const` int-literal materialization in `lowerExprImpl`'s `ident_expr` path (`sf/src/lower.zig:3223`) hardcoded `nextTemp(self, TYPE_U32)`, so `const TWO63: u64 = 9223372036854775808;` lowered into a 32-bit `unsigned int` temp and truncated. The temp type is now `TYPE_U32` for `val <= 0xFFFFFFFF`, else `TYPE_U64`. (2) Root cause of the f64 precision loss: `formatF64` (`sf/src/util/format.zig`) hand-extracted only 6 significant digits in f64 arithmetic; it now delegates to the host C library `gcvt(value, 17, buf)`, emitting 17 significant digits (round-trip-safe). Both Task 2b-I pins flip RED → GREEN (`lit64_decimal_xmod` stdout `lit64 ok`; `f64_literal_precision_xmod` stdout `f64 lit ok`; rc=0 each). Fixed point **MOVES** `ab7187cc988e39dc5907b95ccc182f9f` → **`417c435cec303378b224ecdff3f64f26`** (hop1==hop2); seed **v32 → v33** (archive md5 `2eb158f3f24363968e9bf0f085461de8` → `799dbca38d211f6a3d962f3773215adf`; gen 45 `.c` + 46 `.h`, 8743961 bytes). Corpus **829 dirs = 776 OK / 28 GREEN / 25 FAIL / 0 ICE**, full-classifier diff empty (zero unexpected movement); 4-MD5 gate programs (gol/lisp/json/mud) byte-identical to the pre-fix compiler. Runtime gate **123 PASS / 0 FAIL over 123 dirs**; `check_emit_support.sh` **7/7**; self-compile **48 `.c`, rc=0, 0 errors, 0 PANIC**; `CLOSEOUT OK` (A1-A5, B1-B6, C1). `EXPECTED_FAIL.md` **v148 → v149**.
+- **Plan C Task 2b-F — 64-bit decimal + f64 literal precision fixed (GATE/docs, 2026-09-18, HEAD `a9b515d9`; operator ruling m1703).** The F half of the Task 2b-I/F pair. (1) Root cause of the 64-bit decimal truncation: the global-`const` int-literal materialization in `lowerExprImpl`'s `ident_expr` path (`sf/src/lower.zig:3223`) hardcoded `nextTemp(self, TYPE_U32)`, so `const TWO63: u64 = 9223372036854775808;` lowered into a 32-bit `unsigned int` temp and truncated. The temp type is now `TYPE_U32` for `val <= 0xFFFFFFFF`, else `TYPE_U64`. (2) Root cause of the f64 precision loss: `formatF64` (`sf/src/util/format.zig`) hand-extracted only 6 significant digits in f64 arithmetic; it was first replaced with the host libc `gcvt` (commit `2b7acb2d`, seed v33), then by an in-tree **self-contained dtoa** (operator follow-up; no libc): the 53-bit significand is recovered by exact power-of-two scaling, the exact decimal big integer `B` (`m*2^E` / `m*5^-E`) is built in base-1e9 limbs, its top 17 digits are rounded, and normalized scientific notation `d.dddddddddddddddde±XX` is emitted (trailing fractional zeros trimmed). Both Task 2b-I pins flip RED → GREEN (`lit64_decimal_xmod` stdout `lit64 ok`; `f64_literal_precision_xmod` stdout `f64 lit ok`; rc=0 each). Fixed point **MOVES** `ab7187cc988e39dc5907b95ccc182f9f` → `417c435cec303378b224ecdff3f64f26` → **`b0e7042a26e74d7b744a0a49546149b4`** (hop1==hop2); seed **v32 → v33 → v34** (archive md5 `2eb158f3f24363968e9bf0f085461de8` → `799dbca38d211f6a3d962f3773215adf` → `a4d4de3cc7ff131da3a01865b3622ed7`; gen 45 `.c` + 46 `.h`, 8764000 bytes). Corpus **829 dirs = 776 OK / 28 GREEN / 25 FAIL / 0 ICE**, full-classifier diff empty (zero unexpected movement); 4-MD5 gate programs (gol/lisp/json/mud) byte-identical to the pre-fix compiler. Runtime gate **123 PASS / 0 FAIL over 123 dirs**; `check_emit_support.sh` **7/7**; self-compile **48 `.c`, rc=0, 0 errors, 0 PANIC**; `CLOSEOUT OK` (A1-A5, B1-B6, C1). A 47-literal `strtod` harness confirms the new formatter round-trips identically to `gcvt`. `EXPECTED_FAIL.md` **v148 → v149 → v150**; `sf/docs/tech_docs/00_shared_infra.md` §9 updated.
 - **Plan C Task 1b-F nested extension — nested field-store-as-continue-expression fixed (GATE/docs, 2026-09-18, HEAD `fe784e9c` + the extension commit; operator-ruled).** The v146 lowering fallback covered the single-level shape only; a nested continue-expr field store (`while (o.inner.n < 56) : (o.inner.n += 1)`) still ICEd (`error[3043]: unsupported address-of l-value`) because the nested base branch calls `lowerLValueAddr`, which also reads the resolved-type table. Extension: `semanticAnalyzerResolveWhileHeader` now resolves the `while` continue expression (`child_2`) after the capture is registered, so every sub-expression gets a resolved type (the v146 `lower.zig` fallbacks are kept). Fixed point **MOVES again** `6d704d2265096513cf1706f5b414bd27` → **`ab7187cc988e39dc5907b95ccc182f9f`** (hop2==hop3, moving point); seed **v31 → v32** (archive md5 `7ae31cec80cc3726dba042d694c11c25` → `2eb158f3f24363968e9bf0f085461de8`; gen 45 `.c` + 46 `.h`, 8751385 bytes). New corpus dir `field_store_continue_nested_xmod` (**ICE → OK**); corpus **817 dirs = 764 OK / 28 GREEN / 25 FAIL / 0 ICE**, full-classifier diff over the 817-dir universe is exactly one line (the new nested dir); original `field_store_continue_xmod` stays OK. Runtime gate **113 PASS / 0 FAIL over 113 dirs**; `check_emit_support.sh` **7/7**; self-compile **48 `.c`, rc=0, 0 errors, 0 PANIC**; `CLOSEOUT OK` (A1-A5, B1-B6, C1). `EXPECTED_FAIL.md` **v146 → v147**.
 - **Plan C Task 1b-F — field-store-as-continue-expression lowering fix (GATE/docs, 2026-09-18, HEAD `1bd0d0d6` + the fix commit): the ONE authorized `sf/src` change in Plan C (operator ruling m1670) — the I/F pair F half.** `sf/src/lower.zig` now falls back to the lowered base temp's declared type when a field-access base has no resolved-type entry; a `while` continue expression is never visited by the semantic analyzer (`semantic_analyzer.zig:3128` pushes only the body), so both the field-store path (`lowerFieldStore`) and the field-access read path use the fallback and a compound field-store there lowers like the body form. Fixed point **MOVES** `414cccee639bdb61c7a9f1f2ddddb166` → **`6d704d2265096513cf1706f5b414bd27`** (hop1==hop2); seed **v30 → v31** (archive md5 `c0a218c5e7a74afb11435abe20c7d990` → `7ae31cec80cc3726dba042d694c11c25`; gen 45 `.c` + 46 `.h`, 8742372 bytes). Corpus **816 dirs = 763 OK / 28 GREEN / 25 FAIL / 0 ICE**; the full-classifier diff is exactly one line — `field_store_continue_xmod` ICE → OK; all 815 other dirs class-identical. Runtime gate **113 PASS / 0 FAIL over 113 dirs**; `check_emit_support.sh` **7/7**; self-compile **48 `.c`, rc=0, 0 errors, 0 PANIC**; `CLOSEOUT OK` (A1-A5, B1-B6, C1). `EXPECTED_FAIL.md` **v145 → v146**.
 - **Async concerns wave (GATE/docs, 2026-09-15, HEAD `d7ea6667`): Concern 3 + Concern 2b compiler changes + Concern 2a/1 fixtures.** (C3) the compiler await-site child-frame bump now rounds `used` up to 8 before adding `fsz` and deriving `child` (mirrors `std.async.contextAlloc`), so a library non-multiple-of-8 allocation followed by a compiler await site stays 8-aligned; `used` is stored rounded-and-advanced. (C2b) `-fsafe` `@asyncInit(ctx, buf, fn, args)` now traps (`check_trap{kind=7}`) when `buf.len < @asyncFrameSize(fn)` and both are compile-time known (buf is a pointer to a concrete `[N]u8`; `[]u8`/`[*]u8` has no compile-time length and skips) — `-ffast` emission unchanged. Fixed point MOVED `7b515420f749604c1765c2b1edd0d654` → **`027377296b2e38402ff8470f5c429eb8`** (hop1==hop2); seed **v18 → v19** (archive md5 `a9ded441846f54f1d02373d3f4da9142` → `23a16154e83736cf6b636685396a124a`; `lib/` 9 modules). Corpus `-s0` **612 dirs = 571 OK / 37 GREEN / 4 FAIL / 0 ICE / 0 CRASH**, `-ffast` == `-fsafe` zero-asymmetric; vs v84 (611 = 571/37/3) the +1 dir is the new expected-fail `async_step_nonlast_xmod` (multi-module step-emission gap: coroutine in a non-last module, gcc `undeclared` FAIL); the 611 common dirs are class-identical. (C2a) the `-fsafe` check exposed two undersized root buffers — `async_pool_xmod` (`level1` frame 80, root buf 64→80) and `async_suspend_store_xmod` (`worker` frame 80, root buf 64→80); `async_await_xmod` verified `@asyncFrameSize(caller)==72` (128 was sufficient, pinned to 72). `check_emit_support.sh` 5/5. `EXPECTED_FAIL.md` **v84 → v85**.

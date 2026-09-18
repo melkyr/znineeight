@@ -1,4 +1,41 @@
-# mi_matrix corpus — expected-fail manifest (v149 2026-09-18)
+# mi_matrix corpus — expected-fail manifest (v150 2026-09-18)
+
+## Plan C Task 2b-F follow-up — self-contained f64 formatting (no gcvt) (v149 -> v150 2026-09-18)
+
+Operator follow-up to the v149 fix: replace the non-standard libc `gcvt` with an
+in-tree self-contained dtoa. `formatF64` (`sf/src/util/format.zig`) now recovers
+the 53-bit significand by exact power-of-two scaling, builds the exact decimal
+big integer `B` (`m*2^E` when `E >= 0`, `m*5^-E` when `E < 0`) in base-1e9
+limbs, rounds its top 17 digits, and emits normalized scientific notation
+`d.dddddddddddddddde±XX` with trailing fractional zeros trimmed. 17 significant
+digits guarantee IEEE-754 double round-trip; the implementation is pure Zig/C89
+with no `@cInclude` and no libc float formatting. The dead `extractDigit` helper
+is removed. The zero/inf/nan guard emits `0` (no valid C89 literal; the previous
+`gcvt` emitted the invalid token `inf`, and the pre-gcvt 6-digit formatter looped
+forever).
+
+The self-emission fixed point **MOVES again**
+`417c435cec303378b224ecdff3f64f26` -> **`b0e7042a26e74d7b744a0a49546149b4`**
+(hop1 == hop2) and the seed rotates **v33 -> v34** (archive md5
+`799dbca38d211f6a3d962f3773215adf` -> `a4d4de3cc7ff131da3a01865b3622ed7`).
+
+| dir | class (v149) | class (v150) | evidence |
+|---|---|---|---|
+| `lit64_decimal_xmod` | **OK** (runtime GREEN) | **OK** (runtime GREEN) | `run_fixtures.sh` explicit: PASS; stdout `lit64 ok`, rc=0 |
+| `f64_literal_precision_xmod` | **OK** (runtime GREEN) | **OK** (runtime GREEN) | `run_fixtures.sh` explicit: PASS; stdout `f64 lit ok`, rc=0 |
+
+**Corpus delta.** Universe **829 dirs** unchanged; class map **unchanged**
+(776 OK / 28 GREEN / 25 FAIL / 0 ICE / 0 CRASH; full-classifier diff empty —
+zero unexpected movement vs the v149 `gcvt` compiler). The 4-MD5 gate programs
+(gol/lisp/json/mud) emit byte-identically. Runtime gate **123 PASS / 0 FAIL over
+123 dirs**; `check_emit_support.sh` **7/7**; self-compile **48 `.c`, rc=0, 0
+errors, 0 PANIC**; `CLOSEOUT OK` (A1-A5, B1-B6, C1). A 47-literal `strtod`
+round-trip harness confirms the new formatter's text parses to exactly the same
+doubles as the v149 `gcvt` formatter. `sf/docs/tech_docs/00_shared_infra.md` §9
+updated (`extractDigit` removed; `formatF64` + the two new helpers documented).
+
+**Declassification.** The v149 "Fix (2)" gcvt description is superseded by this
+section; both pins remain permanent regression pins.
 
 ## Plan C Task 2b-F (F) — 64-bit decimal + f64 literal precision fixed (v148 -> v149 2026-09-18)
 

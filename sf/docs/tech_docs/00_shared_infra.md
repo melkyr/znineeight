@@ -411,15 +411,16 @@ All arrays: allocation is fatal on OOM (`catch unreachable`). No shrink. Arena-a
 
 ---
 
-## 9. `util/format.zig` — Formatters (153 lines)
+## 9. `util/format.zig` — Formatters (260 lines) [updated: 2026-09-18]
 
 | Function | Line | Vis. | Purpose | Called By | Calls | Key Details |
 |----------|------|------|---------|-----------|-------|-------------|
 | `copyStr` | 1 | pub | Copy `s` into `buf` at `*idx`, incrementing idx as bytes are written. | string construction | (none) | Raw byte copy with cursor. |
 | `formatU32` | 10 | pub | Format u32 to decimal in buf (right-to-left, null-terminated). Returns slice of formatted portion. | diagnostics, debug output | (none) | Writes from end of buffer backwards. Null-terminated. |
 | `formatU64` | 29 | pub | Same as formatU32 for u64. | (future use?) | (none) | Same backward-write pattern. |
-| `extractDigit` | 48 | pub | Floor of f64 to integer 0-9. If-then chain: `v >= 9 → 9`, ..., `v >= 1 → 1`, else 0. | `formatF64` | (none) | Integer conversion for float formatting. |
-| `formatF64` | 61 | pub | Format f64 to string. Handles negative, normalizes to 1-10 range, extracts 6 significant digits, optionally adds decimal and scientific notation (e±N). | (future use?) | `extractDigit` | 6-digit precision. Handles neg/frac/sci. Null-terminated. |
+| `fmtBnMulSmall` | 63 | priv | Multiply a base-1e9 big integer by a small u32 (`2` or `5`) in place, growing `nlimbs`. | `formatF64` | (none) | Little-endian limbs; u64 carry. |
+| `fmtCopyOut` | 79 | priv | Copy a formatted slice into the caller buffer, cap at `cap-1`, NUL-terminate, return the written slice. | `formatF64` | (none) | Shared safe buffer copy. |
+| `formatF64` | 91 | pub | Self-contained f64 formatter (no libc): recovers the 53-bit significand by exact power-of-two scaling, builds the exact decimal big integer `B` (`m*2^E` or `m*5^-E`), rounds its top 17 digits, and emits normalized scientific notation `d.dddddddddddddddde±XX` with trailing fractional zeros trimmed. | c89_emit (`.float_const`), ast/parser/dump debug | `fmtBnMulSmall`, `fmtCopyOut` | 17 significant digits — IEEE-754 double round-trip. Zero/inf/nan guard emits `0` (no valid C89 literal). Deterministic; no host libc. |
 
 ---
 
