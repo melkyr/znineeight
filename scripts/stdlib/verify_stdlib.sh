@@ -16,6 +16,11 @@
 # is diffed byte-for-byte to its committed `expected.txt`, and its exit code to
 # its committed `expected.rc`, across 3 runs) and turns any harness failure
 # into a nonzero closeout exit with a `STDLIB GATE FAILED` line.
+#
+# In discovery mode (no <dir> args) the harness additionally pins the discovered
+# dir set to scripts/stdlib/expected_dirs.txt, so a dropped/renamed fixture
+# FAILS the gate instead of silently shrinking coverage. Explicit <dir> runs
+# skip the pin.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

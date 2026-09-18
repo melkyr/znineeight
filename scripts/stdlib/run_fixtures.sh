@@ -20,6 +20,17 @@
 #   5. diff stdout bytes to `<dir>/expected.txt` and the exit code to
 #      `<dir>/expected.rc`.
 #
+# Discovery is PINNED to scripts/stdlib/expected_dirs.txt: in discovery mode the
+# discovered dir set must equal the pinned baseline exactly (a dropped, renamed,
+# or added fixture FAILS the gate), so coverage cannot silently shrink. Update
+# the pin intentionally when a band adds/removes fixtures. Explicit `<dir>`
+# arguments skip the pin (targeted runs).
+#
+# Optional `<dir>/ports.txt` (one TCP port per line; `#` comments allowed)
+# declares ports the fixture binds. If a LISTEN socket already exists on a
+# declared port before the run, the fixture FAILs as `PORT-IN-USE:<port>` with
+# a clear message instead of a confusing stdout mismatch.
+#
 # A missing golden is a FAIL (no silent skips). Prints a per-dir PASS/FAIL
 # summary and exits nonzero if any fixture fails.
 set -uo pipefail
@@ -60,17 +71,62 @@ discover_dirs() {
     | grep -E '^repro/mi_matrix/stdlib_[^/]*_xmod/$|^stdlib_test/[^/]*/$'
 }
 
+# port_listening <port> — true if a TCP LISTEN socket exists on <port>.
+port_listening() {
+  local hex
+  hex="$(printf '%04X' "$1")"
+  awk -v want="$hex" 'NR>1 { split($2,a,":"); if (a[2] == want && $4 == "0A") found=1 }
+       END { exit !found }' /proc/net/tcp 2>/dev/null && return 0
+  awk -v want="$hex" 'NR>1 { split($2,a,":"); if (a[2] == want && $4 == "0A") found=1 }
+       END { exit !found }' /proc/net/tcp6 2>/dev/null && return 0
+  return 1
+}
+
+# check_ports <dir> — 0 if every port in <dir>/ports.txt is clear; else sets
+# BAD_PORT and returns 1.
+BAD_PORT=""
+check_ports() {
+  local pf="$1/ports.txt" line p
+  [ -f "$pf" ] || return 0
+  while IFS= read -r line; do
+    p="${line%%#*}"
+    p="$(printf '%s' "$p" | tr -d '[:space:]')"
+    [ -n "$p" ] || continue
+    if port_listening "$p"; then BAD_PORT="$p"; return 1; fi
+  done < "$pf"
+  return 0
+}
+
 # --- fixture list ---
 declare -a DIRS=()
+DISCOVERY_MODE=0
 if [ "$#" -gt 0 ]; then
   for d in "$@"; do DIRS+=("${d%/}"); done
 else
+  DISCOVERY_MODE=1
   while IFS= read -r rel; do
     [ -n "$rel" ] && DIRS+=("${rel%/}")
   done < <(discover_dirs)
 fi
 
 [ "${#DIRS[@]}" -gt 0 ] || { echo "error: no fixture dirs found" >&2; exit 2; }
+
+# --- discovery pin (skipped for explicit <dir> runs) ---
+EXPECTED_DIRS_FILE="$SCRIPT_DIR/expected_dirs.txt"
+if [ "$DISCOVERY_MODE" = 1 ]; then
+  if [ ! -f "$EXPECTED_DIRS_FILE" ]; then
+    echo "FAIL discovery-pin (missing $EXPECTED_DIRS_FILE)" >&2
+    exit 1
+  fi
+  actual_list="$(printf '%s\n' "${DIRS[@]}" | LC_ALL=C sort)"
+  expected_list="$(grep -vE '^[[:space:]]*(#|$)' "$EXPECTED_DIRS_FILE" | LC_ALL=C sort)"
+  if [ "$actual_list" != "$expected_list" ]; then
+    echo "FAIL discovery-pin (discovered std fixture set differs from $EXPECTED_DIRS_FILE)" >&2
+    diff <(printf '%s\n' "$expected_list") <(printf '%s\n' "$actual_list") >&2 || true
+    echo "discovered=${#DIRS[@]} pinned=$(printf '%s\n' "$expected_list" | grep -c .)" >&2
+    exit 1
+  fi
+fi
 
 pass=0; fail=0
 declare -a FAILED=()
@@ -82,6 +138,8 @@ for d in "${DIRS[@]}"; do
     reason="NOENTRY"
   elif [ ! -f "$d/expected.txt" ] || [ ! -f "$d/expected.rc" ]; then
     reason="MISSING-GOLDEN"
+  elif ! check_ports "$d"; then
+    reason="PORT-IN-USE:$BAD_PORT"
   else
     tmp="$(mktemp -d /tmp/stdlib_run_fixtures.XXXXXX)"
     # 1. emit
@@ -142,11 +200,13 @@ for d in "${DIRS[@]}"; do
     fi
     rm -rf "$tmp"
   fi
-  if [ -n "$reason" ] && { [ "$reason" = "NOENTRY" ] || [ "$reason" = "MISSING-GOLDEN" ]; }; then
-    fail=$((fail + 1))
-    FAILED+=("$d")
-    echo "FAIL $d ($reason)"
-  fi
+  case "$reason" in
+    NOENTRY|MISSING-GOLDEN|PORT-IN-USE:*)
+      fail=$((fail + 1))
+      FAILED+=("$d")
+      echo "FAIL $d ($reason)"
+      ;;
+  esac
 done
 
 echo "----------------------------------------"

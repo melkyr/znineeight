@@ -1,0 +1,66 @@
+# Pinned std-fixture discovery baseline for scripts/stdlib/run_fixtures.sh.
+# One repo-relative dir per line (no trailing slash). Blank lines and lines
+# starting with # are ignored. In discovery mode the harness asserts the
+# discovered set EQUALS this list (a dropped/renamed/added fixture FAILS the
+# gate). Update INTENTIONALLY when a hardening band adds or removes fixtures.
+repro/mi_matrix/stdlib_arena_xmod
+repro/mi_matrix/stdlib_async_addtask_restart_cancel_xmod
+repro/mi_matrix/stdlib_async_addtask_reuse_xmod
+repro/mi_matrix/stdlib_async_addtask_single_xmod
+repro/mi_matrix/stdlib_async_await_nonctx_xmod
+repro/mi_matrix/stdlib_async_await_xmod
+repro/mi_matrix/stdlib_async_blocking_tick_two_xmod
+repro/mi_matrix/stdlib_async_blocking_tick_xmod
+repro/mi_matrix/stdlib_async_cancelall_xmod
+repro/mi_matrix/stdlib_async_f64align_xmod
+repro/mi_matrix/stdlib_async_handle_xmod
+repro/mi_matrix/stdlib_async_headerexact_xmod
+repro/mi_matrix/stdlib_async_oom_xmod
+repro/mi_matrix/stdlib_async_pool_xmod
+repro/mi_matrix/stdlib_async_removetask_noop_xmod
+repro/mi_matrix/stdlib_async_removetask_xmod
+repro/mi_matrix/stdlib_async_sched_xmod
+repro/mi_matrix/stdlib_async_waitfor_cancel_xmod
+repro/mi_matrix/stdlib_async_waitfor_dep_xmod
+repro/mi_matrix/stdlib_async_waitfor_helper_xmod
+repro/mi_matrix/stdlib_async_waitfor_oom_xmod
+repro/mi_matrix/stdlib_async_waitfor_settled_xmod
+repro/mi_matrix/stdlib_async_waitfor_unregistered_xmod
+repro/mi_matrix/stdlib_async_waitfor_xmod
+repro/mi_matrix/stdlib_bits_table_xmod
+repro/mi_matrix/stdlib_buf_clear_xmod
+repro/mi_matrix/stdlib_buf_endian_xmod
+repro/mi_matrix/stdlib_buf_growth_xmod
+repro/mi_matrix/stdlib_buf_oom_xmod
+repro/mi_matrix/stdlib_debug_backtrace_xmod
+repro/mi_matrix/stdlib_debug_cleartrap_xmod
+repro/mi_matrix/stdlib_debug_coredump_xmod
+repro/mi_matrix/stdlib_debug_defaulttrap_xmod
+repro/mi_matrix/stdlib_debug_trap_xmod
+repro/mi_matrix/stdlib_debug_xmod
+repro/mi_matrix/stdlib_fileio_xmod
+repro/mi_matrix/stdlib_math_xmod
+repro/mi_matrix/stdlib_mem_xmod
+repro/mi_matrix/stdlib_os_argc_xmod
+repro/mi_matrix/stdlib_os_cwd_xmod
+repro/mi_matrix/stdlib_os_env_xmod
+repro/mi_matrix/stdlib_str_count_xmod
+repro/mi_matrix/stdlib_str_eqignorecase_xmod
+repro/mi_matrix/stdlib_str_indexof_xmod
+repro/mi_matrix/stdlib_str_join_xmod
+repro/mi_matrix/stdlib_str_lastindexof_xmod
+repro/mi_matrix/stdlib_str_oom_xmod
+repro/mi_matrix/stdlib_str_repeat_xmod
+repro/mi_matrix/stdlib_str_replace_xmod
+repro/mi_matrix/stdlib_str_split_alias_xmod
+repro/mi_matrix/stdlib_str_split_xmod
+repro/mi_matrix/stdlib_str_splitlines_xmod
+repro/mi_matrix/stdlib_str_trim_xmod
+repro/mi_matrix/stdlib_str_trimleft_xmod
+repro/mi_matrix/stdlib_str_trimright_xmod
+repro/mi_matrix/stdlib_str_xmod
+repro/mi_matrix/stdlib_time_monotonic_avail_xmod
+repro/mi_matrix/stdlib_time_monotonic_xmod
+repro/mi_matrix/stdlib_time_sleep_xmod
+stdlib_test/bits_buf_str_usage
+stdlib_test/os_time_usage

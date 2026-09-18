@@ -990,6 +990,16 @@ CWD. A fixture passes only when all 3 stdouts are byte-identical, stdout
 `cmp`-equals `<dir>/expected.txt`, and rc equals `<dir>/expected.rc`
 (whitespace-trimmed).
 
+**Discovery pin + port guard (binding):**
+- In discovery mode the harness asserts the discovered dir set EQUALS the
+  committed baseline `scripts/stdlib/expected_dirs.txt` (61 dirs today), so a
+  dropped/renamed/added fixture FAILS the gate instead of silently shrinking
+  coverage. Update the pin intentionally when a band adds/removes fixtures.
+  Explicit `<dir>` runs skip the pin.
+- A fixture that binds TCP ports ships `<dir>/ports.txt` (one port per line,
+  `#` comments allowed). The harness fails `PORT-IN-USE:<port>` if a LISTEN
+  socket already exists on a declared port before the run.
+
 **Golden convention (binding):**
 - `<dir>/expected.txt` = exact stdout bytes; `<dir>/expected.rc` = expected exit code.
 - A missing golden is a FAIL (no silent skips).
