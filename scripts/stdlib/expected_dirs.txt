@@ -29,15 +29,18 @@ repro/mi_matrix/stdlib_async_waitfor_unregistered_xmod
 repro/mi_matrix/stdlib_async_waitfor_xmod
 repro/mi_matrix/stdlib_bits_extract_trap_xmod
 repro/mi_matrix/stdlib_bits_insert_trap_xmod
+repro/mi_matrix/stdlib_bits_stress_xmod
 repro/mi_matrix/stdlib_bits_table_xmod
 repro/mi_matrix/stdlib_buf_clear_xmod
 repro/mi_matrix/stdlib_buf_endian_xmod
 repro/mi_matrix/stdlib_buf_growth_xmod
 repro/mi_matrix/stdlib_buf_oom_xmod
+repro/mi_matrix/stdlib_buf_stress_xmod
 repro/mi_matrix/stdlib_debug_backtrace_xmod
 repro/mi_matrix/stdlib_debug_cleartrap_xmod
 repro/mi_matrix/stdlib_debug_coredump_xmod
 repro/mi_matrix/stdlib_debug_defaulttrap_xmod
+repro/mi_matrix/stdlib_debug_stress_xmod
 repro/mi_matrix/stdlib_debug_trap_xmod
 repro/mi_matrix/stdlib_debug_xmod
 repro/mi_matrix/stdlib_fileio_xmod
@@ -58,6 +61,7 @@ repro/mi_matrix/stdlib_str_replace_xmod
 repro/mi_matrix/stdlib_str_split_alias_xmod
 repro/mi_matrix/stdlib_str_split_xmod
 repro/mi_matrix/stdlib_str_splitlines_xmod
+repro/mi_matrix/stdlib_str_stress_xmod
 repro/mi_matrix/stdlib_str_trim_xmod
 repro/mi_matrix/stdlib_str_trimleft_xmod
 repro/mi_matrix/stdlib_str_trimright_xmod
