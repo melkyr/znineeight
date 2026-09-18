@@ -7239,10 +7239,13 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             if (uct_ty.kind == type_mod.TypeKind.array_type) {
                  var uap = emitter.registry.array_items[@intCast(usize, uct_ty.payload_idx)];
                  var uct_elem_ty = emitter.registry.types_items[@intCast(usize, uap.elem)];
-                 if (uct_elem_ty.kind == type_mod.TypeKind.array_type) {
-                     // Task 2f-F: a multi-dimensional fixed array is zeroed
-                     // byte-wise; a row-by-row `result[_i] = 0;` would assign a
-                     // scalar to an array (illegal C89).
+                 if (uct_elem_ty.kind == type_mod.TypeKind.array_type or
+                     uct_elem_ty.kind == type_mod.TypeKind.slice_type or
+                     uct_elem_ty.kind == type_mod.TypeKind.optional_type) {
+                     // Task 2f-F / Task 6b-F: an aggregate element (nested array,
+                     // slice, or optional) is zeroed byte-wise; a row-by-row
+                     // `result[_i] = 0;` would assign a scalar to an aggregate
+                     // (illegal C89).
                      bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                      var uz0: []const u8 = "{\n    unsigned int _i = 0;\n    while (_i < sizeof(";
                      bufferedWriterWrite(&emitter.writer, uz0);
@@ -7294,6 +7297,31 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                               bufferedWriterWrite(&emitter.writer, slpfn);
                               var slpb3: []const u8 = "[_k] = 0;\n        _k++;\n    }\n";
                               bufferedWriterWrite(&emitter.writer, slpb3);
+                          } else if (sfety.kind == type_mod.TypeKind.slice_type) {
+                              // Task 6b-F: a slice field is an aggregate; zero its
+                              // two C fields instead of `field = 0;` (illegal C89).
+                              bufferedWriterWrite(&emitter.writer, result);
+                              var sldp: []const u8 = "[_i].";
+                              bufferedWriterWrite(&emitter.writer, sldp);
+                              var slfnp: []const u8 = interner_mod.stringInternerGet(emitter.interner, sfe.name_id);
+                              bufferedWriterWrite(&emitter.writer, slfnp);
+                              var slepp: []const u8 = ".ptr = 0; ";
+                              bufferedWriterWrite(&emitter.writer, slepp);
+                              bufferedWriterWrite(&emitter.writer, result);
+                              bufferedWriterWrite(&emitter.writer, sldp);
+                              bufferedWriterWrite(&emitter.writer, slfnp);
+                              var slepl: []const u8 = ".len = 0;\n        ";
+                              bufferedWriterWrite(&emitter.writer, slepl);
+                          } else if (sfety.kind == type_mod.TypeKind.optional_type) {
+                              // Task 6b-F: an optional field is an aggregate; zero
+                              // its `has_value` flag instead of `field = 0;`.
+                              bufferedWriterWrite(&emitter.writer, result);
+                              var sldo: []const u8 = "[_i].";
+                              bufferedWriterWrite(&emitter.writer, sldo);
+                              var slfno: []const u8 = interner_mod.stringInternerGet(emitter.interner, sfe.name_id);
+                              bufferedWriterWrite(&emitter.writer, slfno);
+                              var sleo: []const u8 = ".has_value = 0;\n        ";
+                              bufferedWriterWrite(&emitter.writer, sleo);
                           } else {
                               bufferedWriterWrite(&emitter.writer, result);
                               var sld: []const u8 = "[_i].";

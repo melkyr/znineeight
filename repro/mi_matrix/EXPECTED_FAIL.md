@@ -1,4 +1,64 @@
-# mi_matrix corpus — expected-fail manifest (v133 2026-09-18)
+# mi_matrix corpus — expected-fail manifest (v134 2026-09-18)
+
+## Plan A Task 6b-F — `-ffast` undefined slice-array emission FIXED (v133 -> v134 2026-09-18)
+
+Task 6b-F fixes the compiler defect pinned by Task 6b-I (operator ruling m1277). **Authorized
+compiler change; fixed point MOVES `4b1c029de5234ea94dae0e78eac733e8` ->
+`7513a8d59a3c317639a055491769a9c5`.**
+
+**Locus + change (`sf/src/c89_emit.zig`, the `.undefined_const` array-fill arm).** Two edits,
+both inside the pinned `.undefined_const` arm:
+1. the array-element byte-wise fill (the multi-dim/nested path) now also covers `slice_type`
+   and `optional_type` element kinds — a 1-D array of slices/optionals is zeroed byte-wise
+   (`while (_i < sizeof(result)) { ((unsigned char*)&result)[_i] = 0; _i++; }`) instead of the
+   illegal `result[_i] = 0;`;
+2. the struct-element field arm gained explicit `slice_type` (`field.ptr = 0; field.len = 0;`)
+   and `optional_type` (`field.has_value = 0;`) field paths instead of `field = 0;`.
+Scalar/pointer/tagged-union element output is unchanged (verified byte-identical for scalar and
+nested-array elements).
+
+**RED -> GREEN (canonical classifier `scripts/corpus/classify`, seed-built compiler).** The
+`-ffast` pin flips FAIL -> OK; the off-corpus `-fsafe`/default control stays clean.
+
+| fixture | v133 class | v134 class | emitted C now (fixed point `7513a8d5`) |
+|---|---|---|---|
+| `undefined_slice_array_xmod` | **FAIL** | **OK** | byte-wise `while (_i < sizeof(zT_1)) { ((unsigned char*)&zT_1)[_i] = 0; _i++; }`; gcc clean, run rc=0, stdout `alpha\|gamma\|5\n` |
+| `known_excluded/undefined_slice_array_safe_xmod` | off-corpus (control) | off-corpus (control) | unchanged `zig_poison_fill`; `-ffast`/`-fsafe`/default all rc=0, stdout `alpha\|gamma\|5\n` |
+
+Affected shapes verified (scratch probes, `-ffast` dump+gcc+run): `[N][]const u8` slice element
+and `[N]?i32` optional element (both byte-wise), `[N]S` with a slice field (`s.ptr`/`s.len`), and
+`[N]S` with an optional field (`o.has_value`) — all FAIL pre-fix, OK + correct stdout post-fix.
+
+**Corpus `-ffast` dump+gcc classifier (761 dirs):**
+
+| | 6b-I `4b1c029d` (v133) | 6b-F `7513a8d5` (v134) | delta |
+|---|---|---|---|
+| dirs | 761 | 761 | 0 |
+| OK | 707 | 708 | +1 |
+| GREEN | 28 | 28 | 0 |
+| FAIL | 26 | 25 | -1 |
+| ICE | 0 | 0 | 0 |
+| CRASH | 0 | 0 | 0 |
+
+Per-dir `join` diff = exactly `repro/mi_matrix/undefined_slice_array_xmod` FAIL -> OK; every other
+dir class-identical.
+
+**Gates.** 3× `-ffast` emission md5 stable (`main_112EE5B5.c`
+`c3e0986e1e95b2b1166d3f1821ad8faf`; all-`.c` concat `e205a5ca2f054704a6752d49e7754aa6`);
+`-ffast`/`-fsafe`/default parity (all dump+gcc+link+run rc=0, identical stdout
+`alpha\|gamma\|5\n`; `-fsafe`/default use `zig_poison_fill`, `-ffast` the byte-wise fill);
+`check_emit_support.sh` **5/5** byte-identical; `verify_upgraded.sh` **CLOSEOUT OK**; self-compile
+dump rc=0, 48 `.c`, 0 `error[`, 0 PANIC. Seed NOT re-rotated.
+
+**Residual (declared, tracked).** An `error_union_type` element (`[N]!T = undefined`) still
+reaches the scalar else-arm and emits `result[_i] = 0;` (gcc: int -> EU struct) — same root cause,
+outside the Task 6b-I measured set (slice/optional/struct), left unfixed. A struct element whose
+field is an ARRAY of slices/optionals (`[N]S`, `S` has `[M][]const u8`) also still emits
+`result[_i].field[_k] = 0;` (array-field sub-arm); left unfixed. Direct slice/struct locals,
+globals, nested arrays, and scalar/pointer elements are unchanged (byte-identical). Full report:
+`.superpowers/sdd/2026-09-17-std-lib-plan-a-foundation/task-6b-F-report.md`.
+
+---
 
 ## Plan A Task 6b-I — `-ffast` undefined slice-array emission defect pinned (v132 -> v133 2026-09-18)
 
