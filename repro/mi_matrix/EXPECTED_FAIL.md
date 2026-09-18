@@ -1,4 +1,54 @@
-# mi_matrix corpus — expected-fail manifest (v148 2026-09-18)
+# mi_matrix corpus — expected-fail manifest (v149 2026-09-18)
+
+## Plan C Task 2b-F (F) — 64-bit decimal + f64 literal precision fixed (v148 -> v149 2026-09-18)
+
+The **F** half of the operator-ruled I/F pair (m1703). Both Task 2b-I pins flip
+RED -> GREEN; the self-emission fixed point **MOVES**
+`ab7187cc988e39dc5907b95ccc182f9f` -> **`417c435cec303378b224ecdff3f64f26`**
+(hop1 == hop2) and the seed rotates **v32 -> v33** (archive md5
+`799dbca38d211f6a3d962f3773215adf`). This is the second authorized Plan C
+`sf/src` change class (m1703).
+
+**Fix (1) — 64-bit decimal literal truncation.** Root cause: the global-`const`
+int-literal materialization in `lowerExprImpl`'s `ident_expr` path
+(`sf/src/lower.zig:3223`) hardcoded `nextTemp(self, type_mod.TYPE_U32)`, so a
+literal that does not fit in 32 bits (e.g. `const TWO63: u64 =
+9223372036854775808;`) lowered into a 32-bit `unsigned int` temp and truncated
+before widening. The temp type is now selected from the literal value:
+`TYPE_U32` when `val <= 0xFFFFFFFF`, else `TYPE_U64`. The emitted C becomes
+`zT_79FAE712_u64 zT_1; zT_1 = 9223372036854775808ULL; lim = zT_1;`. Values that
+fit in 32 bits keep the exact previous `TYPE_U32` behaviour (zero corpus
+movement).
+
+**Fix (2) — f64 literal precision.** Root cause: `formatF64`
+(`sf/src/util/format.zig`) hand-extracted only **6** significant digits in f64
+arithmetic, so an f64 literal emitted at ~6 digits (`0.3333333333333333` ->
+`3.33333e-1`; `1.7976931348623157e308` -> `1.79769`). `formatF64` now delegates
+to the host C library `gcvt(value, 17, buf)`, which emits 17 significant digits —
+enough for IEEE-754 double round-trip. `0.3333333333333333` now emits
+`0.33333333333333331` and the f64-max literal emits `1.7976931348623157e+308`.
+
+| dir | class (v148) | class (v149) | evidence |
+|---|---|---|---|
+| `lit64_decimal_xmod` | **OK** (runtime RED) | **OK** (runtime GREEN) | `run_fixtures.sh` explicit: PASS; stdout `lit64 ok`, rc=0 |
+| `f64_literal_precision_xmod` | **OK** (runtime RED) | **OK** (runtime GREEN) | `run_fixtures.sh` explicit: PASS; stdout `f64 lit ok`, rc=0 |
+
+**Corpus delta.** Universe **829 dirs** unchanged; class map **unchanged**
+(776 OK / 28 GREEN / 25 FAIL / 0 ICE / 0 CRASH; full-classifier diff empty —
+zero unexpected movement). The two pins were already compile-clean, so their
+class stays OK; only their RUNTIME flips RED -> GREEN. The 4-MD5 gate programs
+(gol/lisp/json/mud) emit byte-identically to the pre-fix compiler. Runtime gate
+**123 PASS / 0 FAIL over 123 dirs**; `check_emit_support.sh` **7/7**;
+self-compile **48 `.c`, rc=0, 0 errors, 0 PANIC**; `CLOSEOUT OK` (A1-A5, B1-B6,
+C1 PASS).
+
+**Declassification.** Both dirs remain in the corpus (they are the permanent
+regression pins for this fix) but are declassified as limitations: the RED
+declaration in the v148 section below is superseded — the compiler now lowers
+and emits both literals with full width/precision. The `sf/src/std_parse.zig`
+workarounds (the `@intCast(u64, 0x8000000000000000)` reference and the
+`value != 0.0 and value * 2.0 == value` inf test) are no longer required, but are
+left in place (harmless; out of this task's scope).
 
 ## Plan C Task 2b-I (I) — 64-bit/f64 literal limitations pinned (v147 -> v148 2026-09-18)
 

@@ -3220,7 +3220,9 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                            var literal_tid: u32 = @intCast(u32, 0);
                            if (init_node.kind == AstKind.int_literal) {
                               var val = ast_mod.astStoreIntValue(store, decl_node.child_1);
-                              var tid = nextTemp(self, type_mod.TYPE_U32);
+                              var lit_ty: u32 = type_mod.TYPE_U32;
+                              if (val > @intCast(u64, 4294967295)) { lit_ty = type_mod.TYPE_U64; }
+                              var tid = nextTemp(self, lit_ty);
                               emitInst(self, LirInst{ .int_const = .{ .value = val, .result = tid } });
                               literal_tid = tid;
                           }

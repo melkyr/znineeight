@@ -58,96 +58,21 @@ pub fn extractDigit(v: f64) i32 {
     return 0;
 }
 
+extern "c" fn gcvt(value: f64, ndigit: i32, buf: [*]u8) void;
+
 pub fn formatF64(val: f64, buf: []u8, buf_len: usize) []u8 {
-    var is_neg: u8 = 0;
-    var v = val;
-    if (v < 0) {
-        is_neg = 1;
-        v = -v;
+    var tmp: [64]u8 = undefined;
+    gcvt(val, @intCast(i32, 17), &tmp[0]);
+    var n: usize = 0;
+    while (n < @intCast(usize, 64) and tmp[n] != 0) : (n += 1) {}
+    var cap: usize = buf_len;
+    if (cap > buf.len) cap = buf.len;
+    if (cap == 0) { return buf[0..0]; }
+    if (n > cap - 1) n = cap - 1;
+    var i: usize = 0;
+    while (i < n) : (i += 1) {
+        buf[i] = tmp[i];
     }
-    var exp: i32 = 0;
-    if (v >= 10.0 or v < 1.0) {
-        while (v >= 10.0) {
-            v = v / 10.0;
-            exp += 1;
-        }
-        while (v < 1.0 and v != 0.0) {
-            v = v * 10.0;
-            exp -= 1;
-        }
-    }
-    var fmt_buf: [64]u8 = undefined;
-    var fi: i32 = 0;
-    var rem = v;
-    while (fi < 6) {
-        var digit = extractDigit(rem);
-        fmt_buf[@intCast(usize, fi)] = @intCast(u8, @intCast(u32, '0') + @intCast(u32, digit));
-        fi += 1;
-        rem = (rem - @intToFloat(f64, digit)) * 10.0;
-    }
-    var bi: i32 = 0;
-    if (is_neg != 0) {
-        buf[@intCast(usize, bi)] = '-';
-        bi += 1;
-    }
-    var di: i32 = 0;
-    buf[@intCast(usize, bi)] = fmt_buf[@intCast(usize, di)];
-    bi += 1;
-    di += 1;
-    var has_frac: u8 = 0;
-    while (di < 6) {
-        if (fmt_buf[@intCast(usize, di)] != '0') {
-            has_frac = 1;
-        }
-        di += 1;
-    }
-    if (has_frac != 0) {
-        buf[@intCast(usize, bi)] = '.';
-        bi += 1;
-        di = 1;
-        while (di < 6) {
-            buf[@intCast(usize, bi)] = fmt_buf[@intCast(usize, di)];
-            bi += 1;
-            di += 1;
-        }
-    } else if (exp != 0) {
-        buf[@intCast(usize, bi)] = '.';
-        bi += 1;
-        di = 1;
-        while (di < 6) {
-            buf[@intCast(usize, bi)] = fmt_buf[@intCast(usize, di)];
-            bi += 1;
-            di += 1;
-        }
-    }
-    if (exp != 0) {
-        buf[@intCast(usize, bi)] = 'e';
-        bi += 1;
-        if (exp < 0) {
-            buf[@intCast(usize, bi)] = '-';
-            bi += 1;
-            exp = -exp;
-        } else {
-            buf[@intCast(usize, bi)] = '+';
-            bi += 1;
-        }
-        var exp_buf: [8]u8 = undefined;
-        var ei: i32 = 7;
-        exp_buf[@intCast(usize, ei)] = 0;
-        ei -= 1;
-        var expv = exp;
-        while (expv > 0) {
-            exp_buf[@intCast(usize, ei)] = @intCast(u8, @intCast(u32, '0') + @intCast(u32, expv % 10));
-            expv = expv / 10;
-            ei -= 1;
-        }
-        ei += 1;
-        while (@intCast(usize, ei) < 7) {
-            buf[@intCast(usize, bi)] = exp_buf[@intCast(usize, ei)];
-            bi += 1;
-            ei += 1;
-        }
-    }
-    buf[@intCast(usize, bi)] = 0;
-    return buf[0..@intCast(usize, bi)];
+    buf[n] = 0;
+    return buf[0..n];
 }
