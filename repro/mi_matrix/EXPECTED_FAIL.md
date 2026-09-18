@@ -1,4 +1,60 @@
-# mi_matrix corpus — expected-fail manifest (v143 2026-09-18)
+# mi_matrix corpus — expected-fail manifest (v144 2026-09-18)
+
+## Plan B hardening closeout — harness hardening + probes + stress tier (v143 -> v144 2026-09-18)
+
+Plan B test-hardening (`docs/superpowers/plans/2026-09-18-plan-B-test-hardening.md`) is
+**COMPLETE** (Tasks 1-4 + the operator-ruled Task 5a-I/5a-F I/F pair + this closeout).
+Docs/scripts/fixtures plus the ONE authorized `sf/src` std-only fix (Task 5a-F, above).
+**No compiler-graph change**: the self-emission fixed point is **UNMOVED
+`414cccee639bdb61c7a9f1f2ddddb166`** (a std-only change cannot move it — the compiler's
+import graph reaches no std module). The seed rotates **v29 -> v30** (archive md5
+`c0a218c5e7a74afb11435abe20c7d990`) because the archive embeds `lib/`.
+
+**Harness hardening (Task 1, `scripts/stdlib/run_fixtures.sh`).**
+- `--capture <zig1> [dirs...]` writes the observed stdout+rc to the per-fixture goldens,
+  with a guard: a nonzero rc not already declared in an existing `expected.rc` is REFUSED
+  (`CAPTURE-REFUSED-RC<rc>(undeclared)`, no golden written); a nondeterministic fixture is
+  refused (`NONDETERMINISTIC`). Capture is always followed by a human review against the
+  fixture's documented GREEN contract.
+- Discovery broadened from `stdlib_*_xmod` to any `stdlib_*` dir
+  (`^repro/mi_matrix/stdlib_[^/]*/$`) plus `stdlib_test/*/` (pin-neutral today: no
+  non-`_xmod` std dir exists). An unpinned-dir guard now ALWAYS fails
+  `unpinned-stdlib-dir (<dir>)` if a `repro/mi_matrix/stdlib_*/` or `stdlib_test/*/` dir
+  exists on disk but is not in the pin — even in explicit-`<dir>` runs and for a dir with
+  no resolvable entry.
+- gcc/link diagnostics surfaced: a `GCCFAIL` echoes the first line of `.gccerr`
+  (`gcc stderr: ...`); a `BUILD-RC<rc>` echoes the first line of `.builderr`
+  (`build stderr: ...`).
+
+**Golden convention (binding).** Each fixture dir carries `expected.txt` (exact stdout
+bytes) + `expected.rc` (exit code). A missing golden is a FAIL (no silent skips);
+`scripts/stdlib/expected_dirs.txt` pins the discovered set so coverage cannot silently
+shrink; a fixture that binds a port ships `ports.txt`. Goldens are runtime-only
+(stdout+rc), captured only after the observed output matched the fixture's documented
+GREEN contract, and re-captured only on an intentional behavior change.
+
+**New fixtures (7).**
+
+| fixture | kind | contract |
+|---|---|---|
+| `stdlib_file_openerr_xmod` | expected-failure probe | `open(arena, nonexistent, Read)` -> `FileError.OpenFailed`, caught + asserted in-process; stdout `file openerr ok`, rc 0 |
+| `stdlib_file_stress_xmod` | stress | 10000-byte writeAll/readAll round-trip embedding binary `\r`/`\n`/NUL at pinned offsets + 777-byte chunked read to EOF; stdout `file stress ok` |
+| `stdlib_stdin_stress_xmod` | stress | 4321-byte line across the overflow boundary + EOF without trailing newline (deterministic stdin via dup2); stdout `stdin stress ok` |
+| `stdlib_net_udp_stress_xmod` | stress | max IPv4 UDP payload (65507 B) loopback byte-exact + zero-length + truncation; binds a fixed port (`ports.txt`); stdout `udp stress ok` |
+| `stdlib_stream_stress_xmod` | stress | 250-byte line through a 100-byte buffer + final line with no trailing newline + empty source; stdout `stream stress ok` |
+| `stdlib_stdin_multiple_xmod` | exact-multiple pin | Task 5a-I RED -> 5a-F GREEN; `"abcd\n"` via a 4-byte buffer yields `abcd` then `z` (no spurious empty line); stdout `stdin multiple ok`, rc 0 |
+| `stdlib_stream_multiple_xmod` | exact-multiple pin | Task 5a-I RED -> 5a-F GREEN; same exact-multiple contract for `std_stream.readLineSync`; stdout `stream multiple ok`, rc 0 |
+
+**Gates (seed-built fixed-point compiler `414cccee`).** Runtime gate **108 PASS / 0 FAIL
+over 108 dirs** (3x determinism internal; pin `scripts/stdlib/expected_dirs.txt` = 108
+data lines: 104 `repro/mi_matrix/stdlib_*` + 4 `stdlib_test/*`).
+`scripts/check_emit_support.sh` **7/7** byte-identical. Self-compile `-ffast --dump-c89`
+rc=0, 48 `.c` + 48 `.h`, 0 `error[`, 0 PANIC. Corpus `-ffast` dump+gcc classifier
+**810 dirs = 757 OK / 28 GREEN / 25 FAIL / 0 ICE / 0 CRASH** (803 -> 810: the 7 new dirs
+all classify OK; every pre-existing dir class-identical). `scripts/closeout/verify_upgraded.sh`
+**CLOSEOUT OK** (A1-A5 / B1-B7 / C1). Seed v30 round-trip re-verified (two-hop closure
+hop1 == hop2 == `414cccee`). Full report:
+`.superpowers/sdd/2026-09-18-plan-B-test-hardening/task-5-report.md`.
 
 ## Plan B hardening Task 5a-F — exact-multiple long-line defect fixed (v142 -> v143 2026-09-18)
 
@@ -254,8 +310,9 @@ out of the current plan scope. No ruling yet.
 
 ## Next plan
 
-Plan B complete. NEXT: `docs/superpowers/plans/2026-09-17-std-lib-plan-c-data-codecs.md`
-(L4 data structures + L5 encoders/decoders). Plan D (network async) is recorded at
+Plan B hardening complete. NEXT: author `docs/superpowers/plans/2026-09-18-plan-C-test-hardening.md`
+(L4/L5 goldens + stress tier), then execute `docs/superpowers/plans/2026-09-17-std-lib-plan-c-data-codecs.md`.
+Plan D (network async) is recorded at
 `docs/superpowers/plans/2026-09-18-plan-D-network-async.md` and scheduled after A/B/C.
 
 ---

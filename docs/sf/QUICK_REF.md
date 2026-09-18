@@ -45,9 +45,11 @@ the UDP surface). `scripts/seed/build_from_seed.sh` installs all 20 into the
 rebuilt compiler's `lib/`, and the rotated **v30** archive carries all 20 (the
 Plan B Task 5a-F seed rotation). See `repro/mi_matrix/EXPECTED_FAIL.md` v143.
 The archived binary and the self-emission fixed point
-`414cccee639bdb61c7a9f1f2ddddb166` are the SAME compiler state (HEAD
-`7c2b2445`). zig0 is retired; the seed model (`scripts/seed/build_from_seed.sh`)
-is the only rebuild path.
+`414cccee639bdb61c7a9f1f2ddddb166` are the SAME compiler state (the v30
+provenance entry in `release/seed/CHANGELOG.md` records HEAD `69066336`; the
+archive's `lib/` carries the Task 5a-F exact-multiple fix, which did not move
+the fixed point). zig0 is retired; the seed model
+(`scripts/seed/build_from_seed.sh`) is the only rebuild path.
 **C89-AHEAD note (2026-09-13):** `runtime/` now carries the compiler's **emitted,
 mode-specific** support (the `-ffast` self-emission support), not the canonical
 `-fsafe` `sf/src/include` files, so a gcc-only rebuild of the archive C
@@ -1006,7 +1008,7 @@ CWD. A fixture passes only when all 3 stdouts are byte-identical, stdout
 - Discovery is `repro/mi_matrix/stdlib_*/` (any `stdlib_*` dir, not just
   `_xmod`) plus `stdlib_test/*/`. In discovery mode the harness asserts the
   discovered dir set EQUALS the committed baseline
-  `scripts/stdlib/expected_dirs.txt` (101 dirs today: 97
+  `scripts/stdlib/expected_dirs.txt` (108 dirs today: 104
   `repro/mi_matrix/stdlib_*` + 4 `stdlib_test/*`), so a dropped/renamed/added
   fixture FAILS the gate instead of silently shrinking coverage. Update the pin
   intentionally when a band adds/removes fixtures.
