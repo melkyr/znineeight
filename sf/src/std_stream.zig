@@ -18,10 +18,10 @@
 // line-accumulation buffer and `pending` is the unconsumed slice into it. The
 // returned line aliases `buf` and is valid until the next call.
 //
-// Contract quirk (Plan B final review): the overflow path (a line longer than
-// `buf`) hands back a full buffer WITHOUT stripping a trailing `\r`; a CRLF
-// straddling the buffer boundary can therefore yield a spurious empty line on
-// the next call. Documented, not fixed (behavior unchanged).
+// CRLF at the buffer boundary: when a `\r` lands as the last byte of a full
+// overflow buffer, `takeOverflow` strips it and sets the caller-held
+// `pending_cr` carry; the next read consumes the following `\n` as the same
+// terminator, so no `\r` is leaked and no spurious empty line is produced.
 //
 // One error set at the top (R2), aliased from the source's error set. No
 // `catch unreachable`; every file error is propagated.
@@ -37,6 +37,7 @@ pub const FileLineReader = struct {
     src: *file_mod.File,
     buf: []u8,
     pending: []u8,
+    pending_cr: bool,
 };
 
 // Async read granularity: at most a quarter of the caller buffer per chunk, so
@@ -86,12 +87,44 @@ fn takeRest(lr: *FileLineReader) ?[]u8 {
 }
 
 // A line longer than `buf`: hand back the full buffer as a line so the caller
-// makes progress; the rest of the line is returned by subsequent calls.
+// makes progress; the rest of the line is returned by subsequent calls. A
+// trailing `\r` at the boundary is stripped and carried in `pending_cr` so the
+// next read can consume its `\n` as the same terminator.
 fn takeOverflow(lr: *FileLineReader) ?[]u8 {
     if (lr.pending.len < lr.buf.len) return null;
     var line: []u8 = lr.pending;
     lr.pending = lr.buf[0..0];
+    if (line.len > 0 and line[line.len - 1] == '\r') {
+        lr.pending_cr = true;
+        line = line[0 .. line.len - 1];
+    }
     return line;
+}
+
+// Resolve a boundary CR carried from a full-buffer overflow (`pending_cr`).
+// Read the next byte: '\n' closes the CRLF (the overflow call already returned
+// that line's text, so this is not a new empty line); any other byte makes the
+// CR a literal first byte of the continuation. Called only while `pending` is
+// empty (takeOverflow clears it before setting `pending_cr`).
+fn resolvePending(lr: *FileLineReader) StreamError!void {
+    if (!lr.pending_cr) return;
+    lr.pending_cr = false;
+    if (lr.buf.len == 0) return;
+    const got = try file_mod.read(lr.src, lr.buf[0..1]);
+    if (got == 0) {
+        lr.buf[0] = '\r';
+        lr.pending = lr.buf[0..1];
+        return;
+    }
+    if (lr.buf[0] == '\n') return;
+    const b = lr.buf[0];
+    lr.buf[0] = '\r';
+    if (lr.buf.len >= 2) {
+        lr.buf[1] = b;
+        lr.pending = lr.buf[0..2];
+    } else {
+        lr.pending = lr.buf[0..1];
+    }
 }
 
 // Read up to `want` bytes (bounded by the free tail of buf) into `pending`.
@@ -109,12 +142,13 @@ fn readChunk(lr: *FileLineReader, want: usize) StreamError!usize {
 }
 
 pub fn initFileLineReader(src: *file_mod.File, buf: []u8) FileLineReader {
-    return FileLineReader{ .src = src, .buf = buf, .pending = buf[0..0] };
+    return FileLineReader{ .src = src, .buf = buf, .pending = buf[0..0], .pending_cr = false };
 }
 
 // Blocking: read until a line is buffered or EOF. No suspension.
 pub fn readLineSync(lr: *FileLineReader) StreamError!?[]u8 {
     if (lr.buf.len == 0) return null;
+    try resolvePending(lr);
     while (true) {
         if (takeLine(lr)) |line| return line;
         if (takeOverflow(lr)) |line| return line;
@@ -146,6 +180,7 @@ const LINE_OVERFLOW: u8 = 2;
 
 fn awaitLine(lr: *FileLineReader) StreamError!u8 {
     if (lr.buf.len == 0) return LINE_EOF;
+    try resolvePending(lr);
     while (true) {
         if (hasLine(lr)) return LINE_READY;
         if (lr.pending.len >= lr.buf.len) return LINE_OVERFLOW;

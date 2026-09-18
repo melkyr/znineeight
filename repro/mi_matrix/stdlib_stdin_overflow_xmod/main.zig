@@ -38,7 +38,7 @@ fn feed(data: []const u8) void {
 }
 
 fn expectLine(buf: []u8, want: []const u8, what: []const u8) void {
-    if (stdin.readLine(buf)) |line| {
+    if (stdin.readLine(buf) catch @panic(what)) |line| {
         ck(line.len == want.len, what);
         var i: usize = 0;
         while (i < want.len) : (i += 1) {
@@ -58,7 +58,7 @@ pub fn main() void {
     expectLine(buf[0..], "abcd", "overflow prefix");
     expectLine(buf[0..], "ef", "overflow remainder");
     expectLine(buf[0..], "xy", "overflow next line");
-    ck(stdin.readLine(buf[0..]) == null, "overflow EOF null");
+    ck((stdin.readLine(buf[0..]) catch @panic("overflow EOF")) == null, "overflow EOF null");
 
     io.write("stdin overflow ok\n");
 }

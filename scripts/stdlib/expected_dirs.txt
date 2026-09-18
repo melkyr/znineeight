@@ -69,6 +69,7 @@ repro/mi_matrix/stdlib_os_argc_xmod
 repro/mi_matrix/stdlib_os_cwd_xmod
 repro/mi_matrix/stdlib_os_env_xmod
 repro/mi_matrix/stdlib_os_exit_xmod
+repro/mi_matrix/stdlib_stdin_crlf_boundary_xmod
 repro/mi_matrix/stdlib_stdin_eof_notrailing_xmod
 repro/mi_matrix/stdlib_stdin_multiline_xmod
 repro/mi_matrix/stdlib_stdin_overflow_xmod
@@ -90,6 +91,7 @@ repro/mi_matrix/stdlib_str_trim_xmod
 repro/mi_matrix/stdlib_str_trimleft_xmod
 repro/mi_matrix/stdlib_str_trimright_xmod
 repro/mi_matrix/stdlib_str_xmod
+repro/mi_matrix/stdlib_stream_crlf_boundary_xmod
 repro/mi_matrix/stdlib_stream_readline_empty_xmod
 repro/mi_matrix/stdlib_stream_readline_noeof_xmod
 repro/mi_matrix/stdlib_stream_readline_xmod

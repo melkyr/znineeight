@@ -52,7 +52,7 @@ fn feed(data: []const u8) void {
 }
 
 fn expectLine(buf: []u8, want: []const u8, what: []const u8) void {
-    if (stdin.readLine(buf)) |line| {
+    if (stdin.readLine(buf) catch @panic(what)) |line| {
         ck(line.len == want.len, what);
         var i: usize = 0;
         while (i < want.len) : (i += 1) {
@@ -92,7 +92,7 @@ pub fn main() void {
     expectLine(buf[0..], "one", "line one");
     expectLine(buf[0..], "two", "line two CRLF strip");
     expectLine(buf[0..], "three", "line three no trailing newline");
-    var eof: bool = stdin.readLine(buf[0..]) == null;
+    var eof: bool = (stdin.readLine(buf[0..]) catch @panic("EOF readLine")) == null;
     ck(eof, "EOF null");
 
     f.remove(name) catch {};

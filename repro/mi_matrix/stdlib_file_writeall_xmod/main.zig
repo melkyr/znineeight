@@ -33,7 +33,9 @@ pub fn main() void {
     ck(back[1] == 13, "byte CR");
     ck(back[2] == 10, "byte LF");
     ck(back[3] == 0, "byte NUL");
+    ck(back[4] == 'B', "byte B");
     ck(back[5] == 255, "byte FF");
+    ck(back[6] == 0, "byte trailing NUL");
     f.remove("t_writeall.bin") catch {};
     io.write("file writeall ok\n");
 }

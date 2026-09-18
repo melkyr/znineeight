@@ -41,7 +41,7 @@ pub fn main() void {
 
     var buf: [16]u8 = undefined;
     var got: []u8 = undefined;
-    if (stdin.readLine(buf[0..])) |line| {
+    if (stdin.readLine(buf[0..]) catch @panic("readline line1")) |line| {
         got = line;
     } else {
         @panic("readline line1");
@@ -56,7 +56,7 @@ pub fn main() void {
     ck(buf[0] == 'H', "readline slice into buf");
 
     // No second line and no partial: null at EOF.
-    ck(stdin.readLine(buf[0..]) == null, "readline EOF null");
+    ck((stdin.readLine(buf[0..]) catch @panic("readline EOF")) == null, "readline EOF null");
 
     io.write("stdin readline ok\n");
 }

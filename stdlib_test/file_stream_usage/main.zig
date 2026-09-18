@@ -105,9 +105,13 @@ pub fn main() void {
 
     var storage: [4096]u64 = undefined;
     var ctx = sa.contextInit(@ptrCast([*]u8, &storage)[0..4096 * 8]);
-    var frame_store: [1024]u8 = undefined;
+    // Frame buffer sized by the authoritative @asyncFrameSize (not a hardcoded
+    // 1024): the size is a runtime int-literal in this compiler, so it backs an
+    // arena allocation (same idiom as mud_server / client_task_arena_xmod).
+    const frame_sz = @intCast(usize, @asyncFrameSize(co));
+    const frame_store = arena_mod.alloc(&g_arena, frame_sz) catch @panic("frame alloc");
     var task: sa.Task = undefined;
-    task.frame = @asyncInit(@ptrCast(*void, ctx), &frame_store, co, @ptrCast(*const void, &ca));
+    task.frame = @asyncInit(@ptrCast(*void, ctx), @ptrCast([*]u8, frame_store), co, @ptrCast(*const void, &ca));
     task.ctx = ctx;
     task.arg = @ptrCast(*void, &ca);
     task.result = @ptrCast(*void, &ca);

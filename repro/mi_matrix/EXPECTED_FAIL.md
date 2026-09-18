@@ -1,4 +1,26 @@
-# mi_matrix corpus — expected-fail manifest (v140 2026-09-18)
+# mi_matrix corpus — expected-fail manifest (v141 2026-09-18)
+
+## Plan B cleanup — known-issues residuals (v140 -> v141 2026-09-18)
+
+Plan B cleanup round (`fix(std): Plan B cleanup — stdin Io/EOF/CRLF,
+frame-size, fixture tightening`) fixed 7 review minors; the remaining
+un-fixed minors are recorded here. Std-side/fixtures/scripts only — no
+compiler-graph file; fixed point UNMOVED `414cccee639bdb61c7a9f1f2ddddb166`.
+
+| residual | where | note |
+|---|---|---|
+| `GetStdHandle(i32)` vs `<windows.h>` `DWORD` | `sf/src/std_stdin_pal.zig` | declared `i32`; Windows `GetStdHandle` takes/returns `DWORD` (unsigned long). ABI-identical on i386; not re-typed this round. |
+| blueprint truncation wording (inverted) | `sf/docs/std_lib_extension.txt` §3 L3 `std_file` | the readAll/truncation wording is inverted; docs-only. |
+| `__errno_location` glibc-specific | `sf/src/std_file_pal.zig` / `std_net.zig` | the POSIX errno accessor is glibc-specific (musl differs); x86_64-linux/glibc is the only supported POSIX target today. |
+| `awaitLine` extra yield | `sf/src/std_stream.zig` | the async reader suspends once more than strictly needed on the last incomplete read. |
+| Program C graph-isolation evidence report-only | closeout report | the graph-isolation claim for Program C is report-only (not an automated gate). |
+| chunk granularity `buf.len/4` | `sf/src/std_stream.zig` | the async chunk is a fixed quarter of the caller buffer; no adaptive sizing. |
+| `file_stdin_usage` seek-check weakness + redundant `feed()` + literal echo | `stdlib_test/file_stdin_usage/main.zig` | the seek check does not assert the post-seek read; `feed()` is called after the file was already written; the final lines echo literals rather than the read data. |
+| `off_t` i32 | `sf/src/std_file.zig` | file offsets are `i32` (not `off_t`/i64); >2 GiB files are out of contract. |
+| `std_file.zig` `@cInclude("<fcntl.h>")` unused | `sf/src/std_file.zig` | the include is not required by the emitted code path. |
+| stale std-count comment | `docs/sf/QUICK_REF.md:36,45` (historically `scripts/check_emit_support.sh`) | QUICK_REF still says "15 std `.zig`"; the canonical set is 20 (`scripts/check_emit_support.sh` already reads 20). |
+
+---
 
 ## Plan B closeout — L3 resources + std_stream landed (v139 -> v140 2026-09-18)
 

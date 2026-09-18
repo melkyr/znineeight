@@ -1,14 +1,14 @@
-// stdlib_stdin_eof_notrailing_xmod — STDLIB std_stdin (L3) EOF-with-no-trailing-
-// newline GREEN fixture (blueprint §3 L3 named shape: EOF with no trailing
-// newline).
+// stdlib_stdin_crlf_boundary_xmod — STDLIB std_stdin (L3) CRLF-at-buffer-
+// boundary GREEN fixture.
 //
-// Contract: a final line not terminated by \n is returned as a partial line;
-// the next readLine returns null. CRLF input is stripped to the line text.
+// Contract: when a `\r` lands as the last byte of a full buffer and the `\n` is
+// the next unread byte, the CRLF is consumed as ONE terminator: the returned
+// line has no `\r` and the next call does NOT return a spurious empty line.
 //
 // Deterministic stdin: the fixture writes its input to a CWD-relative file and
 // dup2()s it onto fd 0 before the first read (the gate runs with no stdin).
 //
-// GREEN (contract): deterministic byte-exact stdout `stdin eof notrailing ok\n`.
+// GREEN (contract): deterministic byte-exact stdout `stdin crlf boundary ok\n`.
 const stdin = @import("std_stdin.zig");
 const f = @import("std_file.zig");
 const io = @import("std_io.zig");
@@ -24,7 +24,7 @@ fn ck(cond: bool, what: []const u8) void {
 }
 
 fn feed(data: []const u8) void {
-    var name: []const u8 = "t_stdin_eof.txt";
+    var name: []const u8 = "t_stdin_crlf_boundary.txt";
     f.writeAll(name, data) catch @panic("setup writeAll");
     var cbuf: [64]u8 = undefined;
     var i: usize = 0;
@@ -49,14 +49,15 @@ fn expectLine(buf: []u8, want: []const u8, what: []const u8) void {
 }
 
 pub fn main() void {
-    // CRLF lines then a final line with no terminator at all.
-    feed("a\r\nb\r\nc");
+    // "ab\r\ncd\n" into a 3-byte buffer: the `\r` is the last byte of the first
+    // full buffer (a, b, \r), so its `\n` must be consumed as the same CRLF.
+    // Before the fix this returned "ab\r", then "" (spurious empty), then "cd".
+    feed("ab\r\ncd\n");
 
-    var buf: [16]u8 = undefined;
-    expectLine(buf[0..], "a", "eof a");
-    expectLine(buf[0..], "b", "eof b");
-    expectLine(buf[0..], "c", "eof c no trailing newline");
-    ck((stdin.readLine(buf[0..]) catch @panic("eof null")) == null, "eof null");
+    var buf: [3]u8 = undefined;
+    expectLine(buf[0..], "ab", "crlf boundary first line");
+    expectLine(buf[0..], "cd", "crlf boundary second line (no spurious empty)");
+    ck((stdin.readLine(buf[0..]) catch @panic("crlf boundary EOF")) == null, "crlf boundary EOF null");
 
-    io.write("stdin eof notrailing ok\n");
+    io.write("stdin crlf boundary ok\n");
 }
