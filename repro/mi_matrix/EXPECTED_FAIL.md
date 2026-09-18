@@ -1,4 +1,23 @@
-# mi_matrix corpus — expected-fail manifest (v134 2026-09-18)
+# mi_matrix corpus — expected-fail manifest (v135 2026-09-18)
+
+## Plan A Task 6b-F fix round 1 — nested-struct/tagged-union undefined-field residuals declared (v134 -> v135 2026-09-18)
+
+Task 6b-F fix round 1 (review Important finding: incomplete residual declaration). **Docs/manifest
+only — no `sf/src` change; fixed point UNMOVED `7513a8d59a3c317639a055491769a9c5`.** The
+struct-element field fallback else (`sf/src/c89_emit.zig:7325-7333`) still emits
+`result[_i].field = 0;` for two same-locus element shapes outside the mandated slice/optional set;
+both are pre-existing and reproduced pre- and post-fix (declared, NOT fixed this round):
+
+| residual shape | emitted C | gcc (pre- and post-fix) |
+|---|---|---|
+| `[N]S`, `S` has a nested struct field (`inner: Inner`) | `zT_1[_i].inner = 0;` | **FAIL** `incompatible types when assigning to type 'zT_7E9B6EC7_Inner' from type 'int'` |
+| `[N]S`, `S` has a `tagged_union_type` field (`u: U`) | `zT_1[_i].u = 0;` | **FAIL** `incompatible types when assigning to type 'zT_D00C09B0_U' from type 'int'` |
+
+These join the already-declared residuals in the v134 section (error-union element
+`[N]!T = undefined`; struct field that is an array of slices/optionals). Full report:
+`.superpowers/sdd/2026-09-17-std-lib-plan-a-foundation/task-6b-F-report.md`.
+
+---
 
 ## Plan A Task 6b-F — `-ffast` undefined slice-array emission FIXED (v133 -> v134 2026-09-18)
 
