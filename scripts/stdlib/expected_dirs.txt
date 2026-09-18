@@ -98,6 +98,7 @@ repro/mi_matrix/stdlib_str_trimleft_xmod
 repro/mi_matrix/stdlib_str_trimright_xmod
 repro/mi_matrix/stdlib_str_xmod
 repro/mi_matrix/stdlib_stream_crlf_boundary_xmod
+repro/mi_matrix/stdlib_stream_multiple_async_xmod
 repro/mi_matrix/stdlib_stream_multiple_xmod
 repro/mi_matrix/stdlib_stream_readline_empty_xmod
 repro/mi_matrix/stdlib_stream_readline_noeof_xmod

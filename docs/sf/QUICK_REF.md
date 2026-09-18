@@ -43,7 +43,7 @@ carries: `std`, `std_io`, `std_arena`, `std_net`, `std_str`, `std_mem`,
 **20** `.zig` (the list above; L3 resources + L6 capstone; `std_net` also gained
 the UDP surface). `scripts/seed/build_from_seed.sh` installs all 20 into the
 rebuilt compiler's `lib/`, and the rotated **v30** archive carries all 20 (the
-Plan B Task 5a-F seed rotation). See `repro/mi_matrix/EXPECTED_FAIL.md` v143.
+Plan B Task 5a-F seed rotation). See `repro/mi_matrix/EXPECTED_FAIL.md` v144.
 The archived binary and the self-emission fixed point
 `414cccee639bdb61c7a9f1f2ddddb166` are the SAME compiler state (the v30
 provenance entry in `release/seed/CHANGELOG.md` records HEAD `69066336`; the

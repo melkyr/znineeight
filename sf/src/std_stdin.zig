@@ -8,9 +8,9 @@
 // the compiler-PAL `pal_file_*` surface stays untouched.
 //
 // readLine reads one byte at a time so it never consumes past the line's
-// terminator (no internal buffer, no allocation); the only module state is the
-// one-byte boundary CR carry described below. readAll grows a single arena
-// buffer by doubling.
+// terminator (no internal buffer, no allocation); the module state is the
+// one-byte boundary CR carry and the exact-multiple overflow carry, both
+// described below. readAll grows a single arena buffer by doubling.
 
 const file_mod = @import("std_file.zig");
 const arena_mod = @import("std_arena.zig");

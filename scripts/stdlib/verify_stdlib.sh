@@ -9,7 +9,7 @@
 #   <zig1>    seed-built `zig1_5_clean` (NEVER a zig0-built compiler).
 #   <dir>...  optional explicit fixture dirs, forwarded verbatim to the
 #             harness. With no dirs, the harness discovers every
-#             `repro/mi_matrix/stdlib_*_xmod/` and every `stdlib_test/*/`.
+#             `repro/mi_matrix/stdlib_*/` and every `stdlib_test/*/`.
 #
 # This is a thin closeout wrapper over scripts/stdlib/run_fixtures.sh: it runs
 # the harness over the full discovered std fixture set (each fixture's stdout
@@ -20,7 +20,8 @@
 # In discovery mode (no <dir> args) the harness additionally pins the discovered
 # dir set to scripts/stdlib/expected_dirs.txt, so a dropped/renamed fixture
 # FAILS the gate instead of silently shrinking coverage. Explicit <dir> runs
-# skip the pin.
+# skip only the discovery set-equality check; the unpinned-stdlib-dir guard
+# (a std-looking dir on disk that is absent from the pin) ALWAYS runs.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

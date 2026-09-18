@@ -4,7 +4,7 @@
 
 Plan B test-hardening (`docs/superpowers/plans/2026-09-18-plan-B-test-hardening.md`) is
 **COMPLETE** (Tasks 1-4 + the operator-ruled Task 5a-I/5a-F I/F pair + this closeout).
-Docs/scripts/fixtures plus the ONE authorized `sf/src` std-only fix (Task 5a-F, above).
+Docs/scripts/fixtures plus the ONE authorized `sf/src` std-only fix (Task 5a-F, below).
 **No compiler-graph change**: the self-emission fixed point is **UNMOVED
 `414cccee639bdb61c7a9f1f2ddddb166`** (a std-only change cannot move it — the compiler's
 import graph reaches no std module). The seed rotates **v29 -> v30** (archive md5
