@@ -89,12 +89,14 @@ fn takeRest(lr: *FileLineReader) ?[]u8 {
 // A line longer than `buf`: hand back the full buffer as a line so the caller
 // makes progress; the rest of the line is returned by subsequent calls. A
 // trailing `\r` at the boundary is stripped and carried in `pending_cr` so the
-// next read can consume its `\n` as the same terminator.
+// next read can consume its `\n` as the same terminator. The carry needs room
+// for the `\r` plus the next byte (buf.len > 1); a 1-byte buffer keeps the CR
+// in the returned line rather than dropping a byte.
 fn takeOverflow(lr: *FileLineReader) ?[]u8 {
     if (lr.pending.len < lr.buf.len) return null;
     var line: []u8 = lr.pending;
     lr.pending = lr.buf[0..0];
-    if (line.len > 0 and line[line.len - 1] == '\r') {
+    if (lr.buf.len > 1 and line.len > 0 and line[line.len - 1] == '\r') {
         lr.pending_cr = true;
         line = line[0 .. line.len - 1];
     }
@@ -123,6 +125,7 @@ fn resolvePending(lr: *FileLineReader) StreamError!void {
         lr.buf[1] = b;
         lr.pending = lr.buf[0..2];
     } else {
+        // Unreachable: takeOverflow only sets pending_cr when buf.len > 1.
         lr.pending = lr.buf[0..1];
     }
 }

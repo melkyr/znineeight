@@ -44,10 +44,13 @@ fn stdinHandle() *void {
 }
 
 // One read through std_file's handle path. A fresh File is cheap (three
-// fields) and keeps std_stdin stateless: the fd/HANDLE is the whole state.
-fn readStdin(buf: []u8) file_mod.FileError!usize {
+// fields) and keeps std_stdin stateless: the fd/HANDLE is the whole state. Any
+// read failure is mapped to the module's error.Io — std_file's ReadFailed is
+// not part of StdinError (the std_net mapErr pattern), so the declared set is
+// exactly what readLine/readAll can return.
+fn readStdin(buf: []u8) StdinError!usize {
     var f = file_mod.File{ .handle = stdinHandle(), .size_cache = @intCast(i64, -1), .arena = nullArena() };
-    return file_mod.read(&f, buf);
+    return file_mod.read(&f, buf) catch return error.Io;
 }
 
 // The pending boundary byte: '\r' when a CR landed as the last byte of a full

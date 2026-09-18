@@ -1,8 +1,8 @@
 // stdlib_stdin_readall_xmod — STDLIB std_stdin (L3) readAll GREEN fixture.
 //
 // Contract (blueprint §3 L3): readAll(arena) ![]u8 reads all of process stdin
-// and returns it as one arena-allocated slice; the only error is OutOfMemory
-// (R1/§6 arena gate).
+// and returns it as one arena-allocated slice; the errors are OutOfMemory
+// (arena, R1/§6 gate) and Io (read failure).
 //
 // Deterministic stdin: the runtime gate runs with no stdin, so the fixture
 // writes its input to a CWD-relative file and dup2()s it onto fd 0 before the
