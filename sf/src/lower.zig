@@ -4827,12 +4827,30 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var cexv_m: []const u8 = "CEX:ev"; pal.markerWrite(cexv_m); var cexv_b: [10]u8 = undefined; var cexv_l = itoa_mod.itoa(err_val, cexv_b[0..]); var cexv_s: usize = @intCast(usize, 9) - @intCast(usize, cexv_l); pal.markerWrite(cexv_b[cexv_s..@intCast(usize, 9)]); var cexv_nl: []const u8 = "\n"; pal.markerWrite(cexv_nl);
             var cexb_m: []const u8 = "CEX:bt"; pal.markerWrite(cexb_m); var cexb_b: [10]u8 = undefined; var cexb_l = itoa_mod.itoa(@intCast(u32, self.block_terminated), cexb_b[0..]); var cexb_s: usize = @intCast(usize, 9) - @intCast(usize, cexb_l); pal.markerWrite(cexb_b[cexb_s..@intCast(usize, 9)]); var cexb_nl: []const u8 = "\n"; pal.markerWrite(cexb_nl);
             var cexg_m: []const u8 = "CEX:g"; pal.markerWrite(cexg_m); var cexg_b: [10]u8 = undefined; var cexg_l = itoa_mod.itoa(@intCast(u32, self.block_terminated), cexg_b[0..]); var cexg_s: usize = @intCast(usize, 9) - @intCast(usize, cexg_l); pal.markerWrite(cexg_b[cexg_s..@intCast(usize, 9)]); var cexg_nl: []const u8 = "\n"; pal.markerWrite(cexg_nl);
-            if (self.block_terminated == @intCast(u8, 0)) {
-                var hit_m: []const u8 = "CEX:HIT\n"; pal.markerWrite(hit_m);
-                err_val = materializeInto(self, err_val, euPayloadOf(self, eu_box[0]), srcIntentForNode(self, node.child_1), node.child_1);
-                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = join_temp, .src = err_val } });
-                emitInst(self, LirInst{ .jump = join_bb });
-            }
+             if (self.block_terminated == @intCast(u8, 0)) {
+                 // A catch body with no value (an empty or statement-only block,
+                 // or a void expression) has nothing to store into the
+                 // payload-typed join temp. Assigning the lowering's no-value
+                 // result (temp 0) or a statement's incidental value emits a
+                 // type-invalid C assignment when the payload is a struct (e.g.
+                 // `_ = f() catch |e| { ... };`). Such a result can only be
+                 // discarded, so skip the err-branch join assignment.
+                 var err_val_has_value: u8 = @intCast(u8, 1);
+                 if (lowerCatchBodyIsValueless(self, node.child_1)) {
+                     err_val_has_value = @intCast(u8, 0);
+                 } else {
+                     var ev_ty: u32 = getTempType(self, err_val);
+                     if (ev_ty == type_mod.TYPE_VOID or ev_ty == type_mod.TYPE_UNDEFINED) {
+                         err_val_has_value = @intCast(u8, 0);
+                     }
+                 }
+                 if (err_val_has_value != @intCast(u8, 0)) {
+                     var hit_m: []const u8 = "CEX:HIT\n"; pal.markerWrite(hit_m);
+                     err_val = materializeInto(self, err_val, euPayloadOf(self, eu_box[0]), srcIntentForNode(self, node.child_1), node.child_1);
+                     emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = join_temp, .src = err_val } });
+                 }
+                 emitInst(self, LirInst{ .jump = join_bb });
+             }
             self.block_terminated = @intCast(u8, 0);
             self.current_bb = ok_bb;
             var ok_val = nextTemp(self, euPayloadOf(self, eu_box[0]));
@@ -5665,6 +5683,50 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     } else {
         return @intCast(u32, 0);
     }
+}
+
+fn lowerIsAssignmentKind(kind: AstKind) bool {
+    if (kind == AstKind.plain_assign) return true;
+    if (kind == AstKind.add_assign) return true;
+    if (kind == AstKind.sub_assign) return true;
+    if (kind == AstKind.mul_assign) return true;
+    if (kind == AstKind.div_assign) return true;
+    if (kind == AstKind.mod_assign) return true;
+    if (kind == AstKind.shl_assign) return true;
+    if (kind == AstKind.shr_assign) return true;
+    if (kind == AstKind.and_assign) return true;
+    if (kind == AstKind.xor_assign) return true;
+    if (kind == AstKind.or_assign) return true;
+    if (kind == AstKind.wrap_add_assign) return true;
+    if (kind == AstKind.wrap_sub_assign) return true;
+    if (kind == AstKind.wrap_mul_assign) return true;
+    if (kind == AstKind.sat_add_assign) return true;
+    if (kind == AstKind.sat_sub_assign) return true;
+    if (kind == AstKind.sat_mul_assign) return true;
+    if (kind == AstKind.sat_shl_assign) return true;
+    return false;
+}
+
+// True when a catch body produces no value: an empty block, or a block whose
+// last item is a statement (assignment, var decl, value-less if/while/for,
+// return/break/continue, defer). Such a catch can only appear where its result
+// is discarded; its err branch must not store a value into the payload-typed
+// join temp.
+fn lowerCatchBodyIsValueless(self: *LirLowerer, node_idx: u32) bool {
+    var nd = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    if (nd.kind == AstKind.block) {
+        var n = ast_mod.astStoreNodeExtraChildCount(self.ctx.store, node_idx);
+        if (n == @intCast(u32, 0)) return true;
+        var last = ast_mod.astStoreNodeExtraChildAt(self.ctx.store, node_idx, n - @intCast(u32, 1));
+        var last_nd = ast_mod.astStoreNodeAt(self.ctx.store, last);
+        if (lowerIsNoValueStmtKind(last_nd.kind)) return true;
+        if (lowerIsAssignmentKind(last_nd.kind)) return true;
+        if (last_nd.kind == AstKind.if_expr and last_nd.child_2 == @intCast(u32, 0)) return true;
+        return false;
+    }
+    if (lowerIsNoValueStmtKind(nd.kind)) return true;
+    if (lowerIsAssignmentKind(nd.kind)) return true;
+    return false;
 }
 
 fn lowerIsNoValueStmtKind(kind: AstKind) bool {

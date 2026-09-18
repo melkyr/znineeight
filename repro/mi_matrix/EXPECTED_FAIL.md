@@ -1,4 +1,52 @@
-# mi_matrix corpus — expected-fail manifest (v151 2026-09-18)
+# mi_matrix corpus — expected-fail manifest (v152 2026-09-18)
+
+## Plan C Task 3b-F — discarded fallible struct-returning catch fixed (v151 -> v152 2026-09-18)
+
+Operator-ruled pin + fix for the pre-existing lowering defect found while
+authoring `std_map` (Plan C Task 3).
+
+**Root cause.** `sf/src/lower.zig` catch lowering: a catch body that produces no
+value (an empty block, a statement-only block, or a void expression) leaves
+`lowerExprOrBlock` returning temp `0` (its no-value sentinel, which collides with
+real temp index 0) or a statement's incidental value (e.g. an assignment's RHS).
+The err branch then emitted `join_temp = <that temp>`, storing an integer into
+the payload-typed join temp. For a scalar payload this compiles to a harmless
+(but bogus, discarded) value; for a **struct** payload it emits an invalid C89
+assignment (`incompatible types when assigning to type '...' from type 'int'`).
+
+**Fix.** The catch err branch now skips the join assignment when the catch body
+is valueless (`lowerCatchBodyIsValueless`: empty/statement block, assignment
+kind, or void-typed result) and just jumps to the join. Value-producing catch
+bodies are unchanged. `sf/src/std_map.zig` was authored against the defect with a
+bound-variable helper; that helper is now optional (left in place).
+
+**New pin.** `repro/mi_matrix/catch_discard_struct_xmod` — the exact
+`_ = f() catch |e| { ... };` shape on a `!Pair` call (error path and success
+path), plus the bound form as a control; `ck`-style `@panic` asserts and stable
+stdout `catch discard struct ok`.
+
+| dir | class (v151) | class (v152) | evidence |
+|---|---|---|---|
+| `catch_discard_struct_xmod` | **FAIL** (dump rc=0, 5 `.c`; gcc rejects `zT_.. = <int>` into a struct temp) | **OK** (runtime GREEN) | `run_fixtures.sh` explicit: PASS; stdout `catch discard struct ok`, rc=0, 3x deterministic |
+
+**Corpus delta.** Universe **835 -> 836** (+1, the new pin). Class delta:
+**+1 OK / -1 FAIL** (782 OK / 28 GREEN / 25 FAIL / 0 ICE -> **783 OK** / 28 GREEN
+/ 25 FAIL / 0 ICE). The full-classifier diff over the 836-dir universe (pre-fix
+vs post-fix) is exactly one line: the new pin **FAIL -> OK** — zero unexpected
+movement. (The v151 header's 830 predates the five Task-3 `stdlib_map_*_xmod`
+fixtures, all OK, already counted in the 835 baseline here.) The 4-MD5 gate
+programs (gol/lisp/json/mud) emit byte-identically. Runtime gate **128 PASS / 0
+FAIL over 128 dirs**; `check_emit_support.sh` **7/7**; self-compile **48 `.c`,
+rc=0, 0 errors, 0 PANIC**; `CLOSEOUT OK` (A1-A5, B1-B7, C1).
+
+The self-emission fixed point **MOVES**
+`9265739b7b5e7b1626b8db7ad4255fc5` -> **`bcfa85a40279a5c7bc4d8e6fd5f8df91`**
+(hop1 == hop2) and the seed rotates **v35 -> v36** (archive md5
+`981d58539c31cd5b66d97aef4ee87ebe` -> `a0a2fc8e49fc888385b0927ada602b06`).
+
+This dir is deliberately **not** added to `scripts/stdlib/expected_dirs.txt`
+(compiler-class pin, not `stdlib_*`; cf. `field_store_continue_xmod`). The corpus
+manifest + classifier are the pin mechanism.
 
 ## Plan C Task 2b-F follow-up — lexer f64 exponent after a decimal point fixed (v150 -> v151 2026-09-18)
 
