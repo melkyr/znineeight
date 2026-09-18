@@ -1,0 +1,4 @@
+# UDP port this fixture binds. The runtime gate's port guard only inspects TCP
+# LISTEN sockets (/proc/net/tcp), so a UDP bind is not pre-checked; the file is
+# the per-fixture declaration convention (stdlib_async_blocking_tick_*).
+4141
