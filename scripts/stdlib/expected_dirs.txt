@@ -47,6 +47,7 @@ repro/mi_matrix/stdlib_file_close_xmod
 repro/mi_matrix/stdlib_file_exists_xmod
 repro/mi_matrix/stdlib_file_flush_xmod
 repro/mi_matrix/stdlib_file_open_xmod
+repro/mi_matrix/stdlib_file_openerr_xmod
 repro/mi_matrix/stdlib_file_read_xmod
 repro/mi_matrix/stdlib_file_readall_xmod
 repro/mi_matrix/stdlib_file_remove_xmod
