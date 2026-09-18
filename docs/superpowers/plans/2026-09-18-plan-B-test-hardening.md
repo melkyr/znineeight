@@ -4,22 +4,22 @@
 
 **Goal:** Extend the runtime gate to the Plan B (L3 + L6) modules, harden the harness with the three Important items carried from Plan A's final review, and add the Plan B stress/adversarial and expected-failure fixtures.
 
-**Architecture:** One plan, five tasks, no `sf/src` change (fixed point UNMOVED, no seed rotation). Task 1 hardens the harness (capture mode + broadened discovery + gcc/link diagnostics) and re-verifies the 101 existing goldens. Task 2 verifies the Plan B goldens (already captured with Plan B). Task 3 adds the one missing Plan B expected-failure probe. Task 4 adds the Plan B stress tier. Task 5 is the closeout + the Plan C hardening pointer.
+**Architecture:** One plan, six tasks, no `sf/src` change except Task 5a-F (the operator-ruled I/F fix; the fixed point is UNMOVED through Tasks 1-4 + 5a-I, MOVED by 5a-F, and the seed rotates at 5a-F). Task 1 hardens the harness (capture mode + broadened discovery + gcc/link diagnostics) and re-verifies the existing goldens. Task 2 verifies the Plan B goldens (already captured with Plan B). Task 3 adds the one missing Plan B expected-failure probe. Task 4 adds the Plan B stress tier. Task 5a-I/5a-F pin and fix the exact-multiple long-line defect. Task 5 is the closeout + the Plan C hardening pointer.
 
 **Tech Stack:** Z98/`zig1` self-hosted compiler (C89 emission), bash, `gcc -m32`, git.
 
 **Spec:** `docs/superpowers/specs/2026-09-18-std-lib-test-hardening-design.md`.
 
-**Sequence:** PREVIOUS plan: [`2026-09-18-plan-A-test-hardening.md`](2026-09-18-plan-A-test-hardening.md) (L0-L2 hardening). Plan B ([`2026-09-17-std-lib-plan-b-resources-stream.md`](2026-09-17-std-lib-plan-b-resources-stream.md), L3 + L6) has **landed** (its fixtures + goldens exist; the runtime gate is 101/101), so this hardening plan executes **after** it. Task 1 (the harness hardening) is the primary remaining work; Task 2 verifies the already-landed goldens; Task 3 fills the one missing probe; Task 4 adds the stress tier.
+**Sequence:** PREVIOUS plan: [`2026-09-18-plan-A-test-hardening.md`](2026-09-18-plan-A-test-hardening.md) (L0-L2 hardening). Plan B ([`2026-09-17-std-lib-plan-b-resources-stream.md`](2026-09-17-std-lib-plan-b-resources-stream.md), L3 + L6) has **landed** (its fixtures + goldens exist; the runtime gate is 106/106), so this hardening plan executes **after** it. Task 1 (the harness hardening) is the primary remaining work; Task 2 verifies the already-landed goldens; Task 3 fills the one missing probe; Task 4 adds the stress tier; Task 5a-I/5a-F pin and fix the exact-multiple long-line defect (the operator-ruled I/F pair); Task 5 is the closeout.
 
 ## Global Constraints
 
 - **Baseline (re-verify at Task 1).** Record HEAD, the self-compile fixed point, the seed version/archive md5, the corpus `EXPECTED_FAIL.md` header. Expected at execution (refreshed after Plan B landed): HEAD `796f20d3`; fixed point `414cccee639bdb61c7a9f1f2ddddb166`; seed v29 archive md5 `910a4d673f0fa95f8473c08e143ceb54`; corpus 803; `EXPECTED_FAIL.md` v141; runtime gate 101/101 (pin 101).
-- **No `sf/src` change.** The fixed point MUST stay at Plan B's baseline (recorded at Task 1). If it moves, STOP.
+- **No `sf/src` change — EXCEPT Task 5a-F** (the operator-ruled I/F fix for the exact-multiple long-line defect). Tasks 1-4 + 5a-I MUST leave the fixed point at Plan B's baseline (recorded at Task 1); Task 5a-F moves it by design. If it moves anywhere else, STOP.
 - **Build only via the seed model.** Never invoke `zig0`. Binding gcc flag-set; `timeout 120`.
 - **Determinism (R6):** every fixture's stdout must be identical across 3 runs and equal to its committed `expected.txt`.
 - **No silent skips:** every discovered std fixture MUST have a committed golden + be in `scripts/stdlib/expected_dirs.txt`.
-- **A found bug is not fixed in place:** STOP and report a separate I/F pair.
+- **A found bug is not fixed in place:** STOP and report a separate I/F pair (the exact-multiple long-line defect found in Task 4 became Task 5a-I/5a-F).
 - **Fixture naming contract (binding, closes the carried finding):** Plan B std fixtures are named `repro/mi_matrix/stdlib_<module>_<name>_xmod/` (the `_xmod` suffix); workflow fixtures live under `stdlib_test/`.
 - **Edits only via `edit`/`fastedit`**; never stage `mnemoria/` or `.zig1_*.tmp`; declare every residual gap.
 
@@ -41,6 +41,12 @@
 - `repro/mi_matrix/stdlib_stdin_stress_xmod/` — long lines, EOF without a trailing newline, buffer-overflow boundary.
 - `repro/mi_matrix/stdlib_net_udp_stress_xmod/` — loopback send/recv at max datagram, zero-length, truncation.
 - `repro/mi_matrix/stdlib_stream_stress_xmod/` — a long line stream, no trailing newline, empty source, interleaved readers.
+
+**Create (the exact-multiple long-line pins — Task 5a-I):**
+- `repro/mi_matrix/stdlib_stdin_multiple_xmod/` — a `std_stdin.readLine` exact-multiple long line (RED before Task 5a-F).
+- `repro/mi_matrix/stdlib_stream_multiple_xmod/` — a `std_stream.readLineSync` exact-multiple long line (RED before Task 5a-F).
+
+**Modify (Task 5a-F):** `sf/src/std_stdin.zig` (`readLine`), `sf/src/std_stream.zig` (`readLineSync`) — the fix (the fixed point MOVES; the seed rotates).
 
 **Modify (closeout):** `repro/mi_matrix/EXPECTED_FAIL.md` (bump once), `docs/sf/QUICK_REF.md` (counts).
 
@@ -125,18 +131,53 @@ gap is the `std_file` open-failure (`FileError`) probe.
 
 ---
 
+### Task 5a-I: Pin the exact-multiple long-line defect (I)
+
+**Files:**
+- Create: `repro/mi_matrix/stdlib_stdin_multiple_xmod/`, `repro/mi_matrix/stdlib_stream_multiple_xmod/` (+ their `expected.txt`/`expected.rc`); modify `scripts/stdlib/expected_dirs.txt`, `repro/mi_matrix/EXPECTED_FAIL.md`.
+
+**Interfaces:**
+- Consumes: the harness + the golden convention.
+- Produces: RED pins for the exact-multiple long-line defect.
+
+**Context (operator ruling m1568/m1569):** Plan B hardening Task 4 found that an exact-multiple long line (`len % buf.len == 0`) makes both `std_stdin.readLine` (`sf/src/std_stdin.zig:99-122`) and `std_stream.readLineSync` (`sf/src/std_stream.zig:95-104,152-162`) emit a spurious empty line (a 4-byte buffer over `"abcd\nz\n"` -> `[abcd] [] [z]`). The operator ruled: declare + pin + fix as a separate I/F pair, BEFORE the Task 5 closeout.
+
+- [ ] **Step 1: Add the RED pins** — `stdlib_stdin_multiple_xmod` and `stdlib_stream_multiple_xmod`, each reading an exact-multiple long line and asserting the exact expected lines (the current behaviour emits the spurious empty line, so the assert traps -> RED).
+- [ ] **Step 2: Clarify the contract** (blueprint §3 L3/L6 + the hardening spec) for the exact-multiple boundary (currently only the "longer than buf" case is specified).
+- [ ] **Step 3: Declare the defect** in `EXPECTED_FAIL.md`; update `expected_dirs.txt`; record the RED (a runtime assert trap).
+- [ ] **Step 4: Commit** (`test(stdlib): pin the exact-multiple long-line defect (Plan B hardening Task 5a-I)`). No `sf/src` change; the fixed point stays UNMOVED for this task.
+
+---
+
+### Task 5a-F: Fix the exact-multiple long-line defect (F)
+
+**Files:**
+- Modify: `sf/src/std_stdin.zig` (`readLine`), `sf/src/std_stream.zig` (`readLineSync`); the Task 5a-I fixtures + goldens.
+
+**Interfaces:**
+- Consumes: the Task 5a-I RED pins.
+- Produces: the fix; the fixed point MOVES; the seed rotates.
+
+- [ ] **Step 1: Fix `std_stdin.readLine`** so a line whose length is an exact multiple of `buf.len` does not emit a trailing empty line.
+- [ ] **Step 2: Fix `std_stream.readLineSync`** the same way.
+- [ ] **Step 3: Flip the Task 5a-I pins RED -> GREEN**; re-capture their goldens; run the full gate; confirm 3× determinism.
+- [ ] **Step 4: Re-verify the gates** (`check_emit_support.sh` 7/7; the self-compile; the corpus class map; `CLOSEOUT OK`); confirm the fixed point MOVED.
+- [ ] **Step 5: Rotate the seed** (`bash scripts/seed/archive_seed.sh <zig1> <gen_dir> release/seed/zig1-seed.tgz --update-changelog`) and commit (`fix(std): no spurious empty line for an exact-multiple long line (Plan B hardening Task 5a-F)`).
+
+---
+
 ### Task 5: Closeout + next-plan pointer
 
 **Files:**
 - Modify: `repro/mi_matrix/EXPECTED_FAIL.md` (bump once), `docs/sf/QUICK_REF.md`.
 
 **Interfaces:**
-- Consumes: Tasks 1-4.
+- Consumes: Tasks 1-4 + 5a-I/5a-F.
 - Produces: the Plan C hardening pointer.
 
-- [ ] **Step 1: Run the full closeout:** the corpus count/classes, the runtime gate (all Plan B fixtures), `check_emit_support.sh`, the self-compile, `CLOSEOUT OK`.
-- [ ] **Step 2: Bump `EXPECTED_FAIL.md`** once with a Plan B hardening section (the new fixtures, the golden convention, the fixed point, the seed).
-- [ ] **Step 3: Update `QUICK_REF.md`** counts (the pinned dir count).
+- [ ] **Step 1: Run the full closeout** on the Task 5a-F seed-rotated compiler: the corpus count/classes, the runtime gate (all Plan B fixtures), `check_emit_support.sh`, the self-compile, `CLOSEOUT OK`.
+- [ ] **Step 2: Bump `EXPECTED_FAIL.md`** once with a Plan B hardening section (the new fixtures, the golden convention, the new fixed point, the rotated seed).
+- [ ] **Step 3: Update `QUICK_REF.md`** counts (the pinned dir count; the seed version/md5; the fixed point).
 - [ ] **Step 4: Record the next-plan pointer:**
 
 ```markdown
@@ -151,6 +192,7 @@ Plan B hardening complete. NEXT: author `docs/superpowers/plans/2026-09-18-plan-
 
 ## Self-Review
 
-- **Spec coverage:** spec §2 (the runtime gate) → Tasks 1-2; §3 (the stress tier + expected-failure pins) → Tasks 3-4; §4 (the sequence) → the `Sequence:` line + Task 5 Step 4; §5 (the conventions) → the Global Constraints; the 3 carried Important items → Task 1 Steps 2-4.
+- **Spec coverage:** spec §2 (the runtime gate) → Tasks 1-2; §3 (the stress tier + expected-failure pins) → Tasks 3-4; the found exact-multiple long-line defect → Task 5a-I/5a-F (the operator-ruled I/F pair); §4 (the sequence) → the `Sequence:` line + Task 5 Step 4; §5 (the conventions) → the Global Constraints; the 3 carried Important items → Task 1 Steps 2-4.
+- **Fixed point:** Tasks 1-4 + 5a-I leave it UNMOVED; Task 5a-F MOVES it (an `sf/src` fix) and rotates the seed; Task 5 re-verifies the rotated seed.
 - **Placeholder scan:** every step names concrete files + the observable result.
 - **Type consistency:** the `--capture` CLI, the `expected.txt`/`expected.rc` convention, and the `scripts/stdlib/*` paths are used identically across tasks.
