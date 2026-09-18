@@ -27,6 +27,8 @@ repro/mi_matrix/stdlib_async_waitfor_oom_xmod
 repro/mi_matrix/stdlib_async_waitfor_settled_xmod
 repro/mi_matrix/stdlib_async_waitfor_unregistered_xmod
 repro/mi_matrix/stdlib_async_waitfor_xmod
+repro/mi_matrix/stdlib_bits_extract_trap_xmod
+repro/mi_matrix/stdlib_bits_insert_trap_xmod
 repro/mi_matrix/stdlib_bits_table_xmod
 repro/mi_matrix/stdlib_buf_clear_xmod
 repro/mi_matrix/stdlib_buf_endian_xmod
@@ -44,6 +46,7 @@ repro/mi_matrix/stdlib_mem_xmod
 repro/mi_matrix/stdlib_os_argc_xmod
 repro/mi_matrix/stdlib_os_cwd_xmod
 repro/mi_matrix/stdlib_os_env_xmod
+repro/mi_matrix/stdlib_os_exit_xmod
 repro/mi_matrix/stdlib_str_count_xmod
 repro/mi_matrix/stdlib_str_eqignorecase_xmod
 repro/mi_matrix/stdlib_str_indexof_xmod
