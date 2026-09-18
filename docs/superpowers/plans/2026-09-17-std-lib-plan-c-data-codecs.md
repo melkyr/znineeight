@@ -195,6 +195,33 @@
 
 ---
 
+### Task 3b-I: Pin the discarded fallible-struct-call catch defect (I)
+
+**Files:**
+- Create: `repro/mi_matrix/catch_discard_struct_xmod/`
+- Modify: `repro/mi_matrix/EXPECTED_FAIL.md`
+
+**Context (operator ruling m1735):** Plan C Task 3 found a pre-existing compiler defect — `_ = <fallible struct-returning call> catch |e| { ... }` mis-emits C (`incompatible types ... from type 'int'`). `std_map` works around it with a bound-variable helper.
+
+- [ ] **Step 1: Add the RED pin** (the `_ = <fallible struct-returning call> catch |e| { ... }` shape).
+- [ ] **Step 2: Declare it** in `EXPECTED_FAIL.md`; bump the header once.
+- [ ] **Step 3: Commit** (`test(repro): pin the discarded fallible-struct-call catch defect (Plan C Task 3b-I)`). No `sf/src` change.
+
+---
+
+### Task 3b-F: Fix the discarded fallible-struct-call catch defect (F)
+
+**Files:**
+- Modify: `sf/src/` (the catch/discard lowering); the Task 3b-I fixture; the seed.
+
+- [ ] **Step 1: Fix** the `_ = <fallible struct-returning call> catch |e| { ... }` emission.
+- [ ] **Step 2: Flip the pin RED -> GREEN**; run the full corpus + gates.
+- [ ] **Step 3: Re-verify** (`check_emit_support.sh` 7/7; the self-compile; the corpus class map; `CLOSEOUT OK`); confirm the fixed point MOVED.
+- [ ] **Step 4: Rotate the seed** and commit (`fix(lower): discarded fallible struct-returning catch (Plan C Task 3b-F)`).
+
+---
+
+
 ### Task 4: `std_sort` (L4)
 
 **Files:**
