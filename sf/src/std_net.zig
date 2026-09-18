@@ -312,6 +312,14 @@ pub fn udpSendTo(s: *Socket, addr: IpAddr, port: u16, data: []const u8) NetError
     return;
 }
 
+// Write the source address/port out-params from a recvfrom sockaddr. Reading
+// the network-order sin_addr bytes directly keeps host endianness irrelevant.
+fn fillOut(from: *SockAddrIn, out_addr: *IpAddr, out_port: *u16) void {
+    var p: [*]u8 = @ptrCast([*]u8, &from.sin_addr);
+    out_addr.* = IpAddr{ .a = p[0], .b = p[1], .c = p[2], .d = p[3] };
+    out_port.* = htonsManual(from.sin_port);
+}
+
 pub fn udpRecvFrom(s: *Socket, buf: []u8, out_addr: *IpAddr, out_port: *u16) NetError!usize {
     var from = emptySockAddr();
     var fromlen: i32 = @intCast(i32, 16);
@@ -321,18 +329,20 @@ pub fn udpRecvFrom(s: *Socket, buf: []u8, out_addr: *IpAddr, out_port: *u16) Net
         // WinSock reports a datagram larger than the buffer as WSAEMSGSIZE
         // after copying the truncated prefix; POSIX recvfrom silently returns
         // buf.len instead. Normalize so truncation is uniformly
-        // non-detectable (the documented contract).
+        // non-detectable (the documented contract). WinSock still fills the
+        // source sockaddr, so the out-params are populated exactly as on the
+        // POSIX success path.
         if (@isWindows()) {
-            if (e == 10040) return buf.len;
+            if (e == 10040) {
+                fillOut(&from, out_addr, out_port);
+                return buf.len;
+            }
         }
         return mapRecvErr(e);
     }
-    // Read the network-order address bytes directly so host endianness is
-    // irrelevant. Truncation (rc == buf.len while the datagram was longer) is
-    // not detectable here; see the module contract.
-    var p: [*]u8 = @ptrCast([*]u8, &from.sin_addr);
-    out_addr.* = IpAddr{ .a = p[0], .b = p[1], .c = p[2], .d = p[3] };
-    out_port.* = htonsManual(from.sin_port);
+    // Truncation (rc == buf.len while the datagram was longer) is not
+    // detectable here; see the module contract.
+    fillOut(&from, out_addr, out_port);
     return @intCast(usize, rc);
 }
 
