@@ -1,4 +1,40 @@
-# mi_matrix corpus — expected-fail manifest (v142 2026-09-18)
+# mi_matrix corpus — expected-fail manifest (v143 2026-09-18)
+
+## Plan B hardening Task 5a-F — exact-multiple long-line defect fixed (v142 -> v143 2026-09-18)
+
+Task 5a-F fixes the exact-multiple long-line defect pinned by Task 5a-I, in the ONE
+authorized `sf/src` change of this plan. **`sf/src` std-only fix — the self-emission
+fixed point stays UNMOVED `414cccee639bdb61c7a9f1f2ddddb166`** (the compiler's import
+graph reaches no std module; the std lib is user-side `.zig` resolved from
+`<exe_dir>/lib/`). **The seed STILL rotates v29 -> v30** because the seed archive
+embeds `lib/`.
+
+Fix shape: `std_stdin.readLine` carries a `pending_overflow` boundary flag; a full
+buffer whose last byte is not `\r` sets it, and the next call consumes the line's own
+`\n`/`\r\n` terminator before reading the following line. `std_stream.FileLineReader`
+gains `overflow_cont`, set by `takeOverflow`, consumed by the new `resolveOverflow`
+(wired into `readLineSync` and `awaitLine`). Both carries are engaged only when
+`buf.len > 1`, preserving the frozen 1-byte-buffer boundary behaviour
+(`stdlib_stream_crlf_boundary_xmod`).
+
+**Declassification (both fixtures now GREEN).** The two dirs stay corpus class `OK`
+(compile-clean); the RED was RUNTIME-only, so the class map does not move — only the
+run gate flips.
+
+| fixture | pre-fix (5a-I, fixed point `414cccee`) | post-fix (5a-F, fixed point `414cccee`) |
+|---|---|---|
+| `stdlib_stdin_multiple_xmod` | dump/gcc/link rc=0; run rc=133 (SIGTRAP), stdout empty, panic `exact-multiple next line (no spurious empty)` (observed `["abcd", "", "z"]`) | **PASS** — lines exactly `["abcd", "z"]` then null; stdout `stdin multiple ok\n`, rc=0 |
+| `stdlib_stream_multiple_xmod` | dump/gcc/link rc=0; run rc=133 (SIGTRAP), stdout empty, panic `exact-multiple next line (no spurious empty)` (observed `["abcd", "", "z"]`) | **PASS** — lines exactly `["abcd", "z"]` then null; stdout `stream multiple ok\n`, rc=0 |
+
+Runtime gate **106 PASS / 2 FAIL -> 108 PASS / 0 FAIL over 108 dirs** (3× deterministic).
+Other gates: `check_emit_support.sh` 7/7; self-compile 48 `.c` + 48 `.h`, 0 errors,
+0 PANIC; corpus `-ffast` dump+gcc classifier 810 dirs = **757 OK / 28 GREEN / 25 FAIL /
+0 ICE / 0 CRASH** (unchanged class distribution vs the Plan B closeout 800 = 747 OK /
+28 GREEN / 25 FAIL — the +10 dirs are all new OK); `CLOSEOUT OK`. Seed v30 archive md5
+and fixed point recorded in `release/seed/CHANGELOG.md`. Full report:
+`.superpowers/sdd/2026-09-18-plan-B-test-hardening/task-5aF-report.md`.
+
+---
 
 ## Plan B hardening Task 5a-I — exact-multiple long-line defect pinned (v141 -> v142 2026-09-18)
 

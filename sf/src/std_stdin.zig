@@ -59,6 +59,14 @@ fn readStdin(buf: []u8) StdinError!usize {
 // std_os.saved_argc); readLine is otherwise stateless.
 var pending_cr: u8 = undefined;
 
+// True when the previous readLine returned a full buffer as a line prefix (an
+// overflow) and the line's terminator may still be unread. The next call
+// consumes a leading \n (or \r\n) as THAT line's terminator so an
+// exact-multiple long line does not surface a spurious empty line. A
+// 1-byte buffer keeps the pre-existing boundary behaviour (the carry needs
+// room for two bytes), matching the stream reader.
+var pending_overflow: u8 = undefined;
+
 // Read one line into buf, stripping the terminating \n (and the \r of \r\n).
 // Returns a slice INTO buf; no allocation. null at EOF with no partial line.
 // When the line is longer than buf, a full buf is returned and the remainder
@@ -70,6 +78,46 @@ pub fn readLine(buf: []u8) StdinError!?[]u8 {
     var n: usize = 0;
     var saw_any: bool = false;
     var saw_nl: bool = false;
+
+    // Resolve an exact-multiple overflow boundary from the previous call: the
+    // previous call returned a full buffer as the line prefix, so a terminator
+    // now at the head of the stream belongs to THAT line and must not surface
+    // as a new (empty) line. Any other byte is the line's continuation.
+    if (pending_overflow != 0) {
+        pending_overflow = 0;
+        var one: [1]u8 = undefined;
+        const r = try readStdin(one[0..1]);
+        if (r == 0) return null;
+        if (one[0] == '\n') {
+            // The overflow line's LF terminator; the next line starts below.
+        } else if (one[0] == '\r') {
+            var two: [1]u8 = undefined;
+            const r2 = try readStdin(two[0..1]);
+            if (r2 == 0) {
+                // A lone CR at EOF is the line's literal final byte.
+                buf[0] = '\r';
+                return buf[0..1];
+            }
+            if (two[0] == '\n') {
+                // The overflow line's CRLF terminator; read the next line.
+            } else {
+                // The CR was literal continuation content.
+                buf[0] = '\r';
+                saw_any = true;
+                if (buf.len >= 2) {
+                    buf[1] = two[0];
+                    n = 2;
+                } else {
+                    n = 1;
+                }
+            }
+        } else {
+            // Continuation content of the overflow line.
+            buf[0] = one[0];
+            saw_any = true;
+            n = 1;
+        }
+    }
 
     // Resolve a CR carried over from a full buffer at the previous boundary.
     // Read the next byte: '\n' closes the CRLF (the previous call already
@@ -117,6 +165,12 @@ pub fn readLine(buf: []u8) StdinError!?[]u8 {
     if (!saw_nl and n == buf.len and n > 1 and buf[n - 1] == '\r') {
         pending_cr = '\r';
         n -= 1;
+    }
+    // A full buffer whose last byte is not \r: the line continues, so carry the
+    // overflow. The next call consumes this line's terminator (if any) before
+    // reading the following line (see pending_overflow above).
+    if (!saw_nl and n == buf.len and n > 1 and buf[n - 1] != '\r') {
+        pending_overflow = 1;
     }
     if (!saw_any) return null;
     return buf[0..n];

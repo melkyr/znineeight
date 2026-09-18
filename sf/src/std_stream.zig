@@ -38,6 +38,7 @@ pub const FileLineReader = struct {
     buf: []u8,
     pending: []u8,
     pending_cr: bool,
+    overflow_cont: bool,
 };
 
 // Async read granularity: at most a quarter of the caller buffer per chunk, so
@@ -99,6 +100,10 @@ fn takeOverflow(lr: *FileLineReader) ?[]u8 {
     if (lr.buf.len > 1 and line.len > 0 and line[line.len - 1] == '\r') {
         lr.pending_cr = true;
         line = line[0 .. line.len - 1];
+    } else if (lr.buf.len > 1) {
+        // The full buffer is a line prefix and the line continues; the next
+        // read must consume this line's terminator before the next line.
+        lr.overflow_cont = true;
     }
     return line;
 }
@@ -130,6 +135,35 @@ fn resolvePending(lr: *FileLineReader) StreamError!void {
     }
 }
 
+// Consume the terminator of an exact-multiple overflow line. After
+// takeOverflow returned a full buffer as a line prefix, the line's \n (or
+// \r\n) is still unread and must be consumed as THAT line's terminator, not
+// surfaced as a new empty line. A non-terminator head byte is the line's
+// continuation and is left buffered. Only called when `overflow_cont` is set,
+// which takeOverflow only does for buf.len > 1, so the 1-byte boundary
+// behaviour is untouched.
+fn resolveOverflow(lr: *FileLineReader) StreamError!void {
+    if (lr.pending.len == 0) {
+        const got = try readChunk(lr, lr.buf.len);
+        if (got == 0) {
+            lr.overflow_cont = false;
+            return;
+        }
+    }
+    if (lr.pending[0] == '\n') {
+        lr.pending = lr.pending[1..];
+        lr.overflow_cont = false;
+        return;
+    }
+    if (lr.pending[0] == '\r') {
+        if (lr.pending.len < 2) _ = try readChunk(lr, 1);
+        if (lr.pending.len >= 2 and lr.pending[1] == '\n') {
+            lr.pending = lr.pending[2..];
+        }
+    }
+    lr.overflow_cont = false;
+}
+
 // Read up to `want` bytes (bounded by the free tail of buf) into `pending`.
 // Returns the byte count; 0 means EOF or no free space (disambiguated by the
 // caller via takeOverflow/takeRest).
@@ -145,13 +179,14 @@ fn readChunk(lr: *FileLineReader, want: usize) StreamError!usize {
 }
 
 pub fn initFileLineReader(src: *file_mod.File, buf: []u8) FileLineReader {
-    return FileLineReader{ .src = src, .buf = buf, .pending = buf[0..0], .pending_cr = false };
+    return FileLineReader{ .src = src, .buf = buf, .pending = buf[0..0], .pending_cr = false, .overflow_cont = false };
 }
 
 // Blocking: read until a line is buffered or EOF. No suspension.
 pub fn readLineSync(lr: *FileLineReader) StreamError!?[]u8 {
     if (lr.buf.len == 0) return null;
     try resolvePending(lr);
+    if (lr.overflow_cont) try resolveOverflow(lr);
     while (true) {
         if (takeLine(lr)) |line| return line;
         if (takeOverflow(lr)) |line| return line;
@@ -184,6 +219,7 @@ const LINE_OVERFLOW: u8 = 2;
 fn awaitLine(lr: *FileLineReader) StreamError!u8 {
     if (lr.buf.len == 0) return LINE_EOF;
     try resolvePending(lr);
+    if (lr.overflow_cont) try resolveOverflow(lr);
     while (true) {
         if (hasLine(lr)) return LINE_READY;
         if (lr.pending.len >= lr.buf.len) return LINE_OVERFLOW;
