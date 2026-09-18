@@ -39,7 +39,7 @@ it.
 | Unit | Type | Scope | Plan |
 |---|---|---|---|
 | **Task 0** | I+F | Compiler↔std separation audit; delete the dead std-importing files; docs. Stands alone, first. | `2026-09-17-std-lib-task0-separation-plan.md` |
-| **Plan A** | impl | L0-L2 foundation: `std_bits`, `std_os`, `std_time`, `std_debug` ext, `std_buf`, `std_str` ext; plus the optional-fn-pointer compiler-defect I/F pair (Tasks 4b-I/4b-F/4c). | `2026-09-17-std-lib-plan-a-foundation.md` |
+| **Plan A** | impl | L0-L2 foundation: `std_bits`, `std_os`, `std_time`, `std_debug` ext, `std_buf`, `std_str` ext; plus the optional-fn-pointer compiler-defect I/F pair (Tasks 4b-I/4b-F/4c) and the `-ffast` undefined slice/optional/struct-field compiler-defect I/F pair (Tasks 6b-I/6b-F). | `2026-09-17-std-lib-plan-a-foundation.md` |
 | **Plan B** | impl | L3 resources + L6 capstone: `std_file`, `std_stdin`, `std_net` UDP ext, then `std_stream`. | `2026-09-17-std-lib-plan-b-resources-stream.md` |
 | **Plan C** | impl | L4 + L5: `std_map`, `std_sort`, `std_heap`, `std_rle`; `std_crypto`, `std_parse`, `std_base64`, `std_hex`, `std_utf8`. | `2026-09-17-std-lib-plan-c-data-codecs.md` |
 
@@ -109,15 +109,20 @@ its fixtures GREEN and the dependency-graph check passing.
   Cross-module translation at the call site. No `catch unreachable` in std.
 - **R3 — Imports.** Strict direction: lower layers only, never siblings,
   never higher. One-pass module-level import-graph check.
-  **Correction (operator, 2026-09-17):** the current `std.zig` re-export
+  **Correction (operator, 2026-09-18):** the current `std.zig` re-export
   set is authoritative — `std.zig` re-exports
-  `io/arena/str/mem/math/debug/net/async`. The blueprint's R3 text ("core
-  L0-L3 only") is corrected to match; `async` stays re-exported.
-  **Single exception (operator, m1243):** `std_debug.backtrace(ctx, out:
+  `io/arena/str/mem/math/debug/net/async/bits/os/time/buf` (12 names; the
+  set grew from the original 8 through Plan A). The blueprint's R3 text
+  ("core L0-L3 only") is corrected to match; `async` stays re-exported.
+  **Exception 1 (operator, m1243):** `std_debug.backtrace(ctx, out:
   *std.buf.Buf)` (blueprint §3 L1) consumes `std_buf`, so `std_debug` (L1)
   imports `std_buf` (L2) for this one function. It is cycle-free (`std_buf`
   imports only `std_arena`) and sanctioned because the blueprint fixes the
-  public API name/signature; no other L1→L2 import is permitted.
+  public API name/signature.
+  **Exception 2 (operator, 2026-09-18):** `std_debug` (L1) also imports the
+  core `std_io` module (no imports of its own) for `log`/`writeCoreDump`.
+  It is cycle-free and operator-authorized; no other L1→L2 import is
+  permitted.
 - **R4 — Coroutines.** Three flavors where all three are meaningful: pure
   (`fn foo(...) T`), sync (`fn read(...) !usize`), async
   (`fn readAsync(...) !usize`, same signature + `Async` suffix, same
@@ -139,9 +144,11 @@ its fixtures GREEN and the dependency-graph check passing.
 - **R8 — PAL boundary.** The std lib never edits
   `sf/src/pal.zig`/`sf/src/include/zig_pal.c`/`sf/src/emit_support.zig`,
   except for the authorized compiler-graph changes: the per-OS prelude
-  headers in Plan A Tasks 2-3, the `std_debug` trap hook in Task 4, and the
+  headers in Plan A Tasks 2-3, the `std_debug` trap hook in Task 4, the
   optional-fn-pointer C-emission fix in Plan A Task 4b-F (operator ruling
-  m1243; Task 4c is std-only).
+  m1243; Task 4c is std-only), and the `-ffast` undefined
+  slice/optional/struct-field C-emission fix in Plan A Task 6b-F (operator
+  ruling m1277).
   Per-OS primitives live in `sf/src/std_<module>_pal.zig`, a private
   implementation unit of that module (exempt from the R3 sibling rule),
   using `@cInclude` + `extern` declarations and `@isWindows()` guards. The
@@ -167,8 +174,10 @@ plan at its closeout.
 ## §7 Distribution
 
 `MANIFEST.txt` lists every module with its md5. The core re-exported set is
-unchanged (the 8 names above). Higher layers are imported by path. The
-compiler's `lib/` gains the new `.zig` modules; the self-compile fixed point
+the 12 names above
+(`io/arena/str/mem/math/debug/net/async/bits/os/time/buf`; operator ruling
+2026-09-18 authorized the growth from 8). Higher layers are imported by path.
+The compiler's `lib/` gains the new `.zig` modules; the self-compile fixed point
 stays flat because the compiler imports none of them — the property Task 0
 proves. `stdlib_test/` is a corpus container: the harness
 (`scripts/corpus/list_corpus_dirs.sh`) enumerates every immediate subdir of
@@ -179,11 +188,15 @@ per-function `repro/mi_matrix/` fixtures.
 
 - **`std_debug` TrapContext (L1) — RESOLVED (operator, 2026-09-17).** The
   trap hook is an authorized compiler↔std crossing: `zig_pal` gains a
-  `static void(*g_trap_handler)(TrapContext*)`, `pal_trap()` calls it,
-  `emit_support.zig` emits the setter, and `std_debug.zig` declares the
-  extern and wraps it. It moves the fixed point. No compiler-graph change
-  beyond the authorized ones (this hook, the per-OS preludes, and the
-  optional-fn-pointer fix below) is permitted in the program.
+  `static void(*g_trap_handler)(TrapContext*)`, `pal_trap()` invokes the
+  installed handler (register capture on GCC/x86, zero-filled context
+  elsewhere) and then raises the divergence trap (`int3`/SIGTRAP on
+  MSVC/Watcom/x86-GCC, `pal_abort()` fallback), `emit_support.zig` emits
+  the setter, and `std_debug.zig` declares the extern and wraps it. It
+  moves the fixed point. No compiler-graph change beyond the four
+  authorized ones (this hook, the per-OS preludes, the optional-fn-pointer
+  fix below, and the `-ffast` undefined slice/optional/struct-field fix
+  below) is permitted in the program.
 - **Optional fn-pointer / optional `*void` C emission — RESOLVED (operator,
   m1243).** The landed `std_debug.setTrapHandler` diverged from the
   blueprint's `?fn(*TrapContext) void` because `?fn`/`?*void` was believed
@@ -194,6 +207,14 @@ per-function `repro/mi_matrix/` fixtures.
   present the fix surface) → Task 4b-F (fix; fixed point moves), then Task 4c
   reverts `setTrapHandler` to the blueprint `?fn` signature and drops the
   redundant `clearTrapHandler` (null-install is `setTrapHandler(null)`).
+- **`-ffast` undefined slice/optional/struct-field emission — RESOLVED
+  (operator, m1277).** The pre-existing `-ffast` defect where an undefined
+  `[N][]const u8` (and nested undefined optional/struct/tagged-union fields)
+  emitted incorrect C is fixed at the pinned locus in Plan A Task 6b-F. It
+  is the fourth authorized compiler change and moves the fixed point.
+  Pinned by `repro/mi_matrix/undefined_slice_array_xmod` (Task 6b-I) with
+  the off-corpus `-fsafe`/default control
+  (`known_excluded/undefined_slice_array_safe_xmod`).
 - **L1 OS externs — RESOLVED (operator, 2026-09-17).** `std_os`/`std_time`
   MUST NOT wrap the compiler PAL. They own std-side PAL modules
   (`std_os_pal.zig`/`std_time_pal.zig`) built with `@cInclude`+`extern`+

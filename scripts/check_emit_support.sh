@@ -13,7 +13,7 @@ set -euo pipefail
 #
 # The compiler locates its std modules at <exe_dir>/lib, so pass a built zig1
 # (e.g. one produced by scripts/seed/build_from_seed.sh) whose sibling lib/ holds
-# the 8 std *.zig files.
+# the 15 std *.zig files.
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ZIG1="${1:-}"
@@ -132,4 +132,4 @@ else
 fi
 
 [ "$fail" = 0 ] || { echo "error: emitted support files differ from canonical" >&2; exit 1; }
-echo "[check] OK: 5/5 support files byte-identical to canonical (+ conditional preludes)"
+echo "[check] OK: 7/7 support files byte-identical to canonical (5 core + 2 conditional preludes)"

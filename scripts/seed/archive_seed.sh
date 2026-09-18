@@ -236,7 +236,7 @@ linked as objects; dropping them onto the link line as sources omits the
 canonical flags (notably -Wall) and links a different object set/order, so the
 fixed point is NOT reproduced.
 
-std install: the produced binary needs the std lib next to it (lib/ with the 9
+std install: the produced binary needs the std lib next to it (lib/ with the 15
 std .zig) - copied from zig1-seed/lib/ or the binary's lib-dir.
 
 CRITICAL FLAG SET RULE (operator amendment 2026-09-07)
