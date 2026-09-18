@@ -971,7 +971,7 @@ cd /workspace/znineeight && ./sf/scripts/build_test.sh
 Note: `build_test.sh` links `sf/src/include/zig_pal.c` into each test binary (required since
 `pal.zig` gained the `pal_file_*` file-I/O externs; without it every test binary fails to link).
 
-## Std-lib Runtime Gate (Plan A hardening)
+## Std-lib Runtime Gate (Plan A/B hardening)
 
 Runtime-behavior gate for the std-lib fixtures (spec
 `docs/superpowers/specs/2026-09-18-std-lib-test-hardening-design.md` §2). The
@@ -979,11 +979,17 @@ corpus classifier stays compile-only; this gate builds, links, RUNS, and
 golden-diffs each fixture.
 
 ```bash
-# full discovered std set (repro/mi_matrix/stdlib_*_xmod/ + stdlib_test/*/)
+# full discovered std set (repro/mi_matrix/stdlib_*/ + stdlib_test/*/)
 bash scripts/stdlib/run_fixtures.sh <seed-built-zig1_5_clean>
 
 # restrict to explicit dirs (repo-relative or absolute)
 bash scripts/stdlib/run_fixtures.sh <zig1> repro/mi_matrix/stdlib_bits_table_xmod
+
+# re-capture a fixture's goldens from the observed run (writes expected.txt +
+# expected.rc and prints what it wrote; refuses an undeclared nonzero rc).
+# ALWAYS review the observed output against the fixture's documented GREEN
+# contract before committing a capture.
+bash scripts/stdlib/run_fixtures.sh --capture <zig1> repro/mi_matrix/stdlib_bits_table_xmod
 
 # closeout wrapper (full discovered set; nonzero + STDLIB GATE FAILED on any fail)
 bash scripts/stdlib/verify_stdlib.sh <zig1>
@@ -997,17 +1003,31 @@ CWD. A fixture passes only when all 3 stdouts are byte-identical, stdout
 `cmp`-equals `<dir>/expected.txt`, and rc equals `<dir>/expected.rc`
 (whitespace-trimmed).
 
-**Discovery pin + port guard (binding):**
-- In discovery mode the harness asserts the discovered dir set EQUALS the
-  committed baseline `scripts/stdlib/expected_dirs.txt` (98 dirs today: the 68
-  Plan A fixtures + the 28 Plan B L3/L6 fixtures + the 2 Plan B R7b usage
-  programs), so a dropped/renamed/added
+**Discovery pin + unpinned-dir guard + port guard (binding):**
+- Discovery is `repro/mi_matrix/stdlib_*/` (any `stdlib_*` dir, not just
+  `_xmod`) plus `stdlib_test/*/`. In discovery mode the harness asserts the
+  discovered dir set EQUALS the committed baseline
+  `scripts/stdlib/expected_dirs.txt` (101 dirs today: 97
+  `repro/mi_matrix/stdlib_*` + 4 `stdlib_test/*`), so a dropped/renamed/added
   fixture FAILS the gate instead of silently shrinking coverage. Update the pin
-  intentionally when a band adds/removes fixtures. Explicit `<dir>` runs skip
-  the pin.
+  intentionally when a band adds/removes fixtures.
+- Independently of the discovery pin, a guard ALWAYS fails
+  `unpinned-stdlib-dir (<dir>)` if any `repro/mi_matrix/stdlib_*/` or
+  `stdlib_test/*/` dir exists on disk that is not in the pin — even in explicit
+  `<dir>` runs, and even for a dir with no resolvable entry (so a std-looking
+  dir cannot silently escape the gate). Explicit `<dir>` runs skip only the
+  discovery-pin set-equality check (targeted runs), not the guard.
 - A fixture that binds TCP ports ships `<dir>/ports.txt` (one port per line,
   `#` comments allowed). The harness fails `PORT-IN-USE:<port>` if a LISTEN
   socket already exists on a declared port before the run.
+
+**Fixture naming contract (binding):**
+- Std fixtures live at `repro/mi_matrix/stdlib_<module>_<name>_xmod/` (the
+  `_xmod` suffix is the corpus convention; discovery matches any `stdlib_*`
+  dir). Workflow-level fixtures live under `stdlib_test/<name>/`.
+- Every discovered fixture MUST have a committed `expected.txt` +
+  `expected.rc` and be listed in `scripts/stdlib/expected_dirs.txt` (no silent
+  skips).
 
 **Golden convention (binding):**
 - `<dir>/expected.txt` = exact stdout bytes; `<dir>/expected.rc` = expected exit code.
@@ -1015,6 +1035,9 @@ CWD. A fixture passes only when all 3 stdouts are byte-identical, stdout
 - Goldens are runtime-only (stdout+rc), never emitted-C bytes; captured from a
   known-good compiler at the plan baseline and re-captured only on an intentional
   behavior change.
+- `--capture` writes the observed stdout+rc, but REFUSES a nonzero rc that is
+  not already declared in an existing `expected.rc` (a crashing fixture is not
+  silently frozen — a probe declares its `expected.rc` first).
 - Capture only after confirming the observed output matches the fixture's
   documented GREEN contract in its `main.zig` header (never freeze a wrong output).
 - Expected-failure probes (e.g. `stdlib_debug_defaulttrap_xmod` rc=134,

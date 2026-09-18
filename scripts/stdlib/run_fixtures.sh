@@ -1,14 +1,21 @@
 #!/usr/bin/env bash
-# Runtime gate for the std-lib fixtures (Plan A hardening Task 1).
+# Runtime gate for the std-lib fixtures (Plan A/B hardening).
 #
 # Spec: docs/superpowers/specs/2026-09-18-std-lib-test-hardening-design.md §2.
 #
-# usage: run_fixtures.sh <zig1> [<dir>...]
+# usage: run_fixtures.sh [--capture] <zig1> [<dir>...]
 #
+#   --capture  re-capture each fixture's committed golden from the observed run:
+#             writes <dir>/expected.txt + <dir>/expected.rc and prints what it
+#             wrote. A fixture whose program rc is nonzero AND not already
+#             declared in an existing <dir>/expected.rc is REFUSED (a crashing
+#             fixture is not silently frozen). ALWAYS review the observed output
+#             against the fixture's documented GREEN contract (its main.zig
+#             header) before committing a capture.
 #   <zig1>    seed-built `zig1_5_clean` (its sibling lib/ resolves the std
 #             modules). NEVER pass a zig0-built compiler.
 #   <dir>...  optional explicit fixture dirs (repo-relative or absolute). With
-#             no dirs, discovery is every `repro/mi_matrix/stdlib_*_xmod/` and
+#             no dirs, discovery is every `repro/mi_matrix/stdlib_*/` and
 #             every `stdlib_test/*/` in the corpus universe (the same
 #             `emit_dir` entry-resolution rule as scripts/corpus/list_corpus_dirs.sh).
 #
@@ -24,7 +31,9 @@
 # discovered dir set must equal the pinned baseline exactly (a dropped, renamed,
 # or added fixture FAILS the gate), so coverage cannot silently shrink. Update
 # the pin intentionally when a band adds/removes fixtures. Explicit `<dir>`
-# arguments skip the pin (targeted runs).
+# arguments skip the discovery pin (targeted runs), but an independent guard
+# ALWAYS fails if any `repro/mi_matrix/stdlib_*/` or `stdlib_test/*/` dir exists
+# that is not in the pin (a std-looking dir cannot silently escape the gate).
 #
 # Optional `<dir>/ports.txt` (one TCP port per line; `#` comments allowed)
 # declares ports the fixture binds. If a LISTEN socket already exists on a
@@ -39,8 +48,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$ROOT" || exit 2
 
+CAPTURE=0
+if [ "${1:-}" = "--capture" ]; then CAPTURE=1; shift; fi
+
 if [ "$#" -lt 1 ]; then
-  echo "usage: run_fixtures.sh <zig1> [<dir>...]" >&2
+  echo "usage: run_fixtures.sh [--capture] <zig1> [<dir>...]" >&2
   exit 2
 fi
 
@@ -68,7 +80,7 @@ resolve_entry() {
 
 discover_dirs() {
   bash "$ROOT/scripts/corpus/list_corpus_dirs.sh" \
-    | grep -E '^repro/mi_matrix/stdlib_[^/]*_xmod/$|^stdlib_test/[^/]*/$'
+    | grep -E '^repro/mi_matrix/stdlib_[^/]*/$|^stdlib_test/[^/]*/$'
 }
 
 # port_listening <port> — true if a TCP LISTEN socket exists on <port>.
@@ -111,15 +123,34 @@ fi
 
 [ "${#DIRS[@]}" -gt 0 ] || { echo "error: no fixture dirs found" >&2; exit 2; }
 
-# --- discovery pin (skipped for explicit <dir> runs) ---
+# --- discovery pin ---
 EXPECTED_DIRS_FILE="$SCRIPT_DIR/expected_dirs.txt"
-if [ "$DISCOVERY_MODE" = 1 ]; then
-  if [ ! -f "$EXPECTED_DIRS_FILE" ]; then
-    echo "FAIL discovery-pin (missing $EXPECTED_DIRS_FILE)" >&2
-    exit 1
+if [ ! -f "$EXPECTED_DIRS_FILE" ]; then
+  echo "FAIL discovery-pin (missing $EXPECTED_DIRS_FILE)" >&2
+  exit 1
+fi
+expected_list="$(grep -vE '^[[:space:]]*(#|$)' "$EXPECTED_DIRS_FILE" | LC_ALL=C sort)"
+
+# Independent guard (both modes): a std-looking dir that exists on disk but is
+# not in the pin must fail loudly, even if it has no resolvable entry (so it
+# would otherwise be invisible to discovery and silently escape the gate).
+unpinned=""
+for d in repro/mi_matrix/stdlib_*/ stdlib_test/*/; do
+  [ -d "$d" ] || continue
+  rel="${d%/}"
+  if ! printf '%s\n' "$expected_list" | grep -qxF "$rel"; then
+    unpinned="$rel"
+    break
   fi
+done
+if [ -n "$unpinned" ]; then
+  echo "FAIL unpinned-stdlib-dir ($unpinned exists but is not in $EXPECTED_DIRS_FILE)" >&2
+  exit 1
+fi
+
+# discovery pin (skipped for explicit <dir> runs)
+if [ "$DISCOVERY_MODE" = 1 ]; then
   actual_list="$(printf '%s\n' "${DIRS[@]}" | LC_ALL=C sort)"
-  expected_list="$(grep -vE '^[[:space:]]*(#|$)' "$EXPECTED_DIRS_FILE" | LC_ALL=C sort)"
   if [ "$actual_list" != "$expected_list" ]; then
     echo "FAIL discovery-pin (discovered std fixture set differs from $EXPECTED_DIRS_FILE)" >&2
     diff <(printf '%s\n' "$expected_list") <(printf '%s\n' "$actual_list") >&2 || true
@@ -136,7 +167,7 @@ for d in "${DIRS[@]}"; do
   entry="$(resolve_entry "$d")"
   if [ -z "$entry" ]; then
     reason="NOENTRY"
-  elif [ ! -f "$d/expected.txt" ] || [ ! -f "$d/expected.rc" ]; then
+  elif [ "$CAPTURE" = 0 ] && { [ ! -f "$d/expected.txt" ] || [ ! -f "$d/expected.rc" ]; }; then
     reason="MISSING-GOLDEN"
   elif ! check_ports "$d"; then
     reason="PORT-IN-USE:$BAD_PORT"
@@ -175,6 +206,19 @@ for d in "${DIRS[@]}"; do
           ( cd "$run_cwd" && timeout 120 "$tmp/prog" ) >"$tmp/.run3.out" 2>"$tmp/.run3.err"; rc3=$?
           if ! cmp -s "$tmp/.run1.out" "$tmp/.run2.out" || ! cmp -s "$tmp/.run1.out" "$tmp/.run3.out"; then
             reason="NONDETERMINISTIC"
+          elif [ "$CAPTURE" = 1 ]; then
+            # --capture: write the observed golden. Refuse a nonzero rc that is
+            # not already declared in an existing expected.rc — a crashing
+            # fixture must not be silently frozen (a probe declares its rc first).
+            want_rc=""
+            [ -f "$d/expected.rc" ] && want_rc="$(tr -d '[:space:]' < "$d/expected.rc")"
+            if [ "$rc1" != 0 ] && [ "$rc1" != "$want_rc" ]; then
+              reason="CAPTURE-REFUSED-RC$rc1(undeclared)"
+            else
+              cp "$tmp/.run1.out" "$d/expected.txt"
+              printf '%s\n' "$rc1" > "$d/expected.rc"
+              reason="CAPTURED"
+            fi
           elif ! cmp -s "$tmp/.run1.out" "$d/expected.txt"; then
             reason="STDOUT-MISMATCH"
           else
@@ -187,7 +231,10 @@ for d in "${DIRS[@]}"; do
         fi
       fi
     fi
-    if [ -z "$reason" ]; then
+    if [ "$reason" = "CAPTURED" ]; then
+      pass=$((pass + 1))
+      echo "CAPTURED $d (stdout $(wc -c < "$d/expected.txt" | tr -d '[:space:]') bytes, rc $(tr -d '[:space:]' < "$d/expected.rc"))"
+    elif [ -z "$reason" ]; then
       pass=$((pass + 1))
       echo "PASS $d"
     else
@@ -197,6 +244,14 @@ for d in "${DIRS[@]}"; do
       if [ -s "$tmp/.dumperr" ]; then
         echo "    dump stderr: $(tail -n 1 "$tmp/.dumperr")"
       fi
+      case "$reason" in
+        GCCFAIL)
+          [ -s "$tmp/.gccerr" ] && echo "    gcc stderr: $(head -n 1 "$tmp/.gccerr")"
+          ;;
+        BUILD-RC*)
+          [ -s "$tmp/.builderr" ] && echo "    build stderr: $(head -n 1 "$tmp/.builderr")"
+          ;;
+      esac
     fi
     rm -rf "$tmp"
   fi
@@ -210,6 +265,7 @@ for d in "${DIRS[@]}"; do
 done
 
 echo "----------------------------------------"
+[ "$CAPTURE" = 1 ] && echo "run_fixtures: --capture mode (goldens written; review before committing)"
 echo "run_fixtures: $pass PASS / $fail FAIL over ${#DIRS[@]} dirs"
 if [ "$fail" -ne 0 ]; then
   printf 'failed: %s\n' "${FAILED[*]}"
