@@ -1,4 +1,103 @@
-# mi_matrix corpus — expected-fail manifest (v132 2026-09-17)
+# mi_matrix corpus — expected-fail manifest (v133 2026-09-18)
+
+## Plan A Task 6b-I — `-ffast` undefined slice-array emission defect pinned (v132 -> v133 2026-09-18)
+
+Task 6b-I investigates the compiler defect found in the Task 6 (`std_str`) review (operator
+ruling m1277): under `-ffast`, a 1-D array of slices initialized `undefined` mis-emits its
+element fill as a scalar zero, which gcc rejects. **Premise CONFIRMED; no `sf/src` change;
+fixed point UNMOVED `4b1c029de5234ea94dae0e78eac733e8`.** Two new dirs: the auto-listed
+`-ffast` pin and an off-corpus `-fsafe`/default control.
+
+**Exact emitted C (verbatim), fixed point `4b1c029d`.** Pin
+`repro/mi_matrix/undefined_slice_array_xmod`:
+
+`-ffast` (BUG — dump rc=0, 5 `.c`, gcc rc=1):
+```c
+    zT_4C214FEE_Arr_zT_8F083A69_Sli zT_1;
+    ...
+    {
+    unsigned int _i = 0;
+    while (_i < 3) {
+        zT_1[_i] = 0;
+        _i++;
+    }
+}
+    {
+    unsigned int _i = 0;
+    while (_i < 3) {
+        arr[_i] = zT_1[_i];
+        _i++;
+    }
+}
+```
+gcc: `main_112EE5B5.c:26:20: error: incompatible types when assigning to type
+'zT_8F083A69_Slice_zT_0B42B2F8_u' from type 'int'`.
+
+`-fsafe`/default (CLEAN — dump rc=0, gcc+link rc=0, run rc=0, stdout `alpha|gamma|5\n`):
+```c
+    zig_poison_fill((void*)&zT_1, (unsigned int)sizeof zT_1);
+```
+(the A17 lowering routes `undefined` through `poison_init`, `sf/src/c89_emit.zig:7329`;
+the default mode is the `-fsafe` path).
+
+**Affected shapes (measured, fixed point `4b1c029d`).** The `.undefined_const` array-element
+else-arm (`sf/src/c89_emit.zig:7308-7311`) is reached whenever the 1-D array element kind is
+neither `array_type` (multi-dim byte-fill, `:7242-7254`), `tagged_union_type` (`:7267-7270`),
+nor `struct_type` (`:7271-7307`):
+
+| shape | emitted fill | gcc |
+|---|---|---|
+| `[N][]const u8`, `[N][]u8` (slice element) | `zT_1[_i] = 0;` | **FAIL** (int -> slice) |
+| `[N]?T` (optional element) | `zT_1[_i] = 0;` | **FAIL** (int -> optional struct) |
+| `[N]S` with `S` slice/optional field | `zT_1[_i].s = 0;` (`:7297-7305`) | **FAIL** |
+| `[N][M][]const u8` (nested array element) | `((unsigned char*)&zT_1)[_i] = 0;` | OK |
+| `[N][*]u8`, `[N]i32` (scalar/pointer element) | `zT_1[_i] = 0;` | OK |
+| direct `var s: []const u8 = undefined;` | hoisted temp `= {0}` | OK |
+| global `var a: [N][]const u8 = undefined;` | BSS zero | OK |
+
+The `-ffast` defect is confined to 1-D arrays of C-aggregate element kinds the arm does not
+special-case; nested arrays are already correct via the byte-wise path.
+
+**Fixtures + classification.** Universe 760 -> **761** (+1; the control under
+`known_excluded/` is never enumerated by `scripts/corpus/list_corpus_dirs.sh`).
+
+| fixture | class (pre-fix) | class (post-6b-F contract) | gate |
+|---|---|---|---|
+| `undefined_slice_array_xmod` | **FAIL** | **OK** | `-ffast` dump rc=0, gcc rejects `zT_1[_i] = 0;`; post-fix gcc clean + stdout `alpha\|gamma\|5\n` |
+| `known_excluded/undefined_slice_array_safe_xmod` | off-corpus (control) | off-corpus | `-fsafe`/default dump+gcc+link+run rc=0, stdout `alpha\|gamma\|5\n` pre- and post-fix |
+
+**Corpus `-ffast` dump+gcc classifier (`scripts/corpus/classify`):**
+
+| | pre-6b-I `4b1c029d` (760) | 6b-I `4b1c029d` (761) | delta |
+|---|---|---|---|
+| dirs | 760 | 761 | +1 |
+| OK | 707 | 707 | 0 |
+| GREEN | 28 | 28 | 0 |
+| FAIL | 25 | 26 | +1 |
+| ICE | 0 | 0 | 0 |
+| CRASH | 0 | 0 | 0 |
+
+Per-dir `join` diff = exactly `repro/mi_matrix/undefined_slice_array_xmod` (new, FAIL);
+every pre-existing dir class-identical (no `sf/src` change).
+
+**Mode-specific gate (explicit).** The corpus classifier is `-ffast`-based, so the pin MUST
+classify **FAIL** pre-fix and **OK** post-fix — it does. The `-fsafe`/default control MUST
+build/run clean both pre- and post-fix — it does. A `-fsafe`-only defect would be invisible to
+the `-ffast` classifier; this one is not, because the defect lives in the `-ffast` path.
+
+**Fix surface for Task 6b-F (no `sf/src` change here).** Locus
+`sf/src/c89_emit.zig:7308-7311`, the `.undefined_const` array-element scalar else-arm. Minimal
+change: add an `else if (elem_ty.kind == type_mod.TypeKind.slice_type)` arm that zero-fills the
+slice's two C fields (`result[_i].ptr = 0; result[_i].len = 0;`) before the final `else`.
+General alternative: replace the scalar else with the same byte-wise zero loop the multi-dim
+array path uses (`((unsigned char*)&result)[_i] = 0;` over `sizeof(result)`), which is
+shape-agnostic and also covers `optional_type` elements. Sibling defect (same round or
+declared): the struct-element field arm (`:7297-7305`) emits `result[_i].field = 0;` for
+slice/optional fields (blast radius above). Direct slice/struct locals, globals, and nested
+arrays are already correct and must stay byte-identical. Full report:
+`.superpowers/sdd/2026-09-17-std-lib-plan-a-foundation/task-6b-I-report.md`.
+
+---
 
 ## Plan A Task 4b-F — optional-fn-pointer C-emission defect fixed (v131 -> v132 2026-09-17)
 
