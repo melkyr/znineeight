@@ -1,6 +1,6 @@
-# mi_matrix corpus — expected-fail manifest (v136 2026-09-18)
+# mi_matrix corpus — expected-fail manifest (v137 2026-09-18)
 
-## Plan A closeout — L0-L2 std-lib foundation landed (v135 -> v136 2026-09-18)
+## Plan A closeout — L0-L2 std-lib foundation landed (v135 -> v136 2026-09-18; re-rotated v136 -> v137 2026-09-18)
 
 Plan A (`docs/superpowers/plans/2026-09-17-std-lib-plan-a-foundation.md`) is **COMPLETE**.
 The L0-L2 foundation landed: `std_bits` (L0); `std_os` + `std_os_pal` + the authorized
@@ -9,18 +9,28 @@ The L0-L2 foundation landed: `std_bits` (L0); `std_os` + `std_os_pal` + the auth
 `?fn(*TrapContext) void` by Task 4c); `std_buf` (L2) + `std_debug.backtrace` (the single
 documented R3 L1→L2 import); and the `std_str` extension (L2). The two R7b usage programs
 (`stdlib_test/bits_buf_str_usage`, `stdlib_test/os_time_usage`) are corpus dirs. This
-closeout commit is **docs/seed only — no `sf/src` change**; the self-emission fixed point is
-UNMOVED from the Task 6b-F value. The seed is rotated (Plan A moved the fixed point through
+closeout commit is **docs/seed only — no `sf/src` change**; the self-emission fixed point was
+UNMOVED from the Task 6b-F value at the Task 8 closeout (the final-review fix wave then moved
+it — see below). The seed is rotated (Plan A moved the fixed point through
 the authorized compiler changes) per the QUICK_REF rotation protocol.
+
+**Final-review fix wave + re-rotation (v136 -> v137).** The whole-plan final review
+(operator rulings m1323/m1325) authorized the 12-name `std.zig` re-export set, documented the
+second R3 exception (`std_debug` -> `std_io`), recorded the fourth authorized compiler change
+(the `-ffast` undefined slice/optional/struct-field fix, m1277), and restored the
+`int3`/SIGTRAP trap hook with its non-GCC/non-x86 `pal_abort()` fallback. The trap-hook
+compiler fix moved the self-emission fixed point `7513a8d5` -> `414cccee`; the seed was
+re-rotated **v28 -> v29** at the new fixed point (the v28 archive embedded the pre-fix
+`zig_pal.c`).
 
 | field | value |
 |---|---|
-| fixed point | `7513a8d59a3c317639a055491769a9c5` |
-| seed before | v27 (archive md5 `cab32bf6ba4998a2a78de3064a07443e`, fixed point `553a39b42983ce72459698a7aa5817e1`) |
-| seed after | v28 (archive md5 `e7bebc14f4b600a7742062ac2ab4c38d`; archived binary md5 = fixed point `7513a8d5`) |
-| self-emission C | 45 `.c` + 46 `.h` (8733246 bytes) |
+| fixed point | `414cccee639bdb61c7a9f1f2ddddb166` |
+| seed before | v27 (archive md5 `cab32bf6ba4998a2a78de3064a07443e`, fixed point `553a39b42983ce72459698a7aa5817e1`), rotated to v28 at `7513a8d5` (archive `e7bebc14f4b600a7742062ac2ab4c38d`) |
+| seed after | v29 (archive md5 `910a4d673f0fa95f8473c08e143ceb54`; archived binary md5 = fixed point `414cccee`) |
+| self-emission C | 45 `.c` + 46 `.h` (8739997 bytes) |
 | corpus (`-ffast` dump+gcc classifier) | 763 dirs = **710 OK / 28 GREEN / 25 FAIL / 0 ICE / 0 CRASH** |
-| EXPECTED_FAIL header | v135 -> v136 |
+| EXPECTED_FAIL header | v135 -> v136; v136 -> v137 (final-review re-rotation) |
 
 **Corpus delta through Plan A.** The Task 1 baseline was **728** dirs (EXPECTED_FAIL v130);
 the closeout corpus is **763** (+35 dirs): the per-module `stdlib_*` fixtures, the two
@@ -30,13 +40,12 @@ during Plan A is confined to the tasks' declared flips — `opt_fnptr_extern_xmo
 every pre-existing dir is class-identical at closeout (Task 8 changes no `sf/src`, so the
 class map cannot move).
 
-**Gates (seed-built fixed-point compiler `7513a8d5`).** `scripts/check_emit_support.sh`
-**5/5** byte-identical (+ conditional `std_os_prelude.h`/`std_time_prelude.h`);
-`scripts/closeout/verify_upgraded.sh` **CLOSEOUT OK** (A1-A5 / B1-B7, all goldens
-byte-identical); self-compile `-ffast --dump-c89` rc=0, 48 `.c`, 0 `error[`, 0 PANIC;
-canonical classifier 763 = 710 OK / 28 GREEN / 25 FAIL. Seed v28 round-trip re-verified
-(rebuild from the new seed closes hop1 == hop2 == `7513a8d5`). Full report:
-`.superpowers/sdd/2026-09-17-std-lib-plan-a-foundation/task-8-report.md`.
+**Gates (seed-built fixed-point compiler `414cccee`).** `scripts/check_emit_support.sh`
+**7/7** byte-identical (5 core + 2 conditional preludes); `scripts/closeout/verify_upgraded.sh`
+**CLOSEOUT OK** (A1-A5 / B1-B7, all goldens byte-identical); self-compile `-ffast --dump-c89`
+rc=0, 48 `.c`, 0 `error[`, 0 PANIC; canonical classifier 763 = 710 OK / 28 GREEN / 25 FAIL.
+Seed v29 round-trip re-verified (rebuild from the new seed closes hop1 == hop2 == `414cccee`).
+Full report: `.superpowers/sdd/2026-09-17-std-lib-plan-a-foundation/task-8-report.md`.
 
 **Known undeclared-fail (recorded, NOT fixed; pending operator ruling).**
 `repro/mi_matrix/ptrcast_arity_xmod` classifies **FAIL** but is **not declared in this
