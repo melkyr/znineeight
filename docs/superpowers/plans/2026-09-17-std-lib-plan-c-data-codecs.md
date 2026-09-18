@@ -26,6 +26,7 @@
 - **Seed `lib/` copy lists:** each task that adds a module extends both `scripts/seed/build_from_seed.sh` and `scripts/seed/archive_seed.sh` `lib/` copy lists in the same commit; the closeout verifies the lists are complete. (`scripts/self_compile/build_zig1_5.sh:12` keeps its legacy 5-module list on the retired zig0 path — a known divergence; do not silently change it.)
 - **Crypto gate:** RFC/FIPS normative vectors (RFC 3174 SHA-1, FIPS 180-4 SHA-256, RFC 1321 MD5, IEEE 802.3 CRC-32); streaming vs one-shot equality; empty input.
 - **Edits only via `edit`/`fastedit`**; never stage `mnemoria/` or `.zig1_*.tmp`; declare every residual gap.
+- **Recorded compiler gap (defer to Plan C; fix alongside the FramePool work).** `@asyncFrameSize(fn)` in array-size position — the natural way to declare a statically-sized frame buffer, `[@asyncFrameSize(co)]u8` — is rejected with `error[3050] array size is not a constant expression` because `evalConstU32Full` (`sf/src/type_resolver.zig`) has no builtin arm for `@asyncFrameSize`. Until it is fixed, frame buffers are sized by a runtime arena/sand allocation (`arena_mod.alloc(&arena, @intCast(usize, @asyncFrameSize(co)))`), the `examples/z98/mud_server` / `repro/mi_matrix/client_task_arena_xmod` idiom. Plan B's `stdlib_test/file_stream_usage` uses that idiom; the const-evaluator gap is a `sf/src` change (moves the fixed point) to be scheduled with the FramePool work.
 
 ---
 
