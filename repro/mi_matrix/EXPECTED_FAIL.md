@@ -1,4 +1,46 @@
-# mi_matrix corpus — expected-fail manifest (v150 2026-09-18)
+# mi_matrix corpus — expected-fail manifest (v151 2026-09-18)
+
+## Plan C Task 2b-F follow-up — lexer f64 exponent after a decimal point fixed (v150 -> v151 2026-09-18)
+
+Operator-ruled pin + fix for the pre-existing `parseF64` bug found while
+replacing `gcvt` (the F half of the lexer-exponent I/F pair).
+
+**Root cause.** `sf/src/lexer.zig` `parseF64`: the fraction loop advanced `i`
+past the `e`/`E` before breaking (`i += 1` at the top of the loop), so the
+exponent block at `:643` saw the character *after* the `e` and was skipped. A
+decimal-point mantissa followed by an exponent (`1.0e300`, `1.5e-3`) therefore
+parsed with its exponent silently dropped (`1.0`, `1.5`), while no-dot literals
+(`1e300`) decremented `i` first and parsed correctly. This is why the Task 2b-I
+`1.7976931348623157e308` -> `1.79769` example was doubly wrong (the exponent was
+already lost before the 6-digit formatter saw the value).
+
+**Fix.** The fraction loop now decrements `i` before breaking on `e`/`E`
+(`if (c == 'e' or c == 'E') { i -= 1; break; }`), mirroring the integer-part
+loop, so the exponent block sees the `e`. No other parsing path changes.
+
+**New pin.** `repro/mi_matrix/lexer_float_exponent_xmod` — a decimal-point +
+exponent literal (`1.0e300` vs `1e300`, `1.5e-3`, `2.5e10` vs `25e9`) with
+`ck`-style `@panic` asserts and a stable stdout line.
+
+| dir | class (v150) | class (v151) | evidence |
+|---|---|---|---|
+| `lexer_float_exponent_xmod` | **OK** (runtime RED) | **OK** (runtime GREEN) | `run_fixtures.sh` explicit: PASS; stdout `lexer float exp ok`, rc=0 |
+
+**Corpus delta.** Universe **829 -> 830** (+1, the new pin). Class delta vs v150:
+**+1 OK** (776 OK / 28 GREEN / 25 FAIL / 0 ICE -> **777 OK** / 28 GREEN / 25
+FAIL / 0 ICE); full-classifier diff over the 830-dir universe is exactly one line
+(the new pin). The 4-MD5 gate programs (gol/lisp/json/mud) emit byte-identically.
+Runtime gate **123 PASS / 0 FAIL over 123 dirs**; `check_emit_support.sh`
+**7/7**; self-compile **48 `.c`, rc=0, 0 errors, 0 PANIC**; `CLOSEOUT OK`
+(A1-A5, B1-B6, C1).
+
+The self-emission fixed point **MOVES again**
+`b0e7042a26e74d7b744a0a49546149b4` -> **`9265739b7b5e7b1626b8db7ad4255fc5`**
+(hop1 == hop2) and the seed rotates **v34 -> v35** (archive md5
+`a4d4de3cc7ff131da3a01865b3622ed7` -> `981d58539c31cd5b66d97aef4ee87ebe`).
+
+**Declassification.** `lexer_float_exponent_xmod` remains a permanent regression
+pin; the v150 report's "New concern" (the parseF64 exponent drop) is resolved.
 
 ## Plan C Task 2b-F follow-up — self-contained f64 formatting (no gcvt) (v149 -> v150 2026-09-18)
 

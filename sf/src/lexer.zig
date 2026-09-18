@@ -632,7 +632,7 @@ fn parseF64(text: []const u8) f64 {
             var c = text[i];
             i += 1;
             if (c == '_') continue;
-            if (c == 'e' or c == 'E') break;
+            if (c == 'e' or c == 'E') { i -= 1; break; }
             if (!isDigit(c)) break;
             var dg2: i32 = @intCast(i32, c - @intCast(u8, '0'));
             result += @intToFloat(f64, dg2) * frac_mul;

@@ -46,7 +46,7 @@ Scanner: source text → `Token` stream. Single-pass, character-by-character. Al
 |------|------|-------------|
 | `Lexer` | 18 | Fields: `source([]const u8)`, `pos(usize)`, `line(u32)`, `col(u32)`, `file_id(u32)`, `interner(*StringInterner)`, `diag(*DiagnosticCollector)`, `string_buf(*U8ArrayList)` |
 
-### Functions
+### Functions [updated: 2026-09-18]
 
 | Function | Line | Scope | `[inference]` | Description |
 |----------|------|-------|---------------|-------------|
@@ -73,7 +73,7 @@ Scanner: source text → `Token` stream. Single-pass, character-by-character. Al
 | `lexerParseEscapeSequence` | 456 | private | `[inference: dispatch on '\n','\t','\r','\\','\"','\'','\0','\x', else WARN_1010]` | Parses escape sequences. Unrecognized escapes emit `WARN_1010` and return the raw char. |
 | `isDigitInBase` | 482 | private | `[inference: switch on base 2/8/10/16]` | Range check per base. |
 | `parseU64` | 492 | private | `[inference: base prefix skip, digit loop, overflow detection]` | Parses `[]const u8` to `u64`. Handles `_` separators. Clamps overflow to `0xFFFF_FFFF_FFFF_FFFF`. |
-| `parseF64` | 536 | private | `[inference: sign, int part, frac part, scientific exp, E notation loop]` | Hand-written float parser. No IEEE edge cases. Scientific exponent uses naive `10^exp` loop. |
+| `parseF64` | 610 | private | `[inference: sign, int part, frac part, scientific exp, E notation loop]` | Hand-written float parser. No IEEE edge cases. Scientific exponent uses naive `10^exp` loop. **2026-09-18:** the fraction loop no longer consumes the `e`/`E` (it decrements `i` before breaking), so a decimal-point mantissa followed by an exponent (`1.0e300`, `1.5e-3`) parses with its exponent; previously the exponent block was skipped for those literals. |
 | `isU64MaxLiteral` | 596 | private | `[inference: reparses as hex, compares to 0xFFFF_FFFF_FFFF_FFFF]` | Distinguishes true max-u64 from overflow. |
 | `assertEqBool` | 602 | private | `[inference: test helper, stderr output on mismatch]` | Inline test assertion. |
 | `assertEqU32` | 621 | private | `[inference: test helper, stderr output on mismatch]` | Inline test assertion. |
@@ -473,7 +473,7 @@ See table in parser section above. All go to stderr via `pal.markerWrite`.
 
 4. **`lexerScanIdentifierOrKeyword` re-interns** (parser.zig:543): Parser re-interms identifier text rather than using `TokenValue.string_id` directly. Redundant but ensures consistency.
 
-5. **No IEEE float edge cases**: `parseF64` uses naive multiplication loops for scientific notation — potential precision issues on extreme exponents.
+5. **No IEEE float edge cases**: `parseF64` uses naive multiplication loops for scientific notation — potential precision issues on extreme exponents. (The separate exponent-after-decimal-point drop — the fraction loop consumed the `e` — was fixed 2026-09-18 and pinned by `lexer_float_exponent_xmod`.)
 
 ---
 
