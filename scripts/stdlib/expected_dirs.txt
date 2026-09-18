@@ -54,6 +54,7 @@ repro/mi_matrix/stdlib_file_remove_xmod
 repro/mi_matrix/stdlib_file_rename_xmod
 repro/mi_matrix/stdlib_file_seek_xmod
 repro/mi_matrix/stdlib_file_size_xmod
+repro/mi_matrix/stdlib_file_stress_xmod
 repro/mi_matrix/stdlib_file_write_xmod
 repro/mi_matrix/stdlib_file_writeall_xmod
 repro/mi_matrix/stdlib_fileio_xmod
@@ -64,6 +65,7 @@ repro/mi_matrix/stdlib_net_udp_loopback_xmod
 repro/mi_matrix/stdlib_net_udp_recvfrom_xmod
 repro/mi_matrix/stdlib_net_udp_sendto_xmod
 repro/mi_matrix/stdlib_net_udp_settimeout_xmod
+repro/mi_matrix/stdlib_net_udp_stress_xmod
 repro/mi_matrix/stdlib_net_udp_truncation_xmod
 repro/mi_matrix/stdlib_net_udp_zero_len_xmod
 repro/mi_matrix/stdlib_os_argc_xmod
@@ -77,6 +79,7 @@ repro/mi_matrix/stdlib_stdin_overflow_xmod
 repro/mi_matrix/stdlib_stdin_readall_xmod
 repro/mi_matrix/stdlib_stdin_readerr_xmod
 repro/mi_matrix/stdlib_stdin_readline_xmod
+repro/mi_matrix/stdlib_stdin_stress_xmod
 repro/mi_matrix/stdlib_str_count_xmod
 repro/mi_matrix/stdlib_str_eqignorecase_xmod
 repro/mi_matrix/stdlib_str_indexof_xmod
@@ -98,6 +101,7 @@ repro/mi_matrix/stdlib_stream_readline_empty_xmod
 repro/mi_matrix/stdlib_stream_readline_noeof_xmod
 repro/mi_matrix/stdlib_stream_readline_xmod
 repro/mi_matrix/stdlib_stream_readlinesync_xmod
+repro/mi_matrix/stdlib_stream_stress_xmod
 repro/mi_matrix/stdlib_time_monotonic_avail_xmod
 repro/mi_matrix/stdlib_time_monotonic_xmod
 repro/mi_matrix/stdlib_time_sleep_xmod
