@@ -10,6 +10,17 @@
 // any f64->int conversion (unsupported here): digits are extracted by
 // comparison and placed into a temporary buffer, which is then copied into the
 // tail of buf.
+//
+// ftoa contract (L5):
+//   * Fixed-point notation, round half up, `precision` fraction digits clamped
+//     to 17. No exponent notation.
+//   * Non-finite input is total: NaN -> "nan", +inf -> "inf", -inf -> "-inf".
+//     It never hangs or traps.
+//   * Buffer precondition: `buf` must hold the rendered text (sign + integer
+//     digits + optional '.' + precision). If it does not, ftoa writes nothing
+//     and returns buf[0..0]; size buf >= 1 + 309 + 1 + 17 = 328 bytes to cover
+//     every finite f64. The same empty result is returned for any value that
+//     cannot be represented in the fixed ftoa temps.
 
 const MAX_I32_MAG: u64 = 2147483647;
 const MAX_I32_NEG_MAG: u64 = 2147483648;
@@ -17,6 +28,12 @@ const MAX_U32: u64 = 4294967295;
 const MAX_I64_MAG: u64 = @intCast(u64, 0x7FFFFFFFFFFFFFFF);
 const MAX_I64_NEG_MAG: u64 = @intCast(u64, 0x8000000000000000);
 const MAX_U64: u64 = @intCast(u64, 0xFFFFFFFFFFFFFFFF);
+
+// ftoa working size. The largest finite f64 (~1.7977e308) has 309 integer
+// digits; precision is clamped to 17, so a rendered value is at most
+// 1 (sign) + 309 + 1 ('.') + 17 = 328 bytes. 352 gives headroom and is used for
+// both the digit scratch and the output temp, so no finite input can overrun.
+const FTOA_TMP = 352;
 
 // ---------------------------------------------------------------------------
 // Parsing
@@ -241,7 +258,7 @@ fn extractDigit(v: f64) u32 {
     return 0;
 }
 
-fn writeZeros(p: u8, out: *[96]u8) usize {
+fn writeZeros(p: u8, out: *[FTOA_TMP]u8) usize {
     var n: usize = 1;
     out[0] = '0';
     if (p > 0) {
@@ -256,7 +273,7 @@ fn writeZeros(p: u8, out: *[96]u8) usize {
     return n;
 }
 
-fn writeRoundedOne(p: u8, out: *[96]u8) usize {
+fn writeRoundedOne(p: u8, out: *[FTOA_TMP]u8) usize {
     if (p == 0) {
         out[0] = '1';
         return 1;
@@ -274,18 +291,27 @@ fn writeRoundedOne(p: u8, out: *[96]u8) usize {
     return n;
 }
 
-// Renders a non-negative value in fixed-point with `p` fraction digits (round
-// half up) into `out` (ASCII, forward). Returns the byte length.
-fn ftoaPositive(x: f64, p: u8, out: *[96]u8) usize {
+// Renders a non-negative finite value in fixed-point with `p` fraction digits
+// (round half up) into `out` (ASCII, forward). Returns the byte length, or 0 if
+// the value cannot fit in `out` (defensive; unreachable for finite f64).
+fn ftoaPositive(x: f64, p: u8, out: *[FTOA_TMP]u8) usize {
     if (x == 0.0) return writeZeros(p, out);
-    // Normalize to m in [1, 10): x == m * 10^e.
+    // Normalize to m in [1, 10): x == m * 10^e. The iteration caps below make
+    // the loop bounded even if a non-finite value ever reached here; the true
+    // finite-f64 range is e in [-324, 308], well inside the caps.
     var m: f64 = x;
     var e: i32 = 0;
+    var guard: u32 = 0;
     while (m >= 10.0) {
+        if (guard >= 320) return 0;
+        guard += 1;
         m = m / 10.0;
         e += 1;
     }
+    guard = 0;
     while (m < 1.0) {
+        if (guard >= 340) return 0;
+        guard += 1;
         m = m * 10.0;
         e -= 1;
     }
@@ -298,7 +324,10 @@ fn ftoaPositive(x: f64, p: u8, out: *[96]u8) usize {
     }
     var n_ret: usize = @intCast(usize, idx_last + 1);
     var need: usize = n_ret + 1;
-    var dg: [96]u8 = undefined;
+    // Bound the digit temp: the largest finite f64 needs at most
+    // 309 integer digits + 17 fraction digits + 1 guard = 327 <= FTOA_TMP.
+    if (need > FTOA_TMP) return 0;
+    var dg: [FTOA_TMP]u8 = undefined;
     var rem: f64 = m;
     var gi: usize = 0;
     while (gi < need) : (gi += 1) {
@@ -374,29 +403,55 @@ fn ftoaPositive(x: f64, p: u8, out: *[96]u8) usize {
     return n;
 }
 
+// NaN and +/-inf tests with no libm: NaN is the only value unequal to itself;
+// a finite non-zero x has x*2 != x, so x*2 == x identifies an infinity.
+fn isNanF64(x: f64) bool {
+    return x != x;
+}
+
+fn isInfF64(x: f64) bool {
+    return x != 0.0 and x * 2.0 == x;
+}
+
+// Copies `s` into the tail of buf (the returned slice points into buf).
+// Returns buf[0..0] and writes nothing when buf cannot hold all of `s`; this is
+// the documented ftoa short-buffer guard (see the module header).
+fn writeTail(buf: []u8, s: []const u8) []u8 {
+    if (buf.len < s.len) return buf[0..0];
+    var start: usize = buf.len - s.len;
+    var i: usize = 0;
+    while (i < s.len) : (i += 1) {
+        buf[start + i] = s[i];
+    }
+    return buf[start..];
+}
+
 pub fn ftoa(buf: []u8, v: f64, precision: u8) []u8 {
     var p: u8 = precision;
     if (p > 17) p = 17;
+    // Non-finite values render as text and always terminate (no hang, no trap).
+    if (isNanF64(v)) return writeTail(buf, "nan");
     var neg: bool = false;
     var x: f64 = v;
     if (x < 0.0) {
         neg = true;
         x = -x;
     }
-    var tmp: [96]u8 = undefined;
+    if (isInfF64(x)) {
+        if (neg) return writeTail(buf, "-inf");
+        return writeTail(buf, "inf");
+    }
+    var tmp: [FTOA_TMP]u8 = undefined;
     var n: usize = ftoaPositive(x, p, &tmp);
-    var total: usize = n;
-    if (neg) total += 1;
-    var start: usize = buf.len - total;
-    var w: usize = start;
+    if (n == 0) return buf[0..0];
     if (neg) {
-        buf[w] = '-';
-        w += 1;
+        if (n + 1 > FTOA_TMP) return buf[0..0];
+        var s: usize = n;
+        while (s > 0) : (s -= 1) {
+            tmp[s] = tmp[s - 1];
+        }
+        tmp[0] = '-';
+        n += 1;
     }
-    var i: usize = 0;
-    while (i < n) : (i += 1) {
-        buf[w] = tmp[i];
-        w += 1;
-    }
-    return buf[start..];
+    return writeTail(buf, tmp[0..n]);
 }
