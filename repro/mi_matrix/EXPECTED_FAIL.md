@@ -1,4 +1,56 @@
-# mi_matrix corpus — expected-fail manifest (v135 2026-09-18)
+# mi_matrix corpus — expected-fail manifest (v136 2026-09-18)
+
+## Plan A closeout — L0-L2 std-lib foundation landed (v135 -> v136 2026-09-18)
+
+Plan A (`docs/superpowers/plans/2026-09-17-std-lib-plan-a-foundation.md`) is **COMPLETE**.
+The L0-L2 foundation landed: `std_bits` (L0); `std_os` + `std_os_pal` + the authorized
+`std_os_prelude.h` (L1); `std_time` + `std_time_pal` + the authorized `std_time_prelude.h`
+(L1); the `std_debug` extension + trap hook (L1, `setTrapHandler` restored to the blueprint
+`?fn(*TrapContext) void` by Task 4c); `std_buf` (L2) + `std_debug.backtrace` (the single
+documented R3 L1→L2 import); and the `std_str` extension (L2). The two R7b usage programs
+(`stdlib_test/bits_buf_str_usage`, `stdlib_test/os_time_usage`) are corpus dirs. This
+closeout commit is **docs/seed only — no `sf/src` change**; the self-emission fixed point is
+UNMOVED from the Task 6b-F value. The seed is rotated (Plan A moved the fixed point through
+the authorized compiler changes) per the QUICK_REF rotation protocol.
+
+| field | value |
+|---|---|
+| fixed point | `7513a8d59a3c317639a055491769a9c5` |
+| seed before | v27 (archive md5 `cab32bf6ba4998a2a78de3064a07443e`, fixed point `553a39b42983ce72459698a7aa5817e1`) |
+| seed after | v28 (archive md5 `e7bebc14f4b600a7742062ac2ab4c38d`; archived binary md5 = fixed point `7513a8d5`) |
+| self-emission C | 45 `.c` + 46 `.h` (8733246 bytes) |
+| corpus (`-ffast` dump+gcc classifier) | 763 dirs = **710 OK / 28 GREEN / 25 FAIL / 0 ICE / 0 CRASH** |
+| EXPECTED_FAIL header | v135 -> v136 |
+
+**Corpus delta through Plan A.** The Task 1 baseline was **728** dirs (EXPECTED_FAIL v130);
+the closeout corpus is **763** (+35 dirs): the per-module `stdlib_*` fixtures, the two
+`stdlib_test/` usage programs, and the two compiler-defect I/F pins. Per-dir class movement
+during Plan A is confined to the tasks' declared flips — `opt_fnptr_extern_xmod` FAIL -> OK
+(Task 4b-F) and `undefined_slice_array_xmod` FAIL -> OK (Task 6b-F) — plus the new dirs;
+every pre-existing dir is class-identical at closeout (Task 8 changes no `sf/src`, so the
+class map cannot move).
+
+**Gates (seed-built fixed-point compiler `7513a8d5`).** `scripts/check_emit_support.sh`
+**5/5** byte-identical (+ conditional `std_os_prelude.h`/`std_time_prelude.h`);
+`scripts/closeout/verify_upgraded.sh` **CLOSEOUT OK** (A1-A5 / B1-B7, all goldens
+byte-identical); self-compile `-ffast --dump-c89` rc=0, 48 `.c`, 0 `error[`, 0 PANIC;
+canonical classifier 763 = 710 OK / 28 GREEN / 25 FAIL. Seed v28 round-trip re-verified
+(rebuild from the new seed closes hop1 == hop2 == `7513a8d5`). Full report:
+`.superpowers/sdd/2026-09-17-std-lib-plan-a-foundation/task-8-report.md`.
+
+**Known undeclared-fail (recorded, NOT fixed; pending operator ruling).**
+`repro/mi_matrix/ptrcast_arity_xmod` classifies **FAIL** but is **not declared in this
+manifest**. It is a pre-existing deliberate expected-fail (pins the 1-arg `@ptrCast` ->
+`error[3049]` rejection, commit `46cf5e47`, ASYNCTRACK2) that was never added to the
+manifest; its "2-arg must compile" line is untestable in the same file. Pre-existing,
+out of the current plan scope. No ruling yet.
+
+## Next plan
+
+Plan A complete. NEXT: `docs/superpowers/plans/2026-09-17-std-lib-plan-b-resources-stream.md`
+(L3 resources + L6 std_stream).
+
+---
 
 ## Plan A Task 6b-F fix round 1 — nested-struct/tagged-union undefined-field residuals declared (v134 -> v135 2026-09-18)
 

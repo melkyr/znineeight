@@ -5,7 +5,7 @@
 **Every subagent doing build/compile/run/gate work MUST read this section first.** These are the
 exact, verified commands. Do not improvise flags or rediscover linking — copy these.
 
-> **C89-AHEAD (2026-09-10):** runtime safety is now `-fsafe` by **default** (six runtime checks — cast / div-mod / shift / null-unwrap / index-OOB / integer-overflow — plus `undefined` `0xAA` poison); `-ffast` disables them. `unreachable`/`@panic` trap in **both** modes (`@panic` prints `panic: <msg>` to **stderr**). `std.arena.alloc` is `ArenaError![*]u8` — use `try`/`catch`, never `orelse` (`error[3016]`). Landed fixed point `1467d932a876402f40a56316dfcad0e5` (superseded by the calling-convention fixed point `de7137e04d62435c74e7b15281cb4540`, then by the async-compiler-core fixed point `f5ee84800dd32d7c440bb383c10edb55`, now moved by the cross-track ABI fix (Rule A) to `7b515420f749604c1765c2b1edd0d654`, then by the concerns wave (await-site 8-alignment + `-fsafe` `@asyncInit` bounds check) to `027377296b2e38402ff8470f5c429eb8`, then by the Track-4 coroutine-integration wave (multi-module step emission + `@asyncInit` ABI/arena + array/type fixes) to `18e0de5cf71f4fe0fbf5c560ab24e624`, then by the Task-8-F suspending-`export fn` driver to `9b3075b105ff544f3541d5a621d00d40`, then by the Task-8-F fix round 1 (`is_export`/`call_conv` init in `lowerModuleInit`) to `b981bc80290bfde5ed5383cd0927e124`, then by the Task 9-M-F AST index-side write-through spill (`extra_children`/`extra_ranges` → `s_extra` pools), then by the Task 9-P-F `perm` source-text release (read-per-module into a reset `source` arena + diagnostics fault-in), then by the Task 9-Q-F fault-arena lazy-init (first fault-in calls `growableSandInit`; the eager `sourceManagerInit` carve is dropped), then by the Task 9-Q-F fix round 1 (null-read fault-in fallback + transient-only fault reset + tight `diag_read` offsets cap) to **`553a39b42983ce72459698a7aa5817e1`**); seed **v27** is rotated (`release/seed/zig1-seed.tgz`, archive md5 `cab32bf6ba4998a2a78de3064a07443e`). See the **Calling convention** section below.
+> **C89-AHEAD (2026-09-10):** runtime safety is now `-fsafe` by **default** (six runtime checks — cast / div-mod / shift / null-unwrap / index-OOB / integer-overflow — plus `undefined` `0xAA` poison); `-ffast` disables them. `unreachable`/`@panic` trap in **both** modes (`@panic` prints `panic: <msg>` to **stderr**). `std.arena.alloc` is `ArenaError![*]u8` — use `try`/`catch`, never `orelse` (`error[3016]`). Landed fixed point `1467d932a876402f40a56316dfcad0e5` (superseded by the calling-convention fixed point `de7137e04d62435c74e7b15281cb4540`, then by the async-compiler-core fixed point `f5ee84800dd32d7c440bb383c10edb55`, now moved by the cross-track ABI fix (Rule A) to `7b515420f749604c1765c2b1edd0d654`, then by the concerns wave (await-site 8-alignment + `-fsafe` `@asyncInit` bounds check) to `027377296b2e38402ff8470f5c429eb8`, then by the Track-4 coroutine-integration wave (multi-module step emission + `@asyncInit` ABI/arena + array/type fixes) to `18e0de5cf71f4fe0fbf5c560ab24e624`, then by the Task-8-F suspending-`export fn` driver to `9b3075b105ff544f3541d5a621d00d40`, then by the Task-8-F fix round 1 (`is_export`/`call_conv` init in `lowerModuleInit`) to `b981bc80290bfde5ed5383cd0927e124`, then by the Task 9-M-F AST index-side write-through spill (`extra_children`/`extra_ranges` → `s_extra` pools), then by the Task 9-P-F `perm` source-text release (read-per-module into a reset `source` arena + diagnostics fault-in), then by the Task 9-Q-F fault-arena lazy-init (first fault-in calls `growableSandInit`; the eager `sourceManagerInit` carve is dropped), then by the Task 9-Q-F fix round 1 (null-read fault-in fallback + transient-only fault reset + tight `diag_read` offsets cap) to `553a39b42983ce72459698a7aa5817e1`, then by the std-lib Plan A L0-L2 foundation (the authorized `std_os`/`std_time` per-OS preludes, the `std_debug` trap hook, the optional-fn-pointer emission fix, and the `-ffast` undefined slice-array emission fix) to **`7513a8d59a3c317639a055491769a9c5`**); seed **v28** is rotated (`release/seed/zig1-seed.tgz`, archive md5 `e7bebc14f4b600a7742062ac2ab4c38d`). See the **Calling convention** section below.
 
 ### Build zig1 (the compiler under test)
 ```bash
@@ -27,19 +27,20 @@ bash sf/scripts/build_release.sh
 **Seed location + contents:** the committed rotating seed is
 `release/seed/zig1-seed.tgz` (git-tracked; provenance + rotation history in
 `release/seed/CHANGELOG.md`, full recipes in `release/seed/SEED_README.txt`).
-Current seed is **seed v27** (archive md5 `cab32bf6ba4998a2a78de3064a07443e`; Track-4 Task 9-Q-F fix round 1 (null-read fault-in fallback + transient-only fault reset + tight `diag_read` offsets cap), moving the fixed point to `553a39b42983ce72459698a7aa5817e1`).
+Current seed is **seed v28** (archive md5 `e7bebc14f4b600a7742062ac2ab4c38d`; std-lib Plan A closeout (L0-L2 foundation), moving the fixed point to `7513a8d59a3c317639a055491769a9c5`).
 Top-level `zig1-seed/`: `zig1` (reference binary md5
-`553a39b42983ce72459698a7aa5817e1`), `gen/` (its self-emission C89 module set —
+`7513a8d59a3c317639a055491769a9c5`), `gen/` (its self-emission C89 module set —
 45 `.c` + 46 `.h`, including `zig_special_types.h`; the emitted runtime/support
 sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/` (the emitted 5:
 `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`, `zig_runtime.c`,
-`zig_pal.c` — NO `net_prelude.h`), `lib/` (the 9 std `.zig` in the current v27
+`zig_pal.c` — NO `net_prelude.h`), `lib/` (the 15 std `.zig` in the current v28
 archive: `std`, `std_io`, `std_arena`, `std_net`, `std_str`, `std_mem`,
-`std_math`, `std_debug`, `std_async`),
+`std_math`, `std_debug`, `std_async`, `std_bits`, `std_os`, `std_os_pal`,
+`std_time`, `std_time_pal`, `std_buf`),
 `SEED_README.txt`.
 The archived binary and the self-emission fixed point
-`553a39b42983ce72459698a7aa5817e1` are the SAME compiler state (HEAD
-`0a37ca6e`). zig0 is retired; the seed model (`scripts/seed/build_from_seed.sh`)
+`7513a8d59a3c317639a055491769a9c5` are the SAME compiler state (HEAD
+`c235126d`). zig0 is retired; the seed model (`scripts/seed/build_from_seed.sh`)
 is the only rebuild path.
 **C89-AHEAD note (2026-09-13):** `runtime/` now carries the compiler's **emitted,
 mode-specific** support (the `-ffast` self-emission support), not the canonical
@@ -59,8 +60,8 @@ cd /workspace/znineeight
 bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out_dir>
 ```
 - GATE: `=== [seed] Done: <out_dir> ===`; result `<out_dir>/zig1_5_clean` md5 MUST equal the recorded
-  fixed point `553a39b42983ce72459698a7aa5817e1` (hop1 == hop2 closure). Set
-  `FIXED_POINT_MD5=553a39b42983ce72459698a7aa5817e1` to gate on it explicitly.
+  fixed point `7513a8d59a3c317639a055491769a9c5` (hop1 == hop2 closure). Set
+  `FIXED_POINT_MD5=7513a8d59a3c317639a055491769a9c5` to gate on it explicitly.
 - The dump MUST run from the repo root with the RELATIVE `sf/src/main.zig` path (module basename-hash
   tokens are path-derived). `<out_dir>` MUST be a fresh dir (the script `rm -rf`s it) — never point it
   at `/tmp/fx_subfolder` (the reference compiler lives there).
@@ -70,7 +71,7 @@ bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out_dir>
 **Rebuild recipe 2 (seed binary lost — rebuild from the seed's C only):** self-contained, no repo
 include path, no zig0: `gcc -c -I <seed>/runtime` over `gen/*.c`, link `<seed>/runtime/zig_runtime.c`
 + `<seed>/runtime/zig_pal.c` + `<seed>/c_exit.c`. Exact commands in `release/seed/SEED_README.txt`.
-Binary md5 MUST equal `553a39b42983ce72459698a7aa5817e1`.
+Binary md5 MUST equal `7513a8d59a3c317639a055491769a9c5`.
 
 **Flag-set rule (binding):** every `gcc -c` MUST be
 `gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc>`
@@ -152,7 +153,7 @@ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
   via the search path: (1) importer's dir, (2) `-I`/`--lib-dir` dirs in CLI order, (3) the default
   install path `<exe_dir>/lib`, (4) CWD. To run a migrated example/repro you must first install the
   canonical std lib next to the compiler under test:
-  `mkdir -p <exe_dir>/lib && cp sf/src/std.zig sf/src/std_io.zig sf/src/std_arena.zig sf/src/std_net.zig sf/src/std_str.zig sf/src/std_mem.zig sf/src/std_math.zig sf/src/std_debug.zig sf/src/std_async.zig <exe_dir>/lib/`
+  `mkdir -p <exe_dir>/lib && cp sf/src/std.zig sf/src/std_io.zig sf/src/std_arena.zig sf/src/std_net.zig sf/src/std_str.zig sf/src/std_mem.zig sf/src/std_math.zig sf/src/std_debug.zig sf/src/std_async.zig sf/src/std_bits.zig sf/src/std_os.zig sf/src/std_os_pal.zig sf/src/std_time.zig sf/src/std_time_pal.zig sf/src/std_buf.zig <exe_dir>/lib/`
   (for `/tmp/fx_subfolder/zig1` that is `/tmp/fx_subfolder/lib/`). The local `std*.zig` copies are
   gone from the migrated examples/repros; `std_import_bare_xmod/local/` remains a fixture (the Task R
   `--lib-dir` GREEN test), and the 4 `r_fallback_*` repros (fnret / constalias / constalias_prepass /
