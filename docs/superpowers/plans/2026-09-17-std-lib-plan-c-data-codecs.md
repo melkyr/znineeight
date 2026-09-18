@@ -15,7 +15,7 @@
 ## Global Constraints
 
 - **Precondition:** Task 0 + Plan A + Plan B complete.
-- **Baseline (re-verify at Task 1).** Record HEAD, the fixed point, the seed version/archive md5, the corpus `EXPECTED_FAIL.md` header. Adding std modules MUST NOT move the fixed point — if it does, STOP. **Exception (operator ruling m1670):** Task 1b-F (the found field-store-as-continue-expression ICE fix) is the ONE authorized `sf/src` change in this plan; it MOVES the fixed point and rotates the seed. (The FramePool / `@asyncFrameSize` const-evaluator work is a separate authorized task.)
+- **Baseline (re-verify at Task 1).** Record HEAD, the fixed point, the seed version/archive md5, the corpus `EXPECTED_FAIL.md` header. Adding std modules MUST NOT move the fixed point — if it does, STOP. **Exceptions (operator rulings m1670/m1703):** the authorized `sf/src` changes in this plan are Task 1b-F (the found field-store-as-continue-expression ICE fix, including the operator-ruled nested-case extension) and Task 2b-F (the found 64-bit/f64 literal limitations); each MOVES the fixed point and rotates the seed. (The FramePool / `@asyncFrameSize` const-evaluator work is a separate authorized task.)
 - **Build only via the seed model:** `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <fresh_out>`; never invoke `zig0`.
 - **gcc flag-set (binding):** `gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc>`. `timeout 120` on every binary.
 - **Layering (R3):** L4 and L5 both import L0-L2 only — never siblings, never each other. Plan C is independent of Plan B.
@@ -144,6 +144,34 @@
 - [ ] **Step 2: RED.**
 - [ ] **Step 3: Implement `std_parse.zig`.** Parsing rejects whitespace/`+`/underscores; `null` on overflow or malformed; `itoa`/`utoa`/`ftoa` write backwards from `buf`'s end (returned slice points into `buf`).
 - [ ] **Step 4: GREEN + safety/determinism gates + fixed point UNMOVED + commit** (stage `sf/src/std_parse.zig`, the fixtures, and both seed scripts).
+
+---
+
+### Task 2b-I: Pin the 64-bit-literal + f64-literal limitations (I)
+
+**Files:**
+- Create: `repro/mi_matrix/lit64_decimal_xmod/`, `repro/mi_matrix/f64_literal_precision_xmod/`.
+- Modify: `repro/mi_matrix/EXPECTED_FAIL.md`.
+
+**Context (operator ruling m1703):** Plan C Task 2 found two pre-existing compiler limitations: (a) a 64-bit decimal literal materializes in a 32-bit temp and truncates (`9223372036854775808` -> 0); (b) an f64 literal emits at ~6 significant digits (`1.7976931348623157e308` -> `1.79769`). `std_parse` works around both. The operator ruled: pin + fix each as a separate I/F pair.
+
+- [ ] **Step 1: Add the RED pins** — `lit64_decimal_xmod` (a `u64`/`i64` decimal literal beyond 32 bits) and `f64_literal_precision_xmod` (an f64 literal whose value needs >6 sig digits). The current compiler mis-lowers them, so the fixtures' asserts trap (RED).
+- [ ] **Step 2: Declare both** in `EXPECTED_FAIL.md`; bump the header once.
+- [ ] **Step 3: Commit** (`test(repro): pin the 64-bit/f64 literal limitations (Plan C Task 2b-I)`). No `sf/src` change.
+
+---
+
+### Task 2b-F: Fix the 64-bit-literal + f64-literal limitations (F)
+
+**Files:**
+- Modify: `sf/src/` (the literal materialization / emission); the Task 2b-I fixtures; the seed.
+- Modify: `release/seed/zig1-seed.tgz`, `release/seed/CHANGELOG.md`, `docs/sf/QUICK_REF.md`.
+
+- [ ] **Step 1: Fix the 64-bit decimal literal materialization** (no truncation to a 32-bit temp).
+- [ ] **Step 2: Fix the f64 literal precision** (emit enough significant digits).
+- [ ] **Step 3: Flip both pins RED -> GREEN**; run the full corpus + gates.
+- [ ] **Step 4: Re-verify** (`check_emit_support.sh` 7/7; the self-compile; the corpus class map; `CLOSEOUT OK`); confirm the fixed point MOVED.
+- [ ] **Step 5: Rotate the seed** and commit (`fix(emit): 64-bit decimal + f64 literal precision (Plan C Task 2b-F)`).
 
 ---
 
