@@ -1,4 +1,30 @@
-# mi_matrix corpus — expected-fail manifest (v141 2026-09-18)
+# mi_matrix corpus — expected-fail manifest (v142 2026-09-18)
+
+## Plan B hardening Task 5a-I — exact-multiple long-line defect pinned (v141 -> v142 2026-09-18)
+
+Task 5a-I pins the exact-multiple long-line defect found in Plan B hardening Task 4 (operator
+ruling m1568/m1569). **Fixtures/manifest/docs only — no `sf/src` change; fixed point UNMOVED
+`414cccee639bdb61c7a9f1f2ddddb166`; seed v29 NOT rotated.**
+
+The defect: a line whose length is an exact multiple of `buf.len` (`len % buf.len == 0`) makes
+both `std_stdin.readLine` (`sf/src/std_stdin.zig:99-122`) and `std_stream.readLineSync`
+(`sf/src/std_stream.zig:95-104,152-162`) emit a spurious empty line. Probe: a 4-byte buffer over
+`"abcd\nz\n"` yields `["abcd", "", "z"]` instead of `["abcd", "z"]`. The blueprint contract only
+specified the "longer than buf" case; the exact-multiple boundary was unspecified. It is now
+specified (blueprint §3 L3/L6 + hardening spec) as: a line whose length is an exact multiple of
+`buf.len` must NOT yield a trailing empty line.
+
+| fixture | RED today (fixed point `414cccee`) | GREEN contract (Task 5a-F) |
+|---|---|---|
+| `stdlib_stdin_multiple_xmod` | dump/gcc/link rc=0; run rc=133 (SIGTRAP), stdout empty, panic `exact-multiple next line (no spurious empty)` (observed `["abcd", "", "z"]`) | lines exactly `["abcd", "z"]` then null; stdout `stdin multiple ok\n`, rc=0 |
+| `stdlib_stream_multiple_xmod` | dump/gcc/link rc=0; run rc=133 (SIGTRAP), stdout empty, panic `exact-multiple next line (no spurious empty)` (observed `["abcd", "", "z"]`) | lines exactly `["abcd", "z"]` then null; stdout `stream multiple ok\n`, rc=0 |
+
+The two dirs are compile-clean (dump/gcc/link rc=0) so the corpus `-ffast` classifier buckets
+them `OK`; the RED is RUNTIME-only (the assert trap). `scripts/stdlib/expected_dirs.txt` pins the
+discovered set **106 -> 108**. Full report:
+`.superpowers/sdd/2026-09-18-plan-B-test-hardening/task-5aI-report.md`.
+
+---
 
 ## Plan B cleanup — known-issues residuals (v140 -> v141 2026-09-18)
 

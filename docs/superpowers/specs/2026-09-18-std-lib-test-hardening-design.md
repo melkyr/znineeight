@@ -60,6 +60,16 @@ failure is itself asserted.
 **Determinism (R6):** each fixture runs 3×; the stdout must be identical
 across runs and equal to `expected.txt`.
 
+**Contract note — exact-multiple long line (Task 5a-I).** The
+`std_stdin.readLine` / `std_stream.readLineSync` contract specifies the
+"longer than `buf`" overflow case but historically left the exact-multiple
+boundary (`len % buf.len == 0`) unspecified. It is now specified: a line
+whose length is an exact multiple of the buffer length must NOT yield a
+trailing empty line (a 4-byte buffer over `"abcd\nz\n"` yields `["abcd",
+"z"]`, not `["abcd", "", "z"]`). The two RED pins
+(`stdlib_stdin_multiple_xmod`, `stdlib_stream_multiple_xmod`) assert this
+desired behavior; Task 5a-F fixes `sf/src` to turn them GREEN.
+
 **Wiring:** the harness is invoked by the closeout (either a new
 `C*`-prefixed phase in `scripts/closeout/verify_upgraded.sh`, or a sibling
 `scripts/stdlib/verify_stdlib.sh` called from it). A fixture with no
