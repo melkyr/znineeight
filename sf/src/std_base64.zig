@@ -1,9 +1,9 @@
 // std_base64.zig — Z98 std lib L5: RFC 4648 base64 encode/decode.
 //
-// Contract (blueprint §3 L5): alloc output only | errors OutOfMemory |
-// coroutine no. Imports only L1 (`std_arena`) — never a sibling (`std_hex`) and
-// never a higher layer (R3). `sf/src/std.zig` is NOT modified (Ruling F1: L5
-// modules are imported by path, not re-exported).
+// Contract (blueprint §3 L5): alloc output only | errors OutOfMemory,
+// InvalidInput | coroutine no. Imports only L1 (`std_arena`) — never a sibling
+// (`std_hex`) and never a higher layer (R3). `sf/src/std.zig` is NOT modified
+// (Ruling F1: L5 modules are imported by path, not re-exported).
 //
 // Format: RFC 4648 §4 standard base64 — alphabet
 //   ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/
@@ -14,22 +14,27 @@
 //   encodedLen(n) usize        exact encoded size: 4 * ceil(n / 3)
 //   decodedLen(n) usize        max decoded size: (n / 4) * 3 (upper bound)
 //
-// `encodedLen`/`decodedLen` allocate nothing (R1). `encode`/`decode` allocate
-// only the output; their error set is exactly `error.OutOfMemory`.
+// `encodedLen`/`decodedLen` allocate nothing (R1). `encode` allocates only its
+// output and errors only with `error.OutOfMemory`; `decode` allocates only its
+// output and errors with `error.OutOfMemory` or `error.InvalidInput`.
 //
-// WHITESPACE / VALIDITY POLICY (pinned by the fixtures): `decode` does not skip
-// whitespace and accepts only canonical padded base64. Any byte outside the
+// WHITESPACE / INVALID-INPUT POLICY (pinned by the fixtures): `decode` does not
+// skip whitespace and accepts only canonical padded base64. Any byte outside the
 // alphabet (space, tab, CR, LF, ...), a length that is not a multiple of 4, or
-// misplaced/malformed '=' makes the input invalid. Because the contract fixes
-// the error set to exactly `error.OutOfMemory`, invalid input is signalled by
-// an empty output slice (length 0), not by an error; a well-formed empty input
-// also yields length 0. An invalid decode allocates nothing (`used` unchanged).
+// misplaced/malformed '=' makes the input invalid and `decode` returns
+// `error.InvalidInput` (operator ruling m1842). An empty input is a VALID empty
+// result (a length-0 slice, no error) and is distinct from an invalid one. An
+// invalid decode allocates nothing (`used` unchanged).
 //
 // `decodedLen(n)` is an upper bound because the exact decoded length depends on
 // trailing padding, which a length alone cannot reveal; it equals (n / 4) * 3,
 // matching the Zig std decoder sizing convention (calcSizeForSlice).
 
 const arena_mod = @import("std_arena.zig");
+
+// One error set per module (R2). `decode` can fail on a bad arena request
+// (OutOfMemory) or on malformed/whitespace input (InvalidInput).
+const DecodeError = error{ OutOfMemory, InvalidInput };
 
 fn b64Val(c: u8) u8 {
     if (c >= 'A' and c <= 'Z') return c - 'A';
@@ -40,7 +45,7 @@ fn b64Val(c: u8) u8 {
     return 0xFF;
 }
 
-fn emptyOut(arena: *arena_mod.Arena) ![]u8 {
+fn emptyOut(arena: *arena_mod.Arena) DecodeError![]u8 {
     var raw = try arena_mod.alloc(arena, 0);
     return raw[0..0];
 }
@@ -94,31 +99,31 @@ pub fn encode(arena: *arena_mod.Arena, src: []const u8) ![]u8 {
     return out;
 }
 
-pub fn decode(arena: *arena_mod.Arena, src: []const u8) ![]u8 {
+pub fn decode(arena: *arena_mod.Arena, src: []const u8) DecodeError![]u8 {
     if (src.len == 0) return emptyOut(arena);
-    if (src.len % 4 != 0) return emptyOut(arena);
+    if (src.len % 4 != 0) return error.InvalidInput;
 
     var pad: usize = 0;
     var i: usize = 0;
     while (i < src.len) : (i += 4) {
         var c0: u8 = src[i];
         var c1: u8 = src[i + 1];
-        if (b64Val(c0) == 0xFF) return emptyOut(arena);
-        if (b64Val(c1) == 0xFF) return emptyOut(arena);
+        if (b64Val(c0) == 0xFF) return error.InvalidInput;
+        if (b64Val(c1) == 0xFF) return error.InvalidInput;
         var c2: u8 = src[i + 2];
         var c3: u8 = src[i + 3];
         var is_last: bool = (i + 4 == src.len);
         if (c2 == '=') {
-            if (c3 != '=') return emptyOut(arena);
-            if (!is_last) return emptyOut(arena);
+            if (c3 != '=') return error.InvalidInput;
+            if (!is_last) return error.InvalidInput;
             pad += 2;
         } else {
-            if (b64Val(c2) == 0xFF) return emptyOut(arena);
+            if (b64Val(c2) == 0xFF) return error.InvalidInput;
             if (c3 == '=') {
-                if (!is_last) return emptyOut(arena);
+                if (!is_last) return error.InvalidInput;
                 pad += 1;
             } else if (b64Val(c3) == 0xFF) {
-                return emptyOut(arena);
+                return error.InvalidInput;
             }
         }
     }

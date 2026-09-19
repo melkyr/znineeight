@@ -7,11 +7,12 @@
 // Format pinned: hexadecimal, two characters per output byte, high nybble
 // first, case-insensitive alphabet 0-9 a-f A-F.
 //
-// WHITESPACE POLICY (pinned here): decode does NOT skip whitespace. Any byte
-// outside the hex alphabet — space, tab, CR, LF, or any other byte — makes the
-// whole input invalid. Because the contract fixes the error set to exactly
-// error.OutOfMemory, an invalid input is signalled by an empty output slice
-// (length 0), not by an error. A well-formed empty input also yields length 0.
+// WHITESPACE / INVALID-INPUT POLICY (pinned here): decode does NOT skip
+// whitespace. Any byte outside the hex alphabet — space, tab, CR, LF, or any
+// other byte — or an odd length makes the whole input invalid and returns
+// `error.InvalidInput` (contract error set: OutOfMemory, InvalidInput; operator
+// ruling m1842). An empty input is a VALID empty result (a length-0 slice, no
+// error), distinct from an invalid one.
 //
 // Cases: lowercase/uppercase/mixed-case vectors; 0x00/0x0F/0xF0/0xFF;
 // 0xDEADBEEF; "hello"; all 256 byte values (both cases); odd-length rejection;
@@ -46,11 +47,13 @@ fn decIs(ar: *std.arena.Arena, src: []const u8, want: []const u8, what: []const 
     ckBytes(got, want, what);
 }
 
-fn decReject(ar: *std.arena.Arena, src: []const u8, what: []const u8) void {
-    var got = hex.decode(ar, src) catch {
-        @panic(what);
+fn decInvalid(ar: *std.arena.Arena, src: []const u8, what: []const u8) void {
+    var got = hex.decode(ar, src) catch |e| {
+        ck(e == error.InvalidInput, what);
+        return;
     };
-    ck(got.len == 0, what);
+    _ = got;
+    ck(false, what);
 }
 
 pub fn main() void {
@@ -88,18 +91,18 @@ pub fn main() void {
     decIs(&ar, lo_all, all[0..], "all256 lower");
     decIs(&ar, up_all, all[0..], "all256 upper");
 
-    decReject(&ar, "0", "reject odd 1");
-    decReject(&ar, "abc", "reject odd 3");
-    decReject(&ar, "deadbee", "reject odd 7");
+    decInvalid(&ar, "0", "reject odd 1");
+    decInvalid(&ar, "abc", "reject odd 3");
+    decInvalid(&ar, "deadbee", "reject odd 7");
 
-    decReject(&ar, "0g", "reject g");
-    decReject(&ar, "zz", "reject z");
-    decReject(&ar, "de ad", "reject embedded space");
-    decReject(&ar, "deadbeef\n", "reject trailing newline");
-    decReject(&ar, " deadbeef", "reject leading space");
-    decReject(&ar, "dead\tbeef", "reject embedded tab");
-    decReject(&ar, "0x00", "reject 0x prefix");
-    decReject(&ar, "-1", "reject minus");
+    decInvalid(&ar, "0g", "reject g");
+    decInvalid(&ar, "zz", "reject z");
+    decInvalid(&ar, "de ad", "reject embedded space");
+    decInvalid(&ar, "deadbeef\n", "reject trailing newline");
+    decInvalid(&ar, " deadbeef", "reject leading space");
+    decInvalid(&ar, "dead\tbeef", "reject embedded tab");
+    decInvalid(&ar, "0x00", "reject 0x prefix");
+    decInvalid(&ar, "-1", "reject minus");
 
     if (g_fail == 0) {
         std.io.write("hex decode ok\n");

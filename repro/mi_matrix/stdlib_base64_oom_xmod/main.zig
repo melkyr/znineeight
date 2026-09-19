@@ -3,13 +3,14 @@
 // Contract (blueprint §3 L5 + §1 R1): encode/decode allocate only their output
 // from the caller's arena; when the arena cannot satisfy the request the error
 // is exactly error.OutOfMemory, no byte outside the arena is written, and
-// arena.used is unchanged. An INVALID decode input needs no output, so it
-// returns an empty slice and leaves arena.used unchanged.
+// arena.used is unchanged. An INVALID decode input returns error.InvalidInput
+// without allocating (arena.used unchanged); a VALID empty input returns a
+// length-0 slice (no error) and also leaves arena.used unchanged.
 //
 // Layout: a 512-byte storage array; each case fills it 0xAB, hands a sub-slice
 // to the arena, and asserts:
-//   - the call reports exactly error.OutOfMemory (or, for invalid input, an
-//     empty slice);
+//   - the call reports exactly error.OutOfMemory (or, for invalid input,
+//     error.InvalidInput);
 //   - arena.used is unchanged after a failing/rejecting call;
 //   - every byte OUTSIDE the arena region and every unused byte INSIDE it is
 //     still 0xAB (no out-of-arena or over-arena write).
@@ -21,7 +22,8 @@
 //   D. encode with exactly enough room succeeds; used advances by encodedLen.
 //   E. decode with exactly enough room succeeds; used advances by the decoded
 //      length (3), not by decodedLen's upper bound (also 3 here).
-//   F. invalid decode returns length 0 and does not consume the arena.
+//   F. invalid decode returns error.InvalidInput and does not consume the arena.
+//   G. valid empty decode returns a length-0 slice (no error), used unchanged.
 //
 // GREEN (contract): deterministic byte-exact stdout `base64 oom ok\n`
 // (RUNRC=0).
@@ -92,6 +94,15 @@ fn decOom(ar: *std.arena.Arena, src: []const u8) bool {
     return false;
 }
 
+fn decInvalid(ar: *std.arena.Arena, src: []const u8) bool {
+    var got = b64.decode(ar, src) catch |e| {
+        if (e == error.InvalidInput) return true;
+        return false;
+    };
+    _ = got;
+    return false;
+}
+
 pub fn main() void {
     var srcA = [_]u8{ 'A', 'A', 'A', 'A' };
     var srcB = [_]u8{'A'};
@@ -144,15 +155,23 @@ pub fn main() void {
     ckBytes(gotE, "foo", "E value");
     checkOutside(8, 11, "E guard");
 
-    // ---- F: invalid decode allocates nothing ------------------------------
+    // ---- F: invalid decode errors and allocates nothing -------------------
     fillAll();
     var arF = std.arena.init(g_storage[8..12]);
-    var gotF = b64.decode(&arF, "Zm9\n") catch {
-        @panic("F decode");
-    };
-    ck(gotF.len == 0, "F empty");
+    ck(decInvalid(&arF, "Zm9\n"), "F decode InvalidInput");
     ck(arF.used == 0, "F used unchanged");
     checkOutside(8, 12, "F guard");
+
+    // ---- G: valid empty decode is a length-0 slice, no error --------------
+    fillAll();
+    var arG = std.arena.init(g_storage[8..12]);
+    var eG: [1]u8 = undefined;
+    var gotG = b64.decode(&arG, eG[0..0]) catch {
+        @panic("G empty decode");
+    };
+    ck(gotG.len == 0, "G empty");
+    ck(arG.used == 0, "G used unchanged");
+    checkOutside(8, 12, "G guard");
 
     if (g_fail == 0) {
         std.io.write("base64 oom ok\n");
