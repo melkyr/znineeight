@@ -62,6 +62,13 @@ repro/mi_matrix/stdlib_file_stress_xmod
 repro/mi_matrix/stdlib_file_write_xmod
 repro/mi_matrix/stdlib_file_writeall_xmod
 repro/mi_matrix/stdlib_fileio_xmod
+repro/mi_matrix/stdlib_heap_init_xmod
+repro/mi_matrix/stdlib_heap_len_xmod
+repro/mi_matrix/stdlib_heap_oom_xmod
+repro/mi_matrix/stdlib_heap_peek_xmod
+repro/mi_matrix/stdlib_heap_pop_xmod
+repro/mi_matrix/stdlib_heap_push_xmod
+repro/mi_matrix/stdlib_heap_tie_xmod
 repro/mi_matrix/stdlib_map_determinism_xmod
 repro/mi_matrix/stdlib_map_map32ptr_xmod
 repro/mi_matrix/stdlib_map_map32x32_xmod
