@@ -15,7 +15,7 @@
 ## Global Constraints
 
 - **Precondition:** Task 0 + Plan A + Plan B complete.
-- **Baseline (re-verify at Task 1).** Record HEAD, the fixed point, the seed version/archive md5, the corpus `EXPECTED_FAIL.md` header. Adding std modules MUST NOT move the fixed point — if it does, STOP. **Exceptions (operator rulings m1670/m1703):** the authorized `sf/src` changes in this plan are Task 1b-F (the found field-store-as-continue-expression ICE fix, including the operator-ruled nested-case extension) and Task 2b-F (the found 64-bit/f64 literal limitations); each MOVES the fixed point and rotates the seed. (The FramePool / `@asyncFrameSize` const-evaluator work is a separate authorized task.)
+- **Baseline (re-verify at Task 1).** Record HEAD, the fixed point, the seed version/archive md5, the corpus `EXPECTED_FAIL.md` header. Adding std modules MUST NOT move the fixed point — if it does, STOP. **Exceptions (operator rulings m1670/m1703/m1735/m1787):** the authorized `sf/src` changes in this plan are Task 1b-F (the found field-store-as-continue-expression ICE fix, including the operator-ruled nested-case extension), Task 2b-F (the found 64-bit/f64 literal limitations), Task 3b-F (the found discarded fallible-struct-call catch defect), and Task 4b-F (the found array-of-struct-literal defect); each MOVES the fixed point and rotates the seed. (The FramePool / `@asyncFrameSize` const-evaluator work is a separate authorized task.)
 - **Build only via the seed model:** `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <fresh_out>`; never invoke `zig0`.
 - **gcc flag-set (binding):** `gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc>`. `timeout 120` on every binary.
 - **Layering (R3):** L4 and L5 both import L0-L2 only — never siblings, never each other. Plan C is independent of Plan B.
@@ -237,6 +237,33 @@
 - [ ] **Step 2: RED.**
 - [ ] **Step 3: Implement `std_sort.zig`.** Introsort; not stable (documented); `binarySearchU32` requires sorted input.
 - [ ] **Step 4: GREEN + safety/determinism gates + fixed point UNMOVED + commit** (stage `sf/src/std_sort.zig`, the fixtures, and both seed scripts).
+
+---
+
+### Task 4b-I: Pin + investigate the array-of-struct-literal defect (I)
+
+**Files:**
+- Create: `repro/mi_matrix/array_of_struct_literal_xmod/`
+- Modify: `repro/mi_matrix/EXPECTED_FAIL.md`
+
+**Context (operator ruling m1787):** Plan C Task 4 found a pre-existing compiler defect — an array literal of a user struct type is typed `void`. The inferred-length form (`[_]Pair{ .a = 1, .b = 2, ... }`) is rejected with `error[3000]` (rc 2, 0 `.c`); the annotated form (`var a: [2]Pair = [_]Pair{ ... };`) only warns but emits C that fails gcc (`'zT_2' undeclared`). `std_sort`'s vtable fixture works around it with `[N]Pair = undefined` + per-element assignment.
+
+- [ ] **Step 1: Add the RED pin** (both shapes: the inferred-length literal and the annotated literal).
+- [ ] **Step 2: Investigate related shapes** (the I-task questionnaire). Determine the exact locus and the full class a fix must cover: element types (plain struct, tagged union, optional, nested array, slice-of-struct, struct-containing-array), literal forms (`[_]T{...}` vs `[N]T{...}`), and positions (local, global, struct field, call argument). Report which shapes share the defect and which are already correct, with the locus in `sf/src`.
+- [ ] **Step 3: Declare it** in `EXPECTED_FAIL.md`; bump the header once.
+- [ ] **Step 4: Commit** (`test(repro): pin the array-of-struct-literal defect (Plan C Task 4b-I)`). No `sf/src` change.
+
+---
+
+### Task 4b-F: Fix the array-of-struct-literal defect (F)
+
+**Files:**
+- Modify: `sf/src/` (the array-literal typing/lowering); the Task 4b-I fixture; the seed.
+
+- [ ] **Step 1: Fix** the array-of-struct-literal typing/emission for the shapes the Task 4b-I investigation confirms.
+- [ ] **Step 2: Flip the pin RED -> GREEN**; run the full corpus + gates.
+- [ ] **Step 3: Re-verify** (`check_emit_support.sh` 7/7; the self-compile; the corpus class map; `CLOSEOUT OK`); confirm the fixed point MOVED.
+- [ ] **Step 4: Rotate the seed** and commit (`fix(lower): array-of-struct literal typing (Plan C Task 4b-F)`).
 
 ---
 
