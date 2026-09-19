@@ -2,7 +2,7 @@
 //
 // No PRNG: every input is an explicit table or an explicit fixed loop (the key
 // generator `fmtKey` is a literal formula over the loop index, written out).
-// Stresses all three maps:
+// Stresses Map32x32 + MapStrPtr:
 //   - Map32x32 capacity sweep 8..1024 at 50% load: put, get, replace, remove;
 //   - heavy collisions: a capacity-16 table filled to 15/16 (linear probing),
 //     then tombstones reused and the full-table OutOfMemory boundary;

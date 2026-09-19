@@ -5,7 +5,6 @@
 // total and never trap. A malformed input — empty, whitespace, '+', an
 // underscore, a stray alpha, a bare/double sign, trailing junk, or an
 // out-of-range magnitude — returns `null` (not an error, not a trap).
-// `parseFloat` additionally rejects a value that overflows to +/-inf.
 //
 // This probe drives every parser's documented malformed-input path. Each call
 // is expected to yield `null`; a parser that instead returns a value, traps, or

@@ -13,7 +13,8 @@ stdout bytes) + `expected.rc` (exit code). A missing golden is a FAIL (no silent
 `scripts/stdlib/expected_dirs.txt` pins the discovered set so coverage cannot silently shrink.
 Goldens are runtime-only (stdout + rc), captured only after the observed output matched the
 fixture's documented GREEN contract, and each fixture runs 3× with byte-identical stdout
-(determinism R6). `stdlib_map_oom_xmod` / `stdlib_heap_oom_xmod` (Plan C) are the OOM probes.
+(determinism R6). `stdlib_map_oom_xmod` / `stdlib_heap_oom_xmod` (pre-existing Plan C
+probes, not among the 12 new fixtures below) are the OOM probes.
 
 **New fixtures (12).**
 
