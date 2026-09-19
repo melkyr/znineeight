@@ -335,6 +335,7 @@ beyond the three maps and one heap, a testing framework) are out of scope.
 3. `docs/superpowers/plans/2026-09-17-std-lib-plan-b-resources-stream.md` — L3 + L6.
 4. `docs/superpowers/plans/2026-09-17-std-lib-plan-c-data-codecs.md` — L4 + L5.
 5. `docs/superpowers/plans/2026-09-18-plan-D-network-async.md` — network async: non-blocking sockets in `std_net`, `std_stream.SocketLineReader`, `MsgReader`, optional `std.async.wait(handle)`. **Deferred from Plan B** (Model C ruling); not in the Task 0 → A → B → C sequence.
+6. `docs/superpowers/plans/2026-09-18-plan-D-test-hardening.md` — the Plan D runtime gate (loopback goldens + would-block/oversize probes + the network/async stress tier). Executes after Plan D lands; the **final** plan of the program.
 
 Each plan's header `Sequence:` line names its predecessor and successor;
 the successor plan is the "next plan to follow up" for the plan just
@@ -344,7 +345,8 @@ completed.
 the std-lib extension program's core bands are COMPLETE. The next executable is
 Plan D (`2026-09-18-plan-D-network-async.md`, the network-async capstone:
 non-blocking sockets in `std_net`, `std_stream.SocketLineReader`, `MsgReader`,
-optional `std.async.wait(handle)`), followed by a Plan D test-hardening plan
-(operator m1927). Plan C closeout:
+optional `std.async.wait(handle)`), followed by the Plan D test-hardening plan
+`docs/superpowers/plans/2026-09-18-plan-D-test-hardening.md` (operator m1927;
+the final plan). Plan C closeout:
 `docs/superpowers/plans/2026-09-17-std-lib-plan-c-data-codecs.md` § "Next plan";
 seed v39; fixed point `fc9198f6c1a24c92ec136e741c81c975`.

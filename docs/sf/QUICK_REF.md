@@ -27,16 +27,16 @@ bash sf/scripts/build_release.sh
 **Seed location + contents:** the committed rotating seed is
 `release/seed/zig1-seed.tgz` (git-tracked; provenance + rotation history in
 `release/seed/CHANGELOG.md`, full recipes in `release/seed/SEED_README.txt`).
-Current seed is **seed v39** (archive md5 `4e493be2625311fa11c8f421b732c59a`; Plan C closeout — L4 + L5 landed, the archive `lib/` payload grew to all 29 std `.zig`; the fixed point stays **UNMOVED** `fc9198f6c1a24c92ec136e741c81c975`).
+Current seed is **seed v40** (archive md5 `0e3250ea5bdcff1ccd79f8954ea17f48`; Plan D closeout — network async landed, the archive `lib/` payload stays all 29 std `.zig`; the fixed point **MOVED** `fc9198f6c1a24c92ec136e741c81c975` -> `197602956b55d1cb59848a922a934fe8`).
 Top-level `zig1-seed/`: `zig1` (reference binary md5
-`fc9198f6c1a24c92ec136e741c81c975`), `gen/` (its self-emission C89 module set —
+`197602956b55d1cb59848a922a934fe8`), `gen/` (its self-emission C89 module set —
 45 `.c` + 46 `.h`, including `zig_special_types.h`; the emitted runtime/support
 sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/` (the emitted 5:
 `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`, `zig_runtime.c`,
-`zig_pal.c` — NO `net_prelude.h`), `lib/` (all 29 std `.zig` the v39 archive
+`zig_pal.c` — NO `net_prelude.h`), `lib/` (all 29 std `.zig` the v40 archive
 carries: `std.zig` plus the 28 `std_*.zig`),
 `SEED_README.txt`.
-**Std-module inventory (Plan C closeout, 2026-09-19):** the CURRENT `sf/src` std set is
+**Std-module inventory (Plan D closeout, 2026-09-19):** the CURRENT `sf/src` std set is
 **28** `std_*.zig` + `std.zig` (all six blueprint layers complete: `std_io`,
 `std_arena`, `std_str`, `std_mem`, `std_math`, `std_debug`, `std_net`,
 `std_async`, `std_bits`, `std_os`, `std_os_pal`, `std_time`, `std_time_pal`,
@@ -46,14 +46,17 @@ carries: `std.zig` plus the 28 `std_*.zig`),
 **12** names (`io/arena/str/mem/math/debug/net/async/bits/os/time/buf`); the
 higher-layer modules (L3-L6) are imported by path, not re-exported (Ruling F1).
 `scripts/seed/build_from_seed.sh` installs all 29 into the rebuilt compiler's
-`lib/`, and the rotated **v39** archive carries all 29. The std-lib extension
-program (`docs/superpowers/specs/2026-09-17-std-lib-extension-program-design.md`)
-is **COMPLETE**; the Plan C closeout adds the R7b usage programs
+`lib/`, and the rotated **v40** archive carries all 29. The Plan D closeout lands
+the network half of the `std_stream` reader surface (the `std_net` non-blocking
+primitives + `SocketLineReader` + `MsgReader`) and adds the R7b usage program
+`stdlib_test/net_stream_usage`; the Plan C closeout added the R7b usage programs
 `stdlib_test/map_sort_heap_usage` + `stdlib_test/crypto_codec_usage`. See
-`repro/mi_matrix/EXPECTED_FAIL.md` v157.
+`repro/mi_matrix/EXPECTED_FAIL.md` v159.
 The archived binary and the self-emission fixed point
-`fc9198f6c1a24c92ec136e741c81c975` are the SAME compiler state (the v39
-provenance entry in `release/seed/CHANGELOG.md` records HEAD `5734a66b`). zig0 is
+`197602956b55d1cb59848a922a934fe8` are the SAME compiler state (the v40
+provenance entry in `release/seed/CHANGELOG.md` records HEAD `e921d040`). The
+final remaining std-lib plan is
+`docs/superpowers/plans/2026-09-18-plan-D-test-hardening.md`. zig0 is
 retired; the seed model (`scripts/seed/build_from_seed.sh`) is the only rebuild
 path.
 **C89-AHEAD note (2026-09-13):** `runtime/` now carries the compiler's **emitted,
@@ -74,8 +77,8 @@ cd /workspace/znineeight
 bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out_dir>
 ```
 - GATE: `=== [seed] Done: <out_dir> ===`; result `<out_dir>/zig1_5_clean` md5 MUST equal the recorded
-  fixed point `fc9198f6c1a24c92ec136e741c81c975` (hop1 == hop2 closure). Set
-  `FIXED_POINT_MD5=fc9198f6c1a24c92ec136e741c81c975` to gate on it explicitly.
+  fixed point `197602956b55d1cb59848a922a934fe8` (hop1 == hop2 closure). Set
+  `FIXED_POINT_MD5=197602956b55d1cb59848a922a934fe8` to gate on it explicitly.
 - The dump MUST run from the repo root with the RELATIVE `sf/src/main.zig` path (module basename-hash
   tokens are path-derived). `<out_dir>` MUST be a fresh dir (the script `rm -rf`s it) — never point it
   at `/tmp/fx_subfolder` (the reference compiler lives there).
@@ -85,7 +88,7 @@ bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out_dir>
 **Rebuild recipe 2 (seed binary lost — rebuild from the seed's C only):** self-contained, no repo
 include path, no zig0: `gcc -c -I <seed>/runtime` over `gen/*.c`, link `<seed>/runtime/zig_runtime.c`
 + `<seed>/runtime/zig_pal.c` + `<seed>/c_exit.c`. Exact commands in `release/seed/SEED_README.txt`.
-Binary md5 MUST equal `fc9198f6c1a24c92ec136e741c81c975`.
+Binary md5 MUST equal `197602956b55d1cb59848a922a934fe8`.
 
 **Flag-set rule (binding):** every `gcc -c` MUST be
 `gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc>`
@@ -1021,8 +1024,8 @@ CWD. A fixture passes only when all 3 stdouts are byte-identical, stdout
 - Discovery is `repro/mi_matrix/stdlib_*/` (any `stdlib_*` dir, not just
   `_xmod`) plus `stdlib_test/*/`. In discovery mode the harness asserts the
   discovered dir set EQUALS the committed baseline
-  `scripts/stdlib/expected_dirs.txt` (177 dirs today: 171
-  `repro/mi_matrix/stdlib_*` + 6 `stdlib_test/*`), so a dropped/renamed/added
+  `scripts/stdlib/expected_dirs.txt` (183 dirs today: 176
+  `repro/mi_matrix/stdlib_*` + 7 `stdlib_test/*`), so a dropped/renamed/added
   fixture FAILS the gate instead of silently shrinking coverage. Update the pin
   intentionally when a band adds/removes fixtures.
 - Independently of the discovery pin, a guard ALWAYS fails

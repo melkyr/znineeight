@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-17-std-lib-extension-program-design.md` §4 (Plan D), §5, §6, §7; module signatures in `sf/docs/std_lib_extension.txt` §3 (L3 `std_net`, L6 `std_stream`) and §4; the Model C ruling in `sf/docs/answerT4.txt`.
 
-**Sequence:** PREVIOUS plan: [`2026-09-17-std-lib-plan-b-resources-stream.md`](2026-09-17-std-lib-plan-b-resources-stream.md) (L3 + L6 file-only). **Recorded, NOT scheduled:** execute after the Plan A / Plan B / Plan C foundation (the ruled chain is Task 0 → A → A-hardening → B → B-hardening → C → C-hardening → D). NEXT plan: none — this is the network-async capstone of the std-lib extension program.
+**Sequence:** PREVIOUS plan: [`2026-09-17-std-lib-plan-b-resources-stream.md`](2026-09-17-std-lib-plan-b-resources-stream.md) (L3 + L6 file-only). **Recorded, NOT scheduled:** execute after the Plan A / Plan B / Plan C foundation (the ruled chain is Task 0 → A → A-hardening → B → B-hardening → C → C-hardening → D). NEXT plan: [`2026-09-18-plan-D-test-hardening.md`](2026-09-18-plan-D-test-hardening.md) (the network-async hardening: loopback goldens + would-block/oversize probes + the network/async stress tier), which executes after this plan lands — this is the network-async capstone of the std-lib extension program.
 
 ## Global Constraints
 
@@ -132,7 +132,7 @@
 - [ ] **Step 4: Bump `EXPECTED_FAIL.md`** once (header + a Plan D section).
 - [ ] **Step 5: Update the QUICK_REF std-module inventory.**
 - [ ] **Step 6: Rotate the seed** (the fixed point moved).
-- [ ] **Step 7: Record the next-plan pointer** (none — final plan in the std-lib extension program).
+- [ ] **Step 7: Record the next-plan pointer** (author/execute [`2026-09-18-plan-D-test-hardening.md`](2026-09-18-plan-D-test-hardening.md) — the final plan; after it the std-lib extension program is complete).
 - [ ] **Step 8: Commit** (`chore(std-lib): Plan D closeout — network async landed`).
 
 ---

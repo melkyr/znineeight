@@ -1,4 +1,63 @@
-# mi_matrix corpus — expected-fail manifest (v158 2026-09-19)
+# mi_matrix corpus — expected-fail manifest (v159 2026-09-19)
+
+## Plan D closeout — network async landed (v158 -> v159 2026-09-19)
+
+Plan D (`docs/superpowers/plans/2026-09-18-plan-D-network-async.md`) is
+**COMPLETE** (Tasks 1-3 + this closeout; Task 4 SKIPPED). It lands the network
+half of the `std_stream` two-reader surface: the `std_net` non-blocking socket
+primitives (`setNonBlocking`/`recvNonBlocking`/`sendNonBlocking`) and the
+`std_stream` `SocketLineReader` / `MsgReader` (length-prefix framing). The
+closeout adds the band's R7b usage program and rotates the seed. Unlike Plan C,
+this band includes a `sf/src` change: the authorized `net_prelude.h` prelude add
+(`#include <fcntl.h>`) in `emit_support.zig` (R8), so the self-emission fixed
+point **MOVED `fc9198f6c1a24c92ec136e741c81c975` ->
+`197602956b55d1cb59848a922a934fe8`** and the seed rotates **v39 -> v40**
+(archive md5 `4e493be2625311fa11c8f421b732c59a` ->
+`0e3250ea5bdcff1ccd79f8954ea17f48`). The archive `lib/` file set stays 29 (no
+new std module); only the fixed point and payload contents changed.
+
+**Task 4 (OPTIONAL `std.async.wait(handle)`) — SKIPPED (recorded decision).**
+Model C is binding: Z98 is cooperative-yield with no executor and no poll loop
+(the `answerT4` ruling). The landed would-block-yield readers cover the use
+case, so the optional poll-based readiness primitive was not justified (plan
+Task 4 Step 1 decide-branch). No `sf/src/std_async.zig` change.
+
+**New module fixtures (5, all loopback).**
+
+| fixture | kind | contract |
+|---|---|---|
+| `stdlib_net_setnonblocking_xmod` | primitive | `setNonBlocking` flips the socket (raw `recv` returns `-1` with no data, then the payload); stdout `setnonblocking ok`, rc 0 |
+| `stdlib_net_recvnonblocking_xmod` | primitive | no-data -> `error.WouldBlock`; peer send -> exact bytes; peer close -> `0`; stdout `recvnonblocking ok`, rc 0 |
+| `stdlib_net_sendnonblocking_xmod` | primitive | full-accept count + intact round-trip (would-block intentionally unpinned); stdout `sendnonblocking ok`, rc 0 |
+| `stdlib_stream_socketlinereader_xmod` | L6 reader | sync `[one, abcdefg, hi, last]` (boundary-CR overflow + unterminated tail); async `[abcdef, xyz]` partial across ticks; `max-suspends 2`; stdout `max-suspends 2` / `socketlinereader ok`, rc 0 |
+| `stdlib_stream_msgreader_xmod` | L6 framing | u32 big-endian prefix; sync `[abc, "", 0123456789abcdef, xy, z]`; oversize probe -> `error.FrameTooLarge`; async `[hello, "", hi]`; `max-suspends 3`; stdout `frametoolarge ok` / `max-suspends 3` / `msgreader ok`, rc 0 |
+
+**New usage program (R7b, 1).**
+
+| dir | composition | stdout contract (rc 0) |
+|---|---|---|
+| `stdlib_test/net_stream_usage` | `std_net` + `std_stream` + `std.async` | `net_stream_usage` / `sync: [alpha]` / `sync: [beta]` / `async: [one]` / `async: [two]` / `frame: [hello]` / `frame: []` / `frame: [hi]` / `async-lines: 2` / `async-frames: 3` / `max-suspends: 3` / `net_stream ok` |
+
+**Golden convention (binding).** Each discovered std fixture dir carries
+`expected.txt` (exact stdout bytes) + `expected.rc` (exit code); a missing golden
+is a FAIL (no silent skips). `scripts/stdlib/expected_dirs.txt` pins the
+discovered set so coverage cannot silently shrink. Goldens are runtime-only
+(stdout + rc), captured only after the observed output matched the fixture's
+documented GREEN contract, and each fixture runs 3x with byte-identical stdout
+(determinism R6). A fixture that binds TCP ports ships `<dir>/ports.txt` (new:
+4149/4150/4151/4152/4153/4154).
+
+**Gates (seed-built fixed-point compiler `197602956b55d1cb59848a922a934fe8`).**
+Runtime gate **183 PASS / 0 FAIL over 183 dirs** (pin
+`scripts/stdlib/expected_dirs.txt` = **183** data lines: 176
+`repro/mi_matrix/stdlib_*` + 7 `stdlib_test/*`). `scripts/check_emit_support.sh`
+**7/7** byte-identical. Self-compile `-ffast --dump-c89` rc=0, 48 `.c` + 48 `.h`,
+0 `error[`, 0 PANIC. Corpus `-ffast` dump+gcc classifier **892 dirs = 839 OK /
+28 GREEN / 25 FAIL / 0 ICE / 0 CRASH** (886 -> 892: the 6 new dirs all classify
+OK; every pre-existing dir class-identical). `scripts/closeout/verify_upgraded.sh`
+**CLOSEOUT OK** (A1-A5 / B1-B7 / C1). Seed v40 round-trip re-verified (two-hop
+closure hop1 == hop2 == `197602956b55d1cb59848a922a934fe8`). Full report:
+`.superpowers/sdd/2026-09-18-plan-D-network-async/task-5-report.md`.
 
 ## Plan C hardening closeout — L4/L5 goldens + stress tier (v157 -> v158 2026-09-19)
 

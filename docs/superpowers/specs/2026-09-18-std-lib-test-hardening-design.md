@@ -57,6 +57,17 @@ aborts/traps ships an `expected.rc` of its signal code (e.g. `133`
 SIGTRAP, `134` SIGABRT) and an empty `expected.txt`, so the expected
 failure is itself asserted.
 
+**Network contract note (Plan D).** Every network fixture uses **loopback
+only** and binds a fixed port declared in its per-dir `ports.txt` (the
+harness fails `PORT-IN-USE:<port>` if a LISTEN socket already exists on a
+declared port before the run). The `error.WouldBlock` path is exercised
+deterministically (a bounded `select`/drain loop or a bounded resume
+count), never by a wall-clock sleep; no fixture may depend on addresses,
+the wall clock, or the PID. A `recvNonBlocking` fixture asserts the
+`error.WouldBlock` → byte-count → `0`-at-peer-close sequence; the
+`*Async` readers assert they yield on `error.WouldBlock` and are re-driven
+on the next tick (Model C).
+
 **Determinism (R6):** each fixture runs 3×; the stdout must be identical
 across runs and equal to `expected.txt`.
 
@@ -93,6 +104,11 @@ fixtures, under `repro/mi_matrix/stdlib_<module>_stress_xmod/` (and/or the
   (`std_bits.extract`/`insert` out-of-range trap, `std_os.exit`'s rc,
   `std_str`/`std_buf` misuse) become probe fixtures with declared
   `expected.rc`.
+- **Network/async (Plan D):** loopback drain loops over many
+  `recvNonBlocking` calls (would-block/partial/EOF interleavings), a long
+  line spanning many ticks, back-to-back frames, a frame split across
+  ticks, a zero-length frame, and the maximum frame the reader buffer
+  allows. All deterministic by construction (bounded loops, no sleep).
 
 ## §4 Plan sequence
 
@@ -100,6 +116,7 @@ The program becomes:
 
 ```
 Task 0 -> Plan A -> Plan A hardening -> Plan B -> Plan B hardening -> Plan C -> Plan C hardening
+       -> Plan D -> Plan D hardening
 ```
 
 - `docs/superpowers/plans/2026-09-18-plan-A-test-hardening.md` — the
@@ -107,6 +124,12 @@ Task 0 -> Plan A -> Plan A hardening -> Plan B -> Plan B hardening -> Plan C -> 
 - A `plan-B-test-hardening.md` is written before Plan B executes (it
   reuses the Plan A harness and adds the L3/L6 goldens + stress tier).
 - A `plan-C-test-hardening.md` likewise for L4/L5.
+- `docs/superpowers/plans/2026-09-18-plan-D-test-hardening.md` — the
+  network-async capstone hardening (Plan D's `std_net` non-blocking
+  primitives + `std_stream` network readers): the loopback goldens, the
+  would-block/oversize probes, and the network/async stress tier. It
+  executes after Plan D has landed and is the **final** plan of the
+  program.
 
 Each hardening plan's Global Constraints require that its band's modules
 are complete only when the runtime gate is GREEN and the band's stress
@@ -137,11 +160,18 @@ fixtures pass (this extends R7b).
   fixtures print stable summary lines (`time monotonic ok`, `os argc ok`)
   rather than raw values, so they are golden-stable; any fixture that
   cannot be made stable is declared a probe (rc-only).
+- **Network/loopback nondeterminism (Plan D).** A loopback fixture can be
+  flaky if it depends on scheduling, a wall-clock timeout, or a port left
+  in a LISTEN state. Mitigation: loopback-only, a fixed port declared in
+  the per-dir `ports.txt` (the harness's `PORT-IN-USE` guard), bounded
+  drain/resume loops instead of sleeps, and the 3× determinism gate.
 - **Harness runtime.** ~40 fixtures × (build+link+run) is slower than the
   compile-only sweep; the harness is opt-in/closeout-only, not per-commit.
 
 ## §7 Plan index
 
-1. `docs/superpowers/plans/2026-09-18-plan-A-test-hardening.md` — **next.**
-2. `plan-B-test-hardening.md` — written before Plan B.
-3. `plan-C-test-hardening.md` — written before Plan C.
+1. `docs/superpowers/plans/2026-09-18-plan-A-test-hardening.md` — landed.
+2. `docs/superpowers/plans/2026-09-18-plan-B-test-hardening.md` — landed.
+3. `docs/superpowers/plans/2026-09-18-plan-C-test-hardening.md` — landed.
+4. `docs/superpowers/plans/2026-09-18-plan-D-test-hardening.md` — written;
+   executes after Plan D lands. **Final plan of the program.**

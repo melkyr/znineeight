@@ -184,4 +184,5 @@ stdlib_test/crypto_codec_usage
 stdlib_test/file_stdin_usage
 stdlib_test/file_stream_usage
 stdlib_test/map_sort_heap_usage
+stdlib_test/net_stream_usage
 stdlib_test/os_time_usage
