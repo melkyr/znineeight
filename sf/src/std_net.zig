@@ -82,6 +82,15 @@ extern "stdcall" fn recvfrom(s: i32, buf: [*]u8, len: i32, flags: i32, name: *vo
 // declarations here are the resolution source for the call sites.
 extern "stdcall" fn WSAGetLastError() i32;
 extern "c" fn __errno_location() *i32;
+// Non-blocking-mode setters (Plan D Task 1). ioctlsocket is a Winsock 1.1
+// extern from <winsock.h> (stdcall); fcntl is the POSIX extern from
+// <fcntl.h> (added to net_prelude.h's POSIX branch). Both are declared
+// unconditionally and pruned by the @isWindows() guards in setNonBlocking, so
+// the emitter never emits a call to the other target's symbol. `fcntl` is
+// declared with a fixed 3rd arg (the C header's variadic prototype is the
+// actual call-site prototype).
+extern "stdcall" fn ioctlsocket(s: i32, cmd: i32, argp: *u32) i32;
+extern "c" fn fcntl(fd: i32, cmd: i32, arg: i32) i32;
 
 pub fn init() i32 {
     if (@isWindows()) {
@@ -395,6 +404,52 @@ pub fn select(nfds: i32, readfds: ?*u8, writefds: ?*u8, exceptfds: ?*u8, timeout
     } else {
         return select_os(nfds, rf, wf, xf, ptv);
     }
+}
+
+// --- Non-blocking surface (Plan D Task 1, Model C cooperative-yield) ---------
+//
+// setNonBlocking flips a connected socket to non-blocking; recvNonBlocking /
+// sendNonBlocking are the non-blocking transfer wrappers. There is no executor
+// and no poll loop (Model C): the caller drives readiness and treats
+// error.WouldBlock as "yield and retry next tick". The transfer wrappers are
+// plain recv/send on a socket the caller already set non-blocking, so they
+// reuse the module mapErr (EAGAIN/EWOULDBLOCK=11, WSAEWOULDBLOCK=10035 ->
+// WouldBlock); recvNonBlocking returns 0 at peer close (raw recv EOF).
+
+// POSIX fcntl(2) commands + O_NONBLOCK (i386-linux numeric values). win32
+// FIONBIO (0x8004667E) as the signed i32 with the same bit pattern.
+const F_GETFL_I32: i32 = 3;
+const F_SETFL_I32: i32 = 4;
+const O_NONBLOCK_I32: i32 = 2048;
+const FIONBIO_I32: i32 = -2147195266;
+
+pub fn setNonBlocking(s: *Socket) NetError!void {
+    if (@isWindows()) {
+        // ioctlsocket(FIONBIO, &1) turns non-blocking on; &0 turns it off.
+        var mode: u32 = @intCast(u32, 1);
+        const rc = ioctlsocket(s.*, FIONBIO_I32, &mode);
+        if (rc != 0) return mapErr(lastErr());
+        return;
+    } else {
+        // Preserve the existing status flags and add O_NONBLOCK.
+        const flags = fcntl(s.*, F_GETFL_I32, @intCast(i32, 0));
+        if (flags < 0) return mapErr(lastErr());
+        const rc = fcntl(s.*, F_SETFL_I32, flags | O_NONBLOCK_I32);
+        if (rc < 0) return mapErr(lastErr());
+        return;
+    }
+}
+
+pub fn recvNonBlocking(s: *Socket, buf: []u8) NetError!usize {
+    const rc = recv_os(s.*, buf.ptr, @intCast(i32, buf.len), @intCast(i32, 0));
+    if (rc < 0) return mapErr(lastErr());
+    return @intCast(usize, rc);
+}
+
+pub fn sendNonBlocking(s: *Socket, buf: []const u8) NetError!usize {
+    const rc = send_os(s.*, buf.ptr, @intCast(i32, buf.len), @intCast(i32, 0));
+    if (rc < 0) return mapErr(lastErr());
+    return @intCast(usize, rc);
 }
 
 pub fn fdZero(s: *u8) void {

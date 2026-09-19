@@ -82,6 +82,7 @@ pub fn emitNetPreludeHSupport(writer: *BufferedWriter) void {
     c89_mod.bufferedWriterWrite(writer, "#include <sys/time.h>\n");
     c89_mod.bufferedWriterWrite(writer, "#include <unistd.h>\n");
     c89_mod.bufferedWriterWrite(writer, "#include <netdb.h>\n");
+    c89_mod.bufferedWriterWrite(writer, "#include <fcntl.h>\n");
     c89_mod.bufferedWriterWrite(writer, "#endif\n");
     c89_mod.bufferedWriterWrite(writer, "\n");
     c89_mod.bufferedWriterWrite(writer, "/* std_net extern-call aliases. std_net's public API owns the names\n");

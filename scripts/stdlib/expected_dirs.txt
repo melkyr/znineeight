@@ -93,6 +93,9 @@ repro/mi_matrix/stdlib_map_oom_xmod
 repro/mi_matrix/stdlib_map_stress_xmod
 repro/mi_matrix/stdlib_math_xmod
 repro/mi_matrix/stdlib_mem_xmod
+repro/mi_matrix/stdlib_net_recvnonblocking_xmod
+repro/mi_matrix/stdlib_net_sendnonblocking_xmod
+repro/mi_matrix/stdlib_net_setnonblocking_xmod
 repro/mi_matrix/stdlib_net_udp_bind_xmod
 repro/mi_matrix/stdlib_net_udp_loopback_xmod
 repro/mi_matrix/stdlib_net_udp_recvfrom_xmod
