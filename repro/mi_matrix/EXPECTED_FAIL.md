@@ -1,4 +1,101 @@
-# mi_matrix corpus — expected-fail manifest (v152 2026-09-18)
+# mi_matrix corpus — expected-fail manifest (v153 2026-09-19)
+
+## Plan C Task 4b-I — array-of-struct-literal defect pinned (v152 -> v153 2026-09-19)
+
+Plan C Task 4 (`std_sort`) found a pre-existing compiler defect: an array literal
+of a user struct type is typed `void`. The operator ruled it an I/F pin+fix pair
+(m1787). This task is the **I** half (pin + investigation only). **No `sf/src`
+change**: the self-emission fixed point stays **UNMOVED
+`bcfa85a40279a5c7bc4d8e6fd5f8df91`** (seed v36 unchanged). Task 4b-F (the F half)
+fixes the typing/lowering and MOVES the fixed point.
+
+**New corpus dir** (auto-listed by `scripts/corpus/list_corpus_dirs.sh`):
+
+| dir | class (pre-pin, fixed point bcfa85a4) | expected GREEN (Task 4b-F) |
+|---|---|---|
+| `array_of_struct_literal_xmod` | **GREEN** (error[3000] green-guard bucket — a FALSE rejection; see caveat) | dump rc=0, 5 `.c`, gcc clean, link+run rc=0, stdout `array of struct literal ok` |
+
+**Trigger shapes** (both in `main.zig`, plus a typed-element control):
+
+```zig
+const Pair = struct { key: u32, val: u32 };
+var a = [_]Pair{ .{ .key = 1, .val = 2 }, .{ .key = 3, .val = 4 } };           // inferred length
+var b: [2]Pair = [_]Pair{ .{ .key = 5, .val = 6 }, .{ .key = 7, .val = 8 } };   // annotated length
+var c = [_]Pair{ Pair{ .key = 9, .val = 10 }, Pair{ .key = 11, .val = 12 } };   // control (already OK)
+```
+
+**RED today.** Combined pin: dump rc=2, 0 `.c`,
+`error[3000]: cannot declare variable of type void` (inferred shape) plus
+`warning[3000]: type mismatch ... note: source: void` (annotated shape).
+Isolated annotated shape: dump rc=0, 5 `.c`, gcc rejects
+`'zT_2' undeclared (first use in this function)` — the first element's
+struct-literal temp is referenced but never declared. Isolated inferred shape:
+dump rc=2, 0 `.c`, the same `error[3000]`.
+
+**Root cause / loci.**
+- `sf/src/semantic_analyzer.zig:3333` `semanticAnalyzerResolveArrayInit` resolves
+  each element (`:3384-3389`) with **no expected type pushed**, so an anonymous
+  struct/union literal element `.{...}` reaches
+  `semanticAnalyzerResolveStructInit` (`:1794`) with no `topExpectedType`
+  (`:1800`) and returns `TYPE_VOID` (`:1801`); the array then short-circuits to
+  void at `:3390` before the annotation-derived element type (`:3362-3377`) can
+  be used (`:3393-3394`). Enum literal elements hit the same missing-expected-type
+  path (`:1743-1791`, `:1790` sets void).
+- `sf/src/lower.zig:5012` array-init arm: the resolved type is void, so the
+  element temp is allocated void (`:5034`, `:5045`) and the per-element store
+  (`:5036-5040`) references it; `sf/src/c89_emit.zig:3893` never declares a
+  `TYPE_VOID` (= id 1) temp, hence `zT_2 undeclared`.
+- The same per-element store is a plain C `=` (`:5040`), which is also invalid
+  for aggregate element kinds (nested array, slice, optional) even when the
+  element type resolves.
+
+**Affected vs correct shapes** (local `var`; measured, fixed point `bcfa85a4`):
+
+| element type / literal | inferred `[_]T{...}` | annotated `var x:[N]T = [_]T{...}` | class |
+|---|---|---|---|
+| plain struct, anon `.{...}` | `error[3000]` void | gcc `'zT_2' undeclared` | **BUG** |
+| plain struct, typed `Pair{...}` | OK | OK | correct |
+| tagged union, anon `.{...}` | `error[3000]` void | gcc `'zT_2' undeclared` | **BUG** |
+| tagged union, typed `U{...}` | OK | OK | correct |
+| enum, anon `.a` | `error[3000]` void | gcc clean but run SIGTRAP (wrong values) | **BUG** |
+| enum, typed `E.a` | OK | OK | correct |
+| optional `?u32` | gcc int -> optional | gcc int -> optional | **BUG** (element wrap) |
+| nested array `[2]u32` | gcc `assignment to expression with array type` | same | **BUG** (aggregate copy) |
+| slice `[]const u8` | gcc slice <- pointer | same | **BUG** (slice construct) |
+| struct w/ array field, anon | `error[3000]` void | gcc `'zT_2' undeclared` | **BUG** |
+| struct w/ nested struct, anon | `error[3000]` void | gcc `'zT_2' undeclared` | **BUG** |
+| scalar `u32` | OK | OK | correct |
+
+Position sweep (plain struct): local anon `error[3000]` / typed OK; global anon
+gcc `'zT_0' undeclared` (no `error[3000]`) / typed OK; struct-field anon gcc
+`'zT_2' undeclared` / typed gcc `incompatible types ... Pair from int` (the field
+array is zero-filled, values never stored); call argument by value anon gcc
+`'zT_3' undeclared` / typed OK; call argument via `(literal)[0..]` frontend
+`error[3043]: unsupported slice_expr form/base` (separate gap).
+
+**Workaround** (used by `stdlib_sort`'s vtable fixture):
+`var a: [N]Pair = undefined;` + per-element assignment (`a[0] = .{ ... };`).
+
+**RED -> GREEN contract (Task 4b-F).** The inferred and annotated anonymous
+struct-literal forms (and the aggregate element kinds the investigation confirms)
+lower/emit/run; the fixture prints exactly `array of struct literal ok` (rc 0).
+The committed `expected.txt`/`expected.rc` encode this DESIRED GREEN behaviour.
+
+**Green-guard caveat.** The canonical classifier buckets `0 .c + error[3000]` as
+GREEN ("documented green-guard"). Here the rejection is a FALSE rejection of
+valid Zig, so the combined pin sits in GREEN today; the F fix flips it
+**GREEN -> OK** (the classifier-pin movement). The annotated-shape gcc failure
+(FAIL class) is only reachable in isolation because the inferred shape aborts the
+combined file first.
+
+**Corpus delta.** Universe **842 -> 843** (+1, the new pin). Class delta:
+**+1 GREEN** (789 OK / 28 GREEN / 25 FAIL / 0 ICE -> 789 OK / **29 GREEN** /
+25 FAIL / 0 ICE); all 842 pre-existing dirs are class-identical (no `sf/src`
+change). (The v152 header's 836 predates the six Task-4 `stdlib_sort_*` dirs:
+836 + 5 + 1 introsort = 842.) The dir is deliberately **not** added to
+`scripts/stdlib/expected_dirs.txt` (compiler-class pin, not `stdlib_*`; cf.
+`field_store_continue_xmod`). Full investigation:
+`.superpowers/sdd/2026-09-17-std-lib-plan-c-data-codecs/task-4bI-report.md`.
 
 ## Plan C Task 3b-F — discarded fallible struct-returning catch fixed (v151 -> v152 2026-09-18)
 
