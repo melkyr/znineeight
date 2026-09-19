@@ -34,6 +34,7 @@ repro/mi_matrix/stdlib_base64_encodedlen_xmod
 repro/mi_matrix/stdlib_base64_invalid_xmod
 repro/mi_matrix/stdlib_base64_oom_xmod
 repro/mi_matrix/stdlib_base64_roundtrip_xmod
+repro/mi_matrix/stdlib_base64_stress_xmod
 repro/mi_matrix/stdlib_bits_extract_trap_xmod
 repro/mi_matrix/stdlib_bits_insert_trap_xmod
 repro/mi_matrix/stdlib_bits_stress_xmod
@@ -47,6 +48,7 @@ repro/mi_matrix/stdlib_crypto_crc32_xmod
 repro/mi_matrix/stdlib_crypto_md5_xmod
 repro/mi_matrix/stdlib_crypto_sha1_xmod
 repro/mi_matrix/stdlib_crypto_sha256_xmod
+repro/mi_matrix/stdlib_crypto_stress_xmod
 repro/mi_matrix/stdlib_debug_backtrace_xmod
 repro/mi_matrix/stdlib_debug_cleartrap_xmod
 repro/mi_matrix/stdlib_debug_coredump_xmod
@@ -75,17 +77,20 @@ repro/mi_matrix/stdlib_heap_oom_xmod
 repro/mi_matrix/stdlib_heap_peek_xmod
 repro/mi_matrix/stdlib_heap_pop_xmod
 repro/mi_matrix/stdlib_heap_push_xmod
+repro/mi_matrix/stdlib_heap_stress_xmod
 repro/mi_matrix/stdlib_heap_tie_xmod
 repro/mi_matrix/stdlib_hex_decode_xmod
 repro/mi_matrix/stdlib_hex_encodelower_xmod
 repro/mi_matrix/stdlib_hex_encodeupper_xmod
 repro/mi_matrix/stdlib_hex_oom_xmod
 repro/mi_matrix/stdlib_hex_roundtrip_xmod
+repro/mi_matrix/stdlib_hex_stress_xmod
 repro/mi_matrix/stdlib_map_determinism_xmod
 repro/mi_matrix/stdlib_map_map32ptr_xmod
 repro/mi_matrix/stdlib_map_map32x32_xmod
 repro/mi_matrix/stdlib_map_mapstrptr_xmod
 repro/mi_matrix/stdlib_map_oom_xmod
+repro/mi_matrix/stdlib_map_stress_xmod
 repro/mi_matrix/stdlib_math_xmod
 repro/mi_matrix/stdlib_mem_xmod
 repro/mi_matrix/stdlib_net_udp_bind_xmod
@@ -109,6 +114,7 @@ repro/mi_matrix/stdlib_parse_parseint64_xmod
 repro/mi_matrix/stdlib_parse_parseint_xmod
 repro/mi_matrix/stdlib_parse_parseuint64_xmod
 repro/mi_matrix/stdlib_parse_parseuint_xmod
+repro/mi_matrix/stdlib_parse_stress_xmod
 repro/mi_matrix/stdlib_parse_utoa64_xmod
 repro/mi_matrix/stdlib_parse_utoa_xmod
 repro/mi_matrix/stdlib_rle_decode_xmod
@@ -118,12 +124,14 @@ repro/mi_matrix/stdlib_rle_encode_xmod
 repro/mi_matrix/stdlib_rle_encodedlen_xmod
 repro/mi_matrix/stdlib_rle_oom_xmod
 repro/mi_matrix/stdlib_rle_roundtrip_xmod
+repro/mi_matrix/stdlib_rle_stress_xmod
 repro/mi_matrix/stdlib_sort_binarysearchu32_xmod
 repro/mi_matrix/stdlib_sort_introsort_xmod
 repro/mi_matrix/stdlib_sort_sort_xmod
 repro/mi_matrix/stdlib_sort_sorti32_xmod
 repro/mi_matrix/stdlib_sort_sortstr_xmod
 repro/mi_matrix/stdlib_sort_sortu32_xmod
+repro/mi_matrix/stdlib_sort_stress_xmod
 repro/mi_matrix/stdlib_stdin_crlf_boundary_xmod
 repro/mi_matrix/stdlib_stdin_eof_notrailing_xmod
 repro/mi_matrix/stdlib_stdin_multiline_xmod
@@ -165,6 +173,7 @@ repro/mi_matrix/stdlib_utf8_countcodepoints_xmod
 repro/mi_matrix/stdlib_utf8_decode_xmod
 repro/mi_matrix/stdlib_utf8_encode_xmod
 repro/mi_matrix/stdlib_utf8_invalid_xmod
+repro/mi_matrix/stdlib_utf8_stress_xmod
 stdlib_test/bits_buf_str_usage
 stdlib_test/crypto_codec_usage
 stdlib_test/file_stdin_usage
