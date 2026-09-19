@@ -167,6 +167,7 @@ repro/mi_matrix/stdlib_stream_readline_empty_xmod
 repro/mi_matrix/stdlib_stream_readline_noeof_xmod
 repro/mi_matrix/stdlib_stream_readline_xmod
 repro/mi_matrix/stdlib_stream_readlinesync_xmod
+repro/mi_matrix/stdlib_stream_socketlinereader_xmod
 repro/mi_matrix/stdlib_stream_stress_xmod
 repro/mi_matrix/stdlib_time_monotonic_avail_xmod
 repro/mi_matrix/stdlib_time_monotonic_xmod
