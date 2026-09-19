@@ -360,9 +360,9 @@
 
 - [ ] **Step 1: Verify the seed scripts' `lib/` copy list is complete** — Tasks 1-8 each appended their module in the same commit; confirm `std_crypto.zig`/`std_parse.zig`/`std_map.zig`/`std_sort.zig`/`std_heap.zig`/`std_rle.zig`/`std_base64.zig`/`std_hex.zig`/`std_utf8.zig` are present in both scripts. Add any missing entry here.
 - [ ] **Step 2: Create the Plan C usage programs (R7b)** — `stdlib_test/map_sort_heap_usage/main.zig` composes `std_map` + `std_sort` + `std_heap`; `stdlib_test/crypto_codec_usage/main.zig` composes `std_crypto` + `std_base64`/`std_hex` + `std_utf8` + `std_buf`. Each has a deterministic stdout contract and is compiled/run under the fixture gates (3× emission md5, `-fsafe`/`-ffast` parity). Confirm `scripts/corpus/list_corpus_dirs.sh | grep stdlib_test` enumerates both.
-- [ ] **Step 3: Run the full corpus + gates** (count; `check_emit_support` 5/5; `CLOSEOUT OK`; zero class movement on pre-existing dirs).
+- [ ] **Step 3: Run the full corpus + gates** (count; `check_emit_support` 7/7; `CLOSEOUT OK`; zero class movement on pre-existing dirs).
 - [ ] **Step 4: Bump `EXPECTED_FAIL.md`** once (header + a Plan C section).
-- [ ] **Step 5: Update the QUICK_REF std-module inventory + `MANIFEST.txt`** (every module + md5).
+- [ ] **Step 5: Update the QUICK_REF std-module inventory** (Ruling F2: drop the `MANIFEST.txt` part — no such file exists; the QUICK_REF inventory is canonical).
 - [ ] **Step 6: Rotate the seed** if the distribution changed (the `lib/` payload grows even though the fixed point does not move):
 
 ```bash
