@@ -278,14 +278,37 @@ per-function `repro/mi_matrix/` fixtures.
   use it (C3 violation). Plan B asserts this in the import graph.
 - **Fixture volume (~60 dirs).** Corpus growth per plan; each plan
   re-baselines `EXPECTED_FAIL.md` once at closeout.
-- **Network async — DEFERRED to Plan D (operator, m1449/m1451).** Z98 is
-  Model C cooperative-yield, so there is no runtime-mediated wakeup.
-  `SocketLineReader`/`MsgReader` need non-blocking sockets
-  (`recvNonBlocking`/`sendNonBlocking`/`setNonBlocking`) in `std_net`, and an
-  optional `std.async.wait(handle)` needs an executor or a `poll()` loop.
-  None are Plan B work: Plan B's `std_stream` is file-only (`FileLineReader`,
-  `readLineSync` + `readLineAsync`). Recorded in
-  `docs/superpowers/plans/2026-09-18-plan-D-network-async.md`.
+- **Network async — SCHEDULED as Plan D (operator, m1449/m1451/m1927).** Z98 is
+  Model C cooperative-yield, so there is no runtime-mediated wakeup. Plan D
+  lands the network half of the `std_stream` two-reader surface; it is the
+  capstone of the std-lib extension program. Module signatures (source of
+  record, mirrored in `sf/docs/std_lib_extension.txt` §3 L3/L6):
+
+  ```
+  // std_net (L3)
+  pub fn setNonBlocking(s: *Socket) NetError!void;
+  pub fn recvNonBlocking(s: *Socket, buf: []u8) NetError!usize;
+  pub fn sendNonBlocking(s: *Socket, buf: []const u8) NetError!usize;
+
+  // std_stream (L6)
+  const SocketLineReader = struct { src: *std.net.Socket, buf: []u8, pending: []u8 };
+  pub fn initSocketLineReader(src: *std.net.Socket, buf: []u8) SocketLineReader;
+  pub fn readSocketLineSync(lr: *SocketLineReader) !?[]u8;    // blocking
+  pub fn readSocketLineAsync(lr: *SocketLineReader) !?[]u8;   // yields on error.WouldBlock
+
+  const MsgReader = struct { src: *std.net.Socket, buf: []u8, pending: []u8 };
+  pub fn initMsgReader(src: *std.net.Socket, buf: []u8) MsgReader;
+  pub fn readMsgSync(mr: *MsgReader) !?[]u8;    // blocking: length-prefix frame
+  pub fn readMsgAsync(mr: *MsgReader) !?[]u8;   // yields on error.WouldBlock
+  ```
+
+  `recvNonBlocking` returns `error.WouldBlock` when no data is ready and 0 at
+  peer close. The `*Async` readers yield on `error.WouldBlock` and are
+  re-driven on the next tick (Model C); the `Sync` forms block. `MsgReader`
+  reads a length prefix, then the body. An optional `std.async.wait(handle)`
+  needs an executor or a `poll()` loop and is Plan D Task 4 (optional). Plan B's
+  `std_stream` is file-only (`FileLineReader`, `readLineSync` + `readLineAsync`).
+  Recorded in `docs/superpowers/plans/2026-09-18-plan-D-network-async.md`.
 - **Async frame-layout residual — DECLARED (Plan B Task 4 fix round 1).** A
   suspending function with a `while` loop that returns `!?[]u8` trips the
   P2/P3 async frame-layout size guard
@@ -318,8 +341,10 @@ the successor plan is the "next plan to follow up" for the plan just
 completed.
 
 **Completion (2026-09-19).** Task 0 → Plan A → Plan B → Plan C are COMPLETE;
-the std-lib extension program is COMPLETE. There is no successor plan within
-the program. Plan D (`2026-09-18-plan-D-network-async.md`) remains a recorded,
-separately-scheduled follow-up (deferred from Plan B, not part of this program).
-Plan C closeout: `docs/superpowers/plans/2026-09-17-std-lib-plan-c-data-codecs.md`
-§ "Next plan"; seed v39; fixed point `fc9198f6c1a24c92ec136e741c81c975`.
+the std-lib extension program's core bands are COMPLETE. The next executable is
+Plan D (`2026-09-18-plan-D-network-async.md`, the network-async capstone:
+non-blocking sockets in `std_net`, `std_stream.SocketLineReader`, `MsgReader`,
+optional `std.async.wait(handle)`), followed by a Plan D test-hardening plan
+(operator m1927). Plan C closeout:
+`docs/superpowers/plans/2026-09-17-std-lib-plan-c-data-codecs.md` § "Next plan";
+seed v39; fixed point `fc9198f6c1a24c92ec136e741c81c975`.
