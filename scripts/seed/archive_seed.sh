@@ -110,7 +110,7 @@ else
         cp "$ROOT/sf/src/include/$f" "$SEED/runtime/"
     done
 fi
-for f in std.zig std_io.zig std_arena.zig std_net.zig std_str.zig std_mem.zig std_math.zig std_debug.zig std_async.zig std_bits.zig std_os.zig std_os_pal.zig std_time.zig std_time_pal.zig std_buf.zig std_file.zig std_file_pal.zig std_stdin.zig std_stdin_pal.zig std_stream.zig std_crypto.zig std_parse.zig std_map.zig std_sort.zig std_heap.zig; do
+for f in std.zig std_io.zig std_arena.zig std_net.zig std_str.zig std_mem.zig std_math.zig std_debug.zig std_async.zig std_bits.zig std_os.zig std_os_pal.zig std_time.zig std_time_pal.zig std_buf.zig std_file.zig std_file_pal.zig std_stdin.zig std_stdin_pal.zig std_stream.zig std_crypto.zig std_parse.zig std_map.zig std_sort.zig std_heap.zig std_rle.zig; do
     cp "$ROOT/sf/src/$f" "$SEED/lib/"
 done
 

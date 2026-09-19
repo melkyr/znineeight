@@ -98,6 +98,13 @@ repro/mi_matrix/stdlib_parse_parseuint64_xmod
 repro/mi_matrix/stdlib_parse_parseuint_xmod
 repro/mi_matrix/stdlib_parse_utoa64_xmod
 repro/mi_matrix/stdlib_parse_utoa_xmod
+repro/mi_matrix/stdlib_rle_decode_xmod
+repro/mi_matrix/stdlib_rle_decodedlen_xmod
+repro/mi_matrix/stdlib_rle_determinism_xmod
+repro/mi_matrix/stdlib_rle_encode_xmod
+repro/mi_matrix/stdlib_rle_encodedlen_xmod
+repro/mi_matrix/stdlib_rle_oom_xmod
+repro/mi_matrix/stdlib_rle_roundtrip_xmod
 repro/mi_matrix/stdlib_sort_binarysearchu32_xmod
 repro/mi_matrix/stdlib_sort_introsort_xmod
 repro/mi_matrix/stdlib_sort_sort_xmod
