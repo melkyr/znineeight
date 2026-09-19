@@ -1,6 +1,6 @@
-# mi_matrix corpus — expected-fail manifest (v153 2026-09-19)
+# mi_matrix corpus — expected-fail manifest (v154 2026-09-19)
 
-## Plan C Task 4b-I — array-of-struct-literal defect pinned (v152 -> v153 2026-09-19)
+## Plan C Task 4b-I — array-of-struct-literal defect pinned (v152 -> v153; fix round 1 v153 -> v154 2026-09-19)
 
 Plan C Task 4 (`std_sort`) found a pre-existing compiler defect: an array literal
 of a user struct type is typed `void`. The operator ruled it an I/F pin+fix pair
@@ -48,6 +48,24 @@ dump rc=2, 0 `.c`, the same `error[3000]`.
 - The same per-element store is a plain C `=` (`:5040`), which is also invalid
   for aggregate element kinds (nested array, slice, optional) even when the
   element type resolves.
+- **Struct-field initializer path** (`var b: Box = .{ .items = [_]Pair{ ... } };`):
+  the field store is emitted by `sf/src/c89_emit.zig:6093-6102` (`.assign_field`).
+  For an array-typed field the `emitFieldAssign` array branch
+  (`sf/src/c89_emit.zig:365-376`; `is_arr` set at `:329-333`) hardcodes a
+  zero-fill `base.field[_j] = 0;` and **ignores `src`**. This is general to any
+  array-typed struct field, not only struct elements: `[2]u32` is silently
+  zeroed (runtime wrong-value/SIGTRAP), `[2]Pair` fails gcc with
+  `incompatible types ... Pair from int`.
+
+**Fix round 1 (v153 -> v154).** Probed the brief-requested `slice-of-struct`
+element type and adjacent slice shapes: `[N][]Pair` (slice-of-struct) is
+**correct** (dump/gcc/link/run rc=0, values correct), as are `[N][]u32` and
+`[N][]const u8` built from genuine slice expressions (`b0[0..]`); the array
+element store is a plain struct copy, which is valid C for the slice temp. Only
+the **string-literal element** form (`[_][]const u8{ "ab", "cde" }`) fails (the
+literal lowers as `unsigned char*` and is not coerced to a slice). The
+struct-field zero-fill locus is pinned above. No `sf/src` change; fixed point
+UNMOVED `bcfa85a40279a5c7bc4d8e6fd5f8df91`.
 
 **Affected vs correct shapes** (local `var`; measured, fixed point `bcfa85a4`):
 
@@ -61,7 +79,8 @@ dump rc=2, 0 `.c`, the same `error[3000]`.
 | enum, typed `E.a` | OK | OK | correct |
 | optional `?u32` | gcc int -> optional | gcc int -> optional | **BUG** (element wrap) |
 | nested array `[2]u32` | gcc `assignment to expression with array type` | same | **BUG** (aggregate copy) |
-| slice `[]const u8` | gcc slice <- pointer | same | **BUG** (slice construct) |
+| slice `[]const u8`, string-literal elems | gcc slice <- pointer | same | **BUG** (string-literal -> slice coercion missing) |
+| slice `[]T`, genuine slice elems (`[N][]Pair`, `[N][]u32`, `[N][]const u8` of real slices) | OK | OK | correct |
 | struct w/ array field, anon | `error[3000]` void | gcc `'zT_2' undeclared` | **BUG** |
 | struct w/ nested struct, anon | `error[3000]` void | gcc `'zT_2' undeclared` | **BUG** |
 | scalar `u32` | OK | OK | correct |
