@@ -50,6 +50,15 @@ the next plan to run is always discoverable from the plan just completed.
 Within a plan, tasks follow the blueprint's construction order for that
 band.
 
+**Plan C L5 codec `decode` contract (operator ruling m1842).** The
+`std_base64`/`std_hex` `decode` functions declare `errors OutOfMemory,
+InvalidInput`; both modules' `encode` functions stay `OutOfMemory`-only.
+`decode` (both modules) rejects malformed or whitespace input with
+`error.InvalidInput`. An empty input is a VALID empty result (a length-0
+slice, no error) and is distinct from an invalid one. This mirrors the
+blueprint's `Contract:` line (git-ignored `sf/docs/std_lib_extension.txt`);
+this spec is the durable, committed source of record.
+
 ## §3 Task 0 — separation audit + dead-file removal (I+F)
 
 **I (audit, no compiler change):**

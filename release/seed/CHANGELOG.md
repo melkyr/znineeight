@@ -62,6 +62,7 @@ binary. Rebuild recipes + full canonical flag-set requirement (`gcc -m32
 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 -Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
 `-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-09-19 — seed v37 (HEAD d896217b)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
@@ -87,6 +88,7 @@ binary. Rebuild recipes + full canonical flag-set requirement (`gcc -m32
 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 -Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
 `-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-09-18 — seed v36 (HEAD 3e809080)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
@@ -112,6 +114,7 @@ binary. Rebuild recipes + full canonical flag-set requirement (`gcc -m32
 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 -Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
 `-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-09-18 — seed v35 (HEAD e1f1bf8c)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
@@ -137,6 +140,7 @@ binary. Rebuild recipes + full canonical flag-set requirement (`gcc -m32
 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 -Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
 `-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-09-18 — seed v34 (HEAD 2b7acb2d)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
@@ -162,6 +166,7 @@ binary. Rebuild recipes + full canonical flag-set requirement (`gcc -m32
 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 -Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
 `-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-09-18 — seed v33 (HEAD a9b515d9)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
@@ -187,6 +192,7 @@ binary. Rebuild recipes + full canonical flag-set requirement (`gcc -m32
 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 -Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
 `-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-09-18 — seed v32 (HEAD fe784e9c)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
@@ -212,6 +218,7 @@ binary. Rebuild recipes + full canonical flag-set requirement (`gcc -m32
 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 -Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
 `-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-09-18 — seed v31 (HEAD 1bd0d0d6)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
@@ -237,6 +244,7 @@ binary. Rebuild recipes + full canonical flag-set requirement (`gcc -m32
 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 -Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
 `-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-09-18 — seed v30 (HEAD 69066336; archive content 871074e1)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
@@ -266,6 +274,7 @@ binary. Rebuild recipes + full canonical flag-set requirement (`gcc -m32
 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 -Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
 `-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-09-18 — seed v29 (HEAD 7c2b2445)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
@@ -291,6 +300,7 @@ binary. Rebuild recipes + full canonical flag-set requirement (`gcc -m32
 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 -Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
 `-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-09-18 — seed v28 (HEAD c235126d)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
@@ -316,6 +326,7 @@ binary. Rebuild recipes + full canonical flag-set requirement (`gcc -m32
 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 -Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
 `-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-09-17 — seed v27 (HEAD 0a37ca6e)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
@@ -341,6 +352,7 @@ binary. Rebuild recipes + full canonical flag-set requirement (`gcc -m32
 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 -Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
 `-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-09-17 — seed v26 (HEAD e3e58d7b)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
@@ -366,6 +378,7 @@ binary. Rebuild recipes + full canonical flag-set requirement (`gcc -m32
 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 -Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
 `-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-09-17 — seed v25 (HEAD dc181cf0)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
@@ -391,6 +404,7 @@ binary. Rebuild recipes + full canonical flag-set requirement (`gcc -m32
 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 -Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
 `-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-09-17 — seed v24 (HEAD 8d9d33fc)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
@@ -416,6 +430,7 @@ binary. Rebuild recipes + full canonical flag-set requirement (`gcc -m32
 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 -Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
 `-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-09-17 — seed v23 (HEAD f2657957)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
@@ -441,6 +456,7 @@ binary. Rebuild recipes + full canonical flag-set requirement (`gcc -m32
 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 -Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
 `-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-09-17 — seed v22 (HEAD 66446667)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
@@ -466,6 +482,7 @@ binary. Rebuild recipes + full canonical flag-set requirement (`gcc -m32
 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 -Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
 `-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-09-17 — seed v21 (HEAD 17422544)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
@@ -491,6 +508,7 @@ binary. Rebuild recipes + full canonical flag-set requirement (`gcc -m32
 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 -Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
 `-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-09-17 — seed v20 (HEAD 6ef08661)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
@@ -542,6 +560,7 @@ binary. Rebuild recipes + full canonical flag-set requirement (`gcc -m32
 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 -Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
 `-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-09-15 — seed v18 (HEAD d2629f9c)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
@@ -567,6 +586,7 @@ binary. Rebuild recipes + full canonical flag-set requirement (`gcc -m32
 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 -Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
 `-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-09-15 — seed v17 (HEAD 5daab707)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
@@ -647,6 +667,7 @@ binary. Rebuild recipes + full canonical flag-set requirement (`gcc -m32
 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 -Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
 `-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-09-14 — seed v14 (HEAD a1c4658c)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
@@ -672,6 +693,7 @@ binary. Rebuild recipes + full canonical flag-set requirement (`gcc -m32
 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 -Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
 `-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-09-14 — seed v13 (HEAD 060be000)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
@@ -697,6 +719,7 @@ binary. Rebuild recipes + full canonical flag-set requirement (`gcc -m32
 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 -Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
 `-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-09-14 — seed v12 (HEAD 921e4f76)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
@@ -748,6 +771,7 @@ binary. Rebuild recipes + full canonical flag-set requirement (`gcc -m32
 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 -Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
 `-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-09-13 — seed v10 (HEAD ab2589e6)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
@@ -773,6 +797,7 @@ binary. Rebuild recipes + full canonical flag-set requirement (`gcc -m32
 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 -Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
 `-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-09-10 — seed v9 (HEAD c599b00e)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
@@ -865,6 +890,7 @@ requirement (`gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 `std_mem.zig`, `std_math.zig`, `std_debug.zig`) — `scripts/seed/archive_seed.sh`
 extended to match `build_from_seed.sh` (was 4 files), so the archived seed is
 self-consistent with the STDLIB plan's canonical lib set.
+
 ## 2026-09-09 — seed v6 (HEAD 4bdf52da)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
@@ -888,6 +914,7 @@ compiler state at HEAD 4bdf52da. Rebuild recipes + full canonical flag-set
 requirement (`gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 -Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
 `-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-09-09 — seed v5 (HEAD e62ebd99)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
@@ -923,6 +950,7 @@ chain at HEAD `e62ebd99` converged seed v4 `f5c2f9d2` → hop1 `ae525bdc` → ho
 battery (24/24 run-identical, corpus 419/419 zero class change, upgraded goldens + net 12/12,
 mingw32 `-osw` clean). The 4-MD5 dump gates were re-baselined (runtime-identical) to the values
 recorded at this HEAD's docs GATE.
+
 ## 2026-09-08 — seed v4 (HEAD 890302c6)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
@@ -954,6 +982,7 @@ the `sf/scripts/build_release.sh` zig0 path is dead for the current `sf/src` (ke
 historical). From this seed onward the reference compiler is built **from the committed seed**
 (`zig1 → zig1_5`, N-hop stabilization: seed `e20bfb70` → hop1 `1e96b989` → hop2 `f5c2f9d2` → hop3
 `f5c2f9d2`, hop2==hop3 == this seed's fixed point), never zig0.
+
 ## 2026-09-08 — seed v3 (HEAD 9bc2c751)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
@@ -977,6 +1006,7 @@ compiler state at HEAD 9bc2c751. Rebuild recipes + full canonical flag-set
 requirement (`gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 -Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
 `-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-09-08 — seed v2 (HEAD f1259e65)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
@@ -1000,6 +1030,7 @@ compiler state at HEAD f1259e65. Rebuild recipes + full canonical flag-set
 requirement (`gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 -Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
 `-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-09-07 — seed v1 (HEAD c7af022a)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
@@ -1023,6 +1054,7 @@ compiler state at HEAD c7af022a. Rebuild recipes + full canonical flag-set
 requirement (`gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 -Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
 `-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-09-07 — seed v0 (HEAD 1079d90a)
 
 First capture (SEEDMIG, Phase 0). Archive layout: top-level dir `zig1-seed/`
