@@ -31,6 +31,7 @@ repro/mi_matrix/stdlib_base64_decode_xmod
 repro/mi_matrix/stdlib_base64_decodedlen_xmod
 repro/mi_matrix/stdlib_base64_encode_xmod
 repro/mi_matrix/stdlib_base64_encodedlen_xmod
+repro/mi_matrix/stdlib_base64_invalid_xmod
 repro/mi_matrix/stdlib_base64_oom_xmod
 repro/mi_matrix/stdlib_base64_roundtrip_xmod
 repro/mi_matrix/stdlib_bits_extract_trap_xmod
@@ -100,6 +101,7 @@ repro/mi_matrix/stdlib_os_cwd_xmod
 repro/mi_matrix/stdlib_os_env_xmod
 repro/mi_matrix/stdlib_os_exit_xmod
 repro/mi_matrix/stdlib_parse_ftoa_xmod
+repro/mi_matrix/stdlib_parse_invalid_xmod
 repro/mi_matrix/stdlib_parse_itoa64_xmod
 repro/mi_matrix/stdlib_parse_itoa_xmod
 repro/mi_matrix/stdlib_parse_parsefloat_xmod
@@ -162,6 +164,7 @@ repro/mi_matrix/stdlib_utf8_codepointlen_xmod
 repro/mi_matrix/stdlib_utf8_countcodepoints_xmod
 repro/mi_matrix/stdlib_utf8_decode_xmod
 repro/mi_matrix/stdlib_utf8_encode_xmod
+repro/mi_matrix/stdlib_utf8_invalid_xmod
 stdlib_test/bits_buf_str_usage
 stdlib_test/crypto_codec_usage
 stdlib_test/file_stdin_usage
