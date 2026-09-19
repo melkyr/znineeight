@@ -158,6 +158,10 @@ repro/mi_matrix/stdlib_stream_stress_xmod
 repro/mi_matrix/stdlib_time_monotonic_avail_xmod
 repro/mi_matrix/stdlib_time_monotonic_xmod
 repro/mi_matrix/stdlib_time_sleep_xmod
+repro/mi_matrix/stdlib_utf8_codepointlen_xmod
+repro/mi_matrix/stdlib_utf8_countcodepoints_xmod
+repro/mi_matrix/stdlib_utf8_decode_xmod
+repro/mi_matrix/stdlib_utf8_encode_xmod
 stdlib_test/bits_buf_str_usage
 stdlib_test/file_stdin_usage
 stdlib_test/file_stream_usage
