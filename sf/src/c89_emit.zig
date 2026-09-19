@@ -363,17 +363,26 @@ fn emitFieldAssign(writer: *BufferedWriter, indent_val: u32, registry: *TypeRegi
         bufferedWriterWrite(writer, fn_prefix);
     }
     if (is_arr[0] != @intCast(u32, 0)) {
+        // Task 4b-F: an array-typed struct field initialized from an array
+        // literal/value must be copied from `src`; the old code zero-filled
+        // and discarded the value. C89 forbids array assignment, so copy the
+        // whole field storage byte-wise (any element kind / nesting depth),
+        // matching the `.assign` / `.assign_index` array-copy paths.
         var afsemi: []const u8 = ";\n"; bufferedWriterWrite(writer, afsemi);
         bufferedWriterWriteIndent(writer, indent_val);
         var afblk: []const u8 = "{\n"; bufferedWriterWrite(writer, afblk);
         var afli: []const u8 = "    unsigned int _j = 0;\n"; bufferedWriterWrite(writer, afli);
-        var aflw: []const u8 = "    while (_j < "; bufferedWriterWrite(writer, aflw);
-        var afalb: [20]u8 = undefined; var afall: u32 = itoa_mod.itoa(arr_len[0], afalb[0..]); var afals: usize = @intCast(usize, 19) - @intCast(usize, afall); bufferedWriterWrite(writer, afalb[afals..@intCast(usize, 19)]);
-        var aflb2: []const u8 = ") {\n        "; bufferedWriterWrite(writer, aflb2);
+        var aflw: []const u8 = "    while (_j < sizeof("; bufferedWriterWrite(writer, aflw);
         bufferedWriterWrite(writer, base);
         var dot_s2: []const u8 = "."; bufferedWriterWrite(writer, dot_s2);
         bufferedWriterWrite(writer, fld_name_val);
-        var aflb3: []const u8 = "[_j] = 0;\n        _j++;\n    }\n}\n"; bufferedWriterWrite(writer, aflb3);
+        var aflb2: []const u8 = ")) {\n        ((unsigned char*)&"; bufferedWriterWrite(writer, aflb2);
+        bufferedWriterWrite(writer, base);
+        var dot_s2b: []const u8 = "."; bufferedWriterWrite(writer, dot_s2b);
+        bufferedWriterWrite(writer, fld_name_val);
+        var aflb3: []const u8 = ")[_j] = ((unsigned char*)&"; bufferedWriterWrite(writer, aflb3);
+        bufferedWriterWrite(writer, src);
+        var aflb4: []const u8 = ")[_j];\n        _j++;\n    }\n}\n"; bufferedWriterWrite(writer, aflb4);
     } else {
         var fa_cast: []const u8 = "";
         if (cast_name.len != @intCast(usize, 0)) {
@@ -8394,7 +8403,7 @@ fn dceMarkAllReads(lir_fn: *LirFunction, max_temp: u32, tid_to_pos: [*]u32, read
             var inst = bb.insts.items[ii];
             switch (inst) {
                 .assign => |a| { dceMarkReadPos(max_temp, tid_to_pos, read_count, a.src); },
-                .assign_field => |a| { dceMarkReadPos(max_temp, tid_to_pos, read_count, a.base); if (!dceFieldIsArray(registry, lir_fn, a.base, a.field_id)) { dceMarkReadPos(max_temp, tid_to_pos, read_count, a.src); } },
+                .assign_field => |a| { dceMarkReadPos(max_temp, tid_to_pos, read_count, a.base); dceMarkReadPos(max_temp, tid_to_pos, read_count, a.src); },
                 .assign_index => |a| { if (dceBaseEscapes(registry, lir_fn, max_temp, tid_to_pos, no_decl_arr, a.base)) { dceMarkReadPos(max_temp, tid_to_pos, read_count, a.base); } dceMarkReadPos(max_temp, tid_to_pos, read_count, a.index); dceMarkReadPos(max_temp, tid_to_pos, read_count, a.src); },
                 .branch => |b| { dceMarkReadPos(max_temp, tid_to_pos, read_count, b.cond); },
                 .switch_br => |s| { dceMarkReadPos(max_temp, tid_to_pos, read_count, s.cond); },

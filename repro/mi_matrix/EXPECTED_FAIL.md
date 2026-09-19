@@ -1,4 +1,52 @@
-# mi_matrix corpus — expected-fail manifest (v154 2026-09-19)
+# mi_matrix corpus — expected-fail manifest (v155 2026-09-19)
+
+## Plan C Task 4b-F — array-of-struct-literal defect fixed (v154 -> v155 2026-09-19)
+
+Task 4b-F (the **F** half of the m1787 I/F pair) fixes the void-typing root cause
+of the Task 4b-I defect and MOVES the self-emission fixed point
+**`bcfa85a40279a5c7bc4d8e6fd5f8df91` -> `1ffd20c17fe28c88238bf3c7a286bdd5`**
+(hop1==hop2), seed **v36 -> v37** (archive md5
+`14d8ad3e853cfaea91755d3e11d9cd3e`). The `array_of_struct_literal_xmod` pin flips
+**GREEN -> OK** (dump rc=0, gcc clean, link+run rc=0, stdout
+`array of struct literal ok`).
+
+**Fix (2 loci).**
+1. `sf/src/semantic_analyzer.zig` `semanticAnalyzerResolveArrayInit`: derive the
+   element type from the literal's own annotation (`[_]T` -> `annot_elem_tid`,
+   `[N]T` -> `typeRegistryIndexedElemType(annot_tid)`) and push it as the
+   expected type around each element resolution. Anonymous aggregate/enum
+   literals now resolve instead of void. This fixes the whole void-typing class:
+   plain struct, tagged union, enum, inferred/annotated/explicit-length, and the
+   global position (all previously `error[3000]` void or `'zT_0' undeclared`).
+2. `sf/src/c89_emit.zig` `emitFieldAssign` array branch + `dceMarkAllReads`:
+   an array-typed struct field initialized from an array literal/value is now
+   byte-copied from `src` (C89 forbids array assignment) instead of zero-filled;
+   the DCE read-mark for `.assign_field` src is no longer skipped for array
+   fields (so the source construction is retained). This fixes
+   `Box{ .items = [_]Pair{ ... } }` (gcc `'zT_2' undeclared`) and the general
+   array-field zero-fill (silent wrong values). Note: this changes the emitted C
+   of `std_net.zig` `sin_zero` initialization (all-zero array copy instead of a
+   direct zero-fill) — runtime-identical, verified by the runtime gates.
+
+**Deliberately left (distinct bugs, declared).** These were pinned by 4b-I and
+are NOT fixed here (they are emission/coercion gaps, not the void-typing root
+cause; each warrants its own I/F pair):
+- `sf/src/lower.zig:5040` plain `=` element store for optional (needs wrap),
+  nested-array (needs aggregate copy), and string-literal->slice (needs
+  coercion) element kinds.
+- The unannotated tuple-literal shorthand `S{ .xs = .{ 1, 2 } }` (and the
+  `[_]Box{ .{ .xs = .{ ... } } }` inner form): the field value is a
+  `tuple_literal`, whose resolved type is not context-coerced to the array
+  field type, so it lowers to its first element. Explicit `[_]T{...}` /
+  `[N]T{...}` field forms are fixed.
+- `(literal)[0..]` frontend gap `error[3043]: unsupported slice_expr form/base`.
+
+**Corpus delta.** Universe **843** dirs, class map **790 OK / 28 GREEN / 25
+FAIL** (pre-fix **789 / 29 / 25**); the full-classifier diff is exactly the pin
+`GREEN -> OK`, zero unexpected movement. Runtime gate **134 PASS / 0 FAIL**;
+`check_emit_support.sh` **7/7**; `CLOSEOUT OK`; self-compile **48 `.c`, rc=0,
+0 errors, 0 PANIC**; 4-MD5 gate programs gol/lisp/json emitted C byte-identical
+(mud differs only in the runtime-identical `std_net` `sin_zero` zero-copy).
 
 ## Plan C Task 4b-I — array-of-struct-literal defect pinned (v152 -> v153; fix round 1 v153 -> v154 2026-09-19)
 

@@ -3380,13 +3380,25 @@ fn semanticAnalyzerResolveArrayInit(self: *SemanticAnalyzer, node_idx: u32) u32 
     var ec_n = @intCast(usize, ast_mod.astStoreNodeExtraChildCount(self.store, node_idx));
      if (ec_n == @intCast(usize, 0)) { self._stub_0 = saved; if (annot_tid != @intCast(u32, type_mod.TYPE_UNDEFINED)) { return annot_tid; } return type_mod.TYPE_VOID; }
      var arr_elem_tid: u32 = @intCast(u32, type_mod.TYPE_VOID);
+     // Task 4b-F: establish the array's element type from the literal's own
+     // annotation (`[_]T` -> annot_elem_tid, `[N]T` -> annot_tid's element) and
+     // push it as the expected type for each element, so anonymous aggregate /
+     // enum literals (which require an expected type) resolve instead of void.
+     var elem_expected: u32 = annot_elem_tid;
+     if (elem_expected == @intCast(u32, type_mod.TYPE_UNDEFINED) and annot_tid != @intCast(u32, type_mod.TYPE_UNDEFINED)) {
+         elem_expected = type_mod.typeRegistryIndexedElemType(self.registry, annot_tid);
+     }
      var aei: usize = @intCast(usize, 0);
      while (aei < ec_n) : (aei += @intCast(usize, 1)) {
          var el = ast_mod.astStoreNodeAt(self.store, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, aei)));
          var el_tid: u32 = @intCast(u32, type_mod.TYPE_VOID);
          if (el.kind == AstKind.char_literal) { el_tid = type_mod.TYPE_U8; }
          else if (el.kind == AstKind.int_literal) { el_tid = type_mod.TYPE_U32; }
-         else { el_tid = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, aei))); }
+         else {
+             if (elem_expected != @intCast(u32, type_mod.TYPE_UNDEFINED)) { pushExpectedType(self, elem_expected); }
+             el_tid = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, aei)));
+             if (elem_expected != @intCast(u32, type_mod.TYPE_UNDEFINED)) { popExpectedType(self); }
+         }
          if (el_tid == type_mod.TYPE_VOID) { self._stub_0 = saved; return type_mod.TYPE_VOID; }
          if (aei == @intCast(usize, 0)) { arr_elem_tid = el_tid; }
      }
