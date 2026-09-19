@@ -92,6 +92,7 @@ repro/mi_matrix/stdlib_parse_parseuint_xmod
 repro/mi_matrix/stdlib_parse_utoa64_xmod
 repro/mi_matrix/stdlib_parse_utoa_xmod
 repro/mi_matrix/stdlib_sort_binarysearchu32_xmod
+repro/mi_matrix/stdlib_sort_introsort_xmod
 repro/mi_matrix/stdlib_sort_sort_xmod
 repro/mi_matrix/stdlib_sort_sorti32_xmod
 repro/mi_matrix/stdlib_sort_sortstr_xmod
