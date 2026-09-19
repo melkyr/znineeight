@@ -1,4 +1,49 @@
-# mi_matrix corpus — expected-fail manifest (v157 2026-09-19)
+# mi_matrix corpus — expected-fail manifest (v158 2026-09-19)
+
+## Plan C hardening closeout — L4/L5 goldens + stress tier (v157 -> v158 2026-09-19)
+
+Plan C test-hardening (`docs/superpowers/plans/2026-09-18-plan-C-test-hardening.md`) is
+**COMPLETE** (Tasks 1-5). Docs/scripts/fixtures only — **no `sf/src` change**. The
+self-emission fixed point is **UNMOVED `fc9198f6c1a24c92ec136e741c81c975`**, and the seed is
+**NOT rotated** (stays **v39**, archive md5 `4e493be2625311fa11c8f421b732c59a`; the hardening
+adds no std module, so the archive `lib/` payload is unchanged).
+
+**Golden convention (binding).** Each discovered std fixture dir carries `expected.txt` (exact
+stdout bytes) + `expected.rc` (exit code). A missing golden is a FAIL (no silent skips);
+`scripts/stdlib/expected_dirs.txt` pins the discovered set so coverage cannot silently shrink.
+Goldens are runtime-only (stdout + rc), captured only after the observed output matched the
+fixture's documented GREEN contract, and each fixture runs 3× with byte-identical stdout
+(determinism R6). `stdlib_map_oom_xmod` / `stdlib_heap_oom_xmod` (Plan C) are the OOM probes.
+
+**New fixtures (12).**
+
+| fixture | kind | contract |
+|---|---|---|
+| `stdlib_parse_invalid_xmod` | expected-failure probe | malformed numeric input → `null` (all five parsers); stdout `parse invalid ok`, rc 0 |
+| `stdlib_base64_invalid_xmod` | expected-failure probe | non-alphabet / bad-length / misplaced-`=` input → `error.InvalidInput`, arena untouched; stdout `base64 invalid ok`, rc 0 |
+| `stdlib_utf8_invalid_xmod` | expected-failure probe | invalid continuation / overlong / surrogate / >U+10FFFF / impossible lead → `decode == null`; stdout `utf8 invalid ok`, rc 0 |
+| `stdlib_map_stress_xmod` | stress | capacity sweep 8..1024 at 50% load; heavy linear probing; full-table OOM boundary; string-key lifetime; deterministic slot layout |
+| `stdlib_sort_stress_xmod` | stress | 4096 full-range u32 (fixed-seed LCG) + bounded histograms; ascending/descending/duplicate/all-equal; `binarySearchU32` present+absent |
+| `stdlib_heap_stress_xmod` | stress | 2000 pushes into a capacity-1 heap (every doubling) + full drain; tie stability; interleave; empty-pop boundary |
+| `stdlib_rle_stress_xmod` | stress | 128-byte token boundaries (128..4096); alternating; empty; all 256 values; `encodedLen`/`decodedLen` + `decode∘encode` |
+| `stdlib_crypto_stress_xmod` | stress | RFC 3174 SHA-1 / FIPS 180-4 SHA-256 / RFC 1321 MD5 / IEEE 802.3 CRC-32 KATs; streaming-vs-one-shot over many chunk splittings; empty |
+| `stdlib_parse_stress_xmod` | stress | valid/invalid tables; i32/u32/i64/u64 overflow boundaries; itoa/utoa round-trips; buffer-end writes; ftoa precision/carry |
+| `stdlib_base64_stress_xmod` | stress | RFC 4648 §10 vectors; whitespace/malformed rejection; `decode∘encode` over adversarial lengths × patterns; all 256 values |
+| `stdlib_hex_stress_xmod` | stress | standard vectors; case-insensitive decode; whitespace/non-hex/odd-length rejection; round-trips; all 256 values |
+| `stdlib_utf8_stress_xmod` | stress | boundary code points; invalid continuations/overlong/surrogates; encode rejects + undersized buffer; `countCodepoints` over mixed/all-256 |
+
+Inputs are hand-written deterministic tables (the only "random-looking" inputs are explicit
+fixed-literal-seed LCG loops — no external PRNG).
+
+**Gates (seed-built fixed-point compiler `fc9198f6`).** Runtime gate **177 PASS / 0 FAIL over
+177 dirs** (3× determinism internal; pin `scripts/stdlib/expected_dirs.txt` = **165 -> 177**
+data lines: 171 `repro/mi_matrix/stdlib_*` + 6 `stdlib_test/*`). `scripts/check_emit_support.sh`
+**7/7** byte-identical. Self-compile `-ffast --dump-c89` rc=0, 48 `.c` + 48 `.h`, 0 `error[`,
+0 PANIC. Corpus `-ffast` dump+gcc classifier **886 dirs = 833 OK / 28 GREEN / 25 FAIL / 0 ICE /
+0 CRASH** (874 -> 886: the 12 new dirs all classify OK; every pre-existing dir
+class-identical). `scripts/closeout/verify_upgraded.sh` **CLOSEOUT OK** (A1-A5 / B1-B7 / C1).
+Seed v39 round-trip re-verified (two-hop closure hop1 == hop2 == `fc9198f6`). Full report:
+`.superpowers/sdd/2026-09-18-plan-C-test-hardening/task-5-report.md`.
 
 ## Plan C closeout — L4 + L5 landed; std-lib extension program COMPLETE (v156 -> v157 2026-09-19)
 
@@ -888,10 +933,8 @@ out of the current plan scope. No ruling yet.
 
 ## Next plan
 
-Plan B hardening complete. NEXT: author `docs/superpowers/plans/2026-09-18-plan-C-test-hardening.md`
-(L4/L5 goldens + stress tier), then execute `docs/superpowers/plans/2026-09-17-std-lib-plan-c-data-codecs.md`.
-Plan D (network async) is recorded at
-`docs/superpowers/plans/2026-09-18-plan-D-network-async.md` and scheduled after A/B/C.
+Plan C hardening complete. The std-lib extension program is COMPLETE.
+No successor plan. Program spec: `docs/superpowers/specs/2026-09-17-std-lib-extension-program-design.md`.
 
 ---
 
