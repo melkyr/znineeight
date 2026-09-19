@@ -382,6 +382,13 @@ No successor plan. Program spec: `docs/superpowers/specs/2026-09-17-std-lib-exte
 
 ---
 
+## Next plan
+
+Plan C complete. The std-lib extension program is COMPLETE.
+No successor plan. Program spec: `docs/superpowers/specs/2026-09-17-std-lib-extension-program-design.md`.
+
+---
+
 ## Self-Review
 
 - **Spec coverage:** spec §4 Plan C (all nine modules) → Tasks 1-8; §5 R1/R3/R6 → the constraints; §5 R7b → Task 9 Step 2; §6 crypto gate → Task 1 Step 5; §7 distribution → Task 9 Steps 1/5/6; §10 index → the `Sequence:` line + Task 9 Step 7; the Task 1b I/F pair (the found field-store ICE) → Tasks 1b-I/1b-F.

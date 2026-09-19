@@ -163,6 +163,8 @@ repro/mi_matrix/stdlib_utf8_countcodepoints_xmod
 repro/mi_matrix/stdlib_utf8_decode_xmod
 repro/mi_matrix/stdlib_utf8_encode_xmod
 stdlib_test/bits_buf_str_usage
+stdlib_test/crypto_codec_usage
 stdlib_test/file_stdin_usage
 stdlib_test/file_stream_usage
+stdlib_test/map_sort_heap_usage
 stdlib_test/os_time_usage

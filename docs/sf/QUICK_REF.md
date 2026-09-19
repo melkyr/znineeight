@@ -27,30 +27,35 @@ bash sf/scripts/build_release.sh
 **Seed location + contents:** the committed rotating seed is
 `release/seed/zig1-seed.tgz` (git-tracked; provenance + rotation history in
 `release/seed/CHANGELOG.md`, full recipes in `release/seed/SEED_README.txt`).
-Current seed is **seed v35** (archive md5 `981d58539c31cd5b66d97aef4ee87ebe`; Plan C Task 2b-F lexer f64 exponent-after-decimal-point fix — the fixed point **MOVES** to `9265739b7b5e7b1626b8db7ad4255fc5`).
+Current seed is **seed v39** (archive md5 `4e493be2625311fa11c8f421b732c59a`; Plan C closeout — L4 + L5 landed, the archive `lib/` payload grew to all 29 std `.zig`; the fixed point stays **UNMOVED** `fc9198f6c1a24c92ec136e741c81c975`).
 Top-level `zig1-seed/`: `zig1` (reference binary md5
-`9265739b7b5e7b1626b8db7ad4255fc5`), `gen/` (its self-emission C89 module set —
+`fc9198f6c1a24c92ec136e741c81c975`), `gen/` (its self-emission C89 module set —
 45 `.c` + 46 `.h`, including `zig_special_types.h`; the emitted runtime/support
 sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/` (the emitted 5:
 `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`, `zig_runtime.c`,
-`zig_pal.c` — NO `net_prelude.h`), `lib/` (the 21 std `.zig` the v35 archive
-carries: `std`, `std_io`, `std_arena`, `std_net`, `std_str`, `std_mem`,
-`std_math`, `std_debug`, `std_async`, `std_bits`, `std_os`, `std_os_pal`,
-`std_time`, `std_time_pal`, `std_buf`, `std_file`, `std_file_pal`, `std_stdin`,
-`std_stdin_pal`, `std_stream`, `std_crypto`),
+`zig_pal.c` — NO `net_prelude.h`), `lib/` (all 29 std `.zig` the v39 archive
+carries: `std.zig` plus the 28 `std_*.zig`),
 `SEED_README.txt`.
-**Std-module inventory (Plan C Task 2b-F, 2026-09-18):** the CURRENT `sf/src` std set is
-**21** `.zig` (the list above; L3 resources + L6 capstone + Plan C Task 1
-`std_crypto`; `std_net` also gained the UDP surface). `scripts/seed/build_from_seed.sh` installs all 21 into the
-rebuilt compiler's `lib/`, and the rotated **v35** archive carries all 21 (Plan B
-std set + Plan C Task 1 `std_crypto`; Task 2b-F rotated the seed). See `repro/mi_matrix/EXPECTED_FAIL.md` v151.
+**Std-module inventory (Plan C closeout, 2026-09-19):** the CURRENT `sf/src` std set is
+**28** `std_*.zig` + `std.zig` (all six blueprint layers complete: `std_io`,
+`std_arena`, `std_str`, `std_mem`, `std_math`, `std_debug`, `std_net`,
+`std_async`, `std_bits`, `std_os`, `std_os_pal`, `std_time`, `std_time_pal`,
+`std_buf`, `std_file`, `std_file_pal`, `std_stdin`, `std_stdin_pal`,
+`std_stream`, `std_crypto`, `std_parse`, `std_map`, `std_sort`, `std_heap`,
+`std_rle`, `std_base64`, `std_hex`, `std_utf8`). `std.zig` re-exports the core
+**12** names (`io/arena/str/mem/math/debug/net/async/bits/os/time/buf`); the
+higher-layer modules (L3-L6) are imported by path, not re-exported (Ruling F1).
+`scripts/seed/build_from_seed.sh` installs all 29 into the rebuilt compiler's
+`lib/`, and the rotated **v39** archive carries all 29. The std-lib extension
+program (`docs/superpowers/specs/2026-09-17-std-lib-extension-program-design.md`)
+is **COMPLETE**; the Plan C closeout adds the R7b usage programs
+`stdlib_test/map_sort_heap_usage` + `stdlib_test/crypto_codec_usage`. See
+`repro/mi_matrix/EXPECTED_FAIL.md` v157.
 The archived binary and the self-emission fixed point
-`9265739b7b5e7b1626b8db7ad4255fc5` are the SAME compiler state (the v35
-provenance entry in `release/seed/CHANGELOG.md` records HEAD `e1f1bf8c`; the
-archive carries the Task 2b-F `sf/src` fixes (lower.zig literal-width temp type +
-`util/format.zig` self-contained 17-digit dtoa + `lexer.zig` exponent-after-dot
-parse fix), which MOVED the fixed point). zig0 is retired; the seed model
-(`scripts/seed/build_from_seed.sh`) is the only rebuild path.
+`fc9198f6c1a24c92ec136e741c81c975` are the SAME compiler state (the v39
+provenance entry in `release/seed/CHANGELOG.md` records HEAD `5734a66b`). zig0 is
+retired; the seed model (`scripts/seed/build_from_seed.sh`) is the only rebuild
+path.
 **C89-AHEAD note (2026-09-13):** `runtime/` now carries the compiler's **emitted,
 mode-specific** support (the `-ffast` self-emission support), not the canonical
 `-fsafe` `sf/src/include` files, so a gcc-only rebuild of the archive C
@@ -69,8 +74,8 @@ cd /workspace/znineeight
 bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out_dir>
 ```
 - GATE: `=== [seed] Done: <out_dir> ===`; result `<out_dir>/zig1_5_clean` md5 MUST equal the recorded
-  fixed point `9265739b7b5e7b1626b8db7ad4255fc5` (hop1 == hop2 closure). Set
-  `FIXED_POINT_MD5=9265739b7b5e7b1626b8db7ad4255fc5` to gate on it explicitly.
+  fixed point `fc9198f6c1a24c92ec136e741c81c975` (hop1 == hop2 closure). Set
+  `FIXED_POINT_MD5=fc9198f6c1a24c92ec136e741c81c975` to gate on it explicitly.
 - The dump MUST run from the repo root with the RELATIVE `sf/src/main.zig` path (module basename-hash
   tokens are path-derived). `<out_dir>` MUST be a fresh dir (the script `rm -rf`s it) — never point it
   at `/tmp/fx_subfolder` (the reference compiler lives there).
@@ -80,7 +85,7 @@ bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out_dir>
 **Rebuild recipe 2 (seed binary lost — rebuild from the seed's C only):** self-contained, no repo
 include path, no zig0: `gcc -c -I <seed>/runtime` over `gen/*.c`, link `<seed>/runtime/zig_runtime.c`
 + `<seed>/runtime/zig_pal.c` + `<seed>/c_exit.c`. Exact commands in `release/seed/SEED_README.txt`.
-Binary md5 MUST equal `9265739b7b5e7b1626b8db7ad4255fc5`.
+Binary md5 MUST equal `fc9198f6c1a24c92ec136e741c81c975`.
 
 **Flag-set rule (binding):** every `gcc -c` MUST be
 `gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc>`
@@ -88,7 +93,9 @@ Binary md5 MUST equal `9265739b7b5e7b1626b8db7ad4255fc5`.
 `zig_runtime.c` + `zig_pal.c` + `c_exit.c` (`zig_pal.c` alone is insufficient).
 
 **Rotation protocol (closeout-only):** rotate the seed ONLY at a plan closeout that moved the
-self-emission fixed point, via
+self-emission fixed point **or changed the archive's `lib/` payload** (the archive embeds the
+std `.zig` set, so a plan that adds/removes std modules rotates the seed even when the fixed
+point is unmoved), via
 `bash scripts/seed/archive_seed.sh <zig1_binary> <gen_dir> release/seed/zig1-seed.tgz --update-changelog`
 (gcc-rebuilds the archive C self-contained to the NEW fixed point + prepends the provenance entry to
 `release/seed/CHANGELOG.md`). The seed lives at `release/seed/` (tracked), never `/tmp`.
@@ -162,7 +169,7 @@ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
   via the search path: (1) importer's dir, (2) `-I`/`--lib-dir` dirs in CLI order, (3) the default
   install path `<exe_dir>/lib`, (4) CWD. To run a migrated example/repro you must first install the
   canonical std lib next to the compiler under test:
-  `mkdir -p <exe_dir>/lib && cp sf/src/std.zig sf/src/std_io.zig sf/src/std_arena.zig sf/src/std_net.zig sf/src/std_str.zig sf/src/std_mem.zig sf/src/std_math.zig sf/src/std_debug.zig sf/src/std_async.zig sf/src/std_bits.zig sf/src/std_os.zig sf/src/std_os_pal.zig sf/src/std_time.zig sf/src/std_time_pal.zig sf/src/std_buf.zig sf/src/std_file.zig sf/src/std_file_pal.zig sf/src/std_stdin.zig sf/src/std_stdin_pal.zig sf/src/std_stream.zig <exe_dir>/lib/`
+  `mkdir -p <exe_dir>/lib && cp sf/src/std.zig sf/src/std_io.zig sf/src/std_arena.zig sf/src/std_net.zig sf/src/std_str.zig sf/src/std_mem.zig sf/src/std_math.zig sf/src/std_debug.zig sf/src/std_async.zig sf/src/std_bits.zig sf/src/std_os.zig sf/src/std_os_pal.zig sf/src/std_time.zig sf/src/std_time_pal.zig sf/src/std_buf.zig sf/src/std_file.zig sf/src/std_file_pal.zig sf/src/std_stdin.zig sf/src/std_stdin_pal.zig sf/src/std_stream.zig sf/src/std_crypto.zig sf/src/std_parse.zig sf/src/std_map.zig sf/src/std_sort.zig sf/src/std_heap.zig sf/src/std_rle.zig sf/src/std_base64.zig sf/src/std_hex.zig sf/src/std_utf8.zig <exe_dir>/lib/`
   (for `/tmp/fx_subfolder/zig1` that is `/tmp/fx_subfolder/lib/`). The local `std*.zig` copies are
   gone from the migrated examples/repros; `std_import_bare_xmod/local/` remains a fixture (the Task R
   `--lib-dir` GREEN test), and the 4 `r_fallback_*` repros (fnret / constalias / constalias_prepass /

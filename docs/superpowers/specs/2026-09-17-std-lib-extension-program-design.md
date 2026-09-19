@@ -307,3 +307,10 @@ beyond the three maps and one heap, a testing framework) are out of scope.
 Each plan's header `Sequence:` line names its predecessor and successor;
 the successor plan is the "next plan to follow up" for the plan just
 completed.
+
+**Completion (2026-09-19).** Task 0 → Plan A → Plan B → Plan C are COMPLETE;
+the std-lib extension program is COMPLETE. There is no successor plan within
+the program. Plan D (`2026-09-18-plan-D-network-async.md`) remains a recorded,
+separately-scheduled follow-up (deferred from Plan B, not part of this program).
+Plan C closeout: `docs/superpowers/plans/2026-09-17-std-lib-plan-c-data-codecs.md`
+§ "Next plan"; seed v39; fixed point `fc9198f6c1a24c92ec136e741c81c975`.

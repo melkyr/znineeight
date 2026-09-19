@@ -1,4 +1,37 @@
-# mi_matrix corpus — expected-fail manifest (v156 2026-09-19)
+# mi_matrix corpus — expected-fail manifest (v157 2026-09-19)
+
+## Plan C closeout — L4 + L5 landed; std-lib extension program COMPLETE (v156 -> v157 2026-09-19)
+
+Plan C (`docs/superpowers/plans/2026-09-17-std-lib-plan-c-data-codecs.md`) is
+**COMPLETE**, and with it the whole std-lib extension program
+(`docs/superpowers/specs/2026-09-17-std-lib-extension-program-design.md`): all
+six blueprint layers have landed. The closeout adds the band's two R7b usage
+programs and rotates the seed `lib/` payload. **No `sf/src` change**: the
+self-emission fixed point stays **UNMOVED
+`fc9198f6c1a24c92ec136e741c81c975`**. The seed rotates **v38 -> v39** (archive
+md5 `372385a68099d19269b099ef6e4a5e27` -> `4e493be2625311fa11c8f421b732c59a`)
+because the archive embeds `lib/`, which now carries all 28 `std_*.zig` +
+`std.zig`. (Plan C's four authorized compiler-defect I/F fixes — Tasks 1b-F,
+2b-F, 3b-F, 4b-F — landed earlier and their fixed-point moves are recorded in
+v144-v156.)
+
+**New usage programs (R7b, 2).**
+
+| dir | composition | stdout contract (rc 0) |
+|---|---|---|
+| `stdlib_test/map_sort_heap_usage` | `std_map` + `std_sort` + `std_heap` | `map_sort_heap_usage` / `map-len: 9` / `sorted: 0 0 1 1 2 2 3 4 9` / `search-9: 8` / `search-5: missing` / `heap: 0 0 1 1 2 2 3 4 9` / `stable: 1` / `map_sort_heap ok` |
+| `stdlib_test/crypto_codec_usage` | `std_crypto` + `std_base64` + `std_hex` + `std_utf8` + `std_buf` | `crypto_codec_usage` / `codepoints: 5` / `cp-first: 90` / `cp-second: 233` / `b64: Wjk4IMOp` / `hex: 5a393820c3a9` / `sha256: 390edd46037981d883bd4363c30dccc4bc9b01b08dbc43192415539910872f09` / `crc32: f2e959aa` / `roundtrip: 1` / `invalid: 1` / `buf-len: 27` / `buf-crc32: ab387860` / `crypto_codec ok` |
+
+Both are deterministic (no address/clock/PID input), 3x emission-md5 identical,
+and byte-identical under `-fsafe` and `-ffast`. `scripts/stdlib/expected_dirs.txt`
+pins the discovered set **163 -> 165**.
+
+**Corpus delta.** Universe **872 -> 874** (+2, the two usage programs). Class map
+**819 OK / 28 GREEN / 25 FAIL -> 821 OK / 28 GREEN / 25 FAIL**; both new dirs
+classify **OK** and all 872 pre-existing dirs are class-identical (no `sf/src`
+change). Runtime gate **163 -> 165 PASS / 0 FAIL over 165 dirs** (3x
+determinism). `check_emit_support.sh` **7/7**; `scripts/closeout/verify_upgraded.sh`
+**CLOSEOUT OK** (A1-A5 / B1-B7 / C1).
 
 ## Plan C Task 4b-F fix round 1 — over-read guard + 4-MD5 emitted-C re-baseline (v155 -> v156 2026-09-19)
 
