@@ -321,6 +321,19 @@
 
 ---
 
+### Task 7b-F: Give the base64/hex decoders an invalid-input error channel (F)
+
+**Files:**
+- Modify: `sf/src/std_base64.zig`, `sf/src/std_hex.zig` (the `decode` error sets); the `stdlib_base64_*`/`stdlib_hex_*` fixtures.
+
+**Context (operator ruling m1842):** Task 7's review found that both decoders signalled invalid/whitespace input by returning a length-0 slice, colliding with a valid empty result — forced by the blueprint's `error{OutOfMemory}`-only set. The operator ruled: extend the API with an error channel.
+
+- [ ] **Step 1: Add `error.InvalidInput`** to the `decode` error sets (both modules) and return it for malformed/whitespace input; keep a length-0 slice (no error) for a valid empty input.
+- [ ] **Step 2: Amend the fixtures** so invalid input is pinned as `error.InvalidInput` and empty input as a valid empty slice; keep the RFC 4648 vectors GREEN.
+- [ ] **Step 3: GREEN + safety/determinism gates + fixed point UNMOVED + commit** (`fix(std): base64/hex decode invalid-input error channel (Plan C Task 7b-F)`). Std-only: the fixed point stays UNMOVED; no seed rotation.
+
+---
+
 ### Task 8: `std_utf8` (L5)
 
 **Files:**
