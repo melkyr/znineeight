@@ -3,8 +3,10 @@
 // cooperative-yield): `FileLineReader` over a caller-owned `*std_file.File`.
 // Plan D Task 2 lands the socket half: `SocketLineReader` over a caller-owned
 // `*std_net.Socket` (caller sets it non-blocking for the async path).
-// `MsgReader` and an optional `std.async.wait(handle)` remain Plan D (recorded,
-// not implemented).
+// Plan D Task 3 lands `MsgReader`, a length-prefix frame reader over the same
+// non-blocking primitive (u32 big-endian prefix; oversize -> error.FrameTooLarge;
+// zero-length prefix -> a valid empty frame). An optional
+// `std.async.wait(handle)` remains Plan D (recorded, not implemented).
 //
 // Model C: there is no executor and no poll loop. The caller drives the landed
 // std.async scheduler with tick(); a coroutine yields only when it chooses to.
@@ -499,4 +501,139 @@ pub fn readSocketLineAsync(lr: *SocketLineReader) !?[]u8 {
     if (status == SOCK_READY) return takeSocketLine(lr);
     if (status == SOCK_OVERFLOW) return takeSocketOverflow(lr);
     return takeSocketRest(lr);
+}
+
+// ============================================================================
+// MsgReader (Plan D Task 3) — length-prefix frame reader.
+//
+// Operator framing ruling (binding):
+//   1. The length prefix is a u32 in NETWORK byte order (big-endian); it is
+//      decoded with the shipped byte-order helper (net_mod.htonl — the same
+//      byte reversal as ntohl; std_net exposes htonl).
+//   2. A declared length larger than the reader buffer capacity (`buf.len`) is
+//      `error.FrameTooLarge`, the operator-authorized std_stream framing error.
+//      It is NOT part of std_net.NetError: the inferred error set of the
+//      `!?[]u8` signatures unions NetError with this member. R2: StreamError
+//      stays the module's only named error set.
+//   3. A zero-length frame (prefix 0) is a VALID empty frame: a length-0 slice,
+//      never null.
+//
+// C1: readMsgSync/readMsgAsync share the module, inferred error set, and
+// return type. C3: the sync path never calls the async one — the read
+// primitive is shared, the suspend handling lives only in the await* wrappers.
+// A frame truncated by peer close (EOF mid-prefix or mid-body) surfaces as
+// null, the same EOF contract as the line readers (no unauthorized error).
+
+pub const MsgReader = struct {
+    src: *net_mod.Socket,
+    buf: []u8,
+    pending: []u8,
+};
+
+pub fn initMsgReader(src: *net_mod.Socket, buf: []u8) MsgReader {
+    return MsgReader{ .src = src, .buf = buf, .pending = buf[0..0] };
+}
+
+// The prefix is accumulated one wire byte at a time into a host-order u32
+// through a byte pointer (`rp`), so no array local is live across a suspension
+// (the async frame-layout pass cannot hoist a C array). net_mod.htonl
+// (== ntohl) then reverses the wire bytes to host order on a little-endian
+// target (identity on a big-endian target).
+
+// One non-blocking read attempt into `dst`. Returns 1 with the byte count in
+// `out_n` (0 = EOF) on success, 0 when the socket would block. A real socket
+// error propagates. Retry-safe: `dst` is untouched on a would-block.
+fn msgTryRead(mr: *MsgReader, dst: []u8, out_n: *usize) net_mod.NetError!u8 {
+    if (dst.len == 0) {
+        out_n.* = 0;
+        return 1;
+    }
+    const got = net_mod.recvNonBlocking(mr.src, dst) catch |e| {
+        if (e == error.WouldBlock) return 0;
+        return e;
+    };
+    out_n.* = got;
+    return 1;
+}
+
+// Suspend once per would-block and retry until at least one byte arrives or
+// EOF. Returns the byte count (0 = EOF).
+fn awaitMsgRead(mr: *MsgReader, dst: []u8) net_mod.NetError!usize {
+    var n: usize = 0;
+    while (true) {
+        const st = try msgTryRead(mr, dst, &n);
+        if (st == 1) return n;
+        _ = @asyncSuspend(null);
+    }
+    return 0;
+}
+
+// Blocking: read the 4-byte prefix then the body. No suspension. The socket
+// must be in blocking mode; a would-block read on a non-blocking socket is
+// surfaced as error.WouldBlock.
+pub fn readMsgSync(mr: *MsgReader) !?[]u8 {
+    if (mr.buf.len == 0) return null;
+    var raw: u32 = 0;
+    var rp: [*]u8 = @ptrCast([*]u8, &raw);
+    var got: usize = 0;
+    while (got < 4) {
+        const n = try net_mod.recvNonBlocking(mr.src, mr.buf[0..1]);
+        if (n == 0) return null;
+        rp[got] = mr.buf[0];
+        got += 1;
+    }
+    const len: u32 = net_mod.htonl(raw);
+    if (@intCast(usize, len) > mr.buf.len) return error.FrameTooLarge;
+    mr.pending = mr.buf[0..0];
+    while (mr.pending.len < @intCast(usize, len)) {
+        const n = try net_mod.recvNonBlocking(mr.src, mr.buf[mr.pending.len..@intCast(usize, len)]);
+        if (n == 0) return null;
+        mr.pending = mr.buf[0 .. mr.pending.len + n];
+    }
+    const frame: []u8 = mr.pending;
+    mr.pending = mr.buf[0..0];
+    return frame;
+}
+
+// --- async (Model C): suspend on WouldBlock, resume on the next tick ---
+
+const MSG_EOF: u8 = 0;
+const MSG_READY: u8 = 1;
+const MSG_TOOBIG: u8 = 2;
+
+// Cooperative-yield core returning a scalar status so the suspending loops and
+// the `!?[]u8` result never share one frame (P2/P3 async frame-layout guard;
+// the same workaround as awaitLine/awaitSocketLine). readMsgAsync maps it.
+fn awaitMsg(mr: *MsgReader) !u8 {
+    if (mr.buf.len == 0) return MSG_EOF;
+    var raw: u32 = 0;
+    var rp: [*]u8 = @ptrCast([*]u8, &raw);
+    var got: usize = 0;
+    while (got < 4) {
+        const n = try awaitMsgRead(mr, mr.buf[0..1]);
+        if (n == 0) return MSG_EOF;
+        rp[got] = mr.buf[0];
+        got += 1;
+    }
+    const len: u32 = net_mod.htonl(raw);
+    if (@intCast(usize, len) > mr.buf.len) return MSG_TOOBIG;
+    mr.pending = mr.buf[0..0];
+    while (mr.pending.len < @intCast(usize, len)) {
+        const n = try awaitMsgRead(mr, mr.buf[mr.pending.len..@intCast(usize, len)]);
+        if (n == 0) return MSG_EOF;
+        mr.pending = mr.buf[0 .. mr.pending.len + n];
+    }
+    return MSG_READY;
+}
+
+// Cooperative-yield entry point. A SEPARATE implementation from readMsgSync
+// (it never calls it); it suspends on error.WouldBlock and is re-driven next
+// tick (Model C).
+pub fn readMsgAsync(mr: *MsgReader) !?[]u8 {
+    const status = try awaitMsg(mr);
+    if (status == MSG_EOF) return null;
+    if (status == MSG_TOOBIG) return error.FrameTooLarge;
+    const frame: []u8 = mr.pending;
+    mr.pending = mr.buf[0..0];
+    return frame;
 }
