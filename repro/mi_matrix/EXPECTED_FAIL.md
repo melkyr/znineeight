@@ -1,4 +1,35 @@
-# mi_matrix corpus — expected-fail manifest (v155 2026-09-19)
+# mi_matrix corpus — expected-fail manifest (v156 2026-09-19)
+
+## Plan C Task 4b-F fix round 1 — over-read guard + 4-MD5 emitted-C re-baseline (v155 -> v156 2026-09-19)
+
+Review round 1 (operator ruling m1814) fixed one Critical and one Important.
+
+**Important — over-read guard.** The `emitFieldAssign` array branch (v155) copied
+`sizeof(dst.field)` bytes from `&src` unconditionally, so the declared residual
+`S{ .xs = .{ 1, 2 } }` (whose `src` lowers to a scalar) read past `src`. The byte
+copy is now emitted ONLY when the `src` temp is an array of the same element type
+and length as the field; otherwise it falls back to the safe zero-fill (field
+zeroed, values still wrong — the residual stays declared). `mud_server`'s
+`sin_zero` src is the same `[8]u8` array, so the correct byte copy is preserved.
+
+**Critical — the 4-MD5 gate is the `--dump-c89` EMITTED-C hash, not program
+stdout** (`docs/sf/QUICK_REF.md` "Byte-identical gate"; recipe
+`zig1 --dump-c89 <ENTRY> > /tmp/new.c`). Every gate program emits `std_net`
+(`std.zig` re-exports it), so the v155 `sin_zero` byte-copy change moves ALL FOUR
+emitted-C dumps, not just mud. Re-baselined (operator-approved, runtime-identical):
+gol `75c09bd8…` -> `ce222a5d13ed168368af9ebbfe570d78`, lisp `cad5f491…` ->
+`1bcb5270864bb07d2e47654f75e3d3aa`, json `6cb272d1…` ->
+`0e6f1db53f5de7aede2d7258258b6030`, mud `b9321f7c…` ->
+`409cf8c77b104a194a15e9b926d1b5df`. Runtime PRE vs POST verified byte-identical
+by execution: gol stdout `fcbf7e7c…` rc=0, lisp `(+ 1 2)` stdout `b3d9f897…`
+rc=0, json stdout `8bda3d5a…` rc=0, mud canonical session server stdout
+`66c8f0ab…` / client `93147d0f…`.
+
+Fixed point `1ffd20c1…` -> **`fc9198f6c1a24c92ec136e741c81c975`** (hop1==hop2);
+seed **v37 -> v38** (archive md5 `372385a68099d19269b099ef6e4a5e27`). Pin GREEN,
+corpus 843 = 790 OK / 28 GREEN / 25 FAIL (only pin `GREEN -> OK`), runtime gate
+134 PASS / 0 FAIL, `check_emit_support.sh` 7/7, self-compile 48 `.c` / 0 err /
+0 PANIC, `CLOSEOUT OK`.
 
 ## Plan C Task 4b-F — array-of-struct-literal defect fixed (v154 -> v155 2026-09-19)
 
@@ -45,8 +76,11 @@ cause; each warrants its own I/F pair):
 FAIL** (pre-fix **789 / 29 / 25**); the full-classifier diff is exactly the pin
 `GREEN -> OK`, zero unexpected movement. Runtime gate **134 PASS / 0 FAIL**;
 `check_emit_support.sh` **7/7**; `CLOSEOUT OK`; self-compile **48 `.c`, rc=0,
-0 errors, 0 PANIC**; 4-MD5 gate programs gol/lisp/json emitted C byte-identical
-(mud differs only in the runtime-identical `std_net` `sin_zero` zero-copy).
+0 errors, 0 PANIC**. **CORRECTED in v156:** the 4-MD5 gate is the `--dump-c89`
+EMITTED-C hash (not program stdout); the `sin_zero` change moves all four
+emitted-C dumps — see the v156 section above for the re-baselined values and the
+runtime-identity evidence. (The v155 text originally claimed gol/lisp/json emitted
+C was byte-identical; that was wrong.)
 
 ## Plan C Task 4b-I — array-of-struct-literal defect pinned (v152 -> v153; fix round 1 v153 -> v154 2026-09-19)
 

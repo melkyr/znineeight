@@ -262,6 +262,8 @@ fn emitFieldAssign(writer: *BufferedWriter, indent_val: u32, registry: *TypeRegi
     var found: u8 = @intCast(u8, 0);
     var is_arr: [1]u32 = [1]u32{@intCast(u32, 0)};
     var arr_len: [1]u32 = [1]u32{@intCast(u32, 0)};
+    var field_arr_tid: u32 = @intCast(u32, 0xFFFFFFFF);
+    var field_arr_elem: u32 = @intCast(u32, 0xFFFFFFFF);
     var cast_name: []const u8 = "";
     var fld_name_val: []const u8 = fn_prefix;
     var tj: usize = @intCast(usize, 0);
@@ -330,6 +332,8 @@ fn emitFieldAssign(writer: *BufferedWriter, indent_val: u32, registry: *TypeRegi
                         var afap: type_mod.ArrayPayload = registry.array_items[@intCast(usize, af_fety.payload_idx)];
                         is_arr[0] = @intCast(u32, 1);
                         arr_len[0] = afap.length;
+                        field_arr_tid = fe.type_id;
+                        field_arr_elem = afap.elem;
                     }
                 } else if (bty.kind == TypeKind.union_type or bty.kind == TypeKind.packed_union_type) {
                     var dot_s: []const u8 = ".";
@@ -345,6 +349,8 @@ fn emitFieldAssign(writer: *BufferedWriter, indent_val: u32, registry: *TypeRegi
                         var afap: type_mod.ArrayPayload = registry.array_items[@intCast(usize, af_fety.payload_idx)];
                         is_arr[0] = @intCast(u32, 1);
                         arr_len[0] = afap.length;
+                        field_arr_tid = fe.type_id;
+                        field_arr_elem = afap.elem;
                     }
                 }
             }
@@ -367,22 +373,57 @@ fn emitFieldAssign(writer: *BufferedWriter, indent_val: u32, registry: *TypeRegi
         // literal/value must be copied from `src`; the old code zero-filled
         // and discarded the value. C89 forbids array assignment, so copy the
         // whole field storage byte-wise (any element kind / nesting depth),
-        // matching the `.assign` / `.assign_index` array-copy paths.
-        var afsemi: []const u8 = ";\n"; bufferedWriterWrite(writer, afsemi);
-        bufferedWriterWriteIndent(writer, indent_val);
-        var afblk: []const u8 = "{\n"; bufferedWriterWrite(writer, afblk);
-        var afli: []const u8 = "    unsigned int _j = 0;\n"; bufferedWriterWrite(writer, afli);
-        var aflw: []const u8 = "    while (_j < sizeof("; bufferedWriterWrite(writer, aflw);
-        bufferedWriterWrite(writer, base);
-        var dot_s2: []const u8 = "."; bufferedWriterWrite(writer, dot_s2);
-        bufferedWriterWrite(writer, fld_name_val);
-        var aflb2: []const u8 = ")) {\n        ((unsigned char*)&"; bufferedWriterWrite(writer, aflb2);
-        bufferedWriterWrite(writer, base);
-        var dot_s2b: []const u8 = "."; bufferedWriterWrite(writer, dot_s2b);
-        bufferedWriterWrite(writer, fld_name_val);
-        var aflb3: []const u8 = ")[_j] = ((unsigned char*)&"; bufferedWriterWrite(writer, aflb3);
-        bufferedWriterWrite(writer, src);
-        var aflb4: []const u8 = ")[_j];\n        _j++;\n    }\n}\n"; bufferedWriterWrite(writer, aflb4);
+        // matching the `.assign` / `.assign_index` array-copy paths. The copy
+        // is emitted ONLY when `src` is the SAME array type as the field, so a
+        // non-array/short `src` (e.g. the declared tuple-literal shorthand
+        // residual `S{ .xs = .{1,2} }`, whose src lowers to a scalar) can never
+        // over-read `src`; that case falls back to the safe zero-fill below.
+        var src_same_arr: u8 = @intCast(u8, 0);
+        if (field_arr_tid != @intCast(u32, 0xFFFFFFFF)) {
+            var saj: usize = @intCast(usize, 0);
+            while (saj < hoisted_temps_len) : (saj += @intCast(usize, 1)) {
+                var saht: lir_mod.TempDecl = hoisted_temps_items[saj];
+                if (saht.temp_id == src_temp) {
+                    if (saht.type_id != type_mod.TYPE_UNDEFINED) {
+                        var sahty = registry.types_items[@intCast(usize, saht.type_id)];
+                        if (sahty.kind == TypeKind.array_type) {
+                            var saap = registry.array_items[@intCast(usize, sahty.payload_idx)];
+                            if (saap.elem == field_arr_elem and saap.length == arr_len[0]) { src_same_arr = @intCast(u8, 1); }
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+        if (src_same_arr != @intCast(u8, 0)) {
+            var afsemi: []const u8 = ";\n"; bufferedWriterWrite(writer, afsemi);
+            bufferedWriterWriteIndent(writer, indent_val);
+            var afblk: []const u8 = "{\n"; bufferedWriterWrite(writer, afblk);
+            var afli: []const u8 = "    unsigned int _j = 0;\n"; bufferedWriterWrite(writer, afli);
+            var aflw: []const u8 = "    while (_j < sizeof("; bufferedWriterWrite(writer, aflw);
+            bufferedWriterWrite(writer, base);
+            var dot_s2: []const u8 = "."; bufferedWriterWrite(writer, dot_s2);
+            bufferedWriterWrite(writer, fld_name_val);
+            var aflb2: []const u8 = ")) {\n        ((unsigned char*)&"; bufferedWriterWrite(writer, aflb2);
+            bufferedWriterWrite(writer, base);
+            var dot_s2b: []const u8 = "."; bufferedWriterWrite(writer, dot_s2b);
+            bufferedWriterWrite(writer, fld_name_val);
+            var aflb3: []const u8 = ")[_j] = ((unsigned char*)&"; bufferedWriterWrite(writer, aflb3);
+            bufferedWriterWrite(writer, src);
+            var aflb4: []const u8 = ")[_j];\n        _j++;\n    }\n}\n"; bufferedWriterWrite(writer, aflb4);
+        } else {
+            var afsemi: []const u8 = ";\n"; bufferedWriterWrite(writer, afsemi);
+            bufferedWriterWriteIndent(writer, indent_val);
+            var afblk: []const u8 = "{\n"; bufferedWriterWrite(writer, afblk);
+            var afli: []const u8 = "    unsigned int _j = 0;\n"; bufferedWriterWrite(writer, afli);
+            var aflw: []const u8 = "    while (_j < "; bufferedWriterWrite(writer, aflw);
+            var afalb: [20]u8 = undefined; var afall: u32 = itoa_mod.itoa(arr_len[0], afalb[0..]); var afals: usize = @intCast(usize, 19) - @intCast(usize, afall); bufferedWriterWrite(writer, afalb[afals..@intCast(usize, 19)]);
+            var aflb2: []const u8 = ") {\n        "; bufferedWriterWrite(writer, aflb2);
+            bufferedWriterWrite(writer, base);
+            var dot_s2: []const u8 = "."; bufferedWriterWrite(writer, dot_s2);
+            bufferedWriterWrite(writer, fld_name_val);
+            var aflb3: []const u8 = "[_j] = 0;\n        _j++;\n    }\n}\n"; bufferedWriterWrite(writer, aflb3);
+        }
     } else {
         var fa_cast: []const u8 = "";
         if (cast_name.len != @intCast(usize, 0)) {
