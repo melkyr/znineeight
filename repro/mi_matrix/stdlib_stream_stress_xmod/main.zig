@@ -1,7 +1,7 @@
 // stdlib_stream_stress_xmod — STDLIB std_stream (L6) hand-written stress table.
 //
 // No PRNG: every input is an explicit, deterministic pattern. File-only (the
-// L6 reader is file-only); the blocking readLineSync path is stressed:
+// L6 reader is file-only); the blocking readFileLineSync path is stressed:
 //   - a long line (250 bytes) through a 100-byte buffer: two full 100-byte
 //     overflow chunks then a 50-byte remainder (250 % 100 != 0, so the
 //     terminator is consumed in the last chunk, no spurious empty line).
@@ -34,7 +34,7 @@ fn makeLine(path: []const u8, ch: u8, len: usize) void {
 }
 
 fn expectChunk(lr: *st.FileLineReader, ch: u8, len: usize, what: []const u8) void {
-    const m = st.readLineSync(lr) catch @panic(what);
+    const m = st.readFileLineSync(lr) catch @panic(what);
     if (m) |line| {
         ck(line.len == len, what);
         var i: usize = 0;
@@ -45,7 +45,7 @@ fn expectChunk(lr: *st.FileLineReader, ch: u8, len: usize, what: []const u8) voi
 }
 
 fn expectText(lr: *st.FileLineReader, want: []const u8, what: []const u8) void {
-    const m = st.readLineSync(lr) catch @panic(what);
+    const m = st.readFileLineSync(lr) catch @panic(what);
     if (m) |line| {
         ck(line.len == want.len, what);
         var i: usize = 0;
@@ -56,7 +56,7 @@ fn expectText(lr: *st.FileLineReader, want: []const u8, what: []const u8) void {
 }
 
 fn expectNull(lr: *st.FileLineReader, what: []const u8) void {
-    if ((st.readLineSync(lr) catch @panic(what)) != null) @panic(what);
+    if ((st.readFileLineSync(lr) catch @panic(what)) != null) @panic(what);
 }
 
 pub fn main() void {

@@ -667,7 +667,7 @@ GREEN contract, and re-captured only on an intentional behavior change.
 | `stdlib_net_udp_stress_xmod` | stress | max IPv4 UDP payload (65507 B) loopback byte-exact + zero-length + truncation; binds a fixed port (`ports.txt`); stdout `udp stress ok` |
 | `stdlib_stream_stress_xmod` | stress | 250-byte line through a 100-byte buffer + final line with no trailing newline + empty source; stdout `stream stress ok` |
 | `stdlib_stdin_multiple_xmod` | exact-multiple pin | Task 5a-I RED -> 5a-F GREEN; `"abcd\n"` via a 4-byte buffer yields `abcd` then `z` (no spurious empty line); stdout `stdin multiple ok`, rc 0 |
-| `stdlib_stream_multiple_xmod` | exact-multiple pin | Task 5a-I RED -> 5a-F GREEN; same exact-multiple contract for `std_stream.readLineSync`; stdout `stream multiple ok`, rc 0 |
+| `stdlib_stream_multiple_xmod` | exact-multiple pin | Task 5a-I RED -> 5a-F GREEN; same exact-multiple contract for `std_stream.readFileLineSync`; stdout `stream multiple ok`, rc 0 |
 
 **Gates (seed-built fixed-point compiler `414cccee`).** Runtime gate **108 PASS / 0 FAIL
 over 108 dirs** (3x determinism internal; pin `scripts/stdlib/expected_dirs.txt` = 108
@@ -693,7 +693,7 @@ Fix shape: `std_stdin.readLine` carries a `pending_overflow` boundary flag; a fu
 buffer whose last byte is not `\r` sets it, and the next call consumes the line's own
 `\n`/`\r\n` terminator before reading the following line. `std_stream.FileLineReader`
 gains `overflow_cont`, set by `takeOverflow`, consumed by the new `resolveOverflow`
-(wired into `readLineSync` and `awaitLine`). Both carries are engaged only when
+(wired into `readFileLineSync` and `awaitLine`). Both carries are engaged only when
 `buf.len > 1`, preserving the frozen 1-byte-buffer boundary behaviour
 (`stdlib_stream_crlf_boundary_xmod`).
 
@@ -723,7 +723,7 @@ ruling m1568/m1569). **Fixtures/manifest/docs only — no `sf/src` change; fixed
 `414cccee639bdb61c7a9f1f2ddddb166`; seed v29 NOT rotated.**
 
 The defect: a line whose length is an exact multiple of `buf.len` (`len % buf.len == 0`) makes
-both `std_stdin.readLine` (`sf/src/std_stdin.zig:99-122`) and `std_stream.readLineSync`
+both `std_stdin.readLine` (`sf/src/std_stdin.zig:99-122`) and `std_stream.readFileLineSync`
 (`sf/src/std_stream.zig:95-104,152-162`) emit a spurious empty line. Probe: a 4-byte buffer over
 `"abcd\nz\n"` yields `["abcd", "", "z"]` instead of `["abcd", "z"]`. The blueprint contract only
 specified the "longer than buf" case; the exact-multiple boundary was unspecified. It is now
@@ -772,7 +772,7 @@ Plan B (`docs/superpowers/plans/2026-09-17-std-lib-plan-b-resources-stream.md`) 
 `std_stdin` + `std_stdin_pal` (line-based stdin over a `std_file.File`); the `std_net` UDP
 extension (`Socket` alias, 8-member `NetError` (no OOM), `IpAddr`,
 `udpBind`/`udpSendTo`/`udpRecvFrom`/`udpSetTimeout`); and the file-only `std_stream`
-(`FileLineReader`/`initFileLineReader`/`readLineSync`/`readLineAsync` — Model C
+(`FileLineReader`/`initFileLineReader`/`readFileLineSync`/`readFileLineAsync` — Model C
 cooperative-yield, a separate chunked async implementation over the `@asyncSuspend`
 builtin). `SocketLineReader`/`MsgReader`, the non-blocking socket primitives, and
 `std.async.wait(handle)` are Plan D (recorded, not scheduled). This closeout commit is
@@ -826,7 +826,7 @@ Minimal trigger shape:
 `fn f(lr: *T) FileError!?[]u8 { while (true) { ...; _ = @asyncSuspend(null); } return null; }`.
 Bisection on the seed-built compiler (`414cccee`): `loop + !usize` is OK, `non-loop + !?[]u8` is
 OK, `loop + !?[]u8` panics — the trigger is the **loop + error-union + optional-slice return** in
-one suspending function. `std_stream.readLineAsync` avoids it by keeping the loop on an internal
+one suspending function. `std_stream.readFileLineAsync` avoids it by keeping the loop on an internal
 scalar-status helper (`awaitLine` returning `!u8`) and the `!?[]u8` return loop-free. Full report:
 `.superpowers/sdd/2026-09-17-std-lib-plan-b-resources-stream/task-4-report.md`.
 

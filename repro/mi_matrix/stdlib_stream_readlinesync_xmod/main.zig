@@ -1,9 +1,9 @@
-// stdlib_stream_readlinesync_xmod — Plan B Task 4 (L6) blocking readLineSync.
+// stdlib_stream_readlinesync_xmod — Plan B Task 4 (L6) blocking readFileLineSync.
 //
-// Contract: readLineSync blocks (no suspension, no coroutine); it strips the
+// Contract: readFileLineSync blocks (no suspension, no coroutine); it strips the
 // terminating \n and the \r of \r\n, returns a slice into the caller buffer,
 // returns the final unterminated line, and returns null at EOF with no partial
-// line. It is a SEPARATE implementation from readLineAsync (operator ruling
+// line. It is a SEPARATE implementation from readFileLineAsync (operator ruling
 // m1449/m1451): the sync path never pulls the async runtime.
 //
 // GREEN: bracketed lines showing the CRLF strip, the empty line, and the final
@@ -31,7 +31,7 @@ pub fn main() void {
     var lr = st.initFileLineReader(&file, rbuf[0..]);
 
     while (true) {
-        const m = st.readLineSync(&lr) catch @panic("readLineSync");
+        const m = st.readFileLineSync(&lr) catch @panic("readFileLineSync");
         if (m) |line| {
             show(line);
         } else {
@@ -42,7 +42,7 @@ pub fn main() void {
     var empty = f.open(&g_arena, "t_stream_f.txt", f.Mode.Read) catch @panic("open empty");
     var ebuf: [16]u8 = undefined;
     var elr = st.initFileLineReader(&empty, ebuf[0..]);
-    const e = st.readLineSync(&elr) catch @panic("readLineSync empty");
+    const e = st.readFileLineSync(&elr) catch @panic("readFileLineSync empty");
     if (e) |_| @panic("empty file returned a line");
 
     f.close(&file);

@@ -44,9 +44,9 @@
 
 **Create (the exact-multiple long-line pins — Task 5a-I):**
 - `repro/mi_matrix/stdlib_stdin_multiple_xmod/` — a `std_stdin.readLine` exact-multiple long line (RED before Task 5a-F).
-- `repro/mi_matrix/stdlib_stream_multiple_xmod/` — a `std_stream.readLineSync` exact-multiple long line (RED before Task 5a-F).
+- `repro/mi_matrix/stdlib_stream_multiple_xmod/` — a `std_stream.readFileLineSync` exact-multiple long line (RED before Task 5a-F).
 
-**Modify (Task 5a-F):** `sf/src/std_stdin.zig` (`readLine`), `sf/src/std_stream.zig` (`readLineSync`) — the fix (the fixed point stays UNMOVED — a std-only change cannot move it; the seed rotates because the archive embeds `lib/`).
+**Modify (Task 5a-F):** `sf/src/std_stdin.zig` (`readLine`), `sf/src/std_stream.zig` (`readFileLineSync`) — the fix (the fixed point stays UNMOVED — a std-only change cannot move it; the seed rotates because the archive embeds `lib/`).
 
 **Modify (closeout):** `repro/mi_matrix/EXPECTED_FAIL.md` (bump once), `docs/sf/QUICK_REF.md` (counts).
 
@@ -140,7 +140,7 @@ gap is the `std_file` open-failure (`FileError`) probe.
 - Consumes: the harness + the golden convention.
 - Produces: RED pins for the exact-multiple long-line defect.
 
-**Context (operator ruling m1568/m1569):** Plan B hardening Task 4 found that an exact-multiple long line (`len % buf.len == 0`) makes both `std_stdin.readLine` (`sf/src/std_stdin.zig:99-122`) and `std_stream.readLineSync` (`sf/src/std_stream.zig:95-104,152-162`) emit a spurious empty line (a 4-byte buffer over `"abcd\nz\n"` -> `[abcd] [] [z]`). The operator ruled: declare + pin + fix as a separate I/F pair, BEFORE the Task 5 closeout.
+**Context (operator ruling m1568/m1569):** Plan B hardening Task 4 found that an exact-multiple long line (`len % buf.len == 0`) makes both `std_stdin.readLine` (`sf/src/std_stdin.zig:99-122`) and `std_stream.readFileLineSync` (`sf/src/std_stream.zig:95-104,152-162`) emit a spurious empty line (a 4-byte buffer over `"abcd\nz\n"` -> `[abcd] [] [z]`). The operator ruled: declare + pin + fix as a separate I/F pair, BEFORE the Task 5 closeout.
 
 - [ ] **Step 1: Add the RED pins** — `stdlib_stdin_multiple_xmod` and `stdlib_stream_multiple_xmod`, each reading an exact-multiple long line and asserting the exact expected lines (the current behaviour emits the spurious empty line, so the assert traps -> RED).
 - [ ] **Step 2: Clarify the contract** (blueprint §3 L3/L6 + the hardening spec) for the exact-multiple boundary (currently only the "longer than buf" case is specified).
@@ -152,14 +152,14 @@ gap is the `std_file` open-failure (`FileError`) probe.
 ### Task 5a-F: Fix the exact-multiple long-line defect (F)
 
 **Files:**
-- Modify: `sf/src/std_stdin.zig` (`readLine`), `sf/src/std_stream.zig` (`readLineSync`); the Task 5a-I fixtures + goldens.
+- Modify: `sf/src/std_stdin.zig` (`readLine`), `sf/src/std_stream.zig` (`readFileLineSync`); the Task 5a-I fixtures + goldens.
 
 **Interfaces:**
 - Consumes: the Task 5a-I RED pins.
 - Produces: the fix; the fixed point stays UNMOVED (a std-only change cannot move it); the seed rotates.
 
 - [ ] **Step 1: Fix `std_stdin.readLine`** so a line whose length is an exact multiple of `buf.len` does not emit a trailing empty line.
-- [ ] **Step 2: Fix `std_stream.readLineSync`** the same way.
+- [ ] **Step 2: Fix `std_stream.readFileLineSync`** the same way.
 - [ ] **Step 3: Flip the Task 5a-I pins RED -> GREEN.** Run the full gate; the two pins must PASS and all other dirs stay PASS. Confirm 3× determinism. (The goldens are already the desired values — do not re-capture unless the observed output disagrees with the documented GREEN contract.)
 - [ ] **Step 4: Re-verify the gates** (`check_emit_support.sh` 7/7; the self-compile; the corpus class map; `CLOSEOUT OK`); confirm the fixed point stayed UNMOVED (expected — a std-only change cannot move it).
 - [ ] **Step 5: Rotate the seed** (`bash scripts/seed/archive_seed.sh <zig1> <gen_dir> release/seed/zig1-seed.tgz --update-changelog`) and commit (`fix(std): no spurious empty line for an exact-multiple long line (Plan B hardening Task 5a-F)`).

@@ -6,8 +6,8 @@
 //
 // Model C: there is no executor and no poll loop. The caller drives the landed
 // std.async scheduler with tick(); a coroutine yields only when it chooses to.
-// `readLineAsync` is therefore a SEPARATE chunked implementation, not a wrapper
-// over `readLineSync`: it reads a bounded chunk and calls the `@asyncSuspend`
+// `readFileLineAsync` is therefore a SEPARATE chunked implementation, not a wrapper
+// over `readFileLineSync`: it reads a bounded chunk and calls the `@asyncSuspend`
 // builtin once per incomplete read. The scheduler is caller-provided and owned
 // by main; this module never calls `tick`/`waitFor`/`waitAll` (C2). The
 // `@asyncSuspend` builtin is the language-level async facility — the module
@@ -183,7 +183,7 @@ pub fn initFileLineReader(src: *file_mod.File, buf: []u8) FileLineReader {
 }
 
 // Blocking: read until a line is buffered or EOF. No suspension.
-pub fn readLineSync(lr: *FileLineReader) StreamError!?[]u8 {
+pub fn readFileLineSync(lr: *FileLineReader) StreamError!?[]u8 {
     if (lr.buf.len == 0) return null;
     try resolvePending(lr);
     if (lr.overflow_cont) try resolveOverflow(lr);
@@ -210,7 +210,7 @@ fn hasLine(lr: *FileLineReader) bool {
 // the suspending loop and the `!?[]u8` result never share one frame: the landed
 // async frame-layout pass rejects a `while` loop whose suspending function
 // returns `!?[]u8` (P2/P3 size guard). This is a compiler limitation, worked
-// around here — no compiler/PAL file is touched (R8). `readLineAsync` maps the
+// around here — no compiler/PAL file is touched (R8). `readFileLineAsync` maps the
 // status to the line slice.
 const LINE_EOF: u8 = 0;
 const LINE_READY: u8 = 1;
@@ -230,9 +230,9 @@ fn awaitLine(lr: *FileLineReader) StreamError!u8 {
     return LINE_EOF;
 }
 
-// Cooperative-yield entry point. A SEPARATE implementation from readLineSync
+// Cooperative-yield entry point. A SEPARATE implementation from readFileLineSync
 // (it never calls it); it suspends once per incomplete read inside awaitLine.
-pub fn readLineAsync(lr: *FileLineReader) StreamError!?[]u8 {
+pub fn readFileLineAsync(lr: *FileLineReader) StreamError!?[]u8 {
     const status = try awaitLine(lr);
     if (status == LINE_READY) return takeLine(lr);
     if (status == LINE_OVERFLOW) return takeOverflow(lr);

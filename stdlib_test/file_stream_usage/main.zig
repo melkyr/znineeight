@@ -1,13 +1,13 @@
 // stdlib_test/file_stream_usage — Plan B Task 5 (R7b) usage program.
 //
 // Composes std_file (L3) + std_stream (L6) + std.async into one intended
-// workflow: std_file creates two small text files; std_stream.readLineSync
+// workflow: std_file creates two small text files; std_stream.readFileLineSync
 // drains the first (blocking, no async runtime); a std.async coroutine drains
-// the second with std_stream.readLineAsync, yielding once per incomplete read
+// the second with std_stream.readFileLineAsync, yielding once per incomplete read
 // (Model C cooperative-yield: main owns the scheduler and drives tick()).
 //
 // The reader buffer is 16 bytes, so the async chunk is buf.len/4 = 4: each
-// 10-char line spans several reads and each readLineAsync call suspends >= 2
+// 10-char line spans several reads and each readFileLineAsync call suspends >= 2
 // times. `ticks` is the driver's completed-tick counter, so a call's tick delta
 // IS its suspension count.
 //
@@ -55,7 +55,7 @@ const CArgs = struct { c: *CoCtx };
 fn co(c: *CoCtx) void {
     while (true) {
         const before = c.ticks.*;
-        const m = st.readLineAsync(c.lr) catch {
+        const m = st.readFileLineAsync(c.lr) catch {
             c.err = true;
             return;
         };
@@ -78,13 +78,13 @@ pub fn main() void {
 
     io.write("file_stream_usage\n");
 
-    // --- readLineSync: blocking, no async runtime ---------------------------
+    // --- readFileLineSync: blocking, no async runtime ---------------------------
     var file = f.open(&g_arena, "t_file_stream_usage_a.txt", f.Mode.Read) catch @panic("open sync");
     var rbuf: [16]u8 = undefined;
     var lr = st.initFileLineReader(&file, rbuf[0..]);
     var sync_lines: u32 = 0;
     while (true) {
-        const m = st.readLineSync(&lr) catch @panic("readLineSync");
+        const m = st.readFileLineSync(&lr) catch @panic("readFileLineSync");
         if (m) |line| {
             show(line);
             sync_lines += 1;
@@ -95,7 +95,7 @@ pub fn main() void {
     ck(sync_lines == 4, "sync line count");
     f.close(&file);
 
-    // --- readLineAsync: cooperative coroutine, main drives tick -------------
+    // --- readFileLineAsync: cooperative coroutine, main drives tick -------------
     var afile = f.open(&g_arena, "t_file_stream_usage_b.txt", f.Mode.Read) catch @panic("open async");
     var abuf: [16]u8 = undefined;
     var alr = st.initFileLineReader(&afile, abuf[0..]);
@@ -127,9 +127,9 @@ pub fn main() void {
         sa.tick(&s) catch @panic("tick");
         ticks += 1;
     }
-    if (cc.err) @panic("readLineAsync error");
+    if (cc.err) @panic("readFileLineAsync error");
     if (cc.lines != 3) @panic("async line count");
-    if (cc.max_suspends < 2) @panic("async gate: a readLineAsync call suspended fewer than 2 times");
+    if (cc.max_suspends < 2) @panic("async gate: a readFileLineAsync call suspended fewer than 2 times");
 
     f.close(&afile);
     f.remove("t_file_stream_usage_a.txt") catch {};

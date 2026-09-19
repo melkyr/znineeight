@@ -1,4 +1,4 @@
-// stdlib_stream_readline_empty_xmod — Plan B Task 4 (L6) readLineAsync on an
+// stdlib_stream_readline_empty_xmod — Plan B Task 4 (L6) readFileLineAsync on an
 // empty file.
 //
 // The empty read must return null immediately (no line, no suspension). The
@@ -20,7 +20,7 @@ const arena_mod = @import("std_arena.zig");
 var g_storage: [65536]u8 = undefined;
 var g_arena = arena_mod.init(g_storage[0..]);
 
-// Per-call gate: the driver's completed-tick delta around each readLineAsync
+// Per-call gate: the driver's completed-tick delta around each readFileLineAsync
 // call IS that call's suspension count; `max_suspends` is asserted >= 2. The
 // empty-file call legitimately suspends 0 times (nothing to read); the
 // non-empty call in the same coroutine supplies the gate evidence.
@@ -37,7 +37,7 @@ const CArgs = struct { c: *CoCtx };
 
 fn co(c: *CoCtx) void {
     const e0 = c.ticks.*;
-    const e = st.readLineAsync(c.empty) catch {
+    const e = st.readFileLineAsync(c.empty) catch {
         c.err = true;
         return;
     };
@@ -50,7 +50,7 @@ fn co(c: *CoCtx) void {
     c.empty_ok = true;
     while (true) {
         const before = c.ticks.*;
-        const m = st.readLineAsync(c.nonempty) catch {
+        const m = st.readFileLineAsync(c.nonempty) catch {
             c.err = true;
             return;
         };
@@ -101,10 +101,10 @@ pub fn main() void {
         sa.tick(&s) catch @panic("tick");
         ticks += 1;
     }
-    if (cc.err) @panic("readLineAsync error");
+    if (cc.err) @panic("readFileLineAsync error");
     if (!cc.empty_ok) @panic("empty file did not return null");
     if (cc.lines != 2) @panic("line count");
-    if (cc.max_suspends < 2) @panic("async gate: a readLineAsync call suspended fewer than 2 times");
+    if (cc.max_suspends < 2) @panic("async gate: a readFileLineAsync call suspended fewer than 2 times");
 
     f.close(&empty);
     f.close(&nonempty);

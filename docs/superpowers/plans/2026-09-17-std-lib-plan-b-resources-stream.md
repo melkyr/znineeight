@@ -34,7 +34,7 @@
 **Create (modules):**
 - `sf/src/std_file.zig` — L3, binary-safe file I/O (owns the OS handle).
 - `sf/src/std_stdin.zig` — L3, line-based stdin.
-- `sf/src/std_stream.zig` — L6, file-only coroutine-aware composition (`FileLineReader`, `initFileLineReader`, `readLineSync`, `readLineAsync`; `SocketLineReader`/`MsgReader` are Plan D).
+- `sf/src/std_stream.zig` — L6, file-only coroutine-aware composition (`FileLineReader`, `initFileLineReader`, `readFileLineSync`, `readFileLineAsync`; `SocketLineReader`/`MsgReader` are Plan D).
 
 **Modify (modules):**
 - `sf/src/std_net.zig` — add the UDP surface (`IpAddr`, `udpBind`, `udpSendTo`, `udpRecvFrom`, `udpSetTimeout`).
@@ -129,17 +129,17 @@
 
 **Interfaces:**
 - Consumes: `std_file` (L3), `std.async` (the `@asyncSuspend` builtin + the scheduler the caller drives).
-- Produces: `FileLineReader`, `initFileLineReader`, `readLineSync` (blocking), `readLineAsync` (coroutine) — the file half of the blueprint §3 L6 two-reader surface. `SocketLineReader` / `MsgReader` are deferred to Plan D.
+- Produces: `FileLineReader`, `initFileLineReader`, `readFileLineSync` (blocking), `readFileLineAsync` (coroutine) — the file half of the blueprint §3 L6 two-reader surface. `SocketLineReader` / `MsgReader` are deferred to Plan D.
 
-**Operator ruling (`sf/docs/answerT4.txt` + m1449/m1451):** Z98 is Model C — cooperative-yield. The caller drives `tick`; there is no executor and no `poll` loop. `readLineAsync` is NOT a wrapper over `readLineSync`: it is a separate implementation that reads a chunk and `@asyncSuspend`s per incomplete read. `std_stream` is file-only in Plan B; `SocketLineReader`, `MsgReader`, the non-blocking socket primitives, and an optional `std.async.wait(handle)` are Plan D (recorded, not scheduled).
+**Operator ruling (`sf/docs/answerT4.txt` + m1449/m1451):** Z98 is Model C — cooperative-yield. The caller drives `tick`; there is no executor and no `poll` loop. `readFileLineAsync` is NOT a wrapper over `readFileLineSync`: it is a separate implementation that reads a chunk and `@asyncSuspend`s per incomplete read. `std_stream` is file-only in Plan B; `SocketLineReader`, `MsgReader`, the non-blocking socket primitives, and an optional `std.async.wait(handle)` are Plan D (recorded, not scheduled).
 
 - [ ] **Step 1: Resolve the async boundary (RESOLVED).** `std_stream` is the only module importing `std.async`; it uses `@asyncSuspend` (the builtin), never `tick`/`waitFor`/`waitAll` — C2. The landed `std.async` has no `wait` primitive; per the ruling that primitive is deferred to Plan D and is not needed for the file reader.
-- [ ] **Step 2: Write the failing fixtures** (4): `stdlib_stream_readline_xmod` (`readLineAsync` on a small file), `stdlib_stream_readline_noeof_xmod` (last line without a trailing newline), `stdlib_stream_readline_empty_xmod` (empty file), `stdlib_stream_readlinesync_xmod` (`readLineSync`). Each `readLineAsync` fixture suspends ≥2× per call.
+- [ ] **Step 2: Write the failing fixtures** (4): `stdlib_stream_readline_xmod` (`readFileLineAsync` on a small file), `stdlib_stream_readline_noeof_xmod` (last line without a trailing newline), `stdlib_stream_readline_empty_xmod` (empty file), `stdlib_stream_readlinesync_xmod` (`readFileLineSync`). Each `readFileLineAsync` fixture suspends ≥2× per call.
 - [ ] **Step 3: RED.**
-- [ ] **Step 4: Implement `std_stream.zig`.** `FileLineReader` over a `*std.file.File` + a caller buffer; `readLineSync` blocks; `readLineAsync` is a separate chunked implementation that yields per incomplete read. No callbacks, no state enum in user code.
+- [ ] **Step 4: Implement `std_stream.zig`.** `FileLineReader` over a `*std.file.File` + a caller buffer; `readFileLineSync` blocks; `readFileLineAsync` is a separate chunked implementation that yields per incomplete read. No callbacks, no state enum in user code.
 - [ ] **Step 5: GREEN + safety/determinism gates + the async gate** (suspend ≥2× per call).
 - [ ] **Step 6: Graph assertion (C3 isolation)** — `std_stream` does NOT source-import `std.async` (it reaches async only via the `@asyncSuspend` builtin), so the assertion actually proved is: a program that imports only `std_file`/`std_net`/`std_stdin` does NOT link the async runtime. Emit an L3-only program and an L3+`std_stream` program and compare the module set to confirm the async runtime is absent unless the program itself imports `std.async`.
-- [ ] **Step 7: Docs amendments (folded in)** — program spec §2 (add Plan D), §4 (L6 file-only), §5 R4 (Model C + the asset-loading idiom), §7 (`std_stream` = `FileLineReader`), §8 (the deferrals), §10 (Plan D entry); blueprint §3 L6 (two-reader surface, `readLineSync`/`readLineAsync` as separate implementations, `MsgReader` deferred) and §4 C2 (Model C; `wait(handle)` deferred).
+- [ ] **Step 7: Docs amendments (folded in)** — program spec §2 (add Plan D), §4 (L6 file-only), §5 R4 (Model C + the asset-loading idiom), §7 (`std_stream` = `FileLineReader`), §8 (the deferrals), §10 (Plan D entry); blueprint §3 L6 (two-reader surface, `readFileLineSync`/`readFileLineAsync` as separate implementations, `MsgReader` deferred) and §4 C2 (Model C; `wait(handle)` deferred).
 - [ ] **Step 8: Fixed point UNMOVED + commit** (stage `sf/src/std_stream.zig`, the fixtures, both seed scripts, the spec, and the blueprint).
 ---
 

@@ -1,14 +1,14 @@
 // stdlib_stream_multiple_async_xmod — Plan B hardening final review (finding A):
-// async coverage for the exact-multiple long line (L6 readLineAsync).
+// async coverage for the exact-multiple long line (L6 readFileLineAsync).
 //
-// stdlib_stream_multiple_xmod pins readLineSync on a 4-byte buffer over
+// stdlib_stream_multiple_xmod pins readFileLineSync on a 4-byte buffer over
 // "abcd\nz\n"; this sibling drives the SAME FileLineReader shape through
-// readLineAsync so the `overflow_cont` / resolveOverflow wiring in awaitLine
+// readFileLineAsync so the `overflow_cont` / resolveOverflow wiring in awaitLine
 // (sf/src/std_stream.zig) is exercised. Without this fixture a refactor could
 // drop that async resolveOverflow call and no gate would fail.
 //
 // "abcd\n" is an exact multiple of the 4-byte reader buffer: the overflow call
-// returns "abcd" and sets overflow_cont; the NEXT readLineAsync resolves the
+// returns "abcd" and sets overflow_cont; the NEXT readFileLineAsync resolves the
 // still-unread '\n' as that line's terminator and returns "z" (never a spurious
 // empty line), then null at EOF.
 //
@@ -35,7 +35,7 @@ const CoCtx = struct {
 const CArgs = struct { c: *CoCtx };
 
 fn co(c: *CoCtx) void {
-    const first = st.readLineAsync(c.lr) catch {
+    const first = st.readFileLineAsync(c.lr) catch {
         c.err = true;
         return;
     };
@@ -50,7 +50,7 @@ fn co(c: *CoCtx) void {
         return;
     }
 
-    const second = st.readLineAsync(c.lr) catch {
+    const second = st.readFileLineAsync(c.lr) catch {
         c.err = true;
         return;
     };
@@ -65,7 +65,7 @@ fn co(c: *CoCtx) void {
         return;
     }
 
-    const third = st.readLineAsync(c.lr) catch {
+    const third = st.readFileLineAsync(c.lr) catch {
         c.err = true;
         return;
     };
@@ -102,7 +102,7 @@ pub fn main() void {
         sa.tick(&s) catch @panic("tick");
         ticks += 1;
     }
-    if (cc.err) @panic("readLineAsync error");
+    if (cc.err) @panic("readFileLineAsync error");
     if (cc.bad) @panic("async exact-multiple line mismatch");
     if (cc.lines != 2) @panic("line count");
 

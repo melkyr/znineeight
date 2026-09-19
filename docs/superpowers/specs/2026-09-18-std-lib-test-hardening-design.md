@@ -61,7 +61,7 @@ failure is itself asserted.
 across runs and equal to `expected.txt`.
 
 **Contract note — exact-multiple long line (Task 5a-I).** The
-`std_stdin.readLine` / `std_stream.readLineSync` contract specifies the
+`std_stdin.readLine` / `std_stream.readFileLineSync` contract specifies the
 "longer than `buf`" overflow case but historically left the exact-multiple
 boundary (`len % buf.len == 0`) unspecified. It is now specified: a line
 whose length is an exact multiple of the buffer length must NOT yield a

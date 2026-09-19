@@ -1,10 +1,10 @@
-// stdlib_stream_readline_noeof_xmod — Plan B Task 4 (L6) readLineAsync with a
+// stdlib_stream_readline_noeof_xmod — Plan B Task 4 (L6) readFileLineAsync with a
 // final line that has no trailing newline.
 //
 // Same Model C driver as stdlib_stream_readline_xmod. The last line is emitted
 // by the EOF path (takeRest), not by a newline; it must not be dropped. The
 // 12-char final line spans several 4-byte async chunks, so the second
-// readLineAsync call suspends >= 2 times.
+// readFileLineAsync call suspends >= 2 times.
 //
 // GREEN: two lines in order, then the observed suspension count (>= 2), RUNRC=0.
 const f = @import("std_file.zig");
@@ -16,7 +16,7 @@ const arena_mod = @import("std_arena.zig");
 var g_storage: [65536]u8 = undefined;
 var g_arena = arena_mod.init(g_storage[0..]);
 
-// Per-call gate: the driver's completed-tick delta around each readLineAsync
+// Per-call gate: the driver's completed-tick delta around each readFileLineAsync
 // call IS that call's suspension count; `max_suspends` is asserted >= 2.
 const CoCtx = struct {
     lr: *st.FileLineReader,
@@ -30,7 +30,7 @@ const CArgs = struct { c: *CoCtx };
 fn co(c: *CoCtx) void {
     while (true) {
         const before = c.ticks.*;
-        const m = st.readLineAsync(c.lr) catch {
+        const m = st.readFileLineAsync(c.lr) catch {
             c.err = true;
             return;
         };
@@ -75,9 +75,9 @@ pub fn main() void {
         sa.tick(&s) catch @panic("tick");
         ticks += 1;
     }
-    if (cc.err) @panic("readLineAsync error");
+    if (cc.err) @panic("readFileLineAsync error");
     if (cc.lines != 2) @panic("line count");
-    if (cc.max_suspends < 2) @panic("async gate: a readLineAsync call suspended fewer than 2 times");
+    if (cc.max_suspends < 2) @panic("async gate: a readFileLineAsync call suspended fewer than 2 times");
 
     f.close(&file);
     f.remove("t_stream_b.txt") catch {};

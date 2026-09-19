@@ -106,8 +106,8 @@ its fixtures GREEN and the dependency-graph check passing.
 - **Plan B (L3 + L6)** is where R4 (the `*Async` flavor) and C2 (no
   `tick`/`waitFor`/`waitAll` in std) are exercised. Under the operator's
   Model C ruling (`sf/docs/answerT4.txt`, m1449/m1451), Plan B's L6 is
-  **file-only**: `std_stream.FileLineReader` with `readLineSync` (blocking)
-  and `readLineAsync` (a separate chunked implementation that yields via the
+  **file-only**: `std_stream.FileLineReader` with `readFileLineSync` (blocking)
+  and `readFileLineAsync` (a separate chunked implementation that yields via the
   `@asyncSuspend` builtin once per incomplete read). `SocketLineReader`,
   `MsgReader`, the non-blocking socket primitives, and `std.async.wait(handle)`
   are deferred to Plan D. `std_stream` is the only module that pulls in the
@@ -155,7 +155,7 @@ its fixtures GREEN and the dependency-graph check passing.
   executor and no `poll` loop. A `*Async` function is a **separate
   implementation** from its sync sibling — it does its own I/O and calls the
   `@asyncSuspend` builtin when it has nothing more to do right now; it is not
-  a wrapper over the sync path. `std_stream.readLineAsync` reads a bounded
+  a wrapper over the sync path. `std_stream.readFileLineAsync` reads a bounded
   chunk and yields once per incomplete read.
   **Asset-loading idiom (the Model C answer to "background loading").** The
   frame loop runs every tick and draws a *placeholder*; a loading coroutine
@@ -307,7 +307,7 @@ per-function `repro/mi_matrix/` fixtures.
   re-driven on the next tick (Model C); the `Sync` forms block. `MsgReader`
   reads a length prefix, then the body. An optional `std.async.wait(handle)`
   needs an executor or a `poll()` loop and is Plan D Task 4 (optional). Plan B's
-  `std_stream` is file-only (`FileLineReader`, `readLineSync` + `readLineAsync`).
+  `std_stream` is file-only (`FileLineReader`, `readFileLineSync` + `readFileLineAsync`).
   Recorded in `docs/superpowers/plans/2026-09-18-plan-D-network-async.md`.
 - **Async frame-layout residual — DECLARED (Plan B Task 4 fix round 1).** A
   suspending function with a `while` loop that returns `!?[]u8` trips the
@@ -315,7 +315,7 @@ per-function `repro/mi_matrix/` fixtures.
   (`sf/src/async_frame_layout.zig:659`,
   `panic: async frame layout exceeds authoritative frame size`). The trigger is
   the **loop + error-union + optional-slice return** in one function;
-  `std_stream.readLineAsync` works around it with the internal `awaitLine`
+  `std_stream.readFileLineAsync` works around it with the internal `awaitLine`
   scalar-status helper. Pinning it with an I/F fixture pair and fixing the
   layout is a recorded follow-up — the fix moves the fixed point and needs
   operator authorization. Declared in `repro/mi_matrix/EXPECTED_FAIL.md` v139.

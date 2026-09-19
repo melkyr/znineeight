@@ -1,12 +1,12 @@
-// stdlib_stream_readline_xmod — Plan B Task 4 (L6) readLineAsync on a small
+// stdlib_stream_readline_xmod — Plan B Task 4 (L6) readFileLineAsync on a small
 // file, Model C cooperative-yield.
 //
 // Contract (operator ruling m1449/m1451, sf/docs/answerT4.txt): the caller
-// drives the landed std.async scheduler with tick(); readLineAsync is a
+// drives the landed std.async scheduler with tick(); readFileLineAsync is a
 // separate chunked implementation that yields with @asyncSuspend once per
 // incomplete read. The reader owns a caller buffer (16 bytes here); the async
 // chunk is buf.len/4 = 4, so each 10-char line spans several reads and each
-// readLineAsync call suspends >= 2 times.
+// readFileLineAsync call suspends >= 2 times.
 //
 // `@asyncInit`'s 4th argument is the pointer to the argument slot it loads
 // (corpus ABI: see stdlib_async_blocking_tick_xmod), so `CArgs.c` is the
@@ -23,7 +23,7 @@ const arena_mod = @import("std_arena.zig");
 var g_storage: [65536]u8 = undefined;
 var g_arena = arena_mod.init(g_storage[0..]);
 
-// `ticks` is the driver's completed-tick counter; a readLineAsync call that
+// `ticks` is the driver's completed-tick counter; a readFileLineAsync call that
 // suspends k times advances it by exactly k, so the per-call delta IS the
 // per-call suspension count. `max_suspends` is the §6 async-gate quantity.
 const CoCtx = struct {
@@ -38,7 +38,7 @@ const CArgs = struct { c: *CoCtx };
 fn co(c: *CoCtx) void {
     while (true) {
         const before = c.ticks.*;
-        const m = st.readLineAsync(c.lr) catch {
+        const m = st.readFileLineAsync(c.lr) catch {
             c.err = true;
             return;
         };
@@ -83,9 +83,9 @@ pub fn main() void {
         sa.tick(&s) catch @panic("tick");
         ticks += 1;
     }
-    if (cc.err) @panic("readLineAsync error");
+    if (cc.err) @panic("readFileLineAsync error");
     if (cc.lines != 3) @panic("line count");
-    if (cc.max_suspends < 2) @panic("async gate: a readLineAsync call suspended fewer than 2 times");
+    if (cc.max_suspends < 2) @panic("async gate: a readFileLineAsync call suspended fewer than 2 times");
 
     f.close(&file);
     f.remove("t_stream_a.txt") catch {};

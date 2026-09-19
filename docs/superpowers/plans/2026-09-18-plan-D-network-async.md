@@ -78,11 +78,11 @@
 
 **Interfaces:**
 - Consumes: `std_net.recvNonBlocking` (Task 1), `std.async`.
-- Produces: `SocketLineReader` + `initSocketLineReader` + `readLineSync`/`readLineAsync` (the socket half of the two-reader surface; same shape as `FileLineReader`).
+- Produces: `SocketLineReader` + `initSocketLineReader` + `readSocketLineSync`/`readSocketLineAsync` (the socket half of the two-reader surface; same shape as `FileLineReader`).
 
 - [ ] **Step 1: Write the failing fixture** (loopback line stream; a partial line across ticks; ≥2 suspends per call).
 - [ ] **Step 2: RED.**
-- [ ] **Step 3: Implement `SocketLineReader`** — `readLineAsync` yields on `error.WouldBlock` and is re-driven next tick (Model C); `readLineSync` blocks.
+- [ ] **Step 3: Implement `SocketLineReader`** — `readSocketLineAsync` yields on `error.WouldBlock` and is re-driven next tick (Model C); `readSocketLineSync` blocks.
 - [ ] **Step 4: GREEN + determinism/safety gates + the async gate.**
 - [ ] **Step 5: Fixed point MOVED/UNMOVED (recorded) + commit.**
 

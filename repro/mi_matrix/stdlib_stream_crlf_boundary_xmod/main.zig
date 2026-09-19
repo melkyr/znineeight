@@ -1,5 +1,5 @@
 // stdlib_stream_crlf_boundary_xmod — Plan B Task 4 (L6) CRLF-at-buffer-boundary
-// GREEN fixture for the blocking readLineSync reader.
+// GREEN fixture for the blocking readFileLineSync reader.
 //
 // Contract: when a `\r` lands as the last byte of a full overflow buffer,
 // takeOverflow strips it and carries it; the next read consumes the following
@@ -25,7 +25,7 @@ fn show(line: []const u8) void {
 
 // Silent exact-line assertion (keeps the golden stable).
 fn expectSync(lr: *st.FileLineReader, want: []const u8, what: []const u8) void {
-    const m = st.readLineSync(lr) catch @panic(what);
+    const m = st.readFileLineSync(lr) catch @panic(what);
     if (m) |line| {
         if (line.len != want.len) @panic(what);
         var i: usize = 0;
@@ -43,19 +43,19 @@ pub fn main() void {
     var rbuf: [3]u8 = undefined;
     var lr = st.initFileLineReader(&file, rbuf[0..]);
 
-    const a = st.readLineSync(&lr) catch @panic("readLineSync first");
+    const a = st.readFileLineSync(&lr) catch @panic("readFileLineSync first");
     if (a) |line| {
         show(line);
     } else {
         @panic("first line missing");
     }
-    const b = st.readLineSync(&lr) catch @panic("readLineSync second");
+    const b = st.readFileLineSync(&lr) catch @panic("readFileLineSync second");
     if (b) |line| {
         show(line);
     } else {
         @panic("second line missing");
     }
-    const c = st.readLineSync(&lr) catch @panic("readLineSync third");
+    const c = st.readFileLineSync(&lr) catch @panic("readFileLineSync third");
     if (c) |_| @panic("spurious line at EOF");
 
     f.close(&file);
@@ -70,7 +70,7 @@ pub fn main() void {
     expectSync(&lr1, "\r", "1buf literal CR kept");
     expectSync(&lr1, "X", "1buf X not lost");
     expectSync(&lr1, "", "1buf empty line");
-    if ((st.readLineSync(&lr1) catch @panic("1buf eof")) != null) @panic("1buf spurious line");
+    if ((st.readFileLineSync(&lr1) catch @panic("1buf eof")) != null) @panic("1buf spurious line");
     f.close(&file1);
     f.remove("t_stream_crlf1.txt") catch {};
 

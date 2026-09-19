@@ -1,10 +1,10 @@
 // stdlib_stream_multiple_xmod — Plan B hardening Task 5a-I: exact-multiple
-// long-line RED pin for std_stream.readLineSync (L6).
+// long-line RED pin for std_stream.readFileLineSync (L6).
 //
 // Contract (blueprint §3 L6, clarified 5a-I): a line whose length is an exact
 // multiple of buf.len must NOT yield a trailing empty line. "abcd\n" read
 // through a 4-byte FileLineReader buffer returns "abcd" for the overflow call;
-// the following readLineSync consumes the line's own '\n' terminator and
+// the following readFileLineSync consumes the line's own '\n' terminator and
 // returns the NEXT line ("z"), not an empty line.
 //
 // RED before Task 5a-F: the current compiler returns ["abcd", "", "z"] (the
@@ -40,21 +40,21 @@ pub fn main() void {
     var rbuf: [4]u8 = undefined;
     var lr = st.initFileLineReader(&file, rbuf[0..]);
 
-    const first = st.readLineSync(&lr) catch @panic("readLineSync first");
+    const first = st.readFileLineSync(&lr) catch @panic("readFileLineSync first");
     if (first) |line| {
         ckLine(line, "abcd", "exact-multiple first line");
     } else {
         @panic("exact-multiple first line null");
     }
 
-    const second = st.readLineSync(&lr) catch @panic("readLineSync second");
+    const second = st.readFileLineSync(&lr) catch @panic("readFileLineSync second");
     if (second) |line| {
         ckLine(line, "z", "exact-multiple next line (no spurious empty)");
     } else {
         @panic("exact-multiple next line null");
     }
 
-    const third = st.readLineSync(&lr) catch @panic("readLineSync third");
+    const third = st.readFileLineSync(&lr) catch @panic("readFileLineSync third");
     if (third) |_| @panic("exact-multiple EOF returned a line");
 
     f.close(&file);
