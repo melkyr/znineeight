@@ -227,17 +227,11 @@ fn boom() error{Boom}!void {
 </pre>
 <p>
 Two <tt>errdefer</tt>s in the same scope run innermost first, in reverse order
-of declaration.
+of declaration. A dynamic error-union return is no exception: when
+<tt>return someErrorUnion;</tt> returns an error, the <tt>errdefer</tt> runs on
+the way out; when it returns success, the <tt>errdefer</tt> is skipped, just as
+for any other exit.
 </p>
-<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffffcc">
-<tr>
-<td valign="top" width="20"><img src="gfx/icon-note.gif" width="16" height="16" alt="Note"></td>
-<td><b>Note.</b> One shape does not run the undo: returning a variable whose
-type is already an error union, <tt>return someErrorUnion;</tt>. The undo runs
-for <tt>try</tt> propagation and for an explicit <tt>return error.Tag;</tt>,
-but not for that dynamic return of an error-union value.</td>
-</tr>
-</table>
 
 <h2>The <tt>defer</tt>/<tt>errdefer</tt> control-flow rule</h2>
 <p>
