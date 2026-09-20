@@ -1,9 +1,38 @@
-# mi_matrix corpus — expected-fail manifest (v159 2026-09-19)
+# mi_matrix corpus — expected-fail manifest (v160 2026-09-20)
+
+## Plan D Task 4 (REVISED) — std.async.suspendUntil (v159 -> v160 2026-09-20)
+
+The original optional `std.async.wait(handle)` was ruled NOT justified under
+Model C; the operator replaced it with the Model C suspending primitive
+`pub fn suspendUntil(pred: fn() bool) void` in `sf/src/std_async.zig` — yield via
+`@asyncSuspend(null)` once per tick until `pred()` is true. The predicate is a
+NON-suspending function pointer invoked indirectly and stored in the coroutine
+frame across the suspend; `suspendUntil` is called directly by name (the allowed
+direction). This is the `sf/src/std_async.zig` change the v159 note recorded as
+absent.
+
+**New module fixture (1).**
+
+| fixture | kind | contract |
+|---|---|---|
+| `stdlib_async_suspenduntil_xmod` | primitive | named non-suspending `fn() bool` predicate increments a per-tick counter; coroutine calls `sa.suspendUntil(isReady)`; driver ticks 3x with the flag clear then sets it; coroutine resumes on tick 4; stdout `resume-tick 4` / `pred-calls 4` / `suspenduntil ok`, rc 0 |
+
+`scripts/stdlib/expected_dirs.txt` pin grows 183 -> 184 (177
+`repro/mi_matrix/stdlib_*` + 7 `stdlib_test/*`).
+
+**Gates (seed-built fixed-point compiler `197602956b55d1cb59848a922a934fe8`).**
+The change is confined to a std module outside `sf/src/main.zig`'s import graph,
+so the self-emission fixed point is **UNMOVED
+`197602956b55d1cb59848a922a934fe8`**. Runtime gate **184 PASS / 0 FAIL over 184
+dirs** (3x byte-identical stdout per fixture). Seed rotates **v40 -> v41**
+(archive `lib/std_async.zig` synced; archive binary byte-identical; archive md5
+`0e3250ea5bdcff1ccd79f8954ea17f48` -> `c9461ae95e8b6ff3c4cd585663fbca8b`). Full
+report: `.superpowers/sdd/2026-09-18-plan-D-network-async/task-4-report.md`.
 
 ## Plan D closeout — network async landed (v158 -> v159 2026-09-19)
 
 Plan D (`docs/superpowers/plans/2026-09-18-plan-D-network-async.md`) is
-**COMPLETE** (Tasks 1-3 + this closeout; Task 4 SKIPPED). It lands the network
+**COMPLETE** (Tasks 1-3 + this closeout; the original optional Task 4 was later replaced by `std.async.suspendUntil` in v160). It lands the network
 half of the `std_stream` two-reader surface: the `std_net` non-blocking socket
 primitives (`setNonBlocking`/`recvNonBlocking`/`sendNonBlocking`) and the
 `std_stream` `SocketLineReader` / `MsgReader` (length-prefix framing). The
@@ -16,11 +45,12 @@ point **MOVED `fc9198f6c1a24c92ec136e741c81c975` ->
 `0e3250ea5bdcff1ccd79f8954ea17f48`). The archive `lib/` file set stays 29 (no
 new std module); only the fixed point and payload contents changed.
 
-**Task 4 (OPTIONAL `std.async.wait(handle)`) — SKIPPED (recorded decision).**
-Model C is binding: Z98 is cooperative-yield with no executor and no poll loop
-(the `answerT4` ruling). The landed would-block-yield readers cover the use
-case, so the optional poll-based readiness primitive was not justified (plan
-Task 4 Step 1 decide-branch). No `sf/src/std_async.zig` change.
+**Task 4 (OPTIONAL `std.async.wait(handle)`) — SKIPPED, then REPLACED by
+`std.async.suspendUntil` (v160 2026-09-20).** Model C is binding: Z98 is
+cooperative-yield with no executor and no poll loop (the `answerT4` ruling), so
+the poll-based `wait(handle)` was not justified. The operator replaced it with
+the Model C primitive `pub fn suspendUntil(pred: fn() bool) void` (see the v160
+section above). No compiler change; fixed point UNMOVED.
 
 **New module fixtures (5, all loopback).**
 

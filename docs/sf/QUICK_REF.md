@@ -1024,7 +1024,7 @@ CWD. A fixture passes only when all 3 stdouts are byte-identical, stdout
 - Discovery is `repro/mi_matrix/stdlib_*/` (any `stdlib_*` dir, not just
   `_xmod`) plus `stdlib_test/*/`. In discovery mode the harness asserts the
   discovered dir set EQUALS the committed baseline
-  `scripts/stdlib/expected_dirs.txt` (183 dirs today: 176
+  `scripts/stdlib/expected_dirs.txt` (184 dirs today: 177
   `repro/mi_matrix/stdlib_*` + 7 `stdlib_test/*`), so a dropped/renamed/added
   fixture FAILS the gate instead of silently shrinking coverage. Update the pin
   intentionally when a band adds/removes fixtures.

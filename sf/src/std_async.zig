@@ -233,6 +233,16 @@ pub fn suspend(s: *Scheduler, t: *Task) void {
     t.state = TaskState.suspended;
 }
 
+/// Model C suspending primitive: yield via `@asyncSuspend(null)` once per tick
+/// until `pred()` is true. `pred` is a NON-suspending function pointer invoked
+/// indirectly; the caller must be a suspending function (this function
+/// self-seeds as suspending because its body contains `@asyncSuspend`).
+pub fn suspendUntil(pred: fn() bool) void {
+    while (!pred()) {
+        _ = @asyncSuspend(null);
+    }
+}
+
 /// Tick until every task is done or cancelled.
 pub fn waitAll(s: *Scheduler) FrameError!void {
     while (!allSettled(s)) {

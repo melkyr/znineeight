@@ -20,6 +20,7 @@ repro/mi_matrix/stdlib_async_pool_xmod
 repro/mi_matrix/stdlib_async_removetask_noop_xmod
 repro/mi_matrix/stdlib_async_removetask_xmod
 repro/mi_matrix/stdlib_async_sched_xmod
+repro/mi_matrix/stdlib_async_suspenduntil_xmod
 repro/mi_matrix/stdlib_async_waitfor_cancel_xmod
 repro/mi_matrix/stdlib_async_waitfor_dep_xmod
 repro/mi_matrix/stdlib_async_waitfor_helper_xmod
