@@ -118,6 +118,7 @@ standard library beside it in <tt>/tmp/manual_seed/lib/</tt>. Now translate the
 program to C89 and build it:
 </p>
 <pre>
+$ mkdir -p /tmp/manual_out
 $ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out docs/sf/manuals/src/vol1/hello.z98
 $ cd /tmp/manual_out &amp;&amp; sh build_target.sh linux hello
 Building for linux...
@@ -126,10 +127,11 @@ $ ./hello
 Hello from Z98!
 </pre>
 <p>
-The first command translates <tt>hello.z98</tt> into C89 and writes it, with
-the runtime and a <tt>build_target.sh</tt>, into <tt>/tmp/manual_out</tt>. The
-second compiles that C with <tt>gcc -m32</tt> and links the executable
-<tt>hello</tt>. The generated C draws a long list of warnings from
+The <tt>mkdir</tt> creates the output directory, which the compiler requires to
+exist. The next command translates <tt>hello.z98</tt> into C89 and writes it,
+with the runtime and a <tt>build_target.sh</tt>, into <tt>/tmp/manual_out</tt>.
+The one after that compiles the C with <tt>gcc -m32</tt> and links the
+executable <tt>hello</tt>. The generated C draws a long list of warnings from
 <tt>gcc</tt>; the emitted script does not use <tt>-Werror</tt>, so they do not
 stop the build. The last command runs the program, which prints its one line.
 </p>

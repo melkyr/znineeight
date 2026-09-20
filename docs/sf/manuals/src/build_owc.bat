@@ -13,14 +13,16 @@ REM     cd out
 REM     build_owc.bat [OUT]
 REM
 REM wcc386 /za /we /dZIG_WIN32 /i=.  strict ANSI C, warnings as errors
-REM wlink system console op q opt stack=65536
+REM wlink system console op q opt stack=65536 ... library wsock32
+REM wsock32 matches the emitted build_owc.bat: the seed emits std_net_*.c for
+REM every @import("std") program, so the socket symbols must resolve.
 setlocal
 if "%~1"=="" (set OUT=prog.exe) else (set OUT=%~1)
 echo Compiling...
 wcc386 /za /we /dZIG_WIN32 /i=. *.c
 if errorlevel 1 goto fail
 echo Linking...
-wlink system console op q opt stack=65536 file {*.obj} name %OUT%
+wlink system console op q opt stack=65536 file {*.obj} library wsock32 name %OUT%
 if errorlevel 1 goto fail
 echo Built: %OUT%
 goto :eof
