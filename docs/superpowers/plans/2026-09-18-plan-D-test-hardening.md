@@ -23,7 +23,7 @@
 - **No silent skips:** every discovered std fixture MUST have a committed golden (`expected.txt` + `expected.rc`) and be in `scripts/stdlib/expected_dirs.txt`.
 - **A found bug is not fixed in place:** STOP and report a separate I/F pair (as Plan A's Tasks 4b/6b, the Plan B Task 5a I/F pair, and the Plan C Task 1b/2b/3b/4b I/F pairs did).
 - **Fixture naming contract:** Plan D std fixtures are named `repro/mi_matrix/stdlib_<module>_<name>_xmod/` (the `_xmod` suffix); workflow fixtures live under `stdlib_test/`.
-- **Conditional optional task.** Plan D Task 4 (`std.async.wait(handle)`) is OPTIONAL. If Plan D landed it, this plan covers it (Task 2 golden + Task 3 probe + Task 4 stress); if Plan D recorded the decision to skip it, this plan records the skip and omits its fixtures. Determine the status at Task 1.
+- **Plan D Task 4 (revised).** Plan D Task 4 is `std.async.suspendUntil(pred: fn() bool) void` (operator-revised; the original `wait(handle)` was ruled not justified under Model C). This plan covers it: the Task 4 fixture `stdlib_async_suspenduntil_xmod` (already landed with Task 4) plus a `suspendUntil` probe and stress fixture.
 - **Edits only via `edit`/`fastedit`**; never stage `mnemoria/` or `.zig1_*.tmp`; declare every residual gap.
 
 ---
@@ -41,19 +41,19 @@
 - `stdlib_stream_socketlinereader_xmod/` — a loopback line stream; a partial line across ticks (≥2 suspends per call); the sync + async readers.
 - `stdlib_stream_msgreader_xmod/` — a length-prefix frame over loopback; partial frames across ticks; back-to-back frames; the sync + async readers.
 - `stdlib_test/net_stream_usage/` — the R7b workflow program composing `std_net` + `std_stream` + `std.async`.
-- (Conditional) `stdlib_async_wait_xmod/` — only if Plan D landed `std.async.wait(handle)`.
+- `stdlib_async_suspenduntil_xmod/` — the Plan D Task 4 fixture (landed with Task 4).
 
 **Create (the Plan D expected-failure probes — Task 3):**
 - `stdlib_net_recvnonblocking_wouldblock_xmod/` — `recvNonBlocking` on an idle loopback socket yields `error.WouldBlock` (asserted, declared `expected.rc`/`expected.txt`).
 - `stdlib_net_recvnonblocking_close_xmod/` — `recvNonBlocking` returns `0` at peer close (the EOF boundary).
 - `stdlib_stream_msgreader_oversize_xmod/` — a length prefix exceeding the reader buffer is rejected (declared `expected.rc`/`expected.txt`).
-- (Conditional) `stdlib_async_wait_unregistered_xmod/` — only if `wait(handle)` landed; an unregistered/invalid handle traps or errors (declared `expected.rc`).
+- `stdlib_async_suspenduntil_false_xmod/` — a predicate that stays false (bounded ticks): the coroutine suspends every tick and never resumes past the suspension point; the timing contract is asserted.
 
 **Create (the Plan D stress tier — Task 4):**
 - `stdlib_net_nonblocking_stress_xmod/` — a loopback drain loop over many `recvNonBlocking` calls: would-block/partial/EOF interleavings, zero-length send, maximum datagram/stream chunk.
 - `stdlib_stream_socketlinereader_stress_xmod/` — a long line stream, no trailing newline, empty source, a line spanning many ticks, interleaved readers.
 - `stdlib_stream_msgreader_stress_xmod/` — many back-to-back frames, a frame split across ticks, a zero-length frame, the maximum frame the buffer allows.
-- (Conditional) `stdlib_async_wait_stress_xmod/` — only if `wait(handle)` landed.
+- `stdlib_async_suspenduntil_stress_xmod/` — many coroutines yielding on `suspendUntil`; predicate flips at varied ticks.
 
 **Modify (closeout):** `repro/mi_matrix/EXPECTED_FAIL.md` (bump once), `docs/sf/QUICK_REF.md` (counts).
 
@@ -68,11 +68,11 @@
 
 **Interfaces:**
 - Consumes: the Plan B hardening harness.
-- Produces: the recorded Plan D baseline; confirmation the harness carries the hardening (capture mode, broadened discovery + unpinned-dir guard, `ports.txt` port guard, gcc/link diagnostics); the Plan D Task 4 (`wait(handle)`) landed/skipped status.
+- Produces: the recorded Plan D baseline; confirmation the harness carries the hardening (capture mode, broadened discovery + unpinned-dir guard, `ports.txt` port guard, gcc/link diagnostics); the Plan D Task 4 (`suspendUntil`) landed status.
 
 - [ ] **Step 1: Record the baseline** (HEAD; the fixed point via a fresh seed build; the seed version/archive md5; the corpus count + `EXPECTED_FAIL.md` header; the runtime gate count). The fixed point is MOVED from the Plan C value by Plan D's `net_prelude.h` change — record the new value.
 - [ ] **Step 2: Confirm the harness carries the hardening** — `--capture`, the broadened discovery filter + the unpinned-stdlib-dir guard, the `ports.txt` port guard, and the gcc/link first-line diagnostics. If any is missing, STOP (do not re-implement).
-- [ ] **Step 3: Determine the Plan D Task 4 status** — did Plan D land `std.async.wait(handle)` or record the skip? Record it; it gates the conditional fixtures in Tasks 2-4.
+- [ ] **Step 3: Confirm the Plan D Task 4 status** — Plan D landed `std.async.suspendUntil` (revised scope); record it; it gates the conditional fixtures in Tasks 2-4.
 - [ ] **Step 4: Run the full gate** on a fresh seed build; confirm every existing fixture PASSes and the pin set-equality holds.
 - [ ] **Step 5: Confirm the fixed point is UNMOVED** at the Plan D baseline; no commit (this task is a verification).
 
@@ -81,7 +81,7 @@
 ### Task 2: Capture the Plan D runtime goldens
 
 **Files:**
-- Create: `expected.txt` + `expected.rc` for every Plan D fixture (the `stdlib_net_{set,recv,send}nonblocking_xmod`, `stdlib_stream_{socketlinereader,msgreader}_xmod`, and `stdlib_test/net_stream_usage` dirs; plus `stdlib_async_wait_xmod` iff Task 4 landed); modify `scripts/stdlib/expected_dirs.txt`.
+- Create: `expected.txt` + `expected.rc` for every Plan D fixture (the `stdlib_net_{set,recv,send}nonblocking_xmod`, `stdlib_stream_{socketlinereader,msgreader}_xmod`, and `stdlib_test/net_stream_usage` dirs; plus `stdlib_async_suspenduntil_xmod`); modify `scripts/stdlib/expected_dirs.txt`.
 
 **Interfaces:**
 - Consumes: Task 1's harness + the golden convention.
@@ -107,7 +107,7 @@
 - Produces: the Plan D failure-path assertions.
 
 - [ ] **Step 1: Add the probes** — `stdlib_net_recvnonblocking_wouldblock_xmod` (an idle loopback socket → `error.WouldBlock`), `stdlib_net_recvnonblocking_close_xmod` (peer close → `0`), `stdlib_stream_msgreader_oversize_xmod` (a length prefix larger than the reader buffer is rejected), each with a declared `expected.txt`/`expected.rc` (a single-failure-per-process probe where the process traps; otherwise a deterministic rc-0 assertion line).
-- [ ] **Step 2 (conditional): If `wait(handle)` landed**, add `stdlib_async_wait_unregistered_xmod` (an invalid/unregistered handle → the declared trap/error rc).
+- [ ] **Step 2: Add the `suspendUntil` probe** — `stdlib_async_suspenduntil_false_xmod` (a predicate that stays false over a bounded tick count → the coroutine remains suspended; assert the observed resume count).
 - [ ] **Step 3: Confirm each probe asserts its expected failure**; update `expected_dirs.txt`; run the full gate.
 - [ ] **Step 4: Confirm the fixed point is UNMOVED**; commit (`test(stdlib): add the Plan D expected-failure probes (Plan D hardening Task 3)`).
 
@@ -116,7 +116,7 @@
 ### Task 4: Plan D network/async stress tier
 
 **Files:**
-- Create: `repro/mi_matrix/stdlib_{net_nonblocking,stream_socketlinereader,stream_msgreader}_stress_xmod/` (+ goldens; conditional `stdlib_async_wait_stress_xmod`); modify `scripts/stdlib/expected_dirs.txt`.
+- Create: `repro/mi_matrix/stdlib_{net_nonblocking,stream_socketlinereader,stream_msgreader,async_suspenduntil}_stress_xmod/` (+ goldens); modify `scripts/stdlib/expected_dirs.txt`.
 
 **Interfaces:**
 - Consumes: the harness + the golden convention.
@@ -125,7 +125,7 @@
 - [ ] **Step 1: `stdlib_net_nonblocking_stress_xmod`** — a loopback drain loop over many `recvNonBlocking` calls: the would-block / partial / EOF interleavings, a zero-length send, and the maximum chunk; deterministic (bounded loop, no sleep).
 - [ ] **Step 2: `stdlib_stream_socketlinereader_stress_xmod`** — a long line stream, no trailing newline, an empty source, a line spanning many ticks (≥2 suspends), and interleaved readers.
 - [ ] **Step 3: `stdlib_stream_msgreader_stress_xmod`** — many back-to-back frames, a frame split across ticks, a zero-length frame, and the maximum frame the buffer allows; assert frame boundaries.
-- [ ] **Step 4 (conditional): `stdlib_async_wait_stress_xmod`** — only if `wait(handle)` landed.
+- [ ] **Step 4: `stdlib_async_suspenduntil_stress_xmod`** — many coroutines yielding on `suspendUntil`; predicate flips at varied ticks.
 - [ ] **Step 5: Update `expected_dirs.txt`**; run the full gate; confirm PASS + 3× determinism.
 - [ ] **Step 6: Confirm the fixed point is UNMOVED**; commit (`test(stdlib): add the Plan D stress/adversarial tier (Plan D hardening Task 4)`).
 

@@ -4,7 +4,7 @@
 
 **Goal:** Land the network half of the `std_stream` two-reader surface: the `std_net` non-blocking socket primitives, `std_stream.SocketLineReader`, and `std_stream.MsgReader` (length-prefix framing) — the pieces deferred from Plan B by the `answerT4` ruling.
 
-**Architecture:** One plan, three module tasks plus an optional primitive task and the closeout. Non-blocking socket support is the gating change: it is the only new OS surface, and it is what makes a socket source suspendable in the Model C (cooperative-yield) tick model. Once it exists, `SocketLineReader` is the socket analog of Plan B's `FileLineReader`, and `MsgReader` is the length-prefix frame reader over the same primitive.
+**Architecture:** One plan, three module tasks plus the `std.async.suspendUntil` primitive task and the closeout. Non-blocking socket support is the gating change: it is the only new OS surface, and it is what makes a socket source suspendable in the Model C (cooperative-yield) tick model. Once it exists, `SocketLineReader` is the socket analog of Plan B's `FileLineReader`, and `MsgReader` is the length-prefix frame reader over the same primitive.
 
 **Tech Stack:** Z98/`zig1` self-hosted compiler (C89 emission), `std.arena`, `std.async` (Track 3), `std_net` (Plan B), `std_stream` (Plan B), bash, `gcc -m32`, git.
 
@@ -22,7 +22,7 @@
 - **Layering (R3):** `std_net` imports L0-L2; `std_stream` (L6) imports L0-L5 + `std.async`. No sibling imports. `std_stream` remains the only module importing `std.async` transitively.
 - **Coroutine rules (blueprint §4):** C1 — a `*Async` function is the same module, same error set, same return type as its sync sibling; only the body may suspend. C2 — no std module calls `std.async.tick`/`waitFor`/`waitAll` (those are `main`-level). C3 — a synchronous function never calls a `*Async` function.
 - **R8 PAL boundary:** the std lib never edits `sf/src/pal.zig`/`sf/src/include/zig_pal.c`/`sf/src/emit_support.zig`, except a prelude change if a new OS prototype is required (the `net_prelude.h` analog is an authorized compiler-graph change; record it and the fixed-point move).
-- **`std.async` API (landed):** `TaskState`, `FrameError{OutOfFrame}`, `Context`, `Task`, `Scheduler`, `schedulerInit/addTask/removeTask/tick/suspend/awaitTask/waitFor/waitAll/cancel/cancelAll`. **There is no `wait` primitive** — Task 4 of this plan is optional and only lands if a poll-based wakeup justifies it.
+- **`std.async` API (landed):** `TaskState`, `FrameError{OutOfFrame}`, `Context`, `Task`, `Scheduler`, `schedulerInit/addTask/removeTask/tick/suspend/awaitTask/waitFor/waitAll/cancel/cancelAll`. **Task 4 (revised, operator 2026-09-19) adds `suspendUntil(pred: fn() bool) void`** — a Model C primitive that yields via `@asyncSuspend` once per tick until `pred()` is true (no executor/poll loop).
 - **Fixtures (R7):** one `repro/mi_matrix/stdlib_<module>_<name>_xmod` per public function; loopback for network fixtures; per-dir `ports.txt` for any fixed port.
 - **Usage programs (R7b):** the band ships `stdlib_test/net_stream_usage/main.zig` (the network analog of Plan B's `file_stream_usage`).
 - **Edits only via `edit`/`fastedit`**; never stage `mnemoria/` or `.zig1_*.tmp`; declare every residual gap.
@@ -106,17 +106,27 @@
 
 ---
 
-### Task 4 (OPTIONAL): `std.async.wait(handle)`
+### Task 4 (REVISED): `std.async.suspendUntil`
+
+**Status:** Revised by operator ruling (2026-09-19). The original optional `std.async.wait(handle)` was ruled NOT justified under Model C (no executor/poll loop); the deliverable is REPLACED by `std.async.suspendUntil`. Post-closeout follow-up (Tasks 1-3 + Task 5 already landed; seed v40).
 
 **Files:**
-- Modify: `sf/src/std_async.zig` (only if this task is justified)
+- Modify: `sf/src/std_async.zig`
+- Create: the `stdlib_async_suspenduntil_xmod` fixture
 
 **Interfaces:**
-- Consumes: the scheduler.
-- Produces: an optional `wait(handle)`-style readiness primitive.
+- Consumes: the scheduler (`tick` drives the coroutine).
+- Produces: `pub fn suspendUntil(pred: fn() bool) void` — a Model C suspending primitive that yields via `@asyncSuspend(null)` once per tick until `pred()` is true.
 
-- [ ] **Step 1: Decide.** Only land this if a poll-based wakeup justifies it over the Model C would-block yield. If not justified, record the decision and skip Tasks 4's steps.
-- [ ] **Step 2: If justified:** pin with fixtures, implement, run the gates, record the fixed-point move.
+- [ ] **Step 1: Write the failing fixture** — `repro/mi_matrix/stdlib_async_suspenduntil_xmod/`: a named non-suspending predicate (Z98 has no anonymous function literals) that increments a per-tick counter and returns a global flag; a coroutine that calls `suspendUntil(isReady)`; the driver flips the flag after N ticks and asserts the coroutine resumes on the correct tick and the predicate-call count matches. Deterministic stdout; add the dir to `scripts/stdlib/expected_dirs.txt`.
+- [ ] **Step 2: RED.** The fixture fails to build (missing `suspendUntil`) — capture the exact output.
+- [ ] **Step 3: Implement `suspendUntil`** in `sf/src/std_async.zig`:
+  `pub fn suspendUntil(pred: fn() bool) void { while (!pred()) { _ = @asyncSuspend(null); } }`
+  No compiler change (uses the landed `@asyncSuspend` builtin); fixed point stays UNMOVED at `197602956b55d1cb59848a922a934fe8`.
+- [ ] **Step 4: GREEN + determinism/safety gates + the async gate.** Run the full stdlib runtime gate; confirm 3× determinism.
+- [ ] **Step 5: STOP condition (operator ruling).** The fixture is the pin for the residual risk (a fn-pointer param in an async frame; an indirect `pred()` call in a suspending loop). If the fixture fails to compile, ICEs, mis-lowers, rejects the fn-pointer async-frame param, or resumes on the wrong tick — that is a COMPILER BUG: STOP and present with evidence. No workaround, no compiler edits.
+- [ ] **Step 6: Re-close.** Bump `repro/mi_matrix/EXPECTED_FAIL.md` once (v159 → v160; correct the earlier "Task 4 SKIPPED" note to "replaced by `suspendUntil`"); update `docs/sf/QUICK_REF.md` pinned count 183 → 184; rotate the seed v40 → v41 (`bash scripts/seed/archive_seed.sh <zig1> <gen_dir> release/seed/zig1-seed.tgz --update-changelog`) to sync the archive `lib/` (fixed point UNMOVED; archive binary byte-identical, only `lib/` content differs).
+- [ ] **Step 7: Commit** (`feat(std): add std.async.suspendUntil + fixture (Plan D Task 4 revised)`).
 
 ---
 
@@ -139,6 +149,6 @@
 
 ## Self-Review
 
-- **Spec coverage:** the `answerT4` deferred package → Tasks 1-3; the optional `wait(handle)` → Task 4; R7b → Task 5 Step 2; R3/C1-C3 → the Global Constraints + the per-task gates; the seed rotation → Task 5 Step 6.
+- **Spec coverage:** the `answerT4` deferred package → Tasks 1-3; the revised `suspendUntil` primitive → Task 4; R7b → Task 5 Step 2; R3/C1-C3 → the Global Constraints + the per-task gates; the seed rotation → Task 5 Step 6.
 - **Placeholder scan:** the module signatures are referenced to the blueprint (§3 L3/L6) as the exact-signature source of record; each task names concrete files + the observable result.
 - **Type consistency:** `SocketLineReader`/`MsgReader`/`recvNonBlocking`/`sendNonBlocking`/`setNonBlocking` are named identically across tasks and the file structure.

@@ -42,7 +42,7 @@ it.
 | **Plan A** | impl | L0-L2 foundation: `std_bits`, `std_os`, `std_time`, `std_debug` ext, `std_buf`, `std_str` ext; plus the optional-fn-pointer compiler-defect I/F pair (Tasks 4b-I/4b-F/4c) and the `-ffast` undefined slice/optional/struct-field compiler-defect I/F pair (Tasks 6b-I/6b-F). | `2026-09-17-std-lib-plan-a-foundation.md` |
 | **Plan B** | impl | L3 resources + L6 capstone: `std_file`, `std_stdin`, `std_net` UDP ext, then `std_stream`. | `2026-09-17-std-lib-plan-b-resources-stream.md` |
 | **Plan C** | impl | L4 + L5: `std_map`, `std_sort`, `std_heap`, `std_rle`; `std_crypto`, `std_parse`, `std_base64`, `std_hex`, `std_utf8`. | `2026-09-17-std-lib-plan-c-data-codecs.md` |
-| **Plan D** | impl | Network async: non-blocking socket primitives in `std_net` (`recvNonBlocking`/`sendNonBlocking`/`setNonBlocking`), `std_stream.SocketLineReader`, `MsgReader`, and an optional `std.async.wait(handle)`. Deferred from Plan B (Model C ruling). | `2026-09-18-plan-D-network-async.md` |
+| **Plan D** | impl | Network async: non-blocking socket primitives in `std_net` (`recvNonBlocking`/`sendNonBlocking`/`setNonBlocking`), `std_stream.SocketLineReader`, `MsgReader`, and `std.async.suspendUntil` (revised Task 4). Deferred from Plan B (Model C ruling). | `2026-09-18-plan-D-network-async.md` |
 
 **Sequencing is binding:** Task 0 → Plan A → Plan B → Plan C. Each plan's
 header carries a `Sequence:` line naming its predecessor and successor, so
@@ -109,7 +109,7 @@ its fixtures GREEN and the dependency-graph check passing.
   **file-only**: `std_stream.FileLineReader` with `readFileLineSync` (blocking)
   and `readFileLineAsync` (a separate chunked implementation that yields via the
   `@asyncSuspend` builtin once per incomplete read). `SocketLineReader`,
-  `MsgReader`, the non-blocking socket primitives, and `std.async.wait(handle)`
+  `MsgReader`, the non-blocking socket primitives, and `std.async.suspendUntil`
   are deferred to Plan D. `std_stream` is the only module that pulls in the
   async facility; a program that does not use `std_stream` must not link the
   async runtime (C3). Plan B carries a graph assertion for this.
@@ -305,8 +305,10 @@ per-function `repro/mi_matrix/` fixtures.
   `recvNonBlocking` returns `error.WouldBlock` when no data is ready and 0 at
   peer close. The `*Async` readers yield on `error.WouldBlock` and are
   re-driven on the next tick (Model C); the `Sync` forms block. `MsgReader`
-  reads a length prefix, then the body. An optional `std.async.wait(handle)`
-  needs an executor or a `poll()` loop and is Plan D Task 4 (optional). Plan B's
+  reads a length prefix, then the body. Plan D Task 4 (revised by operator ruling
+  2026-09-19) adds `std.async.suspendUntil(pred: fn() bool) void` — a Model C
+  primitive that yields via `@asyncSuspend` once per tick until `pred()` is true
+  (no executor or `poll()` loop). Plan B's
   `std_stream` is file-only (`FileLineReader`, `readFileLineSync` + `readFileLineAsync`).
   Recorded in `docs/superpowers/plans/2026-09-18-plan-D-network-async.md`.
 - **Async frame-layout residual — DECLARED (Plan B Task 4 fix round 1).** A
@@ -334,18 +336,17 @@ beyond the three maps and one heap, a testing framework) are out of scope.
 2. `docs/superpowers/plans/2026-09-17-std-lib-plan-a-foundation.md` — L0-L2.
 3. `docs/superpowers/plans/2026-09-17-std-lib-plan-b-resources-stream.md` — L3 + L6.
 4. `docs/superpowers/plans/2026-09-17-std-lib-plan-c-data-codecs.md` — L4 + L5.
-5. `docs/superpowers/plans/2026-09-18-plan-D-network-async.md` — network async: non-blocking sockets in `std_net`, `std_stream.SocketLineReader`, `MsgReader`, optional `std.async.wait(handle)`. **Deferred from Plan B** (Model C ruling); not in the Task 0 → A → B → C sequence.
+5. `docs/superpowers/plans/2026-09-18-plan-D-network-async.md` — network async: non-blocking sockets in `std_net`, `std_stream.SocketLineReader`, `MsgReader`, `std.async.suspendUntil` (revised Task 4). **Deferred from Plan B** (Model C ruling); not in the Task 0 → A → B → C sequence.
 6. `docs/superpowers/plans/2026-09-18-plan-D-test-hardening.md` — the Plan D runtime gate (loopback goldens + would-block/oversize probes + the network/async stress tier). Executes after Plan D lands; the **final** plan of the program.
 
 Each plan's header `Sequence:` line names its predecessor and successor;
 the successor plan is the "next plan to follow up" for the plan just
 completed.
 
-**Completion (2026-09-19).** Task 0 → Plan A → Plan B → Plan C are COMPLETE;
-the std-lib extension program's core bands are COMPLETE. The next executable is
-Plan D (`2026-09-18-plan-D-network-async.md`, the network-async capstone:
-non-blocking sockets in `std_net`, `std_stream.SocketLineReader`, `MsgReader`,
-optional `std.async.wait(handle)`), followed by the Plan D test-hardening plan
+**Completion (2026-09-19).** Task 0 → Plan A → Plan B → Plan C → Plan D are
+COMPLETE (Plan D includes the revised Task 4 `std.async.suspendUntil`); the
+std-lib extension program's core bands and the network-async capstone are
+COMPLETE. The next executable is the Plan D test-hardening plan
 `docs/superpowers/plans/2026-09-18-plan-D-test-hardening.md` (operator m1927;
 the final plan). Plan C closeout:
 `docs/superpowers/plans/2026-09-17-std-lib-plan-c-data-codecs.md` § "Next plan";
