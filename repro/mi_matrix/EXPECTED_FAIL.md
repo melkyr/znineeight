@@ -1,4 +1,51 @@
-# mi_matrix corpus — expected-fail manifest (v160 2026-09-20)
+# mi_matrix corpus — expected-fail manifest (v161 2026-09-20)
+
+## Plan D hardening closeout — network/async goldens + stress tier (v160 -> v161 2026-09-20)
+
+Plan D test-hardening (`docs/superpowers/plans/2026-09-18-plan-D-test-hardening.md`) is
+**COMPLETE** (Tasks 1-5). Docs/scripts/fixtures only — **no `sf/src` change**. The
+self-emission fixed point is **UNMOVED `197602956b55d1cb59848a922a934fe8`**, and the seed is
+**NOT rotated** (stays **v41**, archive md5 `c9461ae95e8b6ff3c4cd585663fbca8b`; the hardening
+adds no std module, so the archive `lib/` payload is unchanged). This is the final hardening
+plan; the std-lib extension program is COMPLETE (see `## Next plan`).
+
+**Golden convention (binding).** Each discovered std fixture dir carries `expected.txt` (exact
+stdout bytes) + `expected.rc` (exit code); a missing golden is a FAIL (no silent skips).
+`scripts/stdlib/expected_dirs.txt` pins the discovered set so coverage cannot silently shrink.
+Goldens are runtime-only (stdout + rc), captured only after the observed output matched the
+fixture's documented GREEN contract, and each fixture runs 3x with byte-identical stdout
+(determinism R6). Network fixtures are loopback-only and ship `<dir>/ports.txt` (new:
+4155/4156/4157/4158/4159/4160); the async-only probes bind no socket.
+
+**New fixtures (8).**
+
+| fixture | kind | contract |
+|---|---|---|
+| `stdlib_net_recvnonblocking_wouldblock_xmod` | expected-failure probe | idle loopback socket → `recvNonBlocking` yields `error.WouldBlock` (never a count, never 0); stdout `wouldblock ok`, rc 0; port 4155 |
+| `stdlib_net_recvnonblocking_close_xmod` | expected-failure probe | after peer close `recvNonBlocking` converges to `0` (EOF), not `WouldBlock`; stdout `close-eof ok`, rc 0; port 4156 |
+| `stdlib_stream_msgreader_oversize_xmod` | expected-failure probe | u32 big-endian prefix 17 against a 16-byte reader buffer → `readMsgSync` returns `error.FrameTooLarge` before touching the body; stdout `oversize ok`, rc 0; port 4157 |
+| `stdlib_async_suspenduntil_false_xmod` | expected-failure probe | predicate stays false over a bounded 4-tick drive → coroutine stays suspended, never resumes, predicate invoked once per tick; stdout `resume-count 0` / `pred-calls 4` / `suspenduntil-false ok`, rc 0 |
+| `stdlib_net_nonblocking_stress_xmod` | stress | 4096-byte payload drained through an 8-byte buffer (512 bounded partial reads, byte-exact); would-block on empty + post-drain; zero-length send; 65536-byte max-chunk drain; peer-close EOF; stdout `net nonblocking stress ok`, rc 0; port 4158 |
+| `stdlib_stream_socketlinereader_stress_xmod` | stress | 250-byte line through a 100-byte buffer (100/100/50); final line with no trailing newline; empty source; interleaved readers; async line across ticks (3 suspends); stdout `max-suspends 3` / `socketlinereader stress ok`, rc 0; port 4159 |
+| `stdlib_stream_msgreader_stress_xmod` | stress | 40 back-to-back frames (lengths cycling 0..15), full-capacity 16-byte frame, zero-length frame, EOF; async frame split across ticks (3 suspends) + 8-byte full-capacity frame; stdout `max-suspends 3` / `msgreader stress ok`, rc 0; port 4160 |
+| `stdlib_async_suspenduntil_stress_xmod` | stress | six coroutines on named `suspendUntil` predicates flipping at ticks {3,1,6,2,7,4}; each resumes on exactly its flip tick and its predicate-call count equals that tick; 13 stdout lines, rc 0 |
+
+Inputs are hand-written deterministic tables (bounded loops, no PRNG, no wall-clock sleep);
+Model C is respected (caller drives `tick`; no executor/poll loop). Each probe is a
+single-failure-per-process assertion: the wrong outcome `@panic`s (trap = harness FAIL), so a
+mistake cannot be mistaken for success.
+
+**Gates (seed-built fixed-point compiler `197602956b55d1cb59848a922a934fe8`).** Runtime gate
+**192 PASS / 0 FAIL over 192 dirs** (3x byte-identical stdout internal; pin
+`scripts/stdlib/expected_dirs.txt` = **184 -> 192** data lines: 185
+`repro/mi_matrix/stdlib_*` + 7 `stdlib_test/*`). `scripts/check_emit_support.sh` **7/7**
+byte-identical. Self-compile `-ffast --dump-c89` rc=0, 48 `.c` + 48 `.h`, 0 `error[`,
+0 PANIC. Corpus `-ffast` dump+gcc classifier **901 dirs = 848 OK / 28 GREEN / 25 FAIL / 0 ICE
+/ 0 CRASH** (Plan D closeout 892 -> 901: the 9 new dirs — the v160 `suspenduntil` fixture + the
+8 hardening fixtures — all classify OK; `join`-diff shows **zero class movement on all 892
+pre-existing dirs**). `scripts/closeout/verify_upgraded.sh` **CLOSEOUT OK** (A1-A5 / B1-B7 /
+C1). Seed v41 round-trip re-verified (two-hop closure hop1 == hop2 == `197602956b55d1cb59848a922a934fe8`).
+Full report: `.superpowers/sdd/2026-09-18-plan-D-test-hardening/task-5-report.md`.
 
 ## Plan D Task 4 (REVISED) — std.async.suspendUntil (v159 -> v160 2026-09-20)
 
@@ -1023,7 +1070,7 @@ out of the current plan scope. No ruling yet.
 
 ## Next plan
 
-Plan C hardening complete. The std-lib extension program is COMPLETE.
+Plan D hardening complete. The std-lib extension program is COMPLETE.
 No successor plan. Program spec: `docs/superpowers/specs/2026-09-17-std-lib-extension-program-design.md`.
 
 ---
