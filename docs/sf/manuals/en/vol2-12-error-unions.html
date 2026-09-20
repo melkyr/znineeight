@@ -1,0 +1,358 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Error Unions</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual error unions error set try catch errdefer error.Tag orelse anyerror">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol1-05-first-program.html">
+<link rel="next" href="toc.html">
+</head>
+<body bgcolor="#f5f0e1" text="#000000" link="#003366" vlink="#551a8b" alink="#cc0000">
+<table width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#e8e0cc" class="sidebar">
+<font size="1">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#e8e0cc" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume II &mdash; Learning Z98</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+The honest comparison <i>(planned)</i><br>
+The type system <i>(planned)</i><br>
+Pointers <i>(planned)</i><br>
+Aggregates I: structs <i>(planned)</i><br>
+Aggregates II: packed structs <i>(planned)</i><br>
+Aggregates III: enums <i>(planned)</i><br>
+Aggregates IV: unions <i>(planned)</i><br>
+Aggregates V: tuples <i>(planned)</i><br>
+Arrays and slices <i>(planned)</i><br>
+Control flow, in full <i>(planned)</i><br>
+defer and errdefer <i>(planned)</i><br>
+<b>Error unions &mdash; the first big shift</b><br>
+Optionals <i>(planned)</i><br>
+The arena &mdash; the second big shift <i>(planned)</i><br>
+Builtins, in full <i>(planned)</i><br>
+No methods, no generics, no comptime <i>(planned)</i><br>
+The standard library tour <i>(planned)</i><br>
+print and the format string <i>(planned)</i><br>
+Idioms and best practices <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Error Unions &mdash; the First Big Shift</h1>
+<p>
+Every language has a way to say "this did not work". C says it with a return
+value, a global variable, and a comment. Z98 says it with a <b>type</b>. This is
+the chapter where that difference stops being a slogan and becomes something you
+type. It is the first big shift for a C programmer, and it is the one that
+changes how the rest of the manual reads.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ece0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> If you come from C, your hands already know the old
+shapes: return <tt>-1</tt> and set <tt>errno</tt>, or carry a status variable
+down the function and <tt>goto cleanup</tt> when it goes bad. Both work, and Z98
+emits C89, so you can still write them. But the compiler cannot see them.
+Nothing forces the caller to check the <tt>-1</tt>; nothing runs the cleanup
+when a later step fails; the error is a convention between people, not a fact
+the tool can reason about. Here is the Z98 way: make the error part of the
+function's return type, propagate it with <tt>try</tt>, handle it with
+<tt>catch</tt>, and undo partial work with <tt>errdefer</tt>.</td>
+</tr>
+</table>
+
+<h2>Error sets: <tt>error{...}</tt></h2>
+<p>
+An error set is a named list of error tags. You declare it with the
+<tt>error</tt> keyword and bind it to a name with <tt>const</tt>:
+</p>
+<pre>
+const MyErrors = error{ DivideByZero, Bad };
+</pre>
+<p>
+The spec writes the same declaration as <tt>error { Foo, Bar }</tt>; the
+spacing is not significant. Each tag is a distinct value, not an integer you
+have to keep straight. A function that can fail returns the set as part of its
+type, so a caller reading the signature knows exactly what can go wrong.
+</p>
+
+<h2>Error unions: <tt>!T</tt> and <tt>E!T</tt></h2>
+<p>
+An <b>error union</b> is "a value of type <tt>T</tt>, or one of a set of errors".
+Write it with the error set, then a bang, then the payload type:
+</p>
+<pre>
+fn divide(a: i32, b: i32) error{DivideByZero}!i32 {
+    if (b == 0) return error.DivideByZero;
+    return a / b;
+}
+</pre>
+<p>
+<tt>error{DivideByZero}!i32</tt> is a named error union: success is an
+<tt>i32</tt>, failure is <tt>DivideByZero</tt>. If you name the set once, the
+signature reads <tt>MyErrors!i32</tt>; the two forms mean the same thing. The
+short form <tt>!T</tt> is an anonymous error union and is what <tt>main</tt>
+uses:
+</p>
+<pre>
+pub fn main() !void {
+    ...
+}
+</pre>
+<p>
+A plain value of type <tt>T</tt> is implicitly coerced to <tt>!T</tt> as a
+success, and an error literal is implicitly coerced to any error union. That is
+why <tt>return a / b;</tt> above needs no wrapping: an <tt>i32</tt> becomes a
+successful <tt>error{DivideByZero}!i32</tt> on the way out. The compiler
+represents an error union as a C struct holding the payload and an error code,
+so on the wire it is still plain C89.
+</p>
+<p>
+A function returning <tt>!void</tt> (or <tt>ErrorSet!void</tt>) that falls off
+the end of its body implicitly returns success. That is the one exception to the
+usual rule that a non-void function must return a value, and it is why
+<tt>main</tt> in the example above needs no final <tt>return</tt>.
+</p>
+
+<h2><tt>try</tt>: propagate it</h2>
+<p>
+<tt>try expr</tt> unwraps an error union. On success it yields the payload; on
+error it returns that error from the <i>current</i> function. The enclosing
+function must return a compatible error union, so the error travels up the call
+chain without a single status variable:
+</p>
+<pre>
+const ok = try divide(10, 2);
+</pre>
+<p>
+If <tt>divide</tt> succeeds, <tt>ok</tt> is the quotient. If it fails,
+<tt>main</tt> returns the error immediately and the line after it never runs.
+<tt>try</tt> is the everyday spelling of "I cannot handle this here; pass it
+on".
+</p>
+
+<h2><tt>catch |err|</tt>: handle it</h2>
+<p>
+<tt>catch</tt> is where the error stops. <tt>expr catch |err| fallback</tt>
+evaluates <tt>expr</tt>; on success the payload is yielded and the fallback is
+skipped; on error the tag is bound to <tt>err</tt> and the fallback is
+evaluated. The fallback can be an expression or a block, and the capture is
+optional:
+</p>
+<pre>
+const bad = divide(1, 0) catch |err| {
+    std.io.print("caught: DivideByZero\n");
+    return;
+};
+</pre>
+<p>
+The result type of a <tt>catch</tt> expression is the payload type of the
+operand, so the fallback must either produce that type or diverge. The block
+above diverges with <tt>return</tt>, which is why it can stand in for the
+<tt>i32</tt> that <tt>divide</tt> would have produced. Inside the block,
+<tt>err</tt> is an ordinary value you can inspect, and the spec's own example
+compares it:
+</p>
+<pre>
+const res = mightFail() catch |err| {
+    if (err == error.Bad) return 0;
+    return 1;
+};
+</pre>
+
+<h2><tt>error.Tag</tt>: the error value itself</h2>
+<p>
+<tt>error.TagName</tt> is an error literal: an unqualified value of the tag,
+with no type name attached. You write it in a <tt>return</tt>, compare it with
+<tt>==</tt>, and coerce it into any error union. The tag in
+<tt>return error.DivideByZero;</tt> and the tag in
+<tt>err == error.DivideByZero</tt> are the same value.
+</p>
+
+<h2><tt>errdefer</tt>: undo on the error path</h2>
+<p>
+<tt>errdefer statement</tt> schedules code to run only when the scope exits
+<i>with an error</i>. It is the structured replacement for the
+<tt>goto cleanup</tt> tail: you put the undo next to the thing it undoes, and
+the compiler runs it on every error exit, in reverse order of declaration, and
+never on the success path. Braces are optional:
+</p>
+<pre>
+fn check(a: i32, b: i32) MyError!i32 {
+    errdefer std.io.print("errdefer ran\n");
+    const v = try divide(a, b);
+    return v;
+}
+</pre>
+<p>
+If <tt>divide</tt> fails, <tt>try</tt> returns the error from <tt>check</tt>,
+and <tt>errdefer</tt> runs on the way out. If <tt>divide</tt> succeeds,
+<tt>errdefer</tt> is skipped. The same is true when the function returns the
+error itself: an explicit <tt>return error.Tag;</tt> is an error exit, so every
+<tt>errdefer</tt> in the scope runs before the error leaves the function:
+</p>
+<pre>
+fn boom() error{Boom}!void {
+    errdefer std.io.print("undo\n");
+    return error.Boom;
+}
+</pre>
+<p>
+Two <tt>errdefer</tt>s in the same scope run innermost first, in reverse order
+of declaration.
+</p>
+
+<h2>Why <tt>orelse</tt> is not the tool</h2>
+<p>
+<tt>orelse</tt> looks like a natural fallback for an error union, and it is not.
+<tt>orelse</tt> belongs to <b>optionals</b> (<tt>?T</tt>): it fires when the
+value is <tt>null</tt>. An error union is never <tt>null</tt>; it carries an
+error tag, and the operation that handles a tag is <tt>catch</tt>. The compiler
+enforces the distinction. Asking <tt>orelse</tt> to handle an error union is
+rejected:
+</p>
+<pre>
+error[3016]: orelse requires an optional operand; use 'catch' for error unions
+</pre>
+<p>
+So the rule is short: <tt>?T</tt> takes <tt>orelse</tt>, <tt>E!T</tt> takes
+<tt>catch</tt>. Use the wrong one and the compiler tells you which is which.
+</p>
+
+<h2>Why there is no <tt>anyerror</tt></h2>
+<p>
+Modern Zig has an <tt>anyerror</tt> type: one type that can hold any error tag.
+Z98 does not. <tt>anyerror</tt> is not in the token set, and naming it is a
+compile error, not a silently accepted type:
+</p>
+<pre>
+error[3000]: unknown type in variable declaration
+</pre>
+<p>
+The reason is the same one that runs through the whole language: errors are
+declared, not erased. A function says in its signature which errors it can
+return, and the caller can see that list without reading the body. If you want
+to group tags, name a set; if you want "some error, unnamed", write the
+anonymous <tt>!T</tt>.
+</p>
+
+<h2>One rule you will meet early</h2>
+<p>
+An error union cannot be ignored. A statement whose result is an error union and
+is discarded is rejected, because dropping it would throw away the very thing
+the type exists to make visible:
+</p>
+<pre>
+error[3015]: error union result is ignored; use 'try', 'catch', or assign the result
+</pre>
+<p>
+This is the compiler holding up its end of the bargain: if a function declares
+that it can fail, every call site has to say what it does about that.
+</p>
+
+<h2>The example</h2>
+<p>
+The whole chapter in one program. <tt>divide</tt> returns
+<tt>error{DivideByZero}!i32</tt>. The first call succeeds and <tt>try</tt>
+unwraps it; the second fails and <tt>catch</tt> reports it:
+</p>
+<pre>
+const std = @import("std");
+
+fn divide(a: i32, b: i32) error{DivideByZero}!i32 {
+    if (b == 0) return error.DivideByZero;
+    return a / b;
+}
+
+pub fn main() !void {
+    const ok = try divide(10, 2);
+    std.io.printInt(@intCast(i32, ok));
+    std.io.print("\n");
+
+    const bad = divide(1, 0) catch |err| {
+        std.io.print("caught: DivideByZero\n");
+        return;
+    };
+    std.io.printInt(@intCast(i32, bad));
+    std.io.print("\n");
+}
+</pre>
+<p>
+Build the compiler once from the committed seed, then emit and compile the
+program:
+</p>
+<pre>
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/manual_seed
+</pre>
+<p>
+That produces <tt>/tmp/manual_seed/zig1_5_clean</tt> with the standard library
+beside it in <tt>/tmp/manual_seed/lib/</tt>. Now translate the program to C89,
+build it, and run it:
+</p>
+<pre>
+$ mkdir -p /tmp/manual_out
+$ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out docs/sf/manuals/src/vol2/error_unions.z98
+$ cd /tmp/manual_out &amp;&amp; sh build_target.sh linux error_unions
+Building for linux...
+Built: error_unions
+$ ./error_unions
+5
+caught: DivideByZero
+</pre>
+<p>
+The first line of output is the successful division. The second is the
+<tt>catch</tt> block reporting the error from <tt>divide(1, 0)</tt>. The program
+exits with status 0.
+</p>
+
+<h2>Running under Windows 98</h2>
+<p>
+The same program builds for Win9x. <tt>src/build_owc.bat</tt> compiles the
+emitted C89 with OpenWatcom's <tt>wcc386</tt> and links a console
+<tt>error_unions.exe</tt>; run from a Windows 98 command prompt, it prints the
+same two lines. The screenshot below will be captured on real hardware.
+</p>
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f5f0e1" class="placeholder">
+<tr>
+<td align="center">
+<i>Figure 2 &mdash; Win9x screenshot pending</i>
+</td>
+</tr>
+</table>
+<p><i>Figure 2. Running <tt>error_unions.exe</tt> under Windows 98.</i></p>
+
+<p>Previous: <a href="vol1-05-first-program.html">Your first program</a> | <a href="toc.html">Contents</a> | Next: <a href="toc.html">Contents</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>

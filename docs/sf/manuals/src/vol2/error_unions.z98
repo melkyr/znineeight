@@ -1,0 +1,19 @@
+const std = @import("std");
+
+fn divide(a: i32, b: i32) error{DivideByZero}!i32 {
+    if (b == 0) return error.DivideByZero;
+    return a / b;
+}
+
+pub fn main() !void {
+    const ok = try divide(10, 2);
+    std.io.printInt(@intCast(i32, ok));
+    std.io.print("\n");
+
+    const bad = divide(1, 0) catch |err| {
+        std.io.print("caught: DivideByZero\n");
+        return;
+    };
+    std.io.printInt(@intCast(i32, bad));
+    std.io.print("\n");
+}
