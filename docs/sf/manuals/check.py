@@ -55,7 +55,7 @@ FIGURE_RE = re.compile(
     r"(?:&mdash;|\u2014|--|\u2013)\s*Win9x screenshot pending",
     re.IGNORECASE,
 )
-LANG_ROOT_RE = re.compile(r"^([a-z]{2}(?:-[a-z]{2})?)/")
+LANG_ROOT_RE = re.compile(r"^(?:\.\./|/)*([a-z]{2}(?:-[a-z]{2})?)/")
 SCHEME_RE = re.compile(r"^[a-z][a-z0-9+.-]*:", re.IGNORECASE)
 LINK_TAG_RE = re.compile(r"<link\b[^>]*>", re.IGNORECASE)
 REL_STYLESHEET_RE = re.compile(r"""rel\s*=\s*["']?stylesheet""", re.IGNORECASE)
