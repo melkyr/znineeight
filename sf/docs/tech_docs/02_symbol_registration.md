@@ -8,7 +8,7 @@
 |----------|-------|-------|
 | `SymbolKind` variants | 7 | `local(0)`, `param(1)`, `global(2)`, `function(3)`, `type_alias(4)`, `module(5)`, `test_sym(6)` |
 | `Symbol` fields | 7 | name_id, type_id, kind, flags, decl_node, module_id, scope_level |
-| Switch arms creating symbols | 8 | var_decl, fn_decl, test_decl, struct_decl, enum_decl, union_decl, error_set_decl, import_expr |
+| Decl kinds creating symbols | 8 | var_decl, fn_decl, test_decl, struct_decl, enum_decl, union_decl, error_set_decl, import_expr |
 | `DepGraph` edge items | dynamic | Flat array of `DepEdge`, 2x growth, min 8 |
 | `SymbolTable` per module | lazy | Created on first `symbolRegistryGetTable(mod_id)` access |
 | Type-stub back-patch paths | 4 | StructPayload; UnionPayload/TaggedUnionPayload; EnumPayload; ErrorSetPayload — packed struct/union additionally seed the `pk_struct`/`pk_un` side tables |
@@ -93,7 +93,7 @@ Sub-cases based on `child_1` (the init expression):
 
 1. **Init is `import_expr`**: Resolves the target module via the `path_to_id` hash map. If found, creates `SymbolKind.module` with `type_id = typeRegistryGetOrCreateModule(mtid)`. Writes `M5:p<path_id>`, `Rs`, `FIX1:mid=<mod_id>t=<target_mtid>n=<mod_id>` markers. If not found, writes the `Rf` (resolve failed) marker.
 
-2. **Init is an inline type decl** (`struct_decl`/`enum_decl`/`union_decl`/`error_set_decl`): Registers the type via `typeRegistryRegisterNamedType`, calls `populateTypePayload` (when `populate=true`) to create type stubs, calls `addTypeDependencies` to record field→type edges. Packed struct/union (flag `0x10`) selects `TypeKind.packed_union_type` and calls `typeRegistrySetPacked`. Creates `SymbolKind.type_alias`.
+2. **Init is an inline type decl** (`struct_decl`/`enum_decl`/`union_decl`/`error_set_decl`): Registers the type via `typeRegistryRegisterNamedType`, calls `populateTypePayload` (when `populate=true`) to create type stubs, calls `addTypeDependencies` to record field→type edges. Packed struct/union (flag `0x10`) calls `typeRegistrySetPacked` (a packed union selects `TypeKind.packed_union_type`; a packed struct stays `struct_type`). Creates `SymbolKind.type_alias`.
 
 3. **Init is `ident_expr`**: Looks up the type via `nameCacheGet`. If cached, creates `SymbolKind.type_alias` with the cached type ID and writes `RCA:p<ident_payload>`, `RCA:i<interned_name>`, `RCA:H<cached_type>` markers. On a cache miss, the identifier text is tested with `parseArbIntWidth`; if it names an arbitrary-width integer (`u1..u64` / `i1..i63`), `typeRegistryGetOrCreateArbInt` builds the TypeId, caches it, and the symbol registers as `SymbolKind.type_alias`.
 
@@ -313,4 +313,4 @@ Type-registry markers emitted while registering named types / modules: `RN:m<mod
 
 7. **`symbolRegistryQualifiedLookup` mutates the registry** (`symbol_table.zig`): the lookup routes through `symbolRegistryGetTable`, which creates (and grows) a `SymbolTable` for any module id it has not seen. A pure read therefore has a side effect; callers that query an unregistered module id silently materialize an empty table.
 
-8. **Type-alias symbols may register with `type_id = 0`** (`symbol_registrator.zig`): the `ident_expr` and aggregate/pointer/fn-type (`AT`) branches set `SymbolKind.type_alias` even when the RHS type is not yet in the name cache, leaving `type_id = 0`. `phase_FrontResolution` (`front_resolution.zig`) back-fills these later — see the interaction note under Data Flow.
+8. **Symbols may register with `type_id = 0`** (`symbol_registrator.zig`): the aggregate/pointer/fn-type (`AT`) branch always creates a `SymbolKind.type_alias` but leaves `type_id = 0` when the type is not yet in the name cache; the `ident_expr` branch likewise leaves `type_id = 0` on a non-arbitrary-width cache miss (the symbol stays `SymbolKind.global`). `phase_FrontResolution` (`front_resolution.zig`) back-fills the type ID and promotes the symbol to `type_alias` when its initializer resolves to one — see the interaction note under Data Flow.
