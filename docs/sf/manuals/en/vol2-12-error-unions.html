@@ -202,8 +202,8 @@ with no type name attached. You write it in a <tt>return</tt>, compare it with
 <tt>errdefer statement</tt> schedules code to run only when the scope exits
 <i>with an error</i>. It is the structured replacement for the
 <tt>goto cleanup</tt> tail: you put the undo next to the thing it undoes, and
-the compiler runs it on every error exit, in reverse order of declaration, and
-never on the success path. Braces are optional:
+the compiler runs it when the error leaves the scope, in reverse order of
+declaration, and never on the success path. Braces are optional:
 </p>
 <pre>
 fn check(a: i32, b: i32) MyError!i32 {
@@ -228,6 +228,36 @@ fn boom() error{Boom}!void {
 <p>
 Two <tt>errdefer</tt>s in the same scope run innermost first, in reverse order
 of declaration.
+</p>
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffffcc">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-note.gif" width="16" height="16" alt="Note"></td>
+<td><b>Note.</b> One shape does not run the undo: returning a variable whose
+type is already an error union, <tt>return someErrorUnion;</tt>. The undo runs
+for <tt>try</tt> propagation and for an explicit <tt>return error.Tag;</tt>,
+but not for that dynamic return of an error-union value.</td>
+</tr>
+</table>
+
+<h2>The <tt>defer</tt>/<tt>errdefer</tt> control-flow rule</h2>
+<p>
+A <tt>defer</tt> or <tt>errdefer</tt> body is not an ordinary block. It runs
+while the surrounding scope is being left, so it cannot itself redirect that
+exit. The compiler enforces the same rule for both, and the rule is
+scope-aware:
+</p>
+<ul>
+<li><tt>return</tt> anywhere in the body is rejected (<tt>error[3051]</tt>).</li>
+<li><tt>break</tt> or <tt>continue</tt> that leaves the body, targeting a loop
+or labeled block declared outside it, is rejected (<tt>error[3052]</tt> for
+<tt>break</tt>, <tt>error[3053]</tt> for <tt>continue</tt>).</li>
+<li><tt>try</tt> in the body is rejected (<tt>error[3054]</tt>): propagating an
+error from cleanup would replace the error already on its way out.</li>
+</ul>
+<p>
+Control flow that stays inside the body is fine. A <tt>break</tt> or
+<tt>continue</tt> aimed at a loop or labeled block declared <i>inside</i> the
+body is allowed, and a <tt>continue</tt> can only target a loop.
 </p>
 
 <h2>Why <tt>orelse</tt> is not the tool</h2>
