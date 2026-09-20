@@ -1,5 +1,7 @@
 # 06 — Static Analyzers [updated: 2026-09-20 — refreshed against current analyzer/StateMap source; removed line refs and dated evidence]
 
+> Covers: `analyzer.zig`, `state_map.zig`
+
 ## Summary Table
 
 | Artifact | Count | Notes |
