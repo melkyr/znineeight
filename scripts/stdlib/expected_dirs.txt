@@ -20,6 +20,7 @@ repro/mi_matrix/stdlib_async_pool_xmod
 repro/mi_matrix/stdlib_async_removetask_noop_xmod
 repro/mi_matrix/stdlib_async_removetask_xmod
 repro/mi_matrix/stdlib_async_sched_xmod
+repro/mi_matrix/stdlib_async_suspenduntil_false_xmod
 repro/mi_matrix/stdlib_async_suspenduntil_xmod
 repro/mi_matrix/stdlib_async_waitfor_cancel_xmod
 repro/mi_matrix/stdlib_async_waitfor_dep_xmod
@@ -94,6 +95,8 @@ repro/mi_matrix/stdlib_map_oom_xmod
 repro/mi_matrix/stdlib_map_stress_xmod
 repro/mi_matrix/stdlib_math_xmod
 repro/mi_matrix/stdlib_mem_xmod
+repro/mi_matrix/stdlib_net_recvnonblocking_close_xmod
+repro/mi_matrix/stdlib_net_recvnonblocking_wouldblock_xmod
 repro/mi_matrix/stdlib_net_recvnonblocking_xmod
 repro/mi_matrix/stdlib_net_sendnonblocking_xmod
 repro/mi_matrix/stdlib_net_setnonblocking_xmod
@@ -169,6 +172,7 @@ repro/mi_matrix/stdlib_stream_readline_noeof_xmod
 repro/mi_matrix/stdlib_stream_readline_xmod
 repro/mi_matrix/stdlib_stream_readlinesync_xmod
 repro/mi_matrix/stdlib_stream_socketlinereader_xmod
+repro/mi_matrix/stdlib_stream_msgreader_oversize_xmod
 repro/mi_matrix/stdlib_stream_msgreader_xmod
 repro/mi_matrix/stdlib_stream_stress_xmod
 repro/mi_matrix/stdlib_time_monotonic_avail_xmod

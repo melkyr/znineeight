@@ -1,0 +1,3 @@
+# TCP port this fixture binds; the runtime gate FAILs (PORT-IN-USE:<port>)
+# if a LISTEN socket already exists on the declared port before the run.
+4157
