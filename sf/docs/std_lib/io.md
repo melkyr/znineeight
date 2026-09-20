@@ -19,8 +19,8 @@ offers whole-file helpers (`readAll`, `writeAll`) plus path operations
 standard input.
 
 **Two file surfaces.** `std.io`'s `fileOpen` returns a raw OS descriptor
-(`usize`) or `null`; it is a thin wrapper over the compiler-PAL `pal_file_*`
-symbols, its path is copied into a 512-byte stack buffer, and its read path has
+(`usize`) or `null`; it is a thin wrapper over the compiler's private file
+primitives, its path is copied into a 512-byte stack buffer, and its read path has
 no separate error channel (0 means both EOF and error). `std_file` is the
 recommended surface for new code: it owns a `File` handle, uses
 `CreateFileA`/`open` through the std-side PAL, reports a full `FileError`, caps

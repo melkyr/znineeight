@@ -639,7 +639,7 @@ allocation, and the logical `len`.
 **When to use** — create one with `init` or `initCapacity` and pass `&b` to the
 `append*`/`reserve` functions rather than editing the fields.
 
-**Signature** — `pub const Buf = struct { arena: *arena_mod.Arena, data: []u8, len: usize };`
+**Signature** — `pub const Buf = struct { arena: *std.arena.Arena, data: []u8, len: usize };`
 
 **Parameters** (fields)
 - `arena` — the arena that owns all storage.

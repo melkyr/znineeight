@@ -10,8 +10,8 @@
 ## Module overview
 
 `std.net` is the target-selected networking surface: on win32 it binds Winsock
-1.1 (`wsock32`), elsewhere it binds libc. The per-OS C prototypes come from the
-private `net_prelude.h`, and the externs live in this module. Call `init`
+1.1 (`wsock32`), elsewhere it binds libc. The per-OS C prototypes come from a
+private prelude header, and the externs live in this module. Call `init`
 before any socket call and `cleanup` when finished; on POSIX both are trivial
 (`init` returns `0`, `cleanup` does nothing), while win32 runs
 `WSAStartup(1,1)`/`WSACleanup`.
@@ -199,8 +199,8 @@ const loopback = std.net.IpAddr{ .a = 127, .b = 0, .c = 0, .d = 1 };
 ```
 
 **Gotchas** — declared without `pub`, but Z98 does not gate top-level
-declarations on `pub`, so `std.net.IpAddr` is still nameable (the fixtures rely
-on this). Addresses are IPv4 only; there is no IPv6 form.
+declarations on `pub`, so `std.net.IpAddr` is still nameable. Addresses are IPv4
+only; there is no IPv6 form.
 
 ### `htons`
 
@@ -675,8 +675,8 @@ socket; the Model C non-blocking pattern.
 **Signature** — `pub fn select(nfds: i32, readfds: ?*u8, writefds: ?*u8, exceptfds: ?*u8, timeout_ms: i32) i32`
 
 **Parameters**
-- `nfds` — the highest descriptor plus one. On POSIX this must be exact; on
-  win32 it is ignored.
+- `nfds` — the highest descriptor in the sets plus one. On POSIX it must cover
+  every descriptor in the sets; on win32 it is ignored.
 - `readfds` — pointer to an `fd_set` blob cast to `?*u8` (usually the only set),
   or `null`.
 - `writefds` — pointer to an `fd_set` blob cast to `?*u8`, or `null`.

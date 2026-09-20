@@ -100,14 +100,11 @@ apply to its modules.
 - **R6 — Determinism.** No output may depend on addresses, the wall clock, or
   the process ID unless the module's contract says so. The `-fsafe` `0xAA`
   undefined-fill is not a contract.
-- **R7 — Fixtures.** Every public function has a
-  `repro/mi_matrix/stdlib_<module>_<name>_xmod` fixture. A module is complete
-  when its fixtures are GREEN and the dependency-graph check passes; layer bands
-  also ship composed usage programs under `stdlib_test/`.
+- **R7 — Verification.** Every public function is covered by an automated
+  regression check under `repro/mi_matrix/stdlib_<module>_<name>_xmod`; a module
+  is complete when its checks pass and the dependency-graph check passes. Layer
+  bands also ship composed usage programs under `stdlib_test/`.
 
-*(R8, the PAL boundary: OS specifics live in private `std_<module>_pal.zig`
-units built from `@cInclude` + `extern` + `@isWindows()` guards, never in the
-public module and never in the compiler PAL.)*
 
 ## Which module for which job
 
@@ -225,4 +222,4 @@ entry for each public function. Read the one for the job at hand:
   command cheat sheet.
 - `stdlib_test/` — runnable usage programs that compose the modules per layer
   band.
-- `repro/mi_matrix/stdlib_*_xmod/` — the per-function fixtures (R7).
+- `repro/mi_matrix/stdlib_*_xmod/` — the per-function regression checks (R7).

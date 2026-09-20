@@ -132,7 +132,7 @@ allocated arena buffer.
 **When to use** — to produce base64 text. No whitespace or line breaks are
 emitted.
 
-**Signature** — `pub fn encode(arena: *arena_mod.Arena, src: []const u8) ![]u8`
+**Signature** — `pub fn encode(arena: *std.arena.Arena, src: []const u8) ![]u8`
 
 **Parameters**
 - `arena` — the allocation source for the output.
@@ -156,7 +156,7 @@ arena `reset`.
 
 **When to use** — to recover the bytes from base64 text.
 
-**Signature** — `pub fn decode(arena: *arena_mod.Arena, src: []const u8) DecodeError![]u8`
+**Signature** — `pub fn decode(arena: *std.arena.Arena, src: []const u8) DecodeError![]u8`
 
 **Parameters**
 - `arena` — the allocation source for the output.
@@ -191,7 +191,7 @@ high nybble first.
 
 **When to use** — to render bytes as `0-9a-f`.
 
-**Signature** — `pub fn encodeLower(arena: *arena_mod.Arena, src: []const u8) ![]u8`
+**Signature** — `pub fn encodeLower(arena: *std.arena.Arena, src: []const u8) ![]u8`
 
 **Parameters**
 - `arena` — the allocation source for the output.
@@ -215,7 +215,7 @@ high nybble first.
 
 **When to use** — to render bytes as `0-9A-F`.
 
-**Signature** — `pub fn encodeUpper(arena: *arena_mod.Arena, src: []const u8) ![]u8`
+**Signature** — `pub fn encodeUpper(arena: *std.arena.Arena, src: []const u8) ![]u8`
 
 **Parameters**
 - `arena` — the allocation source for the output.
@@ -239,7 +239,7 @@ buffer.
 
 **When to use** — to recover bytes from hex text.
 
-**Signature** — `pub fn decode(arena: *arena_mod.Arena, src: []const u8) DecodeError![]u8`
+**Signature** — `pub fn decode(arena: *std.arena.Arena, src: []const u8) DecodeError![]u8`
 
 **Parameters**
 - `arena` — the allocation source for the output.

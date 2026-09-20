@@ -154,7 +154,7 @@ copied into the arena at `put`.
 
 **When to use** — string-keyed maps of opaque pointers.
 
-**Signature** — `pub const MapStrPtr = struct { arena: *arena_mod.Arena, entries: [*]EntryStrPtr, capacity: usize, len: usize };`
+**Signature** — `pub const MapStrPtr = struct { arena: *std.arena.Arena, entries: [*]EntryStrPtr, capacity: usize, len: usize };`
 
 **Parameters** (fields)
 - `arena` — the arena that owns the copied keys (used by `put`).
@@ -181,7 +181,7 @@ reclaims them.
 
 **When to use** — the entry point for an integer map.
 
-**Signature** — `pub fn map32x32Init(arena: *arena_mod.Arena, capacity: usize) !Map32x32`
+**Signature** — `pub fn map32x32Init(arena: *std.arena.Arena, capacity: usize) !Map32x32`
 
 **Parameters**
 - `arena` — the allocation source.
@@ -309,7 +309,7 @@ than the number of non-empty slots.
 
 **When to use** — the entry point for an integer-to-pointer map.
 
-**Signature** — `pub fn map32PtrInit(arena: *arena_mod.Arena, capacity: usize) !Map32Ptr`
+**Signature** — `pub fn map32PtrInit(arena: *std.arena.Arena, capacity: usize) !Map32Ptr`
 
 **Parameters**
 - `arena` — the allocation source.
@@ -434,7 +434,7 @@ arena and records the arena for key copies.
 
 **When to use** — the entry point for a string-to-pointer map.
 
-**Signature** — `pub fn mapStrPtrInit(arena: *arena_mod.Arena, capacity: usize) !MapStrPtr`
+**Signature** — `pub fn mapStrPtrInit(arena: *std.arena.Arena, capacity: usize) !MapStrPtr`
 
 **Parameters**
 - `arena` — the allocation source and the owner of copied keys.
@@ -750,7 +750,7 @@ and a monotonic insertion sequence.
 **When to use** — as the value returned by `heapInit` and passed to the heap
 functions.
 
-**Signature** — `pub const Heap = struct { arena: *arena_mod.Arena, items: [*]HeapEntry, capacity: usize, len: usize, seq: u64 };`
+**Signature** — `pub const Heap = struct { arena: *std.arena.Arena, items: [*]HeapEntry, capacity: usize, len: usize, seq: u64 };`
 
 **Parameters** (fields)
 - `arena` — the allocation source for the table and its growth.
@@ -777,7 +777,7 @@ table allocated. Do not write the fields by hand.
 
 **When to use** — the entry point for a heap.
 
-**Signature** — `pub fn heapInit(arena: *arena_mod.Arena, capacity: usize) !Heap`
+**Signature** — `pub fn heapInit(arena: *std.arena.Arena, capacity: usize) !Heap`
 
 **Parameters**
 - `arena` — the allocation source.
@@ -952,7 +952,7 @@ truncated stream can declare more than it carries.
 
 **When to use** — to compress a byte run.
 
-**Signature** — `pub fn encode(arena: *arena_mod.Arena, src: []const u8) ![]u8`
+**Signature** — `pub fn encode(arena: *std.arena.Arena, src: []const u8) ![]u8`
 
 **Parameters**
 - `arena` — the allocation source for the output.
@@ -978,7 +978,7 @@ arena `reset`. Worst case (all distinct bytes) grows by the 4-byte prefix.
 
 **When to use** — to expand a stream produced by `encode`.
 
-**Signature** — `pub fn decode(arena: *arena_mod.Arena, src: []const u8) ![]u8`
+**Signature** — `pub fn decode(arena: *std.arena.Arena, src: []const u8) ![]u8`
 
 **Parameters**
 - `arena` — the allocation source for the output.

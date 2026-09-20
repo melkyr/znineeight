@@ -295,10 +295,10 @@ The Z98 standard library lives in `sf/src/std_*.zig`. Its core modules (`io`, `a
 `mem`, `math`, `debug`, `net`, `async`, `bits`, `os`, `time`, `buf`) are re-exported through
 `@import("std")`; the higher layers (`std_file`, `std_stdin`, `std_stream`, `std_crypto`,
 `std_parse`, `std_map`, `std_sort`, `std_heap`, `std_rle`, `std_base64`, `std_hex`, `std_utf8`)
-are imported by path. See the reference for the full per-module API, error sets, the arena
-rule, and usage snippets:
+are imported by path. See the guide for the library's model and an index that links each
+domain's detailed doc:
 
-- [STD_README.MD](STD_README.MD) — the Z98 standard library reference.
+- [STD_README.MD](STD_README.MD) — the Z98 standard library guide and index.
 
 ## Example Showcase
 `examples/z98/` carries the maintained example suite (matrix 21/21 dump/gcc/link), including

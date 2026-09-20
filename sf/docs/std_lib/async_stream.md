@@ -20,8 +20,8 @@ settle.
 
 **`Task` stores no step pointer.** `tick` self-dispatches with
 `@asyncResume(t.frame, t.arg)`, which loads the hidden pointer-sized step word
-the compiler writes at frame offset 0. `StepFn` is the documented
-`__async_step_<f>` ABI alias only — the scheduler never stores or passes one.
+the compiler writes at frame offset 0. `StepFn` is the documented step-function
+ABI type only — the scheduler never stores or passes one.
 The root frame lives in the caller-owned `buf` passed to `@asyncInit` and is
 **outside** the child-frame pool.
 
@@ -71,10 +71,10 @@ the task; the coroutine yields once per iteration.
 ```zig
 const std = @import("std");
 const std_async = @import("std_async");
-const arena_mod = @import("std_arena");
+const std_arena = @import("std_arena");
 
 var g_storage: [8192]u8 = undefined;
-var g_arena = arena_mod.init(g_storage[0..]);
+var g_arena = std_arena.init(g_storage[0..]);
 
 fn worker(count: *u32) void {
     var i: u32 = 0;
@@ -90,7 +90,7 @@ pub fn main() void {
 
     var count: u32 = 0;
     const frame_sz = @intCast(usize, @asyncFrameSize(worker));
-    const frame_store = arena_mod.alloc(&g_arena, frame_sz) catch @panic("frame");
+    const frame_store = std_arena.alloc(&g_arena, frame_sz) catch @panic("frame");
 
     var task: std_async.Task = undefined;
     task.frame = @asyncInit(@ptrCast(*void, ctx), @ptrCast([*]u8, frame_store), worker, @ptrCast(*const void, &count));
@@ -177,7 +177,7 @@ std_async.tick(&s) catch |e| {
 
 #### `StepFn`
 
-**Purpose** — the documented `__async_step_<f>` ABI alias:
+**Purpose** — the ABI type of a coroutine step function:
 `fn(frame: *void, arg: ?*void) ?*void`.
 
 **When to use** — only when writing a hand-rolled step function (a manual frame
@@ -764,7 +764,7 @@ set `std_file.FileError`.
 **When to use** — when naming or matching a file-reader failure. The socket and
 frame readers use their own inferred sets (see below).
 
-**Signature** — `pub const StreamError = file_mod.FileError;`
+**Signature** — `pub const StreamError = std_file.FileError;`
 
 **Parameters** — none.
 
@@ -798,7 +798,7 @@ carries.
 **When to use** — as the value returned by `initFileLineReader` and passed to
 `readFileLineSync`/`readFileLineAsync`.
 
-**Signature** — `pub const FileLineReader = struct { src: *file_mod.File, buf: []u8, pending: []u8, pending_cr: bool, overflow_cont: bool };`
+**Signature** — `pub const FileLineReader = struct { src: *std_file.File, buf: []u8, pending: []u8, pending_cr: bool, overflow_cont: bool };`
 
 **Parameters** (fields)
 - `src` — the open file (caller-owned).
@@ -826,7 +826,7 @@ line aliases `buf` and is invalidated by the next call.
 
 **When to use** — once per file, before the first read.
 
-**Signature** — `pub fn initFileLineReader(src: *file_mod.File, buf: []u8) FileLineReader`
+**Signature** — `pub fn initFileLineReader(src: *std_file.File, buf: []u8) FileLineReader`
 
 **Parameters**
 - `src` — an open `*std_file.File`.
@@ -922,7 +922,7 @@ same fields as `FileLineReader` with a socket source.
 **When to use** — as the value returned by `initSocketLineReader` and passed to
 `readSocketLineSync`/`readSocketLineAsync`.
 
-**Signature** — `pub const SocketLineReader = struct { src: *net_mod.Socket, buf: []u8, pending: []u8, pending_cr: bool, overflow_cont: bool };`
+**Signature** — `pub const SocketLineReader = struct { src: *std_net.Socket, buf: []u8, pending: []u8, pending_cr: bool, overflow_cont: bool };`
 
 **Parameters** (fields)
 - `src` — the socket (caller-owned; non-blocking for the async path).
@@ -950,7 +950,7 @@ var lr = std_stream.initSocketLineReader(&sock, rbuf[0..]);
 
 **When to use** — once per socket, before the first read.
 
-**Signature** — `pub fn initSocketLineReader(src: *net_mod.Socket, buf: []u8) SocketLineReader`
+**Signature** — `pub fn initSocketLineReader(src: *std_net.Socket, buf: []u8) SocketLineReader`
 
 **Parameters**
 - `src` — the socket; set it non-blocking for the async path.
@@ -1043,7 +1043,7 @@ the caller's tick counter measures the wait.
 **When to use** — as the value returned by `initMsgReader` and passed to
 `readMsgSync`/`readMsgAsync`.
 
-**Signature** — `pub const MsgReader = struct { src: *net_mod.Socket, buf: []u8, pending: []u8 };`
+**Signature** — `pub const MsgReader = struct { src: *std_net.Socket, buf: []u8, pending: []u8 };`
 
 **Parameters** (fields)
 - `src` — the socket (caller-owned; non-blocking for the async path).
@@ -1070,7 +1070,7 @@ functions return `null` immediately.
 
 **When to use** — once per socket, before the first frame read.
 
-**Signature** — `pub fn initMsgReader(src: *net_mod.Socket, buf: []u8) MsgReader`
+**Signature** — `pub fn initMsgReader(src: *std_net.Socket, buf: []u8) MsgReader`
 
 **Parameters**
 - `src` — the socket; set it non-blocking for the async path.

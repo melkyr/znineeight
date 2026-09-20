@@ -40,7 +40,7 @@ with a captured register context before terminating. `writeCoreDump` serializes
 that context to a file, and `backtrace` walks the x86 frame chain into a
 `std.buf.Buf`.
 
-**Per-OS split (R8).** OS specifics live in private std-side PAL units, never in
+**Per-OS split.** OS specifics live in private std-side PAL units, never in
 the compiler PAL. `std_os_pal.zig` selects `GetCurrentDirectoryA` (win32) vs
 `getcwd` (POSIX) and declares `getenv` for both. `std_time_pal.zig` selects
 `GetTickCount`/`QueryPerformanceCounter`/`QueryPerformanceFrequency` (win32) vs
@@ -562,9 +562,8 @@ buffer, so the call never allocates.
 
 **Purpose** — checks a condition and, on failure, prints a message and traps.
 
-**When to use** — for internal invariants that must never be violated; keep
-them out of hot loops if the program runs under `-fsafe` (which may also trap
-on other faults).
+**When to use** — for invariants that must never be violated; it always traps
+on failure, so keep it out of hot loops.
 
 **Signature** — `pub fn assert(cond: bool) void`
 
