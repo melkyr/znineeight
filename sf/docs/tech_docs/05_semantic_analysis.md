@@ -1,4 +1,4 @@
-# 05 — Semantic Analysis [updated: 2026-09-20 — refreshed against current source: socket builtins removed (std_net extern surface), async/introspection/pointer/bitcast builtins, volatile + packed/enum checks, spill-backed resolved-type table; line refs and dated evidence removed]
+# 05 — Semantic Analysis [updated: 2026-09-20 — refreshed against current source: socket builtins removed (std_net extern surface), async/introspection/pointer/bitcast builtins, volatile + packed/enum checks, spill-backed resolved-type table; line refs and dated evidence removed; Task 10D adds the Zig-matched `defer`/`errdefer` outward-control-flow rejections ERR_3051–ERR_3054]
 
 > Covers: `semantic_analyzer.zig`, `coercion.zig`, `resolved_type_table.zig`, `constraint_checker.zig`, `assign_helper.zig`
 
@@ -6,7 +6,7 @@
 
 | Artifact | Count | Notes |
 |----------|-------|-------|
-| `SemanticAnalyzer` fields | 79 | 45 non-builtin + 34 builtin name IDs (11 socket IDs removed) |
+| `SemanticAnalyzer` fields | 83 | 49 non-builtin + 34 builtin name IDs (11 socket IDs removed) |
 | Expression kind dispatch arms | 47+ | Every `AstKind` handled in `semanticAnalyzerResolveExpr` |
 | `CoercionKind` variants | 17 | `none` through `wrap_optional_null` |
 | Coercion checks in `classifyCoercion` | ~20 | noreturn/undefined, null, optional, error union, ptr/slice/many-ptr (qualifier-monotone), array, widening, literal |
@@ -50,6 +50,10 @@ pub const SemanticAnalyzer = struct {
     current_switch_cond_tu: u32,
     switch_depth: u32,
     defer_depth: u32,
+    defer_inner_loops: u32,
+    defer_label_stack: [16]u32,
+    defer_label_isloop: [16]u8,
+    defer_label_len: usize,
     local_decl_names: [*]u32,
     local_decl_types: [*]u32,
     local_decl_count: usize,
@@ -116,6 +120,15 @@ Grows the parallel name/type local-decl arrays. Called by registerLocalDecl on o
 ### Async diagnostics (`sf/src/semantic_analyzer.zig`)
 
 `semanticAnalyzerDiagAsyncOutsideSuspending` emits `ERR_3018` when `@asyncSuspend` is used outside a function known to be suspending (via `async_analysis.asyncIsSuspending`). `semanticAnalyzerDiagAsyncBuiltinInDefer` emits `ERR_3019` for any `@async*` builtin reached while `defer_depth > 0`.
+
+### Defer control-flow rejections — `ERR_3051`–`ERR_3054` (`sf/src/semantic_analyzer.zig`)
+
+Task 10D implements official Zig's (`src/AstGen.zig`) rule for control flow inside a `defer`/`errdefer` body, applied before lowering. `semanticAnalyzerDiagDeferCtl` emits the diagnostic at the offending node; `semanticAnalyzerCheckDeferBody` is a recursive walk entered from the `defer_stmt`/`errdefer_stmt` arm of `semanticAnalyzerResolveStmtIter` (state saved/restored around it):
+
+- `return_stmt` → `ERR_3051` "cannot return from defer expression" (Zig's `any_defer_node`).
+- `try_expr` → `ERR_3054` "'try' not allowed inside defer expression" (Zig's `any_defer_node`).
+- `break_stmt`/`continue_stmt` → `ERR_3052`/`ERR_3053` "cannot break/continue out of defer expression" **only** when the target is not declared inside the body (Zig's `cur_defer_node` walk). A `while`/`for` increments `defer_inner_loops`; a `labeled_stmt` pushes onto `defer_label_stack` (with `defer_label_isloop` recording whether the label wraps a loop, so a labeled-block target is legal for `break` but not `continue`). `semanticAnalyzerDeferBreakAllowed`/`semanticAnalyzerDeferContinueAllowed` test membership.
+- A nested `fn_decl` stops the walk (resets both markers); a nested `defer`/`errdefer` is skipped here and validated by its own arm. Children are walked generically via `nodeHasNodeExtraChildren`/`nodeChildIsNode` in `semanticAnalyzerCheckDeferChildren`.
 
 ### Packed / enum gates (`sf/src/semantic_analyzer.zig`)
 
@@ -482,7 +495,7 @@ Worklist (stack-based) traversal. Pushes stmt children in reverse order for pre-
 - `for_stmt` → resolve header, push body.
 - `return_stmt` → `resolveReturnStmt`.
 - Assignments → `semanticAnalyzerResolveExpr`.
-- `defer_stmt`/`errdefer_stmt` → bump `defer_depth`, recurse into the body, decrement.
+- `defer_stmt`/`errdefer_stmt` → run `semanticAnalyzerCheckDeferBody` (Task 10D outward-control-flow rejections `ERR_3051`–`ERR_3054`), then bump `defer_depth`, recurse into the body, decrement.
 - **`labeled_stmt` → transparent unwrap:** if `child_0 != 0`, push it onto the stmt work queue — the label is a pure wrapper, the inner statement resolves as if unlabeled. (A `labeled_stmt` reaching `resolveExpr` re-enters the stmt iter and returns `TYPE_VOID`, preventing the `error[3020]` unhandled-else.)
 - `break_stmt`/`continue_stmt` → no-op here (validated by `constraint_checker.zig`).
 - Other → `semanticAnalyzerResolveExpr`; if the result is an error union, emit `ERR_3015` "error union result is ignored".

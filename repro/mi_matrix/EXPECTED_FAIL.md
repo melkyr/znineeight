@@ -1,4 +1,19 @@
-# mi_matrix corpus — expected-fail manifest (v162 2026-09-20)
+# mi_matrix corpus — expected-fail manifest (v163 2026-09-20)
+
+## Task 10D — defer/errdefer outward control flow rejected (v162 -> v163 2026-09-20)
+
+The Z98 manual Phase 0 plan's second inserted compiler fix (`docs/superpowers/plans/2026-09-20-z98-manual-phase0-plan.md` AMENDMENT 2; Task 10C investigation, Task 10D fix; operator rulings R11/R12). The compiler accepted `return`/`break`/`continue`/`try` inside `defer`/`errdefer`; lowering inlined the body, whose terminator set `block_terminated` and silently dropped the enclosing transfer — so `errdefer { continue; }` turned an explicit `return error.Boom` into a success exit. `sf/src/semantic_analyzer.zig` now rejects, before lowering, only the transfers that leave the body, matching official Zig (`src/AstGen.zig`): dedicated codes `ERR_3051` return / `ERR_3052` break / `ERR_3053` continue / `ERR_3054` try. A `break`/`continue` targeting a loop or labeled block declared INSIDE the body stays legal (Zig's `cur_defer_node`); `return`/`try` are rejected anywhere in the body except inside a nested `fn`. Spec §3.1/§3.2 amended.
+
+**New fixtures (2).**
+
+| fixture | class | contract |
+|---|---|---|
+| `stdlib_defer_control_flow_xmod` | OK (runtime regression) | accepted side: inner-loop `break`/`continue`, labeled-block and labeled-loop `break`, and an `errdefer` inner-loop transfer all compile and run; stdout 12 lines ending `done`, rc 0 |
+| `defer_control_flow_reject_xmod` | FAIL (by design — dedicated-code clean reject) | rejected side: outward `return`/`break`/`continue` and `try` in `defer` + `errdefer` clean-reject rc=2, 0 `.c`, one diagnostic per shape (`ERR_3051`/`ERR_3052`/`ERR_3053`/`ERR_3054`). The canonical classifier GREENs only `error[3000]`, so a dedicated-code clean reject buckets FAIL, like the other dedicated-code rejects (`parsergap_specifier_xmod` `error[3013]`, `async_defer_error_xmod` `error[3019]`) |
+
+`scripts/stdlib/expected_dirs.txt` pin grows 193 -> 194.
+
+**Gates (seed-built fixed-point compiler `1c4f676524f74061d8b459a747f9241d`).** Self-compile `-ffast --dump-c89` rc=0, two-hop closure hop1 == hop2 == `1c4f6765…`. Runtime gate **194 PASS / 0 FAIL over 194 dirs** (3x byte-identical stdout internal). Corpus `-s0` classifier **904 dirs = 850 OK / 28 GREEN / 26 FAIL / 0 ICE / 0 CRASH** (v162 902 -> 904: the 2 new dirs are the only additions); a full-classifier join-diff vs the pre-fix compiler over the 902 common dirs is **byte-identical — zero class movement**. 4-MD5 emitted-C gates **UNCHANGED** (no gate program contains defer control flow): gol `80287f58bd761e4a551d5d62db5a3551` / lisp `d1d99b597d4ca2a2a75a42c363d54ff4` / json `f9c9f113b3a7bbd9413b999426daf330` / mud `91fd711d97bcf9cad91352076be39710`. 21-example matrix **21/21** dump/gcc/link rc=0. Fixed point **MOVED `36c04ebf5f6f3f4afcb4baf8c721a6a0` -> `1c4f676524f74061d8b459a747f9241d`**; seed **v42 -> v43** (archive md5 `fe532ad44b659b8c4a34d0f7932fc04f` -> `f3f9e9bbfd10d6f675cf7a10819f0794`). Full report: `.superpowers/sdd/2026-09-20-z98-manual-phase0-plan/task-10D-report.md`.
 
 ## Task 10B — errdefer on explicit error returns fixed (v161 -> v162 2026-09-20)
 

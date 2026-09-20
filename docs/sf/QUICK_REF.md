@@ -27,13 +27,13 @@ bash sf/scripts/build_release.sh
 **Seed location + contents:** the committed rotating seed is
 `release/seed/zig1-seed.tgz` (git-tracked; provenance + rotation history in
 `release/seed/CHANGELOG.md`, full recipes in `release/seed/SEED_README.txt`).
-Current seed is **seed v42** (archive md5 `fe532ad44b659b8c4a34d0f7932fc04f`; v42 rotation — Task 10B `errdefer`-on-explicit-return compiler fix; the archive `lib/` payload stays all 29 std `.zig`; the fixed point **MOVED** `19760295…` → `36c04ebf5f6f3f4afcb4baf8c721a6a0`).
+Current seed is **seed v43** (archive md5 `f3f9e9bbfd10d6f675cf7a10819f0794`; v43 rotation — Task 10D `defer`/`errdefer` outward-control-flow rejection; the archive `lib/` payload stays all 29 std `.zig`; the fixed point **MOVED** `36c04ebf…` → `1c4f676524f74061d8b459a747f9241d`).
 Top-level `zig1-seed/`: `zig1` (reference binary md5
-`36c04ebf5f6f3f4afcb4baf8c721a6a0`), `gen/` (its self-emission C89 module set —
+`1c4f676524f74061d8b459a747f9241d`), `gen/` (its self-emission C89 module set —
 45 `.c` + 46 `.h`, including `zig_special_types.h`; the emitted runtime/support
 sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/` (the emitted 5:
 `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`, `zig_runtime.c`,
-`zig_pal.c` — NO `net_prelude.h`), `lib/` (all 29 std `.zig` the v42 archive
+`zig_pal.c` — NO `net_prelude.h`), `lib/` (all 29 std `.zig` the v43 archive
 carries: `std.zig` plus the 28 `std_*.zig`),
 `SEED_README.txt`.
 **Std-module inventory (Plan D closeout, 2026-09-19):** the CURRENT `sf/src` std set is
@@ -46,15 +46,15 @@ carries: `std.zig` plus the 28 `std_*.zig`),
 **12** names (`io/arena/str/mem/math/debug/net/async/bits/os/time/buf`); the
 higher-layer modules (L3-L6) are imported by path, not re-exported (Ruling F1).
 `scripts/seed/build_from_seed.sh` installs all 29 into the rebuilt compiler's
-`lib/`, and the rotated **v42** archive carries all 29. The Plan D closeout lands
+`lib/`, and the rotated **v43** archive carries all 29. The Plan D closeout lands
 the network half of the `std_stream` reader surface (the `std_net` non-blocking
 primitives + `SocketLineReader` + `MsgReader`) and adds the R7b usage program
 `stdlib_test/net_stream_usage`; the Plan C closeout added the R7b usage programs
 `stdlib_test/map_sort_heap_usage` + `stdlib_test/crypto_codec_usage`. See
-`repro/mi_matrix/EXPECTED_FAIL.md` v162.
+`repro/mi_matrix/EXPECTED_FAIL.md` v163.
 The archived binary and the self-emission fixed point
-`36c04ebf5f6f3f4afcb4baf8c721a6a0` are the SAME compiler state (the v42
-provenance entry in `release/seed/CHANGELOG.md` records HEAD `4d0f5c23`). The
+`1c4f676524f74061d8b459a747f9241d` are the SAME compiler state (the v43
+provenance entry in `release/seed/CHANGELOG.md` records HEAD `7b6b05ac`). The
 std-lib extension program is COMPLETE (Plan D test hardening was the final plan).
 Program spec: `docs/superpowers/specs/2026-09-17-std-lib-extension-program-design.md`.
 zig0 is retired; the seed model (`scripts/seed/build_from_seed.sh`) is the only rebuild
@@ -77,8 +77,8 @@ cd /workspace/znineeight
 bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out_dir>
 ```
 - GATE: `=== [seed] Done: <out_dir> ===`; result `<out_dir>/zig1_5_clean` md5 MUST equal the recorded
-  fixed point `36c04ebf5f6f3f4afcb4baf8c721a6a0` (hop1 == hop2 closure). Set
-  `FIXED_POINT_MD5=36c04ebf5f6f3f4afcb4baf8c721a6a0` to gate on it explicitly.
+  fixed point `1c4f676524f74061d8b459a747f9241d` (hop1 == hop2 closure). Set
+  `FIXED_POINT_MD5=1c4f676524f74061d8b459a747f9241d` to gate on it explicitly.
 - The dump MUST run from the repo root with the RELATIVE `sf/src/main.zig` path (module basename-hash
   tokens are path-derived). `<out_dir>` MUST be a fresh dir (the script `rm -rf`s it) — never point it
   at `/tmp/fx_subfolder` (the reference compiler lives there).
@@ -88,7 +88,7 @@ bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out_dir>
 **Rebuild recipe 2 (seed binary lost — rebuild from the seed's C only):** self-contained, no repo
 include path, no zig0: `gcc -c -I <seed>/runtime` over `gen/*.c`, link `<seed>/runtime/zig_runtime.c`
 + `<seed>/runtime/zig_pal.c` + `<seed>/c_exit.c`. Exact commands in `release/seed/SEED_README.txt`.
-Binary md5 MUST equal `36c04ebf5f6f3f4afcb4baf8c721a6a0`.
+Binary md5 MUST equal `1c4f676524f74061d8b459a747f9241d`.
 
 **Flag-set rule (binding):** every `gcc -c` MUST be
 `gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc>`
@@ -237,6 +237,7 @@ for f in DIR/*.c; do gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/sr
   documented `error[3000]` diagnostic and 0 `.c` emitted is a green-guard (correct rejection matching
   the zig0 oracle), counted SEPARATELY from FAIL; a green-guard moving to OK/FAIL is a regression.
   (See EXPECTED_FAIL.md "Green-guards" section.)
+- **Task 10D — defer/errdefer outward control flow rejected, matching Zig (GATE/docs, 2026-09-20, HEAD `7b6b05ac` + fix commit; operator rulings AMENDMENT 2 / R11 / R12).** The Z98 manual Phase 0 plan's second inserted compiler fix (the F half of the Task 10C/10D I/F pair). The compiler accepted `return`/`break`/`continue`/`try` inside `defer`/`errdefer`; lowering inlined the body and its terminator silently dropped the enclosing transfer, so `errdefer { continue; }` turned an explicit `return error.Boom` into a success exit. `sf/src/semantic_analyzer.zig` now rejects, before lowering, only the transfers that leave the body (official Zig `src/AstGen.zig`): dedicated codes `ERR_3051` return / `ERR_3052` break / `ERR_3053` continue / `ERR_3054` try. A `break`/`continue` targeting a loop or labeled block DECLARED INSIDE the body stays legal (Zig's `cur_defer_node` walk via `defer_inner_loops` + `defer_label_stack`); `return`/`try` are rejected anywhere in the body except inside a nested `fn`. Spec §3.1/§3.2 amended. Fixed point **MOVES** `36c04ebf…` → **`1c4f676524f74061d8b459a747f9241d`** (hop1==hop2); seed **v42 → v43** (archive md5 `fe532ad44b659b8c4a34d0f7932fc04f` → `f3f9e9bbfd10d6f675cf7a10819f0794`; gen 45 `.c` + 46 `.h`, 8800765 bytes). New fixtures: runtime `repro/mi_matrix/stdlib_defer_control_flow_xmod` (stdlib pin 193 → 194) is OK; `repro/mi_matrix/defer_control_flow_reject_xmod` is a dedicated-code clean reject (FAIL bucket — the canonical classifier GREENs only `error[3000]`). Corpus `-s0` **904 dirs = 850 OK / 28 GREEN / 26 FAIL / 0 ICE / 0 CRASH**, and a full-classifier join-diff vs the pre-fix compiler over the 902 common dirs is **byte-identical (zero class movement)**. 4-MD5 emitted-C gates **UNCHANGED**: gol `80287f58…` / lisp `d1d99b59…` / json `f9c9f113…` / mud `91fd711d…`. 21-example matrix **21/21** dump/gcc/link rc=0; std-lib runtime gate **194 PASS / 0 FAIL**; seed v43 round-trip hop1==hop2==`1c4f6765…`. `EXPECTED_FAIL.md` **v162 → v163**.
 - **Task 10B — errdefer on explicit error returns fixed (GATE/docs, 2026-09-20, HEAD `4d0f5c23` + fix commit; operator ruling AMENDMENT 1).** The ONE authorized `sf/src` change in the Z98 manual Phase 0 plan (the inserted I/F pair F half; Task 10A is the I half). `sf/src/lower.zig` `return_stmt` lowering unconditionally called `expandDefers(..., is_error_path=0, ...)`, so every explicit `return` was a success exit and all `errdefer` (kind==1) bodies were skipped; only the `try` path passed `is_error_path=1`. The return is now classified first — `ret_is_error=1` when the return expression carries a `CoercionKind.wrap_error_err` coercion (error set → error union, recorded by `resolveReturnStmt`; covers `return error.X`, `return E.X`, `return err;`) or its AST kind is `error_literal` (covers a bare-error-set return type) — and that value is passed to `expandDefers`; success returns and dynamic error-union `return x;` (no coercion recorded) stay on the success path. Fixed point **MOVES** `19760295…` → **`36c04ebf5f6f3f4afcb4baf8c721a6a0`** (hop1==hop2); seed **v41 → v42** (archive md5 `c9461ae95e8b6ff3c4cd585663fbca8b` → `fe532ad44b659b8c4a34d0f7932fc04f`; gen 45 `.c` + 46 `.h`, 8783277 bytes). New runtime fixture `repro/mi_matrix/stdlib_errdefer_xmod` (stdlib pin 192 → 193) is OK; corpus `-s0` **902 dirs = 849 OK / 28 GREEN / 25 FAIL / 0 ICE / 0 CRASH**, and a full-classifier join-diff vs the pre-fix compiler over the same 902 dirs is **byte-identical (zero class movement)**. 4-MD5 gates **UNCHANGED** (no gate program uses `errdefer`): gol `80287f58…` / lisp `d1d99b59…` / json `f9c9f113…` / mud `91fd711d…`. 21-example matrix **21/21** dump/gcc/link rc=0; std-lib runtime gate **193 PASS / 0 FAIL**; seed v42 round-trip hop1==hop2==`36c04ebf…`. `EXPECTED_FAIL.md` **v161 → v162**.
 - **Plan C Task 2b-F — 64-bit decimal + f64 literal precision fixed (GATE/docs, 2026-09-18, HEAD `a9b515d9`; operator ruling m1703).** The F half of the Task 2b-I/F pair. (1) Root cause of the 64-bit decimal truncation: the global-`const` int-literal materialization in `lowerExprImpl`'s `ident_expr` path (`sf/src/lower.zig:3223`) hardcoded `nextTemp(self, TYPE_U32)`, so `const TWO63: u64 = 9223372036854775808;` lowered into a 32-bit `unsigned int` temp and truncated. The temp type is now `TYPE_U32` for `val <= 0xFFFFFFFF`, else `TYPE_U64`. (2) Root cause of the f64 precision loss: `formatF64` (`sf/src/util/format.zig`) hand-extracted only 6 significant digits in f64 arithmetic; it was first replaced with the host libc `gcvt` (commit `2b7acb2d`, seed v33), then by an in-tree **self-contained dtoa** (operator follow-up; no libc): the 53-bit significand is recovered by exact power-of-two scaling, the exact decimal big integer `B` (`m*2^E` / `m*5^-E`) is built in base-1e9 limbs, its top 17 digits are rounded, and normalized scientific notation `d.dddddddddddddddde±XX` is emitted (trailing fractional zeros trimmed). (3) Operator follow-up: the pre-existing `lexer.zig` `parseF64` bug that dropped the exponent after a decimal-point mantissa (`1.0e300` parsed as `1.0`) is fixed (`if (c == 'e' or c == 'E') { i -= 1; break; }`), pinned by `lexer_float_exponent_xmod`. Both Task 2b-I pins flip RED → GREEN (`lit64_decimal_xmod` stdout `lit64 ok`; `f64_literal_precision_xmod` stdout `f64 lit ok`; rc=0 each). Fixed point **MOVES** `ab7187cc988e39dc5907b95ccc182f9f` → `417c435cec303378b224ecdff3f64f26` → `b0e7042a26e74d7b744a0a49546149b4` → **`9265739b7b5e7b1626b8db7ad4255fc5`** (hop1==hop2); seed **v32 → v33 → v34 → v35** (archive md5 `2eb158f3f24363968e9bf0f085461de8` → `799dbca38d211f6a3d962f3773215adf` → `a4d4de3cc7ff131da3a01865b3622ed7` → `981d58539c31cd5b66d97aef4ee87ebe`; gen 45 `.c` + 46 `.h`, 8764125 bytes). Corpus **830 dirs = 777 OK / 28 GREEN / 25 FAIL / 0 ICE**, full-classifier diff exactly the new pin (zero unexpected movement); 4-MD5 gate programs (gol/lisp/json/mud) byte-identical to the pre-fix compiler. Runtime gate **123 PASS / 0 FAIL over 123 dirs**; `check_emit_support.sh` **7/7**; self-compile **48 `.c`, rc=0, 0 errors, 0 PANIC**; `CLOSEOUT OK` (A1-A5, B1-B6, C1). A 47-literal `strtod` harness confirms the new formatter round-trips identically to `gcvt`. `EXPECTED_FAIL.md` **v148 → v149 → v150 → v151**; `sf/docs/tech_docs/00_shared_infra.md` §9 updated.
 - **Plan C Task 1b-F nested extension — nested field-store-as-continue-expression fixed (GATE/docs, 2026-09-18, HEAD `fe784e9c` + the extension commit; operator-ruled).** The v146 lowering fallback covered the single-level shape only; a nested continue-expr field store (`while (o.inner.n < 56) : (o.inner.n += 1)`) still ICEd (`error[3043]: unsupported address-of l-value`) because the nested base branch calls `lowerLValueAddr`, which also reads the resolved-type table. Extension: `semanticAnalyzerResolveWhileHeader` now resolves the `while` continue expression (`child_2`) after the capture is registered, so every sub-expression gets a resolved type (the v146 `lower.zig` fallbacks are kept). Fixed point **MOVES again** `6d704d2265096513cf1706f5b414bd27` → **`ab7187cc988e39dc5907b95ccc182f9f`** (hop2==hop3, moving point); seed **v31 → v32** (archive md5 `7ae31cec80cc3726dba042d694c11c25` → `2eb158f3f24363968e9bf0f085461de8`; gen 45 `.c` + 46 `.h`, 8751385 bytes). New corpus dir `field_store_continue_nested_xmod` (**ICE → OK**); corpus **817 dirs = 764 OK / 28 GREEN / 25 FAIL / 0 ICE**, full-classifier diff over the 817-dir universe is exactly one line (the new nested dir); original `field_store_continue_xmod` stays OK. Runtime gate **113 PASS / 0 FAIL over 113 dirs**; `check_emit_support.sh` **7/7**; self-compile **48 `.c`, rc=0, 0 errors, 0 PANIC**; `CLOSEOUT OK` (A1-A5, B1-B6, C1). `EXPECTED_FAIL.md` **v146 → v147**.

@@ -82,6 +82,14 @@ pub const ErrorCode = enum(u16) {
     // Task 2c-F: an array-size expression that cannot be const-folded (hard
     // error; never silently emit invalid C for an unresolved array size).
     ERR_3050_ARRAY_SIZE_NOT_CONSTANT = 3050,
+    // Task 10D: outward control flow inside a `defer`/`errdefer` body, matching
+    // official Zig (AstGen.zig). A transfer that targets a loop/labeled block
+    // declared INSIDE the body is allowed; only escapes are rejected. Dedicated
+    // codes (3011/3012/3013/3019 already taken).
+    ERR_3051_RETURN_INSIDE_DEFER = 3051,
+    ERR_3052_BREAK_OUT_OF_DEFER = 3052,
+    ERR_3053_CONTINUE_OUT_OF_DEFER = 3053,
+    ERR_3054_TRY_INSIDE_DEFER = 3054,
 };
 
 pub const ERR_1000_UNTERMINATED_STRING: u16 = 0;

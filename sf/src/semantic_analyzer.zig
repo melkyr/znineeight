@@ -46,6 +46,15 @@ pub const SemanticAnalyzer = struct {
     current_switch_cond_tu: u32,
     switch_depth: u32,
     defer_depth: u32,
+    // Task 10D: scope-aware defer-context state for the Zig-matched control-flow
+    // check. `defer_depth` is the `any_defer_node` marker (return/try). These
+    // track targets DECLARED INSIDE the defer body being checked (the
+    // `cur_defer_node` walk): an unlabeled loop count plus a small stack of
+    // labeled loops/blocks. A nested `fn` resets everything (the walk stops).
+    defer_inner_loops: u32,
+    defer_label_stack: [16]u32,
+    defer_label_isloop: [16]u8,
+    defer_label_len: usize,
     local_decl_names: [*]u32,
     local_decl_types: [*]u32,
     local_decl_count: usize,
@@ -198,6 +207,10 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .current_switch_cond_tu = @intCast(u32, 0),
         .switch_depth = @intCast(u32, 0),
         .defer_depth = @intCast(u32, 0),
+        .defer_inner_loops = @intCast(u32, 0),
+        .defer_label_stack = undefined,
+        .defer_label_isloop = undefined,
+        .defer_label_len = @intCast(usize, 0),
         .local_decl_names = undefined,
         .local_decl_types = undefined,
         .local_decl_count = @intCast(usize, 0),
@@ -344,6 +357,112 @@ fn semanticAnalyzerDiagAsyncBuiltinInDefer(self: *SemanticAnalyzer, node_idx: u3
     _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0),
         @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3019_ASYNC_BUILTIN_IN_DEFER)),
         self.source_file_id, a319_node.span_start, a319_node.span_start + @intCast(u32, a319_node.span_len), e319);
+}
+
+// Task 10D — Zig-matched control flow inside `defer`/`errdefer`.
+//
+// Official Zig (src/AstGen.zig) rejects a `return`/`try` anywhere inside a defer
+// body (its `any_defer_node` marker, inherited by nested sub-blocks) unless it
+// is inside a nested `fn` (which resets the marker). `break`/`continue` are
+// rejected only when their target is not found before the defer scope is
+// reached (the `cur_defer_node` marker): a loop or labeled block DECLARED
+// inside the body is a legal target, an outward transfer is not. This walk
+// mirrors that scope chain — a nested `fn` stops it, a loop/labeled block
+// pushes an inner target, and a nested `defer` is validated by its own
+// invocation (so it is not descended into here).
+fn semanticAnalyzerDiagDeferCtl(self: *SemanticAnalyzer, node_idx: u32, code: diag_mod.ErrorCode, msg: []const u8) void {
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0),
+        @intCast(u16, @enumToInt(code)), self.source_file_id,
+        node.span_start, node.span_start + @intCast(u32, node.span_len), msg);
+}
+
+fn semanticAnalyzerDeferBreakAllowed(self: *SemanticAnalyzer, label: u32) bool {
+    if (label == @intCast(u32, 0)) { return self.defer_inner_loops > @intCast(u32, 0); }
+    var i: usize = @intCast(usize, 0);
+    while (i < self.defer_label_len) : (i += @intCast(usize, 1)) {
+        if (self.defer_label_stack[i] == label) return true;
+    }
+    return false;
+}
+
+fn semanticAnalyzerDeferContinueAllowed(self: *SemanticAnalyzer, label: u32) bool {
+    if (label == @intCast(u32, 0)) { return self.defer_inner_loops > @intCast(u32, 0); }
+    var i: usize = @intCast(usize, 0);
+    while (i < self.defer_label_len) : (i += @intCast(usize, 1)) {
+        if (self.defer_label_stack[i] == label and self.defer_label_isloop[i] != @intCast(u8, 0)) return true;
+    }
+    return false;
+}
+
+fn semanticAnalyzerCheckDeferChildren(self: *SemanticAnalyzer, node_idx: u32) void {
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    // `builtin_call` stores its arguments in the extra-children pool but is not
+    // in `nodeHasExtraChildren` (see `astStoreNodePayload`); include it so a
+    // `try` nested in a builtin argument is still seen.
+    if (ast_mod.nodeHasNodeExtraChildren(node.kind) or node.kind == AstKind.builtin_call) {
+        var n = ast_mod.astStoreNodeExtraChildCount(self.store, node_idx);
+        var i: u32 = 0;
+        while (i < n) : (i += 1) {
+            semanticAnalyzerCheckDeferBody(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, i));
+        }
+    }
+    if (node.child_2 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 2))) { semanticAnalyzerCheckDeferBody(self, node.child_2); }
+    if (node.child_1 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 1))) { semanticAnalyzerCheckDeferBody(self, node.child_1); }
+    if (node.child_0 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(node.kind, @intCast(u8, 0))) { semanticAnalyzerCheckDeferBody(self, node.child_0); }
+}
+
+fn semanticAnalyzerCheckDeferBody(self: *SemanticAnalyzer, node_idx: u32) void {
+    if (node_idx == @intCast(u32, 0)) return;
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    var kind = node.kind;
+    // A nested `fn` resets both markers; its body is not walked. A nested
+    // defer/errdefer is checked by its own statement arm, so skip it here.
+    if (kind == AstKind.fn_decl) return;
+    if (kind == AstKind.defer_stmt or kind == AstKind.errdefer_stmt) return;
+    if (kind == AstKind.return_stmt) {
+        var m: []const u8 = "cannot return from defer expression";
+        semanticAnalyzerDiagDeferCtl(self, node_idx, diag_mod.ErrorCode.ERR_3051_RETURN_INSIDE_DEFER, m);
+    } else if (kind == AstKind.try_expr) {
+        var m: []const u8 = "'try' not allowed inside defer expression";
+        semanticAnalyzerDiagDeferCtl(self, node_idx, diag_mod.ErrorCode.ERR_3054_TRY_INSIDE_DEFER, m);
+    } else if (kind == AstKind.break_stmt) {
+        var label = ast_mod.astStoreNodePayload(self.store, node_idx);
+        if (!semanticAnalyzerDeferBreakAllowed(self, label)) {
+            var m: []const u8 = "cannot break out of defer expression";
+            semanticAnalyzerDiagDeferCtl(self, node_idx, diag_mod.ErrorCode.ERR_3052_BREAK_OUT_OF_DEFER, m);
+        }
+    } else if (kind == AstKind.continue_stmt) {
+        var label = ast_mod.astStoreNodePayload(self.store, node_idx);
+        if (!semanticAnalyzerDeferContinueAllowed(self, label)) {
+            var m: []const u8 = "cannot continue out of defer expression";
+            semanticAnalyzerDiagDeferCtl(self, node_idx, diag_mod.ErrorCode.ERR_3053_CONTINUE_OUT_OF_DEFER, m);
+        }
+    } else if (kind == AstKind.while_stmt or kind == AstKind.for_stmt) {
+        var saved_loops = self.defer_inner_loops;
+        self.defer_inner_loops += @intCast(u32, 1);
+        semanticAnalyzerCheckDeferChildren(self, node_idx);
+        self.defer_inner_loops = saved_loops;
+        return;
+    } else if (kind == AstKind.labeled_stmt) {
+        var label = ast_mod.astStoreNodePayload(self.store, node_idx);
+        var is_loop: u8 = @intCast(u8, 0);
+        if (node.child_0 != @intCast(u32, 0)) {
+            var inner = ast_mod.astStoreNodeAt(self.store, node.child_0);
+            if (inner.kind == AstKind.while_stmt or inner.kind == AstKind.for_stmt) { is_loop = @intCast(u8, 1); }
+        }
+        var pushed: u8 = @intCast(u8, 0);
+        if (self.defer_label_len < @intCast(usize, 16)) {
+            self.defer_label_stack[self.defer_label_len] = label;
+            self.defer_label_isloop[self.defer_label_len] = is_loop;
+            self.defer_label_len += @intCast(usize, 1);
+            pushed = @intCast(u8, 1);
+        }
+        semanticAnalyzerCheckDeferChildren(self, node_idx);
+        if (pushed != @intCast(u8, 0)) { self.defer_label_len -= @intCast(usize, 1); }
+        return;
+    }
+    semanticAnalyzerCheckDeferChildren(self, node_idx);
 }
 
 fn semanticAnalyzerGrowLocalDecls(self: *SemanticAnalyzer) void {
@@ -3162,6 +3281,16 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
             }
         } else if (node.kind == AstKind.defer_stmt or node.kind == AstKind.errdefer_stmt) {
             if (node.child_0 != @intCast(u32, 0)) {
+                // Task 10D: reject outward `return`/`try`/`break`/`continue`
+                // before lowering (Zig-matched). The nested-defer case is
+                // handled by this same arm when the body walk reaches it.
+                var dc_saved_loops = self.defer_inner_loops;
+                var dc_saved_len = self.defer_label_len;
+                self.defer_inner_loops = @intCast(u32, 0);
+                self.defer_label_len = @intCast(usize, 0);
+                semanticAnalyzerCheckDeferBody(self, node.child_0);
+                self.defer_inner_loops = dc_saved_loops;
+                self.defer_label_len = dc_saved_len;
                 self.defer_depth += @intCast(u32, 1);
                 semanticAnalyzerResolveStmtIter(self, node.child_0);
                 self.defer_depth -= @intCast(u32, 1);
