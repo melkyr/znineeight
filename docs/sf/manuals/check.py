@@ -10,7 +10,8 @@ failure and names the offending file. Checks, in order:
   4. lang="en" and the ISO-8859-1 charset meta are present;
   5. the forbidden list (HTML5 tags, <div>, PNG/SVG/web fonts, http(s):// in
      href/src, inline <style>, <script src> other than doc.js, and CSS2/CSS3
-     tokens in the two stylesheets);
+     tokens in the two stylesheets), and the 2048-byte cap on doc.js
+     (search-data.js is search index data and is deliberately not size-capped);
   6. the figure-placeholder 1:1 match with todo-figures-list.html;
   7. the no-CSS baseline (heading and prev/contents/next footer survive with
      the stylesheet links stripped).
@@ -31,6 +32,8 @@ DIST_DIR = os.path.abspath(os.path.join(ROOT, "dist"))
 FIGURE_LIST = "todo-figures-list.html"
 FIGURE_SCAN_EXCLUDE = frozenset(("en/vol4-24-html-style.html",))
 CSS_FILES = ("en/z98.css", "en/z98-print.css")
+DOC_JS = "en/doc.js"
+DOC_JS_MAX_BYTES = 2048
 SHIPPED_LANGS = frozenset(("en",))
 
 HTML5_TAGS = frozenset((
@@ -298,6 +301,15 @@ def check_forbidden(parsed):
                     fail(name, "line %d: forbidden asset %s=%r" % (line, attr, value))
 
 
+def check_js_size():
+    path = os.path.join(ROOT, DOC_JS)
+    if not os.path.exists(path):
+        fail(DOC_JS, "missing behaviour script")
+    size = os.path.getsize(path)
+    if size > DOC_JS_MAX_BYTES:
+        fail(DOC_JS, "exceeds %d-byte cap (actual %d bytes)" % (DOC_JS_MAX_BYTES, size))
+
+
 def check_css():
     for name in CSS_FILES:
         path = os.path.join(ROOT, name)
@@ -408,6 +420,7 @@ def main():
     check_langbar(parsed)
     check_lang_charset(parsed)
     check_forbidden(parsed)
+    check_js_size()
     check_css()
     check_figures(parsed)
     check_nocss(parsed)
