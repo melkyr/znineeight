@@ -6,6 +6,8 @@
 <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
 <meta name="generator" content="z98doc 0.1">
 <meta name="keywords" content="Z98 manual search index A to Z">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
 <link rel="home" href="index.html">
 <link rel="up" href="toc.html">
 <link rel="prev" href="toc.html">
@@ -14,9 +16,9 @@
 <body bgcolor="#f5f0e1" text="#000000" link="#003366" vlink="#551a8b" alink="#cc0000">
 <table width="100%" cellpadding="0" cellspacing="0" border="0">
 <tr>
-<td width="160" valign="top" bgcolor="#e8e0cc">
+<td width="160" valign="top" bgcolor="#e8e0cc" class="sidebar">
 <font size="1">
-<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#e8e0cc">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#e8e0cc" class="langbar">
 <tr>
 <td align="right">
 English |
@@ -34,10 +36,10 @@ Espa&ntilde;ol (not yet available) |
 </p>
 <p><b>Volumes</b></p>
 <p>
-I. Getting Started <i>(planned)</i><br>
-II. Learning Z98 <i>(planned)</i><br>
+<a href="vol1-00-title.html">I. Getting Started</a><br>
+<a href="vol2-00-title.html">II. Learning Z98</a><br>
 III. Working in the Era <i>(planned)</i><br>
-IV. Reference <i>(planned)</i><br>
+<a href="vol4-00-title.html">IV. Reference</a><br>
 V. HOWTO <i>(planned)</i><br>
 VI. Internals <i>(planned)</i>
 </p>
@@ -51,13 +53,19 @@ Type one or more words and submit the form. With JavaScript available the
 results are filtered from the page index; without it, use the A&ndash;Z
 fallback below, which points at the <a href="toc.html">table of contents</a>.
 </p>
-<form action="search.html" method="get">
+<form action="search.html" method="get" onsubmit="return doSearch()">
 <p>
 <label for="q">Search the manual:</label>
 <input type="text" id="q" name="q" size="32" maxlength="64">
 <input type="submit" value="Search">
 </p>
 </form>
+<table width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td id="results">
+</td>
+</tr>
+</table>
 <noscript>
 <p><b>A&ndash;Z fallback.</b> JavaScript is off, so browse by letter through the
 table of contents.</p>
@@ -78,5 +86,6 @@ table of contents.</p>
 </tr>
 </table>
 <script type="text/javascript" src="search-data.js"></script>
+<script type="text/javascript" src="doc.js"></script>
 </body>
 </html>
