@@ -1,0 +1,274 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: HTML Style</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual HTML style guide page template doctype encoding tables CSS JavaScript assets">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="toc.html">
+<link rel="next" href="index.html">
+</head>
+<body bgcolor="#f5f0e1" text="#000000" link="#003366" vlink="#551a8b" alink="#cc0000">
+<table width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#e8e0cc" class="sidebar">
+<font size="1">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#e8e0cc" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume IV &mdash; Reference</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+How to use the Reference <i>(planned)</i><br>
+The full grammar <i>(planned)</i><br>
+Types <i>(planned)</i><br>
+Pointers <i>(planned)</i><br>
+Structs <i>(planned)</i><br>
+Enums <i>(planned)</i><br>
+Unions <i>(planned)</i><br>
+Tuples <i>(planned)</i><br>
+Arrays and slices <i>(planned)</i><br>
+Errors <i>(planned)</i><br>
+Optionals <i>(planned)</i><br>
+Aliases <i>(planned)</i><br>
+Statements <i>(planned)</i><br>
+Control flow <i>(planned)</i><br>
+Error expressions <i>(planned)</i><br>
+Builtins <i>(planned)</i><br>
+Async <i>(planned)</i><br>
+Memory <i>(planned)</i><br>
+The standard library <i>(planned)</i><br>
+The PAL <i>(planned)</i><br>
+Markers <i>(planned)</i><br>
+Diagnostics <i>(planned)</i><br>
+The command line <i>(planned)</i><br>
+Limits <i>(planned)</i><br>
+<b>HTML style</b><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>HTML Style</h1>
+<p>
+This page is the manual's HTML contract. Every page is hand-authored to the
+same skeleton, so the set stays consistent, renders on 1998 browsers, and
+survives the loss of its stylesheets. Copy the skeleton below, fill in the
+placeholders, and follow the rules that follow it.
+</p>
+
+<h2>The page skeleton</h2>
+<p>
+Copy this block verbatim into a new file, then replace the angle-bracket
+placeholders with the page's real title, keywords, and neighbour links. Keep
+the <tt>&lt;link rel&gt;</tt> order: screen stylesheet, print stylesheet, home,
+up, prev, next. The sidebar cell carries <tt>class="sidebar"</tt>, the language
+bar carries <tt>class="langbar"</tt>, and the volume table of contents carries
+<tt>id="toc"</tt>; those are the hooks the print stylesheet and <tt>doc.js</tt>
+use.
+</p>
+<pre>
+&lt;!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd"&gt;
+&lt;html lang="en"&gt;
+&lt;head&gt;
+&lt;title&gt;Z98 Manual: &amp;lt;TITLE&amp;gt;&lt;/title&gt;
+&lt;meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1"&gt;
+&lt;meta name="generator" content="z98doc 0.1"&gt;
+&lt;meta name="keywords" content="&amp;lt;KEYWORDS&amp;gt;"&gt;
+&lt;link rel="stylesheet" type="text/css" href="z98.css"&gt;
+&lt;link rel="stylesheet" type="text/css" href="z98-print.css" media="print"&gt;
+&lt;link rel="home" href="index.html"&gt;
+&lt;link rel="up" href="toc.html"&gt;
+&lt;link rel="prev" href="&amp;lt;PREV&amp;gt;"&gt;
+&lt;link rel="next" href="&amp;lt;NEXT&amp;gt;"&gt;
+&lt;/head&gt;
+&lt;body bgcolor="#f5f0e1" text="#000000" link="#003366" vlink="#551a8b" alink="#cc0000"&gt;
+&lt;table width="100%" cellpadding="0" cellspacing="0" border="0"&gt;
+&lt;tr&gt;
+&lt;td width="160" valign="top" bgcolor="#e8e0cc" class="sidebar"&gt;
+  &lt;!-- language bar + volume TOC --&gt;
+&lt;/td&gt;
+&lt;td width="1" bgcolor="#000000"&gt;&lt;img src="gfx/bullet.gif" width="1" height="1" alt=""&gt;&lt;/td&gt;
+&lt;td valign="top"&gt;
+  &lt;h1&gt;&amp;lt;TITLE&amp;gt;&lt;/h1&gt;
+  &lt;!-- body --&gt;
+  &lt;p&gt;Previous: &amp;lt;PREV&amp;gt; | &lt;a href="toc.html"&gt;Contents&lt;/a&gt; | Next: &amp;lt;NEXT&amp;gt;&lt;/p&gt;
+&lt;/td&gt;
+&lt;/tr&gt;
+&lt;/table&gt;
+&lt;script type="text/javascript" src="doc.js"&gt;&lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;
+</pre>
+
+<h2>The rules</h2>
+
+<h3>Doctype and encoding</h3>
+<p>
+The doctype is HTML 4.0 Transitional, exactly as shown, and pages are authored
+in the conservative HTML 3.2/4.0 intersection: nothing a 1998 browser cannot
+parse. The encoding is ISO-8859-1, declared with
+<tt>&lt;meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1"&gt;</tt>.
+Do not use UTF-8 for the English edition. The root element carries
+<tt>lang="en"</tt>.
+</p>
+
+<h3>No &lt;div&gt;; tables for layout</h3>
+<p>
+Structure is carried by tables, never by <tt>&lt;div&gt;</tt>. The page body is
+the three-column table in the skeleton: a 160-pixel sidebar, a one-pixel
+gutter, and the content column. Do not use the HTML5 structural elements:
+</p>
+<pre>
+&lt;section&gt;  &lt;article&gt;  &lt;nav&gt;  &lt;header&gt;  &lt;footer&gt;  &lt;main&gt;  &lt;figure&gt;
+&lt;div&gt;
+</pre>
+<p>
+None of these existed in 1998. A browser of the era ignores them, and the
+layout collapses without the table.
+</p>
+
+<h3>Baseline appearance</h3>
+<p>
+Appearance that matters is carried by presentational attributes, not by CSS:
+<tt>bgcolor</tt>, <tt>text</tt>, <tt>link</tt>, <tt>vlink</tt>, <tt>alink</tt>,
+<tt>align</tt>, <tt>width</tt>, <tt>border</tt>, <tt>cellpadding</tt>,
+<tt>cellspacing</tt>, and <tt>valign</tt>, together with <tt>&lt;font&gt;</tt>,
+<tt>&lt;b&gt;</tt>, <tt>&lt;i&gt;</tt>, and <tt>&lt;center&gt;</tt>. With both
+stylesheets removed the page must remain legible, navigable, and correctly
+ordered.
+</p>
+
+<h3>CSS as progressive enhancement</h3>
+<p>
+CSS is optional decoration. It ships as two external linked stylesheets:
+<tt>z98.css</tt> for the screen and <tt>z98-print.css</tt> for print, linked
+with <tt>media="print"</tt>. Both are CSS1 only; there is no CSS2 or CSS3.
+Do not write inline <tt>&lt;style&gt;</tt> blocks: a pre-CSS browser would
+render their text as body content. If a style block is ever unavoidable it must
+be wrapped in SGML comments, but the manual has none. CSS carries no meaning
+and no layout.
+</p>
+
+<h3>JavaScript</h3>
+<p>
+There is exactly one behaviour script, <tt>doc.js</tt>, loaded at the end of the
+body with
+<tt>&lt;script type="text/javascript" src="doc.js"&gt;&lt;/script&gt;</tt>. It
+contains four functions: <tt>swap</tt>, <tt>tocToggle</tt>, <tt>doSearch</tt>,
+and <tt>preload</tt>. It does not use <tt>document.write</tt> and does not sniff
+the browser. Every feature degrades to working HTML; the manual is fully usable
+with JavaScript switched off.
+</p>
+
+<h3>Assets</h3>
+<p>
+Images are GIF only: no PNG, no SVG, no web fonts. Keep the exact sizes: logo
+240&times;48, bullets 8&times;8, icons 16&times;16, buttons 88&times;24 plus a
+<tt>-over</tt> rollover pair, navrule 150&times;8. The icon set is
+<tt>note</tt>, <tt>tip</tt>, <tt>warn</tt>, <tt>caution</tt>, <tt>era</tt>, and
+<tt>honest</tt>. XBM alternates for the button GIFs live in <tt>gfx/xbm/</tt>.
+</p>
+
+<h2>Admonitions</h2>
+<p>
+Five callouts are defined: <b>note</b>, <b>tip</b>, <b>warn</b>,
+<b>caution</b>, and <b>honest</b>. Each is a table with its 16&times;16 icon and
+a coloured background. The honesty callout uses the warmer background
+<tt>#ece0e0</tt> so a reader recognises the manual being straight with them.
+</p>
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffffcc">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-note.gif" width="16" height="16" alt="Note"></td>
+<td><b>Note.</b> A neutral aside: something true that the reader does not need in order to proceed.</td>
+</tr>
+</table>
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e0f0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-tip.gif" width="16" height="16" alt="Tip"></td>
+<td><b>Tip.</b> A shortcut or a habit that makes the material easier to work with.</td>
+</tr>
+</table>
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffe8cc">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-warn.gif" width="16" height="16" alt="Warn"></td>
+<td><b>Warn.</b> Something that will bite if ignored, but is not dangerous.</td>
+</tr>
+</table>
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffdddd">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-caution.gif" width="16" height="16" alt="Caution"></td>
+<td><b>Caution.</b> A mistake that costs data, time, or a rebuild.</td>
+</tr>
+</table>
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ece0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> The manual being straight with you: friction, a limitation, or the case for another tool.</td>
+</tr>
+</table>
+
+<h2>Terminal transcripts</h2>
+<p>
+Output captured from a real run is rendered in a <tt>&lt;pre&gt;</tt> block,
+monospaced and unadorned. Never invent a transcript; capture it and paste it
+verbatim.
+</p>
+<pre>
+$ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out hello.z98
+$ cd /tmp/manual_out &amp;&amp; sh build_target.sh linux hello
+$ ./hello
+Hello from Z98!
+</pre>
+
+<h2>Win9x figure placeholders</h2>
+<p>
+A Win9x screenshot that has not yet been captured is reserved with a
+dashed-border box that names the figure and says what is missing. The operator
+captures the real screenshot on real hardware later.
+</p>
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f5f0e1" style="border: 1px dashed #808080">
+<tr>
+<td align="center">
+<i>Figure N &mdash; Win9x screenshot pending</i>
+</td>
+</tr>
+</table>
+<p>
+Every on-page placeholder must have exactly one matching row in the
+<a href="../todo-figures-list.html">pending figure list</a>, and every row
+there must have exactly one on-page placeholder. A figure that appears in
+neither place is a gap; a placeholder without a row, or a row without a
+placeholder, is an orphan. Terminal transcripts are not listed in that file;
+they live on the page in a <tt>&lt;pre&gt;</tt> block.
+</p>
+
+<p>Previous: <a href="toc.html">Contents</a> | <a href="toc.html">Contents</a> | Next: <a href="index.html">Title page</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
