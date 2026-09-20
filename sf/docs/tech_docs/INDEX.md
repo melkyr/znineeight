@@ -310,6 +310,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `emitArithNeg` | lower.zig |
 | `emitArrayType` | c89_emit.zig |
 | `emitAwait` | async_state_machine.zig |
+| `emitBaseIdxAccess` | c89_emit.zig |
 | `emitBuildOwcBat` | c89_emit.zig |
 | `emitBuildScripts` | c89_emit.zig |
 | `emitBuildTargetBat` | c89_emit.zig |
@@ -323,9 +324,11 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `emitErrorCodePrologue` | c89_emit.zig |
 | `emitErrorSetType` | c89_emit.zig |
 | `emitErrorUnionType` | c89_emit.zig |
+| `emitFieldAssign` | c89_emit.zig |
 | `emitFlagOp` | c89_emit.zig |
 | `emitFnPtrType` | c89_emit.zig |
 | `emitFunctionBody` | c89_emit.zig |
+| `emitFunctionForwardDecl` | c89_emit.zig |
 | `emitFunctionSignature` | c89_emit.zig |
 | `emitGlobalDecls` | c89_emit.zig |
 | `emitHoistedDecls` | c89_emit.zig |
