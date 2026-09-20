@@ -1,4 +1,19 @@
-# mi_matrix corpus — expected-fail manifest (v165 2026-09-20)
+# mi_matrix corpus — expected-fail manifest (v166 2026-09-20)
+
+## Task 11D — `@floatCast`/`@intToFloat` comptime constant folding (v165 -> v166 2026-09-20)
+
+The Z98 manual Phase 0 plan's fifth inserted compiler fix (`docs/superpowers/plans/2026-09-20-z98-manual-phase0-plan.md`, Task 11C investigation, Task 11D fix; operator-inserted I/F pair). Operator ruling: fold even though Z98's comptime-required positions are integer-only today ("comptime-required positions will eventually include floats"). `sf/src/comptime_eval.zig` interned exactly seven foldable builtins and had no `@floatCast`/`@intToFloat` branch and no float-literal arm, so a comptime-known conversion never entered `ctx.comptime_values`; the lowerer's only fold consumer emitted `int_const` (it cannot represent a float), so the call lowered to a RUNTIME `int_to_float`/`float_cast` in `__module_init` instead of a `float_const` — an emission/folding gap (dump rc=0, zero diagnostics), not a hard error. `comptime_eval.zig` now interns the two names, adds the fold branches plus a private float sub-evaluator, and tags float folds with the `WIDTH_FLOAT` `width_bits` sentinel so the integer binop/negate/bit_not/int_cast paths reject them (no IEEE bits leak into integer arithmetic). `lower.zig`'s `comptime_values` HIT path emits the existing `float_const` with the resolved `f32`/`f64` target. No `lir.zig`/`c89_emit.zig`/`type_resolver.zig` change; the array-size gap (`evalConstU32Full`) is untouched (Task 11E/11F).
+
+**New fixture (1) + standalone repro.**
+
+| fixture | class | contract |
+|---|---|---|
+| `stdlib_comptime_floatcast_fold_xmod` | OK (runtime regression + emitted-C fold gate) | `@intToFloat(f64,3)`, `@intToFloat(f32,7)`, `@floatCast(f32,1.5)`, `@floatCast(f64, f32 const)`, negative float literal `@floatCast(f32,-1.25)`, precision-losing `@floatCast(f32,16777217.0)`, const-chain `@intToFloat(f64, WIDTH)`, negative int `@intToFloat(f64,-7)`, nested `@floatCast(f64,@intToFloat(f32,5))`, and a runtime-operand control (`widen`); each pinned by an equality probe. The emitted-C fold gate asserts `__module_init` has 0 `int_to_float`/`float_cast` and the folded values as float literals. Deterministic 11-line stdout ending `done`, rc 0 |
+| standalone `repro/comptime_floatcast_fold.z98` (top-level file, not a corpus dir) | — | single-file repro of the same defect with header defect/fix/recipe/expected stdout |
+
+`scripts/stdlib/expected_dirs.txt` pin grows 196 -> 197 (effective entries).
+
+**Gates (seed-built fixed-point compiler `ea159fc2f14af88b3d450f3ca70eca17`).** Self-compile `-ffast --dump-c89` rc=0, two-hop closure hop1 == hop2 == `ea159fc2…` (re-verified from the rotated seed). Emitted-C fold gate: fixture `__module_init` 0 `int_to_float`/`float_cast`, 9 float literals; the runtime-operand control still emits a runtime cast. Runtime gate **197 PASS / 0 FAIL over 197 dirs** (3x byte-identical stdout internal). Corpus `-s0` classifier **907 dirs = 853 OK / 28 GREEN / 26 FAIL / 0 ICE / 0 CRASH** (v165 906 -> 907: the new fixture is the only addition); a full-classifier join-diff vs the pre-fix compiler over the 907-dir universe is **byte-identical — zero class movement**. 4-MD5 emitted-C gates **UNCHANGED** (no gate program uses these builtins): gol `80287f58bd761e4a551d5d62db5a3551` / lisp `d1d99b597d4ca2a2a75a42c363d54ff4` / json `f9c9f113b3a7bbd9413b999426daf330` / mud `91fd711d97bcf9cad91352076be39710`. 21-example matrix **21/21** dump/gcc/link rc=0. `examples/z98/mandelbrot` emitted C changed (fold) and is runtime-identical (stdout md5 `d596677501e3653786841195b30d8d64`, 1944 B, rc=0). Fixed point **MOVED `ff54332e2d4418eb663f225bbad6d9c7` -> `ea159fc2f14af88b3d450f3ca70eca17`**; seed **v45 -> v46** (archive md5 `444f0d997867d3ff97d34d45d9720636` -> `0db592d0d00e010a6296674e1e2fd9ce`). Full report: `.superpowers/sdd/2026-09-20-z98-manual-phase0-plan/task-11D-report.md`.
 
 ## Task 10F — dynamic error-union return runs errdefer (v164 -> v165 2026-09-20)
 

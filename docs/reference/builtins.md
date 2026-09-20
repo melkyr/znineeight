@@ -71,14 +71,14 @@ Performs an explicit integer cast with range checking.
 Performs an explicit floating-point cast (not runtime-checked).
 - **Syntax:** `@floatCast(FloatType, float_expression)`
 - **Constraints:** Both must be floating-point types (`f32`, `f64`).
-- **Compile-time Evaluation:** None — `@floatCast` is not constant-folded (the comptime evaluator has no `@floatCast` branch); it is lowered to a runtime `float_cast` even when the argument is a constant literal.
+- **Compile-time Evaluation:** A comptime-known argument is **constant-folded** (Task 11D): `comptime_eval.zig` interns `@floatCast`, evaluates the operand with its float sub-evaluator (float literals, `negate`, nested conversions, const chains), and the lowerer's `comptime_values` HIT path emits a `float_const` at the resolved `f32`/`f64` target. A runtime operand is lowered to a runtime `float_cast` as before.
 - **C89 Emission Strategy:** Emitted as a direct C-style cast in **both** directions (spec §4: no runtime check): widening `@floatCast(f64, f32_expr)` → `(double)expr`; narrowing `@floatCast(f32, f64_expr)` → `(float)expr`, which may lose precision. (The bootstrap-era `__bootstrap_f32_from_f64` helper — itself a no-op `return (f32)x;` — is not emitted by the current lowering; `@floatCast` lowers to the `float_cast` LIR op.)
 
 ### `@intToFloat(T, expr)`
 Performs an explicit conversion from an integer to a floating-point type.
 - **Syntax:** `@intToFloat(FloatType, integer_expression)`
 - **Constraints:** `T` must be a floating-point type (`f32`, `f64`), and `expr` must be an integer type.
-- **Compile-time Evaluation:** None — `@intToFloat` is not constant-folded (the comptime evaluator has no `@intToFloat` branch); it is lowered to a runtime `int_to_float` even when the argument is a constant literal.
+- **Compile-time Evaluation:** A comptime-known argument is **constant-folded** (Task 11D): `comptime_eval.zig` interns `@intToFloat`, evaluates the integer operand with the integer evaluator (honoring signedness) and rounds an `f32` target through `f32`, and the lowerer's `comptime_values` HIT path emits a `float_const` at the resolved `f32`/`f64` target. A runtime operand is lowered to a runtime `int_to_float` as before.
 - **C89 Emission Strategy:** Emitted as a direct C-style cast: `(double)expr`.
 
 ### `@import(path)`

@@ -1,0 +1,11 @@
+inttofloat-f64-3-ok
+inttofloat-f32-7-ok
+floatcast-f32-1.5-ok
+floatcast-f64-widen-ok
+floatcast-neg-literal-ok
+floatcast-narrow-round-ok
+inttofloat-constchain-ok
+inttofloat-neg-int-ok
+nested-cast-ok
+runtime-operand-ok
+done

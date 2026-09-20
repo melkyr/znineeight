@@ -16,6 +16,12 @@ pub const ComptimeVal = struct {
     sig: bool,
 };
 
+// Float-valued folds carry this distinctive width_bits sentinel so the integer
+// fold operators (binop / negate / bit_not / int_cast) reject them: a float's
+// IEEE-754 bit pattern must never enter integer arithmetic. No integer fold can
+// legitimately carry this width (literal=0, char=8, bool=1, intCast<=64).
+const WIDTH_FLOAT: u32 = @intCast(u32, 4294967295);
+
 pub const ComptimeEval = struct {
     registry: *TypeRegistry,
     store: *AstStore,
@@ -27,6 +33,8 @@ pub const ComptimeEval = struct {
     bit_size_of_id: u32,
     bit_offset_of_id: u32,
     int_cast_id: u32,
+    float_cast_id: u32,
+    int_to_float_id: u32,
     is_windows_id: u32,
     host_is_windows: bool,
 };
@@ -36,6 +44,10 @@ pub fn comptimeEvalInit(registry: *TypeRegistry, store: *AstStore, interner: *St
     var s_align: []const u8 = "@alignOf";
     var s_intc: []const u8 = "@intCast";
     var intc_id = interner_mod.stringInternerIntern(interner, s_intc);
+    var s_fc: []const u8 = "@floatCast";
+    var fc_id = interner_mod.stringInternerIntern(interner, s_fc);
+    var s_itf: []const u8 = "@intToFloat";
+    var itf_id = interner_mod.stringInternerIntern(interner, s_itf);
     var size_id = interner_mod.stringInternerIntern(interner, s_size);
     var align_id = interner_mod.stringInternerIntern(interner, s_align);
     var s_off: []const u8 = "@offsetOf";
@@ -49,6 +61,7 @@ pub fn comptimeEvalInit(registry: *TypeRegistry, store: *AstStore, interner: *St
     return ComptimeEval{
         .registry = registry, .store = store, .interner = interner, .symbol_reg = symbol_reg,
         .size_of_id = size_id, .align_of_id = align_id, .int_cast_id = intc_id,
+        .float_cast_id = fc_id, .int_to_float_id = itf_id,
         .offset_of_id = off_id, .bit_size_of_id = bitsz_id, .bit_offset_of_id = bitoff_id,
         .is_windows_id = iw_id,
         .host_is_windows = false,
@@ -61,6 +74,7 @@ fn comptimeEvalBinOp(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, depth
     var rhs = comptimeEvalEvaluateDepth(self, node.child_1, depth);
     if (lhs) |l| {
         if (rhs) |r| {
+            if (l.width_bits == WIDTH_FLOAT or r.width_bits == WIDTH_FLOAT) return null;
             var lv: u64 = l.bits;
             var rv: u64 = r.bits;
             var use_signed = l.sig or r.sig;
@@ -235,6 +249,7 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
         var inner = comptimeEvalEvaluateDepth(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 1)), depth);
         if (tid) |t| {
             if (inner) |cv| {
+                if (cv.width_bits == WIDTH_FLOAT) return null;
                 var ty = self.registry.types_items[@intCast(usize, t)];
                 var is_int_t: bool = type_mod.typeRegistryIsInteger(self.registry, t);
                 var wb: u32 = @intCast(u32, type_mod.typeRegistryIntWidthBits(self.registry, t));
@@ -264,6 +279,99 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
         }
         return ComptimeVal{ .bits = wb2, .width_bits = @intCast(u32, 1), .sig = false };
     }
+    if (node.child_0 == self.int_to_float_id or node.child_0 == self.float_cast_id) {
+        var fv = comptimeEvalFloatBuiltin(self, node_idx, depth);
+        if (fv) |v| {
+            // Z98 @bitCast is integer-only, so transport the f64 bit pattern
+            // through a pointer reinterpretation (no value conversion).
+            var fb: f64 = v;
+            var fbp: *u64 = @ptrCast(*u64, &fb);
+            return ComptimeVal{ .bits = fbp.*, .width_bits = WIDTH_FLOAT, .sig = false };
+        }
+        return null;
+    }
+    return null;
+}
+
+// Float-valued sub-evaluator. Deliberately SEPARATE from
+// comptimeEvalEvaluateDepth so a float bit pattern can never enter the integer
+// binop/negate/bit_not/int_cast paths (see WIDTH_FLOAT). Handles float
+// literals, `negate` (a negative float literal is `negate(float_literal)`),
+// parentheses, nested @intToFloat/@floatCast, and const ident chains.
+fn comptimeEvalFloat(self: *ComptimeEval, node_idx: u32, depth: u32) ?f64 {
+    if (node_idx == @intCast(u32, 0)) return null;
+    if (depth >= @intCast(u32, 16)) return null;
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    if (node.kind == AstKind.float_literal) {
+        return self.store.float_values.items[@intCast(usize, ast_mod.astStoreNodePayload(self.store, node_idx))];
+    } else if (node.kind == AstKind.negate) {
+        var inner = comptimeEvalFloat(self, node.child_0, depth + @intCast(u32, 1));
+        if (inner) |fv| { return 0.0 - fv; }
+        return null;
+    } else if (node.kind == AstKind.paren_expr) {
+        return comptimeEvalFloat(self, node.child_0, depth + @intCast(u32, 1));
+    } else if (node.kind == AstKind.builtin_call) {
+        if (node.child_0 == self.int_to_float_id or node.child_0 == self.float_cast_id) {
+            return comptimeEvalFloatBuiltin(self, node_idx, depth + @intCast(u32, 1));
+        }
+        return null;
+    } else if (node.kind == AstKind.ident_expr) {
+        var name_id = ast_mod.astStoreIdentifier(self.store, node_idx);
+        var mi: usize = 0;
+        while (mi < @intCast(usize, self.symbol_reg.tables_len)) : (mi += 1) {
+            var c_sym = sym_mod.symbolRegistryQualifiedLookup(self.symbol_reg, @intCast(u32, mi), name_id);
+            if (c_sym) |cs| {
+                if ((cs.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
+                    var c_decl = ast_mod.astStoreNodeAt(self.store, cs.decl_node);
+                    if (c_decl.child_1 != @intCast(u32, 0)) {
+                        return comptimeEvalFloat(self, c_decl.child_1, depth + @intCast(u32, 1));
+                    }
+                }
+            }
+        }
+        return null;
+    } else {
+        return null;
+    }
+}
+
+// Evaluate one @intToFloat/@floatCast call to an f64. The target must resolve
+// to TYPE_F32/TYPE_F64; an f32 target rounds through f32. @intToFloat's operand
+// is evaluated with the integer evaluator (honoring `sig`); @floatCast's with
+// comptimeEvalFloat. A non-float target or non-foldable operand returns null
+// (no fold; the runtime lowering is unchanged).
+fn comptimeEvalFloatBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?f64 {
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    var tid = comptimeEvalResolveTypeArg(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)));
+    if (tid) |t| {
+        if (t != type_mod.TYPE_F32 and t != type_mod.TYPE_F64) return null;
+        var inner_idx = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 1));
+        var fv: f64 = 0.0;
+        if (node.child_0 == self.int_to_float_id) {
+            var iv = comptimeEvalEvaluateDepth(self, inner_idx, depth);
+            if (iv) |cv| {
+                if (cv.width_bits == WIDTH_FLOAT) return null;
+                if (cv.sig) {
+                    var sv: i64 = @bitCast(i64, cv.bits);
+                    fv = @intToFloat(f64, sv);
+                } else {
+                    fv = @intToFloat(f64, cv.bits);
+                }
+            } else {
+                return null;
+            }
+        } else if (node.child_0 == self.float_cast_id) {
+            var xv = comptimeEvalFloat(self, inner_idx, depth);
+            if (xv) |x| { fv = x; } else { return null; }
+        } else {
+            return null;
+        }
+        if (t == type_mod.TYPE_F32) {
+            var f32v: f32 = @floatCast(f32, fv);
+            return @floatCast(f64, f32v);
+        }
+        return fv;
+    }
     return null;
 }
 
@@ -284,6 +392,7 @@ fn comptimeEvalEvaluateDepth(self: *ComptimeEval, node_idx: u32, depth: u32) ?Co
     } else if (node.kind == AstKind.negate) {
         var inner = comptimeEvalEvaluateDepth(self, node.child_0, depth);
         if (inner) |cv| {
+            if (cv.width_bits == WIDTH_FLOAT) return null;
             var nv: u64 = @intCast(u64, 0) - cv.bits;
             if (cv.width_bits != @intCast(u32, 0)) {
                 var wb: u32 = cv.width_bits;
@@ -304,6 +413,7 @@ fn comptimeEvalEvaluateDepth(self: *ComptimeEval, node_idx: u32, depth: u32) ?Co
     } else if (node.kind == AstKind.bit_not) {
         var bnv = comptimeEvalEvaluateDepth(self, node.child_0, depth);
         if (bnv) |bv| {
+            if (bv.width_bits == WIDTH_FLOAT) return null;
             var bnb = ~bv.bits;
             return ComptimeVal{ .bits = bnb, .width_bits = bv.width_bits, .sig = false };
         }

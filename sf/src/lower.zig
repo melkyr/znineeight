@@ -4300,8 +4300,37 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 if (node.child_0 == self.is_windows_name_id) {
                     fold_ty_box[0] = type_mod.TYPE_BOOL;
                 }
+                // Task 11D: a comptime-known @floatCast/@intToFloat folds to a
+                // float value. The map stores the f64 bit pattern; emit the
+                // existing float_const op with the resolved f32/f64 target
+                // (the int_const path cannot represent a float fold).
+                var float_fold: u8 = @intCast(u8, 0);
+                if (node.child_0 == self.floatcast_name_id or node.child_0 == self.inttofloat_name_id) {
+                    var ft: u32 = type_mod.TYPE_UNDEFINED;
+                    var frt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+                    if (frt) |t| {
+                        if (t == type_mod.TYPE_F32 or t == type_mod.TYPE_F64) { ft = t; }
+                    }
+                    if (ft == type_mod.TYPE_UNDEFINED and ec_n >= @intCast(usize, 1)) {
+                        var ff_env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner, .module_id = self.module_id, .source_file_id = @intCast(u32, 0), .diag = null, .local_consts = null };
+                        var ft2 = type_resolver.resolveTypeExprFull(&ff_env, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)), @intCast(u32, 0));
+                        if (ft2 == type_mod.TYPE_F32 or ft2 == type_mod.TYPE_F64) { ft = ft2; }
+                    }
+                    if (ft != type_mod.TYPE_UNDEFINED) {
+                        fold_ty_box[0] = ft;
+                        float_fold = @intCast(u8, 1);
+                    }
+                }
                 var cres = nextTemp(self, fold_ty_box[0]);
-                emitInst(self, LirInst{ .int_const = .{ .value = cv, .result = cres } });
+                if (float_fold != @intCast(u8, 0)) {
+                    // The map stores the f64 bit pattern; reinterpret (Z98
+                    // @bitCast is integer-only) back to the f64 value.
+                    var fbits: u64 = cv;
+                    var fbp: *f64 = @ptrCast(*f64, &fbits);
+                    emitInst(self, LirInst{ .float_const = .{ .value = fbp.*, .result = cres } });
+                } else {
+                    emitInst(self, LirInst{ .int_const = .{ .value = cv, .result = cres } });
+                }
                 var cm: []const u8 = "CEV\n"; pal.markerWrite(cm);
                 return cres;
             }
