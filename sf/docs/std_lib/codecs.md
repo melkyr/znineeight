@@ -152,8 +152,7 @@ arena `reset`.
 
 #### `decode`
 
-**Purpose** — decodes canonical padded base64 into a freshly allocated arena
-buffer.
+**Purpose** — decodes padded base64 into a freshly allocated arena buffer.
 
 **When to use** — to recover the bytes from base64 text.
 
@@ -292,8 +291,8 @@ if (std_utf8.decode(msg)) |cp| {
 ```
 
 **Gotchas** — Z98 cannot write an anonymous struct type literally, so the
-blueprint's `?struct { cp, len }` is declared as this named type with the same
-field names, order, and layout.
+anonymous-struct form `?struct { cp: u32, len: u8 }` is declared as this named
+type with the same field names, order, and layout.
 
 #### `codepointLen`
 

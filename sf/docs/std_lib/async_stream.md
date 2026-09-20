@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Modules** | `std.async`, `std_stream` |
-| **Layers** | `std.async` — async runtime: the cooperative task scheduler and the per-task child-frame pool behind Z98 coroutines; `std_stream` — `L6` composition layer: coroutine-aware line and length-prefixed frame readers over L3 file/socket resources |
+| **Layers** | `std.async` — `async runtime` layer (outside the L0–L6 stack): the cooperative task scheduler and the per-task child-frame pool behind Z98 coroutines; `std_stream` — `L6` composition layer: coroutine-aware line and length-prefixed frame readers over L3 file/socket resources |
 | **Import (re-export)** | `const std = @import("std");` → `std.async` |
 | **Import (by path)** | `const std_async = @import("std_async");`, `const std_stream = @import("std_stream");` |
 
@@ -57,9 +57,11 @@ never allocates.
 
 **Frame contract (`MsgReader`).** Each frame is a `u32` length prefix in
 **network byte order (big-endian)** followed by that many body bytes. A declared
-length greater than `buf.len` is `error.FrameTooLarge`. A zero-length prefix is a
-**valid empty frame** (a length-0 slice, never `null`). A frame truncated by peer
-close (EOF mid-prefix or mid-body) surfaces as `null`.
+length greater than `buf.len` is `error.FrameTooLarge`, reported **after** the
+4-byte prefix has been consumed (see `readMsgSync` for the resynchronization
+caveat). A zero-length prefix is a **valid empty frame** (a length-0 slice, never
+`null`). A frame truncated by peer close (EOF mid-prefix or mid-body) surfaces as
+`null`.
 
 ## Quick start
 
@@ -178,9 +180,9 @@ std_async.tick(&s) catch |e| {
 **Purpose** — the documented `__async_step_<f>` ABI alias:
 `fn(frame: *void, arg: ?*void) ?*void`.
 
-**When to use** — only when writing a hand-rolled step function for a fixture
-that sets it as the first `Frame` field so it lands at frame offset 0. Normal
-code uses `@asyncInit`/`@asyncSuspend`.
+**When to use** — only when writing a hand-rolled step function (a manual frame
+whose first field is a `StepFn`, so it lands at frame offset 0). Normal code uses
+`@asyncInit`/`@asyncSuspend`.
 
 **Signature** — `pub const StepFn = fn(frame: *void, arg: ?*void) ?*void;`
 
@@ -206,8 +208,8 @@ fn stepInc(f: *void, arg: ?*void) ?*void {
 ```
 
 **Gotchas** — documentation only; the scheduler never stores or passes a
-`StepFn` (it self-dispatches via `@asyncResume`). The historical
-`fn_ptr_struct_field` gap is closed.
+`StepFn` (it self-dispatches via `@asyncResume`). It exists for hand-rolled step
+machines and is not needed with `@asyncInit`.
 
 #### `HEADER_SIZE`
 
@@ -231,8 +233,8 @@ const cap = pool_bytes.len - std_async.HEADER_SIZE;
 ```
 
 **Gotchas** — 16 (not 12) so `pool_base = ctx + 16` stays 8-aligned whenever the
-buffer is 8-aligned. This is the cross-track ABI constant the compiler core's
-`CTX_POOL_OFF` must match.
+buffer is 8-aligned. This fixed offset is part of the frame ABI; do not change
+it.
 
 #### `Context`
 
@@ -294,8 +296,8 @@ The `Context` aliases `buf`; keep `buf` alive for the task's lifetime.
 **Purpose** — bump-allocates `size` bytes from the task's child-frame pool and
 returns an 8-aligned pointer.
 
-**When to use** — inside the compiler-generated frame machinery, or a fixture
-that hand-manages child frames. Normal coroutines never call it directly.
+**When to use** — inside the compiler-generated frame machinery, or when
+hand-managing child frames yourself. Normal coroutines never call it directly.
 
 **Signature** — `pub fn contextAlloc(ctx: *Context, size: usize) FrameError![*]u8`
 
@@ -1120,6 +1122,13 @@ _ = got;
 **Gotchas** — requires a blocking socket for the normal path. A zero-length
 prefix is a valid empty frame, never `null`. A 1-byte frame proves the prefix is
 decoded big-endian.
+
+On `error.FrameTooLarge` the reader is **desynchronized**: it has already
+consumed the 4-byte length prefix, while the declared body remains unread on the
+socket and `mr.pending` is left untouched. Retrying the same `MsgReader` reads
+the first body bytes as the next prefix, producing garbage. Treat
+`FrameTooLarge` as terminal for that reader — close the socket (or otherwise
+discard the connection) rather than calling `readMsgSync`/`readMsgAsync` again.
 
 #### `readMsgAsync`
 
