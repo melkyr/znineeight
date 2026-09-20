@@ -290,6 +290,16 @@ To build a Z98 program on a target machine you need:
 - [README_zig0_bootstrap.md](README_zig0_bootstrap.md) — the preserved bootstrap-era (`zig0`)
   README, kept byte-verbatim.
 
+## Standard Library
+The Z98 standard library lives in `sf/src/std_*.zig`. Its core modules (`io`, `arena`, `str`,
+`mem`, `math`, `debug`, `net`, `async`, `bits`, `os`, `time`, `buf`) are re-exported through
+`@import("std")`; the higher layers (`std_file`, `std_stdin`, `std_stream`, `std_crypto`,
+`std_parse`, `std_map`, `std_sort`, `std_heap`, `std_rle`, `std_base64`, `std_hex`, `std_utf8`)
+are imported by path. See the reference for the full per-module API, error sets, the arena
+rule, and usage snippets:
+
+- [STD_README.MD](STD_README.MD) — the Z98 standard library reference.
+
 ## Example Showcase
 `examples/z98/` carries the maintained example suite (matrix 21/21 dump/gcc/link), including
 complete programs that exercise the language-wins features and the PAL/networking runtime:
