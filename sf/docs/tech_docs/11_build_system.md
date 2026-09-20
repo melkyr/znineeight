@@ -199,7 +199,7 @@ the winsock library iff a `net_prelude.h` c-include was emitted.
 | Release build | `bash sf/scripts/build_release.sh` | Gate on `=== [release] Done: /tmp/fx_subfolder/zig1 ===` (requires `zig0` to parse `sf/src`) [inference] |
 | Test suite | `bash sf/scripts/build_test.sh` | `=== [test] Results: 9 passed, 0 failed ===` [inference] |
 | Seed rebuild | `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out>` | `=== [seed] Done: <out> ===`; `<out>/zig1_5_clean` md5 == recorded fixed point [inference] |
-| Differential (single program) | `bash sf/scripts/differential_test.sh <test.zig> [--verbose]` | Normalized zig0-vs-zig1 line match ≥ 90% → PASS [inference] |
+| Differential (single program) | `bash sf/scripts/differential_test.sh <test.zig> [--verbose]` | Normalized zig0-vs-zig1 line match ≥ 90% → PASS (strong); 50-89% → PASS (partial structural match); < 50% → INFO [inference] |
 | C89 validation | `bash sf/scripts/validate_c89.sh <dir> [--pedantic]` | gcc `-fsyntax-only` all pass; Wine `cl /Za` and `wcc386 -za` optional, info-only [inference] |
 | Memory profile | `bash sf/scripts/memory_profile.sh [test.zig] [max_bytes]` | `/usr/bin/time -v` peak RSS or `--track-memory` under the 16 MB budget [inference] |
 | Byte-identical gate | zig1 `--dump-c89` output vs parent/seed `--dump-c89` output | `md5sum` match [inference] |

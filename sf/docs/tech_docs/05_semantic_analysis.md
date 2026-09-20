@@ -829,7 +829,7 @@ The dense record is `{ type_id u32 @0, present u8 @4 }` = 5 B/node (the old inli
 - `resolvedTypeTableReserve(self, node_count)` — extend the dense extent (block-aligned zero-fill).
 - `resolvedTypeTableSet(self, node_idx, type_id)` — fault the block into a resident slot, write the 5-byte record with `present=1`, mark the slot dirty.
 - `resolvedTypeTableGet(self, node_idx) -> ?TypeId` — `null` if `node_idx >= cap` or `present==0`; otherwise the stored TypeId.
-- `resolvedSourceTableSet` / `resolvedSourceTableGet(self, node_idx, source_name_id)` — the sparse `src_map`; used by `semanticAnalyzerResolveIndexAccess` to trace variable sources through var_decl → slice_expr chains.
+- `resolvedSourceTableSet(self, node_idx, source_name_id)` / `resolvedSourceTableGet(self, node_idx) -> ?u32` — the sparse `src_map`; used by `semanticAnalyzerResolveIndexAccess` to trace variable sources through var_decl → slice_expr chains.
 - `resolvedTypeTableClose(self)` — write back dirty slots and close the spill.
 
 Internally, `rttExtend` grows the block-aligned dense extent, `rttBlockEnsure` evicts/writes back the ring victim and faults a block into the resident window, and `rttWriteU32`/`rttReadU32` encode the little-endian record. A spill extent beyond `SEEK_MAX` panics via `panicHandler`.

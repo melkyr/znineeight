@@ -106,7 +106,6 @@ AstStore (fn_decl) → lowerFn() → LirFunction → lirStreamAppend() ── sp
 | `ret_void` | `void` | Return without value |
 | `label` | `u32` | Label marker for jumping |
 | `trap` | `void` | Emit a live trap (`pal_trap`) |
-| `nop` | `void` | No operation (tombstone/placeholder) |
 
 #### Arithmetic & Logic
 | Variant | Fields | Purpose |
