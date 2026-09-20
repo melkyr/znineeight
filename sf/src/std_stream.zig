@@ -5,8 +5,9 @@
 // `*std_net.Socket` (caller sets it non-blocking for the async path).
 // Plan D Task 3 lands `MsgReader`, a length-prefix frame reader over the same
 // non-blocking primitive (u32 big-endian prefix; oversize -> error.FrameTooLarge;
-// zero-length prefix -> a valid empty frame). An optional
-// `std.async.wait(handle)` remains Plan D (recorded, not implemented).
+// zero-length prefix -> a valid empty frame). The Plan D Model C primitive is
+// `std.async.suspendUntil(pred: fn() bool) void` (yields via `@asyncSuspend`
+// until the predicate is true).
 //
 // Model C: there is no executor and no poll loop. The caller drives the landed
 // std.async scheduler with tick(); a coroutine yields only when it chooses to.

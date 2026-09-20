@@ -213,6 +213,7 @@ removed through the same object.
 | `removeTask(s, t)` | any non-suspending | Compact `t` out of the scheduler; no-op if absent; does not change `t.state` |
 | `tick(s) FrameError!void` | any | Resume every ready/suspended task once; observes `cancel_requested`; skips tasks parked on `waiting_on`; returns `error.OutOfFrame` if a resumed task's pool overflowed |
 | `suspend(s, t)` | any | Mark `t` suspended (yield bookkeeping) |
+| `suspendUntil(pred: fn() bool) void` | **coroutine-internal** | Model C yield-until: `@asyncSuspend(null)` once per tick until `pred()` returns true; `pred` is a **non-suspending** `fn() bool` invoked indirectly, and the caller must be a suspending function (this function self-seeds as suspending because its body contains `@asyncSuspend`) |
 | `awaitTask(s, t)` | **coroutine-internal** | Mark the current task suspended and `waiting_on = t`; `@panic` if `!s.in_task` (non-suspending context) or if the scheduler is empty |
 | `waitFor(s, t) FrameError!void` | any non-suspending | Drive `tick` until `t` is settled; `@panic` if `t` is neither registered nor settled |
 | `waitAll(s) FrameError!void` | any | Tick until every task is done/cancelled |

@@ -539,10 +539,12 @@ diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prio
 
 | Entry Path | Reference md5 (default `-fsafe`; authoritative) | Historical `-ffast` byte-anchor (superseded — not re-measured after C89-AHEAD/Track-1) |
 |---|---|---|
-| `examples/z98/mud_server/main.zig` | `409cf8c77b104a194a15e9b926d1b5df` | `ac1579907ce84efa2f9014187070bf94` |
-| `examples/z98/game_of_life/main.zig` | `ce222a5d13ed168368af9ebbfe570d78` | `e023d3cd0bfb23346ac800725c5192f1` |
-| `examples/z98/lisp_interpreter_curr/main.zig` | `1bcb5270864bb07d2e47654f75e3d3aa` | `21747e2acf177947ad499149bb3fdc98` |
-| `examples/z98/json_parser/main.zig` | `0e6f1db53f5de7aede2d7258258b6030` | `2f08bf260bf2b6813fa4d70ffbc88aa9` |
+| `examples/z98/mud_server/main.zig` | `91fd711d97bcf9cad91352076be39710` | `ac1579907ce84efa2f9014187070bf94` |
+| `examples/z98/game_of_life/main.zig` | `80287f58bd761e4a551d5d62db5a3551` | `e023d3cd0bfb23346ac800725c5192f1` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `d1d99b597d4ca2a2a75a42c363d54ff4` | `21747e2acf177947ad499149bb3fdc98` |
+| `examples/z98/json_parser/main.zig` | `f9c9f113b3a7bbd9413b999426daf330` | `2f08bf260bf2b6813fa4d70ffbc88aa9` |
+
+- **4-MD5 `-fsafe` re-baseline (2026-09-20, Plan D Task 4 revised `std.async.suspendUntil`; fixed point `197602956b55d1cb59848a922a934fe8`, seed v41):** `std.zig` re-exports `std.async`, so adding the `suspendUntil` `pub fn` changes the emitted `std_async` module body of every std-importing gate program; the table was already stale from Plan D's `std_net` additions. Rows re-dumped with the fixed-point compiler + the v41 canonical `lib/` (repo-root CWD, `--dump-c89 <ENTRY>` stdout-only, dump rc=0 each; deterministic 2×). **Runtime-identical PRE (v40 `lib/`) vs POST (v41 `lib`) verified by execution** (the compiler binary is byte-identical `197602…` in both; only `lib/` differs): gol stdout md5 `fcbf7e7cead5082f0a8caadd5a8f0ff9` rc=0; lisp `(+ 1 2)` stdout md5 `b3d9f8974da24ddbf9d389f3d7d97322` rc=0; json stdout md5 `8bda3d5a1ec07d14a301bc343df32bf8` rc=0; mud canonical session (`demo/session.sh`) server stdout `66c8f0abb926cca7baf9a0d1692ab318` / client `93147d0f0bbd983a9d844fea8b7a6fa7`, session rc=0 — all byte-identical PRE↔POST. old→new `-fsafe`: gol `ce222a5d…` → `80287f58…`, lisp `1bcb5270…` → `d1d99b59…`, json `0e6f1db5…` → `f9c9f113…`, mud `409cf8c7…` → `91fd711d…`. The `-ffast` byte-anchor column remains frozen/superseded (not re-measured).
 
 - **4-MD5 `-fsafe` re-baseline (2026-09-17; fixed point `553a39b4…`, seed v27):** the Track-3/4 wave moves all four default `-fsafe` dumps — A1 string-literal typing (`char*` → `unsigned char*`) + type-registry token shifts (gol/lisp/json/mud), the Track-3 `std_async` re-export (mud only, needed-only module pruning), and the `json_parser/file.zig` `strtod` signature update (json). Runtime-identical (json stdout md5 `8bda3d5a…`, rc=0). old→new `-fsafe`: gol `e6afce41…` → `75c09bd8…`, lisp `a3ba5809…` → `cad5f491…`, json `99514d39…` → `6cb272d1…`, mud `07ec234e…` → `b9321f7c…`. The `-ffast` byte-anchor column is **frozen as historical**: it retains the last recorded Track-1 values, has not been re-measured after C89-AHEAD/Track-1 (no values in the Task 9-F-I/9-J reports), and is superseded — the current `-fsafe` rows are authoritative.
 
