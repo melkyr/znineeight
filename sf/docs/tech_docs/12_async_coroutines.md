@@ -1,4 +1,6 @@
-# 12 — Async / Coroutines (`@async*` + `std.async`) [updated: 2026-09-17 — Track 4 closeout]
+# 12 — Async / Coroutines (`@async*` + `std.async`) [updated: 2026-09-20 — refreshed against current source; line references removed]
+
+> Covers: `async_analysis.zig`, `async_frame_layout.zig`, `async_state_machine.zig`, `std_async.zig`
 
 ## Summary
 
@@ -9,15 +11,17 @@ Z98 implements **cooperative, stackless coroutines** with four builtins and a li
 | Suspension analysis | `sf/src/async_analysis.zig` | Program-wide `is_suspending` fixed point + authoritative frame sizes / state widths |
 | Frame layout reader | `sf/src/async_frame_layout.zig` | Precise per-function frame layout (step/ctx/state/params/live/hidden tail) |
 | State-machine transform | `sf/src/async_state_machine.zig` | Lowers each suspending function to `__Z98Step_<f>`; defines the `Context` header ABI |
-| Builtin lowering | `sf/src/lower.zig` (`@asyncFrameSize` 4371, `@asyncInit` 4389, `@asyncResume` 4555, `@asyncSuspend` 4592) | Builtin semantics + `-fsafe` checks |
-| Type checking | `sf/src/semantic_analyzer.zig` (2331-2368) | Result types + diagnostics 3017/3018/3019/3046 |
-| Pipeline wiring | `sf/src/main.zig` (phase A 770-784, phase B 868-893, emission grouping 1160-1203) | Runs the passes; emits each step in its owning module |
+| Builtin lowering | `sf/src/lower.zig` (`@asyncFrameSize`, `@asyncInit`, `@asyncResume`, `@asyncSuspend`) | Builtin semantics + `-fsafe` checks |
+| Type checking | `sf/src/semantic_analyzer.zig` | Result types + diagnostics 3018/3019/3046 |
+| Pipeline wiring | `sf/src/main.zig` (phase A, phase B, emission grouping) | Runs the passes; emits each step in its owning module |
 | Scheduler library | `sf/src/std_async.zig` | `Context` / `Task` / `Scheduler` / drive primitives |
 
 There is no `async`/`await` keyword and no `Future(T)` type. Coroutine state is type-erased to
 `*void`, and the "event loop" is the ordinary `std.async` library driven from `main` or an
-`export fn`. The formal pre-implementation plan lives in `sf/docs/corroutines.txt`; where it
-differs from the landed surface below, the code is authoritative.
+`export fn`. The formal pre-implementation plan lives in
+`docs/superpowers/specs/2026-09-13-z98-coroutine-ideas.md` (a tracked verbatim copy of the
+untracked `sf/docs/corroutines.txt`); where it differs from the landed surface below, the code is
+authoritative.
 
 ---
 
@@ -31,8 +35,8 @@ differs from the landed surface below, the code is authoritative.
 | `@asyncResume(frame, arg)` | `?*void` | Resume a step; `null` = finished, non-`null` = still suspended |
 
 `@asyncFrameSize` is folded at compile time to the frame size that `asyncFrameSizeRun` computed
-(`sf/src/async_analysis.zig:605`). The other three lower to raw-byte frame stores/loads and a
-function-pointer call (`sf/src/lower.zig:4389-4596`); the step function is reached through the
+(in `sf/src/async_analysis.zig`). The other three lower to raw-byte frame stores/loads and a
+function-pointer call (in `sf/src/lower.zig`); the step function is reached through the
 generic `__Z98StepFn` type (`?*void (*)(*void, ?*void)`), so the scheduler never stores a
 per-function pointer type.
 
@@ -45,20 +49,20 @@ The result is the frame pointer.
 **`-fsafe` bounds check.** When `self.ctx.safe_checks` is set and the frame size is compile-time
 known, `@asyncInit` recovers `buf`'s length only if the argument's resolved type is a pointer to a
 concrete `[N]u8` array; then it emits `check_trap` kind 7 (trap when `N < frame_size`)
-(`sf/src/lower.zig:4438-4462`). A slice/many-pointer buffer has no compile-time length, so the
+(in `sf/src/lower.zig`). A slice/many-pointer buffer has no compile-time length, so the
 check is skipped. `@asyncResume` similarly emits `check_trap` kind 4 (null-unwrap) when the loaded
-step word is zero (`sf/src/lower.zig:4561-4567`). `-ffast` emits neither.
+step word is zero (in `sf/src/lower.zig`). `-ffast` emits neither.
 
 ---
 
 ## 2. The compiled step machine
 
 A function is **suspending** if its body directly contains `@asyncSuspend` (a seed) or directly
-calls a suspending function (propagation). `suspensionAnalysisRun` (`sf/src/async_analysis.zig:178`)
+calls a suspending function (propagation). `suspensionAnalysisRun` (in `sf/src/async_analysis.zig`)
 builds a dense function index, collects direct-call edges and direct-`@asyncSuspend` seeds over the
 AST, then runs a monotone worklist over a CSR reverse index. Mutual recursion is ordinary
 propagation, never recursive descent. The result is stored in `ctx.suspending_fns`, keyed
-`(module_id << 32) | name_id` (`asyncKey`, `sf/src/async_analysis.zig:37`).
+`(module_id << 32) | name_id` (`asyncKey`, in `sf/src/async_analysis.zig`).
 
 Every suspending function is rewritten to a **step** named `__Z98Step_<f>` with the ABI
 
@@ -70,10 +74,10 @@ and the original synchronous body is **not** emitted. The step loads its hidden 
 the numbered resume segment, and runs to the next suspension or to completion. An explicit
 `@asyncSuspend` becomes: save every frame field, store `state = N`, return a non-`null` `?*void`;
 the matching resume segment reloads the fields and continues. Returning `null` is terminal
-(`sf/src/async_state_machine.zig:757`, `asyncTransform`).
+(`asyncTransform`, in `sf/src/async_state_machine.zig`).
 
 **Implicit await.** A direct call to a suspending callee is an implicit await (`emitAwait`,
-`sf/src/async_state_machine.zig:415`). The caller:
+in `sf/src/async_state_machine.zig`). The caller:
 1. loads `ctx` from its own frame and inline-reads `used`/`capacity`/`oom` from the context header;
 2. rounds `used` up to 8, checks `used_r + child_frame_size <= capacity`, and on overflow sets the
    sticky `oom` and takes the terminal path;
@@ -101,9 +105,9 @@ working.
 
 ## 3. Frame layout / step ABI
 
-`asyncLayoutFrame` (`sf/src/async_frame_layout.zig:522`) reads the lowered LIR and builds the exact
+`asyncLayoutFrame` (in `sf/src/async_frame_layout.zig`) reads the lowered LIR and builds the exact
 frame layout. The rows below are in **layout order** (offset order); the `Kind` column is the source
-`ASYNC_FIELD_*` numeric value (`sf/src/async_frame_layout.zig:43-50`):
+`ASYNC_FIELD_*` numeric value (in `sf/src/async_frame_layout.zig`):
 
 | Order | Kind | Field | Notes |
 |-------|------|-------|-------|
@@ -117,15 +121,15 @@ frame layout. The rows below are in **layout order** (offset order); the `Kind` 
 | 7 | 7 (`ASYNC_FIELD_PARENT_RESULT`) | `parent_result` | One slot per value-returning implicit await, in program order |
 
 The state width is the single source of truth written by `asyncFrameSizeRun`
-(`sf/src/async_analysis.zig:605`): `u8` for ≤ 255 suspension points, `u16` for ≤ 65535, else `u32`
-(`asyncStateTypeForCount`, `sf/src/async_analysis.zig:518`). The Stage-3 transform fails closed with
+(in `sf/src/async_analysis.zig`): `u8` for ≤ 255 suspension points, `u16` for ≤ 65535, else `u32`
+(`asyncStateTypeForCount`, in `sf/src/async_analysis.zig`). The Stage-3 transform fails closed with
 `ERR_9001_ICE` if the actual LIR count exceeds the chosen width
-(`sf/src/async_state_machine.zig:951`).
+(in `sf/src/async_state_machine.zig`).
 
 The authoritative frame size is computed by the AST-level conservative pass (it reserves a field for
 every reachable AST node) and then padded up to 8 bytes. The precise LIR reader asserts
 `precise <= frame_sizes[key]` (ICE otherwise) and reports the padded size
-(`sf/src/async_frame_layout.zig:647-665`). **Every frame is 8-byte padded** so consecutive pool
+(in `sf/src/async_frame_layout.zig`). **Every frame is 8-byte padded** so consecutive pool
 frames stay 8-aligned given an 8-aligned pool base.
 
 ---
@@ -144,7 +148,7 @@ the source function's). The pipeline runs in two phases (`sf/src/main.zig`):
 Because the synthesized step slots are appended to `lir_slots` **after** the per-module lowering
 run, the multi-file emission path stable-groups every slot by owning module id (module ids are
 dense: `mods[i].id == i`) before the cursor walk, so each module's `.c`/`.h` carries its own
-originals plus its own steps (`sf/src/main.zig:1160-1203`, the Track-4 S15 fix). The single-file path
+originals plus its own steps (in `sf/src/main.zig`, the Track-4 S15 fix). The single-file path
 emits the whole slot list unchanged.
 
 ---
@@ -162,16 +166,16 @@ follows it. On the 32-bit target (`usize` = 4 bytes):
 | `9..15` | pad | Reserved; the compiler reserves a pointer-sized pad slot at `12..15` |
 | `16` | pool base | `pool_base = ctx + HEADER_SIZE` (derived, never stored) |
 
-`HEADER_SIZE = 16` (`sf/src/std_async.zig:51`) — not 12 — so `ctx + 16` stays 8-aligned whenever
+`HEADER_SIZE = 16` (in `sf/src/std_async.zig`) — not 12 — so `ctx + 16` stays 8-aligned whenever
 `ctx` is 8-aligned. Buffers **must** be 8-aligned: back them with a `[K]u64` array (a bare `[N]u8`
 is only 1-aligned) and cast to `[]u8`. `contextInit` traps if the buffer is misaligned and sets
-`capacity = buf.len - 16` (`sf/src/std_async.zig:68`).
+`capacity = buf.len - 16` (in `sf/src/std_async.zig`).
 
 `contextAlloc` rounds `used` up to 8 before handing out a frame, checks `aligned + size > capacity`,
 and on exhaustion sets `oom` and returns `error.OutOfFrame` — never a crash
-(`sf/src/std_async.zig:82`). `contextMark` / `contextRelease` bracket a child so it is reclaimed
+(in `sf/src/std_async.zig`). `contextMark` / `contextRelease` bracket a child so it is reclaimed
 exactly when it returns. The Stage-3 transform uses the same constants inline (`CTX_USED_OFF = 0`,
-`CTX_CAP_OFF = 4`, `CTX_OOM_OFF = 8`, `CTX_POOL_OFF = 16`; `sf/src/async_state_machine.zig:71-74`),
+`CTX_CAP_OFF = 4`, `CTX_OOM_OFF = 8`, `CTX_POOL_OFF = 16`; in `sf/src/async_state_machine.zig`),
 so a compiler-allocated child frame and one allocated by `std.async.contextAlloc` share one ABI.
 The root-frame arena for `@asyncInit` targets **must start at `HEADER_SIZE`**, because the first 16
 bytes are the `Context` header (aliasing them corrupts frame 0's step word).
@@ -199,7 +203,8 @@ pub const Scheduler = struct {
 `Task` stores **no step pointer**: `tick`/`waitAll` self-dispatch with `@asyncResume(t.frame, t.arg)`,
 which loads the hidden step word at frame offset 0 (heterogeneous self-dispatch). `Scheduler.tasks`
 is `[*]*Task`, so `addTask` stores the caller's handle — a task can be shared, cancelled, and
-removed through the same object.
+removed through the same object. The module also declares the documented step ABI alias
+`StepFn = fn(frame: *void, arg: ?*void) ?*void`, but the scheduler never stores or passes one.
 
 ### Primitives
 
@@ -250,10 +255,10 @@ normal `(ctx, args)` signature.
 
 | Entry | File | Shape |
 |-------|------|-------|
-| E1 NPC AI | `examples/z98/rogue_mud/lib/combat.zig:108` | `npcCoroutine(na: *NpcArgs)` + `NpcCoroutineArgs{ na }`; `npcStep(na)` then `@asyncSuspend(null)` in `while (true)`; `spawnEnemies` allocates root frames from the **permanent** `async_arena` and `addTask`s them; `updateEnemies(sched)` is `try std.async.tick(sched)` |
-| E2 per-client broadcast | `examples/z98/rogue_mud/main.zig:433` | `clientFrameCoroutine(ctx, cfa: *ClientFrameArgs)` + `ClientFrameCoroutineArgs{ ctx, cfa }`; one long-lived task per client slot, self-gating on `.active`; builds into its **own** `client_cells[i]`; one row per `@asyncSuspend(null)` |
+| E1 NPC AI | `examples/z98/rogue_mud/lib/combat.zig` | `npcCoroutine(na: *NpcArgs)` + `NpcCoroutineArgs{ na }`; `npcStep(na)` then `@asyncSuspend(null)` in `while (true)`; `spawnEnemies` allocates root frames from the **permanent** `async_arena` and `addTask`s them; `updateEnemies(sched)` is `try std.async.tick(sched)` |
+| E2 per-client broadcast | `examples/z98/rogue_mud/main.zig` | `clientFrameCoroutine(ctx, cfa: *ClientFrameArgs)` + `ClientFrameCoroutineArgs{ ctx, cfa }`; one long-lived task per client slot, self-gating on `.active`; builds into its **own** `client_cells[i]`; one row per `@asyncSuspend(null)` |
 | E3 cross-module lifecycle | `main.zig` / `lib/combat.zig` / `ui.zig` | Tasks are created in `main.zig`/`combat.zig`, scheduled via `std.async`, and cancelled in `main.zig` (`cancel` per client, `cancelAll` on shutdown); each step is emitted in its owning module |
-| E4 per-client tasks | `examples/z98/mud_server/main.zig:244` | `clientCoroutine(cta: *ClientTaskArgs)` + `ClientCoroutineArgs{ cta }`; one non-blocking `recv` + line processing then `@asyncSuspend(null)`; `main` accepts, `@asyncInit`s, `addTask`s; the drive is **readiness-gated** — only `select`-ready sockets are `@asyncResume`d, and a `null` return frees the slot directly (close socket, `is_active=false`, `state=.done`, `removeTask`) with no `waitFor`/`tick` |
+| E4 per-client tasks | `examples/z98/mud_server/main.zig` | `clientCoroutine(cta: *ClientTaskArgs)` + `ClientCoroutineArgs{ cta }`; one non-blocking `recv` + line processing then `@asyncSuspend(null)`; `main` accepts, `@asyncInit`s, `addTask`s; the drive is **readiness-gated** — only `select`-ready sockets are `@asyncResume`d, and a `null` return frees the slot directly (close socket, `is_active=false`, `state=.done`, `removeTask`) with no `waitFor`/`tick` |
 
 **Two rules the examples pin.**
 - **Permanent root frames.** A task's root frame must live for the task's whole life. `rogue_mud`
@@ -266,9 +271,10 @@ normal `(ctx, args)` signature.
 
 ## 8. Known limitations / declared residuals
 
-- **Diagnostics.** `@asyncSuspend` outside a suspending function → `error[3018]`; an `@async*`
-  builtin inside `defer`/`errdefer` → `error[3019]`; `@asyncFrameSize` on an unknown/non-suspending
-  function → `error[3046]`; taking the address of a suspending function → `error[3017]`.
+- **Diagnostics.** `@asyncSuspend` outside a suspending function → `error[3018]`; an
+  `@asyncInit`/`@asyncResume`/`@asyncSuspend` builtin inside `defer`/`errdefer` → `error[3019]`;
+  `@asyncFrameSize` on an unknown/non-suspending function → `error[3046]`; taking the address of a
+  suspending function → `error[3017]`.
 - **`-fsafe` only.** The `@asyncInit` frame-size bounds check and the `@asyncResume` null-step check
   exist only under `-fsafe`; `-ffast` omits them (bad input is UB).
 - **Only driver targets keep a synchronous entry.** A suspending function keeps a synthesized
@@ -293,7 +299,7 @@ normal `(ctx, args)` signature.
   no typed future (`Future(T)`) because generics are unavailable, and coroutine state is erased to
   `*void`.
 - **For-loop array items are by-value copies.** `for (arr) |row|` where the item is itself a fixed
-  array copies the row byte-wise (`sf/src/lower.zig:6138-6145`); this is real Zig `for |row|`
+  array copies the row byte-wise (in `sf/src/lower.zig`); this is real Zig `for |row|`
   semantics, so a mutation through `row` does not write back to `arr`. The broader array-to-array
   emission class (for-loop iteration, `*[N]T` element access, multi-dim field stores, array-literal
   init, row store) was closed in Track-4 Task 2g-F.
