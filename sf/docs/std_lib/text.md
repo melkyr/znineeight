@@ -337,8 +337,9 @@ socket use `std_stream`'s line readers.
 - `arena` — arena that supplies the outer segment array (R1).
 - `s` — the slice to split; not mutated.
 
-**Returns** — `[][]const u8`: views into `s`, one per line. The final
-unterminated line is included; an empty `s` yields one empty segment.
+**Returns** — `[][]const u8`: views into `s`, one per line. A final segment is
+always appended, so the last unterminated line is included and a trailing `\n`
+yields a trailing empty segment; an empty `s` yields one empty segment.
 
 **Errors** — `error.OutOfMemory` (inferred `std.arena.ArenaError`) when the outer
 array cannot be allocated.

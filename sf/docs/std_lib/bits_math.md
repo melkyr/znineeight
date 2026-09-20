@@ -213,8 +213,8 @@ const r = std.bits.rotl32(0x80000001, 1); // 0x00000003
 ```
 
 **Gotchas** — `n` wraps modulo `32`, so `rotl32(x, 32)` returns `x`. The
-implementation masks the shifted half before shifting so the `-fsafe` shift-count
-check is never tripped.
+implementation masks the shifted half before shifting so the `-fsafe` left-shift
+overflow (high-bit discard) check is never tripped.
 
 #### `rotr32`
 
@@ -606,8 +606,9 @@ const a = std.math.alignUp(5, 4); // 8
 ```
 
 **Gotchas** — assumes `alignment` is a power of two; `alignment == 0` underflows
-`alignment - 1` and traps under the default `-fsafe` mode. A non-power-of-two
-alignment yields a meaningless result.
+`alignment - 1` and traps under the default `-fsafe` mode, and a large `n` can
+overflow `n + (alignment - 1)` (for example `n = 0xFFFFFFFF, alignment = 4`),
+which also traps. A non-power-of-two alignment yields a meaningless result.
 
 #### `alignDown`
 

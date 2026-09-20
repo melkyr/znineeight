@@ -120,10 +120,10 @@ error set includes it.
 
 **Example**
 ```zig
-const p = std.arena.alloc(&arena, 8) catch |e| {
-    if (e == error.OutOfMemory) return;
-    return;
+const p = std.arena.alloc(&arena, 8) catch |e| switch (e) {
+    error.OutOfMemory => @panic("arena exhausted"),
 };
+p[0] = 0xFF;
 ```
 
 **Gotchas** — `ArenaError` contains exactly one member; there is no other failure

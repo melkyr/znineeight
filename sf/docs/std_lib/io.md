@@ -753,8 +753,9 @@ std.arena.reset(&arena);
 ```
 
 **Gotchas** — allocates `size` bytes up front; the slice is valid only until the
-next arena `reset`. On any failure the file is closed and the arena is left with
-the size buffer consumed.
+next arena `reset`. On a read failure after that allocation the file is closed and
+the arena is left with the size buffer consumed; `SizeFailed` allocates nothing
+and `OutOfMemory` fails before any consumption.
 
 #### `writeAll`
 
