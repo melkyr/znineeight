@@ -71,14 +71,14 @@ Performs an explicit integer cast with range checking.
 Performs an explicit floating-point cast (not runtime-checked).
 - **Syntax:** `@floatCast(FloatType, float_expression)`
 - **Constraints:** Both must be floating-point types (`f32`, `f64`).
-- **Compile-time Evaluation:** Constant folding for constant float literals.
+- **Compile-time Evaluation:** None — `@floatCast` is not constant-folded (the comptime evaluator has no `@floatCast` branch); it is lowered to a runtime `float_cast` even when the argument is a constant literal.
 - **C89 Emission Strategy:** Emitted as a direct C-style cast in **both** directions (spec §4: no runtime check): widening `@floatCast(f64, f32_expr)` → `(double)expr`; narrowing `@floatCast(f32, f64_expr)` → `(float)expr`, which may lose precision. (The bootstrap-era `__bootstrap_f32_from_f64` helper — itself a no-op `return (f32)x;` — is not emitted by the current lowering; `@floatCast` lowers to the `float_cast` LIR op.)
 
 ### `@intToFloat(T, expr)`
 Performs an explicit conversion from an integer to a floating-point type.
 - **Syntax:** `@intToFloat(FloatType, integer_expression)`
 - **Constraints:** `T` must be a floating-point type (`f32`, `f64`), and `expr` must be an integer type.
-- **Compile-time Evaluation:** Constant folding for constant integer literals.
+- **Compile-time Evaluation:** None — `@intToFloat` is not constant-folded (the comptime evaluator has no `@intToFloat` branch); it is lowered to a runtime `int_to_float` even when the argument is a constant literal.
 - **C89 Emission Strategy:** Emitted as a direct C-style cast: `(double)expr`.
 
 ### `@import(path)`
