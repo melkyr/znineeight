@@ -522,7 +522,7 @@ by-value globals) so only reachable modules are emitted (module pruning).
 
 **Markers:** `C` (start), `FINAL_FLUSH` (per file in multi-module mode; once for stdout).
 
-**Arena:** Sand reset (scratch) at entry. BufferedWriter, NameMangler, C89Emitter in scratch/emission.
+**Arena:** No reset at phase entry — `runCompiler` resets the module arena immediately before calling this phase; the emitter's scratch arena is reset per function inside the emission loops. BufferedWriter, NameMangler, C89Emitter in scratch/emission.
 
 ---
 
