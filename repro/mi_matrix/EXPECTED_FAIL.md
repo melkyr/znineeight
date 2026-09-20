@@ -1,4 +1,18 @@
-# mi_matrix corpus — expected-fail manifest (v161 2026-09-20)
+# mi_matrix corpus — expected-fail manifest (v162 2026-09-20)
+
+## Task 10B — errdefer on explicit error returns fixed (v161 -> v162 2026-09-20)
+
+The Z98 manual Phase 0 plan's inserted compiler fix (`docs/superpowers/plans/2026-09-20-z98-manual-phase0-plan.md` AMENDMENT 1; Task 10A investigation, Task 10B fix). `sf/src/lower.zig` `return_stmt` lowering unconditionally passed `is_error_path=0` to `expandDefers`, so `errdefer` bodies were skipped on every explicit `return`; the return is now classified (`wrap_error_err` coercion or `error_literal` -> `ret_is_error=1`) and passed through. Compiler-correctness task, not a manual page.
+
+**New runtime fixture (1).**
+
+| fixture | kind | contract |
+|---|---|---|
+| `stdlib_errdefer_xmod` | regression (runtime) | explicit `return error.Boom`, conditional explicit return, `try` propagation, and `return err;` each run their `errdefer`; a plain `return;` does NOT. stdout 9 lines ending `done`, rc 0 |
+
+`scripts/stdlib/expected_dirs.txt` pin grows 192 -> 193 (186 `repro/mi_matrix/stdlib_*` + 7 `stdlib_test/*`).
+
+**Gates (seed-built fixed-point compiler `36c04ebf5f6f3f4afcb4baf8c721a6a0`).** Runtime gate **193 PASS / 0 FAIL over 193 dirs** (3x byte-identical stdout internal). Self-compile `-ffast --dump-c89` rc=0, 45 `.c` + 46 `.h`, 0 `error[`, 0 PANIC; two-hop closure hop1 == hop2 == `36c04ebf5f6f3f4afcb4baf8c721a6a0`. Corpus `-s0` classifier **902 dirs = 849 OK / 28 GREEN / 25 FAIL / 0 ICE / 0 CRASH** (v161 901 -> 902: the new fixture classifies OK); a full-classifier join-diff vs the pre-fix compiler over the same 902 dirs is **byte-identical — zero class movement**. 4-MD5 gates **UNCHANGED** (no gate program uses `errdefer`): gol `80287f58bd761e4a551d5d62db5a3551` / lisp `d1d99b597d4ca2a2a75a42c363d54ff4` / json `f9c9f113b3a7bbd9413b999426daf330` / mud `91fd711d97bcf9cad91352076be39710`. 21-example matrix **21/21** dump/gcc/link rc=0. Fixed point **MOVED `197602956b55d1cb59848a922a934fe8` -> `36c04ebf5f6f3f4afcb4baf8c721a6a0`**; seed **v41 -> v42** (archive md5 `fe532ad44b659b8c4a34d0f7932fc04f`). Full report: `.superpowers/sdd/2026-09-20-z98-manual-phase0-plan/task-10B-report.md`.
 
 ## Plan D hardening closeout — network/async goldens + stress tier (v160 -> v161 2026-09-20)
 

@@ -59,6 +59,7 @@ repro/mi_matrix/stdlib_debug_defaulttrap_xmod
 repro/mi_matrix/stdlib_debug_stress_xmod
 repro/mi_matrix/stdlib_debug_trap_xmod
 repro/mi_matrix/stdlib_debug_xmod
+repro/mi_matrix/stdlib_errdefer_xmod
 repro/mi_matrix/stdlib_file_close_xmod
 repro/mi_matrix/stdlib_file_exists_xmod
 repro/mi_matrix/stdlib_file_flush_xmod

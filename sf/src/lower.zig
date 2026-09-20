@@ -6306,7 +6306,22 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         var pre_defer_bb = self.current_bb;
         var pre_defer_blk_p = &self.func.blocks.items[@intCast(usize, pre_defer_bb)];
         var pre_defer_len: usize = pre_defer_blk_p.insts.len;
-        expandDefers(self, @intCast(u32, 0), @intCast(u8, 0), @intCast(u8, 0));
+        // Task 10B: an explicit error return must run errdefer bodies. The return
+        // expression is a statically-known error exit when it carries a
+        // `wrap_error_err` coercion (error set -> error union, recorded by
+        // resolveReturnStmt) or is an error literal. Success returns (and returns
+        // of a dynamic error union) stay on the success path.
+        var ret_is_error: u8 = @intCast(u8, 0);
+        if (node.child_0 != @intCast(u32, 0)) {
+            if (coercion_mod.coercionTableGet(self.ctx.coercions, node.child_0)) |ret_ce| {
+                if (ret_ce.kind == CoercionKind.wrap_error_err) { ret_is_error = @intCast(u8, 1); }
+            }
+            if (ret_is_error == @intCast(u8, 0)) {
+                var ret_expr_nd = ast_mod.astStoreNodeAt(store, node.child_0);
+                if (ret_expr_nd.kind == AstKind.error_literal) { ret_is_error = @intCast(u8, 1); }
+            }
+        }
+        expandDefers(self, @intCast(u32, 0), ret_is_error, @intCast(u8, 0));
         var post_defer_len: usize = pre_defer_blk_p.insts.len;
         var defer_bb_unchanged: u8 = @intCast(u8, 0);
         if (self.current_bb == pre_defer_bb) {
