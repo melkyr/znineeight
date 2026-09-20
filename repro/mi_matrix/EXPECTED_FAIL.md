@@ -1,4 +1,18 @@
-# mi_matrix corpus — expected-fail manifest (v163 2026-09-20)
+# mi_matrix corpus — expected-fail manifest (v164 2026-09-20)
+
+## Task 11B — `@floatCast` lowering fixed (v163 -> v164 2026-09-20)
+
+The Z98 manual Phase 0 plan's third inserted compiler fix (`docs/superpowers/plans/2026-09-20-z98-manual-phase0-plan.md`, Task 11A investigation, Task 11B fix; operator-inserted I/F pair). `@floatCast` was interned and typed by the front end, but `LirLowerer` never interned it and the cast-dispatch chain in `lowerExprImpl` had no prong for it, so control fell through to `return result;` with a fresh never-assigned temp — the emitted C returned a poison-filled (or, under `-ffast`, zero-initialized) temp instead of the conversion. A silent miscompile: dump rc=0, zero diagnostics, wrong value at runtime. `sf/src/lower.zig` now interns `@floatCast` (`floatcast_name_id`) and adds one `else if (node.child_0 == self.floatcast_name_id)` prong emitting the existing `float_cast` LIR op (`result = (ctype)value;` in `c89_emit.zig`); no emitter/coercion/comptime change.
+
+**New fixture (1).**
+
+| fixture | class | contract |
+|---|---|---|
+| `stdlib_floatcast_xmod` | OK (runtime regression) | both directions (`f32`->`f64` widen, `f64`->`f32` narrow), a literal argument, a precision-losing narrowing (2^24+1 -> 2^24), and positive controls (`@as` float cast, `@intToFloat`, implicit `f32`->`f64` widening); deterministic 9-line stdout ending `done`, rc 0. Floats have no `std.io` printer, so each conversion is pinned by an equality probe printing `-ok`/`-bad` |
+
+`scripts/stdlib/expected_dirs.txt` pin grows 194 -> 195.
+
+**Gates (seed-built fixed-point compiler `27e61065a8006183d5f8c55043890c7c`).** Self-compile `-ffast --dump-c89` rc=0, two-hop closure hop1 == hop2 == `27e61065…` (re-verified from the rotated seed). Runtime gate **195 PASS / 0 FAIL over 195 dirs** (3x byte-identical stdout internal). Corpus `-s0` classifier **905 dirs = 851 OK / 28 GREEN / 26 FAIL / 0 ICE / 0 CRASH** (v163 904 -> 905: the new fixture is the only addition); a full-classifier join-diff vs the pre-fix compiler over the 905-dir universe is **byte-identical — zero class movement**. 4-MD5 emitted-C gates **UNCHANGED** (no gate program contains `@floatCast`): gol `80287f58bd761e4a551d5d62db5a3551` / lisp `d1d99b597d4ca2a2a75a42c363d54ff4` / json `f9c9f113b3a7bbd9413b999426daf330` / mud `91fd711d97bcf9cad91352076be39710`. 21-example matrix **21/21** dump/gcc/link rc=0. Fixed point **MOVED `1c4f676524f74061d8b459a747f9241d` -> `27e61065a8006183d5f8c55043890c7c`**; seed **v43 -> v44** (archive md5 `f3f9e9bbfd10d6f675cf7a10819f0794` -> `d5bcddd4fd513a2ca3fe2c0997dee9ec`). Full report: `.superpowers/sdd/2026-09-20-z98-manual-phase0-plan/task-11B-report.md`.
 
 ## Task 10D — defer/errdefer outward control flow rejected (v162 -> v163 2026-09-20)
 

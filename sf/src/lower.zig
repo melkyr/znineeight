@@ -375,6 +375,7 @@ pub const LirLowerer = struct {
     module_id: u32,
     module_reg: *ModuleRegistry,
     intcast_name_id: u32,
+    floatcast_name_id: u32,
     inttofloat_name_id: u32,
     print_fn_id: u32,
     ptrcast_name_id: u32,
@@ -439,6 +440,8 @@ pub const LirLowerer = struct {
 pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
     var intcast_s: []const u8 = "@intCast";
     var intcast_id = si_mod.stringInternerIntern(ctx.registry.interner, intcast_s);
+    var floatcast_s: []const u8 = "@floatCast";
+    var floatcast_id = si_mod.stringInternerIntern(ctx.registry.interner, floatcast_s);
     var inttofloat_s: []const u8 = "@intToFloat";
      var inttofloat_id = si_mod.stringInternerIntern(ctx.registry.interner, inttofloat_s);
      var print_s: []const u8 = "print";
@@ -527,6 +530,7 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
         .module_id = @intCast(u32, 0),
         .module_reg = undefined,
          .intcast_name_id = intcast_id,
+         .floatcast_name_id = floatcast_id,
          .inttofloat_name_id = inttofloat_id,
          .print_fn_id = print_id,
          .ptrcast_name_id = ptrcast_id,
@@ -4698,6 +4702,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     .value = val_temp, .target = t_target, .result = result,
                 } });
             }
+        } else if (node.child_0 == self.floatcast_name_id) {
+            emitInst(self, LirInst{ .float_cast = .{
+                .value = val_temp, .target = t_target, .result = result,
+            } });
         } else if (node.child_0 == self.inttofloat_name_id) {
             emitInst(self, LirInst{ .int_to_float = .{
                 .value = val_temp, .target = t_target, .result = result,

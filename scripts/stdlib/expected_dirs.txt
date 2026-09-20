@@ -76,6 +76,7 @@ repro/mi_matrix/stdlib_file_stress_xmod
 repro/mi_matrix/stdlib_file_write_xmod
 repro/mi_matrix/stdlib_file_writeall_xmod
 repro/mi_matrix/stdlib_fileio_xmod
+repro/mi_matrix/stdlib_floatcast_xmod
 repro/mi_matrix/stdlib_heap_init_xmod
 repro/mi_matrix/stdlib_heap_len_xmod
 repro/mi_matrix/stdlib_heap_oom_xmod

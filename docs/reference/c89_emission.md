@@ -524,7 +524,9 @@ Numeric casts are handled differently depending on whether they can be resolved 
 | Narrowing | `@intCast(i32, my_i64)` | `__bootstrap_i32_from_i64(my_i64)` |
 | Signed Mismatch | `@intCast(u32, my_i32)` | `__bootstrap_u32_from_i32(my_i32)` |
 | Float Widening | `@floatCast(f64, my_f32)` | `(double)my_f32` |
-| Float Narrowing | `@floatCast(f32, my_f64)` | `__bootstrap_f32_from_f64(my_f64)` |
+| Float Narrowing | `@floatCast(f32, my_f64)` | `(float)my_f64` |
+
+*(Note: `@floatCast` is not runtime-checked (spec §4); both directions are a direct C-style cast, and narrowing may lose precision. The bootstrap-era `__bootstrap_f32_from_f64` helper is a no-op and is not emitted.)*
 
 *(Note: Runtime helpers are defined in `zig_runtime.h` as `static` functions and use Zig primitive names in their identifiers.)*
 

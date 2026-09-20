@@ -68,13 +68,11 @@ Performs an explicit integer cast with range checking.
   - **Runtime Helpers**: These functions (e.g., `__bootstrap_i32_from_i64`) are implemented as `static` functions in `zig_runtime.h`. They perform bounds checks at runtime and call `std_panic` (which traps) if the value is out of range. Under `-fsafe` (default) `@intCast` instead lowers to the checked `zig_cast_checked_s` / `zig_cast_checked_u` helpers; `-ffast` omits the check. The `__bootstrap_panic` wrapper has been removed.
 
 ### `@floatCast(T, expr)`
-Performs an explicit floating-point cast with range checking.
+Performs an explicit floating-point cast (not runtime-checked).
 - **Syntax:** `@floatCast(FloatType, float_expression)`
 - **Constraints:** Both must be floating-point types (`f32`, `f64`).
 - **Compile-time Evaluation:** Constant folding for constant float literals.
-- **C89 Emission Strategy:**
-  - **Safe widenings** (e.g., `f32` to `f64`): Emitted as a direct C-style cast: `(double)expr`.
-  - **Potentially unsafe narrowing** (`f64` to `f32`): Emitted as a call to a runtime helper: `__bootstrap_f32_from_f64(expr)`.
+- **C89 Emission Strategy:** Emitted as a direct C-style cast in **both** directions (spec §4: no runtime check): widening `@floatCast(f64, f32_expr)` → `(double)expr`; narrowing `@floatCast(f32, f64_expr)` → `(float)expr`, which may lose precision. (The bootstrap-era `__bootstrap_f32_from_f64` helper — itself a no-op `return (f32)x;` — is not emitted by the current lowering; `@floatCast` lowers to the `float_cast` LIR op.)
 
 ### `@intToFloat(T, expr)`
 Performs an explicit conversion from an integer to a floating-point type.

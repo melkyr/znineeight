@@ -1,4 +1,4 @@
-# 07 — LIR Lowering [updated: 2026-09-20 — refreshed against the current 82-variant `LirInst` set, `lir_opt_pass`/`lir_stream`/`spill_store` coverage, packed bitfields, arbitrary-width int ops, `-fsafe` checks, `volatile`, calling convention, and async lowering; line references and dated evidence removed; `return_stmt` now classifies an explicit error return and passes `is_error_path=1` to `expandDefers` so `errdefer` runs on explicit error returns (Task 10B, 2026-09-20)]
+# 07 — LIR Lowering [updated: 2026-09-20 — refreshed against the current 82-variant `LirInst` set, `lir_opt_pass`/`lir_stream`/`spill_store` coverage, packed bitfields, arbitrary-width int ops, `-fsafe` checks, `volatile`, calling convention, and async lowering; line references and dated evidence removed; `return_stmt` now classifies an explicit error return and passes `is_error_path=1` to `expandDefers` so `errdefer` runs on explicit error returns (Task 10B, 2026-09-20); `@floatCast` is now interned (`floatcast_name_id`) and lowers to the existing `float_cast` op (Task 11B, 2026-09-20)]
 
 > Covers: `lower.zig`, `lir.zig`, `lir_opt_pass.zig`, `lir_stream.zig`, `spill_store.zig`
 
@@ -241,7 +241,7 @@ Emission is `#ifdef _WIN32 / #elif defined(__WATCOMC__) / #else` guarded (see 08
 | `suppress_fnref_ban` | `u8` | Suppresses the bare-function-reference ban while lowering `@asyncFrameSize`/`@asyncInit` target args |
 | `module_id` | `u32` | Current module ID |
 | `module_reg` | `*ModuleRegistry` | Module registry reference |
-| `*_name_id` | `u32` | Pre-interned builtin names: `@intCast`, `@intToFloat`, `print`, `@ptrCast`, `@volatileCast`, `@ptrToInt`, `@intToPtr`, `@intFromPtr`, `@ptrFromInt`, `@fieldParentPtr`, `@enumToInt`, `@intToEnum`, `@as`, `@bitCast`, `@sizeOf`, `@alignOf`, `@offsetOf`, `@bitSizeOf`, `@bitOffsetOf`, `@cVaStart`/`@cVaArg`/`@cVaEnd`, `@putChar`/`@stdoutWrite`/`@stderrWrite`/`@getChar`/`@exit`/`@panic`/`@sleepMs`, `@isWindows`, `@consoleClear`/`@consoleGotoxy`/`@consoleSetColor`, `@asyncFrameSize`/`@asyncInit`/`@asyncResume`/`@asyncSuspend` |
+| `*_name_id` | `u32` | Pre-interned builtin names: `@intCast`, `@floatCast`, `@intToFloat`, `print`, `@ptrCast`, `@volatileCast`, `@ptrToInt`, `@intToPtr`, `@intFromPtr`, `@ptrFromInt`, `@fieldParentPtr`, `@enumToInt`, `@intToEnum`, `@as`, `@bitCast`, `@sizeOf`, `@alignOf`, `@offsetOf`, `@bitSizeOf`, `@bitOffsetOf`, `@cVaStart`/`@cVaArg`/`@cVaEnd`, `@putChar`/`@stdoutWrite`/`@stderrWrite`/`@getChar`/`@exit`/`@panic`/`@sleepMs`, `@isWindows`, `@consoleClear`/`@consoleGotoxy`/`@consoleSetColor`, `@asyncFrameSize`/`@asyncInit`/`@asyncResume`/`@asyncSuspend` |
 | `local_decl_names`/`_src_names`/`_types`/`_temps` | `[*]u32` | Parallel arrays of local declarations (grown by `growLocalDecls`) |
 | `local_decl_kinds`/`_is_capture` | `[*]u8` | Declared type kind / capture flag per local |
 | `local_decl_scopes`/`_scope_nodes`/`_fn` | `[*]u32` | Scope depth, scope-node id, and owning function sequence per local |
@@ -463,7 +463,7 @@ emitInst(.call{ callee_temp, args_start, args_count, result })
 
 `print()` is special-cased: it emits `print_str` for each format-string segment and `print_val` per argument.
 
-`@ptrCast`/`@volatileCast` emit `ptr_cast`; `@intCast` emits `int_cast` or, under `-fsafe` when a narrowing or sign-change check is required, `int_cast_checked`; `@intToFloat` emits `int_to_float`; `@ptrToInt`/`@intFromPtr` emit `ptr_to_int`; `@intToPtr`/`@ptrFromInt` emit `int_to_ptr`; `@bitCast` resolves the target type and emits `int_cast`; `@enumToInt` forwards the value as-is; `@intToEnum`/`@as` emit `int_cast` to the target. `@sizeOf`/`@alignOf`/`@offsetOf`/`@bitSizeOf`/`@bitOffsetOf` resolve through the comptime-values table (ICE otherwise). `@fieldParentPtr` computes the outer pointer via `ptr_to_int`/`sub`/`int_to_ptr`.
+`@ptrCast`/`@volatileCast` emit `ptr_cast`; `@intCast` emits `int_cast` or, under `-fsafe` when a narrowing or sign-change check is required, `int_cast_checked`; `@floatCast` emits `float_cast` (a direct C-style cast, no runtime check, both directions); `@intToFloat` emits `int_to_float`; `@ptrToInt`/`@intFromPtr` emit `ptr_to_int`; `@intToPtr`/`@ptrFromInt` emit `int_to_ptr`; `@bitCast` resolves the target type and emits `int_cast`; `@enumToInt` forwards the value as-is; `@intToEnum`/`@as` emit `int_cast` to the target. `@sizeOf`/`@alignOf`/`@offsetOf`/`@bitSizeOf`/`@bitOffsetOf` resolve through the comptime-values table (ICE otherwise). `@fieldParentPtr` computes the outer pointer via `ptr_to_int`/`sub`/`int_to_ptr`.
 
 **Variadic builtins**: `@cVaStart`/`@cVaArg`/`@cVaEnd` emit `va_start`/`va_arg`/`va_end`; `@cVaStart` in a non-variadic function emits `error[3012]`, as does a variadic function with zero fixed params.
 
