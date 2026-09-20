@@ -483,7 +483,7 @@ Every `LirInst` variant handled in `emitInst`:
 | `.tail_call` | `result = fn_name(args...); return result;` — call+ret **fallback**, NOT a jump; void return → `fn_name(args...); return;`; extern → original name; indirect callee via `resolveTempName` |
 | `.switch_br` | `switch (cond) { case <val>: goto z_bb_<target>; ... default: goto z_bb_<else>; }` |
 | `.wrap_optional` | `result.has_value = 1;\n result.value = src;` |
-| `.int_cast` | `result = (type)src;` (checked legacy form uses `__bootstrap_<DST>_from_<SRC>(src);`) |
+| `.int_cast` | `result = (type)src;` (unchecked plain cast; the checked `-fsafe` path is the separate `.int_cast_checked`) |
 | `.int_cast_checked` | `result = (type)zig_cast_checked_s/u((unsigned long long)src, <sw>u, <ss>u, <dw>u);` (`-fsafe` width/sign-aware) |
 | `.width_wrap` | `result = (type)(src & <mask>);` (signed: `((... ^ <signbit>) - <signbit>)`) |
 | `.int_to_float` | `result = (type)src;` |
@@ -523,12 +523,13 @@ Any unhandled variant falls through the `else => {}` (no-op). Emission is preced
 optimization pass (`lirOptRun`) and the dead-temp DCE / expression-nesting suppression (§6.3),
 so a declared instruction may be omitted entirely from the emitted C.
 
-**`@intCast` / arbitrary-width emission:** the checked `.int_cast` arm builds
-`__bootstrap_<DST>_from_<SRC>` from the target's cast suffix and the source temp's type, falling
-back to a raw `(type)` cast when the source type is unknown. Those helpers are `static` in
-`sf/src/include/zig_runtime.h` (per-TU) + `extern` in `sf/src/include/zig_runtime.c`; the message
-is `"integer cast overflow in @intCast"`. Under `-fsafe`, `.int_cast_checked` maps to the
-width/sign-aware `zig_cast_checked_s/u` helpers in `zig_runtime.h`.
+**`@intCast` / arbitrary-width emission:** `.int_cast` is the unchecked plain cast — the arm
+emits `result = (type)src;` only, with all bound/sign decisions made in lowering. The checked path
+is the separate `.int_cast_checked` op, emitted only under `-fsafe` (narrowing or same-width sign
+change), which maps to the width/sign-aware `zig_cast_checked_s/u` helpers in `zig_runtime.h`. The
+older `__bootstrap_<DST>_from_<SRC>` helpers still exist as retained runtime support (emitted by
+`emit_support.zig` as `static` in `zig_runtime.h` + `extern` in `zig_runtime.c`, message
+`"integer cast overflow in @intCast"`), but the emitter no longer selects them.
 
 **`stdarg.h` gating:** `emitStdargInclude` emits `#include <stdarg.h>` only when
 `moduleHasVaInsts` finds a `va_start`/`va_arg`/`va_end` LirInst in the TU — gated on actual
