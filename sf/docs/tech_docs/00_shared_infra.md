@@ -316,7 +316,7 @@ C89 emitter must mirror for the planned std-lib builtins.
 |--------|------|--------|
 | `zig_pal.c` | `pal_print_stdout/stderr`, `pal_abort`, `pal_trap`, i64/u64/f64→str, `pal_file_open/read/write/close`, `pal_dir_exists`, `pal_get_default_lib_path`. fd = `usize` (F-S9), `PlatFile` = `void*` Win / `int` POSIX, `PLAT_INVALID_FILE=((void*)-1)`. | NEW in sf |
 | `zig_runtime.c` | `std_print_*`/`std_panic` (forward to `pal_*`), checked-cast helpers, `@intCast` range-check `__bootstrap_*` helpers, `zig_poison_fill`. Platform-independent. | REWRITTEN from zig0 |
-| `net_runtime.c` | 12 `plat_socket_*` (WSAStartup/winsock.h vs sys/socket.h; `SOCKET` casts guarded). | inherited byte-identical from zig0; **[F6 2026-08-13: SUPERSEDED for migrated examples — the 11 socket builtins port the bodies into the emitter (see 08 §6.9); net_runtime.c link removed from mud_server/rogue_mud]** |
+| `net_runtime.c` | 12 `plat_socket_*` (WSAStartup/winsock.h vs sys/socket.h; `SOCKET` casts guarded). | inherited byte-identical from zig0; **superseded** — the 11 socket builtins were removed (netbind S3, 2026-09-04; see 08 §7) in favor of the `std_net` extern surface (`net_prelude.h`), so the file is legacy/unlinked (see 10) |
 
 Builtin → guard-chain map (zig0 proven patterns):
 - **print/write:** `_WIN32` `GetStdHandle(STD_OUTPUT_HANDLE)` → `WriteConsoleA`, fallback

@@ -430,8 +430,8 @@ covered by 03_type_resolution.md.
 
 **Arena:** Sand reset (scratch) at entry and per module. Analyzer workspace in scratch.
 
-**Statement type pre-resolution (moved):** `resolveStmtTypes` (with its `P0-P3`/`R0n`/`R1t`/`R2s`/
-`AI`/`FI` markers) and `resolveTypeExpr` now live in `front_resolution.zig` and are covered by
+**Statement type pre-resolution (moved):** `resolveStmtTypes` and `resolveTypeExpr` now live in
+`front_resolution.zig` and are covered by
 03_type_resolution.md; `phase_SemanticAnalysis` calls `front_res.resolveStmtTypes` per function
 body before `semanticAnalyzerResolveFnBody`. The module-scope var_decl type threading
 (previously described here) is likewise owned by `front_resolution.zig`/`semantic_analyzer.zig`.
@@ -809,8 +809,8 @@ Per-phase marker inventory (all written by `main.zig`):
 | 10 c89 | `C`, `FINAL_FLUSH` | thin — entry/exit only |
 
 The `runCompiler` inter-phase markers `2 3 3a 4` and `t1`/`t2` bracket the import/type boundaries.
-Sub-phase markers emitted inside `front_resolution.zig` (`P0-P3 R0n R1t R2s AI FI`, `V2:`,
-`REG:tl/tt`) are documented in 03.
+`front_resolution.zig` emits no markers of its own. The sema-phase switch (`P0:`/`PL0:n`) and
+name-cache (`REG:cp`/`REG:ct`) sub-markers live in `semantic_analyzer.zig` and are documented in 05.
 
 Gaps: phases 1, 4, 5, 7, 8, 10 have entry/exit markers only; internal behavior of comptime eval,
 static analyzers, and C89 emission is invisible to `--markers` alone.

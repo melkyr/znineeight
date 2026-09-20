@@ -1,6 +1,6 @@
 # 10 — C Runtime Layer [updated: 2026-09-20 — refreshed against current source: `pal_trap`/trap handler, `pal_file_read`/`pal_dir_exists`/`pal_get_default_lib_path`, 15 print helpers incl. hex, 20 `__bootstrap_*` helpers, the `-fsafe` overflow/checked-cast/poison helpers, the three target-neutral preludes, `c_exit.c`, and the dead `extern_c_z98.zig`; emitted-support relationship now via `emit_support.zig`; line references and dated evidence removed]
 
-> Covers: `sf/src/include/*`, `extern_c.zig`, `extern_c_z98.zig`
+> Covers: `sf/src/include/*`, `c_exit.c`, `extern_c.zig`, `extern_c_z98.zig`
 
 ## Summary Table
 

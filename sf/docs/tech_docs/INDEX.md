@@ -1390,7 +1390,7 @@ level (`-s<N>`). Per-tier peaks are read from each tier's `peak` field; the unwi
 | `07_lir_lowering.md` | `lower.zig`, `lir.zig`, `lir_opt_pass.zig`, `lir_stream.zig`, `spill_store.zig` | Phase 9 |
 | `08_c89_emission.md` | `c89_emit.zig`, `name_mangler.zig`, `cinclude.zig`, `emit_support.zig` | Phase 10 |
 | `09_pipeline_orchestration.md` | `main.zig`, `main_dump.zig`, `main_exp.zig`, `strip_main.zig` | Orchestration |
-| `10_c_runtime.md` | `sf/src/include/*`, `extern_c.zig`, `extern_c_z98.zig` | C runtime |
+| `10_c_runtime.md` | `sf/src/include/*`, `c_exit.c`, `extern_c.zig`, `extern_c_z98.zig` | C runtime |
 | `11_build_system.md` | `sf/scripts/*`, `scripts/seed/*`, `release/seed/*` | Build system |
 | `12_async_coroutines.md` | `async_analysis.zig`, `async_frame_layout.zig`, `async_state_machine.zig`, `std_async.zig` | Phase 8 / async |
 
