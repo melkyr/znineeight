@@ -91,7 +91,7 @@ Walks the AST root of each resolved module, registers declarations as symbols pe
 
 Sub-cases based on `child_1` (the init expression):
 
-1. **Init is `import_expr`**: Resolves the target module via the `path_to_id` hash map. If found, creates `SymbolKind.module` with `type_id = typeRegistryGetOrCreateModule(mtid)`. Writes `M5:p<path_id>`, `Rs`, `FIX1:mid=<mod_id>t=<target_mtid>n=<mod_id>` markers. If not found, writes the `Rf` (resolve failed) marker.
+1. **Init is `import_expr`**: Resolves the target module via the `path_to_id` hash map. If found, creates `SymbolKind.module` with `type_id = typeRegistryGetOrCreateModule(mtid)`. Writes `M5:p<path_id>`, `Rs`, `FIX1:mid=<target_mtid>t=<target_mtid>n=<mod_id>` markers. If not found, writes the `Rf` (resolve failed) marker.
 
 2. **Init is an inline type decl** (`struct_decl`/`enum_decl`/`union_decl`/`error_set_decl`): Registers the type via `typeRegistryRegisterNamedType`, calls `populateTypePayload` (when `populate=true`) to create type stubs, calls `addTypeDependencies` to record field→type edges. Packed struct/union (flag `0x10`) calls `typeRegistrySetPacked` (a packed union selects `TypeKind.packed_union_type`; a packed struct stays `struct_type`). Creates `SymbolKind.type_alias`.
 
@@ -280,7 +280,7 @@ TypeRegistry (permanent arena, updated with stubs)
 | `D12:n<name_id>` | Debug name dump — var_decl name_id |
 | `M5:p<path_id>` | Module import — path ID of import_expr payload |
 | `Rs` | Register symbol — import_expr target resolved |
-| `FIX1:mid=<mod_id>t=<target>n=<mod_id>` | Fixup debug — resolved target module id (`mid` and `t`) and declaring module id (`n`) |
+| `FIX1:mid=<target>t=<target>n=<mod_id>` | Fixup debug — resolved target module id (`mid` and `t`) and declaring module id (`n`) |
 | `Rf` | Register failed — import_expr target not in `path_to_id` |
 | `RCA:p<payload>` | Register const alias — init.ident payload |
 | `RCA:i<name_id>` | Register const alias — resolved ident name_id |
