@@ -1,5 +1,7 @@
 # 05 — Semantic Analysis [updated: 2026-09-20 — refreshed against current source: socket builtins removed (std_net extern surface), async/introspection/pointer/bitcast builtins, volatile + packed/enum checks, spill-backed resolved-type table; line refs and dated evidence removed]
 
+> Covers: `semantic_analyzer.zig`, `coercion.zig`, `resolved_type_table.zig`, `constraint_checker.zig`, `assign_helper.zig`
+
 ## Summary Table
 
 | Artifact | Count | Notes |
