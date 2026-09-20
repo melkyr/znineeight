@@ -1,0 +1,461 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Builtins</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual builtins reference cast conversion introspection runtime varargs async declarations print ptrCast intCast floatCast sizeOf offsetOf panic">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="toc.html">
+<link rel="next" href="vol4-24-html-style.html">
+</head>
+<body bgcolor="#f5f0e1" text="#000000" link="#003366" vlink="#551a8b" alink="#cc0000">
+<table width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#e8e0cc" class="sidebar">
+<font size="1">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#e8e0cc" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume IV &mdash; Reference</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+How to use the Reference <i>(planned)</i><br>
+The full grammar <i>(planned)</i><br>
+Types <i>(planned)</i><br>
+Pointers <i>(planned)</i><br>
+Structs <i>(planned)</i><br>
+Enums <i>(planned)</i><br>
+Unions <i>(planned)</i><br>
+Tuples <i>(planned)</i><br>
+Arrays and slices <i>(planned)</i><br>
+Errors <i>(planned)</i><br>
+Optionals <i>(planned)</i><br>
+Aliases <i>(planned)</i><br>
+Statements <i>(planned)</i><br>
+Control flow <i>(planned)</i><br>
+Error expressions <i>(planned)</i><br>
+<b>Builtins</b><br>
+Async <i>(planned)</i><br>
+Memory <i>(planned)</i><br>
+The standard library <i>(planned)</i><br>
+The PAL <i>(planned)</i><br>
+Markers <i>(planned)</i><br>
+Diagnostics <i>(planned)</i><br>
+The command line <i>(planned)</i><br>
+Limits <i>(planned)</i><br>
+<a href="vol4-24-html-style.html">HTML style</a><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Builtins</h1>
+<p>
+Builtins are the compiler's own functions. They are written <tt>@name(...)</tt>
+and recognized by name; an unknown or unsupported builtin is rejected with
+<tt>error[3000]: unsupported builtin function</tt>. This page is the lookup:
+every builtin the compiler supports, grouped as the language reference groups
+them, one short entry each. It is not a tutorial.
+</p>
+<p>
+Everything below is the surface documented in <i>Language_Spec_Z98.md</i>
+&sect;4 and implemented by the compiler. There is no <tt>@typeInfo</tt>, no
+<tt>@typeName</tt>, and no other builtin beyond those listed here.
+</p>
+
+<h2>Cast and conversion</h2>
+<p>
+Each names an explicit conversion. Except where noted, the first argument is the
+result type.
+</p>
+
+<h3>@ptrCast(T, expr)</h3>
+<p>
+Explicit pointer cast. Both the target type and the expression must be pointer
+types.
+</p>
+<pre>
+var p: *u8 = @ptrCast(*u8, q);
+</pre>
+
+<h3>@ptrToInt(expr) / @intFromPtr(expr)</h3>
+<p>
+Pointer to integer. The result is a <tt>usize</tt>; <tt>@intFromPtr</tt> is the
+modern alias.
+</p>
+<pre>
+var addr: usize = @ptrToInt(p);
+</pre>
+
+<h3>@intToPtr(T, expr)</h3>
+<p>
+Integer to pointer, with the result type named explicitly.
+</p>
+<pre>
+var p: *u8 = @intToPtr(*u8, addr);
+</pre>
+
+<h3>@ptrFromInt(expr)</h3>
+<p>
+Integer to pointer, with the result type taken from context.
+</p>
+<pre>
+var p: *u8 = @ptrFromInt(addr);
+</pre>
+
+<h3>@fieldParentPtr(T, "field", expr)</h3>
+<p>
+Pointer to the containing struct, from a pointer to one of its fields.
+</p>
+<pre>
+const owner: *Point = @fieldParentPtr(Point, "x", xptr);
+</pre>
+
+<h3>@bitCast(T, expr)</h3>
+<p>
+Same-size integer-to-integer bit reinterpretation. Source and destination must
+be integers of the same size.
+</p>
+<pre>
+var u: u32 = @bitCast(u32, i);
+</pre>
+
+<h3>@volatileCast(T, expr)</h3>
+<p>
+Removes the <tt>volatile</tt> qualifier. The source must be a volatile pointer
+and the target the same base type.
+</p>
+<pre>
+var p: *u8 = @volatileCast(*u8, vp);
+</pre>
+
+<h3>@intCast(T, expr)</h3>
+<p>
+Checked integer conversion or width change. Under the default <tt>-fsafe</tt>
+the conversion is range-checked and traps on overflow.
+</p>
+<pre>
+var n: u8 = @intCast(u8, x);
+</pre>
+
+<h3>@floatCast(T, expr)</h3>
+<p>
+Float conversion. It is not runtime-checked, so narrowing may lose precision.
+</p>
+<pre>
+var d: f64 = @floatCast(f64, f);
+var f2: f32 = @floatCast(f32, d);
+</pre>
+
+<h3>@intToFloat(T, expr)</h3>
+<p>
+Integer to floating point. <tt>T</tt> is a float type and <tt>expr</tt> is an
+integer type.
+</p>
+<pre>
+var d: f64 = @intToFloat(f64, n);
+</pre>
+
+<h3>@intToEnum(T, expr)</h3>
+<p>
+Integer to enum value of type <tt>T</tt>.
+</p>
+<pre>
+var c: Color = @intToEnum(Color, n);
+</pre>
+
+<h3>@enumToInt(expr)</h3>
+<p>
+Enum value to its underlying integer type.
+</p>
+<pre>
+var n: u8 = @enumToInt(c);
+</pre>
+
+<h3>@as(T, expr)</h3>
+<p>
+Explicit type coercion.
+</p>
+<pre>
+var x: i64 = @as(i64, n);
+</pre>
+
+<h2>Introspection</h2>
+<p>
+These are evaluated at compile time and yield a <tt>usize</tt> constant (the
+<tt>bit</tt> variants a bit count). <tt>T</tt> must be a complete type.
+</p>
+
+<h3>@sizeOf(T)</h3>
+<p>
+Size of type <tt>T</tt> in bytes.
+</p>
+<pre>
+const n: usize = @sizeOf(Point);
+</pre>
+
+<h3>@alignOf(T)</h3>
+<p>
+Alignment requirement of type <tt>T</tt> in bytes.
+</p>
+<pre>
+const a: usize = @alignOf(Point);
+</pre>
+
+<h3>@offsetOf(T, "field")</h3>
+<p>
+Byte offset of a field within a struct or union. The field name is a string
+literal; for a union the offset is 0.
+</p>
+<pre>
+const off: usize = @offsetOf(Point, "y");
+</pre>
+
+<h3>@bitSizeOf(T)</h3>
+<p>
+Size of type <tt>T</tt> in bits.
+</p>
+<pre>
+const bits: usize = @bitSizeOf(Point);
+</pre>
+
+<h3>@bitOffsetOf(T, "field")</h3>
+<p>
+Bit offset of a field within a struct or union.
+</p>
+<pre>
+const bit: usize = @bitOffsetOf(Point, "y");
+</pre>
+
+<h2>Runtime</h2>
+<p>
+Ordinary runtime operations, emitted directly as C89.
+</p>
+
+<h3>@putChar(c)</h3>
+<p>
+Writes a single character.
+</p>
+<pre>
+@putChar('A');
+</pre>
+
+<h3>@stdoutWrite(ptr, len) / @stderrWrite(ptr, len)</h3>
+<p>
+Writes <tt>len</tt> bytes from <tt>ptr</tt> to stdout or stderr.
+</p>
+<pre>
+@stdoutWrite(msg.ptr, msg.len);
+</pre>
+
+<h3>@getChar()</h3>
+<p>
+Reads a single character as a <tt>u8</tt>.
+</p>
+<pre>
+var c: u8 = @getChar();
+</pre>
+
+<h3>@exit(code)</h3>
+<p>
+Terminates the process with <tt>code</tt>.
+</p>
+<pre>
+@exit(1);
+</pre>
+
+<h3>@sleepMs(ms)</h3>
+<p>
+Sleeps for <tt>ms</tt> milliseconds.
+</p>
+<pre>
+@sleepMs(100);
+</pre>
+
+<h3>@isWindows()</h3>
+<p>
+Compile-time-folded target predicate; true only for the Windows target.
+</p>
+<pre>
+if (@isWindows()) {
+    @consoleClear();
+}
+</pre>
+
+<h3>@consoleClear()</h3>
+<p>
+Clears the console.
+</p>
+<pre>
+@consoleClear();
+</pre>
+
+<h3>@consoleGotoxy(x, y)</h3>
+<p>
+Moves the console cursor to column <tt>x</tt>, row <tt>y</tt>.
+</p>
+<pre>
+@consoleGotoxy(0, 0);
+</pre>
+
+<h3>@consoleSetColor(fg, bg)</h3>
+<p>
+Sets the console foreground and background colour.
+</p>
+<pre>
+@consoleSetColor(7, 0);
+</pre>
+
+<h3>@panic(msg)</h3>
+<p>
+Evaluates <tt>msg</tt>, writes <tt>panic: &lt;msg&gt;\n</tt> to stderr, then
+traps. It is typed <tt>noreturn</tt> and is not a no-op.
+</p>
+<pre>
+@panic("bad state");
+</pre>
+
+<h2>C varargs</h2>
+<p>
+These access a C <tt>va_list</tt> inside a variadic function.
+</p>
+
+<h3>@cVaStart</h3>
+<p>
+Initializes a C <tt>va_list</tt>. It is only valid in a variadic function.
+</p>
+<pre>
+var vl: va_list = undefined;
+@cVaStart(&amp;vl);
+</pre>
+
+<h3>@cVaArg(ap, T)</h3>
+<p>
+Fetches the next argument from the list as type <tt>T</tt>.
+</p>
+<pre>
+var n: i32 = @cVaArg(&amp;vl, i32);
+</pre>
+
+<h3>@cVaEnd</h3>
+<p>
+Finishes the traversal of the list.
+</p>
+<pre>
+@cVaEnd(&amp;vl);
+</pre>
+
+<h2>Async / coroutines</h2>
+<p>
+Z98 has cooperative, stackless coroutines, but there is no
+<tt>async</tt>/<tt>await</tt> keyword and no <tt>Future(T)</tt>. Coroutine state
+is type-erased to <tt>*void</tt>, and the scheduler lives in the
+<tt>std.async</tt> library. A function is <i>suspending</i> when it contains
+<tt>@asyncSuspend</tt> or calls a suspending function; every suspending
+function is compiled to a step machine.
+</p>
+
+<h3>@asyncFrameSize(fn)</h3>
+<p>
+Compile-time byte size of a suspending function's root frame. <tt>fn</tt> must
+resolve to a known suspending function.
+</p>
+<pre>
+const sz: usize = @asyncFrameSize(worker);
+</pre>
+
+<h3>@asyncInit(ctx, buf, fn, args)</h3>
+<p>
+Initializes a coroutine root frame in <tt>buf</tt> for the suspending function
+<tt>fn</tt> and returns it as <tt>*void</tt>. <tt>args</tt> is the parameter
+record, passed as a plain <tt>*const void</tt>.
+</p>
+<pre>
+var frame: *void = @asyncInit(ctx, buf, worker, @ptrCast(*const void, &amp;args));
+</pre>
+
+<h3>@asyncSuspend(data)</h3>
+<p>
+An explicit suspension point; valid only inside a suspending function. The
+<tt>data</tt> operand is type-checked but not propagated.
+</p>
+<pre>
+_ = @asyncSuspend(null);
+</pre>
+
+<h3>@asyncResume(frame, arg)</h3>
+<p>
+Resumes the coroutine rooted at <tt>frame</tt>. Returns <tt>null</tt> when the
+coroutine has finished, and non-<tt>null</tt> while it is still suspended.
+</p>
+<pre>
+var r: ?*void = @asyncResume(frame, arg);
+</pre>
+
+<h2>Declarations</h2>
+
+<h3>@import(path)</h3>
+<p>
+Includes another module. The path is resolved relative to the current module.
+The standard library is imported as <tt>@import("std")</tt>, which re-exports
+<tt>io</tt>, <tt>arena</tt>, <tt>str</tt>, <tt>mem</tt>, <tt>math</tt>,
+<tt>debug</tt>, and <tt>net</tt>; symbols are reached with dot notation.
+</p>
+<pre>
+const std = @import("std");
+std.io.print("hi\n", .{});
+</pre>
+
+<h3>@cInclude("header.h")</h3>
+<p>
+Emits a C header <tt>#include</tt>. It is used by the extern OS bindings.
+</p>
+<pre>
+@cInclude("zig_runtime.h");
+</pre>
+
+<h2>Formatted print</h2>
+<p>
+A call whose callee is named <tt>print</tt> (for example <tt>std.io.print</tt>)
+is a compiler special case: the compiler decomposes the format string and emits
+one runtime print call per argument. The arguments must be a tuple literal
+(<tt>.{...}</tt>) or a tuple variable. The specifiers are <tt>{}</tt> (default,
+decimal), <tt>{d}</tt> (decimal), <tt>{x}</tt> (hex), <tt>{c}</tt> (character),
+and <tt>{s}</tt> (string); any other specifier is rejected with
+<tt>error[3013]</tt>. This is the only variadic form Z98 supports; there is no
+<tt>anytype</tt>. The shipped wrapper is
+<tt>std.io.print(s: [*]const c_char, ...) void</tt>.
+</p>
+<pre>
+std.io.print("fact(10) = {}\n", .{fact(10, 1)});
+std.io.print("{c}", .{ch});
+</pre>
+
+<p>Previous: <a href="toc.html">Contents</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-24-html-style.html">HTML style</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
