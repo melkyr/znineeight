@@ -33,3 +33,7 @@ a:link {
 a:visited {
   color: #551a8b;
 }
+
+.placeholder {
+  border: 1px dashed #808080;
+}

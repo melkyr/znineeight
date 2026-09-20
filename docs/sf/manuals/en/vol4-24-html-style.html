@@ -246,10 +246,13 @@ Hello from Z98!
 <h2>Win9x figure placeholders</h2>
 <p>
 A Win9x screenshot that has not yet been captured is reserved with a
-dashed-border box that names the figure and says what is missing. The operator
-captures the real screenshot on real hardware later.
+dashed-border box that names the figure and says what is missing. The box is a
+table carrying <tt>class="placeholder"</tt>; <tt>z98.css</tt> supplies the
+dashed border, and the presentational <tt>border="1"</tt> keeps a solid box
+when the stylesheet is absent. The operator captures the real screenshot on
+real hardware later.
 </p>
-<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f5f0e1" style="border: 1px dashed #808080">
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f5f0e1" class="placeholder">
 <tr>
 <td align="center">
 <i>Figure N &mdash; Win9x screenshot pending</i>
