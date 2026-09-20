@@ -1,4 +1,4 @@
-# 07 — LIR Lowering [updated: 2026-09-20 — refreshed against the current 82-variant `LirInst` set, `lir_opt_pass`/`lir_stream`/`spill_store` coverage, packed bitfields, arbitrary-width int ops, `-fsafe` checks, `volatile`, calling convention, and async lowering; line references and dated evidence removed; `return_stmt` now classifies an explicit error return and passes `is_error_path=1` to `expandDefers` so `errdefer` runs on explicit error returns (Task 10B, 2026-09-20); `@floatCast` is now interned (`floatcast_name_id`) and lowers to the existing `float_cast` op (Task 11B, 2026-09-20)]
+# 07 — LIR Lowering [updated: 2026-09-20 — refreshed against the current 82-variant `LirInst` set, `lir_opt_pass`/`lir_stream`/`spill_store` coverage, packed bitfields, arbitrary-width int ops, `-fsafe` checks, `volatile`, calling convention, and async lowering; line references and dated evidence removed; `return_stmt` now classifies an explicit error return and passes `is_error_path=1` to `expandDefers` so `errdefer` runs on explicit error returns (Task 10B, 2026-09-20); `@floatCast` is now interned (`floatcast_name_id`) and lowers to the existing `float_cast` op (Task 11B, 2026-09-20); `return_stmt` now runs `errdefer` on a dynamic error-union return (identical src/dst types, no recorded coercion) via a pending-errdefer-gated `check_error`/`branch` mirroring the `try` path (Task 10F, 2026-09-20)]
 
 > Covers: `lower.zig`, `lir.zig`, `lir_opt_pass.zig`, `lir_stream.zig`, `spill_store.zig`
 
@@ -552,6 +552,8 @@ The `else` prong is identified by `flags` bit0.
 #### Return / Break / Continue
 ```
 return:   classify ret_is_error → expandDefers(0, ret_is_error, 0) → lowerExpr(value) → .ret(val) or .ret_void
+          dynamic EU + pending errdefer: lowerExpr(value) → .check_error → .branch{is_err, err_bb, ok_bb}
+            → err_bb: expandDefers(0, 1, 0) → .ret(val)   → ok_bb: expandDefers(0, 0, 0) → .ret(val)
 break:    expandDefers(exit_scope, 0, 0) → .jump(exit_target)
 continue: expandDefers(cont_scope, 0, 0) → .jump(header_target)
 ```
@@ -623,6 +625,7 @@ At scope-termination exits (`lowerStmtBody` block exit, `lowerStmt` block exit, 
 Called at:
 - Scope exit in `lowerStmtBody` (target_depth = `self.scope_depth`, is_error_path = 0)
 - `return_stmt` (target_depth = 0, is_error_path = `ret_is_error`; `ret_is_error=1` when the return expression carries a `CoercionKind.wrap_error_err` coercion (error set → error union, recorded by `resolveReturnStmt`) or its AST kind is `error_literal`, else 0)
+- `return_stmt` dynamic error-union path (target_depth = 0, is_error_path = 1 on the error arm and 0 on the success arm; taken only when `ret_is_error == 0`, a pending `errdefer` exists, and both the return expression's resolved type and `func.return_type` are error unions)
 - `break_stmt`/`continue_stmt` (target_depth = targeted scope + 1, is_error_path = 0)
 - `try_expr` error path (target_depth = 0, is_error_path = 1)
 
@@ -668,7 +671,7 @@ When the tail resolves through a try, the dead call CFG is zeroed out: `zeroCall
 
 Per-branch `return_stmt` sites inside `if_stmt`/`switch_stmt` bodies reach this same handler and get TCO automatically. Expression-form `return if/switch (...)` (join-temp results) is out of scope: the walk starts at the return temp and cannot resolve a join temp to one call without full dataflow, so those fall back to plain `ret`.
 
-`expandDefers(self, 0, ret_is_error, 0)` is called once at the top of `return_stmt`, before any TCO decision. `ret_is_error` is computed first: it is 1 when the return expression carries a `CoercionKind.wrap_error_err` coercion (error set → error union; covers `return error.X`, `return E.X`, `return err;`) or when its AST kind is `error_literal` (covers a bare-error-set return type, where no coercion is recorded); otherwise 0. This makes `errdefer` (kind=1) fire on an explicit error return while a success `return` (and a dynamic error-union `return x;`, which records no coercion) stays on the success path. The self-TCO branch then nops the freshly-emitted defer instructions when the defer stayed in the same block; cross/non-TCO branches preserve them. The defer fires once at terminal exit via `expandDefers(self, 0, 0, 1)` at the end of `lowerFn`.
+`return_stmt` first classifies the return and then calls `expandDefers`, before any TCO decision. `ret_is_error` is 1 when the return expression carries a `CoercionKind.wrap_error_err` coercion (error set → error union; covers `return error.X`, `return E.X`, `return err;`) or when its AST kind is `error_literal` (covers a bare-error-set return type, where no coercion is recorded); otherwise 0. When `ret_is_error == 0`, a pending `errdefer` exists, and both the return expression's resolved type and `func.return_type` are error unions, the **dynamic error-union return** path is taken instead: the value is lowered first, then `check_error` + `branch` discriminate on its `is_error` flag; the error arm calls `expandDefers(self, 0, 1, 0)` and the success arm `expandDefers(self, 0, 0, 0)`, each followed by `.ret(val)`. This mirrors the `try` path and makes a dynamic `return x;` (`x: E!T`; `src==dst`, so `tryRecordCoercion` records no coercion) run `errdefer` iff the value is in its error state; the pending-errdefer gate keeps every other error-union return on the existing path. This dynamic path deliberately skips TCO (a tail call would bypass `errdefer`), and it evaluates the return operand before the defers (the static path evaluates defers first) — the same operand-before-defers order the `try` path already uses. Otherwise the static path calls `expandDefers(self, 0, ret_is_error, 0)`, and the self-TCO branch then nops the freshly-emitted defer instructions when the defer stayed in the same block; cross/non-TCO branches preserve them. The defer fires once at terminal exit via `expandDefers(self, 0, 0, 1)` at the end of `lowerFn`.
 
 ---
 

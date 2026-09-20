@@ -6329,6 +6329,68 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                 if (ret_expr_nd.kind == AstKind.error_literal) { ret_is_error = @intCast(u8, 1); }
             }
         }
+        // Task 10F: a dynamic error-union return (`return <EU expr>;` where the
+        // source and destination error-union types are identical, so no
+        // coercion is recorded) is a runtime error exit. When a pending
+        // `errdefer` exists, discriminate on the value's `is_error` flag and run
+        // the errdefer bodies on the error arm only. Gated on a pending errdefer
+        // so EU-typed returns without one keep the existing byte-identical path.
+        var ret_dyn_eu: u8 = @intCast(u8, 0);
+        if (ret_is_error == @intCast(u8, 0) and node.child_0 != @intCast(u32, 0)) {
+            var has_pending_ed: u8 = @intCast(u8, 0);
+            var dsi: usize = self.defer_stack.len;
+            while (dsi > @intCast(usize, 0)) {
+                dsi -= @intCast(usize, 1);
+                if (self.defer_stack.items[dsi].kind == @intCast(u8, 1)) {
+                    has_pending_ed = @intCast(u8, 1);
+                    break;
+                }
+            }
+            if (has_pending_ed != @intCast(u8, 0)) {
+                var dyn_frt = self.func.return_type;
+                if (dyn_frt != type_mod.TYPE_UNDEFINED) {
+                    if (self.ctx.registry.types_items[@intCast(usize, dyn_frt)].kind == type_mod.TypeKind.error_union_type) {
+                        if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0)) |dyn_c0_rt| {
+                            if (dyn_c0_rt != type_mod.TYPE_UNDEFINED) {
+                                if (self.ctx.registry.types_items[@intCast(usize, dyn_c0_rt)].kind == type_mod.TypeKind.error_union_type) {
+                                    ret_dyn_eu = @intCast(u8, 1);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (ret_dyn_eu != @intCast(u8, 0)) {
+            var dyn_val = lowerExpr(self, node.child_0);
+            if (self.block_terminated != 0) { return; }
+            var dyn_is_err = nextTemp(self, type_mod.TYPE_U8);
+            emitInst(self, LirInst{ .check_error = .{ .value = dyn_val, .result = dyn_is_err } });
+            var dyn_err_bb = createBlock(self);
+            var dyn_ok_bb = createBlock(self);
+            emitInst(self, LirInst{ .branch = .{ .cond = dyn_is_err, .then_bb = dyn_err_bb, .else_bb = dyn_ok_bb } });
+            self.current_bb = dyn_err_bb;
+            self.block_terminated = @intCast(u8, 0);
+            expandDefers(self, @intCast(u32, 0), @intCast(u8, 1), @intCast(u8, 0));
+            if (self.block_terminated == @intCast(u8, 0)) {
+                if (self.func.return_type != type_mod.TYPE_VOID) {
+                    self.hoisted_temps.items[@intCast(usize, dyn_val)].type_id = self.func.return_type;
+                }
+                emitInst(self, LirInst{ .ret = dyn_val });
+                self.block_terminated = @intCast(u8, 1);
+            }
+            self.current_bb = dyn_ok_bb;
+            self.block_terminated = @intCast(u8, 0);
+            expandDefers(self, @intCast(u32, 0), @intCast(u8, 0), @intCast(u8, 0));
+            if (self.block_terminated == @intCast(u8, 0)) {
+                if (self.func.return_type != type_mod.TYPE_VOID) {
+                    self.hoisted_temps.items[@intCast(usize, dyn_val)].type_id = self.func.return_type;
+                }
+                emitInst(self, LirInst{ .ret = dyn_val });
+                self.block_terminated = @intCast(u8, 1);
+            }
+            return;
+        }
         expandDefers(self, @intCast(u32, 0), ret_is_error, @intCast(u8, 0));
         var post_defer_len: usize = pre_defer_blk_p.insts.len;
         var defer_bb_unchanged: u8 = @intCast(u8, 0);

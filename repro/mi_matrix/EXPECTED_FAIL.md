@@ -1,4 +1,19 @@
-# mi_matrix corpus — expected-fail manifest (v164 2026-09-20)
+# mi_matrix corpus — expected-fail manifest (v165 2026-09-20)
+
+## Task 10F — dynamic error-union return runs errdefer (v164 -> v165 2026-09-20)
+
+The Z98 manual Phase 0 plan's fourth inserted compiler fix (`docs/superpowers/plans/2026-09-20-z98-manual-phase0-plan.md`, Task 10E investigation, Task 10F fix; operator-inserted I/F pair). `return <error-union expr>;` where the source and destination error-union types are identical (`src==dst`, so `tryRecordCoercion` early-returns and no coercion is recorded) left `ret_is_error=0`, so Task 10B's classifier skipped the errdefer bodies and no runtime `is_error` branch was emitted — the error value was returned with its `errdefer` silently dropped (a runtime defect: dump rc=0, zero diagnostics). `sf/src/lower.zig` `return_stmt` now, when (a) no static classification, (b) the return expression's resolved type is an error union, (c) `func.return_type` is an error union, and (d) a pending `errdefer` exists, lowers the value, emits `check_error` + `branch` (mirroring the `try` path), and runs `expandDefers(0,1,0)` on the error arm / `expandDefers(0,0,0)` on the success arm before `ret val`. Gating on a pending errdefer keeps every other EU return byte-identical; no emitter/`lir.zig`/sema change.
+
+**New fixture (1) + standalone repro.**
+
+| fixture | class | contract |
+|---|---|---|
+| `stdlib_errdefer_dyn_xmod` | OK (runtime regression) | dynamic EU variable return (error/success), dynamic EU call return (error/success), `E!void` (error/success), subset `F!i32`->`E!i32`, static `return error.Boom` and `try` controls, and a nested `defer`/`errdefer` dynamic return; each errdefer runs iff the returned union is in its error state. Deterministic 21-line stdout ending `done`, rc 0 |
+| standalone `repro/errdefer_dynamic_return.z98` (top-level file, not a corpus dir) | — | single-file repro of the same defect with header defect/fix/recipe/expected stdout |
+
+`scripts/stdlib/expected_dirs.txt` pin grows 195 -> 196.
+
+**Gates (seed-built fixed-point compiler `ff54332e2d4418eb663f225bbad6d9c7`).** Self-compile `-ffast --dump-c89` rc=0, two-hop closure hop1 == hop2 == `ff54332e…` (re-verified from the rotated seed). Runtime gate **196 PASS / 0 FAIL over 196 dirs** (3x byte-identical stdout internal). Corpus `-s0` classifier **906 dirs = 852 OK / 28 GREEN / 26 FAIL / 0 ICE / 0 CRASH** (v164 905 -> 906: the new fixture is the only addition); a full-classifier join-diff vs the pre-fix compiler over the 906-dir universe is **byte-identical — zero class movement**. 4-MD5 emitted-C gates **UNCHANGED** (no gate program uses errdefer): gol `80287f58bd761e4a551d5d62db5a3551` / lisp `d1d99b597d4ca2a2a75a42c363d54ff4` / json `f9c9f113b3a7bbd9413b999426daf330` / mud `91fd711d97bcf9cad91352076be39710`. 21-example matrix **21/21** dump/gcc/link rc=0. Fixed point **MOVED `27e61065a8006183d5f8c55043890c7c` -> `ff54332e2d4418eb663f225bbad6d9c7`**; seed **v44 -> v45** (archive md5 `d5bcddd4fd513a2ca3fe2c0997dee9ec` -> `444f0d997867d3ff97d34d45d9720636`). Full report: `.superpowers/sdd/2026-09-20-z98-manual-phase0-plan/task-10F-report.md`.
 
 ## Task 11B — `@floatCast` lowering fixed (v163 -> v164 2026-09-20)
 
