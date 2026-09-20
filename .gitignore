@@ -104,3 +104,4 @@ sf_out/*
 repro_out/*
 out_*/
 release/staging/
+docs/sf/manuals/dist/
