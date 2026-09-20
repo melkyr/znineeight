@@ -1,0 +1,35 @@
+body {
+  font-family: serif;
+  font-size: 12pt;
+  color: #000000;
+  background-color: #f5f0e1;
+}
+
+pre {
+  font-family: monospace;
+  font-size: 10pt;
+}
+
+h1 {
+  font-size: 24pt;
+}
+
+h2 {
+  font-size: 18pt;
+}
+
+h3 {
+  font-size: 14pt;
+}
+
+h4 {
+  font-size: 12pt;
+}
+
+a:link {
+  color: #003366;
+}
+
+a:visited {
+  color: #551a8b;
+}

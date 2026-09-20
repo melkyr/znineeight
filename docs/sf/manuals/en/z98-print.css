@@ -1,0 +1,15 @@
+body {
+  font-size: 11pt;
+}
+
+.sidebar {
+  display: none;
+}
+
+.langbar {
+  display: none;
+}
+
+pre {
+  border: 1px solid #000000;
+}
