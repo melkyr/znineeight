@@ -1,0 +1,13 @@
+resume 0 3
+resume 1 1
+resume 2 6
+resume 3 2
+resume 4 7
+resume 5 4
+predcalls 0 3
+predcalls 1 1
+predcalls 2 6
+predcalls 3 2
+predcalls 4 7
+predcalls 5 4
+suspenduntil stress ok

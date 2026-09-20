@@ -1,0 +1,2 @@
+max-suspends 3
+msgreader stress ok
