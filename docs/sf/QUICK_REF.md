@@ -27,13 +27,13 @@ bash sf/scripts/build_release.sh
 **Seed location + contents:** the committed rotating seed is
 `release/seed/zig1-seed.tgz` (git-tracked; provenance + rotation history in
 `release/seed/CHANGELOG.md`, full recipes in `release/seed/SEED_README.txt`).
-Current seed is **seed v40** (archive md5 `0e3250ea5bdcff1ccd79f8954ea17f48`; Plan D closeout — network async landed, the archive `lib/` payload stays all 29 std `.zig`; the fixed point **MOVED** `fc9198f6c1a24c92ec136e741c81c975` -> `197602956b55d1cb59848a922a934fe8`).
+Current seed is **seed v41** (archive md5 `c9461ae95e8b6ff3c4cd585663fbca8b`; v41 rotation — `lib/` captured at working-tree `ba9aa6ae` (`std.async.suspendUntil`); the archive `lib/` payload stays all 29 std `.zig`; the fixed point is **UNMOVED** `197602956b55d1cb59848a922a934fe8`).
 Top-level `zig1-seed/`: `zig1` (reference binary md5
 `197602956b55d1cb59848a922a934fe8`), `gen/` (its self-emission C89 module set —
 45 `.c` + 46 `.h`, including `zig_special_types.h`; the emitted runtime/support
 sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/` (the emitted 5:
 `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`, `zig_runtime.c`,
-`zig_pal.c` — NO `net_prelude.h`), `lib/` (all 29 std `.zig` the v40 archive
+`zig_pal.c` — NO `net_prelude.h`), `lib/` (all 29 std `.zig` the v41 archive
 carries: `std.zig` plus the 28 `std_*.zig`),
 `SEED_README.txt`.
 **Std-module inventory (Plan D closeout, 2026-09-19):** the CURRENT `sf/src` std set is
@@ -46,18 +46,18 @@ carries: `std.zig` plus the 28 `std_*.zig`),
 **12** names (`io/arena/str/mem/math/debug/net/async/bits/os/time/buf`); the
 higher-layer modules (L3-L6) are imported by path, not re-exported (Ruling F1).
 `scripts/seed/build_from_seed.sh` installs all 29 into the rebuilt compiler's
-`lib/`, and the rotated **v40** archive carries all 29. The Plan D closeout lands
+`lib/`, and the rotated **v41** archive carries all 29. The Plan D closeout lands
 the network half of the `std_stream` reader surface (the `std_net` non-blocking
 primitives + `SocketLineReader` + `MsgReader`) and adds the R7b usage program
 `stdlib_test/net_stream_usage`; the Plan C closeout added the R7b usage programs
 `stdlib_test/map_sort_heap_usage` + `stdlib_test/crypto_codec_usage`. See
-`repro/mi_matrix/EXPECTED_FAIL.md` v159.
+`repro/mi_matrix/EXPECTED_FAIL.md` v161.
 The archived binary and the self-emission fixed point
-`197602956b55d1cb59848a922a934fe8` are the SAME compiler state (the v40
-provenance entry in `release/seed/CHANGELOG.md` records HEAD `e921d040`). The
-final remaining std-lib plan is
-`docs/superpowers/plans/2026-09-18-plan-D-test-hardening.md`. zig0 is
-retired; the seed model (`scripts/seed/build_from_seed.sh`) is the only rebuild
+`197602956b55d1cb59848a922a934fe8` are the SAME compiler state (the v41
+provenance entry in `release/seed/CHANGELOG.md` records HEAD `1b1371ba`). The
+std-lib extension program is COMPLETE (Plan D test hardening was the final plan).
+Program spec: `docs/superpowers/specs/2026-09-17-std-lib-extension-program-design.md`.
+zig0 is retired; the seed model (`scripts/seed/build_from_seed.sh`) is the only rebuild
 path.
 **C89-AHEAD note (2026-09-13):** `runtime/` now carries the compiler's **emitted,
 mode-specific** support (the `-ffast` self-emission support), not the canonical
