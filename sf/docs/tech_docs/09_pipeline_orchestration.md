@@ -1,56 +1,66 @@
-# Pipeline Orchestration — main.zig, main_dump.zig [updated: 2026-08-06 — F3 expanded phase_ComptimeEvaluation visitor; F7 module-scope var_decl type threading]
+# 09 — Pipeline Orchestration [updated: 2026-09-20 — refreshed against current source: added `phase_FrontResolution`/`phase_AsyncFrameSize`, `-fsafe`/`-ffast` and target/output flags, self-contained output-dir orchestration, and the tooling mains; line references and dated evidence removed]
 
-> Source: `sf/src/main.zig` (957 lines), `sf/src/main_dump.zig` (326 lines)
+> Covers: `main.zig`, `main_dump.zig`, `main_exp.zig`, `strip_main.zig`
 
 ## 1. Overview
 
-Two entry-point binaries share the same phase naming convention:
+`sf/src` has four `main` entry points:
 
 | Binary | File | Purpose |
 |--------|------|---------|
-| `zig1` | `main.zig` | Full 8-phase compiler pipeline: source → C89 |
+| `zig1` | `main.zig` | Full 10-phase compiler pipeline: source → C89 |
 | `zig1-dump` | `main_dump.zig` | Standalone dump binary (tokens, AST only) |
+| (bootstrap smoke) | `main_exp.zig` | 5-line extern-C smoke entry (`__bootstrap_print`) |
+| (strip tool) | `strip_main.zig` | Minimal name-mangler link-check entry |
 
-Both define `CompilerCli`, `CompilerContext`, `matchFlag`, `cstrToSlice`, `parseSize`, `parseU32`, `parseColorMode`, `parseErrorFormat`, and `phase_*` stubs (main_dump has empty stubs). Only `main.zig` implements the full pipeline.
+`main.zig` and `main_dump.zig` share the `CompilerCli`/`CompilerContext` shape and a CLI-helper naming convention (`matchFlag`, `cstrToSlice`, `parseSize`, `parseU32`, `parseColorMode`, `parseErrorFormat`). `main.zig` additionally has `matchMMFlag`, `matchSFlag`, `parseMMBytes`, `parseSLevel`, `parseTargetIsWindows`, `writeU32`, and `printUsage`; `main_dump.zig` has `getByte`. `main_dump.zig` carries `phase_*` empty stubs for compilation compatibility; only `main.zig` implements the full pipeline.
+
+`main.zig`'s `phase_*` set is: `phase_ImportResolution`, `phase_SymbolRegistration`, `phase_TypeResolution`, `phase_FrontResolution`, `phase_ComptimeEvaluation`, `phase_SemanticAnalysis`, `phase_StaticAnalyzers`, `phase_AsyncFrameSize`, `phase_LIRLowering`, `phase_C89Emission` (10 phases), plus the `runCompiler` orchestrator.
 
 ---
 
 ## 2. `CompilerCli` — CLI Argument Struct
 
-**File:** `main.zig:61-84` (22 fields)
+**File:** `main.zig` (26 fields)
 
 | # | Field | Type | Default | Flag(s) |
 |---|-------|------|---------|---------|
 | 1 | `input_file` | `[]const u8` | `""` | positional |
 | 2 | `output_dir` | `[]const u8` | `"."` | `--output-dir`, `-o` |
-| 3 | `dump_types` | `bool` | `false` | `--dump-types`, `-y` |
-| 4 | `dump_lir` | `bool` | `false` | `--dump-lir`, `-l` |
-| 5 | `dump_c89` | `bool` | `false` | `--dump-c89` |
-| 6 | `max_mem` | `u32` | `DEV_MAX_MEM` | `--max-mem`, `-m` |
-| 7 | `max_errors` | `u32` | `256` | `--max-errors`, `-e` |
-| 8 | `color` | `ColorMode` | `.auto` | `--color` |
-| 9 | `error_format` | `ErrorFormat` | `.human` | `--error-format` |
-| 10 | `warnings_as_errors` | `bool` | `false` | `--warnings-as-errors`, `-W` |
-| 11 | `quiet` | `bool` | `false` | `--quiet`, `-q` |
-| 12 | `test_mode` | `bool` | `false` | `--test` |
-| 13 | `sanity_test_mode` | `bool` | `false` | `--sanity-test` |
-| 14 | `track_memory` | `bool` | `false` | `--track-memory` |
-| 15 | `no_null_check` | `bool` | `false` | `--no-null-check` |
-| 16 | `no_lifetime_check` | `bool` | `false` | `--no-lifetime-check` |
-| 17 | `no_leak_check` | `bool` | `false` | `--no-leak-check` |
-| 18 | `warn_all` | `bool` | `false` | `--warn-all` |
-| 19 | `warn_error` | `bool` | `false` | `--warn-error` |
-| 20 | `show_markers` | `bool` | `false` | `--markers` |
-| 21 | `include_dirs` | `[16][]const u8` | `undefined` | `-I` |
-| 22 | `include_count` | `u32` | `0` | (implicit from -I count) |
+| 3 | `output_dir_set` | `bool` | `false` | set when `--output-dir`/`-o` seen |
+| 4 | `dump_types` | `bool` | `false` | `--dump-types`, `-y` (declared; never matched — see §9 Known Issues) |
+| 5 | `dump_lir` | `bool` | `false` | `--dump-lir`, `-l` (declared; never matched) |
+| 6 | `dump_c89` | `bool` | `false` | `--dump-c89` |
+| 7 | `max_mem` | `u32` | `DEFAULT_MAX_MEM_KB` (64 MiB) | `--max-mem`, `-m`, `-mm<N>` |
+| 8 | `spill_level` | `u32` | `0` | `-s<N>` (0 = all spills on disk) |
+| 9 | `max_errors` | `u32` | `256` | `--max-errors`, `-e` |
+| 10 | `color` | `ColorMode` | `.auto` | `--color` |
+| 11 | `error_format` | `ErrorFormat` | `.human` | `--error-format` |
+| 12 | `warnings_as_errors` | `bool` | `false` | `--warnings-as-errors`, `-W`, `--warn-error` |
+| 13 | `quiet` | `bool` | `false` | `--quiet`, `-q` |
+| 14 | `test_mode` | `bool` | `false` | `--test` |
+| 15 | `sanity_test_mode` | `bool` | `false` | `--sanity-test` |
+| 16 | `track_memory` | `bool` | `false` | `--track-memory` |
+| 17 | `no_null_check` | `bool` | `false` | `--no-null-check` |
+| 18 | `no_lifetime_check` | `bool` | `false` | `--no-lifetime-check` |
+| 19 | `no_leak_check` | `bool` | `false` | `--no-leak-check` |
+| 20 | `safe_checks` | `bool` | `true` | `-fsafe` (default) / `-ffast` (disables) |
+| 21 | `warn_all` | `bool` | `false` | `--warn-all` |
+| 22 | `warn_error` | `bool` | `false` | `--warn-error` |
+| 23 | `show_markers` | `bool` | `false` | `--markers` |
+| 24 | `include_dirs` | `[16][]const u8` | `undefined` | `-I`, `--lib-dir` |
+| 25 | `include_count` | `u32` | `0` | (implicit from `-I`/`--lib-dir` count) |
+| 26 | `target_is_windows` | `bool` | `false` | `-osw`, `--target windows`; `-osl`/`--target linux` sets false |
 
-**main_dump.zig variant:** `main_dump.zig:35-52` (15 fields) — replaces `dump_types`/`dump_lir`/`dump_c89` with `dump_tokens`/`dump_ast`, adds `print_usage`, omits analyzer toggle flags (`no_null_check`, `no_lifetime_check`, `no_leak_check`, `warn_all`, `warn_error`, `show_markers`), uses fixed 16MB `max_mem` default.
+`-fsafe`/`-ffast` toggle `safe_checks`, which flows into the C89 emitter and the LIR lowerer as the c89-ahead runtime-check switch (see 07/08). `target_is_windows` is the single target-platform flip point consumed by `phase_ComptimeEvaluation` (`@isWindows`); `config.zig`'s `host_is_windows` is unwired (see 04).
+
+**main_dump.zig variant:** (16 fields) — replaces `dump_types`/`dump_lir`/`dump_c89` with `dump_tokens`/`dump_ast`, adds `print_usage`, omits `output_dir_set`, `spill_level`, analyzer/safe-check toggle flags (`no_null_check`, `no_lifetime_check`, `no_leak_check`, `safe_checks`, `warn_all`, `warn_error`, `show_markers`), and `target_is_windows`; uses a fixed 16 MiB `max_mem` default.
 
 ---
 
 ## 3. `CompilerContext` — Global Compiler State
 
-**File:** `main.zig:87-110` (21 fields)
+**File:** `main.zig` (34 fields)
 
 | # | Field | Type | Arena | Subsystem |
 |---|-------|------|-------|-----------|
@@ -61,44 +71,62 @@ Both define `CompilerCli`, `CompilerContext`, `matchFlag`, `cstrToSlice`, `parse
 | 5 | `source_man` | `*SourceManager` | permanent | Source file text storage |
 | 6 | `name_mangler` | `*NameMangler` | (stack) | C89 name mangling |
 | 7 | `module_reg` | `*ModuleRegistry` | permanent | Module graph + imports |
-| 8 | `typereg` | `*TypeRegistry` | type_db (128KB sand) | Type system registry |
+| 8 | `typereg` | `*TypeRegistry` | type_db (growable sand) | Type system registry |
 | 9 | `store` | `*AstStore` | module | AST node store |
 | 10 | `symbol_reg` | `*SymbolRegistry` | permanent | Symbol table per module |
 | 11 | `resolved_types` | `*ResolvedTypeTable` | module | Type expr → TypeId mapping |
 | 12 | `coercion_table` | `*CoercionTable` | module | Coercion rule storage |
-| 13 | `dep_graph` | `*symbol_registrator.DepGraph` | module (UNUSED) | Symbol dependency graph — **dead field**: initialized at `main.zig:163` but never populated/consumed by the pipeline (see §5 DepGraph Lifecycle). Live graphs are scratch-local per phase. |
-| 14 | `lir_fns` | `LirFunctionArrayList` | module | Compiled LIR functions |
-| 15 | `enum_value_table` | `hash_mod.U32ToU32Map` | module | Enum field → value mapping |
-| 16 | `call_arg_types` | `hash_mod.U32ToU32Map` | module | Per-call argument types |
-| 17 | `call_param_map` | `hash_mod.U32ToU32Map` | module | Per-call parameter mapping |
-| 18 | `comptime_values` | `hash_mod.U32ToU64Map` | module | Comptime-evaluated values |
-| 19 | `pointer_only_ids` | `[*]u32` | permanent | Types emitted as pointers only |
-| 20 | `pointer_only_len` | `u32` | (value) | Length of pointer-only list |
+| 13 | `dep_graph` | `*symbol_registrator.DepGraph` | module (UNUSED) | Symbol dependency graph — **dead field**: initialized in `main` but never populated/consumed by the pipeline (see §5 DepGraph Lifecycle). Live graphs are scratch-local per phase. |
+| 14 | `lir_slots` | `LirSlotArrayList` | emission | Ordered slot index into the LIR stream |
+| 15 | `lir_stream` | `lir_stream.LirStream` | emission | Offset-addressed spill stream of lowered LIR |
+| 16 | `enum_value_table` | `hash_mod.U32ToU32Map` | module | Enum field → value mapping |
+| 17 | `error_code_registry` | `hash_mod.U32ToU32Map` | emission | Dense error-code assignment |
+| 18 | `call_arg_types` | `hash_mod.U32ToU32Map` | module | Per-call argument types |
+| 19 | `call_param_map` | `hash_mod.U32ToU32Map` | module | Per-call parameter mapping |
+| 20 | `comptime_values` | `hash_mod.U32ToU64Map` | module | Comptime-evaluated values |
+| 21 | `pointer_only_ids` | `[*]u32` | permanent | Types emitted as pointers only |
+| 22 | `pointer_only_len` | `u32` | (value) | Length of pointer-only list |
+| 23 | `global_decls` | `lir_mod.GlobalDeclArrayList` | emission | Module-global declarations for emission |
+| 24 | `exported` | `hash_mod.U64ToU32Map` | emission | Exported fn/global set (`module<<35 | kind<<32 | name_id`) |
+| 25 | `suspending_fns` | `hash_mod.U64ToU32Map` | module | Async: functions that can suspend |
+| 26 | `frame_sizes` | `hash_mod.U64ToU32Map` | module | Async: frame sizes |
+| 27 | `state_widths` | `hash_mod.U64ToU32Map` | module | Async: state field widths |
+| 28 | `awaited_fns` | `hash_mod.U64ToU32Map` | module | Async: awaited callee map |
+| 29 | `async_hidden_fns` | `hash_mod.U64ToU32Map` | module | Async: hidden transformed fns |
+| 30 | `driver_targets` | `hash_mod.U64ToU32Map` | module | Async: root-driver targets |
+| 31 | `parent_result_type_list` | `ga_mod.U32ArrayList` | module | Async: parent result types |
+| 32 | `parent_result_start` | `hash_mod.U64ToU32Map` | module | Async: parent result start offsets |
+| 33 | `parent_result_count` | `hash_mod.U64ToU32Map` | module | Async: parent result counts |
+| 34 | `async_layouts` | `hash_mod.U64ToU32Map` | module | Async: published frame layouts |
 
-**Initialization order** (`main.zig:138-167`):
-1. `initCompilerAlloc()` — 3-tier arena
-2. `stringInternerInit` — string interning
-3. `sourceManagerInit` — source text manager
-4. `diagnosticCollectorInit` — diagnostic collector
-5. `initKeywordTable` — lexer keyword lookup
-6. `nameManglerInit` — C89 name mangler
-7. `moduleRegistryInit` + `moduleRegistrySetSourceMan` — import system
-8. `sandInit` (128KB type_db) + `typeRegistryInit` + `typeRegistryRegisterPrimitives` — type system
-9. `astStoreInit` — AST node store
-10. `symbolRegistryInit` — symbol registry
-11. `resolvedTypeTableInit` — resolved type table
-12. `coercionTableInit` — coercion table
-13. `lirFunctionArrayListInit` — LIR function list
-14. `depGraphInit` — dependency graph
-15. Hash maps: `enum_value_table`, `call_arg_types`, `call_param_map`, `comptime_values`
+**Initialization order** (inside `main`):
+1. `initCompilerAlloc()` — 3-tier arena; set `max_mem = cli.max_mem`; `spillSetLevel(cli.spill_level)`
+2. `pal.readFile` — root source into scratch
+3. `stringInternerInit` — string interning (capacity derived from source length)
+4. `sourceManagerInit` — source text manager
+5. `diagnosticCollectorInit` — diagnostic collector; set `max_diagnostics = cli.max_errors`
+6. `initKeywordTable` — lexer keyword lookup
+7. `nameManglerInit` — C89 name mangler
+8. `moduleRegistryInit` + `moduleRegistrySetSourceMan` — import system
+9. `growableSandInit` (type_db) + `typeRegistryInit` + `typeRegistryRegisterPrimitives` — type system
+10. `astStoreInit` + `astStoreSetSpillPath` / `astStoreSetValuePoolSpillPath` — AST store and its 5 spill temp paths (AST, side pools 0/1, extra ec/er); dir = `--output-dir` or `.`
+11. `symbolRegistryInit` — symbol registry
+12. `resolvedTypeTableInit` + `resolvedTypeTableSetSpillPath` — resolved type table
+13. `coercionTableInit` — coercion table
+14. `lirSlotArrayListInit` (emission) + `lirStreamInit` — LIR storage
+15. `depGraphInit` — dependency graph (module arena; unwired)
+16. Hash maps: `enum_value_table`, `error_code_registry`, `call_arg_types`, `call_param_map`, `comptime_values`, `exported`
+17. Async maps: `suspending_fns`, `frame_sizes`, `state_widths`, `awaited_fns`, `async_hidden_fns`, `driver_targets`, `parent_result_start`, `parent_result_count`, `async_layouts` + `parent_result_type_list`
+18. `globalDeclArrayListInit` (emission) — module globals
+19. Construct `CompilerContext`; call `runCompiler(&ctx)`
 
-**main_dump.zig variant:** Only has `cli`, `alloc`, `interner`, `diag`, `source_man`, `name_mangler` (6 fields, `main_dump.zig:54-61`).
+**main_dump.zig variant:** Only has `cli`, `alloc`, `interner`, `diag`, `source_man`, `name_mangler` (6 fields).
 
 ---
 
 ## 4. `main` — Entry Point
 
-**File:** `main.zig:112-193`
+**File:** `main.zig`
 
 ### Flow
 
@@ -116,48 +144,56 @@ main(argc, argv)
   │   └─ return
   │
   ├─ [TEST MODE] cli.test_mode
-  │   ├─ print "use test_main.zig for test mode"
+  │   ├─ print "error: use test_main.zig for test mode\n"
   │   └─ pal.exit(1)
   │
   ├─ [NO INPUT] cli.input_file.len == 0
   │   ├─ printUsage()
   │   └─ return
   │
-  ├─ [ROOT FILE CHECK] pal.readFile(cli.input_file, &compiler_alloc.permanent) orelse {…}   ← F-S10
+  ├─ [OUTPUT DIR CHECK] cli.output_dir_set and !pal.dirExists(cli.output_dir)
+  │   ├─ "error: output directory does not exist: <dir>\n" → stderr
+  │   └─ pal.exit(1)
+  │
+  ├─ [ROOT FILE CHECK] pal.readFile(cli.input_file, &compiler_alloc.scratch) orelse {…}
   │   ├─ "error: could not read input file\n" → stderr
   │   └─ pal.exit(1)
   │
   ├─ [NORMAL COMPILATION]
-  │   ├─ initCompilerAlloc() + set max_mem
-  │   ├─ Initialize all 8 subsystems (interner → comptime_values)
+  │   ├─ initCompilerAlloc() + set max_mem + spillSetLevel
+  │   ├─ Initialize all subsystems (interner → async maps / global_decls)
   │   ├─ Construct CompilerContext
   │   └─ runCompiler(&ctx)
   │
 ```
 
-### Early Exits — [updated: 2026-08-01]
+### Early Exits
 
 | Condition | Action |
 |-----------|--------|
 | `cli.sanity_test_mode` | Lexer sanity check, return immediately |
 | `cli.test_mode` | Print error, `pal.exit(1)` — test_main.zig is the test entry |
 | `cli.input_file.len == 0` | `printUsage()`, return |
-| **input file missing or empty (F-S10)** | `pal.readFile` returns null → `error: could not read input file\n` on stderr, `pal.exit(1)` (`main.zig:140-145`) — one message covers both missing and empty, matching the `main_dump.zig:73-79` pattern. Previously this was silent (exit 0 + 243-byte boilerplate C on stdout or junk `.c/.h` files on `--output-dir`) |
+| `cli.output_dir_set` and dir missing | `pal.dirExists` false → `error: output directory does not exist: <dir>\n` on stderr, `pal.exit(1)` |
+| **input file missing or empty** | `pal.readFile` returns null → `error: could not read input file\n` on stderr, `pal.exit(1)` — one message covers both missing and empty, matching the `main_dump.zig` pattern. Previously this was silent (exit 0 + boilerplate C on stdout or junk `.c/.h` files on `--output-dir`) |
 
 ### Output Directory Isolation
 
-[updated: 2026-08-01] `cli.output_dir` is now **live**: when `--dump-c89 --output-dir DIR` is
-set, `phase_C89Emission` writes per-module `.c`/`.h` files plus `zig_special_types.h` into `DIR`
-(via the `BufferedWriter` fd sink + `pal.fileOpen`/`fileWrite`/`fileClose`). The output directory
-is still **not created or checked in main()** — callers must `mkdir -p DIR` first (the
-QUICK_REF/NOTES.md recipes do). Bare `--dump-c89` (no `--output-dir`, default `"."` unchanged)
+`cli.output_dir` is **live**: when `--dump-c89 --output-dir DIR` (or `-o DIR`, which implies
+emission) is set, `phase_C89Emission` writes per-module `.c`/`.h` files plus `zig_special_types.h`,
+the self-contained support files (`emitSupportFiles`), and the companion build scripts
+(`emitBuildScripts`) into `DIR` (via the `BufferedWriter` fd sink + `pal.fileOpen`/`fileWrite`/
+`fileClose`; see 08 §1.17/§6). `main` now **checks** that the directory exists (`pal.dirExists`)
+before compiling and exits 1 if it does not, but it does **not create** it — callers must
+`mkdir -p DIR` first. When `--output-dir` is set, the AST/resolved-type/hash/LIR spill temp files
+(`.zig1_*.tmp`) are also rooted in `DIR` rather than `.`. Bare `--dump-c89` (no `--output-dir`)
 keeps the stdout single-file path byte-identical — stdout-path preservation is a hard gate.
 
 ---
 
 ## 5. `runCompiler` — Phase Orchestration
 
-**File:** `main.zig:194-258`
+**File:** `main.zig`
 
 ### Phase Sequence (ordered)
 
@@ -166,228 +202,176 @@ runCompiler(ctx)
   │
   ├── 1. phase_ImportResolution(ctx)
   │     marker: I, Z
+  │     marker: 2
   │     alloc_mod.checkCombinedPeak(ctx.alloc)
-  │     marker: 2, 3, 3a, 4
+  │     marker: 3, 3a, 4
   │
   ├── 2. phase_SymbolRegistration(ctx)
   │     marker: S, S0
   │     alloc_mod.checkCombinedPeak(ctx.alloc)
+  │     async_analysis.suspensionAnalysisRun(...)   ← not a phase_*; populates suspending_fns
   │
   ├── 3. phase_TypeResolution(ctx)
   │     marker: T, T0
-  │     alloc_mod.checkCombinedPeak(ctx.alloc)
   │     marker: t1
-  │     [ERROR CHECK] → pal.exit(2) if errors    ← main.zig:207 (F-S10)
   │     alloc_mod.checkCombinedPeak(ctx.alloc)
   │     marker: t2
+  │     [ERROR CHECK] → pal.exit(2) if errors
+  │     alloc_mod.checkCombinedPeak(ctx.alloc)
   │
-  ├── 4. phase_ComptimeEvaluation(ctx)
+  ├── 4. phase_FrontResolution(ctx)
+  │     (no marker) frontResolveModuleInits
+  │
+  ├── 5. phase_ComptimeEvaluation(ctx)
   │     marker: CE
   │
-  ├── 5. phase_SemanticAnalysis(ctx)
-  │     marker: RS, MZ, AD, DSE, DN, SA, sA, P0-P3, V2:, REG:tl, REG:tt
-  │     [ERROR CHECK] → pal.exit(2) if errors    ← main.zig:214
+  ├── 6. phase_SemanticAnalysis(ctx)
+  │     marker: RS, MZ, AD, DSE, DN, SA, sA
+  │     [ERROR CHECK] → pal.exit(2) if errors
   │
-  ├── 6. phase_StaticAnalyzers(ctx)
+  ├── 7. phase_StaticAnalyzers(ctx)
   │     marker: A
   │     alloc_mod.checkCombinedPeak(ctx.alloc)
-  │     [ERROR CHECK] → pal.exit(2) if errors    ← main.zig:220
+  │     [ERROR CHECK] → pal.exit(2) if errors
   │
-  ├── 7. phase_LIRLowering(ctx)
-  │     marker: L, M, R, F, A0
+  ├── 8. phase_AsyncFrameSize(ctx)
+  │     marker: AFS
+  │
+  ├── 9. phase_LIRLowering(ctx)
+  │     marker: L, nodes=, extra=, M, R, F, A0
   │     alloc_mod.checkCombinedPeak(ctx.alloc)
-  │     [ERROR CHECK] → pal.exit(2) if errors    ← main.zig:226
+  │     [ERROR CHECK] → pal.exit(2) if errors
+  │     resolvedTypeTableClose + module sandReset
   │
-  ├── 8. phase_C89Emission(ctx)
+  ├── 10. phase_C89Emission(ctx)
   │     marker: C, FINAL_FLUSH
   │     alloc_mod.checkCombinedPeak(ctx.alloc)
-  │     [WARNING CHECK] → pal.exit(1) if warnings_as_errors or warn_error   ← main.zig:232
+  │     [WARNING CHECK] → pal.exit(1) if warnings_as_errors or warn_error
   │
   ├── [TRACK MEMORY] if cli.track_memory
-  │     print perm_kb / mod_kb / scr_kb / total_kb
+  │     print perm / mod / scr / pool / type_db / total (KB)
   │
   └── diagnosticCollectorPrintAll(ctx.diag)  — final output
 ```
+
+`phase_FrontResolution` and `phase_AsyncFrameSize` are the two phases added after the doc's
+original 8-phase form. `suspensionAnalysisRun` is invoked directly by `runCompiler` between
+phases 2 and 3 (it owns `suspending_fns`; see 12).
 
 ### Memory Checkpoints
 
 | Location | Call | Purpose |
 |----------|------|---------|
 | After phase 1 | `checkCombinedPeak(ctx.alloc)` | Peak memory after import resolution |
-| After phase 1 | `checkCombinedPeak(ctx.alloc)` | (second call, same point — see code line 187) |
 | After phase 2 | `checkCombinedPeak(ctx.alloc)` | Peak after symbol registration |
-| After phase 3 | `checkCombinedPeak(ctx.alloc)` | Peak after type resolution |
-| After phase 3 | `checkCombinedPeak(ctx.alloc)` | (second call, between t1 and t2 markers) |
-| After phase 6 | `checkCombinedPeak(ctx.alloc)` | Peak after static analyzers |
-| After phase 7 | `checkCombinedPeak(ctx.alloc)` | Peak after LIR lowering |
-| After phase 8 | `checkCombinedPeak(ctx.alloc)` | Peak after C89 emission |
+| After phase 3 | `checkCombinedPeak(ctx.alloc)` | Peak after type resolution, before the `t2` marker |
+| After phase 3 (post error check) | `checkCombinedPeak(ctx.alloc)` | Second call, after the first `hasErrors` gate |
+| After phase 7 | `checkCombinedPeak(ctx.alloc)` | Peak after static analyzers |
+| After phase 9 | `checkCombinedPeak(ctx.alloc)` | Peak after LIR lowering |
+| After phase 10 | `checkCombinedPeak(ctx.alloc)` | Peak after C89 emission |
 
-### Diagnostic Exits — [updated: 2026-08-01]
+### Diagnostic Exits
 
 | Location | Condition | Exit Code |
 |----------|-----------|-----------|
-| After phase 3 | `diagnosticCollectorHasErrors` | 2 |
-| After phase 5 | `diagnosticCollectorHasErrors` | 2 |
-| After phase 6 | `diagnosticCollectorHasErrors` | 2 |
-| After phase 7 | `diagnosticCollectorHasErrors` | 2 |
-| After phase 8 | `warnings_as_errors or warn_error` + warning count > 0 | 1 |
-| **main() root check (F-S10)** | `pal.readFile` null (input missing/empty) | **1** (`main.zig:140-145`) |
+| After phase 3 (TypeResolution) | `diagnosticCollectorHasErrors` | 2 |
+| After phase 6 (SemanticAnalysis) | `diagnosticCollectorHasErrors` | 2 |
+| After phase 7 (StaticAnalyzers) | `diagnosticCollectorHasErrors` | 2 |
+| After phase 9 (LIRLowering) | `diagnosticCollectorHasErrors` | 2 |
+| After phase 10 (C89Emission) | `warnings_as_errors or warn_error` + warning count > 0 | 1 |
+| `main()` output-dir check | `pal.dirExists` false (dir missing) | 1 |
+| `main()` root check | `pal.readFile` null (input missing/empty) | 1 |
 
-**F-S10 note (exit asymmetry):** dependency file failures surface as `error[3048]` diagnostics in
-phase 1 (`import_resolver.zig:96-105` empty dep; `module_registry.zig:263-270` missing dep) and are
-caught by the **first** `hasErrors` gate at `main.zig:207` → `pal.exit(2)` — the same path as all
-other diagnostics. The root input file uses a separate pre-phase check with exit **1** (the I/O/usage
-class, matching `main_dump.zig:78`). The 1-vs-2 split is deliberate. Both `pal.exit` calls use the
+**Exit asymmetry:** dependency file failures surface as `error[3048]` diagnostics in phase 1
+(`import_resolver.zig` empty dep; `module_registry.zig` missing dep) and are caught by the
+**first** `hasErrors` gate after phase 3 → `pal.exit(2)` — the same path as all other
+diagnostics. The root input file uses a separate pre-phase check with exit **1** (the I/O/usage
+class, matching `main_dump.zig`). The 1-vs-2 split is deliberate; both calls use the
 `pal.exit(code)` convention.
 
-### Empirical Arena Peaks — `--track-memory` (P10 evidence) `[markers]` + `[fprintf]` — [updated: 2026-08-01]
+### `--track-memory` output
 
-Final `--track-memory` line (`main.zig:236-255`) on the release zig1, all 4 examples
-(`--markers --track-memory --dump-c89`, exit 0, zero diagnostics):
-
-| Example | perm | mod | scr | total | AST nodes (`L\nnodes=` `main.zig:515`) |
-|---------|------|-----|-----|-------|----------------------------------------|
-| `mud_server` | 72K | 103K | 184K | 359K | 944 |
-| `game_of_life` | 65K | 92K | 186K | 343K | 807 |
-| `lisp_interpreter_curr` | 118K | 412K | 844K | 1374K | 3854 |
-| `json_parser` | 52K | 197K | 376K | 625K | 1568 |
-
-All well under the 4 MB static arena total (`allocator.zig:74-76`) and 8 MB `DEV_MAX_MEM`
-(`allocator.zig:78`).
-
-**Per-phase peaks** `[fprintf]` (debug build `/tmp/z1`, values in KB; perm/mod/scr = `peak` of
-each tier read at the phase boundary — matches release `--track-memory` byte-for-byte):
-
-| Phase boundary | mud perm/mod/scr | gol perm/mod/scr | lisp perm/mod/scr | json perm/mod/scr |
-|----------------|------------------|------------------|-------------------|-------------------|
-| after import | 26/57/103 | 15/58/100 | 75/229/208 | 29/114/101 |
-| after symreg | 28/57/103 | 16/58/100 | 79/229/208 | 32/114/101 |
-| after typeres | 32/61/103 | 19/59/100 | 87/237/208 | 37/120/101 |
-| after comptime | 32/62/103 | 19/61/100 | 87/238/208 | 37/121/101 |
-| after sema | 32/96/103 | 19/90/100 | 87/399/208 | 37/191/101 |
-| after analyzers | 32/96/**0** | 19/90/**0** | 87/399/**0** | 37/191/**0** |
-| after lir | 33/103/155 | 19/92/162 | 87/412/715 | 37/197/319 |
-| after c89 | 72/103/184 | 65/92/186 | 118/412/844 | 52/197/376 |
-
-Observations:
-- **scratch `scr=` drops to 0 after phase 6**: `phase_StaticAnalyzers` calls
-  `sandResetPeak` (`main.zig:483`) right after `sandReset`. The final `track-memory` `scr=`
-  therefore reports the peak of **phases 6-8 only** (max of LIR lowering / C89 emission) — any
-  earlier-phase scratch pressure (phases 1-5 here peak ~100-208K) is masked by the reset.
-- **module `mod=` grows most during phase 5** (sema): mud 62→96K, gol 61→90K, lisp 238→399K,
-  json 121→191K — `ResolvedTypeTable`/`CoercionTable`/`enum_value_table` writes in module arena.
-- **permanent `perm=` grows most during phase 8** (C89 emission): mud 33→72K, gol 19→65K,
-  lisp 87→118K — the emitter interns emitted type/ident names into the permanent arena.
-- The `TypeRegistry` type_db sand is a **separate 128KB stack buffer** (`main.zig:154-155`),
-  not part of the 3-tier arena and not included in `track-memory`.
-
-### DepGraph Lifecycle — Cross-Phase Data Persistence (Q3) `[fprintf]`
-
-The pre-plan audit asked "how does DepGraph survive phase 2→3?". Answer: **it does not, and it
-does not need to — each phase builds its own scratch-local graph, and phase 3 rebuilds it.**
-Evidence from instrumenting the generated C89 (`/tmp/z1`, `main.c` phase functions):
+When `cli.track_memory` is set, `runCompiler` prints one line via `pal.measureMarkerWrite` (always
+live, unlike `pal.markerWrite`) after phase 10:
 
 ```
-mud:  DG:S2:init  local dg=0xff9d5b8c scratch.pos=0  ctx->dep_graph=0xff9d6194 module-dg.len=0
-      DG:S2:end   local dg len=15 scratch.pos=192  module-dg.len=0
-      DG:T3:entry PRE-reset scratch.pos=192        ← phase-2 edges still physically present
-      DG:T3:post-reset scratch.pos=0               ← sandReset (main.zig:301) wipes them
-      DG:T3:after reg local dg len=15              ← phase 3 rebuilt the SAME 15 edges
+track-memory: perm=<n>K mod=<n>K scr=<n>K pool=<n>K type_db=<n>K total=<n>K
 ```
 
-Edge counts (identical between phase 2 and phase 3, proving full rebuild): mud 15, gol 4,
-lisp 19, json 11.
+`total` is `perm + mod + scr` (the three arena tiers; `pool`/`type_db` are reported separately and
+not summed). `type_db` is the growable sand backing the `TypeRegistry`. Values are peaks, not
+current usage. (Earlier docs recorded per-example numbers against pre-upgrade examples; those
+dated traces are removed — run `--markers --track-memory --dump-c89` against a current example to
+regenerate.)
 
-- `phase_SymbolRegistration` creates a **local** `dep_graph` in scratch (`main.zig:272`) and
-  passes it only to `registerModuleSymbols`; the graph is **never consumed inside phase 2**
-  (no `typeResolverBuild`). It is write-only work.
-- `phase_TypeResolution` resets scratch (`main.zig:301`), wiping the phase-2 edges, then
-  creates its **own** local `dep_graph` in scratch (`main.zig:302`), re-runs the identical
-  `registerModuleSymbols` loop (`main.zig:306`), and consumes it via `typeResolverBuild`
-  (`main.zig:311`), which copies the edges into the TypeResolver's own `depend_items` arrays.
-- `ctx.dep_graph` (the module-arena field initialized at `main.zig:163`) is **never populated
-  by the pipeline** — `module-dg.len` stays 0 for all 4 examples. It is a dead field.
-  → Correct the CompilerContext table (row 13): the live DepGraph is scratch-local and per-phase;
-  the module-arena `ctx.dep_graph` is unused.
-- **Implication for phase isolation:** no cross-phase heap handoff is relied upon for DepGraph;
-  the 00 doc "Module arena contains DepGraph" claim (00_shared_infra.md "Who Allocates Where")
-  describes the dead `ctx.dep_graph` field, not the live pipeline.
+### DepGraph Lifecycle
 
-### Phase Timing — marker deltas (Q4) `[fprintf]`
+The live `DepGraph` is **scratch-local and rebuilt per phase**; there is no phase 2→3 handoff.
 
-Markers carry no timestamps, so per-phase wall-clock was measured by instrumenting the
-generated C89 with `gettimeofday` at each phase boundary in `runCompiler` (`/tmp/z1/main.c`).
-Values are wall-clock ms on this Linux host, 32-bit `-O0` debug build — treat as **relative**
-proportions, not absolute perf.
+- `phase_SymbolRegistration` creates a **local** `dep_graph` in scratch and passes it only to
+  `registerModuleSymbols`; the graph is never consumed inside phase 2 (no `typeResolverBuild`).
+- `phase_TypeResolution` resets scratch (wiping the phase-2 edges), creates its **own** local
+  `dep_graph`, re-runs the identical `registerModuleSymbols` loop, and consumes it via
+  `typeResolverBuild`, which copies the edges into the TypeResolver's own `depend_items` arrays.
+- `ctx.dep_graph` (the module-arena field in `CompilerContext`) is **never populated by the
+  pipeline** — it is a dead field, left in place for the `TYPE_SYSTEM_p2.md §2.4` design.
+- **Implication for phase isolation:** no cross-phase heap handoff is relied upon for DepGraph.
 
-**lisp_interpreter_curr** (largest example):
+### `--dump-c89` vs no-dump — phase skipping
 
-| Phase | ms | % |
-|-------|----|---|
-| import | 48.8 | 9.2% |
-| symreg | 1.0 | 0.2% |
-| typeres | 10.1 | 1.9% |
-| comptime | 0.5 | 0.1% |
-| sema | 125.8 | 23.7% |
-| analyzers | 0.01 | ~0% |
-| lir | 118.3 | 22.3% |
-| c89 | 226.4 | 42.7% |
-
-C89 emission dominates (~43%), then sema (~24%), then LIR lowering (~22%). Import is ~9%.
-Smaller examples share the shape: mud 12.3/0.4/3.3/0.6/30.7/0.01/27.3/41.0 ms;
-gol 9.7/0.2/1.5/1.0/19.7/0.01/24.0/44.4 ms; json 20.0/0.4/4.2/0.2/51.4/0.01/52.1/91.9 ms.
-Phases 2, 4, 6 are negligible on all 4 examples.
-
-### `--dump-c89` vs no-dump — phase skipping (Q5) `[markers]` + source — [updated: 2026-08-01]
-
-**No pipeline phase is skipped when `--dump-c89` is absent.** Only `phase_C89Emission`
-early-returns (`main.zig:612` `if (!ctx.cli.dump_c89) return;`). Evidence: a no-dump run
-emits the same `I Z S T CE RS A L C` marker set and LIR lowering still builds `lir_fns`, but
-no `FINAL_FLUSH` marker (`main.zig:730`) and 0 bytes to stdout. `--dump-types` and `--dump-lir`
-are declared (`main.zig:734-735`) but never matched in `parseArgs` and **no phase consults them** —
-they have no effect on the current pipeline. The LIR lowering + scratch work for an un-emitted build is wasted.
+**No pipeline phase is skipped when C89 emission is disabled.** Only `phase_C89Emission`
+early-returns (`if (!ctx.cli.dump_c89 and !ctx.cli.output_dir_set) return;`). A no-dump run still
+emits the phase marker set (`I Z S T CE RS A AFS L C`) and LIR lowering still builds the LIR stream,
+but no `FINAL_FLUSH` marker and 0 bytes to stdout. `--dump-types` and `--dump-lir` are declared in
+`CompilerCli` but never matched in `parseArgs`, and **no phase consults them** — they have no
+effect on the current pipeline. The LIR lowering + scratch work for an un-emitted build is wasted.
 
 ---
 
 ## 6. Phase Function Details
 
-### `phase_ImportResolution` — `main.zig:259-268`
+### `phase_ImportResolution` — `main.zig`
 
 **Calls:**
-- `interner_mod.stringInternerIntern` — intern input file path
+- `alloc_mod.sandReset` — reset scratch at entry
+- `mr_mod.moduleResolverAddSearchDir` — add each `-I`/`--lib-dir` dir, plus the default lib path from `pal.getDefaultLibPath` when it exists
+- `path_mod.normalizePath` — normalize the input path (when it fits 512 bytes)
+- `interner_mod.stringInternerIntern` — intern the root module path
 - `mr_mod.moduleRegistryAddModule` — register root module
 - `mr_mod.importQueueEnqueue` — enqueue root for import resolution
 - `import_resolver.moduleRegistryResolveImports` — drain import queue, parse all modules
+- `mr_mod.moduleRegistrySpillHashMaps` — set the registry hash-spill temp path (rooted in `--output-dir` or `.`)
 
 **Markers:** `I` (start), `Z` (done)
 
 **Arena:** Sand reset (scratch) at entry. Import queue and parsing temporaries use scratch.
 
-[updated: 2026-08-01] **F-S10 dependency diagnostics fire in this phase:** an empty dep fails
-`pal.readFile` at `import_resolver.zig:96-105` → `error[3048]: could not read imported file '<path>'`
-+ `ModuleState.failed`; a missing dep (never resolves in the 3-tier search) errors at the
-`moduleRegistryResolveImport` null choke point `module_registry.zig:263-270` →
-`error[3048]: could not resolve imported file '<path>'`. Both are caught by the first `hasErrors`
-gate at `main.zig:207` → exit 2.
+**Dependency diagnostics fire in this phase:** an empty dep fails `pal.readFile` in
+`import_resolver.zig` → `error[3048]: could not read imported file '<path>'` + `ModuleState.failed`;
+a missing dep (never resolves in the 3-tier search) errors at the `moduleRegistryResolveImport`
+null choke point in `module_registry.zig` → `error[3048]: could not resolve imported file
+'<path>'`. Both are caught by the first `hasErrors` gate (after phase 3) → exit 2.
 
-### `phase_SymbolRegistration` — `main.zig:269-298`
+### `phase_SymbolRegistration` — `main.zig`
 
 **Calls:**
-- `symbol_registrator.depGraphInit` — create dep graph in scratch
-- `symbol_registrator.registerModuleSymbols` — register all symbols per module
+- `symbol_registrator.depGraphInit` — create a **local** dep graph in scratch
+- `symbol_registrator.registerModuleSymbols(..., true)` — register all symbols per module
 - Root module AST walk: enumerate children, write AstKind enum values as markers
 
 **Markers:** `S` (start), `S0` + per-decl kind values
 
-**Arena:** Sand reset (scratch) at entry. DepGraph allocated in scratch.
+**Arena:** Sand reset (scratch) at entry. DepGraph allocated in scratch (not consumed here).
 
-### `phase_TypeResolution` — `main.zig:299-335`
+### `phase_TypeResolution` — `main.zig`
 
 **Calls:**
-- `symbol_registrator.registerModuleSymbols` — re-run symbol registration for type context
+- `resolved_type_table.resolvedTypeTableReserve` — reserve table slots for `store.nodes.len`
+- `symbol_registrator.registerModuleSymbols(..., false)` — re-run symbol registration for type context
 - `const_alias_prepass.constAliasPrepass` — detect const alias dependency cycles
 - `type_resolver.typeResolverResolveNames` — resolve type expression names
 - `type_resolver.typeResolverInit` — create type resolver
+- `type_resolver.typeResolverBuildDependencyGraph` — build real by-value field edges
 - `type_resolver.typeResolverBuild` — build type dependency graph (Kahn)
 - `type_resolver.typeResolverResolve` — resolve all types in topological order
 - `type_resolver.classifyTypeEmissionGroups` — classify pointer-only types
@@ -397,118 +381,130 @@ gate at `main.zig:207` → exit 2.
 
 **Arena:** Sand reset (scratch) at entry. Const alias prepass uses permanent. TypeResolver workspace in scratch.
 
-### `phase_ComptimeEvaluation` — `main.zig:339-366` [updated: 2026-08-06]
+### `phase_FrontResolution` — `main.zig`
+
+Builds a `FrontResCtx` (`store`, `typereg`, `symbol_reg`, `resolved_types`, `module_reg`,
+`interner`, `diag`, `scratch`, `coercion_table`, `enum_value_table`, `error_code_registry`,
+`call_arg_types`, `call_param_map`, `suspending_fns`) and calls
+`front_res.frontResolveModuleInits` to resolve module-level initializer/type-annotation
+expressions into the `ResolvedTypeTable`. The pass logic lives in `front_resolution.zig` and is
+covered by 03_type_resolution.md.
+
+**Markers:** none (no marker is written)
+
+**Arena:** Works in scratch; results recorded in the module-arena `ResolvedTypeTable`.
+
+### `phase_ComptimeEvaluation` — `main.zig`
 
 **Calls:**
 - `ce_mod.comptimeEvalInit` — init comptime evaluator
-- `ce_mod.comptimeEvalEvaluate` — evaluate each `builtin_call` node **and** (F3) each module-scope
-  `const var_decl` whose init is a bare binary/unary arithmetic node
-- `hash_mod.u32ToU64MapPut` — store evaluated values
+- `ce.host_is_windows = ctx.cli.target_is_windows` — set the `@isWindows` flip point
+- `ce_mod.comptimeEvalEvaluate` — evaluate each `builtin_call` node **and** each module-scope
+  `const var_decl` whose init is a bare arithmetic node
+- `hash_mod.u32ToU64MapPut` — store evaluated values in `ctx.comptime_values`
 
-**Expanded visitor (F3, commit `94853c65`, 2026-08-06):** the per-node loop now has two arms:
-1. `builtin_call` nodes (original behavior) — evaluate via `comptimeEvalEvaluate`.
-2. `var_decl` nodes whose `child_1` init kind is one of the 12 arithmetic ops (`add`..`shr`, i.e.
-   AstKind 33-42, plus `negate`=62/`bit_not`=64) AND whose `flags & 1 == 0` (`const`, not `var`) —
-   evaluate the **init expression** and store under `comptime_values[init_node]`. This is what
-   populates the folds that the F4/F5 lowerer guards consume. (F8 extended the evaluator itself
-   with an `ident_expr` const-chain arm so inits referencing other consts also fold.)
+**Two-arm visitor:** the per-node sweep over `ctx.store.nodes` has two arms:
+1. `builtin_call` nodes — evaluate via `comptimeEvalEvaluate`.
+2. `var_decl` nodes whose `child_1` init kind is one of the arithmetic ops (`add`..`shr`, i.e.
+   AstKind 33-42, plus `negate`=62 / `bit_not`=64) AND whose `flags & 1 == 0` (`const`, not `var`) —
+   evaluate the **init expression** and store under `comptime_values[init_node]`. The evaluator
+   itself folds `ident_expr` const chains, so inits referencing other consts also fold. (Foldable
+   builtin set and value semantics: see 04.)
 
 **Markers:** `CE`
 
 **Arena:** No sand reset — operates on existing data. Store results in `ctx.comptime_values` (module arena).
 
-### `phase_SemanticAnalysis` — `main.zig:368-435` [updated: 2026-08-06]
+### `phase_SemanticAnalysis` — `main.zig`
 
 **Calls:**
-- `sa_mod.semanticAnalyzerInit` — init semantic analyzer per module
-- `resolveStmtTypes(ctx, decl.child_0, 0)` — resolve types in fn_decl body
-- `sa_mod.semanticAnalyzerResolveFnBody` — type-check function body
-- `resolveTypeExpr(ctx, decl.child_0)` — resolve var_decl type expression
-- `resolved_type_table.resolvedTypeTableSet` — store resolved types
-- `sa_mod.semanticAnalyzerResolveExpr` — type-check initialization expression
-- `type_mod.nameCachePut` — cache resolved type for ident expressions
+- `alloc_mod.sandReset` — reset scratch at entry and per module
+- Builds a `FrontResCtx` identical to `phase_FrontResolution`
+- Per module (`ast_root == 0` → `MZ` and skip): `sa_mod.semanticAnalyzerInit`, then per top-level decl:
+  - `fn_decl` → `front_res.resolveStmtTypes` (fn body) then `sa_mod.semanticAnalyzerResolveFnBody`
+  - `var_decl` whose init is `struct_decl`/packed `union_decl` → `sa_mod.semanticAnalyzerGateModulePackedDecl`;
+    init `enum_decl` → `sa_mod.semanticAnalyzerGateEnumModuleDecl`
+  - bare `enum_decl` → `sa_mod.semanticAnalyzerGateEnumModuleDecl`
 
-**Module-scope var_decl type threading (F7, 2026-08-06):** the module-scope var_decl loop now
-mirrors the fn-scope behavior (semantic_analyzer.zig:1705-1708) in two ways:
-1. The `resolved_types[var_decl] = init_type` fallback write is gated on `existing == null`, so
-   a known declared type (set from `resolveTypeExpr(decl.child_0)`) is never clobbered by the
-   init's natural type (INT_LIT for bare binops) — this keeps storage globals (main.zig:639
-   reads `resolved_types[var_decl]`) correctly typed (e.g. `u64` not `int`).
-2. After the init resolves, when the init's natural type is INT_LIT (bare literal/binop/unary
-   inits), `resolved_types[decl.child_1] = declared type` is set when the decl is annotated, so
-   the lowerer's comptime_values fold guards (lower.zig) type folded temps at the DECLARED width
-   instead of the binop's INT_LIT→I32 remap. Fixes the F7 `comptime_u64_fold_overflow` repro
-   (u64 const fold >2^32 was masked to 32 bits).
+**Markers:** `RS`, `MZ`, `AD`, `DSE`, `DN`, `SA`, `sA`
 
-**Markers:** `RS`, `MZ`, `AD`, `DSE`, `DN`, `SA`, `sA`, `P0-P3`, `V2:`, `REG:tl`, `REG:tt`
+**Arena:** Sand reset (scratch) at entry and per module. Analyzer workspace in scratch.
 
-**Arena:** Sand reset (scratch) at entry. Analyzer workspace in scratch.
+**Statement type pre-resolution (moved):** `resolveStmtTypes` (with its `P0-P3`/`R0n`/`R1t`/`R2s`/
+`AI`/`FI` markers) and `resolveTypeExpr` now live in `front_resolution.zig` and are covered by
+03_type_resolution.md; `phase_SemanticAnalysis` calls `front_res.resolveStmtTypes` per function
+body before `semanticAnalyzerResolveFnBody`. The module-scope var_decl type threading
+(previously described here) is likewise owned by `front_resolution.zig`/`semantic_analyzer.zig`.
 
-### `resolveStmtTypes` — `main.zig:447-496`
-
-Recursive helper called from `phase_SemanticAnalysis`. Walks statement nodes to pre-resolve type expressions before full semantic analysis.
-
-**Logic:**
-1. Depth limit of 16 (prevents infinite recursion on cyclic AST)
-2. For `var_decl`: resolve type expression via `resolveTypeExpr`, store in `resolved_type_table`
-3. For `array_init`/`struct_init`/`tuple_literal`: resolve child_0 type expression
-4. For `block`: recurse into children
-5. For any node: recurse into child_0 and child_1
-
-**Markers:** `P0-P3` (pointer alignment bits in var_decl child_0), `R0n` (node index), `R1t` (type id), `R2s` (set), `AI` (array init), `FI` (failed init)
-
-### `resolveTypeExpr` — `main.zig:498-502`
-
-Thin wrapper around `type_resolver.resolveTypeExprFull`:
-```zig
-fn resolveTypeExpr(ctx: *CompilerContext, node_idx: u32) type_mod.TypeId {
-    var env = type_resolver.TypeResolveEnv{ .store = ctx.store, .typereg = ctx.typereg, .symbol_reg = ctx.symbol_reg, .interner = ctx.interner };
-    return type_resolver.resolveTypeExprFull(&env, node_idx, 0);
-}
-```
-
-Built on the fly — no allocation. Returns `TYPE_UNDEFINED` if resolution fails.
-
-### `phase_StaticAnalyzers` — `main.zig:480-518`
+### `phase_StaticAnalyzers` — `main.zig`
 
 **Calls:**
-- `az_mod.AnalyzerContext` construction with skip flags from CLI
-- `az_mod.runAllAnalyzers` — run null/lifetime/leak analyzers per module
+- `alloc_mod.sandReset` + `alloc_mod.sandResetPeak` — reset scratch and its peak at entry
+- Skips the whole pass when all three `no_*_check` flags are true
+- Per module: `sym_mod.symbolRegistryGetTable`, build `az_mod.AnalyzerContext` (skip flags from
+  CLI, `warn_all`, `on_stmt_cb = onNullStmt`), `az_mod.runAllAnalyzers`
 
 **Flags honored:** `no_null_check`, `no_lifetime_check`, `no_leak_check`, `warn_all`
 
 **Markers:** `A`
 
-**Arena:** Sand reset + reset peak (scratch) at entry. StateMap, defer queues in scratch.
+**Arena:** Sand reset + reset peak (scratch) at entry; per-module reset. StateMap, defer queues in scratch.
 
-### `phase_LIRLowering` — `main.zig:513-608` — [updated: 2026-08-01]
+### `phase_AsyncFrameSize` — `main.zig`
 
 **Calls:**
-- `lower_mod.lowererInit` — init LIR lowerer per function
-- `lower_mod.lowerFn` — lower function to LIR
-- `lir_mod.lirFunctionArrayListAppend` — store compiled LIR function
-- `mr_mod.moduleRegistryCollectIncludes` — collect C includes per module
+- `async_analysis.asyncFrameSizeRun` — compute async frame sizes/state widths and publish the
+  driver/parent-result maps: `suspending_fns`, `frame_sizes`, `state_widths`, `awaited_fns`,
+  `async_hidden_fns`, `driver_targets`, `parent_result_type_list`, `parent_result_start`,
+  `parent_result_count`
+
+**Markers:** `AFS`
+
+**Arena:** Module arena. Consumed by `phase_LIRLowering`'s async phase A. See 12.
+
+### `phase_LIRLowering` — `main.zig`
+
+**Calls:**
+- `alloc_mod.sandReset`; reset `ctx.lir_slots.len`; set the LIR spill temp path (`--output-dir` or `.`)
+- `lir_stream.lirStreamBeginWrite` — open the offset-addressed LIR stream
+- Build `SemanticContext` (`safe_checks` from CLI, `comptime_values`, async maps)
+- Per module (`M`): `mr_mod.moduleRegistryCollectIncludes`; per top-level decl (`R`, `F`, `A0`):
+  - `fn_decl` → `lower_mod.lowererInit` + `lower_mod.lowerFn`; if
+    `async_analysis.asyncIsSuspending` → `async_frame_layout.asyncLayoutFrame` +
+    `asyncLayoutPublish` and retain the LIR for phase B; else `lir_stream.lirStreamAppend` +
+    `lir_mod.lirSlotArrayListAppend`
+  - exported fn (`flags & 0x08`) → record in `ctx.exported`
+  - global `var_decl` → `lir_mod.globalDeclArrayListAppend` (+ `ctx.exported` when exported)
+- `lower_mod.lowerModuleInit` when a module has a runtime-initialized global
+- Phase B: `async_state_machine.asyncTransform` on each retained suspending function
+- `lir_stream.lirStreamFinishWrite`
 
 **Markers:** `L` (start), `nodes=`, `extra=` (AST node counts), `M` (module index), `R` (root module), `F` (fn_decl), `A0` (decl kinds)
 
-**Arena:** Sand reset (scratch) at entry. Per-function memory (BasicBlocks, insts) in scratch.
+**Arena:** Sand reset (scratch) at entry. Per-function memory (BasicBlocks, insts) in scratch;
+retained async LIR also lives in scratch, so resets are deferred once a suspending function is retained.
 
-### `phase_C89Emission` — `main.zig:610-732`
+### `phase_C89Emission` — `main.zig`
 
-[updated: 2026-08-01] Branches on `--output-dir` (with `--dump-c89`):
-- **Stdout branch (no `--output-dir`)** — the classic single-file path below, kept byte-identical:
+**Early exit:** if `!ctx.cli.dump_c89 and !ctx.cli.output_dir_set` — return immediately after the
+`C` marker (no emission, no files written). `-o`/`--output-dir` therefore implies emission.
+
+Builds the name mangler, `C89Emitter`, `errorCodeRegistryFinalize`, global-decl slice, and the LIR
+read stream; computes the **reachable module set** (value/type reference edges, runtime-init roots,
+by-value globals) so only reachable modules are emitted (module pruning).
+
+- **Stdout branch (no `--output-dir`)** — the classic single-file path, kept byte-identical:
   `emitIncludes` preamble → `cincludeUnionAll` → `emitModule("output", …)` → final flush.
 - **Multi-module branch (`--output-dir DIR`)** — `tstTopologicalSort` once →
-  `emitSharedHeader` (writes `DIR/zig_special_types.h`) → per-module loop over
-  `moduleRegistryGetModules`: derive the output stem from `moduleQualifiedName(&emitter, m.id)`
-  (basename clamped 64 + `_` + 8-hex FNV-1a of the full path — see 08 §1.17; replaces the old
-  basename-only derivation and its duplicated copy in `emitModuleHeaderFile`), guard the length
-  (`main.zig:665`, `od.len + base.len + 3 > 511` → error + exit 1), build the module's fn slice +
-  dep-module-id list from
-  `import_edges_items[M.imports_start .. M.imports_start+M.import_count]`, then
-  `pal.fileOpen(DIR/<qualified>.h)` (fd `usize`, `== pal.INVALID_FD` on failure) →
-  `bufferedWriterInitFd` → `emitModuleHeaderFile` →
-  flush/close, then the same for `.c` via `emitModuleFile`. Per-file `FINAL_FLUSH`.
+  `emitSupportFiles` (self-contained runtime/platform support files) →
+  `emitSharedHeader` (writes `DIR/zig_special_types.h`) → stable-group `lir_slots` by owning module
+  → per reachable module: derive the output stem from `moduleQualifiedName(&emitter, m.id)`
+  (basename clamped 64 + `_` + 8-hex FNV-1a of the full path — see 08 §1.17), guard the length
+  (`od.len + 1 + base.len + 3 > 511` → error + exit 1), build the module's fn slice + dep-module-id
+  list from `import_edges_items[M.imports_start .. M.imports_start+M.import_count]` unioned with
+  value-ref targets, then `pal.fileOpen(DIR/<qualified>.h)` (fd `usize`, `== pal.INVALID_FD` on
+  failure) → `bufferedWriterInitFd` → `emitModuleHeaderFile` → flush/close/`FINAL_FLUSH`, then the
+  same for `.c` via `emitModuleFile`. Finally `emitBuildScripts` (companion build scripts; see 08 §6).
 
 **Calls (stdout branch):**
 - `c89_mod.nameManglerInit` — init name mangler
@@ -519,57 +515,63 @@ Built on the fly — no allocation. Returns `TYPE_UNDEFINED` if resolution fails
 - `c89_mod.emitModule` — emit module to C89
 - `c89_mod.bufferedWriterFlush` — final flush
 
-**Calls (multi-module branch):** `c89_mod.tstTopologicalSort`, `c89_mod.emitSharedHeader`,
-`c89_mod.emitModuleHeaderFile`, `c89_mod.emitModuleFile`, plus
-`pal.fileOpen`/`pal.fileWrite`/`pal.fileClose` via `bufferedWriterInitFd`/`bufferedWriterFlush`.
-
-**Early exit:** If `!ctx.cli.dump_c89` — return immediately (no emission, no files written).
+**Calls (multi-module branch):** `c89_mod.tstTopologicalSort`, `c89_mod.emitSupportFiles`,
+`c89_mod.emitSharedHeader`, `c89_mod.emitModuleHeaderFile`, `c89_mod.emitModuleFile`,
+`c89_mod.emitBuildScripts`, plus `pal.fileOpen`/`pal.fileWrite`/`pal.fileClose` via
+`bufferedWriterInitFd`/`bufferedWriterFlush`.
 
 **Markers:** `C` (start), `FINAL_FLUSH` (per file in multi-module mode; once for stdout).
 
-**Arena:** Sand reset (scratch) at entry. BufferedWriter, NameMangler, C89Emitter in scratch.
+**Arena:** Sand reset (scratch) at entry. BufferedWriter, NameMangler, C89Emitter in scratch/emission.
 
 ---
 
 ## 7. CLI Helper Functions
 
-### `parseArgs` — `main.zig:734-863`
+### `parseArgs` — `main.zig`
 
-Iterates `pal.argCount()` from index 1, dispatches by `matchFlag`:
+Iterates `pal.argCount()` from index 1, dispatching by `matchFlag` (and the prefix matchers
+`matchMMFlag`/`matchSFlag`):
 
 ```
 parseArgs() → CompilerCli
   for i in 1..argc:
     arg = cstrToSlice(pal.argGet(i))
     if arg[0] == '-':
-      match --dump-types/-y | --dump-lir/-l | --dump-c89
-            --max-mem/-m (next arg → parseSize)
+      match --dump-c89
+            --max-mem/-m (next arg → parseSize) | -mm<N> (matchMMFlag → parseMMBytes)
+            -s<N> (matchSFlag → parseSLevel)
             --max-errors/-e (next arg → parseU32)
-            --output-dir/-o (next arg → cstrToSlice)
+            --output-dir/-o (next arg → cstrToSlice; sets output_dir_set)
             --quiet/-q | --test | --sanity-test
-            --warnings-as-errors/-W | --color (next arg → parseColorMode)
-            --error-format (next arg → parseErrorFormat)
+            --warnings-as-errors/-W | --warn-error (also sets warn_error)
+            --color (next arg → parseColorMode) | --error-format (next arg → parseErrorFormat)
             --track-memory | --no-null-check | --no-lifetime-check
-            --no-leak-check | --warn-all | --warn-error | --markers
-            -I (next arg → include_dirs[include_count++], max 16)
+            --no-leak-check | --warn-all | --markers
+            -I/--lib-dir (next arg → include_dirs[include_count++], max 16)
+            -osl (target_is_windows=false) | -osw (target_is_windows=true)
+            --target (next arg → parseTargetIsWindows)
+            -ffast (safe_checks=false) | -fsafe (safe_checks=true)
       else → input_file = cstrToSlice(arg_ptr)
     else → input_file = cstrToSlice(arg_ptr)
 ```
 
-Unrecognized flags are treated as positional input_file (no error).
+Unrecognized flags (including the declared-but-unmatched `--dump-types`/`-y`/`--dump-lir`/`-l`/`-a`)
+are treated as positional `input_file` (no error).
 
-### `matchFlag` — `main.zig:865-873`
+### `matchFlag` — `main.zig`
 
 Exact-length byte-by-byte comparison:
 ```zig
 fn matchFlag(arg: []const u8, flag: []const u8) bool
 ```
 
-Returns `true` if `arg.len == flag.len` and all bytes match.
+Returns `true` if `arg.len == flag.len` and all bytes match. `matchMMFlag` (`-mm` prefix) and
+`matchSFlag` (`-s` prefix) are prefix checks used for the `-mm<N>`/`-s<N>` forms.
 
-**main_dump.zig variant** (`main_dump.zig:226-233`): Same logic, slightly different loop structure.
+**main_dump.zig variant:** Same logic, slightly different loop structure.
 
-### `cstrToSlice` — `main.zig:875-881`
+### `cstrToSlice` — `main.zig`
 
 Convert null-terminated C string pointer to Zig slice:
 ```zig
@@ -578,9 +580,9 @@ fn cstrToSlice(ptr: [*]const u8) []const u8
 
 Walks forward from `ptr` counting non-null bytes, returns `ptr[0..len]`.
 
-**main_dump.zig variant** (`main_dump.zig:291-295`): Identical.
+**main_dump.zig variant:** Identical.
 
-### `parseSize` — `main.zig:883-901`
+### `parseSize` — `main.zig`
 
 Parse human-readable memory size string to `u32` bytes:
 ```zig
@@ -595,9 +597,9 @@ fn parseSize(ptr: [*]const u8) u32
 
 Digits accumulate via `val = val * 10 + digit`. Non-digit/non-suffix characters are silently ignored.
 
-**main_dump.zig variant** (`main_dump.zig:240-255`): Takes `[]const u8` directly (not `[*]const u8`), no `'g'`/`'G'` suffix support.
+**main_dump.zig variant:** Takes `[]const u8` directly (not `[*]const u8`), no `'g'`/`'G'` suffix support.
 
-### `parseU32` — `main.zig:903-915`
+### `parseU32` — `main.zig`
 
 Parse decimal integer string to `u32`:
 ```zig
@@ -606,9 +608,21 @@ fn parseU32(ptr: [*]const u8) u32
 
 Skips non-digit characters. No overflow detection.
 
-**main_dump.zig variant** (`main_dump.zig:257-268`): Takes `[]const u8` directly.
+**main_dump.zig variant:** Takes `[]const u8` directly.
 
-### `parseColorMode` — `main.zig:917-924`
+### `parseMMBytes` — `main.zig`
+
+Parse the decimal MB suffix of `-mm<N>` (already stripped of the `-mm` prefix) to a `u32` KB
+budget. Clamps at the `POOL_SIZE` ceiling; a bare `-mm` or trailing non-digit exits 1. `-mm0` is
+allowed (the `max_mem == 0` relax path in `checkCombinedPeak`).
+
+### `parseSLevel` — `main.zig`
+
+Parse the decimal level of `-s<N>` (already stripped of the `-s` prefix) to a `u32` in
+`0..spill_store_mod.SPILL_COUNT` (0 = all spills on disk, higher = more RAM). Bare `-s`,
+non-digit, or out-of-range exits 1.
+
+### `parseColorMode` — `main.zig`
 
 Parse color mode string to `ColorMode` enum:
 ```zig
@@ -623,9 +637,9 @@ fn parseColorMode(ptr: [*]const u8) ColorMode
 
 Uses `matchFlag` for comparison.
 
-**main_dump.zig variant** (`main_dump.zig:270-279`): Checks first character: `'a'` → `.always`, `'n'` → `.never`, else `.auto`.
+**main_dump.zig variant:** Checks first character: `'a'` → `.always`, `'n'` → `.never`, else `.auto`.
 
-### `parseErrorFormat` — `main.zig:926-933`
+### `parseErrorFormat` — `main.zig`
 
 Parse error format string to `ErrorFormat` enum:
 ```zig
@@ -640,25 +654,37 @@ fn parseErrorFormat(ptr: [*]const u8) ErrorFormat
 
 Uses `matchFlag` for comparison.
 
-**main_dump.zig variant** (`main_dump.zig:281-289`): Checks first character: `'j'` → `.json`, else `.human`.
+**main_dump.zig variant:** Checks first character: `'j'` → `.json`, else `.human`.
 
-### `writeU32` — `main.zig:935-952`
+### `parseTargetIsWindows` — `main.zig`
 
-Write a `usize` value as decimal string via `pal.markerWrite`:
+Parse the `--target` argument: `"windows"` → `true`, `"linux"` → `false`; anything else prints
+`error: --target must be 'linux' or 'windows'` and exits 1.
+
+### `writeU32` — `main.zig`
+
+Write a `usize` value as decimal string via `pal.measureMarkerWrite`:
 ```zig
 fn writeU32(val: usize) void
 ```
 
-Custom itoa (not using format/itoa module) — builds digits right-to-left in a 16-byte stack buffer. Handles `val == 0` as special case (writes `"0"`). Used by `runCompiler` for `--track-memory` peak output.
+Custom itoa (not using the format/itoa module) — builds digits right-to-left in a 16-byte stack
+buffer. Handles `val == 0` as a special case (writes `"0"`). Used by `runCompiler` for
+`--track-memory` peak output.
 
-### `printUsage` — `main.zig:954-957`
+### `printUsage` — `main.zig`
 
-Prints usage banner:
+Prints the usage banner plus the `-mm<N>`, `-s<N>`, `-osl`/`-osw`, and `--target` help lines to
+stderr:
 ```
 zig1 - Z98 self-hosted compiler - usage: zig1 [options] <input.zig>
+  -mm<N>    hard pool budget in MB (default 64; pool.peak over budget -> ICE rc=3)
+  -s<N>     spill level 0..6 (default 0 = all spills on disk; -s1..-s6 deactivate the ...
+  -osl       compile target = linux (default); -osw = windows
+  --target <linux|windows>  long-form target alias for -osl/-osw
 ```
 
-**main_dump.zig variant** (`main_dump.zig:110-113`): More detailed, lists `--test`/`-t`, `--dump-tokens`, `--dump-ast` flags.
+**main_dump.zig variant:** More detailed, lists `--test`/`-t`, `--dump-tokens`, `--dump-ast` flags.
 
 ---
 
@@ -671,27 +697,31 @@ CLI args (argv)
 parseArgs()
     │
     ▼
-CompilerCli (22 fields)
+CompilerCli (26 fields)
     │
     ▼
-main() constructs CompilerContext (20 fields)
+main() constructs CompilerContext (34 fields)
     │
     ▼
 runCompiler(ctx)
     │
-    ├─ phase_ImportResolution    → ModuleRegistry populated
-    ├─ phase_SymbolRegistration  → SymbolRegistry populated
-    ├─ phase_TypeResolution       → TypeRegistry, ResolvedTypeTable
+    ├─ phase_ImportResolution     → ModuleRegistry populated
+    ├─ phase_SymbolRegistration   → SymbolRegistry populated
+    ├─ suspensionAnalysisRun      → suspending_fns
+    ├─ phase_TypeResolution       → TypeRegistry, ResolvedTypeTable, pointer_only_ids
+    ├─ phase_FrontResolution      → module-init/type-annotation resolution
     ├─ phase_ComptimeEvaluation   → comptime_values hash map
     ├─ phase_SemanticAnalysis     → CoercionTable, resolved_types, enum_value_table
     ├─ phase_StaticAnalyzers      → AnalyzerContext (scratch, discarded)
-    ├─ phase_LIRLowering           → LirFunctionArrayList (lir_fns)
-    └─ phase_C89Emission         → C89 output via BufferedWriter
+    ├─ phase_AsyncFrameSize       → frame_sizes / state_widths / async maps
+    ├─ phase_LIRLowering          → lir_stream + lir_slots, global_decls
+    └─ phase_C89Emission          → C89 output via BufferedWriter
                                         │
                     ┌───────────────────┴────────────────────┐
                     ▼                                        ▼
    stdout single-file (bare --dump-c89)      DIR/*.c + DIR/*.h + DIR/zig_special_types.h
-                output.c                     (multi-module, --output-dir DIR)
+                output.c                     + support files + build scripts
+                                             (multi-module, --output-dir/-o DIR)
 ```
 
 ### Field Producers → Consumers
@@ -699,18 +729,22 @@ runCompiler(ctx)
 | Field | Produced By | Consumed By |
 |-------|-------------|-------------|
 | `cli.input_file` | `parseArgs` | `phase_ImportResolution` (path → module) |
-| `cli.output_dir` | `parseArgs` | `phase_C89Emission` (live — multi-module file emission, `[updated: 2026-08-01]`) |
-| `cli.dump_*` flags | `parseArgs` | `phase_LIRLowering`, `phase_C89Emission` |
+| `cli.output_dir` / `output_dir_set` | `parseArgs` | spill-path setup (`main`), `phase_LIRLowering`, `phase_C89Emission` (live — multi-module file emission) |
+| `cli.dump_c89` | `parseArgs` | `phase_C89Emission` |
+| `cli.safe_checks` | `parseArgs` | `phase_LIRLowering` (SemanticContext), `phase_C89Emission` |
+| `cli.target_is_windows` | `parseArgs` | `phase_ComptimeEvaluation` (`@isWindows`), `phase_C89Emission` (build scripts) |
 | `cli.*_check` flags | `parseArgs` | `phase_StaticAnalyzers` |
 | `cli.track_memory` | `parseArgs` | `runCompiler` (final print) |
-| `store` (AstStore) | `phase_ImportResolution` (parser) | All phases 2-8 |
-| `symbol_reg` | `phase_SymbolRegistration` | Phases 3, 5, 6, 7 |
-| `typereg` | Init (primitives) + phase 3 | Phases 2-8 |
-| `resolved_types` | Phases 3, 5 | Phases 5, 7 |
-| `coercion_table` | Init | Phase 5, 7 |
-| `lir_fns` | `phase_LIRLowering` | `phase_C89Emission` |
-| `comptime_values` | `phase_ComptimeEvaluation` | Phase 7 |
+| `store` (AstStore) | `phase_ImportResolution` (parser) | All phases |
+| `symbol_reg` | `phase_SymbolRegistration` | Phases 3-9 |
+| `typereg` | Init (primitives) + phase 3 | Phases 2-10 |
+| `resolved_types` | `phase_FrontResolution`, `phase_TypeResolution` | `phase_LIRLowering`, emission |
+| `coercion_table` | Init | `phase_FrontResolution`, `phase_SemanticAnalysis`, `phase_LIRLowering` |
+| `comptime_values` | `phase_ComptimeEvaluation` | `phase_LIRLowering` |
 | `pointer_only_ids` | `phase_TypeResolution` | `phase_C89Emission` |
+| `lir_stream` / `lir_slots` | `phase_LIRLowering` | `phase_C89Emission` |
+| `global_decls` | `phase_LIRLowering` | `phase_C89Emission` |
+| async maps (`frame_sizes`, `state_widths`, …) | `phase_AsyncFrameSize` | `phase_LIRLowering` (async phase A/B) |
 
 ---
 
@@ -738,8 +772,8 @@ pal.markerWrite(buf[start..19]);  // right-aligned in 19-char field
 To skip a phase, comment out the call in `runCompiler` or add a conditional early return at the top of the phase function:
 
 ```zig
-fn phase_TypeResolution(ctx: *CompilerContext) void {
-    if (ctx.cli.dump_types) return;  // example: skip if not dumping
+fn phase_C89Emission(ctx: *CompilerContext) void {
+    if (!ctx.cli.dump_c89 and !ctx.cli.output_dir_set) return;  // real early exit
     // ... normal body
 }
 ```
@@ -757,44 +791,53 @@ Each phase resets the scratch arena on entry (`alloc_mod.sandReset(&ctx.alloc.sc
 3. **Inspect AST before a phase:** Add a `dump_ast` call at the phase entry
 4. **Force error exit:** Trigger `diagnosticCollectorHasErrors` early to test error path
 
-### Marker Coverage Assessment (Q6) `[markers]` + `[fprintf]` — [updated: 2026-08-01]
+### Marker Coverage
 
-Per-phase marker inventory (`main.zig` line refs):
+Per-phase marker inventory (all written by `main.zig`):
 
 | Phase | Markers | Density |
 |-------|---------|---------|
-| 1 import | `I`, `Z` (`258`, `264`) | thin — entry/exit only, no per-module detail |
-| 2 symreg | `S`, `S0` + per-decl AstKind values (`268`, `282-283`) | dense — one line per root decl |
-| 3 typeres | `T`, `T0` + per-decl AstKind values (`298`, `319-320`) | dense |
-| 4 comptime | `CE` (`335`) | thin — single marker, no per-node detail |
-| 5 sema | `RS MZ AD DSE DN SA sA V2: V49:p/t/k REG:tl/tt P0-P3 R0n R1t R2s AI FI` (`351-419`) | densest |
-| 6 analyzers | `A` (`479`) | thin — single marker, no per-function detail |
-| 7 lir | `L nodes= extra= M R F A0` (`514-592`) | dense |
-| 8 c89 | `C`, `FINAL_FLUSH` (`611`, `695/718/730`) | thin — entry/exit only |
+| 1 import | `I`, `Z` | thin — entry/exit only, no per-module detail |
+| 2 symreg | `S`, `S0` + per-decl AstKind values | dense — one line per root decl |
+| 3 typeres | `T`, `T0` + per-decl AstKind values | dense |
+| 4 front-resolution | (none) | none — pass is silent |
+| 5 comptime | `CE` | thin — single marker, no per-node detail |
+| 6 sema | `RS MZ AD DSE DN SA sA` | densest (per-decl) |
+| 7 analyzers | `A` | thin — single marker, no per-function detail |
+| 8 async frame size | `AFS` | thin |
+| 9 lir | `L nodes= extra= M R F A0` | dense |
+| 10 c89 | `C`, `FINAL_FLUSH` | thin — entry/exit only |
 
-Gaps: phases 1, 4, 6, 8 have entry/exit markers only; internal behavior of comptime eval,
+The `runCompiler` inter-phase markers `2 3 3a 4` and `t1`/`t2` bracket the import/type boundaries.
+Sub-phase markers emitted inside `front_resolution.zig` (`P0-P3 R0n R1t R2s AI FI`, `V2:`,
+`REG:tl/tt`) are documented in 03.
+
+Gaps: phases 1, 4, 5, 7, 8, 10 have entry/exit markers only; internal behavior of comptime eval,
 static analyzers, and C89 emission is invisible to `--markers` alone.
 
-**The 5 pre-plan tech-doc gaps — resolution method classification** (which need markers vs
-GDB/fprintf):
+### Known Issues
 
-| Gap | Resolved by | Marker-resolvable? |
-|-----|-------------|--------------------|
-| 1 comptime scope incomplete | P4 (`[markers]`+`[fprintf]`+`[inference]`) | Partially — the sema/lower boundary needed fprintf/source |
-| 2 cross-phase DepGraph persistence | **P10 this task** (`[fprintf]`) | **No** — no marker exposes arena state or edge counts |
-| 3 symbol resolution priority order | P5 (`[fprintf]` primary, `[markers]` confirm paths) | Partially — markers show which path fired, not the order |
-| 4 coercion table 5→7 handoff | P7 (`[markers]` CEM/CEP per lowerExpr + `[fprintf]`) | **Yes** — CEP/CEM markers distinguish the paths |
-| 5 StateMap fork/merge precision | P6 (`[markers]`+`[fprintf]`+`[gdb]`) | Partially — merge-to-99/branch-drop visible via markers; counters needed fprintf |
-| (new) phase timing | P10 this task (`[fprintf]`) | **No** — markers carry no timestamps |
-
-**Method summary:** 1 gap fully marker-resolvable (4), 3 partially (1, 3, 5), 2 need fprintf
-(2, 6/timing). None required GDB on this task; P5/P6 used GDB for specific values.
+- **`--dump-types`/`-y` and `--dump-lir`/`-l` are declared but dead.** The `dump_types` and
+  `dump_lir` fields exist in `CompilerCli`, but `parseArgs` never matches the flags and no phase
+  consults the fields. The `-y`/`-l`/`-a` string constants are declared but never compared. Passing
+  any of them falls through to the positional `input_file` branch.
+- **`main_dump.zig`'s `--sanity-test` is parsed but not acted on**, and its `-o`/`--output` sets
+  `output_dir`, which `main_dump` never reads.
+- **`main_dump.zig`'s `-e` short flag is shadowed:** the `--error-format` branch tests `-e` before
+  the `--max-errors` branch, so `-e` sets `error_format` rather than `max_errors`.
+- **`main_dump.zig`'s `runCompiler` and `phase_*` bodies are stubs** (the `phase_ASTLowering` stub
+  has no counterpart in `main.zig`).
+- **`config.zig`'s `host_is_windows` is unwired** — nothing imports `config.zig`; the `@isWindows`
+  value comes from `ComptimeEval.host_is_windows`, set by `main.zig` from `cli.target_is_windows`
+  (see 04 §`host_is_windows`).
+- **`ctx.dep_graph` is a dead field** — initialized in `main` but never populated; live DepGraphs
+  are scratch-local (see §5 DepGraph Lifecycle).
 
 ---
 
 ## 10. `main_dump.zig` — Standalone Dump Binary
 
-**File:** `main_dump.zig` (326 lines)
+**File:** `main_dump.zig`
 
 Entry for token/AST dumping without running the full pipeline.
 
@@ -802,31 +845,58 @@ Entry for token/AST dumping without running the full pipeline.
 
 | Aspect | main.zig | main_dump.zig |
 |--------|----------|---------------|
-| CompilerCli fields | 22 | 15 |
-| CompilerContext fields | 20 | 6 |
-| Phase implementations | Full | Empty stubs (`_ = ctx;`) |
-| Dump targets | types, lir, c89 | tokens, ast |
-| `--sanity-test` | Lexer test | Not supported |
+| CompilerCli fields | 26 | 16 |
+| CompilerContext fields | 34 | 6 |
+| Phase implementations | Full 10-phase pipeline | Empty stubs (`_ = ctx;`) |
+| Dump targets | c89 (stdout) / multi-module tree | tokens, ast |
+| `--sanity-test` | Lexer test | Parsed but not acted on |
 | `parseSize` suffix | k, m, g | k, m only |
 | `parseColorMode` | `matchFlag` | First-character check |
 | `parseErrorFormat` | `matchFlag` | First-character check |
-| Default max_mem | `DEV_MAX_MEM` | 16MB |
+| Default max_mem | `DEFAULT_MAX_MEM_KB` (64 MiB) | fixed 16 MiB |
+| `output_dir` use | live (emission + spill paths) | parsed, unused |
 
 ### Entry Flow
 
 ```
 main(argc, argv)
   ├─ parseArgs()
-  ├─ if cli.input_file.len == 0 → printUsage(), return
+  ├─ if cli.input_file.len == 0 → printUsage() (stdout), return
   ├─ if cli.dump_ast:
   │     ├─ initCompilerAlloc, interner, source_man, diag, keyword table
-  │     ├─ pal.readFile → source buffer
+  │     ├─ pal.readFile(cli.input_file, &compiler_alloc.permanent)
   │     ├─ Two-pass lex: count tokens → allocate array → fill
   │     ├─ parserParseModuleRoot → AST
-  │     └─ dump_ast.dumpAst(...)
-  └─ else: error "no mode selected, use --dump-ast"
+  │     └─ dump_ast.dumpAst(store, root, interner)
+  └─ else: error "no mode selected, use --dump-ast" → stderr, exit 1
 ```
+
+`main_dump.zig`'s `parseArgs` starts at index 0 (unlike `main.zig`'s index 1), accepts
+`--dump-tokens`/`--dump-ast`, `--test`/`-t`, `--sanity-test`, `-o`/`--output`, `--color`/`-c`,
+`--error-format`/`-e`, `--warnings-as-errors`/`-w`, `--quiet`/`-q`, `--max-mem`/`-m`,
+`--max-errors`, `--track-memory`, and `--include`/`-I`, and errors on any other `-`-prefixed
+argument.
 
 ### Phase Stubs
 
-All `phase_*` functions are empty stubs (`_ = ctx;`), present for compilation compatibility with shared test infrastructure that expects the function signatures.
+All `phase_*` functions are empty stubs (`_ = ctx;`), present for compilation compatibility with
+shared test infrastructure that expects the function signatures. The set is
+`phase_ImportResolution`, `phase_SymbolRegistration`, `phase_TypeResolution`,
+`phase_SemanticAnalysis`, `phase_ASTLowering` (no live counterpart), and `phase_C89Emission`, plus
+a stub `runCompiler(source, ctx)`.
+
+---
+
+## 11. Tooling Mains
+
+### `main_exp.zig`
+
+A 5-line bootstrap smoke entry: imports `extern_c.zig` and calls
+`ext_c.__bootstrap_print("zig1 bootstrap test\n")` then `ext_c.__bootstrap_print_int(42)`. Used to
+validate the extern-C print surface, not the compiler pipeline.
+
+### `strip_main.zig`
+
+A 9-line link-check entry: imports `pal.zig` and `name_mangler.zig` (`NameMangler`,
+`nameManglerInit`), calls `nameManglerInit()`, and writes `"zig1\n"` to stderr. Used to confirm the
+name-mangler object links standalone; it runs no pipeline phase.
