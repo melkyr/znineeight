@@ -20,8 +20,9 @@
 // start forms.
 //
 // SCOPE. The range capture stays `u32` (the spec's `usize` is a pre-existing,
-// out-of-scope divergence). `for (0..p.len)` on a `[*]T` is now cleanly
-// rejected (correct Zig) rather than silently lowered — the 11O review flagged
+// out-of-scope divergence). `for (0..p.len)` on a `[*]T` is invalid Zig and is
+// rejected, but in range position it yields a gcc-class failure (undeclared
+// operand temp), NOT a clean front-end `error[3000]` — the 11O review flagged
 // this behavior change for the classifier join-diff.
 //
 // EXPECTED after the fix (deterministic one-line stdout, RUNRC=0). Before the

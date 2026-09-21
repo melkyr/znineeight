@@ -17,9 +17,10 @@
 // 11N `.len` machinery then fires for the operands. No lowerer change. Both the
 // end (silent 0) and the start forms are repaired.
 //
-// SCOPE NOTE: `for (0..p.len)` on a `[*]T` is now cleanly rejected (correct
-// Zig) instead of silently lowered. The range capture stays `u32` (the spec's
-// `usize` is a pre-existing, out-of-scope divergence).
+// SCOPE NOTE: `for (0..p.len)` on a `[*]T` is invalid Zig and is rejected, but
+// in range position it yields a gcc-class failure (undeclared operand temp),
+// NOT a clean front-end `error[3000]`. The range capture stays `u32` (the
+// spec's `usize` is a pre-existing, out-of-scope divergence).
 //
 // EXPECTED after the fix (deterministic, RUNRC=0):
 //   field_len=4 slice_field_len=4 nested=4 global=4 byval=4 byptr=4 local_arr=4 var=4 xy=4 sizeof=8
