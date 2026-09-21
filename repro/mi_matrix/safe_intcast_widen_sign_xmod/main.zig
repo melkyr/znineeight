@@ -1,22 +1,24 @@
-// safe_intcast_widen_sign_xmod — A18 widening sign-change `@intCast` pin.
+// safe_intcast_widen_sign_xmod — A18 widening sign-change `@intCast` pin,
+// RE-PINNED by Task 11U (AMENDMENT 15 option A).
 //
-// `@intCast(u16, @as(i8, -1))` is a WIDENING sign change (`i8 -> u16`): it is
-// neither narrowing (`src_bits > dst_bits`) nor equal-width (`src_bits ==
-// dst_bits`), so pre-fix the lowering `chk` predicate did not fire and the
-// emitter printed a plain `(unsigned short)(signed char)value`, giving 65535
-// and rc 0 even under `-fsafe`. Zig's `@intCast` RANGE-CHECKS the value, so -1
-// must trap. A18 extends the predicate with the widening case `src_signed &&
-// !dst_signed && src_bits < dst_bits`, routing it through `int_cast_checked` /
-// `zig_cast_checked_u`.
+// ORIGINAL contract: `@intCast(u16, @as(i8, -1))` is a WIDENING sign change
+// (`i8 -> u16`). Before Task 11U, `@as` did not fold, so the cast operand was
+// runtime-valued and the A18 lowering predicate (`src_signed && !dst_signed &&
+// src_bits < dst_bits`) routed it through `int_cast_checked` — under `-fsafe`
+// the program trapped (rc 133) before printing, and under `-ffast` the
+// unchecked C cast printed `65535` (rc 0).
 //
-// The in-range widening sign change (`i8 100 -> u16`) must NOT trap and yields
-// 100; it is pinned in isolation (a `-fsafe` run of this program traps at the
-// out-of-range cast, so the earlier output stays buffered and is lost) by
-// `main_inrange.zig`.
+// SUPERSEDED (Task 11U, AMENDMENT 15 general `@as` fold + option A): `@as`
+// now folds at comptime (integer targets only), so `@as(i8, -1)` is a
+// comptime-known -1 and `@intCast(u16, -1)` is a comptime OUT-OF-RANGE cast,
+// which official Zig rejects. The program is therefore now a clean reject.
+// The A18 RUNTIME widening-sign-change trap stays covered by the general
+// runtime-operand cast check (see `intcast_range_check`).
 //
-// GREEN: `-fsafe` (default) traps before stdout (empty, rc 133 SIGTRAP); the
-// `-ffast` control keeps the unchecked C cast, so the wrapped `u16` is `65535`,
-// printing `65535` (rc 0).
+// Contract (post-11U): dump rc=2, 0 `.c`, `error[3000]` — the canonical
+// classifier's GREEN clean-reject bucket. The IN-RANGE widening sign change
+// (`i8 100 -> u16`) must NOT reject and is pinned by the companion
+// `main_inrange.zig` (prints `100`, rc=0 under both modes).
 const std = @import("std");
 
 pub fn main() void {

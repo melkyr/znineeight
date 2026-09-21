@@ -1,4 +1,4 @@
-# 04 — Compile-Time Evaluation [updated: 2026-09-21 — Task 11S (c): `ComptimeEval` gains a `diag` field and the `@intCast` arm range-checks an integer target via the new `comptimeValFitsType` helper, emitting `error[3000]` and refusing to fold an out-of-range comptime cast (previously it masked to the target width)] [updated: 2026-09-20 — Task 11D: 9-name foldable-builtin set (adds `@floatCast`/`@intToFloat`), the private float sub-evaluator, and the `WIDTH_FLOAT` float-fold sentinel; earlier: refreshed against the 7-name set (`@sizeOf`/`@alignOf`/`@offsetOf`/`@bitOffsetOf`/`@bitSizeOf`/`@intCast`/`@isWindows`), arbitrary-width/enum-backing folds, and the CLI-driven `host_is_windows`]
+# 04 — Compile-Time Evaluation [updated: 2026-09-21 — Task 11U: `@as` is interned (`as_id`, 10-name foldable set) and shares the `@intCast` fold/range-check arm in `comptimeEvalBuiltin`, with a mandatory integer-target guard so a non-integer `@as` never folds to an integer `ComptimeVal` (which would miscompile float arithmetic, e.g. `@as(f64,3)/2`); the `@as` case is mirrored in `comptimeEvalOperandSigned`] [updated: 2026-09-21 — Task 11S (c): `ComptimeEval` gains a `diag` field and the `@intCast` arm range-checks an integer target via the new `comptimeValFitsType` helper, emitting `error[3000]` and refusing to fold an out-of-range comptime cast (previously it masked to the target width)] [updated: 2026-09-20 — Task 11D: 9-name foldable-builtin set (adds `@floatCast`/`@intToFloat`), the private float sub-evaluator, and the `WIDTH_FLOAT` float-fold sentinel; earlier: refreshed against the 7-name set (`@sizeOf`/`@alignOf`/`@offsetOf`/`@bitOffsetOf`/`@bitSizeOf`/`@intCast`/`@isWindows`), arbitrary-width/enum-backing folds, and the CLI-driven `host_is_windows`]
 
 > Covers: `comptime_eval.zig`
 
@@ -7,8 +7,8 @@
 | Artifact | Count | Notes |
 |----------|-------|-------|
 | `ComptimeVal` fields | 3 | bits (u64), width_bits (u32), sig (bool); a float fold carries the `WIDTH_FLOAT` sentinel in `width_bits` |
-| `ComptimeEval` fields | 15 | registry, store, interner, symbol_reg, size_of_id, align_of_id, offset_of_id, bit_size_of_id, bit_offset_of_id, int_cast_id, float_cast_id, int_to_float_id, is_windows_id, host_is_windows, diag (Task 11S) |
-| Builtin intrinsics (comptime-foldable) | 9 | @sizeOf, @alignOf, @offsetOf, @bitOffsetOf, @bitSizeOf, @intCast, @floatCast, @intToFloat, @isWindows — the ONLY names interned by `comptimeEvalInit` |
+| `ComptimeEval` fields | 16 | registry, store, interner, symbol_reg, size_of_id, align_of_id, offset_of_id, bit_size_of_id, bit_offset_of_id, int_cast_id, as_id (Task 11U), float_cast_id, int_to_float_id, is_windows_id, host_is_windows, diag (Task 11S) |
+| Builtin intrinsics (comptime-foldable) | 10 | @sizeOf, @alignOf, @offsetOf, @bitOffsetOf, @bitSizeOf, @intCast, @as (Task 11U; integer targets only), @floatCast, @intToFloat, @isWindows — the ONLY names interned by `comptimeEvalInit` |
 | Builtin names interned by sema | 35 | `@ptrCast`, `@ptrToInt`, `@intToPtr`, `@intFromPtr`, `@ptrFromInt`, `@fieldParentPtr`, `@volatileCast`, `@bitCast`, `@intCast`, `@floatCast`, `@intToFloat`, `@intToEnum`, `@enumToInt`, `@as`, `@sizeOf`, `@alignOf`, `@offsetOf`, `@bitSizeOf`, `@bitOffsetOf` + runtime/console/async builtins (+ `_` stub) — type assignment only |
 | Builtin names interned by lowerer | 37 | `@intCast`, `@intToFloat`, `print`, `@ptrCast`, `@volatileCast`, `@ptrToInt`, `@intToPtr`, `@intFromPtr`, `@ptrFromInt`, `@fieldParentPtr`, `@enumToInt`, `@intToEnum`, `@as`, `@bitCast`, `@sizeOf`, `@alignOf`, `@offsetOf`, `@bitSizeOf`, `@bitOffsetOf`, `@cVaStart`, `@cVaArg`, `@cVaEnd` + runtime/console/async builtins — LIR dispatch only |
 | Non-foldable builtins | 25 | every other interned builtin name (pointer/cast/introspection/runtime/console/async) — comptime eval returns `null`, handled by sema type rules + runtime LIR |
@@ -25,17 +25,17 @@
 
 | Function | Visibility | Purpose | Called By | Calls | Data Touched | Key Decisions | Markers |
 |----------|-----------|---------|-----------|-------|-------------|---------------|---------|
-| `comptimeEvalInit` | pub | Initialize `ComptimeEval` by interning `@sizeOf`, `@alignOf`, `@offsetOf`, `@bitSizeOf`, `@bitOffsetOf`, `@intCast`, `@floatCast`, `@intToFloat`, `@isWindows` string names (9 names). Returns populated struct with `host_is_windows=false` and `diag=null` (Task 11S; `main.zig` sets `ce.diag = ctx.diag`). | `main.zig` phase_ComptimeEvaluation; unit tests (test_semantic_bin.zig) | `interner_mod.stringInternerIntern` | `interner` hash map, `ComptimeEval` fields | Nine builtin IDs frozen at init; no dynamic registration. | None [inference] |
+| `comptimeEvalInit` | pub | Initialize `ComptimeEval` by interning `@sizeOf`, `@alignOf`, `@offsetOf`, `@bitSizeOf`, `@bitOffsetOf`, `@intCast`, `@as`, `@floatCast`, `@intToFloat`, `@isWindows` string names (10 names; Task 11U added `@as`). Returns populated struct with `host_is_windows=false` and `diag=null` (Task 11S; `main.zig` sets `ce.diag = ctx.diag`). | `main.zig` phase_ComptimeEvaluation; unit tests (test_semantic_bin.zig) | `interner_mod.stringInternerIntern` | `interner` hash map, `ComptimeEval` fields | Ten builtin IDs frozen at init; no dynamic registration. | None [inference] |
 | `comptimeEvalResolveTypeArg` | private | Resolve a type argument AST node to a `TypeId` using `resolveTypeExprFull`. Returns `null` on `node_idx==0` or `TYPE_UNDEFINED`. | `comptimeEvalBuiltin` | `type_resolver.resolveTypeExprFull` | `store`, `registry`, `symbol_reg`, `interner` | Creates an ephemeral `TypeResolveEnv` (`MODULE_ID_NONE`, no diag, no local consts) each call. No caching. | None [inference] |
-| `comptimeEvalBuiltin` | private | Dispatch comptime-evaluable builtin calls across the 9 interned IDs. | `comptimeEvalEvaluateDepth` | `comptimeEvalResolveTypeArg`, `comptimeEvalEvaluateDepth`, `comptimeEvalFloatBuiltin`, `ast_mod.astStoreNodeExtraChildAt/Count` | `self.store`, `self.registry`, `self.interner` | Guards on `ty.state==2` (fully resolved); returns null for any other name. | None [inference] |
+| `comptimeEvalBuiltin` | private | Dispatch comptime-evaluable builtin calls across the 10 interned IDs. | `comptimeEvalEvaluateDepth` | `comptimeEvalResolveTypeArg`, `comptimeEvalEvaluateDepth`, `comptimeEvalFloatBuiltin`, `ast_mod.astStoreNodeExtraChildAt/Count` | `self.store`, `self.registry`, `self.interner` | Guards on `ty.state==2` (fully resolved); returns null for any other name. | None [inference] |
 | `comptimeEvalBuiltin` — `@sizeOf` | — | Extract first extra child as type arg, resolve, return `ty.size` as `ComptimeVal`. | (same as above) | same | `registry.types_items[t].size` | Always width_bits=0, sig=false (compile-time size is unsigned). | None [inference] |
 | `comptimeEvalBuiltin` — `@alignOf` | — | Same pattern as `@sizeOf` but returns `ty.alignment`. | (same as above) | same | `registry.types_items[t].alignment` | Width=0, sig=false. | None [inference] |
 | `comptimeEvalBuiltin` — `@offsetOf` / `@bitOffsetOf` | — | Require ≥2 extra children: resolve type arg (extra child 0), take extra child 1 as a literal field name. For a struct, look up the field; packed struct uses `packed_fields[fi].bit_offset` (`@bitOffsetOf` = bit offset, `@offsetOf` = bit offset/8), unpacked struct uses `fields[fi].offset` (`@bitOffsetOf` = offset*8). For a packed union, returns 0. | (same as above) | `typeRegistryGetStructFields`, `typeRegistryGetPackedBitFields`, `typeRegistryGetUnionFields` | `registry` field arrays, `store.string_values` | Field name must be an `AstKind.string_literal`; struct must be resolved (`state==2`). | None [inference] |
 | `comptimeEvalBuiltin` — `@bitSizeOf` | — | Resolve type; base `ty.size*8`. Packed struct → `typeRegistryGetPackedTotalBits`; packed union → `typeRegistryGetPackedUnionTotalBits`; integer → `typeRegistryIntWidthBits`; enum → backing type's width bits; bool → 1. | (same as above) | `typeRegistryGetPackedTotalBits`, `typeRegistryGetPackedUnionTotalBits`, `typeRegistryIsInteger`, `typeRegistryIntWidthBits`, `typeRegistryEnumBackingType` | `registry.types_items` | Arbitrary-width and `enum(uN)`-backing aware. | None [inference] |
-| `comptimeEvalBuiltin` — `@intCast` | — | Resolve target type, evaluate inner expression. **Task 11S (c):** an integer target is range-checked via `comptimeValFitsType`; an out-of-range value emits `error[3000]` (once per node) and returns null (no fold; the post-phase diag check exits rc=2 before emission). A fitting integer target then truncates/sign-extends bits to target width; non-integer targets use `ty.size*8` unsigned. ≥64-bit width passes through directly; otherwise mask + sign-extend. | (same as above) | `comptimeEvalEvaluateDepth`, `comptimeEvalResolveTypeArg`, `comptimeValFitsType`, `typeRegistryIsInteger`, `typeRegistryIntWidthBits`, `typeRegistryIntIsSigned` | `registry.types_items[t]`, `self.diag` | A `WIDTH_FLOAT` inner returns null (no float→int fold). Arbitrary-width signed ints use the registry helpers. Enum targets are not integers (`typeRegistryIsInteger` is false for `enum_type`), so they take the non-integer path (`ty.size*8`, unsigned). | None [inference] |
+| `comptimeEvalBuiltin` — `@intCast` / `@as` | — | Resolve target type, evaluate inner expression. `@as` shares this arm (identical extra-child layout `[target_type, value]`). **Task 11U:** the arm is gated on `int_cast_id OR as_id`; an `@as` with a NON-integer target returns null BEFORE folding (`if (node.child_0 == self.as_id and !is_int_t) return null;`) because the arm yields an integer `ComptimeVal` that would enter the integer binop evaluator (guards `@as(f64,3)/2`). **Task 11S (c):** an integer target is range-checked via `comptimeValFitsType`; an out-of-range value emits `error[3000]` (once per node; the message names `@intCast` for both) and returns null (no fold; the post-phase diag check exits rc=2 before emission). A fitting integer target then truncates/sign-extends bits to target width; non-integer `@intCast` targets use `ty.size*8` unsigned (unchanged). ≥64-bit width passes through directly; otherwise mask + sign-extend. | (same as above) | `comptimeEvalEvaluateDepth`, `comptimeEvalResolveTypeArg`, `comptimeValFitsType`, `typeRegistryIsInteger`, `typeRegistryIntWidthBits`, `typeRegistryIntIsSigned` | `registry.types_items[t]`, `self.diag` | A `WIDTH_FLOAT` inner returns null (no float→int fold). Arbitrary-width signed ints use the registry helpers. Enum targets are not integers (`typeRegistryIsInteger` is false for `enum_type`), so they take the non-integer path (`ty.size*8`, unsigned). | None [inference] |
 | `comptimeEvalBuiltin` — `@floatCast` / `@intToFloat` | — | Delegates to `comptimeEvalFloatBuiltin`; on a value, returns `ComptimeVal{ bits = <f64 bit pattern>, width_bits = WIDTH_FLOAT, sig = false }`. The f64 bits are transported through a pointer reinterpretation because Z98 `@bitCast` is integer-only. | (same as above) | `comptimeEvalFloatBuiltin` | local `f64`, `ComptimeVal` | A non-float target or non-foldable operand returns null (no fold). | None [inference] |
 | `comptimeEvalFloat` | private | Float-valued sub-evaluator, deliberately SEPARATE from `comptimeEvalEvaluateDepth` so no float bit pattern can reach the integer binop/negate/bit_not/int_cast paths. Handles `float_literal` (`store.float_values`), `negate` (`-v`, sign-preserving for `-0.0`), `paren_expr`, nested `@floatCast`/`@intToFloat`, and const `ident_expr` chains (depth-16 guarded). Fix round 1: the `ident_expr` arm resolves the const's **declared** type and rounds an `f32` const through `f32` before returning, so `const S: f32 = 0.1` evaluates as `f32(0.1)`, not the raw `f64` literal. | `comptimeEvalFloatBuiltin`; recursively itself | `comptimeEvalFloat`, `comptimeEvalFloatBuiltin`, `comptimeEvalResolveTypeArg`, `symbolRegistryQualifiedLookup` | `store.float_values`, `store.nodes`, `store.identifiers`, `symbol_reg` | `node_idx==0` or `depth>=16` → null. A non-float node kind → null. | None [inference] |
-| `comptimeEvalOperandSigned` | private | Determine an `@intToFloat` operand's signedness from its declared type / literal shape, NOT `ComptimeVal.sig` (true for every int literal). First recursively unwraps `paren_expr` (depth-32 guarded) so `(U)`/`((U))` classify by the inner node. Then: `ident_expr` → the const's declared integer type via `typeRegistryIntIsSigned`; `int_literal` → value ≤ `i64` max; `char_literal` → unsigned; `@intCast` → target signedness; else falls back to `cv.sig`. Fix round 1: prevents a `u64` const above `i64` max folding as negative; fix round 2: the paren unwrap. | `comptimeEvalFloatBuiltin` | `comptimeEvalResolveTypeArg`, `typeRegistryIsInteger`, `typeRegistryIntIsSigned`, `symbolRegistryQualifiedLookup` | `registry`, `store`, `symbol_reg` | Fixes the `u64` `18446744073709551615` → `-1.0` mis-fold (bare and parenthesized). | None [inference] |
+| `comptimeEvalOperandSigned` | private | Determine an `@intToFloat` operand's signedness from its declared type / literal shape, NOT `ComptimeVal.sig` (true for every int literal). First recursively unwraps `paren_expr` (depth-32 guarded) so `(U)`/`((U))` classify by the inner node. Then: `ident_expr` → the const's declared integer type via `typeRegistryIntIsSigned`; `int_literal` → value ≤ `i64` max; `char_literal` → unsigned; `@intCast`/`@as` (Task 11U) → target signedness; else falls back to `cv.sig`. Fix round 1: prevents a `u64` const above `i64` max folding as negative; fix round 2: the paren unwrap; Task 11U mirrors the `@intCast` arm for `@as`. | `comptimeEvalFloatBuiltin` | `comptimeEvalResolveTypeArg`, `typeRegistryIsInteger`, `typeRegistryIntIsSigned`, `symbolRegistryQualifiedLookup` | `registry`, `store`, `symbol_reg` | Fixes the `u64` `18446744073709551615` → `-1.0` mis-fold (bare and parenthesized). | None [inference] |
 | `comptimeEvalFloatBuiltin` | private | Evaluate one `@floatCast`/`@intToFloat` call to an `f64`. Resolves the target type arg (extra child 0; must be `TYPE_F32`/`TYPE_F64`); `@intToFloat` evaluates extra child 1 with the integer evaluator and `comptimeEvalOperandSigned`, `@floatCast` with `comptimeEvalFloat`; an `f32` target rounds through `f32`. | `comptimeEvalBuiltin`, `comptimeEvalFloat` | `comptimeEvalResolveTypeArg`, `comptimeEvalEvaluateDepth`, `comptimeEvalOperandSigned`, `comptimeEvalFloat`, `@intToFloat`/`@floatCast` | `registry`, `store`, local `f64`/`f32` | A non-float target, a `WIDTH_FLOAT` integer operand, or a non-foldable operand → null. | None [inference] |
 | `comptimeEvalBuiltin` — `@isWindows` | — | Returns `self.host_is_windows ? 1 : 0`, width=1, sig=false. | (same as above) | none | `self.host_is_windows` | Value set by `main.zig` from `cli.target_is_windows`. | None [inference] |
 | `comptimeEvalBinOp` | private | Evaluate binary arithmetic at compile time. Handles add/sub/mul/div/mod_op/bit_and/bit_or/bit_xor/shl/shr. Signed division uses a sign-magnitude algorithm. | `comptimeEvalEvaluateDepth` | `comptimeEvalEvaluateDepth` (recursive for lhs/rhs) | `store.nodes`, lhs/rhs `ComptimeVal` | If either operand carries `WIDTH_FLOAT`, returns null (float values never enter integer arithmetic). Width = max(lhs.width_bits, rhs.width_bits). Signed if either operand signed. Division-by-zero returns null. Shift amount >= 64 returns null. | None [inference] |
@@ -48,7 +48,7 @@
 | `comptimeEvalEvaluate` — bool_literal | — | Returns 1 or 0, width=1, sig=false. Based on `node.flags & 1`. | (same as above) | none | `node.flags` | Flags bit 0 = value. | None [inference] |
 | `comptimeEvalEvaluate` — negate/bit_not | — | Recursively evaluate inner, compute `0 - bits` (negate) or `~bits` (bit_not); negate masks/sign-extends to inner width. | (same as above) | `comptimeEvalEvaluateDepth` | inner `ComptimeVal` | A `WIDTH_FLOAT` inner returns null (a float must not be negated as integer bits). width=0 case returns sig=true (signed literal). Finite width applies mask + optional sign extension. `bit_not` keeps the inner width with sig=false. | None [inference] |
 | `comptimeEvalEvaluate` — binop | — | Dispatches to `comptimeEvalBinOp` for add/sub/mul/div/mod_op/bit_and/bit_or/bit_xor/shl/shr kinds. | (same as above) | `comptimeEvalBinOp` | `node.kind` | Forwards `node_idx`, `node.kind`, and current depth to the binop handler. | None [inference] |
-| `comptimeEvalEvaluate` — builtin_call | — | Dispatches to `comptimeEvalBuiltin` for the builtin_call kind. | (same as above) | `comptimeEvalBuiltin` | `node.kind` | 9 names foldable; every other name returns null. | None [inference] |
+| `comptimeEvalEvaluate` — builtin_call | — | Dispatches to `comptimeEvalBuiltin` for the builtin_call kind. | (same as above) | `comptimeEvalBuiltin` | `node.kind` | 10 names foldable; every other name returns null. | None [inference] |
 | `comptimeEvalEvaluate` — paren_expr | — | Unwraps parentheses: recurses on `node.child_0`. | (same as above) | `comptimeEvalEvaluateDepth` | `node.child_0` | Trivial pass-through. | None [inference] |
 | `comptimeEvalEvaluate` — ident_expr | — | Const-chain resolution: look up `name_id` via `symbolRegistryQualifiedLookup` across all module tables; if the symbol is a `const` (symbol `flags & 0x01 == 0`) with a non-empty init (`decl.child_1 != 0`), recurse into that init at `depth+1`. Returns null on `depth >= 16` (const-chain guard) or no matching const. | (same as above) | `comptimeEvalEvaluateDepth` (recursive), `symbolRegistryQualifiedLookup` | `store.identifiers`, `symbol_reg`, `store.nodes` | Enables `const B: i32 = A + 5` to fold from `const A: i32 = 30`. | None [inference] |
 
@@ -96,6 +96,7 @@ comptimeEvalInit(registry, store, interner, symbol_reg)
   └─ interner.stringInternerIntern("@bitSizeOf")    → bit_size_of_id
   └─ interner.stringInternerIntern("@bitOffsetOf")  → bit_offset_of_id
   └─ interner.stringInternerIntern("@intCast")      → int_cast_id
+  └─ interner.stringInternerIntern("@as")           → as_id (Task 11U)
   └─ interner.stringInternerIntern("@floatCast")    → float_cast_id
   └─ interner.stringInternerIntern("@intToFloat")   → int_to_float_id
   └─ interner.stringInternerIntern("@isWindows")    → is_windows_id
@@ -110,7 +111,7 @@ comptimeEvalInit(registry, store, interner, symbol_reg)
   `ctx.comptime_values`, so LIR lowering falls back to a runtime form instead of an `int_const`.
   Null causes include: type argument unresolved (`ty.state != 2`), division/mod by zero, shift
   amount ≥ 64, unhandled node kind, `node_idx == 0`, a const chain deeper than 16, and any builtin
-  not in the 7-name fold set. The semantic analyzer still assigns a result *type* to the node
+  not in the fold set. The semantic analyzer still assigns a result *type* to the node
   regardless.
 - **Wrong width** — `@intCast` width comes from `typeRegistryIntWidthBits` for integer targets
   (arbitrary-width included) and `ty.size * 8` otherwise. An unresolved type or wrong size makes
@@ -125,12 +126,12 @@ comptimeEvalInit(registry, store, interner, symbol_reg)
 
 ---
 
-## Builtin Internment: 9 in comptime_eval
+## Builtin Internment: 10 in comptime_eval
 
-`comptimeEvalInit` interns **exactly nine** names — `@sizeOf`, `@alignOf`, `@offsetOf`,
-`@bitSizeOf`, `@bitOffsetOf`, `@intCast`, `@floatCast`, `@intToFloat`, `@isWindows` — into
-`size_of_id`/`align_of_id`/`offset_of_id`/`bit_size_of_id`/`bit_offset_of_id`/`int_cast_id`/`float_cast_id`/`int_to_float_id`/`is_windows_id`.
-(Task 11D added the two float-cast names.) The **semantic analyzer** interns a 35-name set at
+`comptimeEvalInit` interns **exactly ten** names — `@sizeOf`, `@alignOf`, `@offsetOf`,
+`@bitSizeOf`, `@bitOffsetOf`, `@intCast`, `@as`, `@floatCast`, `@intToFloat`, `@isWindows` — into
+`size_of_id`/`align_of_id`/`offset_of_id`/`bit_size_of_id`/`bit_offset_of_id`/`int_cast_id`/`as_id`/`float_cast_id`/`int_to_float_id`/`is_windows_id`.
+(Task 11D added the two float-cast names; Task 11U added `@as`.) The **semantic analyzer** interns a 35-name set at
 `semanticAnalyzerInit` (including a `_` stub → `_stub_0`), and the LIR lowerer independently
 interns a 37-name set at `lowererInit`.
 
@@ -153,7 +154,7 @@ interns a 37-name set at `lowererInit`.
 | `@intToFloat` | ✓ (fold integer operand) | ✓ (type-value cast) | ✓ (float_const fold / runtime int_to_float) |
 | `@intToEnum` | — | ✓ (type-value cast) | ✓ |
 | `@enumToInt` | — | ✓ | ✓ (lower arg directly) |
-| `@as` | — | ✓ (type-value cast) | ✓ (lower inner) |
+| `@as` | ✓ (fold; integer targets only, Task 11U) | ✓ (type-value cast) | ✓ (lower inner) |
 | `@cVaStart` / `@cVaArg` / `@cVaEnd` | — | — | ✓ (va_start / va_arg / va_end) |
 | runtime / console builtins | — | ✓ (`@putChar`, `@stdoutWrite`, `@stderrWrite`, `@getChar`, `@exit`, `@panic`, `@sleepMs`, `@consoleClear`, `@consoleGotoxy`, `@consoleSetColor`) | ✓ |
 | async builtins | — | ✓ (`@asyncFrameSize`, `@asyncInit`, `@asyncResume`, `@asyncSuspend`) | ✓ |
@@ -227,7 +228,7 @@ even when `A` is a named const.
 
 **Coverage boundaries:**
 - Only `builtin_call` nodes go through `comptimeEvalBuiltin` — there is no name pre-filter, so
-  `@ptrCast`/`@enumToInt` etc. are invoked and return `null` after checking the seven interned IDs.
+  `@ptrCast`/`@enumToInt` etc. are invoked and return `null` after checking the interned IDs.
 - Fold results are stored keyed by AST node index in `ctx.comptime_values` and consumed by the
   lowerer's `comptime_values` lookups; a `@sizeOf`/`@alignOf`/`@offsetOf`/`@bitSizeOf`/`@bitOffsetOf`
   that failed to fold (type unresolved at fold time) ICEs via `iceUnresolvedComptime` rather than
@@ -266,6 +267,22 @@ into the integer binop path).
   rounds through `f32` (the float sub-evaluator already unwrapped parens).
 - `@floatCast` operand-type validation remains absent (Task 11A §6.4); a non-float operand simply
   returns `null` (no fold, runtime lowering unchanged).
+
+### `@as` folds (Task 11U) — [updated: 2026-09-21]
+
+`@as` is now interned by `comptimeEvalInit` (`as_id`) and shares the `@intCast` fold/range-check
+arm in `comptimeEvalBuiltin` — `@as` and `@intCast` have the exact same extra-child layout
+(`[target_type, value]`). Because that shared arm yields an integer `ComptimeVal` which enters the
+integer binop evaluator, the arm carries a mandatory **integer-target guard**
+(`if (node.child_0 == self.as_id and !is_int_t) return null;`): an `@as` with a NON-integer target
+must NOT fold, or float arithmetic silently miscompiles (`const A: f64 = @as(f64,3)/2` would fold
+as integer `3/2` = `1`, not `1.5`). `@intCast`'s non-integer behavior is deliberately unchanged
+(out of scope). The `@as` case is mirrored in `comptimeEvalOperandSigned` (defense-in-depth,
+matching the existing `@intCast` precedent). An out-of-range `@as` integer target emits the same
+`error[3000]` as `@intCast` (the shared diagnostic still names `@intCast`; the canonical
+classifier keys only on the error code). Fixtures: `stdlib_comptime_inttofloat_as_xmod` (positive
+folds + runtime oracle), `stdlib_as_float_guard_xmod` (the guard control that traps on an
+unguarded arm), and the standalone `repro/comptime_inttofloat_as.z98`.
 
 ---
 

@@ -34,6 +34,7 @@ pub const ComptimeEval = struct {
     bit_size_of_id: u32,
     bit_offset_of_id: u32,
     int_cast_id: u32,
+    as_id: u32,
     float_cast_id: u32,
     int_to_float_id: u32,
     is_windows_id: u32,
@@ -48,6 +49,8 @@ pub fn comptimeEvalInit(registry: *TypeRegistry, store: *AstStore, interner: *St
     var s_align: []const u8 = "@alignOf";
     var s_intc: []const u8 = "@intCast";
     var intc_id = interner_mod.stringInternerIntern(interner, s_intc);
+    var s_as: []const u8 = "@as";
+    var as_id = interner_mod.stringInternerIntern(interner, s_as);
     var s_fc: []const u8 = "@floatCast";
     var fc_id = interner_mod.stringInternerIntern(interner, s_fc);
     var s_itf: []const u8 = "@intToFloat";
@@ -64,7 +67,7 @@ pub fn comptimeEvalInit(registry: *TypeRegistry, store: *AstStore, interner: *St
     var iw_id = interner_mod.stringInternerIntern(interner, s_iw);
     return ComptimeEval{
         .registry = registry, .store = store, .interner = interner, .symbol_reg = symbol_reg,
-        .size_of_id = size_id, .align_of_id = align_id, .int_cast_id = intc_id,
+        .size_of_id = size_id, .align_of_id = align_id, .int_cast_id = intc_id, .as_id = as_id,
         .float_cast_id = fc_id, .int_to_float_id = itf_id,
         .offset_of_id = off_id, .bit_size_of_id = bitsz_id, .bit_offset_of_id = bitoff_id,
         .is_windows_id = iw_id,
@@ -280,7 +283,7 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
         }
         return null;
     }
-    if (node.child_0 == self.int_cast_id) {
+    if (node.child_0 == self.int_cast_id or node.child_0 == self.as_id) {
         var tid = comptimeEvalResolveTypeArg(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)));
         var inner = comptimeEvalEvaluateDepth(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 1)), depth);
         if (tid) |t| {
@@ -290,6 +293,13 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
                 var is_int_t: bool = type_mod.typeRegistryIsInteger(self.registry, t);
                 var wb: u32 = @intCast(u32, type_mod.typeRegistryIntWidthBits(self.registry, t));
                 var sig: bool = type_mod.typeRegistryIntIsSigned(self.registry, t);
+                // @as with a NON-integer target must NOT fold here: the arm
+                // yields an integer ComptimeVal, which enters the integer
+                // binop evaluator and silently miscompiles float arithmetic
+                // (e.g. `@as(f64,3)/2` -> integer 3/2). Fold @as only when the
+                // target is an integer. (@intCast's non-integer behavior is
+                // deliberately left unchanged, out of scope.)
+                if (node.child_0 == self.as_id and !is_int_t) return null;
                 if (!is_int_t) {
                     wb = @intCast(u32, ty.size * @intCast(u32, 8));
                     sig = false;
@@ -441,7 +451,7 @@ fn comptimeEvalOperandSigned(self: *ComptimeEval, node_idx: u32, cv: ComptimeVal
     } else if (node.kind == AstKind.char_literal) {
         return false;
     } else if (node.kind == AstKind.builtin_call) {
-        if (node.child_0 == self.int_cast_id) {
+        if (node.child_0 == self.int_cast_id or node.child_0 == self.as_id) {
             var dt2 = comptimeEvalResolveTypeArg(self, ast_mod.astStoreNodeExtraChildAt(self.store, idx, @intCast(u32, 0)));
             if (dt2) |t2| {
                 if (type_mod.typeRegistryIsInteger(self.registry, t2)) {

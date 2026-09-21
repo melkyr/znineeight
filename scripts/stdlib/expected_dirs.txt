@@ -32,6 +32,7 @@ repro/mi_matrix/stdlib_async_waitfor_oom_xmod
 repro/mi_matrix/stdlib_async_waitfor_settled_xmod
 repro/mi_matrix/stdlib_async_waitfor_unregistered_xmod
 repro/mi_matrix/stdlib_async_waitfor_xmod
+repro/mi_matrix/stdlib_as_float_guard_xmod
 repro/mi_matrix/stdlib_base64_decode_xmod
 repro/mi_matrix/stdlib_base64_decodedlen_xmod
 repro/mi_matrix/stdlib_base64_encode_xmod
@@ -51,6 +52,7 @@ repro/mi_matrix/stdlib_buf_growth_xmod
 repro/mi_matrix/stdlib_buf_oom_xmod
 repro/mi_matrix/stdlib_buf_stress_xmod
 repro/mi_matrix/stdlib_comptime_floatcast_fold_xmod
+repro/mi_matrix/stdlib_comptime_inttofloat_as_xmod
 repro/mi_matrix/stdlib_crypto_crc32_xmod
 repro/mi_matrix/stdlib_crypto_md5_xmod
 repro/mi_matrix/stdlib_crypto_sha1_xmod
