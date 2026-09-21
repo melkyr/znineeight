@@ -37,7 +37,7 @@ off Room_t.h=3`. Field offsets (`hp=4`, `x=8`, `Room_t.h=3`) and `bits bool=1`
 match the hand contract; `size Entity=12` matches the hand-computed `12` —
 `bool` is now 1 byte/align 1 (Task 11L), and
 `EntityType`'s `union(enum)` tag lowers to a `unsigned int`, so the natural
-layout is 4(typ) + 2+2(hp/max_hp) + 1+1(x/y) + 1(active bool) = 10, rounded up
+layout is 4(typ) + 2+2(hp/max_hp) + 1+1(x/y) + 1(active bool) = 11, rounded up
 to the 4-byte struct alignment = 12. The
 compiler is the source of truth; this value is stable 3× and layout-coupled —
 regenerate `demo_expected.txt` if the struct layout ever changes.
