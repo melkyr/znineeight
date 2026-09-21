@@ -420,7 +420,8 @@ var r: ?*void = @asyncResume(frame, arg);
 Includes another module. The path is resolved relative to the current module.
 The standard library is imported as <tt>@import("std")</tt>, which re-exports
 <tt>io</tt>, <tt>arena</tt>, <tt>str</tt>, <tt>mem</tt>, <tt>math</tt>,
-<tt>debug</tt>, and <tt>net</tt>; symbols are reached with dot notation.
+<tt>debug</tt>, <tt>net</tt>, <tt>async</tt>, <tt>bits</tt>, <tt>os</tt>,
+<tt>time</tt>, and <tt>buf</tt>; symbols are reached with dot notation.
 </p>
 <pre>
 const std = @import("std");
