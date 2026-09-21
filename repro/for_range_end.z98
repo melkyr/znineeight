@@ -1,0 +1,120 @@
+// for_range_end.z98 — standalone reproduction for the Task 11P fix.
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   <zig1> -ffast -o /tmp/forrange repro/for_range_end.z98
+//   cd /tmp/forrange && sh build_target.sh linux prog && ./prog ; echo "rc=$?"
+//
+// DEFECT (before the fix): the semantic analyzer typed a `for` range node as
+// `u32` without resolving its start/end operands, so a range end whose lowering
+// needs the resolved-type table — `.len` on a struct/union array or slice field
+// (`s.a.len`) — lowered to an unassigned temp. Under `-ffast` that temp is 0,
+// so `for (0..s.a.len)` silently ran 0 times (the capture itself was fine).
+// See `repro/mi_matrix/for_range_end_len_xmod/` for the pinned corpus fixture.
+//
+// FIX (Task 11P): the `range_exclusive`/`range_inclusive` arm of
+// `semanticAnalyzerResolveExpr` now resolves `child_0` (start) and, when
+// present, `child_1` (end) before returning the range type; the existing Task
+// 11N `.len` machinery then fires for the operands. No lowerer change. Both the
+// end (silent 0) and the start forms are repaired.
+//
+// SCOPE NOTE: `for (0..p.len)` on a `[*]T` is now cleanly rejected (correct
+// Zig) instead of silently lowered. The range capture stays `u32` (the spec's
+// `usize` is a pre-existing, out-of-scope divergence).
+//
+// EXPECTED after the fix (deterministic, RUNRC=0):
+//   field_len=4 slice_field_len=4 nested=4 global=4 byval=4 byptr=4 local_arr=4 var=4 xy=4 sizeof=8
+//   for_range_end ok
+const std = @import("std");
+
+const S = struct { a: [4]u8 };
+const Sl = struct { a: []u8 };
+const N = struct { inner: S, b: u8 };
+const T = struct { x: u32, y: u32 };
+
+var g_s: S = undefined;
+
+fn countByVal(s: S) u32 {
+    var c: u32 = 0;
+    for (0..s.a.len) |i| { _ = i; c += 1; }
+    return c;
+}
+
+fn countByPtr(s: *S) u32 {
+    var c: u32 = 0;
+    for (0..s.a.len) |i| { _ = i; c += 1; }
+    return c;
+}
+
+pub fn main() void {
+    var s: S = undefined;
+    var nn: N = undefined;
+    var buf: [8]u8 = undefined;
+    var sl: Sl = undefined;
+    sl.a = buf[0..4];
+
+    var bad: u32 = 0;
+
+    var c1: u32 = 0;
+    for (0..s.a.len) |i| { _ = i; c1 += 1; }
+    if (c1 != 4) bad += 1;
+
+    var c2: u32 = 0;
+    for (0..sl.a.len) |i| { _ = i; c2 += 1; }
+    if (c2 != 4) bad += 1;
+
+    var c3: u32 = 0;
+    for (0..nn.inner.a.len) |i| { _ = i; c3 += 1; }
+    if (c3 != 4) bad += 1;
+
+    var c4: u32 = 0;
+    for (0..g_s.a.len) |i| { _ = i; c4 += 1; }
+    if (c4 != 4) bad += 1;
+
+    if (countByVal(s) != 4) bad += 1;
+    if (countByPtr(&s) != 4) bad += 1;
+
+    var arr: [4]u8 = undefined;
+    var c5: u32 = 0;
+    for (0..arr.len) |i| { _ = i; c5 += 1; }
+    if (c5 != 4) bad += 1;
+
+    var n: u32 = 4;
+    var c6: u32 = 0;
+    for (0..n) |i| { _ = i; c6 += 1; }
+    if (c6 != 4) bad += 1;
+
+    var x: u32 = 1;
+    var y: u32 = 5;
+    var c7: u32 = 0;
+    for (x..y) |i| { _ = i; c7 += 1; }
+    if (c7 != 4) bad += 1;
+
+    var c8: u32 = 0;
+    for (0..@sizeOf(T)) |i| { _ = i; c8 += 1; }
+    if (c8 != 8) bad += 1;
+
+    std.io.write("field_len=");
+    std.io.printInt(@intCast(i32, c1));
+    std.io.write(" slice_field_len=");
+    std.io.printInt(@intCast(i32, c2));
+    std.io.write(" nested=");
+    std.io.printInt(@intCast(i32, c3));
+    std.io.write(" global=");
+    std.io.printInt(@intCast(i32, c4));
+    std.io.write(" byval=");
+    std.io.printInt(@intCast(i32, countByVal(s)));
+    std.io.write(" byptr=");
+    std.io.printInt(@intCast(i32, countByPtr(&s)));
+    std.io.write(" local_arr=");
+    std.io.printInt(@intCast(i32, c5));
+    std.io.write(" var=");
+    std.io.printInt(@intCast(i32, c6));
+    std.io.write(" xy=");
+    std.io.printInt(@intCast(i32, c7));
+    std.io.write(" sizeof=");
+    std.io.printInt(@intCast(i32, c8));
+    std.io.write("\n");
+
+    if (bad != 0) @panic("for_range_end: wrong count");
+    std.io.write("for_range_end ok\n");
+}

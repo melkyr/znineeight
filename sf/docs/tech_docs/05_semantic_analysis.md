@@ -1,4 +1,4 @@
-# 05 — Semantic Analysis [updated: 2026-09-21 — refreshed against current source: socket builtins removed (std_net extern surface), async/introspection/pointer/bitcast builtins, volatile + packed/enum checks, spill-backed resolved-type table; line refs and dated evidence removed; Task 10D adds the Zig-matched `defer`/`errdefer` outward-control-flow rejections ERR_3051–ERR_3054; Task 11N adds `semanticAnalyzerArrayFieldLen` so `.len` on a struct/union array field resolves to `TYPE_USIZE` despite the array-field decay, gated on the accessed name being `len` (fix round 1)]
+# 05 — Semantic Analysis [updated: 2026-09-21 — refreshed against current source: socket builtins removed (std_net extern surface), async/introspection/pointer/bitcast builtins, volatile + packed/enum checks, spill-backed resolved-type table; line refs and dated evidence removed; Task 10D adds the Zig-matched `defer`/`errdefer` outward-control-flow rejections ERR_3051–ERR_3054; Task 11N adds `semanticAnalyzerArrayFieldLen` so `.len` on a struct/union array field resolves to `TYPE_USIZE` despite the array-field decay, gated on the accessed name being `len` (fix round 1); Task 11P resolves the `for`-range start/end operands in the `range_exclusive`/`range_inclusive` arm before returning `TYPE_U32`]
 
 > Covers: `semantic_analyzer.zig`, `coercion.zig`, `resolved_type_table.zig`, `constraint_checker.zig`, `assign_helper.zig`
 
@@ -290,7 +290,7 @@ fi from 0..fields_count:
 | 44 | `bool_and` / `bool_or` | → `semanticAnalyzerResolveLogical` | `TYPE_BOOL` or VOID |
 | 45 | `cmp_eq` / `cmp_ne` / `cmp_lt` / `cmp_le` / `cmp_gt` / `cmp_ge` | → `semanticAnalyzerResolveComparison` | `TYPE_BOOL` or VOID |
 | 46 | `plain_assign` … `or_assign` plus `wrap_add_assign`/`wrap_sub_assign`/`wrap_mul_assign`/`sat_add_assign`/`sat_sub_assign`/`sat_mul_assign`/`sat_shl_assign` | → `semanticAnalyzerResolveAssign` | lhs type or VOID |
-| 47 | `range_exclusive` / `range_inclusive` | `[inference: return TYPE_U32]` (early return) | `TYPE_U32` |
+| 47 | `range_exclusive` / `range_inclusive` | `[inference: resolve child_0, and child_1 when present, then return TYPE_U32]` (early return) `[updated: 2026-09-21 — Task 11P]` | `TYPE_U32` |
 | — | (any other AstKind) | `[inference: diag ERR_3020, return TYPE_VOID]` | `TYPE_VOID` |
 
 After all arms: emit `STX:n<idx> STX:k<kind> STX:r<result> A4:N<idx> A4:K<kind> A4:R<result>`, `resolvedTypeTableSet(node_idx, result)`, `STB:N<idx> STB:R<result>`, return `result`.
@@ -563,7 +563,7 @@ Capture unwraps optional via `semanticAnalyzerCaptureType`.
 
 `resolveForHeader` (`semantic_analyzer.zig`):
 `[inference: resolve iterable → slice/array/range → element type → register capture + index]`
-If payload (capture name), register local decl with element type. If child_2 (index name), register with `TYPE_USIZE`.
+If payload (capture name), register local decl with element type. If child_2 (index name), register with `TYPE_USIZE`. When the iterable is a `range_exclusive`/`range_inclusive` node, its start/end operands are resolved by that node's own arm of `semanticAnalyzerResolveExpr` (Task 11P), so operands whose lowering needs the resolved-type table (e.g. `.len` on a struct/union array or slice field) get resolved-type entries.
 
 `resolveWhileHeader` (`semantic_analyzer.zig`):
 `[inference: resolve condition → while_capture → registerLocalDecl]`

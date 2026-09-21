@@ -1,4 +1,21 @@
-# mi_matrix corpus — expected-fail manifest (v172 2026-09-21)
+# mi_matrix corpus — expected-fail manifest (v173 2026-09-21)
+
+## Task 11P — resolve the `for`-range end expression (v172 -> v173 2026-09-21)
+
+The Z98 manual Phase 0 plan's operator-inserted compiler fix (the F half of the Task 11O/11P pair; Task 11O is the reviewer-verified investigation). `semanticAnalyzerResolveExpr`'s `range_exclusive`/`range_inclusive` arm typed the range node `u32` and returned WITHOUT resolving `child_0` (start) or `child_1` (end), so neither operand received a resolved-type entry. The lowerer lowers range operands directly, and any operand whose lowering consults the resolved-type table — `.len` on a struct/union ARRAY or SLICE field (`s.a.len`, via `fieldStaticLenForBase`) — found no entry and fell through to an unassigned temp: under `-ffast` a **silent `0`** for the end (`for (0..s.a.len)` iterated 0 times) and a pointer-typed temp / gcc failure for the start (`for (s.a.len..N)`). The capture was fine (the range node was typed); only the operands were unresolved. Fix (one edit, `sf/src/semantic_analyzer.zig`): the range arm now resolves `child_0`, and `child_1` when present, before returning the range type. No `lower.zig` change — the existing Task 11N `.len` machinery then fires for the operands. The fix repairs both the end and the start forms.
+
+**New fixture (1) + standalone repro.**
+
+| fixture | class | contract |
+|---|---|---|
+| `for_range_end_len_xmod` | OK (runtime regression guard) | `for (0..s.a.len)` on a struct array field / struct slice field / nested field / global field / by-value param / pointer param; regression controls `for (0..arr.len)` (local array), `for (0..n)`, `for (x..y)`, `for (0..@sizeOf(T))`. Each count compared with a `@panic` on mismatch (the silent-`0` guard the compile-only classifier cannot see). Deterministic 2-line stdout `field_len=4 slice_field_len=4 nested=4 global=4 byval=4 byptr=4 local_arr=4 var=4 xy=4 sizeof=8` / `for_range_end ok`, rc 0 |
+| standalone `repro/for_range_end.z98` (top-level file, not a corpus dir) | — | single-file repro of the same defect with header defect/fix/recipe/expected stdout + scope note |
+
+No `scripts/stdlib/expected_dirs.txt` pin change (the fixture is not `stdlib_*`; the std-lib runtime gate stays 199).
+
+**Behavior change to watch (11O review).** `for (0..p.len)` on a `[*]T` was a silent-`0`-class shape; after the fix it is a gcc-class failure (undeclared operand temp), NOT a clean front-end reject — the plain-expression `const n = s.p.len` clean `error[3000]` (Task 11N) is unchanged. No corpus dir exercises the range shape, so the full-classifier join-diff is byte-identical. The range capture stays `u32` (the spec's `usize` is a pre-existing, out-of-scope divergence).
+
+**Gates (seed-built fixed-point compiler `6ed66e8d0d0ba862f014baf76be17a86`).** Self-compile `-ffast --dump-c89` rc=0, **two-hop closure hop1 == hop2 == `6ed66e8d…`** — the fixed point MOVED (11O predicted neutral; the source edit changes the compiler's own emitted `semantic_analyzer` module, as for every `sf/src` fix). Corpus `-s0` classifier **912 dirs = 857 OK / 29 GREEN / 26 FAIL / 0 ICE / 0 CRASH** (v172 911 -> 912: the new fixture is the only addition); a full-classifier join-diff vs the pre-fix seed v52 compiler is **byte-identical (zero class movement)** — the new fixture compiles (silent 0) under both. 4-MD5 emitted-C gates **UNCHANGED** (no gate program uses a range operand whose lowering needs the resolved-type table): gol `e7bde571649a67291419ce57131a556a` / lisp `552d0a84fe54b9cb5ac07c7e30ba2137` / json `38b37bdd45798f6d752cd0aa334491e3` / mud `5a1cc65ef23f27d1c4c51f4516760c07`. 21-example matrix **21/21** dump/gcc/link rc=0. Std-lib runtime gate **199 PASS / 0 FAIL over 199 dirs**. `check_emit_support.sh` **7/7**. Fixed point **MOVED `0080736e9637b6993e7539f755f351ea` -> `6ed66e8d0d0ba862f014baf76be17a86`**; seed **v52 -> v53** (archive md5 `b47270f17c7725d02bb0ab405dbe3377` -> `ba0f5208a832b8357fb8c51be8e22067`; gen 45 `.c` + 46 `.h`). Residuals (out of scope): range capture `u32` vs spec `usize`; `for (0..p.len)` on `[*]T` is not cleanly rejected in the range position. Full report: `.superpowers/sdd/2026-09-20-z98-manual-phase0-plan/task-11P-report.md`.
 
 ## Task 11N — lower `.len` on a struct-field array (v170 -> v172 2026-09-21)
 

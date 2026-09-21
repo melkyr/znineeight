@@ -1,0 +1,2 @@
+field_len=4 slice_field_len=4 nested=4 global=4 byval=4 byptr=4 local_arr=4 var=4 xy=4 sizeof=8
+for_range_end ok

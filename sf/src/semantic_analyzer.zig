@@ -2723,6 +2723,12 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                node.kind == AstKind.sat_shl_assign) {
         result = semanticAnalyzerResolveAssign(self, node_idx);
     } else if (node.kind == AstKind.range_exclusive or node.kind == AstKind.range_inclusive) {
+        // Task 11P: the start/end operands are part of the range's semantics. Resolve
+        // them so an operand whose lowering needs the resolved-type table (e.g. `.len`
+        // on a struct/union array or slice field) lowers correctly; without this the
+        // end silently lowered to 0 and the start form failed at gcc.
+        _ = semanticAnalyzerResolveExpr(self, node.child_0);
+        if (node.child_1 != 0) { _ = semanticAnalyzerResolveExpr(self, node.child_1); }
         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_U32);
         return type_mod.TYPE_U32;
      } else {
