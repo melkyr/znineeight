@@ -197,7 +197,7 @@ A claim that fails is fixed or removed — never shipped.
 
 ## §11 Conventions (binding)
 
-- **Website only, with scoped compiler exceptions (Amendments 1–13).** No
+- **Website only, with scoped compiler exceptions (Amendments 1–17).** No
   `sf/src`, `scripts/`, fixture, or `release/seed` change — except the inserted
   compiler tasks **10A/10B** (`errdefer` dropped on explicit error returns),
   **10C/10D** (`break`/`continue`/`return` accepted inside `defer`/`errdefer`),
@@ -206,11 +206,15 @@ A claim that fails is fixed or removed — never shipped.
   (`@floatCast`/`@intToFloat` not constant-folded), **11E–11J + 11Q** (array
   sizes using a builtin hard-error `ERR_3050`; struct introspection in array
   sizes; the `evalConstI64Full` enum silent miscompile, fixed via the Option B
-  post-layout re-evaluation pass studied in 11Q), and **11K–11P** (`bool`
+  post-layout re-evaluation pass studied in 11Q), **11K–11P** (`bool`
   size/align 4 vs Zig 1; `.len` on a struct-field array not lowering; the
-  `for (0..s.a.len)` for-range end not resolved), found while verifying the
-  manual. Only those tasks may touch the compiler, run its gates, and rotate the
-  seed; compiler correctness takes priority over the manual.
+  `for (0..s.a.len)` for-range end not resolved), and **11R–11U** (invalid-Zig
+  constructs accepted with poor/no diagnostics: `[@intCast(u8, 300)]` without a
+  target-width range check and `for (0..p.len)` on `[*]T`; `@as` not unwrapped
+  in float-fold operand signedness), found while verifying the manual. (Task
+  **11V** is docs-only and therefore outside this `sf/src` exception.) Only
+  those tasks may touch the compiler, run its gates, and rotate the seed;
+  compiler correctness takes priority over the manual.
 - All files live under `docs/sf/manuals/`. `dist/` is gitignored.
 - English content only in Phase 0; the language bar lists only shipped
   languages.

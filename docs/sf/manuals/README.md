@@ -187,10 +187,10 @@ properties or selectors.
 
 ## Ground rules
 
-- **Website only, with scoped compiler exceptions (Amendments 1–13).** No
+- **Website only, with scoped compiler exceptions (Amendments 1–17).** No
   `sf/src/**`, `scripts/**`, fixture, or `release/seed/**` change - except the
   inserted compiler-fix tasks enumerated in the design spec §11 (Amendments
-  1–13). Only those tasks may touch the compiler, run its gate battery, and
+  1–17). Only those tasks may touch the compiler, run its gate battery, and
   rotate the seed. See
   `docs/superpowers/specs/2026-09-20-z98-manual-phase0-design.md` §11 and
   `docs/superpowers/plans/2026-09-20-z98-manual-phase0-plan.md`.
