@@ -4,7 +4,7 @@
 
 **Goal:** Make function-local / inline named types (`const E = enum {…};` / `struct` / `union` / `error{…}` declared inside a function or as an inline type expression) emit valid C, or cleanly reject — never emit C that fails to compile.
 
-**Architecture:** Five tasks. **B1 (I)** investigates the registration/emission path for function-local and inline named types and decides emit-properly vs clean-reject, covering `enum`, `struct`, `union`, and error-set declarations, and documents the divergence. **B2 (F)** implements the B1 design with fixtures, gates, and a seed rotation. **B3 (F)** resolves the Phase 0 deferred minors carried into this plan (operator ruling 2026-09-21). **B4 (I)** investigates the dynamic error-union `return x;` rewrap gap. **B5 (F)** implements the B4 fix with fixtures, gates, and a seed rotation.
+**Architecture:** Five tasks. **B1 (I)** investigates the registration/emission path for function-local and inline named types and decides emit-properly vs clean-reject, covering `enum`, `struct`, `union`, and error-set declarations, and documents the divergence. **B2 (F)** implements the B1 design with fixtures, gates, and a seed rotation. **B3 (F)** resolves the Phase 0 deferred minors carried into this plan (operator ruling 2026-09-21). **B4 (I)** investigates error-union coercion and established, against official Zig, that a runtime payload-differing EU→EU coercion is invalid and must be cleanly rejected. **B5 (F)** implements that rejection at the type layer, with fixtures, gates, and a seed rotation.
 
 **Tech Stack:** the self-hosted Z98 compiler (`sf/src`), the seed build model, `gcc -m32`, the `repro/mi_matrix` corpus.
 
@@ -67,7 +67,7 @@
 - Read (no edits): `sf/src/lower.zig`, `sf/src/semantic_analyzer.zig`, `sf/src/coercion.zig`, `sf/src/type_registry.zig`.
 - Create: the findings report (SDD workspace; not committed).
 
-**Context:** Task 10F's dynamic errdefer path in `sf/src/lower.zig` lowers `return x;` (where `x` is an error-union expression for which no static coercion was recorded) as `check_error` + `branch` + `ret val`, where `val` is the *source* error union. It skips the rewrap the `try` path performs. That is correct when the source and destination error unions share an error set and payload (the C typedef is payload-keyed and error codes are globally dense), but for a legal error-union *narrowing* — `fn f() E2!U { const x: E1!T = …; return x; }` with `E2 ⊆ E1` and `T` coercible to `U` — the error tag must be remapped and the payload coerced. The Phase 0 program recorded this as an accepted residual; the operator (2026-09-21) directs it be addressed here.
+**Context:** Task 10F's dynamic errdefer path in `sf/src/lower.zig` lowers `return x;` (where `x` is an error-union expression for which no static coercion was recorded) as `check_error` + `branch` + `ret val`, where `val` is the *source* error union. It skips the rewrap the `try` path performs. That is correct when the source and destination error unions share an error set and payload (the C typedef is payload-keyed and error codes are globally dense), but for a legal error-union *narrowing* — `fn f() E2!U { const x: E1!T = …; return x; }` with `E2 ⊆ E1` and `T` coercible to `U` — the error tag must be remapped and the payload coerced. The Phase 0 program recorded this as an accepted residual; the operator (2026-09-21) directs it be addressed here. **Ruling (operator 2026-09-21, "option 1", after the B4 review): official Zig REJECTS a runtime payload-differing EU→EU coercion — the payloads must be in-memory identical (only comptime-known values coerce). So the correct action is a clean rejection at the type layer, NOT the rewrap originally framed here. See the corrected B4 report.**
 
 - [ ] **Step 1: Reproduce** — construct a legal Z98 program that `return x;`-narrows an error-union variable/call whose error set and/or payload differ from the function's return type; capture the wrong emitted C and/or runtime behavior (with a runtime `@panic` guard).
 - [ ] **Step 2: Establish official-Zig validity** — confirm the narrowing is legal Zig (`E1!T` → `E2!U` with `E2 ⊆ E1`, `T` coercible to `U`) and what the correct semantics are.
@@ -78,11 +78,11 @@
 
 ---
 
-### Task B5 (F): Rewrap a dynamic error-union return
+### Task B5 (F): Cleanly reject runtime payload-differing error-union coercions
 
-**Files (confirm against the B4 report):** `sf/src/lower.zig`; `repro/mi_matrix/` fixtures; `repro/`; tech docs; seed rotation iff the fixed point moves.
+**Files (confirm against the corrected B4 report):** `sf/src/type_registry.zig` (EU→EU assignability), and any sema site that needs the matching diagnostic; `repro/mi_matrix/` fixtures; `repro/`; tech docs; seed rotation iff the fixed point moves.
 
-- [ ] **Steps 1–7:** implement per B4; verify the narrowing emits the correct rewrap and that same-type returns stay byte-identical; leave the reproductions; run the QUICK_REF gate battery verbatim (STOP on unexpected gate movement); rotate the seed iff the fixed point moves; update tech docs per AGENTS §1.1.1; commit `fix(lower): rewrap a dynamic error-union return`.
+- [ ] **Steps 1–7:** implement per the corrected B4 report (Option 1): require in-memory-identical payloads for a runtime EU→EU coercion, so a payload-differing `return x;` (and the same-class assignment/declaration) is **cleanly rejected** matching official Zig, while the already-correct same-payload subset case stays byte-identical; add a reject control + the same-payload positive control; leave the reproductions; run the QUICK_REF gate battery verbatim (STOP on unexpected gate movement); rotate the seed iff the fixed point moves; update tech docs per AGENTS §1.1.1; commit `fix(types): reject payload-differing error-union coercion`.
 
 ---
 
