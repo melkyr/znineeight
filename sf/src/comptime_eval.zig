@@ -356,9 +356,19 @@ fn comptimeEvalFloat(self: *ComptimeEval, node_idx: u32, depth: u32) ?f64 {
 // every int literal and would misread an unsigned value above i64 max as
 // negative, e.g. a `u64` const = 18446744073709551615 folding to -1.0).
 fn comptimeEvalOperandSigned(self: *ComptimeEval, node_idx: u32, cv: ComptimeVal) bool {
-    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    // Unwrap parenthesization (recursively) so `@intToFloat(f64, (U))` is
+    // classified by U's declared type, not the wrapper's shape. The value in
+    // `cv` already came from the raw node (comptimeEvalEvaluateDepth unwraps
+    // parens), so only the signedness classification needs the unwrap.
+    var idx = node_idx;
+    var guard: u32 = 0;
+    while (guard < @intCast(u32, 32)) : (guard += 1) {
+        var wn = ast_mod.astStoreNodeAt(self.store, idx);
+        if (wn.kind == AstKind.paren_expr) { idx = wn.child_0; } else { break; }
+    }
+    var node = ast_mod.astStoreNodeAt(self.store, idx);
     if (node.kind == AstKind.ident_expr) {
-        var name_id = ast_mod.astStoreIdentifier(self.store, node_idx);
+        var name_id = ast_mod.astStoreIdentifier(self.store, idx);
         var mi: usize = 0;
         while (mi < @intCast(usize, self.symbol_reg.tables_len)) : (mi += 1) {
             var c_sym = sym_mod.symbolRegistryQualifiedLookup(self.symbol_reg, @intCast(u32, mi), name_id);
@@ -380,7 +390,7 @@ fn comptimeEvalOperandSigned(self: *ComptimeEval, node_idx: u32, cv: ComptimeVal
         return false;
     } else if (node.kind == AstKind.builtin_call) {
         if (node.child_0 == self.int_cast_id) {
-            var dt2 = comptimeEvalResolveTypeArg(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)));
+            var dt2 = comptimeEvalResolveTypeArg(self, ast_mod.astStoreNodeExtraChildAt(self.store, idx, @intCast(u32, 0)));
             if (dt2) |t2| {
                 if (type_mod.typeRegistryIsInteger(self.registry, t2)) {
                     return type_mod.typeRegistryIntIsSigned(self.registry, t2);

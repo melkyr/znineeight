@@ -40,6 +40,7 @@
 //   runtime-operand-ok
 //   typed-f32-widen-ok
 //   u64-above-i64-ok
+//   u64-paren-ok
 //   done
 const std = @import("std");
 
@@ -67,6 +68,8 @@ const WIDE2: f64 = @floatCast(f64, SRC2);
 // operand's `sig` bit (which would read it as -1.0).
 const U: u64 = 18446744073709551615;
 const UF: f64 = @intToFloat(f64, U);
+// Fix round 2: a parenthesized operand must be classified by the inner type.
+const UP: f64 = @intToFloat(f64, (U));
 
 // Runtime-operand controls: must NOT fold (their bodies emit runtime ops).
 fn widen(x: f32) f64 { return @floatCast(f64, x); }
@@ -96,6 +99,9 @@ pub fn main() void {
     // conversion (unsigned), not a signed reinterpretation.
     var uu: u64 = U;
     if (UF == tof(uu)) { std.io.print("u64-above-i64-ok\n"); } else { std.io.print("u64-above-i64-bad\n"); }
+
+    // Parenthesized operand: same unsigned classification must apply.
+    if (UP == tof(uu)) { std.io.print("u64-paren-ok\n"); } else { std.io.print("u64-paren-bad\n"); }
 
     std.io.print("done\n");
 }

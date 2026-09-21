@@ -11,6 +11,32 @@ Each completed plan that moves the self-emission fixed point rotates the seed
 (new zig1 binary + new self-emission C), overwriting the archive and appending
 a provenance entry here. Prior seeds remain recoverable in git history.
 
+## 2026-09-21 — seed v48 (HEAD a657ae62)
+
+Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
+`zig1-seed/` with `zig1`, `gen/` (45 `.c` + 46 `.h` incl.
+emitted `zig_special_types.h`, 8840074 bytes), `c_exit.c` (top level),
+`runtime/`, `lib/`, `SEED_README.txt`.
+
+| field | value |
+|---|---|
+| date | 2026-09-21 |
+| HEAD | `a657ae62` (rotation-time; fix commit immediately following) |
+| seed binary md5 | `0b717b37c412ce5cd6abd87eeb6a36d8` |
+| self-emission C | 45 `.c` + 46 `.h` (8840074 bytes) |
+| fixed point | `0b717b37c412ce5cd6abd87eeb6a36d8` |
+| archive md5 | `e30fbafb93b1253ad007c536883030b6` |
+
+Provenance note: the archived binary (md5 0b717b37c412ce5cd6abd87eeb6a36d8) was captured by
+scripts/seed/archive_seed.sh; the script's rotation-time HEAD was `a657ae62`, the parent of the
+Task 11D fix-round-2 commit whose tree the archived compiler was built from. gcc of the archive's self-emission
+C reproduces the self-emission fixed point `0b717b37c412ce5cd6abd87eeb6a36d8` — both are the same
+compiler state as that fix commit. The compiler self-build uses `-ffast` (user
+programs default to `-fsafe`), so the recorded fixed point is the `-ffast`
+binary. Rebuild recipes + full canonical flag-set requirement (`gcc -m32
+-std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
+-Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
+`-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
 ## 2026-09-21 — seed v47 (HEAD c21f1ff0)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir
@@ -21,16 +47,17 @@ emitted `zig_special_types.h`, 8839028 bytes), `c_exit.c` (top level),
 | field | value |
 |---|---|
 | date | 2026-09-21 |
-| HEAD | `c21f1ff0` |
+| HEAD | `c21f1ff0` (rotation-time; fix commit `a657ae62`) |
 | seed binary md5 | `109628afa625baca56c2d4b340a802b0` |
 | self-emission C | 45 `.c` + 46 `.h` (8839028 bytes) |
 | fixed point | `109628afa625baca56c2d4b340a802b0` |
 | archive md5 | `cccc81768445f05b68bea8d3bb780961` |
 
 Provenance note: the archived binary (md5 109628afa625baca56c2d4b340a802b0) was captured by
-scripts/seed/archive_seed.sh at HEAD c21f1ff0; gcc of the archive's self-emission
-C reproduces the self-emission fixed point `109628afa625baca56c2d4b340a802b0` — both are the same
-compiler state at HEAD c21f1ff0. The compiler self-build uses `-ffast` (user
+scripts/seed/archive_seed.sh; the script's rotation-time HEAD was `c21f1ff0`, the parent of the
+Task 11D fix-round-1 commit `a657ae62` whose tree the archived compiler was built from. gcc of the
+archive's self-emission C reproduces the self-emission fixed point `109628afa625baca56c2d4b340a802b0` — both are the same
+compiler state as commit `a657ae62`. The compiler self-build uses `-ffast` (user
 programs default to `-fsafe`), so the recorded fixed point is the `-ffast`
 binary. Rebuild recipes + full canonical flag-set requirement (`gcc -m32
 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign

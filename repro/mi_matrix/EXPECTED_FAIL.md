@@ -1,4 +1,16 @@
-# mi_matrix corpus — expected-fail manifest (v167 2026-09-20)
+# mi_matrix corpus — expected-fail manifest (v168 2026-09-20)
+
+## Task 11D fix round 2 — unwrap parens in float-fold operand signedness (v167 -> v168 2026-09-20)
+
+Residual of the fix-round-1 class: `comptimeEvalOperandSigned` (`sf/src/comptime_eval.zig`) inspected the raw operand node and did not unwrap `paren_expr`, so `@intToFloat(f64, (U))` with `const U: u64 = 18446744073709551615;` fell back to `ComptimeVal.sig=true` and mis-folded to `-1.0` instead of `1.8446744073709552e19`. The helper now recursively unwraps `paren_expr` (depth-guarded) before classifying, so the operand's actual declared type/signedness is honored regardless of parenthesization. `(I)` for `i64` stays signed; `(SRC)` for `f32` still rounds through `f32` (the float sub-evaluator already unwrapped parens).
+
+**Fixture extended (same dir, 1 new case).**
+
+| fixture | class | new contract |
+|---|---|---|
+| `stdlib_comptime_floatcast_fold_xmod` | OK | `u64-paren-ok` (`@intToFloat(f64, (U))` equals the runtime `tof(U)` result `1.8446744073709552e19`). Deterministic 14-line stdout ending `done`, rc 0 |
+
+**Gates (seed-built fixed-point compiler `0b717b37c412ce5cd6abd87eeb6a36d8`).** Self-compile `-ffast --dump-c89` rc=0, two-hop closure hop1 == hop2 == `0b717b37…` (re-verified from the rotated seed). Fold gate: fixture `__module_init` 0 runtime `int_to_float`/`float_cast`, 12 folded float literals; runtime controls `widen`/`tof` still emit `return (double)((double)x);`. Runtime gate **197 PASS / 0 FAIL**. Corpus `-s0` **907 = 853 OK / 28 GREEN / 26 FAIL / 0 ICE / 0 CRASH**, full-classifier join-diff vs the previous compiler byte-identical (zero class movement). 4-MD5 emitted-C gates **UNCHANGED**: gol `80287f58…` / lisp `d1d99b59…` / json `f9c9f113…` / mud `91fd711d…`. 21-example matrix **21/21**; mandelbrot runtime-identical (`d5966775…`, 1944 B, rc=0). Fixed point **MOVED `109628afa625baca56c2d4b340a802b0` -> `0b717b37c412ce5cd6abd87eeb6a36d8`**; seed **v47 -> v48** (archive md5 `cccc81768445f05b68bea8d3bb780961` -> `e30fbafb93b1253ad007c536883030b6`).
 
 ## Task 11D fix round 1 — honor declared float width + operand signedness (v166 -> v167 2026-09-20)
 
