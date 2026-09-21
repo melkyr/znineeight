@@ -90,6 +90,11 @@ pub const ErrorCode = enum(u16) {
     ERR_3052_BREAK_OUT_OF_DEFER = 3052,
     ERR_3053_CONTINUE_OUT_OF_DEFER = 3053,
     ERR_3054_TRY_INSIDE_DEFER = 3054,
+    // Task 11J: an enum member's explicit initializer is not a comptime-known
+    // integer expression (a function call, a bool/float builtin, `~`, an
+    // enum-member reference), or two members share a tag value. Never a silent
+    // auto-increment fallback.
+    ERR_3055_ENUM_VALUE_NOT_CONSTANT = 3055,
 };
 
 pub const ERR_1000_UNTERMINATED_STRING: u16 = 0;

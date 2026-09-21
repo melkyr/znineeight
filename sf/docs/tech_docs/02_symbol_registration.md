@@ -1,4 +1,4 @@
-# 02 — Symbol Registration [updated: 2026-09-20 — refreshed against current source: arbitrary-width/packed/pointer-and-fn type-alias registration, the `phase_FrontResolution` back-fill, and current markers; line references and dated evidence removed]
+# 02 — Symbol Registration [updated: 2026-09-21 — Task 11J: the enum member loop is factored into ONE shared walk (`enumMembersResolve`, append+lenient at registration) reused by the post-layout re-evaluation pass] [updated: 2026-09-20 — refreshed against current source: arbitrary-width/packed/pointer-and-fn type-alias registration, the `phase_FrontResolution` back-fill, and current markers; line references and dated evidence removed]
 
 > Covers: `symbol_registrator.zig`, `symbol_table.zig`
 
@@ -156,7 +156,7 @@ Same field iteration as struct. If `node.flags & 1 != 0` (tagged union): calls `
 
 ### enum_decl
 
-Creates a `TypeResolveEnv` for backing-type resolution. If `node.child_0 != 0`, resolves the backing integer type via `resolveTypeExprFull` and records `explicit_backing = 1`; otherwise the backing defaults to `TYPE_U32`. Iterates children: for each `field_decl`, auto-increments the value (starting at 0, i64) unless `mnode.child_1` provides an explicit value via `evalConstI64Full`. Calls `emAppend` with `EnumMember{name_id, value}`, then `enAppend` with `EnumPayload{members_start, members_count, backing_type, explicit_backing}`. Back-patches `payload_idx`.
+Creates a `TypeResolveEnv` for backing-type resolution. If `node.child_0 != 0`, resolves the backing integer type via `resolveTypeExprFull` and records `explicit_backing = 1`; otherwise the backing defaults to `TYPE_U32`. Then calls the ONE shared member walk `enumMembersResolve(env, decl_idx, append=true, mstart=0, strict=false, ...)` (**Task 11J**), which iterates the `field_decl` children with a fresh `auto_val` cascade (starting at 0, i64) and `emAppend`s each `EnumMember{name_id, value}`; an explicit `child_1` is folded via `evalConstI64Full`, falling back to `auto_val` when it cannot fold yet. The SAME walk is reused by the post-layout re-evaluation pass with `append=false, strict=true` (overwrite in place; fold-or-reject), so registration and the pass cannot diverge. Registration-time folding is best-effort only: named aggregates are not yet laid out here, so `@sizeOf(S)` stays auto-increment at registration and is corrected by the post-layout pass. Finally calls `enAppend` with `EnumPayload{members_start, members_count, backing_type, explicit_backing}` and back-patches `payload_idx`.
 
 ### error_set_decl
 

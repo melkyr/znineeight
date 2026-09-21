@@ -1,4 +1,4 @@
-# 09 — Pipeline Orchestration [updated: 2026-09-20 — refreshed against current source: added `phase_FrontResolution`/`phase_AsyncFrameSize`, `-fsafe`/`-ffast` and target/output flags, self-contained output-dir orchestration, and the tooling mains; line references and dated evidence removed]
+# 09 — Pipeline Orchestration [updated: 2026-09-21 — Task 11J: `phase_TypeResolution` now calls `type_resolver.enumReevaluateAll` after `typeResolverResolve` and before `classifyTypeEmissionGroups`] [updated: 2026-09-20 — refreshed against current source: added `phase_FrontResolution`/`phase_AsyncFrameSize`, `-fsafe`/`-ffast` and target/output flags, self-contained output-dir orchestration, and the tooling mains; line references and dated evidence removed]
 
 > Covers: `main.zig`, `main_dump.zig`, `main_exp.zig`, `strip_main.zig`
 
@@ -374,6 +374,7 @@ null choke point in `module_registry.zig` → `error[3048]: could not resolve im
 - `type_resolver.typeResolverBuildDependencyGraph` — build real by-value field edges
 - `type_resolver.typeResolverBuild` — build type dependency graph (Kahn)
 - `type_resolver.typeResolverResolve` — resolve all types in topological order
+- `type_resolver.enumReevaluateAll` — **Task 11J** post-layout enum re-evaluation: re-walk every module enum with a fresh `auto_val` cascade, overwrite `em_items[].value` (fold integer/builtin initializers, including named-aggregate introspection), reject unfoldable/duplicate with `ERR_3055`
 - `type_resolver.classifyTypeEmissionGroups` — classify pointer-only types
 - Sets `ctx.pointer_only_ids` and `ctx.pointer_only_len`
 

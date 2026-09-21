@@ -512,6 +512,12 @@ fn phase_TypeResolution(ctx: *CompilerContext) void {
     type_resolver.typeResolverBuildDependencyGraph(&tr);
     type_resolver.typeResolverBuild(&tr, &dep_graph);
     type_resolver.typeResolverResolve(&tr);
+    // Task 11J: post-layout enum re-evaluation (Option B). Every type is now
+    // laid out, so an enum member's explicit initializer can fold the full
+    // integer/builtin set (including named-aggregate introspection). Overwrite
+    // the registration-time stored values with a fresh auto-increment cascade;
+    // an unfoldable initializer or a duplicate tag is a clean ERR_3055.
+    type_resolver.enumReevaluateAll(ctx.store, ctx.typereg, ctx.symbol_reg, ctx.interner, ctx.module_reg, ctx.diag);
     var ptr_grp = type_resolver.classifyTypeEmissionGroups(&tr, &ctx.alloc.permanent);
     ctx.pointer_only_ids = ptr_grp.ids;
     ctx.pointer_only_len = ptr_grp.len;

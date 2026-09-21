@@ -1090,19 +1090,69 @@ pub fn evalConstU32Full(env: *TypeResolveEnv, node_idx: u32, depth: u32) u32 {
     return @intCast(u32, 0xFFFFFFFF);
 }
 
-pub fn evalConstI64Full(env: *TypeResolveEnv, node_idx: u32) ?i64 {
+pub fn evalConstI64Full(env: *TypeResolveEnv, node_idx: u32, depth: u32) ?i64 {
+    // Task 11J: cycle guard, mirroring `evalConstU32Full`'s depth cap (16). A
+    // self- or mutually-recursive const (`const X = X`) terminates as an
+    // unfoldable value instead of recursing forever.
+    if (depth > @intCast(u32, 16)) return null;
     if (node_idx == @intCast(u32, 0)) return null;
     var node = ast_mod.astStoreNodeAt(env.store, node_idx);
     if (node.kind == AstKind.int_literal) {
         return @bitCast(i64, ast_mod.astStoreIntValue(env.store, node_idx));
     }
+    // Task 11J: a character literal is an 8-bit integer literal.
+    if (node.kind == AstKind.char_literal) {
+        return @bitCast(i64, ast_mod.astStoreIntValue(env.store, node_idx));
+    }
     if (node.kind == AstKind.negate) {
         if (node.child_0 != @intCast(u32, 0)) {
-            var nv_opt = evalConstI64Full(env, node.child_0);
+            var nv_opt = evalConstI64Full(env, node.child_0, depth + @intCast(u32, 1));
             if (nv_opt) |nv| {
                 var as_u: u64 = @bitCast(u64, nv);
                 var neg_u: u64 = @intCast(u64, 0) - as_u;
                 return @bitCast(i64, neg_u);
+            }
+        }
+        return null;
+    }
+    // Task 11J: parenthesized expression.
+    if (node.kind == AstKind.paren_expr) {
+        return evalConstI64Full(env, node.child_0, depth + @intCast(u32, 1));
+    }
+    // Task 11J: integer binary/bitwise/shift expressions, mirroring
+    // `comptime_eval.zig`'s `comptimeEvalBinOp` (div/mod by zero and a shift
+    // count >= 64 are unfoldable). Computed on the 64-bit pattern so the
+    // backing-width fit-check downstream is the authority on range.
+    if (node.kind == AstKind.add or node.kind == AstKind.sub or
+        node.kind == AstKind.mul or node.kind == AstKind.div or node.kind == AstKind.mod_op or
+        node.kind == AstKind.bit_and or node.kind == AstKind.bit_or or node.kind == AstKind.bit_xor or
+        node.kind == AstKind.shl or node.kind == AstKind.shr) {
+        var l_opt = evalConstI64Full(env, node.child_0, depth + @intCast(u32, 1));
+        var r_opt = evalConstI64Full(env, node.child_1, depth + @intCast(u32, 1));
+        if (l_opt) |li| {
+            if (r_opt) |ri| {
+                var lv: u64 = @bitCast(u64, li);
+                var rv: u64 = @bitCast(u64, ri);
+                if (node.kind == AstKind.add) return @bitCast(i64, lv + rv);
+                if (node.kind == AstKind.sub) return @bitCast(i64, lv - rv);
+                if (node.kind == AstKind.mul) return @bitCast(i64, lv * rv);
+                if (node.kind == AstKind.div) {
+                    if (rv == @intCast(u64, 0)) return null;
+                    return @bitCast(i64, lv / rv);
+                }
+                if (node.kind == AstKind.mod_op) {
+                    if (rv == @intCast(u64, 0)) return null;
+                    return @bitCast(i64, lv % rv);
+                }
+                if (node.kind == AstKind.bit_and) return @bitCast(i64, lv & rv);
+                if (node.kind == AstKind.bit_or) return @bitCast(i64, lv | rv);
+                if (node.kind == AstKind.bit_xor) return @bitCast(i64, lv ^ rv);
+                if (node.kind == AstKind.shl) {
+                    if (rv >= @intCast(u64, 64)) return null;
+                    return @bitCast(i64, lv << rv);
+                }
+                if (rv >= @intCast(u64, 64)) return null;
+                return @bitCast(i64, lv >> rv);
             }
         }
         return null;
@@ -1114,13 +1164,137 @@ pub fn evalConstI64Full(env: *TypeResolveEnv, node_idx: u32) ?i64 {
             if ((cs.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
                 var c_decl = ast_mod.astStoreNodeAt(env.store, cs.decl_node);
                 if (c_decl.child_1 != 0) {
-                    return evalConstI64Full(env, c_decl.child_1);
+                    return evalConstI64Full(env, c_decl.child_1, depth + @intCast(u32, 1));
                 }
             }
         }
     }
+    // Task 11J: a module-const reference through a field access (`mid.N`).
+    if (node.kind == AstKind.field_access) {
+        var fa_mod_id = evalConstModuleOfExpr(env, node.child_0);
+        if (fa_mod_id != @intCast(u32, 0)) {
+            var fa_field_id = ast_mod.astStoreNodePayload(env.store, node_idx);
+            if (sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, fa_mod_id, fa_field_id)) |fa_sym| {
+                if ((fa_sym.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
+                    var fa_decl = ast_mod.astStoreNodeAt(env.store, fa_sym.decl_node);
+                    if (fa_decl.child_1 != 0) {
+                        return evalConstI64Full(env, fa_decl.child_1, depth + @intCast(u32, 1));
+                    }
+                }
+            }
+        }
+    }
+    // Task 11J: integer-valued builtins. `@as`/`@intCast` fold their operand;
+    // `@sizeOf`/`@alignOf`/`@bitSizeOf`/`@offsetOf`/`@bitOffsetOf` fold the
+    // resolved type/field (named aggregates are complete post-layout). `~`, the
+    // bool/float builtins (`@isWindows`, `@intToFloat`, `@floatCast`), function
+    // calls, and enum-member references deliberately have no arm: they fall
+    // through to `null` and are rejected by the caller (ERR_3055), never a
+    // silent auto-increment.
+    if (node.kind == AstKind.builtin_call) {
+        var s_size: []const u8 = "@sizeOf";
+        var size_id = interner_mod.stringInternerIntern(env.interner, s_size);
+        var s_align: []const u8 = "@alignOf";
+        var align_id = interner_mod.stringInternerIntern(env.interner, s_align);
+        var s_bitsz: []const u8 = "@bitSizeOf";
+        var bitsz_id = interner_mod.stringInternerIntern(env.interner, s_bitsz);
+        var s_intc: []const u8 = "@intCast";
+        var intc_id = interner_mod.stringInternerIntern(env.interner, s_intc);
+        var s_as: []const u8 = "@as";
+        var as_id = interner_mod.stringInternerIntern(env.interner, s_as);
+        var s_off: []const u8 = "@offsetOf";
+        var off_id = interner_mod.stringInternerIntern(env.interner, s_off);
+        var s_bitoff: []const u8 = "@bitOffsetOf";
+        var bitoff_id = interner_mod.stringInternerIntern(env.interner, s_bitoff);
+        var bc_n = ast_mod.astStoreNodeExtraChildCount(env.store, node_idx);
+        if (node.child_0 == intc_id or node.child_0 == as_id) {
+            if (bc_n >= @intCast(u32, 2)) {
+                return evalConstI64Full(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 1)), depth + @intCast(u32, 1));
+            }
+            return null;
+        }
+        if (node.child_0 == size_id or node.child_0 == align_id or node.child_0 == bitsz_id) {
+            if (bc_n >= @intCast(u32, 1)) {
+                var bt_tid = resolveTypeExprFull(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 0)), depth + @intCast(u32, 1));
+                if (bt_tid != type_mod.TYPE_UNDEFINED) {
+                    var bt_ty = env.typereg.types_items[@intCast(usize, bt_tid)];
+                    if (bt_ty.state != @intCast(u8, 2) and bt_ty.kind == TypeKind.struct_type) {
+                        _ = layoutEnsure(env.typereg, bt_tid, @intCast(u32, 0));
+                        bt_ty = env.typereg.types_items[@intCast(usize, bt_tid)];
+                    }
+                    var bt_foldable = evalConstScalarKind(bt_ty.kind);
+                    if (bt_ty.kind == TypeKind.struct_type) { bt_foldable = true; }
+                    if (bt_ty.state == @intCast(u8, 2) and bt_foldable) {
+                        if (node.child_0 == size_id) { return @intCast(i64, bt_ty.size); }
+                        if (node.child_0 == align_id) { return @intCast(i64, bt_ty.alignment); }
+                        var bt_bits: u32 = bt_ty.size * @intCast(u32, 8);
+                        if (type_mod.typeRegistryIsInteger(env.typereg, bt_tid)) {
+                            bt_bits = @intCast(u32, type_mod.typeRegistryIntWidthBits(env.typereg, bt_tid));
+                        }
+                        if (bt_ty.kind == TypeKind.enum_type) {
+                            bt_bits = @intCast(u32, type_mod.typeRegistryIntWidthBits(env.typereg, type_mod.typeRegistryEnumBackingType(env.typereg, bt_tid)));
+                        }
+                        if (bt_ty.kind == TypeKind.bool_type) { bt_bits = @intCast(u32, 1); }
+                        if (bt_ty.kind == TypeKind.struct_type and (bt_ty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
+                            bt_bits = @intCast(u32, type_mod.typeRegistryGetPackedTotalBits(env.typereg, bt_tid));
+                        }
+                        return @intCast(i64, bt_bits);
+                    }
+                }
+            }
+            return null;
+        }
+        if (node.child_0 == off_id or node.child_0 == bitoff_id) {
+            if (bc_n >= @intCast(u32, 2)) {
+                var ot_tid = resolveTypeExprFull(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 0)), depth + @intCast(u32, 1));
+                if (ot_tid != type_mod.TYPE_UNDEFINED) {
+                    var ot_ty = env.typereg.types_items[@intCast(usize, ot_tid)];
+                    if (ot_ty.state == @intCast(u8, 2) and ot_ty.kind == TypeKind.struct_type) {
+                        var fields: []type_mod.FieldEntry = undefined;
+                        type_mod.typeRegistryGetStructFields(env.typereg, ot_tid, &fields);
+                        var packed_fields: []type_mod.PackedBitField = undefined;
+                        var has_pk = type_mod.typeRegistryGetPackedBitFields(env.typereg, ot_tid, &packed_fields);
+                        var fname_node = ast_mod.astStoreNodeAt(env.store, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 1)));
+                        if (fname_node.kind == AstKind.string_literal) {
+                            var sv_idx = ast_mod.astStoreNodePayload(env.store, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 1)));
+                            var want_id = env.store.string_values.items[@intCast(usize, sv_idx)];
+                            var fi: usize = 0;
+                            while (fi < fields.len) : (fi += 1) {
+                                if (fields[fi].name_id == want_id) {
+                                    var bo: u64 = @intCast(u64, fields[fi].offset);
+                                    if (has_pk) {
+                                        var pk_bo: u64 = @intCast(u64, 0);
+                                        if (fi < packed_fields.len) { pk_bo = @intCast(u64, packed_fields[fi].bit_offset); }
+                                        if (node.child_0 == bitoff_id) { bo = pk_bo; } else { bo = pk_bo / @intCast(u64, 8); }
+                                    } else {
+                                        if (node.child_0 == bitoff_id) { bo = bo * @intCast(u64, 8); }
+                                    }
+                                    return @bitCast(i64, bo);
+                                }
+                            }
+                        }
+                    } else if (ot_ty.state == @intCast(u8, 2) and ot_ty.kind == TypeKind.packed_union_type) {
+                        var u_fields: []type_mod.FieldEntry = undefined;
+                        type_mod.typeRegistryGetUnionFields(env.typereg, ot_tid, &u_fields);
+                        var fname_node2 = ast_mod.astStoreNodeAt(env.store, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 1)));
+                        if (fname_node2.kind == AstKind.string_literal) {
+                            var sv_idx2 = ast_mod.astStoreNodePayload(env.store, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 1)));
+                            var want_id2 = env.store.string_values.items[@intCast(usize, sv_idx2)];
+                            var fi2: usize = 0;
+                            while (fi2 < u_fields.len) : (fi2 += 1) {
+                                if (u_fields[fi2].name_id == want_id2) { return @intCast(i64, 0); }
+                            }
+                        }
+                    }
+                }
+            }
+            return null;
+        }
+        return null;
+    }
     return null;
 }
+
 
 fn symbolLookupAllModules(env: *TypeResolveEnv, name_id: u32) ?*sym_mod.Symbol {
     var si: usize = 0;
@@ -1129,6 +1303,136 @@ fn symbolLookupAllModules(env: *TypeResolveEnv, name_id: u32) ?*sym_mod.Symbol {
         if (sym != null) return sym;
     }
     return null;
+}
+// Task 11J: the ONE shared enum-member walk (AMENDMENT 10: no duplicated
+// fold/cascade logic). Computes every member value with a fresh `auto_val`
+// cascade, exactly mirroring Zig's ordinal rule: `value = auto_val` unless an
+// explicit initializer folds, then `auto_val = value + 1`. Used both at symbol
+// registration (append=true, strict=false) and by the post-layout re-evaluation
+// pass (append=false, strict=true). In strict mode an unfoldable explicit
+// initializer (`out_fail_kind = 1`) or a duplicate tag value
+// (`out_fail_kind = 2`) fails the walk; the caller emits ERR_3055.
+pub fn enumMembersResolve(
+    env: *TypeResolveEnv,
+    enum_node: u32,
+    append: bool,
+    mstart: u32,
+    strict: bool,
+    out_count: *u32,
+    out_fail_node: *u32,
+    out_fail_kind: *u32,
+) bool {
+    var children_n = ast_mod.astStoreNodeExtraChildCount(env.store, enum_node);
+    var auto_val: i64 = @intCast(i64, 0);
+    var k: u32 = 0;
+    var i: usize = 0;
+    while (i < children_n) : (i += 1) {
+        var mnode = ast_mod.astStoreNodeAt(env.store, ast_mod.astStoreNodeExtraChildAt(env.store, enum_node, @intCast(u32, i)));
+        if (mnode.kind != AstKind.field_decl) continue;
+        var mval: i64 = auto_val;
+        if (mnode.child_1 != @intCast(u32, 0)) {
+            var ev_opt = evalConstI64Full(env, mnode.child_1, @intCast(u32, 0));
+            if (ev_opt) |ev| {
+                mval = ev;
+            } else if (strict) {
+                out_fail_node.* = mnode.child_1;
+                out_fail_kind.* = @intCast(u32, 1);
+                out_count.* = k;
+                return false;
+            }
+        }
+        if (strict) {
+            var dj: u32 = 0;
+            while (dj < k) : (dj += 1) {
+                if (env.typereg.em_items[@intCast(usize, mstart) + @intCast(usize, dj)].value == mval) {
+                    out_fail_node.* = ast_mod.astStoreNodeExtraChildAt(env.store, enum_node, @intCast(u32, i));
+                    out_fail_kind.* = @intCast(u32, 2);
+                    out_count.* = k;
+                    return false;
+                }
+            }
+        }
+        if (append) {
+            type_mod.emAppend(env.typereg, type_mod.EnumMember{
+                .name_id = ast_mod.astStoreNodePayload(env.store, ast_mod.astStoreNodeExtraChildAt(env.store, enum_node, @intCast(u32, i))),
+                .value = mval,
+            });
+        } else {
+            env.typereg.em_items[@intCast(usize, mstart) + @intCast(usize, k)].value = mval;
+        }
+        k += 1;
+        auto_val = mval + @intCast(i64, 1);
+    }
+    out_count.* = k;
+    return true;
+}
+
+// Task 11J: post-layout enum re-evaluation (Option B, P1). Runs at the end of
+// `phase_TypeResolution`, after `typeResolverResolve` has laid out every type
+// and before `phase_FrontResolution`/`phase_SemanticAnalysis`, so every
+// consumer of `em_items[].value` sees the corrected value. Re-walks each module
+// enum decl with a fresh `auto_val` cascade (the shared walk) and overwrites
+// the stored member values in place; an unfoldable explicit initializer or a
+// duplicate tag becomes a clean ERR_3055 (rc=2, 0 `.c`), never a silent value.
+pub fn enumReevaluateAll(
+    store: *AstStore,
+    typereg: *TypeRegistry,
+    symbol_reg: *SymbolRegistry,
+    interner: *StringInterner,
+    module_reg: *mr_mod.ModuleRegistry,
+    diag: *DiagnosticCollector,
+) void {
+    var mods = mr_mod.moduleRegistryGetModules(module_reg);
+    var mi: usize = 0;
+    while (mi < mods.len) : (mi += 1) {
+        var ast_root = mods[mi].ast_root;
+        if (ast_root == @intCast(u32, 0)) continue;
+        var decls_n = ast_mod.astStoreNodeExtraChildCount(store, ast_root);
+        var di: usize = 0;
+        while (di < decls_n) : (di += 1) {
+            var decl_idx = ast_mod.astStoreNodeExtraChildAt(store, ast_root, @intCast(u32, di));
+            var dnode = ast_mod.astStoreNodeAt(store, decl_idx);
+            var enum_node: u32 = @intCast(u32, 0);
+            var enum_name_id: u32 = @intCast(u32, 0);
+            if (dnode.kind == AstKind.enum_decl and dnode.child_1 != @intCast(u32, 0)) {
+                enum_node = decl_idx;
+                enum_name_id = dnode.child_0;
+            } else if (dnode.kind == AstKind.var_decl and dnode.child_1 != @intCast(u32, 0)) {
+                var inn = ast_mod.astStoreNodeAt(store, dnode.child_1);
+                if (inn.kind == AstKind.enum_decl) {
+                    enum_node = dnode.child_1;
+                    enum_name_id = ast_mod.astStoreNodePayload(store, decl_idx);
+                }
+            }
+            if (enum_node == @intCast(u32, 0)) continue;
+            var key: u64 = @intCast(u64, mods[mi].id) * @intCast(u64, 4294967296) + @intCast(u64, enum_name_id);
+            var tid_box: [1]u32 = [1]u32{ @intCast(u32, 0) };
+            if (type_mod.nameCacheGet(typereg, key)) |t| { tid_box[0] = t; } else { continue; }
+            var tid = tid_box[0];
+            if (@intCast(usize, tid) >= typereg.types_len) continue;
+            var ety = typereg.types_items[@intCast(usize, tid)];
+            if (ety.kind != TypeKind.enum_type) continue;
+            var ep = typereg.en_items[@intCast(usize, ety.payload_idx)];
+            var env = TypeResolveEnv{
+                .store = store, .typereg = typereg, .symbol_reg = symbol_reg, .interner = interner,
+                .module_id = mods[mi].id, .source_file_id = mods[mi].source_file_id,
+                .diag = diag, .local_consts = null,
+            };
+            var count: u32 = 0;
+            var fail_node: u32 = 0;
+            var fail_kind: u32 = 0;
+            if (!enumMembersResolve(&env, enum_node, false, ep.members_start, true, &count, &fail_node, &fail_kind)) {
+                var fn_ = ast_mod.astStoreNodeAt(store, fail_node);
+                var sp = fn_.span_start;
+                var ep_ = sp + @intCast(u32, fn_.span_len);
+                var msg: []const u8 = "enum member value is not a comptime-known integer expression";
+                if (fail_kind == @intCast(u32, 2)) { msg = "duplicate enum tag value (tag values must be unique)"; }
+                _ = diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0),
+                    @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3055_ENUM_VALUE_NOT_CONSTANT)),
+                    mods[mi].source_file_id, sp, ep_, msg);
+            }
+        }
+    }
 }
 
 pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type_mod.TypeId {
