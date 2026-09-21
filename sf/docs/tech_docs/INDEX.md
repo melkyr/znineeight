@@ -1,4 +1,4 @@
-# zig1 Pipeline — Master Index [updated: 2026-09-21 — Task B2: Table B gains `containerAnonNameId`, `isContainerDeclKind`, `registerContainerType`, and `localTypeScopeInit`/`localTypeScopeLookup`/`localTypeScopePush` (type_resolver.zig)] [updated: 2026-09-20 — regenerated against current source and the refreshed 14 tech docs; line references removed, `phase_FrontResolution`/`phase_AsyncFrameSize` added, counts corrected]
+# zig1 Pipeline — Master Index [updated: 2026-09-21 — Task B2 final fix wave: Table B gains `isCompoundTypeExprKind` and `containerFieldCount` (type_resolver.zig); `registerContainerType` clean-rejects a >32-field local/inline aggregate] [updated: 2026-09-21 — Task B2: Table B gains `containerAnonNameId`, `isContainerDeclKind`, `registerContainerType`, and `localTypeScopeInit`/`localTypeScopeLookup`/`localTypeScopePush` (type_resolver.zig)] [updated: 2026-09-20 — regenerated against current source and the refreshed 14 tech docs; line references removed, `phase_FrontResolution`/`phase_AsyncFrameSize` added, counts corrected]
 
 > Source-files: `sf/src/*.zig` | Cross-reference for all 14 tech docs
 
@@ -261,6 +261,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `computeSharedSet` | c89_emit.zig |
 | `constAliasPrepass` | const_alias_prepass.zig |
 | `containerAnonNameId` | type_resolver.zig |
+| `containerFieldCount` | type_resolver.zig |
 | `constraintCheckerCheckBreakContinue` | constraint_checker.zig |
 | `contextAlloc` | std_async.zig |
 | `contextInit` | std_async.zig |
@@ -476,6 +477,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `isBShapeMismatch` | semantic_analyzer.zig |
 | `isBasePtrToArray` | c89_emit.zig |
 | `isC89Keyword` | c89_emit.zig |
+| `isCompoundTypeExprKind` | type_resolver.zig |
 | `isContainerDeclKind` | type_resolver.zig |
 | `isDeadLocalName` | c89_emit.zig |
 | `isDigit` | lexer.zig |

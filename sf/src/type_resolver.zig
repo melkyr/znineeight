@@ -29,6 +29,14 @@ pub const MODULE_ID_NONE: u32 = @intCast(u32, 0xFFFFFFFF);
 // `@panic` in `resolveFnSignatures`, never a silent truncation.
 const MAX_FN_PARAMS: usize = 64;
 
+// Task B2 final fix wave: maximum number of fields a function-local/inline
+// struct or union may carry. `registerContainerType`'s field scratch buffers
+// are fixed at this size; exceeding it is a clean `error[3000]`, never a
+// silent truncation (which emitted a truncated C struct and miscompiled field
+// access beyond the cap). Module-level aggregates are unaffected (registered by
+// `symbol_registrator`, which has no such buffer).
+const MAX_CONTAINER_FIELDS: usize = 32;
+
 pub const TypeResolveEnv = struct {
 
     store: *AstStore,
@@ -1660,6 +1668,35 @@ pub fn isContainerDeclKind(kind: AstKind) bool {
     return kind == AstKind.struct_decl or kind == AstKind.enum_decl or kind == AstKind.union_decl or kind == AstKind.error_set_decl;
 }
 
+// Task B2 final fix wave: the compound type-expression node kinds (`*E`,
+// `[*]E`, `[N]E`, `[]E`, `?E`, `E!T`, `fn(...) T`). A local binding whose
+// initializer is one of these names a `type` value; Z98 does not model
+// function-local `type` values, so the semantic analyzer clean-rejects it
+// (mirrors the bare local-alias reject) rather than leak `TYPE_TYPE` into
+// lowering and emit uncompilable C.
+pub fn isCompoundTypeExprKind(kind: AstKind) bool {
+    return kind == AstKind.ptr_type or kind == AstKind.many_ptr_type or
+        kind == AstKind.array_type or kind == AstKind.slice_type or
+        kind == AstKind.optional_type or kind == AstKind.error_union_type or
+        kind == AstKind.fn_type;
+}
+
+// Task B2 final fix wave: count the `field_decl` children of a struct/union
+// node. Used only to enforce `MAX_CONTAINER_FIELDS` before registering, so the
+// fixed-size scratch buffers in `registerContainerType` can never truncate.
+fn containerFieldCount(env: *TypeResolveEnv, node_idx: u32) usize {
+    var count: usize = 0;
+    var children_n = ast_mod.astStoreNodeExtraChildCount(env.store, node_idx);
+    var i: usize = 0;
+    while (i < @intCast(usize, children_n)) : (i += 1) {
+        var child = ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, i));
+        if (ast_mod.astStoreNodeAt(env.store, child).kind == AstKind.field_decl) {
+            count += 1;
+        }
+    }
+    return count;
+}
+
 // Task B2 fix round 1: strict validation of a local/inline enum declaration.
 // Runs the ONE shared member walk (`enumMembersResolve`) in check-only strict
 // mode so a duplicate tag value or an unfoldable initializer is a clean
@@ -1704,6 +1741,20 @@ pub fn registerContainerType(env: *TypeResolveEnv, node_idx: u32, kind: AstKind,
     var name_id = containerAnonNameId(env, node_idx);
     var existing = type_mod.nameCacheGet(env.typereg, @intCast(u64, name_id));
     if (existing) |e| return e;
+    // Task B2 final fix wave: reject an aggregate with more fields than the
+    // fixed-size scratch buffers below can hold, rather than silently
+    // truncating it (which emitted a truncated C struct and miscompiled field
+    // access beyond the cap). Never registered, so a later diag-carrying pass
+    // re-checks and emits.
+    if (kind == AstKind.struct_decl or kind == AstKind.union_decl) {
+        if (ast_mod.astStoreNodePayload(env.store, node_idx) != @intCast(u32, 0) and containerFieldCount(env, node_idx) > MAX_CONTAINER_FIELDS) {
+            if (env.diag) |diag| {
+                var fc_msg: []const u8 = "aggregate type has more than 32 fields, which is not supported";
+                _ = diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0), @intCast(u16, 3000), env.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), fc_msg);
+            }
+            return type_mod.TYPE_UNDEFINED;
+        }
+    }
     var type_kind: type_mod.TypeKind = switch (kind) {
         AstKind.struct_decl => type_mod.TypeKind.struct_type,
         AstKind.enum_decl => type_mod.TypeKind.enum_type,
@@ -1718,11 +1769,11 @@ pub fn registerContainerType(env: *TypeResolveEnv, node_idx: u32, kind: AstKind,
     if (kind == AstKind.struct_decl) {
         if (ast_mod.astStoreNodePayload(env.store, node_idx) != @intCast(u32, 0)) {
             var sd_children_n = ast_mod.astStoreNodeExtraChildCount(env.store, node_idx);
-            var sd_fty: [32]u32 = undefined;
-            var sd_fnm: [32]u32 = undefined;
+            var sd_fty: [MAX_CONTAINER_FIELDS]u32 = undefined;
+            var sd_fnm: [MAX_CONTAINER_FIELDS]u32 = undefined;
             var sd_fc: usize = 0;
             var sd_i: usize = 0;
-            while (sd_i < @intCast(usize, sd_children_n) and sd_fc < @intCast(usize, 32)) : (sd_i += 1) {
+            while (sd_i < @intCast(usize, sd_children_n) and sd_fc < MAX_CONTAINER_FIELDS) : (sd_i += 1) {
                 var sd_child = ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, sd_i));
                 var sd_fd = ast_mod.astStoreNodeAt(env.store, sd_child);
                 if (sd_fd.kind == AstKind.field_decl) {
@@ -1755,12 +1806,12 @@ pub fn registerContainerType(env: *TypeResolveEnv, node_idx: u32, kind: AstKind,
         if (ast_mod.astStoreNodePayload(env.store, node_idx) != @intCast(u32, 0)) {
             var un_children_n = ast_mod.astStoreNodeExtraChildCount(env.store, node_idx);
             if (un_children_n != 0) {
-                var un_fty: [32]u32 = undefined;
-                var un_fnm: [32]u32 = undefined;
+                var un_fty: [MAX_CONTAINER_FIELDS]u32 = undefined;
+                var un_fnm: [MAX_CONTAINER_FIELDS]u32 = undefined;
                 var un_fc: usize = 0;
 
                 var un_i: usize = 0;
-                while (un_i < @intCast(usize, un_children_n) and un_fc < @intCast(usize, 32)) : (un_i += 1) {
+                while (un_i < @intCast(usize, un_children_n) and un_fc < MAX_CONTAINER_FIELDS) : (un_i += 1) {
                     var un_child = ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, un_i));
                     var un_fd = ast_mod.astStoreNodeAt(env.store, un_child);
                     if (un_fd.kind == AstKind.field_decl) {

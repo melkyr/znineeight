@@ -13,7 +13,7 @@ set -euo pipefail
 #
 # The compiler locates its std modules at <exe_dir>/lib, so pass a built zig1
 # (e.g. one produced by scripts/seed/build_from_seed.sh) whose sibling lib/ holds
-# the 20 std *.zig files.
+# the 29 std *.zig files.
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ZIG1="${1:-}"

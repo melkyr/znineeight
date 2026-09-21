@@ -1,0 +1,58 @@
+// local_type_alias_compound_reject.z98 — standalone reproduction for the Task B2
+// final fix wave (findings 1 and 3).
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   <zig1> -o /tmp/local_type_alias_compound_reject repro/local_type_alias_compound_reject.z98
+//
+// EXPECTED (after the fix): dump rc=2, 0 `.c`, `error[3000]` diagnostics.
+//
+// DEFECT (before the fix): a function-local `const`/`var` binding whose
+// initializer names a `type` value leaked `TYPE_TYPE` into lowering and emitted
+// uncompilable C:
+//   - compound local-type aliases (`const P = *E;`, `const Q = E!i32;`,
+//     `const R = [2]E;`, `const S = ?E;`) returned `TYPE_TYPE` from
+//     `semanticAnalyzerResolveExpr`'s ptr/array/optional/error-union arms;
+//   - `var x = struct { ... };` was excluded from the guard by its `var` flag.
+// Both produced `unknown type name 'zT_5127F14D_type'` at gcc.
+//
+// FIX: the semantic analyzer's `var_decl` arm now clean-rejects any local
+// binding whose initializer is a container decl under `var` (a `type` value
+// must be `const`) or a compound type expression, matching the pre-existing
+// bare-alias reject. Official Zig allows local `type` values; Z98 does not
+// model them, so it rejects rather than emit invalid C (documented divergence).
+fn ptrAlias() void {
+    const E = enum(u8) { A = 1, B };
+    const P = *E;
+    _ = P;
+}
+
+fn euAlias() void {
+    const E = enum(u8) { A = 1, B };
+    const Q = E!i32;
+    _ = Q;
+}
+
+fn arrAlias() void {
+    const E = enum(u8) { A = 1, B };
+    const R = [2]E;
+    _ = R;
+}
+
+fn optAlias() void {
+    const E = enum(u8) { A = 1, B };
+    const S = ?E;
+    _ = S;
+}
+
+fn varContainer() void {
+    var x = struct { a: u32 };
+    _ = x;
+}
+
+pub fn main() void {
+    ptrAlias();
+    euAlias();
+    arrAlias();
+    optAlias();
+    varContainer();
+}

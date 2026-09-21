@@ -3212,32 +3212,44 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
             // Task B2: a function-local named type (`const T = struct/enum/union/error{...}`)
             // is a first-class `type` value, not a runtime local. Register the
             // container type, bind the name as a type, and skip the value path.
-            if (node.child_0 == @intCast(u32, 0) and node.child_1 != @intCast(u32, 0) and (node.flags & @intCast(u8, 1)) == @intCast(u8, 0)) {
+            // Task B2 final fix wave: any other local `const`/`var` binding whose
+            // initializer names a `type` value also clean-rejects instead of
+            // leaking `TYPE_TYPE` into lowering and emitting uncompilable C: a
+            // `var` binding of a container type (invalid Zig — a `type` value must
+            // be `const`), a compound type expression (`*E`, `E!i32`, `[N]E`,
+            // `?E`, `fn(...)`, `[]E`, `[*]E`), and a bare local-type alias.
+            if (node.child_0 == @intCast(u32, 0) and node.child_1 != @intCast(u32, 0)) {
                 var vd_init_node = ast_mod.astStoreNodeAt(self.store, node.child_1);
+                var vd_is_const = (node.flags & @intCast(u8, 1)) == @intCast(u8, 0);
                 if (type_resolver.isContainerDeclKind(vd_init_node.kind)) {
-                    if (vd_init_node.kind == AstKind.struct_decl) {
-                        semanticAnalyzerGatePackedFields(self, node.child_1, self.module_id);
-                    }
-                    if (vd_init_node.kind == AstKind.enum_decl) {
-                        semanticAnalyzerCheckLocalEnum(self, node.child_1);
-                    }
-                    var vd_lt_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id, .diag = self.diag, .local_consts = &self.local_consts, .local_types = &self.local_types, .source_file_id = self.source_file_id };
-                    decl_type = type_resolver.registerContainerType(&vd_lt_env, node.child_1, vd_init_node.kind, @intCast(u32, 0));
-                    if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED)) {
-                        // Task B2 §4.9.1: a type registered during sema misses the
-                        // earlier layout pass, so size-dependent uses
-                        // (`@sizeOf`/`@alignOf`, aggregate copies) need it laid out
-                        // on demand. The inline path is untouched (byte-identical).
-                        _ = type_resolver.layoutEnsure(self.registry, decl_type, @intCast(u32, 0));
-                        rtt_mod.resolvedTypeTableSet(self.type_table, node.child_1, decl_type);
-                        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, decl_type);
-                        type_resolver.localTypeScopePush(&self.local_types, ast_mod.astStoreNodePayload(self.store, node_idx), decl_type);
-                        if (self.local_decl_count >= self.local_decl_cap) {
-                            semanticAnalyzerGrowLocalDecls(self);
+                    if (vd_is_const) {
+                        if (vd_init_node.kind == AstKind.struct_decl) {
+                            semanticAnalyzerGatePackedFields(self, node.child_1, self.module_id);
                         }
-                        self.local_decl_names[self.local_decl_count] = ast_mod.astStoreNodePayload(self.store, node_idx);
-                        self.local_decl_types[self.local_decl_count] = decl_type;
-                        self.local_decl_count += @intCast(usize, 1);
+                        if (vd_init_node.kind == AstKind.enum_decl) {
+                            semanticAnalyzerCheckLocalEnum(self, node.child_1);
+                        }
+                        var vd_lt_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id, .diag = self.diag, .local_consts = &self.local_consts, .local_types = &self.local_types, .source_file_id = self.source_file_id };
+                        decl_type = type_resolver.registerContainerType(&vd_lt_env, node.child_1, vd_init_node.kind, @intCast(u32, 0));
+                        if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED)) {
+                            // Task B2 §4.9.1: a type registered during sema misses the
+                            // earlier layout pass, so size-dependent uses
+                            // (`@sizeOf`/`@alignOf`, aggregate copies) need it laid out
+                            // on demand. The inline path is untouched (byte-identical).
+                            _ = type_resolver.layoutEnsure(self.registry, decl_type, @intCast(u32, 0));
+                            rtt_mod.resolvedTypeTableSet(self.type_table, node.child_1, decl_type);
+                            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, decl_type);
+                            type_resolver.localTypeScopePush(&self.local_types, ast_mod.astStoreNodePayload(self.store, node_idx), decl_type);
+                            if (self.local_decl_count >= self.local_decl_cap) {
+                                semanticAnalyzerGrowLocalDecls(self);
+                            }
+                            self.local_decl_names[self.local_decl_count] = ast_mod.astStoreNodePayload(self.store, node_idx);
+                            self.local_decl_types[self.local_decl_count] = decl_type;
+                            self.local_decl_count += @intCast(usize, 1);
+                        }
+                    } else {
+                        var vd_var_msg: []const u8 = "a local type value must be declared with 'const'";
+                        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), vd_var_msg);
                     }
                     vd_type_binding = @intCast(u8, 1);
                 } else if (vd_init_node.kind == AstKind.ident_expr) {
@@ -3251,6 +3263,12 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                         _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), vd_alias_msg);
                         vd_type_binding = @intCast(u8, 1);
                     }
+                } else if (type_resolver.isCompoundTypeExprKind(vd_init_node.kind)) {
+                    // Task B2 final fix wave: a compound type expression names a
+                    // `type` value; Z98 does not model function-local `type` values.
+                    var vd_texpr_msg: []const u8 = "local type aliases are not supported; bind the container declaration directly";
+                    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), vd_texpr_msg);
+                    vd_type_binding = @intCast(u8, 1);
                 }
             }
             if (node.child_0 != @intCast(u32, 0)) {

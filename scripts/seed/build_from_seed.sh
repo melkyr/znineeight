@@ -21,7 +21,7 @@ set -euo pipefail
 #   gcc -m32 -O0 *.o <repo>/sf/src/include/zig_runtime.c
 #     <repo>/sf/src/include/zig_pal.c <repo>/sf/src/c_exit.c
 #     -o <out>/zig1_5_clean
-#   std lib: 20 std .zig copied into <out>/lib/
+#   std lib: 29 std .zig copied into <out>/lib/
 # Two-hop fixed-point closure is verified: <out>/zig1_5_clean (hop1) dumps
 # sf/src/main.zig again -> gcc -> hop2 binary; md5(hop1) must equal
 # md5(hop2) (== recorded fixed point when sf/src matches the seed's era; both
