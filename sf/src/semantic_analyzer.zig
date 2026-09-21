@@ -914,11 +914,19 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
         var fnf: []const u8 = "FF\n"; pal_mod.markerWrite(fnf);
         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
         return type_mod.TYPE_VOID;
-    } else if (semanticAnalyzerArrayFieldLen(self, node.child_0) != @intCast(u32, 0)) {
-        var afl_ty = semanticAnalyzerArrayFieldLen(self, node.child_0);
-        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, afl_ty);
-        return afl_ty;
     } else {
+        // Task 11N: `.len` on a struct/union array field only — gate on the
+        // accessed name first, or any unknown field on an array field (e.g.
+        // `s.a.foo`) would be wrongly accepted as `usize`.
+        var len_s: []const u8 = "len";
+        var len_id = interner_mod.stringInternerIntern(self.interner, len_s);
+        if (field_name_id == len_id) {
+            var afl_ty = semanticAnalyzerArrayFieldLen(self, node.child_0);
+            if (afl_ty != @intCast(u32, 0)) {
+                rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, afl_ty);
+                return afl_ty;
+            }
+        }
         var fnf: []const u8 = "FF\n"; pal_mod.markerWrite(fnf);
         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
         return type_mod.TYPE_VOID;

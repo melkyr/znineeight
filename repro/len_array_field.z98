@@ -18,6 +18,12 @@
 // SCOPE NOTE: `for (0..s.a.len)` stays broken after this fix (separate
 // for-range-end resolution defect); this repro avoids that position.
 //
+// NEGATIVE CASE (fix round 1): an unknown field on an array field (`s.a.foo`)
+// stays rejected with `error[3000]: cannot declare variable of type void`
+// (0 `.c`) — the analyzer fallback is gated on the accessed name being `len`.
+// See `repro/mi_matrix/len_array_field_reject_xmod/` for the pinned corpus
+// negative fixture.
+//
 // EXPECTED after the fix (deterministic, RUNRC=0):
 //   local=4
 //   byval=4
