@@ -1,4 +1,18 @@
-# mi_matrix corpus — expected-fail manifest (v181 2026-09-21)
+# mi_matrix corpus — expected-fail manifest (v182 2026-09-21)
+
+## Task B5 — cleanly reject runtime payload-differing error-union coercions (v181 -> v182 2026-09-21)
+
+A runtime error-union→error-union coercion whose payloads differ (`F!i32 → E!i64`) is **invalid Zig**. Official Zig's EU→EU rule requires the destination error set to be a superset (`E1 ⊆ E2`) **and the payloads to be in-memory identical**; only comptime-known values may coerce (verified on Zig 0.13.0 by Task B4, and on 0.10.1/0.14.1 by the reviewer). Z98 **accepted** the invalid program and emitted C that failed to compile (`incompatible types when assigning to type 'zT_..._EU_7' from type 'zT_..._EU_6'`).
+
+**Root cause.** `sf/src/type_registry.zig`'s EU→EU assignability branch (`typeRegistryIsAssignable`) accepted the coercion whenever the payloads were merely *assignable* — integer widening (`i32 → i64`) qualifies — instead of requiring in-memory-identical payloads. That single branch gates every EU→EU context (return, assignment, var-declaration, call argument), so one fix closes all of them.
+
+**Fix.** The branch now requires exact payload TypeId equality: `return eu_src.payload == eu_tgt.payload;`. This is the operator's "option 1" (clean-reject at the type layer, aligning with official Zig), not a rewrap. The same-payload subset path (`F!i32 → E!i32`) is unchanged and emits byte-identical C; the existing `repro/mi_matrix/stdlib_errdefer_dyn_xmod` `subErr` case (Task 10F) remains the positive runtime control. The `try` path (payload→EU, not EU→EU) is unaffected.
+
+**Declared stricter-than-Zig divergences (safe clean rejects; exact payload equality is also what the payload-keyed C EU typedef can represent without a rewrap):** in-memory pointer-qualifier EU→EU (`F!*u8 → E!*const u8`, Zig-accepted) and comptime-known payload-differing EU→EU (`const x: F!i32 = 5; return x;`, Zig-accepted) are rejected.
+
+**New fixtures (2 dirs + 1 standalone).** Reject control `repro/mi_matrix/eu_payload_diff_reject_xmod` (`error[3000]`, 0 `.c`; exercises the ordinary return, the errdefer/dynamic return, assignment/var-decl, and call-argument shapes in one file). Positive runtime control `repro/mi_matrix/stdlib_eu_samepayload_xmod` (same payload `F!i32 → E!i32`, with and without `errdefer`; error tag and success payload `@panic`-guarded; deterministic stdout `undo / ederr-caught / 7 / noederr-caught / 7 / done`, rc 0). Standalone `repro/eu_payload_diff_reject.z98`. Stdlib pin **207 -> 208**.
+
+**Gates (seed-built fixed-point compiler `6322cd4f916a7cc47c883b22f1f44905`).** Self-compile two-hop closure hop1 == hop2 == `6322cd4f…`; 4-MD5 emitted-C gates **UNCHANGED**: gol `e7bde571649a67291419ce57131a556a` / lisp `552d0a84fe54b9cb5ac07c7e30ba2137` / json `38b37bdd45798f6d752cd0aa334491e3` / mud `5a1cc65ef23f27d1c4c51f4516760c07`. 21-example matrix **21/21**. Std-lib runtime gate **208 PASS / 0 FAIL**. Corpus `-s0` **947 dirs = 864 OK / 39 GREEN / 44 FAIL / 0 ICE / 0 CRASH** (v181 945 → 947: the 2 new fixture dirs); a full-classifier join-diff vs the pre-fix seed v61 compiler moves EXACTLY `eu_payload_diff_reject_xmod` (FAIL→GREEN) — **zero other pre-existing class movement** (the new positive control is OK under both compilers). Same-payload byte-identity: `stdlib_errdefer_dyn_xmod`'s emitted `.c`/`.h` are byte-identical pre/post (verified with both compilers installed at the same path). `check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK. Fixed point **MOVED `31f61d870ee93f97bb0e01cc76c629cd` -> `6322cd4f916a7cc47c883b22f1f44905`**; seed **v61 -> v62** (archive md5 recorded in `release/seed/CHANGELOG.md`).
 
 ## Task B3 — resolve the carried Phase 0 deferred minors (v180 -> v181 2026-09-21)
 

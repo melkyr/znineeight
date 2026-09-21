@@ -1,0 +1,47 @@
+// eu_payload_diff_reject.z98 — standalone reproduction for the Task B5 fix.
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   <zig1> -o /tmp/eu_payload_diff_reject repro/eu_payload_diff_reject.z98
+//
+// EXPECTED (after the fix): dump rc=2, 0 `.c`, one or more `error[3000]`
+// "type mismatch ... error-union" diagnostics. Official Zig rejects this
+// program too (the runtime EU->EU payloads are not in-memory identical).
+//
+// DEFECT (before the fix): Z98 accepted the program and emitted C that failed
+// to compile (`incompatible types when assigning to type 'zT_..._EU_7' from
+// type 'zT_..._EU_6'`), because the EU->EU assignability branch in
+// `sf/src/type_registry.zig` accepted the coercion whenever the payloads were
+// merely assignable (integer widening qualifies).
+//
+// FIX (Task B5): the EU->EU branch requires exact payload TypeId equality, so
+// a runtime payload-differing EU->EU coercion (return / assignment /
+// declaration / call argument) is a clean reject, matching official Zig's
+// in-memory-payload rule. The same-payload subset path (`F!i32 -> E!i32`)
+// stays accepted and byte-identical (see
+// repro/mi_matrix/stdlib_eu_samepayload_xmod and
+// repro/mi_matrix/stdlib_errdefer_dyn_xmod).
+//
+// Official Zig 0.13.0 on this program:
+//   error: expected type 'error{Boom,Other}!i64', found 'error{Boom}!i32'
+//   note: error union payload 'i32' cannot cast into error union payload 'i64'
+const E = error{Boom, Other};
+const F = error{Boom};
+
+fn g() F!i32 { return error.Boom; }
+fn gok() F!i32 { return 7; }
+
+fn takesE(x: E!i64) void {
+    _ = x;
+}
+
+fn retWiden() E!i64 {
+    return g();
+}
+
+pub fn main() void {
+    var a: E!i64 = 0;
+    a = g();
+    takesE(gok());
+    _ = retWiden;
+    _ = a;
+}

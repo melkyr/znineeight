@@ -1197,7 +1197,7 @@ pub fn typeRegistryIsAssignable(self: *TypeRegistry, source: TypeId, target: Typ
         var es_ok: bool = eu_src.error_set == eu_tgt.error_set;
         if (!es_ok) es_ok = errorSetIsSubset(self, eu_src.error_set, eu_tgt.error_set);
         if (es_ok) {
-            return typeRegistryIsAssignable(self, eu_src.payload, eu_tgt.payload);
+            return eu_src.payload == eu_tgt.payload;
         }
     }
     if (tgt.kind == TypeKind.error_union_type) {
