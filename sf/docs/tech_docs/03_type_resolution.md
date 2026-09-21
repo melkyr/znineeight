@@ -1,4 +1,4 @@
-# 03 — Type Resolution [updated: 2026-09-21 — Task 11F: `evalConstU32Full` folds the integer-valued builtins (`@intCast`/`@sizeOf`/`@alignOf`/`@bitSizeOf`) in array-size positions; `evalConstScalarKind` restricts the `@sizeOf`/`@alignOf`/`@bitSizeOf` fold to complete primitive/alias types] [updated: 2026-09-20 — refreshed against current source: `front_resolution.zig` front pass, arbitrary-width int/`enum(uN)` layer, packed struct/union kinds, `volatile`/calling-convention type layer, `TYPE_VA_LIST`; line references and dated evidence removed]
+# 03 — Type Resolution [updated: 2026-09-21 — Task 11H: the layout math is factored into `layoutCompute` and reached through one shared, order-independent `layoutEnsure(registry, tid, depth)` used by BOTH the normal topological pass and the array-size fold; `evalConstU32Full` now completes a struct on demand and folds struct `@sizeOf`/`@alignOf`/`@bitSizeOf` in array-size positions (only from `state == 2`)] [updated: 2026-09-21 — Task 11F: `evalConstU32Full` folds the integer-valued builtins (`@intCast`/`@sizeOf`/`@alignOf`/`@bitSizeOf`) in array-size positions; `evalConstScalarKind` restricts the `@sizeOf`/`@alignOf`/`@bitSizeOf` fold to complete primitive/alias types] [updated: 2026-09-20 — refreshed against current source: `front_resolution.zig` front pass, arbitrary-width int/`enum(uN)` layer, packed struct/union kinds, `volatile`/calling-convention type layer, `TYPE_VA_LIST`; line references and dated evidence removed]
 
 > Covers: `type_resolver.zig`, `type_registry.zig`, `const_alias_prepass.zig`, `front_resolution.zig`
 
@@ -269,8 +269,12 @@ Depends-on-graph topological sort and layout computation for all compound types.
 | `worklistPush` | private | `[inference: worklistEnsureCapacity, write id at worklist_len, increment len]` | Pushes a TypeId onto the Kahn worklist. |
 | `worklistPop` | private | `[inference: return null if empty, decrement len, return worklist_items[len]]` | Pops a TypeId from the Kahn worklist (LIFO). |
 | `inDegreeEnsureCapacity` | private | `[inference: grow in_degree array to requested capacity (min 64), sandAlloc, update pointer and cap]` | Ensures the in_degree array is large enough. |
-| `alignUp` | private | `[inference: (v + a - 1) & ~(a - 1), round v up to multiple of a, a must be power of 2]` | Aligns `v` up to alignment `a`; used by `typeResolverResolveLayout`. |
-| `typeResolverResolveLayout` | private | `[inference: switch on kind, compute size/alignment, update Type in registry]` | Computes size/alignment for a single type. See [Layout Resolution](#layout-resolution). |
+| `alignUp` | private | `[inference: (v + a - 1) & ~(a - 1), round v up to multiple of a, a must be power of 2]` | Aligns `v` up to alignment `a`; used by `layoutCompute`. |
+| `layoutCompute` | private | `[inference: switch on kind, compute size/alignment, update Type in registry; does NOT touch state]` | The ONE layout math (the former `typeResolverResolveLayout` body, verbatim). Callable only when every direct dependency is complete. See [Layout Resolution](#layout-resolution). |
+| `layoutDepOk` | private | `[inference: false for dep 0/TYPE_UNDEFINED/TYPE_VOID, else layoutEnsure(dep, depth)]` | One direct-dependency completeness check for the shared walk. |
+| `layoutFieldDepsOk` | private | `[inference: for each FieldEntry type_id in fe_items[fstart..fstart+fcount], layoutDepOk]` | Field-list dependency completeness check. |
+| `layoutEnsure` | private | `[inference: true if state==2; false past depth cap 16; walk direct deps (fields/tag/enum backing/tuple elems/array elem/optional+EU payload), false if any incomplete; else layoutCompute + state=2]` | **Task 11H (Option B, AMENDMENT 10).** The ONE shared, order-independent layout entry point. Used by the normal topological pass AND the on-demand array-size fold, so there is exactly one layout implementation and one dependency walk. |
+| `typeResolverResolveLayout` | private | `[inference: layoutEnsure(registry, tid, 0); on false fall back to layoutCompute]` | Normal-pass wrapper. The fallback preserves the historical behavior for a legitimate zero-size `void` field, a depth cap, or a kind with no layout math; the on-demand fold never takes it. |
 | `typeResolverBuild` | pub | `[inference: copy dep edges, alloc in_degree array of size types_len, zero-init, count edges per target]` | Initializes the in-degree array from the dependency graph (symbol-registrator DUMMY `0->tid` edges PLUS the real `field_type -> container_tid` edges added by `typeResolverBuildDependencyGraph`). Allocates `sorted_items`. |
 | `typeResolverResolve` | pub | `[inference: Kahn's algorithm — push zero-in-degree nodes, pop→resolveLayout→set state=2, decrement dependents' in-degree, push new zeros; detect circular deps]` | Topological sort + layout resolution. See [Kahn's Algorithm](#kahns-algorithm). |
 | `fieldEmbedsByValue` | private | `[inference: true for struct/tagged_union/union/packed_union/array/tuple/enum/error_set]` | Classification helper: kinds that require the full type definition when used as a field. |
@@ -312,7 +316,7 @@ Phase 2 — Process:
   while worklist not empty:
     tid = worklistPop()
     sorted_items.append(tid)
-    typeResolverResolveLayout(tid)          # compute size/alignment
+    typeResolverResolveLayout(tid)          # layoutEnsure: compute size/alignment
     registry.types_items[tid].state = 2     # mark resolved
     for each edge where edge.from == tid:
       dep = edge.to
@@ -328,7 +332,7 @@ Phase 3 — Cycle detection:
 
 ### Layout Resolution
 
-`typeResolverResolveLayout`:
+`layoutCompute` (reached via `layoutEnsure` from `typeResolverResolveLayout`):
 
 | Kind | Logic |
 |------|-------|
@@ -419,7 +423,7 @@ Internal helpers:
 | `optional_type` | Returns `typeRegistryGetOrCreateOptional(child)`. |
 | `array_type` | Resolve element type (`child_0`). Evaluate length from `child_1`: `int_literal`, `add`/`sub`, `mul`/`div`/`mod_op`, `ident_expr`, or any other const-foldable expression via `evalConstU32Full` (including integer-valued `builtin_call` sizes). On success returns `typeRegistryGetOrCreateArray(elem, len)`; on failure emits `ERR_3050_ARRAY_SIZE_NOT_CONSTANT` (once per node) unless the size is the inferred `[_]` form. Emits `T0`, `T1e`, `T2L`, `T3a`, `A`/`a`. |
 
-**Array-size evaluation:** the `array_type` arm's size-node handling covers `int_literal`, `add`/`sub`, `mul`/`div`/`mod_op` (div/mod by zero → uncomputable), `ident_expr`, and a catch-all const-fold via `evalConstU32Full` (which covers module-member `field_access`, function-local consts, and the integer-valued builtins `@intCast`/`@sizeOf`/`@alignOf`/`@bitSizeOf`). An uncomputable size is a hard `ERR_3050_ARRAY_SIZE_NOT_CONSTANT` diagnostic instead of a silent `TYPE_UNDEFINED`.
+**Array-size evaluation:** the `array_type` arm's size-node handling covers `int_literal`, `add`/`sub`, `mul`/`div`/`mod_op` (div/mod by zero → uncomputable), `ident_expr`, and a catch-all const-fold via `evalConstU32Full` (which covers module-member `field_access`, function-local consts, and the integer-valued builtins `@intCast`/`@sizeOf`/`@alignOf`/`@bitSizeOf` — Task 11H also folds a struct's `@sizeOf`/`@alignOf`/`@bitSizeOf` by completing it on demand via `layoutEnsure`). An uncomputable size is a hard `ERR_3050_ARRAY_SIZE_NOT_CONSTANT` diagnostic instead of a silent `TYPE_UNDEFINED`.
 
 #### `evalConstU32Full`
 
@@ -431,13 +435,13 @@ Internal helpers:
 4. **negate**: `0 - child`.
 5. **ident_expr**: consult the function-local const scope first (`localConstScopeLookup`), then `symbolLookupAllModules`; if the symbol is a const (`flags & 0x01 == 0`) recurse into `decl.child_1`.
 6. **field_access**: resolve the base module via `evalConstModuleOfExpr`, then fold the member const's initializer.
-7. **builtin_call** (Task 11F): fold the clear integer-valued builtins, else `0xFFFFFFFF`:
+7. **builtin_call** (Task 11F; aggregate fold added by Task 11H): fold the clear integer-valued builtins, else `0xFFFFFFFF`:
    - `@intCast(T, e)` → recurse into the operand (extra-child 1), so local consts, const chains, and arithmetic operands fold through the arms above;
-   - `@sizeOf(T)` / `@alignOf(T)` / `@bitSizeOf(T)` → `resolveTypeExprFull` the type arg (extra-child 0); only if the resolved type is COMPLETE (`state == 2`) and `evalConstScalarKind(kind)` returns the registry `size` / `alignment` / bit-size (`@bitSizeOf`: `size*8`, overridden by `typeRegistryIntWidthBits` for integer/enum, `1` for bool). The `state == 2` gate is mandatory — reading `size`/`alignment` before layout produced a silently wrong `[1]`;
-   - `@isWindows`/`@intToFloat`/`@floatCast` (bool/float), and `@offsetOf`/`@bitOffsetOf` plus struct/aggregate `@sizeOf` (aggregate introspection, deferred to Task 11G/11H) → `0xFFFFFFFF`, so the caller keeps the `ERR_3050` reject.
+   - `@sizeOf(T)` / `@alignOf(T)` / `@bitSizeOf(T)` → `resolveTypeExprFull` the type arg (extra-child 0). **Task 11H:** if the resolved type is a not-yet-complete `struct_type` (packed or not), call the shared `layoutEnsure(registry, bt_tid, 0)` first, then re-read the type. Fold only if COMPLETE (`state == 2`) and (`evalConstScalarKind(kind)` — the integer whitelist — OR `struct_type`); return the registry `size` / `alignment` / bit-size (`@bitSizeOf`: `size*8`, overridden by `typeRegistryIntWidthBits` for integer/enum, `1` for bool, and `typeRegistryGetPackedTotalBits` for a packed struct). The `state == 2` gate is mandatory — reading `size`/`alignment` before layout produced a silently wrong `[1]` for an aggregate field;
+   - `@isWindows`/`@intToFloat`/`@floatCast` (bool/float), `@offsetOf`/`@bitOffsetOf`, and every non-struct aggregate kind (tuple/slice/union/tagged/packed-union/optional/error-union/enum) → `0xFFFFFFFF`, so the caller keeps the `ERR_3050` reject. A forward-referenced/mutual aggregate also defers (`layoutEnsure` returns false on a `TYPE_VOID` placeholder or past the depth cap), so it too stays `ERR_3050` — never silently wrong.
 8. **Fallback**: returns `0xFFFFFFFF` (sentinel for "unknown").
 
-Helpers: `symbolLookupAllModules` — linear scan of all symbol tables for a `name_id`; `evalConstModuleOfExpr` — resolves a field-access base to a module id by walking module aliases; `evalConstScalarKind` — true for the primitive/alias kinds whose `@sizeOf`/`@alignOf`/`@bitSizeOf` are safe to fold (excludes struct/union/tagged-union/packed-union/tuple/array/slice/optional/error-union/fn/module/type/unresolved/none); `evalConstI64Full` — the `i64` companion used for enum backing values (`int_literal`/`negate`/`ident_expr`, returns `?i64`).
+Helpers: `symbolLookupAllModules` — linear scan of all symbol tables for a `name_id`; `evalConstModuleOfExpr` — resolves a field-access base to a module id by walking module aliases; `evalConstScalarKind` — true for the primitive/alias kinds whose `@sizeOf`/`@alignOf`/`@bitSizeOf` are safe to fold (excludes struct/union/tagged-union/packed-union/tuple/array/slice/optional/error-union/fn/module/type/unresolved/none); Task 11H keeps it as the integer whitelist and adds `struct_type` as the only on-demand-completed aggregate; `evalConstI64Full` — the `i64` companion used for enum backing values (`int_literal`/`negate`/`ident_expr`, returns `?i64`).
 
 #### `resolveDeclAggregateFieldTypes`
 
@@ -657,7 +661,7 @@ phase_TypeResolution (main.zig)
     │   │
     │   ├─ Seed: push zero-in-degree types to worklist
     │   │
-    │   ├─ Loop: pop → typeResolverResolveLayout → state=2
+    │   ├─ Loop: pop → layoutEnsure (→ layoutCompute) → state=2
     │   │   ├─ struct_type   → sequential offset+size per field (packed → bit layout)
     │   │   ├─ enum_type     → backing_type.size/align
     │   │   ├─ union_type    → max field size/align
@@ -691,7 +695,7 @@ phase_SemanticAnalysis (main.zig)
         └─ function-local type annotations + local-const scope for array sizes
 
 State transitions in types_items[*].state:
-  0 (initial) → 2 (resolved) — set by typeResolverResolveLayout
+  0 (initial) → 2 (resolved) — set by layoutEnsure (the normal-pass wrapper `typeResolverResolveLayout` falls back to `layoutCompute` when the shared walk declines, then `typeResolverResolve` sets `state = 2`)
 ```
 
 ### Data Structures After Type Resolution
@@ -855,7 +859,7 @@ To trace a specific TypeId through the pipeline:
 
 4. **Depth limit in `resolveTypeExprFull`**: hardcoded max depth of 16 (the `evalConstU32Full` const-cycle guard uses the same cap). Deeply nested type expressions silently return `TYPE_UNDEFINED`.
 
-5. **`evalConstU32Full` fallback ambiguity**: `0xFFFFFFFF` is both a valid `u32` and the "uncomputable" sentinel, so a zero-sized array of length `0xFFFFFFFF` cannot be distinguished from a failed fold. The evaluator folds `add`/`sub`/`mul`/`div`/`mod_op`/`negate`, `ident_expr` (module + function-local consts), `field_access` module-member consts, and the integer-valued `builtin_call`s `@intCast`/`@sizeOf`/`@alignOf`/`@bitSizeOf` (complete primitive/alias types only); everything else falls back to the sentinel.
+5. **`evalConstU32Full` fallback ambiguity**: `0xFFFFFFFF` is both a valid `u32` and the "uncomputable" sentinel, so a zero-sized array of length `0xFFFFFFFF` cannot be distinguished from a failed fold. The evaluator folds `add`/`sub`/`mul`/`div`/`mod_op`/`negate`, `ident_expr` (module + function-local consts), `field_access` module-member consts, and the integer-valued `builtin_call`s `@intCast`/`@sizeOf`/`@alignOf`/`@bitSizeOf` (complete primitive/alias types, plus Task 11H's on-demand-completed `struct_type`); everything else falls back to the sentinel. Task 11H keeps forward-referenced/mutual aggregates, `@offsetOf`/`@bitOffsetOf`, and non-struct aggregates on the sentinel (`ERR_3050`) — never silently wrong.
 
 6. **SURFACED (2026-08-13, F5): plain untagged `union` layout vs C emission mismatch.** A bare `union` layout uses the max-member model (`typeResolverResolveLayout` union branch, `size = alignUp(max_sz, max_align)`), but `c89_emit` emits a plain union as a C `struct` with ALL variants stacked — so a union-holding struct's `@sizeOf` can under-size the emitted C struct, overflowing arena bump-alloc slots. Pre-fix masked by the Defect D 1/1 clamp; post-F5 `lisp_interpreter` `(+ 1 2)` SEGFAULTs (was silent fail) because eval now runs against the still-mismatched `Value` size. Tagged unions are unaffected (emitted correctly). Tracked for the F3 closeout / union-emission task.
 

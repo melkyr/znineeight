@@ -1,0 +1,60 @@
+// struct_introspection_array_size.z98 — standalone reproduction for the
+// Task 11H fix.
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   <zig1> -ffast -o /tmp/structintro repro/struct_introspection_array_size.z98
+//   cd /tmp/structintro && sh build_target.sh linux prog && ./prog ; echo "rc=$?"
+//
+// DEFECT (before the fix): `sf/src/type_resolver.zig`'s array-size evaluator
+// `evalConstU32Full` runs inside `typeResolverResolveNames`, BEFORE
+// `typeResolverResolve` computes aggregate layout and sets `state == 2`, and
+// `evalConstScalarKind` excluded the aggregate kinds — so
+// `[@sizeOf(S)]`/`[@alignOf(S)]`/`[@bitSizeOf(S)]` of a struct hard-errored
+// `error[3050]` at module scope, in an aggregate field, and in a function
+// local. Removing the `state == 2` gate instead produced a silently WRONG `[1]`
+// for the aggregate-field position (true 16).
+//
+// FIX (Task 11H, Option B — AMENDMENT 10): ONE shared, order-independent
+// `layoutEnsure` completes the referenced struct on demand (walking every
+// direct dependency first, deferring on `0`/`TYPE_UNDEFINED`/`TYPE_VOID`
+// placeholders and on the depth cap), then the existing layout math runs and
+// `state == 2` is set; the fold runs only from `state == 2`. The normal
+// topological pass uses the same function — one layout implementation and one
+// dependency walk. `evalConstScalarKind` stays the integer whitelist, so
+// tuple/slice/union/enum and forward/cyclic aggregates stay `error[3050]`
+// (never silently wrong).
+//
+// EXPECTED after the fix: deterministic stdout below, RUNRC=0. Before the fix
+// this file did not compile at all.
+//
+//   module-sizeof-ok
+//   field-sizeof-ok
+//   module-alignof-ok
+//   module-bitsizeof-ok
+//   packed-sizeof-ok
+//   local-sizeof-ok
+//   done
+const std = @import("std");
+
+const S = struct { a: u32, b: u64 };
+const P = packed struct { a: u4, b: u4 };
+const Field = struct { data: [@sizeOf(S)]u8 };
+
+var g_size: [@sizeOf(S)]u8 = undefined;
+var g_align: [@alignOf(S)]u8 = undefined;
+var g_bits: [@bitSizeOf(S)]u8 = undefined;
+var g_packed: [@sizeOf(P)]u8 = undefined;
+var g_field: Field = undefined;
+
+pub fn main() void {
+    if (g_size.len == 16) { std.io.print("module-sizeof-ok\n"); } else { std.io.print("module-sizeof-bad\n"); }
+    if (g_field.data.len == 16) { std.io.print("field-sizeof-ok\n"); } else { std.io.print("field-sizeof-bad\n"); }
+    if (g_align.len == 8) { std.io.print("module-alignof-ok\n"); } else { std.io.print("module-alignof-bad\n"); }
+    if (g_bits.len == 128) { std.io.print("module-bitsizeof-ok\n"); } else { std.io.print("module-bitsizeof-bad\n"); }
+    if (g_packed.len == 1) { std.io.print("packed-sizeof-ok\n"); } else { std.io.print("packed-sizeof-bad\n"); }
+
+    var local: [@sizeOf(S)]u8 = undefined;
+    if (local.len == 16) { std.io.print("local-sizeof-ok\n"); } else { std.io.print("local-sizeof-bad\n"); }
+
+    std.io.print("done\n");
+}

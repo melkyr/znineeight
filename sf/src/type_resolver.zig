@@ -196,29 +196,36 @@ fn alignUp(v: u32, a: u32) u32 {
     return (v + a - @intCast(u32, 1)) & ~(a - @intCast(u32, 1));
 }
 
-fn typeResolverResolveLayout(self: *TypeResolver, tid: u32) void {
+// Task 11H (Option B, AMENDMENT 10): the ONE shared, order-independent layout
+// math. `layoutCompute` is the verbatim former body of
+// `typeResolverResolveLayout`; it does NOT touch `state` and must be called only
+// once every direct dependency is complete (`state == 2`). The normal
+// topological pass and the on-demand array-size fold both reach the layout math
+// through `layoutEnsure`, so there is exactly one layout implementation and one
+// dependency walk (no duplicated math that could silently diverge).
+fn layoutCompute(registry: *TypeRegistry, tid: u32) void {
     var idx = @intCast(usize, tid);
-    var ty = self.registry.types_items[idx];
+    var ty = registry.types_items[idx];
     if (ty.kind == TypeKind.struct_type) {
         if ((ty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
-            type_mod.typeRegistryComputePackedLayout(self.registry, tid);
+            type_mod.typeRegistryComputePackedLayout(registry, tid);
         } else {
-            var sp = self.registry.st_items[@intCast(usize, ty.payload_idx)];
+            var sp = registry.st_items[@intCast(usize, ty.payload_idx)];
             var fstart: usize = @intCast(usize, sp.fields_start);
             var fcount: usize = @intCast(usize, sp.fields_count);
             var offset: u32 = 0;
             var max_align: u32 = 1;
             var fi: usize = 0;
             while (fi < fcount) : (fi += 1) {
-                var fe = self.registry.fe_items[fstart + fi];
-                var ft = self.registry.types_items[@intCast(usize, fe.type_id)];
+                var fe = registry.fe_items[fstart + fi];
+                var ft = registry.types_items[@intCast(usize, fe.type_id)];
                 if (ft.kind == TypeKind.void_type) {
                     fe.offset = offset;
-                    self.registry.fe_items[fstart + fi] = fe;
+                    registry.fe_items[fstart + fi] = fe;
                 } else {
                     offset = alignUp(offset, ft.alignment);
                     fe.offset = offset;
-                    self.registry.fe_items[fstart + fi] = fe;
+                    registry.fe_items[fstart + fi] = fe;
                     offset += ft.size;
                     if (ft.alignment > max_align) max_align = ft.alignment;
                 }
@@ -226,24 +233,24 @@ fn typeResolverResolveLayout(self: *TypeResolver, tid: u32) void {
             ty.size = alignUp(offset, max_align);
             ty.alignment = max_align;
             if (ty.size == @intCast(u32, 0)) { ty.size = @intCast(u32, 1); ty.alignment = @intCast(u32, 1); }
-            self.registry.types_items[idx] = ty;
+            registry.types_items[idx] = ty;
         }
     } else if (ty.kind == TypeKind.enum_type) {
-        var ep = self.registry.en_items[@intCast(usize, ty.payload_idx)];
-        var bt = self.registry.types_items[@intCast(usize, ep.backing_type)];
+        var ep = registry.en_items[@intCast(usize, ty.payload_idx)];
+        var bt = registry.types_items[@intCast(usize, ep.backing_type)];
         ty.size = bt.size;
         ty.alignment = bt.alignment;
-        self.registry.types_items[idx] = ty;
+        registry.types_items[idx] = ty;
     } else if (ty.kind == TypeKind.union_type) {
-        var up = self.registry.un_items[@intCast(usize, ty.payload_idx)];
+        var up = registry.un_items[@intCast(usize, ty.payload_idx)];
         var fstart: usize = @intCast(usize, up.fields_start);
         var fcount: usize = @intCast(usize, up.fields_count);
         var max_sz: u32 = 0;
         var max_align: u32 = 1;
         var fi: usize = 0;
         while (fi < fcount) : (fi += 1) {
-            var fe = self.registry.fe_items[fstart + fi];
-            var ft = self.registry.types_items[@intCast(usize, fe.type_id)];
+            var fe = registry.fe_items[fstart + fi];
+            var ft = registry.types_items[@intCast(usize, fe.type_id)];
             if (ft.kind != TypeKind.void_type) {
                 if (ft.size > max_sz) max_sz = ft.size;
                 if (ft.alignment > max_align) max_align = ft.alignment;
@@ -252,22 +259,22 @@ fn typeResolverResolveLayout(self: *TypeResolver, tid: u32) void {
         ty.size = alignUp(max_sz, max_align);
         ty.alignment = max_align;
         if (ty.size == @intCast(u32, 0)) { ty.size = @intCast(u32, 1); ty.alignment = @intCast(u32, 1); }
-        self.registry.types_items[idx] = ty;
+        registry.types_items[idx] = ty;
      } else if (ty.kind == TypeKind.packed_union_type) {
-        type_mod.typeRegistryComputePackedUnionLayout(self.registry, tid);
+        type_mod.typeRegistryComputePackedUnionLayout(registry, tid);
      } else if (ty.kind == TypeKind.tagged_union_type) {
-         var tp = self.registry.tu_items[@intCast(usize, ty.payload_idx)];
-         var tag_ty = self.registry.types_items[@intCast(usize, tp.tag_type)];
+         var tp = registry.tu_items[@intCast(usize, ty.payload_idx)];
+         var tag_ty = registry.types_items[@intCast(usize, tp.tag_type)];
          var fstart: usize = @intCast(usize, tp.fields_start);
          var fcount: usize = @intCast(usize, tp.fields_count);
          var max_ps: u32 = 0;
          var max_pa: u32 = 1;
          var fi: usize = 0;
          while (fi < fcount) : (fi += 1) {
-             var fe = self.registry.fe_items[fstart + fi];
+             var fe = registry.fe_items[fstart + fi];
              var fer_nm: []const u8 = "FER:n"; pal_mod.markerWriteInt(fer_nm, @intCast(u32, fstart + fi));
              var fer_tm: []const u8 = "FER:t"; pal_mod.markerWriteInt(fer_tm, fe.type_id);
-            var ft = self.registry.types_items[@intCast(usize, fe.type_id)];
+            var ft = registry.types_items[@intCast(usize, fe.type_id)];
             if (ft.kind != TypeKind.void_type) {
                 if (ft.size > max_ps) max_ps = ft.size;
                 if (ft.alignment > max_pa) max_pa = ft.alignment;
@@ -279,40 +286,40 @@ fn typeResolverResolveLayout(self: *TypeResolver, tid: u32) void {
         total += alignUp(max_ps, max_pa);
         ty.size = alignUp(total, overall_align);
         ty.alignment = overall_align;
-        self.registry.types_items[idx] = ty;
+        registry.types_items[idx] = ty;
     } else if (ty.kind == TypeKind.optional_type) {
-        var op = self.registry.opt_items[@intCast(usize, ty.payload_idx)];
-        var pt = self.registry.types_items[@intCast(usize, op.payload)];
+        var op = registry.opt_items[@intCast(usize, ty.payload_idx)];
+        var pt = registry.types_items[@intCast(usize, op.payload)];
         var pay_align = if (pt.alignment > @intCast(u32, 4)) pt.alignment else @intCast(u32, 4);
         ty.size = alignUp(alignUp(pt.size, @intCast(u32, 4)) + @intCast(u32, 4), pay_align);
         ty.alignment = pay_align;
-        self.registry.types_items[idx] = ty;
+        registry.types_items[idx] = ty;
     } else if (ty.kind == TypeKind.error_union_type) {
-        var ep = self.registry.eu_items[@intCast(usize, ty.payload_idx)];
-        var pt = self.registry.types_items[@intCast(usize, ep.payload)];
+        var ep = registry.eu_items[@intCast(usize, ty.payload_idx)];
+        var pt = registry.types_items[@intCast(usize, ep.payload)];
         var union_sz = if (pt.size > @intCast(u32, 4)) pt.size else @intCast(u32, 4);
         var union_align = if (pt.alignment > @intCast(u32, 4)) pt.alignment else @intCast(u32, 4);
         var total = alignUp(union_sz, union_align);
         total = alignUp(total, @intCast(u32, 4)) + @intCast(u32, 4);
         ty.size = alignUp(total, union_align);
         ty.alignment = union_align;
-        self.registry.types_items[idx] = ty;
+        registry.types_items[idx] = ty;
     } else if (ty.kind == TypeKind.array_type) {
-        var ap = self.registry.array_items[@intCast(usize, ty.payload_idx)];
-        var et = self.registry.types_items[@intCast(usize, ap.elem)];
+        var ap = registry.array_items[@intCast(usize, ty.payload_idx)];
+        var et = registry.types_items[@intCast(usize, ap.elem)];
         ty.size = et.size * ap.length;
         ty.alignment = et.alignment;
-        self.registry.types_items[idx] = ty;
+        registry.types_items[idx] = ty;
     } else if (ty.kind == TypeKind.tuple_type) {
-        var tp = self.registry.tup_items[@intCast(usize, ty.payload_idx)];
+        var tp = registry.tup_items[@intCast(usize, ty.payload_idx)];
         var estr: usize = @intCast(usize, tp.elems_start);
         var ecount: usize = @intCast(usize, tp.elems_count);
         var offset: u32 = 0;
         var max_align: u32 = 1;
         var ei: usize = 0;
         while (ei < ecount) : (ei += 1) {
-            var elem_tid = self.registry.xt_items[estr + ei];
-            var et = self.registry.types_items[@intCast(usize, elem_tid)];
+            var elem_tid = registry.xt_items[estr + ei];
+            var et = registry.types_items[@intCast(usize, elem_tid)];
             offset = alignUp(offset, et.alignment);
             offset += et.size;
             if (et.alignment > max_align) max_align = et.alignment;
@@ -320,7 +327,99 @@ fn typeResolverResolveLayout(self: *TypeResolver, tid: u32) void {
         ty.size = alignUp(offset, max_align);
         ty.alignment = max_align;
         if (ty.size == @intCast(u32, 0)) { ty.size = @intCast(u32, 1); ty.alignment = @intCast(u32, 1); }
-        self.registry.types_items[idx] = ty;
+        registry.types_items[idx] = ty;
+    }
+}
+
+// Task 11H: a direct dependency is usable for an on-demand layout only when it
+// is a real, complete type. `0` and `TYPE_UNDEFINED` are never types;
+// `TYPE_VOID` (id 1) is the symbol-registration placeholder for a field whose
+// type was not resolved (`symbol_registrator.zig:111`), so it must be deferred
+// — treating it as a real zero-size void field is what produced the silent
+// wrong `[1]` for a forward-referenced aggregate.
+fn layoutDepOk(registry: *TypeRegistry, dep: u32, depth: u32) bool {
+    if (dep == @intCast(u32, 0)) return false;
+    if (dep == type_mod.TYPE_UNDEFINED) return false;
+    if (dep == type_mod.TYPE_VOID) return false;
+    return layoutEnsure(registry, dep, depth);
+}
+
+fn layoutFieldDepsOk(registry: *TypeRegistry, fstart: u32, fcount: u16, depth: u32) bool {
+    var fi: usize = 0;
+    while (fi < @intCast(usize, fcount)) : (fi += 1) {
+        if (!layoutDepOk(registry, registry.fe_items[@intCast(usize, fstart) + fi].type_id, depth)) return false;
+    }
+    return true;
+}
+
+// Task 11H: make `tid` complete on demand, order-independently. Returns true
+// only when `tid` is (or was made) `state == 2`. Never reads `size`/`alignment`
+// of an incomplete dependency: every direct dependency is walked first and the
+// layout math runs only when all of them are complete. A depth cap (mirrors
+// `resolveTypeExprFull`'s 16) turns a cyclic/mutual graph into a safe `false`
+// (the array-size fold then leaves `ERR_3050`).
+fn layoutEnsure(registry: *TypeRegistry, tid: u32, depth: u32) bool {
+    if (tid == @intCast(u32, 0)) return false;
+    if (@intCast(usize, tid) >= registry.types_len) return false;
+    var ty = registry.types_items[@intCast(usize, tid)];
+    if (ty.state == @intCast(u8, 2)) return true;
+    if (depth > @intCast(u32, 16)) return false;
+    var deps_ok: bool = true;
+    var handled: bool = true;
+    if (ty.kind == TypeKind.struct_type) {
+        var sp = registry.st_items[@intCast(usize, ty.payload_idx)];
+        deps_ok = layoutFieldDepsOk(registry, sp.fields_start, sp.fields_count, depth + @intCast(u32, 1));
+    } else if (ty.kind == TypeKind.enum_type) {
+        var ep = registry.en_items[@intCast(usize, ty.payload_idx)];
+        deps_ok = layoutDepOk(registry, ep.backing_type, depth + @intCast(u32, 1));
+    } else if (ty.kind == TypeKind.union_type) {
+        var up = registry.un_items[@intCast(usize, ty.payload_idx)];
+        deps_ok = layoutFieldDepsOk(registry, up.fields_start, up.fields_count, depth + @intCast(u32, 1));
+    } else if (ty.kind == TypeKind.packed_union_type) {
+        var pup = registry.un_items[@intCast(usize, ty.payload_idx)];
+        deps_ok = layoutFieldDepsOk(registry, pup.fields_start, pup.fields_count, depth + @intCast(u32, 1));
+    } else if (ty.kind == TypeKind.tagged_union_type) {
+        var tp = registry.tu_items[@intCast(usize, ty.payload_idx)];
+        deps_ok = layoutDepOk(registry, tp.tag_type, depth + @intCast(u32, 1));
+        if (deps_ok) {
+            deps_ok = layoutFieldDepsOk(registry, tp.fields_start, tp.fields_count, depth + @intCast(u32, 1));
+        }
+    } else if (ty.kind == TypeKind.array_type) {
+        var ap = registry.array_items[@intCast(usize, ty.payload_idx)];
+        deps_ok = layoutDepOk(registry, ap.elem, depth + @intCast(u32, 1));
+    } else if (ty.kind == TypeKind.tuple_type) {
+        var tup = registry.tup_items[@intCast(usize, ty.payload_idx)];
+        var ei: usize = 0;
+        while (ei < @intCast(usize, tup.elems_count)) : (ei += 1) {
+            if (!layoutDepOk(registry, registry.xt_items[@intCast(usize, tup.elems_start) + ei], depth + @intCast(u32, 1))) {
+                deps_ok = false;
+            }
+        }
+    } else if (ty.kind == TypeKind.optional_type) {
+        var op = registry.opt_items[@intCast(usize, ty.payload_idx)];
+        deps_ok = layoutDepOk(registry, op.payload, depth + @intCast(u32, 1));
+    } else if (ty.kind == TypeKind.error_union_type) {
+        var eup = registry.eu_items[@intCast(usize, ty.payload_idx)];
+        deps_ok = layoutDepOk(registry, eup.payload, depth + @intCast(u32, 1));
+    } else {
+        handled = false;
+    }
+    if (!handled) return false;
+    if (!deps_ok) return false;
+    layoutCompute(registry, tid);
+    registry.types_items[@intCast(usize, tid)].state = @intCast(u8, 2);
+    return true;
+}
+
+// Task 11H: the normal topological pass entry point. Dependencies of a popped
+// (acyclic) type are complete by construction, so `layoutEnsure` normally
+// computes and marks `state == 2`. When the walk declines — a legitimate
+// zero-size `void` field, a depth cap, or a kind with no layout math — fall
+// back to the verbatim math, preserving the historical normal-pass behavior.
+// The on-demand array-size fold never takes this fallback.
+fn typeResolverResolveLayout(self: *TypeResolver, tid: u32) void {
+    if (!layoutEnsure(self.registry, tid, @intCast(u32, 0))) {
+        layoutCompute(self.registry, tid);
     }
 }
 
@@ -952,9 +1051,21 @@ pub fn evalConstU32Full(env: *TypeResolveEnv, node_idx: u32, depth: u32) u32 {
                 var bt_tid = resolveTypeExprFull(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 0)), depth + @intCast(u32, 1));
                 if (bt_tid != type_mod.TYPE_UNDEFINED) {
                     var bt_ty = env.typereg.types_items[@intCast(usize, bt_tid)];
-                    // MANDATORY completeness gate: reading `size`/`alignment`
-                    // before layout yields a silently WRONG array length.
-                    if (bt_ty.state == @intCast(u8, 2) and evalConstScalarKind(bt_ty.kind)) {
+                    // Task 11H: an aggregate in an array-size position is made
+                    // complete on demand through the SAME shared,
+                    // order-independent `layoutEnsure` the normal pass uses.
+                    // Only the in-scope aggregate kind (a struct, packed or
+                    // not) is completed here; tuple/slice/union/etc. stay
+                    // unfolded (`ERR_3050`). The `state == 2` gate below is
+                    // MANDATORY: reading `size`/`alignment` before layout yields
+                    // a silently WRONG array length.
+                    if (bt_ty.state != @intCast(u8, 2) and bt_ty.kind == TypeKind.struct_type) {
+                        _ = layoutEnsure(env.typereg, bt_tid, @intCast(u32, 0));
+                        bt_ty = env.typereg.types_items[@intCast(usize, bt_tid)];
+                    }
+                    var bt_foldable = evalConstScalarKind(bt_ty.kind);
+                    if (bt_ty.kind == TypeKind.struct_type) { bt_foldable = true; }
+                    if (bt_ty.state == @intCast(u8, 2) and bt_foldable) {
                         if (node.child_0 == size_id) { return bt_ty.size; }
                         if (node.child_0 == align_id) { return bt_ty.alignment; }
                         var bt_bits: u32 = bt_ty.size * @intCast(u32, 8);
@@ -965,6 +1076,9 @@ pub fn evalConstU32Full(env: *TypeResolveEnv, node_idx: u32, depth: u32) u32 {
                             bt_bits = @intCast(u32, type_mod.typeRegistryIntWidthBits(env.typereg, type_mod.typeRegistryEnumBackingType(env.typereg, bt_tid)));
                         }
                         if (bt_ty.kind == TypeKind.bool_type) { bt_bits = @intCast(u32, 1); }
+                        if (bt_ty.kind == TypeKind.struct_type and (bt_ty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
+                            bt_bits = @intCast(u32, type_mod.typeRegistryGetPackedTotalBits(env.typereg, bt_tid));
+                        }
                         return bt_bits;
                     }
                 }

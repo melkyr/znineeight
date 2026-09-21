@@ -5,6 +5,7 @@
 # gate). Update INTENTIONALLY when a hardening band adds or removes fixtures.
 repro/mi_matrix/stdlib_arena_xmod
 repro/mi_matrix/stdlib_array_size_builtin_xmod
+repro/mi_matrix/stdlib_array_size_struct_introspection_xmod
 repro/mi_matrix/stdlib_async_addtask_restart_cancel_xmod
 repro/mi_matrix/stdlib_async_addtask_reuse_xmod
 repro/mi_matrix/stdlib_async_addtask_single_xmod
