@@ -1,0 +1,7 @@
+local=4
+byval=4
+byptr=4
+global=4
+union=4
+nested=4
+len_array_field ok

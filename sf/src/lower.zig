@@ -3551,6 +3551,17 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 resolved_base = base_ty;
             }
         }
+        // Task 11N: `.len` on a struct/union array field. The field access base
+        // decays to a bare pointer, so the array `.len` arm below is unreachable;
+        // recover the declared field length and emit it as a compile-time const.
+        var lv_len_id = si_mod.stringInternerIntern(self.ctx.registry.interner, "len");
+        if (field_name_id == lv_len_id) {
+            if (fieldStaticLenForBase(self, node.child_0)) |lv_alen| {
+                var lv_lt = nextTemp(self, type_mod.TYPE_USIZE);
+                emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, lv_alen), .result = lv_lt } });
+                return lv_lt;
+            }
+        }
         if (resolved_base) |_| { var f4s: []const u8 = "F4:H\n"; pal.markerWrite(f4s); } else { var f4m_f: []const u8 = "F4:Mf"; pal.markerWrite(f4m_f); var f4m_fb: [10]u8 = undefined; var f4m_fl = itoa_mod.itoa(node_idx, f4m_fb[0..]); var f4m_fs: usize = @intCast(usize, 9) - @intCast(usize, f4m_fl); pal.markerWrite(f4m_fb[f4m_fs..@intCast(usize, 9)]); var f4m_bm: []const u8 = "b"; pal.markerWrite(f4m_bm); var f4m_bb: [10]u8 = undefined; var f4m_bl = itoa_mod.itoa(node.child_0, f4m_bb[0..]); var f4m_bs: usize = @intCast(usize, 9) - @intCast(usize, f4m_bl); pal.markerWrite(f4m_bb[f4m_bs..@intCast(usize, 9)]); var f4mnl2: []const u8 = "\n"; pal.markerWrite(f4mnl2); }
         var rt_fa = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var fa_box: [1]u32 = [1]u32{type_mod.TYPE_U32};

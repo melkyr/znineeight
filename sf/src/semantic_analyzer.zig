@@ -567,6 +567,47 @@ pub fn semanticAnalyzerResolveIdent(self: *SemanticAnalyzer, module_id: u32, nam
     return type_mod.TYPE_VOID;
 }
 
+// Task 11N: `.len` on a struct/union array field. The generic field loop below
+// decays a `[N]T` field to a bare `*T`, so `.len` on `s.a` never matches the
+// `array_type` `.len` arm. Recover the declared array-field type from the
+// `.len` node's base (a field access, optionally through a pointer) and report
+// it as `usize`; returns 0 (the unused type id) when the field is not an array.
+fn semanticAnalyzerArrayFieldLen(self: *SemanticAnalyzer, base_node_idx: u32) u32 {
+    var bn = ast_mod.astStoreNodeAt(self.store, base_node_idx);
+    if (bn.kind != AstKind.field_access) return @intCast(u32, 0);
+    var fname: u32 = ast_mod.astStoreNodePayload(self.store, base_node_idx);
+    var cont = semanticAnalyzerResolveExpr(self, bn.child_0);
+    if (cont == type_mod.TYPE_VOID or cont == type_mod.TYPE_UNDEFINED) return @intCast(u32, 0);
+    if (@intCast(usize, cont) >= self.registry.types_len) return @intCast(u32, 0);
+    var cty = self.registry.types_items[@intCast(usize, cont)];
+    if (cty.kind == type_mod.TypeKind.ptr_type or cty.kind == type_mod.TypeKind.many_ptr_type) {
+        cont = self.registry.ptr_items[@intCast(usize, cty.payload_idx)].base;
+        if (@intCast(usize, cont) >= self.registry.types_len) return @intCast(u32, 0);
+        cty = self.registry.types_items[@intCast(usize, cont)];
+    }
+    var fstart: usize = 0;
+    var fcount: usize = 0;
+    if (cty.kind == type_mod.TypeKind.struct_type) {
+        var sp = self.registry.st_items[@intCast(usize, cty.payload_idx)];
+        fstart = @intCast(usize, sp.fields_start); fcount = @intCast(usize, sp.fields_count);
+    } else if (cty.kind == type_mod.TypeKind.union_type or cty.kind == type_mod.TypeKind.packed_union_type) {
+        var up = self.registry.un_items[@intCast(usize, cty.payload_idx)];
+        fstart = @intCast(usize, up.fields_start); fcount = @intCast(usize, up.fields_count);
+    } else return @intCast(u32, 0);
+    var fi: usize = 0;
+    while (fi < fcount) : (fi += 1) {
+        if (self.registry.fe_items[fstart + fi].name_id == fname) {
+            var ft = self.registry.fe_items[fstart + fi].type_id;
+            if (@intCast(usize, ft) < self.registry.types_len and
+                self.registry.types_items[@intCast(usize, ft)].kind == type_mod.TypeKind.array_type) {
+                return type_mod.TYPE_USIZE;
+            }
+            return @intCast(u32, 0);
+        }
+    }
+    return @intCast(u32, 0);
+}
+
 pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var fae: []const u8 = "FAE\n"; pal_mod.markerWrite(fae);
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
@@ -873,6 +914,10 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
         var fnf: []const u8 = "FF\n"; pal_mod.markerWrite(fnf);
         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
         return type_mod.TYPE_VOID;
+    } else if (semanticAnalyzerArrayFieldLen(self, node.child_0) != @intCast(u32, 0)) {
+        var afl_ty = semanticAnalyzerArrayFieldLen(self, node.child_0);
+        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, afl_ty);
+        return afl_ty;
     } else {
         var fnf: []const u8 = "FF\n"; pal_mod.markerWrite(fnf);
         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);

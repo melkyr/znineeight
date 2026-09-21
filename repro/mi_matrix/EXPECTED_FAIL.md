@@ -1,4 +1,19 @@
-# mi_matrix corpus — expected-fail manifest (v170 2026-09-21)
+# mi_matrix corpus — expected-fail manifest (v171 2026-09-21)
+
+## Task 11N — lower `.len` on a struct-field array (v170 -> v171 2026-09-21)
+
+The Z98 manual Phase 0 plan's operator-inserted compiler fix (the F half of the Task 11M/11N pair; Task 11M is the reviewer-verified investigation). `semantic_analyzer.zig`'s generic struct/union field loop decays every field whose declared type is an array `[N]T` to a bare element pointer `*T`, discarding the length. So `s.a` resolves to `*u8`; `.len` on `*u8` matches neither the `array_type` `.len` arm nor the struct/slice arms and falls to the final `TYPE_VOID` fallback. Depending on the consuming position this surfaced as a front-end `error[3000] cannot declare variable of type void` (untyped `const n = s.a.len`), as gcc `'zT_N' undeclared` (comparison / global), or — worst — as a **silent `0`** (return / call-argument). The array-field decay is deliberately PRESERVED (load-bearing for `s.arr[i]` / A5F bounds checks). Two coordinated edits: (a) `sf/src/semantic_analyzer.zig` adds `semanticAnalyzerArrayFieldLen` (recover the declared array field type from a field-access base through a pointer) and calls it in the final fallback so `.len` resolves to `TYPE_USIZE`; (b) `sf/src/lower.zig` intercepts `.len` whose base is a field access with a declared array field (`fieldStaticLenForBase`, the same helper A5F uses) and emits a compile-time `int_const`. The lowerer-only fix was insufficient (the `error[3000] void` is emitted during semantic analysis) and the analyzer-only fix left the lowerer's array arm unreachable — both are required.
+
+**New fixture (1) + standalone repro.**
+
+| fixture | class | contract |
+|---|---|---|
+| `len_array_field_xmod` | OK (runtime regression guard) | local struct array field `.len` (untyped `const n = s.a.len`), by-value param `s.a.len`, pointer param `s.a.len`, global struct field `.len`, union array field `.len`, and nested `n.inner.a.len`; each compared to 4 with a `@panic` on mismatch (the silent-`0` guard the compile-only classifier cannot see). Deterministic 7-line stdout ending `len_array_field ok`, rc 0 |
+| standalone `repro/len_array_field.z98` (top-level file, not a corpus dir) | — | single-file repro of the same defect with header defect/fix/recipe/expected stdout |
+
+No `scripts/stdlib/expected_dirs.txt` pin change (the fixture is not `stdlib_*`; the std-lib runtime gate stays 199).
+
+**Gates (seed-built fixed-point compiler `6cbb52440c2e91e33f735e4e09368fd5`).** Self-compile `-ffast --dump-c89` rc=0, **two-hop closure hop1 == hop2 == `6cbb5244…`** (the seed v50 dump already yields the fixed compiler, so hop1==hop2 directly). Corpus `-s0` classifier **910 dirs = 856 OK / 28 GREEN / 26 FAIL / 0 ICE / 0 CRASH** (v170 909 -> 910: the new fixture is the only addition); a full-classifier join-diff vs the pre-fix seed compiler over the 910-dir universe moves EXACTLY the new fixture (`len_array_field_xmod` GREEN -> OK) — zero other class movement. 4-MD5 emitted-C gates **UNCHANGED** (no gate program uses `.len` on a struct array field): gol `e7bde571649a67291419ce57131a556a` / lisp `552d0a84fe54b9cb5ac07c7e30ba2137` / json `38b37bdd45798f6d752cd0aa334491e3` / mud `5a1cc65ef23f27d1c4c51f4516760c07`. 21-example matrix **21/21** dump/gcc/link rc=0. Std-lib runtime gate **199 PASS / 0 FAIL over 199 dirs**. `check_emit_support.sh` **7/7**. Fixed point **MOVED `5dd7874d7a69e015f63874abc30b3222` -> `6cbb52440c2e91e33f735e4e09368fd5`**; seed **v50 -> v51** (archive md5 `a9f303cac8f3710fa51ea475b51bfec9` -> `55694207eaf1f29a98400eb7364bb5d9`; gen 45 `.c` + 46 `.h`, 8957475 bytes). Residuals (out of scope, documented): `for (0..s.a.len)` remains broken (the for-range end expression is not resolved by the semantic analyzer — separate defect); a `[*]T` field `.len` stays `error[3000]` (correct Zig rejection, unchanged). Full report: `.superpowers/sdd/2026-09-20-z98-manual-phase0-plan/task-11N-report.md`.
 
 ## Task 11L — `bool` is 1 byte/align 1 to match Zig (v169 -> v170 2026-09-21)
 

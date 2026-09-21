@@ -1,0 +1,78 @@
+// len_array_field.z98 — standalone reproduction for the Task 11N fix.
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   <zig1> -ffast -o /tmp/lenfield repro/len_array_field.z98
+//   cd /tmp/lenfield && sh build_target.sh linux prog && ./prog ; echo "rc=$?"
+//
+// DEFECT (before the fix): the semantic analyzer decays every struct/union
+// array field `[N]T` to a bare pointer `*T`, so `.len` on `s.a` resolves to
+// `void` (untyped `const n = s.a.len` is a hard `error[3000]`; a comparison or
+// global form is gcc `'zT_N' undeclared`; a return/param form silently yields
+// 0). See `repro/mi_matrix/len_array_field_xmod/` for the pinned corpus fixture.
+//
+// FIX (Task 11N): `semanticAnalyzerArrayFieldLen` resolves `.len` on an array
+// field to `usize`; the lowerer emits the declared compile-time length. The
+// array-field decay is deliberately preserved (it is load-bearing for
+// `s.arr[i]` / A5F bounds checks).
+//
+// SCOPE NOTE: `for (0..s.a.len)` stays broken after this fix (separate
+// for-range-end resolution defect); this repro avoids that position.
+//
+// EXPECTED after the fix (deterministic, RUNRC=0):
+//   local=4
+//   byval=4
+//   byptr=4
+//   global=4
+//   union=4
+//   len_array_field ok
+const std = @import("std");
+
+const S = struct { a: [4]u8 };
+const U = union { a: [4]u8, b: u32 };
+
+var g_s: S = undefined;
+
+fn byval(s: S) usize {
+    return s.a.len;
+}
+
+fn byptr(s: *S) usize {
+    return s.a.len;
+}
+
+fn ulen(u: U) usize {
+    return u.a.len;
+}
+
+pub fn main() void {
+    var s: S = undefined;
+    var u: U = undefined;
+
+    const n = s.a.len;
+
+    std.io.write("local=");
+    std.io.printInt(@intCast(i32, n));
+    std.io.write("\n");
+    std.io.write("byval=");
+    std.io.printInt(@intCast(i32, byval(s)));
+    std.io.write("\n");
+    std.io.write("byptr=");
+    std.io.printInt(@intCast(i32, byptr(&s)));
+    std.io.write("\n");
+    std.io.write("global=");
+    std.io.printInt(@intCast(i32, g_s.a.len));
+    std.io.write("\n");
+    std.io.write("union=");
+    std.io.printInt(@intCast(i32, ulen(u)));
+    std.io.write("\n");
+
+    var bad: u32 = 0;
+    if (n != 4) bad += 1;
+    if (byval(s) != 4) bad += 1;
+    if (byptr(&s) != 4) bad += 1;
+    if (g_s.a.len != 4) bad += 1;
+    if (ulen(u) != 4) bad += 1;
+    if (bad != 0) @panic("len_array_field: wrong length");
+
+    std.io.write("len_array_field ok\n");
+}

@@ -1,4 +1,4 @@
-# 05 — Semantic Analysis [updated: 2026-09-20 — refreshed against current source: socket builtins removed (std_net extern surface), async/introspection/pointer/bitcast builtins, volatile + packed/enum checks, spill-backed resolved-type table; line refs and dated evidence removed; Task 10D adds the Zig-matched `defer`/`errdefer` outward-control-flow rejections ERR_3051–ERR_3054]
+# 05 — Semantic Analysis [updated: 2026-09-21 — refreshed against current source: socket builtins removed (std_net extern surface), async/introspection/pointer/bitcast builtins, volatile + packed/enum checks, spill-backed resolved-type table; line refs and dated evidence removed; Task 10D adds the Zig-matched `defer`/`errdefer` outward-control-flow rejections ERR_3051–ERR_3054; Task 11N adds `semanticAnalyzerArrayFieldLen` so `.len` on a struct/union array field resolves to `TYPE_USIZE` despite the array-field decay]
 
 > Covers: `semantic_analyzer.zig`, `coercion.zig`, `resolved_type_table.zig`, `constraint_checker.zig`, `assign_helper.zig`
 
@@ -222,6 +222,7 @@ Entry: `FAE\n PFA:BK<kind> PFA:FN<name_id>`.
 - `module_type` → `MFA\n`/`MF1\n`/`MFF\n`/`MFP` markers. Look up field in target module's symbols. If function, look up resolved fn type.
 - `slice_type` → `.len` returns `TYPE_USIZE` (`FSL:USIZE\n`). `.ptr` returns `[*]elem` (`FSP:PTR\n`).
 - `array_type` → `.len` returns `TYPE_USIZE` (`FAA:USIZE\n`).
+- **array-field `.len` fallback** `[updated: 2026-09-21 — Task 11N]`: before the final `TYPE_VOID` fallback, `semanticAnalyzerArrayFieldLen(node.child_0)` inspects the `.len` base. If it is a `field_access` whose container (struct / union / packed_union, optionally through a pointer) declares the named field as an `array_type`, `.len` resolves to `TYPE_USIZE`. This recovers `s.a.len` after the Phase-4 array-field decay (`s.a` → `*u8`) makes the `array_type` arm above unreachable. A `[*]T` field (many-item pointer) is not an array and stays `TYPE_VOID` (rejected).
 - `error_set_type` → `typeRegistryErrorSetMemberIndex` check. If found, return `base_type_id`.
 - `enum_type` → scan enum members; if found, return `base_type_id`.
 
