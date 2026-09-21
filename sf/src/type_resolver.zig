@@ -811,6 +811,30 @@ fn evalConstModuleOfExpr(env: *TypeResolveEnv, node_idx: u32) u32 {
     return @intCast(u32, 0);
 }
 
+// Task 11F: true for the primitive/alias type kinds whose `@sizeOf`/`@alignOf`/
+// `@bitSizeOf` are safe to fold during array-size resolution. The aggregate
+// kinds are deliberately EXCLUDED: struct/aggregate introspection in an
+// array-size position is deferred to Task 11G/11H, and the `state == 2` gate
+// alone does not make those folds safe at every resolution point (a field type
+// resolved by `resolveAggregateFieldTypesAll` can precede layout).
+fn evalConstScalarKind(kind: TypeKind) bool {
+    if (kind == TypeKind.struct_type) return false;
+    if (kind == TypeKind.union_type) return false;
+    if (kind == TypeKind.tagged_union_type) return false;
+    if (kind == TypeKind.packed_union_type) return false;
+    if (kind == TypeKind.tuple_type) return false;
+    if (kind == TypeKind.array_type) return false;
+    if (kind == TypeKind.slice_type) return false;
+    if (kind == TypeKind.optional_type) return false;
+    if (kind == TypeKind.error_union_type) return false;
+    if (kind == TypeKind.fn_type) return false;
+    if (kind == TypeKind.module_type) return false;
+    if (kind == TypeKind.type_type) return false;
+    if (kind == TypeKind.unresolved_name) return false;
+    if (kind == TypeKind.none_sentinel) return false;
+    return true;
+}
+
 pub fn evalConstU32Full(env: *TypeResolveEnv, node_idx: u32, depth: u32) u32 {
     // Task 2c-F fix round 1: mirror `resolveTypeExprFull`'s depth cap (`:925`)
     // so a const cycle in array-size position (`const A = A + 1`, or
@@ -892,6 +916,62 @@ pub fn evalConstU32Full(env: *TypeResolveEnv, node_idx: u32, depth: u32) u32 {
                 }
             }
         }
+    }
+    // Task 11F: fold the clear integer-valued builtins in an array-size
+    // position. The general fold evaluator (`comptime_eval.zig`) runs in a
+    // LATER pipeline phase and is never consulted by type resolution, so
+    // `[@intCast(u32, n)]`, `[@sizeOf(u32)]`, `[@alignOf(u32)]`, and
+    // `[@bitSizeOf(u32)]` all fell through to the `ERR_3050` fallback. Fold
+    // only the integer-valued builtins, and only on COMPLETE (`state == 2`)
+    // primitive/alias types. Everything else — `@isWindows` (bool),
+    // `@intToFloat`/`@floatCast` (float), and `@offsetOf`/`@bitOffsetOf`
+    // (aggregate field introspection, deferred to Task 11G/11H) — stays the
+    // unfoldable sentinel so the caller keeps rejecting it, consistent with
+    // `[true]`/`[4.0]`.
+    if (node.kind == AstKind.builtin_call) {
+        var s_size: []const u8 = "@sizeOf";
+        var size_id = interner_mod.stringInternerIntern(env.interner, s_size);
+        var s_align: []const u8 = "@alignOf";
+        var align_id = interner_mod.stringInternerIntern(env.interner, s_align);
+        var s_bitsz: []const u8 = "@bitSizeOf";
+        var bitsz_id = interner_mod.stringInternerIntern(env.interner, s_bitsz);
+        var s_intc: []const u8 = "@intCast";
+        var intc_id = interner_mod.stringInternerIntern(env.interner, s_intc);
+        var bc_n = ast_mod.astStoreNodeExtraChildCount(env.store, node_idx);
+        // `@intCast(T, e)`: fold by recursing into the operand. The existing
+        // `ident_expr`/binary/`negate` arms above handle local consts, module
+        // const chains, and arithmetic operands.
+        if (node.child_0 == intc_id) {
+            if (bc_n >= @intCast(u32, 2)) {
+                return evalConstU32Full(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 1)), depth + @intCast(u32, 1));
+            }
+            return @intCast(u32, 0xFFFFFFFF);
+        }
+        if (node.child_0 == size_id or node.child_0 == align_id or node.child_0 == bitsz_id) {
+            if (bc_n >= @intCast(u32, 1)) {
+                var bt_tid = resolveTypeExprFull(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 0)), depth + @intCast(u32, 1));
+                if (bt_tid != type_mod.TYPE_UNDEFINED) {
+                    var bt_ty = env.typereg.types_items[@intCast(usize, bt_tid)];
+                    // MANDATORY completeness gate: reading `size`/`alignment`
+                    // before layout yields a silently WRONG array length.
+                    if (bt_ty.state == @intCast(u8, 2) and evalConstScalarKind(bt_ty.kind)) {
+                        if (node.child_0 == size_id) { return bt_ty.size; }
+                        if (node.child_0 == align_id) { return bt_ty.alignment; }
+                        var bt_bits: u32 = bt_ty.size * @intCast(u32, 8);
+                        if (type_mod.typeRegistryIsInteger(env.typereg, bt_tid)) {
+                            bt_bits = @intCast(u32, type_mod.typeRegistryIntWidthBits(env.typereg, bt_tid));
+                        }
+                        if (bt_ty.kind == TypeKind.enum_type) {
+                            bt_bits = @intCast(u32, type_mod.typeRegistryIntWidthBits(env.typereg, type_mod.typeRegistryEnumBackingType(env.typereg, bt_tid)));
+                        }
+                        if (bt_ty.kind == TypeKind.bool_type) { bt_bits = @intCast(u32, 1); }
+                        return bt_bits;
+                    }
+                }
+            }
+            return @intCast(u32, 0xFFFFFFFF);
+        }
+        return @intCast(u32, 0xFFFFFFFF);
     }
     return @intCast(u32, 0xFFFFFFFF);
 }

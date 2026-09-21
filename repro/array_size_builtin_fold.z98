@@ -1,0 +1,62 @@
+// array_size_builtin_fold.z98 — standalone reproduction for the Task 11F fix.
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   <zig1> -ffast -o /tmp/arrsize repro/array_size_builtin_fold.z98
+//   cd /tmp/arrsize && sh build_target.sh linux prog && ./prog ; echo "rc=$?"
+//
+// DEFECT (before the fix): `sf/src/type_resolver.zig`'s array-size evaluator
+// `evalConstU32Full` had no `builtin_call` arm, so every integer-valued builtin
+// in an array-size position (`[@intCast(u32, n)]`, `[@sizeOf(u32)]`,
+// `[@alignOf(u32)]`, `[@bitSizeOf(u32)]`) returned the unfoldable `0xFFFFFFFF`
+// sentinel and the `array_type` arm emitted
+// `error[3050]: array size is not a constant expression` (dump rc=2, 0 `.c`).
+//
+// FIX (Task 11F): `evalConstU32Full` folds `@intCast` by recursing into its
+// operand and folds `@sizeOf`/`@alignOf`/`@bitSizeOf` for COMPLETE
+// (`state == 2`) primitive/alias types via `resolveTypeExprFull` + the type
+// registry. Non-integer builtins (`@isWindows`, `@intToFloat`, `@floatCast`)
+// and aggregate introspection stay rejected (ERR_3050); struct/aggregate
+// introspection in array sizes is deferred to Task 11G/11H.
+//
+// EXPECTED after the fix: deterministic stdout below, RUNRC=0. Before the fix
+// this file did not compile at all.
+//
+//   module-sizeof-ok
+//   module-intcast-ok
+//   module-alignof-ok
+//   module-bitsizeof-ok
+//   const-chain-ok
+//   field-position-ok
+//   local-position-ok
+//   local-const-operand-ok
+//   done
+const std = @import("std");
+
+const CHAIN: usize = @sizeOf(u32);
+const Field = struct { data: [@sizeOf(u32)]u8 };
+
+var g_size: [@sizeOf(u32)]u8 = undefined;
+var g_cast: [@intCast(u32, 4)]u8 = undefined;
+var g_align: [@alignOf(u32)]u8 = undefined;
+var g_bits: [@bitSizeOf(u32)]u8 = undefined;
+var g_chain: [CHAIN]u8 = undefined;
+var g_field: Field = undefined;
+
+pub fn main() void {
+    if (g_size.len == 4) { std.io.print("module-sizeof-ok\n"); } else { std.io.print("module-sizeof-bad\n"); }
+    if (g_cast.len == 4) { std.io.print("module-intcast-ok\n"); } else { std.io.print("module-intcast-bad\n"); }
+    if (g_align.len == 4) { std.io.print("module-alignof-ok\n"); } else { std.io.print("module-alignof-bad\n"); }
+    if (g_bits.len == 32) { std.io.print("module-bitsizeof-ok\n"); } else { std.io.print("module-bitsizeof-bad\n"); }
+    if (g_chain.len == 4) { std.io.print("const-chain-ok\n"); } else { std.io.print("const-chain-bad\n"); }
+
+    g_field.data[3] = 9;
+    if (g_field.data[3] == 9) { std.io.print("field-position-ok\n"); } else { std.io.print("field-position-bad\n"); }
+
+    var local: [@sizeOf(u32)]u8 = undefined;
+    const N = 7;
+    var localc: [@intCast(u32, N)]u8 = undefined;
+    if (local.len == 4) { std.io.print("local-position-ok\n"); } else { std.io.print("local-position-bad\n"); }
+    if (localc.len == 7) { std.io.print("local-const-operand-ok\n"); } else { std.io.print("local-const-operand-bad\n"); }
+
+    std.io.print("done\n");
+}

@@ -1,4 +1,19 @@
-# mi_matrix corpus — expected-fail manifest (v168 2026-09-20)
+# mi_matrix corpus — expected-fail manifest (v169 2026-09-21)
+
+## Task 11F — integer-valued builtins fold in array-size positions (v168 -> v169 2026-09-21)
+
+The F half of the Task 11E/11F operator-inserted pair. `sf/src/type_resolver.zig`'s array-size evaluator `evalConstU32Full` had NO `builtin_call` arm, so every builtin in an array-size position returned the `0xFFFFFFFF` unfoldable sentinel and the `array_type` arm emitted `error[3050]: array size is not a constant expression`; the general fold evaluator (`comptime_eval.zig`) is a SEPARATE evaluator that runs in a later pipeline phase and is never consulted by type resolution. `evalConstU32Full` now folds `@intCast(T, e)` by recursing into its operand and `@sizeOf`/`@alignOf`/`@bitSizeOf` for COMPLETE (`state == 2`) primitive/alias types via `resolveTypeExprFull` + the registry (new `evalConstScalarKind` excludes the aggregate kinds). `@isWindows`/`@intToFloat`/`@floatCast` and struct/aggregate introspection (`@offsetOf`/`@bitOffsetOf`, struct `@sizeOf`) stay `ERR_3050` — consistent with `[true]`/`[4.0]`, and struct/aggregate introspection in array sizes is deferred to Task 11G/11H. The `state == 2` completeness gate is MANDATORY — a gate-less in-place read produced a silently wrong `[1]` for an aggregate field. No `comptime_eval.zig`/`lower.zig`/emitter change.
+
+**New fixture (1) + standalone repro.**
+
+| fixture | class | contract |
+|---|---|---|
+| `stdlib_array_size_builtin_xmod` | OK (runtime regression + emitted-C dimension gate) | module-scope `[@sizeOf(u32)]`, `[@intCast(u32,4)]`, `[@intCast(u32,2+2)]`, `[@alignOf(u32)]`, `[@bitSizeOf(u32)]`, `[@alignOf(u64)]`, `[@bitSizeOf(u16)]`, const-chain `const N: usize = @sizeOf(u32); [N]u8`; field position `struct { data: [@sizeOf(u32)]u8 }`; function-local `[@sizeOf(u32)]` and local-const operand `[@intCast(u32, N)]`. Emitted-C dimension gate: `Arr_unsigned_char_4[4]` (size/intCast/align), `Arr_unsigned_char_3[32]` (`@bitSizeOf(u32)`; the name suffix truncates multi-digit lengths), `Arr_unsigned_char_8[8]` (`@alignOf(u64)`), `Arr_unsigned_char_1[16]` (`@bitSizeOf(u16)`), `Field.data` = `[4]`. Rejected controls (ERR_3050, 0 `.c`): `[@isWindows()]`, `[@intToFloat(f64,4)]`, `[@floatCast(f32,4.0)]`, `[@sizeOf(struct)]`, field `[@sizeOf(struct)]`. Deterministic 13-line stdout ending `done`, rc 0 |
+| standalone `repro/array_size_builtin_fold.z98` (top-level file, not a corpus dir) | — | single-file repro of the same defect with header defect/fix/recipe/expected stdout |
+
+`scripts/stdlib/expected_dirs.txt` pin grows 198 -> 199 (effective entries).
+
+**Gates (seed-built fixed-point compiler `9b292edf64686968c69e0b15f7da762d`).** Self-compile `-ffast --dump-c89` rc=0, two-hop closure hop1 == hop2 == `9b292edf…` (re-verified from the rotated seed). Corpus `-s0` classifier **908 dirs = 854 OK / 28 GREEN / 26 FAIL / 0 ICE / 0 CRASH** (v168 907 -> 908: the new fixture is the only addition); a full-classifier join-diff vs the pre-fix compiler over the 908-dir universe moves EXACTLY the new fixture (`stdlib_array_size_builtin_xmod` FAIL -> OK) — zero other class movement. 4-MD5 emitted-C gates **UNCHANGED** (no gate program uses an array-size builtin): gol `80287f58bd761e4a551d5d62db5a3551` / lisp `d1d99b597d4ca2a2a75a42c363d54ff4` / json `f9c9f113b3a7bbd9413b999426daf330` / mud `91fd711d97bcf9cad91352076be39710`. 21-example matrix **21/21** dump/gcc/link rc=0. Std-lib runtime gate **198 PASS / 0 FAIL over 198 dirs**. Fixed point **MOVED `0b717b37c412ce5cd6abd87eeb6a36d8` -> `9b292edf64686968c69e0b15f7da762d`**; seed **v48 -> v49** (archive md5 `e30fbafb93b1253ad007c536883030b6` -> `77cff5d2cb032526e2cad6e0a4b38b1a`). Full report: `.superpowers/sdd/2026-09-20-z98-manual-phase0-plan/task-11F-report.md`.
 
 ## Task 11D fix round 2 — unwrap parens in float-fold operand signedness (v167 -> v168 2026-09-20)
 

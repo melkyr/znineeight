@@ -1,4 +1,4 @@
-# 03 — Type Resolution [updated: 2026-09-20 — refreshed against current source: `front_resolution.zig` front pass, arbitrary-width int/`enum(uN)` layer, packed struct/union kinds, `volatile`/calling-convention type layer, `TYPE_VA_LIST`; line references and dated evidence removed]
+# 03 — Type Resolution [updated: 2026-09-21 — Task 11F: `evalConstU32Full` folds the integer-valued builtins (`@intCast`/`@sizeOf`/`@alignOf`/`@bitSizeOf`) in array-size positions; `evalConstScalarKind` restricts the `@sizeOf`/`@alignOf`/`@bitSizeOf` fold to complete primitive/alias types] [updated: 2026-09-20 — refreshed against current source: `front_resolution.zig` front pass, arbitrary-width int/`enum(uN)` layer, packed struct/union kinds, `volatile`/calling-convention type layer, `TYPE_VA_LIST`; line references and dated evidence removed]
 
 > Covers: `type_resolver.zig`, `type_registry.zig`, `const_alias_prepass.zig`, `front_resolution.zig`
 
@@ -283,7 +283,7 @@ Depends-on-graph topological sort and layout computation for all compound types.
 | `growWpEdges` | private | `[inference: 2x growth for the backward edge adjacency list]` | Grows the classification backward-edge arrays. |
 | `typeResolverGetSorted` | pub | `[inference: return sorted_items[0..sorted_len]]` | Returns the topological order slice. |
 | `evalConstModuleOfExpr` | private | `[inference: resolve a field-access base to a module id, walking module aliases; 0 when not a module reference]` | Module-base resolver used by `evalConstU32Full`'s `field_access` arm. |
-| `evalConstU32Full` | pub | `[inference: fold int_literal/arithmetic/negate/ident_expr/field_access, depth-limit 16, fallback 0xFFFFFFFF sentinel]` | Constant `u32` expression evaluator (array sizes). See [Type Expression Resolution](#type-expression-resolution). |
+| `evalConstU32Full` | pub | `[inference: fold int_literal/arithmetic/negate/ident_expr/field_access/builtin_call, depth-limit 16, fallback 0xFFFFFFFF sentinel]` | Constant `u32` expression evaluator (array sizes). See [Type Expression Resolution](#type-expression-resolution). |
 | `evalConstI64Full` | pub | `[inference: int_literal/negate/ident_expr, returns ?i64]` | Constant `i64` evaluator (enum backing values). |
 | `symbolLookupAllModules` | private | `[inference: linear scan of all symbol tables for a name_id]` | Name → symbol lookup across modules. |
 | `resolveTypeExprFull` | pub | `[inference: recursive AST type-expression resolver, depth-limit 16]` | See [Type Expression Resolution](#type-expression-resolution). |
@@ -417,13 +417,13 @@ Internal helpers:
 | `ptr_type` / `many_ptr_type` | Resolve child as base type. `is_const = (node.flags & 1) != 0`, `is_volatile = (node.flags & 2) != 0`. Returns `typeRegistryGetOrCreatePtrQ` / `typeRegistryGetOrCreateManyPtrQ`. Emits `PTR:i...`, `P<tid>` / `M<tid>`. |
 | `slice_type` | `is_const = (node.flags & 1) != 0`. Returns `typeRegistryGetOrCreateSlice(child, is_const)`. |
 | `optional_type` | Returns `typeRegistryGetOrCreateOptional(child)`. |
-| `array_type` | Resolve element type (`child_0`). Evaluate length from `child_1`: `int_literal`, `add`/`sub`, `mul`/`div`/`mod_op`, `ident_expr`, or any other const-foldable expression via `evalConstU32Full`. On success returns `typeRegistryGetOrCreateArray(elem, len)`; on failure emits `ERR_3050_ARRAY_SIZE_NOT_CONSTANT` (once per node) unless the size is the inferred `[_]` form. Emits `T0`, `T1e`, `T2L`, `T3a`, `A`/`a`. |
+| `array_type` | Resolve element type (`child_0`). Evaluate length from `child_1`: `int_literal`, `add`/`sub`, `mul`/`div`/`mod_op`, `ident_expr`, or any other const-foldable expression via `evalConstU32Full` (including integer-valued `builtin_call` sizes). On success returns `typeRegistryGetOrCreateArray(elem, len)`; on failure emits `ERR_3050_ARRAY_SIZE_NOT_CONSTANT` (once per node) unless the size is the inferred `[_]` form. Emits `T0`, `T1e`, `T2L`, `T3a`, `A`/`a`. |
 
-**Array-size evaluation:** the `array_type` arm's size-node handling covers `int_literal`, `add`/`sub`, `mul`/`div`/`mod_op` (div/mod by zero → uncomputable), `ident_expr`, and a catch-all const-fold via `evalConstU32Full` (which covers module-member `field_access` and function-local consts). An uncomputable size is now a hard `ERR_3050_ARRAY_SIZE_NOT_CONSTANT` diagnostic instead of a silent `TYPE_UNDEFINED`.
+**Array-size evaluation:** the `array_type` arm's size-node handling covers `int_literal`, `add`/`sub`, `mul`/`div`/`mod_op` (div/mod by zero → uncomputable), `ident_expr`, and a catch-all const-fold via `evalConstU32Full` (which covers module-member `field_access`, function-local consts, and the integer-valued builtins `@intCast`/`@sizeOf`/`@alignOf`/`@bitSizeOf`). An uncomputable size is a hard `ERR_3050_ARRAY_SIZE_NOT_CONSTANT` diagnostic instead of a silent `TYPE_UNDEFINED`.
 
 #### `evalConstU32Full`
 
-`[inference: return int_literal int_values[node.payload], fold arithmetic/negate, recurse into ident_expr decl.child_1, resolve field_access module members, fallback 0xFFFFFFFF sentinel]` constant u32 expression evaluator:
+`[inference: return int_literal int_values[node.payload], fold arithmetic/negate, recurse into ident_expr decl.child_1, resolve field_access module members, fold integer-valued builtin_call, fallback 0xFFFFFFFF sentinel]` constant u32 expression evaluator:
 
 1. **depth guard**: `depth > 16` → `0xFFFFFFFF` (const-cycle guard).
 2. **int_literal**: returns stored `int_values[node.payload]`.
@@ -431,9 +431,13 @@ Internal helpers:
 4. **negate**: `0 - child`.
 5. **ident_expr**: consult the function-local const scope first (`localConstScopeLookup`), then `symbolLookupAllModules`; if the symbol is a const (`flags & 0x01 == 0`) recurse into `decl.child_1`.
 6. **field_access**: resolve the base module via `evalConstModuleOfExpr`, then fold the member const's initializer.
-7. **Fallback**: returns `0xFFFFFFFF` (sentinel for "unknown").
+7. **builtin_call** (Task 11F): fold the clear integer-valued builtins, else `0xFFFFFFFF`:
+   - `@intCast(T, e)` → recurse into the operand (extra-child 1), so local consts, const chains, and arithmetic operands fold through the arms above;
+   - `@sizeOf(T)` / `@alignOf(T)` / `@bitSizeOf(T)` → `resolveTypeExprFull` the type arg (extra-child 0); only if the resolved type is COMPLETE (`state == 2`) and `evalConstScalarKind(kind)` returns the registry `size` / `alignment` / bit-size (`@bitSizeOf`: `size*8`, overridden by `typeRegistryIntWidthBits` for integer/enum, `1` for bool). The `state == 2` gate is mandatory — reading `size`/`alignment` before layout produced a silently wrong `[1]`;
+   - `@isWindows`/`@intToFloat`/`@floatCast` (bool/float), and `@offsetOf`/`@bitOffsetOf` plus struct/aggregate `@sizeOf` (aggregate introspection, deferred to Task 11G/11H) → `0xFFFFFFFF`, so the caller keeps the `ERR_3050` reject.
+8. **Fallback**: returns `0xFFFFFFFF` (sentinel for "unknown").
 
-Helpers: `symbolLookupAllModules` — linear scan of all symbol tables for a `name_id`; `evalConstModuleOfExpr` — resolves a field-access base to a module id by walking module aliases; `evalConstI64Full` — the `i64` companion used for enum backing values (`int_literal`/`negate`/`ident_expr`, returns `?i64`).
+Helpers: `symbolLookupAllModules` — linear scan of all symbol tables for a `name_id`; `evalConstModuleOfExpr` — resolves a field-access base to a module id by walking module aliases; `evalConstScalarKind` — true for the primitive/alias kinds whose `@sizeOf`/`@alignOf`/`@bitSizeOf` are safe to fold (excludes struct/union/tagged-union/packed-union/tuple/array/slice/optional/error-union/fn/module/type/unresolved/none); `evalConstI64Full` — the `i64` companion used for enum backing values (`int_literal`/`negate`/`ident_expr`, returns `?i64`).
 
 #### `resolveDeclAggregateFieldTypes`
 
@@ -851,7 +855,7 @@ To trace a specific TypeId through the pipeline:
 
 4. **Depth limit in `resolveTypeExprFull`**: hardcoded max depth of 16 (the `evalConstU32Full` const-cycle guard uses the same cap). Deeply nested type expressions silently return `TYPE_UNDEFINED`.
 
-5. **`evalConstU32Full` fallback ambiguity**: `0xFFFFFFFF` is both a valid `u32` and the "uncomputable" sentinel, so a zero-sized array of length `0xFFFFFFFF` cannot be distinguished from a failed fold. The evaluator folds `add`/`sub`/`mul`/`div`/`mod_op`/`negate`, `ident_expr` (module + function-local consts), and `field_access` module-member consts; everything else falls back to the sentinel.
+5. **`evalConstU32Full` fallback ambiguity**: `0xFFFFFFFF` is both a valid `u32` and the "uncomputable" sentinel, so a zero-sized array of length `0xFFFFFFFF` cannot be distinguished from a failed fold. The evaluator folds `add`/`sub`/`mul`/`div`/`mod_op`/`negate`, `ident_expr` (module + function-local consts), `field_access` module-member consts, and the integer-valued `builtin_call`s `@intCast`/`@sizeOf`/`@alignOf`/`@bitSizeOf` (complete primitive/alias types only); everything else falls back to the sentinel.
 
 6. **SURFACED (2026-08-13, F5): plain untagged `union` layout vs C emission mismatch.** A bare `union` layout uses the max-member model (`typeResolverResolveLayout` union branch, `size = alignUp(max_sz, max_align)`), but `c89_emit` emits a plain union as a C `struct` with ALL variants stacked — so a union-holding struct's `@sizeOf` can under-size the emitted C struct, overflowing arena bump-alloc slots. Pre-fix masked by the Defect D 1/1 clamp; post-F5 `lisp_interpreter` `(+ 1 2)` SEGFAULTs (was silent fail) because eval now runs against the still-mismatched `Value` size. Tagged unions are unaffected (emitted correctly). Tracked for the F3 closeout / union-emission task.
 
