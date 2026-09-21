@@ -19,9 +19,9 @@
 // (`eu_src.payload == eu_tgt.payload`), so every runtime payload-differing
 // EU->EU context is a clean reject: `error[3000]`, rc=2, 0 `.c`.
 //
-// The four shapes below cover the return (ordinary and errdefer/dynamic),
-// var-declaration/assignment, and call-argument contexts; the same single
-// type-layer predicate gates all of them.
+// The five shapes below cover the return (ordinary and errdefer/dynamic),
+// var-declaration initialization, assignment, and call-argument contexts; the
+// same single type-layer predicate gates all of them.
 //
 // Contract: dump rc=2, 0 `.c`, `error[3000]` — the canonical classifier's
 // GREEN clean-reject bucket.
@@ -52,11 +52,15 @@ fn takesE(x: E!i64) void {
 }
 
 pub fn main() void {
+    // (d) var-declaration initialization: payload-differing EU->EU.
+    var d: E!i64 = g();
+    // (e) assignment: payload-differing EU->EU.
     var a: E!i64 = 0;
-    // (d) assignment / var-declaration init: payload-differing EU->EU.
     a = g();
+    // (f) call argument: payload-differing EU->EU.
     takesE(gok());
     _ = retWiden;
     _ = retWidenGuard;
+    _ = d;
     _ = a;
 }

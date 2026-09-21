@@ -39,9 +39,11 @@ fn retWiden() E!i64 {
 }
 
 pub fn main() void {
+    var d: E!i64 = g(); // var-declaration initialization
     var a: E!i64 = 0;
-    a = g();
-    takesE(gok());
-    _ = retWiden;
+    a = g();            // assignment
+    takesE(gok());      // call argument
+    _ = retWiden;       // ordinary return (in its body)
+    _ = d;
     _ = a;
 }
