@@ -33,6 +33,8 @@
 //   local-struct-ok
 //   local-union-ok
 //   local-tagged-union-ok
+//   local-union-nested-ok
+//   local-packed-union-ok
 //   local-packed-struct-ok
 //   local-errset-ok
 //   local-errunion-ok
@@ -40,6 +42,7 @@
 //   local-discard-ok
 //   inline-enum-ret-ok
 //   inline-union-ret-ok
+//   inline-union-nested-ok
 //   inline-struct-ret-ok
 //   inline-var-ok
 //   done
@@ -74,6 +77,22 @@ fn localTaggedUnion() u32 {
     const U = union(enum) { a: u32, b: u8 };
     var u: U = .{ .a = 7 };
     if (u.a != 7) @panic("local tagged union");
+    return u.a;
+}
+
+// Task B2 fix round 1: a union whose field is a nested anonymous aggregate
+// guards the `UnionPayload.fields_start` capture order (resolve before capture).
+fn localUnionNested() u32 {
+    const U = union { b: u8, a: struct { x: u32 } };
+    var u: U = U{ .a = .{ .x = 5 } };
+    if (u.a.x != 5) @panic("local union nested");
+    return u.a.x;
+}
+
+fn localPackedUnion() u32 {
+    const U = packed union { a: u32, b: u8 };
+    var u: U = U{ .a = 3 };
+    if (u.a != 3) @panic("local packed union");
     return u.a;
 }
 
@@ -122,6 +141,11 @@ fn localDiscard() void {
 
 fn inlineEnumRet() enum(u8) { A = 1, B } { return .A; }
 fn inlineUnionRet() union { a: u32, b: u8 } { return .{ .a = 5 }; }
+fn inlineUnionNested() u32 {
+    var u: union { b: u8, a: struct { x: u32 } } = .{ .a = .{ .x = 7 } };
+    if (u.a.x != 7) @panic("inline union nested");
+    return u.a.x;
+}
 fn inlineStructRet() struct { a: u32, b: u32 } { return .{ .a = 1, .b = 2 }; }
 
 pub fn main() void {
@@ -133,6 +157,10 @@ pub fn main() void {
     std.io.print("local-union-ok\n");
     if (localTaggedUnion() != 7) @panic("ret tagged union");
     std.io.print("local-tagged-union-ok\n");
+    if (localUnionNested() != 5) @panic("ret union nested");
+    std.io.print("local-union-nested-ok\n");
+    if (localPackedUnion() != 3) @panic("ret packed union");
+    std.io.print("local-packed-union-ok\n");
     if (localPackedStruct() != 3) @panic("ret packed struct");
     std.io.print("local-packed-struct-ok\n");
     _ = localErrSet();
@@ -147,6 +175,8 @@ pub fn main() void {
     std.io.print("inline-enum-ret-ok\n");
     if (inlineUnionRet().a != 5) @panic("inline union ret");
     std.io.print("inline-union-ret-ok\n");
+    if (inlineUnionNested() != 7) @panic("inline union nested");
+    std.io.print("inline-union-nested-ok\n");
     if (inlineStructRet().a != 1) @panic("inline struct ret");
     std.io.print("inline-struct-ret-ok\n");
     var ie: enum(u8) { A = 1, B } = .A;

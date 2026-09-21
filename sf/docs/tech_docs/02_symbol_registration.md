@@ -72,7 +72,7 @@ Walks the AST root of each resolved module, registers declarations as symbols pe
 | Function | Scope | `[inference]` | Description |
 |----------|-------|---------------|-------------|
 | `addTypeDependencies` | private | `[inference: iterate extra children of decl_idx, add dep edge for each field_decl → tid]` | Records type dependencies. For each `field_decl` extra child, adds `depGraphAddEdge(g, 0, tid)` — node 0 is a sentinel root. Returns early if the decl has no payload. |
-| `populateTypePayload` | private | `[inference: switch on decl_kind, iterate extra children, append payload structs to TypeRegistry]` | Creates type stubs in `TypeRegistry`. See [Type Stub Population](#type-stub-population) below. |
+| `populateTypePayload` | **pub** | `[inference: switch on decl_kind, iterate extra children, append payload structs to TypeRegistry]` | Creates type stubs in `TypeRegistry`. **Task B2:** now `pub` — shared with `type_resolver.registerContainerType` for function-local/inline enum/error-set payloads. See [Type Stub Population](#type-stub-population) below. |
 | `registerDecl` | private | `[inference: switch on node.kind, create Symbol, insert into SymbolTable; populate guards stub creation]` | Registers a single declaration. See [Decl Registration Walkthrough](#decl-registration-walkthrough) below. |
 
 #### Entry Point

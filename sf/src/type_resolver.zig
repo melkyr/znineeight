@@ -1587,6 +1587,32 @@ pub fn isContainerDeclKind(kind: AstKind) bool {
     return kind == AstKind.struct_decl or kind == AstKind.enum_decl or kind == AstKind.union_decl or kind == AstKind.error_set_decl;
 }
 
+// Task B2 fix round 1: strict validation of a local/inline enum declaration.
+// Runs the ONE shared member walk (`enumMembersResolve`) in check-only strict
+// mode so a duplicate tag value or an unfoldable initializer is a clean
+// ERR_3055, exactly as for a module enum. Shared by `registerContainerType`
+// (inline enums in ANY type position) and the semantic analyzer's
+// `semanticAnalyzerCheckLocalEnum` (the binding / expression forms), so the two
+// can never diverge. A null `env.diag` pass is a no-op.
+pub fn validateLocalEnum(env: *TypeResolveEnv, enum_node: u32) void {
+    if (enum_node == @intCast(u32, 0)) return;
+    var diag = env.diag orelse return;
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(diag, enum_node)) return;
+    var count: u32 = 0;
+    var fail_node: u32 = 0;
+    var fail_kind: u32 = 0;
+    if (!enumMembersResolve(env, enum_node, false, @intCast(u32, 0), true, true, &count, &fail_node, &fail_kind)) {
+        var fn_ = ast_mod.astStoreNodeAt(env.store, fail_node);
+        var sp = fn_.span_start;
+        var ep = sp + @intCast(u32, fn_.span_len);
+        var msg: []const u8 = "enum member value is not a comptime-known integer expression";
+        if (fail_kind == @intCast(u32, 2)) { msg = "duplicate enum tag value (tag values must be unique)"; }
+        _ = diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0),
+            @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3055_ENUM_VALUE_NOT_CONSTANT)),
+            env.source_file_id, sp, ep, msg);
+    }
+}
+
 // Task B2: register one container type (struct/enum/union/error-set) under its
 // synthesized `anon_<node_idx>` name and populate its payload, returning the
 // TypeId. Struct/union field types are resolved directly here (the module-only
@@ -1596,6 +1622,12 @@ pub fn isContainerDeclKind(kind: AstKind) bool {
 // registrator logic. Idempotent across passes via the name cache.
 pub fn registerContainerType(env: *TypeResolveEnv, node_idx: u32, kind: AstKind, depth: u32) type_mod.TypeId {
     var node = ast_mod.astStoreNodeAt(env.store, node_idx);
+    // Task B2 fix round 1: validate an inline enum BEFORE the name-cache
+    // short-circuit, so an enum first seen in a diag-less pass is still
+    // validated when a later diag-carrying pass resolves it.
+    if (kind == AstKind.enum_decl) {
+        validateLocalEnum(env, node_idx);
+    }
     var name_id = containerAnonNameId(env, node_idx);
     var existing = type_mod.nameCacheGet(env.typereg, @intCast(u64, name_id));
     if (existing) |e| return e;
@@ -1653,7 +1685,7 @@ pub fn registerContainerType(env: *TypeResolveEnv, node_idx: u32, kind: AstKind,
                 var un_fty: [32]u32 = undefined;
                 var un_fnm: [32]u32 = undefined;
                 var un_fc: usize = 0;
-                var un_fstart: u32 = @intCast(u32, env.typereg.fe_len);
+
                 var un_i: usize = 0;
                 while (un_i < @intCast(usize, un_children_n) and un_fc < @intCast(usize, 32)) : (un_i += 1) {
                     var un_child = ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, un_i));
@@ -1664,6 +1696,11 @@ pub fn registerContainerType(env: *TypeResolveEnv, node_idx: u32, kind: AstKind,
                         un_fc += 1;
                     }
                 }
+                // Task B2 fix round 1: capture `fields_start` AFTER the resolve
+                // loop — resolving a nested aggregate field appends its own `fe`
+                // entries, so capturing before would point the union payload into
+                // the nested type's fields (mirrors the struct branch).
+                var un_fstart: u32 = @intCast(u32, env.typereg.fe_len);
                 var un_j: usize = 0;
                 while (un_j < un_fc) : (un_j += 1) {
                     type_mod.feAppend(env.typereg, type_mod.FieldEntry{

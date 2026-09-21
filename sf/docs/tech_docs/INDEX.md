@@ -1090,6 +1090,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `unAppend` | type_registry.zig |
 | `unrAppend` | type_registry.zig |
 | `vaListArgTemp` | lower.zig |
+| `validateLocalEnum` | type_resolver.zig |
 | `validateSignatureType` | analyzer.zig |
 | `valuePoolAppend` | ast.zig |
 | `valuePoolCacheSlot` | ast.zig |

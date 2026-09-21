@@ -1,4 +1,51 @@
-# mi_matrix corpus — expected-fail manifest (v179 2026-09-21)
+# mi_matrix corpus — expected-fail manifest (v180 2026-09-21)
+
+## Task B2 fix round 1 — union `fields_start` order + inline-enum validation (v179 -> v180 2026-09-21)
+
+Two review defects in the Task B2 implementation.
+
+**(Critical 1) Union payload `fields_start` captured before field-type resolution.**
+`registerContainerType`'s union branch captured `un_fstart = fe_len` BEFORE the field-resolution
+loop. Resolving a nested anonymous aggregate field appends its own `fe` entries, so the union's
+`UnionPayload`/`TaggedUnionPayload.fields_start` pointed into the nested type's fields — e.g.
+`const U = union { b: u8, a: struct { x: u32 } };` emitted `union { unsigned int x; unsigned char b; }`
+(field `a` gone, spurious `x`), and `var u: U = U{ .a = .{ .x = 5 } }; u.a.x` failed at gcc/at
+runtime. The module-level inline form (`var g: union { b: u8, a: struct{x:u32} } = ...`) was affected
+too. Fix: capture `un_fstart` AFTER the resolve loop, mirroring the struct branch. New positive
+fixture cases `localUnionNested` + `localPackedUnion` + inline `union { b: u8, a: struct{x:u32} }`
+in `stdlib_local_type_emission_xmod`.
+
+**(Important 2) Inline `enum` bypassed `semanticAnalyzerCheckLocalEnum`.**
+`semanticAnalyzerCheckLocalEnum` ran only for the binding form and the expression arm; an inline
+annotation (`var e: enum(u8){...}`) went `resolveTypeExprFull` -> `registerContainerType` ->
+`populateTypePayload`, whose `enumMembersResolve(..., strict=false)` result was discarded — so
+`var e: enum(u8){ A = 1, B = 1 }` was silently accepted (rc=0) and `enum(u8){ A = @intToFloat(f32,1) }`
+silently tagged `A = 0`. Fix: the strict walk + `ERR_3055` emission is factored into ONE shared
+`type_resolver.validateLocalEnum(env, enum_node)` (MarkNodeOnce + `enumMembersResolve(check_only,
+strict)`); `registerContainerType` calls it for every enum BEFORE the name-cache short-circuit, and
+`semanticAnalyzerCheckLocalEnum` now delegates to it. New reject controls
+`enum_init_inline_duplicate_reject_xmod` and `enum_init_inline_nonconstant_reject_xmod`
+(`error[3055]`, 0 `.c`).
+
+**Minor.** `sf/docs/tech_docs/02_symbol_registration.md` corrected `populateTypePayload` private ->
+`pub`. Recorded (not changed): the lower `enum_type` field-access arm mirrors the module `type_alias`
+arm (design-permitted); `registerContainerType`'s `[32]` field buffer silently truncates >32-field
+local/inline aggregates; `LocalTypeScope` is function-scoped, not block-scoped (design-sanctioned);
+the positive fixture now also covers packed unions.
+
+**Gates (seed-built fixed-point compiler `603d835a31d3a8c051f75cc608c477c4`).** Self-compile two-hop
+closure hop1 == hop2 == `603d835a…` — the fixed point MOVED (`af757cca…` -> `603d835a…`). Corpus `-s0`
+**941 dirs = 861 OK / 37 GREEN / 43 FAIL / 0 ICE / 0 CRASH** (v179 939 -> 941: the 2 new reject fixture
+dirs); a full-classifier join-diff vs the pre-fix-round v59 compiler (`af757cca…`, 941 dirs = 860 OK /
+39 GREEN / 42 FAIL) moves EXACTLY `stdlib_local_type_emission_xmod` (GREEN -> OK), `local_type_alias_reject_xmod`
+(FAIL -> GREEN), and the two new inline-enum reject controls (GREEN -> FAIL — the pre-fix-round compiler
+accepted them; the fixed compiler rejects with the dedicated `error[3055]`, which buckets FAIL like the
+existing `enum_init_local_duplicate_reject_xmod`) — **zero other pre-existing class movement**. 4-MD5
+emitted-C gates **UNCHANGED**: gol `e7bde571649a67291419ce57131a556a` / lisp `552d0a84fe54b9cb5ac07c7e30ba2137`
+/ json `38b37bdd45798f6d752cd0aa334491e3` / mud `5a1cc65ef23f27d1c4c51f4516760c07`. 21-example matrix
+**21/21**; std-lib runtime gate **205 PASS / 0 FAIL**; `check_emit_support.sh` 7/7; `verify_upgraded.sh`
+CLOSEOUT OK. Fixed point **MOVED `af757cca4c6ca77f2197e1e39d8cd818` -> `603d835a31d3a8c051f75cc608c477c4`**;
+seed **v59 -> v60**. Rotated-seed round-trip hop1 == hop2 == `603d835a…`.
 
 ## Task B2 — function-local / inline named-type emission (v178 -> v179 2026-09-21)
 
