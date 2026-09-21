@@ -145,6 +145,11 @@ fn comptimeEvalResolveTypeArg(self: *ComptimeEval, node_idx: u32) ?u32 {
 // `@intCast(u8, 300)` to 44. A negative source never fits an unsigned target;
 // a positive source must not exceed the target's max. Widths >= 64 are left
 // alone (no masking, existing behavior preserved).
+//
+// M3 note: this intentionally mirrors `type_resolver.intValueFitsType` (same
+// width/signedness range rule) because the two evaluators hold values in
+// different representations (`ComptimeVal` bits+sig vs `i64`); a shared helper
+// would need a conversion shim, so the small duplication is deliberate.
 fn comptimeValFitsType(self: *ComptimeEval, cv: ComptimeVal, t: u32) bool {
     if (!type_mod.typeRegistryIsInteger(self.registry, t)) return false;
     var wb: u32 = @intCast(u32, type_mod.typeRegistryIntWidthBits(self.registry, t));
