@@ -222,7 +222,7 @@ This approach maximizes performance on legacy hardware by minimizing the active 
   - **Example**: `defer cleanup();`
   - `defer` statements are executed in reverse order of declaration (LIFO).
   - They execute on all paths out of the scope, including `return`, `break`, and `continue`.
-  - Control flow **out of** a `defer` body is rejected, matching official Zig: `return` anywhere inside the body is `error[3051]` (`cannot return from defer expression`); `break`/`continue` that transfer control out of the body are `error[3052]`/`error[3053]` (`cannot break`/`cannot continue out of defer expression`); `try` is `error[3054]` (`'try' not allowed inside defer expression`). A `break`/`continue` whose target loop or labeled block is **declared inside** the body is allowed, and a nested `fn` resets the restriction. The same rule applies to `errdefer`.
+  - Control flow **out of** a `defer` body is rejected, matching official Zig: `return` anywhere inside the body is `error[3051]` (`cannot return from defer expression`); `break`/`continue` that transfer control out of the body are `error[3052]`/`error[3053]` (`cannot break`/`cannot continue out of defer expression`); `try` is `error[3054]` (`'try' not allowed inside defer expression`). A `break` whose target loop or labeled block, or a `continue` whose target loop, is **declared inside** the body is allowed, and a nested `fn` resets the restriction. The same rule applies to `errdefer`.
 - `errdefer statement`: Schedules code to execute only when the scope exits with an error. Braces are **optional**.
   - **Example**: `errdefer rollback();`
 - `expr orelse fallback`: Provides a fallback value for an optional type. If `expr` is `null`, `fallback` is evaluated and yielded. The `fallback` can be an expression or a block. `orelse` is **right-associative**, so `a orelse b orelse c` is equivalent to `a orelse (b orelse c)`.
@@ -249,7 +249,7 @@ This approach maximizes performance on legacy hardware by minimizing the active 
 - `continue`: Jumps to the next iteration of the innermost `while` or `for` loop.
 - `continue :label`: Jumps to the next iteration of the matching loop.
 - **Loop Labels**: Loops can be labeled using `label: while ...` or `label: for ...`. Labels must be unique within their function.
-- **Validation**: A `break` or `continue` inside `defer`/`errdefer` is rejected with `error[3052]`/`error[3053]` only when it transfers control **out of** the defer body; a transfer targeting a loop or labeled block **declared inside** the body is allowed (official Zig behaviour, verified against `AstGen.zig`). `return` and `try` inside the body are always rejected (`error[3051]`/`error[3054]`), except inside a nested `fn`.
+- **Validation**: A `break` or `continue` inside `defer`/`errdefer` is rejected with `error[3052]`/`error[3053]` only when it transfers control **out of** the defer body; a `break` targeting a loop or labeled block, or a `continue` targeting a loop, **declared inside** the body is allowed (official Zig behaviour, verified against `AstGen.zig`). `return` and `try` inside the body are always rejected (`error[3051]`/`error[3054]`), except inside a nested `fn`.
 
 ### 3.3 Error Handling Expressions
 - `try expr`: Unwraps an error union. If `expr` is an error, it is returned from the current function. Otherwise, the payload is yielded.

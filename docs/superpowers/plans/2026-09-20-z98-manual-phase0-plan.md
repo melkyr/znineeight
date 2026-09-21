@@ -32,7 +32,7 @@
 
 ## Global Constraints
 
-- **Website only, with scoped exceptions (AMENDMENTS 1–9).** Do NOT edit `sf/src/**`, `scripts/**`, fixtures, or `release/seed/**` — EXCEPT Tasks 10A/10B/10C/10D/10E/10F and 11A–11P, which investigate and fix the compiler defects found while verifying the manual. Only those tasks may edit `sf/src/**`, add regression fixtures/repros, run the compiler gate battery, and rotate the seed. Every other task leaves the compiler fixed point and seed untouched.
+- **Website only, with scoped exceptions (AMENDMENTS 1–17).** Do NOT edit `sf/src/**`, `scripts/**`, fixtures, or `release/seed/**` — EXCEPT Tasks 10A–10F and 11A–11U, which investigate and fix the compiler defects found while verifying the manual. Only those tasks may edit `sf/src/**`, add regression fixtures/repros, run the compiler gate battery, and rotate the seed. Every other task leaves the compiler fixed point and seed untouched.
 - **All files under `docs/sf/manuals/`** except this plan/spec and the one `.gitignore` line that ignores `docs/sf/manuals/dist/`.
 - **Blueprint-vs-reality rule (spec §3).** The manual documents the current compiler only. When a claim cannot be verified against `docs/reference/Language_Spec_Z98.md` and source, fix the page or drop the claim. Never ship an unreproducible claim.
 - **HTML restrictions (spec §6.1).** HTML 4.0 Transitional doctype, authored in the HTML 3.2/4.0 intersection. No HTML5 structural tags (`<section>`, `<article>`, `<nav>`, `<header>`, `<footer>`, `<main>`, `<figure>`). **No `<div>` for structure** — layout uses `<table>`. ISO-8859-1 only, declared `<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">`. Baseline appearance via presentational attributes (`bgcolor`, `align`, `width`, `border`, `cellpadding`, `cellspacing`, `valign`) and `<font>`/`<b>`/`<i>`/`<center>`. Every page carries `<link rel="home|up|prev|next">`, a sidebar TOC, a language bar, and a prev/contents/next footer.
@@ -658,6 +658,14 @@ If the emitted script's argument order or default name differs, use the recipe i
 
 **AMENDMENT 13 (operator ruling 2026-09-20):** Task 11J's review found two plan-mandated wrong-accepts and one scope gap; the operator ruled to **fold the rejections and address the minors**. Task 11J's fix round must additionally: (a) **reject** `@as`/`@intCast` in an enum initializer when the target type is non-integer (e.g. `@as(f32,3)`) or the value is out of the target's range (e.g. `@as(u8,300)`) — official Zig rejects both — with `ERR_3055`; (b) extend **duplicate-tag rejection to function-local enums** (currently only the module-pass strict mode runs it); (c) correct the report's inaccurate concerns (a forward-referenced module-level struct DOES fold; a function-local `@sizeOf(S)` folds in both the pre- and post-fix compilers).
 
+**AMENDMENT 14 (operator ruling 2026-09-21):** re-evaluating the deferred minors found two **invalid-Zig** constructs accepted with poor/no diagnostics: `[@intCast(u8, 300)]` folds without a target-width range check (a regression introduced by Task 11F), and `for (0..p.len)` on `[*]T` yields a gcc-class failure instead of a clean front-end error. Operator ruled to add fixtures and an I/F round: **11R (I)** + **11S (F)**. Both join the scoped `sf/src` exception. **Ruling on 11R's decision points:** **D1** — use the existing `error[3000]` for all three rejects (no new dedicated code); **D2** — also include the `comptime_eval.zig:247-274` `@intCast` masking case (`const X = @intCast(u8,300)` → `44`, same invalid-Zig class) in Task 11S. **Ruling on the 11S STOP (option A):** D2 stands and AMENDMENT 14 **supersedes** the INTWIDTH design's `@intCast` truncate/mask semantics (`docs/superpowers/specs/2026-09-06-arbitrary-width-ints-design.md` §3.4); re-pin `repro/mi_matrix/intwidth_cast_xmod` to the range-checked (reject) behavior and update that design line; the truncate/mask case remains covered by `intwidth_wrap_xmod`.
+
+**AMENDMENT 15 (operator ruling 2026-09-21):** `comptimeEvalOperandSigned` (`comptime_eval.zig:410-454`; fold arm `:283`) does not unwrap `@as`, so `@intToFloat(f64, @as(u64, X))` misclassifies operand signedness. Valid Z98. Operator ruled an I/F round: **11T (I)** + **11U (F)**. **Ruling on 11T's STOP (2026-09-21):** (1) proceed with the **general fix** — intern `@as` and share the `@intCast` arm in `comptimeEvalBuiltin` and `comptimeEvalOperandSigned` so `@as` folds; the brief's stated mechanism was wrong (`@as` never folds at all, and `comptimeEvalOperandSigned` is never reached with an `@as` node — the gap is pre-existing, reproduced on `ea159fc2`). (2) **Option A:** re-pin the pinned fixture `safe_intcast_widen_sign_xmod` to the range-checked behavior (`@intCast(u16, @as(i8,-1))` is comptime out-of-range, as official Zig rejects).
+
+**AMENDMENT 16 (operator ruling 2026-09-21):** the remaining deferred minors are documentation-only. Operator ruled a single F task: **11V (F)** (docs corrections + a note documenting the `?bool` = 8 / `E!bool` 4-byte-floor divergence). **Accepted residuals (no action):** the dynamic error-union `return x;` rewrap is left as-is; the function-local-enum-referencing-a-function-local-const reject keeps the improvement.
+
+**AMENDMENT 17 (operator ruling 2026-09-21):** the function-local/inline **type emission** defect (valid Zig; `semantic_analyzer.zig:2699-2702` + `lower.zig:6585`) is **out of scope for this plan** and gets its **own separate plan** (I task first, then the plan, covering enum **and** struct/union/error-set if official Zig behaves the same), including the divergence discussion (official Zig allows local types; the C++ bootstrap `type_checker.cpp:3827` rejects).
+
 
 ### Task 11Q (I): Investigate cycle-safe post-layout enum re-evaluation and its placement
 
@@ -684,6 +692,62 @@ If the emitted script's argument order or default name differs, use the recipe i
 - [ ] **Steps 1–7:** implement per 11I + 11Q + AMENDMENT 12 (Option B: post-layout re-evaluation pass; fold/reject matrix and duplicate-tag rejection as specified there); rebuild+verify (enum values correct, or a clean diagnostic instead of silent 0); leave the reproductions; run the QUICK_REF gate battery verbatim (STOP on unexpected gate movement); rotate the seed iff the fixed point moves; update tech docs; commit `fix(types): fold enum initializer expressions` (with fixture, repro, docs, seed).
 
 ---
+
+### Task 11R (I): Investigate the invalid-Zig diagnostic gaps (array-size `@intCast` range; `[*]T` `.len`)
+
+**Files:**
+- Read (no edits): `sf/src/type_resolver.zig`, `sf/src/semantic_analyzer.zig`, `sf/src/lower.zig`.
+- Create: the findings report (SDD workspace; not committed).
+
+**Context:** Two invalid-Zig constructs are accepted with poor/no diagnostics. (a) `var a: [@intCast(u8, 300)]u8` folds without a target-width range check (`type_resolver.zig:1043-1048`) — a regression introduced by Task 11F; official Zig rejects an out-of-range comptime `@intCast`. (b) `for (0..p.len)` with `p: [*]T` emits an undeclared C operand (gcc-class failure) instead of a clean front-end error (`semantic_analyzer.zig:759-766`); `[*]T` has no `.len` in Z98 or Zig.
+
+- [ ] **Step 1: Reproduce** both shapes; confirm each is invalid Zig (spec + official Zig).
+- [ ] **Step 2: Locate the exact gaps** and the minimal fix sites — `intValueFitsType` (`type_resolver.zig:1096`) for (a); a `.len`-on-many-item-pointer diagnostic for (b).
+- [ ] **Step 3: Blast radius** (fixed point / seed, gates) + recommend the Task 11S verification plan (reject-control fixtures).
+- [ ] **Step 4: Report.** **No `sf/src` edits, no source commit.**
+
+---
+
+### Task 11S (F): Clean-reject the invalid-Zig diagnostic gaps
+
+**Files (confirm against the 11R report):** `sf/src/type_resolver.zig`, `sf/src/semantic_analyzer.zig`, `sf/src/comptime_eval.zig`; `repro/mi_matrix/` reject-control fixtures; tech docs; seed rotation iff the fixed point moves.
+
+- [ ] **Steps 1–7:** implement per 11R with the operator ruling (**D1:** use the existing `error[3000]` for all three rejects; **D2:** include the `comptime_eval.zig:247-274` `@intCast` masking case). All three cases — (a) array-size `@intCast` target-width range check via `intValueFitsType`, (b) `.len` on `[*]T`, (c) the `comptime_eval.zig` `@intCast` masking — must clean-reject (rc=2, 0 `.c`), never a silent value or a gcc-class failure; add fixtures + `expected_dirs.txt` pin; run the QUICK_REF gate battery verbatim (STOP on unexpected gate movement); rotate the seed iff the fixed point moves; update tech docs; commit `fix(types): clean-reject invalid @intCast and [*]T .len`.
+
+---
+
+### Task 11T (I): Investigate `comptimeEvalOperandSigned` `@as` unwrapping
+
+**Files:**
+- Read (no edits): `sf/src/comptime_eval.zig`.
+- Create: the findings report (SDD workspace; not committed).
+
+**Context:** `comptimeEvalOperandSigned` (`comptime_eval.zig:410-454`) unwraps `paren_expr` and `@intCast` but not `@as`, so `@intToFloat(f64, @as(u64, X))` is classified by `cv.sig` instead of the `@as` target's signedness. Valid Z98.
+
+- [ ] **Step 1: Reproduce** the signedness misclassification.
+- [ ] **Step 2: Locate the gap** (`@as` is not interned; no `as_id` in `ComptimeEval`).
+- [ ] **Step 3: Determine the minimal fix** (intern `@as`; resolve the target type's signedness via the same extra-child layout as `@intCast`) + blast radius.
+- [ ] **Step 4: Recommend the Task 11U verification plan** (fixtures, gates).
+- [ ] **Step 5: Report.** **No `sf/src` edits, no source commit.**
+
+---
+
+### Task 11U (F): Unwrap `@as` in `comptimeEvalOperandSigned`
+
+**Files (confirm against the 11T report):** `sf/src/comptime_eval.zig`; a `repro/mi_matrix/` fixture + standalone `repro/`; tech docs; seed rotation iff the fixed point moves.
+
+- [ ] **Steps 1–7:** implement per 11T; rebuild+verify; leave the reproductions; run the QUICK_REF gate battery verbatim (STOP on unexpected gate movement); rotate the seed iff the fixed point moves; update tech docs; commit `fix(comptime): unwrap @as in float-fold operand signedness`.
+
+---
+
+### Task 11V (F): Documentation corrections (final-review minors)
+
+**Files:** `docs/superpowers/plans/2026-09-20-z98-manual-phase0-plan.md` (its own `:35` Global Constraints amendment range), `docs/sf/QUICK_REF.md` (11N historical tally), `docs/sf/manuals/README.md` ("seven checks" / "only JavaScript" / "local only" + `serve.sh` bind), the design docs with stale comptime-fold claims (`COMPATIBILITY.md`, `DESIGN.md`, `C89_Codegen.md`, `AST_Parser.md`), `docs/reference/Language_Spec_Z98.md` (`continue`/`break` prose), and the Task 10D call-site comment; `release/seed/SEED_README.txt` (archive metadata — note it is generated, so fix the generator or defer to the next rotation).
+
+- [ ] **Steps 1–7:** correct each; document the `?bool` = 8 / `E!bool` 4-byte-floor divergence as an accepted residual; no compiler change; commit `docs: final-review minor corrections`.
+
+---
+
 
 ### Task 11K (I): Investigate the `bool` size/align divergence
 
