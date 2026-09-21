@@ -565,6 +565,7 @@ fn phase_ComptimeEvaluation(ctx: *CompilerContext) void {
     var pc_m: []const u8 = "CE\n"; pal.markerWrite(pc_m);
     var ce = ce_mod.comptimeEvalInit(ctx.typereg, ctx.store, ctx.interner, ctx.symbol_reg);
     ce.host_is_windows = ctx.cli.target_is_windows;
+    ce.diag = ctx.diag;
     // Block-by-block sweep: fault in each 4096-node block, scan its slots, let
     // the resident ring evict it on the next fault. Node VALUES are identical to
     // the old contiguous scan (storage-location-only change).

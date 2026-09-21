@@ -49,7 +49,7 @@ These two helpers replace (a) every semantic compare that currently uses byte `s
 
 - Arithmetic (`+ - *`, negation, shifts, division) on `uN`/`iN` wraps/truncates to width (mask uN; sign-extend iN). `iN` min-int negation wraps (same class as today's i64 handling, generalized to width).
 - Comparisons on `iN` are sign-correct at width (sign-extend both sides before compare, or compare as signed at the carrier after sign-extension).
-- `@intCast(Dst, src)`: widen (uN zero-extend, iN sign-extend), narrow (truncate then mask/sign-extend to Dst width). Checked vs unchecked per existing `@intCast`/`@as` semantics: checked cast overflow checks against the *width*, not the carrier.
+- `@intCast(Dst, src)`: widen (uN zero-extend, iN sign-extend). **SUPERSEDED (Task 11S, AMENDMENT 14, 2026-09-21):** a narrowing `@intCast` is **range-checked** (matching official Zig and `Language_Spec_Z98.md` §1.2) — an out-of-range comptime value is a clean `error[3000]` reject, NOT a truncate/mask. The truncate/mask behavior is covered by arithmetic wrap (`intwidth_wrap_xmod`). Checked cast overflow checks against the *width*, not the carrier.
 - Literals: an integer literal materialized into a `uN`/`iN` context adopts that width (mask/sign-extend on storage). Literal materialization default elsewhere unchanged (I7 note: sema has no i32 default; materialization default is c89_emit `intConstTypeForValue`).
 - `@intCast` checked-cast decision table (lower.zig ~:1280 fixed 8/16/32/64) generalizes to width.
 - `comptime_eval`: width-aware folds; `@bitSizeOf(uN)` = N.
@@ -69,7 +69,7 @@ These two helpers replace (a) every semantic compare that currently uses byte `s
 - `@bitSizeOf(u3)` = 3; `@bitSizeOf(i7)` = 7.
 - `@sizeOf(u3)` = 1; `@sizeOf(u12)` = 2; `@sizeOf(u20)` = 4; `@sizeOf(u33)` = 8 (carrier bytes).
 - `u3 7 + 1` wraps to 0; `i7 63 + 1` wraps to -64 (sign-extend); `i7 -1` sign-extends to 127-bit pattern at width.
-- `@intCast(u3, 255)` → 7 (truncate/mask); `@intCast(i7, 128)` → checked overflow error if checked.
+- `@intCast(u3, 255)` → `error[3000]` (out of range; **SUPERSEDED by Task 11S** — originally truncate/mask → 7); `@intCast(i7, 128)` → `error[3000]` (out of range).
 - Comparisons: `i7 -1 < 0` true (sign-correct).
 - Existing `u8/i8/u16/i16/u32/i32/u64/i64` behavior unchanged (width == size*8 for power-of-2; helpers return the same values).
 

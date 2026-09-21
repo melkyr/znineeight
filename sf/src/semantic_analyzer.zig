@@ -763,6 +763,22 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
         var fapr_ok_m: []const u8 = "FAPR:OK"; pal_mod.markerWriteInt(fapr_ok_m, @intCast(u32, @enumToInt(pre_kind)));
         var fapr_dk_m: []const u8 = "FAPR:DK"; pal_mod.markerWriteInt(fapr_dk_m, @intCast(u32, @enumToInt(base_ty.kind)));
         var fapr_nl: []const u8 = "\n"; pal_mod.markerWrite(fapr_nl);
+        // Task 11S (b): `[*]T` has no `.len` (Z98 spec §1.2 / official Zig).
+        // The auto-deref above would otherwise resolve `p.len` to TYPE_VOID
+        // silently — a gcc-class failure (`zT_N undeclared`) or a silent 0 in a
+        // range position. Reject cleanly in any position.
+        if (pre_kind == type_mod.TypeKind.many_ptr_type) {
+            var mpl_len_s: []const u8 = "len";
+            var mpl_len_id = interner_mod.stringInternerIntern(self.interner, mpl_len_s);
+            if (field_name_id == mpl_len_id) {
+                var mpl_msg: []const u8 = "many-item pointer has no field 'len'";
+                _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000),
+                    self.source_file_id, node.span_start,
+                    node.span_start + @intCast(u32, node.span_len), mpl_msg);
+                rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
+                return type_mod.TYPE_VOID;
+            }
+        }
     }
     if (base_ty.kind == type_mod.TypeKind.optional_type) {
         var sp = node.span_start;

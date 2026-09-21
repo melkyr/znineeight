@@ -1037,12 +1037,34 @@ pub fn evalConstU32Full(env: *TypeResolveEnv, node_idx: u32, depth: u32) u32 {
         var s_intc: []const u8 = "@intCast";
         var intc_id = interner_mod.stringInternerIntern(env.interner, s_intc);
         var bc_n = ast_mod.astStoreNodeExtraChildCount(env.store, node_idx);
-        // `@intCast(T, e)`: fold by recursing into the operand. The existing
-        // `ident_expr`/binary/`negate` arms above handle local consts, module
-        // const chains, and arithmetic operands.
+        // `@intCast(T, e)`: resolve the target `T`, fold the operand `e` (the
+        // existing `ident_expr`/binary/`negate` arms above handle local consts,
+        // module const chains, and arithmetic operands), and range-check it
+        // against `T` (Task 11S (a)).
         if (node.child_0 == intc_id) {
             if (bc_n >= @intCast(u32, 2)) {
-                return evalConstU32Full(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 1)), depth + @intCast(u32, 1));
+                // Task 11S (a): resolve the target type and range-check the
+                // folded operand against it. `@intCast(u8, 300)` in an
+                // array-size position is invalid Zig; before this gate the arm
+                // discarded the target and folded 300 as the dimension. The
+                // operand MUST fold through `evalConstU32Full` (not the i64
+                // twin) so a function-local `const N = 7` still resolves.
+                var ic_tid = resolveTypeExprFull(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 0)), depth + @intCast(u32, 1));
+                var ic_v = evalConstU32Full(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 1)), depth + @intCast(u32, 1));
+                if (ic_tid != type_mod.TYPE_UNDEFINED and ic_v != @intCast(u32, 0xFFFFFFFF)) {
+                    if (intValueFitsType(env, ic_tid, @intCast(i64, ic_v))) {
+                        return ic_v;
+                    }
+                    if (env.diag) |dg| {
+                        if (diag_mod.diagnosticCollectorMarkNodeOnce(dg, node_idx)) {
+                            var ic_msg: []const u8 = "@intCast value does not fit the target type";
+                            _ = diag_mod.diagnosticCollectorAdd(dg, @intCast(u8, 0),
+                                @intCast(u16, 3000),
+                                env.source_file_id, node.span_start,
+                                node.span_start + @intCast(u32, node.span_len), ic_msg);
+                        }
+                    }
+                }
             }
             return @intCast(u32, 0xFFFFFFFF);
         }

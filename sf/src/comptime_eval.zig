@@ -9,6 +9,7 @@ const type_mod = @import("type_registry.zig");
 const ast_mod = @import("ast.zig");
 const interner_mod = @import("string_interner.zig");
 const type_resolver = @import("type_resolver.zig");
+const diag_mod = @import("diagnostics.zig");
 
 pub const ComptimeVal = struct {
     bits: u64,
@@ -37,6 +38,9 @@ pub const ComptimeEval = struct {
     int_to_float_id: u32,
     is_windows_id: u32,
     host_is_windows: bool,
+    // Task 11S (c): the fold pass may reject an out-of-range comptime
+    // `@intCast` (error[3000]); null when no collector is available.
+    diag: ?*diag_mod.DiagnosticCollector,
 };
 
 pub fn comptimeEvalInit(registry: *TypeRegistry, store: *AstStore, interner: *StringInterner, symbol_reg: *SymbolRegistry) ComptimeEval {
@@ -65,6 +69,7 @@ pub fn comptimeEvalInit(registry: *TypeRegistry, store: *AstStore, interner: *St
         .offset_of_id = off_id, .bit_size_of_id = bitsz_id, .bit_offset_of_id = bitoff_id,
         .is_windows_id = iw_id,
         .host_is_windows = false,
+        .diag = null,
     };
 }
 
@@ -133,6 +138,32 @@ fn comptimeEvalResolveTypeArg(self: *ComptimeEval, node_idx: u32) ?u32 {
     var tid = type_resolver.resolveTypeExprFull(&env, node_idx, @intCast(u32, 0));
     if (tid == type_mod.TYPE_UNDEFINED) return null;
     return tid;
+}
+
+// Task 11S (c): does the folded value `cv` fit the integer type `t`? The
+// comptime `@intCast` arm used to mask to the target width, silently folding
+// `@intCast(u8, 300)` to 44. A negative source never fits an unsigned target;
+// a positive source must not exceed the target's max. Widths >= 64 are left
+// alone (no masking, existing behavior preserved).
+fn comptimeValFitsType(self: *ComptimeEval, cv: ComptimeVal, t: u32) bool {
+    if (!type_mod.typeRegistryIsInteger(self.registry, t)) return false;
+    var wb: u32 = @intCast(u32, type_mod.typeRegistryIntWidthBits(self.registry, t));
+    if (wb >= @intCast(u32, 64)) return true;
+    if (wb == @intCast(u32, 0)) return false;
+    var tsig: bool = type_mod.typeRegistryIntIsSigned(self.registry, t);
+    var sval: i64 = @bitCast(i64, cv.bits);
+    if (sval < @intCast(i64, 0)) {
+        if (!tsig) return false;
+        var mag: u64 = @intCast(u64, @intCast(i64, 0) - sval);
+        var smin_mag: u64 = @intCast(u64, 1) << @intCast(u64, wb - @intCast(u32, 1));
+        return mag <= smin_mag;
+    }
+    if (tsig) {
+        var smax: u64 = (@intCast(u64, 1) << @intCast(u64, wb - @intCast(u32, 1))) - @intCast(u64, 1);
+        return cv.bits <= smax;
+    }
+    var umax: u64 = (@intCast(u64, 1) << @intCast(u64, wb)) - @intCast(u64, 1);
+    return cv.bits <= umax;
 }
 
 fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?ComptimeVal {
@@ -257,6 +288,22 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
                 if (!is_int_t) {
                     wb = @intCast(u32, ty.size * @intCast(u32, 8));
                     sig = false;
+                }
+                // Task 11S (c): an out-of-range comptime `@intCast` is invalid
+                // Zig (`@intCast(u8, 300)` must not mask to 44). Emit
+                // error[3000] and stop folding; the pass's post-phase diag
+                // check exits rc=2 before any emission.
+                if (is_int_t and !comptimeValFitsType(self, cv, t)) {
+                    if (self.diag) |dg| {
+                        if (diag_mod.diagnosticCollectorMarkNodeOnce(dg, node_idx)) {
+                            var ic_msg: []const u8 = "@intCast value does not fit the target type";
+                            _ = diag_mod.diagnosticCollectorAdd(dg, @intCast(u8, 0),
+                                @intCast(u16, 3000),
+                                @intCast(u32, 0), node.span_start,
+                                node.span_start + @intCast(u32, node.span_len), ic_msg);
+                        }
+                    }
+                    return null;
                 }
                 if (wb >= @intCast(u32, 64)) {
                     return ComptimeVal{ .bits = cv.bits, .width_bits = wb, .sig = sig };

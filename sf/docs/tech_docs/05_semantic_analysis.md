@@ -211,7 +211,7 @@ Entry: `FAE\n PFA:BK<kind> PFA:FN<name_id>`.
 
 **Phase 2 — general field access (non-ident base):**
 - Resolve base expr. If `TYPE_VOID`, bail `FB\n`.
-- **Pointer dereference**: if ptr_type/many_ptr_type, follow to pointee. Markers: `FAPR:OK FAPR:DK`.
+- **Pointer dereference**: if ptr_type/many_ptr_type, follow to pointee. Markers: `FAPR:OK FAPR:DK`. **Task 11S (b):** when the original base kind was `many_ptr_type` and the accessed field is `len`, emit `error[3000]: many-item pointer has no field 'len'` and return `TYPE_VOID` (`[*]T` has no `.len`; previously the auto-deref resolved it silently to `TYPE_VOID`, giving a gcc-class failure or a silent 0 in a range position). `*T` keeps its existing pointee walk.
 - **Optional guard**: `error[3000]` "cannot access field on optional type; use .? to unwrap first".
 - **Error union guard**: `error[3000]` "cannot access field on error-union type; handle the error first".
 
@@ -222,7 +222,7 @@ Entry: `FAE\n PFA:BK<kind> PFA:FN<name_id>`.
 - `module_type` → `MFA\n`/`MF1\n`/`MFF\n`/`MFP` markers. Look up field in target module's symbols. If function, look up resolved fn type.
 - `slice_type` → `.len` returns `TYPE_USIZE` (`FSL:USIZE\n`). `.ptr` returns `[*]elem` (`FSP:PTR\n`).
 - `array_type` → `.len` returns `TYPE_USIZE` (`FAA:USIZE\n`).
-- **array-field `.len` fallback** `[updated: 2026-09-21 — Task 11N]`: before the final `TYPE_VOID` fallback, `semanticAnalyzerArrayFieldLen(node.child_0)` inspects the `.len` base. If it is a `field_access` whose container (struct / union / packed_union, optionally through a pointer) declares the named field as an `array_type`, `.len` resolves to `TYPE_USIZE`. This recovers `s.a.len` after the Phase-4 array-field decay (`s.a` → `*u8`) makes the `array_type` arm above unreachable. The fallback is gated on the accessed name being `len` (`field_name_id == len_id`), so an unknown field on an array field (`s.a.foo`) still falls through to `TYPE_VOID` (rejected). A `[*]T` field (many-item pointer) is not an array and stays `TYPE_VOID` (rejected).
+- **array-field `.len` fallback** `[updated: 2026-09-21 — Task 11N]`: before the final `TYPE_VOID` fallback, `semanticAnalyzerArrayFieldLen(node.child_0)` inspects the `.len` base. If it is a `field_access` whose container (struct / union / packed_union, optionally through a pointer) declares the named field as an `array_type`, `.len` resolves to `TYPE_USIZE`. This recovers `s.a.len` after the Phase-4 array-field decay (`s.a` → `*u8`) makes the `array_type` arm above unreachable. The fallback is gated on the accessed name being `len` (`field_name_id == len_id`), so an unknown field on an array field (`s.a.foo`) still falls through to `TYPE_VOID` (rejected). A `[*]T` field (many-item pointer) is not an array and is now rejected cleanly with `error[3000]` by the Task 11S (b) many-ptr `.len` gate (previously a silent `TYPE_VOID`).
 - `error_set_type` → `typeRegistryErrorSetMemberIndex` check. If found, return `base_type_id`.
 - `enum_type` → scan enum members; if found, return `base_type_id`.
 
