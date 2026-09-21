@@ -13,9 +13,9 @@ Returns the size of type `T` in bytes as a `usize` constant.
 - **Syntax:** `@sizeOf(TypeName)`
 - **Constraints:** `T` must be a complete type. Incomplete types trigger `ERR_SIZE_OF_INCOMPLETE_TYPE`.
 - **Target (32-bit little-endian):**
-  - `i8`, `u8`: 1 byte
+  - `i8`, `u8`, `bool`: 1 byte
   - `i16`, `u16`: 2 bytes
-  - `i32`, `u32`, `f32`, `*T`, `usize`, `isize`, `bool`: 4 bytes
+  - `i32`, `u32`, `f32`, `*T`, `usize`, `isize`: 4 bytes
   - `i64`, `u64`, `f64`: 8 bytes
   - `struct`: Sum of field sizes plus padding for alignment.
 
@@ -24,9 +24,9 @@ Returns the alignment requirement of type `T` in bytes as a `usize` constant.
 - **Syntax:** `@alignOf(TypeName)`
 - **Constraints:** `T` must be a complete type. Incomplete types trigger `ERR_SIZE_OF_INCOMPLETE_TYPE`.
 - **Target (32-bit little-endian):**
-  - `i8`, `u8`: 1 byte
+  - `i8`, `u8`, `bool`: 1 byte
   - `i16`, `u16`: 2 bytes
-  - `i32`, `u32`, `f32`, `*T`, `usize`, `isize`, `bool`: 4 bytes
+  - `i32`, `u32`, `f32`, `*T`, `usize`, `isize`: 4 bytes
   - `i64`, `u64`, `f64`: 8 bytes
 
 ### `@offsetOf(T, field_name)`

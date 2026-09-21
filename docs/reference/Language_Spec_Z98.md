@@ -16,7 +16,7 @@ Z98 is a restricted subset of the Zig programming language compiled by the self-
 | `isize`, `usize` | Platform-sized integers | `int`, `unsigned int` (32-bit) |
 | `c_char` | C char type | `char` (signedness is implementation-defined) |
 | `f32`, `f64` | Floating-point | `float`, `double` |
-| `bool` | Boolean (`true`, `false`) | `int` (1, 0) |
+| `bool` | Boolean (`true`, `false`) | `unsigned char` (1, 0) |
 | `void` | Empty type | `void` |
 | `noreturn` | Never-returning type | `void` |
 

@@ -754,7 +754,7 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
         var d6nl2: []const u8 = "\n"; pal.markerWrite(d6nl2);
     }
     if (ty.kind == TypeKind.void_type) { var s: []const u8 = "void"; return s; }
-    if (ty.kind == TypeKind.bool_type) { var s: []const u8 = "int"; return s; }
+    if (ty.kind == TypeKind.bool_type) { var s: []const u8 = "unsigned char"; return s; }
     if (ty.kind == TypeKind.i8_type) { var s: []const u8 = "signed char"; return s; }
     if (ty.kind == TypeKind.i16_type) { var s: []const u8 = "short"; return s; }
     if (ty.kind == TypeKind.i32_type) { var s: []const u8 = "int"; return s; }
@@ -4758,8 +4758,8 @@ fn classifyIntSignedness(reg: *TypeRegistry, tyid: u32) i8 {
     if (tyid == type_mod.TYPE_VOID) { return @intCast(i8, -1); }
     var ty = reg.types_items[@intCast(usize, tyid)];
     var k = ty.kind;
-    if (k == TypeKind.i8_type or k == TypeKind.i16_type or k == TypeKind.i32_type or k == TypeKind.i64_type or k == TypeKind.isize_type or k == TypeKind.c_char_type or k == TypeKind.integer_literal_type or k == TypeKind.bool_type or k == TypeKind.undefined_type or k == TypeKind.null_type) { return @intCast(i8, 1); }
-    if (k == TypeKind.u8_type or k == TypeKind.u16_type or k == TypeKind.u32_type or k == TypeKind.u64_type or k == TypeKind.usize_type or k == TypeKind.arb_uint_type) { return @intCast(i8, 0); }
+    if (k == TypeKind.i8_type or k == TypeKind.i16_type or k == TypeKind.i32_type or k == TypeKind.i64_type or k == TypeKind.isize_type or k == TypeKind.c_char_type or k == TypeKind.integer_literal_type or k == TypeKind.undefined_type or k == TypeKind.null_type) { return @intCast(i8, 1); }
+    if (k == TypeKind.u8_type or k == TypeKind.u16_type or k == TypeKind.u32_type or k == TypeKind.u64_type or k == TypeKind.usize_type or k == TypeKind.arb_uint_type or k == TypeKind.bool_type) { return @intCast(i8, 0); }
     if (k == TypeKind.arb_int_type) { return @intCast(i8, 1); }
     return @intCast(i8, -1);
 }
@@ -4943,7 +4943,8 @@ fn intTypeByteWidth(reg: *TypeRegistry, tyid: u32) u32 {
     var k = ty.kind;
     if (k == TypeKind.i8_type or k == TypeKind.u8_type or k == TypeKind.c_char_type) { return @intCast(u32, 1); }
     if (k == TypeKind.i16_type or k == TypeKind.u16_type) { return @intCast(u32, 2); }
-    if (k == TypeKind.i32_type or k == TypeKind.u32_type or k == TypeKind.isize_type or k == TypeKind.usize_type or k == TypeKind.integer_literal_type or k == TypeKind.bool_type or k == TypeKind.null_type or k == TypeKind.undefined_type) { return @intCast(u32, 4); }
+    if (k == TypeKind.bool_type) { return @intCast(u32, 1); }
+    if (k == TypeKind.i32_type or k == TypeKind.u32_type or k == TypeKind.isize_type or k == TypeKind.usize_type or k == TypeKind.integer_literal_type or k == TypeKind.null_type or k == TypeKind.undefined_type) { return @intCast(u32, 4); }
     if (k == TypeKind.i64_type or k == TypeKind.u64_type) { return @intCast(u32, 8); }
     return ty.size;
 }

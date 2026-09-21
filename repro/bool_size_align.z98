@@ -1,0 +1,114 @@
+// bool_size_align.z98 — standalone reproduction for the Task 11L fix.
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   <zig1> -ffast -o /tmp/boolsize repro/bool_size_align.z98
+//   cd /tmp/boolsize && sh build_target.sh linux prog && ./prog ; echo "rc=$?"
+//
+// DEFECT (before the fix): `sf/src/type_registry.zig` registered `bool` with
+// size 4 / align 4 and `sf/src/c89_emit.zig` mapped `bool` to C `int`, so
+// `@sizeOf(bool)`/`@alignOf(bool)` were 4/4 (Zig: 1/1) and every struct/array
+// with a bool field was oversized. The registry and the C emission MUST change
+// together: the folded `@sizeOf`/`@offsetOf` come from the registry while the
+// actual C layout comes from the emitted type.
+//
+// FIX (Task 11L): registry bool 4/4 -> 1/1; emitter bool C type `int` ->
+// `unsigned char`; `intTypeByteWidth` bool -> 1; `classifyIntSignedness` bool ->
+// unsigned. Runtime support is unchanged (`std_print_bool(int)` promotes).
+//
+// EXPECTED after the fix: deterministic stdout below, RUNRC=0. Before the fix
+// the bool/struct/array/union sizes were all 4x and `selfconsistency` compared
+// the registry's 4-byte offset against the C `int` layout.
+//
+//   sizeof-bool=1
+//   alignof-bool=1
+//   bitsizeof-bool=1
+//   sizeof-arr4=4
+//   alignof-arr4=1
+//   SB-size=2
+//   SB-offa=0
+//   SB-offb=1
+//   S3-size=3
+//   S3-offb=1
+//   SU-size=12
+//   SU-offa=0
+//   SU-offb=4
+//   SU-offc=8
+//   S5-size=5
+//   U1-size=1
+//   U1-align=1
+//   selfconsistency-ok
+//   stride-ok
+//   roundtrip-true-ok
+//   roundtrip-false-ok
+//   done
+const std = @import("std");
+
+const SB = struct { a: bool, b: bool };
+const S3 = struct { a: u8, b: bool, c: u8 };
+const SU = struct { a: bool, b: u32, c: bool };
+const S5 = struct { a: bool, b: bool, c: bool, d: bool, e: bool };
+const U1 = union { b: bool };
+
+fn idb(b: bool) bool {
+    return b;
+}
+
+fn pl(n: i32) void {
+    std.io.printInt(n);
+    std.io.print("\n");
+}
+
+pub fn main() void {
+    std.io.print("sizeof-bool=");
+    pl(@intCast(i32, @sizeOf(bool)));
+    std.io.print("alignof-bool=");
+    pl(@intCast(i32, @alignOf(bool)));
+    std.io.print("bitsizeof-bool=");
+    pl(@intCast(i32, @bitSizeOf(bool)));
+    std.io.print("sizeof-arr4=");
+    pl(@intCast(i32, @sizeOf([4]bool)));
+    std.io.print("alignof-arr4=");
+    pl(@intCast(i32, @alignOf([4]bool)));
+    std.io.print("SB-size=");
+    pl(@intCast(i32, @sizeOf(SB)));
+    std.io.print("SB-offa=");
+    pl(@intCast(i32, @offsetOf(SB, "a")));
+    std.io.print("SB-offb=");
+    pl(@intCast(i32, @offsetOf(SB, "b")));
+    std.io.print("S3-size=");
+    pl(@intCast(i32, @sizeOf(S3)));
+    std.io.print("S3-offb=");
+    pl(@intCast(i32, @offsetOf(S3, "b")));
+    std.io.print("SU-size=");
+    pl(@intCast(i32, @sizeOf(SU)));
+    std.io.print("SU-offa=");
+    pl(@intCast(i32, @offsetOf(SU, "a")));
+    std.io.print("SU-offb=");
+    pl(@intCast(i32, @offsetOf(SU, "b")));
+    std.io.print("SU-offc=");
+    pl(@intCast(i32, @offsetOf(SU, "c")));
+    std.io.print("S5-size=");
+    pl(@intCast(i32, @sizeOf(S5)));
+    std.io.print("U1-size=");
+    pl(@intCast(i32, @sizeOf(U1)));
+    std.io.print("U1-align=");
+    pl(@intCast(i32, @alignOf(U1)));
+
+    var s: SB = SB{ .a = true, .b = false };
+    const off_b: i32 = @intCast(i32, @offsetOf(SB, "b"));
+    const ptr_b: i32 = @intCast(i32, @ptrToInt(&s.b)) - @intCast(i32, @ptrToInt(&s));
+    if (ptr_b == off_b) { std.io.print("selfconsistency-ok\n"); } else { std.io.print("selfconsistency-bad\n"); }
+
+    var v: [4]bool = undefined;
+    v[0] = true;
+    v[1] = false;
+    v[2] = true;
+    v[3] = false;
+    const stride: i32 = @intCast(i32, @ptrToInt(&v[3])) - @intCast(i32, @ptrToInt(&v[0]));
+    if (stride == 3) { std.io.print("stride-ok\n"); } else { std.io.print("stride-bad\n"); }
+
+    if (idb(true)) { std.io.print("roundtrip-true-ok\n"); } else { std.io.print("roundtrip-true-bad\n"); }
+    if (!idb(false)) { std.io.print("roundtrip-false-ok\n"); } else { std.io.print("roundtrip-false-bad\n"); }
+
+    std.io.print("done\n");
+}

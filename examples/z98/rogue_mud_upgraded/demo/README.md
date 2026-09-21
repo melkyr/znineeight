@@ -7,9 +7,9 @@ This directory holds the closeout demo feeds for the upgraded rogue MUD
   boot text only). Output is fully deterministic (md5 `3fb6709e…`).
 - `canonical_move_feed.txt` / `canonical_move_expected.txt` — the Task 1
   move baseline (`d`/`l`/`q`; exercises a render + look + quit). Fully
-  deterministic (md5 `b3c5b0e1…`).
+  deterministic (md5 `cf3c82f9…`; re-baselined by Task 11L — see below).
 - `demo_feed.txt` / `demo_expected.txt` — the Task 5 observable demo surface
-  (`i`/`q`). Deterministic; golden is the 3×-verified capture (md5 `7361d248…`).
+  (`i`/`q`). Deterministic; golden is the 3×-verified capture (md5 `ad947e1e…`).
 
 Neither canonical feed contains `i`.
 
@@ -31,16 +31,33 @@ position/timing dependence) plus two module-level helper fns it calls:
 The `Local` container-of struct is module-scope (not a local struct binding)
 because zig1 does not support local struct type declarations (AMENDMENT 3).
 
-Recorded layout actuals for the current build (`/tmp/fx_subfolder/zig1` ref,
-commit `…Task-5`): `off Entity.hp=4 off Entity.x=8 size Entity=16 bits bool=1
+Recorded layout actuals for the current build (Task 11L, `bool` 1 byte/align 1):
+`off Entity.hp=4 off Entity.x=8 size Entity=12 bits bool=1
 off Room_t.h=3`. Field offsets (`hp=4`, `x=8`, `Room_t.h=3`) and `bits bool=1`
-match the hand contract; `size Entity=16` (not the hand-computed `12`) is the
-program's compile-time constant and equals the emitted C `sizeof` — zig1 widens
-the trailing `active: bool` struct field to `int` storage, and
+match the hand contract; `size Entity=12` matches the hand-computed `12` —
+`bool` is now 1 byte/align 1 (Task 11L), and
 `EntityType`'s `union(enum)` tag lowers to a `unsigned int`, so the natural
-layout is 4(typ) + 2+2(hp/max_hp) + 1+1(x/y) + 4(active int) = 16. The
+layout is 4(typ) + 2+2(hp/max_hp) + 1+1(x/y) + 1(active bool) = 10, rounded up
+to the 4-byte struct alignment = 12. The
 compiler is the source of truth; this value is stable 3× and layout-coupled —
 regenerate `demo_expected.txt` if the struct layout ever changes.
+
+### Task 11L `canonical_move_expected.txt` re-baseline (operator-approved)
+
+Task 11L made `bool` 1 byte/align 1 (`Entity` 16→12). This moved
+`canonical_move_expected.txt` `b3c5b0e1…` → `cf3c82f9…` (deterministic 3×).
+**The final rendered 31×60 screen is byte-identical PRE↔POST** — the change is
+only a transient single-frame draw-sequence difference in `ui.draw`'s
+frame-diff emission (map cell row17/col15 emitted as `#` by the pre-fix
+compiler and `?` by the fixed compiler, then overwritten). Evidence recorded
+at re-baseline: dungeon generation (tile grid / `room_count`) is byte-identical;
+placed entities (count/typ/x/y/active) are identical; raw tile memory at the
+differing row is unchanged; the emitted `draw` (`ui_*.c`) and `renderLocal`
+(`main_*.c`) differ only in bool type declarations (`int` → `unsigned char`)
+and casts, no logic change; and the reconstructed final screen is identical
+under both the normal (buffered) run and an unbuffered (`flush.c` LD_PRELOAD)
+run. The golden is a whole-file byte gate, so it is re-baselined even though
+the visible output is unchanged.
 
 ## Demo feed and golden
 
@@ -61,7 +78,7 @@ followed by the `i` info block — nothing else is printed between boot and the
 
 Determinism: 3× harness runs (`scripts/closeout/run_upgraded.sh
 /tmp/fx_subfolder/zig1 examples/z98/rogue_mud_upgraded/main.zig
-demo/demo_feed.txt`) produce byte-identical stdout (md5 `7361d248…`,
+demo/demo_feed.txt`) produce byte-identical stdout (md5 `ad947e1e…`,
 RUNRC=0 each); `demo_expected.txt` is that capture. Unlike the lisp `(address)`
 demo, nothing in this demo prints a runtime address, so there is no PIE/ASLR
 variance — the golden is a whole-file byte gate.
@@ -94,7 +111,7 @@ is the negative probe for their clean removal.) It sends a single `i`
 byte, drains whatever the server streams, and self-terminates.
 
 `net_demo_expected.txt` is the verified server-stdout golden (md5
-`aa40a52e…`, 359 bytes): the net boot lines (`Welcome to Rogue MUD!`,
+`17c95831…`, 359 bytes): the net boot lines (`Welcome to Rogue MUD!`,
 `Generating dungeon...`, the two `Random_range error` lines, `Game
 started! ...` — note NO `Running in single-player ASCII mode.`, which only the
 `false` branch prints) followed by the SAME `i` info block bytes as
@@ -127,7 +144,7 @@ cd <client_dir> && timeout 10 ./prog              # client sends 'i', self-termi
 `flush.so` is a 5-line `-m32` shim (`__attribute__((constructor))` calling
 `setvbuf(stdout, NULL, _IONBF, 0)`); a bare `timeout`/`kill` otherwise
 discards the libc stdout buffer and yields an empty `server.out`.
-Determinism: 3× runs produced byte-identical `server.out` (md5 `aa40a52e…`).
+Determinism: 3× runs produced byte-identical `server.out` (md5 `17c95831…`).
 Port 4000 must be free before each run (`connect_ex` returns 111/refused); do
 not `pkill` — capture the server PID and `kill` it only after the client
 finishes.

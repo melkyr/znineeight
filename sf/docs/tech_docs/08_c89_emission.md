@@ -235,7 +235,7 @@ the typedef and `arena_multi_inst_xmod` compiles + runs clean. No emitter change
 | TypeKind | C89 Name | Notes |
 |----------|----------|-------|
 | `void_type` | `"void"` | Direct |
-| `bool_type` | `"int"` | C89 has no bool |
+| `bool_type` | `"unsigned char"` | 1 byte; C89 has no bool |
 | `i8_type` | `"signed char"` | |
 | `i16_type` | `"short"` | |
 | `i32_type` | `"int"` | |
@@ -263,6 +263,8 @@ the typedef and `arena_multi_inst_xmod` compiles + runs clean. No emitter change
 | `undefined_type` | `"int"` | Fallback |
 | `null_type` | `"int"` | Fallback (uncoerced null / non-optional pointer/fn targets — pointer-compatible). A null literal coerced to an optional emits `set_optional_null` directly, so no `null_const` temp is produced. |
 | `integer_literal_type` | `"int"` | Fallback |
+
+**`bool` representation (Task 11L, 2026-09-21).** `bool` is 1 byte / align 1 and maps to C89 `"unsigned char"` (C89 has no `_Bool`), matching Zig. The registry (`type_registry.zig`) and the emitter MUST agree — the folded `@sizeOf`/`@offsetOf` come from the registry, the actual layout from the emitted type. `intTypeByteWidth(bool) = 1` and `classifyIntSignedness(bool) = 0` (unsigned) agree with the emitted type. **Residuals (NOT full Zig parity):** `?bool` is 8 bytes / align 4 (the optional arm keeps a `max(payload.alignment, 4)` floor) and `E!bool` keeps a 4-byte floor (`max(payload.size, 4)`); `typeWidthBitsForKind(bool)` stays 0 (`@bitSizeOf`/packed layout special-case bool to 1).
 
 When `ty.c_name_id != 0`, returns the cached C name directly (set by `emitErrorUnionType` for
 error union types).

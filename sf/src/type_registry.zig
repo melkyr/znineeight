@@ -682,7 +682,7 @@ pub fn typeRegistryGetOrCreateModule(self: *TypeRegistry, module_id: u32) u32 {
 pub fn typeRegistryRegisterPrimitives(self: *TypeRegistry) void {
     registerPrimitive(self, TypeKind.none_sentinel, @intCast(u32, 0), @intCast(u32, 0));
     registerPrimitive(self, TypeKind.void_type, @intCast(u32, 0), @intCast(u32, 0));
-    registerPrimitive(self, TypeKind.bool_type, @intCast(u32, 4), @intCast(u32, 4));
+    registerPrimitive(self, TypeKind.bool_type, @intCast(u32, 1), @intCast(u32, 1));
     registerPrimitive(self, TypeKind.noreturn_type, @intCast(u32, 0), @intCast(u32, 0));
     registerPrimitive(self, TypeKind.i8_type, @intCast(u32, 1), @intCast(u32, 1));
     registerPrimitive(self, TypeKind.i16_type, @intCast(u32, 2), @intCast(u32, 2));

@@ -241,9 +241,9 @@ run_rogue_feed() {
 run_rogue_feed B2 "$RDEMO/canonical_feed.txt" "$RDEMO/canonical_expected.txt"
 echo "PASS B2 (canonical q feed byte-identity, md5 3fb6709e)"
 run_rogue_feed B3 "$RDEMO/canonical_move_feed.txt" "$RDEMO/canonical_move_expected.txt"
-echo "PASS B3 (canonical move feed byte-identity, md5 b3c5b0e1)"
+echo "PASS B3 (canonical move feed byte-identity, md5 cf3c82f9)"
 run_rogue_feed B4 "$RDEMO/demo_feed.txt" "$RDEMO/demo_expected.txt"
-echo "PASS B4 (demo feed byte-identity, md5 7361d248)"
+echo "PASS B4 (demo feed byte-identity, md5 ad947e1e)"
 
 assert_export B5 "$W/B1" saveDungeon
 assert_export B5 "$W/B1" loadDungeon
@@ -296,7 +296,7 @@ if [ "$md5_server" != "$md5_netexp" ]; then
     diff "$W/B6-srvrun/server.out" "$RDEMO/net_demo_expected.txt"
     phase_fail "B6(server-out-md5)"
 fi
-echo "    B6: server stdout md5 $md5_server == demo/net_demo_expected.txt (aa40a52e)"
+echo "    B6: server stdout md5 $md5_server == demo/net_demo_expected.txt (17c95831)"
 
 if port4000_listen; then
     echo "    B6: port 4000 still has a LISTEN socket after the run"
@@ -329,10 +329,10 @@ echo "A4 export symbol gate ........ PASS"
 echo "A5 zig0 note (echo-only) ..... PASS"
 echo "B1 rogue build ............... PASS"
 echo "B2 canonical q (3fb6709e) .... PASS"
-echo "B3 canonical move (b3c5b0e1) . PASS"
-echo "B4 demo feed (7361d248) ...... PASS"
+echo "B3 canonical move (cf3c82f9) . PASS"
+echo "B4 demo feed (ad947e1e) ...... PASS"
 echo "B5 export symbol gates ....... PASS"
-echo "B6 net variant (aa40a52e) .... PASS"
+echo "B6 net variant (17c95831) .... PASS"
 echo "B7 zig0 note (echo-only) ..... PASS"
 echo "C1 stdlib runtime gate ....... PASS"
 echo "CLOSEOUT OK"

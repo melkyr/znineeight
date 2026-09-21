@@ -43,6 +43,7 @@ repro/mi_matrix/stdlib_bits_extract_trap_xmod
 repro/mi_matrix/stdlib_bits_insert_trap_xmod
 repro/mi_matrix/stdlib_bits_stress_xmod
 repro/mi_matrix/stdlib_bits_table_xmod
+repro/mi_matrix/stdlib_bool_size_align_xmod
 repro/mi_matrix/stdlib_buf_clear_xmod
 repro/mi_matrix/stdlib_buf_endian_xmod
 repro/mi_matrix/stdlib_buf_growth_xmod

@@ -12,7 +12,7 @@
 #   Phase B  examples/z98/rogue_mud_upgraded/demo/{net_main.zig,net_demo_client.zig}
 #            (dumped from the rogue program dir CWD — module resolution is
 #            CWD-relative). Golden = committed demo/net_demo_expected.txt
-#            (md5 aa40a52e).
+#            (md5 17c95831).
 #
 # Capture method under wine (empirical, Task 2): the CRT fwrite stdout of a
 # never-exiting wine server is lost on timeout-kill (0 bytes — no linux
@@ -249,7 +249,7 @@ tr -d '\r' <"$W/B-srvrun/stdout.txt" >"$W/B-srvrun/stdout.norm"
 echo "  B-win server run: rc=$B_WIN_RC (graceful exit via stdin 'q')"
 echo "    raw stdout md5 = $(md5sum "$W/B-srvrun/stdout.txt" | cut -d' ' -f1) ($(wc -c <"$W/B-srvrun/stdout.txt") bytes, CRLF)"
 echo "    LF-normalized md5 = $(md5sum "$W/B-srvrun/stdout.norm" | cut -d' ' -f1)"
-echo "    golden (aa40a52e) md5 = $(md5sum "$NETEXP" | cut -d' ' -f1)"
+echo "    golden (17c95831) md5 = $(md5sum "$NETEXP" | cut -d' ' -f1)"
 
 # B2: LF-normalized parity vs committed golden -------------------------------
 if cmp -s "$W/B-srvrun/stdout.norm" "$NETEXP"; then
