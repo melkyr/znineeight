@@ -197,7 +197,7 @@ A claim that fails is fixed or removed — never shipped.
 
 ## §11 Conventions (binding)
 
-- **Website only, with scoped compiler exceptions (Amendments 1–12).** No
+- **Website only, with scoped compiler exceptions (Amendments 1–13).** No
   `sf/src`, `scripts/`, fixture, or `release/seed` change — except the inserted
   compiler tasks **10A/10B** (`errdefer` dropped on explicit error returns),
   **10C/10D** (`break`/`continue`/`return` accepted inside `defer`/`errdefer`),
