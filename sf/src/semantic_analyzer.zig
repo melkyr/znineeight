@@ -3426,8 +3426,13 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
         } else if (node.kind == AstKind.defer_stmt or node.kind == AstKind.errdefer_stmt) {
             if (node.child_0 != @intCast(u32, 0)) {
                 // Task 10D: reject outward `return`/`try`/`break`/`continue`
-                // before lowering (Zig-matched). The nested-defer case is
-                // handled by this same arm when the body walk reaches it.
+                // before lowering (Zig-matched). The check walk deliberately
+                // does NOT descend into a nested defer/errdefer (see
+                // `semanticAnalyzerCheckDeferBody`); the nested body is
+                // validated by its own invocation when the statement walk
+                // (`semanticAnalyzerResolveStmtIter`) reaches the nested defer
+                // node. The inner-target state is reset here so a nested scope
+                // starts from a clean `cur_defer_node` chain.
                 var dc_saved_loops = self.defer_inner_loops;
                 var dc_saved_len = self.defer_label_len;
                 self.defer_inner_loops = @intCast(u32, 0);

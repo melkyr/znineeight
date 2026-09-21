@@ -1,0 +1,38 @@
+// comptime_cast64_range.z98 — standalone reproduction for Task B3 item 2
+// (range-check casts to a 64-bit target).
+//
+// Recipe (seed-built zig1 with its sibling lib/):
+//   <zig1> --dump-c89 --output-dir /tmp/cast64 repro/comptime_cast64_range.z98
+//   echo "dump rc=$?"   # expect 2, 0 emitted .c
+//
+// DEFECT. `comptimeValFitsType` (comptime_eval.zig) and `intValueFitsType`
+// (type_resolver.zig) both skipped the range check for `wb >= 64`, so an
+// out-of-range cast to a 64-bit target folded silently:
+//   @intCast(u64, -1)                          -> 18446744073709551615
+//   @as(u64, -1)                               -> 18446744073709551615
+//   @intCast(i64, @as(u64, 18446744073709551615)) -> -1
+//   enum(u64){ A = @as(u64, -1) }              -> A = 18446744073709551615
+// Official Zig rejects all four (the value does not fit the target).
+//
+// FIX (Task B3 item 2). The 64-bit bit pattern alone cannot distinguish a
+// negative source from a large non-negative literal (both have the top bit
+// set), so the operand is classified syntactically (a `negate` is negative; a
+// non-negative literal/unsigned source above i64 max is non-negative; an
+// unrecognized shape is never rejected). The first three cases emit
+// `error[3000]` (0 `.c`); the enum case emits `error[3055]` (0 `.c`).
+//
+// ACCEPTED after the fix (must NOT reject): `@as(u64, 18446744073709551615)`,
+// `@as(u64, U)` with `U: u64` or an untyped const = u64 max, `@as(i64, -1)`,
+// `@as(u64, 5)` — pinned by
+// `repro/mi_matrix/stdlib_comptime_cast64_range_xmod`.
+const A = @intCast(u64, -1);
+const B = @as(u64, -1);
+const C = @intCast(i64, @as(u64, 18446744073709551615));
+const E = enum(u64) { A = @as(u64, -1) };
+
+pub fn main() void {
+    _ = A;
+    _ = B;
+    _ = C;
+    _ = E;
+}

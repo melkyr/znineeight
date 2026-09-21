@@ -153,10 +153,27 @@ fn comptimeEvalResolveTypeArg(self: *ComptimeEval, node_idx: u32) ?u32 {
 // width/signedness range rule) because the two evaluators hold values in
 // different representations (`ComptimeVal` bits+sig vs `i64`); a shared helper
 // would need a conversion shim, so the small duplication is deliberate.
-fn comptimeValFitsType(self: *ComptimeEval, cv: ComptimeVal, t: u32) bool {
+//
+// Task B3 item 2: a 64-bit target is no longer a blanket accept. The 64-bit
+// bit pattern alone cannot distinguish a negative source from a large
+// non-negative literal (both have the top bit set), so the OPERAND is
+// classified syntactically (see `comptimeEvalSignClass`): a definitely-negative
+// source cannot fit an unsigned 64-bit target, and a definitely-non-negative
+// source above i64 max cannot fit a signed 64-bit target. An unrecognized shape
+// (`unknown`) is never rejected (no over-rejection of valid programs).
+fn comptimeValFitsType(self: *ComptimeEval, cv: ComptimeVal, t: u32, operand_idx: u32) bool {
     if (!type_mod.typeRegistryIsInteger(self.registry, t)) return false;
     var wb: u32 = @intCast(u32, type_mod.typeRegistryIntWidthBits(self.registry, t));
-    if (wb >= @intCast(u32, 64)) return true;
+    if (wb >= @intCast(u32, 64)) {
+        var sc64 = comptimeEvalSignClass(self, operand_idx, @intCast(u32, 0));
+        var sval64: i64 = @bitCast(i64, cv.bits);
+        if (type_mod.typeRegistryIntIsSigned(self.registry, t)) {
+            if (sc64 == SignClass.non_negative and sval64 < @intCast(i64, 0)) return false;
+            return true;
+        }
+        if (sc64 == SignClass.negative and sval64 < @intCast(i64, 0)) return false;
+        return true;
+    }
     if (wb == @intCast(u32, 0)) return false;
     var tsig: bool = type_mod.typeRegistryIntIsSigned(self.registry, t);
     var sval: i64 = @bitCast(i64, cv.bits);
@@ -173,6 +190,61 @@ fn comptimeValFitsType(self: *ComptimeEval, cv: ComptimeVal, t: u32) bool {
     var umax: u64 = (@intCast(u64, 1) << @intCast(u64, wb)) - @intCast(u64, 1);
     return cv.bits <= umax;
 }
+// Task B3 item 2: syntactic sign classification of a cast operand, used only
+// by the 64-bit range check in `comptimeValFitsType`. Unlike
+// `comptimeEvalOperandSigned` (which collapses every unclassified shape to
+// `cv.sig`), this is a tri-state so an unrecognized shape is NOT treated as
+// either sign. int/char/bool literals are comptime_int non-negative; a
+// `negate` is negative; an ident or `@as`/`@intCast` is classified by its
+// declared/target integer type, recursing into a const initializer when no
+// declared type is present.
+const SignClass = enum(u8) { unknown, negative, non_negative };
+
+fn comptimeEvalSignClass(self: *ComptimeEval, node_idx: u32, depth: u32) SignClass {
+    if (node_idx == @intCast(u32, 0)) return SignClass.unknown;
+    if (depth >= @intCast(u32, 16)) return SignClass.unknown;
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    if (node.kind == AstKind.int_literal or node.kind == AstKind.char_literal or node.kind == AstKind.bool_literal) return SignClass.non_negative;
+    if (node.kind == AstKind.negate) return SignClass.negative;
+    if (node.kind == AstKind.paren_expr) return comptimeEvalSignClass(self, node.child_0, depth + @intCast(u32, 1));
+    if (node.kind == AstKind.ident_expr) {
+        var name_id = ast_mod.astStoreIdentifier(self.store, node_idx);
+        var mi: usize = 0;
+        while (mi < @intCast(usize, self.symbol_reg.tables_len)) : (mi += 1) {
+            var c_sym = sym_mod.symbolRegistryQualifiedLookup(self.symbol_reg, @intCast(u32, mi), name_id);
+            if (c_sym) |cs| {
+                if ((cs.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
+                    var c_decl = ast_mod.astStoreNodeAt(self.store, cs.decl_node);
+                    var dt = comptimeEvalResolveTypeArg(self, c_decl.child_0);
+                    if (dt) |t| {
+                        if (type_mod.typeRegistryIsInteger(self.registry, t)) {
+                            if (type_mod.typeRegistryIntIsSigned(self.registry, t)) return SignClass.negative;
+                            return SignClass.non_negative;
+                        }
+                    }
+                    if (c_decl.child_1 != @intCast(u32, 0)) {
+                        return comptimeEvalSignClass(self, c_decl.child_1, depth + @intCast(u32, 1));
+                    }
+                }
+            }
+        }
+        return SignClass.unknown;
+    }
+    if (node.kind == AstKind.builtin_call) {
+        if (node.child_0 == self.int_cast_id or node.child_0 == self.as_id) {
+            var dt2 = comptimeEvalResolveTypeArg(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)));
+            if (dt2) |t2| {
+                if (type_mod.typeRegistryIsInteger(self.registry, t2)) {
+                    if (type_mod.typeRegistryIntIsSigned(self.registry, t2)) return SignClass.negative;
+                    return SignClass.non_negative;
+                }
+            }
+        }
+        return SignClass.unknown;
+    }
+    return SignClass.unknown;
+}
+
 
 fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?ComptimeVal {
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
@@ -307,11 +379,20 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
                 // Task 11S (c): an out-of-range comptime `@intCast` is invalid
                 // Zig (`@intCast(u8, 300)` must not mask to 44). Emit
                 // error[3000] and stop folding; the pass's post-phase diag
-                // check exits rc=2 before any emission.
-                if (is_int_t and !comptimeValFitsType(self, cv, t)) {
+                // check exits rc=2 before any emission. Task B3 item 3: the
+                // arm is shared with `@as`, so the message names the builtin
+                // actually used. Task B3 item 4: the comptime sweep is a single
+                // global node walk with no module context and the AST store
+                // carries no node->source_file map, so `source_file_id` stays 0
+                // and the diagnostic prints the message without a file:line
+                // (the span is still recorded). Threading a real location needs
+                // a structural change (per-module node ranges or a node->module
+                // table), out of scope here.
+                if (is_int_t and !comptimeValFitsType(self, cv, t, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 1)))) {
                     if (self.diag) |dg| {
                         if (diag_mod.diagnosticCollectorMarkNodeOnce(dg, node_idx)) {
                             var ic_msg: []const u8 = "@intCast value does not fit the target type";
+                            if (node.child_0 == self.as_id) { ic_msg = "@as value does not fit the target type"; }
                             _ = diag_mod.diagnosticCollectorAdd(dg, @intCast(u8, 0),
                                 @intCast(u16, 3000),
                                 @intCast(u32, 0), node.span_start,

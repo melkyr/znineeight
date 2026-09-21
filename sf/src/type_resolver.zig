@@ -1108,7 +1108,7 @@ pub fn evalConstU32Full(env: *TypeResolveEnv, node_idx: u32, depth: u32) u32 {
                 var ic_tid = resolveTypeExprFull(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 0)), depth + @intCast(u32, 1));
                 var ic_v = evalConstU32Full(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 1)), depth + @intCast(u32, 1));
                 if (ic_tid != type_mod.TYPE_UNDEFINED and ic_v != @intCast(u32, 0xFFFFFFFF)) {
-                    if (intValueFitsType(env, ic_tid, @intCast(i64, ic_v))) {
+                    if (intValueFitsType(env, ic_tid, @intCast(i64, ic_v), ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 1)), depth)) {
                         return ic_v;
                     }
                     if (env.diag) |dg| {
@@ -1171,12 +1171,25 @@ pub fn evalConstU32Full(env: *TypeResolveEnv, node_idx: u32, depth: u32) u32 {
 // `tid` (width + signedness). A non-integer target is never a fit. Used to
 // reject an out-of-range or non-integer-target `@as`/`@intCast` in an enum
 // initializer (e.g. `@as(f32,3)`, `@as(u8,300)`).
-fn intValueFitsType(env: *TypeResolveEnv, tid: u32, v: i64) bool {
+//
+// Task B3 item 2: a 64-bit target is no longer a blanket accept. The i64
+// evaluator bitcasts a large unsigned literal to a negative i64, so the value
+// alone cannot distinguish `-1` from `18446744073709551615`; `operand_idx`
+// carries the operand node for the syntactic sign classification below.
+fn intValueFitsType(env: *TypeResolveEnv, tid: u32, v: i64, operand_idx: u32, depth: u32) bool {
     if (tid == @intCast(u32, 0)) return false;
     if (@intCast(usize, tid) >= env.typereg.types_len) return false;
     if (!type_mod.typeRegistryIsInteger(env.typereg, tid)) return false;
     var wb: u32 = @intCast(u32, type_mod.typeRegistryIntWidthBits(env.typereg, tid));
-    if (wb >= @intCast(u32, 64)) return true;
+    if (wb >= @intCast(u32, 64)) {
+        var sc64 = evalConstSignClass(env, operand_idx, depth);
+        if (type_mod.typeRegistryIntIsSigned(env.typereg, tid)) {
+            if (sc64 == EvalSignClass.non_negative and v < @intCast(i64, 0)) return false;
+            return true;
+        }
+        if (sc64 == EvalSignClass.negative and v < @intCast(i64, 0)) return false;
+        return true;
+    }
     if (wb == @intCast(u32, 0)) return false;
     if (type_mod.typeRegistryIntIsSigned(env.typereg, tid)) {
         var minv: i64 = -(@intCast(i64, 1) << @intCast(i64, wb - @intCast(u32, 1)));
@@ -1189,6 +1202,66 @@ fn intValueFitsType(env: *TypeResolveEnv, tid: u32, v: i64) bool {
     var umax: u64 = (@intCast(u64, 1) << @intCast(u64, wb)) - @intCast(u64, 1);
     if (vu > umax) return false;
     return true;
+}
+
+// Task B3 item 2: syntactic sign classification of a cast operand for the
+// 64-bit range check in `intValueFitsType`. Mirrors
+// `comptime_eval.comptimeEvalSignClass` (the two evaluators intentionally hold
+// values in different representations — the sanctioned `intValueFitsType` /
+// `comptimeValFitsType` mirror); tri-state so an unrecognized shape is never
+// rejected. int/char/bool literals are comptime_int non-negative; a `negate`
+// is negative; an ident or `@as`/`@intCast` is classified by its
+// declared/target integer type, recursing into a const initializer when no
+// declared type is present.
+const EvalSignClass = enum(u8) { unknown, negative, non_negative };
+
+fn evalConstSignClass(env: *TypeResolveEnv, node_idx: u32, depth: u32) EvalSignClass {
+    if (node_idx == @intCast(u32, 0)) return EvalSignClass.unknown;
+    if (depth > @intCast(u32, 16)) return EvalSignClass.unknown;
+    var node = ast_mod.astStoreNodeAt(env.store, node_idx);
+    if (node.kind == AstKind.int_literal or node.kind == AstKind.char_literal or node.kind == AstKind.bool_literal) return EvalSignClass.non_negative;
+    if (node.kind == AstKind.negate) return EvalSignClass.negative;
+    if (node.kind == AstKind.paren_expr) return evalConstSignClass(env, node.child_0, depth + @intCast(u32, 1));
+    if (node.kind == AstKind.ident_expr) {
+        var name_id = ast_mod.astStoreIdentifier(env.store, node_idx);
+        var c_sym = symbolLookupAllModules(env, name_id);
+        if (c_sym) |cs| {
+            if ((cs.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
+                var c_decl = ast_mod.astStoreNodeAt(env.store, cs.decl_node);
+                var dt = resolveTypeExprFull(env, c_decl.child_0, depth + @intCast(u32, 1));
+                if (dt != type_mod.TYPE_UNDEFINED) {
+                    if (type_mod.typeRegistryIsInteger(env.typereg, dt)) {
+                        if (type_mod.typeRegistryIntIsSigned(env.typereg, dt)) return EvalSignClass.negative;
+                        return EvalSignClass.non_negative;
+                    }
+                }
+                if (c_decl.child_1 != @intCast(u32, 0)) {
+                    return evalConstSignClass(env, c_decl.child_1, depth + @intCast(u32, 1));
+                }
+            }
+        }
+        return EvalSignClass.unknown;
+    }
+    if (node.kind == AstKind.builtin_call) {
+        var s_intc: []const u8 = "@intCast";
+        var intc_id = interner_mod.stringInternerIntern(env.interner, s_intc);
+        var s_as: []const u8 = "@as";
+        var as_id = interner_mod.stringInternerIntern(env.interner, s_as);
+        if (node.child_0 == intc_id or node.child_0 == as_id) {
+            var bc_n = ast_mod.astStoreNodeExtraChildCount(env.store, node_idx);
+            if (bc_n >= @intCast(u32, 1)) {
+                var dt2 = resolveTypeExprFull(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 0)), depth + @intCast(u32, 1));
+                if (dt2 != type_mod.TYPE_UNDEFINED) {
+                    if (type_mod.typeRegistryIsInteger(env.typereg, dt2)) {
+                        if (type_mod.typeRegistryIntIsSigned(env.typereg, dt2)) return EvalSignClass.negative;
+                        return EvalSignClass.non_negative;
+                    }
+                }
+            }
+        }
+        return EvalSignClass.unknown;
+    }
+    return EvalSignClass.unknown;
 }
 
 
@@ -1319,7 +1392,7 @@ pub fn evalConstI64Full(env: *TypeResolveEnv, node_idx: u32, depth: u32) ?i64 {
                 if (ct_tid != type_mod.TYPE_UNDEFINED) {
                     var cv_opt = evalConstI64Full(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 1)), depth + @intCast(u32, 1));
                     if (cv_opt) |cv| {
-                        if (intValueFitsType(env, ct_tid, cv)) return cv;
+                        if (intValueFitsType(env, ct_tid, cv, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 1)), depth)) return cv;
                     }
                 }
             }
