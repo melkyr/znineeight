@@ -100,6 +100,7 @@ repro/mi_matrix/stdlib_hex_oom_xmod
 repro/mi_matrix/stdlib_hex_roundtrip_xmod
 repro/mi_matrix/stdlib_hex_stress_xmod
 repro/mi_matrix/stdlib_intcast_range_xmod
+repro/mi_matrix/stdlib_local_type_emission_xmod
 repro/mi_matrix/stdlib_map_determinism_xmod
 repro/mi_matrix/stdlib_map_map32ptr_xmod
 repro/mi_matrix/stdlib_map_map32x32_xmod

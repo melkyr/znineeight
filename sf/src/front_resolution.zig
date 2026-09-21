@@ -40,7 +40,7 @@ pub const FrontResCtx = struct {
 };
 
 fn resolveTypeExpr(ct: *FrontResCtx, module_id: u32, node_idx: u32, scope: ?*type_resolver.LocalConstScope, source_file_id: u32) type_mod.TypeId {
-    var env = type_resolver.TypeResolveEnv{ .store = ct.store, .typereg = ct.typereg, .symbol_reg = ct.symbol_reg, .interner = ct.interner, .module_id = module_id, .source_file_id = source_file_id, .diag = ct.diag, .local_consts = scope };
+    var env = type_resolver.TypeResolveEnv{ .store = ct.store, .typereg = ct.typereg, .symbol_reg = ct.symbol_reg, .interner = ct.interner, .module_id = module_id, .source_file_id = source_file_id, .diag = ct.diag, .local_consts = scope, .local_types = null };
     return type_resolver.resolveTypeExprFull(&env, node_idx, @intCast(u32, 0));
 }
 

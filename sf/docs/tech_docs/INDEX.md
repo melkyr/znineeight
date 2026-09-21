@@ -1,4 +1,4 @@
-# zig1 Pipeline — Master Index [updated: 2026-09-20 — regenerated against current source and the refreshed 14 tech docs; line references removed, `phase_FrontResolution`/`phase_AsyncFrameSize` added, counts corrected]
+# zig1 Pipeline — Master Index [updated: 2026-09-21 — Task B2: Table B gains `containerAnonNameId`, `isContainerDeclKind`, `registerContainerType`, and `localTypeScopeInit`/`localTypeScopeLookup`/`localTypeScopePush` (type_resolver.zig)] [updated: 2026-09-20 — regenerated against current source and the refreshed 14 tech docs; line references removed, `phase_FrontResolution`/`phase_AsyncFrameSize` added, counts corrected]
 
 > Source-files: `sf/src/*.zig` | Cross-reference for all 14 tech docs
 
@@ -260,6 +260,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `computeNestMetadata` | lir_opt_pass.zig |
 | `computeSharedSet` | c89_emit.zig |
 | `constAliasPrepass` | const_alias_prepass.zig |
+| `containerAnonNameId` | type_resolver.zig |
 | `constraintCheckerCheckBreakContinue` | constraint_checker.zig |
 | `contextAlloc` | std_async.zig |
 | `contextInit` | std_async.zig |
@@ -475,6 +476,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `isBShapeMismatch` | semantic_analyzer.zig |
 | `isBasePtrToArray` | c89_emit.zig |
 | `isC89Keyword` | c89_emit.zig |
+| `isContainerDeclKind` | type_resolver.zig |
 | `isDeadLocalName` | c89_emit.zig |
 | `isDigit` | lexer.zig |
 | `isDigitInBase` | lexer.zig |
@@ -532,6 +534,9 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `localConstScopeInit` | type_resolver.zig |
 | `localConstScopeLookup` | type_resolver.zig |
 | `localConstScopePush` | type_resolver.zig |
+| `localTypeScopeInit` | type_resolver.zig |
+| `localTypeScopeLookup` | type_resolver.zig |
+| `localTypeScopePush` | type_resolver.zig |
 | `lookupKeyword` | token.zig |
 | `lowerAppendSwitchCaseItem` | lower.zig |
 | `lowerAssignLValue` | lower.zig |
@@ -796,6 +801,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `pushDefer` | lower.zig |
 | `pushExpectedType` | semantic_analyzer.zig |
 | `readFile` | pal.zig |
+| `registerContainerType` | type_resolver.zig |
 | `registerDecl` | symbol_registrator.zig |
 | `registerLocalDecl` | semantic_analyzer.zig |
 | `registerModuleSymbols` | symbol_registrator.zig |

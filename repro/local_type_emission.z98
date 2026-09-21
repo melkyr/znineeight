@@ -1,0 +1,165 @@
+// local_type_emission.z98 — standalone reproduction for the Task B2 fix
+// (function-local / inline named-type emission).
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   <zig1> -o /tmp/localt repro/local_type_emission.z98
+//   cd /tmp/localt && sh build_target.sh linux local_type_emission && ./local_type_emission ; echo "rc=$?"
+//
+// DEFECT (before the fix): a function-local named type
+// (`fn f() void { const E = enum(u8){A=1,B}; var e: E = E.A; }`) or an inline
+// container type in an annotation / return / parameter position emitted C that
+// failed to compile. `semanticAnalyzerResolveExpr`'s container-decl arm
+// (`sf/src/semantic_analyzer.zig`) returned `TYPE_TYPE` without registering a
+// named type, and `lower.zig` lowered the binding as a runtime local of
+// `TYPE_TYPE`; `getCTypeName(TYPE_TYPE)` fell through to
+// `nameManglerMangle("type", ...)` -> `zT_5127F14D_type`, a typedef that is
+// never emitted (`unknown type name 'zT_5127F14D_type'`). Inline `enum`/`union`
+// additionally had no `resolveTypeExprFull` arm, so an annotation resolved to
+// `TYPE_UNDEFINED` -> "cannot declare variable of type void".
+//
+// FIX (Task B2): `type_resolver.registerContainerType` registers a synthesized
+// `anon_<node_idx>` type and resolves struct/union field types directly; the
+// sema `var_decl` arm binds a local `const T = <container>{...}` as a type
+// (local type scope, no `nameCache` pollution) and `lower.zig` emits a storage
+// slot of the registered type and skips the value initializer. A function-local
+// type scope (`LocalTypeScope`) makes compound uses (`E!T`, `*E`, `[N]E`, `?E`)
+// resolve. A local type alias (`const F = E;`) is a documented divergence and
+// clean-rejects (`error[3000]`).
+//
+// EXPECTED after the fix: deterministic stdout below, RUNRC=0. Before the fix
+// this file did not build (gcc `unknown type name 'zT_5127F14D_type'`).
+//
+//   local-enum-ok
+//   local-struct-ok
+//   local-union-ok
+//   local-tagged-union-ok
+//   local-packed-struct-ok
+//   local-errset-ok
+//   local-errunion-ok
+//   local-compound-ok
+//   local-discard-ok
+//   inline-enum-ret-ok
+//   inline-union-ret-ok
+//   inline-struct-ret-ok
+//   inline-var-ok
+//   done
+const std = @import("std");
+
+fn localEnum() u8 {
+    const E = enum(u8) { A = 1, B };
+    var e: E = E.A;
+    if (@enumToInt(e) != 1) @panic("local enum A");
+    e = E.B;
+    if (@enumToInt(e) != 2) @panic("local enum B");
+    return @enumToInt(e);
+}
+
+fn localStruct() u32 {
+    const S = struct { a: u32, b: u32 };
+    var s: S = S{ .a = 3, .b = 4 };
+    if (s.a != 3 or s.b != 4) @panic("local struct init");
+    s.a = 7;
+    if (s.a != 7) @panic("local struct store");
+    return s.a;
+}
+
+fn localUnion() u32 {
+    const U = union { a: u32, b: u8 };
+    var u: U = U{ .a = 9 };
+    if (u.a != 9) @panic("local union");
+    return u.a;
+}
+
+fn localTaggedUnion() u32 {
+    const U = union(enum) { a: u32, b: u8 };
+    var u: U = .{ .a = 7 };
+    if (u.a != 7) @panic("local tagged union");
+    return u.a;
+}
+
+fn localPackedStruct() u32 {
+    const S = packed struct { a: u3, b: u5 };
+    var s: S = S{ .a = 3, .b = 4 };
+    if (s.a != 3 or s.b != 4) @panic("local packed struct");
+    return s.a;
+}
+
+fn localErrSet() bool {
+    const E = error{Boom};
+    var x: E = error.Boom;
+    if (x != error.Boom) @panic("local errset");
+    return true;
+}
+
+fn localErrUnion() bool {
+    const E = error{Boom};
+    var x: E!i32 = error.Boom;
+    var got: i32 = x catch 0;
+    if (got != 0) @panic("local errunion");
+    return true;
+}
+
+fn localCompound() u32 {
+    const E = enum(u8) { A = 1, B };
+    var e: E = E.B;
+    var p: *E = &e;
+    if (@enumToInt(p.*) != 2) @panic("local ptr");
+    var arr: [2]E = .{ E.A, E.B };
+    if (@enumToInt(arr[0]) != 1 or @enumToInt(arr[1]) != 2) @panic("local array");
+    var o: ?E = E.A;
+    if (o) |v| {
+        if (@enumToInt(v) != 1) @panic("local optional");
+    } else {
+        @panic("null");
+    }
+    return @enumToInt(e);
+}
+
+fn localDiscard() void {
+    const E = enum(u8) { A = 1, B };
+    _ = E;
+}
+
+fn inlineEnumRet() enum(u8) { A = 1, B } { return .A; }
+fn inlineUnionRet() union { a: u32, b: u8 } { return .{ .a = 5 }; }
+fn inlineStructRet() struct { a: u32, b: u32 } { return .{ .a = 1, .b = 2 }; }
+
+pub fn main() void {
+    if (localEnum() != 2) @panic("ret enum");
+    std.io.print("local-enum-ok\n");
+    if (localStruct() != 7) @panic("ret struct");
+    std.io.print("local-struct-ok\n");
+    if (localUnion() != 9) @panic("ret union");
+    std.io.print("local-union-ok\n");
+    if (localTaggedUnion() != 7) @panic("ret tagged union");
+    std.io.print("local-tagged-union-ok\n");
+    if (localPackedStruct() != 3) @panic("ret packed struct");
+    std.io.print("local-packed-struct-ok\n");
+    _ = localErrSet();
+    std.io.print("local-errset-ok\n");
+    _ = localErrUnion();
+    std.io.print("local-errunion-ok\n");
+    if (localCompound() != 2) @panic("ret compound");
+    std.io.print("local-compound-ok\n");
+    localDiscard();
+    std.io.print("local-discard-ok\n");
+    if (@enumToInt(inlineEnumRet()) != 1) @panic("inline enum ret");
+    std.io.print("inline-enum-ret-ok\n");
+    if (inlineUnionRet().a != 5) @panic("inline union ret");
+    std.io.print("inline-union-ret-ok\n");
+    if (inlineStructRet().a != 1) @panic("inline struct ret");
+    std.io.print("inline-struct-ret-ok\n");
+    var ie: enum(u8) { A = 1, B } = .A;
+    if (@enumToInt(ie) != 1) @panic("inline enum var");
+    var iu: union { a: u32, b: u8 } = .{ .a = 4 };
+    if (iu.a != 4) @panic("inline union var");
+    var is: struct { a: u32, b: u32 } = .{ .a = 6, .b = 7 };
+    if (is.a != 6 or is.b != 7) @panic("inline struct var");
+    var es: error{Boom} = error.Boom;
+    if (es != error.Boom) @panic("inline errset var");
+    var ieu: error{Boom}!i32 = error.Boom;
+    var iegot: i32 = ieu catch 0;
+    if (iegot != 0) @panic("inline errset eu var");
+    std.io.print("inline-var-ok\n");
+    std.io.print("done\n");
+}

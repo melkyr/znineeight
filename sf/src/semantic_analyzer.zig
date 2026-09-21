@@ -61,6 +61,8 @@ pub const SemanticAnalyzer = struct {
     local_decl_cap: usize,
     // Task 2c-F: function-local `const` scope (variant (e)); reset per fn body.
     local_consts: type_resolver.LocalConstScope,
+    // Task B2: function-local named-type scope; reset per fn body.
+    local_types: type_resolver.LocalTypeScope,
     packed_gate_items: [*]u32,
     packed_gate_len: usize,
     packed_gate_cap: usize,
@@ -216,6 +218,7 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .local_decl_count = @intCast(usize, 0),
         .local_decl_cap = @intCast(usize, 0),
         .local_consts = type_resolver.localConstScopeInit(alloc),
+        .local_types = type_resolver.localTypeScopeInit(alloc),
         .packed_gate_items = undefined,
         .packed_gate_len = @intCast(usize, 0),
         .packed_gate_cap = @intCast(usize, 0),
@@ -691,7 +694,7 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                                     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fn_ty);
                                     return fn_ty;
                                 }
-                                var tre_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = fs.module_id, .diag = self.diag, .local_consts = null, .source_file_id = self.source_file_id };
+                                var tre_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = fs.module_id, .diag = self.diag, .local_consts = null, .local_types = null, .source_file_id = self.source_file_id };
                                 var resolved_rt = type_resolver.resolveTypeExprFull(&tre_env, proto.return_type_node, @intCast(u32, 0));
                                 var brr1_m: []const u8 = "BR:treN"; pal_mod.markerWriteInt(brr1_m, proto.return_type_node);
                                 var brr2_m: []const u8 = "BR:treT"; pal_mod.markerWriteInt(brr2_m, resolved_rt);
@@ -863,7 +866,7 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                              rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fn_ty);
                               return fn_ty;
                 }
-                var tre_env_b = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = mfs.module_id, .diag = self.diag, .local_consts = null, .source_file_id = self.source_file_id };
+                var tre_env_b = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = mfs.module_id, .diag = self.diag, .local_consts = null, .local_types = null, .source_file_id = self.source_file_id };
                 var resolved_rt_b = type_resolver.resolveTypeExprFull(&tre_env_b, proto.return_type_node, @intCast(u32, 0));
                 if (resolved_rt_b != type_mod.TYPE_UNDEFINED) {
                     rtt_mod.resolvedTypeTableSet(self.type_table, proto.return_type_node, resolved_rt_b);
@@ -1078,7 +1081,7 @@ fn semanticAnalyzerGatePackedFields(self: *SemanticAnalyzer, struct_node_idx: u3
         var gate_state: u8 = @intCast(u8, 0);
         var gate_wide: u8 = @intCast(u8, 0);
         if (type_node != @intCast(u32, 0)) {
-            var tre_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = module_id, .diag = self.diag, .local_consts = null, .source_file_id = self.source_file_id };
+            var tre_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = module_id, .diag = self.diag, .local_consts = null, .local_types = null, .source_file_id = self.source_file_id };
             var ft = type_resolver.resolveTypeExprFull(&tre_env, type_node, @intCast(u32, 0));
             if (ft == type_mod.TYPE_UNDEFINED or ft == type_mod.TYPE_VOID) {
                 gate_state = @intCast(u8, 1);
@@ -1158,7 +1161,7 @@ fn semanticAnalyzerGatePackedUnionMembers(self: *SemanticAnalyzer, union_node_id
         var gate_state: u8 = @intCast(u8, 0);
         var gate_wide: u8 = @intCast(u8, 0);
         if (type_node != @intCast(u32, 0)) {
-            var tre_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = module_id, .diag = self.diag, .local_consts = null, .source_file_id = self.source_file_id };
+            var tre_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = module_id, .diag = self.diag, .local_consts = null, .local_types = null, .source_file_id = self.source_file_id };
             var ft = type_resolver.resolveTypeExprFull(&tre_env, type_node, @intCast(u32, 0));
             if (ft == type_mod.TYPE_UNDEFINED or ft == type_mod.TYPE_VOID) {
                 gate_state = @intCast(u8, 1);
@@ -1218,7 +1221,7 @@ fn semanticAnalyzerGateEnumTypeDecl(self: *SemanticAnalyzer, tid: u32, enum_node
         var bnode = ast_mod.astStoreNodeAt(self.store, backing_node);
         var bsp = bnode.span_start;
         var bep = bsp + @intCast(u32, bnode.span_len);
-        var tre_env2 = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id, .diag = self.diag, .local_consts = null, .source_file_id = self.source_file_id };
+        var tre_env2 = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id, .diag = self.diag, .local_consts = null, .local_types = null, .source_file_id = self.source_file_id };
         var bt = type_resolver.resolveTypeExprFull(&tre_env2, backing_node, @intCast(u32, 0));
         if (bt == type_mod.TYPE_UNDEFINED or bt == type_mod.TYPE_VOID) {
             var bg_msg: []const u8 = "invalid enum backing type; enum(uN) requires an unsigned integer type name (u1..u64)";
@@ -1293,7 +1296,7 @@ fn semanticAnalyzerCheckLocalEnum(self: *SemanticAnalyzer, enum_node: u32) void 
     var env = type_resolver.TypeResolveEnv{
         .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols,
         .interner = self.interner, .module_id = self.module_id,
-        .source_file_id = self.source_file_id, .diag = self.diag, .local_consts = null,
+        .source_file_id = self.source_file_id, .diag = self.diag, .local_consts = null, .local_types = null,
     };
     var count: u32 = 0;
     var fail_node: u32 = 0;
@@ -1681,7 +1684,7 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
                         if (rt) |t| { direct_ret = t; }
                         else {
                             var drfb_m: []const u8 = "DRETFB:n"; pal_mod.markerWriteInt(drfb_m, node_idx);
-                            var tre_env_fc = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = s.module_id, .diag = self.diag, .local_consts = null, .source_file_id = self.source_file_id };
+                            var tre_env_fc = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = s.module_id, .diag = self.diag, .local_consts = null, .local_types = null, .source_file_id = self.source_file_id };
                             var fc_rt = type_resolver.resolveTypeExprFull(&tre_env_fc, proto.return_type_node, @intCast(u32, 0));
                             var brfc_m: []const u8 = "BR:fc"; pal_mod.markerWriteInt(brfc_m, fc_rt);
                             if (fc_rt != type_mod.TYPE_UNDEFINED) { direct_ret = fc_rt; }
@@ -2458,7 +2461,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
         var cva: []const u8 = "@cVaArg";
         if (node.child_0 == self.size_of_name_id or node.child_0 == self.align_of_name_id or node.child_0 == self.offset_of_name_id or node.child_0 == self.bit_size_of_name_id or node.child_0 == self.bit_offset_of_name_id) {
             if (ec_n >= @intCast(usize, 1)) {
-                var so_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id, .diag = self.diag, .local_consts = null, .source_file_id = self.source_file_id };
+                var so_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id, .diag = self.diag, .local_consts = null, .local_types = null, .source_file_id = self.source_file_id };
                 _ = type_resolver.resolveTypeExprFull(&so_env, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)), @intCast(u32, 0));
             }
             result = type_mod.TYPE_INT_LIT;
@@ -2485,7 +2488,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
         } else if (node.child_0 == self.field_parent_ptr_name_id) {
             var fpp_res: u32 = @intCast(u32, type_mod.TYPE_VOID);
             if (ec_n >= @intCast(usize, 3)) {
-                var fpp_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id, .diag = self.diag, .local_consts = null, .source_file_id = self.source_file_id };
+                var fpp_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id, .diag = self.diag, .local_consts = null, .local_types = null, .source_file_id = self.source_file_id };
                 var fpp_outer = type_resolver.resolveTypeExprFull(&fpp_env, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)), @intCast(u32, 0));
                 if (fpp_outer != type_mod.TYPE_UNDEFINED) {
                     _ = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 2)));
@@ -2496,7 +2499,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
         } else if (node.child_0 == self.bitcast_name_id) {
             var bc_res: u32 = @intCast(u32, type_mod.TYPE_VOID);
             if (ec_n >= @intCast(usize, 2)) {
-                var bc_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id, .diag = self.diag, .local_consts = null, .source_file_id = self.source_file_id };
+                var bc_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id, .diag = self.diag, .local_consts = null, .local_types = null, .source_file_id = self.source_file_id };
                 var bc_dst = type_resolver.resolveTypeExprFull(&bc_env, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)), @intCast(u32, 0));
                 if (bc_dst != type_mod.TYPE_UNDEFINED) {
                     var bc_src = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 1)));
@@ -2595,13 +2598,13 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
         } else if (semanticAnalyzerBuiltinNameEq(self, node.child_0, cva)) {
             if (ec_n >= @intCast(usize, 2)) {
                 _ = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)));
-                var cva_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id, .diag = self.diag, .local_consts = null, .source_file_id = self.source_file_id };
+                var cva_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id, .diag = self.diag, .local_consts = null, .local_types = null, .source_file_id = self.source_file_id };
                 result = type_resolver.resolveTypeExprFull(&cva_env, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 1)), @intCast(u32, 0));
             } else { result = type_mod.TYPE_VOID; }
         } else if (ec_n >= @intCast(usize, 2)) {
             if (semanticAnalyzerIsTypeValueCast(self, node.child_0)) {
                 var tv_src = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 1)));
-                var tre_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id, .diag = self.diag, .local_consts = null, .source_file_id = self.source_file_id };
+                var tre_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id, .diag = self.diag, .local_consts = null, .local_types = null, .source_file_id = self.source_file_id };
                 result = type_resolver.resolveTypeExprFull(&tre_env, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)), @intCast(u32, 0));
                 if (node.child_0 == self.ptrcast_name_id and tv_src != type_mod.TYPE_UNDEFINED and result != type_mod.TYPE_UNDEFINED) {
                     if (semanticAnalyzerPtrCastDropsVolatile(self, tv_src, result)) {
@@ -2850,6 +2853,7 @@ pub fn semanticAnalyzerResolveFnBody(self: *SemanticAnalyzer, fn_decl_node: u32)
      var fb: []const u8 = "FB"; pal_mod.markerWrite(fb);
      self.local_decl_count = @intCast(usize, 0);
      self.local_consts.count = @intCast(usize, 0);
+     self.local_types.count = @intCast(usize, 0);
      var decl = ast_mod.astStoreNodeAt(self.store, fn_decl_node);
     if (decl.kind != AstKind.fn_decl) return;
     var store = self.store;
@@ -3217,12 +3221,57 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
             var vd_m: []const u8 = "VD:N"; pal_mod.markerWriteInt(vd_m, ast_mod.astStoreNodePayload(self.store, node_idx));
             var vd2_m: []const u8 = "VD:C"; pal_mod.markerWriteInt(vd2_m, @intCast(u32, self.local_decl_count));
             var decl_type: u32 = @intCast(u32, type_mod.TYPE_UNDEFINED);
+            var vd_type_binding: u8 = @intCast(u8, 0);
+            // Task B2: a function-local named type (`const T = struct/enum/union/error{...}`)
+            // is a first-class `type` value, not a runtime local. Register the
+            // container type, bind the name as a type, and skip the value path.
+            if (node.child_0 == @intCast(u32, 0) and node.child_1 != @intCast(u32, 0) and (node.flags & @intCast(u8, 1)) == @intCast(u8, 0)) {
+                var vd_init_node = ast_mod.astStoreNodeAt(self.store, node.child_1);
+                if (type_resolver.isContainerDeclKind(vd_init_node.kind)) {
+                    if (vd_init_node.kind == AstKind.struct_decl) {
+                        semanticAnalyzerGatePackedFields(self, node.child_1, self.module_id);
+                    }
+                    if (vd_init_node.kind == AstKind.enum_decl) {
+                        semanticAnalyzerCheckLocalEnum(self, node.child_1);
+                    }
+                    var vd_lt_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id, .diag = self.diag, .local_consts = &self.local_consts, .local_types = &self.local_types, .source_file_id = self.source_file_id };
+                    decl_type = type_resolver.registerContainerType(&vd_lt_env, node.child_1, vd_init_node.kind, @intCast(u32, 0));
+                    if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED)) {
+                        // Task B2 §4.9.1: a type registered during sema misses the
+                        // earlier layout pass, so size-dependent uses
+                        // (`@sizeOf`/`@alignOf`, aggregate copies) need it laid out
+                        // on demand. The inline path is untouched (byte-identical).
+                        _ = type_resolver.layoutEnsure(self.registry, decl_type, @intCast(u32, 0));
+                        rtt_mod.resolvedTypeTableSet(self.type_table, node.child_1, decl_type);
+                        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, decl_type);
+                        type_resolver.localTypeScopePush(&self.local_types, ast_mod.astStoreNodePayload(self.store, node_idx), decl_type);
+                        if (self.local_decl_count >= self.local_decl_cap) {
+                            semanticAnalyzerGrowLocalDecls(self);
+                        }
+                        self.local_decl_names[self.local_decl_count] = ast_mod.astStoreNodePayload(self.store, node_idx);
+                        self.local_decl_types[self.local_decl_count] = decl_type;
+                        self.local_decl_count += @intCast(usize, 1);
+                    }
+                    vd_type_binding = @intCast(u8, 1);
+                } else if (vd_init_node.kind == AstKind.ident_expr) {
+                    // Task B2 residual: `const F = E;` where E is a function-local
+                    // named type is a local type alias. Official Zig allows it, but
+                    // this compiler does not model function-local `type` values;
+                    // reject cleanly (0 `.c`) rather than emit invalid C.
+                    var vd_alias_name = ast_mod.astStoreIdentifier(self.store, node.child_1);
+                    if (type_resolver.localTypeScopeLookup(&self.local_types, vd_alias_name) != null) {
+                        var vd_alias_msg: []const u8 = "local type aliases are not supported; bind the container declaration directly";
+                        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), vd_alias_msg);
+                        vd_type_binding = @intCast(u8, 1);
+                    }
+                }
+            }
             if (node.child_0 != @intCast(u32, 0)) {
                 var ann = ast_mod.astStoreNodeAt(self.store, node.child_0);
                 if (ann.kind == AstKind.ident_expr) {
                     decl_type = semanticAnalyzerResolveExpr(self, node.child_0);
                     if (decl_type == type_mod.TYPE_VOID) {
-                        var cd_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id, .diag = self.diag, .local_consts = &self.local_consts, .source_file_id = self.source_file_id };
+                        var cd_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id, .diag = self.diag, .local_consts = &self.local_consts, .local_types = &self.local_types, .source_file_id = self.source_file_id };
                         var cd_full = type_resolver.resolveTypeExprFull(&cd_env, node.child_0, @intCast(u32, 0));
                         if (cd_full == type_mod.TYPE_UNDEFINED) {
                             var ut_msg: []const u8 = "unknown type in variable declaration";
@@ -3235,7 +3284,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                     var rt = rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0);
                     if (rt) |t| { decl_type = t; }
                     else {
-                        var tre_env_vd = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id, .diag = self.diag, .local_consts = &self.local_consts, .source_file_id = self.source_file_id };
+                        var tre_env_vd = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id, .diag = self.diag, .local_consts = &self.local_consts, .local_types = &self.local_types, .source_file_id = self.source_file_id };
                         decl_type = type_resolver.resolveTypeExprFull(&tre_env_vd, node.child_0, @intCast(u32, 0));
                         if (decl_type != type_mod.TYPE_UNDEFINED) {
                             rtt_mod.resolvedTypeTableSet(self.type_table, node.child_0, decl_type);
@@ -3243,6 +3292,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                     }
                 }
             }
+            if (vd_type_binding == 0) {
             if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED)) {
                 var b1m: []const u8 = "VRT:"; pal_mod.markerWrite(b1m);
                 var b1nb: [10]u8 = undefined; var b1nl = itoa_mod.itoa(node.child_0, b1nb[0..]); var b1ns: usize = @intCast(usize, 9) - @intCast(usize, b1nl); pal_mod.markerWrite(b1nb[b1ns..@intCast(usize, 9)]);
@@ -3349,6 +3399,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
             type_mod.nameCachePut(self.registry, ck, decl_type);
             var regcp_m: []const u8 = "REG:cp"; pal_mod.markerWriteInt(regcp_m, ast_mod.astStoreNodePayload(self.store, node_idx));
             var regct_m: []const u8 = "REG:ct"; pal_mod.markerWriteInt(regct_m, decl_type);
+            }
             }
         } else if (node.kind == AstKind.if_stmt) {
              semanticAnalyzerResolveIfHeader(self, node_idx);
@@ -3583,7 +3634,7 @@ fn semanticAnalyzerResolveArrayInit(self: *SemanticAnalyzer, node_idx: u32) u32 
         if (annot_tid == @intCast(u32, type_mod.TYPE_UNDEFINED)) {
             var ann_kind_node = ast_mod.astStoreNodeAt(self.store, node.child_0);
             if (ann_kind_node.kind == AstKind.array_type) {
-                var tre_env0 = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id, .diag = self.diag, .local_consts = &self.local_consts, .source_file_id = self.source_file_id };
+                var tre_env0 = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id, .diag = self.diag, .local_consts = &self.local_consts, .local_types = &self.local_types, .source_file_id = self.source_file_id };
                 var at0 = type_resolver.resolveTypeExprFull(&tre_env0, node.child_0, @intCast(u32, 0));
                 if (at0 != @intCast(u32, type_mod.TYPE_UNDEFINED)) {
                     var at0ty = self.registry.types_items[@intCast(usize, at0)];
@@ -3606,7 +3657,7 @@ fn semanticAnalyzerResolveArrayInit(self: *SemanticAnalyzer, node_idx: u32) u32 
                 }
             }
             if (inferred_len and annot_node.child_0 != @intCast(u32, 0)) {
-                var tre_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id, .diag = self.diag, .local_consts = &self.local_consts, .source_file_id = self.source_file_id };
+                var tre_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id, .diag = self.diag, .local_consts = &self.local_consts, .local_types = &self.local_types, .source_file_id = self.source_file_id };
                 var et = type_resolver.resolveTypeExprFull(&tre_env, annot_node.child_0, @intCast(u32, 0));
                 if (et != @intCast(u32, type_mod.TYPE_UNDEFINED)) { annot_elem_tid = et; }
             }

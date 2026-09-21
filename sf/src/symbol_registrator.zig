@@ -93,7 +93,7 @@ fn addTypeDependencies(store: *AstStore, decl_idx: u32, tid: u32, g: *DepGraph) 
     }
 }
 
-fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, decl_kind: AstKind, decl_idx: u32, sym_reg: *SymbolRegistry) void {
+pub fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, decl_kind: AstKind, decl_idx: u32, sym_reg: *SymbolRegistry) void {
     var node = ast_mod.astStoreNodeAt(store, decl_idx);
     if (ast_mod.astStoreNodePayload(store, decl_idx) == @intCast(u32, 0)) return;
     var children_n = ast_mod.astStoreNodeExtraChildCount(store, decl_idx);
@@ -168,7 +168,7 @@ fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, decl_
         }
     }
     if (decl_kind == AstKind.enum_decl) {
-        var tre_env = type_resolver.TypeResolveEnv{ .store = store, .typereg = type_reg, .symbol_reg = sym_reg, .interner = type_reg.interner, .module_id = type_resolver.MODULE_ID_NONE, .source_file_id = @intCast(u32, 0), .diag = null, .local_consts = null };
+        var tre_env = type_resolver.TypeResolveEnv{ .store = store, .typereg = type_reg, .symbol_reg = sym_reg, .interner = type_reg.interner, .module_id = type_resolver.MODULE_ID_NONE, .source_file_id = @intCast(u32, 0), .diag = null, .local_consts = null, .local_types = null };
         var backing_box: [1]u32 = [1]u32{ @intCast(u32, 0) };
         backing_box[0] = type_mod.TYPE_U32;
         var expl_flag: u8 = @intCast(u8, 0);

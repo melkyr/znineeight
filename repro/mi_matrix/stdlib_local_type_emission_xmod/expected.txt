@@ -1,0 +1,14 @@
+local-enum-ok
+local-struct-ok
+local-union-ok
+local-tagged-union-ok
+local-packed-struct-ok
+local-errset-ok
+local-errunion-ok
+local-compound-ok
+local-discard-ok
+inline-enum-ret-ok
+inline-union-ret-ok
+inline-struct-ret-ok
+inline-var-ok
+done
