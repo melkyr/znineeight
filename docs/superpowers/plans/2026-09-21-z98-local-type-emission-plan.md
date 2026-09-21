@@ -4,7 +4,7 @@
 
 **Goal:** Make function-local / inline named types (`const E = enum {…};` / `struct` / `union` / `error{…}` declared inside a function or as an inline type expression) emit valid C, or cleanly reject — never emit C that fails to compile.
 
-**Architecture:** Two tasks. **B1 (I)** investigates the registration/emission path for function-local and inline named types and decides emit-properly vs clean-reject, covering `enum`, `struct`, `union`, and error-set declarations, and documents the divergence. **B2 (F)** implements the B1 design with fixtures, gates, and a seed rotation.
+**Architecture:** Three tasks. **B1 (I)** investigates the registration/emission path for function-local and inline named types and decides emit-properly vs clean-reject, covering `enum`, `struct`, `union`, and error-set declarations, and documents the divergence. **B2 (F)** implements the B1 design with fixtures, gates, and a seed rotation. **B3 (F)** resolves the Phase 0 deferred minors carried into this plan (operator ruling 2026-09-21).
 
 **Tech Stack:** the self-hosted Z98 compiler (`sf/src`), the seed build model, `gcc -m32`, the `repro/mi_matrix` corpus.
 
@@ -43,3 +43,23 @@
 - [ ] **Steps 1–7:** implement per B1; verify each kind emits valid C (or cleanly rejects); leave the reproductions; run the QUICK_REF gate battery verbatim (STOP on unexpected gate movement); rotate the seed iff the fixed point moves; update tech docs; commit `fix(types): support function-local named types` (or the B1-recommended message).
 
 ---
+
+### Task B3 (F): Resolve the carried Phase 0 deferred minors
+
+**Files:** `sf/src/comptime_eval.zig`, `sf/src/type_resolver.zig`, `sf/src/semantic_analyzer.zig`; `repro/mi_matrix/`; `scripts/seed/archive_seed.sh`; `repro/mi_matrix/EXPECTED_FAIL.md`; docs.
+
+**Context:** the Phase 0 program (`docs/superpowers/plans/2026-09-20-z98-manual-phase0-plan.md`) closed with these deferred minors; the operator (2026-09-21) carried them into this plan so they are not lost. Each item is independent; fix, verify, and commit per the global constraints.
+
+- [ ] **Item 1 — restore `@intCast` runtime trap coverage.** The `safe_intcast_widen_sign_xmod` option-A re-pin dropped the runtime widening-sign-change trap coverage; add a runtime fixture that exercises the `-fsafe` `@intCast` trap for a widening sign change (and its `-ffast` non-trapping counterpart), with a `repro/mi_matrix/` fixture + `expected_dirs.txt` pin.
+- [ ] **Item 2 — range-check 64-bit-target casts.** `@intCast(u64,-1)` / `@as(u64,-1)` still fold (`comptime_eval.zig` ~`:159`; `type_resolver.zig` ~`:1123` skip `wb >= 64`). Add the range check so an out-of-range cast to a 64-bit target rejects (invalid-Zig diagnostic-quality gap).
+- [ ] **Item 3 — generalize the `@as` diagnostic wording.** `comptime_eval.zig` ~`:314` prints "@intCast value does not fit the target type" for `@as`; make the message correct for both builtins.
+- [ ] **Item 4 — give the comptime-cast reject a real location.** The `comptime_eval` `@intCast`/`@as` reject uses `source_file_id = 0` (no file:line); provide a real location if feasible without a structural change (else document why not).
+- [ ] **Item 5 — fix the seed `SEED_README.txt` count.** `scripts/seed/archive_seed.sh` (~`:160`) writes "20 std .zig" while `lib/` holds 29; correct the generator so the next rotation is accurate.
+- [ ] **Item 6 — fix the Task 10D call-site comment.** `sf/src/semantic_analyzer.zig:3390-3392` inaccurately describes nested-defer handling; correct the comment.
+- [ ] **Item 7 — reconcile the EXPECTED_FAIL narration.** The Task 11U section narrates "202 → 203 → 204" while the single pin bump is 202 → 204; make it consistent.
+- [ ] **Steps 1–7 (per item):** implement, verify against source/official Zig, leave reproductions where applicable, run the QUICK_REF gate battery verbatim (STOP on unexpected gate movement), rotate the seed iff the fixed point moves, update tech docs per AGENTS §1.1.1, commit each item (or one combined commit with a clear message).
+
+**Accepted residuals (documented, NO action):** the dynamic error-union `return x;` rewrap; the `?bool` = 8 / `E!bool` 4-byte floors. Do not change these.
+
+---
+
