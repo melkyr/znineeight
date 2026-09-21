@@ -1089,6 +1089,30 @@ pub fn evalConstU32Full(env: *TypeResolveEnv, node_idx: u32, depth: u32) u32 {
     }
     return @intCast(u32, 0xFFFFFFFF);
 }
+// Task 11J fix round 1 (AMENDMENT 13): true when `v` fits the integer type
+// `tid` (width + signedness). A non-integer target is never a fit. Used to
+// reject an out-of-range or non-integer-target `@as`/`@intCast` in an enum
+// initializer (e.g. `@as(f32,3)`, `@as(u8,300)`).
+fn intValueFitsType(env: *TypeResolveEnv, tid: u32, v: i64) bool {
+    if (tid == @intCast(u32, 0)) return false;
+    if (@intCast(usize, tid) >= env.typereg.types_len) return false;
+    if (!type_mod.typeRegistryIsInteger(env.typereg, tid)) return false;
+    var wb: u32 = @intCast(u32, type_mod.typeRegistryIntWidthBits(env.typereg, tid));
+    if (wb >= @intCast(u32, 64)) return true;
+    if (wb == @intCast(u32, 0)) return false;
+    if (type_mod.typeRegistryIntIsSigned(env.typereg, tid)) {
+        var minv: i64 = -(@intCast(i64, 1) << @intCast(i64, wb - @intCast(u32, 1)));
+        var maxv: i64 = (@intCast(i64, 1) << @intCast(i64, wb - @intCast(u32, 1))) - @intCast(i64, 1);
+        if (v < minv or v > maxv) return false;
+        return true;
+    }
+    if (v < @intCast(i64, 0)) return false;
+    var vu: u64 = @bitCast(u64, v);
+    var umax: u64 = (@intCast(u64, 1) << @intCast(u64, wb)) - @intCast(u64, 1);
+    if (vu > umax) return false;
+    return true;
+}
+
 
 pub fn evalConstI64Full(env: *TypeResolveEnv, node_idx: u32, depth: u32) ?i64 {
     // Task 11J: cycle guard, mirroring `evalConstU32Full`'s depth cap (16). A
@@ -1209,10 +1233,21 @@ pub fn evalConstI64Full(env: *TypeResolveEnv, node_idx: u32, depth: u32) ?i64 {
         var bc_n = ast_mod.astStoreNodeExtraChildCount(env.store, node_idx);
         if (node.child_0 == intc_id or node.child_0 == as_id) {
             if (bc_n >= @intCast(u32, 2)) {
-                return evalConstI64Full(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 1)), depth + @intCast(u32, 1));
+                // Task 11J fix round 1 (AMENDMENT 13): the target must be an
+                // integer type and the folded value must fit it. `@as(f32,3)` is
+                // not a valid enum field value and `@as(u8,300)` does not fit
+                // u8; both are rejected (ERR_3055), never a silent value.
+                var ct_tid = resolveTypeExprFull(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 0)), depth + @intCast(u32, 1));
+                if (ct_tid != type_mod.TYPE_UNDEFINED) {
+                    var cv_opt = evalConstI64Full(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 1)), depth + @intCast(u32, 1));
+                    if (cv_opt) |cv| {
+                        if (intValueFitsType(env, ct_tid, cv)) return cv;
+                    }
+                }
             }
             return null;
         }
+
         if (node.child_0 == size_id or node.child_0 == align_id or node.child_0 == bitsz_id) {
             if (bc_n >= @intCast(u32, 1)) {
                 var bt_tid = resolveTypeExprFull(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 0)), depth + @intCast(u32, 1));
@@ -1307,21 +1342,27 @@ fn symbolLookupAllModules(env: *TypeResolveEnv, name_id: u32) ?*sym_mod.Symbol {
 // Task 11J: the ONE shared enum-member walk (AMENDMENT 10: no duplicated
 // fold/cascade logic). Computes every member value with a fresh `auto_val`
 // cascade, exactly mirroring Zig's ordinal rule: `value = auto_val` unless an
-// explicit initializer folds, then `auto_val = value + 1`. Used both at symbol
-// registration (append=true, strict=false) and by the post-layout re-evaluation
-// pass (append=false, strict=true). In strict mode an unfoldable explicit
-// initializer (`out_fail_kind = 1`) or a duplicate tag value
-// (`out_fail_kind = 2`) fails the walk; the caller emits ERR_3055.
+// explicit initializer folds, then `auto_val = value + 1`. Used at symbol
+// registration (append=true, strict=false), by the post-layout re-evaluation
+// pass (append=false, strict=true), and as a check-only validation for
+// function-local enums (check_only=true, which writes no registry storage).
+// In strict mode an unfoldable explicit initializer (`out_fail_kind = 1`) or a
+// duplicate tag value (`out_fail_kind = 2`) fails the walk; the caller emits
+// ERR_3055.
 pub fn enumMembersResolve(
     env: *TypeResolveEnv,
     enum_node: u32,
     append: bool,
     mstart: u32,
     strict: bool,
+    check_only: bool,
     out_count: *u32,
     out_fail_node: *u32,
     out_fail_kind: *u32,
 ) bool {
+    // check_only (function-local enums, whose type is not registered) keeps the
+    // previously computed member values here instead of in `em_items`.
+    var seen: [256]i64 = undefined;
     var children_n = ast_mod.astStoreNodeExtraChildCount(env.store, enum_node);
     var auto_val: i64 = @intCast(i64, 0);
     var k: u32 = 0;
@@ -1342,9 +1383,17 @@ pub fn enumMembersResolve(
             }
         }
         if (strict) {
+            var dj_lim: u32 = k;
+            if (check_only and dj_lim > @intCast(u32, 256)) dj_lim = @intCast(u32, 256);
             var dj: u32 = 0;
-            while (dj < k) : (dj += 1) {
-                if (env.typereg.em_items[@intCast(usize, mstart) + @intCast(usize, dj)].value == mval) {
+            while (dj < dj_lim) : (dj += 1) {
+                var prev: i64 = undefined;
+                if (check_only) {
+                    prev = seen[@intCast(usize, dj)];
+                } else {
+                    prev = env.typereg.em_items[@intCast(usize, mstart) + @intCast(usize, dj)].value;
+                }
+                if (prev == mval) {
                     out_fail_node.* = ast_mod.astStoreNodeExtraChildAt(env.store, enum_node, @intCast(u32, i));
                     out_fail_kind.* = @intCast(u32, 2);
                     out_count.* = k;
@@ -1352,7 +1401,9 @@ pub fn enumMembersResolve(
                 }
             }
         }
-        if (append) {
+        if (check_only) {
+            if (k < @intCast(u32, 256)) { seen[@intCast(usize, k)] = mval; }
+        } else if (append) {
             type_mod.emAppend(env.typereg, type_mod.EnumMember{
                 .name_id = ast_mod.astStoreNodePayload(env.store, ast_mod.astStoreNodeExtraChildAt(env.store, enum_node, @intCast(u32, i))),
                 .value = mval,
@@ -1366,6 +1417,7 @@ pub fn enumMembersResolve(
     out_count.* = k;
     return true;
 }
+
 
 // Task 11J: post-layout enum re-evaluation (Option B, P1). Runs at the end of
 // `phase_TypeResolution`, after `typeResolverResolve` has laid out every type
@@ -1421,7 +1473,7 @@ pub fn enumReevaluateAll(
             var count: u32 = 0;
             var fail_node: u32 = 0;
             var fail_kind: u32 = 0;
-            if (!enumMembersResolve(&env, enum_node, false, ep.members_start, true, &count, &fail_node, &fail_kind)) {
+            if (!enumMembersResolve(&env, enum_node, false, ep.members_start, true, false, &count, &fail_node, &fail_kind)) {
                 var fn_ = ast_mod.astStoreNodeAt(store, fail_node);
                 var sp = fn_.span_start;
                 var ep_ = sp + @intCast(u32, fn_.span_len);

@@ -1,4 +1,18 @@
-# mi_matrix corpus — expected-fail manifest (v175 2026-09-21)
+# mi_matrix corpus — expected-fail manifest (v176 2026-09-21)
+
+## Task 11J fix round 1 — reject invalid `@as`/`@intCast` and function-local duplicate tags (v175 -> v176 2026-09-21)
+
+The operator-approved AMENDMENT 13 fix round on top of the Task 11J enum-initializer fold. Three review findings were fixed:
+
+1. **`@as`/`@intCast` with a NON-INTEGER target** (`@as(f32,3)`, `@intCast(f32,3)`) folded the operand and silently compiled. `evalConstI64Full`'s cast arm now resolves the target type and requires `typeRegistryIsInteger`; otherwise `ERR_3055`.
+2. **Out-of-range casts** (`@as(u8,300)`, `@intCast(u8,300)`, `@intCast(u32,-1)`) folded the raw value. The cast arm now range-checks the folded value against the target integer type's width/signedness via the new `intValueFitsType` helper (reusing the registry width/signedness helpers); otherwise `ERR_3055`.
+3. **Function-local duplicate tags** (`fn f() void { const E = enum(u8){ A = 1, B = 1 }; }`) were accepted (the post-layout pass only sees module enums). The semantic analyzer's `enum_decl` expression arm now runs the SAME shared member walk (`enumMembersResolve`) in check-only strict mode via `semanticAnalyzerCheckLocalEnum`, so a function-local duplicate/unfoldable tag is a clean `ERR_3055`.
+
+**New fixtures (3).** All are clean rejects (dump rc=2, 0 `.c`): `enum_init_cast_noninteger_reject_xmod` (`@as(f32,3)`/`@intCast(f32,3)`), `enum_init_cast_range_reject_xmod` (`@as(u8,300)`/`@intCast(u8,300)`/`@intCast(u32,-1)`), `enum_init_local_duplicate_reject_xmod` (function-local `A=1,B=1`). All bucket FAIL (the canonical classifier GREENs only `error[3000]`). The positive `stdlib_enum_init_expr_xmod` fixture is unchanged and still OK; the runtime `@panic` guards still pass.
+
+**Gates (seed-built fixed-point compiler `13434b4f4d5e5172b5a2422d5b6e043c`).** Self-compile two-hop closure hop1 == hop2 == `13434b4f…` — the fixed point MOVED. Corpus `-s0` **930 dirs = 859 OK / 30 GREEN / 41 FAIL / 0 ICE / 0 CRASH** (v175 927 → 930: the 3 new fixture dirs only); a full-classifier join-diff vs the previous Task-11J compiler (`618a0115…`) moves EXACTLY `enum_init_cast_noninteger_reject_xmod` (OK→FAIL) and `enum_init_cast_range_reject_xmod` (GREEN→FAIL) — **zero pre-existing class movement** (`enum_init_local_duplicate_reject_xmod` is FAIL under both, since the pre-fix compiler emitted invalid C for the local enum). 4-MD5 emitted-C gates **UNCHANGED**: gol `e7bde571…` / lisp `552d0a84…` / json `38b37bdd…` / mud `5a1cc65e…`. 21-example matrix **21/21**; std-lib runtime gate **201 PASS / 0 FAIL**; `check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK. Fixed point **MOVED `618a011508fdbed44b02dba3dd26624f` -> `13434b4f4d5e5172b5a2422d5b6e043c`**; seed **v55 -> v56** (archive md5 `e52afcc9d52e763158d5c8e149c287ea` -> `8073b3f3fef42d772cd58d19fd09ef2b`). Rotated-seed round-trip hop1 == hop2 == `13434b4f…`.
+
+**Report corrections (Minor 4/5).** A forward-referenced module-level struct DOES fold in an enum initializer (`@sizeOf(S)`=16, rc=0), and a function-local `enum(u8){ A = @sizeOf(S) }` folds its `@sizeOf(S)` expression to 16 in both the pre- and post-fix compilers — the Task-11J report §5 concerns #3/#4 were inaccurate and are corrected there.
 
 ## Task 11J — fold enum initializer expressions (v174 -> v175 2026-09-21)
 

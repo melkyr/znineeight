@@ -181,7 +181,7 @@ fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, decl_
         var mcount: u32 = 0;
         var fail_node: u32 = 0;
         var fail_kind: u32 = 0;
-        _ = type_resolver.enumMembersResolve(&tre_env, decl_idx, true, @intCast(u32, 0), false, &mcount, &fail_node, &fail_kind);
+        _ = type_resolver.enumMembersResolve(&tre_env, decl_idx, true, @intCast(u32, 0), false, false, &mcount, &fail_node, &fail_kind);
 
         type_mod.enAppend(type_reg, type_mod.EnumPayload{
             .members_start = @intCast(u32, mstart),

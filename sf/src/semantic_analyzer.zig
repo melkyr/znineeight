@@ -1267,6 +1267,34 @@ fn semanticAnalyzerGateEnumTypeDecl(self: *SemanticAnalyzer, tid: u32, enum_node
     }
 }
 
+// Task 11J fix round 1 (AMENDMENT 13): validate an enum declaration seen as an
+// expression (a function-local enum, whose type is not registered). Runs the
+// shared member walk in check-only strict mode so a duplicate tag value or an
+// unfoldable initializer is a clean ERR_3055, exactly as for a module enum.
+fn semanticAnalyzerCheckLocalEnum(self: *SemanticAnalyzer, enum_node: u32) void {
+    if (enum_node == @intCast(u32, 0)) return;
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, enum_node)) return;
+    var env = type_resolver.TypeResolveEnv{
+        .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols,
+        .interner = self.interner, .module_id = self.module_id,
+        .source_file_id = self.source_file_id, .diag = self.diag, .local_consts = null,
+    };
+    var count: u32 = 0;
+    var fail_node: u32 = 0;
+    var fail_kind: u32 = 0;
+    if (!type_resolver.enumMembersResolve(&env, enum_node, false, @intCast(u32, 0), true, true, &count, &fail_node, &fail_kind)) {
+        var fn_ = ast_mod.astStoreNodeAt(self.store, fail_node);
+        var sp = fn_.span_start;
+        var ep = sp + @intCast(u32, fn_.span_len);
+        var msg: []const u8 = "enum member value is not a comptime-known integer expression";
+        if (fail_kind == @intCast(u32, 2)) { msg = "duplicate enum tag value (tag values must be unique)"; }
+        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0),
+            @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3055_ENUM_VALUE_NOT_CONSTANT)),
+            self.source_file_id, sp, ep, msg);
+    }
+}
+
+
 fn semanticAnalyzerPackedStructDeclForType(self: *SemanticAnalyzer, struct_tid: u32) u32 {
     var hc: usize = 0;
     while (hc < self.packed_struct_cache_len) : (hc += @intCast(usize, 1)) {
@@ -2667,6 +2695,9 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                node.kind == AstKind.error_set_decl) {
         if (node.kind == AstKind.struct_decl) {
             semanticAnalyzerGatePackedFields(self, node_idx, self.module_id);
+        }
+        if (node.kind == AstKind.enum_decl) {
+            semanticAnalyzerCheckLocalEnum(self, node_idx);
         }
         result = type_mod.TYPE_TYPE;
     } else if (node.kind == AstKind.paren_expr) {
