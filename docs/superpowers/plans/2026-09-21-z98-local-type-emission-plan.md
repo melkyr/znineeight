@@ -4,7 +4,7 @@
 
 **Goal:** Make function-local / inline named types (`const E = enum {…};` / `struct` / `union` / `error{…}` declared inside a function or as an inline type expression) emit valid C, or cleanly reject — never emit C that fails to compile.
 
-**Architecture:** Three tasks. **B1 (I)** investigates the registration/emission path for function-local and inline named types and decides emit-properly vs clean-reject, covering `enum`, `struct`, `union`, and error-set declarations, and documents the divergence. **B2 (F)** implements the B1 design with fixtures, gates, and a seed rotation. **B3 (F)** resolves the Phase 0 deferred minors carried into this plan (operator ruling 2026-09-21).
+**Architecture:** Five tasks. **B1 (I)** investigates the registration/emission path for function-local and inline named types and decides emit-properly vs clean-reject, covering `enum`, `struct`, `union`, and error-set declarations, and documents the divergence. **B2 (F)** implements the B1 design with fixtures, gates, and a seed rotation. **B3 (F)** resolves the Phase 0 deferred minors carried into this plan (operator ruling 2026-09-21). **B4 (I)** investigates the dynamic error-union `return x;` rewrap gap. **B5 (F)** implements the B4 fix with fixtures, gates, and a seed rotation.
 
 **Tech Stack:** the self-hosted Z98 compiler (`sf/src`), the seed build model, `gcc -m32`, the `repro/mi_matrix` corpus.
 
@@ -59,7 +59,34 @@
 - [ ] **Item 7 — reconcile the EXPECTED_FAIL narration.** The Task 11U section narrates "202 → 203 → 204" while the single pin bump is 202 → 204; make it consistent.
 - [ ] **Steps 1–7 (per item):** implement, verify against source/official Zig, leave reproductions where applicable, run the QUICK_REF gate battery verbatim (STOP on unexpected gate movement), rotate the seed iff the fixed point moves, update tech docs per AGENTS §1.1.1, commit each item (or one combined commit with a clear message).
 
-**Accepted residuals (documented, NO action):** the dynamic error-union `return x;` rewrap; the `?bool` = 8 / `E!bool` 4-byte floors. Do not change these.
+---
+
+### Task B4 (I): Investigate the dynamic error-union rewrap
+
+**Files:**
+- Read (no edits): `sf/src/lower.zig`, `sf/src/semantic_analyzer.zig`, `sf/src/coercion.zig`, `sf/src/type_registry.zig`.
+- Create: the findings report (SDD workspace; not committed).
+
+**Context:** Task 10F's dynamic errdefer path in `sf/src/lower.zig` lowers `return x;` (where `x` is an error-union expression for which no static coercion was recorded) as `check_error` + `branch` + `ret val`, where `val` is the *source* error union. It skips the rewrap the `try` path performs. That is correct when the source and destination error unions share an error set and payload (the C typedef is payload-keyed and error codes are globally dense), but for a legal error-union *narrowing* — `fn f() E2!U { const x: E1!T = …; return x; }` with `E2 ⊆ E1` and `T` coercible to `U` — the error tag must be remapped and the payload coerced. The Phase 0 program recorded this as an accepted residual; the operator (2026-09-21) directs it be addressed here.
+
+- [ ] **Step 1: Reproduce** — construct a legal Z98 program that `return x;`-narrows an error-union variable/call whose error set and/or payload differ from the function's return type; capture the wrong emitted C and/or runtime behavior (with a runtime `@panic` guard).
+- [ ] **Step 2: Establish official-Zig validity** — confirm the narrowing is legal Zig (`E1!T` → `E2!U` with `E2 ⊆ E1`, `T` coercible to `U`) and what the correct semantics are.
+- [ ] **Step 3: Locate the gap** — how the `try` path rewraps vs the dynamic-`return` path; the exact edit site; whether the same-set/same-payload cases are already correct and must stay unchanged.
+- [ ] **Step 4: Decide and specify** — the minimal fix (rewrap on the dynamic error arm only) and the blast radius (fixed point/seed, gates, fixtures).
+- [ ] **Step 5: Recommend the B5 verification plan** — fixtures (positive + same-type control), gates, runtime guard.
+- [ ] **Step 6: Report.** **No `sf/src` edits, no source commit.**
+
+---
+
+### Task B5 (F): Rewrap a dynamic error-union return
+
+**Files (confirm against the B4 report):** `sf/src/lower.zig`; `repro/mi_matrix/` fixtures; `repro/`; tech docs; seed rotation iff the fixed point moves.
+
+- [ ] **Steps 1–7:** implement per B4; verify the narrowing emits the correct rewrap and that same-type returns stay byte-identical; leave the reproductions; run the QUICK_REF gate battery verbatim (STOP on unexpected gate movement); rotate the seed iff the fixed point moves; update tech docs per AGENTS §1.1.1; commit `fix(lower): rewrap a dynamic error-union return`.
+
+---
+
+**Accepted residuals (documented, NO action):** the `?bool` = 8 / `E!bool` 4-byte floors. Do not change these.
 
 ---
 
