@@ -183,8 +183,13 @@ properties or selectors.
 
 ## Ground rules
 
-- **Website only.** Do not edit `sf/src/**`, `scripts/**`, fixtures, or
-  `release/seed/**`. The compiler fixed point and seed are untouched.
+- **Website only, with scoped compiler exceptions (Amendments 1–12).** No
+  `sf/src/**`, `scripts/**`, fixture, or `release/seed/**` change - except the
+  inserted compiler-fix tasks enumerated in the design spec §11 (Amendments
+  1–12). Only those tasks may touch the compiler, run its gate battery, and
+  rotate the seed. See
+  `docs/superpowers/specs/2026-09-20-z98-manual-phase0-design.md` §11 and
+  `docs/superpowers/plans/2026-09-20-z98-manual-phase0-plan.md`.
 - All files live under `docs/sf/manuals/`; `dist/` is gitignored.
 - English only in Phase 0; the language bar lists only shipped languages.
 - Accuracy over volume. Never ship a claim that does not reproduce.

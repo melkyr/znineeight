@@ -52,8 +52,8 @@ primitives + `SocketLineReader` + `MsgReader`) and adds the R7b usage program
 `stdlib_test/net_stream_usage`; the Plan C closeout added the R7b usage programs
 `stdlib_test/map_sort_heap_usage` + `stdlib_test/crypto_codec_usage`. See
 `repro/mi_matrix/EXPECTED_FAIL.md` v169.
-The archived binary and the self-emission fixed point
-`9b292edf64686968c69e0b15f7da762d` are the SAME compiler state (the v49
+At the v49 closeout the archived binary and the self-emission fixed point
+`9b292edf64686968c69e0b15f7da762d` were the SAME compiler state (the v49
 provenance entry in `release/seed/CHANGELOG.md` names the fix commit). The
 std-lib extension program is COMPLETE (Plan D test hardening was the final plan).
 Program spec: `docs/superpowers/specs/2026-09-17-std-lib-extension-program-design.md`.
@@ -77,8 +77,8 @@ cd /workspace/znineeight
 bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out_dir>
 ```
 - GATE: `=== [seed] Done: <out_dir> ===`; result `<out_dir>/zig1_5_clean` md5 MUST equal the recorded
-  fixed point `9b292edf64686968c69e0b15f7da762d` (hop1 == hop2 closure). Set
-  `FIXED_POINT_MD5=9b292edf64686968c69e0b15f7da762d` to gate on it explicitly.
+  fixed point `13434b4f4d5e5172b5a2422d5b6e043c` (hop1 == hop2 closure). Set
+  `FIXED_POINT_MD5=13434b4f4d5e5172b5a2422d5b6e043c` to gate on it explicitly.
 - The dump MUST run from the repo root with the RELATIVE `sf/src/main.zig` path (module basename-hash
   tokens are path-derived). `<out_dir>` MUST be a fresh dir (the script `rm -rf`s it) — never point it
   at `/tmp/fx_subfolder` (the reference compiler lives there).
@@ -88,7 +88,7 @@ bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out_dir>
 **Rebuild recipe 2 (seed binary lost — rebuild from the seed's C only):** self-contained, no repo
 include path, no zig0: `gcc -c -I <seed>/runtime` over `gen/*.c`, link `<seed>/runtime/zig_runtime.c`
 + `<seed>/runtime/zig_pal.c` + `<seed>/c_exit.c`. Exact commands in `release/seed/SEED_README.txt`.
-Binary md5 MUST equal `9b292edf64686968c69e0b15f7da762d`.
+Binary md5 MUST equal `13434b4f4d5e5172b5a2422d5b6e043c`.
 
 **Flag-set rule (binding):** every `gcc -c` MUST be
 `gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc>`
