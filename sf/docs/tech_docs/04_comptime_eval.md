@@ -279,8 +279,8 @@ must NOT fold, or float arithmetic silently miscompiles (`const A: f64 = @as(f64
 as integer `3/2` = `1`, not `1.5`). `@intCast`'s non-integer behavior is deliberately unchanged
 (out of scope). The `@as` case is mirrored in `comptimeEvalOperandSigned` (defense-in-depth,
 matching the existing `@intCast` precedent). An out-of-range `@as` integer target emits the same
-`error[3000]` as `@intCast` (the shared diagnostic still names `@intCast`; the canonical
-classifier keys only on the error code). Fixtures: `stdlib_comptime_inttofloat_as_xmod` (positive
+`error[3000]` as `@intCast` (the shared diagnostic names the builtin actually used — `@as` vs
+`@intCast`, since Task B3 item 3; the canonical classifier keys only on the error code). Fixtures: `stdlib_comptime_inttofloat_as_xmod` (positive
 folds + runtime oracle), `stdlib_as_float_guard_xmod` (the guard control that traps on an
 unguarded arm), and the standalone `repro/comptime_inttofloat_as.z98`.
 

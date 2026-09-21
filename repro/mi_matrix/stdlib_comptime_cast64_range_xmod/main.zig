@@ -29,6 +29,7 @@ pub fn main() void {
     var uu: u64 = U;
     if (@intToFloat(f64, @as(u64, 18446744073709551615)) != tof_u(uu)) { @panic("litmax"); }
     if (@intToFloat(f64, @as(u64, UU)) != tof_u(uu)) { @panic("untypedmax"); }
+    if (@intToFloat(f64, @as(u64, U)) != tof_u(uu)) { @panic("typedmax"); }
     if (@intToFloat(f64, @as(i64, -1)) != tof_i(-1)) { @panic("i64neg"); }
     var five: u64 = @as(u64, 5);
     if (five != 5) { @panic("five"); }
