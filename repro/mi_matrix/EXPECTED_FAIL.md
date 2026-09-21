@@ -1,4 +1,16 @@
-# mi_matrix corpus — expected-fail manifest (v166 2026-09-20)
+# mi_matrix corpus — expected-fail manifest (v167 2026-09-20)
+
+## Task 11D fix round 1 — honor declared float width + operand signedness (v166 -> v167 2026-09-20)
+
+Two review findings in the Task 11D fold code (`sf/src/comptime_eval.zig`). (Critical) `comptimeEvalFloat`'s `ident_expr` arm recursed into a const's initializer as a raw `f64` literal and never rounded through the const's **declared** type, so `const S: f32 = 0.1; const W: f64 = @floatCast(f64, S);` folded to `f64(0.1)` instead of `f64(f32(0.1))` — a silent semantic change vs the runtime path (the fixture's exactly-representable `2.5` masked it). The ident arm now resolves the const's declared type and rounds an `f32` const through `f32`. (Important) `@intToFloat` used `ComptimeVal.sig` for signedness, so a `u64` const above `i64` max (`18446744073709551615`) folded as `-1.0`; the new `comptimeEvalOperandSigned` helper derives signedness from the operand's declared type / literal shape instead. (Minor) `negate` now computes `-fv` so `-0.0` keeps its sign bit in the sub-evaluator.
+
+**Fixture extended (same dir, 2 new cases).**
+
+| fixture | class | new contract |
+|---|---|---|
+| `stdlib_comptime_floatcast_fold_xmod` | OK | `typed-f32-widen-ok` (`const S: f32 = 0.1` widened to `f64` equals the runtime `widen()` result = `f64(f32(0.1))` = `1.0000000149011612e-1`) and `u64-above-i64-ok` (`const U: u64 = 18446744073709551615` equals the runtime `tof()` result = `1.8446744073709552e19`). Deterministic 13-line stdout ending `done`, rc 0 |
+
+**Gates (seed-built fixed-point compiler `109628afa625baca56c2d4b340a802b0`).** Self-compile `-ffast --dump-c89` rc=0, two-hop closure hop1 == hop2 == `109628afa6…` (re-verified from the rotated seed). Fold gate: fixture `__module_init` 0 runtime `int_to_float`/`float_cast`, 11 folded float literals; runtime controls `widen`/`tof` still emit `return (double)((double)x);`. Runtime gate **197 PASS / 0 FAIL**. Corpus `-s0` **907 = 853 OK / 28 GREEN / 26 FAIL / 0 ICE / 0 CRASH**, full-classifier join-diff vs the previous compiler byte-identical (zero class movement). 4-MD5 emitted-C gates **UNCHANGED**: gol `80287f58…` / lisp `d1d99b59…` / json `f9c9f113…` / mud `91fd711d…`. 21-example matrix **21/21**; mandelbrot runtime-identical (`d5966775…`, 1944 B, rc=0). Fixed point **MOVED `ea159fc2f14af88b3d450f3ca70eca17` -> `109628afa625baca56c2d4b340a802b0`**; seed **v46 -> v47** (archive md5 `0db592d0d00e010a6296674e1e2fd9ce` -> `cccc81768445f05b68bea8d3bb780961`).
 
 ## Task 11D — `@floatCast`/`@intToFloat` comptime constant folding (v165 -> v166 2026-09-20)
 

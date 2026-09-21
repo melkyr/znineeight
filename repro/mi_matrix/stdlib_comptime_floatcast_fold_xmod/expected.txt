@@ -8,4 +8,6 @@ inttofloat-constchain-ok
 inttofloat-neg-int-ok
 nested-cast-ok
 runtime-operand-ok
+typed-f32-widen-ok
+u64-above-i64-ok
 done

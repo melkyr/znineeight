@@ -306,7 +306,8 @@ fn comptimeEvalFloat(self: *ComptimeEval, node_idx: u32, depth: u32) ?f64 {
         return self.store.float_values.items[@intCast(usize, ast_mod.astStoreNodePayload(self.store, node_idx))];
     } else if (node.kind == AstKind.negate) {
         var inner = comptimeEvalFloat(self, node.child_0, depth + @intCast(u32, 1));
-        if (inner) |fv| { return 0.0 - fv; }
+        // Unary minus (not `0.0 - fv`) so `-0.0` keeps its sign bit.
+        if (inner) |fv| { return -fv; }
         return null;
     } else if (node.kind == AstKind.paren_expr) {
         return comptimeEvalFloat(self, node.child_0, depth + @intCast(u32, 1));
@@ -324,7 +325,22 @@ fn comptimeEvalFloat(self: *ComptimeEval, node_idx: u32, depth: u32) ?f64 {
                 if ((cs.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
                     var c_decl = ast_mod.astStoreNodeAt(self.store, cs.decl_node);
                     if (c_decl.child_1 != @intCast(u32, 0)) {
-                        return comptimeEvalFloat(self, c_decl.child_1, depth + @intCast(u32, 1));
+                        var inner = comptimeEvalFloat(self, c_decl.child_1, depth + @intCast(u32, 1));
+                        if (inner) |fv| {
+                            // Round through the const's DECLARED type: a typed
+                            // `const S: f32 = 0.1` is f32(0.1), not the raw f64
+                            // literal. Skipping this silently changes semantics
+                            // when the const is later widened to f64.
+                            var dt = comptimeEvalResolveTypeArg(self, c_decl.child_0);
+                            if (dt) |t| {
+                                if (t == type_mod.TYPE_F32) {
+                                    var f32v: f32 = @floatCast(f32, fv);
+                                    return @floatCast(f64, f32v);
+                                }
+                            }
+                            return fv;
+                        }
+                        return null;
                     }
                 }
             }
@@ -335,11 +351,51 @@ fn comptimeEvalFloat(self: *ComptimeEval, node_idx: u32, depth: u32) ?f64 {
     }
 }
 
+// Determine whether an @intToFloat operand is a SIGNED integer from its
+// declared type / literal shape, rather than ComptimeVal.sig (which is true for
+// every int literal and would misread an unsigned value above i64 max as
+// negative, e.g. a `u64` const = 18446744073709551615 folding to -1.0).
+fn comptimeEvalOperandSigned(self: *ComptimeEval, node_idx: u32, cv: ComptimeVal) bool {
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    if (node.kind == AstKind.ident_expr) {
+        var name_id = ast_mod.astStoreIdentifier(self.store, node_idx);
+        var mi: usize = 0;
+        while (mi < @intCast(usize, self.symbol_reg.tables_len)) : (mi += 1) {
+            var c_sym = sym_mod.symbolRegistryQualifiedLookup(self.symbol_reg, @intCast(u32, mi), name_id);
+            if (c_sym) |cs| {
+                if ((cs.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
+                    var c_decl = ast_mod.astStoreNodeAt(self.store, cs.decl_node);
+                    var dt = comptimeEvalResolveTypeArg(self, c_decl.child_0);
+                    if (dt) |t| {
+                        if (type_mod.typeRegistryIsInteger(self.registry, t)) {
+                            return type_mod.typeRegistryIntIsSigned(self.registry, t);
+                        }
+                    }
+                }
+            }
+        }
+    } else if (node.kind == AstKind.int_literal) {
+        return cv.bits <= @intCast(u64, 9223372036854775807);
+    } else if (node.kind == AstKind.char_literal) {
+        return false;
+    } else if (node.kind == AstKind.builtin_call) {
+        if (node.child_0 == self.int_cast_id) {
+            var dt2 = comptimeEvalResolveTypeArg(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)));
+            if (dt2) |t2| {
+                if (type_mod.typeRegistryIsInteger(self.registry, t2)) {
+                    return type_mod.typeRegistryIntIsSigned(self.registry, t2);
+                }
+            }
+        }
+    }
+    return cv.sig;
+}
+
 // Evaluate one @intToFloat/@floatCast call to an f64. The target must resolve
 // to TYPE_F32/TYPE_F64; an f32 target rounds through f32. @intToFloat's operand
-// is evaluated with the integer evaluator (honoring `sig`); @floatCast's with
-// comptimeEvalFloat. A non-float target or non-foldable operand returns null
-// (no fold; the runtime lowering is unchanged).
+// is evaluated with the integer evaluator (honoring its declared signedness);
+// @floatCast's with comptimeEvalFloat. A non-float target or non-foldable
+// operand returns null (no fold; the runtime lowering is unchanged).
 fn comptimeEvalFloatBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?f64 {
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var tid = comptimeEvalResolveTypeArg(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)));
@@ -351,7 +407,7 @@ fn comptimeEvalFloatBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?f64
             var iv = comptimeEvalEvaluateDepth(self, inner_idx, depth);
             if (iv) |cv| {
                 if (cv.width_bits == WIDTH_FLOAT) return null;
-                if (cv.sig) {
+                if (comptimeEvalOperandSigned(self, inner_idx, cv)) {
                     var sv: i64 = @bitCast(i64, cv.bits);
                     fv = @intToFloat(f64, sv);
                 } else {

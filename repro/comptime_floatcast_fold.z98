@@ -32,6 +32,8 @@
 //   inttofloat-neg-int-ok
 //   nested-cast-ok
 //   runtime-operand-ok
+//   typed-f32-widen-ok
+//   u64-above-i64-ok
 //   done
 const std = @import("std");
 
@@ -49,8 +51,20 @@ const CHAIN: f64 = @intToFloat(f64, WIDTH);
 const NEGI: f64 = @intToFloat(f64, -7);
 const NEST: f64 = @floatCast(f64, @intToFloat(f32, 5));
 
-// Runtime-operand control: must NOT fold (its body emits a runtime float_cast).
+// Fix round 1: a typed f32 const whose value is NOT exactly representable must
+// round through f32 before widening (f64(f32(0.1))), not use the raw f64
+// literal. The runtime `widen()` below is the oracle.
+const SRC2: f32 = 0.1;
+const WIDE2: f64 = @floatCast(f64, SRC2);
+
+// Fix round 1: a u64 const above i64 max must fold UNSIGNED, not via the
+// operand's `sig` bit (which would read it as -1.0).
+const U: u64 = 18446744073709551615;
+const UF: f64 = @intToFloat(f64, U);
+
+// Runtime-operand controls: must NOT fold (their bodies emit runtime ops).
 fn widen(x: f32) f64 { return @floatCast(f64, x); }
+fn tof(x: u64) f64 { return @intToFloat(f64, x); }
 
 pub fn main() void {
     if (A == 3.0) { std.io.print("inttofloat-f64-3-ok\n"); } else { std.io.print("inttofloat-f64-3-bad\n"); }
@@ -66,6 +80,16 @@ pub fn main() void {
     var rt: f32 = @floatCast(f32, 2.5);
     var w: f64 = widen(rt);
     if (w == 2.5) { std.io.print("runtime-operand-ok\n"); } else { std.io.print("runtime-operand-bad\n"); }
+
+    // Typed f32 const (non-exactly-representable) widened to f64: the fold must
+    // equal the runtime f32->f64 conversion, not the raw f64 literal.
+    var s2: f32 = SRC2;
+    if (WIDE2 == widen(s2)) { std.io.print("typed-f32-widen-ok\n"); } else { std.io.print("typed-f32-widen-bad\n"); }
+
+    // u64 const above i64 max: the fold must equal the runtime u64->f64
+    // conversion (unsigned), not a signed reinterpretation.
+    var uu: u64 = U;
+    if (UF == tof(uu)) { std.io.print("u64-above-i64-ok\n"); } else { std.io.print("u64-above-i64-bad\n"); }
 
     std.io.print("done\n");
 }

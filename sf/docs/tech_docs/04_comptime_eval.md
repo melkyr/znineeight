@@ -34,8 +34,9 @@
 | `comptimeEvalBuiltin` — `@bitSizeOf` | — | Resolve type; base `ty.size*8`. Packed struct → `typeRegistryGetPackedTotalBits`; packed union → `typeRegistryGetPackedUnionTotalBits`; integer → `typeRegistryIntWidthBits`; enum → backing type's width bits; bool → 1. | (same as above) | `typeRegistryGetPackedTotalBits`, `typeRegistryGetPackedUnionTotalBits`, `typeRegistryIsInteger`, `typeRegistryIntWidthBits`, `typeRegistryEnumBackingType` | `registry.types_items` | Arbitrary-width and `enum(uN)`-backing aware. | None [inference] |
 | `comptimeEvalBuiltin` — `@intCast` | — | Resolve target type, evaluate inner expression, then truncate/sign-extend bits to target width. Integer targets use `typeRegistryIntWidthBits` + `typeRegistryIntIsSigned`; non-integer targets use `ty.size*8` unsigned. ≥64-bit width passes through directly; otherwise mask + sign-extend. | (same as above) | `comptimeEvalEvaluateDepth`, `comptimeEvalResolveTypeArg`, `typeRegistryIsInteger`, `typeRegistryIntWidthBits`, `typeRegistryIntIsSigned` | `registry.types_items[t]` | A `WIDTH_FLOAT` inner returns null (no float→int fold). Arbitrary-width signed ints use the registry helpers. Enum targets are not integers (`typeRegistryIsInteger` is false for `enum_type`), so they take the non-integer path (`ty.size*8`, unsigned). | None [inference] |
 | `comptimeEvalBuiltin` — `@floatCast` / `@intToFloat` | — | Delegates to `comptimeEvalFloatBuiltin`; on a value, returns `ComptimeVal{ bits = <f64 bit pattern>, width_bits = WIDTH_FLOAT, sig = false }`. The f64 bits are transported through a pointer reinterpretation because Z98 `@bitCast` is integer-only. | (same as above) | `comptimeEvalFloatBuiltin` | local `f64`, `ComptimeVal` | A non-float target or non-foldable operand returns null (no fold). | None [inference] |
-| `comptimeEvalFloat` | private | Float-valued sub-evaluator, deliberately SEPARATE from `comptimeEvalEvaluateDepth` so no float bit pattern can reach the integer binop/negate/bit_not/int_cast paths. Handles `float_literal` (`store.float_values`), `negate` (`0.0 - v`), `paren_expr`, nested `@floatCast`/`@intToFloat`, and const `ident_expr` chains (depth-16 guarded). | `comptimeEvalFloatBuiltin`; recursively itself | `comptimeEvalFloat`, `comptimeEvalFloatBuiltin`, `symbolRegistryQualifiedLookup` | `store.float_values`, `store.nodes`, `store.identifiers`, `symbol_reg` | `node_idx==0` or `depth>=16` → null. A non-float node kind → null. | None [inference] |
-| `comptimeEvalFloatBuiltin` | private | Evaluate one `@floatCast`/`@intToFloat` call to an `f64`. Resolves the target type arg (extra child 0; must be `TYPE_F32`/`TYPE_F64`); `@intToFloat` evaluates extra child 1 with the integer evaluator (honoring `sig`), `@floatCast` with `comptimeEvalFloat`; an `f32` target rounds through `f32`. | `comptimeEvalBuiltin`, `comptimeEvalFloat` | `comptimeEvalResolveTypeArg`, `comptimeEvalEvaluateDepth`, `comptimeEvalFloat`, `@intToFloat`/`@floatCast` | `registry`, `store`, local `f64`/`f32` | A non-float target, a `WIDTH_FLOAT` integer operand, or a non-foldable operand → null. | None [inference] |
+| `comptimeEvalFloat` | private | Float-valued sub-evaluator, deliberately SEPARATE from `comptimeEvalEvaluateDepth` so no float bit pattern can reach the integer binop/negate/bit_not/int_cast paths. Handles `float_literal` (`store.float_values`), `negate` (`-v`, sign-preserving for `-0.0`), `paren_expr`, nested `@floatCast`/`@intToFloat`, and const `ident_expr` chains (depth-16 guarded). Fix round 1: the `ident_expr` arm resolves the const's **declared** type and rounds an `f32` const through `f32` before returning, so `const S: f32 = 0.1` evaluates as `f32(0.1)`, not the raw `f64` literal. | `comptimeEvalFloatBuiltin`; recursively itself | `comptimeEvalFloat`, `comptimeEvalFloatBuiltin`, `comptimeEvalResolveTypeArg`, `symbolRegistryQualifiedLookup` | `store.float_values`, `store.nodes`, `store.identifiers`, `symbol_reg` | `node_idx==0` or `depth>=16` → null. A non-float node kind → null. | None [inference] |
+| `comptimeEvalOperandSigned` | private | Determine an `@intToFloat` operand's signedness from its declared type / literal shape, NOT `ComptimeVal.sig` (true for every int literal). `ident_expr` → the const's declared integer type via `typeRegistryIntIsSigned`; `int_literal` → value ≤ `i64` max; `char_literal` → unsigned; `@intCast` → target signedness; else falls back to `cv.sig`. Fix round 1: prevents a `u64` const above `i64` max folding as negative. | `comptimeEvalFloatBuiltin` | `comptimeEvalResolveTypeArg`, `typeRegistryIsInteger`, `typeRegistryIntIsSigned`, `symbolRegistryQualifiedLookup` | `registry`, `store`, `symbol_reg` | Fixes the `u64` `18446744073709551615` → `-1.0` mis-fold. | None [inference] |
+| `comptimeEvalFloatBuiltin` | private | Evaluate one `@floatCast`/`@intToFloat` call to an `f64`. Resolves the target type arg (extra child 0; must be `TYPE_F32`/`TYPE_F64`); `@intToFloat` evaluates extra child 1 with the integer evaluator and `comptimeEvalOperandSigned`, `@floatCast` with `comptimeEvalFloat`; an `f32` target rounds through `f32`. | `comptimeEvalBuiltin`, `comptimeEvalFloat` | `comptimeEvalResolveTypeArg`, `comptimeEvalEvaluateDepth`, `comptimeEvalOperandSigned`, `comptimeEvalFloat`, `@intToFloat`/`@floatCast` | `registry`, `store`, local `f64`/`f32` | A non-float target, a `WIDTH_FLOAT` integer operand, or a non-foldable operand → null. | None [inference] |
 | `comptimeEvalBuiltin` — `@isWindows` | — | Returns `self.host_is_windows ? 1 : 0`, width=1, sig=false. | (same as above) | none | `self.host_is_windows` | Value set by `main.zig` from `cli.target_is_windows`. | None [inference] |
 | `comptimeEvalBinOp` | private | Evaluate binary arithmetic at compile time. Handles add/sub/mul/div/mod_op/bit_and/bit_or/bit_xor/shl/shr. Signed division uses a sign-magnitude algorithm. | `comptimeEvalEvaluateDepth` | `comptimeEvalEvaluateDepth` (recursive for lhs/rhs) | `store.nodes`, lhs/rhs `ComptimeVal` | If either operand carries `WIDTH_FLOAT`, returns null (float values never enter integer arithmetic). Width = max(lhs.width_bits, rhs.width_bits). Signed if either operand signed. Division-by-zero returns null. Shift amount >= 64 returns null. | None [inference] |
 | `comptimeEvalBinOp` — signed div | — | Extract sign bits, compute absolute values, divide, apply sign to quotient. | (same as above) | none | local variables | Two's complement negation: `0 - val`. XOR sign bits for result sign. | None [inference] |
@@ -75,8 +76,9 @@ comptimeEvalEvaluate(node_idx)
        │     ├─ @bitSizeOf: resolveTypeArg → size*8 / packed bits / int width / enum backing / 1
        │     ├─ @intCast: resolveTypeArg + EvaluateDepth(inner) → mask/truncate/sign-ext
        │     ├─ @floatCast/@intToFloat: comptimeEvalFloatBuiltin → f64 (f32 target rounds)
-       │     │     └─ @intToFloat: EvaluateDepth(inner) → signed/unsigned → f64
+       │     │     └─ @intToFloat: EvaluateDepth(inner) + comptimeEvalOperandSigned → f64
        │     │     └─ @floatCast: comptimeEvalFloat(inner) → f64
+       │     │     └─ comptimeEvalFloat ident const → round through DECLARED type (f32)
        │     │     └─ success → ComptimeVal{bits=<f64 pattern>, width=WIDTH_FLOAT, sig=false}
        │     └─ @isWindows: host_is_windows ? 1 : 0
        ├─ paren_expr ──→ EvaluateDepth(node.child_0)
@@ -249,9 +251,15 @@ into the integer binop path).
   type from the resolved-type table or the type argument. The f64 value is transported as its bit
   pattern in `ctx.comptime_values` (a `U32ToU64Map`) and reinterpreted at the consumer via a
   pointer cast (`@bitCast` is integer-only in Z98).
-- Fold coverage: float literals, `negate` (negative float literals are `negate(float_literal)`),
-  parentheses, nested `@intToFloat`/`@floatCast`, and const `ident_expr` chains. Float arithmetic
-  (`X + 1.0`) and float comparisons are still NOT folded.
+- Fold coverage: float literals, `negate` (negative float literals are `negate(float_literal)`;
+  computed as `-v` so `-0.0` keeps its sign bit), parentheses, nested `@intToFloat`/`@floatCast`,
+  and const `ident_expr` chains. Float arithmetic (`X + 1.0`) and float comparisons are still NOT
+  folded.
+- **Fix round 1 (2026-09-20):** the `ident_expr` arm rounds a typed const through its DECLARED
+  type (`const S: f32 = 0.1` is `f32(0.1)`), so widening it to `f64` folds to `f64(f32(0.1))` and
+  matches the runtime path; and `@intToFloat` derives the operand's signedness from its declared
+  type / literal shape (`comptimeEvalOperandSigned`), so a `u64` const above `i64` max folds
+  unsigned (`18446744073709551615` → `1.8446744073709552e19`, not `-1.0`).
 - `@floatCast` operand-type validation remains absent (Task 11A §6.4); a non-float operand simply
   returns `null` (no fold, runtime lowering unchanged).
 
@@ -313,4 +321,11 @@ No `@isWindows` value folding exists in any other file.
 7. **`@floatCast` operand-type validation absent**: sema accepts a non-float source (Task 11A §6.4).
    The fold branch returns `null` for a non-float operand rather than diagnosing; no new diagnostic
    was added in Task 11D.
+
+8. **Negative zero is preserved in the sub-evaluator but not yet in emitted C** (`comptime_eval.zig`
+   + `util/format.zig`): `comptimeEvalFloat`'s `negate` computes `-v`, so `-0.0` keeps its sign bit
+   in the folded value; however `formatF64` (`sf/src/util/format.zig:99`) renders any zero as `0`,
+   so `@floatCast(f64, -0.0)` still emits `(double)(0)`. Fixing the emitter's negative-zero rendering
+   is out of Task 11D fix-round-1 scope (the finding targeted the sub-evaluator); no fixture uses
+   `-0.0`.
 
