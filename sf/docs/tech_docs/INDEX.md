@@ -297,12 +297,15 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `diagnosticCollectorAddNote` | diagnostics.zig |
 | `diagnosticCollectorAddRelatedSpan` | diagnostics.zig |
 | `diagnosticCollectorErrorCount` | diagnostics.zig |
+| `diagnosticCollectorFindFirstByte` | diagnostics.zig |
+| `diagnosticCollectorFindLastByte` | diagnostics.zig |
 | `diagnosticCollectorFlushAndExit` | diagnostics.zig |
 | `diagnosticCollectorHasErrors` | diagnostics.zig |
 | `diagnosticCollectorInit` | diagnostics.zig |
 | `diagnosticCollectorIntern` | diagnostics.zig |
 | `diagnosticCollectorMarkNodeOnce` | diagnostics.zig |
 | `diagnosticCollectorPrintAll` | diagnostics.zig |
+| `diagnosticCollectorScanIdentSpan` | diagnostics.zig |
 | `diagnosticCollectorWarningCount` | diagnostics.zig |
 | `dirExists` | pal.zig |
 | `dumpAst` | dump_ast.zig |
@@ -875,6 +878,8 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `semanticAnalyzerIsTypeValueCast` | semantic_analyzer.zig |
 | `semanticAnalyzerMaybeDiagVolatileDrop` | semantic_analyzer.zig |
 | `semanticAnalyzerMaybeGateAliasDecl` | semantic_analyzer.zig |
+| `semanticAnalyzerNthIdentSpan` | semantic_analyzer.zig |
+| `semanticAnalyzerPopScopeMarker` | semantic_analyzer.zig |
 | `semanticAnalyzerPackedFieldTypeAllowed` | semantic_analyzer.zig |
 | `semanticAnalyzerIsLValueConst` | semantic_analyzer.zig |
 | `semanticAnalyzerPackedStructDeclForType` | semantic_analyzer.zig |

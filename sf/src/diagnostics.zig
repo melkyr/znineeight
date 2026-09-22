@@ -442,6 +442,80 @@ pub fn diagnosticCollectorFlushAndExit(self: *DiagnosticCollector, exit_code: u3
     pal.exit(@intCast(u8, exit_code));
 }
 
+// Task 7D: source scanners used to locate a declaration's name-token span for a
+// precise diagnostic when the AST node carries its name only as a payload
+// (var_decl, `for` captures). Comments are skipped; scanning is bounded by
+// `to` so a missing token cannot run away into the rest of the file.
+
+fn isIdentStartByte(c: u8) bool {
+    if (c >= 'a' and c <= 'z') return true;
+    if (c >= 'A' and c <= 'Z') return true;
+    if (c == '_') return true;
+    return false;
+}
+
+fn isIdentByte(c: u8) bool {
+    if (isIdentStartByte(c)) return true;
+    if (c >= '0' and c <= '9') return true;
+    return false;
+}
+
+pub fn diagnosticCollectorScanIdentSpan(self: *DiagnosticCollector, file_id: u32, from: u32, to: u32, out_start: *u32, out_end: *u32) bool {
+    var content = sm_mod.sourceManagerGetSourceContent(self.source_manager, file_id);
+    var limit: usize = content.len;
+    if (@intCast(usize, to) < limit) limit = @intCast(usize, to);
+    var i: usize = @intCast(usize, from);
+    while (i < limit) {
+        var c = content[i];
+        if (c == '/' and i + 1 < limit and content[i + 1] == '/') {
+            while (i < limit and content[i] != '\n') { i += 1; }
+            continue;
+        }
+        if (c == '/' and i + 1 < limit and content[i + 1] == '*') {
+            i += 2;
+            while (i + 1 < limit and !(content[i] == '*' and content[i + 1] == '/')) { i += 1; }
+            if (i + 1 < limit) { i += 2; } else { i = limit; }
+            continue;
+        }
+        if (isIdentStartByte(c)) {
+            var s = i;
+            while (i < limit and isIdentByte(content[i])) { i += 1; }
+            out_start.* = @intCast(u32, s);
+            out_end.* = @intCast(u32, i);
+            return true;
+        }
+        i += 1;
+    }
+    return false;
+}
+
+// Returns the byte offset of the LAST occurrence of `byte` in [from, to), or
+// 0xFFFFFFFF if absent (used to find the `)` that closes a `for` iterable).
+pub fn diagnosticCollectorFindLastByte(self: *DiagnosticCollector, file_id: u32, from: u32, to: u32, byte: u8) u32 {
+    var content = sm_mod.sourceManagerGetSourceContent(self.source_manager, file_id);
+    var limit: usize = content.len;
+    if (@intCast(usize, to) < limit) limit = @intCast(usize, to);
+    var i: usize = @intCast(usize, from);
+    var found: u32 = @intCast(u32, 4294967295);
+    while (i < limit) : (i += 1) {
+        if (content[i] == byte) found = @intCast(u32, i);
+    }
+    return found;
+}
+
+// Returns the byte offset of the FIRST occurrence of `byte` in [from, to), or
+// 0xFFFFFFFF if absent (used to find the `>` of a switch prong's `=>`).
+pub fn diagnosticCollectorFindFirstByte(self: *DiagnosticCollector, file_id: u32, from: u32, to: u32, byte: u8) u32 {
+    var content = sm_mod.sourceManagerGetSourceContent(self.source_manager, file_id);
+    var limit: usize = content.len;
+    if (@intCast(usize, to) < limit) limit = @intCast(usize, to);
+    var i: usize = @intCast(usize, from);
+    while (i < limit) : (i += 1) {
+        if (content[i] == byte) return @intCast(u32, i);
+    }
+    return @intCast(u32, 4294967295);
+}
+
 pub fn diagnosticBuilderMakeMsg(interner: *StringInterner, parts: [*]const []const u8, count: u32) []const u8 {
     var total: usize = 0;
     var ci: u32 = 0;

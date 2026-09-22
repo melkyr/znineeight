@@ -545,6 +545,35 @@ fn semanticAnalyzerCheckLocalShadow(self: *SemanticAnalyzer, name_id: u32, span_
     }
 }
 
+// Task 7D: if `item` is a scope-pop marker (`0x80000000 | saved_depth`), restore
+// the local-decl depth and return true. Shared by the stmt-walker worklist, the
+// switch-prong drain, and the expression-block drain.
+fn semanticAnalyzerPopScopeMarker(self: *SemanticAnalyzer, item: u32) bool {
+    if (item >= @intCast(u32, 0x80000000)) {
+        self.local_decl_count = @intCast(usize, item & @intCast(u32, 0x7FFFFFFF));
+        return true;
+    }
+    return false;
+}
+
+// Task 7D: the span of the `n`th (1-based) identifier token at or after `from`
+// within `[from, limit)`, used to point the shadow diagnostic at a declaration's
+// NAME token when the node carries the name only as a payload (var_decl, `for`
+// captures). Returns false (and leaves the out-params untouched) when the token
+// cannot be located.
+fn semanticAnalyzerNthIdentSpan(self: *SemanticAnalyzer, from: u32, limit: u32, n: u32, out_start: *u32, out_end: *u32) bool {
+    var f = from;
+    var i: u32 = 0;
+    while (i < n) : (i += 1) {
+        var s: u32 = 0; var e: u32 = 0;
+        if (!diag_mod.diagnosticCollectorScanIdentSpan(self.diag, self.source_file_id, f, limit, &s, &e)) return false;
+        out_start.* = s;
+        out_end.* = e;
+        f = e;
+    }
+    return true;
+}
+
 fn semanticAnalyzerCaptureType(self: *SemanticAnalyzer, cond_type: u32) u32 {
     if (cond_type == type_mod.TYPE_VOID) return type_mod.TYPE_VOID;
     var capt_ty = self.registry.types_items[@intCast(usize, cond_type)];
@@ -2363,8 +2392,18 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
             if ((prong.flags & @intCast(u8, 16)) != @intCast(u8, 0)) {
                 var cap_name = prong.child_1;
                 // Task 7D: a switch-prong capture may not shadow/redeclare an
-                // enclosing binding or a container-level decl.
-                semanticAnalyzerCheckLocalShadow(self, cap_name, prong.span_start, prong.span_start + @intCast(u32, prong.span_len));
+                // enclosing binding or a container-level decl. The capture name
+                // is a payload; locate its token after the prong's `=>`.
+                var sp_ns: u32 = prong.span_start;
+                var sp_ne: u32 = prong.span_start + @intCast(u32, prong.span_len);
+                if (prong.child_0 != @intCast(u32, 0)) {
+                    var sp_body = ast_mod.astStoreNodeAt(self.store, prong.child_0);
+                    var sp_arrow = diag_mod.diagnosticCollectorFindFirstByte(self.diag, self.source_file_id, prong.span_start, sp_body.span_start, '>');
+                    if (sp_arrow != @intCast(u32, 4294967295)) {
+                        _ = diag_mod.diagnosticCollectorScanIdentSpan(self.diag, self.source_file_id, sp_arrow, sp_body.span_start, &sp_ns, &sp_ne);
+                    }
+                }
+                semanticAnalyzerCheckLocalShadow(self, cap_name, sp_ns, sp_ne);
                 var sce_pm: []const u8 = "SCE:p"; pal_mod.markerWriteInt(sce_pm, cap_name);
                 var sce_lm: []const u8 = "SCE:l"; pal_mod.markerWriteInt(sce_lm, @intCast(u32, case_n));
                 if (@intCast(usize, case_n) > @intCast(usize, 0)) {
@@ -2416,9 +2455,7 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
         while (self.stmt_work_len > sw_base) {
             self.stmt_work_len -= @intCast(usize, 1);
             var wi = self.stmt_work_items[self.stmt_work_len];
-            if (wi >= @intCast(u32, 0x80000000)) {
-                self.local_decl_count = @intCast(usize, wi & @intCast(u32, 0x7FFFFFFF));
-            } else if (wi != @intCast(u32, 0)) { semanticAnalyzerResolveStmtIter(self, wi); }
+            if (!semanticAnalyzerPopScopeMarker(self, wi) and wi != @intCast(u32, 0)) { semanticAnalyzerResolveStmtIter(self, wi); }
         }
         // Task 7D: pop the prong's payload capture.
         self.local_decl_count = @intCast(usize, prong_scope_saved);
@@ -2920,9 +2957,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
         while (self.stmt_work_len > eblk_work_base) {
             self.stmt_work_len -= @intCast(usize, 1);
             var eblk_wi = self.stmt_work_items[self.stmt_work_len];
-            if (eblk_wi >= @intCast(u32, 0x80000000)) {
-                self.local_decl_count = @intCast(usize, eblk_wi & @intCast(u32, 0x7FFFFFFF));
-            } else if (eblk_wi != @intCast(u32, 0)) { semanticAnalyzerResolveStmtIter(self, eblk_wi); }
+            if (!semanticAnalyzerPopScopeMarker(self, eblk_wi) and eblk_wi != @intCast(u32, 0)) { semanticAnalyzerResolveStmtIter(self, eblk_wi); }
         }
         self.local_decl_count = @intCast(usize, eblk_scope_saved);
     } else if (node.kind == AstKind.add or node.kind == AstKind.sub or
@@ -3316,6 +3351,28 @@ fn semanticAnalyzerResolveIfHeader(self: *SemanticAnalyzer, node_idx: u32) void 
 
 fn semanticAnalyzerResolveForHeader(self: *SemanticAnalyzer, node_idx: u32) void {
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    // Task 7D: locate the item/index capture NAME tokens (the for_stmt node
+    // carries the captures only as payload name IDs). The captures follow the
+    // `)` that closes the iterable, so scan from there; fall back to the whole
+    // for_stmt span when a token cannot be located.
+    var for_item_s: u32 = node.span_start;
+    var for_item_e: u32 = node.span_start + @intCast(u32, node.span_len);
+    var for_idx_s: u32 = for_item_s;
+    var for_idx_e: u32 = for_item_e;
+    if (node.child_1 != @intCast(u32, 0)) {
+        var for_body = ast_mod.astStoreNodeAt(self.store, node.child_1);
+        var for_close = diag_mod.diagnosticCollectorFindLastByte(self.diag, self.source_file_id, node.span_start, for_body.span_start, ')');
+        if (for_close != @intCast(u32, 4294967295)) {
+            var fi_s: u32 = 0; var fi_e: u32 = 0;
+            if (diag_mod.diagnosticCollectorScanIdentSpan(self.diag, self.source_file_id, for_close, for_body.span_start, &fi_s, &fi_e)) {
+                for_item_s = fi_s; for_item_e = fi_e;
+            }
+            var ix_s: u32 = 0; var ix_e: u32 = 0;
+            if (diag_mod.diagnosticCollectorScanIdentSpan(self.diag, self.source_file_id, for_item_e, for_body.span_start, &ix_s, &ix_e)) {
+                for_idx_s = ix_s; for_idx_e = ix_e;
+            }
+        }
+    }
     _ = semanticAnalyzerResolveExpr(self, node.child_0);
     var fs_c_m: []const u8 = "FS:C"; pal_mod.markerWriteInt(fs_c_m, node.child_0);
     var cnode = ast_mod.astStoreNodeAt(self.store, node.child_0);
@@ -3331,7 +3388,7 @@ fn semanticAnalyzerResolveForHeader(self: *SemanticAnalyzer, node_idx: u32) void
         if (ast_mod.astStoreNodePayload(self.store, node_idx) != @intCast(u32, 0) and elem_box[0] != type_mod.TYPE_UNDEFINED) {
             var fs_p_m: []const u8 = "FS:P"; pal_mod.markerWriteInt(fs_p_m, ast_mod.astStoreNodePayload(self.store, node_idx));
             var fs_e_m: []const u8 = "FS:E"; pal_mod.markerWriteInt(fs_e_m, elem_box[0]);
-            semanticAnalyzerCheckLocalShadow(self, ast_mod.astStoreNodePayload(self.store, node_idx), node.span_start, node.span_start + @intCast(u32, node.span_len));
+            semanticAnalyzerCheckLocalShadow(self, ast_mod.astStoreNodePayload(self.store, node_idx), for_item_s, for_item_e);
             if (self.local_decl_count >= self.local_decl_cap) { semanticAnalyzerGrowLocalDecls(self); }
             self.local_decl_names[self.local_decl_count] = ast_mod.astStoreNodePayload(self.store, node_idx); self.local_decl_types[self.local_decl_count] = elem_box[0]; self.local_decl_consts[self.local_decl_count] = @intCast(u8, 1); self.local_decl_count += @intCast(usize, 1);
             var d4f_n: []const u8 = "D4F:N"; pal_mod.markerWriteInt(d4f_n, ast_mod.astStoreNodePayload(self.store, node_idx));
@@ -3341,7 +3398,7 @@ fn semanticAnalyzerResolveForHeader(self: *SemanticAnalyzer, node_idx: u32) void
         var a5_m: []const u8 = "FS:M\n"; pal_mod.markerWrite(a5_m);
     }
     if (node.child_2 != @intCast(u32, 0)) {
-        semanticAnalyzerCheckLocalShadow(self, node.child_2, node.span_start, node.span_start + @intCast(u32, node.span_len));
+        semanticAnalyzerCheckLocalShadow(self, node.child_2, for_idx_s, for_idx_e);
         if (self.local_decl_count >= self.local_decl_cap) { semanticAnalyzerGrowLocalDecls(self); }
         self.local_decl_names[self.local_decl_count] = node.child_2; self.local_decl_types[self.local_decl_count] = type_mod.TYPE_USIZE; self.local_decl_consts[self.local_decl_count] = @intCast(u8, 1); self.local_decl_count += @intCast(usize, 1);
         var f2_m: []const u8 = "FIX2:LN"; pal_mod.markerWriteInt(f2_m, node.child_2);
@@ -3380,15 +3437,10 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
     while (self.stmt_work_len > sp_base) {
         self.stmt_work_len -= @intCast(usize, 1);
         var node_idx = self.stmt_work_items[self.stmt_work_len];
-        // Task 7D: a scope-pop marker (high bit set; low 31 bits = the
-        // local-decl depth to restore) closes a block/construct scope. This
-        // keeps `local_decl_names[0..local_decl_count)` exactly the set of
-        // currently-in-scope bindings, so sibling/closed scopes are gone and
+        // Task 7D: a scope-pop marker closes a block/construct scope (see
+        // semanticAnalyzerPopScopeMarker); it restores the local-decl depth so
         // the shadow check sees only enclosing + same scope.
-        if (node_idx >= @intCast(u32, 0x80000000)) {
-            self.local_decl_count = @intCast(usize, node_idx & @intCast(u32, 0x7FFFFFFF));
-            continue;
-        }
+        if (semanticAnalyzerPopScopeMarker(self, node_idx)) { continue; }
         if (node_idx == @intCast(u32, 0)) { continue; }
         var node = ast_mod.astStoreNodeAt(self.store, node_idx);
         var sp_m: []const u8 = "SP:n"; pal_mod.markerWriteInt(sp_m, @intCast(u32, self.stmt_work_len));
@@ -3427,8 +3479,13 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
             var vd_type_binding: u8 = @intCast(u8, 0);
             // Task 7D: reject a shadowing/redeclaring local `const`/`var` (or
             // function-local named type) BEFORE type resolution, so an unknown
-            // type never suppresses the shadow diagnostic.
-            semanticAnalyzerCheckLocalShadow(self, ast_mod.astStoreNodePayload(self.store, node_idx), node.span_start, node.span_start + @intCast(u32, node.span_len));
+            // type never suppresses the shadow diagnostic. The name is a payload
+            // (no name node), so locate the NAME token (2nd ident: keyword then
+            // name); fall back to the declaration span when not locatable.
+            var vd_ns: u32 = node.span_start;
+            var vd_ne: u32 = node.span_start + @intCast(u32, node.span_len);
+            _ = semanticAnalyzerNthIdentSpan(self, node.span_start, vd_ne, @intCast(u32, 2), &vd_ns, &vd_ne);
+            semanticAnalyzerCheckLocalShadow(self, ast_mod.astStoreNodePayload(self.store, node_idx), vd_ns, vd_ne);
             // Task B2: a function-local named type (`const T = struct/enum/union/error{...}`)
             // is a first-class `type` value, not a runtime local. Register the
             // container type, bind the name as a type, and skip the value path.

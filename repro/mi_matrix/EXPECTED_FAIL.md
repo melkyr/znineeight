@@ -1,4 +1,4 @@
-# mi_matrix corpus — expected-fail manifest (v191 2026-09-22)
+# mi_matrix corpus — expected-fail manifest (v192 2026-09-22)
 
 ## Task 7D — reject local declaration shadowing (v190 -> v191 2026-09-22)
 
@@ -27,10 +27,13 @@ function-local -> container/module. The new diagnostic is the dedicated **`error
   then rejects a container-level symbol (`global`/`function`/`type_alias`/`module`) in the current
   module. `_` (the discard) is exempt.
 
-**Key finding (corrects 7C §5.1).** The 10 predicted `sf/src` local-shadow sites were **not** real
-shadows — they were cascades of leaked expression-position scopes. With expression-position scoping
-in place the self-compile passes with **no `sf/src` de-shadowing** (unlike 7C's estimate). The
-compiler's own source was already de-shadowed by Task 7M for the genuine local/capture sites.
+**Key finding.** 7C's 10 predicted `sf/src` local-shadow sites were **genuine** nested-scope shadows
+and Task 7M's de-shadowing renames stand (necessary — Zig 0.15.2 rejects them, e.g.
+`sf/src/parser.zig:730` `var tok` shadowing `:713 var tok`). 7D's first build then flagged a
+**further** set of `sf/src` sites that were **expression-position-scope false positives** (a leaked
+`if_expr` capture / `orelse`-body local re-encountered after its expression scope closed); with
+expression-position scoping in place the self-compile passes with **no further `sf/src`
+de-shadowing**.
 
 **Non-forms (residuals, per 7C §6):** `else |e|` payload captures (unparseable in Z98 ->
 `error[2000]`) and nested `fn` (unsupported -> `error[3020]`) are not enforced.
@@ -48,12 +51,14 @@ compiler's own source was already de-shadowed by Task 7M for the genuine local/c
 **Blast radius (corpus `-s0`).** The corpus is **976 dirs = 860 OK / 42 GREEN / 74 FAIL / 0 ICE /
 0 CRASH** (pre-fix seed v70: 976 = 869 OK / 42 GREEN / 65 FAIL). The full-classifier join-diff vs
 the pre-fix seed v70 compiler moves **exactly 9 dirs, every one an OK -> FAIL deliberate Zig-matching
-shadow reject**, each confirmed illegal by the official 0.15.2 oracle (`build-obj -fno-emit-bin`):
+shadow reject**. Eight are confirmed illegal by the official 0.15.2 oracle (`build-obj
+-fno-emit-bin`); `repro/capture_rename` is correct by Zig's rule (same-scope redeclaration) but the
+oracle stops earlier on Z98's 2-arg `@intCast` (see its row):
 
 | dir | site | oracle diagnostic |
 |---|---|---|
 | `repro/mi_matrix/parsergap_shadow_local_xmod` | block `var x` shadows outer `var x` | `local variable 'x' shadows local variable from outer scope` |
-| `repro/capture_rename` | `var err_shadow` + `catch |err_shadow|` same block | `redeclaration of local ...` |
+| `repro/capture_rename` | `var err_shadow` + `catch |err_shadow|` same block | `redeclaration of local ...` (oracle stops earlier at `main.zig:47`, Z98 2-arg `@intCast`) |
 | `repro/mi_matrix/emission_capture_control_xmod` | `for |s|` capture + local `var s` | `local variable 's' shadows capture from outer scope` |
 | `repro/mi_matrix/emission_sibling_payload_ifcap_xmod` | `if |s|` capture + local `var s` | same |
 | `repro/mi_matrix/emission_sibling_payload_scale_xmod` | switch-prong `|s|` capture + local `var s` | same |
@@ -82,6 +87,20 @@ md5 `dd805c837557235f5fc5dd576282555e` -> `fae87bb36b621b07642d4db57a8c7212`).
 `552d0a84fe54b9cb5ac07c7e30ba2137` / json `38b37bdd45798f6d752cd0aa334491e3` / mud
 `5a1cc65ef23f27d1c4c51f4516760c07`. Example matrix **24/24** dump/gcc. Std-lib runtime gate
 **211 PASS / 0 FAIL**. `check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK.
+
+**Fix round 1 (review).** Two review findings touched `sf/src`, so the fixed point moved again.
+(1) The `error[3057]` span now points at the shadowing NAME token for `var_decl` (2nd ident after
+the keyword), `for` item/index captures (ident after the `)` that closes the iterable), and
+switch-prong captures (ident after the prong's `=>`) — those nodes carry the name only as a payload,
+so the span is source-scanned (`diagnosticCollectorScanIdentSpan` + `FindFirstByte`/`FindLastByte`
+in `diagnostics.zig`); `if`/`while`/`catch`/param already used their name node. (2) The
+scope-pop-marker restore, previously duplicated at three sites, is factored into
+`semanticAnalyzerPopScopeMarker`. Fixed point **MOVED `e5ba7d74a78536683d2633c4655e027e` ->
+`e46810b5ec6327f7bdf5288836e55c51`** (two-hop closure hop1 == hop2); seed **v71 -> v72** (archive
+md5 `fae87bb36b621b07642d4db57a8c7212` -> `5ed3debdb199ceafe0117f45183b3a39`). Corpus `-s0`
+re-swept: **976 = 860 OK / 42 GREEN / 74 FAIL / 0 ICE / 0 CRASH**, join-diff vs seed v70 still
+**exactly the same 9 deliberate shadow rejects** (no further movement); 4-MD5 / matrix 24/24 /
+stdlib 211 / check_emit 7/7 / CLOSEOUT OK all unchanged.
 
 ## Task 7M fix round 1 — de-shadow `if`-capture sites (v189 -> v190 2026-09-22)
 

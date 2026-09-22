@@ -6,7 +6,7 @@
 
 | Artifact | Count | Notes |
 |----------|-------|-------|
-| `SemanticAnalyzer` fields | 84 | 50 non-builtin + 34 builtin name IDs (11 socket IDs removed) |
+| `SemanticAnalyzer` fields | 85 | 51 non-builtin + 34 builtin name IDs (11 socket IDs removed) |
 | Expression kind dispatch arms | 47+ | Every `AstKind` handled in `semanticAnalyzerResolveExpr` |
 | `CoercionKind` variants | 17 | `none` through `wrap_optional_null` |
 | Coercion checks in `classifyCoercion` | ~20 | noreturn/undefined, null, optional, error union, ptr/slice/many-ptr (qualifier-monotone), array, widening, literal |
@@ -171,6 +171,15 @@ semanticAnalyzerCheckLocalShadow(name_id, span_start, span_end):
 Mirrors official Zig 0.15.2 ("Variable identifiers are never allowed to shadow identifiers from an
 outer scope"). Enforced at every registration site. Non-forms (not enforced): `else |e|` payloads
 (unparseable -> `error[2000]`) and nested `fn` (unsupported -> `error[3020]`).
+
+**Task 7D fix round 1.** The `[span_start, span_end)` passed for a shadowing declaration points at
+its NAME token. `if`/`while`/`catch`/param use the capture/param node span directly; `var_decl` and
+`for` item/index and switch-prong captures carry the name only as a payload, so their name token is
+located by source scanning (`semanticAnalyzerNthIdentSpan` + `diagnostics.zig`'s
+`diagnosticCollectorScanIdentSpan` / `diagnosticCollectorFindFirstByte` / `FindLastByte`), falling
+back to the declaration span when not locatable. The scope-pop-marker restore shared by the
+stmt-walker worklist, switch-prong drain, and expression-block drain is factored into
+`semanticAnalyzerPopScopeMarker`.
 
 ### pushExpectedType / popExpectedType (`semantic_analyzer.zig`)
 

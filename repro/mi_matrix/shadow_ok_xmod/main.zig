@@ -1,11 +1,18 @@
 // shadow_ok_xmod — Task 7D positive runtime control (no over-rejection).
 //
-// These are all LEGAL under official Zig 0.15.2 and must keep compiling:
+// These sibling-scope patterns are accepted by Z98 and must keep compiling:
 //   * sibling blocks reuse the same identifier (separate scopes)
 //   * an inner block uses a name before the enclosing scope declares it
 //   * sibling `if`/`for` constructs use distinct capture names
 //   * `_` (the discard) is re-bound freely — it is not an identifier
 //   * a read-only `for` capture
+//
+// NOTE: this is a Z98 acceptance control, NOT a claim that the file is
+// oracle-legal Zig. Official Zig 0.15.2 additionally rejects an unmutated `var`
+// ("local variable is never mutated") and the Z98-specific `const _ = 1;`
+// discard binding, so it does not accept this file verbatim; what must not be
+// over-rejected is the sibling-scope REUSE exercised here (the Zig-matching
+// boundary is proven by shadow_reject_xmod, whose shapes the oracle rejects).
 //
 // Contract: deterministic byte-exact stdout below, RUNRC=0.
 const std = @import("std");
