@@ -471,7 +471,9 @@ Search dirs are seeded by `phase_ImportResolution` (`main.zig`):
    (repeatable, capped at 16), each added via `moduleResolverAddSearchDir`, which
    normalizes and interns the directory; then
 2. the compiler-binary-relative default install path (`pal.getDefaultLibPath`,
-   `<exe_dir>/lib`), appended only when `pal.fileExists` confirms it.
+   `<exe_dir>/lib`), appended only when `pal.dirExists` confirms it (the path
+   names a **directory**; `pal.fileExists` is a `fopen("rb")` file probe and
+   fails on a directory on win32 — Task 5B fix). [updated: 2026-09-22 — Task 5B]
 
 User dirs therefore precede the default install path. The effective `@import("std")`
 search order is: importer dir → `-I`/`--lib-dir` dirs (CLI order) → `<exe_dir>/lib`

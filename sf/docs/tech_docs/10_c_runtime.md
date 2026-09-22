@@ -106,7 +106,7 @@ The live `zig_runtime.c` no longer defines the `__bootstrap_print*`/`__bootstrap
 | `pal_file_read` | extern | Read up to `len` bytes (EINTR-retrying) | zig1 `fileRead`, `std_io` | `read` / `ReadFile` | `-1` on error, else bytes read |
 | `pal_file_write` | extern | Write `len` bytes with partial-write loop | zig1 `fileWrite`, `std_io` | `write` / `WriteFile` | Loops until all bytes written; `-1` on error |
 | `pal_file_close` | extern | Close a `PlatFile` | zig1 `fileClose`, `std_io` | `close` / `CloseHandle` | |
-| `pal_dir_exists` | extern | Directory existence test | `pal.zig` `dirExists` | `stat` / `GetFileAttributesA` | POSIX checks the `S_IFDIR` bit |
+| `pal_dir_exists` | extern | Directory existence test | `pal.zig` `dirExists` (CLI output-dir check `main.zig:164` + default lib-dir lookup `main.zig:437`) | `stat` / `GetFileAttributesA` | POSIX checks the `S_IFDIR` bit. Task 5B: the default lib path `<exe_dir>/lib` is a directory, so this probe (not `pal_file_exists`/`fopen`) guards it. [updated: 2026-09-22 — Task 5B] |
 | `pal_get_default_lib_path` | extern | Compute the compiler-relative `<exe_dir>/lib` path | `pal.zig` | `readlink("/proc/self/exe")` / `GetModuleFileNameA` | Returns the written path length, or 0 on failure |
 | `mainCRTStartup` | Win32 only | CRT-less Win32 entry point | Win32 loader | `main`, `ExitProcess` | Compiled only with `ZIG_NO_CRT` |
 
@@ -191,7 +191,9 @@ zig_compat.h → i8/u8/i16/u16/i32/u32/i64/u64/f32/f64/usize/bool
 (`zig_runtime.c`, `zig_pal.c`, `c_exit.c`) from its output directory, not the `sf/src/include/*`
 sources. **zig1's own build** (`sf/scripts/build_release.sh`) links `sf/src/include/zig_pal.c`
 into the compiler binary — it defines `pal_file_*` plus `pal_dir_exists`/`pal_get_default_lib_path`,
-which the `pal.zig` wrappers (`fileOpen`/`fileWrite`/`fileClose`/`dirExists`) call. Any manual zig1
+which the `pal.zig` wrappers (`fileOpen`/`fileWrite`/`fileClose`/`dirExists`) call. `dirExists`
+probes a directory via `pal_dir_exists` and is used both for the CLI output-dir check and for the
+default lib-dir lookup (`<exe_dir>/lib`, Task 5B). Any manual zig1
 rebuild MUST include it in the gcc line, else the link fails with `undefined reference to
 'pal_file_open'` / `pal_file_write` / `pal_file_close`.
 

@@ -1,4 +1,16 @@
-# mi_matrix corpus — expected-fail manifest (v183 2026-09-21)
+# mi_matrix corpus — expected-fail manifest (v184 2026-09-22)
+
+## Task 5B — win32 default-lib-path lookup: `pal.fileExists` → `pal.dirExists` (v183 -> v184 2026-09-22)
+
+The default standard-library lookup `<exe_dir>/lib` was guarded by `pal.fileExists`, which is `fopen(path,"rb")` + `fclose` (`sf/src/pal.zig:54-66`). On win32 the CRT **refuses to `fopen` a directory**, so `phase_ImportResolution` never added `<exe_dir>/lib` as a search dir and a bare `@import("std")` failed `error[3048]: could not resolve imported file 'std'` unless the user passed `-I lib`. On Linux glibc `fopen`s a directory, so the same layout worked and the defect was invisible there.
+
+**Fix.** `sf/src/main.zig:437` `pal.fileExists(lib_path)` → `pal.dirExists(lib_path)`. The default lib path always names a directory (`pal_get_default_lib_path` appends the literal `lib` to `<exe_dir>`), so the existence probe must be a directory probe; `pal.dirExists` → `pal_dir_exists` uses `GetFileAttributesA`/`FILE_ATTRIBUTE_DIRECTORY` on win32 and `stat`/`S_IFDIR` on POSIX (already used at `main.zig:164` for the output-dir check). `pal.fileExists` itself is UNCHANGED — its remaining callers (`sf/src/module_registry.zig:174,177`) resolve candidate `.zig` **files**, and broadening it would let a directory named `std` intern as a module path.
+
+**Linux gates cannot discriminate this fix** (glibc `fopen`s a directory). The real RED/GREEN proof is win32: pre-fix `error[3048]` rc=2 / 0 `.c`; post-fix rc=0 with the full std closure. It is pinned by the new gate `scripts/win32_cross/default_lib_lookup.sh` (builds the win32 compiler from the seed's self-emission C, copies `lib/` beside `zig1.exe`, runs a `std`-importing program from the exe dir with no `-I` under `wine`).
+
+**New fixtures (1 dir + 1 standalone).** Linux positive control `repro/mi_matrix/stdlib_default_lib_lookup_xmod` (bare `@import("std")` plus a `std_parse.zig` path import, NO `-I`; pulls in `std_io`/`std_str`/`std_math`/`std_parse`; `@panic`-guarded; deterministic stdout `default-lib-lookup-ok / len=3 / max=9 / parsed=-42 / done`, rc 0). Standalone `repro/default_lib_lookup.z98`. Stdlib pin **209 -> 210**.
+
+**Gates (seed-built fixed-point compiler `17a476d2543c2ca9dcf0d7e7cb09ba01`).** Self-compile two-hop closure hop1 == hop2 == `17a476d2…`; self-emission rc=0, 48 `.c`, 0 `error[...]`, 0 PANIC. 4-MD5 emitted-C gates **UNCHANGED**: gol `e7bde571649a67291419ce57131a556a` / lisp `552d0a84fe54b9cb5ac07c7e30ba2137` / json `38b37bdd45798f6d752cd0aa334491e3` / mud `5a1cc65ef23f27d1c4c51f4516760c07`. Example matrix **24/24** dump/gcc/link. Std-lib runtime gate **210 PASS / 0 FAIL**. Corpus `-s0` **952 dirs = 866 OK / 42 GREEN / 44 FAIL / 0 ICE / 0 CRASH** (v183 951 → 952: the 1 new fixture dir, OK under both compilers); a full-classifier join-diff vs the pre-fix seed v63 compiler is **byte-identical (zero class movement)**. `check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK. Fixed point **MOVED `5d792f50cea61b9ef09fbd353c4557b0` -> `17a476d2543c2ca9dcf0d7e7cb09ba01`**; seed **v63 -> v64** (archive md5 `71880fbdabf20b542389031ab5cbdc11` -> `0abd7af67a38bb26d92953245e32944e`).
 
 ## Task B2 final fix wave — compound/var local type values + >32-field local aggregates (v182 -> v183 2026-09-21)
 

@@ -434,7 +434,7 @@ fn phase_ImportResolution(ctx: *CompilerContext) void {
     var lib_len = pal.getDefaultLibPath(&lib_buf[0], @intCast(i32, 512));
     if (lib_len > 0) {
         var lib_path = lib_buf[0..@intCast(usize, lib_len)];
-        if (pal.fileExists(lib_path)) {
+        if (pal.dirExists(lib_path)) {
             mr_mod.moduleResolverAddSearchDir(&ctx.module_reg.resolver, lib_path);
         }
     }

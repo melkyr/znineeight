@@ -334,7 +334,7 @@ effect on the current pipeline. The LIR lowering + scratch work for an un-emitte
 
 **Calls:**
 - `alloc_mod.sandReset` — reset scratch at entry
-- `mr_mod.moduleResolverAddSearchDir` — add each `-I`/`--lib-dir` dir, plus the default lib path from `pal.getDefaultLibPath` when it exists
+- `mr_mod.moduleResolverAddSearchDir` — add each `-I`/`--lib-dir` dir, plus the default lib path from `pal.getDefaultLibPath` when it exists (`pal.dirExists`, a directory probe — Task 5B; the default lib path `<exe_dir>/lib` is a directory, and the old `pal.fileExists` `fopen` probe failed on win32). [updated: 2026-09-22 — Task 5B]
 - `path_mod.normalizePath` — normalize the input path (when it fits 512 bytes)
 - `interner_mod.stringInternerIntern` — intern the root module path
 - `mr_mod.moduleRegistryAddModule` — register root module
