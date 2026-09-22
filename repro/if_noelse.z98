@@ -1,0 +1,37 @@
+// repro/if_noelse.z98 — standalone Task 9B (b) reproduction.
+//
+// A value `if` expression without an `else` branch (`var x = if (cond) 1;`,
+// `return if (cond) 1;`, `take(if (cond) 1);`, `_ = if (cond) 1;`) is invalid
+// Z98/Zig: Zig types a no-`else` `if` as `void`, so a value use is
+// "incompatible types: ... and void". zig1 silently accepted it and lowered the
+// absent `else` as `lowerIfArmValue(self, 0)`, reusing the condition temp — a
+// silent miscompile.
+//
+// FIX (Task 9B, sema): `semanticAnalyzerResolveIfExpr`'s `child_2 == 0` branch
+// rejects with error[3059] unless the then-type is void/noreturn/undefined or
+// the condition folds to a comptime-true bool (m1240 ruling 3).
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   mkdir -p /tmp/if_noelse_out
+//   <zig1> -o /tmp/if_noelse_out repro/if_noelse.z98
+//
+// EXPECTED (after the fix): rc=2, 0 emitted `.c`, `error[3059]` per site.
+// DEFECT (before the fix): rc=0, 6 `.c`, runs (`x=1`).
+const std = @import("std");
+
+fn take(x: i32) void {
+    _ = x;
+}
+
+fn pick(a: i32) i32 {
+    return if (a == 1) 1;
+}
+
+pub fn main() void {
+    var a: i32 = 1;
+    var x: i32 = if (a == 1) 1;
+    take(if (a == 1) 1);
+    _ = if (a == 1) 1;
+    std.io.print("{}\n", .{pick(1)});
+    _ = x;
+}

@@ -1,0 +1,48 @@
+// repro/cond_nonbool.z98 — standalone Task 9B (c) reproduction.
+//
+// A non-`bool` `if`/`while` condition (`if (a)` with `a: i32`/`u32`/`*i32`/
+// enum/optional) and a non-optional capture condition (`if (q) |v|` with a
+// non-optional `q`) are invalid Z98/Zig. Official Zig 0.15.2 rejects the former
+// with "expected type 'bool', found ..." and the latter with "expected optional
+// type, found ...". zig1 silently accepted both.
+//
+// FIX (Task 9B, sema): `semanticAnalyzerCheckConditionType` in the shared
+// if/while header requires `bool` when there is no capture (error[3058]) and an
+// optional/error-union type when there is a capture (also error[3058]).
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   mkdir -p /tmp/cond_nonbool_out
+//   <zig1> -o /tmp/cond_nonbool_out repro/cond_nonbool.z98
+//
+// EXPECTED (after the fix): rc=2, 0 emitted `.c`, `error[3058]` per site.
+// DEFECT (before the fix): rc=0, 6 `.c`, runs.
+const std = @import("std");
+
+const Color = enum { red, green };
+
+pub fn main() void {
+    var a: i32 = 1;
+    if (a) {
+        std.io.print("taken\n");
+    }
+    var u: u32 = 1;
+    while (u) {
+        std.io.print("loop\n");
+    }
+    var p: *i32 = undefined;
+    if (p) {
+        std.io.print("ptr\n");
+    }
+    var c: Color = Color.red;
+    if (c) {
+        std.io.print("enum\n");
+    }
+    var o: ?i32 = 1;
+    if (o) {
+        std.io.print("opt\n");
+    }
+    var q: i32 = 5;
+    if (q) |v| {
+        std.io.print("cap {}\n", .{v});
+    }
+}

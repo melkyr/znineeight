@@ -1,4 +1,64 @@
-# mi_matrix corpus — expected-fail manifest (v194 2026-09-22)
+# mi_matrix corpus — expected-fail manifest (v195 2026-09-22)
+
+## Task 9B — reject invalid condition / `if` forms (v194 -> v195 2026-09-22)
+
+**What.** Three shapes where zig1 silently ACCEPTED invalid Z98/Zig (all rejected by official
+Zig 0.15.2). **(a)** an assignment in a condition (`if (a = 3)`, `if (a += 1)`,
+`while (a = 0)`, `switch (a = 3)`) — assignment is a statement, not an expression; **(b)** a value
+`if` expression without `else` (`var x = if (cond) 1;`, `return if (cond) 1;`,
+`take(if (cond) 1);`) — Zig types a no-`else` `if` as `void`; **(c)** a non-`bool` condition
+(`if (a)` with i32/u32/usize/`*i32`/enum/optional), and (m1240 ruling 5) a non-optional capture
+condition (`if (q) |v|` with a non-optional `q`) and assignment-as-expression
+(`var x = (a = 3);`). (b) was also a silent **miscompile**: the absent `else` lowered as
+`lowerIfArmValue(self, 0)`, reusing the condition's last temp. Root cause + blast radius in the
+Task 9A investigation report.
+
+**Fix (AMENDMENT 11; operator rulings m1240).**
+- **(a) parser** (`sf/src/parser.zig`): the condition `min_prec` at `parserParseIfExpr`,
+  `parserParseSwitchExpr`, `parserParseIfStmt`, `parserParseWhileStmt` is now `Prec.prec_orelse`
+  (was `Prec.assignment`/`Prec.none`), so `Prec.assignment` is not consumed and the `)` expect
+  fails with `error[2000]`; `parserParseGroupedExpr` likewise parses at `Prec.prec_orelse`, so a
+  parenthesized assignment expression is rejected. Matching Zig's parse error.
+- **(b) sema** (`sf/src/semantic_analyzer.zig`): `semanticAnalyzerResolveIfExpr`'s `child_2 == 0`
+  branch emits the new `error[3059]` (`ERR_3059_IF_WITHOUT_ELSE`) when the then-type is not
+  void/noreturn/undefined and the condition is not comptime-known-true. `semanticAnalyzerConditionIsComptimeTrue`
+  folds the condition via a fresh `comptime_eval` evaluator (diag null) and accepts a `bool`-width
+  true result (bool literal, const-bool chain, or folding builtin), matching Zig's comptime-true
+  no-`else` acceptance (m1240 ruling 3).
+- **(c) sema**: the new `semanticAnalyzerCheckConditionType`, called by the shared if/while headers
+  after the capture block, requires `bool` when there is no capture and an optional/error-union
+  condition when there is a capture, else the new `error[3058]` (`ERR_3058_CONDITION_NOT_BOOL`).
+  A condition already typed void/undefined/noreturn is skipped (no cascade). `MarkNodeOnce`-deduped.
+- **diagnostics** (`sf/src/diagnostics.zig`): `ERR_3058_CONDITION_NOT_BOOL = 3058`,
+  `ERR_3059_IF_WITHOUT_ELSE = 3059` (both level 0; next free codes after 3057).
+
+**New fixtures.** Reject controls (all rc=2 / 0 `.c` / FAIL):
+`repro/mi_matrix/cond_assign_reject_xmod` (a: `error[2000]`),
+`repro/mi_matrix/cond_nonbool_reject_xmod` (c + capture: `error[3058]`),
+`repro/mi_matrix/if_noelse_reject_xmod` (b: `error[3059]`). Positive runtime control
+`repro/mi_matrix/stdlib_cond_ok_xmod` (valid `if`/`else if`/`else`, value `if` with `else`,
+optional capture, null-optional else, `while`, void-then `if` statement; golden
+`2 10 7 -1 3 1`, rc 0), pinned in `scripts/stdlib/expected_dirs.txt` (**213 → 214**). Standalone
+repros `repro/cond_assign.z98`, `repro/if_noelse.z98`, `repro/cond_nonbool.z98`.
+
+**Blast radius.** 4-MD5 emitted-C gates **UNCHANGED** (gol `e7bde571…` / lisp `552d0a84…` /
+json `38b37bdd…` / mud `5a1cc65e…`); example matrix **24/24** dumps byte-identical pre↔post;
+std-lib runtime gate **214 PASS / 0 FAIL**; `check_emit_support.sh` 7/7; `verify_upgraded.sh`
+CLOSEOUT OK. Corpus `-s0` **982 dirs = 862 OK / 42 GREEN / 78 FAIL / 0 ICE / 0 CRASH** (v194
+978 → 982: the 4 new fixture dirs). Full-classifier join-diff vs the pre-fix seed v74 compiler
+over the 978 common dirs moves **EXACTLY `emission_void_temp_xmod` (OK→FAIL)** — it uses the
+invalid non-optional capture `if (i.a) |v|` (official Zig: "expected optional type, found
+'...'"), which m1240 ruling 5 mandates rejecting; zero other pre-existing movement. Fixed point
+**MOVED `bea0a1c4c96140ced060d386fc99d145` → `c8f1a76a97e0fe385faf757d5c4015ba`** (two-hop
+closure hop1==hop2); seed **v74 → v75** (archive md5 `18e05ec36c7ba13bcc9aaf69d2ed3b8e` →
+rotated). Docs: `docs/reference/Language_Spec_Z98.md` §3.1 example fixed; the chapter-8 manual
+page (`docs/sf/manuals/en/vol1-08-decisions.html`) "Using `=` where you meant `==`" section
+rewritten to document the new rejection.
+
+**Residual (NOT fixed; pre-existing, distinct defect).** A void-then no-`else` value `if` used as
+a value (`_ = if (c) foo();`) is accepted by the front end (correctly, per Zig) but the pre-existing
+lowering emits an undeclared temp (`gcc: 'zT_<n>' undeclared`); present in the pre-fix compiler
+too, so not a Task 9B regression. Documented in the Task 9B report.
 
 ## Task 8B — lower `@as(<signed>, <negative>)` operands with the target type (v193 -> v194 2026-09-22)
 

@@ -107,6 +107,18 @@ pub const ErrorCode = enum(u16) {
     // ("never allowed to shadow identifiers from an outer scope"). Level 0, span
     // on the shadowing declaration; rejects with 0 `.c`.
     ERR_3057_LOCAL_SHADOW = 3057,
+    // Task 9B: an invalid condition. Either an `if`/`while` condition with no
+    // capture whose type is not `bool` (matching official Zig 0.15.2's
+    // "expected type 'bool', found ..."), or a capture condition that is not an
+    // optional/error-union type ("expected optional type, found ..."). Level 0,
+    // span on the condition; rejects with 0 `.c`.
+    ERR_3058_CONDITION_NOT_BOOL = 3058,
+    // Task 9B: a value `if` expression without an `else` branch whose
+    // then-branch is not `void`/`noreturn` and whose condition is not
+    // comptime-known-true. Zig types a no-`else` `if` as `void`, so it cannot
+    // produce a value ("incompatible types: '...' and 'void'"). Level 0, span
+    // on the `if` expression; rejects with 0 `.c`.
+    ERR_3059_IF_WITHOUT_ELSE = 3059,
 };
 
 pub const ERR_1000_UNTERMINATED_STRING: u16 = 0;

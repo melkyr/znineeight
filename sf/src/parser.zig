@@ -702,7 +702,10 @@ fn parserParsePrefixUnary(self: *Parser, kind: AstKind) ParserError!u32 {
 
 fn parserParseGroupedExpr(self: *Parser) ParserError!u32 {
     var lparen = parserAdvance(self);
-    var inner = try parserParseExprPrec(self, Prec.assignment);
+    // Task 9B (m1240 ruling 5): assignment is a statement, not an expression, so
+    // a parenthesized assignment (`var x = (a = 3);`) is rejected here (the `)`
+    // expect fails), matching official Zig.
+    var inner = try parserParseExprPrec(self, Prec.prec_orelse);
     var rparen = try parserExpect(self, TokenKind.rparen);
     return ast_mod.astStoreAddNode(self.store, AstKind.paren_expr, 0,
         lparen.span_start, rparen.span_start + @intCast(u32, rparen.span_len),
@@ -918,7 +921,11 @@ fn parserParseArrayLiteral(self: *Parser) ParserError!u32 {
 fn parserParseIfExpr(self: *Parser) ParserError!u32 {
     var kw = parserAdvance(self);
     _ = try parserExpect(self, TokenKind.lparen);
-    var cond = try parserParseExprPrec(self, Prec.assignment);
+    // Task 9B (a): a condition is not an assignment expression. `prec_orelse`
+    // still admits orelse/catch/comparison/logical/arithmetic but excludes
+    // `Prec.assignment`, so `if (a = 3)` fails at the `)` expect (error[2000]),
+    // matching official Zig's parse error.
+    var cond = try parserParseExprPrec(self, Prec.prec_orelse);
     _ = try parserExpect(self, TokenKind.rparen);
     var capture_node: u32 = 0;
     if (parserPeek(self).kind == TokenKind.pipe) {
@@ -954,7 +961,8 @@ fn parserParseIfExpr(self: *Parser) ParserError!u32 {
 pub fn parserParseSwitchExpr(self: *Parser) ParserError!u32 {
     var kw_tok = parserAdvance(self);
     _ = try parserExpect(self, TokenKind.lparen);
-    var cond: u32 = try parserParseExprPrec(self, Prec.assignment);
+    // Task 9B (a): a switch condition is not an assignment expression.
+    var cond: u32 = try parserParseExprPrec(self, Prec.prec_orelse);
     _ = try parserExpect(self, TokenKind.rparen);
     _ = try parserExpect(self, TokenKind.lbrace);
 
@@ -1707,7 +1715,8 @@ fn parserParseFnDecl(self: *Parser, is_pub: bool, is_extern: bool, is_test: bool
 fn parserParseIfStmt(self: *Parser) ParserError!u32 {
     var kw = parserAdvance(self);
     _ = try parserExpect(self, TokenKind.lparen);
-    var cond = try parserParseExprPrec(self, Prec.none);
+    // Task 9B (a): exclude assignment from the condition (see parserParseIfExpr).
+    var cond = try parserParseExprPrec(self, Prec.prec_orelse);
     var pc0: []const u8 = "PIF:c="; pal.markerWrite(pc0);
     var pc0b: [10]u8 = undefined; var pc0l = itoa_mod.itoa(cond, pc0b[0..]); var pc0s: usize = @intCast(usize, 9) - @intCast(usize, pc0l); pal.markerWrite(pc0b[pc0s..@intCast(usize, 9)]);
     var pck: []const u8 = "k"; pal.markerWrite(pck);
@@ -1784,7 +1793,8 @@ fn parserParseIfStmt(self: *Parser) ParserError!u32 {
 fn parserParseWhileStmt(self: *Parser) ParserError!u32 {
     var kw = parserAdvance(self);
     _ = try parserExpect(self, TokenKind.lparen);
-    var cond = try parserParseExprPrec(self, Prec.none);
+    // Task 9B (a): exclude assignment from the condition (see parserParseIfExpr).
+    var cond = try parserParseExprPrec(self, Prec.prec_orelse);
     _ = try parserExpect(self, TokenKind.rparen);
 
     var capture_name: u32 = 0;

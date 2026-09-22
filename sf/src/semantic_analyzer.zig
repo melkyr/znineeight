@@ -20,6 +20,9 @@ const interner_mod = @import("string_interner.zig");
 const type_resolver = @import("type_resolver.zig");
 const mr_mod = @import("module_registry.zig");
 const async_analysis = @import("async_analysis.zig");
+// Task 9B (b): the if-without-else comptime-true allowance consults the same
+// fold evaluator the lowering pass uses (`comptime_eval.zig`).
+const ce_mod = @import("comptime_eval.zig");
 
 pub const SemanticAnalyzer = struct {
     type_table: *ResolvedTypeTable,
@@ -1946,11 +1949,57 @@ fn semanticAnalyzerResolveOrelseExpr(self: *SemanticAnalyzer, node_idx: u32) u32
     return opt.payload;
 }
 
+// Task 9B (b, m1240 ruling 3): is an `if`/`while` condition comptime-known-true?
+// Official Zig accepts a value `if` without `else` only when the condition is
+// comptime-true (the taken arm alone is analyzed) or the then-branch is
+// void/noreturn. Z98's comptime fold (`comptime_eval.zig`) folds bool literals,
+// const-bool chains, and the folding builtins (`@isWindows`); the result must be
+// a bool (width_bits == 1) so a non-bool condition is never mistaken for a
+// suitable `if` condition. A fresh evaluator with `diag = null` is used so this
+// probe never emits a diagnostic of its own.
+fn semanticAnalyzerConditionIsComptimeTrue(self: *SemanticAnalyzer, cond_idx: u32) bool {
+    if (cond_idx == @intCast(u32, 0)) return false;
+    var cond = ast_mod.astStoreNodeAt(self.store, cond_idx);
+    if (cond.kind == AstKind.bool_literal) {
+        return (cond.flags & @intCast(u8, 1)) != @intCast(u8, 0);
+    }
+    var ce = ce_mod.comptimeEvalInit(self.registry, self.store, self.interner, self.symbols);
+    var folded = ce_mod.comptimeEvalEvaluate(&ce, cond_idx);
+    if (folded) |cv| {
+        if (cv.width_bits == @intCast(u32, 1)) {
+            return cv.bits != @intCast(u64, 0);
+        }
+    }
+    return false;
+}
+
 fn semanticAnalyzerResolveIfExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     semanticAnalyzerResolveIfHeader(self, node_idx);
     var then_type = semanticAnalyzerResolveExpr(self, node.child_1);
-    if (node.child_2 == @intCast(u32, 0)) { var sif_m: []const u8 = "SIF:0N"; pal_mod.markerWriteInt(sif_m, node_idx); var sif_tm: []const u8 = "T"; pal_mod.markerWriteInt(sif_tm, then_type); var sif_nl: []const u8 = " "; pal_mod.markerWrite(sif_nl); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type; }
+    if (node.child_2 == @intCast(u32, 0)) {
+        // Task 9B (b, m1240 ruling 3): a value `if` without `else` is rejected
+        // unless the then-branch is void/noreturn or the condition is
+        // comptime-known-true (Zig analyzes only the taken arm). A no-`else`
+        // `if` is typed `void`, so a value use is an error.
+        if (then_type != type_mod.TYPE_VOID and then_type != type_mod.TYPE_NORETURN and then_type != @intCast(u32, 0) and then_type != type_mod.TYPE_UNDEFINED) {
+            var iw_ok = semanticAnalyzerConditionIsComptimeTrue(self, node.child_0);
+            if (!iw_ok) {
+                var iw_cond_bool = false;
+                var iw_ct = rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0);
+                if (iw_ct) |ct| {
+                    if (ct != @intCast(u32, 0) and ct != type_mod.TYPE_VOID and ct != type_mod.TYPE_UNDEFINED) {
+                        if (self.registry.types_items[@intCast(usize, ct)].kind == type_mod.TypeKind.bool_type) { iw_cond_bool = true; }
+                    }
+                }
+                if (iw_cond_bool and diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) {
+                    var iw_msg: []const u8 = "if expression without 'else' must be of type 'void'";
+                    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3059_IF_WITHOUT_ELSE)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), iw_msg);
+                }
+            }
+        }
+        var sif_m: []const u8 = "SIF:0N"; pal_mod.markerWriteInt(sif_m, node_idx); var sif_tm: []const u8 = "T"; pal_mod.markerWriteInt(sif_tm, then_type); var sif_nl: []const u8 = " "; pal_mod.markerWrite(sif_nl); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type;
+    }
     var else_type = semanticAnalyzerResolveExpr(self, node.child_2);
     var ie_exp = topExpectedType(self);
     if (ie_exp == @intCast(u32, 0) or ie_exp == type_mod.TYPE_VOID) {
@@ -3326,6 +3375,29 @@ pub fn topExpectedType(self: *SemanticAnalyzer) u32 {
     return self.expected_type_stack_items[self.expected_type_stack_len - @intCast(usize, 1)];
 }
 
+// Task 9B (c, m1240 ruling 5): validate an `if`/`while` condition. With no
+// capture the condition must be `bool` (Zig: "expected type 'bool', found
+// ..."); with a capture it must be optional or error-union (Zig: "expected
+// optional type, found ..."). A condition already typed void/undefined/noreturn
+// is skipped — an earlier diagnostic (e.g. an undeclared identifier) fired.
+fn semanticAnalyzerCheckConditionType(self: *SemanticAnalyzer, node_idx: u32, cond_idx: u32, cond_t: u32, has_capture: bool) void {
+    if (cond_t == @intCast(u32, 0) or cond_t == type_mod.TYPE_VOID or cond_t == type_mod.TYPE_NORETURN or cond_t == type_mod.TYPE_UNDEFINED) return;
+    var ck = self.registry.types_items[@intCast(usize, cond_t)].kind;
+    var ok = false;
+    var cc_msg: []const u8 = "invalid condition";
+    if (has_capture) {
+        if (ck == type_mod.TypeKind.optional_type or ck == type_mod.TypeKind.error_union_type) { ok = true; }
+        else { cc_msg = "capture condition must be an optional or error union type"; }
+    } else {
+        if (ck == type_mod.TypeKind.bool_type) { ok = true; }
+        else { cc_msg = "condition must be of type 'bool'"; }
+    }
+    if (ok) return;
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) return;
+    var cond_node = ast_mod.astStoreNodeAt(self.store, cond_idx);
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3058_CONDITION_NOT_BOOL)), self.source_file_id, cond_node.span_start, cond_node.span_start + @intCast(u32, cond_node.span_len), cc_msg);
+}
+
 fn semanticAnalyzerResolveIfHeader(self: *SemanticAnalyzer, node_idx: u32) void {
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var icond_t = semanticAnalyzerResolveExpr(self, node.child_0);
@@ -3337,6 +3409,8 @@ fn semanticAnalyzerResolveIfHeader(self: *SemanticAnalyzer, node_idx: u32) void 
             registerLocalDecl(self, ast_mod.astStoreNodePayload(self.store, icap_idx), semanticAnalyzerCaptureType(self, icond_t));
         }
     }
+    var icap_present = ast_mod.astStoreNodePayload(self.store, node_idx) != @intCast(u32, 0);
+    semanticAnalyzerCheckConditionType(self, node_idx, node.child_0, icond_t, icap_present);
     var ifs_b: [1]u32 = [1]u32{node.child_1};
     var ifs_k: [1]u32 = [1]u32{@intCast(u32, 0)};
     if (ifs_b[0] != @intCast(u32, 0)) { var ifs_cn = ast_mod.astStoreNodeAt(self.store, ifs_b[0]); ifs_k[0] = @intCast(u32, @enumToInt(ifs_cn.kind)); }
@@ -3421,6 +3495,8 @@ fn semanticAnalyzerResolveWhileHeader(self: *SemanticAnalyzer, node_idx: u32) vo
             registerLocalDecl(self, ast_mod.astStoreNodePayload(self.store, wcap_idx), semanticAnalyzerCaptureType(self, wcond_t));
         }
     }
+    var wcap_present = ast_mod.astStoreNodePayload(self.store, node_idx) != @intCast(u32, 0);
+    semanticAnalyzerCheckConditionType(self, node_idx, node.child_0, wcond_t, wcap_present);
     // Plan C Task 1b-F (nested extension): resolve the `while` continue
     // expression. The stmt walker's `while_stmt` arm pushes only the body, so
     // child_2 never gets resolved-type entries; lowering a nested field store

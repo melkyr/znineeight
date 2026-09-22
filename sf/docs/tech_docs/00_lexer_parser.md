@@ -1,4 +1,4 @@
-# 00 — Lexer & Parser [updated: 2026-09-20 — refresh against current source: 112 AstKind variants, disk-backed AstStore, streaming parser, packed/volatile/calling-convention/`enum(uN)` grammar, dump-tooling coverage; line references and dated evidence removed]
+# 00 — Lexer & Parser [updated: 2026-09-22 — Task 9B (a, m1240 ruling 5): assignment is excluded from every condition position — `parserParseIfExpr`, `parserParseSwitchExpr`, `parserParseIfStmt`, `parserParseWhileStmt` parse the condition at `Prec.prec_orelse` (was `Prec.assignment`/`Prec.none`), and `parserParseGroupedExpr` parses the parenthesized inner expression at `Prec.prec_orelse`, so `if (a = 3)` / `while (a = 0)` / `switch (a = 3)` / `var x = (a = 3);` are parse errors (error[2000]) matching official Zig] [updated: 2026-09-20 — refresh against current source: 112 AstKind variants, disk-backed AstStore, streaming parser, packed/volatile/calling-convention/`enum(uN)` grammar, dump-tooling coverage; line references and dated evidence removed]
 
 > Covers: `token.zig`, `lexer.zig`, `parser.zig`, `ast.zig`, `print_decomposition.zig`, `dump_ast.zig`, `dump_tokens.zig`, `ast_dump_main.zig`
 
@@ -143,7 +143,7 @@ pre-lexed token slice (`parserInit`), but the module path uses the streaming for
 | `parserParseSingleToken` | private | Generic single-token leaf (`null`, `undefined`, `unreachable`). |
 | `parserParseIdentExpr` | private | Identifier expression; re-interns the token text. |
 | `parserParsePrefixUnary` | private | Prefix `-`, `-%`, `!`, `~`, `&`; operand parsed at `Prec.prefix`. |
-| `parserParseGroupedExpr` | private | Parenthesized `(expr)` at `Prec.assignment`. |
+| `parserParseGroupedExpr` | private | Parenthesized `(expr)` at `Prec.prec_orelse`. `[updated: 2026-09-22 — Task 9B (m1240 ruling 5): the inner precedence is `Prec.prec_orelse` (was `Prec.assignment`), so a parenthesized assignment expression (`var x = (a = 3);`) is rejected at the `)` expect — assignment is a statement, not an expression, matching official Zig.]` |
 | `parserParseBuiltinCall` | private | `@builtin(args)`; detects `@import` by interned ID; type args by prefix tokens (`*`, `[`, `?`, `!`, `fn`, `struct`, `enum`, `union`, `error`, `anytype`); args packed as extra children with the builtin name id in `child_0`. |
 | `parserParseImportExpr` | private | `@import("path")`; resolves the module through `module_reg`/`import_scratch` when attached. |
 | `parserParseCInclude` | private | `@cInclude("header.h")`; payload = header name id. |
@@ -152,8 +152,8 @@ pre-lexed token slice (`parserInit`), but the module path uses the streaming for
 | `parserParseAnonymousLiteral` | private | `.{}` / `.{...}` → `struct_init` if named fields, else `tuple_literal`. |
 | `parserParseEnumLiteral` | private | `.TagName` → `enum_literal`. |
 | `parserParseArrayLiteral` | private | `[T]{a, b, c}` array literal. |
-| `parserParseIfExpr` | private | Expression-context `if (cond) [\|capture\|] then [else else]`; supports optional-capture `\|name\|` in value position (`if_expr` payload = capture node, 0 when absent). |
-| `parserParseSwitchExpr` | pub | `switch(cond) { prongs }`; emits `PSWE:n<payload> p<payload>`. |
+| `parserParseIfExpr` | private | Expression-context `if (cond) [\|capture\|] then [else else]`; supports optional-capture `\|name\|` in value position (`if_expr` payload = capture node, 0 when absent). `[updated: 2026-09-22 — Task 9B (a): the condition is parsed at `Prec.prec_orelse` (was `Prec.assignment`), excluding assignment from condition positions; `if (a = 3)` fails at the `)` expect with error[2000].]` |
+| `parserParseSwitchExpr` | pub | `switch(cond) { prongs }`; emits `PSWE:n<payload> p<payload>`. `[updated: 2026-09-22 — Task 9B (a): the condition is parsed at `Prec.prec_orelse` (was `Prec.assignment`), so `switch (a = 3)` is a parse error.]` |
 | `parserParseSwitchProng` | private | One prong: `else` or case items with `..`/`...` ranges, `=> [\|capture\|] body`. Debug: `PCB:T/E/B/n/S`, `CPT:n`, `PPL:n`. |
 | `parserParseType` | pub | Type-expression dispatch: ptr/bracket/optional/error-union/extern-fn/fn/error-set/struct/enum/union/packed/anytype/type-name + trailing `!` error-union. `anytype` returns node 0. |
 | `parserParsePtrQualifiers` | private | Consumes leading `const`/`volatile` qualifiers (bit0=const, bit1=volatile). |
@@ -179,8 +179,8 @@ pre-lexed token slice (`parserInit`), but the module path uses the streaming for
 | `parserParseExportDecl` | private | `export fn/const/var`. |
 | `parserParseFnDecl` | private | `[pub] [extern] [export] fn name(params) [:ret] {body} or ;`. Flags: bit0=variadic, bit1=pub, bit2=extern, bit3=export, bit5=test. Stores `FnProto` (with `call_conv`). Debug: `Fv`, `P:<n>`, `Fk`, `DP:child_buf_stale`. |
 | `parserClassifyCallConv` | private | Maps `"c"`/`"cdecl"`/`"stdcall"` to a convention code, else `CALL_CONV_INVALID`. |
-| `parserParseIfStmt` | private | Statement-context `if (cond) [\|capture\|] then [else ...] ;`. Debug: `PIF:c/k/c1/k1/c2/k2`, `PIF:b...k...`. Rejects `;` before `else`. |
-| `parserParseWhileStmt` | private | `while (cond) [\|capture\|] [:(continue_expr)] body ;`. Debug: `PTC2:e`, `ZZZ_*`. |
+| `parserParseIfStmt` | private | Statement-context `if (cond) [\|capture\|] then [else ...] ;`. Debug: `PIF:c/k/c1/k1/c2/k2`, `PIF:b...k...`. Rejects `;` before `else`. `[updated: 2026-09-22 — Task 9B (a): the condition is parsed at `Prec.prec_orelse` (was `Prec.none`), excluding assignment from condition positions.]` |
+| `parserParseWhileStmt` | private | `while (cond) [\|capture\|] [:(continue_expr)] body ;`. Debug: `PTC2:e`, `ZZZ_*`. `[updated: 2026-09-22 — Task 9B (a): the condition is parsed at `Prec.prec_orelse` (was `Prec.none`), excluding assignment from condition positions.]` |
 | `parserParseForStmt` | private | `for (range) [\|elem, idx\|] body ;`; range `..` wrapped in `range_exclusive`; `child_2` = index name id. |
 | `parserParseSwitchStmt` | private | Parses a switch expression and wraps it in `expr_stmt`. |
 | `parserParseReturnExpr` / `parserParseReturnStmt` | private | `return [expr]` / plus `;`. |

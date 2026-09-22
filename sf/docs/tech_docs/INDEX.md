@@ -865,6 +865,8 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `semanticAnalyzerBuiltinNameEq` | semantic_analyzer.zig |
 | `semanticAnalyzerCaptureType` | semantic_analyzer.zig |
 | `semanticAnalyzerCheckLocalShadow` | semantic_analyzer.zig |
+| `semanticAnalyzerCheckConditionType` | semantic_analyzer.zig |
+| `semanticAnalyzerConditionIsComptimeTrue` | semantic_analyzer.zig |
 | `semanticAnalyzerDiagAsyncBuiltinInDefer` | semantic_analyzer.zig |
 | `semanticAnalyzerDiagAsyncOutsideSuspending` | semantic_analyzer.zig |
 | `semanticAnalyzerFnPtrConvMismatch` | semantic_analyzer.zig |
