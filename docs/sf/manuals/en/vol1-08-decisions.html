@@ -1,0 +1,509 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Making Decisions</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual if else condition comparison operators bool if expression branches decisions">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol1-07-arithmetic.html">
+<link rel="next" href="vol2-00-title.html">
+</head>
+<body bgcolor="#f5f0e1" text="#000000" link="#003366" vlink="#551a8b" alink="#cc0000">
+<table width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#e8e0cc" class="sidebar">
+<font size="1">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#e8e0cc" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume I &mdash; Getting Started</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol1-00-title.html">How to read this</a><br>
+<a href="vol1-01-what-is-programming.html">What is a program</a><br>
+<a href="vol1-02-what-is-z98.html">What is Z98, and why 1998</a><br>
+<a href="vol1-03-your-machine.html">Your machine</a><br>
+<a href="vol1-04-installing.html">Installing the toolchain</a><br>
+<a href="vol1-05-first-program.html">Your first program</a><br>
+<a href="vol1-06-variables-types.html">Variables and types</a><br>
+<a href="vol1-07-arithmetic.html">Doing arithmetic</a><br>
+<b>Making decisions</b><br>
+Doing things repeatedly <i>(planned)</i><br>
+Functions <i>(planned)</i><br>
+Grouping data <i>(planned)</i><br>
+Lists of things <i>(planned)</i><br>
+Reading the errors <i>(planned)</i><br>
+Your first useful program <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Making Decisions</h1>
+<p>
+The last chapter made numbers do arithmetic. A program that can only compute
+the same answer every time is still a very literal assistant; it cannot react.
+This chapter gives it a choice. It adds the <tt>if</tt> statement, the six
+comparison operators that ask yes-or-no questions, the <tt>bool</tt> type those
+questions produce, and the <tt>if</tt> expression, which chooses a value rather
+than a block of statements. After this chapter the program can take a different
+path for each kind of input, which is the first real decision it has made.
+</p>
+
+<h2>The program</h2>
+<pre>
+const std = @import("std");
+
+pub fn main() void {
+    var a: i32 = 7;
+    var b: i32 = -3;
+    var c: i32 = 0;
+
+    if (a &gt; 0) {
+        std.io.print("{} is positive\n", .{a});
+    } else if (a &lt; 0) {
+        std.io.print("{} is negative\n", .{a});
+    } else {
+        std.io.print("{} is zero\n", .{a});
+    }
+
+    if (b &gt; 0) {
+        std.io.print("{} is positive\n", .{b});
+    } else if (b &lt; 0) {
+        std.io.print("{} is negative\n", .{b});
+    } else {
+        std.io.print("{} is zero\n", .{b});
+    }
+
+    if (c &gt; 0) {
+        std.io.print("{} is positive\n", .{c});
+    } else if (c &lt; 0) {
+        std.io.print("{} is negative\n", .{c});
+    } else {
+        std.io.print("{} is zero\n", .{c});
+    }
+
+    var n: i32 = -3;
+    var sign: i32 = if (n &gt; 0) 1 else if (n &lt; 0) -1 else 0;
+    std.io.print("sign of {} is {}\n", .{n, sign});
+
+    var above: bool = n &gt; 0;
+    if (above) {
+        std.io.print("{} is above zero\n", .{n});
+    } else {
+        std.io.print("{} is not above zero\n", .{n});
+    }
+}
+</pre>
+<p>
+It does four things. It classifies three values &mdash; a positive one, a
+negative one, and zero &mdash; printing which kind each is. It computes the
+<i>sign</i> of a value with an <tt>if</tt> expression, the form that chooses a
+value instead of running a block. It stores the result of a comparison in a
+<tt>bool</tt> variable. And it uses that variable as the question for one more
+<tt>if</tt>. Each of those is a separate piece of the chapter.
+</p>
+
+<h2>Choosing with <tt>if</tt></h2>
+<p>
+An <tt>if</tt> statement asks a question and runs a block of statements only when
+the answer is yes:
+</p>
+<pre>
+if (a &gt; 0) {
+    std.io.print("{} is positive\n", .{a});
+}
+</pre>
+<p>
+The word <tt>if</tt> is followed by a <b>condition</b> in parentheses, and then a
+<b>block</b> in braces. The condition is the question; the block is what happens
+when the answer is yes. The question <tt>a &gt; 0</tt> is not a number. It is a
+truth value: either true or false. When it is true the block runs; when it is
+false the block is skipped and the program continues after it.
+</p>
+<p>
+A question with only one answer is rarely enough, so <tt>if</tt> can carry an
+<tt>else</tt> block that runs when the answer is no:
+</p>
+<pre>
+if (b &gt; 0) {
+    std.io.print("{} is positive\n", .{b});
+} else {
+    std.io.print("{} is not positive\n", .{b});
+}
+</pre>
+<p>
+Exactly one of the two blocks runs, never both and never neither. For a third
+possibility the <tt>else</tt> can itself hold another <tt>if</tt>. That chain is
+written <tt>else if</tt> and reads as "otherwise, if&hellip;":
+</p>
+<pre>
+if (b &gt; 0) {
+    std.io.print("{} is positive\n", .{b});
+} else if (b &lt; 0) {
+    std.io.print("{} is negative\n", .{b});
+} else {
+    std.io.print("{} is zero\n", .{b});
+}
+</pre>
+<p>
+The program uses that three-way shape for each of its three values. Read the
+first question first: <tt>b &gt; 0</tt>. If it is true, the value is positive and
+the rest of the chain is skipped. If it is false, the next question is asked:
+<tt>b &lt; 0</tt>. If that is true, the value is negative. If both are false, the
+only possibility left is zero, and the final <tt>else</tt> handles it without
+asking anything.
+</p>
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffffcc">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-note.gif" width="16" height="16" alt="Note"></td>
+<td><b>Note.</b> Only the first true branch runs. In the chain above, a value of
+<tt>-3</tt> fails <tt>b &gt; 0</tt>, passes <tt>b &lt; 0</tt>, and never reaches
+the final <tt>else</tt>. The order of the questions is part of the meaning.</td>
+</tr>
+</table>
+
+<h2>The comparison operators</h2>
+<p>
+The questions in the program are built from comparison operators. Each one takes
+two values and answers with a truth value, not a number. There are six, and they
+come in three pairs:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left">Operator</th>
+<th align="left">Reads as</th>
+<th align="left">Example</th>
+<th align="left">Answer for 5</th>
+</tr>
+<tr>
+<td><tt>==</tt></td>
+<td>equal to</td>
+<td><tt>n == 5</tt></td>
+<td>true</td>
+</tr>
+<tr>
+<td><tt>!=</tt></td>
+<td>not equal to</td>
+<td><tt>n != 5</tt></td>
+<td>false</td>
+</tr>
+<tr>
+<td><tt>&lt;</tt></td>
+<td>less than</td>
+<td><tt>n &lt; 10</tt></td>
+<td>true</td>
+</tr>
+<tr>
+<td><tt>&gt;</tt></td>
+<td>greater than</td>
+<td><tt>n &gt; 10</tt></td>
+<td>false</td>
+</tr>
+<tr>
+<td><tt>&lt;=</tt></td>
+<td>less than or equal to</td>
+<td><tt>n &lt;= 5</tt></td>
+<td>true</td>
+</tr>
+<tr>
+<td><tt>&gt;=</tt></td>
+<td>greater than or equal to</td>
+<td><tt>n &gt;= 5</tt></td>
+<td>true</td>
+</tr>
+</table>
+<p>
+The two-character operators are easy to mistype. <tt>==</tt> is a question
+("are these equal?"); a single <tt>=</tt> is an instruction ("store this value"),
+and it is the subject of a common mistake below. The same is true of <tt>!=</tt>:
+the exclamation mark means <i>not</i>, so <tt>!=</tt> asks whether two values
+differ.
+</p>
+<p>
+Comparison sits below arithmetic in the precedence table from the last chapter,
+so the arithmetic on either side is settled first. <tt>a + 1 &gt; b</tt> compares
+the sum to <tt>b</tt>; it does not add a truth value to anything. When in doubt,
+parentheses make the grouping explicit and cost nothing.
+</p>
+
+<h2>The type of an answer: <tt>bool</tt></h2>
+<p>
+Every comparison produces a value of type <tt>bool</tt>, the boolean type you met
+in chapter 6. It has exactly two values, written <tt>true</tt> and
+<tt>false</tt>, and <tt>if</tt> is the statement that acts on one:
+</p>
+<pre>
+var n: i32 = -3;
+var above: bool = n &gt; 0;
+if (above) {
+    std.io.print("{} is above zero\n", .{n});
+} else {
+    std.io.print("{} is not above zero\n", .{n});
+}
+</pre>
+<p>
+The third line of the program stores the result of <tt>n &gt; 0</tt> in a
+<tt>bool</tt> variable named <tt>above</tt>, and the <tt>if</tt> asks about
+<tt>above</tt> directly. A comparison and a <tt>bool</tt> variable are
+interchangeable as conditions; naming the result is often clearer when the same
+question is asked more than once.
+</p>
+<p>
+Two more operators build larger questions out of smaller ones. <tt>and</tt> is
+true only when both sides are true, and <tt>or</tt> is true when at least one
+side is true:
+</p>
+<pre>
+if (n &gt; 0 and n &lt; 10) {
+    std.io.print("{} is a single digit\n", .{n});
+}
+</pre>
+<p>
+<tt>and</tt> binds tighter than <tt>or</tt>, the same way multiplication binds
+tighter than addition. Both sit below the comparison operators, so the
+comparisons are answered before the logical operators combine them. The
+arithmetic and logical levels were listed together in the last chapter's
+precedence table; the only new row this chapter adds is the comparisons, which
+sit just below the arithmetic.
+</p>
+
+<h2>Braces and the <tt>else</tt> rule</h2>
+<p>
+The braces around a block are optional when the block holds a single statement.
+All three of these are legal:
+</p>
+<pre>
+if (n &gt; 0) std.io.print("positive\n", .{});
+
+if (n &gt; 0) {
+    std.io.print("positive\n", .{});
+}
+</pre>
+<p>
+The first is a bare statement; the second wraps the same statement in a block.
+They mean the same thing, and the compiler treats the bare form as if the braces
+were there. For a beginner the braces are worth writing even when they are not
+required, because they make the extent of the branch visible at a glance.
+</p>
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e0f0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-tip.gif" width="16" height="16" alt="Tip"></td>
+<td><b>Tip.</b> Always write the braces. They are one extra line, they never
+change the meaning you intended, and they keep an <tt>else</tt> attached to the
+<tt>if</tt> you meant when a branch grows a second statement.</td>
+</tr>
+</table>
+<p>
+There is one place where the bare form bites. In C, and in several other
+languages, it is common to write a one-line <tt>if</tt> and <tt>else</tt> with a
+semicolon after the first branch:
+</p>
+<pre>
+if (n &gt; 0) n = 1; else n = -1;
+</pre>
+<p>
+Z98 rejects that line. The semicolon before <tt>else</tt> ends the <tt>if</tt>
+statement, so the <tt>else</tt> has nothing to attach to. The compiler says so
+plainly, and the message names the fix:
+</p>
+<pre>
+classify.z98:5:22: error[2000]: ';' not allowed before 'else' - use braces: if (cond) { ... } else { ... }
+    if (n &gt; 0) n = 1; else n = -1;
+                      ^^^^
+</pre>
+<p>
+The cure is to put braces around both branches. A brace-less <tt>if</tt> with no
+<tt>else</tt> is fine, and a brace-less <tt>if</tt> and <tt>else</tt> written
+without the offending semicolon is accepted too; it is the semicolon between them
+that the compiler refuses. Writing the braces removes the question entirely.
+</p>
+
+<h2><tt>if</tt> as an expression</h2>
+<p>
+So far <tt>if</tt> chooses which statements run. It can also choose which
+<i>value</i> is produced. Written without braces and with an <tt>else</tt>, an
+<tt>if</tt> expression yields one of two values:
+</p>
+<pre>
+var sign: i32 = if (n &gt; 0) 1 else if (n &lt; 0) -1 else 0;
+</pre>
+<p>
+Read it as a sentence: <tt>sign</tt> is 1 if <tt>n</tt> is positive, otherwise
+&minus;1 if <tt>n</tt> is negative, otherwise 0. The whole thing is an
+expression, so it can stand on the right of an <tt>=</tt> or anywhere else a
+value is allowed. The two branches should produce the same type &mdash; here
+both produce an <tt>i32</tt> &mdash; and the result takes that type. If the two
+branches disagree, the compiler warns about the mismatch, the same warning
+chapter 6 showed for mixing two integer types. The program uses
+this form to compute the sign of <tt>-3</tt>, which is &minus;1.
+</p>
+<p>
+The difference between the two forms is what they are for. An <tt>if</tt>
+statement is used for its effect: it runs code. An <tt>if</tt> expression is used
+for its value: it selects one of two values to be used somewhere else. Both
+appear in the program, and both read from the same question.
+</p>
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffffcc">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-note.gif" width="16" height="16" alt="Note"></td>
+<td><b>Note.</b> An <tt>if</tt> expression has two branches; the <tt>else</tt>
+supplies the second. When you want a value and there are three cases, nest the
+<tt>else if</tt> as the program does, so that every path still produces a
+value.</td>
+</tr>
+</table>
+
+<h2>Building and running it</h2>
+<p>
+The commands are the ones from the last two chapters, with <tt>classify</tt> in
+place of <tt>math</tt>. The compiler is still at <tt>/tmp/manual_seed</tt>, built
+in chapter 4:
+</p>
+<pre>
+$ mkdir -p /tmp/manual_out
+$ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out docs/sf/manuals/src/vol1/classify.z98
+$ cd /tmp/manual_out &amp;&amp; sh build_target.sh linux classify
+Building for linux...
+Built: classify
+$ ./classify
+7 is positive
+-3 is negative
+0 is zero
+sign of -3 is -1
+-3 is not above zero
+</pre>
+<p>
+Read the output against the source. The first three lines are the three
+classifications: 7 takes the first branch of its chain, &minus;3 the second, and
+0 the final <tt>else</tt>. The fourth line is the <tt>if</tt> expression: the
+sign of &minus;3 is &minus;1. The fifth is the <tt>bool</tt> variable: &minus;3
+is not above zero, so the <tt>else</tt> branch ran. The program exits with status
+0, because no branch failed; choosing a path is not an error.
+</p>
+
+<h2>Running under Windows 98</h2>
+<p>
+The program builds for Win9x exactly as <tt>hello</tt>, <tt>types</tt>, and
+<tt>math</tt> did. The same <tt>build_target.sh</tt> script, or
+<tt>src/build_owc.bat</tt> with OpenWatcom, produces a console
+<tt>classify.exe</tt> that prints the same five lines. The screenshot below will
+be captured on real hardware.
+</p>
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f5f0e1" class="placeholder">
+<tr>
+<td align="center">
+<i>Figure 9 &mdash; Win9x screenshot pending</i>
+</td>
+</tr>
+</table>
+<p><i>Figure 9. Running <tt>classify.exe</tt> under Windows 98.</i></p>
+
+<h2>Common mistakes</h2>
+<p>
+These are the mistakes a first decision attracts. Each one has a symptom you can
+recognize.
+</p>
+<p>
+<b>Writing the C one-liner: a semicolon before <tt>else</tt>.</b> The habit from
+C and other languages is to end the first branch with a semicolon and put
+<tt>else</tt> after it on the same line. Z98 rejects that, because the semicolon
+ends the <tt>if</tt> and leaves the <tt>else</tt> unattached:
+</p>
+<pre>
+classify.z98:5:22: error[2000]: ';' not allowed before 'else' - use braces: if (cond) { ... } else { ... }
+    if (n &gt; 0) n = 1; else n = -1;
+                      ^^^^
+</pre>
+<p>
+The caret points at the <tt>else</tt>, and the message tells you what to do. Put
+braces around the branches. The braces are optional in Z98, but they are the
+only way to write an <tt>if</tt> and <tt>else</tt> that each hold a full
+statement ending in a semicolon.
+</p>
+<p>
+<b>Using <tt>=</tt> where you meant <tt>==</tt>.</b> This is the one that does
+not announce itself. A single <tt>=</tt> is assignment; <tt>==</tt> is the
+question. The compiler accepts an assignment in the condition, performs it, and
+then tests the value it just stored, so the branch that runs is not the one you
+wrote:
+</p>
+<pre>
+var n: i32 = 7;
+if (n = 0) {
+    std.io.print("{} is zero\n", .{n});
+} else {
+    std.io.print("{} is not zero\n", .{n});
+}
+</pre>
+<p>
+This compiles and runs, and prints:
+</p>
+<pre>
+0 is not zero
+</pre>
+<p>
+The message proves both halves of the trap. The <tt>=</tt> stored 0 into
+<tt>n</tt>, so the condition was false and the <tt>else</tt> branch ran; and the
+value printed is 0, because the assignment really happened. There is no
+diagnostic, because the program is not malformed; it is doing exactly what it
+says. When a condition misbehaves, check first that it says <tt>==</tt> and not
+<tt>=</tt>.
+</p>
+
+<h2>Check yourself</h2>
+<p>
+Answer these before moving on. The last three ask you to change the program and
+run it.
+</p>
+<ol>
+<li>What does an <tt>if</tt> statement do, and what does the condition in
+parentheses produce?</li>
+<li>Name the six comparison operators and say what question each one asks.</li>
+<li>When an <tt>if</tt> chain has an <tt>else if</tt>, how many of its branches
+run? Why does the order of the questions matter?</li>
+<li>What type does <tt>n &gt; 0</tt> have, and what are its two possible
+values?</li>
+<li>What is the difference between an <tt>if</tt> statement and an <tt>if</tt>
+expression? Which one does <tt>var sign: i32 = if (n &gt; 0) 1 else -1;</tt>
+use?</li>
+<li>Are the braces around an <tt>if</tt> body required? What happens if you put
+a semicolon before <tt>else</tt>?</li>
+<li>Change <tt>a</tt> from 7 to 0, rebuild, and run it. Which branch of the
+first chain runs, and why?</li>
+<li>Change the <tt>if</tt> expression to <tt>if (n &gt; 0) 1 else 0</tt>, rebuild,
+and run it. What does the program print for the sign of &minus;3 now, and what
+case has been lost?</li>
+<li>Add a fourth value of 100 and classify it. Which branch of its chain runs?
+Then change its value to &minus;100 and run it again.</li>
+</ol>
+
+<p>Previous: <a href="vol1-07-arithmetic.html">Doing arithmetic</a> | <a href="toc.html">Contents</a> | Next: <a href="vol2-00-title.html">Volume II &mdash; Learning Z98</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
