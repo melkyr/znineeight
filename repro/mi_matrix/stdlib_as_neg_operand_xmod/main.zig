@@ -14,8 +14,9 @@
 // type. The fold itself (`sf/src/comptime_eval.zig`) was already correct.
 //
 // Operator ruling m1210: every signed width is pinned (`i8`/`i16`/`i32`/`i64`/
-// `isize`), not only `i32`. Positive/unsigned `@as` operands and the
-// already-correct control shapes are pinned too (over-correction guard).
+// `isize` and an arbitrary-width signed `i40`), not only `i32`. Positive/
+// unsigned `@as` operands and the already-correct control shapes are pinned too
+// (over-correction guard).
 //
 // Contract: deterministic byte-exact stdout below, RUNRC=0.
 //
@@ -29,6 +30,8 @@
 //   i16=5
 //   i64=5
 //   isize=5
+//   i40=5
+//   i40-div=-3
 //   ctrl-pos=9
 //   ctrl-neg=5
 //   ctrl-unsigned=9
@@ -94,6 +97,15 @@ pub fn main() void {
     var ris: isize = vis + @as(isize, -2);
     if (ris != 5) { @panic("isize"); }
     std.io.print("isize={d}\n", .{ris});
+
+    var v40: i40 = 7;
+    var r40: i40 = v40 + @as(i40, -2);
+    if (r40 != 5) { @panic("i40"); }
+    std.io.print("i40={d}\n", .{r40});
+
+    var d40: i40 = v40 / @as(i40, -2);
+    if (d40 != -3) { @panic("i40-div"); }
+    std.io.print("i40-div={d}\n", .{d40});
 
     var cpos: i32 = v + @as(i32, 2);
     if (cpos != 9) { @panic("ctrl-pos"); }

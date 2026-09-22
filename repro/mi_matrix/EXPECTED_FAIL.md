@@ -28,11 +28,12 @@ carries a signed integer type (as `@intCast` proved).
 
 **New fixture.** `repro/mi_matrix/stdlib_as_neg_operand_xmod` (`main.zig` + `expected.txt` +
 `expected.rc`), pinned in `scripts/stdlib/expected_dirs.txt` (**212 → 213**). It pins **every
-signed width** (`i8` / `i16` / `i32` / `i64` / `isize`, operator ruling m1210) across `/`, `*`,
-`+`, `-`, `%`, and comparison operands, plus the positive/unsigned/direct-print/`const`/literal/
-non-fold/`@intCast` controls (over-correction guard). Every check is `@panic`-guarded; golden
-stdout is byte-exact 3× (`div=-3` … `done`), `expected.rc = 0`, and independently matched against
-official Zig 0.15.2. Standalone `repro/as_neg_operand.z98` (pre-fix: `div=0` then rc 133).
+signed width** (`i8` / `i16` / `i32` / `i64` / `isize`, plus an arbitrary-width signed `i40`,
+operator ruling m1210) across `/`, `*`, `+`, `-`, `%`, and comparison operands, plus the
+positive/unsigned/direct-print/`const`/literal/non-fold/`@intCast` controls (over-correction
+guard). Every check is `@panic`-guarded; golden stdout is byte-exact 3× (`div=-3` … `done`),
+`expected.rc = 0`, and independently matched against official Zig 0.15.2. Standalone
+`repro/as_neg_operand.z98` (pre-fix: `div=0` then rc 133; `i40-div=0`).
 
 **Gate battery (all on the seed-built fixed compiler).** Self-compile two-hop closure
 **`bea0a1c4c96140ced060d386fc99d145`**; 4-MD5 emitted-C gates **UNCHANGED** (gol `e7bde571…` /

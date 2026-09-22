@@ -18,7 +18,7 @@
 //
 // EXPECTED (after the fix), rc=0 — matches official Zig 0.15.2:
 //   div=-3  mul=-14  add=5  sub=9  mod=1  cmp=true
-//   i8=5  i16=5  i64=5  isize=5
+//   i8=5  i16=5  i64=5  isize=5  i40=5  i40-div=-3
 //   ctrl-pos=9  ctrl-neg=5  ctrl-unsigned=9  ctrl-direct=-2
 //   ctrl-const=-3  ctrl-literal=-3  ctrl-nonfold=-3  ctrl-intcast=-3
 //   done
@@ -41,6 +41,7 @@ pub fn main() void {
     var v16: i16 = 7;
     var v64: i64 = 7;
     var vis: isize = 7;
+    var v40: i40 = 7;
     var w: i32 = -2;
 
     std.io.print("div={d}\n", .{v / @as(i32, -2)});
@@ -58,6 +59,8 @@ pub fn main() void {
     std.io.print("i16={d}\n", .{v16 + @as(i16, -2)});
     std.io.print("i64={d}\n", .{v64 + @as(i64, -2)});
     std.io.print("isize={d}\n", .{vis + @as(isize, -2)});
+    std.io.print("i40={d}\n", .{v40 + @as(i40, -2)});
+    std.io.print("i40-div={d}\n", .{v40 / @as(i40, -2)});
 
     std.io.print("ctrl-pos={d}\n", .{v + @as(i32, 2)});
     std.io.print("ctrl-neg={d}\n", .{v + -@as(i32, 2)});
