@@ -1,0 +1,282 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Your Machine</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual your machine Linux gcc Windows 95 98 OpenWatcom 86Box PCem emulation seed build scripts">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol1-02-what-is-z98.html">
+<link rel="next" href="vol1-05-first-program.html">
+</head>
+<body bgcolor="#f5f0e1" text="#000000" link="#003366" vlink="#551a8b" alink="#cc0000">
+<table width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#e8e0cc" class="sidebar">
+<font size="1">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#e8e0cc" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume I &mdash; Getting Started</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol1-00-title.html">How to read this</a><br>
+<a href="vol1-01-what-is-programming.html">What is a program</a><br>
+<a href="vol1-02-what-is-z98.html">What is Z98, and why 1998</a><br>
+<b>Your machine</b><br>
+Installing the toolchain <i>(planned)</i><br>
+<a href="vol1-05-first-program.html">Your first program</a><br>
+Variables and types <i>(planned)</i><br>
+Doing arithmetic <i>(planned)</i><br>
+Making decisions <i>(planned)</i><br>
+Doing things repeatedly <i>(planned)</i><br>
+Functions <i>(planned)</i><br>
+Grouping data <i>(planned)</i><br>
+Lists of things <i>(planned)</i><br>
+Reading the errors <i>(planned)</i><br>
+Your first useful program <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Your Machine</h1>
+<p>
+The last chapter described the machine Z98 was built for: a 32-bit
+Pentium-class computer of 1998, running Windows 95 or 98, or a Linux of the
+era. This chapter turns that description into a checklist. It says which two
+machines you can use, what to do if you do not own one, what the manual's disk
+already carries, and how to tell that your machine is ready for the work ahead.
+</p>
+<p>
+There is no code in this chapter, and no program to build. It is the last of
+the three framing chapters. Read it before you install anything, so that the
+next chapter's instructions land on a machine you already understand.
+</p>
+
+<h2>Two machines are enough</h2>
+<p>
+Z98 compiles to C89, and C89 compilers were everywhere in 1998. That fact
+gives you two supported paths, and you only need one of them. The language and
+the compiler are the same on both; what differs is the ordinary C compiler
+that finishes the job at the end of the build.
+</p>
+<p>
+<b>Path one is a Linux machine with <tt>gcc</tt>.</b> The compiler is rebuilt
+from a small committed archive called the seed, and that rebuild needs nothing
+but <tt>gcc</tt>. The emitted C89 is then compiled with <tt>gcc -m32</tt>, the
+32-bit mode of the same compiler.
+</p>
+<p>
+<b>Path two is a Windows 95 or 98 machine with OpenWatcom.</b> OpenWatcom is a
+compiler suite of the era, and the manual ships a companion script that drives
+it. Its <tt>wcc386</tt> compiles the emitted C89 in strict ANSI mode, and
+<tt>wlink</tt> links the result into a console program.
+</p>
+<p>
+The two paths are not a competition. A Linux machine is the easier one to
+script and the one the manual's own scripts assume; a real Windows 95 or 98
+machine is the more faithful one, because it is the machine the programs are
+meant to run on. Either is enough to follow this volume.
+</p>
+
+<h2>Path one: Linux with gcc</h2>
+<p>
+The manual's examples are built on Linux, and its helper script
+<tt>src/build_linux.sh</tt> shows the whole shape of a build. It runs the
+seed-built compiler over each example, and the compiler writes a self-contained
+tree of C89 files plus a small <tt>build_target.sh</tt>. That emitted script
+compiles the C with <tt>gcc -m32</tt> and links the program.
+</p>
+<p>
+What you need, then, is a Linux machine with a working <tt>gcc</tt> that can
+produce 32-bit code. The seed rebuild asks nothing more of the system: no
+package manager, no network, no modern language runtime. If your Linux is
+modern, that is fine &mdash; the programs still target the era; only the
+machine doing the building is new.
+</p>
+<p>
+The 32-bit part is worth stating plainly. Z98 targets 32-bit x86, so the
+emitted C89 is compiled with <tt>gcc -m32</tt>. A <tt>gcc</tt> that cannot do
+32-bit builds is the one thing that will stop this path, and it is the first
+thing to check.
+</p>
+
+<h2>Path two: Windows 95 or 98 with OpenWatcom</h2>
+<p>
+If you have the target machine itself, you can build on it. The manual's
+<tt>src/build_owc.bat</tt> is the Win9x companion to <tt>build_linux.sh</tt>.
+The order is a little different, because the compiler first has to be told to
+emit Windows-target C89:
+</p>
+<p>
+You run the compiler with the Windows output option, for example
+<tt>zig1 -osw -o out hello.z98</tt>. The compiler writes a self-contained tree
+into <tt>out\</tt>, and with it two build scripts of its own: a
+<tt>build_target.bat</tt> for MSVC and a <tt>build_owc.bat</tt> for OpenWatcom.
+The manual's companion follows those emitted conventions. Run it from inside
+the emitted directory and it compiles every <tt>.c</tt> and links one console
+executable.
+</p>
+<p>
+Under the hood it is short. <tt>wcc386</tt> compiles the C89 in strict ANSI
+mode, with warnings treated as errors, so a build that succeeds is a build the
+compiler had no complaint about. <tt>wlink</tt> then links a console program
+with a 64 KB stack, and adds the WinSock library when the program uses the
+network. On a real Windows 98 machine, the resulting <tt>.exe</tt> is the same
+kind of program the era shipped.
+</p>
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f5f0e1" class="placeholder">
+<tr>
+<td align="center">
+<i>Figure 2 &mdash; Win9x screenshot pending</i>
+</td>
+</tr>
+</table>
+<p><i>Figure 2. A Windows 98 desktop.</i></p>
+
+<h2>No real machine: 86Box and PCem</h2>
+<p>
+Most readers will not have a working Pentium-class machine on the desk, and
+that is not a problem. The 1998 machine can be emulated on a modern host.
+<b>86Box</b> and <b>PCem</b> are two emulators that reproduce era hardware
+closely enough to install Windows 95 or 98 and a compiler on top of it, and to
+run the programs this manual builds. They are the recommended path for anyone
+without real hardware, and a perfectly good one even for those who have it.
+</p>
+<p>
+Emulation gives you the whole target in one window: the era's BIOS, its sound
+and video hardware, its disks, and its operating system. You configure a
+machine of the right vintage, install Windows from the media you already have,
+and then follow the same Win9x path described above. A modern host runs the
+emulator; the guest is the 1998 machine.
+</p>
+<p>
+The choice between 86Box and PCem is not one this manual will make for you.
+Both emulate the era's PCs, both are free, and both will run Windows 95 or 98
+well enough for this volume. Pick the one that installs and starts cleanly on
+your host, and spend your time on the programs instead.
+</p>
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f5f0e1" class="placeholder">
+<tr>
+<td align="center">
+<i>Figure 3 &mdash; Win9x screenshot pending</i>
+</td>
+</tr>
+</table>
+<p><i>Figure 3. 86Box or PCem configured to emulate a Pentium-class machine.</i></p>
+
+<h2>What ships on the disk</h2>
+<p>
+The manual is a book that happens to be a website, and it ships as static HTML
+on a disk with no network and no server. Beside the pages, the disk carries
+everything the volume needs to build and run its examples. The pieces are:
+</p>
+<ul>
+<li><b>The manual pages.</b> Every page you are reading is a plain file that
+opens, prints, and keeps without a network connection.</li>
+<li><b>The example programs.</b> Each chapter that introduces code has one
+example, kept under <tt>src/</tt> in a folder named for its volume, such as
+<tt>src/vol1/hello.z98</tt> and <tt>src/vol2/error_unions.z98</tt>.</li>
+<li><b>The compiler's seed.</b> The compiler is rebuilt from a small committed
+archive, <tt>release/seed/zig1-seed.tgz</tt>, and that rebuild needs only
+<tt>gcc</tt>. Its provenance is recorded beside it in <tt>release/seed/</tt>,
+and the archive carries its own rebuild recipes.</li>
+<li><b>The build helpers.</b> <tt>src/build_linux.sh</tt> for the Linux path and
+<tt>src/build_owc.bat</tt> for the Win9x path drive the examples end to end.</li>
+</ul>
+<p>
+What is deliberately absent matters too. There is no installer, no package
+manager, no network fetch, and no modern runtime to install first. The disk is
+meant to be self-contained, the way a 1998 machine had to be.
+</p>
+
+<h2>Confirming the machine is ready</h2>
+<p>
+You do not need to build anything to know whether you are ready; you need to
+know which path you are on and that its one prerequisite is present. On Linux,
+that prerequisite is a <tt>gcc</tt> that accepts <tt>-m32</tt>. On Windows 95
+or 98, it is an installed OpenWatcom with <tt>wcc386</tt> available. If you
+have neither, set up 86Box or PCem first and choose a path inside the guest.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0cc">If you have</th>
+<th align="left" bgcolor="#e8e0cc">Your path</th>
+</tr>
+<tr>
+<td>A Linux machine with <tt>gcc</tt></td>
+<td>Build on Linux; the emitted C89 is compiled with <tt>gcc -m32</tt>.</td>
+</tr>
+<tr>
+<td>Windows 95 or 98 with OpenWatcom</td>
+<td>Build on the target; <tt>wcc386</tt> and <tt>wlink</tt> finish the job.</td>
+</tr>
+<tr>
+<td>Neither, but a modern computer</td>
+<td>Install 86Box or PCem, set up Windows 98 inside it, and take the Win9x path.</td>
+</tr>
+</table>
+<p>
+The next chapter does the installing and proves the result: it unpacks the
+seed, runs the compiler with <tt>--version</tt>, and builds a bundled example.
+When that succeeds, your machine is ready, and the first real program is one
+chapter away.
+</p>
+
+<h2>Where this is going</h2>
+<p>
+Chapter 4 installs the toolchain and confirms it works. Chapter 5 is where you
+write your first Z98 program and watch it print a single line. By then the
+machine will be a machine you know, not a mystery you are hoping will cooperate.
+</p>
+<p>
+One machine, two ways to build, and a disk that carries everything. That is the
+whole of what this chapter asks you to arrange. Do it once, and it will not
+come up again.
+</p>
+
+<h2>Check yourself</h2>
+<p>
+Answer these before moving on. They need no code, and only the machine in front
+of you.
+</p>
+<ol>
+<li>Name the two supported machines for this volume. What ordinary compiler
+finishes the job at the end of the build on each one?</li>
+<li>What exactly does the emitted <tt>build_target.sh</tt> compile with on
+Linux, and why does the 32-bit flag matter?</li>
+<li>You have a modern computer but no Pentium-class machine. What are 86Box and
+PCem for, and which path do you take once one of them is running?</li>
+<li>What does the disk carry that lets the compiler be rebuilt with only
+<tt>gcc</tt>?</li>
+</ol>
+
+<p>Previous: <a href="vol1-02-what-is-z98.html">What is Z98, and why 1998</a> | <a href="toc.html">Contents</a> | Next: <a href="vol1-05-first-program.html">Your first program</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
