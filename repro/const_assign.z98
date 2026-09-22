@@ -15,7 +15,7 @@
 // DEFECT (before the fix): rc=0, no diagnostic, 4 `.c`, and the emitted C
 // mutates `x`, `G`, and `*p`.
 //
-// See repro/mi_matrix/const_assign_reject_xmod (all 13 shapes) and the positive
+// See repro/mi_matrix/const_assign_reject_xmod (all 12 assignment sites) and the positive
 // runtime control repro/mi_matrix/const_assign_ok_xmod.
 const G: u32 = 1;
 var GV: u32 = 1;
