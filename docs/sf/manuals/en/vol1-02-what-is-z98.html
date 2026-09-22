@@ -1,0 +1,358 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: What is Z98, and why 1998</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual what is Z98 why 1998 C89 C++98 Pentium compiler subset honesty">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol1-01-what-is-programming.html">
+<link rel="next" href="vol1-05-first-program.html">
+</head>
+<body bgcolor="#f5f0e1" text="#000000" link="#003366" vlink="#551a8b" alink="#cc0000">
+<table width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#e8e0cc" class="sidebar">
+<font size="1">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#e8e0cc" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume I &mdash; Getting Started</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol1-00-title.html">How to read this</a><br>
+<a href="vol1-01-what-is-programming.html">What is a program</a><br>
+<b>What is Z98, and why 1998</b><br>
+Your machine <i>(planned)</i><br>
+Installing the toolchain <i>(planned)</i><br>
+<a href="vol1-05-first-program.html">Your first program</a><br>
+Variables and types <i>(planned)</i><br>
+Doing arithmetic <i>(planned)</i><br>
+Making decisions <i>(planned)</i><br>
+Doing things repeatedly <i>(planned)</i><br>
+Functions <i>(planned)</i><br>
+Grouping data <i>(planned)</i><br>
+Lists of things <i>(planned)</i><br>
+Reading the errors <i>(planned)</i><br>
+Your first useful program <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>What is Z98, and why 1998</h1>
+<p>
+Z98 is a small programming language that compiles to C89 and targets
+Pentium-class machines. That one sentence is the whole of it. The rest of this
+chapter takes the sentence apart, one clause at a time, so that by the end you
+know what the tool is, what it is not, and why it was aimed at a year that
+predates this manual by decades.
+</p>
+<p>
+There is no code in this chapter. It is the frame that the rest of the volume
+hangs on. If you already program in some language, most of it will be familiar
+ground with different names; read it anyway, because the honesty at the end is
+the reason the manual is worth trusting.
+</p>
+
+<h2>Why a language at all</h2>
+<p>
+The previous chapter described the machine as a very literal assistant: fast,
+tireless, and unable to guess what you meant. A programming language is the
+vocabulary you use to give that assistant its instructions. It is not English,
+and it is not a conversation. It is a small, exact set of words and rules that
+the machine can be made to follow without interpretation.
+</p>
+<p>
+You do not speak to the machine directly. You write instructions in a
+language, and a program called a <b>compiler</b> translates them into the form
+the machine actually runs. Every language has a compiler of some kind, and the
+choice of language is really a choice about which compiler you trust and which
+kind of mistakes it catches for you before the program ever runs.
+</p>
+<p>
+Z98's compiler is named <tt>zig1</tt>. Its job is narrow and it is stated
+plainly: it reads a file written in Z98 and writes out a file written in C89.
+That translation is the heart of the language, and everything else in this
+chapter follows from it.
+</p>
+
+<h2>What Z98 is</h2>
+<p>
+Four plain facts describe the language. None of them is a slogan; each has a
+consequence you will meet in the chapters ahead.
+</p>
+
+<h3>A small language</h3>
+<p>
+Z98 is a restricted subset of the Zig programming language. &ldquo;Subset&rdquo;
+means it keeps some of Zig's ideas and deliberately leaves others out. The
+result is small enough to hold in your head: a beginner can meet the whole
+language in one volume, and an experienced programmer can read a Z98 file
+without a reference open beside it. The smallness is not an accident of youth
+or a shortage of features. It is the design.
+</p>
+<p>
+The smallness has a cost, and the manual will be honest about it. A feature
+that a modern language gives you for free may simply not be in Z98, and there
+may be no way to add it. The next section says what those features are.
+</p>
+
+<h3>A language that compiles to C89</h3>
+<p>
+C89 is the 1989 standard version of the C language. By 1998 a C89 compiler
+existed for essentially every machine worth programming, so C89 was a safe
+thing to write: if you could produce C89, you could build on almost any system.
+Z98 borrows that safety. When you build a Z98 program, <tt>zig1</tt> first
+translates it into ordinary C89, and then an ordinary C compiler &mdash; the one
+that came with your machine, such as <tt>gcc</tt> or OpenWatcom &mdash; turns
+that C89 into a program.
+</p>
+<p>
+The two-step has real advantages. The C89 that Z98 produces is ordinary,
+portable, and readable, so you can look at what your program became. And
+because the output is plain C89, Z98 code and hand-written C89 code can live in
+the same project and call each other freely. Z98 is not a walled garden; it
+emits a language the era already spoke.
+</p>
+<p>
+It also means the toolchain is small. To build <tt>zig1</tt> itself you need a
+C compiler and nothing else &mdash; not a modern language runtime, not a package
+manager, not a network connection. That is a property worth having when the
+machine you are building for is a 1998 desktop with no internet.
+</p>
+
+<h3>A language for Pentium-class machines</h3>
+<p>
+The target is the hardware and software of 1998. The machines this manual has
+in mind are 32-bit x86 computers in the Pentium family, running Windows 95 or
+98, or a Linux of the era. They have tens of megabytes of memory, not
+gigabytes. They have a screen of 640 by 480 pixels, or perhaps a little more.
+Their disks are measured in hundreds of megabytes, and the fastest way to move
+data between two of them is often a stack of floppy disks.
+</p>
+<p>
+On such a machine, memory &mdash; not processor speed &mdash; is the binding
+constraint. A program that ignores this will run out of memory long before it
+runs out of instructions. Z98 is designed around that fact, and the discipline
+of writing within it is what this manual is really teaching.
+</p>
+
+<h3>A language with a compiler written in itself</h3>
+<p>
+<tt>zig1</tt> is written in Z98. The compiler for the language is itself a Z98
+program, translated by an earlier copy of the compiler and rebuilt from a small
+committed starting point called a seed. This is a mark of confidence in a
+language: if you can write a serious program as demanding as a compiler in it,
+the language is not a toy. You do not need to understand how this works to use
+Z98, but it is worth knowing that the tool you are learning was built with the
+tool you are learning.
+</p>
+
+<h2>Why 1998</h2>
+<p>
+It would be fair to ask why anyone would aim a new language at a year that has
+already happened. The answer is that the year is not the point; the
+<b>constraints</b> are. A 1998 machine is small, predictable, and completely
+understood. Its memory is counted in megabytes, its screen in hundreds of
+pixels, and its disk in hundreds of megabytes. Those numbers are not
+obstacles to be overcome. They are the specification.
+</p>
+<p>
+Writing for such a machine forces a kind of clarity that a modern machine lets
+you avoid. You cannot allocate your way out of a design problem, because there
+is not enough memory to waste. You cannot let the framework hide the cost of
+what you asked for, because there is no framework and no room for one. Every
+byte is accounted for, and every choice shows up in the result. That is the
+discipline the manual is about.
+</p>
+<p>
+This is not nostalgia, and it is not a claim that the era was better. The
+manual takes the era seriously as a target with specific rules, and it treats
+respecting those rules as the skill being taught. If you want to write software
+that runs well on the machine in front of you, modern tools are the right
+choice, and this manual will say so. If you want to write software for a
+machine of 1998, the constraints are the whole job.
+</p>
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f5f0e1" class="placeholder">
+<tr>
+<td align="center">
+<i>Figure 1 &mdash; Win9x screenshot pending</i>
+</td>
+</tr>
+</table>
+<p><i>Figure 1. A Pentium-class machine of the era, running Windows 98.</i></p>
+
+<h2>What Z98 is not</h2>
+<p>
+A small language is defined as much by what it leaves out as by what it keeps.
+It is easier to learn a tool when you know the shape of its edges, so here is
+what Z98 is not.
+</p>
+<p>
+<b>It is not modern Zig.</b> Z98 is a subset of Zig, with deliberate
+differences, so a modern Zig program will often not compile as Z98. Treat them
+as relatives who share a name, not as the same language. When this manual says
+&ldquo;Zig&rdquo; it means the language Z98 was drawn from; when it says
+&ldquo;Z98&rdquo; it means the small subset you are learning.
+</p>
+<p>
+<b>It is not C.</b> It gives you things C89 does not. A function that can fail
+can say so in its type, and the compiler will not let you ignore that fact. A
+value that might be absent can be written as a value that might be absent, with
+the compiler tracking it. A task that needs to pause and resume can be written
+as a function that suspends, instead of a hand-built state machine. Memory
+comes from a simple, explicit pool rather than from scattered calls to allocate
+and free. These are the features that make Z98 worth learning instead of
+writing the C89 yourself.
+</p>
+<p>
+<b>It is not C++.</b> There are no classes, no inheritance, no templates, and
+no exceptions. There is no virtual dispatch except the kind you build by hand,
+and no runtime machinery to make objects behave in clever ways. C++98 offered
+all of these, and the next section explains honestly why the era found them
+hard to use well.
+</p>
+<p>
+<b>It is not a modern language generally.</b> There are no generics, no
+package manager, no automatic memory management, no threads or preemption, and
+no convenient linking against modern libraries. If you arrive expecting the
+conveniences of a contemporary language, you will not find them here. What you
+will find is a smaller surface, which means fewer things to learn and fewer
+places for the machine to surprise you.
+</p>
+
+<h2>The era's real languages</h2>
+<p>
+Here is the honest part, and it is the reason to trust the rest. In 1998,
+nobody wrote software in Z98, because Z98 did not exist yet. If you were
+shipping a program for a Pentium-class machine that year, you reached for one
+of three tools: C89, C++98, or assembly.
+</p>
+<p>
+<b>C89</b> was the lingua franca. Its compilers were everywhere, its rules were
+stable, and it asked almost nothing of the machine. But C89 is tedious for
+exactly the work that real programs do most: handling errors and cleaning up
+resources. When a function fails, C89 has no way to say so in its type; the
+failure is a convention between programmers, carried in a return value or a
+global, and nothing forces anyone to check it. Undoing partial work means
+writing careful cleanup code by hand, and getting it wrong means a leak or a
+crash.
+</p>
+<p>
+<b>C++98</b> was the ambitious option. It offered classes, templates, and
+constructors that clean up after themselves. On a machine with tens of
+megabytes of memory, though, the era's C++ compilers were fragile. Templates
+could exhaust memory and build time; exceptions and runtime type information
+cost resources that the machine did not have to spare; and different compilers
+supported different, incomplete pieces of the standard. C++98 on a small
+machine was possible, but it was a bet that often did not pay.
+</p>
+<p>
+<b>Assembly</b> was the last resort, and the right one for inner loops and
+hardware work where the compiler's output was not tight enough. It is still the
+right answer in those places, and Volume III says so.
+</p>
+<p>
+Z98 exists because writing for those machines in C89 is tedious and writing for
+them in C++98 is fragile. It is best understood as a higher-level C89 &mdash; a
+smaller, friendlier way to write the C89 you would otherwise write by hand
+&mdash; and not as a smaller modern Zig. It does not replace C89 or C++98. It
+gives you a third way to say the same kinds of things, one that is honest about
+what it can and cannot do.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ece0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> This manual teaches you Z98, but the era's real
+languages were C89 and C++98. If you were shipping software in 1998, those
+&mdash; or assembly &mdash; were what you reached for. Z98 is a small, honest
+tool for a specific job; it is not the only choice, and it is not always the
+right one. Volume III explains when C89 or C++98 is the better tool and why.
+Read that before you decide what to build, and take this manual's enthusiasm
+with the grain of salt it is offering.</td>
+</tr>
+</table>
+
+<h2>What Z98 gives you, and what it asks</h2>
+<p>
+A language is a bargain, and it is worth stating both sides. Z98 gives you a
+handful of features that make the tedious parts of C89 bearable: functions that
+declare their failures in their types, values that can be absent without a
+sentinel, tasks that suspend and resume as ordinary functions, a simple pool
+for memory, and a set of compiler builtins that can inspect and convert types
+at compile time. These are the things you will spend the volume learning to
+use.
+</p>
+<p>
+In exchange, Z98 asks you to be explicit. It does not allocate memory behind
+your back, so you must say where memory comes from. It does not throw
+exceptions, so you must say what happens when a function fails. It does not
+quietly convert one kind of number into another, so you must say when a
+conversion is intended. Nothing is hidden, which means nothing is a surprise,
+and a program that compiles is a program whose costs are written down where you
+can see them.
+</p>
+<p>
+That bargain is the whole reason the language exists. If it sounds like more
+work than a modern language, it is, and the manual will not pretend otherwise.
+What you get for the work is a program that does exactly what it says, on a
+machine small enough that the difference matters.
+</p>
+
+<h2>Where this is going</h2>
+<p>
+The next two chapters prepare the ground. Chapter 3 describes the machine you
+will run this on, and what to do if you do not have a real one. Chapter 4
+installs the toolchain and confirms it works. Chapter 5 is where you write your
+first Z98 program and watch it print a single line, which is the moment the
+whole of the previous three chapters turns into something you can run.
+</p>
+<p>
+Everything in this volume is built from that first line. The language is small,
+the machine is old, and the work is honest. That is enough to begin.
+</p>
+
+<h2>Check yourself</h2>
+<p>
+Answer these before moving on. They need no code and no machine.
+</p>
+<ol>
+<li>In your own words, what does it mean that Z98 &ldquo;compiles to C89&rdquo;?
+What is the second step, and what ordinary program performs it?</li>
+<li>Name two things Z98 gives you that C89 does not, and two things it
+deliberately leaves out. You may look back at the chapter for the lists.</li>
+<li>The honesty note says the era's real languages were C89 and C++98, not
+Z98. Why would a manual about Z98 tell you that, and what should you do with
+the information?</li>
+</ol>
+
+<p>Previous: <a href="vol1-01-what-is-programming.html">What is a program</a> | <a href="toc.html">Contents</a> | Next: <a href="vol1-05-first-program.html">Your first program</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
