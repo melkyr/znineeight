@@ -132,7 +132,7 @@ emit Windows-target C89:
 </p>
 <p>
 You run the compiler with the Windows output option, for example
-<tt>zig1 -osw -o out hello.z98</tt>. The compiler writes a self-contained tree
+<tt>zig1 -osw -I lib -o out hello.z98</tt>. The compiler writes a self-contained tree
 into <tt>out\</tt>, and with it two build scripts of its own: a
 <tt>build_target.bat</tt> for MSVC and a <tt>build_owc.bat</tt> for OpenWatcom.
 The manual's companion follows those emitted conventions. Run it from inside
@@ -201,8 +201,10 @@ example, kept under <tt>src/</tt> in a folder named for its volume, such as
 <tt>src/vol1/hello.z98</tt> and <tt>src/vol2/error_unions.z98</tt>.</li>
 <li><b>The compiler's seed.</b> The compiler is rebuilt from a small committed
 archive, <tt>release/seed/zig1-seed.tgz</tt>, and that rebuild needs only
-<tt>gcc</tt>. Its provenance is recorded beside it in <tt>release/seed/</tt>,
-and the archive carries its own rebuild recipes.</li>
+<tt>gcc</tt>. The archive also carries the compiler's own C89 source and the
+runtime it needs, which is what you build for Windows 95 or 98 with OpenWatcom.
+Its provenance is recorded beside it in <tt>release/seed/</tt>, and the archive
+carries its own rebuild recipes.</li>
 <li><b>The build helpers.</b> <tt>src/build_linux.sh</tt> for the Linux path and
 <tt>src/build_owc.bat</tt> for the Win9x path drive the examples end to end.</li>
 </ul>

@@ -176,12 +176,16 @@ pipeline works.
 <h2>Path two: the compiler on Windows 95 or 98</h2>
 <p>
 On the target machine there is no <tt>bash</tt> and no <tt>gcc</tt>, so you do
-not rebuild the compiler from the seed there. The disk carries the toolchain
-already built for Windows: the compiler, <tt>zig1.exe</tt>, and the standard
-library in a <tt>lib</tt> folder beside it. Unpack the two into a folder of your
-own and keep them together, because that is where the compiler looks for the
-library. As on Linux, nothing is installed system-wide and nothing is placed on
-<tt>PATH</tt>. Run the compiler from inside its folder, or give its full path.
+not run the seed script there. The seed archive also carries the compiler's own
+C89 source and the runtime it needs, and that source is the same for every
+target. On Windows 95 or 98 you build the compiler from it: unpack the archive,
+compile that C89 with OpenWatcom's <tt>wcc386</tt>, and link a console
+<tt>zig1.exe</tt> with <tt>wlink</tt>, following the conventions the companion
+<tt>src/build_owc.bat</tt> uses for programs. Keep the standard library in a
+<tt>lib</tt> folder beside <tt>zig1.exe</tt>; that is the compiler's default
+library location. As on Linux, nothing is installed system-wide and nothing is
+placed on <tt>PATH</tt>. Run the compiler from inside its folder, or give its
+full path.
 </p>
 <table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f5f0e1" class="placeholder">
 <tr>
@@ -193,10 +197,13 @@ library. As on Linux, nothing is installed system-wide and nothing is placed on
 <p><i>Figure 4. Unpacking the toolchain on Windows 98.</i></p>
 <p>
 The confirmation is the same test as on Linux: run <tt>zig1.exe</tt> with no
-arguments and it prints its usage. To run a program, <tt>zig1.exe</tt> emits the
-Windows-target C89, and the companion <tt>src/build_owc.bat</tt> compiles it
-with OpenWatcom's <tt>wcc386</tt> and links a console program. The bundled
-example builds there the same way and prints the same line as on Linux.
+arguments and it prints its usage. One thing differs from Linux: the compiler
+does not find its <tt>lib</tt> folder on its own, so name it when you build a
+program that imports <tt>std</tt>, as in
+<tt>zig1.exe -I lib -osw -o out hello.z98</tt>. The companion
+<tt>src/build_owc.bat</tt>, run from inside the emitted tree, then compiles the
+Windows-target C89 and links a console program. The bundled example builds there
+the same way and prints the same line as on Linux.
 </p>
 <table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f5f0e1" class="placeholder">
 <tr>
