@@ -129,8 +129,8 @@ The empty parentheses mean the function takes no arguments.
 a word. <tt>void</tt> means "no value": the function returns nothing to its
 caller. The <tt>!</tt> in front makes it an <b>error union</b>: the function
 either finishes normally (the <tt>void</tt> case) or stops with an error.
-Chapter 12 takes error unions apart; for now read <tt>!void</tt> as "this
-function may fail, and this program does not." A function that returns
+A later chapter in Volume II takes error unions apart; for now read
+<tt>!void</tt> as "this function may fail, and this program does not." A function that returns
 <tt>!void</tt> and reaches its closing brace is treated as having succeeded, so
 <tt>main</tt> needs no <tt>return</tt> at the end. (<tt>main</tt> may also
 return plain <tt>void</tt> when it cannot fail; the manual uses <tt>!void</tt>
