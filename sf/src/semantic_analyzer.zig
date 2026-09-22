@@ -1981,19 +1981,29 @@ fn semanticAnalyzerResolveIfExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
         // Task 9B (b, m1240 ruling 3): a value `if` without `else` is rejected
         // unless the then-branch is void/noreturn or the condition is
         // comptime-known-true (Zig analyzes only the taken arm). A no-`else`
-        // `if` is typed `void`, so a value use is an error.
+        // `if` is typed `void`, so a value use is an error. A capture condition
+        // (`if (opt) |v| v`) is optional/error-union rather than bool, so the
+        // validity gate accepts either a bool condition (no capture) or an
+        // optional/error-union condition (capture); an invalid condition already
+        // got its error[3058] from the header and is not double-reported.
         if (then_type != type_mod.TYPE_VOID and then_type != type_mod.TYPE_NORETURN and then_type != @intCast(u32, 0) and then_type != type_mod.TYPE_UNDEFINED) {
             var iw_ok = semanticAnalyzerConditionIsComptimeTrue(self, node.child_0);
             if (!iw_ok) {
-                var iw_cond_bool = false;
+                var iw_has_capture = ast_mod.astStoreNodePayload(self.store, node_idx) != @intCast(u32, 0);
+                var iw_cond_valid = false;
                 var iw_ct = rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0);
                 if (iw_ct) |ct| {
                     if (ct != @intCast(u32, 0) and ct != type_mod.TYPE_VOID and ct != type_mod.TYPE_UNDEFINED) {
-                        if (self.registry.types_items[@intCast(usize, ct)].kind == type_mod.TypeKind.bool_type) { iw_cond_bool = true; }
+                        var iw_kind = self.registry.types_items[@intCast(usize, ct)].kind;
+                        if (iw_has_capture) {
+                            if (iw_kind == type_mod.TypeKind.optional_type or iw_kind == type_mod.TypeKind.error_union_type) { iw_cond_valid = true; }
+                        } else {
+                            if (iw_kind == type_mod.TypeKind.bool_type) { iw_cond_valid = true; }
+                        }
                     }
                 }
-                if (iw_cond_bool and diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) {
-                    var iw_msg: []const u8 = "if expression without 'else' must be of type 'void'";
+                if (iw_cond_valid and diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) {
+                    var iw_msg: []const u8 = "if expression without 'else' cannot be used as a value (its type is 'void')";
                     _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3059_IF_WITHOUT_ELSE)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), iw_msg);
                 }
             }

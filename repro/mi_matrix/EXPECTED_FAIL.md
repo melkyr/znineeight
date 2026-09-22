@@ -1,6 +1,6 @@
-# mi_matrix corpus — expected-fail manifest (v195 2026-09-22)
+# mi_matrix corpus — expected-fail manifest (v196 2026-09-22)
 
-## Task 9B — reject invalid condition / `if` forms (v194 -> v195 2026-09-22)
+## Task 9B — reject invalid condition / `if` forms (v194 -> v195 2026-09-22; fix round 1 v195 -> v196)
 
 **What.** Three shapes where zig1 silently ACCEPTED invalid Z98/Zig (all rejected by official
 Zig 0.15.2). **(a)** an assignment in a condition (`if (a = 3)`, `if (a += 1)`,
@@ -59,6 +59,24 @@ rewritten to document the new rejection.
 a value (`_ = if (c) foo();`) is accepted by the front end (correctly, per Zig) but the pre-existing
 lowering emits an undeclared temp (`gcc: 'zT_<n>' undeclared`); present in the pre-fix compiler
 too, so not a Task 9B regression. Documented in the Task 9B report.
+
+**Fix round 1 (v195 -> v196, review Important).** The `error[3059]` emission was gated on the
+condition's resolved kind being `bool_type`, but a **capture** condition (`if (o) |v| v`) is
+optional/error-union, so the gate suppressed the diagnostic and a value `if` without `else` was
+silently accepted (`fn f(o: ?i32) i32 { var x: i32 = if (o) |v| v; return x; }` → rc=0, emitted
+uncompilable C `incompatible types`; official Zig 0.15.2 rejects with `expected type 'i32', found
+'void'`). The gate now accepts a `bool` condition (no capture) **or** an optional/error-union
+condition (capture); an invalid condition still gets only its header `error[3058]` (no double
+report). The message is reworded to `"if expression without 'else' cannot be used as a value (its
+type is 'void')"`. `repro/mi_matrix/if_noelse_reject_xmod` gained a capture row (`capPick`) —
+now 5 `error[3059]`. Verified: valid capture `if` **with** `else` and void-then capture `if`
+still compile (rc=0). Fixed point **MOVED `c8f1a76a97e0fe385faf757d5c4015ba` →
+`efa91f8d7c000df51d5547b2628f6e9f`** (two-hop closure hop1==hop2); seed **v75 → v76** (archive
+md5 `884f00cd4b90a934253e8b3a14e4a8e6` → `d3df69da8b0c029e4373fef816c86ff4`; `gen/` 45 `.c` +
+46 `.h`, 9182817 bytes). Gates: 4-MD5 **UNCHANGED**; matrix 24/24; stdlib 214 PASS; corpus `-s0`
+**982 dirs = 862 OK / 42 GREEN / 78 FAIL / 0 ICE / 0 CRASH** with a join-diff vs the v75 compiler
+**zero movement** (the fix only changes the diagnostic decision for an invalid program; class
+stays FAIL); `check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK.
 
 ## Task 8B — lower `@as(<signed>, <negative>)` operands with the target type (v193 -> v194 2026-09-22)
 
