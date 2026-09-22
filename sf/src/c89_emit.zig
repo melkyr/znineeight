@@ -3970,10 +3970,10 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
         }
      }
      if (lir_fn.poison_uninit != @intCast(u8, 0)) {
-         var pi: usize = @intCast(usize, 0);
-         while (pi < lir_fn.hoisted_temps.len) : (pi += @intCast(usize, 1)) {
-             if (poison_arr[@intCast(usize, pi)] != @intCast(u8, 0)) {
-                 var ptd = lir_fn.hoisted_temps.items[pi];
+         var poison_i: usize = @intCast(usize, 0);
+         while (poison_i < lir_fn.hoisted_temps.len) : (poison_i += @intCast(usize, 1)) {
+             if (poison_arr[@intCast(usize, poison_i)] != @intCast(u8, 0)) {
+                 var ptd = lir_fn.hoisted_temps.items[poison_i];
                  var ptn = mangleTempName(emitter.interner, ptd.temp_id);
                  bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                  var pf0: []const u8 = "zig_poison_fill((void*)&";

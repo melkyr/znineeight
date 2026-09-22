@@ -1,4 +1,29 @@
-# mi_matrix corpus — expected-fail manifest (v188 2026-09-22)
+# mi_matrix corpus — expected-fail manifest (v189 2026-09-22)
+
+## Task 7M — de-shadow the compiler source's local-shadow sites (v188 -> v189 2026-09-22)
+
+Task 7C found **10 real function-local shadowing sites** in the compiler's own `sf/src` (all in `main.zig`'s self-compile import graph; test-only files such as `sf/src/tests/*` are excluded — `main.zig` does not import `test_main.zig`). Official Zig 0.15.2 rejects ALL shadowing of an outer identifier, so the shadow-rejection of Task 7D would break the self-compile. Per operator ruling **m1079**, this **M (migration)** task de-shadows them FIRST, so the migration is verified independently of the rejection. It is a **mechanical, semantics-preserving rename** with **no behavior change to the compiler's output on user programs**.
+
+**The 10 sites (each verified against current source; every reference within the inner binding's scope updated; the outer binding untouched):**
+
+| File | Inner binding | Renamed to | Shadows |
+|---|---|---|---|
+| `sf/src/parser.zig` | `:730` `var tok` | `arg_tok` | `:713` `var tok` |
+| `sf/src/lower.zig` | `:3338` `var rt` | `rt_lrb` | `:2539` `var rt` |
+| `sf/src/lower.zig` | `:4077` `var rt` | `rt_h` | `:2539` `var rt` |
+| `sf/src/lower.zig` | `:4164` `var rt` | `rt_d` | `:2539` `var rt` |
+| `sf/src/lower.zig` | `:4345` `var rt` | `rt_fold` | `:2539` `var rt` |
+| `sf/src/lower.zig` | `:4849` `var rt` | `rt_ret` | `:2539` `var rt` |
+| `sf/src/lower.zig` | `:4975` `var rt` | `rt_oe` | `:2539` `var rt` |
+| `sf/src/lower.zig` | `:5111` `var rt` | `rt_arr` | `:2539` `var rt` |
+| `sf/src/lower.zig` | `:4023` `var field_name_id` | `inner_field_name_id` | `:3981` `var field_name_id` |
+| `sf/src/c89_emit.zig` | `:3973` `var pi` | `poison_i` | `:3140` `var pi` |
+
+A brace-scope scanner over the self-compile graph found **no additional** local↔local shadows (and no local→container shadows in non-test `sf/src`), consistent with Task 7C §5.1.
+
+**Fixed point / seed.** The compiler's own emitted C changes (renamed locals), so the self-emission fixed point **MOVED `02c10559914a7a85704f7eca5c87bbff` → `b30033e88075b82243b5601ea3b1c38c`** (two-hop closure hop1 == hop2); seed **v68 → v69** (archive md5 `462dde37abb64c56292c8deb5f2439b1` → `bbaeab7c4a77e3d20342a5a0cfd78646`; `gen/` 45 `.c` + 46 `.h`, 9135064 bytes; round-trip verified hop1 == hop2 == `b30033e8…`).
+
+**Gates — zero user-program movement.** 4-MD5 emitted-C gates **UNCHANGED**: gol `e7bde571649a67291419ce57131a556a` / lisp `552d0a84fe54b9cb5ac07c7e30ba2137` / json `38b37bdd45798f6d752cd0aa334491e3` / mud `5a1cc65ef23f27d1c4c51f4516760c07`. Example matrix **24/24** dump/gcc. Std-lib runtime gate **211 PASS / 0 FAIL**. Corpus `-s0` **974 dirs = 868 OK / 42 GREEN / 64 FAIL / 0 ICE / 0 CRASH**; a full-classifier join-diff vs the pre-fix seed v68 compiler is **byte-identical (zero class movement)**. `check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK.
 
 ## Task 7B — enforce `const` assignment (v187 -> v188 2026-09-22)
 
