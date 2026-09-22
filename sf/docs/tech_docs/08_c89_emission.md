@@ -1,4 +1,4 @@
-# 08 — C89 Emission [updated: 2026-09-20 — refreshed against current source: added `emit_support.zig` (self-contained output dir + companion build scripts), packed/int-width/`volatile`/calling-convention and `-fsafe`/`-ffast` guard emission, emission-core compaction, and module pruning; documented the removed `@socket*` builtin emission; dropped line references and the 4-example evidence appendix]
+# 08 — C89 Emission [updated: 2026-09-22 — `getPrintFnName` gained an `f32_type` arm routing `f32` to the existing `std_print_f64` (Task 7F f32 print dispatch; the prototype widens `float`→`double`, no runtime change)] [updated: 2026-09-20 — refreshed against current source: added `emit_support.zig` (self-contained output dir + companion build scripts), packed/int-width/`volatile`/calling-convention and `-fsafe`/`-ffast` guard emission, emission-core compaction, and module pruning; documented the removed `@socket*` builtin emission; dropped line references and the 4-example evidence appendix]
 
 > Covers: `c89_emit.zig`, `name_mangler.zig`, `cinclude.zig`, `emit_support.zig`
 > Cross-ref: [INDEX.md](INDEX.md) §E (NameMangler, BufferedWriter data structures)
@@ -667,7 +667,7 @@ Resolves field access for `.assign_field`:
 | `getBinOpStr` | Maps binary op u8 → C operator string (+, -, *, /, %, &, \|, ^, <<, >>, ==, !=, <, <=, >, >=) |
 | `getUnOpStr` | Maps unary op u8 → C operator string (-, !, ~) |
 | `getCheckedCastFnName` | Maps TypeId → checked cast function name (std_checked_cast_i8/u8/i16/u16/i32/u32/i64/u64) |
-| `getPrintFnName` | Maps TypeId → print function name (std_print_u32/u64/i64/f64/bool/char/str) |
+| `getPrintFnName` | Maps TypeId → print function name (std_print_u32/u64/i64/f64/f32/bool/char/str). `f32_type` routes to `std_print_f64` (Task 7F) — the `float`→`double` widening is implicit via the `void std_print_f64(double)` prototype. |
 | `emitCStringLiteral` | Emits C string literal with escape sequences (\n, \t, \r, \\, \") |
 | `resolveTempName` | Resolve temp_id → C name. Checks local flat lookup first (fl_temps), falls back to mangleTempName |
 | `getTempTypeByIndex` | Find type_id for a temp_id by scanning hoisted_temps |

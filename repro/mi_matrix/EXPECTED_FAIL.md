@@ -1,4 +1,51 @@
-# mi_matrix corpus — expected-fail manifest (v192 2026-09-22)
+# mi_matrix corpus — expected-fail manifest (v193 2026-09-22)
+
+## Task 7F — print an `f32` correctly (v192 -> v193 2026-09-22)
+
+**What.** `getPrintFnName` (`sf/src/c89_emit.zig`) had explicit arms only for `u32`/`i32`/`i64`/
+`u64`/`f64`/`bool`/`u8`/`slice`; every other `TypeKind` fell through to the final
+`std_print_i32` default. An `f32` argument (C `float`) was therefore passed to a C function taking
+`int`, and C truncates `float`→`int` toward zero, so `1.5` printed `1`. The program was legal
+Z98/Zig, built cleanly, and produced **no diagnostic** — a silent miscompile (AMENDMENT 8; root
+cause + blast radius in the Task 7E investigation report).
+
+**Fix (approach (a), one line).** One arm next to the `f64_type` arm:
+
+```zig
+if (ty.kind == TypeKind.f32_type) { var s: []const u8 = "std_print_f64"; return s; }
+```
+
+No runtime change: `std_print_f64` is already declared/defined in every emitted program, and its
+in-scope `void std_print_f64(double val)` prototype widens `float`→`double` (C89 default-argument
+promotion would do the same), so the existing decimal printer runs on the widened value. The f64
+arm ignores `fmt`, so the new f32 arm does too: `{}`/`{d}` print decimal (Zig-matching), while
+`{x}` prints decimal (Zig prints hex-float `0x1.8p0`) and `{c}`/`{s}` print decimal (Zig rejects
+them) — pre-existing f64-arm limitations shared by f32, not regressions.
+
+**New fixture.** `repro/mi_matrix/stdlib_f32_print_xmod` (`main.zig` + `expected.txt` +
+`expected.rc`), pinned in `scripts/stdlib/expected_dirs.txt` (**211 → 212**). It pins `{}` and
+`{d}`, a negative (`-2.25`), a rounding value (`0.1`), an `@intToFloat`-computed value, and a wide
+value (`123456.75`); golden stdout is byte-exact 3×, `expected.rc = 0`. The pre-fix compiler prints
+`f32-default = 1` / `f32-neg = -2` (truncation); the fixed compiler prints the values above.
+Standalone `repro/f32_print.z98`.
+
+**Gate battery (all on the seed-built fixed compiler).** Self-compile two-hop closure
+**`3c55361afc2a898352379aa9a8bfff26`**; 4-MD5 emitted-C gates **UNCHANGED** (gol `e7bde571…` /
+lisp `552d0a84…` / json `38b37bdd…` / mud `5a1cc65e…`); example matrix **24/24**; std-lib runtime
+gate **212 PASS / 0 FAIL**; corpus `-s0` **977 dirs = 861 OK / 42 GREEN / 74 FAIL / 0 ICE / 0
+CRASH** with a full-classifier join-diff vs the pre-fix seed v72 compiler **byte-identical (zero
+movement)** — the only added dir is the new fixture (OK under both compilers, since the defect is a
+silent runtime misprint, not a build failure); `check_emit_support.sh` 7/7; `verify_upgraded.sh`
+CLOSEOUT OK. Fixed point **MOVED `e46810b5ec6327f7bdf5288836e55c51` →
+`3c55361afc2a898352379aa9a8bfff26`**; seed **v72 → v73** (archive md5
+`5ed3debdb199ceafe0117f45183b3a39` → `2c27579e32ee37c4661c5500305cd947`).
+
+**Residuals (NOT fixed; distinct root causes — a kind/width/signedness-aware dispatcher, a separate
+task).** The same fall-through mis-routes `usize` > `2^31-1`, arbitrary-width ints wider than 32
+bits (`u40`/`i40`), and wide-backed enums; it also drops `{x}`/`{c}` for kinds without a hex/char
+arm and accepts aggregate/pointer/function-value/error-set arguments (aggregates then fail at gcc
+with `incompatible type for argument 1 of 'std_print_i32'`; `error_set_type` silently prints its
+ordinal; array/pointer/function-value print silent garbage).
 
 ## Task 7D — reject local declaration shadowing (v190 -> v191 2026-09-22)
 

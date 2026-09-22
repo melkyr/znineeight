@@ -72,6 +72,7 @@ repro/mi_matrix/stdlib_enum_init_expr_xmod
 repro/mi_matrix/stdlib_errdefer_dyn_xmod
 repro/mi_matrix/stdlib_errdefer_xmod
 repro/mi_matrix/stdlib_eu_samepayload_xmod
+repro/mi_matrix/stdlib_f32_print_xmod
 repro/mi_matrix/stdlib_file_close_xmod
 repro/mi_matrix/stdlib_file_exists_xmod
 repro/mi_matrix/stdlib_file_flush_xmod

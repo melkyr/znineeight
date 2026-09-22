@@ -5491,6 +5491,7 @@ fn getPrintFnName(reg: *TypeRegistry, tid: u32, fmt: u8) []const u8 {
         { var s: []const u8 = "std_print_u64"; return s; }
     }
     if (ty.kind == TypeKind.f64_type) { var s: []const u8 = "std_print_f64"; return s; }
+    if (ty.kind == TypeKind.f32_type) { var s: []const u8 = "std_print_f64"; return s; }
     if (ty.kind == TypeKind.bool_type) { var s: []const u8 = "std_print_bool"; return s; }
     if (ty.kind == TypeKind.u8_type) {
         if (fmt == @intCast(u8, 'c')) { var s: []const u8 = "std_print_char"; return s; }
