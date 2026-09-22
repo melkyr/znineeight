@@ -9,7 +9,10 @@
 // EXPECTED (after the fix): every assignment below clean-rejects with
 // `error[3002]` ("cannot assign to immutable variable"), dump rc=2, 0 `.c`.
 // The canonical corpus classifier GREENs only `error[3000]`, so this dir
-// classifies FAIL (an expected reject; OK under the pre-fix compiler).
+// classifies FAIL. Under the pre-fix compiler the dump is rc=0 / 4 `.c` but the
+// emitted C is gcc-invalid (it mutates the never-emitted module `const G`), so
+// this dir classifies FAIL under both compilers — the fix is pinned by the
+// direct rc=2 / `error[3002]` evidence, not by a corpus class movement.
 //
 // Covered shapes (12 assignment sites):
 //   1. local `const` plain assignment          7. module `const S: []const T`
