@@ -33,6 +33,7 @@ repro/mi_matrix/stdlib_async_waitfor_settled_xmod
 repro/mi_matrix/stdlib_async_waitfor_unregistered_xmod
 repro/mi_matrix/stdlib_async_waitfor_xmod
 repro/mi_matrix/stdlib_as_float_guard_xmod
+repro/mi_matrix/stdlib_as_neg_operand_xmod
 repro/mi_matrix/stdlib_base64_decode_xmod
 repro/mi_matrix/stdlib_base64_decodedlen_xmod
 repro/mi_matrix/stdlib_base64_encode_xmod

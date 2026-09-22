@@ -1,4 +1,52 @@
-# mi_matrix corpus — expected-fail manifest (v193 2026-09-22)
+# mi_matrix corpus — expected-fail manifest (v194 2026-09-22)
+
+## Task 8B — lower `@as(<signed>, <negative>)` operands with the target type (v193 -> v194 2026-09-22)
+
+**What.** `@as(<signed>, <negative literal>)` used as a **binary operand** lost its signed
+target. `sf/src/lower.zig`'s `comptime_values` HIT path (the `builtin_call` arm in
+`lowerExprImpl`) recovered the folded constant's target type for `@intCast` only; `@as` fell
+through to the `TYPE_USIZE` default, so the folded constant was materialised as the unsigned
+64-bit literal `18446744073709551614ULL` (`0xFFFFFFFFFFFFFFFE`). As an operand that produced
+wrong values or a `-fsafe` trap: `v / @as(i32,-2)` printed `0` (Zig `-3`),
+`v + @as(i32,-2)` / `*` / `-` trapped rc 133, `@as(i32,7) > @as(i32,-2)` was `false` (Zig
+`true`), `v % @as(i32,-2)` printed `7` (Zig `1`), and the `i64` / `i8` / `i16` / `isize`
+operands were also wrong (only a direct print was accidentally correct, by C truncation). The
+program was legal Z98/Zig, built cleanly, and produced **no diagnostic** — a silent miscompile
+(AMENDMENT 10; root cause + blast radius in the Task 8A investigation report).
+
+**Fix (one condition + comment).** `@as` shares the `@intCast` AST layout
+`[target_type, value]` (Task 11U), so the target-recovery condition at `sf/src/lower.zig:4344`
+now accepts `self.as_name_id`:
+
+```zig
+if (node.child_0 == self.intcast_name_id or node.child_0 == self.as_name_id) {
+```
+
+The fold itself (`sf/src/comptime_eval.zig:358-413`) was already correct and is unchanged. The
+emitter's `.int_const` arm already renders a signed negative literal once the result temp
+carries a signed integer type (as `@intCast` proved).
+
+**New fixture.** `repro/mi_matrix/stdlib_as_neg_operand_xmod` (`main.zig` + `expected.txt` +
+`expected.rc`), pinned in `scripts/stdlib/expected_dirs.txt` (**212 → 213**). It pins **every
+signed width** (`i8` / `i16` / `i32` / `i64` / `isize`, operator ruling m1210) across `/`, `*`,
+`+`, `-`, `%`, and comparison operands, plus the positive/unsigned/direct-print/`const`/literal/
+non-fold/`@intCast` controls (over-correction guard). Every check is `@panic`-guarded; golden
+stdout is byte-exact 3× (`div=-3` … `done`), `expected.rc = 0`, and independently matched against
+official Zig 0.15.2. Standalone `repro/as_neg_operand.z98` (pre-fix: `div=0` then rc 133).
+
+**Gate battery (all on the seed-built fixed compiler).** Self-compile two-hop closure
+**`bea0a1c4c96140ced060d386fc99d145`**; 4-MD5 emitted-C gates **UNCHANGED** (gol `e7bde571…` /
+lisp `552d0a84…` / json `38b37bdd…` / mud `5a1cc65e…`); example matrix **24/24 dumps
+byte-identical** pre↔post; std-lib runtime gate **213 PASS / 0 FAIL**; corpus `-s0` **978 dirs =
+862 OK / 42 GREEN / 74 FAIL / 0 ICE / 0 CRASH** with a full-classifier join-diff vs the pre-fix
+seed v73 compiler **zero class movement** — the only added dir is the new fixture (OK under both
+compilers, since the defect is a silent runtime miscompile, not a build failure). **Emitted C is
+NOT byte-identical outside the new fixture** (per the Task 8A review): `noreturn_opt_ctx_xmod`
+(positive `@as(i32,0)` — the fix also drops a redundant temp) and `stdlib_comptime_cast64_range_xmod`
+(`@as(u64,5)`) dumps change while their class holds; `check_emit_support.sh` 7/7;
+`verify_upgraded.sh` CLOSEOUT OK. Fixed point **MOVED `3c55361afc2a898352379aa9a8bfff26` →
+`bea0a1c4c96140ced060d386fc99d145`** (two-hop closure hop1==hop2); seed **v73 → v74** (archive
+md5 `2c27579e32ee37c4661c5500305cd947` → `18e05ec36c7ba13bcc9aaf69d2ed3b8e`).
 
 ## Task 7F — print an `f32` correctly (v192 -> v193 2026-09-22)
 

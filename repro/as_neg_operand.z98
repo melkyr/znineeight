@@ -1,0 +1,72 @@
+// repro/as_neg_operand.z98 — standalone Task 8B reproduction.
+//
+// `@as(<signed>, <negative literal>)` used as a BINARY OPERAND lost its signed
+// target: `sf/src/lower.zig`'s `comptime_values` HIT path recovered the folded
+// constant's target type for `@intCast` only, so `@as(i32,-2)` fell through to
+// the `TYPE_USIZE` default and was materialised as the unsigned 64-bit literal
+// `18446744073709551614ULL`. As an operand that yielded wrong values or a
+// `-fsafe` overflow trap.
+//
+// FIX (Task 8B): accept `self.as_name_id` alongside `self.int_cast_name_id` at
+// `sf/src/lower.zig:4344`, so the folded `@as` result temp carries the target
+// type. The fold (`sf/src/comptime_eval.zig`) was already correct.
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   mkdir -p /tmp/as_neg_out
+//   <zig1> -o /tmp/as_neg_out repro/as_neg_operand.z98
+//   cd /tmp/as_neg_out && sh build_target.sh linux as_neg_operand && ./as_neg_operand
+//
+// EXPECTED (after the fix), rc=0 — matches official Zig 0.15.2:
+//   div=-3  mul=-14  add=5  sub=9  mod=1  cmp=true
+//   i8=5  i16=5  i64=5  isize=5
+//   ctrl-pos=9  ctrl-neg=5  ctrl-unsigned=9  ctrl-direct=-2
+//   ctrl-const=-3  ctrl-literal=-3  ctrl-nonfold=-3  ctrl-intcast=-3
+//   done
+//
+// DEFECT (before the fix): `div=0`, `mod=7`, `cmp=false`, and `mul`/`add`/
+// `sub`/`i8`/`i16`/`isize` trap (rc 133) under the default `-fsafe` mode.
+//
+// See repro/mi_matrix/stdlib_as_neg_operand_xmod for the pinned runtime golden.
+const std = @import("std");
+
+const K: i32 = -2;
+
+fn nonfold(x: i32) i32 {
+    return x;
+}
+
+pub fn main() void {
+    var v: i32 = 7;
+    var v8: i8 = 7;
+    var v16: i16 = 7;
+    var v64: i64 = 7;
+    var vis: isize = 7;
+    var w: i32 = -2;
+
+    std.io.print("div={d}\n", .{v / @as(i32, -2)});
+    std.io.print("mul={d}\n", .{v * @as(i32, -2)});
+    std.io.print("add={d}\n", .{v + @as(i32, -2)});
+    std.io.print("sub={d}\n", .{v - @as(i32, -2)});
+    std.io.print("mod={d}\n", .{v % @as(i32, -2)});
+    if (@as(i32, 7) > @as(i32, -2)) {
+        std.io.print("cmp=true\n", .{});
+    } else {
+        std.io.print("cmp=false\n", .{});
+    }
+
+    std.io.print("i8={d}\n", .{v8 + @as(i8, -2)});
+    std.io.print("i16={d}\n", .{v16 + @as(i16, -2)});
+    std.io.print("i64={d}\n", .{v64 + @as(i64, -2)});
+    std.io.print("isize={d}\n", .{vis + @as(isize, -2)});
+
+    std.io.print("ctrl-pos={d}\n", .{v + @as(i32, 2)});
+    std.io.print("ctrl-neg={d}\n", .{v + -@as(i32, 2)});
+    std.io.print("ctrl-unsigned={d}\n", .{v + @as(u32, 2)});
+    std.io.print("ctrl-direct={d}\n", .{@as(i32, -2)});
+    std.io.print("ctrl-const={d}\n", .{v / K});
+    std.io.print("ctrl-literal={d}\n", .{v / -2});
+    std.io.print("ctrl-nonfold={d}\n", .{v / @as(i32, nonfold(w))});
+    std.io.print("ctrl-intcast={d}\n", .{v / @intCast(i32, -2)});
+
+    std.io.print("done\n", .{});
+}

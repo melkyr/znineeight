@@ -4341,7 +4341,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             }
             if (hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node_idx)) |cv| {
                 var fold_ty_box: [1]u32 = [1]u32{ type_mod.TYPE_USIZE };
-                if (node.child_0 == self.intcast_name_id) {
+                // `@as` shares the `@intCast` AST layout `[target_type, value]`
+                // (Task 11U), so the folded constant must recover the same
+                // target type; otherwise a signed `@as` operand is materialised
+                // as the untyped/unsigned `TYPE_USIZE` constant (Task 8B).
+                if (node.child_0 == self.intcast_name_id or node.child_0 == self.as_name_id) {
                     var rt_fold = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
                     if (rt_fold) |t| {
                         if (t != type_mod.TYPE_USIZE and t != type_mod.TYPE_UNDEFINED and t != type_mod.TYPE_INT_LIT) {
