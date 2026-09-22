@@ -156,7 +156,7 @@ This approach maximizes performance on legacy hardware by minimizing the active 
 ### 3.1 Statements
 - `if (cond) statement else statement`: Braces are **optional** for `if` statement bodies. Single statements are normalized into synthetic blocks by the compiler.
   - **Capture**: `if (result) |payload| ...` supports capturing payloads from error unions and optional types.
-  - **Example**: `if (a) return 1; else return 0;`
+  - **Example**: `if (a) { return 1; } else { return 0; }` (the brace-less form `if (a) return 1; else return 0;` is rejected: a semicolon may not precede `else`; write the braces, or omit the semicolon as in `if (a) return 1 else return 0;`). The condition must be `bool`; an assignment is not an expression, so `if (a = 3)` is a parse error.
   - **Optional Capture**: `if (optional_val) |val| statement`. Unwraps the optional value if it is not null. `val` is immutable.
 - **If Expressions**: `if (cond) a else b`. Braces are NOT required for expressions. Must have an `else` branch. Result type is merged from both branches.
   - **Optional Capture**: `if (optional_val) |val| a else b`. Supported in expressions.

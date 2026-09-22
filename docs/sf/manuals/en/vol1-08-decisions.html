@@ -444,33 +444,41 @@ only way to write an <tt>if</tt> and <tt>else</tt> that each hold a full
 statement ending in a semicolon.
 </p>
 <p>
-<b>Using <tt>=</tt> where you meant <tt>==</tt>.</b> This is the one that does
-not announce itself. A single <tt>=</tt> is assignment; <tt>==</tt> is the
-question. The compiler accepts an assignment in the condition, performs it, and
-then tests the value it just stored, so the branch that runs is not the one you
-wrote:
+<b>Using <tt>=</tt> where you meant <tt>==</tt>.</b> A single <tt>=</tt> is
+assignment; <tt>==</tt> is the question. In Z98, assignment is a statement, not
+an expression, so it cannot appear inside a condition. This complete program
+does not compile:
 </p>
 <pre>
-var n: i32 = 7;
-if (n = 0) {
-    std.io.print("{} is zero\n", .{n});
-} else {
-    std.io.print("{} is not zero\n", .{n});
+const std = @import("std");
+
+pub fn main() void {
+    var n: i32 = 7;
+    if (n = 0) {
+        std.io.print("{} is zero\n", .{n});
+    } else {
+        std.io.print("{} is not zero\n", .{n});
+    }
 }
 </pre>
 <p>
-This compiles and runs, and prints:
+The parser stops at the <tt>=</tt> and reports:
 </p>
 <pre>
-0 is not zero
+assign_mistake.z98:5:10: error[2000]: expected ')' but found token
+    if (n = 0) {
+          ^
 </pre>
 <p>
-The message proves both halves of the trap. The <tt>=</tt> stored 0 into
-<tt>n</tt>, so the condition was false and the <tt>else</tt> branch ran; and the
-value printed is 0, because the assignment really happened. There is no
-diagnostic, because the program is not malformed; it is doing exactly what it
-says. When a condition misbehaves, check first that it says <tt>==</tt> and not
-<tt>=</tt>.
+The caret points at the <tt>=</tt>. The condition in the parentheses must be a
+complete expression, and an assignment is not one &mdash; the compiler will not
+quietly perform the assignment and then test the value it stored the way C does.
+A few follow-on <tt>error[2000]</tt> messages trail the first one as the parser
+recovers; the first is the one to fix. The same rule applies to every other
+condition: <tt>while (n = 0)</tt> and <tt>switch (n = 0)</tt> are rejected too,
+and so is a condition that is not a <tt>bool</tt> at all &mdash; <tt>if (n)</tt>
+with an integer <tt>n</tt> does not compile either. When a condition misbehaves,
+check first that it says <tt>==</tt> and not <tt>=</tt>.
 </p>
 
 <h2>Check yourself</h2>
