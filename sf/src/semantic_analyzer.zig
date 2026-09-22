@@ -57,6 +57,9 @@ pub const SemanticAnalyzer = struct {
     defer_label_len: usize,
     local_decl_names: [*]u32,
     local_decl_types: [*]u32,
+    // Task 7B: parallel constness bit (1 = immutable) for each registered
+    // local/param/capture; consulted by semanticAnalyzerIsLValueConst.
+    local_decl_consts: [*]u8,
     local_decl_count: usize,
     local_decl_cap: usize,
     // Task 2c-F: function-local `const` scope (variant (e)); reset per fn body.
@@ -215,6 +218,7 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .defer_label_len = @intCast(usize, 0),
         .local_decl_names = undefined,
         .local_decl_types = undefined,
+        .local_decl_consts = undefined,
         .local_decl_count = @intCast(usize, 0),
         .local_decl_cap = @intCast(usize, 0),
         .local_consts = type_resolver.localConstScopeInit(alloc),
@@ -472,17 +476,21 @@ fn semanticAnalyzerGrowLocalDecls(self: *SemanticAnalyzer) void {
     var new_cap: usize = if (self.local_decl_cap < @intCast(usize, 8)) @intCast(usize, 8) else self.local_decl_cap * @intCast(usize, 2);
     var raw_names = alloc_mod.sandAlloc(self.expected_type_stack_alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
     var raw_types = alloc_mod.sandAlloc(self.expected_type_stack_alloc, @intCast(usize, 4) * new_cap, @intCast(usize, 4)) catch unreachable;
+    var raw_consts = alloc_mod.sandAlloc(self.expected_type_stack_alloc, new_cap, @intCast(usize, 1)) catch unreachable;
     var ndst = @ptrCast([*]u32, raw_names);
     var tdst = @ptrCast([*]u32, raw_types);
+    var cdst = @ptrCast([*]u8, raw_consts);
     if (self.local_decl_count > @intCast(usize, 0)) {
         var ci: usize = 0;
         while (ci < self.local_decl_count) : (ci += 1) {
             ndst[ci] = self.local_decl_names[ci];
             tdst[ci] = self.local_decl_types[ci];
+            cdst[ci] = self.local_decl_consts[ci];
         }
     }
     self.local_decl_names = ndst;
     self.local_decl_types = tdst;
+    self.local_decl_consts = cdst;
     self.local_decl_cap = new_cap;
 }
 
@@ -494,6 +502,9 @@ fn registerLocalDecl(self: *SemanticAnalyzer, name_id: u32, type_id: u32) void {
     var sct_tm: []const u8 = "SCT:t"; pal_mod.markerWriteInt(sct_tm, type_id);
     self.local_decl_names[self.local_decl_count] = name_id;
     self.local_decl_types[self.local_decl_count] = type_id;
+    // Task 7B: every registerLocalDecl caller registers an if/while/switch
+    // capture, which is immutable (Z98 spec: all captures are immutable).
+    self.local_decl_consts[self.local_decl_count] = @intCast(u8, 1);
     self.local_decl_count += @intCast(usize, 1);
 }
 
@@ -2094,6 +2105,98 @@ fn semanticAnalyzerResolveStructInit(self: *SemanticAnalyzer, node_idx: u32) u32
     return type_mod.TYPE_VOID;
 }
 
+// Task 7B: is the l-value at `node_idx` immutable? Mirrors zig0's
+// `TypeChecker::isLValueConst` (src/bootstrap/type_checker.cpp:6470): an
+// identifier whose binding is const, a `*const T` deref, a `[]const T`/`*const
+// T` element, a const-array element (inherits the binding), a read-only
+// optional/tagged-union member, a const module member, or a paren wrapping any
+// of these. The l-value was already resolved by `semanticAnalyzerResolveAssign`
+// (every node/subexpression carries a resolved-type entry), so this predicate
+// only READS the resolved-type table and the symbol/local tables — it never
+// re-resolves, so an undeclared base keeps its single `error[3001]`.
+fn semanticAnalyzerIsLValueConst(self: *SemanticAnalyzer, node_idx: u32) bool {
+    if (node_idx == @intCast(u32, 0)) return false;
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    if (node.kind == AstKind.paren_expr) {
+        return semanticAnalyzerIsLValueConst(self, node.child_0);
+    }
+    if (node.kind == AstKind.ident_expr) {
+        var name_id = ast_mod.astStoreIdentifier(self.store, node_idx);
+        var li = self.local_decl_count;
+        while (li > @intCast(usize, 0)) {
+            li -= @intCast(usize, 1);
+            if (self.local_decl_names[li] == name_id) {
+                return self.local_decl_consts[li] != @intCast(u8, 0);
+            }
+        }
+        if (sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, name_id)) |s| {
+            if (s.kind == sym_mod.SymbolKind.global and s.decl_node != @intCast(u32, 0)) {
+                var dn = ast_mod.astStoreNodeAt(self.store, s.decl_node);
+                if (dn.kind == AstKind.var_decl) {
+                    return (s.flags & @intCast(u16, 1)) == @intCast(u16, 0);
+                }
+            }
+        }
+        return false;
+    }
+    if (node.kind == AstKind.deref) {
+        if (rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0)) |base_t| {
+            if (@intCast(usize, base_t) < self.registry.types_len) {
+                var bt = self.registry.types_items[@intCast(usize, base_t)];
+                if (bt.kind == type_mod.TypeKind.ptr_type or bt.kind == type_mod.TypeKind.many_ptr_type) {
+                    return (bt.flags & @intCast(u8, 1)) != @intCast(u8, 0);
+                }
+            }
+        }
+        return false;
+    }
+    if (node.kind == AstKind.index_access) {
+        if (rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0)) |base_t| {
+            if (@intCast(usize, base_t) < self.registry.types_len) {
+                var bt = self.registry.types_items[@intCast(usize, base_t)];
+                if (bt.kind == type_mod.TypeKind.slice_type or bt.kind == type_mod.TypeKind.ptr_type or bt.kind == type_mod.TypeKind.many_ptr_type) {
+                    return (bt.flags & @intCast(u8, 1)) != @intCast(u8, 0);
+                }
+                if (bt.kind == type_mod.TypeKind.array_type) {
+                    return semanticAnalyzerIsLValueConst(self, node.child_0);
+                }
+            }
+        }
+        return false;
+    }
+    if (node.kind == AstKind.field_access) {
+        var field_name_id = ast_mod.astStoreNodePayload(self.store, node_idx);
+        if (rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0)) |base_t| {
+            if (@intCast(usize, base_t) < self.registry.types_len) {
+                var bt = self.registry.types_items[@intCast(usize, base_t)];
+                // A write through a const pointer (`*const T`/`[*]const T`) is
+                // immutable; a mutable pointer's pointee is writable.
+                if (bt.kind == type_mod.TypeKind.ptr_type or bt.kind == type_mod.TypeKind.many_ptr_type) {
+                    return (bt.flags & @intCast(u8, 1)) != @intCast(u8, 0);
+                }
+                // A module member is const iff its `var_decl` is immutable.
+                // (Z98 supports `.tag`/optional-member writes on a mutable
+                // binding, so those are NOT special-cased here — the binding
+                // check below covers a const union/optional.)
+                if (bt.kind == type_mod.TypeKind.module_type) {
+                    if (sym_mod.symbolRegistryQualifiedLookup(self.symbols, bt.module_id, field_name_id)) |fs| {
+                        if (fs.kind == sym_mod.SymbolKind.global and fs.decl_node != @intCast(u32, 0)) {
+                            var fdn = ast_mod.astStoreNodeAt(self.store, fs.decl_node);
+                            if (fdn.kind == AstKind.var_decl) {
+                                return (fs.flags & @intCast(u16, 1)) == @intCast(u16, 0);
+                            }
+                        }
+                    }
+                    return false;
+                }
+            }
+        }
+        // A struct/union field write inherits the binding's constness.
+        return semanticAnalyzerIsLValueConst(self, node.child_0);
+    }
+    return false;
+}
+
 fn semanticAnalyzerResolveAssign(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var ase: []const u8 = "ASE"; pal_mod.markerWrite(ase);
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
@@ -2107,6 +2210,19 @@ fn semanticAnalyzerResolveAssign(self: *SemanticAnalyzer, node_idx: u32) u32 {
                 return type_mod.TYPE_VOID;
             }
         }
+    }
+    // Task 7B: reject assignment to an immutable l-value (const local/param/
+    // capture, module const, `*const T` deref, `[]const T` element). Mirrors
+    // zig0's TypeChecker::isLValueConst (src/bootstrap/type_checker.cpp:6470).
+    // `_ = expr;` is exempted above. Level 0 so the post-sema gate exits rc=2
+    // with 0 `.c`; code literal 3002 (the enum ordinal is 21 — do not use it).
+    if (semanticAnalyzerIsLValueConst(self, node.child_0)) {
+        var lv = ast_mod.astStoreNodeAt(self.store, node.child_0);
+        var csp: u32 = lv.span_start;
+        var cep = csp + @intCast(u32, lv.span_len);
+        var c_msg: []const u8 = "cannot assign to immutable variable";
+        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3002), self.source_file_id, csp, cep, c_msg);
+        return type_mod.TYPE_VOID;
     }
     pushExpectedType(self, lhs);
     var rhs = semanticAnalyzerResolveExpr(self, node.child_1);
@@ -2222,6 +2338,7 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
                             if (self.local_decl_count >= self.local_decl_cap) { semanticAnalyzerGrowLocalDecls(self); }
                             self.local_decl_names[self.local_decl_count] = cap_name;
                             self.local_decl_types[self.local_decl_count] = fe.type_id;
+                            self.local_decl_consts[self.local_decl_count] = @intCast(u8, 1);
                             self.local_decl_count += @intCast(usize, 1);
                             var scax_m: []const u8 = "SCAX:N"; pal_mod.markerWriteInt(scax_m, cap_name);
                             var scax_tm: []const u8 = "SCAX:T"; pal_mod.markerWriteInt(scax_tm, fe.type_id);
@@ -2650,6 +2767,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
             if (self.local_decl_count >= self.local_decl_cap) { semanticAnalyzerGrowLocalDecls(self); }
             self.local_decl_names[self.local_decl_count] = ast_mod.astStoreNodePayload(self.store, node.child_2);
             self.local_decl_types[self.local_decl_count] = if (catch_es != 0) catch_es else type_mod.TYPE_I32;
+            self.local_decl_consts[self.local_decl_count] = @intCast(u8, 1);
             self.local_decl_count += @intCast(usize, 1);
         }
         if (node.child_1 != @intCast(u32, 0)) {
@@ -2882,6 +3000,8 @@ pub fn semanticAnalyzerResolveFnBody(self: *SemanticAnalyzer, fn_decl_node: u32)
                     var rtm2: []const u8 = "RT:M\n"; pal_mod.markerWrite(rtm2);
                     self.local_decl_types[self.local_decl_count] = type_mod.TYPE_UNDEFINED;
                 }
+                // Task 7B: function parameters are immutable (Z98 spec).
+                self.local_decl_consts[self.local_decl_count] = @intCast(u8, 1);
                 self.local_decl_count += @intCast(usize, 1);
             }
         }
@@ -3133,7 +3253,7 @@ fn semanticAnalyzerResolveForHeader(self: *SemanticAnalyzer, node_idx: u32) void
             var fs_p_m: []const u8 = "FS:P"; pal_mod.markerWriteInt(fs_p_m, ast_mod.astStoreNodePayload(self.store, node_idx));
             var fs_e_m: []const u8 = "FS:E"; pal_mod.markerWriteInt(fs_e_m, elem_box[0]);
             if (self.local_decl_count >= self.local_decl_cap) { semanticAnalyzerGrowLocalDecls(self); }
-            self.local_decl_names[self.local_decl_count] = ast_mod.astStoreNodePayload(self.store, node_idx); self.local_decl_types[self.local_decl_count] = elem_box[0]; self.local_decl_count += @intCast(usize, 1);
+            self.local_decl_names[self.local_decl_count] = ast_mod.astStoreNodePayload(self.store, node_idx); self.local_decl_types[self.local_decl_count] = elem_box[0]; self.local_decl_consts[self.local_decl_count] = @intCast(u8, 1); self.local_decl_count += @intCast(usize, 1);
             var d4f_n: []const u8 = "D4F:N"; pal_mod.markerWriteInt(d4f_n, ast_mod.astStoreNodePayload(self.store, node_idx));
             var d4f_t: []const u8 = "D4F:T"; pal_mod.markerWriteInt(d4f_t, elem_box[0]);
         }
@@ -3142,7 +3262,7 @@ fn semanticAnalyzerResolveForHeader(self: *SemanticAnalyzer, node_idx: u32) void
     }
     if (node.child_2 != @intCast(u32, 0)) {
         if (self.local_decl_count >= self.local_decl_cap) { semanticAnalyzerGrowLocalDecls(self); }
-        self.local_decl_names[self.local_decl_count] = node.child_2; self.local_decl_types[self.local_decl_count] = type_mod.TYPE_USIZE; self.local_decl_count += @intCast(usize, 1);
+        self.local_decl_names[self.local_decl_count] = node.child_2; self.local_decl_types[self.local_decl_count] = type_mod.TYPE_USIZE; self.local_decl_consts[self.local_decl_count] = @intCast(u8, 1); self.local_decl_count += @intCast(usize, 1);
         var f2_m: []const u8 = "FIX2:LN"; pal_mod.markerWriteInt(f2_m, node.child_2);
     }
 }
@@ -3246,6 +3366,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                             }
                             self.local_decl_names[self.local_decl_count] = ast_mod.astStoreNodePayload(self.store, node_idx);
                             self.local_decl_types[self.local_decl_count] = decl_type;
+                            self.local_decl_consts[self.local_decl_count] = @intCast(u8, 1);
                             self.local_decl_count += @intCast(usize, 1);
                         }
                     } else {
@@ -3400,6 +3521,8 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
             if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED)) {
             self.local_decl_names[self.local_decl_count] = ast_mod.astStoreNodePayload(self.store, node_idx);
             self.local_decl_types[self.local_decl_count] = decl_type;
+            // Task 7B: a local `const` binding is immutable (AST flags bit 0 = mutable).
+            self.local_decl_consts[self.local_decl_count] = if ((node.flags & @intCast(u8, 1)) == @intCast(u8, 0)) @intCast(u8, 1) else @intCast(u8, 0);
             self.local_decl_count += @intCast(usize, 1);
             var ck: u64 = @intCast(u64, self.module_id) * @intCast(u64, 4294967296) + @intCast(u64, ast_mod.astStoreNodePayload(self.store, node_idx));
             type_mod.nameCachePut(self.registry, ck, decl_type);

@@ -875,6 +875,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `semanticAnalyzerMaybeDiagVolatileDrop` | semantic_analyzer.zig |
 | `semanticAnalyzerMaybeGateAliasDecl` | semantic_analyzer.zig |
 | `semanticAnalyzerPackedFieldTypeAllowed` | semantic_analyzer.zig |
+| `semanticAnalyzerIsLValueConst` | semantic_analyzer.zig |
 | `semanticAnalyzerPackedStructDeclForType` | semantic_analyzer.zig |
 | `semanticAnalyzerPtrCastDropsVolatile` | semantic_analyzer.zig |
 | `semanticAnalyzerResolveArithmetic` | semantic_analyzer.zig |

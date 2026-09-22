@@ -1,4 +1,4 @@
-# 09 — Pipeline Orchestration [updated: 2026-09-22 — Task 6F: an undeclared identifier now emits `error[3001]` (code 20) in `phase_SemanticAnalysis` (`semanticAnalyzerResolveIdent`); the post-sema `hasErrors` gate (`main.zig:370-373`, after `phase_SemanticAnalysis` and before `phase_StaticAnalyzers`) prints all diagnostics and exits rc=2 with 0 `.c`, so the program never reaches `phase_LIRLowering`] [updated: 2026-09-22 — Task 6D: the same post-`phase_LIRLowering` `hasErrors` gate turns the new lowering-emitted `error[3056]` (a call whose callee is not a function) into rc=2 with 0 `.c`] [updated: 2026-09-22 — Task 6B: the post-`phase_LIRLowering` `hasErrors` gate is what turns a lowering-emitted `error[3042]` (an undefined member of a nested module, `std.io.<name>`) into rc=2 with 0 `.c`; the fix lives in `lower.zig`, not here] [updated: 2026-09-21 — Task 11J: `phase_TypeResolution` now calls `type_resolver.enumReevaluateAll` after `typeResolverResolve` and before `classifyTypeEmissionGroups`] [updated: 2026-09-20 — refreshed against current source: added `phase_FrontResolution`/`phase_AsyncFrameSize`, `-fsafe`/`-ffast` and target/output flags, self-contained output-dir orchestration, and the tooling mains; line references and dated evidence removed]
+# 09 — Pipeline Orchestration [updated: 2026-09-22 — Task 7B: assignment to an immutable l-value emits level-0 `error[3002]` in `phase_SemanticAnalysis` (`semanticAnalyzerResolveAssign` + `semanticAnalyzerIsLValueConst`); the post-sema `hasErrors` gate prints it and exits rc=2 with 0 `.c`] [updated: 2026-09-22 — Task 6F: an undeclared identifier now emits `error[3001]` (code 20) in `phase_SemanticAnalysis` (`semanticAnalyzerResolveIdent`); the post-sema `hasErrors` gate (`main.zig:370-373`, after `phase_SemanticAnalysis` and before `phase_StaticAnalyzers`) prints all diagnostics and exits rc=2 with 0 `.c`, so the program never reaches `phase_LIRLowering`] [updated: 2026-09-22 — Task 6D: the same post-`phase_LIRLowering` `hasErrors` gate turns the new lowering-emitted `error[3056]` (a call whose callee is not a function) into rc=2 with 0 `.c`] [updated: 2026-09-22 — Task 6B: the post-`phase_LIRLowering` `hasErrors` gate is what turns a lowering-emitted `error[3042]` (an undefined member of a nested module, `std.io.<name>`) into rc=2 with 0 `.c`; the fix lives in `lower.zig`, not here] [updated: 2026-09-21 — Task 11J: `phase_TypeResolution` now calls `type_resolver.enumReevaluateAll` after `typeResolverResolve` and before `classifyTypeEmissionGroups`] [updated: 2026-09-20 — refreshed against current source: added `phase_FrontResolution`/`phase_AsyncFrameSize`, `-fsafe`/`-ffast` and target/output flags, self-contained output-dir orchestration, and the tooling mains; line references and dated evidence removed]
 
 > Covers: `main.zig`, `main_dump.zig`, `main_exp.zig`, `strip_main.zig`
 
@@ -307,6 +307,14 @@ identifier now emits `error[3001]` (numeric code 20) from `semanticAnalyzerResol
 0 `.c`. Because it is caught here — before `phase_LIRLowering` — an undeclared-identifier callee
 never reaches the Task 6D variant-C `error[3056]` path or the Task 6B `error[3042]` path (both
 unchanged for their own shapes).
+
+**Semantic-analysis-emitted `error[3002]`** `[added: 2026-09-22 — Task 7B]`. Assignment to an
+immutable l-value now emits level-0 `error[3002]` "cannot assign to immutable variable" from
+`semanticAnalyzerResolveAssign` (via `semanticAnalyzerIsLValueConst`) during
+`phase_SemanticAnalysis`; the same **post-sema** `hasErrors` gate prints all diagnostics and exits 2
+with 0 `.c`, before `phase_LIRLowering`. The numeric literal `3002` is passed to
+`diagnosticCollectorAdd` (the `ERR_3002_INVALID_ASSIGNMENT` enum ordinal is 21, so the enum value is
+NOT used — matching the hardcoded `3000` at the type-mismatch sites).
 
 ### `--track-memory` output
 
