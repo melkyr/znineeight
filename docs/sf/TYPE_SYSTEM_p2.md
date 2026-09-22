@@ -1354,6 +1354,8 @@ fn resolveFnCall(self: *SemanticAnalyzer, node: AstNode, node_idx: u32) !TypeId 
 }
 ```
 
+**Implementation note (Task 6D, 2026-09-22).** The shipped implementation emits this rejection as `error[3056]: expression is not callable` (`ERR_3056_CALL_TARGET_NOT_CALLABLE`) from the **LIR lowering** generic call path (on the lowered callee temp), not from `semanticAnalyzerResolveFnCall`. The resolved-type check cannot cover a flat non-pub module member (`io.INVALID_FD()` where `const io = @import("std_io.zig")`), whose sema type is `TYPE_VOID`; the lowered callee temp does. The `resolveFnCall` non-`fn_type` branch still returns `TYPE_VOID`; the diagnostic code/placement is the only divergence from this snippet.
+
 #### Try Expression
 
 ```zig

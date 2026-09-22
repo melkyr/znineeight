@@ -1,0 +1,36 @@
+// nonfn_member_call.z98 — standalone reproduction for the Task 6D fix.
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   <zig1> -o /tmp/nonfn_member_call repro/nonfn_member_call.z98
+//
+// EXPECTED (after the fix): dump rc=2, 0 `.c`,
+//   error[3056]: expression is not callable
+//
+// DEFECT (before the fix): a call whose callee is a defined non-function value
+// was never checked for callability. `sf/src/lower.zig`'s generic `fn_call`
+// path lowered the callee as a VALUE and emitted an indirect `LirInst.call`
+// without verifying the callee temp was callable. For `std.io.INVALID_FD`
+// (a `usize` const) the emitted C was `(void)zG_CC81CC5F_INVALID_FD();`, which
+// gcc rejects (`called object ... is not a function`). rc=0, no diagnostic.
+//
+// The gap was GENERAL: a local `const x: u32 = 5; x();`, a `bool`/struct/enum
+// value called, and a flat non-pub module member (`const io =
+// @import("std_io.zig"); io.INVALID_FD();`) all emitted invalid C on the same
+// path.
+//
+// FIX (Task 6D, variant C): after `callee_temp = lowerExpr(...)` the generic
+// call path inspects the lowered callee temp's type. A type that is neither a
+// `fn_type` nor a pointer to a `fn_type` (and is not `TYPE_VOID`/
+// `TYPE_UNDEFINED`, so the Task 6B undefined-member `error[3042]` path is
+// preserved) emits `error[3056]: expression is not callable`, rc=2, 0 `.c`.
+//
+// Valid function calls and function-pointer calls are unchanged; the nested
+// undefined-member case still gives `error[3042]`. See
+// repro/mi_matrix/nonfn_member_call_reject_xmod and its siblings, the positive
+// control repro/mi_matrix/stdlib_nested_mod_call_xmod, and
+// repro/mi_matrix/fn_ptr_local_bare.
+const std = @import("std");
+
+pub fn main() void {
+    std.io.INVALID_FD();
+}

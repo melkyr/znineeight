@@ -4210,6 +4210,35 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         }
         var a3pnl: []const u8 = " "; pal.markerWrite(a3pnl);
         var callee_temp = lowerExpr(self, node.child_0);
+        // Task 6D: a call whose callee lowered to a non-function value is not
+        // callable. `TYPE_VOID`/`TYPE_UNDEFINED` are skipped so the undefined
+        // member path keeps its `error[3042]` diagnostic (Task 6B).
+        var ct_ty = type_mod.TYPE_UNDEFINED;
+        if (callee_temp != TEMP_NONE and @intCast(usize, callee_temp) < self.hoisted_temps.len) {
+            ct_ty = getTempType(self, callee_temp);
+        }
+        if (ct_ty != type_mod.TYPE_VOID and ct_ty != type_mod.TYPE_UNDEFINED and
+            @intCast(usize, ct_ty) < self.ctx.registry.types_len) {
+            var cty = self.ctx.registry.types_items[@intCast(usize, ct_ty)];
+            var ct_callable: u8 = @intCast(u8, 0);
+            if (cty.kind == type_mod.TypeKind.fn_type) {
+                ct_callable = @intCast(u8, 1);
+            } else if (cty.kind == type_mod.TypeKind.ptr_type) {
+                var ctpp = self.ctx.registry.ptr_items[@intCast(usize, cty.payload_idx)];
+                if (@intCast(usize, ctpp.base) < self.ctx.registry.types_len) {
+                    if (self.ctx.registry.types_items[@intCast(usize, ctpp.base)].kind == type_mod.TypeKind.fn_type) {
+                        ct_callable = @intCast(u8, 1);
+                    }
+                }
+            }
+            if (ct_callable == @intCast(u8, 0)) {
+                var ct_msg: []const u8 = "expression is not callable";
+                _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, 3056),
+                    @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), ct_msg);
+                var ct_dummy = nextTemp(self, type_mod.TYPE_VOID);
+                return ct_dummy;
+            }
+        }
         var args_start = self.temp_counter;
         var ai2: usize = 0;
         while (ai2 < ec_n) : (ai2 += 1) { _ = nextTemp(self, type_mod.TYPE_UNDEFINED); }

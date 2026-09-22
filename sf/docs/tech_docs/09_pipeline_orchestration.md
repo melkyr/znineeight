@@ -1,4 +1,4 @@
-# 09 — Pipeline Orchestration [updated: 2026-09-22 — Task 6B: the post-`phase_LIRLowering` `hasErrors` gate is what turns a lowering-emitted `error[3042]` (an undefined member of a nested module, `std.io.<name>`) into rc=2 with 0 `.c`; the fix lives in `lower.zig`, not here] [updated: 2026-09-21 — Task 11J: `phase_TypeResolution` now calls `type_resolver.enumReevaluateAll` after `typeResolverResolve` and before `classifyTypeEmissionGroups`] [updated: 2026-09-20 — refreshed against current source: added `phase_FrontResolution`/`phase_AsyncFrameSize`, `-fsafe`/`-ffast` and target/output flags, self-contained output-dir orchestration, and the tooling mains; line references and dated evidence removed]
+# 09 — Pipeline Orchestration [updated: 2026-09-22 — Task 6D: the same post-`phase_LIRLowering` `hasErrors` gate turns the new lowering-emitted `error[3056]` (a call whose callee is not a function) into rc=2 with 0 `.c`] [updated: 2026-09-22 — Task 6B: the post-`phase_LIRLowering` `hasErrors` gate is what turns a lowering-emitted `error[3042]` (an undefined member of a nested module, `std.io.<name>`) into rc=2 with 0 `.c`; the fix lives in `lower.zig`, not here] [updated: 2026-09-21 — Task 11J: `phase_TypeResolution` now calls `type_resolver.enumReevaluateAll` after `typeResolverResolve` and before `classifyTypeEmissionGroups`] [updated: 2026-09-20 — refreshed against current source: added `phase_FrontResolution`/`phase_AsyncFrameSize`, `-fsafe`/`-ffast` and target/output flags, self-contained output-dir orchestration, and the tooling mains; line references and dated evidence removed]
 
 > Covers: `main.zig`, `main_dump.zig`, `main_exp.zig`, `strip_main.zig`
 
@@ -295,7 +295,10 @@ expression in field access`, emitted by `lower.zig` when a callee base is a modu
 They are collected in the same `DiagnosticCollector` and caught by the `hasErrors` gate after phase
 9 → `pal.exit(2)` with 0 `.c`. Task 6B relies on this path: an unresolvable nested-module member
 call (`std.io.printt(...)`) now falls through to the generic call path, which emits `error[3042]`
-(+ `warning[3023]`), so it exits 2 with 0 `.c` instead of silently returning temp 0.
+(+ `warning[3023]`), so it exits 2 with 0 `.c` instead of silently returning temp 0. Task 6D adds a
+second lowering-emitted diagnostic on the same gate: `error[3056]: expression is not callable`, when
+the generic call path's lowered callee temp is not a function (nor a pointer to one), so a
+non-callable call also exits 2 with 0 `.c`.
 
 ### `--track-memory` output
 

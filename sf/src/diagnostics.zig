@@ -95,6 +95,10 @@ pub const ErrorCode = enum(u16) {
     // enum-member reference), or two members share a tag value. Never a silent
     // auto-increment fallback.
     ERR_3055_ENUM_VALUE_NOT_CONSTANT = 3055,
+    // Task 6D: a call whose callee is not a function (neither a `fn` value nor a
+    // pointer to one). Emitted by the lowering generic call path when the lowered
+    // callee temp's type is not callable; the program rejects with 0 `.c`.
+    ERR_3056_CALL_TARGET_NOT_CALLABLE = 3056,
 };
 
 pub const ERR_1000_UNTERMINATED_STRING: u16 = 0;
