@@ -1,4 +1,16 @@
-# mi_matrix corpus — expected-fail manifest (v189 2026-09-22)
+# mi_matrix corpus — expected-fail manifest (v190 2026-09-22)
+
+## Task 7M fix round 1 — de-shadow `if`-capture sites (v189 -> v190 2026-09-22)
+
+Review found the first Task 7M commit incomplete. **12 `if`-capture sites** in `sf/src/lower.zig` (same function `lowerExprImpl`) remained: `:2716`, `:2741`, `:2759`, `:2777`, `:2798`, `:2821`, `:2837`, `:2853`, `:2868`, `:2883`, `:2898`, `:2915` — each is a `var rtype: u32 = if (res) |rt| rt else type_mod.TYPE_U32;` whose `if`-capture `rt` shadows the function-level `var rt` at `:2539`. Official Zig 0.15.2 rejects this exact pattern, and Task 7D will guard `if`-capture registration, so 7D would have rejected these and broken the self-compile — the exact failure Task 7M exists to prevent.
+
+**Fix (mechanical, semantics-preserving).** Each capture binding `|rt|` was renamed to `|rrt|` (its single use `rt` in the same arm updated); the outer `:2539` binding was not touched. One additional in-scope reference was found and fixed: `sf/src/lower.zig:3402` `if (rt) |rtt|` is inside the scope of the inner `var rt` renamed to `rt_lrb` at `:3338`, so it was updated to `if (rt_lrb) |rtt|` (it previously bound the outer `:2539` only by coincidence — identical initializers).
+
+**Verification.** A brace-scope scanner (comments/strings/char-literals stripped; `var`/`const` declarations AND `|name|` captures) over the non-test `sf/src` self-compile graph now reports **zero** local↔local or capture shadows (only the `extern_c_z98.zig:2` `_` discard false positive). The same scanner run against the previous commit correctly flags exactly the 12 capture sites, confirming coverage.
+
+**Fixed point / seed.** The self-emission fixed point **MOVED `b30033e88075b82243b5601ea3b1c38c` → `5c4d6eb627944dd4c5e0ff68a1089f43`** (two-hop closure hop1 == hop2); seed **v69 → v70** (archive md5 `bbaeab7c4a77e3d20342a5a0cfd78646` → `dd805c837557235f5fc5dd576282555e`; `gen/` 45 `.c` + 46 `.h`, 9134766 bytes; round-trip verified hop1 == hop2 == `5c4d6eb6…`).
+
+**Gates — zero user-program movement.** 4-MD5 emitted-C gates **UNCHANGED**: gol `e7bde571649a67291419ce57131a556a` / lisp `552d0a84fe54b9cb5ac07c7e30ba2137` / json `38b37bdd45798f6d752cd0aa334491e3` / mud `5a1cc65ef23f27d1c4c51f4516760c07`. Example matrix **24/24** dump/gcc. Std-lib runtime gate **211 PASS / 0 FAIL**. Corpus `-s0` **974 dirs = 868 OK / 42 GREEN / 64 FAIL / 0 ICE / 0 CRASH**; a full-classifier join-diff vs both the pre-fix seed v69 and the original seed v68 is **byte-identical (zero class movement)**. `check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK.
 
 ## Task 7M — de-shadow the compiler source's local-shadow sites (v188 -> v189 2026-09-22)
 

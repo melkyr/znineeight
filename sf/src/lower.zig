@@ -2713,7 +2713,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return @intCast(u32, 0);
     } else if (node.kind == AstKind.add) {
         var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        var rtype: u32 = if (res) |rt| rt else type_mod.TYPE_U32;
+        var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
         if (hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node_idx)) |cv| {
             var ft: u32 = rtype;
             if (rtype == type_mod.TYPE_INT_LIT or rtype == type_mod.TYPE_UNDEFINED) { ft = type_mod.TYPE_I32; }
@@ -2738,7 +2738,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return tid;
     } else if (node.kind == AstKind.sub) {
         var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        var rtype: u32 = if (res) |rt| rt else type_mod.TYPE_U32;
+        var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
         if (hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node_idx)) |cv| {
             var ft: u32 = rtype;
             if (rtype == type_mod.TYPE_INT_LIT or rtype == type_mod.TYPE_UNDEFINED) { ft = type_mod.TYPE_I32; }
@@ -2756,7 +2756,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return tid;
     } else if (node.kind == AstKind.mul) {
         var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        var rtype: u32 = if (res) |rt| rt else type_mod.TYPE_U32;
+        var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
         if (hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node_idx)) |cv| {
             var ft: u32 = rtype;
             if (rtype == type_mod.TYPE_INT_LIT or rtype == type_mod.TYPE_UNDEFINED) { ft = type_mod.TYPE_I32; }
@@ -2774,7 +2774,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return tid;
     } else if (node.kind == AstKind.wrap_add or node.kind == AstKind.wrap_sub or node.kind == AstKind.wrap_mul) {
         var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        var rtype: u32 = if (res) |rt| rt else type_mod.TYPE_U32;
+        var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
         if (hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node_idx)) |cv| {
             var ft: u32 = rtype;
             if (rtype == type_mod.TYPE_INT_LIT or rtype == type_mod.TYPE_UNDEFINED) { ft = type_mod.TYPE_I32; }
@@ -2795,7 +2795,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return tid;
     } else if (node.kind == AstKind.sat_add or node.kind == AstKind.sat_sub or node.kind == AstKind.sat_mul or node.kind == AstKind.sat_shl) {
         var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        var rtype: u32 = if (res) |rt| rt else type_mod.TYPE_U32;
+        var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
         if (hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node_idx)) |cv| {
             var ft: u32 = rtype;
             if (rtype == type_mod.TYPE_INT_LIT or rtype == type_mod.TYPE_UNDEFINED) { ft = type_mod.TYPE_I32; }
@@ -2818,7 +2818,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return tid;
     } else if (node.kind == AstKind.div) {
         var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        var rtype: u32 = if (res) |rt| rt else type_mod.TYPE_U32;
+        var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
         if (hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node_idx)) |cv| {
             var ft: u32 = rtype;
             if (rtype == type_mod.TYPE_INT_LIT or rtype == type_mod.TYPE_UNDEFINED) { ft = type_mod.TYPE_I32; }
@@ -2834,7 +2834,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return tid;
     } else if (node.kind == AstKind.mod_op) {
         var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        var rtype: u32 = if (res) |rt| rt else type_mod.TYPE_U32;
+        var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
         if (hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node_idx)) |cv| {
             var ft: u32 = rtype;
             if (rtype == type_mod.TYPE_INT_LIT or rtype == type_mod.TYPE_UNDEFINED) { ft = type_mod.TYPE_I32; }
@@ -2850,7 +2850,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return tid;
     } else if (node.kind == AstKind.bit_and) {
         var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        var rtype: u32 = if (res) |rt| rt else type_mod.TYPE_U32;
+        var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
         if (hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node_idx)) |cv| {
             var ft: u32 = rtype;
             if (rtype == type_mod.TYPE_INT_LIT or rtype == type_mod.TYPE_UNDEFINED) { ft = type_mod.TYPE_I32; }
@@ -2865,7 +2865,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return tid;
     } else if (node.kind == AstKind.bit_or) {
         var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        var rtype: u32 = if (res) |rt| rt else type_mod.TYPE_U32;
+        var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
         if (hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node_idx)) |cv| {
             var ft: u32 = rtype;
             if (rtype == type_mod.TYPE_INT_LIT or rtype == type_mod.TYPE_UNDEFINED) { ft = type_mod.TYPE_I32; }
@@ -2880,7 +2880,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return tid;
     } else if (node.kind == AstKind.bit_xor) {
         var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        var rtype: u32 = if (res) |rt| rt else type_mod.TYPE_U32;
+        var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
         if (hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node_idx)) |cv| {
             var ft: u32 = rtype;
             if (rtype == type_mod.TYPE_INT_LIT or rtype == type_mod.TYPE_UNDEFINED) { ft = type_mod.TYPE_I32; }
@@ -2895,7 +2895,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return tid;
     } else if (node.kind == AstKind.shl) {
         var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        var rtype: u32 = if (res) |rt| rt else type_mod.TYPE_U32;
+        var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
         if (hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node_idx)) |cv| {
             var ft: u32 = rtype;
             if (rtype == type_mod.TYPE_INT_LIT or rtype == type_mod.TYPE_UNDEFINED) { ft = type_mod.TYPE_I32; }
@@ -2912,7 +2912,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return tid;
     } else if (node.kind == AstKind.shr) {
         var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        var rtype: u32 = if (res) |rt| rt else type_mod.TYPE_U32;
+        var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
         if (hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node_idx)) |cv| {
             var ft: u32 = rtype;
             if (rtype == type_mod.TYPE_INT_LIT or rtype == type_mod.TYPE_UNDEFINED) { ft = type_mod.TYPE_I32; }
@@ -3399,7 +3399,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var tpp_kb: [10]u8 = undefined; var tpp_kl = itoa_mod.itoa(@intCast(u32, arr_kind), tpp_kb[0..]); var tpp_ks: usize = @intCast(usize, 9) - @intCast(usize, tpp_kl); pal.markerWrite(tpp_kb[tpp_ks..@intCast(usize, 9)]);
             var tpp_tm: []const u8 = "t"; pal.markerWrite(tpp_tm);
             var tpp_tb: [10]u8 = undefined; var tpp_tl = itoa_mod.itoa(arr_tid, tpp_tb[0..]); var tpp_ts: usize = @intCast(usize, 9) - @intCast(usize, tpp_tl); pal.markerWrite(tpp_tb[tpp_ts..@intCast(usize, 9)]);
-            if (rt) |rtt| {
+            if (rt_lrb) |rtt| {
                 self.hoisted_temps.items[@intCast(usize, arr_temp)].type_id = rtt;
                 var hot_m: []const u8 = "HOT:a"; pal.markerWrite(hot_m);
                 var hot_ab: [10]u8 = undefined; var hot_al = itoa_mod.itoa(arr_temp, hot_ab[0..]); var hot_as: usize = @intCast(usize, 9) - @intCast(usize, hot_al); pal.markerWrite(hot_ab[hot_as..@intCast(usize, 9)]);
