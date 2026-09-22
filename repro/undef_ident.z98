@@ -1,0 +1,8 @@
+// repro/undef_ident.z98 — standalone Task 6F repro (variant S).
+//
+// An undeclared identifier must clean-reject (rc=2, 0 `.c`, `error[20]`) rather
+// than silently resolving to `TYPE_VOID` and emitting uncompilable C. Run:
+//   sf/build/out_release/zig1 --dump-c89 repro/undef_ident.z98
+pub fn main() void {
+    nope();
+}

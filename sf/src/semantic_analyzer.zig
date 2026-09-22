@@ -567,6 +567,15 @@ pub fn semanticAnalyzerResolveIdent(self: *SemanticAnalyzer, module_id: u32, nam
     var idm: []const u8 = "IDT:"; pal_mod.markerWrite(idm);
     var idnb: [10]u8 = undefined; var idnl = itoa_mod.itoa(name_id, idnb[0..]); var idns: usize = @intCast(usize, 9) - @intCast(usize, idnl); pal_mod.markerWrite(idnb[idns..@intCast(usize, 9)]);
     var idc: []const u8 = ":VOID\n"; pal_mod.markerWrite(idc);
+    var uin = ast_mod.astStoreNodeAt(self.store, node_idx);
+    var uisp: u32 = uin.span_start;
+    var uiep = uisp + @intCast(u32, uin.span_len);
+    var uinm = interner_mod.stringInternerGet(self.interner, name_id);
+    var ui1: []const u8 = "identifier '";
+    var ui2: []const u8 = "' is not declared or imported in this module";
+    var uiparts: [3][]const u8 = [3][]const u8{ ui1, uinm, ui2 };
+    var uimsg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &uiparts[0], @intCast(u32, 3));
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3001_UNDEFINED_SYMBOL)), self.source_file_id, uisp, uiep, uimsg);
     return type_mod.TYPE_VOID;
 }
 
@@ -718,14 +727,6 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                 return type_mod.TYPE_VOID;
             }
         } else if (base_rt == type_mod.TYPE_VOID) {
-            var uisp: u32 = base_node.span_start;
-            var uiep = uisp + @intCast(u32, base_node.span_len);
-            var uinm = interner_mod.stringInternerGet(self.interner, base_ident_id);
-            var ui1: []const u8 = "identifier '";
-            var ui2: []const u8 = "' is not declared or imported in this module";
-            var uiparts: [3][]const u8 = [3][]const u8{ui1, uinm, ui2};
-            var uimsg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &uiparts[0], @intCast(u32, 3));
-            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3001_UNDEFINED_SYMBOL)), self.source_file_id, uisp, uiep, uimsg);
             rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
             return type_mod.TYPE_VOID;
         }
