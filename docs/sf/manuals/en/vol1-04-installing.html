@@ -80,7 +80,10 @@ working compiler in a folder of your choosing.
 </p>
 <p>
 What you end up with is a compiler binary and a standard library folder beside
-it. Nothing is placed on the system <tt>PATH</tt> and nothing is registered with
+it. The compiler looks for that folder beside itself, so no extra option is
+needed to find it; a library kept somewhere else can be named with
+<tt>-I &lt;dir&gt;</tt>, but the manual always keeps it beside the compiler.
+Nothing is placed on the system <tt>PATH</tt> and nothing is registered with
 the operating system. You run the compiler by naming its path. That is
 deliberate: this manual is a disk you carry, not a system you modify.
 </p>
@@ -108,7 +111,7 @@ successful run ends like this:
 </p>
 <pre>
 ...
-[seed] two-hop closure OK: hop1 == hop2 == 5d792f50cea61b9ef09fbd353c4557b0
+[seed] two-hop closure OK: hop1 == hop2 == 17a476d2543c2ca9dcf0d7e7cb09ba01
 === [seed] Done: /tmp/manual_seed ===
 </pre>
 <p>
@@ -197,10 +200,9 @@ full path.
 <p><i>Figure 4. Unpacking the toolchain on Windows 98.</i></p>
 <p>
 The confirmation is the same test as on Linux: run <tt>zig1.exe</tt> with no
-arguments and it prints its usage. One thing differs from Linux: the compiler
-does not find its <tt>lib</tt> folder on its own, so name it when you build a
-program that imports <tt>std</tt>, as in
-<tt>zig1.exe -I lib -osw -o out hello.z98</tt>. The companion
+arguments and it prints its usage. As on Linux, the compiler finds the standard
+library in the <tt>lib</tt> folder beside it, so a program that imports
+<tt>std</tt> builds with no extra option. The companion
 <tt>src/build_owc.bat</tt>, run from inside the emitted tree, then compiles the
 Windows-target C89 and links a console program. The bundled example builds there
 the same way and prints the same line as on Linux.
