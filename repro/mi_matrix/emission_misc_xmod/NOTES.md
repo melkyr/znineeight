@@ -1,5 +1,10 @@
 # emission_misc_xmod — RED fixture for the 194-closeout `misc` class (R6, 5 errors)
 
+> **Task 7D (2026-09-22) — re-baselined OK → FAIL (intentional Zig-matching reject).** The inner
+> `var fb` shadows an outer local `var fb` (official Zig 0.15.2: "local variable 'fb' shadows local
+> variable from outer scope"). Task 7D now emits `error[3057]` (rc=2, 0 `.c`). Deliberate corpus
+> movement, not a regression.
+
 Task R6 (2026-08-22). Branch `zig1_start`. Compiler under test: `/tmp/fx_subfolder/zig1`
 (current; R tasks have not rebuilt it). Build recipe identical to the other emission_*_xmod
 fixtures: emit with `--dump-c89 --output-dir`, compile emitted C with

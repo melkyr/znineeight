@@ -1,5 +1,13 @@
 # parsergap_shadow_local_xmod — Task R4 exploration notes
 
+> **Task 7D (2026-09-22) — REVERSED INTENT: this fixture is now an intentional REJECT (OK → FAIL).**
+> The block-local `var x` below shadows the outer local `var x`, which official Zig 0.15.2 rejects
+> ("local variable 'x' shadows local variable from outer scope"). Task 7D adds the Zig-matching
+> shadow rejection, so this fixture now clean-rejects with `error[3057]` at the inner declaration
+> (rc=2, 0 `.c`) instead of printing `21`. This deliberately reverses the earlier "shadowing is
+> valid" intent recorded below (the old text is kept for history). See `repro/mi_matrix/shadow_reject_xmod`
+> (one site per supported form) and the positive control `repro/mi_matrix/shadow_ok_xmod`.
+
 Root cause under test: local-decl scan (LDS, `sf/src/lower.zig` ~2066-2086) forward-scans and
 breaks on the FIRST/outermost match with no scope filter, vs `findLocalTemp`
 (lower.zig ~1188-1196) backward-scans + scope-filters.

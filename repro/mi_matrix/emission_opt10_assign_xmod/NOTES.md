@@ -1,5 +1,10 @@
 # emission_opt10_assign_xmod — RED fixture for the residual Opt_10 assign class (unsigned int ← Opt_10)
 
+> **Task 7D (2026-09-22) — re-baselined OK → FAIL (intentional Zig-matching reject).** The `if` capture
+> `|rt|` shadows the outer local `var rt` (official Zig 0.15.2: "capture 'rt' shadows local variable
+> from outer scope"). Task 7D now emits `error[3057]` (rc=2, 0 `.c`). Deliberate corpus movement, not
+> a regression.
+
 Task R-R1 (2026-08-24), R2/R1 self-compile closeout plan. Compiler under test:
 `/tmp/fx_subfolder/zig1`. This is the last residual R1 error — the self-compile re-count after
 F-R2 (array-.len) + F-ORELSEBLK (orelse-block) is exactly **1** (`incompatible types … unsigned int

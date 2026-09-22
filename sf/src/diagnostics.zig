@@ -99,6 +99,14 @@ pub const ErrorCode = enum(u16) {
     // pointer to one). Emitted by the lowering generic call path when the lowered
     // callee temp's type is not callable; the program rejects with 0 `.c`.
     ERR_3056_CALL_TARGET_NOT_CALLABLE = 3056,
+    // Task 7D: a function-local declaration (local const/var, parameter, if/while/
+    // for capture, switch-prong capture, catch payload, or function-local named
+    // type) reuses an identifier already declared in a strictly-enclosing or the
+    // same scope, or shadows a container-level declaration (global/function/type
+    // alias/import) in the current module. Matches official Zig 0.15.2
+    // ("never allowed to shadow identifiers from an outer scope"). Level 0, span
+    // on the shadowing declaration; rejects with 0 `.c`.
+    ERR_3057_LOCAL_SHADOW = 3057,
 };
 
 pub const ERR_1000_UNTERMINATED_STRING: u16 = 0;

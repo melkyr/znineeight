@@ -1,5 +1,11 @@
 # Capture Rename Edge-Case RED Repro
 
+> **Task 7D (2026-09-22) — re-baselined OK → FAIL (intentional Zig-matching reject).**
+> CASE 5 (`var err_shadow` + `catch |err_shadow|` in the same block) is a same-scope
+> redeclaration, which official Zig 0.15.2 rejects ("redeclaration of local ..."). Task 7D now
+> emits `error[3057]` there (rc=2, 0 `.c`), so the whole fixture clean-rejects. Deliberate corpus
+> movement, not a regression.
+
 Commit: (to be filled after commit)
 Status: RED - Case 2 catch same-name same-type produces wrong output
 

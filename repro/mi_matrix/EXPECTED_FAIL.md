@@ -1,4 +1,87 @@
-# mi_matrix corpus — expected-fail manifest (v190 2026-09-22)
+# mi_matrix corpus — expected-fail manifest (v191 2026-09-22)
+
+## Task 7D — reject local declaration shadowing (v190 -> v191 2026-09-22)
+
+**What.** Task 7D makes the compiler reject function-local declaration shadowing, matching official
+Zig 0.15.2 ("Variable identifiers are never allowed to shadow identifiers from an outer scope").
+Scope 1 = FULL Zig fidelity: shadowing of an identifier from ANY outer scope is rejected, including
+function-local -> container/module. The new diagnostic is the dedicated **`error[3057]`**
+(`ERR_3057_LOCAL_SHADOW`, level 0, span on the shadowing declaration) in `sf/src/diagnostics.zig`.
+
+**Implementation (`sf/src/semantic_analyzer.zig` only).**
+- Re-applied the reverted `fa553205` block-scoped local-decl machinery: the stmt walker pushes a
+  scope-pop marker (`0x80000000 | saved_depth`) for blocks and for `if`/`while`/`for` statements
+  (captures are registered before the marker, so they are popped after the branches/body); the
+  switch-expr drain loop pops per prong; the `catch` payload is popped after resolving the handler
+  synchronously.
+- **Extended beyond 7C:** expression-position scopes are now popped too — `if_expr` and `orelse_expr`
+  in `semanticAnalyzerResolveExpr`, plus the expression-position `block` arm (which drains any
+  statement work its trailing child deferred BEFORE restoring, so an `if`/`while`/`for` used as a
+  block's last child still sees the block's locals). 7C listed expression-position captures as a
+  residual; without this the compiler's own `sf/src` produced 10 **false** `error[3057]`s (a leaked
+  `if_expr` capture / `orelse`-body local re-encountered later).
+- Added `semanticAnalyzerCheckLocalShadow(name_id, span_start, span_end)` and call it immediately
+  before every local-registration site: local `const`/`var`, function parameters, `if`/`while`/`for`
+  captures, switch-prong captures, `catch` payloads, and function-local named types. It scans the
+  scope-truncated local table newest-first (a hit = strictly-enclosing or same-scope declaration),
+  then rejects a container-level symbol (`global`/`function`/`type_alias`/`module`) in the current
+  module. `_` (the discard) is exempt.
+
+**Key finding (corrects 7C §5.1).** The 10 predicted `sf/src` local-shadow sites were **not** real
+shadows — they were cascades of leaked expression-position scopes. With expression-position scoping
+in place the self-compile passes with **no `sf/src` de-shadowing** (unlike 7C's estimate). The
+compiler's own source was already de-shadowed by Task 7M for the genuine local/capture sites.
+
+**Non-forms (residuals, per 7C §6):** `else |e|` payload captures (unparseable in Z98 ->
+`error[2000]`) and nested `fn` (unsupported -> `error[3020]`) are not enforced.
+
+**New fixtures + repro.**
+- `repro/mi_matrix/shadow_reject_xmod/main.zig` — one site per supported form (inner `const`/`var`
+  shadow both directions, same-scope redeclare, local-shadows-param, param-shadows-container, local
+  shadows container `const`/`var`/`fn`/type, `if`/`while`/`for` capture shadow, switch-prong capture
+  shadow, `catch` payload shadow). **14 `error[3057]` diagnostics, one per site**; rc=2, 0 `.c`; FAIL.
+- `repro/mi_matrix/shadow_ok_xmod/main.zig` — positive runtime control (sibling-block reuse,
+  inner-before-outer declaration, distinct capture names across sibling constructs, `_` re-binding,
+  read-only capture). rc=0; deterministic golden stdout `123499565611567` + newline; OK.
+- `repro/shadow_local.z98` — standalone reproduction (rc=2, 0 `.c`, 3 `error[3057]`).
+
+**Blast radius (corpus `-s0`).** The corpus is **976 dirs = 860 OK / 42 GREEN / 74 FAIL / 0 ICE /
+0 CRASH** (pre-fix seed v70: 976 = 869 OK / 42 GREEN / 65 FAIL). The full-classifier join-diff vs
+the pre-fix seed v70 compiler moves **exactly 9 dirs, every one an OK -> FAIL deliberate Zig-matching
+shadow reject**, each confirmed illegal by the official 0.15.2 oracle (`build-obj -fno-emit-bin`):
+
+| dir | site | oracle diagnostic |
+|---|---|---|
+| `repro/mi_matrix/parsergap_shadow_local_xmod` | block `var x` shadows outer `var x` | `local variable 'x' shadows local variable from outer scope` |
+| `repro/capture_rename` | `var err_shadow` + `catch |err_shadow|` same block | `redeclaration of local ...` |
+| `repro/mi_matrix/emission_capture_control_xmod` | `for |s|` capture + local `var s` | `local variable 's' shadows capture from outer scope` |
+| `repro/mi_matrix/emission_sibling_payload_ifcap_xmod` | `if |s|` capture + local `var s` | same |
+| `repro/mi_matrix/emission_sibling_payload_scale_xmod` | switch-prong `|s|` capture + local `var s` | same |
+| `repro/mi_matrix/emission_sibling_payload_catchcap_xmod` | `catch |e|` payload + local `var e` | same |
+| `repro/mi_matrix/emission_sibling_payload_nestedarm_xmod` | nested prong `|s|` shadows prong `|s|` | `capture 's' shadows capture from outer scope` |
+| `repro/mi_matrix/emission_misc_xmod` | inner `var fb` shadows outer `var fb` | `local variable 'fb' shadows local variable from outer scope` |
+| `repro/mi_matrix/emission_opt10_assign_xmod` | `if |rt|` capture shadows local `var rt` | `capture 'rt' shadows local variable from outer scope` |
+
+`repro/mi_matrix/emission_conflation_control_xmod` (sibling `if`/`else` branch blocks reusing `ck`)
+is **legal** Zig and stays **OK** — it exposed an expression-position scope leak during development
+that the block-arm drain fixed. `parsergap_shadow_local_xmod` deliberately reverses the earlier
+"shadowing is valid" intent (its NOTES.md now says so).
+
+**Examples de-shadowed (mechanical, semantics-preserving).** The example matrix's `rogue_mud` and
+`rogue_mud_upgraded` had block-local `var i` shadows of the function-level `var i`:
+`examples/z98/rogue_mud/main.zig:159,185`, `examples/z98/rogue_mud_upgraded/main.zig:116,142`, and
+`examples/z98/rogue_mud_upgraded/demo/net_main.zig:116,142`. The inner bindings were renamed
+`sel_i` (fd-set loop) and `acc_i` (accept loop) with every reference in scope updated; the outer
+`var i` is untouched. The `examples/zig0/` copies are not in any gate and were left as-is.
+
+**Fixed point / seed.** The self-emission fixed point **MOVED `5c4d6eb627944dd4c5e0ff68a1089f43`
+-> `e5ba7d74a78536683d2633c4655e027e`** (two-hop closure hop1 == hop2); seed **v70 -> v71** (archive
+md5 `dd805c837557235f5fc5dd576282555e` -> `fae87bb36b621b07642d4db57a8c7212`).
+
+**Gates.** 4-MD5 emitted-C gates **UNCHANGED**: gol `e7bde571649a67291419ce57131a556a` / lisp
+`552d0a84fe54b9cb5ac07c7e30ba2137` / json `38b37bdd45798f6d752cd0aa334491e3` / mud
+`5a1cc65ef23f27d1c4c51f4516760c07`. Example matrix **24/24** dump/gcc. Std-lib runtime gate
+**211 PASS / 0 FAIL**. `check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK.
 
 ## Task 7M fix round 1 — de-shadow `if`-capture sites (v189 -> v190 2026-09-22)
 

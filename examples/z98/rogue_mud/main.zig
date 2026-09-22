@@ -156,11 +156,11 @@ pub fn main() !void {
             net_mod.fdSet(server.listen_socket, @ptrCast(*u8, &read_fds));
             if (server.listen_socket > max_fd) max_fd = server.listen_socket;
 
-            var i: usize = 0;
-            while (i < @intCast(usize, 5)) : (i += 1) {
-                if (server.clients[i].active) {
-                    net_mod.fdSet(server.clients[i].socket, @ptrCast(*u8, &read_fds));
-                    if (server.clients[i].socket > max_fd) max_fd = server.clients[i].socket;
+            var sel_i: usize = 0;
+            while (sel_i < @intCast(usize, 5)) : (sel_i += 1) {
+                if (server.clients[sel_i].active) {
+                    net_mod.fdSet(server.clients[sel_i].socket, @ptrCast(*u8, &read_fds));
+                    if (server.clients[sel_i].socket > max_fd) max_fd = server.clients[sel_i].socket;
                 }
             }
         }
@@ -182,9 +182,9 @@ pub fn main() !void {
             const client_sock = net_mod.accept(server.listen_socket);
             if (client_sock >= 0) {
                 var found = false;
-                var i: usize = 0;
-                while (i < @intCast(usize, 5)) : (i += 1) {
-                    if (!server.clients[i].active) {
+                var acc_i: usize = 0;
+                while (acc_i < @intCast(usize, 5)) : (acc_i += 1) {
+                    if (!server.clients[acc_i].active) {
                         // Create a new entity for this player
                         const first_room = dungeon.rooms[0];
                         const px = room_mod.Room_centerX(first_room);
@@ -193,7 +193,7 @@ pub fn main() !void {
                         p_typ_2 = .Player;
                         combat_mod.addEntity(&dungeon, p_typ_2, px, py, 20);
 
-                        server.clients[i] = net_mod.Client {
+                        server.clients[acc_i] = net_mod.Client {
                             .socket = client_sock,
                             .active = true,
                             .entity_idx = dungeon.entity_count - 1,
