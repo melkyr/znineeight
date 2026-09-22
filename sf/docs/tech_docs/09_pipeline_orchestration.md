@@ -1,4 +1,4 @@
-# 09 — Pipeline Orchestration [updated: 2026-09-21 — Task 11J: `phase_TypeResolution` now calls `type_resolver.enumReevaluateAll` after `typeResolverResolve` and before `classifyTypeEmissionGroups`] [updated: 2026-09-20 — refreshed against current source: added `phase_FrontResolution`/`phase_AsyncFrameSize`, `-fsafe`/`-ffast` and target/output flags, self-contained output-dir orchestration, and the tooling mains; line references and dated evidence removed]
+# 09 — Pipeline Orchestration [updated: 2026-09-22 — Task 6B: the post-`phase_LIRLowering` `hasErrors` gate is what turns a lowering-emitted `error[3042]` (an undefined member of a nested module, `std.io.<name>`) into rc=2 with 0 `.c`; the fix lives in `lower.zig`, not here] [updated: 2026-09-21 — Task 11J: `phase_TypeResolution` now calls `type_resolver.enumReevaluateAll` after `typeResolverResolve` and before `classifyTypeEmissionGroups`] [updated: 2026-09-20 — refreshed against current source: added `phase_FrontResolution`/`phase_AsyncFrameSize`, `-fsafe`/`-ffast` and target/output flags, self-contained output-dir orchestration, and the tooling mains; line references and dated evidence removed]
 
 > Covers: `main.zig`, `main_dump.zig`, `main_exp.zig`, `strip_main.zig`
 
@@ -288,6 +288,14 @@ phases 2 and 3 (it owns `suspending_fns`; see 12).
 diagnostics. The root input file uses a separate pre-phase check with exit **1** (the I/O/usage
 class, matching `main_dump.zig`). The 1-vs-2 split is deliberate; both calls use the
 `pal.exit(code)` convention.
+
+**Lowering-emitted diagnostics** `[updated: 2026-09-22 — Task 6B]`. Some diagnostics are emitted
+during `phase_LIRLowering` rather than by the semantic analyzer (e.g. `error[3042]: non-value base
+expression in field access`, emitted by `lower.zig` when a callee base is a module used as a value).
+They are collected in the same `DiagnosticCollector` and caught by the `hasErrors` gate after phase
+9 → `pal.exit(2)` with 0 `.c`. Task 6B relies on this path: an unresolvable nested-module member
+call (`std.io.printt(...)`) now falls through to the generic call path, which emits `error[3042]`
+(+ `warning[3023]`), so it exits 2 with 0 `.c` instead of silently returning temp 0.
 
 ### `--track-memory` output
 

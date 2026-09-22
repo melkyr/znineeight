@@ -3980,18 +3980,19 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             if (base_node.kind == AstKind.ident_expr or base_node.kind == @enumToInt(AstKind.field_access)) {
             var field_name_id: u32 = ast_mod.astStoreNodePayload(store, node.child_0);
             var base_node_idx: u32 = callee_node.child_0;
+            var chain_valid: u8 = @intCast(u8, 1);
             if (base_node.kind == @enumToInt(AstKind.field_access)) {
                     var chain: [4]u32 = undefined;
                     var chain_len: u32 = @intCast(u32, 0);
                     chain[@intCast(usize, chain_len)] = ast_mod.astStoreNodePayload(store, node.child_0); chain_len += @intCast(u32, 1);
                     var cw = base_node;
                     var cw_idx: u32 = callee_node.child_0;
-                    while (cw.kind == @enumToInt(AstKind.field_access)) {
+                    while (cw.kind == @enumToInt(AstKind.field_access) and chain_len < @intCast(u32, 4)) {
                         chain[@intCast(usize, chain_len)] = ast_mod.astStoreNodePayload(store, cw_idx); chain_len += @intCast(u32, 1);
                         cw_idx = cw.child_0;
                         cw = ast_mod.astStoreNodeAt(store, cw_idx);
                     }
-                    if (cw.kind != @enumToInt(AstKind.ident_expr)) { return @intCast(u32, 0); }
+                    if (cw.kind != @enumToInt(AstKind.ident_expr)) { chain_valid = @intCast(u8, 0); }
                     base_node = cw;
                     base_node_idx = cw_idx;
                     field_name_id = chain[@intCast(usize, 0)];
@@ -4002,11 +4003,12 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         var cf = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, cmod, chain[@intCast(usize, ci)]);
                         if (cf) |cfs| {
                             if (cfs.module_id != @intCast(u32, 0)) { cmod = cfs.module_id; }
-                            else { return @intCast(u32, 0); }
-                        } else { return @intCast(u32, 0); }
+                            else { chain_valid = @intCast(u8, 0); break; }
+                        } else { chain_valid = @intCast(u8, 0); break; }
                     }
                     var chain_ok: []const u8 = "CHAIN:r\n"; pal.markerWrite(chain_ok);
                 }
+                if (chain_valid == @intCast(u8, 1)) {
                 var base_name_id = ast_mod.astStoreIdentifier(store, base_node_idx);
                 var sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, base_name_id);
                 if (sym) |sm| {
@@ -4100,6 +4102,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         } else { var a3m: []const u8 = "DZ1:NF"; pal.markerWrite(a3m); var a3mb: [10]u8 = undefined; var a3ml = itoa_mod.itoa(field_name_id, a3mb[0..]); var a3ms: usize = @intCast(usize, 9) - @intCast(usize, a3ml); pal.markerWrite(a3mb[a3ms..@intCast(usize, 9)]); var a3mns: []const u8 = " "; pal.markerWrite(a3mns); }
                     } else { var dz1_fail: []const u8 = "DZ1:MSKIP\n"; pal.markerWrite(dz1_fail); }
                 } else { var a3b: []const u8 = "F3aBn"; pal.markerWrite(a3b); var a3bb: [10]u8 = undefined; var a3bl = itoa_mod.itoa(base_name_id, a3bb[0..]); var a3bs: usize = @intCast(usize, 9) - @intCast(usize, a3bl); pal.markerWrite(a3bb[a3bs..@intCast(usize, 9)]); var a3bns: []const u8 = " "; pal.markerWrite(a3bns); }
+                }
             }
         } else if (callee_node.kind == @enumToInt(AstKind.ident_expr)) {
             var callee_name_id = ast_mod.astStoreIdentifier(store, node.child_0);

@@ -114,6 +114,7 @@ repro/mi_matrix/stdlib_map_oom_xmod
 repro/mi_matrix/stdlib_map_stress_xmod
 repro/mi_matrix/stdlib_math_xmod
 repro/mi_matrix/stdlib_mem_xmod
+repro/mi_matrix/stdlib_nested_mod_call_xmod
 repro/mi_matrix/stdlib_net_nonblocking_stress_xmod
 repro/mi_matrix/stdlib_net_recvnonblocking_close_xmod
 repro/mi_matrix/stdlib_net_recvnonblocking_wouldblock_xmod

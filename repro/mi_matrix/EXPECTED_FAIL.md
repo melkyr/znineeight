@@ -1,4 +1,16 @@
-# mi_matrix corpus — expected-fail manifest (v184 2026-09-22)
+# mi_matrix corpus — expected-fail manifest (v185 2026-09-22)
+
+## Task 6B — reject a call to an undefined member of a nested module (v184 -> v185 2026-09-22)
+
+A call to an undefined member of a **nested** module (`std.io.printt("y\n")`) is invalid Zig (official Zig: `error: root source file struct 'std' has no member named 'printt'`), but Z98 compiled it **rc=0 with no diagnostic** and the call was **silently dropped from the emitted C** — the typo changed program behaviour. The flat base `std.nope()` was already correctly rejected (`error[3042]`).
+
+**Root cause (Task 6A).** `sf/src/lower.zig`'s `fn_call` field-access callee path (`:3984-4007`) early-`return`ed temp 0 when the nested-module chain walk failed, bypassing the generic call path (`:4193`) that lowers the callee as a value and emits the existing `error[3042]` + `warning[3023]` with 0 `.c`. A secondary latent defect in the same block: the `chain: [4]u32` buffer overran for a base with >=4 field-access levels (`std.io.a.b.c.d()`, `chain_len` reaches 5) — an out-of-bounds stack write (observed benign).
+
+**Fix (`sf/src/lower.zig` only).** Declare `var chain_valid: u8 = 1;`; bound the chain walk (`while (... and chain_len < 4)`); at every failure point set `chain_valid = 0` (breaking out of the lookup loop for the two in-loop sites) instead of `return 0`; guard the direct cross-module handling with `if (chain_valid == 1) { ... }` so a failed chain falls through to the generic call path. A valid nested call resolves to a `fn_type` at the top of `fn_call` (`:3834`) and never reaches this block, so no valid program's emission changes.
+
+**New fixtures (3 dirs + 1 standalone).** Reject controls `repro/mi_matrix/nested_mod_undef_member_reject_xmod` (`std.io.printt`, `error[3042]`/0 `.c`) + `nested_mod_deep_chain_reject_xmod` (`std.io.a.b.c.d()`, the chain-bound guard; `error[3042]`/0 `.c`) — both class **FAIL** (the canonical classifier GREENs only `error[3000]`). Positive runtime control `repro/mi_matrix/stdlib_nested_mod_call_xmod` (valid nested `std.io.print`/`printInt`; `@panic`-guarded; deterministic stdout `nested-ok` / `int=42` / `done`, rc 0; golden md5 `3ddec145fd468d69e7cb36e04cbf8919`) — class **OK** under both compilers, so the fix cannot over-reject. Standalone `repro/nested_mod_undef_member.z98`. Stdlib pin **210 -> 211**.
+
+**Gates (seed-built fixed-point compiler `845165786674f82870abea053616d0d2`).** Self-compile two-hop closure hop1 == hop2 == `84516578…`; self-emission rc=0, 48 `.c`, 0 `error[...]`, 0 PANIC. 4-MD5 emitted-C gates **UNCHANGED**: gol `e7bde571649a67291419ce57131a556a` / lisp `552d0a84fe54b9cb5ac07c7e30ba2137` / json `38b37bdd45798f6d752cd0aa334491e3` / mud `5a1cc65ef23f27d1c4c51f4516760c07`. Example matrix **24/24** dump/gcc/link. Std-lib runtime gate **211 PASS / 0 FAIL**. Corpus `-s0` **955 dirs = 867 OK / 42 GREEN / 46 FAIL / 0 ICE / 0 CRASH** (v184 952 → 955: the 3 new fixture dirs); a full-classifier join-diff vs the pre-fix seed v64 compiler moves EXACTLY `nested_mod_undef_member_reject_xmod` + `nested_mod_deep_chain_reject_xmod` (OK→FAIL) — **zero other pre-existing class movement**. `check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK. Fixed point **MOVED `17a476d2543c2ca9dcf0d7e7cb09ba01` -> `845165786674f82870abea053616d0d2`**; seed **v64 -> v65** (archive md5 `0abd7af67a38bb26d92953245e32944e` -> `2f2ba33a3239a1b004e9e242b0c01e3b`).
 
 ## Task 5B — win32 default-lib-path lookup: `pal.fileExists` → `pal.dirExists` (v183 -> v184 2026-09-22)
 

@@ -1,0 +1,33 @@
+// nested_mod_undef_member.z98 — standalone reproduction for the Task 6B fix.
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   <zig1> -o /tmp/nested_mod_undef_member repro/nested_mod_undef_member.z98
+//
+// EXPECTED (after the fix): dump rc=2, 0 `.c`,
+//   error[3042]: non-value base expression in field access
+//   warning[3023]: module used as value expression
+// — exact parity with the flat base `std.nope()`.
+//
+// DEFECT (before the fix): a call to an undefined member of a nested module was
+// silently dropped. `sf/src/lower.zig`'s `fn_call` nested-chain block
+// (`:3984-4007`) early-returned temp 0 when the chain walk failed, bypassing
+// the generic call path that diagnoses the flat case. So `std.io.printt("y\n")`
+// compiled rc=0 with no diagnostic and the call was absent from the emitted C
+// (the typo silently changed program behaviour).
+//
+// FIX (Task 6B): an unresolvable nested chain now sets `chain_valid = 0` and
+// falls through to the generic call path, which lowers the callee as a value
+// and emits the existing `error[3042]` (+ `warning[3023]`), rc=2, 0 `.c`.
+// Official Zig rejects a call to a nonexistent member of a nested module too
+// (`error: root source file struct 'std' has no member named 'printt'`).
+//
+// A valid nested call (`std.io.print`) still emits and runs; see
+// repro/mi_matrix/stdlib_nested_mod_call_xmod. The deep-chain shape
+// (`std.io.a.b.c.d()`) is pinned by
+// repro/mi_matrix/nested_mod_deep_chain_reject_xmod (the chain buffer is
+// bounded at 4, so the walk no longer overruns it).
+const std = @import("std");
+
+pub fn main() void {
+    std.io.printt("y\n");
+}

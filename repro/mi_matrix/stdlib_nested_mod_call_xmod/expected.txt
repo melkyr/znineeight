@@ -1,0 +1,3 @@
+nested-ok
+int=42
+done
