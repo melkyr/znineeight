@@ -871,11 +871,11 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `semanticAnalyzerGrowLocalDecls` | semantic_analyzer.zig |
 | `semanticAnalyzerInit` | semantic_analyzer.zig |
 | `semanticAnalyzerIsBuiltinSupported` | semantic_analyzer.zig |
-| `semanticAnalyzerIsLValueConst` | semantic_analyzer.zig |
 | `semanticAnalyzerIsTypeValueCast` | semantic_analyzer.zig |
 | `semanticAnalyzerMaybeDiagVolatileDrop` | semantic_analyzer.zig |
 | `semanticAnalyzerMaybeGateAliasDecl` | semantic_analyzer.zig |
 | `semanticAnalyzerPackedFieldTypeAllowed` | semantic_analyzer.zig |
+| `semanticAnalyzerIsLValueConst` | semantic_analyzer.zig |
 | `semanticAnalyzerPackedStructDeclForType` | semantic_analyzer.zig |
 | `semanticAnalyzerPtrCastDropsVolatile` | semantic_analyzer.zig |
 | `semanticAnalyzerResolveArithmetic` | semantic_analyzer.zig |

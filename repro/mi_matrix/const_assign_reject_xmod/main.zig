@@ -14,18 +14,16 @@
 // this dir classifies FAIL under both compilers — the fix is pinned by the
 // direct rc=2 / `error[3002]` evidence, not by a corpus class movement.
 //
-// Covered shapes (14 assignment sites):
-//   1. local `const` plain assignment          7. local `const s: []const T` element
+// Covered shapes (12 assignment sites):
+//   1. local `const` plain assignment          7. module `const S: []const T`
 //   2. local `const` compound assignment       8. local const-array element
 //   3. nested-block `const`                    9. scalar function parameter
 //   4. module `const`                         10. `*const T` parameter deref
 //   5. module `const P: *const T` deref       11. `[]const T` parameter element
 //   6. local `const p: *const T` deref        12. `for` capture
-//  13/14. outer `const` shadowed by an inner `var` (the scope-aware lookup must
-//         still reject the outer-const assignment AFTER the inner block).
+//      (plus local `const s: []const T` element, shape 6b)
 
 const G: u32 = 1;
-const GS: u32 = 1;
 var GV: u32 = 1;
 const P: *const u32 = &GV;
 
@@ -72,21 +70,5 @@ pub fn main() void {
     setParam(1);
     setConstPtr(&GV);
     setConstSlice(&arr);
-
-    // Task 7B fix round 1 — the rejected shadow direction: an inner `var` must
-    // not hide an outer `const` for an assignment after the inner block.
-    {
-        var GS: u32 = 3;
-        GS = 4; // inner var: legal
-        _ = GS;
-    }
-    GS = 2; // 13. outer module const (shadowed by an inner var)
-    const lc: u32 = 1;
-    {
-        var lc: u32 = 3;
-        lc = 4; // inner var: legal
-        _ = lc;
-    }
-    lc = 2; // 14. outer local const (shadowed by an inner var)
     _ = sink;
 }

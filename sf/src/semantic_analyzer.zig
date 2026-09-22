@@ -2298,8 +2298,6 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
     while (i < @intCast(usize, prongs_n)) : (i += 1) {
         var prong_i = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, i));
         var prong = ast_mod.astStoreNodeAt(self.store, prong_i);
-        // Task 7B fix round 1: scope this prong's payload capture to the prong.
-        var prong_scope_saved: u32 = @intCast(u32, self.local_decl_count);
         if ((prong.flags & @intCast(u8, 1)) != @intCast(u8, 0)) has_else = 1;
         if ((prong.flags & @intCast(u8, 1)) != @intCast(u8, 0) and (prong.flags & @intCast(u8, 16)) != @intCast(u8, 0)) {
             var swec_msg: []const u8 = "switch else-prong capture (else => |capture|) is not supported";
@@ -2376,12 +2374,8 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
         while (self.stmt_work_len > sw_base) {
             self.stmt_work_len -= @intCast(usize, 1);
             var wi = self.stmt_work_items[self.stmt_work_len];
-            if (wi >= @intCast(u32, 0x80000000)) {
-                self.local_decl_count = @intCast(usize, wi & @intCast(u32, 0x7FFFFFFF));
-            } else if (wi != @intCast(u32, 0)) { semanticAnalyzerResolveStmtIter(self, wi); }
+            if (wi != @intCast(u32, 0)) { semanticAnalyzerResolveStmtIter(self, wi); }
         }
-        // Task 7B fix round 1: pop the prong's payload capture.
-        self.local_decl_count = @intCast(usize, prong_scope_saved);
         var pct_m: []const u8 = "PCT:n"; pal_mod.markerWriteInt(pct_m, prong.child_0); var pct_bm: []const u8 = "PCT:b"; pal_mod.markerWriteInt(pct_bm, bt); var pct_fm: []const u8 = "PCT:f"; pal_mod.markerWriteInt(pct_fm, self.current_fn_return);
         var swpb_im: []const u8 = "SWPB:i"; pal_mod.markerWriteInt(swpb_im, @intCast(u32, i)); var swpb_tm: []const u8 = "SWPB:t"; pal_mod.markerWriteInt(swpb_tm, bt);
         if (bt == type_mod.TYPE_NORETURN) {}
@@ -2768,7 +2762,6 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                 coercion_mod.coercionTableAdd(self.coercion_table, node.child_0, coercion_mod.CoercionKind.unwrap_optional, result);
             }
         }
-        var catch_scope_saved: u32 = @intCast(u32, self.local_decl_count);
         if (node.child_2 != 0) {
             var capture_node = ast_mod.astStoreNodeAt(self.store, node.child_2);
             if (self.local_decl_count >= self.local_decl_cap) { semanticAnalyzerGrowLocalDecls(self); }
@@ -2778,9 +2771,6 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
             self.local_decl_count += @intCast(usize, 1);
         }
         if (node.child_1 != @intCast(u32, 0)) {
-            // Task 7B fix round 1: the catch capture is scoped to the handler;
-            // resolve the handler synchronously and pop the capture, so a
-            // deferred scope marker cannot truncate a later sibling decl.
             if (catch_es != 0) {
                 var child1 = ast_mod.astStoreNodeAt(self.store, node.child_1);
                 if (child1.kind == AstKind.error_literal) {
@@ -2789,9 +2779,8 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                     popExpectedType(self);
                 }
             }
-            semanticAnalyzerResolveStmtIter(self, node.child_1);
+            semanticAnalyzerStmtWorkPush(self, node.child_1);
         }
-        self.local_decl_count = @intCast(usize, catch_scope_saved);
     } else if (node.kind == AstKind.orelse_expr) {
         result = semanticAnalyzerResolveOrelseExpr(self, node_idx);
      } else if (node.kind == AstKind.break_stmt or node.kind == AstKind.continue_stmt) {
@@ -3309,13 +3298,6 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
     while (self.stmt_work_len > sp_base) {
         self.stmt_work_len -= @intCast(usize, 1);
         var node_idx = self.stmt_work_items[self.stmt_work_len];
-        // Task 7B fix round 1: a block's scope-pop marker restores the local-decl
-        // stack to its pre-block depth, so a closed block's locals no longer
-        // shadow an outer binding. The saved depth is encoded in the low 31 bits.
-        if (node_idx >= @intCast(u32, 0x80000000)) {
-            self.local_decl_count = @intCast(usize, node_idx & @intCast(u32, 0x7FFFFFFF));
-            continue;
-        }
         if (node_idx == @intCast(u32, 0)) { continue; }
         var node = ast_mod.astStoreNodeAt(self.store, node_idx);
         var sp_m: []const u8 = "SP:n"; pal_mod.markerWriteInt(sp_m, @intCast(u32, self.stmt_work_len));
@@ -3324,10 +3306,6 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
             var children_n = ast_mod.astStoreNodeExtraChildCount(self.store, node_idx);
             var blk_nm: []const u8 = "BLK:N"; pal_mod.markerWriteInt(blk_nm, node_idx);
             var blk_cm: []const u8 = "BLK:C"; pal_mod.markerWriteInt(blk_cm, @intCast(u32, children_n));
-            // Task 7B fix round 1: push a scope-pop marker (below the children) so
-            // the block's locals are popped once its body has been walked.
-            var scope_saved: u32 = @intCast(u32, self.local_decl_count);
-            semanticAnalyzerStmtWorkPush(self, @intCast(u32, 0x80000000) | scope_saved);
             var i: usize = @intCast(usize, children_n);
             while (i > @intCast(usize, 0)) : (i -= @intCast(usize, 1)) {
                 var ci = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, i) - @intCast(u32, 1));
@@ -3553,10 +3531,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
             }
             }
         } else if (node.kind == AstKind.if_stmt) {
-             // Task 7B fix round 1: scope the if-capture to the branches.
-             var if_scope_saved: u32 = @intCast(u32, self.local_decl_count);
              semanticAnalyzerResolveIfHeader(self, node_idx);
-             semanticAnalyzerStmtWorkPush(self, @intCast(u32, 0x80000000) | if_scope_saved);
              if (node.child_2 != @intCast(u32, 0)) {
                  semanticAnalyzerStmtWorkPush(self, node.child_2);
              }
@@ -3564,18 +3539,12 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                  semanticAnalyzerStmtWorkPush(self, node.child_1);
              }
           } else if (node.kind == AstKind.while_stmt) {
-            // Task 7B fix round 1: scope the while-capture to the body.
-            var w_scope_saved: u32 = @intCast(u32, self.local_decl_count);
             semanticAnalyzerResolveWhileHeader(self, node_idx);
-            semanticAnalyzerStmtWorkPush(self, @intCast(u32, 0x80000000) | w_scope_saved);
             if (node.child_1 != @intCast(u32, 0)) {
                 semanticAnalyzerStmtWorkPush(self, node.child_1);
             }
         } else if (node.kind == AstKind.for_stmt) {
-             // Task 7B fix round 1: scope the for item/index captures to the body.
-             var for_scope_saved: u32 = @intCast(u32, self.local_decl_count);
              semanticAnalyzerResolveForHeader(self, node_idx);
-             semanticAnalyzerStmtWorkPush(self, @intCast(u32, 0x80000000) | for_scope_saved);
             if (node.child_1 != @intCast(u32, 0)) {
                 semanticAnalyzerStmtWorkPush(self, node.child_1);
             }
