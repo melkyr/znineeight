@@ -5,7 +5,7 @@
 <title>Z98 Manual: Volume I &mdash; Getting Started</title>
 <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
 <meta name="generator" content="z98doc 0.1">
-<meta name="keywords" content="Z98 manual volume I getting started beginner title page entry exit chapters">
+<meta name="keywords" content="Z98 manual volume I getting started beginner title page how to read sidebar print callouts reading paths">
 <link rel="stylesheet" type="text/css" href="z98.css">
 <link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
 <link rel="home" href="index.html">
@@ -38,7 +38,7 @@ Espa&ntilde;ol (not yet available) |
 <table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
 <tr>
 <td>
-How to read this <i>(planned)</i><br>
+<b>How to read this</b><br>
 What is a program <i>(planned)</i><br>
 What is Z98, and why 1998 <i>(planned)</i><br>
 Your machine <i>(planned)</i><br>
@@ -71,9 +71,116 @@ This volume is the on-ramp. It is short on purpose: it exists to get you to the
 point where Volume II makes sense. Every chapter ends with a runnable program,
 a list of common mistakes, and an exercise.
 </p>
+
+<h2>How to read this</h2>
+<p>
+This manual is a book that happens to be a website. It ships as static HTML on
+a disk, with no network and no server, so every page is a file you can open,
+print, and keep. The prose is the manual; the HTML is only the binding.
+</p>
+
+<h3>What a manual is</h3>
+<p>
+A manual is not a tutorial you finish and forget. It is something you keep
+beside the machine, written so that a reader who has never done this before can
+start at the first page and arrive at the last with a working skill. This one
+teaches a language called Z98 and the discipline of writing for 1998 hardware.
+It is honest about both: where Z98 is the wrong tool, it says so and points you
+at the era's other tools.
+</p>
+
+<h3>The sidebar</h3>
+<p>
+The narrow column on the left is the sidebar. Its top links are the same on
+every page: <tt>Title page</tt>, <tt>Contents</tt>, <tt>Read me</tt>, and
+<tt>Search</tt>. Below them is the table of contents for the volume you are
+reading, so you can jump to any chapter without going back to the master
+contents. The chapter you are on is shown in <b>bold</b>; a chapter whose page
+does not exist yet is plain text marked <i>(planned)</i> and is not a link.
+</p>
+
+<h3>The language bar</h3>
+<p>
+The bar at the top of the sidebar lists the languages the manual ships in.
+English is the current edition. Spanish and Simplified Chinese are shown as
+plain text marked <i>(not yet available)</i>; each will be a complete manual of
+its own, not a translation layered on this one. When they ship, they become
+links to the equivalent page.
+</p>
+
+<h3>Printing the manual</h3>
+<p>
+Every page links two stylesheets: <tt>z98.css</tt> for the screen and
+<tt>z98-print.css</tt> for print. The print sheet hides the sidebar and the
+language bar, sets the body to 11-point type, and draws a hairline border
+around code blocks so they survive photocopying. Choose Print (or press
+Ctrl-P) and the page comes out as a book page rather than a web page. Page
+breaks are not forced; forcing them is a later CSS feature, and this manual
+uses CSS1 only.
+</p>
+
+<h3>The reading paths</h3>
+<p>
+Six volumes, each with a stated entry state and exit state. One reader enters
+at the volume that matches their background and reads forward; nobody reads all
+six cover to cover. The paths printed on the back cover of every volume are:
+</p>
+<ul>
+<li><b>Never programmed</b> &rarr; I &rarr; II &rarr; III &rarr; IV/V as needed</li>
+<li><b>Knows C, C++, Java, or Python</b> &rarr; skim I &rarr; II &rarr; III &rarr; IV/V as needed</li>
+<li><b>Knows modern Zig</b> &rarr; II (for the differences) &rarr; III &rarr; IV/V</li>
+<li><b>Wants to use it now</b> &rarr; V &rarr; IV</li>
+<li><b>Maintainer</b> &rarr; VI &rarr; IV &rarr; the engineering docs</li>
+</ul>
+<p>
+If you have never written a program, you are in the right place: this volume is
+the first leg of the first path.
+</p>
+
+<h3>The callouts</h3>
+<p>
+The manual sets off five kinds of aside, each with its own icon and colour, so
+you can tell at a glance whether a paragraph is an aside, a shortcut, a
+warning, a trap, or the manual being straight with you.
+</p>
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffffcc">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-note.gif" width="16" height="16" alt="Note"></td>
+<td><b>Note.</b> The chapter list marks an unwritten chapter <i>(planned)</i>. It is plain text, not a link, until its page ships.</td>
+</tr>
+</table>
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e0f0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-tip.gif" width="16" height="16" alt="Tip"></td>
+<td><b>Tip.</b> The <tt>Contents</tt> link at the top of the sidebar and in the footer always returns you to the master table of contents for all six volumes.</td>
+</tr>
+</table>
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffe8cc">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-warn.gif" width="16" height="16" alt="Warn"></td>
+<td><b>Warn.</b> Read the chapters in order. A later chapter assumes the types and functions an earlier one defined; skipping ahead leaves names the compiler cannot resolve.</td>
+</tr>
+</table>
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffdddd">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-caution.gif" width="16" height="16" alt="Caution"></td>
+<td><b>Caution.</b> Never edit the generated C by hand. Change the <tt>.z98</tt> source and rebuild; the next build overwrites the generated files.</td>
+</tr>
+</table>
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ece0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> This manual teaches Z98, a small language for 1998 machines. Modern languages do more with less effort, and the era's real choices were C89 and C++98. Where another tool is the better choice, this manual says so.</td>
+</tr>
+</table>
+<p>
+The last one matters most. The manual earns its keep by telling you when Z98 is
+the wrong tool; when you see the warm grey box, read it before you decide what
+to build.
+</p>
 <h2>Chapters</h2>
 <ul>
-<li>How to read this <i>(planned)</i></li>
+<li><b>How to read this</b></li>
 <li>What is a program <i>(planned)</i></li>
 <li>What is Z98, and why 1998 <i>(planned)</i></li>
 <li>Your machine <i>(planned)</i></li>
