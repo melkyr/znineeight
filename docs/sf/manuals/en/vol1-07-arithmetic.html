@@ -218,7 +218,8 @@ Parentheses always win; they are the one tool that removes all doubt.
 </p>
 <p>
 The compiler sorts the operators into levels. A higher level is applied before a
-lower one. The levels that matter in this chapter are the first three:
+lower one. The table below lists the levels a beginner meets, from tightest
+(highest) to loosest (lowest):
 </p>
 <table width="100%" border="1" cellpadding="4" cellspacing="0">
 <tr>
@@ -247,18 +248,37 @@ lower one. The levels that matter in this chapter are the first three:
 <td>left to right</td>
 </tr>
 <tr>
+<td></td>
+<td><tt>and</tt></td>
+<td>left to right</td>
+</tr>
+<tr>
 <td>lowest</td>
-<td><tt>and</tt>, <tt>or</tt></td>
+<td><tt>or</tt></td>
 <td>left to right</td>
 </tr>
 </table>
 <p>
-The two rows above the arithmetic operators are the unary operators, which take
-one value instead of two: <tt>-x</tt> negates, and <tt>!x</tt> is logical not.
-They bind to the nearest value, so <tt>-2 * 3</tt> is <tt>(-2) * 3</tt>, which
-is <tt>-6</tt>. The comparison operators and <tt>and</tt>/<tt>or</tt> sit below
-the arithmetic; later chapters use them, and the important thing for now is that
-arithmetic is settled before any comparison is made.
+The two operators above the arithmetic operators are the unary operators, which
+take one value instead of two: <tt>-x</tt> negates, and <tt>!x</tt> is logical
+not. They bind to the nearest value, so <tt>-2 * 3</tt> is <tt>(-2) * 3</tt>,
+which is <tt>-6</tt>.
+</p>
+<p>
+Note the last two rows: <tt>and</tt> and <tt>or</tt> are <b>not</b> on the same
+level. <tt>and</tt> binds tighter than <tt>or</tt>, so <tt>true or false and
+false</tt> is <tt>true or (false and false)</tt>, which is <tt>true</tt>. The
+comparison operators sit below the arithmetic, so arithmetic is settled before
+any comparison is made; later chapters use comparisons and the logical
+operators.
+</p>
+<p>
+This table is scoped to the operators this chapter introduces. The compiler has
+more levels: below <tt>or</tt> sit <tt>catch</tt>, <tt>orelse</tt>, and
+assignment, and between the comparison row and the <tt>+</tt>/<tt>-</tt> row sit
+the bitwise <tt>&amp;</tt>, <tt>^</tt>, <tt>|</tt> and the shifts. They arrive in
+later chapters, and the Reference volume will list them all. What matters here
+is the arithmetic levels and the rule that a tighter level is applied first.
 </p>
 <p>
 When two operators are on the same level, they group <b>left to right</b>: the
