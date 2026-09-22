@@ -1,0 +1,491 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Doing Arithmetic</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual arithmetic operators precedence integer division remainder overflow fsafe ffast i32">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol1-06-variables-types.html">
+<link rel="next" href="vol2-00-title.html">
+</head>
+<body bgcolor="#f5f0e1" text="#000000" link="#003366" vlink="#551a8b" alink="#cc0000">
+<table width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#e8e0cc" class="sidebar">
+<font size="1">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#e8e0cc" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume I &mdash; Getting Started</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol1-00-title.html">How to read this</a><br>
+<a href="vol1-01-what-is-programming.html">What is a program</a><br>
+<a href="vol1-02-what-is-z98.html">What is Z98, and why 1998</a><br>
+<a href="vol1-03-your-machine.html">Your machine</a><br>
+<a href="vol1-04-installing.html">Installing the toolchain</a><br>
+<a href="vol1-05-first-program.html">Your first program</a><br>
+<a href="vol1-06-variables-types.html">Variables and types</a><br>
+<b>Doing arithmetic</b><br>
+Making decisions <i>(planned)</i><br>
+Doing things repeatedly <i>(planned)</i><br>
+Functions <i>(planned)</i><br>
+Grouping data <i>(planned)</i><br>
+Lists of things <i>(planned)</i><br>
+Reading the errors <i>(planned)</i><br>
+Your first useful program <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Doing Arithmetic</h1>
+<p>
+The last chapter gave values names and types. This chapter makes them work. It
+introduces the five arithmetic operators, the order the compiler applies them,
+and the one place where a calculation can do something the source does not say:
+when the result no longer fits the type it is stored in. That last part is the
+first time the compiler's default safety checks earn their keep, and the first
+time a program can stop without printing what you expected.
+</p>
+
+<h2>The program</h2>
+<pre>
+const std = @import("std");
+
+pub fn main() void {
+    var a: i32 = 17;
+    var b: i32 = 5;
+
+    std.io.print("a + b = {}\n", .{a + b});
+    std.io.print("a - b = {}\n", .{a - b});
+    std.io.print("a * b = {}\n", .{a * b});
+    std.io.print("a / b = {}\n", .{a / b});
+    std.io.print("a % b = {}\n", .{a % b});
+
+    var p: i32 = -7;
+    var q: i32 = 2;
+    std.io.print("-7 / 2 = {}\n", .{p / q});
+    std.io.print("-7 % 2 = {}\n", .{p % q});
+
+    var two: i32 = 2;
+    var three: i32 = 3;
+    var four: i32 = 4;
+    std.io.print("2 + 3 * 4 = {}\n", .{two + three * four});
+    std.io.print("(2 + 3) * 4 = {}\n", .{(two + three) * four});
+
+    var max: i32 = 2147483647;
+    var one: i32 = 1;
+    var over: i32 = max + one;
+    std.io.print("max + 1 = {}\n", .{over});
+}
+</pre>
+<p>
+It does four things. It applies all five operators to the same two numbers. It
+shows what integer division does when one number is negative. It shows two ways
+to group the same three numbers, so the difference precedence makes is visible.
+And it ends by adding one to the largest value an <tt>i32</tt> can hold, which is
+where the chapter's last section comes in.
+</p>
+
+<h2>The five operators</h2>
+<p>
+Five symbols do arithmetic on integers. Each takes two values, one on either
+side, and produces a third.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left">Operator</th>
+<th align="left">Name</th>
+<th align="left">Example</th>
+<th align="left">Result</th>
+</tr>
+<tr>
+<td><tt>+</tt></td>
+<td>addition</td>
+<td><tt>17 + 5</tt></td>
+<td>22</td>
+</tr>
+<tr>
+<td><tt>-</tt></td>
+<td>subtraction</td>
+<td><tt>17 - 5</tt></td>
+<td>12</td>
+</tr>
+<tr>
+<td><tt>*</tt></td>
+<td>multiplication</td>
+<td><tt>17 * 5</tt></td>
+<td>85</td>
+</tr>
+<tr>
+<td><tt>/</tt></td>
+<td>division</td>
+<td><tt>17 / 5</tt></td>
+<td>3</td>
+</tr>
+<tr>
+<td><tt>%</tt></td>
+<td>remainder</td>
+<td><tt>17 % 5</tt></td>
+<td>2</td>
+</tr>
+</table>
+<p>
+The first three behave the way you expect. The last two are the pair that
+surprises people, and they are worth reading carefully because they are the
+reason a program that looks like it does one thing can do another.
+</p>
+
+<h3><tt>/</tt> gives the whole quotient</h3>
+<p>
+The slash is <b>integer</b> division. Both values are integers, so the answer is
+an integer, and any fractional part is thrown away rather than rounded.
+<tt>17 / 5</tt> is 3, not 3.4 and not 4. The fraction that is discarded is the
+subject of the next section.
+</p>
+
+<h3><tt>%</tt> gives what is left over</h3>
+<p>
+The percent sign is the <b>remainder</b>, often called the modulus. It answers
+"after dividing as many whole times as possible, what is left?" Five goes into
+seventeen three times (fifteen), and two is left, so <tt>17 % 5</tt> is 2. The
+two operators fit together: for a positive divisor, <tt>a / b</tt> times
+<tt>b</tt> plus <tt>a % b</tt> gives back <tt>a</tt>.
+</p>
+
+<h2>Integer division truncates</h2>
+<p>
+The discarded fraction is worth its own heading because it is the first
+arithmetic mistake a new programmer makes, and because the compiler does not
+warn about it. The rule is that the result is <b>truncated toward zero</b>: the
+part after the decimal point is cut off, and the sign of the result is the sign
+the ordinary division would have had.
+</p>
+<p>
+For positive numbers that matches intuition: <tt>17 / 5</tt> is 3. The negative
+case is where it bites. <tt>-7 / 2</tt> is not <tt>-3.5</tt> and it is not
+<tt>-4</tt>; it is <tt>-3</tt>. The program prints exactly that:
+</p>
+<pre>
+-7 / 2 = -3
+-7 % 2 = -1
+</pre>
+<p>
+The remainder keeps the sign of the dividend, so <tt>-7 % 2</tt> is
+<tt>-1</tt>. This is the behaviour C89 has, and Z98 compiles to C89, so the two
+agree. When you want the other rounding, you have to say so in your own code;
+the operators will not do it for you.
+</p>
+
+<h2>Precedence: which operator goes first</h2>
+<p>
+An expression with more than one operator needs a rule for the order they are
+applied in, and that rule is <b>precedence</b>. The program makes it visible
+with the same three numbers grouped two ways:
+</p>
+<pre>
+2 + 3 * 4 = 14
+(2 + 3) * 4 = 20
+</pre>
+<p>
+In the first line, multiplication is applied before addition, so it is
+<tt>2 + (3 * 4)</tt> and the answer is 14. In the second line, the parentheses
+force the addition first, so it is <tt>(2 + 3) * 4</tt> and the answer is 20.
+Parentheses always win; they are the one tool that removes all doubt.
+</p>
+<p>
+The compiler sorts the operators into levels. A higher level is applied before a
+lower one. The levels that matter in this chapter are the first three:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left">Level</th>
+<th align="left">Operators</th>
+<th align="left">How they group</th>
+</tr>
+<tr>
+<td>highest</td>
+<td><tt>-x</tt>, <tt>!x</tt> (one value)</td>
+<td>bind to the value on their right</td>
+</tr>
+<tr>
+<td></td>
+<td><tt>*</tt>&nbsp;&nbsp;<tt>/</tt>&nbsp;&nbsp;<tt>%</tt></td>
+<td>left to right</td>
+</tr>
+<tr>
+<td></td>
+<td><tt>+</tt>&nbsp;&nbsp;<tt>-</tt></td>
+<td>left to right</td>
+</tr>
+<tr>
+<td></td>
+<td><tt>==</tt>&nbsp;<tt>!=</tt>&nbsp;<tt>&lt;</tt>&nbsp;<tt>&gt;</tt>&nbsp;<tt>&lt;=</tt>&nbsp;<tt>&gt;=</tt></td>
+<td>left to right</td>
+</tr>
+<tr>
+<td>lowest</td>
+<td><tt>and</tt>, <tt>or</tt></td>
+<td>left to right</td>
+</tr>
+</table>
+<p>
+The two rows above the arithmetic operators are the unary operators, which take
+one value instead of two: <tt>-x</tt> negates, and <tt>!x</tt> is logical not.
+They bind to the nearest value, so <tt>-2 * 3</tt> is <tt>(-2) * 3</tt>, which
+is <tt>-6</tt>. The comparison operators and <tt>and</tt>/<tt>or</tt> sit below
+the arithmetic; later chapters use them, and the important thing for now is that
+arithmetic is settled before any comparison is made.
+</p>
+<p>
+When two operators are on the same level, they group <b>left to right</b>: the
+left one is applied first. That is why <tt>20 / 5 % 3</tt> is
+<tt>(20 / 5) % 3</tt>, which is <tt>4 % 3</tt>, which is 1. The same left-to-right
+rule gives <tt>1 + 2 * 3 - 4</tt> the value 3: the multiplication is done first
+because it is a higher level, then the addition and subtraction run left to
+right.
+</p>
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e0f0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-tip.gif" width="16" height="16" alt="Tip"></td>
+<td><b>Tip.</b> When you are not sure, add parentheses. They cost nothing at
+run time, they never change the meaning you intended, and they spare the next
+reader (often you) the job of reconstructing the precedence table in their
+head.</td>
+</tr>
+</table>
+
+<h2>When a result no longer fits</h2>
+<p>
+An <tt>i32</tt> is four bytes, and four bytes hold a fixed range of values:
+<tt>-2147483648</tt> to <tt>2147483647</tt>. The program's last two lines push
+against that ceiling. It declares <tt>max</tt> as the largest <tt>i32</tt>,
+declares <tt>one</tt> as 1, and adds them:
+</p>
+<pre>
+var max: i32 = 2147483647;
+var one: i32 = 1;
+var over: i32 = max + one;
+</pre>
+<p>
+The true answer, 2147483648, is one past the top. There is no bit pattern for it
+in an <tt>i32</tt>, so the addition <b>overflows</b>. Z98 gives you two
+behaviours for that moment, and which one you get is chosen when the program is
+compiled, not when it runs.
+</p>
+
+<h3><tt>-fsafe</tt>: stop before the wrong value exists</h3>
+<p>
+The default is <b><tt>-fsafe</tt></b>. Before the addition is performed, the
+emitted C checks whether the result would leave the range of the type. If it
+would, the program is stopped on the spot. Nothing after the check runs, so the
+<tt>max + 1</tt> line never prints, and the program does not exit normally. This
+is the point of the default: a wrong number is worse than a stopped program,
+because a wrong number travels.
+</p>
+
+<h3><tt>-ffast</tt>: let it wrap</h3>
+<p>
+The other mode is <b><tt>-ffast</tt></b>, which turns the checks off. The
+addition is emitted as a plain C addition, and the value <b>wraps around</b> the
+way the hands of a clock wrap past twelve. One past the top of the range becomes
+the bottom of the range, so <tt>2147483647 + 1</tt> prints as
+<tt>-2147483648</tt>. The program keeps running and prints a value, but that
+value is not the arithmetic answer.
+</p>
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffe8cc">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-warn.gif" width="16" height="16" alt="Warn"></td>
+<td><b>Warn.</b> Wrapping is silent. Under <tt>-ffast</tt> the compiler emits
+no diagnostic for an overflow it cannot see coming, and the program reports
+success. Use <tt>-ffast</tt> only when you have measured the cost of the checks
+and know the values cannot overflow.</td>
+</tr>
+</table>
+<p>
+The safety checks are not free: each one is a comparison and a branch around the
+operation. On a 1998 machine those branches are cheap for a handful of values
+and not cheap in a tight loop over a large array. That is the trade the two
+modes offer. The default is the safe one, and you opt out deliberately.
+</p>
+
+<h2>Building and running it</h2>
+<p>
+The commands are the ones from the last two chapters, with <tt>math</tt> in
+place of <tt>types</tt>. The compiler is still at <tt>/tmp/manual_seed</tt>,
+built in chapter 4. Build the program with the default <tt>-fsafe</tt> first:
+</p>
+<pre>
+$ mkdir -p /tmp/manual_out
+$ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out docs/sf/manuals/src/vol1/math.z98
+$ cd /tmp/manual_out &amp;&amp; sh build_target.sh linux math
+Building for linux...
+Built: math
+$ ./math
+a + b = 22
+a - b = 12
+a * b = 85
+a / b = 3
+a % b = 2
+-7 / 2 = -3
+-7 % 2 = -1
+2 + 3 * 4 = 14
+(2 + 3) * 4 = 20
+Trace/breakpoint trap (core dumped)
+</pre>
+<p>
+The first nine lines are the arithmetic. The tenth line of output never comes:
+the overflow check fires on the <tt>max + one</tt> addition and stops the
+program. The shell reports the trap, and the program's exit status is 133. A
+trap is not a crash in the sense of a bug you have to find; it is the check
+doing exactly what it was compiled to do. But it does mean the program did not
+finish, and on a real machine a reader would see the same thing.
+</p>
+<p>
+Now build the same source with the checks off. Only the compiler flag changes;
+the <tt>.z98</tt> file is untouched:
+</p>
+<pre>
+$ mkdir -p /tmp/manual_fast
+$ /tmp/manual_seed/zig1_5_clean -ffast -o /tmp/manual_fast docs/sf/manuals/src/vol1/math.z98
+$ cd /tmp/manual_fast &amp;&amp; sh build_target.sh linux math
+Building for linux...
+Built: math
+$ ./math
+a + b = 22
+a - b = 12
+a * b = 85
+a / b = 3
+a % b = 2
+-7 / 2 = -3
+-7 % 2 = -1
+2 + 3 * 4 = 14
+(2 + 3) * 4 = 20
+max + 1 = -2147483648
+</pre>
+<p>
+This time all ten lines print, and the last one shows the wrap. The program
+exits with status 0 and reports success. Nothing in the output says that the
+last number is not the arithmetic answer; that is the difference between the two
+modes in one line.
+</p>
+
+<h2>Running under Windows 98</h2>
+<p>
+The program builds for Win9x exactly as <tt>hello</tt> and <tt>types</tt> did.
+The same <tt>build_target.sh</tt> script, or <tt>src/build_owc.bat</tt> with
+OpenWatcom, produces a console <tt>math.exe</tt>. Built with the default
+<tt>-fsafe</tt> it stops at the same overflow as on Linux; built with
+<tt>-ffast</tt> it prints all ten lines, ending with the wrapped value. The
+screenshot below will be captured on real hardware.
+</p>
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f5f0e1" class="placeholder">
+<tr>
+<td align="center">
+<i>Figure 8 &mdash; Win9x screenshot pending</i>
+</td>
+</tr>
+</table>
+<p><i>Figure 8. Running <tt>math.exe</tt> under Windows 98.</i></p>
+
+<h2>Common mistakes</h2>
+<p>
+These are the arithmetic mistakes that do not announce themselves. Each one has
+a symptom you can recognize.
+</p>
+<p>
+<b>Expecting a fraction from integer division.</b> This is the first one, and it
+is silent. The compiler accepts <tt>17 / 5</tt> and gives you 3. If you meant
+3.4, you wanted a floating-point type, not <tt>i32</tt>:
+</p>
+<pre>
+a / b = 3
+</pre>
+<p>
+There is no warning, because the program is not wrong; it is doing integer
+division, which is what the types said to do. The fix is either to use
+<tt>f32</tt> or <tt>f64</tt>, or to accept that you are counting whole things
+and that the remainder is a separate value.
+</p>
+<p>
+<b>Letting a result overflow.</b> The program's last line is the example. Under
+the default <tt>-fsafe</tt> the check stops the program; under <tt>-ffast</tt>
+it wraps and prints a wrong number. Neither one is a compile error, because the
+compiler cannot always know the values that will arrive at run time:
+</p>
+<pre>
+max + 1 = -2147483648
+</pre>
+<p>
+If you see a value that should have grown jump to a large negative number, you
+have an overflow. The cure is to choose a wider type for the variable that
+holds the running total, or to keep the values small enough that the range is
+never reached.
+</p>
+<p>
+<b>Dividing by zero.</b> This is not arithmetic with a wrong answer; it is
+arithmetic with no answer at all. Under <tt>-fsafe</tt> the division check
+catches it and stops the program with the same kind of trap as the overflow
+above. Under <tt>-ffast</tt> the check is gone and the machine raises its own
+fault, which on this target is reported as a floating-point exception. The
+lesson is the same in both modes: a divisor that can be zero needs a check in
+your own code before the division, because no compiler can guess whether the
+value will be zero.
+</p>
+
+<h2>Check yourself</h2>
+<p>
+Answer these before moving on. The last three ask you to change the program and
+run it.
+</p>
+<ol>
+<li>Name the five arithmetic operators and say what each produces for
+<tt>17</tt> and <tt>5</tt>.</li>
+<li>What is <tt>7 / 2</tt>, and what is <tt>7 % 2</tt>? What are they for
+<tt>-7 / 2</tt> and <tt>-7 % 2</tt>?</li>
+<li>What is the value of <tt>2 + 3 * 4</tt>, and how do you make it 20
+instead?</li>
+<li>On the same precedence level, does the compiler group operators left to
+right or right to left? What is <tt>20 / 5 % 3</tt>?</li>
+<li>What does the default <tt>-fsafe</tt> do when an addition would overflow,
+and what does <tt>-ffast</tt> do instead?</li>
+<li>Change <tt>max</tt> to 2147483640 and rebuild with the default mode. Does
+the program still stop? Why or why not?</li>
+<li>Change the type of <tt>over</tt> to <tt>i64</tt> (and <tt>max</tt> and
+<tt>one</tt> with it), rebuild, and run it. What does <tt>max + 1</tt> print
+now, and why does the overflow no longer happen?</li>
+<li>Write an expression that computes the average of <tt>a</tt> and <tt>b</tt>
+as an integer, then change <tt>b</tt> to 4 and run it. What does the expression
+print, what is the true average, and where did the difference go?</li>
+</ol>
+
+<p>Previous: <a href="vol1-06-variables-types.html">Variables and types</a> | <a href="toc.html">Contents</a> | Next: <a href="vol2-00-title.html">Volume II &mdash; Learning Z98</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>

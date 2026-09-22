@@ -1,0 +1,28 @@
+const std = @import("std");
+
+pub fn main() void {
+    var a: i32 = 17;
+    var b: i32 = 5;
+
+    std.io.print("a + b = {}\n", .{a + b});
+    std.io.print("a - b = {}\n", .{a - b});
+    std.io.print("a * b = {}\n", .{a * b});
+    std.io.print("a / b = {}\n", .{a / b});
+    std.io.print("a % b = {}\n", .{a % b});
+
+    var p: i32 = -7;
+    var q: i32 = 2;
+    std.io.print("-7 / 2 = {}\n", .{p / q});
+    std.io.print("-7 % 2 = {}\n", .{p % q});
+
+    var two: i32 = 2;
+    var three: i32 = 3;
+    var four: i32 = 4;
+    std.io.print("2 + 3 * 4 = {}\n", .{two + three * four});
+    std.io.print("(2 + 3) * 4 = {}\n", .{(two + three) * four});
+
+    var max: i32 = 2147483647;
+    var one: i32 = 1;
+    var over: i32 = max + one;
+    std.io.print("max + 1 = {}\n", .{over});
+}
