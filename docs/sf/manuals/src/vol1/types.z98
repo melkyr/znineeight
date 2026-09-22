@@ -1,0 +1,24 @@
+const std = @import("std");
+
+pub fn main() !void {
+    var count: i32 = 41;
+    count = count + 1;
+
+    const max_u8: u8 = 255;
+
+    var ready: bool = false;
+    ready = true;
+
+    const ratio: f32 = @floatCast(f32, 1.5);
+
+    std.io.print("count  (i32)   = {}\n", .{count});
+    std.io.print("max_u8 (u8)    = {}\n", .{max_u8});
+    std.io.print("ready  (bool)  = {}\n", .{ready});
+    std.io.print("ratio  (f32)   = {}\n", .{@floatCast(f64, ratio)});
+
+    std.io.print("sizeOf(i32)    = {}\n", .{@sizeOf(i32)});
+    std.io.print("sizeOf(u8)     = {}\n", .{@sizeOf(u8)});
+    std.io.print("sizeOf(bool)   = {}\n", .{@sizeOf(bool)});
+    std.io.print("sizeOf(f32)    = {}\n", .{@sizeOf(f32)});
+    std.io.print("sizeOf(usize)  = {}\n", .{@sizeOf(usize)});
+}

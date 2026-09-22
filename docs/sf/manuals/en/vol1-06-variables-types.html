@@ -1,0 +1,416 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Variables and Types</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual variables types var const i32 u8 bool f32 usize sizeOf width memory">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol1-05-first-program.html">
+<link rel="next" href="vol2-00-title.html">
+</head>
+<body bgcolor="#f5f0e1" text="#000000" link="#003366" vlink="#551a8b" alink="#cc0000">
+<table width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#e8e0cc" class="sidebar">
+<font size="1">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#e8e0cc" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume I &mdash; Getting Started</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol1-00-title.html">How to read this</a><br>
+<a href="vol1-01-what-is-programming.html">What is a program</a><br>
+<a href="vol1-02-what-is-z98.html">What is Z98, and why 1998</a><br>
+<a href="vol1-03-your-machine.html">Your machine</a><br>
+<a href="vol1-04-installing.html">Installing the toolchain</a><br>
+<a href="vol1-05-first-program.html">Your first program</a><br>
+<b>Variables and types</b><br>
+Doing arithmetic <i>(planned)</i><br>
+Making decisions <i>(planned)</i><br>
+Doing things repeatedly <i>(planned)</i><br>
+Functions <i>(planned)</i><br>
+Grouping data <i>(planned)</i><br>
+Lists of things <i>(planned)</i><br>
+Reading the errors <i>(planned)</i><br>
+Your first useful program <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Variables and Types</h1>
+<p>
+The first program printed one fixed line. A program becomes useful when it can
+give names to the values it works with and change those values as it runs. That
+is what a <b>variable</b> is: a name for a value, held in memory, with a type
+that says what kind of value it is and how much room it takes. This chapter adds
+the variable to the program from chapter 5.
+</p>
+
+<h2>The program</h2>
+<pre>
+const std = @import("std");
+
+pub fn main() !void {
+    var count: i32 = 41;
+    count = count + 1;
+
+    const max_u8: u8 = 255;
+
+    var ready: bool = false;
+    ready = true;
+
+    const ratio: f32 = @floatCast(f32, 1.5);
+
+    std.io.print("count  (i32)   = {}\n", .{count});
+    std.io.print("max_u8 (u8)    = {}\n", .{max_u8});
+    std.io.print("ready  (bool)  = {}\n", .{ready});
+    std.io.print("ratio  (f32)   = {}\n", .{@floatCast(f64, ratio)});
+
+    std.io.print("sizeOf(i32)    = {}\n", .{@sizeOf(i32)});
+    std.io.print("sizeOf(u8)     = {}\n", .{@sizeOf(u8)});
+    std.io.print("sizeOf(bool)   = {}\n", .{@sizeOf(bool)});
+    std.io.print("sizeOf(f32)    = {}\n", .{@sizeOf(f32)});
+    std.io.print("sizeOf(usize)  = {}\n", .{@sizeOf(usize)});
+}
+</pre>
+<p>
+It declares four values, changes two of them, and prints each value and the size
+of its type. Nothing else happens; the program is a tour of the pieces a
+declaration is made from.
+</p>
+
+<h2>What the lines mean</h2>
+
+<h3><tt>var count: i32 = 41;</tt></h3>
+<p>
+This is a <b>declaration</b>. It has four parts, and it is worth naming them
+because every declaration in Z98 is built the same way.
+</p>
+<ul>
+<li><tt>var</tt> says the name may be given a new value later.</li>
+<li><tt>count</tt> is the name being introduced.</li>
+<li><tt>: i32</tt> is the type of the value the name will hold. The colon
+reads as "of type".</li>
+<li><tt>= 41</tt> is the value it starts with.</li>
+</ul>
+<p>
+The semicolon ends the declaration. A <tt>var</tt> with no value is not allowed:
+the compiler insists every variable start with something, because a value read
+before it is written is a bug. (If you really want an empty slot, <tt>= undefined</tt>
+is the explicit way to ask for one; a later chapter explains why that is rarely
+what you want.)
+</p>
+
+<h3><tt>count = count + 1;</tt></h3>
+<p>
+This is an <b>assignment</b>, and it is shorter than the declaration on purpose.
+There is no <tt>var</tt> and no type: the name already exists, and its type was
+fixed when it was declared. Read the line right to left: take the current value
+of <tt>count</tt>, add one, and store the result back under the same name. After
+it runs, <tt>count</tt> holds 42.
+</p>
+<p>
+Because <tt>count</tt> was declared <tt>var</tt>, the assignment is allowed. The
+next declaration shows the other kind.
+</p>
+
+<h3><tt>const max_u8: u8 = 255;</tt></h3>
+<p>
+<tt>const</tt> introduces a name exactly as <tt>var</tt> does, but the value may
+not be reassigned. <tt>max_u8</tt> is <tt>u8</tt>, an unsigned eight-bit number,
+and it starts at 255. Nothing later in the program changes it, and if something
+tried to, the compiler would refuse before writing any C.
+</p>
+<p>
+The rule of thumb is to reach for <tt>const</tt> first and use <tt>var</tt> only
+when the value must change. A name that cannot change is one less thing to keep
+in your head.
+</p>
+
+<h3><tt>var ready: bool = false; ready = true;</tt></h3>
+<p>
+<tt>bool</tt> is the boolean type: its only two values are <tt>true</tt> and
+<tt>false</tt>. This variable is declared <tt>var</tt>, so the second statement
+is allowed to flip it. The same two-step pattern &mdash; declare, then assign
+&mdash; works for every type.
+</p>
+
+<h3><tt>const ratio: f32 = @floatCast(f32, 1.5);</tt></h3>
+<p>
+<tt>f32</tt> is a 32-bit floating-point number: a number with a fractional part.
+The literal <tt>1.5</tt> is read by the compiler as a 64-bit float (<tt>f64</tt>),
+so <tt>@floatCast(f32, 1.5)</tt> narrows it to <tt>f32</tt> before it is stored.
+<tt>@floatCast</tt> is a builtin, a compiler-provided function whose name begins
+with an at sign. Without the cast the compiler warns that the literal and the
+declared type differ; with it, the narrowing is explicit and quiet.
+</p>
+
+<h3>The <tt>std.io.print</tt> lines</h3>
+<p>
+These are the print calls from chapter 5, now with a value to show. The string
+<tt>"count  (i32)   = {}\n"</tt> is the format; the <tt>{}</tt> is the
+placeholder that the value fills, and <tt>.{count}</tt> is the one-element tuple
+that carries it. The label before the equals sign is only text the program
+prints; it does no work.
+</p>
+<p>
+The last five calls use <tt>@sizeOf</tt>. <tt>@sizeOf(T)</tt> is a builtin that
+asks the compiler how many bytes a value of type <tt>T</tt> occupies. It is
+answered at compile time and becomes an ordinary number in the program.
+</p>
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ece0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> <tt>print</tt> knows how to show an <tt>f64</tt>, not an
+<tt>f32</tt>. That is why the program writes <tt>@floatCast(f64, ratio)</tt> in
+the print call: it widens the stored value back to <tt>f64</tt> first. Printing
+an <tt>f32</tt> directly builds and runs, but prints the wrong value, so widen
+it.</td>
+</tr>
+</table>
+
+<h2>The primitive types you have met</h2>
+<p>
+Four of the names in the program are types. They are not arbitrary: each one
+says how many bytes a value takes and therefore how large the value may be.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left">Type</th>
+<th align="left">Holds</th>
+<th align="left">Bytes</th>
+<th align="left">Values</th>
+</tr>
+<tr>
+<td><tt>i32</tt></td>
+<td>a signed whole number</td>
+<td>4</td>
+<td>about &minus;2,000,000,000 to 2,000,000,000</td>
+</tr>
+<tr>
+<td><tt>u8</tt></td>
+<td>an unsigned whole number</td>
+<td>1</td>
+<td>0 to 255</td>
+</tr>
+<tr>
+<td><tt>bool</tt></td>
+<td>a truth value</td>
+<td>1</td>
+<td><tt>true</tt> or <tt>false</tt></td>
+</tr>
+<tr>
+<td><tt>f32</tt></td>
+<td>a fractional number</td>
+<td>4</td>
+<td>about seven significant digits</td>
+</tr>
+<tr>
+<td><tt>usize</tt></td>
+<td>a length or count</td>
+<td>4</td>
+<td>0 to about 4,000,000,000</td>
+</tr>
+</table>
+<p>
+<tt>usize</tt> is the type Z98 uses for lengths and counts; on this target it is
+four bytes, the same size as an <tt>i32</tt>, but it is a distinct type. The
+<tt>u</tt> in <tt>u8</tt> and <tt>usize</tt> means <i>unsigned</i>: those types
+cannot hold a negative number. The <tt>i</tt> in <tt>i32</tt> means signed: it
+can hold both signs. <tt>f</tt> stands for floating point.
+</p>
+
+<h2>Why the width matters</h2>
+<p>
+The number after the <tt>i</tt>, <tt>u</tt>, or <tt>f</tt> is the <b>width</b>
+in bits. It is the whole reason these types exist. The machine this manual
+targets has 32 MB of memory, not gigabytes, and every value a program keeps
+spends some of it. One <tt>i32</tt> and one <tt>u8</tt> hardly differ; a
+thousand of them differ by three kilobytes, and a million of them differ by
+three megabytes.
+</p>
+<p>
+So the rule is to choose the smallest type that holds every value the variable
+will ever see. A count that cannot be negative and will not exceed 255 belongs
+in a <tt>u8</tt>; one that may be large belongs in an <tt>i32</tt> or
+<tt>usize</tt>. The program prints <tt>@sizeOf</tt> for each type so you can see
+the price directly: <tt>i32</tt> is four bytes, <tt>u8</tt> is one.
+</p>
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffe8cc">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-warn.gif" width="16" height="16" alt="Warn"></td>
+<td><b>Warn.</b> A narrow type is a promise about the values it will hold. Break
+the promise and the result is not a message, it is a wrong number. The common
+mistakes below show both the silent wrap and the runtime trap that catch the two
+ways a value can fall outside its type.</td>
+</tr>
+</table>
+
+<h2>Building and running it</h2>
+<p>
+The commands are the ones from chapter 5, with <tt>types</tt> in place of
+<tt>hello</tt>. The compiler is still at <tt>/tmp/manual_seed</tt>, built in
+chapter 4:
+</p>
+<pre>
+$ mkdir -p /tmp/manual_out
+$ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out docs/sf/manuals/src/vol1/types.z98
+$ cd /tmp/manual_out &amp;&amp; sh build_target.sh linux types
+Building for linux...
+Built: types
+$ ./types
+count  (i32)   = 42
+max_u8 (u8)    = 255
+ready  (bool)  = true
+ratio  (f32)   = 1.5
+sizeOf(i32)    = 4
+sizeOf(u8)     = 1
+sizeOf(bool)   = 1
+sizeOf(f32)    = 4
+sizeOf(usize)  = 4
+</pre>
+<p>
+Read the output one line at a time. The first four lines are the values:
+<tt>count</tt> is 42 because the program added one to 41, <tt>max_u8</tt> is the
+255 it was given, <tt>ready</tt> is <tt>true</tt> because the assignment flipped
+it, and <tt>ratio</tt> is <tt>1.5</tt> after being widened for printing. The last
+five lines are <tt>@sizeOf</tt>: the sizes the compiler gave those types. They
+are the same on every build, because they are a property of the target machine,
+not of the program.
+</p>
+
+<h2>Running under Windows 98</h2>
+<p>
+The program builds for Win9x exactly as <tt>hello</tt> did. The same
+<tt>build_target.sh</tt> script, or <tt>src/build_owc.bat</tt> with OpenWatcom,
+produces a console <tt>types.exe</tt> that prints the same nine lines. The
+screenshot below will be captured on real hardware.
+</p>
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f5f0e1" class="placeholder">
+<tr>
+<td align="center">
+<i>Figure 7 &mdash; Win9x screenshot pending</i>
+</td>
+</tr>
+</table>
+<p><i>Figure 7. Running <tt>types.exe</tt> under Windows 98.</i></p>
+
+<h2>Common mistakes</h2>
+<p>
+These are the mistakes declarations attract. Each one has a symptom you can
+recognize.
+</p>
+<p>
+<b>Using a variable before giving it a value.</b> A <tt>var</tt> with no
+initializer is rejected, not silently zero-filled:
+</p>
+<pre>
+types.z98:4:4: error[3014]: variable must be initialized; use '= undefined' to opt out
+    var x: i32;
+    ^^^^^^^^^^^
+</pre>
+<p>
+The message names the fix: write a starting value, or <tt>= undefined</tt> if you
+really mean an empty slot. A value read from an uninitialized variable would be
+garbage, so the compiler refuses to let the program get that far.
+</p>
+<p>
+<b>Trying to change a <tt>const</tt>.</b> The value is fixed at the declaration
+and cannot be reassigned:
+</p>
+<pre>
+types.z98:5:4: error[3002]: cannot assign to immutable variable
+    limit = 11;
+    ^^^^^
+</pre>
+<p>
+The caret points at the name, not at the value. If the value must change, declare
+it <tt>var</tt>.
+</p>
+<p>
+<b>A value too big for the type.</b> This one is not an error, which is why it is
+dangerous. A <tt>u8</tt> holds 0 to 255; put 300 into one and the compiler says
+nothing, the program builds, and it prints 44:
+</p>
+<pre>
+$ ./types
+b = 44
+</pre>
+<p>
+300 wrapped around to 44, the same way the hands of a clock wrap around. The
+width of the type is the whole story. The same thing happens at run time when a
+calculation overflows: adding one to a <tt>u8</tt> that holds 255 wraps too, but
+under the default safety checks it stops with a trap instead of a wrong number.
+</p>
+<p>
+<b>Mixing two integer types without a cast.</b> The compiler warns but does not
+stop. Here a <tt>u8</tt> is stored into an <tt>i32</tt>:
+</p>
+<pre>
+types.z98:5:4: warning[3000]: type mismatch in variable declaration &mdash; initialization type may not be compatible with declared type
+    var m: i32 = b;
+    ^^^^^^^^^^^^^^^
+note: source: u8
+note: target: i32
+</pre>
+<p>
+The program still builds and runs; the warning is a nudge, not a wall. The same
+warning appears when you mix <tt>i32</tt> and <tt>usize</tt>: on this target both
+are four bytes, so the program keeps working, but the compiler is telling you the
+two types are not the same. Write the conversion out loud with
+<tt>@intCast</tt>, as in <tt>var m: i32 = @intCast(i32, b);</tt>, and the warning
+goes away because the conversion is no longer a guess.
+</p>
+
+<h2>Check yourself</h2>
+<p>
+Answer these before moving on. The last two ask you to change the program and
+run it.
+</p>
+<ol>
+<li>What is the difference between <tt>var</tt> and <tt>const</tt>, and which
+should you reach for first?</li>
+<li>What does the colon in <tt>var count: i32 = 41;</tt> mean, and what is the
+<tt>41</tt> called?</li>
+<li>Why does the program print <tt>@sizeOf</tt> for each type? What does the
+number tell you?</li>
+<li>Why is <tt>u8</tt> one byte and <tt>i32</tt> four, and what is the price of
+choosing the smaller one?</li>
+<li>Change <tt>max_u8</tt> from 255 to 300, rebuild, and run it. What does the
+program print, and why? Then change the type to <tt>i32</tt> and run it again.</li>
+<li>Add a <tt>var</tt> named <tt>total</tt> of type <tt>usize</tt>, set it to
+<tt>count</tt> with <tt>@intCast</tt>, and print it. Why does the compiler want
+the cast?</li>
+</ol>
+
+<p>Previous: <a href="vol1-05-first-program.html">Your first program</a> | <a href="toc.html">Contents</a> | Next: <a href="vol2-00-title.html">Volume II &mdash; Learning Z98</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
