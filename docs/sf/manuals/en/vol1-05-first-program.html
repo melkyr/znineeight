@@ -63,9 +63,10 @@ What you have learned, what is next <i>(planned)</i><br>
 <td valign="top">
 <h1>Your First Program</h1>
 <p>
-This is the smallest complete Z98 program: it prints one line and stops. Type
-it in, build it, and run it. Everything later in the manual is built from
-pieces like this one.
+This is the smallest complete Z98 program. It is not a sketch or a fragment: it
+is a whole program that you type into a file, build, and run, and it prints one
+line. Everything later in the manual is built from pieces like this one, so it
+is worth reading every character of it before you type it.
 </p>
 
 <h2>The program</h2>
@@ -76,46 +77,126 @@ pub fn main() !void {
     std.io.print("Hello from Z98!\n");
 }
 </pre>
+<p>
+That is the whole file. It is five lines. The blank line between the import and
+the function is for the reader; the compiler does not care about it.
+</p>
 
 <h2>What the lines mean</h2>
 <p>
-<tt>const std = @import("std");</tt> pulls in the standard library and gives it
-the name <tt>std</tt>. The compiler resolves <tt>@import("std")</tt> to the
-shipped standard library, so you do not copy library files into your own
-project.
+Read the program one line at a time. Nothing here is decoration; every token
+has a job.
+</p>
+
+<h3><tt>const std = @import("std");</tt></h3>
+<p>
+<tt>const</tt> introduces a name whose value cannot be reassigned. The name is
+<tt>std</tt>, and the value is whatever follows the equals sign.
 </p>
 <p>
-<tt>pub fn main() !void { ... }</tt> declares the program's entry point.
-<tt>fn</tt> starts a function, <tt>main</tt> is its name, and the empty
-parentheses mean it takes no arguments. <tt>pub</tt> makes it visible outside
-its own module; the compiler looks for <tt>pub fn main</tt> and wraps it in the
-C <tt>int main</tt> that the operating system calls. The <tt>!void</tt> after
-the parentheses is the return type: a <tt>void</tt> error union, meaning the
-function returns nothing or an error. A function that returns <tt>!void</tt>
-and reaches its closing brace without a <tt>return</tt> is treated as success,
-so <tt>main</tt> needs no explicit <tt>return</tt>.
+<tt>@import</tt> is a builtin, one of the names that begin with an at sign. It
+takes a string and resolves it to a module. <tt>@import("std")</tt> resolves to
+the standard library that ships with the compiler, so you do not copy library
+files into your own folder. The library is a set of modules gathered behind
+one name &mdash; <tt>io</tt>, <tt>arena</tt>, <tt>str</tt>, <tt>mem</tt>,
+<tt>math</tt>, <tt>debug</tt>, <tt>net</tt>, <tt>async</tt>, <tt>bits</tt>,
+<tt>os</tt>, <tt>time</tt>, and <tt>buf</tt>.
 </p>
 <p>
-<tt>std.io.print("Hello from Z98!\n");</tt> writes the string to standard
-output. The <tt>\n</tt> at the end is a newline character, so the shell prompt
-starts on the next line. <tt>print</tt> is special in Z98: it takes a string
-and, when there are values to show, a tuple of arguments (for example
-<tt>std.io.print("count: {}\n", .{n});</tt>). This first program has nothing to
+<tt>std</tt> is the name you use for the library in the rest of the file. You
+could call it something else, but <tt>std</tt> is the convention and the name
+every other Z98 program uses. The semicolon ends the declaration.
+</p>
+
+<h3><tt>pub fn main() !void {</tt></h3>
+<p>
+<tt>fn</tt> starts a function declaration. <tt>main</tt> is its name, and
+<tt>main</tt> is special: the compiler looks for a public function of that name
+and wraps it in the C <tt>int main</tt> that the operating system calls. Every
+program has exactly one.
+</p>
+<p>
+<tt>pub</tt> makes the function visible outside its own module. It is not
+optional for <tt>main</tt>. Without it the compiler emits an ordinary private
+function and no C <tt>main</tt> at all, and the final link step fails with
+<tt>undefined reference to 'main'</tt>.
+</p>
+<p>
+The empty parentheses mean the function takes no arguments.
+</p>
+<p>
+<tt>!void</tt> is the return type, and it is written as punctuation rather than
+a word. <tt>void</tt> means "no value": the function returns nothing to its
+caller. The <tt>!</tt> in front makes it an <b>error union</b>: the function
+either finishes normally (the <tt>void</tt> case) or stops with an error.
+Chapter 12 takes error unions apart; for now read <tt>!void</tt> as "this
+function may fail, and this program does not." A function that returns
+<tt>!void</tt> and reaches its closing brace is treated as having succeeded, so
+<tt>main</tt> needs no <tt>return</tt> at the end. (<tt>main</tt> may also
+return plain <tt>void</tt> when it cannot fail; the manual uses <tt>!void</tt>
+because a real program can.)
+</p>
+<p>
+The opening brace begins the body. Everything indented under it is what
+<tt>main</tt> does.
+</p>
+
+<h3><tt>std.io.print("Hello from Z98!\n");</tt></h3>
+<p>
+<tt>std</tt> is the name imported on the first line. <tt>.io</tt> selects the
+input/output module inside it, and <tt>.print</tt> selects the function that
+writes text. The dots are member access: read the whole call as "the
+<tt>print</tt> function in the <tt>io</tt> part of the standard library."
+</p>
+<p>
+The string in the parentheses is the text to write. A string is enclosed in
+double quotes. Inside it, a backslash begins an <b>escape</b>: <tt>\n</tt> is a
+single newline character. It is one character in the program, not a backslash
+followed by an <tt>n</tt>. Without it the program's output would not end with a
+line break, and the shell prompt would appear immediately after the exclamation
+mark.
+</p>
+<p>
+The semicolon ends the statement. Z98, like C, uses the semicolon to mark where
+one statement stops and the next begins.
+</p>
+<p>
+<tt>print</tt> is special in Z98. With nothing to show it takes just the
+string, as here. When there are values to show, it also takes a <b>tuple</b> of
+arguments, and the compiler fills the format string in for you:
+</p>
+<pre>
+std.io.print("count: {}\n", .{n});
+</pre>
+<p>
+The <tt>{}</tt> is a placeholder; <tt>.{n}</tt> is a one-element tuple holding
+the value to put there. The supported placeholders are <tt>{}</tt> and
+<tt>{d}</tt> for decimal, <tt>{x}</tt> for hexadecimal, <tt>{c}</tt> for a
+character, and <tt>{s}</tt> for a string. This first program has nothing to
 substitute, so the string is all it needs.
+</p>
+
+<h3>The closing brace</h3>
+<p>
+The last line's <tt>}</tt> closes the body of <tt>main</tt> that opened after
+<tt>!void</tt>. Braces come in pairs, and the compiler refuses a file whose
+braces do not balance.
 </p>
 
 <h2>Building it</h2>
 <p>
-Build the compiler once from the committed seed (from the repository root),
-then emit and compile the program:
+Chapter 4 built the compiler from the committed seed and left it at
+<tt>/tmp/manual_seed/zig1_5_clean</tt>, with the standard library beside it in
+<tt>/tmp/manual_seed/lib/</tt>. If you have not done that yet, do it now, from
+the repository root:
 </p>
 <pre>
 bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/manual_seed
 </pre>
 <p>
-That produces <tt>/tmp/manual_seed/zig1_5_clean</tt>, the compiler, with the
-standard library beside it in <tt>/tmp/manual_seed/lib/</tt>. Now translate the
-program to C89 and build it:
+The compiler is not an interpreter: it does not run your <tt>.z98</tt> file
+directly. It translates the file to C89, and you compile that C with the C
+compiler already on the machine. Two steps, then a third to run the result:
 </p>
 <pre>
 $ mkdir -p /tmp/manual_out
@@ -127,13 +208,53 @@ $ ./hello
 Hello from Z98!
 </pre>
 <p>
-The <tt>mkdir</tt> creates the output directory, which the compiler requires to
-exist. The next command translates <tt>hello.z98</tt> into C89 and writes it,
-with the runtime and a <tt>build_target.sh</tt>, into <tt>/tmp/manual_out</tt>.
-The one after that compiles the C with <tt>gcc -m32</tt> and links the
-executable <tt>hello</tt>. The generated C draws a long list of warnings from
-<tt>gcc</tt>; the emitted script does not use <tt>-Werror</tt>, so they do not
-stop the build. The last command runs the program, which prints its one line.
+Read the transcript left to right:
+</p>
+<ul>
+<li><tt>mkdir -p /tmp/manual_out</tt> creates the output folder. The compiler
+requires the folder to exist already; it will not create it for you.</li>
+<li><tt>zig1_5_clean -o /tmp/manual_out docs/sf/manuals/src/vol1/hello.z98</tt>
+translates <tt>hello.z98</tt> into C89 and writes a self-contained tree of
+files into <tt>/tmp/manual_out</tt>. Among them are the generated C, a copy of
+the runtime, and a build script named <tt>build_target.sh</tt>.</li>
+<li><tt>sh build_target.sh linux hello</tt> runs that script. It invokes
+<tt>gcc -m32</tt> on the generated C, links the runtime, and produces an
+executable named <tt>hello</tt>. The <tt>Building for linux...</tt> and
+<tt>Built: hello</tt> lines are the script's own report.</li>
+<li><tt>./hello</tt> runs the program, and it prints its one line.</li>
+</ul>
+<p>
+The generated C draws a long list of warnings from <tt>gcc</tt>. They are
+expected, and the emitted script does not pass <tt>-Werror</tt>, so they do not
+stop the build. A successful build ends with <tt>Built: hello</tt>; the
+warnings scroll past above it.
+</p>
+
+<h2>Talking to the standard library</h2>
+<p>
+The one interesting call is <tt>std.io.print</tt>. Its job is to write text to
+standard output, the stream the terminal shows. The shipped declaration is a
+C-style variadic function,
+<tt>std.io.print(s: [*]const c_char, ...) void</tt>, but the compiler treats a
+call to a function named <tt>print</tt> as a special case: it reads the format
+string at compile time and emits one small print for each placeholder, so no
+runtime format machinery is needed on a 1998 machine.
+</p>
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ece0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> <tt>print</tt> is a compiler special case, not an
+ordinary variadic function you could write yourself. The language has no
+<tt>anytype</tt> and no generics, so a user-defined function cannot accept a
+variable number of arguments; only the compiler can. That is why the format
+string has to be a literal the compiler can read, and why the arguments have to
+be a tuple.</td>
+</tr>
+</table>
+<p>
+That is also why the argument after the format string is a tuple. It is the
+only variadic form Z98 supports. A later chapter in Volume II covers the format
+string in full.
 </p>
 
 <h2>Running under Windows 98</h2>
@@ -151,6 +272,75 @@ line. The screenshot below will be captured on real hardware.
 </tr>
 </table>
 <p><i>Figure 6. Running <tt>hello.exe</tt> under Windows 98.</i></p>
+
+<h2>Common mistakes</h2>
+<p>
+These are the mistakes a first program attracts. Each one has a symptom you can
+recognize.
+</p>
+<p>
+<b>Forgetting the import.</b> If you leave off
+<tt>const std = @import("std");</tt> and write <tt>std.io.print(...)</tt>
+anyway, the compiler does not know the name <tt>std</tt> and says so:
+</p>
+<pre>
+hello.z98:2:4: error[20]: identifier 'std' is not declared or imported in this module
+    std.io.print("Hello from Z98!\n");
+    ^^^
+</pre>
+<p>
+The caret points at the first use of the missing name.
+</p>
+<p>
+<b>Forgetting <tt>pub</tt> on <tt>main</tt>.</b> The compiler accepts
+<tt>fn main() !void</tt>, but it emits a private function and no C
+<tt>main</tt>. The failure comes later, from the linker, not from Z98:
+</p>
+<pre>
+...
+(.text+0x1e): undefined reference to `main'
+collect2: error: ld returned 1 exit status
+</pre>
+<p>
+If the link fails with that message, check the first word of the
+<tt>main</tt> declaration.
+</p>
+<p>
+<b>Leaving off the closing brace.</b> A file that opens a brace and does not
+close it is rejected before any C is written:
+</p>
+<pre>
+hello.z98:5:0: error[2000]: expected '}' but found token
+hello.z98:5:0: error[2000]: unexpected token
+</pre>
+<p>
+The compiler names the end of the file as the place it expected the brace.
+Count the braces in the function; they must balance.
+</p>
+<p>
+<b>Forgetting <tt>\n</tt>.</b> This one is not an error at all, which is why it
+is easy to miss. The program still builds and runs, but its output has no line
+break, so the shell prompt is printed immediately after the exclamation mark.
+If your transcript looks wrong, look at the end of the string first.
+</p>
+
+<h2>Check yourself</h2>
+<p>
+Answer these before moving on. The last one asks you to change the program and
+run it.
+</p>
+<ol>
+<li>What does <tt>@import("std")</tt> do, and where does the compiler find the
+standard library?</li>
+<li>Why does <tt>main</tt> need <tt>pub</tt>? What fails if it is missing, and
+at which step?</li>
+<li>What does <tt>!void</tt> mean, and why does <tt>main</tt> not need a
+<tt>return</tt> at the end?</li>
+<li>What is <tt>\n</tt>, and what changes if you remove it?</li>
+<li>Change the string to <tt>"Goodbye from Z98!\n"</tt>, rebuild, and run it.
+Then add a second <tt>std.io.print</tt> line that prints your name on its own
+line.</li>
+</ol>
 
 <p>Previous: <a href="vol1-04-installing.html">Installing the toolchain</a> | <a href="toc.html">Contents</a> | Next: <a href="vol2-00-title.html">Volume II &mdash; Learning Z98</a></p>
 </td>
