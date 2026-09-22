@@ -6,7 +6,7 @@
 
 | Artifact | Count | Notes |
 |----------|-------|-------|
-| `SemanticAnalyzer` fields | 85 | 51 non-builtin + 34 builtin name IDs (11 socket IDs removed) |
+| `SemanticAnalyzer` fields | 86 | 51 non-`_name_id` + 35 `_name_id` (the 35th is `discard_name_id`; 34 builtin name IDs, 11 socket IDs removed) |
 | Expression kind dispatch arms | 47+ | Every `AstKind` handled in `semanticAnalyzerResolveExpr` |
 | `CoercionKind` variants | 17 | `none` through `wrap_optional_null` |
 | Coercion checks in `classifyCoercion` | ~20 | noreturn/undefined, null, optional, error union, ptr/slice/many-ptr (qualifier-monotone), array, widening, literal |

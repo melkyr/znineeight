@@ -18,8 +18,10 @@ function-local -> container/module. The new diagnostic is the dedicated **`error
   in `semanticAnalyzerResolveExpr`, plus the expression-position `block` arm (which drains any
   statement work its trailing child deferred BEFORE restoring, so an `if`/`while`/`for` used as a
   block's last child still sees the block's locals). 7C listed expression-position captures as a
-  residual; without this the compiler's own `sf/src` produced 10 **false** `error[3057]`s (a leaked
-  `if_expr` capture / `orelse`-body local re-encountered later).
+  residual; 7C's 10 predicted `sf/src` sites were GENUINE nested-scope shadows (Task 7M's renames
+  stand and were necessary), and only 2 ADDITIONAL sites flagged during 7D's first build were
+  expression-position-scope **false positives** (a leaked `if_expr` capture / `orelse`-body local
+  re-encountered after its scope closed).
 - Added `semanticAnalyzerCheckLocalShadow(name_id, span_start, span_end)` and call it immediately
   before every local-registration site: local `const`/`var`, function parameters, `if`/`while`/`for`
   captures, switch-prong captures, `catch` payloads, and function-local named types. It scans the
@@ -29,8 +31,8 @@ function-local -> container/module. The new diagnostic is the dedicated **`error
 
 **Key finding.** 7C's 10 predicted `sf/src` local-shadow sites were **genuine** nested-scope shadows
 and Task 7M's de-shadowing renames stand (necessary — Zig 0.15.2 rejects them, e.g.
-`sf/src/parser.zig:730` `var tok` shadowing `:713 var tok`). 7D's first build then flagged a
-**further** set of `sf/src` sites that were **expression-position-scope false positives** (a leaked
+`sf/src/parser.zig:730` `var tok` shadowing `:713 var tok`). 7D's first build then flagged 2
+**additional** `sf/src` sites that were **expression-position-scope false positives** (a leaked
 `if_expr` capture / `orelse`-body local re-encountered after its expression scope closed); with
 expression-position scoping in place the self-compile passes with **no further `sf/src`
 de-shadowing**.
