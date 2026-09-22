@@ -88,7 +88,7 @@ pub fn main() !void {
     std.io.print("count  (i32)   = {}\n", .{count});
     std.io.print("max_u8 (u8)    = {}\n", .{max_u8});
     std.io.print("ready  (bool)  = {}\n", .{ready});
-    std.io.print("ratio  (f32)   = {}\n", .{@floatCast(f64, ratio)});
+    std.io.print("ratio  (f32)   = {}\n", .{ratio});
 
     std.io.print("sizeOf(i32)    = {}\n", .{@sizeOf(i32)});
     std.io.print("sizeOf(u8)     = {}\n", .{@sizeOf(u8)});
@@ -182,20 +182,10 @@ The last five calls use <tt>@sizeOf</tt>. <tt>@sizeOf(T)</tt> is a builtin that
 asks the compiler how many bytes a value of type <tt>T</tt> occupies. It is
 answered at compile time and becomes an ordinary number in the program.
 </p>
-<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ece0e0">
-<tr>
-<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
-<td><b>Honest note.</b> <tt>print</tt> knows how to show an <tt>f64</tt>, not an
-<tt>f32</tt>. That is why the program writes <tt>@floatCast(f64, ratio)</tt> in
-the print call: it widens the stored value back to <tt>f64</tt> first. Printing
-an <tt>f32</tt> directly builds and runs, but prints the wrong value, so widen
-it.</td>
-</tr>
-</table>
 
 <h2>The primitive types you have met</h2>
 <p>
-Four of the names in the program are types. They are not arbitrary: each one
+Five of the names in the program are types. They are not arbitrary: each one
 says how many bytes a value takes and therefore how large the value may be.
 </p>
 <table width="100%" border="1" cellpadding="4" cellspacing="0">
@@ -297,7 +287,7 @@ sizeOf(usize)  = 4
 Read the output one line at a time. The first four lines are the values:
 <tt>count</tt> is 42 because the program added one to 41, <tt>max_u8</tt> is the
 255 it was given, <tt>ready</tt> is <tt>true</tt> because the assignment flipped
-it, and <tt>ratio</tt> is <tt>1.5</tt> after being widened for printing. The last
+it, and <tt>ratio</tt> is <tt>1.5</tt>. The last
 five lines are <tt>@sizeOf</tt>: the sizes the compiler gave those types. They
 are the same on every build, because they are a property of the target machine,
 not of the program.

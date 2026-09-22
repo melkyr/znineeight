@@ -14,7 +14,7 @@ pub fn main() !void {
     std.io.print("count  (i32)   = {}\n", .{count});
     std.io.print("max_u8 (u8)    = {}\n", .{max_u8});
     std.io.print("ready  (bool)  = {}\n", .{ready});
-    std.io.print("ratio  (f32)   = {}\n", .{@floatCast(f64, ratio)});
+    std.io.print("ratio  (f32)   = {}\n", .{ratio});
 
     std.io.print("sizeOf(i32)    = {}\n", .{@sizeOf(i32)});
     std.io.print("sizeOf(u8)     = {}\n", .{@sizeOf(u8)});
