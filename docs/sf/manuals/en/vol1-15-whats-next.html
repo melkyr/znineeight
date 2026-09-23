@@ -107,7 +107,8 @@ have neither; what ships on the disk</td>
 </tr>
 <tr>
 <td><a href="vol1-05-first-program.html">5. Your first program</a></td>
-<td><tt>pub fn main</tt>, <tt>std.io.print</tt>, and the compile-and-run cycle
+<td><tt>pub fn main</tt>, the <tt>!void</tt> error-union return type,
+<tt>std.io.print</tt> and its argument tuple, and the compile-and-run cycle
 that turns a file into output</td>
 </tr>
 <tr>
@@ -163,8 +164,9 @@ each value needs, do arithmetic on them, decide and repeat, group related values
 in functions and structs, keep lists in arrays, and read what the compiler says
 when you get it wrong. You can build that program for Linux with the seed
 compiler, or emit it for Windows 98, and you can feed it input and read its
-output. The line counter of chapter 14 is the proof: it uses everything from
-chapters 6 through 12, and it is a tool a person could actually use.
+output. The line counter of chapter 14 is the proof: it uses what chapters 6
+through 11 taught, plus the input handling chapter 14 introduces, and it is a
+tool a person could actually use.
 </p>
 <p>
 The programs are small, and they are meant to be. Everything in this volume
@@ -179,13 +181,15 @@ the exit state the title page promised.
 The other side deserves the same plainness. The volume deliberately stopped
 before the parts of the language that make larger programs possible. You have
 not met pointers, so a function cannot reach back into the caller's data except
-by value. You have not met error unions, so a function that fails has no way to
-say so in its type. You have not met optionals, so "a value that might be
-absent" has to be written as a sentinel value and remembered by you. You have
-not met the arena or any other way to obtain memory while the program runs. You
-have not met enums, unions, packed structs, tuples, arbitrary-width integers,
-<tt>defer</tt>, or coroutines, and you have not built a program out of more
-than one file. String handling beyond one byte at a time, the wider standard
+by value. You have met the <tt>!T</tt> return type only in its simplest form,
+<tt>!void</tt>: the error sets behind it, and the <tt>try</tt>, <tt>catch</tt>,
+and <tt>errdefer</tt> that work with them, are still ahead. You have not met
+optionals, so "a value that might be absent" has to be written as a sentinel
+value and remembered by you. You have not met the arena or any other way to
+obtain memory while the program runs. You have not met enums, unions, packed
+structs, tuples as declared aggregate types, arbitrary-width integers,
+<tt>defer</tt>, or coroutines, and you have not built a program out of more than
+one file. String handling beyond one byte at a time, the wider standard
 library, and every interaction with the operating system beyond reading and
 printing are still ahead.
 </p>
