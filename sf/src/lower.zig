@@ -5962,6 +5962,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                 var ls_exit_bb = createBlock(self);
                 var ls_loop_info = LoopInfo{ .header_bb = ls_exit_bb, .exit_bb = ls_exit_bb, .scope_depth = self.scope_depth, .label_id = self.current_label, .is_loop = @intCast(u8, 0) };
                 loopInfoArrayListAppend(&self.loop_stack, ls_loop_info);
+                self.current_label = @intCast(u32, 0);
                 lowerStmt(self, node.child_0);
                 if (self.block_terminated == @intCast(u8, 0)) {
                     emitInst(self, LirInst{ .jump = ls_exit_bb });
@@ -6124,6 +6125,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         var body_bb = createBlock(self);
         var exit_bb = createBlock(self);
         var cont_bb = createBlock(self);
+        var saved_label = self.current_label;
         var loop_info = LoopInfo{
             .header_bb = cont_bb,
             .exit_bb = exit_bb,
@@ -6132,6 +6134,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             .is_loop = @intCast(u8, 1),
         };
         loopInfoArrayListAppend(&self.loop_stack, loop_info);
+        self.current_label = @intCast(u32, 0);
         emitInst(self, LirInst{ .jump = cond_bb });
         markTerminated(&self.func.blocks, entry_bb);
         self.current_bb = cond_bb;
@@ -6199,6 +6202,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         self.block_terminated = @intCast(u8, 0);
         self.capture_shadow.count = @intCast(usize, 0);
         self.loop_stack.len = self.loop_stack.len - @intCast(usize, 1);
+        self.current_label = saved_label;
      } else if (node.kind == AstKind.for_stmt) {
           var forx_m: []const u8 = "FORX\n"; pal.markerWrite(forx_m);
           var pattern = ast_mod.astStoreNodeAt(store, node.child_0);
@@ -6230,8 +6234,11 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             var cond_bb = createBlock(self);
             var body_bb = createBlock(self);
             var exit_bb = createBlock(self);
-            var loop_info = LoopInfo{ .header_bb = cond_bb, .exit_bb = exit_bb, .scope_depth = self.scope_depth, .label_id = self.current_label, .is_loop = @intCast(u8, 1) };
+            var step_bb = createBlock(self);
+            var saved_label = self.current_label;
+            var loop_info = LoopInfo{ .header_bb = step_bb, .exit_bb = exit_bb, .scope_depth = self.scope_depth, .label_id = self.current_label, .is_loop = @intCast(u8, 1) };
             loopInfoArrayListAppend(&self.loop_stack, loop_info);
+            self.current_label = @intCast(u32, 0);
             emitInst(self, LirInst{ .jump = cond_bb });
             self.current_bb = cond_bb;
             var cmp_op = if (pattern.kind == AstKind.range_inclusive) BIN_LE else BIN_LT;
@@ -6243,22 +6250,26 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             var fbr_m: []const u8 = "FBR:"; pal.markerWrite(fbr_m);
             lowerStmtBody(self, node.child_1);
             if (self.block_terminated == @intCast(u8, 0)) {
-                var fbi_m: []const u8 = "FBI:n"; pal.markerWrite(fbi_m);
-                var fbi_nb: [10]u8 = undefined; var fbi_nl = itoa_mod.itoa(node.child_1, fbi_nb[0..]); var fbi_ns: usize = @intCast(usize, 9) - @intCast(usize, fbi_nl); pal.markerWrite(fbi_nb[fbi_ns..@intCast(usize, 9)]);
-                var fbi_nl2: []const u8 = "\n"; pal.markerWrite(fbi_nl2);
-                var one_r = nextTemp(self, type_mod.TYPE_U32);
-                emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 1), .result = one_r } });
-                var nxt = nextTemp(self, type_mod.TYPE_U32);
-                var instc_fr_m: []const u8 = "INSTC:flr\n"; pal.markerWrite(instc_fr_m);
-                emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = start_temp, .rhs = one_r, .result = nxt } });
-                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = start_temp, .src = nxt } });
-                start_temp = nxt;
-                emitInst(self, LirInst{ .jump = cond_bb });
+                emitInst(self, LirInst{ .jump = step_bb });
             }
+            self.current_bb = step_bb;
+            self.block_terminated = @intCast(u8, 0);
+            var fbi_m: []const u8 = "FBI:n"; pal.markerWrite(fbi_m);
+            var fbi_nb: [10]u8 = undefined; var fbi_nl = itoa_mod.itoa(node.child_1, fbi_nb[0..]); var fbi_ns: usize = @intCast(usize, 9) - @intCast(usize, fbi_nl); pal.markerWrite(fbi_nb[fbi_ns..@intCast(usize, 9)]);
+            var fbi_nl2: []const u8 = "\n"; pal.markerWrite(fbi_nl2);
+            var one_r = nextTemp(self, type_mod.TYPE_U32);
+            emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 1), .result = one_r } });
+            var nxt = nextTemp(self, type_mod.TYPE_U32);
+            var instc_fr_m: []const u8 = "INSTC:flr\n"; pal.markerWrite(instc_fr_m);
+            emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = start_temp, .rhs = one_r, .result = nxt } });
+            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = start_temp, .src = nxt } });
+            start_temp = nxt;
+            emitInst(self, LirInst{ .jump = cond_bb });
             self.current_bb = exit_bb;
             self.block_terminated = @intCast(u8, 0);
             self.capture_shadow.count = @intCast(usize, 0);
             self.loop_stack.len = self.loop_stack.len - @intCast(usize, 1);
+            self.current_label = saved_label;
         } else {
             var slice_temp = lowerExpr(self, node.child_0);
             var ptr_temp = nextTemp(self, type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, elem_type[0], false));
@@ -6284,8 +6295,11 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             var cond_bb = createBlock(self);
             var body_bb = createBlock(self);
             var exit_bb = createBlock(self);
-            var loop_info = LoopInfo{ .header_bb = cond_bb, .exit_bb = exit_bb, .scope_depth = self.scope_depth, .label_id = self.current_label, .is_loop = @intCast(u8, 1) };
+            var step_bb = createBlock(self);
+            var saved_label = self.current_label;
+            var loop_info = LoopInfo{ .header_bb = step_bb, .exit_bb = exit_bb, .scope_depth = self.scope_depth, .label_id = self.current_label, .is_loop = @intCast(u8, 1) };
             loopInfoArrayListAppend(&self.loop_stack, loop_info);
+            self.current_label = @intCast(u32, 0);
             emitInst(self, LirInst{ .jump = cond_bb });
             self.current_bb = cond_bb;
             var cmp_temp = nextTemp(self, type_mod.TYPE_BOOL);
@@ -6314,18 +6328,22 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             self.block_terminated = @intCast(u8, 0);
             lowerStmtBody(self, node.child_1);
             if (self.block_terminated == @intCast(u8, 0)) {
-                var one_s = nextTemp(self, type_mod.TYPE_USIZE);
-                emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 1), .result = one_s } });
-                var nxt_idx = nextTemp(self, type_mod.TYPE_USIZE);
-                var instc_fs_m: []const u8 = "INSTC:fls\n"; pal.markerWrite(instc_fs_m);
-                emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = idx_temp, .rhs = one_s, .result = nxt_idx } });
-                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = idx_temp, .src = nxt_idx } });
-                idx_temp = nxt_idx;
-                emitInst(self, LirInst{ .jump = cond_bb });
+                emitInst(self, LirInst{ .jump = step_bb });
             }
+            self.current_bb = step_bb;
+            self.block_terminated = @intCast(u8, 0);
+            var one_s = nextTemp(self, type_mod.TYPE_USIZE);
+            emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 1), .result = one_s } });
+            var nxt_idx = nextTemp(self, type_mod.TYPE_USIZE);
+            var instc_fs_m: []const u8 = "INSTC:fls\n"; pal.markerWrite(instc_fs_m);
+            emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = idx_temp, .rhs = one_s, .result = nxt_idx } });
+            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = idx_temp, .src = nxt_idx } });
+            idx_temp = nxt_idx;
+            emitInst(self, LirInst{ .jump = cond_bb });
             self.current_bb = exit_bb;
             self.capture_shadow.count = @intCast(usize, 0);
             self.loop_stack.len = self.loop_stack.len - @intCast(usize, 1);
+            self.current_label = saved_label;
          }
      } else if (node.kind == AstKind.swt_ex) {
          var swt_m: []const u8 = "SWT:s\n"; pal.markerWrite(swt_m);

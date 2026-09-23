@@ -1,0 +1,47 @@
+// nested_loop_label.z98 — Task 10B standalone repro (defect B): a labeled
+// `break`/`continue` must target the loop that carries the label, not a nested
+// unlabeled loop that borrowed the label. Pre-fix (seed v80) `current_label`
+// leaked into nested unlabeled loops, so `continue :outer` / `break :outer`
+// matched the INNER loop first (silent wrong result, or a hang when combined
+// with the for-`continue` step defect). Post-fix this matches official Zig
+// 0.15.2.
+//
+// Expected stdout:
+//   i=3 count=6
+//   log=3
+//   blk=2
+// rc 0.
+const std = @import("std");
+
+pub fn main() void {
+    var count: u32 = 0;
+    var i: u32 = 0;
+    outer: while (i < 3) : (i += 1) {
+        for (0..3) |j| {
+            if (i == 1 and j == 0) continue :outer;
+            count += 1;
+        }
+    }
+    std.io.print("i={} count={}\n", .{ i, count });
+
+    var log: u32 = 0;
+    outer2: for (0..3) |m| {
+        var k2: u32 = 0;
+        while (k2 < 3) : (k2 += 1) {
+            if (m == 1 and k2 == 0) break :outer2;
+            log += 1;
+        }
+    }
+    std.io.print("log={}\n", .{log});
+
+    var blkc: u32 = 0;
+    blk: {
+        var b: u32 = 0;
+        while (b < 5) : (b += 1) {
+            if (b == 2) break :blk;
+            blkc += 1;
+        }
+        blkc += 100;
+    }
+    std.io.print("blk={}\n", .{blkc});
+}

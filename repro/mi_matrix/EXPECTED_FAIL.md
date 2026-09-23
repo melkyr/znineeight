@@ -1,4 +1,57 @@
-# mi_matrix corpus — expected-fail manifest (v200 2026-09-23)
+# mi_matrix corpus — expected-fail manifest (v201 2026-09-23)
+
+## Task 10B — `for`-loop `continue` runs the implicit step + nested-loop label leak (v200 -> v201 2026-09-23)
+
+**What.** Two silent miscompiles in `sf/src/lower.zig` (AMENDMENT 13; operator rulings
+m1318 + m1336). **(A)** `continue` inside a `for` loop (range or slice/array) jumped to the loop's
+**condition** instead of its implicit increment — the increment lived inline in the body block and
+`LoopInfo.header_bb` was `cond_bb` — so the range/index never advanced and the program hung
+(emit/build rc 0, no diagnostic, runtime `timeout` rc 124), contradicting spec §3.2. **(B)** an
+unlabeled nested loop inherited `current_label`, so a labeled `break`/`continue` matched the inner
+loop first (wrong result, or a hang when combined with A); affected both `while` and `for`, both
+transfer kinds.
+
+**Fix.**
+- **(A)** Both `AstKind.for_stmt` arms (`sf/src/lower.zig`, range arm and slice/array arm) create a
+  dedicated `step_bb`, register `LoopInfo.header_bb = step_bb`, emit the body fall-through as
+  `.jump(step_bb)`, and emit the increment **unconditionally** in `step_bb` (then `.jump(cond_bb)`)
+  — the `while` `cont_bb` pattern. An always-`continue` body still reaches the step (pre-fix such a
+  body had no increment at all).
+- **(B)** The `while` arm, both `for` arms, and the labeled-block arm save `current_label`, clear it
+  while lowering the body, and restore it at arm end (the `labeled_stmt` save/restore is unchanged),
+  so an unlabeled nested loop is pushed with `label_id = 0`; labeled transfers target the loop that
+  actually carries the label. Unlabeled transfers are unchanged.
+
+**Fixtures.** New positive runtime fixture `repro/mi_matrix/stdlib_for_continue_xmod` (range /
+array / slice / nested / nested-`if` / side-effect-before-`continue` / always-`continue` /
+index-capture / `defer`+`continue`, plus `break`-in-`for` and `while` controls; every aggregate
+`@panic`-guarded; golden `8 5 70 80 5 6 103 5 4 3 4 6 5 5`, rc 0, byte-exact 3x; stdlib pin
+**215 -> 216**) and `repro/mi_matrix/nested_loop_label_xmod` (21 aggregates across
+`while`/`for` x `break`/`continue` x unlabeled inner / mixed kinds / labeled block / nested labeled
+/ plain-nested control; golden `6 3 3 1 3 6 2 3 2 6 2 6 3 7 3 7 3 6 4 3 103`, rc 0, 3x). Standalone
+repros `repro/for_continue.z98` / `repro/nested_loop_label.z98`. All goldens matched against Zig
+0.15.2 twins. RED pre-fix: stdlib fixture hang rc=124, nested fixture panic rc=133.
+
+**Gates.** self-compile pre-rotation moving point `43fe3df1…` -> hop1 `6401621a…` ->
+hop2==hop3 `8b43b3b4…`; post-rotation two-hop closure hop1==hop2==`8b43b3b4f111cb9bedfebdd49309bd6a`;
+4-MD5 emitted-C **RE-BASELINED (authorized; PRE-vs-POST runtime stdout byte-identical + identical rc
+for all four programs)**: gol `e7bde571…` / mud `5a1cc65e…` **UNCHANGED**; lisp `552d0a84…` ->
+`353887639f127f4624de8b14b7e43a78` (+58 B); json `38b37bdd…` ->
+`5e1e0050c0c462d76e9ef8dee3f5ae7c` (+62 B); example matrix **24/24**; std-lib runtime gate
+**216 PASS / 0 FAIL**; corpus `-s0` **986 dirs = 865 OK / 42 GREEN / 79 FAIL / 0 ICE / 0 CRASH**
+with a full-classifier join-diff vs the pre-fix seed v80 compiler **byte-identical (zero movement**
+over the 986 common dirs; +2 vs v80's 984 = the 2 new fixtures); `check_emit_support.sh` 7/7;
+`verify_upgraded.sh` CLOSEOUT OK. Fixed point **MOVED `43fe3df1509ffb5728c8250133ab7827` ->
+`8b43b3b4f111cb9bedfebdd49309bd6a`**; seed **v80 -> v81** (archive md5
+`4a499af291e17445736106d40eb14ab1` -> `617ee1623331f79aae7957ff8e9138b4`; `gen/` 45 `.c` + 46 `.h`,
+9226589 bytes).
+
+**Important pre-existing anomaly (found while isolating fixture 2; NOT caused by Task 10B).** A plain
+`var` declaration whose name was earlier used as a `for` capture in a sibling scope can silently lose
+its declaration + initializer and alias the stale capture storage (e.g. fixture-2's first draft
+reused `j`; the emitted C had no `j = 0` init for the later loop and its uses read the previous
+capture temp). Reproduced identically with the v80 seed and the fixed compiler; the permanent
+fixtures avoid it via unique local names. Reported per m1336; a separate I/F pair is required.
 
 ## Task 9D — comptime-true no-`else` `if` fold + void-then value-`if` lowering (v196 -> v197 2026-09-22)
 

@@ -1,4 +1,4 @@
-# 07 — LIR Lowering [updated: 2026-09-23 — Task 9D: the `AstKind.if_expr` arm no longer allocates a result temp when the resolved type is `TYPE_VOID` (it returns `TEMP_NONE` at the join and guards the arm assigns), lowers the `else` arm only when `child_2 != 0` (removing the old `lowerIfArmValue(self, 0)` bogus-temp lowering for an absent `else`), applies the same void handling to the comptime-fold sub-path, and guards `return_stmt`'s `hoisted_temps[val]` deref against `TEMP_NONE`; this fixes `_ = if (c) foo();` (was gcc `'zT_<n>' undeclared`) — see Control Flow §If Expression] [updated: 2026-09-22 — Task 8B: the `comptime_values` HIT path in `lowerExprImpl` now recovers the folded constant's target type for `@as` as well as `@intCast` (`node.child_0 == self.intcast_name_id or node.child_0 == self.as_name_id`); the two builtins share the `[target_type, value]` AST layout, so a folded `@as(<signed>, <negative literal>)` operand previously fell through to the `TYPE_USIZE` default and was materialised as the unsigned 64-bit literal `18446744073709551614ULL` (wrong value or `-fsafe` trap); the fold itself (`comptime_eval.zig`) was already correct] [updated: 2026-09-22 — Task 6F: an undeclared identifier now clean-rejects in semantic analysis (`semanticAnalyzerResolveIdent` emits `error[3001]`, code 20), so the post-sema `hasErrors` gate exits rc=2 / 0 `.c` BEFORE `phase_LIRLowering`; an undeclared-ident callee therefore never reaches the Task 6D variant-C `error[3056]` path or the Task 6B `error[3042]` path — both are unchanged (`std.nope()` still `error[3042]`; a declared non-function callee still `error[3056]`)] [updated: 2026-09-22 — Task 6D: the generic `fn_call` path now inspects the lowered callee temp's type after `callee_temp = lowerExpr(...)`; a callee that is neither a `fn_type` nor a pointer to a `fn_type` (and is not `TYPE_VOID`/`TYPE_UNDEFINED`) emits the new `error[3056]: expression is not callable` (`ERR_3056_CALL_TARGET_NOT_CALLABLE`), rc=2, 0 `.c`; keyed on the lowered temp type so it also covers the flat non-pub member the resolved-type check misses] [updated: 2026-09-22 — Task 6B: the `fn_call` field-access callee path no longer silently returns temp 0 on an unresolvable nested-module chain (`std.io.<name>`); the chain walk is bounded (`chain_len < 4`, the `chain` buffer size) and a failure sets `chain_valid=0` and falls through to the generic call path, which lowers the callee as a value and emits the existing `error[3042]` (rc=2, 0 `.c`); a resolved nested callee is still emitted before the chain code is reached] [updated: 2026-09-21 — Task B2: a function-local named-type binding (`const T = struct/enum/union/error{...}`) is skipped in `var_decl` lowering after emitting one `decl_local` storage slot of the registered type (the value initializer has no runtime representation); `field_access`'s generic base-type path gains an `enum_type` arm mirroring `error_set_type` so a local enum's `E.A` emits `enum_const`] [updated: 2026-09-20 — refreshed against the current 82-variant `LirInst` set, `lir_opt_pass`/`lir_stream`/`spill_store` coverage, packed bitfields, arbitrary-width int ops, `-fsafe` checks, `volatile`, calling convention, and async lowering; line references and dated evidence removed; `return_stmt` now classifies an explicit error return and passes `is_error_path=1` to `expandDefers` so `errdefer` runs on explicit error returns (Task 10B, 2026-09-20); `@floatCast` is now interned (`floatcast_name_id`) and lowers to the existing `float_cast` op (Task 11B, 2026-09-20); `return_stmt` now runs `errdefer` on a dynamic error-union return (identical src/dst types, no recorded coercion) via a pending-errdefer-gated `check_error`/`branch` mirroring the `try` path (Task 10F, 2026-09-20); field-access lowering now intercepts `.len` on a struct/union array field and emits the declared compile-time length via `fieldStaticLenForBase`, since the array-field decay makes the `array_type` `.len` arm unreachable (Task 11N, 2026-09-21)]
+# 07 — LIR Lowering [updated: 2026-09-23 — Task 10B: the two `for` arms (`AstKind.for_stmt`, range and slice/array) now create a dedicated `step_bb` and register it as `LoopInfo.header_bb`, so a `continue` reaches the implicit increment before the next condition test; the increment moved out of the body fall-through into `step_bb`, which is emitted unconditionally (an always-`continue` body still reaches it), and `step_bb`/the fall-through both jump to `cond_bb`. The `while` arm, both `for` arms, and the labeled-block arm now clear `self.current_label` before lowering the body (saving/restoring it at the arm end), so an unlabeled nested loop is pushed with `label_id = 0` and a labeled `break`/`continue` no longer targets the inner loop — see Control Flow §While Statement/§For Statement/§Labeled break/continue] [updated: 2026-09-23 — Task 9D: the `AstKind.if_expr` arm no longer allocates a result temp when the resolved type is `TYPE_VOID` (it returns `TEMP_NONE` at the join and guards the arm assigns), lowers the `else` arm only when `child_2 != 0` (removing the old `lowerIfArmValue(self, 0)` bogus-temp lowering for an absent `else`), applies the same void handling to the comptime-fold sub-path, and guards `return_stmt`'s `hoisted_temps[val]` deref against `TEMP_NONE`; this fixes `_ = if (c) foo();` (was gcc `'zT_<n>' undeclared`) — see Control Flow §If Expression] [updated: 2026-09-22 — Task 8B: the `comptime_values` HIT path in `lowerExprImpl` now recovers the folded constant's target type for `@as` as well as `@intCast` (`node.child_0 == self.intcast_name_id or node.child_0 == self.as_name_id`); the two builtins share the `[target_type, value]` AST layout, so a folded `@as(<signed>, <negative literal>)` operand previously fell through to the `TYPE_USIZE` default and was materialised as the unsigned 64-bit literal `18446744073709551614ULL` (wrong value or `-fsafe` trap); the fold itself (`comptime_eval.zig`) was already correct] [updated: 2026-09-22 — Task 6F: an undeclared identifier now clean-rejects in semantic analysis (`semanticAnalyzerResolveIdent` emits `error[3001]`, code 20), so the post-sema `hasErrors` gate exits rc=2 / 0 `.c` BEFORE `phase_LIRLowering`; an undeclared-ident callee therefore never reaches the Task 6D variant-C `error[3056]` path or the Task 6B `error[3042]` path — both are unchanged (`std.nope()` still `error[3042]`; a declared non-function callee still `error[3056]`)] [updated: 2026-09-22 — Task 6D: the generic `fn_call` path now inspects the lowered callee temp's type after `callee_temp = lowerExpr(...)`; a callee that is neither a `fn_type` nor a pointer to a `fn_type` (and is not `TYPE_VOID`/`TYPE_UNDEFINED`) emits the new `error[3056]: expression is not callable` (`ERR_3056_CALL_TARGET_NOT_CALLABLE`), rc=2, 0 `.c`; keyed on the lowered temp type so it also covers the flat non-pub member the resolved-type check misses] [updated: 2026-09-22 — Task 6B: the `fn_call` field-access callee path no longer silently returns temp 0 on an unresolvable nested-module chain (`std.io.<name>`); the chain walk is bounded (`chain_len < 4`, the `chain` buffer size) and a failure sets `chain_valid=0` and falls through to the generic call path, which lowers the callee as a value and emits the existing `error[3042]` (rc=2, 0 `.c`); a resolved nested callee is still emitted before the chain code is reached] [updated: 2026-09-21 — Task B2: a function-local named-type binding (`const T = struct/enum/union/error{...}`) is skipped in `var_decl` lowering after emitting one `decl_local` storage slot of the registered type (the value initializer has no runtime representation); `field_access`'s generic base-type path gains an `enum_type` arm mirroring `error_set_type` so a local enum's `E.A` emits `enum_const`] [updated: 2026-09-20 — refreshed against the current 82-variant `LirInst` set, `lir_opt_pass`/`lir_stream`/`spill_store` coverage, packed bitfields, arbitrary-width int ops, `-fsafe` checks, `volatile`, calling convention, and async lowering; line references and dated evidence removed; `return_stmt` now classifies an explicit error return and passes `is_error_path=1` to `expandDefers` so `errdefer` runs on explicit error returns (Task 10B, 2026-09-20); `@floatCast` is now interned (`floatcast_name_id`) and lowers to the existing `float_cast` op (Task 11B, 2026-09-20); `return_stmt` now runs `errdefer` on a dynamic error-union return (identical src/dst types, no recorded coercion) via a pending-errdefer-gated `check_error`/`branch` mirroring the `try` path (Task 10F, 2026-09-20); field-access lowering now intercepts `.len` on a struct/union array field and emits the declared compile-time length via `fieldStaticLenForBase`, since the array-field decay makes the `array_type` `.len` arm unreachable (Task 11N, 2026-09-21)]
 
 > Covers: `lower.zig`, `lir.zig`, `lir_opt_pass.zig`, `lir_stream.zig`, `spill_store.zig`
 
@@ -262,7 +262,7 @@ Emission is `#ifdef _WIN32 / #elif defined(__WATCOMC__) / #else` guarded (see 08
 |------|--------|---------|
 | `SemanticContext` | store, registry, symbol_tables, resolved_types, coercions, diag, has_symbols, enum_value_table, error_code_registry, call_arg_types, comptime_values, source_file_id, safe_checks, suspending_fns, frame_sizes, state_widths | Read-only view of the compilation state passed to the lowerer |
 | `DeferAction` | `kind, ast_node, scope_depth` | Descriptor for deferred statement execution (`kind`: 0=defer, 1=errdefer) |
-| `LoopInfo` | `header_bb, exit_bb, scope_depth, label_id, is_loop` | Loop context for break/continue resolution. `label_id` is the active label name ID from `current_label` at push time (0=unlabeled) |
+| `LoopInfo` | `header_bb, exit_bb, scope_depth, label_id, is_loop` | Loop context for break/continue resolution. `header_bb` is the `continue` target (a `while` uses its `cont_bb`; each `for` arm uses its dedicated `step_bb` so `continue` runs the implicit increment). `label_id` is the active label name ID from `current_label` at push time (0=unlabeled); the loop arms then clear `current_label` while lowering the body, so an unlabeled nested loop is pushed with `label_id = 0` |
 | `SwitchInfo` | `exit_bb, scope_depth` | Switch context |
 | `SrcIntent` | enum `value`, `null_src`, `error_src` | Classifies a source expression for coercion. `null_src` makes the null_literal branch emit `set_optional_null` directly on an `Opt_`-typed temp |
 | `LocalBinding` | `temp, kind, tid` | Resolved local-variable binding |
@@ -520,12 +520,14 @@ Same pattern as the if-statement, with a `result` temp both arms assign into —
 #### While Statement
 ```
 createBlock(cond_bb, body_bb, exit_bb, cont_bb)
-push LoopInfo{ header=cont_bb, exit=exit_bb }
+saved_label = current_label
+push LoopInfo{ header=cont_bb, exit=exit_bb, label_id=current_label }
+current_label = 0
 .jump(cond_bb)
 → cond_bb: lowerExpr(cond) → check_optional? → .branch{ cond, body_bb, exit_bb }
 → body_bb: bindCapture? → lowerStmtBody(body) → .jump(cont_bb) (if not terminated)
 → cont_bb: lowerStmtBody(incr) → .jump(cond_bb) (if not terminated)
-→ exit_bb: pop loop_stack
+→ exit_bb: pop loop_stack; current_label = saved_label
 ```
 
 #### For Statement
@@ -533,25 +535,38 @@ push LoopInfo{ header=cont_bb, exit=exit_bb }
 **Range for** (`range_exclusive`/`range_inclusive`):
 ```
 lowerExpr(start), lowerExpr(end)
-createBlock(cond_bb, body_bb, exit_bb)
-push LoopInfo
+createBlock(cond_bb, body_bb, exit_bb, step_bb)
+saved_label = current_label
+push LoopInfo{ header=step_bb, exit=exit_bb, label_id=current_label }
+current_label = 0
 .jump(cond_bb)
 → cond_bb: .binary{ LE/LT, start, end } → .branch{ cmp, body_bb, exit_bb }
-→ body_bb: lowerStmtBody(body) → nxt = start + 1; start = nxt → .jump(cond_bb)
-→ exit_bb: pop loop_stack
+→ body_bb: lowerStmtBody(body) → .jump(step_bb) (if not terminated)
+→ step_bb: nxt = start + 1; start = nxt → .jump(cond_bb)
+→ exit_bb: pop loop_stack; current_label = saved_label
 ```
 
 **Iteration for** (slice/array):
 ```
 lowerExpr(array/slice) → extract .ptr and .len
 idx = 0
-createBlock(cond_bb, body_bb, exit_bb)
-push LoopInfo
+createBlock(cond_bb, body_bb, exit_bb, step_bb)
+saved_label = current_label
+push LoopInfo{ header=step_bb, exit=exit_bb, label_id=current_label }
+current_label = 0
 .jump(cond_bb)
 → cond_bb: .binary{ LT, idx, len } → .branch{ cmp, body_bb, exit_bb }
-→ body_bb: .load_index{ ptr, idx } → item_temp; decl_local for capture → lowerStmtBody(body) → idx += 1 → .jump(cond_bb)
-→ exit_bb: pop loop_stack
+→ body_bb: .load_index{ ptr, idx } → item_temp; decl_local for capture → lowerStmtBody(body) → .jump(step_bb) (if not terminated)
+→ step_bb: idx += 1 → .jump(cond_bb)
+→ exit_bb: pop loop_stack; current_label = saved_label
 ```
+
+**Always-emitted step block (Task 10B).** Both `for` arms emit `step_bb` unconditionally — a `continue`
+from anywhere in the body jumps to it, and the fall-through jumps to it too, so the increment runs on
+every iteration (including a body that never falls through, e.g. a body whose last statement is
+`continue`). Registering `cond_bb` as the `continue` target instead (the pre-10B shape) skipped the
+increment whenever `continue` was taken (a silent hang). The labeled-block arm clears `current_label`
+for its body as well; its `LoopInfo{ is_loop=0 }` entry keeps the block's own label for `break :blk`.
 
 #### Switch Expression
 ```
@@ -585,7 +600,7 @@ break:    expandDefers(exit_scope, 0, 0) → .jump(exit_target)
 continue: expandDefers(cont_scope, 0, 0) → .jump(header_target)
 ```
 
-**Labeled break/continue:** `break :label` / `continue :label` read `node.payload` as `label_id` (0 = unlabeled). The unlabeled path keeps the top-of-stack jump; the labeled path scans `loop_stack` top-down for `LoopInfo.label_id == label_id` and jumps to that loop's exit/header. `LoopInfo.label_id` is stamped from `self.current_label` at all three loop-push sites, and `current_label` is set from a `labeled_stmt` node's payload in `lowerStmt` with save/restore around the `child_0` recursion. `break :label` out of a labeled **non-loop** block is unsupported — the break handler searches only `loop_stack`.
+**Labeled break/continue:** `break :label` / `continue :label` read `node.payload` as `label_id` (0 = unlabeled). The unlabeled path keeps the top-of-stack jump; the labeled path scans `loop_stack` top-down for `LoopInfo.label_id == label_id` and jumps to that loop's exit/header. `LoopInfo.label_id` is stamped from `self.current_label` at all three loop-push sites; each loop arm then **clears** `self.current_label` while lowering its body and restores the saved value at arm end (the labeled-block arm clears it too), so a nested **unlabeled** loop is pushed with `label_id = 0` and cannot capture a labeled transfer — a labeled `break`/`continue` reaches the loop that actually carries the label (Task 10B; pre-fix the inner loop inherited the outer label and the search matched it first). `current_label` is set from a `labeled_stmt` node's payload in `lowerStmt` with save/restore around the `child_0` recursion. `break :label` out of a labeled **non-loop** block is unsupported — the break handler searches only `loop_stack`.
 
 ### Optional Unwrapping
 
