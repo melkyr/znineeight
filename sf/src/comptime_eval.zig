@@ -172,6 +172,19 @@ fn ciMagCmp(a: ComptimeInt, b: ComptimeInt) i32 {
     return @intCast(i32, 0);
 }
 
+// Task 3 (Task 1 §4): exact signedness-free three-way comparison (-1 / 0 / 1).
+// `-0` is normalized to `0`, so (neg, mag) is a total order and no sign class
+// or declared type is ever consulted.
+fn ciCmp(a: ComptimeInt, b: ComptimeInt) i32 {
+    if (a.neg != b.neg) {
+        if (a.neg) return @intCast(i32, -1);
+        return @intCast(i32, 1);
+    }
+    var m: i32 = ciMagCmp(a, b);
+    if (a.neg) { m = @intCast(i32, 0) - m; }
+    return m;
+}
+
 // Low 64 bits as a two's-complement pattern (for materialisation only).
 pub fn ciToU64(v: ComptimeInt) u64 {
     var m: u64 = @intCast(u64, 0);
@@ -192,20 +205,6 @@ fn ciToF64(v: ComptimeInt) f64 {
     }
     if (v.neg) { fv = -fv; }
     return fv;
-}
-
-// Reconstruct the pre-Task-2 64-bit bits view of a folded value, when it fits
-// (used by the pre-Task-3 comparison fold; a bool is 0/1). Values at/above
-// 2^64 decline -- the old comparison fold could not represent them either.
-fn ciValToOldBits(cv: ComptimeVal, out: *u64) bool {
-    if (cv.kind == KIND_BOOL) {
-        if (ciIsZero(cv.v)) { out.* = @intCast(u64, 0); } else { out.* = @intCast(u64, 1); }
-        return true;
-    }
-    var lim = ciPow2(@intCast(u32, 64));
-    if (ciMagCmp(cv.v, lim) >= 0) return false;
-    out.* = ciToU64(cv.v);
-    return true;
 }
 
 fn ciIntVal(v: ComptimeInt) ComptimeVal {
@@ -647,6 +646,17 @@ pub fn ciShr(a: ComptimeInt, b: ComptimeInt, out: *ComptimeInt) bool {
     return true;
 }
 
+// Task 3 (Task 1 §5.4): exact arithmetic/bitwise/shift fold with the operand
+// peer-fit rule — the rule that keeps Zig-rejected shapes like
+// `const u: u8 = 200; (u - 300) < 0` rejected. Compute the operand peer type
+// P: one operand declared integer T + the other untyped -> P = T; both declared
+// -> the sema width rule (wider wins, ties keep lhs); otherwise no P. Then:
+// (1) each UNTYPED operand's exact value must fit P (Zig: "type 'u8' cannot
+// represent integer value '300'"), and (2) the exact result must fit P (Zig:
+// "overflow of integer type 'u64' with value ..."). A failed fit makes the fold
+// decline (`null`), which preserves today's verdicts: a comptime-required
+// position rejects, a runtime position keeps the runtime path. Comparisons are
+// exempt (see `comptimeEvalCompare`).
 fn comptimeEvalBinOp(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, depth: u32) ?ComptimeVal {
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var lhs = comptimeEvalEvaluateDepth(self, node.child_0, depth);
@@ -654,6 +664,26 @@ fn comptimeEvalBinOp(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, depth
     if (lhs) |l| {
         if (rhs) |r| {
             if (l.kind != KIND_INT or r.kind != KIND_INT) return null;
+            var peer_tid: u32 = @intCast(u32, 0);
+            var lt = comptimeEvalOperandType(self, node.child_0);
+            var rt = comptimeEvalOperandType(self, node.child_1);
+            if (lt) |lti| {
+                if (rt) |rti| {
+                    peer_tid = comptimeEvalWiderIntType(self, lti, rti);
+                } else {
+                    peer_tid = lti;
+                }
+            } else {
+                if (rt) |rti2| { peer_tid = rti2; }
+            }
+            if (peer_tid != @intCast(u32, 0)) {
+                if (lt == null) {
+                    if (!comptimeIntFitsType(self, l.v, peer_tid)) return null;
+                }
+                if (rt == null) {
+                    if (!comptimeIntFitsType(self, r.v, peer_tid)) return null;
+                }
+            }
             var res = ciZeroInt();
             if (op_kind == AstKind.add) {
                 if (!ciAdd(l.v, r.v, &res)) return null;
@@ -680,30 +710,26 @@ fn comptimeEvalBinOp(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, depth
             } else {
                 return null;
             }
+            if (peer_tid != @intCast(u32, 0)) {
+                if (!comptimeIntFitsType(self, res, peer_tid)) return null;
+            }
             return ciIntVal(res);
         }
     }
     return null;
 }
 
-// Task 9D: fold a comparison (`==`/`!=`/`<`/`<=`/`>`/`>=`) of two comptime
-// integers to a bool ComptimeVal. Both operands must fold; a float operand is a
-// bounded residual and stays unfolded. Signedness is per-operand and
-// CONSERVATIVE (fix round 3, ruling m1293 (b)): a declared integer type wins
-// for its operand, otherwise the syntactic sign class decides (a
-// definitely-negative untyped operand forces signed comparison even when the
-// OTHER operand is declared unsigned, so `const u: u8 = 200; u > -1` is true).
-// A shape whose signedness cannot be derived from a declared type, a literal's
-// own sign / `negate`, or an explicit `@intCast`/`@as` target — e.g. an
-// arithmetic expression over a const — makes the whole comparison UNFOLDABLE
-// (null). Documented bounded divergence: Zig evaluates such expressions at
-// arbitrary precision; Task 3 replaces this whole path with the exact
-// magnitude+sign comparison.
-//
-// Task 2: the representation is now a big int, so the two operands are first
-// converted back to the OLD 64-bit bits+sig view when they fit in 64 bits
-// (`ciValToOldBits`); a value beyond that declines the comparison (the old fold
-// could not represent it either), preserving the frozen comparison behavior.
+// Task 3 (Task 1 §4 compare row): signedness-free comparison
+// (`==`/`!=`/`<`/`<=`/`>`/`>=`) of two exact comptime integers. `ComptimeInt`
+// carries only magnitude+sign, so `(umax - 1) > 0`, `-1 < U64MAX`, and
+// arithmetic-derived conditions fold exactly like Zig's `comptime_int`; bools
+// compare as 0/1 (`-0` is normalized to `0`). The Task 9D sign-class
+// machinery, the declared-type lookup, and the 64-bit `ciValToOldBits` bridge
+// are all gone. Comparisons deliberately do NOT apply the arithmetic peer-fit
+// rule (Task 1 §5.4): the oracle accepts `const u: u8 = 200; u > -1` (true) and
+// `u > 300` (false), so a comparison is mathematical and range rulings belong
+// to the arithmetic folds beneath it. A float operand stays unfoldable (float
+// comparison folding is out of scope — a bounded residual).
 fn comptimeEvalCompare(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, depth: u32) ?ComptimeVal {
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var lhs = comptimeEvalEvaluateDepth(self, node.child_0, depth);
@@ -711,33 +737,14 @@ fn comptimeEvalCompare(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, dep
     if (lhs) |l| {
         if (rhs) |r| {
             if (l.kind == KIND_FLOAT or r.kind == KIND_FLOAT) return null;
-            var l_bits: u64 = @intCast(u64, 0);
-            var r_bits: u64 = @intCast(u64, 0);
-            if (!ciValToOldBits(l, &l_bits)) return null;
-            if (!ciValToOldBits(r, &r_bits)) return null;
-            var l_signed: bool = false;
-            var r_signed: bool = false;
-            if (!comptimeEvalOperandCompareSigned(self, node.child_0, &l_signed)) return null;
-            if (!comptimeEvalOperandCompareSigned(self, node.child_1, &r_signed)) return null;
-            var use_signed: bool = l_signed or r_signed;
+            var c: i32 = ciCmp(l.v, r.v);
             var res: bool = false;
-            if (use_signed) {
-                var sl: i64 = @bitCast(i64, l_bits);
-                var sr: i64 = @bitCast(i64, r_bits);
-                if (op_kind == AstKind.cmp_eq) res = sl == sr;
-                if (op_kind == AstKind.cmp_ne) res = sl != sr;
-                if (op_kind == AstKind.cmp_lt) res = sl < sr;
-                if (op_kind == AstKind.cmp_le) res = sl <= sr;
-                if (op_kind == AstKind.cmp_gt) res = sl > sr;
-                if (op_kind == AstKind.cmp_ge) res = sl >= sr;
-            } else {
-                if (op_kind == AstKind.cmp_eq) res = l_bits == r_bits;
-                if (op_kind == AstKind.cmp_ne) res = l_bits != r_bits;
-                if (op_kind == AstKind.cmp_lt) res = l_bits < r_bits;
-                if (op_kind == AstKind.cmp_le) res = l_bits <= r_bits;
-                if (op_kind == AstKind.cmp_gt) res = l_bits > r_bits;
-                if (op_kind == AstKind.cmp_ge) res = l_bits >= r_bits;
-            }
+            if (op_kind == AstKind.cmp_eq) res = c == @intCast(i32, 0);
+            if (op_kind == AstKind.cmp_ne) res = c != @intCast(i32, 0);
+            if (op_kind == AstKind.cmp_lt) res = c < @intCast(i32, 0);
+            if (op_kind == AstKind.cmp_le) res = c <= @intCast(i32, 0);
+            if (op_kind == AstKind.cmp_gt) res = c > @intCast(i32, 0);
+            if (op_kind == AstKind.cmp_ge) res = c >= @intCast(i32, 0);
             return ciBoolVal(res);
         }
     }
@@ -799,12 +806,28 @@ fn comptimeEvalLogical(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, dep
     return null;
 }
 
-// Task 9D fix round 1: the DECLARED integer signedness of a comparison operand,
-// or null when the operand has no declared integer type (an untyped comptime_int
-// literal / expression). Unlike `comptimeEvalOperandSigned`, this does not fall
-// back to `cv.sig`, and it consults the function-local const scope first (Task
-// 9D Gap B): a function-local `u64` const above i64 max must compare UNSIGNED.
-fn comptimeEvalOperandDeclaredSigned(self: *ComptimeEval, node_idx: u32) ?bool {
+// Task 3 (Task 1 §5.4 / §8 risk 3): the integer type a binop operand receives
+// in sema, or null when the operand is untyped (an int/char/bool literal, or a
+// shape whose type cannot be derived). This replaces the Task 9D
+// `comptimeEvalOperandDeclaredSigned` (signedness is never recovered any more);
+// the only consumer is the arithmetic peer-fit rule in `comptimeEvalBinOp`.
+// Leaves: an ident's declared integer type (function-local const scope first,
+// Task 9D Gap B, then the module symbol tables); `@intCast`/`@as` integer
+// targets. Compound expressions MIRROR sema's typing so the fold cannot
+// disagree with the runtime type: `negate`/`bit_not` propagate their operand
+// (sema :1525-1541), and the integer binops apply the INT_LIT/numeric arm plus
+// the wider-wins/ties-lhs width rule (sema :1440-1449, :1462-1463) via
+// `comptimeEvalWiderIntType`. The recursion matters: for `((u - 1) - 300)` with
+// `u: u8` the outer sub's sema type is `u8`, so the peer fit must see `u8` and
+// decline -- without it the fold would accept a result the runtime arithmetic
+// wraps (a silent miscompile).
+fn comptimeEvalOperandType(self: *ComptimeEval, node_idx: u32) ?u32 {
+    return comptimeEvalOperandTypeDepth(self, node_idx, @intCast(u32, 0));
+}
+
+fn comptimeEvalOperandTypeDepth(self: *ComptimeEval, node_idx: u32, depth: u32) ?u32 {
+    if (node_idx == @intCast(u32, 0)) return null;
+    if (depth >= @intCast(u32, 16)) return null;
     var idx = node_idx;
     var guard: u32 = 0;
     while (guard < @intCast(u32, 32)) : (guard += 1) {
@@ -818,7 +841,7 @@ fn comptimeEvalOperandDeclaredSigned(self: *ComptimeEval, node_idx: u32) ?bool {
             if (type_resolver.localConstScopeLookup(lcs, name_id)) |l_decl_node| {
                 var l_decl = ast_mod.astStoreNodeAt(self.store, l_decl_node);
                 if (comptimeEvalResolveTypeArg(self, l_decl.child_0)) |lt| {
-                    if (type_mod.typeRegistryIsInteger(self.registry, lt)) return type_mod.typeRegistryIntIsSigned(self.registry, lt);
+                    if (type_mod.typeRegistryIsInteger(self.registry, lt)) return lt;
                 }
             }
         }
@@ -829,42 +852,49 @@ fn comptimeEvalOperandDeclaredSigned(self: *ComptimeEval, node_idx: u32) ?bool {
                 if ((cs.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
                     var c_decl = ast_mod.astStoreNodeAt(self.store, cs.decl_node);
                     if (comptimeEvalResolveTypeArg(self, c_decl.child_0)) |t| {
-                        if (type_mod.typeRegistryIsInteger(self.registry, t)) return type_mod.typeRegistryIntIsSigned(self.registry, t);
+                        if (type_mod.typeRegistryIsInteger(self.registry, t)) return t;
                     }
                 }
             }
         }
         return null;
     }
-    if (node.kind == AstKind.char_literal) return false;
     if (node.kind == AstKind.builtin_call) {
         if (node.child_0 == self.int_cast_id or node.child_0 == self.as_id) {
             if (comptimeEvalResolveTypeArg(self, ast_mod.astStoreNodeExtraChildAt(self.store, idx, @intCast(u32, 0)))) |t2| {
-                if (type_mod.typeRegistryIsInteger(self.registry, t2)) return type_mod.typeRegistryIntIsSigned(self.registry, t2);
+                if (type_mod.typeRegistryIsInteger(self.registry, t2)) return t2;
             }
         }
         return null;
     }
+    if (node.kind == AstKind.negate or node.kind == AstKind.bit_not) {
+        return comptimeEvalOperandTypeDepth(self, node.child_0, depth + @intCast(u32, 1));
+    }
+    if (node.kind == AstKind.add or node.kind == AstKind.sub or
+        node.kind == AstKind.mul or node.kind == AstKind.div or
+        node.kind == AstKind.mod_op or node.kind == AstKind.bit_and or
+        node.kind == AstKind.bit_or or node.kind == AstKind.bit_xor or
+        node.kind == AstKind.shl or node.kind == AstKind.shr) {
+        var lt = comptimeEvalOperandTypeDepth(self, node.child_0, depth + @intCast(u32, 1));
+        var rt = comptimeEvalOperandTypeDepth(self, node.child_1, depth + @intCast(u32, 1));
+        if (lt) |ltv| {
+            if (rt) |rtv| { return comptimeEvalWiderIntType(self, ltv, rtv); }
+            return ltv;
+        }
+        return rt;
+    }
     return null;
 }
 
-// Task 9D fix round 3 (ruling m1293 (b), bounded divergence): one comparison
-// operand's signedness. Determinable ONLY from (i) a declared integer type (a
-// name/const), (ii) a literal's own sign or a `negate`, or (iii) an explicit
-// `@intCast`/`@as` target — i.e. the shapes `comptimeEvalSignClass` recognizes
-// (`0 - X` counts as the negation of X). Anything else (e.g. an arithmetic
-// expression over a const) is NOT guessed from `cv.sig`: returns false so the
-// caller makes the whole comparison unfoldable. Otherwise writes the signedness
-// through `out_signed` and returns true.
-fn comptimeEvalOperandCompareSigned(self: *ComptimeEval, node_idx: u32, out_signed: *bool) bool {
-    if (comptimeEvalOperandDeclaredSigned(self, node_idx)) |d| {
-        out_signed.* = d;
-        return true;
-    }
-    var sc = comptimeEvalSignClass(self, node_idx, @intCast(u32, 0));
-    if (sc == SignClass.negative) { out_signed.* = true; return true; }
-    if (sc == SignClass.non_negative) { out_signed.* = false; return true; }
-    return false;
+// Task 3 (Task 1 §5.4): the peer type of TWO declared integer operand types —
+// mirror of `semanticAnalyzerResolveArithmetic`'s integer width rule (the
+// wider type wins; a tie keeps the lhs). Both ids are integer types.
+fn comptimeEvalWiderIntType(self: *ComptimeEval, lt: u32, rt: u32) u32 {
+    if (lt == rt) return lt;
+    var lw: u8 = type_mod.typeRegistryIntWidthBits(self.registry, lt);
+    var rw: u8 = type_mod.typeRegistryIntWidthBits(self.registry, rt);
+    if (lw >= rw) return lt;
+    return rt;
 }
 
 fn comptimeEvalResolveTypeArg(self: *ComptimeEval, node_idx: u32) ?u32 {
@@ -922,95 +952,6 @@ pub fn comptimeValStoreU64(cv: ComptimeVal) ?u64 {
         if (ciMagCmp(cv.v, lim2) >= 0) return null;
     }
     return ciToU64(cv.v);
-}
-
-// Task B3 item 2: syntactic sign classification of a comparison operand. Used
-// by `comptimeEvalOperandCompareSigned` (the pre-Task-3 comparison fold; Task 3
-// replaces the whole comparison path with magnitude+sign). Unlike
-// `comptimeEvalOperandSigned` (deleted in Task 2), this is a tri-state so an
-// unrecognized shape is NOT treated as either sign. int/char/bool literals are
-// comptime_int non-negative; a `negate` is negative; an ident or
-// `@as`/`@intCast` is classified by its declared/target integer type, recursing
-// into a const initializer when no declared type is present. Task 9D fix round
-// 3: `0 - X` is classified as the negation of X (the one arithmetic shape with
-// a definite sign); any other arithmetic expression stays `unknown`.
-const SignClass = enum(u8) { unknown, negative, non_negative };
-
-fn comptimeEvalSignClass(self: *ComptimeEval, node_idx: u32, depth: u32) SignClass {
-    if (node_idx == @intCast(u32, 0)) return SignClass.unknown;
-    if (depth >= @intCast(u32, 16)) return SignClass.unknown;
-    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
-    if (node.kind == AstKind.int_literal or node.kind == AstKind.char_literal or node.kind == AstKind.bool_literal) return SignClass.non_negative;
-    if (node.kind == AstKind.negate) return SignClass.negative;
-    if (node.kind == AstKind.paren_expr) return comptimeEvalSignClass(self, node.child_0, depth + @intCast(u32, 1));
-    if (node.kind == AstKind.ident_expr) {
-        var name_id = ast_mod.astStoreIdentifier(self.store, node_idx);
-        // Task 9D fix round 1: consult the function-local const scope first
-        // (mirrors the ident_expr fold arm); only set when the sema probe runs,
-        // so the global phase_ComptimeEvaluation fold is unaffected.
-        if (self.local_consts) |lcs| {
-            if (type_resolver.localConstScopeLookup(lcs, name_id)) |l_decl_node| {
-                var l_decl = ast_mod.astStoreNodeAt(self.store, l_decl_node);
-                var ldt = comptimeEvalResolveTypeArg(self, l_decl.child_0);
-                if (ldt) |lt| {
-                    if (type_mod.typeRegistryIsInteger(self.registry, lt)) {
-                        if (type_mod.typeRegistryIntIsSigned(self.registry, lt)) return SignClass.negative;
-                        return SignClass.non_negative;
-                    }
-                }
-                if (l_decl.child_1 != @intCast(u32, 0)) {
-                    return comptimeEvalSignClass(self, l_decl.child_1, depth + @intCast(u32, 1));
-                }
-            }
-        }
-        var mi: usize = 0;
-        while (mi < @intCast(usize, self.symbol_reg.tables_len)) : (mi += 1) {
-            var c_sym = sym_mod.symbolRegistryQualifiedLookup(self.symbol_reg, @intCast(u32, mi), name_id);
-            if (c_sym) |cs| {
-                if ((cs.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
-                    var c_decl = ast_mod.astStoreNodeAt(self.store, cs.decl_node);
-                    var dt = comptimeEvalResolveTypeArg(self, c_decl.child_0);
-                    if (dt) |t| {
-                        if (type_mod.typeRegistryIsInteger(self.registry, t)) {
-                            if (type_mod.typeRegistryIntIsSigned(self.registry, t)) return SignClass.negative;
-                            return SignClass.non_negative;
-                        }
-                    }
-                    if (c_decl.child_1 != @intCast(u32, 0)) {
-                        return comptimeEvalSignClass(self, c_decl.child_1, depth + @intCast(u32, 1));
-                    }
-                }
-            }
-        }
-        return SignClass.unknown;
-    }
-    if (node.kind == AstKind.builtin_call) {
-        if (node.child_0 == self.int_cast_id or node.child_0 == self.as_id) {
-            var dt2 = comptimeEvalResolveTypeArg(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)));
-            if (dt2) |t2| {
-                if (type_mod.typeRegistryIsInteger(self.registry, t2)) {
-                    if (type_mod.typeRegistryIntIsSigned(self.registry, t2)) return SignClass.negative;
-                    return SignClass.non_negative;
-                }
-            }
-        }
-        return SignClass.unknown;
-    }
-    if (node.kind == AstKind.sub) {
-        // Task 9D fix round 3: `0 - X` is the negation of X — the ONE arithmetic
-        // shape with a definite sign (a zero-literal lhs; `X` a non-negative
-        // literal/negate). Any other arithmetic expression stays `unknown` so
-        // the comparison fold declines it (bounded divergence) instead of
-        // guessing from `cv.sig`.
-        var lz = ast_mod.astStoreNodeAt(self.store, node.child_0);
-        if (lz.kind == AstKind.int_literal and ast_mod.astStoreIntValue(self.store, node.child_0) == @intCast(u64, 0)) {
-            var rs = comptimeEvalSignClass(self, node.child_1, depth + @intCast(u32, 1));
-            if (rs == SignClass.non_negative) return SignClass.negative;
-            if (rs == SignClass.negative) return SignClass.non_negative;
-        }
-        return SignClass.unknown;
-    }
-    return SignClass.unknown;
 }
 
 

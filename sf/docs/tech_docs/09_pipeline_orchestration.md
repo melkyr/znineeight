@@ -1,4 +1,4 @@
-# 09 — Pipeline Orchestration [updated: 2026-09-22 — Task 7D: a function-local declaration that shadows an outer-scope identifier emits level-0 `error[3057]` (`ERR_3057_LOCAL_SHADOW`) in `phase_SemanticAnalysis` (`semanticAnalyzerCheckLocalShadow`); the post-sema `hasErrors` gate prints it and exits rc=2 with 0 `.c`] [updated: 2026-09-22 — Task 7B: assignment to an immutable l-value emits level-0 `error[3002]` in `phase_SemanticAnalysis` (`semanticAnalyzerResolveAssign` + `semanticAnalyzerIsLValueConst`); the post-sema `hasErrors` gate prints it and exits rc=2 with 0 `.c`] [updated: 2026-09-22 — Task 6F: an undeclared identifier now emits `error[3001]` (code 20) in `phase_SemanticAnalysis` (`semanticAnalyzerResolveIdent`); the post-sema `hasErrors` gate (`main.zig:370-373`, after `phase_SemanticAnalysis` and before `phase_StaticAnalyzers`) prints all diagnostics and exits rc=2 with 0 `.c`, so the program never reaches `phase_LIRLowering`] [updated: 2026-09-22 — Task 6D: the same post-`phase_LIRLowering` `hasErrors` gate turns the new lowering-emitted `error[3056]` (a call whose callee is not a function) into rc=2 with 0 `.c`] [updated: 2026-09-22 — Task 6B: the post-`phase_LIRLowering` `hasErrors` gate is what turns a lowering-emitted `error[3042]` (an undefined member of a nested module, `std.io.<name>`) into rc=2 with 0 `.c`; the fix lives in `lower.zig`, not here] [updated: 2026-09-21 — Task 11J: `phase_TypeResolution` now calls `type_resolver.enumReevaluateAll` after `typeResolverResolve` and before `classifyTypeEmissionGroups`] [updated: 2026-09-20 — refreshed against current source: added `phase_FrontResolution`/`phase_AsyncFrameSize`, `-fsafe`/`-ffast` and target/output flags, self-contained output-dir orchestration, and the tooling mains; line references and dated evidence removed]
+# 09 — Pipeline Orchestration [updated: 2026-09-23 — Task 3 (signedness-free comparisons): `phase_ComptimeEvaluation` gains a third visitor arm — every capture-free no-`else` `if_expr` condition is folded and stored (Task 1 §7), so lowering's `if_expr` `ie_fold` path elides the untaken branch and module-scope conditions are runtime-equal to Zig] [updated: 2026-09-22 — Task 7D: a function-local declaration that shadows an outer-scope identifier emits level-0 `error[3057]` (`ERR_3057_LOCAL_SHADOW`) in `phase_SemanticAnalysis` (`semanticAnalyzerCheckLocalShadow`); the post-sema `hasErrors` gate prints it and exits rc=2 with 0 `.c`] [updated: 2026-09-22 — Task 7B: assignment to an immutable l-value emits level-0 `error[3002]` in `phase_SemanticAnalysis` (`semanticAnalyzerResolveAssign` + `semanticAnalyzerIsLValueConst`); the post-sema `hasErrors` gate prints it and exits rc=2 with 0 `.c`] [updated: 2026-09-22 — Task 6F: an undeclared identifier now emits `error[3001]` (code 20) in `phase_SemanticAnalysis` (`semanticAnalyzerResolveIdent`); the post-sema `hasErrors` gate (`main.zig:370-373`, after `phase_SemanticAnalysis` and before `phase_StaticAnalyzers`) prints all diagnostics and exits rc=2 with 0 `.c`, so the program never reaches `phase_LIRLowering`] [updated: 2026-09-22 — Task 6D: the same post-`phase_LIRLowering` `hasErrors` gate turns the new lowering-emitted `error[3056]` (a call whose callee is not a function) into rc=2 with 0 `.c`] [updated: 2026-09-22 — Task 6B: the post-`phase_LIRLowering` `hasErrors` gate is what turns a lowering-emitted `error[3042]` (an undefined member of a nested module, `std.io.<name>`) into rc=2 with 0 `.c`; the fix lives in `lower.zig`, not here] [updated: 2026-09-21 — Task 11J: `phase_TypeResolution` now calls `type_resolver.enumReevaluateAll` after `typeResolverResolve` and before `classifyTypeEmissionGroups`] [updated: 2026-09-20 — refreshed against current source: added `phase_FrontResolution`/`phase_AsyncFrameSize`, `-fsafe`/`-ffast` and target/output flags, self-contained output-dir orchestration, and the tooling mains; line references and dated evidence removed]
 
 > Covers: `main.zig`, `main_dump.zig`, `main_exp.zig`, `strip_main.zig`
 
@@ -437,19 +437,27 @@ covered by 03_type_resolution.md.
 - `ce_mod.comptimeEvalInit` — init comptime evaluator
 - `ce.host_is_windows = ctx.cli.target_is_windows` — set the `@isWindows` flip point
 - `ce_mod.comptimeEvalEvaluate` — evaluate each `builtin_call` node **and** each module-scope
-  `const var_decl` whose init is a bare arithmetic node
+  `const var_decl` whose init is a bare arithmetic node, **and** each capture-free no-`else`
+  `if_expr` condition (Task 3, Task 1 §7)
 - `ce_mod.comptimeValStoreU64` — **Task 2:** materialise the folded `ComptimeVal` to the fold
   table's 64-bit pattern (bool 0/1, float bit pattern, int two's-complement when in
   `[i64 min, u64 max]`); an out-of-window integer is NOT stored (the runtime path stays)
 - `hash_mod.u32ToU64MapPut` — store evaluated values in `ctx.comptime_values`
 
-**Two-arm visitor:** the per-node sweep over `ctx.store.nodes` has two arms:
+**Three-arm visitor:** the per-node sweep over `ctx.store.nodes` has three arms:
 1. `builtin_call` nodes — evaluate via `comptimeEvalEvaluate`.
 2. `var_decl` nodes whose `child_1` init kind is one of the arithmetic ops (`add`..`shr`, i.e.
    AstKind 33-42, plus `negate`=62 / `bit_not`=64) AND whose `flags & 1 == 0` (`const`, not `var`) —
    evaluate the **init expression** and store under `comptime_values[init_node]`. The evaluator
    itself folds `ident_expr` const chains, so inits referencing other consts also fold. (Foldable
    builtin set and value semantics: see 04.)
+3. **Task 3** `if_expr` nodes with `child_2 == 0` (no `else`) and `payload == 0` (capture-free) —
+   evaluate the **condition** and, when it folds to a `KIND_BOOL`, store it under
+   `comptime_values[condition_node]`. Lowering's `if_expr` `ie_fold` path then elides the untaken
+   branch, making module-scope conditions runtime-equal to Zig (step-0 S3/S5/E12). `if_stmt`
+   conditions and `if_expr` with an `else` are deliberately not stored; a function-local condition
+   operand is invisible to this module-scope sweep (no local-const scope), so its runtime branch
+   stays.
 
 **Markers:** `CE`
 

@@ -1,4 +1,74 @@
-# mi_matrix corpus — expected-fail manifest (v203 2026-09-23)
+# mi_matrix corpus — expected-fail manifest (v204 2026-09-23)
+
+## Task 3 — signedness-free comparisons + logical folds (v203 -> v204 2026-09-23)
+
+**What.** Two defects, one root cause. (1) The Task 9D comparison fold recovered each operand's
+signedness syntactically (declared type / literal sign / `0 - X` / `@intCast`/`@as` target) and made
+any arithmetic-derived comparison unfoldable, so the documented bounded divergence rejected
+`(umax - 1) > 0`, `0 < (umax - 1)`, `(umax - 1) > zero`, `umax > (0 + 0)`, `(a + 1) == 2`,
+`(imin + 1) < 0`, `(imax - 1) > 0` in a no-`else` value `if` (`error[3059]`) although official Zig
+0.15.2 accepts them. (2) Accepted module-scope mixed-signedness shapes (`uu > -1` S3, `uu > (0 - 1)`
+S5, `-9223372036854775808 < 0` E12, and S4 coincidentally) folded TRUE in the sema probe but
+lowering emitted a FALSE runtime branch (unsigned materialisation) plus an uninitialised result
+temp — a silent miscompile (step-0 §3).
+
+**Fix (Task 3; Task 1 design §4/§5.4/§7).** `sf/src/comptime_eval.zig`:
+`comptimeEvalCompare` now compares the exact magnitude+sign of the two `ComptimeInt`s via the new
+private `ciCmp` (`-0` normalized; bools compare as 0/1) — no sign class, no declared-type lookup,
+no 64-bit `ciValToOldBits` bridge; `comptimeEvalSignClass`, `SignClass`,
+`comptimeEvalOperandCompareSigned`, `comptimeEvalOperandDeclaredSigned` and the `0 - X` special
+case are DELETED, and `comptimeEvalOperandDeclaredSigned`'s type lookup is repurposed as
+`comptimeEvalOperandType`. The arithmetic fold gains the operand peer-fit rule: the peer type P is
+a typed operand's integer type (both typed → `comptimeEvalWiderIntType`, wider wins, ties keep
+lhs); each UNTYPED operand's exact value and the exact result must fit P
+(`comptimeIntFitsType`), else the fold declines — this keeps the Zig-rejected shapes rejected
+(`(u - 300) < 0` with `u: u8`, `(u + 1000) < 0`, `(0 - umax) < 0`; Zig reports "cannot represent
+integer value '300'/'1000'" and "overflow of integer type 'u64'"). `comptimeEvalOperandType`
+mirrors sema's integer typing RECURSIVELY (negate/bit_not propagate; binops use the INT_LIT/numeric
+arm + the wider-wins/ties-lhs rule), so nested arithmetic like `((u - 1) - 300) < 0` declines too
+(without the recursion the fold computed -101 and accepted a program whose runtime u8 arithmetic
+wraps to 155 — a silent miscompile caught in self-review). Comparisons are exempt from
+peer-fit (oracle: `u8 200 > -1` is true, `u8 200 > 300` is false). `sf/src/main.zig`
+`phase_ComptimeEvaluation` gains a third visitor arm: the condition of every capture-free
+(`payload == 0`) no-`else` `if_expr` is folded and stored (bool 0/1) — exactly the domain where
+`semanticAnalyzerConditionIsComptimeTrue` grants acceptance — so lowering's existing `if_expr`
+`ie_fold` path elides the untaken branch and the module-scope shapes are runtime-equal to Zig.
+`if_stmt` conditions and `if_expr` with an `else` are deliberately not stored; a function-local
+condition operand is invisible to the module-scope sweep, so its (C-correct) runtime branch is kept.
+
+**Fixtures.** New positive runtime fixture `repro/mi_matrix/stdlib_comptime_compare_xmod`
+(`main.zig` + `expected.txt` + `expected.rc`; 22 values: function-local D1-D5 + local `imax` and
+`@as`-spelled local `imin`, the same shapes with module-scope consts plus S3/S4/S5/E12 and
+module-scope i64 extremes, and `and`/`or`/`!` over 2^100 magnitudes; every value `@panic`-guarded;
+golden stdout below, rc 0, byte-exact 3x and Zig-0.15.2-oracle-matched) — **class OK**; stdlib pin
+**218 → 219**. New reject fixture `repro/mi_matrix/comptime_compare_reject_xmod` (7 sites:
+`umax < 0`, `(umax - 1) < 0`, `(u - 300) < 0`, `(0 - umax) < 0`, `(u + 1000) < 0`, nested
+`((u - 1) - 300) < 0`, module `MUMAX < 0`; rc=2, 0 `.c`, 7 × `error[3059]`) — **class FAIL** (the
+canonical classifier GREENs
+only `error[3000]`). The old `repro/mi_matrix/comptime_compare_diverge_reject_xmod` (7-site
+bounded divergence) is REPLACED by the pair. Standalone repro `repro/comptime_compare.z98`.
+RED pre-fix: the positive fixture rejects 18 × `error[3059]` / 0 `.c`; standalone rejects
+5 × `error[3059]`. Known residual (pre-existing, out of scope): the bare local
+`const imin: i64 = -9223372036854775808` spelling materialises as 0 (32-bit HIT materialisation,
+`print(imin)` prints 0 at HEAD too); the fixture spells it `@as(i64, …)`. Task 4/5 own the
+lowering HIT migration.
+
+**Gates.** Self-compile two-hop closure hop1 == hop2 == `88c6b4c9b8b0ce154385f6c382b251ea`; 4-MD5
+emitted-C **UNCHANGED** (gol `e7bde571…` / lisp `35388763…` / json `5e1e0050…` / mud `5a1cc65e…`);
+corpus `-s0` **989 dirs = 868 OK / 42 GREEN / 79 FAIL / 0 ICE / 0 CRASH** (988 → 989; join-diff vs
+the Task 2 post-fix compiler moves EXACTLY `stdlib_comptime_compare_xmod` (+OK),
+`comptime_compare_reject_xmod` (+FAIL), `comptime_compare_diverge_reject_xmod` (−FAIL) — zero class
+movement on the 987 common dirs); stdlib runtime gate **219 PASS / 0 FAIL**; example matrix
+**24/24**; `check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK; build_test **0/9**
+(pre-existing zig0 baseline). Frozen Task 0 shape table: D1-D5/E10/E11 reject → accept (values
+1/1/3/4/5/1/1 == oracle), E12 4 → 1, S3 4 → 3, S5 4 → 5 (all == oracle), D6/D7/E5/S6 still
+reject (== oracle rejects), all other rows unchanged.
+
+```
+101 102 103 104 105 110 111 201 202 203 204
+205 206 207 208 209 210 211 301 302 303 304
+compare ok
+```
 
 ## Task 2 — `ComptimeInt` core + arithmetic (v202 -> v203 2026-09-23)
 

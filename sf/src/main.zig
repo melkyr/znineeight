@@ -598,6 +598,29 @@ fn phase_ComptimeEvaluation(ctx: *CompilerContext) void {
                     }
                 }
             }
+        } else if (node.kind == AstKind.if_expr and node.child_2 == @intCast(u32, 0)) {
+            // Task 3 (Task 1 §7): fold and store the condition of every
+            // capture-free no-`else` value `if` -- exactly the domain where
+            // sema's `semanticAnalyzerConditionIsComptimeTrue` grants
+            // acceptance. Lowering's existing `if_expr` `ie_fold` path
+            // (lower.zig) then elides the untaken branch, so module-scope
+            // conditions (step-0 S3/S5/E12) become runtime-equal to Zig
+            // instead of materialising a false runtime branch plus an
+            // uninitialised result temp. A function-local condition operand is
+            // not visible to this module-scope sweep (no local-const scope),
+            // so its (C-correct) runtime branch is kept. `if_stmt` conditions
+            // and `if_expr` with an `else` are deliberately NOT stored
+            // (bounded blast radius: their emitted C is unchanged).
+            if (ast_mod.astStoreNodePayload(ctx.store, @intCast(u32, ni)) == @intCast(u32, 0)) {
+                var cval = ce_mod.comptimeEvalEvaluate(&ce, node.child_0);
+                if (cval) |cv| {
+                    if (cv.kind == ce_mod.KIND_BOOL) {
+                        if (ce_mod.comptimeValStoreU64(cv)) |cpat| {
+                            hash_mod.u32ToU64MapPut(&ctx.comptime_values, node.child_0, cpat);
+                        }
+                    }
+                }
+            }
         }
     }
 }

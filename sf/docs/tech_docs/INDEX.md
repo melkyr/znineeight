@@ -1,4 +1,4 @@
-# zig1 Pipeline — Master Index [updated: 2026-09-23 — Task 10D: Table B gains `captureShadowShouldRedirect` (lower.zig)] [updated: 2026-09-21 — Task B2 final fix wave: Table B gains `isCompoundTypeExprKind` and `containerFieldCount` (type_resolver.zig); `registerContainerType` clean-rejects a >32-field local/inline aggregate] [updated: 2026-09-21 — Task B2: Table B gains `containerAnonNameId`, `isContainerDeclKind`, `registerContainerType`, and `localTypeScopeInit`/`localTypeScopeLookup`/`localTypeScopePush` (type_resolver.zig)] [updated: 2026-09-20 — regenerated against current source and the refreshed 14 tech docs; line references removed, `phase_FrontResolution`/`phase_AsyncFrameSize` added, counts corrected]
+# zig1 Pipeline — Master Index [updated: 2026-09-23 — Task 3: Table B gains `ciCmp`, `comptimeEvalOperandType`, `comptimeEvalWiderIntType` (comptime_eval.zig); `ciValToOldBits`, `comptimeEvalOperandDeclaredSigned`, `comptimeEvalOperandCompareSigned` retired] [updated: 2026-09-23 — Task 10D: Table B gains `captureShadowShouldRedirect` (lower.zig)] [updated: 2026-09-21 — Task B2 final fix wave: Table B gains `isCompoundTypeExprKind` and `containerFieldCount` (type_resolver.zig); `registerContainerType` clean-rejects a >32-field local/inline aggregate] [updated: 2026-09-21 — Task B2: Table B gains `containerAnonNameId`, `isContainerDeclKind`, `registerContainerType`, and `localTypeScopeInit`/`localTypeScopeLookup`/`localTypeScopePush` (type_resolver.zig)] [updated: 2026-09-20 — regenerated against current source and the refreshed 14 tech docs; line references removed, `phase_FrontResolution`/`phase_AsyncFrameSize` added, counts corrected]
 
 > Source-files: `sf/src/*.zig` | Cross-reference for all 14 tech docs
 
@@ -253,6 +253,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `ciBitOr` | comptime_eval.zig |
 | `ciBitXor` | comptime_eval.zig |
 | `ciBoolVal` | comptime_eval.zig |
+| `ciCmp` | comptime_eval.zig |
 | `ciDivMod` | comptime_eval.zig |
 | `ciFromU64` | comptime_eval.zig |
 | `ciIntVal` | comptime_eval.zig |
@@ -268,7 +269,6 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `ciSub` | comptime_eval.zig |
 | `ciToF64` | comptime_eval.zig |
 | `ciToU64` | comptime_eval.zig |
-| `ciValToOldBits` | comptime_eval.zig |
 | `ciZeroInt` | comptime_eval.zig |
 | `coercionTableGet` | coercion.zig |
 | `coercionTableInit` | coercion.zig |
@@ -282,9 +282,9 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `comptimeEvalEvaluateDepth` | comptime_eval.zig |
 | `comptimeEvalInit` | comptime_eval.zig |
 | `comptimeEvalLogical` | comptime_eval.zig |
-| `comptimeEvalOperandCompareSigned` | comptime_eval.zig |
-| `comptimeEvalOperandDeclaredSigned` | comptime_eval.zig |
+| `comptimeEvalOperandType` | comptime_eval.zig |
 | `comptimeEvalResolveTypeArg` | comptime_eval.zig |
+| `comptimeEvalWiderIntType` | comptime_eval.zig |
 | `comptimeIntFitsType` | comptime_eval.zig |
 | `comptimeValStoreU64` | comptime_eval.zig |
 | `computeNestMetadata` | lir_opt_pass.zig |
