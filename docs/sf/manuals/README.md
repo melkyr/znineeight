@@ -81,6 +81,9 @@ problem, naming the offending file. It checks, in order:
 
 ### `serve.sh` - local browsing
 
+The site is fully static: double-click `index.html` (or `en/index.html`) to
+read it with no server. `serve.sh` is only a local-preview convenience.
+
 ```bash
 bash docs/sf/manuals/serve.sh        # http://127.0.0.1:8000/
 bash docs/sf/manuals/serve.sh 8765   # http://127.0.0.1:8765/
