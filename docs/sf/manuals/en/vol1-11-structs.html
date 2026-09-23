@@ -109,7 +109,7 @@ pub fn main() void {
 }
 </pre>
 <p>
-It defines a type called <tt>Point</tt>, builds three values of it, prints
+It defines a type called <tt>Point</tt>, builds four values of it, prints
 their fields, changes one field, and passes points to two functions.
 <tt>sum</tt> takes a point and answers with the sum of its fields.
 <tt>shifted</tt> takes a point and two offsets and returns a new point, with
@@ -138,10 +138,10 @@ whole declaration.
 </p>
 <p>
 The declaration itself stores no numbers. <tt>struct</tt> describes a shape;
-values of that shape are made later, one construction at a time. The name is
-not optional: Z98 has no anonymous struct types, so an aggregate declaration
-must be named with <tt>const</tt>. The Common mistakes section shows what the
-compiler says when the <tt>const</tt> is left out.
+values of that shape are made later, one construction at a time. Z98's rule
+is that an aggregate type declaration must be named with <tt>const</tt>; the
+name is how the rest of the program writes the type. The Common mistakes
+section shows what the compiler says when the <tt>const</tt> is left out.
 </p>
 <p>
 Because the fields are stored in the order they are declared, the shape has a
@@ -383,12 +383,13 @@ struct_mistake.z98:7:14: error[20]: identifier 'Point' is not declared or import
 </pre>
 <p>
 The <tt>error[20]</tt> line is the one that names the real problem: nothing in
-the file declared a name called <tt>Point</tt>. The <tt>struct</tt> line describes a
-shape, but without <tt>const</tt> it never binds the shape to a name, and Z98
-has no anonymous struct types to fall back on. With no type for the
-declaration, the compiler's first line reports that <tt>const p = ...</tt>
-has no type at all. Read both lines together, and write the declaration the
-named way: <tt>const Point = struct { ... };</tt>.
+the file declared a name called <tt>Point</tt>. The <tt>struct</tt> line
+describes a shape, but without <tt>const</tt> it never binds the shape to a
+name, so the rest of the file has no type to use. With no type for the
+declaration, the compiler's first line reports what it saw instead:
+<tt>error[3000]: cannot declare variable of type void</tt>. Read both lines
+together, and write the declaration the named way:
+<tt>const Point = struct { ... };</tt>.
 </p>
 
 <h2>Check yourself</h2>
