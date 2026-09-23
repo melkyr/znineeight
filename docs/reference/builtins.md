@@ -89,7 +89,7 @@ Loads and parses an external Zig module.
     - Resolves the path relative to the current module's directory.
     - Recursively loads and parses the target file if not already loaded.
     - Detects circular dependencies and reports them as fatal errors.
-    - Symbols from the imported module are accessed using dot notation: `const std = @import("std"); std.debug.print(...);`.
+    - Symbols from the imported module are accessed using dot notation: `const std = @import("std"); std.io.print(...);`.
 - **C89 Emission:** This built-in is handled entirely by the compiler's front-end and import resolution phase. It does not generate any code at the call site. Instead, it influences header generation and symbol resolution.
 
 ### Cast Built-ins (Internal/Runtime)

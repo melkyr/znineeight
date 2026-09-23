@@ -67,7 +67,7 @@ mkdir -p "$WORK"
 cat >"$WORK/std_hello.zig" <<'EOF'
 const std = @import("std");
 pub fn main() void {
-    std.debug.print("hi\n", .{});
+    std.io.print("hi\n");
 }
 EOF
 
