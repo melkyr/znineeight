@@ -18,3 +18,11 @@ pre {
   background-color: #ffffff;
   border: 1px solid #000000;
 }
+
+.navbtns {
+  display: none;
+}
+
+h1, h2, h3, h4, a:link, a:visited {
+  color: #000000;
+}
