@@ -104,16 +104,32 @@ use.
 &lt;link rel="prev" href="&amp;lt;PREV&amp;gt;"&gt;
 &lt;link rel="next" href="&amp;lt;NEXT&amp;gt;"&gt;
 &lt;/head&gt;
-&lt;body bgcolor="#f5f0e1" text="#000000" link="#003366" vlink="#551a8b" alink="#cc0000"&gt;
-&lt;table width="100%" cellpadding="0" cellspacing="0" border="0"&gt;
+&lt;body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080"&gt;
+&lt;table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar"&gt;
 &lt;tr&gt;
-&lt;td width="160" valign="top" bgcolor="#e8e0cc" class="sidebar"&gt;
-  &lt;!-- language bar + volume TOC --&gt;
+&lt;td align="right"&gt;
+English |
+Espa&amp;ntilde;ol (not yet available) |
+&amp;#31616;&amp;#20307;&amp;#20013;&amp;#25991; (not yet available)
+&lt;/td&gt;
+&lt;/tr&gt;
+&lt;/table&gt;
+&lt;table width="760" align="center" cellpadding="0" cellspacing="0" border="0"&gt;
+&lt;tr&gt;
+&lt;td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar"&gt;
+  &lt;!-- volume TOC --&gt;
 &lt;/td&gt;
 &lt;td width="1" bgcolor="#000000"&gt;&lt;img src="gfx/bullet.gif" width="1" height="1" alt=""&gt;&lt;/td&gt;
 &lt;td valign="top"&gt;
   &lt;h1&gt;&amp;lt;TITLE&amp;gt;&lt;/h1&gt;
   &lt;!-- body --&gt;
+  &lt;p&gt;
+  &lt;a href="&amp;lt;PREV&amp;gt;"&gt;&lt;img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"&gt;&lt;/a&gt;
+  &amp;nbsp;&amp;nbsp;
+  &lt;a href="toc.html"&gt;&lt;img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"&gt;&lt;/a&gt;
+  &amp;nbsp;&amp;nbsp;
+  &lt;a href="&amp;lt;NEXT&amp;gt;"&gt;&lt;img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"&gt;&lt;/a&gt;
+  &lt;/p&gt;
   &lt;p&gt;Previous: &amp;lt;PREV&amp;gt; | &lt;a href="toc.html"&gt;Contents&lt;/a&gt; | Next: &amp;lt;NEXT&amp;gt;&lt;/p&gt;
 &lt;/td&gt;
 &lt;/tr&gt;
@@ -197,7 +213,7 @@ Images are GIF only: no PNG, no SVG, no web fonts. Keep the exact sizes: logo
 Five callouts are defined: <b>note</b>, <b>tip</b>, <b>warn</b>,
 <b>caution</b>, and <b>honest</b>. Each is a table with its 16&times;16 icon and
 a coloured background. The honesty callout uses the warmer background
-<tt>#ece0e0</tt> so a reader recognises the manual being straight with them.
+<tt>#e8e0e0</tt> so a reader recognises the manual being straight with them.
 </p>
 <table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffffcc">
 <tr>
@@ -217,13 +233,13 @@ a coloured background. The honesty callout uses the warmer background
 <td><b>Warn.</b> Something that will bite if ignored, but is not dangerous.</td>
 </tr>
 </table>
-<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffdddd">
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffd8d8">
 <tr>
 <td valign="top" width="20"><img src="gfx/icon-caution.gif" width="16" height="16" alt="Caution"></td>
 <td><b>Caution.</b> A mistake that costs data, time, or a rebuild.</td>
 </tr>
 </table>
-<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ece0e0">
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
 <tr>
 <td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
 <td><b>Honest note.</b> The manual being straight with you: friction, a limitation, or the case for another tool.</td>
@@ -252,7 +268,7 @@ dashed border, and the presentational <tt>border="1"</tt> keeps a solid box
 when the stylesheet is absent. The operator captures the real screenshot on
 real hardware later.
 </p>
-<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f5f0e1" class="placeholder">
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f0f0f0" class="placeholder">
 <tr>
 <td align="center">
 <i>Figure N &mdash; Win9x screenshot pending</i>

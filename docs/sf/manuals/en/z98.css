@@ -90,4 +90,5 @@ a:visited {
 /* Figure placeholders. */
 .placeholder {
   border: 1px dashed #a09878;
+  background-color: #f0f0f0;
 }
