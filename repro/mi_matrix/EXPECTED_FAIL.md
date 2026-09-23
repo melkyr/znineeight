@@ -1,4 +1,62 @@
-# mi_matrix corpus — expected-fail manifest (v202 2026-09-23)
+# mi_matrix corpus — expected-fail manifest (v203 2026-09-23)
+
+## Task 2 — `ComptimeInt` core + arithmetic (v202 -> v203 2026-09-23)
+
+**What.** Z98's comptime integers were 64-bit (`ComptimeVal { bits: u64, sig, width_bits }`) and
+every arithmetic fold wrapped/truncated at 64 bits (a shift count ≥ 64 declined, so `1 << 100`
+never folded at all). Exact intermediate magnitudes beyond 2^64 therefore ran WRONG at runtime:
+`((1 << 64) + 1) / 2` printed `1` (Zig `9223372036854775808`), `(1 << 100) + 12345 % (1 << 90)`
+printed `12361` (Zig `12345`), `(1 << 64) - 1` printed `0` (Zig `18446744073709551615`), etc.
+The old compiler traps on the fixture's own `@panic` guard (`panic: bigint mod`, 3x).
+
+**Fix (Task 2; Task 1 design §2–§4).** `sf/src/comptime_eval.zig` now implements a fixed-cap
+arbitrary-precision core: `ComptimeInt { mag: [8]u32, len: u8, neg: bool }` (256-bit little-endian
+magnitude; `len == 0` ⟺ zero; `-0` normalizes to `0`) wrapped in
+`ComptimeVal { v, kind, float_bits }` with `KIND_INT`/`KIND_BOOL`/`KIND_FLOAT` replacing the old
+`width_bits`/`sig`/`WIDTH_FLOAT` sentinel. add/sub/mul/div/mod/negate/bitand/bitor/bitxor/bitnot/
+shl/shr are exact limb ops (`ci*`, `pub`): division and `%` truncate toward zero, `>>` is floor,
+`&`/`|`/`^` use infinite two's-complement semantics. Every op is exact or declines (unfoldable) —
+cap > 256 magnitude bits, division by zero, negative/oversized shift counts; no wrap/truncation.
+`comptimeValFitsType` became the exact `comptimeIntFitsType`; `@intCast`/`@as` range-check the
+exact value and fold it exactly (same `error[3000]` messages/location); `@intToFloat` converts from
+the limbs; `comptimeEvalOperandSigned` and `WIDTH_FLOAT` are deleted. Comparison and logical folds
+deliberately keep their pre-Task-3 semantics (`kind == KIND_BOOL`, `ciValToOldBits` reconstructs
+the old 64-bit view and declines ≥ 2^64) so the frozen comparison table does not move; Task 3
+rewrites them. `main.zig` stores folds via `comptimeValStoreU64` (bool 0/1, float bit pattern, int
+two's-complement when it fits `[i64 min, u64 max]`; otherwise not stored), keeping the fold table's
+`U32ToU64Map` ABI until Task 5. `semanticAnalyzerConditionIsComptimeTrue` now tests
+`kind == KIND_BOOL` + `ciIsZero`.
+
+**Fixtures.** New positive runtime fixture `repro/mi_matrix/stdlib_comptime_bigint_arith_xmod`
+(`main.zig` + `expected.txt` + `expected.rc`; 29 values, every one Zig-0.15.2-oracle-checked:
+2^64/2^100/2^200 magnitudes across add/sub/mul/div/mod, truncating-division and floor-shift signs,
+bitwise AND/OR/XOR/NOT on negatives, u64 max, far shifts, and in-range no-over-rejection controls;
+golden stdout below, rc 0, byte-exact 3x; stdlib pin **217 -> 218**) + standalone
+`repro/comptime_bigint_arith.z98`. RED pre-fix: guard panic rc 133 (or the wrong raw values shown
+above). Unit coverage: `test_semantic_bin.zig` `testComptimeBigIntCore` (cap declines,
+div-by-zero, negative shift counts, division/floor-shift/bit-op signs) + the seven
+`comptimeEvalEvaluate` tests migrated to the new representation.
+
+```
+a=9223372036854775808  b=1024  c=12345  d=6148914691236517205
+e=-9223372036854775808 f=-1    g=-9223372036854775808
+h=1024 i=255 j=18446744073709551615 k=9223372036854775808 l=-2 m=0
+n=1099511627781 o=-1537228672809129301 p=9223372036854775805
+r=48 s=-48 t=17 u=-1 v=-2 w=-4611686018427387905
+x1=-1 x2=0 x3=-3 x4=-3 x5=-1 x6=1 x7=3
+```
+
+**Gates.** self-compile two-hop closure hop1 == hop2 == `e4246b1946722da55cc5c44e7c2286bd` (MOVED
+from `cd38f3167ca3e39982cc2d817b16dc70`); 4-MD5 emitted-C **UNCHANGED** (gol `e7bde571…` / lisp
+`35388763…` / json `5e1e0050…` / mud `5a1cc65e…`); corpus `-s0` **988 dirs = 867 OK / 42 GREEN /
+79 FAIL / 0 ICE / 0 CRASH** (v202 987 → 988: the new fixture dir; full-classifier join-diff on the
+987 common dirs **byte-identical, zero movement**); stdlib runtime gate **218 PASS / 0 FAIL**;
+example matrix **24/24** dump/gcc/link; the 35 frozen Task-0 comparison/coercion shapes re-run
+**verdict-identical**; `check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK;
+`--track-memory -s0` pool **16883K** (matches the pre-change compiler on the same source, so no
+memory regression). Test binaries via `sf/scripts/build_test.sh` **0/9 — pre-existing failure**
+(retired zig0 cannot parse current `sf/src`; verified identical at pristine HEAD). Seed NOT
+rotated (operator R2: closeout-only). Fixed point **MOVED `cd38f316…` → `e4246b19…`**.
 
 ## Task 10D — same-named local after a sibling `for` capture keeps its own variable (v201 -> v202 2026-09-23)
 

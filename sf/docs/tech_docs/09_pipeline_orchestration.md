@@ -438,6 +438,9 @@ covered by 03_type_resolution.md.
 - `ce.host_is_windows = ctx.cli.target_is_windows` — set the `@isWindows` flip point
 - `ce_mod.comptimeEvalEvaluate` — evaluate each `builtin_call` node **and** each module-scope
   `const var_decl` whose init is a bare arithmetic node
+- `ce_mod.comptimeValStoreU64` — **Task 2:** materialise the folded `ComptimeVal` to the fold
+  table's 64-bit pattern (bool 0/1, float bit pattern, int two's-complement when in
+  `[i64 min, u64 max]`); an out-of-window integer is NOT stored (the runtime path stays)
 - `hash_mod.u32ToU64MapPut` — store evaluated values in `ctx.comptime_values`
 
 **Two-arm visitor:** the per-node sweep over `ctx.store.nodes` has two arms:

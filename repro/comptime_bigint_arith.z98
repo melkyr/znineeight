@@ -1,0 +1,49 @@
+// comptime_bigint_arith.z98 — standalone reproduction for Task 2
+// (ComptimeInt core + arbitrary-precision arithmetic).
+//
+// Recipe (seed-built zig1 with its sibling lib/):
+//   <zig1> -ffast -o /tmp/bigint repro/comptime_bigint_arith.z98
+//   sh /tmp/bigint/build_target.sh linux /tmp/bigint/prog
+//   timeout 120 /tmp/bigint/prog
+//
+// DEFECT (pre-Task-2). Z98's comptime integers were 64-bit
+// (`ComptimeVal { bits: u64, sig, width_bits }`) and every arithmetic fold
+// wrapped/truncated at 64 bits (a shift count >= 64 declined, so `1 << 100`
+// never folded at all). Exact intermediate magnitudes beyond 2^64 therefore
+// ran WRONG at runtime:
+//   a = ((1 << 64) + 1) / 2               -> 1                  (want 2^63)
+//   b = ((1 << 100) + 12345) / (1 << 90)  -> 0                  (want 1024)
+//   c = ((1 << 100) + 12345) % (1 << 90)  -> 12361              (want 12345)
+//   d = ((1 << 64) - 1) / 3               -> 0                  (want 6148914691236517205)
+//   e = (0 - (1 << 64)) / 2               -> 0                  (want i64 min)
+//   j = (1 << 64) - 1                     -> 0                  (want u64 max)
+//
+// FIX (Task 2). `sf/src/comptime_eval.zig` now carries
+// `ComptimeInt { mag: [8]u32, len, neg }` (256-bit little-endian magnitude,
+// exact-or-unfoldable) and folds add/sub/mul/div/mod/negate/bit ops/shifts at
+// arbitrary precision with Zig-truncating division; beyond-64-bit values stay
+// exact. Observed stdout must be byte-exact 3x with rc 0.
+//
+// Oracle: official Zig 0.15.2 twin (`@rem` for the signed remainder — Zig
+// rejects `%` on signed comptime_int; Z98's `%` is the runtime C-% form).
+const std = @import("std");
+
+pub fn main() void {
+    const a: u64 = @as(u64, ((1 << 64) + 1) / 2);
+    const b: u64 = @as(u64, ((1 << 100) + 12345) / (1 << 90));
+    const c: u64 = @as(u64, ((1 << 100) + 12345) % (1 << 90));
+    const d: u64 = @as(u64, ((1 << 64) - 1) / 3);
+    const e: i64 = @as(i64, (0 - (1 << 64)) / 2);
+    const f: i64 = @as(i64, (0 - ((1 << 64) + 3)) % 2);
+    const g: i64 = @as(i64, (0 - (1 << 64)) >> 1);
+    const h: u64 = @as(u64, (1 << 200) >> 190);
+    const i: i64 = @as(i64, ((0 - (1 << 100)) - 1) & 0xFF);
+    const j: u64 = @as(u64, (1 << 64) - 1);
+    const k: u64 = @as(u64, (1 << 64) + (0 - (1 << 63)));
+    const l: i64 = @as(i64, ((0 - (1 << 100)) - 1) >> 100);
+    const m: u64 = @as(u64, (1 << 100) - (1 << 100));
+    const n: u64 = @as(u64, (1 << 40) + 5);
+    const o: i64 = @as(i64, (0 - (1 << 62)) / 3);
+    const p: u64 = @as(u64, ((1 << 64) - 3) % (1 << 63));
+    std.io.print("{} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {}\n", .{ a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p });
+}

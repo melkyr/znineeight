@@ -11,17 +11,29 @@ const interner_mod = @import("string_interner.zig");
 const type_resolver = @import("type_resolver.zig");
 const diag_mod = @import("diagnostics.zig");
 
-pub const ComptimeVal = struct {
-    bits: u64,
-    width_bits: u32,
-    sig: bool,
+// Task 2: fixed-cap arbitrary-precision comptime integer (Task 1 design §2).
+// Little-endian u32 magnitude limbs, 8 limbs = 256 bits; `len` is one past the
+// top non-zero limb (0 = zero); `neg` is the sign (`false` when zero).
+pub const COMPTIME_INT_LIMBS: u8 = 8;
+
+pub const ComptimeInt = struct {
+    mag: [8]u32,
+    len: u8,
+    neg: bool,
 };
 
-// Float-valued folds carry this distinctive width_bits sentinel so the integer
-// fold operators (binop / negate / bit_not / int_cast) reject them: a float's
-// IEEE-754 bit pattern must never enter integer arithmetic. No integer fold can
-// legitimately carry this width (literal=0, char=8, bool=1, intCast<=64).
-const WIDTH_FLOAT: u32 = @intCast(u32, 4294967295);
+// `kind` replaces the old `width_bits` sentinel role (Task 1 §2): 0 = integer
+// comptime_int, 1 = bool (the old `width_bits == 1` test), 2 = float (the old
+// WIDTH_FLOAT sentinel; the f64 bit pattern rides in `float_bits`).
+pub const KIND_INT: u8 = 0;
+pub const KIND_BOOL: u8 = 1;
+pub const KIND_FLOAT: u8 = 2;
+
+pub const ComptimeVal = struct {
+    v: ComptimeInt,
+    kind: u8,
+    float_bits: u64,
+};
 
 pub const ComptimeEval = struct {
     registry: *TypeRegistry,
@@ -82,84 +94,622 @@ pub fn comptimeEvalInit(registry: *TypeRegistry, store: *AstStore, interner: *St
     };
 }
 
+// ---------------------------------------------------------------------------
+// Task 2: arbitrary-precision comptime integer core.
+//
+// `ComptimeInt` is a fixed-cap sign-magnitude big integer: 8 little-endian
+// u32 magnitude limbs (256 bits), a significant-limb count, and a sign bit.
+// Invariants (re-established by `ciNormalize`): `len == 0` means zero and
+// forces `neg == false` (`-0` normalizes to `0`); `mag[len-1] != 0` when
+// `len > 0`; limbs at/above `len` are zero. Every arithmetic op is EXACT or
+// declines (`false`/`null`) when the exact result needs more than 256
+// magnitude bits -- no wrap, no truncation (Task 1 design §3).
+// ---------------------------------------------------------------------------
+
+pub fn ciZeroInt() ComptimeInt {
+    return ComptimeInt{ .mag = [8]u32{ @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0) }, .len = @intCast(u8, 0), .neg = false };
+}
+
+pub fn ciFromU64(x: u64) ComptimeInt {
+    var v = ciZeroInt();
+    if (x == @intCast(u64, 0)) return v;
+    v.mag[0] = @intCast(u32, x & @intCast(u64, 4294967295));
+    v.mag[1] = @intCast(u32, (x >> @intCast(u64, 32)) & @intCast(u64, 4294967295));
+    v.len = @intCast(u8, 1);
+    if (v.mag[1] != @intCast(u32, 0)) { v.len = @intCast(u8, 2); }
+    return v;
+}
+
+// 2^k as a ComptimeInt (k <= 255; used for range bounds with k <= 64).
+fn ciPow2(k: u32) ComptimeInt {
+    var v = ciZeroInt();
+    var word: usize = @intCast(usize, k / @intCast(u32, 32));
+    var bit: u32 = k % @intCast(u32, 32);
+    v.mag[word] = @intCast(u32, 1) << @intCast(u32, bit);
+    v.len = @intCast(u8, word + @intCast(usize, 1));
+    return v;
+}
+
+fn ciSet(out: *ComptimeInt, src: ComptimeInt) void {
+    var i: usize = 0;
+    while (i < @intCast(usize, COMPTIME_INT_LIMBS)) : (i += 1) { out.mag[i] = src.mag[i]; }
+    out.len = src.len;
+    out.neg = src.neg;
+}
+
+fn ciNormalize(v: *ComptimeInt) void {
+    var l: usize = @intCast(usize, v.len);
+    var done: bool = false;
+    while (!done) {
+        if (l == 0) { done = true; } else if (v.mag[l - 1] == @intCast(u32, 0)) { l -= 1; } else { done = true; }
+    }
+    v.len = @intCast(u8, l);
+    if (l == 0) {
+        v.neg = false;
+        var i: usize = 0;
+        while (i < @intCast(usize, COMPTIME_INT_LIMBS)) : (i += 1) { v.mag[i] = @intCast(u32, 0); }
+    }
+}
+
+pub fn ciIsZero(v: ComptimeInt) bool {
+    return v.len == @intCast(u8, 0);
+}
+
+// -1 / 0 / 1 magnitude comparison.
+fn ciMagCmp(a: ComptimeInt, b: ComptimeInt) i32 {
+    if (a.len != b.len) {
+        if (a.len < b.len) return @intCast(i32, -1);
+        return @intCast(i32, 1);
+    }
+    var i: usize = @intCast(usize, a.len);
+    while (i > 0) {
+        i -= 1;
+        if (a.mag[i] != b.mag[i]) {
+            if (a.mag[i] < b.mag[i]) return @intCast(i32, -1);
+            return @intCast(i32, 1);
+        }
+    }
+    return @intCast(i32, 0);
+}
+
+// Low 64 bits as a two's-complement pattern (for materialisation only).
+pub fn ciToU64(v: ComptimeInt) u64 {
+    var m: u64 = @intCast(u64, 0);
+    if (v.len > @intCast(u8, 0)) { m = @intCast(u64, v.mag[0]); }
+    if (v.len > @intCast(u8, 1)) { m = m | (@intCast(u64, v.mag[1]) << @intCast(u64, 32)); }
+    if (v.neg) { m = @intCast(u64, 0) - m; }
+    return m;
+}
+
+// Exact int -> f64 for @intToFloat (limb accumulation; documented residual:
+// values above 2^53 may differ from a correctly-rounded conversion by 1 ulp).
+fn ciToF64(v: ComptimeInt) f64 {
+    var fv: f64 = 0.0;
+    var i: usize = @intCast(usize, v.len);
+    while (i > 0) {
+        i -= 1;
+        fv = fv * 4294967296.0 + @intToFloat(f64, v.mag[i]);
+    }
+    if (v.neg) { fv = -fv; }
+    return fv;
+}
+
+// Reconstruct the pre-Task-2 64-bit bits view of a folded value, when it fits
+// (used by the pre-Task-3 comparison fold; a bool is 0/1). Values at/above
+// 2^64 decline -- the old comparison fold could not represent them either.
+fn ciValToOldBits(cv: ComptimeVal, out: *u64) bool {
+    if (cv.kind == KIND_BOOL) {
+        if (ciIsZero(cv.v)) { out.* = @intCast(u64, 0); } else { out.* = @intCast(u64, 1); }
+        return true;
+    }
+    var lim = ciPow2(@intCast(u32, 64));
+    if (ciMagCmp(cv.v, lim) >= 0) return false;
+    out.* = ciToU64(cv.v);
+    return true;
+}
+
+fn ciIntVal(v: ComptimeInt) ComptimeVal {
+    return ComptimeVal{ .v = v, .kind = KIND_INT, .float_bits = @intCast(u64, 0) };
+}
+
+fn ciBoolVal(b: bool) ComptimeVal {
+    var v = ciZeroInt();
+    if (b) { v = ciFromU64(@intCast(u64, 1)); }
+    return ComptimeVal{ .v = v, .kind = KIND_BOOL, .float_bits = @intCast(u64, 0) };
+}
+
+fn ciMagAnd(a: ComptimeInt, b: ComptimeInt, out: *ComptimeInt) void {
+    var i: usize = 0;
+    while (i < @intCast(usize, COMPTIME_INT_LIMBS)) : (i += 1) { out.mag[i] = a.mag[i] & b.mag[i]; }
+    out.len = @intCast(u8, COMPTIME_INT_LIMBS);
+    out.neg = false;
+    ciNormalize(out);
+}
+
+fn ciMagOr(a: ComptimeInt, b: ComptimeInt, out: *ComptimeInt) void {
+    var i: usize = 0;
+    while (i < @intCast(usize, COMPTIME_INT_LIMBS)) : (i += 1) { out.mag[i] = a.mag[i] | b.mag[i]; }
+    out.len = @intCast(u8, COMPTIME_INT_LIMBS);
+    out.neg = false;
+    ciNormalize(out);
+}
+
+fn ciMagXor(a: ComptimeInt, b: ComptimeInt, out: *ComptimeInt) void {
+    var i: usize = 0;
+    while (i < @intCast(usize, COMPTIME_INT_LIMBS)) : (i += 1) { out.mag[i] = a.mag[i] ^ b.mag[i]; }
+    out.len = @intCast(u8, COMPTIME_INT_LIMBS);
+    out.neg = false;
+    ciNormalize(out);
+}
+
+// 256-bit complement of a magnitude.
+fn ciMagNot(a: ComptimeInt, out: *ComptimeInt) void {
+    var i: usize = 0;
+    while (i < @intCast(usize, COMPTIME_INT_LIMBS)) : (i += 1) { out.mag[i] = ~a.mag[i]; }
+    out.len = @intCast(u8, COMPTIME_INT_LIMBS);
+    out.neg = false;
+    ciNormalize(out);
+}
+
+// Magnitude addition; false on carry out of limb 7 (needs > 256 bits).
+fn ciMagAddInto(a: ComptimeInt, b: ComptimeInt, out: *ComptimeInt) bool {
+    var carry: u64 = @intCast(u64, 0);
+    var i: usize = 0;
+    while (i < @intCast(usize, COMPTIME_INT_LIMBS)) : (i += 1) {
+        var av: u64 = @intCast(u64, 0);
+        var bv: u64 = @intCast(u64, 0);
+        if (i < @intCast(usize, a.len)) { av = @intCast(u64, a.mag[i]); }
+        if (i < @intCast(usize, b.len)) { bv = @intCast(u64, b.mag[i]); }
+        var s: u64 = av + bv + carry;
+        out.mag[i] = @intCast(u32, s & @intCast(u64, 4294967295));
+        carry = s >> @intCast(u64, 32);
+    }
+    if (carry != @intCast(u64, 0)) return false;
+    out.len = @intCast(u8, COMPTIME_INT_LIMBS);
+    out.neg = false;
+    ciNormalize(out);
+    return true;
+}
+
+// Magnitude subtraction; requires a >= b.
+fn ciMagSubInto(a: ComptimeInt, b: ComptimeInt, out: *ComptimeInt) bool {
+    var borrow: u64 = @intCast(u64, 0);
+    var i: usize = 0;
+    while (i < @intCast(usize, COMPTIME_INT_LIMBS)) : (i += 1) {
+        var av: u64 = @intCast(u64, 0);
+        var bv: u64 = @intCast(u64, 0);
+        if (i < @intCast(usize, a.len)) { av = @intCast(u64, a.mag[i]); }
+        if (i < @intCast(usize, b.len)) { bv = @intCast(u64, b.mag[i]); }
+        var d: u64 = av + @intCast(u64, 4294967296) - bv - borrow;
+        out.mag[i] = @intCast(u32, d & @intCast(u64, 4294967295));
+        if (d >= @intCast(u64, 4294967296)) { borrow = @intCast(u64, 0); } else { borrow = @intCast(u64, 1); }
+    }
+    out.len = @intCast(u8, COMPTIME_INT_LIMBS);
+    out.neg = false;
+    ciNormalize(out);
+    return true;
+}
+
+// a + 1; false if a is the cap (2^256 - 1).
+fn ciMagAddOne(a: ComptimeInt, out: *ComptimeInt) bool {
+    var one = ciFromU64(@intCast(u64, 1));
+    return ciMagAddInto(a, one, out);
+}
+
+// a - 1; requires a > 0.
+fn ciMagSubOne(a: ComptimeInt, out: *ComptimeInt) bool {
+    var borrow: u32 = @intCast(u32, 1);
+    var i: usize = 0;
+    while (i < @intCast(usize, COMPTIME_INT_LIMBS)) : (i += 1) {
+        var av: u32 = a.mag[i];
+        var d: u32 = av - borrow;
+        if (av < borrow) { borrow = @intCast(u32, 1); } else { borrow = @intCast(u32, 0); }
+        out.mag[i] = d;
+    }
+    out.len = @intCast(u8, COMPTIME_INT_LIMBS);
+    out.neg = false;
+    ciNormalize(out);
+    return true;
+}
+
+pub fn ciAdd(a: ComptimeInt, b: ComptimeInt, out: *ComptimeInt) bool {
+    if (a.neg == b.neg) {
+        if (!ciMagAddInto(a, b, out)) return false;
+        out.neg = a.neg;
+        if (out.len == @intCast(u8, 0)) { out.neg = false; }
+        return true;
+    }
+    var m = ciMagCmp(a, b);
+    if (m == 0) { ciSet(out, ciZeroInt()); return true; }
+    if (m > 0) {
+        if (!ciMagSubInto(a, b, out)) return false;
+        out.neg = a.neg;
+        return true;
+    }
+    if (!ciMagSubInto(b, a, out)) return false;
+    out.neg = b.neg;
+    return true;
+}
+
+pub fn ciSub(a: ComptimeInt, b: ComptimeInt, out: *ComptimeInt) bool {
+    var nb = b;
+    if (!ciIsZero(nb)) { nb.neg = !nb.neg; } else { nb.neg = false; }
+    return ciAdd(a, nb, out);
+}
+
+pub fn ciNeg(a: ComptimeInt, out: *ComptimeInt) bool {
+    ciSet(out, a);
+    if (!ciIsZero(a)) { out.neg = !a.neg; } else { out.neg = false; }
+    return true;
+}
+
+// Schoolbook multiplication; false when the exact product needs > 256 bits.
+pub fn ciMul(a: ComptimeInt, b: ComptimeInt, out: *ComptimeInt) bool {
+    if (ciIsZero(a) or ciIsZero(b)) { ciSet(out, ciZeroInt()); return true; }
+    var acc: [16]u64 = undefined;
+    var zi: usize = 0;
+    while (zi < @intCast(usize, 16)) : (zi += 1) { acc[zi] = @intCast(u64, 0); }
+    var alen: usize = @intCast(usize, a.len);
+    var blen: usize = @intCast(usize, b.len);
+    var i: usize = 0;
+    while (i < alen) : (i += 1) {
+        var carry: u64 = @intCast(u64, 0);
+        var j: usize = 0;
+        while (j < blen) : (j += 1) {
+            var p: u64 = @intCast(u64, a.mag[i]) * @intCast(u64, b.mag[j]) + acc[i + j] + carry;
+            acc[i + j] = p & @intCast(u64, 4294967295);
+            carry = p >> @intCast(u64, 32);
+        }
+        var k: usize = i + blen;
+        var c2: u64 = carry;
+        while (c2 != @intCast(u64, 0)) {
+            if (k >= @intCast(usize, 16)) return false;
+            var s: u64 = acc[k] + c2;
+            acc[k] = s & @intCast(u64, 4294967295);
+            c2 = s >> @intCast(u64, 32);
+            k += 1;
+        }
+    }
+    var oi: usize = @intCast(usize, COMPTIME_INT_LIMBS);
+    while (oi < @intCast(usize, 16)) : (oi += 1) {
+        if (acc[oi] != @intCast(u64, 0)) return false;
+    }
+    i = 0;
+    while (i < @intCast(usize, COMPTIME_INT_LIMBS)) : (i += 1) { out.mag[i] = @intCast(u32, acc[i]); }
+    out.len = @intCast(u8, COMPTIME_INT_LIMBS);
+    out.neg = false;
+    ciNormalize(out);
+    out.neg = (a.neg != b.neg);
+    if (out.len == @intCast(u8, 0)) { out.neg = false; }
+    return true;
+}
+
+// Truncating division (Zig `/` and `%`): |q| = |a| / |b|, q.neg = a.neg xor
+// b.neg; |r| = |a| mod |b|, r.neg = a.neg. False on division by zero.
+// Binary long division over the 256 dividend bits with a 9-limb remainder.
+pub fn ciDivMod(a: ComptimeInt, b: ComptimeInt, q: *ComptimeInt, r: *ComptimeInt) bool {
+    if (ciIsZero(b)) return false;
+    if (ciIsZero(a)) { ciSet(q, ciZeroInt()); ciSet(r, ciZeroInt()); return true; }
+    if (ciMagCmp(a, b) < 0) {
+        ciSet(q, ciZeroInt());
+        ciSet(r, a);
+        if (r.len == @intCast(u8, 0)) { r.neg = false; }
+        return true;
+    }
+    var rem: [9]u32 = undefined;
+    var k: usize = 0;
+    while (k < @intCast(usize, 9)) : (k += 1) { rem[k] = @intCast(u32, 0); }
+    var rem_len: usize = 0;
+    var qm = ciZeroInt();
+    var bit: usize = 256;
+    while (bit > 0) {
+        bit -= 1;
+        var carry: u32 = @intCast(u32, 0);
+        k = 0;
+        while (k < @intCast(usize, 9)) : (k += 1) {
+            var nv: u32 = (rem[k] << 1) | carry;
+            carry = rem[k] >> 31;
+            rem[k] = nv;
+        }
+        var word: usize = bit / 32;
+        var pos: u32 = @intCast(u32, bit % 32);
+        if (word < 8 and word < @intCast(usize, a.len)) {
+            var abit: u32 = (a.mag[word] >> @intCast(u32, pos)) & @intCast(u32, 1);
+            rem[0] = rem[0] | abit;
+        }
+        if (rem_len < 9 and rem[rem_len] != @intCast(u32, 0)) { rem_len += 1; }
+        var ge: bool = false;
+        if (rem_len == 9) {
+            ge = true;
+        } else if (rem_len > @intCast(usize, b.len)) {
+            ge = true;
+        } else if (rem_len == @intCast(usize, b.len)) {
+            // Compare top-down: the FIRST differing limb is decisive, so stop.
+            var diff_found: bool = false;
+            var m: usize = @intCast(usize, b.len);
+            while (m > 0 and !diff_found) {
+                m -= 1;
+                if (rem[m] != b.mag[m]) {
+                    diff_found = true;
+                    if (rem[m] < b.mag[m]) { ge = false; } else { ge = true; }
+                }
+            }
+            if (!diff_found) { ge = true; }
+        }
+        if (ge) {
+            var borrow: u32 = @intCast(u32, 0);
+            var m2: usize = 0;
+            while (m2 < @intCast(usize, 9)) : (m2 += 1) {
+                var bv: u32 = @intCast(u32, 0);
+                if (m2 < @intCast(usize, b.len)) { bv = b.mag[m2]; }
+                var sub: u32 = bv + borrow;
+                var diff: u32 = rem[m2] - sub;
+                if (rem[m2] < sub) { borrow = @intCast(u32, 1); } else { borrow = @intCast(u32, 0); }
+                rem[m2] = diff;
+            }
+            rem_len = 9;
+            var found: bool = false;
+            while (rem_len > 0 and !found) {
+                if (rem[rem_len - 1] != @intCast(u32, 0)) { found = true; } else { rem_len -= 1; }
+            }
+            var qword: usize = bit / 32;
+            var qpos: u32 = @intCast(u32, bit % 32);
+            qm.mag[qword] = qm.mag[qword] | (@intCast(u32, 1) << @intCast(u32, qpos));
+        }
+    }
+    ciSet(q, qm);
+    q.len = @intCast(u8, COMPTIME_INT_LIMBS);
+    ciNormalize(q);
+    q.neg = (a.neg != b.neg);
+    if (q.len == @intCast(u8, 0)) { q.neg = false; }
+    var ri: usize = 0;
+    while (ri < @intCast(usize, COMPTIME_INT_LIMBS)) : (ri += 1) { r.mag[ri] = rem[ri]; }
+    r.len = @intCast(u8, COMPTIME_INT_LIMBS);
+    r.neg = a.neg;
+    ciNormalize(r);
+    if (r.len == @intCast(u8, 0)) { r.neg = false; }
+    return true;
+}
+
+// Bitwise ops with infinite-precision two's-complement semantics, reduced to
+// magnitude ops via `~m == -m - 1`: -m <-> ~(m-1).
+pub fn ciBitAnd(a: ComptimeInt, b: ComptimeInt, out: *ComptimeInt) bool {
+    if (!a.neg and !b.neg) { ciMagAnd(a, b, out); return true; }
+    if (a.neg and b.neg) {
+        var am = ciZeroInt();
+        var bm = ciZeroInt();
+        if (!ciMagSubOne(a, &am)) return false;
+        if (!ciMagSubOne(b, &bm)) return false;
+        var t = ciZeroInt();
+        ciMagOr(am, bm, &t);
+        if (!ciMagAddOne(t, out)) return false;
+        out.neg = true;
+        return true;
+    }
+    var m = ciZeroInt();
+    var n = ciZeroInt();
+    if (a.neg) { if (!ciMagSubOne(a, &m)) return false; ciSet(&n, b); } else { if (!ciMagSubOne(b, &m)) return false; ciSet(&n, a); }
+    var notm = ciZeroInt();
+    ciMagNot(m, &notm);
+    ciMagAnd(notm, n, out);
+    return true;
+}
+
+pub fn ciBitOr(a: ComptimeInt, b: ComptimeInt, out: *ComptimeInt) bool {
+    if (!a.neg and !b.neg) { ciMagOr(a, b, out); return true; }
+    var m = ciZeroInt();
+    var n = ciZeroInt();
+    if (a.neg and b.neg) {
+        if (!ciMagSubOne(a, &m)) return false;
+        if (!ciMagSubOne(b, &n)) return false;
+        var t = ciZeroInt();
+        ciMagAnd(m, n, &t);
+        if (!ciMagAddOne(t, out)) return false;
+        out.neg = true;
+        return true;
+    }
+    if (a.neg) { if (!ciMagSubOne(a, &m)) return false; ciSet(&n, b); } else { if (!ciMagSubOne(b, &m)) return false; ciSet(&n, a); }
+    var notn = ciZeroInt();
+    ciMagNot(n, &notn);
+    var t2 = ciZeroInt();
+    ciMagAnd(m, notn, &t2);
+    if (!ciMagAddOne(t2, out)) return false;
+    out.neg = true;
+    return true;
+}
+
+pub fn ciBitXor(a: ComptimeInt, b: ComptimeInt, out: *ComptimeInt) bool {
+    if (!a.neg and !b.neg) { ciMagXor(a, b, out); return true; }
+    var m = ciZeroInt();
+    var n = ciZeroInt();
+    if (a.neg and b.neg) {
+        if (!ciMagSubOne(a, &m)) return false;
+        if (!ciMagSubOne(b, &n)) return false;
+        ciMagXor(m, n, out);
+        return true;
+    }
+    if (a.neg) { if (!ciMagSubOne(a, &m)) return false; ciSet(&n, b); } else { if (!ciMagSubOne(b, &m)) return false; ciSet(&n, a); }
+    var t = ciZeroInt();
+    ciMagXor(m, n, &t);
+    if (!ciMagAddOne(t, out)) return false;
+    out.neg = true;
+    return true;
+}
+
+// ~x = -x - 1 (Task 1 §4: Z98 keeps `~`, Zig 0.15.2 rejects it).
+pub fn ciBitNot(a: ComptimeInt, out: *ComptimeInt) bool {
+    if (a.neg) {
+        if (!ciMagSubOne(a, out)) return false;
+        out.neg = false;
+        return true;
+    }
+    if (!ciMagAddOne(a, out)) return false;
+    out.neg = true;
+    return true;
+}
+
+// Exact `a << b` (multiply by 2^b); false for a negative/oversized count or
+// when the exact result needs > 256 bits. A negative lhs keeps its sign.
+pub fn ciShl(a: ComptimeInt, b: ComptimeInt, out: *ComptimeInt) bool {
+    if (b.neg and !ciIsZero(b)) return false;
+    if (b.len > @intCast(u8, 1)) return false;
+    if (ciIsZero(a)) { ciSet(out, ciZeroInt()); return true; }
+    var sh: u32 = @intCast(u32, 0);
+    if (b.len == @intCast(u8, 1)) { sh = b.mag[0]; }
+    if (sh >= @intCast(u32, 256)) return false;
+    var word: usize = @intCast(usize, sh / @intCast(u32, 32));
+    var bits: u32 = sh % @intCast(u32, 32);
+    var tmp: [8]u64 = undefined;
+    var i: usize = 0;
+    while (i < @intCast(usize, COMPTIME_INT_LIMBS)) : (i += 1) {
+        var src: u64 = @intCast(u64, 0);
+        if (i < @intCast(usize, a.len)) { src = @intCast(u64, a.mag[i]); }
+        tmp[i] = src << @intCast(u64, bits);
+    }
+    var carry: u64 = @intCast(u64, 0);
+    i = 0;
+    while (i < @intCast(usize, COMPTIME_INT_LIMBS)) : (i += 1) {
+        var val: u64 = carry;
+        if (i >= word) {
+            var si: usize = i - word;
+            if (si < @intCast(usize, COMPTIME_INT_LIMBS)) { val += tmp[si]; }
+        }
+        out.mag[i] = @intCast(u32, val & @intCast(u64, 4294967295));
+        carry = val >> @intCast(u64, 32);
+    }
+    if (carry != @intCast(u64, 0)) return false;
+    out.len = @intCast(u8, COMPTIME_INT_LIMBS);
+    out.neg = false;
+    ciNormalize(out);
+    out.neg = a.neg;
+    if (out.len == @intCast(u8, 0)) { out.neg = false; }
+    return true;
+}
+
+// Floor right shift (arithmetic): a >> b = floor(a / 2^b). False for a
+// negative/oversized count; the result never exceeds the cap.
+pub fn ciShr(a: ComptimeInt, b: ComptimeInt, out: *ComptimeInt) bool {
+    if (b.neg and !ciIsZero(b)) return false;
+    if (b.len > @intCast(u8, 1)) return false;
+    if (ciIsZero(a)) { ciSet(out, ciZeroInt()); return true; }
+    var sh: u32 = @intCast(u32, 0);
+    if (b.len == @intCast(u8, 1)) { sh = b.mag[0]; }
+    if (sh >= @intCast(u32, 256)) {
+        if (a.neg) { ciSet(out, ciFromU64(@intCast(u64, 1))); out.neg = true; } else { ciSet(out, ciZeroInt()); }
+        return true;
+    }
+    var word: usize = @intCast(usize, sh / @intCast(u32, 32));
+    var bits: u32 = sh % @intCast(u32, 32);
+    var sticky: bool = false;
+    var i: usize = 0;
+    while (i < word) : (i += 1) {
+        if (i < @intCast(usize, a.len) and a.mag[i] != @intCast(u32, 0)) { sticky = true; }
+    }
+    if (bits > @intCast(u32, 0) and word < @intCast(usize, a.len)) {
+        var mask: u32 = (@intCast(u32, 1) << @intCast(u32, bits)) - @intCast(u32, 1);
+        if ((a.mag[word] & mask) != @intCast(u32, 0)) { sticky = true; }
+    }
+    i = 0;
+    while (i < @intCast(usize, COMPTIME_INT_LIMBS)) : (i += 1) {
+        var idx: usize = i + word;
+        var lo: u64 = @intCast(u64, 0);
+        if (idx < @intCast(usize, a.len)) { lo = @intCast(u64, a.mag[idx]) >> @intCast(u64, bits); }
+        var hi: u64 = @intCast(u64, 0);
+        if (bits > @intCast(u32, 0) and idx + 1 < @intCast(usize, a.len)) {
+            hi = @intCast(u64, a.mag[idx + 1]) << @intCast(u64, 32 - bits);
+        }
+        out.mag[i] = @intCast(u32, (lo | hi) & @intCast(u64, 4294967295));
+    }
+    out.len = @intCast(u8, COMPTIME_INT_LIMBS);
+    out.neg = false;
+    ciNormalize(out);
+    if (a.neg) {
+        if (sticky) {
+            var carry: u64 = @intCast(u64, 1);
+            var k2: usize = 0;
+            while (k2 < @intCast(usize, COMPTIME_INT_LIMBS)) : (k2 += 1) {
+                var s: u64 = @intCast(u64, out.mag[k2]) + carry;
+                out.mag[k2] = @intCast(u32, s & @intCast(u64, 4294967295));
+                carry = s >> @intCast(u64, 32);
+                if (carry == @intCast(u64, 0)) { k2 = @intCast(usize, COMPTIME_INT_LIMBS); }
+            }
+            if (carry != @intCast(u64, 0)) return false;
+            out.len = @intCast(u8, COMPTIME_INT_LIMBS);
+            ciNormalize(out);
+        }
+        if (out.len != @intCast(u8, 0)) { out.neg = true; }
+    }
+    return true;
+}
+
 fn comptimeEvalBinOp(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, depth: u32) ?ComptimeVal {
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var lhs = comptimeEvalEvaluateDepth(self, node.child_0, depth);
     var rhs = comptimeEvalEvaluateDepth(self, node.child_1, depth);
     if (lhs) |l| {
         if (rhs) |r| {
-            if (l.width_bits == WIDTH_FLOAT or r.width_bits == WIDTH_FLOAT) return null;
-            var lv: u64 = l.bits;
-            var rv: u64 = r.bits;
-            var use_signed = l.sig or r.sig;
-            var maxw: u32 = l.width_bits;
-            if (r.width_bits > maxw) { maxw = r.width_bits; }
-            if (op_kind == AstKind.add) return ComptimeVal{ .bits = lv + rv, .width_bits = maxw, .sig = use_signed };
-            if (op_kind == AstKind.sub) return ComptimeVal{ .bits = lv - rv, .width_bits = maxw, .sig = use_signed };
-            if (op_kind == AstKind.mul) return ComptimeVal{ .bits = lv * rv, .width_bits = maxw, .sig = use_signed };
-            if (op_kind == AstKind.div) {
-                if (rv == @intCast(u64, 0)) return null;
-                if (use_signed) {
-                    var sl: u64 = (lv >> @intCast(u64, 63)) & @intCast(u64, 1);
-                    var sr: u64 = (rv >> @intCast(u64, 63)) & @intCast(u64, 1);
-                    var al: u64 = undefined; var ar: u64 = undefined;
-                    if (sl == @intCast(u64, 1)) { al = @intCast(u64, 0) - lv; } else { al = lv; }
-                    if (sr == @intCast(u64, 1)) { ar = @intCast(u64, 0) - rv; } else { ar = rv; }
-                    var q: u64 = al / ar;
-                    if (sl != sr) { q = @intCast(u64, 0) - q; }
-                    return ComptimeVal{ .bits = q, .width_bits = maxw, .sig = true };
-                }
-                return ComptimeVal{ .bits = lv / rv, .width_bits = maxw, .sig = false };
+            if (l.kind != KIND_INT or r.kind != KIND_INT) return null;
+            var res = ciZeroInt();
+            if (op_kind == AstKind.add) {
+                if (!ciAdd(l.v, r.v, &res)) return null;
+            } else if (op_kind == AstKind.sub) {
+                if (!ciSub(l.v, r.v, &res)) return null;
+            } else if (op_kind == AstKind.mul) {
+                if (!ciMul(l.v, r.v, &res)) return null;
+            } else if (op_kind == AstKind.div) {
+                var rem = ciZeroInt();
+                if (!ciDivMod(l.v, r.v, &res, &rem)) return null;
+            } else if (op_kind == AstKind.mod_op) {
+                var q2 = ciZeroInt();
+                if (!ciDivMod(l.v, r.v, &q2, &res)) return null;
+            } else if (op_kind == AstKind.bit_and) {
+                if (!ciBitAnd(l.v, r.v, &res)) return null;
+            } else if (op_kind == AstKind.bit_or) {
+                if (!ciBitOr(l.v, r.v, &res)) return null;
+            } else if (op_kind == AstKind.bit_xor) {
+                if (!ciBitXor(l.v, r.v, &res)) return null;
+            } else if (op_kind == AstKind.shl) {
+                if (!ciShl(l.v, r.v, &res)) return null;
+            } else if (op_kind == AstKind.shr) {
+                if (!ciShr(l.v, r.v, &res)) return null;
+            } else {
+                return null;
             }
-            if (op_kind == AstKind.mod_op) {
-                if (rv == @intCast(u64, 0)) return null;
-                if (use_signed) {
-                    var sl: u64 = (lv >> @intCast(u64, 63)) & @intCast(u64, 1);
-                    var sr: u64 = (rv >> @intCast(u64, 63)) & @intCast(u64, 1);
-                    var al: u64 = undefined; var ar: u64 = undefined;
-                    if (sl == @intCast(u64, 1)) { al = @intCast(u64, 0) - lv; } else { al = lv; }
-                    if (sr == @intCast(u64, 1)) { ar = @intCast(u64, 0) - rv; } else { ar = rv; }
-                    var rem: u64 = al % ar;
-                    if (sl == @intCast(u64, 1)) { rem = @intCast(u64, 0) - rem; }
-                    return ComptimeVal{ .bits = rem, .width_bits = maxw, .sig = true };
-                }
-                return ComptimeVal{ .bits = lv % rv, .width_bits = maxw, .sig = false };
-            }
-            if (op_kind == AstKind.bit_and) return ComptimeVal{ .bits = lv & rv, .width_bits = maxw, .sig = use_signed };
-            if (op_kind == AstKind.bit_or) return ComptimeVal{ .bits = lv | rv, .width_bits = maxw, .sig = use_signed };
-            if (op_kind == AstKind.bit_xor) return ComptimeVal{ .bits = lv ^ rv, .width_bits = maxw, .sig = use_signed };
-            if (op_kind == AstKind.shl) {
-                if (rv >= @intCast(u64, 64)) return null;
-                return ComptimeVal{ .bits = lv << rv, .width_bits = maxw, .sig = use_signed };
-            }
-            if (op_kind == AstKind.shr) {
-                if (rv >= @intCast(u64, 64)) return null;
-                return ComptimeVal{ .bits = lv >> rv, .width_bits = maxw, .sig = use_signed };
-            }
+            return ciIntVal(res);
         }
     }
     return null;
 }
 
 // Task 9D: fold a comparison (`==`/`!=`/`<`/`<=`/`>`/`>=`) of two comptime
-// integers to a bool ComptimeVal. Both operands must fold; a float operand
-// (WIDTH_FLOAT) is a bounded residual and stays unfolded. Signedness is
-// per-operand and CONSERVATIVE (fix round 3, ruling m1293 (b)): a declared
-// integer type wins for its operand, otherwise the syntactic sign class decides
-// (a definitely-negative untyped operand forces signed comparison even when the
+// integers to a bool ComptimeVal. Both operands must fold; a float operand is a
+// bounded residual and stays unfolded. Signedness is per-operand and
+// CONSERVATIVE (fix round 3, ruling m1293 (b)): a declared integer type wins
+// for its operand, otherwise the syntactic sign class decides (a
+// definitely-negative untyped operand forces signed comparison even when the
 // OTHER operand is declared unsigned, so `const u: u8 = 200; u > -1` is true).
 // A shape whose signedness cannot be derived from a declared type, a literal's
 // own sign / `negate`, or an explicit `@intCast`/`@as` target — e.g. an
 // arithmetic expression over a const — makes the whole comparison UNFOLDABLE
-// (null); `cv.sig` is never used to guess. Documented bounded divergence: Zig
-// evaluates such expressions at arbitrary precision.
+// (null). Documented bounded divergence: Zig evaluates such expressions at
+// arbitrary precision; Task 3 replaces this whole path with the exact
+// magnitude+sign comparison.
+//
+// Task 2: the representation is now a big int, so the two operands are first
+// converted back to the OLD 64-bit bits+sig view when they fit in 64 bits
+// (`ciValToOldBits`); a value beyond that declines the comparison (the old fold
+// could not represent it either), preserving the frozen comparison behavior.
 fn comptimeEvalCompare(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, depth: u32) ?ComptimeVal {
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var lhs = comptimeEvalEvaluateDepth(self, node.child_0, depth);
     var rhs = comptimeEvalEvaluateDepth(self, node.child_1, depth);
     if (lhs) |l| {
         if (rhs) |r| {
-            if (l.width_bits == WIDTH_FLOAT or r.width_bits == WIDTH_FLOAT) return null;
+            if (l.kind == KIND_FLOAT or r.kind == KIND_FLOAT) return null;
+            var l_bits: u64 = @intCast(u64, 0);
+            var r_bits: u64 = @intCast(u64, 0);
+            if (!ciValToOldBits(l, &l_bits)) return null;
+            if (!ciValToOldBits(r, &r_bits)) return null;
             var l_signed: bool = false;
             var r_signed: bool = false;
             if (!comptimeEvalOperandCompareSigned(self, node.child_0, &l_signed)) return null;
@@ -167,8 +717,8 @@ fn comptimeEvalCompare(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, dep
             var use_signed: bool = l_signed or r_signed;
             var res: bool = false;
             if (use_signed) {
-                var sl: i64 = @bitCast(i64, l.bits);
-                var sr: i64 = @bitCast(i64, r.bits);
+                var sl: i64 = @bitCast(i64, l_bits);
+                var sr: i64 = @bitCast(i64, r_bits);
                 if (op_kind == AstKind.cmp_eq) res = sl == sr;
                 if (op_kind == AstKind.cmp_ne) res = sl != sr;
                 if (op_kind == AstKind.cmp_lt) res = sl < sr;
@@ -176,16 +726,14 @@ fn comptimeEvalCompare(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, dep
                 if (op_kind == AstKind.cmp_gt) res = sl > sr;
                 if (op_kind == AstKind.cmp_ge) res = sl >= sr;
             } else {
-                if (op_kind == AstKind.cmp_eq) res = l.bits == r.bits;
-                if (op_kind == AstKind.cmp_ne) res = l.bits != r.bits;
-                if (op_kind == AstKind.cmp_lt) res = l.bits < r.bits;
-                if (op_kind == AstKind.cmp_le) res = l.bits <= r.bits;
-                if (op_kind == AstKind.cmp_gt) res = l.bits > r.bits;
-                if (op_kind == AstKind.cmp_ge) res = l.bits >= r.bits;
+                if (op_kind == AstKind.cmp_eq) res = l_bits == r_bits;
+                if (op_kind == AstKind.cmp_ne) res = l_bits != r_bits;
+                if (op_kind == AstKind.cmp_lt) res = l_bits < r_bits;
+                if (op_kind == AstKind.cmp_le) res = l_bits <= r_bits;
+                if (op_kind == AstKind.cmp_gt) res = l_bits > r_bits;
+                if (op_kind == AstKind.cmp_ge) res = l_bits >= r_bits;
             }
-            var rb: u64 = @intCast(u64, 0);
-            if (res) rb = @intCast(u64, 1);
-            return ComptimeVal{ .bits = rb, .width_bits = @intCast(u32, 1), .sig = false };
+            return ciBoolVal(res);
         }
     }
     return null;
@@ -196,51 +744,50 @@ fn comptimeEvalCompare(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, dep
 // without evaluating the rhs; when the lhs does NOT fold, a decisive RHS still
 // decides (`<runtime> or true` -> true, `<runtime> and false` -> false) without
 // requiring the lhs — matching Zig's comptime-known-true acceptance (fix round
-// 1). Any other operand that does not fold, or is not bool-width, yields null.
+// 1). Any other operand that does not fold, or is not bool-kind, yields null.
 fn comptimeEvalLogical(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, depth: u32) ?ComptimeVal {
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var lhs = comptimeEvalEvaluateDepth(self, node.child_0, depth);
     if (op_kind == AstKind.bool_not) {
         if (lhs) |l| {
-            if (l.width_bits != @intCast(u32, 1)) return null;
-            var nb: u64 = @intCast(u64, 1) - (l.bits & @intCast(u64, 1));
-            return ComptimeVal{ .bits = nb, .width_bits = @intCast(u32, 1), .sig = false };
+            if (l.kind != KIND_BOOL) return null;
+            return ciBoolVal(ciIsZero(l.v));
         }
         return null;
     }
     if (op_kind == AstKind.bool_and) {
         if (lhs) |l| {
-            if (l.width_bits != @intCast(u32, 1)) return null;
-            if (l.bits == @intCast(u64, 0)) return ComptimeVal{ .bits = @intCast(u64, 0), .width_bits = @intCast(u32, 1), .sig = false };
+            if (l.kind != KIND_BOOL) return null;
+            if (ciIsZero(l.v)) return ciBoolVal(false);
             var rhs_a = comptimeEvalEvaluateDepth(self, node.child_1, depth);
             if (rhs_a) |ra| {
-                if (ra.width_bits != @intCast(u32, 1)) return null;
-                return ComptimeVal{ .bits = ra.bits & @intCast(u64, 1), .width_bits = @intCast(u32, 1), .sig = false };
+                if (ra.kind != KIND_BOOL) return null;
+                return ciBoolVal(!ciIsZero(ra.v));
             }
             return null;
         }
         // lhs does not fold: a false rhs decides the conjunction.
         if (comptimeEvalEvaluateDepth(self, node.child_1, depth)) |ra2| {
-            if (ra2.width_bits != @intCast(u32, 1)) return null;
-            if (ra2.bits == @intCast(u64, 0)) return ComptimeVal{ .bits = @intCast(u64, 0), .width_bits = @intCast(u32, 1), .sig = false };
+            if (ra2.kind != KIND_BOOL) return null;
+            if (ciIsZero(ra2.v)) return ciBoolVal(false);
         }
         return null;
     }
     if (op_kind == AstKind.bool_or) {
         if (lhs) |l| {
-            if (l.width_bits != @intCast(u32, 1)) return null;
-            if (l.bits != @intCast(u64, 0)) return ComptimeVal{ .bits = @intCast(u64, 1), .width_bits = @intCast(u32, 1), .sig = false };
+            if (l.kind != KIND_BOOL) return null;
+            if (!ciIsZero(l.v)) return ciBoolVal(true);
             var rhs_o = comptimeEvalEvaluateDepth(self, node.child_1, depth);
             if (rhs_o) |ro| {
-                if (ro.width_bits != @intCast(u32, 1)) return null;
-                return ComptimeVal{ .bits = ro.bits & @intCast(u64, 1), .width_bits = @intCast(u32, 1), .sig = false };
+                if (ro.kind != KIND_BOOL) return null;
+                return ciBoolVal(!ciIsZero(ro.v));
             }
             return null;
         }
         // lhs does not fold: a true rhs decides the disjunction.
         if (comptimeEvalEvaluateDepth(self, node.child_1, depth)) |ro2| {
-            if (ro2.width_bits != @intCast(u32, 1)) return null;
-            if (ro2.bits != @intCast(u64, 0)) return ComptimeVal{ .bits = @intCast(u64, 1), .width_bits = @intCast(u32, 1), .sig = false };
+            if (ro2.kind != KIND_BOOL) return null;
+            if (!ciIsZero(ro2.v)) return ciBoolVal(true);
         }
         return null;
     }
@@ -323,63 +870,65 @@ fn comptimeEvalResolveTypeArg(self: *ComptimeEval, node_idx: u32) ?u32 {
     return tid;
 }
 
-// Task 11S (c): does the folded value `cv` fit the integer type `t`? The
-// comptime `@intCast` arm used to mask to the target width, silently folding
-// `@intCast(u8, 300)` to 44. A negative source never fits an unsigned target;
-// a positive source must not exceed the target's max. Widths >= 64 are left
-// alone (no masking, existing behavior preserved).
+// Task 2: exact range check of a `ComptimeInt` against an integer type `t`.
+// Replaces the old 64-bit `comptimeValFitsType` sign-class heuristic: the exact
+// value distinguishes `-1` from `18446744073709551615`, so a negative source
+// never fits an unsigned target and the signed/unsigned boundaries are exact.
+// Task 11S (c) semantics are preserved: an out-of-range `@intCast`/`@as` still
+// emits error[3000] and stops folding.
 //
-// M3 note: this intentionally mirrors `type_resolver.intValueFitsType` (same
-// width/signedness range rule) because the two evaluators hold values in
-// different representations (`ComptimeVal` bits+sig vs `i64`); a shared helper
-// would need a conversion shim, so the small duplication is deliberate.
-//
-// Task B3 item 2: a 64-bit target is no longer a blanket accept. The 64-bit
-// bit pattern alone cannot distinguish a negative source from a large
-// non-negative literal (both have the top bit set), so the OPERAND is
-// classified syntactically (see `comptimeEvalSignClass`): a definitely-negative
-// source cannot fit an unsigned 64-bit target, and a definitely-non-negative
-// source above i64 max cannot fit a signed 64-bit target. An unrecognized shape
-// (`unknown`) is never rejected (no over-rejection of valid programs).
-fn comptimeValFitsType(self: *ComptimeEval, cv: ComptimeVal, t: u32, operand_idx: u32) bool {
+// M3 note: `type_resolver.intValueFitsType` remains the twin until Task 5
+// migrates the type-layer evaluators; the small duplication is deliberate.
+pub fn comptimeIntFitsType(self: *ComptimeEval, v: ComptimeInt, t: u32) bool {
     if (!type_mod.typeRegistryIsInteger(self.registry, t)) return false;
     var wb: u32 = @intCast(u32, type_mod.typeRegistryIntWidthBits(self.registry, t));
-    if (wb >= @intCast(u32, 64)) {
-        var sc64 = comptimeEvalSignClass(self, operand_idx, @intCast(u32, 0));
-        var sval64: i64 = @bitCast(i64, cv.bits);
-        if (type_mod.typeRegistryIntIsSigned(self.registry, t)) {
-            if (sc64 == SignClass.non_negative and sval64 < @intCast(i64, 0)) return false;
-            return true;
-        }
-        if (sc64 == SignClass.negative and sval64 < @intCast(i64, 0)) return false;
-        return true;
-    }
     if (wb == @intCast(u32, 0)) return false;
     var tsig: bool = type_mod.typeRegistryIntIsSigned(self.registry, t);
-    var sval: i64 = @bitCast(i64, cv.bits);
-    if (sval < @intCast(i64, 0)) {
+    if (v.neg) {
         if (!tsig) return false;
-        var mag: u64 = @intCast(u64, @intCast(i64, 0) - sval);
-        var smin_mag: u64 = @intCast(u64, 1) << @intCast(u64, wb - @intCast(u32, 1));
-        return mag <= smin_mag;
+        var lim = ciPow2(wb - @intCast(u32, 1));
+        return ciMagCmp(v, lim) <= 0;
     }
     if (tsig) {
-        var smax: u64 = (@intCast(u64, 1) << @intCast(u64, wb - @intCast(u32, 1))) - @intCast(u64, 1);
-        return cv.bits <= smax;
+        var lim2 = ciPow2(wb - @intCast(u32, 1));
+        return ciMagCmp(v, lim2) < 0;
     }
-    var umax: u64 = (@intCast(u64, 1) << @intCast(u64, wb)) - @intCast(u64, 1);
-    return cv.bits <= umax;
+    var lim3 = ciPow2(wb);
+    return ciMagCmp(v, lim3) < 0;
 }
-// Task B3 item 2: syntactic sign classification of a cast operand, used only
-// by the 64-bit range check in `comptimeValFitsType`. Unlike
-// `comptimeEvalOperandSigned` (which collapses every unclassified shape to
-// `cv.sig`), this is a tri-state so an unrecognized shape is NOT treated as
-// either sign. int/char/bool literals are comptime_int non-negative; a
-// `negate` is negative; an ident or `@as`/`@intCast` is classified by its
-// declared/target integer type, recursing into a const initializer when no
-// declared type is present. Task 9D fix round 3: `0 - X` is classified as the
-// negation of X (the one arithmetic shape with a definite sign); any other
-// arithmetic expression stays `unknown`.
+
+// Task 2: the fold-table ABI stays `U32ToU64Map` in this task (the fold-table
+// type migration belongs to Task 5). Materialise a folded ComptimeVal to the
+// 64-bit pattern the lowerer consumes: bools as 0/1, floats as their f64 bit
+// pattern, integers as their two's-complement pattern when the exact value fits
+// [i64 min, u64 max]. An integer outside that window returns null and the fold
+// is simply not stored (lowering then keeps the pre-fold runtime path).
+pub fn comptimeValStoreU64(cv: ComptimeVal) ?u64 {
+    if (cv.kind == KIND_FLOAT) return cv.float_bits;
+    if (cv.kind == KIND_BOOL) {
+        if (ciIsZero(cv.v)) return @intCast(u64, 0);
+        return @intCast(u64, 1);
+    }
+    if (cv.v.neg) {
+        var lim = ciPow2(@intCast(u32, 63));
+        if (ciMagCmp(cv.v, lim) > 0) return null;
+    } else {
+        var lim2 = ciPow2(@intCast(u32, 64));
+        if (ciMagCmp(cv.v, lim2) >= 0) return null;
+    }
+    return ciToU64(cv.v);
+}
+
+// Task B3 item 2: syntactic sign classification of a comparison operand. Used
+// by `comptimeEvalOperandCompareSigned` (the pre-Task-3 comparison fold; Task 3
+// replaces the whole comparison path with magnitude+sign). Unlike
+// `comptimeEvalOperandSigned` (deleted in Task 2), this is a tri-state so an
+// unrecognized shape is NOT treated as either sign. int/char/bool literals are
+// comptime_int non-negative; a `negate` is negative; an ident or
+// `@as`/`@intCast` is classified by its declared/target integer type, recursing
+// into a const initializer when no declared type is present. Task 9D fix round
+// 3: `0 - X` is classified as the negation of X (the one arithmetic shape with
+// a definite sign); any other arithmetic expression stays `unknown`.
 const SignClass = enum(u8) { unknown, negative, non_negative };
 
 fn comptimeEvalSignClass(self: *ComptimeEval, node_idx: u32, depth: u32) SignClass {
@@ -466,7 +1015,7 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
         var tid = comptimeEvalResolveTypeArg(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)));
         if (tid) |t| {
             var ty = self.registry.types_items[@intCast(usize, t)];
-            if (ty.state == @intCast(u8, 2)) return ComptimeVal{ .bits = @intCast(u64, ty.size), .width_bits = @intCast(u32, 0), .sig = false };
+            if (ty.state == @intCast(u8, 2)) return ciIntVal(ciFromU64(@intCast(u64, ty.size)));
         }
         return null;
     }
@@ -474,7 +1023,7 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
         var tid = comptimeEvalResolveTypeArg(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)));
         if (tid) |t| {
             var ty = self.registry.types_items[@intCast(usize, t)];
-            if (ty.state == @intCast(u8, 2)) return ComptimeVal{ .bits = @intCast(u64, ty.alignment), .width_bits = @intCast(u32, 0), .sig = false };
+            if (ty.state == @intCast(u8, 2)) return ciIntVal(ciFromU64(@intCast(u64, ty.alignment)));
         }
         return null;
     }
@@ -512,7 +1061,7 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
                                         bo = bo * @intCast(u64, 8);
                                     }
                                 }
-                                return ComptimeVal{ .bits = bo, .width_bits = @intCast(u32, 0), .sig = false };
+                                return ciIntVal(ciFromU64(bo));
                             }
                         }
                     }
@@ -530,7 +1079,7 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
                                 if (node.child_0 == self.offset_of_id) {
                                     ubo = @intCast(u64, 0);
                                 }
-                                return ComptimeVal{ .bits = ubo, .width_bits = @intCast(u32, 0), .sig = false };
+                                return ciIntVal(ciFromU64(ubo));
                             }
                         }
                     }
@@ -563,7 +1112,7 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
                     if (ty2.kind == type_mod.TypeKind.bool_type) {
                         bsz = @intCast(u64, 1);
                     }
-                    return ComptimeVal{ .bits = bsz, .width_bits = @intCast(u32, 0), .sig = false };
+                    return ciIntVal(ciFromU64(bsz));
                 }
             }
         }
@@ -574,11 +1123,8 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
         var inner = comptimeEvalEvaluateDepth(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 1)), depth);
         if (tid) |t| {
             if (inner) |cv| {
-                if (cv.width_bits == WIDTH_FLOAT) return null;
-                var ty = self.registry.types_items[@intCast(usize, t)];
+                if (cv.kind == KIND_FLOAT) return null;
                 var is_int_t: bool = type_mod.typeRegistryIsInteger(self.registry, t);
-                var wb: u32 = @intCast(u32, type_mod.typeRegistryIntWidthBits(self.registry, t));
-                var sig: bool = type_mod.typeRegistryIntIsSigned(self.registry, t);
                 // @as with a NON-integer target must NOT fold here: the arm
                 // yields an integer ComptimeVal, which enters the integer
                 // binop evaluator and silently miscompiles float arithmetic
@@ -586,23 +1132,15 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
                 // target is an integer. (@intCast's non-integer behavior is
                 // deliberately left unchanged, out of scope.)
                 if (node.child_0 == self.as_id and !is_int_t) return null;
-                if (!is_int_t) {
-                    wb = @intCast(u32, ty.size * @intCast(u32, 8));
-                    sig = false;
-                }
-                // Task 11S (c): an out-of-range comptime `@intCast` is invalid
-                // Zig (`@intCast(u8, 300)` must not mask to 44). Emit
-                // error[3000] and stop folding; the pass's post-phase diag
-                // check exits rc=2 before any emission. Task B3 item 3: the
-                // arm is shared with `@as`, so the message names the builtin
-                // actually used. Task B3 item 4: the comptime sweep is a single
-                // global node walk with no module context and the AST store
-                // carries no node->source_file map, so `source_file_id` stays 0
-                // and the diagnostic prints the message without a file:line
-                // (the span is still recorded). Threading a real location needs
-                // a structural change (per-module node ranges or a node->module
-                // table), out of scope here.
-                if (is_int_t and !comptimeValFitsType(self, cv, t, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 1)))) {
+                // Task 2: the exact ComptimeInt value is range-checked against
+                // the target width/signedness (Task 11S (c) semantics, now
+                // exact -- no masking, no 64-bit sign-class heuristic). An
+                // out-of-range `@intCast`/`@as` emits error[3000] and stops
+                // folding; the pass's post-phase diag check exits rc=2 before
+                // any emission. The message names the builtin actually used
+                // (Task B3 item 3); `source_file_id` stays 0 because the global
+                // comptime node sweep has no module context (Task B3 item 4).
+                if (is_int_t and !comptimeIntFitsType(self, cv.v, t)) {
                     if (self.diag) |dg| {
                         if (diag_mod.diagnosticCollectorMarkNodeOnce(dg, node_idx)) {
                             var ic_msg: []const u8 = "@intCast value does not fit the target type";
@@ -615,26 +1153,19 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
                     }
                     return null;
                 }
-                if (wb >= @intCast(u32, 64)) {
-                    return ComptimeVal{ .bits = cv.bits, .width_bits = wb, .sig = sig };
-                }
-                var mask: u64 = (@intCast(u64, 1) << @intCast(u64, wb)) - @intCast(u64, 1);
-                var masked = cv.bits & mask;
-                if (sig and (cv.bits & (@intCast(u64, 1) << @intCast(u64, wb - @intCast(u32, 1)))) != @intCast(u64, 0)) {
-                    var not_mask: u64 = (@intCast(u64, 0) - mask) - @intCast(u64, 1);
-                    masked = cv.bits | not_mask;
-                }
-                return ComptimeVal{ .bits = masked, .width_bits = wb, .sig = sig };
+                // Exact value; the cast result is an integer kind. For a
+                // non-integer `@intCast` target the value stays as evaluated
+                // (pre-Task-2 behavior: the arm folded the operand's bits).
+                var outv = cv;
+                outv.kind = KIND_INT;
+                return outv;
             }
         }
         return null;
     }
     if (node.child_0 == self.is_windows_id) {
-        var wb2: u64 = @intCast(u64, 0);
-        if (self.host_is_windows) {
-            wb2 = @intCast(u64, 1);
-        }
-        return ComptimeVal{ .bits = wb2, .width_bits = @intCast(u32, 1), .sig = false };
+        if (self.host_is_windows) return ciBoolVal(true);
+        return ciBoolVal(false);
     }
     if (node.child_0 == self.int_to_float_id or node.child_0 == self.float_cast_id) {
         var fv = comptimeEvalFloatBuiltin(self, node_idx, depth);
@@ -643,7 +1174,7 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
             // through a pointer reinterpretation (no value conversion).
             var fb: f64 = v;
             var fbp: *u64 = @ptrCast(*u64, &fb);
-            return ComptimeVal{ .bits = fbp.*, .width_bits = WIDTH_FLOAT, .sig = false };
+            return ComptimeVal{ .v = ciZeroInt(), .kind = KIND_FLOAT, .float_bits = fbp.* };
         }
         return null;
     }
@@ -652,9 +1183,11 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
 
 // Float-valued sub-evaluator. Deliberately SEPARATE from
 // comptimeEvalEvaluateDepth so a float bit pattern can never enter the integer
-// binop/negate/bit_not/int_cast paths (see WIDTH_FLOAT). Handles float
-// literals, `negate` (a negative float literal is `negate(float_literal)`),
-// parentheses, nested @intToFloat/@floatCast, and const ident chains.
+// binop/negate/bit_not/int_cast paths (`kind == KIND_FLOAT` gates them). Handles
+// float literals, `negate` (a negative float literal is
+// `negate(float_literal)`), parentheses, nested @intToFloat/@floatCast, and
+// const ident chains.
+
 fn comptimeEvalFloat(self: *ComptimeEval, node_idx: u32, depth: u32) ?f64 {
     if (node_idx == @intCast(u32, 0)) return null;
     if (depth >= @intCast(u32, 16)) return null;
@@ -708,61 +1241,12 @@ fn comptimeEvalFloat(self: *ComptimeEval, node_idx: u32, depth: u32) ?f64 {
     }
 }
 
-// Determine whether an @intToFloat operand is a SIGNED integer from its
-// declared type / literal shape, rather than ComptimeVal.sig (which is true for
-// every int literal and would misread an unsigned value above i64 max as
-// negative, e.g. a `u64` const = 18446744073709551615 folding to -1.0).
-fn comptimeEvalOperandSigned(self: *ComptimeEval, node_idx: u32, cv: ComptimeVal) bool {
-    // Unwrap parenthesization (recursively) so `@intToFloat(f64, (U))` is
-    // classified by U's declared type, not the wrapper's shape. The value in
-    // `cv` already came from the raw node (comptimeEvalEvaluateDepth unwraps
-    // parens), so only the signedness classification needs the unwrap.
-    var idx = node_idx;
-    var guard: u32 = 0;
-    while (guard < @intCast(u32, 32)) : (guard += 1) {
-        var wn = ast_mod.astStoreNodeAt(self.store, idx);
-        if (wn.kind == AstKind.paren_expr) { idx = wn.child_0; } else { break; }
-    }
-    var node = ast_mod.astStoreNodeAt(self.store, idx);
-    if (node.kind == AstKind.ident_expr) {
-        var name_id = ast_mod.astStoreIdentifier(self.store, idx);
-        var mi: usize = 0;
-        while (mi < @intCast(usize, self.symbol_reg.tables_len)) : (mi += 1) {
-            var c_sym = sym_mod.symbolRegistryQualifiedLookup(self.symbol_reg, @intCast(u32, mi), name_id);
-            if (c_sym) |cs| {
-                if ((cs.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
-                    var c_decl = ast_mod.astStoreNodeAt(self.store, cs.decl_node);
-                    var dt = comptimeEvalResolveTypeArg(self, c_decl.child_0);
-                    if (dt) |t| {
-                        if (type_mod.typeRegistryIsInteger(self.registry, t)) {
-                            return type_mod.typeRegistryIntIsSigned(self.registry, t);
-                        }
-                    }
-                }
-            }
-        }
-    } else if (node.kind == AstKind.int_literal) {
-        return cv.bits <= @intCast(u64, 9223372036854775807);
-    } else if (node.kind == AstKind.char_literal) {
-        return false;
-    } else if (node.kind == AstKind.builtin_call) {
-        if (node.child_0 == self.int_cast_id or node.child_0 == self.as_id) {
-            var dt2 = comptimeEvalResolveTypeArg(self, ast_mod.astStoreNodeExtraChildAt(self.store, idx, @intCast(u32, 0)));
-            if (dt2) |t2| {
-                if (type_mod.typeRegistryIsInteger(self.registry, t2)) {
-                    return type_mod.typeRegistryIntIsSigned(self.registry, t2);
-                }
-            }
-        }
-    }
-    return cv.sig;
-}
-
 // Evaluate one @intToFloat/@floatCast call to an f64. The target must resolve
 // to TYPE_F32/TYPE_F64; an f32 target rounds through f32. @intToFloat's operand
-// is evaluated with the integer evaluator (honoring its declared signedness);
-// @floatCast's with comptimeEvalFloat. A non-float target or non-foldable
-// operand returns null (no fold; the runtime lowering is unchanged).
+// is evaluated with the integer evaluator (Task 2: the exact ComptimeInt value
+// is converted from its sign/magnitude limbs); @floatCast's with
+// comptimeEvalFloat. A non-float target or non-foldable operand returns null
+// (no fold; the runtime lowering is unchanged).
 fn comptimeEvalFloatBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?f64 {
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var tid = comptimeEvalResolveTypeArg(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)));
@@ -773,12 +1257,11 @@ fn comptimeEvalFloatBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?f64
         if (node.child_0 == self.int_to_float_id) {
             var iv = comptimeEvalEvaluateDepth(self, inner_idx, depth);
             if (iv) |cv| {
-                if (cv.width_bits == WIDTH_FLOAT) return null;
-                if (comptimeEvalOperandSigned(self, inner_idx, cv)) {
-                    var sv: i64 = @bitCast(i64, cv.bits);
-                    fv = @intToFloat(f64, sv);
+                if (cv.kind == KIND_FLOAT) return null;
+                if (cv.kind == KIND_BOOL) {
+                    if (ciIsZero(cv.v)) { fv = 0.0; } else { fv = 1.0; }
                 } else {
-                    fv = @intToFloat(f64, cv.bits);
+                    fv = ciToF64(cv.v);
                 }
             } else {
                 return null;
@@ -806,39 +1289,28 @@ fn comptimeEvalEvaluateDepth(self: *ComptimeEval, node_idx: u32, depth: u32) ?Co
     if (node_idx == @intCast(u32, 0)) return null;
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     if (node.kind == AstKind.int_literal) {
-        return ComptimeVal{ .bits = ast_mod.astStoreIntValue(self.store, node_idx), .width_bits = @intCast(u32, 0), .sig = true };
+        return ciIntVal(ciFromU64(ast_mod.astStoreIntValue(self.store, node_idx)));
     } else if (node.kind == AstKind.char_literal) {
-        return ComptimeVal{ .bits = ast_mod.astStoreIntValue(self.store, node_idx), .width_bits = @intCast(u32, 8), .sig = false };
+        return ciIntVal(ciFromU64(ast_mod.astStoreIntValue(self.store, node_idx)));
     } else if (node.kind == AstKind.bool_literal) {
-        if ((node.flags & @intCast(u8, 1)) != @intCast(u8, 0)) return ComptimeVal{ .bits = @intCast(u64, 1), .width_bits = @intCast(u32, 1), .sig = false };
-        return ComptimeVal{ .bits = @intCast(u64, 0), .width_bits = @intCast(u32, 1), .sig = false };
+        if ((node.flags & @intCast(u8, 1)) != @intCast(u8, 0)) return ciBoolVal(true);
+        return ciBoolVal(false);
     } else if (node.kind == AstKind.negate) {
         var inner = comptimeEvalEvaluateDepth(self, node.child_0, depth);
         if (inner) |cv| {
-            if (cv.width_bits == WIDTH_FLOAT) return null;
-            var nv: u64 = @intCast(u64, 0) - cv.bits;
-            if (cv.width_bits != @intCast(u32, 0)) {
-                var wb: u32 = cv.width_bits;
-                if (wb >= @intCast(u32, 64)) {
-                    return ComptimeVal{ .bits = nv, .width_bits = wb, .sig = cv.sig };
-                }
-                var mask: u64 = (@intCast(u64, 1) << @intCast(u64, wb)) - @intCast(u64, 1);
-                var masked = nv & mask;
-                if (cv.sig and (nv & (@intCast(u64, 1) << @intCast(u64, wb - @intCast(u32, 1)))) != @intCast(u64, 0)) {
-                    var not_mask: u64 = (@intCast(u64, 0) - mask) - @intCast(u64, 1);
-                    masked = nv | not_mask;
-                }
-                return ComptimeVal{ .bits = masked, .width_bits = wb, .sig = cv.sig };
-            }
-            return ComptimeVal{ .bits = nv, .width_bits = @intCast(u32, 0), .sig = true };
+            if (cv.kind != KIND_INT) return null;
+            var nv = ciZeroInt();
+            _ = ciNeg(cv.v, &nv);
+            return ciIntVal(nv);
         }
         return null;
     } else if (node.kind == AstKind.bit_not) {
         var bnv = comptimeEvalEvaluateDepth(self, node.child_0, depth);
         if (bnv) |bv| {
-            if (bv.width_bits == WIDTH_FLOAT) return null;
-            var bnb = ~bv.bits;
-            return ComptimeVal{ .bits = bnb, .width_bits = bv.width_bits, .sig = false };
+            if (bv.kind != KIND_INT) return null;
+            var bnb = ciZeroInt();
+            if (!ciBitNot(bv.v, &bnb)) return null;
+            return ciIntVal(bnb);
         }
         return null;
     } else if (node.kind == AstKind.bool_not) {

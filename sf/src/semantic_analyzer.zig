@@ -1954,9 +1954,10 @@ fn semanticAnalyzerResolveOrelseExpr(self: *SemanticAnalyzer, node_idx: u32) u32
 // comptime-true (the taken arm alone is analyzed) or the then-branch is
 // void/noreturn. Z98's comptime fold (`comptime_eval.zig`) folds bool literals,
 // const-bool chains, and the folding builtins (`@isWindows`); the result must be
-// a bool (width_bits == 1) so a non-bool condition is never mistaken for a
-// suitable `if` condition. A fresh evaluator with `diag = null` is used so this
-// probe never emits a diagnostic of its own.
+// a bool (`kind == KIND_BOOL`, the Task 2 replacement for `width_bits == 1`) so
+// a non-bool condition is never mistaken for a suitable `if` condition. A fresh
+// evaluator with `diag = null` is used so this probe never emits a diagnostic
+// of its own.
 fn semanticAnalyzerConditionIsComptimeTrue(self: *SemanticAnalyzer, cond_idx: u32) bool {
     if (cond_idx == @intCast(u32, 0)) return false;
     var cond = ast_mod.astStoreNodeAt(self.store, cond_idx);
@@ -1970,8 +1971,8 @@ fn semanticAnalyzerConditionIsComptimeTrue(self: *SemanticAnalyzer, cond_idx: u3
     ce.local_consts = &self.local_consts;
     var folded = ce_mod.comptimeEvalEvaluate(&ce, cond_idx);
     if (folded) |cv| {
-        if (cv.width_bits == @intCast(u32, 1)) {
-            return cv.bits != @intCast(u64, 0);
+        if (cv.kind == ce_mod.KIND_BOOL) {
+            return !ce_mod.ciIsZero(cv.v);
         }
     }
     return false;

@@ -45,6 +45,15 @@ fn ok(msg: []const u8) void {
     pal.stderr_write(nl);
 }
 
+// Task 2: a folded comptime value is now an arbitrary-precision ComptimeInt
+// (`kind` + `v` limbs). The comptime tests read the materialisable 64-bit
+// two's-complement pattern (0 when the exact value does not fit
+// [i64 min, u64 max]), mirroring the fold-table materialisation.
+fn cvTestU64(v: ce_mod.ComptimeVal) u64 {
+    if (ce_mod.comptimeValStoreU64(v)) |x| { return x; }
+    return @intCast(u64, 0);
+}
+
 fn testResolveIntLiteral() void {
     var arena = alloc_mod.sandInit(perm_buf[0..]);
     var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);
@@ -1074,11 +1083,12 @@ fn testComptimeIntLit() void {
     var typereg = type_mod.typeRegistryInit(&type_db, &interner);
     type_mod.typeRegistryRegisterPrimitives(&typereg);
     var store = ast_mod.astStoreInit(&arena);
-    var ce = ce_mod.comptimeEvalInit(&typereg, &store, &interner);
+    var symreg = sym_mod.symbolRegistryInit(&arena);
+    var ce = ce_mod.comptimeEvalInit(&typereg, &store, &interner, &symreg);
     var idx = ast_mod.astStoreAddIntLiteral(&store, @intCast(u64, 42), @intCast(u32, 0), @intCast(u32, 0));
     var result = ce_mod.comptimeEvalEvaluate(&ce, idx);
     if (result) |v| {
-        if (v != @intCast(u64, 42)) { var fmsg: []const u8 = "testComptimeIntLit expected 42"; fail(fmsg); return; }
+        if (v.kind != ce_mod.KIND_INT or cvTestU64(v) != @intCast(u64, 42)) { var fmsg: []const u8 = "testComptimeIntLit expected 42"; fail(fmsg); return; }
     } else { var fmsg: []const u8 = "testComptimeIntLit expected value"; fail(fmsg); return; }
     var emsg: []const u8 = "testComptimeIntLit";
     ok(emsg);
@@ -1091,11 +1101,12 @@ fn testComptimeBoolTrue() void {
     var typereg = type_mod.typeRegistryInit(&type_db, &interner);
     type_mod.typeRegistryRegisterPrimitives(&typereg);
     var store = ast_mod.astStoreInit(&arena);
-    var ce = ce_mod.comptimeEvalInit(&typereg, &store, &interner);
+    var symreg = sym_mod.symbolRegistryInit(&arena);
+    var ce = ce_mod.comptimeEvalInit(&typereg, &store, &interner, &symreg);
     var idx = ast_mod.astStoreAddNode(&store, AstKind.bool_literal, @intCast(u8, 1), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var result = ce_mod.comptimeEvalEvaluate(&ce, idx);
     if (result) |v| {
-        if (v != @intCast(u64, 1)) { var fmsg: []const u8 = "testComptimeBoolTrue expected 1"; fail(fmsg); return; }
+        if (v.kind != ce_mod.KIND_BOOL or cvTestU64(v) != @intCast(u64, 1)) { var fmsg: []const u8 = "testComptimeBoolTrue expected 1"; fail(fmsg); return; }
     } else { var fmsg: []const u8 = "testComptimeBoolTrue expected value"; fail(fmsg); return; }
     var emsg: []const u8 = "testComptimeBoolTrue";
     ok(emsg);
@@ -1108,13 +1119,14 @@ fn testComptimeAdd() void {
     var typereg = type_mod.typeRegistryInit(&type_db, &interner);
     type_mod.typeRegistryRegisterPrimitives(&typereg);
     var store = ast_mod.astStoreInit(&arena);
-    var ce = ce_mod.comptimeEvalInit(&typereg, &store, &interner);
+    var symreg = sym_mod.symbolRegistryInit(&arena);
+    var ce = ce_mod.comptimeEvalInit(&typereg, &store, &interner, &symreg);
     var lhs = ast_mod.astStoreAddIntLiteral(&store, @intCast(u64, 3), @intCast(u32, 0), @intCast(u32, 0));
     var rhs = ast_mod.astStoreAddIntLiteral(&store, @intCast(u64, 4), @intCast(u32, 0), @intCast(u32, 0));
     var add_idx = ast_mod.astStoreAddNode(&store, AstKind.add, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), lhs, rhs, @intCast(u32, 0), @intCast(u32, 0));
     var result = ce_mod.comptimeEvalEvaluate(&ce, add_idx);
     if (result) |v| {
-        if (v != @intCast(u64, 7)) { var fmsg: []const u8 = "testComptimeAdd expected 7"; fail(fmsg); return; }
+        if (v.kind != ce_mod.KIND_INT or cvTestU64(v) != @intCast(u64, 7)) { var fmsg: []const u8 = "testComptimeAdd expected 7"; fail(fmsg); return; }
     } else { var fmsg: []const u8 = "testComptimeAdd expected value"; fail(fmsg); return; }
     var emsg: []const u8 = "testComptimeAdd";
     ok(emsg);
@@ -1127,7 +1139,8 @@ fn testComptimeNotEvaluable() void {
     var typereg = type_mod.typeRegistryInit(&type_db, &interner);
     type_mod.typeRegistryRegisterPrimitives(&typereg);
     var store = ast_mod.astStoreInit(&arena);
-    var ce = ce_mod.comptimeEvalInit(&typereg, &store, &interner);
+    var symreg = sym_mod.symbolRegistryInit(&arena);
+    var ce = ce_mod.comptimeEvalInit(&typereg, &store, &interner, &symreg);
     var idx = ast_mod.astStoreAddNode(&store, AstKind.string_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var result = ce_mod.comptimeEvalEvaluate(&ce, idx);
     if (result) |v| { _ = v; var fmsg: []const u8 = "testComptimeNotEvaluable expected null"; fail(fmsg); return; }
@@ -1142,7 +1155,8 @@ fn testComptimeSizeOfU32() void {
     var typereg = type_mod.typeRegistryInit(&type_db, &interner);
     type_mod.typeRegistryRegisterPrimitives(&typereg);
     var store = ast_mod.astStoreInit(&arena);
-    var ce = ce_mod.comptimeEvalInit(&typereg, &store, &interner);
+    var symreg = sym_mod.symbolRegistryInit(&arena);
+    var ce = ce_mod.comptimeEvalInit(&typereg, &store, &interner, &symreg);
     var sz: []const u8 = "@sizeOf";
     var sz_id = interner_mod.stringInternerIntern(&interner, sz);
     var un: []const u8 = "u32";
@@ -1151,7 +1165,7 @@ fn testComptimeSizeOfU32() void {
     var bc = ast_mod.astStoreAddNode(&store, AstKind.builtin_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), ident, @intCast(u32, 0), @intCast(u32, 0), sz_id);
     var result = ce_mod.comptimeEvalEvaluate(&ce, bc);
     if (result) |v| {
-        if (v != @intCast(u64, 4)) { var fmsg: []const u8 = "testComptimeSizeOfU32 expected 4"; fail(fmsg); return; }
+        if (v.kind != ce_mod.KIND_INT or cvTestU64(v) != @intCast(u64, 4)) { var fmsg: []const u8 = "testComptimeSizeOfU32 expected 4"; fail(fmsg); return; }
     } else { var fmsg: []const u8 = "testComptimeSizeOfU32 expected value"; fail(fmsg); return; }
     var emsg: []const u8 = "testComptimeSizeOfU32";
     ok(emsg);
@@ -1164,7 +1178,8 @@ fn testComptimeAlignOfI8() void {
     var typereg = type_mod.typeRegistryInit(&type_db, &interner);
     type_mod.typeRegistryRegisterPrimitives(&typereg);
     var store = ast_mod.astStoreInit(&arena);
-    var ce = ce_mod.comptimeEvalInit(&typereg, &store, &interner);
+    var symreg = sym_mod.symbolRegistryInit(&arena);
+    var ce = ce_mod.comptimeEvalInit(&typereg, &store, &interner, &symreg);
     var sz: []const u8 = "@alignOf";
     var sz_id = interner_mod.stringInternerIntern(&interner, sz);
     var un: []const u8 = "i8";
@@ -1173,7 +1188,7 @@ fn testComptimeAlignOfI8() void {
     var bc = ast_mod.astStoreAddNode(&store, AstKind.builtin_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), ident, @intCast(u32, 0), @intCast(u32, 0), sz_id);
     var result = ce_mod.comptimeEvalEvaluate(&ce, bc);
     if (result) |v| {
-        if (v != @intCast(u64, 1)) { var fmsg: []const u8 = "testComptimeAlignOfI8 expected 1"; fail(fmsg); return; }
+        if (v.kind != ce_mod.KIND_INT or cvTestU64(v) != @intCast(u64, 1)) { var fmsg: []const u8 = "testComptimeAlignOfI8 expected 1"; fail(fmsg); return; }
     } else { var fmsg: []const u8 = "testComptimeAlignOfI8 expected value"; fail(fmsg); return; }
     var emsg: []const u8 = "testComptimeAlignOfI8";
     ok(emsg);
@@ -1186,7 +1201,8 @@ fn testComptimeSizeOfVoid() void {
     var typereg = type_mod.typeRegistryInit(&type_db, &interner);
     type_mod.typeRegistryRegisterPrimitives(&typereg);
     var store = ast_mod.astStoreInit(&arena);
-    var ce = ce_mod.comptimeEvalInit(&typereg, &store, &interner);
+    var symreg = sym_mod.symbolRegistryInit(&arena);
+    var ce = ce_mod.comptimeEvalInit(&typereg, &store, &interner, &symreg);
     var sz: []const u8 = "@sizeOf";
     var sz_id = interner_mod.stringInternerIntern(&interner, sz);
     var un: []const u8 = "void";
@@ -1195,10 +1211,75 @@ fn testComptimeSizeOfVoid() void {
     var bc = ast_mod.astStoreAddNode(&store, AstKind.builtin_call, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), ident, @intCast(u32, 0), @intCast(u32, 0), sz_id);
     var result = ce_mod.comptimeEvalEvaluate(&ce, bc);
     if (result) |v| {
-        if (v != @intCast(u64, 0)) { var fmsg: []const u8 = "testComptimeSizeOfVoid expected 0"; fail(fmsg); return; }
+        if (v.kind != ce_mod.KIND_INT or cvTestU64(v) != @intCast(u64, 0)) { var fmsg: []const u8 = "testComptimeSizeOfVoid expected 0"; fail(fmsg); return; }
     } else { var fmsg: []const u8 = "testComptimeSizeOfVoid expected value"; fail(fmsg); return; }
     var emsg: []const u8 = "testComptimeSizeOfVoid";
     ok(emsg);
+}
+
+// Task 2: direct core coverage for the cases the runtime fixture cannot observe
+// end-to-end (cap declines, division by zero, negative shift counts) plus the
+// truncating-division / floor-shift / infinite two's-complement bit-op signs.
+// Every expected pattern mirrors official Zig 0.15.2.
+fn testComptimeBigIntCore() void {
+    var one = ce_mod.ciFromU64(@intCast(u64, 1));
+    var two = ce_mod.ciFromU64(@intCast(u64, 2));
+    var k255 = ce_mod.ciFromU64(@intCast(u64, 255));
+    var p255 = ce_mod.ciZeroInt();
+    if (!ce_mod.ciShl(one, k255, &p255)) { fail("testComptimeBigIntCore shl255"); return; }
+    // (2^255 - 1) + 2^255 = 2^256 - 1 is representable; the next +1 and *2 are not.
+    var all_limbs = ce_mod.ciZeroInt();
+    _ = ce_mod.ciSub(p255, one, &all_limbs);
+    var cap = ce_mod.ciZeroInt();
+    if (!ce_mod.ciAdd(all_limbs, p255, &cap)) { fail("testComptimeBigIntCore cap add"); return; }
+    var skip = ce_mod.ciZeroInt();
+    if (ce_mod.ciAdd(cap, one, &skip)) { fail("testComptimeBigIntCore cap add accepted"); return; }
+    if (ce_mod.ciMul(p255, two, &skip)) { fail("testComptimeBigIntCore cap mul accepted"); return; }
+    var q = ce_mod.ciZeroInt();
+    var r = ce_mod.ciZeroInt();
+    if (ce_mod.ciDivMod(one, ce_mod.ciZeroInt(), &q, &r)) { fail("testComptimeBigIntCore div0 accepted"); return; }
+    var neg1 = ce_mod.ciZeroInt();
+    _ = ce_mod.ciNeg(one, &neg1);
+    if (ce_mod.ciShl(one, neg1, &skip)) { fail("testComptimeBigIntCore shl neg accepted"); return; }
+    if (ce_mod.ciShr(one, neg1, &skip)) { fail("testComptimeBigIntCore shr neg accepted"); return; }
+    // Truncating division: -7 / 2 = -3, -7 % 2 = -1; 7 / -2 = -3, 7 % -2 = 1.
+    var seven = ce_mod.ciFromU64(@intCast(u64, 7));
+    var nseven = ce_mod.ciZeroInt();
+    _ = ce_mod.ciNeg(seven, &nseven);
+    var ntwo = ce_mod.ciZeroInt();
+    _ = ce_mod.ciNeg(two, &ntwo);
+    if (!ce_mod.ciDivMod(nseven, two, &q, &r)) { fail("testComptimeBigIntCore div1"); return; }
+    if (@bitCast(i64, ce_mod.ciToU64(q)) != @intCast(i64, -3)) { fail("testComptimeBigIntCore div1 q"); return; }
+    if (@bitCast(i64, ce_mod.ciToU64(r)) != @intCast(i64, -1)) { fail("testComptimeBigIntCore div1 r"); return; }
+    if (!ce_mod.ciDivMod(seven, ntwo, &q, &r)) { fail("testComptimeBigIntCore div2"); return; }
+    if (@bitCast(i64, ce_mod.ciToU64(q)) != @intCast(i64, -3)) { fail("testComptimeBigIntCore div2 q"); return; }
+    if (ce_mod.ciToU64(r) != @intCast(u64, 1)) { fail("testComptimeBigIntCore div2 r"); return; }
+    // Floor right shift: -7 >> 1 = -4; -1 >> 1 = -1.
+    var s1 = ce_mod.ciZeroInt();
+    if (!ce_mod.ciShr(nseven, one, &s1)) { fail("testComptimeBigIntCore shr"); return; }
+    if (@bitCast(i64, ce_mod.ciToU64(s1)) != @intCast(i64, -4)) { fail("testComptimeBigIntCore shr neg"); return; }
+    if (!ce_mod.ciShr(neg1, one, &s1)) { fail("testComptimeBigIntCore shr2"); return; }
+    if (@bitCast(i64, ce_mod.ciToU64(s1)) != @intCast(i64, -1)) { fail("testComptimeBigIntCore shr2 neg"); return; }
+    // Infinite two's-complement bit ops: -5 & 0xFF = 251; -5 | 1 = -5;
+    // -1 ^ 1 = -2; ~0 = -1.
+    var five = ce_mod.ciFromU64(@intCast(u64, 5));
+    var nfive = ce_mod.ciZeroInt();
+    _ = ce_mod.ciNeg(five, &nfive);
+    var ff = ce_mod.ciFromU64(@intCast(u64, 255));
+    var b1 = ce_mod.ciZeroInt();
+    if (!ce_mod.ciBitAnd(nfive, ff, &b1)) { fail("testComptimeBigIntCore and"); return; }
+    if (ce_mod.ciToU64(b1) != @intCast(u64, 251)) { fail("testComptimeBigIntCore and v"); return; }
+    var b2 = ce_mod.ciZeroInt();
+    if (!ce_mod.ciBitOr(nfive, one, &b2)) { fail("testComptimeBigIntCore or"); return; }
+    if (@bitCast(i64, ce_mod.ciToU64(b2)) != @intCast(i64, -5)) { fail("testComptimeBigIntCore or v"); return; }
+    var b3 = ce_mod.ciZeroInt();
+    if (!ce_mod.ciBitXor(neg1, one, &b3)) { fail("testComptimeBigIntCore xor"); return; }
+    if (@bitCast(i64, ce_mod.ciToU64(b3)) != @intCast(i64, -2)) { fail("testComptimeBigIntCore xor v"); return; }
+    var b4 = ce_mod.ciZeroInt();
+    if (!ce_mod.ciBitNot(ce_mod.ciZeroInt(), &b4)) { fail("testComptimeBigIntCore not"); return; }
+    if (@bitCast(i64, ce_mod.ciToU64(b4)) != @intCast(i64, -1)) { fail("testComptimeBigIntCore not v"); return; }
+    var emsg2: []const u8 = "testComptimeBigIntCore";
+    ok(emsg2);
 }
 
 fn testSwitchExhaustiveness() void {
@@ -1996,6 +2077,7 @@ pub fn main() void {
     testComptimeSizeOfU32();
     testComptimeAlignOfI8();
     testComptimeSizeOfVoid();
+    testComptimeBigIntCore();
     testSwitchExhaustiveness();
     testReturnTypeMatch();
     testReturnTypeMismatch();

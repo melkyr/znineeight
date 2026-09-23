@@ -575,7 +575,14 @@ fn phase_ComptimeEvaluation(ctx: *CompilerContext) void {
         if (node.kind == AstKind.builtin_call) {
             var val = ce_mod.comptimeEvalEvaluate(&ce, @intCast(u32, ni));
             if (val) |v| {
-                hash_mod.u32ToU64MapPut(&ctx.comptime_values, @intCast(u32, ni), v.bits);
+                // Task 2: the folded ComptimeVal is materialised to the
+                // fold-table's 64-bit pattern (bools 0/1, floats their bit
+                // pattern, ints their two's-complement pattern when they fit
+                // [i64 min, u64 max]); an out-of-window integer is simply not
+                // stored and lowering keeps its runtime path.
+                if (ce_mod.comptimeValStoreU64(v)) |pat| {
+                    hash_mod.u32ToU64MapPut(&ctx.comptime_values, @intCast(u32, ni), pat);
+                }
             }
         } else if (node.kind == AstKind.var_decl and node.child_1 != 0) {
             if ((node.flags & @intCast(u8, 1)) == @intCast(u8, 0)) {
@@ -585,7 +592,9 @@ fn phase_ComptimeEvaluation(ctx: *CompilerContext) void {
                     ik == @intCast(u32, 62) or ik == @intCast(u32, 64)) {
                     var val2 = ce_mod.comptimeEvalEvaluate(&ce, node.child_1);
                     if (val2) |v2| {
-                        hash_mod.u32ToU64MapPut(&ctx.comptime_values, node.child_1, v2.bits);
+                        if (ce_mod.comptimeValStoreU64(v2)) |pat2| {
+                            hash_mod.u32ToU64MapPut(&ctx.comptime_values, node.child_1, pat2);
+                        }
                     }
                 }
             }
