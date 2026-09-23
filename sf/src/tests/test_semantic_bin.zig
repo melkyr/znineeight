@@ -2143,6 +2143,7 @@ pub fn main() void {
     testComptimeAlignOfI8();
     testComptimeSizeOfVoid();
     testComptimeBigIntCore();
+    testComptimeCompareCore();
     testSwitchExhaustiveness();
     testReturnTypeMatch();
     testReturnTypeMismatch();

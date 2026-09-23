@@ -1280,15 +1280,17 @@ fn comptimeEvalEvaluateDepth(self: *ComptimeEval, node_idx: u32, depth: u32) ?Co
             if (bv.kind != KIND_INT) return null;
             var bnb = ciZeroInt();
             if (!ciBitNot(bv.v, &bnb)) return null;
-            // Task 3 fix round 1 (Important): unary folds obey the same
-            // peer-fit rule as the binops. Sema types `~x` as x's type
-            // (`semanticAnalyzerResolveBitNot`), so a result that does not fit
-            // the operand's integer type must decline (the runtime `~` wraps
-            // to that type while the exact fold does not).
-            var pt_bn = comptimeEvalOperandType(self, node.child_0);
-            if (pt_bn) |ptid_bn| {
-                if (!comptimeIntFitsType(self, bnb, ptid_bn)) return null;
-            }
+            // Task 3 fix round 1/2: `~` is the ONE unary that does NOT apply the
+            // peer fit. Task 1 §4 keeps Z98's exact `~x = -x - 1` (Zig 0.15.2
+            // rejects `~` on `comptime_int`), while sema types `~x` as x's type
+            // and the runtime complement wraps to it — so for a typed unsigned
+            // operand the exact result is negative and a fit check would reject
+            // EVERY `~u` fold (fix round 1 review Important: it broke the valid,
+            // Zig-equal `if ((~u) != 0) ...`). Declared divergence (documented in
+            // doc 04): a comparison/use that depends on the WRAPPED complement
+            // (e.g. `(~u) == 4294967295` with u: u32) still folds with the exact
+            // value and can false-reject; the accepted `(~u) != 0` class is
+            // runtime-equal to Zig.
             return ciIntVal(bnb);
         }
         return null;

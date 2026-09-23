@@ -1,4 +1,37 @@
-# mi_matrix corpus — expected-fail manifest (v205 2026-09-23)
+# mi_matrix corpus — expected-fail manifest (v206 2026-09-23)
+
+## Task 3 fix round 2 — `bit_not` peer-fit revert + unit-test wiring (v205 -> v206 2026-09-23)
+
+**What.** Fix round 1 gave BOTH unary folds the peer fit. For `bit_not` that over-rejects valid Zig:
+`ciBitNot` is the exact `-x-1`, so for any TYPED UNSIGNED operand the result is always negative and
+can never fit the operand type → every `~u` fold declined. Review probe
+(`const u: u32 = 0; const x: i32 = if ((~u) != 0) 1;`): Zig 0.15.2 accepts and runs (`bnotNe ok`,
+rc 0); the pre-round-1 Task 3 build accepted and ran (Zig-equal); the round-1 build rejected
+`error[3059]`. Sema's `ResolveBitNot` types `~x` as x's type and the runtime complement wraps
+(`~0u32` = 4294967295), so the fit is not a faithful mirror there.
+
+**Fix (`sf/src/comptime_eval.zig`).** `bit_not` is EXEMPT from the peer fit again (as in Task 1 §4's
+exact `~x = -x-1`); `negate` keeps the fit, so `-umax < 0` stays rejected. The accepted
+`(~u) != 0` class is Zig-equal and regression-pinned. Declared divergence (documented in doc 04
+Known Issues 9, NOT pinned): a shape that depends on the WRAPPED complement
+(`(~u) == 4294967295` with `u: u32`) folds with the exact `-1` and false-rejects where Zig accepts —
+the pre-existing Z98 `~` divergence (Task 1 §4, out of scope).
+
+**Coverage defect.** `testComptimeCompareCore` (added in fix round 1) was never called from
+`test_semantic_bin.zig`'s `main()`; it is now wired in after `testComptimeBigIntCore` and the probe
+was re-run against the current source (`emit rc=0 / build rc=0 / cmp probe ok / run rc=0`).
+
+**Fixtures.** `repro/mi_matrix/stdlib_comptime_compare_xmod` gains the fix-round-2 `~` shapes
+(`(~UZERO) != 0` module operand and `(~uz) != 0` local operand; new golden line `400 401`; the
+oracle twin prints the same) — **class OK**, harness PASS. Pin unchanged (220). Reject fixture and
+noreturn fixture unchanged (9 × `error[3059]`; `5 6 7 8 9`).
+
+**Gates.** Self-compile two-hop closure hop1 == hop2 == `f533e834fdfdedb83991b7adf72da22d`
+(previous `04272a88…`); 4-MD5 emitted-C **UNCHANGED**; corpus `-s0` **990 = 869 OK / 42 GREEN /
+79 FAIL / 0 ICE / 0 CRASH** (same dir set; join-diff vs Task 2 = exactly the 3 fixture dirs, 0 moved
+on the 987 common dirs); stdlib **220 PASS / 0 FAIL**; example matrix **24/24**; frozen 35-shape
+table **byte-identical** to the pre-round-1 run; `check_emit_support.sh` 7/7; `verify_upgraded.sh`
+CLOSEOUT OK; build_test **0/9** (pre-existing).
 
 ## Task 3 fix round 1 — noreturn folded `if`, unary peer fit, unannotated-const init (v204 -> v205 2026-09-23)
 
@@ -16,9 +49,10 @@
    if_expr resolves to `TYPE_NORETURN`.
 2. **(Important) Unary `-` escaped the peer-fit rule.** `-umax < 0` (`umax: u64`) was accepted and
    wrong; Zig rejects (`negation of type 'u64'`), Task 2 rejected (`error[3059]`). Fix
-   (`sf/src/comptime_eval.zig`): the `negate`/`bit_not` folds now require the exact result to fit
+   (`sf/src/comptime_eval.zig`): the `negate` fold now requires the exact result to fit
    the operand's type (`comptimeEvalOperandType` + `comptimeIntFitsType`), mirroring sema's
-   `semanticAnalyzerResolveNegate`/`ResolveBitNot`.
+   `semanticAnalyzerResolveNegate`. (`bit_not` got the same fit here; fix round 2 REVERTS it — see
+   the v205 → v206 entry above.)
 3. **(Important) Operand-type mirror missed an unannotated const's initializer.**
    `const c = @as(u8, 200); if ((c + 300) == 500) 7;` was accepted; Zig rejects (`type 'u8' cannot
    represent integer value '300'`), Task 2 rejected. Fix: `comptimeEvalOperandType` recurses into

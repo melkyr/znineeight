@@ -20,16 +20,21 @@
 //     the i64-min literal `-9223372036854775808 < 0` (E12), and module-scope
 //     i64 extremes;
 //   * logical short-circuit over arbitrary magnitudes: `and`/`or`/`!` with
-//     2^100 operands.
+//     2^100 operands;
+//   * fix round 2: `(~u) != 0` with a typed u32 operand (module + local), the
+//     valid Zig-equal class that a bit_not peer fit broke (Oracle: accepts,
+//     prints `400 401`; Zig computes the wrapped complement 4294967295).
 //
 // Every value is `@panic`-guarded. Oracle: official Zig 0.15.2 twin
-// (`/tmp/task3/oracle_accept.zig`), which accepts every shape and prints these
+// (`/tmp/task3/oracle_accept.zig`; the fix-round-2 `~` shapes re-checked with
+// `/tmp/fix3/bnot_oracle.zig`), which accepts every shape and prints these
 // exact values.
 //
 // Contract: stdout below, rc 0, byte-exact 3x.
 //
 //   101 102 103 104 105 110 111 201 202 203 204
 //   205 206 207 208 209 210 211 301 302 303 304
+//   400 401
 //   compare ok
 const std = @import("std");
 
@@ -39,6 +44,7 @@ const MZERO: u64 = 0;
 const MA: i32 = 1;
 const MICRO: i64 = -9223372036854775808;
 const MIMAX: i64 = 9223372036854775807;
+const UZERO: u32 = 0;
 
 pub fn main() void {
     const umax: u64 = 18446744073709551615;
@@ -77,6 +83,17 @@ pub fn main() void {
     var g3: i32 = if (!((1 << 100) < 0)) 303;
     var g4: i32 = if ((0 - (1 << 100)) < 0 and (1 << 100) > 0) 304;
 
+    // Task 3 fix round 2: `~` must NOT apply the peer fit (only `negate` does).
+    // Sema types `~x` as x's type and the runtime complement wraps, while Z98's
+    // fold is the exact `-x - 1` (Task 1 §4); a fit check would reject EVERY
+    // typed-unsigned `~u` shape, including these valid, Zig-equal ones. Module
+    // operand (condition stored + elided) and local operand (runtime branch).
+    // Declared divergence: a shape that depends on the WRAPPED value (e.g.
+    // `(~uz) == 4294967295`) can still false-reject; see doc 04 Known Issues.
+    var b1: i32 = if ((~UZERO) != 0) 400;
+    const uz: u32 = 0;
+    var b2: i32 = if ((~uz) != 0) 401;
+
     if (l1 != 101 or l2 != 102 or l3 != 103 or l4 != 104 or l5 != 105 or l6 != 110 or l7 != 111) {
         @panic("comptime_compare local guard failed");
     }
@@ -89,7 +106,11 @@ pub fn main() void {
     if (g1 != 301 or g2 != 302 or g3 != 303 or g4 != 304) {
         @panic("comptime_compare logical guard failed");
     }
+    if (b1 != 400 or b2 != 401) {
+        @panic("comptime_compare bitnot guard failed");
+    }
     std.io.print("{} {} {} {} {} {} {} {} {} {} {}\n", .{ l1, l2, l3, l4, l5, l6, l7, m1, m2, m3, m4 });
     std.io.print("{} {} {} {} {} {} {} {} {} {} {}\n", .{ m5, m6, m7, m8, m9, m10, m11, g1, g2, g3, g4 });
+    std.io.print("{} {}\n", .{ b1, b2 });
     std.io.print("compare ok\n", .{});
 }
