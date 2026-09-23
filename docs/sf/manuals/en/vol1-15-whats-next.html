@@ -1,0 +1,290 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: What You Have Learned, What Is Next</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume I summary review honesty discipline what next Volume II">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol1-14-line-counter.html">
+<link rel="next" href="vol2-00-title.html">
+</head>
+<body bgcolor="#f5f0e1" text="#000000" link="#003366" vlink="#551a8b" alink="#cc0000">
+<table width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#e8e0cc" class="sidebar">
+<font size="1">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#e8e0cc" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume I &mdash; Getting Started</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol1-00-title.html">How to read this</a><br>
+<a href="vol1-01-what-is-programming.html">What is a program</a><br>
+<a href="vol1-02-what-is-z98.html">What is Z98, and why 1998</a><br>
+<a href="vol1-03-your-machine.html">Your machine</a><br>
+<a href="vol1-04-installing.html">Installing the toolchain</a><br>
+<a href="vol1-05-first-program.html">Your first program</a><br>
+<a href="vol1-06-variables-types.html">Variables and types</a><br>
+<a href="vol1-07-arithmetic.html">Doing arithmetic</a><br>
+<a href="vol1-08-decisions.html">Making decisions</a><br>
+<a href="vol1-09-repetition.html">Doing things repeatedly</a><br>
+<a href="vol1-10-functions.html">Functions</a><br>
+<a href="vol1-11-structs.html">Grouping data</a><br>
+<a href="vol1-12-arrays.html">Lists of things</a><br>
+<a href="vol1-13-reading-errors.html">Reading the errors</a><br>
+<a href="vol1-14-line-counter.html">Your first useful program</a><br>
+<b>What you have learned, what is next</b><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>What You Have Learned, What Is Next</h1>
+<p>
+The title page opened this volume with a promise: <b>enter here if</b> you have
+never written a program, <b>leave able to</b> write small working programs. This
+chapter is the accounting. There is no new code in it and no example program,
+only what the volume actually taught, what it deliberately did not, and where to
+go next. Read it as the manual being straight with you one last time before it
+hands you to Volume II.
+</p>
+
+<h2>The ground you covered</h2>
+<p>
+Fifteen pages are behind you. One table, one row per page, is the shortest
+honest summary of what each one gave you:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left">Chapter</th>
+<th align="left">What it gave you</th>
+</tr>
+<tr>
+<td><a href="vol1-00-title.html">0. How to read this</a></td>
+<td>what a manual is, the sidebar, the language bar, the print stylesheet, the
+five callouts, and the reading paths</td>
+</tr>
+<tr>
+<td><a href="vol1-01-what-is-programming.html">1. What is a program</a></td>
+<td>input, process, output; the machine as a very literal assistant</td>
+</tr>
+<tr>
+<td><a href="vol1-02-what-is-z98.html">2. What is Z98, and why 1998</a></td>
+<td>the frame: a small language that compiles to C89 and targets Pentium-class
+machines, and why the era's constraints are the point</td>
+</tr>
+<tr>
+<td><a href="vol1-03-your-machine.html">3. Your machine</a></td>
+<td>Linux with gcc, Windows 95 or 98 with OpenWatcom, or 86Box and PCem when you
+have neither; what ships on the disk</td>
+</tr>
+<tr>
+<td><a href="vol1-04-installing.html">4. Installing the toolchain</a></td>
+<td>building the compiler from its seed, running it, and building the bundled
+<tt>hello</tt></td>
+</tr>
+<tr>
+<td><a href="vol1-05-first-program.html">5. Your first program</a></td>
+<td><tt>pub fn main</tt>, <tt>std.io.print</tt>, and the compile-and-run cycle
+that turns a file into output</td>
+</tr>
+<tr>
+<td><a href="vol1-06-variables-types.html">6. Variables and types</a></td>
+<td><tt>var</tt> and <tt>const</tt>; <tt>i32</tt>, <tt>u8</tt>, <tt>bool</tt>,
+<tt>f32</tt>, <tt>usize</tt>; why a type's width is part of the decision</td>
+</tr>
+<tr>
+<td><a href="vol1-07-arithmetic.html">7. Doing arithmetic</a></td>
+<td><tt>+</tt>, <tt>-</tt>, <tt>*</tt>, <tt>/</tt>, <tt>%</tt>; precedence;
+truncating division; and the two overflow behaviours, <tt>-fsafe</tt> and
+<tt>-ffast</tt></td>
+</tr>
+<tr>
+<td><a href="vol1-08-decisions.html">8. Making decisions</a></td>
+<td><tt>if</tt> and <tt>else</tt>, the comparison operators, <tt>bool</tt>, and
+the <tt>if</tt> expression</td>
+</tr>
+<tr>
+<td><a href="vol1-09-repetition.html">9. Doing things repeatedly</a></td>
+<td><tt>while</tt>, <tt>for</tt> over a <tt>start..end</tt> range, the loop
+capture, <tt>break</tt>, and <tt>continue</tt></td>
+</tr>
+<tr>
+<td><a href="vol1-10-functions.html">10. Functions</a></td>
+<td>declaring a function, read-only parameters, and returning a value</td>
+</tr>
+<tr>
+<td><a href="vol1-11-structs.html">11. Grouping data</a></td>
+<td><tt>struct</tt>, fields, and building a value field by field</td>
+</tr>
+<tr>
+<td><a href="vol1-12-arrays.html">12. Lists of things</a></td>
+<td><tt>[N]T</tt>, indexing, slices, and the half-open rule</td>
+</tr>
+<tr>
+<td><a href="vol1-13-reading-errors.html">13. Reading the errors</a></td>
+<td>the position line, the source line, the caret, the notes, and five
+diagnostics read without panic</td>
+</tr>
+<tr>
+<td><a href="vol1-14-line-counter.html">14. Your first useful program</a></td>
+<td><tt>wc</tt>: reading standard input a byte at a time, counting, and grouping
+the totals in a struct</td>
+</tr>
+</table>
+
+<h2>What you can do now</h2>
+<p>
+Put the rows together and the shape of the skill is clear. You can write a
+program in a single Z98 file: declare variables and constants with the width
+each value needs, do arithmetic on them, decide and repeat, group related values
+in functions and structs, keep lists in arrays, and read what the compiler says
+when you get it wrong. You can build that program for Linux with the seed
+compiler, or emit it for Windows 98, and you can feed it input and read its
+output. The line counter of chapter 14 is the proof: it uses everything from
+chapters 6 through 12, and it is a tool a person could actually use.
+</p>
+<p>
+The programs are small, and they are meant to be. Everything in this volume
+fits in one file, uses standard output and standard input for its conversation
+with the machine, and stays inside the primitive types, arrays, and structs it
+taught. That is what "writes small working programs" means, and it is exactly
+the exit state the title page promised.
+</p>
+
+<h2>What you cannot do yet</h2>
+<p>
+The other side deserves the same plainness. The volume deliberately stopped
+before the parts of the language that make larger programs possible. You have
+not met pointers, so a function cannot reach back into the caller's data except
+by value. You have not met error unions, so a function that fails has no way to
+say so in its type. You have not met optionals, so "a value that might be
+absent" has to be written as a sentinel value and remembered by you. You have
+not met the arena or any other way to obtain memory while the program runs. You
+have not met enums, unions, packed structs, tuples, arbitrary-width integers,
+<tt>defer</tt>, or coroutines, and you have not built a program out of more
+than one file. String handling beyond one byte at a time, the wider standard
+library, and every interaction with the operating system beyond reading and
+printing are still ahead.
+</p>
+<p>
+That list is not a defect of the volume; it is the volume's scope. A beginner
+needs a small language first and the full one second. What matters now is that
+the missing features have names, so that nothing in the preceding chapters reads
+as the whole of Z98.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ece0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> If you came here to learn programming in general, Z98
+is a fine teacher, but you should know that modern languages exist and do more
+with less effort. They manage memory for you, give you strings and lists that
+grow, carry richer error information, and ship with libraries this manual will
+never mention. This volume is about a specific discipline, not about
+programming as such: writing for a machine whose memory is counted in
+megabytes, where every allocation and every failure is written down where you
+can see it. Learn that discipline here if the target interests you. Learn it
+here and also learn a modern language if what you want is to build software
+with the least friction. Neither choice is wrong, and the manual is not
+offended by either.</td>
+</tr>
+</table>
+
+<h2>The discipline</h2>
+<p>
+One idea ran under every chapter, and the last page is the right place to name
+it. Z98 is small because the machine it aims at is small: a Pentium-class
+computer with tens of megabytes of memory, where memory and not processor speed
+is the binding constraint. A language that compiles to C89, that asks you to
+choose every width, to start every variable with a value, and to read every
+diagnostic, is a language that keeps the cost of the program visible. That
+visibility is the discipline this manual has been teaching. It is also why the
+manual refused to oversell: on a modern machine, tools that hide these costs are
+the better choice, and chapter 2 and the honesty note above say so.
+</p>
+
+<h2>Where to go next</h2>
+<p>
+The next volume is <a href="vol2-00-title.html">Volume II &mdash; Learning
+Z98</a>. It is written for a reader who already programs in <i>some</i>
+language, and after this volume that is you. It assumes you know what a
+variable is and does not explain the machine again; its pages go to the parts
+of Z98 that differ from the languages you will meet elsewhere: the full type
+system, pointers, the aggregates, error unions, optionals, the arena, the
+builtins, and the idioms that hold them together. Its own final chapter is
+another "what you have learned", at a larger scale.
+</p>
+<p>
+If your goal was programming itself rather than this language and this era,
+Volume II is still the honest second step: it shows what a small language asks
+of you and what it gives back. And when you can write Z98 fluently,
+<a href="toc.html">the contents page</a> shows the rest of the set: Volume III
+for shipping software on 1998 hardware, Volume IV for looking things up,
+Volume V for solving a specific task, and Volume VI for the compiler's own
+internals. The <a href="readme.html">read me</a> page repeats the reading paths
+if you want to choose a different one.
+</p>
+<p>
+One last thing before the questions. You built the compiler from a seed, wrote
+and ran real programs, and read real diagnostics without panic. That is not
+nothing: it is the whole first leg of the path printed at the front of this
+volume. Turn the page and start the second.
+</p>
+
+<h2>Check yourself</h2>
+<p>
+Answer these before moving on. They need no code and no machine; every answer is
+somewhere in this volume.
+</p>
+<ol>
+<li>What three parts does chapter 1 say every program has, and where did the
+line counter put each of them?</li>
+<li>Name the five primitive types of chapter 6 and one job each is good for.
+Why does Z98 make you choose a width instead of offering a single number
+type?</li>
+<li>Chapter 7 gave two behaviours for an addition that leaves the range of its
+type. Name both, say which is the default, and describe what each one does.</li>
+<li>For an array of N items, why is <tt>[0..N]</tt> not the same as
+<tt>[0..N-1]</tt>? What does the two-dot range keep, and what does it leave
+out?</li>
+<li>The compiler reports <tt>error[3002]</tt> on an assignment to a parameter.
+What is the rule, and what is the fix?</li>
+<li>The line counter stops when <tt>readByte</tt> answers 255. Why would
+testing for a zero byte be wrong twice over?</li>
+<li>Name three things this volume did not teach, and the volume that takes them
+up.</li>
+<li>The honesty note says modern languages do more with less effort. What does
+the manual say it is about instead? Answer in one sentence, in your own
+words.</li>
+</ol>
+
+<p>Previous: <a href="vol1-14-line-counter.html">Your first useful program</a> | <a href="toc.html">Contents</a> | Next: <a href="vol2-00-title.html">Volume II &mdash; Learning Z98</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
