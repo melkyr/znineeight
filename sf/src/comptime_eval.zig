@@ -144,12 +144,15 @@ fn comptimeEvalBinOp(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, depth
 // Task 9D: fold a comparison (`==`/`!=`/`<`/`<=`/`>`/`>=`) of two comptime
 // integers to a bool ComptimeVal. Both operands must fold; a float operand
 // (WIDTH_FLOAT) is a bounded residual and stays unfolded. Signedness is
-// per-operand (fix round 2): a declared integer type wins for its operand (a
-// `u64` const above i64 max compares UNSIGNED, not by the initializer literal's
-// `sig`), otherwise the syntactic sign class decides (a definitely-negative
-// untyped operand forces signed comparison even when the OTHER operand is
-// declared unsigned, so `const u: u8 = 200; u > -1` is true), falling back to
-// `cv.sig` for an unrecognized untyped shape (`0 - 1`).
+// per-operand and CONSERVATIVE (fix round 3, ruling m1293 (b)): a declared
+// integer type wins for its operand, otherwise the syntactic sign class decides
+// (a definitely-negative untyped operand forces signed comparison even when the
+// OTHER operand is declared unsigned, so `const u: u8 = 200; u > -1` is true).
+// A shape whose signedness cannot be derived from a declared type, a literal's
+// own sign / `negate`, or an explicit `@intCast`/`@as` target — e.g. an
+// arithmetic expression over a const — makes the whole comparison UNFOLDABLE
+// (null); `cv.sig` is never used to guess. Documented bounded divergence: Zig
+// evaluates such expressions at arbitrary precision.
 fn comptimeEvalCompare(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, depth: u32) ?ComptimeVal {
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var lhs = comptimeEvalEvaluateDepth(self, node.child_0, depth);
@@ -157,7 +160,11 @@ fn comptimeEvalCompare(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, dep
     if (lhs) |l| {
         if (rhs) |r| {
             if (l.width_bits == WIDTH_FLOAT or r.width_bits == WIDTH_FLOAT) return null;
-            var use_signed: bool = comptimeEvalOperandCompareSigned(self, node.child_0, l) or comptimeEvalOperandCompareSigned(self, node.child_1, r);
+            var l_signed: bool = false;
+            var r_signed: bool = false;
+            if (!comptimeEvalOperandCompareSigned(self, node.child_0, &l_signed)) return null;
+            if (!comptimeEvalOperandCompareSigned(self, node.child_1, &r_signed)) return null;
+            var use_signed: bool = l_signed or r_signed;
             var res: bool = false;
             if (use_signed) {
                 var sl: i64 = @bitCast(i64, l.bits);
@@ -289,20 +296,23 @@ fn comptimeEvalOperandDeclaredSigned(self: *ComptimeEval, node_idx: u32) ?bool {
     return null;
 }
 
-// Task 9D fix round 2: one comparison operand's signedness. A declared integer
-// type wins for its operand; otherwise the syntactic sign class decides
-// (`negative` → signed, `non_negative` → unsigned), falling back to `cv.sig`
-// for an unrecognized untyped shape. Consulting the sign class even when the
-// OTHER operand is declared is required so a declared-unsigned const does not
-// mask a negative literal/expression: `const u: u8 = 200; u > -1` must compare
-// signed and be true (Zig accepts it), while `const umax: u64 = ...; umax < 0`
-// stays unsigned/false.
-fn comptimeEvalOperandCompareSigned(self: *ComptimeEval, node_idx: u32, cv: ComptimeVal) bool {
-    if (comptimeEvalOperandDeclaredSigned(self, node_idx)) |d| return d;
+// Task 9D fix round 3 (ruling m1293 (b), bounded divergence): one comparison
+// operand's signedness. Determinable ONLY from (i) a declared integer type (a
+// name/const), (ii) a literal's own sign or a `negate`, or (iii) an explicit
+// `@intCast`/`@as` target — i.e. the shapes `comptimeEvalSignClass` recognizes
+// (`0 - X` counts as the negation of X). Anything else (e.g. an arithmetic
+// expression over a const) is NOT guessed from `cv.sig`: returns false so the
+// caller makes the whole comparison unfoldable. Otherwise writes the signedness
+// through `out_signed` and returns true.
+fn comptimeEvalOperandCompareSigned(self: *ComptimeEval, node_idx: u32, out_signed: *bool) bool {
+    if (comptimeEvalOperandDeclaredSigned(self, node_idx)) |d| {
+        out_signed.* = d;
+        return true;
+    }
     var sc = comptimeEvalSignClass(self, node_idx, @intCast(u32, 0));
-    if (sc == SignClass.negative) return true;
-    if (sc == SignClass.non_negative) return false;
-    return cv.sig;
+    if (sc == SignClass.negative) { out_signed.* = true; return true; }
+    if (sc == SignClass.non_negative) { out_signed.* = false; return true; }
+    return false;
 }
 
 fn comptimeEvalResolveTypeArg(self: *ComptimeEval, node_idx: u32) ?u32 {
@@ -367,7 +377,9 @@ fn comptimeValFitsType(self: *ComptimeEval, cv: ComptimeVal, t: u32, operand_idx
 // either sign. int/char/bool literals are comptime_int non-negative; a
 // `negate` is negative; an ident or `@as`/`@intCast` is classified by its
 // declared/target integer type, recursing into a const initializer when no
-// declared type is present.
+// declared type is present. Task 9D fix round 3: `0 - X` is classified as the
+// negation of X (the one arithmetic shape with a definite sign); any other
+// arithmetic expression stays `unknown`.
 const SignClass = enum(u8) { unknown, negative, non_negative };
 
 fn comptimeEvalSignClass(self: *ComptimeEval, node_idx: u32, depth: u32) SignClass {
@@ -427,6 +439,20 @@ fn comptimeEvalSignClass(self: *ComptimeEval, node_idx: u32, depth: u32) SignCla
                     return SignClass.non_negative;
                 }
             }
+        }
+        return SignClass.unknown;
+    }
+    if (node.kind == AstKind.sub) {
+        // Task 9D fix round 3: `0 - X` is the negation of X — the ONE arithmetic
+        // shape with a definite sign (a zero-literal lhs; `X` a non-negative
+        // literal/negate). Any other arithmetic expression stays `unknown` so
+        // the comparison fold declines it (bounded divergence) instead of
+        // guessing from `cv.sig`.
+        var lz = ast_mod.astStoreNodeAt(self.store, node.child_0);
+        if (lz.kind == AstKind.int_literal and ast_mod.astStoreIntValue(self.store, node.child_0) == @intCast(u64, 0)) {
+            var rs = comptimeEvalSignClass(self, node.child_1, depth + @intCast(u32, 1));
+            if (rs == SignClass.non_negative) return SignClass.negative;
+            if (rs == SignClass.negative) return SignClass.non_negative;
         }
         return SignClass.unknown;
     }

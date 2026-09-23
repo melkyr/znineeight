@@ -1,4 +1,4 @@
-# mi_matrix corpus — expected-fail manifest (v199 2026-09-23)
+# mi_matrix corpus — expected-fail manifest (v200 2026-09-23)
 
 ## Task 9D — comptime-true no-`else` `if` fold + void-then value-`if` lowering (v196 -> v197 2026-09-22)
 
@@ -95,6 +95,36 @@ std-lib runtime gate **215 PASS / 0 FAIL**; corpus `-s0` **983 dirs = 863 OK / 4
 CLOSEOUT OK. Fixed point **MOVED `4b8a6364ef47e8ebdfc5e4506b7cff02` →
 `d5608123de41de68663aa1842fcca9f2`** (two-hop closure hop1==hop2); seed **v78 → v79** (archive md5
 `8fff355b0423235500f044ddc84af62b` → `101b8f72037be1e6279c5209391e0a13`; `gen/` 45 `.c` + 46 `.h`).
+
+**Fix round 3 (v199 -> v200 2026-09-23; review Important — the `cv.sig` fallback mis-signs untyped
+shapes; operator ruling m1293 option (b)).** `comptimeEvalOperandCompareSigned`'s `cv.sig` fallback
+mis-signed unrecognized untyped comptime shapes in both directions: `const umax: u64 =
+18446744073709551615; if ((umax - 1) > 0) 1;` (valid Zig, accepted by v78) over-rejected, while
+`if ((umax - 1) < 0) 1;` (invalid Zig) over-accepted. Ruling (b) replaces the guess with a bounded,
+documented divergence: an operand's signedness is taken ONLY from (i) a declared integer type,
+(ii) a literal's own sign / `negate`, or (iii) an explicit `@intCast`/`@as` target; any other shape
+makes the whole comparison unfoldable (null), so a no-`else` value `if` rejects `error[3059]`.
+`comptimeEvalSignClass` classifies `0 - X` as the negation of X (the one arithmetic shape with a
+definite sign), preserving `uu > (0 - 1)`. Consequences (all pinned):
+- documented divergence (Zig 0.15.2 accepts): `(umax - 1) > 0`, `0 < (umax - 1)`,
+  `(umax - 1) > zero`, `umax > (0 + 0)`, `(a + 1) == 2` -> `error[3059]`;
+- Zig also rejects (outcome matches): `(umax - 1) < 0` (`expected type 'i32', found 'void'`) and
+  `(u - 300) < 0` (`type 'u8' cannot represent integer value '300'`) -> `error[3059]`;
+- still accepted: `umax > 0`, `umax > zero`, `uu > -1`, `-1 < uu`, `uu > (0 - 1)`;
+  `umax < 0` still rejected.
+New documented-diverge reject fixture `repro/mi_matrix/comptime_compare_diverge_reject_xmod`
+(`main.zig` + `NOTES.md`; rc=2, 0 `.c`, 7 `error[3059]`); the positive
+`repro/mi_matrix/stdlib_comptime_true_if_xmod` drops the now-unfoldable `a + 1 == 2` (golden
+`10 11 12 13 14 15 16 17 18 30 32 34 40 41 42 43 44 45 46 47 48\nFFF`, 3× oracle-matched). Gates:
+4-MD5 emitted-C **UNCHANGED** (gol `e7bde571…` / lisp `552d0a84…` / json `38b37bdd…` / mud
+`5a1cc65e…`); example matrix **24/24**; std-lib runtime gate **215 PASS / 0 FAIL**; corpus `-s0`
+**984 dirs = 863 OK / 42 GREEN / 79 FAIL / 0 ICE / 0 CRASH** with a full-classifier join-diff vs the
+v79 compiler **byte-identical (zero movement** over the 984 common dirs; the +1 dir vs v79's 983 is
+the new diverge fixture, FAIL under both**)**; `check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK. Fixed
+point **MOVED `d5608123de41de68663aa1842fcca9f2` → `43fe3df1509ffb5728c8250133ab7827`** (two-hop
+closure hop1==hop2); seed **v79 → v80** (archive md5 `101b8f72037be1e6279c5209391e0a13` →
+`4a499af291e17445736106d40eb14ab1`; `gen/` 45 `.c` + 46 `.h`). Spec `docs/reference/Language_Spec_Z98.md`
+§7.2 records the bounded divergence.
 
 ## Task 9B — reject invalid condition / `if` forms (v194 -> v195 2026-09-22; fix round 1 v195 -> v196)
 

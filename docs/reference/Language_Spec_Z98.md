@@ -454,3 +454,4 @@ These were considered and are **not** planned for `zig1`; use the documented idi
 - The `anyerror` type (use explicit error sets or `!T`).
 - `@cImport` (use bare `extern` declarations plus `@cInclude`).
 - `std.Io` / an event-loop interface, preemption, threads, and typed futures (`Future(T)`): the `@async*` coroutines (§4.1) are cooperative and round-robin only, and coroutine state is type-erased to `*void`.
+- Bounded compile-time comparison folding (Task 9D, ruling m1293 (b)): a `comptime` comparison folds only when each operand's signedness is derivable from a declared type, a literal's own sign, or an explicit `@intCast`/`@as` target. An arithmetic operand over a const (e.g. `(umax - 1) > 0`, `umax > (0 + 0)`, `(a + 1) == 2`) is not folded, so a no-`else` value `if` on it is rejected (`error[3059]`) even where official Zig evaluates it. Documented divergence; see `repro/mi_matrix/comptime_compare_diverge_reject_xmod`.

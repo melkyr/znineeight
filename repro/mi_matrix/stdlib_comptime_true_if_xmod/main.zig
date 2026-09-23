@@ -9,7 +9,9 @@
 //   * bool `and` / `or` / `!`
 //   * a short-circuit `true or <runtime>` and the mirrored rhs-decisive
 //     `<runtime> or true` (fix round 1)
-//   * an arithmetic-derived comparison (`a + 1 == 2`)
+//   * (an arithmetic-derived comparison such as `a + 1 == 2` is a documented
+//     Z98 bounded divergence — see
+//     `repro/mi_matrix/comptime_compare_diverge_reject_xmod`)
 //   * const-of-const (`const c: bool = a == 1;`)
 //   * a module const (`MA == 5`)
 //   * fixed-width const comparisons by DECLARED type (fix round 1): a `u64`
@@ -24,7 +26,7 @@
 //   * `_ = if (o) |v| { _ = v; foo(); };` (capture condition)
 //
 // Every result is `@panic`-guarded. Contract: stdout
-// `10 11 12 13 14 15 16 17 18 19 30 32 34 40 41 42 43 44 45 46 47 48\nFFF\n`,
+// `10 11 12 13 14 15 16 17 18 30 32 34 40 41 42 43 44 45 46 47 48\nFFF\n`,
 // rc 0, byte-exact 3x.
 const std = @import("std");
 
@@ -51,31 +53,30 @@ pub fn main() void {
     var x8: i32 = if (b or false) 17;
     const bf: bool = false;
     var x9: i32 = if (!bf) 18;
-    var x10: i32 = if (a + 1 == 2) 19;
     const c: bool = a == 1;
-    var x11: i32 = if (c) 30;
-    var x12: i32 = if (MA == 5) 32;
+    var x10: i32 = if (c) 30;
+    var x11: i32 = if (MA == 5) 32;
     var run: bool = true;
     run = !run;
-    var x13: i32 = if (true or run) 34;
+    var x12: i32 = if (true or run) 34;
     const umax: u64 = 18446744073709551615;
     const zero: u64 = 0;
-    var x14: i32 = if (umax > 0) 40;
-    var x15: i32 = if (umax > zero) 41;
+    var x13: i32 = if (umax > 0) 40;
+    var x14: i32 = if (umax > zero) 41;
     const an = -1;
-    var x16: i32 = if (an < 0) 42;
+    var x15: i32 = if (an < 0) 42;
     const n: i8 = -1;
-    var x17: i32 = if (n < 0) 43;
+    var x16: i32 = if (n < 0) 43;
     const u: u8 = 200;
-    var x18: i32 = if (u > 0) 44;
-    var x19: i32 = if (run or true) 45;
-    var x20: i32 = if (u > -1) 46;
-    var x21: i32 = if (-1 < u) 47;
-    var x22: i32 = if (u > (0 - 1)) 48;
-    if (x1 != 10 or x2 != 11 or x3 != 12 or x4 != 13 or x5 != 14 or x6 != 15 or x7 != 16 or x8 != 17 or x9 != 18 or x10 != 19 or x11 != 30 or x12 != 32 or x13 != 34 or x14 != 40 or x15 != 41 or x16 != 42 or x17 != 43 or x18 != 44 or x19 != 45 or x20 != 46 or x21 != 47 or x22 != 48) {
+    var x17: i32 = if (u > 0) 44;
+    var x18: i32 = if (run or true) 45;
+    var x19: i32 = if (u > -1) 46;
+    var x20: i32 = if (-1 < u) 47;
+    var x21: i32 = if (u > (0 - 1)) 48;
+    if (x1 != 10 or x2 != 11 or x3 != 12 or x4 != 13 or x5 != 14 or x6 != 15 or x7 != 16 or x8 != 17 or x9 != 18 or x10 != 30 or x11 != 32 or x12 != 34 or x13 != 40 or x14 != 41 or x15 != 42 or x16 != 43 or x17 != 44 or x18 != 45 or x19 != 46 or x20 != 47 or x21 != 48) {
         @panic("comptime_true_if guard failed");
     }
-    std.io.print("{} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {}\n", .{ x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15, x16, x17, x18, x19, x20, x21, x22 });
+    std.io.print("{} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {}\n", .{ x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15, x16, x17, x18, x19, x20, x21 });
     var vc: bool = false;
     vc = !vc;
     _ = if (vc) foo();
