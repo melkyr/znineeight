@@ -1,0 +1,445 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Functions</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual functions fn parameters return value pub immutable function declaration call">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol1-09-repetition.html">
+<link rel="next" href="vol2-00-title.html">
+</head>
+<body bgcolor="#f5f0e1" text="#000000" link="#003366" vlink="#551a8b" alink="#cc0000">
+<table width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#e8e0cc" class="sidebar">
+<font size="1">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#e8e0cc" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume I &mdash; Getting Started</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol1-00-title.html">How to read this</a><br>
+<a href="vol1-01-what-is-programming.html">What is a program</a><br>
+<a href="vol1-02-what-is-z98.html">What is Z98, and why 1998</a><br>
+<a href="vol1-03-your-machine.html">Your machine</a><br>
+<a href="vol1-04-installing.html">Installing the toolchain</a><br>
+<a href="vol1-05-first-program.html">Your first program</a><br>
+<a href="vol1-06-variables-types.html">Variables and types</a><br>
+<a href="vol1-07-arithmetic.html">Doing arithmetic</a><br>
+<a href="vol1-08-decisions.html">Making decisions</a><br>
+<a href="vol1-09-repetition.html">Doing things repeatedly</a><br>
+<b>Functions</b><br>
+Grouping data <i>(planned)</i><br>
+Lists of things <i>(planned)</i><br>
+Reading the errors <i>(planned)</i><br>
+Your first useful program <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Functions</h1>
+<p>
+The last chapter gave the program a loop, which repeats steps inside one place.
+A loop still belongs to the one spot where it is written. This chapter gives a
+block of steps a <b>name</b>, so the rest of the program can ask for that job
+whenever it needs it. The name is a <b>function</b>. It takes input values,
+called <b>parameters</b>, does its work, and hands a <b>return value</b> back to
+whoever called it. The chapter also adds <tt>pub</tt>, the word that marks a
+function as part of the module's public surface, and it explains why the values
+a call passes in cannot be rewritten inside the function.
+</p>
+
+<h2>The program</h2>
+<pre>
+const std = @import("std");
+
+fn add(a: i32, b: i32) i32 {
+    return a + b;
+}
+
+fn max(a: i32, b: i32) i32 {
+    if (a &gt; b) {
+        return a;
+    }
+    return b;
+}
+
+fn show(n: i32) void {
+    std.io.print("show({}) prints this\n", .{n});
+}
+
+pub fn square(n: i32) i32 {
+    return n * n;
+}
+
+pub fn main() void {
+    const sum = add(2, 3);
+    std.io.print("add(2, 3) is {}\n", .{sum});
+
+    std.io.print("max(4, 9) is {}\n", .{max(4, 9)});
+    std.io.print("max(12, 3) is {}\n", .{max(12, 3)});
+
+    const nine_squared = square(9);
+    std.io.print("square(9) is {}\n", .{nine_squared});
+
+    std.io.print("square(10) is {}\n", .{square(10)});
+
+    show(7);
+    std.io.print("add(20, 22) is {}\n", .{add(20, 22)});
+}
+</pre>
+<p>
+It defines four functions and calls each of them from <tt>main</tt>.
+<tt>add</tt> takes two numbers and returns their sum. <tt>max</tt> takes two
+numbers and returns the larger one, using the <tt>if</tt> of chapter 8 to pick
+between its two <tt>return</tt> statements. <tt>show</tt> takes one number,
+prints a line, and returns nothing at all &mdash; its result type is
+<tt>void</tt>. <tt>square</tt> is a <tt>pub fn</tt>, the public kind. The body
+of <tt>main</tt> mixes calls with prints: the results of <tt>add</tt>,
+<tt>max</tt>, and <tt>square</tt> are printed, and <tt>show(7);</tt> does its
+own printing while returning nothing.
+</p>
+
+<h2>Declaring a function</h2>
+<p>
+A function declaration gives a name to a block, and describes exactly what goes
+in and what comes out:
+</p>
+<pre>
+fn add(a: i32, b: i32) i32 {
+    return a + b;
+}
+</pre>
+<p>
+Read it piece by piece. <tt>fn</tt> starts the declaration. <tt>add</tt> is the
+function's name &mdash; the name a caller writes. The parentheses hold the
+<b>parameter list</b>: <tt>a: i32</tt> says the first parameter is named
+<tt>a</tt> and holds an <tt>i32</tt>, and <tt>b: i32</tt> says the same for the
+second. After the closing parenthesis comes the <b>result type</b>, here
+<tt>i32</tt>: the kind of value the function hands back. The braces hold the
+<b>body</b>, the steps that run when someone calls the function. The last of
+those steps is <tt>return a + b;</tt>, which ends the call and sends the sum
+back.
+</p>
+<p>
+The caller writes the name and supplies one value, called an <b>argument</b>,
+for each parameter, in order. In <tt>add(2, 3)</tt> the <tt>2</tt> goes into
+<tt>a</tt> and the <tt>3</tt> goes into <tt>b</tt>. A call is an expression: it
+can be stored in a variable, printed, or passed as an argument. The program
+uses calls in both roles:
+</p>
+<pre>
+const sum = add(2, 3);
+std.io.print("max(4, 9) is {}\n", .{max(4, 9)});
+</pre>
+<p>
+The first line stores the returned <tt>5</tt> in <tt>sum</tt>. The second
+passes the value returned by <tt>max</tt> straight into <tt>print</tt>, inside
+the argument tuple where a number would go.
+</p>
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffffcc">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-note.gif" width="16" height="16" alt="Note"></td>
+<td><b>Note.</b> A function may be called before its declaration appears in the
+file. <tt>main</tt> comes last in the program and calls everything above it, but
+that order is a reading choice, not a rule: the compiler reads the whole file
+before it builds the program, so declaration order does not matter.</td>
+</tr>
+</table>
+
+<h2>Parameters are read-only</h2>
+<p>
+A parameter is the function's own name for one argument. It exists only for the
+duration of the call, and Z98 treats it as <b>read-only</b>, exactly like the
+<tt>const</tt> names of chapter 6. This function does not compile:
+</p>
+<pre>
+fn bump(n: i32) i32 {
+    n = n + 1;
+    return n;
+}
+</pre>
+<p>
+The compiler rejects the assignment inside <tt>bump</tt>, because parameters
+and loop captures share one rule: every value a call puts into a function is
+immutable. There is a reason. A parameter is not the caller's variable; it is a
+value handed in for this one call. If the body could overwrite it, the
+function's first lines could change the meaning of the very value the name
+described, and the signature at the top would no longer tell the truth about
+what the body works with. Z98 closes that door: values in, one value out. A
+function that needs a number it can change declares a local <tt>var</tt> and
+copies the parameter into it:
+</p>
+<pre>
+fn bump(n: i32) i32 {
+    var result = n;
+    result = result + 1;
+    return result;
+}
+</pre>
+<p>
+<tt>result</tt> is an ordinary local variable, so it can change; <tt>n</tt> is
+the incoming value and stays as it arrived. <tt>bump(4)</tt> returns <tt>5</tt>.
+The same trick applies to counters and running totals: copy the parameter into a
+<tt>var</tt> on the first line that needs one. Chapter 9's loop captures obey
+the same rule, which is why that chapter's running totals live in
+<tt>var</tt>s declared outside the loop.
+</p>
+
+<h2>Returning a value</h2>
+<p>
+<tt>return expression;</tt> does two things at once: it computes the expression
+and ends the call, handing the value back to the caller. Nothing after it on
+that path runs. <tt>max</tt> shows what that means when a function has more
+than one way out:
+</p>
+<pre>
+fn max(a: i32, b: i32) i32 {
+    if (a &gt; b) {
+        return a;
+    }
+    return b;
+}
+</pre>
+<p>
+On <tt>max(4, 9)</tt> the test <tt>4 &gt; 9</tt> is false, so the first
+<tt>return</tt> is skipped and the second one sends back <tt>9</tt>. On
+<tt>max(12, 3)</tt> the test is true, the first <tt>return</tt> sends back
+<tt>12</tt>, and the second line never runs. Exactly one of the two returns
+finishes a call; that is how one function can answer with different values. The
+choice itself is just the <tt>if</tt> from chapter 8, which means a function
+body is a block like any other and may use everything the earlier chapters
+taught.
+</p>
+<p>
+A function that has no value to send back writes <tt>void</tt> where the result
+type would go. <tt>show</tt> is that kind:
+</p>
+<pre>
+fn show(n: i32) void {
+    std.io.print("show({}) prints this\n", .{n});
+}
+</pre>
+<p>
+<tt>void</tt> is the type that means "no value", as chapter 5 put it: nothing
+comes back.
+There is no result to store or print, so a call to a <tt>void</tt> function is
+written as a statement by itself &mdash; <tt>show(7);</tt> in the program.
+Falling off the end of a <tt>void</tt> function is fine, just as <tt>main</tt>
+falls off its end when the last print is done. A function with any other result
+type must return a value on every path; the Common mistakes section shows what
+the compiler says when one does not.
+</p>
+
+<h2><tt>pub fn</tt>: the public kind</h2>
+<p>
+The program writes <tt>pub fn square(n: i32) i32</tt>. <tt>pub</tt> marks the
+function as part of the module's public surface &mdash; a name the file offers
+to the rest of the program. The standard library is built that way:
+<tt>std.io.print</tt> is a <tt>pub fn</tt> inside its module. The program's
+other functions are written without the keyword; they are this file's own
+helpers.
+</p>
+<p>
+Inside a single file, <tt>pub</tt> changes nothing at the call site:
+<tt>main</tt> calls <tt>add</tt>, <tt>max</tt>, <tt>show</tt>, and
+<tt>square</tt> in exactly the same way. The keyword's effect lives at the edge
+of a module &mdash; how other files see this one &mdash; and the manual returns
+to it when programs grow beyond a single file.
+</p>
+<p>
+<tt>main</tt> itself is public. <tt>pub fn main</tt> is the entry point, the
+function the toolchain looks for to start the program. The manual has written
+it that way since chapter 5, and the compiler builds the C entry point of the
+whole program around it.
+</p>
+
+<h2>Building and running it</h2>
+<p>
+The commands are the ones from the last four chapters, with <tt>functions</tt>
+in place of <tt>count</tt>. The compiler is still at <tt>/tmp/manual_seed</tt>,
+built in chapter 4:
+</p>
+<pre>
+$ mkdir -p /tmp/manual_out
+$ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out docs/sf/manuals/src/vol1/functions.z98
+$ cd /tmp/manual_out &amp;&amp; sh build_target.sh linux functions
+Building for linux...
+Built: functions
+$ ./functions
+add(2, 3) is 5
+max(4, 9) is 9
+max(12, 3) is 12
+square(9) is 81
+square(10) is 100
+show(7) prints this
+add(20, 22) is 42
+</pre>
+<p>
+Read the output against the source. The value-returning calls account for six
+of the seven lines: <tt>add(2, 3)</tt> is <tt>5</tt>; <tt>max</tt> picked
+<tt>9</tt> for the first call and <tt>12</tt> for the second; <tt>square(9)</tt>
+is <tt>81</tt> and <tt>square(10)</tt> is <tt>100</tt>; and the last line is
+the first function called with new arguments, <tt>add(20, 22)</tt> is
+<tt>42</tt>. The sixth line is the one call that prints from inside the
+function: <tt>show(7)</tt> returns nothing, but its body still prints. The
+program exits with status 0.
+</p>
+
+<h2>Running under Windows 98</h2>
+<p>
+The program builds for Win9x exactly as <tt>hello</tt>, <tt>types</tt>,
+<tt>math</tt>, <tt>classify</tt>, and <tt>count</tt> did. The same
+<tt>build_target.sh</tt> script, or <tt>src/build_owc.bat</tt> with OpenWatcom,
+produces a console <tt>functions.exe</tt> that prints the same seven lines. The
+screenshot below will be captured on real hardware.
+</p>
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f5f0e1" class="placeholder">
+<tr>
+<td align="center">
+<i>Figure 11 &mdash; Win9x screenshot pending</i>
+</td>
+</tr>
+</table>
+<p><i>Figure 11. Running <tt>functions.exe</tt> under Windows 98.</i></p>
+
+<h2>Common mistakes</h2>
+<p>
+These are the mistakes a first function attracts. Three of them are reported by
+the compiler; the first is a habit from other languages that Z98 meets with a
+different shape.
+</p>
+<p>
+<b>Calling with a dot: there are no methods.</b> In Z98 a dot means "a name
+inside", the way <tt>std.io.print</tt> names <tt>print</tt> inside the module
+<tt>io</tt>. It never means "a function that belongs to this value". Functions
+are not attached to values: the value is handed to the function as an argument.
+Write <tt>square(nine)</tt>, not <tt>nine.square()</tt>. The same goes for
+<tt>add</tt>, <tt>max</tt>, <tt>show</tt>, and every function you will write.
+</p>
+<p>
+<b>Assigning to a parameter.</b> The parameter is read-only, so this function
+is rejected:
+</p>
+<pre>
+fn bump(n: i32) i32 {
+    n = n + 1;
+    return n;
+}
+</pre>
+<pre>
+param_mistake.z98:2:4: error[3002]: cannot assign to immutable variable
+    n = n + 1;
+    ^
+</pre>
+<p>
+The caret points at the parameter name, and the message names the rule:
+immutable. The fix is the one from earlier in the chapter: declare a local
+<tt>var</tt>, copy the parameter into it, and change the copy
+(<tt>var result = n;</tt>). The rule covers every parameter of every function,
+and chapter 9's loop captures behave the same way.
+</p>
+<p>
+<b>Forgetting the return.</b> A function like <tt>half</tt> promises an
+<tt>i32</tt> in its signature, but its body has no <tt>return</tt>:
+</p>
+<pre>
+fn half(n: i32) i32 {
+    n / 2;
+}
+</pre>
+<p>
+Computing <tt>n / 2</tt> and then doing nothing with it is not returning it, so
+the compiler refuses the function:
+</p>
+<pre>
+return_mistake.z98:1:0: error[3003]: missing return: not all control paths return a value
+fn half(n: i32) i32 {
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+</pre>
+<p>
+The message is exact: a path through this function reaches the closing brace
+with no value to send back. The caret spans the signature &mdash; the place
+that made the promise. Add <tt>return n / 2;</tt> and the function is whole.
+When the compiler reports <tt>error[3003]</tt>, look for a path that can fall
+off the end, usually a missing final <tt>return</tt> or an <tt>if</tt> whose
+branch does not end.
+</p>
+<p>
+<b>Using the result of a <tt>void</tt> function.</b> <tt>show</tt> returns
+nothing, so there is no value to store. Asking for one is rejected:
+</p>
+<pre>
+const x = show(3);
+</pre>
+<pre>
+void_mistake.z98:8:4: error[3000]: cannot declare variable of type void
+    const x = show(3);
+    ^^^^^^^^^^^^^^^^^^
+</pre>
+<p>
+The message names the problem exactly: a variable cannot have the empty type.
+A <tt>void</tt> function's call is a complete statement by itself:
+write <tt>show(3);</tt> and let the work happen. If you truly need a value
+back, the function must be declared with a result type other than
+<tt>void</tt>, and it must <tt>return</tt> that value.
+</p>
+
+<h2>Check yourself</h2>
+<p>
+Answer these before moving on. The last three ask you to change the program and
+run it.
+</p>
+<ol>
+<li>In the declaration <tt>fn add(a: i32, b: i32) i32</tt>, what are the three
+pieces after <tt>fn</tt> &mdash; the name, the parameters, and the part after
+the parenthesis?</li>
+<li>What does <tt>return a + b;</tt> do? What runs after it on the same
+path?</li>
+<li>How many of <tt>max</tt>'s two <tt>return</tt> statements run during one
+call to <tt>max(4, 9)</tt>, and which one?</li>
+<li>Why is <tt>n = n + 1;</tt> inside a function rejected? What can the
+function do instead when it needs a number it can change?</li>
+<li>What does <tt>show</tt> return, and how do you call a function that returns
+nothing?</li>
+<li>What does <tt>pub</tt> mark, and where does the marking matter? Why does
+<tt>main</tt> carry it?</li>
+<li>Change <tt>square(10)</tt> to <tt>square(12)</tt>, rebuild, and run. What is
+printed now? Predict before you run.</li>
+<li>Add a function <tt>fn triple(n: i32) i32 { return n * 3; }</tt>, rebuild,
+and call it from <tt>main</tt> with <tt>14</tt>. What is printed?</li>
+<li>Change <tt>max(12, 3)</tt> to <tt>max(3, 12)</tt>, rebuild, and run. Which
+line of the program changed, and why does the output stay the same?</li>
+</ol>
+
+<p>Previous: <a href="vol1-09-repetition.html">Doing things repeatedly</a> | <a href="toc.html">Contents</a> | Next: <a href="vol2-00-title.html">Volume II &mdash; Learning Z98</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
