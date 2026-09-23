@@ -1,5 +1,5 @@
-/* Z98 Manual - screen stylesheet. CSS1 only; colours are multiples of 8
-   (16-bit-display safe) and luminance-separated (readable in grayscale). */
+/* Z98 Manual - screen stylesheet. CSS1 only; era-standard palette,
+   16-bit-display safe and luminance-separated. */
 
 body {
   font-family: serif;
