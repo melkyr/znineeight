@@ -1,0 +1,476 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Your First Useful Program</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual line counter word count character count standard input readByte file redirection loop struct">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol1-13-reading-errors.html">
+<link rel="next" href="vol2-00-title.html">
+</head>
+<body bgcolor="#f5f0e1" text="#000000" link="#003366" vlink="#551a8b" alink="#cc0000">
+<table width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#e8e0cc" class="sidebar">
+<font size="1">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#e8e0cc" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume I &mdash; Getting Started</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol1-00-title.html">How to read this</a><br>
+<a href="vol1-01-what-is-programming.html">What is a program</a><br>
+<a href="vol1-02-what-is-z98.html">What is Z98, and why 1998</a><br>
+<a href="vol1-03-your-machine.html">Your machine</a><br>
+<a href="vol1-04-installing.html">Installing the toolchain</a><br>
+<a href="vol1-05-first-program.html">Your first program</a><br>
+<a href="vol1-06-variables-types.html">Variables and types</a><br>
+<a href="vol1-07-arithmetic.html">Doing arithmetic</a><br>
+<a href="vol1-08-decisions.html">Making decisions</a><br>
+<a href="vol1-09-repetition.html">Doing things repeatedly</a><br>
+<a href="vol1-10-functions.html">Functions</a><br>
+<a href="vol1-11-structs.html">Grouping data</a><br>
+<a href="vol1-12-arrays.html">Lists of things</a><br>
+<a href="vol1-13-reading-errors.html">Reading the errors</a><br>
+<b>Your first useful program</b><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Your First Useful Program</h1>
+<p>
+The last thirteen chapters taught the pieces one at a time: values and types,
+arithmetic, decisions, repetition, functions, structs, lists, and how to read a
+compiler complaint. This chapter puts the pieces together into something worth
+keeping: a line counter. The tool reads text and reports three numbers &mdash;
+the lines, the words, and the characters &mdash; the same three numbers the
+era's word-count utilities print. Every language feature it needs was
+introduced in chapters 6 through 12.
+</p>
+<p>
+The tool lives beside the earlier examples, in
+<tt>docs/sf/manuals/src/vol1/wc.z98</tt>. Compile it with the compiler from
+chapter 4 and run it as shown below. One new idea carries the chapter: how a
+program reads input, instead of only writing output.
+</p>
+
+<h2>The program</h2>
+<pre>
+const std = @import("std");
+
+const END_OF_INPUT: u8 = 255;
+
+const Counts = struct {
+    lines: i32,
+    words: i32,
+    chars: i32,
+};
+
+fn isSpace(c: u8) bool {
+    return c == ' ' or c == '\t' or c == '\r' or c == '\n';
+}
+
+fn countInput() Counts {
+    var lines: i32 = 0;
+    var words: i32 = 0;
+    var chars: i32 = 0;
+    var in_word: bool = false;
+    var c: u8 = std.io.readByte();
+    while (c != END_OF_INPUT) {
+        chars = chars + 1;
+        if (c == '\n') {
+            lines = lines + 1;
+        }
+        if (isSpace(c)) {
+            in_word = false;
+        } else {
+            if (!in_word) {
+                words = words + 1;
+                in_word = true;
+            }
+        }
+        c = std.io.readByte();
+    }
+    return Counts{ .lines = lines, .words = words, .chars = chars };
+}
+
+pub fn main() void {
+    const counts = countInput();
+    std.io.print("lines: {}\n", .{counts.lines});
+    std.io.print("words: {}\n", .{counts.words});
+    std.io.print("chars: {}\n", .{counts.chars});
+}
+</pre>
+<p>
+Read it once before the walk-through. The shape is already familiar: a counter
+or two, a loop that reads one byte at a time, an <tt>if</tt> that updates the
+counters, and a struct that carries the three totals back to <tt>main</tt>.
+</p>
+
+<h2>Where input comes from</h2>
+<p>
+Every program so far has only written. <tt>std.io.print</tt> sends its text to
+<b>standard output</b>, the stream the terminal shows (chapter 5). The other
+direction is <b>standard input</b>: a stream of bytes the machine feeds to the
+program, one byte at a time, in order. <tt>std.io.readByte()</tt> takes the
+next byte from that stream and answers it as a <tt>u8</tt>, the one-byte
+integer type from chapter 6. Each byte of text is one <tt>u8</tt>.
+</p>
+<p>
+When the stream has no more bytes, <tt>readByte</tt> reports it with the value
+255. That number did not arrive in the input; it is the reader's signal that
+the input is finished. The shipped <tt>readByte</tt> is a thin wrapper over the
+C library's character reader, whose end-of-file value is &minus;1; stored in
+the <tt>u8</tt> the function returns, it becomes 255. The program gives the
+signal a name &mdash; <tt>const END_OF_INPUT: u8 = 255;</tt> &mdash; so every
+loop that tests it says what it means.
+</p>
+<p>
+Where does the file come in? The shell decides. The command line
+</p>
+<pre>
+$ ./wc &lt; sample.txt
+</pre>
+<p>
+runs <tt>wc</tt>, but before the program starts, the shell opens
+<tt>sample.txt</tt> and connects it to the program's standard input. The
+program is never told the name <tt>sample.txt</tt>; it sees a stream of bytes
+that happens to be the file's contents. The same tool can read another
+program's output through a pipe, as <tt>cat sample.txt | ./wc</tt> does. Output
+was always the terminal's stream; input is the same idea in the other
+direction.
+</p>
+<p>
+A first read makes the idea concrete. A fragment with one read and one print:
+</p>
+<pre>
+var c: u8 = std.io.readByte();
+std.io.print("first byte is {}\n", .{c});
+</pre>
+<p>
+For the sample file used below, the first byte is the letter <tt>o</tt>, whose
+number is 111, so the fragment prints <tt>first byte is 111</tt>. The byte and
+the character are the same thing seen two ways: the machine stores characters
+as small numbers, and <tt>{}</tt> prints the number, exactly as in earlier
+chapters.
+</p>
+
+<h2>Counting the lines</h2>
+<p>
+The line counter is a <tt>while</tt> loop from chapter 9 with an <tt>if</tt>
+from chapter 8 inside it:
+</p>
+<pre>
+var c: u8 = std.io.readByte();
+while (c != END_OF_INPUT) {
+    if (c == '\n') {
+        lines = lines + 1;
+    }
+    c = std.io.readByte();
+}
+</pre>
+<p>
+Three details are worth a second look. First, there are two reads. The read
+before the loop puts a real byte into <tt>c</tt> before the loop's first test,
+because a <tt>while</tt> tests before it runs the body. The read at the end of
+the body replaces that byte with the next one, so each pass consumes exactly
+one byte and the loop always moves forward. When that second read answers 255,
+the test fails and the loop stops.
+</p>
+<p>
+Second, a line ends at the newline byte, and the character literal
+<tt>'\n'</tt> names it: one character between single quotes, using the same
+backslash escapes you have written inside strings. <tt>'\n'</tt> is the byte a
+text file writes at the end of a line, so counting those bytes counts the
+lines.
+</p>
+<p>
+Third, <tt>lines</tt> is an <tt>i32</tt> that starts at 0, the counter pattern
+from chapters 6 and 7. The count therefore grows by one for every newline the
+loop meets.
+</p>
+
+<h2>Counting the characters</h2>
+<p>
+The first line of the loop body is <tt>chars = chars + 1;</tt>, so every byte
+the tool reads is counted once. In this text one character is one byte, so that
+makes <tt>chars</tt> the character count. The newline at the end of every line
+is a character too and is included: the number describes the whole file, not
+only the letters you can see.
+</p>
+<p>
+The read before the loop is not counted, because the body has not run yet; the
+end signal is not counted either, because the loop stops before its body would
+see it. Every real byte, and nothing else, is counted exactly once.
+</p>
+
+<h2>Counting the words</h2>
+<p>
+A word is a run of bytes that are not spaces. The tool names the separating
+bytes in a helper function, using chapter 10's functions, chapter 6's
+<tt>bool</tt>, and chapter 7's <tt>or</tt>:
+</p>
+<pre>
+fn isSpace(c: u8) bool {
+    return c == ' ' or c == '\t' or c == '\r' or c == '\n';
+}
+</pre>
+<p>
+Four bytes separate words in ordinary text: the space (32), the tab (9), the
+carriage return (13), and the newline (10). The carriage return is the one that
+surprises people. Text saved by a Windows editor ends each line with two bytes,
+CR then LF, and a tool that forgets CR treats a byte that is not a letter as
+word material. Keeping it in the set costs one comparison and makes the tool
+read the same text the same way on both machines.
+</p>
+<p>
+The word count itself needs one piece of memory that survives from byte to
+byte: <tt>in_word</tt>, a <tt>bool</tt> that remembers whether the previous
+byte was inside a word. The rule is short: a word begins at a byte that is not
+a space and was not already inside a word.
+</p>
+<pre>
+if (isSpace(c)) {
+    in_word = false;
+} else {
+    if (!in_word) {
+        words = words + 1;
+        in_word = true;
+    }
+}
+</pre>
+<p>
+A space ends any word that was open by clearing the flag. Anything else is word
+material; when the flag says no word is open, this byte is the first of a new
+word, so the count moves up by one and the flag is set. Counting at the first
+byte, rather than at the separator that follows, means a file whose last word
+has no newline after it still counts that word: the count happened when the
+word began, and no separator is needed to finish it.
+</p>
+
+<h2>Grouping the totals</h2>
+<p>
+Three counters travel together, which is a job for the structs of chapter 11:
+</p>
+<pre>
+const Counts = struct {
+    lines: i32,
+    words: i32,
+    chars: i32,
+};
+</pre>
+<p>
+<tt>countInput</tt> reads the whole stream and returns one <tt>Counts</tt>
+value, so <tt>main</tt> stays short and the reading lives in one place:
+</p>
+<pre>
+fn countInput() Counts {
+    ...
+    return Counts{ .lines = lines, .words = words, .chars = chars };
+}
+
+pub fn main() void {
+    const counts = countInput();
+    std.io.print("lines: {}\n", .{counts.lines});
+    std.io.print("words: {}\n", .{counts.words});
+    std.io.print("chars: {}\n", .{counts.chars});
+}
+</pre>
+<p>
+The return type <tt>Counts</tt> is written after the parameter list, and the
+returned value is built with the field-by-name initialization from chapter 11.
+Chapter 10's rule that a value-returning function must answer on every path is
+satisfied because the loop can only end by falling through to the
+<tt>return</tt>. The three counters are local to <tt>countInput</tt>; once the
+function hands back the struct, they cannot be changed by anyone else, which is
+exactly what a report should do.
+</p>
+
+<h2>Building and running it</h2>
+<p>
+The commands are the ones from the last chapters, with <tt>wc</tt> in place of
+<tt>scores</tt>. The compiler is still at <tt>/tmp/manual_seed</tt>, built in
+chapter 4:
+</p>
+<pre>
+$ mkdir -p /tmp/manual_out
+$ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out docs/sf/manuals/src/vol1/wc.z98
+$ cd /tmp/manual_out &amp;&amp; sh build_target.sh linux wc
+Building for linux...
+Built: wc
+$ cat &gt; sample.txt &lt;&lt;'EOF'
+one two three
+four five
+six
+EOF
+$ cat sample.txt
+one two three
+four five
+six
+$ ./wc &lt; sample.txt
+lines: 3
+words: 6
+chars: 28
+</pre>
+<p>
+The first two commands build the tool exactly as before. The
+<tt>cat</tt> command then writes a three-line sample file, and the second
+<tt>cat</tt> shows what went into it. The last command runs the tool with the
+file connected to its input.
+</p>
+<p>
+Read the three answers against the sample. <tt>lines: 3</tt> counts the three
+newline bytes, one after each line. <tt>words: 6</tt> counts one two three four
+five six. <tt>chars: 28</tt> counts every byte: 13 in <tt>one two three</tt>,
+plus its newline; 9 in <tt>four five</tt>, plus its newline; 3 in <tt>six</tt>,
+plus its newline. The pipe form reads the same bytes and prints the same
+answers:
+</p>
+<pre>
+$ cat sample.txt | ./wc
+lines: 3
+words: 6
+chars: 28
+</pre>
+
+<h2>Running under Windows 98</h2>
+<p>
+The tool builds for Win9x exactly as <tt>hello</tt>, <tt>types</tt>, and the
+rest did: emit with <tt>-osw</tt> from chapter 3, then compile the emitted C
+with <tt>src/build_owc.bat</tt> or the emitted script's mingw target. Input
+redirection is a shell feature, not a Z98 feature, and the Windows 98 command
+prompt supports it too, so <tt>wc.exe &lt; sample.txt</tt> reads the sample
+file and prints the same three lines. The screenshot below will be captured on
+real hardware.
+</p>
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f5f0e1" class="placeholder">
+<tr>
+<td align="center">
+<i>Figure 15 &mdash; Win9x screenshot pending</i>
+</td>
+</tr>
+</table>
+<p><i>Figure 15. Running <tt>wc.exe</tt> under Windows 98.</i></p>
+
+<h2>Common mistakes</h2>
+<p>
+The mistakes a first input-reading tool attracts are loop mistakes. Each one
+below is a loop that never ends, a tool that stops early, or a count that
+answers a slightly different question than the one you meant.
+</p>
+<p>
+<b>Forgetting to fetch the next byte.</b> If the last line of the loop body
+&mdash; <tt>c = std.io.readByte();</tt> &mdash; is deleted, <tt>c</tt> never
+changes. The loop tests the same byte on every pass, the counters grow on every
+pass, and nothing is ever printed. The rule the tool depends on is that every
+pass consumes exactly one byte and brings in the next; a loop with a read in
+its body but no second read cannot move.
+</p>
+<p>
+<b>Waiting for a zero byte.</b> The end of input is not a zero byte. Zero is an
+ordinary byte that can appear in a file (and a condition such as
+<tt>c != 0</tt> would stop early the moment one did), but the end of input is
+reported as 255. That makes <tt>c != 0</tt> wrong twice over: it can stop on
+real data, and at the true end of the stream it is true forever, because
+<tt>readByte</tt> answers 255 on every call once the input is over. The end
+value is <tt>END_OF_INPUT</tt>; no other number means finished.
+</p>
+<p>
+<b>Expecting a last line with no newline to count.</b> The counter counts
+newline bytes, so a file whose final line has no newline ends without one last
+increment. The input <tt>one\ntwo</tt> has one newline and one word that ends
+at the file's end, and the tool prints:
+</p>
+<pre>
+$ ./wc &lt; no_newline.txt
+lines: 1
+words: 2
+chars: 7
+</pre>
+<p>
+A person looking at that file sees two lines; the tool reports the number of
+newline bytes, and so does the era's <tt>wc</tt>. If the last line must count,
+the file should end with a newline, the way text files normally do.
+</p>
+<p>
+<b>Leaving the carriage return out of <tt>isSpace</tt>.</b> Text saved by a
+Windows editor ends each line with CR and LF. Remove <tt>c == '\r'</tt> from
+<tt>isSpace</tt> and the CR of a blank line becomes a word of its own. For the
+input <tt>a\r\n\r\nb\r\n</tt> &mdash; a word, a blank line, and a word &mdash;
+the tool then prints <tt>words: 3</tt> instead of <tt>words: 2</tt>, because
+the blank line's CR counts as a word byte. This is the quiet kind of mistake:
+the program still builds, still runs, and is wrong only on files with a shape
+the test sample did not have.
+</p>
+<p>
+<b>Pointing the tool at a binary file.</b> 255 is a legal byte, so a file that
+contains one stops the tool early. For an input that begins <tt>a\n</tt> and
+then holds byte 255 and more text, the tool prints <tt>lines: 1</tt>,
+<tt>words: 1</tt>, <tt>chars: 2</tt>, because byte 255 is the end signal. Text
+files are made of printable ASCII characters and line separators, so plain
+ASCII text never contains 255; a file in another encoding, or a binary file,
+can, and needs a different tool.
+</p>
+
+<h2>Check yourself</h2>
+<p>
+Answer these before moving on. The first four can be answered from the
+transcript and the source; the rest ask you to change the program and run it.
+</p>
+<ol>
+<li>Why does the sample's <tt>chars</tt> come to 28? Name the bytes that make
+up the count, line by line.</li>
+<li>Why does the program read one byte before the loop and one byte at the end
+of the loop body? What happens to the stream if the read at the end of the
+body is deleted? What would the loop's first test be examining if there were
+no read before the loop?</li>
+<li>What is the first byte of the sample file, as a number, and why is it
+111?</li>
+<li>What does <tt>isSpace</tt> answer for <tt>'\r'</tt>, and why does the word
+counter care about that byte at all?</li>
+<li>The tool counts a word when it meets the first non-space byte rather than
+when it meets the space that follows. What would a file ending in a word with
+no newline report if the count happened at the separator instead?</li>
+<li>Predict what the tool prints for a file whose content is exactly
+<tt>a\nb\nc</tt> &mdash; no newline at the end. Then make the file with
+<tt>printf 'a\nb\nc' &gt; three.txt</tt> and run
+<tt>./wc &lt; three.txt</tt>. Was the prediction right?</li>
+<li>Extend the tool with a fourth counter, <tt>e_count</tt>, that counts every
+byte equal to <tt>'e'</tt>. Add it to the <tt>Counts</tt> struct and print
+<tt>e: {}</tt> after the other three lines. What does the sample report?</li>
+<li>Change <tt>main</tt> so the three prints become one:
+<tt>std.io.print("{} {} {}\n", .{counts.lines, counts.words, counts.chars});</tt>.
+Rebuild and run. What prints, and why does the order of the tuple matter?</li>
+</ol>
+
+<p>Previous: <a href="vol1-13-reading-errors.html">Reading the errors</a> | <a href="toc.html">Contents</a> | Next: <a href="vol2-00-title.html">Volume II &mdash; Learning Z98</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
