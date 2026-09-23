@@ -1,4 +1,4 @@
-# mi_matrix corpus — expected-fail manifest (v198 2026-09-23)
+# mi_matrix corpus — expected-fail manifest (v199 2026-09-23)
 
 ## Task 9D — comptime-true no-`else` `if` fold + void-then value-`if` lowering (v196 -> v197 2026-09-22)
 
@@ -73,6 +73,28 @@ join-diff vs the v77 compiler moving EXACTLY `stdlib_comptime_true_if_xmod` (FAI
 7/7; `verify_upgraded.sh` CLOSEOUT OK. Fixed point **MOVED `c635bbf952501ca5993e6c60f63a4a5f` →
 `4b8a6364ef47e8ebdfc5e4506b7cff02`** (two-hop closure hop1==hop2); seed **v77 → v78** (archive md5
 `6ca3b47c216754a0fb4b11c3cab7bd10` → `8fff355b0423235500f044ddc84af62b`; `gen/` 45 `.c` + 46 `.h`).
+
+**Fix round 2 (v198 -> v199 2026-09-23; review Important — a NEW over-rejection from fix round 1).**
+Fix round 1's `have_decl` gate suppressed the syntactic-negative fallback, so a declared-**unsigned**
+const compared against an **untyped negative** comptime_int was forced unsigned: with
+`const uu: u8 = 200;`, `if (uu > -1)`, `if (-1 < uu)` and `if (uu > (0 - 1))` regressed from
+v77-accepted (prints `1 2 3`) to `error[3059]` (rc=2, 0 `.c`), while official Zig 0.15.2 accepts all
+three. Fix: the new private `comptimeEvalOperandCompareSigned` computes each operand's signedness
+independently — a declared integer type wins for its OWN operand, otherwise the syntactic sign class
+(`negative` → signed, `non_negative` → unsigned), falling back to `cv.sig` for an unrecognized
+untyped shape — and the comparison is signed if either operand is. A declared-unsigned peer therefore
+no longer masks a negative counterpart (`uu > -1` is true), while `const umax: u64 = …; if (umax < 0)`
+stays unsigned/false and rejected. Fixture: `repro/mi_matrix/stdlib_comptime_true_if_xmod` gains
+x20–x22 (`u > -1`, `-1 < u`, `u > (0 - 1)`; golden now
+`10 11 12 13 14 15 16 17 18 19 30 32 34 40 41 42 43 44 45 46 47 48\nFFF`, 3× oracle-matched);
+`if_noelse_reject_xmod` is unchanged (10 `error[3059]`). Gates: 4-MD5 emitted-C **UNCHANGED**
+(gol `e7bde571…` / lisp `552d0a84…` / json `38b37bdd…` / mud `5a1cc65e…`); example matrix **24/24**;
+std-lib runtime gate **215 PASS / 0 FAIL**; corpus `-s0` **983 dirs = 863 OK / 42 GREEN / 78 FAIL /
+0 ICE / 0 CRASH** with a full-classifier join-diff vs the v78 compiler moving EXACTLY
+`stdlib_comptime_true_if_xmod` (FAIL -> OK); `check_emit_support.sh` 7/7; `verify_upgraded.sh`
+CLOSEOUT OK. Fixed point **MOVED `4b8a6364ef47e8ebdfc5e4506b7cff02` →
+`d5608123de41de68663aa1842fcca9f2`** (two-hop closure hop1==hop2); seed **v78 → v79** (archive md5
+`8fff355b0423235500f044ddc84af62b` → `101b8f72037be1e6279c5209391e0a13`; `gen/` 45 `.c` + 46 `.h`).
 
 ## Task 9B — reject invalid condition / `if` forms (v194 -> v195 2026-09-22; fix round 1 v195 -> v196)
 

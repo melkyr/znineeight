@@ -143,12 +143,13 @@ fn comptimeEvalBinOp(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, depth
 
 // Task 9D: fold a comparison (`==`/`!=`/`<`/`<=`/`>`/`>=`) of two comptime
 // integers to a bool ComptimeVal. Both operands must fold; a float operand
-// (WIDTH_FLOAT) is a bounded residual and stays unfolded. Signedness is the
-// DECLARED integer type of a typed operand (fix round 1): a `u64` const above
-// i64 max must compare UNSIGNED, not by the initializer literal's `sig`. With no
-// declared type on either side, a syntactically definitely-negative operand
-// makes the comparison signed (so `-1 < 0` holds and `18446744073709551615 > 0`
-// compares unsigned).
+// (WIDTH_FLOAT) is a bounded residual and stays unfolded. Signedness is
+// per-operand (fix round 2): a declared integer type wins for its operand (a
+// `u64` const above i64 max compares UNSIGNED, not by the initializer literal's
+// `sig`), otherwise the syntactic sign class decides (a definitely-negative
+// untyped operand forces signed comparison even when the OTHER operand is
+// declared unsigned, so `const u: u8 = 200; u > -1` is true), falling back to
+// `cv.sig` for an unrecognized untyped shape (`0 - 1`).
 fn comptimeEvalCompare(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, depth: u32) ?ComptimeVal {
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var lhs = comptimeEvalEvaluateDepth(self, node.child_0, depth);
@@ -156,19 +157,7 @@ fn comptimeEvalCompare(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, dep
     if (lhs) |l| {
         if (rhs) |r| {
             if (l.width_bits == WIDTH_FLOAT or r.width_bits == WIDTH_FLOAT) return null;
-            var use_signed: bool = false;
-            var have_decl: bool = false;
-            if (comptimeEvalOperandDeclaredSigned(self, node.child_0)) |ls| {
-                use_signed = ls;
-                have_decl = true;
-            }
-            if (comptimeEvalOperandDeclaredSigned(self, node.child_1)) |rs| {
-                if (have_decl) { use_signed = use_signed or rs; } else { use_signed = rs; have_decl = true; }
-            }
-            if (!have_decl) {
-                if (comptimeEvalSignClass(self, node.child_0, @intCast(u32, 0)) == SignClass.negative) use_signed = true;
-                if (comptimeEvalSignClass(self, node.child_1, @intCast(u32, 0)) == SignClass.negative) use_signed = true;
-            }
+            var use_signed: bool = comptimeEvalOperandCompareSigned(self, node.child_0, l) or comptimeEvalOperandCompareSigned(self, node.child_1, r);
             var res: bool = false;
             if (use_signed) {
                 var sl: i64 = @bitCast(i64, l.bits);
@@ -298,6 +287,22 @@ fn comptimeEvalOperandDeclaredSigned(self: *ComptimeEval, node_idx: u32) ?bool {
         return null;
     }
     return null;
+}
+
+// Task 9D fix round 2: one comparison operand's signedness. A declared integer
+// type wins for its operand; otherwise the syntactic sign class decides
+// (`negative` → signed, `non_negative` → unsigned), falling back to `cv.sig`
+// for an unrecognized untyped shape. Consulting the sign class even when the
+// OTHER operand is declared is required so a declared-unsigned const does not
+// mask a negative literal/expression: `const u: u8 = 200; u > -1` must compare
+// signed and be true (Zig accepts it), while `const umax: u64 = ...; umax < 0`
+// stays unsigned/false.
+fn comptimeEvalOperandCompareSigned(self: *ComptimeEval, node_idx: u32, cv: ComptimeVal) bool {
+    if (comptimeEvalOperandDeclaredSigned(self, node_idx)) |d| return d;
+    var sc = comptimeEvalSignClass(self, node_idx, @intCast(u32, 0));
+    if (sc == SignClass.negative) return true;
+    if (sc == SignClass.non_negative) return false;
+    return cv.sig;
 }
 
 fn comptimeEvalResolveTypeArg(self: *ComptimeEval, node_idx: u32) ?u32 {

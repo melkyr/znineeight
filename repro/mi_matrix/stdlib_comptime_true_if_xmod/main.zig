@@ -15,14 +15,17 @@
 //   * fixed-width const comparisons by DECLARED type (fix round 1): a `u64`
 //     const above i64 max (`umax > 0`, `umax > zero`), a declared `i8` negative,
 //     a declared `u8` positive, and an untyped local negative (`an < 0`)
+//   * a declared-unsigned const against an untyped negative literal (fix round
+//     2): `u > -1`, `-1 < u`, `u > (0 - 1)` — the sign class must still win
+//     over the peer's declared unsigned type
 // and the void-then value `if` forms:
 //   * `_ = if (vc) foo();`          (absent else, runtime bool cond, void then)
 //   * `_ = if (vc) foo() else bar();`
 //   * `_ = if (o) |v| { _ = v; foo(); };` (capture condition)
 //
 // Every result is `@panic`-guarded. Contract: stdout
-// `10 11 12 13 14 15 16 17 18 19 30 32 34 40 41 42 43 44 45\nFFF\n`, rc 0,
-// byte-exact 3x.
+// `10 11 12 13 14 15 16 17 18 19 30 32 34 40 41 42 43 44 45 46 47 48\nFFF\n`,
+// rc 0, byte-exact 3x.
 const std = @import("std");
 
 const MA: i32 = 5;
@@ -66,10 +69,13 @@ pub fn main() void {
     const u: u8 = 200;
     var x18: i32 = if (u > 0) 44;
     var x19: i32 = if (run or true) 45;
-    if (x1 != 10 or x2 != 11 or x3 != 12 or x4 != 13 or x5 != 14 or x6 != 15 or x7 != 16 or x8 != 17 or x9 != 18 or x10 != 19 or x11 != 30 or x12 != 32 or x13 != 34 or x14 != 40 or x15 != 41 or x16 != 42 or x17 != 43 or x18 != 44 or x19 != 45) {
+    var x20: i32 = if (u > -1) 46;
+    var x21: i32 = if (-1 < u) 47;
+    var x22: i32 = if (u > (0 - 1)) 48;
+    if (x1 != 10 or x2 != 11 or x3 != 12 or x4 != 13 or x5 != 14 or x6 != 15 or x7 != 16 or x8 != 17 or x9 != 18 or x10 != 19 or x11 != 30 or x12 != 32 or x13 != 34 or x14 != 40 or x15 != 41 or x16 != 42 or x17 != 43 or x18 != 44 or x19 != 45 or x20 != 46 or x21 != 47 or x22 != 48) {
         @panic("comptime_true_if guard failed");
     }
-    std.io.print("{} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {}\n", .{ x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15, x16, x17, x18, x19 });
+    std.io.print("{} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {}\n", .{ x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15, x16, x17, x18, x19, x20, x21, x22 });
     var vc: bool = false;
     vc = !vc;
     _ = if (vc) foo();

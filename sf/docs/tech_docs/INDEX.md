@@ -258,6 +258,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `comptimeEvalEvaluateDepth` | comptime_eval.zig |
 | `comptimeEvalInit` | comptime_eval.zig |
 | `comptimeEvalLogical` | comptime_eval.zig |
+| `comptimeEvalOperandCompareSigned` | comptime_eval.zig |
 | `comptimeEvalOperandDeclaredSigned` | comptime_eval.zig |
 | `comptimeEvalResolveTypeArg` | comptime_eval.zig |
 | `computeNestMetadata` | lir_opt_pass.zig |
