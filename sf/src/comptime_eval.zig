@@ -143,9 +143,12 @@ fn comptimeEvalBinOp(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, depth
 
 // Task 9D: fold a comparison (`==`/`!=`/`<`/`<=`/`>`/`>=`) of two comptime
 // integers to a bool ComptimeVal. Both operands must fold; a float operand
-// (WIDTH_FLOAT) is a bounded residual and stays unfolded. Signedness mirrors
-// comptimeEvalBinOp's div/mod handling: a signed operand makes the comparison
-// signed, and signed values are stored sign-extended to 64 bits.
+// (WIDTH_FLOAT) is a bounded residual and stays unfolded. Signedness is the
+// DECLARED integer type of a typed operand (fix round 1): a `u64` const above
+// i64 max must compare UNSIGNED, not by the initializer literal's `sig`. With no
+// declared type on either side, a syntactically definitely-negative operand
+// makes the comparison signed (so `-1 < 0` holds and `18446744073709551615 > 0`
+// compares unsigned).
 fn comptimeEvalCompare(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, depth: u32) ?ComptimeVal {
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var lhs = comptimeEvalEvaluateDepth(self, node.child_0, depth);
@@ -153,7 +156,19 @@ fn comptimeEvalCompare(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, dep
     if (lhs) |l| {
         if (rhs) |r| {
             if (l.width_bits == WIDTH_FLOAT or r.width_bits == WIDTH_FLOAT) return null;
-            var use_signed = l.sig or r.sig;
+            var use_signed: bool = false;
+            var have_decl: bool = false;
+            if (comptimeEvalOperandDeclaredSigned(self, node.child_0)) |ls| {
+                use_signed = ls;
+                have_decl = true;
+            }
+            if (comptimeEvalOperandDeclaredSigned(self, node.child_1)) |rs| {
+                if (have_decl) { use_signed = use_signed or rs; } else { use_signed = rs; have_decl = true; }
+            }
+            if (!have_decl) {
+                if (comptimeEvalSignClass(self, node.child_0, @intCast(u32, 0)) == SignClass.negative) use_signed = true;
+                if (comptimeEvalSignClass(self, node.child_1, @intCast(u32, 0)) == SignClass.negative) use_signed = true;
+            }
             var res: bool = false;
             if (use_signed) {
                 var sl: i64 = @bitCast(i64, l.bits);
@@ -180,21 +195,26 @@ fn comptimeEvalCompare(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, dep
     return null;
 }
 
-// Task 9D: fold `and`/`or`/`!` on comptime bools. `and`/`or` short-circuit
-// (evaluate the lhs first; a decisive lhs returns without evaluating the rhs,
-// so `true or <runtime>` folds true and `false and <runtime>` folds false,
-// matching Zig). An operand that does not fold, or is not bool-width, yields
-// null (no fold).
+// Task 9D: fold `and`/`or`/`!` on comptime bools. `and`/`or` short-circuit:
+// when the lhs folds, a decisive lhs (`0` for `and`, `1` for `or`) returns
+// without evaluating the rhs; when the lhs does NOT fold, a decisive RHS still
+// decides (`<runtime> or true` -> true, `<runtime> and false` -> false) without
+// requiring the lhs — matching Zig's comptime-known-true acceptance (fix round
+// 1). Any other operand that does not fold, or is not bool-width, yields null.
 fn comptimeEvalLogical(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, depth: u32) ?ComptimeVal {
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var lhs = comptimeEvalEvaluateDepth(self, node.child_0, depth);
-    if (lhs) |l| {
-        if (l.width_bits != @intCast(u32, 1)) return null;
-        if (op_kind == AstKind.bool_not) {
+    if (op_kind == AstKind.bool_not) {
+        if (lhs) |l| {
+            if (l.width_bits != @intCast(u32, 1)) return null;
             var nb: u64 = @intCast(u64, 1) - (l.bits & @intCast(u64, 1));
             return ComptimeVal{ .bits = nb, .width_bits = @intCast(u32, 1), .sig = false };
         }
-        if (op_kind == AstKind.bool_and) {
+        return null;
+    }
+    if (op_kind == AstKind.bool_and) {
+        if (lhs) |l| {
+            if (l.width_bits != @intCast(u32, 1)) return null;
             if (l.bits == @intCast(u64, 0)) return ComptimeVal{ .bits = @intCast(u64, 0), .width_bits = @intCast(u32, 1), .sig = false };
             var rhs_a = comptimeEvalEvaluateDepth(self, node.child_1, depth);
             if (rhs_a) |ra| {
@@ -203,7 +223,16 @@ fn comptimeEvalLogical(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, dep
             }
             return null;
         }
-        if (op_kind == AstKind.bool_or) {
+        // lhs does not fold: a false rhs decides the conjunction.
+        if (comptimeEvalEvaluateDepth(self, node.child_1, depth)) |ra2| {
+            if (ra2.width_bits != @intCast(u32, 1)) return null;
+            if (ra2.bits == @intCast(u64, 0)) return ComptimeVal{ .bits = @intCast(u64, 0), .width_bits = @intCast(u32, 1), .sig = false };
+        }
+        return null;
+    }
+    if (op_kind == AstKind.bool_or) {
+        if (lhs) |l| {
+            if (l.width_bits != @intCast(u32, 1)) return null;
             if (l.bits != @intCast(u64, 0)) return ComptimeVal{ .bits = @intCast(u64, 1), .width_bits = @intCast(u32, 1), .sig = false };
             var rhs_o = comptimeEvalEvaluateDepth(self, node.child_1, depth);
             if (rhs_o) |ro| {
@@ -212,6 +241,61 @@ fn comptimeEvalLogical(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, dep
             }
             return null;
         }
+        // lhs does not fold: a true rhs decides the disjunction.
+        if (comptimeEvalEvaluateDepth(self, node.child_1, depth)) |ro2| {
+            if (ro2.width_bits != @intCast(u32, 1)) return null;
+            if (ro2.bits != @intCast(u64, 0)) return ComptimeVal{ .bits = @intCast(u64, 1), .width_bits = @intCast(u32, 1), .sig = false };
+        }
+        return null;
+    }
+    return null;
+}
+
+// Task 9D fix round 1: the DECLARED integer signedness of a comparison operand,
+// or null when the operand has no declared integer type (an untyped comptime_int
+// literal / expression). Unlike `comptimeEvalOperandSigned`, this does not fall
+// back to `cv.sig`, and it consults the function-local const scope first (Task
+// 9D Gap B): a function-local `u64` const above i64 max must compare UNSIGNED.
+fn comptimeEvalOperandDeclaredSigned(self: *ComptimeEval, node_idx: u32) ?bool {
+    var idx = node_idx;
+    var guard: u32 = 0;
+    while (guard < @intCast(u32, 32)) : (guard += 1) {
+        var wn = ast_mod.astStoreNodeAt(self.store, idx);
+        if (wn.kind == AstKind.paren_expr) { idx = wn.child_0; } else { break; }
+    }
+    var node = ast_mod.astStoreNodeAt(self.store, idx);
+    if (node.kind == AstKind.ident_expr) {
+        var name_id = ast_mod.astStoreIdentifier(self.store, idx);
+        if (self.local_consts) |lcs| {
+            if (type_resolver.localConstScopeLookup(lcs, name_id)) |l_decl_node| {
+                var l_decl = ast_mod.astStoreNodeAt(self.store, l_decl_node);
+                if (comptimeEvalResolveTypeArg(self, l_decl.child_0)) |lt| {
+                    if (type_mod.typeRegistryIsInteger(self.registry, lt)) return type_mod.typeRegistryIntIsSigned(self.registry, lt);
+                }
+            }
+        }
+        var mi: usize = 0;
+        while (mi < @intCast(usize, self.symbol_reg.tables_len)) : (mi += 1) {
+            var c_sym = sym_mod.symbolRegistryQualifiedLookup(self.symbol_reg, @intCast(u32, mi), name_id);
+            if (c_sym) |cs| {
+                if ((cs.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
+                    var c_decl = ast_mod.astStoreNodeAt(self.store, cs.decl_node);
+                    if (comptimeEvalResolveTypeArg(self, c_decl.child_0)) |t| {
+                        if (type_mod.typeRegistryIsInteger(self.registry, t)) return type_mod.typeRegistryIntIsSigned(self.registry, t);
+                    }
+                }
+            }
+        }
+        return null;
+    }
+    if (node.kind == AstKind.char_literal) return false;
+    if (node.kind == AstKind.builtin_call) {
+        if (node.child_0 == self.int_cast_id or node.child_0 == self.as_id) {
+            if (comptimeEvalResolveTypeArg(self, ast_mod.astStoreNodeExtraChildAt(self.store, idx, @intCast(u32, 0)))) |t2| {
+                if (type_mod.typeRegistryIsInteger(self.registry, t2)) return type_mod.typeRegistryIntIsSigned(self.registry, t2);
+            }
+        }
+        return null;
     }
     return null;
 }
@@ -290,6 +374,24 @@ fn comptimeEvalSignClass(self: *ComptimeEval, node_idx: u32, depth: u32) SignCla
     if (node.kind == AstKind.paren_expr) return comptimeEvalSignClass(self, node.child_0, depth + @intCast(u32, 1));
     if (node.kind == AstKind.ident_expr) {
         var name_id = ast_mod.astStoreIdentifier(self.store, node_idx);
+        // Task 9D fix round 1: consult the function-local const scope first
+        // (mirrors the ident_expr fold arm); only set when the sema probe runs,
+        // so the global phase_ComptimeEvaluation fold is unaffected.
+        if (self.local_consts) |lcs| {
+            if (type_resolver.localConstScopeLookup(lcs, name_id)) |l_decl_node| {
+                var l_decl = ast_mod.astStoreNodeAt(self.store, l_decl_node);
+                var ldt = comptimeEvalResolveTypeArg(self, l_decl.child_0);
+                if (ldt) |lt| {
+                    if (type_mod.typeRegistryIsInteger(self.registry, lt)) {
+                        if (type_mod.typeRegistryIntIsSigned(self.registry, lt)) return SignClass.negative;
+                        return SignClass.non_negative;
+                    }
+                }
+                if (l_decl.child_1 != @intCast(u32, 0)) {
+                    return comptimeEvalSignClass(self, l_decl.child_1, depth + @intCast(u32, 1));
+                }
+            }
+        }
         var mi: usize = 0;
         while (mi < @intCast(usize, self.symbol_reg.tables_len)) : (mi += 1) {
             var c_sym = sym_mod.symbolRegistryQualifiedLookup(self.symbol_reg, @intCast(u32, mi), name_id);

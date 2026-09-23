@@ -34,6 +34,33 @@ fn andFalse(run: bool) i32 {
     return x;
 }
 
+// Task 9D fix round 1: a `u64` const above i64 max compared `< 0` folds FALSE
+// by its DECLARED (unsigned) type, so this no-`else` value `if` is rejected
+// (pre-fix it folded `true` and was silently accepted with an uninitialised
+// result — official Zig 0.15.2 rejects it).
+fn u64Lt0() i32 {
+    const umax: u64 = 18446744073709551615;
+    var x: i32 = if (umax < 0) 3;
+    return x;
+}
+
+// Task 9D fix round 1: rhs-decisive / non-decisive runtime-lhs logical forms
+// (all Zig-rejected; a runtime lhs cannot be folded away).
+fn rhsAndFalse(run: bool) i32 {
+    var x: i32 = if (run and false) 1;
+    return x;
+}
+
+fn rhsAndTrue(run: bool) i32 {
+    var x: i32 = if (run and true) 1;
+    return x;
+}
+
+fn rhsOrFalse(run: bool) i32 {
+    var x: i32 = if (false or run) 1;
+    return x;
+}
+
 pub fn main() void {
     var a: i32 = 1;
     var x: i32 = if (a == 1) 1;
@@ -42,5 +69,10 @@ pub fn main() void {
     std.io.print("{}\n", .{pick(1)});
     _ = capPick(null);
     _ = andFalse(true);
+    _ = u64Lt0();
+    _ = rhsAndFalse(true);
+    _ = rhsAndTrue(true);
+    _ = rhsOrFalse(true);
     _ = x;
 }
+

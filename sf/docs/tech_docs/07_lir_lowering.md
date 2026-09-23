@@ -511,8 +511,11 @@ Same pattern as the if-statement, with a `result` temp both arms assign into —
 - The comptime-fold sub-path (`comptime_values` HIT, capture-free) gets the same void handling and
   the same `child_2 != 0` guard.
 - `return_stmt`'s `hoisted_temps[val]` deref is guarded against `TEMP_NONE` so a void value-`if` in
-  return position cannot read out of bounds. (The adjacent pre-existing void-expression defects
-  `_ = foo();` and `return foo();` are out of scope and unchanged.)
+  return position cannot read out of bounds. A direct void call in return position (`return foo();`)
+  is lowered as a tail call and **compiles+runs** (pre-9D it segfaulted the compiler — the guard's
+  beneficial side effect, kept). `_ = foo();` (a discarded void call) still ICEs `error[3043]` and
+  `return if (c) foo();` still emits the sentinel name (`gcc: 'zT_4294967295' undeclared`) — known
+  residuals for a separate task.
 
 #### While Statement
 ```

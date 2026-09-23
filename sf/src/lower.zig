@@ -6520,11 +6520,12 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                 var val = lowerExpr(self, node.child_0);
                 if (self.block_terminated != 0) { return; }
                 var retm: []const u8 = "RET:v="; pal.markerWrite(retm); dbgPrintU32(val);
-                // Task 9D: `val` may be TEMP_NONE (a void value-`if` / void
-                // expression in return position). Guard the temp-table deref so
-                // the sentinel cannot read out of bounds. The pre-existing
-                // `return foo();` void-expression defect is out of scope, but
-                // the new sentinel must not turn it into a new ICE here.
+                // Task 9D: `val` may be TEMP_NONE (a void value-`if` in return
+                // position). Guard the temp-table deref so the sentinel cannot
+                // read out of bounds. This guard also removed the pre-9D
+                // compiler segfault on `return foo();` (which now compiles and
+                // runs); `return if (c) foo();` still emits the sentinel name
+                // and is a known residual.
                 if (val != TEMP_NONE and @intCast(usize, val) < self.hoisted_temps.len) {
                     var rett: []const u8 = " t="; pal.markerWrite(rett); dbgPrintU32(self.hoisted_temps.items[@intCast(usize, val)].type_id);
                 }

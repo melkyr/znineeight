@@ -1,4 +1,4 @@
-# mi_matrix corpus — expected-fail manifest (v197 2026-09-22)
+# mi_matrix corpus — expected-fail manifest (v198 2026-09-23)
 
 ## Task 9D — comptime-true no-`else` `if` fold + void-then value-`if` lowering (v196 -> v197 2026-09-22)
 
@@ -44,6 +44,35 @@ fixture; RED pre-fix = 13 `error[3059]`, GREEN post-fix = rc 0 / 6 `.c`); `check
 7/7; `verify_upgraded.sh` CLOSEOUT OK. Fixed point **MOVED `efa91f8d7c000df51d5547b2628f6e9f` →
 `c635bbf952501ca5993e6c60f63a4a5f`** (two-hop closure hop1==hop2); seed **v76 → v77** (archive md5
 `d3df69da8b0c029e4373fef816c86ff4` → `6ca3b47c216754a0fb4b11c3cab7bd10`; `gen/` 45 `.c` + 46 `.h`).
+
+**Fix round 1 (v197 -> v198 2026-09-23; review Important A + Minor B).** **(A) The comparison fold
+ignored the declared const type.** `comptimeEvalCompare` used `use_signed = l.sig or r.sig`, and the
+`ident_expr` arm recursed into the initializer literal without applying the const's declared type,
+so a `u64` const ≥ 2^63 carried `sig = true`. Verified consequences against official Zig 0.15.2:
+over-rejection (`const umax: u64 = 18446744073709551615; const x: i32 = if (umax > 0) 1;` and the
+two-`u64`-const form `if (umax > zero)` — Zig accepts, Z98 rejected `error[3059]`) and
+over-acceptance (`var x: i32 = if (umax < 0) 3;` — Zig rejects, Z98 accepted and left `x`
+uninitialised). Fix: the new private `comptimeEvalOperandDeclaredSigned` resolves each operand's
+declared integer type (function-local consts first, then the module symbol tables; `char_literal` →
+unsigned; `@intCast`/`@as` → the integer target), and the comparison is signed when any declared-typed
+operand is signed; when neither operand is typed, `comptimeEvalSignClass` decides (signed iff an
+operand is syntactically definitely-negative), and that classifier now also consults the local const
+scope (only set by the sema probe, so the global `phase_ComptimeEvaluation` fold is unaffected).
+**(B) rhs-decisive short-circuit missing.** `comptimeEvalLogical` returned null as soon as the lhs
+did not fold, so `if (run or true) 36` (runtime `run`) was rejected. Fix: when the lhs does not fold,
+a decisive RHS still decides (`<runtime> or true` → true, `<runtime> and false` → false); other
+runtime-lhs forms (`run and true`, `false or run`) stay rejected. Fixtures: the positive
+`repro/mi_matrix/stdlib_comptime_true_if_xmod` gains x14–x19 (local-const `u64` above i64 max,
+declared `i8` negative, declared `u8` positive, untyped local negative, `run or true`; golden now
+`10 11 12 13 14 15 16 17 18 19 30 32 34 40 41 42 43 44 45\nFFF`, 61 bytes, rc 0, 3× oracle-matched)
+and `if_noelse_reject_xmod` gains `u64Lt0`/`rhsAndFalse`/`rhsAndTrue`/`rhsOrFalse` (now 10
+`error[3059]`). Gates: 4-MD5 emitted-C **UNCHANGED** (gol `e7bde571…` / lisp `552d0a84…` / json
+`38b37bdd…` / mud `5a1cc65e…`); example matrix **24/24**; std-lib runtime gate **215 PASS / 0 FAIL**;
+corpus `-s0` **983 dirs = 863 OK / 42 GREEN / 78 FAIL / 0 ICE / 0 CRASH** with a full-classifier
+join-diff vs the v77 compiler moving EXACTLY `stdlib_comptime_true_if_xmod` (FAIL -> OK); `check_emit_support.sh`
+7/7; `verify_upgraded.sh` CLOSEOUT OK. Fixed point **MOVED `c635bbf952501ca5993e6c60f63a4a5f` →
+`4b8a6364ef47e8ebdfc5e4506b7cff02`** (two-hop closure hop1==hop2); seed **v77 → v78** (archive md5
+`6ca3b47c216754a0fb4b11c3cab7bd10` → `8fff355b0423235500f044ddc84af62b`; `gen/` 45 `.c` + 46 `.h`).
 
 ## Task 9B — reject invalid condition / `if` forms (v194 -> v195 2026-09-22; fix round 1 v195 -> v196)
 
