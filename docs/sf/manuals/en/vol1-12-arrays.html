@@ -1,0 +1,409 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Lists of Things</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual array list index indexing len element range slice half-open for loop">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol1-11-structs.html">
+<link rel="next" href="vol2-00-title.html">
+</head>
+<body bgcolor="#f5f0e1" text="#000000" link="#003366" vlink="#551a8b" alink="#cc0000">
+<table width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#e8e0cc" class="sidebar">
+<font size="1">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#e8e0cc" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume I &mdash; Getting Started</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol1-00-title.html">How to read this</a><br>
+<a href="vol1-01-what-is-programming.html">What is a program</a><br>
+<a href="vol1-02-what-is-z98.html">What is Z98, and why 1998</a><br>
+<a href="vol1-03-your-machine.html">Your machine</a><br>
+<a href="vol1-04-installing.html">Installing the toolchain</a><br>
+<a href="vol1-05-first-program.html">Your first program</a><br>
+<a href="vol1-06-variables-types.html">Variables and types</a><br>
+<a href="vol1-07-arithmetic.html">Doing arithmetic</a><br>
+<a href="vol1-08-decisions.html">Making decisions</a><br>
+<a href="vol1-09-repetition.html">Doing things repeatedly</a><br>
+<a href="vol1-10-functions.html">Functions</a><br>
+<a href="vol1-11-structs.html">Grouping data</a><br>
+<b>Lists of things</b><br>
+Reading the errors <i>(planned)</i><br>
+Your first useful program <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Lists of Things</h1>
+<p>
+The last chapter bundled related values into a struct: a fixed shape with a
+name for every field. This chapter bundles values the other way: a list of
+items that are all the same type, in a fixed count. Z98 calls it an
+<b>array</b>, and writes its type as <tt>[N]T</tt> &mdash; <tt>N</tt> values of
+type <tt>T</tt>. One name, one count, one type of item. The chapter adds the
+brackets that hold the count and the position, the <tt>.len</tt> property that
+answers how many items there are, and the list form of the <tt>for</tt> loop
+from chapter 9. A class's scores, a row of pixels, a tally per month: each is
+one array instead of five variables that have to be kept in step by hand.
+</p>
+
+<h2>The program</h2>
+<pre>
+const std = @import("std");
+
+pub fn main() void {
+    const scores = [5]i32{ 90, 72, 85, 60, 98 };
+
+    std.io.print("the list has {} scores\n", .{scores.len});
+    std.io.print("first is {}, last is {}\n", .{ scores[0], scores[scores.len - 1] });
+
+    var total: i32 = 0;
+    for (scores) |score, i| {
+        std.io.print("scores[{}] is {}\n", .{ i, score });
+        total = total + score;
+    }
+    std.io.print("total is {}\n", .{total});
+
+    const all = scores[0..scores.len];
+    std.io.print("scores[0..len] has {} items, last is {}\n", .{ all.len, all[all.len - 1] });
+
+    const all_but_last = scores[0..scores.len - 1];
+    std.io.print("scores[0..len-1] has {} items, last is {}\n", .{ all_but_last.len, all_but_last[all_but_last.len - 1] });
+}
+</pre>
+<p>
+It builds a list of five scores, prints how many there are and the first and the
+last, walks the whole list with a <tt>for</tt> loop that keeps a running total,
+and then takes two slices &mdash; one holding every score, one without the last.
+The two slices are the same list seen with different end marks, and the
+difference between them is the one rule this chapter turns on.
+</p>
+
+<h2>An array is one name for N values</h2>
+<p>
+The declaration is the chapter's new syntax:
+</p>
+<pre>
+const scores = [5]i32{ 90, 72, 85, 60, 98 };
+</pre>
+<p>
+Read it piece by piece. <tt>[5]</tt> is the <b>count</b>, and the brackets say
+that this is a list; the <tt>5</tt> says how many items fit. <tt>i32</tt> is the
+type of <b>every</b> item: a list has one item type for the whole list, not one
+type per item the way a struct has one type per field. The braces hold the items
+themselves, in order, separated by commas. <tt>const scores</tt> names the whole
+list, exactly as <tt>const</tt> named a single value in chapter 6 and a shape in
+chapter 11.
+</p>
+<p>
+The count is fixed when the program is built. The compiler knows <tt>[5]i32</tt>
+is five <tt>i32</tt> values and reserves room for exactly five; an array cannot
+grow or shrink while the program runs. That is not a limitation to work around
+here &mdash; it is what makes the list cheap, because the machine never has to
+go looking for more room for it. When a count really must change at run time,
+the language's answer is the slice, which Volume II covers.
+</p>
+<p>
+Because every item is an <tt>i32</tt>, the five items together take the space of
+five <tt>i32</tt> variables: <tt>@sizeOf([5]i32)</tt> is <tt>20</tt>, five times
+the four bytes of one <tt>i32</tt>. The items sit next to each other, and that is
+all the size arithmetic there is to an array.
+</p>
+
+<h2>Asking for one item</h2>
+<p>
+One item is named by its <b>index</b>, written in brackets after the list:
+</p>
+<pre>
+std.io.print("first is {}, last is {}\n", .{ scores[0], scores[scores.len - 1] });
+</pre>
+<p>
+<tt>scores[0]</tt> is an expression like any other: it can be printed, stored,
+added, or passed to a function. Indexing starts at zero, so the first of five
+scores is <tt>scores[0]</tt> and the last is <tt>scores[4]</tt>. The index
+between the brackets does not have to be a literal; <tt>scores[i]</tt> with an
+<tt>i</tt> from a loop or a variable works the same way, and the index
+expression is computed first and then used to pick the item.
+</p>
+<p>
+<tt>scores.len</tt> is a built-in property: the number of items in the list,
+<tt>5</tt> here. The dot names something inside the value, the dot of chapter
+11; what it names here is not a field the program declared but the count the
+compiler already knows. Because indexing starts at zero, the last valid index
+is <tt>scores.len - 1</tt>, which is how the second line above names the last
+score without writing <tt>4</tt>. The two numbers are always one apart:
+<tt>.len</tt> is the count, <tt>5</tt>, and the last index is <tt>5 - 1</tt>,
+<tt>4</tt>.
+</p>
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffffcc">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-note.gif" width="16" height="16" alt="Note"></td>
+<td><b>Note.</b> <tt>.len</tt> is always a count, never a position: five items
+have length <tt>5</tt> and indices <tt>0</tt> through <tt>4</tt>. Every
+off-by-one in this chapter is that one confusion between the two numbers.</td>
+</tr>
+</table>
+
+<h2>Walking the list with <tt>for</tt></h2>
+<p>
+Chapter 9's <tt>for</tt> loop walked a range of numbers. Given a list instead of
+a range, it walks the items:
+</p>
+<pre>
+var total: i32 = 0;
+for (scores) |score, i| {
+    std.io.print("scores[{}] is {}\n", .{ i, score });
+    total = total + score;
+}
+</pre>
+<p>
+Read the first line as "for each score in scores". The parentheses hold the
+iterable &mdash; here the array itself. The first capture, <tt>score</tt>, is
+the current item; the second, <tt>i</tt>, is its index, starting at 0. A range
+loop needs one capture because a number already is its index; a list needs the
+second name so the body can say where it is as well as what it found. Both
+captures are read-only, the rule from chapter 9: the loop hands you the items,
+and changing one means assigning to <tt>scores[i]</tt>, not to <tt>score</tt>.
+</p>
+<p>
+With one capture, <tt>for (scores) |score|</tt>, the loop visits the same items
+and leaves the index out. The same loop shape also walks a slice; a slice holds
+items of the same type as the array, so there is nothing new to learn for it.
+</p>
+<p>
+The range form still works when the index is what you want. The range
+<tt>0..scores.len</tt> stops before <tt>.len</tt>, so it visits exactly the
+valid indices, and the same five items the walk above does:
+</p>
+<pre>
+for (0..scores.len) |i| {
+    std.io.print("scores[{}] is {}\n", .{ i, scores[i] });
+}
+</pre>
+<p>
+<tt>scores.len</tt> is the exclusive end of the range, exactly as <tt>10</tt>
+was in chapter 9's <tt>0..10</tt>: it is one past the last valid index. That is
+the chapter's one rule showing up again, and it is worth slowing down for.
+</p>
+
+<h2>The half-open rule</h2>
+<p>
+A run of items is taken with the same two-dot range used for numbers:
+</p>
+<pre>
+const all = scores[0..scores.len];
+const all_but_last = scores[0..scores.len - 1];
+</pre>
+<p>
+<tt>start..end</tt> keeps the item at <tt>start</tt> and stops before the item
+at <tt>end</tt>. The end is an <b>exclusive</b> mark, not the last item you
+want: it is one past it. So <tt>scores[0..5]</tt> asks for the items at indices
+0, 1, 2, 3, and 4 &mdash; all five scores. <tt>scores[0..4]</tt> asks for
+indices 0 through 3 &mdash; four scores, everything except the last. Move the
+end by one and the result changes by one item, always at the far end.
+</p>
+<p>
+That is why <tt>[0..N]</tt> is not the same as <tt>[0..N-1]</tt> for a list of
+N items. <tt>[0..N]</tt> names all N of them. <tt>[0..N-1]</tt> names N-1 of
+them and leaves the last one out. When you mean "the whole list", the end you
+write is <tt>N</tt>, or <tt>.len</tt>; when you mean "the list without its last
+item", it is <tt>.len - 1</tt>. Writing the index of the last item as the end
+mark is the commonest off-by-one in this chapter, and the mistakes below dwell
+on it.
+</p>
+<p>
+The result of the range is a <b>slice</b>: a view of that run of items, with
+the same item type. A slice answers <tt>.len</tt> the way the array does, and
+its items are indexed the same way, so <tt>all[all.len - 1]</tt> is the last
+score of the slice. Nothing is copied; the slice names items that already exist
+in the array.
+</p>
+
+<h2>Building and running it</h2>
+<p>
+The commands are the ones from the last chapters, with <tt>scores</tt> in place
+of <tt>point</tt>. The compiler is still at <tt>/tmp/manual_seed</tt>, built in
+chapter 4:
+</p>
+<pre>
+$ mkdir -p /tmp/manual_out
+$ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out docs/sf/manuals/src/vol1/scores.z98
+$ cd /tmp/manual_out &amp;&amp; sh build_target.sh linux scores
+Building for linux...
+Built: scores
+$ ./scores
+the list has 5 scores
+first is 90, last is 98
+scores[0] is 90
+scores[1] is 72
+scores[2] is 85
+scores[3] is 60
+scores[4] is 98
+total is 405
+scores[0..len] has 5 items, last is 98
+scores[0..len-1] has 4 items, last is 60
+</pre>
+<p>
+Read the output against the source. The first line is <tt>.len</tt>: 5 items.
+The second is the first item and the last, the last named as
+<tt>scores[scores.len - 1]</tt>: 90 and 98. The five lines after that are the
+walk, one line per item, with the index in front. <tt>total is 405</tt> is the
+sum, 90 + 72 + 85 + 60 + 98. Then the two slices: <tt>[0..len]</tt> has all
+five items and ends at 98; <tt>[0..len-1]</tt> has four and ends at 60. The last
+score is exactly the one missing when the end mark moves back by one. The
+program exits with status 0.
+</p>
+
+<h2>Running under Windows 98</h2>
+<p>
+The program builds for Win9x exactly as <tt>hello</tt>, <tt>types</tt>,
+<tt>math</tt>, <tt>classify</tt>, <tt>count</tt>, <tt>functions</tt>, and
+<tt>point</tt> did. The same <tt>build_target.sh</tt> script, or
+<tt>src/build_owc.bat</tt> with OpenWatcom, produces a console
+<tt>scores.exe</tt> that prints the same ten lines. The screenshot below will be
+captured on real hardware.
+</p>
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f5f0e1" class="placeholder">
+<tr>
+<td align="center">
+<i>Figure 13 &mdash; Win9x screenshot pending</i>
+</td>
+</tr>
+</table>
+<p><i>Figure 13. Running <tt>scores.exe</tt> under Windows 98.</i></p>
+
+<h2>Common mistakes</h2>
+<p>
+These are the mistakes a first list attracts. One is caught only when the
+program runs, one is the same mistake made by confusing two numbers, and one is
+caught by the compiler.
+</p>
+<p>
+<b>Asking for an item that is not there.</b> The valid indices for five scores
+are 0 through 4. An index of 5 is one past the end. The compiler builds the
+program without a word &mdash; it does not check the index, even when the index
+is a literal &mdash; and the bad access stops the run:
+</p>
+<pre>
+const scores = [5]i32{ 90, 72, 85, 60, 98 };
+std.io.print("the list has {} scores\n", .{scores.len});
+const sixth = scores[5];
+std.io.print("the sixth is {}\n", .{sixth});
+</pre>
+<pre>
+$ ./bounds_mistake
+the list has 5 scores
+</pre>
+<p>
+The first line prints and nothing else does: when the program reaches
+<tt>scores[5]</tt> it stops with a trap, the safety check that runs under the
+default build. The trap has no message of its own; on this Linux host the shell
+reports the trace trap and the exit status is 133. The fix is to keep every
+index inside 0 up to <tt>.len - 1</tt>, and to check the boundary arithmetic
+when a <tt>while</tt> loop counts the index by hand.
+</p>
+<p>
+<b>Confusing <tt>.len</tt> with the last index.</b> <tt>.len</tt> is the
+<b>count</b> &mdash; how many items &mdash; not the position of the last one,
+because counting starts at 0 and the positions stop at <tt>.len - 1</tt>:
+</p>
+<pre>
+const scores = [5]i32{ 90, 72, 85, 60, 98 };
+std.io.print("last is {}\n", .{scores[scores.len]});
+</pre>
+<p>
+For five scores this asks for <tt>scores[5]</tt>, the same out-of-bounds access
+as the mistake above; the program builds and then stops with the same trap. The
+item the author meant is <tt>scores[scores.len - 1]</tt>, the expression the
+program's own second line uses. A useful habit: say "<tt>.len</tt> is the
+count" out loud whenever the two numbers get mixed, and write the last index as
+<tt>.len - 1</tt> every time.
+</p>
+<p>
+<b>Changing an item of a <tt>const</tt> list.</b> A <tt>const</tt> array is
+read-only down to its items, so assigning to one is rejected before the program
+is built:
+</p>
+<pre>
+const scores = [5]i32{ 90, 72, 85, 60, 98 };
+
+pub fn main() void {
+    scores[0] = 100;
+}
+</pre>
+<pre>
+const_mistake.z98:4:12: error[3002]: cannot assign to immutable variable
+    scores[0] = 100;
+            ^
+</pre>
+<p>
+The caret points at the index inside the brackets, and the message is the one
+chapter 6 met for a <tt>const</tt> variable and chapter 11 for a field:
+immutable. The whole list is fixed, so every item in it is fixed. When an item
+must change, declare the list with <tt>var</tt> instead &mdash;
+<tt>var scores = [5]i32{ ... };</tt> &mdash; and then <tt>scores[0] = 100;</tt>
+is accepted, exactly as assigning to a <tt>var</tt> variable is. Making the
+list a <tt>var</tt> does not change its count; it only allows the items to be
+replaced.
+</p>
+
+<h2>Check yourself</h2>
+<p>
+Answer these before moving on. The last three ask you to change the program
+and run it.
+</p>
+<ol>
+<li>What does the type <tt>[5]i32</tt> say about the list? How many items are
+there, and of what type?</li>
+<li>Which index holds the first item? Which index holds the last item of a
+five-item list? Write the last index using <tt>.len</tt>.</li>
+<li>In <tt>for (scores) |score, i|</tt>, what does each capture hold? Which
+one tells you where in the list you are?</li>
+<li>What does <tt>scores[0..3]</tt> ask for, and how many items come back?
+What about <tt>scores[0..4]</tt>? Why do the two answers differ by one?</li>
+<li>For the five-score list, why is <tt>scores[0..5]</tt> the whole list while
+<tt>scores[0..4]</tt> drops the last score?</li>
+<li>What does <tt>.len</tt> answer for the slice <tt>all</tt>? Why is
+<tt>.len</tt> not the same as the last valid index?</li>
+<li>Change the list to six scores, count included, rebuild, and run. What do
+<tt>total</tt> and the two slice lines print now? Predict before you run.</li>
+<li>Add a line printing <tt>scores[2]</tt> after the first/last line, rebuild,
+and run. What prints?</li>
+<li>Write a loop that adds only the scores above 80 and prints the sum. What is
+it for the five scores?</li>
+</ol>
+
+<p>Previous: <a href="vol1-11-structs.html">Grouping data</a> | <a href="toc.html">Contents</a> | Next: <a href="vol2-00-title.html">Volume II &mdash; Learning Z98</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
