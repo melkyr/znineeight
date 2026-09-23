@@ -1,4 +1,49 @@
-# mi_matrix corpus — expected-fail manifest (v204 2026-09-23)
+# mi_matrix corpus — expected-fail manifest (v205 2026-09-23)
+
+## Task 3 fix round 1 — noreturn folded `if`, unary peer fit, unannotated-const init (v204 -> v205 2026-09-23)
+
+**What.** Three review findings on Task 3 (`e720a99c`), all reproduced on HEAD and fixed.
+
+1. **(Critical) Condition-store vs noreturn then-arm.** The Task 3 condition store feeds every
+   capture-free no-`else` `if_expr`, but `lower.zig`'s `ie_fold` sub-path handled only `void`: for
+   `const x: i32 = if (true) return 5;` it lowered the `return` arm as a VALUE (`lowerExpr` has no
+   statement arm) and left `x` uninitialised. Official Zig prints `5`; the Task 2 compiler printed
+   `5`; HEAD emitted `int zT_1; int x; zT_1 = x; x = zT_1; return x;` and printed garbage. Same for
+   `if (T: bool = true)`, `if (1 < 2)` and `if ((1 + 1) == 2)`. Fix (`sf/src/lower.zig`): the fold
+   sub-path now lowers the arm with `lowerIfArmValue` (which `lowerStmt`s a
+   `return`/`break`/`continue`), returns the "no value" sentinel when the arm set
+   `block_terminated` (the caller skips its store), and skips the shortcut entirely when the
+   if_expr resolves to `TYPE_NORETURN`.
+2. **(Important) Unary `-` escaped the peer-fit rule.** `-umax < 0` (`umax: u64`) was accepted and
+   wrong; Zig rejects (`negation of type 'u64'`), Task 2 rejected (`error[3059]`). Fix
+   (`sf/src/comptime_eval.zig`): the `negate`/`bit_not` folds now require the exact result to fit
+   the operand's type (`comptimeEvalOperandType` + `comptimeIntFitsType`), mirroring sema's
+   `semanticAnalyzerResolveNegate`/`ResolveBitNot`.
+3. **(Important) Operand-type mirror missed an unannotated const's initializer.**
+   `const c = @as(u8, 200); if ((c + 300) == 500) 7;` was accepted; Zig rejects (`type 'u8' cannot
+   represent integer value '300'`), Task 2 rejected. Fix: `comptimeEvalOperandType` recurses into
+   the initializer of an unannotated const (the deleted `comptimeEvalSignClass` did this too), so
+   `c` types as u8 and the untyped 300 declines.
+
+**Fixtures.** New positive runtime fixture `repro/mi_matrix/stdlib_comptime_noreturn_if_xmod`
+(`main.zig` + `expected.txt` + `expected.rc`; bool-literal / function-local-const / folded-
+comparison / folded-arithmetic-comparison / module-const conditions over
+`if (<comptime-true>) return N;`; golden `5 6 7 8 9`, rc 0, byte-exact 3x, Zig-0.15.2-oracle twin
+matched) — **class OK**; stdlib pin **219 → 220**. `repro/mi_matrix/comptime_compare_reject_xmod`
+gains the two Important sites (`negUmaxLt0`, `unannotatedConstAddLt0`) — now **9 × `error[3059]`**,
+rc=2, 0 `.c`, **class FAIL**. Unit coverage: `ciCmp` made `pub` and `test_semantic_bin.zig` gains
+`testComptimeCompareCore` (runtime-verified via a probe against the real core: `cmp probe ok`,
+rc 0). RED evidence: crit1/crit1b printed garbage (`-142108613`/`-152717253`) and imp2/imp3 were
+accepted before the fixes; after: `5 5 5` (3x) and `rc=2, 1 × error[3059], 0 .c` each.
+
+**Gates.** Self-compile two-hop closure hop1 == hop2 == `04272a883bb00c7afc3364660b2adc4d`
+(previous `88c6b4c9…`); 4-MD5 emitted-C **UNCHANGED** (gol `e7bde571…` / lisp `35388763…` /
+json `5e1e0050…` / mud `5a1cc65e…`); corpus `-s0` **990 dirs = 869 OK / 42 GREEN / 79 FAIL /
+0 ICE / 0 CRASH** (989 → 990: the new fixture; join-diff vs the Task 2 baseline moves EXACTLY the
+3 fixture dirs, zero class movement on the 987 common dirs); stdlib runtime gate **220 PASS /
+0 FAIL**; example matrix **24/24**; frozen Task 0 shape table **byte-identical to the pre-fix
+Task 3 run**; `check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK; build_test **0/9**
+(pre-existing zig0 baseline).
 
 ## Task 3 — signedness-free comparisons + logical folds (v203 -> v204 2026-09-23)
 

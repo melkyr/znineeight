@@ -22,9 +22,16 @@
 //     Zig: `type 'u8' cannot represent integer value '300'`. Without the
 //     recursion the fold computed -101 and silently accepted a program whose
 //     runtime arithmetic wraps;
+//   * `-umax < 0` (u64 const, fix round 1) — Zig: `negation of type 'u64'`.
+//     The unary fold now applies the same peer fit as the binops (sema types
+//     `-x` as x's type), so the negative exact result declines;
+//   * `(c + 300) == 500` with `const c = @as(u8, 200)` (fix round 1) — Zig:
+//     `type 'u8' cannot represent integer value '300'`. The operand-type mirror
+//     now recurses into an UNANNOTATED const's initializer, so `c` is typed
+//     u8 and the untyped 300 declines;
 //   * `MUMAX < 0` at module scope — same as the first shape.
 //
-// Contract: rc=2, 0 emitted `.c`, one `error[3059]` per site (7 total).
+// Contract: rc=2, 0 emitted `.c`, one `error[3059]` per site (9 total).
 const std = @import("std");
 
 const MUMAX: u64 = 18446744073709551615;
@@ -70,6 +77,23 @@ fn modU64Lt0() i32 {
     return x;
 }
 
+// Fix round 1 (Important): unary `-` escaped the peer-fit rule; sema types
+// `-x` as x's type, so `-umax` on a u64 declines (Zig: negation of type 'u64').
+fn negUmaxLt0() i32 {
+    const umax: u64 = 18446744073709551615;
+    var x: i32 = if (-umax < 0) 8;
+    return x;
+}
+
+// Fix round 1 (Important): an UNANNOTATED const's initializer types the name
+// (sema: `c` is u8 via the @as); the operand-type mirror now recurses into the
+// init, so `c + 300` declines (Zig: type 'u8' cannot represent 300).
+fn unannotatedConstAddLt0() i32 {
+    const c = @as(u8, 200);
+    var x: i32 = if ((c + 300) == 500) 9;
+    return x;
+}
+
 pub fn main() void {
     _ = u64Lt0();
     _ = subLt0();
@@ -78,4 +102,6 @@ pub fn main() void {
     _ = u8AddBigLt0();
     _ = nestedU8SubLt0();
     _ = modU64Lt0();
+    _ = negUmaxLt0();
+    _ = unannotatedConstAddLt0();
 }

@@ -5,10 +5,12 @@ Task 3 (signedness-free comparisons). Replaces
 (b)), whose five divergence sites are now ACCEPTED and runtime-pinned in
 `repro/mi_matrix/stdlib_comptime_compare_xmod`; the two outcome-matching sites
 (`subLt0`, `u8SubLt0`) stay here, plus the `umax < 0` / `(0 - umax) < 0` /
-`(u + 1000) < 0` over-acceptance family and the nested peer-fit control
-`((u - 1) - 300) < 0`.
+`(u + 1000) < 0` over-acceptance family, the nested peer-fit control
+`((u - 1) - 300) < 0`, and the fix-round-1 sites `-umax < 0` (unary peer fit)
+and `(c + 300) == 500` with `const c = @as(u8, 200)` (unannotated-const
+initializer recursion).
 
-**Class:** FAIL (rc=2, 0 emitted `.c`, 7 `error[3059]`).
+**Class:** FAIL (rc=2, 0 emitted `.c`, 9 `error[3059]`).
 
 **Why each site rejects (oracle-checked, official Zig 0.15.2).**
 
@@ -20,6 +22,8 @@ Task 3 (signedness-free comparisons). Replaces
 | `zeroSubUmaxLt0`: `(0 - umax) < 0` | result does not fit the u64 peer → decline → `error[3059]` | reject (`overflow of integer type 'u64' with value '-18446744073709551615'`) |
 | `u8AddBigLt0`: `(u + 1000) < 0` | literal does not fit the u8 peer → decline → `error[3059]` | reject (`type 'u8' cannot represent integer value '1000'`) |
 | `nestedU8SubLt0`: `((u - 1) - 300) < 0` | the recursive operand-type mirror gives the outer sub the sema type `u8`, so `- 300` declines → `error[3059]` | reject (`type 'u8' cannot represent integer value '300'`) |
+| `negUmaxLt0`: `-umax < 0` | the unary fold applies the peer fit (sema types `-x` as x's type) → `error[3059]` | reject (`negation of type 'u64'`) |
+| `unannotatedConstAddLt0`: `(c + 300) == 500`, `c = @as(u8, 200)` | the operand-type mirror recurses into the unannotated const's initializer → `c` is u8 → decline → `error[3059]` | reject (`type 'u8' cannot represent integer value '300'`) |
 | `modU64Lt0`: module `MUMAX < 0` | folds false → `error[3059]` | reject (`expected type 'i32', found 'void'`) |
 
 Outcome matches on every site (both compilers reject). The exact magnitude+sign

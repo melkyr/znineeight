@@ -58,6 +58,7 @@ repro/mi_matrix/stdlib_comptime_cast64_range_xmod
 repro/mi_matrix/stdlib_comptime_compare_xmod
 repro/mi_matrix/stdlib_comptime_floatcast_fold_xmod
 repro/mi_matrix/stdlib_comptime_inttofloat_as_xmod
+repro/mi_matrix/stdlib_comptime_noreturn_if_xmod
 repro/mi_matrix/stdlib_comptime_true_if_xmod
 repro/mi_matrix/stdlib_cond_ok_xmod
 repro/mi_matrix/stdlib_crypto_crc32_xmod

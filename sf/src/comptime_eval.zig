@@ -175,7 +175,7 @@ fn ciMagCmp(a: ComptimeInt, b: ComptimeInt) i32 {
 // Task 3 (Task 1 §4): exact signedness-free three-way comparison (-1 / 0 / 1).
 // `-0` is normalized to `0`, so (neg, mag) is a total order and no sign class
 // or declared type is ever consulted.
-fn ciCmp(a: ComptimeInt, b: ComptimeInt) i32 {
+pub fn ciCmp(a: ComptimeInt, b: ComptimeInt) i32 {
     if (a.neg != b.neg) {
         if (a.neg) return @intCast(i32, -1);
         return @intCast(i32, 1);
@@ -840,8 +840,19 @@ fn comptimeEvalOperandTypeDepth(self: *ComptimeEval, node_idx: u32, depth: u32) 
         if (self.local_consts) |lcs| {
             if (type_resolver.localConstScopeLookup(lcs, name_id)) |l_decl_node| {
                 var l_decl = ast_mod.astStoreNodeAt(self.store, l_decl_node);
-                if (comptimeEvalResolveTypeArg(self, l_decl.child_0)) |lt| {
-                    if (type_mod.typeRegistryIsInteger(self.registry, lt)) return lt;
+                if (l_decl.child_0 != @intCast(u32, 0)) {
+                    if (comptimeEvalResolveTypeArg(self, l_decl.child_0)) |lt| {
+                        if (type_mod.typeRegistryIsInteger(self.registry, lt)) return lt;
+                    }
+                } else if (l_decl.child_1 != @intCast(u32, 0)) {
+                    // Task 3 fix round 1 (Important): an UNANNOTATED const has
+                    // no declared type, but sema types the name by its
+                    // initializer (`const c = @as(u8, 200)` is a u8). Recurse
+                    // into the init so the mirror sees the same type (the
+                    // deleted `comptimeEvalSignClass` did this too); without it
+                    // `(c + 300) == 500` folded and accepted a Zig-rejected
+                    // program.
+                    return comptimeEvalOperandTypeDepth(self, l_decl.child_1, depth + @intCast(u32, 1));
                 }
             }
         }
@@ -851,8 +862,12 @@ fn comptimeEvalOperandTypeDepth(self: *ComptimeEval, node_idx: u32, depth: u32) 
             if (c_sym) |cs| {
                 if ((cs.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
                     var c_decl = ast_mod.astStoreNodeAt(self.store, cs.decl_node);
-                    if (comptimeEvalResolveTypeArg(self, c_decl.child_0)) |t| {
-                        if (type_mod.typeRegistryIsInteger(self.registry, t)) return t;
+                    if (c_decl.child_0 != @intCast(u32, 0)) {
+                        if (comptimeEvalResolveTypeArg(self, c_decl.child_0)) |t| {
+                            if (type_mod.typeRegistryIsInteger(self.registry, t)) return t;
+                        }
+                    } else if (c_decl.child_1 != @intCast(u32, 0)) {
+                        return comptimeEvalOperandTypeDepth(self, c_decl.child_1, depth + @intCast(u32, 1));
                     }
                 }
             }
@@ -1247,6 +1262,15 @@ fn comptimeEvalEvaluateDepth(self: *ComptimeEval, node_idx: u32, depth: u32) ?Co
             if (cv.kind != KIND_INT) return null;
             var nv = ciZeroInt();
             _ = ciNeg(cv.v, &nv);
+            // Task 3 fix round 1 (Important): the unary fold obeys the same
+            // peer-fit rule as the binops. Sema types `-x` as x's type
+            // (`semanticAnalyzerResolveNegate`), so `-umax` on a u64 must
+            // decline (Zig: "negation of type 'u64'"); the runtime negation
+            // would wrap to u64 while the exact fold is negative.
+            var pt = comptimeEvalOperandType(self, node.child_0);
+            if (pt) |ptid| {
+                if (!comptimeIntFitsType(self, nv, ptid)) return null;
+            }
             return ciIntVal(nv);
         }
         return null;
@@ -1256,6 +1280,15 @@ fn comptimeEvalEvaluateDepth(self: *ComptimeEval, node_idx: u32, depth: u32) ?Co
             if (bv.kind != KIND_INT) return null;
             var bnb = ciZeroInt();
             if (!ciBitNot(bv.v, &bnb)) return null;
+            // Task 3 fix round 1 (Important): unary folds obey the same
+            // peer-fit rule as the binops. Sema types `~x` as x's type
+            // (`semanticAnalyzerResolveBitNot`), so a result that does not fit
+            // the operand's integer type must decline (the runtime `~` wraps
+            // to that type while the exact fold does not).
+            var pt_bn = comptimeEvalOperandType(self, node.child_0);
+            if (pt_bn) |ptid_bn| {
+                if (!comptimeIntFitsType(self, bnb, ptid_bn)) return null;
+            }
             return ciIntVal(bnb);
         }
         return null;

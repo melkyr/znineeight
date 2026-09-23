@@ -1311,6 +1311,42 @@ fn testComptimeBigIntCore() void {
     ok(emsg2);
 }
 
+fn testComptimeCompareCore() void {
+    // Task 3 fix round 1: the exact signedness-free three-way order (`ciCmp`)
+    // that `comptimeEvalCompare` now uses. `-0` normalizes to `0`, bools are
+    // 0/1, and arbitrary magnitudes compare exactly (no 64-bit window, no sign
+    // class): task-9D fix-round-3 shapes like `umax > -1` and the over-
+    // acceptance shapes like `umax < 0` hinge on this order.
+    var z = ce_mod.ciZeroInt();
+    var one = ce_mod.ciFromU64(@intCast(u64, 1));
+    var k64 = ce_mod.ciFromU64(@intCast(u64, 64));
+    var p64 = ce_mod.ciZeroInt();
+    if (!ce_mod.ciShl(one, k64, &p64)) { fail("testComptimeCompareCore pow64"); return; }
+    var u64max = ce_mod.ciZeroInt();
+    _ = ce_mod.ciSub(p64, one, &u64max);
+    if (ce_mod.ciCmp(z, z) != @intCast(i32, 0)) { fail("testComptimeCompareCore zz"); return; }
+    if (ce_mod.ciCmp(one, z) != @intCast(i32, 1)) { fail("testComptimeCompareCore onez"); return; }
+    if (ce_mod.ciCmp(z, one) != @intCast(i32, -1)) { fail("testComptimeCompareCore zone"); return; }
+    if (ce_mod.ciCmp(u64max, z) != @intCast(i32, 1)) { fail("testComptimeCompareCore maxz"); return; }
+    if (ce_mod.ciCmp(z, u64max) != @intCast(i32, -1)) { fail("testComptimeCompareCore zmax"); return; }
+    var n1 = ce_mod.ciZeroInt();
+    _ = ce_mod.ciNeg(one, &n1);
+    if (ce_mod.ciCmp(n1, z) != @intCast(i32, -1)) { fail("testComptimeCompareCore n1z"); return; }
+    if (ce_mod.ciCmp(n1, one) != @intCast(i32, -1)) { fail("testComptimeCompareCore n1one"); return; }
+    if (ce_mod.ciCmp(n1, u64max) != @intCast(i32, -1)) { fail("testComptimeCompareCore n1max"); return; }
+    if (ce_mod.ciCmp(u64max, n1) != @intCast(i32, 1)) { fail("testComptimeCompareCore maxn1"); return; }
+    var k100 = ce_mod.ciFromU64(@intCast(u64, 100));
+    var big = ce_mod.ciZeroInt();
+    if (!ce_mod.ciShl(one, k100, &big)) { fail("testComptimeCompareCore p100"); return; }
+    var nbig = ce_mod.ciZeroInt();
+    _ = ce_mod.ciNeg(big, &nbig);
+    if (ce_mod.ciCmp(nbig, n1) != @intCast(i32, -1)) { fail("testComptimeCompareCore nbig"); return; }
+    if (ce_mod.ciCmp(big, u64max) != @intCast(i32, 1)) { fail("testComptimeCompareCore big"); return; }
+    if (ce_mod.ciCmp(nbig, z) != @intCast(i32, -1)) { fail("testComptimeCompareCore nbigz"); return; }
+    var emsg_cmp: []const u8 = "testComptimeCompareCore";
+    ok(emsg_cmp);
+}
+
 fn testSwitchExhaustiveness() void {
     var arena = alloc_mod.sandInit(perm_buf[0..]);
     var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);

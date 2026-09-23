@@ -5033,7 +5033,17 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         // requires an optional cond, which comptime_values never folds — scalars/bools
         // only); guard on payload==0 to mirror the if_stmt fold guard defensively.
         if (ie_fold) |ie_fv| {
-            if (ast_mod.astStoreNodePayload(store, node_idx) == @intCast(u32, 0)) {
+            // Task 3 fix round 1 (Critical): the fold sub-path handles void but
+            // NOT a terminating arm. `lowerExpr` has no statement arm, so an
+            // `if (<comptime-true>) return N;` lowered the return as a VALUE and
+            // the var read an uninitialised temp. Mirror the non-fold path:
+            // lower the arm with `lowerIfArmValue` (which lowerStmt()s a
+            // return/break/continue) and, when the arm terminated the block,
+            // return the "no value" sentinel without materialising anything --
+            // the caller sees `block_terminated` and skips its store. The
+            // `ie_rtype3 != TYPE_NORETURN` guard is kept as a second line of
+            // defence (the resolved type may already be stamped noreturn).
+            if (ast_mod.astStoreNodePayload(store, node_idx) == @intCast(u32, 0) and ie_rtype3 != type_mod.TYPE_NORETURN) {
                 // Task 9D (ii): a void-typed folded if_expr produces no value;
                 // skip the result temp and return the "no value" sentinel.
                 var ie_fold_void: u8 = @intCast(u8, 0);
@@ -5041,14 +5051,16 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 var ie_res = TEMP_NONE;
                 if (ie_fold_void == @intCast(u8, 0)) { ie_res = nextTemp(self, ie_rtype3); }
                 if (ie_fv != @intCast(u64, 0)) {
-                    var ie_then = lowerExpr(self, node.child_1);
+                    var ie_then = lowerIfArmValue(self, node.child_1);
+                    if (self.block_terminated != @intCast(u8, 0)) { return @intCast(u32, 0); }
                     if (ie_fold_void == @intCast(u8, 0)) {
                         ie_then = materializeInto(self, ie_then, ie_rtype3, srcIntentForNode(self, node.child_1), node.child_1);
                         emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = ie_res, .src = ie_then } });
                     }
                 } else {
                     if (node.child_2 != @intCast(u32, 0)) {
-                        var ie_else = lowerExpr(self, node.child_2);
+                        var ie_else = lowerIfArmValue(self, node.child_2);
+                        if (self.block_terminated != @intCast(u8, 0)) { return @intCast(u32, 0); }
                         if (ie_fold_void == @intCast(u8, 0)) {
                             ie_else = materializeInto(self, ie_else, ie_rtype3, srcIntentForNode(self, node.child_2), node.child_2);
                             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = ie_res, .src = ie_else } });
