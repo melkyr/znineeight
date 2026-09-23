@@ -28,14 +28,25 @@ two's-complement when it fits `[i64 min, u64 max]`; otherwise not stored), keepi
 `kind == KIND_BOOL` + `ciIsZero`.
 
 **Fixtures.** New positive runtime fixture `repro/mi_matrix/stdlib_comptime_bigint_arith_xmod`
-(`main.zig` + `expected.txt` + `expected.rc`; 29 values, every one Zig-0.15.2-oracle-checked:
+(`main.zig` + `expected.txt` + `expected.rc`; 31 values, every one Zig-0.15.2-oracle-checked:
 2^64/2^100/2^200 magnitudes across add/sub/mul/div/mod, truncating-division and floor-shift signs,
-bitwise AND/OR/XOR/NOT on negatives, u64 max, far shifts, and in-range no-over-rejection controls;
-golden stdout below, rc 0, byte-exact 3x; stdlib pin **217 -> 218**) + standalone
-`repro/comptime_bigint_arith.z98`. RED pre-fix: guard panic rc 133 (or the wrong raw values shown
-above). Unit coverage: `test_semantic_bin.zig` `testComptimeBigIntCore` (cap declines,
-div-by-zero, negative shift counts, division/floor-shift/bit-op signs) + the seven
-`comptimeEvalEvaluate` tests migrated to the new representation.
+bitwise AND/OR/XOR/NOT on negatives, u64 max, far shifts, multi-word shift controls (`y1`/`y2`),
+and in-range no-over-rejection controls; golden stdout below, rc 0, byte-exact 3x; stdlib pin
+**217 -> 218**) + standalone `repro/comptime_bigint_arith.z98`. RED pre-fix: guard panic rc 133
+(or the wrong raw values shown above). Unit coverage: `test_semantic_bin.zig`
+`testComptimeBigIntCore` (cap declines incl. the review's `word > 0` shapes, div-by-zero,
+negative shift counts, division/floor-shift/bit-op signs) + the seven `comptimeEvalEvaluate` tests
+migrated to the new representation.
+
+**Review fix (Critical, 2026-09-23).** `ciShl` built all shifted source limbs but only consumed
+those whose target limb started below 8, so a multi-word cap overflow (`(1 << 200) << 64`,
+`2^32 << 224`, `2^64 << 192` — all exactly 2^256+) dropped the high limbs and returned `true` with
+a silently truncated/garbage value. Fixed: a nonzero shifted limb whose target starts at/beyond
+limb 8 now declines (`return false`); the fixture gains reduced-result controls `y1 = (2^100 << 64)
+>> 164 = 1` and `y2 = (2^32 << 32) >> 32 = 2^32`, and `testComptimeBigIntCore` gains the
+`word > 0` cap declines plus those two exact controls. Post-fix gates: closure hop1 == hop2 ==
+`e0efd63178aea4edd1f818a058ba2b32`; 4-MD5 unchanged; corpus unchanged (zero movement); stdlib
+**218 PASS / 0 FAIL**; frozen 35 shapes unchanged; the amended fixture run rc 0 (3x).
 
 ```
 a=9223372036854775808  b=1024  c=12345  d=6148914691236517205
@@ -44,19 +55,21 @@ h=1024 i=255 j=18446744073709551615 k=9223372036854775808 l=-2 m=0
 n=1099511627781 o=-1537228672809129301 p=9223372036854775805
 r=48 s=-48 t=17 u=-1 v=-2 w=-4611686018427387905
 x1=-1 x2=0 x3=-3 x4=-3 x5=-1 x6=1 x7=3
+y1=1 y2=4294967296
 ```
 
-**Gates.** self-compile two-hop closure hop1 == hop2 == `e4246b1946722da55cc5c44e7c2286bd` (MOVED
-from `cd38f3167ca3e39982cc2d817b16dc70`); 4-MD5 emitted-C **UNCHANGED** (gol `e7bde571…` / lisp
-`35388763…` / json `5e1e0050…` / mud `5a1cc65e…`); corpus `-s0` **988 dirs = 867 OK / 42 GREEN /
-79 FAIL / 0 ICE / 0 CRASH** (v202 987 → 988: the new fixture dir; full-classifier join-diff on the
-987 common dirs **byte-identical, zero movement**); stdlib runtime gate **218 PASS / 0 FAIL**;
-example matrix **24/24** dump/gcc/link; the 35 frozen Task-0 comparison/coercion shapes re-run
-**verdict-identical**; `check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK;
-`--track-memory -s0` pool **16883K** (matches the pre-change compiler on the same source, so no
-memory regression). Test binaries via `sf/scripts/build_test.sh` **0/9 — pre-existing failure**
-(retired zig0 cannot parse current `sf/src`; verified identical at pristine HEAD). Seed NOT
-rotated (operator R2: closeout-only). Fixed point **MOVED `cd38f316…` → `e4246b19…`**.
+**Gates.** self-compile two-hop closure hop1 == hop2 == `e0efd63178aea4edd1f818a058ba2b32` (MOVED
+`cd38f3167ca3e39982cc2d817b16dc70` → `e4246b19…` → `e0efd631…`, the last post-review-fix); 4-MD5
+emitted-C **UNCHANGED** (gol `e7bde571…` / lisp `35388763…` / json `5e1e0050…` / mud
+`5a1cc65e…`); corpus `-s0` **988 dirs = 867 OK / 42 GREEN / 79 FAIL / 0 ICE / 0 CRASH** (v202 987
+→ 988: the new fixture dir; full-classifier join-diff on the 987 common dirs **byte-identical, zero
+movement**); stdlib runtime gate **218 PASS / 0 FAIL**; example matrix **24/24** dump/gcc/link; the
+35 frozen Task-0 comparison/coercion shapes re-run **verdict-identical**; `check_emit_support.sh`
+7/7; `verify_upgraded.sh` CLOSEOUT OK; `--track-memory -s0` pool **16883K** (matches the pre-change
+compiler on the same source, so no memory regression). Test binaries via `sf/scripts/build_test.sh`
+**0/9 — pre-existing failure** (retired zig0 cannot parse current `sf/src`; verified identical at
+pristine HEAD). Seed NOT rotated (operator R2: closeout-only). Fixed point **MOVED
+`cd38f316…` → `e0efd631…` (via `e4246b19…`)**.
 
 ## Task 10D — same-named local after a sibling `for` capture keeps its own variable (v201 -> v202 2026-09-23)
 

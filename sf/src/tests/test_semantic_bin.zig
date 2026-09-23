@@ -1235,6 +1235,35 @@ fn testComptimeBigIntCore() void {
     var skip = ce_mod.ciZeroInt();
     if (ce_mod.ciAdd(cap, one, &skip)) { fail("testComptimeBigIntCore cap add accepted"); return; }
     if (ce_mod.ciMul(p255, two, &skip)) { fail("testComptimeBigIntCore cap mul accepted"); return; }
+    // Review fix (Critical): a `word > 0` shift whose nonzero source limb's
+    // target starts at/beyond limb 8 must decline, not silently truncate
+    // (`2^32 << 224` and `2^64 << 192` both need 2^256; `2^255 << 64` needs
+    // 2^319). The reduced-result controls below stay exact.
+    var k32 = ce_mod.ciFromU64(@intCast(u64, 32));
+    var k64 = ce_mod.ciFromU64(@intCast(u64, 64));
+    var k192 = ce_mod.ciFromU64(@intCast(u64, 192));
+    var k224 = ce_mod.ciFromU64(@intCast(u64, 224));
+    var p32 = ce_mod.ciZeroInt();
+    if (!ce_mod.ciShl(one, k32, &p32)) { fail("testComptimeBigIntCore p32"); return; }
+    if (ce_mod.ciShl(p32, k224, &skip)) { fail("testComptimeBigIntCore p32shl224 accepted"); return; }
+    var p64 = ce_mod.ciZeroInt();
+    if (!ce_mod.ciShl(one, k64, &p64)) { fail("testComptimeBigIntCore p64"); return; }
+    if (ce_mod.ciShl(p64, k192, &skip)) { fail("testComptimeBigIntCore p64shl192 accepted"); return; }
+    if (ce_mod.ciShl(p255, k64, &skip)) { fail("testComptimeBigIntCore p255shl64 accepted"); return; }
+    var k100 = ce_mod.ciFromU64(@intCast(u64, 100));
+    var k164 = ce_mod.ciFromU64(@intCast(u64, 164));
+    var p100 = ce_mod.ciZeroInt();
+    if (!ce_mod.ciShl(one, k100, &p100)) { fail("testComptimeBigIntCore p100"); return; }
+    var y1 = ce_mod.ciZeroInt();
+    if (!ce_mod.ciShl(p100, k64, &y1)) { fail("testComptimeBigIntCore p100shl64"); return; }
+    var back1 = ce_mod.ciZeroInt();
+    if (!ce_mod.ciShr(y1, k164, &back1)) { fail("testComptimeBigIntCore y1 shr"); return; }
+    if (ce_mod.ciToU64(back1) != @intCast(u64, 1)) { fail("testComptimeBigIntCore y1 v"); return; }
+    var y2 = ce_mod.ciZeroInt();
+    if (!ce_mod.ciShl(p32, k32, &y2)) { fail("testComptimeBigIntCore p32shl32"); return; }
+    var back2 = ce_mod.ciZeroInt();
+    if (!ce_mod.ciShr(y2, k32, &back2)) { fail("testComptimeBigIntCore y2 shr"); return; }
+    if (ce_mod.ciToU64(back2) != @intCast(u64, 4294967296)) { fail("testComptimeBigIntCore y2 v"); return; }
     var q = ce_mod.ciZeroInt();
     var r = ce_mod.ciZeroInt();
     if (ce_mod.ciDivMod(one, ce_mod.ciZeroInt(), &q, &r)) { fail("testComptimeBigIntCore div0 accepted"); return; }

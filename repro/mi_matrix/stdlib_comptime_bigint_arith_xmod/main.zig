@@ -21,6 +21,10 @@
 //   * far floor shifts: negative -> -1, positive -> 0 (`x1`, `x2`);
 //   * all four truncated div/mod sign combinations (`x3`-`x6`) and a
 //     quotient-3 division across the 2^63 boundary (`x7`);
+//   * exact multi-word left shifts whose reduced results are observable
+//     (`y1` = 2^164 >> 164, `y2` = 2^64 >> 32) — review fix coverage for the
+//     `word > 0` cap path (the cap-overflow twins themselves are only
+//     observable as unfolds until Task 4, so they live in the unit test);
 //   * u64 max via `(1 << 64) - 1` (`j`);
 //   * mixed-sign exact subtraction (`k`);
 //   * no-over-rejection controls: in-range arithmetic keeps folding and
@@ -62,6 +66,8 @@
 //   x5=-1
 //   x6=1
 //   x7=3
+//   y1=1
+//   y2=4294967296
 const std = @import("std");
 
 pub fn main() void {
@@ -94,10 +100,13 @@ pub fn main() void {
     const x5: i64 = @as(i64, (0 - 7) % 2);
     const x6: i64 = @as(i64, 7 % (0 - 2));
     const x7: u64 = @as(u64, ((1 << 63) + (1 << 64)) / (1 << 63));
+    const y1: u64 = @as(u64, ((1 << 100) << 64) >> 164);
+    const y2: u64 = @as(u64, ((1 << 32) << 32) >> 32);
     if (c != 12345) { @panic("bigint mod"); }
     if (h != 1024) { @panic("bigint shr"); }
     if (n != 1099511627781) { @panic("in-range add"); }
     if (r != 48 or t != 17 or x7 != 3) { @panic("bigint mul/bit/div"); }
+    if (y1 != 1 or y2 != 4294967296) { @panic("bigint shl word"); }
     std.io.print("a={}\n", .{a});
     std.io.print("b={}\n", .{b});
     std.io.print("c={}\n", .{c});
@@ -127,4 +136,6 @@ pub fn main() void {
     std.io.print("x5={}\n", .{x5});
     std.io.print("x6={}\n", .{x6});
     std.io.print("x7={}\n", .{x7});
+    std.io.print("y1={}\n", .{y1});
+    std.io.print("y2={}\n", .{y2});
 }

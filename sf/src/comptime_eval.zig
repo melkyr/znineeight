@@ -565,6 +565,11 @@ pub fn ciShl(a: ComptimeInt, b: ComptimeInt, out: *ComptimeInt) bool {
         var src: u64 = @intCast(u64, 0);
         if (i < @intCast(usize, a.len)) { src = @intCast(u64, a.mag[i]); }
         tmp[i] = src << @intCast(u64, bits);
+        // Review fix (Critical): a nonzero shifted source limb whose target
+        // starts at or beyond limb 8 is never consumed by the accumulation
+        // below, so it must decline here -- otherwise the result is silently
+        // truncated (e.g. `(1 << 200) << 64`, `(1 << 32) << 224`).
+        if (tmp[i] != @intCast(u64, 0) and i + word >= @intCast(usize, COMPTIME_INT_LIMBS)) return false;
     }
     var carry: u64 = @intCast(u64, 0);
     i = 0;
