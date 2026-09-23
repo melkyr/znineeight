@@ -1,0 +1,40 @@
+// comptime_coerce_typed_slots.z98 — standalone reproduction for Task 4
+// (coercion of folded comptime integers into typed slots).
+//
+// Recipe (seed-built zig1 with its sibling lib/):
+//   <zig1> -ffast -o /tmp/coerce repro/comptime_coerce_typed_slots.z98
+//   sh /tmp/coerce/build_target.sh linux /tmp/coerce/prog
+//   timeout 120 /tmp/coerce/prog
+//
+// BEFORE Task 4 the coercion sites did not range-check the exact folded value:
+//   * the function-local bare-negate i64 min folded into an i32 temp slot and
+//     printed 0 instead of -9223372036854775808;
+//   * untyped folds were forced to `int` (i32), so `2000000000 + 1000000000`
+//     and `(1 << 63) + 7` truncated and a negative fold printed garbage.
+//
+// AFTER Task 4 every materialisation site chooses the temp/slot type from the
+// exact value (untyped slots) or range-checks it against the target
+// (`materializeInto` / decl slots / `@intCast`/`@as`), and an out-of-range
+// value is a clean error[3000] (`repro/comptime_coerce_reject.z98`).
+//
+// Oracle: official Zig 0.15.2 twin (`/tmp/task4/oracle/pos.zig`) prints the
+// same two lines. Observed stdout must be byte-exact 3x with rc 0.
+const std = @import("std");
+
+pub fn main() void {
+    const imin: i64 = -9223372036854775808;
+    const lu32: u32 = 2000000000 + 1000000000;
+    const bigu = 2000000000 + 1000000000;
+    const bigu64 = (1 << 63) + 7;
+    const negi64 = 0 - 3000000000;
+    var arr: [4 * 8]u8 = undefined;
+    var arr2: [10 - 3]u8 = undefined;
+    _ = arr;
+    _ = arr2;
+    if (imin != @as(i64, -9223372036854775808)) { @panic("imin"); }
+    if (lu32 != 3000000000) { @panic("lu32"); }
+    if (bigu != 3000000000) { @panic("bigu"); }
+    if (bigu64 != 9223372036854775815) { @panic("bigu64"); }
+    if (negi64 != @as(i64, 0 - 3000000000)) { @panic("negi64"); }
+    std.io.print("{} {} {} {} {}\n", .{ imin, lu32, bigu, bigu64, negi64 });
+}

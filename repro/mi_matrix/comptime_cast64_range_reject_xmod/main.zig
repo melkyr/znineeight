@@ -19,12 +19,18 @@
 //   error[3000]: @intCast value does not fit the target type   (line A)
 //   error[3000]: @as value does not fit the target type        (line B)
 //   error[3000]: @intCast value does not fit the target type   (line C)
+//   error[3000]: @intCast value does not fit the target type   (line D)
+//
+// Task 4 adds site D: the `@intCast(u64, 0 - 1)`-class (the same exact-value
+// check, spelled through an arithmetic `negate` rather than a literal).
 const A = @intCast(u64, -1);
 const B = @as(u64, -1);
 const C = @intCast(i64, @as(u64, 18446744073709551615));
+const D = @intCast(u64, 0 - 1);
 
 pub fn main() void {
     _ = A;
     _ = B;
     _ = C;
+    _ = D;
 }

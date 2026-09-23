@@ -23,6 +23,7 @@ const lower_mod = @import("../lower.zig");
 const LirLowerer = lower_mod.LirLowerer;
 const SemanticContext = lower_mod.SemanticContext;
 const hash_mod = @import("../util/hash.zig");
+const ce_mod = @import("../comptime_eval.zig");
 
 var perm_buf: [2097152]u8 = undefined;
 var scratch_buf: [262144]u8 = undefined;
@@ -109,7 +110,8 @@ fn testLower() void {
 
     var enum_value_table = hash_mod.u32ToU32MapInit(&scratch);
     var call_arg_types = hash_mod.u32ToU32MapInit(&scratch);
-    var comptime_values = hash_mod.u32ToU64MapInit(&scratch);
+    // Task 4: the fold table stores exact ComptimeVals.
+    var comptime_folds = ce_mod.comptimeFoldTableInit(&scratch);
     var error_code_registry = hash_mod.u32ToU32MapInit(&scratch);
     var ctx = SemanticContext{
         .store = &store,
@@ -121,7 +123,7 @@ fn testLower() void {
         .has_symbols = @intCast(u8, 0),
         .enum_value_table = &enum_value_table,
         .call_arg_types = &call_arg_types,
-        .comptime_values = &comptime_values,
+        .comptime_folds = &comptime_folds,
         .error_code_registry = &error_code_registry,
         .source_file_id = @intCast(u32, 0),
     };

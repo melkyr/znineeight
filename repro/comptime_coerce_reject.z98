@@ -1,0 +1,32 @@
+// comptime_coerce_reject.z98 — standalone reproduction for Task 4
+// (out-of-range coercion of a folded comptime integer into a typed slot).
+//
+// Recipe (seed-built zig1 with its sibling lib/):
+//   <zig1> --dump-c89 --output-dir /tmp/coerce_rej repro/comptime_coerce_reject.z98
+//   echo "dump rc=$?"   # expect 2, 0 emitted .c
+//
+// BEFORE Task 4 these shapes compiled and ran WRONG values:
+//   `const U8FOLD: u8 = 250 + 60;`        emitted `(unsigned char)(310)` = 54;
+//   `const BIGFOLD = 1 << 100;`           never folded, ran a wrapped value;
+//   `const NEGU: u64 = @as(i64, -1);`     emitted 18446744073709551615;
+//   `const NEGI8: i8 = @as(i32, -200);`   truncated silently.
+// Official Zig 0.15.2 rejects the first, third and fourth (`type 'uX' cannot
+// represent integer value ...`); it ACCEPTS `BIGFOLD` (unused comptime_int) —
+// that one site is the documented bounded divergence (Task 1 §8 risk 1): Z98
+// has no runtime slot that can hold it, so it refuses to emit wrong C.
+//
+// AFTER Task 4: dump rc=2, 0 `.c`,
+//   error[3000]: comptime integer value does not fit the target type
+// (the `@intCast` fold class keeps its own message; the full matrix lives in
+// `repro/mi_matrix/comptime_coerce_reject_xmod`).
+const U8FOLD: u8 = 250 + 60;
+const BIGFOLD = 1 << 100;
+const NEGU: u64 = @as(i64, -1);
+const NEGI8: i8 = @as(i32, -200);
+
+pub fn main() void {
+    _ = U8FOLD;
+    _ = BIGFOLD;
+    _ = NEGU;
+    _ = NEGI8;
+}

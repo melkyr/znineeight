@@ -116,7 +116,7 @@ pub const CompilerContext = struct {
     error_code_registry: hash_mod.U32ToU32Map,
     call_arg_types: hash_mod.U32ToU32Map,
     call_param_map: hash_mod.U32ToU32Map,
-    comptime_values: hash_mod.U32ToU64Map,
+    comptime_folds: ce_mod.ComptimeFoldTable,
     pointer_only_ids: [*]u32,
     pointer_only_len: u32,
     global_decls: lir_mod.GlobalDeclArrayList,
@@ -294,7 +294,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     var error_code_registry = hash_mod.u32ToU32MapInit(&compiler_alloc.emission);
      var call_arg_types = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
      var call_param_map = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
-     var comptime_values = hash_mod.u32ToU64MapInit(&compiler_alloc.module);
+     var comptime_folds = ce_mod.comptimeFoldTableInit(&compiler_alloc.module);
      var exported = hash_mod.u64ToU32MapInit(&compiler_alloc.emission);
      var suspending_fns = hash_mod.u64ToU32MapInit(&compiler_alloc.module);
      var frame_sizes = hash_mod.u64ToU32MapInit(&compiler_alloc.module);
@@ -326,7 +326,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         .error_code_registry = error_code_registry,
         .call_arg_types = call_arg_types,
         .call_param_map = call_param_map,
-        .comptime_values = comptime_values,
+        .comptime_folds = comptime_folds,
         .exported = exported,
         .suspending_fns = suspending_fns,
         .frame_sizes = frame_sizes,
@@ -575,14 +575,12 @@ fn phase_ComptimeEvaluation(ctx: *CompilerContext) void {
         if (node.kind == AstKind.builtin_call) {
             var val = ce_mod.comptimeEvalEvaluate(&ce, @intCast(u32, ni));
             if (val) |v| {
-                // Task 2: the folded ComptimeVal is materialised to the
-                // fold-table's 64-bit pattern (bools 0/1, floats their bit
-                // pattern, ints their two's-complement pattern when they fit
-                // [i64 min, u64 max]); an out-of-window integer is simply not
-                // stored and lowering keeps its runtime path.
-                if (ce_mod.comptimeValStoreU64(v)) |pat| {
-                    hash_mod.u32ToU64MapPut(&ctx.comptime_values, @intCast(u32, ni), pat);
-                }
+                // Task 4: store the EXACT ComptimeVal (Task 1 §6.2). An
+                // out-of-64-bit integer is stored too, so the lowering
+                // materialisation site can reject it with error[3000]
+                // (Task 1 §8 risk 1) instead of silently keeping a wrong
+                // runtime path (the old 64-bit-pattern store dropped it).
+                ce_mod.comptimeFoldTablePut(&ctx.comptime_folds, @intCast(u32, ni), v);
             }
         } else if (node.kind == AstKind.var_decl and node.child_1 != 0) {
             if ((node.flags & @intCast(u8, 1)) == @intCast(u8, 0)) {
@@ -592,9 +590,8 @@ fn phase_ComptimeEvaluation(ctx: *CompilerContext) void {
                     ik == @intCast(u32, 62) or ik == @intCast(u32, 64)) {
                     var val2 = ce_mod.comptimeEvalEvaluate(&ce, node.child_1);
                     if (val2) |v2| {
-                        if (ce_mod.comptimeValStoreU64(v2)) |pat2| {
-                            hash_mod.u32ToU64MapPut(&ctx.comptime_values, node.child_1, pat2);
-                        }
+                        // Task 4: exact-value store (see the builtin arm).
+                        ce_mod.comptimeFoldTablePut(&ctx.comptime_folds, node.child_1, v2);
                     }
                 }
             }
@@ -615,9 +612,7 @@ fn phase_ComptimeEvaluation(ctx: *CompilerContext) void {
                 var cval = ce_mod.comptimeEvalEvaluate(&ce, node.child_0);
                 if (cval) |cv| {
                     if (cv.kind == ce_mod.KIND_BOOL) {
-                        if (ce_mod.comptimeValStoreU64(cv)) |cpat| {
-                            hash_mod.u32ToU64MapPut(&ctx.comptime_values, node.child_0, cpat);
-                        }
+                        ce_mod.comptimeFoldTablePut(&ctx.comptime_folds, node.child_0, cv);
                     }
                 }
             }
@@ -778,7 +773,7 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
         .enum_value_table = &ctx.enum_value_table,
         .error_code_registry = &ctx.error_code_registry,
         .call_arg_types = &ctx.call_arg_types,
-        .comptime_values = &ctx.comptime_values,
+        .comptime_folds = &ctx.comptime_folds,
         .source_file_id = @intCast(u32, 0),
         .safe_checks = ctx.cli.safe_checks,
         .suspending_fns = &ctx.suspending_fns,

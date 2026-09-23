@@ -10,6 +10,8 @@ const ast_mod = @import("ast.zig");
 const interner_mod = @import("string_interner.zig");
 const type_resolver = @import("type_resolver.zig");
 const diag_mod = @import("diagnostics.zig");
+const hash_mod = @import("util/hash.zig");
+const alloc_mod = @import("allocator.zig");
 
 // Task 2: fixed-cap arbitrary-precision comptime integer (Task 1 design §2).
 // Little-endian u32 magnitude limbs, 8 limbs = 256 bits; `len` is one past the
@@ -34,6 +36,61 @@ pub const ComptimeVal = struct {
     kind: u8,
     float_bits: u64,
 };
+
+// Task 4 (Task 1 §6.2): the fold table keeps the EXACT folded value, not a
+// 64-bit pattern. Node -> slot in a dense `ComptimeVal` array; both live in the
+// module arena. Exact storage is required because the u64 pattern cannot
+// distinguish `-1` from `18446744073709551615`, and because a folded value
+// outside [i64 min, u64 max] must be rejected at the materialisation site
+// (Task 1 §8 risk 1) instead of silently vanishing from the table.
+pub const ComptimeFoldTable = struct {
+    slots: hash_mod.U32ToU32Map,
+    vals: [*]ComptimeVal,
+    len: usize,
+    capacity: usize,
+    alloc: *alloc_mod.Sand,
+};
+
+pub fn comptimeFoldTableInit(alloc: *alloc_mod.Sand) ComptimeFoldTable {
+    return ComptimeFoldTable{
+        .slots = hash_mod.u32ToU32MapInit(alloc),
+        .vals = undefined,
+        .len = @intCast(usize, 0),
+        .capacity = @intCast(usize, 0),
+        .alloc = alloc,
+    };
+}
+
+fn comptimeFoldTableGrow(self: *ComptimeFoldTable) void {
+    var old_cap = self.capacity;
+    var old_vals = self.vals;
+    var new_cap: usize = @intCast(usize, 16);
+    if (old_cap >= @intCast(usize, 16)) { new_cap = old_cap * @intCast(usize, 2); }
+    var raw = alloc_mod.sandAlloc(self.alloc, @sizeOf(ComptimeVal) * new_cap, @intCast(usize, 8)) catch unreachable;
+    var new_vals = @ptrCast([*]ComptimeVal, raw);
+    var i: usize = 0;
+    while (i < self.len) : (i += @intCast(usize, 1)) { new_vals[i] = old_vals[i]; }
+    self.vals = new_vals;
+    self.capacity = new_cap;
+}
+
+pub fn comptimeFoldTablePut(self: *ComptimeFoldTable, node_idx: u32, v: ComptimeVal) void {
+    if (hash_mod.u32ToU32MapGet(&self.slots, node_idx)) |slot| {
+        self.vals[@intCast(usize, slot)] = v;
+        return;
+    }
+    if (self.len >= self.capacity) { comptimeFoldTableGrow(self); }
+    self.vals[self.len] = v;
+    hash_mod.u32ToU32MapPut(&self.slots, node_idx, @intCast(u32, self.len));
+    self.len += 1;
+}
+
+pub fn comptimeFoldTableGet(self: *ComptimeFoldTable, node_idx: u32) ?ComptimeVal {
+    if (hash_mod.u32ToU32MapGet(&self.slots, node_idx)) |slot| {
+        if (@intCast(usize, slot) < self.len) { return self.vals[@intCast(usize, slot)]; }
+    }
+    return null;
+}
 
 pub const ComptimeEval = struct {
     registry: *TypeRegistry,
@@ -678,10 +735,10 @@ fn comptimeEvalBinOp(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, depth
             }
             if (peer_tid != @intCast(u32, 0)) {
                 if (lt == null) {
-                    if (!comptimeIntFitsType(self, l.v, peer_tid)) return null;
+                    if (!comptimeIntFitsType(self.registry, l.v, peer_tid)) return null;
                 }
                 if (rt == null) {
-                    if (!comptimeIntFitsType(self, r.v, peer_tid)) return null;
+                    if (!comptimeIntFitsType(self.registry, r.v, peer_tid)) return null;
                 }
             }
             var res = ciZeroInt();
@@ -711,7 +768,7 @@ fn comptimeEvalBinOp(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, depth
                 return null;
             }
             if (peer_tid != @intCast(u32, 0)) {
-                if (!comptimeIntFitsType(self, res, peer_tid)) return null;
+                if (!comptimeIntFitsType(self.registry, res, peer_tid)) return null;
             }
             return ciIntVal(res);
         }
@@ -927,13 +984,14 @@ fn comptimeEvalResolveTypeArg(self: *ComptimeEval, node_idx: u32) ?u32 {
 // Task 11S (c) semantics are preserved: an out-of-range `@intCast`/`@as` still
 // emits error[3000] and stops folding.
 //
-// M3 note: `type_resolver.intValueFitsType` remains the twin until Task 5
-// migrates the type-layer evaluators; the small duplication is deliberate.
-pub fn comptimeIntFitsType(self: *ComptimeEval, v: ComptimeInt, t: u32) bool {
-    if (!type_mod.typeRegistryIsInteger(self.registry, t)) return false;
-    var wb: u32 = @intCast(u32, type_mod.typeRegistryIntWidthBits(self.registry, t));
+// Task 4: registry-based (Task 1 §5.1) so the lowerer can range-check a
+// materialised fold without constructing an evaluator.
+pub fn comptimeIntFitsType(registry: *TypeRegistry, v: ComptimeInt, t: u32) bool {
+    if (@intCast(usize, t) >= registry.types_len) return false;
+    if (!type_mod.typeRegistryIsInteger(registry, t)) return false;
+    var wb: u32 = @intCast(u32, type_mod.typeRegistryIntWidthBits(registry, t));
     if (wb == @intCast(u32, 0)) return false;
-    var tsig: bool = type_mod.typeRegistryIntIsSigned(self.registry, t);
+    var tsig: bool = type_mod.typeRegistryIntIsSigned(registry, t);
     if (v.neg) {
         if (!tsig) return false;
         var lim = ciPow2(wb - @intCast(u32, 1));
@@ -947,25 +1005,54 @@ pub fn comptimeIntFitsType(self: *ComptimeEval, v: ComptimeInt, t: u32) bool {
     return ciMagCmp(v, lim3) < 0;
 }
 
-// Task 2: the fold-table ABI stays `U32ToU64Map` in this task (the fold-table
-// type migration belongs to Task 5). Materialise a folded ComptimeVal to the
-// 64-bit pattern the lowerer consumes: bools as 0/1, floats as their f64 bit
+// Task 4 (Task 1 §5.1): the two's-complement pattern of an already-fit value.
+pub fn comptimeIntMaterialize(v: ComptimeInt) u64 {
+    return ciToU64(v);
+}
+
+// Task 4: does the exact value fit the untyped 64-bit window [i64 min, u64 max]?
+pub fn comptimeIntFits64(v: ComptimeInt) bool {
+    if (v.neg) {
+        var lim = ciPow2(@intCast(u32, 63));
+        return ciMagCmp(v, lim) <= 0;
+    }
+    var lim2 = ciPow2(@intCast(u32, 64));
+    return ciMagCmp(v, lim2) < 0;
+}
+
+// Task 4 (Task 1 §5.2 untyped row): choose the materialisation temp type for an
+// UNTYPED (comptime_int) slot by exact value: negative -> signed (I32/I64),
+// non-negative -> the narrowest fitting type (I32/U32/I64/U64). null when the
+// value exceeds the 64-bit window (the caller emits error[3000]).
+pub fn comptimeIntUntypedType(v: ComptimeInt) ?u32 {
+    var b31 = ciPow2(@intCast(u32, 31));
+    var b32 = ciPow2(@intCast(u32, 32));
+    var b63 = ciPow2(@intCast(u32, 63));
+    var b64 = ciPow2(@intCast(u32, 64));
+    if (v.neg) {
+        if (ciMagCmp(v, b31) <= 0) return type_mod.TYPE_I32;
+        if (ciMagCmp(v, b63) <= 0) return type_mod.TYPE_I64;
+        return null;
+    }
+    if (ciMagCmp(v, b31) < 0) return type_mod.TYPE_I32;
+    if (ciMagCmp(v, b32) < 0) return type_mod.TYPE_U32;
+    if (ciMagCmp(v, b63) < 0) return type_mod.TYPE_I64;
+    if (ciMagCmp(v, b64) < 0) return type_mod.TYPE_U64;
+    return null;
+}
+
+// Task 2 helper retained for the unit tests (Task 4 moved the production fold
+// table to exact `ComptimeVal`s -- see `ComptimeFoldTable`). Materialise a
+// folded ComptimeVal to a 64-bit pattern: bools as 0/1, floats as their f64 bit
 // pattern, integers as their two's-complement pattern when the exact value fits
-// [i64 min, u64 max]. An integer outside that window returns null and the fold
-// is simply not stored (lowering then keeps the pre-fold runtime path).
+// [i64 min, u64 max]; otherwise null.
 pub fn comptimeValStoreU64(cv: ComptimeVal) ?u64 {
     if (cv.kind == KIND_FLOAT) return cv.float_bits;
     if (cv.kind == KIND_BOOL) {
         if (ciIsZero(cv.v)) return @intCast(u64, 0);
         return @intCast(u64, 1);
     }
-    if (cv.v.neg) {
-        var lim = ciPow2(@intCast(u32, 63));
-        if (ciMagCmp(cv.v, lim) > 0) return null;
-    } else {
-        var lim2 = ciPow2(@intCast(u32, 64));
-        if (ciMagCmp(cv.v, lim2) >= 0) return null;
-    }
+    if (!comptimeIntFits64(cv.v)) return null;
     return ciToU64(cv.v);
 }
 
@@ -1101,7 +1188,7 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
                 // any emission. The message names the builtin actually used
                 // (Task B3 item 3); `source_file_id` stays 0 because the global
                 // comptime node sweep has no module context (Task B3 item 4).
-                if (is_int_t and !comptimeIntFitsType(self, cv.v, t)) {
+                if (is_int_t and !comptimeIntFitsType(self.registry, cv.v, t)) {
                     if (self.diag) |dg| {
                         if (diag_mod.diagnosticCollectorMarkNodeOnce(dg, node_idx)) {
                             var ic_msg: []const u8 = "@intCast value does not fit the target type";
@@ -1114,9 +1201,28 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
                     }
                     return null;
                 }
-                // Exact value; the cast result is an integer kind. For a
-                // non-integer `@intCast` target the value stays as evaluated
-                // (pre-Task-2 behavior: the arm folded the operand's bits).
+                // Exact value; the cast result is an integer kind. A
+                // NON-integer `@intCast` target restores the pre-Task-2
+                // masking/truncation (carry item): the target's byte size is
+                // its material width, so the folded bits are reduced to
+                // `size * 8` low bits of the two's-complement pattern
+                // (e.g. `@intCast(f32, 4294967596)` folds 300, not the exact
+                // 4294967596). `@as` never reaches here with a non-integer
+                // target (declined above).
+                if (!is_int_t) {
+                    var nty = self.registry.types_items[@intCast(usize, t)];
+                    var nwb: u32 = @intCast(u32, nty.size) * @intCast(u32, 8);
+                    if (nwb == 0) {
+                        var zm = ciZeroInt();
+                        return ciIntVal(zm);
+                    }
+                    if (nwb < @intCast(u32, 64)) {
+                        var npat = ciToU64(cv.v);
+                        var nmask: u64 = (@intCast(u64, 1) << @intCast(u64, nwb)) - @intCast(u64, 1);
+                        npat = npat & nmask;
+                        return ciIntVal(ciFromU64(npat));
+                    }
+                }
                 var outv = cv;
                 outv.kind = KIND_INT;
                 return outv;
@@ -1269,7 +1375,7 @@ fn comptimeEvalEvaluateDepth(self: *ComptimeEval, node_idx: u32, depth: u32) ?Co
             // would wrap to u64 while the exact fold is negative.
             var pt = comptimeEvalOperandType(self, node.child_0);
             if (pt) |ptid| {
-                if (!comptimeIntFitsType(self, nv, ptid)) return null;
+                if (!comptimeIntFitsType(self.registry, nv, ptid)) return null;
             }
             return ciIntVal(nv);
         }
@@ -1323,7 +1429,11 @@ fn comptimeEvalEvaluateDepth(self: *ComptimeEval, node_idx: u32, depth: u32) ?Co
             if (type_resolver.localConstScopeLookup(lcs, name_id)) |l_decl_node| {
                 var l_decl = ast_mod.astStoreNodeAt(self.store, l_decl_node);
                 if (l_decl.child_1 != @intCast(u32, 0)) {
-                    return comptimeEvalEvaluateDepth(self, l_decl.child_1, depth + @intCast(u32, 1));
+                    var lv = comptimeEvalEvaluateDepth(self, l_decl.child_1, depth + @intCast(u32, 1));
+                    if (lv) |lvv| {
+                        if (!comptimeEvalDeclFits(self, l_decl_node, lvv)) return null;
+                    }
+                    return lv;
                 }
             }
         }
@@ -1334,7 +1444,11 @@ fn comptimeEvalEvaluateDepth(self: *ComptimeEval, node_idx: u32, depth: u32) ?Co
                 if ((cs.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
                     var c_decl = ast_mod.astStoreNodeAt(self.store, cs.decl_node);
                     if (c_decl.child_1 != @intCast(u32, 0)) {
-                        return comptimeEvalEvaluateDepth(self, c_decl.child_1, depth + @intCast(u32, 1));
+                        var cv = comptimeEvalEvaluateDepth(self, c_decl.child_1, depth + @intCast(u32, 1));
+                        if (cv) |cvv| {
+                            if (!comptimeEvalDeclFits(self, cs.decl_node, cvv)) return null;
+                        }
+                        return cv;
                     }
                 }
             }
@@ -1343,4 +1457,22 @@ fn comptimeEvalEvaluateDepth(self: *ComptimeEval, node_idx: u32, depth: u32) ?Co
     } else {
         return null;
     }
+}
+
+// Task 4 (Task 1 §5.3): typed-slot fold rule. When a name's declaration has a
+// declared integer type T and the exact initializer value does not fit T, the
+// name is UNFOLDABLE (`false`), so the fold cannot invent a value the runtime
+// slot never holds (`const u: u8 = 300;` materialises 44 with warning[3000]
+// today, so folding 300 would be wrong). A non-integer value or an absent /
+// non-integer declared type accepts.
+fn comptimeEvalDeclFits(self: *ComptimeEval, decl_node: u32, v: ComptimeVal) bool {
+    if (v.kind != KIND_INT) return true;
+    var d = ast_mod.astStoreNodeAt(self.store, decl_node);
+    if (d.child_0 == @intCast(u32, 0)) return true;
+    if (comptimeEvalResolveTypeArg(self, d.child_0)) |t| {
+        if (type_mod.typeRegistryIsInteger(self.registry, t)) {
+            return comptimeIntFitsType(self.registry, v.v, t);
+        }
+    }
+    return true;
 }

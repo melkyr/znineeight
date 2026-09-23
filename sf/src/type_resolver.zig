@@ -1007,7 +1007,12 @@ pub fn evalConstU32Full(env: *TypeResolveEnv, node_idx: u32, depth: u32) u32 {
     if (node_idx == @intCast(u32, 0)) return @intCast(u32, 0xFFFFFFFF);
     var node = ast_mod.astStoreNodeAt(env.store, node_idx);
     if (node.kind == AstKind.int_literal) {
-        return @intCast(u32, ast_mod.astStoreIntValue(env.store, node_idx));
+        // Task 4: accept only 0..0xFFFFFFFE as a concrete array size; the
+        // literal's exact u64 value decides (0xFFFFFFFF is the unfoldable
+        // sentinel, so a literal 4294967295 stays rejected, pre-existing).
+        var lv = ast_mod.astStoreIntValue(env.store, node_idx);
+        if (lv > @intCast(u64, 4294967294)) return @intCast(u32, 0xFFFFFFFF);
+        return @intCast(u32, lv);
     }
     // Task 2c-F: fold an arithmetic expression node. A module `const C = A * B`
     // recurses from the ident_expr arm into its initializer, which is one of
@@ -1018,9 +1023,24 @@ pub fn evalConstU32Full(env: *TypeResolveEnv, node_idx: u32, depth: u32) u32 {
         var bl = evalConstU32Full(env, node.child_0, depth + @intCast(u32, 1));
         var br = evalConstU32Full(env, node.child_1, depth + @intCast(u32, 1));
         if (bl != @intCast(u32, 0xFFFFFFFF) and br != @intCast(u32, 0xFFFFFFFF)) {
-            if (node.kind == AstKind.add) { return bl + br; }
-            if (node.kind == AstKind.sub) { return bl - br; }
-            if (node.kind == AstKind.mul) { return bl * br; }
+            // Task 4: checked u32 arithmetic -- a negative, wrapping, or
+            // over-u32 result is unfoldable so the array_type caller emits the
+            // existing error[3050] (Task 1 §9.3: `[0 - 1]u8` is rejected).
+            if (node.kind == AstKind.add) {
+                if (bl <= @intCast(u32, 4294967294) - br) { return bl + br; }
+                return @intCast(u32, 0xFFFFFFFF);
+            }
+            if (node.kind == AstKind.sub) {
+                if (bl >= br) { return bl - br; }
+                return @intCast(u32, 0xFFFFFFFF);
+            }
+            if (node.kind == AstKind.mul) {
+                if (br != @intCast(u32, 0) and bl <= @intCast(u32, 4294967294) / br) {
+                    var prod = bl * br;
+                    if (prod != @intCast(u32, 0xFFFFFFFF)) { return prod; }
+                }
+                return @intCast(u32, 0xFFFFFFFF);
+            }
             if (node.kind == AstKind.div) {
                 if (br != @intCast(u32, 0)) { return bl / br; }
                 return @intCast(u32, 0xFFFFFFFF);
@@ -1030,12 +1050,11 @@ pub fn evalConstU32Full(env: *TypeResolveEnv, node_idx: u32, depth: u32) u32 {
         return @intCast(u32, 0xFFFFFFFF);
     }
     // Task 2c-F: `-v` folds as `0 - v` (mirrors evalConstI64Full's negate arm).
+    // Task 4: a negative size is unfoldable (`[-0]` is still 0).
     if (node.kind == AstKind.negate) {
         if (node.child_0 != @intCast(u32, 0)) {
             var nv = evalConstU32Full(env, node.child_0, depth + @intCast(u32, 1));
-            if (nv != @intCast(u32, 0xFFFFFFFF)) {
-                return @intCast(u32, 0) - nv;
-            }
+            if (nv == @intCast(u32, 0)) { return @intCast(u32, 0); }
         }
         return @intCast(u32, 0xFFFFFFFF);
     }
@@ -2112,41 +2131,15 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
                 var sz_node = ast_mod.astStoreNodeAt(env.store, node.child_1);
                 var arr_len: u32 = @intCast(u32, 0);
                 var arr_resolved: bool = false;
-                if (sz_node.kind == AstKind.int_literal) {
-                    arr_len = @intCast(u32, ast_mod.astStoreIntValue(env.store, node.child_1));
+                // Task 4 (Task 1 §6.5/§9.3): the size fold is exact for
+                // 0..0xFFFFFFFE; 0xFFFFFFFF is the unfoldable sentinel. The
+                // former inline u32-wrapping add/sub/mul arms are gone, so
+                // `[0 - 1]u8` is rejected via error[3050] (Zig: type 'usize'
+                // cannot represent integer value '-1').
+                var alf = evalConstU32Full(env, node.child_1, @intCast(u32, 0));
+                if (alf != @intCast(u32, 0xFFFFFFFF)) {
+                    arr_len = alf;
                     arr_resolved = true;
-                } else if (sz_node.kind == AstKind.add or sz_node.kind == AstKind.sub) {
-                    var lhs = evalConstU32Full(env, sz_node.child_0, @intCast(u32, 0));
-                    var rhs = evalConstU32Full(env, sz_node.child_1, @intCast(u32, 0));
-                    if (lhs != @intCast(u32, 0xFFFFFFFF) and rhs != @intCast(u32, 0xFFFFFFFF)) {
-                        arr_resolved = true;
-                        if (sz_node.kind == AstKind.add) { arr_len = lhs + rhs; }
-                        else { arr_len = lhs - rhs; }
-                    }
-                } else if (sz_node.kind == AstKind.mul or sz_node.kind == AstKind.div or sz_node.kind == AstKind.mod_op) {
-                    var lhs = evalConstU32Full(env, sz_node.child_0, @intCast(u32, 0));
-                    var rhs = evalConstU32Full(env, sz_node.child_1, @intCast(u32, 0));
-                    if (lhs != @intCast(u32, 0xFFFFFFFF) and rhs != @intCast(u32, 0xFFFFFFFF) and rhs != @intCast(u32, 0)) {
-                        arr_resolved = true;
-                        if (sz_node.kind == AstKind.mul) { arr_len = lhs * rhs; }
-                        else if (sz_node.kind == AstKind.div) { arr_len = lhs / rhs; }
-                        else { arr_len = lhs % rhs; }
-                    }
-                } else if (sz_node.kind == AstKind.ident_expr) {
-                    var al = evalConstU32Full(env, node.child_1, @intCast(u32, 0));
-                    if (al != @intCast(u32, 0xFFFFFFFF)) {
-                        arr_len = al;
-                        arr_resolved = true;
-                    }
-                } else {
-                    // Task 2b-F (#1): any other const-foldable size expression
-                    // (notably a module-member `field_access` such as
-                    // `[mid.leaf.HEADER_SIZE]`) is folded by the const evaluator.
-                    var alf = evalConstU32Full(env, node.child_1, @intCast(u32, 0));
-                    if (alf != @intCast(u32, 0xFFFFFFFF)) {
-                        arr_len = alf;
-                        arr_resolved = true;
-                    }
                 }
                 var t2m: []const u8 = "T2L"; pal_mod.markerWrite(t2m);
                 var t2b: [20]u8 = undefined;

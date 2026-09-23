@@ -3744,6 +3744,25 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                     }
                 }
                 if (decl_type == @intCast(u32, type_mod.TYPE_UNDEFINED)) { decl_type = it; }
+                // Task 4 (Task 1 §5.2 untyped row / §8 risk 7): an unannotated
+                // binding whose initializer folds to an integer that does NOT
+                // fit the default i32 materialisation takes the value-based
+                // type (U32/I64/U64). Keeping the binding and every reference
+                // consistent is the point: a lowering-only slot override would
+                // leave later uses typed i32 and truncate. Values that fit i32
+                // (and non-integer inits) keep the existing INT_LIT typing, so
+                // emitted C for the common case is unchanged.
+                if (decl_type == type_mod.TYPE_INT_LIT or decl_type == type_mod.TYPE_I32) {
+                    var vd_ce = ce_mod.comptimeEvalInit(self.registry, self.store, self.interner, self.symbols);
+                    vd_ce.local_consts = &self.local_consts;
+                    if (ce_mod.comptimeEvalEvaluate(&vd_ce, node.child_1)) |vdcv| {
+                        if (vdcv.kind == ce_mod.KIND_INT) {
+                            if (ce_mod.comptimeIntUntypedType(vdcv.v)) |vdut| {
+                                if (vdut != type_mod.TYPE_I32) { decl_type = vdut; }
+                            }
+                        }
+                    }
+                }
                 if (decl_type == type_mod.TYPE_VOID) {
                     var vdag_m: []const u8 = "VDIAG:void_var\n"; pal_mod.markerWrite(vdag_m);
                     var vfvd_m: []const u8 = "VFLOW:vdag\n"; pal_mod.markerWrite(vfvd_m);

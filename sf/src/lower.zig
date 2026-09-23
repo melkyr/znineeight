@@ -35,6 +35,7 @@ const hash_mod = @import("util/hash.zig");
 const async_analysis = @import("async_analysis.zig");
 const async_state_machine = @import("async_state_machine.zig");
 const mr_mod = @import("module_registry.zig");
+const ce_mod = @import("comptime_eval.zig");
 
 pub const SrcIntent = enum(u8) { value, null_src, error_src };
 
@@ -97,7 +98,7 @@ pub const SemanticContext = struct {
     enum_value_table: *hash_mod.U32ToU32Map,
     error_code_registry: *hash_mod.U32ToU32Map,
     call_arg_types: *hash_mod.U32ToU32Map,
-    comptime_values: *hash_mod.U32ToU64Map,
+    comptime_folds: *ce_mod.ComptimeFoldTable,
     source_file_id: u32,
     safe_checks: bool,
     suspending_fns: *hash_mod.U64ToU32Map,
@@ -2078,6 +2079,85 @@ fn srcIntentForNode(self: *LirLowerer, node_idx: u32) SrcIntent {
     return SrcIntent.value;
 }
 
+// ---------------------------------------------------------------------------
+// Task 4: fold materialisation into typed slots (Task 1 §5).
+// ---------------------------------------------------------------------------
+
+// Emit error[3000] "comptime integer value does not fit the target type" at
+// most once per source node (the post-lowering diagnostic gate exits rc=2 with
+// 0 `.c`). `source_file_id` is 0, matching the comptime sweep's diagnostics.
+fn reportComptimeIntFits(self: *LirLowerer, node_idx: u32) void {
+    if (node_idx == @intCast(u32, 0)) return;
+    if (diag_mod.diagnosticCollectorMarkNodeOnce(self.ctx.diag, node_idx)) {
+        var sn = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+        var msg: []const u8 = "comptime integer value does not fit the target type";
+        _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, 3000),
+            @intCast(u32, 0), sn.span_start, sn.span_start + @intCast(u32, sn.span_len), msg);
+    }
+}
+
+// Task 4 (pinned param/argument/return rule): when the source expression node
+// carries a folded integer and the destination is an integer type, range-check
+// the exact value. `~` folds are exempt: Z98 keeps the exact `~x = -x - 1`
+// while the runtime complement wraps (the documented Task 3 divergence), so a
+// wrapped `~u` materialisation must not become a hard error.
+fn checkFoldedIntFits(self: *LirLowerer, src_node: u32, target: u32) void {
+    if (src_node == @intCast(u32, 0)) return;
+    if (target == @intCast(u32, 0) or target == type_mod.TYPE_UNDEFINED) return;
+    // The untyped `comptime_int` slot is not a target: its materialisation type
+    // is chosen from the value (lowerFoldedIntConst) and a value outside the
+    // 64-bit window is rejected there.
+    if (target == type_mod.TYPE_INT_LIT) return;
+    if (!type_mod.typeRegistryIsInteger(self.ctx.registry, target)) return;
+    if (ce_mod.comptimeFoldTableGet(self.ctx.comptime_folds, src_node)) |fv| {
+        if (fv.kind != ce_mod.KIND_INT) return;
+        var sn = ast_mod.astStoreNodeAt(self.ctx.store, src_node);
+        if (sn.kind == AstKind.bit_not) return;
+        if (ce_mod.comptimeIntFitsType(self.ctx.registry, fv.v, target)) return;
+        reportComptimeIntFits(self, src_node);
+    }
+}
+
+// Task 4: truthiness of a stored condition fold (`kind == KIND_BOOL` only).
+fn comptimeFoldBool(self: *LirLowerer, node_idx: u32) ?bool {
+    if (ce_mod.comptimeFoldTableGet(self.ctx.comptime_folds, node_idx)) |cv| {
+        if (cv.kind == ce_mod.KIND_BOOL) {
+            return !ce_mod.ciIsZero(cv.v);
+        }
+    }
+    return null;
+}
+
+// Task 4: materialise a folded INTEGER node into its resolved type `rtype`.
+// Untyped slots choose the temp type by exact value (Task 1 §5.2); typed slots
+// range-check (when `check_fit != 0`; `~` passes 0 and keeps the wrapped
+// pattern). On failure emits error[3000] and returns a dummy temp so lowering
+// stays stable. Returns null when the node has no fold entry or the fold is not
+// an integer (the builtin/float path handles those).
+fn lowerFoldedIntConst(self: *LirLowerer, node_idx: u32, rtype: u32, check_fit: u8) ?u32 {
+    if (ce_mod.comptimeFoldTableGet(self.ctx.comptime_folds, node_idx)) |fv| {
+        if (fv.kind != ce_mod.KIND_INT) return null;
+        var ft: u32 = rtype;
+        if (rtype == type_mod.TYPE_INT_LIT or rtype == type_mod.TYPE_UNDEFINED) {
+            if (ce_mod.comptimeIntUntypedType(fv.v)) |ut| {
+                ft = ut;
+            } else {
+                reportComptimeIntFits(self, node_idx);
+                return nextTemp(self, type_mod.TYPE_I32);
+            }
+        } else if (check_fit != @intCast(u8, 0)) {
+            if (!ce_mod.comptimeIntFitsType(self.ctx.registry, fv.v, ft)) {
+                reportComptimeIntFits(self, node_idx);
+                return nextTemp(self, ft);
+            }
+        }
+        var ctid = nextTemp(self, ft);
+        emitInst(self, LirInst{ .int_const = .{ .value = ce_mod.comptimeIntMaterialize(fv.v), .result = ctid } });
+        return ctid;
+    }
+    return null;
+}
+
 pub fn materializeInto(self: *LirLowerer, src_temp: u32, expected: u32, intent: SrcIntent, src_node: u32) u32 {
     if (expected == @intCast(u32, 0) or expected == type_mod.TYPE_UNDEFINED) return src_temp;
 
@@ -2122,6 +2202,10 @@ pub fn materializeInto(self: *LirLowerer, src_temp: u32, expected: u32, intent: 
         }
         break;
     }
+    // Task 4 (pinned param/argument/return rule): a folded comptime integer
+    // materialised into an integer slot is range-checked exactly, after any
+    // optional/error-union layers are unwrapped. Deduped per source node.
+    if (intent == SrcIntent.value) { checkFoldedIntFits(self, src_node, cur); }
     if (nlayers == @intCast(usize, 0)) {
         var nk0 = coercion_mod.classifyCoercion(self.ctx.registry, src_ty, cur);
         if (intent == SrcIntent.value and cur != src_ty and
@@ -2719,13 +2803,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.add) {
         var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
-        if (hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node_idx)) |cv| {
-            var ft: u32 = rtype;
-            if (rtype == type_mod.TYPE_INT_LIT or rtype == type_mod.TYPE_UNDEFINED) { ft = type_mod.TYPE_I32; }
-            var ctid = nextTemp(self, ft);
-            emitInst(self, LirInst{ .int_const = .{ .value = cv, .result = ctid } });
-            return ctid;
-        }
+        if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
         var lhs_type = getTempType(self, lhs);
@@ -2744,13 +2822,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.sub) {
         var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
-        if (hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node_idx)) |cv| {
-            var ft: u32 = rtype;
-            if (rtype == type_mod.TYPE_INT_LIT or rtype == type_mod.TYPE_UNDEFINED) { ft = type_mod.TYPE_I32; }
-            var ctid = nextTemp(self, ft);
-            emitInst(self, LirInst{ .int_const = .{ .value = cv, .result = ctid } });
-            return ctid;
-        }
+        if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
         var tid = nextTemp(self, rtype);
@@ -2762,13 +2834,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.mul) {
         var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
-        if (hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node_idx)) |cv| {
-            var ft: u32 = rtype;
-            if (rtype == type_mod.TYPE_INT_LIT or rtype == type_mod.TYPE_UNDEFINED) { ft = type_mod.TYPE_I32; }
-            var ctid = nextTemp(self, ft);
-            emitInst(self, LirInst{ .int_const = .{ .value = cv, .result = ctid } });
-            return ctid;
-        }
+        if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
         var tid = nextTemp(self, rtype);
@@ -2780,13 +2846,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.wrap_add or node.kind == AstKind.wrap_sub or node.kind == AstKind.wrap_mul) {
         var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
-        if (hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node_idx)) |cv| {
-            var ft: u32 = rtype;
-            if (rtype == type_mod.TYPE_INT_LIT or rtype == type_mod.TYPE_UNDEFINED) { ft = type_mod.TYPE_I32; }
-            var ctid = nextTemp(self, ft);
-            emitInst(self, LirInst{ .int_const = .{ .value = cv, .result = ctid } });
-            return ctid;
-        }
+        if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
         var tid = nextTemp(self, rtype);
@@ -2801,13 +2861,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.sat_add or node.kind == AstKind.sat_sub or node.kind == AstKind.sat_mul or node.kind == AstKind.sat_shl) {
         var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
-        if (hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node_idx)) |cv| {
-            var ft: u32 = rtype;
-            if (rtype == type_mod.TYPE_INT_LIT or rtype == type_mod.TYPE_UNDEFINED) { ft = type_mod.TYPE_I32; }
-            var ctid = nextTemp(self, ft);
-            emitInst(self, LirInst{ .int_const = .{ .value = cv, .result = ctid } });
-            return ctid;
-        }
+        if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
         var tid = nextTemp(self, rtype);
@@ -2824,13 +2878,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.div) {
         var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
-        if (hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node_idx)) |cv| {
-            var ft: u32 = rtype;
-            if (rtype == type_mod.TYPE_INT_LIT or rtype == type_mod.TYPE_UNDEFINED) { ft = type_mod.TYPE_I32; }
-            var ctid = nextTemp(self, ft);
-            emitInst(self, LirInst{ .int_const = .{ .value = cv, .result = ctid } });
-            return ctid;
-        }
+        if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
         var tid = nextTemp(self, rtype);
@@ -2840,13 +2888,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.mod_op) {
         var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
-        if (hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node_idx)) |cv| {
-            var ft: u32 = rtype;
-            if (rtype == type_mod.TYPE_INT_LIT or rtype == type_mod.TYPE_UNDEFINED) { ft = type_mod.TYPE_I32; }
-            var ctid = nextTemp(self, ft);
-            emitInst(self, LirInst{ .int_const = .{ .value = cv, .result = ctid } });
-            return ctid;
-        }
+        if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
         var tid = nextTemp(self, rtype);
@@ -2856,13 +2898,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.bit_and) {
         var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
-        if (hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node_idx)) |cv| {
-            var ft: u32 = rtype;
-            if (rtype == type_mod.TYPE_INT_LIT or rtype == type_mod.TYPE_UNDEFINED) { ft = type_mod.TYPE_I32; }
-            var ctid = nextTemp(self, ft);
-            emitInst(self, LirInst{ .int_const = .{ .value = cv, .result = ctid } });
-            return ctid;
-        }
+        if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
         var tid = nextTemp(self, rtype);
@@ -2871,13 +2907,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.bit_or) {
         var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
-        if (hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node_idx)) |cv| {
-            var ft: u32 = rtype;
-            if (rtype == type_mod.TYPE_INT_LIT or rtype == type_mod.TYPE_UNDEFINED) { ft = type_mod.TYPE_I32; }
-            var ctid = nextTemp(self, ft);
-            emitInst(self, LirInst{ .int_const = .{ .value = cv, .result = ctid } });
-            return ctid;
-        }
+        if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
         var tid = nextTemp(self, rtype);
@@ -2886,13 +2916,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.bit_xor) {
         var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
-        if (hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node_idx)) |cv| {
-            var ft: u32 = rtype;
-            if (rtype == type_mod.TYPE_INT_LIT or rtype == type_mod.TYPE_UNDEFINED) { ft = type_mod.TYPE_I32; }
-            var ctid = nextTemp(self, ft);
-            emitInst(self, LirInst{ .int_const = .{ .value = cv, .result = ctid } });
-            return ctid;
-        }
+        if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
         var tid = nextTemp(self, rtype);
@@ -2901,13 +2925,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.shl) {
         var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
-        if (hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node_idx)) |cv| {
-            var ft: u32 = rtype;
-            if (rtype == type_mod.TYPE_INT_LIT or rtype == type_mod.TYPE_UNDEFINED) { ft = type_mod.TYPE_I32; }
-            var ctid = nextTemp(self, ft);
-            emitInst(self, LirInst{ .int_const = .{ .value = cv, .result = ctid } });
-            return ctid;
-        }
+        if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
         lhs = materializeShiftLhs(self, node_idx, lhs, rtype);
@@ -2918,13 +2936,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.shr) {
         var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
-        if (hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node_idx)) |cv| {
-            var ft: u32 = rtype;
-            if (rtype == type_mod.TYPE_INT_LIT or rtype == type_mod.TYPE_UNDEFINED) { ft = type_mod.TYPE_I32; }
-            var ctid = nextTemp(self, ft);
-            emitInst(self, LirInst{ .int_const = .{ .value = cv, .result = ctid } });
-            return ctid;
-        }
+        if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
         var tid = nextTemp(self, rtype);
@@ -3041,13 +3053,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var rt_ng = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var ng_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
         if (rt_ng) |t| { if (t != type_mod.TYPE_UNDEFINED) { ng_box[0] = t; } } else { var rtm_ng: []const u8 = "RTMISS:n"; pal.markerWrite(rtm_ng); var rtmb_ng: [10]u8 = undefined; var rtml_ng = itoa_mod.itoa(node_idx, rtmb_ng[0..]); var rtms_ng: usize = @intCast(usize, 9) - @intCast(usize, rtml_ng); pal.markerWrite(rtmb_ng[rtms_ng..@intCast(usize, 9)]); var rtmnl_ng: []const u8 = "\n"; pal.markerWrite(rtmnl_ng); }
-        if (hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node_idx)) |cv| {
-            var ft: u32 = ng_box[0];
-            if (ft == type_mod.TYPE_INT_LIT or ft == type_mod.TYPE_UNDEFINED) { ft = type_mod.TYPE_I32; }
-            var ctid = nextTemp(self, ft);
-            emitInst(self, LirInst{ .int_const = .{ .value = cv, .result = ctid } });
-            return ctid;
-        }
+        if (lowerFoldedIntConst(self, node_idx, ng_box[0], @intCast(u8, 1))) |fctid| { return fctid; }
         var val = lowerExpr(self, node.child_0);
         var tid = nextTemp(self, ng_box[0]);
         emitArithNeg(self, val, tid, ng_box[0]);
@@ -3069,13 +3075,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var rt_bn = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var bn_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
         if (rt_bn) |t| { if (t != type_mod.TYPE_UNDEFINED) { bn_box[0] = t; } }
-        if (hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node_idx)) |cv| {
-            var ft: u32 = bn_box[0];
-            if (ft == type_mod.TYPE_INT_LIT or ft == type_mod.TYPE_UNDEFINED) { ft = type_mod.TYPE_I32; }
-            var ctid = nextTemp(self, ft);
-            emitInst(self, LirInst{ .int_const = .{ .value = cv, .result = ctid } });
-            return ctid;
-        }
+        if (lowerFoldedIntConst(self, node_idx, bn_box[0], @intCast(u8, 0))) |fctid| { return fctid; }
         var val = lowerExpr(self, node.child_0);
         var tid = nextTemp(self, bn_box[0]);
         emitInst(self, LirInst{ .unary = .{ .op = UN_BNOT, .operand = val, .result = tid } });
@@ -4344,7 +4344,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 }
                 return nextTemp(self, type_mod.TYPE_VOID);
             }
-            if (hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node_idx)) |cv| {
+            if (ce_mod.comptimeFoldTableGet(self.ctx.comptime_folds, node_idx)) |fcv| {
                 var fold_ty_box: [1]u32 = [1]u32{ type_mod.TYPE_USIZE };
                 // `@as` shares the `@intCast` AST layout `[target_type, value]`
                 // (Task 11U), so the folded constant must recover the same
@@ -4370,11 +4370,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     fold_ty_box[0] = type_mod.TYPE_BOOL;
                 }
                 // Task 11D: a comptime-known @floatCast/@intToFloat folds to a
-                // float value. The map stores the f64 bit pattern; emit the
+                // float value. The table stores the f64 bit pattern; emit the
                 // existing float_const op with the resolved f32/f64 target
                 // (the int_const path cannot represent a float fold).
                 var float_fold: u8 = @intCast(u8, 0);
-                if (node.child_0 == self.floatcast_name_id or node.child_0 == self.inttofloat_name_id) {
+                if (fcv.kind == ce_mod.KIND_FLOAT and (node.child_0 == self.floatcast_name_id or node.child_0 == self.inttofloat_name_id)) {
                     var ft: u32 = type_mod.TYPE_UNDEFINED;
                     var frt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
                     if (frt) |t| {
@@ -4390,16 +4390,36 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         float_fold = @intCast(u8, 1);
                     }
                 }
-                var cres = nextTemp(self, fold_ty_box[0]);
                 if (float_fold != @intCast(u8, 0)) {
-                    // The map stores the f64 bit pattern; reinterpret (Z98
-                    // @bitCast is integer-only) back to the f64 value.
-                    var fbits: u64 = cv;
+                    // Reinterpret (Z98 @bitCast is integer-only) the exact
+                    // f64 bit pattern back to the f64 value.
+                    var cres_f = nextTemp(self, fold_ty_box[0]);
+                    var fbits: u64 = fcv.float_bits;
                     var fbp: *f64 = @ptrCast(*f64, &fbits);
-                    emitInst(self, LirInst{ .float_const = .{ .value = fbp.*, .result = cres } });
-                } else {
-                    emitInst(self, LirInst{ .int_const = .{ .value = cv, .result = cres } });
+                    emitInst(self, LirInst{ .float_const = .{ .value = fbp.*, .result = cres_f } });
+                    var cmf: []const u8 = "CEV\n"; pal.markerWrite(cmf);
+                    return cres_f;
                 }
+                // Task 4: an integer fold into a concrete integer target is
+                // range-checked exactly (the fold-time check only covered
+                // @intCast/@as targets, not the enclosing typed slot). A
+                // non-integer target keeps the materialised pattern.
+                var cval: u64 = @intCast(u64, 0);
+                if (fcv.kind == ce_mod.KIND_FLOAT) {
+                    cval = fcv.float_bits;
+                } else if (fcv.kind == ce_mod.KIND_BOOL) {
+                    if (!ce_mod.ciIsZero(fcv.v)) { cval = @intCast(u64, 1); }
+                } else {
+                    if (type_mod.typeRegistryIsInteger(self.ctx.registry, fold_ty_box[0])) {
+                        if (!ce_mod.comptimeIntFitsType(self.ctx.registry, fcv.v, fold_ty_box[0])) {
+                            reportComptimeIntFits(self, node_idx);
+                            return nextTemp(self, fold_ty_box[0]);
+                        }
+                    }
+                    cval = ce_mod.comptimeIntMaterialize(fcv.v);
+                }
+                var cres = nextTemp(self, fold_ty_box[0]);
+                emitInst(self, LirInst{ .int_const = .{ .value = cval, .result = cres } });
                 var cm: []const u8 = "CEV\n"; pal.markerWrite(cm);
                 return cres;
             }
@@ -5028,10 +5048,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.if_expr) {
         var ie_rt3 = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var ie_rtype3: u32 = if (ie_rt3) |t| t else type_mod.TYPE_UNDEFINED;
-        var ie_fold = hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node.child_0);
         // C3: if_expr comptime-fold sub-path is capture-free by construction (a capture
-        // requires an optional cond, which comptime_values never folds — scalars/bools
-        // only); guard on payload==0 to mirror the if_stmt fold guard defensively.
+        // requires an optional cond, which the fold table never stores — bools only);
+        // guard on payload==0 to mirror the if_stmt fold guard defensively.
+        var ie_fold = comptimeFoldBool(self, node.child_0);
         if (ie_fold) |ie_fv| {
             // Task 3 fix round 1 (Critical): the fold sub-path handles void but
             // NOT a terminating arm. `lowerExpr` has no statement arm, so an
@@ -5050,7 +5070,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 if (ie_rtype3 == type_mod.TYPE_VOID) { ie_fold_void = @intCast(u8, 1); }
                 var ie_res = TEMP_NONE;
                 if (ie_fold_void == @intCast(u8, 0)) { ie_res = nextTemp(self, ie_rtype3); }
-                if (ie_fv != @intCast(u64, 0)) {
+                if (ie_fv) {
                     var ie_then = lowerIfArmValue(self, node.child_1);
                     if (self.block_terminated != @intCast(u8, 0)) { return @intCast(u32, 0); }
                     if (ie_fold_void == @intCast(u8, 0)) {
@@ -5996,10 +6016,10 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
     } else if (node.kind == AstKind.errdefer_stmt) {
         pushDefer(self, @intCast(u8, 1), node.child_0);
     } else if (node.kind == AstKind.if_stmt) {
-        var if_fold = hash_mod.u32ToU64MapGet(self.ctx.comptime_values, node.child_0);
+        var if_fold = comptimeFoldBool(self, node.child_0);
         if (if_fold) |ifv| {
             if (ast_mod.astStoreNodePayload(store, node_idx) == @intCast(u32, 0)) {
-                if (ifv != @intCast(u64, 0)) {
+                if (ifv) {
                     self.block_terminated = @intCast(u8, 0);
                     lowerStmtBody(self, node.child_1);
                 } else {
@@ -6552,6 +6572,10 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         }
         if (self.block_terminated == @intCast(u8, 0)) {
             if (node.child_0 != 0) {
+                // Task 4 (returns): a folded comptime integer returned into an
+                // integer return type is range-checked exactly (no coercion
+                // entry is recorded for an exact-type return expression).
+                checkFoldedIntFits(self, node.child_0, self.func.return_type);
                 var val = lowerExpr(self, node.child_0);
                 if (self.block_terminated != 0) { return; }
                 var retm: []const u8 = "RET:v="; pal.markerWrite(retm); dbgPrintU32(val);
@@ -6728,6 +6752,20 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         } else if (node.child_1 != 0) {
             var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_1);
             if (rt) |t| { decl_type = t; }
+            // Task 4 (Task 1 §5.2 untyped row / §8 risk 7): an UNANNOTATED
+            // binding whose initializer is a folded integer takes the slot type
+            // chosen from the exact value when the inferred type cannot hold it
+            // (`const c = 2000000000 + 1000000000;` must not truncate at the
+            // `int` assignment). A value the inferred type already holds keeps
+            // the current type, so emitted C for in-range bindings is unchanged.
+            if (ce_mod.comptimeFoldTableGet(self.ctx.comptime_folds, node.child_1)) |iv| {
+                if (iv.kind == ce_mod.KIND_INT) {
+                    var keep = decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED) and ce_mod.comptimeIntFitsType(self.ctx.registry, iv.v, decl_type);
+                    if (!keep) {
+                        if (ce_mod.comptimeIntUntypedType(iv.v)) |ut| { decl_type = ut; }
+                    }
+                }
+            }
         }
         if (self.local_decl_count > @intCast(usize, 0)) {
             var scli: usize = @intCast(usize, 0);
@@ -6801,6 +6839,10 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                         }
                     }
                     if (sn_x == @intCast(u8, 0)) {
+                    // Task 4 (decls): range-check a folded initializer against
+                    // the declared slot type (the HIT materialised the fold's
+                    // resolved type, which may be the @intCast/@as target).
+                    checkFoldedIntFits(self, node.child_1, decl_type);
                     var init_val = lowerExpr(self, node.child_1);
 
                     if (decl_type != type_mod.TYPE_VOID and (self.block_terminated == 0 or noreturn_local == 0)) {
@@ -7083,6 +7125,11 @@ fn applyNoneCoercion(self: *LirLowerer, src_temp: u32, coercion: CoercionEntry) 
 }
 
 pub fn applyCoercion(self: *LirLowerer, src_temp: u32, coercion: CoercionEntry) u32 {
+    // Task 4 (pinned param/argument/return rule): check the recorded target
+    // before dispatch -- the int_widen/int_literal_coerce/none arms materialise
+    // without calling `materializeInto`, and those are exactly the function
+    // argument / return paths. Deduped with the materializeInto check.
+    checkFoldedIntFits(self, coercion.node_idx, coercion.target_type);
     var kind = coercion.kind;
     if (kind == CoercionKind.none) {
         return applyNoneCoercion(self, src_temp, coercion);
@@ -7588,6 +7635,15 @@ pub fn lowerModuleInit(self: *LirLowerer, root_idx: u32, mod_id: u32) LirFunctio
             }
             if ((@intCast(u16, dcl.flags) & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
                 if (ginit.kind == AstKind.int_literal or ginit.kind == AstKind.float_literal or ginit.kind == AstKind.char_literal) continue;
+            }
+            // Task 4 (decls): a module const/var with a declared integer type
+            // materialises the fold into that slot -- range-check it exactly
+            // (the fold HIT materialises the @intCast/@as TARGET type, so the
+            // declared slot type is only visible here).
+            if (dcl.child_0 != @intCast(u32, 0)) {
+                if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, dcl.child_0)) |gdt| {
+                    checkFoldedIntFits(self, dcl.child_1, gdt);
+                }
             }
             var val_t = lowerExpr(self, dcl.child_1);
             emitInst(self, LirInst{ .store_global = .{ .name_id = g_name_id, .module_id = gss.module_id, .value = val_t } });

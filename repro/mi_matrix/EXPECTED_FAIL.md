@@ -1,4 +1,77 @@
-# mi_matrix corpus — expected-fail manifest (v206 2026-09-23)
+# mi_matrix corpus — expected-fail manifest (v207 2026-09-23)
+
+## Task 4 — coercion into typed slots (v206 -> v207 2026-09-23)
+
+**What.** Every materialisation of a folded comptime integer now range-checks the exact value
+against the target's width/signedness; before Task 4 the same shapes silently truncated (or, for a
+value beyond 64 bits, silently unfolded and ran a wrong value).
+
+**Compiler (`sf/src`).**
+1. **Exact fold table.** `comptime_eval.zig` gains `ComptimeFoldTable` (`comptimeFoldTableInit`/
+   `Put`/`Get`: node→slot `U32ToU32Map` + a dense `ComptimeVal` array in the module arena);
+   `main.zig`'s `ctx.comptime_values` (`U32ToU64Map`) becomes `ctx.comptime_folds` and the three
+   store arms put the exact `ComptimeVal`. `comptimeValStoreU64` stays as a test helper.
+   Consequence (Task 1 §8 risk 1): `const BIG = 1 << 100;` (Zig-accepted, unused) is now
+   `error[3000]` — Z98 has no runtime slot for it and refuses to emit wrong C. Bounded divergence.
+2. **Coercion primitive.** `comptimeIntFitsType` is registry-based; new `comptimeIntFits64`,
+   `comptimeIntMaterialize`, `comptimeIntUntypedType` (I32/U32/I64/U64 by exact value).
+   Non-integer `@intCast` targets restore the pre-Task-2 `size*8` masking (carry item).
+3. **Typed-slot fold rule** (`comptimeEvalDeclFits`, Task 1 §5.3): a name whose declared integer
+   type cannot hold its initializer no longer folds (the runtime slot would hold the truncated
+   value).
+4. **Lowering.** `lowerFoldedIntConst` materialises all 14 arithmetic/unary HITs (typed target →
+   fit check; untyped → value-based type); `checkFoldedIntFits`/`reportComptimeIntFits` cover
+   `materializeInto` (after optional/EU unwrap), `applyCoercion`, the module-init and local-decl
+   slots, and `return_stmt`. Failure = `error[3000] "comptime integer value does not fit the
+   target type"` (existing `@intCast`/`@as` fold messages unchanged), once per node; the
+   post-lowering diag gate exits rc=2 with 0 `.c`. `~` is exempt (Task 3 documented divergence).
+   The carry-item local bare-negate i64 min now materialises exactly (`const imin: i64 =
+   -9223372036854775808;` printed 0 before).
+5. **Untyped local bindings.** An unannotated local whose folded init does not fit i32 takes the
+   value-based slot type in BOTH sema and lowering (Task 1 §8 risk 7): `const c = 2000000000 +
+   1000000000;` → u32, `(1 << 63) + 7` → u64, `0 - 3000000000` → i64 (each truncated before).
+6. **Array sizes** (`type_resolver.zig`): `evalConstU32Full` is exact (`0..0xFFFFFFFE`;
+   `0xFFFFFFFF` stays the sentinel) and the `array_type` arm routes every size expression through
+   it (the inline u32-wrapping `add`/`sub`/`mul` arms are gone). `[0 - 1]u8` and
+   `[4000000000 + 400000000]u8` now reject via the existing `error[3050]`.
+
+**Fixtures (3 new dirs).**
+- `repro/mi_matrix/stdlib_comptime_coerce_typed_slots_xmod` — positive runtime: in-range coerced
+  slots per target (u8/i8/u32 bounds, `@intCast(i8,-128)`, `@as(u64, u64max)`, `[4*8]u8`,
+  `[10-3]u8`, `enum(u8){A=250+5}`, folded u8 param/optional param/return, module typed fold) plus
+  the carry-item local i64 min; Oracle Zig-0.15.2 output byte-matched; **class OK**; harness PASS
+  (3×, expected.txt/expected.rc); stdlib pin **220 → 221**.
+- `repro/mi_matrix/comptime_coerce_reject_xmod` — 7 lowering-phase `error[3000]` sites:
+  `const U8FOLD: u8 = 250 + 60`, `const BIGFOLD = 1 << 100` (documented Zig divergence),
+  `const NEGU: u64 = @as(i64, -1)`, `const NEGI8: i8 = @as(i32, -200)`, a `u8` parameter arg,
+  a `u8` return, and a local `u8` decl; **class GREEN** (0 `.c` + `error[3000]`).
+- `repro/mi_matrix/array_size_negative_reject_xmod` — `[0 - 1]u8` + an over-u32 sum, both
+  `error[3050]`; **class FAIL** (a clean non-`error[3000]` reject; earlier FAIL-bucket convention).
+- `repro/mi_matrix/comptime_cast64_range_reject_xmod` gains **site D** `@intCast(u64, 0 - 1)`
+  (the Task 4 brief's explicit class; still GREEN).
+- Standalone reps: `repro/comptime_coerce_typed_slots.z98` (positive; RED on the pre-Task-4 build
+  panics `imin`, GREEN rc 0 3×) and `repro/comptime_coerce_reject.z98` (dump rc=2, 0 `.c`; RED on
+  the old build = rc=0 + emitted C).
+
+**Corpus.** `-s0` **993 dirs = 870 OK / 43 GREEN / 80 FAIL / 0 ICE / 0 CRASH** (v206 990 =
+869/42/79; +3 = the new fixture dirs only). Full-classifier join-diff vs the Task 3 fix-round-2
+baseline: **zero class movement on all 990 common dirs**; new = exactly the 3 Task 4 dirs.
+Pre-fix RED on the old compiler: the positive fixture emits rc=0 and traps (`panic: imin`,
+rc=133); both reject fixtures emit C and exit rc=0.
+
+**Other gates.** 4-MD5 emitted-C **UNCHANGED** (gol `e7bde571…` / lisp `35388763…` /
+json `5e1e0050…` / mud `5a1cc65e…`); stdlib **221 PASS / 0 FAIL**; example matrix 24/24 (all
+`examples/z98/*` OK); frozen Step-0 35-shape table **byte-identical**; `check_emit_support.sh`
+7/7; `verify_upgraded.sh` CLOSEOUT OK; `build_test.sh` **0/9** (pre-existing zig0 baseline);
+self-emission rc 0 / 0 `error[...]` / 0 PANIC; `track-memory: perm=883K mod=1020K scr=1024K
+pool=19213K type_db=362K total=2927K`. Fixed point **MOVED
+`f533e834fdfdedb83991b7adf72da22d` → `b4f999b57e4516c2a2c305e8660d5c44`** (two-hop closure
+hop1 == hop2); seed stays **v82**, NOT rotated (operator R2: rotation is closeout-only).
+
+**Residuals (documented, not fixed; see doc 04 Known Issues 10/11).** An unannotated MODULE
+const's C slot still comes from its symbol type (`const X = 2000000000 + 1000000000;` at module
+scope truncates at runtime; the local case is fixed); an optional-payload coercion that records no
+wrap (`takeOpt8(@as(i32, 300))`) is accepted with `warning[3000]` where Zig rejects.
 
 ## Task 3 fix round 2 — `bit_not` peer-fit revert + unit-test wiring (v205 -> v206 2026-09-23)
 
