@@ -1,4 +1,4 @@
-# zig1 Pipeline — Master Index [updated: 2026-09-21 — Task B2 final fix wave: Table B gains `isCompoundTypeExprKind` and `containerFieldCount` (type_resolver.zig); `registerContainerType` clean-rejects a >32-field local/inline aggregate] [updated: 2026-09-21 — Task B2: Table B gains `containerAnonNameId`, `isContainerDeclKind`, `registerContainerType`, and `localTypeScopeInit`/`localTypeScopeLookup`/`localTypeScopePush` (type_resolver.zig)] [updated: 2026-09-20 — regenerated against current source and the refreshed 14 tech docs; line references removed, `phase_FrontResolution`/`phase_AsyncFrameSize` added, counts corrected]
+# zig1 Pipeline — Master Index [updated: 2026-09-23 — Task 10D: Table B gains `captureShadowShouldRedirect` (lower.zig)] [updated: 2026-09-21 — Task B2 final fix wave: Table B gains `isCompoundTypeExprKind` and `containerFieldCount` (type_resolver.zig); `registerContainerType` clean-rejects a >32-field local/inline aggregate] [updated: 2026-09-21 — Task B2: Table B gains `containerAnonNameId`, `isContainerDeclKind`, `registerContainerType`, and `localTypeScopeInit`/`localTypeScopeLookup`/`localTypeScopePush` (type_resolver.zig)] [updated: 2026-09-20 — regenerated against current source and the refreshed 14 tech docs; line references removed, `phase_FrontResolution`/`phase_AsyncFrameSize` added, counts corrected]
 
 > Source-files: `sf/src/*.zig` | Cross-reference for all 14 tech docs
 
@@ -232,6 +232,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `canLiteralFitInType` | type_registry.zig |
 | `cancel` | std_async.zig |
 | `cancelAll` | std_async.zig |
+| `captureShadowShouldRedirect` | lower.zig |
 | `checkCombinedPeak` | allocator.zig |
 | `checkLeaksOnScopeExit` | analyzer.zig |
 | `checkReturnProvenance` | analyzer.zig |

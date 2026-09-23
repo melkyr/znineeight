@@ -1,4 +1,49 @@
-# mi_matrix corpus — expected-fail manifest (v201 2026-09-23)
+# mi_matrix corpus — expected-fail manifest (v202 2026-09-23)
+
+## Task 10D — same-named local after a sibling `for` capture keeps its own variable (v201 -> v202 2026-09-23)
+
+**What.** A pre-existing silent miscompile in `sf/src/lower.zig`: a plain local `var`/`const`
+declared after a same-named `for` capture in a **sibling** scope lost its declaration + initializer
+in the emitted C and aliased the stale capture temp (its uses redirected through the leaked
+`capture_shadow` table). Canonical r3 probe: Zig 0.15.2 `c7=6 g7=2` vs pre-fix `c7=3 g7=5`
+(emit/build rc 0, no diagnostic). The name must have appeared in an earlier closed scope (forcing
+the capture rename), and the later declaration must sit in a sibling scope shallower than the
+capture's registration depth; `while (opt) |v|` / `if (opt) |v|` captures and different names were
+unaffected.
+
+**Fix (AMENDMENT 14; Task 10D).** `captureShadowShouldRedirect` (signature and all three call sites
+untouched) now walks the real scope chain from `cur_scope` through `scope_nodes[...].parent` instead
+of comparing depth numbers: a declaration of the original name in a scope nearer than the synth
+declaration's scope node suppresses the redirect; reaching the synth scope first redirects. The
+`capture_shadow` table remains append-only (the eight arm-end `capture_shadow.count = 0` sites are
+dead writes because `u32ToU32MapGet` ignores `count`); the guard renders that harmless for
+identifier resolution.
+
+**Fixtures.** New positive runtime fixture `repro/mi_matrix/stdlib_capture_sibling_reuse_xmod`
+(canonical shape + later sibling `while`/`for`-body `var j`/`const j` + two renamed captures + bare
+block + controls: same-depth nested block, capture-after-nested-loop, different name, no earlier
+name, `while`/`if` capture analogues, cross-function reuse; every aggregate `@panic`-guarded; golden
+`c7=6 g7=2 s1b=6 cap1=9 post1=57 post2=27 post3=15 cap2=4 cap3=4 post4=18 post5=21 ctl1=1 ctl2=18 ctl3=5 ctl4=20 wc=5 ic=2 xa=10 xb=8`,
+rc 0, 3x byte-exact and Zig-0.15.2-twin-matched; stdlib pin **216 -> 217**) + standalone
+`repro/var_after_capture.z98`. RED pre-fix: guard panic rc 133. The fixture uses no `@intCast` on a
+capture (a separate pre-existing defect emits invalid C for that shape).
+
+**Gates.** self-compile two-hop closure hop1 == hop2 == `cd38f3167ca3e39982cc2d817b16dc70`; 4-MD5
+emitted-C **UNCHANGED** (gol `e7bde571…` / lisp `35388763…` / json `5e1e0050…` / mud `5a1cc65e…`),
+re-confirmed post-rotation; example matrix **24/24**; std-lib runtime gate **217 PASS / 0 FAIL**;
+corpus `-s0` **987 dirs = 866 OK / 42 GREEN / 79 FAIL / 0 ICE / 0 CRASH** with a full-classifier
+join-diff vs the pre-fix seed v81 compiler **byte-identical (zero movement**; the new fixture
+classifies OK under both — the defect is runtime-only); `check_emit_support.sh` 7/7;
+`verify_upgraded.sh` CLOSEOUT OK; Task 7D `shadow_reject_xmod` still rejects 14x `error[3057]` with
+0 `.c`. Fixed point **MOVED `8b43b3b4f111cb9bedfebdd49309bd6a` -> `cd38f3167ca3e39982cc2d817b16dc70`**;
+seed **v81 -> v82** (archive md5 `617ee1623331f79aae7957ff8e9138b4` -> `98a8b0ef292b31486a37f97c75938f30`;
+`gen/` 45 `.c` + 46 `.h`, 9226676 bytes).
+
+**Out-of-scope residual (unchanged).** `capture_shadow` has no real scope exit (append-only) and the
+local-decl table is never reset between functions; the scope-chain guard's fallbacks make both
+harmless for identifier resolution, but a proper scoped-shadow design remains a separate task. The
+`maybeDisambiguateCapture` over-rename (any prior same-name declaration forces a synth name) is also
+unchanged.
 
 ## Task 10B — `for`-loop `continue` runs the implicit step + nested-loop label leak (v200 -> v201 2026-09-23)
 

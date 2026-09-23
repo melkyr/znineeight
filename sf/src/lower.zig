@@ -2209,17 +2209,22 @@ fn resolveLocalSrcName(self: *LirLowerer, name_id: u32) u32 {
 }
 
 fn captureShadowShouldRedirect(self: *LirLowerer, name_id: u32, syn: u32) bool {
-    var cap_scope: u32 = @intCast(u32, 0);
-    var cap_idx: usize = @intCast(usize, 0);
+    var cap_scope_node: u32 = TEMP_NONE;
     var cap_found: u8 = @intCast(u8, 0);
     var ci: usize = @intCast(usize, 0);
     while (ci < self.local_decl_count) : (ci += @intCast(usize, 1)) {
-        if (self.local_decl_names[ci] == syn) { cap_scope = self.local_decl_scopes[ci]; cap_idx = ci; cap_found = @intCast(u8, 1); break; }
+        if (self.local_decl_names[ci] == syn) { cap_scope_node = self.local_decl_scope_nodes[ci]; cap_found = @intCast(u8, 1); break; }
     }
     if (cap_found == @intCast(u8, 0)) return true;
-    var si: usize = @intCast(usize, 0);
-    while (si < self.local_decl_count) : (si += @intCast(usize, 1)) {
-        if (self.local_decl_names[si] == name_id and si > cap_idx and self.local_decl_scopes[si] <= self.scope_depth and self.local_decl_scopes[si] >= cap_scope) return false;
+    var sc: u32 = self.cur_scope;
+    while (sc != TEMP_NONE) {
+        if (sc == cap_scope_node) return true;
+        var li: usize = self.local_decl_count;
+        while (li > @intCast(usize, 0)) {
+            li -= @intCast(usize, 1);
+            if (self.local_decl_scope_nodes[li] == sc and self.local_decl_names[li] == name_id) return false;
+        }
+        sc = self.scope_nodes.items[@intCast(usize, sc)].parent;
     }
     return true;
 }

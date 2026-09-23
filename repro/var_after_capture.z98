@@ -1,0 +1,49 @@
+// var_after_capture.z98 — Task 10D standalone repro: a plain local declared
+// after a same-named `for` capture in a sibling scope must be a DISTINCT
+// variable (official Zig 0.15.2 parity). Pre-fix (`captureShadowShouldRedirect`,
+// sf/src/lower.zig) the leaked `capture_shadow` source->synth redirect plus its
+// depth-only guard made the later `var j` alias the stale capture temp: its
+// declaration/initializer were dropped and the body read the old loop variable.
+//
+// Expected stdout (Zig 0.15.2 and the fixed compiler):
+//   c7=6 g7=2
+// rc 0. Pre-fix the guard traps (`panic: var-after-capture guard failed`, rc
+// 133); without a guard the pre-fix compiler silently prints `c7=3 g7=5`.
+//
+// NOTE: no `@intCast` on a capture — a separate pre-existing defect emits
+// invalid C for that shape (out of scope).
+const std = @import("std");
+
+pub fn main() void {
+    var a: u32 = 0;
+    while (a < 3) : (a += 1) {
+        var j: u32 = 0;
+        while (j < 2) : (j += 1) {
+            _ = j;
+        }
+    }
+
+    var cap: u32 = 0;
+    for (0..3) |i| {
+        for (0..3) |j| {
+            _ = i;
+            _ = j;
+            cap += 1;
+        }
+    }
+
+    var c7: u32 = 0;
+    var g7: u32 = 0;
+    outer6: for (0..5) |i| {
+        var j: u32 = 0;
+        while (j < 3) : (j += 1) {
+            if (i == 2 and j == 0) break :outer6;
+            c7 += 1;
+        }
+        g7 += 1;
+    }
+    if (cap != 9 or c7 != 6 or g7 != 2) {
+        @panic("var-after-capture guard failed");
+    }
+    std.io.print("c7={} g7={}\n", .{ c7, g7 });
+}
