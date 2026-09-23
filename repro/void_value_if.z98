@@ -1,0 +1,24 @@
+// void_value_if.z98 — Task 9D standalone repro: a void-then value `if` lowers
+// correctly. Pre-fix (seed v76) the `if_expr` arm allocated a `TYPE_VOID` result
+// temp that the emitter never declared, so gcc failed with `zT_N undeclared`.
+// Post-fix the arm returns the no-value sentinel and only lowers a present
+// `else`. Expected stdout: `FFF\n` (foo runs three times), rc 0.
+const std = @import("std");
+
+fn foo() void {
+    std.io.print("F", .{});
+}
+
+pub fn main() void {
+    var c: bool = false;
+    c = !c;
+    _ = if (c) foo();
+    _ = if (c) foo() else foo();
+    var o: ?i32 = null;
+    o = 7;
+    _ = if (o) |v| {
+        _ = v;
+        foo();
+    };
+    std.io.print("\n", .{});
+}

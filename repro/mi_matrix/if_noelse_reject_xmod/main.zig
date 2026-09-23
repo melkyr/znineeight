@@ -27,6 +27,13 @@ fn capPick(o: ?i32) i32 {
     return x;
 }
 
+// Task 9D: a runtime `false and <runtime>` condition does not fold (the fold
+// short-circuits to false), so the no-`else` value `if` stays rejected.
+fn andFalse(run: bool) i32 {
+    var x: i32 = if (false and run) 1;
+    return x;
+}
+
 pub fn main() void {
     var a: i32 = 1;
     var x: i32 = if (a == 1) 1;
@@ -34,5 +41,6 @@ pub fn main() void {
     _ = if (a == 1) 1;
     std.io.print("{}\n", .{pick(1)});
     _ = capPick(null);
+    _ = andFalse(true);
     _ = x;
 }

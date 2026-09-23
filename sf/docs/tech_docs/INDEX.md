@@ -253,9 +253,11 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `compositeNameId` | analyzer.zig |
 | `comptimeEvalBinOp` | comptime_eval.zig |
 | `comptimeEvalBuiltin` | comptime_eval.zig |
+| `comptimeEvalCompare` | comptime_eval.zig |
 | `comptimeEvalEvaluate` | comptime_eval.zig |
 | `comptimeEvalEvaluateDepth` | comptime_eval.zig |
 | `comptimeEvalInit` | comptime_eval.zig |
+| `comptimeEvalLogical` | comptime_eval.zig |
 | `comptimeEvalResolveTypeArg` | comptime_eval.zig |
 | `computeNestMetadata` | lir_opt_pass.zig |
 | `computeSharedSet` | c89_emit.zig |

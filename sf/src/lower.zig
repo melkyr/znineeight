@@ -5029,15 +5029,26 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         // only); guard on payload==0 to mirror the if_stmt fold guard defensively.
         if (ie_fold) |ie_fv| {
             if (ast_mod.astStoreNodePayload(store, node_idx) == @intCast(u32, 0)) {
-                var ie_res = nextTemp(self, ie_rtype3);
+                // Task 9D (ii): a void-typed folded if_expr produces no value;
+                // skip the result temp and return the "no value" sentinel.
+                var ie_fold_void: u8 = @intCast(u8, 0);
+                if (ie_rtype3 == type_mod.TYPE_VOID) { ie_fold_void = @intCast(u8, 1); }
+                var ie_res = TEMP_NONE;
+                if (ie_fold_void == @intCast(u8, 0)) { ie_res = nextTemp(self, ie_rtype3); }
                 if (ie_fv != @intCast(u64, 0)) {
                     var ie_then = lowerExpr(self, node.child_1);
-                    ie_then = materializeInto(self, ie_then, ie_rtype3, srcIntentForNode(self, node.child_1), node.child_1);
-                    emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = ie_res, .src = ie_then } });
+                    if (ie_fold_void == @intCast(u8, 0)) {
+                        ie_then = materializeInto(self, ie_then, ie_rtype3, srcIntentForNode(self, node.child_1), node.child_1);
+                        emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = ie_res, .src = ie_then } });
+                    }
                 } else {
-                    var ie_else = lowerExpr(self, node.child_2);
-                    ie_else = materializeInto(self, ie_else, ie_rtype3, srcIntentForNode(self, node.child_2), node.child_2);
-                    emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = ie_res, .src = ie_else } });
+                    if (node.child_2 != @intCast(u32, 0)) {
+                        var ie_else = lowerExpr(self, node.child_2);
+                        if (ie_fold_void == @intCast(u8, 0)) {
+                            ie_else = materializeInto(self, ie_else, ie_rtype3, srcIntentForNode(self, node.child_2), node.child_2);
+                            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = ie_res, .src = ie_else } });
+                        }
+                    }
                 }
                 return ie_res;
             }
@@ -5063,8 +5074,14 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         // materialized for a value that can never be produced.
         var ie_noreturn: u8 = @intCast(u8, 0);
         if (ie_rtype == type_mod.TYPE_NORETURN) { ie_noreturn = @intCast(u8, 1); }
+        // Task 9D (ii): a void-typed if_expr is not a value producer. It must
+        // not allocate a result temp (nextTemp(TYPE_VOID) records an undeclared
+        // void temp that the arm assigns still reference) and it returns
+        // TEMP_NONE at the join (the "no value" sentinel plain_assign checks).
+        var ie_void: u8 = @intCast(u8, 0);
+        if (ie_rtype == type_mod.TYPE_VOID) { ie_void = @intCast(u8, 1); }
         var result: u32 = @intCast(u32, 0);
-        if (ie_noreturn == @intCast(u8, 0)) { result = nextTemp(self, ie_rtype); }
+        if (ie_noreturn == @intCast(u8, 0) and ie_void == @intCast(u8, 0)) { result = nextTemp(self, ie_rtype); }
         var und_ie_m: []const u8 = "UND:ieRt"; pal.markerWrite(und_ie_m);
         var und_ie_tb: [10]u8 = undefined; var und_ie_tl = itoa_mod.itoa(result, und_ie_tb[0..]); var und_ie_ts: usize = @intCast(usize, 9) - @intCast(usize, und_ie_tl); pal.markerWrite(und_ie_tb[und_ie_ts..@intCast(usize, 9)]);
         var und_ie_nl: []const u8 = "\n"; pal.markerWrite(und_ie_nl);
@@ -5082,7 +5099,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         }
         pushScopeDepth(self);
         var then_val = lowerIfArmValue(self, node.child_1);
-        if (self.block_terminated == @intCast(u8, 0) and ie_noreturn == @intCast(u8, 0)) {
+        if (self.block_terminated == @intCast(u8, 0) and ie_noreturn == @intCast(u8, 0) and ie_void == @intCast(u8, 0)) {
             then_val = materializeInto(self, then_val, ie_rtype, srcIntentForNode(self, node.child_1), node.child_1);
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = result, .src = then_val } });
         }
@@ -5092,10 +5109,15 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         }
         self.current_bb = else_bb;
         self.block_terminated = @intCast(u8, 0);
-        var else_val = lowerIfArmValue(self, node.child_2);
-        if (self.block_terminated == @intCast(u8, 0) and ie_noreturn == @intCast(u8, 0)) {
-            else_val = materializeInto(self, else_val, ie_rtype, srcIntentForNode(self, node.child_2), node.child_2);
-            emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = result, .src = else_val } });
+        // Task 9D (ii): only lower the else arm when one is present. An absent
+        // else is reachable only when sema proved the condition comptime-true
+        // (then arm is the sole analyzed arm), so no value is needed.
+        if (node.child_2 != @intCast(u32, 0)) {
+            var else_val = lowerIfArmValue(self, node.child_2);
+            if (self.block_terminated == @intCast(u8, 0) and ie_noreturn == @intCast(u8, 0) and ie_void == @intCast(u8, 0)) {
+                else_val = materializeInto(self, else_val, ie_rtype, srcIntentForNode(self, node.child_2), node.child_2);
+                emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = result, .src = else_val } });
+            }
         }
         if (self.block_terminated == @intCast(u8, 0) and ie_noreturn == @intCast(u8, 0)) {
             emitInst(self, LirInst{ .jump = join_bb });
@@ -5104,6 +5126,9 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (ie_noreturn != @intCast(u8, 0)) {
             self.block_terminated = @intCast(u8, 1);
             result = @intCast(u32, 0);
+        } else if (ie_void != @intCast(u8, 0)) {
+            self.block_terminated = @intCast(u8, 0);
+            result = TEMP_NONE;
         } else {
             self.block_terminated = @intCast(u8, 0);
         }
@@ -6494,8 +6519,17 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             if (node.child_0 != 0) {
                 var val = lowerExpr(self, node.child_0);
                 if (self.block_terminated != 0) { return; }
-                var retm: []const u8 = "RET:v="; pal.markerWrite(retm); dbgPrintU32(val); var rett: []const u8 = " t="; pal.markerWrite(rett); dbgPrintU32(self.hoisted_temps.items[@intCast(usize, val)].type_id); var retn: []const u8 = "\n"; pal.markerWrite(retn);
-                if (self.func.return_type != type_mod.TYPE_VOID) {
+                var retm: []const u8 = "RET:v="; pal.markerWrite(retm); dbgPrintU32(val);
+                // Task 9D: `val` may be TEMP_NONE (a void value-`if` / void
+                // expression in return position). Guard the temp-table deref so
+                // the sentinel cannot read out of bounds. The pre-existing
+                // `return foo();` void-expression defect is out of scope, but
+                // the new sentinel must not turn it into a new ICE here.
+                if (val != TEMP_NONE and @intCast(usize, val) < self.hoisted_temps.len) {
+                    var rett: []const u8 = " t="; pal.markerWrite(rett); dbgPrintU32(self.hoisted_temps.items[@intCast(usize, val)].type_id);
+                }
+                var retn: []const u8 = "\n"; pal.markerWrite(retn);
+                if (val != TEMP_NONE and self.func.return_type != type_mod.TYPE_VOID) {
                     var vt = getTempType(self, val);
                     if (vt != self.func.return_type) {
                         var rgm: []const u8 = "RET_GAP:n"; pal.markerWriteInt(rgm, node.child_0);

@@ -1964,6 +1964,10 @@ fn semanticAnalyzerConditionIsComptimeTrue(self: *SemanticAnalyzer, cond_idx: u3
         return (cond.flags & @intCast(u8, 1)) != @intCast(u8, 0);
     }
     var ce = ce_mod.comptimeEvalInit(self.registry, self.store, self.interner, self.symbols);
+    // Task 9D (Gap B): the probe must see function-local `const`s (pushed into
+    // `self.local_consts` by the var_decl path); the module symbol registry
+    // alone cannot resolve them.
+    ce.local_consts = &self.local_consts;
     var folded = ce_mod.comptimeEvalEvaluate(&ce, cond_idx);
     if (folded) |cv| {
         if (cv.width_bits == @intCast(u32, 1)) {

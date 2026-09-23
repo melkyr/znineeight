@@ -1,0 +1,17 @@
+// if_noelse_comptime.z98 — Task 9D standalone repro: a no-`else` value `if`
+// whose condition is comptime-known-true is valid Z98 (matching official Zig
+// 0.15.2). Pre-fix (seed v76) every site was rejected `error[3059]`; post-fix
+// compiles and runs. The fold must see the function-local `const a` (Gap B) and
+// fold the comparison / bool ops (Gap A). Expected stdout: `1 2 3\n`, rc 0.
+const std = @import("std");
+
+const M: i32 = 2;
+
+pub fn main() void {
+    const a: i32 = 1;
+    var x: i32 = if (a == 1) 1;
+    var y: i32 = if (a < M) 2;
+    const b: bool = true;
+    var z: i32 = if (b and (M == 2)) 3;
+    std.io.print("{} {} {}\n", .{ x, y, z });
+}

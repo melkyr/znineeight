@@ -1,4 +1,49 @@
-# mi_matrix corpus — expected-fail manifest (v196 2026-09-22)
+# mi_matrix corpus — expected-fail manifest (v197 2026-09-22)
+
+## Task 9D — comptime-true no-`else` `if` fold + void-then value-`if` lowering (v196 -> v197 2026-09-22)
+
+**What.** Two residuals from Task 9B. **(i)** The comptime-true no-`else` allowance used Z98's
+comptime fold, which did **not** fold comparisons/logical ops and could not see function-local
+consts, so `const a: i32 = 1; var x: i32 = if (a == 1) 1;` was rejected although official Zig
+0.15.2 accepts it (too narrow a downgrade). **(ii)** A void-then value `if` (`_ = if (c) foo();`)
+was front-end-accepted (correctly) but lowered to an undeclared result temp — gcc
+`'zT_<n>' undeclared`.
+
+**Fix (AMENDMENT 12; operator ruling m1251).**
+- **(i) fold — Gap A** (`sf/src/comptime_eval.zig`): `comptimeEvalEvaluateDepth` gains
+  `cmp_eq`/`cmp_ne`/`cmp_lt`/`cmp_le`/`cmp_gt`/`cmp_ge` (new `comptimeEvalCompare`, signedness
+  mirrors the existing div/mod sign handling; float operands stay unfolded — a bounded residual)
+  and `bool_and`/`bool_or`/`bool_not` (new `comptimeEvalLogical`, `and`/`or` **short-circuit**:
+  `true or <runtime>` folds true, `false and <runtime>` folds false).
+- **(i) fold — Gap B** (`sf/src/comptime_eval.zig`, `sf/src/semantic_analyzer.zig`): the
+  `ident_expr` arm consults the enclosing function's `type_resolver.LocalConstScope` before the
+  module symbol registry, and `semanticAnalyzerConditionIsComptimeTrue` sets
+  `ce.local_consts = &self.local_consts` so the probe sees local `const`s.
+- **(ii) lowering** (`sf/src/lower.zig`, `AstKind.if_expr`): when the result type is
+  `TYPE_VOID`, no result temp is allocated; the arm-value assigns are guarded; the `else` arm is
+  lowered only when `child_2 != 0`; the join returns `TEMP_NONE`. `return_stmt`'s
+  `hoisted_temps[val]` deref is guarded against `TEMP_NONE`. (The adjacent pre-existing void-expr
+  defects `_ = foo();` and `return foo();` are out of scope and unchanged.)
+
+**Fixtures.** New positive runtime fixture
+`repro/mi_matrix/stdlib_comptime_true_if_xmod/` (`main.zig` + `expected.txt` + `expected.rc`;
+local-const `==`/`!=`/`<`/`<=`/`>`/`>=`, `and`/`or`/`!`, `true or <runtime>`, an arithmetic-derived
+comparison, const-of-const, a module const, and the void-then value `if` forms
+`_ = if (c) foo();` / `_ = if (c) foo() else bar();` / the capture form; every result
+`@panic`-guarded; golden `10 11 12 13 14 15 16 17 18 19 30 32 34\nFFF`, rc 0, byte-exact 3x and
+oracle-matched against `/tmp/zig-x86_64-linux-0.15.2/zig`). New standalone repros
+`repro/if_noelse_comptime.z98` and `repro/void_value_if.z98`. `repro/mi_matrix/if_noelse_reject_xmod`
+gained a `false and <runtime>` row (`andFalse`) — now 6 `error[3059]`; runtime `var`-comparison and
+non-optional-capture rows stay rejected. stdlib pin **214 -> 215**.
+
+**Gates.** 4-MD5 emitted-C **UNCHANGED** (gol `e7bde571…` / lisp `552d0a84…` / json `38b37bdd…` /
+mud `5a1cc65e…`); example matrix **24/24**; std-lib runtime gate **215 PASS / 0 FAIL**; corpus
+`-s0` **983 dirs = 863 OK / 42 GREEN / 78 FAIL / 0 ICE / 0 CRASH** with a full-classifier join-diff
+vs the pre-fix seed v76 compiler moving EXACTLY `stdlib_comptime_true_if_xmod` (FAIL -> OK, the new
+fixture; RED pre-fix = 13 `error[3059]`, GREEN post-fix = rc 0 / 6 `.c`); `check_emit_support.sh`
+7/7; `verify_upgraded.sh` CLOSEOUT OK. Fixed point **MOVED `efa91f8d7c000df51d5547b2628f6e9f` →
+`c635bbf952501ca5993e6c60f63a4a5f`** (two-hop closure hop1==hop2); seed **v76 → v77** (archive md5
+`d3df69da8b0c029e4373fef816c86ff4` → `6ca3b47c216754a0fb4b11c3cab7bd10`; `gen/` 45 `.c` + 46 `.h`).
 
 ## Task 9B — reject invalid condition / `if` forms (v194 -> v195 2026-09-22; fix round 1 v195 -> v196)
 
