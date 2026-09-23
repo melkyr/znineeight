@@ -1,0 +1,423 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Reading the Errors</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual error diagnostic compiler message caret file line column error code note shadow">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol1-12-arrays.html">
+<link rel="next" href="vol2-00-title.html">
+</head>
+<body bgcolor="#f5f0e1" text="#000000" link="#003366" vlink="#551a8b" alink="#cc0000">
+<table width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#e8e0cc" class="sidebar">
+<font size="1">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#e8e0cc" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume I &mdash; Getting Started</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol1-00-title.html">How to read this</a><br>
+<a href="vol1-01-what-is-programming.html">What is a program</a><br>
+<a href="vol1-02-what-is-z98.html">What is Z98, and why 1998</a><br>
+<a href="vol1-03-your-machine.html">Your machine</a><br>
+<a href="vol1-04-installing.html">Installing the toolchain</a><br>
+<a href="vol1-05-first-program.html">Your first program</a><br>
+<a href="vol1-06-variables-types.html">Variables and types</a><br>
+<a href="vol1-07-arithmetic.html">Doing arithmetic</a><br>
+<a href="vol1-08-decisions.html">Making decisions</a><br>
+<a href="vol1-09-repetition.html">Doing things repeatedly</a><br>
+<a href="vol1-10-functions.html">Functions</a><br>
+<a href="vol1-11-structs.html">Grouping data</a><br>
+<a href="vol1-12-arrays.html">Lists of things</a><br>
+<b>Reading the errors</b><br>
+Your first useful program <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Reading the Errors</h1>
+<p>
+Every program in this volume has ended with a build that succeeds. This
+chapter is about the other outcome: the compiler reads the source, finds
+something it cannot accept, prints a message, and refuses to produce a
+program. That message is the compiler doing its job. It names the file, the
+line, the column, and the thing that is wrong, and the fastest way to fix a
+program is to read it without panic.
+</p>
+<p>
+The chapter is a tour of five small programs, each deliberately wrong in a
+different way. They live beside the working examples, in
+<tt>docs/sf/manuals/src/vol1/errors/</tt>, one error per file
+(<tt>err1.z98</tt> through <tt>err5.z98</tt>). Compile one with the compiler
+from chapter 4 and it stops with exactly the diagnostic quoted here. There is
+no working program in this chapter: the transcripts are the figures, and the
+"Check yourself" asks you to read a diagnostic the way earlier chapters asked
+you to read a program.
+</p>
+
+<h2>How to read a diagnostic</h2>
+<p>
+A diagnostic is written to standard error and the compiler stops, without
+producing a program; the exit status is nonzero. One build can print more
+than one diagnostic, but each is a small block of lines, and every line has
+one job.
+</p>
+<ul>
+<li>The first line is the position, the code, and the message:
+<tt>file:line:column: error[code]: message</tt>. The line is counted from 1,
+the way a text editor counts lines. The column is counted from 0, the way
+this manual counts the indices of a list, and it is the column of the first
+character of the span the compiler is complaining about.</li>
+<li>The second line repeats the offending source line, so you do not have to
+go looking for it.</li>
+<li>The third line is the caret line: spaces up to the column, then one
+<tt>^</tt> under every character of the span. Some spans are a single name;
+some cover a whole statement; a function that must return has a span that
+covers the whole function, and its carets run to the end of the span.</li>
+<li><tt>note:</tt> lines come last, and only when the compiler has more to
+say. A note carries no position of its own; it belongs to the diagnostic
+above it. Error 5 ends with one.</li>
+</ul>
+<p>
+The code in brackets is a label the compiler puts on each kind of diagnostic.
+It is not a line number and not a count. Language-level errors use codes in
+the 30xx block, but a code is only a label: error 1 below is
+<tt>error[20]</tt>. Read the message and the caret, not the digits.
+</p>
+
+<h2>Error 1: a name that is not there</h2>
+<p>
+The first program counts one value and then prints a total. It builds until
+line 7, where it asks for a name that was never declared:
+</p>
+<pre>
+const std = @import("std");
+
+pub fn main() void {
+    var count: i32 = 3;
+    count = count + 1;
+    std.io.print("count is {}\n", .{count});
+    std.io.print("total is {}\n", .{total});
+}
+</pre>
+<pre>
+$ mkdir -p /tmp/manual_out/err1
+$ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out/err1 err1.z98
+err1.z98:7:36: error[20]: identifier 'total' is not declared or imported in this module
+    std.io.print("total is {}\n", .{total});
+                                    ^^^^^
+</pre>
+<p>
+Read the header first: file <tt>err1.z98</tt>, line 7, column 36. Count the
+line from 1 &mdash; it is the second print &mdash; and the column from 0:
+column 36 is where the name <tt>total</tt> begins. The caret line agrees:
+five carets under the five letters of <tt>total</tt>, and nothing else
+underlined. The message says what the caret shows: nothing named
+<tt>total</tt> is declared in this module. The only variable here is
+<tt>count</tt>.
+</p>
+<p>
+The fix is to use a name that exists. If the second print was meant to show
+the same count, write <tt>count</tt>; if the program really wants a total,
+declare it first (<tt>var total: i32 = 0;</tt>) and give it a value before
+line 7 uses it. The compiler will not guess which name you meant.
+</p>
+
+<h2>Error 2: a variable with no starting value</h2>
+<p>
+The second program declares a variable and assigns to it on the next line.
+Z98 refuses to let a variable exist without a starting value:
+</p>
+<pre>
+const std = @import("std");
+
+pub fn main() void {
+    var count: i32;
+    count = 3;
+    std.io.print("count is {}\n", .{count});
+}
+</pre>
+<pre>
+$ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out/err2 err2.z98
+err2.z98:4:4: error[3014]: variable must be initialized; use '= undefined' to opt out
+    var count: i32;
+    ^^^^^^^^^^^^^^^
+</pre>
+<p>
+The position is line 4, column 4 &mdash; the first character of <tt>var</tt>
+&mdash; and the span is the whole declaration, so the carets cover all
+fifteen characters from <tt>var</tt> to the semicolon. The message names both
+the rule and the escape hatch: <tt>var x: T;</tt> is rejected, and writing
+<tt>= undefined</tt> tells the compiler that the first value will be supplied
+some other way. For a counter, the honest fix is a real starting value:
+</p>
+<pre>
+var count: i32 = 0;
+count = 3;
+</pre>
+<p>
+or simply <tt>var count: i32 = 3;</tt>, dropping the next line. The opt-out
+exists for the cases where the first value really does arrive another way;
+for an ordinary counter, start with the value you mean.
+</p>
+
+<h2>Error 3: a value that cannot change</h2>
+<p>
+Chapter 6 drew the line between <tt>const</tt> and <tt>var</tt>, and chapter
+10 applied it to parameters: a parameter is a name for a value the caller
+supplied, and Z98 does not let the function change it. The third program
+tries:
+</p>
+<pre>
+const std = @import("std");
+
+fn double(n: i32) i32 {
+    n = n * 2;
+    return n;
+}
+
+pub fn main() void {
+    std.io.print("double is {}\n", .{double(21)});
+}
+</pre>
+<pre>
+$ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out/err3 err3.z98
+err3.z98:4:4: error[3002]: cannot assign to immutable variable
+    n = n * 2;
+    ^
+</pre>
+<p>
+Line 4, column 4; the span is the single character <tt>n</tt>, so there is a
+single caret. The message is the one chapter 6 met for a <tt>const</tt> and
+chapter 11 met for a struct field: immutable. <tt>n</tt> is a parameter, so
+it is read-only no matter how convenient changing it in place would be.
+</p>
+<p>
+The fix is a second name for the second value:
+</p>
+<pre>
+fn double(n: i32) i32 {
+    const doubled: i32 = n * 2;
+    return doubled;
+}
+</pre>
+<p>
+The parameter <tt>n</tt> is still there, unchanged; <tt>doubled</tt> is a new
+<tt>const</tt> holding the new value. When a value must change inside a
+function, declare a local <tt>var</tt> and copy the parameter into it.
+</p>
+
+<h2>Error 4: a function that does not always return</h2>
+<p>
+Chapter 10's rule was short: a function that promises a value owes a value on
+every path. The fourth program returns on two of the three possible inputs
+and forgets the third:
+</p>
+<pre>
+const std = @import("std");
+
+fn sign(n: i32) i32 {
+    if (n < 0) return -1;
+    if (n > 0) return 1;
+}
+
+pub fn main() void {
+    std.io.print("sign is {}\n", .{sign(5)});
+}
+</pre>
+<pre>
+$ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out/err4 err4.z98
+err4.z98:3:0: error[3003]: missing return: not all control paths return a value
+fn sign(n: i32) i32 {
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+</pre>
+<p>
+The position is line 3, column 0 &mdash; the first character of the function
+itself &mdash; and the span is the whole function body, which is why the
+caret line is much wider than the printed source line. The message is about
+reachability: the compiler followed the paths, and some path reaches the
+closing brace without a value. <tt>sign</tt> returns <tt>-1</tt> for negative
+input and <tt>1</tt> for positive input; input <tt>0</tt> satisfies neither
+<tt>if</tt>, so it falls off the end.
+</p>
+<p>
+The fix is to answer the missing case, exactly as a person reading the
+function would:
+</p>
+<pre>
+fn sign(n: i32) i32 {
+    if (n < 0) return -1;
+    if (n > 0) return 1;
+    return 0;
+}
+</pre>
+<p>
+The compiler is not guessing that <tt>0</tt> is the missing case; it is
+telling you that <i>some</i> path has no return. Read the conditions and find
+the path that slips through.
+</p>
+
+<h2>Error 5: a name declared twice</h2>
+<p>
+The last program declares <tt>count</tt> outside an <tt>if</tt> and then
+declares another <tt>count</tt> inside it. Both names would be legal on their
+own; the problem is that the second one hides the first:
+</p>
+<pre>
+const std = @import("std");
+
+pub fn main() void {
+    const count: i32 = 3;
+    if (count > 0) {
+        const count: i32 = 5;
+        std.io.print("inner count is {}\n", .{count});
+    }
+}
+</pre>
+<pre>
+$ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out/err5 err5.z98
+err5.z98:6:14: error[3057]: local declaration shadows an earlier declaration in an enclosing scope
+        const count: i32 = 5;
+              ^^^^^
+note: previous declaration here
+</pre>
+<p>
+Line 6 is the inner declaration, and column 14 is where the inner
+<tt>count</tt> begins; the carets mark it. The message uses the word
+<i>shadows</i>: the new name stands in front of an older one, so inside the
+<tt>if</tt> block <tt>count</tt> would mean the new variable and the outer one
+could not be reached by name. The <tt>note:</tt> line is the compiler's hint
+that an earlier declaration exists: the <tt>const count: i32 = 3;</tt> in the
+enclosing block. A note has no file and line of its own; it is an aside
+attached to the error above it.
+</p>
+<p>
+The fix is a name that means what it says:
+</p>
+<pre>
+const count: i32 = 3;
+if (count > 0) {
+    const inner: i32 = 5;
+    std.io.print("inner count is {}\n", .{inner});
+}
+</pre>
+<p>
+If the inner block really means to change the outer value, the outer
+declaration must be a <tt>var</tt>, and the inner block should assign to it
+instead of declaring a second name. What Z98 does not allow is one name with
+two meanings in nested scopes.
+</p>
+
+<h2>The five in one look</h2>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left">Diagnostic</th>
+<th align="left">What the compiler saw</th>
+<th align="left">What to write instead</th>
+</tr>
+<tr>
+<td><tt>error[20]</tt></td>
+<td>a name that was never declared</td>
+<td>declare it, or use the name that exists</td>
+</tr>
+<tr>
+<td><tt>error[3014]</tt></td>
+<td>a variable with no starting value</td>
+<td><tt>var count: i32 = 0;</tt></td>
+</tr>
+<tr>
+<td><tt>error[3002]</tt></td>
+<td>an assignment to something read-only</td>
+<td>a new local, or a <tt>var</tt> declaration</td>
+</tr>
+<tr>
+<td><tt>error[3003]</tt></td>
+<td>a path that leaves a function without a value</td>
+<td>a <tt>return</tt> for the missing case</td>
+</tr>
+<tr>
+<td><tt>error[3057]</tt></td>
+<td>a name that hides an enclosing name</td>
+<td>a different name, or an assignment to the outer one</td>
+</tr>
+</table>
+
+<h2>Running the compiler under Windows 98</h2>
+<p>
+The compiler is a console program under Windows 98 as well, and an error
+looks the same there: the position line, the source line, the caret, and any
+notes, printed in the console. The five files fail with the same diagnostics.
+The screenshot below will be captured on real hardware.
+</p>
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f5f0e1" class="placeholder">
+<tr>
+<td align="center">
+<i>Figure 14 &mdash; Win9x screenshot pending</i>
+</td>
+</tr>
+</table>
+<p><i>Figure 14. An error in the Windows 98 console.</i></p>
+
+<h2>Check yourself</h2>
+<p>
+Answer these before moving on. The first three can be answered from the
+transcripts above; the rest ask you to read an error and state the fix.
+</p>
+<ol>
+<li>In <tt>err1.z98:7:36: error[20]: ...</tt>, which line holds the mistake,
+and which character does the caret point at? Why is the column 36 and not
+37?</li>
+<li>What does the code in brackets tell you, and what does it not tell
+you?</li>
+<li>Why does error 4's caret line run past the end of the printed source
+line, while error 3's caret line is a single <tt>^</tt>?</li>
+<li>State the fix for each of the five errors in one sentence.</li>
+<li>A program reports <tt>error[3014]: variable must be initialized; use '=
+undefined' to opt out</tt> on the line <tt>var total: i32;</tt>. What is the
+fix?</li>
+<li>A function <tt>fn max(a: i32, b: i32) i32</tt> ends with
+<tt>if (a &gt; b) return a;</tt>. The compiler reports
+<tt>error[3003]</tt>. Which input falls off the end, and what line would you
+add?</li>
+<li>A block declares <tt>const total</tt>, and an inner block declares
+<tt>const total</tt> again; the compiler reports <tt>error[3057]</tt> with
+<tt>note: previous declaration here</tt>. Which declaration does the note
+mean?</li>
+<li>Fix <tt>err4.z98</tt> by adding the missing <tt>return</tt>, rebuild, and
+run it. What does it print? Then change the call to <tt>sign(0)</tt> and
+rebuild; what prints now?</li>
+</ol>
+
+<p>Previous: <a href="vol1-12-arrays.html">Lists of things</a> | <a href="toc.html">Contents</a> | Next: <a href="vol2-00-title.html">Volume II &mdash; Learning Z98</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
