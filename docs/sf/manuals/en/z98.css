@@ -1,39 +1,93 @@
+/* Z98 Manual - screen stylesheet. CSS1 only; colours are multiples of 8
+   (16-bit-display safe) and luminance-separated (readable in grayscale). */
+
 body {
   font-family: serif;
   font-size: 12pt;
   color: #000000;
-  background-color: #f5f0e1;
+  background-color: #fffff0;
 }
 
+/* Code blocks: their own surface so a block's start and end are obvious. */
 pre {
   font-family: monospace;
   font-size: 10pt;
+  background-color: #f8f0d8;
+  border: 1px solid #a09878;
+  padding: 6pt;
+  margin-top: 6pt;
+  margin-bottom: 6pt;
+}
+
+/* Inline code. */
+tt {
+  background-color: #f8f0d8;
 }
 
 h1 {
-  font-size: 24pt;
+  font-size: 26pt;
+  font-weight: bold;
+  color: #003366;
+  margin-top: 0pt;
+  margin-bottom: 8pt;
 }
 
 h2 {
-  font-size: 18pt;
+  font-size: 20pt;
+  font-weight: bold;
+  color: #003366;
+  margin-top: 16pt;
+  margin-bottom: 6pt;
+  border-bottom: 1px solid #a09878;
+  padding-bottom: 2pt;
 }
 
 h3 {
-  font-size: 14pt;
+  font-size: 15pt;
+  font-weight: bold;
+  color: #003366;
+  margin-top: 12pt;
+  margin-bottom: 4pt;
 }
 
 h4 {
   font-size: 12pt;
+  font-weight: bold;
+  margin-top: 10pt;
+  margin-bottom: 4pt;
 }
 
 a:link {
-  color: #003366;
+  color: #000080;
+  text-decoration: underline;
 }
 
 a:visited {
-  color: #551a8b;
+  color: #800080;
+  text-decoration: underline;
 }
 
+/* The left menu: larger than the <font size="1"> presentational baseline,
+   with its own surface so it separates from the page. */
+.sidebar {
+  background-color: #c8c0a0;
+  border-right: 1px solid #a09878;
+  font-size: 10pt;
+  line-height: 1.35;
+}
+
+.sidebar font {
+  font-size: 10pt;
+}
+
+/* The language bar above the page. */
+.langbar {
+  background-color: #c8c0a0;
+  border-bottom: 1px solid #a09878;
+  font-size: 9pt;
+}
+
+/* Figure placeholders. */
 .placeholder {
-  border: 1px dashed #808080;
+  border: 1px dashed #a09878;
 }

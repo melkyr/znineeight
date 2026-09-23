@@ -1,5 +1,9 @@
+/* Z98 Manual - print stylesheet. Black on white; navigation hidden. */
+
 body {
   font-size: 11pt;
+  color: #000000;
+  background-color: #ffffff;
 }
 
 .sidebar {
@@ -11,5 +15,6 @@ body {
 }
 
 pre {
+  background-color: #ffffff;
   border: 1px solid #000000;
 }
