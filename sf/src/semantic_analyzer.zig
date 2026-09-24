@@ -1051,6 +1051,25 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
 
     var fnf2: []const u8 = "NF\n"; pal_mod.markerWrite(fnf2);
     var ff2n_m: []const u8 = "FF2:N"; pal_mod.markerWriteInt(ff2n_m, node_idx); var ff2f_m: []const u8 = "FF2:F"; pal_mod.markerWriteInt(ff2f_m, field_name_id); var ff2b_m: []const u8 = "FF2:B"; pal_mod.markerWriteInt(ff2b_m, base_type_id);
+    // Task 13 (S1): a non-existent member of a struct/union/tagged-union value.
+    // Z98 aggregate types cannot contain function declarations, so the
+    // spec-forbidden method syntax `value.func()` is always this shape.
+    // Official Zig 0.15.2 rejects it ("no field or member function named
+    // '...'"); before this check the access resolved silently to TYPE_VOID and
+    // a call lowered to `zT_N = zT_undeclared();`. MarkNodeOnce dedupes: the
+    // expression walk can revisit a field access.
+    if (diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) {
+        var ukm1: []const u8 = "no field or member function named '";
+        var ukm2: []const u8 = "' in struct type";
+        if (base_ty.kind == type_mod.TypeKind.union_type or base_ty.kind == type_mod.TypeKind.packed_union_type or base_ty.kind == type_mod.TypeKind.tagged_union_type) {
+            var ukm2u: []const u8 = "' in union type";
+            ukm2 = ukm2u;
+        }
+        var ukm_name = interner_mod.stringInternerGet(self.interner, field_name_id);
+        var ukmparts: [3][]const u8 = [3][]const u8{ ukm1, ukm_name, ukm2 };
+        var ukm_msg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &ukmparts[0], @intCast(u32, 3));
+        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3060_METHOD_SYNTAX_NOT_SUPPORTED)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), ukm_msg);
+    }
     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
     return type_mod.TYPE_VOID;
 }

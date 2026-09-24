@@ -119,6 +119,13 @@ pub const ErrorCode = enum(u16) {
     // produce a value ("incompatible types: '...' and 'void'"). Level 0, span
     // on the `if` expression; rejects with 0 `.c`.
     ERR_3059_IF_WITHOUT_ELSE = 3059,
+    // Task 13 (S1): a field access naming a non-existent member of a
+    // struct/union/tagged-union value. Z98 aggregate types cannot contain
+    // function declarations, so the spec-forbidden method syntax
+    // `value.func()` is always this shape. Matches official Zig 0.15.2's
+    // "no field or member function named '...'" rejection. Level 0, span on
+    // the field access; rejects with 0 `.c`.
+    ERR_3060_METHOD_SYNTAX_NOT_SUPPORTED = 3060,
 };
 
 pub const ERR_1000_UNTERMINATED_STRING: u16 = 0;

@@ -1,4 +1,48 @@
-# mi_matrix corpus — expected-fail manifest (v218 2026-09-24)
+# mi_matrix corpus — expected-fail manifest (v219 2026-09-24)
+
+## Task 13 (S1) — reject method-call syntax and unknown struct members (v218 -> v219 2026-09-24)
+
+**Defect.** Z98 forbids method syntax — `struct.func()` is not supported; use `func(struct)`
+(`docs/reference/Language_Spec_Z98.md` §5 "No Method Syntax"; `docs/sf/AGENTS.md`). But a member
+call on a struct value (`nine.square()`) compiled rc=0 with **no error diagnostic**:
+`semanticAnalyzerResolveFieldAccess` returned `TYPE_VOID` silently when a struct's member was not
+found, so the call lowered to an indirect call with an undeclared callee temp
+(`zT_8 = zT_7();`). The C89 compile passed via an implicit function declaration and the **link**
+failed (`undefined reference to 'zT_7'`). A plain unknown member (`nine.nope`) was silently typed
+`void` too. Pre-fix (`d290b3d7` seed build): `method_syntax_reject_xmod` rc=0 / 4 `.c` / 0 errors;
+`repro/method_syntax.z98` rc=0 / 4 `.c` / gcc `'zT_8' undeclared`.
+
+**Fix.** `sf/src/semantic_analyzer.zig`'s `semanticAnalyzerResolveFieldAccess` Phase 5 (member not
+found on a `struct_type`/`union_type`/`packed_union_type`/`tagged_union_type` base) now emits the
+new level-0 `error[3060]` (`ERR_3060_METHOD_SYNTAX_NOT_SUPPORTED` in
+`sf/src/diagnostics.zig`) with message `no field or member function named '<name>' in
+struct/union type`, deduped per node via `diagnosticCollectorMarkNodeOnce`, and returns
+`TYPE_VOID`. rc=2, 0 `.c`. Official Zig 0.15.2 rejects every site
+(`no field or member function named 'square' in 'Point'` / `no field named 'nope' in struct`).
+Valid free-function calls (`square(nine)`), real field accesses (value / pointer / nested /
+call-result), union fields, tagged-union fields + `.tag`, enum members and error-set members are
+unchanged (diagnostics and emitted C byte-identical to the base compiler on the all-valid-shapes
+probe).
+
+**Fixtures.** Reject: `repro/mi_matrix/method_syntax_reject_xmod` (8 sites: `nine.square()`,
+`nine.nope`, `p.square()`, `outer.inner.area()`, `makePoint().square`, `u.nope`, `tu.nope`,
+`Point.square`; rc=2, 0 `.c`, 8 x `error[3060]`; class FAIL). Positive runtime control:
+`repro/mi_matrix/stdlib_method_syntax_ok_xmod` (stdlib pin **227 -> 228**; golden
+`free=9 x=3 px=3 nested=7 callx=5 union=11 tu=13 tag=0 enum=2`, rc 0, 3x byte-exact and
+Zig-0.15.2-twin-matched). Standalone `repro/method_syntax.z98` (rc 2 / 0 `.c` / 2 x `error[3060]`).
+
+**Gates.** self-compile **moving point** hop1 `ba6ff1d4be52652125a5947882f1696b` != hop2 == hop3 ==
+**`7c9a1dc0e3a1e7bacd00bc53eb3f07f1`** (explicit `FIXED_POINT_MD5=7c9a1dc0…` gate OK, deterministic
+across two out-dirs); 4-MD5 emitted-C **UNCHANGED** (gol `e7bde571…` / lisp `4afb601f…` /
+json `09fb55e5…` / mud `5a1cc65e…`, 2x each); corpus `-s0` **1004 = 877 OK / 45 GREEN / 82 FAIL /
+0 ICE / 0 CRASH** (join-diff vs the pre-fix Task 11 fix-round classification = exactly the 2 new
+fixture dirs, **zero other movement**); std-lib runtime gate **228 PASS / 0 FAIL**; example matrix
+**24/24**; `check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK; build_test **0/9**
+(pre-existing zig0 baseline); self-emission rc 0 / 48 `.c` + 48 `.h` / no PANIC / memory
+`pool=17785K`. Seed stays **v83** (operator R2, rotation is closeout-only).
+
+**Residual (out of scope).** An unknown member on an enum value / error set / non-aggregate base
+still resolves silently to `TYPE_VOID` (the reject covers aggregate types only).
 
 ## Task 11 fix round — for-header evaluation order (v217 -> v218 2026-09-24)
 

@@ -1,0 +1,42 @@
+// method_syntax.z98 — standalone reproduction for the Task 13 (S1) fix.
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   <zig1> --dump-c89 --output-dir /tmp/method_syntax repro/method_syntax.z98
+//
+// EXPECTED (after the fix): dump rc=2, 0 `.c`,
+//   error[3060]: no field or member function named 'square' in struct type
+//   error[3060]: no field or member function named 'nope' in struct type
+//
+// DEFECT (before the fix): Z98 forbids method syntax — `struct.func()` is not
+// supported; use `func(struct)` (docs/reference/Language_Spec_Z98.md, "No
+// Method Syntax") — but the member call on a struct value compiled rc=0 with
+// NO error diagnostic. `semanticAnalyzerResolveFieldAccess` returned
+// `TYPE_VOID` silently when a struct's member was not found, so the call
+// lowered to an indirect call with an undeclared callee temp
+// (`zT_8 = zT_7();`); the C89 compile passed via an implicit function
+// declaration and the LINK failed (`undefined reference to 'zT_7'`).
+// A plain unknown member (`nine.nope`) was silently typed `void` too.
+//
+// FIX (Task 13): an unknown member of a struct/union/tagged-union value emits
+// the new level-0 `error[3060]` (ERR_3060_METHOD_SYNTAX_NOT_SUPPORTED) and the
+// program rejects with rc=2 and 0 emitted `.c`. Valid free-function calls
+// (`square(nine)`) and real field accesses (`nine.x`) are unchanged — see
+// repro/mi_matrix/stdlib_method_syntax_ok_xmod.
+//
+// Zig 0.15.2 oracle: both sites are rejected
+// ("no field or member function named 'square' in 'Point'",
+// "no field named 'nope' in struct 'Point'").
+const Point = struct {
+    x: i32,
+    y: i32,
+};
+
+fn square(p: Point) i32 {
+    return p.x * p.x;
+}
+
+pub fn main() void {
+    const nine = Point{ .x = 3, .y = 4 };
+    nine.square();
+    _ = nine.nope;
+}
