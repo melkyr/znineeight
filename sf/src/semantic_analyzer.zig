@@ -1798,6 +1798,67 @@ fn resolveReturnStmt(self: *SemanticAnalyzer, node_idx: u32) void {
     }
 }
 
+// Task 14 (S2): report a call whose argument count does not match the callee's
+// fixed parameter count. `variadic` selects Zig's "expected at least N"
+// wording; deduped per call node (the expression walk can revisit a call).
+fn semanticAnalyzerReportCallArity(self: *SemanticAnalyzer, node_idx: u32, expected: usize, found: usize, variadic: bool) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) return;
+    var exp_buf: [10]u8 = undefined;
+    var exp_l = itoa_mod.itoa(@intCast(u32, expected), exp_buf[0..]);
+    var found_buf: [10]u8 = undefined;
+    var found_l = itoa_mod.itoa(@intCast(u32, found), found_buf[0..]);
+    var p0: []const u8 = "expected ";
+    if (variadic) { p0 = "expected at least "; }
+    var p1: []const u8 = " argument(s), found ";
+    var exp_s: usize = @intCast(usize, 9) - @intCast(usize, exp_l);
+    var found_s: usize = @intCast(usize, 9) - @intCast(usize, found_l);
+    var parts: [4][]const u8 = [4][]const u8{ p0, exp_buf[exp_s..@intCast(usize, 9)], p1, found_buf[found_s..@intCast(usize, 9)] };
+    var msg = diag_mod.diagnosticBuilderMakeMsg(self.diag.interner, &parts[0], @intCast(u32, 4));
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3061_WRONG_ARGUMENT_COUNT)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), msg);
+}
+
+// Task 14 (S2): the call-site assignability check rejects only CROSS-FAMILY
+// argument mismatches (e.g. a `bool` passed for an `i32` parameter — the
+// silent `bool` -> `i32` coercion this task was opened for). Z98's
+// established implicit conversions stay valid:
+//   * integer <-> integer of any width/signedness (the compiler's own source
+//     and the corpus use them pervasively; Zig's strictly-wider rule would
+//     break self-hosting);
+//   * the whole pointer/slice/array interop family (its invalid shapes are
+//     already rejected by `isBShapeMismatch` and the lowering diagnostics);
+//   * an error-set source into an integer (Z98's `@enumToInt(<error set>)`
+//     keeps the error-set type in the front end);
+//   * a void/unresolved source (an undeclared identifier already got
+//     `error[20]`; some front-end folds type void where the program is valid).
+// Everything else that is not assignable now rejects at the call site.
+fn semanticAnalyzerIsPointerFamilyKind(k: type_mod.TypeKind) bool {
+    if (k == type_mod.TypeKind.ptr_type) return true;
+    if (k == type_mod.TypeKind.many_ptr_type) return true;
+    if (k == type_mod.TypeKind.slice_type) return true;
+    if (k == type_mod.TypeKind.array_type) return true;
+    return false;
+}
+
+fn semanticAnalyzerCallArgTolerated(self: *SemanticAnalyzer, src_ty: u32, tgt_ty: u32) bool {
+    if (src_ty == @intCast(u32, 0) or tgt_ty == @intCast(u32, 0)) return false;
+    if (@intCast(usize, src_ty) >= self.registry.types_len or @intCast(usize, tgt_ty) >= self.registry.types_len) return false;
+    var sk = self.registry.types_items[@intCast(usize, src_ty)];
+    var tk = self.registry.types_items[@intCast(usize, tgt_ty)];
+    if (src_ty == type_mod.TYPE_VOID) return true;
+    if (semanticAnalyzerCallArgIntegerKind(self, src_ty) and semanticAnalyzerCallArgIntegerKind(self, tgt_ty)) return true;
+    if (sk.kind == type_mod.TypeKind.error_set_type and semanticAnalyzerCallArgIntegerKind(self, tgt_ty)) return true;
+    if (semanticAnalyzerIsPointerFamilyKind(sk.kind) and semanticAnalyzerIsPointerFamilyKind(tk.kind)) return true;
+    return false;
+}
+
+// Task 14 (S2): the integer family for the call-site check — every integer
+// kind plus Z98's distinct `c_char` (spec: u8/c_char interchange).
+fn semanticAnalyzerCallArgIntegerKind(self: *SemanticAnalyzer, ty: u32) bool {
+    if (ty == type_mod.TYPE_C_CHAR) return true;
+    return type_mod.typeRegistryIsInteger(self.registry, ty);
+}
+
 fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var fne: []const u8 = "FNE\n"; pal_mod.markerWrite(fne);
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
@@ -1838,6 +1899,7 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
         var has_params: u8 = @intCast(u8, 0);
         var pcount: u16 = @intCast(u16, 0);
         var pstart: u32 = @intCast(u32, 0);
+        var direct_variadic: u8 = @intCast(u8, 0);
         if (decl_cap != 0) {
             var ft = rtt_mod.resolvedTypeTableGet(self.type_table, decl_cap);
             if (ft) |ftid| { var sfm: []const u8 = "SF:H\n"; pal_mod.markerWrite(sfm);
@@ -1847,9 +1909,20 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
                 pcount = ftp.params_count;
                 pstart = ftp.params_start;
                 has_params = @intCast(u8, 1);
+                if ((ftp.flags_packed & type_mod.FN_FLAG_VARIADIC) != @intCast(u8, 0)) { direct_variadic = @intCast(u8, 1); }
             }
             }
             }
+        // Task 14 (S2): enforce the callee's arity at the call site.
+        if (has_params != @intCast(u8, 0)) {
+            if (direct_variadic != @intCast(u8, 0)) {
+                if (args_n < @intCast(usize, pcount)) {
+                    semanticAnalyzerReportCallArity(self, node_idx, @intCast(usize, pcount), args_n, true);
+                }
+            } else if (args_n != @intCast(usize, pcount)) {
+                semanticAnalyzerReportCallArity(self, node_idx, @intCast(usize, pcount), args_n, false);
+            }
+        }
         var ai: usize = 0;
         while (ai < args_n) : (ai += 1) {
             var expected: u32 = @intCast(u32, 0);
@@ -1864,7 +1937,10 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
             popExpectedType(self);
             if (has_params != @intCast(u8, 0) and ai < @intCast(usize, pcount)) {
                 var carg_eff = errLitSrcType(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)), expected, dxc_at);
-                if (!type_mod.typeRegistryIsAssignable(self.registry, carg_eff, expected) and isBShapeMismatch(self, carg_eff, expected, false)) {
+                // Task 14 (S2): enforce per-argument assignability, matching
+                // official Zig 0.15.2; the tolerated Z98 conversion families
+                // stay (see semanticAnalyzerCallArgTolerated).
+                if (carg_eff != @intCast(u32, 0) and expected != @intCast(u32, 0) and expected != type_mod.TYPE_UNDEFINED and expected != type_mod.TYPE_VOID and !type_mod.typeRegistryIsAssignable(self.registry, carg_eff, expected) and !semanticAnalyzerCallArgTolerated(self, carg_eff, expected)) {
                     var argn = ast_mod.astStoreNodeAt(self.store, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)));
                     var csp = argn.span_start;
                     var cep = csp + @intCast(u32, argn.span_len);
@@ -1914,17 +1990,22 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var is_var: u8 = @intCast(u8, 0);
     if ((fnp.flags_packed & @intCast(u8, 1)) != @intCast(u8, 0)) { is_var = @intCast(u8, 1); }
     var fixed: usize = pcount;
+    // Task 14 (S2): report an arity mismatch instead of silently returning the
+    // declared return type; analysis continues so the present arguments are
+    // still resolved (the sema error gate rejects before lowering).
     if (is_var != @intCast(u8, 0)) {
         if (args_n < fixed) {
-            return fnp.return_type;
+            semanticAnalyzerReportCallArity(self, node_idx, fixed, args_n, true);
         }
     } else if (args_n != pcount) {
-        return fnp.return_type;
+        semanticAnalyzerReportCallArity(self, node_idx, pcount, args_n, false);
     }
+    var check_n: usize = fixed;
+    if (args_n < check_n) { check_n = args_n; }
     var ai: usize = 0;
     var fn4e: []const u8 = "FN4e\n"; pal_mod.markerWrite(fn4e);
     var fn4x_m: []const u8 = "FN4x:X"; pal_mod.markerWriteInt(fn4x_m, @intCast(u32, self.registry.xt_len));
-    var fn4y_m: []const u8 = "FN4y:P"; pal_mod.markerWriteInt(fn4y_m, @intCast(u32, pstart));    while (ai < fixed) : (ai += 1) {
+    var fn4y_m: []const u8 = "FN4y:P"; pal_mod.markerWriteInt(fn4y_m, @intCast(u32, pstart));    while (ai < check_n) : (ai += 1) {
         var fn4f: []const u8 = "FN4f\n"; pal_mod.markerWrite(fn4f);
         var param_type = self.registry.xt_items[pstart + ai];
         hash_mod.u32ToU32MapPut(self.call_arg_types, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)), param_type);
@@ -1938,7 +2019,10 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
         if (param_type == type_mod.TYPE_UNDEFINED) { if (arg_type != type_mod.TYPE_UNDEFINED) { hash_mod.u32ToU32MapPut(self.call_arg_types, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)), arg_type); } }
         if (param_type == type_mod.TYPE_VOID) { if (arg_type != type_mod.TYPE_UNDEFINED) { hash_mod.u32ToU32MapPut(self.call_arg_types, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)), arg_type); } }
         var carg_eff = errLitSrcType(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)), param_type, arg_type);
-        if (!type_mod.typeRegistryIsAssignable(self.registry, carg_eff, param_type) and isBShapeMismatch(self, carg_eff, param_type, false)) {
+        // Task 14 (S2): enforce per-argument assignability, matching official
+        // Zig 0.15.2; the tolerated Z98 conversion families stay (see
+        // semanticAnalyzerCallArgTolerated).
+        if (carg_eff != @intCast(u32, 0) and param_type != type_mod.TYPE_UNDEFINED and param_type != type_mod.TYPE_VOID and !type_mod.typeRegistryIsAssignable(self.registry, carg_eff, param_type) and !semanticAnalyzerCallArgTolerated(self, carg_eff, param_type)) {
             var argn = ast_mod.astStoreNodeAt(self.store, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)));
             var csp = argn.span_start;
             var cep = csp + @intCast(u32, argn.span_len);

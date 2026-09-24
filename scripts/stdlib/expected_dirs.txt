@@ -52,6 +52,7 @@ repro/mi_matrix/stdlib_buf_endian_xmod
 repro/mi_matrix/stdlib_buf_growth_xmod
 repro/mi_matrix/stdlib_buf_oom_xmod
 repro/mi_matrix/stdlib_buf_stress_xmod
+repro/mi_matrix/stdlib_call_arity_types_ok_xmod
 repro/mi_matrix/stdlib_capture_sibling_reuse_xmod
 repro/mi_matrix/stdlib_comptime_bigint_arith_xmod
 repro/mi_matrix/stdlib_comptime_cast64_range_xmod

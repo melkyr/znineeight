@@ -368,7 +368,7 @@ To maintain C89 compatibility and compiler simplicity, Z98 has the following lim
 - **No Method Syntax**: `struct.func()` is not supported; use `func(struct)`. (Exception: a call whose callee is named `print` gets format-string lowering; see §4.) A member not found on a value — which is always the case for `struct.func()`, since Z98 aggregate types cannot contain function declarations — is rejected at compile time with `error[3060]` (`no field or member function named '<name>' in <kind> type`), including member access/call on a non-aggregate value (`const x: i32 = 5; x.foo();`); `.len` on an array field, enum/error-set members, module members, `.ptr`, `.tag`/`.payload` and real aggregate fields stay valid. See `sf/docs/tech_docs/05_semantic_analysis.md` §semanticAnalyzerResolveFieldAccess Phases 3/5.
 - **AST Lifting**: Most control-flow expressions (`if`, `switch`, `try`, `catch`, `orelse`) are automatically transformed into statement blocks using temporary variables. This enables their use in complex expressions while maintaining C89 compatibility.
 - **Runtime Safety (`-fsafe` / `-ffast`)**: `-fsafe` is the **default** and enables six runtime checks — checked cast (`@intCast`), division/modulo-by-zero, shift-count, null-unwrap, index out-of-bounds, and integer overflow (`+`, `-`, `*`, unary `-`). A failed check calls `pal_trap()`. `-ffast` disables all six checks (the compiler self-build uses `-ffast`; user programs default to `-fsafe`). `unreachable`/`@panic` trap in **both** modes. Under `-fsafe`, storage initialized with `undefined` is byte-filled with `0xAA` to make reads visible; `-ffast` emits no poison fill (and does not zero it).
-- **Compile-time Diagnostics**: `var x: T;` with no initializer is `error[3014]` (write `= undefined` to opt out). A statement whose result is an error union and is discarded is `error[3015]`. A non-void function that can fall off its end, or a bare `return;` in a non-void function, is `error[3003]` (real reachability; an `if`/`else` where both arms return is not flagged). `orelse` on a non-optional operand is `error[3016]` (see §3.1). All are mode-independent.
+- **Compile-time Diagnostics**: `var x: T;` with no initializer is `error[3014]` (write `= undefined` to opt out). A statement whose result is an error union and is discarded is `error[3015]`. A non-void function that can fall off its end, or a bare `return;` in a non-void function, is `error[3003]` (real reachability; an `if`/`else` where both arms return is not flagged). `orelse` on a non-optional operand is `error[3016]` (see §3.1). A call whose argument count does not match the callee's parameter count is `error[3061]` (`expected N argument(s), found M`; a variadic callee reports `expected at least N ...`), and a call argument whose type is in a different type family from the parameter is `error[3000]` (see Type Coercions below). All are mode-independent.
 
 ## 6. Z98 Idioms and Best Practices
 
@@ -421,6 +421,15 @@ Coercions are only allowed if they do not discard const qualifiers.
 
 **Restriction:**
 These coercions are **not** allowed in other contexts, such as arithmetic operations or comparisons.
+
+### Call-Site Arity and Argument Types
+A call is checked against the callee's signature at the call site.
+
+- **Arity**: the argument count must match the callee's parameter count. A variadic callee (`extern fn f(fmt: [*]const u8, ...)`) requires at least its fixed parameters. A violation rejects with `error[3061]` (`expected N argument(s), found M`; variadic too-few: `expected at least N argument(s), found M`) and emits no C.
+- **Argument types**: an argument whose type is in a different family from the parameter type rejects with `error[3000]` (`type mismatch in function argument ...`) with `source:`/`target:` notes — e.g. a `bool` passed for an `i32` parameter (previously a silent `bool` -> `i32` coercion), an `i32` for a `f32` parameter, or an integer literal for a `bool` parameter.
+- **Still implicit**: Z98's established conversions are unchanged — integer <-> integer of any width/signedness (including `u32` <-> `usize` and narrowing), the pointer/slice/array coercions above, `@enumToInt(<error set>)` into an integer parameter, and `@intCast`-based conversions (which remain the explicit form for a narrowing the program does not want to rely on).
+
+This matches official Zig 0.15.2's rejection of wrong arity and cross-family argument types; the integer-conversion tolerance is the documented Z98 divergence retained for the existing corpus and the compiler's own source.
 
 ## 7. Not Yet Supported
 

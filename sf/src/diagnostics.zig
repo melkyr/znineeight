@@ -126,6 +126,12 @@ pub const ErrorCode = enum(u16) {
     // "no field or member function named '...'" rejection. Level 0, span on
     // the field access; rejects with 0 `.c`.
     ERR_3060_METHOD_SYNTAX_NOT_SUPPORTED = 3060,
+    // Task 14 (S2): a call whose argument count does not match the callee's
+    // parameter count (too few for a fixed list, too many for a non-variadic
+    // one). Matches official Zig 0.15.2's "expected N argument(s), found M"
+    // (variadic too-few: "expected at least N argument(s), found M"). Level 0,
+    // span on the call expression; rejects with 0 `.c`.
+    ERR_3061_WRONG_ARGUMENT_COUNT = 3061,
 };
 
 pub const ERR_1000_UNTERMINATED_STRING: u16 = 0;

@@ -1,4 +1,73 @@
-# mi_matrix corpus — expected-fail manifest (v220 2026-09-24)
+# mi_matrix corpus — expected-fail manifest (v221 2026-09-24)
+
+## Task 14 (S2) — call arity + argument types (v220 -> v221 2026-09-24)
+
+**Defect (High — silent miscompile).** `add(2)` / `add(1, 2, 3)` (wrong arity) compiled rc=0
+(6 `.c`) and failed only at gcc (`too few`/`too many arguments to function`); `add(1, true)` built,
+linked and ran, printing `2` — a silent `bool` -> `i32` coercion. Official Zig 0.15.2 rejects all
+three (`expected 2 argument(s), found 1/3`; `expected type 'i32', found 'bool'`).
+
+**Fix.** `sf/src/diagnostics.zig` gains level-0 `ERR_3061_WRONG_ARGUMENT_COUNT = 3061`.
+`sf/src/semantic_analyzer.zig`'s `semanticAnalyzerResolveFnCall`:
+- **Arity** — the direct-call path reads the resolved fn type's `params_count` + `FN_FLAG_VARIADIC`;
+  the fn-value path had the check but silently `return`ed the declared return type. Both now report
+  `semanticAnalyzerReportCallArity` ("expected N argument(s), found M"; variadic short call
+  "expected at least N argument(s), found M") and CONTINUE analysis (the fn-value loop clamps to
+  `min(params_count, args.len)`), so every present argument is still resolved; the sema `hasErrors`
+  gate rejects before lowering (rc=2, 0 `.c`).
+- **Per-argument assignability** — both paths now reject a typed argument that is neither
+  `typeRegistryIsAssignable` nor `semanticAnalyzerCallArgTolerated` with the existing
+  `error[3000]` "type mismatch in function argument" + `source:`/`target:` notes. The tolerated
+  families (zero-movement constraint: the compiler's own source and the corpus use them pervasively)
+  are: integer <-> integer of any width/signedness (incl. `u32` <-> `usize` and narrowing),
+  the whole pointer/slice/array interop family (its invalid shapes stay covered by
+  `isBShapeMismatch`/lowering), an error-set source into an integer (Z98's
+  `@enumToInt(<error set>)` keeps the error-set type), and a void/unresolved source (an undeclared
+  identifier already got its single `error[20]`). `bool` is in no family, so the reported defect
+  rejects; so do int <-> float, float <-> pointer and aggregate cross-family pairs.
+
+**RED evidence (base `d84f5da4` compiler `1b69e533…`).** `bool_run` probe: rc 0, gcc/link rc 0,
+run prints `sum=2`. Wrong-arity probes: rc 0, gcc `too few arguments to function
+'zF_3B391274_add'` / `too many arguments to function 'zF_3B391274_add'`.
+
+**GREEN evidence (fix compiler `/tmp/opencode_t14/green/zig1_5_clean`).** `add(2)` ->
+`error[3061] expected 2 argument(s), found 1`; `add(1, 2, 3)` -> `error[3061] expected 2
+argument(s), found 3`; `add(1, true)` -> `error[3000] ... source: bool / target: i32`;
+`std.io.print()` -> `error[3061] expected at least 1 argument(s), found 0`; the indirect
+fn-value path rejects the same shapes. Valid controls unchanged: exact-arity correct-type calls,
+`@intCast`-based conversions, `u8` -> `i32` and `u32` <-> `usize` implicit calls, `@enumToInt(err)`
+into `i32`, `system("cls")` (`*const [N]u8` -> `*const c_char`) and `std.io.print(<string>)`.
+
+**Fixtures.** Reject `repro/mi_matrix/call_arity_reject_xmod` (`expected.rc` = 2; 5 sites —
+`add(2)`, `add(1, 2, 3)`, `one(1, 2)`, `one()`, `std.io.print()`; 5 x `error[3061]`, class FAIL).
+Reject `repro/mi_matrix/call_arg_type_reject_xmod` (`expected.rc` = 2; 3 sites — `add(1, true)`,
+`takeBool(1)`, `takeF(i32)`; 3 x `error[3000]`, class GREEN). Positive runtime
+`repro/mi_matrix/stdlib_call_arity_types_ok_xmod` (exact-arity i32 calls, i64 parameter,
+`@intCast` into i8/usize, indirect fn-pointer call, bool parameter/return, `u8` -> `i32` control;
+every check `@panic`-guarded; golden `s1=3 s2=0 i8v=100 us=4096 fp=42 s3=8 neg=1`, rc 0,
+3x byte-exact and Zig-0.15.2-twin-matched) — stdlib pin **228 -> 229**. Standalone
+`repro/call_arity_types.z98` (the three reported shapes).
+
+**Oracle (Zig 0.15.2, one probe per site).** `add(2)` / `add(1, 2, 3)` / `one(1, 2)` / `one()` /
+`printf()` -> `expected [at least] N argument(s), found M`; `add(1, true)` -> `expected type 'i32',
+found 'bool'`; `takeBool(1)` -> `expected type 'bool', found 'comptime_int'`; `takeF(i32)` ->
+`expected type 'f32', found 'i32'` (runtime-`i32` twin).
+
+**Corpus movement (intended, oracle-backed).** `-s0` **1008 = 875 OK / 46 GREEN / 87 FAIL /
+0 ICE / 0 CRASH**; join-diff vs the Task 13 fix-round baseline (1005 = 876 OK / 45 GREEN / 84 FAIL)
+moves exactly the 3 new fixture dirs plus two pre-existing OK -> FAIL arity movements:
+`repro/mi_matrix/ice_literal_overflow` and `repro/mi_matrix/comptime_u64_fold_overflow` — both call
+a fixed 13-parameter `extern fn printf(...)` prototype with 5/6 arguments. Official Zig 0.15.2
+rejects them (`expected 13 argument(s), found 5/6`), so the new `error[3061]` reject is the
+Zig-matching outcome; both were gcc-only survivors of the pre-fix leniency. **Zero other movement.**
+
+**Gates.** self-compile **moving point** hop1 `165a762cbfba63a610600233a0857111` != hop2 == hop3 ==
+**`cd1b2fcfd0efca09dc136d0a0ac7e39e`** (explicit `FIXED_POINT_MD5=cd1b2fcf…` gate OK, deterministic
+across two out-dirs); 4-MD5 emitted-C **UNCHANGED** (gol `e7bde571…` / lisp `4afb601f…` /
+json `09fb55e5…` / mud `5a1cc65e…`, 2x each); std-lib runtime gate **229 PASS / 0 FAIL**; example
+matrix **24/24**; `check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK; build_test **0/9**
+(pre-existing zig0 baseline); self-emission rc 0 / 48 `.c` + 48 `.h` / no PANIC. Seed stays **v83**
+(operator R2: rotation is closeout-only).
 
 ## Task 13 fix round (C1/I1) — array-field `.len` + non-aggregate member rejects (v219 -> v220 2026-09-24)
 
