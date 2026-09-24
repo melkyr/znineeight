@@ -3061,6 +3061,9 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
         if (node.child_1 != 0) { _ = semanticAnalyzerResolveExpr(self, node.child_1); }
         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_U32);
         return type_mod.TYPE_U32;
+     } else if (node.kind == AstKind.for_index_range) {
+        // Task 11 (Part II): `for (iterable, start..end)` explicit index range.
+        return semanticAnalyzerResolveForIndexRange(self, node_idx);
      } else {
           var st_m: []const u8 = "ST:N"; pal_mod.markerWriteInt(st_m, node_idx);
           var st_kv: u32 = @intCast(u32, @enumToInt(node.kind)); var st_km: []const u8 = "ST:K"; pal_mod.markerWriteInt(st_km, st_kv);
@@ -3438,6 +3441,94 @@ fn semanticAnalyzerResolveIfHeader(self: *SemanticAnalyzer, node_idx: u32) void 
     var ifst_k2m: []const u8 = "IFST:K2"; pal_mod.markerWriteInt(ifst_k2m, ifs_k2[0]);
 }
 
+// Task 11 (Part II): `for (iterable, start..end)` explicit index range. The
+// pattern node types as its ITERABLE so `semanticAnalyzerResolveForHeader`
+// extracts the element type from the array/slice exactly as for the plain
+// `for (iterable)` form. The start/end operands follow Zig 0.15.2: each must be
+// a `usize`-compatible unsigned integer (a literal, or an unsigned int whose
+// width fits the target's 32-bit `usize`); a comptime-known bound must fit
+// `usize`; and a comptime-known range whose span differs from a fixed array's
+// length is the Zig "non-matching for loop lengths" reject. Everything that is
+// not comptime-known keeps its runtime check in lowering.
+fn semanticAnalyzerResolveForIndexRange(self: *SemanticAnalyzer, node_idx: u32) u32 {
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    var it_t = semanticAnalyzerResolveExpr(self, node.child_0);
+    var st_t = semanticAnalyzerResolveExpr(self, node.child_1);
+    var en_t: u32 = @intCast(u32, 0);
+    if (node.child_2 != @intCast(u32, 0)) { en_t = semanticAnalyzerResolveExpr(self, node.child_2); }
+    if (!semanticAnalyzerForIndexBoundOk(self, st_t)) {
+        var st_node = ast_mod.astStoreNodeAt(self.store, node.child_1);
+        semanticAnalyzerReportForIndexRange(self, node.child_1, st_node.span_start, st_node.span_start + @intCast(u32, st_node.span_len), "for index range bound must be a 'usize'-compatible unsigned integer");
+    }
+    if (node.child_2 != @intCast(u32, 0) and !semanticAnalyzerForIndexBoundOk(self, en_t)) {
+        var en_node = ast_mod.astStoreNodeAt(self.store, node.child_2);
+        semanticAnalyzerReportForIndexRange(self, node.child_2, en_node.span_start, en_node.span_start + @intCast(u32, en_node.span_len), "for index range bound must be a 'usize'-compatible unsigned integer");
+    }
+    semanticAnalyzerCheckForIndexRangeComptime(self, node_idx, it_t);
+    rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, it_t);
+    return it_t;
+}
+
+fn semanticAnalyzerForIndexBoundOk(self: *SemanticAnalyzer, tid: u32) bool {
+    if (tid == @intCast(u32, 0) or tid == type_mod.TYPE_UNDEFINED or tid == type_mod.TYPE_VOID) return true;
+    if (tid == type_mod.TYPE_INT_LIT) return true;
+    if (!type_mod.typeRegistryIsInteger(self.registry, tid)) return false;
+    if (!type_mod.typeRegistryIsUnsigned(self.registry, tid)) return false;
+    return type_mod.typeRegistryIntWidthBits(self.registry, tid) <= @intCast(u8, 32);
+}
+
+fn semanticAnalyzerReportForIndexRange(self: *SemanticAnalyzer, mark_node: u32, span_start: u32, span_end: u32, msg: []const u8) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, mark_node)) return;
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, span_start, span_end, msg);
+}
+
+fn semanticAnalyzerCheckForIndexRangeComptime(self: *SemanticAnalyzer, node_idx: u32, it_t: u32) void {
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    var ce = ce_mod.comptimeEvalInit(self.registry, self.store, self.interner, self.symbols);
+    ce.local_consts = &self.local_consts;
+    var st_ci: ce_mod.ComptimeInt = ce_mod.ciZeroInt();
+    var st_known: u8 = @intCast(u8, 0);
+    var st_cv = ce_mod.comptimeEvalEvaluate(&ce, node.child_1);
+    if (st_cv) |cv| {
+        if (cv.kind == ce_mod.KIND_INT) {
+            if (!ce_mod.comptimeIntFitsType(self.registry, cv.v, type_mod.TYPE_USIZE)) {
+                semanticAnalyzerReportForIndexRange(self, node.child_1, node.span_start, node.span_start + @intCast(u32, node.span_len), "comptime for index range bound does not fit 'usize'");
+                return;
+            }
+            st_ci = cv.v;
+            st_known = @intCast(u8, 1);
+        }
+    }
+    if (node.child_2 == @intCast(u32, 0)) return;
+    var en_ci: ce_mod.ComptimeInt = ce_mod.ciZeroInt();
+    var en_known: u8 = @intCast(u8, 0);
+    var en_cv = ce_mod.comptimeEvalEvaluate(&ce, node.child_2);
+    if (en_cv) |ecv| {
+        if (ecv.kind == ce_mod.KIND_INT) {
+            if (!ce_mod.comptimeIntFitsType(self.registry, ecv.v, type_mod.TYPE_USIZE)) {
+                semanticAnalyzerReportForIndexRange(self, node.child_2, node.span_start, node.span_start + @intCast(u32, node.span_len), "comptime for index range bound does not fit 'usize'");
+                return;
+            }
+            en_ci = ecv.v;
+            en_known = @intCast(u8, 1);
+        }
+    }
+    if (st_known == @intCast(u8, 0) or en_known == @intCast(u8, 0)) return;
+    var span_ci: ce_mod.ComptimeInt = ce_mod.ciZeroInt();
+    if (!ce_mod.ciSub(en_ci, st_ci, &span_ci)) return;
+    if (span_ci.neg and !ce_mod.ciIsZero(span_ci)) {
+        semanticAnalyzerReportForIndexRange(self, node_idx, node.span_start, node.span_start + @intCast(u32, node.span_len), "for index range end is before start (overflow of 'usize')");
+        return;
+    }
+    if (@intCast(usize, it_t) >= self.registry.types_len) return;
+    var it_ty = self.registry.types_items[@intCast(usize, it_t)];
+    if (it_ty.kind != type_mod.TypeKind.array_type) return;
+    var it_len: u64 = @intCast(u64, self.registry.array_items[@intCast(usize, it_ty.payload_idx)].length);
+    if (ce_mod.ciToU64(span_ci) != it_len) {
+        semanticAnalyzerReportForIndexRange(self, node_idx, node.span_start, node.span_start + @intCast(u32, node.span_len), "non-matching for loop lengths: the index range and the iterable differ in length");
+    }
+}
+
 fn semanticAnalyzerResolveForHeader(self: *SemanticAnalyzer, node_idx: u32) void {
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     // Task 7D: locate the item/index capture NAME tokens (the for_stmt node
@@ -3465,6 +3556,9 @@ fn semanticAnalyzerResolveForHeader(self: *SemanticAnalyzer, node_idx: u32) void
     _ = semanticAnalyzerResolveExpr(self, node.child_0);
     var fs_c_m: []const u8 = "FS:C"; pal_mod.markerWriteInt(fs_c_m, node.child_0);
     var cnode = ast_mod.astStoreNodeAt(self.store, node.child_0);
+    if (cnode.kind == AstKind.for_index_range and node.child_2 == @intCast(u32, 0)) {
+        semanticAnalyzerReportForIndexRange(self, node_idx, node.span_start, node.span_start + @intCast(u32, node.span_len), "explicit index range requires an index capture ('|item, index|')");
+    }
     var fs_ck_m: []const u8 = "FS:CK"; pal_mod.markerWriteInt(fs_ck_m, @intCast(u32, @enumToInt(cnode.kind)));
     var it_tid = rtt_mod.resolvedTypeTableGet(self.type_table, node.child_0);
     if (it_tid) |tid| {

@@ -1,0 +1,169 @@
+// for_index_range.z98 — Task 11 standalone probe: Zig 0.15.2's explicit
+// index-range form.
+//
+//   for (iterable, start..)   |item, index| ...   // open end
+//   for (iterable, start..end) |item, index| ...  // explicit end
+//
+// Oracle-checked semantics (official Zig 0.15.2):
+//   * the index capture is `start + j` (j = 0-based iteration count), never
+//     clamped to the iterable;
+//   * `start..` always iterates every element, even when `start > len`;
+//   * `start..end` requires `end - start == len` (Zig compile error when
+//     known, runtime trap otherwise) and `end < start` overflows the length
+//     computation (runtime trap);
+//   * an empty iterable with `0..0` iterates zero times.
+//
+// Expected stdout (Zig 0.15.2 twin uses `std.debug.print`):
+//   60 2 6 5 60 7 11 60 1 5 60 10 60 10 60 25 0 34 3 70 6
+// rc 0. Built with -fsafe too (the runtime length check passes for every
+// valid range here).
+const std = @import("std");
+
+pub fn main() void {
+    var arr: [5]u32 = [5]u32{ 10, 11, 12, 13, 14 };
+    var s: []u32 = arr[0..5];
+
+    var start1: usize = 2;
+    var sum1: u32 = 0;
+    var n1: u32 = 0;
+    var first1: usize = 999;
+    var last1: usize = 999;
+    for (arr, start1..) |x, i| {
+        sum1 += x;
+        n1 += 1;
+        if (first1 == 999) {
+            first1 = i;
+        }
+        last1 = i;
+    }
+    if (sum1 != 60 or n1 != 5 or first1 != 2 or last1 != 6) {
+        @panic("open-end runtime-start array guard failed");
+    }
+    const r1 = sum1;
+    const r2 = @intCast(u32, first1);
+    const r3 = @intCast(u32, last1);
+    const r4 = n1;
+
+    start1 = 7;
+    sum1 = 0;
+    first1 = 999;
+    last1 = 999;
+    for (arr, start1..) |x, i| {
+        sum1 += x;
+        if (first1 == 999) {
+            first1 = i;
+        }
+        last1 = i;
+    }
+    if (sum1 != 60 or first1 != 7 or last1 != 11) {
+        @panic("open-end start-greater-than-len guard failed");
+    }
+    const r5 = sum1;
+    const r6 = @intCast(u32, first1);
+    const r7 = @intCast(u32, last1);
+
+    var start2: usize = 1;
+    var end2: usize = 6;
+    var sum2: u32 = 0;
+    var first2: usize = 999;
+    var last2: usize = 999;
+    for (s, start2..end2) |x, i| {
+        sum2 += x;
+        if (first2 == 999) {
+            first2 = i;
+        }
+        last2 = i;
+    }
+    if (sum2 != 60 or first2 != 1 or last2 != 5) {
+        @panic("explicit-end runtime-bounds slice guard failed");
+    }
+    const r8 = sum2;
+    const r9 = @intCast(u32, first2);
+    const r10 = @intCast(u32, last2);
+
+    var sum3: u32 = 0;
+    var idx3: usize = 0;
+    for (arr, 0..) |x, i| {
+        sum3 += x;
+        idx3 += i;
+    }
+    if (sum3 != 60 or idx3 != 10) {
+        @panic("literal open-end guard failed");
+    }
+    const r11 = sum3;
+    const r12 = @intCast(u32, idx3);
+
+    sum3 = 0;
+    idx3 = 0;
+    for (arr, 0..5) |x, i| {
+        sum3 += x;
+        idx3 += i;
+    }
+    if (sum3 != 60 or idx3 != 10) {
+        @panic("literal full-range guard failed");
+    }
+    const r13 = sum3;
+    const r14 = @intCast(u32, idx3);
+
+    sum3 = 0;
+    idx3 = 0;
+    for (arr, 3..8) |x, i| {
+        sum3 += x;
+        idx3 += i;
+    }
+    if (sum3 != 60 or idx3 != 25) {
+        @panic("literal offset-range guard failed");
+    }
+    const r15 = sum3;
+    const r16 = @intCast(u32, idx3);
+
+    var se: []u32 = arr[0..0];
+    var sum4: u32 = 0;
+    for (se, 0..0) |x, i| {
+        sum4 += x + @intCast(u32, i);
+    }
+    if (sum4 != 0) {
+        @panic("empty-range guard failed");
+    }
+    const r17 = sum4;
+
+    var sum5: u32 = 0;
+    var seen5: u32 = 0;
+    start1 = 2;
+    for (arr, start1..) |x, i| {
+        _ = i;
+        if (x == 12) {
+            continue;
+        }
+        if (x == 14) {
+            break;
+        }
+        seen5 += 1;
+        sum5 += x;
+    }
+    if (sum5 != 34 or seen5 != 3) {
+        @panic("continue/break guard failed");
+    }
+    const r18 = sum5;
+    const r19 = seen5;
+
+    var m: u32 = 0;
+    for (arr) |x, i| {
+        m += x + @intCast(u32, i);
+    }
+    if (m != 70) {
+        @panic("plain index-capture control failed");
+    }
+    const r20 = m;
+
+    var k: u32 = 0;
+    for (0..4) |i| {
+        k += @intCast(u32, i);
+    }
+    if (k != 6) {
+        @panic("range control failed");
+    }
+    const r21 = k;
+
+    std.io.print("{} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {}\n", .{ r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15, r16, r17, r18, r19, r20, r21 });
+}

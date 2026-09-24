@@ -1,4 +1,59 @@
-# mi_matrix corpus — expected-fail manifest (v216 2026-09-24)
+# mi_matrix corpus — expected-fail manifest (v217 2026-09-24)
+
+## Task 11 — explicit index-range `for (arr, start..end)` (v216 -> v217 2026-09-24)
+
+**Gap.** Zig 0.15.2's explicit index form (`for (arr, start..) |item, index|` /
+`for (arr, start..end) |item, index|`) was a parser gap: Z98 rejected the `,` with `error[2000]`
+(the `range_inclusive` branch in `lower.zig` was dead), and only the plain `for (arr) |x, i|` form
+existed.
+
+**Implementation.** Parser (`sf/src/parser.zig` `parserParseForStmt`): after the iterable, a `,`
+introduces the index range — `start` then `..` with an optional end; the new
+`AstKind.for_index_range` pattern node (child_0 = iterable, child_1 = start, child_2 = end or 0) is
+appended at the end of the `AstKind` enum (`sf/src/ast.zig:112`). Sema
+(`semantic_analyzer.zig` `semanticAnalyzerResolveForIndexRange`): the pattern types as its
+iterable; bounds must be `usize`-compatible unsigned integers (a literal, or an unsigned int whose
+width fits the 32-bit target `usize`); a comptime-known bound must fit `usize`; a comptime-known
+span != a fixed array's length is the Zig "non-matching for loop lengths" reject; a comptime-known
+`end < start` is the Zig overflow reject; an index range without an index capture is the Zig "for
+input is not captured" reject. Lowering (`sf/src/lower.zig` for_stmt arm): the iterable lowers
+exactly as the plain form, the 0-based sequence counter drives the iteration (`j < len`), the index
+capture is `start + j` (no clamping — Zig semantics), and `start..end` computes a checked `usize`
+span (under `-fsafe` an `end < start` underflow traps, Zig's integer-overflow panic) plus an
+`-fsafe`-only `span == len` trap (`check_trap{kind=8}`; Zig's ReleaseFast disables the check too).
+
+**Oracle evidence (Zig 0.15.2).** `for (arr, 5..)` / `for (arr, 7..)` iterate every element with
+indices 5..9 / 7..11 (no clamping); a runtime `start=1,end=4` on a length-5 array panics "for loop
+over objects with non-equal lengths"; `start=5,end=2` panics "integer overflow"; literal `1..4` /
+`3..2` are compile errors; an empty peer with `0..0` iterates zero times; `f64` and `i32` bounds
+reject ("expected type 'usize'"); `u32`/`u64`/`u40` runtime bounds accept on x86_64 (64-bit
+`usize`).
+
+**Fixtures.** Positive runtime `repro/mi_matrix/stdlib_for_index_range_xmod` (array + slice;
+runtime and literal bounds; open `..` and explicit `..end`; `start > len`; literal offset; empty
+slice `0..0`; `continue`/`break`; the `for (arr) |x, i|` and `for (0..n) |i|` controls; golden
+`60 2 6 5 60 7 11 60 1 5 60 10 60 10 60 25 0 34 3 70 6`, rc 0, 3x byte-exact and
+Zig-0.15.2-twin-matched; stdlib pin **226 -> 227**) + reject fixture
+`repro/mi_matrix/for_index_range_reject_xmod` (six sites: literal length mismatch, comptime
+negative bound, `i32` runtime bound, empty span on a non-empty array, `end < start`, missing index
+capture; rc 2, 0 `.c`, 6 x `error[3000]`, GREEN) + standalone `repro/for_index_range.z98`
+(`-ffast` and `-fsafe` byte-identical for every valid range). Runtime-trap probes: a runtime
+mismatch and a runtime `end < start` both trap rc 133 under `-fsafe`.
+
+**Gates.** self-compile **moving point** hop1 `14bebcbe…` != hop2 == hop3 ==
+`0fdee6acaf88360534b930c86fbaad7f`; 4-MD5 emitted-C **UNCHANGED** (gol `e7bde571…` / lisp
+`4afb601f…` / json `09fb55e5…` / mud `5a1cc65e…`, 2x each); example matrix **24/24**; std-lib
+runtime gate **227 PASS / 0 FAIL**; corpus `-s0` **1002 = 876 OK / 45 GREEN / 81 FAIL / 0 ICE /
+0 CRASH** (join-diff vs the pre-change compiler = exactly the 2 new fixture dirs: positive
+FAIL->OK, reject FAIL->GREEN); `check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK;
+build_test **0/9** (pre-existing zig0 baseline); self-emission rc 0 / 48 `.c` + 48 `.h` / no PANIC;
+memory `track-memory: perm=883K mod=1020K scr=1024K pool=19001K type_db=499K total=2927K`. Seed
+stays **v83** (operator R2, rotation is closeout-only).
+
+**Residual (bounded, documented).** A runtime unsigned bound wider than 32 bits (u33..u64) is a
+clean `error[3000]` reject (`usize` is 32-bit on the Z98 target; the x86_64 oracle accepts it
+because its `usize` is 64-bit). Zig's multi-object `for (a, b) |x, y|` stays unsupported (parser
+error, out of scope).
 
 ## Task 10 fix round — over-rename narrowing + authorized 4-MD5 re-baseline (v215 -> v216 2026-09-24)
 

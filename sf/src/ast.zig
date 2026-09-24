@@ -111,6 +111,10 @@ pub const AstKind = enum(u8) {
     sat_sub_assign = 109,
     sat_mul_assign = 110,
     sat_shl_assign = 111,
+    // Task 11 (Part II): `for (iterable, start..end)` explicit index range.
+    // Pattern node carried in `for_stmt.child_0`; child_0 = iterable expr,
+    // child_1 = start expr, child_2 = end expr (0 = open `start..`).
+    for_index_range = 112,
 };
 
 pub const AstNode = struct {

@@ -122,6 +122,7 @@ fn astKindToString(kind: AstKind, buf: []u8) []u8 {
         AstKind.sat_sub_assign => { var s: []const u8 = "sat_sub_assign"; fmt.copyStr(buf, &idx, s); },
         AstKind.sat_mul_assign => { var s: []const u8 = "sat_mul_assign"; fmt.copyStr(buf, &idx, s); },
         AstKind.sat_shl_assign => { var s: []const u8 = "sat_shl_assign"; fmt.copyStr(buf, &idx, s); },
+        AstKind.for_index_range => { var s: []const u8 = "for_index_range"; fmt.copyStr(buf, &idx, s); },
     }
     buf[idx] = 0;
     return buf[0..idx];

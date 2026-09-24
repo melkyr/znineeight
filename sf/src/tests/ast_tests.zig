@@ -183,7 +183,7 @@ fn testNodeHasExtraChildren() void {
 }
 
 fn testNodeChildIsNodeAudit() void {
-    const table = [112]ChildAuditEntry{
+    const table = [113]ChildAuditEntry{
         ChildAuditEntry{ .kind = AstKind.err, .m0 = true, .m1 = true, .m2 = true, .extra = false },
         ChildAuditEntry{ .kind = AstKind.var_decl, .m0 = true, .m1 = true, .m2 = true, .extra = false },
         ChildAuditEntry{ .kind = AstKind.fn_decl, .m0 = true, .m1 = true, .m2 = true, .extra = false },
@@ -296,8 +296,9 @@ fn testNodeChildIsNodeAudit() void {
         ChildAuditEntry{ .kind = AstKind.sat_sub_assign, .m0 = true, .m1 = true, .m2 = true, .extra = false },
         ChildAuditEntry{ .kind = AstKind.sat_mul_assign, .m0 = true, .m1 = true, .m2 = true, .extra = false },
         ChildAuditEntry{ .kind = AstKind.sat_shl_assign, .m0 = true, .m1 = true, .m2 = true, .extra = false },
+        ChildAuditEntry{ .kind = AstKind.for_index_range, .m0 = true, .m1 = true, .m2 = true, .extra = false },
     };
-    assertEqU32(@intCast(u32, table.len), @intCast(u32, 112));
+    assertEqU32(@intCast(u32, table.len), @intCast(u32, 113));
     var i: usize = 0;
     while (i < table.len) : (i += 1) {
         var e = table[i];

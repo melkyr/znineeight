@@ -1851,6 +1851,32 @@ fn parserParseForStmt(self: *Parser) ParserError!u32 {
         var end_node = try parserParseExprPrec(self, Prec.none);
         pattern = ast_mod.astStoreAddNode(self.store, AstKind.range_exclusive, 0,
             0, 0, pattern, end_node, 0, 0);
+    } else if (parserPeek(self).kind == TokenKind.comma) {
+        // Task 11 (Part II): Zig's explicit index-range form
+        //   for (iterable, start..) |item, index| ...
+        //   for (iterable, start..end) |item, index| ...
+        // The `for_index_range` pattern node carries child_0 = iterable,
+        // child_1 = start, child_2 = end (0 = open `start..`). A second
+        // iterable without `..` (Zig's multi-object `for (a, b)`) is out of
+        // scope and falls through to the missing-')' parse error.
+        _ = parserAdvance(self);
+        var idx_tok = parserPeek(self);
+        var idx_start = try parserParseExprPrec(self, Prec.none);
+        if (parserPeek(self).kind != TokenKind.dot_dot) {
+            _ = try parserExpect(self, TokenKind.dot_dot);
+        }
+        _ = parserAdvance(self);
+        var idx_end: u32 = 0;
+        if (parserPeek(self).kind != TokenKind.rparen) {
+            idx_end = try parserParseExprPrec(self, Prec.none);
+        }
+        var idx_span_end: u32 = idx_tok.span_start + @intCast(u32, idx_tok.span_len);
+        if (self.last_tok_valid) {
+            var idx_last = self.last_tok;
+            idx_span_end = idx_last.span_start + @intCast(u32, idx_last.span_len);
+        }
+        pattern = ast_mod.astStoreAddNode(self.store, AstKind.for_index_range, 0,
+            idx_tok.span_start, idx_span_end, pattern, idx_start, idx_end, 0);
     }
     _ = try parserExpect(self, TokenKind.rparen);
 

@@ -101,6 +101,7 @@ repro/mi_matrix/stdlib_file_writeall_xmod
 repro/mi_matrix/stdlib_fileio_xmod
 repro/mi_matrix/stdlib_floatcast_xmod
 repro/mi_matrix/stdlib_for_continue_xmod
+repro/mi_matrix/stdlib_for_index_range_xmod
 repro/mi_matrix/stdlib_heap_init_xmod
 repro/mi_matrix/stdlib_heap_len_xmod
 repro/mi_matrix/stdlib_heap_oom_xmod

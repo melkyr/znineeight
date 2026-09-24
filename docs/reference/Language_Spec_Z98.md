@@ -166,6 +166,7 @@ This approach maximizes performance on legacy hardware by minimizing the active 
 - `for (iterable) |item| statement`: Simple iteration. Supports one or two capture variables: `|item|` or `|item, index|`. Braces are **optional** for the loop body.
   - **Example**: `for (arr) |item| sum = sum + item;`
   - **Iterables**: Supports arrays (`[N]T`), slices (`[]T`), and ranges (`start..end`).
+  - **Explicit Index Range**: `for (arr, start..) |item, index|` and `for (arr, start..end) |item, index|` (Zig 0.15.2 parity) iterate **every** element of the iterable; the index capture is `start + j` (j = the 0-based iteration count) and is **not** clamped to the iterable. `start`/`end` must be `usize`-compatible unsigned integers. `start..end` requires `end - start == arr.len` (a compile-time error when both lengths are known, otherwise a runtime trap under `-fsafe`); `end < start` is an overflow (compile-time error when known, runtime trap otherwise). The index capture is mandatory for this form.
   - **Capture**: The `item` capture is by value (immutable). For ranges, it is of type `usize`.
   - **Index Capture**: An optional second capture `|item, index|` provides the current index as a `usize`.
   - **Discarding**: Captures can be discarded using the underscore `_` (e.g., `for (arr) |_, index|` or `for (arr) |_|`). Discarded captures are not bound to a symbol and cannot be accessed.

@@ -6390,6 +6390,20 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
      } else if (node.kind == AstKind.for_stmt) {
           var forx_m: []const u8 = "FORX\n"; pal.markerWrite(forx_m);
           var pattern = ast_mod.astStoreNodeAt(store, node.child_0);
+          // Task 11 (Part II): `for (iterable, start..)` / `(iterable, start..end)`
+          // wraps the iterable and the explicit index range in a `for_index_range`
+          // pattern; lower the iterable instead and make the index capture
+          // `start + j` (j = the 0-based sequence counter).
+          var iter_node = node.child_0;
+          var idx_range: u8 = @intCast(u8, 0);
+          var idx_start_node: u32 = @intCast(u32, 0);
+          var idx_end_node: u32 = @intCast(u32, 0);
+          if (pattern.kind == AstKind.for_index_range) {
+              iter_node = pattern.child_0;
+              idx_start_node = pattern.child_1;
+              idx_end_node = pattern.child_2;
+              idx_range = @intCast(u8, 1);
+          }
           var elem_type: [1]u32 = [1]u32{type_mod.TYPE_U32};
            var pat_type = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
            var a6_m: []const u8 = "A6:"; pal.markerWrite(a6_m);
@@ -6454,7 +6468,13 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             self.loop_stack.len = self.loop_stack.len - @intCast(usize, 1);
             self.current_label = saved_label;
         } else {
-            var slice_temp = lowerExpr(self, node.child_0);
+            var start_temp: u32 = @intCast(u32, 0);
+            var end_temp: u32 = @intCast(u32, 0);
+            if (idx_range == @intCast(u8, 1)) {
+                start_temp = lowerExpr(self, idx_start_node);
+                if (idx_end_node != @intCast(u32, 0)) { end_temp = lowerExpr(self, idx_end_node); }
+            }
+            var slice_temp = lowerExpr(self, iter_node);
             var ptr_temp = nextTemp(self, type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, elem_type[0], false));
             var len_temp = nextTemp(self, type_mod.TYPE_USIZE);
             if (pat_type) |pt2| {
@@ -6472,6 +6492,21 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                 var ms_nid = nameMapGet(self, slice_temp);
                 emitInst(self, LirInst{ .load_field = .{ .name_id = ms_nid, .base = slice_temp, .field_id = type_mod.SLICE_FIELD_PTR, .result = ptr_temp } });
                 emitInst(self, LirInst{ .load_field = .{ .name_id = ms_nid, .base = slice_temp, .field_id = type_mod.SLICE_FIELD_LEN, .result = len_temp } });
+            }
+            if (idx_range == @intCast(u8, 1) and idx_end_node != @intCast(u32, 0)) {
+                // Zig 0.15.2: an explicit index range and its iterable must
+                // have equal lengths. The span is a checked `usize`
+                // subtraction (under -fsafe it traps on `end < start`, Zig's
+                // integer-overflow panic); the length equality is a
+                // safety-mode-only runtime check (Zig's ReleaseFast disables
+                // it too).
+                var span_temp = nextTemp(self, type_mod.TYPE_USIZE);
+                emitArith(self, lir_mod.CHECK_OP_SUB, BIN_SUB, end_temp, start_temp, span_temp, type_mod.TYPE_USIZE);
+                if (self.ctx.safe_checks) {
+                    var span_eq = nextTemp(self, type_mod.TYPE_BOOL);
+                    emitInst(self, LirInst{ .binary = .{ .op = BIN_EQ, .lhs = span_temp, .rhs = len_temp, .result = span_eq } });
+                    emitInst(self, LirInst{ .check_trap = .{ .cond = span_eq, .kind = @intCast(u8, 8) } });
+                }
             }
             var idx_temp = nextTemp(self, type_mod.TYPE_USIZE);
             emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = idx_temp } });
@@ -6507,7 +6542,12 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             var item_temp = nextTemp(self, item_tid_type);
             emitInst(self, LirInst{ .load_index = .{ .name_id = @intCast(u32, 0), .base = ptr_temp, .index = idx_temp, .result = item_temp, .decay = item_decay } });
             if (ast_mod.astStoreNodePayload(store, node_idx) != @intCast(u32, 0)) { var fcaps = maybeDisambiguateCapture(self, ast_mod.astStoreNodePayload(store, node_idx), item_tid_type); addLocalDecl(self, fcaps, item_tid_type, item_temp, self.scope_depth + @intCast(u32, 1), @intCast(u8, 1)); emitInst(self, LirInst{ .decl_local = .{ .name_id = fcaps, .type_id = item_tid_type, .temp = item_temp } }); }
-            if (node.child_2 != @intCast(u32, 0)) { var icaps = maybeDisambiguateCapture(self, node.child_2, type_mod.TYPE_USIZE); addLocalDecl(self, icaps, type_mod.TYPE_USIZE, idx_temp, self.scope_depth + @intCast(u32, 1), @intCast(u8, 1)); emitInst(self, LirInst{ .decl_local = .{ .name_id = icaps, .type_id = type_mod.TYPE_USIZE, .temp = idx_temp } }); }
+            var idx_cap_temp = idx_temp;
+            if (idx_range == @intCast(u8, 1) and node.child_2 != @intCast(u32, 0)) {
+                idx_cap_temp = nextTemp(self, type_mod.TYPE_USIZE);
+                emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = start_temp, .rhs = idx_temp, .result = idx_cap_temp } });
+            }
+            if (node.child_2 != @intCast(u32, 0)) { var icaps = maybeDisambiguateCapture(self, node.child_2, type_mod.TYPE_USIZE); addLocalDecl(self, icaps, type_mod.TYPE_USIZE, idx_cap_temp, self.scope_depth + @intCast(u32, 1), @intCast(u8, 1)); emitInst(self, LirInst{ .decl_local = .{ .name_id = icaps, .type_id = type_mod.TYPE_USIZE, .temp = idx_cap_temp } }); }
             self.block_terminated = @intCast(u8, 0);
             lowerStmtBody(self, node.child_1);
             if (self.block_terminated == @intCast(u8, 0)) {
