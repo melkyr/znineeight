@@ -29,9 +29,10 @@ set -euo pipefail
 # fixed point.
 #
 # If the seed binary is missing, the seed compiler is first rebuilt from the
-# seed's own C (self-contained fallback: gcc -c -I <seed>/runtime over
-# gen/*.c; link <seed>/runtime/zig_runtime.c + <seed>/runtime/zig_pal.c +
-# <seed>/c_exit.c) and that reconstructed compiler is used as the dump engine.
+# seed's own C (self-contained fallback: stage the runtime support sources
+# zig_runtime.c + zig_pal.c + c_exit.c beside gen/*.c, ONE canonical-flag
+# gcc -c over *.c, link *.o — exactly the archive_seed.sh fixed-point check) and
+# that reconstructed compiler is used as the dump engine.
 #
 # --reconstruct-only: gcc-of-C only — rebuild the seed compiler from the seed's
 # own C and write <out>/zig1_5_clean (no sf/src dump; the Task-1/4.2 fallback
@@ -113,11 +114,16 @@ reconstruct_seed() {
     rm -rf "$OUT/rec"
     mkdir -p "$OUT/rec"
     cp "$SEED"/gen/*.c "$SEED"/gen/*.h "$OUT/rec/"
+    # Stage the runtime support sources beside the module C so every translation
+    # unit — support included — is compiled by the ONE canonical-flag gcc -c
+    # below and linked as objects. Leaving them on the link line compiles them
+    # without -Wall (different assembler label numbering) and does NOT reproduce
+    # the archived fixed point (SEED_README.txt recipe 2 / flag-set rule).
+    cp "$SEED"/runtime/zig_runtime.c "$SEED"/runtime/zig_pal.c "$SEED/c_exit.c" "$OUT/rec/"
     ( cd "$OUT/rec" && gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign \
         -Wno-implicit-function-declaration -I "$SEED/runtime" -c *.c ) \
         || die "reconstruct gcc -c failed"
-    ( cd "$OUT/rec" && gcc -m32 -O0 *.o "$SEED/runtime/zig_runtime.c" \
-        "$SEED/runtime/zig_pal.c" "$SEED/c_exit.c" -o "$outbin" ) \
+    ( cd "$OUT/rec" && gcc -m32 -O0 *.o -o "$outbin" ) \
         || die "reconstruct gcc link failed"
     echo "[seed] reconstructed binary md5: $(md5sum "$outbin" | cut -d' ' -f1)"
 }

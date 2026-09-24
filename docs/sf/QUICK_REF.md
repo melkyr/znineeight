@@ -136,9 +136,11 @@ bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out_dir>
   (`--reconstruct-only <seed> <out>` does that alone).
 
 **Rebuild recipe 2 (seed binary lost — rebuild from the seed's C only):** self-contained, no repo
-include path, no zig0: `gcc -c -I <seed>/runtime` over `gen/*.c`, link `<seed>/runtime/zig_runtime.c`
-+ `<seed>/runtime/zig_pal.c` + `<seed>/c_exit.c`. Exact commands in `release/seed/SEED_README.txt`.
-Binary md5 MUST equal `1e389c5739aea89550d149015f0031d3`.
+include path, no zig0: stage `<seed>/runtime/zig_runtime.c` + `<seed>/runtime/zig_pal.c` +
+`<seed>/c_exit.c` beside `gen/*.c`, ONE canonical-flag `gcc -c -I <seed>/runtime` over all of them,
+then link `*.o` (the three runtime TUs MUST be compiled under the full flag set, NOT dropped onto
+the link line — without `-Wall` the fixed point is not byte-reproduced). Exact commands in
+`release/seed/SEED_README.txt`. Binary md5 MUST equal `1e389c5739aea89550d149015f0031d3`.
 
 **Flag-set rule (binding):** every `gcc -c` MUST be
 `gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <inc>`
