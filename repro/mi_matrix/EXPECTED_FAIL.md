@@ -1,4 +1,38 @@
-# mi_matrix corpus — expected-fail manifest (v213 2026-09-24)
+# mi_matrix corpus — expected-fail manifest (v214 2026-09-24)
+
+## Task 9 fix round 1 — `ciSignificantBits` multi-limb correction (v213 -> v214 2026-09-24)
+
+**Critical (review).** The Task 9 `ciSignificantBits` counted only the TOP limb's bits and then
+subtracted 32 per zero lower limb, so it undercounted multi-limb magnitudes (`2^64 + 1` -> 1,
+`2^53 + 1` -> 22, `2^32 + 1` -> 1) and u32-underflowed on a power of two >= 2^32. Consequences:
+(a) over-acceptance — `if (((1 << 64) + 1) == 18446744073709551616.0) 1;` is `error[3059]`
+pre-Task-9 and in Zig 0.15.2, but the buggy fold accepted it and emitted `x = 1`; (b) a
+folded-false empty-else miscompile — `const TU: u64 = 9007199254740993;
+if (TU > 9007199254740992.0) 1;` folded FALSE and materialised an uninitialized temp where Zig
+yields `1`; (c) false declines for exactly-representable powers of two (`(1 << 32) > 1.0`,
+`1 << 63`, `1 << 64`, `1 << 255`).
+
+**Fix.** `ciSignificantBits` now computes `bitlen(magnitude) - trailing_zeros` (`32 * (len - 1)`
+plus the top limb's bit count, minus the separately accumulated trailing-zero count).
+
+**Coverage (Important).** `stdlib_comptime_float_compare_xmod` gains the multi-limb rows
+(`(1 + 1) == 2.0`, `(1 << 32) > 1.0`, `(1 << 63) > 1.0e18`, `(1 << 64) > 1.0e19`,
+`(1 << 64) == 18446744073709551616.0`, typed `P32`/`P63` u64 consts; 30 values, golden 4 lines) and
+the new reject fixture `comptime_float_compare_reject_xmod` pins the three Zig-false over-acceptance
+sites (`((1 << 64) + 1) == / <= 2^64.0`, `((1 << 53) + 1) == 2^53.0`) at rc 2 / 3 x `error[3059]` /
+0 `.c`.
+
+**Gates (fix-round values).** self-compile two-hop closure hop1 == hop2 ==
+`e809cf6113088dcd20ea18aeef5ea9e6`; explicit `FIXED_POINT_MD5=e809cf61…` gate OK; 4-MD5 emitted-C
+**UNCHANGED** (gol `e7bde571…` / lisp `35388763…` / json `5e1e0050…` / mud `5a1cc65e…`); example
+matrix **24/24**; std-lib runtime gate **226 PASS / 0 FAIL** (pin unchanged); corpus `-s0`
+**1000 = 875 OK / 44 GREEN / 81 FAIL / 0 ICE / 0 CRASH** — join-diff vs the buggy `a059fa89…`
+compiler = exactly `comptime_float_compare_reject_xmod` OK->FAIL +
+`stdlib_comptime_float_compare_xmod` FAIL->OK, zero other movement; `check_emit_support.sh` 7/7;
+`verify_upgraded.sh` CLOSEOUT OK; build_test 0/9; self-emission rc 0 / 48 `.c` + 48 `.h` / no PANIC.
+Fixed point moved `a059fa89b151c0f4363e926fc8366505` -> `e809cf6113088dcd20ea18aeef5ea9e6`; seed
+stays v83 (R2). **The Task 9 section below is the original commit's record; its 23-value fixture /
+`999 = 875/44/80` / fixed point `a059fa89…` claims are superseded by this fix round.**
 
 ## Task 9 — comptime float comparisons (v212 -> v213 2026-09-24)
 
@@ -21,7 +55,8 @@ helpers `CmpFloatOperand`, `comptimeEvalCompareOperand`, `comptimeEvalFloatBits`
 consults the function-local const scope first.
 
 **Fixtures.** New positive runtime fixture `repro/mi_matrix/stdlib_comptime_float_compare_xmod`
-(23 values: all six operators literal/literal, exponent + `-0.0`, untyped int vs float + an
+(23 values at this commit — **superseded by fix round 1: 30 values** — all six operators
+literal/literal, exponent + `-0.0`, untyped int vs float + an
 arithmetic-derived int, module/local f64 consts, typed f32 (f32-vs-f32, f32-vs-f32-exact literal,
 f32-vs-int), `@intToFloat(f64,…)`, `@floatCast(f64, <f32>)`, logicals, an integer-comparison
 control + four runtime-`if` false-condition controls; every value `@panic`-guarded; golden
@@ -30,9 +65,10 @@ pin **225 -> 226**) + standalone `repro/comptime_float_compare.z98`. RED pre-fix
 (rc 2) on the fixture's first float condition and on the standalone.
 
 **Gates.** self-compile two-hop closure hop1 == hop2 == `a059fa89b151c0f4363e926fc8366505` (was
-`4a7ea965…`); 4-MD5 emitted-C **UNCHANGED** (gol `e7bde571…` / lisp `35388763…` / json
-`5e1e0050…` / mud `5a1cc65e…`); example matrix **24/24**; std-lib runtime gate **226 PASS / 0
-FAIL**; corpus `-s0` **999 = 875 OK / 44 GREEN / 80 FAIL / 0 ICE / 0 CRASH** (full-classifier
+`4a7ea965…`; **superseded by fix round 1: `e809cf61…`**); 4-MD5 emitted-C **UNCHANGED** (gol
+`e7bde571…` / lisp `35388763…` / json `5e1e0050…` / mud `5a1cc65e…`); example matrix **24/24**;
+std-lib runtime gate **226 PASS / 0 FAIL**; corpus `-s0` **999 = 875 OK / 44 GREEN / 80 FAIL /
+0 ICE / 0 CRASH** (**superseded by fix round 1: 1000 = 875/44/81**) (full-classifier
 join-diff vs the pre-fix seed v83 compiler = exactly the new fixture dir, FAIL->OK); the
 integer-comparison fixtures `stdlib_comptime_compare_xmod` + `repro/comptime_compare.z98`
 unchanged. Bounded residuals: an f32 operand against a non-f32-exact untyped literal declines (Zig

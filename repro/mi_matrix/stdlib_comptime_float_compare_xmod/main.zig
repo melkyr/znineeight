@@ -19,15 +19,22 @@
 //
 // Covered:
 //   * literal vs literal (all six operators, exponent literal, `-0.0`/`0.0`);
-//   * untyped int vs float (`2.0 == 2`, `1 != 2.0`) and an arithmetic-derived
-//     int (`(1 + 1) == 2.0`);
+//   * untyped int vs float (`2.0 == 2`, `1 != 2.0`) and arithmetic-derived ints
+//     (`(1 + 1) == 2.0`, `(2 + 3) == 5` all-int control);
 //   * module f64 consts and function-local f64 consts (the sema local-const
 //     scope; the runtime branch stays and agrees with the fold);
 //   * typed f32: f32-vs-f32, f32-vs-f32-exact literal (`HF == 0.5`),
 //     f32-vs-int (`HF > 0`);
 //   * `@intToFloat(f64, ...)` and `@floatCast(f64, <f32>)`;
 //   * logical combinations over folded float comparisons;
-//   * an integer-comparison control (`(2 + 3) == 5`);
+//   * fix round 1 (review Critical): MULTI-LIMB integer operands — the
+//     exactly-representable powers of two `(1 << 32) > 1.0`,
+//     `(1 << 63) > 1.0e18`, `(1 << 64) > 1.0e19`,
+//     `(1 << 64) == 18446744073709551616.0` and the typed `P32`/`P63` u64
+//     consts now fold (the original `ciSignificantBits` undercounted multi-limb
+//     magnitudes and u32-underflowed on a power of two >= 2^32); the
+//     inexact-significand over-acceptance shapes are pinned in
+//     `comptime_float_compare_reject_xmod`;
 //   * false conditions in runtime `if` statements (control: never taken).
 // Every folded value is `@panic`-guarded.
 //
@@ -37,7 +44,8 @@
 // Contract: stdout below, rc 0, byte-exact 3x.
 //
 //   101 102 103 104 105 106 107 108 109 110 111 112
-//   113 114 115 116 117 118 119 120 121 122 123
+//   113 114 115 116 117 118 119 120 121 122 123 124
+//   125 126 127 128 129 130
 //   f1=0
 //   float compare ok
 const std = @import("std");
@@ -47,6 +55,8 @@ const MTHIRD: f64 = 0.3;
 const MNEG: f64 = -2.5;
 const HF: f32 = 0.5;
 const QF: f32 = 0.25;
+const P32: u64 = 4294967296;
+const P63: u64 = 9223372036854775808;
 
 pub fn main() void {
     const lsix: f64 = 1.5;
@@ -74,6 +84,13 @@ pub fn main() void {
     const a21: i32 = if (!((HF > 1.0) or (0.25 != 0.25))) 121;
     const a22: i32 = if (2.0 >= 2) 122;
     const a23: i32 = if ((2 + 3) == 5) 123;
+    const a24: i32 = if ((1 + 1) == 2.0) 124;
+    const a25: i32 = if ((1 << 32) > 1.0) 125;
+    const a26: i32 = if ((1 << 63) > 1.0e18) 126;
+    const a27: i32 = if ((1 << 64) > 1.0e19) 127;
+    const a28: i32 = if ((1 << 64) == 18446744073709551616.0) 128;
+    const a29: i32 = if (P32 > 1.0) 129;
+    const a30: i32 = if (P63 > 1.0e18) 130;
     var f1: i32 = 0;
     if (0.5 > 1.0) { f1 = 999; }
     if (1.0 == 2.0) { f1 = f1 + 1; }
@@ -92,11 +109,15 @@ pub fn main() void {
     if (a19 != 119 or a20 != 120 or a21 != 121 or a22 != 122 or a23 != 123) {
         @panic("float compare guard D failed");
     }
+    if (a24 != 124 or a25 != 125 or a26 != 126 or a27 != 127 or a28 != 128 or a29 != 129 or a30 != 130) {
+        @panic("float compare guard E failed");
+    }
     if (f1 != 0) {
         @panic("float compare runtime-false guard failed");
     }
     std.io.print("{} {} {} {} {} {} {} {} {} {} {} {}\n", .{ a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12 });
-    std.io.print("{} {} {} {} {} {} {} {} {} {} {}\n", .{ a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23 });
+    std.io.print("{} {} {} {} {} {} {} {} {} {} {} {}\n", .{ a13, a14, a15, a16, a17, a18, a19, a20, a21, a22, a23, a24 });
+    std.io.print("{} {} {} {} {} {}\n", .{ a25, a26, a27, a28, a29, a30 });
     std.io.print("f1={}\n", .{f1});
     std.io.print("float compare ok\n", .{});
 }

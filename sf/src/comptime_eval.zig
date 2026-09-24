@@ -923,31 +923,41 @@ fn comptimeEvalFloatBits(cv: ComptimeVal) f64 {
     return fp.*;
 }
 
-// Task 9: significant bits of a `ComptimeInt` magnitude (0 for zero). A value
-// with <= 53 (f64) or <= 24 (f32) significant bits is exactly representable in
-// that IEEE binary format (the 256-bit cap is far inside the exponent range).
+// Task 9: significant bits of a `ComptimeInt` magnitude (0 for zero) --
+// bitlen(magnitude) minus its trailing-zero count. A value with <= 53 (f64) or
+// <= 24 (f32) significant bits is exactly representable in that IEEE binary
+// format (the 256-bit cap is far inside the exponent range).
+//
+// Fix round 1 (Critical): the original version COUNTED ONLY the top limb's
+// bits and then subtracted 32 per zero lower limb, which both undercounted a
+// multi-limb magnitude (`2^64 + 1` -> 1) and underflowed (u32 wrap) for a
+// power of two >= 2^32. It now computes the true bit length first
+// (`32 * (len - 1)` + the top limb's bit count) and subtracts the trailing
+// zeros separately, so `2^32`, `2^53 + 1`, `2^64 + 1` and `2^255` report
+// 1, 54, 65 and 1 respectively.
 fn ciSignificantBits(v: ComptimeInt) u32 {
     if (v.len == @intCast(u8, 0)) return @intCast(u32, 0);
-    var bits: u32 = @intCast(u32, 0);
+    var bits: u32 = @intCast(u32, v.len - @intCast(u8, 1)) * @intCast(u32, 32);
     var top: u32 = v.mag[@intCast(usize, v.len - @intCast(u8, 1))];
     while (top != @intCast(u32, 0)) {
         bits += @intCast(u32, 1);
         top = top >> @intCast(u32, 1);
     }
+    var tz: u32 = @intCast(u32, 0);
     var i: u8 = @intCast(u8, 0);
     while (i < v.len) : (i += @intCast(u8, 1)) {
         var limb: u32 = v.mag[@intCast(usize, i)];
         if (limb == @intCast(u32, 0)) {
-            bits -= @intCast(u32, 32);
+            tz += @intCast(u32, 32);
         } else {
             while ((limb & @intCast(u32, 1)) == @intCast(u32, 0)) {
-                bits -= @intCast(u32, 1);
+                tz += @intCast(u32, 1);
                 limb = limb >> @intCast(u32, 1);
             }
-            return bits;
+            return bits - tz;
         }
     }
-    return bits;
+    return bits - tz;
 }
 
 // Task 9: is the f64 value exactly an f32 value (round-trip)?
