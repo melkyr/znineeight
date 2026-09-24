@@ -4868,6 +4868,17 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 }
                 return nextTemp(self, type_mod.TYPE_VOID);
             }
+            // Task 7: a one-argument `@intCast(expr)` (Zig 0.15.2 infers the
+            // target from context) is typed by sema's single-argument builtin
+            // fallback as the operand's own type, so lower the operand value —
+            // the consumer applies any needed context conversion. Previously it
+            // fell through to the void-temp default below, and the emitter
+            // (which never declares void temps) left the consumer referencing
+            // an undeclared `zT_<n>` in the emitted C (emit rc=0, gcc failure).
+            if (node.child_0 == self.intcast_name_id and ec_n == @intCast(usize, 1)) {
+                var ic1_val = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)));
+                return ic1_val;
+            }
             if (ec_n >= 2) {
                 var elm: []const u8 = "B"; pal.markerWrite(elm);
                 if (node.child_0 == self.intcast_name_id) { var bm: []const u8 = "I"; pal.markerWrite(bm); }

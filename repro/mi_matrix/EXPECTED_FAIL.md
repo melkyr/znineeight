@@ -1,4 +1,41 @@
-# mi_matrix corpus — expected-fail manifest (v209 2026-09-23)
+# mi_matrix corpus — expected-fail manifest (v210 2026-09-24)
+
+## Task 7 — one-argument `@intCast` on a loop capture (v209 -> v210 2026-09-24)
+
+**Defect (pre-existing; found by the Task 10C review).** A one-argument `@intCast(expr)` — the
+official Zig 0.15.2 form, whose target is inferred from context — was typed by sema's
+single-argument builtin fallback as the operand's own type, but the lowering `builtin_call` arm's
+cast block is guarded on `ec_n >= 2`, so the call fell through to the `TYPE_VOID` default and
+emitted NO instruction; the emitter never declares void temps, so the consumer referenced an
+undeclared `zT_<n>` (emit rc=0, no diagnostic, gcc `'zT_6' undeclared`). Reported shape:
+`@intCast(<for-range capture>)` inside the capture's own loop; the hole was general (a non-capture
+local, a call result, a copy of the capture all failed pre-fix).
+
+**Fix (Task 7).** `sf/src/lower.zig`'s `builtin_call` arm: before the `ec_n >= 2` cast block, a
+one-argument `@intCast` lowers and returns its operand's temp (`lowerExpr(extra_child_0)`); the
+consumer applies any context conversion, matching sema's inferred operand type.
+
+**Fixtures.** New positive runtime fixture `repro/mi_matrix/stdlib_intcast_loop_capture_xmod` (the
+reported range-capture shape + a renamed capture (an earlier sibling scope declares the same name)
++ a copy of the capture + a non-capture local + a parameter/return-position `@intCast` + a
+nested-loop outer capture + an array-element capture; every check `@panic`-guarded; golden
+`cap=6 ren=8 cpy=3 loc=2 nest=2 sl=6`, rc 0, 3x byte-exact and Zig-0.15.2-twin-matched; stdlib pin
+**223 -> 224**) + standalone `repro/intcast_loop_capture.z98`. RED pre-fix: emit rc=0 with 6
+undeclared `zT_<n>` gcc failures.
+
+**Gates.** self-compile two-hop closure hop1 == hop2 == `49a75cf036acef9aca242d4255646b8e`; 4-MD5
+emitted-C **UNCHANGED** (gol `e7bde571…` / lisp `35388763…` / json `5e1e0050…` / mud `5a1cc65e…`);
+example matrix **24/24**; std-lib runtime gate **224 PASS / 0 FAIL**; corpus `-s0` **997 = 873 OK /
+44 GREEN / 80 FAIL / 0 ICE / 0 CRASH** with a full-classifier join-diff vs the pre-fix seed v83
+compiler moving EXACTLY the new fixture dir (`stdlib_intcast_loop_capture_xmod` FAIL -> OK);
+`check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK; build_test 0/9 (pre-existing zig0
+baseline); self-emission rc 0 / 48 `.c` + 48 `.h` / no PANIC. Fixed point **MOVED
+`1e389c5739aea89550d149015f0031d3` -> `49a75cf036acef9aca242d4255646b8e`**; seed stays **v83** (NOT
+rotated — operator R2: rotation is closeout-only).
+
+**Residual (bounded; documented).** A narrowing context (`var x: u8 = @intCast(q)` with `q: u32`)
+keeps sema's operand type, so the compiler's strict-coercion rules apply instead of Zig's target
+inference. Distinct root cause from the two-argument `@intCast(T, expr)` form, which is unchanged.
 
 ## Task 6 — comptime-int core Part I closeout (v209; NO BUMP, 2026-09-24)
 

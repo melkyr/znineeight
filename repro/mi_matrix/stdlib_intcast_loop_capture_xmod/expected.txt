@@ -1,0 +1,1 @@
+cap=6 ren=8 cpy=3 loc=2 nest=2 sl=6
