@@ -1825,8 +1825,11 @@ fn semanticAnalyzerReportCallArity(self: *SemanticAnalyzer, node_idx: u32, expec
 //   * integer <-> integer of any width/signedness (the compiler's own source
 //     and the corpus use them pervasively; Zig's strictly-wider rule would
 //     break self-hosting);
-//   * the whole pointer/slice/array interop family (its invalid shapes are
-//     already rejected by `isBShapeMismatch` and the lowering diagnostics);
+//   * the pointer/slice/array interop family — consulted only AFTER the `(b)`
+//     shape reject (`isBShapeMismatch`: `*T` -> `[]T`, mismatched
+//     `[N]T` -> `[M]T`, error-union mismatch, enum -> int) at the call site,
+//     so those invalid shapes keep rejecting while the valid decays/qualifier
+//     conversions pass;
 //   * an error-set source into an integer (Z98's `@enumToInt(<error set>)`
 //     keeps the error-set type in the front end);
 //   * a void/unresolved source (an undeclared identifier already got
@@ -1938,9 +1941,11 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
             if (has_params != @intCast(u8, 0) and ai < @intCast(usize, pcount)) {
                 var carg_eff = errLitSrcType(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)), expected, dxc_at);
                 // Task 14 (S2): enforce per-argument assignability, matching
-                // official Zig 0.15.2; the tolerated Z98 conversion families
-                // stay (see semanticAnalyzerCallArgTolerated).
-                if (carg_eff != @intCast(u32, 0) and expected != @intCast(u32, 0) and expected != type_mod.TYPE_UNDEFINED and expected != type_mod.TYPE_VOID and !type_mod.typeRegistryIsAssignable(self.registry, carg_eff, expected) and !semanticAnalyzerCallArgTolerated(self, carg_eff, expected)) {
+                // official Zig 0.15.2; the `(b)` shape rejects (ptr->slice,
+                // mismatched array->array, ...) fire first, then the tolerated
+                // Z98 conversion families keep their shapes (see
+                // semanticAnalyzerCallArgTolerated).
+                if (carg_eff != @intCast(u32, 0) and expected != @intCast(u32, 0) and expected != type_mod.TYPE_UNDEFINED and expected != type_mod.TYPE_VOID and !type_mod.typeRegistryIsAssignable(self.registry, carg_eff, expected) and (isBShapeMismatch(self, carg_eff, expected, false) or !semanticAnalyzerCallArgTolerated(self, carg_eff, expected))) {
                     var argn = ast_mod.astStoreNodeAt(self.store, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)));
                     var csp = argn.span_start;
                     var cep = csp + @intCast(u32, argn.span_len);
@@ -2020,9 +2025,10 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
         if (param_type == type_mod.TYPE_VOID) { if (arg_type != type_mod.TYPE_UNDEFINED) { hash_mod.u32ToU32MapPut(self.call_arg_types, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)), arg_type); } }
         var carg_eff = errLitSrcType(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)), param_type, arg_type);
         // Task 14 (S2): enforce per-argument assignability, matching official
-        // Zig 0.15.2; the tolerated Z98 conversion families stay (see
-        // semanticAnalyzerCallArgTolerated).
-        if (carg_eff != @intCast(u32, 0) and param_type != type_mod.TYPE_UNDEFINED and param_type != type_mod.TYPE_VOID and !type_mod.typeRegistryIsAssignable(self.registry, carg_eff, param_type) and !semanticAnalyzerCallArgTolerated(self, carg_eff, param_type)) {
+        // Zig 0.15.2; the `(b)` shape rejects (ptr->slice, mismatched
+        // array->array, ...) fire first, then the tolerated Z98 conversion
+        // families keep their shapes (see semanticAnalyzerCallArgTolerated).
+        if (carg_eff != @intCast(u32, 0) and param_type != type_mod.TYPE_UNDEFINED and param_type != type_mod.TYPE_VOID and !type_mod.typeRegistryIsAssignable(self.registry, carg_eff, param_type) and (isBShapeMismatch(self, carg_eff, param_type, false) or !semanticAnalyzerCallArgTolerated(self, carg_eff, param_type))) {
             var argn = ast_mod.astStoreNodeAt(self.store, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)));
             var csp = argn.span_start;
             var cep = csp + @intCast(u32, argn.span_len);

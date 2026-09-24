@@ -18,12 +18,19 @@
 //                                          'comptime_int')
 //   * `takeF(i)` (i: i32)   int for f32   (Zig: expected type 'f32', found
 //                                          'i32')
+//   * `takeSlice(p)`        `*u8` for `[]u8` (Zig: expected type '[]u8', found
+//                                          '*u8'; the `(b)` ptr->slice shape)
+//   * `takeArr4(a3)`        `[3]i32` for `[4]i32` (Zig: expected type
+//                                          '[4]i32', found '[3]i32'; the `(b)`
+//                                          array length/element shape)
 //
-// EXPECTED: dump rc=2, 0 `.c`, 3 x `error[3000]`; the `error[3000]`-only
+// EXPECTED: dump rc=2, 0 `.c`, 5 x `error[3000]`; the `error[3000]`-only
 // shape buckets as GREEN under the corpus classifier. The int->f32 site lives
 // in a helper whose parameter is a runtime i32, matching the Zig oracle's
 // runtime-`i32` probe (a comptime-known Zig i32 is coercible to f32 where
-// Z98's runtime `var` is not — the strict direction).
+// Z98's runtime `var` is not — the strict direction). The two pointer/array
+// sites are the Task 14 fix-round regression: the pointer-family tolerance
+// must not swallow the pre-existing `isBShapeMismatch` call-site rejects.
 fn add(a: i32, b: i32) i32 {
     return a + b;
 }
@@ -40,6 +47,14 @@ fn passF(i: i32) f32 {
     return takeF(i);
 }
 
+fn takeSlice(s: []u8) usize {
+    return s.len;
+}
+
+fn takeArr4(a: [4]i32) i32 {
+    return a[0];
+}
+
 pub fn main() void {
     var u: i32 = add(1, true);
     _ = u;
@@ -47,4 +62,11 @@ pub fn main() void {
     _ = xb;
     var y: f32 = passF(5);
     _ = y;
+    var x: u8 = 5;
+    var p: *u8 = &x;
+    var ns: usize = takeSlice(p);
+    _ = ns;
+    var a3: [3]i32 = [3]i32{ 1, 2, 3 };
+    var v4: i32 = takeArr4(a3);
+    _ = v4;
 }

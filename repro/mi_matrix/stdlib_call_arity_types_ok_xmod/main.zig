@@ -6,13 +6,15 @@
 // (`scale(i64, i32)`); `@intCast`-based conversions into narrower and
 // platform-width parameters (`takeI8(@intCast(i8, n))`,
 // `takeUsize(@intCast(usize, u))`); a `bool` parameter and `bool` return; an
-// indirect call through a `fn (i32, i32) i32` parameter; and the
-// Z98-established implicit integer widening (`u8` -> `i32` parameter) that
-// the cross-family rule deliberately keeps. Every observation is
+// indirect call through a `fn (i32, i32) i32` parameter; the Z98-established
+// implicit integer widening (`u8` -> `i32` parameter) that the cross-family
+// rule deliberately keeps; and the pointer/array call controls restored by the
+// Task 14 fix round (`&arr` (`*[N]T`) -> `[]T` and a same-length `[N]T` ->
+// `[N]T` value) whose MISMATCHED shapes must still reject. Every observation is
 // `@panic`-guarded.
 //
-// Contract: stdout `s1=3 s2=0 i8v=100 us=4096 fp=42 s3=8 neg=1\n`, rc 0,
-// byte-exact 3x, Zig-0.15.2-twin-matched.
+// Contract: stdout `s1=3 s2=0 i8v=100 us=4096 fp=42 s3=8 sl=6 f3=1 neg=1\n`,
+// rc 0, byte-exact 3x, Zig-0.15.2-twin-matched.
 const std = @import("std");
 
 fn add(a: i32, b: i32) i32 {
@@ -37,6 +39,18 @@ fn apply(f: fn (i32, i32) i32, a: i32, b: i32) i32 {
 
 fn isNeg(x: i32) bool {
     return x < 0;
+}
+
+fn sumSlice(s: []i32) i32 {
+    var t: i32 = 0;
+    for (s) |v| {
+        t = t + v;
+    }
+    return t;
+}
+
+fn firstOf3(a: [3]i32) i32 {
+    return a[0];
 }
 
 pub fn main() void {
@@ -79,5 +93,16 @@ pub fn main() void {
     if (isNeg(-1)) {
         neg_i = 1;
     }
-    std.io.print("s1={} s2={} i8v={} us={} fp={} s3={} neg={}\n", .{ s1, s2, @intCast(i32, i8v), @intCast(i32, us), fp, s3, neg_i });
+    // Task 14 fix round: the valid pointer/array decays must keep passing while
+    // the mismatched shapes reject (see call_arg_type_reject_xmod).
+    var arr3: [3]i32 = [3]i32{ 1, 2, 3 };
+    var sl_sum: i32 = sumSlice(&arr3);
+    if (sl_sum != 6) {
+        @panic("pointer-to-array slice call failed");
+    }
+    var f3: i32 = firstOf3(arr3);
+    if (f3 != 1) {
+        @panic("same-length array call failed");
+    }
+    std.io.print("s1={} s2={} i8v={} us={} fp={} s3={} sl={} f3={} neg={}\n", .{ s1, s2, @intCast(i32, i8v), @intCast(i32, us), fp, s3, sl_sum, f3, neg_i });
 }

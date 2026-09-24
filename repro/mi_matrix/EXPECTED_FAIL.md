@@ -1,6 +1,46 @@
-# mi_matrix corpus — expected-fail manifest (v221 2026-09-24)
+# mi_matrix corpus — expected-fail manifest (v222 2026-09-24)
+
+## Task 14 fix round (review Critical 1) — restore the `(b)` call-arg shape rejects (v221 -> v222 2026-09-24)
+
+**Review Critical 1.** The Task 14 call-arg gates replaced `!assignable && isBShapeMismatch(..., false)`
+with `!assignable && !semanticAnalyzerCallArgTolerated(...)`, and the new pointer-family tolerance
+blanket-accepted every ptr/slice/array pair, so the pre-existing `(b)` call-site rejects stopped firing:
+- `*u8` argument to a `[]u8` parameter: base (v221) rc=2 / 0 `.c` / `error[3000]`; broken Task 14 rc=0 /
+  4 `.c`, emitting `zT_6 = p;` — gcc `incompatible types when assigning to type 'Slice_…' from type
+  'unsigned char *'` (the "rc=0, fails only at gcc" class this task exists to close).
+- `[3]i32` argument to a `[4]i32` parameter: base rc=2 / 0 `.c`; broken Task 14 rc=0 / 4 `.c` and gcc
+  accepts via array decay (silent length mismatch).
+
+**Fix.** Both gates (`sf/src/semantic_analyzer.zig`) restore the shape arm:
+`!assignable and (isBShapeMismatch(self, carg, tgt, false) or !semanticAnalyzerCallArgTolerated(...))`
+— the `(b)` shapes (`*T` -> `[]T`, mismatched `[N]T` -> `[M]T`, error-union mismatch, enum -> int) reject
+first; the pointer-family tolerance only relaxes the shapes that are not one of those. The tolerance
+header comment was corrected (it had claimed the shape rejects were "already covered").
+
+**Regression coverage.** `repro/mi_matrix/call_arg_type_reject_xmod` gains the two oracle-checked sites
+(`takeSlice(p)` `*u8` -> `[]u8`; `takeArr4(a3)` `[3]i32` -> `[4]i32`) — now 5 x `error[3000]`, rc 2, 0 `.c`,
+class GREEN. `repro/mi_matrix/stdlib_call_arity_types_ok_xmod` gains valid controls (`sumSlice(&arr3)`
+`*[3]i32` -> `[]i32`; `firstOf3(arr3)` same-length `[3]i32` -> `[3]i32`), every check `@panic`-guarded;
+golden now `s1=3 s2=0 i8v=100 us=4096 fp=42 s3=8 sl=6 f3=1 neg=1`, rc 0, 3x byte-exact, Zig-0.15.2 twin
+re-matched (md5 `68491cc7…`).
+
+**Oracle (Zig 0.15.2).** `*u8` -> `[]u8`: `expected type '[]u8', found '*u8'`; `[3]i32` -> `[4]i32`:
+`expected type '[4]i32', found '[3]i32'`.
+
+**Gates.** self-compile **moving point** hop1 `a0cc292bc102cbab512bff4d86c5376d` != hop2 == hop3 ==
+**`b499fe5f706904cfe2acc74bce300a2b`** (explicit `FIXED_POINT_MD5=b499fe5f…` gate OK, deterministic across
+two out-dirs); 4-MD5 emitted-C **UNCHANGED** (gol `e7bde571…` / lisp `4afb601f…` / json `09fb55e5…` /
+mud `5a1cc65e…`, 2x each); corpus `-s0` **1008 = 875 OK / 46 GREEN / 87 FAIL / 0 ICE / 0 CRASH** —
+join-diff vs the base Task 14 run **empty** (zero movement); std-lib runtime gate **229 PASS / 0 FAIL**;
+example matrix **24/24**; `check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK; build_test **0/9**;
+self-emission rc 0 / 48 `.c` + 48 `.h` / no PANIC. Seed stays **v83** (operator R2).
 
 ## Task 14 (S2) — call arity + argument types (v220 -> v221 2026-09-24)
+
+**SUPERSEDED in part by the fix round above (v222):** the fixed point is `b499fe5f…`; the arg-type
+reject fixture now has 5 sites (5 x `error[3000]`) and the positive fixture's golden gained
+`sl=6 f3=1`; the "pointer-family invalid shapes stay covered" claim in the original fix description
+below was wrong until the fix round restored the shape arm.
 
 **Defect (High — silent miscompile).** `add(2)` / `add(1, 2, 3)` (wrong arity) compiled rc=0
 (6 `.c`) and failed only at gcc (`too few`/`too many arguments to function`); `add(1, true)` built,
