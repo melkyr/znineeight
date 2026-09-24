@@ -14,8 +14,16 @@
 //        compiled rc=0 but emitted gcc-invalid C
 //        (`return zT_4294967295;`, the TEMP_NONE sentinel).
 //
-// Both are fixed in `sf/src/lower.zig` (skip the l-value store for a
-// void-typed RHS; emit a valueless return for the TEMP_NONE sentinel).
+//   (iii) fix round: `fn f(c: bool) !void { return if (c) foo(); }` — the
+//        same void `if` returned from an error-union(void) function — ICEd
+//        (`error[3043] invalid temp index 294967295`): `lowerExpr`'s coercion
+//        wrapper applied the recorded void->`!void` coercion to the TEMP_NONE
+//        sentinel, so `materializeInto` dereferenced it with `getTempType`
+//        before `return_stmt` was reached.
+//
+// All three are fixed in `sf/src/lower.zig` (skip the l-value store for a
+// void-typed RHS; emit a valueless return for the TEMP_NONE sentinel; skip a
+// recorded coercion on the TEMP_NONE sentinel).
 //
 // Covers:
 //   * `_ = foo();` as the FIRST lowered statement of the function (empty temp
@@ -27,6 +35,8 @@
 //   * `return if (c) foo();` true and false
 //   * `return if (c) foo() else baz();` true and false
 //   * `return foo();` direct (control)
+//   * `fn f() !void` EU(void) returns: `return if (c) foo();` and
+//     `return if (c) foo() else baz();`, true and false
 //
 // Every aggregate is `@panic`-guarded, so a wrong hit count traps (rc 133)
 // instead of printing as if correct. Golden from the FIXED compiler, 3x
@@ -51,6 +61,14 @@ fn retCall() void {
     return foo();
 }
 
+fn retIfEu(c: bool) !void {
+    return if (c) foo();
+}
+
+fn retIfElseEu(c: bool) !void {
+    return if (c) foo() else baz();
+}
+
 pub fn main() void {
     // (i) the reported shape: the discard is the first lowered statement.
     _ = foo(); // +1
@@ -71,6 +89,11 @@ pub fn main() void {
     retIfElseVoid(false); // +100
     // Control: a direct void call returned.
     retCall(); // +1
-    if (g_hits != 118) { @panic("void-temp guard failed"); }
+    // (iii) the same void `if` returned from an EU(void) function.
+    retIfEu(true) catch { @panic("retIfEu(true) failed"); }; // +1
+    retIfEu(false) catch { @panic("retIfEu(false) failed"); }; // +0
+    retIfElseEu(true) catch { @panic("retIfElseEu(true) failed"); }; // +1
+    retIfElseEu(false) catch { @panic("retIfElseEu(false) failed"); }; // +100
+    if (g_hits != 220) { @panic("void-temp guard failed"); }
     std.io.print("hits={}\n", .{g_hits});
 }

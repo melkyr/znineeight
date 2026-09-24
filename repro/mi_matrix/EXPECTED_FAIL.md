@@ -1,6 +1,6 @@
-# mi_matrix corpus — expected-fail manifest (v211 2026-09-24)
+# mi_matrix corpus — expected-fail manifest (v212 2026-09-24)
 
-## Task 8 — void/value-`if` statement residuals (v210 -> v211 2026-09-24)
+## Task 8 — void/value-`if` statement residuals (v211 -> v212 2026-09-24)
 
 **Defects (pre-existing; carried from Task 9D).** (i) `_ = foo();` — discarding a void call — ICEd
 with `error[3043]: internal: invalid temp index 0 (len 0)`. A known-direct void call lowers with
@@ -8,39 +8,46 @@ result temp 0 (its "no result" marker, not the void-`if` `TEMP_NONE` sentinel), 
 `plain_assign` path ran `getTempType(self, 0)` on it: out of bounds while the temp table was still
 empty, and with a non-empty table a spurious `(void)zT_0;` naming an unrelated temp. (ii)
 `return if (c) foo();` — a void `if` returned from a void function — compiled rc=0 but emitted
-gcc-invalid C (`return zT_4294967295;`, the `TEMP_NONE` sentinel).
+gcc-invalid C (`return zT_4294967295;`, the `TEMP_NONE` sentinel). (iii) fix round
+(v211 -> v212; review Important, operator ruling "fix it now in Task 8"):
+`fn f(c: bool) !void { return if (c) foo(); }` — the same void `if` returned from an
+error-union(void) function — ICEd (`error[3043] invalid temp index 294967295`): `lowerExpr`'s
+coercion wrapper applied the recorded void -> `!void` coercion to the `TEMP_NONE` sentinel, so
+`materializeInto` dereferenced it with `getTempType` before `return_stmt` was reached.
 
-**Fix (Task 8).** `sf/src/lower.zig`, two sites. (i) `plain_assign` skips the l-value store when the
+**Fix (Task 8).** `sf/src/lower.zig`, three sites. (i) `plain_assign` skips the l-value store when the
 lowered RHS is the `0` no-value marker and the RHS resolved type is `TYPE_VOID` (the expression is
 already lowered into the current block). (ii) `return_stmt` emits `emitValuelessReturn`
 (`.ret_void`, or the error-union(void) `wrap_error_ok`) when the return operand is `TEMP_NONE`,
-instead of `.ret` on the sentinel.
+instead of `.ret` on the sentinel. (iii) fix round: `lowerExpr`'s coercion wrapper skips the recorded
+coercion when the lowered result is `TEMP_NONE` (a sentinel-aware guard mirroring (i)/(ii)); the
+consumer handles the sentinel, so the EU(void) return walks the normal `emitValuelessReturn` path.
 
 **Fixtures.** New positive runtime fixture `repro/mi_matrix/stdlib_void_temp_stmt_xmod` (the reported
 empty-temp-table `_ = foo();` + `_ = { foo(); };` + void value-`if` discards + a void call statement
 and a non-void `_ = bar();` discard (controls) + `return if (c) foo();` true/false + `return if (c)
-foo() else baz();` true/false + `return foo();` (control); every aggregate `@panic`-guarded; golden
-`hits=118`, rc 0, 3x byte-exact and Zig-0.15.2-twin-matched; stdlib pin **224 -> 225**) + standalone
-`repro/void_temp_discard.z98` / `repro/void_return_if.z98`. RED pre-fix: `error[3043] invalid temp
-index 0 (len 0)` (fixture + discard repro); emitted `return zT_4294967295;` with gcc
-`'zT_4294967295' undeclared` (return-if repro).
+foo() else baz();` true/false + `return foo();` (control); fix round adds the EU(void) forms
+`fn f() !void { return if (c) foo(); }` and `return if (c) foo() else baz();`, true/false; every
+aggregate `@panic`-guarded; golden `hits=220` (was `hits=118`), rc 0, 3x byte-exact and
+Zig-0.15.2-twin-matched; stdlib pin **224 -> 225**) + standalone `repro/void_temp_discard.z98` /
+`repro/void_return_if.z98`. RED pre-fix: `error[3043] invalid temp index 0 (len 0)` (fixture +
+discard repro); emitted `return zT_4294967295;` with gcc `'zT_4294967295' undeclared` (return-if
+repro); `error[3043] invalid temp index 294967295 (len 1)` (EU(void) probe).
 
-**Gates.** self-compile two-hop closure hop1 == hop2 == `91e9e16d7d0cd5509c1677dacf9ffef9`; 4-MD5
-emitted-C **UNCHANGED** (gol `e7bde571…` / lisp `35388763…` / json `5e1e0050…` / mud `5a1cc65e…`);
-example matrix **24/24**; std-lib runtime gate **225 PASS / 0 FAIL**; corpus `-s0` **998 = 874 OK /
-44 GREEN / 80 FAIL / 0 ICE / 0 CRASH** with a full-classifier join-diff vs the pre-fix seed v83
-compiler moving EXACTLY the new fixture dir (`stdlib_void_temp_stmt_xmod` ICE -> OK);
-`check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK; build_test 0/9 (pre-existing zig0
-baseline); self-emission rc 0 / 48 `.c` + 48 `.h` / no PANIC. Fixed point **MOVED
-`49a75cf036acef9aca242d4255646b8e` -> `91e9e16d7d0cd5509c1677dacf9ffef9`**; seed stays **v83** (NOT
-rotated — operator R2: rotation is closeout-only).
+**Gates (fix-round values).** self-compile two-hop closure hop1 == hop2 ==
+`4a7ea9654dcfff5a9fae25a683c698ff` (was `91e9e16d…`); 4-MD5 emitted-C **UNCHANGED** (gol
+`e7bde571…` / lisp `35388763…` / json `5e1e0050…` / mud `5a1cc65e…`, 2x each); example matrix
+**24/24**; std-lib runtime gate **225 PASS / 0 FAIL**; corpus `-s0` **998 = 874 OK / 44 GREEN /
+80 FAIL / 0 ICE / 0 CRASH** with a full-classifier join-diff vs the pre-fix seed v83 compiler moving
+EXACTLY the new fixture dir (`stdlib_void_temp_stmt_xmod` ICE -> OK); `check_emit_support.sh` 7/7;
+`verify_upgraded.sh` CLOSEOUT OK; build_test 0/9 (pre-existing zig0 baseline); self-emission rc 0 /
+48 `.c` + 48 `.h` / no PANIC. Fixed point **MOVED `49a75cf0…` -> `91e9e16d…` (Task 8) ->
+`4a7ea9654dcfff5a9fae25a683c698ff` (fix round)**; seed stays **v83** (NOT rotated — operator R2:
+rotation is closeout-only).
 
-**Residual (pre-existing, distinct; NOT fixed).** A void `return if (c) foo();` inside an
-error-union(void) function (`fn f(c: bool) !void`) still ICEs (`error[3043] invalid temp index
-294967295`) via the `void -> !void` coercion applied to the if_expr (identical ICE with the pre-fix
-compiler). A void `catch` block that lowers to a real temp (e.g. the compiler's own
-`std_debug.zig` `_ = writeCoreDump(...) catch {};`) keeps its pre-existing store — the narrowed fix
-deliberately leaves it byte-identical, which is why the 4-MD5 gates stay UNCHANGED.
+**Residual (pre-existing, distinct; NOT fixed).** A void `catch` block that lowers to a real temp
+(e.g. the compiler's own `std_debug.zig` `_ = writeCoreDump(...) catch {};`) keeps its pre-existing
+store — the narrowing that keeps the 4-MD5 gates byte-identical.
 
 ## Task 7 — one-argument `@intCast` on a loop capture (v209 -> v210 2026-09-24)
 

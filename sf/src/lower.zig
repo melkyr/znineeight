@@ -1074,7 +1074,18 @@ pub fn lowerExpr(self: *LirLowerer, node_idx: u32) u32 {
         var cep_km: []const u8 = "k"; pal.markerWrite(cep_km);
         var cep_kb: [10]u8 = undefined; var cep_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(coercion.kind)), cep_kb[0..]); var cep_ks: usize = @intCast(usize, 9) - @intCast(usize, cep_kl); pal.markerWrite(cep_kb[cep_ks..@intCast(usize, 9)]);
         var cep_nl2: []const u8 = "\n"; pal.markerWrite(cep_nl2);
-        result = applyCoercion(self, result, coercion);
+        // Task 8 fix round: `result` may be the TEMP_NONE "no value"
+        // sentinel (a void value-`if`). There is no value to coerce, so skip
+        // the recorded coercion (a void->EU/optional layer) and return the
+        // sentinel to the consumer, which handles it (e.g. `return_stmt`
+        // emits a valueless return / EU(void) wrap). Pre-fix the wrapper
+        // passed TEMP_NONE into `applyCoercion` -> `materializeInto`, which
+        // dereferenced it with `getTempType` and ICEd (`error[3043] invalid
+        // temp index 294967295`) for `fn f(c: bool) !void { return if (c)
+        // foo(); }` before `return_stmt` was reached.
+        if (result != TEMP_NONE) {
+            result = applyCoercion(self, result, coercion);
+        }
     } else {
         var cem_m: []const u8 = "CEM:n"; pal.markerWrite(cem_m);
         var cem_nb: [10]u8 = undefined; var cem_nl = itoa_mod.itoa(node_idx, cem_nb[0..]); var cem_ns: usize = @intCast(usize, 9) - @intCast(usize, cem_nl); pal.markerWrite(cem_nb[cem_ns..@intCast(usize, 9)]);
