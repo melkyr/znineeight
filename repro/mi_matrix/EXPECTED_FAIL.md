@@ -1,5 +1,18 @@
 # mi_matrix corpus — expected-fail manifest (v209 2026-09-23)
 
+## Task 6 — comptime-int core Part I closeout (v209; NO BUMP, 2026-09-24)
+
+Part I (Step 0 + Tasks 1–5) of `docs/superpowers/plans/2026-09-22-z98-comptime-int-parity-plan.md`
+is COMPLETE. The closeout re-verified this manifest's expectations with the Part-I final compiler
+(fixed point `1e389c5739aea89550d149015f0031d3`): the frozen Step-0 35-shape table (28 accepted
+shapes all Zig-0.15.2-equal, 7 preserved rejects), 4-MD5 emitted-C unchanged, corpus `-s0`
+996 = 872 OK / 44 GREEN / 80 FAIL / 0 ICE / 0 CRASH (zero class movement vs Task 5),
+stdlib 223 PASS / 0 FAIL, example matrix 24/24. **No version bump**: Task 6 changes no fixture
+expectation and no fixture class. The retired divergence is recorded in
+`docs/reference/Language_Spec_Z98.md` §7.2 and `sf/docs/tech_docs/04_comptime_eval.md`: the Task 9D
+bounded divergence is gone, and float comparison folding is **pending Part II Task 9**.
+Seed rotated v82 → v83 at this closeout.
+
 ## Task 5 — fold-consumer migration: exact array-size / enum-initializer folds (v208 -> v209 2026-09-23)
 
 **What.** `sf/src/type_resolver.zig`'s two remaining 64-bit evaluators are re-pointed at the
