@@ -1,4 +1,43 @@
-# mi_matrix corpus — expected-fail manifest (v212 2026-09-24)
+# mi_matrix corpus — expected-fail manifest (v213 2026-09-24)
+
+## Task 9 — comptime float comparisons (v212 -> v213 2026-09-24)
+
+**Defect.** `comptimeEvalCompare` returned null whenever an operand was float-valued, so a
+comptime-true float condition never folded and a no-`else` value `if` was rejected `error[3059]`
+(e.g. `var x: i32 = if (0.5 < 1.0) 1;`), while official Zig 0.15.2 folds it and accepts.
+
+**Fix (Task 9; `sf/src/comptime_eval.zig`).** `comptimeEvalCompare` keeps the exact integer
+`ciCmp` path when both operands are integer/bool and otherwise calls the new
+`comptimeEvalCompareFloat`: the float sub-evaluator supplies each float operand at the established
+f64 precision (a typed `f32` rounds through f32 first), and an INTEGER operand participates only
+when exactly representable in the peer significand (new `ciSignificantBits`; <= 53 bits for an
+f64/`comptime_float` peer, <= 24 for f32), so the folded verdict is the mathematical comparison Zig
+folds. Peer rules (oracle-checked, Zig 0.15.2): a typed f64 operand makes the peer f64 (an f32
+widens exactly); a typed f32 peer folds an untyped operand only when its f64 value is exactly
+f32-representable (`comptimeEvalF64IsF32Exact`; Z98's emitted C widens to double, so rounding
+would fold a verdict the runtime never computes); no typed float operand evaluates at f64. New
+helpers `CmpFloatOperand`, `comptimeEvalCompareOperand`, `comptimeEvalFloatBits`,
+`comptimeEvalF64IsF32Exact`, `comptimeEvalFloatOperandType`; `comptimeEvalFloat`'s ident arm now
+consults the function-local const scope first.
+
+**Fixtures.** New positive runtime fixture `repro/mi_matrix/stdlib_comptime_float_compare_xmod`
+(23 values: all six operators literal/literal, exponent + `-0.0`, untyped int vs float + an
+arithmetic-derived int, module/local f64 consts, typed f32 (f32-vs-f32, f32-vs-f32-exact literal,
+f32-vs-int), `@intToFloat(f64,…)`, `@floatCast(f64, <f32>)`, logicals, an integer-comparison
+control + four runtime-`if` false-condition controls; every value `@panic`-guarded; golden
+`101 … 123` / `f1=0` / `float compare ok`, rc 0, 3x byte-exact and Zig-0.15.2-twin-matched; stdlib
+pin **225 -> 226**) + standalone `repro/comptime_float_compare.z98`. RED pre-fix: `error[3059]`
+(rc 2) on the fixture's first float condition and on the standalone.
+
+**Gates.** self-compile two-hop closure hop1 == hop2 == `a059fa89b151c0f4363e926fc8366505` (was
+`4a7ea965…`); 4-MD5 emitted-C **UNCHANGED** (gol `e7bde571…` / lisp `35388763…` / json
+`5e1e0050…` / mud `5a1cc65e…`); example matrix **24/24**; std-lib runtime gate **226 PASS / 0
+FAIL**; corpus `-s0` **999 = 875 OK / 44 GREEN / 80 FAIL / 0 ICE / 0 CRASH** (full-classifier
+join-diff vs the pre-fix seed v83 compiler = exactly the new fixture dir, FAIL->OK); the
+integer-comparison fixtures `stdlib_comptime_compare_xmod` + `repro/comptime_compare.z98`
+unchanged. Bounded residuals: an f32 operand against a non-f32-exact untyped literal declines (Zig
+peer-rounds it to f32); an integer with more significant bits than the peer's significand declines
+(Zig compares exactly); `comptime_float` literals compare at f64, not Zig's f128.
 
 ## Task 8 — void/value-`if` statement residuals (v211 -> v212 2026-09-24)
 

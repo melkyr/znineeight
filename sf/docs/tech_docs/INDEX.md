@@ -1,4 +1,4 @@
-# zig1 Pipeline — Master Index [updated: 2026-09-23 — Task 4 fix round: Table B gains `scalarTargetOf`, `foldNodeIntExact`, `checkIntFitsMode`, `checkArgReturnIntFits` (lower.zig); `semanticAnalyzerResolveModuleVarDecl` now re-types unannotated module consts] [updated: 2026-09-23 — Task 4: Table B gains `ComptimeFoldTable` helpers (`comptimeFoldTableInit`/`comptimeFoldTablePut`/`comptimeFoldTableGet`), `comptimeIntFits64`/`comptimeIntMaterialize`/`comptimeIntUntypedType`, `comptimeEvalDeclFits` (comptime_eval.zig), `checkFoldedIntFits`/`comptimeFoldBool`/`lowerFoldedIntConst`/`reportComptimeIntFits` (lower.zig); the production fold table moved from `U32ToU64Map` to exact `ComptimeVal`s] [updated: 2026-09-23 — Task 3 fix round 2 (Important): `bit_not` exempted from the unary peer fit (valid `~u` shapes accept again); `testComptimeCompareCore` wired into `main()`] [updated: 2026-09-23 — Task 3 fix round 1 (Critical/Important): `ciCmp` is now `pub`; `comptimeEvalOperandType` recurses into an unannotated const's initializer and the unary `-` fold applies the peer fit; the `if_expr` fold sub-path is terminator-aware (doc 07)] [updated: 2026-09-23 — Task 3: Table B gains `ciCmp`, `comptimeEvalOperandType`, `comptimeEvalWiderIntType` (comptime_eval.zig); `ciValToOldBits`, `comptimeEvalOperandDeclaredSigned`, `comptimeEvalOperandCompareSigned` retired] [updated: 2026-09-23 — Task 10D: Table B gains `captureShadowShouldRedirect` (lower.zig)] [updated: 2026-09-21 — Task B2 final fix wave: Table B gains `isCompoundTypeExprKind` and `containerFieldCount` (type_resolver.zig); `registerContainerType` clean-rejects a >32-field local/inline aggregate] [updated: 2026-09-21 — Task B2: Table B gains `containerAnonNameId`, `isContainerDeclKind`, `registerContainerType`, and `localTypeScopeInit`/`localTypeScopeLookup`/`localTypeScopePush` (type_resolver.zig)] [updated: 2026-09-20 — regenerated against current source and the refreshed 14 tech docs; line references removed, `phase_FrontResolution`/`phase_AsyncFrameSize` added, counts corrected]
+# zig1 Pipeline — Master Index [updated: 2026-09-24 — Task 9 (Part II): Table B gains `comptimeEvalCompareFloat`, `comptimeEvalCompareOperand`, `comptimeEvalF64IsF32Exact`, `comptimeEvalFloat`, `comptimeEvalFloatBits`, `comptimeEvalFloatBuiltin`, `comptimeEvalFloatOperandType`, `ciSignificantBits` (comptime_eval.zig); comptime float comparisons now fold at the established f64 precision] [updated: 2026-09-23 — Task 4 fix round: Table B gains `scalarTargetOf`, `foldNodeIntExact`, `checkIntFitsMode`, `checkArgReturnIntFits` (lower.zig); `semanticAnalyzerResolveModuleVarDecl` now re-types unannotated module consts] [updated: 2026-09-23 — Task 4: Table B gains `ComptimeFoldTable` helpers (`comptimeFoldTableInit`/`comptimeFoldTablePut`/`comptimeFoldTableGet`), `comptimeIntFits64`/`comptimeIntMaterialize`/`comptimeIntUntypedType`, `comptimeEvalDeclFits` (comptime_eval.zig), `checkFoldedIntFits`/`comptimeFoldBool`/`lowerFoldedIntConst`/`reportComptimeIntFits` (lower.zig); the production fold table moved from `U32ToU64Map` to exact `ComptimeVal`s] [updated: 2026-09-23 — Task 3 fix round 2 (Important): `bit_not` exempted from the unary peer fit (valid `~u` shapes accept again); `testComptimeCompareCore` wired into `main()`] [updated: 2026-09-23 — Task 3 fix round 1 (Critical/Important): `ciCmp` is now `pub`; `comptimeEvalOperandType` recurses into an unannotated const's initializer and the unary `-` fold applies the peer fit; the `if_expr` fold sub-path is terminator-aware (doc 07)] [updated: 2026-09-23 — Task 3: Table B gains `ciCmp`, `comptimeEvalOperandType`, `comptimeEvalWiderIntType` (comptime_eval.zig); `ciValToOldBits`, `comptimeEvalOperandDeclaredSigned`, `comptimeEvalOperandCompareSigned` retired] [updated: 2026-09-23 — Task 10D: Table B gains `captureShadowShouldRedirect` (lower.zig)] [updated: 2026-09-21 — Task B2 final fix wave: Table B gains `isCompoundTypeExprKind` and `containerFieldCount` (type_resolver.zig); `registerContainerType` clean-rejects a >32-field local/inline aggregate] [updated: 2026-09-21 — Task B2: Table B gains `containerAnonNameId`, `isContainerDeclKind`, `registerContainerType`, and `localTypeScopeInit`/`localTypeScopeLookup`/`localTypeScopePush` (type_resolver.zig)] [updated: 2026-09-20 — regenerated against current source and the refreshed 14 tech docs; line references removed, `phase_FrontResolution`/`phase_AsyncFrameSize` added, counts corrected]
 
 > Source-files: `sf/src/*.zig` | Cross-reference for all 14 tech docs
 
@@ -269,6 +269,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `ciSet` | comptime_eval.zig |
 | `ciShl` | comptime_eval.zig |
 | `ciShr` | comptime_eval.zig |
+| `ciSignificantBits` | comptime_eval.zig |
 | `ciSub` | comptime_eval.zig |
 | `ciToF64` | comptime_eval.zig |
 | `ciToU64` | comptime_eval.zig |
@@ -281,9 +282,16 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `comptimeEvalBinOp` | comptime_eval.zig |
 | `comptimeEvalBuiltin` | comptime_eval.zig |
 | `comptimeEvalCompare` | comptime_eval.zig |
+| `comptimeEvalCompareFloat` | comptime_eval.zig |
+| `comptimeEvalCompareOperand` | comptime_eval.zig |
 | `comptimeEvalDeclFits` | comptime_eval.zig |
 | `comptimeEvalEvaluate` | comptime_eval.zig |
 | `comptimeEvalEvaluateDepth` | comptime_eval.zig |
+| `comptimeEvalF64IsF32Exact` | comptime_eval.zig |
+| `comptimeEvalFloat` | comptime_eval.zig |
+| `comptimeEvalFloatBits` | comptime_eval.zig |
+| `comptimeEvalFloatBuiltin` | comptime_eval.zig |
+| `comptimeEvalFloatOperandType` | comptime_eval.zig |
 | `comptimeEvalInit` | comptime_eval.zig |
 | `comptimeEvalLogical` | comptime_eval.zig |
 | `comptimeEvalOperandType` | comptime_eval.zig |

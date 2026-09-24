@@ -31,6 +31,12 @@ pub const KIND_INT: u8 = 0;
 pub const KIND_BOOL: u8 = 1;
 pub const KIND_FLOAT: u8 = 2;
 
+// Task 9 (Part II): significand widths of the IEEE binary formats, used to
+// require an integer comparison operand to be exactly representable in the
+// comparison's float peer before the float fold may fire.
+pub const F32_SIGNIFICAND_BITS: u32 = 24;
+pub const F64_SIGNIFICAND_BITS: u32 = 53;
+
 pub const ComptimeVal = struct {
     v: ComptimeInt,
     kind: u8,
@@ -785,27 +791,239 @@ fn comptimeEvalBinOp(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, depth
 // are all gone. Comparisons deliberately do NOT apply the arithmetic peer-fit
 // rule (Task 1 §5.4): the oracle accepts `const u: u8 = 200; u > -1` (true) and
 // `u > 300` (false), so a comparison is mathematical and range rulings belong
-// to the arithmetic folds beneath it. A float operand stays unfoldable (float
-// comparison folding is out of scope — a bounded residual).
+// to the arithmetic folds beneath it.
+//
+// Task 9 (Part II): an all-integer/bool comparison stays on the exact `ciCmp`
+// path; any float operand goes to `comptimeEvalCompareFloat` (below).
 fn comptimeEvalCompare(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, depth: u32) ?ComptimeVal {
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var lhs = comptimeEvalEvaluateDepth(self, node.child_0, depth);
     var rhs = comptimeEvalEvaluateDepth(self, node.child_1, depth);
     if (lhs) |l| {
         if (rhs) |r| {
-            if (l.kind == KIND_FLOAT or r.kind == KIND_FLOAT) return null;
-            var c: i32 = ciCmp(l.v, r.v);
+            if (l.kind != KIND_FLOAT and r.kind != KIND_FLOAT) {
+                var c: i32 = ciCmp(l.v, r.v);
+                var res: bool = false;
+                if (op_kind == AstKind.cmp_eq) res = c == @intCast(i32, 0);
+                if (op_kind == AstKind.cmp_ne) res = c != @intCast(i32, 0);
+                if (op_kind == AstKind.cmp_lt) res = c < @intCast(i32, 0);
+                if (op_kind == AstKind.cmp_le) res = c <= @intCast(i32, 0);
+                if (op_kind == AstKind.cmp_gt) res = c > @intCast(i32, 0);
+                if (op_kind == AstKind.cmp_ge) res = c >= @intCast(i32, 0);
+                return ciBoolVal(res);
+            }
+        }
+    }
+    return comptimeEvalCompareFloat(self, node_idx, op_kind, depth);
+}
+
+// Task 9 (Part II): float comparison folding at the existing f64 precision.
+// The float sub-evaluator (`comptimeEvalFloat`) supplies each float operand at
+// f64 precision (a typed `f32` rounds through f32 first, matching the C
+// `float` the emitted program holds; an untyped literal is the f64 the runtime
+// comparison uses). An INTEGER operand participates only when it is EXACTLY
+// representable in the comparison's peer precision (<= 53 significand bits for
+// an f64 / `comptime_float` peer, <= 24 for an f32 peer), so the folded
+// verdict is the mathematical comparison official Zig folds and cannot
+// disagree with the emitted runtime comparison of the same values (the
+// integer->float coercion is then exact). Any other shape declines (no fold),
+// preserving the pre-Task-9 verdict.
+//
+// Oracle-checked peer rules (Zig 0.15.2): a typed `f64` operand makes the peer
+// f64 (an `f32` operand widens exactly); otherwise a typed `f32` operand makes
+// the peer f32, so an UNTYPED (`comptime_float`) operand is folded only when
+// its f64 value is exactly f32-representable (f64 values that are not exact in
+// f32 are NOT rounded: Z98's emitted C widens to double, so rounding would
+// fold a verdict the runtime never computes); with no typed float operand the
+// comparison is comptime_float, evaluated here at f64 (the documented
+// precision residual).
+fn comptimeEvalCompareFloat(self: *ComptimeEval, node_idx: u32, op_kind: AstKind, depth: u32) ?ComptimeVal {
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    var lop = comptimeEvalCompareOperand(self, node.child_0, depth);
+    var rop = comptimeEvalCompareOperand(self, node.child_1, depth);
+    if (lop) |l| {
+        if (rop) |r| {
+            if (!l.ok or !r.ok) return null;
+            if (!l.is_float and !r.is_float) return null;
+            if (l.is_bool or r.is_bool) return null;
+            var has_f64: bool = (l.is_float and l.ftype == type_mod.TYPE_F64) or (r.is_float and r.ftype == type_mod.TYPE_F64);
+            var has_f32: bool = (l.is_float and l.ftype == type_mod.TYPE_F32) or (r.is_float and r.ftype == type_mod.TYPE_F32);
+            if (has_f64 or !has_f32) {
+                if (!l.is_float and l.sig_bits > F64_SIGNIFICAND_BITS) return null;
+                if (!r.is_float and r.sig_bits > F64_SIGNIFICAND_BITS) return null;
+            } else {
+                if (l.is_float and l.ftype == @intCast(u32, 0) and !comptimeEvalF64IsF32Exact(l.fval)) return null;
+                if (r.is_float and r.ftype == @intCast(u32, 0) and !comptimeEvalF64IsF32Exact(r.fval)) return null;
+                if (!l.is_float and l.sig_bits > F32_SIGNIFICAND_BITS) return null;
+                if (!r.is_float and r.sig_bits > F32_SIGNIFICAND_BITS) return null;
+            }
+            var lv: f64 = l.fval;
+            var rv: f64 = r.fval;
             var res: bool = false;
-            if (op_kind == AstKind.cmp_eq) res = c == @intCast(i32, 0);
-            if (op_kind == AstKind.cmp_ne) res = c != @intCast(i32, 0);
-            if (op_kind == AstKind.cmp_lt) res = c < @intCast(i32, 0);
-            if (op_kind == AstKind.cmp_le) res = c <= @intCast(i32, 0);
-            if (op_kind == AstKind.cmp_gt) res = c > @intCast(i32, 0);
-            if (op_kind == AstKind.cmp_ge) res = c >= @intCast(i32, 0);
+            if (op_kind == AstKind.cmp_eq) res = lv == rv;
+            if (op_kind == AstKind.cmp_ne) res = lv != rv;
+            if (op_kind == AstKind.cmp_lt) res = lv < rv;
+            if (op_kind == AstKind.cmp_le) res = lv <= rv;
+            if (op_kind == AstKind.cmp_gt) res = lv > rv;
+            if (op_kind == AstKind.cmp_ge) res = lv >= rv;
             return ciBoolVal(res);
         }
     }
     return null;
+}
+
+// Task 9: one comparison operand for the float path: the operand's f64 value,
+// whether it is float-valued (as opposed to int/bool), its declared float type
+// (TYPE_F32 / TYPE_F64; 0 = untyped `comptime_float`), and -- for an integer
+// operand -- its magnitude's significant-bit count so the caller can require
+// exact representability in the peer's significand.
+const CmpFloatOperand = struct {
+    ok: bool,
+    is_float: bool,
+    is_bool: bool,
+    ftype: u32,
+    fval: f64,
+    sig_bits: u32,
+};
+
+fn comptimeEvalCompareOperand(self: *ComptimeEval, node_idx: u32, depth: u32) ?CmpFloatOperand {
+    var op = CmpFloatOperand{ .ok = false, .is_float = false, .is_bool = false, .ftype = @intCast(u32, 0), .fval = 0.0, .sig_bits = @intCast(u32, 0) };
+    if (comptimeEvalEvaluateDepth(self, node_idx, depth)) |cv| {
+        if (cv.kind == KIND_FLOAT) {
+            op.ok = true;
+            op.is_float = true;
+            op.ftype = comptimeEvalFloatOperandType(self, node_idx);
+            op.fval = comptimeEvalFloatBits(cv);
+            return op;
+        }
+        if (cv.kind == KIND_BOOL) {
+            op.ok = true;
+            op.is_bool = true;
+            if (!ciIsZero(cv.v)) { op.fval = 1.0; }
+            return op;
+        }
+        op.ok = true;
+        op.sig_bits = ciSignificantBits(cv.v);
+        op.fval = ciToF64(cv.v);
+        return op;
+    }
+    if (comptimeEvalFloat(self, node_idx, depth)) |fv| {
+        op.ok = true;
+        op.is_float = true;
+        op.ftype = comptimeEvalFloatOperandType(self, node_idx);
+        op.fval = fv;
+    }
+    return op;
+}
+
+// Task 9: reinterpret a folded float `ComptimeVal`'s f64 bit pattern.
+fn comptimeEvalFloatBits(cv: ComptimeVal) f64 {
+    var fb: u64 = cv.float_bits;
+    var fp: *f64 = @ptrCast(*f64, &fb);
+    return fp.*;
+}
+
+// Task 9: significant bits of a `ComptimeInt` magnitude (0 for zero). A value
+// with <= 53 (f64) or <= 24 (f32) significant bits is exactly representable in
+// that IEEE binary format (the 256-bit cap is far inside the exponent range).
+fn ciSignificantBits(v: ComptimeInt) u32 {
+    if (v.len == @intCast(u8, 0)) return @intCast(u32, 0);
+    var bits: u32 = @intCast(u32, 0);
+    var top: u32 = v.mag[@intCast(usize, v.len - @intCast(u8, 1))];
+    while (top != @intCast(u32, 0)) {
+        bits += @intCast(u32, 1);
+        top = top >> @intCast(u32, 1);
+    }
+    var i: u8 = @intCast(u8, 0);
+    while (i < v.len) : (i += @intCast(u8, 1)) {
+        var limb: u32 = v.mag[@intCast(usize, i)];
+        if (limb == @intCast(u32, 0)) {
+            bits -= @intCast(u32, 32);
+        } else {
+            while ((limb & @intCast(u32, 1)) == @intCast(u32, 0)) {
+                bits -= @intCast(u32, 1);
+                limb = limb >> @intCast(u32, 1);
+            }
+            return bits;
+        }
+    }
+    return bits;
+}
+
+// Task 9: is the f64 value exactly an f32 value (round-trip)?
+fn comptimeEvalF64IsF32Exact(x: f64) bool {
+    var x32: f32 = @floatCast(f32, x);
+    var back: f64 = @floatCast(f64, x32);
+    return back == x;
+}
+
+// Task 9: the declared float type of a comparison operand -- TYPE_F32 /
+// TYPE_F64 for a typed shape, 0 for an untyped `comptime_float` or a non-float
+// shape (the caller knows which from the evaluated value). Mirrors
+// `comptimeEvalOperandTypeDepth` for the float kinds and consults the same
+// function-local const scope.
+fn comptimeEvalFloatOperandType(self: *ComptimeEval, node_idx: u32) u32 {
+    return comptimeEvalFloatOperandTypeDepth(self, node_idx, @intCast(u32, 0));
+}
+
+fn comptimeEvalFloatOperandTypeDepth(self: *ComptimeEval, node_idx: u32, depth: u32) u32 {
+    if (node_idx == @intCast(u32, 0)) return @intCast(u32, 0);
+    if (depth >= @intCast(u32, 16)) return @intCast(u32, 0);
+    var idx = node_idx;
+    var guard: u32 = @intCast(u32, 0);
+    while (guard < @intCast(u32, 32)) : (guard += @intCast(u32, 1)) {
+        var wn = ast_mod.astStoreNodeAt(self.store, idx);
+        if (wn.kind == AstKind.paren_expr) { idx = wn.child_0; } else { break; }
+    }
+    var node = ast_mod.astStoreNodeAt(self.store, idx);
+    if (node.kind == AstKind.float_literal) return @intCast(u32, 0);
+    if (node.kind == AstKind.negate) return comptimeEvalFloatOperandTypeDepth(self, node.child_0, depth + @intCast(u32, 1));
+    if (node.kind == AstKind.ident_expr) {
+        var name_id = ast_mod.astStoreIdentifier(self.store, idx);
+        if (self.local_consts) |lcs| {
+            if (type_resolver.localConstScopeLookup(lcs, name_id)) |l_decl_node| {
+                var l_decl = ast_mod.astStoreNodeAt(self.store, l_decl_node);
+                if (l_decl.child_0 != @intCast(u32, 0)) {
+                    if (comptimeEvalResolveTypeArg(self, l_decl.child_0)) |lt| {
+                        if (lt == type_mod.TYPE_F32 or lt == type_mod.TYPE_F64) return lt;
+                    }
+                    return @intCast(u32, 0);
+                }
+                if (l_decl.child_1 != @intCast(u32, 0)) {
+                    return comptimeEvalFloatOperandTypeDepth(self, l_decl.child_1, depth + @intCast(u32, 1));
+                }
+                return @intCast(u32, 0);
+            }
+        }
+        var mi: usize = 0;
+        while (mi < @intCast(usize, self.symbol_reg.tables_len)) : (mi += 1) {
+            var c_sym = sym_mod.symbolRegistryQualifiedLookup(self.symbol_reg, @intCast(u32, mi), name_id);
+            if (c_sym) |cs| {
+                if ((cs.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
+                    var c_decl = ast_mod.astStoreNodeAt(self.store, cs.decl_node);
+                    if (c_decl.child_0 != @intCast(u32, 0)) {
+                        if (comptimeEvalResolveTypeArg(self, c_decl.child_0)) |t| {
+                            if (t == type_mod.TYPE_F32 or t == type_mod.TYPE_F64) return t;
+                        }
+                        return @intCast(u32, 0);
+                    }
+                    if (c_decl.child_1 != @intCast(u32, 0)) {
+                        return comptimeEvalFloatOperandTypeDepth(self, c_decl.child_1, depth + @intCast(u32, 1));
+                    }
+                }
+            }
+        }
+        return @intCast(u32, 0);
+    }
+    if (node.kind == AstKind.builtin_call) {
+        if (node.child_0 == self.int_to_float_id or node.child_0 == self.float_cast_id) {
+            if (comptimeEvalResolveTypeArg(self, ast_mod.astStoreNodeExtraChildAt(self.store, idx, @intCast(u32, 0)))) |t2| {
+                if (t2 == type_mod.TYPE_F32 or t2 == type_mod.TYPE_F64) return t2;
+            }
+        }
+        return @intCast(u32, 0);
+    }
+    return @intCast(u32, 0);
 }
 
 // Task 9D: fold `and`/`or`/`!` on comptime bools. `and`/`or` short-circuit:
@@ -1275,6 +1493,30 @@ fn comptimeEvalFloat(self: *ComptimeEval, node_idx: u32, depth: u32) ?f64 {
         return null;
     } else if (node.kind == AstKind.ident_expr) {
         var name_id = ast_mod.astStoreIdentifier(self.store, node_idx);
+        // Task 9 (Part II): consult the enclosing function's local-const scope
+        // FIRST (mirrors the integer evaluator and the module arm below): a
+        // local `const` shadows a module const of the same name. This is what
+        // lets a function-local `const f: f64 = ...` participate in a float
+        // comparison fold.
+        if (self.local_consts) |lcs| {
+            if (type_resolver.localConstScopeLookup(lcs, name_id)) |l_decl_node| {
+                var l_decl = ast_mod.astStoreNodeAt(self.store, l_decl_node);
+                if (l_decl.child_1 != @intCast(u32, 0)) {
+                    var lin = comptimeEvalFloat(self, l_decl.child_1, depth + @intCast(u32, 1));
+                    if (lin) |lfv| {
+                        var ldt = comptimeEvalResolveTypeArg(self, l_decl.child_0);
+                        if (ldt) |lt| {
+                            if (lt == type_mod.TYPE_F32) {
+                                var lf32: f32 = @floatCast(f32, lfv);
+                                return @floatCast(f64, lf32);
+                            }
+                        }
+                        return lfv;
+                    }
+                    return null;
+                }
+            }
+        }
         var mi: usize = 0;
         while (mi < @intCast(usize, self.symbol_reg.tables_len)) : (mi += 1) {
             var c_sym = sym_mod.symbolRegistryQualifiedLookup(self.symbol_reg, @intCast(u32, mi), name_id);
