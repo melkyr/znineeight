@@ -5085,7 +5085,6 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 emitInst(self, LirInst{ .decl_local = .{ .name_id = catch_cap_name, .type_id = type_mod.TYPE_I32, .temp = err_code_temp } });
                 var decl_m: []const u8 = "DECL:t"; pal.markerWrite(decl_m); var decl_b: [10]u8 = undefined; var decl_l = itoa_mod.itoa(err_code_temp, decl_b[0..]); var decl_s: usize = @intCast(usize, 9) - @intCast(usize, decl_l); pal.markerWrite(decl_b[decl_s..@intCast(usize, 9)]); var decl_bb: []const u8 = "b"; pal.markerWrite(decl_bb); var decl_bb_b: [10]u8 = undefined; var decl_bb_l = itoa_mod.itoa(@intCast(u32, self.current_bb), decl_bb_b[0..]); var decl_bb_s: usize = @intCast(usize, 9) - @intCast(usize, decl_bb_l); pal.markerWrite(decl_bb_b[decl_bb_s..@intCast(usize, 9)]); var decl_nl: []const u8 = "\n"; pal.markerWrite(decl_nl);
             }
-            self.capture_shadow.count = @intCast(usize, 0);
             var err_val = lowerExprOrBlock(self, node.child_1);
             var cdiag_et: u32 = getTempType(self, err_val);
             var cdiag_e1: []const u8 = "CDIAG:errT"; pal.markerWriteInt(cdiag_e1, cdiag_et);
@@ -5312,7 +5311,6 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         } else {
             self.block_terminated = @intCast(u8, 0);
         }
-        self.capture_shadow.count = @intCast(usize, 0);
         return result;
 
       } else if (node.kind == AstKind.array_init) {
@@ -5726,7 +5724,6 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 emitInst(self, LirInst{ .jump = exit_bb });
             }
 
-            self.capture_shadow.count = @intCast(usize, 0);
         }
         var swx_m: []const u8 = "SWEXIT:bt"; pal.markerWriteInt(swx_m, @intCast(u32, self.block_terminated));
         self.current_bb = exit_bb;
@@ -6289,7 +6286,6 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             self.block_terminated = @intCast(u8, 0);
         }
         self.current_bb = join_bb;
-        self.capture_shadow.count = @intCast(usize, 0);
     } else if (node.kind == AstKind.while_stmt) {
         var mw_m: []const u8 = "MW:en"; pal.markerWrite(mw_m);
         var mw_b: [20]u8 = undefined; var mw_l = itoa_mod.itoa(node.child_0, mw_b[0..]); var mw_s: usize = @intCast(usize, 19) - @intCast(usize, mw_l); pal.markerWrite(mw_b[mw_s..@intCast(usize, 19)]);
@@ -6380,7 +6376,6 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         }
         self.current_bb = exit_bb;
         self.block_terminated = @intCast(u8, 0);
-        self.capture_shadow.count = @intCast(usize, 0);
         self.loop_stack.len = self.loop_stack.len - @intCast(usize, 1);
         self.current_label = saved_label;
      } else if (node.kind == AstKind.for_stmt) {
@@ -6447,7 +6442,6 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             emitInst(self, LirInst{ .jump = cond_bb });
             self.current_bb = exit_bb;
             self.block_terminated = @intCast(u8, 0);
-            self.capture_shadow.count = @intCast(usize, 0);
             self.loop_stack.len = self.loop_stack.len - @intCast(usize, 1);
             self.current_label = saved_label;
         } else {
@@ -6521,7 +6515,6 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             idx_temp = nxt_idx;
             emitInst(self, LirInst{ .jump = cond_bb });
             self.current_bb = exit_bb;
-            self.capture_shadow.count = @intCast(usize, 0);
             self.loop_stack.len = self.loop_stack.len - @intCast(usize, 1);
             self.current_label = saved_label;
          }
@@ -6620,7 +6613,6 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                 emitInst(self, LirInst{ .jump = exit_bb });
             }
 
-            self.capture_shadow.count = @intCast(usize, 0);
         }
         var swx_p: []const u8 = "SWEXIT:preds"; pal.markerWriteInt(swx_p, exit_preds);
         var swx_b: []const u8 = "SWEXIT:bt"; pal.markerWriteInt(swx_b, @intCast(u32, self.block_terminated));
@@ -7627,6 +7619,17 @@ fn emitValuelessReturn(self: *LirLowerer) void {
 
 pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
     self.fn_seq = self.fn_seq + @intCast(u32, 1);
+    // Task 10 bookkeeping hygiene: the function-scoped capture/local state
+    // starts clean here. `main.zig` hands every function a FRESH lowerer, so in
+    // the production path these stores are no-ops; they make `lowerFn`
+    // self-contained for callers that reuse one lowerer across functions
+    // (`sf/src/tests/test_lower_bin.zig` does), and they replace the eight dead
+    // arm-end `capture_shadow.count = 0` stores: u32ToU32MapGet scans the
+    // `occupied` flags and ignores `count`, so those cleared nothing, and a
+    // mid-function clear is wrong anyway (it drops an enclosing capture that is
+    // referenced after a nested loop inside its own body).
+    self.local_decl_count = @intCast(usize, 0);
+    hash_mod.u32ToU32MapClear(&self.capture_shadow);
     var evcap = self.ctx.enum_value_table.capacity; var evcnt = self.ctx.enum_value_table.count;
     var evcap_buf: [20]u8 = undefined; var evcnt_buf: [20]u8 = undefined;
     var evcap_len = itoa_mod.itoa(@intCast(u32, evcap), evcap_buf[0..]);

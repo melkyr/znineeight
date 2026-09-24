@@ -119,6 +119,15 @@ pub fn u32ToU32MapPut(self: *U32ToU32Map, key: u32, value: u32) void {
     self.count += 1;
 }
 
+// Clears every entry. `count` alone is not a clear — u32ToU32MapGet scans the
+// `occupied` flags and ignores count — so resetting only count leaves the map
+// fully readable (Task 10 capture_shadow hygiene).
+pub fn u32ToU32MapClear(self: *U32ToU32Map) void {
+    var i: usize = 0;
+    while (i < self.capacity) : (i += @intCast(usize, 1)) { self.occupied[i] = @intCast(u8, 0); }
+    self.count = @intCast(usize, 0);
+}
+
 pub const U64ToU32Map = struct {
     keys: [*]u64,
     values: [*]u32,

@@ -1,4 +1,37 @@
-# mi_matrix corpus — expected-fail manifest (v214 2026-09-24)
+# mi_matrix corpus — expected-fail manifest (v215 2026-09-24)
+
+## Task 10 — capture/lifetime bookkeeping hygiene (v214 -> v215 2026-09-24)
+
+**Decision (no behavior change for valid programs).** Three residuals from the Task 10C investigation,
+decided and implemented in `sf/src/lower.zig` + `sf/src/util/hash.zig`:
+(1) the eight arm-end `capture_shadow.count = 0` stores were dead writes (`u32ToU32MapGet` scans the
+`occupied` flags and ignores `count`) — **DELETED**;
+(2) the `capture_shadow` map is now explicitly function-scoped: the new `u32ToU32MapClear` (a real
+clear — zeroes `occupied` + `count`) is called together with `local_decl_count = 0` in `lowerFn`'s
+entry. `main.zig` already creates a fresh `LirLowerer` per `fn_decl`, so the production path is
+unchanged; the explicit reset makes `lowerFn` self-contained for the unit-test caller, which reuses
+one lowerer across functions. A mid-function clear was NOT adopted — Task 10C proved it regresses the
+capture-referenced-after-nested-loop shape;
+(3) `maybeDisambiguateCapture`'s conservative over-rename (ANY earlier same-name declaration forces a
+synth name, including closed sibling scopes) is **KEPT**: it is semantically neutral and narrowing it
+would churn the emitted C of gate programs (e.g. json_parser's `item_1`/`i_2`), violating the
+no-behavior-change constraint.
+
+**Coverage.** New standalone `repro/capture_fn_reuse.z98` (cross-function reuse: renamed capture in
+`fa`, later plain local `j` in `fb`, clean capture in `fc`, parameter `j` in `fd`, `if` capture in
+`ff`, `catch |err|` in `fg`, `for (arr) |x, i|` index capture in `fi`; `@panic`-guarded golden
+`fa=7 fb=6 fc=3 fd=9 ff=3 fg0=102 fg1=9 fi=20`, rc 0, 3x byte-exact, Zig-0.15.2 oracle-matched) +
+the Task 10D fixture `stdlib_capture_sibling_reuse_xmod` re-run PASS. No new corpus dirs and no
+stdlib-pin change.
+
+**Gates.** self-compile two-hop closure hop1 == hop2 == `3f31c1c20f085f840f7d52dff89411e5`; explicit
+`FIXED_POINT_MD5=3f31c1c2…` gate OK; 4-MD5 emitted-C **UNCHANGED** (gol `e7bde571…` / lisp
+`35388763…` / json `5e1e0050…` / mud `5a1cc65e…`); example matrix **24/24**; std-lib runtime gate
+**226 PASS / 0 FAIL** (pin unchanged); corpus `-s0` **1000 = 875 OK / 44 GREEN / 81 FAIL / 0 ICE /
+0 CRASH** — full-classifier join-diff vs the pre-fix seed compiler **byte-identical (zero movement)**;
+`check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK; build_test **0/9** (pre-existing zig0
+baseline); self-emission rc 0 / 48 `.c` + 48 `.h` / no PANIC. Seed stays **v83** (operator R2,
+rotation is closeout-only).
 
 ## Task 9 fix round 1 — `ciSignificantBits` multi-limb correction (v213 -> v214 2026-09-24)
 
