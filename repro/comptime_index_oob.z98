@@ -1,0 +1,40 @@
+// comptime_index_oob.z98 — standalone reproduction for the Task 17 (F) fix.
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   <zig1> --dump-c89 --output-dir /tmp/comptime_index_oob repro/comptime_index_oob.z98
+//
+// EXPECTED (after the fix): dump rc=2, 0 `.c`,
+//   error[3062]: index 5 outside array of length 5                   (`scores[5]`)
+//   error[3062]: index 5 outside array of length 5                   (`scores[scores.len]`)
+//   error[3062]: end index 10 out of bounds for array of length 5     (`scores[1..10]`)
+//   error[3062]: start index 3 is larger than end index 1             (`scores[3..1]`)
+//   error[3062]: index 5 outside array of length 3                    (`st.arr[5]`)
+//
+// DEFECT (before the fix): a comptime-known out-of-bounds index (and a
+// constant out-of-bounds slice range) compiled rc=0 with no diagnostic — under
+// the default `-fsafe` the runtime `check_trap{kind=5}` guard trapped, but
+// under `-ffast` the read silently produced the wrong value. Official Zig
+// 0.15.2 rejects each shape at compile time with the messages above.
+//
+// FIX (Task 17): `semanticAnalyzerResolveIndexAccess` /
+// `semanticAnalyzerResolveSliceExpr` fold the index/bounds and reject a
+// provably out-of-bounds value on a fixed-size array (new level-0
+// `error[3062]` ERR_3062_INDEX_OUT_OF_BOUNDS). A runtime index keeps the
+// `-fsafe` runtime guard — see repro/mi_matrix/stdlib_comptime_index_ok_xmod
+// and repro/mi_matrix/safe_bounds_read_xmod.
+const S = struct { arr: [3]i32 };
+
+pub fn main() void {
+    var scores: [5]i32 = .{ 10, 20, 30, 40, 50 };
+    var st: S = S{ .arr = .{ 1, 2, 3 } };
+    var a: i32 = scores[5];
+    _ = a;
+    var b: i32 = scores[scores.len];
+    _ = b;
+    var c: []i32 = scores[1..10];
+    _ = c;
+    var d: []i32 = scores[3..1];
+    _ = d;
+    var e: i32 = st.arr[5];
+    _ = e;
+}

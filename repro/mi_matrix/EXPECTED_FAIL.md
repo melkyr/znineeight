@@ -1,4 +1,58 @@
-# mi_matrix corpus — expected-fail manifest (v224 2026-09-24)
+# mi_matrix corpus — expected-fail manifest (v225 2026-09-24)
+
+## Task 17 (F) — reject a comptime-known out-of-bounds index at compile time (v224 -> v225 2026-09-24)
+
+**Defect.** A comptime-known out-of-bounds array index compiled rc=0 with no diagnostic: `scores[5]` /
+`scores[scores.len]` on a `[5]i32` trapped at runtime under the default `-fsafe` (rc 133 through the A5F
+`check_trap{kind=5}` guard) but silently read the wrong value under `-ffast`; the constant slice-range
+analogue produced a wrong slice length with no diagnostic (`scores[1..10]` gave len 9). Official Zig
+0.15.2 rejects each shape at compile time (`index 5 outside array of length 5`, `end index 10 out of
+bounds for array of length 5`, `start index 3 is larger than end index 1`,
+`type 'usize' cannot represent integer value '-1'`).
+
+**Fix.** New level-0 `error[3062]` `ERR_3062_INDEX_OUT_OF_BOUNDS` (`sf/src/diagnostics.zig`).
+`semanticAnalyzerResolveIndexAccess` and `semanticAnalyzerResolveSliceExpr`
+(`sf/src/semantic_analyzer.zig`) run `semanticAnalyzerCheckComptimeIndexOob` /
+`semanticAnalyzerCheckComptimeSliceBounds` when the base is a fixed-size array — an array value, a
+`*[N]T`, or a struct/union array field (length via `semanticAnalyzerStaticArrayLen` /
+`semanticAnalyzerArrayFieldLength`, the Task-11N `.len` declaration walk factored out). The
+index/bound folds through `semanticAnalyzerComptimeIntValue` (literals, `const` chains, constant
+arithmetic; `.len` of a fixed array is recovered from the base's declared type because the fold
+evaluator has no field-access arm). Messages are Zig-0.15.2 ASCII-exact; rejects are deduped per node
+(`diagnosticCollectorMarkNodeOnce`) and produce rc=2 / 0 `.c`. **Unchanged:** the runtime-index path
+keeps the `-fsafe` `check_trap{kind=5}` guard; slices / `[*]T` have no compile-time length; a string
+literal is skipped (Zig's implicit sentinel makes its bound `N + 1`, and Z98 has no sentinel array
+kind — bounded residual).
+
+**Fixtures.** Reject `repro/mi_matrix/index_oob_reject_xmod` (`expected.rc` = 2): 8 sites —
+`[5]` literal, `.len`, `const` chain, negative, `*[N]T`, struct array field, field `.len`, and
+`4294967296` — GREEN **rc 2 / 0 `.c` / 8 x `error[3062]` / 0 x `error[3000]`** (FAIL class).
+Reject `repro/mi_matrix/slice_range_oob_reject_xmod` (`expected.rc` = 2): 7 sites — `1..10`,
+`10..12`, `3..1`, `6..`, `-1..2`, ptr `1..10`, field `1..4` — GREEN **rc 2 / 0 `.c` /
+7 x `error[3062]` / 0 x `error[3000]`** (FAIL class). Positive runtime
+`repro/mi_matrix/stdlib_comptime_index_ok_xmod` (in-range comptime indexes incl. a typed `const`, a
+pointer, a struct field and `scores.len - 1`; a runtime index; every legal slice boundary
+`[0..5]`/`[5..]`/`[5..5]`/`[1..3]`/field/ptr; every check `@panic`-guarded; golden
+`50 50 40 10 3 30 5 0 0 2 3 3`, rc 0, 3x byte-exact, Zig-0.15.2 twin byte-identical md5
+`e336823a…`; stdlib pin **230 -> 231**). Standalone `repro/comptime_index_oob.z98` (5 sites,
+5 x `error[3062]`; RED pre-fix rc 0 / 4 `.c`).
+
+**Oracle (Zig 0.15.2).** Every reject site was independently compiled and rejected with the exact
+wording above (one probe per site); the positive fixture's twin accepts and prints the same golden.
+Controls: `safe_bounds_read_xmod` still traps rc 133 under `-fsafe` and reads garbage under `-ffast`
+(emitted C byte-identical pre/post), `safe_bounds_inbounds_xmod` unchanged, and the runtime-index
+probe's emitted C is byte-identical.
+
+**Gates.** self-compile **moving point** hop1 `91446986a6de3c1e9c49a4a2409a28cd` != hop2 == hop3 ==
+**`44a3ce38951732d945a9d3d8c6711671`** (explicit `FIXED_POINT_MD5=44a3ce38…` gate OK, deterministic
+across two out-dirs); 4-MD5 emitted-C **UNCHANGED** (gol `e7bde571…` / lisp `4afb601f…` /
+json `09fb55e5…` / mud `5a1cc65e…`, 2x each); corpus `-s0` **1014 = 877 OK / 46 GREEN / 91 FAIL /
+0 ICE / 0 CRASH** (join-diff vs the Task 15 fix-round baseline 1011 = exactly the 3 new fixture dirs,
+**zero other movement**); std-lib runtime gate **231 PASS / 0 FAIL**; example matrix **24/24**;
+`check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK; build_test **0/9** (pre-existing zig0
+baseline); self-emission rc 0 / 48 `.c` + 48 `.h` / no PANIC / memory
+`track-memory: perm=883K mod=1020K scr=1024K pool=18008K type_db=500K total=2927K`.
+Seed stays **v83** (operator R2: rotation is closeout-only).
 
 ## Task 15 (S3) fix round 1 — gate the const-fold field-access positions (v223 -> v224 2026-09-24)
 

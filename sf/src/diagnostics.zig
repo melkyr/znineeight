@@ -132,6 +132,14 @@ pub const ErrorCode = enum(u16) {
     // (variadic too-few: "expected at least N argument(s), found M"). Level 0,
     // span on the call expression; rejects with 0 `.c`.
     ERR_3061_WRONG_ARGUMENT_COUNT = 3061,
+    // Task 17 (F): a comptime-known array index or constant slice-range bound
+    // that is out of bounds for a fixed-size array. Official Zig 0.15.2 rejects
+    // the same shapes at compile time ("index N outside array of length L",
+    // "end index N out of bounds for array of length L", "start index S is
+    // larger than end index E", "type 'usize' cannot represent integer value
+    // '-N'"). Level 0, span on the offending index/bound; rejects with 0 `.c`.
+    // A runtime index keeps its `-fsafe` `check_trap{kind=5}` guard unchanged.
+    ERR_3062_INDEX_OUT_OF_BOUNDS = 3062,
 };
 
 pub const ERR_1000_UNTERMINATED_STRING: u16 = 0;

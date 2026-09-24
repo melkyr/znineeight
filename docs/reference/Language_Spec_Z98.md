@@ -57,13 +57,14 @@ Arbitrary-width integers carry an exact compile-time bit width, `u1`..`u64` unsi
 ### 1.4 Arrays and Slices
 - **Fixed-size Arrays**: `[N]T` where `N` is a compile-time constant.
 - **Slices**: `[]T` and `[]const T`. Represented internally as a structure containing a pointer (`ptr`) and a length (`len`).
-- **Indexing**: `base[i]` is supported for both arrays and slices. For slices, this is translated to `base.ptr[i]`. Slices are guaranteed to be non-null when indexed if their length is greater than zero (enforced by the compiler's static analysis).
+- **Indexing**: `base[i]` is supported for both arrays and slices. For slices, this is translated to `base.ptr[i]`. Slices are guaranteed to be non-null when indexed if their length is greater than zero (enforced by the compiler's static analysis). A **comptime-known** index that is provably out of bounds for a fixed-size array (`scores[5]`, `scores[scores.len]`, a negative index, a `const` chain, a `*[N]T`, or a struct/union array field) is rejected at compile time with `error[3062]` (`index N outside array of length L`; a negative value gets Zig's `type 'usize' cannot represent integer value '-N'`), matching official Zig 0.15.2; a runtime index keeps the mode-independent `-fsafe` out-of-bounds runtime check.
 - **Ranges**:
   - **Exclusive**: `start..end` (inclusive of `start`, exclusive of `end`). Used in `for` loops and slicing.
   - **Inclusive**: `start...end` (inclusive of both `start` and `end`). Supported primarily in `switch` cases.
 - **Slicing**: `base[start..end]` syntax for arrays, slices, and many-item pointers.
   - The `end` index may be omitted (`arr[5..]`); the resulting slice runs from `start` to the end of the source. Omitting the `start` index (`arr[..5]`) is **not** supported.
   - Resulting slices propagate constness: slicing a `const` array or a `[]const T` results in a `[]const T`.
+  - **Constant bounds** on a fixed-size array are checked at compile time with `error[3062]`, matching official Zig 0.15.2: `end index N out of bounds for array of length L`, `start index S is larger than end index E` (the open-ended `arr[s..]` compares against the length), and a negative bound gets `type 'usize' cannot represent integer value '-N'`. `arr[len..]` and `arr[len..len]` are legal empty slices; a runtime bound keeps the `-fsafe` runtime check.
 - **Properties**: Slices have built-in `.ptr` and `.len` properties.
   - `slice.ptr` returns a many-item pointer (`[*]T` or `[*]const T`).
   - `slice.len` returns a `usize`.

@@ -664,17 +664,21 @@ pub fn semanticAnalyzerResolveIdent(self: *SemanticAnalyzer, module_id: u32, nam
 // `array_type` `.len` arm. Recover the declared array-field type from the
 // `.len` node's base (a field access, optionally through a pointer) and report
 // it as `usize`; returns 0 (the unused type id) when the field is not an array.
-fn semanticAnalyzerArrayFieldLen(self: *SemanticAnalyzer, base_node_idx: u32) u32 {
+//
+// Task 17 (F): the walk is factored into `semanticAnalyzerArrayFieldLength`,
+// which also feeds the compile-time index/slice bounds check -- the field's
+// declared length is exactly the bound Zig enforces for `s.a[i]` / `s.a[a..b]`.
+fn semanticAnalyzerArrayFieldLength(self: *SemanticAnalyzer, base_node_idx: u32) ?u32 {
     var bn = ast_mod.astStoreNodeAt(self.store, base_node_idx);
-    if (bn.kind != AstKind.field_access) return @intCast(u32, 0);
+    if (bn.kind != AstKind.field_access) return null;
     var fname: u32 = ast_mod.astStoreNodePayload(self.store, base_node_idx);
     var cont = semanticAnalyzerResolveExpr(self, bn.child_0);
-    if (cont == type_mod.TYPE_VOID or cont == type_mod.TYPE_UNDEFINED) return @intCast(u32, 0);
-    if (@intCast(usize, cont) >= self.registry.types_len) return @intCast(u32, 0);
+    if (cont == type_mod.TYPE_VOID or cont == type_mod.TYPE_UNDEFINED) return null;
+    if (@intCast(usize, cont) >= self.registry.types_len) return null;
     var cty = self.registry.types_items[@intCast(usize, cont)];
     if (cty.kind == type_mod.TypeKind.ptr_type or cty.kind == type_mod.TypeKind.many_ptr_type) {
         cont = self.registry.ptr_items[@intCast(usize, cty.payload_idx)].base;
-        if (@intCast(usize, cont) >= self.registry.types_len) return @intCast(u32, 0);
+        if (@intCast(usize, cont) >= self.registry.types_len) return null;
         cty = self.registry.types_items[@intCast(usize, cont)];
     }
     var fstart: usize = 0;
@@ -685,19 +689,248 @@ fn semanticAnalyzerArrayFieldLen(self: *SemanticAnalyzer, base_node_idx: u32) u3
     } else if (cty.kind == type_mod.TypeKind.union_type or cty.kind == type_mod.TypeKind.packed_union_type) {
         var up = self.registry.un_items[@intCast(usize, cty.payload_idx)];
         fstart = @intCast(usize, up.fields_start); fcount = @intCast(usize, up.fields_count);
-    } else return @intCast(u32, 0);
+    } else return null;
     var fi: usize = 0;
     while (fi < fcount) : (fi += 1) {
         if (self.registry.fe_items[fstart + fi].name_id == fname) {
             var ft = self.registry.fe_items[fstart + fi].type_id;
             if (@intCast(usize, ft) < self.registry.types_len and
                 self.registry.types_items[@intCast(usize, ft)].kind == type_mod.TypeKind.array_type) {
-                return type_mod.TYPE_USIZE;
+                return self.registry.array_items[@intCast(usize, self.registry.types_items[@intCast(usize, ft)].payload_idx)].length;
             }
-            return @intCast(u32, 0);
+            return null;
         }
     }
+    return null;
+}
+
+fn semanticAnalyzerArrayFieldLen(self: *SemanticAnalyzer, base_node_idx: u32) u32 {
+    if (semanticAnalyzerArrayFieldLength(self, base_node_idx) != null) {
+        return type_mod.TYPE_USIZE;
+    }
     return @intCast(u32, 0);
+}
+
+// Task 17 (F): compile-time bounds checking for a comptime-known array index
+// and for constant slice-range bounds, matching official Zig 0.15.2. The
+// runtime-index `-fsafe` `check_trap{kind=5}` guard is untouched: this frontend
+// check only fires when the fold can prove the value (a literal / `const`
+// chain / constant arithmetic / `.len` of a fixed array). Official Zig rejects
+// `scores[5]` and `scores[scores.len]` on `[5]i32`, `scores[1..10]`,
+// `scores[3..1]`, `scores[6..]`, and a negative index/bound; a runtime index
+// still lowers to the existing runtime check.
+//
+// The length comes from the base expression's declared type: an array value, a
+// pointer to a fixed array (`*[N]T`), or a struct/union array FIELD (whose
+// access decays to an element pointer). A slice / many-item pointer / scalar
+// has no compile-time length (its length is the runtime slice length, which is
+// a Zig runtime panic, not a compile reject) and is skipped. A string literal
+// is skipped too: its Zig type carries an implicit NUL sentinel (`[N:0]u8`),
+// so Zig's acceptable bound is N + 1 while this front end has no sentinel
+// array kind.
+fn semanticAnalyzerStaticArrayLen(self: *SemanticAnalyzer, base_node_idx: u32) ?u32 {
+    if (base_node_idx == @intCast(u32, 0)) return null;
+    var bn = ast_mod.astStoreNodeAt(self.store, base_node_idx);
+    var bt: u32 = @intCast(u32, 0);
+    if (rtt_mod.resolvedTypeTableGet(self.type_table, base_node_idx)) |t| { bt = t; } else { return null; }
+    if (bt == @intCast(u32, 0) or bt == type_mod.TYPE_UNDEFINED or bt == type_mod.TYPE_VOID) return null;
+    if (@intCast(usize, bt) >= self.registry.types_len) return null;
+    var ty = self.registry.types_items[@intCast(usize, bt)];
+    if (ty.kind == type_mod.TypeKind.array_type) {
+        return self.registry.array_items[@intCast(usize, ty.payload_idx)].length;
+    }
+    if (ty.kind == type_mod.TypeKind.ptr_type) {
+        if (bn.kind == AstKind.string_literal) return null;
+        var pt = self.registry.ptr_items[@intCast(usize, ty.payload_idx)].base;
+        if (@intCast(usize, pt) < self.registry.types_len and
+            self.registry.types_items[@intCast(usize, pt)].kind == type_mod.TypeKind.array_type) {
+            return self.registry.array_items[@intCast(usize, self.registry.types_items[@intCast(usize, pt)].payload_idx)].length;
+        }
+    }
+    if (bn.kind == AstKind.field_access) {
+        return semanticAnalyzerArrayFieldLength(self, base_node_idx);
+    }
+    return null;
+}
+
+// Task 17 (F): the comptime integer value of an index / slice-bound
+// expression, when the fold can know it. The shared fold evaluator resolves
+// literals, `const` chains and constant arithmetic; it has no field-access arm,
+// so `.len` on a fixed array is recovered from the base's declared type (the
+// shape the brief names explicitly: `scores[scores.len]`). Parens around the
+// index are unwrapped for that recovery. A runtime value (`var`, slice length,
+// call result) returns false and keeps the existing runtime behavior.
+fn semanticAnalyzerComptimeIntValue(self: *SemanticAnalyzer, ce: *ce_mod.ComptimeEval, node_idx: u32, out: *ce_mod.ComptimeInt) bool {
+    if (node_idx == @intCast(u32, 0)) return false;
+    if (ce_mod.comptimeEvalEvaluate(ce, node_idx)) |cv| {
+        if (cv.kind == ce_mod.KIND_INT) { out.* = cv.v; return true; }
+        return false;
+    }
+    var cur = node_idx;
+    var unwrap_n: u32 = @intCast(u32, 0);
+    while (unwrap_n < @intCast(u32, 4)) : (unwrap_n += @intCast(u32, 1)) {
+        var cn = ast_mod.astStoreNodeAt(self.store, cur);
+        if (cn.kind == AstKind.paren_expr and cn.child_0 != @intCast(u32, 0)) { cur = cn.child_0; } else { break; }
+    }
+    var ln = ast_mod.astStoreNodeAt(self.store, cur);
+    if (ln.kind == AstKind.field_access) {
+        var len_s: []const u8 = "len";
+        var len_id = interner_mod.stringInternerIntern(self.interner, len_s);
+        if (ast_mod.astStoreNodePayload(self.store, cur) == len_id) {
+            if (semanticAnalyzerStaticArrayLen(self, ln.child_0)) |l| {
+                out.* = ce_mod.ciFromU64(@intCast(u64, l));
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// Task 17 (F): render a comptime integer (possibly negative) into `buf` for a
+// diagnostic message; returns the slice excluding the NUL itoa appends. The
+// magnitude goes through the established 64-bit path (a bound beyond u64 is
+// still a rejection; only the printed digits are bounded).
+fn semanticAnalyzerComptimeIntText(ci: ce_mod.ComptimeInt, buf: []u8) []const u8 {
+    var is_neg = ci.neg and !ce_mod.ciIsZero(ci);
+    var mag = ci;
+    mag.neg = false;
+    var dl = itoa_mod.itoa64(ce_mod.ciToU64(mag), buf[1..]);
+    var ds: usize = @intCast(usize, buf.len) - @intCast(usize, dl) - @intCast(usize, 1);
+    if (is_neg) {
+        buf[ds - @intCast(usize, 1)] = @intCast(u8, 45);
+        return buf[ds - @intCast(usize, 1) .. @intCast(usize, buf.len) - @intCast(usize, 1)];
+    }
+    return buf[ds .. @intCast(usize, buf.len) - @intCast(usize, 1)];
+}
+
+fn semanticAnalyzerU32Text(v: u32, buf: []u8) []const u8 {
+    var l = itoa_mod.itoa(v, buf);
+    var s: usize = @intCast(usize, buf.len) - @intCast(usize, l) - @intCast(usize, 1);
+    return buf[s .. @intCast(usize, buf.len) - @intCast(usize, 1)];
+}
+
+// Task 17 (F): `index N outside array of length L` (Zig 0.15.2 wording; used
+// for an out-of-range index and, with the sign kept, for a negative one).
+fn semanticAnalyzerReportIndexOob(self: *SemanticAnalyzer, mark_node: u32, ci: ce_mod.ComptimeInt, len: u32) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, mark_node)) return;
+    var idx_buf: [24]u8 = undefined;
+    var idx_text = semanticAnalyzerComptimeIntText(ci, idx_buf[0..]);
+    var len_buf: [12]u8 = undefined;
+    var len_text = semanticAnalyzerU32Text(len, len_buf[0..]);
+    var p0: []const u8 = "index ";
+    var p1: []const u8 = " outside array of length ";
+    var parts: [4][]const u8 = [4][]const u8{ p0, idx_text, p1, len_text };
+    var msg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &parts[0], @intCast(u32, 4));
+    var node = ast_mod.astStoreNodeAt(self.store, mark_node);
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3062_INDEX_OUT_OF_BOUNDS)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), msg);
+}
+
+// Task 17 (F): `end index N out of bounds for array of length L`.
+fn semanticAnalyzerReportSliceEndOob(self: *SemanticAnalyzer, mark_node: u32, ci: ce_mod.ComptimeInt, len: u32) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, mark_node)) return;
+    var end_buf: [24]u8 = undefined;
+    var end_text = semanticAnalyzerComptimeIntText(ci, end_buf[0..]);
+    var len_buf: [12]u8 = undefined;
+    var len_text = semanticAnalyzerU32Text(len, len_buf[0..]);
+    var p0: []const u8 = "end index ";
+    var p1: []const u8 = " out of bounds for array of length ";
+    var parts: [4][]const u8 = [4][]const u8{ p0, end_text, p1, len_text };
+    var msg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &parts[0], @intCast(u32, 4));
+    var node = ast_mod.astStoreNodeAt(self.store, mark_node);
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3062_INDEX_OUT_OF_BOUNDS)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), msg);
+}
+
+// Task 17 (F): `start index S is larger than end index E` (the open-ended form
+// `a[s..]` compares against the array length, matching Zig).
+fn semanticAnalyzerReportSliceStartAfterEnd(self: *SemanticAnalyzer, mark_node: u32, start_ci: ce_mod.ComptimeInt, end_ci: ce_mod.ComptimeInt) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, mark_node)) return;
+    var start_buf: [24]u8 = undefined;
+    var start_text = semanticAnalyzerComptimeIntText(start_ci, start_buf[0..]);
+    var end_buf: [24]u8 = undefined;
+    var end_text = semanticAnalyzerComptimeIntText(end_ci, end_buf[0..]);
+    var p0: []const u8 = "start index ";
+    var p1: []const u8 = " is larger than end index ";
+    var parts: [4][]const u8 = [4][]const u8{ p0, start_text, p1, end_text };
+    var msg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &parts[0], @intCast(u32, 4));
+    var node = ast_mod.astStoreNodeAt(self.store, mark_node);
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3062_INDEX_OUT_OF_BOUNDS)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), msg);
+}
+
+// Task 17 (F): `type 'usize' cannot represent integer value '-N'` (Zig 0.15.2's
+// rejection for a negative comptime index/bound).
+fn semanticAnalyzerReportUsizeNegative(self: *SemanticAnalyzer, mark_node: u32, ci: ce_mod.ComptimeInt) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, mark_node)) return;
+    var num_buf: [24]u8 = undefined;
+    var num_text = semanticAnalyzerComptimeIntText(ci, num_buf[0..]);
+    var p0: []const u8 = "type 'usize' cannot represent integer value '";
+    var p1: []const u8 = "'";
+    var parts: [3][]const u8 = [3][]const u8{ p0, num_text, p1 };
+    var msg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &parts[0], @intCast(u32, 3));
+    var node = ast_mod.astStoreNodeAt(self.store, mark_node);
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3062_INDEX_OUT_OF_BOUNDS)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), msg);
+}
+
+// Task 17 (F): the index-access check. The base's fixed length bounds a
+// comptime-known index; a negative value is Zig's coercion reject. The caller
+// restores `_stub_0`/`_stub_1` (the `.len` recovery can re-resolve the base).
+fn semanticAnalyzerCheckComptimeIndexOob(self: *SemanticAnalyzer, node_idx: u32) void {
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    if (node.child_1 == @intCast(u32, 0)) return;
+    var alen: u32 = @intCast(u32, 0);
+    if (semanticAnalyzerStaticArrayLen(self, node.child_0)) |l| { alen = l; } else { return; }
+    var ce = ce_mod.comptimeEvalInit(self.registry, self.store, self.interner, self.symbols);
+    ce.local_consts = &self.local_consts;
+    var idx_ci: ce_mod.ComptimeInt = ce_mod.ciZeroInt();
+    if (!semanticAnalyzerComptimeIntValue(self, &ce, node.child_1, &idx_ci)) return;
+    if (idx_ci.neg and !ce_mod.ciIsZero(idx_ci)) {
+        semanticAnalyzerReportUsizeNegative(self, node.child_1, idx_ci);
+        return;
+    }
+    var len_ci = ce_mod.ciFromU64(@intCast(u64, alen));
+    if (ce_mod.ciCmp(idx_ci, len_ci) >= 0) {
+        semanticAnalyzerReportIndexOob(self, node.child_1, idx_ci, alen);
+    }
+}
+
+// Task 17 (F): the constant-slice-range check (the fixed-array analogue of the
+// index check). Zig's order: a negative bound is a coercion reject; then an
+// end beyond the length; then a start after the effective end (the open-ended
+// `a[s..]` end is the length). `a[len..]` and `a[len..len]` stay legal empty
+// slices.
+fn semanticAnalyzerCheckComptimeSliceBounds(self: *SemanticAnalyzer, node_idx: u32) void {
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    var alen: u32 = @intCast(u32, 0);
+    if (semanticAnalyzerStaticArrayLen(self, node.child_0)) |l| { alen = l; } else { return; }
+    var ce = ce_mod.comptimeEvalInit(self.registry, self.store, self.interner, self.symbols);
+    ce.local_consts = &self.local_consts;
+    var start_known: u8 = @intCast(u8, 0);
+    var start_ci: ce_mod.ComptimeInt = ce_mod.ciZeroInt();
+    if (node.child_1 != @intCast(u32, 0)) {
+        if (semanticAnalyzerComptimeIntValue(self, &ce, node.child_1, &start_ci)) { start_known = @intCast(u8, 1); }
+    }
+    var end_known: u8 = @intCast(u8, 0);
+    var end_ci: ce_mod.ComptimeInt = ce_mod.ciZeroInt();
+    if (node.child_2 != @intCast(u32, 0)) {
+        if (semanticAnalyzerComptimeIntValue(self, &ce, node.child_2, &end_ci)) { end_known = @intCast(u8, 1); }
+    }
+    if (start_known != @intCast(u8, 0) and start_ci.neg and !ce_mod.ciIsZero(start_ci)) {
+        semanticAnalyzerReportUsizeNegative(self, node.child_1, start_ci);
+        return;
+    }
+    if (end_known != @intCast(u8, 0) and end_ci.neg and !ce_mod.ciIsZero(end_ci)) {
+        semanticAnalyzerReportUsizeNegative(self, node.child_2, end_ci);
+        return;
+    }
+    var len_ci = ce_mod.ciFromU64(@intCast(u64, alen));
+    if (end_known != @intCast(u8, 0) and ce_mod.ciCmp(end_ci, len_ci) > 0) {
+        semanticAnalyzerReportSliceEndOob(self, node.child_2, end_ci, alen);
+        return;
+    }
+    var end_eff = len_ci;
+    if (end_known != @intCast(u8, 0)) { end_eff = end_ci; }
+    if (start_known != @intCast(u8, 0) and ce_mod.ciCmp(start_ci, end_eff) > 0) {
+        semanticAnalyzerReportSliceStartAfterEnd(self, node.child_1, start_ci, end_eff);
+    }
 }
 
 // Task 11N + Task 13 fix round (C1): `.len` on a struct/union array field whose
@@ -4221,6 +4454,14 @@ fn semanticAnalyzerResolveIndexAccess(self: *SemanticAnalyzer, node_idx: u32) u3
     var bt = self.registry.types_items[@intCast(usize, self._stub_0)];
     var ix_elem = type_mod.typeRegistryIndexedElemType(self.registry, self._stub_0);
     if (ix_elem != type_mod.TYPE_UNDEFINED) {
+        // Task 17 (F): reject a comptime-known out-of-bounds index on a
+        // fixed-size array here, before lowering (rc=2, 0 `.c`). The `.len`
+        // recovery can re-resolve the base, so the scratch slabs are preserved.
+        var ix_oob_sb0 = self._stub_0;
+        var ix_oob_sb1 = self._stub_1;
+        semanticAnalyzerCheckComptimeIndexOob(self, node_idx);
+        self._stub_0 = ix_oob_sb0;
+        self._stub_1 = ix_oob_sb1;
         var ixr_m: []const u8 = "IX:R"; pal_mod.markerWriteInt(ixr_m, ix_elem);
         self._stub_0 = saved;
         return ix_elem;
@@ -4279,6 +4520,13 @@ fn semanticAnalyzerResolveSliceExpr(self: *SemanticAnalyzer, node_idx: u32) u32 
         self._stub_0 = saved;
         return type_mod.TYPE_VOID;
     }
+    // Task 17 (F): reject a comptime-known out-of-bounds constant slice-range
+    // on a fixed-size array (the analogue of the index check). The `.len`
+    // recovery can re-resolve the base, so the base scratch slot is preserved
+    // (`_stub_1` is reset to void on the next line, exactly as before).
+    var sl_oob_sb0 = self._stub_0;
+    semanticAnalyzerCheckComptimeSliceBounds(self, node_idx);
+    self._stub_0 = sl_oob_sb0;
     self._stub_1 = type_mod.TYPE_VOID;
     var ix_elem2 = type_mod.typeRegistryIndexedElemType(self.registry, self._stub_0);
     if (ix_elem2 != type_mod.TYPE_UNDEFINED) {
