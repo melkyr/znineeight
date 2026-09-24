@@ -324,7 +324,7 @@ Builtins are invoked as `@name(...)` and are recognized by name; an unknown or u
 - `@asyncFrameSize(fn)`: Compile-time byte size of a suspending function's frame. See §4.1.
 
 **Declarations**
-- `@import("file.zig")`: Includes another module. The standard library is imported as `@import("std")`; `sf/src/std.zig` re-exports `io`, `arena`, `str`, `mem`, `math`, `debug`, `net`, `async`, `bits`, `os`, `time`, and `buf`. **Cross-module visibility:** only `pub` declarations are visible to an importing module — a reference through an imported module (flat `mod.member`, nested `mod.sub.member`, or a direct `@import("file.zig").member` callee) to a declaration that is not `pub` is rejected with `error[3007]` (`'<name>' is not marked 'pub'`, matching official Zig 0.15.2), in both value and type positions; references to a module's own non-`pub` declarations are unaffected.
+- `@import("file.zig")`: Includes another module. The standard library is imported as `@import("std")`; `sf/src/std.zig` re-exports `io`, `arena`, `str`, `mem`, `math`, `debug`, `net`, `async`, `bits`, `os`, `time`, and `buf`. **Cross-module visibility:** only `pub` declarations are visible to an importing module — a reference through an imported module (flat `mod.member`, nested `mod.sub.member`, or a direct `@import("file.zig").member` callee) to a declaration that is not `pub` is rejected with `error[3007]` (`'<name>' is not marked 'pub'`, matching official Zig 0.15.2), in value positions, type positions, and const-fold positions (array sizes and enum initializers); references to a module's own non-`pub` declarations are unaffected.
 - `@cInclude("header.h")`: Emits a C header `#include` (used by the extern OS bindings, e.g. `std.net`).
 
 **Formatted `print`**

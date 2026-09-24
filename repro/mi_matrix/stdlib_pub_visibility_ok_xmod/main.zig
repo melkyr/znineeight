@@ -52,5 +52,23 @@ pub fn main() void {
     if (iv != 11) {
         @panic("cross-module pub var store failed");
     }
+    // Fix round 1 controls: a `pub` const is foldable in an array-size and an
+    // enum-initializer position, and a same-module private const stays foldable
+    // inside its own module (all Zig-0.15.2-matched).
+    var fold_arr: [helper.shown_const]u8 = undefined;
+    if (fold_arr.len != 7) {
+        @panic("pub const array size failed");
+    }
+    const EFold = enum(u8) {
+        A = helper.shown_const,
+        B,
+    };
+    var ef: EFold = EFold.B;
+    if (@enumToInt(ef) != 8) {
+        @panic("pub const enum init failed");
+    }
+    if (helper.private_buf_len() != 5) {
+        @panic("same-module private array size failed");
+    }
     std.io.print("a={} b={} c={} d={} e={} f={} g={} h={} i={}\n", .{ a, b, c, d, e, f, g, h, iv });
 }

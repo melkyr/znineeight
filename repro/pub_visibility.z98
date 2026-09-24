@@ -15,13 +15,17 @@
 // module (`helper.secret(21)` rc=0, builds, runs, prints 21) and the
 // asymmetric shapes (non-`pub` const read, nested `mod.sub.member`) were
 // accepted too. Official Zig 0.15.2 rejects every one with
-// `error: '<name>' is not marked 'pub'`.
+// `error: '<name>' is not marked 'pub'`. The const-fold positions have their
+// own standalone `repro/pub_visibility_fold.z98` (a type-resolution
+// diagnostic short-circuits the pipeline before semantic analysis, so the two
+// classes cannot be pinned in one program).
 //
 // FIX (Task 15): `ERR_3007_VISIBILITY_VIOLATION` (level 0) is emitted for a
-// cross-module reference to a non-`pub` declaration in both expression and
-// type positions (`sf/src/semantic_analyzer.zig` +
-// `sf/src/type_resolver.zig`); same-module access is unchanged — see
-// `repro/pub_visibility_ok.z98` and the `repro/mi_matrix/*_xmod` fixtures.
+// cross-module reference to a non-`pub` declaration in expression positions,
+// type positions, and the const-fold positions (array sizes / enum
+// initializers) (`sf/src/semantic_analyzer.zig` + `sf/src/type_resolver.zig`);
+// same-module access is unchanged — see `repro/pub_visibility_ok.z98` and the
+// `repro/mi_matrix/*_xmod` fixtures.
 const helper = @import("mi_matrix/pub_visibility_reject_xmod/helper.zig");
 
 pub fn main() void {

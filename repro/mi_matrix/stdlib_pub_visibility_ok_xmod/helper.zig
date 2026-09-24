@@ -26,6 +26,14 @@ pub fn uses_hidden(x: i32) i32 {
     return hidden_only(x);
 }
 
+// Fix round 1: the same-module private const stays usable in a const-fold
+// position (array size) inside its own module.
+var private_buf: [hidden_const]u8 = undefined;
+
+pub fn private_buf_len() usize {
+    return private_buf.len;
+}
+
 pub const shown_const: i32 = 7;
 pub const ShownAlias = i32;
 pub var shown_var: i32 = 10;

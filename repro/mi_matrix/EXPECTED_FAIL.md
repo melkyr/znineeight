@@ -1,4 +1,46 @@
-# mi_matrix corpus — expected-fail manifest (v223 2026-09-24)
+# mi_matrix corpus — expected-fail manifest (v224 2026-09-24)
+
+## Task 15 (S3) fix round 1 — gate the const-fold field-access positions (v223 -> v224 2026-09-24)
+
+**Review Important 1 (plan-authorized class: "then any other flat/nested module-member shape the
+investigation finds asymmetric").** `evalConstIntFull`'s `field_access` arm (`sf/src/type_resolver.zig`,
+entered via `evalConstU32Full` for array sizes and `evalConstI64Full` for enum member values) resolved a
+cross-module const with no visibility check, so a non-`pub` const folded through the type resolver:
+- `var arr: [helper.hidden_const]u8 = undefined;` compiled rc=0 and emitted the array with the folded
+  non-`pub` length 5;
+- `const E = enum(u8) { A = helper.hidden_const, B };` compiled rc=0.
+Official Zig 0.15.2 rejects both (`'hidden_const' is not marked 'pub'`).
+
+**Fix.** The fold arm now runs `typeResolverCheckMemberVisibility` on the member symbol before using it
+(emits the same level-0 `error[3007]`, declines the fold). The array-size caller then adds
+`ERR_3050_ARRAY_SIZE_NOT_CONSTANT` and the enum walk adds `ERR_3055_ENUM_VALUE_NOT_CONSTANT` as
+cascades. Same-module consts and `pub` consts fold unchanged.
+
+**Fixtures.** New reject `repro/mi_matrix/pub_visibility_fold_reject_xmod` (`main.zig` + `helper.zig` +
+`inner.zig`; `expected.rc` = 2): flat and nested array-size and enum-initializer sites — rc 2 / 0 `.c`
+/ **4 x `error[3007]` + 2 x `error[3050]` + 2 x `error[3055]`** / FAIL class. This is separate from
+`pub_visibility_reject_xmod` because a type-resolution diagnostic short-circuits the pipeline before
+semantic analysis (`main.zig` prints + exits after `phase_TypeResolution`), so expression sites and
+fold sites cannot be pinned in one program (putting both in one fixture suppressed the 7 sema
+diagnostics — observed and reverted). New standalone `repro/pub_visibility_fold.z98` (2 x `error[3007]`
++ `error[3050]` + `error[3055]`). Positive fold controls added to `stdlib_pub_visibility_ok_xmod`
+(`[helper.shown_const]u8`, `enum(u8){A = helper.shown_const}`, same-module `[hidden_const]u8` behind
+`private_buf_len`) and `repro/pub_visibility_ok.z98`; golden unchanged
+`a=22 b=46 c=12 d=7 e=9 f=23 g=3 h=8 i=11`, Zig-0.15.2 twin re-matched (md5 `165d27fb…`).
+
+**Oracle (Zig 0.15.2).** `[helper.hidden_const]u8` and `enum{ A = helper.hidden_const }`:
+`'hidden_const' is not marked 'pub'`; all four positive fold controls accept.
+
+**Gates.** self-compile **moving point** hop1 `a92d1faacee3b8a90bf825cd30308654` != hop2 == hop3 ==
+**`c9e5d744d089f8f7ad1b1846159b5732`** (explicit `FIXED_POINT_MD5=c9e5d744…` gate OK, deterministic
+across two out-dirs); 4-MD5 emitted-C **UNCHANGED** (gol `e7bde571…` / lisp `4afb601f…` /
+json `09fb55e5…` / mud `5a1cc65e…`, 2x each); corpus `-s0` **1011 = 876 OK / 46 GREEN / 89 FAIL /
+0 ICE / 0 CRASH** (join-diff vs the Task 15 baseline = exactly the new fold fixture,
+**zero other movement**); std-lib runtime gate **230 PASS / 0 FAIL**; example matrix **24/24**;
+`check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK; build_test **0/9** (pre-existing zig0
+baseline); self-emission rc 0 / 48 `.c` + 48 `.h` / no PANIC / memory
+`track-memory: perm=883K mod=1020K scr=1024K pool=17767K type_db=455K total=2927K`.
+Seed stays **v83** (operator R2: rotation is closeout-only). New commit (does not amend `dc373d5c`).
 
 ## Task 15 (S3) — enforce `pub` visibility across modules (v222 -> v223 2026-09-24)
 

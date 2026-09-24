@@ -22,8 +22,12 @@
 //
 // EXPECTED: dump rc=2, 0 `.c`, exactly one `error[3007]` per site (7 total);
 // no `error[3000]`, so this dir buckets as FAIL under the corpus classifier.
-// The controls live in `stdlib_pub_visibility_ok_xmod` and the standalone
-// `repro/pub_visibility.z98`.
+// The const-fold positions (array sizes / enum initializers) live in the
+// separate `pub_visibility_fold_reject_xmod` because a type-resolution
+// diagnostic short-circuits the pipeline before semantic analysis (main.zig
+// prints + exits after `phase_TypeResolution`), so the two classes cannot be
+// pinned in one fixture. The controls live in `stdlib_pub_visibility_ok_xmod`
+// and the standalone `repro/pub_visibility.z98`.
 const helper = @import("helper.zig");
 
 pub fn main() void {

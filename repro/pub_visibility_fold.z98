@@ -1,0 +1,35 @@
+// pub_visibility_fold.z98 — standalone reproduction for the Task 15 (S3)
+// const-fold visibility fix (fix round 1).
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   <zig1> --dump-c89 --output-dir /tmp/pub_visibility_fold repro/pub_visibility_fold.z98
+//
+// The import path is relative to this file (`repro/`), so the modules of the
+// committed fold reject fixture are reused verbatim.
+//
+// EXPECTED (after the fix): dump rc=2, 0 `.c`,
+//   error[3007]: 'hidden_const' is not marked 'pub'   (`[helper.hidden_const]u8`)
+//   error[3007]: 'hidden_const' is not marked 'pub'   (`enum{ A = helper.hidden_const }`)
+//   + the declined-fold cascades `error[3050]` and `error[3055]`.
+//
+// DEFECT (before the fix): the type-resolver fold path (`evalConstIntFull`)
+// resolved a cross-module non-`pub` const with no visibility check, so a
+// non-`pub` const folded into an array size / enum initializer (rc=0). Official
+// Zig 0.15.2 rejects (`'hidden_const' is not marked 'pub'`).
+const helper = @import("mi_matrix/pub_visibility_fold_reject_xmod/helper.zig");
+
+var folded_arr: [helper.hidden_const]u8 = undefined;
+const FoldedEnum = enum(u8) {
+    A = helper.hidden_const,
+    B,
+};
+
+pub fn main() void {
+    if (folded_arr.len != 5) {
+        @panic("folded array length");
+    }
+    var fe: FoldedEnum = FoldedEnum.B;
+    if (@enumToInt(fe) != 6) {
+        @panic("folded enum value");
+    }
+}

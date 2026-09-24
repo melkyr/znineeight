@@ -12,6 +12,11 @@
 //   fn used within its own module (`helper.call_own` -> `secret`), and the
 //   nested `pub` module (`helper.inner.visible2`). Official Zig 0.15.2 accepts
 //   all three.
+//
+// Fix round 1 controls (fold positions): a `pub` const is foldable in an
+// array-size position and an enum-initializer position across modules, and a
+// same-module private const stays foldable inside its own module
+// (`helper.private_buf_len`); all `@panic`-guarded, stdout unchanged.
 const std = @import("std");
 const helper = @import("mi_matrix/stdlib_pub_visibility_ok_xmod/helper.zig");
 
@@ -19,5 +24,20 @@ pub fn main() void {
     var a: i32 = helper.visible(21);
     var b: i32 = helper.call_own();
     var c: i32 = helper.inner.visible2(21);
+    var fold_arr: [helper.shown_const]u8 = undefined;
+    if (fold_arr.len != 7) {
+        @panic("pub const array size failed");
+    }
+    const EFold = enum(u8) {
+        A = helper.shown_const,
+        B,
+    };
+    var ef: EFold = EFold.B;
+    if (@enumToInt(ef) != 8) {
+        @panic("pub const enum init failed");
+    }
+    if (helper.private_buf_len() != 5) {
+        @panic("same-module private array size failed");
+    }
     std.io.print("{} {} {}\n", .{ a, b, c });
 }

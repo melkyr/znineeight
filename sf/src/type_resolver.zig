@@ -1098,6 +1098,7 @@ fn evalConstIntFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) ?comptime_e
         if (fa_mod_id != @intCast(u32, 0)) {
             var fa_field_id = ast_mod.astStoreNodePayload(env.store, node_idx);
             if (sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, fa_mod_id, fa_field_id)) |fa_sym| {
+                if (!typeResolverCheckMemberVisibility(env, node_idx, fa_field_id, fa_sym)) return null;
                 if ((fa_sym.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
                     var fa_decl = ast_mod.astStoreNodeAt(env.store, fa_sym.decl_node);
                     if (fa_decl.child_1 != @intCast(u32, 0)) {
@@ -1680,11 +1681,14 @@ pub fn registerContainerType(env: *TypeResolveEnv, node_idx: u32, kind: AstKind,
 
 // Task 15 (S3): the same cross-module `pub` rule as
 // `semanticAnalyzerCheckMemberVisibility`, enforced in type positions
-// (`var x: mod.HiddenAlias`, `mod.Hidden{...}`). Only passes with a live
-// DiagnosticCollector emit; passes with `diag = null` (lower,
-// symbol_registrator, comptime_eval) resolve already-accepted programs, so a
-// missing collector is not an escape hatch for user code. Returns false and
-// the caller maps the type expression to TYPE_UNDEFINED.
+// (`var x: mod.HiddenAlias`, `mod.Hidden{...}`) and in the const-fold
+// field-access arm of `evalConstIntFull` (array sizes via `evalConstU32Full`,
+// enum member values via `evalConstI64Full` — `[mod.Hidden]u8`,
+// `enum(u8) { A = mod.Hidden }`). Only passes with a live DiagnosticCollector
+// emit; passes with `diag = null` (lower, symbol_registrator, comptime_eval)
+// resolve already-accepted programs, so a missing collector is not an escape
+// hatch for user code. Returns false after emitting; the callers map the type
+// expression to TYPE_UNDEFINED / decline the fold.
 fn typeResolverCheckMemberVisibility(env: *TypeResolveEnv, node_idx: u32, name_id: u32, sym: *sym_mod.Symbol) bool {
     if (sym.module_id == env.module_id) return true;
     if (sym_mod.symbolIsPublic(sym)) return true;
