@@ -1,0 +1,62 @@
+// comptime_constfold_exact.z98 — standalone reproduction for Task 5 (exact
+// array-size / enum-initializer comptime folds).
+//
+// Recipe (seed-built zig1 with its sibling lib/):
+//   <zig1> -ffast -o /tmp/cfold repro/comptime_constfold_exact.z98
+//   sh /tmp/cfold/build_target.sh linux /tmp/cfold/prog
+//   timeout 120 /tmp/cfold/prog
+//
+// BEFORE Task 5 the type-resolver evaluators were still the 64-bit twins:
+//   * `evalConstU32Full` (array size) had no shift/bitwise/paren arms, so
+//     `[1 << 4]u8`, `[(2 + 1) * 2]u8`, `[3 & 3]u8`, `[MSHIFT]u8` and
+//     `[(1 << 200) >> 190]u8` were unfoldable -> `error[3050]`
+//     (`array size is not a constant expression`);
+//   * `evalConstI64Full` (enum initializer) declined a shift count >= 64, so
+//     `enum(u64) { A = (1 << 200) >> 190 }` was `error[3055]`.
+// Official Zig 0.15.2 folds all of them exactly.
+//
+// AFTER Task 5 both evaluators share `evalConstIntFull` over the Task-2
+// `ComptimeInt` core (exact add/sub/mul/div/mod/negate/bitwise/shift, 256-bit
+// cap) and materialise at their own boundary (array size: `0..0xFFFFFFFE`
+// sentinel; enum: i64 pattern with an `[i64 min, u64 max]` fit window). The
+// observed stdout must be byte-exact 3x with rc 0.
+//
+// Oracle: official Zig 0.15.2 twin (`/tmp/task5/oracle/constfold_twin.zig`;
+// 2-arg Z98 `@intCast(u64, ...)` spelled `@as(u64, ...)`, `@enumToInt` spelled
+// `@intFromEnum`) prints the same two lines.
+const std = @import("std");
+
+const MSHIFT: u64 = 1 << 5;
+
+const EShift = enum(u64) { A = (1 << 200) >> 190, B };
+const EMod = enum(u16) { A = 1 << 12, B };
+const EBit = enum(u8) { A = 6 & 3, B };
+
+pub fn main() void {
+    var a1: [1 << 4]u8 = undefined;
+    var a2: [(2 + 1) * 2]u8 = undefined;
+    var a3: [3 & 3]u8 = undefined;
+    var a4: [MSHIFT]u8 = undefined;
+    var a5: [@intCast(u64, 1 << 6)]u8 = undefined;
+    var a6: [(1 << 200) >> 190]u8 = undefined;
+    const e1 = @enumToInt(EShift.A);
+    const e2 = @enumToInt(EShift.B);
+    const e3 = @enumToInt(EMod.A);
+    const e4 = @enumToInt(EMod.B);
+    const e5 = @enumToInt(EBit.A);
+    const e6 = @enumToInt(EBit.B);
+    if (a1.len != 16) { @panic("a1"); }
+    if (a2.len != 6) { @panic("a2"); }
+    if (a3.len != 3) { @panic("a3"); }
+    if (a4.len != 32) { @panic("a4"); }
+    if (a5.len != 64) { @panic("a5"); }
+    if (a6.len != 1024) { @panic("a6"); }
+    if (e1 != 1024) { @panic("e1"); }
+    if (e2 != 1025) { @panic("e2"); }
+    if (e3 != 4096) { @panic("e3"); }
+    if (e4 != 4097) { @panic("e4"); }
+    if (e5 != 2) { @panic("e5"); }
+    if (e6 != 3) { @panic("e6"); }
+    std.io.print("{} {} {} {} {} {}\n", .{ a1.len, a2.len, a3.len, a4.len, a5.len, a6.len });
+    std.io.print("{} {} {} {} {} {}\n", .{ e1, e2, e3, e4, e5, e6 });
+}

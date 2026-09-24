@@ -1,4 +1,58 @@
-# mi_matrix corpus — expected-fail manifest (v208 2026-09-23)
+# mi_matrix corpus — expected-fail manifest (v209 2026-09-23)
+
+## Task 5 — fold-consumer migration: exact array-size / enum-initializer folds (v208 -> v209 2026-09-23)
+
+**What.** `sf/src/type_resolver.zig`'s two remaining 64-bit evaluators are re-pointed at the
+Task-2 `ComptimeInt` core (Task 1 §6.5). New private `evalConstIntFull` (the exact fold, shared by
+both public wrappers; deliberate mutual import with `comptime_eval.zig`) + `evalConstIntToSize`.
+`evalConstU32Full` (array sizes) keeps the `0xFFFFFFFF` sentinel, the depth cap (16) and its
+`@intCast` `error[3000]` arm (now on the exact fit primitive); `evalConstI64Full` (enum member
+values) materialises the exact value through the `[i64 min, u64 max]` window into the
+two's-complement i64 storage. `intValueFitsType` / `evalConstSignClass` / `EvalSignClass` are
+DELETED (the `wb >= 64` syntactic sign-class hack is gone — the exact value decides).
+
+**Verdict changes (all Zig-0.15.2-oracle-checked).**
+- Array sizes now fold shifts/bitwise/parens and >64-bit intermediates reduced back into range:
+  `[1 << 4]u8` = 16, `[(2 + 1) * 2]u8` = 6, `[3 & 3]u8` = 3, `[MSHIFT]u8` = 32
+  (`const MSHIFT: u64 = 1 << 5;`), `[@intCast(u64, 1 << 6)]u8` = 64,
+  `[(1 << 200) >> 190]u8` = 1024 — all previously `error[3050]`.
+- Enum initializers are exact: `enum(u64) { A = (1 << 200) >> 190, B }` folds 1024/1025 (was
+  `error[3055]`); `enum { A = 18446744073709551615 + 1 }` and
+  `enum(u64) { A = 18446744073709551615 * 2 }` are clean `error[3055]` (the old wrappers stored
+  `0` / `2^64 - 2` silently; Zig rejects both).
+- Unchanged: `[0 - 1]u8` / `[4000000000 + 400000000]u8` are `error[3050]`; `[1 << 40]u8` stays the
+  sentinel (Z98's array length field is u32 — bounded, documented); `[@intCast(u8, 300)]u8` keeps
+  `error[3000]` + the `error[3050]` cascade; the enum cast-range rejects
+  (`enum_init_cast{_64}_range_reject_xmod`) keep `error[3055]`.
+
+**Fixtures.** New positive runtime `repro/mi_matrix/stdlib_comptime_constfold_exact_xmod`
+(oracle-matched twin `/tmp/task5/oracle/constfold_twin.zig`; stdout `16 6 3 32 64 1024` /
+`1024 1025 4096 4097 2 3`; stdlib pin 222 -> 223) and new reject
+`repro/mi_matrix/comptime_constfold_reject_xmod` (2 × `error[3055]` enum wraps, `error[3000]` +
+`error[3050]` cast size, `error[3050]` over-u32 size; clean-reject GREEN). Standalone repros
+`repro/comptime_constfold_exact.z98` (3× byte-exact, rc 0) and
+`repro/comptime_constfold_reject.z98` (rc=2, 0 `.c`, 2 × `error[3055]`). RED on the Task 4
+fix-round compiler: the positive fixture failed to emit (1 × `error[3055]`; the array shapes
+`error[3050]`), and `repro/comptime_constfold_reject.z98` compiled silently (rc=0, 630 B `.c`).
+
+**Corpus.** `-s0` **996 dirs = 872 OK / 44 GREEN / 80 FAIL / 0 ICE / 0 CRASH** (v208 994 =
+871/43/80). Full-classifier join-diff vs the Task 4 fix-round final: exactly the two new fixture
+dirs (`stdlib_comptime_constfold_exact_xmod` OK, `comptime_constfold_reject_xmod` GREEN); **zero
+class movement on all 994 common dirs**.
+
+**Other gates.** 4-MD5 emitted-C **UNCHANGED** (gol `e7bde571…` / lisp `35388763…` / json
+`5e1e0050…` / mud `5a1cc65e…`, 2× each); stdlib **223 PASS / 0 FAIL** (pin 222 -> 223); example
+matrix 24/24 (`examples/z98/*` all OK in the classifier); frozen Step-0 35-shape table
+**byte-identical** to the Task 4 final; `check_emit_support.sh` 7/7; `verify_upgraded.sh`
+CLOSEOUT OK; `build_test.sh` **0/9** (pre-existing zig0 baseline); self-emission rc 0 /
+0 `error[...]` / no PANIC; `track-memory: perm=883K mod=1020K scr=1024K pool=18793K type_db=490K
+total=2927K`. Fixed point **MOVED `a8ea33f75f239f2255adeb8cc2426a7c` →
+`1e389c5739aea89550d149015f0031d3`** (two-hop closure hop1 == hop2; seed stays v82, NOT rotated
+per R2). Bounded divergences documented (spec §7.2 + docs 03/04): `const BIGFOLD = 1 << 100;`
+rejects `error[3000]` where Zig accepts; `(~u) == 4294967295` wrapped-complement false-reject;
+over-u32 array sizes reject; the Task 4 review residuals (literals >= 2^64 clamp, `+%`, module
+annotated `i8` const, runtime-typed optional payloads) are recorded in doc 04 Known Issues 11–12.
+
 
 ## Task 4 fix round — four coercion escape holes + @intCast masking coverage (v207 -> v208 2026-09-23)
 

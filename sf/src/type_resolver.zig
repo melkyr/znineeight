@@ -20,6 +20,11 @@ const ast_mod = @import("ast.zig");
 const mr_mod = @import("module_registry.zig");
 const rtt_mod = @import("resolved_type_table.zig");
 const hash_mod = @import("util/hash.zig");
+// Task 5: the exact `ComptimeInt` core lives in `comptime_eval.zig`, which
+// already imports this module for `resolveTypeExprFull`/`LocalConstScope`.
+// The mutual import is deliberate (Task 1 §9.1, probe-verified compilable):
+// the array-size/enum evaluators share the one exact arithmetic core.
+const comptime_eval = @import("comptime_eval.zig");
 
 pub const MODULE_ID_NONE: u32 = @intCast(u32, 0xFFFFFFFF);
 
@@ -998,380 +1003,96 @@ fn evalConstScalarKind(kind: TypeKind) bool {
     return true;
 }
 
-pub fn evalConstU32Full(env: *TypeResolveEnv, node_idx: u32, depth: u32) u32 {
-    // Task 2c-F fix round 1: mirror `resolveTypeExprFull`'s depth cap (`:925`)
-    // so a const cycle in array-size position (`const A = A + 1`, or
-    // `const A = B; const B = A`) terminates as an unfoldable value — a clean
-    // hard error via the array-size fallback — never unbounded recursion / ICE.
-    if (depth > @intCast(u32, 16)) return @intCast(u32, 0xFFFFFFFF);
-    if (node_idx == @intCast(u32, 0)) return @intCast(u32, 0xFFFFFFFF);
-    var node = ast_mod.astStoreNodeAt(env.store, node_idx);
-    if (node.kind == AstKind.int_literal) {
-        // Task 4: accept only 0..0xFFFFFFFE as a concrete array size; the
-        // literal's exact u64 value decides (0xFFFFFFFF is the unfoldable
-        // sentinel, so a literal 4294967295 stays rejected, pre-existing).
-        var lv = ast_mod.astStoreIntValue(env.store, node_idx);
-        if (lv > @intCast(u64, 4294967294)) return @intCast(u32, 0xFFFFFFFF);
-        return @intCast(u32, lv);
-    }
-    // Task 2c-F: fold an arithmetic expression node. A module `const C = A * B`
-    // recurses from the ident_expr arm into its initializer, which is one of
-    // these binary nodes; mirror the array_type arm's inline semantics
-    // (0xFFFFFFFF = unfoldable sentinel; div/mod by zero is unfoldable).
-    if (node.kind == AstKind.add or node.kind == AstKind.sub or
-        node.kind == AstKind.mul or node.kind == AstKind.div or node.kind == AstKind.mod_op) {
-        var bl = evalConstU32Full(env, node.child_0, depth + @intCast(u32, 1));
-        var br = evalConstU32Full(env, node.child_1, depth + @intCast(u32, 1));
-        if (bl != @intCast(u32, 0xFFFFFFFF) and br != @intCast(u32, 0xFFFFFFFF)) {
-            // Task 4: checked u32 arithmetic -- a negative, wrapping, or
-            // over-u32 result is unfoldable so the array_type caller emits the
-            // existing error[3050] (Task 1 §9.3: `[0 - 1]u8` is rejected).
-            if (node.kind == AstKind.add) {
-                if (bl <= @intCast(u32, 4294967294) - br) { return bl + br; }
-                return @intCast(u32, 0xFFFFFFFF);
-            }
-            if (node.kind == AstKind.sub) {
-                if (bl >= br) { return bl - br; }
-                return @intCast(u32, 0xFFFFFFFF);
-            }
-            if (node.kind == AstKind.mul) {
-                if (br != @intCast(u32, 0) and bl <= @intCast(u32, 4294967294) / br) {
-                    var prod = bl * br;
-                    if (prod != @intCast(u32, 0xFFFFFFFF)) { return prod; }
-                }
-                return @intCast(u32, 0xFFFFFFFF);
-            }
-            if (node.kind == AstKind.div) {
-                if (br != @intCast(u32, 0)) { return bl / br; }
-                return @intCast(u32, 0xFFFFFFFF);
-            }
-            if (br != @intCast(u32, 0)) { return bl % br; }
-        }
-        return @intCast(u32, 0xFFFFFFFF);
-    }
-    // Task 2c-F: `-v` folds as `0 - v` (mirrors evalConstI64Full's negate arm).
-    // Task 4: a negative size is unfoldable (`[-0]` is still 0).
-    if (node.kind == AstKind.negate) {
-        if (node.child_0 != @intCast(u32, 0)) {
-            var nv = evalConstU32Full(env, node.child_0, depth + @intCast(u32, 1));
-            if (nv == @intCast(u32, 0)) { return @intCast(u32, 0); }
-        }
-        return @intCast(u32, 0xFFFFFFFF);
-    }
-    if (node.kind == AstKind.ident_expr) {
-        var name_id = ast_mod.astStoreIdentifier(env.store, node_idx);
-        // Task 2c-F (variant (e)): consult the enclosing function's local-const
-        // scope before the module symbol tables. A local `const N = <expr>` is a
-        // statement, not a module symbol, so only this scope can see it.
-        if (env.local_consts) |lcs| {
-            if (localConstScopeLookup(lcs, name_id)) |l_decl_node| {
-                var l_decl = ast_mod.astStoreNodeAt(env.store, l_decl_node);
-                if (l_decl.child_1 != 0) {
-                    return evalConstU32Full(env, l_decl.child_1, depth + @intCast(u32, 1));
-                }
-            }
-        }
-        var c_sym = symbolLookupAllModules(env, name_id);
-        if (c_sym) |cs| {
-            if ((cs.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
-                var c_decl = ast_mod.astStoreNodeAt(env.store, cs.decl_node);
-                if (c_decl.child_1 != 0) {
-                    return evalConstU32Full(env, c_decl.child_1, depth + @intCast(u32, 1));
-                }
-            }
-        }
-    }
-    // Task 2b-F (#1): a field-access const in array-size position
-    // (`[mid.leaf.HEADER_SIZE]`). Resolve the base module through the alias
-    // chain, then fold the member const's initializer recursively. The existing
-    // `ident_expr` recursion above then also covers `const N = <member>`.
-    if (node.kind == AstKind.field_access) {
-        var fa_mod_id = evalConstModuleOfExpr(env, node.child_0);
-        if (fa_mod_id != @intCast(u32, 0)) {
-            var fa_field_id = ast_mod.astStoreNodePayload(env.store, node_idx);
-            if (sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, fa_mod_id, fa_field_id)) |fa_sym| {
-                if ((fa_sym.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
-                    var fa_decl = ast_mod.astStoreNodeAt(env.store, fa_sym.decl_node);
-                    if (fa_decl.child_1 != 0) {
-                        return evalConstU32Full(env, fa_decl.child_1, depth + @intCast(u32, 1));
-                    }
-                }
-            }
-        }
-    }
-    // Task 11F: fold the clear integer-valued builtins in an array-size
-    // position. The general fold evaluator (`comptime_eval.zig`) runs in a
-    // LATER pipeline phase and is never consulted by type resolution, so
-    // `[@intCast(u32, n)]`, `[@sizeOf(u32)]`, `[@alignOf(u32)]`, and
-    // `[@bitSizeOf(u32)]` all fell through to the `ERR_3050` fallback. Fold
-    // only the integer-valued builtins, and only on COMPLETE (`state == 2`)
-    // primitive/alias types. Everything else — `@isWindows` (bool),
-    // `@intToFloat`/`@floatCast` (float), and `@offsetOf`/`@bitOffsetOf`
-    // (aggregate field introspection, deferred to Task 11G/11H) — stays the
-    // unfoldable sentinel so the caller keeps rejecting it, consistent with
-    // `[true]`/`[4.0]`.
-    if (node.kind == AstKind.builtin_call) {
-        var s_size: []const u8 = "@sizeOf";
-        var size_id = interner_mod.stringInternerIntern(env.interner, s_size);
-        var s_align: []const u8 = "@alignOf";
-        var align_id = interner_mod.stringInternerIntern(env.interner, s_align);
-        var s_bitsz: []const u8 = "@bitSizeOf";
-        var bitsz_id = interner_mod.stringInternerIntern(env.interner, s_bitsz);
-        var s_intc: []const u8 = "@intCast";
-        var intc_id = interner_mod.stringInternerIntern(env.interner, s_intc);
-        var bc_n = ast_mod.astStoreNodeExtraChildCount(env.store, node_idx);
-        // `@intCast(T, e)`: resolve the target `T`, fold the operand `e` (the
-        // existing `ident_expr`/binary/`negate` arms above handle local consts,
-        // module const chains, and arithmetic operands), and range-check it
-        // against `T` (Task 11S (a)).
-        if (node.child_0 == intc_id) {
-            if (bc_n >= @intCast(u32, 2)) {
-                // Task 11S (a): resolve the target type and range-check the
-                // folded operand against it. `@intCast(u8, 300)` in an
-                // array-size position is invalid Zig; before this gate the arm
-                // discarded the target and folded 300 as the dimension. The
-                // operand MUST fold through `evalConstU32Full` (not the i64
-                // twin) so a function-local `const N = 7` still resolves.
-                var ic_tid = resolveTypeExprFull(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 0)), depth + @intCast(u32, 1));
-                var ic_v = evalConstU32Full(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 1)), depth + @intCast(u32, 1));
-                if (ic_tid != type_mod.TYPE_UNDEFINED and ic_v != @intCast(u32, 0xFFFFFFFF)) {
-                    if (intValueFitsType(env, ic_tid, @intCast(i64, ic_v), ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 1)), depth)) {
-                        return ic_v;
-                    }
-                    if (env.diag) |dg| {
-                        if (diag_mod.diagnosticCollectorMarkNodeOnce(dg, node_idx)) {
-                            var ic_msg: []const u8 = "@intCast value does not fit the target type";
-                            _ = diag_mod.diagnosticCollectorAdd(dg, @intCast(u8, 0),
-                                @intCast(u16, 3000),
-                                env.source_file_id, node.span_start,
-                                node.span_start + @intCast(u32, node.span_len), ic_msg);
-                        }
-                    }
-                }
-            }
-            return @intCast(u32, 0xFFFFFFFF);
-        }
-        if (node.child_0 == size_id or node.child_0 == align_id or node.child_0 == bitsz_id) {
-            if (bc_n >= @intCast(u32, 1)) {
-                var bt_tid = resolveTypeExprFull(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 0)), depth + @intCast(u32, 1));
-                if (bt_tid != type_mod.TYPE_UNDEFINED) {
-                    var bt_ty = env.typereg.types_items[@intCast(usize, bt_tid)];
-                    // Task 11H: an aggregate in an array-size position is made
-                    // complete on demand through the SAME shared,
-                    // order-independent `layoutEnsure` the normal pass uses.
-                    // Only the in-scope aggregate kind (a struct, packed or
-                    // not) is completed here; tuple/slice/union/etc. stay
-                    // unfolded (`ERR_3050`). The `state == 2` gate below is
-                    // MANDATORY: reading `size`/`alignment` before layout yields
-                    // a silently WRONG array length.
-                    if (bt_ty.state != @intCast(u8, 2) and bt_ty.kind == TypeKind.struct_type) {
-                        _ = layoutEnsure(env.typereg, bt_tid, @intCast(u32, 0));
-                        bt_ty = env.typereg.types_items[@intCast(usize, bt_tid)];
-                    }
-                    var bt_foldable = evalConstScalarKind(bt_ty.kind);
-                    if (bt_ty.kind == TypeKind.struct_type) { bt_foldable = true; }
-                    if (bt_ty.state == @intCast(u8, 2) and bt_foldable) {
-                        if (node.child_0 == size_id) { return bt_ty.size; }
-                        if (node.child_0 == align_id) { return bt_ty.alignment; }
-                        var bt_bits: u32 = bt_ty.size * @intCast(u32, 8);
-                        if (type_mod.typeRegistryIsInteger(env.typereg, bt_tid)) {
-                            bt_bits = @intCast(u32, type_mod.typeRegistryIntWidthBits(env.typereg, bt_tid));
-                        }
-                        if (bt_ty.kind == TypeKind.enum_type) {
-                            bt_bits = @intCast(u32, type_mod.typeRegistryIntWidthBits(env.typereg, type_mod.typeRegistryEnumBackingType(env.typereg, bt_tid)));
-                        }
-                        if (bt_ty.kind == TypeKind.bool_type) { bt_bits = @intCast(u32, 1); }
-                        if (bt_ty.kind == TypeKind.struct_type and (bt_ty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
-                            bt_bits = @intCast(u32, type_mod.typeRegistryGetPackedTotalBits(env.typereg, bt_tid));
-                        }
-                        return bt_bits;
-                    }
-                }
-            }
-            return @intCast(u32, 0xFFFFFFFF);
-        }
-        return @intCast(u32, 0xFFFFFFFF);
-    }
-    return @intCast(u32, 0xFFFFFFFF);
-}
-// Task 11J fix round 1 (AMENDMENT 13): true when `v` fits the integer type
-// `tid` (width + signedness). A non-integer target is never a fit. Used to
-// reject an out-of-range or non-integer-target `@as`/`@intCast` in an enum
-// initializer (e.g. `@as(f32,3)`, `@as(u8,300)`).
-//
-// Task B3 item 2: a 64-bit target is no longer a blanket accept. The i64
-// evaluator bitcasts a large unsigned literal to a negative i64, so the value
-// alone cannot distinguish `-1` from `18446744073709551615`; `operand_idx`
-// carries the operand node for the syntactic sign classification below.
-fn intValueFitsType(env: *TypeResolveEnv, tid: u32, v: i64, operand_idx: u32, depth: u32) bool {
-    if (tid == @intCast(u32, 0)) return false;
-    if (@intCast(usize, tid) >= env.typereg.types_len) return false;
-    if (!type_mod.typeRegistryIsInteger(env.typereg, tid)) return false;
-    var wb: u32 = @intCast(u32, type_mod.typeRegistryIntWidthBits(env.typereg, tid));
-    if (wb >= @intCast(u32, 64)) {
-        var sc64 = evalConstSignClass(env, operand_idx, depth);
-        if (type_mod.typeRegistryIntIsSigned(env.typereg, tid)) {
-            if (sc64 == EvalSignClass.non_negative and v < @intCast(i64, 0)) return false;
-            return true;
-        }
-        if (sc64 == EvalSignClass.negative and v < @intCast(i64, 0)) return false;
-        return true;
-    }
-    if (wb == @intCast(u32, 0)) return false;
-    if (type_mod.typeRegistryIntIsSigned(env.typereg, tid)) {
-        var minv: i64 = -(@intCast(i64, 1) << @intCast(i64, wb - @intCast(u32, 1)));
-        var maxv: i64 = (@intCast(i64, 1) << @intCast(i64, wb - @intCast(u32, 1))) - @intCast(i64, 1);
-        if (v < minv or v > maxv) return false;
-        return true;
-    }
-    if (v < @intCast(i64, 0)) return false;
-    var vu: u64 = @bitCast(u64, v);
-    var umax: u64 = (@intCast(u64, 1) << @intCast(u64, wb)) - @intCast(u64, 1);
-    if (vu > umax) return false;
-    return true;
-}
-
-// Task B3 item 2: syntactic sign classification of a cast operand for the
-// 64-bit range check in `intValueFitsType`. Mirrors
-// `comptime_eval.comptimeEvalSignClass` (the two evaluators intentionally hold
-// values in different representations — the sanctioned `intValueFitsType` /
-// `comptimeValFitsType` mirror); tri-state so an unrecognized shape is never
-// rejected. int/char/bool literals are comptime_int non-negative; a `negate`
-// is negative; an ident or `@as`/`@intCast` is classified by its
-// declared/target integer type, recursing into a const initializer when no
-// declared type is present.
-const EvalSignClass = enum(u8) { unknown, negative, non_negative };
-
-fn evalConstSignClass(env: *TypeResolveEnv, node_idx: u32, depth: u32) EvalSignClass {
-    if (node_idx == @intCast(u32, 0)) return EvalSignClass.unknown;
-    if (depth > @intCast(u32, 16)) return EvalSignClass.unknown;
-    var node = ast_mod.astStoreNodeAt(env.store, node_idx);
-    if (node.kind == AstKind.int_literal or node.kind == AstKind.char_literal or node.kind == AstKind.bool_literal) return EvalSignClass.non_negative;
-    if (node.kind == AstKind.negate) return EvalSignClass.negative;
-    if (node.kind == AstKind.paren_expr) return evalConstSignClass(env, node.child_0, depth + @intCast(u32, 1));
-    if (node.kind == AstKind.ident_expr) {
-        var name_id = ast_mod.astStoreIdentifier(env.store, node_idx);
-        var c_sym = symbolLookupAllModules(env, name_id);
-        if (c_sym) |cs| {
-            if ((cs.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
-                var c_decl = ast_mod.astStoreNodeAt(env.store, cs.decl_node);
-                var dt = resolveTypeExprFull(env, c_decl.child_0, depth + @intCast(u32, 1));
-                if (dt != type_mod.TYPE_UNDEFINED) {
-                    if (type_mod.typeRegistryIsInteger(env.typereg, dt)) {
-                        if (type_mod.typeRegistryIntIsSigned(env.typereg, dt)) return EvalSignClass.negative;
-                        return EvalSignClass.non_negative;
-                    }
-                }
-                if (c_decl.child_1 != @intCast(u32, 0)) {
-                    return evalConstSignClass(env, c_decl.child_1, depth + @intCast(u32, 1));
-                }
-            }
-        }
-        return EvalSignClass.unknown;
-    }
-    if (node.kind == AstKind.builtin_call) {
-        var s_intc: []const u8 = "@intCast";
-        var intc_id = interner_mod.stringInternerIntern(env.interner, s_intc);
-        var s_as: []const u8 = "@as";
-        var as_id = interner_mod.stringInternerIntern(env.interner, s_as);
-        if (node.child_0 == intc_id or node.child_0 == as_id) {
-            var bc_n = ast_mod.astStoreNodeExtraChildCount(env.store, node_idx);
-            if (bc_n >= @intCast(u32, 1)) {
-                var dt2 = resolveTypeExprFull(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 0)), depth + @intCast(u32, 1));
-                if (dt2 != type_mod.TYPE_UNDEFINED) {
-                    if (type_mod.typeRegistryIsInteger(env.typereg, dt2)) {
-                        if (type_mod.typeRegistryIntIsSigned(env.typereg, dt2)) return EvalSignClass.negative;
-                        return EvalSignClass.non_negative;
-                    }
-                }
-            }
-        }
-        return EvalSignClass.unknown;
-    }
-    return EvalSignClass.unknown;
-}
-
-
-pub fn evalConstI64Full(env: *TypeResolveEnv, node_idx: u32, depth: u32) ?i64 {
-    // Task 11J: cycle guard, mirroring `evalConstU32Full`'s depth cap (16). A
-    // self- or mutually-recursive const (`const X = X`) terminates as an
-    // unfoldable value instead of recursing forever.
+// Task 5 (Task 1 §6.5): the exact internal fold shared by both public
+// type-resolver evaluators. It replaces the old 64-bit wrapping u32/i64
+// evaluators: every value is a Task-2 `ComptimeInt` (256-bit cap, exact or
+// unfoldable) and the public callers apply their own materialisation rule at
+// exit. The arm set is the UNION of the old twins: int/char literals, parens,
+// `negate`, the ten integer binops, ident chains (function-local const scope
+// first, then the module symbol tables), field-access module consts, and the
+// integer-valued builtins (`@sizeOf`/`@alignOf`/`@bitSizeOf`/`@offsetOf`/
+// `@bitOffsetOf`/`@intCast`/`@as`). `null` means unfoldable: an unsupported
+// shape, the depth/cycle cap (16), division/mod by zero, a cap overflow, or a
+// non-integer / non-fitting `@intCast`/`@as` target. `~`, floats, bools,
+// function calls, and enum-member references deliberately stay unfoldable in
+// this evaluator (the old enum arm set; the caller's ERR_3055 path).
+fn evalConstIntFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) ?comptime_eval.ComptimeInt {
     if (depth > @intCast(u32, 16)) return null;
     if (node_idx == @intCast(u32, 0)) return null;
     var node = ast_mod.astStoreNodeAt(env.store, node_idx);
-    if (node.kind == AstKind.int_literal) {
-        return @bitCast(i64, ast_mod.astStoreIntValue(env.store, node_idx));
-    }
-    // Task 11J: a character literal is an 8-bit integer literal.
-    if (node.kind == AstKind.char_literal) {
-        return @bitCast(i64, ast_mod.astStoreIntValue(env.store, node_idx));
+    if (node.kind == AstKind.int_literal or node.kind == AstKind.char_literal) {
+        return comptime_eval.ciFromU64(ast_mod.astStoreIntValue(env.store, node_idx));
     }
     if (node.kind == AstKind.negate) {
         if (node.child_0 != @intCast(u32, 0)) {
-            var nv_opt = evalConstI64Full(env, node.child_0, depth + @intCast(u32, 1));
-            if (nv_opt) |nv| {
-                var as_u: u64 = @bitCast(u64, nv);
-                var neg_u: u64 = @intCast(u64, 0) - as_u;
-                return @bitCast(i64, neg_u);
+            var inner = evalConstIntFull(env, node.child_0, depth + @intCast(u32, 1));
+            if (inner) |iv| {
+                var nv = comptime_eval.ciZeroInt();
+                _ = comptime_eval.ciNeg(iv, &nv);
+                return nv;
             }
         }
         return null;
     }
-    // Task 11J: parenthesized expression.
     if (node.kind == AstKind.paren_expr) {
-        return evalConstI64Full(env, node.child_0, depth + @intCast(u32, 1));
+        return evalConstIntFull(env, node.child_0, depth + @intCast(u32, 1));
     }
-    // Task 11J: integer binary/bitwise/shift expressions, mirroring
-    // `comptime_eval.zig`'s `comptimeEvalBinOp` (div/mod by zero and a shift
-    // count >= 64 are unfoldable). Computed on the 64-bit pattern so the
-    // backing-width fit-check downstream is the authority on range.
     if (node.kind == AstKind.add or node.kind == AstKind.sub or
         node.kind == AstKind.mul or node.kind == AstKind.div or node.kind == AstKind.mod_op or
         node.kind == AstKind.bit_and or node.kind == AstKind.bit_or or node.kind == AstKind.bit_xor or
         node.kind == AstKind.shl or node.kind == AstKind.shr) {
-        var l_opt = evalConstI64Full(env, node.child_0, depth + @intCast(u32, 1));
-        var r_opt = evalConstI64Full(env, node.child_1, depth + @intCast(u32, 1));
-        if (l_opt) |li| {
-            if (r_opt) |ri| {
-                var lv: u64 = @bitCast(u64, li);
-                var rv: u64 = @bitCast(u64, ri);
-                if (node.kind == AstKind.add) return @bitCast(i64, lv + rv);
-                if (node.kind == AstKind.sub) return @bitCast(i64, lv - rv);
-                if (node.kind == AstKind.mul) return @bitCast(i64, lv * rv);
+        var l_opt = evalConstIntFull(env, node.child_0, depth + @intCast(u32, 1));
+        var r_opt = evalConstIntFull(env, node.child_1, depth + @intCast(u32, 1));
+        if (l_opt) |lv| {
+            if (r_opt) |rv| {
+                var res = comptime_eval.ciZeroInt();
+                if (node.kind == AstKind.add) { if (!comptime_eval.ciAdd(lv, rv, &res)) return null; return res; }
+                if (node.kind == AstKind.sub) { if (!comptime_eval.ciSub(lv, rv, &res)) return null; return res; }
+                if (node.kind == AstKind.mul) { if (!comptime_eval.ciMul(lv, rv, &res)) return null; return res; }
                 if (node.kind == AstKind.div) {
-                    if (rv == @intCast(u64, 0)) return null;
-                    return @bitCast(i64, lv / rv);
+                    var rem = comptime_eval.ciZeroInt();
+                    if (!comptime_eval.ciDivMod(lv, rv, &res, &rem)) return null;
+                    return res;
                 }
                 if (node.kind == AstKind.mod_op) {
-                    if (rv == @intCast(u64, 0)) return null;
-                    return @bitCast(i64, lv % rv);
+                    var q = comptime_eval.ciZeroInt();
+                    if (!comptime_eval.ciDivMod(lv, rv, &q, &res)) return null;
+                    return res;
                 }
-                if (node.kind == AstKind.bit_and) return @bitCast(i64, lv & rv);
-                if (node.kind == AstKind.bit_or) return @bitCast(i64, lv | rv);
-                if (node.kind == AstKind.bit_xor) return @bitCast(i64, lv ^ rv);
-                if (node.kind == AstKind.shl) {
-                    if (rv >= @intCast(u64, 64)) return null;
-                    return @bitCast(i64, lv << rv);
-                }
-                if (rv >= @intCast(u64, 64)) return null;
-                return @bitCast(i64, lv >> rv);
+                if (node.kind == AstKind.bit_and) { if (!comptime_eval.ciBitAnd(lv, rv, &res)) return null; return res; }
+                if (node.kind == AstKind.bit_or) { if (!comptime_eval.ciBitOr(lv, rv, &res)) return null; return res; }
+                if (node.kind == AstKind.bit_xor) { if (!comptime_eval.ciBitXor(lv, rv, &res)) return null; return res; }
+                if (node.kind == AstKind.shl) { if (!comptime_eval.ciShl(lv, rv, &res)) return null; return res; }
+                if (!comptime_eval.ciShr(lv, rv, &res)) return null;
+                return res;
             }
         }
         return null;
     }
     if (node.kind == AstKind.ident_expr) {
         var name_id = ast_mod.astStoreIdentifier(env.store, node_idx);
+        // The function-local const scope first (the old U32 evaluator's
+        // variant (e)); a local const shadows a module symbol of the same name.
+        if (env.local_consts) |lcs| {
+            if (localConstScopeLookup(lcs, name_id)) |l_decl_node| {
+                var l_decl = ast_mod.astStoreNodeAt(env.store, l_decl_node);
+                if (l_decl.child_1 != @intCast(u32, 0)) {
+                    return evalConstIntFull(env, l_decl.child_1, depth + @intCast(u32, 1));
+                }
+            }
+        }
         var c_sym = symbolLookupAllModules(env, name_id);
         if (c_sym) |cs| {
             if ((cs.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
                 var c_decl = ast_mod.astStoreNodeAt(env.store, cs.decl_node);
-                if (c_decl.child_1 != 0) {
-                    return evalConstI64Full(env, c_decl.child_1, depth + @intCast(u32, 1));
+                if (c_decl.child_1 != @intCast(u32, 0)) {
+                    return evalConstIntFull(env, c_decl.child_1, depth + @intCast(u32, 1));
                 }
             }
         }
+        return null;
     }
-    // Task 11J: a module-const reference through a field access (`mid.N`).
+    // A module-const reference through a field access (`mid.N`).
     if (node.kind == AstKind.field_access) {
         var fa_mod_id = evalConstModuleOfExpr(env, node.child_0);
         if (fa_mod_id != @intCast(u32, 0)) {
@@ -1379,20 +1100,14 @@ pub fn evalConstI64Full(env: *TypeResolveEnv, node_idx: u32, depth: u32) ?i64 {
             if (sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, fa_mod_id, fa_field_id)) |fa_sym| {
                 if ((fa_sym.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
                     var fa_decl = ast_mod.astStoreNodeAt(env.store, fa_sym.decl_node);
-                    if (fa_decl.child_1 != 0) {
-                        return evalConstI64Full(env, fa_decl.child_1, depth + @intCast(u32, 1));
+                    if (fa_decl.child_1 != @intCast(u32, 0)) {
+                        return evalConstIntFull(env, fa_decl.child_1, depth + @intCast(u32, 1));
                     }
                 }
             }
         }
+        return null;
     }
-    // Task 11J: integer-valued builtins. `@as`/`@intCast` fold their operand;
-    // `@sizeOf`/`@alignOf`/`@bitSizeOf`/`@offsetOf`/`@bitOffsetOf` fold the
-    // resolved type/field (named aggregates are complete post-layout). `~`, the
-    // bool/float builtins (`@isWindows`, `@intToFloat`, `@floatCast`), function
-    // calls, and enum-member references deliberately have no arm: they fall
-    // through to `null` and are rejected by the caller (ERR_3055), never a
-    // silent auto-increment.
     if (node.kind == AstKind.builtin_call) {
         var s_size: []const u8 = "@sizeOf";
         var size_id = interner_mod.stringInternerIntern(env.interner, s_size);
@@ -1411,26 +1126,31 @@ pub fn evalConstI64Full(env: *TypeResolveEnv, node_idx: u32, depth: u32) ?i64 {
         var bc_n = ast_mod.astStoreNodeExtraChildCount(env.store, node_idx);
         if (node.child_0 == intc_id or node.child_0 == as_id) {
             if (bc_n >= @intCast(u32, 2)) {
-                // Task 11J fix round 1 (AMENDMENT 13): the target must be an
-                // integer type and the folded value must fit it. `@as(f32,3)` is
-                // not a valid enum field value and `@as(u8,300)` does not fit
-                // u8; both are rejected (ERR_3055), never a silent value.
+                // The target must be an integer type and the folded value must
+                // fit it (`@as(f32,3)` / `@as(u8,300)` are not valid enum
+                // values). No diagnostic here: the enum caller's ERR_3055 path
+                // owns its reject, and the array-size wrapper emits the
+                // preserved error[3000] for a failing `@intCast`.
                 var ct_tid = resolveTypeExprFull(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 0)), depth + @intCast(u32, 1));
                 if (ct_tid != type_mod.TYPE_UNDEFINED) {
-                    var cv_opt = evalConstI64Full(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 1)), depth + @intCast(u32, 1));
+                    var cv_opt = evalConstIntFull(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 1)), depth + @intCast(u32, 1));
                     if (cv_opt) |cv| {
-                        if (intValueFitsType(env, ct_tid, cv, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 1)), depth)) return cv;
+                        if (comptime_eval.comptimeIntFitsType(env.typereg, cv, ct_tid)) return cv;
                     }
                 }
             }
             return null;
         }
-
         if (node.child_0 == size_id or node.child_0 == align_id or node.child_0 == bitsz_id) {
             if (bc_n >= @intCast(u32, 1)) {
                 var bt_tid = resolveTypeExprFull(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 0)), depth + @intCast(u32, 1));
                 if (bt_tid != type_mod.TYPE_UNDEFINED) {
                     var bt_ty = env.typereg.types_items[@intCast(usize, bt_tid)];
+                    // A named aggregate in an initializer position is made
+                    // complete on demand through the shared `layoutEnsure`,
+                    // exactly as the pre-Task-5 enum evaluator did. The
+                    // `state == 2` gate is MANDATORY: reading size/alignment
+                    // before layout yields a silently wrong value.
                     if (bt_ty.state != @intCast(u8, 2) and bt_ty.kind == TypeKind.struct_type) {
                         _ = layoutEnsure(env.typereg, bt_tid, @intCast(u32, 0));
                         bt_ty = env.typereg.types_items[@intCast(usize, bt_tid)];
@@ -1438,8 +1158,8 @@ pub fn evalConstI64Full(env: *TypeResolveEnv, node_idx: u32, depth: u32) ?i64 {
                     var bt_foldable = evalConstScalarKind(bt_ty.kind);
                     if (bt_ty.kind == TypeKind.struct_type) { bt_foldable = true; }
                     if (bt_ty.state == @intCast(u8, 2) and bt_foldable) {
-                        if (node.child_0 == size_id) { return @intCast(i64, bt_ty.size); }
-                        if (node.child_0 == align_id) { return @intCast(i64, bt_ty.alignment); }
+                        if (node.child_0 == size_id) { return comptime_eval.ciFromU64(@intCast(u64, bt_ty.size)); }
+                        if (node.child_0 == align_id) { return comptime_eval.ciFromU64(@intCast(u64, bt_ty.alignment)); }
                         var bt_bits: u32 = bt_ty.size * @intCast(u32, 8);
                         if (type_mod.typeRegistryIsInteger(env.typereg, bt_tid)) {
                             bt_bits = @intCast(u32, type_mod.typeRegistryIntWidthBits(env.typereg, bt_tid));
@@ -1451,7 +1171,7 @@ pub fn evalConstI64Full(env: *TypeResolveEnv, node_idx: u32, depth: u32) ?i64 {
                         if (bt_ty.kind == TypeKind.struct_type and (bt_ty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
                             bt_bits = @intCast(u32, type_mod.typeRegistryGetPackedTotalBits(env.typereg, bt_tid));
                         }
-                        return @intCast(i64, bt_bits);
+                        return comptime_eval.ciFromU64(@intCast(u64, bt_bits));
                     }
                 }
             }
@@ -1482,7 +1202,7 @@ pub fn evalConstI64Full(env: *TypeResolveEnv, node_idx: u32, depth: u32) ?i64 {
                                     } else {
                                         if (node.child_0 == bitoff_id) { bo = bo * @intCast(u64, 8); }
                                     }
-                                    return @bitCast(i64, bo);
+                                    return comptime_eval.ciFromU64(bo);
                                 }
                             }
                         }
@@ -1495,7 +1215,7 @@ pub fn evalConstI64Full(env: *TypeResolveEnv, node_idx: u32, depth: u32) ?i64 {
                             var want_id2 = env.store.string_values.items[@intCast(usize, sv_idx2)];
                             var fi2: usize = 0;
                             while (fi2 < u_fields.len) : (fi2 += 1) {
-                                if (u_fields[fi2].name_id == want_id2) { return @intCast(i64, 0); }
+                                if (u_fields[fi2].name_id == want_id2) { return comptime_eval.ciZeroInt(); }
                             }
                         }
                     }
@@ -1506,6 +1226,83 @@ pub fn evalConstI64Full(env: *TypeResolveEnv, node_idx: u32, depth: u32) ?i64 {
         return null;
     }
     return null;
+}
+
+// `0..0xFFFFFFFE` as a u32 array size; everything else is the unfoldable
+// sentinel (negative, over-u32, or the `0xFFFFFFFF` sentinel collision).
+fn evalConstIntToSize(v: comptime_eval.ComptimeInt) u32 {
+    if (v.neg) return @intCast(u32, 0xFFFFFFFF);
+    var lim = comptime_eval.ciFromU64(@intCast(u64, 4294967294));
+    if (comptime_eval.ciCmp(v, lim) > 0) return @intCast(u32, 0xFFFFFFFF);
+    return @intCast(u32, comptime_eval.ciToU64(v));
+}
+
+// Task 5 (Task 1 §6.5): exact array-size fold. `0xFFFFFFFF` stays the
+// unfoldable sentinel and the depth cap (16) is kept; a concrete size must be
+// in `0..0xFFFFFFFE` (a value of exactly 4294967295 collides with the sentinel
+// and stays rejected — pre-existing). The `@intCast` arm keeps its
+// `error[3000]` diagnostic (Task 1 §5.5) with the exact fit primitive; every
+// other shape goes through `evalConstIntFull`. The former u32-wrapping
+// add/sub/mul arms are gone (Task 4): a negative or over-u32 size is
+// unfoldable, so `[0 - 1]u8` reaches the caller's error[3050].
+pub fn evalConstU32Full(env: *TypeResolveEnv, node_idx: u32, depth: u32) u32 {
+    // Cycle guard, mirroring `resolveTypeExprFull`'s depth cap (16) so a const
+    // cycle in array-size position (`const A = A + 1`, or `const A = B; const
+    // B = A`) terminates as an unfoldable value — a clean hard error via the
+    // array-size fallback — never unbounded recursion / ICE.
+    if (depth > @intCast(u32, 16)) return @intCast(u32, 0xFFFFFFFF);
+    if (node_idx == @intCast(u32, 0)) return @intCast(u32, 0xFFFFFFFF);
+    var node = ast_mod.astStoreNodeAt(env.store, node_idx);
+    if (node.kind == AstKind.builtin_call) {
+        var s_intc: []const u8 = "@intCast";
+        var intc_id = interner_mod.stringInternerIntern(env.interner, s_intc);
+        if (node.child_0 == intc_id) {
+            var bc_n = ast_mod.astStoreNodeExtraChildCount(env.store, node_idx);
+            if (bc_n >= @intCast(u32, 2)) {
+                // Task 11S (a): resolve the target and range-check the folded
+                // operand against it; `@intCast(u8, 300)` is invalid Zig and
+                // must not fold 300 as the dimension. The operand folds
+                // EXACTLY through the shared evaluator so a function-local
+                // `const N = 7` still resolves.
+                var ic_tid = resolveTypeExprFull(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 0)), depth + @intCast(u32, 1));
+                var ic_v = evalConstIntFull(env, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 1)), depth + @intCast(u32, 1));
+                if (ic_tid != type_mod.TYPE_UNDEFINED) {
+                    if (ic_v) |iv| {
+                        if (!comptime_eval.comptimeIntFitsType(env.typereg, iv, ic_tid)) {
+                            if (env.diag) |dg| {
+                                if (diag_mod.diagnosticCollectorMarkNodeOnce(dg, node_idx)) {
+                                    var ic_msg: []const u8 = "@intCast value does not fit the target type";
+                                    _ = diag_mod.diagnosticCollectorAdd(dg, @intCast(u8, 0),
+                                        @intCast(u16, 3000),
+                                        env.source_file_id, node.span_start,
+                                        node.span_start + @intCast(u32, node.span_len), ic_msg);
+                                }
+                            }
+                            return @intCast(u32, 0xFFFFFFFF);
+                        }
+                        return evalConstIntToSize(iv);
+                    }
+                }
+            }
+            return @intCast(u32, 0xFFFFFFFF);
+        }
+    }
+    var v = evalConstIntFull(env, node_idx, depth) orelse return @intCast(u32, 0xFFFFFFFF);
+    return evalConstIntToSize(v);
+}
+
+
+// Task 5 (Task 1 §6.5): exact enum/const-initializer fold materialised to the
+// i64 storage pattern. The exact value must fit `[i64 min, u64 max]` (the
+// registry's i64 member storage); a value outside that window is unfoldable
+// (the caller's `error[3055]` path) and the two's-complement low 64 bits are
+// returned for the fit values. This replaces the old 64-bit wrapping evaluator:
+// a wrapping shape such as `18446744073709551615 + 1` is no longer silently
+// stored as 0 (Zig rejects it; `enum(u64)` values must fit the backing).
+pub fn evalConstI64Full(env: *TypeResolveEnv, node_idx: u32, depth: u32) ?i64 {
+    var v = evalConstIntFull(env, node_idx, depth) orelse return null;
+    if (!comptime_eval.comptimeIntFits64(v)) return null;
+    return @bitCast(i64, comptime_eval.ciToU64(v));
 }
 
 

@@ -430,6 +430,8 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `esAppend` | type_registry.zig |
 | `euAppend` | type_registry.zig |
 | `evalConstI64Full` | type_resolver.zig |
+| `evalConstIntFull` | type_resolver.zig |
+| `evalConstIntToSize` | type_resolver.zig |
 | `evalConstModuleOfExpr` | type_resolver.zig |
 | `evalConstU32Full` | type_resolver.zig |
 | `executeDeferQueue` | analyzer.zig |
