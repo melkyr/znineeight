@@ -6468,13 +6468,17 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             self.loop_stack.len = self.loop_stack.len - @intCast(usize, 1);
             self.current_label = saved_label;
         } else {
+            // Task 11 fix round (review Important I1): evaluate the for-header
+            // inputs in SOURCE order — iterable, then start, then end (official
+            // Zig). Lowering start/end first was observable for side-effecting
+            // header expressions (`for (tickA(), tickB()..tickC())`).
+            var slice_temp = lowerExpr(self, iter_node);
             var start_temp: u32 = @intCast(u32, 0);
             var end_temp: u32 = @intCast(u32, 0);
             if (idx_range == @intCast(u8, 1)) {
                 start_temp = lowerExpr(self, idx_start_node);
                 if (idx_end_node != @intCast(u32, 0)) { end_temp = lowerExpr(self, idx_end_node); }
             }
-            var slice_temp = lowerExpr(self, iter_node);
             var ptr_temp = nextTemp(self, type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, elem_type[0], false));
             var len_temp = nextTemp(self, type_mod.TYPE_USIZE);
             if (pat_type) |pt2| {

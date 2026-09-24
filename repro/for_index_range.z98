@@ -14,10 +14,28 @@
 //   * an empty iterable with `0..0` iterates zero times.
 //
 // Expected stdout (Zig 0.15.2 twin uses `std.debug.print`):
-//   60 2 6 5 60 7 11 60 1 5 60 10 60 10 60 25 0 34 3 70 6
+//   60 2 6 5 60 7 11 60 1 5 60 10 60 10 60 25 0 34 3 70 6 123 80
 // rc 0. Built with -fsafe too (the runtime length check passes for every
-// valid range here).
+// valid range here). The trailing `123 80` row is the header evaluation-order
+// probe (review Important I1): iterable, then start, then end (Zig order).
 const std = @import("std");
+
+var g_order: u32 = 0;
+
+fn tickA(arr: []u32) []u32 {
+    g_order = g_order * 10 + 1;
+    return arr;
+}
+
+fn tickB() usize {
+    g_order = g_order * 10 + 2;
+    return 2;
+}
+
+fn tickC() usize {
+    g_order = g_order * 10 + 3;
+    return 7;
+}
 
 pub fn main() void {
     var arr: [5]u32 = [5]u32{ 10, 11, 12, 13, 14 };
@@ -165,5 +183,16 @@ pub fn main() void {
     }
     const r21 = k;
 
-    std.io.print("{} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {}\n", .{ r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15, r16, r17, r18, r19, r20, r21 });
+    g_order = 0;
+    var osum: u32 = 0;
+    for (tickA(s), tickB()..tickC()) |x, i| {
+        osum += x + @intCast(u32, i);
+    }
+    if (g_order != 123 or osum != 80) {
+        @panic("for-header evaluation order guard failed");
+    }
+    const r22 = g_order;
+    const r23 = osum;
+
+    std.io.print("{} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {}\n", .{ r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15, r16, r17, r18, r19, r20, r21, r22, r23 });
 }

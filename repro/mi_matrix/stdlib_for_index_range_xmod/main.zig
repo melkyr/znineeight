@@ -21,11 +21,33 @@
 //
 // Covers: fixed-array and slice iterables; runtime and literal bounds; open
 // `..` and explicit `..end`; start > len; literal offset; empty slice;
-// `continue`/`break` in the new form; the `for (arr) |x, i|` and
+// `continue`/`break` in the new form; header evaluation order (fix round:
+// iterable, then start, then end); the `for (arr) |x, i|` and
 // `for (0..n) |i|` controls. Every aggregate is `@panic`-guarded. Contract:
-// stdout `60 2 6 5 60 7 11 60 1 5 60 10 60 10 60 25 0 34 3 70 6\n`, rc 0,
+// stdout `60 2 6 5 60 7 11 60 1 5 60 10 60 10 60 25 0 34 3 70 6 123 80\n`, rc 0,
 // byte-exact 3x, Zig-0.15.2-twin-matched.
 const std = @import("std");
+
+// Header evaluation-order probe (review Important I1): a side-effecting
+// iterable/start/end must be evaluated in SOURCE order (iterable, start, end),
+// matching official Zig. `g_order` becomes 123 when the order is right, 231
+// when start/end are lowered before the iterable (the pre-fix behavior).
+var g_order: u32 = 0;
+
+fn tickA(arr: []u32) []u32 {
+    g_order = g_order * 10 + 1;
+    return arr;
+}
+
+fn tickB() usize {
+    g_order = g_order * 10 + 2;
+    return 2;
+}
+
+fn tickC() usize {
+    g_order = g_order * 10 + 3;
+    return 7;
+}
 
 pub fn main() void {
     var arr: [5]u32 = [5]u32{ 10, 11, 12, 13, 14 };
@@ -35,7 +57,7 @@ pub fn main() void {
     var r9: u32 = 0; var r10: u32 = 0; var r11: u32 = 0; var r12: u32 = 0;
     var r13: u32 = 0; var r14: u32 = 0; var r15: u32 = 0; var r16: u32 = 0;
     var r17: u32 = 0; var r18: u32 = 0; var r19: u32 = 0; var r20: u32 = 0;
-    var r21: u32 = 0;
+    var r21: u32 = 0; var r22: u32 = 0; var r23: u32 = 0;
 
     // (1) open end, runtime start: index values start..start+len-1 over all
     // elements.
@@ -182,5 +204,16 @@ pub fn main() void {
     }
     r21 = k;
 
-    std.io.print("{} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {}\n", .{ r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15, r16, r17, r18, r19, r20, r21 });
+    // (11) header evaluation order: iterable, then start, then end.
+    g_order = 0;
+    var osum: u32 = 0;
+    for (tickA(s), tickB()..tickC()) |x, i| {
+        osum += x + @intCast(u32, i);
+    }
+    if (g_order != 123 or osum != 80) {
+        @panic("for-header evaluation order guard failed");
+    }
+    r22 = g_order; r23 = osum;
+
+    std.io.print("{} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {}\n", .{ r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15, r16, r17, r18, r19, r20, r21, r22, r23 });
 }

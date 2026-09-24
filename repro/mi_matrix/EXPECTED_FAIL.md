@@ -1,6 +1,42 @@
-# mi_matrix corpus — expected-fail manifest (v217 2026-09-24)
+# mi_matrix corpus — expected-fail manifest (v218 2026-09-24)
+
+## Task 11 fix round — for-header evaluation order (v217 -> v218 2026-09-24)
+
+**Review Important I1.** `sf/src/lower.zig`'s explicit-index arm lowered the range `start`/`end`
+operands BEFORE the iterable. Zig 0.15.2 evaluates the for-header inputs in source order
+(iterable, then start, then end), so the pre-fix order was a silent, observable divergence for
+valid programs with side-effecting header expressions.
+
+**Probe (`order.zig`, both compilers rc 0).** `tickA()` returns the iterable and appends `1` to a
+global order value, `tickB()` appends `2` (start), `tickC()` appends `3` (end):
+
+* Zig 0.15.2 twin: stdout `80 123` (source order).
+* pre-fix Z98 (`6dbfb462`): stdout `80 231`, emitted C calls `tickB`/`tickC` before `tickA`.
+* fixed Z98: stdout `80 123`, emitted C calls `tickA`, `tickB`, `tickC` in order.
+
+**Fix.** The `else` (array/slice) branch of the `for_stmt` arm now lowers `iter_node` first, then
+`idx_start_node`, then `idx_end_node` (`sf/src/lower.zig`, three statements moved; no other change).
+
+**Regression coverage.** The order row was added to `repro/mi_matrix/stdlib_for_index_range_xmod`
+(module-level `g_order` + `tickA`/`tickB`/`tickC`; `@panic` unless `g_order == 123`, `osum == 80`)
+and to `repro/for_index_range.z98`; the fixture golden is now
+`60 2 6 5 60 7 11 60 1 5 60 10 60 10 60 25 0 34 3 70 6 123 80` (rc 0, 3x byte-exact, full
+Zig-0.15.2 twin re-matched, stderr md5 `e3ccbc98dbf0cbec764237d175ab7b26`). The reject fixture is
+unchanged.
+
+**Gates.** fixed point **MOVED `0fdee6ac…` → `f44e2c15c827c469620996fc99cf991c`** (moving point
+hop1 `1b6843cd…` != hop2 == hop3; explicit `FIXED_POINT_MD5=f44e2c15…` OK); 4-MD5 emitted-C
+**UNCHANGED** (gol `e7bde571…` / lisp `4afb601f…` / json `09fb55e5…` / mud `5a1cc65e…`, 2x each);
+corpus `-s0` **1002 = 876 OK / 45 GREEN / 81 FAIL / 0 ICE / 0 CRASH** (join-diff vs the pre-fix
+Task 11 classification **zero movement**); std-lib runtime gate **227 PASS / 0 FAIL**; example
+matrix **24/24**; `check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK; build_test **0/9**
+(pre-existing zig0 baseline); self-emission rc 0 / 48 `.c` + 48 `.h` / no PANIC. Seed stays
+**v83** (operator R2, rotation is closeout-only).
 
 ## Task 11 — explicit index-range `for (arr, start..end)` (v216 -> v217 2026-09-24)
+
+**SUPERSEDED by the Task 11 fix round above (v218): the fixture golden now ends `123 80`, the fixed
+point is `f44e2c15…`, and the header evaluation order is source order (iterable, start, end).**
 
 **Gap.** Zig 0.15.2's explicit index form (`for (arr, start..) |item, index|` /
 `for (arr, start..end) |item, index|`) was a parser gap: Z98 rejected the `,` with `error[2000]`
