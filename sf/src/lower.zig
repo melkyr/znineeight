@@ -1209,7 +1209,16 @@ fn maybeDisambiguateCapture(self: *LirLowerer, capture_name: u32, variant_type_i
     var eli: usize = self.local_decl_count;
     while (eli > @intCast(usize, 0)) {
         eli -= @intCast(usize, 1);
-        if (self.local_decl_names[eli] == capture_name) {
+        // Task 10 fix round: only an earlier same-named declaration OF A
+        // DIFFERENT TYPE forces a synth name. Same-type declarations can share
+        // the emitted C variable (the emitter dedupes `decl_local` by name_id
+        // across the whole function, and the lifetimes of sibling-scope
+        // bindings never overlap), so renaming for them is unnecessary name
+        // churn; different types cannot share the C variable, so the rename is
+        // required (mirrors `maybeDisambiguateCaptureIfTypeDiffers` and the
+        // var-decl type_rename path). `lowerFn`'s per-function reset scopes
+        // this table to the current function, so no fn_seq filter is needed.
+        if (self.local_decl_names[eli] == capture_name and self.local_decl_types[eli] != variant_type_id) {
             var orig_str = si_mod.stringInternerGet(self.ctx.registry.interner, capture_name);
             var name_buf: [96]u8 = undefined;
             var np: usize = @intCast(usize, 0);

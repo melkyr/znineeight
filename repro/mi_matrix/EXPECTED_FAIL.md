@@ -1,4 +1,42 @@
-# mi_matrix corpus — expected-fail manifest (v215 2026-09-24)
+# mi_matrix corpus — expected-fail manifest (v216 2026-09-24)
+
+## Task 10 fix round — over-rename narrowing + authorized 4-MD5 re-baseline (v215 -> v216 2026-09-24)
+
+**Ruling.** The Task 10 review left the `maybeDisambiguateCapture` over-rename open; the operator
+authorized the narrowing fix AND the re-baseline of the gate dumps it moves, with runtime-identity
+proof by execution.
+
+**Fix (`sf/src/lower.zig`).** `maybeDisambiguateCapture` now renames only when an earlier same-named
+declaration has a **different type** (`self.local_decl_types[eli] != variant_type_id` — the previously
+unused parameter): same-type same-name bindings may share the emitted C variable (the emitter dedupes
+`decl_local` by `name_id` across the function and sibling-scope lifetimes never overlap), while
+different types cannot — the criterion mirrors `maybeDisambiguateCaptureIfTypeDiffers` and the
+var-decl `type_rename` path. Task 10D's scope-chain redirect guard is untouched; the per-function reset
+from `4109fd71` scopes the scan, so no fn_seq filter is needed.
+
+**Coverage.** `repro/mi_matrix/stdlib_capture_sibling_reuse_xmod` re-run **PASS** (golden unchanged);
+`repro/capture_fn_reuse.z98` re-run 3× byte-exact and Zig-0.15.2-twin-matched
+(`fa=7 fb=6 fc=3 fd=9 ff=3 fg0=102 fg1=9 fi=20`, md5 `85dd7796…`). No new corpus dirs; stdlib pin
+unchanged (226).
+
+**4-MD5 re-baseline (authorized; identifier-only diffs).** gol `e7bde571649a67291419ce57131a556a`
+**UNCHANGED** / mud `5a1cc65ef23f27d1c4c51f4516760c07` **UNCHANGED**; lisp
+`353887639f127f4624de8b14b7e43a78` -> **`4afb601f28e15bcb60d4b896cc2684e3`** (−401 B; 89 changed
+lines); json `5e1e0050c0c462d76e9ef8dee3f5ae7c` -> **`09fb55e5fc3f846f4602d3b2eef30970`** (−53 B;
+18 changed lines). Runtime identity PRE (Task 10 `3f31c1c2…`) ↔ POST proven by execution: gol stdout
+`fcbf7e7cead5082f0a8caadd5a8f0ff9` rc 0; json stdout `8bda3d5a1ec07d14a301bc343df32bf8` rc 0; lisp
+`(+ 1 2)` stdout `b3d9f8974da24ddbf9d389f3d7d97322` rc 0 + canonical feed stdout
+`96654b3910a54d8bb7ec3ddfc0f26c6a` rc 0; mud `demo/session.sh` server
+`66c8f0abb926cca7baf9a0d1692ab318` / client `93147d0f0bbd983a9d844fea8b7a6fa7`, session rc 0 — all
+PRE == POST byte-identical.
+
+**Gates.** self-compile **moving point** hop1 `e58be1fd…` ≠ hop2 == hop3 ==
+`249b38be5c95ebc0f148ae323262201d` (explicit `FIXED_POINT_MD5=249b38be…` gate OK); example matrix
+**24/24**; std-lib runtime gate **226 PASS / 0 FAIL**; corpus `-s0` **1000 = 875 OK / 44 GREEN /
+81 FAIL / 0 ICE / 0 CRASH** — full-classifier join-diff vs the pre-Task-10 compiler **byte-identical
+(zero movement)**; `check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK; build_test **0/9**
+(pre-existing zig0 baseline); self-emission rc 0 / 48 `.c` + 48 `.h` / no PANIC. Seed stays **v83**
+(operator R2, rotation is closeout-only).
 
 ## Task 10 — capture/lifetime bookkeeping hygiene (v214 -> v215 2026-09-24)
 
@@ -15,7 +53,9 @@ capture-referenced-after-nested-loop shape;
 (3) `maybeDisambiguateCapture`'s conservative over-rename (ANY earlier same-name declaration forces a
 synth name, including closed sibling scopes) is **KEPT**: it is semantically neutral and narrowing it
 would churn the emitted C of gate programs (e.g. json_parser's `item_1`/`i_2`), violating the
-no-behavior-change constraint.
+no-behavior-change constraint. **SUPERSEDED by the Task 10 fix round above (v216): the over-rename is
+now type-gated and the two moved 4-MD5 rows are re-baselined under the operator's authorization, with
+PRE↔POST runtime identity proven by execution.**
 
 **Coverage.** New standalone `repro/capture_fn_reuse.z98` (cross-function reuse: renamed capture in
 `fa`, later plain local `j` in `fb`, clean capture in `fc`, parameter `j` in `fd`, `if` capture in
