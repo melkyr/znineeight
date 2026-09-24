@@ -115,9 +115,9 @@ bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out_dir>
 ```
 - GATE: `=== [seed] Done: <out_dir> ===`; result `<out_dir>/zig1_5_clean` md5 MUST equal the recorded
 - GATE: `=== [seed] Done: <out_dir> ===`; result `<out_dir>/zig1_5_clean` md5 MUST equal the recorded
-  fixed point for the current HEAD. **Current HEAD fixed point (Part I closeout, Task 6) = `1e389c5739aea89550d149015f0031d3`**
-  (two-hop closure hop1 == hop2; supersedes the Task 4 value `a8ea33f75f239f2255adeb8cc2426a7c`). The committed seed was ROTATED to **v83** at the Part I closeout (internal binary md5 and fixed point both `1e389c57…`);
-  rebuilding with the v83 archive and the current `sf/src` reproduces `1e389c57…`. Set `FIXED_POINT_MD5=1e389c5739aea89550d149015f0031d3` to gate explicitly.
+  fixed point for the current HEAD. **Current HEAD fixed point (Task 7, `bcd95f07`) = `49a75cf036acef9aca242d4255646b8e`**
+  (two-hop closure hop1 == hop2; supersedes the Part I closeout/Task 6 value `1e389c5739aea89550d149015f0031d3`). The committed seed is **v83** (rotated at the Part I closeout; archive internal binary md5 `1e389c57…`), NOT re-rotated at Task 7 (rotation is closeout-only — operator R2);
+  rebuilding with the v83 archive and the current `sf/src` reproduces `49a75cf0…`. Set `FIXED_POINT_MD5=49a75cf036acef9aca242d4255646b8e` to gate explicitly.
 - The dump MUST run from the repo root with the RELATIVE `sf/src/main.zig` path (module basename-hash
   tokens are path-derived). `<out_dir>` MUST be a fresh dir (the script `rm -rf`s it) — never point it
   at `/tmp/fx_subfolder` (the reference compiler lives there).
