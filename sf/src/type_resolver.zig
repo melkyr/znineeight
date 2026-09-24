@@ -1678,6 +1678,30 @@ pub fn registerContainerType(env: *TypeResolveEnv, node_idx: u32, kind: AstKind,
     return tid;
 }
 
+// Task 15 (S3): the same cross-module `pub` rule as
+// `semanticAnalyzerCheckMemberVisibility`, enforced in type positions
+// (`var x: mod.HiddenAlias`, `mod.Hidden{...}`). Only passes with a live
+// DiagnosticCollector emit; passes with `diag = null` (lower,
+// symbol_registrator, comptime_eval) resolve already-accepted programs, so a
+// missing collector is not an escape hatch for user code. Returns false and
+// the caller maps the type expression to TYPE_UNDEFINED.
+fn typeResolverCheckMemberVisibility(env: *TypeResolveEnv, node_idx: u32, name_id: u32, sym: *sym_mod.Symbol) bool {
+    if (sym.module_id == env.module_id) return true;
+    if (sym_mod.symbolIsPublic(sym)) return true;
+    if (env.diag) |dc| {
+        if (diag_mod.diagnosticCollectorMarkNodeOnce(dc, node_idx)) {
+            var tv1: []const u8 = "'";
+            var tv2: []const u8 = "' is not marked 'pub'";
+            var tvnm = interner_mod.stringInternerGet(env.interner, name_id);
+            var tvparts: [3][]const u8 = [3][]const u8{ tv1, tvnm, tv2 };
+            var tvmsg = diag_mod.diagnosticBuilderMakeMsg(env.interner, &tvparts[0], @intCast(u32, 3));
+            var tvnode = ast_mod.astStoreNodeAt(env.store, node_idx);
+            _ = diag_mod.diagnosticCollectorAdd(dc, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3007_VISIBILITY_VIOLATION)), env.source_file_id, tvnode.span_start, tvnode.span_start + @intCast(u32, tvnode.span_len), tvmsg);
+        }
+    }
+    return false;
+}
+
 pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type_mod.TypeId {
     if (depth > @intCast(u32, 16)) return type_mod.TYPE_UNDEFINED;
     var node = ast_mod.astStoreNodeAt(env.store, node_idx);
@@ -1753,6 +1777,7 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
                             var mod_id = bs.module_id;
                             var payload_sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, mod_id, ast_mod.astStoreNodePayload(env.store, node_idx));
                             if (payload_sym) |ps| {
+                                if (!typeResolverCheckMemberVisibility(env, node_idx, ast_mod.astStoreNodePayload(env.store, node_idx), ps)) return type_mod.TYPE_UNDEFINED;
                                 if (ps.type_id != @intCast(u32, 0)) {
                                     fah_matched = @intCast(u8, 1);
                                     var fam: []const u8 = "FAH:r"; pal_mod.markerWriteInt(fam, ps.type_id);
@@ -1771,6 +1796,7 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
             var mod_id = base_ty.module_id;
             var sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, mod_id, ast_mod.astStoreNodePayload(env.store, node_idx));
             if (sym) |s| {
+                if (!typeResolverCheckMemberVisibility(env, node_idx, ast_mod.astStoreNodePayload(env.store, node_idx), s)) return type_mod.TYPE_UNDEFINED;
                 if (s.type_id != @intCast(u32, 0)) {
                     fah_matched = @intCast(u8, 1);
                     var fam: []const u8 = "FAH:r"; pal_mod.markerWriteInt(fam, s.type_id);

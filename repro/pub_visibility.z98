@@ -1,0 +1,34 @@
+// pub_visibility.z98 — standalone reproduction for the Task 15 (S3) fix.
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   <zig1> --dump-c89 --output-dir /tmp/pub_visibility repro/pub_visibility.z98
+//
+// The import path is relative to this file (`repro/`), so the two modules of
+// the committed reject fixture are reused verbatim.
+//
+// EXPECTED (after the fix): dump rc=2, 0 `.c`,
+//   error[3007]: 'secret' is not marked 'pub'          (`helper.secret(21)`)
+//   error[3007]: 'hidden_const' is not marked 'pub'    (`helper.hidden_const`)
+//   error[3007]: 'secret2' is not marked 'pub'         (`helper.inner.secret2(21)`)
+//
+// DEFECT (before the fix): a non-`pub` function was callable from an importing
+// module (`helper.secret(21)` rc=0, builds, runs, prints 21) and the
+// asymmetric shapes (non-`pub` const read, nested `mod.sub.member`) were
+// accepted too. Official Zig 0.15.2 rejects every one with
+// `error: '<name>' is not marked 'pub'`.
+//
+// FIX (Task 15): `ERR_3007_VISIBILITY_VIOLATION` (level 0) is emitted for a
+// cross-module reference to a non-`pub` declaration in both expression and
+// type positions (`sf/src/semantic_analyzer.zig` +
+// `sf/src/type_resolver.zig`); same-module access is unchanged — see
+// `repro/pub_visibility_ok.z98` and the `repro/mi_matrix/*_xmod` fixtures.
+const helper = @import("mi_matrix/pub_visibility_reject_xmod/helper.zig");
+
+pub fn main() void {
+    var a: i32 = helper.secret(21);
+    _ = a;
+    var b: i32 = helper.hidden_const;
+    _ = b;
+    var c: i32 = helper.inner.secret2(21);
+    _ = c;
+}

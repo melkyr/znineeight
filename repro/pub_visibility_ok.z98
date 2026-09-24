@@ -1,0 +1,23 @@
+// pub_visibility_ok.z98 — standalone positive control for the Task 15 (S3) fix.
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   <zig1> --dump-c89 --output-dir /tmp/pub_visibility_ok repro/pub_visibility_ok.z98
+//   # then gcc the emitted dir and run: prints `22 46 23`
+//
+// The import path is relative to this file (`repro/`), so the modules of the
+// committed positive fixture are reused verbatim.
+//
+// EXPECTED: dump rc=0, emitted `.c` builds/links/runs and prints
+//   `22 46 23\n` — a `pub` fn across modules (`helper.visible`), a non-`pub`
+//   fn used within its own module (`helper.call_own` -> `secret`), and the
+//   nested `pub` module (`helper.inner.visible2`). Official Zig 0.15.2 accepts
+//   all three.
+const std = @import("std");
+const helper = @import("mi_matrix/stdlib_pub_visibility_ok_xmod/helper.zig");
+
+pub fn main() void {
+    var a: i32 = helper.visible(21);
+    var b: i32 = helper.call_own();
+    var c: i32 = helper.inner.visible2(21);
+    std.io.print("{} {} {}\n", .{ a, b, c });
+}

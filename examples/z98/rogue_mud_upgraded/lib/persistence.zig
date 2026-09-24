@@ -25,7 +25,7 @@ pub const FileError = error {
     ReadFailed,
 };
 
-export fn saveDungeon(arena: *sand_mod.Sand, dungeon: scenario.Dungeon_t, filename: []const u8) !void {
+pub export fn saveDungeon(arena: *sand_mod.Sand, dungeon: scenario.Dungeon_t, filename: []const u8) !void {
     const c_path = try sand_mod.sand_dupe_z(arena, filename);
     const file = fopen(c_path, "wb") orelse return error.OpenFailed;
     defer _ = fclose(file);
@@ -44,7 +44,7 @@ export fn saveDungeon(arena: *sand_mod.Sand, dungeon: scenario.Dungeon_t, filena
     last_save_status = 1;
 }
 
-export fn loadDungeon(arena: *sand_mod.Sand, out: *scenario.Dungeon_t, filename: []const u8) !void {
+pub export fn loadDungeon(arena: *sand_mod.Sand, out: *scenario.Dungeon_t, filename: []const u8) !void {
     const c_path = try sand_mod.sand_dupe_z(arena, filename);
     const file = fopen(c_path, "rb") orelse return error.OpenFailed;
     defer _ = fclose(file);

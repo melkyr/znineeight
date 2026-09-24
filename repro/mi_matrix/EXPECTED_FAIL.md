@@ -1,4 +1,74 @@
-# mi_matrix corpus — expected-fail manifest (v222 2026-09-24)
+# mi_matrix corpus — expected-fail manifest (v223 2026-09-24)
+
+## Task 15 (S3) — enforce `pub` visibility across modules (v222 -> v223 2026-09-24)
+
+**Defect.** A cross-module reference to a non-`pub` declaration was accepted everywhere:
+`helper.secret(21)` compiled rc=0, built, ran and printed `21`; a flat non-`pub` const read folded its
+value silently; a non-`pub` type annotation resolved; a non-`pub` cross-module `var` store compiled; the
+nested `mod.sub.member` shape had no check at all; and the direct `@import("x.zig").secret(21)` callee
+emitted gcc-invalid C (`undefined reference to 'zT_1'`). Official Zig 0.15.2 rejects each with
+`error: '<name>' is not marked 'pub'`. `ERR_3007_VISIBILITY_VIOLATION` was declared
+(`sf/src/diagnostics.zig`) but had zero emit sites — this task is its first emitter.
+
+**Fix.** `sf/src/semantic_analyzer.zig` gains `semanticAnalyzerCheckMemberVisibility`, run by all three
+module-member arms of `semanticAnalyzerResolveFieldAccess` (flat `SymbolKind.module` — the reported
+defect; direct `import_expr`; nested `module_type`) before the field symbol is used; type positions are
+gated by the twin `typeResolverCheckMemberVisibility` (`sf/src/type_resolver.zig`, `resolveTypeExprFull`
+`field_access` ident-base + `module_type` sites; emits only when `env.diag` is live). Both emit level-0
+`error[3007]` `ERR_3007_VISIBILITY_VIOLATION` (explicit `= 3007`) with the ASCII message
+`'<name>' is not marked 'pub'` (Zig wording, deduped per node via `diagnosticCollectorMarkNodeOnce`) and
+map the expression to `TYPE_VOID`/`TYPE_UNDEFINED` — rc=2, 0 `.c`. Same-module references never route
+through these arms and are unchanged.
+
+**Operator-authorized migrations (2 rulings).** The gate made the new compiler reject its own source
+(`ce_mod.ciIntVal` at `lower.zig:2175/2182`, declared non-`pub` in `comptime_eval.zig`), which the
+binding STOP RULE reserved for operator authorization; the operator then authorized the full sweep of
+invalid-Zig non-`pub` cross-module references the battery exposed:
+- `sf/src/comptime_eval.zig:273` `fn ciIntVal` -> `pub fn` (self-compile; without it the hop-2 seed
+  closure cannot be established).
+- `sf/src/std_net.zig:35` `const IpAddr` -> `pub const` (7 pinned `stdlib_net_udp_*` fixtures name
+  `net.IpAddr`; the old comment "Z98 does not gate top-level declarations on `pub`" removed).
+- `examples/z98/rogue_mud_upgraded/lib/persistence.zig:28,47` `export fn` -> `pub export fn`
+  (`verify_upgraded.sh` B1).
+- `examples/z98/json_parser_workaround/file.zig:19` `extern fn strtod` -> `pub extern fn`.
+- `examples/z98/lisp_interpreter/value.zig:1` `const sand_mod` -> `pub const sand_mod`.
+- `repro/mi_matrix/extern_fn_opt_return_cross/ext.zig:1` `extern fn getp` -> `pub extern fn`.
+Every migrated site was independently confirmed as Zig-0.15.2-rejected before the migration (three
+reduced oracle probes: `export fn`, `extern fn`, and a non-`pub` import alias are each
+`'…' is not marked 'pub'` cross-module). Semantically neutral visibility widenings; the self-emission
+fixed point is unaffected by the std-lib migrations (the compiler's import graph reaches no std module).
+
+**Fixtures.**
+- Reject `repro/mi_matrix/pub_visibility_reject_xmod` (`main.zig` + `helper.zig` + `inner.zig`;
+  `expected.rc` = 2): 7 sites (flat non-`pub` fn/const/type/var, nested non-`pub` fn/const,
+  direct-import non-`pub` callee). GREEN: rc 2, 0 `.c`, **7 x `error[3007]`, 0 x `error[3000]`** ->
+  FAIL class (the canonical GREEN bucket is `error[3000]` only; a dedicated-code clean reject is the
+  established FAIL-bucket pattern, cf. `method_syntax_reject_xmod`).
+- Positive runtime `repro/mi_matrix/stdlib_pub_visibility_ok_xmod`: `pub` fn/const/type/var flat +
+  nested, and same-module private helpers behind `pub` wrappers (`call_own` -> `secret`/`hidden_const`,
+  `uses_hidden` -> `hidden_only`, `call_own2` -> `secret2`). Golden
+  `a=22 b=46 c=12 d=7 e=9 f=23 g=3 h=8 i=11`, rc 0, 3x byte-exact
+  (md5 `165d27fb509ed3312fa627e60ae0b24e`), **Zig-0.15.2 twin byte-identical** (twin `std.debug.print`
+  stderr == golden). Stdlib pin **229 -> 230** (`scripts/stdlib/expected_dirs.txt`).
+- Standalone `repro/pub_visibility.z98` (rc=2, 3 x `error[3007]`) and `repro/pub_visibility_ok.z98`
+  (rc=0; runs `22 46 23`), both importing the committed fixture modules.
+
+**Oracle (Zig 0.15.2).** Every non-`pub` shape rejects (`'secret'/'hidden_const'/'HiddenAlias'/
+'hidden_var'/'secret2'/'hidden_const2'/'HiddenStruct' is not marked 'pub'`); the same-module private
+control and every `pub` control accept; cross-module field-access callee resolution is proven live
+(`helper.visible(1,2)` -> `error: expected 1 argument(s), found 2` through the Task-14 arity gate).
+
+**Gates.** self-compile **moving point** hop1 `684b6d2e7c627cfc1356f7b5d6ee9bb7` != hop2 == hop3 ==
+**`b6bcb1bb4d13729318f5467a9bcc6251`** (explicit `FIXED_POINT_MD5=b6bcb1bb…` gate OK, deterministic
+across two out-dirs); 4-MD5 emitted-C **UNCHANGED** (gol `e7bde571…` / lisp `4afb601f…` /
+json `09fb55e5…` / mud `5a1cc65e…`, 2x each — the `pub` flag does not affect emitted C, so the
+`std_net.zig` migration required no re-baseline); corpus `-s0` **1010 = 876 OK / 46 GREEN / 88 FAIL /
+0 ICE / 0 CRASH** (join-diff vs the Task 14 baseline = exactly the 2 new fixture dirs,
+**zero other movement**); std-lib runtime gate **230 PASS / 0 FAIL**; example matrix **24/24**;
+`check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK; build_test **0/9** (pre-existing zig0
+baseline); self-emission rc 0 / 48 `.c` + 48 `.h` / no PANIC / memory
+`track-memory: perm=883K mod=1020K scr=1024K pool=17993K type_db=500K total=2927K`.
+Seed stays **v83** (operator R2: rotation is closeout-only).
 
 ## Task 14 fix round (review Critical 1) — restore the `(b)` call-arg shape rejects (v221 -> v222 2026-09-24)
 

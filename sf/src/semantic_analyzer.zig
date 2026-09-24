@@ -751,6 +751,29 @@ fn semanticAnalyzerReportUnknownMember(self: *SemanticAnalyzer, node_idx: u32, f
     _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3060_METHOD_SYNTAX_NOT_SUPPORTED)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), ukm_msg);
 }
 
+// Task 15 (S3): a cross-module reference to a declaration that is not `pub` is
+// a visibility violation, matching official Zig 0.15.2 ("'x' is not marked
+// 'pub'"). Z98 modules are named import bindings; every member access through
+// an imported module — flat (`mod.member`, resolved through the
+// `SymbolKind.module` arm) or nested (`mod.sub.member`, resolved through the
+// `module_type` arm) — must name a `pub` declaration of the module that owns
+// it. Same-module access never routes through these arms, so it is unchanged.
+// Deduped per node (the expression walk can revisit a field access); returns
+// false after emitting, and the callers map the expression to TYPE_VOID.
+fn semanticAnalyzerCheckMemberVisibility(self: *SemanticAnalyzer, node_idx: u32, name_id: u32, sym: *sym_mod.Symbol) bool {
+    if (sym.module_id == self.module_id) return true;
+    if (sym_mod.symbolIsPublic(sym)) return true;
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) return false;
+    var mv1: []const u8 = "'";
+    var mv2: []const u8 = "' is not marked 'pub'";
+    var mvnm = interner_mod.stringInternerGet(self.interner, name_id);
+    var mvparts: [3][]const u8 = [3][]const u8{ mv1, mvnm, mv2 };
+    var mvmsg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &mvparts[0], @intCast(u32, 3));
+    var mvnode = ast_mod.astStoreNodeAt(self.store, node_idx);
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3007_VISIBILITY_VIOLATION)), self.source_file_id, mvnode.span_start, mvnode.span_start + @intCast(u32, mvnode.span_len), mvmsg);
+    return false;
+}
+
 pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var fae: []const u8 = "FAE\n"; pal_mod.markerWrite(fae);
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
@@ -805,6 +828,10 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                 var target_mod = s.module_id;
                 var field_sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, target_mod, field_name_id);
                 if (field_sym) |fs| {
+                    if (!semanticAnalyzerCheckMemberVisibility(self, node_idx, field_name_id, fs)) {
+                        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
+                        return type_mod.TYPE_VOID;
+                    }
                     var q1fl_m: []const u8 = "Q1:FL"; pal_mod.markerWriteInt(q1fl_m, @intCast(u32, fs.flags));
                     var q1kl_m: []const u8 = "Q1:KL"; pal_mod.markerWriteInt(q1kl_m, @intCast(u32, @enumToInt(fs.kind)));
                     var q1tl_m: []const u8 = "Q1:TL"; pal_mod.markerWriteInt(q1tl_m, fs.type_id);
@@ -867,6 +894,10 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
         if (target) |mtid| {
             var field_sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, mtid, field_name_id);
             if (field_sym) |fs| {
+                if (!semanticAnalyzerCheckMemberVisibility(self, node_idx, field_name_id, fs)) {
+                    rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
+                    return type_mod.TYPE_VOID;
+                }
                 if ((fs.flags & @intCast(u16, 2)) != @intCast(u16, 0)) {
                     if (fs.kind == sym_mod.SymbolKind.type_alias) {
                         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fs.type_id);
@@ -974,6 +1005,10 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
         var mfa: []const u8 = "MFA\n"; pal_mod.markerWrite(mfa);
         var mod_field_sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, base_ty.module_id, field_name_id);
         if (mod_field_sym) |mfs| {
+            if (!semanticAnalyzerCheckMemberVisibility(self, node_idx, field_name_id, mfs)) {
+                rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
+                return type_mod.TYPE_VOID;
+            }
             if (mfs.type_id != @intCast(u32, 0)) {
                 var mf1: []const u8 = "MF1\n"; pal_mod.markerWrite(mf1);
                 rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, mfs.type_id);

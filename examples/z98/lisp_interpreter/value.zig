@@ -1,4 +1,4 @@
-const sand_mod = @import("sand.zig");
+pub const sand_mod = @import("sand.zig");
 
 pub const ValueTag = enum {
     Nil,

@@ -270,7 +270,10 @@ fn ciToF64(v: ComptimeInt) f64 {
     return fv;
 }
 
-fn ciIntVal(v: ComptimeInt) ComptimeVal {
+// Task 15 (S3, operator-authorized migration): `pub` because `lower.zig`'s
+// `foldNodeIntExact` constructs the folded value through this helper across
+// module boundaries; the new visibility rule rejects the former non-`pub` use.
+pub fn ciIntVal(v: ComptimeInt) ComptimeVal {
     return ComptimeVal{ .v = v, .kind = KIND_INT, .float_bits = @intCast(u64, 0) };
 }
 

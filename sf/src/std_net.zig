@@ -30,9 +30,10 @@ pub const NetError = error {
     Io,
 };
 
-// Dotted-quad IPv4 address (blueprint §3 L3). Z98 does not gate top-level
-// declarations on `pub`, so callers can still name it for out-params.
-const IpAddr = struct { a: u8, b: u8, c: u8, d: u8 };
+// Dotted-quad IPv4 address (blueprint §3 L3). `pub` since Task 15 (S3):
+// callers in other modules name it for out-params, and cross-module
+// references now require `pub`.
+pub const IpAddr = struct { a: u8, b: u8, c: u8, d: u8 };
 
 // Public byte-order helpers + extern wrappers. The externs are the real OS
 // htons/htonl (wsock32 on win32, libc elsewhere); the Manual variants are

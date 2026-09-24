@@ -162,6 +162,7 @@ repro/mi_matrix/stdlib_parse_parseuint_xmod
 repro/mi_matrix/stdlib_parse_stress_xmod
 repro/mi_matrix/stdlib_parse_utoa64_xmod
 repro/mi_matrix/stdlib_parse_utoa_xmod
+repro/mi_matrix/stdlib_pub_visibility_ok_xmod
 repro/mi_matrix/stdlib_rle_decode_xmod
 repro/mi_matrix/stdlib_rle_decodedlen_xmod
 repro/mi_matrix/stdlib_rle_determinism_xmod
