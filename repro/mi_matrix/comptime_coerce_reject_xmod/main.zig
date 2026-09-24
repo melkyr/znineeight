@@ -15,8 +15,13 @@
 // `repro/mi_matrix/comptime_cast64_range_reject_xmod` (site D) because a
 // comptime-eval error stops the pipeline before lowering.
 //
-// Contract: dump rc=2, 0 `.c`, 12 × `error[3000]` — the canonical classifier's
-// GREEN clean-reject bucket.
+// Contract: dump rc=2, 0 `.c`, the canonical classifier's GREEN clean-reject
+// bucket. (Task 4: 12 × `error[3000]`; since Part II Task 14 the sema-phase
+// call-argument gate rejects `takeOpt8(@as(i32, 300))` before lowering, so the
+// current compiler emits 1 × `error[3000]` + 2 × `warning[3000]` and the
+// lowering-phase rejects no longer run — verdict/class unchanged; Task 19
+// whole-plan closeout re-measured; probe: dropping the `takeOpt8` call from a
+// copy re-exposes 11 × `error[3000]`.)
 //
 // | site | shape | target | oracle (Zig 0.15.2) |
 // |---|---|---|---|

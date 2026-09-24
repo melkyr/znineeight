@@ -1,5 +1,29 @@
 # mi_matrix corpus — expected-fail manifest (v228 2026-09-24)
 
+## Task 19 (F) — whole-plan closeout (v228; NO BUMP, 2026-09-24)
+
+The trailing-issue parity plan's whole-plan closeout re-verified this manifest with the final
+compiler (seed rebuild of HEAD `c3b1401f`; moving point hop1 `252ad3e361daee241b4d7c32c513b2bd` ->
+closure hop2 == hop3 == **`b7a7da2673d60852006e9ea87909be1d`**): the frozen Step-0 35-shape table
+normalized byte-identical to the Part-I closeout final (28 accepted shapes all Zig-0.15.2-equal,
+3x deterministic; 7 rejects oracle-rejecting too), 4-MD5 emitted-C unchanged (mud `5a1cc65e…` /
+gol `e7bde571…` / lisp `4afb601f…` / json `09fb55e5…`, 2x each, hop1 and hop2), corpus `-s0`
+**1016 = 878 OK / 46 GREEN / 92 FAIL / 0 ICE / 0 CRASH** (join-diff vs the Task 18 fix-round
+classification **empty**), stdlib 231 PASS / 0 FAIL, example matrix 24/24, `check_emit_support.sh`
+7/7, `verify_upgraded.sh` CLOSEOUT OK, build_test 0/9 (pre-existing retired-zig0 baseline).
+**No version bump**: no fixture expectation and no fixture class changed. Seed rotated v83 -> v84
+(archive md5 `50501c4bc00beed12ce06688d3b64664`; archived binary md5 = fixed point; post-rotation
+rebuild closure hop1 == hop2 == `b7a7da26…`).
+
+**Recorded census drift (Part II Task 14 side effect; verdict/class unchanged).**
+`comptime_coerce_reject_xmod` was recorded at Task 6 as 12 x `error[3000]`; the Task 14 sema-phase
+call-argument gate now clean-rejects its `takeOpt8(@as(i32, 300))` site (`error[3000] "type mismatch
+in function argument"` + `note: parameter type declared here`) before lowering, so the current
+compiler emits **1 x `error[3000]` + 2 x `warning[3000]`** and the 11 lowering-phase rejects no
+longer run (the fixture is still rc=2 / 0 `.c` / GREEN, and Zig 0.15.2 rejects it). The fixture
+header contract comment is updated accordingly; probe evidence: dropping the `takeOpt8` call from a
+`/tmp` copy re-exposes 11 x `error[3000]`.
+
 ## Task 18 (F) fix round (review Important 1) — wire the remaining Zig location-note sites (v227 -> v228 2026-09-24)
 
 **Finding (verbatim).** *"The brief explicitly asks for related spans at 'any other site where Zig
@@ -856,7 +880,8 @@ shapes all Zig-0.15.2-equal, 7 preserved rejects), 4-MD5 emitted-C unchanged, co
 stdlib 223 PASS / 0 FAIL, example matrix 24/24. **No version bump**: Task 6 changes no fixture
 expectation and no fixture class. The retired divergence is recorded in
 `docs/reference/Language_Spec_Z98.md` §7.2 and `sf/docs/tech_docs/04_comptime_eval.md`: the Task 9D
-bounded divergence is gone, and float comparison folding is **pending Part II Task 9**.
+bounded divergence is gone, and float comparison folding was **pending Part II Task 9** (landed in
+Task 9; see the Task 9 and Task 19 sections).
 Seed rotated v82 → v83 at this closeout.
 
 ## Task 5 — fold-consumer migration: exact array-size / enum-initializer folds (v208 -> v209 2026-09-23)
