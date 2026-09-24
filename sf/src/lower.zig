@@ -2096,26 +2096,125 @@ fn reportComptimeIntFits(self: *LirLowerer, node_idx: u32) void {
     }
 }
 
-// Task 4 (pinned param/argument/return rule): when the source expression node
-// carries a folded integer and the destination is an integer type, range-check
-// the exact value. `~` folds are exempt: Z98 keeps the exact `~x = -x - 1`
-// while the runtime complement wraps (the documented Task 3 divergence), so a
-// wrapped `~u` materialisation must not become a hard error.
-fn checkFoldedIntFits(self: *LirLowerer, src_node: u32, target: u32) void {
+// Task 4 fix (review Important 4): unwrap `?T`/`E!T` layers to the innermost
+// scalar type so an optional-payload target is range-checked
+// (`takeOpt8(@as(i32, 300))` / `var o: ?u8 = @as(i32, 300);` used to emit
+// gcc-invalid C instead of a clean reject).
+fn scalarTargetOf(self: *LirLowerer, target: u32) u32 {
+    var t = target;
+    var guard: usize = 0;
+    while (guard < @intCast(usize, 8)) : (guard += @intCast(usize, 1)) {
+        if (@intCast(usize, t) >= self.ctx.registry.types_len) return t;
+        var ty = self.ctx.registry.types_items[@intCast(usize, t)];
+        if (ty.kind == type_mod.TypeKind.optional_type) {
+            if (@intCast(usize, ty.payload_idx) >= self.ctx.registry.opt_len) return t;
+            t = self.ctx.registry.opt_items[@intCast(usize, ty.payload_idx)].payload;
+            continue;
+        }
+        if (ty.kind == type_mod.TypeKind.error_union_type) {
+            if (@intCast(usize, ty.payload_idx) >= self.ctx.registry.eu_len) return t;
+            t = self.ctx.registry.eu_items[@intCast(usize, ty.payload_idx)].payload;
+            continue;
+        }
+        break;
+    }
+    return t;
+}
+
+// Task 4 fix modes for the exact-value lookup below.
+//   TABLE — the fold table only (plus `negate`, see below); used by the
+//           generic coercion/materialize checks so a bare-literal DECL
+//           initialization keeps its pre-existing warning[3000] + truncate
+//           path (Task 1 §5.3; `const x: i8 = 200;`).
+//   ARG   — table + a bare int/char literal (or `negate` of one), even though
+//           the phase sweep never stores literals; used at the function
+//           argument and return sites (review Important 2: `f(300)`,
+//           `return 300;`).
+//   DECL  — table + an on-demand evaluator probe for arithmetic/unary init
+//           expressions, because the sweep stores only const inits; used at
+//           declaration slots (review Important 1: `var y: u32 = 0 - 1;`).
+// `negate` is folded in every mode (`-lit` is the AST shape of a negative
+// literal, and the const-decl fold already rejects `const x: i8 = -200;`).
+// Parentheses are transparent; `~` returns null (exempt). The DECL probe cannot
+// see function-local consts (lowering has no local-const scope) — a documented
+// residual for var-local arithmetic inits.
+const FITS_TABLE: u8 = 0;
+const FITS_ARG: u8 = 1;
+const FITS_DECL: u8 = 2;
+
+fn foldNodeIntExact(self: *LirLowerer, node_idx: u32, mode: u8) ?ce_mod.ComptimeVal {
+    if (node_idx == @intCast(u32, 0)) return null;
+    if (ce_mod.comptimeFoldTableGet(self.ctx.comptime_folds, node_idx)) |fv| {
+        if (fv.kind == ce_mod.KIND_INT) return fv;
+        return null;
+    }
+    var n = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var k = n.kind;
+    if (k == AstKind.int_literal or k == AstKind.char_literal) {
+        if (mode != FITS_ARG) return null;
+        return ce_mod.ciIntVal(ce_mod.ciFromU64(ast_mod.astStoreIntValue(self.ctx.store, node_idx)));
+    }
+    if (k == AstKind.paren_expr) { return foldNodeIntExact(self, n.child_0, mode); }
+    if (k == AstKind.negate) {
+        if (foldNodeIntExact(self, n.child_0, FITS_ARG)) |iv| {
+            var nv = ce_mod.ciZeroInt();
+            _ = ce_mod.ciNeg(iv.v, &nv);
+            return ce_mod.ciIntVal(nv);
+        }
+        return null;
+    }
+    if (k == AstKind.bit_not) return null;
+    if (k == AstKind.add or k == AstKind.sub or k == AstKind.mul or k == AstKind.div or
+        k == AstKind.mod_op or k == AstKind.bit_and or k == AstKind.bit_or or
+        k == AstKind.bit_xor or k == AstKind.shl or k == AstKind.shr) {
+        if (mode != FITS_DECL) return null;
+        var ce = ce_mod.comptimeEvalInit(self.ctx.registry, self.ctx.store, self.ctx.registry.interner, self.ctx.symbol_tables);
+        ce.diag = null;
+        if (ce_mod.comptimeEvalEvaluate(&ce, node_idx)) |pv| {
+            if (pv.kind == ce_mod.KIND_INT) return pv;
+        }
+        return null;
+    }
+    return null;
+}
+
+// Shared fit check: unwrap optional/error-union layers, require an integer
+// scalar target, and compare the exact value (mode decides what may fold).
+fn checkIntFitsMode(self: *LirLowerer, src_node: u32, target: u32, mode: u8) void {
     if (src_node == @intCast(u32, 0)) return;
-    if (target == @intCast(u32, 0) or target == type_mod.TYPE_UNDEFINED) return;
+    var t = scalarTargetOf(self, target);
+    if (t == @intCast(u32, 0) or t == type_mod.TYPE_UNDEFINED) return;
     // The untyped `comptime_int` slot is not a target: its materialisation type
     // is chosen from the value (lowerFoldedIntConst) and a value outside the
     // 64-bit window is rejected there.
-    if (target == type_mod.TYPE_INT_LIT) return;
-    if (!type_mod.typeRegistryIsInteger(self.ctx.registry, target)) return;
-    if (ce_mod.comptimeFoldTableGet(self.ctx.comptime_folds, src_node)) |fv| {
-        if (fv.kind != ce_mod.KIND_INT) return;
-        var sn = ast_mod.astStoreNodeAt(self.ctx.store, src_node);
-        if (sn.kind == AstKind.bit_not) return;
-        if (ce_mod.comptimeIntFitsType(self.ctx.registry, fv.v, target)) return;
+    if (t == type_mod.TYPE_INT_LIT) return;
+    if (!type_mod.typeRegistryIsInteger(self.ctx.registry, t)) return;
+    var sn = ast_mod.astStoreNodeAt(self.ctx.store, src_node);
+    if (sn.kind == AstKind.bit_not) return;
+    if (foldNodeIntExact(self, src_node, mode)) |fv| {
+        if (ce_mod.comptimeIntFitsType(self.ctx.registry, fv.v, t)) return;
         reportComptimeIntFits(self, src_node);
     }
+}
+
+// Task 4 (pinned param/argument/return rule): the generic coercion/materialize
+// check (fold table only, plus negatives).
+fn checkFoldedIntFits(self: *LirLowerer, src_node: u32, target: u32) void {
+    checkIntFitsMode(self, src_node, target, FITS_TABLE);
+}
+
+// Task 4 fix (review Important 2): the argument/return-site check — a bare
+// literal that the sweep never stores is still an exact comptime value.
+fn checkArgReturnIntFits(self: *LirLowerer, src_node: u32, target: u32) void {
+    checkIntFitsMode(self, src_node, target, FITS_ARG);
+}
+
+// Task 4 fix (review Important 1): declaration-slot check — bare positive
+// literals keep the warning[3000] + truncate path, arithmetic/unary inits are
+// folded on demand (`var y: u32 = 0 - 1;` was accepted silently and ran
+// 4294967295).
+fn checkDeclInitFits(self: *LirLowerer, init_node: u32, decl_type: u32) void {
+    checkIntFitsMode(self, init_node, decl_type, FITS_DECL);
 }
 
 // Task 4: truthiness of a stored condition fold (`kind == KIND_BOOL` only).
@@ -3882,6 +3981,9 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                             ce.node_idx = ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ai));
                             ce.kind = ck;
                             ce.target_type = pt;
+                            // Task 4 fix (review Important 2): a bare-literal
+                            // argument is a comptime-known value too.
+                            checkArgReturnIntFits(self, ce.node_idx, pt);
                             arg_val = applyCoercion(self, arg_val, ce);
                         }
                         if (is_ex == @intCast(u8, 1) and pt != type_mod.TYPE_UNDEFINED) {
@@ -3955,6 +4057,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                  ce.node_idx = ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, fpi_ai));
                                  ce.kind = ck;
                                  ce.target_type = fpi_pt;
+                                 // Task 4 fix (review Important 2): bare-literal arg.
+                                 checkArgReturnIntFits(self, ce.node_idx, fpi_pt);
                                  fpi_arg = applyCoercion(self, fpi_arg, ce);
                              }
                          }
@@ -4045,6 +4149,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                                ce.node_idx = ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ai));
                                                ce.kind = ck;
                                                ce.target_type = pt;
+                                               // Task 4 fix (review Important 2): bare-literal arg.
+                                               checkArgReturnIntFits(self, ce.node_idx, pt);
                                                call_val = applyCoercion(self, call_val, ce);
                                            }
                                            if (is_ex == @intCast(u8, 1) and pt != type_mod.TYPE_UNDEFINED) {
@@ -4132,6 +4238,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                 ce.node_idx = ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ai));
                                 ce.kind = ck;
                                 ce.target_type = pt;
+                                // Task 4 fix (review Important 2): bare-literal arg.
+                                checkArgReturnIntFits(self, ce.node_idx, pt);
                                 arg_val = applyCoercion(self, arg_val, ce);
                             }
                             if (is_ex == @intCast(u8, 1) and pt != type_mod.TYPE_UNDEFINED) {
@@ -6572,10 +6680,11 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
         }
         if (self.block_terminated == @intCast(u8, 0)) {
             if (node.child_0 != 0) {
-                // Task 4 (returns): a folded comptime integer returned into an
-                // integer return type is range-checked exactly (no coercion
-                // entry is recorded for an exact-type return expression).
-                checkFoldedIntFits(self, node.child_0, self.func.return_type);
+                // Task 4 (returns): a comptime-known integer returned into an
+                // integer return type is range-checked exactly; the ARG mode
+                // also covers a bare literal the sweep never stores
+                // (review Important 2: `return 300;` in a `u8` fn).
+                checkArgReturnIntFits(self, node.child_0, self.func.return_type);
                 var val = lowerExpr(self, node.child_0);
                 if (self.block_terminated != 0) { return; }
                 var retm: []const u8 = "RET:v="; pal.markerWrite(retm); dbgPrintU32(val);
@@ -6839,10 +6948,12 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                         }
                     }
                     if (sn_x == @intCast(u8, 0)) {
-                    // Task 4 (decls): range-check a folded initializer against
-                    // the declared slot type (the HIT materialised the fold's
-                    // resolved type, which may be the @intCast/@as target).
-                    checkFoldedIntFits(self, node.child_1, decl_type);
+                    // Task 4 fix (decls): range-check a folded initializer
+                    // against the declared slot type (the HIT materialised the
+                    // fold's resolved type, which may be the @intCast/@as
+                    // target); `checkDeclInitFits` also folds a `var`'s
+                    // arithmetic/unary init on demand (review Important 1).
+                    checkDeclInitFits(self, node.child_1, decl_type);
                     var init_val = lowerExpr(self, node.child_1);
 
                     if (decl_type != type_mod.TYPE_VOID and (self.block_terminated == 0 or noreturn_local == 0)) {
@@ -7636,14 +7747,18 @@ pub fn lowerModuleInit(self: *LirLowerer, root_idx: u32, mod_id: u32) LirFunctio
             if ((@intCast(u16, dcl.flags) & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
                 if (ginit.kind == AstKind.int_literal or ginit.kind == AstKind.float_literal or ginit.kind == AstKind.char_literal) continue;
             }
-            // Task 4 (decls): a module const/var with a declared integer type
-            // materialises the fold into that slot -- range-check it exactly
-            // (the fold HIT materialises the @intCast/@as TARGET type, so the
-            // declared slot type is only visible here).
+            // Task 4 fix (decls): a module const/var with a declared integer
+            // type materialises the fold into that slot -- range-check it
+            // exactly. `checkDeclInitFits` also covers an UNANNOTATED module
+            // binding whose re-typed symbol slot cannot hold an on-demand
+            // folded arithmetic init (review Important 1).
             if (dcl.child_0 != @intCast(u32, 0)) {
                 if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, dcl.child_0)) |gdt| {
-                    checkFoldedIntFits(self, dcl.child_1, gdt);
+                    checkDeclInitFits(self, dcl.child_1, gdt);
                 }
+            } else {
+                var gsym_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, decl_idx);
+                if (gsym_rt) |grt| { checkDeclInitFits(self, dcl.child_1, grt); }
             }
             var val_t = lowerExpr(self, dcl.child_1);
             emitInst(self, LirInst{ .store_global = .{ .name_id = g_name_id, .module_id = gss.module_id, .value = val_t } });

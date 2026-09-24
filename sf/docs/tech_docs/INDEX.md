@@ -1,4 +1,4 @@
-# zig1 Pipeline — Master Index [updated: 2026-09-23 — Task 4: Table B gains `ComptimeFoldTable` helpers (`comptimeFoldTableInit`/`comptimeFoldTablePut`/`comptimeFoldTableGet`), `comptimeIntFits64`/`comptimeIntMaterialize`/`comptimeIntUntypedType`, `comptimeEvalDeclFits` (comptime_eval.zig), `checkFoldedIntFits`/`comptimeFoldBool`/`lowerFoldedIntConst`/`reportComptimeIntFits` (lower.zig); the production fold table moved from `U32ToU64Map` to exact `ComptimeVal`s] [updated: 2026-09-23 — Task 3 fix round 2 (Important): `bit_not` exempted from the unary peer fit (valid `~u` shapes accept again); `testComptimeCompareCore` wired into `main()`] [updated: 2026-09-23 — Task 3 fix round 1 (Critical/Important): `ciCmp` is now `pub`; `comptimeEvalOperandType` recurses into an unannotated const's initializer and the unary `-` fold applies the peer fit; the `if_expr` fold sub-path is terminator-aware (doc 07)] [updated: 2026-09-23 — Task 3: Table B gains `ciCmp`, `comptimeEvalOperandType`, `comptimeEvalWiderIntType` (comptime_eval.zig); `ciValToOldBits`, `comptimeEvalOperandDeclaredSigned`, `comptimeEvalOperandCompareSigned` retired] [updated: 2026-09-23 — Task 10D: Table B gains `captureShadowShouldRedirect` (lower.zig)] [updated: 2026-09-21 — Task B2 final fix wave: Table B gains `isCompoundTypeExprKind` and `containerFieldCount` (type_resolver.zig); `registerContainerType` clean-rejects a >32-field local/inline aggregate] [updated: 2026-09-21 — Task B2: Table B gains `containerAnonNameId`, `isContainerDeclKind`, `registerContainerType`, and `localTypeScopeInit`/`localTypeScopeLookup`/`localTypeScopePush` (type_resolver.zig)] [updated: 2026-09-20 — regenerated against current source and the refreshed 14 tech docs; line references removed, `phase_FrontResolution`/`phase_AsyncFrameSize` added, counts corrected]
+# zig1 Pipeline — Master Index [updated: 2026-09-23 — Task 4 fix round: Table B gains `scalarTargetOf`, `foldNodeIntExact`, `checkIntFitsMode`, `checkArgReturnIntFits` (lower.zig); `semanticAnalyzerResolveModuleVarDecl` now re-types unannotated module consts] [updated: 2026-09-23 — Task 4: Table B gains `ComptimeFoldTable` helpers (`comptimeFoldTableInit`/`comptimeFoldTablePut`/`comptimeFoldTableGet`), `comptimeIntFits64`/`comptimeIntMaterialize`/`comptimeIntUntypedType`, `comptimeEvalDeclFits` (comptime_eval.zig), `checkFoldedIntFits`/`comptimeFoldBool`/`lowerFoldedIntConst`/`reportComptimeIntFits` (lower.zig); the production fold table moved from `U32ToU64Map` to exact `ComptimeVal`s] [updated: 2026-09-23 — Task 3 fix round 2 (Important): `bit_not` exempted from the unary peer fit (valid `~u` shapes accept again); `testComptimeCompareCore` wired into `main()`] [updated: 2026-09-23 — Task 3 fix round 1 (Critical/Important): `ciCmp` is now `pub`; `comptimeEvalOperandType` recurses into an unannotated const's initializer and the unary `-` fold applies the peer fit; the `if_expr` fold sub-path is terminator-aware (doc 07)] [updated: 2026-09-23 — Task 3: Table B gains `ciCmp`, `comptimeEvalOperandType`, `comptimeEvalWiderIntType` (comptime_eval.zig); `ciValToOldBits`, `comptimeEvalOperandDeclaredSigned`, `comptimeEvalOperandCompareSigned` retired] [updated: 2026-09-23 — Task 10D: Table B gains `captureShadowShouldRedirect` (lower.zig)] [updated: 2026-09-21 — Task B2 final fix wave: Table B gains `isCompoundTypeExprKind` and `containerFieldCount` (type_resolver.zig); `registerContainerType` clean-rejects a >32-field local/inline aggregate] [updated: 2026-09-21 — Task B2: Table B gains `containerAnonNameId`, `isContainerDeclKind`, `registerContainerType`, and `localTypeScopeInit`/`localTypeScopeLookup`/`localTypeScopePush` (type_resolver.zig)] [updated: 2026-09-20 — regenerated against current source and the refreshed 14 tech docs; line references removed, `phase_FrontResolution`/`phase_AsyncFrameSize` added, counts corrected]
 
 > Source-files: `sf/src/*.zig` | Cross-reference for all 14 tech docs
 
@@ -233,8 +233,10 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `cancel` | std_async.zig |
 | `cancelAll` | std_async.zig |
 | `captureShadowShouldRedirect` | lower.zig |
+| `checkArgReturnIntFits` | lower.zig |
 | `checkCombinedPeak` | allocator.zig |
 | `checkFoldedIntFits` | lower.zig |
+| `checkIntFitsMode` | lower.zig |
 | `checkLeaksOnScopeExit` | analyzer.zig |
 | `checkReturnProvenance` | analyzer.zig |
 | `checkReturnType` | constraint_checker.zig |
@@ -460,6 +462,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `fnProtoArrayListInit` | growable_array.zig |
 | `fnReturnRequiresValue` | semantic_analyzer.zig |
 | `fnv1a` | util/hash.zig |
+| `foldNodeIntExact` | lower.zig |
 | `fopen` | pal.zig |
 | `formatF64` | util/format.zig |
 | `formatU32` | diagnostics.zig |
@@ -890,6 +893,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `runLifetimeAnalyzer` | analyzer.zig |
 | `runNullAnalyzer` | analyzer.zig |
 | `runSignatureAnalyzer` | analyzer.zig |
+| `scalarTargetOf` | lower.zig |
 | `sandAlloc` | allocator.zig |
 | `sandInit` | allocator.zig |
 | `sandReallocInPlace` | allocator.zig |

@@ -22,16 +22,24 @@
 //   * an enum(u8) backing member at its bound (`A = 250 + 5`);
 //   * a typed module const fold (`const MU8: u8 = 100 + 50;`);
 //   * a folded argument into a `u8` parameter and a folded return from a `u8`
-//     function, plus the optional-payload variant.
+//     function, plus the optional-payload variant;
+//   * fix-round controls (review Importants 1/2/3): an UNANNOTATED module const
+//     whose folded init does not fit i32 (`const MX = 2000000000 +
+//     1000000000;` — now a u32 global, previously truncated at runtime), a
+//     `var` decl slot with an in-range arithmetic init (`var vy: u32 = ...`),
+//     and a bare-literal `u8` argument (`takeU8(200)`).
 //
-// Oracle output (Zig 0.15.2 twin, `/tmp/task4/oracle/pos.zig`):
-//   -9223372036854775808 255 -128 3000000000 3000000000 9223372036854775815 -3000000000 -128 18446744073709551615 32 7 255 200 200
-//   150 600
+// Oracle output (Zig 0.15.2 twin, `/tmp/task4/oracle/pos2.zig`):
+//   -9223372036854775808 255 -128 3000000000 3000000000 9223372036854775815 -3000000000 -128 18446744073709551615 32 7 255 200 200 3000000000 3000000000
+//   150 600 200 3000000000
 //
 // Contract: stdout below, rc 0, byte-exact 3x.
 const std = @import("std");
 
 const MU8: u8 = 100 + 50;
+// Task 4 fix round (review Important 3): an UNANNOTATED module const whose
+// folded init does not fit i32 takes the value-based u32 slot.
+const MX = 2000000000 + 1000000000;
 const E8 = enum(u8) { A = 250 + 5, B = 0 };
 
 fn takeU8(x: u8) i32 {
@@ -66,6 +74,14 @@ pub fn main() void {
     const take1: i32 = takeU8(@as(u8, 200));
     const take2: i32 = takeOptU8(@as(u8, 200));
     const ret1: u8 = retU8();
+    // Fix-round in-range controls: a `u8` param with a bare literal, a `var`
+    // decl slot with an arithmetic init that fits, and the unannotated module
+    // const above.
+    const takeLit: i32 = takeU8(200);
+    var vy: u32 = 2000000000 + 1000000000;
+    if (MX != 3000000000) { @panic("MX"); }
+    if (vy != 3000000000) { @panic("vy"); }
+    if (takeLit != 200) { @panic("takeLit"); }
     if (imin != @as(i64, -9223372036854775808)) { @panic("imin"); }
     if (lu8 != 255) { @panic("lu8"); }
     if (li8 != -128) { @panic("li8"); }
@@ -82,6 +98,6 @@ pub fn main() void {
     if (take1 != 200) { @panic("take1"); }
     if (take2 != 200) { @panic("take2"); }
     if (ret1 != 200) { @panic("ret1"); }
-    std.io.print("{} {} {} {} {} {} {} {} {} {} {} {} {} {}\n", .{ imin, lu8, li8, lu32, bigu, bigu64, negi64, ci8, cu64, a1.len, a2.len, en, take1, ret1 });
-    std.io.print("{} {}\n", .{ MU8, take1 + take2 + @intCast(i32, ret1) });
+    std.io.print("{} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {}\n", .{ imin, lu8, li8, lu32, bigu, bigu64, negi64, ci8, cu64, a1.len, a2.len, en, take1, ret1, MX, vy });
+    std.io.print("{} {} {} {}\n", .{ MU8, take1 + take2 + @intCast(i32, ret1), takeLit, vy });
 }

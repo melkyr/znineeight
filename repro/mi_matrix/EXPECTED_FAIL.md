@@ -1,4 +1,71 @@
-# mi_matrix corpus — expected-fail manifest (v207 2026-09-23)
+# mi_matrix corpus — expected-fail manifest (v208 2026-09-23)
+
+## Task 4 fix round — four coercion escape holes + @intCast masking coverage (v207 -> v208 2026-09-23)
+
+**What.** Review Importants 1–4 on `dcb60038`, all reproduced on the Task 4 build and fixed.
+
+1. **`var` local arithmetic/unary inits.** The phase sweep stores only const inits, so
+   `var y: u32 = 0 - 1;` had no fold entry: rc=0, no diagnostic, ran `4294967295` (Zig:
+   `type 'u32' cannot represent integer value '-1'`). New `checkDeclInitFits` (DECL mode of the
+   shared `foldNodeIntExact`/`checkIntFitsMode`/`scalarTargetOf` fit check) folds such an init on
+   demand and rejects it. Bare POSITIVE literals keep the pre-existing warning[3000] + truncate
+   decl path (`const x: i8 = 200;` still accepted, Task 1 §5.3); `negate` literals follow the
+   const-decl fold (`var x: i8 = -200;` now rejects like `const x: i8 = -200;`).
+2. **Bare-literal parameters/returns.** `f(300)` and `return 300;` in a `u8` function ran `44`
+   with no diagnostic. `checkArgReturnIntFits` (ARG mode: fold table + bare int/char literals and
+   their `negate`) is called at the four call-argument loops and `return_stmt`; both now reject.
+   Binary-argument expressions still lower at runtime (only the pinned fold-table/literal shapes
+   are checked).
+3. **Unannotated module consts.** `const X = 2000000000 + 1000000000;` emitted `int zG_X;` and
+   ran `-1294967296` (Zig: `3000000000`). `semanticAnalyzerResolveModuleVarDecl` now applies the
+   same value-based selection as the function-local rule and `front_resolution` stores the
+   returned type on the decl node AND the symbol, so the global is `unsigned int zG_X;` and every
+   reference agrees (positive control `MX` in the runtime fixture, oracle-matched).
+4. **Optional-payload shapes.** `takeOpt8(@as(i32, 300))` was accepted with NO diagnostic and
+   emitted gcc-invalid C (`zT_0 = zT_1;`, optional-struct from int); `var o: ?u8 = @as(i32, 300);`
+   warned then emitted the same. `scalarTargetOf` unwraps `?T`/`E!T` before every fit check, so
+   both (and `takeOpt8(300)`) are clean `error[3000]` rejects (Zig: `expected type '?u8', found
+   'i32'`).
+5. **Coverage carry-item.** The restored non-integer `@intCast` masking now has a committed
+   fixture: `repro/mi_matrix/stdlib_comptime_intcast_nonint_mask_xmod` (`@intCast(i32,
+   @intCast(f32, 4294967596))` folds 300; Z98-only shape — Zig rejects non-integer `@intCast`
+   targets — so no oracle twin; stdout `masked=300`, rc 0, 3×).
+
+**Fixtures.** `stdlib_comptime_coerce_typed_slots_xmod` gains the oracle-matched in-range controls
+`MX` (unannotated module const), `vy` (`var u32` arithmetic init) and `takeLit` (bare-literal `u8`
+argument) — new golden 2 lines, still byte-matched to the Zig-0.15.2 twin.
+`comptime_coerce_reject_xmod` grows 7 → **12** `error[3000]` sites (`varBad`, `takeLit`, `retLit`,
+`takeOpt`, `localOpt`). New `stdlib_comptime_intcast_nonint_mask_xmod` (OK) is the only corpus
+addition. The two `safe_int_lit_shl_{count,value}_xmod` A6F fixtures used
+`var r: u32 = 1 << 40;` / `2 << 31;` — Zig-invalid shapes that the fix round now correctly rejects
+(Zig: `type 'u32' cannot represent integer value '1099511627776'` / `'4294967296'`); both were
+ADAPTED (their documented `-fsafe` count/value guard coverage moves to a call argument,
+`sink(1 << 40)` / `sink(2 << 31)`, which is still lowered at runtime and traps rc 133 under
+`-fsafe`, wrapping to `256`/`0` under `-ffast`) and stay OK, so the corpus delta is exactly the new
+fixture dir + the touched dirs (all same class).
+
+**Corpus.** `-s0` **994 dirs = 871 OK / 43 GREEN / 80 FAIL / 0 ICE / 0 CRASH** (v207 993 =
+870/43/80; +1 = the mask fixture only). Full-classifier join-diff vs the base Task 4 run:
+**zero class movement on all 993 common dirs**. Pre-fix RED on the Task 4 base compiler:
+`var y: u32 = 0 - 1;` rc=0 ran 4294967295; `f(300)`/`return 300;` rc=0 ran 44;
+`const X = 2000000000 + 1000000000;` rc=0 ran -1294967296; both optional shapes rc=0 with
+gcc-invalid C.
+
+**Other gates.** 4-MD5 emitted-C **UNCHANGED** (gol `e7bde571…` / lisp `35388763…` /
+json `5e1e0050…` / mud `5a1cc65e…`); stdlib **222 PASS / 0 FAIL** (pin 221 → 222); example matrix
+24/24 (all `examples/z98/*` OK); frozen Step-0 35-shape table **byte-identical**;
+`check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK; `build_test.sh` **0/9**
+(pre-existing zig0 baseline); self-emission rc 0 / 0 `error[...]`; `track-memory: perm=883K
+mod=1020K scr=1024K pool=18999K type_db=490K total=2927K`. Fixed point **MOVED
+`b4f999b57e4516c2a2c305e8660d5c44` → `a8ea33f75f239f2255adeb8cc2426a7c`** (two-hop closure
+hop1 == hop2); seed stays **v82**, NOT rotated (R2).
+
+**Residuals (documented in doc 04 Known Issues 11).** An optional payload whose source is a
+RUNTIME value with no recorded wrap (`takeOpt8(runtime_i32)`) keeps the pre-existing assignability
+laxness; a bare positive literal into an optional decl (`var o: ?i32 = 3000000000;`) keeps the
+warning[3000]+truncate declaration path (valid C, Zig rejects). A `var` arithmetic init that
+references a function-local const is not probed (lowering has no local-const scope) — a documented
+false negative.
 
 ## Task 4 — coercion into typed slots (v206 -> v207 2026-09-23)
 

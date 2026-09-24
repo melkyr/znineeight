@@ -1,19 +1,24 @@
 // comptime_coerce_reject.z98 — standalone reproduction for Task 4
-// (out-of-range coercion of a folded comptime integer into a typed slot).
+// (out-of-range coercion of a comptime integer into a typed slot).
 //
 // Recipe (seed-built zig1 with its sibling lib/):
 //   <zig1> --dump-c89 --output-dir /tmp/coerce_rej repro/comptime_coerce_reject.z98
 //   echo "dump rc=$?"   # expect 2, 0 emitted .c
 //
-// BEFORE Task 4 these shapes compiled and ran WRONG values:
-//   `const U8FOLD: u8 = 250 + 60;`        emitted `(unsigned char)(310)` = 54;
-//   `const BIGFOLD = 1 << 100;`           never folded, ran a wrapped value;
-//   `const NEGU: u64 = @as(i64, -1);`     emitted 18446744073709551615;
-//   `const NEGI8: i8 = @as(i32, -200);`   truncated silently.
-// Official Zig 0.15.2 rejects the first, third and fourth (`type 'uX' cannot
-// represent integer value ...`); it ACCEPTS `BIGFOLD` (unused comptime_int) —
-// that one site is the documented bounded divergence (Task 1 §8 risk 1): Z98
-// has no runtime slot that can hold it, so it refuses to emit wrong C.
+// BEFORE Task 4 (and, for the fix-round sites, before its first fix round)
+// these shapes compiled and ran WRONG values or emitted invalid C:
+//   `const U8FOLD: u8 = 250 + 60;`          emitted `(unsigned char)(310)` = 54;
+//   `const BIGFOLD = 1 << 100;`             never folded, ran a wrapped value;
+//   `const NEGU: u64 = @as(i64, -1);`       emitted 18446744073709551615;
+//   `const NEGI8: i8 = @as(i32, -200);`     truncated silently;
+//   `var y: u32 = 0 - 1;`                   ran 4294967295 with NO diagnostic (Important 1);
+//   `take8(300);` / `return 300;`           ran 44 with NO diagnostic (Important 2);
+//   `takeOpt8(@as(i32, 300));`
+//   `var o: ?u8 = @as(i32, 300);`           emitted gcc-invalid C (Important 4).
+// Official Zig 0.15.2 rejects every site except `BIGFOLD` (unused
+// comptime_int) — that one is the documented bounded divergence (Task 1 §8
+// risk 1): Z98 has no runtime slot that can hold it, so it refuses to emit
+// wrong C.
 //
 // AFTER Task 4: dump rc=2, 0 `.c`,
 //   error[3000]: comptime integer value does not fit the target type
@@ -24,7 +29,34 @@ const BIGFOLD = 1 << 100;
 const NEGU: u64 = @as(i64, -1);
 const NEGI8: i8 = @as(i32, -200);
 
+fn take8(x: u8) void {
+    _ = x;
+}
+
+fn takeOpt8(x: ?u8) void {
+    _ = x;
+}
+
+fn retLit() u8 {
+    return 300;
+}
+
+fn varBad() void {
+    var y: u32 = 0 - 1;
+    _ = y;
+}
+
+fn localOpt() void {
+    var o: ?u8 = @as(i32, 300);
+    _ = o;
+}
+
 pub fn main() void {
+    take8(300);
+    takeOpt8(@as(i32, 300));
+    _ = retLit();
+    varBad();
+    localOpt();
     _ = U8FOLD;
     _ = BIGFOLD;
     _ = NEGU;

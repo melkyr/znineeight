@@ -4119,6 +4119,24 @@ pub fn semanticAnalyzerResolveModuleVarDecl(self: *SemanticAnalyzer, decl_idx: u
     pushExpectedType(self, decl_type);
     var it = semanticAnalyzerResolveExpr(self, decl.child_1);
     popExpectedType(self);
+    // Task 4 fix (review Important 3): an UNANNOTATED module binding whose
+    // initializer folds to an integer that does not fit the default i32
+    // materialisation takes the value-based type, mirroring the function-local
+    // rule above. The caller (`front_resolution`) stores the returned type on
+    // the decl node AND the symbol, so the global's C slot and every later
+    // reference agree (`const X = 2000000000 + 1000000000;` is a u32 global;
+    // before this fix it emitted `int zG_X;` and ran truncated).
+    if (decl.child_0 == @intCast(u32, 0) and (it == type_mod.TYPE_INT_LIT or it == type_mod.TYPE_I32)) {
+        var vd_ce = ce_mod.comptimeEvalInit(self.registry, self.store, self.interner, self.symbols);
+        if (ce_mod.comptimeEvalEvaluate(&vd_ce, decl.child_1)) |vdcv| {
+            if (vdcv.kind == ce_mod.KIND_INT) {
+                if (ce_mod.comptimeIntUntypedType(vdcv.v)) |vdut| {
+                    if (vdut != type_mod.TYPE_I32) { it = vdut; }
+                }
+            }
+        }
+    }
+
     if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED) and it != decl_type) {
         var it_eff = errLitSrcType(self, decl.child_1, decl_type, it);
         if (semanticAnalyzerMaybeDiagVolatileDrop(self, decl.child_1, it_eff, decl_type)) {

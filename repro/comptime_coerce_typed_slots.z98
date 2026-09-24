@@ -10,16 +10,21 @@
 //   * the function-local bare-negate i64 min folded into an i32 temp slot and
 //     printed 0 instead of -9223372036854775808;
 //   * untyped folds were forced to `int` (i32), so `2000000000 + 1000000000`
-//     and `(1 << 63) + 7` truncated and a negative fold printed garbage.
+//     and `(1 << 63) + 7` truncated and a negative fold printed garbage;
+//   * an UNANNOTATED module const like `const MX = 2000000000 + 1000000000;`
+//     got an `int` global and ran truncated (review Important 3).
 //
-// AFTER Task 4 every materialisation site chooses the temp/slot type from the
-// exact value (untyped slots) or range-checks it against the target
-// (`materializeInto` / decl slots / `@intCast`/`@as`), and an out-of-range
-// value is a clean error[3000] (`repro/comptime_coerce_reject.z98`).
+// AFTER Task 4 (including the fix round) every materialisation site chooses the
+// temp/slot type from the exact value (untyped slots) or range-checks it
+// against the target (`materializeInto` / decl slots / argument+return literals
+// / `@intCast`/`@as`), and an out-of-range value is a clean error[3000]
+// (`repro/comptime_coerce_reject.z98`).
 //
-// Oracle: official Zig 0.15.2 twin (`/tmp/task4/oracle/pos.zig`) prints the
-// same two lines. Observed stdout must be byte-exact 3x with rc 0.
+// Oracle: official Zig 0.15.2 twin (`/tmp/task4/oracle/pos2.zig`) prints the
+// same lines. Observed stdout must be byte-exact 3x with rc 0.
 const std = @import("std");
+
+const MX = 2000000000 + 1000000000;
 
 pub fn main() void {
     const imin: i64 = -9223372036854775808;
@@ -27,6 +32,7 @@ pub fn main() void {
     const bigu = 2000000000 + 1000000000;
     const bigu64 = (1 << 63) + 7;
     const negi64 = 0 - 3000000000;
+    var vy: u32 = 2000000000 + 1000000000;
     var arr: [4 * 8]u8 = undefined;
     var arr2: [10 - 3]u8 = undefined;
     _ = arr;
@@ -36,5 +42,7 @@ pub fn main() void {
     if (bigu != 3000000000) { @panic("bigu"); }
     if (bigu64 != 9223372036854775815) { @panic("bigu64"); }
     if (negi64 != @as(i64, 0 - 3000000000)) { @panic("negi64"); }
-    std.io.print("{} {} {} {} {}\n", .{ imin, lu32, bigu, bigu64, negi64 });
+    if (MX != 3000000000) { @panic("MX"); }
+    if (vy != 3000000000) { @panic("vy"); }
+    std.io.print("{} {} {} {} {} {} {}\n", .{ imin, lu32, bigu, bigu64, negi64, MX, vy });
 }
