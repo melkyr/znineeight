@@ -1,6 +1,54 @@
-# mi_matrix corpus — expected-fail manifest (v219 2026-09-24)
+# mi_matrix corpus — expected-fail manifest (v220 2026-09-24)
+
+## Task 13 fix round (C1/I1) — array-field `.len` + non-aggregate member rejects (v219 -> v220 2026-09-24)
+
+**Review Critical C1.** The Task 13 `error[3060]` reject fired before the Task 11N `.len` recovery
+for an array field with an aggregate element: a `b: [4]Point` field decays to `*Point`, the
+auto-deref lands in the `struct_type` arm, `len` is not a field, and Phase 5 rejected. `.len` on
+such a field is valid Z98 (and the lowerer handles it via `fieldStaticLenForBase`). Pre-fix
+(`583e43c6`): `h.pts.len` rc=2 / 0 `.c` / `error[3060]`; base (`d290b3d7`): rc=0 built+ran.
+
+**Review Important I1 (operator ruled: fold in).** A member access/call on a NON-aggregate value
+was still silent: `const x: i32 = 5; x.foo();` compiled rc=0 and emitted `(void)zT_3();` — a call
+to an undeclared temp (the original Task 13 failure class); `_ = e.nope` (enum) / `_ = es.nope`
+(error set) were silent too. Official Zig 0.15.2 rejects every one.
+
+**Fix.** `sf/src/semantic_analyzer.zig`: new `semanticAnalyzerArrayFieldLenCheck` (`.len` recovery
+consulted in Phase 5 and the enum/error-set/`else` arms before any reject) and new
+`semanticAnalyzerReportUnknownMember` (deduped `error[3060]`, ASCII message tail names the base
+kind: struct/union/slice/array/enum/error-set/`type`), called from every "member not found" path.
+The module arm is untouched (unknown module members keep their `error[3042]` lowering reject).
+
+**Regression coverage.** `repro/mi_matrix/stdlib_method_syntax_ok_xmod` gains the C1 control: a
+`Holder { pts: [2]Point, bytes: [3]u8, enums: [2]E, errs: [2]Err }`, `.len` on all four array
+fields, `holder.pts[0].x`, and a `[]Point` slice of the aggregate-element field; every check
+`@panic`-guarded; golden `free=9 x=3 px=3 nested=7 callx=5 union=11 tu=13 tag=0 enum=2 ptslen=2
+byteslen=3 slicelen=2`, rc 0, 3x byte-exact, Zig-0.15.2-twin-matched. New reject fixture
+`repro/mi_matrix/nonagg_member_reject_xmod` (8 oracle-rejected sites: `x.foo()`, `x.bar`, `b.foo`,
+`s.foo`, `arr.foo`, `e.nope`, `es.nope`, `fl.nope`; rc 2, 0 `.c`, 8 x `error[3060]`, class FAIL).
+`repro/method_syntax.z98` gains the `x.foo()` site (3 x `error[3060]`).
+
+**Gates.** self-compile **moving point** hop1 `1b69e53365ab012c1e8ea2c33cc4185e` != hop2 == hop3 ==
+**`14b78a59b806a3fc2b343abea450e894`** (explicit `FIXED_POINT_MD5=14b78a59…` gate OK, deterministic
+across two out-dirs); 4-MD5 emitted-C **UNCHANGED** (gol `e7bde571…` / lisp `4afb601f…` /
+json `09fb55e5…` / mud `5a1cc65e…`, 2x each); corpus `-s0` **1005 = 876 OK / 45 GREEN / 84 FAIL /
+0 ICE / 0 CRASH** — vs the pre-fix-round Task 13 classification (1004 = 877 OK / 45 GREEN / 82 FAIL)
+the join-diff moves EXACTLY two dirs, both INTENDED I1 consequences: the new
+`nonagg_member_reject_xmod` FAIL (new dir) and the pre-existing `error_set_unknown_member`
+**OK -> FAIL** (`fn f() E { return E.Zzz; }` with `E = error{A,B}` — an unknown error-set member
+that was silently accepted rc=0 and emitted `return zT_1;`; official Zig 0.15.2 rejects it
+`error: no error named 'Zzz' in 'error{A,B}'`, so the new `error[3060]` reject is the Zig-matching
+outcome. That dir's historical 2026-07-16 "Class: OK (not fail)" note is superseded here; its name
+is retained). **Zero other movement** — the pinned positive fixture stays OK;
+std-lib runtime gate **228 PASS / 0 FAIL**; example matrix **24/24**; `check_emit_support.sh` 7/7;
+`verify_upgraded.sh` CLOSEOUT OK; build_test **0/9** (pre-existing zig0 baseline); self-emission
+rc 0 / 48 `.c` + 48 `.h` / no PANIC. Seed stays **v83** (operator R2, rotation is closeout-only).
 
 ## Task 13 (S1) — reject method-call syntax and unknown struct members (v218 -> v219 2026-09-24)
+
+**SUPERSEDED in part by the Task 13 fix round above (v220): the fixed point is `14b78a59…`, the
+corpus is 1005 dirs, the positive fixture golden gains `ptslen=2 byteslen=3 slicelen=2`, and the
+`else`/enum/error-set arms now reject too (I1).**
 
 **Defect.** Z98 forbids method syntax — `struct.func()` is not supported; use `func(struct)`
 (`docs/reference/Language_Spec_Z98.md` §5 "No Method Syntax"; `docs/sf/AGENTS.md`). But a member
@@ -41,8 +89,10 @@ fixture dirs, **zero other movement**); std-lib runtime gate **228 PASS / 0 FAIL
 (pre-existing zig0 baseline); self-emission rc 0 / 48 `.c` + 48 `.h` / no PANIC / memory
 `pool=17785K`. Seed stays **v83** (operator R2, rotation is closeout-only).
 
-**Residual (out of scope).** An unknown member on an enum value / error set / non-aggregate base
-still resolves silently to `TYPE_VOID` (the reject covers aggregate types only).
+**Residual (out of scope at the base commit; RESOLVED by the Task 13 fix round above).** An
+unknown member on an enum value / error set / non-aggregate base still resolved silently to
+`TYPE_VOID` at `583e43c6` (the base reject covered aggregate types only); the fix round extends the
+same `error[3060]` reject to those bases (I1).
 
 ## Task 11 fix round — for-header evaluation order (v217 -> v218 2026-09-24)
 

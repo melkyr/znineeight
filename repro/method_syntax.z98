@@ -1,4 +1,5 @@
-// method_syntax.z98 — standalone reproduction for the Task 13 (S1) fix.
+// method_syntax.z98 — standalone reproduction for the Task 13 (S1) fix and its
+// fix round (I1).
 //
 // Compile (seed-built zig1 with its sibling lib/):
 //   <zig1> --dump-c89 --output-dir /tmp/method_syntax repro/method_syntax.z98
@@ -6,6 +7,7 @@
 // EXPECTED (after the fix): dump rc=2, 0 `.c`,
 //   error[3060]: no field or member function named 'square' in struct type
 //   error[3060]: no field or member function named 'nope' in struct type
+//   error[3060]: no field or member function named 'foo' in type
 //
 // DEFECT (before the fix): Z98 forbids method syntax — `struct.func()` is not
 // supported; use `func(struct)` (docs/reference/Language_Spec_Z98.md, "No
@@ -23,9 +25,16 @@
 // (`square(nine)`) and real field accesses (`nine.x`) are unchanged — see
 // repro/mi_matrix/stdlib_method_syntax_ok_xmod.
 //
-// Zig 0.15.2 oracle: both sites are rejected
+// FIX ROUND (I1): the same code now rejects a member access/call on a
+// NON-AGGREGATE base — `const x: i32 = 5; x.foo();` was still silent rc=0 and
+// emitted `(void)zT_3();` (undeclared temp). Valid enum/error-set members,
+// module access, slice/array `.len`/`.ptr`, `.tag`/`.payload` and real fields
+// stay accepted; the array-field `.len` recovery (C1) runs first.
+//
+// Zig 0.15.2 oracle: all three sites are rejected
 // ("no field or member function named 'square' in 'Point'",
-// "no field named 'nope' in struct 'Point'").
+// "no field named 'nope' in struct 'Point'",
+// "no field or member function named 'foo' in 'i32'").
 const Point = struct {
     x: i32,
     y: i32,
@@ -39,4 +48,6 @@ pub fn main() void {
     const nine = Point{ .x = 3, .y = 4 };
     nine.square();
     _ = nine.nope;
+    const x: i32 = 5;
+    x.foo();
 }

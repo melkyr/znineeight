@@ -7,11 +7,15 @@
 // Covers: the free-function call `square(nine)`; real field access on a value,
 // through a pointer, on a nested struct field, and on a function-call result;
 // union field access; tagged-union field access and `.tag`; an enum member
-// reference; and an error-set member reference. Every observation is
+// reference; an error-set member reference; and — the Task 13 fix round (C1)
+// regression control — `.len` on an array field for every element kind
+// (`[2]Point` aggregate, `[3]u8` scalar, `[2]E` enum, `[2]Err` error set) plus
+// a slice of the aggregate-element array field. Every observation is
 // `@panic`-guarded.
 //
 // Contract: stdout `free=9 x=3 px=3 nested=7 callx=5 union=11 tu=13 tag=0
-// enum=2\n`, rc 0, byte-exact 3x, Zig-0.15.2-twin-matched.
+// enum=2 ptslen=2 byteslen=3 slicelen=2\n`, rc 0, byte-exact 3x,
+// Zig-0.15.2-twin-matched.
 const std = @import("std");
 
 const Point = struct {
@@ -42,6 +46,13 @@ const E = enum(u8) { A = 1, B = 2 };
 
 const Err = error{ Bad, Worse };
 
+const Holder = struct {
+    pts: [2]Point,
+    bytes: [3]u8,
+    enums: [2]E,
+    errs: [2]Err,
+};
+
 fn square(p: Point) i32 {
     return p.x * p.x;
 }
@@ -63,6 +74,12 @@ pub fn main() void {
     var tu = TU{ .num = 13 };
     const e = E.B;
     const es = Err.Bad;
+    const holder = Holder{
+        .pts = [2]Point{ Point{ .x = 1, .y = 2 }, Point{ .x = 3, .y = 4 } },
+        .bytes = [3]u8{ 5, 6, 7 },
+        .enums = [2]E{ E.A, E.B },
+        .errs = [2]Err{ Err.Bad, Err.Worse },
+    };
 
     var free_call: i32 = square(nine);
     if (free_call != 9) {
@@ -100,5 +117,28 @@ pub fn main() void {
         @panic("error-set member reference failed");
     }
 
-    std.io.print("free={} x={} px={} nested={} callx={} union={} tu={} tag={} enum={}\n", .{ free_call, nine.x, p.x, outer.inner.v, makePoint().x, u.a, tu.num, @intCast(u32, tu.tag), @intCast(u32, e) });
+    // Task 13 fix round (C1): `.len` on an array field is valid for every
+    // element kind — a `[N]Point` field decays to `*Point` and must NOT hit the
+    // unknown-member reject.
+    if (holder.pts.len != 2) {
+        @panic("aggregate-element array field .len failed");
+    }
+    if (holder.bytes.len != 3) {
+        @panic("scalar-element array field .len failed");
+    }
+    if (holder.enums.len != 2) {
+        @panic("enum-element array field .len failed");
+    }
+    if (holder.errs.len != 2) {
+        @panic("error-set-element array field .len failed");
+    }
+    if (holder.pts[0].x != 1 or holder.pts[1].y != 4) {
+        @panic("array field element access failed");
+    }
+    const slice_pts: []Point = holder.pts[0..2];
+    if (slice_pts.len != 2 or slice_pts[1].x != 3) {
+        @panic("slice of array field failed");
+    }
+
+    std.io.print("free={} x={} px={} nested={} callx={} union={} tu={} tag={} enum={} ptslen={} byteslen={} slicelen={}\n", .{ free_call, nine.x, p.x, outer.inner.v, makePoint().x, u.a, tu.num, @intCast(u32, tu.tag), @intCast(u32, e), holder.pts.len, holder.bytes.len, slice_pts.len });
 }
