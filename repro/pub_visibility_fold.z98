@@ -8,6 +8,8 @@
 // committed fold reject fixture are reused verbatim.
 //
 // EXPECTED (after the fix): dump rc=2, 0 `.c`,
+//   (Task 18) each `error[3007]` also renders `helper.zig:NN: note: declared
+//   here` at the non-`pub` declaration's own location.
 //   error[3007]: 'hidden_const' is not marked 'pub'   (`[helper.hidden_const]u8`)
 //   error[3007]: 'hidden_const' is not marked 'pub'   (`enum{ A = helper.hidden_const }`)
 //   + the declined-fold cascades `error[3050]` and `error[3055]`.

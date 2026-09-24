@@ -1700,7 +1700,14 @@ fn typeResolverCheckMemberVisibility(env: *TypeResolveEnv, node_idx: u32, name_i
             var tvparts: [3][]const u8 = [3][]const u8{ tv1, tvnm, tv2 };
             var tvmsg = diag_mod.diagnosticBuilderMakeMsg(env.interner, &tvparts[0], @intCast(u32, 3));
             var tvnode = ast_mod.astStoreNodeAt(env.store, node_idx);
-            _ = diag_mod.diagnosticCollectorAdd(dc, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3007_VISIBILITY_VIOLATION)), env.source_file_id, tvnode.span_start, tvnode.span_start + @intCast(u32, tvnode.span_len), tvmsg);
+            var tv_di = diag_mod.diagnosticCollectorAdd(dc, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3007_VISIBILITY_VIOLATION)), env.source_file_id, tvnode.span_start, tvnode.span_start + @intCast(u32, tvnode.span_len), tvmsg);
+            // Task 18 fix round: Zig notes the non-pub declaration's own
+            // location (possibly in another source file — `Symbol.file_id`).
+            if (sym.decl_node != @intCast(u32, 0)) {
+                var tv_decl = ast_mod.astStoreNodeAt(env.store, sym.decl_node);
+                var tv_note: []const u8 = "declared here";
+                diag_mod.diagnosticCollectorAddRelatedSpan(dc, tv_di, sym.file_id, tv_decl.span_start, tv_decl.span_start + @intCast(u32, tv_decl.span_len), tv_note);
+            }
         }
     }
     return false;

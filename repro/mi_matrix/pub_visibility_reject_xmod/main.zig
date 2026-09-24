@@ -1,4 +1,7 @@
 // pub_visibility_reject_xmod — Task 15 (S3) cross-module `pub` visibility reject.
+// Task 18 fix round: every `error[3007]` also renders the non-`pub` declaration's
+// own note in its own file (`helper.zig:10: note: declared here` for `secret`;
+// `helper.zig:14/15/16`, `inner.zig:10/14`).
 //
 // DEFECT (before the fix): a non-`pub` function was callable from an importing
 // module (`helper.secret(21)` compiled rc=0, built, ran, printed 21), and the

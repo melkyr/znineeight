@@ -312,6 +312,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                 .flags = @intCast(u16, node.flags),
                 .decl_node = decl_idx,
                 .module_id = sym_mod_id,
+                .file_id = reg.modules.items[@intCast(usize, mod_id)].source_file_id,
                 .scope_level = @intCast(u32, 0),
             };
             var table = sym_mod.symbolRegistryGetTable(sym_reg, mod_id);
@@ -344,6 +345,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                 .flags = @intCast(u16, node.flags),
                 .decl_node = decl_idx,
                 .module_id = mod_id,
+                .file_id = reg.modules.items[@intCast(usize, mod_id)].source_file_id,
                 .scope_level = @intCast(u32, 0),
             };
             var table = sym_mod.symbolRegistryGetTable(sym_reg, mod_id);
@@ -358,6 +360,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                     .flags = @intCast(u16, node.flags),
                     .decl_node = decl_idx,
                     .module_id = mod_id,
+                    .file_id = reg.modules.items[@intCast(usize, mod_id)].source_file_id,
                     .scope_level = @intCast(u32, 0),
                 };
                 var table = sym_mod.symbolRegistryGetTable(sym_reg, mod_id);
@@ -385,6 +388,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                 .flags = @intCast(u16, node.flags),
                 .decl_node = decl_idx,
                 .module_id = mod_id,
+                .file_id = reg.modules.items[@intCast(usize, mod_id)].source_file_id,
                 .scope_level = @intCast(u32, 0),
             };
             var table = sym_mod.symbolRegistryGetTable(sym_reg, mod_id);
@@ -401,6 +405,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                 .flags = @intCast(u16, node.flags),
                 .decl_node = decl_idx,
                 .module_id = mod_id,
+                .file_id = reg.modules.items[@intCast(usize, mod_id)].source_file_id,
                 .scope_level = @intCast(u32, 0),
             };
             var table = sym_mod.symbolRegistryGetTable(sym_reg, mod_id);
@@ -417,6 +422,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                      .flags = @intCast(u16, 0),
                      .decl_node = decl_idx,
                      .module_id = tid,
+                     .file_id = reg.modules.items[@intCast(usize, mod_id)].source_file_id,
                      .scope_level = @intCast(u32, 0),
                  };
                  var table = sym_mod.symbolRegistryGetTable(sym_reg, mod_id);

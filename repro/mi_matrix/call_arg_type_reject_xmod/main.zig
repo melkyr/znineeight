@@ -1,4 +1,7 @@
 // call_arg_type_reject_xmod — Task 14 (S2) argument-type reject fixture.
+// Task 18 fix round: every `error[3000]` also renders Zig's parameter note
+// (`main.zig:37/41/45/53/57: note: parameter type declared here`, one per
+// callee parameter).
 //
 // DEFECT (before the fix): a wrong argument type built, linked and ran —
 // `add(1, true)` printed `2` via a silent `bool` -> `i32` coercion (official

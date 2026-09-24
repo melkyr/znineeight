@@ -1,4 +1,7 @@
 // method_syntax_reject_xmod — Task 13 (S1) reject fixture.
+// Task 18 fix round: every `error[3060]` also renders Zig's aggregate
+// declaration note (`main.zig:40/45: note: struct declared here`;
+// `:54`/`:59: note: union declared here`).
 //
 // Z98 forbids method syntax: `struct.func()` is not supported; use
 // `func(struct)` (docs/reference/Language_Spec_Z98.md, "No Method Syntax";

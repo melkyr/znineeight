@@ -7,6 +7,8 @@
 // the committed reject fixture are reused verbatim.
 //
 // EXPECTED (after the fix): dump rc=2, 0 `.c`,
+//   (Task 18) each diagnostic also renders `<file>:NN: note: declared here`
+//   pointing at the non-`pub` declaration's own file (helper.zig).
 //   error[3007]: 'secret' is not marked 'pub'          (`helper.secret(21)`)
 //   error[3007]: 'hidden_const' is not marked 'pub'    (`helper.hidden_const`)
 //   error[3007]: 'secret2' is not marked 'pub'         (`helper.inner.secret2(21)`)

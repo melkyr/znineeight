@@ -4,6 +4,9 @@
 //   <zig1> --dump-c89 --output-dir /tmp/call_arity_types repro/call_arity_types.z98
 //
 // EXPECTED (after the fix): dump rc=2, 0 `.c`,
+//   (Task 18) each diagnostic also renders its Zig-style declaration note
+//   (`<file>:NN: note: function declared here`, and
+//    `note: parameter type declared here` on the argument-type site).
 //   error[3061]: expected 2 argument(s), found 1          (`add(2)`)
 //   error[3061]: expected 2 argument(s), found 3          (`add(1, 2, 3)`)
 //   error[3000]: type mismatch in function argument ...   (`add(1, true)`,

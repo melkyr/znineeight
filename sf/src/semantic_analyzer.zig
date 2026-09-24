@@ -986,10 +986,34 @@ fn semanticAnalyzerArrayFieldLenCheck(self: *SemanticAnalyzer, node_idx: u32, fi
     return afl_ty;
 }
 
+// Task 18 fix round: the type registry stores no declaration node, so recover
+// the named aggregate's declaration through the owning module's symbol table
+// (the `type_alias` symbol whose `type_id` is the base type). Returns false for
+// an anonymous/unnamed type (inline `struct { ... }`), which has no declaration
+// to point at.
+fn semanticAnalyzerFindTypeDecl(self: *SemanticAnalyzer, tid: u32, out_node: *u32, out_file: *u32) bool {
+    if (tid == @intCast(u32, 0)) return false;
+    if (@intCast(usize, tid) >= self.registry.types_len) return false;
+    var ty = self.registry.types_items[@intCast(usize, tid)];
+    var table = sym_mod.symbolRegistryGetTable(self.symbols, ty.module_id);
+    var ti: usize = 0;
+    while (ti < table.len) : (ti += 1) {
+        if (table.items[ti].kind == sym_mod.SymbolKind.type_alias and table.items[ti].type_id == tid and table.items[ti].decl_node != @intCast(u32, 0)) {
+            out_node.* = table.items[ti].decl_node;
+            out_file.* = table.items[ti].file_id;
+            return true;
+        }
+    }
+    return false;
+}
+
 // Task 13 fix round (C1/I1): an unknown member on its base. Same dedicated
 // `error[3060]` code as the aggregate reject; the ASCII message tail names the
 // base kind. Deduped per node (the expression walk can revisit a field access).
-fn semanticAnalyzerReportUnknownMember(self: *SemanticAnalyzer, node_idx: u32, field_name_id: u32, base_kind: type_mod.TypeKind) void {
+// Task 18 fix round: also render Zig's declaration-site note ("struct declared
+// here" / "union declared here" / "enum declared here"; an error set has no
+// note in Zig's wording, and a slice/array/non-aggregate has no declaration).
+fn semanticAnalyzerReportUnknownMember(self: *SemanticAnalyzer, node_idx: u32, field_name_id: u32, base_kind: type_mod.TypeKind, base_type_id: u32) void {
     if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) return;
     var ukm1: []const u8 = "no field or member function named '";
     var ukm2: []const u8 = "' in type";
@@ -1016,7 +1040,26 @@ fn semanticAnalyzerReportUnknownMember(self: *SemanticAnalyzer, node_idx: u32, f
     var ukmparts: [3][]const u8 = [3][]const u8{ ukm1, ukm_name, ukm2 };
     var ukm_msg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &ukmparts[0], @intCast(u32, 3));
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
-    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3060_METHOD_SYNTAX_NOT_SUPPORTED)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), ukm_msg);
+    var ukm_di = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3060_METHOD_SYNTAX_NOT_SUPPORTED)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), ukm_msg);
+    var ukm_note: []const u8 = "";
+    if (base_kind == type_mod.TypeKind.struct_type) {
+        var ukm_ns: []const u8 = "struct declared here";
+        ukm_note = ukm_ns;
+    } else if (base_kind == type_mod.TypeKind.union_type or base_kind == type_mod.TypeKind.packed_union_type or base_kind == type_mod.TypeKind.tagged_union_type) {
+        var ukm_nu: []const u8 = "union declared here";
+        ukm_note = ukm_nu;
+    } else if (base_kind == type_mod.TypeKind.enum_type) {
+        var ukm_ne: []const u8 = "enum declared here";
+        ukm_note = ukm_ne;
+    }
+    if (ukm_note.len > 0) {
+        var ukm_tdecl: u32 = @intCast(u32, 0);
+        var ukm_tfile: u32 = @intCast(u32, 0);
+        if (semanticAnalyzerFindTypeDecl(self, base_type_id, &ukm_tdecl, &ukm_tfile)) {
+            var ukm_dnode = ast_mod.astStoreNodeAt(self.store, ukm_tdecl);
+            diag_mod.diagnosticCollectorAddRelatedSpan(self.diag, ukm_di, ukm_tfile, ukm_dnode.span_start, ukm_dnode.span_start + @intCast(u32, ukm_dnode.span_len), ukm_note);
+        }
+    }
 }
 
 // Task 15 (S3): a cross-module reference to a declaration that is not `pub` is
@@ -1038,7 +1081,14 @@ fn semanticAnalyzerCheckMemberVisibility(self: *SemanticAnalyzer, node_idx: u32,
     var mvparts: [3][]const u8 = [3][]const u8{ mv1, mvnm, mv2 };
     var mvmsg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &mvparts[0], @intCast(u32, 3));
     var mvnode = ast_mod.astStoreNodeAt(self.store, node_idx);
-    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3007_VISIBILITY_VIOLATION)), self.source_file_id, mvnode.span_start, mvnode.span_start + @intCast(u32, mvnode.span_len), mvmsg);
+    var mv_di = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3007_VISIBILITY_VIOLATION)), self.source_file_id, mvnode.span_start, mvnode.span_start + @intCast(u32, mvnode.span_len), mvmsg);
+    // Task 18 fix round: Zig notes the non-pub declaration's own location
+    // (possibly in another source file — `Symbol.file_id`).
+    if (sym.decl_node != @intCast(u32, 0)) {
+        var mv_decl = ast_mod.astStoreNodeAt(self.store, sym.decl_node);
+        var mv_note: []const u8 = "declared here";
+        diag_mod.diagnosticCollectorAddRelatedSpan(self.diag, mv_di, sym.file_id, mv_decl.span_start, mv_decl.span_start + @intCast(u32, mv_decl.span_len), mv_note);
+    }
     return false;
 }
 
@@ -1356,7 +1406,7 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
         // elements first; any other unknown member rejects.
         var afl_es = semanticAnalyzerArrayFieldLenCheck(self, node_idx, field_name_id);
         if (afl_es != @intCast(u32, 0)) { return afl_es; }
-        semanticAnalyzerReportUnknownMember(self, node_idx, field_name_id, base_ty.kind);
+        semanticAnalyzerReportUnknownMember(self, node_idx, field_name_id, base_ty.kind, base_type_id);
         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
         return type_mod.TYPE_VOID;
     } else if (base_ty.kind == type_mod.TypeKind.enum_type) {
@@ -1375,7 +1425,7 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
         // first; any other unknown member rejects.
         var afl_en = semanticAnalyzerArrayFieldLenCheck(self, node_idx, field_name_id);
         if (afl_en != @intCast(u32, 0)) { return afl_en; }
-        semanticAnalyzerReportUnknownMember(self, node_idx, field_name_id, base_ty.kind);
+        semanticAnalyzerReportUnknownMember(self, node_idx, field_name_id, base_ty.kind, base_type_id);
         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
         return type_mod.TYPE_VOID;
     } else {
@@ -1385,7 +1435,7 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
         var fnf: []const u8 = "FF\n"; pal_mod.markerWrite(fnf);
         var afl_else = semanticAnalyzerArrayFieldLenCheck(self, node_idx, field_name_id);
         if (afl_else != @intCast(u32, 0)) { return afl_else; }
-        semanticAnalyzerReportUnknownMember(self, node_idx, field_name_id, base_ty.kind);
+        semanticAnalyzerReportUnknownMember(self, node_idx, field_name_id, base_ty.kind, base_type_id);
         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
         return type_mod.TYPE_VOID;
     }
@@ -1421,7 +1471,7 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
     // can revisit a field access).
     var afl_p5 = semanticAnalyzerArrayFieldLenCheck(self, node_idx, field_name_id);
     if (afl_p5 != @intCast(u32, 0)) { return afl_p5; }
-    semanticAnalyzerReportUnknownMember(self, node_idx, field_name_id, base_ty.kind);
+    semanticAnalyzerReportUnknownMember(self, node_idx, field_name_id, base_ty.kind, base_type_id);
     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
     return type_mod.TYPE_VOID;
 }
@@ -2104,7 +2154,10 @@ fn resolveReturnStmt(self: *SemanticAnalyzer, node_idx: u32) void {
 // Task 14 (S2): report a call whose argument count does not match the callee's
 // fixed parameter count. `variadic` selects Zig's "expected at least N"
 // wording; deduped per call node (the expression walk can revisit a call).
-fn semanticAnalyzerReportCallArity(self: *SemanticAnalyzer, node_idx: u32, expected: usize, found: usize, variadic: bool) void {
+// Task 18 fix round: when the callee is a direct named function
+// (`decl_node != 0`), also render Zig's `note: function declared here` related
+// span at the function declaration (in the decl's own source file).
+fn semanticAnalyzerReportCallArity(self: *SemanticAnalyzer, node_idx: u32, expected: usize, found: usize, variadic: bool, decl_node: u32, decl_file: u32) void {
     if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) return;
     var exp_buf: [10]u8 = undefined;
     var exp_l = itoa_mod.itoa(@intCast(u32, expected), exp_buf[0..]);
@@ -2118,7 +2171,27 @@ fn semanticAnalyzerReportCallArity(self: *SemanticAnalyzer, node_idx: u32, expec
     var parts: [4][]const u8 = [4][]const u8{ p0, exp_buf[exp_s..@intCast(usize, 9)], p1, found_buf[found_s..@intCast(usize, 9)] };
     var msg = diag_mod.diagnosticBuilderMakeMsg(self.diag.interner, &parts[0], @intCast(u32, 4));
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
-    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3061_WRONG_ARGUMENT_COUNT)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), msg);
+    var ar_di = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3061_WRONG_ARGUMENT_COUNT)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), msg);
+    if (decl_node != @intCast(u32, 0)) {
+        var ar_decl = ast_mod.astStoreNodeAt(self.store, decl_node);
+        var ar_note: []const u8 = "function declared here";
+        diag_mod.diagnosticCollectorAddRelatedSpan(self.diag, ar_di, decl_file, ar_decl.span_start, ar_decl.span_start + @intCast(u32, ar_decl.span_len), ar_note);
+    }
+}
+
+// Task 18 fix round: the parameter declaration node for call argument `ai` of
+// the direct function declaration `fn_decl_node` (its `fn_decl` node), or 0
+// when the callee is not a direct named function / the node cannot be located.
+// Used for Zig's `note: parameter type declared here` related span.
+fn semanticAnalyzerParamDeclNode(self: *SemanticAnalyzer, fn_decl_node: u32, ai: u32) u32 {
+    if (fn_decl_node == @intCast(u32, 0)) return @intCast(u32, 0);
+    var dn = ast_mod.astStoreNodeAt(self.store, fn_decl_node);
+    if (dn.kind != AstKind.fn_decl) return @intCast(u32, 0);
+    var proto = self.store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(self.store, fn_decl_node))];
+    if (ai >= @intCast(u32, proto.params_count)) return @intCast(u32, 0);
+    var p_payload: u64 = (@intCast(u64, proto.params_start) << @intCast(u64, 32)) | @intCast(u64, proto.params_count);
+    if (ast_mod.astStoreGetExtraChildCount(self.store, p_payload) <= ai) return @intCast(u32, 0);
+    return ast_mod.astStoreGetExtraChildAt(self.store, p_payload, ai);
 }
 
 // Task 14 (S2): the call-site assignability check rejects only CROSS-FAMILY
@@ -2165,16 +2238,50 @@ fn semanticAnalyzerCallArgIntegerKind(self: *SemanticAnalyzer, ty: u32) bool {
     return type_mod.typeRegistryIsInteger(self.registry, ty);
 }
 
+// Task 18 fix round: the declaration symbol behind a call's callee, for the
+// Zig-style related spans ("function declared here" / "parameter type declared
+// here"). Handles an identifier callee and the single-level module-member forms
+// `mod.fn` (flat module alias) and `@import("x.zig").fn`; a deeper nested chain
+// (`std.io.print`) has no symbol at this level and stays un-noted.
+fn semanticAnalyzerCalleeDeclSymbol(self: *SemanticAnalyzer, callee_idx: u32) ?*sym_mod.Symbol {
+    var cn = ast_mod.astStoreNodeAt(self.store, callee_idx);
+    if (cn.kind == AstKind.ident_expr) {
+        return sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, ast_mod.astStoreIdentifier(self.store, callee_idx));
+    }
+    if (cn.kind != AstKind.field_access) return null;
+    var field_name_id: u32 = ast_mod.astStoreNodePayload(self.store, callee_idx);
+    var cbase = ast_mod.astStoreNodeAt(self.store, cn.child_0);
+    if (cbase.kind == AstKind.ident_expr) {
+        var bs = sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, ast_mod.astStoreIdentifier(self.store, cn.child_0));
+        if (bs) |b| {
+            if (b.kind == sym_mod.SymbolKind.module) {
+                return sym_mod.symbolRegistryQualifiedLookup(self.symbols, b.module_id, field_name_id);
+            }
+        }
+    } else if (cbase.kind == AstKind.import_expr) {
+        var path_id: u32 = ast_mod.astStoreNodePayload(self.store, cn.child_0);
+        var target = mr_mod.moduleRegistryPathToIdGet(self.module_reg, path_id);
+        if (target) |mtid| {
+            return sym_mod.symbolRegistryQualifiedLookup(self.symbols, mtid, field_name_id);
+        }
+    }
+    return null;
+}
+
 fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var fne: []const u8 = "FNE\n"; pal_mod.markerWrite(fne);
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var callee_node = ast_mod.astStoreNodeAt(self.store, node.child_0);
     var direct_ret: u32 = @intCast(u32, 0);
     var decl_cap: u32 = 0;
+    var note_decl: u32 = @intCast(u32, 0);
+    var note_file: u32 = @intCast(u32, 0);
     if (callee_node.kind == AstKind.ident_expr) {
         var sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, ast_mod.astStoreIdentifier(self.store, node.child_0));
         if (sym) |s| { var xf: []const u8 = "XF\n"; pal_mod.markerWrite(xf);
             decl_cap = s.decl_node;
+            note_decl = s.decl_node;
+            note_file = s.file_id;
             if (s.type_id != @intCast(u32, 0)) { rtt_mod.resolvedTypeTableSet(self.type_table, node.child_0, s.type_id); }
             if (s.kind == sym_mod.SymbolKind.function and s.decl_node != @intCast(u32, 0)) {
                 var dn = ast_mod.astStoreNodeAt(self.store, s.decl_node);
@@ -2197,6 +2304,15 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
                 }
             }
         } else { var xs: []const u8 = "xS\n"; pal_mod.markerWrite(xs); }
+    }
+    // Task 18 fix round: a module-member callee (`helper.fn`) carries no
+    // `decl_cap`, so resolve its declaration symbol separately for the notes.
+    if (note_decl == 0 and callee_node.kind == AstKind.field_access) {
+        var csym = semanticAnalyzerCalleeDeclSymbol(self, node.child_0);
+        if (csym) |cs| {
+            note_decl = cs.decl_node;
+            note_file = cs.file_id;
+        }
     }
     if (direct_ret != @intCast(u32, 0)) {
         var fn1: []const u8 = "FN1\n"; pal_mod.markerWrite(fn1);
@@ -2223,10 +2339,10 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
         if (has_params != @intCast(u8, 0)) {
             if (direct_variadic != @intCast(u8, 0)) {
                 if (args_n < @intCast(usize, pcount)) {
-                    semanticAnalyzerReportCallArity(self, node_idx, @intCast(usize, pcount), args_n, true);
+                    semanticAnalyzerReportCallArity(self, node_idx, @intCast(usize, pcount), args_n, true, note_decl, note_file);
                 }
             } else if (args_n != @intCast(usize, pcount)) {
-                semanticAnalyzerReportCallArity(self, node_idx, @intCast(usize, pcount), args_n, false);
+                semanticAnalyzerReportCallArity(self, node_idx, @intCast(usize, pcount), args_n, false, note_decl, note_file);
             }
         }
         var ai: usize = 0;
@@ -2256,6 +2372,14 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
                     var cdi = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, csp, cep, ctm_msg);
                     _ = diag_mod.diagnosticCollectorAddNote(self.diag, cdi, diag_mod.typeKindSrcStr(self.registry.types_items[@intCast(usize, carg_eff)].kind));
                     _ = diag_mod.diagnosticCollectorAddNote(self.diag, cdi, diag_mod.typeKindTgtStr(self.registry.types_items[@intCast(usize, expected)].kind));
+                    // Task 18 fix round: Zig's `note: parameter type declared
+                    // here` at the direct callee's parameter declaration.
+                    var pad_n = semanticAnalyzerParamDeclNode(self, note_decl, @intCast(u32, ai));
+                    if (pad_n != @intCast(u32, 0)) {
+                        var pad_d = ast_mod.astStoreNodeAt(self.store, pad_n);
+                        var pad_note: []const u8 = "parameter type declared here";
+                        diag_mod.diagnosticCollectorAddRelatedSpan(self.diag, cdi, note_file, pad_d.span_start, pad_d.span_start + @intCast(u32, pad_d.span_len), pad_note);
+                    }
                 }
                 tryRecordCoercion(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)), carg_eff, expected);
             }
@@ -2303,10 +2427,10 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
     // still resolved (the sema error gate rejects before lowering).
     if (is_var != @intCast(u8, 0)) {
         if (args_n < fixed) {
-            semanticAnalyzerReportCallArity(self, node_idx, fixed, args_n, true);
+            semanticAnalyzerReportCallArity(self, node_idx, fixed, args_n, true, note_decl, note_file);
         }
     } else if (args_n != pcount) {
-        semanticAnalyzerReportCallArity(self, node_idx, pcount, args_n, false);
+        semanticAnalyzerReportCallArity(self, node_idx, pcount, args_n, false, note_decl, note_file);
     }
     var check_n: usize = fixed;
     if (args_n < check_n) { check_n = args_n; }
@@ -2339,6 +2463,14 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
             var cdi = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, csp, cep, ctm_msg);
             _ = diag_mod.diagnosticCollectorAddNote(self.diag, cdi, diag_mod.typeKindSrcStr(self.registry.types_items[@intCast(usize, carg_eff)].kind));
             _ = diag_mod.diagnosticCollectorAddNote(self.diag, cdi, diag_mod.typeKindTgtStr(self.registry.types_items[@intCast(usize, param_type)].kind));
+            // Task 18 fix round: Zig's `note: parameter type declared here` at
+            // the direct callee's parameter declaration.
+            var ppd_n = semanticAnalyzerParamDeclNode(self, note_decl, @intCast(u32, ai));
+            if (ppd_n != @intCast(u32, 0)) {
+                var ppd_d = ast_mod.astStoreNodeAt(self.store, ppd_n);
+                var ppd_note: []const u8 = "parameter type declared here";
+                diag_mod.diagnosticCollectorAddRelatedSpan(self.diag, cdi, note_file, ppd_d.span_start, ppd_d.span_start + @intCast(u32, ppd_d.span_len), ppd_note);
+            }
         }
         tryRecordCoercion(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)), carg_eff, param_type);
     }

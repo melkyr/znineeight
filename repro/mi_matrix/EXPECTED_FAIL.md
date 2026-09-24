@@ -1,4 +1,58 @@
-# mi_matrix corpus — expected-fail manifest (v227 2026-09-24)
+# mi_matrix corpus — expected-fail manifest (v228 2026-09-24)
+
+## Task 18 (F) fix round (review Important 1) — wire the remaining Zig location-note sites (v227 -> v228 2026-09-24)
+
+**Finding (verbatim).** *"The brief explicitly asks for related spans at 'any other site where Zig
+emits a note'; `error[3061]`/`error[3007]`/`error[3060]`/`error[3000]`-call-arg have Zig location
+notes and none were wired ... Either wire them ... or obtain an operator ruling bounding the clause,
+and correct report.md:22-25 + QUICK_REF's 'the only Zig-note-with-location family' statement."*
+
+**Fix (four families wired; Zig-0.15.2-oracle cross-checked).**
+
+* `error[3061]` arity -> `note: function declared here` at the callee's `fn_decl` node
+  (`semanticAnalyzerReportCallArity` gains `decl_node`/`decl_file`; `main.zig:32`/`:36` in
+  `call_arity_reject_xmod`, matching Zig's `main.zig:29:1` on the pristine fixture — the fixture's
+  header comment shifted the sites when the expected-note block was added).
+* `error[3007]` visibility -> `note: declared here` at the non-`pub` declaration's own location in
+  its own file: `helper.zig:10/14/15/16`, `inner.zig:10/14` in `pub_visibility_reject_xmod` (Zig:
+  `helper.zig:10:1`). `Symbol` gained `file_id`, set from the declaring module in all six
+  `symbol_registrator.registerDecl` arms; both `semanticAnalyzerCheckMemberVisibility` and
+  `type_resolver.typeResolverCheckMemberVisibility` use it.
+* `error[3060]` member-not-found -> `note: struct declared here` / `note: union declared here` /
+  `note: enum declared here` at the aggregate declaration (`main.zig:40/45/54/59` in
+  `method_syntax_reject_xmod`; Zig: `main.zig:37:15`). New `semanticAnalyzerFindTypeDecl` reverse
+  lookup through the owning module's `type_alias` symbols (`ReportUnknownMember` now takes the base
+  type id). An anonymous type or an error set correctly gets no note (Zig prints none for an error
+  set).
+* `error[3000]` call-arg -> `note: parameter type declared here` at the callee's parameter
+  (`main.zig:37/41/45/53/57` in `call_arg_type_reject_xmod`; Zig: `main.zig:34:19`). New
+  `semanticAnalyzerParamDeclNode`; `semanticAnalyzerCalleeDeclSymbol` resolves ident and single-level
+  `mod.fn` / `@import("x.zig").fn` callees for both the arity and the argument note
+  (cross-module probe `helper.addOne(1, 2)` -> `helper.zig:1: note: function declared here`).
+
+**Bounded residual (documented, not silently skipped):** a **nested-module** callee
+(`std.io.print()`, `call_arity_reject_xmod`'s last site) still gets no note — the callee's symbol
+sits behind a multi-level module chain that `semanticAnalyzerCalleeDeclSymbol` does not walk. The
+review's four pinned fixture cases are all wired; Zig's own early-stop prevents an oracle note pin
+for the nested site.
+
+**Claim correction.** The base entry's "This is the only Zig-note-with-location family in Z98's
+diagnostics" was WRONG and is corrected in place below; the QUICK_REF bullet and tech doc 05/INDEX
+headers were corrected the same way.
+
+**Fixtures.** Expected-note blocks added to the four reject fixtures' headers (with the exact note
+lines) and to the standalone `repro/call_arity_types.z98`, `repro/pub_visibility.z98`,
+`repro/method_syntax.z98`, `repro/pub_visibility_fold.z98` headers.
+
+**Gates (fix round).** self-compile moving point hop1 `252ad3e361daee241b4d7c32c513b2bd` != hop2 ==
+hop3 == `b7a7da2673d60852006e9ea87909be1d` (explicit `FIXED_POINT_MD5=b7a7da26…` gate OK,
+deterministic); 4-MD5 emitted-C **UNCHANGED** (gol `e7bde571…` / lisp `4afb601f…` / json `09fb55e5…` /
+mud `5a1cc65e…`, 2x on hop2 too); corpus `-s0` **1016 = 878 OK / 46 GREEN / 92 FAIL / 0 ICE / 0
+CRASH** (join-diff vs the Task 18 base run **empty**, zero class/set movement — the changes are
+stderr-rendering + symbol bookkeeping only); std-lib runtime gate **231 PASS / 0 FAIL** (pin
+unchanged); example matrix **24/24**; `check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK;
+build_test **0/9** (pre-existing zig0 baseline); self-emission rc 0 / 48 `.c` + 48 `.h` / no PANIC.
+Seed stays **v83** (operator R2: rotation is closeout-only — `release/seed/` untouched).
 
 ## Task 18 (F) — related-span diagnostics + non-ASCII message audit (v226 -> v227 2026-09-24)
 
@@ -16,9 +70,11 @@ capture/redeclaration hit reads the new parallel `local_decl_spans_start`/`local
 grows/copies them), and the container-level path uses the symbol's `decl_node` span. Rendering:
 `<file>:<line>: note: previous declaration here` (or `note: declared here` for a container-level decl) —
 the same note locations Zig 0.15.2 prints. All 14 sites in `shadow_reject_xmod` now point at the right
-earlier line (22/23/36/43/14/14/15/16/17/67/71/77/87/100). This is the only Zig-note-with-location family
-in Z98's diagnostics; the other `AddNote` sites are the Z98-specific `source:`/`target:` type notes
-(investigated, no Zig location-note counterpart).
+earlier line (22/23/36/43/14/14/15/16/17/67/71/77/87/100). **CORRECTED by the Task 18 fix round
+above:** this is NOT the only Zig-note-with-location family — the arity (`error[3061]`), visibility
+(`error[3007]`), member-not-found (`error[3060]`) and call-argument (`error[3000]`) families now
+emit related spans too (see the v227 -> v228 section). The remaining `AddNote` sites are the
+Z98-specific `source:`/`target:` type notes (no Zig location-note counterpart).
 
 **Fix (2) ASCII audit.** The five `error[3000]` messages now use ASCII ` -- `:
 `type mismatch in return statement -- ...`, `type mismatch in function argument -- ...` (two sites),

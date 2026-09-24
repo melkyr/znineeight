@@ -1,4 +1,7 @@
 // call_arity_reject_xmod — Task 14 (S2) arity reject fixture.
+// Task 18 fix round: every `error[3061]` also renders Zig's declaration note
+// (`main.zig:32: note: function declared here` for `add`; `:36:` for `one`;
+// the nested-module `std.io.print()` site has no note — bounded).
 //
 // DEFECT (before the fix): a wrong-arity call compiled rc=0 and failed only at
 // gcc (`too few`/`too many arguments to function`). Official Zig 0.15.2

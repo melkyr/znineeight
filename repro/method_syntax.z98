@@ -5,6 +5,8 @@
 //   <zig1> --dump-c89 --output-dir /tmp/method_syntax repro/method_syntax.z98
 //
 // EXPECTED (after the fix): dump rc=2, 0 `.c`,
+//   (Task 18) each diagnostic also renders `<file>:NN: note: struct declared
+//   here` (or `union declared here`) at the aggregate's declaration.
 //   error[3060]: no field or member function named 'square' in struct type
 //   error[3060]: no field or member function named 'nope' in struct type
 //   error[3060]: no field or member function named 'foo' in type
