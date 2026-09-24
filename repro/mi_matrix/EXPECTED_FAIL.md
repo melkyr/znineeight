@@ -1,4 +1,55 @@
-# mi_matrix corpus — expected-fail manifest (v226 2026-09-24)
+# mi_matrix corpus — expected-fail manifest (v227 2026-09-24)
+
+## Task 18 (F) — related-span diagnostics + non-ASCII message audit (v226 -> v227 2026-09-24)
+
+**Defects.** (i) `diagnosticCollectorAddRelatedSpan` (`sf/src/diagnostics.zig`) had zero call sites, so
+no diagnostic could point at the earlier declaration the way Zig's `note:` does (and the renderer's
+`related_span_idx > 0` guard meant an index-0 span could never print). (ii) Five `error[3000]` message
+strings embedded a raw UTF-8 em dash (`sf/src/semantic_analyzer.zig`) — an ASCII/ISO-8859-1 manual page
+cannot quote them byte-exactly.
+
+**Fix (1) related spans.** The collector now reserves related-span slot 0 as the "no related span"
+sentinel before the first emission, so the first real span lands at index 1 and renders. The two
+`error[3057]` paths of `semanticAnalyzerCheckLocalShadow` now emit related spans: the local/param/
+capture/redeclaration hit reads the new parallel `local_decl_spans_start`/`local_decl_spans_end` arrays
+(written at every registration site; `registerLocalDecl` takes the name span; `semanticAnalyzerGrowLocalDecls`
+grows/copies them), and the container-level path uses the symbol's `decl_node` span. Rendering:
+`<file>:<line>: note: previous declaration here` (or `note: declared here` for a container-level decl) —
+the same note locations Zig 0.15.2 prints. All 14 sites in `shadow_reject_xmod` now point at the right
+earlier line (22/23/36/43/14/14/15/16/17/67/71/77/87/100). This is the only Zig-note-with-location family
+in Z98's diagnostics; the other `AddNote` sites are the Z98-specific `source:`/`target:` type notes
+(investigated, no Zig location-note counterpart).
+
+**Fix (2) ASCII audit.** The five `error[3000]` messages now use ASCII ` -- `:
+`type mismatch in return statement -- ...`, `type mismatch in function argument -- ...` (two sites),
+`type mismatch in assignment -- ...`, `type mismatch in variable declaration -- ...`. Audit command
+`LC_ALL=C grep -rnP '"[^"]*[^\x00-\x7F]' sf/src --include=*.zig | grep -vP ':\s*//'` (plus the
+whole-tree non-ASCII census) finds no non-ASCII diagnostic message string; the only surviving non-ASCII
+string literals live in `emit_support.zig` and are emitted-C **prelude comments**, not diagnostics —
+deliberately untouched (changing emitted C would move the 4-MD5 gates). The new `error[3060]`/`[3061]`/
+`[3062]` messages were already ASCII. `diag_excerpt_multifile_xmod`'s rendered warning now reads
+`type mismatch in assignment -- internal type representations differ; generated code may be incorrect`
+(rc=0 / 5 `.c` / class OK unchanged).
+
+**Fixtures.** Reject `repro/mi_matrix/shadow_related_span_xmod` (`expected.rc` = 2; param /
+outer-local / same-scope / `if`-capture / container-level sites): **rc 2 / 0 `.c` / 5 x `error[3057]` /
+5 related-span lines** (stderr pinned in `NOTES.md`); Zig 0.15.2 prints notes at the same lines
+(`14->13`, `23->21`, `35->34`, `42->10`). Standalone `repro/shadow_related_span.z98`. Pre-existing
+`parsergap_shadow_local_xmod` (reject) now shows `main.zig:3: note: previous declaration here`.
+
+**Known divergence (pre-existing Task 7D, NOT addressed).** Z98 reports every shadow site in a function;
+Zig 0.15.2 suppresses later in-function shadow errors after one has been reported (the fixture's
+same-scope `const twice` is Z98-only) — a diagnostic-count divergence, not a related-span one.
+
+**Gates.** self-compile moving point hop1 `c64e8e6e0039158b1ab0cd7f8a5eac6f` != hop2 == hop3 ==
+`13e9458114537ca669f21816762a4f30` (explicit `FIXED_POINT_MD5=13e94581…` gate OK, deterministic);
+4-MD5 emitted-C **UNCHANGED** (gol `e7bde571…` / lisp `4afb601f…` / json `09fb55e5…` / mud
+`5a1cc65e…`); corpus `-s0` **1016 = 878 OK / 46 GREEN / 92 FAIL / 0 ICE / 0 CRASH** (join-diff vs the
+Task 17 fix-round baseline 1015 = exactly the new fixture dir, **zero class movers**); std-lib runtime
+gate **231 PASS / 0 FAIL** (pin unchanged); example matrix **24/24**; `check_emit_support.sh` 7/7;
+`verify_upgraded.sh` CLOSEOUT OK; build_test **0/9** (pre-existing zig0 baseline); self-emission rc 0 /
+48 `.c` + 48 `.h` / no PANIC. Seed stays **v83** (operator R2: rotation is closeout-only —
+`release/seed/` untouched).
 
 ## Task 17 (F) fix round (review Important 1) — runtime-end slice no longer over-rejected (v225 -> v226 2026-09-24)
 
@@ -6916,8 +6967,8 @@ check at the var-decl annotation site). No implementation yet at fixture-commit 
   `fixture_run.sh` run rc=0 printing `0` (the `@totallyBogus` result is silently dropped).
 - **Current RED status — cleandiag_unknown_type_xmod:** dump rc=2, 0 `.c`. dump.err verbatim:
   `repro/mi_matrix/cleandiag_unknown_type_xmod/main.zig:10:4: error[3000]: cannot declare variable
-  of type void` then `…:10:4: warning[3000]: type mismatch in variable declaration — initialization
-  type may not be compatible with declared type` + the source/`note: source: comptime_int` /
+  of type void` then `…:10:4: warning[3000]: type mismatch in variable declaration -- initialization
+  type may not be compatible with declared type` (text as of Task 18; the Task-6-era observation read `—`) + the source/`note: source: comptime_int` /
   `note: target: void` echo.
 - **Rule (GREEN contracts):** once implemented, both dump rc=2 with 0 `.c`; the builtin fixture's
   stderr contains `error[3000]: unsupported builtin function`; the type fixture's stderr contains
@@ -7104,8 +7155,8 @@ runnable today.
   RED root-cause record beneath retained verbatim.
 - **Current RED status — int_arbitrary_width_xmod:** dump rc=2, 0 `.c` emitted, stdout 0 bytes. The
   four typed var-decls each fire an `error[3000]: cannot declare variable of type void` +
-  `warning[3000]: type mismatch in variable declaration — initialization type may not be compatible
-  with declared type` pair (`note: source: comptime_int` / `note: target: void`); the analyzer stops
+  `warning[3000]: type mismatch in variable declaration -- initialization type may not be compatible
+  with declared type` (text as of Task 18; the historical observation read `—`) pair (`note: source: comptime_int` / `note: target: void`); the analyzer stops
   after the 4th (var `d: u3`). NO unknown-type diagnostic exists for the unregistered width. Observed
   caret-context quirk: the echoed source line under each diagnostic is the PRECEDING line's text while
   the `line:col` points at the declaration (display off-by-one, line numbers authoritative). stderr md5
@@ -9111,7 +9162,7 @@ Classifier rule: dump emits 0 `.c` with the documented `error[NNNN]` diagnostic.
 |-------|----------------|--------------------------------------------------|
 | `var_declared_void` | **green-guard (was emission-defect FAIL)** | dump rc=2, `error[3000]: cannot declare variable of type void`, 0 `.c` emitted. `var x = noop();` (void init) — sema now rejects VOID-typed var decls (semantic_analyzer.zig:1674-1677) |
 | `euvoid_val_catch` | **green-guard (was OK)** | dump rc=2, `error[3000]: cannot declare variable of type void`, 0 `.c` emitted. `var r = h() catch {};` (void-typed init) — latent void-var acceptance bug; Zig forbids void variables |
-| `eu_assign_incompat_payload` | **green-guard (was frontend-gap FAIL)** | dump rc=2, `error[3000]: type mismatch in assignment — internal type representations differ`, 0 `.c` emitted. `E!i64 → E!i32` payload mismatch at sema; zig0 oracle rejects identically (`error: type mismatch`) |
+| `eu_assign_incompat_payload` | **green-guard (was frontend-gap FAIL)** | dump rc=2, `error[3000]: type mismatch in assignment -- internal type representations differ` (Task 18: ASCII `--`; the historical text read `—`), 0 `.c` emitted. `E!i64 → E!i32` payload mismatch at sema; zig0 oracle rejects identically (`error: type mismatch`) |
 | `field_access_optional` | **green-guard (was frontend-gap FAIL)** | dump rc=2, `error[3000]: cannot access field on optional type; use .? to unwrap first`, 0 `.c` emitted. `.` on `?S`; zig0 oracle rejects identically (`error: type mismatch`) |
 
 Post-P2-3 accounting: **OK=188 / FAIL=7 / green-guards=2 / ICE=0 / CRASH=0 over 197 repros.**
@@ -9162,7 +9213,7 @@ out of the FAIL count into the "Green-guards" section). Verified with /tmp/p3/zi
 
 | Repro | zig1 (dump rc, error) | 0 `.c` | zig0 oracle |
 |-------|------------------------|--------|-------------|
-| `eu_assign_incompat_payload` | rc=2, `error[3000]: type mismatch in assignment — internal type representations differ` | yes | rejects: `error: type mismatch` (rc=1) |
+| `eu_assign_incompat_payload` | rc=2, `error[3000]: type mismatch in assignment -- internal type representations differ` (Task 18: ASCII `--`) | yes | rejects: `error: type mismatch` (rc=1) |
 | `field_access_optional` | rc=2, `error[3000]: cannot access field on optional type; use .? to unwrap first` | yes | rejects: `error: type mismatch` (rc=1) |
 
 **Post-P3-1 accounting: OK=189 / FAIL=4 / green-guards=4 / ICE=0 / CRASH=0 over 197 repros**

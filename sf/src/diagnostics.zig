@@ -426,6 +426,24 @@ pub fn diagnosticCollectorAddRelatedSpan(self: *DiagnosticCollector, diag_idx: u
     file_id: u32, span_start: u32, span_end: u32, msg: []const u8) void {
     if (diag_idx >= @intCast(u32, self.diagnostics.len)) return;
     var msg_id = interner_mod.stringInternerIntern(self.interner, msg);
+    // Task 18: `related_span_idx == 0` is the "no related span" sentinel in
+    // Diagnostic and the renderer only prints entries with an index > 0, so the
+    // FIRST real span must land at index 1. Reserve slot 0 with an empty entry
+    // before the first emission.
+    if (self.related_span_len == 0) {
+        var seed_cap: usize = @intCast(usize, 8);
+        var seed_raw = alloc_mod.sandAlloc(self.allocator, @intCast(usize, 16) * seed_cap, @intCast(usize, 4)) catch unreachable;
+        var seed_items = @ptrCast([*]RelatedSpan, seed_raw);
+        seed_items[0] = RelatedSpan{
+            .span_file_id = @intCast(u32, 0),
+            .span_start = @intCast(u32, 0),
+            .span_end = @intCast(u32, 0),
+            .message_id = @intCast(u32, 0),
+        };
+        self.related_span_items = seed_items;
+        self.related_span_cap = seed_cap;
+        self.related_span_len = @intCast(usize, 1);
+    }
     var new_len: usize = self.related_span_len + @intCast(usize, 1);
     if (new_len >= self.related_span_cap) {
         var new_cap = self.related_span_cap * 2;
