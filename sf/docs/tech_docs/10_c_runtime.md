@@ -1,4 +1,4 @@
-# 10 — C Runtime Layer [updated: 2026-09-20 — refreshed against current source: `pal_trap`/trap handler, `pal_file_read`/`pal_dir_exists`/`pal_get_default_lib_path`, 15 print helpers incl. hex, 20 `__bootstrap_*` helpers, the `-fsafe` overflow/checked-cast/poison helpers, the three target-neutral preludes, `c_exit.c`, and the dead `extern_c_z98.zig`; emitted-support relationship now via `emit_support.zig`; line references and dated evidence removed]
+# 10 — C Runtime Layer [updated: 2026-09-24 — Task 1 (z98-print-formatting): the `std_print_i32/u32/i64/u64/f64/bool/char/str/hex_*` formatting bodies were retired from `zig_runtime.c` (canonical) and `emit_support.zig` (emitted copy) and now live in the Z98 std module `sf/src/std_fmt.zig` (`std.fmt`), called through the same PAL primitives (`pal_print_stdout` + `pal_i64/u64/f64_to_str`). `std_print`/`std_print_len` remain the raw-bytes runtime helpers.] [updated: 2026-09-20 — refreshed against current source: `pal_trap`/trap handler, `pal_file_read`/`pal_dir_exists`/`pal_get_default_lib_path`, 15 print helpers incl. hex, 20 `__bootstrap_*` helpers, the `-fsafe` overflow/checked-cast/poison helpers, the three target-neutral preludes, `c_exit.c`, and the dead `extern_c_z98.zig`; emitted-support relationship now via `emit_support.zig`; line references and dated evidence removed]
 
 > Covers: `sf/src/include/*`, `c_exit.c`, `extern_c.zig`, `extern_c_z98.zig`
 
@@ -9,7 +9,7 @@
 | Header files | 8 | `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`, `net_prelude.h`, `std_os_prelude.h`, `std_time_prelude.h`, `net_runtime.h` (legacy), `optstar_repro.h` (repro stub) |
 | C source files | 3 | `zig_runtime.c`, `zig_pal.c`, `net_runtime.c` (legacy, unlinked) |
 | PAL functions | 15 | `pal_print_stderr`/`stdout`, `pal_set_trap_handler`, `pal_abort`, `pal_trap`, `pal_i64/u64/f64_to_str`, `pal_file_open`/`read`/`write`/`close`, `pal_dir_exists`, `pal_get_default_lib_path`, `mainCRTStartup` (Win32 `ZIG_NO_CRT`), plus 4 file-static helpers |
-| Runtime print helpers | 15 | `std_panic`, `std_print`, `std_print_len`, `std_print_i32/u32/i64/u64/f64/bool/char/str`, `std_print_hex_u32/i32/u64/i64` |
+| Runtime print helpers | 3 | `std_panic`, `std_print`, `std_print_len` — the typed `std_print_i32/u32/i64/u64/f64/bool/char/str/hex_*` formatting bodies moved to `sf/src/std_fmt.zig` (`std.fmt`) in Task 1, 2026-09-24 |
 | Checked cast functions | 8 | `std_checked_cast_i8..u64` — **legacy, NOT emitted by zig1** (upper-bound-only) |
 | `__bootstrap_<DST>_from_<SRC>` helpers | 20 | Retained `@intCast` range-check support: `static` defs in `zig_runtime.h` + `extern` defs in `zig_runtime.c`; panic `"integer cast overflow in @intCast"` on out-of-range. The emitter no longer selects them (see `08_c89_emission.md`) |
 | `-fsafe` helpers | 28 | 25 wrap/overflow-flag helpers + 2 width/sign-aware `zig_cast_checked_s/u` + `zig_poison_fill`; header-static, emitted only under `-fsafe` |
@@ -53,10 +53,8 @@ All typedefs at `sf/src/include/zig_compat.h`.
 | `arena_alloc_default` | decl | Default-arena entry point | Defined in the legacy `src/runtime/zig_runtime.c`, not in `sf/src/include` |
 | `zig_default_arena` | extern | Global arena pointer | |
 | `std_panic` | decl | Print panic + trap | Used by zig1 emission |
-| `std_print` / `std_print_len` | decl | Stdout string helpers | |
-| `std_print_i32`..`std_print_f64` | decl | Typed print helpers | |
-| `std_print_bool` / `std_print_char` / `std_print_str` | decl | Bool/char/slice print | |
-| `std_print_hex_u32` / `std_print_hex_i32` / `std_print_hex_u64` / `std_print_hex_i64` | decl | Hex print helpers | |
+| `std_print` / `std_print_len` | decl | Stdout string helpers (raw bytes; format-string literal segments + console) | |
+| `std_print_i32`..`std_print_hex_i64` | decl | **Bodies moved (Task 1, 2026-09-24)** — the declarations are retained in `zig_runtime.h` for compatibility, but the definitions were retired from `zig_runtime.c`/`emit_support.zig`; the formatting bodies now live in `sf/src/std_fmt.zig` (`std.fmt`); see `08_c89_emission.md` | |
 | `std_checked_cast_*` | decl | Legacy upper-bound-only numeric casts | Panic `"int cast overflow for <T>"`; NOT emitted by zig1 |
 | `c_char` + `__bootstrap_<DST>_from_<SRC>` (20) | typedef + static | Retained `@intCast` range-check helpers | `static` here + `extern` in `zig_runtime.c`; the emitter now uses `zig_cast_checked_s/u` instead |
 | `zig_cast_checked_s` / `zig_cast_checked_u` | static | `-fsafe` width/sign-aware checked `@intCast` | Header-static; emitted only under `-fsafe` |
@@ -68,18 +66,9 @@ All declarations at `sf/src/include/zig_runtime.h`.
 | Function | Visibility | Purpose | Calls | Key Decisions |
 |----------|-----------|---------|-------|---------------|
 | `std_panic` | extern | Prints `"panic: "` + msg + `"\n"` to stderr, then calls `pal_trap` | `pal_print_stderr`, `strlen`, `pal_trap` | Fatal — no return; uses `pal_print_stderr`, not `pal_print_stdout` |
-| `std_print` | extern | Print null-terminated string to stdout | `pal_print_stdout`, `strlen` | Null-safety check |
-| `std_print_len` | extern | Print string with explicit length | `pal_print_stdout` | Requires both ptr and len non-zero |
-| `std_print_i32` | extern | Format i32 as decimal, print | `pal_i64_to_str`, `std_print` | local `char[16]`; uses i64 conversion internally |
-| `std_print_u32` | extern | Format u32 as decimal, print | `pal_u64_to_str`, `std_print` | local `char[16]` |
-| `std_print_i64` | extern | Format i64 as decimal, print | `pal_i64_to_str`, `std_print` | local `char[24]` |
-| `std_print_u64` | extern | Format u64 as decimal, print | `pal_u64_to_str`, `std_print` | local `char[24]` |
-| `std_print_f64` | extern | Format f64 as decimal, print | `pal_f64_to_str`, `std_print` | local `char[32]` |
-| `std_print_bool` | extern | Print `"true"` or `"false"` | `std_print` | |
-| `std_print_char` | extern | Print single char | `pal_print_stdout` | Cast to `char` |
-| `std_print_str` | extern | Print u8 slice | `pal_print_stdout` | Casts `const unsigned char*` to `const char*` |
-| `std_print_hex_u32` / `std_print_hex_u64` | extern | Lowercase hex of an unsigned value | `std_print`, `std_print_len` | `"0"` for zero; manual digit extraction |
-| `std_print_hex_i32` / `std_print_hex_i64` | extern | Hex of a signed value | `std_print_hex_u32` / `std_print_hex_u64` | Reinterprets as unsigned |
+| `std_print` | extern | Print null-terminated string to stdout | `pal_print_stdout`, `strlen` | Null-safety check; raw bytes for the `.print_str` literal segments |
+| `std_print_len` | extern | Print string with explicit length | `pal_print_stdout` | Requires both ptr and len non-zero; raw bytes for the console builtins |
+| ~~`std_print_i32`..`std_print_hex_i64`~~ | — | **MOVED (Task 1, 2026-09-24)** — the formatting bodies are now `sf/src/std_fmt.zig` (`std.fmt`) re-implementations over the same PAL primitives | `pal_print_stdout`, `pal_i64/u64/f64_to_str` | The compiler emits mangled `std.fmt` calls; the C definitions are retired from `zig_runtime.c` + `emit_support.zig` |
 | `std_checked_cast_i8`..`std_checked_cast_u64` (8) | extern | Upper-bound-only u64→target casts | `std_panic` | **Legacy — not emitted** (use `zig_cast_checked_s/u`); `u64` is an identity pass-through |
 | `__bootstrap_<DST>_from_<SRC>` (20) | extern | Range-checked `@intCast` support | `std_panic` | Retained; the emitter no longer selects them (see `08_c89_emission.md`) |
 | `zig_poison_fill` | extern | `-fsafe` `undefined` poison (`0xAA` fill) | none | Emitted only under `-fsafe` |
@@ -95,13 +84,13 @@ The live `zig_runtime.c` no longer defines the `__bootstrap_print*`/`__bootstrap
 | `pal_reverse` | static | In-place char buffer reversal | `pal_u64_to_str_buf` | none | Two-pointer swap |
 | `pal_u64_to_str_buf` | static | Unsigned int to decimal string | `pal_u64_to_str`, `pal_i64_to_str` | `pal_reverse` | Reverse digit extraction; handles zero |
 | `pal_print_stderr` | extern | Write `len` bytes to stderr (fd 2) | `std_panic`, diagnostics | `write` / `WriteConsoleA`+`WriteFile` | Win32 tries Console then File |
-| `pal_print_stdout` | extern | Write `len` bytes to stdout (fd 1) | `std_print`, `std_print_len`, `std_print_char`, `std_print_str` | `write` / `WriteConsoleA`+`WriteFile` | Same dual-path as stderr |
+| `pal_print_stdout` | extern | Write `len` bytes to stdout (fd 1) | `std_print`, `std_print_len`, `std.fmt` printers (`std_fmt.zig`) | `write` / `WriteConsoleA`+`WriteFile` | Same dual-path as stderr; **unbuffered on POSIX** (`write(1)`) — the `std.fmt` printers use it (not the buffered `@stdoutWrite`) so print output ordering is unchanged |
 | `pal_set_trap_handler` | extern | Install a Z98 trap handler | `std_debug.zig` | none | `TrapContext` layout must match `std_debug.zig` (10 × `unsigned int`) |
 | `pal_abort` | extern | Abort process | `pal_trap` fallback | `abort()` / `TerminateProcess` | Win32 uses exit code 3 |
 | `pal_trap` | extern | Invoke handler, then `int3` | `std_panic`, `-fsafe` guards | `g_trap_handler`, inline asm, `pal_abort` | Register capture GCC/x86-only; `int3` on x86, `pal_abort` elsewhere |
-| `pal_i64_to_str` | extern | Signed 64-bit to decimal string | `std_print_i32`, `std_print_i64` | `pal_u64_to_str_buf` | Two's-complement-safe negate: `-(value+1)+1` |
-| `pal_u64_to_str` | extern | Unsigned 64-bit to decimal string | `std_print_u32`, `std_print_u64` | `pal_u64_to_str_buf` | Thin wrapper |
-| `pal_f64_to_str` | extern | Double to decimal string (up to 6 fractional digits) | `std_print_f64` | `pal_i64_to_str` | Strips trailing zeros; integer part via i64, fraction via loop ×10 |
+| `pal_i64_to_str` | extern | Signed 64-bit to decimal string | `std.fmt.printI32`/`printI64` (`std_fmt.zig`); historically `std_print_i32`/`std_print_i64` | `pal_u64_to_str_buf` | Two's-complement-safe negate: `-(value+1)+1` |
+| `pal_u64_to_str` | extern | Unsigned 64-bit to decimal string | `std.fmt.printU32`/`printU64`; historically `std_print_u32`/`std_print_u64` | `pal_u64_to_str_buf` | Thin wrapper |
+| `pal_f64_to_str` | extern | Double to decimal string (up to 6 fractional digits) | `std.fmt.printF64`; historically `std_print_f64` | `pal_i64_to_str` | Strips trailing zeros; integer part via i64, fraction via loop ×10 |
 | `pal_file_open` | extern | Open existing file for read (`PAL_FILE_OPEN_READ`) or create/truncate for write (`PAL_FILE_OPEN_WRITE`) | zig1 `fileOpen`, `std_io` | `open` / `CreateFileA` | Returns a `PlatFile`; `PLAT_INVALID_FILE` on failure; POSIX `O_WRONLY\|O_CREAT\|O_TRUNC\|flags, 0644` |
 | `pal_file_read` | extern | Read up to `len` bytes (EINTR-retrying) | zig1 `fileRead`, `std_io` | `read` / `ReadFile` | `-1` on error, else bytes read |
 | `pal_file_write` | extern | Write `len` bytes with partial-write loop | zig1 `fileWrite`, `std_io` | `write` / `WriteFile` | Loops until all bytes written; `-1` on error |
@@ -168,6 +157,7 @@ The compiler does not link the `sf/src/include/*` files at emission time; `emit_
 zig1 emitted C89 code
   │
   ├─ std.debug.print(...) → std_print*(...) → pal_print_stdout → write(1,...)
+  ├─ std.io.print(fmt, .{...}) → mangled std.fmt.<printer>(...) (std_fmt.zig) → pal_print_stdout → write(1,...)
   ├─ @panic(...) → std_panic(msg) → pal_print_stderr("panic: " + msg) → pal_trap() → int3 / pal_abort
   ├─ @intCast(T, val) checked [-fsafe] → zig_cast_checked_s/u(val, src_w, src_s, dst_w) → range check → return/trap
   ├─ legacy `__bootstrap_<DST>_from_<SRC>` helpers — retained, no longer selected by the emitter
@@ -212,7 +202,7 @@ rebuild MUST include it in the gcc line, else the link fails with `undefined ref
 ## Known Issues
 
 - **`__bootstrap_print` / `__bootstrap_print_int` are declared with no live definition.** `extern_c.zig` declares them and the `zig_runtime.h`/`zig_runtime.c` backward-compat aliases were removed (F4, 2026-08-08), but the live runtime defines neither (only the dead `emitZigRuntimeC` mirror in `c89_emit.zig` does). `pal.zig` uses only `ext_c.write`, so no live release caller links against them; they are retained legacy import surface.
-- **`pal_print_stdout` is not declared in `zig_runtime.h`.** It is forward-declared inside `zig_runtime.c` and defined in `zig_pal.c`; an emitted TU that calls it must supply its own declaration (the emitter does).
+- **`pal_print_stdout` is not declared in `zig_runtime.h`.** It is forward-declared inside `zig_runtime.c` and defined in `zig_pal.c`; an emitted TU that calls it must supply its own declaration. `std_fmt.zig` declares it `extern "c"` (the emitter skips prototypes for extern fns; the emitted `std_fmt` TU calls it with a C89 implicit declaration, as `std_io` already does for `pal_file_*`).
 - **`net_runtime.c` / `net_runtime.h` are dead.** None of the 12 socket helpers declared in `net_runtime.h` are referenced by `sf/src`; 6 carry the `plat_socket_*` prefix (`plat_socket_init`/`cleanup`/`select`/`fd_zero`/`fd_set`/`fd_isset`), the other 6 are the remaining socket helpers (`plat_create_tcp_server`, `plat_bind_listen`, `plat_accept`, `plat_recv`, `plat_send`, `plat_close_socket`). `std_net` is now the extern surface via `net_prelude.h`. The file remains only for legacy/pre-F6 example builds.
 - **`optstar_repro.h` is a repro stub** referencing `extFn` and `fopen` with mangled types; it is included by no live TU.
 - **`extern_c_z98.zig` is dead.** It is not imported by the 40-module build, and its `@cInclude("pal.h")` names a header that is not present in the tree.

@@ -23,100 +23,10 @@ void std_panic(const char* msg) {
 void std_print(const char* s) { if (s) pal_print_stdout(s, strlen(s)); }
 void std_print_len(const char* s, unsigned int len) { if (s && len) pal_print_stdout(s, len); }
 
-void std_print_i32(int val) {
-    char buf[16];
-    pal_i64_to_str((long long)val, buf, sizeof(buf));
-    std_print(buf);
-}
-
-void std_print_u32(unsigned int val) {
-    char buf[16];
-    pal_u64_to_str((unsigned long long)val, buf, sizeof(buf));
-    std_print(buf);
-}
-
-void std_print_i64(long long val) {
-    char buf[24];
-    pal_i64_to_str(val, buf, sizeof(buf));
-    std_print(buf);
-}
-
-void std_print_u64(unsigned long long val) {
-    char buf[24];
-    pal_u64_to_str(val, buf, sizeof(buf));
-    std_print(buf);
-}
-
-void std_print_f64(double val) {
-    char buf[32];
-    pal_f64_to_str(val, buf, sizeof(buf));
-    std_print(buf);
-}
-
-void std_print_bool(int val) {
-    if (val) std_print("true");
-    else std_print("false");
-}
-
-void std_print_char(unsigned char val) { char c = (char)val; pal_print_stdout(&c, 1); }
-
-void std_print_hex_u32(unsigned int val) {
-    const char* hex_digits = "0123456789abcdef";
-    char buf[16];
-    char tmp[16];
-    int pos;
-    int tpos;
-    if (val == 0) {
-        std_print("0");
-        return;
-    }
-    pos = 0;
-    tpos = 0;
-    while (val > 0) {
-        tmp[tpos] = hex_digits[val & 0xF];
-        tpos++;
-        val = val >> 4;
-    }
-    while (tpos > 0) {
-        tpos--;
-        buf[pos] = tmp[tpos];
-        pos++;
-    }
-    std_print_len(buf, (unsigned int)pos);
-}
-
-void std_print_hex_i32(int val) { std_print_hex_u32((unsigned int)val); }
-
-void std_print_hex_u64(unsigned long long val) {
-    const char* hex_digits = "0123456789abcdef";
-    char buf[24];
-    char tmp[24];
-    int pos;
-    int tpos;
-    if (val == 0) {
-        std_print("0");
-        return;
-    }
-    pos = 0;
-    tpos = 0;
-    while (val > 0) {
-        tmp[tpos] = hex_digits[(int)(val & 0xFULL)];
-        tpos++;
-        val = val >> 4;
-    }
-    while (tpos > 0) {
-        tpos--;
-        buf[pos] = tmp[tpos];
-        pos++;
-    }
-    std_print_len(buf, (unsigned int)pos);
-}
-
-void std_print_hex_i64(long long val) { std_print_hex_u64((unsigned long long)val); }
-
-void std_print_str(const unsigned char* ptr, unsigned int len) {
-    if (ptr && len) pal_print_stdout((const char*)ptr, len);
-}
+/* The std_print_* formatting bodies moved to the Z98 std module
+   sf/src/std_fmt.zig (std.fmt) in Task 1 of the print-formatting plan; the
+   compiler now emits mangled std.fmt calls. std_print/std_print_len above
+   remain the raw-bytes helpers (format-string literal segments, console). */
 
 /* Backward compat I/O aliases __bootstrap_print* / __bootstrap_write /
    __bootstrap_sleep_ms / __bootstrap_panic REMOVED (F4, 2026-08-08) — the

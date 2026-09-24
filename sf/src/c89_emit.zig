@@ -665,8 +665,9 @@ pub fn nameManglerMangleGlobal(self: *NameMangler, registry: *TypeRegistry, name
      fwd_decl_set: U32ToU32Map,
      pointer_only_map: U32ToU32Map,
       shared_set: U32ToU32Map,
-      module_reg: *mr_mod.ModuleRegistry,
-      reachable: U32ToU32Map,
+       module_reg: *mr_mod.ModuleRegistry,
+       std_fmt_module_id: u32,
+       reachable: U32ToU32Map,
       prune_active: u8,
       error_code_registry: *hash_mod.U32ToU32Map,
       dedup_names: [*]u32,
@@ -719,6 +720,7 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
          .pointer_only_map = hash_mod.u32ToU32MapInitCap(persist_alloc, @intCast(usize, pointer_only_len)),
          .shared_set = hash_mod.u32ToU32MapInit(persist_alloc),
          .module_reg = undefined,
+         .std_fmt_module_id = @intCast(u32, 0xFFFFFFFF),
          .reachable = hash_mod.u32ToU32MapInit(persist_alloc),
          .prune_active = @intCast(u8, 0),
          .error_code_registry = error_code_reg,
@@ -5471,35 +5473,48 @@ fn getCheckedCastFnName(reg: *TypeRegistry, tid: u32) []const u8 {
 
 
 
-fn getPrintFnName(reg: *TypeRegistry, tid: u32, fmt: u8) []const u8 {
+// Task 1 (z98-print-formatting): the formatting bodies now live in the Z98
+// std module `sf/src/std_fmt.zig` (`std.fmt`). This returns the std.fmt SOURCE
+// name for the (type × specifier) route; getPrintFnName then mangles it
+// against the auto-imported std_fmt module, so every `.print_val` call site is
+// a normal cross-module Z98 call and the C `std_print_*` ABI names are retired.
+fn printFnSourceName(reg: *TypeRegistry, tid: u32, fmt: u8) []const u8 {
     var ty = reg.types_items[@intCast(usize, tid)];
     var is_hex: u8 = if (fmt == @intCast(u8, 'x')) @intCast(u8, 1) else @intCast(u8, 0);
     if (ty.kind == TypeKind.u32_type) {
-        if (is_hex != @intCast(u8, 0)) { var h: []const u8 = "std_print_hex_u32"; return h; }
-        { var s: []const u8 = "std_print_u32"; return s; }
+        if (is_hex != @intCast(u8, 0)) { var h: []const u8 = "printHexU32"; return h; }
+        { var s: []const u8 = "printU32"; return s; }
     }
     if (ty.kind == TypeKind.i32_type) {
-        if (is_hex != @intCast(u8, 0)) { var h: []const u8 = "std_print_hex_i32"; return h; }
-        { var s: []const u8 = "std_print_i32"; return s; }
+        if (is_hex != @intCast(u8, 0)) { var h: []const u8 = "printHexI32"; return h; }
+        { var s: []const u8 = "printI32"; return s; }
     }
     if (ty.kind == TypeKind.i64_type) {
-        if (is_hex != @intCast(u8, 0)) { var h: []const u8 = "std_print_hex_i64"; return h; }
-        { var s: []const u8 = "std_print_i64"; return s; }
+        if (is_hex != @intCast(u8, 0)) { var h: []const u8 = "printHexI64"; return h; }
+        { var s: []const u8 = "printI64"; return s; }
     }
     if (ty.kind == TypeKind.u64_type) {
-        if (is_hex != @intCast(u8, 0)) { var h: []const u8 = "std_print_hex_u64"; return h; }
-        { var s: []const u8 = "std_print_u64"; return s; }
+        if (is_hex != @intCast(u8, 0)) { var h: []const u8 = "printHexU64"; return h; }
+        { var s: []const u8 = "printU64"; return s; }
     }
-    if (ty.kind == TypeKind.f64_type) { var s: []const u8 = "std_print_f64"; return s; }
-    if (ty.kind == TypeKind.f32_type) { var s: []const u8 = "std_print_f64"; return s; }
-    if (ty.kind == TypeKind.bool_type) { var s: []const u8 = "std_print_bool"; return s; }
+    if (ty.kind == TypeKind.f64_type) { var s: []const u8 = "printF64"; return s; }
+    if (ty.kind == TypeKind.f32_type) { var s: []const u8 = "printF64"; return s; }
+    if (ty.kind == TypeKind.bool_type) { var s: []const u8 = "printBool"; return s; }
     if (ty.kind == TypeKind.u8_type) {
-        if (fmt == @intCast(u8, 'c')) { var s: []const u8 = "std_print_char"; return s; }
-        if (is_hex != @intCast(u8, 0)) { var h: []const u8 = "std_print_hex_u32"; return h; }
-        { var s: []const u8 = "std_print_u32"; return s; }
+        if (fmt == @intCast(u8, 'c')) { var s: []const u8 = "printChar"; return s; }
+        if (is_hex != @intCast(u8, 0)) { var h: []const u8 = "printHexU32"; return h; }
+        { var s: []const u8 = "printU32"; return s; }
     }
-    if (ty.kind == TypeKind.slice_type) { var s: []const u8 = "std_print_str"; return s; }
-    { var s: []const u8 = "std_print_i32"; return s; }
+    if (ty.kind == TypeKind.slice_type) { var s: []const u8 = "printStr"; return s; }
+    { var s: []const u8 = "printI32"; return s; }
+}
+
+fn getPrintFnName(emitter: *C89Emitter, tid: u32, fmt: u8) []const u8 {
+    var src = printFnSourceName(emitter.registry, tid, fmt);
+    if (emitter.std_fmt_module_id == @intCast(u32, 0xFFFFFFFF)) return src;
+    var src_id = interner_mod.stringInternerIntern(emitter.interner, src);
+    var mangled_id = nameManglerMangle(emitter.mangler, src_id, @intCast(u8, 0), emitter.std_fmt_module_id);
+    return interner_mod.stringInternerGet(emitter.interner, mangled_id);
 }
 
 fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
@@ -7889,7 +7904,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
         },
         .print_val => |p| {
             var val = resolveTempName(emitter, p.value);
-            var fn_name = getPrintFnName(emitter.registry, p.type_id, p.fmt);
+            var fn_name = getPrintFnName(emitter, p.type_id, p.fmt);
             var ty = emitter.registry.types_items[@intCast(usize, p.type_id)];
             var is_slice: u8 = if (ty.kind == TypeKind.slice_type) @intCast(u8, 1) else @intCast(u8, 0);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);

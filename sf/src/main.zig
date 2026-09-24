@@ -423,6 +423,23 @@ fn runCompiler(ctx: *CompilerContext) void {
     diag_mod.diagnosticCollectorPrintAll(ctx.diag);
 }
 
+// Task 1 (z98-print-formatting): does the parsed program contain a call whose
+// callee is named `print`? That is the same syntactic shape the lowerer's
+// print special case (`fp.name_id == print_fn_id`) intercepts, so the auto
+// import below happens exactly when a `print` can be lowered.
+fn astStoreHasPrintCall(store: *AstStore, print_id: u32) bool {
+    var i: usize = @intCast(usize, 0);
+    while (i < store.nodes.len) : (i += @intCast(usize, 1)) {
+        var node = ast_mod.astStoreNodeAt(store, @intCast(u32, i));
+        if (node.kind != AstKind.fn_call) continue;
+        if (node.child_0 == @intCast(u32, 0)) continue;
+        var callee = ast_mod.astStoreNodeAt(store, node.child_0);
+        if (callee.kind != AstKind.ident_expr and callee.kind != AstKind.field_access) continue;
+        if (ast_mod.astStoreNodePayload(store, node.child_0) == print_id) return true;
+    }
+    return false;
+}
+
 fn phase_ImportResolution(ctx: *CompilerContext) void {
     var p_msg: []const u8 = "I\n"; pal.markerWrite(p_msg);
     alloc_mod.sandReset(&ctx.alloc.scratch);
@@ -448,6 +465,16 @@ fn phase_ImportResolution(ctx: *CompilerContext) void {
     var mod_id = mr_mod.moduleRegistryAddModule(ctx.module_reg, path_id);
     mr_mod.importQueueEnqueue(&ctx.module_reg.import_queue, mod_id);
     import_resolver.moduleRegistryResolveImports(ctx.module_reg, &ctx.alloc.module, &ctx.alloc.scratch, ctx.store);
+    // Task 1 auto-import: whenever the program can lower a `print`, bring the
+    // std_fmt module (and its PAL backing) into the graph so the mangled
+    // `std.fmt` call sites the emitter writes have a definition. The user needs
+    // no new import; `std.io.print` stays the entry point.
+    var print_name_id = interner_mod.stringInternerIntern(ctx.interner, "print");
+    if (astStoreHasPrintCall(ctx.store, print_name_id)) {
+        var fmt_path_id = interner_mod.stringInternerIntern(ctx.interner, "std_fmt.zig");
+        _ = mr_mod.moduleRegistryResolveImport(ctx.module_reg, fmt_path_id, mod_id, &ctx.alloc.scratch);
+        import_resolver.moduleRegistryResolveImports(ctx.module_reg, &ctx.alloc.module, &ctx.alloc.scratch, ctx.store);
+    }
     var hash_spill_path: [512]u8 = undefined;
     var hsp_len: usize = @intCast(usize, 0);
     if (ctx.cli.output_dir_set) {
@@ -1034,6 +1061,28 @@ fn pruneTypeMarkByValue(ref_edges: *hash_mod.U32ToU32Map, reg: *TypeRegistry, vi
 }
 
 
+// Task 1: the auto-imported std_fmt module id, found by its path basename.
+// 0xFFFFFFFF means "no std_fmt in the module graph" (no print was lowered).
+fn moduleIdForBasename(mods: []mr_mod.ModuleEntry, interner: *StringInterner, base: []const u8) u32 {
+    var i: usize = @intCast(usize, 0);
+    while (i < mods.len) : (i += @intCast(usize, 1)) {
+        var p = interner_mod.stringInternerGet(interner, mods[i].path_id);
+        if (p.len >= base.len) {
+            var off: usize = p.len - base.len;
+            var eq: u8 = @intCast(u8, 1);
+            var j: usize = @intCast(usize, 0);
+            while (j < base.len) : (j += @intCast(usize, 1)) {
+                if (p[off + j] != base[j]) { eq = @intCast(u8, 0); break; }
+            }
+            if (eq != @intCast(u8, 0)) {
+                if (off == @intCast(usize, 0)) return mods[i].id;
+                if (p[off - @intCast(usize, 1)] == @intCast(u8, '/')) return mods[i].id;
+            }
+        }
+    }
+    return @intCast(u32, 0xFFFFFFFF);
+}
+
 fn phase_C89Emission(ctx: *CompilerContext) void {
     var p_msg: []const u8 = "C\n"; pal.markerWrite(p_msg);
     if (!ctx.cli.dump_c89 and !ctx.cli.output_dir_set) return;
@@ -1056,6 +1105,8 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
         ctx.cli.safe_checks,
     );
     emitter.module_reg = ctx.module_reg;
+    var c89_fmt_base: []const u8 = "std_fmt.zig";
+    emitter.std_fmt_module_id = moduleIdForBasename(mr_mod.moduleRegistryGetModules(ctx.module_reg), ctx.interner, c89_fmt_base);
     errorCodeRegistryFinalize(ctx);
     var gd_slice = lir_mod.globalDeclArrayListGetSlice(&ctx.global_decls);
     emitter.global_decls = gd_slice.ptr;
@@ -1115,6 +1166,15 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
                 }
                 if (ts_edge_has != @intCast(u8, 0) and ts_edge_dst != ts_src) {
                     hash_mod.u32ToU32MapPut(&ref_edges, ts_src * @intCast(u32, 65536) + ts_edge_dst, @intCast(u32, 1));
+                }
+                // Task 1: a `.print_val` lowers to a mangled call into std_fmt
+                // that is NOT a LIR call instruction, so record the value-ref
+                // edge by hand: it keeps std_fmt reachable and forces the
+                // caller's header to include std_fmt.h (the prototypes).
+                if (ts_tg == @enumToInt(lir_mod.LirInst.print_val) and emitter.std_fmt_module_id != @intCast(u32, 0xFFFFFFFF)) {
+                    if (emitter.std_fmt_module_id != ts_src) {
+                        hash_mod.u32ToU32MapPut(&ref_edges, ts_src * @intCast(u32, 65536) + emitter.std_fmt_module_id, @intCast(u32, 1));
+                    }
                 }
                 if (ts_tg != @enumToInt(lir_mod.LirInst.load_global) and ts_tg != @enumToInt(lir_mod.LirInst.store_global)) continue;
                 var ts_name_id: u32 = @intCast(u32, 0);

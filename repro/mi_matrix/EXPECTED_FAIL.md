@@ -1,4 +1,43 @@
-# mi_matrix corpus — expected-fail manifest (v228 2026-09-24)
+# mi_matrix corpus — expected-fail manifest (v229 2026-09-24)
+
+## Task 1 (F) — create `std.fmt` and migrate the print primitives (v228 -> v229, 2026-09-24)
+
+The print-formatting plan's Task 1 moved the formatting layer out of the C runtime into the new Z98
+std module `sf/src/std_fmt.zig` (re-exported as `std.fmt`). The compiler now emits **mangled
+cross-module `std.fmt` calls** for `.print_val`, **auto-imports std_fmt** whenever the parsed
+program contains a call whose callee is named `print` (`phase_ImportResolution`), and locates the
+module at emission (`moduleIdForBasename` + a `.print_val` `ref_edges` seed). The `.print_val`
+C-ABI names (`std_print_i32/u32/i64/u64/f64/bool/char/str/hex_*`) are retired from the call sites
+and their DEFINITIONS are removed in lockstep from `sf/src/include/zig_runtime.c` and
+`sf/src/emit_support.zig` (the `zig_runtime.h` declarations are retained for compatibility);
+`std_print`/`std_print_len` remain the raw-bytes helpers. std_fmt uses the same PAL primitives the
+retired bodies used (`pal_print_stdout` + `pal_i64/u64/f64_to_str`) so output bytes AND ordering are
+unchanged.
+
+**Fixtures (2 new dirs, both OK; stdlib pin 231 -> 233):**
+- `repro/mi_matrix/stdlib_std_fmt_seam_xmod` — every pre-seam route (i32/u32/i64/u64 `{}`/`{d}`,
+  non-negative `{x}`, u8 `{c}`, `bool {}`, `[]const u8 {s}`, f32/f64 `{}`, literal segments) +
+  a direct `std.fmt.printI32` through the re-export; 13-line exact golden, rc 0.
+- `repro/mi_matrix/stdlib_print_autoimport_xmod` — imports `std_io.zig` directly (no `std`), so the
+  auto-import is the only way std_fmt enters the graph; golden `auto=9 ok=true`, rc 0.
+- standalone `repro/print_std_fmt_seam.z98`.
+
+**Gates (Task-1 compiler; deterministic 3x per fixture via the stdlib harness):** self-compile
+**moving point** hop1 `2e5e7530a37487e4fddee9084bd31bb5` != hop2 == hop3 ==
+**`c1949a3d032c9414f40ef42ec7d38d16`**; **4-MD5 emitted-C ALL FOUR MOVE (sanctioned re-baseline —
+the dump now carries std_fmt's C)**: gol `e7bde571…` -> `c56ff666f8dec9eb16f0dab4ed9207e4`, lisp
+`4afb601f…` -> `573dbd707e9bcb24cbe50ce1dee45b0e`, json `09fb55e5…` ->
+`b01005d4083c7302cd36a43166d73d1c`, mud `5a1cc65e…` -> `f9e5bb583121364f5577e331a826f375`, 2x
+each with PRE<->POST runtime byte-identity (gol `40cfee96…` PRE==POST, json `8bda3d5a…`, lisp
+`(+ 1 2)` `b3d9f897…`, mud session `66c8f0ab…`/`93147d0f…`); corpus `-s0`
+**1018 = 880 OK / 46 GREEN / 92 FAIL / 0 ICE / 0 CRASH** (1016 common dirs, full-classifier
+join-diff vs the pre-task baseline **empty — zero class movement**; the 2 new dirs are OK);
+stdlib runtime gate **233 PASS / 0 FAIL**; example matrix **24/24**; `check_emit_support.sh`
+**7/7**; `verify_upgraded.sh` **CLOSEOUT OK**. Seed stays **v84** (operator R2-print: rotation is
+closeout-only; `release/seed/` untouched).
+
+**No manifest/expectation change for any pre-existing fixture** — this is a pure class-neutral
+seam move; the version bump records the 2 new fixtures + the census.
 
 ## Task 19 (F) — whole-plan closeout (v228; NO BUMP, 2026-09-24)
 

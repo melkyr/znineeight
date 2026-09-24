@@ -1,0 +1,44 @@
+// print_std_fmt_seam.z98 — Task 1 (z98-print-formatting) standalone repro.
+//
+// Pins the `std.fmt` seam move: the compiler emits mangled cross-module
+// `std.fmt` calls, auto-imports std_fmt whenever a `print` is lowered, and the
+// C `std_print_*` formatting bodies are retired from the runtime. Formatting
+// behavior is unchanged; this probe exercises every route that existed before
+// the move, including the ones whose Task 2-6 fixes are still pending.
+//
+// Expected stdout (exact), rc 0:
+//   i32=-2147483648 u32=4294967295 i64=-9223372036854775808 u64=18446744073709551615
+//   f64=2.5 f32=1.5 bool=false char=A str=hi
+//   hex=beef neghex=fffffffb neghex64=fffffffffffffffb
+//   literal braces {x} ok
+//   direct=7
+//
+// `neghex`/`neghex64` print the pre-Task-2 two's-complement form (the frozen
+// table A12 schedules signed decimal `-5` for Task 2; re-capture this probe
+// then).
+const std = @import("std");
+
+pub fn main() void {
+    std.io.print("i32={} u32={} i64={} u64={}\n", .{
+        @as(i32, 0 - 2147483647 - 1),
+        @as(u32, 4294967295),
+        @as(i64, 0 - 9223372036854775807 - 1),
+        @as(u64, 18446744073709551615),
+    });
+    var f: f64 = 2.5;
+    var g: f32 = @floatCast(f32, 1.5);
+    var b: bool = false;
+    var c: u8 = 65;
+    var s: []const u8 = "hi";
+    std.io.print("f64={} f32={} bool={} char={c} str={s}\n", .{ f, g, b, c, s });
+    std.io.print("hex={x} neghex={x} neghex64={x}\n", .{
+        @as(u32, 48879),
+        @as(i32, 0 - 5),
+        @as(i64, 0 - 5),
+    });
+    std.io.print("literal braces {{x}} ok\n", .{});
+    std.io.print("direct=", .{});
+    std.fmt.printI32(@as(i32, 7));
+    var nl: []const u8 = "\n";
+    std.fmt.printStr(nl.ptr, nl.len);
+}
