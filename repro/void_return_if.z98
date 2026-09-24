@@ -1,0 +1,17 @@
+// void_return_if.z98 — Task 8 standalone repro (ii): returning a void `if`.
+//
+// `return if (c) foo();` in a void function was front-end-accepted but emitted
+// gcc-invalid C: the void `if` lowers to the TEMP_NONE "no value" sentinel
+// (`sf/src/lower.zig`, Task 9D) and `return_stmt` emitted `.ret` on it, which
+// the emitter rendered as `return zT_4294967295;`.
+//
+// Expected stdout (Zig 0.15.2 and the fixed compiler): `return-if-ok`, rc 0.
+const std = @import("std");
+
+fn foo() void {}
+
+pub fn main() void {
+    std.io.print("return-if-ok\n", .{});
+    const c: bool = true;
+    return if (c) foo();
+}

@@ -3201,10 +3201,23 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                    return @intCast(u32, 0);
                }
            }
-           if (self.block_terminated != 0 and bd_before_assign == 0) { return src; }
-           if (src != TEMP_NONE and getTempType(self, src) == type_mod.TYPE_VOID) {
-             var t4u_ds_m: []const u8 = "T4U:dS\n"; pal.markerWrite(t4u_ds_m);
-         }
+            if (self.block_terminated != 0 and bd_before_assign == 0) { return src; }
+            // Task 8: `_ = foo();` — discarding a void call — ICEd with
+            // `error[3043] invalid temp index 0 (len 0)`. A known-direct void
+            // call lowers with result temp 0 (its "no result" marker, not the
+            // void-`if` TEMP_NONE sentinel handled above), which the pre-fix
+            // `getTempType(self, 0)` below ran off the end of the temp table:
+            // out of bounds while the table was still empty, and a spurious
+            // `(void)zT_0;` naming an unrelated temp otherwise. A void-typed
+            // RHS has no value to store, so skip the l-value store when the
+            // lowering produced the no-value 0 marker. (A void value-`if`
+            // returns TEMP_NONE and returns in the branch above; a void
+            // `catch` block lowers to a real temp and keeps its store.)
+            if (src == @intCast(u32, 0)) {
+                if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_1)) |rhs_vt| {
+                    if (rhs_vt == type_mod.TYPE_VOID) { return src; }
+                }
+            }
         lowerAssignLValue(self, node.child_0, src, node_idx);
 
         return src;
@@ -6762,7 +6775,17 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                     }
                 }
                 if (self.block_terminated == @intCast(u8, 0)) {
-                    emitInst(self, LirInst{ .ret = val });
+                    // Task 8: a void value-`if` (or any void expression)
+                    // lowers to the "no value" sentinel; returning it from a
+                    // void function must emit a valueless return instead of a
+                    // `.ret` naming TEMP_NONE (`return zT_4294967295;` —
+                    // gcc-invalid C). `emitValuelessReturn` also covers an
+                    // error-union(void) return type.
+                    if (val == TEMP_NONE) {
+                        emitValuelessReturn(self);
+                    } else {
+                        emitInst(self, LirInst{ .ret = val });
+                    }
                 }
             } else {
                 emitValuelessReturn(self);
