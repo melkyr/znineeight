@@ -1,4 +1,49 @@
-# mi_matrix corpus — expected-fail manifest (v225 2026-09-24)
+# mi_matrix corpus — expected-fail manifest (v226 2026-09-24)
+
+## Task 17 (F) fix round (review Important 1) — runtime-end slice no longer over-rejected (v225 -> v226 2026-09-24)
+
+**Finding (verbatim).** *"Slice check over-rejects comptime-start / runtime-end beyond length
+(`sf/src/semantic_analyzer.zig:929-933`): when `child_2 != 0` but end doesn't fold, `end_eff` falls
+back to `alen`, so `scores[7..ri]` (ri runtime) → rc2 `start index 7 is larger than end index 5`;
+Zig 0.15.2 accepts it (`build-exe -fno-emit-bin`, only unused-var diagnostics). BASE compiled it
+(runtime panic rc133). Not in the report's residual list. Fix: use `alen` as `end_eff` only for the
+open form (`child_2 == 0`); skip the start check when a present end is runtime."*
+
+**Fix** (`sf/src/semantic_analyzer.zig` `semanticAnalyzerCheckComptimeSliceBounds`): the start check
+now runs only against a comptime-known effective end — `alen` for the open form (`child_2 == 0`),
+the folded `end_ci` for a closed form with a comptime end; a closed form whose PRESENT end is runtime
+is skipped entirely (no comptime end to compare against). The function comment documents the rule.
+
+**Regression coverage.**
+
+* New fixture `repro/mi_matrix/slice_runtime_end_xmod` (`main.zig`, no `expected.rc` — a runtime
+  trap fixture like `safe_bounds_read_xmod`): `var ri: usize = 3; var s: []i32 = scores[7..ri];`
+  then prints `@intCast(i32, s.len)`. Contract, identical to the pristine compiler and emitted C
+  byte-identical in both modes: `-fsafe` compile rc 0 / run rc 133
+  (`panic: integer cast overflow in @intCast`); `-ffast` compile rc 0 / run rc 0,
+  stdout `len=-4`. Official Zig 0.15.2 accepts the shape (`build-exe -fno-emit-bin`, rc 0, no
+  diagnostics in the harness twin).
+* Runtime-end control added to `repro/mi_matrix/stdlib_comptime_index_ok_xmod`:
+  `var re: usize = 4; var s6: []i32 = scores[1..re];` (comptime start in range, runtime end) checks
+  `s6.len == 3` and `s6[0] == 20`; golden now `50 50 40 10 3 30 5 0 0 2 3 3 3`, rc 0, 3x
+  byte-exact, Zig-0.15.2 twin byte-identical (twin stderr md5 `a886f4ef107c083e5fa552d3e12dae3d` ==
+  golden; the twin prints the same 13 values). Stdlib pin unchanged at 231.
+* Closed/known rejects unchanged: `scores[6..]` (`start index 6 is larger than end index 5`),
+  `scores[1..10]` (`end index 10 out of bounds for array of length 5`), `scores[3..1]`
+  (`start index 3 is larger than end index 1`), field `st.arr[4..1]` — `slice_range_oob_reject_xmod`
+  still 7 x `error[3062]`; `index_oob_reject_xmod` still 8 x `error[3062]`.
+
+**Gates.** self-compile **moving point** hop1 `43b01ac464f4d289f9f2bc1116bee413` != hop2 == hop3 ==
+**`ea5d77ea5c1f4fddd7cd0ab213476923`** (explicit `FIXED_POINT_MD5=ea5d77ea…` gate OK, deterministic
+across two out-dirs); 4-MD5 emitted-C **UNCHANGED** (gol `e7bde571…` / lisp `4afb601f…` /
+json `09fb55e5…` / mud `5a1cc65e…`, 2x each); corpus `-s0` **1015 = 878 OK / 46 GREEN / 91 FAIL /
+0 ICE / 0 CRASH** (join-diff vs the Task 17 base 1014 = exactly the new regression dir,
+**zero other movement**); std-lib runtime gate **231 PASS / 0 FAIL** (pin unchanged); example matrix
+**24/24**; `check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK; build_test **0/9**
+(pre-existing zig0 baseline); self-emission rc 0 / 48 `.c` + 48 `.h` / no PANIC / memory
+`track-memory: perm=883K mod=1020K scr=1024K pool=17814K type_db=500K total=2927K`.
+Seed stays **v83** (operator R2: rotation is closeout-only). Review Minors (empty-array message,
+>u64 magnitude text, stale comment) deferred as instructed.
 
 ## Task 17 (F) — reject a comptime-known out-of-bounds index at compile time (v224 -> v225 2026-09-24)
 

@@ -896,7 +896,10 @@ fn semanticAnalyzerCheckComptimeIndexOob(self: *SemanticAnalyzer, node_idx: u32)
 // index check). Zig's order: a negative bound is a coercion reject; then an
 // end beyond the length; then a start after the effective end (the open-ended
 // `a[s..]` end is the length). `a[len..]` and `a[len..len]` stay legal empty
-// slices.
+// slices. The start check runs only when the effective end is comptime-known:
+// for the open form (`child_2 == 0`) that end is `alen`; for a CLOSED form with
+// a runtime end (`a[7..ri]`) there is no comptime end to compare against, so
+// the shape keeps its pre-Task-17 runtime behavior (Zig accepts it too).
 fn semanticAnalyzerCheckComptimeSliceBounds(self: *SemanticAnalyzer, node_idx: u32) void {
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var alen: u32 = @intCast(u32, 0);
@@ -926,10 +929,14 @@ fn semanticAnalyzerCheckComptimeSliceBounds(self: *SemanticAnalyzer, node_idx: u
         semanticAnalyzerReportSliceEndOob(self, node.child_2, end_ci, alen);
         return;
     }
-    var end_eff = len_ci;
-    if (end_known != @intCast(u8, 0)) { end_eff = end_ci; }
-    if (start_known != @intCast(u8, 0) and ce_mod.ciCmp(start_ci, end_eff) > 0) {
-        semanticAnalyzerReportSliceStartAfterEnd(self, node.child_1, start_ci, end_eff);
+    if (start_known != @intCast(u8, 0) and node.child_2 == @intCast(u32, 0)) {
+        if (ce_mod.ciCmp(start_ci, len_ci) > 0) {
+            semanticAnalyzerReportSliceStartAfterEnd(self, node.child_1, start_ci, len_ci);
+        }
+    } else if (start_known != @intCast(u8, 0) and end_known != @intCast(u8, 0)) {
+        if (ce_mod.ciCmp(start_ci, end_ci) > 0) {
+            semanticAnalyzerReportSliceStartAfterEnd(self, node.child_1, start_ci, end_ci);
+        }
     }
 }
 

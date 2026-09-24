@@ -11,10 +11,11 @@
 //   * a runtime index (`var ri: usize = 2`), which under `-fsafe` keeps the
 //     A5F `check_trap{kind=5}` guard and runs it (in range: no trap);
 //   * every legal slice-range boundary: `[0..5]`, `[5..]`, `[5..5]`, `[1..3]`
-//     (plus an element read of the result), a struct field `[0..3]`, and a
-//     pointer-to-array `[1..4]`.
+//     (plus an element read of the result), a struct field `[0..3]`, a
+//     pointer-to-array `[1..4]`, and the Task 17 fix-round runtime-END control
+//     `scores[1..re]` (re runtime) whose start is comptime-known and in range.
 //
-// Contract: stdout `50 50 40 10 3 30 5 0 0 2 3 3\n`, rc 0, byte-exact 3x,
+// Contract: stdout `50 50 40 10 3 30 5 0 0 2 3 3 3\n`, rc 0, byte-exact 3x,
 // Zig-0.15.2-twin-matched.
 const std = @import("std");
 
@@ -81,6 +82,18 @@ pub fn main() void {
         @panic("comptime_index_ok: ptr [1..4]");
     }
 
+    // Task 17 fix round (review Important 1): a CLOSED range whose end is
+    // RUNTIME must not be bound-checked against the start (there is no comptime
+    // end); the runtime result is the ordinary `end - start`.
+    var re: usize = 4;
+    var s6: []i32 = scores[1..re];
+    if (s6.len != 3) {
+        @panic("comptime_index_ok: runtime-end [1..re]");
+    }
+    if (s6[0] != 20) {
+        @panic("comptime_index_ok: runtime-end [1..re][0]");
+    }
+
     std.io.printInt(a);
     std.io.writeByte(' ');
     std.io.printInt(b);
@@ -104,5 +117,7 @@ pub fn main() void {
     std.io.printInt(@intCast(i32, s4.len));
     std.io.writeByte(' ');
     std.io.printInt(@intCast(i32, s5.len));
+    std.io.writeByte(' ');
+    std.io.printInt(@intCast(i32, s6.len));
     std.io.writeByte('\n');
 }
