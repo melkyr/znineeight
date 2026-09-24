@@ -634,7 +634,8 @@ stays **v83** (operator R2, rotation is closeout-only).
 **Residual (bounded, documented).** A runtime unsigned bound wider than 32 bits (u33..u64) is a
 clean `error[3000]` reject (`usize` is 32-bit on the Z98 target; the x86_64 oracle accepts it
 because its `usize` is 64-bit). Zig's multi-object `for (a, b) |x, y|` stays unsupported (parser
-error, out of scope).
+error, out of scope), and an explicit index range over a range iterable (`for (0..5, 0..) |x, i|`)
+is also a parser `error[2000]` (Zig 0.15.2 accepts it).
 
 ## Task 10 fix round — over-rename narrowing + authorized 4-MD5 re-baseline (v215 -> v216 2026-09-24)
 

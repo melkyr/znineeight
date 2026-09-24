@@ -362,7 +362,7 @@ After all arms: emit `STX:n<idx> STX:k<kind> STX:r<result> A4:N<idx> A4:K<kind> 
 | `@consoleGotoxy(x: i32, y: i32)` | `ec[0]`, `ec[1]` | `TYPE_VOID` |
 | `@consoleSetColor(fg: i32, bg: i32)` | `ec[0]`, `ec[1]` | `TYPE_VOID` |
 
-`@isWindows()` is the sema-half of a comptime intrinsic: `comptime_eval.zig` folds it to a `ComptimeVal` 0/1 (module const `host_is_windows`, currently `false`), so `phase_ComptimeEvaluation` populates `comptime_values[node]` and the lowerer emits an `int_const` (`TYPE_BOOL`). `if (@isWindows())` then folds to only the active branch (see 07 §Builtin console + comptime branch folding).
+`@isWindows()` is the sema-half of a comptime intrinsic: `comptime_eval.zig` folds it to a `ComptimeVal` 0/1 (module const `host_is_windows`, currently `false`), so `phase_ComptimeEvaluation` stores it in `ctx.comptime_folds` (`comptimeFoldTablePut`) and the lowerer emits an `int_const` (`TYPE_BOOL`). `if (@isWindows())` then folds to only the active branch (see 07 §Builtin console + comptime branch folding).
 
 **Introspection / pointer / bitcast builtins:**
 

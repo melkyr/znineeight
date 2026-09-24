@@ -1427,7 +1427,7 @@ segment + `SandSegment` node from the pool.
 | Arena | Contents | Reset Behavior |
 |-------|----------|----------------|
 | Permanent | StringInterner, SourceManager, DiagnosticCollector, interned strings, ModuleRegistry, SymbolRegistry, keyword table, const-alias prepass, type-name resolution | Never reset |
-| Module | AstStore, ResolvedTypeTable, CoercionTable, `ctx.dep_graph` (dead field), enum_value_table, call_arg_types/call_param_map, comptime_values, async tables (suspending_fns, frame_sizes, state_widths, awaited_fns, async_hidden_fns, driver_targets, parent_result_*, async_layouts) | Reset once at the lowering→emission boundary; earlier phases share it |
+| Module | AstStore, ResolvedTypeTable, CoercionTable, `ctx.dep_graph` (dead field), enum_value_table, call_arg_types/call_param_map, comptime_folds, async tables (suspending_fns, frame_sizes, state_widths, awaited_fns, async_hidden_fns, driver_targets, parent_result_*, async_layouts) | Reset once at the lowering→emission boundary; earlier phases share it |
 | Scratch | Per-phase temporaries: input source read, parser tokens, per-phase DepGraph, TypeResolver workspace, semantic analyzer state, lowerer BasicBlocks | Reset at phase start; `sandResetPeak` at StaticAnalyzers entry |
 | lir_read | LIR functions reloaded from the spill stream during C89 emission | Never reset |
 | emission | LIR slots, error_code_registry, exported, global_decls, name mangler, module/type-group tables, emitted runtime support | Never reset |

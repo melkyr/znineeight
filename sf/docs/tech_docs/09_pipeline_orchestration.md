@@ -83,7 +83,7 @@
 | 17 | `error_code_registry` | `hash_mod.U32ToU32Map` | emission | Dense error-code assignment |
 | 18 | `call_arg_types` | `hash_mod.U32ToU32Map` | module | Per-call argument types |
 | 19 | `call_param_map` | `hash_mod.U32ToU32Map` | module | Per-call parameter mapping |
-| 20 | `comptime_values` | `hash_mod.U32ToU64Map` | module | Comptime-evaluated values |
+| 20 | `comptime_folds` | `ComptimeFoldTable` | module | Exact comptime fold values (node → `ComptimeVal`) |
 | 21 | `pointer_only_ids` | `[*]u32` | permanent | Types emitted as pointers only |
 | 22 | `pointer_only_len` | `u32` | (value) | Length of pointer-only list |
 | 23 | `global_decls` | `lir_mod.GlobalDeclArrayList` | emission | Module-global declarations for emission |
@@ -115,7 +115,7 @@
 13. `coercionTableInit` — coercion table
 14. `lirSlotArrayListInit` (emission) + `lirStreamInit` — LIR storage
 15. `depGraphInit` — dependency graph (module arena; unwired)
-16. Hash maps: `enum_value_table`, `error_code_registry`, `call_arg_types`, `call_param_map`, `comptime_values`, `exported`
+16. Hash maps and fold table: `enum_value_table`, `error_code_registry`, `call_arg_types`, `call_param_map`, `comptime_folds` (`ComptimeFoldTable`), `exported`
 17. Async maps: `suspending_fns`, `frame_sizes`, `state_widths`, `awaited_fns`, `async_hidden_fns`, `driver_targets`, `parent_result_start`, `parent_result_count`, `async_layouts` + `parent_result_type_list`
 18. `globalDeclArrayListInit` (emission) — module globals
 19. Construct `CompilerContext`; call `runCompiler(&ctx)`
@@ -515,7 +515,7 @@ body before `semanticAnalyzerResolveFnBody`. The module-scope var_decl type thre
 **Calls:**
 - `alloc_mod.sandReset`; reset `ctx.lir_slots.len`; set the LIR spill temp path (`--output-dir` or `.`)
 - `lir_stream.lirStreamBeginWrite` — open the offset-addressed LIR stream
-- Build `SemanticContext` (`safe_checks` from CLI, `comptime_values`, async maps)
+- Build `SemanticContext` (`safe_checks` from CLI, `comptime_folds`, async maps)
 - Per module (`M`): `mr_mod.moduleRegistryCollectIncludes`; per top-level decl (`R`, `F`, `A0`):
   - `fn_decl` → `lower_mod.lowererInit` + `lower_mod.lowerFn`; if
     `async_analysis.asyncIsSuspending` → `async_frame_layout.asyncLayoutFrame` +
@@ -758,7 +758,7 @@ runCompiler(ctx)
     ├─ suspensionAnalysisRun      → suspending_fns
     ├─ phase_TypeResolution       → TypeRegistry, ResolvedTypeTable, pointer_only_ids
     ├─ phase_FrontResolution      → module-init/type-annotation resolution
-    ├─ phase_ComptimeEvaluation   → comptime_values hash map
+    ├─ phase_ComptimeEvaluation   → comptime_folds table
     ├─ phase_SemanticAnalysis     → CoercionTable, resolved_types, enum_value_table
     ├─ phase_StaticAnalyzers      → AnalyzerContext (scratch, discarded)
     ├─ phase_AsyncFrameSize       → frame_sizes / state_widths / async maps
@@ -788,7 +788,7 @@ runCompiler(ctx)
 | `typereg` | Init (primitives) + phase 3 | Phases 2-10 |
 | `resolved_types` | `phase_FrontResolution`, `phase_TypeResolution` | `phase_LIRLowering`, emission |
 | `coercion_table` | Init | `phase_FrontResolution`, `phase_SemanticAnalysis`, `phase_LIRLowering` |
-| `comptime_values` | `phase_ComptimeEvaluation` | `phase_LIRLowering` |
+| `comptime_folds` | `phase_ComptimeEvaluation` | `phase_LIRLowering` |
 | `pointer_only_ids` | `phase_TypeResolution` | `phase_C89Emission` |
 | `lir_stream` / `lir_slots` | `phase_LIRLowering` | `phase_C89Emission` |
 | `global_decls` | `phase_LIRLowering` | `phase_C89Emission` |
