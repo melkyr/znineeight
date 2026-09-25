@@ -1,4 +1,75 @@
-# mi_matrix corpus — expected-fail manifest (v237 2026-09-25)
+# mi_matrix corpus — expected-fail manifest (v238 2026-09-25)
+
+## Task 6 — pointer/fn-pointer `{}` and float `{x}` (v237 -> v238, 2026-09-25)
+
+**What.** `{}` on a one-pointer now prints official Zig 0.15.2's actual form
+(`Writer.zig:1337-1352`; frozen rows G1/G2/G5, operator ruling R3): the
+lowercase-hex address with **NO `0x`** (`i32@7fff8668af48`), or, for a pointee
+Zig delegates, the pointee printer: `*struct`/`*union`/`*tagged_union`/`*tuple`/
+`*packed_*` → the Task-4 generated aggregate printer with `*(value)` (depth
+unchanged by the pointer arm), `*enum` → the Task-5 name printer. The
+non-delegating form is emitted inline at the call site —
+`std_print("<@typeName(child)>@")` + the EXISTING std.fmt `printHexU64` — and
+the child name comes from the new `zigPrintNameAppend` (exact for the
+Z98-expressible space: fixed/arb ints, `usize`/`isize`, `c_char`, `bool`,
+`f32`/`f64`, `void`/`noreturn`, `error{A,B}` (comma, no space), `?T`, `E!T`,
+`[]`/`[]const`, `[N]`, `*`/`[*]` with quals, `fn (p, ...) [callconv(.c)] ret`).
+No function was added to `std_fmt.zig`, so the 4-MD5 pins hold. Float `{x}`
+prints Zig's `printFloatHex` bit-for-bit (`0x1.8p0`, `0x0.0p0`, `-0x0.0p0`,
+denormals, `nan`/`inf`) through compiler-generated static helpers
+`z98_printFloatHex32/64`, emitted on demand (`need_fhex32/64`) with the decimal
+exponent written by the existing mangled `std.fmt.printI32`. The Task-4 field
+closure is extended for pointer / fn-pointer / many-pointer FIELDS (Zig's
+`{any}` pointer route — `struct { f: fn() void }` →
+`.{ .f = fn () void@addr }`, `[*]i32` field → `i32@addr`, `*?i32` field →
+`?i32@addr`), and a pre-existing "typedef used before emitted" type-ordering
+defect is fixed for pointer members whose C type IS the pointee typedef (a
+`fn_type` value-embedding edge plus `emitTypeDefOnce`/`emitTypeDeps`/
+`emitPointeeDep`/`emitDepMember`; the four special-types sub-pass emitters were
+factored onto the shared guarded writer, dedup via the pass's `seen` map).
+
+**Fixtures.** Positive `repro/mi_matrix/stdlib_print_ptr_hexfloat_xmod`
+(golden 936 B / 19 lines, rc 0, 3x byte-exact). Determinism: every address row
+reaches the printer through `@intToPtr` with a fixed integer, so the golden pins
+the printer FORMAT (`i32@1234`, `fn (i32, u8) i32@2300`, `error{A,B}@1500`)
+without pinning ASLR/link layout; real globals are used only for
+pointee-delegation rows (`*S`/`*E`/tagged/untagged/packed), whose output has no
+address. The 18 oracle rows are byte-identical to the Zig-0.15.2 twin
+`/tmp/t6/oracle/fixture_twin.zig` (931 B / 18 lines); Z98 appends its own `done`
+marker. Standalone `repro/print_ptr_hexfloat.z98` (same rows, `cmp` == golden).
+The Task-4 reject fixture `print_aggregate_noprinter_reject_xmod` lost its
+one-pointer-field and tuple-pointer sites (they are now pinned positive);
+census **7 -> 5 x `error[3063]`**, rc 2 / 0 `.c` / 0 x `error[3013]`.
+
+**Gates.** Fixed point hop1 `feeabb7d0c294700c0069a9b705ee59c` != hop2 == hop3
+== **`f8a549c1a211e5efe638dbd7de2b20aa`**. **4-MD5 emitted-C UNCHANGED**
+(8/8: gol `9e0b708e…` / lisp `dfa69f32…` / json `a4a73461…` / mud `2e92c1f2…`)
+— the emitted C of the gate programs is byte-identical, so their recorded
+execution hashes (`fcbf7e7c…` / `b3d9f897…` / `8bda3d5a…` / mud
+`66c8f0ab…`+`93147d0f…`) are inherited. Corpus `-s0` **1027 = 886 OK / 46
+GREEN / 95 FAIL / 0 ICE / 0 CRASH**; join-diff vs the Task-5 final over the
+1026 common dirs = exactly the new fixture, **zero other movement**. Stdlib
+runtime gate **239 PASS / 0 FAIL** (pin 238 -> 239); example matrix **24/24**;
+`check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK; seed stays
+**v84** (R2-print).
+
+**Bounded residuals (documented, not fixed).**
+
+1. A composite pointee name containing a NAMED struct/enum/union (`*?S`,
+   `**S`, `*?E`) rejects `error[3063]`: Zig's `@typeName` container-qualifies
+   those (`main.S`) and Z98 has no faithful spelling. A DIRECT pointer to an
+   enum still delegates to `.member`; `**i32`/`*?i32`/`*[]const u8`/`*E` all
+   print (oracle-verified).
+2. A one-pointer-to-array aggregate FIELD rejects `error[3063]` (Zig prints it
+   as a slice `{ 1, 2, 3 }` — the array/slice residual); the one-pointer-to-
+   array ARGUMENT stays 3013 and `*const [N]u8 {s}`/`{x}` stays 3063 (Q3).
+3. Pre-existing float-literal residuals (NOT the `{x}` printer): `5e-324`
+   parses as `0.0`, `1e-310` is 1-2 ULP off, and `@bitCast` rejects an
+   f64↔u64 pair — so the fixture's denormal row is computed at runtime
+   (`1e-308 / 1e10` → `0x0.00000000316a2p-1022`, twin-identical).
+4. `*const fn(...)` (the double-pointer spelling, `FP_void*`) keeps its
+   pre-existing assignment anomaly; the canonical fn-pointer spelling
+   (`fn() void` / `&f`) is what the fixture and frozen row G5 pin.
 
 ## Task 5 — enum member names and error-set names (v235 -> v236, 2026-09-25)
 

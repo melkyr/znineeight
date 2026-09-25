@@ -1060,17 +1060,124 @@ fn printFmtArgIsTypeValue(self: *LirLowerer, arg_node_idx: u32) bool {
     return false;
 }
 
+// Task 6 (z98-print-formatting): can Zig 0.15.2's `{}` pointer route print a
+// one-pointer to this pointee? This mirrors `c89_emit.zig`'s
+// `zigPrintNameAppend` + `emitPtrValuePrint` (the exact `@typeName` spelling
+// the emitter would write); keep the two in lockstep (Task 3/4 precedent of
+// mirrored dispatch predicates).
+//
+// - pointee struct/union/tagged-union/tuple/packed-union: Zig delegates to the
+//   pointee value printer (`Writer.zig:1337-1345`), so the Task-4/5 aggregate
+//   field closure decides (`printFmtAggFieldsOk`).
+// - pointee enum: Zig delegates too; the Task-5 name-table printer takes it.
+// - pointee array: Zig delegates to slice printing, which Z98 has no printer
+//   for (`{ ... }`) -> bounded residual (the `{}`-on-array 3063 class).
+// - everything else: `@typeName(child) ++ "@"` + lowercase hex; only names the
+//   emitter can render exactly (no named struct/enum/union component, whose
+//   Zig name is container-qualified).
+fn printFmtPtrPointeeOk(reg: *type_mod.TypeRegistry, tid: u32, depth: u32) bool {
+    if (type_mod.typeRegistryGetPointeeType(reg, tid)) |ptid| {
+        if (@intCast(usize, ptid) >= reg.types_len) return false;
+        var pk = reg.types_items[@intCast(usize, ptid)].kind;
+        if (pk == type_mod.TypeKind.array_type) return false;
+        return printFmtPtrRouteOk(reg, pk, ptid, depth);
+    }
+    return false;
+}
+
+fn printFmtPtrRouteOk(reg: *type_mod.TypeRegistry, pk: type_mod.TypeKind, ptid: u32, depth: u32) bool {
+    if (pk == type_mod.TypeKind.struct_type or pk == type_mod.TypeKind.union_type or pk == type_mod.TypeKind.tagged_union_type or pk == type_mod.TypeKind.tuple_type or pk == type_mod.TypeKind.packed_union_type) {
+        return printFmtAggFieldsOk(reg, ptid, depth + @intCast(u32, 1));
+    }
+    if (pk == type_mod.TypeKind.enum_type) return true;
+    return printFmtPointeeNameOk(reg, ptid, depth + @intCast(u32, 1));
+}
+
+// The name-route pointee space (mirror of the emitter's `zigPrintNameAppend`):
+// scalar kinds and structural composites render exactly; a named
+// struct/enum/union (and the anonymous/exotic kinds) cannot (Zig's
+// `@typeName` qualifies named aggregates with the container path) -> false.
+fn printFmtPointeeNameOk(reg: *type_mod.TypeRegistry, tid: u32, depth: u32) bool {
+    if (depth > 16) return false;
+    if (@intCast(usize, tid) >= reg.types_len) return false;
+    var ty = reg.types_items[@intCast(usize, tid)];
+    var k = ty.kind;
+    // A named enum / integer literal has no exact Zig `@typeName` spelling at
+    // this site (the emitter renders neither): a pointer directly to an enum
+    // delegates to the name printer (`printFmtPtrRouteOk`), so this only
+    // rejects COMPOSITE names containing one (`*?E`, `*[3]E`, ...) — the
+    // container-qualification residual, same class as `*?S`.
+    if (k == type_mod.TypeKind.enum_type or k == type_mod.TypeKind.integer_literal_type) return false;
+    if (printFmtKindIsIntegerLike(k)) return true;
+    if (k == type_mod.TypeKind.bool_type or k == type_mod.TypeKind.f32_type or k == type_mod.TypeKind.f64_type) return true;
+    if (k == type_mod.TypeKind.void_type or k == type_mod.TypeKind.noreturn_type) return true;
+    if (k == type_mod.TypeKind.error_set_type) {
+        if (@intCast(usize, ty.payload_idx) >= reg.es_len) return false;
+        var esp = reg.es_items[@intCast(usize, ty.payload_idx)];
+        return @intCast(usize, esp.tags_start) + @intCast(usize, esp.tags_count) <= reg.xn_len;
+    }
+    if (k == type_mod.TypeKind.optional_type) {
+        if (@intCast(usize, ty.payload_idx) >= reg.opt_len) return false;
+        var op = reg.opt_items[@intCast(usize, ty.payload_idx)];
+        return printFmtPointeeNameOk(reg, op.payload, depth + @intCast(u32, 1));
+    }
+    if (k == type_mod.TypeKind.error_union_type) {
+        if (@intCast(usize, ty.payload_idx) >= reg.eu_len) return false;
+        var ep = reg.eu_items[@intCast(usize, ty.payload_idx)];
+        // A bare `!T` (error_set 0) has no oracle-verifiable Zig name here.
+        if (ep.error_set == @intCast(u32, 0)) return false;
+        if (!printFmtPointeeNameOk(reg, ep.error_set, depth + @intCast(u32, 1))) return false;
+        return printFmtPointeeNameOk(reg, ep.payload, depth + @intCast(u32, 1));
+    }
+    if (k == type_mod.TypeKind.slice_type) {
+        if (@intCast(usize, ty.payload_idx) >= reg.slice_len) return false;
+        var sp = reg.slice_items[@intCast(usize, ty.payload_idx)];
+        return printFmtPointeeNameOk(reg, sp.elem, depth + @intCast(u32, 1));
+    }
+    if (k == type_mod.TypeKind.array_type) {
+        if (@intCast(usize, ty.payload_idx) >= reg.array_len) return false;
+        var ap = reg.array_items[@intCast(usize, ty.payload_idx)];
+        return printFmtPointeeNameOk(reg, ap.elem, depth + @intCast(u32, 1));
+    }
+    if (k == type_mod.TypeKind.ptr_type or k == type_mod.TypeKind.many_ptr_type) {
+        if (@intCast(usize, ty.payload_idx) >= reg.ptr_len) return false;
+        var pp = reg.ptr_items[@intCast(usize, ty.payload_idx)];
+        return printFmtPointeeNameOk(reg, pp.base, depth + @intCast(u32, 1));
+    }
+    if (k == type_mod.TypeKind.fn_type) {
+        if (@intCast(usize, ty.payload_idx) >= reg.fn_len) return false;
+        var fp = reg.fn_items[@intCast(usize, ty.payload_idx)];
+        if (!printFmtPointeeNameOk(reg, fp.return_type, depth + @intCast(u32, 1))) return false;
+        var fpend: usize = @intCast(usize, fp.params_start) + @intCast(usize, fp.params_count);
+        if (fpend > reg.xt_len) return false;
+        var fi: usize = @intCast(usize, fp.params_start);
+        while (fi < fpend) : (fi += @intCast(usize, 1)) {
+            if (!printFmtPointeeNameOk(reg, reg.xt_items[fi], depth + @intCast(u32, 1))) return false;
+        }
+        return true;
+    }
+    return false;
+}
+
 // Task 4 (z98-print-formatting): the field/element kinds the generated
 // aggregate printers can route correctly TODAY. Scalars with a final route
 // (integer-like family minus enum, bool, f32/f64) and nested aggregates recurse;
 // untagged auto unions are always printable (the printer never reads a field).
 // `packed` restricts a field to a scalar of at most 32 bits — the existing
-// `emitPackedLoadBitfield` extraction limit. Enum/error-set/pointer fields are
-// owned by Tasks 5/6, arrays/slices/optionals/error-unions/void by no task:
-// they reject the aggregate argument with error[3063] (bounded residual).
+// `emitPackedLoadBitfield` extraction limit. Enum/error-set fields are Tasks 5's
+// name printers; pointer/fn-pointer fields are Task 6's route (below).
+// Arrays/slices/optionals/error-unions/void stay the documented residual: they
+// reject the aggregate argument with error[3063].
 // Controller ruling R8 (fix round 1): a packed struct/packed union NESTED in
 // another aggregate also rejects — its packed-value C model has no working
 // field route (pre-existing; out of Task 4 scope).
+//
+// Task 6: a pointer/fn-pointer FIELD uses Zig's `{any}` pointer route, which is
+// the same as `{}` (`printAddress` for non-delegating pointees, pointee
+// delegation for struct/union/tagged/enum/array): `struct { p: [*]i32 }` ->
+// `.{ .p = i32@addr }` (oracle-verified). The only difference from the argument
+// route is that a one-pointer-to-array field prints as a slice (`{ 1, 2, 3 }`)
+// — the array/slice residual -> reject.
 fn printFmtAggFieldKindOk(reg: *type_mod.TypeRegistry, tid: u32, is_packed: u8, depth: u32) bool {
     if (depth > 16) return false;
     if (@intCast(usize, tid) >= reg.types_len) return false;
@@ -1102,6 +1209,20 @@ fn printFmtAggFieldKindOk(reg: *type_mod.TypeRegistry, tid: u32, is_packed: u8, 
     if (kind == type_mod.TypeKind.f32_type or kind == type_mod.TypeKind.f64_type) {
         if (is_packed != @intCast(u8, 0)) return false;
         return true;
+    }
+    if (kind == type_mod.TypeKind.ptr_type or kind == type_mod.TypeKind.many_ptr_type) {
+        // Task 6: pointer / fn-pointer fields. `{any}` field semantics use the
+        // same pointer route (address for non-delegating pointees, pointee
+        // delegation otherwise); a one-pointer-to-array field would print as a
+        // slice (`{ 1, 2, 3 }`) -> the array/slice residual rejects.
+        if (is_packed != @intCast(u8, 0)) return false;
+        if (type_mod.typeRegistryGetPointeeType(reg, tid)) |ptid| {
+            if (@intCast(usize, ptid) >= reg.types_len) return false;
+            var pk = reg.types_items[@intCast(usize, ptid)].kind;
+            if (kind == type_mod.TypeKind.ptr_type and pk == type_mod.TypeKind.array_type) return false;
+            return printFmtPtrRouteOk(reg, pk, ptid, depth);
+        }
+        return false;
     }
     if (is_packed != @intCast(u8, 0)) return false;
     if (kind == type_mod.TypeKind.struct_type or kind == type_mod.TypeKind.union_type or kind == type_mod.TypeKind.tagged_union_type or kind == type_mod.TypeKind.tuple_type or kind == type_mod.TypeKind.packed_union_type) {
@@ -1234,7 +1355,15 @@ fn printFmtCheck(self: *LirLowerer, arg_node_idx: u32, tid: u32, spec_fmt: u8, h
             if (p_arr_u8 != @intCast(u8, 0) and (spec_fmt == @intCast(u8, 's') or spec_fmt == @intCast(u8, 'x'))) return printFmtReject(self, arg_node_idx, reject_3063, @intCast(u8, 1));
             return printFmtReject(self, arg_node_idx, reject_3013, @intCast(u8, 0));
         }
-        if (has_explicit == @intCast(u8, 0)) return @intCast(u8, 1);
+        if (has_explicit == @intCast(u8, 0)) {
+            // Task 6: a one-pointer to a non-array `{}` prints Zig's `T@hex`
+            // (the name route) or delegates to the pointee aggregate/enum
+            // printer. Composite pointee names containing a named aggregate
+            // are a documented bounded residual (Zig qualifies those with the
+            // container path) and reject 3063. Frozen table G1/G2.
+            if (!printFmtPtrPointeeOk(reg, tid, @intCast(u32, 0))) return printFmtReject(self, arg_node_idx, reject_3063, @intCast(u8, 1));
+            return @intCast(u8, 1);
+        }
         return printFmtReject(self, arg_node_idx, reject_3013, @intCast(u8, 0));
     }
     if (kind == type_mod.TypeKind.many_ptr_type) {

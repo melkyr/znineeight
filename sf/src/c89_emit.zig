@@ -698,8 +698,14 @@ pub fn nameManglerMangleGlobal(self: *NameMangler, registry: *TypeRegistry, name
        // (hoisted temp / global). Tuple typedefs are emitted ONLY for these —
        // the registry also holds print-args tuple types that never become
        // values, and emitting those would move the 4-MD5 single-file dumps.
-       needed_tuple_set: U32ToU32Map,
-        module_reg: *mr_mod.ModuleRegistry,
+        needed_tuple_set: U32ToU32Map,
+        // Task 6 (z98-print-formatting): float `{x}` prints a hand-rolled C89
+        // hex-float. The helper is compiler-generated static C emitted on
+        // demand — adding a function to std_fmt would move the four pinned
+        // 4-MD5 dumps (the dump carries the whole reachable module C).
+        need_fhex32: u8,
+        need_fhex64: u8,
+         module_reg: *mr_mod.ModuleRegistry,
        std_fmt_module_id: u32,
        reachable: U32ToU32Map,
       prune_active: u8,
@@ -754,6 +760,8 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
          .pointer_only_map = hash_mod.u32ToU32MapInitCap(persist_alloc, @intCast(usize, pointer_only_len)),
          .shared_set = hash_mod.u32ToU32MapInit(persist_alloc),
          .needed_tuple_set = hash_mod.u32ToU32MapInit(persist_alloc),
+         .need_fhex32 = @intCast(u8, 0),
+         .need_fhex64 = @intCast(u8, 0),
          .module_reg = undefined,
          .std_fmt_module_id = @intCast(u32, 0xFFFFFFFF),
          .reachable = hash_mod.u32ToU32MapInit(persist_alloc),
@@ -1208,6 +1216,12 @@ fn c89NeedsEmitEdge(kind: TypeKind) bool {
     if (kind == TypeKind.error_union_type) return true;
     if (kind == TypeKind.enum_type) return true;            // ADD — embeddable by value
     if (kind == TypeKind.error_set_type) return true;       // ADD — embeddable by value
+    // Task 6 (z98-print-formatting): a fn-pointer type is embeddable by value
+    // (a struct field, tuple element, array element, ...). Without the edge the
+    // topological sort can emit an aggregate that references the `fn` typedef
+    // before the typedef itself (gcc: unknown type name), which the aggregate
+    // printer's fn-pointer field route would otherwise hit.
+    if (kind == TypeKind.fn_type) return true;              // ADD — embeddable by value
     if (kind == TypeKind.tuple_type) return true;
     if (kind == TypeKind.unresolved_name) return true;
     return false;
@@ -1480,6 +1494,140 @@ fn ctypeGuardWrite(writer: *BufferedWriter, kind: TypeKind) void {
     }
 }
 
+// Task 6 (z98-print-formatting): emit a type definition once, deduped by the
+// emitted C name. `gated` selects the `#ifndef ZIG_*_<cname>` guard form (the
+// shared-header sub-passes) vs the bare form (the single-file sub-passes).
+// Extracted so the fn dependency emission below reuses exactly the same
+// text/dedup as the type loops.
+fn emitTypeDefOnce(emitter: *C89Emitter, tid: u32, seen: *U32ToU32Map, gated: u8) void {
+    var reg = emitter.registry;
+    var ty = reg.types_items[@intCast(usize, tid)];
+    var cname = getCTypeName(reg, emitter.mangler, tid);
+    var dedup_key: u32 = @intCast(u32, 0);
+    var h_ci: usize = @intCast(usize, 0);
+    while (h_ci < cname.len) : (h_ci += @intCast(usize, 1)) {
+        dedup_key = dedup_key * @intCast(u32, 31) + @intCast(u32, cname[h_ci]);
+    }
+    if (hash_mod.u32ToU32MapGet(seen, dedup_key) != null) return;
+    hash_mod.u32ToU32MapPut(seen, dedup_key, @intCast(u32, 1));
+    if (gated == @intCast(u8, 0)) {
+        emitTypeDefinition(emitter, tid);
+        return;
+    }
+    var g0: []const u8 = "#ifndef "; bufferedWriterWrite(&emitter.writer, g0);
+    ctypeGuardWrite(&emitter.writer, ty.kind);
+    bufferedWriterWrite(&emitter.writer, cname);
+    var g1: []const u8 = "\n#define "; bufferedWriterWrite(&emitter.writer, g1);
+    ctypeGuardWrite(&emitter.writer, ty.kind);
+    bufferedWriterWrite(&emitter.writer, cname);
+    var g2: []const u8 = "\n"; bufferedWriterWrite(&emitter.writer, g2);
+    emitTypeDefinition(emitter, tid);
+    var g3: []const u8 = "#endif /* "; bufferedWriterWrite(&emitter.writer, g3);
+    ctypeGuardWrite(&emitter.writer, ty.kind);
+    bufferedWriterWrite(&emitter.writer, cname);
+    var g4: []const u8 = " */\n"; bufferedWriterWrite(&emitter.writer, g4);
+}
+
+// Task 6: the topological sort's edges cover value-embedding types, but a
+// pointer member's C type is its POINTEE's C type (`*enum` -> `E*`, `*fn` ->
+// the fn-pointer typedef, `*?T` -> `Opt*`, `*[]T` -> `Slice*`), and a pointer
+// is not an emit edge. So a type whose C definition names such a typedef can be
+// emitted before it (gcc: unknown type name). Emit the referenced typedefs
+// first at the type's own emission site (dedup via `seen`; a program whose
+// ordering already worked is untouched because the typedef is already emitted).
+fn emitPointeeDep(emitter: *C89Emitter, ptid: u32, seen: *U32ToU32Map, gated: u8, depth: u32) void {
+    if (depth > 8) return;
+    if (@intCast(usize, ptid) >= emitter.registry.types_len) return;
+    var pk = emitter.registry.types_items[@intCast(usize, ptid)].kind;
+    if (pk == TypeKind.ptr_type or pk == TypeKind.many_ptr_type) {
+        var base = emitter.registry.ptr_items[@intCast(usize, emitter.registry.types_items[@intCast(usize, ptid)].payload_idx)].base;
+        emitPointeeDep(emitter, base, seen, gated, depth + @intCast(u32, 1));
+        return;
+    }
+    if (pk == TypeKind.optional_type) {
+        var op = emitter.registry.opt_items[@intCast(usize, emitter.registry.types_items[@intCast(usize, ptid)].payload_idx)];
+        emitPointeeDep(emitter, op.payload, seen, gated, depth + @intCast(u32, 1));
+        emitTypeDefOnce(emitter, ptid, seen, gated);
+        return;
+    }
+    if (pk == TypeKind.slice_type) {
+        var sp = emitter.registry.slice_items[@intCast(usize, emitter.registry.types_items[@intCast(usize, ptid)].payload_idx)];
+        emitPointeeDep(emitter, sp.elem, seen, gated, depth + @intCast(u32, 1));
+        emitTypeDefOnce(emitter, ptid, seen, gated);
+        return;
+    }
+    if (pk == TypeKind.array_type) {
+        var ap = emitter.registry.array_items[@intCast(usize, emitter.registry.types_items[@intCast(usize, ptid)].payload_idx)];
+        emitPointeeDep(emitter, ap.elem, seen, gated, depth + @intCast(u32, 1));
+        emitTypeDefOnce(emitter, ptid, seen, gated);
+        return;
+    }
+    if (pk == TypeKind.error_union_type) {
+        var ep = emitter.registry.eu_items[@intCast(usize, emitter.registry.types_items[@intCast(usize, ptid)].payload_idx)];
+        emitPointeeDep(emitter, ep.payload, seen, gated, depth + @intCast(u32, 1));
+        emitTypeDefOnce(emitter, ptid, seen, gated);
+        return;
+    }
+    // A typedef with no forward declaration: fn-pointer, enum, error set,
+    // i64/u64 carrier, and packed struct/packed union (the shared-header
+    // forward pass deliberately skips packed aggregates). `struct`/`union`/
+    // `tagged union` get a forward typedef in the shared header, and scalars
+    // have no definition.
+    if (pk == TypeKind.fn_type or pk == TypeKind.enum_type or pk == TypeKind.error_set_type or pk == TypeKind.i64_type or pk == TypeKind.u64_type or pk == TypeKind.packed_union_type) {
+        emitTypeDefOnce(emitter, ptid, seen, gated);
+        return;
+    }
+    if (pk == TypeKind.struct_type and type_mod.typeRegistryIsPacked(emitter.registry, ptid)) {
+        emitTypeDefOnce(emitter, ptid, seen, gated);
+    }
+}
+
+fn emitDepMember(emitter: *C89Emitter, mtid: u32, seen: *U32ToU32Map, gated: u8) void {
+    if (@intCast(usize, mtid) >= emitter.registry.types_len) return;
+    var mk = emitter.registry.types_items[@intCast(usize, mtid)].kind;
+    if (mk == TypeKind.fn_type) {
+        emitTypeDefOnce(emitter, mtid, seen, gated);
+        return;
+    }
+    if (mk == TypeKind.ptr_type or mk == TypeKind.many_ptr_type) {
+        var base = emitter.registry.ptr_items[@intCast(usize, emitter.registry.types_items[@intCast(usize, mtid)].payload_idx)].base;
+        emitPointeeDep(emitter, base, seen, gated, @intCast(u32, 0));
+    }
+}
+
+fn emitTypeDeps(emitter: *C89Emitter, tid: u32, seen: *U32ToU32Map, gated: u8) void {
+    if (@intCast(usize, tid) >= emitter.registry.types_len) return;
+    var ty = emitter.registry.types_items[@intCast(usize, tid)];
+    if (ty.kind == TypeKind.struct_type) {
+        var sp = emitter.registry.st_items[@intCast(usize, ty.payload_idx)];
+        var i: usize = @intCast(usize, 0);
+        while (i < @intCast(usize, sp.fields_count)) : (i += @intCast(usize, 1)) {
+            emitDepMember(emitter, emitter.registry.fe_items[@intCast(usize, sp.fields_start) + i].type_id, seen, gated);
+        }
+    } else if (ty.kind == TypeKind.union_type) {
+        var up = emitter.registry.un_items[@intCast(usize, ty.payload_idx)];
+        var i: usize = @intCast(usize, 0);
+        while (i < @intCast(usize, up.fields_count)) : (i += @intCast(usize, 1)) {
+            emitDepMember(emitter, emitter.registry.fe_items[@intCast(usize, up.fields_start) + i].type_id, seen, gated);
+        }
+    } else if (ty.kind == TypeKind.tagged_union_type) {
+        var tp = emitter.registry.tu_items[@intCast(usize, ty.payload_idx)];
+        var i: usize = @intCast(usize, 0);
+        while (i < @intCast(usize, tp.fields_count)) : (i += @intCast(usize, 1)) {
+            emitDepMember(emitter, emitter.registry.fe_items[@intCast(usize, tp.fields_start) + i].type_id, seen, gated);
+        }
+    } else if (ty.kind == TypeKind.tuple_type) {
+        var tup = emitter.registry.tup_items[@intCast(usize, ty.payload_idx)];
+        var i: usize = @intCast(usize, 0);
+        while (i < @intCast(usize, tup.elems_count)) : (i += @intCast(usize, 1)) {
+            emitDepMember(emitter, emitter.registry.xt_items[@intCast(usize, tup.elems_start) + i], seen, gated);
+        }
+    } else if (ty.kind == TypeKind.array_type) {
+        var elem = emitter.registry.array_items[@intCast(usize, ty.payload_idx)].elem;
+        emitDepMember(emitter, elem, seen, gated);
+    }
+}
+
 pub fn computeSharedSet(reg: *TypeRegistry, emitter: *C89Emitter, alloc: *Sand) void {
     var ti: u32 = @intCast(u32, 0);
     while (@intCast(usize, ti) < reg.types_len) : (ti += 1) {
@@ -1623,26 +1771,8 @@ pub fn emitSharedHeader(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32
                 continue;
             }
         }
-        var cname = getCTypeName(reg, emitter.mangler, tid);
-        var dedup_key: u32 = @intCast(u32, 0);
-        var h_ci: usize = @intCast(usize, 0);
-        while (h_ci < cname.len) : (h_ci += @intCast(usize, 1)) {
-            dedup_key = dedup_key * @intCast(u32, 31) + @intCast(u32, cname[h_ci]);
-        }
-        if (hash_mod.u32ToU32MapGet(&lemit, dedup_key)) |_| continue;
-        hash_mod.u32ToU32MapPut(&lemit, dedup_key, @intCast(u32, 1));
-        var g0: []const u8 = "#ifndef "; bufferedWriterWrite(&emitter.writer, g0);
-        ctypeGuardWrite(&emitter.writer, ty.kind);
-        bufferedWriterWrite(&emitter.writer, cname);
-        var g1: []const u8 = "\n#define "; bufferedWriterWrite(&emitter.writer, g1);
-        ctypeGuardWrite(&emitter.writer, ty.kind);
-        bufferedWriterWrite(&emitter.writer, cname);
-        var g2: []const u8 = "\n"; bufferedWriterWrite(&emitter.writer, g2);
-        emitTypeDefinition(emitter, tid);
-        var g3: []const u8 = "#endif /* "; bufferedWriterWrite(&emitter.writer, g3);
-        ctypeGuardWrite(&emitter.writer, ty.kind);
-        bufferedWriterWrite(&emitter.writer, cname);
-        var g4: []const u8 = " */\n"; bufferedWriterWrite(&emitter.writer, g4);
+        emitTypeDeps(emitter, tid, &lemit, @intCast(u8, 1));
+        emitTypeDefOnce(emitter, tid, &lemit, @intCast(u8, 1));
     }
 
     // Sub-pass 2b: emit value-embedding types entirely
@@ -1675,26 +1805,9 @@ pub fn emitSharedHeader(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32
                 continue;
             }
         }
-        var cname = getCTypeName(reg, emitter.mangler, tid);
-        var dedup_key: u32 = @intCast(u32, 0);
-        var h_ci: usize = @intCast(usize, 0);
-        while (h_ci < cname.len) : (h_ci += @intCast(usize, 1)) {
-            dedup_key = dedup_key * @intCast(u32, 31) + @intCast(u32, cname[h_ci]);
-        }
-        if (hash_mod.u32ToU32MapGet(&lemit, dedup_key)) |_| continue;
-        hash_mod.u32ToU32MapPut(&lemit, dedup_key, @intCast(u32, 1));
-        var g0: []const u8 = "#ifndef "; bufferedWriterWrite(&emitter.writer, g0);
-        ctypeGuardWrite(&emitter.writer, ty.kind);
-        bufferedWriterWrite(&emitter.writer, cname);
-        var g1: []const u8 = "\n#define "; bufferedWriterWrite(&emitter.writer, g1);
-        ctypeGuardWrite(&emitter.writer, ty.kind);
-        bufferedWriterWrite(&emitter.writer, cname);
-        var g2: []const u8 = "\n"; bufferedWriterWrite(&emitter.writer, g2);
-        emitTypeDefinition(emitter, tid);
-        var g3: []const u8 = "#endif /* "; bufferedWriterWrite(&emitter.writer, g3);
-        ctypeGuardWrite(&emitter.writer, ty.kind);
-        bufferedWriterWrite(&emitter.writer, cname);
-        var g4: []const u8 = " */\n"; bufferedWriterWrite(&emitter.writer, g4);
+        emitTypeDeps(emitter, tid, &lemit, @intCast(u8, 1));
+        emitTypeDefOnce(emitter, tid, &lemit, @intCast(u8, 1));
+
     }
     emitNeededTupleTypes(emitter);
     var eg0: []const u8 = "#endif /* ZIG_SPECIAL_TYPES_H */\n";
@@ -1758,15 +1871,8 @@ pub fn emitSpecialTypes(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32
                 continue;
             }
         }
-        var cname = getCTypeName(reg, emitter.mangler, tid);
-        var dedup_key: u32 = @intCast(u32, 0);
-        var h_ci: usize = @intCast(usize, 0);
-        while (h_ci < cname.len) : (h_ci += @intCast(usize, 1)) {
-            dedup_key = dedup_key * @intCast(u32, 31) + @intCast(u32, cname[h_ci]);
-        }
-        if (hash_mod.u32ToU32MapGet(&emitter.emitted_type_set, dedup_key)) |_| continue;
-        hash_mod.u32ToU32MapPut(&emitter.emitted_type_set, dedup_key, @intCast(u32, 1));
-        emitTypeDefinition(emitter, tid);
+        emitTypeDeps(emitter, tid, &emitter.emitted_type_set, @intCast(u8, 0));
+        emitTypeDefOnce(emitter, tid, &emitter.emitted_type_set, @intCast(u8, 0));
     }
 
     // Sub-pass 2b: emit value-embedding types
@@ -1808,15 +1914,8 @@ pub fn emitSpecialTypes(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32
                 continue;
             }
         }
-        var cname = getCTypeName(reg, emitter.mangler, tid);
-        var dedup_key: u32 = @intCast(u32, 0);
-        var h_ci: usize = @intCast(usize, 0);
-        while (h_ci < cname.len) : (h_ci += @intCast(usize, 1)) {
-            dedup_key = dedup_key * @intCast(u32, 31) + @intCast(u32, cname[h_ci]);
-        }
-        if (hash_mod.u32ToU32MapGet(&emitter.emitted_type_set, dedup_key)) |_| continue;
-        hash_mod.u32ToU32MapPut(&emitter.emitted_type_set, dedup_key, @intCast(u32, 1));
-        emitTypeDefinition(emitter, tid);
+        emitTypeDeps(emitter, tid, &emitter.emitted_type_set, @intCast(u8, 0));
+        emitTypeDefOnce(emitter, tid, &emitter.emitted_type_set, @intCast(u8, 0));
     }
     emitNeededTupleTypes(emitter);
 }
@@ -5771,7 +5870,11 @@ fn aggAccessAppendIndex(buf: *[kAggAccessCap]u8, pos: usize, idx: u32) usize {
 // a top-level argument (the validator admits only kinds with a final route).
 fn emitAggValue(emitter: *C89Emitter, tid: u32, access: []const u8) void {
     var ty = emitter.registry.types_items[@intCast(usize, tid)];
-    if (printAggKind(ty.kind)) {
+    if (ty.kind == TypeKind.ptr_type or ty.kind == TypeKind.many_ptr_type) {
+        // Task 6: pointer / fn-pointer field -> the Zig `{any}` pointer route
+        // (address or pointee delegation), nested at depth d - 1.
+        emitPtrValuePrint(emitter, tid, @intCast(u8, 0), @intCast(u32, 0), access, @intCast(u8, 0));
+    } else if (printAggKind(ty.kind)) {
         var pname = aggPrinterName(emitter, tid);
         bufferedWriterWrite(&emitter.writer, pname);
         var o1: []const u8 = "("; bufferedWriterWrite(&emitter.writer, o1);
@@ -6053,6 +6156,315 @@ fn emitNamePrinterRec(emitter: *C89Emitter, emitted: *U32ToU32Map, tid: u32) voi
     emitNamePrinterDef(emitter, tid);
 }
 
+// ============================================================================
+// Task 6 (z98-print-formatting): pointer / fn-pointer `{}` and float `{x}`.
+//
+// Zig 0.15.2's `{}` on a pointer (`Writer.zig:1337-1352`):
+//   - one-pointer to struct/union/tagged/tuple -> delegates to the pointee
+//     value printer (depth unchanged: same `max_depth`);
+//   - one-pointer to enum -> delegates to the enum `{}` name route;
+//   - one-pointer to array -> delegates to slice printing (no Z98 printer;
+//     the 3013/3063 residual);
+//   - everything else -> `@typeName(child) ++ "@"` + `printInt(addr, 16,
+//     .lower)` — NO `0x` prefix (operator ruling R3);
+//   - many/c pointers (`{any}` field semantics) -> `printAddress`: the same
+//     `T@hex` form for their child name.
+// The compiler knows the child type, so the `T@` prefix is a compile-time C
+// string and only the address is runtime (printed through the EXISTING
+// std.fmt `printHexU64`; no std_fmt addition -> the 4-MD5 pins stay put).
+// `zigPrintNameAppend` reproduces `@typeName` for the child space Z98 can
+// express exactly; named struct/enum/union components are a documented
+// bounded residual (Zig container-qualifies them, e.g. `main.S`) and the
+// validator rejects such pointees with error[3063].
+//
+// Float `{x}` (`Writer.zig:1572-1720`): a hand-rolled C89 hex-float that
+// mirrors Zig's `printFloatHex` bit-for-bit (`0x1.8p0`, `0x0.0p0`,
+// `-0x1p1`, denormals, nan/inf). Emitted as two static helpers on demand —
+// adding a function to std_fmt.zig would move the four pinned 4-MD5 dumps.
+// ============================================================================
+
+const kZigPrintNameCap: usize = 512;
+
+fn zigNamePut(buf: *[kZigPrintNameCap]u8, pos: *usize, s: []const u8) bool {
+    if (pos.* + s.len > kZigPrintNameCap) return false;
+    var i: usize = @intCast(usize, 0);
+    while (i < s.len) : (i += @intCast(usize, 1)) {
+        buf[pos.*] = s[i];
+        pos.* += @intCast(usize, 1);
+    }
+    return true;
+}
+
+fn zigNamePutU32(buf: *[kZigPrintNameCap]u8, pos: *usize, v: u32) bool {
+    var db: [16]u8 = undefined;
+    var dl = itoa_mod.itoa(v, db[0..]);
+    var ds: usize = @intCast(usize, 15) - @intCast(usize, dl);
+    return zigNamePut(buf, pos, db[ds..@intCast(usize, 15)]);
+}
+
+fn zigNamePutQuals(buf: *[kZigPrintNameCap]u8, pos: *usize, flags: u8) bool {
+    if ((flags & @intCast(u8, 1)) != @intCast(u8, 0)) {
+        if (!zigNamePut(buf, pos, "const ")) return false;
+    }
+    if ((flags & @intCast(u8, 2)) != @intCast(u8, 0)) {
+        if (!zigNamePut(buf, pos, "volatile ")) return false;
+    }
+    return true;
+}
+
+// Zig 0.15.2 `@typeName` for the pointer child kinds Z98 can spell exactly.
+// Keep in lockstep with lower.zig `printFmtPointeeNameOk` (mirrored predicate).
+fn zigPrintNameAppend(emitter: *C89Emitter, tid: u32, depth: u32, buf: *[kZigPrintNameCap]u8, pos: *usize) bool {
+    if (depth > 16) return false;
+    if (@intCast(usize, tid) >= emitter.registry.types_len) return false;
+    var ty = emitter.registry.types_items[@intCast(usize, tid)];
+    var k = ty.kind;
+    if (k == TypeKind.i8_type) { return zigNamePut(buf, pos, "i8"); }
+    if (k == TypeKind.i16_type) { return zigNamePut(buf, pos, "i16"); }
+    if (k == TypeKind.i32_type) { return zigNamePut(buf, pos, "i32"); }
+    if (k == TypeKind.i64_type) { return zigNamePut(buf, pos, "i64"); }
+    if (k == TypeKind.u8_type) { return zigNamePut(buf, pos, "u8"); }
+    if (k == TypeKind.u16_type) { return zigNamePut(buf, pos, "u16"); }
+    if (k == TypeKind.u32_type) { return zigNamePut(buf, pos, "u32"); }
+    if (k == TypeKind.u64_type) { return zigNamePut(buf, pos, "u64"); }
+    if (k == TypeKind.isize_type) { return zigNamePut(buf, pos, "isize"); }
+    if (k == TypeKind.usize_type) { return zigNamePut(buf, pos, "usize"); }
+    if (k == TypeKind.c_char_type) { return zigNamePut(buf, pos, "c_char"); }
+    if (k == TypeKind.bool_type) { return zigNamePut(buf, pos, "bool"); }
+    if (k == TypeKind.f32_type) { return zigNamePut(buf, pos, "f32"); }
+    if (k == TypeKind.f64_type) { return zigNamePut(buf, pos, "f64"); }
+    if (k == TypeKind.void_type) { return zigNamePut(buf, pos, "void"); }
+    if (k == TypeKind.noreturn_type) { return zigNamePut(buf, pos, "noreturn"); }
+    if (k == TypeKind.arb_uint_type or k == TypeKind.arb_int_type) {
+        if (k == TypeKind.arb_uint_type) {
+            if (!zigNamePut(buf, pos, "u")) return false;
+        } else {
+            if (!zigNamePut(buf, pos, "i")) return false;
+        }
+        return zigNamePutU32(buf, pos, @intCast(u32, ty.width_bits));
+    }
+    if (k == TypeKind.error_set_type) {
+        if (@intCast(usize, ty.payload_idx) >= emitter.registry.es_len) return false;
+        var esp = emitter.registry.es_items[@intCast(usize, ty.payload_idx)];
+        if (@intCast(usize, esp.tags_start) + @intCast(usize, esp.tags_count) > emitter.registry.xn_len) return false;
+        if (!zigNamePut(buf, pos, "error{")) return false;
+        var ei: usize = @intCast(usize, 0);
+        while (ei < @intCast(usize, esp.tags_count)) : (ei += @intCast(usize, 1)) {
+            if (ei > @intCast(usize, 0)) {
+                if (!zigNamePut(buf, pos, ",")) return false;
+            }
+            var nid = emitter.registry.xn_items[@intCast(usize, esp.tags_start) + ei];
+            var nm = interner_mod.stringInternerGet(emitter.interner, nid);
+            if (!zigNamePut(buf, pos, nm)) return false;
+        }
+        return zigNamePut(buf, pos, "}");
+    }
+    if (k == TypeKind.optional_type) {
+        if (@intCast(usize, ty.payload_idx) >= emitter.registry.opt_len) return false;
+        if (!zigNamePut(buf, pos, "?")) return false;
+        var op = emitter.registry.opt_items[@intCast(usize, ty.payload_idx)];
+        return zigPrintNameAppend(emitter, op.payload, depth + @intCast(u32, 1), buf, pos);
+    }
+    if (k == TypeKind.error_union_type) {
+        if (@intCast(usize, ty.payload_idx) >= emitter.registry.eu_len) return false;
+        var ep = emitter.registry.eu_items[@intCast(usize, ty.payload_idx)];
+        if (ep.error_set == @intCast(u32, 0)) return false;
+        if (!zigPrintNameAppend(emitter, ep.error_set, depth + @intCast(u32, 1), buf, pos)) return false;
+        if (!zigNamePut(buf, pos, "!")) return false;
+        return zigPrintNameAppend(emitter, ep.payload, depth + @intCast(u32, 1), buf, pos);
+    }
+    if (k == TypeKind.slice_type) {
+        if (@intCast(usize, ty.payload_idx) >= emitter.registry.slice_len) return false;
+        if (!zigNamePut(buf, pos, "[]")) return false;
+        if (!zigNamePutQuals(buf, pos, ty.flags)) return false;
+        var sp = emitter.registry.slice_items[@intCast(usize, ty.payload_idx)];
+        return zigPrintNameAppend(emitter, sp.elem, depth + @intCast(u32, 1), buf, pos);
+    }
+    if (k == TypeKind.array_type) {
+        if (@intCast(usize, ty.payload_idx) >= emitter.registry.array_len) return false;
+        if (!zigNamePut(buf, pos, "[")) return false;
+        var ap = emitter.registry.array_items[@intCast(usize, ty.payload_idx)];
+        if (!zigNamePutU32(buf, pos, ap.length)) return false;
+        if (!zigNamePut(buf, pos, "]")) return false;
+        return zigPrintNameAppend(emitter, ap.elem, depth + @intCast(u32, 1), buf, pos);
+    }
+    if (k == TypeKind.ptr_type or k == TypeKind.many_ptr_type) {
+        if (@intCast(usize, ty.payload_idx) >= emitter.registry.ptr_len) return false;
+        if (k == TypeKind.many_ptr_type) {
+            if (!zigNamePut(buf, pos, "[*]")) return false;
+        } else {
+            if (!zigNamePut(buf, pos, "*")) return false;
+        }
+        if (!zigNamePutQuals(buf, pos, ty.flags)) return false;
+        var pp = emitter.registry.ptr_items[@intCast(usize, ty.payload_idx)];
+        return zigPrintNameAppend(emitter, pp.base, depth + @intCast(u32, 1), buf, pos);
+    }
+    if (k == TypeKind.fn_type) {
+        if (@intCast(usize, ty.payload_idx) >= emitter.registry.fn_len) return false;
+        var fp = emitter.registry.fn_items[@intCast(usize, ty.payload_idx)];
+        if (!zigNamePut(buf, pos, "fn (")) return false;
+        var pend: usize = @intCast(usize, fp.params_start) + @intCast(usize, fp.params_count);
+        if (pend > emitter.registry.xt_len) return false;
+        var pi: usize = @intCast(usize, fp.params_start);
+        var first: u8 = @intCast(u8, 1);
+        while (pi < pend) : (pi += @intCast(usize, 1)) {
+            if (first == @intCast(u8, 0)) {
+                if (!zigNamePut(buf, pos, ", ")) return false;
+            }
+            if (!zigPrintNameAppend(emitter, emitter.registry.xt_items[pi], depth + @intCast(u32, 1), buf, pos)) return false;
+            first = @intCast(u8, 0);
+        }
+        if ((fp.flags_packed & type_mod.FN_FLAG_VARIADIC) != @intCast(u8, 0)) {
+            if (first == @intCast(u8, 0)) {
+                if (!zigNamePut(buf, pos, ", ")) return false;
+            }
+            if (!zigNamePut(buf, pos, "...")) return false;
+        }
+        if (!zigNamePut(buf, pos, ")")) return false;
+        if ((fp.flags_packed & type_mod.FN_FLAG_STDCALL) != @intCast(u8, 0)) {
+            if (!zigNamePut(buf, pos, " callconv(.x86_stdcall)")) return false;
+        } else if (fp.is_extern != @intCast(u8, 0)) {
+            if (!zigNamePut(buf, pos, " callconv(.c)")) return false;
+        }
+        if (!zigNamePut(buf, pos, " ")) return false;
+        return zigPrintNameAppend(emitter, fp.return_type, depth + @intCast(u32, 1), buf, pos);
+    }
+    return false;
+}
+
+fn emitPtrValueExpr(emitter: *C89Emitter, is_temp: u8, temp: u32, access: []const u8) void {
+    if (is_temp != @intCast(u8, 0)) {
+        emitValueExpr(emitter, temp, @intCast(u32, 0));
+    } else {
+        bufferedWriterWrite(&emitter.writer, access);
+    }
+}
+
+// Print one pointer value (a `.print_val` top-level argument or an aggregate
+// field) exactly as Zig 0.15.2 does. `is_top` selects the delegation depth:
+// Zig's pointer arm passes `max_depth` through unchanged, so a top-level
+// pointer delegates at kPrintAggMaxDepth while a field (already at `d - 1`)
+// delegates at `d - 1`. The caller has written the leading indentation.
+fn emitPtrValuePrint(emitter: *C89Emitter, tid: u32, is_temp: u8, temp: u32, access: []const u8, is_top: u8) void {
+    if (type_mod.typeRegistryGetPointeeType(emitter.registry, tid)) |ptid| {
+        if (@intCast(usize, ptid) >= emitter.registry.types_len) return;
+        var pk = emitter.registry.types_items[@intCast(usize, ptid)].kind;
+        if (printAggKind(pk)) {
+            var pname = aggPrinterName(emitter, ptid);
+            bufferedWriterWrite(&emitter.writer, pname);
+            bufferedWriterWrite(&emitter.writer, "(*(");
+            emitPtrValueExpr(emitter, is_temp, temp, access);
+            bufferedWriterWrite(&emitter.writer, "), ");
+            if (is_top != @intCast(u8, 0)) {
+                emitU64Dec(emitter, @intCast(u64, kPrintAggMaxDepth));
+            } else {
+                bufferedWriterWrite(&emitter.writer, "d - 1");
+            }
+            bufferedWriterWrite(&emitter.writer, ");\n");
+            return;
+        }
+        if (pk == TypeKind.enum_type) {
+            var nname = namePrinterName(emitter, ptid);
+            bufferedWriterWrite(&emitter.writer, nname);
+            bufferedWriterWrite(&emitter.writer, "(*(");
+            emitPtrValueExpr(emitter, is_temp, temp, access);
+            bufferedWriterWrite(&emitter.writer, "));\n");
+            return;
+        }
+        var nb: [kZigPrintNameCap]u8 = undefined;
+        var npos: usize = @intCast(usize, 0);
+        if (!zigPrintNameAppend(emitter, ptid, @intCast(u32, 0), &nb, &npos)) return;
+        if (!zigNamePut(&nb, &npos, "@")) return;
+        bufferedWriterWrite(&emitter.writer, "std_print(");
+        emitCStringLiteral(&emitter.writer, nb[0..npos]);
+        bufferedWriterWrite(&emitter.writer, ");\n");
+        bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+        var hexfn = stdFmtSourceSymbol(emitter, "printHexU64");
+        bufferedWriterWrite(&emitter.writer, hexfn);
+        bufferedWriterWrite(&emitter.writer, "((unsigned long long)(unsigned int)(");
+        emitPtrValueExpr(emitter, is_temp, temp, access);
+        bufferedWriterWrite(&emitter.writer, "));\n");
+    }
+}
+
+// Hand-rolled C89 hex-float, bit-for-bit Zig 0.15.2 `printFloatHex`
+// (`Writer.zig:1572-1720`) with no precision option (Z98 `{x}` has none).
+fn emitFloatHexHelper(emitter: *C89Emitter, is32: u8) void {
+    var dec_fn = stdFmtSourceSymbol(emitter, "printI32");
+    if (is32 != @intCast(u8, 0)) {
+        bufferedWriterWrite(&emitter.writer, "static void z98_printFloatHex32(float v) {\n");
+        bufferedWriterWrite(&emitter.writer, "    union { float f; unsigned int u; } zT_fhx;\n");
+        bufferedWriterWrite(&emitter.writer, "    unsigned int zT_bits;\n");
+        bufferedWriterWrite(&emitter.writer, "    unsigned int zT_man;\n");
+        bufferedWriterWrite(&emitter.writer, "    int zT_exp;\n");
+        bufferedWriterWrite(&emitter.writer, "    int zT_i;\n");
+        bufferedWriterWrite(&emitter.writer, "    char zT_buf[8];\n");
+        bufferedWriterWrite(&emitter.writer, "    zT_fhx.f = v;\n");
+        bufferedWriterWrite(&emitter.writer, "    zT_bits = zT_fhx.u;\n");
+        bufferedWriterWrite(&emitter.writer, "    zT_man = zT_bits & 0x7FFFFF;\n");
+        bufferedWriterWrite(&emitter.writer, "    zT_exp = (int)((zT_bits >> 23) & 0xFF);\n");
+        bufferedWriterWrite(&emitter.writer, "    if ((zT_bits >> 31) != 0) { std_print(\"-\"); }\n");
+        bufferedWriterWrite(&emitter.writer, "    if (zT_exp == 0xFF) {\n");
+        bufferedWriterWrite(&emitter.writer, "        if (zT_man != 0) { std_print(\"nan\"); } else { std_print(\"inf\"); }\n");
+        bufferedWriterWrite(&emitter.writer, "        return;\n");
+        bufferedWriterWrite(&emitter.writer, "    }\n");
+        bufferedWriterWrite(&emitter.writer, "    if (zT_exp == 0 && zT_man == 0) { std_print(\"0x0.0p0\"); return; }\n");
+        bufferedWriterWrite(&emitter.writer, "    if (zT_exp == 0) { zT_exp = zT_exp + 1; } else { zT_man = zT_man | 0x800000; }\n");
+        bufferedWriterWrite(&emitter.writer, "    zT_man = zT_man << 1;\n");
+        bufferedWriterWrite(&emitter.writer, "    for (zT_i = 6; zT_i >= 0; zT_i = zT_i - 1) {\n");
+        bufferedWriterWrite(&emitter.writer, "        zT_buf[zT_i] = \"0123456789abcdef\"[(int)(zT_man & 0xF)];\n");
+        bufferedWriterWrite(&emitter.writer, "        zT_man = zT_man >> 4;\n");
+        bufferedWriterWrite(&emitter.writer, "    }\n");
+        bufferedWriterWrite(&emitter.writer, "    std_print(\"0x\");\n");
+        bufferedWriterWrite(&emitter.writer, "    std_print_len(zT_buf, 1);\n");
+        bufferedWriterWrite(&emitter.writer, "    zT_i = 7;\n");
+        bufferedWriterWrite(&emitter.writer, "    while (zT_i > 1 && zT_buf[zT_i - 1] == '0') { zT_i = zT_i - 1; }\n");
+        bufferedWriterWrite(&emitter.writer, "    if (zT_i > 1) {\n");
+        bufferedWriterWrite(&emitter.writer, "        std_print(\".\");\n");
+        bufferedWriterWrite(&emitter.writer, "        std_print_len(zT_buf + 1, (unsigned int)(zT_i - 1));\n");
+        bufferedWriterWrite(&emitter.writer, "    }\n");
+        bufferedWriterWrite(&emitter.writer, "    std_print(\"p\");\n");
+        bufferedWriterWrite(&emitter.writer, "    ");
+        bufferedWriterWrite(&emitter.writer, dec_fn);
+        bufferedWriterWrite(&emitter.writer, "(zT_exp - 127);\n}\n\n");
+    } else {
+        bufferedWriterWrite(&emitter.writer, "static void z98_printFloatHex64(double v) {\n");
+        bufferedWriterWrite(&emitter.writer, "    union { double f; unsigned long long u; } zT_fhx;\n");
+        bufferedWriterWrite(&emitter.writer, "    unsigned long long zT_bits;\n");
+        bufferedWriterWrite(&emitter.writer, "    unsigned long long zT_man;\n");
+        bufferedWriterWrite(&emitter.writer, "    int zT_exp;\n");
+        bufferedWriterWrite(&emitter.writer, "    int zT_i;\n");
+        bufferedWriterWrite(&emitter.writer, "    char zT_buf[16];\n");
+        bufferedWriterWrite(&emitter.writer, "    zT_fhx.f = v;\n");
+        bufferedWriterWrite(&emitter.writer, "    zT_bits = zT_fhx.u;\n");
+        bufferedWriterWrite(&emitter.writer, "    zT_man = zT_bits & 0xFFFFFFFFFFFFFULL;\n");
+        bufferedWriterWrite(&emitter.writer, "    zT_exp = (int)((zT_bits >> 52) & 0x7FF);\n");
+        bufferedWriterWrite(&emitter.writer, "    if ((zT_bits >> 63) != 0) { std_print(\"-\"); }\n");
+        bufferedWriterWrite(&emitter.writer, "    if (zT_exp == 0x7FF) {\n");
+        bufferedWriterWrite(&emitter.writer, "        if (zT_man != 0) { std_print(\"nan\"); } else { std_print(\"inf\"); }\n");
+        bufferedWriterWrite(&emitter.writer, "        return;\n");
+        bufferedWriterWrite(&emitter.writer, "    }\n");
+        bufferedWriterWrite(&emitter.writer, "    if (zT_exp == 0 && zT_man == 0) { std_print(\"0x0.0p0\"); return; }\n");
+        bufferedWriterWrite(&emitter.writer, "    if (zT_exp == 0) { zT_exp = zT_exp + 1; } else { zT_man = zT_man | 0x10000000000000ULL; }\n");
+        bufferedWriterWrite(&emitter.writer, "    for (zT_i = 13; zT_i >= 0; zT_i = zT_i - 1) {\n");
+        bufferedWriterWrite(&emitter.writer, "        zT_buf[zT_i] = \"0123456789abcdef\"[(int)(zT_man & 0xFULL)];\n");
+        bufferedWriterWrite(&emitter.writer, "        zT_man = zT_man >> 4;\n");
+        bufferedWriterWrite(&emitter.writer, "    }\n");
+        bufferedWriterWrite(&emitter.writer, "    std_print(\"0x\");\n");
+        bufferedWriterWrite(&emitter.writer, "    std_print_len(zT_buf, 1);\n");
+        bufferedWriterWrite(&emitter.writer, "    zT_i = 14;\n");
+        bufferedWriterWrite(&emitter.writer, "    while (zT_i > 1 && zT_buf[zT_i - 1] == '0') { zT_i = zT_i - 1; }\n");
+        bufferedWriterWrite(&emitter.writer, "    if (zT_i > 1) {\n");
+        bufferedWriterWrite(&emitter.writer, "        std_print(\".\");\n");
+        bufferedWriterWrite(&emitter.writer, "        std_print_len(zT_buf + 1, (unsigned int)(zT_i - 1));\n");
+        bufferedWriterWrite(&emitter.writer, "    }\n");
+        bufferedWriterWrite(&emitter.writer, "    std_print(\"p\");\n");
+        bufferedWriterWrite(&emitter.writer, "    ");
+        bufferedWriterWrite(&emitter.writer, dec_fn);
+        bufferedWriterWrite(&emitter.writer, "(zT_exp - 1023);\n}\n\n");
+    }
+}
+
 fn emitAggPrinterDef(emitter: *C89Emitter, tid: u32) void {
     var reg = emitter.registry;
     var ty = reg.types_items[@intCast(usize, tid)];
@@ -6287,6 +6699,19 @@ fn emitFieldPrinterRec(emitter: *C89Emitter, emitted: *U32ToU32Map, visiting: *U
         emitAggPrinterRec(emitter, emitted, visiting, ft);
     } else if (printNameRouteKind(fk)) {
         emitNamePrinterRec(emitter, emitted, ft);
+    } else if (fk == TypeKind.ptr_type or fk == TypeKind.many_ptr_type) {
+        // Task 6: a pointer field that delegates to its pointee needs the
+        // pointee's generated printer (aggregate) or name printer (enum).
+        if (type_mod.typeRegistryGetPointeeType(emitter.registry, ft)) |ptid| {
+            if (@intCast(usize, ptid) < emitter.registry.types_len) {
+                var pk = emitter.registry.types_items[@intCast(usize, ptid)].kind;
+                if (printAggKind(pk)) {
+                    emitAggPrinterRec(emitter, emitted, visiting, ptid);
+                } else if (pk == TypeKind.enum_type) {
+                    emitNamePrinterRec(emitter, emitted, ptid);
+                }
+            }
+        }
     }
 }
 
@@ -6310,6 +6735,28 @@ fn collectPrintRoots(emitter: *C89Emitter, roots: *U32ToU32Map) void {
                                 hash_mod.u32ToU32MapPut(roots, pv.type_id, @intCast(u32, 1));
                             } else if (printNameRouteKind(rk) and pv.implicit != @intCast(u8, 0)) {
                                 hash_mod.u32ToU32MapPut(roots, pv.type_id, @intCast(u32, 1));
+                            } else if (rk == TypeKind.ptr_type or rk == TypeKind.many_ptr_type) {
+                                // Task 6: a pointer argument that delegates to its
+                                // pointee roots the pointee aggregate / enum-name
+                                // printer.
+                                if (type_mod.typeRegistryGetPointeeType(emitter.registry, pv.type_id)) |ptid| {
+                                    if (@intCast(usize, ptid) < emitter.registry.types_len) {
+                                        var pk = emitter.registry.types_items[@intCast(usize, ptid)].kind;
+                                        if (printAggKind(pk)) {
+                                            hash_mod.u32ToU32MapPut(roots, ptid, @intCast(u32, 1));
+                                        } else if (pk == TypeKind.enum_type) {
+                                            hash_mod.u32ToU32MapPut(roots, ptid, @intCast(u32, 1));
+                                        }
+                                    }
+                                }
+                            } else if ((rk == TypeKind.f32_type or rk == TypeKind.f64_type) and pv.fmt == @intCast(u8, 'x')) {
+                                // Task 6: float `{x}` needs the hand-rolled C89
+                                // hex-float helper (emitted below, on demand).
+                                if (rk == TypeKind.f32_type) {
+                                    emitter.need_fhex32 = @intCast(u8, 1);
+                                } else {
+                                    emitter.need_fhex64 = @intCast(u8, 1);
+                                }
                             }
                         }
                     },
@@ -6326,6 +6773,11 @@ fn collectPrintRoots(emitter: *C89Emitter, roots: *U32ToU32Map) void {
 pub fn emitGeneratedPrinters(emitter: *C89Emitter) void {
     var roots = hash_mod.u32ToU32MapInit(emitter.persist_alloc);
     collectPrintRoots(emitter, &roots);
+    if (roots.count == @intCast(usize, 0) and emitter.need_fhex32 == @intCast(u8, 0) and emitter.need_fhex64 == @intCast(u8, 0)) return;
+    // Task 6: the float `{x}` helpers are static and self-contained; they are
+    // emitted before any printer/function body that could call them.
+    if (emitter.need_fhex32 != @intCast(u8, 0)) emitFloatHexHelper(emitter, @intCast(u8, 1));
+    if (emitter.need_fhex64 != @intCast(u8, 0)) emitFloatHexHelper(emitter, @intCast(u8, 0));
     if (roots.count == @intCast(usize, 0)) return;
     var emitted = hash_mod.u32ToU32MapInit(emitter.persist_alloc);
     var visiting = hash_mod.u32ToU32MapInit(emitter.persist_alloc);
@@ -8790,7 +9242,12 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
         },
         .print_val => |p| {
             var ty = emitter.registry.types_items[@intCast(usize, p.type_id)];
-            if (printAggKind(ty.kind)) {
+            if (ty.kind == TypeKind.ptr_type or ty.kind == TypeKind.many_ptr_type) {
+                // Task 6: pointer / fn-pointer `{}` -> Zig's `T@hex` / pointee
+                // delegation route (top-level depth = kPrintAggMaxDepth).
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                emitPtrValuePrint(emitter, p.type_id, @intCast(u8, 1), p.value, "", @intCast(u8, 1));
+            } else if (printAggKind(ty.kind)) {
                 // Task 4: aggregate/tuple `{}` -> the generated per-type printer
                 // (`z98_print<Kind>_<tid>(value, depth)`; depth starts at Zig's
                 // std.fmt.default_max_depth).
@@ -8819,6 +9276,18 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                 emitValueExpr(emitter, p.value, @intCast(u32, 0));
                 var rnp: []const u8 = ");\n";
                 bufferedWriterWrite(&emitter.writer, rnp);
+            } else if ((ty.kind == TypeKind.f32_type or ty.kind == TypeKind.f64_type) and p.fmt == @intCast(u8, 'x')) {
+                // Task 6: float `{x}` -> the generated C89 hex-float helper
+                // (Zig's `0x1.8p0` form; the helper is rooted + emitted by
+                // collectPrintRoots/emitGeneratedPrinters).
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                if (ty.kind == TypeKind.f32_type) {
+                    bufferedWriterWrite(&emitter.writer, "z98_printFloatHex32(");
+                } else {
+                    bufferedWriterWrite(&emitter.writer, "z98_printFloatHex64(");
+                }
+                emitValueExpr(emitter, p.value, @intCast(u32, 0));
+                bufferedWriterWrite(&emitter.writer, ");\n");
             } else {
                 var val = resolveTempName(emitter, p.value);
                 var fn_name = getPrintFnName(emitter, p.type_id, p.fmt);

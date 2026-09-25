@@ -1,4 +1,4 @@
-# 08 — C89 Emission [updated: 2026-09-25 — Task 5 (z98-print-formatting): `.print_val` on an enum (bare `{}`) calls the compiler-generated `z98_printEnum_<tid>` and on an error set uses `z98_printErrorSet_<tid>`; each carries a static name table (`z98_etab_` name blob + `z98_eoff_`/`z98_elen_` byte offset/length arrays + `z98_eval_` member values / `z98_escode_` global codes) and writes the name through the EXISTING std.fmt `printStr` (std_fmt.zig stays untouched so the 4-MD5 dumps keep their pinned bytes). See §1.19.] [updated: 2026-09-25 — Task 4 (z98-print-formatting): `.print_val` on struct/union/tagged-union/packed-union/tuple calls a compiler-generated per-type static printer (`z98_printStruct_<tid>`, ...) that emits Zig 0.15.2's `. { .a = 1 }` / `.{ 1, 2, 3 }` form with `std.fmt.default_max_depth = 3`; tuple types gain a `Tup_<tid>` C model (`typedef struct { _0, _1, ... }`), emitted only for `needed_tuple_set` (runtime hoisted temps/globals) so registry-only print-args tuples keep the 4-MD5 dumps byte-identical. See §1.18.] [updated: 2026-09-25 — Task 2 (z98-print-formatting): `printFnSourceName` is a width/signedness dispatcher (`printKindIsIntegerLike` + `typeRegistryIntWidthBits`/`IsSigned`; ≤32 → U32/I32, 33..64 → U64/I64, `{x}` → the matching `printHex*`; Z98 `usize` is 32-bit unsigned; `integer_literal` is the 32-bit signed fallback) and `std.fmt`'s `printHexI32/I64` print `-` + hex magnitude for negative values; `pal_f64_to_str` omits the `.`+fraction for an integral float. Fixture `stdlib_print_dispatch_xmod`.][updated: 2026-09-24 — Task 1 (z98-print-formatting): `.print_val` emits a mangled cross-module call into the Z98 std module `sf/src/std_fmt.zig` (`std.fmt`); `printFnSourceName` picks the std.fmt source name and `getPrintFnName` mangles it against the auto-imported std_fmt module id (new `C89Emitter.std_fmt_module_id`, set in `phase_C89Emission`; a `.print_val` also seeds a `ref_edges` entry so std_fmt stays reachable and its header is included). The C `std_print_<type>` bodies are retired; `std_print`/`std_print_len` remain the raw-bytes helpers for `.print_str`/console. `.print_str` is unchanged.] [updated: 2026-09-22 — `getPrintFnName` gained an `f32_type` arm routing `f32` to the existing `std_print_f64` (Task 7F f32 print dispatch; the prototype widens `float`→`double`, no runtime change)] [updated: 2026-09-20 — refreshed against current source: added `emit_support.zig` (self-contained output dir + companion build scripts), packed/int-width/`volatile`/calling-convention and `-fsafe`/`-ffast` guard emission, emission-core compaction, and module pruning; documented the removed `@socket*` builtin emission; dropped line references and the 4-example evidence appendix]
+# 08 — C89 Emission [updated: 2026-09-25 — Task 6 (z98-print-formatting): pointer/fn-pointer `{}` prints Zig 0.15.2's `T@<lowercase-hex>` (NO `0x`; operator ruling R3) or delegates to the pointee printer (`*struct`/`*union`/`*tagged`/`*packed`/`*tuple` → the Task-4 generated printer, `*enum` → the Task-5 name printer, everything else the address form). The address form is emitted inline — `std_print("<@typeName(child)>@")` + the EXISTING std.fmt `printHexU64` — and the child name is rendered by the new `zigPrintNameAppend` for the exact Z98-expressible space (ints/floats/bool/void/`c_char`/arb/pointers/many/slices/arrays/optionals/error-unions/error-sets/fn); named struct/enum/union components reject `error[3063]` (Zig container-qualifies them — bounded residual). Float `{x}` prints a hand-rolled C89 hex-float (`0x1.8p0`, `Writer.zig:1572-1720`) through compiler-generated static helpers `z98_printFloatHex32/64` (emitted on demand — adding a std_fmt function would move the 4-MD5 pins). The Task-4 closure is extended for pointer/fn-pointer fields (Zig's `{any}` field pointer route); type-dependency emission (`emitTypeDefOnce`/`emitTypeDeps`/`emitPointeeDep`/`emitDepMember`) fixes the pre-existing "typedef used before emitted" ordering for a pointer member's pointee typedef (fn-pointer/enum/error-set/optional/slice/array/packed), and `c89NeedsEmitEdge` now treats `fn_type` as a value-embedding dependency edge. See §1.20.] [updated: 2026-09-25 — Task 5 (z98-print-formatting): `.print_val` on an enum (bare `{}`) calls the compiler-generated `z98_printEnum_<tid>` and on an error set uses `z98_printErrorSet_<tid>`; each carries a static name table (`z98_etab_` name blob + `z98_eoff_`/`z98_elen_` byte offset/length arrays + `z98_eval_` member values / `z98_escode_` global codes) and writes the name through the EXISTING std.fmt `printStr` (std_fmt.zig stays untouched so the 4-MD5 dumps keep their pinned bytes). See §1.19.] [updated: 2026-09-25 — Task 4 (z98-print-formatting): `.print_val` on struct/union/tagged-union/packed-union/tuple calls a compiler-generated per-type static printer (`z98_printStruct_<tid>`, ...) that emits Zig 0.15.2's `. { .a = 1 }` / `.{ 1, 2, 3 }` form with `std.fmt.default_max_depth = 3`; tuple types gain a `Tup_<tid>` C model (`typedef struct { _0, _1, ... }`), emitted only for `needed_tuple_set` (runtime hoisted temps/globals) so registry-only print-args tuples keep the 4-MD5 dumps byte-identical. See §1.18.] [updated: 2026-09-25 — Task 2 (z98-print-formatting): `printFnSourceName` is a width/signedness dispatcher (`printKindIsIntegerLike` + `typeRegistryIntWidthBits`/`IsSigned`; ≤32 → U32/I32, 33..64 → U64/I64, `{x}` → the matching `printHex*`; Z98 `usize` is 32-bit unsigned; `integer_literal` is the 32-bit signed fallback) and `std.fmt`'s `printHexI32/I64` print `-` + hex magnitude for negative values; `pal_f64_to_str` omits the `.`+fraction for an integral float. Fixture `stdlib_print_dispatch_xmod`.][updated: 2026-09-24 — Task 1 (z98-print-formatting): `.print_val` emits a mangled cross-module call into the Z98 std module `sf/src/std_fmt.zig` (`std.fmt`); `printFnSourceName` picks the std.fmt source name and `getPrintFnName` mangles it against the auto-imported std_fmt module id (new `C89Emitter.std_fmt_module_id`, set in `phase_C89Emission`; a `.print_val` also seeds a `ref_edges` entry so std_fmt stays reachable and its header is included). The C `std_print_<type>` bodies are retired; `std_print`/`std_print_len` remain the raw-bytes helpers for `.print_str`/console. `.print_str` is unchanged.] [updated: 2026-09-22 — `getPrintFnName` gained an `f32_type` arm routing `f32` to the existing `std_print_f64` (Task 7F f32 print dispatch; the prototype widens `float`→`double`, no runtime change)] [updated: 2026-09-20 — refreshed against current source: added `emit_support.zig` (self-contained output dir + companion build scripts), packed/int-width/`volatile`/calling-convention and `-fsafe`/`-ffast` guard emission, emission-core compaction, and module pruning; documented the removed `@socket*` builtin emission; dropped line references and the 4-example evidence appendix]
 
 > Covers: `c89_emit.zig`, `name_mangler.zig`, `cinclude.zig`, `emit_support.zig`
 > Cross-ref: [INDEX.md](INDEX.md) §E (NameMangler, BufferedWriter data structures)
@@ -495,7 +495,7 @@ Every `LirInst` variant handled in `emitInst`:
 | `.float_cast` | `result = (type)src;` |
 | `.make_slice` | `result.ptr = ptr;\n result.len = len;` |
 | `.print_str` | `std_print("literal");` (unchanged: the raw-bytes helper for a format-string literal segment) |
-| `.print_val` | mangled `std.fmt.<printer>(val);` cross-module call into the auto-imported `sf/src/std_fmt.zig` (slice → `printStr(val.ptr, val.len)`); the old `std_print_<type>` C-ABI calls are retired. Task 4: an aggregate/tuple type calls its generated per-type printer `<name>(val, 3)` instead (see §1.18). Task 5: a bare `{}` on an enum calls `z98_printEnum_<tid>(val)`, on an error set `z98_printErrorSet_<tid>(val)` (the `print_val.implicit` bit distinguishes a bare `{}` from an explicit enum `{d}`/`{x}`, which keeps the numeric route; see §1.19) |
+| `.print_val` | mangled `std.fmt.<printer>(val);` cross-module call into the auto-imported `sf/src/std_fmt.zig` (slice → `printStr(val.ptr, val.len)`); the old `std_print_<type>` C-ABI calls are retired. Task 4: an aggregate/tuple type calls its generated per-type printer `<name>(val, 3)` instead (see §1.18). Task 5: a bare `{}` on an enum calls `z98_printEnum_<tid>(val)`, on an error set `z98_printErrorSet_<tid>(val)` (the `print_val.implicit` bit distinguishes a bare `{}` from an explicit enum `{d}`/`{x}`, which keeps the numeric route; see §1.19). Task 6: a pointer/fn-pointer type emits the inline `T@hex` / pointee-delegation form, and a `fmt == 'x'` float calls `z98_printFloatHex32/64(val)` (see §1.20) |
 | `.ptr_cast` | `result = (type)src;` |
 | `.check_error` | `result = src.is_error;` |
 | `.unwrap_error_payload` | `result = src.data.payload;` |
@@ -677,6 +677,11 @@ Resolves field access for `.assign_field`:
 | `emitGeneratedPrinters` / `collectPrintRoots` / `emitAggPrinterRec` / `emitAggPrinterDef` / `emitAggValue` | Task 4: per-module scan for `.print_val` aggregate roots, dependency-first deduped emission, and the printer body (fields/tag-switch/packed extraction/depth-1 recursion). |
 | `emitTupleType` / `emitNeededTupleTypes` / `collectNeededTuples` | Task 4: the tuple `typedef struct { _0, _1, ... }` C model, the needed-tuple emission pass (end of both type-emission paths), and the hoisted-temp/global collector (`C89Emitter.needed_tuple_set`). |
 | `aggPackedScratchName` / `aggAccessAppend` / `aggAccessAppendIndex` / `aggIndentStmt` | Task 4 helpers: packed-field scratch local names, `v.field` / `v._N` access-string builders, printer-statement indentation. |
+| `zigPrintNameAppend` / `zigNamePut` / `zigNamePutU32` / `zigNamePutQuals` | Task 6: Zig 0.15.2 `@typeName` renderer for a pointer child (exact Z98-expressible space; named enum/struct/union components return false, i.e. the `error[3063]` named-composite residual). `kZigPrintNameCap = 512`. Kept in lockstep with `lower.zig` `printFmtPointeeNameOk`. |
+| `emitPtrValuePrint` / `emitPtrValueExpr` | Task 6: one pointer value's print dispatch — pointee aggregate/tuple/packed → the generated aggregate printer with `*(value)` (depth unchanged at top level, `d - 1` as a field); pointee enum → the Task-5 name printer; else inline `std_print("<name>@")` + `printHexU64((unsigned long long)(unsigned int)(value))`. `emitAggValue` routes pointer/many-pointer FIELDS here, `.print_val` routes top-level ones (`is_top`). |
+| `emitFloatHexHelper` | Task 6: emits the on-demand `static void z98_printFloatHex32(float)` / `z98_printFloatHex64(double)` C89 hex-float (bit-for-bit Zig's `printFloatHex`, no precision option; the decimal exponent goes through the existing mangled `std.fmt.printI32`). Rooted by `collectPrintRoots` flags `need_fhex32`/`need_fhex64`. |
+| `emitTypeDefOnce` / `emitTypeDeps` / `emitPointeeDep` / `emitDepMember` | Task 6: shared gated/bare type-definition writer (refactored out of the four special-types sub-passes) plus the pointer-pointee dependency emission that fixes "typedef used before emitted" for a pointer member's pointee C type (fn-pointer/enum/error-set/optional/slice/array/packed/ptr-chain); dedup via the pass's `seen` map. |
+| `c89NeedsEmitEdge` (`fn_type`) | Task 6: `fn_type` is now a value-embedding dependency edge (a fn-pointer can be a struct field / tuple element / array element), ordering its typedef before the user. |
 | `emitCStringLiteral` | Emits C string literal with escape sequences (\n, \t, \r, \\, \") |
 | `resolveTempName` | Resolve temp_id → C name. Checks local flat lookup first (fl_temps), falls back to mangleTempName |
 | `getTempTypeByIndex` | Find type_id for a temp_id by scanning hoisted_temps |
@@ -917,6 +922,70 @@ function moves the four pinned 4-MD5 dumps), so the emitter generates one
 `error[3063]`; an enum member literal above u32 max truncates at the literal
 (pre-existing sema `enum_value_table` `U32ToU32Map`; the runtime lookup is
 exact).
+
+### 1.20 Pointer / fn-pointer printers and float `{x}` hex-float (Task 6, z98-print-formatting)
+
+`{}` on a pointer / fn-pointer, and float `{x}`, are the Task-6 surface.
+
+- **Pointer `{}`** follows Zig 0.15.2's `Writer.zig:1337-1352` exactly (operator
+  ruling R3: `T@<lowercase-hex>`, **no `0x`**):
+  - `*struct` / `*union` / `*tagged_union` / `*tuple` / `*packed_*` delegates to
+    the pointee's Task-4 generated printer with `*(value)` — depth is UNCHANGED
+    by the pointer arm (top-level `kPrintAggMaxDepth`; aggregate field `d - 1`);
+  - `*enum` delegates to the Task-5 `z98_printEnum_<tid>` name printer;
+  - everything else (scalar/`void`/error-set/pointer/many/slice/array/optional/
+    error-union/fn child) emits `std_print(<@typeName(child)> ++ "@")` followed
+    by the EXISTING `std.fmt` `printHexU64` (cast `(unsigned long long)(unsigned
+    int)`) — no new std_fmt function, so the 4-MD5 pins hold.
+  - `zigPrintNameAppend` reproduces `@typeName` for the exact Z98 space
+    (i8..i64/u8..u64/isize/usize/c_char/bool/f32/f64/void/noreturn, `uN`/`iN`,
+    `error{A,B}` (comma, no space — `@typeName`'s error-set join), `?T`,
+    `E!T`, `[]`/`[]const`, `[N]`, `*`/`[*]` + const/volatile quals, and
+    `fn (p, ...) [callconv(.c)] ret`; `i64`/`u64` keep their carrier names).
+  - **Named-composite residual:** a child name containing a NAMED
+    struct/enum/union (`*?S`, `**S`, `*?E`) rejects `error[3063]` — Zig's
+    `@typeName` container-qualifies those (`main.S`), which Z98 cannot
+    reproduce. One-pointer-to-array `{}` stays 3013 (slice-delegate reject),
+    `[*]T {}` 3013, byte-view `*const [N]u8 {s}`/`{x}` 3063 (Q3) — all Task-3
+    validator decisions.
+- **Aggregate fields:** Zig's aggregate arms print fields with `{any}` pointer
+  semantics, so `printFmtAggFieldKindOk` and `emitAggValue` now route pointer /
+  many-pointer / fn-pointer fields: `struct { p: *S }` → `.{ .p = .{ ... } }`,
+  `struct { f: fn() void }` → `.{ .f = fn () void@addr }`, `[*]i32` field →
+  `i32@addr` (`Writer.zig:1346-1352` + `printAddress`). A one-pointer-to-array
+  field would print as a slice (`{ 1, 2, 3 }`) — the array/slice residual
+  rejects the aggregate `error[3063]`.
+- **Type-dependency fix (pre-existing ordering defect):** a pointer member's C
+  type IS its pointee's typedef (`*enum` → `E*`, `*fn` → the fn-pointer
+  typedef), but the topological sort had no edge, so a value-shared type could
+  be emitted before its pointee typedef (gcc `unknown type name`). `emitTypeDefOnce`
+  (the four sub-pass bodies factored into one gated/bare writer) plus
+  `emitTypeDeps`/`emitPointeeDep` now emit the referenced typedefs at the type's
+  own emission site (recursing through ptr chains, optional/slice/array/eu
+  payloads and fn; dedup via the pass's `seen` map, so a program whose order
+  already worked is untouched). `c89NeedsEmitEdge` additionally treats
+  `fn_type` as a value-embedding edge.
+- **Float `{x}`:** `Writer.zig:1572-1720` bit-for-bit (no precision option —
+  Z98 has none): sign bit then `nan`/`inf`, zero `0x0.0p0`, denormals (exponent
+  adjusted, no implicit bit), implicit-bit normalization, `mantissa_digits =
+  (fractional_bits + 3) / 4` (13 for f64, 6 for f32 with the extra `<< 1`
+  alignment), trailing-zero trim, `p` + decimal exponent. Emitted as static
+  helpers `z98_printFloatHex32/64` on demand (`collectPrintRoots` sets
+  `need_fhex32`/`need_fhex64`; `emitGeneratedPrinters` emits them before the
+  printers/function bodies). The exponent prints through the existing mangled
+  `std.fmt.printI32`. Verified against Zig 0.15.2 for `0x1.8p0`, `0x0.0p0`,
+  `-0x0.0p0`, `0x1p1`, `-0x1p1`, `1/3` (`0x1.5555555555555p-2`, f32
+  `0x1.99999ap-4`), `1e20`, a runtime-built denormal
+  (`0x0.00000000316a2p-1022`), f32 `1e20`/max, and `inf`/`nan`.
+  **Pre-existing literal residuals** (not the printer): Z98's float-literal
+  parser underflows `5e-324` to `0.0` and is 1-2 ULP off on `1e-310`; `@bitCast`
+  rejects an f64↔u64 pair — so the denormal fixture row is computed at runtime.
+
+**Bounded residuals (Task 6, Zig-accepted / pre-existing):** composite pointee
+names with a named aggregate (`*?S`, `**S`, `*?E`) reject `error[3063]`; a
+one-pointer-to-array field rejects (slice residual); float-literal
+subnormals/ULP drift above; `*const fn(...)` (the double-pointer spelling)
+remains the pre-existing assignment anomaly.
 
 ---
 

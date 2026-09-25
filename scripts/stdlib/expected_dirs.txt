@@ -234,6 +234,7 @@ repro/mi_matrix/stdlib_utf8_stress_xmod
 repro/mi_matrix/stdlib_void_temp_stmt_xmod
 repro/mi_matrix/stdlib_print_aggregate_xmod
 repro/mi_matrix/stdlib_print_enum_errset_xmod
+repro/mi_matrix/stdlib_print_ptr_hexfloat_xmod
 stdlib_test/bits_buf_str_usage
 stdlib_test/crypto_codec_usage
 stdlib_test/file_stdin_usage
