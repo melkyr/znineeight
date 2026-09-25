@@ -1,4 +1,40 @@
-# mi_matrix corpus — expected-fail manifest (v229 2026-09-24)
+# mi_matrix corpus — expected-fail manifest (v230 2026-09-24)
+
+## Task 1 (F) fix round 1 — auto-import std_fmt for aliased print callees (v229 -> v230, 2026-09-24)
+
+**Finding (review Important, verbatim summary).** The Task-1 auto-import scan
+(`sf/src/main.zig` `astStoreHasPrintCall`) only matched `fn_call` callees named `print`, so
+`const io = @import("std_io.zig"); const p = io.print; p("alias={}\n", .{7});` (direct std_io
+import, no `std`) lowered through the print special case (`lower.zig`, keyed on the resolved fn
+`name_id`) with **no std_fmt in the graph**: dump rc 0, emitter wrote an **unmangled
+`printI32(zT_0);`**, link failed `undefined reference to 'printI32'` — a regression vs the base
+compiler (`/tmp/t0/build/zig1_5_clean` emitted `std_print_i32(...)`, linked, printed `alias=7`).
+The `std`-import variant was masked because `std.zig` re-exports `fmt`.
+
+**Fix (preferred option: broaden the scan; no new diagnostic — Task 3 owns diagnostics).**
+`astStoreHasPrintCall` → **`astStoreHasPrintRef`**: it now matches ANY `ident_expr`/`field_access`
+payload named `print`, which includes a direct callee AND the alias initializer `io.print`.
+Over-approximation is safe: an unreferenced std_fmt is pruned at emission. Evidence: the alias
+repro now dumps with `std_fmt_*.c/.h` present and a mangled `zF_…_printI32(...)` call, builds and
+runs `alias=7` rc 0; variants `const p = @import("std_io.zig").print;` and `const q = io.print;`
+also auto-import (both mangled + rc 0). **No known escaping shape remains** — a print fn value can
+only be obtained through some `ident_expr`/`field_access` referencing the name; the only residual
+is the silent unmangled fallback in `getPrintFnName` when std_fmt is absent, which the broadened
+scan makes unreachable in practice (kept defensive; a level-0 diagnostic is Task 3's scope).
+
+**Fixtures (1 new dir, OK; stdlib pin 233 -> 234):**
+- `repro/mi_matrix/stdlib_print_alias_xmod` — `const p = io.print; p("alias={}\n", .{7});
+  p("bool={}\n", .{true});` (direct `std_io` import), golden `alias=7` / `bool=true`, rc 0, 3x.
+- standalone `repro/print_std_fmt_alias.z98`.
+
+**Gates (fix-round compiler):** self-compile **moving point** hop1 `38cc3974721e5e49792725bd8a5772f7`
+!= hop2 == hop3 == **`4061adac1424c7dccb256931ea2a88fa`**; **4-MD5 emitted-C UNCHANGED at the
+Task-1 re-baselined values** (gol `c56ff666…` / lisp `573dbd70…` / json `b01005d4…` / mud
+`f9e5bb58…`; no gate program aliases print); corpus `-s0` **1019 = 881 OK / 46 GREEN / 92 FAIL /
+0 ICE / 0 CRASH** (join-diff vs the Task-1 classification on the 1018 common dirs **empty**; the
+new alias dir is OK); stdlib runtime gate **234 PASS / 0 FAIL**; example matrix **24/24**;
+`check_emit_support.sh` **7/7**; `verify_upgraded.sh` **CLOSEOUT OK**. Seed stays **v84**
+(R2-print: rotation is closeout-only; `release/seed/` untouched).
 
 ## Task 1 (F) — create `std.fmt` and migrate the print primitives (v228 -> v229, 2026-09-24)
 

@@ -423,19 +423,19 @@ fn runCompiler(ctx: *CompilerContext) void {
     diag_mod.diagnosticCollectorPrintAll(ctx.diag);
 }
 
-// Task 1 (z98-print-formatting): does the parsed program contain a call whose
-// callee is named `print`? That is the same syntactic shape the lowerer's
-// print special case (`fp.name_id == print_fn_id`) intercepts, so the auto
-// import below happens exactly when a `print` can be lowered.
-fn astStoreHasPrintCall(store: *AstStore, print_id: u32) bool {
+// Task 1 (z98-print-formatting): does the parsed program REFERENCE the
+// `print` name? Any `ident_expr`/`field_access` payload named `print` counts:
+// that includes a direct `print(...)`/`std.io.print(...)` callee AND an alias
+// initializer (`const p = io.print;`) whose later indirect call is still
+// intercepted by the lowerer's print special case (`fp.name_id ==
+// print_fn_id`). Over-approximating only brings std_fmt into the graph (an
+// unreferenced std_fmt is pruned at emission), so this is the safe direction.
+fn astStoreHasPrintRef(store: *AstStore, print_id: u32) bool {
     var i: usize = @intCast(usize, 0);
     while (i < store.nodes.len) : (i += @intCast(usize, 1)) {
         var node = ast_mod.astStoreNodeAt(store, @intCast(u32, i));
-        if (node.kind != AstKind.fn_call) continue;
-        if (node.child_0 == @intCast(u32, 0)) continue;
-        var callee = ast_mod.astStoreNodeAt(store, node.child_0);
-        if (callee.kind != AstKind.ident_expr and callee.kind != AstKind.field_access) continue;
-        if (ast_mod.astStoreNodePayload(store, node.child_0) == print_id) return true;
+        if (node.kind != AstKind.ident_expr and node.kind != AstKind.field_access) continue;
+        if (ast_mod.astStoreNodePayload(store, @intCast(u32, i)) == print_id) return true;
     }
     return false;
 }
@@ -470,7 +470,7 @@ fn phase_ImportResolution(ctx: *CompilerContext) void {
     // `std.fmt` call sites the emitter writes have a definition. The user needs
     // no new import; `std.io.print` stays the entry point.
     var print_name_id = interner_mod.stringInternerIntern(ctx.interner, "print");
-    if (astStoreHasPrintCall(ctx.store, print_name_id)) {
+    if (astStoreHasPrintRef(ctx.store, print_name_id)) {
         var fmt_path_id = interner_mod.stringInternerIntern(ctx.interner, "std_fmt.zig");
         _ = mr_mod.moduleRegistryResolveImport(ctx.module_reg, fmt_path_id, mod_id, &ctx.alloc.scratch);
         import_resolver.moduleRegistryResolveImports(ctx.module_reg, &ctx.alloc.module, &ctx.alloc.scratch, ctx.store);
