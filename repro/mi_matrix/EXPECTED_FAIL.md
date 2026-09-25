@@ -1,4 +1,4 @@
-# mi_matrix corpus — expected-fail manifest (v236 2026-09-25)
+# mi_matrix corpus — expected-fail manifest (v237 2026-09-25)
 
 ## Task 5 — enum member names and error-set names (v235 -> v236, 2026-09-25)
 
@@ -23,8 +23,9 @@ prints the defined `error.UnknownError` (Zig panics on an unknown code in safe
 modes).
 
 **Fixtures.** Positive `repro/mi_matrix/stdlib_print_enum_errset_xmod` (golden
-304 B, rc 0, 3x byte-exact, byte-identical to the Zig-0.15.2 twin
-`/tmp/t5/oracle/fixture_twin.zig`): top-level/parameter/module-const/direct
+304 B / 16 lines, rc 0, 3x byte-exact; the 15 oracle rows are byte-identical to
+the Zig-0.15.2 twin `/tmp/t5/oracle/fixture_twin.zig` — 299 B / 15 lines — and
+Z98 appends its own `done` marker line): top-level/parameter/module-const/direct
 enum `{}`, the `{d}`/`{x}` numeric controls, non-contiguous member values
 (`enum(u8){red=3,green=9,blue=12}`), a wide `enum(u64)` member above u32 max
 via `@intToEnum`, two error sets, enum/error-set fields in a struct, a nested
@@ -60,7 +61,24 @@ zero other movement); stdlib runtime gate **238 PASS / 0 FAIL** (pin
    are exact (the `@intToEnum(EW, 5000000001)` path prints `.big` correctly).
    Pre-existing defect, distinct root cause, outside Task 5's sites.
 3. A bare `error.X` print argument with no expected type resolves to void and
-   rejects `error[3063]` (Zig needs an inference site for an error literal too).
+   rejects `error[3063]` — **operator ruling R10, a DOCUMENTED DIVERGENCE, not
+   parity.** Official Zig 0.15.2 accepts the shape
+   (`std.debug.print("e={}\n", .{error.A})` -> `e=error.A`, rc 0; re-verified
+   2026-09-25, `/tmp/t5/oracle/errlit.out`), so Z98's reject is an
+   operator-ruled bounded residual in the same class as the Q3 list.
+
+**Fix round 1 (R10 + Minors 2/3, 2026-09-25; commit
+`docs(print): record the bare-error-literal residual and fix the enum fallback
+text`).** (R10) The three false-parity claims (here, the fixture header and
+QUICK_REF) were corrected and the exception recorded in spec §6; the reject is
+kept. (Minor 2) `emitNamePrinterDef`'s error-set fallback now emits
+`std_print("error.UnknownError")`, matching its documentation (was
+`std_print("UnknownError")`; unreachable for valid programs). (Minor 3) the
+golden-vs-twin claim is now "15 oracle rows byte-identical + Z98-only `done`
+marker". Re-verified with the rebuilt compiler: bare error literal rc 2 / 1 ×
+`error[3063]` / 0 `.c`; fixture golden byte-unchanged (304 B, rc 0); out-of-range
+enum fallback `@enumFromInt(7)`; **4-MD5 emitted-C UNCHANGED** (8/8). The code
+edit moved the fixed point (recorded in the Task-5 report fix-round section).
 
 ## Task 4 fix round 1 — tuple globals + nested-packed reject (v234 -> v235, 2026-09-25)
 

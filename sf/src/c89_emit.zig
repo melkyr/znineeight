@@ -6040,7 +6040,7 @@ fn emitNamePrinterDef(emitter: *C89Emitter, tid: u32) void {
         bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
         var e2: []const u8 = "std_print(\")\");\n"; bufferedWriterWrite(&emitter.writer, e2);
     } else {
-        var e3: []const u8 = "std_print(\"UnknownError\");\n"; bufferedWriterWrite(&emitter.writer, e3);
+        var e3: []const u8 = "std_print(\"error.UnknownError\");\n"; bufferedWriterWrite(&emitter.writer, e3);
     }
     var h3: []const u8 = "}\n\n"; bufferedWriterWrite(&emitter.writer, h3);
     emitter.indent = saved_indent;

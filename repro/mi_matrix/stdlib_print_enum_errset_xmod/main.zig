@@ -15,8 +15,10 @@
 // struct, a nested struct, a tagged-union payload, a tuple element, and an
 // untagged-union negative control (`{ ... }`).
 //
-// Golden contract (rc 0, 3x byte-exact, Zig-0.15.2-twin byte-identical
-// `/tmp/t5/oracle/fixture_twin.zig`):
+// Golden contract (rc 0, 3x byte-exact; the 15 oracle rows below are
+// byte-identical to the Zig-0.15.2 twin `/tmp/t5/oracle/fixture_twin.zig`
+// (299 B / 15 lines), and Z98 appends its own `done` marker line — golden
+// 304 B / 16 lines):
 //   param=.c
 //   basic .a 2 2
 //   glob .c
@@ -37,8 +39,9 @@
 // Bounded residuals NOT pinned here (documented): a packed-struct enum field
 // still rejects the aggregate argument with error[3063] (Task-4 packed model);
 // an enum member literal above u32 max truncates at the literal (pre-existing);
-// a bare `error.X` with no expected type resolves to void and rejects (Zig
-// needs an inference site too).
+// a bare `error.X` print argument with no expected type resolves to void and
+// rejects `error[3063]` — operator ruling R10, a documented divergence (Zig
+// 0.15.2 ACCEPTS `std.debug.print("e={}\n", .{error.A})` -> `e=error.A`).
 const std = @import("std");
 const E1 = enum { a, b, c };
 const EC = enum(u8) { red = 3, green = 9, blue = 12 };
