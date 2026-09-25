@@ -1407,6 +1407,62 @@ fn printFmtCheck(self: *LirLowerer, arg_node_idx: u32, tid: u32, spec_fmt: u8, h
     return printFmtReject(self, arg_node_idx, reject_3063, @intCast(u8, 1));
 }
 
+// Final whole-branch review fix (Finding 1): the exact value of an untyped
+// integer print argument. `{}`/`{d}`/`{x}` on an `integer_literal` used to
+// force the 32-bit signed route, so a value outside i32 printed a truncated or
+// re-interpreted number: `print("{}", .{3000000000})` -> `-1294967296`,
+// `18446744073709551615` -> `-1`, and literal-only arithmetic such as
+// `0 - 3000000000` ran as 32-bit unsigned wrap -> `1294967296` (Zig prints
+// `3000000000` / `18446744073709551615` / `-3000000000`). The exact value is
+// obtained the same way the unannotated-local slot type already is (fold table
+// first, then the FITS_ARG literal/negate/paren recursion, then the exact
+// ComptimeInt evaluator for a literal-only expression) and materialised into
+// the value-chosen carrier (`comptimeIntUntypedType`: i32/u32/i64/u64). A value
+// that fits i32 keeps the legacy `integer_literal` temp, so in-range literals
+// emit byte-identical C.
+fn foldPrintArgIntExact(self: *LirLowerer, node_idx: u32) ?ce_mod.ComptimeVal {
+    if (node_idx == @intCast(u32, 0)) return null;
+    if (ce_mod.comptimeFoldTableGet(self.ctx.comptime_folds, node_idx)) |fv| {
+        if (fv.kind == ce_mod.KIND_INT) return fv;
+        return null;
+    }
+    if (foldNodeIntExact(self, node_idx, FITS_ARG)) |fv| return fv;
+    var n = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var k = n.kind;
+    var is_expr: bool = false;
+    if (k == AstKind.negate or k == AstKind.bit_not) is_expr = true;
+    if (k == AstKind.add or k == AstKind.sub or k == AstKind.mul or k == AstKind.div or
+        k == AstKind.mod_op or k == AstKind.bit_and or k == AstKind.bit_or or
+        k == AstKind.bit_xor or k == AstKind.shl or k == AstKind.shr) is_expr = true;
+    if (!is_expr) return null;
+    var ce = ce_mod.comptimeEvalInit(self.ctx.registry, self.ctx.store, self.ctx.registry.interner, self.ctx.symbol_tables);
+    ce.diag = null;
+    if (ce_mod.comptimeEvalEvaluate(&ce, node_idx)) |pv| {
+        if (pv.kind == ce_mod.KIND_INT) return pv;
+    }
+    return null;
+}
+
+// Returns the value-chosen carrier temp for an untyped integer print argument,
+// or TEMP_NONE when the argument is not one (or already fits i32, or is not an
+// exact literal-only integer expression). A >64-bit exact value reports the
+// shared `error[3000]` (Z98 has no >64-bit runtime integer slot, the
+// documented comptime-int bound) instead of wrapping silently.
+fn lowerPrintArgExact(self: *LirLowerer, node_idx: u32) u32 {
+    var rtid: u32 = type_mod.TYPE_VOID;
+    if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx)) |rt| rtid = rt;
+    if (rtid != type_mod.TYPE_INT_LIT) return TEMP_NONE;
+    var fv = foldPrintArgIntExact(self, node_idx) orelse return TEMP_NONE;
+    var ut = ce_mod.comptimeIntUntypedType(fv.v) orelse {
+        reportComptimeIntFits(self, node_idx);
+        return nextTemp(self, type_mod.TYPE_I32);
+    };
+    if (ut == type_mod.TYPE_I32) return TEMP_NONE;
+    var ctid = nextTemp(self, ut);
+    emitInst(self, LirInst{ .int_const = .{ .value = ce_mod.comptimeIntMaterialize(fv.v), .result = ctid } });
+    return ctid;
+}
+
 fn lowerPrintFmt(self: *LirLowerer, fmt_node_idx: u32, fmt: []const u8, tuple_node_idx: u32) void {
     var seg_start: usize = @intCast(usize, 0);
     var ai: usize = @intCast(usize, 0);
@@ -1433,7 +1489,13 @@ fn lowerPrintFmt(self: *LirLowerer, fmt_node_idx: u32, fmt: []const u8, tuple_no
                 }
                 if (ai < @intCast(usize, ast_mod.astStoreNodeExtraChildCount(self.ctx.store, tuple_node_idx))) {
                     var arg_node = ast_mod.astStoreNodeExtraChildAt(self.ctx.store, tuple_node_idx, @intCast(u32, ai));
-                    var pv = lowerExpr(self, arg_node);
+                    // Finding 1 fix: an exact untyped integer argument takes
+                    // its value-chosen carrier (and a value-chosen int_const
+                    // temp) instead of a runtime 32-bit literal expression.
+                    var pv = lowerPrintArgExact(self, arg_node);
+                    if (pv == TEMP_NONE) {
+                        pv = lowerExpr(self, arg_node);
+                    }
                     // Task 3 crash guard (H4): a void-valued argument lowers to
                     // the "no value" sentinel (or a phantom 0 with an empty temp
                     // table); dereferencing `hoisted_temps` unguarded SIGSEGVs.
