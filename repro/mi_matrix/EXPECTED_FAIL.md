@@ -1,4 +1,76 @@
-# mi_matrix corpus — expected-fail manifest (v244 2026-09-25)
+# mi_matrix corpus — expected-fail manifest (v245 2026-09-25)
+
+## Task 9 fix round 2 — cross-module/paren refs + same-type validation (v244 -> v245, 2026-09-25)
+
+**What.** Two review findings against the v244 predicate
+(`semanticAnalyzerTupleElemRefreshOk`), both Q6.1 boundary violations.
+
+**(1) Critical — previously-working references rejected.** The v244 helper
+required a bare `ident_expr` resolved in the same module, so a parenthesized
+element (`var g = .{ (s), 7 };`) and an aliased cross-module literal
+(`const colors = @import("colors.zig"); var g = .{ colors.C, 7 };` with
+`pub const C = 5;`) rejected `error[3064]` although the base compiler accepted
+them and both printed Zig-identically. Fix: `semanticAnalyzerUnwrapParens`
+peels any `( ... )` chain, and `semanticAnalyzerTupleElemGlobalSym` resolves
+the module global through a bare ident, a module alias (`colors.C`), an
+`@import("x.zig").C` member, or a global aggregate field (`cfg.x` -> `cfg`).
+
+**(2) Important — same-type silent-wrong forward refs accepted.** Detection was
+"recorded type != re-resolved type", so a forward reference whose final type
+equals the pass-1 `i32` slot slipped through and printed zeros:
+`var g = .{ s, 7 }; const s: i32 = 5 + 7;` printed `0` (Zig `12`),
+`const s: i32 = -5;` printed `0` (Zig `-5`),
+`const s = @as(i32, 5);` printed `0` (Zig `5`). Fix: the recorded path now
+validates EVERY element via `semanticAnalyzerTupleElemSubtreeOrderOk` (child
+fields only) regardless of type deltas; a forward reference whose value is not
+inlined rejects, while a global declared before the tuple stays order-safe.
+
+**Complete predicate.** An element is benign when (a) it references a module
+`const` whose init is a bare int/char literal that fits the recorded slot
+(inlined at the use site — `integer_literal` slots use the 32-bit-signed
+materialisation for the fit, since `comptimeIntFitsType` cannot handle the
+width-0 primitive), or (b) the referenced global is declared before the tuple
+(parse/store node order, which matches `__module_init` order). The
+`@import("x.zig").C` DIRECT member form is never inlined by the lowerer (the
+base emitted gcc-invalid C), so `allow_inline` is cleared for it. B4's guard is
+unchanged.
+
+**Fixtures.** Positive runtime `stdlib_print_tuple_fwd_ok_xmod` extended to 9
+rows (`fwd_small`, `fwd_max`, `fwd_char`, `colors.C`, `(fwd_small)`,
+`fwd_u32: u32`, `fwd_i32lit: i32`, a two-element row, and a backward
+`back_arith` control) + new `colors.zig`; golden 9 lines, rc 0, 3x byte-exact
+(stdout md5 `5fcee24f97293078fc21da71ac6f1843`), byte-identical to the
+Zig-0.15.2 twin. Reject `tuple_fwd_global_reject_xmod` extended to **11 x
+`error[3064]`** (adds the same-type arith/negate/`@as` rows, the cross-module
+non-literal `colors.C2`, and the direct `@import(...).C` row) + new
+`colors.zig`; rc 2 / 0 `.c`, 3x byte-exact (stderr md5
+`d278f0ddfcdd89b7aea3ad66edbed2fb`). Standalone `repro/print_tuple_fwd.z98`
+gains the same-type row (3 x `error[3064]`; base rc=0 then gcc `incompatible
+types`).
+
+**Gates (fix-round-2 compiler `/tmp/t9/build7/zig1_5_clean`, binary md5
+`b4e15a3f12604a67cfd3697782b1aacb`).** Self-emission rc 0 / 48 `.c` + 48 `.h` /
+0 PANIC; seed-v86 rebuild hop1 == hop2 == `b4e15a3f…`; 4-MD5 emitted-C
+**UNCHANGED 8/8** (gol `9e0b708e…` / lisp `dfa69f32…` / json `a4a73461…` /
+mud `2e92c1f2…`); corpus `-s0` **1034 = 889 OK / 46 GREEN / 99 FAIL / 0 ICE /
+0 CRASH** (full-classifier join-diff vs the fix-round-1 run over all 1034
+common dirs **empty**); stdlib runtime gate **242 PASS / 0 FAIL** (pin
+unchanged); example matrix **24/24**; `check_emit_support.sh`
+**7/7**; `verify_upgraded.sh` **CLOSEOUT OK**; build_test **0/9**
+(pre-existing retired-zig0 baseline). Fixed point **moved `83985e4320d23aea9b8379d8a2893d5b` (fix
+round 1) -> `b4e15a3f12604a67cfd3697782b1aacb`**; **seed NOT rotated (v86
+stays; Task 12 rotates, R2-print)**.
+
+**Residual.** The broken forward references reject `error[3064]`; Zig 0.15.2
+accepts and prints them. A forward global reference hidden inside a **call
+argument** (`.{ id(fwd), 7 }` with `fwd: i32 = 5 + 7` declared later) is not
+walked — call-argument lists live in the AST's `extra_children` pool, and a
+generic extras walk is unsafe (`astStoreNodeExtraChildCount` is only meaningful
+for kinds that store extra ranges; the first fr2 attempt proved it by
+traversing garbage). That sub-class remains accepted and silently reads the
+pre-init value (`g=.{ 0, 7 }`; Zig `12`) — documented here, not pinned; a
+future round can add a kind-guarded extras descent. The true fix
+(dependency-ordered `__module_init`) is out of this round.
 
 ## Task 9 fix round 1 — narrow the B5 reject to the broken shapes (v243 -> v244, 2026-09-25)
 
