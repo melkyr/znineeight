@@ -126,6 +126,7 @@ fn testLower() void {
         .comptime_folds = &comptime_folds,
         .error_code_registry = &error_code_registry,
         .source_file_id = @intCast(u32, 0),
+        .print_value_lowered = @intCast(u8, 0),
     };
 
     var lowerer = lower_mod.lowererInit(&ctx, &scratch);

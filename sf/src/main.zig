@@ -1150,8 +1150,8 @@ fn pruneTypeMarkByValue(ref_edges: *hash_mod.U32ToU32Map, reg: *TypeRegistry, vi
 }
 
 
-// Task 1: the auto-imported std_fmt module id, found by its path basename.
-// 0xFFFFFFFF means "no std_fmt in the module graph" (no print was lowered).
+// Task 1/10: the std_fmt module id, found by its path basename.
+// 0xFFFFFFFF means "std_fmt is not in the module graph" (see phase_LIRLowering).
 fn moduleIdForBasename(mods: []mr_mod.ModuleEntry, interner: *StringInterner, base: []const u8) u32 {
     var i: usize = @intCast(usize, 0);
     while (i < mods.len) : (i += @intCast(usize, 1)) {

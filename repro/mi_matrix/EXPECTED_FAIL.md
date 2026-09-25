@@ -1,5 +1,27 @@
 # mi_matrix corpus — expected-fail manifest (v248 2026-09-25)
 
+## Task 12 (Amendment 1) — hardening-round closeout (v248; NO BUMP, 2026-09-25)
+
+The print-formatting Amendment-1 round (Tasks 8–11) is CLOSED. No corpus class moved:
+the Task-12 full-classifier run with the closeout compiler `e3f8d737…` is
+**1038 = 893 OK / 46 GREEN / 99 FAIL / 0 ICE / 0 CRASH**, join-diff vs the Task-10
+classifier run over the same 1038 dirs **empty** (the round's fixtures were all added
+by Tasks 8–10; Task 11 was docs-only plus one fixture comment, and Task 12 is
+comment-only source minors plus docs). Re-verified gates: 4-MD5 emitted-C UNCHANGED
+8/8, stdlib runtime 246 PASS / 0 FAIL, example matrix 24/24, `check_emit_support.sh`
+7/7, `verify_upgraded.sh` CLOSEOUT OK, build_test 0/9 (pre-existing retired-zig0
+baseline), self-emission rc 0 / 48 `.c` + 48 `.h` / 0 PANIC;
+seed-v86 rebuild hop1 == hop2 == `e3f8d737a69d9ba2653eb6ad6aec2b58`. **Seed ROTATED
+v86 -> v87** from the closeout compiler (archive md5
+`28c8ab28662a990848eb980e112457b2` -> `71f3e3c652a2cba07fdedb4cbc5dff3b`; archived
+binary md5 = fixed point `e3f8d737a69d9ba2653eb6ad6aec2b58`; post-rotation closure
+hop1 == hop2 == `e3f8d737…`). Bounded residuals carried unchanged (see the Task-8/9/10
+sections and the Task-12 report): duplicated `error[3048]` message construction,
+unguarded sibling payload reads, per-element `ComptimeEval` cost, `&s` tuple element
+rejecting 3063 since Task 9 fix round 3, permissive `const s = 5; var x = s;` not in
+the residual prose, ~33 historical CHANGELOG headings without blank lines, and no
+committed no-std_fmt harness.
+
 ## Task 10 (Amendment 1, B8) — std_fmt auto-import precision (v247 -> v248, 2026-09-25)
 
 **What.** `astStoreHasPrintRef` (`sf/src/main.zig`) deliberately over-approximates:
