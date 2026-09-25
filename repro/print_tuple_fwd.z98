@@ -1,67 +1,62 @@
-// print_tuple_fwd.z98 — standalone reproduction for the Task 9 (F) B5 fix
-// (z98-print-formatting Amendment 1; fix round 2 extended the reject by the
-// operator Q6.1 ruling).
+// print_tuple_fwd.z98 — standalone reproduction for the Task 9 B5 fix,
+// resolved by fix round 3 (operator ruling Q7: dependency-ordered
+// `__module_init`).
 //
 // Compile (seed-built zig1 with its sibling lib/):
 //   mkdir -p /tmp/print_tuple_fwd_out
-//   <zig1> --dump-c89 --output-dir /tmp/print_tuple_fwd_out repro/print_tuple_fwd.z98
+//   <zig1> -o /tmp/print_tuple_fwd_out repro/print_tuple_fwd.z98
 //
-// EXPECTED (after the fix rounds): dump rc=2, 0 `.c`, exactly 3 x error[3064],
-//   error[3064]: cannot infer tuple element type: a forward-referenced global
-//                is not resolved on the first pass
-//     (`g_pair` composite, `g_big` out-of-i32, `g_ann` same-i32-type arith)
-// The stable control `g_ok = .{ 11, 22 }` and the BENIGN scalar row
-// `g_small = .{ fwd_small, 7 }` with `const fwd_small = 5` emit no diagnostic.
+// EXPECTED (after Q7): rc 0; the program prints, in order:
+//   lit=.{ 5, 7 }
+//   nonlit=.{ 12, 7 }
+//   comp=.{ .{ .a = 1, .b = 2 }, 7 }
+//   stf=.{ .{ .a = 12, .b = 2 }, 7 }
+//   call=.{ 12, 7 }
+//   back=.{ 12, 7 }
+// byte-identical to the Zig 0.15.2 `std.debug.print` twin. Cross-module rows
+// (`colors.C`, `colors.C2`, direct `@import`, chain) live in
+// `repro/mi_matrix/stdlib_print_tuple_fwd_ok_xmod`.
 //
-// DEFECT (before the fix): the tuple literal's element list was frozen on
-// module-var resolution pass 1. A forward-referenced global declared after the
-// tuple had no type yet, so the element fell back to `i32`. `g_pair` then
-// emitted gcc-invalid C (`zT_0._0 = zG_p;` assigning a `Pair` into an `int`,
-// rc=0 then gcc `incompatible types`); `g_big` emitted gcc-valid C that ran and
-// printed `-1294967296` where Zig prints `3000000000`; `g_ann` never changed
-// type across passes, so it was accepted and printed `0` where Zig prints `12`
-// (fix round 2 catches the value-store-order hazard for same-type elements).
-//
-// NARROWED/RESTORED RULE (operator Q6.1): only the BROKEN shapes reject. A
-// module `const` with a bare int/char literal init whose exact value fits the
-// recorded slot (`const fwd_small = 5`) is inlined at the use site by the
-// module-init emitter's literal skip, so the frozen slot holds it exactly and
-// the program prints Zig-identically (positive fixture
-// `repro/mi_matrix/stdlib_print_tuple_fwd_ok_xmod`); a global declared before
-// the tuple is order-safe too.
-//
-// ORACLE (official Zig 0.15.2 accepts all shapes; container-level declarations
-// are order-independent):
-//   g_pair  = .{ .{ .a = 1, .b = 2 }, 7 }
-//   g_big   = .{ 3000000000, 7 }
-//   g_ann   = .{ 12, 7 }
-//   g_small = .{ 5, 7 }
-// The clean rejects are a documented Z98 bounded residual: `__module_init`
-// lowers globals in declaration order, so the broken forward references cannot
-// be made runtime-correct by a type refresh alone.
+// DEFECT (before Q7): a module-level tuple literal whose element referenced a
+// global declared later froze the pass-1 `TYPE_VOID -> TYPE_I32` fallback and
+// the Task-4 idempotent tuple kept it: `lit`/`nonlit` printed `0` (the global
+// store ran after the tuple owner), `comp` emitted gcc-invalid C (`int = Pair`)
+// and `stf`/`call` read the pre-init value. Q7 emits globals in a stable
+// dependency order (same module and across modules) and lets the module-var
+// fixpoint settle the element's true type, so all rows now match Zig.
 const std = @import("std");
 
 const Pair = struct { a: i32, b: i32 };
+const Inner = struct { a: i32, b: i32 };
 
-// Composite forward reference: rc=0 then gcc-invalid C before the fix.
-var g_pair = .{ fwd_pair, 7 };
-const fwd_pair = Pair{ .a = 1, .b = 2 };
+fn id(x: i32) i32 {
+    return x;
+}
 
-// Large scalar forward reference: silently truncated before the fix.
-var g_big = .{ fwd_big, 7 };
-const fwd_big = 3000000000;
+var g_lit = .{ fwd_lit, 7 };
+const fwd_lit = 5;
 
-// Same-i32-type arithmetic forward reference: silently printed 0 (fix round 2).
-var g_ann = .{ fwd_ann, 7 };
-const fwd_ann: i32 = 5 + 7;
+var g_nonlit = .{ fwd_nonlit, 7 };
+const fwd_nonlit: i32 = 5 + 7;
 
-// Benign scalar forward reference (previously-working class, accepted).
-var g_small = .{ fwd_small, 7 };
-const fwd_small = 5;
+var g_comp = .{ fwd_comp, 7 };
+const fwd_comp = Pair{ .a = 1, .b = 2 };
 
-// Stable control: no forward reference, accepted.
-var g_ok = .{ 11, 22 };
+var g_stf = .{ Inner{ .a = fwd_stf, .b = 2 }, 7 };
+const fwd_stf: i32 = 5 + 7;
+
+var g_call = .{ id(fwd_call), 7 };
+const fwd_call: i32 = 5 + 7;
+
+// Control: a global declared BEFORE the tuple was already ordered.
+const back: i32 = 5 + 7;
+var g_back = .{ back, 7 };
 
 pub fn main() void {
-    std.io.print("ok={}\n", .{g_ok});
+    std.io.print("lit={}\n", .{g_lit});
+    std.io.print("nonlit={}\n", .{g_nonlit});
+    std.io.print("comp={}\n", .{g_comp});
+    std.io.print("stf={}\n", .{g_stf});
+    std.io.print("call={}\n", .{g_call});
+    std.io.print("back={}\n", .{g_back});
 }

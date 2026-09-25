@@ -113,8 +113,24 @@ pub fn frontResolveModuleInits(ct: *FrontResCtx) void {
                             }
                         }
                         var vd_existing = resolved_type_table.resolvedTypeTableGet(ct.resolved_types, decl_idx);
-                        if (init_type != type_mod.TYPE_VOID and init_type != type_mod.TYPE_UNDEFINED and init_type != type_mod.TYPE_TYPE and vd_existing == null) {
-                            resolved_type_table.resolvedTypeTableSet(ct.resolved_types, decl_idx, init_type);
+                        if (init_type != type_mod.TYPE_VOID and init_type != type_mod.TYPE_UNDEFINED and init_type != type_mod.TYPE_TYPE) {
+                            if (decl.child_0 == @intCast(u32, 0)) {
+                                // Task 9 fix round 3 (operator ruling Q7): an
+                                // UNANNOTATED binding's type is the re-resolved
+                                // init type. A forward-referenced global's true
+                                // type only becomes known on a later pass, so
+                                // update the decl record (and the symbol below,
+                                // which drives another pass) until the fixpoint
+                                // is stable. An ANNOTATED binding keeps the
+                                // annotation's first-wins record.
+                                var need_set: u8 = @intCast(u8, 1);
+                                if (vd_existing) |vex| { if (vex == init_type) need_set = @intCast(u8, 0); }
+                                if (need_set != @intCast(u8, 0)) {
+                                    resolved_type_table.resolvedTypeTableSet(ct.resolved_types, decl_idx, init_type);
+                                }
+                            } else if (vd_existing == null) {
+                                resolved_type_table.resolvedTypeTableSet(ct.resolved_types, decl_idx, init_type);
+                            }
                         }
                         if (init_type == type_mod.TYPE_INT_LIT and decl.child_0 != @intCast(u32, 0)) {
                             var mdt2 = resolved_type_table.resolvedTypeTableGet(ct.resolved_types, decl.child_0);
@@ -128,7 +144,12 @@ pub fn frontResolveModuleInits(ct: *FrontResCtx) void {
                             var name_id: u32 = ast_mod.astStoreNodePayload(ct.store, decl_idx);
                             var sym = sym_mod.symbolRegistryQualifiedLookup(ct.symbol_reg, mods[mi].id, name_id);
                             if (sym) |s| {
-                                if (s.type_id == @intCast(u32, 0)) {
+                                if (decl.child_0 == @intCast(u32, 0)) {
+                                    if (s.type_id != init_type) {
+                                        s.type_id = init_type;
+                                        changed = @intCast(u8, 1);
+                                    }
+                                } else if (s.type_id == @intCast(u32, 0)) {
                                     s.type_id = init_type;
                                     changed = @intCast(u8, 1);
                                 }

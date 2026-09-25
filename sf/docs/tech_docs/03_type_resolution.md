@@ -616,9 +616,9 @@ The front pass that resolves module-level initializer/type-annotation expression
    - `child_0` (type annotation) → `resolveTypeExpr`; on success record the type in the `ResolvedTypeTable` for both the annotation node and the decl node.
    - `child_1` (init) that is not a `struct_decl`/`union_decl` → `semanticAnalyzerResolveModuleVarDecl`.
      - `ident_expr` init: `nameCachePut((module_id<<32)|decl_payload, init_type)`; if the referenced symbol is a `type_alias` and the decl's own symbol is not, promote the decl's symbol to `SymbolKind.type_alias` (sets `changed`).
-     - Record the init type on the decl node, excluding `TYPE_VOID`/`TYPE_UNDEFINED`/`TYPE_TYPE`.
+     - Record the init type on the decl node, excluding `TYPE_VOID`/`TYPE_UNDEFINED`/`TYPE_TYPE`. **Task 9 fix round 3 (Q7):** for an UNANNOTATED binding the record is UPDATED whenever the re-resolved type differs (a forward-referenced global's true type only appears on a later pass), so the decl and symbol converge together; an ANNOTATED binding keeps the annotation's first-wins record.
      - `TYPE_INT_LIT` with an annotation: copy the annotation's resolved type onto the init node.
-     - Back-fill `symbol.type_id` for the declaring symbol (sets `changed`).
+     - Back-fill `symbol.type_id` for the declaring symbol (sets `changed`). **Task 9 fix round 3 (Q7):** for an UNANNOTATED binding the symbol is updated whenever its type differs from the re-resolved init type (this drives another pass); an ANNOTATED binding is only back-filled when still 0.
 4. Repeat until a full pass makes no change (`changed == 0`), then `sandReset(scratch)`.
 
 ---

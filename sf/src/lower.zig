@@ -375,6 +375,11 @@ pub const LirLowerer = struct {
     suppress_fnref_ban: u8,
     module_id: u32,
     module_reg: *ModuleRegistry,
+    // Task 9 fix round 3 (Q7): module-to-module global-initializer dependency
+    // edges (key `(referrer << 32) | dependency`, value = referencing decl
+    // node), filled by `lowerModuleInit` and consumed to order the emitted
+    // `__module_init` calls.
+    module_dep_map: *hash_mod.U64ToU32Map,
     intcast_name_id: u32,
     floatcast_name_id: u32,
     inttofloat_name_id: u32,
@@ -530,6 +535,7 @@ pub fn lowererInit(ctx: *SemanticContext, alloc: *Sand) LirLowerer {
         .suppress_fnref_ban = @intCast(u8, 0),
         .module_id = @intCast(u32, 0),
         .module_reg = undefined,
+        .module_dep_map = undefined,
          .intcast_name_id = intcast_id,
          .floatcast_name_id = floatcast_id,
          .inttofloat_name_id = inttofloat_id,
@@ -3292,6 +3298,17 @@ fn resolveModuleBase(self: *LirLowerer, base_node_idx: u32) u32 {
             var ty = self.ctx.registry.types_items[@intCast(usize, t)];
             if (ty.kind == type_mod.TypeKind.module_type) return ty.module_id;
         }
+    }
+    // Task 9 fix round 3 (Q7): a direct `@import("x.zig").member` base. The
+    // alias form (`const m = @import(...); m.member`) goes through the module
+    // symbol above; the direct form has no symbol and previously fell through
+    // to an uninitialized temp (`member` read as 0). Resolve the path to the
+    // module id so `lowerModuleMemberValue` emits the member (inlining a
+    // literal const, or a load that the dependency-ordered init covers).
+    if (bn.kind == AstKind.import_expr) {
+        var path_id: u32 = ast_mod.astStoreNodePayload(store, base_node_idx);
+        var target = mr_mod.moduleRegistryPathToIdGet(self.module_reg, path_id);
+        if (target) |mtid| return mtid;
     }
     return @intCast(u32, 0);
 }
@@ -8414,8 +8431,9 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
     return func_ptr.*;
 }
 
-pub fn lowerModuleInit(self: *LirLowerer, root_idx: u32, mod_id: u32) LirFunction {
+pub fn lowerModuleInit(self: *LirLowerer, root_idx: u32, mod_id: u32, dep_map: *hash_mod.U64ToU32Map) LirFunction {
     var store = self.ctx.store;
+    self.module_dep_map = dep_map;
     var init_s: []const u8 = "__module_init";
     var init_name_id = si_mod.stringInternerIntern(self.ctx.registry.interner, init_s);
     var func_raw = alloc_mod.sandAlloc(self.alloc, @intCast(usize, @sizeOf(LirFunction)), @intCast(usize, 4)) catch unreachable;
@@ -8442,6 +8460,10 @@ pub fn lowerModuleInit(self: *LirLowerer, root_idx: u32, mod_id: u32) LirFunctio
     self.cur_scope = @intCast(u32, 0);
     self.temp_counter = @intCast(u32, 0);
     var decls_n = ast_mod.astStoreNodeExtraChildCount(store, root_idx);
+    var alloc_n: usize = @intCast(usize, decls_n) + @intCast(usize, 1);
+    var cand_decl = @ptrCast([*]u32, alloc_mod.sandAlloc(self.alloc, @intCast(usize, 4) * alloc_n, @intCast(usize, 4)) catch unreachable);
+    var cand_name = @ptrCast([*]u32, alloc_mod.sandAlloc(self.alloc, @intCast(usize, 4) * alloc_n, @intCast(usize, 4)) catch unreachable);
+    var cand_n: usize = @intCast(usize, 0);
     var di: usize = @intCast(usize, 0);
     while (di < @intCast(usize, decls_n)) : (di += @intCast(usize, 1)) {
         var decl_idx = ast_mod.astStoreNodeExtraChildAt(store, root_idx, @intCast(u32, di));
@@ -8464,25 +8486,205 @@ pub fn lowerModuleInit(self: *LirLowerer, root_idx: u32, mod_id: u32) LirFunctio
             if ((@intCast(u16, dcl.flags) & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
                 if (ginit.kind == AstKind.int_literal or ginit.kind == AstKind.float_literal or ginit.kind == AstKind.char_literal) continue;
             }
+            cand_decl[cand_n] = decl_idx;
+            cand_name[cand_n] = g_name_id;
+            cand_n += @intCast(usize, 1);
+        }
+    }
+    // Task 9 fix round 3 (operator ruling Q7): emit global initializers in a
+    // stable dependency order. A depth-first walk over the source-ordered
+    // candidate list emits a global's SAME-MODULE initializer dependencies
+    // first and only then the global itself; a program whose globals are
+    // already dependency-ordered keeps its exact source order (the gate dumps
+    // do not churn). References to other modules record a module-dependency
+    // edge that orders the emitted `__module_init` calls. A cycle has no valid
+    // order: reject `error[3064]` (official Zig 0.15.2 likewise rejects a
+    // comptime dependency loop).
+    var emitted = @ptrCast([*]u8, alloc_mod.sandAlloc(self.alloc, alloc_n, @intCast(usize, 1)) catch unreachable);
+    var visiting = @ptrCast([*]u8, alloc_mod.sandAlloc(self.alloc, alloc_n, @intCast(usize, 1)) catch unreachable);
+    var order = @ptrCast([*]u32, alloc_mod.sandAlloc(self.alloc, @intCast(usize, 4) * alloc_n, @intCast(usize, 4)) catch unreachable);
+    var dep_buf = @ptrCast([*]u32, alloc_mod.sandAlloc(self.alloc, @intCast(usize, 4) * alloc_n, @intCast(usize, 4)) catch unreachable);
+    var ci_z: usize = @intCast(usize, 0);
+    while (ci_z < cand_n) : (ci_z += @intCast(usize, 1)) { emitted[ci_z] = @intCast(u8, 0); visiting[ci_z] = @intCast(u8, 0); }
+    var order_len: usize = @intCast(usize, 0);
+    var cycle: u8 = @intCast(u8, 0);
+    var ci: usize = @intCast(usize, 0);
+    while (ci < cand_n) : (ci += @intCast(usize, 1)) {
+        lowerInitOrderVisit(self, ci, cand_decl, cand_name, cand_n, emitted, visiting, order, &order_len, dep_buf, &cycle);
+    }
+    if (cycle == @intCast(u8, 0)) {
+        var oi: usize = @intCast(usize, 0);
+        while (oi < order_len) : (oi += @intCast(usize, 1)) {
+            var cidx = order[oi];
+            var decl_idx2 = cand_decl[cidx];
+            var dcl2 = ast_mod.astStoreNodeAt(store, decl_idx2);
+            var g_name_id2: u32 = cand_name[cidx];
             // Task 4 fix (decls): a module const/var with a declared integer
             // type materialises the fold into that slot -- range-check it
             // exactly. `checkDeclInitFits` also covers an UNANNOTATED module
             // binding whose re-typed symbol slot cannot hold an on-demand
             // folded arithmetic init (review Important 1).
-            if (dcl.child_0 != @intCast(u32, 0)) {
-                if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, dcl.child_0)) |gdt| {
-                    checkDeclInitFits(self, dcl.child_1, gdt);
+            if (dcl2.child_0 != @intCast(u32, 0)) {
+                if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, dcl2.child_0)) |gdt| {
+                    checkDeclInitFits(self, dcl2.child_1, gdt);
                 }
             } else {
-                var gsym_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, decl_idx);
-                if (gsym_rt) |grt| { checkDeclInitFits(self, dcl.child_1, grt); }
+                var gsym_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, decl_idx2);
+                if (gsym_rt) |grt| { checkDeclInitFits(self, dcl2.child_1, grt); }
             }
-            var val_t = lowerExpr(self, dcl.child_1);
-            emitInst(self, LirInst{ .store_global = .{ .name_id = g_name_id, .module_id = gss.module_id, .value = val_t } });
+            var val_t = lowerExpr(self, dcl2.child_1);
+            var g_sym2 = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, mod_id, g_name_id2);
+            if (g_sym2) |gs2| {
+                emitInst(self, LirInst{ .store_global = .{ .name_id = g_name_id2, .module_id = gs2.module_id, .value = val_t } });
+            }
         }
     }
     emitValuelessReturn(self);
     hoistTemps(self);
     func_ptr.hoisted_temps = self.hoisted_temps;
     return func_ptr.*;
+}
+
+// Task 9 fix round 3 (operator ruling Q7): does this initializer-expression
+// kind store its children in the extra-child pool? Only these kinds may be
+// descended through `astStoreNodeExtraChild*` — for every other kind the
+// payload is not a range index (an ident's payload is its name id), so reading
+// extras would traverse garbage.
+fn lowerInitKindHasExtras(kind: AstKind) bool {
+    if (kind == AstKind.fn_call) return true;
+    if (kind == AstKind.builtin_call) return true;
+    if (kind == AstKind.struct_init) return true;
+    if (kind == AstKind.array_init) return true;
+    if (kind == AstKind.tuple_literal) return true;
+    if (kind == AstKind.swt_ex) return true;
+    if (kind == AstKind.block) return true;
+    return false;
+}
+
+fn lowerInitDepAppend(out: [*]u32, out_len: *usize, cap: usize, v: u32) void {
+    if (out_len.* >= cap) return;
+    out[out_len.*] = v;
+    out_len.* += 1;
+}
+
+// Task 9 fix round 3 (Q7): collect the module-global references of one global
+// initializer. A SAME-module reference is appended to `out` (used to order the
+// module's own initializers); a reference to another module records a
+// module-dependency edge in `self.module_dep_map` (used to order the emitted
+// `__module_init` calls).
+fn lowerInitDepScan(self: *LirLowerer, mod_id: u32, node_idx: u32, out: [*]u32, out_len: *usize, cap: usize) void {
+    if (node_idx == @intCast(u32, 0)) return;
+    var store = self.ctx.store;
+    // Defensive bound: the child/extra fields this walk reads are node indices
+    // for the kinds it reaches; anything out of range is skipped, never read.
+    if (@intCast(usize, node_idx) >= store.nodes.len) return;
+    var nd = ast_mod.astStoreNodeAt(store, node_idx);
+    if (nd.kind == AstKind.ident_expr) {
+        var nm = ast_mod.astStoreIdentifier(store, node_idx);
+        var sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, mod_id, nm);
+        if (sym) |s| {
+            if (s.kind == sym_mod.SymbolKind.global) {
+                if (s.module_id == mod_id) {
+                    lowerInitDepAppend(out, out_len, cap, nm);
+                } else {
+                    var id_key: u64 = (@intCast(u64, mod_id) << @intCast(u64, 32)) | @intCast(u64, s.module_id);
+                    _ = hash_mod.u64ToU32MapPut(self.module_dep_map, id_key, node_idx);
+                }
+            }
+        }
+    } else if (nd.kind == AstKind.field_access) {
+        var field_name_id: u32 = ast_mod.astStoreNodePayload(store, node_idx);
+        var b = nd.child_0;
+        if (b != @intCast(u32, 0)) {
+            var bn = ast_mod.astStoreNodeAt(store, b);
+            if (bn.kind == AstKind.ident_expr) {
+                var base_name = ast_mod.astStoreIdentifier(store, b);
+                var base = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, mod_id, base_name);
+                if (base) |bs| {
+                    if (bs.kind == sym_mod.SymbolKind.module) {
+                        var fs = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, bs.module_id, field_name_id);
+                        if (fs) |f| {
+                            if (f.kind == sym_mod.SymbolKind.global) {
+                                if (f.module_id == mod_id) {
+                                    lowerInitDepAppend(out, out_len, cap, field_name_id);
+                                } else {
+                                    var fa_key: u64 = (@intCast(u64, mod_id) << @intCast(u64, 32)) | @intCast(u64, f.module_id);
+                                    _ = hash_mod.u64ToU32MapPut(self.module_dep_map, fa_key, node_idx);
+                                }
+                            }
+                        }
+                    } else if (bs.kind == sym_mod.SymbolKind.global) {
+                        if (bs.module_id == mod_id) {
+                            lowerInitDepAppend(out, out_len, cap, base_name);
+                        } else {
+                            var fa_key2: u64 = (@intCast(u64, mod_id) << @intCast(u64, 32)) | @intCast(u64, bs.module_id);
+                            _ = hash_mod.u64ToU32MapPut(self.module_dep_map, fa_key2, node_idx);
+                        }
+                    }
+                }
+            } else if (bn.kind == AstKind.import_expr) {
+                var path_id: u32 = ast_mod.astStoreNodePayload(store, b);
+                var target = mr_mod.moduleRegistryPathToIdGet(self.module_reg, path_id);
+                if (target) |mtid| {
+                    var fs2 = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, mtid, field_name_id);
+                    if (fs2) |f2| {
+                        if (f2.kind == sym_mod.SymbolKind.global) {
+                            if (f2.module_id == mod_id) {
+                                lowerInitDepAppend(out, out_len, cap, field_name_id);
+                            } else {
+                                var fa_key3: u64 = (@intCast(u64, mod_id) << @intCast(u64, 32)) | @intCast(u64, f2.module_id);
+                                _ = hash_mod.u64ToU32MapPut(self.module_dep_map, fa_key3, node_idx);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // `AstKind.builtin_call` stores its NAME id in `child_0` (not a node) — its
+    // arguments live in the extra-child pool, so never descend child_0 for it.
+    if (nd.kind != AstKind.builtin_call and nd.child_0 != @intCast(u32, 0)) { lowerInitDepScan(self, mod_id, nd.child_0, out, out_len, cap); }
+    if (nd.child_1 != @intCast(u32, 0)) { lowerInitDepScan(self, mod_id, nd.child_1, out, out_len, cap); }
+    if (nd.child_2 != @intCast(u32, 0)) { lowerInitDepScan(self, mod_id, nd.child_2, out, out_len, cap); }
+    if (lowerInitKindHasExtras(nd.kind)) {
+        var ec = ast_mod.astStoreNodeExtraChildCount(store, node_idx);
+        var ei: usize = @intCast(usize, 0);
+        while (ei < @intCast(usize, ec)) : (ei += @intCast(usize, 1)) {
+            lowerInitDepScan(self, mod_id, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ei)), out, out_len, cap);
+        }
+    }
+}
+
+// Task 9 fix round 3 (Q7): depth-first emission order for one module's global
+// initializers. `visiting` detects a dependency cycle; a candidate is appended
+// to `order` only after all of its same-module dependencies are ordered, so
+// already-dependency-ordered programs keep their source order exactly.
+fn lowerInitOrderVisit(self: *LirLowerer, i: usize, decls: [*]u32, names: [*]u32, n: usize, emitted: [*]u8, visiting: [*]u8, order: [*]u32, order_len: *usize, dep_buf: [*]u32, cycle: *u8) void {
+    if (emitted[i] != @intCast(u8, 0)) return;
+    if (visiting[i] != @intCast(u8, 0)) {
+        if (cycle.* == @intCast(u8, 0)) {
+            var cyc_dcl = ast_mod.astStoreNodeAt(self.ctx.store, decls[i]);
+            var cyc_msg: []const u8 = "cyclic global initializer dependency";
+            _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3064_CYCLIC_GLOBAL_INIT)), self.ctx.source_file_id, cyc_dcl.span_start, cyc_dcl.span_start + @intCast(u32, cyc_dcl.span_len), cyc_msg);
+        }
+        cycle.* = @intCast(u8, 1);
+        return;
+    }
+    visiting[i] = @intCast(u8, 1);
+    var dep_n: usize = @intCast(usize, 0);
+    var ord_dcl = ast_mod.astStoreNodeAt(self.ctx.store, decls[i]);
+    lowerInitDepScan(self, self.module_id, ord_dcl.child_1, dep_buf, &dep_n, n);
+    var dj: usize = @intCast(usize, 0);
+    while (dj < dep_n) : (dj += @intCast(usize, 1)) {
+        var j: usize = @intCast(usize, 0);
+        var found: usize = n;
+        while (j < n) : (j += @intCast(usize, 1)) {
+            if (names[j] == dep_buf[dj]) { found = j; break; }
+        }
+        if (found < n) { lowerInitOrderVisit(self, found, decls, names, n, emitted, visiting, order, order_len, dep_buf, cycle); }
+    }
+    visiting[i] = @intCast(u8, 0);
+    emitted[i] = @intCast(u8, 1);
+    order[order_len.*] = @intCast(u32, i);
+    order_len.* += @intCast(usize, 1);
 }

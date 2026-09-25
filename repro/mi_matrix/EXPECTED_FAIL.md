@@ -1,4 +1,82 @@
-# mi_matrix corpus — expected-fail manifest (v245 2026-09-25)
+# mi_matrix corpus — expected-fail manifest (v246 2026-09-25)
+
+## Task 9 fix round 3 — dependency-ordered module init (Q7) (v245 -> v246, 2026-09-25)
+
+**What.** Operator ruling Q7 replaced the narrow-reject approach with the true
+fix: `__module_init` now emits globals in a stable dependency order, and the
+module-var fixpoint settles forward-referenced element types.
+
+**Design.** (1) `lowerModuleInit` (`sf/src/lower.zig`) first collects the
+module's emittable global decls, then runs a depth-first visit that emits each
+global after its same-module initializer dependencies (source order preserved
+when already dependency-ordered). References are scanned by
+`lowerInitDepScan`, which walks `child_0/child_1/child_2` plus the extra-child
+pool only for kinds that store extras (`fn_call`, `builtin_call`,
+`struct_init`, `array_init`, `tuple_literal`, `swt_ex`, `block`). A
+cross-module reference records a module-dependency edge; a cycle rejects
+`error[3064]` (`ERR_3064_CYCLIC_GLOBAL_INIT`) at the cycle declaration. (2)
+`computeModuleInitOrder` (`sf/src/main.zig`, end of phase 9) stable-
+topologically orders the emitted `__module_init` calls from those edges
+(registry order unless a dependency forces a move); a cross-module cycle
+rejects at a referencing decl. (3) `emitModuleInitCalls` (`sf/src/c89_emit.zig`)
+iterates that order. (4) `semanticAnalyzerResolveTupleLiteral` rebuilds a
+recorded tuple whose element list changed (instead of rejecting), and
+`frontResolveModuleInits` (`sf/src/front_resolution.zig`) updates an
+UNANNOTATED binding's decl/symbol to the re-resolved type until the fixpoint is
+stable; annotated bindings keep their annotation. (5) `resolveModuleBase`
+(`sf/src/lower.zig`) now resolves a direct `@import("x.zig").member` base, so
+`lowerModuleMemberValue` emits the member (correcting a pre-existing
+uninitialized-temp read). The whole fix-round-1/2 reject machinery
+(`semanticAnalyzerTupleElem*`, the `decl_node < tuple_node_idx` heuristic, the
+per-element 3064s) is deleted.
+
+**RED -> GREEN (probes).** Before Q7 the classes printed gcc-invalid or wrong
+values; with the fix-round-3 compiler they are Zig-equal (Zig-0.15.2 twins):
+
+| class | before | after |
+|---|---|---|
+| `const s: i32 = 5 + 7` fwd tuple element | `0` | `12` |
+| `const s: i32 = -5` / `@as(i32,5)` | `0` / `0` | `-5` / `5` |
+| `var g = .{ b, 7 }; const b = Pair{...}` | gcc `incompatible types` | `.{ .{ .a = 1, .b = 2 }, 7 }` |
+| `const b = 3000000000` | `-1294967296` | `3000000000` |
+| `const b = 1.5` / `true` | `1` / `0` | `1.5` / `true` |
+| cross-module `colors.C2` (alias) | `0` | `12` |
+| direct `@import("colors.zig").C` | `0` (base: gcc-invalid) | `5` |
+| transitive `aux.A = colors.C2`, both import orders | `0` | `12` |
+| `Inner{ .a = fwd, .b = 2 }` tuple element | `.a = 0` | `.a = 12` |
+| `id(fwd)` call-argument element | `0` | `12` |
+| cycle `var a = .{ b, 1 }; var b = .{ a, 2 };` | rc=0 / garbage types | `1 x error[3064]`, rc 2 / 0 `.c` (Zig `dependency loop detected`) |
+
+**Fixtures.** Positive `repro/mi_matrix/stdlib_print_tuple_fwd_ok_xmod`
+extended to 21 rows (+ `aux.zig`; `colors.zig` gains `C2`; golden 21 lines,
+rc 0, 3x byte-exact stdout md5 `37b6129393acd28168d23e85e9c737a0`,
+byte-identical to the Zig-0.15.2 twin; stdlib pin 242 unchanged). Reject
+`repro/mi_matrix/tuple_fwd_global_reject_xmod` re-scoped to cycles only (tuple
++ scalar cycle in one module; 1 x `error[3064]`, rc 2 / 0 `.c`, 3x byte-exact
+stderr md5 `b4e555ab67bf8bdebdc59d39402a29d2`; `colors.zig` removed).
+Standalone `repro/print_tuple_fwd.z98` is now a positive repro (6 rows, 3x
+byte-exact, Zig-twin-identical).
+
+**Gates (fix-round-3 compiler `/tmp/t9/build10/zig1_5_clean`, binary md5
+`7c70cf47eafc795d30ccbf820ee3091c`).** Self-emission rc 0 / 48 `.c` + 48 `.h` /
+0 PANIC; seed-v86 rebuild hop1 == hop2 == `7c70cf47…`; 4-MD5 emitted-C
+**UNCHANGED 8/8** (gol `9e0b708e…` / lisp `dfa69f32…` / json `a4a73461…` /
+mud `2e92c1f2…`) — the stable ordering kept the gate dumps byte-identical;
+corpus `-s0` **1034 = 889 OK / 46 GREEN / 99 FAIL / 0 ICE / 0 CRASH** (full-
+classifier join-diff vs the fix-round-2 run over all 1034 common dirs
+**empty**, and vs the Task-8 baseline over the common dirs **empty**); stdlib
+runtime gate **242 PASS / 0 FAIL** (pin unchanged); example matrix **24/24**;
+`check_emit_support.sh` **7/7**; `verify_upgraded.sh` **CLOSEOUT OK**;
+build_test **0/9** (pre-existing retired-zig0 baseline). Fixed point
+**moved `b4e15a3f12604a67cfd3697782b1aacb` ->
+`7c70cf47eafc795d30ccbf820ee3091c`**; **seed NOT rotated (v86 stays; Task 12
+rotates, R2-print)**.
+
+**Residual.** A same-module cycle reports one diagnostic per module (the DFS
+stops at the first cycle); a cross-module cycle reports one referencing decl.
+A container-level `var` tuple element is accepted and ordered correctly even
+though Zig rejects such an initializer as not comptime-known (Z98 is
+permissive; not an over-rejection). No other residual in this class.
 
 ## Task 9 fix round 2 — cross-module/paren refs + same-type validation (v244 -> v245, 2026-09-25)
 

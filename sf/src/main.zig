@@ -133,6 +133,11 @@ pub const CompilerContext = struct {
     parent_result_start: hash_mod.U64ToU32Map,
     parent_result_count: hash_mod.U64ToU32Map,
     async_layouts: hash_mod.U64ToU32Map,
+    // Task 9 fix round 3 (Q7): module-init dependency edges
+    // (`referrer << 32 | dependency` -> referencing decl node) and the stable
+    // emission order derived from them.
+    module_init_deps: hash_mod.U64ToU32Map,
+    module_init_order: ga_mod.U32ArrayList,
 };
 
 pub fn main(argc: i32, argv: [*]*const u8) void {
@@ -341,6 +346,11 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         .pointer_only_ids = undefined,
         .pointer_only_len = @intCast(u32, 0),
         .global_decls = lir_mod.globalDeclArrayListInit(&compiler_alloc.emission),
+        // Task 9 fix round 3 (Q7): module-init dependency edges (referrer << 32
+        // | dependency -> referencing decl) and the resulting stable emitted
+        // call order.
+        .module_init_deps = hash_mod.u64ToU32MapInit(&compiler_alloc.module),
+        .module_init_order = ga_mod.u32ArrayListInit(&compiler_alloc.emission),
     };
     runCompiler(&ctx);
 }
@@ -934,7 +944,7 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
         var ilowerer = lower_mod.lowererInit(&sem_ctx, &ctx.alloc.scratch);
         ilowerer.module_id = mods[mi].id;
         ilowerer.module_reg = ctx.module_reg;
-        var imf = lower_mod.lowerModuleInit(&ilowerer, mods[mi].ast_root, mods[mi].id);
+        var imf = lower_mod.lowerModuleInit(&ilowerer, mods[mi].ast_root, mods[mi].id, &ctx.module_init_deps);
         var islot = lir_stream.lirStreamAppend(&ctx.lir_stream, imf);
         lir_mod.lirSlotArrayListAppend(&ctx.lir_slots, islot);
         if (!async_pending) { alloc_mod.sandReset(&ctx.alloc.scratch); }
@@ -988,7 +998,63 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
         }
     }
     if (async_pending) { alloc_mod.sandReset(&ctx.alloc.scratch); }
+    computeModuleInitOrder(ctx);
     lir_stream.lirStreamFinishWrite(&ctx.lir_stream);
+}
+
+// Task 9 fix round 3 (operator ruling Q7): order the emitted `__module_init`
+// calls so a module's global initializers run after every module they read.
+// Stable: a module is placed in registry order unless an outgoing dependency
+// edge forces an earlier placement, so a program without cross-module global
+// dependencies keeps its exact previous call sequence (the gate dumps do not
+// churn). A cross-module cycle has no valid order and rejects `error[3064]` at
+// one referencing declaration.
+fn computeModuleInitOrder(ctx: *CompilerContext) void {
+    var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
+    var n = mods.len;
+    ctx.module_init_order.len = @intCast(usize, 0);
+    var placed = @ptrCast([*]u8, alloc_mod.sandAlloc(&ctx.alloc.scratch, n + @intCast(usize, 1), @intCast(usize, 1)) catch unreachable);
+    var i: usize = @intCast(usize, 0);
+    while (i < n) : (i += @intCast(usize, 1)) { placed[i] = @intCast(u8, 0); }
+    var remaining = n;
+    while (remaining > @intCast(usize, 0)) {
+        var pick: usize = n;
+        i = @intCast(usize, 0);
+        while (i < n and pick == n) : (i += @intCast(usize, 1)) {
+            if (placed[i] != @intCast(u8, 0)) continue;
+            var ok: u8 = @intCast(u8, 1);
+            var j: usize = @intCast(usize, 0);
+            while (j < n) : (j += @intCast(usize, 1)) {
+                if (placed[j] != @intCast(u8, 0)) continue;
+                var dep_key: u64 = (@intCast(u64, mods[i].id) << @intCast(u64, 32)) | @intCast(u64, mods[j].id);
+                if (hash_mod.u64ToU32MapGet(&ctx.module_init_deps, dep_key) != null) { ok = @intCast(u8, 0); break; }
+            }
+            if (ok != @intCast(u8, 0)) { pick = i; }
+        }
+        if (pick == n) {
+            var ri: usize = @intCast(usize, 0);
+            var reported: u8 = @intCast(u8, 0);
+            while (ri < n and reported == @intCast(u8, 0)) : (ri += @intCast(usize, 1)) {
+                if (placed[ri] != @intCast(u8, 0)) continue;
+                var rj: usize = @intCast(usize, 0);
+                while (rj < n) : (rj += @intCast(usize, 1)) {
+                    if (placed[rj] != @intCast(u8, 0)) continue;
+                    var cyc_key: u64 = (@intCast(u64, mods[ri].id) << @intCast(u64, 32)) | @intCast(u64, mods[rj].id);
+                    if (hash_mod.u64ToU32MapGet(&ctx.module_init_deps, cyc_key)) |ref_decl| {
+                        var cyc_dcl = ast_mod.astStoreNodeAt(ctx.store, ref_decl);
+                        var cyc_msg: []const u8 = "cyclic global initializer dependency";
+                        _ = diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3064_CYCLIC_GLOBAL_INIT)), mods[ri].source_file_id, cyc_dcl.span_start, cyc_dcl.span_start + @intCast(u32, cyc_dcl.span_len), cyc_msg);
+                        reported = @intCast(u8, 1);
+                        break;
+                    }
+                }
+            }
+            break;
+        }
+        placed[pick] = @intCast(u8, 1);
+        ga_mod.u32ArrayListAppend(&ctx.module_init_order, mods[pick].id);
+        remaining -= @intCast(usize, 1);
+    }
 }
 
 fn errorCodeRegistryFinalize(ctx: *CompilerContext) void {
@@ -1111,6 +1177,10 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
     var gd_slice = lir_mod.globalDeclArrayListGetSlice(&ctx.global_decls);
     emitter.global_decls = gd_slice.ptr;
     emitter.global_decls_len = @intCast(u32, gd_slice.len);
+    // Task 9 fix round 3 (Q7): the dependency-ordered `__module_init` call list
+    // computed at the end of `phase_LIRLowering`.
+    emitter.module_init_order = ctx.module_init_order.items;
+    emitter.module_init_order_len = ctx.module_init_order.len;
     emitter.spill = &ctx.lir_stream;
     emitter.fn_slots = ctx.lir_slots.items;
     emitter.fn_slots_start = @intCast(usize, 0);

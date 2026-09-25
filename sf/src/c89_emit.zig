@@ -720,6 +720,10 @@ pub fn nameManglerMangleGlobal(self: *NameMangler, registry: *TypeRegistry, name
       ts_ref_set: U32ToU32Map,
       global_decls: [*]lir_mod.ModuleGlobalDecl,
       global_decls_len: u32,
+      // Task 9 fix round 3 (Q7): stable module-init call order computed by
+      // `phase_LIRLowering` (dependency-ordered `__module_init` calls).
+      module_init_order: [*]u32,
+      module_init_order_len: usize,
       safe_checks: bool,
    };
 
@@ -777,6 +781,8 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
            .ts_ref_set = hash_mod.u32ToU32MapInit(persist_alloc),
            .global_decls = undefined,
            .global_decls_len = @intCast(u32, 0),
+           .module_init_order = undefined,
+           .module_init_order_len = @intCast(usize, 0),
            .safe_checks = safe_checks,
        };
 }
@@ -3227,16 +3233,19 @@ fn moduleHasRuntimeInit(emitter: *C89Emitter, module_id: u32) bool {
 }
 
 fn emitModuleInitCalls(emitter: *C89Emitter) void {
-    var mm = mr_mod.moduleRegistryGetModules(emitter.module_reg);
-    var mi2: usize = @intCast(usize, 0);
-    while (mi2 < mm.len) : (mi2 += @intCast(usize, 1)) {
+    // Task 9 fix round 3 (Q7): the order is the dependency-ordered module list
+    // computed by `phase_LIRLowering` (stable: registry order unless a global
+    // initializer of one module reads another module's global).
+    var oi: usize = @intCast(usize, 0);
+    while (oi < emitter.module_init_order_len) : (oi += @intCast(usize, 1)) {
+        var mid = emitter.module_init_order[oi];
         if (emitter.prune_active != @intCast(u8, 0)) {
-            if (hash_mod.u32ToU32MapGet(&emitter.reachable, mm[mi2].id) == null) continue;
+            if (hash_mod.u32ToU32MapGet(&emitter.reachable, mid) == null) continue;
         }
-        if (moduleHasRuntimeInit(emitter, mm[mi2].id)) {
+        if (moduleHasRuntimeInit(emitter, mid)) {
             var mi_s: []const u8 = "__module_init";
             var mi_id = interner_mod.stringInternerIntern(emitter.interner, mi_s);
-            var mi_mid = nameManglerMangle(emitter.mangler, mi_id, @intCast(u8, 0), mm[mi2].id);
+            var mi_mid = nameManglerMangle(emitter.mangler, mi_id, @intCast(u8, 0), mid);
             var mi_name = interner_mod.stringInternerGet(emitter.interner, mi_mid);
             bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
             bufferedWriterWrite(&emitter.writer, mi_name);

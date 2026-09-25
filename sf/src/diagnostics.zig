@@ -148,18 +148,16 @@ pub const ErrorCode = enum(u16) {
     // Operator ruling Q1 (2026-09-24): 3063, because 3058 is live
     // `ERR_3058_CONDITION_NOT_BOOL`.
     ERR_3063_PRINT_TYPE_NOT_SUPPORTED = 3063,
-    // Task 9 (B5, z98-print-formatting Amendment 1): a module-level tuple
-    // literal whose recorded element types changed on a later module-var
-    // resolution pass. That means pass 1 inferred an element from a
-    // forward-referenced global that was not yet typed (the `TYPE_VOID ->
-    // TYPE_I32` fallback), so the frozen tuple slot is stale: reusing it emits
-    // gcc-invalid C (composite element) or a silently wrong value (integer
-    // element whose final carrier differs). `__module_init` lowers globals in
-    // declaration order, so the composite case cannot be repaired by a type
-    // refresh alone; the shape is clean-rejected instead. Official Zig 0.15.2
-    // accepts it (documented bounded residual). Level 0, span on the tuple
-    // literal, deduped per node; rejects with 0 `.c`.
-    ERR_3064_FORWARD_REF_TUPLE_GLOBAL = 3064,
+    // Task 9 fix round 3 / operator ruling Q7: a cycle in the global-initializer
+    // dependency graph. `__module_init` now emits globals in a stable
+    // dependency order (same module and across modules), so a forward-
+    // referenced global's value is always materialized before use; the only
+    // shape that cannot be ordered is a cycle (`var a = .{ b, 1 }; var b = .{ a,
+    // 2 };`), which official Zig 0.15.2 likewise rejects at comptime
+    // ("dependency loop detected"). Level 0, span on one global declaration of
+    // the cycle; rejects with 0 `.c`. (Renamed from
+    // `ERR_3064_FORWARD_REF_TUPLE_GLOBAL`; the number is unchanged.)
+    ERR_3064_CYCLIC_GLOBAL_INIT = 3064,
 };
 
 pub const ERR_1000_UNTERMINATED_STRING: u16 = 0;
