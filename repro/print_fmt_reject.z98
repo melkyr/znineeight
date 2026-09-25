@@ -1,0 +1,39 @@
+// print_fmt_reject.z98 — Task 3 (z98-print-formatting) standalone reject repro
+// for the print-format validator.
+//
+// Recipe (seed-built zig1 with its sibling lib/):
+//   <zig1> --dump-c89 --output-dir /tmp/print_fmt_reject repro/print_fmt_reject.z98
+//   echo "dump rc=$?"   # expect 2, 0 emitted .c
+//
+// EXPECTED (after Task 3): dump rc=2, 0 `.c`,
+//   error[3013] at each argument span ("invalid print format specifier for the
+//   argument type") for the Zig-rejected spec/type mismatches:
+//     `{d}` on bool            (D2; Zig: invalid format string 'd' for 'bool')
+//     `{s}` on u8              (A4; Zig: invalid format string 's' for 'u8')
+//     `{}` on []const u8       (D4; Zig: cannot format slice without a specifier)
+//   error[3063] at each argument span ("print argument type is not supported")
+//   for the no-printer kinds:
+//     `{}` on ?i32                        (F4; Zig rejects without {?}/{any})
+//     `{}` on [3]i32                      (H1; Zig rejects without {s}/{any})
+//     `{}` on a void-valued call          (H4; Q3 residual - Zig prints `void`;
+//                                          pre-fix this SIGSEGV'd the compiler)
+//
+// BEFORE Task 3 all six compiled rc=0 (the mismatches printed garbage and the
+// void site crashed the compiler with rc=139 at `lower.zig:1015`).
+const std = @import("std");
+fn noret() void {}
+
+pub fn main() void {
+    const b = true;
+    const n: u8 = 65;
+    var ub = [_]u8{ 'h', 'i' };
+    const s: []const u8 = ub[0..];
+    const o: ?i32 = 5;
+    const a = [3]i32{ 1, 2, 3 };
+    std.io.print("{d}", .{b});
+    std.io.print("{s}", .{n});
+    std.io.print("{}", .{s});
+    std.io.print("{}", .{o});
+    std.io.print("{}", .{a});
+    std.io.print("{}", .{noret()});
+}

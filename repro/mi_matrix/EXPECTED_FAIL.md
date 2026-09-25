@@ -1,4 +1,52 @@
-# mi_matrix corpus — expected-fail manifest (v232 2026-09-25)
+# mi_matrix corpus — expected-fail manifest (v233 2026-09-25)
+
+## Task 3 (F) — print-format validator + rejects (v232 -> v233, 2026-09-25)
+
+`lowerPrintFmt` (`sf/src/lower.zig`) now validates each `print` argument's static type against
+its specifier before emitting `.print_val` (spec §6 / frozen table
+`.superpowers/sdd/2026-09-22-z98-print-formatting-plan/task-0-report.md`): new level-0
+`error[3013]` `ERR_3013_INVALID_PRINT_SPECIFIER` for Zig-rejected spec/type mismatches and the
+new level-0 `error[3063]` `ERR_3063_PRINT_TYPE_NOT_SUPPORTED` for no-printer kinds, both at the
+**argument node's** span → rc=2 / 0 `.c`. **Operator ruling Q1:** the code is 3063, not the
+plan's original 3058 (`3058` is live `ERR_3058_CONDITION_NOT_BOOL`); the design spec §6 and the
+plan's `3058` references are corrected. **Crash guard (mandatory):** the argument deref is now
+guarded against `TEMP_NONE`/out-of-range temps — `std.io.print("{}", .{f()})` with `f() void`
+previously SIGSEGV'd the compiler (dump rc=139 at `lower.zig:1015`; the validator now rejects it
+cleanly with `error[3063]`). The validator tracks a bare `{}` separately from an explicit `{d}`
+(aggregates/error sets accept the former, reject the latter), uses sema's resolved type as
+authority (lowered temp type fallback; primitive-type values such as `. {u32}` are detected via
+the symbol table / type name cache), emits once per argument node
+(`diagnosticCollectorMarkNodeOnce`), and suppresses the type check for an unknown specifier (the
+existing fmt-span `error[3013]` is not doubled).
+
+**Operator-ruled Q3 bounded residuals (Zig accepts; Z98 rejects 3063, documented):** `{}` on
+`void`/`null`/`type`; `[]const u8 {x}`; `[N]u8 {s}`/`{x}`; `*const [N]u8 {s}`/`{x}`;
+`[*c]u8 {s}`/`{x}` (unparseable in Z98). **R5 residual:** `{c}` on an `integer_literal` stays
+`error[3013]` (Zig accepts an in-range comptime literal). `[*]u8 {s}`/`{x}`, `undefined`,
+arrays, optional / error-union and function-body values are Zig-rejected too, so their clean
+reject matches the oracle.
+
+**Fixtures.** Reject `repro/mi_matrix/print_fmt_type_reject_xmod` (`expected.rc` = 2; 60 sites,
+60 × `error[3013]`, 0 × `error[3063]`, FAIL; the H9 `{q}` on bool is the no-double-report
+control — one diagnostic, not two) and reject
+`repro/mi_matrix/print_fmt_noprinter_reject_xmod` (`expected.rc` = 2; 20 sites, 20 ×
+`error[3063]`, 0 × `error[3013]`, FAIL). Positive runtime
+`repro/mi_matrix/stdlib_print_fmt_valid_xmod` (27-row oracle-twin-matched golden, rc 0, 3×
+byte-exact; stdlib pin **235 → 236**). Standalone `repro/print_fmt_valid.z98` (rc 0, golden
+stdout) + `repro/print_fmt_reject.z98` (rc 2 / 0 `.c` / 3 × `error[3013]` + 3 × `error[3063]`).
+
+**Gates.** Self-compile **moving point** hop1 `5843a377eec246ffb01a5d317e37db21` ≠ hop2 == hop3
+== **`1dd9d76dc43422e2d9ea17be63d905f1`**; **4-MD5 emitted-C UNCHANGED** (gol `9e0b708e…` /
+lisp `dfa69f32…` / json `a4a73461…` / mud `2e92c1f2…`, 2× each — the validator is reject-only,
+so the STOP rule holds) with runtime identity re-confirmed by execution (gol `fcbf7e7c…` / lisp
+`b3d9f897…` / json `8bda3d5a…` / mud server `66c8f0ab…` + client `93147d0f…`, all rc 0); corpus
+`-s0` **1023 = 883 OK / 46 GREEN / 94 FAIL / 0 ICE / 0 CRASH** (full-classifier join-diff vs the
+Task-2 1020-dir baseline = exactly the 3 new fixture dirs, **zero other class movement**);
+stdlib runtime gate **236 PASS / 0 FAIL**; example matrix **24/24**; `check_emit_support.sh`
+**7/7**; `verify_upgraded.sh` **CLOSEOUT OK**. Seed stays **v84** (R2-print: rotation is
+closeout-only). Docs: design spec §6 (`3058` → `3063`, Q3/R5 boundaries, argument span) + plan
+`3058` references, `sf/docs/tech_docs/{00_shared_infra,07_lir_lowering,INDEX}.md`,
+`docs/sf/QUICK_REF.md`.
 
 ## Task 2 ruling applied — 4-MD5 re-baseline + negative-`{x}` oracle confirmed (v231 -> v232, 2026-09-25)
 

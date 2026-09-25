@@ -986,6 +986,176 @@ pub fn createBlock(self: *LirLowerer) u32 {
     return @intCast(u32, id);
 }
 
+// Task 3 (z98-print-formatting): emit a level-0 print-validator diagnostic at
+// the ARGUMENT node's span and return the reject result (0). Emission is
+// deduped per node via the shared "already diagnosed" set, so one argument
+// node never receives two validator diagnostics.
+fn printFmtReject(self: *LirLowerer, arg_node_idx: u32, err_code: u16, is_no_printer: u8) u8 {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.ctx.diag, arg_node_idx)) return @intCast(u8, 0);
+    var an = ast_mod.astStoreNodeAt(self.ctx.store, arg_node_idx);
+    var sp = an.span_start;
+    var ep = sp + @intCast(u32, an.span_len);
+    var msg: []const u8 = "invalid print format specifier for the argument type";
+    if (is_no_printer != @intCast(u8, 0)) {
+        var m2: []const u8 = "print argument type is not supported (no std.fmt printer)";
+        msg = m2;
+    }
+    _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), err_code,
+        self.ctx.source_file_id, sp, ep, msg);
+    return @intCast(u8, 0);
+}
+
+// Task 3: the validator's view of "integer-like", kept in lockstep with
+// `printKindIsIntegerLike` in c89_emit.zig (the dispatch key). `u8` is handled
+// separately (`{c}` is its only extra route); this helper covers the remaining
+// fixed/arbitrary-width ints, `isize`/`usize`, `c_char`, enum and
+// integer_literal.
+fn printFmtKindIsIntegerLike(k: type_mod.TypeKind) bool {
+    if (k == type_mod.TypeKind.i8_type or k == type_mod.TypeKind.i16_type or k == type_mod.TypeKind.i32_type or k == type_mod.TypeKind.i64_type) return true;
+    if (k == type_mod.TypeKind.u8_type or k == type_mod.TypeKind.u16_type or k == type_mod.TypeKind.u32_type or k == type_mod.TypeKind.u64_type) return true;
+    if (k == type_mod.TypeKind.isize_type or k == type_mod.TypeKind.usize_type or k == type_mod.TypeKind.c_char_type) return true;
+    if (k == type_mod.TypeKind.arb_uint_type or k == type_mod.TypeKind.arb_int_type) return true;
+    if (k == type_mod.TypeKind.enum_type or k == type_mod.TypeKind.integer_literal_type) return true;
+    return false;
+}
+
+// Task 3 (H6): a TYPE used as a value (`print("{}", .{u32})`, `.{S}`,
+// `.{mod.Type}`) resolves to the named type's own id, so it cannot be told
+// apart from a value of that type by the type alone. Detect it from the AST /
+// symbol (mirroring the lowering ident_expr/field_access type-alias arms).
+fn printFmtArgIsTypeValue(self: *LirLowerer, arg_node_idx: u32) bool {
+    if (self.ctx.has_symbols == @intCast(u8, 0)) return false;
+    var an = ast_mod.astStoreNodeAt(self.ctx.store, arg_node_idx);
+    if (an.kind == AstKind.ident_expr) {
+        var name_id = ast_mod.astStoreIdentifier(self.ctx.store, arg_node_idx);
+        if (sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, name_id)) |s| {
+            if (s.kind == sym_mod.SymbolKind.type_alias) return true;
+        }
+        // Primitive builtin names (`u32`, `bool`, ...) are registered in the
+        // type name cache, not the symbol table; a cache hit whose type name is
+        // the ident itself is a type value.
+        if (type_mod.nameCacheGet(self.ctx.registry, @intCast(u64, name_id))) |ctid| {
+            if (@intCast(usize, ctid) < self.ctx.registry.types_len) {
+                var cty = self.ctx.registry.types_items[@intCast(usize, ctid)];
+                if (cty.name_id != @intCast(u32, 0) and cty.name_id == name_id) return true;
+            }
+        }
+        return false;
+    }
+    if (an.kind == AstKind.field_access) {
+        var field_name = ast_mod.astStoreNodePayload(self.ctx.store, arg_node_idx);
+        var base_node = ast_mod.astStoreNodeAt(self.ctx.store, an.child_0);
+        if (base_node.kind == AstKind.ident_expr) {
+            var base_name = ast_mod.astStoreIdentifier(self.ctx.store, an.child_0);
+            if (sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, base_name)) |bs| {
+                if (bs.kind == sym_mod.SymbolKind.module) {
+                    if (sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, bs.module_id, field_name)) |ms| {
+                        if (ms.kind == sym_mod.SymbolKind.type_alias) return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+    return false;
+}
+
+// Task 3: spec §6 / frozen-table (task-0-report.md) print-format validator.
+// `tid` is the argument's static type, `spec_fmt` the parsed specifier and
+// `has_explicit` is 0 for a bare `{}` (whose default route is 'd' but which is
+// NOT the explicit `{d}` — aggregates/error-sets accept `{}` but reject `{d}`).
+// Returns 1 when the pair is printable, 0 after emitting one diagnostic:
+//   error[3013] — specifier invalid for the type (Zig rejects; frozen 3013
+//                 rows + operator ruling R5 for `{c}` on integer literals);
+//   error[3063] — no std.fmt printer after Option B: array/optional/error-union
+//                 /function-body/void/null/type/undefined/exotic kinds, plus
+//                 the operator-ruled Q3 bounded residuals (`[]const u8 {x}`,
+//                 `*const [N]u8 {s}`/`{x}`; `[N]u8`/`[N]T` are 3063 via the
+//                 array arm). `[*]u8 {s}`/`{x}` is Zig-rejected -> 3013.
+fn printFmtCheck(self: *LirLowerer, arg_node_idx: u32, tid: u32, spec_fmt: u8, has_explicit: u8) u8 {
+    var reg = self.ctx.registry;
+    var reject_3013 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3013_INVALID_PRINT_SPECIFIER));
+    var reject_3063 = @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3063_PRINT_TYPE_NOT_SUPPORTED));
+    if (printFmtArgIsTypeValue(self, arg_node_idx)) return printFmtReject(self, arg_node_idx, reject_3063, @intCast(u8, 1));
+    if (@intCast(usize, tid) >= reg.types_len) return printFmtReject(self, arg_node_idx, reject_3063, @intCast(u8, 1));
+    var kind = reg.types_items[@intCast(usize, tid)].kind;
+    if (kind == type_mod.TypeKind.u8_type) {
+        if (has_explicit != @intCast(u8, 0) and spec_fmt == @intCast(u8, 's')) return printFmtReject(self, arg_node_idx, reject_3013, @intCast(u8, 0));
+        return @intCast(u8, 1);
+    }
+    if (kind == type_mod.TypeKind.bool_type) {
+        if (has_explicit != @intCast(u8, 0)) return printFmtReject(self, arg_node_idx, reject_3013, @intCast(u8, 0));
+        return @intCast(u8, 1);
+    }
+    if (kind == type_mod.TypeKind.f32_type or kind == type_mod.TypeKind.f64_type) {
+        if (has_explicit != @intCast(u8, 0) and (spec_fmt == @intCast(u8, 'c') or spec_fmt == @intCast(u8, 's'))) return printFmtReject(self, arg_node_idx, reject_3013, @intCast(u8, 0));
+        return @intCast(u8, 1);
+    }
+    if (kind == type_mod.TypeKind.enum_type) {
+        if (has_explicit != @intCast(u8, 0) and (spec_fmt == @intCast(u8, 'c') or spec_fmt == @intCast(u8, 's'))) return printFmtReject(self, arg_node_idx, reject_3013, @intCast(u8, 0));
+        return @intCast(u8, 1);
+    }
+    if (kind == type_mod.TypeKind.error_set_type) {
+        if (has_explicit != @intCast(u8, 0)) return printFmtReject(self, arg_node_idx, reject_3013, @intCast(u8, 0));
+        return @intCast(u8, 1);
+    }
+    if (kind == type_mod.TypeKind.slice_type) {
+        var elem_is_u8: u8 = @intCast(u8, 0);
+        if (type_mod.typeRegistryGetSliceElem(reg, tid)) |et| {
+            if (reg.types_items[@intCast(usize, et)].kind == type_mod.TypeKind.u8_type) elem_is_u8 = @intCast(u8, 1);
+        }
+        if (elem_is_u8 != @intCast(u8, 0)) {
+            if (has_explicit == @intCast(u8, 0)) return printFmtReject(self, arg_node_idx, reject_3013, @intCast(u8, 0));
+            if (spec_fmt == @intCast(u8, 's')) return @intCast(u8, 1);
+            if (spec_fmt == @intCast(u8, 'x')) return printFmtReject(self, arg_node_idx, reject_3063, @intCast(u8, 1));
+            return printFmtReject(self, arg_node_idx, reject_3013, @intCast(u8, 0));
+        }
+        return printFmtReject(self, arg_node_idx, reject_3013, @intCast(u8, 0));
+    }
+    if (kind == type_mod.TypeKind.ptr_type) {
+        var p_is_arr: u8 = @intCast(u8, 0);
+        var p_arr_u8: u8 = @intCast(u8, 0);
+        if (type_mod.typeRegistryGetPointeeType(reg, tid)) |pt| {
+            if (@intCast(usize, pt) < reg.types_len) {
+                var pty = reg.types_items[@intCast(usize, pt)];
+                if (pty.kind == type_mod.TypeKind.array_type) {
+                    p_is_arr = @intCast(u8, 1);
+                    var e = reg.array_items[pty.payload_idx].elem;
+                    if (@intCast(usize, e) < reg.types_len and reg.types_items[@intCast(usize, e)].kind == type_mod.TypeKind.u8_type) p_arr_u8 = @intCast(u8, 1);
+                }
+            }
+        }
+        if (p_is_arr != @intCast(u8, 0)) {
+            if (has_explicit == @intCast(u8, 0)) return printFmtReject(self, arg_node_idx, reject_3013, @intCast(u8, 0));
+            if (p_arr_u8 != @intCast(u8, 0) and (spec_fmt == @intCast(u8, 's') or spec_fmt == @intCast(u8, 'x'))) return printFmtReject(self, arg_node_idx, reject_3063, @intCast(u8, 1));
+            return printFmtReject(self, arg_node_idx, reject_3013, @intCast(u8, 0));
+        }
+        if (has_explicit == @intCast(u8, 0)) return @intCast(u8, 1);
+        return printFmtReject(self, arg_node_idx, reject_3013, @intCast(u8, 0));
+    }
+    if (kind == type_mod.TypeKind.many_ptr_type) {
+        return printFmtReject(self, arg_node_idx, reject_3013, @intCast(u8, 0));
+    }
+    if (kind == type_mod.TypeKind.array_type) {
+        return printFmtReject(self, arg_node_idx, reject_3063, @intCast(u8, 1));
+    }
+    if (kind == type_mod.TypeKind.struct_type or kind == type_mod.TypeKind.union_type or kind == type_mod.TypeKind.tagged_union_type or kind == type_mod.TypeKind.tuple_type or kind == type_mod.TypeKind.packed_union_type) {
+        if (has_explicit != @intCast(u8, 0)) return printFmtReject(self, arg_node_idx, reject_3013, @intCast(u8, 0));
+        return @intCast(u8, 1);
+    }
+    if (kind == type_mod.TypeKind.optional_type or kind == type_mod.TypeKind.error_union_type) {
+        return printFmtReject(self, arg_node_idx, reject_3063, @intCast(u8, 1));
+    }
+    if (kind == type_mod.TypeKind.void_type or kind == type_mod.TypeKind.null_type or kind == type_mod.TypeKind.type_type or kind == type_mod.TypeKind.undefined_type or kind == type_mod.TypeKind.fn_type or kind == type_mod.TypeKind.noreturn_type) {
+        return printFmtReject(self, arg_node_idx, reject_3063, @intCast(u8, 1));
+    }
+    if (printFmtKindIsIntegerLike(kind)) {
+        if (has_explicit != @intCast(u8, 0) and (spec_fmt == @intCast(u8, 'c') or spec_fmt == @intCast(u8, 's'))) return printFmtReject(self, arg_node_idx, reject_3013, @intCast(u8, 0));
+        return @intCast(u8, 1);
+    }
+    return printFmtReject(self, arg_node_idx, reject_3063, @intCast(u8, 1));
+}
+
 fn lowerPrintFmt(self: *LirLowerer, fmt_node_idx: u32, fmt: []const u8, tuple_node_idx: u32) void {
     var seg_start: usize = @intCast(usize, 0);
     var ai: usize = @intCast(usize, 0);
@@ -1011,15 +1181,28 @@ fn lowerPrintFmt(self: *LirLowerer, fmt_node_idx: u32, fmt: []const u8, tuple_no
                     emitInst(self, LirInst{ .print_str = .{ .string_id = sid2 } });
                 }
                 if (ai < @intCast(usize, ast_mod.astStoreNodeExtraChildCount(self.ctx.store, tuple_node_idx))) {
-                    var pv = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(self.ctx.store, tuple_node_idx, @intCast(u32, ai)));
-                    var pvt = self.hoisted_temps.items[@intCast(usize, pv)].type_id;
+                    var arg_node = ast_mod.astStoreNodeExtraChildAt(self.ctx.store, tuple_node_idx, @intCast(u32, ai));
+                    var pv = lowerExpr(self, arg_node);
+                    // Task 3 crash guard (H4): a void-valued argument lowers to
+                    // the "no value" sentinel (or a phantom 0 with an empty temp
+                    // table); dereferencing `hoisted_temps` unguarded SIGSEGVs.
+                    // Keep the old dispatch type for the emitted `.print_val`
+                    // and validate on the static (resolved) type instead.
+                    var pvt: u32 = type_mod.TYPE_VOID;
+                    if (pv != TEMP_NONE and @intCast(usize, pv) < self.hoisted_temps.len) {
+                        pvt = self.hoisted_temps.items[@intCast(usize, pv)].type_id;
+                    }
                     var spec_fmt: u8 = @intCast(u8, 'd');
+                    var has_explicit: u8 = @intCast(u8, 0);
+                    var spec_known: u8 = @intCast(u8, 1);
                     var spec_i: usize = i + @intCast(usize, 1);
                     if (spec_i < fmt.len) {
                         var spec_c = fmt[spec_i];
                         if (spec_c != @intCast(u8, '}')) {
+                            has_explicit = @intCast(u8, 1);
                             spec_fmt = spec_c;
                             if (spec_c != @intCast(u8, 'd') and spec_c != @intCast(u8, 'c') and spec_c != @intCast(u8, 's') and spec_c != @intCast(u8, 'x')) {
+                                spec_known = @intCast(u8, 0);
                                 var fn_node = ast_mod.astStoreNodeAt(self.ctx.store, fmt_node_idx);
                                 var isp = fn_node.span_start;
                                 var iep = isp + @intCast(u32, fn_node.span_len);
@@ -1029,6 +1212,17 @@ fn lowerPrintFmt(self: *LirLowerer, fmt_node_idx: u32, fmt: []const u8, tuple_no
                                     self.ctx.source_file_id, isp, iep, iv_msg);
                             }
                         }
+                    }
+                    // Task 3: validate only a KNOWN specifier (never double-report
+                    // the already-invalid one above). The argument's static type
+                    // (sema's resolved type) is authoritative for validation; the
+                    // lowered temp type is the fallback.
+                    if (spec_known != @intCast(u8, 0)) {
+                        var pvt_check: u32 = pvt;
+                        if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, arg_node)) |rtid| {
+                            pvt_check = rtid;
+                        }
+                        _ = printFmtCheck(self, arg_node, pvt_check, spec_fmt, has_explicit);
                     }
                     emitInst(self, LirInst{ .print_val = .{ .value = pv, .type_id = pvt, .fmt = spec_fmt } });
                     ai += @intCast(usize, 1);

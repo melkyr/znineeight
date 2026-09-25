@@ -140,6 +140,14 @@ pub const ErrorCode = enum(u16) {
     // '-N'"). Level 0, span on the offending index/bound; rejects with 0 `.c`.
     // A runtime index keeps its `-fsafe` `check_trap{kind=5}` guard unchanged.
     ERR_3062_INDEX_OUT_OF_BOUNDS = 3062,
+    // Task 3 (z98-print-formatting): a `print` argument whose static type has
+    // no `std.fmt` printer (after Option B), or an operator-ruled Option-B
+    // bounded residual that Zig accepts but the plan deliberately does not
+    // implement (Q3: void/null/type, byte-view arrays/pointers, `[]const u8`
+    // `{x}`). Level 0, span on the argument node; rejects with 0 `.c`.
+    // Operator ruling Q1 (2026-09-24): 3063, because 3058 is live
+    // `ERR_3058_CONDITION_NOT_BOOL`.
+    ERR_3063_PRINT_TYPE_NOT_SUPPORTED = 3063,
 };
 
 pub const ERR_1000_UNTERMINATED_STRING: u16 = 0;
