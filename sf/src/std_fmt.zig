@@ -136,8 +136,20 @@ pub fn printHexU32(v: u32) void {
     writeHexDigitsU32(v);
 }
 
+// Zig 0.15.2 `{x}` on a negative signed value prints '-' followed by the HEX
+// MAGNITUDE (`-10` -> `-a`, `-549755813888` -> `-8000000000`) — NOT the two's
+// complement and NOT signed decimal. Frozen table A12 records that oracle
+// evidence (`p_ints ix=-8000000000`); the magnitude is computed in unsigned
+// arithmetic so INT_MIN is handled.
 pub fn printHexI32(v: i32) void {
-    writeHexDigitsU32(@bitCast(u32, v));
+    var mag: u32 = @bitCast(u32, v);
+    if (v < 0) {
+        var minus: [1]u8 = undefined;
+        minus[0] = @intCast(u8, '-');
+        pal_print_stdout(@ptrCast([*]const u8, &minus[0]), 1);
+        mag = (~mag) +% 1;
+    }
+    writeHexDigitsU32(mag);
 }
 
 pub fn printHexU64(v: u64) void {
@@ -145,5 +157,12 @@ pub fn printHexU64(v: u64) void {
 }
 
 pub fn printHexI64(v: i64) void {
-    writeHexDigitsU64(@bitCast(u64, v));
+    var mag: u64 = @bitCast(u64, v);
+    if (v < 0) {
+        var minus: [1]u8 = undefined;
+        minus[0] = @intCast(u8, '-');
+        pal_print_stdout(@ptrCast([*]const u8, &minus[0]), 1);
+        mag = (~mag) +% 1;
+    }
+    writeHexDigitsU64(mag);
 }

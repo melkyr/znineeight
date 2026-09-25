@@ -16,10 +16,12 @@
 // Residuals NOT fixed here (documented, out of scope): `{x}` on a float prints
 // decimal (Zig prints hex-float `0x1.8p0`) and `{c}`/`{s}` on a float print
 // decimal where Zig rejects them — both are pre-existing f64-arm limitations
-// shared by f32, not regressions. Sibling print mis-routes (usize > 2^31-1,
-// arbitrary-width ints wider than 32 bits, wide-backed enums, `{x}` on negative
-// ints, aggregate/pointer/error-set arguments) are distinct defects tracked
-// separately.
+// shared by f32, not regressions.
+//
+// Task 2 (z98-print-formatting) update: the integral float `f32-calc` now
+// prints `7` (Zig's form), not `7.0` — `pal_f64_to_str` omits the `'.'` +
+// fraction for an integral value. The non-integral rows are unchanged (the
+// 6-digit truncation of `f32-round = 0.1` is a documented Task-2 residual).
 //
 // Contract: deterministic byte-exact stdout below, RUNRC=0.
 //
@@ -27,7 +29,7 @@
 //   f32-decimal = 1.5
 //   f32-neg = -2.25
 //   f32-round = 0.1
-//   f32-calc = 7.0
+//   f32-calc = 7
 //   f32-wide = 123456.75
 //   done
 const std = @import("std");

@@ -214,6 +214,13 @@ int pal_f64_to_str(f64 value, char* buf, int bufsize)
     int_len = pal_i64_to_str(int_part, buf + pos, bufsize - pos);
     if (int_len <= 0) return 0;
     pos += int_len;
+    /* Task 2 (z98-print-formatting): an integral value prints WITHOUT the
+       '.'+fraction (Zig 7.0 -> 7). The non-integral path below is unchanged
+       (6-digit truncation is a documented bounded residual). */
+    if ((f64)int_part == value) {
+        buf[pos] = '\0';
+        return pos;
+    }
     buf[pos++] = '.';
     frac_part = value - (f64)int_part;
     i = 0;

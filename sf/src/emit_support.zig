@@ -880,6 +880,13 @@ pub fn emitZigPalCSupport(writer: *BufferedWriter) void {
     c89_mod.bufferedWriterWrite(writer, "    int_len = pal_i64_to_str(int_part, buf + pos, bufsize - pos);\n");
     c89_mod.bufferedWriterWrite(writer, "    if (int_len <= 0) return 0;\n");
     c89_mod.bufferedWriterWrite(writer, "    pos += int_len;\n");
+    c89_mod.bufferedWriterWrite(writer, "    /* Task 2 (z98-print-formatting): an integral value prints WITHOUT the\n");
+    c89_mod.bufferedWriterWrite(writer, "       '.'+fraction (Zig 7.0 -> 7). The non-integral path below is unchanged\n");
+    c89_mod.bufferedWriterWrite(writer, "       (6-digit truncation is a documented bounded residual). */\n");
+    c89_mod.bufferedWriterWrite(writer, "    if ((f64)int_part == value) {\n");
+    c89_mod.bufferedWriterWrite(writer, "        buf[pos] = '\\0';\n");
+    c89_mod.bufferedWriterWrite(writer, "        return pos;\n");
+    c89_mod.bufferedWriterWrite(writer, "    }\n");
     c89_mod.bufferedWriterWrite(writer, "    buf[pos++] = '.';\n");
     c89_mod.bufferedWriterWrite(writer, "    frac_part = value - (f64)int_part;\n");
     c89_mod.bufferedWriterWrite(writer, "    i = 0;\n");

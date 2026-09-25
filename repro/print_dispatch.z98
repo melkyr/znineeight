@@ -1,0 +1,72 @@
+// print_dispatch.z98 — Task 2 (z98-print-formatting) standalone repro.
+//
+// Pins the width/signedness dispatch and the runtime format fixes of Task 2
+// (frozen table task-0-report.md rows A7-A17, C1):
+//   * usize is 32-bit unsigned -> U32 routes (`usize=3000000000`,
+//     `{x}` = `b2d05e00`, not the pre-fix `-1294967296`);
+//   * a size-8 arbitrary-width int takes the 64-bit routes (`u40` prints
+//     `1099511627775`, `{x}` = `ffffffffff`; `i40` prints `-549755813888`);
+//   * `{x}` on a negative signed value prints `-` + hex magnitude
+//     (`-5` for i8/i32/i64, `-8000000000` for i40, `-80000000` for i32 min),
+//     not the pre-fix two's complement (`fffffffb`);
+//   * `{x}` on small ints honours the specifier (`u16` 60000 -> `ea60`,
+//     i8 100 -> `64`);
+//   * an integral float prints without `.0` (`7.0` -> `7`, `0.0` -> `0`,
+//     `100.0` -> `100`).
+//
+// Expected stdout (exact), rc 0 (byte-identical to official Zig 0.15.2):
+//   usize=3000000000
+//   usizex=b2d05e00
+//   u40=1099511627775
+//   u40x=ffffffffff
+//   i40=-549755813888
+//   i40x=-8000000000
+//   u16x=ea60
+//   i8x=-5
+//   i8px=64
+//   i32x=-5
+//   i32minx=-80000000
+//   i64x=-5
+//   i64minx=-8000000000000000
+//   f64int=7
+//   f64zero=0
+//   f64hundred=100
+//   f32int=7
+//   ccharx=-5
+const std = @import("std");
+
+pub fn main() void {
+    var a: usize = @intCast(usize, 3000000000);
+    var b: u40 = @intCast(u40, 1099511627775);
+    var c: i40 = @intCast(i40, 0 - 549755813888);
+    var d: u16 = @intCast(u16, 60000);
+    var e: i8 = @intCast(i8, 0 - 5);
+    var e2: i8 = @intCast(i8, 100);
+    var f: i32 = @intCast(i32, 0 - 5);
+    var f2: i32 = @intCast(i32, 0 - 2147483647 - 1);
+    var g: i64 = @intCast(i64, 0 - 5);
+    var g2: i64 = @intCast(i64, 0 - 9223372036854775807 - 1);
+    var h: f64 = 7.0;
+    var i: f64 = 0.0;
+    var j: f64 = 100.0;
+    var k: f32 = @intToFloat(f32, 7);
+    var n: c_char = @intCast(c_char, 0 - 5);
+    std.io.print("usize={}\n", .{a});
+    std.io.print("usizex={x}\n", .{a});
+    std.io.print("u40={}\n", .{b});
+    std.io.print("u40x={x}\n", .{b});
+    std.io.print("i40={}\n", .{c});
+    std.io.print("i40x={x}\n", .{c});
+    std.io.print("u16x={x}\n", .{d});
+    std.io.print("i8x={x}\n", .{e});
+    std.io.print("i8px={x}\n", .{e2});
+    std.io.print("i32x={x}\n", .{f});
+    std.io.print("i32minx={x}\n", .{f2});
+    std.io.print("i64x={x}\n", .{g});
+    std.io.print("i64minx={x}\n", .{g2});
+    std.io.print("f64int={}\n", .{h});
+    std.io.print("f64zero={}\n", .{i});
+    std.io.print("f64hundred={}\n", .{j});
+    std.io.print("f32int={}\n", .{k});
+    std.io.print("ccharx={x}\n", .{n});
+}

@@ -1,4 +1,53 @@
-# mi_matrix corpus — expected-fail manifest (v230 2026-09-24)
+# mi_matrix corpus — expected-fail manifest (v231 2026-09-25)
+
+## Task 2 (F) — width/signedness dispatch + `{x}`/float format fixes (v230 -> v231, 2026-09-25)
+
+`printFnSourceName` (`sf/src/c89_emit.zig`) is now a width/signedness dispatcher over integer-like
+kinds (new `printKindIsIntegerLike`: fixed ints, arbitrary-width ints, `c_char`, `enum`,
+`integer_literal`): `typeRegistryIntWidthBits`/`typeRegistryIntIsSigned` route a ≤32-bit
+unsigned/signed type to `printU32`/`printI32` and a 33..64-bit type to `printU64`/`printI64` (with
+the matching `printHex*` for `{x}`); Z98 `usize` is 32-bit unsigned; `integer_literal` is the
+32-bit signed fallback. This fixes the pre-Task-2 fallthrough to `printI32`: `usize` 3000000000
+printed `-1294967296` (now `3000000000`), a size-8 `u40` printed `-1` (now `1099511627775`), an
+`i40` printed `0` (now `-549755813888`).
+
+`std_fmt.zig`'s `printHexI32/I64` now print **`-` + hex magnitude** for a negative value (Zig
+0.15.2 oracle: `-10` → `-a`, `-549755813888` → `-8000000000`, `i32` min → `-80000000`), replacing
+the two's-complement form (`fffffffb`). **Controller-ruling note:** the frozen table A12 / Task-2
+Step-2 prose said "signed decimal when `val < 0`"; the oracle — and A12's own recorded evidence
+`p_ints ix=-8000000000` — print `-` + hex magnitude, which is what was implemented. The design
+spec §4 wording was corrected.
+
+`pal_f64_to_str` (both lockstep copies) omits the `'.'`+fraction when the value is integral
+(`7.0` → `7`, `100.0` → `100`, `0.0` → `0`). **Documented Q2 bounded residuals (unchanged):**
+non-integral values keep the 6-digit truncation (`1.0/3.0` → `0.333333`, Zig
+`0.3333333333333333`); `1e20` hits the `(i64)` cast UB and prints `-9223372036854775808…` (Zig
+`100000000000000000000`); `-0.0` → `0` (Zig `-0`).
+
+**Fixtures (1 new dir, OK; stdlib pin 234 -> 235):**
+- `repro/mi_matrix/stdlib_print_dispatch_xmod` — 18 rows: wide `usize` `{}`/`{x}`, `u40`
+  `{}`/`{x}`, `i40` `{}`/`{x}`, `u16 {x}`, `i8` negative/positive `{x}`, `i32`/`i64` negative
+  `{x}` incl. both minima, `c_char {x}`, integral f64/f32 `{}`; every value `@panic`-guarded;
+  golden byte-identical to the official Zig 0.15.2 twin, rc 0, 3x deterministic.
+- `repro/mi_matrix/stdlib_f32_print_xmod` golden **re-captured** (`f32-calc = 7.0` -> `7`);
+  header updated.
+- standalone `repro/print_dispatch.z98`; `repro/print_std_fmt_seam.z98` header re-captured
+  (`neghex=-5`).
+
+**Gates (Task-2 compiler `/tmp/t2/build_final/zig1_5_clean`, hop1):** self-compile **moving
+point** hop1 `da7baa2836e536699257b92d2cb23200` != hop2 == hop3 ==
+**`475e9a920934583a23a90a7ac1bb4e52`**; **4-MD5 emitted-C MOVED** (gol `c56ff666…` ->
+`9e0b708e…`, lisp `573dbd70…` -> `dfa69f32…`, json `b01005d4…` -> `a4a73461…`, mud `f9e5bb58…`
+-> `2e92c1f2…`) — the dump carries the changed `std_fmt`/`zig_pal` support C (new
+`printHexI32/I64` locals + the PAL integral branch shift type/temp interning), **runtime output
+byte-identical PRE<->POST for all four** (gol `fcbf7e7c…` / lisp `b3d9f897…` / json
+`8bda3d5a…` / mud server `66c8f0ab…` + client `93147d0f…`); per the Task-2 STOP rule the table
+was **NOT re-baselined** — controller ruling pending; corpus `-s0` **1020 = 882 OK / 46 GREEN /
+92 FAIL / 0 ICE / 0 CRASH** (join-diff vs the Task-1 fix-round classification on the 1019
+common dirs **empty**; the only new dir is `stdlib_print_dispatch_xmod`, OK); stdlib runtime
+gate **235 PASS / 0 FAIL**; example matrix **24/24**; `check_emit_support.sh` **7/7**;
+`verify_upgraded.sh` **CLOSEOUT OK**. Seed stays **v84** (R2-print: rotation is closeout-only;
+`release/seed/` untouched).
 
 ## Task 1 (F) fix round 1 — auto-import std_fmt for aliased print callees (v229 -> v230, 2026-09-24)
 

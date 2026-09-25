@@ -5478,35 +5478,53 @@ fn getCheckedCastFnName(reg: *TypeRegistry, tid: u32) []const u8 {
 // name for the (type × specifier) route; getPrintFnName then mangles it
 // against the auto-imported std_fmt module, so every `.print_val` call site is
 // a normal cross-module Z98 call and the C `std_print_*` ABI names are retired.
+//
+// Task 2: integer-like kinds (fixed ints, arbitrary-width ints, c_char, enum,
+// integer_literal) route by width/signedness via typeRegistryIntWidthBits /
+// typeRegistryIntIsSigned (frozen table task-0-report.md rows A7-A17). usize is
+// 32-bit unsigned in Z98; a 33..64-bit type takes the U64/I64 routes;
+// integer_literal is the 32-bit signed fallback. f32/f64, bool, u8{c} and
+// slices keep their explicit arms; any other kind keeps the defensive printI32
+// fallback (Task 3 adds the validator that rejects those arguments).
+fn printKindIsIntegerLike(k: TypeKind) bool {
+    if (k == TypeKind.i8_type or k == TypeKind.i16_type or k == TypeKind.i32_type or k == TypeKind.i64_type) return true;
+    if (k == TypeKind.u8_type or k == TypeKind.u16_type or k == TypeKind.u32_type or k == TypeKind.u64_type) return true;
+    if (k == TypeKind.isize_type or k == TypeKind.usize_type or k == TypeKind.c_char_type) return true;
+    if (k == TypeKind.arb_uint_type or k == TypeKind.arb_int_type) return true;
+    if (k == TypeKind.enum_type or k == TypeKind.integer_literal_type) return true;
+    return false;
+}
+
 fn printFnSourceName(reg: *TypeRegistry, tid: u32, fmt: u8) []const u8 {
     var ty = reg.types_items[@intCast(usize, tid)];
-    var is_hex: u8 = if (fmt == @intCast(u8, 'x')) @intCast(u8, 1) else @intCast(u8, 0);
-    if (ty.kind == TypeKind.u32_type) {
-        if (is_hex != @intCast(u8, 0)) { var h: []const u8 = "printHexU32"; return h; }
-        { var s: []const u8 = "printU32"; return s; }
-    }
-    if (ty.kind == TypeKind.i32_type) {
-        if (is_hex != @intCast(u8, 0)) { var h: []const u8 = "printHexI32"; return h; }
-        { var s: []const u8 = "printI32"; return s; }
-    }
-    if (ty.kind == TypeKind.i64_type) {
-        if (is_hex != @intCast(u8, 0)) { var h: []const u8 = "printHexI64"; return h; }
-        { var s: []const u8 = "printI64"; return s; }
-    }
-    if (ty.kind == TypeKind.u64_type) {
-        if (is_hex != @intCast(u8, 0)) { var h: []const u8 = "printHexU64"; return h; }
-        { var s: []const u8 = "printU64"; return s; }
-    }
-    if (ty.kind == TypeKind.f64_type) { var s: []const u8 = "printF64"; return s; }
-    if (ty.kind == TypeKind.f32_type) { var s: []const u8 = "printF64"; return s; }
+    if (ty.kind == TypeKind.f64_type or ty.kind == TypeKind.f32_type) { var s: []const u8 = "printF64"; return s; }
     if (ty.kind == TypeKind.bool_type) { var s: []const u8 = "printBool"; return s; }
-    if (ty.kind == TypeKind.u8_type) {
-        if (fmt == @intCast(u8, 'c')) { var s: []const u8 = "printChar"; return s; }
-        if (is_hex != @intCast(u8, 0)) { var h: []const u8 = "printHexU32"; return h; }
-        { var s: []const u8 = "printU32"; return s; }
-    }
+    if (ty.kind == TypeKind.u8_type and fmt == @intCast(u8, 'c')) { var s: []const u8 = "printChar"; return s; }
     if (ty.kind == TypeKind.slice_type) { var s: []const u8 = "printStr"; return s; }
-    { var s: []const u8 = "printI32"; return s; }
+    if (printKindIsIntegerLike(ty.kind)) {
+        var width_bits: u8 = type_mod.typeRegistryIntWidthBits(reg, tid);
+        var is_signed: bool = type_mod.typeRegistryIntIsSigned(reg, tid);
+        if (ty.kind == TypeKind.integer_literal_type) {
+            width_bits = @intCast(u8, 32);
+            is_signed = true;
+        }
+        var is_hex: u8 = if (fmt == @intCast(u8, 'x')) @intCast(u8, 1) else @intCast(u8, 0);
+        if (width_bits > @intCast(u8, 32)) {
+            if (is_hex != @intCast(u8, 0)) {
+                if (is_signed) { var h64s: []const u8 = "printHexI64"; return h64s; }
+                { var h64u: []const u8 = "printHexU64"; return h64u; }
+            }
+            if (is_signed) { var d64s: []const u8 = "printI64"; return d64s; }
+            { var d64u: []const u8 = "printU64"; return d64u; }
+        }
+        if (is_hex != @intCast(u8, 0)) {
+            if (is_signed) { var h32s: []const u8 = "printHexI32"; return h32s; }
+            { var h32u: []const u8 = "printHexU32"; return h32u; }
+        }
+        if (is_signed) { var d32s: []const u8 = "printI32"; return d32s; }
+        { var d32u: []const u8 = "printU32"; return d32u; }
+    }
+    { var fallback: []const u8 = "printI32"; return fallback; }
 }
 
 fn getPrintFnName(emitter: *C89Emitter, tid: u32, fmt: u8) []const u8 {

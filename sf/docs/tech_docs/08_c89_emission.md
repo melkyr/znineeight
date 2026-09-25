@@ -1,4 +1,4 @@
-# 08 — C89 Emission [updated: 2026-09-24 — Task 1 (z98-print-formatting): `.print_val` emits a mangled cross-module call into the Z98 std module `sf/src/std_fmt.zig` (`std.fmt`); `printFnSourceName` picks the std.fmt source name and `getPrintFnName` mangles it against the auto-imported std_fmt module id (new `C89Emitter.std_fmt_module_id`, set in `phase_C89Emission`; a `.print_val` also seeds a `ref_edges` entry so std_fmt stays reachable and its header is included). The C `std_print_<type>` bodies are retired; `std_print`/`std_print_len` remain the raw-bytes helpers for `.print_str`/console. `.print_str` is unchanged.] [updated: 2026-09-22 — `getPrintFnName` gained an `f32_type` arm routing `f32` to the existing `std_print_f64` (Task 7F f32 print dispatch; the prototype widens `float`→`double`, no runtime change)] [updated: 2026-09-20 — refreshed against current source: added `emit_support.zig` (self-contained output dir + companion build scripts), packed/int-width/`volatile`/calling-convention and `-fsafe`/`-ffast` guard emission, emission-core compaction, and module pruning; documented the removed `@socket*` builtin emission; dropped line references and the 4-example evidence appendix]
+# 08 — C89 Emission [updated: 2026-09-25 — Task 2 (z98-print-formatting): `printFnSourceName` is a width/signedness dispatcher (`printKindIsIntegerLike` + `typeRegistryIntWidthBits`/`IsSigned`; ≤32 → U32/I32, 33..64 → U64/I64, `{x}` → the matching `printHex*`; Z98 `usize` is 32-bit unsigned; `integer_literal` is the 32-bit signed fallback) and `std.fmt`'s `printHexI32/I64` print `-` + hex magnitude for negative values; `pal_f64_to_str` omits the `.`+fraction for an integral float. Fixture `stdlib_print_dispatch_xmod`.][updated: 2026-09-24 — Task 1 (z98-print-formatting): `.print_val` emits a mangled cross-module call into the Z98 std module `sf/src/std_fmt.zig` (`std.fmt`); `printFnSourceName` picks the std.fmt source name and `getPrintFnName` mangles it against the auto-imported std_fmt module id (new `C89Emitter.std_fmt_module_id`, set in `phase_C89Emission`; a `.print_val` also seeds a `ref_edges` entry so std_fmt stays reachable and its header is included). The C `std_print_<type>` bodies are retired; `std_print`/`std_print_len` remain the raw-bytes helpers for `.print_str`/console. `.print_str` is unchanged.] [updated: 2026-09-22 — `getPrintFnName` gained an `f32_type` arm routing `f32` to the existing `std_print_f64` (Task 7F f32 print dispatch; the prototype widens `float`→`double`, no runtime change)] [updated: 2026-09-20 — refreshed against current source: added `emit_support.zig` (self-contained output dir + companion build scripts), packed/int-width/`volatile`/calling-convention and `-fsafe`/`-ffast` guard emission, emission-core compaction, and module pruning; documented the removed `@socket*` builtin emission; dropped line references and the 4-example evidence appendix]
 
 > Covers: `c89_emit.zig`, `name_mangler.zig`, `cinclude.zig`, `emit_support.zig`
 > Cross-ref: [INDEX.md](INDEX.md) §E (NameMangler, BufferedWriter data structures)
@@ -668,7 +668,8 @@ Resolves field access for `.assign_field`:
 | `getUnOpStr` | Maps unary op u8 → C operator string (-, !, ~) |
 | `getCheckedCastFnName` | Maps TypeId → checked cast function name (std_checked_cast_i8/u8/i16/u16/i32/u32/i64/u64) |
 | `getPrintFnName` | Maps TypeId → **mangled C name** of the fmt printer: infers `printFnSourceName` then mangles it (`nameManglerMangle` kind 0) against `emitter.std_fmt_module_id`; when that id is absent (`0xFFFFFFFF`) it falls back to the unmangled source name. |
-| `printFnSourceName` | Maps TypeId × specifier → the `std.fmt` SOURCE name (Task 1): `printU32`/`printI32`/`printU64`/`printI64`/`printHexU32`/`printHexI32`/`printHexU64`/`printHexI64`/`printF64` (`f32_type` too — the `float`→`double` widening is implicit via the `void printF64(double)` prototype), `printBool`, `printChar` (u8 `{c}`), `printStr` (slice), default `printI32`. |
+| `printKindIsIntegerLike` | Task 2: true for fixed ints, arbitrary-width ints, `c_char`, `enum`, `integer_literal` — the kinds the width/signedness dispatch routes (everything else keeps an explicit arm or the defensive `printI32` fallback). |
+| `printFnSourceName` | Maps TypeId × specifier → the `std.fmt` SOURCE name. Task 2 width/signedness dispatch: integer-like kinds (`printKindIsIntegerLike`) route via `typeRegistryIntWidthBits`/`typeRegistryIntIsSigned` → `printU32`/`printI32` at ≤32 bits, `printU64`/`printI64` at 33..64, and the matching `printHex*` for `{x}` (Z98 `usize` is 32-bit unsigned; `integer_literal` is the 32-bit signed fallback). Non-integer arms unchanged: `printF64` (`f32_type` too — the `float`→`double` widening is implicit via the `void printF64(double)` prototype), `printBool`, `printChar` (u8 `{c}`), `printStr` (slice), default `printI32` (defensive; Task 3 rejects those arguments). |
 | `emitCStringLiteral` | Emits C string literal with escape sequences (\n, \t, \r, \\, \") |
 | `resolveTempName` | Resolve temp_id → C name. Checks local flat lookup first (fl_temps), falls back to mangleTempName |
 | `getTempTypeByIndex` | Find type_id for a temp_id by scanning hoisted_temps |
@@ -1102,8 +1103,16 @@ Floating-point formatting avoids the host `printf`: float literals emit via
 `std.fmt.printF64` (`sf/src/std_fmt.zig`, Task 1) uses `pal_f64_to_str`
 (integer part via `pal_i64_to_str`, up to 6 fractional digits, trailing zeros
 trimmed) in `zig_pal.c`. Both are part of the emitted self-contained set. Before
-Task 1 the printer body lived in the C runtime as `std_print_f64`; the PAL
-conversion itself is unchanged.
+Task 1 the printer body lived in the C runtime as `std_print_f64`.
+
+Task 2 added the integral-value omission to `pal_f64_to_str` (both lockstep
+copies): when `(f64)(i64)value == value`, the `'.'` + fraction is not emitted
+(`7.0` → `7`, `100.0` → `100`, `0.0` → `0`), matching Zig. **Operator-ruled
+bounded residuals (Q2, unchanged):** the non-integral path is still the 6-digit
+truncating loop (`1.0/3.0` → `0.333333`, Zig `0.3333333333333333`); `1e20` hits
+the `(i64)` cast UB and prints `-9223372036854775808…` (Zig
+`100000000000000000000`); `-0.0` prints `0` (Zig `-0`). Full shortest-form
+decimal is not implemented.
 
 ---
 

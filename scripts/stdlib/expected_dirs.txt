@@ -165,6 +165,7 @@ repro/mi_matrix/stdlib_parse_utoa64_xmod
 repro/mi_matrix/stdlib_parse_utoa_xmod
 repro/mi_matrix/stdlib_print_alias_xmod
 repro/mi_matrix/stdlib_print_autoimport_xmod
+repro/mi_matrix/stdlib_print_dispatch_xmod
 repro/mi_matrix/stdlib_pub_visibility_ok_xmod
 repro/mi_matrix/stdlib_rle_decode_xmod
 repro/mi_matrix/stdlib_rle_decodedlen_xmod

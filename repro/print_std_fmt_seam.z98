@@ -9,13 +9,13 @@
 // Expected stdout (exact), rc 0:
 //   i32=-2147483648 u32=4294967295 i64=-9223372036854775808 u64=18446744073709551615
 //   f64=2.5 f32=1.5 bool=false char=A str=hi
-//   hex=beef neghex=fffffffb neghex64=fffffffffffffffb
+//   hex=beef neghex=-5 neghex64=-5
 //   literal braces {x} ok
 //   direct=7
 //
-// `neghex`/`neghex64` print the pre-Task-2 two's-complement form (the frozen
-// table A12 schedules signed decimal `-5` for Task 2; re-capture this probe
-// then).
+// `neghex`/`neghex64` were re-captured by Task 2: Zig 0.15.2 prints `{x}` on a
+// negative signed value as '-' + hex magnitude (`-5` here), not the pre-fix
+// two's complement (`fffffffb`).
 const std = @import("std");
 
 pub fn main() void {

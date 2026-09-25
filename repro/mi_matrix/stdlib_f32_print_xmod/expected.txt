@@ -2,6 +2,6 @@ f32-default = 1.5
 f32-decimal = 1.5
 f32-neg = -2.25
 f32-round = 0.1
-f32-calc = 7.0
+f32-calc = 7
 f32-wide = 123456.75
 done
