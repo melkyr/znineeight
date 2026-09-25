@@ -1,6 +1,6 @@
-# mi_matrix corpus — expected-fail manifest (v238 2026-09-25)
+# mi_matrix corpus — expected-fail manifest (v239 2026-09-25)
 
-## Task 6 — pointer/fn-pointer `{}` and float `{x}` (v237 -> v238, 2026-09-25)
+## Task 6 — pointer/fn-pointer `{}` and float `{x}` (v237 -> v238; fix r1 v238 -> v239, 2026-09-25)
 
 **What.** `{}` on a one-pointer now prints official Zig 0.15.2's actual form
 (`Writer.zig:1337-1352`; frozen rows G1/G2/G5, operator ruling R3): the
@@ -22,9 +22,15 @@ exponent written by the existing mangled `std.fmt.printI32`. The Task-4 field
 closure is extended for pointer / fn-pointer / many-pointer FIELDS (Zig's
 `{any}` pointer route — `struct { f: fn() void }` →
 `.{ .f = fn () void@addr }`, `[*]i32` field → `i32@addr`, `*?i32` field →
-`?i32@addr`), and a pre-existing "typedef used before emitted" type-ordering
-defect is fixed for pointer members whose C type IS the pointee typedef (a
-`fn_type` value-embedding edge plus `emitTypeDefOnce`/`emitTypeDeps`/
+`?i32@addr`). **Fix round 1 (review Critical 1):** delegation is a ONE-pointer
+rule — Zig's `.many, .c` arm is `printAddress`, whose `@typeName(child)` is
+container-qualified for a named aggregate (`main.S@addr`), so a many-pointer
+field takes the structural name route only and `[*]S`/`[*]E`/`[*]TU`/`[*]U`/
+`[*]PS` fields reject `error[3063]` (they previously silently delegated to the
+pointee printer or crashed on deref); `[*]i32` and other exactly-nameable
+children still print `T@addr`. A pre-existing "typedef used before emitted"
+type-ordering defect is fixed for pointer members whose C type IS the pointee
+typedef (a `fn_type` value-embedding edge plus `emitTypeDefOnce`/`emitTypeDeps`/
 `emitPointeeDep`/`emitDepMember`; the four special-types sub-pass emitters were
 factored onto the shared guarded writer, dedup via the pass's `seen` map).
 
@@ -39,7 +45,8 @@ address. The 18 oracle rows are byte-identical to the Zig-0.15.2 twin
 marker. Standalone `repro/print_ptr_hexfloat.z98` (same rows, `cmp` == golden).
 The Task-4 reject fixture `print_aggregate_noprinter_reject_xmod` lost its
 one-pointer-field and tuple-pointer sites (they are now pinned positive);
-census **7 -> 5 x `error[3063]`**, rc 2 / 0 `.c` / 0 x `error[3013]`.
+census **7 -> 5 x `error[3063]`**, then **5 -> 7 at fix round 1** (the two new
+many-pointer-to-aggregate/enum sites), rc 2 / 0 `.c` / 0 x `error[3013]`.
 
 **Gates.** Fixed point hop1 `feeabb7d0c294700c0069a9b705ee59c` != hop2 == hop3
 == **`f8a549c1a211e5efe638dbd7de2b20aa`**. **4-MD5 emitted-C UNCHANGED**
@@ -53,13 +60,24 @@ runtime gate **239 PASS / 0 FAIL** (pin 238 -> 239); example matrix **24/24**;
 `check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK; seed stays
 **v84** (R2-print).
 
+**Fix round 1 (review Critical 1) gates.** Fixed point hop1
+`e621c6588be3667c95ce7a03d9e3de3a` != hop2 == hop3 ==
+**`a4bb2250c0a172cf95aee419890783f8`**. **4-MD5 emitted-C UNCHANGED** (8/8).
+`stdlib_print_ptr_hexfloat_xmod` re-run 3x PASS (golden byte-unchanged — the
+`[*]i32` `mf` row is the positive control); reject census 7 x `error[3063]`,
+rc 2 / 0 `.c` / 0 x `error[3013]`; standalone `repro/print_ptr_hexfloat.z98` ==
+golden.
+
 **Bounded residuals (documented, not fixed).**
 
 1. A composite pointee name containing a NAMED struct/enum/union (`*?S`,
    `**S`, `*?E`) rejects `error[3063]`: Zig's `@typeName` container-qualifies
-   those (`main.S`) and Z98 has no faithful spelling. A DIRECT pointer to an
+   those (`main.S`) and Z98 has no faithful spelling. A DIRECT one-pointer to an
    enum still delegates to `.member`; `**i32`/`*?i32`/`*[]const u8`/`*E` all
-   print (oracle-verified).
+   print (oracle-verified). **Fix round 1:** a MANY-pointer field to a named
+   aggregate/enum (`[*]S`/`[*]E`/`[*]TU`/`[*]U`/`[*]PS`) rejects `error[3063]`
+   for the same reason (Zig prints `main.S@addr`); `[*]i32` still prints
+   `i32@addr` (positive fixture `mf` row).
 2. A one-pointer-to-array aggregate FIELD rejects `error[3063]` (Zig prints it
    as a slice `{ 1, 2, 3 }` — the array/slice residual); the one-pointer-to-
    array ARGUMENT stays 3013 and `*const [N]u8 {s}`/`{x}` stays 3063 (Q3).

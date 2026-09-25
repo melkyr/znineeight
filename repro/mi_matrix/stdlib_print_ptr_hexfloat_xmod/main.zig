@@ -48,7 +48,10 @@
 // Bounded residuals NOT pinned here (documented): a composite pointee name
 // that contains a NAMED enum/struct/union rejects the argument with
 // error[3063] (`*?S`, `**S`, `*?E`; Zig container-qualifies those names, e.g.
-// `main.S`); a one-pointer-to-array field rejects (print as slice residual);
+// `main.S`); so does a MANY-pointer FIELD to a named aggregate/enum/tuple/
+// packed (`[*]S`/`[*]E`; Zig prints `main.S@addr`, fix round 1 / review
+// Critical 1) — `[*]i32` still prints `i32@addr` and is pinned by the `mf`
+// row; a one-pointer-to-array field rejects (print as slice residual);
 // float denormal/nan/inf cannot be built via a Z98 literal (`5e-324` parses
 // as 0.0; `@bitCast` rejects f64 - pre-existing), so d8 is computed at runtime.
 const std = @import("std");

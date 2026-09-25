@@ -1080,16 +1080,26 @@ fn printFmtPtrPointeeOk(reg: *type_mod.TypeRegistry, tid: u32, depth: u32) bool 
         if (@intCast(usize, ptid) >= reg.types_len) return false;
         var pk = reg.types_items[@intCast(usize, ptid)].kind;
         if (pk == type_mod.TypeKind.array_type) return false;
-        return printFmtPtrRouteOk(reg, pk, ptid, depth);
+        return printFmtPtrRouteOk(reg, pk, ptid, depth, @intCast(u8, 0));
     }
     return false;
 }
 
-fn printFmtPtrRouteOk(reg: *type_mod.TypeRegistry, pk: type_mod.TypeKind, ptid: u32, depth: u32) bool {
-    if (pk == type_mod.TypeKind.struct_type or pk == type_mod.TypeKind.union_type or pk == type_mod.TypeKind.tagged_union_type or pk == type_mod.TypeKind.tuple_type or pk == type_mod.TypeKind.packed_union_type) {
-        return printFmtAggFieldsOk(reg, ptid, depth + @intCast(u32, 1));
+// Task 6 fix round 1 (review Critical 1): `is_many` gates the pointee
+// delegation. Zig delegates only for a ONE-pointer (`.one`, `Writer.zig:1337`);
+// a `.many` pointer calls `printAddress`, whose `@typeName(child)` is
+// container-qualified for named aggregates (`main.S@addr`) and has no exact Z98
+// spelling — so a many-pointer takes the structural name route only, and an
+// aggregate/enum child rejects `error[3063]` (the container-qualification
+// residual; scalar/composite child names like `i32` / `[*]i32` / `?i32` /
+// `fn () void` still render exactly).
+fn printFmtPtrRouteOk(reg: *type_mod.TypeRegistry, pk: type_mod.TypeKind, ptid: u32, depth: u32, is_many: u8) bool {
+    if (is_many == @intCast(u8, 0)) {
+        if (pk == type_mod.TypeKind.struct_type or pk == type_mod.TypeKind.union_type or pk == type_mod.TypeKind.tagged_union_type or pk == type_mod.TypeKind.tuple_type or pk == type_mod.TypeKind.packed_union_type) {
+            return printFmtAggFieldsOk(reg, ptid, depth + @intCast(u32, 1));
+        }
+        if (pk == type_mod.TypeKind.enum_type) return true;
     }
-    if (pk == type_mod.TypeKind.enum_type) return true;
     return printFmtPointeeNameOk(reg, ptid, depth + @intCast(u32, 1));
 }
 
@@ -1211,16 +1221,21 @@ fn printFmtAggFieldKindOk(reg: *type_mod.TypeRegistry, tid: u32, is_packed: u8, 
         return true;
     }
     if (kind == type_mod.TypeKind.ptr_type or kind == type_mod.TypeKind.many_ptr_type) {
-        // Task 6: pointer / fn-pointer fields. `{any}` field semantics use the
-        // same pointer route (address for non-delegating pointees, pointee
-        // delegation otherwise); a one-pointer-to-array field would print as a
+        // Task 6: pointer / fn-pointer fields. `{any}` field semantics route a
+        // ONE-pointer through the pointee printer (`printFmtAggFieldsOk`) or
+        // the `T@hex` name route; a MANY-pointer is `printAddress` only (the
+        // `T@hex` name route) — its aggregate/enum child needs Zig's
+        // container-qualified `@typeName` and rejects `error[3063]` (fix round
+        // 1 / review Critical 1). A one-pointer-to-array field would print as a
         // slice (`{ 1, 2, 3 }`) -> the array/slice residual rejects.
         if (is_packed != @intCast(u8, 0)) return false;
         if (type_mod.typeRegistryGetPointeeType(reg, tid)) |ptid| {
             if (@intCast(usize, ptid) >= reg.types_len) return false;
             var pk = reg.types_items[@intCast(usize, ptid)].kind;
             if (kind == type_mod.TypeKind.ptr_type and pk == type_mod.TypeKind.array_type) return false;
-            return printFmtPtrRouteOk(reg, pk, ptid, depth);
+            var is_many: u8 = @intCast(u8, 0);
+            if (kind == type_mod.TypeKind.many_ptr_type) is_many = @intCast(u8, 1);
+            return printFmtPtrRouteOk(reg, pk, ptid, depth, is_many);
         }
         return false;
     }

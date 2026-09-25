@@ -5872,7 +5872,8 @@ fn emitAggValue(emitter: *C89Emitter, tid: u32, access: []const u8) void {
     var ty = emitter.registry.types_items[@intCast(usize, tid)];
     if (ty.kind == TypeKind.ptr_type or ty.kind == TypeKind.many_ptr_type) {
         // Task 6: pointer / fn-pointer field -> the Zig `{any}` pointer route
-        // (address or pointee delegation), nested at depth d - 1.
+        // (one-pointer: address or pointee delegation; many-pointer: address
+        // only), nested at depth d - 1.
         emitPtrValuePrint(emitter, tid, @intCast(u8, 0), @intCast(u32, 0), access, @intCast(u8, 0));
     } else if (printAggKind(ty.kind)) {
         var pname = aggPrinterName(emitter, tid);
@@ -6167,8 +6168,11 @@ fn emitNamePrinterRec(emitter: *C89Emitter, emitted: *U32ToU32Map, tid: u32) voi
 //     the 3013/3063 residual);
 //   - everything else -> `@typeName(child) ++ "@"` + `printInt(addr, 16,
 //     .lower)` — NO `0x` prefix (operator ruling R3);
-//   - many/c pointers (`{any}` field semantics) -> `printAddress`: the same
-//     `T@hex` form for their child name.
+//   - many/c pointers (`{any}` field semantics) -> `printAddress` ONLY, even
+//     when the child is an aggregate/enum: the child name is always `@typeName`
+//     (container-qualified for named types), so a many-pointer never delegates;
+//     aggregate/enum children are the 3063 container-qualification residual
+//     (fix round 1 / review Critical 1).
 // The compiler knows the child type, so the `T@` prefix is a compile-time C
 // string and only the address is runtime (printed through the EXISTING
 // std.fmt `printHexU64`; no std_fmt addition -> the 4-MD5 pins stay put).
@@ -6348,28 +6352,39 @@ fn emitPtrValueExpr(emitter: *C89Emitter, is_temp: u8, temp: u32, access: []cons
 fn emitPtrValuePrint(emitter: *C89Emitter, tid: u32, is_temp: u8, temp: u32, access: []const u8, is_top: u8) void {
     if (type_mod.typeRegistryGetPointeeType(emitter.registry, tid)) |ptid| {
         if (@intCast(usize, ptid) >= emitter.registry.types_len) return;
+        // Task 6 fix round 1 (review Critical 1): delegation to a pointee
+        // printer is a ONE-POINTER rule (`Writer.zig:1337-1345`). Zig's
+        // `.many, .c` arm calls `printAddress`, which prints
+        // `@typeName(child)` — container-qualified for named aggregates
+        // (`main.S@addr`) — so a many-pointer NEVER delegates; it takes the
+        // name route below, and an aggregate/enum child then fails to render
+        // and the mirrored validator rejects it `error[3063]`.
+        var ptr_kind = emitter.registry.types_items[@intCast(usize, tid)].kind;
+        var is_many: u8 = if (ptr_kind == TypeKind.many_ptr_type) @intCast(u8, 1) else @intCast(u8, 0);
         var pk = emitter.registry.types_items[@intCast(usize, ptid)].kind;
-        if (printAggKind(pk)) {
-            var pname = aggPrinterName(emitter, ptid);
-            bufferedWriterWrite(&emitter.writer, pname);
-            bufferedWriterWrite(&emitter.writer, "(*(");
-            emitPtrValueExpr(emitter, is_temp, temp, access);
-            bufferedWriterWrite(&emitter.writer, "), ");
-            if (is_top != @intCast(u8, 0)) {
-                emitU64Dec(emitter, @intCast(u64, kPrintAggMaxDepth));
-            } else {
-                bufferedWriterWrite(&emitter.writer, "d - 1");
+        if (is_many == @intCast(u8, 0)) {
+            if (printAggKind(pk)) {
+                var pname = aggPrinterName(emitter, ptid);
+                bufferedWriterWrite(&emitter.writer, pname);
+                bufferedWriterWrite(&emitter.writer, "(*(");
+                emitPtrValueExpr(emitter, is_temp, temp, access);
+                bufferedWriterWrite(&emitter.writer, "), ");
+                if (is_top != @intCast(u8, 0)) {
+                    emitU64Dec(emitter, @intCast(u64, kPrintAggMaxDepth));
+                } else {
+                    bufferedWriterWrite(&emitter.writer, "d - 1");
+                }
+                bufferedWriterWrite(&emitter.writer, ");\n");
+                return;
             }
-            bufferedWriterWrite(&emitter.writer, ");\n");
-            return;
-        }
-        if (pk == TypeKind.enum_type) {
-            var nname = namePrinterName(emitter, ptid);
-            bufferedWriterWrite(&emitter.writer, nname);
-            bufferedWriterWrite(&emitter.writer, "(*(");
-            emitPtrValueExpr(emitter, is_temp, temp, access);
-            bufferedWriterWrite(&emitter.writer, "));\n");
-            return;
+            if (pk == TypeKind.enum_type) {
+                var nname = namePrinterName(emitter, ptid);
+                bufferedWriterWrite(&emitter.writer, nname);
+                bufferedWriterWrite(&emitter.writer, "(*(");
+                emitPtrValueExpr(emitter, is_temp, temp, access);
+                bufferedWriterWrite(&emitter.writer, "));\n");
+                return;
+            }
         }
         var nb: [kZigPrintNameCap]u8 = undefined;
         var npos: usize = @intCast(usize, 0);

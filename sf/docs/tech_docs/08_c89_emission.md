@@ -954,7 +954,11 @@ exact).
   `struct { f: fn() void }` → `.{ .f = fn () void@addr }`, `[*]i32` field →
   `i32@addr` (`Writer.zig:1346-1352` + `printAddress`). A one-pointer-to-array
   field would print as a slice (`{ 1, 2, 3 }`) — the array/slice residual
-  rejects the aggregate `error[3063]`.
+  rejects the aggregate `error[3063]`. **Fix round 1 (review Critical 1):**
+  delegation is a ONE-pointer rule; a many-pointer field is `printAddress`-only
+  (`is_many` gate in `emitPtrValuePrint` + `printFmtPtrRouteOk`), so
+  `[*]S`/`[*]E`/`[*]TU`/`[*]U`/`[*]PS` fields reject `error[3063]` (Zig prints
+  the container-qualified `main.S@addr`) while `[*]i32` keeps `i32@addr`.
 - **Type-dependency fix (pre-existing ordering defect):** a pointer member's C
   type IS its pointee's typedef (`*enum` → `E*`, `*fn` → the fn-pointer
   typedef), but the topological sort had no edge, so a value-shared type could
@@ -983,9 +987,12 @@ exact).
 
 **Bounded residuals (Task 6, Zig-accepted / pre-existing):** composite pointee
 names with a named aggregate (`*?S`, `**S`, `*?E`) reject `error[3063]`; a
-one-pointer-to-array field rejects (slice residual); float-literal
-subnormals/ULP drift above; `*const fn(...)` (the double-pointer spelling)
-remains the pre-existing assignment anomaly.
+MANY-pointer field to a named aggregate/enum/tuple/packed (`[*]S`, `[*]E`, ...)
+rejects `error[3063]` (container-qualified `@typeName`; fix round 1 — only
+`[*] <exactly-nameable child>` prints `T@addr`); a one-pointer-to-array field
+rejects (slice residual); float-literal subnormals/ULP drift above;
+`*const fn(...)` (the double-pointer spelling) remains the pre-existing
+assignment anomaly.
 
 ---
 

@@ -16,6 +16,13 @@
 // struct/packed union NESTED inside another aggregate also rejects — its
 // packed-VALUE C model has no working field route (pre-existing; out of Task 4
 // scope).
+// Task 6 fix round 1 (review Critical 1): a MANY-pointer field never delegates
+// to the pointee printer — Zig's `.many, .c` arm calls `printAddress`, whose
+// `@typeName(child)` is container-qualified for named aggregates
+// (`main.S@addr`), so `[*]S`/`[*]E` aggregate FIELDS reject `error[3063]`
+// (sites 6/7). A many-pointer to a scalar/composite child whose name renders
+// exactly (`[*]i32`, `[*][]u8`, ...) still prints (`i32@addr`); the positive
+// control `mf` row (`[*]i32` field) is pinned in stdlib_print_ptr_hexfloat_xmod.
 //
 // Sites (each exactly one error[3063]):
 //   1. struct with an array field          (Zig: prints `{ 1, 2, 3 }`)
@@ -23,6 +30,8 @@
 //   3. struct with an optional field       (Zig: prints payload/`null`)
 //   4. packed struct with a packed-struct field (Zig: prints nested)
 //   5. non-packed struct with a packed-struct field (R8; Zig: prints nested)
+//   6. struct with a many-pointer-to-struct field (Zig: `main.S@addr`) [fix r1]
+//   7. struct with a many-pointer-to-enum field   (Zig: `main.E@addr`) [fix r1]
 //
 // Negative control that is NOT here: an untagged auto union with unsupported
 // fields still prints `.{ ... }` (the printer never reads a field); the positive
@@ -34,6 +43,10 @@ const OptS = struct { o: ?i32, b: i32 };
 const PS2 = packed struct { x: u3 };
 const PackedNested = packed struct { a: PS2, b: u5 };
 const NonPackedPacked = struct { p: PS2, b: i32 };
+const S = struct { a: i32, b: i32 };
+const E = enum { x, y, z };
+const ManyS = struct { p: [*]S, n: i32 };
+const ManyE = struct { p: [*]E, n: i32 };
 
 pub fn main() void {
     var x: i32 = 5;
@@ -52,4 +65,10 @@ pub fn main() void {
 
     var np = NonPackedPacked{ .p = PS2{ .x = 1 }, .b = 2 };
     std.io.print("np={}\n", .{np});
+
+    var ms = ManyS{ .p = @intToPtr([*]S, 0x1100), .n = 6 };
+    std.io.print("ms={}\n", .{ms});
+
+    var me = ManyE{ .p = @intToPtr([*]E, 0x1200), .n = 7 };
+    std.io.print("me={}\n", .{me});
 }
