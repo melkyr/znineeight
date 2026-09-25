@@ -4,9 +4,12 @@
 // the ARGUMENT with error[3063] at the argument span (rc 2, 0 .c), rather than
 // emitting C that cannot compile. Official Zig 0.15.2 ACCEPTS every site
 // (verified with a std.debug.print twin): arrays/slices print `{ ... }`, enums
-// `.member`, optionals payload/`null`, pointers `T@addr`. Tasks 5/6 extend the
-// closure for enum/error-set/pointer fields; arrays/slices/optionals/error-
-// unions are a standing bounded residual with no owning task.
+// `.member`, optionals payload/`null`, pointers `T@addr`, nested packed prints
+// `.{ ... }`. Tasks 5/6 extend the closure for enum/error-set/pointer fields;
+// arrays/slices/optionals/error-unions are a standing bounded residual with no
+// owning task. Controller ruling R8 (fix round 1): a packed struct/packed
+// union NESTED inside another aggregate also rejects — its packed-VALUE C model
+// has no working field route (pre-existing; out of Task 4 scope).
 //
 // Sites (each exactly one error[3063]):
 //   1. struct with an array field          (Zig: prints `{ 1, 2, 3 }`)
@@ -16,6 +19,7 @@
 //   5. struct with an optional field       (Zig: prints payload/`null`)
 //   6. packed struct with a packed-struct field (Zig: prints nested)
 //   7. tuple with a pointer element        (Zig: prints `i32@...`) [Task 6]
+//   8. non-packed struct with a packed-struct field (R8; Zig: prints nested)
 //
 // Negative control that is NOT here: an untagged auto union with unsupported
 // fields still prints `.{ ... }` (the printer never reads a field); the positive
@@ -29,6 +33,7 @@ const PtrS = struct { p: *i32, b: i32 };
 const OptS = struct { o: ?i32, b: i32 };
 const PS2 = packed struct { x: u3 };
 const PackedNested = packed struct { a: PS2, b: u5 };
+const NonPackedPacked = struct { p: PS2, b: i32 };
 
 pub fn main() void {
     var x: i32 = 5;
@@ -54,4 +59,7 @@ pub fn main() void {
     var q: *i32 = &x;
     var t = .{ q, 3 };
     std.io.print("t={}\n", .{t});
+
+    var np = NonPackedPacked{ .p = PS2{ .x = 1 }, .b = 2 };
+    std.io.print("np={}\n", .{np});
 }

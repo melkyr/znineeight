@@ -9,8 +9,8 @@
 // `.{ ... }`, packed-union all-fields, nested aggregates, the
 // std.fmt.default_max_depth = 3 recursion cap (4th nested level `.{ ... }`),
 // mixed scalar field widths/signedness, a struct value passed as a parameter, a
-// module-level struct global, a direct tuple-literal argument, and a nested
-// tuple.
+// module-level struct global, module-level tuple `var`/`const` globals (fix
+// round 1 Critical 1), a direct tuple-literal argument, and a nested tuple.
 //
 // Golden contract (rc 0, 3x byte-exact, Zig-0.15.2-twin byte-identical):
 //   pair=.{ .a = 1, .b = 2 }
@@ -27,6 +27,7 @@
 //   depth=.{ .a = .{ .a = .{ .a = .{ ... } } } }
 //   param=.{ .a = 3, .b = 4 }
 //   glob=.{ .a = 11, .b = 12 }
+//   gtupv=.{ 11, 22 } gtupc=.{ 33, 44 }
 //   tdirect=.{ 5, 6 }
 //   done
 const std = @import("std");
@@ -48,6 +49,12 @@ const L2 = struct { a: L3 };
 const L1 = struct { a: L2 };
 
 var g_pair = Pair{ .a = 11, .b = 12 };
+var g_tupv = .{ 11, 22 };
+const g_tupc = .{ 33, 44 };
+
+fn showTuple() void {
+    std.io.print("gtupv={} gtupc={}\n", .{ g_tupv, g_tupc });
+}
 
 fn showPair(p: Pair) void {
     std.io.print("param={}\n", .{p});
@@ -93,6 +100,7 @@ pub fn main() void {
     std.io.print("depth={}\n", .{depth});
     showPair(Pair{ .a = 3, .b = 4 });
     std.io.print("glob={}\n", .{g_pair});
+    showTuple();
     std.io.print("tdirect={}\n", .{ .{ 5, 6 } });
     std.io.write("done\n");
 }

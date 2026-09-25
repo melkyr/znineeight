@@ -1,4 +1,43 @@
-# mi_matrix corpus — expected-fail manifest (v234 2026-09-25)
+# mi_matrix corpus — expected-fail manifest (v235 2026-09-25)
+
+## Task 4 fix round 1 — tuple globals + nested-packed reject (v234 -> v235, 2026-09-25)
+
+**Critical 1 (module-level inferred tuple var/const emitted uncompilable C).**
+`front_resolution.zig`'s module-var repeat loop re-resolves every global
+initializer; `semanticAnalyzerResolveTupleLiteral` created a FRESH tuple type per
+pass (`typeRegistryGetOrCreateTuple` never dedupes), so the global symbol kept
+pass 1's `Tup_N` while lowering used a later `Tup_M` and `__module_init` emitted a
+cross-type struct assignment (`var g = .{ 11, 22 };` + `{}` -> gcc `incompatible
+types when assigning to type 'zT_…_Tup_327' from type 'zT_…_Tup_328'`; same for
+`const`, and with no print at all). Fix
+(`sf/src/semantic_analyzer.zig`): tuple-literal resolution is now **idempotent per
+node** — it returns the type already recorded in the resolved-type table (anything
+but `TYPE_UNDEFINED`) before creating a new tuple, so the global symbol, the
+lowered temp and the generated printer share ONE C type. New positive fixture rows:
+module-level `var g_tupv = .{ 11, 22 };` / `const g_tupc = .{ 33, 44 };` printed
+through `showTuple()` (read from a separate function), golden lines
+`gtupv=.{ 11, 22 } gtupc=.{ 33, 44 }`; `stdlib_print_aggregate_xmod` golden
+re-captured (454 -> 490 bytes, still byte-identical to the Zig-0.15.2 twin) and the
+standalone `repro/print_aggregate.z98` gained the same rows.
+
+**Important 2 / controller ruling R8 (nested packed aggregates).** A packed
+struct/packed union field inside another aggregate was admitted by the validator
+(the parent's `is_packed` only covered packed parents), and the generated printer
+then walked the pre-existing broken packed-VALUE C model (gcc `invalid use of void
+expression` / unknown carrier type; the no-print variant fails on the seed compiler
+too — pre-existing, out of Task 4 scope). R8: `printFmtAggFieldKindOk`
+(`sf/src/lower.zig`) now rejects a nested `packed struct` / `packed union` field
+with `error[3063]` at the aggregate argument. New reject site 8 in
+`print_aggregate_noprinter_reject_xmod` (`const NonPackedPacked = struct { p: PS2,
+b: i32 };`, `np={}`; Zig 0.15.2 accepts and prints `np=.{ .p = .{ .x = 1 }, .b = 2
+}` — oracle-twin verified). Census is now **8 x `error[3063]`, 0 other errors, rc
+2 / 0 `.c`**.
+
+**Gates.** Fixed point hop1 `fd6a4e021653912a25f4ed68af2ec779` != hop2 == hop3 ==
+**`b1680ac74ec5dd5ca68843ff6fc5b93a`**. **4-MD5 emitted-C UNCHANGED** (gol
+`9e0b708e…` / lisp `dfa69f32…` / json `a4a73461…` / mud `2e92c1f2…`, 8/8). The
+positive fixture + standalone repro are byte-identical to the oracle twin; reject
+census 8 x `error[3063]`. Seed stays **v84** (R2-print).
 
 ## Task 4 (I/F) — aggregate and tuple printers (v233 -> v234, 2026-09-25)
 

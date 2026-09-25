@@ -4727,6 +4727,19 @@ fn semanticAnalyzerResolveTupleLiteral(self: *SemanticAnalyzer, node_idx: u32) u
     var saved = self._stub_0;
      var ec_n = @intCast(usize, ast_mod.astStoreNodeExtraChildCount(self.store, node_idx));
     if (ec_n == @intCast(usize, 0)) { self._stub_0 = saved; return type_mod.TYPE_VOID; }
+    // Fix round 1 (Critical 1): idempotent per node. The module-var resolution
+    // loop re-resolves every global initializer; the old code created a FRESH
+    // tuple type on each pass (`typeRegistryGetOrCreateTuple` never dedupes), so
+    // the global symbol kept pass 1's `Tup_N` while lowering used a later
+    // `Tup_M` and `__module_init` emitted a cross-type struct assignment (gcc
+    // `incompatible types`). Reusing the recorded type keeps the global symbol,
+    // the lowered temp and the generated printer on ONE C type.
+    if (rtt_mod.resolvedTypeTableGet(self.type_table, node_idx)) |existing| {
+        if (existing != type_mod.TYPE_UNDEFINED) {
+            self._stub_0 = saved;
+            return existing;
+        }
+    }
     // Task 4 (z98-print-formatting): resolve every element BEFORE appending its
     // type to `xt`. A nested tuple literal appends its own element types while it
     // resolves, so the old resolve+append-interleaved loop left the outer tuple

@@ -1068,6 +1068,9 @@ fn printFmtArgIsTypeValue(self: *LirLowerer, arg_node_idx: u32) bool {
 // `emitPackedLoadBitfield` extraction limit. Enum/error-set/pointer fields are
 // owned by Tasks 5/6, arrays/slices/optionals/error-unions/void by no task:
 // they reject the aggregate argument with error[3063] (bounded residual).
+// Controller ruling R8 (fix round 1): a packed struct/packed union NESTED in
+// another aggregate also rejects — its packed-value C model has no working
+// field route (pre-existing; out of Task 4 scope).
 fn printFmtAggFieldKindOk(reg: *type_mod.TypeRegistry, tid: u32, is_packed: u8, depth: u32) bool {
     if (depth > 16) return false;
     if (@intCast(usize, tid) >= reg.types_len) return false;
@@ -1086,6 +1089,14 @@ fn printFmtAggFieldKindOk(reg: *type_mod.TypeRegistry, tid: u32, is_packed: u8, 
     }
     if (is_packed != @intCast(u8, 0)) return false;
     if (kind == type_mod.TypeKind.struct_type or kind == type_mod.TypeKind.union_type or kind == type_mod.TypeKind.tagged_union_type or kind == type_mod.TypeKind.tuple_type or kind == type_mod.TypeKind.packed_union_type) {
+        // Controller ruling R8 (fix round 1): a packed struct/packed union
+        // nested inside another aggregate's printer walks the pre-existing
+        // broken packed-VALUE C model (a packed struct is a byte carrier with
+        // no field access; gcc `invalid use of void expression`). Reject the
+        // aggregate argument instead of emitting uncompilable C. Fixing the
+        // packed C model is out of Task 4 scope.
+        if (kind == type_mod.TypeKind.packed_union_type) return false;
+        if (kind == type_mod.TypeKind.struct_type and type_mod.typeRegistryIsPacked(reg, tid)) return false;
         return printFmtAggFieldsOk(reg, tid, depth + @intCast(u32, 1));
     }
     return false;
