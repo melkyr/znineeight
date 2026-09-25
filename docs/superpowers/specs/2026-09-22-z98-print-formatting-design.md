@@ -205,6 +205,26 @@ error set, optional, slice, array, packed aggregate). Float `{x}` is
 > boundaries below from the reviewed per-case table
 > (`.superpowers/sdd/2026-09-22-z98-print-formatting-plan/task-0-report.md`).
 
+> **Correction (final whole-branch review fix wave, 2026-09-25):** two
+> post-closeout findings. **(1)** An untyped `integer_literal` print argument is
+> no longer forced down the 32-bit signed route: `lowerPrintArgExact`
+> (`sf/src/lower.zig`) materialises the argument's exact value into its
+> value-chosen carrier (`comptimeIntUntypedType`: `i32` when it fits, else
+> `u32`/`i64`/`u64`, with literal-only arithmetic folded exactly like the
+> unannotated-local slot type), so `3000000000` / `b2d05e00` / `-3000000000` /
+> `18446744073709551615` each match the Zig 0.15.2 twin; values that fit `i32`
+> keep the pre-fix temp and emit byte-identical C (fixture
+> `repro/mi_matrix/stdlib_print_untyped_lit_xmod`). **(2) R11 (operator
+> ruling):** a recursive aggregate (`struct Node { v: i32, next: *Node }`) or a
+> mutually recursive pair (`A { b: *B }` / `B { a: *A }`) stays a documented
+> bounded residual rejecting `error[3063]` where Zig 0.15.2 prints the nested
+> `.{ .next = .{ ... } }` form; no recursive-printer machinery is implemented.
+> The latent emitter risk is recorded with the residual: `emitAggPrinterRec`
+> emits printers in post-order with no forward declarations, so relaxing the
+> validator would first need forward declarations plus a recursion strategy (a
+> self-cycle would not terminate; a mutual `A -> B -> A` cycle has no valid
+> post-order). Fixture `repro/mi_matrix/print_recursive_aggregate_reject_xmod`.
+
 - `error[3013]` `ERR_3013_INVALID_PRINT_SPECIFIER` — a specifier that is
   invalid **for the argument type** (Zig rejects): `{c}` on a non-`u8`
   (all non-u8 integer kinds incl. `c_char`/arbitrary-width and

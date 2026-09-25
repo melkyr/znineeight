@@ -1,4 +1,48 @@
-# mi_matrix corpus — expected-fail manifest (v240 2026-09-25)
+# mi_matrix corpus — expected-fail manifest (v241 2026-09-25)
+
+## Final whole-branch review fix wave — print-formatting (v240 -> v241, 2026-09-25)
+
+**What.** Two Important findings from the final whole-branch review of
+`9cd209d2..42662835`; both fixed in the one fix wave.
+**(1) Big untyped integer literals silently printed wrong values** (`FIX`, commit
+`cdae8b36`). `printFnSourceName` forced the `integer_literal` route to 32-bit signed while
+the emitted C carrier is value-chosen, so on the v85 compiler
+`print("{}", .{3000000000})` -> `-1294967296`, `{x}` -> `-4d2fa200`,
+`0 - 3000000000` -> `1294967296` (32-bit unsigned wrap), `18446744073709551615` -> `-1`
+(Zig 0.15.2: `3000000000` / `b2d05e00` / `-3000000000` / `18446744073709551615`).
+The new `foldPrintArgIntExact`/`lowerPrintArgExact` (`sf/src/lower.zig`) materialise an exact
+untyped integer print argument into the carrier of its value (`comptimeIntUntypedType`:
+i32 when it fits, else u32/i64/u64; fold table -> FITS_ARG literal/negate/paren -> the exact
+ComptimeInt evaluator for literal-only arithmetic); the emitter dispatches on that carrier.
+Values that fit i32 keep the legacy temp (in-range literals byte-identical C); a literal-only
+exact value outside the 64-bit window (`1 << 100`) is a clean `error[3000]` instead of a
+silent wrap. New positive fixture `repro/mi_matrix/stdlib_print_untyped_lit_xmod` (13 rows,
+golden 3× deterministic, rc 0, Zig-0.15.2 twin byte-identical; stdlib pin 239 -> 240).
+**(2) Recursive aggregates (operator ruling R11, DOCUMENTED bounded residual).** `struct Node
+{ v: i32, next: *Node }` and the mutual `A { b: *B }` / `B { a: *A }` pair reject `{}` with
+`error[3063]` (rc 2 / 0 `.c`) at the aggregate-field validator's depth cap; Zig 0.15.2 accepts
+and prints the nested `.{ .next = .{ ... } }` form (cycle terminated at
+`std.fmt.default_max_depth`). No recursive-printer machinery is implemented. **Latent emitter
+risk recorded with R11:** `emitAggPrinterRec` emits printers in post-order (dependency order)
+with NO forward declarations, so relaxing the validator would first need forward declarations
+plus a recursion strategy — a self-cycle would not terminate at emission time and a mutual
+`A -> B -> A` cycle has no valid post-order. New reject fixture
+`repro/mi_matrix/print_recursive_aggregate_reject_xmod` (2 × `error[3063]`, rc 2 / 0 `.c`;
+Zig twin accepted-and-printed). The consolidated user-facing residual list is
+`docs/reference/Language_Spec_Z98.md` §4.
+
+**Gates (fix compiler `/tmp/fixwave/g1/zig1_5_clean`).** Self-emission rc 0 / 48 `.c` + 48
+`.h` / 0 PANIC; pre-rotation (v85 seed) and post-rotation (v86 seed) closure both **hop1 ==
+hop2 == `5d3ca7256a7e43bb7f9685a34365865a`**; 4-MD5 emitted-C **UNCHANGED 8/8** (gol
+`9e0b708e…` / lisp `dfa69f32…` / json `a4a73461…` / mud `2e92c1f2…`); corpus `-s0`
+**1029 = 887 OK / 46 GREEN / 96 FAIL / 0 ICE / 0 CRASH** (join-diff vs the v85 compiler over
+all 1029 dirs **empty**; vs the Task-7 universe the only additions are the two new fixtures,
+positive OK + reject FAIL); stdlib runtime gate **240 PASS / 0 FAIL**; example matrix
+**24/24**; `check_emit_support.sh` **7/7**; `verify_upgraded.sh` **CLOSEOUT OK**; build_test
+**0/9** (pre-existing retired-zig0 baseline). **Fixed point `96c723914ec8b48fddc2a1d039e49141`
+-> `5d3ca7256a7e43bb7f9685a34365865a`**; **Seed ROTATED v85 -> v86** (archive md5
+`c544e251b044aef37083ca846d65be05` -> `28c8ab28662a990848eb980e112457b2`, archived binary
+md5 = fixed point, `gen/` 45 `.c` + 46 `.h` = 9762739 bytes).
 
 ## Task 7 — print-formatting whole-plan closeout (v239 -> v240, 2026-09-25)
 
