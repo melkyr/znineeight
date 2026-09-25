@@ -1,4 +1,21 @@
-# mi_matrix corpus — expected-fail manifest (v231 2026-09-25)
+# mi_matrix corpus — expected-fail manifest (v232 2026-09-25)
+
+## Task 2 ruling applied — 4-MD5 re-baseline + negative-`{x}` oracle confirmed (v231 -> v232, 2026-09-25)
+
+**Operator ruling (2026-09-25).** (1) The Task-2 4-MD5 movement is **re-baselined with runtime
+identity**: the dump carries the changed support C (`std_fmt.zig` `printHexI32/I64` + the lockstep
+`pal_f64_to_str` integral branch), no gate-program call-site route changed, and the runtime stdout is
+byte-identical PRE<->POST for all four. New authoritative rows: gol `c56ff666…` -> **`9e0b708e18b6fd2b15f9b1e84b6b1571`**,
+lisp `573dbd70…` -> **`dfa69f32f33f21b75e8c03e4a151611f`**, json `b01005d4…` -> **`a4a7346153557c9e85a8d112d3866a64`**,
+mud `f9e5bb58…` -> **`2e92c1f22efedd8ae0c6aa2fc2c45d0e`** (+1994 B each; re-dumped 2x with
+`/tmp/t2/build_final/zig1_5_clean`). Runtime identity re-confirmed by execution: gol
+`fcbf7e7cead5082f0a8caadd5a8f0ff9` / lisp `(+ 1 2)` `b3d9f8974da24ddbf9d389f3d7d97322` / json
+`8bda3d5a1ec07d14a301bc343df32bf8` / mud server `66c8f0abb926cca7baf9a0d1692ab318` + client
+`93147d0f0bbd983a9d844fea8b7a6fa7` (all `cmp` byte-identical, rc 0). (2) The negative-`{x}` form is
+the **oracle** form — `-` + hex magnitude (`-10` -> `-a`, `-549755813888` -> `-8000000000`) —
+confirmed against Zig 0.15.2; the plan/7G "signed decimal" prose was imprecise. The Task-2 section
+below keeps the pre-ruling wording with this note; `docs/sf/QUICK_REF.md`'s 4-MD5 table + Task-2
+bullet carry the applied ruling.
 
 ## Task 2 (F) — width/signedness dispatch + `{x}`/float format fixes (v230 -> v231, 2026-09-25)
 
@@ -41,8 +58,8 @@ point** hop1 `da7baa2836e536699257b92d2cb23200` != hop2 == hop3 ==
 -> `2e92c1f2…`) — the dump carries the changed `std_fmt`/`zig_pal` support C (new
 `printHexI32/I64` locals + the PAL integral branch shift type/temp interning), **runtime output
 byte-identical PRE<->POST for all four** (gol `fcbf7e7c…` / lisp `b3d9f897…` / json
-`8bda3d5a…` / mud server `66c8f0ab…` + client `93147d0f…`); per the Task-2 STOP rule the table
-was **NOT re-baselined** — controller ruling pending; corpus `-s0` **1020 = 882 OK / 46 GREEN /
+`8bda3d5a…` / mud server `66c8f0ab…` + client `93147d0f…`); operator-authorized re-baseline with
+runtime identity (2026-09-25 ruling — see the v232 section above); corpus `-s0` **1020 = 882 OK / 46 GREEN /
 92 FAIL / 0 ICE / 0 CRASH** (join-diff vs the Task-1 fix-round classification on the 1019
 common dirs **empty**; the only new dir is `stdlib_print_dispatch_xmod`, OK); stdlib runtime
 gate **235 PASS / 0 FAIL**; example matrix **24/24**; `check_emit_support.sh` **7/7**;
