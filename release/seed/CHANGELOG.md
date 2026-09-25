@@ -36,6 +36,7 @@ binary. Rebuild recipes + full canonical flag-set requirement (`gcc -m32
 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
 -Wno-implicit-function-declaration`; the fixed point reproduces ONLY with
 `-Wall` present) are recorded in `zig1-seed/SEED_README.txt`.
+
 ## 2026-09-25 — seed v85 (HEAD 1a2d8853)
 
 Seed rotation via scripts/seed/archive_seed.sh. Archive layout: top-level dir

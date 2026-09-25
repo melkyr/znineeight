@@ -78,7 +78,9 @@ for the `child_0/child_1/child_2` walk (instead of special-casing
 
 **RED -> GREEN.** Fix-round-3 compiler (`/tmp/t9/build10`, md5 `7c70cf47…`) ->
 fix-round-4 compiler (`/tmp/t9r4/build`, md5 `e7f4c67f…`); every row matches
-the Zig-0.15.2 `std.debug.print` twin:
+the Zig-0.15.2 `std.debug.print` twin except the permissive
+`const s = 5; var x = s;` row, whose Zig twin rejects the untyped `var` while
+Z98 folds and prints `x=5`:
 
 | probe | before (fr3) | after (fr4) |
 |---|---|---|
@@ -471,10 +473,12 @@ golden 3× deterministic, rc 0, Zig-0.15.2 twin byte-identical; stdlib pin 239 -
 `error[3063]` (rc 2 / 0 `.c`) at the aggregate-field validator's depth cap; Zig 0.15.2 accepts
 and prints the nested `.{ .next = .{ ... } }` form (cycle terminated at
 `std.fmt.default_max_depth`). No recursive-printer machinery is implemented. **Latent emitter
-risk recorded with R11:** `emitAggPrinterRec` emits printers in post-order (dependency order)
-with NO forward declarations, so relaxing the validator would first need forward declarations
-plus a recursion strategy — a self-cycle would not terminate at emission time and a mutual
-`A -> B -> A` cycle has no valid post-order. New reject fixture
+risk recorded with R11:** `emitAggPrinterRec`'s `emitted`/`visiting` guard terminates emission
+on any cycle, but the printers are emitted post-order (dependency order)
+with NO forward declarations, so a mutual `A -> B -> A` cycle would reference a not-yet-defined
+printer (a gcc forward-declaration error) and relaxing the validator would first need forward
+declarations (a self-cycle's printer is already legal C — its name is in scope inside its own
+definition). New reject fixture
 `repro/mi_matrix/print_recursive_aggregate_reject_xmod` (2 × `error[3063]`, rc 2 / 0 `.c`;
 Zig twin accepted-and-printed). The consolidated user-facing residual list is
 `docs/reference/Language_Spec_Z98.md` §4.

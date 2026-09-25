@@ -227,11 +227,12 @@ error set, optional, slice, array, packed aggregate). Float `{x}` is
 > mutually recursive pair (`A { b: *B }` / `B { a: *A }`) stays a documented
 > bounded residual rejecting `error[3063]` where Zig 0.15.2 prints the nested
 > `.{ .next = .{ ... } }` form; no recursive-printer machinery is implemented.
-> The latent emitter risk is recorded with the residual: `emitAggPrinterRec`
-> emits printers in post-order with no forward declarations, so relaxing the
-> validator would first need forward declarations plus a recursion strategy (a
-> self-cycle would not terminate; a mutual `A -> B -> A` cycle has no valid
-> post-order). Fixture `repro/mi_matrix/print_recursive_aggregate_reject_xmod`.
+> The latent emitter risk is recorded with the residual: `emitAggPrinterRec`'s
+> `emitted`/`visiting` guard terminates emission on any cycle, but the printers
+> are emitted post-order with no forward declarations, so a mutual
+> `A -> B -> A` cycle would reference a not-yet-defined printer (a gcc
+> forward-declaration error); relaxing the validator would first need forward
+> declarations. Fixture `repro/mi_matrix/print_recursive_aggregate_reject_xmod`.
 
 - `error[3013]` `ERR_3013_INVALID_PRINT_SPECIFIER` — a specifier that is
   invalid **for the argument type** (Zig rejects): `{c}` on a non-`u8`

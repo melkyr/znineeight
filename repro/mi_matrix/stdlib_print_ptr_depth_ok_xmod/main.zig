@@ -11,7 +11,7 @@
 // wrapper typedefs are emitted before use. `s10` is the 10-wrapper control.
 //
 // B2 row (`ep`): `*E511` whose `error{...}` @typeName is EXACTLY 511 bytes
-// (43 x 10-char + 2 x 15-char members: 6 + 460 + 45 + 1 = 511); with the
+// (43 x 10-char + 2 x 15-char members: 6 + 460 + 44 + 1 = 511); with the
 // trailing `@` that is exactly the 512-byte emitter name buffer, so both the
 // validator byte mirror and the emitter accept it. The 512-byte name (one
 // byte more) rejects `error[3063]` in `print_ptr_name_cap_reject_xmod`.

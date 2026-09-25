@@ -158,7 +158,7 @@ pre-lexed token slice (`parserInit`), but the module path uses the streaming for
 | `parserParseType` | pub | Type-expression dispatch: ptr/bracket/optional/error-union/extern-fn/fn/error-set/struct/enum/union/packed/anytype/type-name + trailing `!` error-union. `anytype` returns node 0. |
 | `parserParsePtrQualifiers` | private | Consumes leading `const`/`volatile` qualifiers (bit0=const, bit1=volatile). |
 | `parserParsePtrType` | private | `*[const] [volatile] T` single pointer. |
-| `parserParseBracketType` | private | `[*c]T` (many-ptr, with qualifiers), `[]T`/`[]const T` slice, `[N]T` array. |
+| `parserParseBracketType` | private | `[*]T` (many-ptr, with `const`/`volatile` qualifiers; `[*c]T` is unparseable — `error[2000] expected ']'`), `[]T`/`[]const T` slice, `[N]T` array. |
 | `parserParseOptionalType` | private | `?T`. |
 | `parserParseErrorUnionType` | private | `!T` (payload side). |
 | `parserParseExternFnType` | private | `extern ["conv"] fn(...) ...`; classifies the convention (`c`/`cdecl`/`stdcall`); unknown → `3045`, defaults to cdecl. |
