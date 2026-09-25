@@ -1107,7 +1107,39 @@ fn printFmtPtrRouteOk(reg: *type_mod.TypeRegistry, pk: type_mod.TypeKind, ptid: 
 // scalar kinds and structural composites render exactly; a named
 // struct/enum/union (and the anonymous/exotic kinds) cannot (Zig's
 // `@typeName` qualifies named aggregates with the container path) -> false.
+//
+// Task 8 (B2): also mirrors the emitter's fixed 512-byte name buffer
+// (`c89_emit.zig kZigPrintNameCap`) byte-for-byte, including the trailing `@`
+// `emitPtrValuePrint` appends. A name that would overflow the buffer rejects
+// `error[3063]` here at validation time instead of silently dropping the print
+// at emission time; the emitter's append failure is now a defensive `@panic`.
+const kPrintPointeeNameCap: u32 = 512;
+
 fn printFmtPointeeNameOk(reg: *type_mod.TypeRegistry, tid: u32, depth: u32) bool {
+    var len: u32 = @intCast(u32, 0);
+    if (!printFmtPointeeNameLen(reg, tid, depth, &len)) return false;
+    return len + @intCast(u32, 1) <= kPrintPointeeNameCap;
+}
+
+// Decimal digit count of a u32 (mirror of `zigNamePutU32`'s itoa write).
+fn printFmtU32DecLen(v: u32) u32 {
+    var n: u32 = @intCast(u32, 1);
+    var x: u32 = v;
+    while (x >= 10) : (x = x / 10) {
+        n += 1;
+    }
+    return n;
+}
+
+// Mirror of `zigNamePutQuals`' byte count ("const " = 6, "volatile " = 9).
+fn printFmtQualsLen(flags: u8) u32 {
+    var n: u32 = @intCast(u32, 0);
+    if ((flags & @intCast(u8, 1)) != @intCast(u8, 0)) n += 6;
+    if ((flags & @intCast(u8, 2)) != @intCast(u8, 0)) n += 9;
+    return n;
+}
+
+fn printFmtPointeeNameLen(reg: *type_mod.TypeRegistry, tid: u32, depth: u32, len: *u32) bool {
     if (depth > 16) return false;
     if (@intCast(usize, tid) >= reg.types_len) return false;
     var ty = reg.types_items[@intCast(usize, tid)];
@@ -1118,53 +1150,102 @@ fn printFmtPointeeNameOk(reg: *type_mod.TypeRegistry, tid: u32, depth: u32) bool
     // rejects COMPOSITE names containing one (`*?E`, `*[3]E`, ...) — the
     // container-qualification residual, same class as `*?S`.
     if (k == type_mod.TypeKind.enum_type or k == type_mod.TypeKind.integer_literal_type) return false;
-    if (printFmtKindIsIntegerLike(k)) return true;
-    if (k == type_mod.TypeKind.bool_type or k == type_mod.TypeKind.f32_type or k == type_mod.TypeKind.f64_type) return true;
-    if (k == type_mod.TypeKind.void_type or k == type_mod.TypeKind.noreturn_type) return true;
+    if (k == type_mod.TypeKind.i8_type) { len.* += 2; return true; }
+    if (k == type_mod.TypeKind.i16_type or k == type_mod.TypeKind.i32_type or k == type_mod.TypeKind.i64_type) { len.* += 3; return true; }
+    if (k == type_mod.TypeKind.u8_type) { len.* += 2; return true; }
+    if (k == type_mod.TypeKind.u16_type or k == type_mod.TypeKind.u32_type or k == type_mod.TypeKind.u64_type) { len.* += 3; return true; }
+    if (k == type_mod.TypeKind.isize_type or k == type_mod.TypeKind.usize_type) { len.* += 5; return true; }
+    if (k == type_mod.TypeKind.c_char_type) { len.* += 6; return true; }
+    if (k == type_mod.TypeKind.arb_uint_type or k == type_mod.TypeKind.arb_int_type) {
+        len.* += 1;  // "u" / "i"
+        len.* += printFmtU32DecLen(@intCast(u32, ty.width_bits));
+        return true;
+    }
+    if (k == type_mod.TypeKind.bool_type) { len.* += 4; return true; }
+    if (k == type_mod.TypeKind.f32_type or k == type_mod.TypeKind.f64_type) { len.* += 3; return true; }
+    if (k == type_mod.TypeKind.void_type) { len.* += 4; return true; }
+    if (k == type_mod.TypeKind.noreturn_type) { len.* += 8; return true; }
     if (k == type_mod.TypeKind.error_set_type) {
         if (@intCast(usize, ty.payload_idx) >= reg.es_len) return false;
         var esp = reg.es_items[@intCast(usize, ty.payload_idx)];
-        return @intCast(usize, esp.tags_start) + @intCast(usize, esp.tags_count) <= reg.xn_len;
+        if (@intCast(usize, esp.tags_start) + @intCast(usize, esp.tags_count) > reg.xn_len) return false;
+        len.* += 6;  // "error{"
+        var ei: usize = @intCast(usize, 0);
+        while (ei < @intCast(usize, esp.tags_count)) : (ei += @intCast(usize, 1)) {
+            if (ei > @intCast(usize, 0)) len.* += 1;  // ","
+            var nid = reg.xn_items[@intCast(usize, esp.tags_start) + ei];
+            var nm = si_mod.stringInternerGet(reg.interner, nid);
+            len.* += @intCast(u32, nm.len);
+        }
+        len.* += 1;  // "}"
+        return true;
     }
     if (k == type_mod.TypeKind.optional_type) {
         if (@intCast(usize, ty.payload_idx) >= reg.opt_len) return false;
         var op = reg.opt_items[@intCast(usize, ty.payload_idx)];
-        return printFmtPointeeNameOk(reg, op.payload, depth + @intCast(u32, 1));
+        len.* += 1;  // "?"
+        return printFmtPointeeNameLen(reg, op.payload, depth + @intCast(u32, 1), len);
     }
     if (k == type_mod.TypeKind.error_union_type) {
         if (@intCast(usize, ty.payload_idx) >= reg.eu_len) return false;
         var ep = reg.eu_items[@intCast(usize, ty.payload_idx)];
         // A bare `!T` (error_set 0) has no oracle-verifiable Zig name here.
         if (ep.error_set == @intCast(u32, 0)) return false;
-        if (!printFmtPointeeNameOk(reg, ep.error_set, depth + @intCast(u32, 1))) return false;
-        return printFmtPointeeNameOk(reg, ep.payload, depth + @intCast(u32, 1));
+        if (!printFmtPointeeNameLen(reg, ep.error_set, depth + @intCast(u32, 1), len)) return false;
+        len.* += 1;  // "!"
+        return printFmtPointeeNameLen(reg, ep.payload, depth + @intCast(u32, 1), len);
     }
     if (k == type_mod.TypeKind.slice_type) {
         if (@intCast(usize, ty.payload_idx) >= reg.slice_len) return false;
         var sp = reg.slice_items[@intCast(usize, ty.payload_idx)];
-        return printFmtPointeeNameOk(reg, sp.elem, depth + @intCast(u32, 1));
+        len.* += 2;  // "[]"
+        len.* += printFmtQualsLen(ty.flags);
+        return printFmtPointeeNameLen(reg, sp.elem, depth + @intCast(u32, 1), len);
     }
     if (k == type_mod.TypeKind.array_type) {
         if (@intCast(usize, ty.payload_idx) >= reg.array_len) return false;
         var ap = reg.array_items[@intCast(usize, ty.payload_idx)];
-        return printFmtPointeeNameOk(reg, ap.elem, depth + @intCast(u32, 1));
+        len.* += 1;  // "["
+        len.* += printFmtU32DecLen(ap.length);
+        len.* += 1;  // "]"
+        return printFmtPointeeNameLen(reg, ap.elem, depth + @intCast(u32, 1), len);
     }
     if (k == type_mod.TypeKind.ptr_type or k == type_mod.TypeKind.many_ptr_type) {
         if (@intCast(usize, ty.payload_idx) >= reg.ptr_len) return false;
         var pp = reg.ptr_items[@intCast(usize, ty.payload_idx)];
-        return printFmtPointeeNameOk(reg, pp.base, depth + @intCast(u32, 1));
+        if (k == type_mod.TypeKind.many_ptr_type) {
+            len.* += 3;  // "[*]"
+        } else {
+            len.* += 1;  // "*"
+        }
+        len.* += printFmtQualsLen(ty.flags);
+        return printFmtPointeeNameLen(reg, pp.base, depth + @intCast(u32, 1), len);
     }
     if (k == type_mod.TypeKind.fn_type) {
         if (@intCast(usize, ty.payload_idx) >= reg.fn_len) return false;
         var fp = reg.fn_items[@intCast(usize, ty.payload_idx)];
-        if (!printFmtPointeeNameOk(reg, fp.return_type, depth + @intCast(u32, 1))) return false;
+        len.* += 4;  // "fn ("
         var fpend: usize = @intCast(usize, fp.params_start) + @intCast(usize, fp.params_count);
         if (fpend > reg.xt_len) return false;
         var fi: usize = @intCast(usize, fp.params_start);
+        var first: u8 = @intCast(u8, 1);
         while (fi < fpend) : (fi += @intCast(usize, 1)) {
-            if (!printFmtPointeeNameOk(reg, reg.xt_items[fi], depth + @intCast(u32, 1))) return false;
+            if (first == @intCast(u8, 0)) len.* += 2;  // ", "
+            if (!printFmtPointeeNameLen(reg, reg.xt_items[fi], depth + @intCast(u32, 1), len)) return false;
+            first = @intCast(u8, 0);
         }
-        return true;
+        if ((fp.flags_packed & type_mod.FN_FLAG_VARIADIC) != @intCast(u8, 0)) {
+            if (first == @intCast(u8, 0)) len.* += 2;  // ", "
+            len.* += 3;  // "..."
+        }
+        len.* += 1;  // ")"
+        if ((fp.flags_packed & type_mod.FN_FLAG_STDCALL) != @intCast(u8, 0)) {
+            len.* += 23;  // " callconv(.x86_stdcall)"
+        } else if (fp.is_extern != @intCast(u8, 0)) {
+            len.* += 13;  // " callconv(.c)"
+        }
+        len.* += 1;  // " "
+        return printFmtPointeeNameLen(reg, fp.return_type, depth + @intCast(u32, 1), len);
     }
     return false;
 }

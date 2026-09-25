@@ -1515,7 +1515,13 @@ fn emitTypeDefOnce(emitter: *C89Emitter, tid: u32, seen: *U32ToU32Map, gated: u8
 // first at the type's own emission site (dedup via `seen`; a program whose
 // ordering already worked is untouched because the typedef is already emitted).
 fn emitPointeeDep(emitter: *C89Emitter, ptid: u32, seen: *U32ToU32Map, gated: u8, depth: u32) void {
-    if (depth > 8) return;
+    // Task 8 (B3): one documented pointer-chain depth cap (16), aligned with
+    // the validator (`lower.zig printFmtPointeeNameOk`/`printFmtAggFieldsOk`),
+    // `zigPrintNameAppend` and the type resolver. The old cap (8) truncated
+    // this dependency walk below the validator's acceptance, so a >9-deep
+    // chain emitted C that referenced an unemitted wrapper typedef (gcc
+    // `unknown type name`). Beyond 16 the validator clean-rejects error[3063].
+    if (depth > 16) return;
     if (@intCast(usize, ptid) >= emitter.registry.types_len) return;
     var pk = emitter.registry.types_items[@intCast(usize, ptid)].kind;
     if (pk == TypeKind.ptr_type or pk == TypeKind.many_ptr_type) {
@@ -6370,8 +6376,16 @@ fn emitPtrValuePrint(emitter: *C89Emitter, tid: u32, is_temp: u8, temp: u32, acc
         }
         var nb: [kZigPrintNameCap]u8 = undefined;
         var npos: usize = @intCast(usize, 0);
-        if (!zigPrintNameAppend(emitter, ptid, @intCast(u32, 0), &nb, &npos)) return;
-        if (!zigNamePut(&nb, &npos, "@")) return;
+        // Task 8 (B2): a name-append failure used to return silently, dropping
+        // the value with no diagnostic. The validator mirrors the exact byte
+        // budget now (`lower.zig printFmtPointeeNameOk`), so this path is the
+        // defensive backstop: hard-fail instead of emitting nothing or broken C.
+        if (!zigPrintNameAppend(emitter, ptid, @intCast(u32, 0), &nb, &npos)) {
+            @panic("print: pointer name exceeds the emission name buffer");
+        }
+        if (!zigNamePut(&nb, &npos, "@")) {
+            @panic("print: pointer name exceeds the emission name buffer");
+        }
         bufferedWriterWrite(&emitter.writer, "std_print(");
         emitCStringLiteral(&emitter.writer, nb[0..npos]);
         bufferedWriterWrite(&emitter.writer, ");\n");

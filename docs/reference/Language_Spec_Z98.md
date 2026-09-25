@@ -371,7 +371,7 @@ Builtins are invoked as `@name(...)` and are recognized by name; an unknown or u
         - **Wide enum literals**: an enum member literal above `u32` max truncates at the literal (pre-existing `enum_value_table` is a `U32ToU32Map`); the runtime value and the generated name lookup are exact via `@intToEnum`.
         - **Out-of-range enum fallback**: an enum value with no member prints Zig's `@enumFromInt(<n>)` form but has no committed golden fixture.
         - **`need_fhex32/64`**: the hex-float helpers can be re-emitted per module in the `-o` path (dead re-emission only).
-        - **Pointer depth caps**: the printer's depth cap (8) and the type resolver's (16) disagree.
+        - **Pointer-chain caps (Task 8, 2026-09-25)**: ONE structural cap of 16 is enforced by the validator (`printFmtPointeeNameOk`/`printFmtAggFieldsOk`), the emitter's name renderer (`zigPrintNameAppend`) and the emitter's pointee typedef dependency walk (`emitPointeeDep`) — a chain deeper than the cap rejects `error[3063]` (Zig 0.15.2 accepts and prints arbitrary depth), while every accepted chain (validator max) emits correct C. A rendered pointer `@typeName` whose bytes plus the trailing `@` exceed the emitter's 512-byte name buffer also rejects `error[3063]` (Zig prints arbitrarily long names; e.g. a >511-byte `error{...}` name) — previously such a name was silently dropped at emission.
         - **`[*]fn () void`**: a many-pointer to a function type is a parser/type-model gap.
         - **Empty named aggregates**: a pre-existing empty-struct registry defect makes them reject (not print).
 

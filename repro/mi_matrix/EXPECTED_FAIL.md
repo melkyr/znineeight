@@ -1,4 +1,55 @@
-# mi_matrix corpus — expected-fail manifest (v241 2026-09-25)
+# mi_matrix corpus — expected-fail manifest (v242 2026-09-25)
+
+## Task 8 — pointer-name emission hardening (v241 -> v242, 2026-09-25)
+
+**What.** Amendment 1 (2026-09-25) B2 + B3, both in the pointer-print emission layer.
+
+**(1) B2 — silent name-append drop (FIX).** `emitPtrValuePrint`
+(`sf/src/c89_emit.zig`) returned silently when `zigPrintNameAppend`/`zigNamePut`
+failed, and the validator (`lower.zig printFmtPointeeNameOk`) had no mirror for the
+emitter's 512-byte name buffer (`kZigPrintNameCap`). Reproduced RED: a 50-member
+`error{...}` pointer (`@typeName` 556 bytes) was accepted rc=0 and the program printed
+`p=` with NO value (Zig 0.15.2 prints the full name + address). Fix: the validator's
+predicate now accumulates the exact rendered name (`printFmtPointeeNameLen` +
+`printFmtU32DecLen`/`printFmtQualsLen`, `kPrintPointeeNameCap = 512`, requiring
+`name + trailing @ <= 512`) and rejects an over-budget name with the existing
+`error[3063]` (rc 2 / 0 `.c`); the emitter's append failure is now a defensive `@panic`
+(never silent, never broken C). A 511-byte name (exact boundary; the `ep` row) still
+prints byte-identically.
+
+**(2) B3 — pointer-chain depth caps disagreed 8 vs 16 (FIX).** `emitPointeeDep` bailed
+at `depth > 8` while the validator and `zigPrintNameAppend` accept 16, so a
+validator-accepted 10..14-wrapper `?*?*...i32` chain was rc=0 and then emitted C
+referencing an unemitted wrapper typedef (gcc `unknown type name 'Opt_*'`). Fix:
+`emitPointeeDep`'s bail is `depth > 16` — one documented pointer-chain cap shared by
+the validator, the name renderer and the typedef dependency walk. Zig 0.15.2 accepts
+arbitrarily deep chains; beyond 16 stays a clean `error[3063]` residual.
+
+**Fixtures.** Positive runtime `repro/mi_matrix/stdlib_print_ptr_depth_ok_xmod`
+(14-wrapper field `s14` + 10-wrapper control `s10` + the exact 511-byte-name `ep`;
+rc 0, 3x byte-exact, output byte-identical to the Zig-0.15.2 twin; stdlib pin
+**240 -> 241**) + reject `repro/mi_matrix/print_ptr_name_cap_reject_xmod`
+(2 x `error[3063]`, rc 2 / 0 `.c`: the 512-byte-name pointer and a 16-wrapper field)
++ standalone `repro/print_ptr_depth.z98`. Oracle: Zig accepts and prints both rejected
+shapes (twin-checked).
+
+**Gates (fixed compiler `/tmp/t8/build2/zig1_5_clean`, binary md5
+`81923309175fe50e830ede93d0d7c4d3`).** Self-emission rc 0 / 48 `.c` + 48 `.h` / 0
+PANIC; seed-v86 rebuild hop1 == hop2 == `81923309…`; 4-MD5 emitted-C **UNCHANGED 8/8**
+(gol `9e0b708e…` / lisp `dfa69f32…` / json `a4a73461…` / mud `2e92c1f2…`); corpus
+`-s0` **1031 = 888 OK / 46 GREEN / 97 FAIL / 0 ICE / 0 CRASH** (full-classifier
+join-diff vs the pre-Task-8 v86 compiler over the 1029 common dirs **empty**; the only
+additions are the two new fixture dirs, OK + FAIL); stdlib runtime gate **241 PASS /
+0 FAIL**; example matrix **24/24**; `check_emit_support.sh` **7/7**;
+`verify_upgraded.sh` **CLOSEOUT OK**; build_test **0/9** (pre-existing retired-zig0
+baseline). Fixed point **moved `5d3ca7256a7e43bb7f9685a34365865a` ->
+`81923309175fe50e830ede93d0d7c4d3`** (hop1 == hop2); **seed NOT rotated (v86 stays;
+Task 12 rotates, R2-print)**.
+
+**Residuals.** Pointer chains deeper than 16 reject `error[3063]` (Zig accepts;
+pre-existing cap, now consistently enforced by validator + emitter). Rendered pointer
+names whose `@typeName` + `@` exceed 512 bytes reject `error[3063]` (Zig prints
+arbitrary lengths). The consolidated list is `docs/reference/Language_Spec_Z98.md` §4.
 
 ## Final whole-branch review fix wave — print-formatting (v240 -> v241, 2026-09-25)
 
