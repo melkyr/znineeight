@@ -222,9 +222,11 @@ error set, optional, slice, array, packed aggregate). Float `{x}` is
   (each explicit; never a default arm): (i) Zig-rejected no-printer kinds —
   `[N]T` (`{}`/`{d}`/`{c}`/`{s}`/`{x}`), `?T {}`, `E!T {}`, function-body
   values, `undefined`, and the exotic/unreachable kinds; (ii) the operator-ruled
-  Q3 bounded residuals (`{}` on `void`/`null`/`type`; `[]const u8 {x}`;
-  `[N]u8 {s}`/`{x}`; `*const [N]u8 {s}`/`{x}`; `[*c]u8 {s}`/`{x}` — where Zig
-  accepts); (iii) Zig-rejected forms with no Z98 printer (the `undefined`
+  Q3 bounded residuals (`{}` on `void`/`null`/`type`; `[]u8`/`[]const u8 {x}`;
+  `[N]u8 {s}`/`{x}`; `*const [N]u8 {s}`/`{x}` — where Zig accepts; `[*c]u8
+  {s}`/`{x}` is a Zig-side-only entry: Z98 cannot parse a C-pointer type, so
+  the site parse-rejects `error[2000]` before the validator runs); (iii)
+  Zig-rejected forms with no Z98 printer (the `undefined`
   row); (iv) **operator ruling R10 (2026-09-25):** a bare `error.X` print
   argument with no expected type (a bare error literal has no inference site in
   Z98 sema and resolves to `void`) — a **documented divergence**, because

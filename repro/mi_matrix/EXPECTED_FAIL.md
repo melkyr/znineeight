@@ -17,9 +17,11 @@ design spec is marked implemented and is now git-tracked.
 `integer_literal` -> `error[3013]`; R7 anonymous aggregate `{}` -> `error[3063]`; R8 nested
 packed aggregate / packed enum/error-set field -> `error[3063]`; R10 bare `error.X` ->
 `error[3063]` (Zig prints `error.X`); Q2 float decimals (6-digit truncation, `1e20` (i64)-cast
-UB, `-0.0` -> `0`); Q3 byte-view forms (`[]const u8 {x}`, `[N]u8 {s}`/`{x}`,
-`*const [N]u8 {s}`/`{x}`, `[*c]u8 {s}`/`{x}`) and `{}` on `void`/`null`/`type` ->
-`error[3063]`; composite pointee names (`*?S`, `**S`, `*?E`) and many-pointer-to-named-aggregate
+UB, `-0.0` -> `0`); Q3 byte-view forms (`[]u8`/`[]const u8 {x}`, `[N]u8 {s}`/`{x}`,
+`*const [N]u8 {s}`/`{x}`) and `{}` on `void`/`null`/`type` ->
+`error[3063]` (`[*c]u8 {s}`/`{x}` is listed in the operator ruling but is
+unreachable: a C-pointer type is unparseable in Z98, `error[2000]`); composite pointee names
+(`*?S`, `**S`, `*?E`) and many-pointer-to-named-aggregate
 fields -> `error[3063]`; aggregate fields outside the closure (array/slice/optional/error-union/
 void) -> `error[3063]`; forward-referenced tuple-global elements emit gcc-invalid C (pre-existing
 multi-pass limit); wide-enum (>u32) literal truncation (runtime `@intToEnum` exact); no committed

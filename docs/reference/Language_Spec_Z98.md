@@ -330,7 +330,7 @@ Builtins are invoked as `@name(...)` and are recognized by name; an unknown or u
 
 **Formatted `print`**
 - A call whose callee is named `print` (for example `std.io.print`) is a compiler special case: the compiler parses the format string, type-checks each argument against its placeholder, and emits one runtime print call per argument. The formatting bodies live in the standard module `std.fmt` (`sf/src/std_fmt.zig`), which the compiler **auto-imports** whenever a `print` is lowered (the user writes no new import). Aggregates, tuples, enum/error-set names, pointers and hex floats are printed by **compiler-generated per-type helpers** emitted alongside the program.
-    - **Format Specifiers**: `{}` (default), `{d}` (decimal), `{x}` (hex), `{c}` (character), and `{s}` (string). An unknown specifier (e.g. `{q}`) is rejected with `error[3013]`; a known specifier that is invalid for the argument's static type is also `error[3013]` (`invalid print specifier`). A type Z98 has no printer for is rejected with the new `error[3063]` (`print argument type is not supported`). Both are level 0 at the argument node: rc=2 / 0 `.c`. A bare `{}` is validated separately from an explicit `{d}` (enums and error sets accept the former and reject the latter), and an unknown specifier is never double-reported.
+    - **Format Specifiers**: `{}` (default), `{d}` (decimal), `{x}` (hex), `{c}` (character), and `{s}` (string). An unknown specifier (e.g. `{q}`) is rejected with `error[3013]`; a known specifier that is invalid for the argument's static type is also `error[3013]` (`invalid print format specifier for the argument type`). A type Z98 has no printer for is rejected with the new `error[3063]` (`print argument type is not supported`). Both are level 0 at the argument node: rc=2 / 0 `.c`. A bare `{}` is validated separately from an explicit `{d}` (enums and error sets accept the former and reject the latter), and an unknown specifier is never double-reported.
     - **Arguments**: The arguments **must** be a tuple literal (e.g., `.{arg1, arg2}`) or a tuple variable. The compiler decomposes the format string and emits individual print calls for each tuple element.
     - This is the only variadic form Z98 supports; there is no `anytype`. The shipped wrapper is `std.io.print(s: [*]const c_char, ...) void`.
     - **Per-type routes** (a bare `{}` is distinguished from an explicit specifier; `3013` / `3063` name the rejection code):
@@ -346,7 +346,8 @@ Builtins are invoked as `@name(...)` and are recognized by name; an unknown or u
 | `error_set` | `error.Name` | 3013 | 3013 | 3013 |
 | `struct` / `union` / tagged union / packed union / tuple | `.{ .a = 1, .b = 2 }` / `.{ 1, 2, 3 }` (generated per-type printer; recursion capped at `std.fmt.default_max_depth` = 3 -> `.{ ... }`) | 3013 | 3013 | 3013 |
 | one-pointer `*T` / `*const T` | `T@<lowercase-hex>` with **no `0x`** (`i32@7fff8668af48`); `*struct`/`*union`/`*tagged`/`*packed`/`*tuple` delegate to the pointee printer, `*enum` to the name printer | 3013 | 3013 | 3013 |
-| many-pointer `[*]T`, C-pointer `[*c]T` | 3013 (Zig rejects; a many-pointer **field** inside a printable aggregate does print `T@<hex>` when the pointee name is expressible) | 3013 | 3013 | 3013 |
+| many-pointer `[*]T` | 3013 (Zig rejects; a many-pointer **field** inside a printable aggregate does print `T@<hex>` when the pointee name is expressible) | 3013 | 3013 | 3013 |
+| C-pointer `[*c]T` | unparseable in Z98 (`error[2000]: expected ']'`; the grammar accepts only `[*]` plus const/volatile) | `error[2000]` | `error[2000]` | `error[2000]` |
 | `[]u8` / `[]const u8` | 3013 (a slice needs `{s}`, matching Zig) | 3063 (Q3 bounded residual) | 3013 | raw bytes |
 | `[]T` (`T` != `u8`) | 3013 | 3013 | 3013 | 3013 |
 | fixed array `[N]T` | 3063 (no printer; Zig rejects too) | 3063 | 3063 | 3063 |
@@ -357,7 +358,7 @@ Builtins are invoked as `@name(...)` and are recognized by name; an unknown or u
 
     - **Aggregate field closure**: a `{}`-printed aggregate is admitted only when every value the generated printer would read has a final route (integer-like, `bool`, `f32`/`f64`, `u8`, enum, error set, pointer/fn-pointer, nested aggregates). An aggregate with an array / slice / optional / error-union / `void` field, or a nested packed aggregate whose C model is pre-existing-broken, rejects the **argument** with `error[3063]` (Zig accepts and prints it) - operator-principle bounded residual (R4/R8).
     - **Documented bounded residuals of this program** (all Zig-0.15.2-accepted unless stated; each is a deliberate clean reject or a pre-existing limitation, never a silent wrong value):
-        - **Q3 byte-view forms** (operator ruling 2026-09-24): `[]const u8 {x}`, `[N]u8 {s}`/`{x}`, `*const [N]u8 {s}`/`{x}`, `[*c]u8 {s}`/`{x}`, and `{}` on `void`/`null`/`type` reject `error[3063]`.
+        - **Q3 byte-view forms** (operator ruling 2026-09-24): `[]u8 {x}` and `[]const u8 {x}`, `[N]u8 {s}`/`{x}`, `*const [N]u8 {s}`/`{x}`, and `{}` on `void`/`null`/`type` reject `error[3063]`. The `[*c]u8 {s}`/`{x}` pair named in the operator ruling is Zig-side-only: a C-pointer type is **unparseable in Z98** (`error[2000]`), so no validation is reached.
         - **R5**: `{c}` on an `integer_literal` rejects `error[3013]`.
         - **R7**: an anonymous aggregate (`print("{}", .{.{ .a = 1 }})`) rejects `error[3063]`; Zig prints `.{ .a = 1 }`.
         - **R10**: a bare `error.X` with no expected type resolves to `void` in Z98 sema and rejects `error[3063]`; Zig prints `error.X`.
