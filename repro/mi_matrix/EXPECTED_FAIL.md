@@ -3,8 +3,9 @@
 ## Task 2 ruling applied — 4-MD5 re-baseline + negative-`{x}` oracle confirmed (v231 -> v232, 2026-09-25)
 
 **Operator ruling (2026-09-25).** (1) The Task-2 4-MD5 movement is **re-baselined with runtime
-identity**: the dump carries the changed support C (`std_fmt.zig` `printHexI32/I64` + the lockstep
-`pal_f64_to_str` integral branch), no gate-program call-site route changed, and the runtime stdout is
+identity**: the dump carries the changed `std_fmt` module C (`std_fmt.zig` `printHexI32/I64`; the
+lockstep `pal_f64_to_str` integral branch is runtime-only and dump-invisible — the dump carries PAL
+*calls*, not bodies), no gate-program call-site route changed, and the runtime stdout is
 byte-identical PRE<->POST for all four. New authoritative rows: gol `c56ff666…` -> **`9e0b708e18b6fd2b15f9b1e84b6b1571`**,
 lisp `573dbd70…` -> **`dfa69f32f33f21b75e8c03e4a151611f`**, json `b01005d4…` -> **`a4a7346153557c9e85a8d112d3866a64`**,
 mud `f9e5bb58…` -> **`2e92c1f22efedd8ae0c6aa2fc2c45d0e`** (+1994 B each; re-dumped 2x with
@@ -55,8 +56,9 @@ non-integral values keep the 6-digit truncation (`1.0/3.0` → `0.333333`, Zig
 point** hop1 `da7baa2836e536699257b92d2cb23200` != hop2 == hop3 ==
 **`475e9a920934583a23a90a7ac1bb4e52`**; **4-MD5 emitted-C MOVED** (gol `c56ff666…` ->
 `9e0b708e…`, lisp `573dbd70…` -> `dfa69f32…`, json `b01005d4…` -> `a4a73461…`, mud `f9e5bb58…`
--> `2e92c1f2…`) — the dump carries the changed `std_fmt`/`zig_pal` support C (new
-`printHexI32/I64` locals + the PAL integral branch shift type/temp interning), **runtime output
+-> `2e92c1f2…`) — the dump carries the changed `std_fmt` module C (both new `printHexI32/I64`
+bodies + the consequent type/temp interning shifts); the lockstep PAL integral branch is runtime-only
+and dump-invisible, **runtime output
 byte-identical PRE<->POST for all four** (gol `fcbf7e7c…` / lisp `b3d9f897…` / json
 `8bda3d5a…` / mud server `66c8f0ab…` + client `93147d0f…`); operator-authorized re-baseline with
 runtime identity (2026-09-25 ruling — see the v232 section above); corpus `-s0` **1020 = 882 OK / 46 GREEN /
