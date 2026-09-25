@@ -1441,8 +1441,16 @@ fn printFmtCheck(self: *LirLowerer, arg_node_idx: u32, tid: u32, spec_fmt: u8, h
                 var pty = reg.types_items[@intCast(usize, pt)];
                 if (pty.kind == type_mod.TypeKind.array_type) {
                     p_is_arr = @intCast(u8, 1);
-                    var e = reg.array_items[pty.payload_idx].elem;
-                    if (@intCast(usize, e) < reg.types_len and reg.types_items[@intCast(usize, e)].kind == type_mod.TypeKind.u8_type) p_arr_u8 = @intCast(u8, 1);
+                    // Task 9 (B4): the payload index is guarded like every
+                    // sibling payload read in this validator family
+                    // (`printFmtPointeeNameOk` et al.). The registry invariant
+                    // (payload appended before the type record) makes it safe
+                    // today; the guard is defensive only, so the decision below
+                    // is unchanged for every well-formed registry entry.
+                    if (@intCast(usize, pty.payload_idx) < reg.array_len) {
+                        var e = reg.array_items[pty.payload_idx].elem;
+                        if (@intCast(usize, e) < reg.types_len and reg.types_items[@intCast(usize, e)].kind == type_mod.TypeKind.u8_type) p_arr_u8 = @intCast(u8, 1);
+                    }
                 }
             }
         }

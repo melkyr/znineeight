@@ -1,4 +1,72 @@
-# mi_matrix corpus — expected-fail manifest (v242 2026-09-25)
+# mi_matrix corpus — expected-fail manifest (v243 2026-09-25)
+
+## Task 9 — invariant guard + tuple-global forward refs (v242 -> v243, 2026-09-25)
+
+**What.** Amendment 1 (2026-09-25) B4 + B5: one defensive compiler-invariant
+guard and one clean-reject of a shape that emitted gcc-invalid / silently
+wrong C.
+
+**(1) B4 — unguarded payload-elem lookup (GUARD).** `printFmtCheck`'s
+pointer-to-array arm (`sf/src/lower.zig`) read
+`reg.array_items[pty.payload_idx].elem` without the `types_len`-style range
+guard its neighbouring pointee read (`pt < reg.types_len`) and every sibling
+payload read use. The registry appends a payload before the type record
+(`type_registry.zig` `arrayPayloadAppend`), so the index is always valid today
+— the guard is compiler-invariant hardening and every well-formed registry
+entry keeps its exact 3013/3063 decision. Probe/regression pin:
+`repro/mi_matrix/print_fmt_ptrarray_guard_reject_xmod` (rc 2 / 0 `.c`, exactly
+2 x `error[3063]` for `*const [2]u8 {s}`/`{x}` + 4 x `error[3013]` for `{}`
+and `*const [3]i32 {s}`/`{x}`/`{}`), diagnostics byte-identical to the
+pre-guard compiler (verified by diff).
+
+**(2) B5 — forward-referenced tuple globals CLEAN-REJECT (not a fix).**
+`var g = .{ b, 7 }; const b = Pair{...}` compiled rc=0 and emitted gcc-invalid
+C (`zT_0._0 = zG_b;` assigning a `Pair` into an `int`). Pass 1 of
+`frontResolveModuleInits` resolves `g` before the later `b`, so the element
+freezes at the `TYPE_VOID -> TYPE_I32` fallback in
+`semanticAnalyzerResolveTupleLiteral`; the Task-4 idempotent fast path then
+returned the stale tuple on every later pass. A pass-aware TYPE refresh alone
+is not a correct fix: `__module_init` lowers globals in declaration order, so
+`g` would copy the zero-initialised `Pair` — the non-tuple analogue
+`var g = b; const b = Pair{...}` is already rc=0 / gcc-clean on the base
+compiler and prints `.a = 0, .b = 0` (oracle `.a = 1, .b = 2`), and a
+dependency-ordered init emission is out of the brief and gate-moving. The
+recorded fast path now re-resolves the elements and compares the list; a
+change emits the new level-0 `error[3064]`
+`ERR_3064_FORWARD_REF_TUPLE_GLOBAL` at the tuple span (deduped per node,
+rc 2 / 0 `.c`). The scalar variants reject too: `const b = 3000000000`
+previously printed the silently wrong `-1294967296`, and `const b = 5` (which
+happened to fit) is the same stale-inference shape. Stable tuples keep the
+idempotent fast path — the direct/global fixtures (`gtupv`/`gtupc`) and every
+print-arg tuple are unchanged.
+
+**Fixtures.** Reject `repro/mi_matrix/tuple_fwd_global_reject_xmod` (3 x
+`error[3064]`, rc 2 / 0 `.c`, stable control row silent) + reject
+`repro/mi_matrix/print_fmt_ptrarray_guard_reject_xmod` (2 x `error[3063]` +
+4 x `error[3013]`) + standalone `repro/print_tuple_fwd.z98`. All 3x
+deterministic (byte-identical diagnostics). Oracle: Zig 0.15.2 accepts the
+forward-ref rows and prints `g=.{ .{ .a = 1, .b = 2 }, 7 }` — documented
+bounded residual (Language_Spec §4); the pointer-to-array rows are the
+pre-existing Q3/G3 residuals.
+
+**Gates (fixed compiler `/tmp/t9/build2/zig1_5_clean`, binary md5
+`d17828e1c6d7f9bd8f7ae8bdf9ad4c16`).** Self-emission rc 0 / 48 `.c` + 48 `.h` /
+0 PANIC; seed-v86 rebuild hop1 == hop2 == `d17828e1…`; 4-MD5 emitted-C
+**UNCHANGED 8/8** (gol `9e0b708e…` / lisp `dfa69f32…` / json `a4a73461…` /
+mud `2e92c1f2…`); corpus `-s0` **1033 = 888 OK / 46 GREEN / 99 FAIL / 0 ICE /
+0 CRASH** (full-classifier join-diff vs the Task-8 v86 baseline over the 1031
+common dirs **empty**; the only additions are the two new reject fixtures);
+stdlib runtime gate **241 PASS / 0 FAIL**; example matrix **24/24**;
+`check_emit_support.sh` **7/7**; `verify_upgraded.sh` **CLOSEOUT OK**;
+build_test **0/9** (pre-existing retired-zig0 baseline). Fixed point **moved
+`81923309175fe50e830ede93d0d7c4d3` -> `d17828e1c6d7f9bd8f7ae8bdf9ad4c16`**
+(hop1 == hop2); **seed NOT rotated (v86 stays; Task 12 rotates, R2-print)**.
+
+**Residuals.** A module-level tuple literal with a forward-referenced global
+element rejects `error[3064]` (Zig 0.15.2 accepts and prints it). The
+non-tuple direct forward reference (`var g = b; const b = Pair{...}`) stays
+accepted, gcc-clean and runtime-zero — a pre-existing module-init ordering
+residual recorded here, unchanged by this task and not part of B5.
 
 ## Task 8 — pointer-name emission hardening (v241 -> v242, 2026-09-25)
 

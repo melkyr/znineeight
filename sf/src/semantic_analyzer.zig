@@ -4734,8 +4734,40 @@ fn semanticAnalyzerResolveTupleLiteral(self: *SemanticAnalyzer, node_idx: u32) u
     // `Tup_M` and `__module_init` emitted a cross-type struct assignment (gcc
     // `incompatible types`). Reusing the recorded type keeps the global symbol,
     // the lowered temp and the generated printer on ONE C type.
+    //
+    // Task 9 (B5): re-resolve the elements even when a recorded type exists. A
+    // recorded tuple whose element list changed was inferred on pass 1 from a
+    // forward-referenced global that had no type yet (`TYPE_VOID -> TYPE_I32`
+    // fallback below), so its frozen slots are stale: the retained type emits
+    // gcc-invalid C for a composite element and a silently wrong value for an
+    // integer element whose final carrier differs. `__module_init` lowers
+    // globals in declaration order, so a type refresh alone cannot make the
+    // composite case correct; reject the shape cleanly (error[3064]) and keep
+    // returning the recorded type so no cascading type errors follow. A stable
+    // re-resolution (direct/global tuple fixtures, `.{ 11, 22 }`, print-arg
+    // tuples) sees an identical element list and returns the recorded type.
     if (rtt_mod.resolvedTypeTableGet(self.type_table, node_idx)) |existing| {
         if (existing != type_mod.TYPE_UNDEFINED) {
+            if (@intCast(usize, existing) < self.registry.types_len and self.registry.types_items[@intCast(usize, existing)].kind == type_mod.TypeKind.tuple_type) {
+                var etup = self.registry.tup_items[@intCast(usize, self.registry.types_items[@intCast(usize, existing)].payload_idx)];
+                var same: u8 = @intCast(u8, 1);
+                if (@intCast(usize, etup.elems_count) != ec_n) {
+                    same = @intCast(u8, 0);
+                } else {
+                    var ci: usize = @intCast(usize, 0);
+                    while (ci < ec_n) : (ci += @intCast(usize, 1)) {
+                        self._stub_0 = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ci)));
+                        if (self._stub_0 == type_mod.TYPE_VOID) { self._stub_0 = type_mod.TYPE_I32; }
+                        if (self.registry.xt_items[@intCast(usize, etup.elems_start) + ci] != self._stub_0) { same = @intCast(u8, 0); }
+                    }
+                }
+                if (same == @intCast(u8, 0)) {
+                    var b5_msg: []const u8 = "cannot infer tuple element type: a forward-referenced global is not resolved on the first pass";
+                    if (diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) {
+                        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3064_FORWARD_REF_TUPLE_GLOBAL)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), b5_msg);
+                    }
+                }
+            }
             self._stub_0 = saved;
             return existing;
         }

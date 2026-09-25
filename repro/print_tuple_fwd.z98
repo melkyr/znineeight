@@ -1,0 +1,45 @@
+// print_tuple_fwd.z98 — standalone reproduction for the Task 9 (F) B5 fix
+// (z98-print-formatting Amendment 1).
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   mkdir -p /tmp/print_tuple_fwd_out
+//   <zig1> --dump-c89 --output-dir /tmp/print_tuple_fwd_out repro/print_tuple_fwd.z98
+//
+// EXPECTED (after the fix): dump rc=2, 0 `.c`, exactly 2 x error[3064],
+//   error[3064]: cannot infer tuple element type: a forward-referenced global
+//                is not resolved on the first pass      (`g_pair` tuple span)
+//   error[3064]: ...                                    (`g_big` tuple span)
+// The stable control `g_ok = .{ 11, 22 }` emits no diagnostic.
+//
+// DEFECT (before the fix): the tuple literal's element list was frozen on
+// module-var resolution pass 1. A forward-referenced global declared after the
+// tuple had no type yet, so the element fell back to `i32`. `g_pair` then
+// emitted gcc-invalid C (`zT_0._0 = zG_p;` assigning a `Pair` into an `int`,
+// rc=0 then gcc `incompatible types`); `g_big` emitted gcc-valid C that ran and
+// printed `-1294967296` where Zig prints `3000000000`.
+//
+// ORACLE (official Zig 0.15.2 accepts all shapes; container-level declarations
+// are order-independent):
+//   g_pair = .{ .{ .a = 1, .b = 2 }, 7 }
+//   g_big  = .{ 3000000000, 7 }
+// The clean reject is a documented Z98 bounded residual: `__module_init` lowers
+// globals in declaration order, so the composite forward reference cannot be
+// made runtime-correct by a type refresh alone.
+const std = @import("std");
+
+const Pair = struct { a: i32, b: i32 };
+
+// Composite forward reference: rc=0 then gcc-invalid C before the fix.
+var g_pair = .{ p, 7 };
+const p = Pair{ .a = 1, .b = 2 };
+
+// Large scalar forward reference: silently truncated before the fix.
+var g_big = .{ t, 7 };
+const t = 3000000000;
+
+// Stable control: no forward reference, accepted.
+var g_ok = .{ 11, 22 };
+
+pub fn main() void {
+    std.io.print("ok={}\n", .{g_ok});
+}
