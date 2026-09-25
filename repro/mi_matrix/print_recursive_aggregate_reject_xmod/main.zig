@@ -16,12 +16,15 @@
 // implemented.
 //
 // LATENT EMITTER RISK (recorded with R11): if the validator were later
-// relaxed, `emitAggPrinterRec` (c89_emit.zig) emits per-type printers in
-// post-order dependency order with NO forward declarations. A self-cycle would
-// recurse forever at emission time, and a mutual cycle (A -> B -> A) would not
-// produce a compilable order at all (one printer would call a printer defined
-// later); printer root collection follows the same recursion. Relaxing the cap
-// therefore requires forward declarations + a recursion strategy first.
+// relaxed, emission would still terminate — `emitAggPrinterRec` returns on an
+// `emitted`/`visiting` hit (c89_emit.zig:6672-6673), so both a self-cycle and a
+// mutual A -> B -> A cycle stop. The only remaining blocker is C ordering: the
+// printers are emitted post-order with NO forward declarations, so a mutual
+// cycle would have one printer call a printer defined later (a gcc
+// forward-declaration error); a self-cycle needs no declaration (the name is in
+// scope inside its own definition). Root collection is a flat `print_val` scan
+// (collectPrintRoots, c89_emit.zig:6738), not a recursive walk. Relaxing the
+// cap therefore requires forward declarations first, not a recursion strategy.
 //
 // Sites (each exactly one error[3063]):
 //   1. self-recursive struct `Node { v: i32, next: *Node }`
