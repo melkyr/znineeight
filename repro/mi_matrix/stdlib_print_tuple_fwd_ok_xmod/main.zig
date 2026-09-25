@@ -20,11 +20,13 @@
 //   stf              struct-literal field forward ref
 //   call             call-argument forward ref
 //   pair             composite (struct) const element (type rebuilt to Pair)
+//   direct           NON-tuple direct forward ref (`var g_direct = fwd_direct`
+//                    with a later `const fwd_direct = Pair{...}`)
 //   big              out-of-i32 literal (`3000000000`, type rebuilt to u32)
 //   float/bool       f64 / bool elements (type rebuilt)
 //
 // Golden contract (rc 0, 3x byte-exact, byte-identical to the Zig-0.15.2 twin
-// `std.debug.print` output): the 21 lines below, in order.
+// `std.debug.print` output): the 22 lines below, in order.
 //   small=.{ 5, 7 }
 //   max=.{ 2147483647, 7 }
 //   char=.{ 65, 7 }
@@ -43,6 +45,7 @@
 //   stf=.{ .{ .a = 12, .b = 2 }, 7 }
 //   call=.{ 12, 7 }
 //   pair=.{ .{ .a = 1, .b = 2 }, 7 }
+//   direct=.{ .a = 1, .b = 2 }
 //   big=.{ 3000000000, 7 }
 //   float=.{ 1.5, 7 }
 //   bool=.{ true, 7 }
@@ -105,6 +108,13 @@ const fwd_call: i32 = 5 + 7;
 var g_pair = .{ fwd_pair, 7 };
 const fwd_pair = Pair{ .a = 1, .b = 2 };
 
+// Final-review Minor 2: the NON-tuple direct forward reference (`var
+// g_direct = fwd_direct;` with an aggregate const declared later). Q7's
+// ident dep-scan orders fwd_direct first, so this prints Zig's value; the
+// pre-Q7 residual claim (`.a = 0, .b = 0`) is retired.
+var g_direct = fwd_direct;
+const fwd_direct = Pair{ .a = 1, .b = 2 };
+
 var g_big = .{ fwd_big, 7 };
 const fwd_big = 3000000000;
 
@@ -133,6 +143,7 @@ fn show() void {
     std.io.print("stf={}\n", .{g_stf});
     std.io.print("call={}\n", .{g_call});
     std.io.print("pair={}\n", .{g_pair});
+    std.io.print("direct={}\n", .{g_direct});
     std.io.print("big={}\n", .{g_big});
     std.io.print("float={}\n", .{g_float});
     std.io.print("bool={}\n", .{g_bool});

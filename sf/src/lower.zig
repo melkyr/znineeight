@@ -8515,17 +8515,104 @@ pub fn lowerModuleInit(self: *LirLowerer, root_idx: u32, mod_id: u32, dep_map: *
     // edge that orders the emitted `__module_init` calls. A cycle has no valid
     // order: reject `error[3064]` (official Zig 0.15.2 likewise rejects a
     // comptime dependency loop).
+    //
+    // Final-review Critical + Minor 5 fix (2026-09-25): every candidate's
+    // dependency list is precomputed ONCE into a flat adjacency
+    // (`dep_off`/`dep_all`) and the walk is ITERATIVE with an explicit stack.
+    // The previous recursive walk shared one `dep_buf` across nested calls: an
+    // inner visit overwrote it, so the outer loop read stale name ids and
+    // dropped every remaining edge; a global could then be emitted before its
+    // dependencies (repro `var g = a + b; const a = c + d; const b: i32 = 5 + 7;`
+    // emitted `a; g; b` and ran `g = 3` where Zig 0.15.2 prints `15`). The
+    // explicit stack also removes the recursion: a path visits each candidate
+    // at most once, so its depth is bounded by `cand_n` with no C-stack frames.
     var emitted = @ptrCast([*]u8, alloc_mod.sandAlloc(self.alloc, alloc_n, @intCast(usize, 1)) catch unreachable);
     var visiting = @ptrCast([*]u8, alloc_mod.sandAlloc(self.alloc, alloc_n, @intCast(usize, 1)) catch unreachable);
     var order = @ptrCast([*]u32, alloc_mod.sandAlloc(self.alloc, @intCast(usize, 4) * alloc_n, @intCast(usize, 4)) catch unreachable);
     var dep_buf = @ptrCast([*]u32, alloc_mod.sandAlloc(self.alloc, @intCast(usize, 4) * alloc_n, @intCast(usize, 4)) catch unreachable);
+    var dep_cnt = @ptrCast([*]u32, alloc_mod.sandAlloc(self.alloc, @intCast(usize, 4) * alloc_n, @intCast(usize, 4)) catch unreachable);
+    var dep_off = @ptrCast([*]u32, alloc_mod.sandAlloc(self.alloc, @intCast(usize, 4) * (alloc_n + @intCast(usize, 1)), @intCast(usize, 4)) catch unreachable);
+    var stack_i = @ptrCast([*]u32, alloc_mod.sandAlloc(self.alloc, @intCast(usize, 4) * (alloc_n + @intCast(usize, 1)), @intCast(usize, 4)) catch unreachable);
+    var stack_next = @ptrCast([*]u32, alloc_mod.sandAlloc(self.alloc, @intCast(usize, 4) * (alloc_n + @intCast(usize, 1)), @intCast(usize, 4)) catch unreachable);
     var ci_z: usize = @intCast(usize, 0);
     while (ci_z < cand_n) : (ci_z += @intCast(usize, 1)) { emitted[ci_z] = @intCast(u8, 0); visiting[ci_z] = @intCast(u8, 0); }
+    // Pass A: one deterministic scan per candidate records its edge count.
+    var ci_a: usize = @intCast(usize, 0);
+    while (ci_a < cand_n) : (ci_a += @intCast(usize, 1)) {
+        var a_dcl = ast_mod.astStoreNodeAt(store, cand_decl[ci_a]);
+        var a_n: usize = @intCast(usize, 0);
+        lowerInitDepScan(self, self.module_id, a_dcl.child_1, dep_buf, &a_n, cand_n);
+        dep_cnt[ci_a] = @intCast(u32, a_n);
+    }
+    dep_off[0] = @intCast(u32, 0);
+    var ci_o: usize = @intCast(usize, 0);
+    while (ci_o < cand_n) : (ci_o += @intCast(usize, 1)) { dep_off[ci_o + @intCast(usize, 1)] = dep_off[ci_o] + dep_cnt[ci_o]; }
+    var dep_cap: usize = @intCast(usize, dep_off[cand_n]);
+    var dep_all = @ptrCast([*]u32, alloc_mod.sandAlloc(self.alloc, @intCast(usize, 4) * (dep_cap + @intCast(usize, 1)), @intCast(usize, 4)) catch unreachable);
+    // Pass B: rescan and copy each stable list into the flat adjacency.
+    var ci_b: usize = @intCast(usize, 0);
+    while (ci_b < cand_n) : (ci_b += @intCast(usize, 1)) {
+        var b_dcl = ast_mod.astStoreNodeAt(store, cand_decl[ci_b]);
+        var b_n: usize = @intCast(usize, 0);
+        lowerInitDepScan(self, self.module_id, b_dcl.child_1, dep_buf, &b_n, cand_n);
+        var b_off: usize = @intCast(usize, dep_off[ci_b]);
+        var b_i: usize = @intCast(usize, 0);
+        while (b_i < b_n) : (b_i += @intCast(usize, 1)) { dep_all[b_off + b_i] = dep_buf[b_i]; }
+    }
     var order_len: usize = @intCast(usize, 0);
     var cycle: u8 = @intCast(u8, 0);
-    var ci: usize = @intCast(usize, 0);
-    while (ci < cand_n) : (ci += @intCast(usize, 1)) {
-        lowerInitOrderVisit(self, ci, cand_decl, cand_name, cand_n, emitted, visiting, order, &order_len, dep_buf, &cycle);
+    var root: usize = @intCast(usize, 0);
+    while (root < cand_n) : (root += @intCast(usize, 1)) {
+        if (emitted[root] == @intCast(u8, 0)) {
+            visiting[root] = @intCast(u8, 1);
+            var sp: usize = @intCast(usize, 0);
+            stack_i[sp] = @intCast(u32, root);
+            stack_next[sp] = @intCast(u32, 0);
+            var walk: u8 = @intCast(u8, 1);
+            while (walk != @intCast(u8, 0)) {
+                var wi: usize = @intCast(usize, stack_i[sp]);
+                var wbeg: usize = @intCast(usize, dep_off[wi]);
+                var wlen: usize = @intCast(usize, dep_off[wi + @intCast(usize, 1)]) - wbeg;
+                var wp: usize = @intCast(usize, stack_next[sp]);
+                var advanced: u8 = @intCast(u8, 0);
+                while (wp < wlen and advanced == @intCast(u8, 0)) {
+                    var wdep: u32 = dep_all[wbeg + wp];
+                    wp += @intCast(usize, 1);
+                    var wj: usize = @intCast(usize, 0);
+                    var wfound: usize = cand_n;
+                    while (wj < cand_n and wfound == cand_n) : (wj += @intCast(usize, 1)) {
+                        if (cand_name[wj] == wdep) { wfound = wj; }
+                    }
+                    if (wfound < cand_n) {
+                        if (emitted[wfound] == @intCast(u8, 0)) {
+                            if (visiting[wfound] != @intCast(u8, 0)) {
+                                if (cycle == @intCast(u8, 0)) {
+                                    var cyc_dcl = ast_mod.astStoreNodeAt(store, cand_decl[wfound]);
+                                    var cyc_msg: []const u8 = "cyclic global initializer dependency";
+                                    _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3064_CYCLIC_GLOBAL_INIT)), self.ctx.source_file_id, cyc_dcl.span_start, cyc_dcl.span_start + @intCast(u32, cyc_dcl.span_len), cyc_msg);
+                                }
+                                cycle = @intCast(u8, 1);
+                            } else {
+                                stack_next[sp] = @intCast(u32, wp);
+                                visiting[wfound] = @intCast(u8, 1);
+                                sp += @intCast(usize, 1);
+                                stack_i[sp] = @intCast(u32, wfound);
+                                stack_next[sp] = @intCast(u32, 0);
+                                advanced = @intCast(u8, 1);
+                            }
+                        }
+                    }
+                }
+                if (advanced == @intCast(u8, 0)) {
+                    visiting[wi] = @intCast(u8, 0);
+                    emitted[wi] = @intCast(u8, 1);
+                    order[order_len] = @intCast(u32, wi);
+                    order_len += @intCast(usize, 1);
+                    if (sp == @intCast(usize, 0)) { walk = @intCast(u8, 0); }
+                    else { sp -= @intCast(usize, 1); }
+                }
+            }
+        }
     }
     if (cycle == @intCast(u8, 0)) {
         var oi: usize = @intCast(usize, 0);
@@ -8670,38 +8757,4 @@ fn lowerInitDepScan(self: *LirLowerer, mod_id: u32, node_idx: u32, out: [*]u32, 
             lowerInitDepScan(self, mod_id, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ei)), out, out_len, cap);
         }
     }
-}
-
-// Task 9 fix round 3 (Q7): depth-first emission order for one module's global
-// initializers. `visiting` detects a dependency cycle; a candidate is appended
-// to `order` only after all of its same-module dependencies are ordered, so
-// already-dependency-ordered programs keep their source order exactly.
-fn lowerInitOrderVisit(self: *LirLowerer, i: usize, decls: [*]u32, names: [*]u32, n: usize, emitted: [*]u8, visiting: [*]u8, order: [*]u32, order_len: *usize, dep_buf: [*]u32, cycle: *u8) void {
-    if (emitted[i] != @intCast(u8, 0)) return;
-    if (visiting[i] != @intCast(u8, 0)) {
-        if (cycle.* == @intCast(u8, 0)) {
-            var cyc_dcl = ast_mod.astStoreNodeAt(self.ctx.store, decls[i]);
-            var cyc_msg: []const u8 = "cyclic global initializer dependency";
-            _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3064_CYCLIC_GLOBAL_INIT)), self.ctx.source_file_id, cyc_dcl.span_start, cyc_dcl.span_start + @intCast(u32, cyc_dcl.span_len), cyc_msg);
-        }
-        cycle.* = @intCast(u8, 1);
-        return;
-    }
-    visiting[i] = @intCast(u8, 1);
-    var dep_n: usize = @intCast(usize, 0);
-    var ord_dcl = ast_mod.astStoreNodeAt(self.ctx.store, decls[i]);
-    lowerInitDepScan(self, self.module_id, ord_dcl.child_1, dep_buf, &dep_n, n);
-    var dj: usize = @intCast(usize, 0);
-    while (dj < dep_n) : (dj += @intCast(usize, 1)) {
-        var j: usize = @intCast(usize, 0);
-        var found: usize = n;
-        while (j < n) : (j += @intCast(usize, 1)) {
-            if (names[j] == dep_buf[dj]) { found = j; break; }
-        }
-        if (found < n) { lowerInitOrderVisit(self, found, decls, names, n, emitted, visiting, order, order_len, dep_buf, cycle); }
-    }
-    visiting[i] = @intCast(u8, 0);
-    emitted[i] = @intCast(u8, 1);
-    order[order_len.*] = @intCast(u32, i);
-    order_len.* += @intCast(usize, 1);
 }

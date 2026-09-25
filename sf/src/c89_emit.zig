@@ -6389,11 +6389,13 @@ fn emitPtrValuePrint(emitter: *C89Emitter, tid: u32, is_temp: u8, temp: u32, acc
         // the value with no diagnostic. The validator mirrors the exact byte
         // budget now (`lower.zig printFmtPointeeNameOk`), so this path is the
         // defensive backstop: hard-fail instead of emitting nothing or broken C.
+        // Final-review Minor 4: one hoisted message for both guards.
+        var name_cap_msg: []const u8 = "print: pointer name exceeds the emission name buffer";
         if (!zigPrintNameAppend(emitter, ptid, @intCast(u32, 0), &nb, &npos)) {
-            @panic("print: pointer name exceeds the emission name buffer");
+            @panic(name_cap_msg);
         }
         if (!zigNamePut(&nb, &npos, "@")) {
-            @panic("print: pointer name exceeds the emission name buffer");
+            @panic(name_cap_msg);
         }
         bufferedWriterWrite(&emitter.writer, "std_print(");
         emitCStringLiteral(&emitter.writer, nb[0..npos]);
