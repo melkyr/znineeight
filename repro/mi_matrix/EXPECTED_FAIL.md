@@ -1,4 +1,58 @@
-# mi_matrix corpus — expected-fail manifest (v243 2026-09-25)
+# mi_matrix corpus — expected-fail manifest (v244 2026-09-25)
+
+## Task 9 fix round 1 — narrow the B5 reject to the broken shapes (v243 -> v244, 2026-09-25)
+
+**What.** Operator ruling after the Task-9 review: the v243 blanket `error[3064]`
+reject also rejected a shape that had compiled and printed correctly before the
+change — the scalar forward reference `var g = .{ s, 7 }; const s = 5;` (and its
+fitting int/char-literal variants). The reject predicate is narrowed so only
+the genuinely broken shapes reject; the previously-working class is accepted
+and prints Zig-identically. This section supersedes the v243 "scalar variants
+reject too" sentence.
+
+**Narrowed predicate** (`semanticAnalyzerTupleElemRefreshOk`,
+`sf/src/semantic_analyzer.zig`): a recorded tuple element whose final type
+differs from the pass-1 record is benign ONLY when the recorded slot is the
+`TYPE_I32` fallback, the element is a module `const` (not a `var`), its init is
+a bare `int_literal`/`char_literal`, and the literal's exact folded value also
+materialises as `TYPE_I32` (fits i32). Such a literal is inlined at the use
+site (the module-init emitter skips literal consts), so the frozen i32 slot
+holds it exactly. Everything else rejects `error[3064]` (rc 2 / 0 `.c`):
+
+| class | example | pre-fix behavior |
+|---|---|---|
+| composite / pointer / array | `const b = Pair{...}` | rc=0 then gcc `incompatible types` |
+| out-of-i32 integer literal | `const b = 3000000000` | rc=0, printed `-1294967296` |
+| non-literal scalar init | `const b = 5 + 7` / `-5` | rc=0, printed `0` (global load before `__module_init` stores it) |
+| bool / float scalar | `const b = true` / `1.5` | rc=0, printed `0` / `1` |
+
+**Fixtures.** NEW positive runtime `repro/mi_matrix/stdlib_print_tuple_fwd_ok_xmod`
+(`fwd_small = 5`, `fwd_max = 2147483647`, `fwd_char = 'A'`, a two-element row;
+rc 0, 3x byte-exact, byte-identical to the Zig-0.15.2 `std.debug.print` twin;
+golden 78 B / 4 lines; stdlib pin **241 -> 242**). The reject fixture
+`repro/mi_matrix/tuple_fwd_global_reject_xmod` is re-scoped to **6 x
+`error[3064]`** (composite + big + arith + negate + bool + float; rc 2 / 0 `.c`;
+stable control silent). Standalone `repro/print_tuple_fwd.z98` gains the benign
+scalar row and stays 2 x `error[3064]`.
+
+**Gates (fixed compiler `/tmp/t9/build3/zig1_5_clean`, binary md5
+`83985e4320d23aea9b8379d8a2893d5b`).** Self-emission rc 0 / 48 `.c` + 48 `.h` /
+0 PANIC; seed-v86 rebuild hop1 == hop2 == `83985e43…`; 4-MD5 emitted-C
+**UNCHANGED 8/8** (gol `9e0b708e…` / lisp `dfa69f32…` / json `a4a73461…` /
+mud `2e92c1f2…`); corpus `-s0` **1034 = 889 OK / 46 GREEN / 99 FAIL / 0 ICE /
+0 CRASH** (full-classifier join-diff vs the Task-9 v1 run over the 1033 common
+dirs **empty**; the only addition is the new positive fixture); stdlib runtime
+gate **242 PASS / 0 FAIL**; example matrix **24/24**; `check_emit_support.sh`
+**7/7**; `verify_upgraded.sh` **CLOSEOUT OK**; build_test **0/9** (pre-existing
+retired-zig0 baseline). Fixed point **moved `d17828e1c6d7f9bd8f7ae8bdf9ad4c16`
+-> `83985e4320d23aea9b8379d8a2893d5b`**;
+**seed NOT rotated (v86 stays; Task 12 rotates, R2-print)**.
+
+**Residual.** The broken forward references reject `error[3064]`; Zig 0.15.2
+accepts and prints them. The true fix (dependency-ordered `__module_init`
+emission) is out of this round. The non-tuple direct forward reference
+(`var g = b; const b = Pair{...}`) is unchanged (accepted / gcc-clean /
+runtime-zero).
 
 ## Task 9 — invariant guard + tuple-global forward refs (v242 -> v243, 2026-09-25)
 
@@ -19,7 +73,7 @@ entry keeps its exact 3013/3063 decision. Probe/regression pin:
 and `*const [3]i32 {s}`/`{x}`/`{}`), diagnostics byte-identical to the
 pre-guard compiler (verified by diff).
 
-**(2) B5 — forward-referenced tuple globals CLEAN-REJECT (not a fix).**
+**(2) B5 — forward-referenced tuple globals CLEAN-REJECT (not a fix; SUPERSEDED IN PART by the v244 fix round, which accepts the fitting scalar-literal class).**
 `var g = .{ b, 7 }; const b = Pair{...}` compiled rc=0 and emitted gcc-invalid
 C (`zT_0._0 = zG_b;` assigning a `Pair` into an `int`). Pass 1 of
 `frontResolveModuleInits` resolves `g` before the later `b`, so the element
@@ -36,7 +90,9 @@ change emits the new level-0 `error[3064]`
 `ERR_3064_FORWARD_REF_TUPLE_GLOBAL` at the tuple span (deduped per node,
 rc 2 / 0 `.c`). The scalar variants reject too: `const b = 3000000000`
 previously printed the silently wrong `-1294967296`, and `const b = 5` (which
-happened to fit) is the same stale-inference shape. Stable tuples keep the
+happened to fit) is the same stale-inference shape. **Superseded by the v244
+fix round:** `const b = 5` (and the fitting int/char-literal class) is now
+ACCEPTED and prints Zig-identically; only the genuinely broken shapes reject. Stable tuples keep the
 idempotent fast path — the direct/global fixtures (`gtupv`/`gtupc`) and every
 print-arg tuple are unchanged.
 

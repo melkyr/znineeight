@@ -236,6 +236,7 @@ repro/mi_matrix/stdlib_print_aggregate_xmod
 repro/mi_matrix/stdlib_print_enum_errset_xmod
 repro/mi_matrix/stdlib_print_ptr_hexfloat_xmod
 repro/mi_matrix/stdlib_print_ptr_depth_ok_xmod
+repro/mi_matrix/stdlib_print_tuple_fwd_ok_xmod
 repro/mi_matrix/stdlib_print_untyped_lit_xmod
 stdlib_test/bits_buf_str_usage
 stdlib_test/crypto_codec_usage

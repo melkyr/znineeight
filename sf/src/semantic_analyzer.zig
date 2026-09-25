@@ -4735,17 +4735,25 @@ fn semanticAnalyzerResolveTupleLiteral(self: *SemanticAnalyzer, node_idx: u32) u
     // `incompatible types`). Reusing the recorded type keeps the global symbol,
     // the lowered temp and the generated printer on ONE C type.
     //
-    // Task 9 (B5): re-resolve the elements even when a recorded type exists. A
-    // recorded tuple whose element list changed was inferred on pass 1 from a
-    // forward-referenced global that had no type yet (`TYPE_VOID -> TYPE_I32`
-    // fallback below), so its frozen slots are stale: the retained type emits
-    // gcc-invalid C for a composite element and a silently wrong value for an
-    // integer element whose final carrier differs. `__module_init` lowers
-    // globals in declaration order, so a type refresh alone cannot make the
-    // composite case correct; reject the shape cleanly (error[3064]) and keep
-    // returning the recorded type so no cascading type errors follow. A stable
-    // re-resolution (direct/global tuple fixtures, `.{ 11, 22 }`, print-arg
-    // tuples) sees an identical element list and returns the recorded type.
+    // Task 9 (B5; fix round 1 — operator ruling): re-resolve the elements even
+    // when a recorded type exists. A recorded tuple whose element list changed
+    // was inferred on pass 1 from a forward-referenced global that had no type
+    // yet (`TYPE_VOID -> TYPE_I32` fallback below). Most such changes are
+    // broken: a composite/pointer/float/bool element emits gcc-invalid or
+    // silently wrong C, and an integer whose exact value does not fit the
+    // frozen `i32` slot truncates; a non-literal scalar init (`5 + 7`, `-5`,
+    // `true`) lowers to a global load that `__module_init` initialises AFTER
+    // the tuple owner (declaration order), which printed the wrong value before
+    // this task. `__module_init` cannot be reordered here (gate-moving), so
+    // those shapes reject cleanly (error[3064]) and the recorded type is still
+    // returned (no cascading type errors). The ONE benign class is the
+    // previously working scalar forward reference: a module `const`
+    // initialised by a bare int/char literal whose exact value fits `i32` —
+    // the literal is inlined at the use site (the module-init emitter skips
+    // literal consts), so the frozen slot holds it exactly and prints
+    // Zig-identically (`const s = 5;` in `.{ s, 7 }`). A stable re-resolution
+    // (direct/global tuple fixtures, `.{ 11, 22 }`, print-arg tuples) sees an
+    // identical element list and returns the recorded type.
     if (rtt_mod.resolvedTypeTableGet(self.type_table, node_idx)) |existing| {
         if (existing != type_mod.TYPE_UNDEFINED) {
             if (@intCast(usize, existing) < self.registry.types_len and self.registry.types_items[@intCast(usize, existing)].kind == type_mod.TypeKind.tuple_type) {
@@ -4756,9 +4764,13 @@ fn semanticAnalyzerResolveTupleLiteral(self: *SemanticAnalyzer, node_idx: u32) u
                 } else {
                     var ci: usize = @intCast(usize, 0);
                     while (ci < ec_n) : (ci += @intCast(usize, 1)) {
-                        self._stub_0 = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ci)));
+                        var elem_node = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ci));
+                        self._stub_0 = semanticAnalyzerResolveExpr(self, elem_node);
                         if (self._stub_0 == type_mod.TYPE_VOID) { self._stub_0 = type_mod.TYPE_I32; }
-                        if (self.registry.xt_items[@intCast(usize, etup.elems_start) + ci] != self._stub_0) { same = @intCast(u8, 0); }
+                        var rec_e = self.registry.xt_items[@intCast(usize, etup.elems_start) + ci];
+                        if (rec_e != self._stub_0) {
+                            if (!semanticAnalyzerTupleElemRefreshOk(self, elem_node, rec_e)) { same = @intCast(u8, 0); }
+                        }
                     }
                 }
                 if (same == @intCast(u8, 0)) {
@@ -4792,6 +4804,38 @@ fn semanticAnalyzerResolveTupleLiteral(self: *SemanticAnalyzer, node_idx: u32) u
     }
     self._stub_0 = saved;
     return type_mod.typeRegistryGetOrCreateTuple(self.registry, start, @intCast(u16, ec_n));
+}
+
+// Task 9 fix round 1 (B5 narrowing, operator ruling): is a recorded tuple
+// element whose final type differs from the pass-1 record still SAFE to keep?
+// Benign only for the previously-working scalar forward reference: the
+// recorded slot is the `TYPE_I32` resolve fallback, the element is a
+// module-level `const` (not a `var`) initialised by a bare int/char literal,
+// and the literal's exact value also materialises as `TYPE_I32`. Such a
+// const's literal is inlined at the use site (the module-init emitter skips
+// literal consts), so the frozen i32 slot holds it exactly and prints
+// Zig-identically. Every other change — a composite/pointer/float/bool element
+// (gcc-invalid or silently wrong C), an integer outside the i32 range (silent
+// truncation), or a non-literal scalar init (a global load before
+// `__module_init` initialises it) — is the broken class and rejects
+// `error[3064]`.
+fn semanticAnalyzerTupleElemRefreshOk(self: *SemanticAnalyzer, elem_node: u32, rec_e: u32) bool {
+    if (rec_e != type_mod.TYPE_I32) return false;
+    var en = ast_mod.astStoreNodeAt(self.store, elem_node);
+    if (en.kind != AstKind.ident_expr) return false;
+    var name_id = ast_mod.astStoreIdentifier(self.store, elem_node);
+    var sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, name_id) orelse return false;
+    if (sym.kind != sym_mod.SymbolKind.global) return false;
+    if ((sym.flags & @intCast(u16, 0x01)) != @intCast(u16, 0)) return false;
+    var dcl = ast_mod.astStoreNodeAt(self.store, sym.decl_node);
+    if (dcl.child_1 == @intCast(u32, 0)) return false;
+    var init = ast_mod.astStoreNodeAt(self.store, dcl.child_1);
+    if (init.kind != AstKind.int_literal and init.kind != AstKind.char_literal) return false;
+    var ce = ce_mod.comptimeEvalInit(self.registry, self.store, self.interner, self.symbols);
+    var cv = ce_mod.comptimeEvalEvaluate(&ce, dcl.child_1) orelse return false;
+    if (cv.kind != ce_mod.KIND_INT) return false;
+    var ut = ce_mod.comptimeIntUntypedType(cv.v) orelse return false;
+    return ut == rec_e;
 }
 
 fn semanticAnalyzerResolveArrayInit(self: *SemanticAnalyzer, node_idx: u32) u32 {
