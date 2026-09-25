@@ -4727,12 +4727,23 @@ fn semanticAnalyzerResolveTupleLiteral(self: *SemanticAnalyzer, node_idx: u32) u
     var saved = self._stub_0;
      var ec_n = @intCast(usize, ast_mod.astStoreNodeExtraChildCount(self.store, node_idx));
     if (ec_n == @intCast(usize, 0)) { self._stub_0 = saved; return type_mod.TYPE_VOID; }
-    var start: u32 = @intCast(u32, self.registry.xt_len);
+    // Task 4 (z98-print-formatting): resolve every element BEFORE appending its
+    // type to `xt`. A nested tuple literal appends its own element types while it
+    // resolves, so the old resolve+append-interleaved loop left the outer tuple
+    // payload's elems_start/count spanning the nested tuple's element range
+    // (nested tuple values got an int C model and the wrong printer route).
+    var tmp_raw = alloc_mod.sandAlloc(self.registry.types_alloc, @intCast(usize, 4) * ec_n, @intCast(usize, 4)) catch unreachable;
+    var tmp = @ptrCast([*]u32, tmp_raw);
     var i: usize = 0;
     while (i < ec_n) : (i += @intCast(usize, 1)) {
         self._stub_0 = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, i)));
         if (self._stub_0 == type_mod.TYPE_VOID) { self._stub_0 = type_mod.TYPE_I32; }
-        type_mod.xtAppend(self.registry, self._stub_0);
+        tmp[i] = self._stub_0;
+    }
+    var start: u32 = @intCast(u32, self.registry.xt_len);
+    i = 0;
+    while (i < ec_n) : (i += @intCast(usize, 1)) {
+        type_mod.xtAppend(self.registry, tmp[i]);
     }
     self._stub_0 = saved;
     return type_mod.typeRegistryGetOrCreateTuple(self.registry, start, @intCast(u16, ec_n));

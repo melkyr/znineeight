@@ -1,4 +1,70 @@
-# mi_matrix corpus — expected-fail manifest (v233 2026-09-25)
+# mi_matrix corpus — expected-fail manifest (v234 2026-09-25)
+
+## Task 4 (I/F) — aggregate and tuple printers (v233 -> v234, 2026-09-25)
+
+`{}` on `struct` / `union` (untagged) / `tagged_union` / `packed_union` / `tuple` now prints official
+Zig 0.15.2's aggregate form. There are no `std.fmt` primitives for aggregates (Z98 has no
+generics), so `sf/src/c89_emit.zig` generates one **static per-type C printer** for every aggregate
+type a `.print_val` names (and, dependency-first, for its nested aggregate fields):
+`z98_printStruct_<tid>` / `z98_printUnion_` / `z98_printTaggedUnion_` / `z98_printPackedUnion_` /
+`z98_printTuple_`. `collectPrintRoots` scans the current module's fn slots; `emitGeneratedPrinters`
+runs from `emitModule`/`emitModuleFile` before the fn bodies, so no forward declarations are needed
+and the `static` copies of two modules printing the same type are link-safe. The walk reproduces
+Zig's `Io.Writer.printValue` aggregate arms byte-for-byte, including the recursion cap
+(`std.fmt.default_max_depth = 3`): named struct `.{ .a = 1, .b = 2 }`, tuple `.{ 1, 2, 3 }`, active
+tagged-union field `.{ .a = 1 }` (Z98 tags are integer; `switch (v.tag) { case <field-index>: ... }`),
+untagged auto union `.{ ... }` (a field is never read), packed union all fields
+(`.{ .a = 7, .b = 7 }`), packed struct via the existing `emitPackedLoadBitfield`, and `.{ ... }` at
+depth 0. Scalar fields route through `getPrintFnName(..., 'd')`; nested aggregates recurse with
+`d - 1`; packed fields extract into declared scratch locals.
+
+**Tuple C model + need gating.** Tuple types are synthetic (`name_id 0`), so `getCTypeName` gives
+them a stable `Tup_<tid>` name, `emitTupleType` emits `typedef struct { <e0> _0; <e1> _1; ... }`,
+`ctypeGuardWrite` uses `ZIG_TUPLE_`, and `tstEdgesCount`/`tstEdgesFill`/`tstIsDep` gained tuple
+element arms. Tuple typedefs are emitted ONLY for `C89Emitter.needed_tuple_set` — the tuples that
+hold a runtime value (hoisted temps/globals; `collectNeededTuples` + `emitNeededTupleTypes` at the
+end of both type-emission paths). The registry also holds print-args tuple types (e.g. gol has 2);
+emitting those would add C to every printing program and move the 4-MD5 single-file dumps, so they
+stay unemitted. `lower.zig`'s `AstKind.tuple_literal` arm now materialises a real tuple value
+(`nextTemp(tuple_type)` + `assign_field` per element; before, only the first element survived:
+`const t = .{1,2,3}` assigned `t = zT_1` and a direct `print("{}", .{.{1,2,3}})` printed `1`), and
+`semanticAnalyzerResolveTupleLiteral` (`sf/src/semantic_analyzer.zig`) resolves every element BEFORE
+appending the element types to `xt`, so a nested tuple literal can no longer shift the outer tuple's
+element range (the outer C model/printer saw `i32` instead of the nested tuple type).
+
+**Bounded residual (documented).** `printFmtCheck`'s aggregate arm recurses through the value the
+printer would read (`printFmtAggFieldsOk`/`printFmtAggFieldKindOk`, `sf/src/lower.zig`) and accepts
+only integer-like kinds (minus `enum`), `bool`, `f32`/`f64`, `u8` and nested aggregates (packed
+aggregates: scalars <=32 bits only). An aggregate with a field outside that closure — `enum` /
+`error_set` (Task 5), a pointer (Task 6), an array / slice / optional / error-union / `void` (no
+owning task) — rejects the ARGUMENT with `error[3063] "print argument type is not supported (no
+std.fmt printer)"` (rc 2 / 0 `.c`) instead of emitting C that cannot compile. Official Zig 0.15.2
+ACCEPTS and prints every such site (`{ 1, 2, 3 }`, `{ 104, 105 }`, `.green`, `i32@…`, payload/`null`,
+nested packed `.{ ... }`), so these are Zig-accepted bounded residuals, the same operator-principle
+class as Task 3's Q3 list. An untagged auto union with unsupported fields is still accepted (its
+printer never reads a field) — pinned by the positive fixture's `uctrl` row. A pre-existing
+empty-struct registry defect (`struct {}` resolves with unrelated field entries) means empty named
+aggregates reject too; not pinned (out of scope).
+
+**Fixtures.** Positive runtime `repro/mi_matrix/stdlib_print_aggregate_xmod` (15-line / 454-byte
+golden, rc 0, 3x byte-exact, Zig-0.15.2-twin byte-identical; struct/tuple/nested-tuple/mixed-tuple/
+tagged/untagged+control/packed-struct/packed-union/nested-struct/mixed-width/depth-cap/parameter/
+global/direct-tuple rows; stdlib pin **236 -> 237**). Reject
+`repro/mi_matrix/print_aggregate_noprinter_reject_xmod` (`expected.rc` = 2; 7 sites, 7 x
+`error[3063]`, 0 `.c`, FAIL; array/slice/enum/pointer/optional/packed-nested/tuple-pointer fields;
+each site oracle-accepted). Standalone `repro/print_aggregate.z98` (rc 0, byte-identical to the
+same Zig twin).
+
+**Gates.** Self-compile **moving point** hop1 `864994319f4005ae99696ceb3214ba7d` != hop2 == hop3
+== **`6e2cef8bc82fc0e1963aaab638c4c858`**. **4-MD5 emitted-C UNCHANGED** (gol `9e0b708e…` /
+lisp `dfa69f32…` / json `a4a73461…` / mud `2e92c1f2…`, 8/8 dump checks, 2x each) — the STOP rule is
+satisfied and runtime identity is re-confirmed by execution (gol `fcbf7e7c…` / lisp `b3d9f897…` /
+json `8bda3d5a…` / mud server `66c8f0ab…` + client `93147d0f…`). Corpus `-s0` **1025 = 884 OK /
+46 GREEN / 95 FAIL / 0 ICE / 0 CRASH**; the full-classifier join-diff vs Task 3 over the 1023
+common dirs is **empty (zero class movement)** — the 2 new dirs are the positive fixture (OK) and
+the reject fixture (FAIL). Stdlib runtime gate **237 PASS / 0 FAIL**; example matrix **24/24**;
+`check_emit_support.sh` **7/7**; `verify_upgraded.sh` **CLOSEOUT OK**. Seed stays **v84** (R2-print:
+rotation is closeout-only).
 
 ## Task 3 (F) — print-format validator + rejects (v232 -> v233, 2026-09-25)
 

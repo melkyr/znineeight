@@ -1,4 +1,4 @@
-# 08 — C89 Emission [updated: 2026-09-25 — Task 2 (z98-print-formatting): `printFnSourceName` is a width/signedness dispatcher (`printKindIsIntegerLike` + `typeRegistryIntWidthBits`/`IsSigned`; ≤32 → U32/I32, 33..64 → U64/I64, `{x}` → the matching `printHex*`; Z98 `usize` is 32-bit unsigned; `integer_literal` is the 32-bit signed fallback) and `std.fmt`'s `printHexI32/I64` print `-` + hex magnitude for negative values; `pal_f64_to_str` omits the `.`+fraction for an integral float. Fixture `stdlib_print_dispatch_xmod`.][updated: 2026-09-24 — Task 1 (z98-print-formatting): `.print_val` emits a mangled cross-module call into the Z98 std module `sf/src/std_fmt.zig` (`std.fmt`); `printFnSourceName` picks the std.fmt source name and `getPrintFnName` mangles it against the auto-imported std_fmt module id (new `C89Emitter.std_fmt_module_id`, set in `phase_C89Emission`; a `.print_val` also seeds a `ref_edges` entry so std_fmt stays reachable and its header is included). The C `std_print_<type>` bodies are retired; `std_print`/`std_print_len` remain the raw-bytes helpers for `.print_str`/console. `.print_str` is unchanged.] [updated: 2026-09-22 — `getPrintFnName` gained an `f32_type` arm routing `f32` to the existing `std_print_f64` (Task 7F f32 print dispatch; the prototype widens `float`→`double`, no runtime change)] [updated: 2026-09-20 — refreshed against current source: added `emit_support.zig` (self-contained output dir + companion build scripts), packed/int-width/`volatile`/calling-convention and `-fsafe`/`-ffast` guard emission, emission-core compaction, and module pruning; documented the removed `@socket*` builtin emission; dropped line references and the 4-example evidence appendix]
+# 08 — C89 Emission [updated: 2026-09-25 — Task 4 (z98-print-formatting): `.print_val` on struct/union/tagged-union/packed-union/tuple calls a compiler-generated per-type static printer (`z98_printStruct_<tid>`, ...) that emits Zig 0.15.2's `. { .a = 1 }` / `.{ 1, 2, 3 }` form with `std.fmt.default_max_depth = 3`; tuple types gain a `Tup_<tid>` C model (`typedef struct { _0, _1, ... }`), emitted only for `needed_tuple_set` (runtime hoisted temps/globals) so registry-only print-args tuples keep the 4-MD5 dumps byte-identical. See §1.18.] [updated: 2026-09-25 — Task 2 (z98-print-formatting): `printFnSourceName` is a width/signedness dispatcher (`printKindIsIntegerLike` + `typeRegistryIntWidthBits`/`IsSigned`; ≤32 → U32/I32, 33..64 → U64/I64, `{x}` → the matching `printHex*`; Z98 `usize` is 32-bit unsigned; `integer_literal` is the 32-bit signed fallback) and `std.fmt`'s `printHexI32/I64` print `-` + hex magnitude for negative values; `pal_f64_to_str` omits the `.`+fraction for an integral float. Fixture `stdlib_print_dispatch_xmod`.][updated: 2026-09-24 — Task 1 (z98-print-formatting): `.print_val` emits a mangled cross-module call into the Z98 std module `sf/src/std_fmt.zig` (`std.fmt`); `printFnSourceName` picks the std.fmt source name and `getPrintFnName` mangles it against the auto-imported std_fmt module id (new `C89Emitter.std_fmt_module_id`, set in `phase_C89Emission`; a `.print_val` also seeds a `ref_edges` entry so std_fmt stays reachable and its header is included). The C `std_print_<type>` bodies are retired; `std_print`/`std_print_len` remain the raw-bytes helpers for `.print_str`/console. `.print_str` is unchanged.] [updated: 2026-09-22 — `getPrintFnName` gained an `f32_type` arm routing `f32` to the existing `std_print_f64` (Task 7F f32 print dispatch; the prototype widens `float`→`double`, no runtime change)] [updated: 2026-09-20 — refreshed against current source: added `emit_support.zig` (self-contained output dir + companion build scripts), packed/int-width/`volatile`/calling-convention and `-fsafe`/`-ffast` guard emission, emission-core compaction, and module pruning; documented the removed `@socket*` builtin emission; dropped line references and the 4-example evidence appendix]
 
 > Covers: `c89_emit.zig`, `name_mangler.zig`, `cinclude.zig`, `emit_support.zig`
 > Cross-ref: [INDEX.md](INDEX.md) §E (NameMangler, BufferedWriter data structures)
@@ -226,6 +226,7 @@ the typedef and `arena_multi_inst_xmod` compiles + runs clean. No emitter change
 | `temp_global_map` | `U32ToU32Map` | Temp → global alias mapping |
 | `ts_ref_set` | `U32ToU32Map` | Type-storage global reference set |
 | `global_decls` / `global_decls_len` | `[*]ModuleGlobalDecl` / `u32` | Module global declarations |
+| `needed_tuple_set` | `U32ToU32Map` | Task 4: tuple type ids that hold a runtime value (hoisted temp / global); only these get a C typedef (registry-only print-args tuples are skipped so the 4-MD5 dumps stay byte-identical) |
 | `safe_checks` | `bool` | `-fsafe` (true, default) / `-ffast` (false) |
 
 ### 1.5 Type Name Generation
@@ -254,6 +255,7 @@ the typedef and `arena_multi_inst_xmod` compiles + runs clean. No emitter change
 | `va_list_type` | `"va_list"` | |
 | `enum_type` | mangled type | `typedef <backing> <mangled>;` |
 | `array_type` | `Arr_<elem-cname>_<len>` | Typedef'd — `typedef <elem> Arr_<elem>_<len>[<len>];` |
+| `tuple_type` | `Tup_<tid>` (mangled, module 0) | Task 4 — synthetic (name_id 0), so the name is derived from the global dense type id; typedef'd `typedef struct { <e0> _0; ... } <cname>;` |
 | `ptr_type` / `many_ptr_type` | `<base>*` | Direct pointer syntax; fn ptr → use fn name. A `volatile` flag emits the pointee-qualified `volatile T *` (or `T * volatile` for pointer-to-pointer) |
 | `slice_type` | `Slice_<elem>` | Typedef'd struct: `typedef struct { <elem>* ptr; unsigned int len; } ...;` |
 | `optional_type` | `Opt_<payload>` | Typedef'd struct with `{ <type> value; int has_value; }` (void payload: `{ int has_value; }`). Null construction emits `set_optional_null` directly on an `Opt_`-typed temp (`zT_M.has_value = 0;`), so no scalar null payload temp is produced. |
@@ -315,6 +317,7 @@ calls `computeSharedSet` first (see §1.17).
 | `union_type` | `emitUnionType` | `union <cname> { <type> <field>; ... };` — real C union (all members at offset 0, size = max member) matching `@sizeOf`'s union-max. Keyword from `aggregateKeyword(ty.kind)` — the same helper as the two fwd-decl sites, so the C89 tag-namespace (struct/union tags share one namespace) always agrees. Guard tag is `ZIG_UNION_` (see §1.17). |
 | `packed_union_type` | `emitUnionType` | carrier `typedef struct { unsigned char _[N]; } <cname>;` (untagged, members at bit 0 via bitfield access) |
 | `array_type` | `emitArrayType` | `typedef <elem> Arr_<elem>_<len>[<len>];` |
+| `tuple_type` | `emitTupleType` | `typedef struct { <e0> _0; <e1> _1; ... } <cname>;` (positional C model; only for tuples in `needed_tuple_set`, see §1.18) |
 | `i64_type` | `emitInt64Type` | `typedef long long <cname>;` |
 | `u64_type` | `emitUint64Type` | `typedef unsigned long long <cname>;` |
 | `fn_type` | `emitFnPtrType` | `typedef <ret> (<Z98_STDCALL >*<cname>)(<params>);` — emitted only when the fn-ptr-used flag is set |
@@ -492,7 +495,7 @@ Every `LirInst` variant handled in `emitInst`:
 | `.float_cast` | `result = (type)src;` |
 | `.make_slice` | `result.ptr = ptr;\n result.len = len;` |
 | `.print_str` | `std_print("literal");` (unchanged: the raw-bytes helper for a format-string literal segment) |
-| `.print_val` | mangled `std.fmt.<printer>(val);` cross-module call into the auto-imported `sf/src/std_fmt.zig` (slice → `printStr(val.ptr, val.len)`); the old `std_print_<type>` C-ABI calls are retired |
+| `.print_val` | mangled `std.fmt.<printer>(val);` cross-module call into the auto-imported `sf/src/std_fmt.zig` (slice → `printStr(val.ptr, val.len)`); the old `std_print_<type>` C-ABI calls are retired. Task 4: an aggregate/tuple type calls its generated per-type printer `<name>(val, 3)` instead (see §1.18) |
 | `.ptr_cast` | `result = (type)src;` |
 | `.check_error` | `result = src.is_error;` |
 | `.unwrap_error_payload` | `result = src.data.payload;` |
@@ -670,6 +673,10 @@ Resolves field access for `.assign_field`:
 | `getPrintFnName` | Maps TypeId → **mangled C name** of the fmt printer: infers `printFnSourceName` then mangles it (`nameManglerMangle` kind 0) against `emitter.std_fmt_module_id`; when that id is absent (`0xFFFFFFFF`) it falls back to the unmangled source name. |
 | `printKindIsIntegerLike` | Task 2: true for fixed ints, arbitrary-width ints, `c_char`, `enum`, `integer_literal` — the kinds the width/signedness dispatch routes (everything else keeps an explicit arm or the defensive `printI32` fallback). |
 | `printFnSourceName` | Maps TypeId × specifier → the `std.fmt` SOURCE name. Task 2 width/signedness dispatch: integer-like kinds (`printKindIsIntegerLike`) route via `typeRegistryIntWidthBits`/`typeRegistryIntIsSigned` → `printU32`/`printI32` at ≤32 bits, `printU64`/`printI64` at 33..64, and the matching `printHex*` for `{x}` (Z98 `usize` is 32-bit unsigned; `integer_literal` is the 32-bit signed fallback). Non-integer arms unchanged: `printF64` (`f32_type` too — the `float`→`double` widening is implicit via the `void printF64(double)` prototype), `printBool`, `printChar` (u8 `{c}`), `printStr` (slice), default `printI32` (defensive; Task 3 rejects those arguments). |
+| `printAggKind` / `aggPrinterName` | Task 4: true for struct/union/tagged_union/tuple/packed_union; the generated static C printer name (`z98_printStruct_<tid>` etc.; see §1.18). |
+| `emitGeneratedPrinters` / `collectPrintRoots` / `emitAggPrinterRec` / `emitAggPrinterDef` / `emitAggValue` | Task 4: per-module scan for `.print_val` aggregate roots, dependency-first deduped emission, and the printer body (fields/tag-switch/packed extraction/depth-1 recursion). |
+| `emitTupleType` / `emitNeededTupleTypes` / `collectNeededTuples` | Task 4: the tuple `typedef struct { _0, _1, ... }` C model, the needed-tuple emission pass (end of both type-emission paths), and the hoisted-temp/global collector (`C89Emitter.needed_tuple_set`). |
+| `aggPackedScratchName` / `aggAccessAppend` / `aggAccessAppendIndex` / `aggIndentStmt` | Task 4 helpers: packed-field scratch local names, `v.field` / `v._N` access-string builders, printer-statement indentation. |
 | `emitCStringLiteral` | Emits C string literal with escape sequences (\n, \t, \r, \\, \") |
 | `resolveTempName` | Resolve temp_id → C name. Checks local flat lookup first (fl_temps), falls back to mangleTempName |
 | `getTempTypeByIndex` | Find type_id for a temp_id by scanning hoisted_temps |
@@ -835,6 +842,46 @@ paths are branched on the CLI, never mixed.
     was missing from `sf/src/include/zig_runtime.c`; resolved by the Zig-side `sf/src/std_arena.zig`
     module (`Arena{data,capacity,used}` over a static buffer) imported by the examples, removing
     the extern. Regression guard: `extern_runtime_symbol_xmod`.
+
+### 1.18 Generated aggregate printers (Task 4, z98-print-formatting)
+
+`{}` on `struct`/`union`/`tagged_union`/`packed_union`/`tuple` has no `std.fmt`
+primitive (Z98 has no generics), so the emitter generates one `static` C printer
+per printed aggregate type and `.print_val` calls it. Output matches Zig
+0.15.2's `Io.Writer.printValue` aggregate arms byte-for-byte, including its
+recursion cap (`std.fmt.default_max_depth = 3`, `kPrintAggMaxDepth`): a nested
+aggregate at `d == 0` prints `.{ ... }`, and an untagged auto union always
+prints `.{ ... }` (Zig never reads an untagged field).
+
+- `aggPrinterName` → `z98_printStruct_<tid>` / `z98_printUnion_` /
+  `z98_printTaggedUnion_` / `z98_printPackedUnion_` / `z98_printTuple_` (the
+  `z98_` prefix avoids collision with `extern` source names).
+- `collectPrintRoots` scans the module's fn slots for `.print_val` aggregate
+  types; `emitGeneratedPrinters` (called from `emitModule`/`emitModuleFile`
+  before the fn bodies) emits each root and its nested aggregate fields
+  dependency-first, deduped. No forward declarations are needed; `static` makes
+  cross-module duplicates safe.
+- `emitAggPrinterDef` emits `static void <name>(<CType> v, int d)`: named fields
+  as `v.<field>`, tuple elements as `v._<i>`, tagged unions as
+  `switch (v.tag) { case <field-index>: ... v.payload.<field>._0; ... }` (Z98
+  tagged unions always carry integer tags), packed struct/union fields via
+  `emitPackedLoadBitfield` into declared scratch locals. Scalars route through
+  `getPrintFnName(..., 'd')`; nested aggregates call their printer with `d - 1`.
+  The emitted literals are Zig's exact separators (`".{"`, `" .a = "`,
+  `", .b = "`, `" }"`; tuple `" "`/`", "`; packed-union `".{ "`/`", "`; tagged
+  `".{ ."`/`<name>`/`" = "`).
+- **Tuple C model**: `getCTypeName` gives tuple types a stable `Tup_<tid>` name
+  (the generic `name_id==0` fallback would collapse every tuple onto the
+  empty-name mangle); `emitTupleType` emits
+  `typedef struct { <e0> _0; ... } <cname>;`; `ctypeGuardWrite` uses
+  `ZIG_TUPLE_`; `tstEdgesCount`/`tstEdgesFill`/`tstIsDep` gained tuple element
+  arms. Tuple typedefs are emitted ONLY for `C89Emitter.needed_tuple_set`
+  (runtime hoisted temps / globals, collected in `phase_C89Emission` by
+  `collectNeededTuples`; `emitNeededTupleTypes` runs at the end of
+  `emitSpecialTypes` / `emitSharedHeader`): registry-only print-args tuples must
+  not add C, or the 4-MD5 single-file dumps move. Needed tuples also join
+  `shared_set` so the closure promotes pointer-only named element types into the
+  shared header (definition-before-use).
 
 ---
 

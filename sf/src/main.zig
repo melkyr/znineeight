@@ -1133,6 +1133,9 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
         while (ts_tti < ts_fn.hoisted_temps.len) : (ts_tti += @intCast(usize, 1)) {
             var ts_hty = ts_fn.hoisted_temps.items[ts_tti];
             pruneTypeMarkByValue(&ref_edges, ctx.typereg, &type_visited, ts_src, ts_hty.type_id);
+            // Task 4 (z98-print-formatting): tuple types that hold a runtime
+            // value get a C typedef; registry-only print-args tuples do not.
+            c89_mod.collectNeededTuples(ctx.typereg, &emitter.needed_tuple_set, ts_hty.type_id);
         }
         if (ts_fn.return_type < @intCast(u32, ctx.typereg.types_len)) {
             pruneTypeMarkByValue(&ref_edges, ctx.typereg, &type_visited, ts_src, ts_fn.return_type);
@@ -1228,6 +1231,7 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
         var gt_g = ctx.global_decls.items[gt_i];
         if (gt_g.type_id >= @intCast(u32, ctx.typereg.types_len)) continue;
         var gt_ty = ctx.typereg.types_items[@intCast(usize, gt_g.type_id)];
+        c89_mod.collectNeededTuples(ctx.typereg, &emitter.needed_tuple_set, gt_g.type_id);
         if (gt_ty.name_id != @intCast(u32, 0) and gt_ty.name_id == gt_g.name_id) continue;
         pruneTypeMarkByValue(&ref_edges, ctx.typereg, &type_visited, gt_g.module_id, gt_g.type_id);
     }

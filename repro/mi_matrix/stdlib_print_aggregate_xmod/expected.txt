@@ -1,0 +1,16 @@
+pair=.{ .a = 1, .b = 2 }
+tup=.{ 10, 20, 30 }
+tnest=.{ .{ 1, 2 }, 3 }
+tmix=.{ 42, true, 1.5 }
+tagged=.{ .b = 2.5 }
+untagged=.{ ... }
+uctrl=.{ ... }
+packed=.{ .a = 1, .b = 2, .c = true }
+punion=.{ .a = 7, .b = 7 }
+outer=.{ .i = .{ .x = 5 }, .y = 6 }
+mixed=.{ .a = -5, .b = 60000, .c = 3000000000, .d = -5000000000, .e = 1.5, .f = 65 }
+depth=.{ .a = .{ .a = .{ .a = .{ ... } } } }
+param=.{ .a = 3, .b = 4 }
+glob=.{ .a = 11, .b = 12 }
+tdirect=.{ 5, 6 }
+done

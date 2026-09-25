@@ -1060,6 +1060,83 @@ fn printFmtArgIsTypeValue(self: *LirLowerer, arg_node_idx: u32) bool {
     return false;
 }
 
+// Task 4 (z98-print-formatting): the field/element kinds the generated
+// aggregate printers can route correctly TODAY. Scalars with a final route
+// (integer-like family minus enum, bool, f32/f64) and nested aggregates recurse;
+// untagged auto unions are always printable (the printer never reads a field).
+// `packed` restricts a field to a scalar of at most 32 bits — the existing
+// `emitPackedLoadBitfield` extraction limit. Enum/error-set/pointer fields are
+// owned by Tasks 5/6, arrays/slices/optionals/error-unions/void by no task:
+// they reject the aggregate argument with error[3063] (bounded residual).
+fn printFmtAggFieldKindOk(reg: *type_mod.TypeRegistry, tid: u32, is_packed: u8, depth: u32) bool {
+    if (depth > 16) return false;
+    if (@intCast(usize, tid) >= reg.types_len) return false;
+    var kind = reg.types_items[@intCast(usize, tid)].kind;
+    if (printFmtKindIsIntegerLike(kind)) {
+        if (kind == type_mod.TypeKind.enum_type) return false;
+        if (is_packed != @intCast(u8, 0)) {
+            if (type_mod.typeRegistryIntWidthBits(reg, tid) > @intCast(u8, 32)) return false;
+        }
+        return true;
+    }
+    if (kind == type_mod.TypeKind.bool_type) return true;
+    if (kind == type_mod.TypeKind.f32_type or kind == type_mod.TypeKind.f64_type) {
+        if (is_packed != @intCast(u8, 0)) return false;
+        return true;
+    }
+    if (is_packed != @intCast(u8, 0)) return false;
+    if (kind == type_mod.TypeKind.struct_type or kind == type_mod.TypeKind.union_type or kind == type_mod.TypeKind.tagged_union_type or kind == type_mod.TypeKind.tuple_type or kind == type_mod.TypeKind.packed_union_type) {
+        return printFmtAggFieldsOk(reg, tid, depth + @intCast(u32, 1));
+    }
+    return false;
+}
+
+fn printFmtAggFieldsOk(reg: *type_mod.TypeRegistry, tid: u32, depth: u32) bool {
+    if (depth > 16) return false;
+    if (@intCast(usize, tid) >= reg.types_len) return false;
+    var ty = reg.types_items[@intCast(usize, tid)];
+    if (ty.kind == type_mod.TypeKind.struct_type) {
+        var is_packed: u8 = @intCast(u8, 0);
+        if (type_mod.typeRegistryIsPacked(reg, tid)) is_packed = @intCast(u8, 1);
+        var sp = reg.st_items[@intCast(usize, ty.payload_idx)];
+        var i: usize = @intCast(usize, 0);
+        while (i < @intCast(usize, sp.fields_count)) : (i += @intCast(usize, 1)) {
+            var ft = reg.fe_items[@intCast(usize, sp.fields_start) + i].type_id;
+            if (!printFmtAggFieldKindOk(reg, ft, is_packed, depth + @intCast(u32, 1))) return false;
+        }
+        return true;
+    }
+    if (ty.kind == type_mod.TypeKind.tagged_union_type) {
+        var tp = reg.tu_items[@intCast(usize, ty.payload_idx)];
+        var i: usize = @intCast(usize, 0);
+        while (i < @intCast(usize, tp.fields_count)) : (i += @intCast(usize, 1)) {
+            var ft = reg.fe_items[@intCast(usize, tp.fields_start) + i].type_id;
+            if (!printFmtAggFieldKindOk(reg, ft, @intCast(u8, 0), depth + @intCast(u32, 1))) return false;
+        }
+        return true;
+    }
+    if (ty.kind == type_mod.TypeKind.packed_union_type) {
+        var up = reg.un_items[@intCast(usize, ty.payload_idx)];
+        var i: usize = @intCast(usize, 0);
+        while (i < @intCast(usize, up.fields_count)) : (i += @intCast(usize, 1)) {
+            var ft = reg.fe_items[@intCast(usize, up.fields_start) + i].type_id;
+            if (!printFmtAggFieldKindOk(reg, ft, @intCast(u8, 1), depth + @intCast(u32, 1))) return false;
+        }
+        return true;
+    }
+    if (ty.kind == type_mod.TypeKind.tuple_type) {
+        var tup = reg.tup_items[@intCast(usize, ty.payload_idx)];
+        var i: usize = @intCast(usize, 0);
+        while (i < @intCast(usize, tup.elems_count)) : (i += @intCast(usize, 1)) {
+            var et = reg.xt_items[@intCast(usize, tup.elems_start) + i];
+            if (!printFmtAggFieldKindOk(reg, et, @intCast(u8, 0), depth + @intCast(u32, 1))) return false;
+        }
+        return true;
+    }
+    if (ty.kind == type_mod.TypeKind.union_type) return true;
+    return false;
+}
+
 // Task 3: spec §6 / frozen-table (task-0-report.md) print-format validator.
 // `tid` is the argument's static type, `spec_fmt` the parsed specifier and
 // `has_explicit` is 0 for a bare `{}` (whose default route is 'd' but which is
@@ -1141,6 +1218,9 @@ fn printFmtCheck(self: *LirLowerer, arg_node_idx: u32, tid: u32, spec_fmt: u8, h
     }
     if (kind == type_mod.TypeKind.struct_type or kind == type_mod.TypeKind.union_type or kind == type_mod.TypeKind.tagged_union_type or kind == type_mod.TypeKind.tuple_type or kind == type_mod.TypeKind.packed_union_type) {
         if (has_explicit != @intCast(u8, 0)) return printFmtReject(self, arg_node_idx, reject_3013, @intCast(u8, 0));
+        // Task 4: the aggregate is printable only if every value the generated
+        // printer would read has a final field route (see printFmtAggFieldsOk).
+        if (!printFmtAggFieldsOk(reg, tid, @intCast(u32, 0))) return printFmtReject(self, arg_node_idx, reject_3063, @intCast(u8, 1));
         return @intCast(u8, 1);
     }
     if (kind == type_mod.TypeKind.optional_type or kind == type_mod.TypeKind.error_union_type) {
@@ -5751,6 +5831,20 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     var ix_temp = nextTemp(self, type_mod.TYPE_U32);
                     emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, ei), .result = ix_temp } });
                     emitInst(self, LirInst{ .assign_index = .{ .name_id = @intCast(u32, 0), .base = base_temp, .index = ix_temp, .src = val_temp } });
+                }
+                return base_temp;
+            }
+            // Task 4 (z98-print-formatting): a tuple value is a real aggregate.
+            // Materialize every element into a temp of the tuple's C model
+            // (previously only the first element survived, so `const t =
+            // .{1,2,3}` emitted an unassignable partial value and a direct
+            // `print("{}", .{.{1,2,3}})` printed `1`).
+            if (trt_ty.kind == type_mod.TypeKind.tuple_type) {
+                var base_temp = nextTemp(self, trt_id);
+                var ei: usize = @intCast(usize, 0);
+                while (ei < @intCast(usize, ec_n)) : (ei += @intCast(usize, 1)) {
+                    var val_temp = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ei)));
+                    emitInst(self, LirInst{ .assign_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = @intCast(u32, ei), .src = val_temp } });
                 }
                 return base_temp;
             }
