@@ -993,6 +993,14 @@ rejects (slice residual); float-literal subnormals/ULP drift above;
 `*const fn(...)` (the double-pointer spelling) remains the pre-existing
 assignment anomaly.
 
+**Task 7 closeout (2026-09-25):** the z98-print-formatting program is complete
+(Tasks 1-6 landed, whole-set review done); the binding per-type route table and
+the consolidated bounded-residual list live in
+`docs/reference/Language_Spec_Z98.md` §4 "Formatted `print`". The dead
+`emitZigRuntimeC`/`emitZigPalC` string mirrors were removed from `c89_emit.zig`
+in the closeout cleanup commit (`emit_support.zig` is the only support-byte
+source; `check_emit_support.sh` stays 7/7).
+
 ---
 
 ## 2. `cinclude.zig` — @cInclude Dedup (32 lines)

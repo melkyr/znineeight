@@ -1,4 +1,46 @@
-# mi_matrix corpus — expected-fail manifest (v239 2026-09-25)
+# mi_matrix corpus — expected-fail manifest (v240 2026-09-25)
+
+## Task 7 — print-formatting whole-plan closeout (v239 -> v240, 2026-09-25)
+
+**What.** Final task of `docs/superpowers/plans/2026-09-22-z98-print-formatting-plan.md`
+(Tasks 1–6 complete). Whole-set review: every design-spec §4 row matches what shipped (R3
+pointer form `T@<hex>` with no `0x`; R6 negative `{x}` = `-` + hex magnitude; R9 enum/error-set
+names via generated per-type helpers + `std.fmt.printStr`; the Task-4 aggregate/tuple and Task-6
+pointer/hex-float correction paragraphs are the record), no divergence is undocumented, and the
+dead `emitZigRuntimeC`/`emitZigPalC` string mirrors (which still carried the retired
+`std_print_*` bodies) were **removed** from `c89_emit.zig` in cleanup commit `1a2d8853`;
+`emit_support.zig` is the single support-byte source and `check_emit_support.sh` stays 7/7. The
+design spec is marked implemented and is now git-tracked.
+
+**Residuals (all bounded; the consolidated user-facing list is
+`docs/reference/Language_Spec_Z98.md` §4 "Formatted `print`").** R5 `{c}` on an
+`integer_literal` -> `error[3013]`; R7 anonymous aggregate `{}` -> `error[3063]`; R8 nested
+packed aggregate / packed enum/error-set field -> `error[3063]`; R10 bare `error.X` ->
+`error[3063]` (Zig prints `error.X`); Q2 float decimals (6-digit truncation, `1e20` (i64)-cast
+UB, `-0.0` -> `0`); Q3 byte-view forms (`[]const u8 {x}`, `[N]u8 {s}`/`{x}`,
+`*const [N]u8 {s}`/`{x}`, `[*c]u8 {s}`/`{x}`) and `{}` on `void`/`null`/`type` ->
+`error[3063]`; composite pointee names (`*?S`, `**S`, `*?E`) and many-pointer-to-named-aggregate
+fields -> `error[3063]`; aggregate fields outside the closure (array/slice/optional/error-union/
+void) -> `error[3063]`; forward-referenced tuple-global elements emit gcc-invalid C (pre-existing
+multi-pass limit); wide-enum (>u32) literal truncation (runtime `@intToEnum` exact); no committed
+golden for the out-of-range enum fallback `@enumFromInt(7)`; `need_fhex32/64` per-module
+re-emission; pointer depth caps 8 vs 16; `[*]fn () void` parser/type-model gap; empty named
+aggregates reject (pre-existing empty-struct registry defect).
+
+**Gates (final compiler `/tmp/t7/build1/zig1_5_clean`).** 4-MD5 emitted-C **UNCHANGED 8/8**
+(gol `9e0b708e18b6fd2b15f9b1e84b6b1571` / lisp `dfa69f32f33f21b75e8c03e4a151611f` / json
+`a4a7346153557c9e85a8d112d3866a64` / mud `2e92c1f22efedd8ae0c6aa2fc2c45d0e`); corpus `-s0`
+**1027 = 886 OK / 46 GREEN / 95 FAIL / 0 ICE / 0 CRASH** (full-classifier join-diff vs the
+Task-6 final **empty**); stdlib runtime gate **239 PASS / 0 FAIL**; example matrix **24/24**;
+`check_emit_support.sh` **7/7**; `verify_upgraded.sh` **CLOSEOUT OK**; build_test **0/9**
+(pre-existing retired-zig0 baseline); self-emission rc 0 / 48 `.c` + 48 `.h` / 0 PANIC. **Fixed
+point `a4bb2250c0a172cf95aee419890783f8` -> `96c723914ec8b48fddc2a1d039e49141`** (moving point
+hop1 `61e882ba8af6c804a932f0663f61ce15`; hop2 == hop3). **Seed ROTATED v84 -> v85**: archive
+`50501c4bc00beed12ce06688d3b64664` -> `c544e251b044aef37083ca846d65be05`, archived binary md5 =
+fixed point, `gen/` 45 `.c` + 46 `.h` (9752421 bytes), `lib/` 30 std `.zig`; post-rotation
+closure hop1 == hop2 == `96c72391…` (explicit `FIXED_POINT_MD5` gate). Manuals: no transcript
+moved (the manual print examples use only unchanged routes — `classify.z98` i32 `{}`,
+`types.z98` f32 `1.5`, `error_unions.z98` `printInt`; evidence in the Task-7 report).
 
 ## Task 6 — pointer/fn-pointer `{}` and float `{x}` (v237 -> v238; fix r1 v238 -> v239, 2026-09-25)
 
