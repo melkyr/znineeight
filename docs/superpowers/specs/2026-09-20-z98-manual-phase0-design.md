@@ -230,3 +230,10 @@ A claim that fails is fixed or removed — never shipped.
    (2026-09-20) inserts Tasks 10A (I) and 10B (F) to fix the
    `errdefer`-on-explicit-return compiler defect before the error-unions
    chapter is committed.
+2. `docs/superpowers/plans/2026-09-22-z98-manual-volume-I-plan.md` — Volume I
+   (Getting Started), complete; closeout `92ac08af`.
+3. `docs/superpowers/plans/2026-09-23-z98-manual-visual-polish-plan.md` —
+   visual polish for the shipped Volume I/IV pages, complete.
+4. `docs/superpowers/specs/2026-09-25-z98-manual-volume-II-design.md` — Volume
+   II (Learning Z98) design of record; implemented by
+   `docs/superpowers/plans/2026-09-25-z98-manual-volume-II-plan.md` (next).
