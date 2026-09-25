@@ -14,9 +14,11 @@
 // (including write ordering: `pal_print_stdout` is the unbuffered `write(1)`
 // on POSIX, while the `@stdoutWrite` builtin emits buffered `fwrite`).
 //
-// Task 1 scope: only the seam move with identical behavior. Task 2 replaces
-// the width/signedness dispatch and the signed `{x}` (signed decimal when
-// negative) plus the integral-float fix; Task 6 adds pointer/hex-float.
+// What this module does NOT carry (all landed elsewhere): the width/signedness
+// dispatch (Task 2, `printFnSourceName` in c89_emit.zig), the negative signed
+// `{x}` form below ('-' + hex magnitude, oracle ruling R6), the integral-float
+// fix (`pal_f64_to_str`), and the Task-4/5/6 generated per-type printers,
+// enum/error-set name tables and pointer/hex-float helpers.
 
 extern "c" fn pal_print_stdout(msg: [*]const u8, len: usize) void;
 extern "c" fn pal_i64_to_str(val: i64, buf: [*]u8, bufsize: i32) i32;

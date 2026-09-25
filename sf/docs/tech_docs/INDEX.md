@@ -461,9 +461,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `emitWrapNeg` | c89_emit.zig |
 | `emitWrapOp` | c89_emit.zig |
 | `emitZigCompatHSupport` | emit_support.zig |
-| `emitZigPalC` | c89_emit.zig |
 | `emitZigPalCSupport` | emit_support.zig |
-| `emitZigRuntimeC` | c89_emit.zig |
 | `emitZigRuntimeCSupport` | emit_support.zig |
 | `emitZigRuntimeHSupport` | emit_support.zig |
 | `enAppend` | type_registry.zig |

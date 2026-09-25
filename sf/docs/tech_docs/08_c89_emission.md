@@ -706,7 +706,6 @@ Resolves field access for `.assign_field`:
 | `dceResultPos` / `dceMarkAllReads` / `dceMarkAllWritten` / `dceReleaseOperands` | Dead-temp DCE marking |
 | `isDeadLocalName` | True when a local name is never read (skip its declaration) |
 | `emitBuildTargetSh` / `emitBuildTargetBat` / `emitBuildOwcBat` | Companion build-script bodies (`emitBuildScripts`) |
-| `emitZigRuntimeC` / `emitZigPalC` | DEAD CODE — stale mirrors, never called (§6) |
 
 ### 1.16 Marker Reference
 
@@ -1169,9 +1168,9 @@ byte-for-byte.
 Self-contained output means present iff referenced, so a stdio-only program carries no
 net/OS/time prelude and needs no winsock link.
 
-The `emitZigRuntimeC`/`emitZigPalC` functions in `c89_emit.zig` are **DEAD CODE**
-(never called) and are stale mirrors of `zig_pal.c`/`zig_runtime.c`; the live bytes come
-from `emit_support.zig`.
+The `emitZigRuntimeC`/`emitZigPalC` dead stale mirrors were **removed** from
+`c89_emit.zig` at the print-formatting plan closeout (Task 7, 2026-09-25); the live
+bytes come from `emit_support.zig` only.
 
 ### 6.1 Companion build scripts
 
