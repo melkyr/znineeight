@@ -977,7 +977,12 @@ exact).
   single 16 pointer-chain cap (`depth > 8` before), aligned with the validator
   and `zigPrintNameAppend`; pre-fix, a validator-accepted 10..14-wrapper chain
   emitted rc=0 C that referenced an unemitted wrapper typedef (gcc
-  `unknown type name`). Beyond 16 the validator already rejects `error[3063]`.
+  `unknown type name`). **Final-review Minor 3 correction:** beyond the print cap
+  the ARGUMENT rejects `error[3063]` (e.g. a 16-wrapper `*A16`); a chain beyond
+  the type resolver's own representation (a 17-wrapper declaration, pre-existing
+  cap) fails earlier — the declaration does not resolve and the identifier
+  reports `error[20] identifier '<name>' is not declared`, so no emission walk is
+  reached.
 - **Float `{x}`:** `Writer.zig:1572-1720` bit-for-bit (no precision option —
   Z98 has none): sign bit then `nan`/`inf`, zero `0x0.0p0`, denormals (exponent
   adjusted, no implicit bit), implicit-bit normalization, `mantissa_digits =

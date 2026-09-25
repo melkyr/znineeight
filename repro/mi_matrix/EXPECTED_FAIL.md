@@ -1,4 +1,44 @@
-# mi_matrix corpus — expected-fail manifest (v248 2026-09-25)
+# mi_matrix corpus — expected-fail manifest (v249 2026-09-25)
+
+## Final-review Critical fix wave (v248 -> v249, 2026-09-25)
+
+The whole-branch review of Amendment 1 returned one Critical + six Minors; this wave
+fixed them all. **(Critical)** `lowerInitOrderVisit` shared one `dep_buf` across
+recursive calls: a nested visit overwrote it, so the outer loop read stale name ids
+and silently dropped its remaining dependency edges — `var g = a + b; const a = c +
+d; const b: i32 = 5 + 7;` emitted `a; g; b` and ran `g = 3` where Zig 0.15.2 prints
+`15` (rc 0, silent wrong value). FIX: `lowerModuleInit` precomputes each candidate's
+same-module edge list ONCE into a flat adjacency (`dep_cnt`/`dep_off`/`dep_all`) and
+orders the globals with an ITERATIVE explicit-stack DFS (the relative `stack_next` is
+compared against the per-candidate dep LENGTH, not the absolute adjacency end offset);
+the recursion is gone (Minor 5). **New fixture**
+`repro/mi_matrix/stdlib_print_init_order_dep_xmod` (the exact repro + a
+runtime-init `const c: i32 = 1 + 0` variant; golden 31 B / 6 lines, rc 0, 3x
+byte-exact, Zig-0.15.2 twin byte-identical; RED on the v87 compiler) + standalone
+`repro/print_init_order_dep.z98`. **Minors:** (1) the no-std_fmt "byte-identical"
+claims corrected — through `@import("std")` the base emits `error[3048]` twice (the
+Task-1 auto-import attempt + `std.zig`'s own `std_fmt.zig` import), the fixed
+compiler once (same code/text/rc=2/0 `.c`); (2) the stale non-tuple
+`var g = b; const b = Pair{...}` runtime-zero residual is RETIRED — Q7's ident
+dep-scan orders `b` first, it prints Zig's `.a = 1, .b = 2`, and it is pinned as the
+positive `direct` row in `stdlib_print_tuple_fwd_ok_xmod`; (3) the pointer-cap
+wording now distinguishes the print cap (`*A16` argument -> `error[3063]`) from the
+pre-existing 16-wrapper resolver cap (a 17-wrapper declaration -> `error[20]`, which
+fires earlier); (4) the duplicated pointer-name `@panic` string is hoisted.
+**Gates (fix compiler `/tmp/fw/build3/zig1_5_clean`, md5
+`a3928c11f9852db9646dff39006ef654`):** seed-v87 rebuild hop1 == hop2 ==
+`a3928c11f9852db9646dff39006ef654`; 4-MD5 emitted-C **UNCHANGED 8/8** (gol
+`9e0b708e…` / lisp `dfa69f32…` / json `a4a73461…` / mud `2e92c1f2…`, 2x);
+corpus `-s0` **1039 = 894 OK / 46 GREEN / 99 FAIL / 0 ICE / 0 CRASH** (join-diff vs
+the Task-12 classifier run over the 1038 common dirs **empty**; the only addition is
+the new OK fixture); stdlib runtime **247 PASS / 0 FAIL** (pin 246 -> 247); example
+matrix **24/24**; `check_emit_support.sh` **7/7**; `verify_upgraded.sh` **CLOSEOUT
+OK**; build_test **0/9** (pre-existing retired-zig0 baseline); self-emission rc 0 /
+48 `.c` + 48 `.h`. **Seed ROTATED v87 -> v88**: archive md5
+`71f3e3c652a2cba07fdedb4cbc5dff3b` -> `3db5ef392ecc349304ffdf14c618e530`; archived
+binary md5 = fixed point `a3928c11f9852db9646dff39006ef654` (`gen/` 45 `.c` + 46 `.h`
+= 9832934 bytes; `lib/` 30 std `.zig`); post-rotation closure hop1 == hop2 ==
+`a3928c11…`.
 
 ## Task 12 (Amendment 1) — hardening-round closeout (v248; NO BUMP, 2026-09-25)
 
@@ -347,9 +387,13 @@ retired-zig0 baseline). Fixed point **moved `d17828e1c6d7f9bd8f7ae8bdf9ad4c16`
 
 **Residual.** The broken forward references reject `error[3064]`; Zig 0.15.2
 accepts and prints them. The true fix (dependency-ordered `__module_init`
-emission) is out of this round. The non-tuple direct forward reference
-(`var g = b; const b = Pair{...}`) is unchanged (accepted / gcc-clean /
-runtime-zero).
+emission) is out of this round — **SUPERSEDED by fix round 3 (operator ruling
+Q7)**, which implemented it. The non-tuple direct forward reference
+(`var g = b; const b = Pair{...}`) was recorded here as accepted / gcc-clean /
+runtime-zero: **retired by the final-review Critical fix wave (2026-09-25)** —
+Q7's ident dep-scan orders `b` first, so it now prints Zig's `.a = 1, .b = 2`
+and is pinned as a positive `direct` row in
+`repro/mi_matrix/stdlib_print_tuple_fwd_ok_xmod` (final-review Minor 2).
 
 ## Task 9 — invariant guard + tuple-global forward refs (v242 -> v243, 2026-09-25)
 
@@ -378,10 +422,13 @@ freezes at the `TYPE_VOID -> TYPE_I32` fallback in
 `semanticAnalyzerResolveTupleLiteral`; the Task-4 idempotent fast path then
 returned the stale tuple on every later pass. A pass-aware TYPE refresh alone
 is not a correct fix: `__module_init` lowers globals in declaration order, so
-`g` would copy the zero-initialised `Pair` — the non-tuple analogue
-`var g = b; const b = Pair{...}` is already rc=0 / gcc-clean on the base
-compiler and prints `.a = 0, .b = 0` (oracle `.a = 1, .b = 2`), and a
-dependency-ordered init emission is out of the brief and gate-moving. The
+`g` would copy the zero-initialised `Pair` — at that time the non-tuple
+analogue `var g = b; const b = Pair{...}` was rc=0 / gcc-clean and printed
+`.a = 0, .b = 0` (oracle `.a = 1, .b = 2`), and a dependency-ordered init
+emission was out of the brief. **Fix round 3 (Q7) implemented the
+dependency-ordered emission**: the non-tuple analogue now runs after `b` and
+prints Zig's `.a = 1, .b = 2` (final-review Minor 2, positive `direct` row in
+`stdlib_print_tuple_fwd_ok_xmod`). The
 recorded fast path now re-resolves the elements and compares the list; a
 change emits the new level-0 `error[3064]`
 `ERR_3064_FORWARD_REF_TUPLE_GLOBAL` at the tuple span (deduped per node,
@@ -417,9 +464,13 @@ build_test **0/9** (pre-existing retired-zig0 baseline). Fixed point **moved
 
 **Residuals.** A module-level tuple literal with a forward-referenced global
 element rejects `error[3064]` (Zig 0.15.2 accepts and prints it). The
-non-tuple direct forward reference (`var g = b; const b = Pair{...}`) stays
-accepted, gcc-clean and runtime-zero — a pre-existing module-init ordering
-residual recorded here, unchanged by this task and not part of B5.
+non-tuple direct forward reference (`var g = b; const b = Pair{...}`) — listed
+here as an accepted / gcc-clean / runtime-zero pre-existing ordering residual —
+is **RETIRED by Q7's dependency-ordered `__module_init` emission** (fix round 3)
+and the **final-review Critical fix wave (2026-09-25)**: the ident dep-scan
+orders `b` first, so it prints Zig's `.a = 1, .b = 2` and is pinned as a
+positive `direct` row in `stdlib_print_tuple_fwd_ok_xmod` (final-review
+Minor 2).
 
 ## Task 8 — pointer-name emission hardening (v241 -> v242, 2026-09-25)
 
