@@ -479,11 +479,18 @@ fn phase_ImportResolution(ctx: *CompilerContext) void {
     // std_fmt module (and its PAL backing) into the graph so the mangled
     // `std.fmt` call sites the emitter writes have a definition. The user needs
     // no new import; `std.io.print` stays the entry point.
+    // Task 10 (B8): the scan is name-based and over-approximates (see
+    // `astStoreHasPrintRef`), so probe the search dirs first and skip silently
+    // when std_fmt.zig is absent — `phase_LIRLowering` reports error[3048] only
+    // if a print VALUE was actually lowered and needs the module.
     var print_name_id = interner_mod.stringInternerIntern(ctx.interner, "print");
     if (astStoreHasPrintRef(ctx.store, print_name_id)) {
-        var fmt_path_id = interner_mod.stringInternerIntern(ctx.interner, "std_fmt.zig");
-        _ = mr_mod.moduleRegistryResolveImport(ctx.module_reg, fmt_path_id, mod_id, &ctx.alloc.scratch);
-        import_resolver.moduleRegistryResolveImports(ctx.module_reg, &ctx.alloc.module, &ctx.alloc.scratch, ctx.store);
+        var fmt_name: []const u8 = "std_fmt.zig";
+        if (mr_mod.moduleResolverResolve(&ctx.module_reg.resolver, root_path, fmt_name, &ctx.alloc.scratch) != null) {
+            var fmt_path_id = interner_mod.stringInternerIntern(ctx.interner, fmt_name);
+            _ = mr_mod.moduleRegistryResolveImport(ctx.module_reg, fmt_path_id, mod_id, &ctx.alloc.scratch);
+            import_resolver.moduleRegistryResolveImports(ctx.module_reg, &ctx.alloc.module, &ctx.alloc.scratch, ctx.store);
+        }
     }
     var hash_spill_path: [512]u8 = undefined;
     var hsp_len: usize = @intCast(usize, 0);
@@ -816,6 +823,7 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
         .suspending_fns = &ctx.suspending_fns,
         .frame_sizes = &ctx.frame_sizes,
         .state_widths = &ctx.state_widths,
+        .print_value_lowered = @intCast(u8, 0),
     };
     var mods = mr_mod.moduleRegistryGetModules(ctx.module_reg);
     // Amendment 9 two-phase async lowering: phase A lowers + layouts + publishes
@@ -1000,6 +1008,21 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
     if (async_pending) { alloc_mod.sandReset(&ctx.alloc.scratch); }
     computeModuleInitOrder(ctx);
     lir_stream.lirStreamFinishWrite(&ctx.lir_stream);
+    // Task 10 (B8): the auto-import probe in `phase_ImportResolution` skips
+    // std_fmt.zig silently on a resolve miss. A lowered print VALUE is the only
+    // thing that needs a std.fmt symbol, so a program whose `print` reference
+    // never lowered one must not fail; report the missing module here (the same
+    // error[3048] the import path used to raise) only when it was needed.
+    if (sem_ctx.print_value_lowered != @intCast(u8, 0)) {
+        var c89_fmt_base: []const u8 = "std_fmt.zig";
+        if (moduleIdForBasename(mr_mod.moduleRegistryGetModules(ctx.module_reg), ctx.interner, c89_fmt_base) == @intCast(u32, 0xFFFFFFFF)) {
+            var p1: []const u8 = "could not resolve imported file '";
+            var p2: []const u8 = "'";
+            var parts: [3][]const u8 = [3][]const u8{ p1, c89_fmt_base, p2 };
+            var msg = diag_mod.diagnosticBuilderMakeMsg(ctx.interner, &parts[0], @intCast(u32, 3));
+            _ = diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3048_CANNOT_READ_FILE)), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), msg);
+        }
+    }
 }
 
 // Task 9 fix round 3 (operator ruling Q7): order the emitted `__module_init`

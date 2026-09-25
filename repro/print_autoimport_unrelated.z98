@@ -1,0 +1,36 @@
+// print_autoimport_unrelated.z98 — standalone reproduction for the Task 10 B8
+// fix (auto-import precision).
+//
+// The Task-1 auto-import scan matches any `ident_expr`/`field_access` named
+// `print`; before Task 10 an unrelated identifier named `print` made the
+// compiler require std_fmt.zig, so a library path without that module failed
+// with `error[3048]` even though no print was lowered.
+//
+// Compile BOTH ways (the seed-built compiler plus its sibling lib/, then a
+// copy whose lib/ has std_fmt.zig removed):
+//   mkdir -p /tmp/print_autoimport_unrelated_out
+//   <zig1> -o /tmp/print_autoimport_unrelated_out repro/print_autoimport_unrelated.z98
+//   (cd /tmp && cp -r <build> <build_nofmt> && cp <build>/zig1_5_clean <build_nofmt>/ \
+//     && rm <build_nofmt>/lib/std_fmt.zig)
+//   mkdir -p /tmp/print_autoimport_unrelated_out2
+//   <build_nofmt>/zig1_5_clean -o /tmp/print_autoimport_unrelated_out2 repro/print_autoimport_unrelated.z98
+//
+// EXPECTED (after Task 10): both compiles rc 0 / 0 diagnostics; the emitted
+// program prints `b8ok` and exits 0. Before the fix the no-std_fmt compile
+// exited 2 with `error[3048]: could not resolve imported file 'std_fmt.zig'`.
+const Config = struct { print: i32 };
+
+const cfg = Config{ .print = 3 };
+const print: i32 = 7;
+
+const Pair = struct { print: i32, other: i32 };
+const pair = Pair{ .print = 4, .other = 100 };
+
+pub fn main() void {
+    const print_alias = print;
+    const field_alias = cfg.print;
+    var total: i32 = print_alias + field_alias + pair.print + pair.other;
+    if (total == 114) {
+        @stdoutWrite("b8ok\n", 5);
+    }
+}

@@ -241,6 +241,7 @@ repro/mi_matrix/stdlib_print_ptr_hexfloat_xmod
 repro/mi_matrix/stdlib_print_ptr_depth_ok_xmod
 repro/mi_matrix/stdlib_print_tuple_fwd_ok_xmod
 repro/mi_matrix/stdlib_print_untyped_lit_xmod
+repro/mi_matrix/stdlib_print_unrelated_ident_xmod
 stdlib_test/bits_buf_str_usage
 stdlib_test/crypto_codec_usage
 stdlib_test/file_stdin_usage

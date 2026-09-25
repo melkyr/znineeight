@@ -104,6 +104,10 @@ pub const SemanticContext = struct {
     suspending_fns: *hash_mod.U64ToU32Map,
     frame_sizes: *hash_mod.U64ToU32Map,
     state_widths: *hash_mod.U64ToU32Map,
+    // Task 10 (B8): set by `lowerPrintFmt` when a `.print_val` is emitted; the
+    // pipeline uses it to report a missing std_fmt only when a print value was
+    // actually lowered.
+    print_value_lowered: u8,
 };
 
 pub const DeferActionArrayList = struct {
@@ -1638,6 +1642,11 @@ fn lowerPrintFmt(self: *LirLowerer, fmt_node_idx: u32, fmt: []const u8, tuple_no
                     // used so the emitter can pick the name-table printer.
                     var pv_implicit: u8 = @intCast(u8, 0);
                     if (has_explicit == @intCast(u8, 0)) pv_implicit = @intCast(u8, 1);
+                    // Task 10 (B8): a `.print_val` is the only instruction whose
+                    // emission needs a std.fmt symbol (the emitter's mangled
+                    // call). Record it so the pipeline can report a missing
+                    // std_fmt only for a print that actually lowered a value.
+                    self.ctx.print_value_lowered = @intCast(u8, 1);
                     emitInst(self, LirInst{ .print_val = .{ .value = pv, .type_id = pvt, .fmt = spec_fmt, .implicit = pv_implicit } });
                     ai += @intCast(usize, 1);
                 }

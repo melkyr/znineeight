@@ -54,7 +54,15 @@ divergences from official Zig (see `task-7G-report.md` for the full table):
   and disappear from the emitted call sites. The abstraction is hidden behind
   `std.fmt`.
 - **Auto-import (m1172):** the compiler **auto-imports `std_fmt`** whenever a
-  `print` is lowered, so user code needs no new import.
+  `print` is lowered, so user code needs no new import. The detection is
+  name-based and over-approximates (the Task-1 alias fix matches any
+  `ident_expr`/`field_access` named `print`). **Task 10 (B8, 2026-09-25):** the
+  auto-import is skipped silently when `std_fmt.zig` is absent from the search
+  dirs, and the missing module is reported (`error[3048]`) only when a print
+  VALUE was actually lowered — an unrelated identifier named `print` no longer
+  fails a lib dir without `std_fmt.zig`, while the alias auto-import is
+  preserved. When `std_fmt.zig` IS present the over-approximation only adds it
+  to the module graph (an unreferenced module is pruned at emission).
 - **Keep the entry (m1172):** `std.io.print` stays the user-facing entry point;
   the compiler still special-cases a callee named `print`.
 - **Reject `{}` on `[]const u8` (m1170/m1172):** match Zig — a slice needs

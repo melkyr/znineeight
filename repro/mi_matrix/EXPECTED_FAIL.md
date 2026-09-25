@@ -1,4 +1,49 @@
-# mi_matrix corpus — expected-fail manifest (v247 2026-09-25)
+# mi_matrix corpus — expected-fail manifest (v248 2026-09-25)
+
+## Task 10 (Amendment 1, B8) — std_fmt auto-import precision (v247 -> v248, 2026-09-25)
+
+**What.** `astStoreHasPrintRef` (`sf/src/main.zig`) deliberately over-approximates:
+it matches ANY `ident_expr`/`field_access` whose payload is the name `print`, because
+the lowerer's print special case is keyed on the resolved fn `name_id` and also
+intercepts an aliased callee (`const p = io.print; p(...)`; Task 1 fix round). The
+price was that an UNRELATED identifier named `print` (a module const, a struct field,
+a parameter) triggered `moduleRegistryResolveImport("std_fmt.zig")`; a search path
+without `std_fmt.zig` then failed `error[3048]` even though no print was lowered
+(not reachable in the shipped install, but a real behavior change).
+
+**Fix** (`sf/src/main.zig`, `sf/src/lower.zig`; no new diagnostics). (1)
+`phase_ImportResolution` probes the search dirs first (`mr_mod.moduleResolverResolve`)
+and skips the auto-import silently when `std_fmt.zig` is absent. (2) `lowerPrintFmt`
+sets the new `SemanticContext.print_value_lowered` on every emitted `.print_val` —
+the only instruction whose emission needs a std.fmt symbol. (3) At the end of
+`phase_LIRLowering`, if the flag is set and no module named `std_fmt.zig` is in the
+registry, the SAME `error[3048]` is added; the existing post-lowering gate exits
+rc 2 / 0 `.c` before emission, so `getPrintFnName`'s unmangled fallback stays
+unreachable.
+
+**Behavior.** RED (base `e7f4c67f…`, lib dir without std_fmt.zig): the unrelated
+probe and the new fixture -> `error[3048]: could not resolve imported file
+'std_fmt.zig'`, rc 2. GREEN (fixed `e3f8d737…`): both rc 0 and run. A real print
+(`io.print("real={}\n", .{9})`) and the Task-1 alias (`const p = io.print;
+p("alias={}\n", .{7})`) without std_fmt still report the identical 3048
+(stderr byte-identical base vs fixed, rc 2 / 0 `.c`), while with std_fmt present
+the alias runs `alias=7`. A `print("literal", .{})` with no placeholder needs only
+the C-runtime `std_print` and stays error-free.
+
+**Residual (bounded).** When std_fmt IS resolvable, an unrelated `print` reference
+still brings it into the module graph (pruned at emission: the unrelated program's
+dump contains no std_fmt file). The trigger cannot be made exact before
+symbol/type resolution runs, and the Task-1 alias review showed syntactic
+tightening re-opens missed-alias classes.
+
+**Fixtures.** `stdlib_print_unrelated_ident_xmod` (global const + struct field named
+`print`, no lowered print, `@stdoutWrite` output; golden 12 B `b8unrelated`, rc 0,
+3x deterministic; stdlib pin 245 -> 246) + standalone
+`repro/print_autoimport_unrelated.z98` (builds and runs `b8ok` both with and without
+std_fmt.zig). **Gates:** fixed compiler `e3f8d737…`; 4-MD5 UNCHANGED 8/8; corpus
+`-s0` 1038 = 893/46/99 (join-diff vs the Task-9 fix-round-4 run over the 1037
+common dirs empty; only the new fixture added); stdlib 246 PASS / 0 FAIL;
+`verify_upgraded.sh` CLOSEOUT OK; seed NOT rotated (Task 12, R2-print).
 
 ## Task 9 fix round 4 — fold literal-const aliases at the first module temp (v246 -> v247, 2026-09-25)
 
