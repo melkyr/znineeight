@@ -3977,7 +3977,13 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                       var decl_node = ast_mod.astStoreNodeAt(store, s.decl_node);
                       if (decl_node.child_1 != 0) {
                           var init_node = ast_mod.astStoreNodeAt(store, decl_node.child_1);
-                           var literal_tid: u32 = @intCast(u32, 0);
+                           // Task 9 fix round 4: 0 is a REAL temp id — the first
+                           // `nextTemp` of `__module_init` allocates temp 0 — so
+                           // the old `literal_tid = 0` "no fold" sentinel dropped
+                           // the fold whenever a skipped literal const was the
+                           // first value lowered, leaving a `load` of the
+                           // never-declared `zG_...`. `TEMP_NONE` is unallocatable.
+                           var literal_tid: u32 = TEMP_NONE;
                            if (init_node.kind == AstKind.int_literal) {
                               var val = ast_mod.astStoreIntValue(store, decl_node.child_1);
                               var lit_ty: u32 = type_mod.TYPE_U32;
@@ -3998,7 +4004,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                               emitInst(self, LirInst{ .int_const = .{ .value = val, .result = tid } });
                               literal_tid = tid;
                           }
-                           if (literal_tid != @intCast(u32, 0)) {
+                            if (literal_tid != TEMP_NONE) {
                                 var s_ty = self.ctx.registry.types_items[@intCast(usize, s.type_id)];
                                 var rt_tu2 = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
                                 if (rt_tu2) |rt2v| { s_ty = self.ctx.registry.types_items[@intCast(usize, rt2v)]; }
@@ -8641,11 +8647,13 @@ fn lowerInitDepScan(self: *LirLowerer, mod_id: u32, node_idx: u32, out: [*]u32, 
             }
         }
     }
-    // `AstKind.builtin_call` stores its NAME id in `child_0` (not a node) — its
-    // arguments live in the extra-child pool, so never descend child_0 for it.
-    if (nd.kind != AstKind.builtin_call and nd.child_0 != @intCast(u32, 0)) { lowerInitDepScan(self, mod_id, nd.child_0, out, out_len, cap); }
-    if (nd.child_1 != @intCast(u32, 0)) { lowerInitDepScan(self, mod_id, nd.child_1, out, out_len, cap); }
-    if (nd.child_2 != @intCast(u32, 0)) { lowerInitDepScan(self, mod_id, nd.child_2, out, out_len, cap); }
+    // Task 9 fix round 4 (review Minor): `nodeChildIsNode` is the single source
+    // of truth for which fixed slots hold node indices — `builtin_call.child_0`,
+    // `swt_prong.child_1` and `for_stmt.child_2` hold name ids, so the generic
+    // walk must not read them as nodes (the entry bound is kept).
+    if (nd.child_0 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(nd.kind, @intCast(u8, 0))) { lowerInitDepScan(self, mod_id, nd.child_0, out, out_len, cap); }
+    if (nd.child_1 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(nd.kind, @intCast(u8, 1))) { lowerInitDepScan(self, mod_id, nd.child_1, out, out_len, cap); }
+    if (nd.child_2 != @intCast(u32, 0) and ast_mod.nodeChildIsNode(nd.kind, @intCast(u8, 2))) { lowerInitDepScan(self, mod_id, nd.child_2, out, out_len, cap); }
     if (lowerInitKindHasExtras(nd.kind)) {
         var ec = ast_mod.astStoreNodeExtraChildCount(store, node_idx);
         var ei: usize = @intCast(usize, 0);

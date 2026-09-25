@@ -1,4 +1,80 @@
-# mi_matrix corpus — expected-fail manifest (v246 2026-09-25)
+# mi_matrix corpus — expected-fail manifest (v247 2026-09-25)
+
+## Task 9 fix round 4 — fold literal-const aliases at the first module temp (v246 -> v247, 2026-09-25)
+
+**What.** Re-review 3 of the Q7 dependency ordering found a new Critical: a
+forward (or backward) same-module **literal-const alias chain**
+(`var g = .{ s2, 7 }; const s = 5; const s2 = s;`) compiled rc 0 and emitted
+gcc-invalid C — `zG_..._s2 = zG_..._s;` while `zG_..._s` is never declared
+(the literal const `s` is skipped by `__module_init` and normally inlined at
+its use sites). The "every previously-broken class is Zig-equal" wording was
+false while this class was broken.
+
+**Root cause.** In the `ident_expr` arm's global-literal fold
+(`sf/src/lower.zig`), `literal_tid` used `0` as the "no fold" sentinel. Temp 0
+is a REAL temp id: the first `nextTemp` of `__module_init` (and of a
+zero-parameter function) allocates temp 0. Whenever the first value lowered in
+`__module_init` was a skipped literal const — exactly what the Q7 dependency
+order exposes for `const s2 = s` (`s2` is emitted before `g`, so the alias
+store allocates temp 0) — the fold emitted its `int_const` into temp 0, then
+the `literal_tid != 0` test treated it as "not folded" and fell through to
+`lowerGlobalRef`, which emitted a `load` of the skipped const. The pre-Q7
+compiler only escaped the gcc error for the forward order by accident: it
+lowered `g` first, so the alias store was not the first temp.
+
+**Fix** (`sf/src/lower.zig`). (1) The fold sentinel is `TEMP_NONE`
+(unallocatable), so a fold into temp 0 is kept; a literal const referenced by
+a global initializer now inlines its value, and Q7 orders alias chains so each
+alias store sees its dependency's materialized value. (2) The review's Minor
+finding is fixed too: `lowerInitDepScan` uses `ast.zig`'s `nodeChildIsNode`
+for the `child_0/child_1/child_2` walk (instead of special-casing
+`builtin_call`), which also protects `swt_prong.child_1` and
+`for_stmt.child_2` (name ids); the entry bound is kept.
+
+**RED -> GREEN.** Fix-round-3 compiler (`/tmp/t9/build10`, md5 `7c70cf47…`) ->
+fix-round-4 compiler (`/tmp/t9r4/build`, md5 `e7f4c67f…`); every row matches
+the Zig-0.15.2 `std.debug.print` twin:
+
+| probe | before (fr3) | after (fr4) |
+|---|---|---|
+| `chain_fwd` `var g = .{ s2, 7 }; const s = 5; const s2 = s;` | rc 0 / gcc `'zG_..._s' undeclared` | `g=.{ 5, 7 }` |
+| `chain_bwd` `const s = 5; const s2 = s; var g = .{ s2, 7 };` | rc 0 / gcc `'zG_..._s' undeclared` | `g=.{ 5, 7 }` |
+| `chain_scalar` `const s = 5; const s2 = s;` + scalar print | rc 0 / gcc `'zG_..._s' undeclared` | `s2=5` |
+| `chain_declorder` / `chain_two` (fr3 probes) | rc 0 / gcc `'zG_..._s' undeclared` | Zig-equal |
+| `const s = 5; var x = s;` (direct skipped-literal use) | rc 0 / gcc `'zG_..._s' undeclared` | `x=5` |
+| float/char/bool consts, 3-alias chains, `&s`, `ann2 = ann` | mixed (`gcc` invalid or fallthrough load) | Zig-equal, gcc-valid |
+
+**Fixtures.** Three new positive runtime fixtures, each with its own module
+init (each is a genuine RED on the fr3 compiler — all three GCCFAIL):
+`repro/mi_matrix/stdlib_print_alias_chain_fwd_xmod` and `..._bwd_xmod` (golden
+`g=.{ 5, 7 }`) + `..._scalar_xmod` (golden `s2=5`); rc 0, 3x byte-exact,
+byte-identical to the Zig-0.15.2 twins. `scripts/stdlib/expected_dirs.txt` pin
+**242 -> 245**.
+
+**Gates (fix-round-4 compiler `/tmp/t9r4/build/zig1_5_clean`, binary md5
+`e7f4c67f61c1145f2798c7b57d356f53`).** Self-emission rc 0 / 48 `.c` + 48 `.h` /
+0 PANIC; seed-v86 rebuild hop1 == hop2 == `e7f4c67f…`; 4-MD5 emitted-C
+**UNCHANGED 8/8** (gol `9e0b708e…` / lisp `dfa69f32…` / json `a4a73461…` /
+mud `2e92c1f2…`) — the fold only changes programs that previously emitted a
+load of a never-declared skipped const (i.e. only broken C), so the pinned
+dumps stay byte-identical; corpus `-s0` **1037 = 892 OK / 46 GREEN / 99 FAIL /
+0 ICE / 0 CRASH** (join-diff vs the fix-round-3 run over the 1034 common dirs
+**empty**; the only additions are the three new runtime fixtures); stdlib
+runtime gate **245 PASS / 0 FAIL**; example matrix **24/24**;
+`check_emit_support.sh` **7/7**; `verify_upgraded.sh` **CLOSEOUT OK**;
+build_test **0/9** (pre-existing retired-zig0 baseline). Fixed point **moved
+`7c70cf47eafc795d30ccbf820ee3091c` -> `e7f4c67f61c1145f2798c7b57d356f53`** (the
+source change alters the compiler's own emitted C); **seed NOT rotated (v86
+stays; Task 12 rotates, R2-print)**.
+
+**Residuals (re-verified after the fix).** A global initializer that
+references a **`var`** forward is accepted and ordered correctly even though
+Zig rejects the initializer as not comptime-known (Z98 permissive:
+`var v: i32 = 5; var g = .{ v, 7 };` -> `.{ 5, 7 }`; Zig `unable to evaluate
+comptime expression` / `initializer of container-level variable must be
+comptime-known`). Same-module and cross-module **cycles** clean-reject
+`error[3064]` (Zig `dependency loop detected`). No other residual is known in
+this class.
 
 ## Task 9 fix round 3 — dependency-ordered module init (Q7) (v245 -> v246, 2026-09-25)
 
@@ -76,7 +152,9 @@ rotates, R2-print)**.
 stops at the first cycle); a cross-module cycle reports one referencing decl.
 A container-level `var` tuple element is accepted and ordered correctly even
 though Zig rejects such an initializer as not comptime-known (Z98 is
-permissive; not an over-rejection). No other residual in this class.
+permissive; not an over-rejection). No other residual in this class **as known
+at fix round 3 — SUPERSEDED: fix round 4 found the literal-const alias chain
+(`const s2 = s`) broken and fixed it; see the v247 section above**.
 
 ## Task 9 fix round 2 — cross-module/paren refs + same-type validation (v244 -> v245, 2026-09-25)
 
