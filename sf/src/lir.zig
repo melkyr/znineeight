@@ -84,7 +84,7 @@ pub const LirInst = union(enum) {
     load_global: struct { name_id: u32, module_id: u32, result: u32 },
     store_global: struct { name_id: u32, module_id: u32, value: u32 },
     print_str: struct { string_id: u32 },
-    print_val: struct { value: u32, type_id: TypeId, fmt: u8 },
+    print_val: struct { value: u32, type_id: TypeId, fmt: u8, implicit: u8 },
     builtin_put_char: struct { value: u32 },
     builtin_stdout_write: struct { ptr: u32, len: u32 },
     builtin_stderr_write: struct { ptr: u32, len: u32 },

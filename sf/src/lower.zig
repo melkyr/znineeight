@@ -1076,10 +1076,26 @@ fn printFmtAggFieldKindOk(reg: *type_mod.TypeRegistry, tid: u32, is_packed: u8, 
     if (@intCast(usize, tid) >= reg.types_len) return false;
     var kind = reg.types_items[@intCast(usize, tid)].kind;
     if (printFmtKindIsIntegerLike(kind)) {
-        if (kind == type_mod.TypeKind.enum_type) return false;
+        // Task 5 (z98-print-formatting): an enum field prints `.member` through
+        // its compiler-generated name printer. A packed enum field stays the
+        // Task-4 residual: the pre-existing packed-field type resolution /
+        // bit-extraction model is not extended here (the packed gate admits
+        // only some explicit-unsigned-backed enums, and combining it with the
+        // print route would expose those defects — see the Task-5 report).
+        if (kind == type_mod.TypeKind.enum_type) {
+            if (is_packed != @intCast(u8, 0)) return false;
+            return true;
+        }
         if (is_packed != @intCast(u8, 0)) {
             if (type_mod.typeRegistryIntWidthBits(reg, tid) > @intCast(u8, 32)) return false;
         }
+        return true;
+    }
+    if (kind == type_mod.TypeKind.error_set_type) {
+        // Task 5: an error-set field prints `error.Name` through its generated
+        // name printer. The packed-field admission gate never admits an error
+        // set; the packed guard is defensive.
+        if (is_packed != @intCast(u8, 0)) return false;
         return true;
     }
     if (kind == type_mod.TypeKind.bool_type) return true;
@@ -1315,7 +1331,13 @@ fn lowerPrintFmt(self: *LirLowerer, fmt_node_idx: u32, fmt: []const u8, tuple_no
                         }
                         _ = printFmtCheck(self, arg_node, pvt_check, spec_fmt, has_explicit);
                     }
-                    emitInst(self, LirInst{ .print_val = .{ .value = pv, .type_id = pvt, .fmt = spec_fmt } });
+                    // Task 5: the bare `{}` form (has_explicit == 0) is not the
+                    // same route as an explicit `{d}` for enums — `{}` prints
+                    // `.member` while `{d}` stays numeric. Record which form was
+                    // used so the emitter can pick the name-table printer.
+                    var pv_implicit: u8 = @intCast(u8, 0);
+                    if (has_explicit == @intCast(u8, 0)) pv_implicit = @intCast(u8, 1);
+                    emitInst(self, LirInst{ .print_val = .{ .value = pv, .type_id = pvt, .fmt = spec_fmt, .implicit = pv_implicit } });
                     ai += @intCast(usize, 1);
                 }
                 var j: usize = i + @intCast(usize, 1);

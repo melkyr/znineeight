@@ -5660,12 +5660,19 @@ fn printFnSourceName(reg: *TypeRegistry, tid: u32, fmt: u8) []const u8 {
     { var fallback: []const u8 = "printI32"; return fallback; }
 }
 
-fn getPrintFnName(emitter: *C89Emitter, tid: u32, fmt: u8) []const u8 {
-    var src = printFnSourceName(emitter.registry, tid, fmt);
+// Mangle an arbitrary std.fmt source name against the auto-imported std_fmt
+// module. Task 5 uses this for the existing `printStr` primitive, so the new
+// enum/error-set lookup printers need no new std_fmt function (adding one would
+// move the four pinned 4-MD5 gate dumps — their module C is dumped in full).
+fn stdFmtSourceSymbol(emitter: *C89Emitter, src: []const u8) []const u8 {
     if (emitter.std_fmt_module_id == @intCast(u32, 0xFFFFFFFF)) return src;
     var src_id = interner_mod.stringInternerIntern(emitter.interner, src);
     var mangled_id = nameManglerMangle(emitter.mangler, src_id, @intCast(u8, 0), emitter.std_fmt_module_id);
     return interner_mod.stringInternerGet(emitter.interner, mangled_id);
+}
+
+fn getPrintFnName(emitter: *C89Emitter, tid: u32, fmt: u8) []const u8 {
+    return stdFmtSourceSymbol(emitter, printFnSourceName(emitter.registry, tid, fmt));
 }
 
 // ============================================================================
@@ -5697,6 +5704,37 @@ fn printAggKind(k: TypeKind) bool {
     return false;
 }
 
+// Task 5: kinds whose `{}` route is the compiler-generated name-table printer
+// (`.member` / `error.Name`).
+fn printNameRouteKind(k: TypeKind) bool {
+    if (k == TypeKind.enum_type) return true;
+    if (k == TypeKind.error_set_type) return true;
+    return false;
+}
+
+// prefix + decimal type id, interned (the generated printer/table naming rule).
+fn typeIdName(emitter: *C89Emitter, prefix: []const u8, tid: u32) []const u8 {
+    var buf: [64]u8 = undefined;
+    var p: usize = @intCast(usize, 0);
+    var i: usize = @intCast(usize, 0);
+    while (i < prefix.len and p < @intCast(usize, 63)) : (i += @intCast(usize, 1)) { buf[p] = prefix[i]; p += @intCast(usize, 1); }
+    var db: [16]u8 = undefined;
+    var dl = itoa_mod.itoa(tid, db[0..]);
+    var ds: usize = @intCast(usize, 15) - @intCast(usize, dl);
+    var j: usize = ds;
+    while (j < @intCast(usize, 15) and p < @intCast(usize, 63)) : (j += @intCast(usize, 1)) { buf[p] = db[j]; p += @intCast(usize, 1); }
+    var nid = interner_mod.stringInternerIntern(emitter.interner, buf[0..p]);
+    return interner_mod.stringInternerGet(emitter.interner, nid);
+}
+
+// z98_printEnum_<tid> / z98_printErrorSet_<tid>.
+fn namePrinterName(emitter: *C89Emitter, tid: u32) []const u8 {
+    var ty = emitter.registry.types_items[@intCast(usize, tid)];
+    var prefix: []const u8 = "z98_printEnum_";
+    if (ty.kind == TypeKind.error_set_type) { var p2: []const u8 = "z98_printErrorSet_"; prefix = p2; }
+    return typeIdName(emitter, prefix, tid);
+}
+
 // z98_printStruct_<tid> / printUnion_ / printTaggedUnion_ / printPackedUnion_ /
 // printTuple_. The `z98_` prefix avoids any collision with source symbols
 // (extern functions keep their source name).
@@ -5707,17 +5745,7 @@ fn aggPrinterName(emitter: *C89Emitter, tid: u32) []const u8 {
     else if (ty.kind == TypeKind.tagged_union_type) { var p3: []const u8 = "z98_printTaggedUnion_"; prefix = p3; }
     else if (ty.kind == TypeKind.packed_union_type) { var p4: []const u8 = "z98_printPackedUnion_"; prefix = p4; }
     else if (ty.kind == TypeKind.tuple_type) { var p5: []const u8 = "z98_printTuple_"; prefix = p5; }
-    var buf: [48]u8 = undefined;
-    var p: usize = @intCast(usize, 0);
-    var i: usize = @intCast(usize, 0);
-    while (i < prefix.len and p < @intCast(usize, 47)) : (i += @intCast(usize, 1)) { buf[p] = prefix[i]; p += @intCast(usize, 1); }
-    var db: [16]u8 = undefined;
-    var dl = itoa_mod.itoa(tid, db[0..]);
-    var ds: usize = @intCast(usize, 15) - @intCast(usize, dl);
-    var j: usize = ds;
-    while (j < @intCast(usize, 15) and p < @intCast(usize, 47)) : (j += @intCast(usize, 1)) { buf[p] = db[j]; p += @intCast(usize, 1); }
-    var nid = interner_mod.stringInternerIntern(emitter.interner, buf[0..p]);
-    return interner_mod.stringInternerGet(emitter.interner, nid);
+    return typeIdName(emitter, prefix, tid);
 }
 
 fn aggAccessAppend(buf: *[kAggAccessCap]u8, pos: usize, s: []const u8) usize {
@@ -5738,7 +5766,8 @@ fn aggAccessAppendIndex(buf: *[kAggAccessCap]u8, pos: usize, idx: u32) usize {
 }
 
 // Print one field/element value: a nested aggregate recurses through its
-// generated printer with depth-1; every other kind uses the same `{}` route as
+// generated printer with depth-1; an enum/error-set recurses through its
+// generated name printer (Task 5); every other kind uses the same `{}` route as
 // a top-level argument (the validator admits only kinds with a final route).
 fn emitAggValue(emitter: *C89Emitter, tid: u32, access: []const u8) void {
     var ty = emitter.registry.types_items[@intCast(usize, tid)];
@@ -5748,6 +5777,12 @@ fn emitAggValue(emitter: *C89Emitter, tid: u32, access: []const u8) void {
         var o1: []const u8 = "("; bufferedWriterWrite(&emitter.writer, o1);
         bufferedWriterWrite(&emitter.writer, access);
         var o2: []const u8 = ", d - 1);\n"; bufferedWriterWrite(&emitter.writer, o2);
+    } else if (printNameRouteKind(ty.kind)) {
+        var pname = namePrinterName(emitter, tid);
+        bufferedWriterWrite(&emitter.writer, pname);
+        var o1: []const u8 = "("; bufferedWriterWrite(&emitter.writer, o1);
+        bufferedWriterWrite(&emitter.writer, access);
+        var o2: []const u8 = ");\n"; bufferedWriterWrite(&emitter.writer, o2);
     } else {
         var fn_name = getPrintFnName(emitter, tid, @intCast(u8, 'd'));
         bufferedWriterWrite(&emitter.writer, fn_name);
@@ -5776,6 +5811,246 @@ fn aggPackedScratchName(emitter: *C89Emitter, field_idx: u32) []const u8 {
     while (j < @intCast(usize, 15) and p < @intCast(usize, 23)) : (j += @intCast(usize, 1)) { buf[p] = db[j]; p += @intCast(usize, 1); }
     var nid = interner_mod.stringInternerIntern(emitter.interner, buf[0..p]);
     return interner_mod.stringInternerGet(emitter.interner, nid);
+}
+
+// ============================================================================
+// Task 5 (z98-print-formatting): compiler-generated enum / error-set name
+// printers. `{}` on an enum prints Zig 0.15.2's `.member` and `{}` on an error
+// set prints `error.Name`, resolved at runtime against compiler-emitted static
+// name tables and written with the EXISTING std.fmt `printStr` primitive.
+// `std_fmt.zig` is intentionally untouched: the dump carries the reachable
+// std_fmt module C in full, so adding a function there would move the four
+// pinned 4-MD5 gate dumps.
+//
+// Table shape (per type, static, emitted immediately before its printer):
+//   static const unsigned char z98_etab_<tid>[] = "redgreen";     // name bytes
+//   static const unsigned int  z98_eoff_<tid>[] = { 0, 3 };       // byte offsets
+//   static const unsigned int  z98_elen_<tid>[] = { 3, 5 };       // byte lengths
+//   static const unsigned long long z98_eval_<tid>[] = { 0, 1 };  // member values
+// Error sets additionally carry z98_escode_<tid>[] (the global error codes;
+// codes start at 1). The printer linearly scans the value/code array (enums are
+// small) and prints `.` / `error.` + the matching table entry.
+//
+// Fallbacks: an enum value with no matching member prints Zig's non-exhaustive
+// form `@enumFromInt(<decimal>)` (Zig's exhaustive-invalid behavior is UB; a
+// Z98 exhaustive enum can still hold an out-of-range value via `@intToEnum`);
+// an error code with no matching tag prints the defined `error.UnknownError`
+// (Zig panics on an unknown code in safe modes, so it is unreachable in valid
+// programs).
+// ============================================================================
+
+fn emitU64Dec(emitter: *C89Emitter, v: u64) void {
+    var b: [24]u8 = undefined;
+    var l = itoa_mod.itoa64(v, b[0..]);
+    var s: usize = @intCast(usize, 23) - @intCast(usize, l);
+    bufferedWriterWrite(&emitter.writer, b[s..@intCast(usize, 23)]);
+}
+
+fn emitI64Dec(emitter: *C89Emitter, v: i64) void {
+    if (v < 0) {
+        var minus: []const u8 = "-"; bufferedWriterWrite(&emitter.writer, minus);
+        var mag_u: u64 = @bitCast(u64, v);
+        mag_u = (~mag_u) +% @intCast(u64, 1);
+        emitU64Dec(emitter, mag_u);
+    } else {
+        emitU64Dec(emitter, @bitCast(u64, v));
+    }
+}
+
+// Static name blob: the concatenated member/tag name bytes (no separators; the
+// offset/length arrays slice it). Member names are identifiers, so only the two
+// C-literal escape cases are handled defensively.
+fn emitNameBlob(emitter: *C89Emitter, name: []const u8, kind: TypeKind, count: usize, start: usize) void {
+    var reg = emitter.registry;
+    var t0: []const u8 = "static const unsigned char "; bufferedWriterWrite(&emitter.writer, t0);
+    bufferedWriterWrite(&emitter.writer, name);
+    var t1: []const u8 = "[] = \""; bufferedWriterWrite(&emitter.writer, t1);
+    var mi: usize = @intCast(usize, 0);
+    while (mi < count) : (mi += 1) {
+        var nid: u32 = @intCast(u32, 0);
+        if (kind == TypeKind.enum_type) {
+            nid = reg.em_items[start + mi].name_id;
+        } else {
+            nid = reg.xn_items[start + mi];
+        }
+        var mname = interner_mod.stringInternerGet(emitter.interner, nid);
+        var bi: usize = @intCast(usize, 0);
+        while (bi < mname.len) : (bi += @intCast(usize, 1)) {
+            var c = mname[bi];
+            if (c == @intCast(u8, 92)) { var eb: []const u8 = "\\\\"; bufferedWriterWrite(&emitter.writer, eb); }
+            else if (c == @intCast(u8, 34)) { var eq: []const u8 = "\\\""; bufferedWriterWrite(&emitter.writer, eq); }
+            else if (c >= @intCast(u8, 32) and c < @intCast(u8, 127)) { bufferedWriterWriteByte(&emitter.writer, c); }
+            else { var ed: []const u8 = "."; bufferedWriterWrite(&emitter.writer, ed); }
+        }
+    }
+    var t2: []const u8 = "\";\n"; bufferedWriterWrite(&emitter.writer, t2);
+}
+
+// Static byte offset / length arrays for the name blob (same iteration order).
+fn emitNameOffLen(emitter: *C89Emitter, off_name: []const u8, len_name: []const u8, kind: TypeKind, count: usize, start: usize) void {
+    var reg = emitter.registry;
+    var o0: []const u8 = "static const unsigned int "; bufferedWriterWrite(&emitter.writer, o0);
+    bufferedWriterWrite(&emitter.writer, off_name);
+    var o1: []const u8 = "[] = { "; bufferedWriterWrite(&emitter.writer, o1);
+    var off: u64 = @intCast(u64, 0);
+    var mi: usize = @intCast(usize, 0);
+    if (count == @intCast(usize, 0)) { emitU64Dec(emitter, 0); }
+    while (mi < count) : (mi += 1) {
+        if (mi > @intCast(usize, 0)) { var cm: []const u8 = ", "; bufferedWriterWrite(&emitter.writer, cm); }
+        emitU64Dec(emitter, off);
+        var nid: u32 = @intCast(u32, 0);
+        if (kind == TypeKind.enum_type) { nid = reg.em_items[start + mi].name_id; } else { nid = reg.xn_items[start + mi]; }
+        var mname = interner_mod.stringInternerGet(emitter.interner, nid);
+        off += @intCast(u64, mname.len);
+    }
+    var o2: []const u8 = " };\n"; bufferedWriterWrite(&emitter.writer, o2);
+
+    var l0: []const u8 = "static const unsigned int "; bufferedWriterWrite(&emitter.writer, l0);
+    bufferedWriterWrite(&emitter.writer, len_name);
+    var l1: []const u8 = "[] = { "; bufferedWriterWrite(&emitter.writer, l1);
+    mi = @intCast(usize, 0);
+    if (count == @intCast(usize, 0)) { emitU64Dec(emitter, 0); }
+    while (mi < count) : (mi += 1) {
+        if (mi > @intCast(usize, 0)) { var cm2: []const u8 = ", "; bufferedWriterWrite(&emitter.writer, cm2); }
+        var nid2: u32 = @intCast(u32, 0);
+        if (kind == TypeKind.enum_type) { nid2 = reg.em_items[start + mi].name_id; } else { nid2 = reg.xn_items[start + mi]; }
+        var mname2 = interner_mod.stringInternerGet(emitter.interner, nid2);
+        emitU64Dec(emitter, @intCast(u64, mname2.len));
+    }
+    var l2: []const u8 = " };\n"; bufferedWriterWrite(&emitter.writer, l2);
+}
+
+fn emitNamePrinterDef(emitter: *C89Emitter, tid: u32) void {
+    var reg = emitter.registry;
+    var ty = reg.types_items[@intCast(usize, tid)];
+    var cname = getCTypeName(reg, emitter.mangler, tid);
+    var pname = namePrinterName(emitter, tid);
+    var print_str = stdFmtSourceSymbol(emitter, "printStr");
+    var count: usize = @intCast(usize, 0);
+    var start: usize = @intCast(usize, 0);
+    if (ty.kind == TypeKind.enum_type) {
+        if (@intCast(usize, ty.payload_idx) >= reg.en_len) return;
+        var ep = reg.en_items[@intCast(usize, ty.payload_idx)];
+        count = @intCast(usize, ep.members_count);
+        start = @intCast(usize, ep.members_start);
+        if (start + count > reg.em_len) return;
+    } else {
+        if (@intCast(usize, ty.payload_idx) >= reg.es_len) return;
+        var esp = reg.es_items[@intCast(usize, ty.payload_idx)];
+        count = @intCast(usize, esp.tags_count);
+        start = @intCast(usize, esp.tags_start);
+        if (start + count > reg.xn_len) return;
+    }
+    var tab_n: []const u8 = "";
+    var off_n: []const u8 = "";
+    var len_n: []const u8 = "";
+    if (ty.kind == TypeKind.enum_type) {
+        tab_n = typeIdName(emitter, "z98_etab_", tid);
+        off_n = typeIdName(emitter, "z98_eoff_", tid);
+        len_n = typeIdName(emitter, "z98_elen_", tid);
+    } else {
+        tab_n = typeIdName(emitter, "z98_estab_", tid);
+        off_n = typeIdName(emitter, "z98_esoff_", tid);
+        len_n = typeIdName(emitter, "z98_eslen_", tid);
+    }
+
+    emitNameBlob(emitter, tab_n, ty.kind, count, start);
+    emitNameOffLen(emitter, off_n, len_n, ty.kind, count, start);
+
+    var val_n: []const u8 = "";
+    if (ty.kind == TypeKind.enum_type) {
+        val_n = typeIdName(emitter, "z98_eval_", tid);
+        var v0: []const u8 = "static const unsigned long long "; bufferedWriterWrite(&emitter.writer, v0);
+        bufferedWriterWrite(&emitter.writer, val_n);
+        var v1: []const u8 = "[] = { "; bufferedWriterWrite(&emitter.writer, v1);
+        if (count == @intCast(usize, 0)) { emitU64Dec(emitter, 0); }
+        var mi: usize = @intCast(usize, 0);
+        while (mi < count) : (mi += 1) {
+            if (mi > @intCast(usize, 0)) { var cm: []const u8 = ", "; bufferedWriterWrite(&emitter.writer, cm); }
+            emitI64Dec(emitter, reg.em_items[start + mi].value);
+            var uls: []const u8 = "ULL"; bufferedWriterWrite(&emitter.writer, uls);
+        }
+        var v2: []const u8 = " };\n"; bufferedWriterWrite(&emitter.writer, v2);
+    } else {
+        val_n = typeIdName(emitter, "z98_escode_", tid);
+        var c0: []const u8 = "static const int "; bufferedWriterWrite(&emitter.writer, c0);
+        bufferedWriterWrite(&emitter.writer, val_n);
+        var c1: []const u8 = "[] = { "; bufferedWriterWrite(&emitter.writer, c1);
+        if (count == @intCast(usize, 0)) { emitU64Dec(emitter, 0); }
+        var ci: usize = @intCast(usize, 0);
+        while (ci < count) : (ci += @intCast(usize, 1)) {
+            if (ci > @intCast(usize, 0)) { var cm2: []const u8 = ", "; bufferedWriterWrite(&emitter.writer, cm2); }
+            var code = hash_mod.u32ToU32MapGetOrAddDense(emitter.error_code_registry, reg.xn_items[start + ci]);
+            emitU64Dec(emitter, @intCast(u64, code));
+        }
+        var c2: []const u8 = " };\n"; bufferedWriterWrite(&emitter.writer, c2);
+    }
+
+    var h0: []const u8 = "static void "; bufferedWriterWrite(&emitter.writer, h0);
+    bufferedWriterWrite(&emitter.writer, pname);
+    var h1: []const u8 = "("; bufferedWriterWrite(&emitter.writer, h1);
+    bufferedWriterWrite(&emitter.writer, cname);
+    var h2: []const u8 = " v) {\n"; bufferedWriterWrite(&emitter.writer, h2);
+    var saved_indent: u32 = emitter.indent;
+    emitter.indent = @intCast(u32, 1);
+    bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
+    if (ty.kind == TypeKind.enum_type) {
+        var i0: []const u8 = "unsigned long long x = (unsigned long long)v;\n"; bufferedWriterWrite(&emitter.writer, i0);
+    } else {
+        var i0: []const u8 = "int x = (int)v;\n"; bufferedWriterWrite(&emitter.writer, i0);
+    }
+    bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
+    var i1: []const u8 = "unsigned int i = 0;\n"; bufferedWriterWrite(&emitter.writer, i1);
+    bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
+    var w0: []const u8 = "while (i < "; bufferedWriterWrite(&emitter.writer, w0);
+    emitU64Dec(emitter, @intCast(u64, count));
+    var w1: []const u8 = " && "; bufferedWriterWrite(&emitter.writer, w1);
+    bufferedWriterWrite(&emitter.writer, val_n);
+    var w2: []const u8 = "[i] != x) { i = i + 1; }\n"; bufferedWriterWrite(&emitter.writer, w2);
+    bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
+    var f0: []const u8 = "if (i < "; bufferedWriterWrite(&emitter.writer, f0);
+    emitU64Dec(emitter, @intCast(u64, count));
+    var f1: []const u8 = ") {\n"; bufferedWriterWrite(&emitter.writer, f1);
+    bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 2));
+    if (ty.kind == TypeKind.enum_type) {
+        var p0: []const u8 = "std_print(\".\");\n"; bufferedWriterWrite(&emitter.writer, p0);
+    } else {
+        var p0: []const u8 = "std_print(\"error.\");\n"; bufferedWriterWrite(&emitter.writer, p0);
+    }
+    bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 2));
+    bufferedWriterWrite(&emitter.writer, print_str);
+    var p1: []const u8 = "(&"; bufferedWriterWrite(&emitter.writer, p1);
+    bufferedWriterWrite(&emitter.writer, tab_n);
+    var p2: []const u8 = "["; bufferedWriterWrite(&emitter.writer, p2);
+    bufferedWriterWrite(&emitter.writer, off_n);
+    var p3: []const u8 = "[i]], "; bufferedWriterWrite(&emitter.writer, p3);
+    bufferedWriterWrite(&emitter.writer, len_n);
+    var p4: []const u8 = "[i]);\n"; bufferedWriterWrite(&emitter.writer, p4);
+    bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 2));
+    var p5: []const u8 = "return;\n"; bufferedWriterWrite(&emitter.writer, p5);
+    bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
+    var f2: []const u8 = "}\n"; bufferedWriterWrite(&emitter.writer, f2);
+    bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
+    if (ty.kind == TypeKind.enum_type) {
+        var e0: []const u8 = "std_print(\"@enumFromInt(\");\n"; bufferedWriterWrite(&emitter.writer, e0);
+        bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
+        var dec_name = getPrintFnName(emitter, tid, @intCast(u8, 'd'));
+        bufferedWriterWrite(&emitter.writer, dec_name);
+        var e1: []const u8 = "(v);\n"; bufferedWriterWrite(&emitter.writer, e1);
+        bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
+        var e2: []const u8 = "std_print(\")\");\n"; bufferedWriterWrite(&emitter.writer, e2);
+    } else {
+        var e3: []const u8 = "std_print(\"UnknownError\");\n"; bufferedWriterWrite(&emitter.writer, e3);
+    }
+    var h3: []const u8 = "}\n\n"; bufferedWriterWrite(&emitter.writer, h3);
+    emitter.indent = saved_indent;
+}
+
+// No dependencies: an enum/error set's tables + printer are self-contained.
+fn emitNamePrinterRec(emitter: *C89Emitter, emitted: *U32ToU32Map, tid: u32) void {
+    if (hash_mod.u32ToU32MapGet(emitted, tid) != null) return;
+    hash_mod.u32ToU32MapPut(emitted, tid, @intCast(u32, 1));
+    emitNamePrinterDef(emitter, tid);
 }
 
 fn emitAggPrinterDef(emitter: *C89Emitter, tid: u32) void {
@@ -5973,33 +6248,46 @@ fn emitAggPrinterRec(emitter: *C89Emitter, emitted: *U32ToU32Map, visiting: *U32
             var i: usize = @intCast(usize, 0);
             while (i < @intCast(usize, sp.fields_count)) : (i += 1) {
                 var ft = reg.fe_items[@intCast(usize, sp.fields_start) + i].type_id;
-                if (@intCast(usize, ft) < reg.types_len and printAggKind(reg.types_items[@intCast(usize, ft)].kind)) emitAggPrinterRec(emitter, emitted, visiting, ft);
+                emitFieldPrinterRec(emitter, emitted, visiting, ft);
             }
         } else if (ty.kind == TypeKind.tagged_union_type) {
             var tp = reg.tu_items[@intCast(usize, ty.payload_idx)];
             var i: usize = @intCast(usize, 0);
             while (i < @intCast(usize, tp.fields_count)) : (i += 1) {
                 var ft = reg.fe_items[@intCast(usize, tp.fields_start) + i].type_id;
-                if (@intCast(usize, ft) < reg.types_len and printAggKind(reg.types_items[@intCast(usize, ft)].kind)) emitAggPrinterRec(emitter, emitted, visiting, ft);
+                emitFieldPrinterRec(emitter, emitted, visiting, ft);
             }
         } else if (ty.kind == TypeKind.packed_union_type) {
             var up = reg.un_items[@intCast(usize, ty.payload_idx)];
             var i: usize = @intCast(usize, 0);
             while (i < @intCast(usize, up.fields_count)) : (i += 1) {
                 var ft = reg.fe_items[@intCast(usize, up.fields_start) + i].type_id;
-                if (@intCast(usize, ft) < reg.types_len and printAggKind(reg.types_items[@intCast(usize, ft)].kind)) emitAggPrinterRec(emitter, emitted, visiting, ft);
+                emitFieldPrinterRec(emitter, emitted, visiting, ft);
             }
         } else if (ty.kind == TypeKind.tuple_type) {
             var tup = reg.tup_items[@intCast(usize, ty.payload_idx)];
             var i: usize = @intCast(usize, 0);
             while (i < @intCast(usize, tup.elems_count)) : (i += 1) {
                 var et = reg.xt_items[@intCast(usize, tup.elems_start) + i];
-                if (@intCast(usize, et) < reg.types_len and printAggKind(reg.types_items[@intCast(usize, et)].kind)) emitAggPrinterRec(emitter, emitted, visiting, et);
+                emitFieldPrinterRec(emitter, emitted, visiting, et);
             }
         }
     }
     emitAggPrinterDef(emitter, tid);
     hash_mod.u32ToU32MapPut(emitted, tid, @intCast(u32, 1));
+}
+
+// Task 5 (z98-print-formatting): emit the printer a field/element needs before
+// its container printer. Aggregates recurse; enum/error-set fields root the
+// generated name-table printer (there are no dependencies below those).
+fn emitFieldPrinterRec(emitter: *C89Emitter, emitted: *U32ToU32Map, visiting: *U32ToU32Map, ft: u32) void {
+    if (@intCast(usize, ft) >= emitter.registry.types_len) return;
+    var fk = emitter.registry.types_items[@intCast(usize, ft)].kind;
+    if (printAggKind(fk)) {
+        emitAggPrinterRec(emitter, emitted, visiting, ft);
+    } else if (printNameRouteKind(fk)) {
+        emitNamePrinterRec(emitter, emitted, ft);
+    }
 }
 
 fn collectPrintRoots(emitter: *C89Emitter, roots: *U32ToU32Map) void {
@@ -6014,7 +6302,13 @@ fn collectPrintRoots(emitter: *C89Emitter, roots: *U32ToU32Map) void {
                 switch (bb.insts.items[ii]) {
                     .print_val => |pv| {
                         if (@intCast(usize, pv.type_id) < emitter.registry.types_len) {
-                            if (printAggKind(emitter.registry.types_items[@intCast(usize, pv.type_id)].kind)) {
+                            var rk = emitter.registry.types_items[@intCast(usize, pv.type_id)].kind;
+                            // Task 5: enum/error-set name printers are rooted only
+                            // by the bare `{}` form (an explicit enum `{d}`/`{x}`
+                            // stays on the numeric route).
+                            if (printAggKind(rk)) {
+                                hash_mod.u32ToU32MapPut(roots, pv.type_id, @intCast(u32, 1));
+                            } else if (printNameRouteKind(rk) and pv.implicit != @intCast(u8, 0)) {
                                 hash_mod.u32ToU32MapPut(roots, pv.type_id, @intCast(u32, 1));
                             }
                         }
@@ -6038,7 +6332,13 @@ pub fn emitGeneratedPrinters(emitter: *C89Emitter) void {
     var ti: u32 = @intCast(u32, 0);
     while (@intCast(usize, ti) < emitter.registry.types_len) : (ti += 1) {
         if (hash_mod.u32ToU32MapGet(&roots, ti) == null) continue;
-        emitAggPrinterRec(emitter, &emitted, &visiting, ti);
+        var rk = emitter.registry.types_items[@intCast(usize, ti)].kind;
+        if (printAggKind(rk)) {
+            emitAggPrinterRec(emitter, &emitted, &visiting, ti);
+        } else {
+            // Task 5: enum / error-set name printer (no dependencies).
+            emitNamePrinterRec(emitter, &emitted, ti);
+        }
     }
 }
 
@@ -8507,6 +8807,18 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                 bufferedWriterWrite(&emitter.writer, adb[ads..@intCast(usize, 15)]);
                 var arp: []const u8 = ");\n";
                 bufferedWriterWrite(&emitter.writer, arp);
+            } else if (printNameRouteKind(ty.kind) and p.implicit != @intCast(u8, 0)) {
+                // Task 5: bare `{}` on an enum -> `.member`; on an error set ->
+                // `error.Name`, through the generated name-table printer. An
+                // explicit `{d}`/`{x}` on an enum stays on the numeric route.
+                var pname = namePrinterName(emitter, p.type_id);
+                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
+                bufferedWriterWrite(&emitter.writer, pname);
+                var lnp: []const u8 = "(";
+                bufferedWriterWrite(&emitter.writer, lnp);
+                emitValueExpr(emitter, p.value, @intCast(u32, 0));
+                var rnp: []const u8 = ");\n";
+                bufferedWriterWrite(&emitter.writer, rnp);
             } else {
                 var val = resolveTempName(emitter, p.value);
                 var fn_name = getPrintFnName(emitter, p.type_id, p.fmt);

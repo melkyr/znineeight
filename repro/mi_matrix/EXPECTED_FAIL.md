@@ -1,4 +1,66 @@
-# mi_matrix corpus — expected-fail manifest (v235 2026-09-25)
+# mi_matrix corpus — expected-fail manifest (v236 2026-09-25)
+
+## Task 5 — enum member names and error-set names (v235 -> v236, 2026-09-25)
+
+**What.** `{}` on an `enum` now prints Zig 0.15.2's `.member` and `{}` on an
+`error_set` prints `error.Name` (frozen-table rows B1/F1; explicit enum
+`{d}`/`{x}` keep the Task-2 numeric route, explicit error-set specs stay
+`error[3013]`). The compiler emits, per printed type, a static name table
+(`z98_etab_<tid>` blob + `z98_eoff_`/`z98_elen_` byte offset/length arrays +
+`z98_eval_` member values; error sets add `z98_escode_` global codes from
+`error_code_registry`) and a `static` printer (`z98_printEnum_<tid>` /
+`z98_printErrorSet_<tid>`) that linearly scans the value array and writes the
+matching name through the EXISTING std.fmt `printStr` primitive. `std_fmt.zig`
+is deliberately untouched: `--dump-c89` carries the reachable std_fmt module C
+in full, so adding a function there moves all four pinned 4-MD5 dumps (evidence
+in the Task-5 report §1.4); the §4 `printEnumName`/`printErrorName` names are
+realized as the generated helpers. A new `print_val.implicit` bit distinguishes
+a bare `{}` from an explicit `{d}`/`{x}`; `printFmtAggFieldKindOk` and the
+emitter (`emitAggValue`/`emitAggPrinterRec`/`collectPrintRoots`) are extended
+for NON-packed enum/error-set fields. Fallbacks: an enum value with no member
+prints Zig's non-exhaustive form `@enumFromInt(<n>)`; an out-of-set error code
+prints the defined `error.UnknownError` (Zig panics on an unknown code in safe
+modes).
+
+**Fixtures.** Positive `repro/mi_matrix/stdlib_print_enum_errset_xmod` (golden
+304 B, rc 0, 3x byte-exact, byte-identical to the Zig-0.15.2 twin
+`/tmp/t5/oracle/fixture_twin.zig`): top-level/parameter/module-const/direct
+enum `{}`, the `{d}`/`{x}` numeric controls, non-contiguous member values
+(`enum(u8){red=3,green=9,blue=12}`), a wide `enum(u64)` member above u32 max
+via `@intToEnum`, two error sets, enum/error-set fields in a struct, a nested
+struct, a tagged-union payload and a tuple element, and an untagged-union
+`{ ... }` control. Standalone `repro/print_enum_errset.z98` (same rows).
+The Task-4 reject fixture `print_aggregate_noprinter_reject_xmod` lost its
+enum-field site (census 8 -> 7 x `error[3063]`, rc=2, 0 `.c`, 0 x `error[3013]`;
+the aggregate-with-enum-field shape is now pinned positive).
+
+**Gates.** Self-compile moving point hop1 `b5a6fcd1…` != hop2 == hop3 ==
+**`6c3d33b5c640e817220e11a2823163dd`**; **4-MD5 emitted-C UNCHANGED** (8/8:
+gol `9e0b708e…` / lisp `dfa69f32…` / json `a4a73461…` / mud `2e92c1f2…`) with
+runtime identity proven by execution (gol `fcbf7e7c…`, lisp `b3d9f897…`, json
+`8bda3d5a…`, mud server `66c8f0ab…` + client `93147d0f…`, all rc 0); corpus
+`-s0` **1026 = 885 OK / 46 GREEN / 95 FAIL / 0 ICE / 0 CRASH** (join-diff vs
+the Task-4 fix-round final over the 1025 common dirs = exactly the new fixture,
+zero other movement); stdlib runtime gate **238 PASS / 0 FAIL** (pin
+237 -> 238); example matrix **24/24**; `check_emit_support.sh` 7/7;
+`verify_upgraded.sh` CLOSEOUT OK; seed stays **v84** (R2-print).
+
+**Bounded residuals (documented, not fixed).**
+
+1. A PACKED struct's enum/error-set field rejects the aggregate argument with
+   `error[3063]` (the Task-4 packed-VALUE C model; the packed-field admission
+   gate also has a pre-existing multi-enum type-resolution defect — e.g. two
+   enums declared before the packed struct make the gate resolve the wrong
+   field type — which this task deliberately does not expose through print).
+2. An enum member literal whose value exceeds u32 max truncates **at the
+   literal** in Z98 (`enum(u64){ big = 5000000001 }` -> `.big` is
+   `@enumFromInt(705032705)`): sema stores literal values in a
+   `U32ToU32Map` (`semantic_analyzer.zig` `enum_value_table`,
+   `@intCast(u32, member.value)`); the runtime value and the Task-5 name lookup
+   are exact (the `@intToEnum(EW, 5000000001)` path prints `.big` correctly).
+   Pre-existing defect, distinct root cause, outside Task 5's sites.
+3. A bare `error.X` print argument with no expected type resolves to void and
+   rejects `error[3063]` (Zig needs an inference site for an error literal too).
 
 ## Task 4 fix round 1 — tuple globals + nested-packed reject (v234 -> v235, 2026-09-25)
 

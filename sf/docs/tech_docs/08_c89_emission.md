@@ -1,4 +1,4 @@
-# 08 — C89 Emission [updated: 2026-09-25 — Task 4 (z98-print-formatting): `.print_val` on struct/union/tagged-union/packed-union/tuple calls a compiler-generated per-type static printer (`z98_printStruct_<tid>`, ...) that emits Zig 0.15.2's `. { .a = 1 }` / `.{ 1, 2, 3 }` form with `std.fmt.default_max_depth = 3`; tuple types gain a `Tup_<tid>` C model (`typedef struct { _0, _1, ... }`), emitted only for `needed_tuple_set` (runtime hoisted temps/globals) so registry-only print-args tuples keep the 4-MD5 dumps byte-identical. See §1.18.] [updated: 2026-09-25 — Task 2 (z98-print-formatting): `printFnSourceName` is a width/signedness dispatcher (`printKindIsIntegerLike` + `typeRegistryIntWidthBits`/`IsSigned`; ≤32 → U32/I32, 33..64 → U64/I64, `{x}` → the matching `printHex*`; Z98 `usize` is 32-bit unsigned; `integer_literal` is the 32-bit signed fallback) and `std.fmt`'s `printHexI32/I64` print `-` + hex magnitude for negative values; `pal_f64_to_str` omits the `.`+fraction for an integral float. Fixture `stdlib_print_dispatch_xmod`.][updated: 2026-09-24 — Task 1 (z98-print-formatting): `.print_val` emits a mangled cross-module call into the Z98 std module `sf/src/std_fmt.zig` (`std.fmt`); `printFnSourceName` picks the std.fmt source name and `getPrintFnName` mangles it against the auto-imported std_fmt module id (new `C89Emitter.std_fmt_module_id`, set in `phase_C89Emission`; a `.print_val` also seeds a `ref_edges` entry so std_fmt stays reachable and its header is included). The C `std_print_<type>` bodies are retired; `std_print`/`std_print_len` remain the raw-bytes helpers for `.print_str`/console. `.print_str` is unchanged.] [updated: 2026-09-22 — `getPrintFnName` gained an `f32_type` arm routing `f32` to the existing `std_print_f64` (Task 7F f32 print dispatch; the prototype widens `float`→`double`, no runtime change)] [updated: 2026-09-20 — refreshed against current source: added `emit_support.zig` (self-contained output dir + companion build scripts), packed/int-width/`volatile`/calling-convention and `-fsafe`/`-ffast` guard emission, emission-core compaction, and module pruning; documented the removed `@socket*` builtin emission; dropped line references and the 4-example evidence appendix]
+# 08 — C89 Emission [updated: 2026-09-25 — Task 5 (z98-print-formatting): `.print_val` on an enum (bare `{}`) calls the compiler-generated `z98_printEnum_<tid>` and on an error set uses `z98_printErrorSet_<tid>`; each carries a static name table (`z98_etab_` name blob + `z98_eoff_`/`z98_elen_` byte offset/length arrays + `z98_eval_` member values / `z98_escode_` global codes) and writes the name through the EXISTING std.fmt `printStr` (std_fmt.zig stays untouched so the 4-MD5 dumps keep their pinned bytes). See §1.19.] [updated: 2026-09-25 — Task 4 (z98-print-formatting): `.print_val` on struct/union/tagged-union/packed-union/tuple calls a compiler-generated per-type static printer (`z98_printStruct_<tid>`, ...) that emits Zig 0.15.2's `. { .a = 1 }` / `.{ 1, 2, 3 }` form with `std.fmt.default_max_depth = 3`; tuple types gain a `Tup_<tid>` C model (`typedef struct { _0, _1, ... }`), emitted only for `needed_tuple_set` (runtime hoisted temps/globals) so registry-only print-args tuples keep the 4-MD5 dumps byte-identical. See §1.18.] [updated: 2026-09-25 — Task 2 (z98-print-formatting): `printFnSourceName` is a width/signedness dispatcher (`printKindIsIntegerLike` + `typeRegistryIntWidthBits`/`IsSigned`; ≤32 → U32/I32, 33..64 → U64/I64, `{x}` → the matching `printHex*`; Z98 `usize` is 32-bit unsigned; `integer_literal` is the 32-bit signed fallback) and `std.fmt`'s `printHexI32/I64` print `-` + hex magnitude for negative values; `pal_f64_to_str` omits the `.`+fraction for an integral float. Fixture `stdlib_print_dispatch_xmod`.][updated: 2026-09-24 — Task 1 (z98-print-formatting): `.print_val` emits a mangled cross-module call into the Z98 std module `sf/src/std_fmt.zig` (`std.fmt`); `printFnSourceName` picks the std.fmt source name and `getPrintFnName` mangles it against the auto-imported std_fmt module id (new `C89Emitter.std_fmt_module_id`, set in `phase_C89Emission`; a `.print_val` also seeds a `ref_edges` entry so std_fmt stays reachable and its header is included). The C `std_print_<type>` bodies are retired; `std_print`/`std_print_len` remain the raw-bytes helpers for `.print_str`/console. `.print_str` is unchanged.] [updated: 2026-09-22 — `getPrintFnName` gained an `f32_type` arm routing `f32` to the existing `std_print_f64` (Task 7F f32 print dispatch; the prototype widens `float`→`double`, no runtime change)] [updated: 2026-09-20 — refreshed against current source: added `emit_support.zig` (self-contained output dir + companion build scripts), packed/int-width/`volatile`/calling-convention and `-fsafe`/`-ffast` guard emission, emission-core compaction, and module pruning; documented the removed `@socket*` builtin emission; dropped line references and the 4-example evidence appendix]
 
 > Covers: `c89_emit.zig`, `name_mangler.zig`, `cinclude.zig`, `emit_support.zig`
 > Cross-ref: [INDEX.md](INDEX.md) §E (NameMangler, BufferedWriter data structures)
@@ -495,7 +495,7 @@ Every `LirInst` variant handled in `emitInst`:
 | `.float_cast` | `result = (type)src;` |
 | `.make_slice` | `result.ptr = ptr;\n result.len = len;` |
 | `.print_str` | `std_print("literal");` (unchanged: the raw-bytes helper for a format-string literal segment) |
-| `.print_val` | mangled `std.fmt.<printer>(val);` cross-module call into the auto-imported `sf/src/std_fmt.zig` (slice → `printStr(val.ptr, val.len)`); the old `std_print_<type>` C-ABI calls are retired. Task 4: an aggregate/tuple type calls its generated per-type printer `<name>(val, 3)` instead (see §1.18) |
+| `.print_val` | mangled `std.fmt.<printer>(val);` cross-module call into the auto-imported `sf/src/std_fmt.zig` (slice → `printStr(val.ptr, val.len)`); the old `std_print_<type>` C-ABI calls are retired. Task 4: an aggregate/tuple type calls its generated per-type printer `<name>(val, 3)` instead (see §1.18). Task 5: a bare `{}` on an enum calls `z98_printEnum_<tid>(val)`, on an error set `z98_printErrorSet_<tid>(val)` (the `print_val.implicit` bit distinguishes a bare `{}` from an explicit enum `{d}`/`{x}`, which keeps the numeric route; see §1.19) |
 | `.ptr_cast` | `result = (type)src;` |
 | `.check_error` | `result = src.is_error;` |
 | `.unwrap_error_payload` | `result = src.data.payload;` |
@@ -882,6 +882,41 @@ prints `.{ ... }` (Zig never reads an untagged field).
   not add C, or the 4-MD5 single-file dumps move. Needed tuples also join
   `shared_set` so the closure promotes pointer-only named element types into the
   shared header (definition-before-use).
+
+### 1.19 Generated enum / error-set name printers (Task 5, z98-print-formatting)
+
+`{}` on an enum prints `.member` and on an error set `error.Name` (explicit
+enum `{d}`/`{x}` keep the numeric route; explicit error-set specs reject
+`error[3013]`). There is no std.fmt primitive for this and `std_fmt.zig` must
+not change (the dump carries the reachable std_fmt module C in full, so a new
+function moves the four pinned 4-MD5 dumps), so the emitter generates one
+`static` name-table printer per printed type:
+
+- `namePrinterName` → `z98_printEnum_<tid>` / `z98_printErrorSet_<tid>` (shared
+  `typeIdName` prefix+id builder; `printNameRouteKind` is the kind predicate).
+- Static tables: `z98_etab_<tid>` = the concatenated member/tag name bytes,
+  `z98_eoff_`/`z98_elen_` = per-entry byte offset/length, `z98_eval_` = the
+  member values as `unsigned long long` (enums) or `z98_escode_` = the global
+  `error_code_registry` codes as `int` (error sets). `emitNameBlob` /
+  `emitNameOffLen` write them; `emitU64Dec`/`emitI64Dec` are the digit writers
+  (`itoa64` writes digits before the trailing NUL, so the slice excludes it).
+- `emitNamePrinterDef` emits `static void <name>(<CType> v)`: a linear scan of
+  the value/code array, then `.` / `error.` + `stdFmtSourceSymbol("printStr")`
+  on the matching table entry. Fallbacks: `@enumFromInt(<decimal>)` (Zig's
+  non-exhaustive form; exhaustive-invalid is Zig UB) and `error.UnknownError`.
+- `emitNamePrinterRec` is the deduped per-type emitter; `emitFieldPrinterRec`
+  roots an aggregate's enum/error-set fields (non-packed), and
+  `collectPrintRoots` roots top-level `.print_val`s only when `implicit != 0`.
+  `emitGeneratedPrinters` dispatches each root to `emitAggPrinterRec` or
+  `emitNamePrinterRec`.
+- `stdFmtSourceSymbol` factors `getPrintFnName`'s mangling for an arbitrary
+  source name (`printStr`), so the generated C calls the existing std.fmt
+  function.
+
+**Bounded residuals:** a packed enum/error-set aggregate field rejects
+`error[3063]`; an enum member literal above u32 max truncates at the literal
+(pre-existing sema `enum_value_table` `U32ToU32Map`; the runtime lookup is
+exact).
 
 ---
 

@@ -362,7 +362,7 @@ fn remapInst(b: *Build, inst: LirInst, sw_off: u32) LirInst {
         .load_global => |x| return LirInst{ .load_global = .{ .name_id = x.name_id, .module_id = x.module_id, .result = x.result + b.base } },
         .store_global => |x| return LirInst{ .store_global = .{ .name_id = x.name_id, .module_id = x.module_id, .value = x.value + b.base } },
         .print_str => return inst,
-        .print_val => |x| return LirInst{ .print_val = .{ .value = x.value + b.base, .type_id = x.type_id, .fmt = x.fmt } },
+        .print_val => |x| return LirInst{ .print_val = .{ .value = x.value + b.base, .type_id = x.type_id, .fmt = x.fmt, .implicit = x.implicit } },
         .builtin_put_char => |x| return LirInst{ .builtin_put_char = .{ .value = x.value + b.base } },
         .builtin_stdout_write => |x| return LirInst{ .builtin_stdout_write = .{ .ptr = x.ptr + b.base, .len = x.len + b.base } },
         .builtin_stderr_write => |x| return LirInst{ .builtin_stderr_write = .{ .ptr = x.ptr + b.base, .len = x.len + b.base } },
