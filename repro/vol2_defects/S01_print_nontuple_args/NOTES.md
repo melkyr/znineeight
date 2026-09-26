@@ -1,4 +1,16 @@
-# S1 — print-argument container family (new sibling found during D0; RED)
+# S1 — print-argument container family (new sibling found during D0; fixed by FD1)
+
+> **FD1 status (2026-09-26): FIXED as a clean REJECT (no SIGSEGV), with the
+> spec-legal tuple variable INTERIM-rejected until FD2.** With the FD1 compiler
+> (fixed point `7bf2da194d7385dea638a9126191c173`) `main.zig` no longer crashes:
+> rc 2 / 0 `.c` / 1 x `error[3065]` at `logVar`'s container. Every non-tuple
+> shape here rejects rc 2 with `error[3065]` at its own container node
+> (`red_two_literals.zig` 2 x, `red_two_vars.zig` 2 x, `red_var_then_tuple.zig`
+> 1 x on the variable call only, `red_expr.zig` 1 x); `red_tuple_var.zig` is an
+> interim `error[3065]` because tuple-variable element reads are FD2 (after FB)
+> work. `run_all.sh` reports `S01_print_nontuple_args: rc=2 ok` via the new
+> `fixedreject` kind (`expected_error.txt` = `3065 1`). The OBSERVED section
+> below remains the historical seed-v88 evidence.
 
 ## Claim
 `lowerPrintFmt` treats the last call argument as if it were the print-args

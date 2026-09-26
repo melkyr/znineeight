@@ -12,12 +12,15 @@
 # compile/build/run logs capture the failure kind).
 #
 # Expected failure kind per case (see each case's NOTES.md and the README):
-#   crash   compiler must die from a signal (SIGSEGV, rc 139)       D01, S01
+#   crash   compiler must die from a signal (SIGSEGV, rc 139)       D01
 #   reject  compiler must reject now (rc != 0, no C emitted)        D04, D09, D11
 #   accept  compiler must WRONGLY accept now (rc == 0); the defect
-#           is the missing rejection                                 D03, D07, D10, D12
+#           is the missing rejection                                 D03, D10, D12
 #   gccfail compile is accepted (rc 0), gcc must reject the C       D05, D06
 #   wrong   build+run succeed, stdout must differ from expected.txt D02, D08
+#   fixedreject (FD1) compiler must reject with the exact census in the
+#           case's expected_error.txt (`<code> <count>`), no signal,
+#           no `.c` emitted                                          D07, S01
 #
 # FA-a conversion (2026-09-26): D2 (enum range labels) and D3 (mandatory `else`)
 # are FIXED on the current compiler. Under the existing kinds this shows up
@@ -30,6 +33,12 @@
 # expected.txt, the crash branch additionally builds + runs main and goldens
 # stdout/rc before printing `ok` — a compile-only green cannot mask a wrong or
 # crashing run. The remaining cases still follow the table above.
+#
+# FD1 conversion (2026-09-26): D7 and the S01 print-container cluster are
+# FIXED on the current compiler. Both now use the `fixedreject` kind: main.zig
+# must reject with the code/count pinned in the case's expected_error.txt,
+# emit no `.c`, and never signal (a wrong-code reject or a crash prints RED).
+# The historical seed-v88 observations stay in the case NOTES.md.
 #
 # Usage: sh run_all.sh [seed-compiler-path]
 # Default seed: /tmp/manual_seed/zig1_5_clean
@@ -57,9 +66,10 @@ for dir in "$CASE_DIR"/D*/ "$CASE_DIR"/S*/; do
     mkdir -p "$out"
 
     case "$case_name" in
-        D01_*|S01_*) kind=crash ;;
+        D01_*) kind=crash ;;
         D04_*|D09_*|D11_*) kind=reject ;;
-        D03_*|D07_*|D10_*|D12_*) kind=accept ;;
+        D03_*|D10_*|D12_*) kind=accept ;;
+        D07_*|S01_*) kind=fixedreject ;;
         D05_*|D06_*) kind=gccfail ;;
         D02_*|D08_*) kind=wrong ;;
         *)           kind=reject ;;
@@ -87,6 +97,26 @@ for dir in "$CASE_DIR"/D*/ "$CASE_DIR"/S*/; do
             fi
         else
             printf '%s: rc=0 ok\n' "$case_name"
+        fi
+        continue
+    fi
+
+    if [ "$kind" = fixedreject ]; then
+        want_code=""
+        want_n=""
+        if [ -f "$dir/expected_error.txt" ]; then
+            read -r want_code want_n < "$dir/expected_error.txt"
+        fi
+        got_n=$(grep -c "error\[$want_code\]" "$out/compile.log" 2>/dev/null)
+        has_c=0
+        set -- "$out"/*.c
+        [ -e "$1" ] && has_c=1
+        if [ "$cc" -ge 128 ]; then
+            printf '%s: rc=%s RED\n' "$case_name" "$cc"
+        elif [ "$cc" -ne 0 ] && [ "$has_c" -eq 0 ] && [ -n "$want_code" ] && [ "$got_n" -eq "$want_n" ]; then
+            printf '%s: rc=%s ok\n' "$case_name" "$cc"
+        else
+            printf '%s: rc=%s RED\n' "$case_name" "$cc"
         fi
         continue
     fi

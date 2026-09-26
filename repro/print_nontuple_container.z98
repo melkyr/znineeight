@@ -1,0 +1,25 @@
+// print_nontuple_container.z98 — FD1 standalone reject repro.
+//
+// Language Spec §4: the `print` arguments must be a tuple literal (a tuple
+// variable is spec-legal but stays an interim reject until FD2). Before FD1 a
+// non-tuple container was read as an extra-children range, which silently
+// dropped or printed wrong values and could SIGSEGV the compiler (D7/D13).
+// FD1 rejects it with level-0 `error[3065]` (`print arguments must be a tuple
+// literal`) at the container node; more than two arguments reject with the
+// existing `error[3061]` at the call span.
+//
+// Expected: compile rc 2 / 0 emitted `.c` / exactly 3 x error[3065] +
+// 1 x error[3061]; no crash on any shape.
+const std = @import("std");
+
+fn bareVar(v: i32) void {
+    std.io.print("bare={}\n", v);
+}
+
+pub fn main() void {
+    std.io.print("{}\n", 5);
+    bareVar(1);
+    const t = .{ 7, 8 };
+    std.io.print("tuple-var={} {}\n", t);
+    std.io.print("{} {}\n", .{ 1, 2 }, .{ 3 });
+}

@@ -22,6 +22,18 @@ operator-authorized F tasks consume this set.
 > (`D01_defer_segfault: rc=0 ok`). `--no-leak-check` is no longer needed
 > anywhere. The D01 `OBSERVED` section below remains the historical seed-v88
 > evidence.
+>
+> **FD1 status (2026-09-26):** D7 and the S01 print-container cluster are
+> **FIXED as clean rejects** on the current compiler (fixed point
+> `7bf2da194d7385dea638a9126191c173`; code 3065, `run_all.sh` kind
+> `fixedreject`). Every non-tuple `print` container now rejects rc 2 / 0 `.c`
+> with level-0 `error[3065]` (`print arguments must be a tuple literal`) at the
+> container node; a `print` call with more than two arguments rejects with the
+> existing `error[3061]` at the call span; no shape SIGSEGVs. The spec-legal
+> tuple **variable** is still **interim-rejected** (3065) until FD2 implements
+> its element reads; tuple literals (including the empty `.{ }`) are unchanged
+> and byte-identical. The per-case `OBSERVED` sections below remain the
+> historical seed-v88 evidence.
 
 - Plan: `.superpowers/sdd/2026-09-25-z98-manual-volume-II-plan/`
 - Report: `.superpowers/sdd/2026-09-25-z98-manual-volume-II-plan/task-D0-report.md`
@@ -71,13 +83,13 @@ expected behavior here -- `docs/reference/Language_Spec_Z98.md` does.
 | D4 | `D04_tuple/` | Tuple type `struct { T1, T2 }` is a parse error; `.0`/`._0` are `error[3060]`; `t[0]` emits gcc-invalid C | ch8 (tuples) -- chapter-blocking | Tuple type/access unusable in-module and cross-module; named-struct grouped returns work both ways |
 | D5 | `D05_slice_to_manyptr/` | Implicit `[]T` -> `[*]T` coercion compiles rc 0 then gcc-rejects the C | ch3 (pointers), ch9 (arrays/slices) | Does not matter: `xmod_main.zig` emits `(int*)((int*)sl)` and gcc-rejects at the call |
 | D6 | `D06_float_union/` | An f32 tagged-union payload init emits gcc-invalid C (`payload = double`) | ch7 (unions) | Does not matter: `xmod_main.zig` (union from `shapes.zig`) also gcc-rejects; f64/int/bool/struct payloads pass |
-| D7 | `D07_nontuple_print/` | `print(fmt, <non-tuple literal>)` is silently accepted and prints no value | ch18 (print) | Does not matter: `xmod_main.zig` (call in `logger.zig`) also silently drops the value |
+| D7 | `D07_nontuple_print/` | `print(fmt, <non-tuple literal>)` is silently accepted and prints no value; **FIXED by FD1** (rc 2 / 0 `.c` / 1 × `error[3065]` at the argument, tuple control GREEN + byte-identical) | ch18 (print) -- unblocked | Does not matter: `xmod_main.zig` (call in `logger.zig`) rejects 3065 in the helper file too |
 | D8 | `D08_errset_capture/` | `catch \|e\|` capture of an error set prints numeric where a typed value prints `error.Name` | ch12 (errors), ch18 (print) | Does not matter: `xmod_main.zig` (`errors.zig`) also prints `capture=1`; an annotated copy restores the name |
 | D9 | `D09_bare_union_offsetof/` | `@offsetOf` on a bare union is an internal error (`error[3043]`); tagged unions ICE too | ch7 (unions), ch15 (builtins) | Does not matter: `xmod_main.zig` (union from `raw.zig`) also ICEs |
 | D10 | `D10_single_ptr_index/` | `p[0]` on a single-item pointer is accepted and runs though spec 1.2 says it is rejected | ch3 (pointers) | Does not matter: `xmod_main.zig` (indexing in `helper.zig`) also accepted. Defect-vs-spec-correction is for the investigation; this pins current behavior |
 | D11 | `D11_qualified_capture/` | `Shape.circle => \|r\|` (qualified prong) leaves the capture unbound (`error[20]`) | ch7 (unions) | Does not matter: `xmod_main.zig` (type from `shapes.zig`) also `error[20]`; `.circle =>` shorthand passes |
 | D12 | `D12_const_discard_slice/` | `[]const T` -> `[]T` is accepted warning-only (in the var-decl shape) and mutates | ch9 (arrays/slices), ch3 (const) | Does not matter: `xmod_main.zig` accepted silently. Only the in-module var-decl shape warns; param/field/return are silent |
-| S1 | `S01_print_nontuple_args/` | New sibling cluster: non-tuple `print` args are container-misinterpreted -- tuple-variable rejects, mixed calls misattribute `error[3013]` or SIGSEGV, two var calls print wrong values | ch18 (print) | Not settled; shapes are same-module only |
+| S1 | `S01_print_nontuple_args/` | New sibling cluster: non-tuple `print` args are container-misinterpreted -- tuple-variable rejects, mixed calls misattribute `error[3013]` or SIGSEGV, two var calls print wrong values; **FIXED by FD1** (every shape rc 2 / 0 `.c` / `error[3065]` at its own container, no SIGSEGV; tuple variable interim) | ch18 (print) -- unblocked | Cross-module variant in the D07 tree; shapes here same-module only |
 
 ## Case layout
 
@@ -95,3 +107,6 @@ Each `D*/` and `S*/` directory carries:
 - `expected.txt` (D1, D2, D8) = spec-correct stdout: for D1 (FG-converted
   `crash` kind) the runner additionally builds + runs `main.zig` and goldens
   stdout/rc before printing `ok`; for D2/D8 it is the `wrong` kind's reference.
+- `expected_error.txt` (D07, S01) = the FD1 `fixedreject` kind's expected
+  diagnostic census (`<code> <count>`): the runner requires exactly that many
+  occurrences of that code, rc != 0, no `.c` emitted, and no signal.

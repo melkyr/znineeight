@@ -1562,7 +1562,68 @@ fn lowerPrintArgExact(self: *LirLowerer, node_idx: u32) u32 {
     return ctid;
 }
 
+// FD1 (Volume II D7/D13): emit the level-0 `error[3065]` for a `print`
+// container that is not a tuple literal, at the container node's span,
+// deduped per node (the expression walk can revisit the same call).
+fn printFmtContainerReject(self: *LirLowerer, container_node_idx: u32) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.ctx.diag, container_node_idx)) return;
+    var cn = ast_mod.astStoreNodeAt(self.ctx.store, container_node_idx);
+    var csp = cn.span_start;
+    var cep = csp + @intCast(u32, cn.span_len);
+    var cmsg: []const u8 = "print arguments must be a tuple literal";
+    _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0),
+        @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3065_PRINT_CONTAINER_NOT_TUPLE)),
+        self.ctx.source_file_id, csp, cep, cmsg);
+}
+
+// FD1 (Volume II D13 arity arm): `print` is declared variadic
+// (`print(s: [*]const c_char, ...) void`), so sema's arity check only enforces
+// the fixed first parameter. The lowering special case used to fire for any
+// `ec_n >= 2` and take the LAST argument as the container, silently dropping
+// the middle arguments (`print("{} {}", .{1, 2}, .{3})` printed only the last
+// tuple). Zig 0.15.2 rejects the shape (`expected 2 argument(s), found N`), so
+// the special case now requires exactly two arguments; more than two emits the
+// existing level-0 `error[3061]` at the call span (deduped per node).
+fn lowerPrintArityReject(self: *LirLowerer, call_node_idx: u32, found: usize) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.ctx.diag, call_node_idx)) return;
+    var found_buf: [10]u8 = undefined;
+    var found_l = itoa_mod.itoa(@intCast(u32, found), found_buf[0..]);
+    var found_s: usize = @intCast(usize, 9) - @intCast(usize, found_l);
+    var p0: []const u8 = "expected 2 argument(s), found ";
+    var p1: []const u8 = found_buf[found_s..@intCast(usize, 9)];
+    var parts: [2][]const u8 = [2][]const u8{ p0, p1 };
+    var msg = diag_mod.diagnosticBuilderMakeMsg(self.ctx.diag.interner, &parts[0], @intCast(u32, 2));
+    var cn = ast_mod.astStoreNodeAt(self.ctx.store, call_node_idx);
+    _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0),
+        @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3061_WRONG_ARGUMENT_COUNT)),
+        self.ctx.source_file_id, cn.span_start, cn.span_start + @intCast(u32, cn.span_len), msg);
+}
+
 fn lowerPrintFmt(self: *LirLowerer, fmt_node_idx: u32, fmt: []const u8, tuple_node_idx: u32) void {
+    // FD1 (D7/D13): `tuple_node_idx` is the last call argument, and the
+    // argument walk below reads `extraChildCount`/`ExtraChildAt` of that node.
+    // Those accessors do not gate on the node kind, so a non-tuple container's
+    // payload is read as an `extra_ranges` index -- the D7 silent argument
+    // drop, the D13 misdiagnoses/wrong values, and the unbounded re-entry
+    // SIGSEGV (when the accidental child is the print call itself). Gate the
+    // container kind BEFORE the first extra-child read, so no non-tuple node
+    // can ever reach the decomposition path.
+    var container = ast_mod.astStoreNodeAt(self.ctx.store, tuple_node_idx);
+    var container_ok = container.kind == AstKind.tuple_literal;
+    // Parser note: the EMPTY tuple literal `.{}` is parsed as an anonymous
+    // `struct_init` (the anonymous-literal parse routes `.{` followed by `}`
+    // or `.field` to the named-field path), so it needs the same literal path
+    // it already used. Only the fully empty anonymous form is the tuple
+    // literal; a named field-init container (`.{ .a = 1 }`) and a typed
+    // `S{...}` / `S{}` are not.
+    if (!container_ok and container.kind == AstKind.struct_init and container.child_0 == @intCast(u32, 0) and
+        ast_mod.astStoreNodeExtraChildCount(self.ctx.store, tuple_node_idx) == @intCast(u32, 0)) {
+        container_ok = true;
+    }
+    if (!container_ok) {
+        printFmtContainerReject(self, tuple_node_idx);
+        return;
+    }
     var seg_start: usize = @intCast(usize, 0);
     var ai: usize = @intCast(usize, 0);
     var i: usize = @intCast(usize, 0);
@@ -4621,7 +4682,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                  var fp = self.ctx.registry.fn_items[@intCast(usize, crt_ty.payload_idx)];
                   var fnt_nm: []const u8 = "FNT:N"; pal.markerWriteInt(fnt_nm, fp.name_id);
                   var fnt_rm: []const u8 = "FNT:R"; pal.markerWriteInt(fnt_rm, fp.return_type);
-                   if (fp.name_id == self.print_fn_id and ec_n >= @intCast(usize, 2)) {
+                    if (fp.name_id == self.print_fn_id and ec_n > @intCast(usize, 2)) {
+                        lowerPrintArityReject(self, node_idx, ec_n);
+                        return @intCast(u32, 0);
+                    }
+                    if (fp.name_id == self.print_fn_id and ec_n == @intCast(usize, 2)) {
                       var prn_m: []const u8 = "PRN:c"; pal.markerWrite(prn_m);
                       var prn_cb: [10]u8 = undefined; var prn_cl = itoa_mod.itoa(@intCast(u32, ec_n), prn_cb[0..]); var prn_cs: usize = @intCast(usize, 9) - @intCast(usize, prn_cl); pal.markerWrite(prn_cb[prn_cs..@intCast(usize, 9)]);
                       var prn_nm: []const u8 = "n"; pal.markerWrite(prn_nm);

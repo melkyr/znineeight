@@ -1,4 +1,45 @@
-# mi_matrix corpus — expected-fail manifest (v251 2026-09-26)
+# mi_matrix corpus — expected-fail manifest (v252 2026-09-26)
+
+## FD1 — validate the print argument container (D7 + D13, code 3065) (v251 -> v252, 2026-09-26)
+
+Volume II defect-fix phase, Stage 2b third task (task-FD1). **(D7/D13) print container:** the print arm
+passed the last call argument to `lowerPrintFmt` without a kind test, and that function derived the
+argument count/nodes from `astStoreNodeExtraChildCount`/`ExtraChildAt` of that node; those accessors do
+not gate on `nodeHasExtraChildren(kind)`, so a non-tuple node's payload was read as an `extra_ranges`
+index — the D7 silent argument drop, misattributed `error[3013]`/silently wrong values, and unbounded
+`lowerPrintFmt` re-entry when the accidental child was the print call itself (SIGSEGV, S01/D13).
+**Fix (`sf/src/lower.zig` + `sf/src/diagnostics.zig`):** `lowerPrintFmt` gates the container kind BEFORE
+its first extra-child read — only a `tuple_literal` (plus the parser's empty anonymous `struct_init`
+`.{ }`) takes the existing literal path byte-identically; anything else emits level-0 `error[3065]`
+`ERR_3065_PRINT_CONTAINER_NOT_TUPLE` (`print arguments must be a tuple literal`) at the container node,
+deduped per node, rc 2 / 0 `.c`. The print arm requires exactly two arguments (`lowerPrintArityReject`:
+`ec_n > 2` -> the existing `error[3061]` `expected 2 argument(s), found N` at the call span; official Zig
+0.15.2 rejects too, and the old arm silently used only the LAST container). Tuple variables are spec-legal
+but stay an interim `error[3065]` until FD2 implements their element reads. `.{ }` and every tuple-literal
+route stay byte-identical.
+
+**New fixtures:**
+- reject `repro/mi_matrix/print_nontuple_container_reject_xmod` (13 x `error[3065]` + 1 x `error[3061]`,
+  rc 2 / 0 `.c`: bare literal, two literal calls, parameter variable, two variable calls, expression,
+  nested call, typed struct init, anonymous field init, array literal, tuple variable interim,
+  cross-module `helper.zig` site, arity-3 call; the empty `.{ }` and `.{ 7, 8 }` controls stay clean).
+- standalone `repro/print_nontuple_container.z98` (3 x `error[3065]` + 1 x `error[3061]`).
+- Positive boundary already pinned by `stdlib_print_tuple_fwd_ok_xmod` / `stdlib_print_fmt_valid_xmod`
+  and the `repro/vol2_defects/D07_nontuple_print/control_tuple.zig` control (PRE<->POST emitted C
+  byte-identical); no stdlib fixture was added, pin stays **249**.
+
+**Movement:** 4-MD5 emitted-C **UNCHANGED** (gol `9e0b708e…` / lisp `edc55d7f…` / json `ca303731…` /
+mud `2e92c1f2…`, 2x each; runtime identity inherited). Corpus classify POST **1043 = 861 OK / 46 GREEN /
+136 FAIL / 0 ICE / 0 CRASH**; full join-diff vs the FG state over the 1042 common dirs **empty (zero
+movers)** — the D07/S01 repro programs live in `repro/vol2_defects/` subdirectories, which are not corpus
+entries (`repro/vol2_defects/` has no direct `.zig` entry; its subdirs are not immediate `repro/*`
+children), and no corpus program uses a non-tuple print container (re-verified by the join-diff). The
+only added dir is the new reject fixture (FAIL -- invalid-Zig shape, intended). Fixed point MOVED
+`c4f10f9e2d33a0833b9882c5dad2539b` -> `7bf2da194d7385dea638a9126191c173` (hop1 == hop2, explicit
+`FIXED_POINT_MD5` gate; seed v88 NOT rotated). stdlib runtime **249 PASS / 0 FAIL**; example matrix
+**24/24**; `check_emit_support.sh` **7/7**; `verify_upgraded.sh` **CLOSEOUT OK**; self-emission rc 0 /
+48 `.c` + 48 `.h` / 0 PANIC; `build_test` **0/9** (pre-existing retired-zig0 baseline); the D07/S01
+`run_all.sh` conversions print `rc=2 ok` (new `fixedreject` kind with an `expected_error.txt` census).
 
 ## FG — reset the defer queue on every scratch reset (v250 -> v251, 2026-09-26)
 

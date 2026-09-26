@@ -158,6 +158,17 @@ pub const ErrorCode = enum(u16) {
     // the cycle; rejects with 0 `.c`. (Renamed from
     // `ERR_3064_FORWARD_REF_TUPLE_GLOBAL`; the number is unchanged.)
     ERR_3064_CYCLIC_GLOBAL_INIT = 3064,
+    // FD1 (Volume II D7/D13): the last `print` call argument is not a tuple
+    // literal. The print special case passes that node to `lowerPrintFmt` as
+    // the argument container; before this gate the node's payload was read as
+    // an `extra_ranges` index (silent argument drop, misattributed validation
+    // diagnostics, silently wrong values), and when the accidental child was
+    // the print call itself the print arm re-entered `lowerPrintFmt`
+    // unboundedly (SIGSEGV). Level 0, span on the container (last argument)
+    // node, deduped per node; rejects with 0 `.c`. A tuple VARIABLE is
+    // spec-legal (Language Spec §4) but stays an interim reject until FD2
+    // implements its element reads.
+    ERR_3065_PRINT_CONTAINER_NOT_TUPLE = 3065,
     // FA-a (D3): a `switch` without an `else` prong. Language Spec §3.1 makes
     // the `else` prong mandatory in all switch expressions (value AND statement
     // position); this replaces the tombstone at

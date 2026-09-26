@@ -1,4 +1,15 @@
-# D7 — `print` with a non-tuple literal argument silently no-ops (RED)
+# D7 — `print` with a non-tuple literal argument silently no-ops (RED; fixed by FD1)
+
+> **FD1 status (2026-09-26): FIXED as a clean REJECT.** With the FD1 compiler
+> (fixed point `7bf2da194d7385dea638a9126191c173`) every non-tuple literal
+> container rejects rc 2 / 0 emitted `.c` with exactly one level-0 `error[3065]`
+> (`print arguments must be a tuple literal`) at the container node: `main.zig`
+> (at `5`), `red_prefixed_literal.zig`, `red_alias.zig`, `xmod_main.zig` (the
+> diagnostic is in `logger.zig`). `control_tuple.zig` stays GREEN rc 0 and its
+> emitted C is byte-identical to the pre-FD1 compiler. `run_all.sh` reports
+> `D07_nontuple_print: rc=2 ok` via the new `fixedreject` kind
+> (`expected_error.txt` = `3065 1`). No SIGSEGV on any shape. The OBSERVED
+> section below remains the historical seed-v88 evidence.
 
 ## Claim
 `print(fmt, <non-tuple literal>)` is accepted rc 0 and the argument is never
