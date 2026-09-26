@@ -13,6 +13,15 @@ operator-authorized F tasks consume this set.
 > rejects with exactly one `error[3068]` per no-`else` switch (`run_all.sh`:
 > `D03_missing_else: rc=2 ok`). The per-case `OBSERVED` sections below remain
 > the historical seed-v88 evidence.
+>
+> **FG status (2026-09-26):** D1 (defer-queue corruption) is **FIXED** on the
+> current compiler (fixed point
+> `c4f10f9e2d33a0833b9882c5dad2539b`). All four D1 RED programs compile/build/
+> run rc 0 and print their documented expected output; the D01 case ships
+> `expected.txt` and `run_all.sh` now also goldens that program's stdout/rc
+> (`D01_defer_segfault: rc=0 ok`). `--no-leak-check` is no longer needed
+> anywhere. The D01 `OBSERVED` section below remains the historical seed-v88
+> evidence.
 
 - Plan: `.superpowers/sdd/2026-09-25-z98-manual-volume-II-plan/`
 - Report: `.superpowers/sdd/2026-09-25-z98-manual-volume-II-plan/task-D0-report.md`
@@ -56,7 +65,7 @@ expected behavior here -- `docs/reference/Language_Spec_Z98.md` does.
 
 | Id | Directory | One-line claim | Chapter impact | Module-scope note |
 |----|-----------|----------------|----------------|-------------------|
-| D1 | `D01_defer_segfault/` | A module with one plain-`defer` fn and one `for`/`while`-body-`defer` fn makes the compiler SIGSEGV (rc 139) | ch11 (defer) -- blocks | Boundary matters: crash needs both shapes in the SAME module; `xmod_main.zig` (both in helper) crashes, `split_*` controls pass |
+| D1 | `D01_defer_segfault/` | A module with one plain-`defer` fn and one `for`/`while`-body-`defer` fn made the compiler SIGSEGV (rc 139); **FIXED by FG** (rc 0 with documented output) | ch11 (defer) -- unblocked | Boundary matters: the pre-fix crash needed both shapes in the SAME module; `xmod_main.zig` (both in helper) crashed, `split_*` controls passed |
 | D2 | `D02_enum_switch_ranges/` | Enum `switch` range prongs (`a...b`, `a..b`) emit no `case` labels; every value takes `else` (silent wrong code) | ch6 (enums), ch10 (switch) | Does not matter: `xmod_main.zig` (enum from `colors.zig`) also all-`else` |
 | D3 | `D03_missing_else/` | `switch` without `else` is accepted; an unmatched value reads an uninitialized result temp | ch10 (control flow) | Does not matter: `xmod_main.zig` (switch in `picker.zig`) also silent garbage |
 | D4 | `D04_tuple/` | Tuple type `struct { T1, T2 }` is a parse error; `.0`/`._0` are `error[3060]`; `t[0]` emits gcc-invalid C | ch8 (tuples) -- chapter-blocking | Tuple type/access unusable in-module and cross-module; named-struct grouped returns work both ways |
@@ -83,4 +92,6 @@ Each `D*/` and `S*/` directory carries:
   `red_*.zig` = additional failing shapes; `control_*.zig` = passing controls.
   Compile them like `main.zig` (the binary and `build_target.sh` target take
   the file's basename, e.g. `sh build_target.sh linux red_anon`).
-- `expected.txt` (D2, D8 only) = spec-correct stdout for the `wrong` kind.
+- `expected.txt` (D1, D2, D8) = spec-correct stdout: for D1 (FG-converted
+  `crash` kind) the runner additionally builds + runs `main.zig` and goldens
+  stdout/rc before printing `ok`; for D2/D8 it is the `wrong` kind's reference.

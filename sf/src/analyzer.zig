@@ -401,6 +401,12 @@ pub fn deferQueueEnsureCapacity(ctx: *AnalyzerContext, new_cap: usize) void {
     ctx.defer_queue_cap = nc;
 }
 
+pub fn resetDeferQueue(ctx: *AnalyzerContext) void {
+    ctx.defer_queue_items = undefined;
+    ctx.defer_queue_len = @intCast(usize, 0);
+    ctx.defer_queue_cap = @intCast(usize, 0);
+}
+
 pub fn analyzeSignature(ctx: *AnalyzerContext, fn_node_idx: u32) void {
     var node = ast_mod.astStoreNodeAt(ctx.store, fn_node_idx);
     if (node.kind != AstKind.fn_decl) return;
@@ -823,17 +829,21 @@ pub fn runAllAnalyzers(ctx: *AnalyzerContext, module_root_idx: u32) void {
         ctx.current_fn_name = ctx.store.fn_protos.items[@intCast(usize, ast_mod.astStoreNodePayload(ctx.store, decl_idx))].name_id;
         runSignatureAnalyzer(ctx, decl_idx);
         alloc_mod.sandReset(ctx.alloc);
+        resetDeferQueue(ctx);
         if (ctx.skip_null_check == @intCast(u8, 0)) {
             runNullAnalyzer(ctx, decl.child_0);
             alloc_mod.sandReset(ctx.alloc);
+            resetDeferQueue(ctx);
         }
         if (ctx.skip_lifetime_check == @intCast(u8, 0)) {
             runLifetimeAnalyzer(ctx, decl_idx, decl.child_0);
             alloc_mod.sandReset(ctx.alloc);
+            resetDeferQueue(ctx);
         }
         if (ctx.skip_doublefree_check == @intCast(u8, 0)) {
             runDoubleFreeAnalyzer(ctx, decl.child_0);
             alloc_mod.sandReset(ctx.alloc);
+            resetDeferQueue(ctx);
         }
         if (ctx.alloc.peak > PER_FUNC_BUDGET) {
 

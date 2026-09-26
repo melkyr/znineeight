@@ -81,6 +81,7 @@ repro/mi_matrix/stdlib_debug_trap_xmod
 repro/mi_matrix/stdlib_debug_xmod
 repro/mi_matrix/stdlib_default_lib_lookup_xmod
 repro/mi_matrix/stdlib_defer_control_flow_xmod
+repro/mi_matrix/stdlib_defer_queue_reset_xmod
 repro/mi_matrix/stdlib_enum_init_expr_xmod
 repro/mi_matrix/stdlib_errdefer_dyn_xmod
 repro/mi_matrix/stdlib_errdefer_xmod

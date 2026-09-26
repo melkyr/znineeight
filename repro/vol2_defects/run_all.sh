@@ -25,6 +25,12 @@
 # now rejects. Both print `ok` on a post-FA-a compiler; the remaining cases
 # still follow the table above.
 #
+# FG conversion (2026-09-26): D1 (defer-queue corruption) is FIXED on the
+# current compiler. D01 (`crash`) now compiles rc 0; because the case ships an
+# expected.txt, the crash branch additionally builds + runs main and goldens
+# stdout/rc before printing `ok` — a compile-only green cannot mask a wrong or
+# crashing run. The remaining cases still follow the table above.
+#
 # Usage: sh run_all.sh [seed-compiler-path]
 # Default seed: /tmp/manual_seed/zig1_5_clean
 # Rebuild:  bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/manual_seed
@@ -65,6 +71,20 @@ for dir in "$CASE_DIR"/D*/ "$CASE_DIR"/S*/; do
     if [ "$kind" = crash ] || [ "$kind" = reject ]; then
         if [ "$cc" -ne 0 ]; then
             printf '%s: rc=%s RED\n' "$case_name" "$cc"
+        elif [ "$kind" = crash ] && [ -f "$dir/expected.txt" ] && [ -f "$out/build_target.sh" ]; then
+            (cd "$out" && timeout 120 sh build_target.sh linux main) > "$out/build.log" 2>&1
+            bc=$?
+            if [ "$bc" -ne 0 ]; then
+                printf '%s: rc=%s RED\n' "$case_name" "$bc"
+            else
+                timeout 120 "$out/main" > "$out/run.stdout" 2>&1
+                rc=$?
+                if [ "$rc" -eq 0 ] && diff "$dir/expected.txt" "$out/run.stdout" > "$out/diff.txt" 2>&1; then
+                    printf '%s: rc=%s ok\n' "$case_name" "$rc"
+                else
+                    printf '%s: rc=%s RED\n' "$case_name" "$rc"
+                fi
+            fi
         else
             printf '%s: rc=0 ok\n' "$case_name"
         fi

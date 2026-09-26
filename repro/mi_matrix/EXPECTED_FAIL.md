@@ -1,4 +1,36 @@
-# mi_matrix corpus — expected-fail manifest (v250 2026-09-26)
+# mi_matrix corpus — expected-fail manifest (v251 2026-09-26)
+
+## FG — reset the defer queue on every scratch reset (v250 -> v251, 2026-09-26)
+
+Volume II defect-fix phase, Stage 2b second task (task-FG). **(D1) defer-queue corruption:** the
+`AnalyzerContext` defer queue survived every `sandReset` of the scratch arena that holds it;
+`deferQueueEnsureCapacity`'s capacity short-circuit let the next `DeferEntry` write land in recycled
+scratch memory that now held a live `StateMap`, so a module with a plain-`defer` function followed by
+a function with a `defer` inside a nested block SIGSEGV'd the compiler (rc 139) in
+`checkLeaksOnScopeExit` / `stateMapMergeStates`. **Fix:** new `resetDeferQueue(ctx)`
+(`defer_queue_items = undefined; len = 0; cap = 0`) called immediately after each of the four
+`alloc_mod.sandReset(ctx.alloc)` sites in `runAllAnalyzers` (`sf/src/analyzer.zig`). The queue is
+drained at every block exit, so the reset is a bookkeeping-only no-op that kills the stale pointer;
+no `main.zig` arena-lifetime change, no reader hardening, no traversal widening (FX2).
+
+**New fixtures:**
+- positive `repro/mi_matrix/stdlib_defer_queue_reset_xmod` (in-module plain+for trigger, while /
+  nested-for siblings, for-body `errdefer` dynamic-error case, cross-module trigger in `helper.zig`;
+  `ops` @panic-guarded; golden 317 B / 31 lines, rc 0, 3× byte-exact) — stdlib pin **248 -> 249**.
+- standalone `repro/defer_queue_reset.z98` (the four-shape family, rc 0).
+- D01 repro conversion: all four RED programs now compile/build/run rc 0 with documented output;
+  `repro/vol2_defects/D01_defer_segfault/expected.txt` added and `run_all.sh`'s crash-kind branch now
+  goldens stdout/rc for a case with expected.txt (`D01_defer_segfault: rc=0 ok`).
+
+**Movement:** corpus `-s0` POST **1042 = 861 OK / 46 GREEN / 135 FAIL / 0 ICE / 0 CRASH**; join-diff
+vs the FA-a POST state over the 1041 common dirs **empty (zero movement)**; the only added dir is the
+new fixture (OK under both). 4-MD5 emitted-C **UNCHANGED** (gol `9e0b708e…` / lisp `edc55d7f…` / json
+`ca303731…` / mud `2e92c1f2…`, 2× each). Fixed point MOVED `6b68ca72bd8919edef0ef7f955a75580` ->
+`c4f10f9e2d33a0833b9882c5dad2539b` (hop1 == hop2, explicit `FIXED_POINT_MD5` gate; seed v88 NOT
+rotated). stdlib runtime **249 PASS / 0 FAIL**; example matrix **24/24**; `check_emit_support.sh`
+**7/7**; `verify_upgraded.sh` **CLOSEOUT OK**; build_test **0/9** (pre-existing retired-zig0
+baseline); self-emission rc 0 / 48 `.c` + 48 `.h` / 0 PANIC / 0 `WARN_7002`. Leak-analyzer
+diagnostics on the repro controls and the four gate programs byte-identical PRE<->POST.
 
 ## FA-a — strict switch mandatory `else` + D2 enum range case labels (v249 -> v250, 2026-09-26)
 

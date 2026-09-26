@@ -1,4 +1,4 @@
-# 06 — Static Analyzers [updated: 2026-09-20 — refreshed against current analyzer/StateMap source; removed line refs and dated evidence]
+# 06 — Static Analyzers [updated: 2026-09-26 — FG (Volume II defect fix, D1): new `resetDeferQueue` (analyzer.zig) clears the defer queue's `items/len/cap` and is called immediately after each of the four per-phase/per-function `sandReset` sites in `runAllAnalyzers`, so the queue can no longer alias recycled scratch memory that a live `StateMap` now occupies; fixes the D1 SIGSEGV (`checkLeaksOnScopeExit` / `stateMapMergeStates`) for a plain-`defer` fn plus a nested-block-`defer` fn in one module. Bookkeeping-only (the queue is drained at every block exit); fixture `repro/mi_matrix/stdlib_defer_queue_reset_xmod`; fixed point `6b68ca72…` -> `c4f10f9e2d33a0833b9882c5dad2539b` (hop1 == hop2); 4-MD5 UNCHANGED] [updated: 2026-09-20 — refreshed against current analyzer/StateMap source; removed line refs and dated evidence]
 
 > Covers: `analyzer.zig`, `state_map.zig`
 
@@ -19,7 +19,7 @@
 
 ---
 
-## analyzer.zig (`sf/src/analyzer.zig`, 844 lines)
+## analyzer.zig (`sf/src/analyzer.zig`, 854 lines)
 
 4 independent analyzer passes in phase 6. Each runs per-function with a fresh `StateMap` and resets the scratch arena between passes.
 
@@ -254,6 +254,21 @@ Grows the defer queue (parallel arena from `ctx.defer_queue_alloc`) when full.
 
 ---
 
+### resetDeferQueue (`sf/src/analyzer.zig`)
+
+`[inference: defer_queue_items = undefined; defer_queue_len = 0; defer_queue_cap = 0]`
+
+Drops the defer queue's stale bookkeeping (items pointer + length + capacity). Called
+immediately after each of the four `alloc_mod.sandReset(ctx.alloc)` sites in
+`runAllAnalyzers` (after the signature pass and after each optional pass), because the
+queue lives in the scratch arena that `sandReset` recycles. The queue is drained at every
+block exit (`executeDeferQueue` from `walkBlock`), so it is empty between
+functions/phases and the reset is a semantic no-op that only kills the stale pointer —
+without it, the next `DeferEntry` write (`:713`) reused the stale capacity and overlaid
+recycled scratch memory that now held a live `StateMap` (D1 SIGSEGV).
+
+---
+
 ### analyzeSignature (`sf/src/analyzer.zig`)
 
 `[inference: iterate param types → validateSignatureType; validate return type]`
@@ -480,7 +495,7 @@ Entry point for the double-free/memory-leak analysis pass. Creates a fresh `Stat
 
 ### runAllAnalyzers (`sf/src/analyzer.zig`)
 
-`[inference: iterate module_root decls → skip non-fn_decl + no-body → sandResetPeak → runSignatureAnalyzer → sandReset → [optional runNullAnalyzer → sandReset] → [optional runLifetimeAnalyzer → sandReset] → [optional runDoubleFreeAnalyzer → sandReset] → check peak vs PER_FUNC_BUDGET]`
+`[inference: iterate module_root decls → skip non-fn_decl + no-body → sandResetPeak → runSignatureAnalyzer → sandReset + resetDeferQueue → [optional runNullAnalyzer → sandReset + resetDeferQueue] → [optional runLifetimeAnalyzer → sandReset + resetDeferQueue] → [optional runDoubleFreeAnalyzer → sandReset + resetDeferQueue] → check peak vs PER_FUNC_BUDGET]`
 
 Orchestrates all 4 analyzers across every function in the module:
 
@@ -491,7 +506,7 @@ Orchestrates all 4 analyzers across every function in the module:
 4. **`runDoubleFreeAnalyzer`** — double-free / memory leak analysis (skip if `skip_doublefree_check`)
 5. **Budget check**: if `ctx.alloc.peak > PER_FUNC_BUDGET` → `WARN_7002_ANALYZER_BUDGET_EXCEEDED`
 
-Each pass resets the scratch arena (`alloc_mod.sandReset`) after completion, so per-function peak is measured independently. The budget check happens after all passes complete for that function.
+Each pass resets the scratch arena (`alloc_mod.sandReset`) after completion, so per-function peak is measured independently. Each reset is immediately followed by `resetDeferQueue(ctx)`: the queue is allocated from the same scratch arena, and clearing its `items/len/cap` kills the stale pointer before the next pass can reuse the capacity (D1 fix). The budget check happens after all passes complete for that function.
 
 ---
 
@@ -622,6 +637,7 @@ phase_StaticAnalyzers (main.zig)
        │  │   └─ analyzeSignature → validateSignatureType per param + return
        │  │
        │  ├─ sandReset
+       │  ├─ resetDeferQueue (drop the stale scratch-arena queue pointer)
        │  │
        │  ├─ [if !skip_null_check] runNullAnalyzer(body_idx)
        │  │   └─ StateMap → walkBlock → visitStatement(if/while forking + merging)
@@ -630,6 +646,7 @@ phase_StaticAnalyzers (main.zig)
        │  │       └─ stateMapMergeStates for branch convergence
        │  │
        │  ├─ sandReset
+       │  ├─ resetDeferQueue (drop the stale scratch-arena queue pointer)
        │  │
        │  ├─ [if !skip_lifetime_check] runLifetimeAnalyzer(decl_idx, body_idx)
        │  │   └─ StateMap (pre-populated with param provenances)
@@ -639,6 +656,7 @@ phase_StaticAnalyzers (main.zig)
        │  │       └─ checkReturnProvenance on return statements
        │  │
        │  ├─ sandReset
+       │  ├─ resetDeferQueue (drop the stale scratch-arena queue pointer)
        │  │
        │  ├─ [if !skip_doublefree_check] runDoubleFreeAnalyzer(body_idx)
        │  │   └─ StateMap → walkBlock → onDoubleFreeStmt
@@ -660,7 +678,7 @@ Resolver types + AstStore + SymbolTable + Interner
   ▼
 AnalyzerContext (per-function orchestrator)
   │
-  ├─ defer_queue (DeferEntry[], scope-managed)
+  ├─ defer_queue (DeferEntry[], scope-managed; cleared by resetDeferQueue after each sandReset)
   ├─ null_analysis_mode (enables null tracking in visitStatement)
   ├─ skip_* flags (disable individual analyzers)
   │

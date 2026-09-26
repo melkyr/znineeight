@@ -1,4 +1,45 @@
-# D1 — `defer` segfault: plain-defer fn + loop-body-defer fn in one module (RED)
+# D1 — `defer` segfault: plain-defer fn + loop-body-defer fn in one module (RED; fixed by FG)
+
+> **FG status (2026-09-26): FIXED.** `resetDeferQueue` clears
+> `defer_queue_items/len/cap` immediately after each of the four
+> `sandReset(ctx.alloc)` sites in `runAllAnalyzers` (`sf/src/analyzer.zig`), so
+> the queue can never alias recycled scratch memory that now holds a live
+> `StateMap`. Fixed point MOVED `6b68ca72bd8919edef0ef7f955a75580` ->
+> `c4f10f9e2d33a0833b9882c5dad2539b` (two-hop closure hop1 == hop2, explicit
+> `FIXED_POINT_MD5` gate; seed v88 NOT rotated). All four RED entry files now
+> compile rc 0 / build rc 0 / run rc 0 and print their EXPECTED output
+> (recorded below); the split controls and `control_*` stay byte-identical;
+> `run_all.sh` prints `D01_defer_segfault: rc=0 ok` and now additionally
+> goldens `main.zig` stdout/rc against `expected.txt`. `--no-leak-check` is no
+> longer needed anywhere. The seed-v88 OBSERVED section below remains the
+> historical RED evidence.
+
+## FG GREEN evidence
+
+Compiler `/tmp/fg/build1/zig1_5_clean` (md5 `c4f10f9e2d33a0833b9882c5dad2539b`);
+each entry `-o <dir> <file>` -> `sh build_target.sh linux <base>` -> `./<base>`,
+all under `timeout 120`.
+
+- `main.zig` compile/build/run rc 0 / 0 / 0, stdout:
+  `plain-body`, `plain-defer`, `loop 1`, `loop-defer`, `loop 2`, `loop-defer`.
+- `xmod_main.zig` rc 0 / 0 / 0, stdout:
+  `helper-plain-body`, `helper-plain-defer`, `helper-loop 1`,
+  `helper-loop-defer`, `helper-loop 2`, `helper-loop-defer`.
+- `red_while.zig` rc 0 / 0 / 0, stdout:
+  `plain-body`, `plain-defer`, `while 0`, `while-defer`, `while 1`,
+  `while-defer`.
+- `red_nested_for.zig` rc 0 / 0 / 0, stdout:
+  `plain-body`, `plain-defer`, `nested 1 1`, `nested-defer`, `nested 1 2`,
+  `nested-defer`, `nested 2 1`, `nested-defer`, `nested 2 2`, `nested-defer`.
+- controls `control_two_plain` / `control_for_only` / `control_nodefer_for` /
+  `split_plain_main_loop_helper` / `split_loop_main_plain_helper`: POST stdout
+  byte-identical to the pre-FG HEAD compiler (`cmp`), stderr identical (empty).
+- leak-analyzer diagnostics on the controls and the four 4-MD5 gate programs:
+  byte-identical PRE (HEAD `6b68ca72…`) <-> POST; zero `WARN_7002`;
+  self-emission rc 0 / 48 `.c` + 48 `.h` / zero `WARN_7002`.
+- Regression fixture `repro/mi_matrix/stdlib_defer_queue_reset_xmod` is RED
+  (rc 139) on the pre-FG compiler and GREEN (rc 0, golden 317 B, 3x
+  byte-exact) on the FG compiler.
 
 ## Claim
 A module containing one function with a plain `defer` and another function with

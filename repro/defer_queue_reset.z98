@@ -1,0 +1,71 @@
+// defer_queue_reset.z98 — FG (D1) standalone repro.
+//
+// Pins the D1 fix: the analyzer defer queue is cleared immediately after each
+// per-phase/per-function `sandReset` of the scratch arena that holds it, so
+// the next queued DeferEntry can no longer overwrite recycled scratch memory
+// that a live StateMap now occupies. The shape family is a module with a
+// plain-`defer` function followed by functions with `defer` inside nested
+// blocks (for / while / nested for).
+//
+// Pre-fix: compile rc 139 (SIGSEGV in checkLeaksOnScopeExit /
+// stateMapMergeStates; one defect, three downstream readers).
+// Fixed: compile/build/run rc 0 with this exact stdout.
+//
+// Expected stdout (exact), rc 0:
+//   plain-body
+//   plain-defer
+//   for 1
+//   for-defer
+//   for 2
+//   for-defer
+//   while 0
+//   while-defer
+//   while 1
+//   while-defer
+//   nested 1 1
+//   nested-defer
+//   nested 1 2
+//   nested-defer
+//   nested 2 1
+//   nested-defer
+//   nested 2 2
+//   nested-defer
+const std = @import("std");
+
+fn plain() void {
+    defer std.io.print("plain-defer\n", .{});
+    std.io.print("plain-body\n", .{});
+}
+
+fn forDefer() void {
+    const arr = [2]i32{ 1, 2 };
+    for (arr) |v| {
+        defer std.io.print("for-defer\n", .{});
+        std.io.print("for {}\n", .{v});
+    }
+}
+
+fn whileDefer() void {
+    var i: i32 = 0;
+    while (i < 2) : (i = i + 1) {
+        defer std.io.print("while-defer\n", .{});
+        std.io.print("while {}\n", .{i});
+    }
+}
+
+fn nestedForDefer() void {
+    const arr = [2]i32{ 1, 2 };
+    for (arr) |a| {
+        for (arr) |b| {
+            defer std.io.print("nested-defer\n", .{});
+            std.io.print("nested {} {}\n", .{ a, b });
+        }
+    }
+}
+
+pub fn main() void {
+    plain();
+    forDefer();
+    whileDefer();
+    nestedForDefer();
+}
