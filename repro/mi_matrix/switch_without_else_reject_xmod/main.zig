@@ -9,12 +9,14 @@
 // node (deduped per node — the exhaustive enum/TU switches are deliberately
 // listed without `else` here to pin that the strict rule is unconditional).
 //
-// Exact diagnostic census: 5 x error[3068]
+// Exact diagnostic census: 7 x error[3068]
 //   1. partial i32 value switch              (main.zig partial)
 //   2. exhaustive enum value switch          (main.zig exhaustiveEnum)
 //   3. exhaustive enum statement switch      (main.zig stmtNoElse)
 //   4. exhaustive tagged-union value switch  (main.zig exhaustiveTU)
 //   5. partial i32 value switch in helper.zig (cross-module helper.pick)
+//   6. zero-prong value switch               (main.zig zeroProngValue)
+//   7. zero-prong statement switch           (main.zig zeroProngStmt)
 // rc 2 / 0 emitted `.c`.
 const helper = @import("helper.zig");
 const std = @import("std");
@@ -52,8 +54,21 @@ fn exhaustiveTU(v: Value) i32 {
     };
 }
 
+// FA-a fix round 1: `switch (x) {}` used to escape the gate through the
+// zero-prong early returns (accepted rc 0; in value position it read the
+// poisoned result temp). Both positions must reject.
+fn zeroProngValue(x: i32) i32 {
+    return switch (x) {};
+}
+
+fn zeroProngStmt(c: Color) void {
+    switch (c) {}
+}
+
 pub fn main() void {
     std.io.print("{} {} {}\n", .{ partial(1), exhaustiveEnum(Color.Red), exhaustiveTU(Value.Nil) });
+    std.io.print("{}\n", .{zeroProngValue(1)});
     stmtNoElse(Color.Red);
+    zeroProngStmt(Color.Red);
     _ = helper.pick(1);
 }

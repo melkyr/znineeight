@@ -136,7 +136,7 @@ stringInternerIntern("foo"):
 
 **`DiagnosticLevel`** — `enum(u8)`: `err_lvl=0`, `warning=1`, `info=2`, `note=3`. [inference]
 
-**`ErrorCode`** — `enum(u16)` with 72 error/warning/info members. Most auto-increment from 0; the newer members pin explicit numeric discriminants (e.g. `ERR_3008_...=3008` … `ERR_3055_ENUM_VALUE_NOT_CONSTANT=3055`, `ERR_3056_CALL_TARGET_NOT_CALLABLE=3056`). Members are named `ERR_`/`WARN_`/`INFO_` with a phase-ish numeric label, but the label is a naming convention, not the discriminant (e.g. `ERR_2000_UNEXPECTED_TOKEN` auto-increments to 8). [inference]
+**`ErrorCode`** — `enum(u16)` with 85 error/warning/info members (69 `ERR_` + 15 `WARN_` + 1 `INFO_`). Most auto-increment from 0; the newer members pin explicit numeric discriminants (e.g. `ERR_3008_...=3008` … `ERR_3055_ENUM_VALUE_NOT_CONSTANT=3055`, `ERR_3056_CALL_TARGET_NOT_CALLABLE=3056`, `ERR_3068_SWITCH_WITHOUT_ELSE=3068`). Members are named `ERR_`/`WARN_`/`INFO_` with a phase-ish numeric label, but the label is a naming convention, not the discriminant (e.g. `ERR_2000_UNEXPECTED_TOKEN` auto-increments to 8). [inference]
 
 **Numeric constants** — 10 members re-exported as standalone `u16` constants: `ERR_1000..ERR_1005` (0..5), `WARN_1010` (6), `WARN_1011` (7), `ERR_3045_UNKNOWN_CALLING_CONVENTION` (3045), `ERR_3017_SUSPENDING_FUNCTION_POINTER` (3017). These expose the raw numeric code passed as `code`. [inference]
 

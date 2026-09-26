@@ -24,9 +24,11 @@ lisp_interpreter_curr ×3, lisp_interpreter_upgraded ×3, rogue_mud ×2, rogue_m
 - positive `repro/mi_matrix/stdlib_switch_enum_range_xmod` (13 rows: qualified/shorthand/
   `enum(u8)`-gap/xmod/statement/int/char; golden 213 B, rc 0, 3× byte-exact; int/char rows
   byte-identical to the Zig-0.15.2 twin) — stdlib pin **247 -> 248**.
-- reject `repro/mi_matrix/switch_without_else_reject_xmod` (5 × `error[3068]`, rc 2 / 0 `.c`,
-  incl. a cross-module `helper.zig` site) — class FAIL (new dir).
-- standalone `repro/switch_enum_range.z98` / `repro/switch_without_else_reject.z98`.
+- reject `repro/mi_matrix/switch_without_else_reject_xmod` (7 × `error[3068]`, rc 2 / 0 `.c`,
+  incl. a cross-module `helper.zig` site and the two zero-prong sites added by fix round 1) —
+  class FAIL (new dir).
+- standalone `repro/switch_enum_range.z98` / `repro/switch_without_else_reject.z98` /
+  `repro/switch_zero_prong_reject.z98` (fix round 1).
 
 **Expected-FAIL movement (join-diff vs the v88-seed PRE classification over the common dirs):**
 EXACTLY the census's 35 OK no-`else` repro dirs move OK -> FAIL, plus the new reject fixture:
@@ -59,6 +61,19 @@ PRE 1041 = 896 OK / 46 GREEN / 99 FAIL -> POST 1041 = 860 OK / 46 GREEN / 135 FA
 self-emission rc 0 / 48 `.c` + 48 `.h`. D02 repro set now matches `expected.txt`; D03 rejects
 1 × `error[3068]` per shape. Tolerated Z98 divergence: a redundant/unreachable `else` on an
 exhaustive switch is accepted (Zig 0.15.2 rejects "unreachable else prong").
+
+**FA-a fix round 1 (v250, no version bump — zero corpus class movement):** the zero-prong early
+returns in `semanticAnalyzerResolveSwitchExpr` (`payload == 0`, `prongs_n == 0`) escaped the gate, so
+`switch (x) {}` compiled rc 0 (value position read the poisoned `0xAAAAAAAA` result temp). Both now
+call the shared `semanticAnalyzerReportSwitchWithoutElse` reporter: rc 2 / 0 `.c` / one
+`error[3068]` per node, value and statement position; an `else`-only switch stays accepted. The
+reject fixture census is 7 (5 -> 7); new standalone `repro/switch_zero_prong_reject.z98` (2 ×
+`error[3068]`). A scan finds no other empty `switch {}` in `sf/src`, `examples/z98`, `repro`, or
+`stdlib_test`, so the corpus join-diff vs the FA-a classification is **empty (zero movement)**;
+fixed point moves `93b884b5…` -> `6b68ca72bd8919edef0ef7f955a75580` (hop1 == hop2, explicit
+`FIXED_POINT_MD5` gate; seed NOT rotated); 4-MD5 UNCHANGED at the FA-a values (gol `9e0b708e…` /
+lisp `edc55d7f…` / json `ca303731…` / mud `2e92c1f2…`); stdlib 248 PASS; self-emission 48 `.c` +
+48 `.h`.
 
 ## Final-review Critical fix wave (v248 -> v249, 2026-09-25)
 

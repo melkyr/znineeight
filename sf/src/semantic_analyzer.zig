@@ -2983,13 +2983,25 @@ fn semanticAnalyzerResolveAssign(self: *SemanticAnalyzer, node_idx: u32) u32 {
     return type_mod.TYPE_VOID;
 }
 
+// FA-a fix round 1 (D3): shared reporter for a `switch` without an `else`
+// prong. The zero-prong early returns in `semanticAnalyzerResolveSwitchExpr`
+// (`payload == 0` and `prongs_n == 0`) previously escaped the end-of-function
+// gate, so `switch (x) {}` was accepted and (in value position) read the
+// poisoned result temp. Level 0 at the switch node's span, deduped per node.
+fn semanticAnalyzerReportSwitchWithoutElse(self: *SemanticAnalyzer, node_idx: u32) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) return;
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    var swe_msg: []const u8 = "switch must have an 'else' prong";
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3068_SWITCH_WITHOUT_ELSE)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), swe_msg);
+}
+
 fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     self.switch_depth += @intCast(u32, 1);
     var se: []const u8 = "SE"; pal_mod.markerWrite(se);
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var swu_im: []const u8 = "SWI:n"; pal_mod.markerWriteInt(swu_im, node_idx); var swu_pm: []const u8 = "SWI:p"; pal_mod.markerWriteInt(swu_pm, @intCast(u32, ast_mod.astStoreNodePayloadPacked(self.store, node_idx, node.kind) & @intCast(u64, 0xFFFFFFFF)));
     var swi_dm: []const u8 = "SWI:d"; pal_mod.markerWriteInt(swi_dm, self.switch_depth);
-    if (ast_mod.astStoreNodePayload(self.store, node_idx) == @intCast(u32, 0)) { var sep_m: []const u8 = "P0: n"; pal_mod.markerWrite(sep_m); var sep_b: [10]u8 = undefined; var sep_l = itoa_mod.itoa(node_idx, sep_b[0..]); var sep_s: usize = @intCast(usize, 9) - @intCast(usize, sep_l); pal_mod.markerWrite(sep_b[sep_s..@intCast(usize, 9)]); var sep_nl: []const u8 = "\n"; pal_mod.markerWrite(sep_nl); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); self.switch_depth -= @intCast(u32, 1); return type_mod.TYPE_VOID; }
+    if (ast_mod.astStoreNodePayload(self.store, node_idx) == @intCast(u32, 0)) { var sep_m: []const u8 = "P0: n"; pal_mod.markerWrite(sep_m); var sep_b: [10]u8 = undefined; var sep_l = itoa_mod.itoa(node_idx, sep_b[0..]); var sep_s: usize = @intCast(usize, 9) - @intCast(usize, sep_l); pal_mod.markerWrite(sep_b[sep_s..@intCast(usize, 9)]); var sep_nl: []const u8 = "\n"; pal_mod.markerWrite(sep_nl); semanticAnalyzerReportSwitchWithoutElse(self, node_idx); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); self.switch_depth -= @intCast(u32, 1); return type_mod.TYPE_VOID; }
     var cond_type = semanticAnalyzerResolveExpr(self, node.child_0);
     self.current_switch_cond_tu = @intCast(u32, 0);
     var cond_es: u32 = @intCast(u32, 0);
@@ -3011,7 +3023,7 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
         }
     }
     var prongs_n = ast_mod.astStoreNodeExtraChildCount(self.store, node_idx);
-    if (prongs_n == @intCast(usize, 0)) { var pr0_m: []const u8 = "PL0:n"; pal_mod.markerWrite(pr0_m); var pr0_b: [10]u8 = undefined; var pr0_l = itoa_mod.itoa(node_idx, pr0_b[0..]); var pr0_s: usize = @intCast(usize, 9) - @intCast(usize, pr0_l); pal_mod.markerWrite(pr0_b[pr0_s..@intCast(usize, 9)]); var pr0_nl: []const u8 = "\n"; pal_mod.markerWrite(pr0_nl); self.current_switch_cond_tu = @intCast(u32, 0); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); self.switch_depth -= @intCast(u32, 1); return type_mod.TYPE_VOID; }
+    if (prongs_n == @intCast(usize, 0)) { var pr0_m: []const u8 = "PL0:n"; pal_mod.markerWrite(pr0_m); var pr0_b: [10]u8 = undefined; var pr0_l = itoa_mod.itoa(node_idx, pr0_b[0..]); var pr0_s: usize = @intCast(usize, 9) - @intCast(usize, pr0_l); pal_mod.markerWrite(pr0_b[pr0_s..@intCast(usize, 9)]); var pr0_nl: []const u8 = "\n"; pal_mod.markerWrite(pr0_nl); semanticAnalyzerReportSwitchWithoutElse(self, node_idx); self.current_switch_cond_tu = @intCast(u32, 0); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); self.switch_depth -= @intCast(u32, 1); return type_mod.TYPE_VOID; }
     var unified: u32 = @intCast(u32, 0);
     var unified_node: u32 = @intCast(u32, 0);
     var has_else: u8 = 0;
@@ -3157,13 +3169,9 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
     self.current_switch_cond_tu = @intCast(u32, 0);
     if (has_else == @intCast(u8, 0)) {
         // FA-a (D3): §3.1 makes the `else` prong mandatory in ALL switch
-        // expressions (value and statement position). Deduped per switch node.
-        // With every accepted switch carrying `else`, lowering's
-        // uninitialized-result-temp default path is unreachable.
-        if (diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) {
-            var swe_msg: []const u8 = "switch must have an 'else' prong";
-            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3068_SWITCH_WITHOUT_ELSE)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), swe_msg);
-        }
+        // expressions (value and statement position). Deduped per switch node;
+        // the zero-prong early returns above use the same reporter.
+        semanticAnalyzerReportSwitchWithoutElse(self, node_idx);
     }
     if (unified == @intCast(u32, 0)) unified = type_mod.TYPE_NORETURN;
     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, unified);
