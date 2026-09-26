@@ -661,3 +661,20 @@ Every F task inherits the plan's amendment protocol: fix + convert the D-phase r
 - [ ] FD2 — tuple-variable print arguments after FB, per FD-I's design.
 
 ---
+
+## Stage 2b final rulings and order (operator-ruled 2026-09-26, part 3)
+
+All Stage 2a reports are complete and reviewable in the workspace. Final rulings:
+
+- **Code allocation:** `3065` FD1 print container; `3066` FH illegal single-pointer index (incl. `(*p)[i]`); `3067` FH single-pointer slice bounds; `3068` FA switch without `else`; `3069` FB non-comptime tuple index; `3070` FB tuple index out of range; `3071` FX4 bogus/foreign enum qualifier; `3072–3074` FF clean diagnostics replacing the 3043 ICE net (non-struct target / unknown field / unresolved type + arity).
+- **FA split:** **FA-a** (performed FIRST) = strict-`else` enforcement (`semantic_analyzer.zig:3158` + remove the dead checker) + the D2 enum-range label fix + migrate `sf/src` (3 census sites incl. `tokenKindToString` 105/108) and `examples/z98` (12 census sites, which include the four 4-MD5 gate programs) + strict runtime-parity verification (gate runtime output byte-identical; 4-MD5 re-baseline with runtime identity) + the D02/D03 repro conversions. **FA-b** (later, separated) = the remaining migrations (corpus/repro fixtures, 45 census dirs, stdlib pins). Unreachable `else` prongs are a tolerated documented Z98 divergence.
+- **FX1 (after FA):** emit cases for named-const range bounds, exact `identifier` case items, mixed `LO, 2`, cross-module `mod.LO` consts and `bool_literal` items.
+- **FB:** probe `packed struct { T1, T2 }` and tuple-of-array assignment; clean-reject unless support is trivial; update the Language Spec for `._0`/`t[0]`; new codes 3069/3070.
+- **FH2-I (new I, before FH):** check whether adopting Zig's `*[0]T`/`*[1]T` slice result type affects self-compile/gates; adopt Zig if unaffected, else keep Z98 `[]T` as a documented divergence.
+- **FX2:** `labeled_stmt` separated (FX8); duplicate bare-block `WARN_6005` accepted; the switch-merge prong-name fix separated (FX7); the 73 new lisp `WARN_6002` acceptable (gate rc 0 / C-identical); capture-safe marking skipped.
+- **FX4:** new code 3071 for bogus/foreign qualifiers; the `3060`+`error[20]` cascade stays visible (no suppression).
+- **FX3:** full value-aware float narrowing including Zig's int-exactness reject (`takeF32(16777217)`).
+- **New separated groups:** **FX5** pointer/`*[N]T` slice siblings + unchecked runtime slice bounds + `pa.*[i]`; **FX6** const-array decay / `"abc"`→`[]u8` / array-element mismatch holes; **FX7** switch-merge prong-name propagation; **FX8** `labeled_stmt` traversal.
+- **Dispatch is strictly sequential** (one task at a time), in this order: **FA-a**, FG, FD1, FE, FF, FA-b, FC, FB, FH2-I, FH, FX1, FX2, FX3, FX4, FD2, FX5, FX6, FX7, FX8.
+
+---
