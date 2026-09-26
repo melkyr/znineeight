@@ -387,6 +387,7 @@ fn remapInst(b: *Build, inst: LirInst, sw_off: u32) LirInst {
         .poison_init => |x| return LirInst{ .poison_init = .{ .result = x.result + b.base } },
         .int_cast_checked => |x| return LirInst{ .int_cast_checked = .{ .value = x.value + b.base, .target = x.target, .result = x.result + b.base, .src_signed = x.src_signed, .src_width = x.src_width, .dst_signed = x.dst_signed, .dst_width = x.dst_width } },
         .width_wrap => |x| return LirInst{ .width_wrap = .{ .value = x.value + b.base, .result = x.result + b.base, .result_type = x.result_type, .width = x.width, .is_signed = x.is_signed } },
+        else => return inst,
     }
 }
 

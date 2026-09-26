@@ -1,5 +1,14 @@
 # D3 — missing mandatory `else`: unmatched value reads an uninitialized temp (RED, silent wrong value)
 
+> **FA-a status (2026-09-26): FIXED as a strict REJECT.** With the FA-a compiler
+> (fixed point `93b884b5f3ab2aebf500782dca76c3c3`) every no-`else` switch here
+> rejects rc 2 / 0 emitted `.c` / exactly one level-0 `error[3068]` (`switch
+> must have an 'else' prong`) per switch node: `main.zig` (1),
+> `red_unmatched_only.zig` (1), `xmod_main.zig` via `picker.zig` (1).
+> `run_all.sh` reports `D03_missing_else: rc=2 ok`; the D3 uninitialized-result
+> path is unreachable for accepted programs. The OBSERVED section below is the
+> historical seed-v88 evidence.
+
 ## Claim
 A `switch` expression without `else` is accepted; when no prong matches, the
 result temp is never assigned and the program reads uninitialized storage

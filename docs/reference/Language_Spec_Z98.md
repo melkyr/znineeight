@@ -181,10 +181,11 @@ This approach maximizes performance on legacy hardware by minimizing the active 
     - **Inclusive**: `start...end` (includes both `start` and `end`).
     - **Exclusive**: `start..end` (includes `start`, excludes `end`).
     - **Bounds**: Must be compile-time constants of the same type as the switch condition.
-    - **Enums**: Ranges on enum conditions use the underlying integer values of the enum members.
+    - **Enums**: Ranges on enum conditions use the underlying integer values of the enum members. Both bounds may be qualified members (`Color.Red...Color.Green`) or shorthand literals (`.Red... .Blue`); they resolve by member name against the enum condition via each member's underlying value, so `enum(uN)` gaps are exact.
     - **Expansion**: Ranges are lowered into sequential C `case` labels at compile-time.
-    - **Character Literals**: Character literals (e.g., `'a'...'z'`) are fully supported in constant expressions, including `switch` ranges. They are treated as their underlying Unicode codepoint (ASCII) values.
-  - **Else**: An `else` prong is **mandatory** in all switch expressions.
+    - **Character Literals**: Character literals (e.g. `'a'...'z'`) are fully supported in constant expressions, including `switch` ranges. They are treated as their underlying Unicode codepoint (ASCII) values.
+  - **Else**: An `else` prong is **mandatory** in all switch expressions (value and statement position). A `switch` without one is rejected with level-0 `error[3068]` (`switch must have an 'else' prong`, rc=2 / 0 `.c`) at the switch node. Strict enforcement also closes the former silent uninitialized-result-temp path: before this rule, a value switch with no matching prong read an uninitialized temporary.
+    - **Z98-vs-Zig divergence (unreachable `else`)**: Z98 **tolerates** a redundant/unreachable `else` prong on an exhaustive switch (`switch (e) { .a => 1, .b => 2, else => 0 }` compiles and runs); official Zig 0.15.2 rejects the same shape with "unreachable else prong". Because `else` is mandatory here, an exhaustive switch must still spell one out (a `else => unreachable` arm traps under both `-fsafe` and `-ffast`; use `else => {}` or a real fallback instead).
   - **Grammar**:
     ```
     switch (expression) {

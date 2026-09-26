@@ -1,5 +1,17 @@
 # D2 — enum `switch` range prongs are dropped at emission (RED, silent wrong code)
 
+> **FA-a status (2026-09-26): FIXED.** With the FA-a compiler (fixed point
+> `93b884b5f3ab2aebf500782dca76c3c3`) this directory compiles rc 0 and prints
+> `expected.txt` exactly — `incl 10 10 20 / excl 30 30 40 / mixed 60 60 50`;
+> `xmod_main.zig` (`incl 10 10 20 / excl 30 30 40`), `red_exclusive_only.zig`
+> (`excl 30 30 40`) and `red_mixed_prongs.zig` (`mixed 60 60 50`) match too, and
+> the int/char control `control_int_ranges.zig` is byte-identical. Fix: range
+> endpoints resolve through `lowerSwitchCaseItemValue` in
+> `lowerAppendSwitchCaseItem` (enum_literal/field_access by member name against
+> the condition enum, `member.value` so `enum(uN)` gaps are exact). `run_all.sh`
+> reports `D02_enum_switch_ranges: rc=0 ok`. The OBSERVED section below is the
+> historical seed-v88 evidence.
+
 ## Claim
 `switch` on an enum with inclusive (`a...b`) and exclusive (`a..b`) range
 prongs emits no `case` labels for those prongs (only `default`), so every value

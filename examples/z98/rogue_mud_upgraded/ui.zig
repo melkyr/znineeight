@@ -215,6 +215,7 @@ fn describeTile(dungeon: scenario.Dungeon_t, x: u8, y: u8, dx: i16, dy: i16) voi
             std.io.write(dir_str);
             std.io.print(", you see a heavy wooden door.\n");
         },
+        else => {},
     }
 }
 

@@ -1347,51 +1347,6 @@ fn testComptimeCompareCore() void {
     ok(emsg_cmp);
 }
 
-fn testSwitchExhaustiveness() void {
-    var arena = alloc_mod.sandInit(perm_buf[0..]);
-    var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);
-    var source_man = sm_mod.sourceManagerInit(&diag_sand);
-    var interner = interner_mod.stringInternerInit(&diag_sand, 4);
-    var diag = diag_mod.diagnosticCollectorInit(&diag_sand, &source_man, &interner);
-    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
-    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
-    type_mod.typeRegistryRegisterPrimitives(&typereg);
-    var store = ast_mod.astStoreInit(&arena);
-    var rtt = rtt_mod.resolvedTypeTableInit(&arena);
-    var em_buf: [3]type_mod.EnumMember = undefined;
-    em_buf[0] = type_mod.EnumMember{ .name_id = @intCast(u32, 100), .value = @intCast(i64, 0) };
-    em_buf[1] = type_mod.EnumMember{ .name_id = @intCast(u32, 101), .value = @intCast(i64, 1) };
-    em_buf[2] = type_mod.EnumMember{ .name_id = @intCast(u32, 102), .value = @intCast(i64, 2) };
-    var em_start = typereg.em_len;
-    var emi: usize = 0;
-    while (emi < 3) : (emi += 1) { type_mod.emAppend(&typereg, em_buf[emi]); }
-    type_mod.enAppend(&typereg, type_mod.EnumPayload{ .members_start = @intCast(u32, em_start), .members_count = @intCast(u16, 3), .backing_type = @intCast(u32, 0) });
-    var en_tid: u32 = @intCast(u32, typereg.en_len - @intCast(usize, 1));
-    var sn: []const u8 = "E";
-    var snid = interner_mod.stringInternerIntern(&interner, sn);
-    var named_tid = type_mod.typeRegistryRegisterNamedType(&typereg, @intCast(u32, 0), snid, type_mod.TypeKind.enum_type);
-    var named_ty = typereg.types_items[@intCast(usize, named_tid)];
-    named_ty.payload_idx = en_tid;
-    named_ty.size = @intCast(u32, 4);
-    named_ty.alignment = @intCast(u32, 4);
-    named_ty.state = @intCast(u8, 2);
-    typereg.types_items[@intCast(usize, named_tid)] = named_ty;
-    var cond_idx = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
-    rtt_mod.resolvedTypeTableSet(&rtt, cond_idx, named_tid);
-    var check_tid = rtt_mod.resolvedTypeTableGet(&rtt, cond_idx);
-    if (check_tid) |ct| { _ = ct; } else { var fmsg: []const u8 = "testSwitchExhaustiveness RTT missing"; fail(fmsg); return; }
-    var body = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
-    var prong = ast_mod.astStoreAddNode(&store, AstKind.swt_prong, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), body, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
-    var pr_buf: [1]u32 = undefined;
-    pr_buf[0] = prong;
-    var ec = ast_mod.astStoreAddExtraChildren(&store, pr_buf[0..1]);
-    var sw_idx = ast_mod.astStoreAddNode(&store, AstKind.swt_ex, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), cond_idx, @intCast(u32, 0), @intCast(u32, 0), ec);
-    cc_mod.checkSwitchExhaust(&store, &typereg, &diag, &rtt, sw_idx);
-    var err_count = diag_mod.diagnosticCollectorErrorCount(&diag);
-    if (err_count == @intCast(u32, 0)) { var fmsg: []const u8 = "testSwitchExhaustiveness expected error count > 0"; fail(fmsg); return; }
-    var emsg: []const u8 = "testSwitchExhaustiveness";
-    ok(emsg);
-}
 
 fn testReturnTypeMatch() void {
     var arena = alloc_mod.sandInit(perm_buf[0..]);
@@ -1580,32 +1535,6 @@ fn testReturnTypeBareReturn() void {
     ok(emsg);
 }
 
-fn testSwitchExhaustivenessInteger() void {
-    var arena = alloc_mod.sandInit(perm_buf[0..]);
-    var diag_sand = alloc_mod.sandInit(diag_arena_buf[0..]);
-    var source_man = sm_mod.sourceManagerInit(&diag_sand);
-    var interner = interner_mod.stringInternerInit(&diag_sand, 4);
-    var diag = diag_mod.diagnosticCollectorInit(&diag_sand, &source_man, &interner);
-    var type_db = alloc_mod.sandInit(type_db_buf[0..]);
-    var typereg = type_mod.typeRegistryInit(&type_db, &interner);
-    type_mod.typeRegistryRegisterPrimitives(&typereg);
-    var store = ast_mod.astStoreInit(&arena);
-    var rtt = rtt_mod.resolvedTypeTableInit(&arena);
-    var cond = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
-    var body = ast_mod.astStoreAddNode(&store, AstKind.int_literal, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
-    var prong = ast_mod.astStoreAddNode(&store, AstKind.swt_prong, @intCast(u8, 1), @intCast(u32, 0), @intCast(u32, 0), body, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
-    var prong_buf: [1]u32 = undefined;
-    prong_buf[0] = prong;
-    var ec = ast_mod.astStoreAddExtraChildren(&store, prong_buf[0..1]);
-    var sw = ast_mod.astStoreAddNode(&store, AstKind.swt_ex, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), cond, @intCast(u32, 0), @intCast(u32, 0), ec);
-    rtt_mod.resolvedTypeTableSet(&rtt, cond, type_mod.TYPE_U32);
-    var old_ecount = diag_mod.diagnosticCollectorErrorCount(&diag);
-    cc_mod.checkSwitchExhaust(&store, &typereg, &diag, &rtt, sw);
-    var ecount = diag_mod.diagnosticCollectorErrorCount(&diag);
-    if (ecount != old_ecount) { var fmsg: []const u8 = "testSwitchExhaustivenessInteger expected no diag"; fail(fmsg); return; }
-    var emsg: []const u8 = "testSwitchExhaustivenessInteger";
-    ok(emsg);
-}
 
 fn testStateMapSetGet() void {
     var arena = alloc_mod.sandInit(perm_buf[0..]);
@@ -2144,7 +2073,6 @@ pub fn main() void {
     testComptimeSizeOfVoid();
     testComptimeBigIntCore();
     testComptimeCompareCore();
-    testSwitchExhaustiveness();
     testReturnTypeMatch();
     testReturnTypeMismatch();
     testBreakInsideLoop();
@@ -2152,7 +2080,6 @@ pub fn main() void {
     testUndefinedSymbolDiag();
     testFnCallNotCallable();
     testReturnTypeBareReturn();
-    testSwitchExhaustivenessInteger();
     testStateMapSetGet();
     testStateMapForkIsolation();
     testStateMapParentFallback();

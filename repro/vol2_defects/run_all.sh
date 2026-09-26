@@ -19,6 +19,12 @@
 #   gccfail compile is accepted (rc 0), gcc must reject the C       D05, D06
 #   wrong   build+run succeed, stdout must differ from expected.txt D02, D08
 #
+# FA-a conversion (2026-09-26): D2 (enum range labels) and D3 (mandatory `else`)
+# are FIXED on the current compiler. Under the existing kinds this shows up
+# naturally as `ok`: D02 (`wrong`) now matches expected.txt, and D03 (`accept`)
+# now rejects. Both print `ok` on a post-FA-a compiler; the remaining cases
+# still follow the table above.
+#
 # Usage: sh run_all.sh [seed-compiler-path]
 # Default seed: /tmp/manual_seed/zig1_5_clean
 # Rebuild:  bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/manual_seed

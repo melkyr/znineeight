@@ -3156,6 +3156,14 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
 
     self.current_switch_cond_tu = @intCast(u32, 0);
     if (has_else == @intCast(u8, 0)) {
+        // FA-a (D3): §3.1 makes the `else` prong mandatory in ALL switch
+        // expressions (value and statement position). Deduped per switch node.
+        // With every accepted switch carrying `else`, lowering's
+        // uninitialized-result-temp default path is unreachable.
+        if (diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) {
+            var swe_msg: []const u8 = "switch must have an 'else' prong";
+            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3068_SWITCH_WITHOUT_ELSE)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), swe_msg);
+        }
     }
     if (unified == @intCast(u32, 0)) unified = type_mod.TYPE_NORETURN;
     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, unified);

@@ -1,4 +1,64 @@
-# mi_matrix corpus — expected-fail manifest (v249 2026-09-25)
+# mi_matrix corpus — expected-fail manifest (v250 2026-09-26)
+
+## FA-a — strict switch mandatory `else` + D2 enum range case labels (v249 -> v250, 2026-09-26)
+
+Volume II defect-fix phase, Stage 2b first task (task-FA-a). **(D3) strict `else`:** every `switch`
+without an `else` prong is now rejected with level-0 `error[3068]`
+`ERR_3068_SWITCH_WITHOUT_ELSE` (`switch must have an 'else' prong`) at the switch node (value AND
+statement position; deduped per node), so the former uninitialized-result-temp path is unreachable
+and the dead `constraint_checker.checkSwitchExhaust` is deleted. **(D2) enum ranges:**
+`lowerAppendSwitchCaseItem` resolves range endpoints through the new
+`lowerSwitchCaseItemValue`/`lowerSwitchCaseItemMemberValue` helpers, so enum-typed range prongs emit
+real C `case` labels (qualified `Color.Red...Color.Green`, shorthand `.Red... .Blue`, `enum(uN)`
+gaps via `member.value`, cross-module, value and statement position); int/char ranges and the
+`>16384`/`hi < lo`/empty-exclusive caps are unchanged; FX1 shapes (named-const bounds, exact
+`identifier` items, `bool_literal`) stay silently dropped.
+
+**Migrations (this task):** `sf/src` 3 (`async_state_machine.remapInst`, `dump_ast.astKindToString`,
+`dump_tokens.tokenKindToString` names `c_include_builtin`/`kw_anytype`/`kw_volatile`) +
+`examples/z98` 12 sites/9 files (json_parser, json_parser_upgraded, lisp_interpreter_adv,
+lisp_interpreter_curr ×3, lisp_interpreter_upgraded ×3, rogue_mud ×2, rogue_mud_upgraded).
+**FA-b (separated, not this task)** migrates the `repro/**` no-`else` corpus sites below.
+
+**New fixtures:**
+- positive `repro/mi_matrix/stdlib_switch_enum_range_xmod` (13 rows: qualified/shorthand/
+  `enum(u8)`-gap/xmod/statement/int/char; golden 213 B, rc 0, 3× byte-exact; int/char rows
+  byte-identical to the Zig-0.15.2 twin) — stdlib pin **247 -> 248**.
+- reject `repro/mi_matrix/switch_without_else_reject_xmod` (5 × `error[3068]`, rc 2 / 0 `.c`,
+  incl. a cross-module `helper.zig` site) — class FAIL (new dir).
+- standalone `repro/switch_enum_range.z98` / `repro/switch_without_else_reject.z98`.
+
+**Expected-FAIL movement (join-diff vs the v88-seed PRE classification over the common dirs):**
+EXACTLY the census's 35 OK no-`else` repro dirs move OK -> FAIL, plus the new reject fixture:
+`repro/anon_init_if_arm`, `repro/anon_init_var_decl`, `repro/comptime_fold_typed_payload`,
+`repro/mi_matrix/{anon_init_orelse_rhs, array_tagged_union_read, ast_walk_capture_prong_xmod,
+ast_walk_subtree_break_xmod, capture_prong_str_literal_xmod, emission_mangler_collision_xmod,
+emission_orelse_control_xmod, emission_sibling_payload_xmod, emission_type_storage_control_xmod,
+emission_type_storage_extern_threealias_xmod, emission_type_storage_extern_xmod,
+emission_void_temp_enum_xmod, nested_switch_str_literal_xmod, switch_char_nodefault,
+switch_char_xmod_nodefault, switch_expr_payload_capture_xmod, switch_str_literal_prong_xmod,
+switch_str_literal_prong_xmod_xmod, switch_unannotated_diffstr_xmod,
+switch_unannotated_diffstr_xmod_xmod, switch_unannotated_direct_xmod, switch_unannotated_str_xmod,
+switch_unannotated_str_xmod_xmod, typealias_agg_xmod, unannotated_infer_samelength_xmod}`,
+`repro/switch_capture_name_reuse`, `repro/tagged_field_path`, `repro/tagged_union_anon_return`,
+`repro/tagged_union_payload`, `repro/tagged_union_same_type`, `repro/tagged_union_slice_payload`,
+`repro/tu_void_prong`. `examples/z98` (7 census dirs) stay OK via the migration; the 3
+census-listed already-FAIL siblings (`emission_sibling_payload_nestedarm_xmod`,
+`emission_sibling_payload_scale_xmod`, `shadow_reject_xmod`) keep their class. **Zero other
+movement.**
+
+**Gates:** fixed point MOVED `a3928c11f9852db9646dff39006ef654` ->
+`93b884b5f3ab2aebf500782dca76c3c3` (hop1 == hop2, explicit `FIXED_POINT_MD5` gate; seed v88 NOT
+rotated). 4-MD5 emitted-C: lisp `dfa69f32f33f21b75e8c03e4a151611f` ->
+`edc55d7f521c2092be70043ca84ca741`, json `a4a7346153557c9e85a8d112d3866a64` ->
+`ca30373194620ab623a1a91d257049a4`; gol `9e0b708e…` / mud_server `2e92c1f2…` UNCHANGED; runtime
+identity PRE↔POST byte-identical for all four (stdout/stderr/rc + mud session log). Corpus `-s0`
+PRE 1041 = 896 OK / 46 GREEN / 99 FAIL -> POST 1041 = 860 OK / 46 GREEN / 135 FAIL. stdlib runtime
+**248 PASS / 0 FAIL**; example matrix **24/24**; `check_emit_support.sh` **7/7**;
+`verify_upgraded.sh` **CLOSEOUT OK**; build_test **0/9** (pre-existing retired-zig0 baseline);
+self-emission rc 0 / 48 `.c` + 48 `.h`. D02 repro set now matches `expected.txt`; D03 rejects
+1 × `error[3068]` per shape. Tolerated Z98 divergence: a redundant/unreachable `else` on an
+exhaustive switch is accepted (Zig 0.15.2 rejects "unreachable else prong").
 
 ## Final-review Critical fix wave (v248 -> v249, 2026-09-25)
 

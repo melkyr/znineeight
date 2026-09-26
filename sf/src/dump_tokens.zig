@@ -144,8 +144,12 @@ fn tokenKindToString(kind: TokenKind, buf: []u8) []u8 {
         TokenKind.kw_bool => { var s: []const u8 = "kw_bool"; fmt.copyStr(buf, &idx, s); },
         TokenKind.kw_noreturn => { var s: []const u8 = "kw_noreturn"; fmt.copyStr(buf, &idx, s); },
         TokenKind.kw_c_char => { var s: []const u8 = "kw_c_char"; fmt.copyStr(buf, &idx, s); },
+        TokenKind.kw_anytype => { var s: []const u8 = "kw_anytype"; fmt.copyStr(buf, &idx, s); },
+        TokenKind.kw_volatile => { var s: []const u8 = "kw_volatile"; fmt.copyStr(buf, &idx, s); },
+        TokenKind.c_include_builtin => { var s: []const u8 = "c_include_builtin"; fmt.copyStr(buf, &idx, s); },
         TokenKind.eof => { var s: []const u8 = "eof"; fmt.copyStr(buf, &idx, s); },
         TokenKind.err_token => { var s: []const u8 = "err_token"; fmt.copyStr(buf, &idx, s); },
+        else => { var s: []const u8 = "unknown"; fmt.copyStr(buf, &idx, s); },
     }
     buf[idx] = 0;
     return buf[0..idx];

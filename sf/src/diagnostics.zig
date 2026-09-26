@@ -158,6 +158,15 @@ pub const ErrorCode = enum(u16) {
     // the cycle; rejects with 0 `.c`. (Renamed from
     // `ERR_3064_FORWARD_REF_TUPLE_GLOBAL`; the number is unchanged.)
     ERR_3064_CYCLIC_GLOBAL_INIT = 3064,
+    // FA-a (D3): a `switch` without an `else` prong. Language Spec §3.1 makes
+    // the `else` prong mandatory in all switch expressions (value AND statement
+    // position); this replaces the tombstone at
+    // `semantic_analyzer.zig:semanticAnalyzerResolveSwitchExpr` and makes the
+    // D3 uninitialized-result-temp path unreachable. Level 0, span on the
+    // `switch` expression; rejects with 0 `.c`. An unreachable/redundant `else`
+    // arm on an exhaustive switch is a tolerated Z98 divergence from Zig
+    // (Zig 0.15.2 rejects "unreachable else prong"; Z98 accepts it).
+    ERR_3068_SWITCH_WITHOUT_ELSE = 3068,
 };
 
 pub const ERR_1000_UNTERMINATED_STRING: u16 = 0;

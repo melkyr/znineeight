@@ -27,47 +27,6 @@ pub fn checkReturnType(store: *AstStore, reg: *TypeRegistry, diag: *DiagnosticCo
     }
 }
 
-pub fn checkSwitchExhaust(store: *AstStore, reg: *TypeRegistry, diag: *DiagnosticCollector, rtt: *ResolvedTypeTable, node_idx: u32) void {
-    var node = ast_mod.astStoreNodeAt(store, node_idx);
-    if (node.child_0 == @intCast(u32, 0)) return;
-    var cond_tid = rtt_mod.resolvedTypeTableGet(rtt, node.child_0);
-    if (cond_tid) |tid| {
-        if (tid == type_mod.TYPE_VOID or tid == @intCast(u32, 0)) return;
-        var ty = reg.types_items[@intCast(usize, tid)];
-        if (ty.kind != type_mod.TypeKind.enum_type and ty.kind != type_mod.TypeKind.tagged_union_type) return;
-        if (ast_mod.astStoreNodePayload(store, node_idx) == @intCast(u32, 0)) return;
-        var member_count: u16 = 0;
-        if (ty.kind == type_mod.TypeKind.enum_type) {
-            var ep = reg.en_items[@intCast(usize, ty.payload_idx)];
-            member_count = ep.members_count;
-        } else {
-            var tp = reg.tu_items[@intCast(usize, ty.payload_idx)];
-            member_count = tp.fields_count;
-        }
-        var prongs_n = ast_mod.astStoreNodeExtraChildCount(store, node_idx);
-        var covered_count: u16 = 0;
-        var has_else: u8 = 0;
-        var pi: usize = 0;
-        while (pi < @intCast(usize, prongs_n)) : (pi += 1) {
-            var prong_idx = ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, pi));
-            var prong = ast_mod.astStoreNodeAt(store, prong_idx);
-            if ((prong.flags & @intCast(u8, 1)) != @intCast(u8, 0)) { has_else = 1; } else {
-                if (ast_mod.astStoreNodePayload(store, prong_idx) != @intCast(u32, 0)) {
-                    var items_n = ast_mod.astStoreNodeExtraChildCount(store, prong_idx);
-                    var count: u16 = @intCast(u16, items_n);
-                    covered_count += count;
-                }
-            }
-        }
-        if (has_else == @intCast(u8, 0) and covered_count < member_count) {
-            var msg: []const u8 = "switch not exhaustive";
-            diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0),
-                @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3004_SWITCH_NOT_EXHAUSTIVE)),
-                @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), msg);
-        }
-    }
-}
-
 pub fn constraintCheckerCheckBreakContinue(store: *AstStore, diag: *DiagnosticCollector, root_idx: u32) void {
     if (root_idx == @intCast(u32, 0)) return;
     var stack_n: [512]u32 = undefined;

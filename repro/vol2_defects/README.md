@@ -6,6 +6,14 @@ independent review). **These repros pin current seed-compiler behavior; they do
 not fix anything.** The D1-D12 investigation tasks and any later
 operator-authorized F tasks consume this set.
 
+> **FA-a status (2026-09-26):** D2 (enum range prongs) and D3 (mandatory
+> `else`) are **FIXED** on the current compiler (fixed point
+> `93b884b5f3ab2aebf500782dca76c3c3`). D2 now prints the values in its
+> `expected.txt` (`run_all.sh`: `D02_enum_switch_ranges: rc=0 ok`); D3 now
+> rejects with exactly one `error[3068]` per no-`else` switch (`run_all.sh`:
+> `D03_missing_else: rc=2 ok`). The per-case `OBSERVED` sections below remain
+> the historical seed-v88 evidence.
+
 - Plan: `.superpowers/sdd/2026-09-25-z98-manual-volume-II-plan/`
 - Report: `.superpowers/sdd/2026-09-25-z98-manual-volume-II-plan/task-D0-report.md`
 - Fixture style follows `repro/mi_matrix/`: `main.zig` plus relative helper

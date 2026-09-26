@@ -78,6 +78,7 @@ fn printValue(val: json.JsonValue, level: usize) void {
             }
             std.io.print("}");
         },
+        else => {},
     }
 }
 
