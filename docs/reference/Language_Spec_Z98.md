@@ -175,7 +175,8 @@ This approach maximizes performance on legacy hardware by minimizing the active 
 - `switch (expr) { ... }`: Pattern matching and conditional evaluation.
   - **Condition**: Must be a tagged union, integer, enum, or boolean.
   - **Prongs**: Comma-separated case items followed by `=>` and an expression. If a prong consists of a single expression, it is automatically treated as an expression-statement when the switch is used as a statement.
-  - **Payload Captures**: Tagged union switches support payload captures `case => |val| ...`. `val` is an immutable reference to the union's payload for that specific tag.
+  - **Payload Captures**: Tagged union switches support payload captures `case => |val| ...`. `val` is an immutable reference to the union's payload for that specific tag. A prong may be spelled shorthand (`.circle => |r|`) or container-qualified (`Shape.circle => |r|`, including a module-qualified `shapes.Shape.circle => |r|`); both spellings bind the capture identically. The prong's qualifier chain is not validated (a bogus member or a foreign qualifier stays silent — see FX4).
+  - **Enum-operand Captures**: A capture on an enum switch prong (`Color.red => |v|`, `.red => |v|`) binds the switch OPERAND value (type: the enum), matching Zig 0.15.2. An UNUSED capture is accepted by Z98 on enum and tagged-union prongs; official Zig 0.15.2 rejects an unused capture ("unused capture") — a documented Z98 tolerance.
   - **Case Items**: Can be single values or ranges.
   - **Ranges**:
     - **Inclusive**: `start...end` (includes both `start` and `end`).
@@ -266,7 +267,7 @@ This approach maximizes performance on legacy hardware by minimizing the active 
     }
     ```
 - `expr catch |err| fallback`: Handles an error from an error union.
-  - If `expr` is an error, the `err` variable is bound to the error code and `fallback` is evaluated.
+  - If `expr` is an error, the `err` variable is bound to the error union's **error set** (`err: E` for `E!T`) and `fallback` is evaluated. The capture is an ordinary error-set value: `print("{}", .{err})` prints `error.Name`, and an explicit `{d}`/`{x}` on it rejects `error[3013]` like any other error-set value. A bare `!T` union (no named error set) keeps the numeric i32 capture — a documented residual.
   - If `expr` is a success, the payload is yielded and `fallback` is NOT evaluated.
   - The `|err|` capture is optional.
   - The `fallback` can be any expression, including a block `{ ... }`.

@@ -12,6 +12,7 @@ fn describe(s: Shape) i32 {
         Shape.circle => |r| @intCast(i32, r),
         Shape.rect => |rc| rc.w + rc.h,
         Shape.empty => 0,
+        else => 0,
     };
 }
 

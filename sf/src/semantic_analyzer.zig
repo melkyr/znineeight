@@ -2995,6 +2995,49 @@ fn semanticAnalyzerReportSwitchWithoutElse(self: *SemanticAnalyzer, node_idx: u3
     _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3068_SWITCH_WITHOUT_ELSE)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), swe_msg);
 }
 
+// FE (D11): a container-qualified switch prong (`Shape.circle`, `Color.red`,
+// `shapes.Shape.circle`) parses as a `field_access`, not an `enum_literal`, so
+// it never reached `semanticAnalyzerResolveEnumLiteral` and left no
+// `enum_value_table` entry; the payload-capture binding below then found no
+// entry, registered no local, and every use of the capture rejected
+// `error[20]`. Resolve the member name against the switch condition's type
+// exactly like the shorthand (tagged-union field index / enum member value) so
+// qualified prongs bind identically. A name that matches nothing is left
+// alone -- the FX4 validation group owns bogus members and foreign qualifiers.
+fn semanticAnalyzerResolveSwitchCaseMember(self: *SemanticAnalyzer, node_idx: u32) u32 {
+    if (self.current_switch_cond_tu == @intCast(u32, 0)) return type_mod.TYPE_VOID;
+    var name_id = ast_mod.astStoreNodePayload(self.store, node_idx);
+    var tu_ty = self.registry.types_items[@intCast(usize, self.current_switch_cond_tu)];
+    if (tu_ty.kind == type_mod.TypeKind.tagged_union_type) {
+        var tp = self.registry.tu_items[@intCast(usize, tu_ty.payload_idx)];
+        var fstart: usize = @intCast(usize, tp.fields_start);
+        var fcount: usize = @intCast(usize, tp.fields_count);
+        var fi: usize = 0;
+        while (fi < fcount) : (fi += 1) {
+            var fe = self.registry.fe_items[fstart + fi];
+            if (fe.name_id == name_id) {
+                hash_mod.u32ToU32MapPut(self.enum_value_table, node_idx, @intCast(u32, fi));
+                rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, self.current_switch_cond_tu);
+                return self.current_switch_cond_tu;
+            }
+        }
+    } else if (tu_ty.kind == type_mod.TypeKind.enum_type) {
+        var enp = self.registry.en_items[@intCast(usize, tu_ty.payload_idx)];
+        var estart: usize = @intCast(usize, enp.members_start);
+        var ecount: usize = @intCast(usize, enp.members_count);
+        var emi: usize = 0;
+        while (emi < ecount) : (emi += 1) {
+            var member = self.registry.em_items[estart + emi];
+            if (member.name_id == name_id) {
+                hash_mod.u32ToU32MapPut(self.enum_value_table, node_idx, @intCast(u32, member.value));
+                rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, self.current_switch_cond_tu);
+                return self.current_switch_cond_tu;
+            }
+        }
+    }
+    return type_mod.TYPE_VOID;
+}
+
 fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     self.switch_depth += @intCast(u32, 1);
     var se: []const u8 = "SE"; pal_mod.markerWrite(se);
@@ -3056,6 +3099,8 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
                         _ = semanticAnalyzerResolveEnumLiteral(self, case_i);
                     } else if (case_node.kind == AstKind.undefined_literal) {
                         _ = semanticAnalyzerResolveEnumLiteral(self, case_i);
+                    } else if (case_node.kind == AstKind.field_access) {
+                        _ = semanticAnalyzerResolveSwitchCaseMember(self, case_i);
                     }
             }
             if ((prong.flags & @intCast(u8, 16)) != @intCast(u8, 0)) {
@@ -3094,6 +3139,11 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
                             self.local_decl_count += @intCast(usize, 1);
                             var scax_m: []const u8 = "SCAX:N"; pal_mod.markerWriteInt(scax_m, cap_name);
                             var scax_tm: []const u8 = "SCAX:T"; pal_mod.markerWriteInt(scax_tm, fe.type_id);
+                        } else if (tu_ty.kind == type_mod.TypeKind.enum_type) {
+                            // FE (D11): Zig-style enum-operand capture. An enum
+                            // prong's capture binds the switch operand's value
+                            // (the enum type), exactly like the shorthand.
+                            registerLocalDecl(self, cap_name, self.current_switch_cond_tu, sp_ns, sp_ne);
                         }
                     }
                 } else {

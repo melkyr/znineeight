@@ -40,6 +40,15 @@
 # emit no `.c`, and never signal (a wrong-code reject or a crash prints RED).
 # The historical seed-v88 observations stay in the case NOTES.md.
 #
+# FE conversion (2026-09-26): D8 (error-set catch capture) and D11 (qualified
+# prong captures + the bundled unused-capture SIGSEGV) are FIXED. D08 (`wrong`)
+# now builds+runs and matches expected.txt (`rc=0 ok`); D11 (`reject`) now
+# compiles rc 0 (`rc=0 ok` at the compile gate; its f32 shapes stay
+# gcc-blocked by D6/FF). Extra D11 sibling entries
+# (red_enum_capture_{used,unused}.zig) document the enum-capture shapes and
+# are exercised outside run_all.sh; the historical seed-v88 observations stay
+# in the case NOTES.md.
+#
 # Usage: sh run_all.sh [seed-compiler-path]
 # Default seed: /tmp/manual_seed/zig1_5_clean
 # Rebuild:  bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/manual_seed

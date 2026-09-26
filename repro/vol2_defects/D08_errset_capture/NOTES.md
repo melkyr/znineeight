@@ -79,3 +79,40 @@ and prints the name, `e` is the capture and prints numeric. The D8
 investigation should pin the sema/intrinsic provenance rule (what tags a
 value as an error set for printing) and decide whether the annotated copy
 route is the documented workaround.
+
+## FE conversion (2026-09-26) — FIXED
+
+Operator ruling #7: **retype the capture temp to the sema error-set type** (not
+a narrow print dispatch). `sf/src/lower.zig`'s `catch_expr` arm now reads the
+error union's `error_set` from the registry and uses it for `err_code_temp`,
+`maybeDisambiguateCapture`, `addLocalDecl` and `decl_local`, exactly the type
+`semantic_analyzer.zig` registers for the capture. A bare `!T` capture
+(`error_set == 0`) stays `i32` — an explicitly documented residual (anyerror
+is unusable today; see the D8 report §9.3).
+
+POST compiler: `/tmp/fe/build2/zig1_5_clean` (fixed point
+`536ed4943ecf8bacbbf93343d732c3e0`; direct two-hop closure, seed v88 NOT
+rotated).
+
+| Entry | PRE (FD1 compiler `7bf2da19…`) | POST | 
+|---|---|---|
+| `main.zig` | build+run rc 0, `capture=1` | **build+run rc 0, `capture=error.Bar`** (matches `expected.txt`; controls unchanged) |
+| `red_capture.zig` | `capture=1` | **`capture=error.Bar`** |
+| `xmod_main.zig` | `capture=1` | **`capture=error.Bar`** |
+| `control_typed.zig` | all `error.Bar` | unchanged, byte-identical |
+| `control_copied.zig` | `copied=error.Bar` | unchanged, byte-identical |
+| `control_dx_reject.zig` | `error[3013]` on `{d}`/`{x}` | unchanged |
+
+Additional verification (probes `/tmp/fe/probes`):
+
+- `{d}` on a **capture** still rejects `error[3013]` at the argument node,
+  byte-identically PRE↔POST (no 3013 inconsistency).
+- Comparison (`e == error.Bar`), passing the capture to an `E` parameter,
+  `return e` from a catch handler and `@intCast(u32, e)` all compile/build/run
+  PRE↔POST with byte-identical stdout (`d8_blast`).
+- Emitted-C delta is exactly the capture decl/route: `int err;` →
+  `zT_…_E err;` (error sets are `typedef int`; a same-type `@intCast` loses
+  its runtime check). The 4-MD5 lisp/json dumps move on this delta and were
+  re-baselined with PRE↔POST runtime identity (QUICK_REF).
+
+

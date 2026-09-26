@@ -1,0 +1,17 @@
+direct=error.Bar
+show=error.Bar
+cap=error.Bar
+xcap=error.Bar
+tucap=12
+tucap2=6
+tucap3=5
+tucap4=4
+tucap5=8
+tucap6=6
+ecap=.red
+enumcap=1
+ecap=.green
+enumcap2=1
+enumcap3=3
+enumcap4=9
+done

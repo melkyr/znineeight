@@ -5801,11 +5801,21 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             if (node.child_2 != 0) {
                 var cex_c2_m: []const u8 = "CEX:c2"; pal.markerWrite(cex_c2_m); var cex_c2_b: [10]u8 = undefined; var cex_c2_l = itoa_mod.itoa(node.child_2, cex_c2_b[0..]); var cex_c2_s: usize = @intCast(usize, 9) - @intCast(usize, cex_c2_l); pal.markerWrite(cex_c2_b[cex_c2_s..@intCast(usize, 9)]); var cex_c2_nl: []const u8 = "\n"; pal.markerWrite(cex_c2_nl);
                 var capture_node = ast_mod.astStoreNodeAt(self.ctx.store, node.child_2);
-                var err_code_temp = nextTemp(self, type_mod.TYPE_I32);
+                // D8 (FE): sema registers the catch payload with the error
+                // union's error set (`semantic_analyzer.zig` catch_expr arm);
+                // hard-typing the capture temp i32 here made `.print_val` pick
+                // the numeric route for `{}` while the format validator used
+                // the resolved error-set type. Retype the temp/decl to the SAME
+                // error set so `error.Name` prints. A bare `!T` (error_set == 0)
+                // stays i32 -- the documented residual.
+                var err_cap_type: u32 = type_mod.TYPE_I32;
+                var eu_cap_es: u32 = self.ctx.registry.eu_items[@intCast(usize, self.ctx.registry.types_items[@intCast(usize, eu_box[0])].payload_idx)].error_set;
+                if (eu_cap_es != @intCast(u32, 0)) { err_cap_type = eu_cap_es; }
+                var err_code_temp = nextTemp(self, err_cap_type);
                 emitInst(self, LirInst{ .unwrap_error_code = .{ .value = lhs_temp, .result = err_code_temp } });
-                var catch_cap_name = maybeDisambiguateCapture(self, ast_mod.astStoreNodePayload(self.ctx.store, node.child_2), type_mod.TYPE_I32);
-                addLocalDecl(self, catch_cap_name, type_mod.TYPE_I32, err_code_temp, self.scope_depth, @intCast(u8, 1));
-                emitInst(self, LirInst{ .decl_local = .{ .name_id = catch_cap_name, .type_id = type_mod.TYPE_I32, .temp = err_code_temp } });
+                var catch_cap_name = maybeDisambiguateCapture(self, ast_mod.astStoreNodePayload(self.ctx.store, node.child_2), err_cap_type);
+                addLocalDecl(self, catch_cap_name, err_cap_type, err_code_temp, self.scope_depth, @intCast(u8, 1));
+                emitInst(self, LirInst{ .decl_local = .{ .name_id = catch_cap_name, .type_id = err_cap_type, .temp = err_code_temp } });
                 var decl_m: []const u8 = "DECL:t"; pal.markerWrite(decl_m); var decl_b: [10]u8 = undefined; var decl_l = itoa_mod.itoa(err_code_temp, decl_b[0..]); var decl_s: usize = @intCast(usize, 9) - @intCast(usize, decl_l); pal.markerWrite(decl_b[decl_s..@intCast(usize, 9)]); var decl_bb: []const u8 = "b"; pal.markerWrite(decl_bb); var decl_bb_b: [10]u8 = undefined; var decl_bb_l = itoa_mod.itoa(@intCast(u32, self.current_bb), decl_bb_b[0..]); var decl_bb_s: usize = @intCast(usize, 9) - @intCast(usize, decl_bb_l); pal.markerWrite(decl_bb_b[decl_bb_s..@intCast(usize, 9)]); var decl_nl: []const u8 = "\n"; pal.markerWrite(decl_nl);
             }
             var err_val = lowerExprOrBlock(self, node.child_1);
@@ -6392,6 +6402,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 if (tu_type_box[0] != @intCast(u32, 0)) {
                     var cap1_m: []const u8 = "CAP1\n"; pal.markerWrite(cap1_m);
                     var tu_ty = self.ctx.registry.types_items[@intCast(usize, tu_type_box[0])];
+                    if (tu_ty.kind == type_mod.TypeKind.tagged_union_type) {
                     var tp = self.ctx.registry.tu_items[@intCast(usize, tu_ty.payload_idx)];
                     var case_n = ast_mod.astStoreNodeExtraChildCount(store, prong_idx);
                     var capy_m: []const u8 = "CAPY:n"; pal.markerWrite(capy_m);
@@ -6414,6 +6425,20 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                          addLocalDecl(self, capture_name, tu_type_box[0], tu_base_box[0], self.scope_depth + @intCast(u32, 1), @intCast(u8, 1));
                          emitInst(self, LirInst{ .decl_local = .{ .name_id = capture_name, .type_id = tu_type_box[0], .temp = tu_base_box[0] } });
                      }
+                    } else {
+                        // FE (D11): a non-tagged-union operand (an enum, or any
+                        // other switch condition) binds the capture to a COPY of
+                        // the operand VALUE Zig-style. The tagged-union payload
+                        // table must never be indexed for it: an enum type's
+                        // payload_idx is not a `tu_items` index, and the
+                        // unguarded read SIGSEGV'd the compiler on an
+                        // unused-capture enum switch. A fresh temp keeps the
+                        // capture's C name from aliasing the switch condition.
+                        var enum_cap_temp = nextTemp(self, tu_type_box[0]);
+                        emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = enum_cap_temp, .src = tu_base_box[0] } });
+                        addLocalDecl(self, capture_name, tu_type_box[0], enum_cap_temp, self.scope_depth + @intCast(u32, 1), @intCast(u8, 1));
+                        emitInst(self, LirInst{ .decl_local = .{ .name_id = capture_name, .type_id = tu_type_box[0], .temp = enum_cap_temp } });
+                    }
                 }
             }
             var body_node = ast_mod.astStoreNodeAt(store, prong_node.child_0);
@@ -7308,8 +7333,8 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
           var cond_ty_id = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0);
           if (cond_ty_id) |ct| {
               var ct_ty = self.ctx.registry.types_items[@intCast(usize, ct)];
+              tu_type_box2[0] = ct;
               if (ct_ty.kind == type_mod.TypeKind.tagged_union_type) {
-                  tu_type_box2[0] = ct;
                  var tag_temp = nextTemp(self, type_mod.TYPE_U32);
                 var tgn2 = nameMapGet(self, cond_temp);
                 emitInst(self, LirInst{ .load_field = .{ .name_id = tgn2, .base = cond_temp, .field_id = type_mod.TU_FIELD_TAG, .result = tag_temp } });
@@ -7365,26 +7390,38 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
              self.block_terminated = @intCast(u8, 0);
              if ((prong_node.flags & @intCast(u8, 16)) != @intCast(u8, 0)) {
                  var capture_name = prong_node.child_1;
-                 if (tu_type_box2[0] != @intCast(u32, 0)) {
-                     var scap2_n: []const u8 = "SCAP2:n"; pal.markerWriteInt(scap2_n, capture_name);
-                     var tu_ty2 = self.ctx.registry.types_items[@intCast(usize, tu_type_box2[0])];
-                     var tp2 = self.ctx.registry.tu_items[@intCast(usize, tu_ty2.payload_idx)];
-                     var case_n2 = ast_mod.astStoreNodeExtraChildCount(store, prong_idx);
-                     if (@intCast(usize, case_n2) > @intCast(usize, 0)) {
-                         var ev4 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, ast_mod.astStoreNodeExtraChildAt(store, prong_idx, @intCast(u32, 0)));
-                         if (ev4) |idx| {
-                             var fe2: type_mod.FieldEntry = self.ctx.registry.fe_items[@intCast(usize, tp2.fields_start) + @intCast(usize, idx)];
-                              capture_name = maybeDisambiguateCapture(self, capture_name, fe2.type_id);
-                              var payload_temp2 = nextTemp(self, fe2.type_id);
-                             _ = hash_mod.u32ToU32MapPut(&self.func.temp_variant_sub_field, payload_temp2, @intCast(u32, 0));
-                              emitInst(self, LirInst{ .load_field = .{ .name_id = @intCast(u32, 0), .base = tu_base_box2[0], .field_id = type_mod.TU_FIELD_PAYLOAD, .result = payload_temp2 } });
-                              addLocalDecl(self, capture_name, fe2.type_id, payload_temp2, self.scope_depth + @intCast(u32, 1), @intCast(u8, 1));
-                              emitInst(self, LirInst{ .decl_local = .{ .name_id = capture_name, .type_id = fe2.type_id, .temp = payload_temp2 } });
-                              var scap2_d: []const u8 = "SCAP2:d"; pal.markerWriteInt(scap2_d, capture_name);
-                          }
+                  if (tu_type_box2[0] != @intCast(u32, 0)) {
+                      var scap2_n: []const u8 = "SCAP2:n"; pal.markerWriteInt(scap2_n, capture_name);
+                      var tu_ty2 = self.ctx.registry.types_items[@intCast(usize, tu_type_box2[0])];
+                      if (tu_ty2.kind == type_mod.TypeKind.tagged_union_type) {
+                      var tp2 = self.ctx.registry.tu_items[@intCast(usize, tu_ty2.payload_idx)];
+                      var case_n2 = ast_mod.astStoreNodeExtraChildCount(store, prong_idx);
+                      if (@intCast(usize, case_n2) > @intCast(usize, 0)) {
+                          var ev4 = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, ast_mod.astStoreNodeExtraChildAt(store, prong_idx, @intCast(u32, 0)));
+                          if (ev4) |idx| {
+                              var fe2: type_mod.FieldEntry = self.ctx.registry.fe_items[@intCast(usize, tp2.fields_start) + @intCast(usize, idx)];
+                               capture_name = maybeDisambiguateCapture(self, capture_name, fe2.type_id);
+                               var payload_temp2 = nextTemp(self, fe2.type_id);
+                              _ = hash_mod.u32ToU32MapPut(&self.func.temp_variant_sub_field, payload_temp2, @intCast(u32, 0));
+                               emitInst(self, LirInst{ .load_field = .{ .name_id = @intCast(u32, 0), .base = tu_base_box2[0], .field_id = type_mod.TU_FIELD_PAYLOAD, .result = payload_temp2 } });
+                               addLocalDecl(self, capture_name, fe2.type_id, payload_temp2, self.scope_depth + @intCast(u32, 1), @intCast(u8, 1));
+                               emitInst(self, LirInst{ .decl_local = .{ .name_id = capture_name, .type_id = fe2.type_id, .temp = payload_temp2 } });
+                               var scap2_d: []const u8 = "SCAP2:d"; pal.markerWriteInt(scap2_d, capture_name);
+                           }
+                       } else {
+                           addLocalDecl(self, capture_name, tu_type_box2[0], tu_base_box2[0], self.scope_depth + @intCast(u32, 1), @intCast(u8, 1));
+                           emitInst(self, LirInst{ .decl_local = .{ .name_id = capture_name, .type_id = tu_type_box2[0], .temp = tu_base_box2[0] } });
+                       }
                       } else {
-                          addLocalDecl(self, capture_name, tu_type_box2[0], tu_base_box2[0], self.scope_depth + @intCast(u32, 1), @intCast(u8, 1));
-                          emitInst(self, LirInst{ .decl_local = .{ .name_id = capture_name, .type_id = tu_type_box2[0], .temp = tu_base_box2[0] } });
+                          // FE (D11): non-tagged-union operand (enum) binds a
+                          // COPY of the switch operand value Zig-style; never
+                          // index the tagged-union payload table for it. A
+                          // fresh temp keeps the capture's C name from aliasing
+                          // the switch condition.
+                          var enum_cap_temp2 = nextTemp(self, tu_type_box2[0]);
+                          emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = enum_cap_temp2, .src = tu_base_box2[0] } });
+                          addLocalDecl(self, capture_name, tu_type_box2[0], enum_cap_temp2, self.scope_depth + @intCast(u32, 1), @intCast(u8, 1));
+                          emitInst(self, LirInst{ .decl_local = .{ .name_id = capture_name, .type_id = tu_type_box2[0], .temp = enum_cap_temp2 } });
                       }
                   }
               }

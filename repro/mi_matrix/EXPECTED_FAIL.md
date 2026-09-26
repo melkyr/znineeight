@@ -1,4 +1,36 @@
-# mi_matrix corpus — expected-fail manifest (v252 2026-09-26)
+# mi_matrix corpus — expected-fail manifest (v253 2026-09-26)
+
+## FE — error-set catch captures (D8) + qualified/enum prong captures (D11) (v252 -> v253, 2026-09-26)
+
+Volume II defect-fix phase, Stage 2b fourth task (task-FE). **(D8) catch capture:** `sf/src/lower.zig`'s
+`catch_expr` arm hard-typed the capture temp/decl `i32` while sema registers the capture with the error
+union's error set, so `.print_val` chose the numeric route and `catch |e| print("{}", .{e})` printed
+`1` instead of `error.Bar`. The arm now reads `eu_items[..].error_set` and types `err_code_temp`,
+`maybeDisambiguateCapture`, `addLocalDecl` and `decl_local` with it (bare `!T`, `error_set == 0`, stays
+`i32` — documented residual). **(D11) qualified prongs:** a `Shape.circle`/`Color.red`/`helper.Box.num`
+prong parses as a `field_access`, not an `enum_literal`, so sema never filled `enum_value_table` and the
+capture binding registered no local (`error[20]` at every use). The case-item loop now resolves
+`field_access` prongs by member name against the switch condition (new
+`semanticAnalyzerResolveSwitchCaseMember`) and registers an enum-condition capture with the enum type
+(Zig-style operand-value binding). **(Bundled SIGSEGV):** `lower.zig`'s expression and statement switch
+capture paths indexed `tu_items[cond_type.payload_idx]` for every condition type, but `tu_type_box` is
+set for enum conditions too; an enum type's payload index is not a `tu_items` index, so an unused enum
+capture SIGSEGV'd the compiler (rc 139). Both paths now index the tagged-union payload table only for
+`tagged_union_type` conditions; a non-tagged-union operand binds a fresh copy of the operand value.
+**(4-MD5):** lisp `edc55d7f521c2092be70043ca84ca741` -> **`ec14d644df5ae53f039b4988ac9d3d5e`** and json
+`ca30373194620ab623a1a91d257049a4` -> **`5034a0c85a84a14626673c33189ffba3`** re-baselined (capture
+decl/route only); gol `9e0b708e18b6fd2b15f9b1e84b6b1571` and mud `2e92c1f22efedd8ae0c6aa2fc2c45d0e`
+UNCHANGED; runtime identity PRE<->POST proven by execution (see the QUICK_REF Byte-identical-gate
+re-baseline note). **(Fixtures):** positive
+`repro/mi_matrix/stdlib_errset_capture_qualified_xmod/` (local + cross-module error-set capture print,
+qualified/shorthand tagged-union captures used and unused, module-qualified prong, enum-operand captures
+used and unused; golden 185 B / 17 lines, rc 0, 3x byte-exact, byte-identical to the Zig-0.15.2 twin —
+whose unused-capture rows need `_ = v;` because Zig rejects unused captures) + standalone
+`repro/errset_capture_qualified_prong.z98`; stdlib pin **249 -> 250**. Corpus `-s0` classify:
+**1044 = 862 OK / 46 GREEN / 136 FAIL / 0 ICE / 0 CRASH** (the 1043-dir FD1 universe plus the new
+fixture, classified OK); join-diff vs the FD1 compiler over the **1043 common dirs empty (zero
+movers)**; the two D08/D11 repro trees are not corpus entries (no immediate `.zig`).
+
 
 ## FD1 — validate the print argument container (D7 + D13, code 3065) (v251 -> v252, 2026-09-26)
 

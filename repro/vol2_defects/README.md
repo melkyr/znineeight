@@ -34,6 +34,20 @@ operator-authorized F tasks consume this set.
 > its element reads; tuple literals (including the empty `.{ }`) are unchanged
 > and byte-identical. The per-case `OBSERVED` sections below remain the
 > historical seed-v88 evidence.
+>
+> **FE status (2026-09-26):** D8 and D11 are **FIXED** on the current compiler
+> (fixed point `536ed4943ecf8bacbbf93343d732c3e0`). D8: the `catch |e|` capture
+> temp is typed as the sema error set, so `print("{}", .{e})` prints
+> `error.Bar` (the annotated copy, typed values and the `{d}`/`{x}` 3013 reject
+> are unchanged; `run_all.sh`: `D08_errset_capture: rc=0 ok`). D11: qualified
+> prongs bind exactly like the shorthand (`Shape.circle => |r|`,
+> `Color.red => |v|`, cross-module `helper.Box.num`), enum-operand captures
+> bind the operand value Zig-style, and an unused enum capture no longer
+> SIGSEGVs the compiler (bundled guard; `run_all.sh`:
+> `D11_qualified_capture: rc=0 ok`). The D11 f32 shapes (`main.zig`,
+> `xmod_main.zig`, `red_multiple_qualified.zig`) compile rc 0 but their gcc
+> step stays blocked by the unrelated D6 float-union defect (FF). The per-case
+> `OBSERVED` sections remain the historical seed-v88 evidence.
 
 - Plan: `.superpowers/sdd/2026-09-25-z98-manual-volume-II-plan/`
 - Report: `.superpowers/sdd/2026-09-25-z98-manual-volume-II-plan/task-D0-report.md`
@@ -84,10 +98,10 @@ expected behavior here -- `docs/reference/Language_Spec_Z98.md` does.
 | D5 | `D05_slice_to_manyptr/` | Implicit `[]T` -> `[*]T` coercion compiles rc 0 then gcc-rejects the C | ch3 (pointers), ch9 (arrays/slices) | Does not matter: `xmod_main.zig` emits `(int*)((int*)sl)` and gcc-rejects at the call |
 | D6 | `D06_float_union/` | An f32 tagged-union payload init emits gcc-invalid C (`payload = double`) | ch7 (unions) | Does not matter: `xmod_main.zig` (union from `shapes.zig`) also gcc-rejects; f64/int/bool/struct payloads pass |
 | D7 | `D07_nontuple_print/` | `print(fmt, <non-tuple literal>)` is silently accepted and prints no value; **FIXED by FD1** (rc 2 / 0 `.c` / 1 × `error[3065]` at the argument, tuple control GREEN + byte-identical) | ch18 (print) -- unblocked | Does not matter: `xmod_main.zig` (call in `logger.zig`) rejects 3065 in the helper file too |
-| D8 | `D08_errset_capture/` | `catch \|e\|` capture of an error set prints numeric where a typed value prints `error.Name` | ch12 (errors), ch18 (print) | Does not matter: `xmod_main.zig` (`errors.zig`) also prints `capture=1`; an annotated copy restores the name |
+| D8 | `D08_errset_capture/` | `catch \|e\|` capture of an error set prints numeric where a typed value prints `error.Name`; **FIXED by FE** (capture temp retyped to the sema error set; `run_all.sh`: `rc=0 ok` with `capture=error.Bar`) | ch12 (errors), ch18 (print) | Does not matter: `xmod_main.zig` (`errors.zig`) now prints `capture=error.Bar`; the annotated copy and the typed controls are unchanged |
 | D9 | `D09_bare_union_offsetof/` | `@offsetOf` on a bare union is an internal error (`error[3043]`); tagged unions ICE too | ch7 (unions), ch15 (builtins) | Does not matter: `xmod_main.zig` (union from `raw.zig`) also ICEs |
 | D10 | `D10_single_ptr_index/` | `p[0]` on a single-item pointer is accepted and runs though spec 1.2 says it is rejected | ch3 (pointers) | Does not matter: `xmod_main.zig` (indexing in `helper.zig`) also accepted. Defect-vs-spec-correction is for the investigation; this pins current behavior |
-| D11 | `D11_qualified_capture/` | `Shape.circle => \|r\|` (qualified prong) leaves the capture unbound (`error[20]`) | ch7 (unions) | Does not matter: `xmod_main.zig` (type from `shapes.zig`) also `error[20]`; `.circle =>` shorthand passes |
+| D11 | `D11_qualified_capture/` | `Shape.circle => \|r\|` (qualified prong) leaves the capture unbound (`error[20]`); **FIXED by FE** (qualified prongs populate `enum_value_table`; enum captures bind Zig-style; the unused-capture SIGSEGV is guarded; `run_all.sh`: `rc=0 ok`) | ch7 (unions) | Does not matter: `xmod_main.zig` (type from `shapes.zig`) binds; `.circle =>` shorthand unchanged; the f32 shapes stay gcc-blocked by D6 (FF) |
 | D12 | `D12_const_discard_slice/` | `[]const T` -> `[]T` is accepted warning-only (in the var-decl shape) and mutates | ch9 (arrays/slices), ch3 (const) | Does not matter: `xmod_main.zig` accepted silently. Only the in-module var-decl shape warns; param/field/return are silent |
 | S1 | `S01_print_nontuple_args/` | New sibling cluster: non-tuple `print` args are container-misinterpreted -- tuple-variable rejects, mixed calls misattribute `error[3013]` or SIGSEGV, two var calls print wrong values; **FIXED by FD1** (every shape rc 2 / 0 `.c` / `error[3065]` at its own container, no SIGSEGV; tuple variable interim) | ch18 (print) -- unblocked | Cross-module variant in the D07 tree; shapes here same-module only |
 
