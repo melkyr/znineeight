@@ -621,3 +621,43 @@ Task 0's capability inventory (review-verified) found 12 real compiler-defect ca
 - **STOP after D1–D12.** No fix task (F) may be dispatched until the operator reads the investigations and rules on the fix grouping.
 
 ---
+
+## Defect fix phase (operator-ruled 2026-09-26, part 2)
+
+Rulings from the D1–D13 checkpoint: **D3** strict mandatory `else` with the self-emission migration; **D4** implements `t.0`/`._0` **and** `t[0]`; **D5** `[]T`/`[]const T`→`[*]T` coerces correctly, **D12** becomes an error; **D7/D13** use a new diagnostic code (3065) and must support spec-legal tuple **variables**; **D9** union layout/offset semantics are settled by verified Zig parity plus the legal-C emission rule (deep dive first) and every ICE on that path is cleared; **D8** retypes the capture (4-MD5 re-baseline with runtime identity); **D11** uses Zig-style enum-operand binding and bundles the unused-capture SIGSEGV; sibling findings (D2 extras, D1 traversal gap, D6 f32-param residual, D11 validation gaps) are separate groups; F order approved as G, D, E, F, A, C, B, H. **FD is split** per option (c): **FD1** (container validation + SIGSEGV + 3065) is direct, **FD2** (tuple-variable print arguments) lands after FB.
+
+### Stage 2a — deep-dive investigations (I, read-only; then STOP again)
+
+Nine I tasks, each consuming the D1–D13 reports and the repro set, writing `.superpowers/sdd/2026-09-25-z98-manual-volume-II-plan/task-<ID>-report.md` (≤150 lines, same 9-section structure as the D-investigation protocol). No `sf/src` edits, no commits; probes stay in `/tmp`. Sequenced in this order:
+
+- [ ] FF-I — union `@offsetOf`/`@bitOffsetOf`/`@sizeOf`/`@alignOf`: probe Zig 0.15.2 and Z98 across bare/packed/tagged unions, unknown field, and scalar target; produce the accept/reject/value table and the fold rules; confirm the legal-C argument; list every ICE site to clear.
+- [ ] FH-I — pointer indexing semantics: probe Zig 0.15.2 + Z98 for `p[0]`, `p[1]`, runtime `p[i]`, `p[0..n]`, `(*p)[i]`, and `*[N]T` auto-deref indexing; settle the §1.2 wording; decide `(*p)[i]`/`p[0..n]` handling and the reject diagnostic.
+- [ ] FB-I — tuple model design: type syntax, `.N`/`._0`/`t[0]` resolution, named-tuple assignability/dedupe/C naming, the `.N`-as-name-id silent hazard, spec wording (`field0/field1` vs emitted `_0/_1`), touchpoint map and implementation order.
+- [ ] FC-I — const-discard blast radius: enumerate `[]const T`→`[]T` uses across `sf/src`, examples/gates, stdlib fixtures and corpus; classify each as bug or legitimate; predict the error-conversion breakage and the required migration.
+- [ ] FA-I — strict-`else` migration census: every `switch` without `else` in `sf/src` + examples + fixtures; classify exhaustive vs not; scope the migration and the D2-extra shapes (named-const range bounds, exact `identifier` cases) for FX1.
+- [ ] FD-I — print tuple-variable decomposition design (for FD2 after FB): what the print site needs from the tuple model, the minimal element-read path, and whether anything can land before FB.
+- [ ] FX2-I — defer traversal gap: where switch-prong/bare-block statements must be traversed by the analyzer passes, and the leak-check risk.
+- [ ] FX4-I — D11 validation gaps: `Shape.bogus` and foreign qualifiers — Zig/spec expectation, tighten-vs-tolerate, blast radius.
+- [ ] FX3-I — f32-param literal parity: Zig vs Z98 probes for f32 param/return literal coercion; decide fix vs documented residual.
+
+**STOP after FF-I…FX3-I** — the operator reads the deep dives and confirms the F dispatch order/scope.
+
+### Stage 2b — fix tasks (F; dispatched after the stage-2a STOP)
+
+Every F task inherits the plan's amendment protocol: fix + convert the D-phase repro cases RED→GREEN, add the `repro/mi_matrix/` fixture(s) + standalone repro(s), run the QUICK_REF gate battery verbatim (**STOP on unexpected movement**; the D8 capture retype re-baselines lisp+json 4-MD5 with runtime identity by operator ruling), update tech docs, record the moved fixed point with a two-hop closure verification, and commit. Seed rotation stays closeout-only (Task 22). Only these tasks may touch `sf/src/**`, `scripts/**`, `repro/**`, `release/seed/**`.
+
+- [ ] FG — D1 defer-queue corruption (`analyzer.zig:713`); reset the queue on every scratch reset.
+- [ ] FD1 — D7+D13 print container: validate the argument container, fix the unbounded-recursion SIGSEGV, emit the new `error[3065]` for a non-tuple container (tuple wrap is spec-illegal), keep tuple LITERALS working.
+- [ ] FE — D8 retype the catch capture to the sema error-set type (re-baseline the affected 4-MD5 dumps with runtime identity) + D11 bind qualified prongs like the shorthand + guard the enum-condition capture path (`lower.zig:6315/7291`) so an unused enum capture cannot SIGSEGV.
+- [ ] FF — D6 float tagged-union payload: coerce the payload temp to the field type (add f64→f32 where legal) and fix silent wrong-variant writes; D9 union offset/size/align folds per FF-I, clearing every ICE on that path with clean semantics/diagnostics.
+- [ ] FA — D2 enum range prongs emit real `case` labels for enum endpoints; D3 enforce the mandatory `else`, assign the result on all paths, and migrate the self-emission switches the census found.
+- [ ] FC — D5 `[]T`/`[]const T`→`[*]T` emits `.ptr` extraction (coerce correctly per the spec); D12 makes `[]const T`→`[]T` an error, with the migration FC-I measured.
+- [ ] FB — D4 tuple type syntax + `.0`/`._0`/`t[0]` + named-tuple assignability/dedupe/C naming; close the `.N`-as-name-id silent hazard; spec wording fix for the C field names where ruled.
+- [ ] FH — D10 pointer indexing per FH-I: keep the legal forms, reject the rest with the Zig-style diagnostic, fix `(*p)[i]`, bound `p[0..n]`, narrow §1.2.
+- [ ] FX1 — D2 extras after FA: named-const range bounds and exact `identifier` case items.
+- [ ] FX2 — D1 extras after FG: defers inside switch/block statements get traversed.
+- [ ] FX3 — D6 extras after FF: f32-param literal coercion per FX3-I's ruling.
+- [ ] FX4 — D11 extras after FE: `Shape.bogus` and foreign-qualifier validation per FX4-I's ruling.
+- [ ] FD2 — tuple-variable print arguments after FB, per FD-I's design.
+
+---
