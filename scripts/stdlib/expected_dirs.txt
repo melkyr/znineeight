@@ -228,6 +228,7 @@ repro/mi_matrix/stdlib_switch_enum_range_xmod
 repro/mi_matrix/stdlib_time_monotonic_avail_xmod
 repro/mi_matrix/stdlib_time_monotonic_xmod
 repro/mi_matrix/stdlib_time_sleep_xmod
+repro/mi_matrix/stdlib_union_layout_payload_xmod
 repro/mi_matrix/stdlib_utf8_codepointlen_xmod
 repro/mi_matrix/stdlib_utf8_countcodepoints_xmod
 repro/mi_matrix/stdlib_utf8_decode_xmod

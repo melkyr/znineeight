@@ -1062,6 +1062,125 @@ fn semanticAnalyzerReportUnknownMember(self: *SemanticAnalyzer, node_idx: u32, f
     }
 }
 
+// FF (Volume II D9): emit one clean introspection-builtin reject, deduped per
+// node. Level 0, span on the builtin call; the surrounding pipeline exits rc=2
+// with 0 `.c` (the former lowering net exited rc=3 through `error[3043]`).
+fn semanticAnalyzerRejectIntrospection(self: *SemanticAnalyzer, node_idx: u32, code: u16, msg: []const u8) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) return;
+    var rj_node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), code, self.source_file_id, rj_node.span_start, rj_node.span_start + @intCast(u32, rj_node.span_len), msg);
+}
+
+// FF (Volume II D9): best-effort type label for the "expected struct type,
+// found 'X'" / "no field named 'x' in struct 'S'" wording. A named aggregate or
+// primitive carries its interned `name_id`; an unnamed composite falls back to
+// a kind word (a full type-expression printer is out of scope).
+fn semanticAnalyzerIntrospectionTypeLabel(self: *SemanticAnalyzer, tid: u32) []const u8 {
+    if (@intCast(usize, tid) < self.registry.types_len) {
+        var lbl_ty = self.registry.types_items[@intCast(usize, tid)];
+        if (lbl_ty.name_id != @intCast(u32, 0)) {
+            return interner_mod.stringInternerGet(self.interner, lbl_ty.name_id);
+        }
+        if (lbl_ty.kind == type_mod.TypeKind.ptr_type or lbl_ty.kind == type_mod.TypeKind.many_ptr_type) { var lbl_p: []const u8 = "pointer"; return lbl_p; }
+        if (lbl_ty.kind == type_mod.TypeKind.slice_type) { var lbl_sl: []const u8 = "slice"; return lbl_sl; }
+        if (lbl_ty.kind == type_mod.TypeKind.array_type) { var lbl_ar: []const u8 = "array"; return lbl_ar; }
+        if (lbl_ty.kind == type_mod.TypeKind.optional_type) { var lbl_op: []const u8 = "optional"; return lbl_op; }
+        if (lbl_ty.kind == type_mod.TypeKind.error_union_type) { var lbl_eu: []const u8 = "error union"; return lbl_eu; }
+        if (lbl_ty.kind == type_mod.TypeKind.fn_type) { var lbl_fn: []const u8 = "function"; return lbl_fn; }
+        if (lbl_ty.kind == type_mod.TypeKind.enum_type) { var lbl_en: []const u8 = "enum"; return lbl_en; }
+        if (lbl_ty.kind == type_mod.TypeKind.union_type or lbl_ty.kind == type_mod.TypeKind.packed_union_type or lbl_ty.kind == type_mod.TypeKind.tagged_union_type) { var lbl_un: []const u8 = "union"; return lbl_un; }
+        if (lbl_ty.kind == type_mod.TypeKind.struct_type) { var lbl_st: []const u8 = "struct"; return lbl_st; }
+    }
+    var lbl_q: []const u8 = "?";
+    return lbl_q;
+}
+
+// FF (Volume II D9): validate `@sizeOf`/`@alignOf`/`@bitSizeOf`/`@offsetOf`/
+// `@bitOffsetOf` at the sema builtin arm, before lowering. Zig 0.15.2 parity:
+// `@offsetOf`/`@bitOffsetOf` are struct-only (packed structs included; every
+// union kind and every scalar/pointer/enum/slice/array/optional target rejects
+// with `error[3072]`), the field name must be a string literal naming an
+// existing struct field (`error[3073]`; a resolvable string `const` stays a
+// documented clean-reject divergence — Zig folds it, Z98 has no string-const
+// resolver), and an unresolved/incomplete target type or a wrong argument
+// count rejects with `error[3074]`. `@sizeOf`/`@alignOf`/`@bitSizeOf` keep
+// accepting every complete type (values unchanged, `@alignOf(void)` 0 residual
+// untouched). This removes every `error[3043]` ICE on the path.
+fn semanticAnalyzerCheckIntrospectionBuiltin(self: *SemanticAnalyzer, node_idx: u32, ec_n: usize) void {
+    var ib_node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    var ib_is_offset = ib_node.child_0 == self.offset_of_name_id or ib_node.child_0 == self.bit_offset_of_name_id;
+    var ib_want: usize = @intCast(usize, 1);
+    if (ib_is_offset) { ib_want = @intCast(usize, 2); }
+    if (ec_n != ib_want) {
+        var ib_wexp_buf: [10]u8 = undefined;
+        var ib_wexp_l = itoa_mod.itoa(@intCast(u32, ib_want), ib_wexp_buf[0..]);
+        var ib_wfnd_buf: [10]u8 = undefined;
+        var ib_wfnd_l = itoa_mod.itoa(@intCast(u32, ec_n), ib_wfnd_buf[0..]);
+        var ib_wexp_s: usize = @intCast(usize, 9) - @intCast(usize, ib_wexp_l);
+        var ib_wfnd_s: usize = @intCast(usize, 9) - @intCast(usize, ib_wfnd_l);
+        var ib_ap0: []const u8 = "expected ";
+        var ib_ap1: []const u8 = " argument(s), found ";
+        var ib_aparts: [4][]const u8 = [4][]const u8{ ib_ap0, ib_wexp_buf[ib_wexp_s..@intCast(usize, 9)], ib_ap1, ib_wfnd_buf[ib_wfnd_s..@intCast(usize, 9)] };
+        var ib_amsg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &ib_aparts[0], @intCast(u32, 4));
+        semanticAnalyzerRejectIntrospection(self, node_idx, @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3074_COMPTIME_BUILTIN_UNRESOLVED)), ib_amsg);
+        return;
+    }
+    var ib_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id, .diag = self.diag, .local_consts = null, .local_types = null, .source_file_id = self.source_file_id };
+    var ib_tid = type_resolver.resolveTypeExprFull(&ib_env, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)), @intCast(u32, 0));
+    if (ib_tid == type_mod.TYPE_UNDEFINED) {
+        var ib_umsg: []const u8 = "unable to resolve type argument";
+        semanticAnalyzerRejectIntrospection(self, node_idx, @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3074_COMPTIME_BUILTIN_UNRESOLVED)), ib_umsg);
+        return;
+    }
+    if (@intCast(usize, ib_tid) >= self.registry.types_len) {
+        var ib_umsg2: []const u8 = "unable to resolve type argument";
+        semanticAnalyzerRejectIntrospection(self, node_idx, @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3074_COMPTIME_BUILTIN_UNRESOLVED)), ib_umsg2);
+        return;
+    }
+    var ib_ty = self.registry.types_items[@intCast(usize, ib_tid)];
+    if (ib_ty.state != @intCast(u8, 2)) {
+        var ib_imsg: []const u8 = "type argument is not complete";
+        semanticAnalyzerRejectIntrospection(self, node_idx, @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3074_COMPTIME_BUILTIN_UNRESOLVED)), ib_imsg);
+        return;
+    }
+    if (!ib_is_offset) return;
+    if (ib_ty.kind != type_mod.TypeKind.struct_type) {
+        var ib_tn = semanticAnalyzerIntrospectionTypeLabel(self, ib_tid);
+        var ib_tp0: []const u8 = "expected struct type, found '";
+        var ib_tp1: []const u8 = "'";
+        var ib_tparts: [3][]const u8 = [3][]const u8{ ib_tp0, ib_tn, ib_tp1 };
+        var ib_tmsg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &ib_tparts[0], @intCast(u32, 3));
+        semanticAnalyzerRejectIntrospection(self, node_idx, @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3072_OFFSET_TARGET_NOT_STRUCT)), ib_tmsg);
+        return;
+    }
+    var ib_fidx = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 1));
+    var ib_fnode = ast_mod.astStoreNodeAt(self.store, ib_fidx);
+    if (ib_fnode.kind != AstKind.string_literal) {
+        var ib_nmsg: []const u8 = "field name must be a string literal";
+        semanticAnalyzerRejectIntrospection(self, node_idx, @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3073_OFFSET_UNKNOWN_FIELD)), ib_nmsg);
+        return;
+    }
+    var ib_sv = ast_mod.astStoreNodePayload(self.store, ib_fidx);
+    var ib_name = self.store.string_values.items[@intCast(usize, ib_sv)];
+    var ib_fields: []type_mod.FieldEntry = undefined;
+    type_mod.typeRegistryGetStructFields(self.registry, ib_tid, &ib_fields);
+    var ib_found: u8 = @intCast(u8, 0);
+    var ib_fi: usize = @intCast(usize, 0);
+    while (ib_fi < ib_fields.len) : (ib_fi += 1) {
+        if (ib_fields[ib_fi].name_id == ib_name) { ib_found = @intCast(u8, 1); break; }
+    }
+    if (ib_found == @intCast(u8, 0)) {
+        var ib_fname = interner_mod.stringInternerGet(self.interner, ib_name);
+        var ib_stname = semanticAnalyzerIntrospectionTypeLabel(self, ib_tid);
+        var ib_fp0: []const u8 = "no field named '";
+        var ib_fp1: []const u8 = "' in struct '";
+        var ib_fp2: []const u8 = "'";
+        var ib_fparts: [5][]const u8 = [5][]const u8{ ib_fp0, ib_fname, ib_fp1, ib_stname, ib_fp2 };
+        var ib_fmsg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &ib_fparts[0], @intCast(u32, 5));
+        semanticAnalyzerRejectIntrospection(self, node_idx, @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3073_OFFSET_UNKNOWN_FIELD)), ib_fmsg);
+    }
+}
+
 // Task 15 (S3): a cross-module reference to a declaration that is not `pub` is
 // a visibility violation, matching official Zig 0.15.2 ("'x' is not marked
 // 'pub'"). Z98 modules are named import bindings; every member access through
@@ -3373,10 +3492,7 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
         var ec_n = @intCast(usize, ast_mod.astStoreNodeExtraChildCount(self.store, node_idx));
         var cva: []const u8 = "@cVaArg";
         if (node.child_0 == self.size_of_name_id or node.child_0 == self.align_of_name_id or node.child_0 == self.offset_of_name_id or node.child_0 == self.bit_size_of_name_id or node.child_0 == self.bit_offset_of_name_id) {
-            if (ec_n >= @intCast(usize, 1)) {
-                var so_env = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id, .diag = self.diag, .local_consts = null, .local_types = null, .source_file_id = self.source_file_id };
-                _ = type_resolver.resolveTypeExprFull(&so_env, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)), @intCast(u32, 0));
-            }
+            semanticAnalyzerCheckIntrospectionBuiltin(self, node_idx, ec_n);
             result = type_mod.TYPE_INT_LIT;
         } else if (node.child_0 == self.ptrtoint_name_id or node.child_0 == self.int_from_ptr_name_id) {
             if (ec_n >= @intCast(usize, 1)) { _ = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0))); }

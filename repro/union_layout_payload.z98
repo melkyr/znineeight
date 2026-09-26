@@ -1,0 +1,23 @@
+// FF standalone repro (D6 + D9): union `@sizeOf`/`@alignOf`/`@bitSizeOf`
+// values stay the C-model values, and a float tagged-union payload literal
+// narrows to the declared f32 field so the real variant is selected (before
+// FF this emitted gcc-invalid whole-union C; with an f64 sibling it silently
+// wrote the sibling while the tag named the f32 field).
+//
+// Expected: compile+build+run rc 0; stdout below.
+const std = @import("std");
+
+const Raw = union { i: i32, u: u32 };
+const T = union(enum) { i: i32, u: u32 };
+const ShapeF = union(enum) { circle: f32, empty };
+const Sib = union(enum) { a: f32, b: f64 };
+
+pub fn main() void {
+    std.io.print("raw={} {} {}\n", .{ @intCast(i32, @sizeOf(Raw)), @intCast(i32, @alignOf(Raw)), @intCast(i32, @bitSizeOf(Raw)) });
+    std.io.print("tag={} {} {}\n", .{ @intCast(i32, @sizeOf(T)), @intCast(i32, @alignOf(T)), @intCast(i32, @bitSizeOf(T)) });
+
+    var a: ShapeF = ShapeF{ .circle = 2.0 };
+    var s1: Sib = Sib{ .a = 2.0 };
+    var s2: Sib = Sib{ .b = 2.5 };
+    std.io.print("f={} a={} b={}\n", .{ a.circle, s1.a, s2.b });
+}

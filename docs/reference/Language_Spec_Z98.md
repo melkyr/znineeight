@@ -303,9 +303,9 @@ Builtins are invoked as `@name(...)` and are recognized by name; an unknown or u
 | `@as(T, expr)` | Explicit type coercion |
 | `@sizeOf(T)` | Byte size of type `T` |
 | `@alignOf(T)` | Alignment of type `T` |
-| `@offsetOf(T, "field")` | Byte offset of a field |
+| `@offsetOf(T, "field")` | Byte offset of a field; `T` must be a struct (packed included) — a union or non-struct target rejects `error[3072]` (Zig parity; no union "offset 0" fold) |
 | `@bitSizeOf(T)` | Bit size of type `T` |
-| `@bitOffsetOf(T, "field")` | Bit offset of a field |
+| `@bitOffsetOf(T, "field")` | Bit offset of a field; struct-only like `@offsetOf` (union/non-struct target rejects `error[3072]`) |
 
 **Runtime**
 - `@putChar(c)`: Writes a single character.

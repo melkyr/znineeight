@@ -221,8 +221,8 @@ These tests verify that Zig's compile-time introspection built-ins are correctly
 ### Test Categories:
 1. **@sizeOf**: Returns `usize` literal with the size of the type.
 2. **@alignOf**: Returns `usize` literal with the alignment of the type.
-3. **@offsetOf**: Returns `usize` literal with the byte offset of a field in a struct or union.
-4. **Error Handling**: Rejection of incomplete types, non-aggregate types for `@offsetOf`, or non-existent fields.
+3. **@offsetOf**: Returns `usize` literal with the byte offset of a field in a **struct** (struct-only Zig parity; unions reject — see `builtin_offsetof_tests.cpp` `BuiltinOffsetOf_Union_Reject`).
+4. **Error Handling**: Rejection of incomplete types, non-struct (including union) types for `@offsetOf`, or non-existent fields.
 
 ### Expected C89 Output Patterns:
 - Zig `@sizeOf(i32)` -> C `4U`

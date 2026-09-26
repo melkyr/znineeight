@@ -46,8 +46,23 @@ operator-authorized F tasks consume this set.
 > SIGSEGVs the compiler (bundled guard; `run_all.sh`:
 > `D11_qualified_capture: rc=0 ok`). The D11 f32 shapes (`main.zig`,
 > `xmod_main.zig`, `red_multiple_qualified.zig`) compile rc 0 but their gcc
-> step stays blocked by the unrelated D6 float-union defect (FF). The per-case
-> `OBSERVED` sections remain the historical seed-v88 evidence.
+> step stayed blocked by the unrelated D6 float-union defect until FF; the FF
+> fix unblocks them. The per-case `OBSERVED` sections remain the historical
+> seed-v88 evidence.
+>
+> **FF status (2026-09-26):** D6 and D9 are **FIXED** on the current compiler
+> (fixed point `cadf3c241abd1baf4d31da52b0ccd649`). D6: an f64 float-literal
+> payload temp is narrowed to the selected variant's f32 type before the store,
+> so `ShapeF{ .circle = 2.0 }` emits a real `zT.payload.circle._0 = (float)…`
+> store (previously gcc-invalid whole-union C, or a silent f64-sibling write);
+> `run_all.sh` now goldens it as `wrong` kind (`D06_float_union: rc=0 ok`,
+> `f=2`). D9: union `@offsetOf`/`@bitOffsetOf` is a **clean Zig-parity reject**
+> (`error[3072]` `expected struct type, found 'X'`, rc 2 / 0 `.c`); unknown
+> field / non-literal name reject `error[3073]`, unresolved type / arity reject
+> `error[3074]`; the `error[3043]` ICE net is gone (`D09_bare_union_offsetof:
+> rc=2 ok` with `expected_error.txt` `3072 1`). Union `@sizeOf`/`@alignOf`/
+> `@bitSizeOf` values are unchanged. The f32 param literal stays the FX3
+> residual; the typed-f64-variable payload stays the documented FX3 residual.
 
 - Plan: `.superpowers/sdd/2026-09-25-z98-manual-volume-II-plan/`
 - Report: `.superpowers/sdd/2026-09-25-z98-manual-volume-II-plan/task-D0-report.md`
@@ -96,10 +111,10 @@ expected behavior here -- `docs/reference/Language_Spec_Z98.md` does.
 | D3 | `D03_missing_else/` | `switch` without `else` is accepted; an unmatched value reads an uninitialized result temp | ch10 (control flow) | Does not matter: `xmod_main.zig` (switch in `picker.zig`) also silent garbage |
 | D4 | `D04_tuple/` | Tuple type `struct { T1, T2 }` is a parse error; `.0`/`._0` are `error[3060]`; `t[0]` emits gcc-invalid C | ch8 (tuples) -- chapter-blocking | Tuple type/access unusable in-module and cross-module; named-struct grouped returns work both ways |
 | D5 | `D05_slice_to_manyptr/` | Implicit `[]T` -> `[*]T` coercion compiles rc 0 then gcc-rejects the C | ch3 (pointers), ch9 (arrays/slices) | Does not matter: `xmod_main.zig` emits `(int*)((int*)sl)` and gcc-rejects at the call |
-| D6 | `D06_float_union/` | An f32 tagged-union payload init emits gcc-invalid C (`payload = double`) | ch7 (unions) | Does not matter: `xmod_main.zig` (union from `shapes.zig`) also gcc-rejects; f64/int/bool/struct payloads pass |
+| D6 | `D06_float_union/` | An f32 tagged-union payload init emits gcc-invalid C (`payload = double`); **FIXED by FF** (literal f64→f32 payload narrowing; the f64-sibling silent wrong-variant write is closed too; `run_all.sh`: `rc=0 ok`, `f=2`) | ch7 (unions) -- unblocked | Does not matter: `xmod_main.zig` (union from `shapes.zig`) now builds+runs (`f=2`); f64/int/bool/struct payloads unchanged; the typed-f64-variable payload stays an FX3 residual |
 | D7 | `D07_nontuple_print/` | `print(fmt, <non-tuple literal>)` is silently accepted and prints no value; **FIXED by FD1** (rc 2 / 0 `.c` / 1 × `error[3065]` at the argument, tuple control GREEN + byte-identical) | ch18 (print) -- unblocked | Does not matter: `xmod_main.zig` (call in `logger.zig`) rejects 3065 in the helper file too |
 | D8 | `D08_errset_capture/` | `catch \|e\|` capture of an error set prints numeric where a typed value prints `error.Name`; **FIXED by FE** (capture temp retyped to the sema error set; `run_all.sh`: `rc=0 ok` with `capture=error.Bar`) | ch12 (errors), ch18 (print) | Does not matter: `xmod_main.zig` (`errors.zig`) now prints `capture=error.Bar`; the annotated copy and the typed controls are unchanged |
-| D9 | `D09_bare_union_offsetof/` | `@offsetOf` on a bare union is an internal error (`error[3043]`); tagged unions ICE too | ch7 (unions), ch15 (builtins) | Does not matter: `xmod_main.zig` (union from `raw.zig`) also ICEs |
+| D9 | `D09_bare_union_offsetof/` | `@offsetOf` on a bare union was an internal error (`error[3043]`); tagged unions ICEd too; **FIXED by FF** (Zig-parity clean reject `error[3072]`, rc 2 / 0 `.c`; `run_all.sh`: `rc=2 ok`) | ch7 (unions), ch15 (builtins) -- unblocked | Does not matter: `xmod_main.zig` (union from `raw.zig`) rejects 3072 in the same clean class; union `@sizeOf`/`@alignOf` controls unchanged |
 | D10 | `D10_single_ptr_index/` | `p[0]` on a single-item pointer is accepted and runs though spec 1.2 says it is rejected | ch3 (pointers) | Does not matter: `xmod_main.zig` (indexing in `helper.zig`) also accepted. Defect-vs-spec-correction is for the investigation; this pins current behavior |
 | D11 | `D11_qualified_capture/` | `Shape.circle => \|r\|` (qualified prong) leaves the capture unbound (`error[20]`); **FIXED by FE** (qualified prongs populate `enum_value_table`; enum captures bind Zig-style; the unused-capture SIGSEGV is guarded; `run_all.sh`: `rc=0 ok`) | ch7 (unions) | Does not matter: `xmod_main.zig` (type from `shapes.zig`) binds; `.circle =>` shorthand unchanged; the f32 shapes stay gcc-blocked by D6 (FF) |
 | D12 | `D12_const_discard_slice/` | `[]const T` -> `[]T` is accepted warning-only (in the var-decl shape) and mutates | ch9 (arrays/slices), ch3 (const) | Does not matter: `xmod_main.zig` accepted silently. Only the in-module var-decl shape warns; param/field/return are silent |

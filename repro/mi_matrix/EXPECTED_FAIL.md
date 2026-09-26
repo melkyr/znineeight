@@ -1,4 +1,60 @@
-# mi_matrix corpus — expected-fail manifest (v253 2026-09-26)
+# mi_matrix corpus — expected-fail manifest (v254 2026-09-26)
+
+## FF — float tagged-union payload coercion (D6) + union comptime layout / ICE clearing (D9) (v253 -> v254, 2026-09-26)
+
+Volume II defect-fix phase, Stage 2b fifth task (task-FF). **(D6) f32 tagged-union
+payload:** the tagged-union init arm (`sf/src/lower.zig`, `struct_init`) lowered the
+payload value temp raw, and `emitFieldAssign` (`c89_emit.zig`) infers the variant by
+exact type-id; an f64 float literal never matches an f32 field, so the emitter fell
+back to the whole-union `payload = <double>` (gcc-invalid) — or, when an f64 sibling
+existed, silently wrote that sibling while the tag named the f32 field. The arm now
+narrows an f64 **float-literal** temp (new `lowerUnionPayloadIsFloatLiteral`:
+`float_literal` optionally under `negate`/`paren_expr`) to the selected variant's
+declared f32 type via a `float_cast` before the `assign_field TU_FIELD_PAYLOAD`, so
+the exact type-id match selects the real field. f64/int/bool/struct payloads and
+f32-typed sources are byte-identical; a typed f64 VARIABLE and the f32 param literal
+stay documented FX3 residuals. **(D9) union introspection:** new
+`semanticAnalyzerCheckIntrospectionBuiltin` (+ `semanticAnalyzerRejectIntrospection` /
+`semanticAnalyzerIntrospectionTypeLabel`) validates the five type-introspection
+builtins in sema before lowering — `@offsetOf`/`@bitOffsetOf` are struct-only (every
+union kind and every non-aggregate target → level-0 `error[3072]`, Zig wording
+`expected struct type, found 'X'`; the former "union returns 0" fold is deleted), the
+field name must be a string literal naming an existing struct field (`error[3073]`;
+Zig's `no field named 'x' in struct 'S'` for the unknown case; a resolvable string
+`const` is a documented Z98 divergence), an unresolved/incomplete target or wrong
+arity rejects `error[3074]`. The packed-union offset fold arms are deleted from
+`comptime_eval.zig` + `type_resolver.zig`, and the `lower.zig` net is now a clean
+`error[3074]` fallback — no `error[3043]` ICE remains anywhere on the path (rc 2 / 0
+`.c`). `@sizeOf`/`@alignOf`/`@bitSizeOf` values are unchanged on every union kind
+(bare `4/4/32`, tagged `8/4/64`, two-u8 tagged `8/4/64`, `u8/u64` bare `8/8/64`,
+`u8/u64` tagged `16/8/128`, packed `1/1/4`); `@alignOf(void)` stays the documented
+`0` residual.
+
+**New fixtures:**
+- positive `repro/mi_matrix/stdlib_union_layout_payload_xmod/` (union
+  `@sizeOf`/`@alignOf`/`@bitSizeOf` across all six kinds + struct-with-union layout +
+  in-module/anonymous/cross-module f32 payload literals + the f64-sibling variant
+  selection (`sib`, `sibneg`, `sibparen`); golden 137 B / 14 lines, rc 0, 3x
+  byte-exact; the payload rows are byte-identical to the Zig-0.15.2 twin; stdlib pin
+  **250 -> 251**)
+- reject `repro/mi_matrix/union_offset_reject_xmod/` (bare/tagged/packed
+  `@offsetOf`/`@bitOffsetOf`, scalar target, cross-module helper site → 6 x
+  `error[3072]`; unknown field, const-string name, int name → 3 x `error[3073]`;
+  missing/extra argument, `@sizeOf` extra argument, unresolved type → 4 x
+  `error[3074]`; rc 2 / 0 `.c`, no ICE)
+- standalone `repro/union_layout_payload.z98` (positive) +
+  `repro/union_offset_reject.z98` (3 x 3072 + 1 x 3073 + 2 x 3074)
+
+**4-MD5:** **UNCHANGED 8/8** (gol `9e0b708e18b6fd2b15f9b1e84b6b1571` / lisp
+`ec14d644df5ae53f039b4988ac9d3d5e` / json `5034a0c85a84a14626673c33189ffba3` / mud
+`2e92c1f22efedd8ae0c6aa2fc2c45d0e`, 2x each) with PRE<->POST runtime identity proven
+by execution (gol `fcbf7e7cead5082f0a8caadd5a8f0ff9` / lisp `b3d9f8974da24ddbf9d389f3d7d97322`
+/ json `8bda3d5a1ec07d14a301bc343df32bf8` / mud server `66c8f0abb926cca7baf9a0d1692ab318`
++ client `93147d0f0bbd983a9d844fea8b7a6fa7`, all rc 0). Corpus `-s0` classify:
+**1046 = 863 OK / 46 GREEN / 137 FAIL / 0 ICE / 0 CRASH** (the 1044-dir FE universe plus
+the two new fixtures); join-diff vs the FE compiler over the 1044 common dirs is
+**empty (zero movers)**; the D06/D09 repro trees are not corpus entries (container dir
+has no immediate `.zig`).
 
 ## FE — error-set catch captures (D8) + qualified/enum prong captures (D11) (v252 -> v253, 2026-09-26)
 

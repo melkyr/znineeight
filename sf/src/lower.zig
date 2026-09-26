@@ -1950,25 +1950,6 @@ fn iceInvalidIndex(self: *LirLowerer, what: []const u8, idx: u32, len: u32) void
     diag_mod.diagnosticCollectorFlushAndExit(self.ctx.diag, @intCast(u32, 3));
 }
 
-fn iceUnresolvedComptime(self: *LirLowerer, node_idx: u32) void {
-    var node_id_buf: [10]u8 = undefined;
-    var node_id_l = itoa_mod.itoa(node_idx, node_id_buf[0..]);
-    var p0: []const u8 = "internal: comptime value unresolved for @sizeOf/@alignOf (node ";
-    var p1: []const u8 = ")";
-    var node_id_s: usize = @intCast(usize, 9) - @intCast(usize, node_id_l);
-    var parts: [3][]const u8 = [3][]const u8{ p0, node_id_buf[node_id_s..@intCast(usize, 9)], p1 };
-    var msg = diag_mod.diagnosticBuilderMakeMsg(self.ctx.diag.interner, &parts[0], @intCast(u32, 3));
-    var start: u32 = 0;
-    var end: u32 = 0;
-    if (@intCast(usize, node_idx) < self.ctx.store.nodes.len) {
-        var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
-        start = node.span_start;
-        end = node.span_start + @intCast(u32, node.span_len);
-    }
-    diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_9001_ICE)), @intCast(u32, 0), start, end, msg);
-    diag_mod.diagnosticCollectorFlushAndExit(self.ctx.diag, @intCast(u32, 3));
-}
-
 fn iceSliceUnsupported(self: *LirLowerer, node_idx: u32) void {
     var node_id_buf: [10]u8 = undefined;
     var node_id_l = itoa_mod.itoa(node_idx, node_id_buf[0..]);
@@ -2729,6 +2710,22 @@ fn getTempType(self: *LirLowerer, temp_id: u32) u32 {
         return @intCast(u32, 0);
     }
     return self.hoisted_temps.items[@intCast(usize, temp_id)].type_id;
+}
+
+// FF (Volume II D6): literal-only float predicate for the tagged-union payload
+// coercion. Zig 0.15.2 implicitly narrows a float LITERAL to the expected f32
+// field (parity verified: `2.0`, `-2.0`, `(2.5)`, even the over-range
+// `1.0e300` -> inf); a typed f64 *variable* stays rejected by Zig and is the
+// documented FX3 residual here. `paren_expr`/`negate` unwrap, so the wrapped
+// literal forms narrow too.
+fn lowerUnionPayloadIsFloatLiteral(self: *LirLowerer, node_idx: u32) bool {
+    if (node_idx == @intCast(u32, 0)) return false;
+    var lu_node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    if (lu_node.kind == AstKind.float_literal) return true;
+    if (lu_node.kind == AstKind.negate or lu_node.kind == AstKind.paren_expr) {
+        return lowerUnionPayloadIsFloatLiteral(self, lu_node.child_0);
+    }
+    return false;
 }
 
 fn intCastTypeBits(reg: *type_mod.TypeRegistry, tid: u32) u32 {
@@ -5280,7 +5277,17 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             }
 
             if (node.child_0 == self.size_of_name_id or node.child_0 == self.align_of_name_id or node.child_0 == self.offset_of_name_id or node.child_0 == self.bit_size_of_name_id or node.child_0 == self.bit_offset_of_name_id) {
-                iceUnresolvedComptime(self, node_idx);
+                // FF (Volume II D9): defense-in-depth only — the sema
+                // introspection check already rejects every fold miss (arity,
+                // unresolved/incomplete target, union/non-struct offset
+                // target, unknown or non-literal field name). Never the old
+                // `error[3043]` ICE; a clean level-0 `error[3074]` here still
+                // exits rc=2 / 0 `.c` via the post-lowering error gate.
+                if (diag_mod.diagnosticCollectorMarkNodeOnce(self.ctx.diag, node_idx)) {
+                    var uc_msg: []const u8 = "unable to resolve comptime value for introspection builtin";
+                    var uc_node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+                    _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3074_COMPTIME_BUILTIN_UNRESOLVED)), @intCast(u32, 0), uc_node.span_start, uc_node.span_start + @intCast(u32, uc_node.span_len), uc_msg);
+                }
                 return nextTemp(self, type_mod.TYPE_USIZE);
             }
             if (node.child_0 == self.enumtoint_name_id) {
@@ -6194,8 +6201,22 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                             var sin_nl2: []const u8 = "\n"; pal.markerWrite(sin_nl2);
                             if (self.ctx.registry.fe_items[fs + fj].type_id != type_mod.TYPE_VOID) {
                                 if (!is_undef_arr_field) {
-
-                                    emitInst(self, LirInst{ .assign_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = type_mod.TU_FIELD_PAYLOAD, .src = val_temp } });
+                                    // FF (Volume II D6): an f64 float-literal temp
+                                    // must be materialised into the SELECTED
+                                    // variant's declared f32 type. The emitter's
+                                    // `.assign_field` payload path infers the
+                                    // variant by exact type-id, so a raw f64 temp
+                                    // either emitted the whole-union
+                                    // `payload = <double>` (gcc-invalid) or, with
+                                    // an f64 sibling, silently wrote that sibling
+                                    // while the tag named this field.
+                                    var pay_src: u32 = val_temp;
+                                    var pay_ftid: u32 = self.ctx.registry.fe_items[fs + fj].type_id;
+                                    if (fi_node.child_0 != @intCast(u32, 0) and val_temp != @intCast(u32, 0) and pay_ftid == type_mod.TYPE_F32 and getTempType(self, val_temp) == type_mod.TYPE_F64 and lowerUnionPayloadIsFloatLiteral(self, fi_node.child_0)) {
+                                        pay_src = nextTemp(self, type_mod.TYPE_F32);
+                                        emitInst(self, LirInst{ .float_cast = .{ .value = val_temp, .target = type_mod.TYPE_F32, .result = pay_src } });
+                                    }
+                                    emitInst(self, LirInst{ .assign_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = type_mod.TU_FIELD_PAYLOAD, .src = pay_src } });
                                 }
                             }
                             break;

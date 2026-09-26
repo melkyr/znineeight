@@ -1207,18 +1207,6 @@ fn evalConstIntFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) ?comptime_e
                                 }
                             }
                         }
-                    } else if (ot_ty.state == @intCast(u8, 2) and ot_ty.kind == TypeKind.packed_union_type) {
-                        var u_fields: []type_mod.FieldEntry = undefined;
-                        type_mod.typeRegistryGetUnionFields(env.typereg, ot_tid, &u_fields);
-                        var fname_node2 = ast_mod.astStoreNodeAt(env.store, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 1)));
-                        if (fname_node2.kind == AstKind.string_literal) {
-                            var sv_idx2 = ast_mod.astStoreNodePayload(env.store, ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, 1)));
-                            var want_id2 = env.store.string_values.items[@intCast(usize, sv_idx2)];
-                            var fi2: usize = 0;
-                            while (fi2 < u_fields.len) : (fi2 += 1) {
-                                if (u_fields[fi2].name_id == want_id2) { return comptime_eval.ciZeroInt(); }
-                            }
-                        }
                     }
                 }
             }

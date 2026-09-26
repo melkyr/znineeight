@@ -30,18 +30,38 @@ Returns the alignment requirement of type `T` in bytes as a `usize` constant.
   - `i64`, `u64`, `f64`: 8 bytes
 
 ### `@offsetOf(T, field_name)`
-Returns the byte offset of a field within a struct or union as a `usize` constant.
-- **Syntax:** `@offsetOf(AggregateType, "field")`
+Returns the byte offset of a field within a **struct** as a `usize` constant.
+- **Syntax:** `@offsetOf(StructType, "field")`
 - **Constraints:**
-  - `AggregateType` must be a struct or union.
-  - `field_name` must be a string literal.
-  - The type must be fully defined (not incomplete).
+  - `StructType` must be a **struct** (packed structs included). Every union kind
+    (bare, packed, tagged) and every non-aggregate target (scalar, pointer,
+    enum, array, slice, optional, …) is a Zig-0.15.2-parity clean reject:
+    level-0 `error[3072]` `expected struct type, found 'X'` (FF, Volume II D9).
+    The former "for unions, always returns 0" fold is **removed**.
+  - `field_name` must be a string literal naming an existing field; otherwise
+    level-0 `error[3073]` (Zig wording for the unknown case: `no field named 'x'
+    in struct 'S'`; a non-literal / resolvable string `const` name is a
+    documented Z98 clean-reject divergence — Zig folds the const).
+  - The type must resolve and be complete; an unresolved or incomplete type
+    argument, or a wrong argument count (exactly 2 args), is a level-0
+    `error[3074]`. The former `error[3043]` internal error is gone: every shape
+    rejects rc 2 with 0 emitted `.c`.
 - **Compile-time evaluation:**
   - Always constant-folded to a `usize` integer literal.
-  - For unions, always returns `0`.
-  - For structs, returns the pre-calculated byte offset from the beginning of the struct.
+  - For structs, returns the pre-calculated byte offset from the beginning of the
+    struct (packed structs: `bit_offset / 8`).
 - **C89 Emission:** Emitted directly as the integer literal (e.g., `4`).
 - **Known Limitation:** `@offsetOf` on incomplete types (e.g., forward declarations) is not currently testable in the bootstrap compiler as it does not support forward-declared structs. The error handling logic is implemented for robustness.
+
+### `@bitOffsetOf(T, field_name)`
+Returns the bit offset of a field within a **struct** as a `usize` constant.
+- **Syntax:** `@bitOffsetOf(StructType, "field")`
+- **Constraints:** identical to `@offsetOf` (struct-only; union and non-struct
+  targets reject `error[3072]`, unknown / non-literal field names reject
+  `error[3073]`, unresolved types and wrong arity reject `error[3074]`).
+- **Compile-time evaluation:** packed structs return the packed `bit_offset`;
+  a plain struct returns `byte_offset * 8`.
+- **C89 Emission:** Emitted directly as the integer literal.
 
 ## Code Generation Built-ins
 

@@ -1291,6 +1291,9 @@ pub fn comptimeValStoreU64(cv: ComptimeVal) ?u64 {
 fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?ComptimeVal {
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     if (node.child_0 == self.size_of_id) {
+        // FF (Volume II D9): exact arity (Zig parity); anything else stays
+        // unfoldable and the lowering net emits the clean 3074 diagnostic.
+        if (ast_mod.astStoreNodeExtraChildCount(self.store, node_idx) != @intCast(u32, 1)) return null;
         var tid = comptimeEvalResolveTypeArg(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)));
         if (tid) |t| {
             var ty = self.registry.types_items[@intCast(usize, t)];
@@ -1299,6 +1302,8 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
         return null;
     }
     if (node.child_0 == self.align_of_id) {
+        // FF (Volume II D9): exact arity, as for `@sizeOf`.
+        if (ast_mod.astStoreNodeExtraChildCount(self.store, node_idx) != @intCast(u32, 1)) return null;
         var tid = comptimeEvalResolveTypeArg(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)));
         if (tid) |t| {
             var ty = self.registry.types_items[@intCast(usize, t)];
@@ -1307,8 +1312,10 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
         return null;
     }
     if (node.child_0 == self.offset_of_id or node.child_0 == self.bit_offset_of_id) {
+        // FF (Volume II D9): exact arity; a missing or extra argument must not
+        // fold (the lowering net emits the clean 3074 arity diagnostic).
         var ec2_n = ast_mod.astStoreNodeExtraChildCount(self.store, node_idx);
-        if (ec2_n >= @intCast(u32, 2)) {
+        if (ec2_n == @intCast(u32, 2)) {
             var tid = comptimeEvalResolveTypeArg(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)));
             if (tid) |t| {
                 var ty = self.registry.types_items[@intCast(usize, t)];
@@ -1341,24 +1348,6 @@ fn comptimeEvalBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?Comptime
                                     }
                                 }
                                 return ciIntVal(ciFromU64(bo));
-                            }
-                        }
-                    }
-                } else if (ty.state == @intCast(u8, 2) and ty.kind == type_mod.TypeKind.packed_union_type) {
-                    var u_fields: []type_mod.FieldEntry = undefined;
-                    type_mod.typeRegistryGetUnionFields(self.registry, t, &u_fields);
-                    var fname_node2 = ast_mod.astStoreNodeAt(self.store, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 1)));
-                    if (fname_node2.kind == AstKind.string_literal) {
-                        var sv_idx2 = ast_mod.astStoreNodePayload(self.store, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 1)));
-                        var want_id2 = self.store.string_values.items[@intCast(usize, sv_idx2)];
-                        var fi2: usize = 0;
-                        while (fi2 < u_fields.len) : (fi2 += 1) {
-                            if (u_fields[fi2].name_id == want_id2) {
-                                var ubo: u64 = @intCast(u64, 0);
-                                if (node.child_0 == self.offset_of_id) {
-                                    ubo = @intCast(u64, 0);
-                                }
-                                return ciIntVal(ciFromU64(ubo));
                             }
                         }
                     }

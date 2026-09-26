@@ -178,6 +178,27 @@ pub const ErrorCode = enum(u16) {
     // arm on an exhaustive switch is a tolerated Z98 divergence from Zig
     // (Zig 0.15.2 rejects "unreachable else prong"; Z98 accepts it).
     ERR_3068_SWITCH_WITHOUT_ELSE = 3068,
+    // FF (Volume II D9): `@offsetOf`/`@bitOffsetOf` target is not a struct.
+    // Zig 0.15.2 parity: every union kind (bare/packed/tagged), scalar,
+    // pointer, enum, array, slice reject ("expected struct type, found 'X'").
+    // Replaces the `error[3043]` ICE net; the packed-union offset fold is
+    // deleted with it. Level 0, span on the builtin call; rejects with 0 `.c`.
+    ERR_3072_OFFSET_TARGET_NOT_STRUCT = 3072,
+    // FF (Volume II D9): `@offsetOf`/`@bitOffsetOf` on a struct names a field
+    // that does not exist, or the field name is not a string literal. The
+    // unknown-field wording matches Zig ("no field named 'x' in struct 'S'").
+    // A resolvable string `const` name is a documented Z98 divergence clean-
+    // reject (Zig folds it; Z98 has no string-const resolver). Level 0, span on
+    // the builtin call; rejects with 0 `.c`.
+    ERR_3073_OFFSET_UNKNOWN_FIELD = 3073,
+    // FF (Volume II D9): an introspection builtin (`@sizeOf`/`@alignOf`/
+    // `@bitSizeOf`/`@offsetOf`/`@bitOffsetOf`) whose target type does not
+    // resolve (or is not complete), or whose argument list does not match the
+    // builtin's arity (`@sizeOf`/`@alignOf`/`@bitSizeOf` exactly 1,
+    // `@offsetOf`/`@bitOffsetOf` exactly 2; Zig's "expected N argument(s),
+    // found M" wording). Replaces the `error[3043]` ICE net. Level 0, span on
+    // the builtin call; rejects with 0 `.c`.
+    ERR_3074_COMPTIME_BUILTIN_UNRESOLVED = 3074,
 };
 
 pub const ERR_1000_UNTERMINATED_STRING: u16 = 0;

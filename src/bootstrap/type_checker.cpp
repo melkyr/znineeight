@@ -8411,7 +8411,11 @@ Type* TypeChecker::visitOffsetOf(ASTNode* parent, ASTOffsetOfNode* node) {
     arg_type = unwrapType(node->type_expr);
     if (!arg_type || is_type_undefined(arg_type)) return get_g_type_undefined();
 
-    if (arg_type->kind != TYPE_STRUCT && arg_type->kind != TYPE_UNION) {
+    // Volume II D9 (FF) — Zig-0.15.2 parity: @offsetOf is struct-only. A union
+    // target is now a clean reject here too (the self-hosted compiler reports
+    // its own error[3072] "expected struct type, found 'X'"); the former
+    // union "all fields at offset 0" fold is gone.
+    if (arg_type->kind != TYPE_STRUCT) {
         char buf[128];
         char type_name[64];
         typeToString(arg_type, type_name, sizeof(type_name));

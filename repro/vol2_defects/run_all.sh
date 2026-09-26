@@ -13,14 +13,14 @@
 #
 # Expected failure kind per case (see each case's NOTES.md and the README):
 #   crash   compiler must die from a signal (SIGSEGV, rc 139)       D01
-#   reject  compiler must reject now (rc != 0, no C emitted)        D04, D09, D11
+#   reject  compiler must reject now (rc != 0, no C emitted)        D04, D11
 #   accept  compiler must WRONGLY accept now (rc == 0); the defect
 #           is the missing rejection                                 D03, D10, D12
-#   gccfail compile is accepted (rc 0), gcc must reject the C       D05, D06
-#   wrong   build+run succeed, stdout must differ from expected.txt D02, D08
+#   gccfail compile is accepted (rc 0), gcc must reject the C       D05
+#   wrong   build+run succeed, stdout must differ from expected.txt D02, D06, D08
 #   fixedreject (FD1) compiler must reject with the exact census in the
 #           case's expected_error.txt (`<code> <count>`), no signal,
-#           no `.c` emitted                                          D07, S01
+#           no `.c` emitted                                          D07, D09, S01
 #
 # FA-a conversion (2026-09-26): D2 (enum range labels) and D3 (mandatory `else`)
 # are FIXED on the current compiler. Under the existing kinds this shows up
@@ -49,6 +49,14 @@
 # are exercised outside run_all.sh; the historical seed-v88 observations stay
 # in the case NOTES.md.
 #
+# FF conversion (2026-09-26): D6 (f32 tagged-union payload) and D9 (union
+# `@offsetOf`/`@bitOffsetOf`) are FIXED. D06 (`wrong`) now builds+runs and
+# matches expected.txt (`f=2`; the sibling shape `red_sibling.zig` is exercised
+# outside run_all.sh). D09 (`fixedreject`) now rejects with exactly one
+# level-0 `error[3072]` (`expected struct type, found 'Raw'`), rc 2 / 0 `.c`,
+# no signal — the former `error[3043]` ICE (rc 3) is gone. The historical
+# seed-v88 observations stay in the case NOTES.md.
+#
 # Usage: sh run_all.sh [seed-compiler-path]
 # Default seed: /tmp/manual_seed/zig1_5_clean
 # Rebuild:  bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/manual_seed
@@ -76,11 +84,11 @@ for dir in "$CASE_DIR"/D*/ "$CASE_DIR"/S*/; do
 
     case "$case_name" in
         D01_*) kind=crash ;;
-        D04_*|D09_*|D11_*) kind=reject ;;
+        D04_*|D11_*) kind=reject ;;
         D03_*|D10_*|D12_*) kind=accept ;;
-        D07_*|S01_*) kind=fixedreject ;;
-        D05_*|D06_*) kind=gccfail ;;
-        D02_*|D08_*) kind=wrong ;;
+        D07_*|D09_*|S01_*) kind=fixedreject ;;
+        D05_*) kind=gccfail ;;
+        D02_*|D06_*|D08_*) kind=wrong ;;
         *)           kind=reject ;;
     esac
     printf '%s\n' "$kind" > "$out/kind.txt"

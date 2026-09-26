@@ -75,3 +75,47 @@ inferred), f64 works. The investigation should determine whether the emitter
 selects the "assign to payload" path for f32 (or all 4-byte floats) and
 whether other 4-byte scalar types (e.g. `u32` payloads) are affected — the
 `control_int.zig` u8/i32 cases pass, so plain integer payloads are fine.
+
+## FF conversion (2026-09-26) — FIXED
+
+Fixed point `cadf3c241abd1baf4d31da52b0ccd649` (seed v88 NOT rotated). The
+tagged-union init path (`sf/src/lower.zig`, `struct_init` tagged-union arm) now
+narrows an **f64 float-literal** payload temp to the selected variant's declared
+f32 type (`float_cast` to f32) before the `.assign_field` payload store, so the
+emitter's exact type-id variant match selects the real field instead of falling
+back to the whole-union `payload = <double>`. The predicate is literal-only
+(`float_literal`, optionally under `negate`/`paren_expr`) — the Zig parity rule;
+a typed f64 variable stays the documented FX3 residual.
+
+POST (`/tmp/ff/build1/zig1_5_clean`), each entry `-o <dir>` + `build_target.sh
+linux <name>` + run:
+
+| Entry | PRE (seed `a3928c11…`) | POST (FF `cadf3c24…`) |
+|---|---|---|
+| `main.zig` (annotated f32) | compile rc 0, gcc rc 1 | **compile/gcc/run rc 0, `f=2`** |
+| `red_anon.zig` (`var c: ShapeF = .{ .circle = 3.0 };`) | gcc rc 1 | **run rc 0, `f2=3`** |
+| `red_inferred_f32.zig` | gcc rc 1 | **run rc 0, `f=2`** |
+| `xmod_main.zig` (union from `shapes.zig`) | gcc rc 1 | **run rc 0, `f=2`** |
+| `red_sibling.zig` (`{a:f32,b:f64}`, `.a = 2.0`) | silent wrong variant (`a=0 b=2.5`) | **run rc 0, `a=2 b=2.5`** |
+| `control_f64.zig` / `control_inferred.zig` | `d=2` / `2.5` | byte-identical (`d=2` / `2.5`) |
+| `control_int.zig` / `control_bool.zig` / `control_struct.zig` | rc 0 | byte-identical (`go=7 count=9` / `b=true` / `area=12`) |
+
+Emitted C (POST `main.zig`): `zT_1.tag = zT_3; zT_4 = (float)zT_2;
+zT_1.payload.circle._0 = zT_4;` — a real `circle` variant store (PRE was
+`zT_1.payload = zT_2;`).
+
+Boundaries (unchanged / residual):
+- f32-typed sources (`@as(f32, 2.0)`, f32 variable) already selected the variant
+  correctly; they stay byte-identical.
+- A typed **f64 variable** payload (`var d: f64 = 2.0; var x: U = U{ .a = d };`)
+  is Zig-rejected; Z98 stays silent (with an f64 sibling it still writes the
+  sibling; without one it still emits the whole-union assignment). Documented
+  FF residual, deferred to FX3.
+- The f32 **parameter** literal reject (`fn f(x: f32); f(2.0)` → `error[3000]`)
+  is unchanged — FX3 owns it.
+- The `p_d6_big` shape (`1.0e300` literal into an f32 payload) now compiles and
+  selects the right variant (f32 `inf`), but `printF64` prints `inf`
+  incorrectly — the documented ch18 print Q2 bounded residual, not a D6
+  regression.
+- Same-type variant aliasing (two variants with the same type) keeps the
+  documented first-match emitter heuristic (NON-ISSUE, unchanged).
