@@ -1,0 +1,7 @@
+direct=error.Bar
+param=error.Bar
+return=error.Bar
+field=error.Bar
+ok=1
+capture=error.Bar
+copied=error.Bar
