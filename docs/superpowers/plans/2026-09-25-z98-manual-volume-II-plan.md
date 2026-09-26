@@ -593,3 +593,31 @@ Every chapter task follows this shape. Steps are written out per task below; the
 - **Type/name consistency:** page filenames match spec §2.1 and are unique; sample filenames match the blueprint Part 4 names (chapter 12's deviation recorded); `rel` targets are existing files; figure numbers are assigned uniquely (Tasks 2/3 = 17/18, Tasks 6–15 = 19–28, Task 16 = 29, Tasks 17–19 = 30–32; Task 0 confirms the base); the figure row columns match Phase 0 (`Page | Figure | Caption | Claim | What to capture`).
 - **Open risks the tasks must verify (STOP if they fail):** the arena API (Task 2), the builtin inventory's fit (Task 3), every chapter's feasibility step, chapter 17's module list, chapter 18's format set. Each STOP escalates to an operator-ruled amendment; the plan's phase order means Task 0 and the three mental-shift chapters surface the highest-risk findings earliest.
 - **Scope discipline:** the plan is website-only; the seed is not rotated except by Task 22 after an amendment; any compiler defect found while verifying a claim is a STOP, not a fix.
+
+---
+
+## Defect intake (operator-ruled 2026-09-26)
+
+Task 0's capability inventory (review-verified) found 12 real compiler-defect candidates that block chapters 3, 6, 7, 8, 9, 10, 11, 12, and 18. The operator ruled the intake order below: repros first (one task, every defect, including cross-module and sibling shapes), then one read-only investigation per defect, **then STOP** for the operator's fix-grouping ruling before any fix task is appended. These tasks are the authorized exception to the website-only constraint for `repro/**`; none of them may touch `sf/src/**`, `scripts/**`, or `release/seed/**`.
+
+**Defect list (source: Task 0 report + its independent review):**
+- D1 — one module holding a plain-`defer` function and a `defer`-in-`for` function SIGSEGVs the compiler (ch11)
+- D2 — enum `switch` inclusive/exclusive range prongs emit no `case` labels (silent wrong branch; ch6/ch10)
+- D3 — missing mandatory `else` accepted; the unmatched value reads an uninitialized temp (ch6/ch10)
+- D4 — tuple type `struct { T1, T2 }` / `t.0` / `t[0]` unusable (ch8)
+- D5 — slice→`[*]T` implicit coercion emits gcc-invalid C (ch9)
+- D6 — annotated float tagged-union payload emits gcc-invalid C (ch7)
+- D7 — non-tuple `print(fmt, 5)` silently prints nothing (ch18)
+- D8 — error-set `catch |e|` capture prints numeric instead of `error.Name` (ch12)
+- D9 — bare-union `@offsetOf` internal error `[3043]` (ch7)
+- D10 — single-pointer `p[0]` accepted though the Language Spec says it is rejected (ch3)
+- D11 — qualified-prong capture `Shape.circle => |r|` resolves `r` unbound (ch7)
+- D12 — `[]const T`→`[]T` const-discarding coercion is warning-only (ch9)
+
+- **Task D0 (F) — the complete defect repro set.** Create committed repros for D1–D12 under `repro/vol2_defects/<NN>_<slug>/` (each self-contained: `main.zig` plus helper modules where a cross-module variant is needed, and a `NOTES.md`), plus `repro/vol2_defects/README.md` (index: defect → directory → module-scope claim → minimal repro command) and `repro/vol2_defects/run_all.sh` (rebuild-free runner that compiles each case with the seed-built `zig1_5_clean` and records rc/stdout/stderr). Requirements: every case must reproduce its defect on the seed v88 compiler (RED evidence captured); each defect must carry the in-module shape plus the cross-module (`_xmod`) shape and the sibling shapes that plausibly share the root cause (and passing controls where a sibling does not fail, so the investigation has a boundary); wrong-code cases must include the emitted-C excerpt or gcc error that shows the failure; the Zig 0.15.2 oracle comparison is recorded where it clarifies expected semantics. No compiler changes, no `sf/src` edits. Commit: `test(repro): add the Volume II defect repro set`.
+
+- **Tasks D1–D12 (I) — one read-only investigation per defect.** Each investigation consumes its repro directory and writes `.superpowers/sdd/2026-09-25-z98-manual-volume-II-plan/task-D<N>-report.md` with: exact root cause (file/function/line), the full failing shape family (from the repros and any additional probes), what stays correct (passing controls), candidate fix approach(es) with trade-offs, blast radius (which gate programs/fixtures could move), predicted gate impact, and a proposed fix group (which other defects would naturally be fixed together). No `sf/src` edits, no commits; probes stay under `/tmp`.
+
+- **STOP after D1–D12.** No fix task (F) may be dispatched until the operator reads the investigations and rules on the fix grouping.
+
+---
