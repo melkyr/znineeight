@@ -1,7 +1,11 @@
-// D10 control (FH conversion, 2026-09-27): the three legal `*T` slice forms
-// are accepted with Zig 0.15.2's result types (`*[0]T`/`*[1]T`, qualifiers
-// carried), plus the unchanged `*[N]T` and deref/many-pointer paths.
-// Contract: stdout `lens=0 1 0 v=42 sl0=42 c=42 pa1=20 pas1=20 dv=42 mp=20`,
+// D10 control (FH conversion 2026-09-27; FI conversion 2026-09-27): the three
+// legal `*T` slice forms are accepted with Zig 0.15.2's result types
+// (`*[0]T`/`*[1]T`, qualifiers carried), the unchanged `*[N]T` and
+// deref/many-pointer paths, and (FI) `for` iteration over the `*[0]T`/`*[1]T`
+// results and over a direct `*[3]T` — the former FH over-rejection
+// (`for (p[0..1]) |v|` -> error[20]) is positive coverage again.
+// Contract: stdout
+// `lens=0 1 0 v=42 sl0=42 c=42 pa1=20 pas1=20 dv=42 mp=20 fsum=42 fz=0 fpa=60`,
 // rc 0. Exercised outside run_all.sh (the case's main.zig is the reject
 // census).
 const std = @import("std");
@@ -28,5 +32,14 @@ pub fn main() void {
     const mp: [*]i32 = marr;
     const mpv = mp[1];
 
-    std.io.print("lens={} {} {} v={} sl0={} c={} pa1={} pas1={} dv={} mp={}\n", .{ t00.len, t01.len, t11.len, v, sl[0], ct01[0], pa1, psl[1], dv, mpv });
+    // FI (operator ruling A): the previously-over-rejected for shapes run.
+    var fsum: i32 = 0;
+    for (p[0..1]) |fv| { fsum += fv; }
+    var fz: i32 = 0;
+    for (p[0..0]) |fv| { fz += fv; }
+    for (p[1..1]) |fv| { fz += fv; }
+    var fpa: i32 = 0;
+    for (pa) |fv| { fpa += fv; }
+
+    std.io.print("lens={} {} {} v={} sl0={} c={} pa1={} pas1={} dv={} mp={} fsum={} fz={} fpa={}\n", .{ t00.len, t01.len, t11.len, v, sl[0], ct01[0], pa1, psl[1], dv, mpv, fsum, fz, fpa });
 }

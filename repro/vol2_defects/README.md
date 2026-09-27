@@ -109,6 +109,15 @@ operator-authorized F tasks consume this set.
 > (`3066 6` + `3067 5` + `3000 10`); the sibling slice/`(*p)` rejects and the
 > accepted `control_slice_legal.zig` are exercised outside the runner. The
 > per-case `OBSERVED` sections below remain the historical seed-v88 evidence.
+>
+> **FI status (2026-09-27):** the FH follow-up over-rejection is fixed — `for`
+> iterates a pointer-to-array (operator ruling A; fixed point
+> `b44a85111b1f89921ab1d46a752c61a5`). `for (p[0..1]) |v|` runs again with the
+> pre-FH `sum=42` shape, `for (p[0..0])`/`for (p[1..1])` iterate zero times, and
+> direct `for (pa) |v|`, `*const [N]T`, explicit `for (pa, 0..3)`/`(pa, 1..)`
+> and the row-by-value `*[2][3]i32` item match Zig 0.15.2;
+> `control_slice_legal.zig` now covers the former probe (tail
+> `fsum=42 fz=0 fpa=60`). Non-array pointer pointees still reject `error[20]`.
 
 - Plan: `.superpowers/sdd/2026-09-25-z98-manual-volume-II-plan/`
 - Report: `.superpowers/sdd/2026-09-25-z98-manual-volume-II-plan/task-D0-report.md`

@@ -7329,14 +7329,26 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
            if (pat_type) |pt| {
                var a6_hm: []const u8 = "H"; pal.markerWrite(a6_hm);
                var a6_hb: [20]u8 = undefined; var a6_hl = itoa_mod.itoa(pt, a6_hb[0..]); var a6_hs: usize = @intCast(usize, 19) - @intCast(usize, a6_hl); pal.markerWrite(a6_hb[a6_hs..@intCast(usize, 19)]);
-              var pt_ty = self.ctx.registry.types_items[@intCast(usize, pt)];
-              if (pt_ty.kind == type_mod.TypeKind.slice_type) {
-                  var sp = self.ctx.registry.slice_items[@intCast(usize, pt_ty.payload_idx)];
-                  elem_type[0] = sp.elem;
-              } else if (pt_ty.kind == type_mod.TypeKind.array_type) {
-                  var ap = self.ctx.registry.array_items[@intCast(usize, pt_ty.payload_idx)];
-                  elem_type[0] = ap.elem;
-              }
+               var pt_ty = self.ctx.registry.types_items[@intCast(usize, pt)];
+               if (pt_ty.kind == type_mod.TypeKind.slice_type) {
+                   var sp = self.ctx.registry.slice_items[@intCast(usize, pt_ty.payload_idx)];
+                   elem_type[0] = sp.elem;
+               } else if (pt_ty.kind == type_mod.TypeKind.array_type) {
+                   var ap = self.ctx.registry.array_items[@intCast(usize, pt_ty.payload_idx)];
+                   elem_type[0] = ap.elem;
+               } else if (pt_ty.kind == type_mod.TypeKind.ptr_type) {
+                   // FI (operator ruling A): a pointer-to-array iterable is
+                   // iterated by its pointee array's element type.
+                   if (@intCast(usize, pt_ty.payload_idx) < self.ctx.registry.ptr_len) {
+                       var fp_pointee = self.ctx.registry.ptr_items[@intCast(usize, pt_ty.payload_idx)].base;
+                       if (@intCast(usize, fp_pointee) < self.ctx.registry.types_len) {
+                           var fp_pty = self.ctx.registry.types_items[@intCast(usize, fp_pointee)];
+                           if (fp_pty.kind == type_mod.TypeKind.array_type) {
+                               elem_type[0] = self.ctx.registry.array_items[@intCast(usize, fp_pty.payload_idx)].elem;
+                           }
+                       }
+                   }
+               }
            } else {
                var a6_mm: []const u8 = "M"; pal.markerWrite(a6_mm);
            }
@@ -7401,10 +7413,36 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             var len_temp = nextTemp(self, type_mod.TYPE_USIZE);
             if (pat_type) |pt2| {
                 var pt_ty2 = self.ctx.registry.types_items[@intCast(usize, pt2)];
+                var ptr_arr_len: u32 = @intCast(u32, 0);
+                var ptr_arr_have: u8 = @intCast(u8, 0);
+                if (pt_ty2.kind == type_mod.TypeKind.ptr_type) {
+                    // FI (operator ruling A): a pointer-to-array is its own
+                    // element pointer (`(*base)[idx]` at emission) and iterates
+                    // the pointee array's compile-time length.
+                    if (@intCast(usize, pt_ty2.payload_idx) < self.ctx.registry.ptr_len) {
+                        var fp_pointee = self.ctx.registry.ptr_items[@intCast(usize, pt_ty2.payload_idx)].base;
+                        if (@intCast(usize, fp_pointee) < self.ctx.registry.types_len) {
+                            var fp_pty = self.ctx.registry.types_items[@intCast(usize, fp_pointee)];
+                            if (fp_pty.kind == type_mod.TypeKind.array_type) {
+                                ptr_arr_len = self.ctx.registry.array_items[@intCast(usize, fp_pty.payload_idx)].length;
+                                ptr_arr_have = @intCast(u8, 1);
+                            }
+                        }
+                    }
+                }
                 if (pt_ty2.kind == type_mod.TypeKind.array_type) {
                     var ap2 = self.ctx.registry.array_items[@intCast(usize, pt_ty2.payload_idx)];
                     ptr_temp = slice_temp;
                     emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, ap2.length), .result = len_temp } });
+                } else if (ptr_arr_have != @intCast(u8, 0)) {
+                    // Cast the pointer-to-array down to its element pointer so
+                    // the item load and the by-value array-row copy behave
+                    // exactly like the plain-array decay path (whose temp is
+                    // already an element pointer).
+                    var fa_ep = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, elem_type[0], false);
+                    ptr_temp = nextTemp(self, fa_ep);
+                    emitInst(self, LirInst{ .ptr_cast = .{ .value = slice_temp, .target = fa_ep, .result = ptr_temp } });
+                    emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, ptr_arr_len), .result = len_temp } });
                 } else {
                     var ms_nid = nameMapGet(self, slice_temp);
                     emitInst(self, LirInst{ .load_field = .{ .name_id = ms_nid, .base = slice_temp, .field_id = type_mod.SLICE_FIELD_PTR, .result = ptr_temp } });

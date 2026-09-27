@@ -1,4 +1,53 @@
-# mi_matrix corpus — expected-fail manifest (v258 2026-09-27)
+# mi_matrix corpus — expected-fail manifest (v259 2026-09-27)
+
+## FI — `for` iterates a pointer-to-array (`*[N]T`) (operator ruling A) (v258 -> v259, 2026-09-27)
+
+Volume II defect-fix phase, Stage 2b follow-up (task-FI). The FH result-type adoption
+(`*[0]T`/`*[1]T` for the legal `p[0..0]`/`p[0..1]`/`p[1..1]` slices) had turned the
+previously-working `for (p[0..1]) |v|` (rc 0, `sum=42`) into `error[20]` because Z98's
+`for` arm had no pointer-to-array iterator, while Zig 0.15.2 accepts `for` over `*[N]T`.
+Operator ruling A: implement the iteration so both the Zig result type and the working
+shape hold.
+
+**Fix.**
+1. Sema (`semantic_analyzer.zig` `semanticAnalyzerResolveForHeader`): a `ptr_type`
+   iterable whose pointee (payload-index-guarded) is a fixed-size array takes the
+   pointee array's element as the item type, so `*[0]T` iterates zero times and the
+   direct/quoted pointer-to-array forms register normally. Every other pointee keeps
+   the pre-FI unresolved-item behavior (`error[20]` at the capture use).
+   `semanticAnalyzerCheckForIndexRangeComptime` applies the explicit-range
+   "non-matching for loop lengths" check to the pointee array's length
+   (`for (pa, 1..3)` on `*[3]T` rejects like Zig).
+2. Lower (`lower.zig` `for_stmt` arm): the element type/length come from the pointee
+   array, and the `*[N]T` temp is `ptr_cast` to a `*elem` element pointer before the
+   standard loop, so the item load and the by-value row copy behave exactly like the
+   plain-array decay path. Array/slice/range/many-pointer arms are byte-identical.
+
+**Fixtures.**
+- positive `repro/mi_matrix/stdlib_ptrarray_for_ok_xmod` (stdlib pin **254 -> 255**):
+  golden `42 0 0 60 63 66 60 31 0 14 40 10`, rc 0, 3x byte-exact and byte-identical to
+  the Zig-0.15.2 twin. Shapes: the FH probe `for (p[0..1]) |v|`, zero-iteration
+  `p[0..0]`/`p[1..1]`, direct `for (pa)`, explicit `for (pa, 0..3)`/`for (pa, 1..)`,
+  `*const [N]T`, `pa[0..2]` slice, `*[0]T`, row-by-value over `*[2][3]i32`, and
+  `continue`/`break`.
+- standalone `repro/ptrarray_for.z98` (positive, includes the Z98-retained plain
+  index capture `for (pa) |v, i|`).
+- D10 repro: `control_slice_legal.zig` converted to include the former FH probe
+  (stdout tail `fsum=42 fz=0 fpa=60`), NOTES/README updated.
+- The FH reject fixture `ptr_slice_reject_xmod` and D10 `main.zig` are unchanged
+  (they pin the illegal `*T` index/slice forms, not iteration).
+
+**Movement:** 4-MD5 emitted-C **UNCHANGED 4/4** (gol `9e0b708e…` / lisp `ec14d644…` /
+json `5034a0c8…` / mud `2e92c1f2…`, 2x each). Corpus `-s0` **1053 = 900 OK / 49 GREEN /
+104 FAIL / 0 ICE / 0 CRASH**; full-classifier join-diff vs the FH compiler (99ef01ad)
+over the 1052 common dirs **EMPTY (zero movers)**; the only added dir is the positive
+fixture (FAIL under FH -> OK). Stdlib runtime **255 PASS / 0 FAIL** (pin 254 -> 255);
+example matrix **24/24**; `check_emit_support.sh` **7/7**; `verify_upgraded.sh`
+**CLOSEOUT OK**; build_test **0/9** (pre-existing retired-zig0 baseline); self-emission
+rc 0 / 48 `.c` + 48 `.h` / 0 PANIC; D10 `run_all.sh` all 13 cases `ok`. Fixed point
+MOVED `99ef01ad63ba37f98f327317608f577f` -> **`b44a85111b1f89921ab1d46a752c61a5`**
+(hop1 == hop2, explicit `FIXED_POINT_MD5` gate; seed v88 **NOT rotated**).
+
 
 ## FH — single-item-pointer indexing rules (D10) (v257 -> v258, 2026-09-27)
 
@@ -74,11 +123,10 @@ baseline); self-emission rc 0 / 48 `.c` + 48 `.h` / 0 PANIC. Fixed point MOVED
 siblings (`*[N]T[a..b]` scaling, `*[N]T[s..]`/`mp[N..]` ICEs, unchecked runtime
 slice bounds, `pa.*[i]`) are out of scope and untouched. An internal array-field
 decay copied into an unannotated local (`var x = s.a; x[i]`) rejects `error[3066]`
-because the decay erases the declared array length. The adopted `*[0]T`/`*[1]T`
-slice results are not yet iterable — `for (p[0..1]) |v|` rejects (`error[20]` for
-the capture plus a void source/target note) where Zig accepts `for` over `*[N]T`;
-zero gate/corpus/stdlib usage and no wrong code, suggested for the FX5
-pointer/slice group or a separate follow-up. A `*[0]T` emits a C array typedef
+because the decay erases the declared array length. **Superseded by FI (operator
+ruling A, 2026-09-27):** the `for (p[0..1]) |v|` over-rejection (`error[20]`) is
+fixed — `for` now iterates a pointer-to-array; see the FI section above. A `*[0]T`
+emits a C array typedef
 clamped to `[1]` (`emitArrayType`, `c89_emit.zig` `decl_len = if (ap.length == 0)
 1 else ap.length`) while the sema length stays 0 (`.len` 0, index 3062), so only
 the C model is clamped, not the behavior. Review round 1 (2026-09-27) recorded

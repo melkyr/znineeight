@@ -37,9 +37,12 @@ Siblings (exercised outside `run_all.sh`):
 - `reject_star_paren.zig` — `(*p)[i]` (a `type` base) rejects `error[3066]`
   instead of the seed-v88 silent `arr[zT_12]` wrong code.
 - `control_slice_legal.zig` — accepted + runs rc 0, stdout
-  `lens=0 1 0 v=42 sl0=42 c=42 pa1=20 pas1=20 dv=42 mp=20` (the three legal
-  `*T` slices now type as `*[0]T`/`*[1]T` with `const`/`volatile` carried; the
-  `*[N]T` and deref/many-pointer controls are unchanged).
+  `lens=0 1 0 v=42 sl0=42 c=42 pa1=20 pas1=20 dv=42 mp=20 fsum=42 fz=0 fpa=60`
+  (the three legal `*T` slices now type as `*[0]T`/`*[1]T` with
+  `const`/`volatile` carried; the `*[N]T` and deref/many-pointer controls are
+  unchanged; the FI conversion 2026-09-27 appends the former FH over-rejection
+  probe `for (p[0..1]) |v|` = 42, zero-iteration `p[0..0]`/`p[1..1]` = 0 and
+  direct `for (pa) |v|` = 60).
 - `xmod_main.zig` + `helper.zig` — the cross-module `p[1]` rejects
   `error[3066]` in `helper.zig`.
 
@@ -74,7 +77,8 @@ census); standalone repros `repro/single_ptr_slice_ok.z98` /
 | `ps[0].x` field base | `red_field_base.zig` | FIXED (reject) | `error[3066]` |
 | Cross-module indexing | `xmod_main.zig` + `helper.zig` | FIXED (reject) | `error[3066]` in `helper.zig` |
 | `p.*` + many-pointer `mp[i]` | `control_deref.zig` | control | `p.*=42`, `mp[1]=20` |
-| legal `*T` slices | `control_slice_legal.zig` | accepted | `*[0]T`/`*[1]T` golden |
+| legal `*T` slices | `control_slice_legal.zig` | accepted | `*[0]T`/`*[1]T` golden + FI `for` rows |
+| `for` over `*[N]T` (FH residual) | `control_slice_legal.zig` | FIXED by FI | `fsum=42 fz=0 fpa=60` |
 
 ## Boundary
 `*[N]T` auto-deref indexing/slicing and `[*]T` stay accepted; `p.*[0]` on
@@ -83,3 +87,8 @@ census); standalone repros `repro/single_ptr_slice_ok.z98` /
 bounds, `pa.*[i]`) are recorded, not fixed. Documented residual: an internal
 array-field decay copied into an unannotated local (`var x = s.a; x[i]`) now
 rejects `error[3066]` because the decay erases the declared array length.
+**FI (2026-09-27, operator ruling A):** the FH `for (p[0..1]) |v|`
+over-rejection (`error[20]`) no longer exists — `for` iterates a
+pointer-to-array (`*[0]T`/`*[1]T`, direct `*[N]T`, `*const [N]T`, explicit
+ranges and the row-by-value item); `control_slice_legal.zig` was extended with
+the former probe. Non-array pointer pointees keep the pre-FI `error[20]`.

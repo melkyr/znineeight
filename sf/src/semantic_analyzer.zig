@@ -4650,8 +4650,27 @@ fn semanticAnalyzerCheckForIndexRangeComptime(self: *SemanticAnalyzer, node_idx:
     }
     if (@intCast(usize, it_t) >= self.registry.types_len) return;
     var it_ty = self.registry.types_items[@intCast(usize, it_t)];
-    if (it_ty.kind != type_mod.TypeKind.array_type) return;
-    var it_len: u64 = @intCast(u64, self.registry.array_items[@intCast(usize, it_ty.payload_idx)].length);
+    var it_len: u64 = @intCast(u64, 0);
+    var it_have_len: u8 = @intCast(u8, 0);
+    if (it_ty.kind == type_mod.TypeKind.array_type) {
+        it_len = @intCast(u64, self.registry.array_items[@intCast(usize, it_ty.payload_idx)].length);
+        it_have_len = @intCast(u8, 1);
+    } else if (it_ty.kind == type_mod.TypeKind.ptr_type) {
+        // FI (operator ruling A): an explicit index range over a pointer-to-array
+        // must span the pointee array's length (Zig's "non-matching for loop
+        // lengths"); every other pointer iterable keeps the runtime span check.
+        if (@intCast(usize, it_ty.payload_idx) < self.registry.ptr_len) {
+            var fh_pointee = self.registry.ptr_items[@intCast(usize, it_ty.payload_idx)].base;
+            if (@intCast(usize, fh_pointee) < self.registry.types_len) {
+                var fh_pty = self.registry.types_items[@intCast(usize, fh_pointee)];
+                if (fh_pty.kind == type_mod.TypeKind.array_type) {
+                    it_len = @intCast(u64, self.registry.array_items[@intCast(usize, fh_pty.payload_idx)].length);
+                    it_have_len = @intCast(u8, 1);
+                }
+            }
+        }
+    }
+    if (it_have_len == @intCast(u8, 0)) return;
     if (ce_mod.ciToU64(span_ci) != it_len) {
         semanticAnalyzerReportForIndexRange(self, node_idx, node.span_start, node.span_start + @intCast(u32, node.span_len), "non-matching for loop lengths: the index range and the iterable differ in length");
     }
@@ -4695,6 +4714,21 @@ fn semanticAnalyzerResolveForHeader(self: *SemanticAnalyzer, node_idx: u32) void
         var elem_box: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
         if (ty.kind == type_mod.TypeKind.slice_type) { elem_box[0] = self.registry.slice_items[@intCast(usize, ty.payload_idx)].elem; }
         else if (ty.kind == type_mod.TypeKind.array_type) { elem_box[0] = self.registry.array_items[@intCast(usize, ty.payload_idx)].elem; }
+        else if (ty.kind == type_mod.TypeKind.ptr_type) {
+            // FI (operator ruling A): a pointer-to-array iterable (`*[N]T`, e.g.
+            // the FH `p[0..1]` result) auto-derefs and iterates the array exactly
+            // like an array value. Every other pointer pointee keeps the pre-FI
+            // unresolved-item behavior (error[20] at the item capture use).
+            if (@intCast(usize, ty.payload_idx) < self.registry.ptr_len) {
+                var fs_pointee = self.registry.ptr_items[@intCast(usize, ty.payload_idx)].base;
+                if (@intCast(usize, fs_pointee) < self.registry.types_len) {
+                    var fs_pty = self.registry.types_items[@intCast(usize, fs_pointee)];
+                    if (fs_pty.kind == type_mod.TypeKind.array_type) {
+                        elem_box[0] = self.registry.array_items[@intCast(usize, fs_pty.payload_idx)].elem;
+                    }
+                }
+            }
+        }
         else if (cnode.kind == AstKind.range_exclusive or cnode.kind == AstKind.range_inclusive) { elem_box[0] = tid; }
         if (ast_mod.astStoreNodePayload(self.store, node_idx) != @intCast(u32, 0) and elem_box[0] != type_mod.TYPE_UNDEFINED) {
             var fs_p_m: []const u8 = "FS:P"; pal_mod.markerWriteInt(fs_p_m, ast_mod.astStoreNodePayload(self.store, node_idx));
