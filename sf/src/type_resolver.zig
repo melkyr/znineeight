@@ -1502,6 +1502,25 @@ fn containerFieldCount(env: *TypeResolveEnv, node_idx: u32) usize {
     return count;
 }
 
+// FB (D4): a tuple element of array type has no C assignment for the
+// field-wise copy (`emitFieldAssign` can only byte-copy a same-typed array
+// field), so the operator ruled a clean reject rather than per-element loops.
+// Emits level-0 error[3000] once per marking node when a diag is live; callers
+// still append the element so the registry shape stays consistent.
+pub fn tupleElemArrayUnsupported(env: *TypeResolveEnv, elem_tid: u32, mark_node: u32) bool {
+    if (elem_tid == type_mod.TYPE_UNDEFINED or elem_tid == type_mod.TYPE_VOID) return false;
+    if (@intCast(usize, elem_tid) >= env.typereg.types_len) return false;
+    if (env.typereg.types_items[@intCast(usize, elem_tid)].kind != type_mod.TypeKind.array_type) return false;
+    if (env.diag) |diag| {
+        if (diag_mod.diagnosticCollectorMarkNodeOnce(diag, mark_node)) {
+            var node = ast_mod.astStoreNodeAt(env.store, mark_node);
+            var msg: []const u8 = "tuple types with array elements are not supported";
+            _ = diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0), @intCast(u16, 3000), env.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), msg);
+        }
+    }
+    return true;
+}
+
 // Task B2 fix round 1: strict validation of a local/inline enum declaration.
 // Runs the ONE shared member walk (`enumMembersResolve`) in check-only strict
 // mode so a duplicate tag value or an unfoldable initializer is a clean
@@ -1561,7 +1580,7 @@ pub fn registerContainerType(env: *TypeResolveEnv, node_idx: u32, kind: AstKind,
         }
     }
     var type_kind: type_mod.TypeKind = switch (kind) {
-        AstKind.struct_decl => type_mod.TypeKind.struct_type,
+        AstKind.struct_decl => if ((@intCast(u16, node.flags) & @intCast(u16, 0x20)) != 0) type_mod.TypeKind.tuple_type else type_mod.TypeKind.struct_type,
         AstKind.enum_decl => type_mod.TypeKind.enum_type,
         AstKind.union_decl => if ((@intCast(u16, node.flags) & @intCast(u16, 0x10)) != 0) type_mod.TypeKind.packed_union_type else if ((@intCast(u16, node.flags) & 1) != 0) type_mod.TypeKind.tagged_union_type else type_mod.TypeKind.union_type,
         AstKind.error_set_decl => type_mod.TypeKind.error_set_type,
@@ -1571,7 +1590,43 @@ pub fn registerContainerType(env: *TypeResolveEnv, node_idx: u32, kind: AstKind,
     if ((kind == AstKind.struct_decl or kind == AstKind.union_decl) and (@intCast(u16, node.flags) & @intCast(u16, 0x10)) != @intCast(u16, 0)) {
         type_mod.typeRegistrySetPacked(env.typereg, tid);
     }
-    if (kind == AstKind.struct_decl) {
+    if (kind == AstKind.struct_decl and (@intCast(u16, node.flags) & @intCast(u16, 0x20)) != 0) {
+        // FB (D4): inline tuple type (`fn f() struct { i32, i32 }`). Elements
+        // are resolved here exactly like the struct branch below (the module
+        // pass never visits inline types).
+        if (ast_mod.astStoreNodePayload(env.store, node_idx) != @intCast(u32, 0)) {
+            var tup_children_n = ast_mod.astStoreNodeExtraChildCount(env.store, node_idx);
+            var tup_ety: [MAX_CONTAINER_FIELDS]u32 = undefined;
+            var tup_enode: [MAX_CONTAINER_FIELDS]u32 = undefined;
+            var tup_ec: usize = 0;
+            var tup_i: usize = 0;
+            while (tup_i < @intCast(usize, tup_children_n) and tup_ec < MAX_CONTAINER_FIELDS) : (tup_i += 1) {
+                var tup_child = ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, tup_i));
+                var tup_fd = ast_mod.astStoreNodeAt(env.store, tup_child);
+                if (tup_fd.kind == AstKind.field_decl) {
+                    tup_ety[tup_ec] = resolveTypeExprFull(env, tup_fd.child_0, depth + @intCast(u32, 1));
+                    tup_enode[tup_ec] = tup_child;
+                    tup_ec += 1;
+                }
+            }
+            if (tup_ec > @intCast(usize, 0)) {
+                var tup_estart: u32 = @intCast(u32, env.typereg.xt_len);
+                var tup_j: usize = 0;
+                while (tup_j < tup_ec) : (tup_j += 1) {
+                    _ = tupleElemArrayUnsupported(env, tup_ety[tup_j], tup_enode[tup_j]);
+                    type_mod.xtAppend(env.typereg, tup_ety[tup_j]);
+                }
+                type_mod.tupAppend(env.typereg, type_mod.TuplePayload{
+                    .elems_start = @intCast(u32, tup_estart),
+                    .elems_count = @intCast(u16, tup_ec),
+                });
+                var tup_tidx: u32 = @intCast(u32, env.typereg.tup_len - @intCast(usize, 1));
+                var tup_ty = env.typereg.types_items[@intCast(usize, tid)];
+                tup_ty.payload_idx = tup_tidx;
+                env.typereg.types_items[@intCast(usize, tid)] = tup_ty;
+            }
+        }
+    } else if (kind == AstKind.struct_decl) {
         if (ast_mod.astStoreNodePayload(env.store, node_idx) != @intCast(u32, 0)) {
             var sd_children_n = ast_mod.astStoreNodeExtraChildCount(env.store, node_idx);
             var sd_fty: [MAX_CONTAINER_FIELDS]u32 = undefined;
@@ -2034,6 +2089,20 @@ pub fn resolveDeclAggregateFieldTypes(env: *TypeResolveEnv, mod_id: u32, decl_id
                         env.typereg.fe_items[@intCast(usize, sp.fields_start) + fi2].type_id = ft;
                         var fsw_nm: []const u8 = "FSW:n"; pal_mod.markerWriteInt(fsw_nm, @intCast(u32, @intCast(usize, sp.fields_start) + fi2));
                         var fsw_tm: []const u8 = "FSW:t"; pal_mod.markerWriteInt(fsw_tm, ft);
+                    }
+                }
+            }
+        } else if (sty.kind == type_mod.TypeKind.tuple_type) {
+            // FB (D4): fill the tuple's `xt_items` slots in declaration order.
+            var tp_t = env.typereg.tup_items[@intCast(usize, sty.payload_idx)];
+            while (fi2 < @intCast(usize, tp_t.elems_count)) : (fi2 += 1) {
+                var tfchild = ast_mod.astStoreNodeExtraChildAt(env.store, decl.child_1, @intCast(u32, fi2));
+                var tfd = ast_mod.astStoreNodeAt(env.store, tfchild);
+                if (tfd.kind == AstKind.field_decl and tfd.child_0 != 0) {
+                    var tft = resolveTypeExprFull(env, tfd.child_0, @intCast(u32, 0));
+                    if (tft != type_mod.TYPE_UNDEFINED) {
+                        _ = tupleElemArrayUnsupported(env, tft, tfchild);
+                        env.typereg.xt_items[@intCast(usize, tp_t.elems_start) + fi2] = tft;
                     }
                 }
             }

@@ -70,6 +70,13 @@
 # exercised outside run_all.sh; the historical seed-v88 observations stay in
 # the case NOTES.md.
 #
+# FB conversion (2026-09-26): D4 (tuple type `struct { T1, T2 }`, `.0`/`._0`
+# access and `t[0]` indexing) is FIXED. D04 uses the `runok` kind: main.zig must
+# compile, build, run rc 0 and print the expected.txt golden (`p=.{ 3, 4 }`).
+# The sibling red_return_type / red_dot0 / red_underscore / red_index entries
+# and the controls are exercised outside run_all.sh; the historical seed-v88
+# observations stay in the case NOTES.md.
+#
 # Usage: sh run_all.sh [seed-compiler-path]
 # Default seed: /tmp/manual_seed/zig1_5_clean
 # Rebuild:  bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/manual_seed
@@ -97,7 +104,8 @@ for dir in "$CASE_DIR"/D*/ "$CASE_DIR"/S*/; do
 
     case "$case_name" in
         D01_*) kind=crash ;;
-        D04_*|D11_*) kind=reject ;;
+        D04_*) kind=runok ;;
+        D11_*) kind=reject ;;
         D03_*|D10_*) kind=accept ;;
         D07_*|D09_*|D12_*|S01_*) kind=fixedreject ;;
         D05_*) kind=runok ;;

@@ -77,6 +77,22 @@ operator-authorized F tasks consume this set.
 > `expected_error.txt` `3000 1`). The legal const-adding directions are
 > unchanged. The per-case `OBSERVED` sections below remain the historical
 > seed-v88 evidence.
+>
+> **FB status (2026-09-26):** D4 is **FIXED** on the current compiler (fixed
+> point `d1ae438960d85b9f1df02ebcd2defe73`). The tuple type
+> `struct { T1, T2 }` parses and registers, `.0`/`._0`/`t[0]` all read, write
+> and address the positional C fields `_0`/`_1`, tuple literals coerce to
+> named tuple types (var decl/assignment/return/argument), and cross-module
+> tuple types/params/returns/globals work. The `.N` name-id silent alias is
+> closed (`.73` is `error[3060] named '73'`, never `len`); new level-0 codes
+> `error[3069]` (non-comptime `t[i]`) and `error[3070]` (out-of-range
+> `.N`/`._N`/`t[N]`) reject the invalid forms with Zig 0.15.2 wording. D04
+> `run_all.sh` uses kind `runok` (golden `expected.txt` `p=.{ 3, 4 }`); the
+> five RED entries (`main`, `red_return_type`, `red_dot0`, `red_underscore`,
+> `red_index`) compile/build/run rc 0, and the three controls print
+> byte-identically. `print(fmt, tupleVariable)` stays the interim
+> `error[3065]` until FD2. The per-case `OBSERVED` sections below remain the
+> historical seed-v88 evidence.
 
 - Plan: `.superpowers/sdd/2026-09-25-z98-manual-volume-II-plan/`
 - Report: `.superpowers/sdd/2026-09-25-z98-manual-volume-II-plan/task-D0-report.md`
@@ -123,7 +139,7 @@ expected behavior here -- `docs/reference/Language_Spec_Z98.md` does.
 | D1 | `D01_defer_segfault/` | A module with one plain-`defer` fn and one `for`/`while`-body-`defer` fn made the compiler SIGSEGV (rc 139); **FIXED by FG** (rc 0 with documented output) | ch11 (defer) -- unblocked | Boundary matters: the pre-fix crash needed both shapes in the SAME module; `xmod_main.zig` (both in helper) crashed, `split_*` controls passed |
 | D2 | `D02_enum_switch_ranges/` | Enum `switch` range prongs (`a...b`, `a..b`) emit no `case` labels; every value takes `else` (silent wrong code) | ch6 (enums), ch10 (switch) | Does not matter: `xmod_main.zig` (enum from `colors.zig`) also all-`else` |
 | D3 | `D03_missing_else/` | `switch` without `else` is accepted; an unmatched value reads an uninitialized result temp | ch10 (control flow) | Does not matter: `xmod_main.zig` (switch in `picker.zig`) also silent garbage |
-| D4 | `D04_tuple/` | Tuple type `struct { T1, T2 }` is a parse error; `.0`/`._0` are `error[3060]`; `t[0]` emits gcc-invalid C | ch8 (tuples) -- chapter-blocking | Tuple type/access unusable in-module and cross-module; named-struct grouped returns work both ways |
+| D4 | `D04_tuple/` | Tuple type `struct { T1, T2 }` is a parse error; `.0`/`._0` are `error[3060]`; `t[0]` emits gcc-invalid C; **FIXED by FB** (tuple model end-to-end; `run_all.sh` kind `runok`, `p=.{ 3, 4 }` rc 0) | ch8 (tuples) -- unblocked | Does not matter: the tuple type/access works in-module and cross-module now (`helper.Pair` param/return/global in `stdlib_tuple_model_ok_xmod`); spelling+`.N`-alias+OOB reject fixtures added; `print(fmt, tupleVariable)` stays interim 3065 until FD2 |
 | D5 | `D05_slice_to_manyptr/` | Implicit `[]T` -> `[*]T` coercion compiles rc 0 then gcc-rejects the C; **FIXED by FC** (`.ptr` extraction; `run_all.sh` kind `runok`, `mp[1]=20` rc 0) | ch3 (pointers), ch9 (arrays/slices) -- unblocked | Does not matter: `xmod_main.zig` (imported `[*]i32` param) now builds+runs `first-ish=20`; const slice -> `[*]const` and all controls byte-identical |
 | D6 | `D06_float_union/` | An f32 tagged-union payload init emits gcc-invalid C (`payload = double`); **FIXED by FF** (literal f64→f32 payload narrowing; the f64-sibling silent wrong-variant write is closed too; `run_all.sh`: `rc=0 ok`, `f=2`) | ch7 (unions) -- unblocked | Does not matter: `xmod_main.zig` (union from `shapes.zig`) now builds+runs (`f=2`); f64/int/bool/struct payloads unchanged; the typed-f64-variable payload stays an FX3 residual |
 | D7 | `D07_nontuple_print/` | `print(fmt, <non-tuple literal>)` is silently accepted and prints no value; **FIXED by FD1** (rc 2 / 0 `.c` / 1 × `error[3065]` at the argument, tuple control GREEN + byte-identical) | ch18 (print) -- unblocked | Does not matter: `xmod_main.zig` (call in `logger.zig`) rejects 3065 in the helper file too |
@@ -147,10 +163,10 @@ Each `D*/` and `S*/` directory carries:
   `red_*.zig` = additional failing shapes; `control_*.zig` = passing controls.
   Compile them like `main.zig` (the binary and `build_target.sh` target take
   the file's basename, e.g. `sh build_target.sh linux red_anon`).
-- `expected.txt` (D1, D2, D5, D8) = spec-correct stdout: for D1 (FG-converted
+- `expected.txt` (D1, D2, D4, D5, D8) = spec-correct stdout: for D1 (FG-converted
   `crash` kind) the runner additionally builds + runs `main.zig` and goldens
   stdout/rc before printing `ok`; for D2/D8 it is the `wrong` kind's reference;
-  for D5 (FC-converted `runok` kind) the runner compiles, builds, runs
+  for D4/D5 (FB/FC-converted `runok` kind) the runner compiles, builds, runs
   `main.zig` rc 0 and diffs stdout against this file.
 - `expected_error.txt` (D07, D09, D12, S01) = the `fixedreject` kind's expected
   diagnostic census (`<code> <count>`): the runner requires exactly that many

@@ -490,7 +490,25 @@ fn parserParseDotAccess(self: *Parser, base: u32) ParserError!u32 {
             tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
             base, 0, 0, 0);
     }
-    var name_id = tok.value.string_id;
+    // FB (D4): a numeric member (`.0`, `.73`) is a tuple ordinal, never a
+    // name id. The old code read `value.string_id` from ANY token kind, so an
+    // `integer_literal` (whose union carries `.int_val`) poured N into the
+    // name-id space and silently aliased whatever name had id N (`.73` read an
+    // interned `len`). Canonicalize the decimal text instead; every downstream
+    // consumer decodes `^[0-9]+$`/`^_[0-9]+$` textually on a tuple base only.
+    var name_id: u32 = @intCast(u32, 0);
+    if (tok.kind == TokenKind.identifier) {
+        name_id = tok.value.string_id;
+    } else if (tok.kind == TokenKind.integer_literal) {
+        var num_buf: [24]u8 = undefined;
+        var num_len = itoa_mod.itoa64(tok.value.int_val, num_buf[0..]);
+        var num_start: usize = num_buf.len - @intCast(usize, num_len) - @intCast(usize, 1);
+        name_id = string_interner_mod.stringInternerIntern(self.interner, num_buf[num_start .. num_buf.len - @intCast(usize, 1)]);
+    } else {
+        var dot_msg: []const u8 = "expected field name or index after '.'";
+        parserAddError(self, tok, dot_msg);
+        return error.UnexpectedToken;
+    }
     _ = parserAdvance(self);
     return ast_mod.astStoreAddNode(self.store, AstKind.field_access, 0,
         tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
@@ -1297,16 +1315,52 @@ fn parserParseStructType(self: *Parser, is_packed: u8) ParserError!u32 {
     var fields_buf: [*]u32 = undefined;
     var fields_count: usize = 0;
     var fields_cap: usize = @intCast(usize, 0);
+    var saw_named: u8 = @intCast(u8, 0);
+    var saw_positional: u8 = @intCast(u8, 0);
     while (parserPeek(self).kind != TokenKind.rbrace) {
-        var name_tok = try parserExpect(self, TokenKind.identifier);
-        _ = try parserExpect(self, TokenKind.colon);
-        var npt = ParseToken{ .kind = name_tok.kind, .span_start = name_tok.span_start, .span_len = name_tok.span_len };
-        var name_id = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, npt));
-        var field_type = try parserParseType(self);
-        var field_node = ast_mod.astStoreAddNode(self.store, AstKind.field_decl, 0,
-            name_tok.span_start, name_tok.span_start + @intCast(u32, name_tok.span_len),
-            field_type, 0, 0, name_id);
-        parserPushU32(self, &fields_buf, &fields_count, &fields_cap, field_node);
+        var field_tok = parserPeek(self);
+        // FB (D4): `struct { T1, T2 }` is a tuple type (positional elements);
+        // `struct { name: T }` is the existing named-struct form. A field is
+        // named iff an identifier is immediately followed by `:`. All elements
+        // must be the same kind (the resolver/emitter have no mixed model).
+        var is_named_field: u8 = @intCast(u8, 0);
+        if (field_tok.kind == TokenKind.identifier and parserPeekN(self, 1).kind == TokenKind.colon) {
+            is_named_field = @intCast(u8, 1);
+        }
+        if (is_named_field != @intCast(u8, 0)) {
+            if (saw_positional != @intCast(u8, 0)) {
+                var mix_msg: []const u8 = "struct fields must be all named or all positional (tuple)";
+                parserAddError(self, field_tok, mix_msg);
+                return error.UnexpectedToken;
+            }
+            saw_named = @intCast(u8, 1);
+            var name_tok = try parserExpect(self, TokenKind.identifier);
+            _ = try parserExpect(self, TokenKind.colon);
+            var npt = ParseToken{ .kind = name_tok.kind, .span_start = name_tok.span_start, .span_len = name_tok.span_len };
+            var name_id = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, npt));
+            var field_type = try parserParseType(self);
+            var field_node = ast_mod.astStoreAddNode(self.store, AstKind.field_decl, 0,
+                name_tok.span_start, name_tok.span_start + @intCast(u32, name_tok.span_len),
+                field_type, 0, 0, name_id);
+            parserPushU32(self, &fields_buf, &fields_count, &fields_cap, field_node);
+        } else {
+            if (saw_named != @intCast(u8, 0)) {
+                var mix_msg2: []const u8 = "struct fields must be all named or all positional (tuple)";
+                parserAddError(self, field_tok, mix_msg2);
+                return error.UnexpectedToken;
+            }
+            if (is_packed != @intCast(u8, 0)) {
+                var pack_msg: []const u8 = "packed structs cannot have positional tuple fields";
+                parserAddError(self, field_tok, pack_msg);
+                return error.UnexpectedToken;
+            }
+            saw_positional = @intCast(u8, 1);
+            var field_type2 = try parserParseType(self);
+            var field_node2 = ast_mod.astStoreAddNode(self.store, AstKind.field_decl, 0,
+                field_tok.span_start, field_tok.span_start + @intCast(u32, field_tok.span_len),
+                field_type2, 0, 0, 0);
+            parserPushU32(self, &fields_buf, &fields_count, &fields_cap, field_node2);
+        }
         if (parserPeek(self).kind == TokenKind.comma) {
             _ = parserAdvance(self);
         }
@@ -1318,6 +1372,7 @@ fn parserParseStructType(self: *Parser, is_packed: u8) ParserError!u32 {
     }
     var flags: u8 = 0;
     if (is_packed != @intCast(u8, 0)) flags = flags | @intCast(u8, 0x10);
+    if (saw_positional != @intCast(u8, 0)) flags = flags | @intCast(u8, 0x20);
     return ast_mod.astStoreAddNode(self.store, AstKind.struct_decl, flags,
         tok.span_start, tok.span_start + @intCast(u32, tok.span_len),
         0, 0, 0, payload);

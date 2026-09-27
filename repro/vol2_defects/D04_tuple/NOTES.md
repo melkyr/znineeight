@@ -85,3 +85,41 @@ and element access are unusable in-module and cross-module. A cross-module
 tuple return/param shape cannot even be written (no tuple type name), so the
 closest representable shapes are the module-scope tuple const and the
 named-struct grouped return above.
+
+## FB conversion (2026-09-26) — FIXED
+
+**Fix:** the tuple model landed end-to-end. Parser: positional
+`struct { T1, T2 }` (flag `0x20`; mixed/packed reject `error[2000]`) and `.N`
+canonicalized to the decimal text (never the name-id space — `.73` no longer
+aliases `len`). Registry/coercion: `typeRegistryTupleElem` /
+`typeRegistryTupleOrdinalFromNameId`, tuple→tuple assignability and
+`CoercionKind.tuple_to_tuple` + `applyTupleToTuple`. Registration:
+`TypeKind.tuple_type` shell + xt element fill. Sema: `.N`/`._0` textual decode
+(OOB `error[3070]`), `t[i]` comptime fold + `tuple_index_table`
+(`error[3069]`/`[3070]`). Lower/emit: `lowerTupleElemRead` + the shared
+`load_field`/`store_field`/`addr_of_field` arms (`._N` / `->_N`).
+`run_all.sh` uses the `runok` kind for D04 (golden `expected.txt`
+`p=.{ 3, 4 }`).
+
+**POST (FB `d1ae438960d85b9f1df02ebcd2defe73`):**
+
+| Entry | PRE (seed `a3928c11…`) | POST (FB) |
+|---|---|---|
+| `main.zig` (tuple type + `{}` print) | rc 2, `error[2000]` | **compile/build/run rc 0, `p=.{ 3, 4 }`** |
+| `red_return_type.zig` (tuple return type) | rc 2, `error[2000]` | **rc 0, `d=.{ 3, 2 }`** |
+| `red_dot0.zig` (`anon.0`) | rc 2, `error[3060] named ''` | **rc 0, `elem0=10`** |
+| `red_underscore.zig` (`anon._0`) | rc 2, `error[3060] named '_0'` | **rc 0, `elem0=10`** |
+| `red_index.zig` (`t[0]`/`t[1]`) | rc 0 then gcc `subscripted value is neither array nor pointer nor vector` | **rc 0, `t[0]=10 t[1]=20` / `tuple=.{ 10, 20 }`** |
+| `control_literal_print.zig` | `anon=.{ 10, 20 }` / `nested=.{ 1, .{ 2, 3 } }` | byte-identical output + program `.c` byte-identical |
+| `control_grouped_return.zig` | `q=3 r=2` | byte-identical output + program `.c` byte-identical |
+| `xmod_main.zig` + `helper.zig` | `pair=.{ 10, 20 }` / `q=3 r=2` | byte-identical output + program `.c` byte-identical |
+
+The `.N` silent-alias hazard is closed: `.73` on a struct with a `len` field
+rejects `error[3060] named '73'` (it previously compiled rc 0 and emitted
+`sl.len`). `t[0]` on a tuple now lowers to the positional C field `_0`, so the
+accept-then-gcc class is gone. Fixtures:
+`repro/mi_matrix/stdlib_tuple_model_ok_xmod` (cross-module positive; golden 3×,
+Zig-0.15.2 `[0]`-spelling twin byte-identical) and
+`repro/mi_matrix/tuple_model_reject_xmod` (OOB/non-comptime/alias/mismatch/
+array-element/parse rejects); standalone `repro/tuple_model.z98`.
+

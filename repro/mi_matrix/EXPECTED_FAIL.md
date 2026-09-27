@@ -1,4 +1,71 @@
-# mi_matrix corpus — expected-fail manifest (v256 2026-09-27)
+# mi_matrix corpus — expected-fail manifest (v257 2026-09-27)
+
+## FB — tuple type/access model (D4) (v256 -> v257, 2026-09-27)
+
+Volume II defect-fix phase, Stage 2b eighth task (task-FB). The Language Spec §1.3 tuple
+type `struct { T1, T2 }` was a parse error (`error[2000]`), `.0`/`._0` were `error[3060]`,
+and `t[0]` compiled rc 0 then emitted gcc-invalid `base[idx]` C.
+
+**Fix.** (1) Parser (`sf/src/parser.zig`): `parserParseStructType` accepts positional
+elements and flags the `struct_decl` with bit `0x20`; mixed named/positional and
+`packed struct { T, ... }` reject `error[2000]`. `parserParseDotAccess` canonicalizes a
+numeric member (`.0`, `.73`) to the interned decimal TEXT of its value — never the
+`int_val`/name-id space, closing the silent `.73`→`len` alias — and rejects any other token
+after `.` with `error[2000]`. (2) Registry/coercion: new
+`typeRegistryTupleElem`/`typeRegistryTupleOrdinalFromNameId`, a tuple→tuple assignability arm
+(element-wise; arrays excluded) and `CoercionKind.tuple_to_tuple` + `applyTupleToTuple`
+(fresh target-typed temp, field-wise copy) for named↔literal and shape-identical named
+tuples. (3) Registration (`symbol_registrator.zig`, `type_resolver.zig`): a flagged
+`struct_decl` registers `TypeKind.tuple_type` (shell + xt element fill); a spelled tuple
+type with an array element clean-rejects `error[3000]` (`tupleElemArrayUnsupported`).
+(4) Sema (`semantic_analyzer.zig`): `.N`/`._0` on a tuple base decode textually
+(out-of-range `error[3070]`; non-tuple keeps `error[3060]`); `t[i]` folds the index
+(`semanticAnalyzerComptimeIntValue`), rejects non-comptime `error[3069]` and out-of-range
+`error[3070]`, and records node→ordinal in the new `tuple_index_table` (plumbed sema→lower
+exactly like `enum_value_table`); `isBShapeMismatch` covers tuple/tuple (level 0).
+(5) Lower/emitter: `lowerTupleElemRead` + the `.N`/`._0`/`t[0]` read/store/`&` arms share the
+existing `load_field`/`store_field`/`addr_of_field` mechanisms; the emitter renders `._N`
+for a tuple value and `->_N` for a pointer-to-tuple; `lowerArrayElemTupleCoerce` copies
+tuple-typed array-literal elements; `emitNeededTupleAt` emits a needed tuple typedef at its
+topological position (a struct embedding a tuple by value previously emitted before the
+tuple typedef → gcc `unknown type name`), sharing its dedupe map with the trailing
+`emitNeededTupleTypes` fallback.
+
+**Fixtures.**
+- positive `repro/mi_matrix/stdlib_tuple_model_ok_xmod` (stdlib pin **252 -> 253**): golden
+  `tp=12/20 us0=11 e1=20 ci=20 q=11/20 sw=20/11 m=7/8 lit=9 g=44/5 ep=12 nn=2`, rc 0,
+  3x byte-exact, byte-identical to the Zig-0.15.2 `[0]`-spelling twin (`.0`/`._0` are
+  operator-ruled Z98 divergences). Shapes: `.0`/`._0`/`[N]` read+write, local-const index,
+  `&p.0`+deref write, literal→named and named→named coercion, cross-module named tuple
+  type/param/return, inline tuple return, cross-module module-global tuple read+write,
+  nested tuple read.
+- reject `repro/mi_matrix/tuple_model_reject_xmod`: `main.zig` rc 2 / 0 `.c` with
+  3 x `error[3070]` (OOB `.9`, `[5]`, cross-module helper) + 1 x `error[3069]`
+  (runtime `p[i]`) + 1 x `error[3060]` (`.73` on a struct — no silent alias) + 6 x
+  `error[3000]` (void-decl cascades + arity and element mismatches); `array_reject.zig`
+  1 x `error[3000]` (tuple with an array element); `parse_reject.zig` 4 x `error[2000]`
+  (mixed named/positional, packed positional).
+- standalone `repro/tuple_model.z98` → `tp=11/20 u0=11 ix=20 sw=20/11 g=44/5`, rc 0.
+
+**Repro conversion:** `repro/vol2_defects/D04_tuple/{main,red_return_type,red_dot0,
+red_underscore,red_index}.zig` RED→GREEN (`run_all.sh` new `runok` kind, `expected.txt`
+`p=.{ 3, 4 }`; controls `control_literal_print`, `control_grouped_return`, `xmod` output
+byte-identical). Fail-closed boundary kept: `print(fmt, tupleVariable)` stays the interim
+`error[3065]` until FD2 (the `print` container path is unchanged; a tuple literal holding an
+array element still rejects via the Task-4 `error[3063]`).
+
+**Movement:** 4-MD5 emitted-C **UNCHANGED 8/8** (gol `9e0b708e…` / lisp `ec14d644…` /
+json `5034a0c8…` / mud `2e92c1f2…`, 2x each). Corpus `-s0` **1050 = 898 OK / 48 GREEN /
+104 FAIL / 0 ICE / 0 CRASH**; full-classifier join-diff vs the FC state over the 1048 common
+dirs **EMPTY (zero movers)**; the two added dirs are the positive fixture (OK) and the reject
+fixture (GREEN green-guard). stdlib runtime **253 PASS / 0 FAIL**; example matrix **24/24**;
+`check_emit_support.sh` **7/7**; `verify_upgraded.sh` **CLOSEOUT OK**; build_test **0/9**
+(pre-existing retired-zig0 baseline); self-emission rc 0 / 48 `.c` + 48 `.h` / 0 PANIC.
+Fixed point MOVED `effa5a6aae9f11266597196561186f1b` -> `d1ae438960d85b9f1df02ebcd2defe73`
+(hop1 == hop2; seed v88 NOT rotated). Docs: Language Spec §1.3/§4, tech docs
+00/05/07/08 + INDEX, QUICK_REF, repro README/D04 NOTES/run_all.sh.
+
+
 
 ## FC — slice→many-pointer `.ptr` extraction (D5) + const-discard rejection (D12) (v255 -> v256, 2026-09-27)
 

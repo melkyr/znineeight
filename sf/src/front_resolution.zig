@@ -33,6 +33,7 @@ pub const FrontResCtx = struct {
     scratch: *Sand,
     coercion_table: *CoercionTable,
     enum_value_table: *hash_mod.U32ToU32Map,
+    tuple_index_table: *hash_mod.U32ToU32Map,
     error_code_registry: *hash_mod.U32ToU32Map,
     call_arg_types: *hash_mod.U32ToU32Map,
     call_param_map: *hash_mod.U32ToU32Map,
@@ -76,7 +77,7 @@ pub fn frontResolveModuleInits(ct: *FrontResCtx) void {
             var root = ast_mod.astStoreNodeAt(ct.store, ast_root);
             var decls_n = ast_mod.astStoreNodeExtraChildCount(ct.store, ast_root);
             var src_fid = mods[mi].source_file_id;
-            var sa = sa_mod.semanticAnalyzerInit(ct.scratch, ct.resolved_types, ct.diag, ct.typereg, ct.symbol_reg, ct.store, mods[mi].id, src_fid, ct.coercion_table, ct.enum_value_table, ct.error_code_registry, ct.interner, ct.call_arg_types, ct.call_param_map, ct.module_reg, ct.suspending_fns);
+            var sa = sa_mod.semanticAnalyzerInit(ct.scratch, ct.resolved_types, ct.diag, ct.typereg, ct.symbol_reg, ct.store, mods[mi].id, src_fid, ct.coercion_table, ct.enum_value_table, ct.tuple_index_table, ct.error_code_registry, ct.interner, ct.call_arg_types, ct.call_param_map, ct.module_reg, ct.suspending_fns);
             var di: usize = 0;
             while (di < @intCast(usize, decls_n)) : (di += 1) {
                 var decl_idx = ast_mod.astStoreNodeExtraChildAt(ct.store, ast_root, @intCast(u32, di));

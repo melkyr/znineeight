@@ -16,6 +16,7 @@ pub const CoercionKind = enum(u8) {
     float_widen,
     int_literal_coerce,
     wrap_optional_null,
+    tuple_to_tuple,
 };
 
 const Sand = @import("allocator.zig").Sand;
@@ -192,6 +193,12 @@ pub fn classifyCoercion(reg: *type_mod.TypeRegistry, source: TypeId, target: Typ
         }
     }
     if ((source == type_mod.TYPE_U8 and target == type_mod.TYPE_C_CHAR) or (source == type_mod.TYPE_C_CHAR and target == type_mod.TYPE_U8)) return CoercionKind.none;
+    // FB (D4): a differently-spelled tuple type (named tuple <-> tuple literal,
+    // or two shape-identical named tuples) is assignable element-wise but is a
+    // distinct C struct type; the field-wise copy is `tuple_to_tuple`.
+    if (src.kind == type_mod.TypeKind.tuple_type and tgt.kind == type_mod.TypeKind.tuple_type) {
+        if (type_mod.typeRegistryIsAssignable(reg, source, target)) return CoercionKind.tuple_to_tuple;
+    }
     if (src.kind == type_mod.TypeKind.ptr_type and tgt.kind == type_mod.TypeKind.slice_type) {
         var qok = type_mod.pointerQualifiersMonotone(src.flags, tgt.flags, type_mod.VOLATILE_FLAG);
         var sp2 = reg.ptr_items[@intCast(usize, src.payload_idx)];

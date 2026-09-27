@@ -589,6 +589,45 @@ pub fn typeRegistryGetOrCreateTuple(self: *TypeRegistry, elems_start: u32, elems
     return tid;
 }
 
+// FB (D4): tuple element lookup by ordinal. A tuple field has no source name;
+// every access spelling (`.N`, `._N`, `t[N]`) resolves to the positional
+// ordinal `_N` (the C field emitted by `emitTupleType`).
+pub fn typeRegistryTupleElem(self: *TypeRegistry, tid: u32, ordinal: u32) ?TypeId {
+    if (@intCast(usize, tid) >= self.types_len) return null;
+    var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.kind != TypeKind.tuple_type) return null;
+    if (ty.payload_idx >= @intCast(u32, self.tup_len)) return null;
+    var tup: TuplePayload = self.tup_items[@intCast(usize, ty.payload_idx)];
+    if (ordinal >= @intCast(u32, tup.elems_count)) return null;
+    return self.xt_items[@intCast(usize, tup.elems_start + ordinal)];
+}
+
+// FB (D4): decode a `.N`/`._N` field name into the tuple ordinal, textually.
+// The parser canonicalizes `.N` by interning the decimal text of N (never the
+// `int_val`/name-id space), so `^[0-9]+$` and `^_[0-9]+$` are the only forms
+// accepted on a tuple base. A non-decimal name returns null (the member then
+// rejects via the normal unknown-member path).
+pub fn typeRegistryTupleOrdinalFromNameId(self: *TypeRegistry, name_id: u32) ?u32 {
+    var text = interner_mod.stringInternerGet(self.interner, name_id);
+    var nlen: usize = text.len;
+    if (nlen == @intCast(usize, 0)) return null;
+    var start: usize = @intCast(usize, 0);
+    if (text[0] == @intCast(u8, '_')) {
+        start = @intCast(usize, 1);
+        if (nlen == @intCast(usize, 1)) return null;
+    }
+    var v: u32 = @intCast(u32, 0);
+    var i: usize = start;
+    while (i < nlen) : (i += 1) {
+        var c: u8 = text[i];
+        if (c < @intCast(u8, '0') or c > @intCast(u8, '9')) return null;
+        if (v > @intCast(u32, 99999999)) return @intCast(u32, 1000000000);
+        var d: u32 = @intCast(u32, c - @intCast(u8, '0'));
+        v = v * @intCast(u32, 10) + d;
+    }
+    return v;
+}
+
  pub fn typeRegistryGetOrCreateFn(self: *TypeRegistry, name_id: u32, module_id: u32, is_extern: u8, is_variadic: u8, params_start: u32, params_count: u16, return_type: TypeId, call_conv: u8) u32 {
      var p2m: []const u8 = "P2:n"; pal_mod.markerWrite(p2m);
      var p2nb: [20]u8 = undefined; var p2nl = itoa_mod.itoa(name_id, p2nb[0..]); var p2ns: usize = @intCast(usize, 19) - @intCast(usize, p2nl); pal_mod.markerWrite(p2nb[p2ns..@intCast(usize, 19)]);
@@ -1298,6 +1337,26 @@ pub fn typeRegistryIsAssignable(self: *TypeRegistry, source: TypeId, target: Typ
         if (opt_ty.kind == TypeKind.ptr_type) return typeRegistryIsAssignable(self, source, opt.payload);
     }
     if ((source == TYPE_U8 and target == TYPE_C_CHAR) or (source == TYPE_C_CHAR and target == TYPE_U8)) return true;
+    if (src.kind == TypeKind.tuple_type and tgt.kind == TypeKind.tuple_type) {
+        var s_tup: TuplePayload = self.tup_items[@intCast(usize, src.payload_idx)];
+        var t_tup: TuplePayload = self.tup_items[@intCast(usize, tgt.payload_idx)];
+        if (s_tup.elems_count == t_tup.elems_count) {
+            var ok: bool = true;
+            var k: u16 = 0;
+            while (k < s_tup.elems_count) : (k += 1) {
+                var se = self.xt_items[@intCast(usize, s_tup.elems_start + @as(u32, k))];
+                var te = self.xt_items[@intCast(usize, t_tup.elems_start + @as(u32, k))];
+                // FB (D4): an array element has no field-wise C copy (the
+                // operator-ruled clean reject: a distinct spelled tuple type
+                // with array elements is not assignable). Source == target
+                // stays assignable (C struct assignment copies array members).
+                if (@intCast(usize, se) < self.types_len and self.types_items[@intCast(usize, se)].kind == TypeKind.array_type) { ok = false; break; }
+                if (@intCast(usize, te) < self.types_len and self.types_items[@intCast(usize, te)].kind == TypeKind.array_type) { ok = false; break; }
+                if (!typeRegistryIsAssignable(self, se, te)) { ok = false; break; }
+            }
+            if (ok) return true;
+        }
+    }
     if (src.kind == TypeKind.tuple_type and tgt.kind == TypeKind.array_type) {
         var tup: TuplePayload = self.tup_items[@intCast(usize, src.payload_idx)];
         var arr: ArrayPayload = self.array_items[@intCast(usize, tgt.payload_idx)];

@@ -178,6 +178,17 @@ pub const ErrorCode = enum(u16) {
     // arm on an exhaustive switch is a tolerated Z98 divergence from Zig
     // (Zig 0.15.2 rejects "unreachable else prong"; Z98 accepts it).
     ERR_3068_SWITCH_WITHOUT_ELSE = 3068,
+    // FB (Volume II D4): a `t[i]` tuple index that is not comptime-known. The
+    // index is folded in sema (`semanticAnalyzerComptimeIntValue`, which covers
+    // local consts); a runtime value rejects with Zig 0.15.2's note wording
+    // ("tuple field index must be comptime-known"). Level 0, span on the index
+    // expression; rejects with 0 `.c`.
+    ERR_3069_TUPLE_INDEX_NOT_COMPTIME = 3069,
+    // FB (Volume II D4): a tuple index outside `0..arity` — `t[N]` with a
+    // comptime-known N past the end, and `.N`/`._N` likewise. Zig 0.15.2
+    // wording "index N outside tuple of length L". Level 0, span on the index
+    // expression; rejects with 0 `.c`.
+    ERR_3070_TUPLE_INDEX_OUT_OF_RANGE = 3070,
     // FF (Volume II D9): `@offsetOf`/`@bitOffsetOf` target is not a struct.
     // Zig 0.15.2 parity: every union kind (bare/packed/tagged), scalar,
     // pointer, enum, array, slice reject ("expected struct type, found 'X'").

@@ -96,6 +96,7 @@ pub const SemanticContext = struct {
     diag: *DiagnosticCollector,
     has_symbols: u8,
     enum_value_table: *hash_mod.U32ToU32Map,
+    tuple_index_table: *hash_mod.U32ToU32Map,
     error_code_registry: *hash_mod.U32ToU32Map,
     call_arg_types: *hash_mod.U32ToU32Map,
     comptime_folds: *ce_mod.ComptimeFoldTable,
@@ -2042,11 +2043,70 @@ fn tempTypeIsPtrToArray(self: *LirLowerer, temp: u32) u8 {
     return @intCast(u8, 0);
 }
 
+// FB (D4): read tuple element `ord` of `base_temp` (whose type is `base_tid`)
+// into a fresh temp through the shared `load_field` mechanism. The emitter's
+// `load_field` tuple arm renders `base._<ord>` (`emitTupleType`'s C model).
+// Returns TEMP_NONE when the element is void or the ordinal is out of range;
+// FD2 consumes this helper for tuple-variable print arguments.
+fn lowerTupleElemRead(self: *LirLowerer, base_temp: u32, base_tid: u32, ord: u32) u32 {
+    var elem_tid = type_mod.typeRegistryTupleElem(self.ctx.registry, base_tid, ord) orelse return TEMP_NONE;
+    if (elem_tid == type_mod.TYPE_VOID) return TEMP_NONE;
+    // An array element decays to a pointer to its first element, exactly like
+    // a struct's array field (`semanticAnalyzerResolveFieldAccess`'s array
+    // route). The C `base._N` array expression then decays to the pointer.
+    var res_tid = elem_tid;
+    if (@intCast(usize, elem_tid) < self.ctx.registry.types_len) {
+        var elem_ty = self.ctx.registry.types_items[@intCast(usize, elem_tid)];
+        if (elem_ty.kind == type_mod.TypeKind.array_type) {
+            var elem_i = self.ctx.registry.array_items[@intCast(usize, elem_ty.payload_idx)].elem;
+            res_tid = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, elem_i, false);
+        }
+    }
+    var result = nextTemp(self, res_tid);
+    var nid = nameMapGet(self, base_temp);
+    emitInst(self, LirInst{ .load_field = .{ .name_id = nid, .base = base_temp, .field_id = ord, .result = result } });
+    return result;
+}
+
+// FB (D4): an array literal element of tuple type whose lowered temp is a
+// differently-spelled tuple is copied field-wise into the array's element type
+// (`.{ .{1,2}, .{3,4} }` into `[2]Pair`). Only tuple_to_tuple classifications
+// are applied here, so every existing element route (int literals, struct
+// literals, nested arrays) is byte-identical.
+fn lowerArrayElemTupleCoerce(self: *LirLowerer, elem_tid: u32, val_temp: u32, node_idx: u32) u32 {
+    var vt = getTempType(self, val_temp);
+    if (vt == elem_tid or vt == type_mod.TYPE_UNDEFINED or vt == type_mod.TYPE_VOID) return val_temp;
+    if (@intCast(usize, elem_tid) >= self.ctx.registry.types_len or @intCast(usize, vt) >= self.ctx.registry.types_len) return val_temp;
+    if (self.ctx.registry.types_items[@intCast(usize, elem_tid)].kind != type_mod.TypeKind.tuple_type) return val_temp;
+    if (self.ctx.registry.types_items[@intCast(usize, vt)].kind != type_mod.TypeKind.tuple_type) return val_temp;
+    var ck = coercion_mod.classifyCoercion(self.ctx.registry, vt, elem_tid);
+    if (ck != CoercionKind.tuple_to_tuple) return val_temp;
+    return applyCoercion(self, val_temp, coercion_mod.CoercionEntry{ .node_idx = node_idx, .kind = ck, .target_type = elem_tid });
+}
+
 fn lowerLValueAddr(self: *LirLowerer, lv_node_idx: u32, result_type: u32) u32 {
     var store = self.ctx.store;
     var lv_node = ast_mod.astStoreNodeAt(store, lv_node_idx);
     if (lv_node.kind == AstKind.index_access) {
-        var base_temp = lowerExpr(self, lv_node.child_0);
+        // FB (D4): a tuple `t[ord]` l-value is the field address `&t._<ord>`
+        // (one mechanism with `.0`/`._0`). The ordinal is the one sema folded
+        // and recorded; an uninstrumented node (no table entry) keeps the
+        // generic index path below.
+        var lv_ix_base = lowerExpr(self, lv_node.child_0);
+        var lv_ix_bt = getTempType(self, lv_ix_base);
+        if (lv_ix_bt != type_mod.TYPE_UNDEFINED and lv_ix_bt != type_mod.TYPE_VOID and @intCast(usize, lv_ix_bt) < self.ctx.registry.types_len) {
+            if (self.ctx.registry.types_items[@intCast(usize, lv_ix_bt)].kind == type_mod.TypeKind.tuple_type) {
+                var lv_ix_ord = hash_mod.u32ToU32MapGet(self.ctx.tuple_index_table, lv_node_idx);
+                if (lv_ix_ord) |lv_io| {
+                    var lv_ix_ptr_ty = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, lv_ix_bt, false);
+                    var lv_ix_addr = lowerLValueAddr(self, lv_node.child_0, lv_ix_ptr_ty);
+                    var lv_ix_tid = nextTemp(self, result_type);
+                    emitInst(self, LirInst{ .addr_of_field = .{ .base = lv_ix_addr, .field_id = lv_io, .result = lv_ix_tid } });
+                    return lv_ix_tid;
+                }
+            }
+        }
+        var base_temp = lv_ix_base;
         base_temp = maybeExtractSlicePtr(self, lv_node.child_0, base_temp);
         var idx_temp = lowerExpr(self, lv_node.child_1);
         // Task 2f-F: `&g[i][j]` where the base expression `g[i]` is a fixed
@@ -2163,6 +2223,10 @@ fn lowerLValueAddr(self: *LirLowerer, lv_node_idx: u32, result_type: u32) u32 {
             while (fi < fields.len) : (fi += 1) {
                 if (fields[fi].name_id == field_name_id) { field_id = @intCast(u32, fi); found_f = @intCast(u8, 1); break; }
             }
+        } else if (pkind == type_mod.TypeKind.tuple_type) {
+            // FB (D4): `&t.N`/`&t._N` -> positional field address.
+            var lvt_ord = type_mod.typeRegistryTupleOrdinalFromNameId(self.ctx.registry, field_name_id);
+            if (lvt_ord) |lvto| { field_id = lvto; found_f = @intCast(u8, 1); }
         }
         if (found_f == @intCast(u8, 0)) {
             iceAddrOfLValueUnsupported(self, lv_node_idx);
@@ -2209,6 +2273,28 @@ fn lowerAssignLValue(self: *LirLowerer, lv_node_idx: u32, value_temp: u32, diag_
         }
     } else if (lv_node.kind == AstKind.index_access) {
         var base_temp = lowerExpr(self, lv_node.child_0);
+        // FB (D4): `t[ord] = value` is the field store `t._<ord> = value`
+        // (same mechanism as `.0`/`._0`). A base that is itself an l-value
+        // chain (field/index/deref/paren) must be taken by ADDRESS, exactly
+        // like `lowerFieldStore`'s nested-base arm — `lowerExpr` on a field
+        // access yields a copy, and the store would be lost.
+        var ait_bt = getTempType(self, base_temp);
+        if (ait_bt != type_mod.TYPE_UNDEFINED and ait_bt != type_mod.TYPE_VOID and @intCast(usize, ait_bt) < self.ctx.registry.types_len) {
+            if (self.ctx.registry.types_items[@intCast(usize, ait_bt)].kind == type_mod.TypeKind.tuple_type) {
+                if (hash_mod.u32ToU32MapGet(self.ctx.tuple_index_table, lv_node_idx)) |ait_ord| {
+                    var ait_base = base_temp;
+                    var ait_nid = nameMapGet(self, base_temp);
+                    var ait_bn = ast_mod.astStoreNodeAt(store, lv_node.child_0);
+                    if (ait_bn.kind == AstKind.field_access or ait_bn.kind == AstKind.index_access or ait_bn.kind == AstKind.deref or ait_bn.kind == AstKind.paren_expr) {
+                        var ait_ptr_ty = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, ait_bt, false);
+                        ait_base = lowerLValueAddr(self, lv_node.child_0, ait_ptr_ty);
+                        ait_nid = @intCast(u32, 0);
+                    }
+                    emitInst(self, LirInst{ .store_field = .{ .name_id = ait_nid, .base = ait_base, .field_id = ait_ord, .value = value_temp } });
+                    return;
+                }
+            }
+        }
         var ai_orig_base = base_temp;
         base_temp = maybeExtractSlicePtr(self, lv_node.child_0, base_temp);
         var idx_temp = lowerExpr(self, lv_node.child_1);
@@ -2551,6 +2637,16 @@ fn lowerFieldStore(self: *LirLowerer, fa_node_idx: u32, value_temp: u32, diag_no
                 }
             } else {
                 emitInst(self, LirInst{ .store_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = field_id, .value = value_temp } });
+            }
+        } else if (kind == type_mod.TypeKind.tuple_type) {
+            // FB (D4): `t.N = value` / `t._N = value` stores the positional
+            // C field `_N` (the parser canonicalized `.N`; the ordinal is
+            // decoded textually, never from the name-id space).
+            var fs_ord = type_mod.typeRegistryTupleOrdinalFromNameId(self.ctx.registry, field_name_id);
+            if (fs_ord) |fso| {
+                emitInst(self, LirInst{ .store_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = fso, .value = value_temp } });
+            } else {
+                iceFieldStoreUnsupported(self, diag_node_idx);
             }
         } else if (kind == type_mod.TypeKind.slice_type) {
             var len_s: []const u8 = "len";
@@ -3958,6 +4054,16 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         return lowerLValueAddr(self, node.child_0, ao_box[0]);
     } else if (node.kind == AstKind.index_access) {
         var base_temp = lowerExpr(self, node.child_0);
+        // FB (D4): a tuple base reads its sema-folded ordinal through the same
+        // field mechanism as `.0`/`._0`; no runtime index is evaluated.
+        var ixt_bt = getTempType(self, base_temp);
+        if (ixt_bt != type_mod.TYPE_UNDEFINED and ixt_bt != type_mod.TYPE_VOID and @intCast(usize, ixt_bt) < self.ctx.registry.types_len) {
+            if (self.ctx.registry.types_items[@intCast(usize, ixt_bt)].kind == type_mod.TypeKind.tuple_type) {
+                if (hash_mod.u32ToU32MapGet(self.ctx.tuple_index_table, node_idx)) |ixt_ord| {
+                    return lowerTupleElemRead(self, base_temp, ixt_bt, ixt_ord);
+                }
+            }
+        }
         var idxk: [1]u32 = [1]u32{@intCast(u32, 0)};
         var idxb = self.hoisted_temps.items[@intCast(usize, base_temp)].type_id;
         if (idxb != type_mod.TYPE_UNDEFINED) { var idxbt = self.ctx.registry.types_items[@intCast(usize, idxb)]; idxk[0] = @intCast(u32, @enumToInt(idxbt.kind)); }
@@ -4505,6 +4611,14 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     var fam_m: []const u8 = "FAM:ALEN\n"; pal.markerWrite(fam_m);
                     tid = nextTemp(self, type_mod.TYPE_USIZE);
                     emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, ap.length), .result = tid } });
+                }
+                return tid;
+            } else if (kind == type_mod.TypeKind.tuple_type) {
+                // FB (D4): `.N`/`._0` read; the ordinal is decoded from the
+                // canonicalized name text on a tuple base only.
+                var fa_tord = type_mod.typeRegistryTupleOrdinalFromNameId(self.ctx.registry, field_name_id);
+                if (fa_tord) |fato| {
+                    return lowerTupleElemRead(self, base_temp, type_box[0], fato);
                 }
                 return tid;
             } else if (kind == type_mod.TypeKind.struct_type or kind == type_mod.TypeKind.union_type or kind == type_mod.TypeKind.packed_union_type or kind == type_mod.TypeKind.tagged_union_type) {
@@ -6075,15 +6189,16 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                    if (exi == null) { resolved_mod.resolvedTypeTableSet(self.ctx.resolved_types, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, bei)), elem_t); }
                }
            }
-           var base_temp = nextTemp(self, arr_tid);
-        var ei: usize = @intCast(usize, 0);
-        while (ei < @intCast(usize, ec_n)) : (ei += @intCast(usize, 1)) {
-            var val_temp = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ei)));
-            var ix_temp = nextTemp(self, type_mod.TYPE_U32);
-            emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, ei), .result = ix_temp } });
-            emitInst(self, LirInst{ .assign_index = .{ .name_id = @intCast(u32, 0), .base = base_temp, .index = ix_temp, .src = val_temp } });
-        }
-        return base_temp;
+            var base_temp = nextTemp(self, arr_tid);
+         var ei: usize = @intCast(usize, 0);
+         while (ei < @intCast(usize, ec_n)) : (ei += @intCast(usize, 1)) {
+             var val_temp = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ei)));
+             val_temp = lowerArrayElemTupleCoerce(self, elem_t, val_temp, node_idx);
+             var ix_temp = nextTemp(self, type_mod.TYPE_U32);
+             emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, ei), .result = ix_temp } });
+             emitInst(self, LirInst{ .assign_index = .{ .name_id = @intCast(u32, 0), .base = base_temp, .index = ix_temp, .src = val_temp } });
+         }
+         return base_temp;
     } else if (node.kind == AstKind.struct_init) {
         var init_type = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var base_temp = nextTemp(self, if (init_type) |it| it else type_mod.TYPE_UNDEFINED);
@@ -6299,6 +6414,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 var ei: usize = @intCast(usize, 0);
                 while (ei < @intCast(usize, ec_n)) : (ei += @intCast(usize, 1)) {
                     var val_temp = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ei)));
+                    val_temp = lowerArrayElemTupleCoerce(self, ap.elem, val_temp, node_idx);
                     var ix_temp = nextTemp(self, type_mod.TYPE_U32);
                     emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, ei), .result = ix_temp } });
                     emitInst(self, LirInst{ .assign_index = .{ .name_id = @intCast(u32, 0), .base = base_temp, .index = ix_temp, .src = val_temp } });
@@ -8111,6 +8227,47 @@ fn applyNoneCoercion(self: *LirLowerer, src_temp: u32, coercion: CoercionEntry) 
     return src_temp;
 }
 
+// FB (D4): materialise a differently-spelled tuple into `coercion.target_type`
+// by a field-wise copy. C has no cross-struct assignment and the source
+// tuple's typedef differs from the target's, so each element is read via
+// `load_field` (its ordinal), recursively coerced to the target element type
+// and stored via `store_field`. The fresh target-typed temp makes every site
+// (declaration, assignment, return, call argument, struct init) see the
+// target's C model.
+fn applyTupleToTuple(self: *LirLowerer, src_temp: u32, coercion: CoercionEntry) u32 {
+    var src_tid = self.hoisted_temps.items[@intCast(usize, src_temp)].type_id;
+    if (src_tid == type_mod.TYPE_UNDEFINED or src_tid == type_mod.TYPE_VOID or @intCast(usize, src_tid) >= self.ctx.registry.types_len) {
+        if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, coercion.node_idx)) |rt_src| {
+            src_tid = rt_src;
+        }
+    }
+    if (src_tid == type_mod.TYPE_UNDEFINED or src_tid == type_mod.TYPE_VOID or @intCast(usize, src_tid) >= self.ctx.registry.types_len) return src_temp;
+    if (@intCast(usize, coercion.target_type) >= self.ctx.registry.types_len) return src_temp;
+    var src_ty = self.ctx.registry.types_items[@intCast(usize, src_tid)];
+    var tgt_ty = self.ctx.registry.types_items[@intCast(usize, coercion.target_type)];
+    if (src_ty.kind != type_mod.TypeKind.tuple_type or tgt_ty.kind != type_mod.TypeKind.tuple_type) return src_temp;
+    var s_tup = self.ctx.registry.tup_items[@intCast(usize, src_ty.payload_idx)];
+    var t_tup = self.ctx.registry.tup_items[@intCast(usize, tgt_ty.payload_idx)];
+    var dst = nextTemp(self, coercion.target_type);
+    var n: usize = @intCast(usize, s_tup.elems_count);
+    if (@intCast(usize, t_tup.elems_count) < n) n = @intCast(usize, t_tup.elems_count);
+    var i: usize = @intCast(usize, 0);
+    while (i < n) : (i += 1) {
+        var se_tid = self.ctx.registry.xt_items[@intCast(usize, s_tup.elems_start) + i];
+        var te_tid = self.ctx.registry.xt_items[@intCast(usize, t_tup.elems_start) + i];
+        var elem_val = lowerTupleElemRead(self, src_temp, src_tid, @intCast(u32, i));
+        if (elem_val == TEMP_NONE) continue;
+        if (se_tid != te_tid) {
+            var e_ck = coercion_mod.classifyCoercion(self.ctx.registry, se_tid, te_tid);
+            if (e_ck != CoercionKind.none) {
+                elem_val = applyCoercion(self, elem_val, coercion_mod.CoercionEntry{ .node_idx = coercion.node_idx, .kind = e_ck, .target_type = te_tid });
+            }
+        }
+        emitInst(self, LirInst{ .store_field = .{ .name_id = nameMapGet(self, dst), .base = dst, .field_id = @intCast(u32, i), .value = elem_val } });
+    }
+    return dst;
+}
+
 pub fn applyCoercion(self: *LirLowerer, src_temp: u32, coercion: CoercionEntry) u32 {
     // Task 4 (pinned param/argument/return rule): check the recorded target
     // before dispatch -- the int_widen/int_literal_coerce/none arms materialise
@@ -8200,6 +8357,8 @@ pub fn applyCoercion(self: *LirLowerer, src_temp: u32, coercion: CoercionEntry) 
         return dst;
     } else if (kind == CoercionKind.const_qualify) {
         return src_temp;
+    } else if (kind == CoercionKind.tuple_to_tuple) {
+        return applyTupleToTuple(self, src_temp, coercion);
     } else if (kind == CoercionKind.unwrap_optional) {
         return src_temp;
     } else {

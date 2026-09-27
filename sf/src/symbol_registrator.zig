@@ -99,6 +99,36 @@ pub fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, d
     var children_n = ast_mod.astStoreNodeExtraChildCount(store, decl_idx);
     if (children_n == 0) return;
 
+    // FB (D4): a flagged positional `struct { T1, T2 }` is a tuple type. Its
+    // shell is `TuplePayload{elems_start, elems_count}` over `xt_items` with
+    // `TYPE_VOID` placeholders; `resolveDeclAggregateFieldTypes` fills the real
+    // element types later (the same shell+fill split the struct branch uses for
+    // `fe_items`).
+    if (decl_kind == AstKind.struct_decl and (@intCast(u16, node.flags) & @intCast(u16, 0x20)) != @intCast(u16, 0)) {
+        var estart: u32 = @intCast(u32, type_reg.xt_len);
+        var ecount: u32 = 0;
+        var ti: usize = 0;
+        while (ti < children_n) : (ti += 1) {
+            var efd = ast_mod.astStoreNodeAt(store, ast_mod.astStoreNodeExtraChildAt(store, decl_idx, @intCast(u32, ti)));
+            if (efd.kind == AstKind.field_decl) {
+                type_mod.xtAppend(type_reg, type_mod.TYPE_VOID);
+                ecount += 1;
+            }
+        }
+        if (ecount > 0) {
+            type_mod.tupAppend(type_reg, type_mod.TuplePayload{
+                .elems_start = estart,
+                .elems_count = @intCast(u16, ecount),
+            });
+            var tup_last: usize = type_reg.tup_len - @intCast(usize, 1);
+            var tup_idx: u32 = @intCast(u32, tup_last);
+            var tty = type_reg.types_items[@intCast(usize, type_reg.types_len - @intCast(usize, 1))];
+            tty.payload_idx = tup_idx;
+            type_reg.types_items[@intCast(usize, type_reg.types_len - @intCast(usize, 1))] = tty;
+        }
+        return;
+    }
+
     if (decl_kind == AstKind.struct_decl) {
         var fstart: u32 = @intCast(u32, type_reg.fe_len);
         var fcount: u32 = 0;
@@ -248,7 +278,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
                 }
                 if (init_node.kind == AstKind.struct_decl or init_node.kind == AstKind.enum_decl or init_node.kind == AstKind.union_decl or init_node.kind == AstKind.error_set_decl) {
                     var type_kind: TypeKind = switch (init_node.kind) {
-                        AstKind.struct_decl => TypeKind.struct_type,
+                        AstKind.struct_decl => if ((@intCast(u16, init_node.flags) & @intCast(u16, 0x20)) != 0) TypeKind.tuple_type else TypeKind.struct_type,
                         AstKind.enum_decl => TypeKind.enum_type,
                         AstKind.union_decl => if ((@intCast(u16, init_node.flags) & @intCast(u16, 0x10)) != 0) TypeKind.packed_union_type else if ((@intCast(u16, init_node.flags) & 1) != 0) TypeKind.tagged_union_type else TypeKind.union_type,
                         AstKind.error_set_decl => TypeKind.error_set_type,
@@ -370,7 +400,7 @@ fn registerDecl(sym_reg: *SymbolRegistry, type_reg: *type_mod.TypeRegistry, stor
         AstKind.struct_decl, AstKind.enum_decl, AstKind.union_decl => {
             var name_id: u32 = @intCast(u32, ast_mod.astStoreNodePayloadPacked(store, decl_idx, node.kind) & @intCast(u64, 0xFFFFFFFF));
             var type_kind: TypeKind = switch (node.kind) {
-                AstKind.struct_decl => TypeKind.struct_type,
+                AstKind.struct_decl => if ((@intCast(u16, node.flags) & @intCast(u16, 0x20)) != 0) TypeKind.tuple_type else TypeKind.struct_type,
                 AstKind.enum_decl => TypeKind.enum_type,
                 AstKind.union_decl => if ((@intCast(u16, node.flags) & @intCast(u16, 0x10)) != 0) TypeKind.packed_union_type else if ((@intCast(u16, node.flags) & 1) != 0) TypeKind.tagged_union_type else TypeKind.union_type,
                 else => TypeKind.void_type,

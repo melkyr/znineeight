@@ -1770,6 +1770,10 @@ pub fn emitSharedHeader(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32
     tsi = @intCast(usize, 0);
     while (tsi < reg.types_len) : (tsi += 1) {
         var tid = sorted[tsi];
+        // FB (D4): a needed tuple is emitted at its topological position, even
+        // when the classifier buckets it pointer-only — a struct embedding the
+        // tuple by value reaches this loop earlier and needs the typedef.
+        emitNeededTupleAt(emitter, tid, &lemit);
         if (hash_mod.u32ToU32MapGet(&emitter.pointer_only_map, tid) != null) continue;
         var ty = reg.types_items[@intCast(usize, tid)];
         var e2m: []const u8 = "E2B:t"; pal.markerWrite(e2m); var e2b: [10]u8 = undefined; var e2l = itoa_mod.itoa(tid, e2b[0..]); var e2s: usize = @intCast(usize, 9) - @intCast(usize, e2l); pal.markerWrite(e2b[e2s..@intCast(usize, 9)]); var e2k: []const u8 = "k"; pal.markerWrite(e2k); var e2kb: [10]u8 = undefined; var e2kl2 = itoa_mod.itoa(@intCast(u32, @enumToInt(ty.kind)), e2kb[0..]); var e2ks: usize = @intCast(usize, 9) - @intCast(usize, e2kl2); pal.markerWrite(e2kb[e2ks..@intCast(usize, 9)]); var e2nm: []const u8 = "n"; pal.markerWrite(e2nm); var e2nb: [10]u8 = undefined; var e2nl3 = itoa_mod.itoa(ty.name_id, e2nb[0..]); var e2ns: usize = @intCast(usize, 9) - @intCast(usize, e2nl3); pal.markerWrite(e2nb[e2ns..@intCast(usize, 9)]); var e2nl2: []const u8 = "\n"; pal.markerWrite(e2nl2);
@@ -1800,7 +1804,7 @@ pub fn emitSharedHeader(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32
         emitTypeDefOnce(emitter, tid, &lemit, @intCast(u8, 1));
 
     }
-    emitNeededTupleTypes(emitter);
+    emitNeededTupleTypes(emitter, &lemit);
     var eg0: []const u8 = "#endif /* ZIG_SPECIAL_TYPES_H */\n";
     bufferedWriterWrite(&emitter.writer, eg0);
 }
@@ -1871,6 +1875,8 @@ pub fn emitSpecialTypes(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32
     tsi = @intCast(usize, 0);
     while (tsi < reg.types_len) : (tsi += 1) {
         var tid = sorted[tsi];
+        // FB (D4): same inline needed-tuple emission as the shared-header path.
+        emitNeededTupleAt(emitter, tid, &emitter.emitted_type_set);
         if (hash_mod.u32ToU32MapGet(&emitter.pointer_only_map, tid) != null) continue;
         var ty = reg.types_items[@intCast(usize, tid)];
         var e2m: []const u8 = "E2B:t"; pal.markerWrite(e2m); var e2b: [10]u8 = undefined; var e2l = itoa_mod.itoa(tid, e2b[0..]); var e2s: usize = @intCast(usize, 9) - @intCast(usize, e2l); pal.markerWrite(e2b[e2s..@intCast(usize, 9)]); var e2k: []const u8 = "k"; pal.markerWrite(e2k); var e2kb: [10]u8 = undefined; var e2kl2 = itoa_mod.itoa(@intCast(u32, @enumToInt(ty.kind)), e2kb[0..]); var e2ks: usize = @intCast(usize, 9) - @intCast(usize, e2kl2); pal.markerWrite(e2kb[e2ks..@intCast(usize, 9)]); var e2nm: []const u8 = "n"; pal.markerWrite(e2nm); var e2nb: [10]u8 = undefined; var e2nl3 = itoa_mod.itoa(ty.name_id, e2nb[0..]); var e2ns: usize = @intCast(usize, 9) - @intCast(usize, e2nl3); pal.markerWrite(e2nb[e2ns..@intCast(usize, 9)]); var e2nl2: []const u8 = "\n"; pal.markerWrite(e2nl2);
@@ -1908,7 +1914,7 @@ pub fn emitSpecialTypes(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32
         emitTypeDeps(emitter, tid, &emitter.emitted_type_set, @intCast(u8, 0));
         emitTypeDefOnce(emitter, tid, &emitter.emitted_type_set, @intCast(u8, 0));
     }
-    emitNeededTupleTypes(emitter);
+    emitNeededTupleTypes(emitter, &emitter.emitted_type_set);
 }
 
 fn emitTaggedUnionType(emitter: *C89Emitter, tid: u32) void {
@@ -6835,9 +6841,7 @@ pub fn collectNeededTuples(reg: *TypeRegistry, set: *U32ToU32Map, tid: u32) void
     }
 }
 
-fn emitNeededTupleRec(emitter: *C89Emitter, emitted: *U32ToU32Map, tid: u32) void {
-    if (hash_mod.u32ToU32MapGet(emitted, tid) != null) return;
-    hash_mod.u32ToU32MapPut(emitted, tid, @intCast(u32, 1));
+fn emitNeededTupleRec(emitter: *C89Emitter, seen: *U32ToU32Map, tid: u32) void {
     var reg = emitter.registry;
     if (@intCast(usize, tid) >= reg.types_len) return;
     var ty = reg.types_items[@intCast(usize, tid)];
@@ -6847,34 +6851,41 @@ fn emitNeededTupleRec(emitter: *C89Emitter, emitted: *U32ToU32Map, tid: u32) voi
     while (i < @intCast(usize, tup.elems_count)) : (i += @intCast(usize, 1)) {
         var et = reg.xt_items[@intCast(usize, tup.elems_start) + i];
         if (@intCast(usize, et) < reg.types_len) {
-            if (reg.types_items[@intCast(usize, et)].kind == TypeKind.tuple_type) emitNeededTupleRec(emitter, emitted, et);
+            if (reg.types_items[@intCast(usize, et)].kind == TypeKind.tuple_type and
+                hash_mod.u32ToU32MapGet(&emitter.needed_tuple_set, et) != null) {
+                emitNeededTupleRec(emitter, seen, et);
+            }
         }
     }
-    var cname = getCTypeName(reg, emitter.mangler, tid);
-    var g0: []const u8 = "#ifndef "; bufferedWriterWrite(&emitter.writer, g0);
-    ctypeGuardWrite(&emitter.writer, ty.kind);
-    bufferedWriterWrite(&emitter.writer, cname);
-    var g1: []const u8 = "\n#define "; bufferedWriterWrite(&emitter.writer, g1);
-    ctypeGuardWrite(&emitter.writer, ty.kind);
-    bufferedWriterWrite(&emitter.writer, cname);
-    var g2: []const u8 = "\n"; bufferedWriterWrite(&emitter.writer, g2);
-    emitTupleType(emitter, tid);
-    var g3: []const u8 = "#endif /* "; bufferedWriterWrite(&emitter.writer, g3);
-    ctypeGuardWrite(&emitter.writer, ty.kind);
-    bufferedWriterWrite(&emitter.writer, cname);
-    var g4: []const u8 = " */\n"; bufferedWriterWrite(&emitter.writer, g4);
+    emitTypeDefOnce(emitter, tid, seen, @intCast(u8, 1));
 }
 
 // Emit the tuple typedefs for the needed set, dependency-first. Called at the
-// end of both type-emission paths (single-file and shared header).
-pub fn emitNeededTupleTypes(emitter: *C89Emitter) void {
+// end of both type-emission paths (single-file and shared header) as a fallback
+// for tuples not reached at their sorted position (e.g. pointer-only tuples).
+// `seen` is the path's type-emission dedupe map, shared with the sorted loops
+// so a tuple already emitted there (FB: aggregates that embed a tuple by value
+// need the tuple's typedef earlier than this trailing pass) is not duplicated.
+pub fn emitNeededTupleTypes(emitter: *C89Emitter, seen: *U32ToU32Map) void {
     if (emitter.needed_tuple_set.count == @intCast(usize, 0)) return;
-    var emitted = hash_mod.u32ToU32MapInit(emitter.persist_alloc);
     var ti: u32 = @intCast(u32, 0);
     while (@intCast(usize, ti) < emitter.registry.types_len) : (ti += 1) {
         if (hash_mod.u32ToU32MapGet(&emitter.needed_tuple_set, ti) == null) continue;
-        emitNeededTupleRec(emitter, &emitted, ti);
+        emitNeededTupleRec(emitter, seen, ti);
     }
+}
+
+// FB (D4): emit a needed tuple at its topological position. The TST sort
+// already orders a tuple before any aggregate that embeds it by value (and
+// after a struct that a tuple embeds), so the type-definition loops call this
+// for every needed tuple they reach. Without it a struct field of tuple type
+// emitted before the tuple typedef (gcc: unknown type name).
+fn emitNeededTupleAt(emitter: *C89Emitter, tid: u32, seen: *U32ToU32Map) void {
+    if (hash_mod.u32ToU32MapGet(&emitter.needed_tuple_set, tid) == null) return;
+    if (@intCast(usize, tid) >= emitter.registry.types_len) return;
+    if (emitter.registry.types_items[@intCast(usize, tid)].kind != TypeKind.tuple_type) return;
+    emitTypeDeps(emitter, tid, seen, @intCast(u8, 1));
+    emitTypeDefOnce(emitter, tid, seen, @intCast(u8, 1));
 }
 
 fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
@@ -7949,6 +7960,28 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                                       var arrow: []const u8 = "->"; bufferedWriterWrite(&emitter.writer, arrow);
                                       bufferedWriterWrite(&emitter.writer, pfn);
                                   }
+                              } else if (pty.kind == type_mod.TypeKind.tuple_type) {
+                                  // FB (D4): a pointer-to-tuple base reads the
+                                  // positional C field `_N` through `->`.
+                                  var ptup = emitter.registry.tup_items[@intCast(usize, pty.payload_idx)];
+                                  if (lf.field_id < @intCast(u32, ptup.elems_count)) {
+                                      var ptup_arrow: []const u8 = "->_"; bufferedWriterWrite(&emitter.writer, ptup_arrow);
+                                      var ptup_b: [16]u8 = undefined;
+                                      var ptup_l = itoa_mod.itoa(lf.field_id, ptup_b[0..]);
+                                      var ptup_s: usize = @intCast(usize, 15) - @intCast(usize, ptup_l);
+                                      bufferedWriterWrite(&emitter.writer, ptup_b[ptup_s..@intCast(usize, 15)]);
+                                  }
+                              }
+                          } else if (bty.kind == type_mod.TypeKind.tuple_type) {
+                              // FB (D4): tuple value base -> positional field `_N`.
+                              field_name_resolved = @intCast(u8, 1);
+                              var lf_tup = emitter.registry.tup_items[@intCast(usize, bty.payload_idx)];
+                              if (lf.field_id < @intCast(u32, lf_tup.elems_count)) {
+                                  var lf_tdot: []const u8 = "._"; bufferedWriterWrite(&emitter.writer, lf_tdot);
+                                  var lf_tb: [16]u8 = undefined;
+                                  var lf_tl = itoa_mod.itoa(lf.field_id, lf_tb[0..]);
+                                  var lf_ts: usize = @intCast(usize, 15) - @intCast(usize, lf_tl);
+                                  bufferedWriterWrite(&emitter.writer, lf_tb[lf_ts..@intCast(usize, 15)]);
                               }
                           } else if (bty.kind == type_mod.TypeKind.struct_type or bty.kind == type_mod.TypeKind.union_type or bty.kind == type_mod.TypeKind.packed_union_type) {
                               field_name_resolved = @intCast(u8, 1);
@@ -8066,7 +8099,23 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                                      bufferedWriterWrite(&emitter.writer, fname);
                                      found2 = @intCast(u8, 1);
                                      if (typeIsPtrKind(emitter.registry, fe.type_id) != @intCast(u8, 0)) { sf_cast = getCTypeName(emitter.registry, emitter.mangler, fe.type_id); }
+                                 } else if (pty.kind == type_mod.TypeKind.tuple_type) {
+                                     // FB (D4): pointer-to-tuple store -> `->_N`.
+                                     var ptup_s: []const u8 = "->_"; bufferedWriterWrite(&emitter.writer, ptup_s);
+                                     var ptup_sb: [16]u8 = undefined;
+                                     var ptup_sl = itoa_mod.itoa(sf.field_id, ptup_sb[0..]);
+                                     var ptup_ss: usize = @intCast(usize, 15) - @intCast(usize, ptup_sl);
+                                     bufferedWriterWrite(&emitter.writer, ptup_sb[ptup_ss..@intCast(usize, 15)]);
+                                     found2 = @intCast(u8, 1);
                                  }
+                            } else if (bty.kind == type_mod.TypeKind.tuple_type) {
+                                // FB (D4): tuple value store -> positional field `_N`.
+                                var sf_tdot: []const u8 = "._"; bufferedWriterWrite(&emitter.writer, sf_tdot);
+                                var sf_tb: [16]u8 = undefined;
+                                var sf_tl = itoa_mod.itoa(sf.field_id, sf_tb[0..]);
+                                var sf_ts: usize = @intCast(usize, 15) - @intCast(usize, sf_tl);
+                                bufferedWriterWrite(&emitter.writer, sf_tb[sf_ts..@intCast(usize, 15)]);
+                                found2 = @intCast(u8, 1);
                             } else if (bty.kind == type_mod.TypeKind.struct_type) {
                                var dot_s: []const u8 = ".";
                                bufferedWriterWrite(&emitter.writer, dot_s);
@@ -8235,6 +8284,15 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                         var fe = emitter.registry.fe_items[@intCast(usize, pup.fields_start) + @intCast(usize, af.field_id)];
                         var fname: []const u8 = interner_mod.stringInternerGet(emitter.interner, fe.name_id);
                         bufferedWriterWrite(&emitter.writer, fname);
+                        af_found = @intCast(u8, 1);
+                    } else if (pty.kind == type_mod.TypeKind.tuple_type) {
+                        // FB (D4): `&t.N` / `&t[N]` -> `&base->_N` (base is the
+                        // tuple address temp, exactly like a struct field).
+                        var atup_arrow: []const u8 = "->_"; bufferedWriterWrite(&emitter.writer, atup_arrow);
+                        var atup_b: [16]u8 = undefined;
+                        var atup_l = itoa_mod.itoa(af.field_id, atup_b[0..]);
+                        var atup_s: usize = @intCast(usize, 15) - @intCast(usize, atup_l);
+                        bufferedWriterWrite(&emitter.writer, atup_b[atup_s..@intCast(usize, 15)]);
                         af_found = @intCast(u8, 1);
                     }
                     break;

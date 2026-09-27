@@ -113,6 +113,7 @@ pub const CompilerContext = struct {
     lir_slots: LirSlotArrayList,
     lir_stream: lir_stream.LirStream,
     enum_value_table: hash_mod.U32ToU32Map,
+    tuple_index_table: hash_mod.U32ToU32Map,
     error_code_registry: hash_mod.U32ToU32Map,
     call_arg_types: hash_mod.U32ToU32Map,
     call_param_map: hash_mod.U32ToU32Map,
@@ -296,6 +297,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     var lir_slots = lir_mod.lirSlotArrayListInit(&compiler_alloc.emission);
     var dep_graph = symbol_registrator.depGraphInit(&compiler_alloc.module);
     var enum_value_table = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
+    var tuple_index_table = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
     var error_code_registry = hash_mod.u32ToU32MapInit(&compiler_alloc.emission);
      var call_arg_types = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
      var call_param_map = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
@@ -328,6 +330,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         .lir_slots = lir_slots,
         .lir_stream = lir_stream.lirStreamInit(),
         .enum_value_table = enum_value_table,
+        .tuple_index_table = tuple_index_table,
         .error_code_registry = error_code_registry,
         .call_arg_types = call_arg_types,
         .call_param_map = call_param_map,
@@ -597,6 +600,7 @@ fn phase_FrontResolution(ctx: *CompilerContext) void {
         .scratch = &ctx.alloc.scratch,
         .coercion_table = ctx.coercion_table,
         .enum_value_table = &ctx.enum_value_table,
+        .tuple_index_table = &ctx.tuple_index_table,
         .error_code_registry = &ctx.error_code_registry,
         .call_arg_types = &ctx.call_arg_types,
         .call_param_map = &ctx.call_param_map,
@@ -680,6 +684,7 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
         .scratch = &ctx.alloc.scratch,
         .coercion_table = ctx.coercion_table,
         .enum_value_table = &ctx.enum_value_table,
+        .tuple_index_table = &ctx.tuple_index_table,
         .error_code_registry = &ctx.error_code_registry,
         .call_arg_types = &ctx.call_arg_types,
         .call_param_map = &ctx.call_param_map,
@@ -696,7 +701,7 @@ fn phase_SemanticAnalysis(ctx: *CompilerContext) void {
          var ad: []const u8 = "AD"; pal.markerWrite(ad);
          var dse_m: []const u8 = "DSE\n"; pal.markerWrite(dse_m);
          var src_fid = mods[mi].source_file_id;
-         var sa = sa_mod.semanticAnalyzerInit(&ctx.alloc.scratch, ctx.resolved_types, ctx.diag, ctx.typereg, ctx.symbol_reg, ctx.store, mods[mi].id, src_fid, ctx.coercion_table, &ctx.enum_value_table, &ctx.error_code_registry, ctx.interner, &ctx.call_arg_types, &ctx.call_param_map, ctx.module_reg, &ctx.suspending_fns);
+         var sa = sa_mod.semanticAnalyzerInit(&ctx.alloc.scratch, ctx.resolved_types, ctx.diag, ctx.typereg, ctx.symbol_reg, ctx.store, mods[mi].id, src_fid, ctx.coercion_table, &ctx.enum_value_table, &ctx.tuple_index_table, &ctx.error_code_registry, ctx.interner, &ctx.call_arg_types, &ctx.call_param_map, ctx.module_reg, &ctx.suspending_fns);
         var di: usize = 0;
         while (di < @intCast(usize, decls_n)) : (di += 1) {
             var decl_idx = ast_mod.astStoreNodeExtraChildAt(ctx.store, ast_root, @intCast(u32, di));
@@ -815,6 +820,7 @@ fn phase_LIRLowering(ctx: *CompilerContext) void {
         .diag = ctx.diag,
         .has_symbols = @intCast(u8, 1),
         .enum_value_table = &ctx.enum_value_table,
+        .tuple_index_table = &ctx.tuple_index_table,
         .error_code_registry = &ctx.error_code_registry,
         .call_arg_types = &ctx.call_arg_types,
         .comptime_folds = &ctx.comptime_folds,

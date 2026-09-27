@@ -43,6 +43,11 @@ pub const SemanticAnalyzer = struct {
     current_fn_name: u32,
     coercion_table: *coercion_mod.CoercionTable,
     enum_value_table: *hash_mod.U32ToU32Map,
+    // FB (D4): index-access node -> folded tuple ordinal. `t[0]` folds its
+    // index in sema (covering local consts; lower's evaluator does not) and
+    // records the ordinal here, so lowering emits the same `load_field`/
+    // `store_field`/`addr_of_field` as `.0`/`._0` (one mechanism).
+    tuple_index_table: *hash_mod.U32ToU32Map,
     error_code_registry: *hash_mod.U32ToU32Map,
     call_arg_types: *hash_mod.U32ToU32Map,
     call_param_map: *hash_mod.U32ToU32Map,
@@ -130,7 +135,7 @@ pub const SemanticAnalyzer = struct {
     suspending_fns: *hash_mod.U64ToU32Map,
 };
 
-pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: *DiagnosticCollector, registry: *TypeRegistry, symbols: *SymbolRegistry, store: *AstStore, module_id: u32, source_file_id: u32, coercion_tab: *coercion_mod.CoercionTable, enum_val_tab: *hash_mod.U32ToU32Map, error_code_reg: *hash_mod.U32ToU32Map, interner: *interner_mod.StringInterner, cal_typs: *hash_mod.U32ToU32Map, cp_map: *hash_mod.U32ToU32Map, module_reg: *mr_mod.ModuleRegistry, suspending_fns: *hash_mod.U64ToU32Map) SemanticAnalyzer {
+pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: *DiagnosticCollector, registry: *TypeRegistry, symbols: *SymbolRegistry, store: *AstStore, module_id: u32, source_file_id: u32, coercion_tab: *coercion_mod.CoercionTable, enum_val_tab: *hash_mod.U32ToU32Map, tuple_idx_tab: *hash_mod.U32ToU32Map, error_code_reg: *hash_mod.U32ToU32Map, interner: *interner_mod.StringInterner, cal_typs: *hash_mod.U32ToU32Map, cp_map: *hash_mod.U32ToU32Map, module_reg: *mr_mod.ModuleRegistry, suspending_fns: *hash_mod.U64ToU32Map) SemanticAnalyzer {
     var und_text: []const u8 = "_";
     var und_name_id = interner_mod.stringInternerIntern(interner, und_text);
     var pc_text: []const u8 = "@ptrCast";
@@ -220,6 +225,7 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .current_fn_name = @intCast(u32, 0),
         .coercion_table = coercion_tab,
         .enum_value_table = enum_val_tab,
+        .tuple_index_table = tuple_idx_tab,
         .error_code_registry = error_code_reg,
         .current_switch_cond_tu = @intCast(u32, 0),
         .switch_depth = @intCast(u32, 0),
@@ -898,6 +904,33 @@ fn semanticAnalyzerReportUsizeNegative(self: *SemanticAnalyzer, mark_node: u32, 
     _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3062_INDEX_OUT_OF_BOUNDS)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), msg);
 }
 
+// FB (D4): `index N outside tuple of length L` (Zig 0.15.2's primary wording
+// for a tuple index outside `0..arity`). New code 3070 (the plan's FB tuple
+// index-out-of-range allocation); level 0, span on the index expression.
+fn semanticAnalyzerReportTupleIndexOob(self: *SemanticAnalyzer, mark_node: u32, ord: u32, len: u32) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, mark_node)) return;
+    var idx_buf: [12]u8 = undefined;
+    var idx_text = semanticAnalyzerU32Text(ord, idx_buf[0..]);
+    var len_buf: [12]u8 = undefined;
+    var len_text = semanticAnalyzerU32Text(len, len_buf[0..]);
+    var p0: []const u8 = "index ";
+    var p1: []const u8 = " outside tuple of length ";
+    var parts: [4][]const u8 = [4][]const u8{ p0, idx_text, p1, len_text };
+    var msg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &parts[0], @intCast(u32, 4));
+    var node = ast_mod.astStoreNodeAt(self.store, mark_node);
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3070_TUPLE_INDEX_OUT_OF_RANGE)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), msg);
+}
+
+// FB (D4): a `t[i]` whose index is not comptime-known. Zig 0.15.2's note
+// wording ("tuple field index must be comptime-known"); new code 3069. Level
+// 0, span on the index expression.
+fn semanticAnalyzerReportTupleIndexNotComptime(self: *SemanticAnalyzer, mark_node: u32) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, mark_node)) return;
+    var msg: []const u8 = "tuple field index must be comptime-known";
+    var node = ast_mod.astStoreNodeAt(self.store, mark_node);
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3069_TUPLE_INDEX_NOT_COMPTIME)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), msg);
+}
+
 // Task 17 (F): the index-access check. The base's fixed length bounds a
 // comptime-known index; a negative value is Zig's coercion reject. The caller
 // restores `_stub_0`/`_stub_1` (the `.len` recovery can re-resolve the base).
@@ -1398,6 +1431,31 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
         _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000),
             self.source_file_id, sp, ep, eu_msg);
         return type_mod.TYPE_VOID;
+    }
+    if (base_ty.kind == type_mod.TypeKind.tuple_type) {
+        // FB (D4): `.N`/`._0` on a tuple base. The parser canonicalized `.N`
+        // to its decimal text, so the ordinal is decoded textually and only
+        // here — the name-id space is never consulted (closes the `.73`
+        // silent-alias hazard). A non-decimal name falls through to the
+        // unknown-member tail (3060).
+        var fa_tup_ord = type_mod.typeRegistryTupleOrdinalFromNameId(self.registry, field_name_id);
+        if (fa_tup_ord) |tord| {
+            var fa_tup = self.registry.tup_items[@intCast(usize, base_ty.payload_idx)];
+            if (tord >= @intCast(u32, fa_tup.elems_count)) {
+                semanticAnalyzerReportTupleIndexOob(self, node_idx, tord, @intCast(u32, fa_tup.elems_count));
+                rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
+                return type_mod.TYPE_VOID;
+            }
+            var fa_elem = self.registry.xt_items[@intCast(usize, fa_tup.elems_start + tord)];
+            var fa_ety = self.registry.types_items[@intCast(usize, fa_elem)];
+            if (fa_ety.kind == type_mod.TypeKind.array_type) {
+                var fa_elem_i = self.registry.array_items[@intCast(usize, fa_ety.payload_idx)].elem;
+                fa_elem = type_mod.typeRegistryGetOrCreatePtr(self.registry, fa_elem_i, false);
+            }
+            var fa_rm: []const u8 = "FA:TUP"; pal_mod.markerWriteInt(fa_rm, fa_elem);
+            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fa_elem);
+            return fa_elem;
+        }
     }
     if (base_ty.kind == type_mod.TypeKind.struct_type) {
         var sp = self.registry.st_items[@intCast(usize, base_ty.payload_idx)];
@@ -3966,6 +4024,7 @@ fn isBShapeMismatch(self: *SemanticAnalyzer, src_ty: u32, tgt_ty: u32, full: boo
     if (sk == type_mod.TypeKind.ptr_type and tk == type_mod.TypeKind.slice_type) return true;
     if (full and sk == type_mod.TypeKind.ptr_type and tk == type_mod.TypeKind.many_ptr_type) return true;
     if (sk == type_mod.TypeKind.array_type and tk == type_mod.TypeKind.array_type) return true;
+    if (sk == type_mod.TypeKind.tuple_type and tk == type_mod.TypeKind.tuple_type) return true;
     if (sk == type_mod.TypeKind.error_union_type and tk == type_mod.TypeKind.error_union_type) return true;
     if (sk == type_mod.TypeKind.enum_type and type_mod.typeRegistryIsInteger(self.registry, tgt_ty)) return true;
     return false;
@@ -4888,11 +4947,61 @@ fn semanticAnalyzerResolveIndexAccess(self: *SemanticAnalyzer, node_idx: u32) u3
         self._stub_0 = saved;
         return ix_elem;
     } else if (bt.kind == type_mod.TypeKind.tuple_type) {
+        // FB (D4): `t[i]` routes through ONE ordinal mechanism. Fold the index
+        // here (covers local consts, unlike lower's evaluator), bounds-check
+        // it, and record node -> ordinal for lowering, which then emits the
+        // same field access as `.0`/`._0`.
         var tp = self.registry.tup_items[@intCast(usize, bt.payload_idx)];
-        var r4 = self.registry.xt_items[@intCast(usize, tp.elems_start)];
-        var ixr_m: []const u8 = "IX:R"; pal_mod.markerWriteInt(ixr_m, r4);
+        var tup_len: u32 = @intCast(u32, tp.elems_count);
+        var tup_ce = ce_mod.comptimeEvalInit(self.registry, self.store, self.interner, self.symbols);
+        tup_ce.local_consts = &self.local_consts;
+        var tup_ci: ce_mod.ComptimeInt = ce_mod.ciZeroInt();
+        if (!semanticAnalyzerComptimeIntValue(self, &tup_ce, node.child_1, &tup_ci)) {
+            semanticAnalyzerReportTupleIndexNotComptime(self, node.child_1);
+            self._stub_0 = saved;
+            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
+            return type_mod.TYPE_VOID;
+        }
+        if (tup_ci.neg and !ce_mod.ciIsZero(tup_ci)) {
+            // Zig rejects a negative comptime index as a usize coercion
+            // failure; the array path's 3062 helper carries the exact wording.
+            semanticAnalyzerReportUsizeNegative(self, node.child_1, tup_ci);
+            self._stub_0 = saved;
+            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
+            return type_mod.TYPE_VOID;
+        }
+        var tup_ord: u32 = @intCast(u32, 0);
+        var tup_oob: u8 = @intCast(u8, 0);
+        if (tup_ci.len > @intCast(u8, 2)) {
+            // More than 64 bits: necessarily past every tuple's arity.
+            tup_oob = @intCast(u8, 1);
+        } else {
+            var tup_v = ce_mod.ciToU64(tup_ci);
+            if (tup_v >= @intCast(u64, tup_len)) {
+                tup_oob = @intCast(u8, 1);
+            } else {
+                tup_ord = @intCast(u32, tup_v);
+            }
+        }
+        if (tup_oob != @intCast(u8, 0)) {
+            var tup_oob_text: u32 = @intCast(u32, 0);
+            if (tup_ci.len <= @intCast(u8, 2)) { tup_oob_text = @intCast(u32, ce_mod.ciToU64(tup_ci)); }
+            semanticAnalyzerReportTupleIndexOob(self, node.child_1, tup_oob_text, tup_len);
+            self._stub_0 = saved;
+            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
+            return type_mod.TYPE_VOID;
+        }
+        var tup_et = self.registry.xt_items[@intCast(usize, tp.elems_start + tup_ord)];
+        var tup_ety = self.registry.types_items[@intCast(usize, tup_et)];
+        if (tup_ety.kind == type_mod.TypeKind.array_type) {
+            var tup_elem_i = self.registry.array_items[@intCast(usize, tup_ety.payload_idx)].elem;
+            tup_et = type_mod.typeRegistryGetOrCreatePtr(self.registry, tup_elem_i, false);
+        }
+        hash_mod.u32ToU32MapPut(self.tuple_index_table, node_idx, tup_ord);
+        var ixr_m: []const u8 = "IX:R"; pal_mod.markerWriteInt(ixr_m, tup_et);
         self._stub_0 = saved;
-        return r4;
+        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, tup_et);
+        return tup_et;
     }
     // Task 2g-F (b): a base that is neither array, slice, pointer, nor tuple is
     // not indexable — e.g. the scalar element yielded by `pp[0]` on a genuine
@@ -4994,6 +5103,12 @@ fn semanticAnalyzerResolveTupleLiteral(self: *SemanticAnalyzer, node_idx: u32) u
         if (self._stub_0 == type_mod.TYPE_VOID) { self._stub_0 = type_mod.TYPE_I32; }
         tmp[i] = self._stub_0;
     }
+    // FB (D4): array ELEMENTS are allowed to exist in a tuple literal (the
+    // print-argument path already rejects them with the Task-4 `error[3063]`,
+    // and `emitFieldAssign` byte-copies a same-typed array source), but a
+    // spelled tuple type with an array element is rejected at registration
+    // (`type_resolver.tupleElemArrayUnsupported`) and tuple->tuple assignment
+    // with an array element is not assignable (no field-wise C copy).
     if (rtt_mod.resolvedTypeTableGet(self.type_table, node_idx)) |existing| {
         if (existing != type_mod.TYPE_UNDEFINED) {
             if (@intCast(usize, existing) < self.registry.types_len and self.registry.types_items[@intCast(usize, existing)].kind == type_mod.TypeKind.tuple_type) {
