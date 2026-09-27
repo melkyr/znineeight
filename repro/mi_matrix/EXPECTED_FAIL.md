@@ -74,7 +74,15 @@ baseline); self-emission rc 0 / 48 `.c` + 48 `.h` / 0 PANIC. Fixed point MOVED
 siblings (`*[N]T[a..b]` scaling, `*[N]T[s..]`/`mp[N..]` ICEs, unchecked runtime
 slice bounds, `pa.*[i]`) are out of scope and untouched. An internal array-field
 decay copied into an unannotated local (`var x = s.a; x[i]`) rejects `error[3066]`
-because the decay erases the declared array length.
+because the decay erases the declared array length. The adopted `*[0]T`/`*[1]T`
+slice results are not yet iterable — `for (p[0..1]) |v|` rejects (`error[20]` for
+the capture plus a void source/target note) where Zig accepts `for` over `*[N]T`;
+zero gate/corpus/stdlib usage and no wrong code, suggested for the FX5
+pointer/slice group or a separate follow-up. A `*[0]T` emits a C array typedef
+clamped to `[1]` (`emitArrayType`, `c89_emit.zig` `decl_len = if (ap.length == 0)
+1 else ap.length`) while the sema length stays 0 (`.len` 0, index 3062), so only
+the C model is clamped, not the behavior. Review round 1 (2026-09-27) recorded
+these; no compiler behavior changed.
 
 ## FB — tuple type/access model (D4) (v256 -> v257, 2026-09-27)
 

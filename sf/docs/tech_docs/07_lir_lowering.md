@@ -742,7 +742,7 @@ If start: .binary(ADD, ptr, start) → offset_ptr
 If end: .binary(SUB, end, start) → new_len
 emitInst(.make_slice{ ptr, len, result, type_id })
 ```
-**[FH (D10), 2026-09-27]** When the node's resolved type is a pointer-to-array (only the legal `*T` slices produce one), the arm instead emits `.binary(ADD, base, start)` on the element-typed pointer (skipped when start is omitted, which is comptime 0) followed by `.ptr_cast{ value, target = resolved type }`; it returns that pointer and never emits `make_slice` or a length temp.
+**[FH (D10), 2026-09-27]** When the node's resolved type is a pointer-to-array (only the legal `*T` slices produce one), the arm instead emits `.binary(ADD, base, start)` on the element-typed pointer (skipped when start is omitted, which is comptime 0) followed by `.ptr_cast{ value, target = resolved type }`; it returns that pointer and never emits `make_slice` or a length temp. **Residual (review round 1, 2026-09-27):** the `for` arm has no `*[N]T` iterator, so `for (p[0..1]) |v|` rejects (`error[20]` for the capture; Zig accepts; zero gate/corpus usage; tracked with the FX5 pointer/slice group).
 
 ### Block Expression
 ```
