@@ -1,0 +1,48 @@
+// repro/single_ptr_index.z98 — standalone FH (Volume II D10) reject census.
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   <zig1> --dump-c89 repro/single_ptr_index.z98
+//
+// EXPECTED (after the fix): dump rc=2, 0 `.c`, the 3066/3067 census below
+// with no `error[3043]` and no signal:
+//   3066  p[0] / p[1] / runtime p[i] / p[0] = v / ps[0].x / (*p)[i]
+//   3067  p[0..2] / p[1..0] / p[-1..1] / p[0..m] / p[0..]
+// DEFECT (before the fix): every index form compiled rc=0 (`p[0]=42`), the
+// illegal slices were accepted unchecked (`p[1..0]` gave len 4294967295) and
+// `p[0..]` ICEd `error[3043]`; `(*p)[i]` silently indexed the traced
+// initializer. See repro/mi_matrix/ptr_slice_reject_xmod for the pinned
+// cross-module census and repro/mi_matrix/stdlib_ptrslice_ok_xmod for the
+// accepted-form golden.
+const std = @import("std");
+
+const Point = struct { x: i32, y: i32 };
+
+pub fn main() void {
+    var n: i32 = 42;
+    const p: *i32 = &n;
+    var i: usize = 1;
+    const a = p[0];
+    const b = p[1];
+    const c = p[i];
+    p[0] = 7;
+    var pt = Point{ .x = 5, .y = 6 };
+    const ps: *Point = &pt;
+    const d = ps[0].x;
+    const e = (*p)[i];
+    const s1 = p[0..2];
+    const s2 = p[1..0];
+    const s3 = p[-1..1];
+    var m: usize = 1;
+    const s4 = p[0..m];
+    const s5 = p[0..];
+    _ = a;
+    _ = b;
+    _ = c;
+    _ = d;
+    _ = e;
+    _ = s1;
+    _ = s2;
+    _ = s3;
+    _ = s4;
+    _ = s5;
+}

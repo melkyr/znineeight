@@ -1,4 +1,80 @@
-# mi_matrix corpus — expected-fail manifest (v257 2026-09-27)
+# mi_matrix corpus — expected-fail manifest (v258 2026-09-27)
+
+## FH — single-item-pointer indexing rules (D10) (v257 -> v258, 2026-09-27)
+
+Volume II defect-fix phase, Stage 2b ninth task (task-FH). A single-item pointer to
+a non-array pointee silently supported `p[0]`/`p[i]` (emitting `base[idx]` C with no
+bounds information), `(*p)[i]` silently indexed the pointer's traced initializer, and
+`p[0..n]` slices were accepted unchecked (`p[1..0]` gave len 4294967295) while `p[0..]`
+ICEd `error[3043]`. Official Zig 0.15.2 rejects every indexing form
+(`type '*i32' does not support indexing` + note `operand must be an array, slice,
+tuple, or vector`) and accepts only the three comptime `*T` slice bounds `[0..0]`,
+`[0..1]`, `[1..1]` (yielding `*[0]T`/`*[1]T`). The operator ruled Zig parity and a
+narrowed §1.2.
+
+**Fix.**
+1. Diagnostics (`sf/src/diagnostics.zig`): new level-0 `ERR_3066_SINGLE_PTR_INDEX`
+   and `ERR_3067_SINGLE_PTR_SLICE_BOUNDS`.
+2. Sema index (`semanticAnalyzerResolveIndexAccess`): before the shared
+   `typeRegistryIndexedElemType`, a `ptr_type` base whose pointee is not a fixed-size
+   array rejects 3066 with the Zig pointer wording (span on the index expression,
+   deduped per node); a `type_type` base (`(*p)[i]`) rejects 3066 with
+   `unable to resolve comptime value` + note `types must be comptime-known`. The
+   backward type speller `semanticAnalyzerSpellTypeBack` renders `*i32`, `*const i32`,
+   `**i32`, `*?i32`, `*Point`. The struct/union array-field decay (`s.arr[i]`,
+   `v.mag[0]`) is exempted via `semanticAnalyzerStaticArrayLen` (the decay is
+   load-bearing).
+3. Sema slice (`semanticAnalyzerCheckSinglePtrSlice`): a non-array-pointee `*T` may be
+   sliced only with comptime `(0,0)`/`(0,1)`/`(1,1)`; the three legal forms return
+   Zig's `*[0]T`/`*[1]T` via `typeRegistryGetOrCreateArray` +
+   `typeRegistryGetOrCreatePtrQ` (const/volatile carried; FH2-I adopt-Zig decision).
+   Illegal pairs (3067 bounds wording), runtime bounds (3067 `unable to resolve
+   comptime value` + comptime-bounds note) and the open form (3067
+   `slice of single-item pointer must be bounded`, replacing the 3043 ICE) reject.
+   Array-field decay slices keep the ordinary path.
+4. Lower (`sf/src/lower.zig` `slice_expr`): a resolved pointer-to-array emits
+   `BIN_ADD` on the element pointer + `ptr_cast` to `*[N]T`; no `make_slice`, no
+   length temp. Every array/slice/many-pointer base and the FX5 `*[N]T` slice path
+   are byte-identical.
+5. Spec: §1.2 narrowed to `[*]T` + `*[N]T` auto-deref indexing and the three legal
+   `*T` slice forms; §1.4 cross-ref + §4 diagnostics updated.
+
+**Fixtures.**
+- positive `repro/mi_matrix/stdlib_ptrslice_ok_xmod` (stdlib pin **253 -> 254**):
+  golden `lens=0 1 0 v=42 sl0=42 c=42 vv=7 pa1=20 pas1=20 dv=42 mp=20`, rc 0,
+  3x byte-exact and byte-identical to the Zig-0.15.2 twin. Shapes: the three legal
+  `*T` slices with annotated `*[0]T`/`*[1]T` results, const + volatile qualifier
+  carry, `*[1]T` indexing and the `[]T` coercion, `*[N]T` indexing/slicing control,
+  `p.*` and `[*]T` indexing controls.
+- reject `repro/mi_matrix/ptr_slice_reject_xmod`: rc 2 / 0 `.c` / GREEN classifier
+  bucket (3000 cascade) with **7 x `error[3066]`** (`p[0]`, `p[1]`, runtime `p[i]`,
+  `p[0] = v`, `ps[0].x`, `(*p)[i]`, cross-module `helper.atOne`) + **5 x
+  `error[3067]`** (`p[0..2]`, `p[1..0]`, `p[-1..1]`, runtime `p[0..m]`, `p[0..]`)
+  + the unchanged `p.*[0]` `error[3000]` control; exact per-site census in the
+  emitted log.
+- standalone `repro/single_ptr_slice_ok.z98` (positive) / `repro/single_ptr_index.z98`
+  (reject census); D10 repro `main.zig` converted to a multi-code `fixedreject`
+  (`expected_error.txt`: `3066 6` + `3067 5` + `3000 10`), with siblings
+  `reject_slice_02/10/open.zig`, `reject_star_paren.zig`, accepted
+  `control_slice_legal.zig`, cross-module `xmod_main.zig`/`helper.zig`, and the
+  byte-identical `control_deref.zig`; `run_all.sh` now reads multiple census lines.
+
+**Movement:** 4-MD5 emitted-C **UNCHANGED 4/4** (gol `9e0b708e…` / lisp `ec14d644…` /
+json `5034a0c8…` / mud `2e92c1f2…`). Corpus `-s0` **1052 = 899 OK / 49 GREEN /
+104 FAIL / 0 ICE / 0 CRASH**; full-classifier join-diff vs FB over the 1050 common
+dirs **EMPTY (zero movers)**; the 2 added dirs are the positive fixture (OK) and the
+reject fixture (GREEN). Stdlib runtime **254 PASS / 0 FAIL** (pin 253 -> 254);
+example matrix **24/24**; `check_emit_support.sh` **7/7**;
+`verify_upgraded.sh` **CLOSEOUT OK**; build_test **0/9** (pre-existing retired-zig0
+baseline); self-emission rc 0 / 48 `.c` + 48 `.h` / 0 PANIC. Fixed point MOVED
+`d1ae438960d85b9f1df02ebcd2defe73` -> **`99ef01ad63ba37f98f327317608f577f`**
+(hop1 == hop2, explicit `FIXED_POINT_MD5` gate; seed v88 **NOT rotated**).
+
+**Residuals (bounded, documented in the Language Spec / tech docs).** The FX5
+siblings (`*[N]T[a..b]` scaling, `*[N]T[s..]`/`mp[N..]` ICEs, unchecked runtime
+slice bounds, `pa.*[i]`) are out of scope and untouched. An internal array-field
+decay copied into an unannotated local (`var x = s.a; x[i]`) rejects `error[3066]`
+because the decay erases the declared array length.
 
 ## FB — tuple type/access model (D4) (v256 -> v257, 2026-09-27)
 

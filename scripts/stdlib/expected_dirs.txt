@@ -170,6 +170,7 @@ repro/mi_matrix/stdlib_print_autoimport_xmod
 repro/mi_matrix/stdlib_print_dispatch_xmod
 repro/mi_matrix/stdlib_print_fmt_valid_xmod
 repro/mi_matrix/stdlib_pub_visibility_ok_xmod
+repro/mi_matrix/stdlib_ptrslice_ok_xmod
 repro/mi_matrix/stdlib_rle_decode_xmod
 repro/mi_matrix/stdlib_rle_decodedlen_xmod
 repro/mi_matrix/stdlib_rle_determinism_xmod

@@ -1,0 +1,1 @@
+lens=0 1 0 v=42 sl0=42 c=42 vv=7 pa1=20 pas1=20 dv=42 mp=20

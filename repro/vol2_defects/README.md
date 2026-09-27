@@ -93,6 +93,22 @@ operator-authorized F tasks consume this set.
 > byte-identically. `print(fmt, tupleVariable)` stays the interim
 > `error[3065]` until FD2. The per-case `OBSERVED` sections below remain the
 > historical seed-v88 evidence.
+>
+> **FH status (2026-09-27):** D10 is **FIXED as a clean reject** on the current
+> compiler (fixed point `99ef01ad63ba37f98f327317608f577f`). Indexing a
+> single-item pointer to a non-array pointee (`p[0]`, `p[1]`, a runtime `p[i]`,
+> `p[0] = v`, `*Point`, `*const`/`*volatile`/multi-level) and the `type` base
+> `(*p)[i]` reject level-0 `error[3066]` with Zig 0.15.2 wording (`type '*T'
+> does not support indexing` / `unable to resolve comptime value`); a `*T`
+> slice accepts only the comptime bounds `[0..0]`/`[0..1]`/`[1..1]` and now
+> yields Zig's `*[0]T`/`*[1]T` (const/volatile carried), while every other form
+> (`p[0..2]`, `p[1..0]`, `p[-1..1]`, runtime `p[0..n]`, open `p[0..]`) rejects
+> level-0 `error[3067]` — the open form no longer ICEs `[3043]`. `*[N]T`
+> auto-deref indexing/slicing, `p.*` and `[*]T` indexing are unchanged. D10
+> `run_all.sh` uses kind `fixedreject` with a multi-code census
+> (`3066 6` + `3067 5` + `3000 10`); the sibling slice/`(*p)` rejects and the
+> accepted `control_slice_legal.zig` are exercised outside the runner. The
+> per-case `OBSERVED` sections below remain the historical seed-v88 evidence.
 
 - Plan: `.superpowers/sdd/2026-09-25-z98-manual-volume-II-plan/`
 - Report: `.superpowers/sdd/2026-09-25-z98-manual-volume-II-plan/task-D0-report.md`

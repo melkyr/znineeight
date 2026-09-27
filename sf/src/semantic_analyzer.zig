@@ -931,6 +931,233 @@ fn semanticAnalyzerReportTupleIndexNotComptime(self: *SemanticAnalyzer, mark_nod
     _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3069_TUPLE_INDEX_NOT_COMPTIME)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), msg);
 }
 
+// FH (Volume II D10): write `text` right-to-left ending at `pos`; returns the
+// new start index (`buf[start..pos0]` is the label). Truncates at buf[0].
+fn semanticAnalyzerSpellBytesBack(buf: []u8, pos: usize, text: []const u8) usize {
+    var p = pos;
+    var i = text.len;
+    while (i > 0) {
+        i -= 1;
+        if (p == 0) return @intCast(usize, 0);
+        p -= 1;
+        buf[p] = text[i];
+    }
+    return p;
+}
+
+// FH (Volume II D10): best-effort backward spelling of a type for the
+// `type '*T' does not support indexing` message. A registry `name_id` (all
+// primitives and named aggregates) wins; ptr/many-ptr/array/slice/optional
+// render structurally for a nested pointer (`**i32`) or a composite pointee,
+// with a depth cap that falls back to `T`; everything else uses the FF kind
+// word. The buffer lives in the caller's frame while the diagnostic builder
+// interns the message, so the returned slice is safe there.
+fn semanticAnalyzerSpellTypeBack(self: *SemanticAnalyzer, tid: u32, buf: []u8, pos: usize, depth: u32) usize {
+    if (depth > @intCast(u32, 3)) {
+        var fb: []const u8 = "T";
+        return semanticAnalyzerSpellBytesBack(buf, pos, fb);
+    }
+    if (@intCast(usize, tid) < self.registry.types_len) {
+        var ty = self.registry.types_items[@intCast(usize, tid)];
+        if (ty.name_id != @intCast(u32, 0)) {
+            var nm = interner_mod.stringInternerGet(self.interner, ty.name_id);
+            return semanticAnalyzerSpellBytesBack(buf, pos, nm);
+        }
+        if (ty.kind == type_mod.TypeKind.ptr_type or ty.kind == type_mod.TypeKind.many_ptr_type) {
+            if (@intCast(usize, ty.payload_idx) < self.registry.ptr_len) {
+                var inner = self.registry.ptr_items[@intCast(usize, ty.payload_idx)].base;
+                var p = semanticAnalyzerSpellTypeBack(self, inner, buf, pos, depth + @intCast(u32, 1));
+                if ((ty.flags & @intCast(u8, 2)) != @intCast(u8, 0)) {
+                    var vq: []const u8 = "volatile ";
+                    p = semanticAnalyzerSpellBytesBack(buf, p, vq);
+                }
+                if ((ty.flags & @intCast(u8, 1)) != @intCast(u8, 0)) {
+                    var cq: []const u8 = "const ";
+                    p = semanticAnalyzerSpellBytesBack(buf, p, cq);
+                }
+                if (ty.kind == type_mod.TypeKind.ptr_type) {
+                    var st: []const u8 = "*";
+                    p = semanticAnalyzerSpellBytesBack(buf, p, st);
+                } else {
+                    var m3: []const u8 = "]";
+                    p = semanticAnalyzerSpellBytesBack(buf, p, m3);
+                    var m2: []const u8 = "*";
+                    p = semanticAnalyzerSpellBytesBack(buf, p, m2);
+                    var m1: []const u8 = "[";
+                    p = semanticAnalyzerSpellBytesBack(buf, p, m1);
+                }
+                return p;
+            }
+        }
+        if (ty.kind == type_mod.TypeKind.slice_type) {
+            if (@intCast(usize, ty.payload_idx) < self.registry.slice_len) {
+                var inner = self.registry.slice_items[@intCast(usize, ty.payload_idx)].elem;
+                var p = semanticAnalyzerSpellTypeBack(self, inner, buf, pos, depth + @intCast(u32, 1));
+                var s2: []const u8 = "]";
+                p = semanticAnalyzerSpellBytesBack(buf, p, s2);
+                var s1: []const u8 = "[";
+                p = semanticAnalyzerSpellBytesBack(buf, p, s1);
+                return p;
+            }
+        }
+        if (ty.kind == type_mod.TypeKind.array_type) {
+            if (@intCast(usize, ty.payload_idx) < self.registry.array_len) {
+                var arr = self.registry.array_items[@intCast(usize, ty.payload_idx)];
+                var nb: [12]u8 = undefined;
+                var ntext = semanticAnalyzerU32Text(arr.length, nb[0..]);
+                var p = semanticAnalyzerSpellTypeBack(self, arr.elem, buf, pos, depth + @intCast(u32, 1));
+                var a3: []const u8 = "]";
+                p = semanticAnalyzerSpellBytesBack(buf, p, a3);
+                p = semanticAnalyzerSpellBytesBack(buf, p, ntext);
+                var a1: []const u8 = "[";
+                p = semanticAnalyzerSpellBytesBack(buf, p, a1);
+                return p;
+            }
+        }
+        if (ty.kind == type_mod.TypeKind.optional_type) {
+            if (@intCast(usize, ty.payload_idx) < self.registry.opt_len) {
+                var inner = self.registry.opt_items[@intCast(usize, ty.payload_idx)].payload;
+                var p = semanticAnalyzerSpellTypeBack(self, inner, buf, pos, depth + @intCast(u32, 1));
+                var qm: []const u8 = "?";
+                p = semanticAnalyzerSpellBytesBack(buf, p, qm);
+                return p;
+            }
+        }
+    }
+    var fb2 = semanticAnalyzerIntrospectionTypeLabel(self, tid);
+    return semanticAnalyzerSpellBytesBack(buf, pos, fb2);
+}
+
+// FH (Volume II D10): 3066 for a single-item-pointer index (or a `type` base).
+fn semanticAnalyzerReportIllegalPtrIndex(self: *SemanticAnalyzer, mark_node: u32, base_tid: u32, is_type_base: bool) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, mark_node)) return;
+    var node = ast_mod.astStoreNodeAt(self.store, mark_node);
+    var sp = node.span_start;
+    var ep = sp + @intCast(u32, node.span_len);
+    if (is_type_base) {
+        var tm: []const u8 = "unable to resolve comptime value";
+        var tdi = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3066_SINGLE_PTR_INDEX)), self.source_file_id, sp, ep, tm);
+        diag_mod.diagnosticCollectorAddNote(self.diag, tdi, "types must be comptime-known");
+        return;
+    }
+    var sbuf: [160]u8 = undefined;
+    var spos = semanticAnalyzerSpellTypeBack(self, base_tid, sbuf[0..], sbuf.len, @intCast(u32, 0));
+    var label = sbuf[spos..sbuf.len];
+    var p0: []const u8 = "type '";
+    var p1: []const u8 = "' does not support indexing";
+    var parts: [3][]const u8 = [3][]const u8{ p0, label, p1 };
+    var msg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &parts[0], @intCast(u32, 3));
+    var di = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3066_SINGLE_PTR_INDEX)), self.source_file_id, sp, ep, msg);
+    diag_mod.diagnosticCollectorAddNote(self.diag, di, "operand must be an array, slice, tuple, or vector");
+}
+
+// FH (Volume II D10): 3067, an illegal comptime bound pair on a single-item
+// pointer (`[0..2]`, `[1..0]`, `[-1..1]`).
+fn semanticAnalyzerReportPtrSliceIllegal(self: *SemanticAnalyzer, mark_node: u32) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, mark_node)) return;
+    var msg: []const u8 = "slice of single-item pointer must have bounds [0..0], [0..1], or [1..1]";
+    var node = ast_mod.astStoreNodeAt(self.store, mark_node);
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3067_SINGLE_PTR_SLICE_BOUNDS)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), msg);
+}
+
+// FH (Volume II D10): 3067, a single-item-pointer slice bound that is not
+// comptime-known (`p[0..n]`; Zig's note wording).
+fn semanticAnalyzerReportPtrSliceRuntime(self: *SemanticAnalyzer, mark_node: u32) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, mark_node)) return;
+    var msg: []const u8 = "unable to resolve comptime value";
+    var node = ast_mod.astStoreNodeAt(self.store, mark_node);
+    var di = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3067_SINGLE_PTR_SLICE_BOUNDS)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), msg);
+    diag_mod.diagnosticCollectorAddNote(self.diag, di, "slice of single-item pointer must have comptime-known bounds");
+}
+
+// FH (Volume II D10): 3067, the open-ended form (`p[0..]`; formerly the
+// `error[3043]` ICE on the lowering path).
+fn semanticAnalyzerReportPtrSliceBounded(self: *SemanticAnalyzer, mark_node: u32) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, mark_node)) return;
+    var msg: []const u8 = "slice of single-item pointer must be bounded";
+    var node = ast_mod.astStoreNodeAt(self.store, mark_node);
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3067_SINGLE_PTR_SLICE_BOUNDS)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), msg);
+}
+
+// FH (Volume II D10): the single-item-pointer slice gate. Returns 0 when
+// `base_tid` is not a single-item pointer to a non-array pointee (the caller
+// keeps the ordinary slice path), 1 when one of the three Zig-legal comptime
+// pairs was accepted (`out_len` = end - start), and 2 when the form was
+// rejected (a 3067 diagnostic was emitted; the caller returns void).
+fn semanticAnalyzerCheckSinglePtrSlice(self: *SemanticAnalyzer, node_idx: u32, base_tid: u32, out_len: *u32) u8 {
+    if (@intCast(usize, base_tid) >= self.registry.types_len) return @intCast(u8, 0);
+    var bt = self.registry.types_items[@intCast(usize, base_tid)];
+    if (bt.kind != type_mod.TypeKind.ptr_type) return @intCast(u8, 0);
+    if (@intCast(usize, bt.payload_idx) >= self.registry.ptr_len) return @intCast(u8, 0);
+    var pointee = self.registry.ptr_items[@intCast(usize, bt.payload_idx)].base;
+    if (@intCast(usize, pointee) >= self.registry.types_len) return @intCast(u8, 0);
+    if (self.registry.types_items[@intCast(usize, pointee)].kind == type_mod.TypeKind.array_type) return @intCast(u8, 0);
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    // A struct/union ARRAY FIELD base (`s.arr[a..b]`) decays to an element
+    // pointer like the index path; its declared array length marks it as an
+    // array slice, so it keeps the ordinary (FX5) slice path.
+    var sps_sb0 = self._stub_0;
+    var sps_af_len = semanticAnalyzerStaticArrayLen(self, node.child_0);
+    self._stub_0 = sps_sb0;
+    if (sps_af_len != null) return @intCast(u8, 0);
+    if (node.child_2 == @intCast(u32, 0)) {
+        semanticAnalyzerReportPtrSliceBounded(self, node_idx);
+        return @intCast(u8, 2);
+    }
+    var ce = ce_mod.comptimeEvalInit(self.registry, self.store, self.interner, self.symbols);
+    ce.local_consts = &self.local_consts;
+    var start_ci: ce_mod.ComptimeInt = ce_mod.ciZeroInt();
+    var start_known: u8 = @intCast(u8, 1);
+    if (node.child_1 != @intCast(u32, 0)) {
+        start_known = @intCast(u8, 0);
+        if (semanticAnalyzerComptimeIntValue(self, &ce, node.child_1, &start_ci)) { start_known = @intCast(u8, 1); }
+    }
+    var end_ci: ce_mod.ComptimeInt = ce_mod.ciZeroInt();
+    if (!semanticAnalyzerComptimeIntValue(self, &ce, node.child_2, &end_ci)) {
+        semanticAnalyzerReportPtrSliceRuntime(self, node.child_2);
+        return @intCast(u8, 2);
+    }
+    if (start_known == @intCast(u8, 0)) {
+        semanticAnalyzerReportPtrSliceRuntime(self, node.child_1);
+        return @intCast(u8, 2);
+    }
+    var start_v: u64 = @intCast(u64, 0);
+    var end_v: u64 = @intCast(u64, 0);
+    var start_ok: u8 = @intCast(u8, 0);
+    var end_ok: u8 = @intCast(u8, 0);
+    if (!start_ci.neg and start_ci.len <= @intCast(u8, 2)) {
+        start_v = ce_mod.ciToU64(start_ci);
+        if (start_v == @intCast(u64, 0) or start_v == @intCast(u64, 1)) { start_ok = @intCast(u8, 1); }
+    }
+    if (!end_ci.neg and end_ci.len <= @intCast(u8, 2)) {
+        end_v = ce_mod.ciToU64(end_ci);
+        end_ok = @intCast(u8, 1);
+    }
+    if (start_ok == @intCast(u8, 0)) {
+        var mn: u32 = node_idx;
+        if (node.child_1 != @intCast(u32, 0)) { mn = node.child_1; }
+        semanticAnalyzerReportPtrSliceIllegal(self, mn);
+        return @intCast(u8, 2);
+    }
+    if (end_ok == @intCast(u8, 0)) {
+        semanticAnalyzerReportPtrSliceIllegal(self, node.child_2);
+        return @intCast(u8, 2);
+    }
+    if (start_v == @intCast(u64, 0)) {
+        if (end_v > @intCast(u64, 1)) {
+            semanticAnalyzerReportPtrSliceIllegal(self, node.child_2);
+            return @intCast(u8, 2);
+        }
+    } else {
+        if (end_v != @intCast(u64, 1)) {
+            semanticAnalyzerReportPtrSliceIllegal(self, node.child_2);
+            return @intCast(u8, 2);
+        }
+    }
+    out_len.* = @intCast(u32, end_v - start_v);
+    return @intCast(u8, 1);
+}
+
 // Task 17 (F): the index-access check. The base's fixed length bounds a
 // comptime-known index; a negative value is Zig's coercion reject. The caller
 // restores `_stub_0`/`_stub_1` (the `.len` recovery can re-resolve the base).
@@ -4933,6 +5160,44 @@ fn semanticAnalyzerResolveIndexAccess(self: *SemanticAnalyzer, node_idx: u32) u3
     var ix_m: []const u8 = "IX:T"; pal_mod.markerWriteInt(ix_m, self._stub_0);
     if (self._stub_0 == @intCast(u32, 0) or self._stub_0 == type_mod.TYPE_VOID) { self._stub_0 = saved; rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); return type_mod.TYPE_VOID; }
     var bt = self.registry.types_items[@intCast(usize, self._stub_0)];
+    // FH (Volume II D10): reject indexing a single-item pointer whose pointee is
+    // not a fixed-size array (`p[0]`, `p[1]`, a runtime `p[i]`, `p[0] = v`,
+    // `*Point`, const/volatile/multi-level), and a `type` base (`(*p)[i]`).
+    // `*[N]T` (auto-deref indexing), `[*]T` and `p.*` are unaffected.
+    if (bt.kind == type_mod.TypeKind.type_type) {
+        semanticAnalyzerReportIllegalPtrIndex(self, node_idx, self._stub_0, true);
+        self._stub_0 = saved;
+        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
+        return type_mod.TYPE_VOID;
+    }
+    if (bt.kind == type_mod.TypeKind.ptr_type) {
+        var ix_ptr_bad: u8 = @intCast(u8, 0);
+        if (@intCast(usize, bt.payload_idx) < self.registry.ptr_len) {
+            var ix_pointee = self.registry.ptr_items[@intCast(usize, bt.payload_idx)].base;
+            if (@intCast(usize, ix_pointee) >= self.registry.types_len) {
+                ix_ptr_bad = @intCast(u8, 1);
+            } else if (self.registry.types_items[@intCast(usize, ix_pointee)].kind != type_mod.TypeKind.array_type) {
+                // The one internal `*T` shape that is not a user single-item
+                // pointer: a struct/union ARRAY FIELD access (`s.arr[i]`,
+                // `v.mag[0]`) decays to an element pointer. Its declared array
+                // length (via the Task-11N walk) marks it as an array index.
+                var ix_decay_sb0 = self._stub_0;
+                var ix_field_len = semanticAnalyzerStaticArrayLen(self, node.child_0);
+                self._stub_0 = ix_decay_sb0;
+                if (ix_field_len == null) {
+                    ix_ptr_bad = @intCast(u8, 1);
+                }
+            }
+        } else {
+            ix_ptr_bad = @intCast(u8, 1);
+        }
+        if (ix_ptr_bad != @intCast(u8, 0)) {
+            semanticAnalyzerReportIllegalPtrIndex(self, node_idx, self._stub_0, false);
+            self._stub_0 = saved;
+            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID);
+            return type_mod.TYPE_VOID;
+        }
+    }
     var ix_elem = type_mod.typeRegistryIndexedElemType(self.registry, self._stub_0);
     if (ix_elem != type_mod.TYPE_UNDEFINED) {
         // Task 17 (F): reject a comptime-known out-of-bounds index on a
@@ -5050,6 +5315,31 @@ fn semanticAnalyzerResolveSliceExpr(self: *SemanticAnalyzer, node_idx: u32) u32 
         _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 2000), self.source_file_id, node_idx, node_idx, sl_msg);
         self._stub_0 = saved;
         return type_mod.TYPE_VOID;
+    }
+    // FH (Volume II D10): a single-item pointer to a non-array pointee may be
+    // sliced only with the comptime-known Zig forms [0..0]/[0..1]/[1..1]; they
+    // yield *[0]T/*[1]T (Zig 0.15.2's result types; FH2-I ruling), carrying the
+    // base's const/volatile qualifiers. Every other form rejects 3067 (the
+    // former `p[0..]` error[3043] ICE included). `*[N]T` slices keep the
+    // ordinary path.
+    var sps_base_tid = self._stub_0;
+    var sps_len: u32 = @intCast(u32, 0);
+    var sps_state = semanticAnalyzerCheckSinglePtrSlice(self, node_idx, sps_base_tid, &sps_len);
+    if (sps_state == @intCast(u8, 2)) {
+        self._stub_0 = saved;
+        return type_mod.TYPE_VOID;
+    }
+    if (sps_state == @intCast(u8, 1)) {
+        var sps_bt = self.registry.types_items[@intCast(usize, sps_base_tid)];
+        var sps_pointee = self.registry.ptr_items[@intCast(usize, sps_bt.payload_idx)].base;
+        var sps_is_const: bool = false;
+        if ((sps_bt.flags & @intCast(u8, 1)) != @intCast(u8, 0)) sps_is_const = true;
+        var sps_is_vol: bool = false;
+        if ((sps_bt.flags & @intCast(u8, 2)) != @intCast(u8, 0)) sps_is_vol = true;
+        var sps_arr = type_mod.typeRegistryGetOrCreateArray(self.registry, sps_pointee, sps_len);
+        var sps_ret = type_mod.typeRegistryGetOrCreatePtrQ(self.registry, sps_arr, sps_is_const, sps_is_vol);
+        self._stub_0 = saved;
+        return sps_ret;
     }
     // Task 17 (F): reject a comptime-known out-of-bounds constant slice-range
     // on a fixed-size array (the analogue of the index check). The `.len`

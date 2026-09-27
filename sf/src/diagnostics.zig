@@ -169,6 +169,29 @@ pub const ErrorCode = enum(u16) {
     // spec-legal (Language Spec §4) but stays an interim reject until FD2
     // implements its element reads.
     ERR_3065_PRINT_CONTAINER_NOT_TUPLE = 3065,
+    // FH (Volume II D10): indexing a single-item pointer whose pointee is not
+    // a fixed-size array (`p[0]`, `p[1]`, a runtime `p[i]`, `p[0] = v` on
+    // `*T`/`*const T`/`*volatile T`/`**T`/`*Point`). Official Zig 0.15.2
+    // rejects the shape (`type '*T' does not support indexing` + the note
+    // `operand must be an array, slice, tuple, or vector`); before the gate
+    // Z98 silently emitted `p[i]` C with no bounds information. A `type` base
+    // (`(*p)[i]`, the pointer-type syntax, not deref) is the same wrong-code
+    // family: Zig reports `unable to resolve comptime value` + the note
+    // `types must be comptime-known`. Level 0, span on the index expression;
+    // rejects with 0 `.c`. `*[N]T` (Zig's auto-deref indexing) and `[*]T` are
+    // unaffected.
+    ERR_3066_SINGLE_PTR_INDEX = 3066,
+    // FH (Volume II D10): slicing a single-item pointer whose pointee is not a
+    // fixed-size array. Zig 0.15.2 accepts only the comptime-known bounds
+    // `[0..0]`, `[0..1]`, `[1..1]` (yielding `*[0]T`/`*[1]T`); every other
+    // form rejects: an open end with `slice of single-item pointer must be
+    // bounded`, a runtime bound with `unable to resolve comptime value` +
+    // `slice of single-item pointer must have comptime-known bounds`, an
+    // illegal comptime pair with `slice of single-item pointer must have
+    // bounds [0..0], [0..1], or [1..1]`. This also replaces the former
+    // `error[3043]` ICE on `p[0..]`. Level 0, span on the offending bound;
+    // rejects with 0 `.c`. `*[N]T` slices keep their existing path.
+    ERR_3067_SINGLE_PTR_SLICE_BOUNDS = 3067,
     // FA-a (D3): a `switch` without an `else` prong. Language Spec §3.1 makes
     // the `else` prong mandatory in all switch expressions (value AND statement
     // position); this replaces the tombstone at

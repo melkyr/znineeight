@@ -1,5 +1,5 @@
-// D10 sibling shape: `p[1]` on a single-item pointer is accepted too (reads
-// past the pointee; no diagnostic).
+// D10 sibling: `p[1]` on a single-item pointer (FH conversion, 2026-09-27).
+// Seed v88 accepted it and printed `p[1]=8`; now `error[3066]`, rc 2 / 0 `.c`.
 const std = @import("std");
 
 pub fn main() void {

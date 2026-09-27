@@ -77,6 +77,16 @@
 # and the controls are exercised outside run_all.sh; the historical seed-v88
 # observations stay in the case NOTES.md.
 #
+# FH conversion (2026-09-27): D10 (single-item-pointer indexing) is FIXED as a
+# clean reject. D10 uses the `fixedreject` kind with a multi-code census in
+# expected_error.txt (`3066 6` index forms + `3067 5` slice forms + `3000 10`
+# void-decl cascades/controls), so the runner now requires every listed code
+# count to match. The sibling `reject_slice_02/10/open.zig` +
+# `reject_star_paren.zig` rejects, the accepted `control_slice_legal.zig`
+# (new `*[0]T`/`*[1]T` result types) and `control_deref.zig` are exercised
+# outside run_all.sh; the historical seed-v88 observations stay in the case
+# NOTES.md.
+#
 # Usage: sh run_all.sh [seed-compiler-path]
 # Default seed: /tmp/manual_seed/zig1_5_clean
 # Rebuild:  bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/manual_seed
@@ -106,8 +116,8 @@ for dir in "$CASE_DIR"/D*/ "$CASE_DIR"/S*/; do
         D01_*) kind=crash ;;
         D04_*) kind=runok ;;
         D11_*) kind=reject ;;
-        D03_*|D10_*) kind=accept ;;
-        D07_*|D09_*|D12_*|S01_*) kind=fixedreject ;;
+        D03_*) kind=accept ;;
+        D07_*|D09_*|D10_*|D12_*|S01_*) kind=fixedreject ;;
         D05_*) kind=runok ;;
         D02_*|D06_*|D08_*) kind=wrong ;;
         *)           kind=reject ;;
@@ -140,18 +150,27 @@ for dir in "$CASE_DIR"/D*/ "$CASE_DIR"/S*/; do
     fi
 
     if [ "$kind" = fixedreject ]; then
-        want_code=""
-        want_n=""
-        if [ -f "$dir/expected_error.txt" ]; then
-            read -r want_code want_n < "$dir/expected_error.txt"
-        fi
-        got_n=$(grep -c "error\[$want_code\]" "$out/compile.log" 2>/dev/null)
+        # expected_error.txt carries one `<code> <count>` line per rejected
+        # code. The earlier conversions pin a single line; D10 (FH) pins the
+        # 3066/3067 census plus the 3000 void-decl cascades and controls.
         has_c=0
         set -- "$out"/*.c
         [ -e "$1" ] && has_c=1
+        fr_ok=1
+        fr_seen=0
+        if [ -f "$dir/expected_error.txt" ]; then
+            while read -r want_code want_n; do
+                [ -n "$want_code" ] || continue
+                fr_seen=1
+                got_n=$(grep -c "error\[$want_code\]" "$out/compile.log" 2>/dev/null)
+                if [ "$got_n" -ne "$want_n" ]; then fr_ok=0; fi
+            done < "$dir/expected_error.txt"
+        else
+            fr_ok=0
+        fi
         if [ "$cc" -ge 128 ]; then
             printf '%s: rc=%s RED\n' "$case_name" "$cc"
-        elif [ "$cc" -ne 0 ] && [ "$has_c" -eq 0 ] && [ -n "$want_code" ] && [ "$got_n" -eq "$want_n" ]; then
+        elif [ "$cc" -ne 0 ] && [ "$has_c" -eq 0 ] && [ "$fr_seen" -eq 1 ] && [ "$fr_ok" -eq 1 ]; then
             printf '%s: rc=%s ok\n' "$case_name" "$cc"
         else
             printf '%s: rc=%s RED\n' "$case_name" "$cc"

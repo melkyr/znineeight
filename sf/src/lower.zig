@@ -6670,6 +6670,34 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 }
             }
             if (node.child_2 != @intCast(u32, 0)) {
+                // FH (Volume II D10): a legal `*T` slice (`p[0..0]`/`[0..1]`/
+                // `[1..1]`) resolves to `*[N]T` (N = 0/1). Emit
+                // `(T (*)[N]) (base + start)`: BIN_ADD on the element pointer,
+                // then ptr_cast to the pointer-to-array type; no `make_slice`,
+                // no length temp. Every array/slice/many-pointer base and the
+                // FX5 `*[N]T` slice paths keep their existing emission.
+                var se_pa_is_ptr_arr: u8 = @intCast(u8, 0);
+                if (@intCast(usize, st) < self.ctx.registry.types_len) {
+                    var se_pa_sty = self.ctx.registry.types_items[@intCast(usize, st)];
+                    if (se_pa_sty.kind == type_mod.TypeKind.ptr_type and @intCast(usize, se_pa_sty.payload_idx) < self.ctx.registry.ptr_len) {
+                        var se_pa_pointee = self.ctx.registry.ptr_items[@intCast(usize, se_pa_sty.payload_idx)].base;
+                        if (@intCast(usize, se_pa_pointee) < self.ctx.registry.types_len and self.ctx.registry.types_items[@intCast(usize, se_pa_pointee)].kind == type_mod.TypeKind.array_type) {
+                            se_pa_is_ptr_arr = @intCast(u8, 1);
+                        }
+                    }
+                }
+                if (se_pa_is_ptr_arr != @intCast(u8, 0)) {
+                    var se_pa_ptr = se_base;
+                    if (node.child_1 != @intCast(u32, 0)) {
+                        var se_pa_start = lowerExpr(self, node.child_1);
+                        var se_pa_pt = self.hoisted_temps.items[@intCast(usize, se_base)].type_id;
+                        se_pa_ptr = nextTemp(self, se_pa_pt);
+                        emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = se_base, .rhs = se_pa_start, .result = se_pa_ptr } });
+                    }
+                    var se_pa_cast = nextTemp(self, st);
+                    emitInst(self, LirInst{ .ptr_cast = .{ .value = se_pa_ptr, .target = st, .result = se_pa_cast } });
+                    return se_pa_cast;
+                }
                 var se_end = lowerExpr(self, node.child_2);
                 var se_ptr = se_slice_ptr;
                 var se_len = se_end;
