@@ -675,6 +675,7 @@ All Stage 2a reports are complete and reviewable in the workspace. Final rulings
 - **FX4:** new code 3071 for bogus/foreign qualifiers; the `3060`+`error[20]` cascade stays visible (no suppression).
 - **FX3:** full value-aware float narrowing including Zig's int-exactness reject (`takeF32(16777217)`).
 - **New separated groups:** **FX5** pointer/`*[N]T` slice siblings + unchecked runtime slice bounds + `pa.*[i]`; **FX6** const-array decay / `"abc"`→`[]u8` / array-element mismatch holes; **FX7** switch-merge prong-name propagation; **FX8** `labeled_stmt` traversal.
+- **FI (added 2026-09-26 by operator ruling A):** extend `for` to iterate `*[N]T` (pointer-to-array) so the FH result-type adoption (`*[0]T`/`*[1]T` for the legal single-pointer slices) does not keep the previously-working `for (p[0..1]) |v|` shape rejected (`error[20]`). FI supersedes the FH bounded-over-rejection residual entry; full Zig parity for the shape.
 - **Dispatch is strictly sequential** (one task at a time), in this order: **FA-a**, FG, FD1, FE, FF, FA-b, FC, FB, FH2-I, FH, FX1, FX2, FX3, FX4, FD2, FX5, FX6, FX7, FX8.
 
 ---
