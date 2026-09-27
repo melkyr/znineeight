@@ -2703,17 +2703,25 @@ fn lowerFieldStore(self: *LirLowerer, fa_node_idx: u32, value_temp: u32, diag_no
     }
 }
 
-// D2: resolve one switch case item to its integer case value. The exact-case
+// FX1: resolve one switch case item to its integer case value. The exact-case
 // tail and the range endpoints share this resolver, so an enum-typed range
 // endpoint (`Color.Red...Color.Green`, shorthand `.Red... .Blue`, cross-module
-// `mod.LO...mod.HI`) expands exactly like an int/char literal range. An
-// unresolved item returns null (no case appended) -- the pre-D2 silent-drop
-// behavior retained for the shapes FX1 still owns (exact `identifier` items,
-// named-const range bounds, `bool_literal`).
+// `mod.LO...mod.HI`) expands exactly like an int/char literal range, and the
+// FX1 shapes resolve to their comptime values: int consts (typed/untyped,
+// same-module `LO` or module-qualified `mod.LO`), enum-member consts
+// (`const LOMEM = Color.Red;`), unqualified enum members (`Blue`) and
+// `bool_literal` items (`true`/`false` -> 1/0). An unresolved item returns
+// null (no case appended) -- the silent-drop behavior retained for the shapes
+// still out of scope (negative const bounds / negative literals, non-constant
+// expressions, function-local consts -- lowering has no local-const scope).
 fn lowerSwitchCaseItemValue(self: *LirLowerer, item_idx: u32, cond_ty_id: ?u32) ?u64 {
     var node = ast_mod.astStoreNodeAt(self.ctx.store, item_idx);
     if (node.kind == AstKind.int_literal or node.kind == AstKind.char_literal) {
         return ast_mod.astStoreIntValue(self.ctx.store, item_idx);
+    }
+    if (node.kind == AstKind.bool_literal) {
+        if ((node.flags & @intCast(u8, 1)) != @intCast(u8, 0)) return @intCast(u64, 1);
+        return @intCast(u64, 0);
     }
     if (node.kind == AstKind.enum_literal) {
         var el_table = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, item_idx);
@@ -2733,7 +2741,17 @@ fn lowerSwitchCaseItemValue(self: *LirLowerer, item_idx: u32, cond_ty_id: ?u32) 
     }
     if (node.kind == AstKind.field_access) {
         var fa_name_id: u32 = ast_mod.astStoreNodePayload(self.ctx.store, item_idx);
-        return lowerSwitchCaseItemMemberValue(self, fa_name_id, cond_ty_id);
+        // D2: a qualified/shorthand enum member or a tagged-union field tag.
+        if (lowerSwitchCaseItemMemberValue(self, fa_name_id, cond_ty_id)) |mv| return mv;
+        // FX1: a module-qualified constant (`mod.LO`, `mod.LOMEM`).
+        return lowerSwitchCaseItemConstValue(self, item_idx, cond_ty_id);
+    }
+    if (node.kind == AstKind.ident_expr) {
+        // FX1: an unqualified enum member (`Blue`) or a named constant
+        // (`LO`, `PICK`, `LOMEM`).
+        var id_name_id: u32 = ast_mod.astStoreIdentifier(self.ctx.store, item_idx);
+        if (lowerSwitchCaseItemMemberValue(self, id_name_id, cond_ty_id)) |mv| return mv;
+        return lowerSwitchCaseItemConstValue(self, item_idx, cond_ty_id);
     }
     return null;
 }
@@ -2768,6 +2786,98 @@ fn lowerSwitchCaseItemMemberValue(self: *LirLowerer, name_id: u32, cond_ty_id: ?
         }
     }
     return null;
+}
+
+// FX1: resolve a named case item / range bound (`LO`, `mod.LO`) to its
+// comptime integer value. The exact evaluator covers typed/untyped int consts
+// in the same module and module-qualified consts, including constant
+// arithmetic and the cross-module visibility check; only non-negative values
+// are emittable (the C emitter prints case labels as unsigned decimal). A
+// reference whose initializer is not an integer constant is re-checked
+// structurally for an enum-member value.
+fn lowerSwitchCaseItemConstValue(self: *LirLowerer, node_idx: u32, cond_ty_id: ?u32) ?u64 {
+    var env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner, .module_id = self.module_id, .source_file_id = @intCast(u32, 0), .diag = self.ctx.diag, .local_consts = null, .local_types = null };
+    if (type_resolver.evalConstI64Full(&env, node_idx, @intCast(u32, 0))) |iv| {
+        if (iv >= @intCast(i64, 0)) return @intCast(u64, iv);
+        return null;
+    }
+    var decl = lowerSwitchCaseItemConstDecl(self, node_idx) orelse return null;
+    var decl_node = ast_mod.astStoreNodeAt(self.ctx.store, decl);
+    if (decl_node.child_1 == @intCast(u32, 0)) return null;
+    if (type_resolver.evalConstI64Full(&env, decl_node.child_1, @intCast(u32, 0))) |iv2| {
+        if (iv2 >= @intCast(i64, 0)) return @intCast(u64, iv2);
+        return null;
+    }
+    return lowerSwitchCaseItemEnumConstMemberValue(self, decl_node.child_1, cond_ty_id, @intCast(u32, 1));
+}
+
+// FX1: an enum-member constant (`const LOMEM = Color.Red;`) has no integer
+// initializer, so the exact evaluator declines it. Walk the constant's
+// initializer chain (`Color.Red` / `.Red` / `Red` / alias consts) to the member
+// name and resolve it against the switch condition exactly like the D2 member
+// arm (`member.value` for enums / the field index for tagged unions).
+fn lowerSwitchCaseItemEnumConstMemberValue(self: *LirLowerer, node_idx: u32, cond_ty_id: ?u32, depth: u32) ?u64 {
+    if (depth >= @intCast(u32, 16)) return null;
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    if (node.kind == AstKind.paren_expr) {
+        return lowerSwitchCaseItemEnumConstMemberValue(self, node.child_0, cond_ty_id, depth + @intCast(u32, 1));
+    }
+    if (node.kind == AstKind.enum_literal) {
+        var el_name_id: u32 = ast_mod.astStoreIdentifier(self.ctx.store, node_idx);
+        return lowerSwitchCaseItemMemberValue(self, el_name_id, cond_ty_id);
+    }
+    if (node.kind == AstKind.field_access) {
+        var fa_name_id: u32 = ast_mod.astStoreNodePayload(self.ctx.store, node_idx);
+        if (lowerSwitchCaseItemMemberValue(self, fa_name_id, cond_ty_id)) |mv| return mv;
+    } else if (node.kind == AstKind.ident_expr) {
+        var id_name_id: u32 = ast_mod.astStoreIdentifier(self.ctx.store, node_idx);
+        if (lowerSwitchCaseItemMemberValue(self, id_name_id, cond_ty_id)) |mv| return mv;
+    }
+    var decl = lowerSwitchCaseItemConstDecl(self, node_idx) orelse return null;
+    var decl_node = ast_mod.astStoreNodeAt(self.ctx.store, decl);
+    if (decl_node.child_1 == @intCast(u32, 0)) return null;
+    return lowerSwitchCaseItemEnumConstMemberValue(self, decl_node.child_1, cond_ty_id, depth + @intCast(u32, 1));
+}
+
+// FX1: the declaration node of the immutable module-level constant a case
+// item names. Identifiers resolve in the current module first and then across
+// the other symbol tables; a field access resolves its base as a module alias
+// (including a direct `@import(...)` base and nested module aliases).
+fn lowerSwitchCaseItemConstDecl(self: *LirLowerer, node_idx: u32) ?u32 {
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    if (node.kind == AstKind.ident_expr) {
+        var name_id: u32 = ast_mod.astStoreIdentifier(self.ctx.store, node_idx);
+        var sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, name_id);
+        if (sym) |s| {
+            if (lowerSwitchCaseItemIsConstGlobal(s)) return s.decl_node;
+        }
+        var mi: usize = 0;
+        while (mi < @intCast(usize, self.ctx.symbol_tables.tables_len)) : (mi += 1) {
+            var s2 = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, @intCast(u32, mi), name_id);
+            if (s2) |s| {
+                if (lowerSwitchCaseItemIsConstGlobal(s)) return s.decl_node;
+            }
+        }
+        return null;
+    }
+    if (node.kind == AstKind.field_access) {
+        var base_mod = resolveModuleBase(self, node.child_0);
+        if (base_mod == @intCast(u32, 0)) return null;
+        var field_name_id: u32 = ast_mod.astStoreNodePayload(self.ctx.store, node_idx);
+        var s3 = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, base_mod, field_name_id);
+        if (s3) |s| {
+            if (lowerSwitchCaseItemIsConstGlobal(s)) return s.decl_node;
+        }
+        return null;
+    }
+    return null;
+}
+
+fn lowerSwitchCaseItemIsConstGlobal(s: *sym_mod.Symbol) bool {
+    // Symbol flags bit0 is `is_mutable` (parser): a `var` case item is not a
+    // compile-time constant (Zig rejects it), so only `const` globals resolve.
+    if (s.kind != sym_mod.SymbolKind.global) return false;
+    return (@intCast(u16, s.flags) & @intCast(u16, 1)) == @intCast(u16, 0);
 }
 
 fn lowerAppendSwitchCaseItem(self: *LirLowerer, item_idx: u32, prong_bb_id: u32, cond_ty_id: ?u32) void {

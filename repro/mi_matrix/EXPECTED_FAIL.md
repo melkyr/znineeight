@@ -1,4 +1,65 @@
-# mi_matrix corpus — expected-fail manifest (v259 2026-09-27)
+# mi_matrix corpus — expected-fail manifest (v260 2026-09-27)
+
+## FX1 — named-constant and `bool` switch case items / range bounds (D2 extras) (v259 -> v260, 2026-09-27)
+
+Volume II defect-fix phase, Stage 2b follow-up (task-FX1). FA-a fixed only enum-member
+range endpoints; the remaining D2 shapes appended ZERO C `case` labels and silently took
+`else` (wrong stdout, rc 0): exact `identifier` items, named-const range bounds (typed/
+untyped int, enum-member consts), mixed lists (`LO, 2`), cross-module `mod.LO` consts and
+`bool_literal` items. Operator ruling: emit the cases and cover cross-module.
+
+**Fix** (`sf/src/lower.zig`, lowering-side const resolution; sema untouched).
+1. `lowerSwitchCaseItemValue` gains a `bool_literal` arm (`true`/`false` -> 1/0) and an
+   `ident_expr` arm: an unqualified enum member name resolves first (as before for
+   `enum_literal`/`field_access`), then the named-constant path. `field_access` keeps the
+   D2 member lookup and falls through to the constant path on a miss.
+2. `lowerSwitchCaseItemConstValue`: a named int const (typed/untyped, same module or
+   module-qualified `mod.LO`) resolves through the exact const evaluator
+   (`type_resolver.evalConstI64Full`, which also carries the cross-module `pub`
+   visibility check); only non-negative values are emittable. A non-integer initializer
+   falls through to the enum-member walk.
+3. `lowerSwitchCaseItemEnumConstMemberValue`: an enum-member const
+   (`const LOMEM = Color.Red;`, `const LOMEM_T: Color = .Red;`, alias chains) has no
+   integer initializer, so the initializer chain is walked to the member name and resolved
+   against the condition enum via `member.value` (TU: field index) — `enum(uN)` gaps exact.
+4. `lowerSwitchCaseItemConstDecl` / `lowerSwitchCaseItemIsConstGlobal`: resolve the
+   declaration node of the immutable module-level constant an item names (current module
+   first, then all symbol tables; `resolveModuleBase` for a module-alias or direct-import
+   base); a `var`/non-global never resolves.
+5. Unchanged: int/char literal paths, `>16384` / `hi < lo` / empty-exclusive caps, FA-a's
+   enum-range resolution, sema's `enum_value_table` walk, and the `error[3068]`
+   mandatory-`else` gate. Negative-valued constants and function-local consts stay
+   unresolved (no case appended, documented in spec §3.1).
+
+**Fixtures.**
+- positive `repro/mi_matrix/stdlib_switch_case_consts_xmod` (20 rows; golden 313 B
+  rc 0, 3x byte-exact; the first 15 rows — through `stmt` — are byte-identical to the
+  Zig-0.15.2 `std.debug.print` twin `/tmp/fx1/oracle_fixture/twin.zig`; stdlib pin
+  **255 -> 256**). Rows: typed/untyped int const ranges, exact const, mixed `LO, 2`,
+  mixed consts `PICK, SUM`, cross-module int range/exact (`helper.LO...helper.HI`,
+  `helper.PICK`), enum-member const exact / typed `.Red` / alias chain / `enum(u8)` gap,
+  cross-module enum const, `true` + `else` bool, statement switch; Z98-only rows: enum
+  ranges (`LOMEM...HIMEM`, `.Red...HIMEM`, `LOMEM...Blue`, `helper.LOMEM...helper.HIMEM`)
+  and the exhaustive `true,false,else` bool switch (Zig rejects enum ranges and the
+  unreachable `else`).
+- standalone `repro/switch_case_consts.z98` (same shapes, 12 rows).
+- D02 `repro/vol2_defects/D02_enum_switch_ranges/` is untouched and still GREEN
+  (`run_all.sh`: `D02: rc=0 ok`).
+
+**Movement:** fixed point MOVED `b44a85111b1f89921ab1d46a752c61a5` ->
+**`98cd68f4a4f99b520f663d6964673e67`** (hop1 == hop2, explicit `FIXED_POINT_MD5` gate;
+seed v88 **NOT rotated**). 4-MD5 emitted-C **UNCHANGED 4/4** (gol `9e0b708e…` /
+lisp `ec14d644…` / json `5034a0c8…` / mud `2e92c1f2…`, 2x each). Corpus `-s0`
+**1054 = 901 OK / 49 GREEN / 104 FAIL / 0 ICE / 0 CRASH**; full-classifier join-diff vs
+the FI 1053-dir baseline = exactly the new positive fixture (OK), **zero other movers**.
+Stdlib runtime **256 PASS / 0 FAIL**; example matrix **24/24**; `check_emit_support.sh`
+**7/7**; `verify_upgraded.sh` **CLOSEOUT OK**; build_test **0/9** (pre-existing
+retired-zig0 baseline); self-emission rc 0 / 48 `.c` + 48 `.h` / 0 PANIC. Pre/post probe
+sweep (seed vs FX1 compiler, 31 probes): only the intended FX1 shapes moved
+(`constbound`, `constboundenum`, `exactconst`, `exactconstenum`, `bool`, `range`,
+`exact`, `multi`, `bare`/`bare_variants.a`, and the new same-mod/xmod probes); D2 enum
+ranges, int/char ranges, caps and reject probes byte-identical.
+
 
 ## FI — `for` iterates a pointer-to-array (`*[N]T`) (operator ruling A) (v258 -> v259, 2026-09-27)
 

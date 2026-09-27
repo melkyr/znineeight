@@ -227,6 +227,7 @@ repro/mi_matrix/stdlib_stream_msgreader_oversize_xmod
 repro/mi_matrix/stdlib_stream_msgreader_stress_xmod
 repro/mi_matrix/stdlib_stream_msgreader_xmod
 repro/mi_matrix/stdlib_stream_stress_xmod
+repro/mi_matrix/stdlib_switch_case_consts_xmod
 repro/mi_matrix/stdlib_switch_enum_range_xmod
 repro/mi_matrix/stdlib_time_monotonic_avail_xmod
 repro/mi_matrix/stdlib_time_monotonic_xmod
