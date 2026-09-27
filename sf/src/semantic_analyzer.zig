@@ -2556,8 +2556,45 @@ fn semanticAnalyzerFloatNarrowIsNumeric(self: *SemanticAnalyzer, ty: u32) bool {
 }
 
 fn semanticAnalyzerFloatNarrowStatus(self: *SemanticAnalyzer, src_node: u32, src_ty: u32, dst_ty: u32) u8 {
+    return semanticAnalyzerFloatNarrowStatusDepth(self, src_node, src_ty, dst_ty, @intCast(u32, 0));
+}
+
+// FX3 fix round 1: an `if`/`switch` VALUE expression at an f32 site has its
+// arms' unified sema type (f64 here), which the value probe cannot fold, so
+// pre-fix the site fell through to the runtime-numeric reject and
+// over-rejected shapes both the seed and Zig 0.15.2 accept
+// (`return if (c > 0) 1.5 else 2.5;`). Classify the ARMS instead: every value
+// arm must be value-aware acceptable (noreturn arms are neutral); a
+// runtime/inexact/oversized arm makes the whole expression reject at the
+// site. The accepted expression is materialised by lowering's `lowerExpr`
+// wrapper (the joined f64 temp gets one `float_cast` to f32).
+fn semanticAnalyzerFloatNarrowStatusDepth(self: *SemanticAnalyzer, src_node: u32, src_ty: u32, dst_ty: u32, depth: u32) u8 {
     if (dst_ty != type_mod.TYPE_F32) return FLOAT_NARROW_NONE;
     if (!semanticAnalyzerFloatNarrowIsNumeric(self, src_ty)) return FLOAT_NARROW_NONE;
+    if (depth < @intCast(u32, 24)) {
+        var sn = ast_mod.astStoreNodeAt(self.store, src_node);
+        if (sn.kind == AstKind.paren_expr) {
+            return semanticAnalyzerFloatNarrowStatusDepth(self, sn.child_0, src_ty, dst_ty, depth + @intCast(u32, 1));
+        }
+        if (sn.kind == AstKind.if_expr) {
+            if (sn.child_2 == @intCast(u32, 0)) return FLOAT_NARROW_NONE;
+            var ia = semanticAnalyzerFloatNarrowArmStatus(self, sn.child_1, depth + @intCast(u32, 1));
+            if (ia != FLOAT_NARROW_ACCEPT) return ia;
+            return semanticAnalyzerFloatNarrowArmStatus(self, sn.child_2, depth + @intCast(u32, 1));
+        }
+        if (sn.kind == AstKind.swt_ex) {
+            var prongs_n = ast_mod.astStoreNodeExtraChildCount(self.store, src_node);
+            if (prongs_n == @intCast(usize, 0)) return FLOAT_NARROW_NONE;
+            var pi: usize = 0;
+            while (pi < prongs_n) : (pi += 1) {
+                var prong_i = ast_mod.astStoreNodeExtraChildAt(self.store, src_node, @intCast(u32, pi));
+                var prong = ast_mod.astStoreNodeAt(self.store, prong_i);
+                var pa = semanticAnalyzerFloatNarrowArmStatus(self, prong.child_0, depth + @intCast(u32, 1));
+                if (pa != FLOAT_NARROW_ACCEPT) return pa;
+            }
+            return FLOAT_NARROW_ACCEPT;
+        }
+    }
     var sk = self.registry.types_items[@intCast(usize, src_ty)].kind;
     var ce = ce_mod.comptimeEvalInit(self.registry, self.store, self.interner, self.symbols);
     ce.local_consts = &self.local_consts;
@@ -2575,6 +2612,27 @@ fn semanticAnalyzerFloatNarrowStatus(self: *SemanticAnalyzer, src_node: u32, src
         }
     }
     return FLOAT_NARROW_NONE;
+}
+
+// One `if`-expression arm / `switch`-prong value at an f32 site. The arm's
+// own sema type comes from the resolved-type table; a genuine `f32` arm
+// (mixed-type shapes) and a `noreturn` arm (a diverging branch) are accepted
+// neutrally, anything else must classify as an accepted narrowing. NEVER
+// returns NONE: inside an `if`/`switch`, an arm that is not classifiable is a
+// reject of the whole expression.
+fn semanticAnalyzerFloatNarrowArmStatus(self: *SemanticAnalyzer, arm_node: u32, depth: u32) u8 {
+    if (arm_node == @intCast(u32, 0)) return FLOAT_NARROW_REJECT;
+    var arm_ty: u32 = @intCast(u32, 0);
+    if (rtt_mod.resolvedTypeTableGet(self.type_table, arm_node)) |t| { arm_ty = t; }
+    if (arm_ty == type_mod.TYPE_NORETURN) return FLOAT_NARROW_ACCEPT;
+    if (arm_ty == @intCast(u32, 0) or arm_ty == type_mod.TYPE_VOID or arm_ty == type_mod.TYPE_UNDEFINED) return FLOAT_NARROW_REJECT;
+    // Only a genuine f32 arm is neutral. An `integer_literal` arm is
+    // ASSIGNABLE to f32 but still has to pass the int-exactness check, so it
+    // must fall through to the status (`if (c) 16777217 else 2.5` rejects).
+    if (arm_ty == type_mod.TYPE_F32) return FLOAT_NARROW_ACCEPT;
+    var a = semanticAnalyzerFloatNarrowStatusDepth(self, arm_node, arm_ty, type_mod.TYPE_F32, depth);
+    if (a == FLOAT_NARROW_NONE) return FLOAT_NARROW_REJECT;
+    return a;
 }
 
 // The value-aware accept record for the sites that do not route through

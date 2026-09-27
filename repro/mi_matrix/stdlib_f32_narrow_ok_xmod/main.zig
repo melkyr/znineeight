@@ -7,7 +7,11 @@
 // comptime-known f64 (const / @as(f64, ...)) that is exactly representable,
 // and a comptime-known integer that is exactly representable. Sites:
 // parameters, returns, struct fields, tagged-union payloads, local
-// declarations, assignments and cross-module calls.
+// declarations, assignments and cross-module calls. FX3 fix round 1 adds
+// `if`/`switch` VALUE expressions (runtime conditions): the narrowing probe
+// classifies every arm value-aware instead of rejecting the joined f64, so
+// `return if (c > 0) 1.5 else 2.5;`/`switch` return and an `if`-initialized
+// declaration stay accepted exactly like Zig 0.15.2.
 //
 // Contract: stdout below, rc 0, byte-exact 3x; every printed value is
 // byte-identical to the Zig-0.15.2 `std.debug.print` twin (the values chosen
@@ -26,6 +30,8 @@ fn take(x: f32) f32 { return x; }
 fn retLit() f32 { return 1.5; }
 fn retD() f32 { return D; }
 fn retC() f32 { return C; }
+fn retIf(c: i32) f32 { return if (c > 0) 1.5 else 2.5; }
+fn retSwitch(c: i32) f32 { return switch (c) { 1 => 1.5, else => 2.5 }; }
 
 pub fn main() void {
     var v1: f32 = 0.1;
@@ -33,6 +39,9 @@ pub fn main() void {
     var v2: f32 = D;
     var v3: f32 = C;
     var v4: f32 = NL;
+    var c: i32 = 1;
+    c = c + 1;
+    const vi: f32 = if (c > 0) 1.5 else 2.5;
 
     var s1: S = S{ .x = 2.0 };
     var s2: S = S{ .x = D };
@@ -44,6 +53,7 @@ pub fn main() void {
     std.io.print("param={} {} {} {} {} {}\n", .{ take(1.5), take(2), take(1.0 + 0.5), take(D), take(@as(f64, 4.0)), take(C) });
     std.io.print("param2={} {} {}\n", .{ take(0.1), take(NL), helper.take(3.5) });
     std.io.print("ret={} {} {}\n", .{ retLit(), retD(), retC() });
+    std.io.print("ifs={} {} {} {}\n", .{ retIf(1), retIf(-1), retSwitch(1), vi });
     std.io.print("decl={} {} {} {}\n", .{ v1, v2, v3, v4 });
     std.io.print("field={} {}\n", .{ s1.x, s2.x });
     std.io.print("union={} {} {}\n", .{ ua.a, ub.a, uc.a });

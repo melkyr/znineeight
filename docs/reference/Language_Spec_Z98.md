@@ -517,6 +517,13 @@ parser accumulates digits, so an extreme literal such as
 typed `const` of it can reject where Zig accepts; the value-aware rule is
 applied to the lexed value.
 
+Two further **pre-existing over-rejects** stay documented (the seed rejected
+these too, so they are not regressions): a **cross-module qualified const**
+(`helper.GoodF` where `helper.GoodF: f64 = 2.5`) and a **comptime struct-field
+read** (`const p = P{ .x = 2.5 }; takeF32(p.x)`) are not folded as
+comptime-known values by the narrowing probe, so the runtime-f64 reject applies
+where Zig accepts the exact values.
+
 ## 7. Not Yet Supported
 
 ### 7.1 Permanently Dropped Features

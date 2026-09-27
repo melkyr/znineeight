@@ -137,8 +137,10 @@ The FX3 fix (`fix(sema): narrow float values to f32 value-aware`, fixed point
 - The accept/reject matrix is pinned by
   `repro/mi_matrix/stdlib_f32_narrow_ok_xmod` (golden, Zig-0.15.2-twin
   byte-identical) and `repro/mi_matrix/f32_narrow_reject_xmod` (18 ×
-  `error[3000]`, rc 2 / 0 `.c`); the D06 `main.zig` literal payloads stay
-  byte-identical.
+  `error[3000]`, rc 2 / 0 `.c`); the D06 `main.zig` literal payloads compile,
+  build and run the same values with the same payload assignment shape, but
+  their emitted C is only semantically identical (temp numbering/order differs
+  from the FF base).
 
 Documented FX3 boundary: the lexer's naive `parseF64` accumulates digits, so
 an extreme literal like `3.4028234663852886e38` is not the correctly-rounded

@@ -30,10 +30,26 @@ declaration, assignment, module var)
 f64 -> f32 would accept runtime values Zig rejects); sema owns the value
 classification and records the coercion on the value node.
 
+**Fix round 1 (2026-09-27, commit `fix(sema): fold if/switch values for f32
+narrowing`).** The review found that `if`/`switch` VALUE expressions at f32
+sites over-rejected (the seed and Zig 0.15.2 accept `return if (c > 0) 1.5
+else 2.5;` / the `switch` form / an `if`-initialized declaration). The status
+now classifies the ARMS (new `semanticAnalyzerFloatNarrowStatusDepth` +
+`semanticAnalyzerFloatNarrowArmStatus`, paren-unwrapping): every value arm must
+be value-aware acceptable, a `noreturn` arm is neutral, and an inexact
+(`if (c) 16777217 else 2.5`) or runtime (`if (c, d: f64) d else 2.5`) arm still
+rejects at the site. The positive fixture gains the `if`/`switch` rows (golden
+now 9 lines / 130 B, still byte-identical to the Zig twin); the reject fixture
+census is unchanged at 18 x `error[3000]`; corpus join-diff vs the FX3 commit
+is EMPTY; 4-MD5 UNCHANGED 8/8; fixed point `8233580f...` ->
+`2012736050feb56f2d699ffb5fae38e1` (hop1 == hop2, explicit gate; seed v88 NOT
+rotated).
+
 **Fixtures.** Positive `repro/mi_matrix/stdlib_f32_narrow_ok_xmod`
-(in-module + cross-module params/returns/fields/payloads/decls/assignments;
-golden 8 lines / 89 B, rc 0, 3x byte-exact, byte-identical to the Zig-0.15.2
-`std.debug.print` twin; stdlib pin **257 -> 258**) + reject
+(in-module + cross-module params/returns/fields/payloads/decls/assignments +
+the fix-round `if`/`switch` rows; golden 9 lines / 130 B, rc 0, 3x
+byte-exact, byte-identical to the Zig-0.15.2 `std.debug.print` twin; stdlib
+pin **257 -> 258**) + reject
 `repro/mi_matrix/f32_narrow_reject_xmod` (18 x `error[3000]`: runtime
 f64/i32 args + returns + decls + assignment + field + tagged-union payload,
 typed f64 const 0.1 / `@as(f64, 0.1)` / typed i32 16777217 / untyped const
