@@ -90,6 +90,7 @@ fn switchForm(u: U) void {
             _ = sc;
         },
         .b => {},
+        else => {},
     }
 }
 

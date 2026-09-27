@@ -31,8 +31,10 @@ fn pick(c: C, d: D) []const u8 {
         .A => switch (d) {
             .X => "alpha\r\n",
             .Y => "ax\r\n",
+            else => unreachable,
         },
         .B => "beta\r\n",
+        else => unreachable,
     };
 }
 

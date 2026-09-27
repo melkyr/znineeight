@@ -1,4 +1,12 @@
-# switch_char_nodefault — FAIL (runtime gap, char_literal stmt-switch case labels dropped)  [I-task: char_literal switch repro battery A1-A4, 2026-08-07]
+# switch_char_nodefault — FAIL (documented strict-`else` reject)  [I-task: char_literal switch repro battery A1-A4, 2026-08-07]
+
+> **FA-b status (2026-09-27): documented reject, NOT migrated.** This stmt
+> switch is intentionally non-exhaustive (`u8` condition, two `char_literal`
+> prongs, no `else`). The FA-a strict rule (`error[3068]`, `switch must have
+> an 'else' prong`) rejects it by design, and FA-b's migration rule never
+> converts a partial switch into an accepted one, so it stays a corpus FAIL
+> reject. The runtime-gap tracking below is historical: the no-default shape
+> it exercises is no longer accepted by the compiler.
 
 ## What it tests
 A stmt-position `switch (c: u8)` with two `char_literal` prongs

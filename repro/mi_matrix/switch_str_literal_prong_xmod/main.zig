@@ -36,6 +36,7 @@ fn pick(c: Cmd) []const u8 {
     return switch (c) {
         .A => "alpha\r\n",
         .B => "beta\r\n",
+        else => unreachable,
     };
 }
 

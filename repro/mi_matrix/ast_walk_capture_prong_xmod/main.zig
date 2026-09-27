@@ -19,6 +19,7 @@ pub fn main() void {
         .value => |n| {
             got = n;
         },
+        else => {},
     }
     if (got != 42) {
         @panic("capture prong mismatch");

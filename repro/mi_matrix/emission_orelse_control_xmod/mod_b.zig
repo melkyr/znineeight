@@ -6,5 +6,6 @@ pub fn useSw(prefix: []const u8, seed: i32, k: K) ?i32 {
     switch (k) {
         .a => return mod_a.maybe(seed) orelse return null,
         .b => return null,
+        else => unreachable,
     }
 }

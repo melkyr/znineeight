@@ -48,6 +48,7 @@ fn stmtExtract(kv: V) []const u8 {
     switch (kv) {
         .A => |s| r = s,
         .B => |s| r = s,
+        else => {},
     }
     return r;
 }
@@ -59,6 +60,7 @@ pub fn main() void {
         const expr_key = switch (kv) {
             .A => |s| s,
             .B => |s| s,
+            else => unreachable,
         };
         std.io.write(expr_key);
         std.io.writeByte('\n');

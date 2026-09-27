@@ -31,6 +31,7 @@ fn pick(u: U) []const u8 {
     return switch (u) {
         .A => |v| if (v == 7) "alpha\r\n" else "wrongA\r\n",
         .B => |v| if (v == 9) "beta\r\n" else "wrongB\r\n",
+        else => unreachable,
     };
 }
 

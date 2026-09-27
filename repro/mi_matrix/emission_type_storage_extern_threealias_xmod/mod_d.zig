@@ -8,6 +8,7 @@ pub fn cval() i32 {
         .Red => 1,
         .Green => 2,
         .Blue => 3,
+        else => unreachable,
     };
 }
 
@@ -15,5 +16,6 @@ pub fn sval() i32 {
     return switch (S.Square) {
         .Circle => 1,
         .Square => 2,
+        else => unreachable,
     };
 }

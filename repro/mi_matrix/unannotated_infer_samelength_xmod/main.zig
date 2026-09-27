@@ -22,6 +22,7 @@ fn pick(c: Cmd) []const u8 {
     var s = switch (c) {
         .A => "abc",
         .B => "xyz",
+        else => unreachable,
     };
     if (s.len != 3) { @panic("unannotated_infer_samelength_xmod: inferred slice s.len != 3"); }
     return s;

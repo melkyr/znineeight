@@ -9,6 +9,7 @@ pub fn pick(c: Cmd) []const u8 {
     var s = switch (c) {
         .A => "alpha\r\n",
         .B => "gamma\r\n",
+        else => unreachable,
     };
     return s;
 }

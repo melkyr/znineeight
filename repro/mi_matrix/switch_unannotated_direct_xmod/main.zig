@@ -25,6 +25,7 @@ fn pick(c: Cmd) []const u8 {
     var s = switch (c) {
         .A => "alpha\r\n",
         .B => "gamma\r\n",
+        else => unreachable,
     };
     if (s.len != 7) { @panic("switch_unannotated_direct_xmod: s.len != 7 (direct un-annotated inference)"); }
     return s;

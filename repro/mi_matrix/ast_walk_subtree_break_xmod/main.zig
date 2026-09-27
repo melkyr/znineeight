@@ -18,6 +18,7 @@ fn spin(u: U) i32 {
             .more => |v| {
                 return v + 1;
             },
+            else => unreachable,
         }
     }
 }

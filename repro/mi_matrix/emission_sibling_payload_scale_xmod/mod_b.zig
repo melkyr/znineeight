@@ -11,5 +11,6 @@ pub fn emit(inst: Inst) void {
         .load => |l| {
             std.io.printInt(@intCast(i32, l.result));
         },
+        else => {},
     }
 }

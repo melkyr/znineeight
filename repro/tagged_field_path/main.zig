@@ -17,5 +17,6 @@ pub fn main() void {
             }
         },
         .Empty => {},
+        else => {},
     }
 }

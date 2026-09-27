@@ -1,4 +1,68 @@
-# mi_matrix corpus — expected-fail manifest (v254 2026-09-26)
+# mi_matrix corpus — expected-fail manifest (v255 2026-09-27)
+
+## FA-b — migrate the remaining no-`else` repro switch fixtures (v254 -> v255, 2026-09-27)
+
+Volume II defect-fix phase, Stage 2b FA follow-up (task FA-b). Closes the FA-a
+corpus debt by migrating every **exhaustive** no-`else` switch in the census
+repro dirs with a semantics-preserving arm: `else => {}` on statement-position
+switches (the identity / fall-through arm — the exact pre-FA-a no-match
+behavior) and `else => unreachable` where the switch is a value or its prong
+tails all diverge. 49 sites across 41 files: 23 `repro/mi_matrix` dirs + the 10
+`repro/` dirs below (including the exhaustive sites inside the 3 census-listed
+already-FAIL siblings); the census's other 2 corpus sites are the non-exhaustive
+char rejects below. No `sf/src`, `scripts`, `examples/z98`, `release/seed`,
+or `vol2_defects` file changed; D03 keeps its 3 int-partial reject sites and
+D11 stays as FE converted it.
+
+**Non-exhaustive sites stay rejects (operator rule):** `switch_char_nodefault`
+and `switch_char_xmod_nodefault` are `u8` char-partial switches; adding an
+`else` would convert a partial switch into an accepted one, so both are left
+as strict `error[3068]` rejects (class FAIL) and their NOTES.md records the
+FA-b disposition. The brief's predicted "35 FAIL→OK" is therefore **33**: the
+FA-a join-diff moved the census's 35 OK dirs to FAIL; FA-b restores every
+exhaustive one (33) and the 2 char dirs remain rejects.
+
+**Movement:** corpus `-s0` **1046 = 896 OK / 46 GREEN / 104 FAIL / 0 ICE /
+0 CRASH** (FF: 863/46/137). Full-classifier join-diff vs the FF classification
+moves **EXACTLY 33 FAIL→OK, zero other movement** — the 3 prior-FAIL siblings
+(`emission_sibling_payload_nestedarm_xmod`,
+`emission_sibling_payload_scale_xmod`, `shadow_reject_xmod`) keep class FAIL,
+the 2 char dirs keep class FAIL, and no other corpus dir changed:
+`repro/anon_init_if_arm`, `repro/anon_init_var_decl`,
+`repro/comptime_fold_typed_payload`,
+`repro/mi_matrix/{anon_init_orelse_rhs, array_tagged_union_read,
+ast_walk_capture_prong_xmod, ast_walk_subtree_break_xmod,
+capture_prong_str_literal_xmod, emission_mangler_collision_xmod,
+emission_orelse_control_xmod, emission_sibling_payload_xmod,
+emission_type_storage_control_xmod,
+emission_type_storage_extern_threealias_xmod,
+emission_type_storage_extern_xmod, emission_void_temp_enum_xmod,
+nested_switch_str_literal_xmod, switch_expr_payload_capture_xmod,
+switch_str_literal_prong_xmod, switch_str_literal_prong_xmod_xmod,
+switch_unannotated_diffstr_xmod, switch_unannotated_diffstr_xmod_xmod,
+switch_unannotated_direct_xmod, switch_unannotated_str_xmod,
+switch_unannotated_str_xmod_xmod, typealias_agg_xmod,
+unannotated_infer_samelength_xmod}`, `repro/switch_capture_name_reuse`,
+`repro/tagged_field_path`, `repro/tagged_union_anon_return`,
+`repro/tagged_union_payload`, `repro/tagged_union_same_type`,
+`repro/tagged_union_slice_payload`, `repro/tu_void_prong`.
+
+**Runtime identity PRE ↔ POST (byte-identical):** every one of the 33 dirs was
+dumped/gcc-compiled/linked/run — PRE = the v88 seed compiler on the original
+sources, POST = the current FF compiler on the migrated sources — with a fixed
+`__bootstrap_print_int` shim (the bootstrap aliases were removed from the
+runtime in F4); stdout/stderr/rc hashes are identical for all 33 under BOTH
+`-ffast` and `-fsafe` (the `else` arm executes on none of the exercised
+inputs; `unreachable` would trap, `{}` would fall through). The 3 prior-FAIL
+siblings dump rc=2 on both sides (unchanged failure mode).
+
+**Gates:** fixed point **UNCHANGED `cadf3c241abd1baf4d31da52b0ccd649`**
+(hop1 == hop2, explicit `FIXED_POINT_MD5` gate; no `sf/src` edit, seed v88 NOT
+rotated); 4-MD5 emitted-C **UNCHANGED 8/8** (gol `9e0b708e…` / lisp
+`ec14d644…` / json `5034a0c8…` / mud `2e92c1f2…`); stdlib runtime **251 PASS /
+0 FAIL**; example matrix **24/24**; `check_emit_support.sh` **7/7**;
+`verify_upgraded.sh` **CLOSEOUT OK**; self-emission rc 0 / **48 `.c` + 48 `.h`**
+/ 0 PANIC.
 
 ## FF — float tagged-union payload coercion (D6) + union comptime layout / ICE clearing (D9) (v253 -> v254, 2026-09-26)
 
