@@ -11,7 +11,11 @@
 // `if`/`switch` VALUE expressions (runtime conditions): the narrowing probe
 // classifies every arm value-aware instead of rejecting the joined f64, so
 // `return if (c > 0) 1.5 else 2.5;`/`switch` return and an `if`-initialized
-// declaration stay accepted exactly like Zig 0.15.2.
+// declaration stay accepted exactly like Zig 0.15.2. FX9 adds the mixed-arm
+// controls: a runtime `f32` arm beside a float literal / an exact typed
+// `i32`/`f64` arm (`if (c > 0) x else 2.5`), a nested mixed `if`, and
+// comptime-known conditions whose untaken arm is never analyzed
+// (`if (false) n else 2.5`); all are red→green against the PRE-FX9 compiler.
 //
 // Contract: stdout below, rc 0, byte-exact 3x; every printed value is
 // byte-identical to the Zig-0.15.2 `std.debug.print` twin (the values chosen
@@ -32,6 +36,12 @@ fn retD() f32 { return D; }
 fn retC() f32 { return C; }
 fn retIf(c: i32) f32 { return if (c > 0) 1.5 else 2.5; }
 fn retSwitch(c: i32) f32 { return switch (c) { 1 => 1.5, else => 2.5 }; }
+fn retIfX(c: i32, x: f32) f32 { return if (c > 0) x else 2.5; }
+fn retIfI(c: i32, x: f32) f32 { return if (c > 0) x else C; }
+fn retIfF(c: i32, x: f32) f32 { return if (c > 0) x else D; }
+fn retIfN(c: i32, e: i32, x: f32) f32 { return if (c > 0) (if (e > 0) x else 2.5) else 3.5; }
+fn retIfFalse(n: i32) f32 { return if (false) n else 2.5; }
+fn retIfTrue(n: i32) f32 { return if (true) 2.5 else n; }
 
 pub fn main() void {
     var v1: f32 = 0.1;
@@ -54,6 +64,7 @@ pub fn main() void {
     std.io.print("param2={} {} {}\n", .{ take(0.1), take(NL), helper.take(3.5) });
     std.io.print("ret={} {} {}\n", .{ retLit(), retD(), retC() });
     std.io.print("ifs={} {} {} {}\n", .{ retIf(1), retIf(-1), retSwitch(1), vi });
+    std.io.print("mix={} {} {} {} {} {} {} {} {}\n", .{ retIfX(1, 3.5), retIfX(-1, 3.5), retIfI(-1, 3.5), retIfF(-1, 3.5), retIfN(1, 1, 4.5), retIfN(1, -1, 4.5), retIfN(-1, 1, 4.5), retIfFalse(7), retIfTrue(7) });
     std.io.print("decl={} {} {} {}\n", .{ v1, v2, v3, v4 });
     std.io.print("field={} {}\n", .{ s1.x, s2.x });
     std.io.print("union={} {} {}\n", .{ ua.a, ub.a, uc.a });

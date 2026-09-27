@@ -6,13 +6,21 @@
 //   * a typed comptime-known f64 that is NOT exactly representable in f32
 //     (`const d: f64 = 0.1`, `@as(f64, 0.1)`, a cross-module const);
 //   * a comptime-known integer that is NOT exactly representable in f32
-//     (`16777217` = 2^24 + 1: typed const, untyped const and literal forms).
+//     (`16777217` = 2^24 + 1: typed const, untyped const and literal forms);
+//   * FX9: an `if`/`switch` VALUE expression at an f32 site with a runtime
+//     non-float arm (`if (c > 0) n else 2.5` with `n: i32`; the `switch`
+//     form; `i64`/`u32`/`bool` arms; both root and nested sites: return,
+//     declaration, assignment, struct field, tagged-union payload, call
+//     argument). Pre-FX9 these were accepted and miscompiled (`r=0`,
+//     gcc-invalid C) or ICEd; Zig rejects `expected type 'f32', found
+//     'i32'`. A comptime-true condition makes the bad arm the taken one and
+//     still rejects (`if (true) n else 2.5`).
 //
 // The int-literal shape (`take(16777217)`) is the Zig int-exactness reject the
 // operator ruling added: it was a silent round before FX3.
 //
-// Contract: rc 2, no `.c` emitted, the `error[3000]` census pinned in
-// `expected_error.txt`; no ICE, no signal.
+// Contract: rc 2, no `.c` emitted, the `error[3000]` census pinned in the
+// header (18 FX3 rows + 15 FX9 runtime-arm rows = 33); no ICE, no signal.
 const std = @import("std");
 const helper = @import("helper.zig");
 
@@ -27,6 +35,13 @@ fn take(x: f32) f32 { return x; }
 fn retRuntime(d: f64) f32 { return d; }
 fn retInexact() f32 { return BadF; }
 fn retInexactI() f32 { return BadI; }
+fn retIfArm(c: i32, n: i32) f32 { return if (c > 0) n else 2.5; }
+fn retSwArm(c: i32, n: i32) f32 { return switch (c) { 1 => n, else => 2.5 }; }
+fn retIfArmI64(c: i32, n: i64) f32 { return if (c > 0) n else 2.5; }
+fn retIfArmU(c: i32, n: u32) f32 { return if (c > 0) n else 2.5; }
+fn retIfArmB(c: i32, b: bool) f32 { return if (c > 0) b else 2.5; }
+fn retIfTrueBad(n: i32) f32 { return if (true) n else 2.5; }
+fn retIfMixRt(c: i32, x: f32, d: f64) f32 { return if (c > 0) x else d; }
 
 pub fn main() void {
     var d: f64 = 0.1;
@@ -34,6 +49,12 @@ pub fn main() void {
     var i: i32 = 1;
     i = i;
     var x: f32 = 0.0;
+    var n: i32 = 1;
+    n = n;
+    var c: i32 = 1;
+    c = c;
+    var bf: bool = true;
+    bf = bf;
 
     _ = take(d);
     _ = take(i);
@@ -62,5 +83,27 @@ pub fn main() void {
     _ = retRuntime(0.1);
     _ = retInexact();
     _ = retInexactI();
+
+    // FX9 runtime non-float arms through an `if`/`switch` value expression.
+    _ = retIfArm(c, n);
+    _ = retSwArm(c, n);
+    _ = retIfArmI64(c, 2);
+    _ = retIfArmU(c, 2);
+    _ = retIfArmB(c, bf);
+    _ = retIfTrueBad(n);
+    _ = retIfMixRt(c, x, d);
+    var xa: f32 = if (c > 0) n else 2.5;
+    _ = xa;
+    x = if (c > 0) n else 2.5;
+    const xb: f32 = switch (c) { 1 => n, else => 2.5 };
+    _ = xb;
+    var sa: S = S{ .x = if (c > 0) n else 2.5 };
+    _ = sa;
+    var uax: U = U{ .a = if (c > 0) n else 2.5 };
+    _ = uax;
+    _ = take(if (c > 0) n else 2.5);
+    _ = take(if (c > 0) bf else 2.5);
+    _ = take(switch (c) { 1 => n, else => 2.5 });
     _ = x;
 }
+

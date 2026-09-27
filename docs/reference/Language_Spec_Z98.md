@@ -501,14 +501,28 @@ At an `f32` expectation site the value decides, matching Zig 0.15.2:
 - A **comptime-known integer** (literal, typed or untyped `const`) is accepted
   only when its exact value is exactly representable in f32 (`5` and `16777216`
   accept; `16777217` = 2^24 + 1 rejects — Zig's int-exactness rule).
-- A **runtime `f64` or `i32`** source rejects with level-0 `error[3000]` (the
-  site's existing message plus `source:`/`target:` notes) — previously a
-  warning at declarations/assignments and silent at returns, fields and union
-  payloads.
+- A **runtime `f64`, integer or other non-float** source rejects with level-0
+  `error[3000]` (the site's existing message plus `source:`/`target:` notes) —
+  previously a warning at declarations/assignments and silent at returns,
+  fields and union payloads. FX9: the same reject covers an `if`/`switch`
+  **value expression** at an f32 site with a runtime non-float arm —
+  `return if (c > 0) n else 2.5;` with runtime `n: i32` rejects
+  (`expected type 'f32', found 'i32'`; pre-FX9 the mismatched arms left the
+  expression void-typed and the runtime arm was silently dropped). A
+  **comptime-known condition** makes the untaken arm unreachable, exactly as
+  Zig skips its type check (`if (false) n else 2.5` accepts and yields 2.5;
+  `if (true) n else 2.5` rejects because the bad arm is the taken one).
+- **Mixed float arms** stay accepted and become f32-typed: a runtime `f32`
+  arm beside a float literal or an exactly-representable typed `i32`/`f64`
+  (`return if (c > 0) x else 2.5;`, the nested
+  `if (c > 0) (if (e > 0) x else 2.5) else 3.5`), each arm recording its own
+  narrowing. The `switch` form already accepted these
+  (`switch (c) { 1 => x, else => 2.5 }`).
 
 Sites: function parameters, returns, struct/union/tagged-union field
 initializers (including union payloads), local and module-level declarations,
-and assignments. An accepted value records an explicit `float` conversion in
+assignments, and the arms of an `if`/`switch` value expression at any of
+those. An accepted value records an explicit `float` conversion in
 the emitted C — there is no silent narrowing. `@floatCast`/`@intToFloat`
 remain the explicit forms when a runtime narrowing is intended.
 

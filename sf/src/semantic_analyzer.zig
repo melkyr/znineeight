@@ -2575,9 +2575,12 @@ fn semanticAnalyzerFloatNarrowStatus(self: *SemanticAnalyzer, src_node: u32, src
 // runtime/inexact/oversized arm makes the whole expression reject at the
 // site. The accepted expression is materialised by lowering's `lowerExpr`
 // wrapper (the joined f64 temp gets one `float_cast` to f32).
+// FX9: the interception now runs BEFORE the numeric guard so a runtime
+// non-float arm rejects even when the mismatched arms gave the expression a
+// non-numeric sema type (`void`/bool/pointer); a comptime-known condition
+// makes the untaken arm unreachable (Zig skips it).
 fn semanticAnalyzerFloatNarrowStatusDepth(self: *SemanticAnalyzer, src_node: u32, src_ty: u32, dst_ty: u32, depth: u32) u8 {
     if (dst_ty != type_mod.TYPE_F32) return FLOAT_NARROW_NONE;
-    if (!semanticAnalyzerFloatNarrowIsNumeric(self, src_ty)) return FLOAT_NARROW_NONE;
     if (depth < @intCast(u32, 24)) {
         var sn = ast_mod.astStoreNodeAt(self.store, src_node);
         if (sn.kind == AstKind.paren_expr) {
@@ -2585,9 +2588,22 @@ fn semanticAnalyzerFloatNarrowStatusDepth(self: *SemanticAnalyzer, src_node: u32
         }
         if (sn.kind == AstKind.if_expr) {
             if (sn.child_2 == @intCast(u32, 0)) return FLOAT_NARROW_NONE;
-            var ia = semanticAnalyzerFloatNarrowArmStatus(self, sn.child_1, depth + @intCast(u32, 1));
+            var ie_then_reach: u8 = @intCast(u8, 1);
+            var ie_else_reach: u8 = @intCast(u8, 1);
+            if (semanticAnalyzerConditionComptimeBool(self, sn.child_0)) |ie_cb| {
+                if (ie_cb) { ie_else_reach = @intCast(u8, 0); } else { ie_then_reach = @intCast(u8, 0); }
+            }
+            var ia: u8 = FLOAT_NARROW_ACCEPT;
+            if (ie_then_reach != @intCast(u8, 0)) { ia = semanticAnalyzerFloatNarrowArmStatus(self, sn.child_1, depth + @intCast(u32, 1)); }
             if (ia != FLOAT_NARROW_ACCEPT) return ia;
-            return semanticAnalyzerFloatNarrowArmStatus(self, sn.child_2, depth + @intCast(u32, 1));
+            var pa: u8 = FLOAT_NARROW_ACCEPT;
+            if (ie_else_reach != @intCast(u8, 0)) { pa = semanticAnalyzerFloatNarrowArmStatus(self, sn.child_2, depth + @intCast(u32, 1)); }
+            if (pa != FLOAT_NARROW_ACCEPT) return pa;
+            // A non-numeric all-acceptable `if` has no value type to narrow
+            // (the resolver FX9 branch types real f32 sites); keep the
+            // pre-FX9 no-decision for every other caller.
+            if (!semanticAnalyzerFloatNarrowIsNumeric(self, src_ty)) return FLOAT_NARROW_NONE;
+            return FLOAT_NARROW_ACCEPT;
         }
         if (sn.kind == AstKind.swt_ex) {
             var prongs_n = ast_mod.astStoreNodeExtraChildCount(self.store, src_node);
@@ -2599,9 +2615,12 @@ fn semanticAnalyzerFloatNarrowStatusDepth(self: *SemanticAnalyzer, src_node: u32
                 var pa = semanticAnalyzerFloatNarrowArmStatus(self, prong.child_0, depth + @intCast(u32, 1));
                 if (pa != FLOAT_NARROW_ACCEPT) return pa;
             }
+            if (!semanticAnalyzerFloatNarrowIsNumeric(self, src_ty)) return FLOAT_NARROW_NONE;
             return FLOAT_NARROW_ACCEPT;
         }
     }
+    if (!semanticAnalyzerFloatNarrowIsNumeric(self, src_ty)) return FLOAT_NARROW_NONE;
+
     var sk = self.registry.types_items[@intCast(usize, src_ty)].kind;
     var ce = ce_mod.comptimeEvalInit(self.registry, self.store, self.interner, self.symbols);
     ce.local_consts = &self.local_consts;
@@ -3177,8 +3196,12 @@ fn semanticAnalyzerResolveOrelseExpr(self: *SemanticAnalyzer, node_idx: u32) u32
 // a non-bool condition is never mistaken for a suitable `if` condition. A fresh
 // evaluator with `diag = null` is used so this probe never emits a diagnostic
 // of its own.
-fn semanticAnalyzerConditionIsComptimeTrue(self: *SemanticAnalyzer, cond_idx: u32) bool {
-    if (cond_idx == @intCast(u32, 0)) return false;
+// FX9: the tri-state form of the probe below -- `?false` (comptime-known
+// false) must be distinguishable from "not comptime-known" so an if VALUE
+// expression's untaken arm can be skipped exactly like Zig (a bad arm behind
+// a comptime-known condition is not analyzed).
+fn semanticAnalyzerConditionComptimeBool(self: *SemanticAnalyzer, cond_idx: u32) ?bool {
+    if (cond_idx == @intCast(u32, 0)) return null;
     var cond = ast_mod.astStoreNodeAt(self.store, cond_idx);
     if (cond.kind == AstKind.bool_literal) {
         return (cond.flags & @intCast(u8, 1)) != @intCast(u8, 0);
@@ -3194,6 +3217,11 @@ fn semanticAnalyzerConditionIsComptimeTrue(self: *SemanticAnalyzer, cond_idx: u3
             return !ce_mod.ciIsZero(cv.v);
         }
     }
+    return null;
+}
+
+fn semanticAnalyzerConditionIsComptimeTrue(self: *SemanticAnalyzer, cond_idx: u32) bool {
+    if (semanticAnalyzerConditionComptimeBool(self, cond_idx)) |cb| return cb;
     return false;
 }
 
@@ -3263,6 +3291,39 @@ fn semanticAnalyzerResolveIfExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     if (else_type == type_mod.TYPE_INT_LIT and type_mod.typeRegistryIsNumeric(self.registry, then_type)) { var sif5m: []const u8 = "SIF:5N"; pal_mod.markerWriteInt(sif5m, node_idx); var sif5tm: []const u8 = "T"; pal_mod.markerWriteInt(sif5tm, then_type); var sif5nl: []const u8 = " "; pal_mod.markerWrite(sif5nl); coercion_mod.coercionTableAdd(self.coercion_table, node.child_2, coercion_mod.CoercionKind.int_literal_coerce, then_type); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type; }
     if (then_type == type_mod.TYPE_VOID) { var sif6m: []const u8 = "SIF:6N"; pal_mod.markerWriteInt(sif6m, node_idx); var sif6tm: []const u8 = "T"; pal_mod.markerWriteInt(sif6tm, else_type); var sif6nl: []const u8 = " "; pal_mod.markerWrite(sif6nl); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, else_type); return else_type; }
     if (else_type == type_mod.TYPE_VOID) { var sif7m: []const u8 = "SIF:7N"; pal_mod.markerWriteInt(sif7m, node_idx); var sif7tm: []const u8 = "T"; pal_mod.markerWriteInt(sif7tm, then_type); var sif7nl: []const u8 = " "; pal_mod.markerWrite(sif7nl); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type); return then_type; }
+    // FX9 (Volume II D6 extras follow-up): value-aware result typing for a
+    // mismatched-arm `if` at an f32 expectation site. Pre-fix the arms did not
+    // unify under Z98's peer rules, the whole `if` was void-typed, and
+    // `if (c) n else 2.5` (runtime `n: i32`) silently produced no value
+    // (`return 0`). Classify the REACHABLE arms with the FX3 value rules (a
+    // comptime-known condition makes the untaken arm unreachable, matching
+    // Zig). All-acceptable arms type the `if` f32 and record the arm
+    // narrowing; otherwise the `if` takes the offending arm's type so the
+    // enclosing f32 site's FX3 status rejects it with the source/target notes.
+    if (ie_exp == type_mod.TYPE_F32) {
+        var ie_then_reach: u8 = @intCast(u8, 1);
+        var ie_else_reach: u8 = @intCast(u8, 1);
+        if (semanticAnalyzerConditionComptimeBool(self, node.child_0)) |ie_cb| {
+            if (ie_cb) { ie_else_reach = @intCast(u8, 0); } else { ie_then_reach = @intCast(u8, 0); }
+        }
+        var ie_then_st: u8 = FLOAT_NARROW_ACCEPT;
+        if (ie_then_reach != @intCast(u8, 0)) { ie_then_st = semanticAnalyzerFloatNarrowArmStatus(self, node.child_1, @intCast(u32, 1)); }
+        var ie_else_st: u8 = FLOAT_NARROW_ACCEPT;
+        if (ie_else_reach != @intCast(u8, 0)) { ie_else_st = semanticAnalyzerFloatNarrowArmStatus(self, node.child_2, @intCast(u32, 1)); }
+        if (ie_then_st == FLOAT_NARROW_ACCEPT and ie_else_st == FLOAT_NARROW_ACCEPT) {
+            if (ie_then_reach != @intCast(u8, 0) and then_type != type_mod.TYPE_F32) { tryRecordCoercion(self, node.child_1, then_type, ie_exp); }
+            if (ie_else_reach != @intCast(u8, 0) and else_type != type_mod.TYPE_F32) { tryRecordCoercion(self, node.child_2, else_type, ie_exp); }
+            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, ie_exp);
+            return ie_exp;
+        }
+        if (ie_then_st != FLOAT_NARROW_ACCEPT) {
+            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, then_type);
+            return then_type;
+        }
+        rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, else_type);
+        return else_type;
+    }
+
     var siffm: []const u8 = "SIF:FN"; pal_mod.markerWriteInt(siffm, node_idx); var sifftm: []const u8 = "\n"; pal_mod.markerWrite(sifftm); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); return type_mod.TYPE_VOID;
 }
 

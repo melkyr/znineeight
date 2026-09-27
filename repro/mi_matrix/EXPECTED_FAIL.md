@@ -1,4 +1,63 @@
-# mi_matrix corpus — expected-fail manifest (v266 2026-09-27)
+# mi_matrix corpus — expected-fail manifest (v267 2026-09-27)
+
+## FX9 — runtime non-float arm at an f32 site (v266 -> v267, 2026-09-27)
+
+Volume II defect-fix phase, Stage 2b follow-up (task-FX9). A runtime non-float
+arm feeding an f32 site through an `if`/`switch` VALUE expression was accepted
+and miscompiled (`fn f(c: i32, n: i32) f32 { return if (c > 0) n else 2.5; }`
+returned `r=0`; the field/argument forms emitted gcc-invalid C `zT_4294967295`
+undeclared or ICEd `error[3043]`), Zig 0.15.2 rejects `expected type 'f32',
+found 'i32'`. Root cause: the mismatched arms did not unify under Z98's peer
+rules, so `semanticAnalyzerResolveIfExpr` typed the `if` `TYPE_VOID`; the FX3
+status then bailed at its numeric guard (the site's effective source was
+`void`). FX9 in `sf/src/semantic_analyzer.zig`:
+
+- `semanticAnalyzerResolveIfExpr` gains an FX9 branch (after the void/
+  int-literal peer rules, before the void fall-through): for an f32 expected
+  type it classifies the REACHABLE arms with
+  `semanticAnalyzerFloatNarrowArmStatus`. All acceptable => the `if` types
+  `TYPE_F32` and each arm records its own narrowing, fixing valid mixed float
+  arms (`if (c > 0) x else 2.5` with runtime `x: f32`; `else C` exact typed
+  i32; `else D` exact typed f64; the nested
+  `if (c > 0) (if (e > 0) x else 2.5) else 3.5`) that used to return 0 or
+  over-reject. A not-acceptable reachable arm => the `if` takes the offending
+  arm's type, so the site's existing FX3 reject fires with the arm's
+  `source:` note (`if (c > 0) n else 2.5` -> `source: i32`).
+- `semanticAnalyzerConditionComptimeBool` (the tri-state form of
+  `semanticAnalyzerConditionIsComptimeTrue`) makes the untaken arm
+  unreachable, matching Zig: `if (false) n else 2.5` accepts and yields 2.5
+  (was 0); `if (true) n else 2.5` rejects because the bad arm is taken.
+- `semanticAnalyzerFloatNarrowStatusDepth` moves the `if`/`switch` arm
+  interception BEFORE the numeric guard and skips unreachable if arms, so a
+  `void`/bool/pointer-typed mismatched-arm expression rejects instead of
+  silently producing no value.
+
+**Census / fixtures.** `repro/mi_matrix/f32_narrow_reject_xmod` 18 -> **33 x
+`error[3000]`** (15 FX9 rows: if/switch return, runtime `i64`/`u32`/`bool`
+arms, comptime-true bad arm, f32+runtime-f64 arm, declaration, assignment,
+switch declaration, struct field, tagged-union payload, three call args);
+PRE the extended fixture was 21 x `error[3000]` + 2 x `warning[3000]` (12 of
+the 15 new rows accepted; 3 switch rows already rejected). Positive
+`stdlib_f32_narrow_ok_xmod` gains the `mix=` row (10 lines / 168 B, 3x
+byte-exact, byte-identical to the Zig-0.15.2 `std.debug.print` twin). New
+standalone `repro/f32_runtime_arm_reject.z98` (11 x `error[3000]`; PRE 2).
+D06 rows and `run_all.sh` unchanged (13/13 ok).
+
+**Gates.** Fixed point `fd4b79b6…` -> **`ee5f30700668059c14c05a317fbae827`**
+(hop1 == hop2, explicit `FIXED_POINT_MD5` gate; seed v88 NOT rotated, archive
+md5 `3db5ef39…` unchanged); 4-MD5 emitted-C UNCHANGED 8/8 (gol `9e0b708e…`,
+lisp `ec14d644…`, json `5034a0c8…`, mud `2e92c1f2…`); corpus `-s0` **1060 =
+904 OK / 51 GREEN / 105 FAIL / 0 ICE / 0 CRASH** (join-diff over the 1060
+common dirs EMPTY); `warning[3000]` full census **20 -> 18** (only mover
+`f32_narrow_reject_xmod` 2 -> 0: the two declaration/assignment warnings
+became errors); stdlib **259 PASS / 0 FAIL** (pin unchanged); example matrix
+24/24; `check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT; self
+emission 48 `.c` + 48 `.h` / 0 `error[` / 0 PANIC; build_test 0/9
+(pre-existing retired-zig0 baseline). FX3 fprobe grid and the 48-case FX3-I
+grid are PRE<->POST identical (no accept/reject movement). Bounded residual:
+a comptime-known switch OPERAND (`switch (0) { 1 => n, else => 2.5 }`) stays
+over-rejected PRE and POST (pre-existing; Zig selects the else prong and
+accepts) — only `if` conditions gained reachability.
 
 ## FB2 — inferred tuple-element typing family (FD2 review Critical/Important 1-2) (v264 -> v265, 2026-09-27; fix round 1 v265 -> v266, 2026-09-27)
 
