@@ -5783,15 +5783,18 @@ fn semanticAnalyzerTupleElemIsTypeValue(self: *SemanticAnalyzer, elem_idx: u32) 
     return false;
 }
 
-// FB2 (Volume II): does a VOID-typed tuple element come from an unresolved
-// forward reference rather than a genuine void value? Only a bare ident /
-// field-access (paren-transparent) reference can be unresolved here, and Z98
-// rejects void variable/parameter bindings (`error[14]`), so such a reference
-// cannot denote a void value. Keeping the pre-FB2 I32 fallback for this
-// transient case preserves the first-pass tuple identity (and therefore every
-// later type id / emitted C byte) in modules with forward-referenced tuple
-// elements; the module-var fixpoint re-resolves the reference and the tuple is
-// rebuilt with its true element type on the next pass.
+// FB2 fix round 1 (Volume II): does a VOID-typed tuple element come from an
+// UNRESOLVED reference rather than a genuine void value? Only two shapes can
+// be transient here: a bare ident (paren-transparent), which is an
+// unresolved/undeclared global/alias reference, and a module-member reference
+// (`colors.C`, `@import("x.zig").C`), whose global may not have settled yet.
+// Both keep the pre-FB2 pass-1 I32 fallback so the first-pass tuple identity
+// (and therefore every later type id / emitted C byte) is preserved while the
+// module-var fixpoint settles the true type. A field read on a VALUE base
+// (`s.v`, `p.v`, `helper.g.v`) is NOT transient: Z98 supports void-typed
+// struct fields (`struct { v: void, a: i32 }` compiles and runs), so its VOID
+// result is a real void value and the element must keep `void` for the print
+// validator's `error[3063]` reject.
 fn semanticAnalyzerTupleElemVoidIsUnresolvedRef(self: *SemanticAnalyzer, elem_idx: u32) bool {
     var idx = elem_idx;
     var guard: usize = @intCast(usize, 0);
@@ -5802,7 +5805,37 @@ fn semanticAnalyzerTupleElemVoidIsUnresolvedRef(self: *SemanticAnalyzer, elem_id
             idx = n.child_0;
             continue;
         }
-        if (n.kind == AstKind.ident_expr or n.kind == AstKind.field_access) return true;
+        if (n.kind == AstKind.ident_expr) return true;
+        if (n.kind == AstKind.field_access) {
+            return semanticAnalyzerTupleElemFieldBaseIsModule(self, n.child_0);
+        }
+        return false;
+    }
+    return false;
+}
+
+// Is the base of a tuple-element field access a module namespace (or a direct
+// `@import(...)`), i.e. a member reference whose global may still be
+// unresolved? Any other base is a value/aggregate read and is not transient.
+fn semanticAnalyzerTupleElemFieldBaseIsModule(self: *SemanticAnalyzer, base_idx: u32) bool {
+    var idx = base_idx;
+    var guard: usize = @intCast(usize, 0);
+    while (guard < @intCast(usize, 8)) : (guard += @intCast(usize, 1)) {
+        if (idx == @intCast(u32, 0)) return false;
+        var n = ast_mod.astStoreNodeAt(self.store, idx);
+        if (n.kind == AstKind.paren_expr) {
+            if (n.child_0 == @intCast(u32, 0)) return false;
+            idx = n.child_0;
+            continue;
+        }
+        if (n.kind == AstKind.import_expr) return true;
+        if (n.kind == AstKind.ident_expr) {
+            var bname = ast_mod.astStoreIdentifier(self.store, idx);
+            if (sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, bname)) |bs| {
+                if (bs.kind == sym_mod.SymbolKind.module) return true;
+            }
+            return false;
+        }
         return false;
     }
     return false;

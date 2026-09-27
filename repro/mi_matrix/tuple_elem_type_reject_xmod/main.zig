@@ -16,6 +16,12 @@
 //   8. `.{ struct { i32, i32 }, 5 }` inline type -> error[3063] (TYPE_TYPE)
 //   9. `.{ 1 << 100, 1 }` >64-bit exact value   -> error[3000] (comptime bound)
 //  10. `.{ -9223372036854775809, 1 }` >window   -> error[3000] (comptime bound)
+//  11. `.{ s.v, 1 }` local void struct FIELD    -> error[3063] (void element;
+//      fix round 1 — the FB2 unresolved-ref fallback must not treat a
+//      value-base field read as an unresolved forward reference)
+//  12. `.{ gvs.v, 1 }` global void field        -> error[3063]
+//  13. `.{ p.v, 1 }` parameter void field       -> error[3063]
+//  14. `print("vfl={} {}", .{ s.v, 1 })` literal -> error[3063] (control)
 //
 // Exact census is recorded in EXPECTED_FAIL.md; main.zig is the only entry
 // (one module so every level-0 diagnostic is collected).
@@ -25,6 +31,18 @@ const helper = @import("helper.zig");
 fn vf() void {}
 
 const S = struct { a: i32 };
+
+// A void-typed struct FIELD is legal Z98 (`struct { v: void, a: i32 }`
+// compiles and runs), so `s.v` is a REAL void value, not an unresolved
+// forward reference: the element must keep `void` and reject 3063.
+const SV = struct { v: void, a: i32 };
+
+var gvs: SV = undefined;
+
+fn showVoidField(p: SV) void {
+    const tv = .{ p.v, 1 };
+    std.io.print("vp={} {}\n", tv);
+}
 
 pub fn main() void {
     const v = .{ vf(), 1 };
@@ -52,4 +70,17 @@ pub fn main() void {
 
     const n = .{ -9223372036854775809, 1 };
     std.io.print("n={} {}\n", n);
+
+    var s: SV = undefined;
+    s.a = 7;
+    const tf = .{ s.v, 1 };
+    std.io.print("vf={} {}\n", tf);
+
+    gvs.a = 9;
+    const tg = .{ gvs.v, 1 };
+    std.io.print("vg={} {}\n", tg);
+
+    showVoidField(s);
+
+    std.io.print("vfl={} {}\n", .{ s.v, 1 });
 }

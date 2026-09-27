@@ -1,0 +1,41 @@
+// print_tuple_void_field_reject.z98 — FB2 fix-round-1 standalone reject repro.
+//
+// A void-typed struct FIELD is legal Z98 (`struct { v: void, a: i32 }`
+// compiles and runs), so `s.v` / `gvs.v` / `p.v` are REAL void values, not
+// unresolved forward references. Before fix round 1 the FB2 unresolved-ref
+// fallback matched every field access, typed the element i32, and the
+// tuple-variable print path accepted it — dump rc 0, then gcc
+// `'zT_N' undeclared` (the void field read lowers to no temp). The fallback is
+// now narrowed to bare idents and MODULE-member references only, so every
+// value-base void field keeps `void` and the print validator rejects:
+//   local / global / parameter void-field element -> error[3063]
+//   literal-container void-field element           -> error[3063] (control)
+//
+// Expected: compile rc 2 / 0 emitted `.c` / exactly 4 x error[3063] (local,
+// global, parameter, literal-container); no gcc step, no undeclared-temp C.
+// The valid control is `repro/void_field_ok.z98`.
+const std = @import("std");
+
+const S = struct { v: void, a: i32 };
+
+var gs: S = undefined;
+
+fn show(p: S) void {
+    const t = .{ p.v, 1 };
+    std.io.print("{} {}\n", t);
+}
+
+pub fn main() void {
+    var s: S = undefined;
+    s.a = 7;
+    const t = .{ s.v, 1 };
+    std.io.print("{} {}\n", t);
+
+    gs.a = 9;
+    const g = .{ gs.v, 1 };
+    std.io.print("{} {}\n", g);
+
+    std.io.print("{} {}\n", .{ s.v, 1 });
+
+    show(s);
+}

@@ -1,6 +1,6 @@
-# mi_matrix corpus — expected-fail manifest (v265 2026-09-27)
+# mi_matrix corpus — expected-fail manifest (v266 2026-09-27)
 
-## FB2 — inferred tuple-element typing family (FD2 review Critical/Important 1-2) (v264 -> v265, 2026-09-27)
+## FB2 — inferred tuple-element typing family (FD2 review Critical/Important 1-2) (v264 -> v265, 2026-09-27; fix round 1 v265 -> v266, 2026-09-27)
 
 Volume II defect-fix phase, Stage 2b follow-up (task-FB2). The FD2 review found
 the FB element model fell back to wrong element types; FB2 types each inferred
@@ -16,9 +16,11 @@ tuple element by value (`semantic_analyzer.zig` `semanticAnalyzerResolveTupleLit
   byte-identical C. `sf/src/lower.zig` reuses the print-argument exact route
   (`lowerPrintArgExact` generalised to `lowerExactIntArg`) in the inferred-tuple
   construction, so a negate element is materialised exactly (not in a 32-bit
-  temp). A VOID-typed bare ident/field-access element is an unresolved forward
-  global and keeps the pre-FB2 pass-1 I32 fallback, preserving the settled
-  tuple's identity and every later type id.
+  temp). A VOID-typed bare (parenthesized) ident or MODULE-member reference is
+  an unresolved forward global and keeps the pre-FB2 pass-1 I32 fallback,
+  preserving the settled tuple's identity and every later type id. (Fix round
+  1 narrowed this from ALL field accesses: a field read on a value base is a
+  real value — see the fix-round entry below.)
 - a genuine `void` element stays `void` instead of becoming i32: both print
   paths reject `error[3063]` (the tuple-variable path via `lowerTupleElemRead`
   -> `TEMP_NONE` + `printFmtCheck`'s void arm; the literal path at the element
@@ -36,10 +38,15 @@ Zig-0.15.2 `std.debug.print` twin; class stays OK. New reject fixture
 `repro/mi_matrix/tuple_elem_type_reject_xmod` (`main.zig` + `helper.zig`):
 rc 2 / 0 `.c` / **8 x `error[3063]` + 2 x `error[3000]`** (void variable /
 literal / aggregate, builtin / named / module / literal / inline type values,
-`1 << 100`, `-9223372036854775809`), class GREEN. Standalone:
+`1 << 100`, `-9223372036854775809`), class GREEN; fix round 1 extends it to
+**12 x `error[3063]` + 2 x `error[3000]`** (4 void struct-field rows: local /
+global / parameter / literal-container). Standalone:
 `repro/print_tuple_var.z98` extended (`big=3000000000 -3000000000`,
 `u64max=18446744073709551615 1`, `hex=b2d05e00 ff`) and new
-`repro/print_tuple_elem_type_reject.z98` (3 x 3063 + 1 x 3000). The stale
+`repro/print_tuple_elem_type_reject.z98` (3 x 3063 + 1 x 3000);
+fix round 1 adds `repro/print_tuple_void_field_reject.z98` (4 x 3063) and the
+positive control `repro/void_field_ok.z98` (`ok=7 7` / `gok=9 1`,
+Zig-twin-equal). The stale
 `repro/print_nontuple_container.z98` header census is corrected to
 **2 x `error[3065]` + 1 x `error[3061]`** (was 3 x/1 x since FD2).
 
@@ -54,6 +61,35 @@ new reject fixture); stdlib 259 PASS (pin unchanged); matrix 24/24;
 type alias element stays accepted (pre-existing on the literal path too); a
 decimal literal above u64 max is lexer-truncated (pre-existing); declaration-only
 void/type-element shapes (no print) stay accepted-then-gcc-invalid.
+
+**Fix round 1 (v265 -> v266, 2026-09-27) — void struct-field element narrowed.**
+The review found the transient fallback matched EVERY `field_access`, so a
+void STRUCT FIELD read (`const S = struct { v: void, a: i32 }; var s: S =
+undefined; const t = .{ s.v, 1 }; print("{} {}\n", t)`) was typed i32 and the
+FD2 variable path accepted it — dump rc 0 / 7 `.c`, gcc `'zT_N' undeclared`
+(the void field read lowers to no temp); the literal-container form already
+rejected 3063 and seed v88 rejected. `semanticAnalyzerTupleElemVoidIsUnresolvedRef`
+is narrowed to bare (parenthesized) idents and MODULE/`@import` member
+references (new `semanticAnalyzerTupleElemFieldBaseIsModule`); a value-base
+field read keeps `void` and both print paths reject `error[3063]` (rc 2 / 0
+`.c`), the original forward-reference exception still settles through the
+module-var fixpoint, and the valid void-field struct use compiles/runs.
+Fixture `tuple_elem_type_reject_xmod` gains local/global/parameter
+void-field rows + a literal-container control (census **12 x `error[3063]` +
+2 x `error[3000]`**, class still GREEN); standalone reject
+`repro/print_tuple_void_field_reject.z98` (4 x 3063) and positive control
+`repro/void_field_ok.z98` (`ok=7 7` / `gok=9 1`, Zig-twin-equal, rc 0).
+**Gates.** Fixed point `416f0932…` -> **`fd4b79b6b992be1b8dd097c24e7bfa7f`**
+(hop1 == hop2, explicit gate; seed v88 NOT rotated); 4-MD5 emitted-C UNCHANGED
+8/8; FB2->fix1 emitted `.c`/`.h` byte-identical on all 120 tuple-using
+corpus/example dirs (the narrowed fallback fires on no existing dir); corpus
+`-s0` **1060 = 904 OK / 51 GREEN / 105 FAIL / 0 ICE / 0 CRASH** (join-diff vs
+FB2 EMPTY); stdlib 259 PASS; matrix 24/24; `check_emit_support.sh` 7/7;
+`verify_upgraded.sh` CLOSEOUT; self-emission 48 `.c` + 48 `.h` / 0 PANIC;
+build_test 0/9; `run_all.sh` 13/13; the big-literal matrix stays Zig-equal;
+previously fixed void-call/type-value shapes still reject. Language Spec §1.3
+states the void-field rule; tech docs 05/07 and the FB2 report carry the
+corrected premise.
 
 ## FD2 — print tuple variables (deferred half of D7/D13, after FB) (v263 -> v264, 2026-09-27)
 
