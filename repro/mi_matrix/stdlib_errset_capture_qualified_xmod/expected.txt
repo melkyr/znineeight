@@ -14,4 +14,8 @@ ecap=.green
 enumcap2=1
 enumcap3=3
 enumcap4=9
+alias=12
+alias2=0
+xenum=11
+xenum2=22
 done

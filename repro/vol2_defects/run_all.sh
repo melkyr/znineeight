@@ -101,6 +101,15 @@
 # (literal/comptime-known accepts; exercised outside run_all.sh like the other
 # D06 siblings). The accept/reject matrix lives in
 # repro/mi_matrix/stdlib_f32_narrow_ok_xmod + f32_narrow_reject_xmod.
+#
+# FX4 conversion (2026-09-27): the D11 validation extras (`Shape.bogus`,
+# `.bogus`, foreign qualifiers) are FIXED as clean level-0 `error[3071]`
+# rejects (captured variants keep the unbound-capture `error[20]` cascade
+# visible). D11 stays kind `reject` (which now prints `rc=0 ok` because the
+# FE shapes compile) and gains the `red_bogus_member.zig` /
+# `red_foreign_qualifier.zig` siblings, exercised outside run_all.sh like the
+# other D11 siblings. The pinned census lives in
+# repro/mi_matrix/switch_case_qualifier_reject_xmod.
 
 # Usage: sh run_all.sh [seed-compiler-path]
 # Default seed: /tmp/manual_seed/zig1_5_clean

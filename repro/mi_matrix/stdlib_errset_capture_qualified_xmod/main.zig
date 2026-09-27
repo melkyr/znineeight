@@ -1,11 +1,15 @@
 // FE (D8 + D11) positive fixture — error-set capture printing (local +
 // cross-module) and qualified/shorthand switch prong captures (tagged-union
-// and enum operands, used and unused).
+// and enum operands, used and unused). FX4 extends it with the alias-qualified
+// and module-qualified-enum prongs that exercise the new qualifier identity
+// check (all must stay accepted).
 //
 // D8: `catch |e| print("{}", .{e})` must print `error.Name` (the capture temp
 // is typed as the sema error set, not hard i32).
 // D11: `Shape.circle => |r|` binds exactly like `.circle => |r|`; enum-operand
 // captures bind the operand value Zig-style and never SIGSEGV when unused.
+// FX4: `ShapeAlias.circle` (alias) and `helper.Kind.plus` (cross-module enum)
+// are valid same-type qualifiers and must not reject `error[3071]`.
 const std = @import("std");
 const helper = @import("helper.zig");
 
@@ -43,6 +47,28 @@ fn shapeUnused(s: Shape) i32 {
 }
 
 const Color = enum { red, green, blue };
+
+// FX4: a type ALIAS qualifier (`const C = A; C.x`) must pass the qualifier
+// identity check exactly like the aliased type.
+const ShapeAlias = Shape;
+
+fn shapeAlias(s: Shape) i32 {
+    return switch (s) {
+        ShapeAlias.circle => |r| r,
+        ShapeAlias.empty => 7,
+        else => 0,
+    };
+}
+
+// FX4: a module-qualified enum type (`helper.Kind.plus`) must pass the
+// identity check across modules.
+fn kindXmod(k: helper.Kind) i32 {
+    return switch (k) {
+        helper.Kind.plus => 11,
+        helper.Kind.minus => 22,
+        else => 0,
+    };
+}
 
 fn useColor(c: Color) i32 {
     std.io.print("ecap={}\n", .{c});
@@ -111,5 +137,10 @@ pub fn main() void {
     std.io.print("enumcap2={}\n", .{e2});
     std.io.print("enumcap3={}\n", .{colorUnused(Color.blue)});
     std.io.print("enumcap4={}\n", .{colorUnused(Color.red)});
+
+    std.io.print("alias={}\n", .{shapeAlias(a)});
+    std.io.print("alias2={}\n", .{shapeAlias(b)});
+    std.io.print("xenum={}\n", .{kindXmod(helper.Kind.plus)});
+    std.io.print("xenum2={}\n", .{kindXmod(helper.Kind.minus)});
     std.io.print("done\n", .{});
 }

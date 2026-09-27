@@ -53,6 +53,12 @@ pub const SemanticAnalyzer = struct {
     call_param_map: *hash_mod.U32ToU32Map,
     current_switch_cond_tu: u32,
     switch_depth: u32,
+    // FX4 (D11 extras): 1 while the current case ITEM is being resolved, so an
+    // unknown shorthand member (`.bogus`) rejects 3071 in the case-item
+    // context only. An enum literal in a prong BODY (or any other value
+    // position that merely has `current_switch_cond_tu` in scope) keeps the
+    // pre-existing expected-type fall-through.
+    switch_case_item: u8,
     defer_depth: u32,
     // Task 10D: scope-aware defer-context state for the Zig-matched control-flow
     // check. `defer_depth` is the `any_defer_node` marker (return/try). These
@@ -229,6 +235,7 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .error_code_registry = error_code_reg,
         .current_switch_cond_tu = @intCast(u32, 0),
         .switch_depth = @intCast(u32, 0),
+        .switch_case_item = @intCast(u8, 0),
         .defer_depth = @intCast(u32, 0),
         .defer_inner_loops = @intCast(u32, 0),
         .defer_label_stack = undefined,
@@ -3299,6 +3306,15 @@ fn semanticAnalyzerResolveEnumLiteral(self: *SemanticAnalyzer, node_idx: u32) u3
                 }
             }
         }
+        // FX4 (D11 extras): a shorthand switch case item (`.bogus`) whose name
+        // matches no member of the condition type rejects 3071. Gated on the
+        // case-item context flag so an enum literal in a prong BODY (or any
+        // other value position that merely has `current_switch_cond_tu` in
+        // scope) keeps the pre-existing expected-type fall-through.
+        if (node.kind == AstKind.enum_literal and self.switch_case_item != @intCast(u8, 0)) {
+            semanticAnalyzerReportSwitchCaseQualifier(self, node_idx, node_idx, n, self.current_switch_cond_tu, @intCast(u8, 0));
+            return type_mod.TYPE_VOID;
+        }
     }
     if (self.expected_type_stack_len > 0) {
         var top: u32 = self.expected_type_stack_items[@intCast(usize, self.expected_type_stack_len - 1)];
@@ -3696,6 +3712,45 @@ fn semanticAnalyzerReportSwitchWithoutElse(self: *SemanticAnalyzer, node_idx: u3
     _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3068_SWITCH_WITHOUT_ELSE)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), swe_msg);
 }
 
+// FX4 (Volume II D11 extras): one invalid-prong reject, level-0
+// `error[3071]` (deduped per case-item node; rc 2 / 0 `.c`). `foreign` 1 is a
+// qualifier that denotes a known type other than the switch condition's
+// enum/tagged-union type (`B.x` on an `A` switch) with the span on the
+// qualifier; `foreign` 0 is an unknown member (`Shape.bogus` / `.bogus`) with
+// the span on the member. `note_type_id` selects the Zig-style related span
+// (`union declared here` / `enum declared here`). No suppression is applied to
+// the pre-existing unbound-capture `error[20]` cascade.
+fn semanticAnalyzerReportSwitchCaseQualifier(self: *SemanticAnalyzer, node_idx: u32, span_node_idx: u32, name_id: u32, note_type_id: u32, foreign: u8) void {
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) return;
+    var span_node = ast_mod.astStoreNodeAt(self.store, span_node_idx);
+    var sp = span_node.span_start;
+    var ep = sp + @intCast(u32, span_node.span_len);
+    var msg: []const u8 = "";
+    if (foreign != @intCast(u8, 0)) {
+        var fmsg: []const u8 = "type mismatch in switch case item -- case item type may not be compatible with the switch condition type";
+        msg = fmsg;
+    } else {
+        var cond_ty = self.registry.types_items[@intCast(usize, self.current_switch_cond_tu)];
+        var m1: []const u8 = "no field or member function named '";
+        var m2: []const u8 = "' in union type";
+        if (cond_ty.kind == type_mod.TypeKind.enum_type) { var m2e: []const u8 = "' in enum type"; m2 = m2e; }
+        var uk_name = interner_mod.stringInternerGet(self.interner, name_id);
+        var parts: [3][]const u8 = [3][]const u8{ m1, uk_name, m2 };
+        msg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &parts[0], @intCast(u32, 3));
+    }
+    var di = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3071_SWITCH_CASE_QUALIFIER)), self.source_file_id, sp, ep, msg);
+    var note: []const u8 = "union declared here";
+    if (note_type_id != @intCast(u32, 0) and @intCast(usize, note_type_id) < self.registry.types_len) {
+        if (self.registry.types_items[@intCast(usize, note_type_id)].kind == type_mod.TypeKind.enum_type) { var ne: []const u8 = "enum declared here"; note = ne; }
+    }
+    var decl_node: u32 = @intCast(u32, 0);
+    var decl_file: u32 = @intCast(u32, 0);
+    if (semanticAnalyzerFindTypeDecl(self, note_type_id, &decl_node, &decl_file)) {
+        var dn = ast_mod.astStoreNodeAt(self.store, decl_node);
+        diag_mod.diagnosticCollectorAddRelatedSpan(self.diag, di, decl_file, dn.span_start, dn.span_start + @intCast(u32, dn.span_len), note);
+    }
+}
+
 // FE (D11): a container-qualified switch prong (`Shape.circle`, `Color.red`,
 // `shapes.Shape.circle`) parses as a `field_access`, not an `enum_literal`, so
 // it never reached `semanticAnalyzerResolveEnumLiteral` and left no
@@ -3703,11 +3758,38 @@ fn semanticAnalyzerReportSwitchWithoutElse(self: *SemanticAnalyzer, node_idx: u3
 // entry, registered no local, and every use of the capture rejected
 // `error[20]`. Resolve the member name against the switch condition's type
 // exactly like the shorthand (tagged-union field index / enum member value) so
-// qualified prongs bind identically. A name that matches nothing is left
-// alone -- the FX4 validation group owns bogus members and foreign qualifiers.
+// qualified prongs bind identically.
+// FX4 (D11 extras): qualify first, then verify the member. A qualifier that
+// resolves to a KNOWN enum/tagged-union type other than the condition's is a
+// foreign qualifier and rejects 3071 before the member walk (Zig's
+// mismatch-wins order, e.g. `B.z` on an `A` switch reports the mismatch, not
+// the missing member). A qualifier that resolves to a MODULE namespace
+// (`helper.LOMEM`, FX1's const-item shape) is not an FX4 prong at all: it is
+// left to lowering's const-item resolution. A same-type qualifier whose
+// member does not exist (`Shape.bogus`) rejects 3071. Conservative fallback:
+// a qualifier whose identity cannot be established (0 / void / undefined --
+// its own diagnostic already fired) or whose kind is neither enum/tagged-union
+// nor module is NOT rejected as foreign; the member walk still runs.
 fn semanticAnalyzerResolveSwitchCaseMember(self: *SemanticAnalyzer, node_idx: u32) u32 {
     if (self.current_switch_cond_tu == @intCast(u32, 0)) return type_mod.TYPE_VOID;
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var name_id = ast_mod.astStoreNodePayload(self.store, node_idx);
+    if (node.child_0 != @intCast(u32, 0)) {
+        var q_tid = semanticAnalyzerResolveExpr(self, node.child_0);
+        if (q_tid != @intCast(u32, 0) and q_tid != type_mod.TYPE_VOID and q_tid != type_mod.TYPE_UNDEFINED) {
+            if (@intCast(usize, q_tid) < self.registry.types_len) {
+                var q_kind = self.registry.types_items[@intCast(usize, q_tid)].kind;
+                if (q_kind == type_mod.TypeKind.module_type) {
+                    return type_mod.TYPE_VOID;
+                }
+                if (q_tid != self.current_switch_cond_tu and
+                    (q_kind == type_mod.TypeKind.enum_type or q_kind == type_mod.TypeKind.tagged_union_type)) {
+                    semanticAnalyzerReportSwitchCaseQualifier(self, node_idx, node.child_0, @intCast(u32, 0), q_tid, @intCast(u8, 1));
+                    return type_mod.TYPE_VOID;
+                }
+            }
+        }
+    }
     var tu_ty = self.registry.types_items[@intCast(usize, self.current_switch_cond_tu)];
     if (tu_ty.kind == type_mod.TypeKind.tagged_union_type) {
         var tp = self.registry.tu_items[@intCast(usize, tu_ty.payload_idx)];
@@ -3736,6 +3818,7 @@ fn semanticAnalyzerResolveSwitchCaseMember(self: *SemanticAnalyzer, node_idx: u3
             }
         }
     }
+    semanticAnalyzerReportSwitchCaseQualifier(self, node_idx, node_idx, name_id, self.current_switch_cond_tu, @intCast(u8, 0));
     return type_mod.TYPE_VOID;
 }
 
@@ -3797,7 +3880,12 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
                 var cc_val = @intCast(u32, @enumToInt(case_node.kind));
                 var cc_m: []const u8 = "CC:K"; pal_mod.markerWriteInt(cc_m, cc_val);
                     if (case_node.kind == AstKind.enum_literal) {
+                        // FX4 (D11 extras): mark case-ITEM context so the
+                        // resolver reports an unknown shorthand member (3071)
+                        // instead of falling through to the expected-type path.
+                        self.switch_case_item = @intCast(u8, 1);
                         _ = semanticAnalyzerResolveEnumLiteral(self, case_i);
+                        self.switch_case_item = @intCast(u8, 0);
                     } else if (case_node.kind == AstKind.undefined_literal) {
                         _ = semanticAnalyzerResolveEnumLiteral(self, case_i);
                     } else if (case_node.kind == AstKind.field_access) {

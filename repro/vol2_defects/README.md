@@ -130,6 +130,23 @@ operator-authorized F tasks consume this set.
 > compiler and rc 0 on FG+FX2. Positive fixture
 > `repro/mi_matrix/stdlib_defer_switch_block_xmod` + standalone
 > `repro/defer_traversal.z98`. `run_all.sh` stays `D01_defer_segfault: rc=0 ok`.
+>
+> **FX4 status (2026-09-27):** the D11 *validation* extras are **FIXED** as
+> clean level-0 `error[3071]` rejects on the current compiler. A qualified
+> prong whose qualifier denotes a different enum/tagged-union type
+> (`B.x` on an `A` switch) and a qualified/shorthand prong naming a
+> non-existent member (`Shape.bogus`, `.bogus`) reject rc 2 / 0 `.c`; the
+> captured variants keep the pre-existing unbound-capture `error[20]` cascade
+> visible (no suppression; no `error[3060]` co-fires — the member check is the
+> direct condition walk, not the generic field-access reporter). Valid
+> same-type/alias/module-qualified prongs and the FE captures are unchanged.
+> New siblings `D11_qualified_capture/red_bogus_member.zig` (4 x 3071 + 1 x 20)
+> and `red_foreign_qualifier.zig` (4 x 3071 + 1 x 20), both exercised outside
+> `run_all.sh`; the reject census is pinned in
+> `repro/mi_matrix/switch_case_qualifier_reject_xmod` (12 x 3071 + 2 x 20) and
+> standalone `repro/switch_case_qualifier_reject.z98` (4 x 3071), with the
+> positive control `repro/switch_case_qualified.z98`. `run_all.sh` stays
+> `D11_qualified_capture: rc=0 ok`.
 
 - Plan: `.superpowers/sdd/2026-09-25-z98-manual-volume-II-plan/`
 - Report: `.superpowers/sdd/2026-09-25-z98-manual-volume-II-plan/task-D0-report.md`
@@ -183,7 +200,7 @@ expected behavior here -- `docs/reference/Language_Spec_Z98.md` does.
 | D8 | `D08_errset_capture/` | `catch \|e\|` capture of an error set prints numeric where a typed value prints `error.Name`; **FIXED by FE** (capture temp retyped to the sema error set; `run_all.sh`: `rc=0 ok` with `capture=error.Bar`) | ch12 (errors), ch18 (print) | Does not matter: `xmod_main.zig` (`errors.zig`) now prints `capture=error.Bar`; the annotated copy and the typed controls are unchanged |
 | D9 | `D09_bare_union_offsetof/` | `@offsetOf` on a bare union was an internal error (`error[3043]`); tagged unions ICEd too; **FIXED by FF** (Zig-parity clean reject `error[3072]`, rc 2 / 0 `.c`; `run_all.sh`: `rc=2 ok`) | ch7 (unions), ch15 (builtins) -- unblocked | Does not matter: `xmod_main.zig` (union from `raw.zig`) rejects 3072 in the same clean class; union `@sizeOf`/`@alignOf` controls unchanged |
 | D10 | `D10_single_ptr_index/` | `p[0]` on a single-item pointer is accepted and runs though spec 1.2 says it is rejected | ch3 (pointers) | Does not matter: `xmod_main.zig` (indexing in `helper.zig`) also accepted. Defect-vs-spec-correction is for the investigation; this pins current behavior |
-| D11 | `D11_qualified_capture/` | `Shape.circle => \|r\|` (qualified prong) leaves the capture unbound (`error[20]`); **FIXED by FE** (qualified prongs populate `enum_value_table`; enum captures bind Zig-style; the unused-capture SIGSEGV is guarded; `run_all.sh`: `rc=0 ok`) | ch7 (unions) | Does not matter: `xmod_main.zig` (type from `shapes.zig`) binds; `.circle =>` shorthand unchanged; the f32 shapes stay gcc-blocked by D6 (FF) |
+| D11 | `D11_qualified_capture/` | `Shape.circle => \|r\|` (qualified prong) leaves the capture unbound (`error[20]`); **FIXED by FE** (qualified prongs populate `enum_value_table`; enum captures bind Zig-style; the unused-capture SIGSEGV is guarded; `run_all.sh`: `rc=0 ok`); the D11 validation extras (`Shape.bogus`, foreign `B.x`) are **FIXED by FX4** as `error[3071]` rejects (`red_bogus_member.zig` / `red_foreign_qualifier.zig`) | ch7 (unions) | Does not matter: `xmod_main.zig` (type from `shapes.zig`) binds; `.circle =>` shorthand unchanged; the f32 shapes stay gcc-blocked by D6 (FF) |
 | D12 | `D12_const_discard_slice/` | `[]const T` -> `[]T` is accepted warning-only (in the var-decl shape) and mutates; **FIXED by FC** (every const-discarding family rejects `error[3000]`, rc 2 / 0 `.c`; `run_all.sh` kind `fixedreject`, `3000 1`) | ch9 (arrays/slices), ch3 (const) -- unblocked | Does not matter: `xmod_main.zig` now rejects with the same diagnostic; added `red_assign.zig` / `red_modvar.zig` cover the two silent sites; legal const-adding control unchanged (`c0=1`) |
 | S1 | `S01_print_nontuple_args/` | New sibling cluster: non-tuple `print` args are container-misinterpreted -- tuple-variable rejects, mixed calls misattribute `error[3013]` or SIGSEGV, two var calls print wrong values; **FIXED by FD1** (every shape rc 2 / 0 `.c` / `error[3065]` at its own container, no SIGSEGV; tuple variable interim) | ch18 (print) -- unblocked | Cross-module variant in the D07 tree; shapes here same-module only |
 

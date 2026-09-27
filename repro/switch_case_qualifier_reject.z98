@@ -1,0 +1,32 @@
+// repro/switch_case_qualifier_reject.z98 — standalone FX4 (Volume II D11
+// extras) reject.
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   mkdir -p /tmp/switch_case_qualifier_reject_out
+//   <zig1> --dump-c89 --output-dir /tmp/switch_case_qualifier_reject_out \
+//       repro/switch_case_qualifier_reject.z98
+//
+// EXPECTED (after the fix): dump rc=2, 0 `.c`, exactly 4 level-0
+// `error[3071]` sites (Zig 0.15.2 rejects every one) and no signal:
+//   qualified bogus union member   (`Shape.bogus =>`)
+//   shorthand bogus enum member    (`.bogus =>`)
+//   foreign qualifier              (`B.x =>` on a `Shape` switch)
+//   shorthand bogus union member   (`.nope =>`)
+//
+// DEFECT (before the fix): all four compiled rc 0; `Shape.bogus`/`.nope`
+// emitted no `case` label (dead prong) and `B.x` dispatched as `Shape.x`.
+const Shape = union(enum) { circle: i32, empty };
+const Color = enum { red, green };
+const B = union(enum) { x: i32 };
+
+fn q1(s: Shape) i32 { return switch (s) { Shape.bogus => 1, else => 0 }; }
+fn q2(c: Color) i32 { return switch (c) { .bogus => 1, else => 0 }; }
+fn q3(a: Shape) i32 { return switch (a) { B.x => 1, else => 0 }; }
+fn q4(s: Shape) i32 { return switch (s) { .nope => 1, else => 0 }; }
+
+pub fn main() void {
+    _ = q1;
+    _ = q2;
+    _ = q3;
+    _ = q4;
+}

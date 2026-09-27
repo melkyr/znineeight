@@ -212,6 +212,22 @@ pub const ErrorCode = enum(u16) {
     // wording "index N outside tuple of length L". Level 0, span on the index
     // expression; rejects with 0 `.c`.
     ERR_3070_TUPLE_INDEX_OUT_OF_RANGE = 3070,
+    // FX4 (Volume II D11 extras): an invalid switch case item. Two shapes:
+    // (a) a qualified prong whose qualifier does not denote the switch
+    // condition's enum/tagged-union type (`B.x` on an `A` switch; Zig 0.15.2
+    // `expected type ... found ...`), which before this gate was silently
+    // name-matched and dispatched as the condition's member; (b) a qualified
+    // or shorthand prong whose member name does not exist on the condition
+    // type (`Shape.bogus`, `.bogus`; Zig `has no member named` /
+    // `no field named`), which before this gate was silently accepted and
+    // emitted no `case` label (dead prong). Level 0, span on the offending
+    // qualifier (foreign) or member (unknown), deduped per case-item node;
+    // related span `union declared here` / `enum declared here`; rc 2 /
+    // 0 `.c`. A qualifier whose type identity cannot be established is NOT
+    // treated as foreign (conservative fallback), and the pre-existing
+    // unbound-capture `error[20]` cascade on a rejected captured prong stays
+    // visible (no suppression).
+    ERR_3071_SWITCH_CASE_QUALIFIER = 3071,
     // FF (Volume II D9): `@offsetOf`/`@bitOffsetOf` target is not a struct.
     // Zig 0.15.2 parity: every union kind (bare/packed/tagged), scalar,
     // pointer, enum, array, slice reject ("expected struct type, found 'X'").

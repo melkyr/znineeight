@@ -12,6 +12,9 @@ pub const Box = union(enum) {
     empty,
 };
 
+// FX4: cross-module enum for the module-qualified enum-prong identity check.
+pub const Kind = enum { plus, minus };
+
 pub fn boxVal(b: Box) i32 {
     return switch (b) {
         Box.num => |v| v,

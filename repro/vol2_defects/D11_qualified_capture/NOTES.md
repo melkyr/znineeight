@@ -112,3 +112,57 @@ Notes:
   capture"); Z98 accepts it (the pre-fix crash shape) — a documented Z98
   divergence pinned by the new siblings and the mi_matrix fixture.
 
+## FX4 conversion (2026-09-27) — validation extras FIXED (error[3071])
+
+Operator ruling: new code **3071** for both remaining validation gaps; the
+`3060`+`error[20]` cascade stays visible (no suppression); conservative
+no-reject when a qualifier's type identity cannot be established.
+
+- `sf/src/semantic_analyzer.zig`: `semanticAnalyzerResolveSwitchCaseMember`
+  (FE's helper) now resolves the prong's QUALIFIER first via
+  `semanticAnalyzerResolveExpr`. A qualifier that resolves to a known
+  enum/tagged-union type other than the condition's rejects level-0
+  `error[3071]` with the mismatch message and the qualifier span (Zig's
+  mismatch-wins order: `B.z` reports the mismatch, not the missing member). A
+  qualifier that resolves to a MODULE namespace (`helper.LOMEM`, FX1's
+  const-item shape) is not an FX4 prong at all and is left to lowering; a
+  qualifier whose identity is unknown (0 / void / undefined — its own
+  diagnostic already fired) is not rejected (conservative fallback). A
+  same-type qualifier whose member does not exist, and an unknown shorthand
+  member `.bogus`, reject 3071 with the member span. All cases are deduped per
+  case-item node via `diagnosticCollectorMarkNodeOnce`, carry the Zig-style
+  `union declared here`/`enum declared here` related span, and exit rc 2 /
+  0 `.c`.
+- The shorthand path is gated by a new `switch_case_item` flag so an enum
+  literal in a prong BODY (where `current_switch_cond_tu` is still in scope)
+  keeps the pre-existing expected-type fall-through — no body false rejects.
+- **Cascade observed (pinned, not suppressed):** the captured variants
+  (`Shape.nope => |r| r`, `B.x => |r| r`) emit 3071 PLUS the pre-existing
+  `error[20]` for the unbound capture. No `error[3060]` co-fires: the member
+  check is the direct condition-type walk, not the generic field-access
+  reporter (the operator's "3060 cascade" provision is satisfied vacuously —
+  the only cascaded code is error[20], which stays visible).
+- **Valid shapes unchanged:** same-type `Shape.circle`/`Color.red`, alias
+  `const C = A; C.x`, module-qualified `shapes.Shape.circle` and
+  `helper.Kind.plus`, value qualifiers whose type is the condition
+  (`s.x` stays accepted), FX1 module-const items (`helper.LOMEM`,
+  `helper.CODE_A`), qualified enum ranges and `identifier` items.
+- New siblings in this dir: `red_bogus_member.zig` (qualified union/enum bogus
+  + shorthand bogus + the captured cascade; 4 x 3071 + 1 x 20) and
+  `red_foreign_qualifier.zig` (`B.x`, `C2.b`, mismatch-wins `B.z`, captured
+  `B.x`; 4 x 3071 + 1 x 20) — exercised outside `run_all.sh`, like the other
+  siblings.
+- Committed coverage: reject
+  `repro/mi_matrix/switch_case_qualifier_reject_xmod` (12 x 3071: qualified
+  union/enum bogus, shorthand union/enum bogus, foreign union/enum,
+  mismatch-wins foreign-nomember, two captured cascades, two cross-module
+  shapes, one value-qualifier bogus; + 2 x 20) with `expected_error.txt`
+  `3071 12` / `20 2`; standalone `repro/switch_case_qualifier_reject.z98`
+  (4 x 3071); positive control `repro/switch_case_qualified.z98`. The FE
+  positive fixture `repro/mi_matrix/stdlib_errset_capture_qualified_xmod`
+  gained the alias-qualified (`ShapeAlias.circle`) and module-qualified-enum
+  (`helper.Kind.plus`) rows; golden re-captured (222 B / 21 lines, 3x
+  byte-exact, Zig-0.15.2-twin stderr byte-identical).
+- POST compiler: fixed point `ce9906b62cb2b9ab7522d8cfafcf3cc9` (two-hop
+  closure hop1 == hop2; seed v88 NOT rotated).
+

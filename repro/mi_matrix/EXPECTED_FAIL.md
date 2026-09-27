@@ -1,4 +1,68 @@
-# mi_matrix corpus — expected-fail manifest (v262 2026-09-27)
+# mi_matrix corpus — expected-fail manifest (v263 2026-09-27)
+
+## FX4 — validate enum switch qualifiers (D11 extras, error 3071) (v262 -> v263, 2026-09-27)
+
+Volume II defect-fix phase, Stage 2b follow-up (task-FX4). FE bound qualified
+prongs; two validation gaps remained: a qualified prong naming a non-existent
+member (`Shape.bogus`) silently compiled rc 0 and emitted no `case` label (a
+dead prong), and a foreign qualifier (`B.x` on an `A`-typed condition) silently
+dispatched as `A.x`. The shorthand sibling `.bogus` had the same dead-prong
+gap. Zig 0.15.2 rejects every shape. Operator ruling: new level-0
+**`error[3071]`** for both classes; the pre-existing `3060`+`error[20]`
+cascade stays visible (no suppression); conservative no-reject when a
+qualifier's type identity cannot be established.
+
+**Rule** (implemented in `sf/src/semantic_analyzer.zig` +
+`sf/src/diagnostics.zig` `ERR_3071_SWITCH_CASE_QUALIFIER`): for a
+`field_access` case item, the qualifier is resolved first —
+- a qualifier that resolves to a KNOWN enum/tagged-union type other than the
+  condition's rejects 3071 with the qualifier span and the message
+  `type mismatch in switch case item -- case item type may not be compatible
+  with the switch condition type` (Zig's mismatch-wins order: `B.z` reports
+  the mismatch, not the missing member);
+- a qualifier that resolves to a MODULE namespace (`helper.LOMEM`, FX1's
+  const-item shape) is not an FX4 prong and is left to lowering's const-item
+  resolution;
+- a qualifier whose identity is 0/void/undefined (its own diagnostic already
+  fired) or of an exotic kind is NOT rejected as foreign;
+- a same-type qualifier whose member does not exist (`Shape.bogus`) and a
+  shorthand member miss (`.bogus`, gated to case-item context by the new
+  `switch_case_item` flag so enum literals in prong BODIES are unaffected)
+  reject 3071 with the member span.
+All sites are deduped per case-item node (`diagnosticCollectorMarkNodeOnce`),
+carry a `union declared here` / `enum declared here` related span, and exit
+rc 2 / 0 `.c`. The captured variants (`Shape.nope => |r| r`, `B.x => |r| r`)
+emit 3071 PLUS the pre-existing unbound-capture `error[20]`; no `error[3060]`
+co-fires (the member check is the direct condition walk, not the generic
+field-access reporter) and no suppression was added.
+
+**Fixtures.** Reject `repro/mi_matrix/switch_case_qualifier_reject_xmod`
+(`expected_error.txt`: `3071 12` + `20 2`; qualified union/enum bogus,
+shorthand union/enum bogus, foreign union/enum, mismatch-wins foreign-nomember,
+two captured cascades, two cross-module shapes, one value-qualifier bogus) +
+standalone `repro/switch_case_qualifier_reject.z98` (4 x 3071) + positive
+standalone `repro/switch_case_qualified.z98` (qualified/alias/shorthand prongs,
+golden `q=12 r=6 e=1 e2=2`, rc 0, 2x byte-exact). The FE positive fixture
+`repro/mi_matrix/stdlib_errset_capture_qualified_xmod` gains the
+alias-qualified (`ShapeAlias.circle`) and module-qualified-enum
+(`helper.Kind.plus`) rows that exercise the identity check positively; golden
+re-captured **222 B / 21 lines**, 3x byte-exact, byte-identical to the
+Zig-0.15.2 `std.debug.print` twin's stderr; stdlib pin stays **258**. D11
+gains `red_bogus_member.zig` (4 x 3071 + 1 x 20) and `red_foreign_qualifier.zig`
+(4 x 3071 + 1 x 20), exercised outside `run_all.sh`.
+
+**Corpus movement.** The only additions are the new reject fixture (FAIL
+class) and the extended FE fixture (class unchanged); zero common-dir class
+movement (no corpus program uses a foreign qualifier or a bogus member, and
+the FX1 module-const items are classified as module namespaces, not foreign
+types). 4-MD5 emitted-C UNCHANGED 8/8 (gol `9e0b708e...`, lisp `ec14d644...`,
+json `5034a0c8...`, mud `2e92c1f2...`); valid-program emission is
+byte-identical to the FX3 compiler (verified by diff on the D11/FE/range/const
+fixtures). Fixed point `2012736050feb56f2d699ffb5fae38e1` ->
+`ce9906b62cb2b9ab7522d8cfafcf3cc9` (hop1 == hop2, explicit gate; seed v88 NOT
+rotated). Documented boundaries: a value qualifier whose type IS the condition
+(`s.x`) stays accepted (out of the ruled scope); a qualifier of an exotic
+non-enum/TU kind is conservatively not rejected as foreign.
 
 ## FX3 — value-aware float narrowing to f32 (D6 extras) (v261 -> v262, 2026-09-27)
 
