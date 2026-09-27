@@ -2162,6 +2162,64 @@ fn semanticAnalyzerMaybeDiagVolatileDrop(self: *SemanticAnalyzer, span_node: u32
     return true;
 }
 
+// FC (D12): a coercion must never discard a `const` qualifier (Language Spec
+// "Type Coercions / Const Correctness": "Coercions are only allowed if they do
+// not discard const qualifiers"; the `[]const T` -> `[*]T` bullet is
+// Forbidden). The frozen family is slice->slice, slice->many, ptr->ptr and
+// many->many with the same effective element/base where the source carries
+// const (flag bit 0) and the target does not; the legal const-ADDING
+// directions (target has const) never match. Volatile is handled by the
+// sibling check above (`pointerQualifiersMonotone` masks only volatile, which
+// is why const slips through the classifier).
+fn semanticAnalyzerConstDiscard(self: *SemanticAnalyzer, src_type: u32, dst_type: u32) bool {
+    if (src_type == @intCast(u32, 0) or dst_type == @intCast(u32, 0)) return false;
+    if (src_type == type_mod.TYPE_UNDEFINED or dst_type == type_mod.TYPE_UNDEFINED) return false;
+    if (src_type == dst_type) return false;
+    if (@intCast(usize, src_type) >= self.registry.types_len) return false;
+    if (@intCast(usize, dst_type) >= self.registry.types_len) return false;
+    var s = self.registry.types_items[@intCast(usize, src_type)];
+    var d = self.registry.types_items[@intCast(usize, dst_type)];
+    if ((s.flags & type_mod.CONST_FLAG) == @intCast(u8, 0)) return false;
+    if ((d.flags & type_mod.CONST_FLAG) != @intCast(u8, 0)) return false;
+    if (s.kind == type_mod.TypeKind.ptr_type) {
+        if (d.kind != type_mod.TypeKind.ptr_type) return false;
+        var sp = self.registry.ptr_items[@intCast(usize, s.payload_idx)];
+        var dp = self.registry.ptr_items[@intCast(usize, d.payload_idx)];
+        return sp.base == dp.base;
+    }
+    if (s.kind == type_mod.TypeKind.many_ptr_type) {
+        if (d.kind != type_mod.TypeKind.many_ptr_type) return false;
+        var sp2 = self.registry.ptr_items[@intCast(usize, s.payload_idx)];
+        var dp2 = self.registry.ptr_items[@intCast(usize, d.payload_idx)];
+        return sp2.base == dp2.base;
+    }
+    if (s.kind == type_mod.TypeKind.slice_type) {
+        var ss = self.registry.slice_items[@intCast(usize, s.payload_idx)];
+        if (d.kind == type_mod.TypeKind.slice_type) {
+            var ds = self.registry.slice_items[@intCast(usize, d.payload_idx)];
+            return ss.elem == ds.elem;
+        }
+        if (d.kind == type_mod.TypeKind.many_ptr_type) {
+            var dp3 = self.registry.ptr_items[@intCast(usize, d.payload_idx)];
+            return ss.elem == dp3.base;
+        }
+        return false;
+    }
+    return false;
+}
+
+fn semanticAnalyzerMaybeDiagConstDiscard(self: *SemanticAnalyzer, span_node: u32, src_type: u32, dst_type: u32) bool {
+    if (!semanticAnalyzerConstDiscard(self, src_type, dst_type)) return false;
+    // The module-var front-resolution fixpoint revisits every initializer on
+    // each pass, so report once per node (the collector's shared marker is the
+    // established dedup for diagnostics in this file).
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, span_node)) return true;
+    var cdrop_node = ast_mod.astStoreNodeAt(self.store, span_node);
+    var cdrop_msg: []const u8 = "cannot implicitly discard 'const' qualifier";
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, cdrop_node.span_start, cdrop_node.span_start + @intCast(u32, cdrop_node.span_len), cdrop_msg);
+    return true;
+}
+
 fn semanticAnalyzerPtrCastDropsVolatile(self: *SemanticAnalyzer, src_type: u32, dst_type: u32) bool {
     if (src_type == @intCast(u32, 0) or dst_type == @intCast(u32, 0)) return false;
     if (src_type == type_mod.TYPE_UNDEFINED or dst_type == type_mod.TYPE_UNDEFINED) return false;
@@ -2208,6 +2266,7 @@ fn tryRecordCoercion(self: *SemanticAnalyzer, src_node: u32, src_type: u32, dst_
     }
     if (src_type == type_mod.TYPE_UNDEFINED or src_type == dst_type) return;
     if (semanticAnalyzerMaybeDiagVolatileDrop(self, src_node, src_type, dst_type)) return;
+    if (semanticAnalyzerMaybeDiagConstDiscard(self, src_node, src_type, dst_type)) return;
     if (!type_mod.typeRegistryIsAssignable(self.registry, src_type, dst_type)) return;
     if (src_type == type_mod.TYPE_NULL) { var cs1_m: []const u8 = "CS1\n"; pal_mod.markerWrite(cs1_m); }
     var ck = coercion_mod.classifyCoercion(self.registry, src_type, dst_type);
@@ -3072,6 +3131,7 @@ fn semanticAnalyzerResolveAssign(self: *SemanticAnalyzer, node_idx: u32) u32 {
     if (lhs == @intCast(u32, 0) or rhs == @intCast(u32, 0)) { var as0: []const u8 = "AS0"; pal_mod.markerWrite(as0); return type_mod.TYPE_VOID; }
     var eff_src = errLitSrcType(self, node.child_1, lhs, rhs);
     if (semanticAnalyzerMaybeDiagVolatileDrop(self, node.child_1, eff_src, lhs)) return type_mod.TYPE_VOID;
+    if (semanticAnalyzerMaybeDiagConstDiscard(self, node.child_1, eff_src, lhs)) return type_mod.TYPE_VOID;
     if (type_mod.typeRegistryIsAssignable(self.registry, eff_src, lhs)) {
         tryRecordCoercion(self, node.child_1, eff_src, lhs);
         var as1: []const u8 = "AS1"; pal_mod.markerWrite(as1);
@@ -4593,6 +4653,8 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                     var it_eff = errLitSrcType(self, node.child_1, decl_type, it);
                     if (semanticAnalyzerMaybeDiagVolatileDrop(self, node.child_1, it_eff, decl_type)) {
                         // implicit volatile discard rejected; no coercion recorded
+                    } else if (semanticAnalyzerMaybeDiagConstDiscard(self, node.child_1, it_eff, decl_type)) {
+                        // implicit const discard rejected; no coercion recorded
                     } else {
                     var ck = coercion_mod.classifyCoercion(self.registry, it_eff, decl_type);
                     var ckv_m: []const u8 = "CCK:vr"; pal_mod.markerWriteInt(ckv_m, @intCast(u32, @enumToInt(ck)));
@@ -5075,6 +5137,9 @@ pub fn semanticAnalyzerResolveModuleVarDecl(self: *SemanticAnalyzer, decl_idx: u
     if (decl_type != @intCast(u32, type_mod.TYPE_UNDEFINED) and it != decl_type) {
         var it_eff = errLitSrcType(self, decl.child_1, decl_type, it);
         if (semanticAnalyzerMaybeDiagVolatileDrop(self, decl.child_1, it_eff, decl_type)) {
+            return it;
+        }
+        if (semanticAnalyzerMaybeDiagConstDiscard(self, decl.child_1, it_eff, decl_type)) {
             return it;
         }
         var ck = coercion_mod.classifyCoercion(self.registry, it_eff, decl_type);

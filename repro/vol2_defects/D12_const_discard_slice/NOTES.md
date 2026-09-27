@@ -58,3 +58,37 @@ allowed if they do not discard const qualifiers. ... `[]const T` -> `[]T`
 Only the in-module variable-declaration site warns; all other coercion sites
 accept silently. The D12 investigation should pin the diagnostic-site matrix
 and decide whether the manual documents a warning or a hard error.
+
+## FC conversion (2026-09-26) — FIXED (rejected)
+
+**Fix:** a const-discard predicate next to `semanticAnalyzerMaybeDiagVolatileDrop`
+(`semantic_analyzer.zig`) detects "source has `const`, target does not, same
+effective element/base" for the frozen family slice->slice, slice->many,
+ptr->ptr and many->many, and emits level-0
+`error[3000]: cannot implicitly discard 'const' qualifier` (deduped per node).
+It is called at the local-decl and assignment sites (before the level-1
+mismatch fallback, so the warning is gone), at the module-var site, and inside
+`tryRecordCoercion` (return, call args, field init). The legal const-ADDING
+directions are untouched.
+
+**POST (FC `effa5a6a…`), all rc 2 / 0 `.c` / 1 x `error[3000]` / 0 x
+`warning[3000]` / no other error code:**
+
+| Shape | File | PRE (seed) | POST (FC) |
+|---|---|---|---|
+| variable declaration `[]const` -> `[]` | `main.zig` | warning[3000], run `m0=9` | **reject** |
+| assignment `[]const` -> `[]` | `red_assign.zig` (added) | warning[3000], run `m0=9` | **reject** |
+| module var `[]const` -> `[]` / `[*]` | `red_modvar.zig` (added) | silent, run `m0=9` | **reject (2 x)** |
+| function parameter `[]const` -> `[]` | `red_param.zig` | silent, run `m0=9` | **reject** |
+| struct field init `[]const` -> `[]` | `red_field.zig` | silent, run `m0=9` | **reject** |
+| function return `[]const` -> `[]` | `red_return.zig` | silent, run `m0=9` | **reject** |
+| cross-module parameter | `xmod_main.zig` | silent, run `m0=9` | **reject** |
+| `[]T` -> `[]const T` control | `control_mut_to_const.zig` | silent, run `c0=1` | unchanged `c0=1` |
+
+All six D12 recorded sites plus the two added siblings reject with a real
+`file:line:col` span; `run_all.sh` uses the `fixedreject` kind with
+`expected_error.txt` `3000 1`. Fixture:
+`repro/mi_matrix/const_discard_reject_xmod` (17 sites incl. `*const i32` ->
+`*i32`, `[*]const i32` -> `[*]i32` and the cross-module return); standalone:
+`repro/const_discard.z98` (8 sites). The `[]const T` -> `[*]T` bullet of the
+spec is now enforced, closing the D5 interaction the investigation flagged.

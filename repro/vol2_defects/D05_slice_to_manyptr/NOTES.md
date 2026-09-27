@@ -71,3 +71,32 @@ Array -> `[*]T` is correctly lowered (`&arr[0]`-style); only the slice source
 is emitted as a raw cast of the slice struct. The investigation should also
 check the return-value context and the `[]const T` -> `[*]const T` direction
 (the latter is RED here).
+
+## FC conversion (2026-09-26) — FIXED
+
+**Fix:** `sf/src/lower.zig` `applyCoercion`'s `slice_to_many_ptr` arm now emits a
+`.ptr` field load (`load_field` with `SLICE_FIELD_PTR`, mirroring
+`maybeExtractSlicePtr`) instead of a raw `ptr_cast` of the slice struct. The
+Language Spec rule ("A slice `[]T` is coerced to `[*]T` by accessing its `.ptr`
+field", allowed in assignments, arguments and returns) is now spec-correct in
+the emitted C: `zT_12 = sl.ptr;`.
+
+**POST (FC `effa5a6a…`):**
+
+| Entry | PRE (seed `a3928c11…`) | POST (FC) |
+|---|---|---|
+| `main.zig` | compile rc 0, gcc rc 1 `cannot convert to a pointer type` | **compile/build/run rc 0, `mp[1]=20`** |
+| `red_const_slice.zig` (`[]const i32` -> `[*]const i32`) | gcc rc 1 | **run rc 0, `mp[1]=20`** |
+| `xmod_main.zig` (`[]i32` -> `[*]i32` at an imported param) | gcc rc 1 | **run rc 0, `first-ish=20`** |
+| `control_array_slice.zig` | `sl[1]=20 len=3` | byte-identical |
+| `control_slice_slice.zig` | `b[1]=20` | byte-identical |
+| `control_array_manyptr.zig` | `mp[2]=30 cmp[0]=10` | byte-identical |
+| `control_ptr_field.zig` | `mp[1]=20` | byte-identical |
+
+The D5-only mutation hole is closed by the D12 gate landed in the same change:
+`[]const i32` -> `[*]i32` is now a level-0 reject (`error[3000]: cannot
+implicitly discard 'const' qualifier`), so the `.ptr` extraction can never
+create a silently mutating alias. Fixture:
+`repro/mi_matrix/stdlib_slice_to_many_ptr_xmod`; standalone:
+`repro/slice_to_many_ptr.z98`. `run_all.sh` uses the new `runok` kind for D05
+(golden `mp[1]=20`, rc 0).

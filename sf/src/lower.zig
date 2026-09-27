@@ -8166,8 +8166,13 @@ pub fn applyCoercion(self: *LirLowerer, src_temp: u32, coercion: CoercionEntry) 
         emitInst(self, LirInst{ .ptr_cast = .{ .value = src_temp, .target = coercion.target_type, .result = dst } });
         return dst;
     } else if (kind == CoercionKind.slice_to_many_ptr) {
+        // FC (D5): a slice coerces to a many-item pointer by extracting its
+        // `.ptr` field (Language Spec "Slice to Pointer"); the previous raw
+        // `ptr_cast` cast the slice STRUCT to a pointer and emitted gcc-invalid
+        // C. Mirrors the explicit `.ptr` lowering (`maybeExtractSlicePtr`).
         var dst = nextTemp(self, coercion.target_type);
-        emitInst(self, LirInst{ .ptr_cast = .{ .value = src_temp, .target = coercion.target_type, .result = dst } });
+        var smp_nid = nameMapGet(self, src_temp);
+        emitInst(self, LirInst{ .load_field = .{ .name_id = smp_nid, .base = src_temp, .field_id = type_mod.SLICE_FIELD_PTR, .result = dst } });
         return dst;
     } else if (kind == CoercionKind.string_to_slice) {
         var dst = nextTemp(self, coercion.target_type);

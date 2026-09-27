@@ -74,6 +74,7 @@ pub const Type = struct {
 };
 
 pub const VOLATILE_FLAG: u8 = 2;
+pub const CONST_FLAG: u8 = 1;
 
 pub const FN_FLAG_VARIADIC: u8 = 1;
 pub const FN_FLAG_STDCALL: u8 = 2;

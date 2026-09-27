@@ -18,9 +18,11 @@
 #           is the missing rejection                                 D03, D10, D12
 #   gccfail compile is accepted (rc 0), gcc must reject the C       D05
 #   wrong   build+run succeed, stdout must differ from expected.txt D02, D06, D08
+#   runok   compiler must accept now (rc 0), gcc must build, the program must
+#           run rc 0 and match the case's expected.txt                  D05
 #   fixedreject (FD1) compiler must reject with the exact census in the
 #           case's expected_error.txt (`<code> <count>`), no signal,
-#           no `.c` emitted                                          D07, D09, S01
+#           no `.c` emitted                                          D07, D09, D12, S01
 #
 # FA-a conversion (2026-09-26): D2 (enum range labels) and D3 (mandatory `else`)
 # are FIXED on the current compiler. Under the existing kinds this shows up
@@ -57,6 +59,17 @@
 # no signal — the former `error[3043]` ICE (rc 3) is gone. The historical
 # seed-v88 observations stay in the case NOTES.md.
 #
+# FC conversion (2026-09-26): D5 (slice -> `[*]T`) and D12 (const-discarding
+# coercions) are FIXED. D05 uses the new `runok` kind: main.zig must compile,
+# build, run rc 0 and print the expected.txt golden (`mp[1]=20`), proving the
+# `.ptr` extraction aliases the slice storage. D12 uses `fixedreject`: main.zig
+# must reject with exactly one level-0 `error[3000]` (`cannot implicitly
+# discard 'const' qualifier`), rc 2 / 0 `.c`, no signal — the former
+# warning-only/silent acceptance is gone. Extra D12 sibling entries
+# (red_assign.zig, red_modvar.zig) and the D05 red_*/xmod/control entries are
+# exercised outside run_all.sh; the historical seed-v88 observations stay in
+# the case NOTES.md.
+#
 # Usage: sh run_all.sh [seed-compiler-path]
 # Default seed: /tmp/manual_seed/zig1_5_clean
 # Rebuild:  bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/manual_seed
@@ -85,9 +98,9 @@ for dir in "$CASE_DIR"/D*/ "$CASE_DIR"/S*/; do
     case "$case_name" in
         D01_*) kind=crash ;;
         D04_*|D11_*) kind=reject ;;
-        D03_*|D10_*|D12_*) kind=accept ;;
-        D07_*|D09_*|S01_*) kind=fixedreject ;;
-        D05_*) kind=gccfail ;;
+        D03_*|D10_*) kind=accept ;;
+        D07_*|D09_*|D12_*|S01_*) kind=fixedreject ;;
+        D05_*) kind=runok ;;
         D02_*|D06_*|D08_*) kind=wrong ;;
         *)           kind=reject ;;
     esac
@@ -134,6 +147,27 @@ for dir in "$CASE_DIR"/D*/ "$CASE_DIR"/S*/; do
             printf '%s: rc=%s ok\n' "$case_name" "$cc"
         else
             printf '%s: rc=%s RED\n' "$case_name" "$cc"
+        fi
+        continue
+    fi
+
+    if [ "$kind" = runok ]; then
+        if [ "$cc" -ne 0 ] || [ ! -f "$out/build_target.sh" ]; then
+            printf '%s: rc=%s RED\n' "$case_name" "$cc"
+            continue
+        fi
+        (cd "$out" && timeout 120 sh build_target.sh linux main) > "$out/build.log" 2>&1
+        bc=$?
+        if [ "$bc" -ne 0 ]; then
+            printf '%s: rc=%s RED\n' "$case_name" "$bc"
+            continue
+        fi
+        timeout 120 "$out/main" > "$out/run.stdout" 2>&1
+        rc=$?
+        if [ "$rc" -eq 0 ] && [ -f "$dir/expected.txt" ] && diff "$dir/expected.txt" "$out/run.stdout" > "$out/diff.txt" 2>&1; then
+            printf '%s: rc=%s ok\n' "$case_name" "$rc"
+        else
+            printf '%s: rc=%s RED\n' "$case_name" "$rc"
         fi
         continue
     fi

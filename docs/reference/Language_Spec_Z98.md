@@ -459,9 +459,17 @@ In specific contexts where a pointer or slice is expected, the compiler provides
 - **Array/Pointer to Slice**: Handled via a synthetic slicing node `arr[0..arr.len]`.
 
 **Const Correctness:**
-Coercions are only allowed if they do not discard const qualifiers.
+Coercions are only allowed if they do not discard const qualifiers. Every
+const-discarding coercion is a level-0 `error[3000]` (`cannot implicitly
+discard 'const' qualifier`, enforced at declarations, assignments, module
+initializers, returns, call arguments and field initializers); no C is emitted.
+- `[]T` -> `[]const T` (Allowed)
 - `[]T` -> `[*]const T` (Allowed)
+- `[]const T` -> `[*]const T` (Allowed)
+- `[]const T` -> `[]T` (Forbidden)
 - `[]const T` -> `[*]T` (Forbidden)
+- `*const T` -> `*T` (Forbidden)
+- `[*]const T` -> `[*]T` (Forbidden)
 
 **Restriction:**
 These coercions are **not** allowed in other contexts, such as arithmetic operations or comparisons.

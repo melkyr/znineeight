@@ -1,4 +1,45 @@
-# mi_matrix corpus — expected-fail manifest (v255 2026-09-27)
+# mi_matrix corpus — expected-fail manifest (v256 2026-09-27)
+
+## FC — slice→many-pointer `.ptr` extraction (D5) + const-discard rejection (D12) (v255 -> v256, 2026-09-27)
+
+Volume II defect-fix phase, Stage 2b seventh task (task-FC). **(D5)** `sf/src/lower.zig`
+`applyCoercion`'s `slice_to_many_ptr` arm emitted a raw `ptr_cast` of the slice STRUCT
+(`zT_12 = (int*)sl;`), so `[]T`/`[]const T` → `[*]T`/`[*]const T` compiled rc 0 and gcc
+rejected the C (`cannot convert to a pointer type`). The arm now emits a `.ptr` field
+extraction (`load_field` with `SLICE_FIELD_PTR`, mirroring `maybeExtractSlicePtr`), so the
+spec-promised coercion is lowered correctly in declarations, assignments, arguments and
+returns. **(D12)** new `semanticAnalyzerConstDiscard` + `semanticAnalyzerMaybeDiagConstDiscard`
+(next to the volatile pair; `type_registry.zig` gains the named `CONST_FLAG = 1`) make every
+const-discarding coercion a level-0 `error[3000]` (`cannot implicitly discard 'const'
+qualifier`, deduped per node) across the frozen family slice→slice, slice→many, ptr→ptr and
+many→many; the check runs at local decl, assignment and module var and inside
+`tryRecordCoercion` (return, call args, field init), i.e. all six measured sites plus
+cross-module. The legal const-adding directions (`[]T`→`[]const T`, `[]T`→`[*]const T`,
+`[]const T`→`[*]const T`, `*T`→`*const T`, `[*]T`→`[*]const T`) are unchanged. The D12 gate
+must land with D5: without it the corrected `.ptr` extraction would silently mutate a
+`[]const T`'s backing array through `[]const T`→`[*]T` (the FC-I measured risk).
+
+**Fixtures / movement:** corpus `-s0` **1048 = 897 OK / 47 GREEN / 104 FAIL / 0 ICE /
+0 CRASH** (FA-b: 1046 = 896/46/104). Full-classifier join-diff vs the FA-b baseline over the
+1046 common dirs is **EMPTY (zero movement)** — the FC-I zero-hit measurement is confirmed
+at corpus scale. The only additions are the two new fixtures: positive
+`repro/mi_matrix/stdlib_slice_to_many_ptr_xmod` (class OK; golden
+`mp2=30 arr0=6 len=4 cmp1=20 rp3=4 first=2 csum=30 addc0=6 p2=30`, rc 0, 3× byte-exact;
+stdlib pin 251 → 252) and reject `repro/mi_matrix/const_discard_reject_xmod` (17 ×
+`error[3000]`, rc 2 / 0 `.c`, class GREEN per the 0-`.c`-plus-`error[3000]` green-guard
+convention). Standalone repros `repro/slice_to_many_ptr.z98` (positive) and
+`repro/const_discard.z98` (8 rejects). The D05/D12 `vol2_defects` repros are converted
+(neither tree is a corpus entry): D05 uses the new `runok` kind with `expected.txt`
+`mp[1]=20`; D12 uses `fixedreject` with `expected_error.txt` `3000 1`, and gains
+`red_assign.zig` + `red_modvar.zig` for the two previously silent sites.
+
+**Gates:** fixed point **MOVED `cadf3c241abd1baf4d31da52b0ccd649` →
+`effa5a6aae9f11266597196561186f1b`** (hop1 == hop2, explicit `FIXED_POINT_MD5` gate; seed v88
+NOT rotated); 4-MD5 emitted-C **UNCHANGED 8/8** (gol `9e0b708e…` / lisp `ec14d644…` / json
+`5034a0c8…` / mud `2e92c1f2…`, 2× each); stdlib runtime **252 PASS / 0 FAIL**; example matrix
+**24/24**; `check_emit_support.sh` **7/7**; `verify_upgraded.sh` **CLOSEOUT OK**; self-emission
+rc 0 / **48 `.c` + 48 `.h`** / 0 PANIC; `w3000` pins identical to FA-b (the one known
+`callconv_nonpub_stdcall_xmod` pin stays).
 
 ## FA-b — migrate the remaining no-`else` repro switch fixtures (v254 -> v255, 2026-09-27)
 

@@ -178,6 +178,7 @@ repro/mi_matrix/stdlib_rle_encodedlen_xmod
 repro/mi_matrix/stdlib_rle_oom_xmod
 repro/mi_matrix/stdlib_rle_roundtrip_xmod
 repro/mi_matrix/stdlib_rle_stress_xmod
+repro/mi_matrix/stdlib_slice_to_many_ptr_xmod
 repro/mi_matrix/stdlib_sort_binarysearchu32_xmod
 repro/mi_matrix/stdlib_sort_introsort_xmod
 repro/mi_matrix/stdlib_sort_sort_xmod
