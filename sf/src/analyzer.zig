@@ -690,6 +690,7 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
         walkBlock(ctx, body_state, node.child_1, visit_fn);
         smap_mod.stateMapMergeStates(state, state, body_state, @intCast(u8, 99));
     } else if (kind == AstKind.swt_ex) {
+        analyzeExpr(ctx, state, node.child_0);
         var prongs_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, node_idx);
         var si: usize = 0;
         while (si < @intCast(usize, prongs_n)) : (si += 1) {
@@ -725,7 +726,16 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
         handleNullAssign(ctx, state, node_idx);
         on_stmt(ctx, state, node_idx);
     } else if (kind == AstKind.expr_stmt) {
-        analyzeExpr(ctx, state, node.child_0);
+        if (node.child_0 != @intCast(u32, 0)) {
+            var inner = ast_mod.astStoreNodeAt(ctx.store, node.child_0);
+            if (inner.kind == AstKind.swt_ex) {
+                visitStatement(ctx, state, node.child_0, on_stmt, visit_fn);
+            } else {
+                analyzeExpr(ctx, state, node.child_0);
+            }
+        }
+    } else if (kind == AstKind.block) {
+        walkBlock(ctx, state, node_idx, visit_fn);
     } else {
         on_stmt(ctx, state, node_idx);
     }

@@ -87,6 +87,14 @@
 # outside run_all.sh; the historical seed-v88 observations stay in the case
 # NOTES.md.
 #
+# FX2 conversion (2026-09-27): the D1 analyzer-traversal extras (defers inside
+# switch prongs and bare blocks) are FIXED on the current compiler. D01 stays
+# kind `crash` (which now goldens main.zig stdout/rc) and gains the
+# `red_switch_block.zig` sibling (plain + switch-prong + bare-block defers:
+# compile/build/run rc 0 under FG+FX2, rc 139 under an FX2-only no-FG compiler;
+# exercised outside run_all.sh like the other D01 siblings). The historical
+# seed-v88 observations stay in the case NOTES.md.
+
 # Usage: sh run_all.sh [seed-compiler-path]
 # Default seed: /tmp/manual_seed/zig1_5_clean
 # Rebuild:  bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/manual_seed

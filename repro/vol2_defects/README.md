@@ -118,6 +118,18 @@ operator-authorized F tasks consume this set.
 > and the row-by-value `*[2][3]i32` item match Zig 0.15.2;
 > `control_slice_legal.zig` now covers the former probe (tail
 > `fsum=42 fz=0 fpa=60`). Non-array pointer pointees still reject `error[20]`.
+>
+> **FX2 status (2026-09-27):** the D1 *traversal* extras are **FIXED** on the
+> current compiler (fixed point `325f741f0326ebaf177a0503e000312a`).
+> `visitStatement` now walks switch-prong and bare-block statements, so defers
+> inside them reach the null/lifetime/double-free passes (runtime unchanged).
+> New sibling `D01_defer_segfault/red_switch_block.zig` (plain + switch-prong +
+> bare-block defers) compiles/builds/runs rc 0 with stdout
+> `plain-body / plain-defer / switch 2 / switch-defer / block-body /
+> block-defer`; all three FX2 shapes SIGSEGV rc 139 on an FX2-only (no-FG)
+> compiler and rc 0 on FG+FX2. Positive fixture
+> `repro/mi_matrix/stdlib_defer_switch_block_xmod` + standalone
+> `repro/defer_traversal.z98`. `run_all.sh` stays `D01_defer_segfault: rc=0 ok`.
 
 - Plan: `.superpowers/sdd/2026-09-25-z98-manual-volume-II-plan/`
 - Report: `.superpowers/sdd/2026-09-25-z98-manual-volume-II-plan/task-D0-report.md`

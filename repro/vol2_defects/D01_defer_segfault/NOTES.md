@@ -1,4 +1,4 @@
-# D1 — `defer` segfault: plain-defer fn + loop-body-defer fn in one module (RED; fixed by FG)
+# D1 — `defer` segfault: plain-defer fn + loop-body-defer fn in one module (RED; fixed by FG; traversal extras by FX2)
 
 > **FG status (2026-09-26): FIXED.** `resetDeferQueue` clears
 > `defer_queue_items/len/cap` immediately after each of the four
@@ -13,6 +13,22 @@
 > goldens `main.zig` stdout/rc against `expected.txt`. `--no-leak-check` is no
 > longer needed anywhere. The seed-v88 OBSERVED section below remains the
 > historical RED evidence.
+
+> **FX2 status (2026-09-27): TRAVERSAL EXTRA FIXED.** `visitStatement`
+> (`sf/src/analyzer.zig`) now walks switch-prong and bare-block statements: the
+> `swt_ex` arm analyzes the condition then forks/walks/merges each prong body,
+> the `expr_stmt` arm recurses the statement-switch wrapper, and a bare `block`
+> routes through `walkBlock` — so defers inside them queue at the walked
+> `current_depth` and drain at their own block exit. The new sibling
+> `red_switch_block.zig` (plain + switch-prong + bare-block defers) compiles/
+> builds/runs rc 0 (stdout `plain-body`, `plain-defer`, `switch 2`,
+> `switch-defer`, `block-body`, `block-defer`; stderr empty); all three FX2
+> shapes SIGSEGV rc 139 on an FX2-only (no-FG) compiler and rc 0 on FG+FX2.
+> Fixed point MOVED `98cd68f4a4f99b520f663d6964673e67` ->
+> `325f741f0326ebaf177a0503e000312a` (hop1 == hop2); runtime behavior is
+> unchanged (analyzer-only). Positive fixture
+> `repro/mi_matrix/stdlib_defer_switch_block_xmod`; standalone
+> `repro/defer_traversal.z98`.
 
 ## FG GREEN evidence
 
@@ -94,6 +110,7 @@ behavior here).
 | Cross-module, both in `helper.zig` | `xmod_main.zig` + `helper.zig` | RED | compile rc 139 |
 | In-module plain + `while`-defer | `red_while.zig` | RED | compile rc 139 |
 | In-module plain + nested-`for`-defer | `red_nested_for.zig` | RED | compile rc 139 |
+| In-module plain + switch-prong/bare-block defers | `red_switch_block.zig` | GREEN after FG+FX2 | compile/build/run rc 0; FX2-only (no FG) rc 139 |
 | Split: plain in main, loop in helper | `split_plain_main_loop_helper.zig` + `helper_loop.zig` | control | rc 0, runs |
 | Split: loop in main, plain in helper | `split_loop_main_plain_helper.zig` + `helper_plain.zig` | control | rc 0, runs |
 | Two plain-defer fns | `control_two_plain.zig` | control | rc 0, runs |

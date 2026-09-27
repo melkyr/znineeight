@@ -1,4 +1,4 @@
-# 06 — Static Analyzers [updated: 2026-09-26 — FG (Volume II defect fix, D1): new `resetDeferQueue` (analyzer.zig) clears the defer queue's `items/len/cap` and is called immediately after each of the four per-phase/per-function `sandReset` sites in `runAllAnalyzers`, so the queue can no longer alias recycled scratch memory that a live `StateMap` now occupies; fixes the D1 SIGSEGV (`checkLeaksOnScopeExit` / `stateMapMergeStates`) for a plain-`defer` fn plus a nested-block-`defer` fn in one module. Bookkeeping-only (the queue is drained at every block exit); fixture `repro/mi_matrix/stdlib_defer_queue_reset_xmod`; fixed point `6b68ca72…` -> `c4f10f9e2d33a0833b9882c5dad2539b` (hop1 == hop2); 4-MD5 UNCHANGED] [updated: 2026-09-20 — refreshed against current analyzer/StateMap source; removed line refs and dated evidence]
+# 06 — Static Analyzers [updated: 2026-09-27 — FX2 (Volume II defect fix, D1 extras): `visitStatement` now traverses switch-prong and bare-block statements. The `swt_ex` arm first analyzes the condition (preserving the previous `expr_stmt(swt_ex)` condition route) and then walks every prong body through the existing fork -> walkBlock -> merge; the `expr_stmt` arm detects a statement-switch wrapper and recurses `visitStatement(swt_ex)`; a bare `block` statement routes through `walkBlock` (depth increment, defer enqueue/drain at its own block exit, leak check). Defers inside prongs/blocks now reach the null/lifetime/double-free passes; runtime behavior is unchanged (analyzer-only). Accepted movement: duplicate bare-block `WARN_6005`; lisp `WARN_6002` counts +58/+73/+85 (`lisp_interpreter_adv/curr/upgraded` only, zero other warning movers over 1055 corpus dirs; zero error movement); FX7 (switch-merge prong-name propagation) and FX8 (`labeled_stmt`) stay out of scope. Fixtures `repro/mi_matrix/stdlib_defer_switch_block_xmod` (stdlib pin 256 -> 257) + standalone `repro/defer_traversal.z98`; fixed point `98cd68f4a4f99b520f663d6964673e67` -> `325f741f0326ebaf177a0503e000312a` (hop1 == hop2); 4-MD5 emitted-C UNCHANGED. FX2-only traversal SIGSEGVs without FG (the newly queued prong defers reach the stale queue), so it lands after `resetDeferQueue`.] [updated: 2026-09-26 — FG (Volume II defect fix, D1): new `resetDeferQueue` (analyzer.zig) clears the defer queue's `items/len/cap` and is called immediately after each of the four per-phase/per-function `sandReset` sites in `runAllAnalyzers`, so the queue can no longer alias recycled scratch memory that a live `StateMap` now occupies; fixes the D1 SIGSEGV (`checkLeaksOnScopeExit` / `stateMapMergeStates`) for a plain-`defer` fn plus a nested-block-`defer` fn in one module. Bookkeeping-only (the queue is drained at every block exit); fixture `repro/mi_matrix/stdlib_defer_queue_reset_xmod`; fixed point `6b68ca72…` -> `c4f10f9e2d33a0833b9882c5dad2539b` (hop1 == hop2); 4-MD5 UNCHANGED] [updated: 2026-09-20 — refreshed against current analyzer/StateMap source; removed line refs and dated evidence]
 
 > Covers: `analyzer.zig`, `state_map.zig`
 
@@ -19,7 +19,7 @@
 
 ---
 
-## analyzer.zig (`sf/src/analyzer.zig`, 854 lines)
+## analyzer.zig (`sf/src/analyzer.zig`, 864 lines)
 
 4 independent analyzer passes in phase 6. Each runs per-function with a fresh `StateMap` and resets the scratch arena between passes.
 
@@ -406,16 +406,47 @@ Entry point for analyzing a block of statements. Manages scope depth, defers, an
 |------|--------|
 | `if_stmt`/`if_capture` | evaluate cond → fork then_state/else_state → optional `applyNullGuardRefinement` + if_capture safe → walkBlock each → `stateMapMergeStates(state, then, else, 99)` |
 | `while_stmt`/`while_capture` | evaluate cond → fork body_state → optional while_capture safe → walkBlock → `stateMapMergeStates(state, state, body, 99)` |
-| `swt_ex` | per-prong: fork → walkBlock → `stateMapMergeStates(state, state, ps, 99)` |
+| `swt_ex` | analyze condition (`analyzeExpr(child_0)`) → per-prong: fork → walkBlock → `stateMapMergeStates(state, state, ps, 99)` |
 | `for_stmt` | fork body_state → walkBlock → `stateMapMergeStates(state, state, body, 99)` |
 | `return_stmt` | if child: `checkReturnProvenance` + `handleOwnershipReturn` → on_stmt |
 | `defer_stmt`/`errdefer_stmt` | push to defer_queue |
 | `var_decl` (null mode) | `handleNullVarDecl` → on_stmt |
 | `plain_assign` (null mode) | `handleNullAssign` → on_stmt |
-| `expr_stmt` | `analyzeExpr` only |
+| `expr_stmt` | statement-switch wrapper (`child_0` kind `swt_ex`) → recurse `visitStatement`; else `analyzeExpr(child_0)` |
+| `block` | `walkBlock` (depth increment, defer queue drain at block exit, leak check) |
 | other | on_stmt |
 
 Central statement dispatch for all analyzers. The null analysis if/else/loop state forking logic is the most complex part — each path gets a forked `StateMap`, and after both paths execute, `stateMapMergeStates` computes a conservative merge.
+
+#### Statement-traversal contract (FX2)
+
+A statement `switch` is parsed as `expr_stmt(swt_ex)`
+(`sf/src/parser.zig`). `visitStatement`'s `expr_stmt` arm detects that wrapper
+and recurses through the `swt_ex` arm, which analyzes the condition first
+(preserving the previous condition-only route) and then walks each prong body
+with the shared fork/walkBlock/merge. A bare `block` statement routes through
+`walkBlock`, so a defer inside it enqueues at the walked `current_depth` and
+drains at its own block exit (LIFO) and the double-free pass leak-checks on
+scope exit. This makes defers inside switch prongs and bare blocks visible to
+all three optional analyzers; lowering alone owns defer execution, so runtime
+behavior is unchanged.
+
+Known limits (not changed by FX2):
+- the `swt_ex` merge (`stateMapMergeStates(state, state, ps, 99)`) cannot add
+  prong-only names to the enclosing state — post-switch reads of a prong-local
+  name fall back to untracked (FX7 owns the merge fix);
+- a bare block whose allocation leaks to function exit reports `WARN_6005`
+  twice (inner block exit + function exit) — operator-accepted duplicate;
+- analyzer diagnostics carry no source span (`file_id 0`);
+- `labeled_stmt` bodies, prong case items and deferred statement bodies stay
+  untraversed (`executeDeferQueue` re-enters with `in_defer_exec = 1`, so the
+  defer arm skips) — FX8 owns `labeled_stmt`;
+- capture-safe marking for prong captures is deliberately skipped (an unmarked
+  capture only reaches the conservative `WARN_6002` path).
+
+FX2-only traversal must land after FG's `resetDeferQueue`: the newly queued
+prong defers otherwise reach the stale queue pointer and SIGSEGV (measured:
+FX2-only compiler rc 139 on the fixture/sibling shapes; FG+FX2 rc 0).
 
 #### Detection Wiring
 

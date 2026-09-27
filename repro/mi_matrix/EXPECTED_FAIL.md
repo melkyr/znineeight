@@ -1,4 +1,53 @@
-# mi_matrix corpus — expected-fail manifest (v260 2026-09-27)
+# mi_matrix corpus — expected-fail manifest (v261 2026-09-27)
+
+## FX2 — switch-prong / bare-block analyzer traversal (D1 extras) (v260 -> v261, 2026-09-27)
+
+Volume II defect-fix phase, Stage 2b follow-up (task-FX2). D1/FG fixed the
+defer-queue corruption; the adjacent gap remained: a statement switch is parsed
+as `expr_stmt(swt_ex)` and the analyzer's `expr_stmt` arm only recursed the
+condition, while a bare `block` statement fell to the `on_stmt` no-op — defers
+inside them were invisible to the null/lifetime/double-free passes.
+
+**Fix** (`sf/src/analyzer.zig` `visitStatement` only; no merge/capture change).
+1. `swt_ex` arm: analyze the condition first (`analyzeExpr(node.child_0)`),
+   preserving the old condition-only route, then the existing per-prong
+   fork/walkBlock/merge.
+2. `expr_stmt` arm: when `child_0` is an `AstKind.swt_ex`, recurse
+   `visitStatement` (statement switch); otherwise keep `analyzeExpr`.
+3. New `block` arm before the fallback: `walkBlock(ctx, state, node_idx,
+   visit_fn)` — depth increment, defer enqueue at the walked depth, block-exit
+   drain and leak check.
+Not included (operator scope): FX7 switch-merge prong-name propagation,
+FX8 `labeled_stmt` traversal, capture-safe marking.
+
+**Fixtures.** Positive `repro/mi_matrix/stdlib_defer_switch_block_xmod`
+(defer in a switch prong + a bare block; golden 82 B / 8 rows, rc 0, 3x
+byte-exact; stdlib pin **256 -> 257**) + standalone `repro/defer_traversal.z98`
+(also a switch nested in a block, 12 rows). D01 gains the
+`red_switch_block.zig` sibling (plain + switch-prong + bare-block defers,
+compile/build/run rc 0, stdout `plain-body / plain-defer / switch 2 /
+switch-defer / block-body / block-defer`); `run_all.sh` stays `D01: rc=0 ok`.
+All three new shapes SIGSEGV rc 139 on an FX2-only (no-FG) compiler and rc 0 on
+FG+FX2 (ordering evidence).
+
+**Movement.** Fixed point MOVED `98cd68f4a4f99b520f663d6964673e67` ->
+**`325f741f0326ebaf177a0503e000312a`** (hop1 == hop2, explicit
+`FIXED_POINT_MD5` gate; seed v88 NOT rotated). 4-MD5 emitted-C **UNCHANGED
+4/4** (gol `9e0b708e…` / lisp `ec14d644…` / json `5034a0c8…` / mud
+`2e92c1f2…`, 2x each) and runtime stdout byte-identical for all four gate
+programs (gol `fcbf7e7c…`, lisp `b3d9f897…`, json `8bda3d5a…`, mud server
+`66c8f0ab…` / client `93147d0f…`). Corpus `-s0` **1055 = 902 OK / 49 GREEN /
+104 FAIL / 0 ICE / 0 CRASH**; full-classifier join-diff vs the 1054-dir FX1
+baseline = exactly the new positive fixture (OK), **zero other movers, zero
+removed**. Full-corpus warning census (1055 dirs, PRE vs POST): exactly 3
+movers, all additions of `warning[3037]` (WARN_6002) on the lisp programs —
+`lisp_interpreter_adv` 47 -> 105, `lisp_interpreter_curr` 47 -> 120 (the
+4-MD5 gate), `lisp_interpreter_upgraded` 52 -> 137; zero error-code movement
+anywhere; the duplicate bare-block `WARN_6005` is operator-accepted. Stdlib
+runtime **257 PASS / 0 FAIL**; example matrix **24/24**; `check_emit_support.sh`
+**7/7**; `verify_upgraded.sh` **CLOSEOUT OK**; build_test **0/9** (pre-existing
+retired-zig0 baseline); self-emission rc 0 / 48 `.c` + 48 `.h` / 0 PANIC, dump
+stderr byte-identical PRE <-> POST.
 
 ## FX1 — named-constant and `bool` switch case items / range bounds (D2 extras) (v259 -> v260, 2026-09-27)
 
