@@ -119,3 +119,29 @@ Boundaries (unchanged / residual):
   regression.
 - Same-type variant aliasing (two variants with the same type) keeps the
   documented first-match emitter heuristic (NON-ISSUE, unchanged).
+
+## FX3 conversion (2026-09-27) — value-aware narrowing
+
+The FX3 fix (`fix(sema): narrow float values to f32 value-aware`, fixed point
+`8233580ff281e73c006d04c5c91281e4`) closes both D6 residuals:
+
+- `green_param.zig` (new sibling) is the former f32-param residual turned
+  positive: `takeF32(1.5)`, `takeF32(2)`, a typed `const d: f64 = 2.5` and a
+  comptime-known `const c: i32 = 2` all narrow to f32 and print
+  `x=1.5 / x=2 / x=2.5 / x=2` (compile/build/run rc 0).
+- The typed-f64-variable payload is now a **clean reject**: `U{ .a = d }` with
+  a runtime `d: f64` is level-0 `error[3000]` (Zig rejects it too) instead of
+  the silent whole-union/sibling write; the same rule applies to runtime f64
+  parameters/returns/fields/declarations/assignments and to inexact comptime
+  values (`16777217`, typed `f64` 0.1).
+- The accept/reject matrix is pinned by
+  `repro/mi_matrix/stdlib_f32_narrow_ok_xmod` (golden, Zig-0.15.2-twin
+  byte-identical) and `repro/mi_matrix/f32_narrow_reject_xmod` (18 ×
+  `error[3000]`, rc 2 / 0 `.c`); the D06 `main.zig` literal payloads stay
+  byte-identical.
+
+Documented FX3 boundary: the lexer's naive `parseF64` accumulates digits, so
+an extreme literal like `3.4028234663852886e38` is not the correctly-rounded
+f64 and a typed const of it stays rejected even though Zig accepts; that is the
+pre-existing float-literal precision residual (spec §7.2), not the narrowing
+rule.

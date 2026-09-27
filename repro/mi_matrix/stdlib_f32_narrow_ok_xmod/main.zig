@@ -1,0 +1,53 @@
+// stdlib_f32_narrow_ok_xmod — FX3 (Volume II D6 extras) positive runtime
+// fixture: value-aware narrowing to f32.
+//
+// Every accepted source materialises at an f32 expectation site and round-
+// trips exactly like Zig 0.15.2: an untyped float literal or literal-only
+// float arithmetic (even inexact: 0.1 rounds to f32(0.1)), a typed
+// comptime-known f64 (const / @as(f64, ...)) that is exactly representable,
+// and a comptime-known integer that is exactly representable. Sites:
+// parameters, returns, struct fields, tagged-union payloads, local
+// declarations, assignments and cross-module calls.
+//
+// Contract: stdout below, rc 0, byte-exact 3x; every printed value is
+// byte-identical to the Zig-0.15.2 `std.debug.print` twin (the values chosen
+// are all representable in f32, so no printer-precision residual applies).
+const std = @import("std");
+const helper = @import("helper.zig");
+
+const D: f64 = 2.5;
+const C: i32 = 6;
+const NL = 7;
+
+const S = struct { x: f32 };
+const U = union(enum) { a: f32, empty };
+
+fn take(x: f32) f32 { return x; }
+fn retLit() f32 { return 1.5; }
+fn retD() f32 { return D; }
+fn retC() f32 { return C; }
+
+pub fn main() void {
+    var v1: f32 = 0.1;
+    v1 = 1.5;
+    var v2: f32 = D;
+    var v3: f32 = C;
+    var v4: f32 = NL;
+
+    var s1: S = S{ .x = 2.0 };
+    var s2: S = S{ .x = D };
+
+    var ua: U = U{ .a = 2.0 };
+    var ub: U = U{ .a = @as(f64, 3.0) };
+    var uc: U = U{ .a = C };
+
+    std.io.print("param={} {} {} {} {} {}\n", .{ take(1.5), take(2), take(1.0 + 0.5), take(D), take(@as(f64, 4.0)), take(C) });
+    std.io.print("param2={} {} {}\n", .{ take(0.1), take(NL), helper.take(3.5) });
+    std.io.print("ret={} {} {}\n", .{ retLit(), retD(), retC() });
+    std.io.print("decl={} {} {} {}\n", .{ v1, v2, v3, v4 });
+    std.io.print("field={} {}\n", .{ s1.x, s2.x });
+    std.io.print("union={} {} {}\n", .{ ua.a, ub.a, uc.a });
+    var xs = helper.S{ .x = 4.5 };
+    std.io.print("xmod={}\n", .{xs.x});
+    std.io.print("done\n", .{});
+}

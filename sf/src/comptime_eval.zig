@@ -964,10 +964,23 @@ fn ciSignificantBits(v: ComptimeInt) u32 {
 }
 
 // Task 9: is the f64 value exactly an f32 value (round-trip)?
-fn comptimeEvalF64IsF32Exact(x: f64) bool {
+pub fn comptimeEvalF64IsF32Exact(x: f64) bool {
     var x32: f32 = @floatCast(f32, x);
     var back: f64 = @floatCast(f64, x32);
     return back == x;
+}
+
+// FX3 (Volume II D6 extras): is the exact integer value representable in f32?
+// An integer is exact in an IEEE binary format iff the magnitude's significant
+// bits fit the significand (24 for f32) AND the magnitude is inside the finite
+// range. For a value with <= 24 significant bits every `ciToF64` accumulation
+// prefix is itself a <= 24-bit prefix of the value, so the f64 conversion is
+// exact (f64 has 53 bits); the range check then falls out of the f64->f32
+// round trip (an above-maximum magnitude rounds to inf and does not come
+// back). The 256-bit cap keeps `ciToF64` finite for every integer.
+pub fn comptimeIntF32Exact(v: ComptimeInt) bool {
+    if (ciSignificantBits(v) > F32_SIGNIFICAND_BITS) return false;
+    return comptimeEvalF64IsF32Exact(ciToF64(v));
 }
 
 // Task 9: the declared float type of a comparison operand -- TYPE_F32 /
@@ -1590,6 +1603,173 @@ fn comptimeEvalFloatBuiltin(self: *ComptimeEval, node_idx: u32, depth: u32) ?f64
         return fv;
     }
     return null;
+}
+
+// FX3 (Volume II D6 extras): the value+provenance probe behind the
+// value-aware f64/int -> f32 narrowing rule. `ok` is false for a runtime (or
+// otherwise non-foldable) expression; `typed` distinguishes a typed float
+// value (a declared/typed const, `@as`/`@floatCast`/`@intToFloat`, a declared
+// integer, or arithmetic with such an operand) from an untyped
+// `comptime_float` (a bare float literal or literal-only arithmetic), which
+// Zig accepts at an f32 site and ROUNDS, while a typed value must be exactly
+// representable.
+pub const FloatNarrowVal = struct {
+    ok: bool,
+    typed: bool,
+    v: f64,
+};
+
+fn floatNarrowNone() FloatNarrowVal {
+    return FloatNarrowVal{ .ok = false, .typed = false, .v = 0.0 };
+}
+
+pub fn comptimeEvalFloatNarrow(self: *ComptimeEval, node_idx: u32) FloatNarrowVal {
+    return floatNarrowProbe(self, node_idx, @intCast(u32, 0));
+}
+
+// Recursive value/provenance probe. Extends `comptimeEvalFloat` with the
+// literal-only arithmetic (`+`/`-`/`*`/`/`) and `@as` shapes that the f32
+// materialisation rule needs; deliberate scope: any other node kind (a
+// runtime ident, a call, an unsupported builtin) stays non-foldable. Peer
+// provenance on an arithmetic node is the OR of its operands, matching what
+// sema types the result as (a typed f64 operand makes the expression f64).
+fn floatNarrowProbe(self: *ComptimeEval, node_idx: u32, depth: u32) FloatNarrowVal {
+    var r = floatNarrowNone();
+    if (node_idx == @intCast(u32, 0)) return r;
+    if (depth >= @intCast(u32, 20)) return r;
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    if (node.kind == AstKind.float_literal) {
+        r.ok = true;
+        r.v = self.store.float_values.items[@intCast(usize, ast_mod.astStoreNodePayload(self.store, node_idx))];
+        return r;
+    }
+    if (node.kind == AstKind.int_literal or node.kind == AstKind.char_literal) {
+        r.ok = true;
+        r.v = @intToFloat(f64, ast_mod.astStoreIntValue(self.store, node_idx));
+        return r;
+    }
+    if (node.kind == AstKind.negate or node.kind == AstKind.paren_expr) {
+        r = floatNarrowProbe(self, node.child_0, depth + @intCast(u32, 1));
+        if (!r.ok) return r;
+        if (node.kind == AstKind.negate) r.v = -r.v;
+        return r;
+    }
+    if (node.kind == AstKind.add or node.kind == AstKind.sub or
+        node.kind == AstKind.mul or node.kind == AstKind.div) {
+        var l = floatNarrowProbe(self, node.child_0, depth + @intCast(u32, 1));
+        if (!l.ok) return r;
+        var rt = floatNarrowProbe(self, node.child_1, depth + @intCast(u32, 1));
+        if (!rt.ok) return r;
+        r.ok = true;
+        r.typed = l.typed or rt.typed;
+        if (node.kind == AstKind.add) r.v = l.v + rt.v;
+        if (node.kind == AstKind.sub) r.v = l.v - rt.v;
+        if (node.kind == AstKind.mul) r.v = l.v * rt.v;
+        if (node.kind == AstKind.div) {
+            if (rt.v == 0.0) return floatNarrowNone();
+            r.v = l.v / rt.v;
+        }
+        return r;
+    }
+    if (node.kind == AstKind.builtin_call) {
+        var bc_n = ast_mod.astStoreNodeExtraChildCount(self.store, node_idx);
+        if (bc_n < @intCast(u32, 1)) return r;
+        var is_as = node.child_0 == self.as_id;
+        var is_fc = node.child_0 == self.float_cast_id;
+        var is_itf = node.child_0 == self.int_to_float_id;
+        if (!is_as and !is_fc and !is_itf) return r;
+        if (is_fc or is_itf) {
+            if (comptimeEvalFloatBuiltin(self, node_idx, depth + @intCast(u32, 1))) |bv| {
+                r.ok = true; r.typed = true; r.v = bv;
+            }
+            return r;
+        }
+        var tid = comptimeEvalResolveTypeArg(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0)));
+        if (tid) |t| {
+            if (t != type_mod.TYPE_F32 and t != type_mod.TYPE_F64) return r;
+            if (bc_n < @intCast(u32, 2)) return r;
+            var inner_idx = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 1));
+            var fv: f64 = 0.0;
+            if (comptimeEvalEvaluateDepth(self, inner_idx, depth + @intCast(u32, 1))) |cv| {
+                if (cv.kind == KIND_FLOAT) { fv = comptimeEvalFloatBits(cv); }
+                else if (cv.kind == KIND_INT) { fv = ciToF64(cv.v); }
+                else if (cv.kind == KIND_BOOL) { if (!ciIsZero(cv.v)) { fv = 1.0; } }
+                else return r;
+            } else {
+                var iv = floatNarrowProbe(self, inner_idx, depth + @intCast(u32, 1));
+                if (!iv.ok) return r;
+                fv = iv.v;
+            }
+            if (t == type_mod.TYPE_F32) {
+                var f32v: f32 = @floatCast(f32, fv);
+                fv = @floatCast(f64, f32v);
+            }
+            r.ok = true; r.typed = true; r.v = fv;
+            return r;
+        }
+        return r;
+    }
+    if (node.kind == AstKind.ident_expr) {
+        var name_id = ast_mod.astStoreIdentifier(self.store, node_idx);
+        if (self.local_consts) |lcs| {
+            if (type_resolver.localConstScopeLookup(lcs, name_id)) |l_decl_node| {
+                return floatNarrowDecl(self, l_decl_node, depth + @intCast(u32, 1));
+            }
+        }
+        var mi: usize = 0;
+        while (mi < @intCast(usize, self.symbol_reg.tables_len)) : (mi += 1) {
+            var c_sym = sym_mod.symbolRegistryQualifiedLookup(self.symbol_reg, @intCast(u32, mi), name_id);
+            if (c_sym) |cs| {
+                if ((cs.flags & @intCast(u16, 0x01)) == @intCast(u16, 0)) {
+                    return floatNarrowDecl(self, cs.decl_node, depth + @intCast(u32, 1));
+                }
+            }
+        }
+        return r;
+    }
+    return r;
+}
+
+// The probe for a `const`/`var` reference: fold the initializer (float first,
+// falling back to the exact integer/bool evaluator), then apply the
+// declaration's declared type to the provenance: a declared `f32` rounds the
+// value through f32 and a declared integer counts as typed. An UNANNOTATED
+// binding whose value came from the integer fallback is `comptime_int`
+// (untyped), so literal-only arithmetic over it still rounds like Zig.
+fn floatNarrowDecl(self: *ComptimeEval, decl_node: u32, depth: u32) FloatNarrowVal {
+    var r = floatNarrowNone();
+    var d = ast_mod.astStoreNodeAt(self.store, decl_node);
+    if (d.child_1 == @intCast(u32, 0)) return r;
+    r = floatNarrowProbe(self, d.child_1, depth + @intCast(u32, 1));
+    if (!r.ok) {
+        if (comptimeEvalEvaluateDepth(self, d.child_1, depth + @intCast(u32, 1))) |cv| {
+            if (cv.kind == KIND_FLOAT) {
+                r.ok = true; r.typed = true; r.v = comptimeEvalFloatBits(cv);
+            } else if (cv.kind == KIND_INT or cv.kind == KIND_BOOL) {
+                r.ok = true;
+                r.typed = (d.child_0 != @intCast(u32, 0));
+                if (cv.kind == KIND_INT) { r.v = ciToF64(cv.v); } else if (!ciIsZero(cv.v)) { r.v = 1.0; }
+            } else {
+                return floatNarrowNone();
+            }
+        } else {
+            return floatNarrowNone();
+        }
+    }
+    if (d.child_0 != @intCast(u32, 0)) {
+        if (comptimeEvalResolveTypeArg(self, d.child_0)) |t| {
+            if (t == type_mod.TYPE_F32) {
+                var f32v: f32 = @floatCast(f32, r.v);
+                r.v = @floatCast(f64, f32v);
+                r.typed = true;
+            } else if (t == type_mod.TYPE_F64) {
+                r.typed = true;
+            } else if (type_mod.typeRegistryIsInteger(self.registry, t)) {
+                r.typed = true;
+            }
+        }
+    }
+    return r;
 }
 
 pub fn comptimeEvalEvaluate(self: *ComptimeEval, node_idx: u32) ?ComptimeVal {

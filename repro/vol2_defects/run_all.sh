@@ -94,6 +94,13 @@
 # compile/build/run rc 0 under FG+FX2, rc 139 under an FX2-only no-FG compiler;
 # exercised outside run_all.sh like the other D01 siblings). The historical
 # seed-v88 observations stay in the case NOTES.md.
+#
+# FX3 conversion (2026-09-27): the D6 f32-param residual is FIXED by the
+# value-aware f64/integer -> f32 narrowing. D06 stays kind `wrong` (which now
+# goldens main.zig stdout/rc, `f=2`) and gains the `green_param.zig` sibling
+# (literal/comptime-known accepts; exercised outside run_all.sh like the other
+# D06 siblings). The accept/reject matrix lives in
+# repro/mi_matrix/stdlib_f32_narrow_ok_xmod + f32_narrow_reject_xmod.
 
 # Usage: sh run_all.sh [seed-compiler-path]
 # Default seed: /tmp/manual_seed/zig1_5_clean

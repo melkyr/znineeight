@@ -2535,6 +2535,68 @@ fn semanticAnalyzerVolatileCastValid(self: *SemanticAnalyzer, src_type: u32, dst
     return sp.base == dp.base;
 }
 
+// FX3 (Volume II D6 extras): value-aware narrowing to f32 at an expectation
+// site. Zig's rule: an untyped `comptime_float` (a float literal or a
+// literal-only float expression) is accepted and ROUNDED to f32; a typed
+// comptime-known f64 or integer is accepted only when the value is exactly
+// representable in f32; a runtime value stays rejected. This predicate owns
+// the value classification (never `classifyCoercion`, which is value-blind);
+// accepted values record `CoercionKind.float_narrow` for lowering, and
+// rejected ones get the site's existing `error[3000]` diagnostic. The
+// int-exactness half is Zig's: `takeF32(16777217)` rejects.
+const FLOAT_NARROW_NONE: u8 = 0;
+const FLOAT_NARROW_ACCEPT: u8 = 1;
+const FLOAT_NARROW_REJECT: u8 = 2;
+
+fn semanticAnalyzerFloatNarrowIsNumeric(self: *SemanticAnalyzer, ty: u32) bool {
+    if (ty == @intCast(u32, 0)) return false;
+    if (@intCast(usize, ty) >= self.registry.types_len) return false;
+    if (ty == type_mod.TYPE_F64) return true;
+    return type_mod.typeRegistryIsInteger(self.registry, ty);
+}
+
+fn semanticAnalyzerFloatNarrowStatus(self: *SemanticAnalyzer, src_node: u32, src_ty: u32, dst_ty: u32) u8 {
+    if (dst_ty != type_mod.TYPE_F32) return FLOAT_NARROW_NONE;
+    if (!semanticAnalyzerFloatNarrowIsNumeric(self, src_ty)) return FLOAT_NARROW_NONE;
+    var sk = self.registry.types_items[@intCast(usize, src_ty)].kind;
+    var ce = ce_mod.comptimeEvalInit(self.registry, self.store, self.interner, self.symbols);
+    ce.local_consts = &self.local_consts;
+    if (sk == type_mod.TypeKind.f64_type) {
+        var fv = ce_mod.comptimeEvalFloatNarrow(&ce, src_node);
+        if (!fv.ok) return FLOAT_NARROW_NONE;
+        if (!fv.typed) return FLOAT_NARROW_ACCEPT;
+        if (ce_mod.comptimeEvalF64IsF32Exact(fv.v)) return FLOAT_NARROW_ACCEPT;
+        return FLOAT_NARROW_REJECT;
+    }
+    if (ce_mod.comptimeEvalEvaluate(&ce, src_node)) |cv| {
+        if (cv.kind == ce_mod.KIND_INT) {
+            if (ce_mod.comptimeIntF32Exact(cv.v)) return FLOAT_NARROW_ACCEPT;
+            return FLOAT_NARROW_REJECT;
+        }
+    }
+    return FLOAT_NARROW_NONE;
+}
+
+// The value-aware accept record for the sites that do not route through
+// `tryRecordCoercion` (local/module declarations and assignments).
+fn semanticAnalyzerFloatNarrowRecord(self: *SemanticAnalyzer, src_node: u32, dst_ty: u32) void {
+    coercion_mod.coercionTableAdd(self.coercion_table, src_node, coercion_mod.CoercionKind.float_narrow, dst_ty);
+}
+
+// Level-0 reject diagnostic for a genuinely-invalid f32 narrowing: the
+// site's existing `error[3000]` message plus source/target notes.
+// `mark_once` dedups a node an expected-type pass may revisit (field
+// initializers).
+fn semanticAnalyzerFloatNarrowReport(self: *SemanticAnalyzer, src_node: u32, src_ty: u32, dst_ty: u32, msg: []const u8, mark_once: bool) void {
+    if (mark_once and !diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, src_node)) return;
+    var sn = ast_mod.astStoreNodeAt(self.store, src_node);
+    var sp = sn.span_start;
+    var ep = sp + @intCast(u32, sn.span_len);
+    var di = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, sp, ep, msg);
+    _ = diag_mod.diagnosticCollectorAddNote(self.diag, di, diag_mod.typeKindSrcStr(self.registry.types_items[@intCast(usize, src_ty)].kind));
+    _ = diag_mod.diagnosticCollectorAddNote(self.diag, di, diag_mod.typeKindTgtStr(self.registry.types_items[@intCast(usize, dst_ty)].kind));
+}
+
 fn tryRecordCoercion(self: *SemanticAnalyzer, src_node: u32, src_type: u32, dst_type: u32) void {
     var coe_nm: []const u8 = "COE:N"; pal_mod.markerWriteInt(coe_nm, src_node);
     var coe_sm: []const u8 = "COE:S"; pal_mod.markerWriteInt(coe_sm, src_type);
@@ -2552,7 +2614,18 @@ fn tryRecordCoercion(self: *SemanticAnalyzer, src_node: u32, src_type: u32, dst_
     if (src_type == type_mod.TYPE_UNDEFINED or src_type == dst_type) return;
     if (semanticAnalyzerMaybeDiagVolatileDrop(self, src_node, src_type, dst_type)) return;
     if (semanticAnalyzerMaybeDiagConstDiscard(self, src_node, src_type, dst_type)) return;
-    if (!type_mod.typeRegistryIsAssignable(self.registry, src_type, dst_type)) return;
+    if (!type_mod.typeRegistryIsAssignable(self.registry, src_type, dst_type)) {
+        // FX3: a value-aware f64/integer -> f32 narrowing is recorded here, so
+        // every `tryRecordCoercion` caller (call arguments, returns, field
+        // initializers, if/switch result arms) materialises it through
+        // `lowerExpr`'s existing coercion wrapper.
+        if (dst_type == type_mod.TYPE_F32) {
+            if (semanticAnalyzerFloatNarrowStatus(self, src_node, src_type, dst_type) == FLOAT_NARROW_ACCEPT) {
+                semanticAnalyzerFloatNarrowRecord(self, src_node, dst_type);
+            }
+        }
+        return;
+    }
     if (src_type == type_mod.TYPE_NULL) { var cs1_m: []const u8 = "CS1\n"; pal_mod.markerWrite(cs1_m); }
     var ck = coercion_mod.classifyCoercion(self.registry, src_type, dst_type);
     var cka_m: []const u8 = "CCK:ca"; pal_mod.markerWriteInt(cka_m, @intCast(u32, @enumToInt(ck)));
@@ -2601,7 +2674,16 @@ fn resolveReturnStmt(self: *SemanticAnalyzer, node_idx: u32) void {
             var t2f_rm: []const u8 = "T2F:R"; pal_mod.markerWriteInt(t2f_rm, ret_val);
             var t2f_fm: []const u8 = "T2F:F"; pal_mod.markerWriteInt(t2f_fm, self.current_fn_return);
             var ret_eff = errLitSrcType(self, node.child_0, self.current_fn_return, ret_val);
-            if (!type_mod.typeRegistryIsAssignable(self.registry, ret_eff, self.current_fn_return) and isBShapeMismatch(self, ret_eff, self.current_fn_return, false)) {
+            var fr_assign = type_mod.typeRegistryIsAssignable(self.registry, ret_eff, self.current_fn_return);
+            // FX3 (Volume II D6 extras): a value-aware f64/integer -> f32
+            // return is accepted; an inexact comptime value or a runtime
+            // numeric source rejects (the latter previously fell through to a
+            // silent implicit C narrow).
+            var ret_fst = semanticAnalyzerFloatNarrowStatus(self, node.child_0, ret_eff, self.current_fn_return);
+            var fr_reject: bool = ret_fst == FLOAT_NARROW_REJECT;
+            if (!fr_assign and ret_fst == FLOAT_NARROW_NONE and isBShapeMismatch(self, ret_eff, self.current_fn_return, false)) { fr_reject = true; }
+            if (!fr_assign and ret_fst == FLOAT_NARROW_NONE and self.current_fn_return == type_mod.TYPE_F32 and semanticAnalyzerFloatNarrowIsNumeric(self, ret_eff)) { fr_reject = true; }
+            if (fr_reject) {
                 var rsp = node.span_start;
                 var rep = rsp + @intCast(u32, node.span_len);
                 var rtm_msg: []const u8 = "type mismatch in return statement -- value type may not be compatible with the function return type";
@@ -2609,7 +2691,9 @@ fn resolveReturnStmt(self: *SemanticAnalyzer, node_idx: u32) void {
                 _ = diag_mod.diagnosticCollectorAddNote(self.diag, rdi, diag_mod.typeKindSrcStr(self.registry.types_items[@intCast(usize, ret_eff)].kind));
                 _ = diag_mod.diagnosticCollectorAddNote(self.diag, rdi, diag_mod.typeKindTgtStr(self.registry.types_items[@intCast(usize, self.current_fn_return)].kind));
             }
-            tryRecordCoercion(self, node.child_0, ret_eff, self.current_fn_return);
+            if (ret_fst != FLOAT_NARROW_REJECT) {
+                tryRecordCoercion(self, node.child_0, ret_eff, self.current_fn_return);
+            }
         }
     }
 }
@@ -2821,14 +2905,20 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
             var dxc_at = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)));
             popExpectedType(self);
             if (has_params != @intCast(u8, 0) and ai < @intCast(usize, pcount)) {
-                var carg_eff = errLitSrcType(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)), expected, dxc_at);
+                var carg_n = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai));
+                var carg_eff = errLitSrcType(self, carg_n, expected, dxc_at);
+                // FX3 (Volume II D6 extras): a value-aware f64/integer -> f32
+                // argument is accepted (and recorded) instead of rejected; an
+                // inexact comptime integer literal (an otherwise-assignable
+                // int_literal source) is rejected by the status.
+                var carg_fst = semanticAnalyzerFloatNarrowStatus(self, carg_n, carg_eff, expected);
                 // Task 14 (S2): enforce per-argument assignability, matching
                 // official Zig 0.15.2; the `(b)` shape rejects (ptr->slice,
                 // mismatched array->array, ...) fire first, then the tolerated
                 // Z98 conversion families keep their shapes (see
                 // semanticAnalyzerCallArgTolerated).
-                if (carg_eff != @intCast(u32, 0) and expected != @intCast(u32, 0) and expected != type_mod.TYPE_UNDEFINED and expected != type_mod.TYPE_VOID and !type_mod.typeRegistryIsAssignable(self.registry, carg_eff, expected) and (isBShapeMismatch(self, carg_eff, expected, false) or !semanticAnalyzerCallArgTolerated(self, carg_eff, expected))) {
-                    var argn = ast_mod.astStoreNodeAt(self.store, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)));
+                if (carg_fst == FLOAT_NARROW_REJECT or (carg_eff != @intCast(u32, 0) and expected != @intCast(u32, 0) and expected != type_mod.TYPE_UNDEFINED and expected != type_mod.TYPE_VOID and carg_fst != FLOAT_NARROW_ACCEPT and !type_mod.typeRegistryIsAssignable(self.registry, carg_eff, expected) and (isBShapeMismatch(self, carg_eff, expected, false) or !semanticAnalyzerCallArgTolerated(self, carg_eff, expected)))) {
+                    var argn = ast_mod.astStoreNodeAt(self.store, carg_n);
                     var csp = argn.span_start;
                     var cep = csp + @intCast(u32, argn.span_len);
                     var ctm_msg: []const u8 = "type mismatch in function argument -- argument type may not be compatible with the parameter type";
@@ -2844,7 +2934,9 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
                         diag_mod.diagnosticCollectorAddRelatedSpan(self.diag, cdi, note_file, pad_d.span_start, pad_d.span_start + @intCast(u32, pad_d.span_len), pad_note);
                     }
                 }
-                tryRecordCoercion(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)), carg_eff, expected);
+                if (carg_fst != FLOAT_NARROW_REJECT) {
+                    tryRecordCoercion(self, carg_n, carg_eff, expected);
+                }
             }
         }
         rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, direct_ret);
@@ -2913,13 +3005,17 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
         popExpectedType(self);
         if (param_type == type_mod.TYPE_UNDEFINED) { if (arg_type != type_mod.TYPE_UNDEFINED) { hash_mod.u32ToU32MapPut(self.call_arg_types, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)), arg_type); } }
         if (param_type == type_mod.TYPE_VOID) { if (arg_type != type_mod.TYPE_UNDEFINED) { hash_mod.u32ToU32MapPut(self.call_arg_types, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)), arg_type); } }
-        var carg_eff = errLitSrcType(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)), param_type, arg_type);
+        var carg_n = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai));
+        var carg_eff = errLitSrcType(self, carg_n, param_type, arg_type);
+        // FX3 (Volume II D6 extras): value-aware f64/integer -> f32 argument
+        // acceptance/reject, same rule as the direct-call path above.
+        var carg_fst = semanticAnalyzerFloatNarrowStatus(self, carg_n, carg_eff, param_type);
         // Task 14 (S2): enforce per-argument assignability, matching official
         // Zig 0.15.2; the `(b)` shape rejects (ptr->slice, mismatched
         // array->array, ...) fire first, then the tolerated Z98 conversion
         // families keep their shapes (see semanticAnalyzerCallArgTolerated).
-        if (carg_eff != @intCast(u32, 0) and param_type != type_mod.TYPE_UNDEFINED and param_type != type_mod.TYPE_VOID and !type_mod.typeRegistryIsAssignable(self.registry, carg_eff, param_type) and (isBShapeMismatch(self, carg_eff, param_type, false) or !semanticAnalyzerCallArgTolerated(self, carg_eff, param_type))) {
-            var argn = ast_mod.astStoreNodeAt(self.store, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)));
+        if (carg_fst == FLOAT_NARROW_REJECT or (carg_eff != @intCast(u32, 0) and param_type != type_mod.TYPE_UNDEFINED and param_type != type_mod.TYPE_VOID and carg_fst != FLOAT_NARROW_ACCEPT and !type_mod.typeRegistryIsAssignable(self.registry, carg_eff, param_type) and (isBShapeMismatch(self, carg_eff, param_type, false) or !semanticAnalyzerCallArgTolerated(self, carg_eff, param_type)))) {
+            var argn = ast_mod.astStoreNodeAt(self.store, carg_n);
             var csp = argn.span_start;
             var cep = csp + @intCast(u32, argn.span_len);
             var ctm_msg: []const u8 = "type mismatch in function argument -- argument type may not be compatible with the parameter type";
@@ -2935,7 +3031,9 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
                 diag_mod.diagnosticCollectorAddRelatedSpan(self.diag, cdi, note_file, ppd_d.span_start, ppd_d.span_start + @intCast(u32, ppd_d.span_len), ppd_note);
             }
         }
-        tryRecordCoercion(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)), carg_eff, param_type);
+        if (carg_fst != FLOAT_NARROW_REJECT) {
+            tryRecordCoercion(self, carg_n, carg_eff, param_type);
+        }
     }
     if (is_var != @intCast(u8, 0)) {
         var vi: usize = fixed;
@@ -3222,7 +3320,27 @@ fn semanticAnalyzerResolveStructInit(self: *SemanticAnalyzer, node_idx: u32) u32
                             pushExpectedType(self, field_type);
                             var init_type = semanticAnalyzerResolveExpr(self, fi_node.child_0);
                             popExpectedType(self);
-                            tryRecordCoercion(self, fi_node.child_0, init_type, field_type);
+                            // FX3 (Volume II D6 extras): value-aware f64/integer
+                            // -> f32 field initialization. An accepted value
+                            // records the narrowing; an inexact comptime value
+                            // or a runtime numeric source rejects level-0
+                            // (previously silent when the source was not
+                            // assignable).
+                            var fi_fst = semanticAnalyzerFloatNarrowStatus(self, fi_node.child_0, init_type, field_type);
+                            var fi_assign = type_mod.typeRegistryIsAssignable(self.registry, init_type, field_type);
+                            if (fi_fst == FLOAT_NARROW_REJECT) {
+                                var fi_msg: []const u8 = "type mismatch in field initialization -- initializer type may not be compatible with the field type";
+                                semanticAnalyzerFloatNarrowReport(self, fi_node.child_0, init_type, field_type, fi_msg, true);
+                            } else if (fi_assign) {
+                                tryRecordCoercion(self, fi_node.child_0, init_type, field_type);
+                            } else if (fi_fst == FLOAT_NARROW_ACCEPT) {
+                                semanticAnalyzerFloatNarrowRecord(self, fi_node.child_0, field_type);
+                            } else if (field_type == type_mod.TYPE_F32 and semanticAnalyzerFloatNarrowIsNumeric(self, init_type)) {
+                                var fi_msg2: []const u8 = "type mismatch in field initialization -- initializer type may not be compatible with the field type";
+                                semanticAnalyzerFloatNarrowReport(self, fi_node.child_0, init_type, field_type, fi_msg2, true);
+                            } else {
+                                tryRecordCoercion(self, fi_node.child_0, init_type, field_type);
+                            }
                         }
                         break;
                     }
@@ -3250,7 +3368,27 @@ fn semanticAnalyzerResolveStructInit(self: *SemanticAnalyzer, node_idx: u32) u32
                             pushExpectedType(self, field_type);
                             var init_type = semanticAnalyzerResolveExpr(self, fi_node.child_0);
                             popExpectedType(self);
-                            tryRecordCoercion(self, fi_node.child_0, init_type, field_type);
+                            // FX3 (Volume II D6 extras): value-aware f64/integer
+                            // -> f32 field initialization. An accepted value
+                            // records the narrowing; an inexact comptime value
+                            // or a runtime numeric source rejects level-0
+                            // (previously silent when the source was not
+                            // assignable).
+                            var fi_fst = semanticAnalyzerFloatNarrowStatus(self, fi_node.child_0, init_type, field_type);
+                            var fi_assign = type_mod.typeRegistryIsAssignable(self.registry, init_type, field_type);
+                            if (fi_fst == FLOAT_NARROW_REJECT) {
+                                var fi_msg: []const u8 = "type mismatch in field initialization -- initializer type may not be compatible with the field type";
+                                semanticAnalyzerFloatNarrowReport(self, fi_node.child_0, init_type, field_type, fi_msg, true);
+                            } else if (fi_assign) {
+                                tryRecordCoercion(self, fi_node.child_0, init_type, field_type);
+                            } else if (fi_fst == FLOAT_NARROW_ACCEPT) {
+                                semanticAnalyzerFloatNarrowRecord(self, fi_node.child_0, field_type);
+                            } else if (field_type == type_mod.TYPE_F32 and semanticAnalyzerFloatNarrowIsNumeric(self, init_type)) {
+                                var fi_msg2: []const u8 = "type mismatch in field initialization -- initializer type may not be compatible with the field type";
+                                semanticAnalyzerFloatNarrowReport(self, fi_node.child_0, init_type, field_type, fi_msg2, true);
+                            } else {
+                                tryRecordCoercion(self, fi_node.child_0, init_type, field_type);
+                            }
                         }
                         break;
                     }
@@ -3278,7 +3416,27 @@ fn semanticAnalyzerResolveStructInit(self: *SemanticAnalyzer, node_idx: u32) u32
                             pushExpectedType(self, field_type);
                             var init_type = semanticAnalyzerResolveExpr(self, fi_node.child_0);
                             popExpectedType(self);
-                            tryRecordCoercion(self, fi_node.child_0, init_type, field_type);
+                            // FX3 (Volume II D6 extras): value-aware f64/integer
+                            // -> f32 field initialization. An accepted value
+                            // records the narrowing; an inexact comptime value
+                            // or a runtime numeric source rejects level-0
+                            // (previously silent when the source was not
+                            // assignable).
+                            var fi_fst = semanticAnalyzerFloatNarrowStatus(self, fi_node.child_0, init_type, field_type);
+                            var fi_assign = type_mod.typeRegistryIsAssignable(self.registry, init_type, field_type);
+                            if (fi_fst == FLOAT_NARROW_REJECT) {
+                                var fi_msg: []const u8 = "type mismatch in field initialization -- initializer type may not be compatible with the field type";
+                                semanticAnalyzerFloatNarrowReport(self, fi_node.child_0, init_type, field_type, fi_msg, true);
+                            } else if (fi_assign) {
+                                tryRecordCoercion(self, fi_node.child_0, init_type, field_type);
+                            } else if (fi_fst == FLOAT_NARROW_ACCEPT) {
+                                semanticAnalyzerFloatNarrowRecord(self, fi_node.child_0, field_type);
+                            } else if (field_type == type_mod.TYPE_F32 and semanticAnalyzerFloatNarrowIsNumeric(self, init_type)) {
+                                var fi_msg2: []const u8 = "type mismatch in field initialization -- initializer type may not be compatible with the field type";
+                                semanticAnalyzerFloatNarrowReport(self, fi_node.child_0, init_type, field_type, fi_msg2, true);
+                            } else {
+                                tryRecordCoercion(self, fi_node.child_0, init_type, field_type);
+                            }
                         }
                         break;
                     }
@@ -3417,10 +3575,31 @@ fn semanticAnalyzerResolveAssign(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var eff_src = errLitSrcType(self, node.child_1, lhs, rhs);
     if (semanticAnalyzerMaybeDiagVolatileDrop(self, node.child_1, eff_src, lhs)) return type_mod.TYPE_VOID;
     if (semanticAnalyzerMaybeDiagConstDiscard(self, node.child_1, eff_src, lhs)) return type_mod.TYPE_VOID;
-    if (type_mod.typeRegistryIsAssignable(self.registry, eff_src, lhs)) {
+    // FX3 (Volume II D6 extras): value-aware f64/integer -> f32 assignment.
+    // An inexact comptime value rejects (it is otherwise assignable as an
+    // int_literal); a literal/exact value records the narrowing. A runtime
+    // numeric source rejects level-0 instead of the old warning + implicit C
+    // narrow.
+    var as_fst = semanticAnalyzerFloatNarrowStatus(self, node.child_1, eff_src, lhs);
+    var as_assign = type_mod.typeRegistryIsAssignable(self.registry, eff_src, lhs);
+    if (as_fst == FLOAT_NARROW_REJECT) {
+        var asr_msg: []const u8 = "type mismatch in assignment -- internal type representations differ; generated code may be incorrect";
+        semanticAnalyzerFloatNarrowReport(self, node.child_1, eff_src, lhs, asr_msg, false);
+        return type_mod.TYPE_VOID;
+    }
+    if (as_assign) {
         tryRecordCoercion(self, node.child_1, eff_src, lhs);
         var as1: []const u8 = "AS1"; pal_mod.markerWrite(as1);
         return lhs;
+    }
+    if (as_fst == FLOAT_NARROW_ACCEPT) {
+        semanticAnalyzerFloatNarrowRecord(self, node.child_1, lhs);
+        return lhs;
+    }
+    if (as_fst == FLOAT_NARROW_NONE and lhs == type_mod.TYPE_F32 and semanticAnalyzerFloatNarrowIsNumeric(self, eff_src)) {
+        var asn_msg: []const u8 = "type mismatch in assignment -- internal type representations differ; generated code may be incorrect";
+        semanticAnalyzerFloatNarrowReport(self, node.child_1, eff_src, lhs, asn_msg, false);
+        return type_mod.TYPE_VOID;
     }
     var as2: []const u8 = "AS2"; pal_mod.markerWrite(as2);
     if (lhs != type_mod.TYPE_VOID) {
@@ -4976,6 +5155,20 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                     } else if (semanticAnalyzerMaybeDiagConstDiscard(self, node.child_1, it_eff, decl_type)) {
                         // implicit const discard rejected; no coercion recorded
                     } else {
+                    // FX3 (Volume II D6 extras): value-aware f64/integer ->
+                    // f32 initialization. A literal/exactly-representable
+                    // value records the narrowing (and drops the old
+                    // warning); a runtime or inexact value now rejects level-0
+                    // instead of falling through to the warning/implicit C
+                    // narrow.
+                    var vd_fst = semanticAnalyzerFloatNarrowStatus(self, node.child_1, it_eff, decl_type);
+                    var vd_assign = type_mod.typeRegistryIsAssignable(self.registry, it_eff, decl_type);
+                    if (vd_fst == FLOAT_NARROW_REJECT or (vd_fst == FLOAT_NARROW_NONE and decl_type == type_mod.TYPE_F32 and semanticAnalyzerFloatNarrowIsNumeric(self, it_eff) and !vd_assign)) {
+                        var vd_msg: []const u8 = "type mismatch in variable declaration -- initialization type may not be compatible with declared type";
+                        semanticAnalyzerFloatNarrowReport(self, node.child_1, it_eff, decl_type, vd_msg, false);
+                    } else if (vd_fst == FLOAT_NARROW_ACCEPT and !vd_assign) {
+                        semanticAnalyzerFloatNarrowRecord(self, node.child_1, decl_type);
+                    } else {
                     var ck = coercion_mod.classifyCoercion(self.registry, it_eff, decl_type);
                     var ckv_m: []const u8 = "CCK:vr"; pal_mod.markerWriteInt(ckv_m, @intCast(u32, @enumToInt(ck)));
                     if (ck != coercion_mod.CoercionKind.none and type_mod.typeRegistryIsAssignable(self.registry, it_eff, decl_type)) {
@@ -5000,6 +5193,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                             self.source_file_id, sp, ep, tmd_msg);
                         _ = diag_mod.diagnosticCollectorAddNote(self.diag, di, diag_mod.typeKindSrcStr(sk));
                         _ = diag_mod.diagnosticCollectorAddNote(self.diag, di, diag_mod.typeKindTgtStr(tk));
+                    }
                     }
                     }
                 }
@@ -5581,9 +5775,20 @@ pub fn semanticAnalyzerResolveModuleVarDecl(self: *SemanticAnalyzer, decl_idx: u
         if (semanticAnalyzerMaybeDiagConstDiscard(self, decl.child_1, it_eff, decl_type)) {
             return it;
         }
+        // FX3 (Volume II D6 extras): module-level value-aware f64/integer ->
+        // f32 initialization, mirroring the function-local rule above.
+        var mv_fst = semanticAnalyzerFloatNarrowStatus(self, decl.child_1, it_eff, decl_type);
+        var mv_assign = type_mod.typeRegistryIsAssignable(self.registry, it_eff, decl_type);
+        if (mv_fst == FLOAT_NARROW_REJECT or (mv_fst == FLOAT_NARROW_NONE and decl_type == type_mod.TYPE_F32 and semanticAnalyzerFloatNarrowIsNumeric(self, it_eff) and !mv_assign)) {
+            var mv_msg: []const u8 = "type mismatch in variable declaration -- initialization type may not be compatible with declared type";
+            semanticAnalyzerFloatNarrowReport(self, decl.child_1, it_eff, decl_type, mv_msg, false);
+        } else if (mv_fst == FLOAT_NARROW_ACCEPT and !mv_assign) {
+            semanticAnalyzerFloatNarrowRecord(self, decl.child_1, decl_type);
+        } else {
         var ck = coercion_mod.classifyCoercion(self.registry, it_eff, decl_type);
         if (ck != coercion_mod.CoercionKind.none) {
             coercion_mod.coercionTableAdd(self.coercion_table, decl.child_1, ck, decl_type);
+        }
         }
     }
     return it;

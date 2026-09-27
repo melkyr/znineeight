@@ -3242,6 +3242,13 @@ pub fn materializeInto(self: *LirLowerer, src_temp: u32, expected: u32, intent: 
             var ft = nextTemp(self, cur);
             emitInst(self, LirInst{ .float_cast = .{ .value = val, .target = cur, .result = ft } });
             val = ft;
+        } else if (nk == CoercionKind.float_narrow) {
+            // FX3: the value-aware f64/integer -> f32 narrowing. Recorded by
+            // sema (never returned by `classifyCoercion`); the cast is a plain
+            // C conversion because the value is known exact-or-roundable.
+            var nft = nextTemp(self, cur);
+            emitInst(self, LirInst{ .float_cast = .{ .value = val, .target = cur, .result = nft } });
+            val = nft;
         } else if (nk == CoercionKind.string_to_slice or nk == CoercionKind.array_to_slice) {
             val = applyCoercion(self, val, coercion_mod.CoercionEntry{ .node_idx = src_node, .kind = nk, .target_type = cur });
         }
@@ -8469,6 +8476,13 @@ pub fn applyCoercion(self: *LirLowerer, src_temp: u32, coercion: CoercionEntry) 
         var dst = nextTemp(self, coercion.target_type);
         emitInst(self, LirInst{ .float_cast = .{ .value = src_temp, .target = coercion.target_type, .result = dst } });
         return dst;
+    } else if (kind == CoercionKind.float_narrow) {
+        // FX3: a value-aware f64/integer -> f32 narrowing recorded by sema
+        // (untyped comptime_float rounds; a typed comptime-known value was
+        // checked exactly before recording).
+        var nsc_dst = nextTemp(self, coercion.target_type);
+        emitInst(self, LirInst{ .float_cast = .{ .value = src_temp, .target = coercion.target_type, .result = nsc_dst } });
+        return nsc_dst;
     } else if (kind == CoercionKind.int_literal_coerce) {
         var dst = nextTemp(self, coercion.target_type);
         emitInst(self, LirInst{ .int_cast = .{ .value = src_temp, .target = coercion.target_type, .result = dst } });

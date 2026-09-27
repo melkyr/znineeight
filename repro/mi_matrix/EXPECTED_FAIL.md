@@ -1,4 +1,58 @@
-# mi_matrix corpus — expected-fail manifest (v261 2026-09-27)
+# mi_matrix corpus — expected-fail manifest (v262 2026-09-27)
+
+## FX3 — value-aware float narrowing to f32 (D6 extras) (v261 -> v262, 2026-09-27)
+
+Volume II defect-fix phase, Stage 2b follow-up (task-FX3). FF fixed the
+tagged-union literal-payload case (D6); the residual was that every f32
+expectation site still rejected a float literal (`takeF32(1.5)` ->
+`error[3000]`), a typed comptime-known f64 (const / `@as(f64, ...)`), and a
+comptime-known integer, while `takeF32(16777217)` silently rounded. The
+operator ruling: full Zig 0.15.2 value-aware rule, including the
+int-exactness reject.
+
+**Rule** (implemented in `sf/src/semantic_analyzer.zig` +
+`sf/src/comptime_eval.zig`, with `CoercionKind.float_narrow` in
+`sf/src/coercion.zig` and its `float_cast` arm in `sf/src/lower.zig`): at an
+f32 expectation site (parameter, return, struct field, tagged-union payload,
+declaration, assignment, module var)
+- an untyped `comptime_float` (float literal or literal-only `+`/`-`/`*`/`/`)
+  is accepted and ROUNDED (`1.5`, `2.0`, `0.1`, `1e40` -> `inf`, `-0.0`,
+  `1.0/3.0`);
+- a typed comptime-known f64 is accepted only when exactly representable
+  (`1.5`, `@as(f64, 4.0)` accepted; `const d: f64 = 0.1`, `@as(f64, 0.1)`,
+  `1e40` rejected);
+- a comptime-known integer is accepted only when exactly representable
+  (`5`, `2`, `16777216` accepted; `16777217` = 2^24 + 1 rejected — Zig's
+  `type 'f32' cannot represent integer value`);
+- a runtime f64 or i32 source rejects (`error[3000]`, previously a warning at
+  declarations/assignments and silent at returns/fields/payloads).
+`classifyCoercion` deliberately never returns `float_narrow` (a value-blind
+f64 -> f32 would accept runtime values Zig rejects); sema owns the value
+classification and records the coercion on the value node.
+
+**Fixtures.** Positive `repro/mi_matrix/stdlib_f32_narrow_ok_xmod`
+(in-module + cross-module params/returns/fields/payloads/decls/assignments;
+golden 8 lines / 89 B, rc 0, 3x byte-exact, byte-identical to the Zig-0.15.2
+`std.debug.print` twin; stdlib pin **257 -> 258**) + reject
+`repro/mi_matrix/f32_narrow_reject_xmod` (18 x `error[3000]`: runtime
+f64/i32 args + returns + decls + assignment + field + tagged-union payload,
+typed f64 const 0.1 / `@as(f64, 0.1)` / typed i32 16777217 / untyped const
+16777217, and the cross-module arg/const; rc 2 / 0 `.c` / 0 ICE) + standalone
+`repro/f32_narrow.z98` / `repro/f32_narrow_reject.z98`; D06 gains
+`green_param.zig` (the former f32-param residual turned positive).
+
+**Corpus movement.** The two new fixture dirs are the only additions
+(positive OK, reject GREEN by the 0-`.c` + `error[3000]` green-guard); zero
+class movement over the common dirs (no corpus program used an f32 float
+literal/typed-f64/comptime-int site, and none relied on the former silent
+implicit narrows). 4-MD5 emitted-C UNCHANGED 8/8 (gol `9e0b708e...`, lisp
+`ec14d644...`, json `5034a0c8...`, mud `2e92c1f2...`; the gate programs have
+no f32 site); self-emission has no direct `f32 = <literal>` site, so the fixed
+point moves by source identity only. Documented boundary: the lexer's naive
+`parseF64` digit accumulation keeps an extreme typed literal like
+`3.4028234663852886e38` (f32 max) rejected where Zig accepts it — the
+pre-existing float-literal precision residual (Language Spec §7.2), not the
+narrowing rule.
 
 ## FX2 — switch-prong / bare-block analyzer traversal (D1 extras) (v260 -> v261, 2026-09-27)
 

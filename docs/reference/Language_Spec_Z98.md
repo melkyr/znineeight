@@ -481,10 +481,41 @@ These coercions are **not** allowed in other contexts, such as arithmetic operat
 A call is checked against the callee's signature at the call site.
 
 - **Arity**: the argument count must match the callee's parameter count. A variadic callee (`extern fn f(fmt: [*]const u8, ...)`) requires at least its fixed parameters. A violation rejects with `error[3061]` (`expected N argument(s), found M`; variadic too-few: `expected at least N argument(s), found M`) and emits no C.
-- **Argument types**: an argument whose type is in a different family from the parameter type rejects with `error[3000]` (`type mismatch in function argument ...`) with `source:`/`target:` notes — e.g. a `bool` passed for an `i32` parameter (previously a silent `bool` -> `i32` coercion), an `i32` for a `f32` parameter, or an integer literal for a `bool` parameter.
+- **Argument types**: an argument whose type is in a different family from the parameter type rejects with `error[3000]` (`type mismatch in function argument ...`) with `source:`/`target:` notes — e.g. a `bool` passed for an `i32` parameter (previously a silent `bool` -> `i32` coercion), a **runtime** `i32` or `f64` for a `f32` parameter (a comptime-known value narrows per the value-aware rule below), or an integer literal for a `bool` parameter.
 - **Still implicit**: Z98's established conversions are unchanged — integer <-> integer of any width/signedness (including `u32` <-> `usize` and narrowing), the pointer/slice/array coercions above, `@enumToInt(<error set>)` into an integer parameter, and `@intCast`-based conversions (which remain the explicit form for a narrowing the program does not want to rely on).
 
 This matches official Zig 0.15.2's rejection of wrong arity and cross-family argument types; the integer-conversion tolerance is the documented Z98 divergence retained for the existing corpus and the compiler's own source.
+
+### Value-Aware Narrowing to `f32`
+At an `f32` expectation site the value decides, matching Zig 0.15.2:
+
+- An **untyped `comptime_float`** — a float literal or literal-only float
+  arithmetic (`+`, `-`, `*`, `/`) — is accepted and **rounded** to f32,
+  including inexact values (`0.1` -> f32(0.1)) and overflow (`1e40` -> `inf`).
+- A **typed comptime-known `f64`** value (a typed `const`, `@as(f64, ...)`,
+  `@floatCast(f64, ...)`, `@intToFloat(f64, ...)`, or arithmetic with such an
+  operand) is accepted only when the f64 value is **exactly representable** in
+  f32 (`1.5` and `@as(f64, 4.0)` accept; `const d: f64 = 0.1`, `@as(f64, 0.1)`
+  and `1e40` reject).
+- A **comptime-known integer** (literal, typed or untyped `const`) is accepted
+  only when its exact value is exactly representable in f32 (`5` and `16777216`
+  accept; `16777217` = 2^24 + 1 rejects — Zig's int-exactness rule).
+- A **runtime `f64` or `i32`** source rejects with level-0 `error[3000]` (the
+  site's existing message plus `source:`/`target:` notes) — previously a
+  warning at declarations/assignments and silent at returns, fields and union
+  payloads.
+
+Sites: function parameters, returns, struct/union/tagged-union field
+initializers (including union payloads), local and module-level declarations,
+and assignments. An accepted value records an explicit `float` conversion in
+the emitted C — there is no silent narrowing. `@floatCast`/`@intToFloat`
+remain the explicit forms when a runtime narrowing is intended.
+
+Boundary (pre-existing float-literal precision, see §7.2): the lexer's float
+parser accumulates digits, so an extreme literal such as
+`3.4028234663852886e38` (f32 max) may not be the correctly-rounded f64 and a
+typed `const` of it can reject where Zig accepts; the value-aware rule is
+applied to the lexed value.
 
 ## 7. Not Yet Supported
 

@@ -17,6 +17,13 @@ pub const CoercionKind = enum(u8) {
     int_literal_coerce,
     wrap_optional_null,
     tuple_to_tuple,
+    // FX3 (Volume II D6 extras): a VALUE-AWARE f64/integer -> f32 narrowing.
+    // Recorded by sema only through `semanticAnalyzerFloatNarrowStatus` (an
+    // untyped comptime_float rounds; a typed comptime-known value must be
+    // exactly representable); `classifyCoercion` deliberately never returns it
+    // (a value-blind f64 -> f32 classification would accept runtime values Zig
+    // rejects).
+    float_narrow,
 };
 
 const Sand = @import("allocator.zig").Sand;

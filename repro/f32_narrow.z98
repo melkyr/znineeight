@@ -1,0 +1,38 @@
+// repro/f32_narrow.z98 — standalone FX3 (Volume II D6 extras) positive.
+//
+// Compile + run (seed-built zig1 with its sibling lib/):
+//   mkdir -p /tmp/f32_narrow_out
+//   <zig1> -o /tmp/f32_narrow_out repro/f32_narrow.z98
+//   cd /tmp/f32_narrow_out && sh build_target.sh linux f32_narrow
+//   ./f32_narrow
+//
+// EXPECTED (after the fix): the value-aware narrowing accepts an untyped
+// float literal / literal-only float arithmetic (rounded), a typed
+// comptime-known exactly-representable f64, and an exactly-representable
+// comptime-known integer at parameters, returns, fields and tagged-union
+// payloads; `0.1` rounds to f32(0.1) like Zig 0.15.2:
+//   lit=1.5 int=2 arith=1.5 inexact=0.1 cf64=2.5 ci32=2 ret=1.5 field=2.5 union=2
+// rc=0.
+//
+// DEFECT (before the fix): every float-literal f32 site rejected
+// `error[3000]` (the D6 f32-param residual) while `takeF32(16777217)`
+// silently rounded; both directions are now value-aware.
+//
+// See repro/mi_matrix/stdlib_f32_narrow_ok_xmod for the pinned runtime golden
+// and repro/mi_matrix/f32_narrow_reject_xmod for the reject contract.
+const std = @import("std");
+
+const D: f64 = 2.5;
+const C: i32 = 2;
+const S = struct { x: f32 };
+const U = union(enum) { a: f32, empty };
+
+fn take(x: f32) f32 { return x; }
+fn ret() f32 { return 2.0; }
+
+pub fn main() void {
+    var s: S = S{ .x = 2.5 };
+    var u: U = U{ .a = 2.0 };
+    std.io.print("lit={} int={} arith={} inexact={} cf64={}\n", .{ take(1.5), take(2), take(1.0 + 0.5), take(0.1), take(D) });
+    std.io.print("ci32={} ret={} field={} union={}\n", .{ take(C), ret(), s.x, u.a });
+}
