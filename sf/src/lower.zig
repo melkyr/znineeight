@@ -1621,10 +1621,29 @@ fn lowerPrintFmt(self: *LirLowerer, fmt_node_idx: u32, fmt: []const u8, tuple_no
         ast_mod.astStoreNodeExtraChildCount(self.ctx.store, tuple_node_idx) == @intCast(u32, 0)) {
         container_ok = true;
     }
+    // FD2 (FD-I §3 rule 2): a spec-legal tuple VARIABLE container takes the
+    // variable path. It has no element AST nodes, so the container is lowered
+    // once (lazily, on the first placeholder it serves) and each placeholder
+    // reads its element through FB's `lowerTupleElemRead` (the same mechanism
+    // as the `.N`/`t[0]` spellings). `container_tid` is the registry tuple type
+    // sema resolved for the container node.
+    var container_is_var: u8 = @intCast(u8, 0);
+    var container_tid: u32 = type_mod.TYPE_VOID;
     if (!container_ok) {
+        if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, tuple_node_idx)) |ct| {
+            if (@intCast(usize, ct) < self.ctx.registry.types_len and
+                self.ctx.registry.types_items[@intCast(usize, ct)].kind == type_mod.TypeKind.tuple_type) {
+                container_is_var = @intCast(u8, 1);
+                container_tid = ct;
+            }
+        }
+    }
+    if (!container_ok and container_is_var == @intCast(u8, 0)) {
         printFmtContainerReject(self, tuple_node_idx);
         return;
     }
+    var container_temp: u32 = TEMP_NONE;
+    var container_lowered: u8 = @intCast(u8, 0);
     var seg_start: usize = @intCast(usize, 0);
     var ai: usize = @intCast(usize, 0);
     var i: usize = @intCast(usize, 0);
@@ -1648,23 +1667,57 @@ fn lowerPrintFmt(self: *LirLowerer, fmt_node_idx: u32, fmt: []const u8, tuple_no
                     var sid2 = si_mod.stringInternerIntern(self.ctx.registry.interner, sg2);
                     emitInst(self, LirInst{ .print_str = .{ .string_id = sid2 } });
                 }
-                if (ai < @intCast(usize, ast_mod.astStoreNodeExtraChildCount(self.ctx.store, tuple_node_idx))) {
-                    var arg_node = ast_mod.astStoreNodeExtraChildAt(self.ctx.store, tuple_node_idx, @intCast(u32, ai));
-                    // Finding 1 fix: an exact untyped integer argument takes
-                    // its value-chosen carrier (and a value-chosen int_const
-                    // temp) instead of a runtime 32-bit literal expression.
-                    var pv = lowerPrintArgExact(self, arg_node);
-                    if (pv == TEMP_NONE) {
-                        pv = lowerExpr(self, arg_node);
+                // FD2: a tuple-variable container resolves element `ai` by
+                // arity (extra placeholders stay silently dropped, matching
+                // the literal path); a literal container keeps its
+                // extra-child gate. Both then share the same specifier walk,
+                // validation and `.print_val` emission below.
+                var arg_node: u32 = @intCast(u32, 0);
+                var elem_tid: u32 = type_mod.TYPE_VOID;
+                var arg_in_range: u8 = @intCast(u8, 0);
+                if (container_is_var != @intCast(u8, 0)) {
+                    if (type_mod.typeRegistryTupleElem(self.ctx.registry, container_tid, @intCast(u32, ai))) |etid| {
+                        elem_tid = etid;
+                        arg_in_range = @intCast(u8, 1);
                     }
-                    // Task 3 crash guard (H4): a void-valued argument lowers to
-                    // the "no value" sentinel (or a phantom 0 with an empty temp
-                    // table); dereferencing `hoisted_temps` unguarded SIGSEGVs.
-                    // Keep the old dispatch type for the emitted `.print_val`
-                    // and validate on the static (resolved) type instead.
+                } else if (ai < @intCast(usize, ast_mod.astStoreNodeExtraChildCount(self.ctx.store, tuple_node_idx))) {
+                    arg_in_range = @intCast(u8, 1);
+                }
+                if (arg_in_range != @intCast(u8, 0)) {
+                    var pv: u32 = TEMP_NONE;
                     var pvt: u32 = type_mod.TYPE_VOID;
-                    if (pv != TEMP_NONE and @intCast(usize, pv) < self.hoisted_temps.len) {
-                        pvt = self.hoisted_temps.items[@intCast(usize, pv)].type_id;
+                    if (container_is_var != @intCast(u8, 0)) {
+                        // Lower the container expression ONCE, lazily on the
+                        // first placeholder it serves, so a placeholder-free
+                        // fmt does not evaluate it. The element read shares
+                        // FB's tuple access mechanism; the element type is
+                        // validated at the container span (no element AST node
+                        // exists) and the resolved-type override below is
+                        // suppressed for this path.
+                        if (container_lowered == @intCast(u8, 0)) {
+                            container_temp = lowerExpr(self, tuple_node_idx);
+                            container_lowered = @intCast(u8, 1);
+                        }
+                        arg_node = tuple_node_idx;
+                        pv = lowerTupleElemRead(self, container_temp, container_tid, @intCast(u32, ai));
+                        pvt = elem_tid;
+                    } else {
+                        arg_node = ast_mod.astStoreNodeExtraChildAt(self.ctx.store, tuple_node_idx, @intCast(u32, ai));
+                        // Finding 1 fix: an exact untyped integer argument takes
+                        // its value-chosen carrier (and a value-chosen int_const
+                        // temp) instead of a runtime 32-bit literal expression.
+                        pv = lowerPrintArgExact(self, arg_node);
+                        if (pv == TEMP_NONE) {
+                            pv = lowerExpr(self, arg_node);
+                        }
+                        // Task 3 crash guard (H4): a void-valued argument lowers to
+                        // the "no value" sentinel (or a phantom 0 with an empty temp
+                        // table); dereferencing `hoisted_temps` unguarded SIGSEGVs.
+                        // Keep the old dispatch type for the emitted `.print_val`
+                        // and validate on the static (resolved) type instead.
+                        if (pv != TEMP_NONE and @intCast(usize, pv) < self.hoisted_temps.len) {
+                            pvt = self.hoisted_temps.items[@intCast(usize, pv)].type_id;
+                        }
                     }
                     var spec_fmt: u8 = @intCast(u8, 'd');
                     var has_explicit: u8 = @intCast(u8, 0);
@@ -1693,8 +1746,10 @@ fn lowerPrintFmt(self: *LirLowerer, fmt_node_idx: u32, fmt: []const u8, tuple_no
                     // lowered temp type is the fallback.
                     if (spec_known != @intCast(u8, 0)) {
                         var pvt_check: u32 = pvt;
-                        if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, arg_node)) |rtid| {
-                            pvt_check = rtid;
+                        if (container_is_var == @intCast(u8, 0)) {
+                            if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, arg_node)) |rtid| {
+                                pvt_check = rtid;
+                            }
                         }
                         _ = printFmtCheck(self, arg_node, pvt_check, spec_fmt, has_explicit);
                     }

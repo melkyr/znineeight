@@ -1,0 +1,14 @@
+basic=7 8
+specs=10 ff
+char=AB
+slice=hi n=3
+float=1.5 2.5
+bool=true false
+enm=.green 9
+agg=.{ 1, 2 } 3
+stct=.{ .a = 1, .b = 2 } 7
+call=4 5
+field=11 12
+alias=7 8
+xmod=12 34
+free

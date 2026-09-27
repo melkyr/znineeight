@@ -1,0 +1,44 @@
+// repro/print_tuple_var.z98 — standalone FD2 (Volume II print tuple
+// variables) positive reproduction.
+//
+// Compile + run (seed-built zig1 with its sibling lib/):
+//   mkdir -p /tmp/print_tuple_var_out
+//   <zig1> -o /tmp/print_tuple_var_out repro/print_tuple_var.z98
+//   cd /tmp/print_tuple_var_out && sh build_target.sh linux print_tuple_var
+//   ./print_tuple_var
+//
+// EXPECTED (after the fix): a spec-legal tuple VARIABLE container prints each
+// placeholder from the FB tuple model (the container is lowered once, lazily
+// on the first placeholder; a placeholder-free fmt does not evaluate it):
+//   var=7 8
+//   alias=7 8
+//   call=30 40
+//   nested=.{ 1, 2 } 3
+//   free
+// rc=0. The Zig-0.15.2 twin (std.debug.print) prints the same lines.
+// DEFECT (before FD2): a tuple-variable container was rejected by FD1's
+// validation as an interim `error[3065]` (pre-FD1: `error[3013]` on the fmt
+// span); the element reads did not exist.
+const std = @import("std");
+
+const Pair = struct { i32, i32 };
+
+fn mk() Pair {
+    return .{ 30, 40 };
+}
+
+pub fn main() void {
+    const t = .{ 7, 8 };
+    std.io.print("var={} {}\n", t);
+
+    const pr = std.io.print;
+    pr("alias={} {}\n", t);
+
+    const p = mk();
+    std.io.print("call={} {}\n", p);
+
+    const n = .{ .{ 1, 2 }, 3 };
+    std.io.print("nested={} {}\n", n);
+
+    std.io.print("free\n", t);
+}

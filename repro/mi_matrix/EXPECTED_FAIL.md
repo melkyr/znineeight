@@ -1,4 +1,57 @@
-# mi_matrix corpus — expected-fail manifest (v263 2026-09-27)
+# mi_matrix corpus — expected-fail manifest (v264 2026-09-27)
+
+## FD2 — print tuple variables (deferred half of D7/D13, after FB) (v263 -> v264, 2026-09-27)
+
+Volume II defect-fix phase, Stage 2b follow-up (task-FD2; the deferred half of
+the print-container fix, after FB's tuple model). FD1 validated the container
+but interim-rejected a spec-legal tuple **variable** with `error[3065]` because
+the per-element read did not exist. FD2 implements FD-I §3's variable path in
+`sf/src/lower.zig`'s `lowerPrintFmt`: a non-literal container whose
+sema-resolved type is a registry `tuple_type` is lowered once through
+`lowerExpr`, **lazily on the first placeholder it serves** (a placeholder-free
+format does not evaluate the container), and each placeholder reads its
+element through FB's `lowerTupleElemRead` (`typeRegistryTupleElem` + the shared
+`load_field` tuple arm), emits `.print_val{ .value = elem, .type_id = elem_tid,
+.fmt, .implicit }` and skips `lowerPrintArgExact`; `printFmtCheck` validates at
+the container span with the element type (the resolved-type override is
+suppressed — there is no element AST node). A placeholder beyond the tuple
+arity stays silently dropped, matching the literal path's extra-child
+equivalence. Anything that is neither a tuple literal nor a tuple variable
+keeps the FD1 `error[3065]`; the literal decomposition path is untouched
+(byte-identical emitted C).
+
+**Fixtures.** Positive `repro/mi_matrix/stdlib_print_tuple_var_ok_xmod`
+(`main.zig` + `helper.zig`): 14 rows — bare inferred tuple, typed ints with
+`{d}`/`{x}`, typed u8 `{c}`, slice `{s}`, f64, bool, enum, nested tuple,
+struct element, tuple-returning call, tuple-typed field, aliased `print`
+callee, cross-module tuple parameter (helper prints its own parameter), and a
+placeholder-free fmt. Golden `basic=7 8 / specs=10 ff / char=AB / slice=hi n=3
+/ float=1.5 2.5 / bool=true false / enm=.green 9 / agg=.{ 1, 2 } 3 /
+stct=.{ .a = 1, .b = 2 } 7 / call=4 5 / field=11 12 / alias=7 8 /
+xmod=12 34 / free`, rc 0, 3x byte-exact, and byte-identical to the Zig-0.15.2
+`std.debug.print` twin (whose `free` row passes `.{}` because Zig rejects
+unused arguments). Stdlib pin **258 -> 259**. Standalone
+`repro/print_tuple_var.z98` (`var=7 8` / `alias=7 8` / `call=30 40` /
+`nested=.{ 1, 2 } 3` / `free`).
+
+**Repro conversion.** `repro/vol2_defects/S01_print_nontuple_args/red_tuple_var.zig`
+RED -> GREEN (`rc 0`, `tuple-var=7 8`, Zig-0.15.2 parity); `S01/main.zig` stays
+the FD1 `fixedreject` census (`3065 1`) and the other `red_*.zig` siblings keep
+rejecting. The FD1 reject fixtures are byte-unchanged; the interim
+tuple-variable row inside `print_nontuple_container_reject_xmod` and
+`repro/print_nontuple_container.z98` now compiles, so their live censuses are
+12 x `error[3065]` + 1 x `error[3061]` and 2 x `error[3065]` + 1 x
+`error[3061]` respectively (both still reject overall via the remaining
+non-tuple sites).
+
+**Corpus movement.** The only addition is the positive fixture (OK class);
+zero common-dir class movement (no corpus program printed a tuple variable
+before FD2). 4-MD5 emitted-C UNCHANGED 8/8 (gol `9e0b708e...`, lisp
+`ec14d644...`, json `5034a0c8...`, mud `2e92c1f2...`); literal-path emission
+byte-identical on the FD1 positive fixtures. Fixed point MOVED
+`ce9906b62cb2b9ab7522d8cfafcf3cc9` -> `115c716c67db7040c0c765dd15795713`
+(seed-v88 rebuild, hop1 == hop2, explicit `FIXED_POINT_MD5` gate; seed v88
+**NOT rotated** — closeout-only).
 
 ## FX4 — validate enum switch qualifiers (D11 extras, error 3071) (v262 -> v263, 2026-09-27)
 

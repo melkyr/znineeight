@@ -147,6 +147,25 @@ operator-authorized F tasks consume this set.
 > standalone `repro/switch_case_qualifier_reject.z98` (4 x 3071), with the
 > positive control `repro/switch_case_qualified.z98`. `run_all.sh` stays
 > `D11_qualified_capture: rc=0 ok`.
+>
+> **FD2 status (2026-09-27):** the spec-legal tuple **variable** print
+> container is **FIXED** on the current compiler (fixed point
+> `115c716c67db7040c0c765dd15795713`; after FB's tuple model). `print(fmt, t)`
+> with `const t = .{ 7, 8 };` compiles/builds/runs and prints
+> `tuple-var=7 8` (Zig 0.15.2 parity); aliased callees, cross-module tuple
+> parameters, nested tuples, tuple-typed fields and tuple-returning calls all
+> print per placeholder. The container expression is lowered once, lazily on
+> the first placeholder, so a placeholder-free fmt does not evaluate it; the
+> literal-container path stays byte-identical and non-tuple containers keep
+> the FD1 `error[3065]`. `S01_print_nontuple_args/red_tuple_var.zig` is the
+> converted flagship (`rc=0`, `tuple-var=7 8`); `main.zig` stays the FD1
+> `fixedreject` census. Pinned by positive fixture
+> `repro/mi_matrix/stdlib_print_tuple_var_ok_xmod` (stdlib pin 258 -> 259) +
+> standalone `repro/print_tuple_var.z98`; the FD1 reject fixtures are
+> unchanged (the interim tuple-variable row inside
+> `print_nontuple_container_reject_xmod` now compiles, so its live census is
+> 12 x `error[3065]` + 1 x `error[3061]`). The per-case `OBSERVED` sections
+> below remain the historical seed-v88 evidence.
 
 - Plan: `.superpowers/sdd/2026-09-25-z98-manual-volume-II-plan/`
 - Report: `.superpowers/sdd/2026-09-25-z98-manual-volume-II-plan/task-D0-report.md`
@@ -193,7 +212,7 @@ expected behavior here -- `docs/reference/Language_Spec_Z98.md` does.
 | D1 | `D01_defer_segfault/` | A module with one plain-`defer` fn and one `for`/`while`-body-`defer` fn made the compiler SIGSEGV (rc 139); **FIXED by FG** (rc 0 with documented output) | ch11 (defer) -- unblocked | Boundary matters: the pre-fix crash needed both shapes in the SAME module; `xmod_main.zig` (both in helper) crashed, `split_*` controls passed |
 | D2 | `D02_enum_switch_ranges/` | Enum `switch` range prongs (`a...b`, `a..b`) emit no `case` labels; every value takes `else` (silent wrong code) | ch6 (enums), ch10 (switch) | Does not matter: `xmod_main.zig` (enum from `colors.zig`) also all-`else` |
 | D3 | `D03_missing_else/` | `switch` without `else` is accepted; an unmatched value reads an uninitialized result temp | ch10 (control flow) | Does not matter: `xmod_main.zig` (switch in `picker.zig`) also silent garbage |
-| D4 | `D04_tuple/` | Tuple type `struct { T1, T2 }` is a parse error; `.0`/`._0` are `error[3060]`; `t[0]` emits gcc-invalid C; **FIXED by FB** (tuple model end-to-end; `run_all.sh` kind `runok`, `p=.{ 3, 4 }` rc 0) | ch8 (tuples) -- unblocked | Does not matter: the tuple type/access works in-module and cross-module now (`helper.Pair` param/return/global in `stdlib_tuple_model_ok_xmod`); spelling+`.N`-alias+OOB reject fixtures added; `print(fmt, tupleVariable)` stays interim 3065 until FD2 |
+| D4 | `D04_tuple/` | Tuple type `struct { T1, T2 }` is a parse error; `.0`/`._0` are `error[3060]`; `t[0]` emits gcc-invalid C; **FIXED by FB** (tuple model end-to-end; `run_all.sh` kind `runok`, `p=.{ 3, 4 }` rc 0) | ch8 (tuples) -- unblocked | Does not matter: the tuple type/access works in-module and cross-module now (`helper.Pair` param/return/global in `stdlib_tuple_model_ok_xmod`); spelling+`.N`-alias+OOB reject fixtures added; `print(fmt, tupleVariable)` was the interim 3065 and is **FIXED by FD2** |
 | D5 | `D05_slice_to_manyptr/` | Implicit `[]T` -> `[*]T` coercion compiles rc 0 then gcc-rejects the C; **FIXED by FC** (`.ptr` extraction; `run_all.sh` kind `runok`, `mp[1]=20` rc 0) | ch3 (pointers), ch9 (arrays/slices) -- unblocked | Does not matter: `xmod_main.zig` (imported `[*]i32` param) now builds+runs `first-ish=20`; const slice -> `[*]const` and all controls byte-identical |
 | D6 | `D06_float_union/` | An f32 tagged-union payload init emits gcc-invalid C (`payload = double`); **FIXED by FF** (literal f64→f32 payload narrowing; the f64-sibling silent wrong-variant write is closed too; `run_all.sh`: `rc=0 ok`, `f=2`) and **completed by FX3** (value-aware narrowing: `green_param.zig` is the former f32-param residual turned positive `x=1.5/x=2/x=2.5/x=2`; runtime f64/i32 and inexact values now clean-reject `error[3000]` at parameters/returns/fields/declarations/assignments/payloads; matrix pinned by `stdlib_f32_narrow_ok_xmod` + `f32_narrow_reject_xmod`) | ch7 (unions) -- unblocked | Does not matter: `xmod_main.zig` (union from `shapes.zig`) now builds+runs (`f=2`); f64/int/bool/struct payloads unchanged; the extreme-literal `parseF64` precision residual (spec §7.2) stays documented |
 | D7 | `D07_nontuple_print/` | `print(fmt, <non-tuple literal>)` is silently accepted and prints no value; **FIXED by FD1** (rc 2 / 0 `.c` / 1 × `error[3065]` at the argument, tuple control GREEN + byte-identical) | ch18 (print) -- unblocked | Does not matter: `xmod_main.zig` (call in `logger.zig`) rejects 3065 in the helper file too |
@@ -202,7 +221,7 @@ expected behavior here -- `docs/reference/Language_Spec_Z98.md` does.
 | D10 | `D10_single_ptr_index/` | `p[0]` on a single-item pointer is accepted and runs though spec 1.2 says it is rejected | ch3 (pointers) | Does not matter: `xmod_main.zig` (indexing in `helper.zig`) also accepted. Defect-vs-spec-correction is for the investigation; this pins current behavior |
 | D11 | `D11_qualified_capture/` | `Shape.circle => \|r\|` (qualified prong) leaves the capture unbound (`error[20]`); **FIXED by FE** (qualified prongs populate `enum_value_table`; enum captures bind Zig-style; the unused-capture SIGSEGV is guarded; `run_all.sh`: `rc=0 ok`); the D11 validation extras (`Shape.bogus`, foreign `B.x`) are **FIXED by FX4** as `error[3071]` rejects (`red_bogus_member.zig` / `red_foreign_qualifier.zig`) | ch7 (unions) | Does not matter: `xmod_main.zig` (type from `shapes.zig`) binds; `.circle =>` shorthand unchanged; the f32 shapes stay gcc-blocked by D6 (FF) |
 | D12 | `D12_const_discard_slice/` | `[]const T` -> `[]T` is accepted warning-only (in the var-decl shape) and mutates; **FIXED by FC** (every const-discarding family rejects `error[3000]`, rc 2 / 0 `.c`; `run_all.sh` kind `fixedreject`, `3000 1`) | ch9 (arrays/slices), ch3 (const) -- unblocked | Does not matter: `xmod_main.zig` now rejects with the same diagnostic; added `red_assign.zig` / `red_modvar.zig` cover the two silent sites; legal const-adding control unchanged (`c0=1`) |
-| S1 | `S01_print_nontuple_args/` | New sibling cluster: non-tuple `print` args are container-misinterpreted -- tuple-variable rejects, mixed calls misattribute `error[3013]` or SIGSEGV, two var calls print wrong values; **FIXED by FD1** (every shape rc 2 / 0 `.c` / `error[3065]` at its own container, no SIGSEGV; tuple variable interim) | ch18 (print) -- unblocked | Cross-module variant in the D07 tree; shapes here same-module only |
+| S1 | `S01_print_nontuple_args/` | New sibling cluster: non-tuple `print` args are container-misinterpreted -- tuple-variable rejects, mixed calls misattribute `error[3013]` or SIGSEGV, two var calls print wrong values; **FIXED by FD1** (every shape rc 2 / 0 `.c` / `error[3065]` at its own container, no SIGSEGV) and the tuple variable is **FIXED by FD2** (`red_tuple_var.zig` rc 0, `tuple-var=7 8`) | ch18 (print) -- unblocked | Cross-module variant in the D07 tree; shapes here same-module only |
 
 ## Case layout
 

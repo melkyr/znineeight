@@ -110,6 +110,16 @@
 # `red_foreign_qualifier.zig` siblings, exercised outside run_all.sh like the
 # other D11 siblings. The pinned census lives in
 # repro/mi_matrix/switch_case_qualifier_reject_xmod.
+#
+# FD2 conversion (2026-09-27): the spec-legal tuple variable print container is
+# FIXED. `S01_print_nontuple_args/red_tuple_var.zig` (the converted flagship,
+# exercised outside run_all.sh like the other red_* siblings) compiles/builds/
+# runs rc 0 with stdout `tuple-var=7 8`. `S01/main.zig` stays the FD1
+# `fixedreject` census (`3065 1`) and every non-tuple sibling still rejects.
+# The positive boundary is pinned in
+# repro/mi_matrix/stdlib_print_tuple_var_ok_xmod and standalone
+# repro/print_tuple_var.z98. The historical seed-v88 observations stay in the
+# case NOTES.md.
 
 # Usage: sh run_all.sh [seed-compiler-path]
 # Default seed: /tmp/manual_seed/zig1_5_clean

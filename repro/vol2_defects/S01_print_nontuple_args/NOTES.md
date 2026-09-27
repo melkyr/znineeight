@@ -1,5 +1,17 @@
 # S1 — print-argument container family (new sibling found during D0; fixed by FD1)
 
+> **FD2 status (2026-09-27): the spec-legal tuple variable is FIXED.** With the
+> FD2 compiler (fixed point `115c716c67db7040c0c765dd15795713`) `red_tuple_var.zig`
+> compiles/builds/runs rc 0 and prints `tuple-var=7 8`, matching the Zig 0.15.2
+> twin (`std.debug.print("tuple-var={} {}\n", t)` -> `tuple-var=7 8`, comparison
+> only). The container expression is lowered once, lazily on the first
+> placeholder (a placeholder-free fmt does not evaluate it); aliased callees,
+> cross-module tuple parameters, nested tuples and tuple-typed fields are
+> pinned in `repro/mi_matrix/stdlib_print_tuple_var_ok_xmod` and standalone
+> `repro/print_tuple_var.z98`. `main.zig` still rejects (FD1 `error[3065]`) and
+> the other non-tuple `red_*.zig` siblings are unchanged; tuple literals stay
+> byte-identical. The FD1 section below remains the historical record.
+
 > **FD1 status (2026-09-26): FIXED as a clean REJECT (no SIGSEGV), with the
 > spec-legal tuple variable INTERIM-rejected until FD2.** With the FD1 compiler
 > (fixed point `7bf2da194d7385dea638a9126191c173`) `main.zig` no longer crashes:
@@ -78,7 +90,7 @@ Language Spec §4: "The arguments **must** be a tuple literal (e.g.,
 | Shape | File | Verdict | Evidence |
 |---|---|---|---|
 | Tuple call + non-tuple var call | `main.zig` | RED | compile rc 139 (SIGSEGV) |
-| Tuple variable argument | `red_tuple_var.zig` | RED | `error[3013]` (spec allows it) |
+| Tuple variable argument | `red_tuple_var.zig` | GREEN (FD2) | rc 0, `tuple-var=7 8` (was `error[3013]` / interim 3065) |
 | Two non-tuple literal calls | `red_two_literals.zig` | RED | `error[3013]` on first call |
 | Var call then tuple call | `red_var_then_tuple.zig` | RED | `error[3013]` on tuple call |
 | Two non-tuple var calls | `red_two_vars.zig` | RED | `one=1 two=1`, wrong values |
