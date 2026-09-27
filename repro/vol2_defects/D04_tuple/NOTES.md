@@ -123,3 +123,28 @@ Zig-0.15.2 `[0]`-spelling twin byte-identical) and
 `repro/mi_matrix/tuple_model_reject_xmod` (OOB/non-comptime/alias/mismatch/
 array-element/parse rejects); standalone `repro/tuple_model.z98`.
 
+
+## FB2 postscript (2026-09-27) — inferred element typing
+
+FB2 (`fix(sema): type inferred tuple elements by value`) closes the FD2-review
+element-typing family on top of the FB tuple model:
+
+- **Untyped integer literals** take their value-chosen carrier (`u32`/`i64`/
+  `u64`), so `const t = .{ 3000000000, -3000000000 }; print("{} {}\n", t)`
+  prints `3000000000 -3000000000` (was `-1294967296 1294967296`; u64 max and
+  `{x}` exact too). In-i32 literals keep `integer_literal` lowering, so the
+  existing D04 controls emit byte-identical C.
+- **`void` elements** (`.{ vf(), 1 }`) stay `void` and clean-reject
+  `error[3063]` on both print paths instead of fabricating an i32 element and
+  emitting gcc-invalid construction C.
+- **Type values** (`.{ i32, 5 }`, `.{ S, 5 }`, `.{ mod.T, 5 }`) type as
+  `TYPE_TYPE` and clean-reject `error[3063]` on both the literal and the tuple
+  variable path.
+- Reject fixture `repro/mi_matrix/tuple_elem_type_reject_xmod`
+  (8 x `error[3063]` + 2 x `error[3000]`); positive rows live in
+  `repro/mi_matrix/stdlib_print_tuple_var_ok_xmod` (23 rows, Zig-twin-equal).
+- Bounded residual: a function-local type alias used as an element
+  (`const T = struct {...}; .{ T, 5 }`) is still accepted with garbage output —
+  pre-existing on the literal path too (`printFmtArgIsTypeValue` and the sema
+  mirror resolve aliases from symbols / the name cache, not the local type
+  scope).

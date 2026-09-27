@@ -14,11 +14,16 @@
 //   alias=7 8
 //   call=30 40
 //   nested=.{ 1, 2 } 3
+//   big=3000000000 -3000000000        (FB2 value-chosen carriers)
+//   u64max=18446744073709551615 1
+//   hex=b2d05e00 ff
 //   free
 // rc=0. The Zig-0.15.2 twin (std.debug.print) prints the same lines.
 // DEFECT (before FD2): a tuple-variable container was rejected by FD1's
 // validation as an interim `error[3065]` (pre-FD1: `error[3013]` on the fmt
-// span); the element reads did not exist.
+// span); the element reads did not exist. DEFECT (before FB2): untyped integer
+// elements harder than i32 were typed i32, so `big=` printed truncated
+// `-1294967296 1294967296` and `u64max=` printed `-1`.
 const std = @import("std");
 
 const Pair = struct { i32, i32 };
@@ -39,6 +44,15 @@ pub fn main() void {
 
     const n = .{ .{ 1, 2 }, 3 };
     std.io.print("nested={} {}\n", n);
+
+    const big = .{ 3000000000, -3000000000 };
+    std.io.print("big={} {}\n", big);
+
+    const umax = .{ 18446744073709551615, 1 };
+    std.io.print("u64max={} {}\n", umax);
+
+    const hx = .{ 3000000000, 255 };
+    std.io.print("hex={x} {x}\n", hx);
 
     std.io.print("free\n", t);
 }

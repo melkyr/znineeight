@@ -21,6 +21,15 @@
 //   field   tuple-typed struct field as the container
 //   alias   aliased `print` callee
 //   xmod    cross-module tuple parameter printed by the helper
+//   big     FB2 value-chosen u32/i64 carriers (`3000000000`, `-3000000000`)
+//   u32b    u32/i64 boundary (`4294967295`, `4294967296`)
+//   u64b    u64 window (`9223372036854775808`, `18446744073709551615`)
+//   i64b    i64 window (`9223372036854775807`, `-9223372036854775808`)
+//   hexb    `{x}` on u32/u64 elements
+//   negb    `{x}` on i64 negative elements
+//   arithb  literal-only arithmetic elements (`2000000000 + 2000000000`)
+//   refb    element reads (`w32[0]`/`w32[1]`) re-tupled and printed
+//   litc    literal-container aggregate print of a big-element tuple
 //   free    placeholder-free fmt (container is not evaluated)
 //
 // Contract: stdout (expected.txt), rc 0, byte-exact 3x. The Zig-0.15.2 twin
@@ -77,6 +86,36 @@ pub fn main() void {
     pr("alias={} {}\n", t);
 
     helper.logPair(.{ 12, 34 });
+
+    // FB2 (Volume II): inferred tuple elements type by value. Every in-i32
+    // element above keeps its legacy lowering (emitted C byte-identical);
+    // these rows pin the value-chosen u32/i64/u64 carriers and the exact
+    // `{x}` routes through the tuple-variable print path.
+    const w32 = .{ 3000000000, -3000000000 };
+    std.io.print("big={} {}\n", w32);
+
+    const wu32 = .{ 4294967295, 4294967296 };
+    std.io.print("u32b={} {}\n", wu32);
+
+    const widest = .{ 9223372036854775808, 18446744073709551615 };
+    std.io.print("u64b={} {}\n", widest);
+
+    const wi64 = .{ 9223372036854775807, -9223372036854775808 };
+    std.io.print("i64b={} {}\n", wi64);
+
+    const whex = .{ 3000000000, 18446744073709551615 };
+    std.io.print("hexb={x} {x}\n", whex);
+
+    const wneg = .{ -3000000000, -9223372036854775808 };
+    std.io.print("negb={x} {x}\n", wneg);
+
+    const warith = .{ 2000000000 + 2000000000, 0 - 3000000000 };
+    std.io.print("arithb={} {}\n", warith);
+
+    const wref = .{ w32[0], w32[1] };
+    std.io.print("refb={} {}\n", wref);
+
+    std.io.print("litc={}\n", .{ w32 });
 
     std.io.print("free\n", t);
 }

@@ -5739,6 +5739,75 @@ fn semanticAnalyzerResolveSliceExpr(self: *SemanticAnalyzer, node_idx: u32) u32 
     return ret;
 }
 
+// FB2 (Volume II): is a tuple-literal element a TYPE VALUE referenced by name
+// (`.{ i32, 5 }`, `.{ S, 5 }`, `.{ mod.T, 5 }`)? A named type used as a value
+// resolves to the named type's own id (indistinguishable from a value of that
+// type by the TypeId alone), so detect it from the element AST/symbol exactly
+// like `printFmtArgIsTypeValue` in lower.zig does for the literal print path.
+// The tuple element type then becomes TYPE_TYPE and the print validator's
+// existing type-kind arm rejects it on both the literal and the
+// tuple-variable path. Inline type expressions already resolve to TYPE_TYPE.
+fn semanticAnalyzerTupleElemIsTypeValue(self: *SemanticAnalyzer, elem_idx: u32) bool {
+    var an = ast_mod.astStoreNodeAt(self.store, elem_idx);
+    if (an.kind == AstKind.ident_expr) {
+        var name_id = ast_mod.astStoreIdentifier(self.store, elem_idx);
+        if (sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, name_id)) |s| {
+            if (s.kind == sym_mod.SymbolKind.type_alias) return true;
+        }
+        // Primitive builtin names (`u32`, `bool`, ...) are registered in the
+        // type name cache, not the symbol table; a cache hit whose type name is
+        // the ident itself is a type value.
+        if (type_mod.nameCacheGet(self.registry, @intCast(u64, name_id))) |ctid| {
+            if (@intCast(usize, ctid) < self.registry.types_len) {
+                var cty = self.registry.types_items[@intCast(usize, ctid)];
+                if (cty.name_id != @intCast(u32, 0) and cty.name_id == name_id) return true;
+            }
+        }
+        return false;
+    }
+    if (an.kind == AstKind.field_access) {
+        var field_name = ast_mod.astStoreNodePayload(self.store, elem_idx);
+        var base_node = ast_mod.astStoreNodeAt(self.store, an.child_0);
+        if (base_node.kind == AstKind.ident_expr) {
+            var base_name = ast_mod.astStoreIdentifier(self.store, an.child_0);
+            if (sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, base_name)) |bs| {
+                if (bs.kind == sym_mod.SymbolKind.module) {
+                    if (sym_mod.symbolRegistryQualifiedLookup(self.symbols, bs.module_id, field_name)) |ms| {
+                        if (ms.kind == sym_mod.SymbolKind.type_alias) return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+    return false;
+}
+
+// FB2 (Volume II): does a VOID-typed tuple element come from an unresolved
+// forward reference rather than a genuine void value? Only a bare ident /
+// field-access (paren-transparent) reference can be unresolved here, and Z98
+// rejects void variable/parameter bindings (`error[14]`), so such a reference
+// cannot denote a void value. Keeping the pre-FB2 I32 fallback for this
+// transient case preserves the first-pass tuple identity (and therefore every
+// later type id / emitted C byte) in modules with forward-referenced tuple
+// elements; the module-var fixpoint re-resolves the reference and the tuple is
+// rebuilt with its true element type on the next pass.
+fn semanticAnalyzerTupleElemVoidIsUnresolvedRef(self: *SemanticAnalyzer, elem_idx: u32) bool {
+    var idx = elem_idx;
+    var guard: usize = @intCast(usize, 0);
+    while (guard < @intCast(usize, 8)) : (guard += @intCast(usize, 1)) {
+        var n = ast_mod.astStoreNodeAt(self.store, idx);
+        if (n.kind == AstKind.paren_expr) {
+            if (n.child_0 == @intCast(u32, 0)) return false;
+            idx = n.child_0;
+            continue;
+        }
+        if (n.kind == AstKind.ident_expr or n.kind == AstKind.field_access) return true;
+        return false;
+    }
+    return false;
+}
+
 fn semanticAnalyzerResolveTupleLiteral(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var saved = self._stub_0;
@@ -5753,18 +5822,59 @@ fn semanticAnalyzerResolveTupleLiteral(self: *SemanticAnalyzer, node_idx: u32) u
     //     generated printer on ONE C type;
     //   * a CHANGED element list rebuilds the tuple from the fresh types. The
     //     caller records the new type for this node and `front_resolution`
-    //     updates the decl/symbol to match, so a pass-1 `TYPE_VOID -> TYPE_I32`
-    //     fallback (`var g = .{ b, 7 }; const b = Pair{...}`) is replaced by
-    //     the true `{ Pair, i32 }`; the dependency-ordered `__module_init`
-    //     materialises `b` before `g`. No diagnostic is emitted here — the only
-    //     unresolvable shape (a dependency cycle) is rejected by the init
-    //     orderer.
+    //     updates the decl/symbol to match, so a pass-1 `TYPE_VOID`
+    //     (`var g = .{ b, 7 }; const b = Pair{...}`, `b` not yet settled) is
+    //     replaced by the true `{ Pair, i32 }`; the dependency-ordered
+    //     `__module_init` materialises `b` before `g`. No diagnostic is emitted
+    //     here — the only unresolvable shape (a dependency cycle) is rejected
+    //     by the init orderer.
     var tmp_raw = alloc_mod.sandAlloc(self.registry.types_alloc, @intCast(usize, 4) * ec_n, @intCast(usize, 4)) catch unreachable;
     var tmp = @ptrCast([*]u32, tmp_raw);
     var i: usize = @intCast(usize, 0);
     while (i < ec_n) : (i += @intCast(usize, 1)) {
-        self._stub_0 = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, i)));
-        if (self._stub_0 == type_mod.TYPE_VOID) { self._stub_0 = type_mod.TYPE_I32; }
+        var elem_idx = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, i));
+        self._stub_0 = semanticAnalyzerResolveExpr(self, elem_idx);
+        // FB2 (Volume II inferred-tuple-element typing family): type the
+        // element by what it is, not by the FB fallbacks.
+        //
+        // 1. A TYPE VALUE used as an element (`.{ i32, 5 }`, `.{ S, 5 }`,
+        //    `.{ mod.T, 5 }`) types as TYPE_TYPE, so the print validator's
+        //    type-kind arm clean-rejects it on BOTH the literal path and FD2's
+        //    tuple-variable path — the variable path has no element AST node, so
+        //    `printFmtArgIsTypeValue` (lower.zig) cannot fire there. Inline type
+        //    expressions (`struct {...}`, `*T`, `[N]T`, ...) already resolve to
+        //    TYPE_TYPE through the resolveExpr type-expression arms.
+        // 2. A genuine `void` element keeps `void`: no i32 fallback, so the
+        //    print validator rejects it (error[3063]) instead of accepting a
+        //    fabricated i32 element whose C construction is invalid. Exception:
+        //    a bare (possibly parenthesized) ident/field-access reference that
+        //    resolves to VOID is an unresolved forward global, not a void
+        //    value (Z98 rejects void bindings, so no value reference can be
+        //    void); it keeps the pre-FB2 pass-1 I32 fallback so the settled
+        //    tuple's registry identity and every subsequent type id stay
+        //    byte-identical when the reference re-resolves on the next
+        //    fixpoint pass.
+        // 3. An untyped integer-literal element takes its value-chosen carrier
+        //    (i32 when the value fits, else u32/i64/u64) exactly like the
+        //    unannotated-binding rule below, so the tuple's C field types match
+        //    the value (`3000000000` must not become `int`). In-i32 values keep
+        //    TYPE_INT_LIT, so emitted C for existing in-range tuples is
+        //    unchanged.
+        if (semanticAnalyzerTupleElemIsTypeValue(self, elem_idx)) {
+            self._stub_0 = type_mod.TYPE_TYPE;
+        } else if (self._stub_0 == type_mod.TYPE_VOID and semanticAnalyzerTupleElemVoidIsUnresolvedRef(self, elem_idx)) {
+            self._stub_0 = type_mod.TYPE_I32;
+        } else if (self._stub_0 == type_mod.TYPE_INT_LIT or self._stub_0 == type_mod.TYPE_I32) {
+            var et_ce = ce_mod.comptimeEvalInit(self.registry, self.store, self.interner, self.symbols);
+            et_ce.local_consts = &self.local_consts;
+            if (ce_mod.comptimeEvalEvaluate(&et_ce, elem_idx)) |et_cv| {
+                if (et_cv.kind == ce_mod.KIND_INT) {
+                    if (ce_mod.comptimeIntUntypedType(et_cv.v)) |et_ut| {
+                        if (et_ut != type_mod.TYPE_I32) { self._stub_0 = et_ut; }
+                    }
+                }
+            }
+        }
         tmp[i] = self._stub_0;
     }
     // FB (D4): array ELEMENTS are allowed to exist in a tuple literal (the

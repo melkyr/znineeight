@@ -1543,12 +1543,18 @@ fn foldPrintArgIntExact(self: *LirLowerer, node_idx: u32) ?ce_mod.ComptimeVal {
     return null;
 }
 
-// Returns the value-chosen carrier temp for an untyped integer print argument,
-// or TEMP_NONE when the argument is not one (or already fits i32, or is not an
-// exact literal-only integer expression). A >64-bit exact value reports the
-// shared `error[3000]` (Z98 has no >64-bit runtime integer slot, the
-// documented comptime-int bound) instead of wrapping silently.
-fn lowerPrintArgExact(self: *LirLowerer, node_idx: u32) u32 {
+// Returns the value-chosen carrier temp for an untyped integer expression, or
+// TEMP_NONE when the node is not one (or already fits i32, or is not an exact
+// literal-only integer expression). A >64-bit exact value reports the shared
+// `error[3000]` (Z98 has no >64-bit runtime integer slot, the documented
+// comptime-int bound) instead of wrapping silently.
+//
+// FB2 (Volume II): two callers share this convention — the print-argument
+// literal route (Finding 1) and the inferred-tuple construction arm (a tuple
+// element that does not fit i32 must materialise its exact value into the
+// value-chosen carrier, matching the element type sema picked for the tuple's
+// C model).
+fn lowerExactIntArg(self: *LirLowerer, node_idx: u32) u32 {
     var rtid: u32 = type_mod.TYPE_VOID;
     if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx)) |rt| rtid = rt;
     if (rtid != type_mod.TYPE_INT_LIT) return TEMP_NONE;
@@ -1706,7 +1712,7 @@ fn lowerPrintFmt(self: *LirLowerer, fmt_node_idx: u32, fmt: []const u8, tuple_no
                         // Finding 1 fix: an exact untyped integer argument takes
                         // its value-chosen carrier (and a value-chosen int_const
                         // temp) instead of a runtime 32-bit literal expression.
-                        pv = lowerPrintArgExact(self, arg_node);
+                        pv = lowerExactIntArg(self, arg_node);
                         if (pv == TEMP_NONE) {
                             pv = lowerExpr(self, arg_node);
                         }
@@ -6602,7 +6608,16 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 var base_temp = nextTemp(self, trt_id);
                 var ei: usize = @intCast(usize, 0);
                 while (ei < @intCast(usize, ec_n)) : (ei += @intCast(usize, 1)) {
-                    var val_temp = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ei)));
+                    var elem_node = ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ei));
+                    // FB2: an exact untyped integer element materialises into
+                    // its value-chosen carrier (the same route as the print
+                    // argument), so a >i32 element value is not truncated by
+                    // the element temp's C type; in-i32 values keep the legacy
+                    // lowering (TEMP_NONE) and stay byte-identical.
+                    var val_temp = lowerExactIntArg(self, elem_node);
+                    if (val_temp == TEMP_NONE) {
+                        val_temp = lowerExpr(self, elem_node);
+                    }
                     emitInst(self, LirInst{ .assign_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = @intCast(u32, ei), .src = val_temp } });
                 }
                 return base_temp;

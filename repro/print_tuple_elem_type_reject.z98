@@ -1,0 +1,28 @@
+// print_tuple_elem_type_reject.z98 — FB2 standalone reject repro.
+//
+// Before FB2 the inferred-tuple element model fabricated runtime elements: a
+// `void` element became i32 (gcc-invalid construction), a type value was
+// accepted (`zT = i32;`), and a >i32 untyped literal was hard-typed i32. The
+// print-formatting rules now win on both print paths:
+//   void element   -> error[3063] (no std.fmt printer) rc 2 / 0 `.c`
+//   type element   -> error[3063] (the TYPE_TYPE kind / type-value check)
+//   >64-bit value  -> error[3000] (comptime integer value does not fit)
+//
+// Expected: compile rc 2 / 0 emitted `.c` / exactly 3 x error[3063] +
+// 1 x error[3000]; no gcc step, no silent wrong value.
+const std = @import("std");
+
+fn vf() void {}
+
+pub fn main() void {
+    const v = .{ vf(), 1 };
+    std.io.print("v={} {}\n", v);
+
+    const ty = .{ i32, 5 };
+    std.io.print("ty={} {}\n", ty);
+
+    std.io.print("tl={} {}\n", .{ u32, 5 });
+
+    const w = .{ 1 << 100, 1 };
+    std.io.print("w={} {}\n", w);
+}

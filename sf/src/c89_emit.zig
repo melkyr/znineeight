@@ -5716,7 +5716,7 @@ fn getCheckedCastFnName(reg: *TypeRegistry, tid: u32) []const u8 {
 // typeRegistryIntIsSigned (frozen table task-0-report.md rows A7-A17). usize is
 // 32-bit unsigned in Z98; a 33..64-bit type takes the U64/I64 routes. An
 // untyped integer_literal argument is materialised by lowering into its
-// value-chosen carrier (i32/u32/i64/u64; `lowerPrintArgExact`), so this arm's
+// value-chosen carrier (i32/u32/i64/u64; `lowerExactIntArg`), so this arm's
 // 32-bit signed fallback only sees a non-folded untyped temp whose exact value
 // already fits i32 (e.g. some builtin results). f32/f64, bool, u8{c} and
 // slices keep their explicit arms; any other kind keeps the defensive printI32

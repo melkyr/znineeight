@@ -8,8 +8,10 @@
 // literal`) at the container node; more than two arguments reject with the
 // existing `error[3061]` at the call span.
 //
-// Expected: compile rc 2 / 0 emitted `.c` / exactly 3 x error[3065] +
-// 1 x error[3061]; no crash on any shape.
+// Expected: compile rc 2 / 0 emitted `.c` / exactly 2 x error[3065] +
+// 1 x error[3061]; no crash on any shape. (The tuple-variable row is now
+// spec-legal FD2/FB2 input — it compiles — so the live 3065 count is 2, not
+// the FD1-era 3 this header originally said.)
 const std = @import("std");
 
 fn bareVar(v: i32) void {

@@ -1,4 +1,59 @@
-# mi_matrix corpus — expected-fail manifest (v264 2026-09-27)
+# mi_matrix corpus — expected-fail manifest (v265 2026-09-27)
+
+## FB2 — inferred tuple-element typing family (FD2 review Critical/Important 1-2) (v264 -> v265, 2026-09-27)
+
+Volume II defect-fix phase, Stage 2b follow-up (task-FB2). The FD2 review found
+the FB element model fell back to wrong element types; FB2 types each inferred
+tuple element by value (`semantic_analyzer.zig` `semanticAnalyzerResolveTupleLiteral`):
+
+- an untyped integer-literal element takes its value-chosen carrier
+  (`comptimeIntUntypedType`: i32 when the value fits, else u32/i64/u64; an exact
+  value outside the 64-bit window reports `error[3000]`), so a tuple variable
+  prints its exact values (`const t = .{ 3000000000, -3000000000 };
+  print("{} {}\n", t)` -> `3000000000 -3000000000`; previously
+  `-1294967296 1294967296`; u64 max -> `18446744073709551615`, `{x}` exact).
+  In-i32 elements stay `TYPE_INT_LIT`, so existing in-range tuples emit
+  byte-identical C. `sf/src/lower.zig` reuses the print-argument exact route
+  (`lowerPrintArgExact` generalised to `lowerExactIntArg`) in the inferred-tuple
+  construction, so a negate element is materialised exactly (not in a 32-bit
+  temp). A VOID-typed bare ident/field-access element is an unresolved forward
+  global and keeps the pre-FB2 pass-1 I32 fallback, preserving the settled
+  tuple's identity and every later type id.
+- a genuine `void` element stays `void` instead of becoming i32: both print
+  paths reject `error[3063]` (the tuple-variable path via `lowerTupleElemRead`
+  -> `TEMP_NONE` + `printFmtCheck`'s void arm; the literal path at the element
+  node; the literal-container aggregate path via `printFmtAggFieldsOk`).
+- a TYPE used as an element (`.{ i32, 5 }`, `.{ S, 5 }`, `.{ mod.T, 5 }`) types
+  as `TYPE_TYPE`, so the existing `printFmtCheck` type-kind arm rejects
+  `error[3063]` on BOTH the literal and the tuple-variable path (the latter has
+  no element AST node for `printFmtArgIsTypeValue`). Inline type expressions
+  already rejected.
+
+**Fixture movement.** `repro/mi_matrix/stdlib_print_tuple_var_ok_xmod` extended
+from 14 to **23 rows / 478 B** (`big`/`u32b`/`u64b`/`i64b`/`hexb`/`negb`/
+`arithb`/`refb`/`litc`); golden rc 0, 3x byte-exact, byte-identical to the
+Zig-0.15.2 `std.debug.print` twin; class stays OK. New reject fixture
+`repro/mi_matrix/tuple_elem_type_reject_xmod` (`main.zig` + `helper.zig`):
+rc 2 / 0 `.c` / **8 x `error[3063]` + 2 x `error[3000]`** (void variable /
+literal / aggregate, builtin / named / module / literal / inline type values,
+`1 << 100`, `-9223372036854775809`), class GREEN. Standalone:
+`repro/print_tuple_var.z98` extended (`big=3000000000 -3000000000`,
+`u64max=18446744073709551615 1`, `hex=b2d05e00 ff`) and new
+`repro/print_tuple_elem_type_reject.z98` (3 x 3063 + 1 x 3000). The stale
+`repro/print_nontuple_container.z98` header census is corrected to
+**2 x `error[3065]` + 1 x `error[3061]`** (was 3 x/1 x since FD2).
+
+**Gates.** Fixed point `115c716c…` -> **`416f0932e2e164fb4c04013d3fda549d`**
+(hop1 == hop2, explicit gate; seed v88 NOT rotated); 4-MD5 emitted-C UNCHANGED
+8/8; all 119 tuple-using corpus/example dirs emit byte-identical `.c`/`.h`
+PRE<->POST; corpus `-s0` **1060 = 904 OK / 51 GREEN / 105 FAIL / 0 ICE / 0
+CRASH** (join-diff vs FD2 over the 1059 common dirs EMPTY; only addition = the
+new reject fixture); stdlib 259 PASS (pin unchanged); matrix 24/24;
+`check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT; self-emission
+48 `.c` + 48 `.h`; build_test 0/9 baseline. Bounded residuals: a function-local
+type alias element stays accepted (pre-existing on the literal path too); a
+decimal literal above u64 max is lexer-truncated (pre-existing); declaration-only
+void/type-element shapes (no print) stay accepted-then-gcc-invalid.
 
 ## FD2 — print tuple variables (deferred half of D7/D13, after FB) (v263 -> v264, 2026-09-27)
 
