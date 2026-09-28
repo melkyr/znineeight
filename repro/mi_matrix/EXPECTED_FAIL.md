@@ -1,4 +1,62 @@
-# mi_matrix corpus — expected-fail manifest (v276 2026-09-28)
+# mi_matrix corpus — expected-fail manifest (v277 2026-09-28)
+
+## FX7 — switch-merge prong-name propagation (v276 -> v277, 2026-09-28)
+
+Volume II defect-fix phase, Stage 2b follow-up (task-FX7; source = the plan's
+FX7 bullet + `task-FX2-I-report.md` §2.3/§2.4, measured on the FX2 compiler
+`ab02f993`). FX2 made switch prongs and bare blocks visible to the analyzers,
+which exposed the adjacent merge gap: the `swt_ex` arm merged each prong with
+`stateMapMergeStates(state, state, ps, 99)` (`sf/src/analyzer.zig`), whose
+second loop cannot ADD a name that exists only in the prong state. A pointer
+first assigned `arena_alloc` in a prong and freed after the switch read
+"untracked" (`WARN_6006` / 3039), and a prong allocation stayed invisible to
+the enclosing state.
+
+**Fix (`sf/src/analyzer.zig` + `sf/src/state_map.zig`).** After each prong's
+merge, the double-free pass calls the new `stateMapMergeInsertMissing(state,
+ps, AllocState.unknown)`: every prong-local name absent from the enclosing
+state (and parent chain) is inserted as `AllocState.unknown` (5) — the
+conservative join of "maybe allocated in this prong, untracked on the other
+prongs". Not `allocated` (would report a leak for the untaken prongs), and not
+absent/untracked (would keep warning 3039). Consequences: a prong-assigned
+name freed after the switch is tracked (free -> `freed`, no 3039), and a second
+post-switch free is a definite `error[3035]` double free. The if/while/for
+merges keep the old drop (a1/a4 controls unchanged); the null/lifetime maps are
+untouched (their enclosing variables are seeded at declaration/param binding,
+so a prong-only name is necessarily a prong-local binding) — corpus,
+gate-program and self-emission stderr show zero null/lifetime movement, and a
+`error[3034]` null-after-switch control is pinned. Residual: an allocation
+freed INSIDE the prong and freed again after the switch joins to `unknown`, so
+the post-switch free is silent — the join cannot tell "freed in this prong"
+from "untracked on the other prongs"; reporting it would be a false positive
+on the untaken-prong path.
+
+**Fixtures.** Positive `repro/mi_matrix/stdlib_analyzer_switch_merge_xmod`
+(local stub allocator; stdout 7 rows, rc 0, 3x; analyzer census documented:
+POST `warning[3038]` x7 + `warning[3039]` x1 — the if-control's untracked free
+— vs PRE x7 + x2; stdlib pin **261 -> 262**). Reject
+`repro/mi_matrix/analyzer_switch_merge_reject_xmod` (`error[3035]` x3 +
+`error[3034]` x1 null control + `warning[3038]` x2; rc 2 / 0 `.c`; PRE: no
+3035, `warning[3039]` x5). Standalone `repro/switch_merge.z98` (accept;
+runnable; POST stderr `3038` x10 + `3039` x1; PRE `3039` x4) and
+`repro/switch_merge_reject.z98` (rc 2 / 0 `.c` / `3035` x3 + `3034` x1 +
+`3038` x2; PRE `3039` x6).
+
+**Gates.** Fixed point MOVED `1a258bd4bcb5194fc3256be0be456311` ->
+**`ff059647856e5c223c1622d1b031579b`** (explicit `FIXED_POINT_MD5` gate;
+hop1 == hop2; seed v88 NOT rotated, archive md5 `3db5ef39…` unchanged).
+4-MD5 emitted-C **UNCHANGED 8/8 both modes** (2x each; the same pins as FX6),
+so every gate-program runtime output holds. Corpus `-s0` classify **1065 =
+907 OK / 52 GREEN / 106 FAIL / 0 ICE / 0 CRASH**; join-diff vs the 1063-dir
+PRE baseline = the two new fixtures only (positive OK, reject FAIL), **zero
+class movers**; full-corpus stderr census movers = 3 unrelated dirs differing
+only in the embedded `<compiler>/lib/std_io.zig` install path. Gate-program
+stderr byte-identical (gol/json/mud 0 lines; lisp 120 lines). Stdlib **262
+PASS / 0 FAIL** over 262 pinned dirs; example matrix **24/24**;
+`check_emit_support.sh` **7/7**; `verify_upgraded.sh` **CLOSEOUT OK**;
+self-emission rc 0 / **48 `.c` + 48 `.h`** / 0 PANIC / 0 `error[` / stderr
+byte-identical; `build_test.sh` **0/9** (pre-existing retired-zig0 baseline);
+`repro/vol2_defects/run_all.sh` **13/13**.
 
 ## FX6 — const-array decay / `"abc"`→`[]u8` / array-element const mismatch (v272 -> v273, 2026-09-28; fix round 1 v273 -> v274, 2026-09-28; fix round 2 v274 -> v275, 2026-09-28)
 

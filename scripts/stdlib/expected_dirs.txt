@@ -3,6 +3,7 @@
 # starting with # are ignored. In discovery mode the harness asserts the
 # discovered set EQUALS this list (a dropped/renamed/added fixture FAILS the
 # gate). Update INTENTIONALLY when a hardening band adds or removes fixtures.
+repro/mi_matrix/stdlib_analyzer_switch_merge_xmod
 repro/mi_matrix/stdlib_arena_xmod
 repro/mi_matrix/stdlib_array_size_builtin_xmod
 repro/mi_matrix/stdlib_array_size_struct_introspection_xmod

@@ -698,6 +698,9 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
             var ps = smap_mod.stateMapFork(state, ctx.alloc);
             walkBlock(ctx, ps, prong.child_0, visit_fn);
             smap_mod.stateMapMergeStates(state, state, ps, @intCast(u8, 99));
+            if (ctx.doublefree_analysis_mode != @intCast(u8, 0)) {
+                smap_mod.stateMapMergeInsertMissing(state, ps, @intCast(u8, @enumToInt(AllocState.unknown)));
+            }
         }
     } else if (kind == AstKind.for_stmt) {
         var body_state = smap_mod.stateMapFork(state, ctx.alloc);

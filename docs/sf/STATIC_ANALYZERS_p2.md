@@ -167,6 +167,19 @@ fn mergeStates(
 }
 ```
 
+**FX7 (switch-merge prong-name propagation, 2026-09-28):** as written, the
+second loop drops a name that is present only in `branch_b` and absent from
+`parent` (`orig == null` → nothing written). The `swt_ex` arm of
+`visitStatement` now follows its per-prong merge with
+`stateMapMergeInsertMissing` (double-free pass only): each prong-only name is
+inserted into the enclosing state as `AllocState.unknown` — the conservative
+join of "maybe allocated in this prong, untracked on the other prongs" (not
+`allocated`, which would leak-report for the untaken prongs; not absent, which
+would keep warning `WARN_6006`). If/else/while/for merges keep the drop, and
+the null/lifetime maps are not affected (their enclosing variables are seeded
+at declaration/param binding, so a prong-only name is a prong-local binding).
+Implementation: `sf/docs/tech_docs/06_static_analyzers.md`.
+
 ### 2.3 Iterative Function Visitor
 
 Each analyzer implements a function-level visitor that walks the AST iteratively. The visitor dispatches on node kind and processes statements in order.
@@ -766,6 +779,7 @@ pub const AllocState = enum(u8) {
 | `some_func(p);` | `allocated` | `transferred` | **INFO 7001**: ownership transferred |
 | Scope exit | `allocated` | — | **WARN 6005**: leak at scope exit |
 | Branch merge | `freed`+`allocated` | `unknown` | Conservative |
+| Switch prong merge, name only in the prong | absent | `unknown` | Conservative (FX7; double-free pass) |
 | Loop body modify | `allocated` | `unknown` | Conservative |
 
 ### 6.4 Allocation Detection

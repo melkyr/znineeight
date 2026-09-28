@@ -1,0 +1,81 @@
+// repro/switch_merge_reject.z98 — FX7 standalone reject probe: the
+// `error[3035]` (double free) class the switch-merge prong-name propagation
+// now reaches, plus the unchanged `error[3034]` null control.
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   <zig1> -ffast --dump-c89 repro/switch_merge_reject.z98 >/dev/null
+//
+// EXPECTED (POST `ff059647`): dump rc=2, 0 `.c`, exactly
+//   error[3035] x3  (doubleFreeAfterSwitch x1, tripleFreeAfterSwitch x2)
+//   error[3034] x1  (nullDerefAfterSwitch: the optional is tracked is_null
+//                    before the switch, the prong keeps it, so the deref is a
+//                    definite null deref — null-map control, unchanged)
+//   warning[3038] x2 (the prong allocations leak at their prong exits)
+// PRE (`1a258bd4`): rc=2, error[3034] x1, warning[3037] x1 (double-free pass),
+// warning[3038] x2, warning[3039] x6 — every post-switch free of the
+// prong-assigned name read "untracked".
+//
+// Residual (conservative join, NOT a missed definite error): an allocation
+// freed INSIDE the prong and freed again after the switch
+// (`allocFreeInProngThenFreeAfter`) joins to `AllocState.unknown`, so the
+// post-switch free marks it freed silently — the join cannot tell "freed in
+// this prong" from "untracked on the other prongs"; reporting it would be a
+// false positive on the untaken-prong path.
+extern fn arena_alloc(size: usize) *u8;
+extern fn arena_free(alloc: usize, p: *u8) void;
+
+fn doubleFreeAfterSwitch(c: bool) void {
+    var p: *u8 = undefined;
+    switch (c) {
+        true => {
+            p = arena_alloc(8);
+        },
+        else => {},
+    }
+    arena_free(0, p);
+    arena_free(0, p);
+}
+
+fn tripleFreeAfterSwitch(c: bool) void {
+    var p: *u8 = undefined;
+    switch (c) {
+        true => {
+            p = arena_alloc(8);
+        },
+        else => {},
+    }
+    arena_free(0, p);
+    arena_free(0, p);
+    arena_free(0, p);
+}
+
+fn allocFreeInProngThenFreeAfter(c: bool) void {
+    var p: *u8 = undefined;
+    switch (c) {
+        true => {
+            p = arena_alloc(8);
+            arena_free(0, p);
+        },
+        else => {},
+    }
+    arena_free(0, p);
+}
+
+fn nullDerefAfterSwitch(c: bool) void {
+    var p: ?*i32 = null;
+    switch (c) {
+        true => {
+            p = null;
+        },
+        else => {},
+    }
+    if (p.* == 0) {
+    }
+}
+
+pub fn main() void {
+    doubleFreeAfterSwitch(true);
+    tripleFreeAfterSwitch(true);
+    allocFreeInProngThenFreeAfter(true);
+    nullDerefAfterSwitch(true);
+}

@@ -1,4 +1,4 @@
-# 06 — Static Analyzers [updated: 2026-09-27 — FX2 (Volume II defect fix, D1 extras): `visitStatement` now traverses switch-prong and bare-block statements. The `swt_ex` arm first analyzes the condition (preserving the previous `expr_stmt(swt_ex)` condition route) and then walks every prong body through the existing fork -> walkBlock -> merge; the `expr_stmt` arm detects a statement-switch wrapper and recurses `visitStatement(swt_ex)`; a bare `block` statement routes through `walkBlock` (depth increment, defer enqueue/drain at its own block exit, leak check). Defers inside prongs/blocks now reach the null/lifetime/double-free passes; runtime behavior is unchanged (analyzer-only). Accepted movement: duplicate bare-block `WARN_6005`; lisp `WARN_6002` counts +58/+73/+85 (`lisp_interpreter_adv/curr/upgraded` only, zero other warning movers over 1055 corpus dirs; zero error movement); FX7 (switch-merge prong-name propagation) and FX8 (`labeled_stmt`) stay out of scope. Fixtures `repro/mi_matrix/stdlib_defer_switch_block_xmod` (stdlib pin 256 -> 257) + standalone `repro/defer_traversal.z98`; fixed point `98cd68f4a4f99b520f663d6964673e67` -> `325f741f0326ebaf177a0503e000312a` (hop1 == hop2); 4-MD5 emitted-C UNCHANGED. FX2-only traversal SIGSEGVs without FG (the newly queued prong defers reach the stale queue), so it lands after `resetDeferQueue`.] [updated: 2026-09-26 — FG (Volume II defect fix, D1): new `resetDeferQueue` (analyzer.zig) clears the defer queue's `items/len/cap` and is called immediately after each of the four per-phase/per-function `sandReset` sites in `runAllAnalyzers`, so the queue can no longer alias recycled scratch memory that a live `StateMap` now occupies; fixes the D1 SIGSEGV (`checkLeaksOnScopeExit` / `stateMapMergeStates`) for a plain-`defer` fn plus a nested-block-`defer` fn in one module. Bookkeeping-only (the queue is drained at every block exit); fixture `repro/mi_matrix/stdlib_defer_queue_reset_xmod`; fixed point `6b68ca72…` -> `c4f10f9e2d33a0833b9882c5dad2539b` (hop1 == hop2); 4-MD5 UNCHANGED] [updated: 2026-09-20 — refreshed against current analyzer/StateMap source; removed line refs and dated evidence]
+# 06 — Static Analyzers [updated: 2026-09-28 — FX7 (Volume II defect fix, switch-merge prong-name propagation): the `swt_ex` arm merges each prong with the existing conservative merge and, in the double-free pass only, inserts prong-only names into the enclosing state as `AllocState.unknown` via the new `stateMapMergeInsertMissing` (`sf/src/state_map.zig`). The join is the contract's divergent-state value: "maybe allocated in this prong, untracked on the others" — neither `allocated` (no spurious leak) nor absent/untracked (no spurious `WARN_6006`). A pointer first assigned `arena_alloc` in a prong and freed after the switch is now tracked (a second post-switch free is a definite `error[3035]`). The if/while/for merges are unchanged; the null/lifetime maps are unchanged because every enclosing variable is already seeded at its declaration/param binding there, so a prong-only name is necessarily prong-local (propagating it would track a dead binding). Fixtures `repro/mi_matrix/stdlib_analyzer_switch_merge_xmod` (stdlib pin 261 -> 262) + `repro/mi_matrix/analyzer_switch_merge_reject_xmod` + standalone `repro/switch_merge.z98` / `repro/switch_merge_reject.z98`; fixed point `1a258bd4bcb5194fc3256be0be456311` -> `ff059647856e5c223c1622d1b031579b` (hop1 == hop2, explicit gate); 4-MD5 emitted-C UNCHANGED 8/8 both modes; corpus 1065 = 907 OK / 52 GREEN / 106 FAIL, zero class movers over the 1063 common dirs; gate-program stderr byte-identical.] [updated: 2026-09-27 — FX2 (Volume II defect fix, D1 extras): `visitStatement` now traverses switch-prong and bare-block statements. The `swt_ex` arm first analyzes the condition (preserving the previous `expr_stmt(swt_ex)` condition route) and then walks every prong body through the existing fork -> walkBlock -> merge; the `expr_stmt` arm detects a statement-switch wrapper and recurses `visitStatement(swt_ex)`; a bare `block` statement routes through `walkBlock` (depth increment, defer enqueue/drain at its own block exit, leak check). Defers inside prongs/blocks now reach the null/lifetime/double-free passes; runtime behavior is unchanged (analyzer-only). Accepted movement: duplicate bare-block `WARN_6005`; lisp `WARN_6002` counts +58/+73/+85 (`lisp_interpreter_adv/curr/upgraded` only, zero other warning movers over 1055 corpus dirs; zero error movement); FX7 (switch-merge prong-name propagation) and FX8 (`labeled_stmt`) stay out of scope. Fixtures `repro/mi_matrix/stdlib_defer_switch_block_xmod` (stdlib pin 256 -> 257) + standalone `repro/defer_traversal.z98`; fixed point `98cd68f4a4f99b520f663d6964673e67` -> `325f741f0326ebaf177a0503e000312a` (hop1 == hop2); 4-MD5 emitted-C UNCHANGED. FX2-only traversal SIGSEGVs without FG (the newly queued prong defers reach the stale queue), so it lands after `resetDeferQueue`.] [updated: 2026-09-26 — FG (Volume II defect fix, D1): new `resetDeferQueue` (analyzer.zig) clears the defer queue's `items/len/cap` and is called immediately after each of the four per-phase/per-function `sandReset` sites in `runAllAnalyzers`, so the queue can no longer alias recycled scratch memory that a live `StateMap` now occupies; fixes the D1 SIGSEGV (`checkLeaksOnScopeExit` / `stateMapMergeStates`) for a plain-`defer` fn plus a nested-block-`defer` fn in one module. Bookkeeping-only (the queue is drained at every block exit); fixture `repro/mi_matrix/stdlib_defer_queue_reset_xmod`; fixed point `6b68ca72…` -> `c4f10f9e2d33a0833b9882c5dad2539b` (hop1 == hop2); 4-MD5 UNCHANGED] [updated: 2026-09-20 — refreshed against current analyzer/StateMap source; removed line refs and dated evidence]
 
 > Covers: `analyzer.zig`, `state_map.zig`
 
@@ -10,7 +10,7 @@
 | `PtrState` variants | 4 | `uninit`, `is_null`, `safe`, `maybe` |
 | `Provenance` variants | 6 | `unknown`, `local`, `param`, `param_addr`, `global`, `heap` |
 | `AllocState` variants | 6 | `untracked`, `allocated`, `freed`, `returned_val`, `transferred`, `unknown` |
-| `StateMap` ops | 6 | `init`, `get`, `set`, `fork`, `mergeStates`, `getEntries` |
+| `StateMap` ops | 7 | `init`, `get`, `set`, `fork`, `mergeStates`, `mergeInsertMissing`, `getEntries` |
 | StateMap parent linking | delta-chain | Fork creates empty child → parent link; get walks up chain |
 | Merge strategy | conservative | Mismatch → `unknown_state` (99) |
 | Alloc call detection | 3 fn names | `sandAlloc`, `sand_alloc`, `arena_alloc` |
@@ -406,7 +406,7 @@ Entry point for analyzing a block of statements. Manages scope depth, defers, an
 |------|--------|
 | `if_stmt`/`if_capture` | evaluate cond → fork then_state/else_state → optional `applyNullGuardRefinement` + if_capture safe → walkBlock each → `stateMapMergeStates(state, then, else, 99)` |
 | `while_stmt`/`while_capture` | evaluate cond → fork body_state → optional while_capture safe → walkBlock → `stateMapMergeStates(state, state, body, 99)` |
-| `swt_ex` | analyze condition (`analyzeExpr(child_0)`) → per-prong: fork → walkBlock → `stateMapMergeStates(state, state, ps, 99)` |
+| `swt_ex` | analyze condition (`analyzeExpr(child_0)`) → per-prong: fork → walkBlock → `stateMapMergeStates(state, state, ps, 99)`; double-free pass: `stateMapMergeInsertMissing(state, ps, unknown)` inserts prong-only names (FX7) |
 | `for_stmt` | fork body_state → walkBlock → `stateMapMergeStates(state, state, body, 99)` |
 | `return_stmt` | if child: `checkReturnProvenance` + `handleOwnershipReturn` → on_stmt |
 | `defer_stmt`/`errdefer_stmt` | push to defer_queue |
@@ -432,9 +432,10 @@ all three optional analyzers; lowering alone owns defer execution, so runtime
 behavior is unchanged.
 
 Known limits (not changed by FX2):
-- the `swt_ex` merge (`stateMapMergeStates(state, state, ps, 99)`) cannot add
-  prong-only names to the enclosing state — post-switch reads of a prong-local
-  name fall back to untracked (FX7 owns the merge fix);
+- the `swt_ex` prong-only-name drop is **fixed by FX7** for the double-free
+  pass (`stateMapMergeInsertMissing`; a prong-only name joins as
+  `AllocState.unknown`, so post-switch frees stay tracked and a second free is
+  `error[3035]`); the if/while/for merges still drop branch-only names;
 - a bare block whose allocation leaks to function exit reports `WARN_6005`
   twice (inner block exit + function exit) — operator-accepted duplicate;
 - analyzer diagnostics carry no source span (`file_id 0`);
@@ -639,7 +640,28 @@ only one fork and the parent has no entry for it, `stateMapMergeStates`
 `stateMapGet(parent, name)` returns `null`, so the variable's per-branch state
 is lost entirely (it does not even degrade to `99`). By contrast, a
 branch-only name whose parent entry *differs* becomes `unknown_state (99)`, and
-one whose parent entry *matches* keeps the parent value.
+one whose parent entry *matches* keeps the parent value. (The if/while/for
+merges keep this behavior; the switch merge's double-free pass uses the
+insert variant below — FX7.)
+
+---
+
+### stateMapMergeInsertMissing (`sf/src/state_map.zig`)
+
+`[inference: for each branch-local entry absent from parent → stateMapSet(parent, name, insert_state)]`
+
+Insert-on-merge variant used by the `swt_ex` arm after each prong's
+`stateMapMergeStates` call, double-free pass only (FX7). For every name present
+locally in the prong state and absent from the parent (and its chain), the
+parent gets `insert_state` — the `AllocState.unknown` value for the
+double-free map. This is the sound conservative join of "name written in this
+prong" with "name untracked on the other prongs": the enclosing state tracks
+the name (so a post-switch `arena_free` marks it freed instead of warning
+`WARN_6006` untracked, and a second free reports `error[3035]`), but the value
+is neither `allocated` (no spurious leak for the untaken prongs) nor
+`freed`. The other analyzers do not call it: their maps seed every enclosing
+variable at its declaration/param binding, so a prong-only name is a
+prong-local binding whose entry dies with the prong.
 
 ---
 
