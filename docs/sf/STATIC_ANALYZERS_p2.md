@@ -197,6 +197,28 @@ unique true-positive `WARN_6002` (the divergent null merge yields `unknown`/99,
 not `maybe`); warning-only, zero corpus/gate impact. Recorded in
 `repro/mi_matrix/EXPECTED_FAIL.md` v279.
 
+**FX8 (`labeled_stmt` traversal, 2026-09-28):** `visitStatement` now has a
+`labeled_stmt` arm: it unwraps the statement and routes `child_0` through the
+same statement walk (`visitStatement(ctx, state, node.child_0, on_stmt,
+visit_fn)`), exactly like FX2's bare-block/prong traversal. A labeled block's
+`child_0` is a `block` node (routed through `walkBlock`) and a labeled loop's
+`child_0` is the loop statement (routed through the matching `while`/`for`/
+`switch` arm), so defers inside labeled constructs enqueue at the walked
+`current_depth` and drain at their own scope exit, and the leak/null/lifetime/
+double-free handlers see the body. Labeled statements are now fully traversed;
+the still-untraversed statement classes are prong case items and deferred
+statement bodies (`executeDeferQueue` re-enters with `in_defer_exec = 1`, so
+the defer arm skips). Lowering alone owns defer execution, so runtime behavior
+is unchanged (analyzer-only fix). No merge/capture/`onLifetimeStmt` change.
+Residual (pre-existing loop merge, not FX8): a free split across a labeled
+LOOP joins `freed` with the enclosing `allocated` as `unknown` — the same
+conservative join an unlabeled loop has — and a free of an `unknown` name is
+silent (no `WARN_6006`). Implementation:
+`sf/docs/tech_docs/06_static_analyzers.md`; fixtures
+`repro/mi_matrix/stdlib_analyzer_labeled_xmod` +
+`repro/mi_matrix/analyzer_labeled_reject_xmod` + `repro/labeled_analyzer.z98` /
+`repro/labeled_analyzer_reject.z98`.
+
 
 ### 2.3 Iterative Function Visitor
 
@@ -376,6 +398,7 @@ pub const NullAnalyzer = struct {
             .return_stmt => try handleReturn(ctx, state, node),
             .defer_stmt, .errdefer_stmt => {}, // defers analyzed at scope exit
             .block => try walkBlock(ctx, state, stmt_idx, &handler),
+            .labeled_stmt => try visitStatement(ctx, state, node.child_0),
             .expr_stmt => try analyzeExpr(ctx, state, node.child_0),
             else => {},
         }

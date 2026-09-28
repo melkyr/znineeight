@@ -1,0 +1,117 @@
+// repro/labeled_analyzer.z98 — FX8 standalone accept/warning probe for the
+// `labeled_stmt` traversal (`sf/src/analyzer.zig` `visitStatement`).
+//
+// DEFECT pinned (FX2-I §2.3 f1 / §3 T4): `visitStatement` had no
+// `AstKind.labeled_stmt` arm, so a labeled block or labeled loop fell to the
+// `on_stmt` no-op — everything inside stayed invisible to the null/lifetime/
+// double-free passes (an allocation leak in a labeled block was silent rc 0
+// and defers inside labeled constructs were never queued).
+//
+// FIX (FX8): unwrap `labeled_stmt` and route `child_0` through the same
+// statement walk, so labeled blocks/loops get the FX2 treatment (walkBlock
+// depth + defer drain at scope exit + leak check; loop/switch arms as before).
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   <zig1> -ffast --dump-c89 repro/labeled_analyzer.z98 >/dev/null
+//
+// EXPECTED (POST `4e76f5a4`): dump rc=0, stderr exactly
+//   warning[3038] x8  (if leak x1, bare-block leak x2 — accepted duplicate,
+//                      labeled-block leak x2 [label-block + function exit],
+//                      labeled-while leak x1, labeled-for leak x1,
+//                      free-after-labeled-block x1 [block-exit leak check])
+// The `freeAfterLabeledBlock` free is tracked after the fix: no
+// `warning[3039]` untracked warning. PRE (`ff059647`): warning[3038] x3
+// (the if + bare-block controls) + warning[3039] x1 (the labeled-block
+// allocation invisible to the free-after path).
+//
+// The program is also runnable (local stub allocator): stdout, rc 0:
+//   if-leak
+//   block-leak
+//   lbl-block-leak
+//   lbl-while-leak
+//   lbl-for-leak
+//   lbl-free
+//   done
+// and `ops` is @panic-guarded (6 stub allocations + 1 stub free = 7).
+const std = @import("std");
+
+var heap: [4096]u8 = undefined;
+var heap_off: usize = 0;
+var ops: i32 = 0;
+
+fn arena_alloc(size: usize) *u8 {
+    var p: *u8 = &heap[heap_off];
+    heap_off += size;
+    ops += 1;
+    return p;
+}
+
+fn arena_free(alloc: usize, p: *u8) void {
+    _ = alloc;
+    _ = p;
+    ops += 1;
+}
+
+fn leakInIf(c: bool) void {
+    if (c) {
+        const p = arena_alloc(8);
+        _ = p;
+    }
+    std.io.print("if-leak\n", .{});
+}
+
+fn leakInBlock() void {
+    {
+        const p = arena_alloc(8);
+        _ = p;
+    }
+    std.io.print("block-leak\n", .{});
+}
+
+fn leakInLabeledBlock() void {
+    blk: {
+        const p = arena_alloc(8);
+        _ = p;
+    }
+    std.io.print("lbl-block-leak\n", .{});
+}
+
+fn leakInLabeledWhile(c: bool) void {
+    lw: while (c) {
+        const p = arena_alloc(8);
+        _ = p;
+        break :lw;
+    }
+    std.io.print("lbl-while-leak\n", .{});
+}
+
+fn leakInLabeledFor() void {
+    lf: for (0..1) |i| {
+        _ = i;
+        const p = arena_alloc(8);
+        _ = p;
+    }
+    std.io.print("lbl-for-leak\n", .{});
+}
+
+fn freeAfterLabeledBlock() void {
+    var p: *u8 = undefined;
+    blk: {
+        p = arena_alloc(8);
+    }
+    arena_free(0, p);
+    std.io.print("lbl-free\n", .{});
+}
+
+pub fn main() void {
+    leakInIf(true);
+    leakInBlock();
+    leakInLabeledBlock();
+    leakInLabeledWhile(true);
+    leakInLabeledFor();
+    freeAfterLabeledBlock();
+    if (ops != 7) {
+        @panic("alloc/free count after labeled traversal");
+    }
+    std.io.print("done\n", .{});
+}

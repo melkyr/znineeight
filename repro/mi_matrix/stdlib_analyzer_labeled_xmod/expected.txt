@@ -1,0 +1,16 @@
+if-body
+if-defer
+block-body
+block-defer
+lbl-body
+lbl-defer
+loop-body
+loop-defer
+loop-body
+loop-defer
+if-leak
+block-leak
+lbl-block-leak
+lbl-while-leak
+lbl-for-leak
+done

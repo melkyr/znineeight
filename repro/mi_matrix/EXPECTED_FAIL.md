@@ -1,4 +1,73 @@
-# mi_matrix corpus — expected-fail manifest (v279 2026-09-28)
+# mi_matrix corpus — expected-fail manifest (v280 2026-09-28)
+
+## FX8 — `labeled_stmt` analyzer traversal (v279 -> v280, 2026-09-28)
+
+Volume II defect-fix phase, Stage 2b follow-up (task-FX8; source = the plan's
+FX8 bullet + `task-FX2-I-report.md` §2.3 f1 / §3 T4, measured on the FX2/FX7
+compiler `ff059647`). FX2 traversed switch prongs and bare blocks; the labeled
+statement had no `visitStatement` arm, so a labeled block or labeled loop fell
+to the `on_stmt` no-op: an allocation leak inside a labeled block was silent
+rc 0 (probe f1), a null deref or double free inside a labeled construct was
+silent, and defers inside labeled constructs were never queued.
+
+**Fix (`sf/src/analyzer.zig` `visitStatement` only, +2 lines).** New arm:
+`labeled_stmt` unwraps the statement and routes `child_0` through
+`visitStatement(ctx, state, node.child_0, on_stmt, visit_fn)`. A labeled
+block's child is a `block` -> `walkBlock` (depth increment, defer enqueue/
+drain at its own scope exit, leak check); a labeled loop's child is the loop
+statement -> the existing `while`/`for` arms; a labeled statement-switch child
+(the `expr_stmt` wrapper) -> the FX2 `swt_ex` route. No `walkBlock`/
+`executeDeferQueue`/`checkLeaksOnScopeExit`/FG `resetDeferQueue`/capture/
+switch-merge (FX7)/`onLifetimeStmt` change. Analyzer-only: lowering owns defer
+execution, so runtime behavior is unchanged.
+
+**Measured probe deltas** (full PRE/POST tables in the task report):
+- labeled-block leak (f1): silent -> `warning[3038]` x2 (label-block exit +
+  function exit; the bare-block duplicate is operator-accepted);
+- labeled-while/for leak: silent -> `warning[3038]` x1 (body scope);
+- alloc in a labeled block, free after: `warning[3039]` x1 -> `warning[3038]`
+  x1 (the free is tracked; the block-exit leak check still fires, same as the
+  bare-block control);
+- free in a labeled block then free after: silent rc 0 -> `error[3035]` rc 2;
+- null deref in a labeled block / labeled while: silent rc 0 -> `error[3034]`
+  + `warning[3037]` rc 2;
+- defer in a labeled block/loop: analyzer-neutral on both; runtime ordering
+  byte-identical PRE vs POST (fixture + standalone, rc 0);
+- every FX2/FX7 control (if/prong/bare-block/while leaks, if null, bare-block
+  double free) unchanged.
+Residual (pre-existing loop merge, recorded, not FX8): a free split across a
+labeled LOOP stays silent on both compilers — the body fork/merge joins the
+body's `freed` with the enclosing `allocated` as `unknown`, and a free of an
+`unknown` name is silent (a definite join would false-positive when the body
+never runs).
+
+**Fixtures.** Positive `repro/mi_matrix/stdlib_analyzer_labeled_xmod` (local
+stub allocator; if/bare-block FX2 controls + labeled block/loop defers + five
+leak shapes; stdout 16 rows, rc 0, 3x byte-exact; analyzer census POST
+`warning[3038]` x7 vs PRE x3; stdlib pin **262 -> 263**). Reject
+`repro/mi_matrix/analyzer_labeled_reject_xmod` (POST rc 2 / 0 `.c`:
+`error[3034]` x3 + `error[3035]` x1 + `warning[3037]` x3; PRE: the if control
+only, `error[3034]` x1 + `warning[3037]` x1). Standalone
+`repro/labeled_analyzer.z98` (accept; runnable; POST stderr `warning[3038]` x8;
+PRE x3 + `warning[3039]` x1) and `repro/labeled_analyzer_reject.z98` (rc 2 /
+0 `.c`; POST `error[3034]` x3 + `error[3035]` x1 + `warning[3037]` x3; PRE
+`error[3034]` x1 + `warning[3037]` x1).
+
+**Gates.** Fixed point MOVED `ff059647856e5c223c1622d1b031579b` ->
+**`4e76f5a4268486d6deae080cebf89978`** (explicit `FIXED_POINT_MD5` gate;
+hop1 == hop2; seed v88 NOT rotated, archive md5 `3db5ef39…` unchanged).
+4-MD5 emitted-C **UNCHANGED 8/8 both modes** (2x each; identical PRE and
+POST). Corpus `-s0` classify **1067 = 908 OK / 52 GREEN / 107 FAIL / 0 ICE /
+0 CRASH**, join-diff vs the PRE baseline over the same 1067 dirs **EMPTY
+(zero class movers)**; dir-set delta vs the 1065-dir FX7 baseline = exactly the
+two new fixtures (positive OK, reject FAIL); full-corpus stderr census movers
+enumerated (the two new fixtures only). Gate-program stderr byte-identical
+(gol/json/mud 0 lines; lisp 120 lines). Stdlib **263 PASS / 0 FAIL** over 263
+pinned dirs; example matrix **24/24**; `check_emit_support.sh` **7/7**;
+`verify_upgraded.sh` **CLOSEOUT OK**; self-emission rc 0 / **48 `.c` + 48
+`.h`** / 0 `error[` / 0 PANIC / stderr byte-identical PRE; `build_test.sh`
+**0/9** (pre-existing retired-zig0 baseline); `repro/vol2_defects/run_all.sh`
+**13/13**.
 
 ## FX7 — switch-merge prong-name propagation (v276 -> v277, 2026-09-28; closeout rulings v277 -> v278; I1 wording v278 -> v279, 2026-09-28)
 

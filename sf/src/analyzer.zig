@@ -739,6 +739,8 @@ pub fn visitStatement(ctx: *AnalyzerContext, state: *StateMap, node_idx: u32, on
         }
     } else if (kind == AstKind.block) {
         walkBlock(ctx, state, node_idx, visit_fn);
+    } else if (kind == AstKind.labeled_stmt) {
+        visitStatement(ctx, state, node.child_0, on_stmt, visit_fn);
     } else {
         on_stmt(ctx, state, node_idx);
     }
