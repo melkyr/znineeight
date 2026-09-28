@@ -18,7 +18,9 @@ Check order mirrors Zig, with the exact messages:
   counter is set around `semanticAnalyzerResolveModuleVarDecl` so the bare
   analyzer unit tests keep the pre-3075 path): `'try' outside function scope`;
 - non-error-union operand: `expected error union type, found '<kind>'` + note
-  `consider omitting 'try'` (`try 5;`, `try g() catch 5;`, `try voidFn()`);
+  `consider omitting 'try'` (`try 5;`, `try (g() catch 5);`, `try voidFn()`; the
+  unparenthesized `try g() catch 5` binds as `(try g()) catch 5` and reports the
+  enclosing-return rule);
 - non-error-union enclosing return (unconditional): `expected type '<ret-kind>',
   found error set` + note `function cannot return an error`;
 - `errorSetIsSubset(operand_set, fn_set)` false (set-only comparison — payload
