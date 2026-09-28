@@ -1,4 +1,80 @@
-# mi_matrix corpus — expected-fail manifest (v282 2026-09-28)
+# mi_matrix corpus — expected-fail manifest (v283 2026-09-28)
+
+## FX13-F — unknown signature type names (v282 -> v283, 2026-09-28)
+
+Volume II defect-fix amendment (task-FX13-F; source = the plan's FX13 bullet +
+the operator rulings 2026-09-28, discovered in the Task 1 ch12 review). A
+function-signature type position silently degraded an unresolvable name:
+parameter -> C `int`, return -> `void`, rc 0 with zero diagnostics
+(`fn f(e: anyerror)`, `fn f() bogustype`, `*bogus`, `[3]bogus`, `?bogus`,
+`[]bogus`, `mod.unknown`, `fn (bogus) void`, `extern fn` params/returns).
+
+**Fix (`sf/src/type_resolver.zig`; sema/type-resolver only, no
+lowering/emitter change).** New `typeResolverDiagnoseSignatureType` walks an
+already-unresolved signature type expression to its unresolved leaves and
+emits the variable-declaration path's level-0 `error[20]`
+(`ERR_3001_UNDEFINED_SYMBOL`, exact text `identifier '<x>' is not declared or
+imported in this module`), one per unresolved leaf node, deduped via
+`diagnosticCollectorMarkNodeOnce`. Wrappers (`*`/`[*]`/`[N]`/`[]`/`?`),
+error unions (`E!T`, `!T`), fn-pointer parameter/return types and `mod.member`
+are all walked; the leaf ident carries the span, while `mod.unknown` reports
+the whole `mod.unknown` node. Called from `resolveFnSignatures` on the return
+and every parameter whose `resolveTypeExprFull` result is `TYPE_UNDEFINED`
+(implicit-`void` returns and `anytype` params are node 0 and never trigger).
+Enforced in every loaded module. `noreturn` is the operator-ruled exemption:
+the resolver has no registered name for it, so the exemption is keyed on the
+ident text `noreturn` at the unresolved leaf and nothing is registered — the 6
+`std` signatures (`std_os.exit`, `std_debug.panic`/`trap`/`defaultTrapHandler`,
+the two `extern "c"` traps; the FX13-I census measured 614/1079 entries
+touching them, 546 currently rc0) keep degrading to `void` unchanged, and a
+real `noreturn` type is deferred. `anyerror` is NOT exempt (documented feature
+gap): a signature spelling it now rejects.
+
+**Corpus movement.** `-s0` classify 1071 = 910 OK / 53 GREEN / 108 FAIL ->
+**1073 = 911 OK / 53 GREEN / 109 FAIL / 0 ICE / 0 CRASH**; join-diff vs the
+pre-fix base over the 1071 common dirs **EMPTY**; the only dir-set additions
+are the two new fixtures below (reject FAIL, positive OK). FX6/FX11/FX12
+reject censuses unchanged.
+
+**Fixtures.** Reject `repro/mi_matrix/sig_unknown_type_reject_xmod` (main +
+helper, `expected.rc` 2, rc 2 / 0 `.c`, exactly 10 x `error[20]`, one per
+site: bare param, bare return, `*`/`[3]`/`?`/`[]`-wrapped param,
+`mod.Missing`, fn-ptr inner unknown, extern param, extern return; the helper's
+`Missing` member is absent). Positive `repro/mi_matrix/sig_known_type_ok_xmod`
+(main + helper, `expected.rc` 0, `expected.txt` 10 lines `1 5 2 foo 7 3 4 7 7
+8` byte-exact 3x, RUNRC 0): forward alias, forward struct, self-referential
+struct, alias chain, `error{...}` set, `u4`/`u7`, `c_char`/`bool`, named
+fn-pointer, cross-module `helper.Good`, the bare global-scan name `T`,
+implicit-void return, `anytype`, and the `noreturn` exemption shape
+(`extern "c" fn trap() noreturn;` unreferenced — a *referenced* extern
+noreturn decl emits a call with no C definition and needs `noreturn`'s
+deferred C companion). Standalone `repro/sig_unknown_type_reject.z98`
+(9 x error[20]) and `repro/sig_known_type_ok.z98` (rc 0, stdout
+`1 5 2 foo 7 3 4 7`, 3x).
+
+**Gates (final compiler `aebefa0c9ceca1361c523d944c5e6b0b`).** Seed two-hop
+closure hop1 == hop2 with explicit `FIXED_POINT_MD5` (seed v88 NOT rotated,
+archive `3db5ef392ecc349304ffdf14c618e530` byte-identical); 4-MD5 emitted C
+both modes **UNCHANGED 8/8**; `run_fixtures.sh` **265 PASS / 0 FAIL** (pin
+unchanged); example matrix 24/24; `check_emit_support.sh` 7/7;
+`verify_upgraded.sh` CLOSEOUT OK; self-emission 48 `.c` + 48 `.h` / 0 PANIC;
+`sf/scripts/build_test.sh` 0/9 pre-existing; `repro/vol2_defects/run_all.sh`
+13/13.
+
+**Residuals (documented, not fixed).** (1) `noreturn` in signatures stays
+degraded to `void` and is the one exempt spelling (above). (2) `anyerror`
+rejects although Zig 0.15.2 accepts it as a real type — the documented Z98
+feature gap (the var-decl path already rejected it). (3) The fix is scoped to
+function signatures: an unknown inner name in a variable-declaration compound
+annotation (`var p: *bogus;`, module- or function-local) still silently
+resolves to `TYPE_UNDEFINED` (verified rc 0 / no diagnostic), the pre-existing
+FX13-I §7 boundary. (4) Bare cross-module names (the 39 `voiddecl_chain_r2`
+`T` sites, plus the new positive fixture's `T`) keep resolving through the
+global name-cache scan — the enforcement is intentionally broader-than-Zig;
+no "must be imported" condition was added.
+
+**Codes.** `error[20]` (`ERR_3001_UNDEFINED_SYMBOL`) reused; no new code, no
+classifier change; the legacy `error[3000]`/`error[3075]` paths untouched.
 
 ## FX12 — `try` enclosing-return rules (v281 -> v282, 2026-09-28)
 

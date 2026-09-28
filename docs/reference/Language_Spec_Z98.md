@@ -103,6 +103,8 @@ Arbitrary-width integers carry an exact compile-time bit width, `u1`..`u64` unsi
 
 ### 1.7 Type Aliases
 `const T = <type>;` names a type. Supported alias targets include primitive and arbitrary-width integers (`i32`, `u7`), arrays (`[N]T`), slices (`[]T`), many-item pointers (`[*]T`), single-item pointers (`*T`), optionals (`?T`), error unions (`E!T`), function types (`fn(...) T`), and other named aggregate/alias types. Aliases may chain (`const B = A;`) and may be re-exported across modules with `pub const`.
+
+**Where type names may appear (FX13-F, 2026-09-28).** Every function-signature type position — `fn` parameters and returns, `extern fn` declarations, and fn-pointer parameter/return types — must name a type that resolves. An unresolved name is a level-0 `error[20]` (`identifier '<x>' is not declared or imported in this module`), emitted once per unresolved leaf: a `*`/`[*]`/`[N]`/`[]`/`?`/`E!T`/`fn(...)` wrapper is walked to its inner leaf (span on that ident), while a qualified `mod.unknown` reports the whole `mod.unknown` node. Same-module forward references and self-references, alias chains, `@import` aliases, `pub` cross-module members, arbitrary widths (`u4`/`u7`), builtin scalars (`c_char`/`void`/`bool`), `error{...}` sets, named fn-pointer types, implicit-`void` returns, `anytype` parameters, and bare cross-module names resolved by the compiler's global name-cache scan all keep resolving. `noreturn` is the one exemption (see §7.2).
 ```zig
 const MyInt = i32;
 const MyArr = [3]i32;
@@ -629,7 +631,8 @@ These were considered and are **not** planned for `zig1`; use the documented idi
 - `@errorName`.
 - `extern struct`, `opaque`, and `vector` types.
 - Generics, `anytype` parameters, `@Type`, `@typeInfo`, and `comptime`.
-- The `anyerror` type (use explicit error sets or `!T`).
+- The `anyerror` type (use explicit error sets or `!T`). It is **not** exempt from the signature name rule: `fn f(e: anyerror)` rejects `error[20]` (FX13-F).
+- **`noreturn` as a signature type (FX13-F residual).** The `noreturn` keyword is not registered as a type name, so a parameter/return spelling it does not resolve. By operator ruling it is the one exemption from the signature `error[20]` rule: the 6 `std` signatures spelling it (`std_os`/`std_debug`) keep degrading to `void` and emit no diagnostic. A real `noreturn` type with a C companion is deferred; `noreturn` remains usable as the compiler's internal divergence result type.
 - `@cImport` (use bare `extern` declarations plus `@cInclude`).
 - `std.Io` / an event-loop interface, preemption, threads, and typed futures (`Future(T)`): the `@async*` coroutines (§4.1) are cooperative and round-robin only, and coroutine state is type-erased to `*void`.
 - Compile-time integer semantics (implemented; Task 2-5 of the comptime-int parity plan). Values are arbitrary-precision within a **256-bit magnitude cap** and **signedness-free until materialised**; `-0` normalises to `0`. `+`, `-`, `*`, `/` (truncating toward zero), `%` (truncating remainder), unary `-`, `&`, `|`, `^`, `~` (`~x = -x - 1`), `<<` and `>>` (floor) are exact; a result needing more than 256 magnitude bits, division/mod by zero, or an out-of-domain shift count is *unfoldable* (the existing reject/runtime path), never wrapped. Source integer literals are `u64`-lossy at lex/parse time (a literal `>= 2^64` clamps to `u64` max), so the cap governs arithmetic results, not literal spellings.

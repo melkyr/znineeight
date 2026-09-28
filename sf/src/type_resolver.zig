@@ -2260,6 +2260,115 @@ fn resolveAggregateFieldTypesAll(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntr
     }
 }
 
+// FX13-F: an unresolvable name in a function-signature type position used to
+// degrade silently (parameter -> C `int`, return -> `void`). Walk the
+// already-unresolved type expression to its unresolved leaves and emit the
+// variable-declaration path's level-0 `error[20]` (`ERR_3001`, exact text
+// "identifier '<x>' is not declared or imported in this module") once per
+// leaf node (`diagnosticCollectorMarkNodeOnce`). `noreturn` is the one
+// operator-ruled residual: no registry name exists and 546 rc0 programs rely
+// on the degradation, so key the exemption on the ident text at the
+// unresolved leaf and never register it (FX13-I §4 option A). Wrapper /
+// fn-pointer / error-union / `mod.member` leaves are all walked; error-set
+// member names, container-literal field types and non-module field bases are
+// deliberately out of scope (FX13-I §7). Depth-capped like
+// `resolveTypeExprFull` so the walk cannot recurse past the resolver's bound.
+pub fn typeResolverDiagnoseSignatureType(env: *TypeResolveEnv, node_idx: u32, depth: u32) void {
+    if (node_idx == @intCast(u32, 0)) return;
+    if (depth > @intCast(u32, 16)) return;
+    var diag = env.diag orelse return;
+    var node = ast_mod.astStoreNodeAt(env.store, node_idx);
+    if (node.kind == AstKind.ident_expr) {
+        if (resolveTypeExprFull(env, node_idx, @intCast(u32, 0)) != type_mod.TYPE_UNDEFINED) return;
+        var name_id = ast_mod.astStoreIdentifier(env.store, node_idx);
+        var nr_text: []const u8 = "noreturn";
+        var nr_id = interner_mod.stringInternerIntern(env.interner, nr_text);
+        if (name_id == nr_id) return;
+        if (!diag_mod.diagnosticCollectorMarkNodeOnce(diag, node_idx)) return;
+        var ui1: []const u8 = "identifier '";
+        var ui2: []const u8 = "' is not declared or imported in this module";
+        var uitext = interner_mod.stringInternerGet(env.interner, name_id);
+        var uiparts: [3][]const u8 = [3][]const u8{ ui1, uitext, ui2 };
+        var uimsg = diag_mod.diagnosticBuilderMakeMsg(env.interner, &uiparts[0], @intCast(u32, 3));
+        _ = diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3001_UNDEFINED_SYMBOL)), env.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), uimsg);
+        return;
+    }
+    if (node.kind == AstKind.field_access) {
+        var fd_base = node.child_0;
+        var fd_bt = resolveTypeExprFull(env, fd_base, @intCast(u32, 0));
+        var fd_is_mod: bool = false;
+        var fd_mod_id: u32 = @intCast(u32, 0);
+        if (fd_bt != type_mod.TYPE_UNDEFINED) {
+            if (@intCast(usize, fd_bt) < env.typereg.types_len) {
+                var fd_ty = env.typereg.types_items[@intCast(usize, fd_bt)];
+                if (fd_ty.kind == type_mod.TypeKind.module_type) {
+                    fd_is_mod = true;
+                    fd_mod_id = fd_ty.module_id;
+                }
+            }
+        } else {
+            // Mirror `resolveTypeExprFull`'s fallback: a module-alias ident
+            // whose module TypeId is not cached still names a module.
+            var fd_bn = ast_mod.astStoreNodeAt(env.store, fd_base);
+            if (fd_bn.kind == AstKind.ident_expr) {
+                var fd_bname = ast_mod.astStoreIdentifier(env.store, fd_base);
+                var fd_mi: usize = 0;
+                while (fd_mi < @intCast(usize, env.symbol_reg.tables_len)) : (fd_mi += 1) {
+                    var fd_bs = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, @intCast(u32, fd_mi), fd_bname);
+                    if (fd_bs) |fb| {
+                        if (fb.kind == sym_mod.SymbolKind.module) {
+                            fd_is_mod = true;
+                            fd_mod_id = fb.module_id;
+                        }
+                    }
+                }
+            }
+        }
+        if (fd_is_mod) {
+            var fd_member = ast_mod.astStoreNodePayload(env.store, node_idx);
+            var fd_ms = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, fd_mod_id, fd_member);
+            if (fd_ms == null) {
+                if (diag_mod.diagnosticCollectorMarkNodeOnce(diag, node_idx)) {
+                    var fm1: []const u8 = "identifier '";
+                    var fm2: []const u8 = "' is not declared or imported in this module";
+                    var fmtext = interner_mod.stringInternerGet(env.interner, fd_member);
+                    var fmparts: [3][]const u8 = [3][]const u8{ fm1, fmtext, fm2 };
+                    var fmmsg = diag_mod.diagnosticBuilderMakeMsg(env.interner, &fmparts[0], @intCast(u32, 3));
+                    _ = diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3001_UNDEFINED_SYMBOL)), env.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), fmmsg);
+                }
+            }
+            return;
+        }
+        if (fd_bt == type_mod.TYPE_UNDEFINED) {
+            typeResolverDiagnoseSignatureType(env, fd_base, depth + @intCast(u32, 1));
+        }
+        return;
+    }
+    if (node.kind == AstKind.error_union_type) {
+        if (node.child_0 != 0) { typeResolverDiagnoseSignatureType(env, node.child_0, depth + @intCast(u32, 1)); }
+        if (node.child_1 != 0) { typeResolverDiagnoseSignatureType(env, node.child_1, depth + @intCast(u32, 1)); }
+        return;
+    }
+    if (node.kind == AstKind.fn_type) {
+        if (node.child_0 != 0) { typeResolverDiagnoseSignatureType(env, node.child_0, depth + @intCast(u32, 1)); }
+        if (ast_mod.astStoreNodePayload(env.store, node_idx) != @intCast(u32, 0)) {
+            var ft_n = ast_mod.astStoreNodeExtraChildCount(env.store, node_idx);
+            var ft_i: usize = 0;
+            while (ft_i < @intCast(usize, ft_n)) : (ft_i += 1) {
+                var ft_child = ast_mod.astStoreNodeExtraChildAt(env.store, node_idx, @intCast(u32, ft_i));
+                if (ft_child != 0) { typeResolverDiagnoseSignatureType(env, ft_child, depth + @intCast(u32, 1)); }
+            }
+        }
+        return;
+    }
+    if (node.kind == AstKind.ptr_type or node.kind == AstKind.many_ptr_type or
+        node.kind == AstKind.slice_type or node.kind == AstKind.optional_type or
+        node.kind == AstKind.array_type) {
+        if (node.child_0 != 0) { typeResolverDiagnoseSignatureType(env, node.child_0, depth + @intCast(u32, 1)); }
+        return;
+    }
+}
+
 fn resolveFnSignatures(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry, resolved_types: *rtt_mod.ResolvedTypeTable) void {
     var mi: usize = 0;
     while (mi < mods.len) : (mi += 1) {
@@ -2287,6 +2396,8 @@ fn resolveFnSignatures(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry, resolve
                     if (rtype != type_mod.TYPE_UNDEFINED) {
                         rt_box[0] = rtype;
                         rtt_mod.resolvedTypeTableSet(resolved_types, proto.return_type_node, rtype);
+                    } else {
+                        typeResolverDiagnoseSignatureType(env, proto.return_type_node, @intCast(u32, 0));
                     }
                 }
                 var is_ext: u8 = @intCast(u8, 0);
@@ -2320,6 +2431,8 @@ fn resolveFnSignatures(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntry, resolve
                             ptypes_n += @intCast(usize, 1);
                             if (ptype != type_mod.TYPE_UNDEFINED) {
                                 rtt_mod.resolvedTypeTableSet(resolved_types, pnode.child_0, ptype);
+                            } else {
+                                typeResolverDiagnoseSignatureType(env, pnode.child_0, @intCast(u32, 0));
                             }
                         }
                     }

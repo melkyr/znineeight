@@ -1,0 +1,47 @@
+// repro/sig_unknown_type_reject.z98 — standalone FX13-F (Volume II ch12)
+// reject census.
+//
+// Before FX13-F every bogus name below compiled rc 0 with zero diagnostics:
+// the parameter silently degraded to C `int` and the return to `void`. The
+// ruled diagnostic is the existing level-0 `error[20]`
+// (`ERR_3001_UNDEFINED_SYMBOL`, text `identifier '<x>' is not declared or
+// imported in this module`), one per unresolved leaf node, deduped per node
+// via `diagnosticCollectorMarkNodeOnce`.
+//
+// Contract: dump rc 2, 0 `.c`, exactly 9 x `error[20]`, no other codes, no
+// signals:
+//   pBare  bare parameter name       span: the ident
+//   rBare  bare return name          span: the ident
+//   wPtr   `*bogusptr` parameter     span: the inner ident
+//   wArr   `[3]bogusarr` parameter   span: the inner ident
+//   wOpt   `?bogusopt` parameter     span: the inner ident
+//   wSlc   `[]bogusslc` parameter    span: the inner ident
+//   fp     fn-pointer inner unknown  span: the inner ident
+//   eParam `extern fn` unknown param span: the ident
+//   eRet   `extern fn` unknown return span: the ident
+//
+// The cross-module member form (`mod.unknown`) and the positive controls live
+// in repro/mi_matrix/sig_unknown_type_reject_xmod and sig_known_type_ok_xmod.
+const std = @import("std");
+
+fn pBare(x: bogustype) void {}
+
+fn rBare() bogusret {}
+
+fn wPtr(x: *bogusptr) void {}
+
+fn wArr(x: [3]bogusarr) void {}
+
+fn wOpt(x: ?bogusopt) void {}
+
+fn wSlc(x: []bogusslc) void {}
+
+fn fp(cb: fn (bogusfp) void) void {}
+
+extern fn eParam(x: bogusxp) void;
+
+extern fn eRet() bogusxr;
+
+pub fn main() void {
+    std.io.printInt(9);
+}
