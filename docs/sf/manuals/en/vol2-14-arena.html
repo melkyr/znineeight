@@ -1,0 +1,677 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: The Arena</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual arena allocator std.arena init alloc reset ArenaError OutOfMemory dual arena malloc free">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol2-12-error-unions.html">
+<link rel="next" href="vol4-00-title.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume II &mdash; Learning Z98</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+The honest comparison <i>(planned)</i><br>
+The type system <i>(planned)</i><br>
+Pointers <i>(planned)</i><br>
+Aggregates I: structs <i>(planned)</i><br>
+Aggregates II: packed structs <i>(planned)</i><br>
+Aggregates III: enums <i>(planned)</i><br>
+Aggregates IV: unions <i>(planned)</i><br>
+Aggregates V: tuples <i>(planned)</i><br>
+Arrays and slices <i>(planned)</i><br>
+Control flow, in full <i>(planned)</i><br>
+defer and errdefer <i>(planned)</i><br>
+<a href="vol2-12-error-unions.html">Error unions &mdash; the first big shift</a><br>
+Optionals <i>(planned)</i><br>
+<b>The arena &mdash; the second big shift</b><br>
+Builtins, in full <i>(planned)</i><br>
+No methods, no generics, no comptime <i>(planned)</i><br>
+The standard library tour <i>(planned)</i><br>
+print and the format string <i>(planned)</i><br>
+Idioms and best practices <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>The Arena &mdash; the Second Big Shift</h1>
+<p>
+Chapter 12 took the error code out of your hands. This chapter takes the heap.
+It is the second big shift for a C programmer, and the one that changes the
+shape of the programs you write: where a C program says <tt>malloc</tt> and
+<tt>free</tt>, a Z98 program owns a buffer and bumps through it.
+</p>
+<p>
+If chapter 12 could be summarized as "the failure is in the type", this chapter
+summarizes as "the lifetime is in the scope". You do not allocate objects one
+at a time from a machine-wide pool; you set aside one block of bytes, hand it
+out in order, and reclaim everything at once when the work is done. There is no
+<tt>free</tt>, no destructor, and no hidden allocation. What there is instead is
+a small, exact API that you can read in full before lunch, and a discipline of
+resetting between phases that replaces the ownership questions <tt>malloc</tt>
+and <tt>free</tt> spend your career asking.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> You will reach for <tt>malloc</tt>; here is the Z98
+way. The instinct is right and the tool is missing: Z98 has no <tt>malloc</tt>
+to call and no <tt>free</tt> to call, and the <tt>std</tt> surface re-exports
+<tt>std.arena</tt>, not a general-purpose heap allocator. What the language
+gives you instead is a contract you can read in ten lines: you supply the
+bytes, the arena hands them out in order, and <tt>reset</tt> takes them all
+back. The <tt>malloc</tt>-shaped question &mdash; "who frees this, and when?"
+&mdash; is answered before the allocation by the scope that owns the buffer.
+The cost is real, and this chapter is honest about it: one buffer size has to
+be chosen up front, and a phase that outgrows it fails with
+<tt>error.OutOfMemory</tt> rather than asking the operating system for more.
+That failure is the point. It is visible, it is typed, and it happens where
+you can see it.</td>
+</tr>
+</table>
+
+<h2>The shift: no <tt>malloc</tt>, no <tt>free</tt></h2>
+<p>
+In C, <tt>malloc</tt> answers "give me N bytes" with a pointer from a
+machine-wide pool, and <tt>free</tt> returns them. The pair is flexible and it
+is the source of the genre's classic failures. Every allocation needs a
+matching free on every path, including the error paths; the compiler cannot
+check the match; a missed free is invisible until the program runs out of
+memory, and a double free or a use after free is invisible until it corrupts
+something unrelated. The pool itself is shared and stateful: two libraries
+allocating in different orders can fragment it, and the amount of memory the
+program needs stops being a number you can point at in the source.
+</p>
+<p>
+Z98 answers a different question. There is no machine-wide pool in the
+language, and no allocator function to call like <tt>malloc</tt>. The memory a
+program uses is memory it declared: arrays, structs, globals, locals. When a
+program needs "somewhere to put things whose count is only known at run time",
+it declares a byte buffer and hands an <b>arena</b> over that buffer. The arena
+is not a pool. It is a cursor: it remembers the buffer, its capacity, and how
+much has been handed out, and <tt>alloc</tt> moves the cursor forward.
+</p>
+<p>
+That is the whole memory model in one sentence: <b>allocation is bumping a
+cursor; reclamation is putting the cursor back to zero.</b> Everything in this
+chapter follows from it. Allocation is a few instructions and cannot fail
+unless the bump would cross the end of the buffer. There is nothing to free
+individually, because there is no individual bookkeeping to do. And the
+lifetime of everything allocated in a phase is exactly the lifetime of the
+arena's current fill, which is exactly what <tt>reset</tt> rewinds.
+</p>
+<p>
+The standard library's arena is one of the modules the standard surface
+re-exports, as <tt>std.arena</tt>. The implementation lives in
+<tt>sf/src/std_arena.zig</tt>, and it is small enough to read in full; the rest
+of this section quotes it. The honesty note above deserves one detail, because
+the name can mislead: the shipped library also carries a module named
+<tt>heap</tt>, but <tt>std_heap.zig</tt> is a binary min-heap &mdash; a
+priority-queue data structure whose own table is allocated from an arena. It
+is not a heap allocator, and <tt>std</tt> does not re-export it. There is no
+allocator in the surface to reach for.
+</p>
+
+<h2>The arena API</h2>
+<p>
+Four declarations, a struct, and one error tag. Here is the module, with the
+bodies trimmed for space:
+</p>
+<pre>
+pub const Arena = struct {
+    data: [*]u8,
+    capacity: usize,
+    used: usize,
+};
+
+pub fn init(data: []u8) Arena { ... }
+
+pub const ArenaError = error{OutOfMemory};
+
+pub fn alloc(self: *Arena, size: usize) ArenaError![*]u8 { ... }
+
+pub fn reset(self: *Arena) void { ... }
+</pre>
+<p>
+Z98 has no method syntax, so these are plain functions called with the arena as
+the first argument. <tt>init</tt> takes a slice &mdash; the caller's buffer,
+usually written <tt>buf[0..]</tt> &mdash; and records the data pointer, the
+capacity, and <tt>used = 0</tt>:
+</p>
+<pre>
+pub fn init(data: []u8) Arena {
+    var a = Arena{ .data = data.ptr, .capacity = data.len, .used = 0 };
+    return a;
+}
+</pre>
+<p>
+<tt>alloc</tt> is the cursor bump. It checks that <tt>size</tt> still fits in
+the remaining capacity, returns the current position as a raw many-pointer to
+bytes, and advances <tt>used</tt> by <tt>size</tt>:
+</p>
+<pre>
+pub fn alloc(self: *Arena, size: usize) ArenaError![*]u8 {
+    if (self.used + size &gt; self.capacity) return error.OutOfMemory;
+    var result: [*]u8 = self.data + self.used;
+    self.used += size;
+    return result;
+}
+</pre>
+<p>
+<tt>reset</tt> is the whole of reclamation:
+</p>
+<pre>
+pub fn reset(self: *Arena) void {
+    self.used = 0;
+}
+</pre>
+<p>
+There is no <tt>deinit</tt>. The arena owns nothing to release: the bytes are
+yours, and the arena is a cursor over them. There is no alignment argument
+either; <tt>alloc</tt> hands back a byte position, and you get a typed object
+by casting that pointer with <tt>@ptrCast</tt> and computing the size with
+<tt>@sizeOf</tt>.
+</p>
+<p>
+The API table, then, is four lines long:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<thead>
+<tr>
+<th align="left">Call</th>
+<th align="left">Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><tt>std.arena.init(buf[0..])</tt></td>
+<td>Build an <tt>Arena</tt> over a byte slice. Success is an <tt>Arena</tt>,
+never an error: the buffer already exists, so there is nothing to fail.</td>
+</tr>
+<tr>
+<td><tt>std.arena.alloc(&amp;arena, n)</tt></td>
+<td>Bump for <tt>n</tt> bytes. Success is <tt>[*]u8</tt>; failure is
+<tt>error.OutOfMemory</tt>. The return type is
+<tt>ArenaError![*]u8</tt>.</td>
+</tr>
+<tr>
+<td><tt>std.arena.reset(&amp;arena)</tt></td>
+<td>Set <tt>used</tt> back to zero. Every allocation made through the arena is
+reclaimed at once. There is no per-object free.</td>
+</tr>
+<tr>
+<td><tt>arena.used</tt>, <tt>arena.capacity</tt></td>
+<td>The fields are public, so you can observe the cursor. The example below
+prints them.</td>
+</tr>
+</tbody>
+</table>
+<p>
+Because the target is C89, the arena lowers to a plain struct with no runtime
+support at all. The emitted header for this chapter's example contains:
+</p>
+<pre>
+struct zT_F22A6288_Arena {
+    unsigned char* data;
+    unsigned int capacity;
+    unsigned int used;
+};
+</pre>
+<p>
+The mangled type name is irrelevant, exactly as it was for chapter 12's error
+union; the shape is the point. A pointer, two counts, and functions that move
+a number. Nothing a C89 compiler cannot compile, and nothing that allocates
+behind your back.
+</p>
+
+<h2><tt>ArenaError![*]u8</tt>: <tt>try</tt> or <tt>catch</tt>, never <tt>orelse</tt></h2>
+<p>
+Look again at the one declaration that can fail:
+</p>
+<pre>
+pub fn alloc(self: *Arena, size: usize) ArenaError![*]u8
+</pre>
+<p>
+This is chapter 12's error union, applied to memory. Success is a
+<tt>[*]u8</tt> &mdash; raw bytes, no type attached. Failure is the one tag the
+arena can produce, <tt>error.OutOfMemory</tt>, declared as
+<tt>pub const ArenaError = error{OutOfMemory};</tt>. A caller reading the
+signature knows both things without reading the body: what it gets, and the
+one way it can fail.
+</p>
+<p>
+Because the result is an error union, the tools are <tt>try</tt> and
+<tt>catch</tt>. <tt>try</tt> passes the failure on; the enclosing function must
+return a compatible error union, or the compiler rejects it:
+</p>
+<pre>
+error[3075]: expected type 'void', found error set
+note: function cannot return an error
+</pre>
+<p>
+<tt>catch</tt> handles it where it happens. A block capture binds the tag, and
+on a typed error set the tag prints as <tt>error.OutOfMemory</tt>:
+</p>
+<pre>
+const big = allocBytes(&amp;arena, 64) catch |err| {
+    std.io.print("caught: {}\n", .{err});
+    return;
+};
+</pre>
+<p>
+The type is an <b>error union</b>, not an optional, and this is where C
+programmers reach for the wrong operator. <tt>orelse</tt> belongs to
+<tt>?T</tt>; the arena's failure is not "absent", it is "failed". Asking
+<tt>orelse</tt> to handle the allocation is rejected, with a message that
+names the right tool:
+</p>
+<pre>
+error[3016]: orelse requires an optional operand; use 'catch' for error unions
+</pre>
+<p>
+So the rule from chapter 12 carries over intact: <tt>?T</tt> takes
+<tt>orelse</tt>, <tt>E!T</tt> takes <tt>catch</tt>. The difference matters
+philosophically as well as mechanically. "No memory available" is a failure of
+a request you made, and the compiler makes you say what happens next; it is not
+an absent value that quietly disappears.
+</p>
+<p>
+One more consequence of the typed return: like every error union, an
+allocation result cannot be silently discarded (the <tt>error[3015]</tt> rule
+from chapter 12). Every call to <tt>alloc</tt> either <tt>try</tt>s, catches,
+or keeps the result in a variable for later. Memory is not something Z98 lets
+you ask for and then forget.
+</p>
+
+<h2>The init-function pattern</h2>
+<p>
+A cursor of raw bytes is not yet a useful object, so the standard pattern is a
+function that allocates, casts, fills in the fields, and returns the typed
+pointer. The language spec calls this the initialization pattern, and this
+chapter's example uses it:
+</p>
+<pre>
+const Point = struct {
+    x: i32,
+    y: i32,
+};
+
+fn Point_init(arena: *std.arena.Arena, x: i32, y: i32) std.arena.ArenaError!*Point {
+    const raw = try allocBytes(arena, @sizeOf(Point));
+    const p = @ptrCast(*Point, raw);
+    p.x = x;
+    p.y = y;
+    return p;
+}
+</pre>
+<p>
+Read it as four steps: compute the size from the type with
+<tt>@sizeOf</tt>; ask the arena for that many bytes; promise the layout with
+<tt>@ptrCast</tt>; fill the fields. The return type says the call can fail the
+same one way the arena can, so the caller sees the failure in the signature
+rather than discovering it at run time. On success the caller has a
+<tt>*Point</tt> whose storage came from a buffer it controls.
+</p>
+<p>
+This is also where the error union becomes visible in a signature you write
+yourself. The helper in the example names the arena's set exactly:
+</p>
+<pre>
+fn allocBytes(arena: *std.arena.Arena, n: usize) std.arena.ArenaError![*]u8 {
+    return std.arena.alloc(arena, n);
+}
+</pre>
+<p>
+<tt>std.arena.ArenaError![*]u8</tt> is the chapter in one type: a pointer to
+bytes on success, <tt>OutOfMemory</tt> on failure. Every fallible step above it
+uses <tt>try</tt> or <tt>catch</tt>; none of them uses <tt>orelse</tt>.
+</p>
+
+<h2><tt>reset</tt> is the <tt>free</tt></h2>
+<p>
+There is no per-object free, so the question "when is this object's memory
+released?" has a different answer: <b>when the arena that handed it out is
+reset.</b> Reclamation is all-at-once, and that is the feature. A phase that
+allocates twenty objects does not need twenty matching frees on twenty exit
+paths; it needs one <tt>reset</tt> when the phase's work is done, and the
+compiler's ordinary control flow &mdash; <tt>return</tt>, <tt>break</tt>,
+<tt>defer</tt> &mdash; decides when that is.
+</p>
+<p>
+<tt>reset</tt> sets <tt>used</tt> to zero. It does not zero the bytes, and it
+does not run code. Two consequences follow; the first is visible in the
+example's transcript:
+</p>
+<ul>
+<li>The next <tt>alloc</tt> hands out the same bytes again. A pointer from
+before the reset now points into the new allocation. The compiler cannot warn
+about this: the pointer is valid C, and the memory is valid C. What died was
+the <i>ownership</i> contract, not the address.</li>
+<li>Nothing in the old phase gets cleaned up automatically. If an object owns
+an external resource &mdash; a file handle, a socket &mdash; close it before
+the reset. The spec is explicit: if a type manages external resources, it must
+clean them up manually before the arena is reset.</li>
+</ul>
+<p>
+The spec's other line is worth repeating for anyone who came here from C:
+memory obtained from <tt>std.arena.alloc</tt> should not be passed to
+<tt>free()</tt>. It was never the heap's to free, and on these targets there
+is no heap in the language to free it back to.
+</p>
+
+<h2>The dual-arena pattern</h2>
+<p>
+One arena per program works, but it forces an unhappy choice: data that must
+live for the whole run and data that dies every phase share one fill level, so
+you can never reset without losing the long-lived data. The standard answer in
+Z98 is the <b>dual-arena pattern</b>: two arenas, two lifetimes.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<thead>
+<tr>
+<th align="left">Arena</th>
+<th align="left">Holds</th>
+<th align="left">Reset</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><b>Permanent</b></td>
+<td>Data that lives for the whole run: global symbols, persistent nodes, the
+structures the program is "about".</td>
+<td>Never, or once at the very end.</td>
+</tr>
+<tr>
+<td><b>Scratch</b></td>
+<td>Temporary data: per-file, per-request, per-phase working memory.</td>
+<td>At every phase boundary, after the phase's results are copied or
+summarized.</td>
+</tr>
+</tbody>
+</table>
+<p>
+The pattern is not a library feature; it is two <tt>Arena</tt> values. The
+example's <tt>dual</tt> function sets up both, allocates into each, then resets
+only the scratch arena and prints both fill levels to show that the permanent
+data survived. That is the whole discipline: long-lived data goes in one arena
+and is never reset; phase data goes in the other and is reset at each
+boundary.
+</p>
+<p>
+On a 1998 machine the second arena is not just a hygiene measure. It keeps the
+active working set small &mdash; the scratch arena is sized for one phase, not
+for the union of all phases &mdash; and it keeps allocation predictable,
+because the same phase run twice sees the same bumps in the same order. The
+language spec introduces the pattern for exactly this reason and names the
+Lisp interpreter as the working example: a compiler or interpreter is a loop
+of phases over permanent state, and the scratch arena is what makes the loop
+reusable.
+</p>
+
+<h2>The example</h2>
+<p>
+The whole chapter in one program. <tt>single</tt> uses one arena from the
+first byte to the <tt>OutOfMemory</tt> path; <tt>dual</tt> uses two arenas and
+resets only the scratch one. <tt>Point_init</tt> is the init-function pattern,
+built on <tt>allocBytes</tt>, whose return type is the chapter's one signature:
+<tt>std.arena.ArenaError![*]u8</tt>.
+</p>
+<pre>
+const std = @import("std");
+
+const Point = struct {
+    x: i32,
+    y: i32,
+};
+
+fn allocBytes(arena: *std.arena.Arena, n: usize) std.arena.ArenaError![*]u8 {
+    return std.arena.alloc(arena, n);
+}
+
+fn Point_init(arena: *std.arena.Arena, x: i32, y: i32) std.arena.ArenaError!*Point {
+    const raw = try allocBytes(arena, @sizeOf(Point));
+    const p = @ptrCast(*Point, raw);
+    p.x = x;
+    p.y = y;
+    return p;
+}
+
+fn single() !void {
+    var buf: [32]u8 = undefined;
+    var arena = std.arena.init(buf[0..]);
+    std.io.print("cap={} used={}\n", .{ arena.capacity, arena.used });
+
+    const p = try Point_init(&amp;arena, 3, 4);
+    std.io.print("p={} {} used={}\n", .{ p.x, p.y, arena.used });
+
+    std.arena.reset(&amp;arena);
+    std.io.print("used after reset={}\n", .{arena.used});
+
+    const p2 = try Point_init(&amp;arena, 9, 8);
+    std.io.print("p2={} {} reused p.x={}\n", .{ p2.x, p2.y, p.x });
+
+    const big = allocBytes(&amp;arena, 64) catch |err| {
+        std.io.print("caught: {}\n", .{err});
+        return;
+    };
+    std.io.print("unreachable {}\n", .{@intFromPtr(big)});
+}
+
+fn dual() !void {
+    var perm_buf: [128]u8 = undefined;
+    var scratch_buf: [64]u8 = undefined;
+    var perm = std.arena.init(perm_buf[0..]);
+    var scratch = std.arena.init(scratch_buf[0..]);
+
+    const p = try Point_init(&amp;perm, 3, 4);
+    const q = try Point_init(&amp;scratch, 5, 6);
+    std.io.print("perm={} {} scratch={} {}\n", .{ p.x, p.y, q.x, q.y });
+    std.io.print("perm used={} scratch used={}\n", .{ perm.used, scratch.used });
+
+    std.arena.reset(&amp;scratch);
+    std.io.print("scratch used after reset={} perm used={}\n", .{ scratch.used, perm.used });
+}
+
+pub fn main() !void {
+    try single();
+    try dual();
+}
+</pre>
+<p>
+Build the compiler once from the committed seed, then emit and compile the
+program, exactly as in chapter 12:
+</p>
+<pre>
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/manual_seed
+</pre>
+<p>
+The result is <tt>/tmp/manual_seed/zig1_5_clean</tt> with the standard library
+beside it in <tt>/tmp/manual_seed/lib/</tt>. Translate the program to C89,
+build it, and run it:
+</p>
+<pre>
+$ mkdir -p /tmp/manual_out
+$ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out docs/sf/manuals/src/vol2/arena.z98
+$ cd /tmp/manual_out &amp;&amp; sh build_target.sh linux arena
+Building for linux...
+Built: arena
+$ ./arena
+cap=32 used=0
+p=3 4 used=8
+used after reset=0
+p2=9 8 reused p.x=9
+caught: error.OutOfMemory
+perm=3 4 scratch=5 6
+perm used=8 scratch used=8
+scratch used after reset=0 perm used=8
+</pre>
+<p>
+Read the eight lines as the chapter's arc. The arena starts at
+<tt>cap=32 used=0</tt>. One point takes eight bytes (<tt>2 &times; i32</tt>),
+so <tt>used=8</tt> and the fields read back as written. The reset puts the
+cursor back to zero. Then the same bytes are allocated again &mdash; and
+because <tt>p</tt> still points at them, <tt>p.x</tt> now reads the new
+object's <tt>9</tt>: the old pointer was never invalidated, it was simply
+reused. That is the ownership rule made visible in one line. The 64-byte
+request then cannot fit in the 32-byte buffer, and the failure is typed and
+caught: <tt>caught: error.OutOfMemory</tt>. The program never reaches the
+<tt>unreachable</tt> line.
+</p>
+<p>
+The dual-arena half shows the pattern's payoff. Both arenas hold their
+allocation, the permanent one is left alone, and the scratch reset returns
+<tt>scratch used</tt> to zero while <tt>perm used=8</tt> stands. The program
+exits with status 0.
+</p>
+
+<h2>Running under Windows 98</h2>
+<p>
+The same program builds for Win9x. <tt>src/build_owc.bat</tt> compiles the
+emitted C89 with OpenWatcom's <tt>wcc386</tt> and links a console
+<tt>arena.exe</tt>; run from a Windows 98 command prompt, it prints the same
+eight lines. The screenshot below will be captured on real hardware.
+</p>
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f0f0f0" class="placeholder">
+<tr>
+<td align="center">
+<i>Figure 17 &mdash; Win9x screenshot pending</i>
+</td>
+</tr>
+</table>
+<p><i>Figure 17. Running <tt>arena.exe</tt> under Windows 98.</i></p>
+
+<h2>Common mistakes</h2>
+<p>
+The mistakes below are the ones a C programmer makes first with this API. Each
+has a diagnostic or a corrected shape, and the first one is the reason this
+chapter exists.
+</p>
+<p>
+<b>Reaching for <tt>malloc</tt> and <tt>free</tt>.</b> There is no
+<tt>malloc</tt> to call, no <tt>free</tt> to call, and no allocator in the
+<tt>std</tt> surface to reach for instead; the arena is the answer, and its
+buffer is memory you declared. The old habit does not merely fail to compile
+&mdash; it asks a question the language has no way to answer well. A C program
+answers "when is this released?" at every call site, by hand, on every path;
+an arena answers it once, at the reset. If you bring a general-purpose
+allocator in through C interop anyway, the spec's rule stands: memory obtained
+from <tt>std.arena.alloc</tt> must not be passed to <tt>free()</tt>.
+</p>
+<p>
+<b>Using <tt>orelse</tt> on the allocation.</b> The result is
+<tt>ArenaError![*]u8</tt>, an error union; <tt>orelse</tt> is the optional's
+operator. The compiler rejects the confusion and names the right one:
+</p>
+<pre>
+error[3016]: orelse requires an optional operand; use 'catch' for error unions
+</pre>
+<p>
+Write <tt>try</tt> when the caller can pass the failure on, and
+<tt>catch |err|</tt> when it must handle it. Chapter 13 <i>(planned)</i> is
+where optionals and <tt>orelse</tt> live.
+</p>
+<p>
+<b>Forgetting <tt>reset</tt> between phases.</b> The arena never reclaims on
+its own, so a program that allocates per phase without resetting behaves like
+a leak: <tt>used</tt> climbs to <tt>capacity</tt> and every later allocation
+fails with <tt>error.OutOfMemory</tt> even though the phase data is long dead.
+The failure is loud, which is the good news; the fix is one call at the phase
+boundary. In the example the buffer is small enough that the 64-byte request
+fails either way &mdash; but in a long-running loop the missing reset is the
+difference between a program that keeps running and one that stops on phase N.
+Reset the scratch arena when the phase ends, not when the arena is full.
+</p>
+<p>
+<b>Assuming the memory is zeroed.</b> <tt>alloc</tt> does not clear bytes; it
+moves a cursor. The example shows the reused block reading back as the new
+object's fields, not as zeros. The related trap is <tt>undefined</tt>: in Z98
+an uninitialized <tt>i32</tt> is not zero. Under the default safe build,
+<tt>undefined</tt> is poison-filled and reads back as <tt>-1431655766</tt>
+(<tt>0xAAAAAAAA</tt>), a value that hides very well until it reaches a pointer
+or a loop bound. Set every field you are going to read; do not treat arena
+bytes as a fresh zero page.
+</p>
+<p>
+<b>Growing a dead reference after <tt>reset</tt>.</b> After the reset in the
+example, <tt>p</tt> and <tt>p2</tt> point at the same bytes, and the transcript
+prints that aliasing as <tt>reused p.x=9</tt>. Nothing in the language stops
+you from reading <tt>p</tt> afterwards, because nothing in the language tracks
+which fill level a pointer came from. The compiler sees a valid pointer to
+valid memory; only you know that its ownership contract ended. The corrected
+shape is a rule, not a diagnostic: after a reset, every pointer that came from
+the arena is dead &mdash; use the pointers from the current fill or none.
+</p>
+
+<h2>Where to go next</h2>
+<p>
+This page is the next shipped chapter after chapter 12, so the reading path is
+<tt>vol2-12</tt> &rarr; this page &rarr; the Reference. Chapter 13,
+<b>Optionals</b>, is <i>(planned)</i> in between, and chapter 15,
+<b>Builtins, in full</b>, is <i>(planned)</i> after it; chapter 15 will be the
+definitive tour of the builtins this chapter used: <tt>@sizeOf</tt>,
+<tt>@ptrCast</tt>, and <tt>@intFromPtr</tt>.
+</p>
+<p>
+For the shipped Reference, <a href="vol4-15-builtins.html">Volume IV &mdash;
+Builtins</a> documents the builtin call syntax the examples use. The formal
+memory material is planned:
+</p>
+<ul>
+<li>Volume IV, <b>Memory</b> <i>(planned)</i> &mdash; the arena and allocator
+reference, including the module surface.</li>
+<li>Volume V, <b>Use the arena correctly</b> <i>(planned)</i> &mdash; recipes
+for sizing buffers, phase resets, and the dual-arena pattern in real
+programs.</li>
+</ul>
+<p>
+Until they ship, the runnable example in
+<tt>docs/sf/manuals/src/vol2/arena.z98</tt> is the working reference, and
+<a href="toc.html">the Contents page</a> shows the volume's shape.
+</p>
+
+<p class="navbtns">
+<a href="vol2-12-error-unions.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol4-00-title.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol2-12-error-unions.html">Error Unions &mdash; the First Big Shift</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-00-title.html">Volume IV &mdash; Reference</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
