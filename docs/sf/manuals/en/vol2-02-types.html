@@ -1,0 +1,652 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: The Type System</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual type system primitives arbitrary width u1 u64 isize usize bool void noreturn c_char sizeOf bitSizeOf intCast float f32 f64 conversions warnings">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol2-01-honest-comparison.html">
+<link rel="next" href="vol2-12-error-unions.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume II &mdash; Learning Z98</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol2-00-title.html">How to read this</a><br>
+<a href="vol2-01-honest-comparison.html">The honest comparison</a><br>
+<b>The type system</b><br>
+Pointers <i>(planned)</i><br>
+Aggregates I: structs <i>(planned)</i><br>
+Aggregates II: packed structs <i>(planned)</i><br>
+Aggregates III: enums <i>(planned)</i><br>
+Aggregates IV: unions <i>(planned)</i><br>
+Aggregates V: tuples <i>(planned)</i><br>
+Arrays and slices <i>(planned)</i><br>
+Control flow, in full <i>(planned)</i><br>
+defer and errdefer <i>(planned)</i><br>
+<a href="vol2-12-error-unions.html">Error unions &mdash; the first big shift</a><br>
+Optionals <i>(planned)</i><br>
+<a href="vol2-14-arena.html">The arena &mdash; the second big shift</a><br>
+<a href="vol2-15-builtins.html">Builtins, in full</a><br>
+No methods, no generics, no comptime <i>(planned)</i><br>
+The standard library tour <i>(planned)</i><br>
+print and the format string <i>(planned)</i><br>
+Idioms and best practices <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>The Type System</h1>
+<p>
+Volume I's sixth chapter gave you the names a C programmer already knows.
+This chapter gives you the whole map. Z98 takes C89's types and adds one
+idea: an integer type can carry an exact compile-time width, anywhere from one
+bit to sixty-four. Everything else here follows from that idea and from a
+second, less glamorous fact: what the compiler lets you convert without
+saying so.
+</p>
+<p>
+Two rules carry the chapter, and both are measured on the compiler this manual
+ships with, not remembered from a language specification. The <b>width
+rule</b>: for an arbitrary-width integer, <tt>@sizeOf</tt> reports the C
+carrier the value is stored in, and <tt>@bitSizeOf</tt> reports the width you
+declared. The <b>conversion rule</b>: integer-to-integer conversions are
+implicit today &mdash; a declaration or an assignment warns and converts, a
+call site converts silently &mdash; and <tt>@intCast</tt> is the explicit,
+warning-free form. The example at the end of the page prints the evidence for
+both.
+</p>
+<p>
+That second rule is written the way it is on purpose. A manual is allowed to
+wish the compiler rejected something; it is not allowed to say it does when it
+does not. On this compiler the conversions happen, and the page teaches the
+measured behavior.
+</p>
+
+<h2>The fixed-width primitives</h2>
+<p>
+The names below are shorthand for exact C89 types. They are the vocabulary of
+most Z98 code, and their sizes are the same on every target this manual
+supports: a 32-bit machine where <tt>int</tt> is four bytes.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Z98 type</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>C89 equivalent</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Size</b></th>
+</tr>
+<tr>
+<td><tt>i8</tt>, <tt>i16</tt>, <tt>i32</tt>, <tt>i64</tt></td>
+<td>signed char, short, int, __int64</td>
+<td>1, 2, 4, 8 bytes</td>
+</tr>
+<tr>
+<td><tt>u8</tt>, <tt>u16</tt>, <tt>u32</tt>, <tt>u64</tt></td>
+<td>unsigned char, short, int, unsigned __int64</td>
+<td>1, 2, 4, 8 bytes</td>
+</tr>
+<tr>
+<td><tt>isize</tt>, <tt>usize</tt></td>
+<td>int, unsigned int</td>
+<td>4 bytes (platform-sized)</td>
+</tr>
+<tr>
+<td><tt>f32</tt>, <tt>f64</tt></td>
+<td>float, double</td>
+<td>4, 8 bytes</td>
+</tr>
+<tr>
+<td><tt>c_char</tt></td>
+<td>char (signedness is implementation-defined)</td>
+<td>1 byte</td>
+</tr>
+<tr>
+<td><tt>bool</tt></td>
+<td>unsigned char, holding 1 or 0</td>
+<td>1 byte</td>
+</tr>
+<tr>
+<td><tt>void</tt></td>
+<td>void</td>
+<td>0 bytes</td>
+</tr>
+<tr>
+<td><tt>noreturn</tt></td>
+<td>void (see the note below)</td>
+<td>no storage of its own</td>
+</tr>
+</table>
+<p>
+The signed fixed names stop at <tt>i64</tt>; there is no <tt>i128</tt> and no
+wide integer arithmetic. The unsigned fixed names stop at <tt>u64</tt>. That
+is not as narrow a set as it sounds, because the interesting part is the
+widths in between.
+</p>
+
+<h2>Arbitrary widths: <tt>u1</tt> through <tt>u64</tt></h2>
+<p>
+Z98 integer types can be declared at an exact width: unsigned <tt>u1</tt>
+through <tt>u64</tt>, signed <tt>i1</tt> through <tt>i63</tt> (the fixed
+<tt>i64</tt> owns the 64-bit signed slot). A <tt>u3</tt> holds 0 through 7; an
+<tt>i7</tt> holds -64 through 63. Widths outside those ranges do not exist,
+and spelling one is an ordinary name error:
+</p>
+<pre>
+error[20]: identifier 'u65' is not declared or imported in this module
+error[3000]: unknown type in variable declaration
+</pre>
+<p>
+The example program declares a <tt>u1</tt>, a <tt>u3</tt>, an <tt>i7</tt>, an
+<tt>i63</tt>, a <tt>u9</tt>, and a <tt>u33</tt>, prints a value from the first
+four, and then asks the compiler what storage each one got. Here is that part
+of the run:
+</p>
+<pre>
+u1  value=1 @sizeOf=1 @bitSizeOf=1
+u3  value=5 @sizeOf=1 @bitSizeOf=3
+i7  value=-3 @sizeOf=1 @bitSizeOf=7
+i63 value=-5 @sizeOf=8 @bitSizeOf=63
+u9 @sizeOf=2 @bitSizeOf=9 u33 @sizeOf=8 @bitSizeOf=33
+u3 max=7 i7 min=-64
+</pre>
+<p>
+Read the last line first: the extremes fit their declared widths exactly, and
+the compiler is the one enforcing it. Then read the <tt>@sizeOf</tt> column
+against the <tt>@bitSizeOf</tt> column. They are different numbers, and the
+rest of the chapter is about why.
+</p>
+
+<h2>The width rule: carrier and declared width</h2>
+<p>
+An arbitrary-width integer is stored in the smallest power-of-two C integer
+that can hold its value: one, two, four, or eight bytes. The declared width is
+a compile-time contract about which values are legal, not a storage layout.
+So <tt>@sizeOf</tt> answers "how many bytes does a value of this type occupy
+in the emitted C?" and <tt>@bitSizeOf</tt> answers "how many bits did the
+source declare?". For <tt>u3</tt> the answers are one byte and three bits; for
+<tt>i63</tt> they are eight bytes and sixty-three bits.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Declared type</b></th>
+<th align="left" bgcolor="#e8e0e0"><b><tt>@sizeOf</tt> (carrier)</b></th>
+<th align="left" bgcolor="#e8e0e0"><b><tt>@bitSizeOf</tt> (width)</b></th>
+</tr>
+<tr>
+<td><tt>u1</tt></td>
+<td>1</td>
+<td>1</td>
+</tr>
+<tr>
+<td><tt>u3</tt></td>
+<td>1</td>
+<td>3</td>
+</tr>
+<tr>
+<td><tt>i7</tt></td>
+<td>1</td>
+<td>7</td>
+</tr>
+<tr>
+<td><tt>u9</tt></td>
+<td>2</td>
+<td>9</td>
+</tr>
+<tr>
+<td><tt>u33</tt></td>
+<td>8</td>
+<td>33</td>
+</tr>
+<tr>
+<td><tt>i63</tt></td>
+<td>8</td>
+<td>63</td>
+</tr>
+</table>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> The widths will surprise you if you expect width and
+size to be the same number. A <tt>u9</tt> takes two bytes; a <tt>u33</tt>
+takes eight; an <tt>i63</tt> takes eight. The carrier is what the C89
+compiler can move in one register, and Z98 does not hide the cost of the
+smaller widths behind bit-packing. If you need fields that actually occupy
+three bits side by side, that is the packed struct's job, and
+chapter&nbsp;5 <i>(planned)</i> is where it lives. An arbitrary-width
+integer keeps <i>one</i> value inside the smallest whole carrier.</td>
+</tr>
+</table>
+
+<p>
+The emitted C makes the same point without the builtins. This chapter's
+program declares a <tt>u3</tt>; the C that comes out of the compiler holds it
+in an <tt>unsigned char</tt> and masks writes back to the declared width:
+</p>
+<pre>
+unsigned char small_unsigned;
+...
+zT_5 = (unsigned char)(zT_5 &amp; 7);
+small_unsigned = zT_5;
+</pre>
+<p>
+The mask is not decoration. It is how a one-byte carrier keeps three-bit
+semantics, and it is why the compiler can promise that a <tt>u3</tt> never
+holds 8. A signed width gets the mirror treatment; the <tt>i7</tt> in the same
+program is a <tt>signed char</tt> whose writes are sign-extended back to seven
+bits. The temporary names are the compiler's; the mask is the point.
+</p>
+
+<h2><tt>isize</tt> and <tt>usize</tt></h2>
+<p>
+<tt>usize</tt> and <tt>isize</tt> are the platform-sized integers: four bytes
+on the 32-bit target this manual supports, the same size as a pointer. They
+are the C <tt>unsigned int</tt> and <tt>int</tt>, and they are the types the
+standard library reaches for when it counts things: <tt>slice.len</tt> is a
+<tt>usize</tt>, arena capacities are <tt>usize</tt>, and loop indexes over
+arrays are <tt>usize</tt>. The example prints their sizes on their own line:
+</p>
+<pre>
+usize=4 isize=4
+</pre>
+<p>
+Because they are ordinary integers to the compiler, <tt>usize</tt> values
+convert to and from <tt>i32</tt> under the conversion rule in the next
+section. Sharing a size does not make them interchangeable in a signature;
+the fix for a mismatch is <tt>@intCast</tt>, not a cast through a pointer.
+</p>
+
+<h2><tt>bool</tt>, <tt>void</tt>, <tt>c_char</tt>, and <tt>noreturn</tt></h2>
+<p>
+Four types with no arithmetic in them round out the set.
+</p>
+<p>
+<b><tt>bool</tt></b> is one byte holding <tt>true</tt> or <tt>false</tt>. It
+is a distinct type, not a small integer: it is what comparisons and logical
+operators return, and the compiler does not let you pass it where an integer
+is expected. Print it with <tt>{}</tt> and it prints <tt>true</tt> or
+<tt>false</tt>.
+</p>
+<p>
+<b><tt>void</tt></b> is the empty type. It has no values and no size
+(<tt>@sizeOf(void)</tt> is 0, as the example's <tt>f32=4 f64=8 bool=1 cchar=1
+void=0</tt> line shows). A function returning <tt>void</tt> returns nothing,
+and a function whose body falls off the end returns <tt>void</tt> implicitly.
+</p>
+<p>
+<b><tt>c_char</tt></b> is C's <tt>char</tt>, one byte, with the C
+implementation deciding whether it is signed. Reach for it when an
+<tt>extern</tt> declaration or a string's bytes ask for it; reach for
+<tt>u8</tt> when you mean an unsigned byte.
+</p>
+<p>
+<b><tt>noreturn</tt></b> is in the type table because the language
+specification lists it, and a function signature may spell it. Here the
+honesty is in the detail: the spelling is accepted and degrades to
+<tt>void</tt>, and the compiler does not enforce that the function never
+returns. The thing that actually stops a program is <tt>@panic</tt>, which
+writes its message to stderr and traps. This compiles, and calling it ends the
+program:
+</p>
+<pre>
+fn stop() noreturn {
+    @panic("stop");
+}
+</pre>
+<pre>
+before
+panic: stop
+</pre>
+<p>
+The first line is stdout; the <tt>panic: stop</tt> line is stderr; the process
+dies on a trap, not on a return. Treat <tt>noreturn</tt> as a name the
+signature may carry, not as a promise the compiler checks.
+</p>
+
+<h2>Integer conversions: implicit today, explicit with <tt>@intCast</tt></h2>
+<p>
+This is the section a C programmer needs most, because the rule is neither
+C's rule nor the rule the language was designed around. It is the rule the
+compiler has, measured:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Where the conversion happens</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>What the compiler does today</b></th>
+</tr>
+<tr>
+<td><tt>var a: usize = v;</tt> (declaration)</td>
+<td><tt>warning[3000]</tt>, then converts; the program builds and runs</td>
+</tr>
+<tr>
+<td><tt>a = v;</tt> (assignment)</td>
+<td><tt>warning[3000]</tt>, then converts; the program builds and runs</td>
+</tr>
+<tr>
+<td><tt>takesUsize(v);</tt> (call argument)</td>
+<td>converts silently; no diagnostic</td>
+</tr>
+<tr>
+<td><tt>const c = @intCast(usize, v);</tt></td>
+<td>converts silently; explicit, checked</td>
+</tr>
+</table>
+<p>
+So integer-to-integer conversion is implicit, and the compiler asks you to
+notice it at the two sites where a mistake is easy to make. The program at
+the end of this page writes both warned forms on purpose; here is the
+compiler's own output for them, from the build transcript:
+</p>
+<pre>
+docs/sf/manuals/src/vol2/types2.z98:27:4: warning[3000]: type mismatch in variable declaration -- initialization type may not be compatible with declared type
+    var a: usize = v;
+    ^^^^^^^^^^^^^^^^^
+note: source: i32
+note: target: type
+docs/sf/manuals/src/vol2/types2.z98:28:6: warning[3000]: type mismatch in assignment -- internal type representations differ; generated code may be incorrect
+    a = v;
+      ^
+note: source: i32
+note: target: type
+</pre>
+<p>
+The warning names the source and the target and lets the conversion run. It
+is the compiler saying "these two integers do not have the same
+representation, so read what you wrote" &mdash; not an error, and not a
+rejection. Both forms print 3 in the run.
+</p>
+<p>
+<tt>@intCast</tt> is how you say the same thing with intent. It takes the
+target type as its first argument, works in both directions
+(<tt>@intCast(usize, v)</tt> widens on a 32-bit target, <tt>@intCast(i32,
+c)</tt> narrows back), and emits nothing. It is also the form that is checked:
+in the default safe mode an <tt>@intCast</tt> whose value does not fit the
+target traps instead of wrapping. A <tt>u8</tt> cast of the value 300 stops
+the program with:
+</p>
+<pre>
+panic: integer cast overflow in @intCast
+</pre>
+<p>
+The lesson is the chapter's shape in miniature. The compiler accepts the
+implicit conversion for the code that exists, and the version you write on
+purpose is the version with the check attached.
+</p>
+
+<h2>Floats: literals are double-precision</h2>
+<p>
+<tt>f32</tt> is four bytes and <tt>f64</tt> is eight. A float literal &mdash;
+and a literal-only float expression &mdash; is carried as a double-precision
+value, and at an <tt>f32</tt> site the compiler narrows it by value, silently,
+whether or not the value is exactly representable:
+</p>
+<pre>
+const exact: f32 = 1.5;
+const inexact: f32 = 0.1;
+</pre>
+<p>
+Both of those compile with no diagnostic, and the program prints
+<tt>f32 exact=1.5 inexact=0.1</tt>. The rounding of <tt>0.1</tt> happens where
+the literal meets the type, and the same rule applies when the literal is
+bound to an unannotated <tt>const</tt> first
+(<tt>const x = 0.1; const f: f32 = x;</tt>).
+</p>
+<p>
+The rule narrows with the value's provenance. A <tt>const</tt> that is
+explicitly typed <tt>f64</tt> narrows to <tt>f32</tt> only when the value is
+exactly representable. <tt>const d: f64 = 0.5; const e: f32 = d;</tt> is
+silent; <tt>const d: f64 = 0.1; const e: f32 = d;</tt> is rejected:
+</p>
+<pre>
+error[3000]: type mismatch in variable declaration -- initialization type may not be compatible with declared type
+note: source: f64
+note: target: f32
+</pre>
+<p>
+And a value that is only known at run time does not narrow implicitly. A
+runtime <tt>f64</tt> at an <tt>f32</tt> site is the same rejection; the
+explicit form is <tt>@floatCast</tt>, which the example uses to make the
+narrowing say what it means:
+</p>
+<pre>
+var rd: f64 = 0.5;
+const fromruntime: f32 = @floatCast(f32, rd);
+</pre>
+<p>
+Read against C, the difference is the point. C narrows <tt>double</tt> to
+<tt>float</tt> wherever the assignment is, silently, whether the value is a
+literal or a variable. Z98 keeps the friendly case &mdash; a literal whose
+value the compiler can see &mdash; and makes the runtime narrowing an
+explicit, greppable operation.
+</p>
+
+<h2>The example</h2>
+<p>
+The whole chapter in one program. It declares the widths, prints their
+carriers and declared sizes, exercises both warned conversions and the
+explicit <tt>@intCast</tt>, and narrows two float literals. It is
+<tt>docs/sf/manuals/src/vol2/types2.z98</tt>:
+</p>
+<pre>
+const std = @import("std");
+
+fn takesUsize(n: usize) void {
+    std.io.print("call site: {}\n", .{n});
+}
+
+pub fn main() void {
+    const one_bit: u1 = 1;
+    const small_unsigned: u3 = 5;
+    const small_signed: i7 = -3;
+    const wide_signed: i63 = -5;
+    const u3_max: u3 = 7;
+    const i7_min: i7 = -64;
+
+    std.io.print("u1  value={} @sizeOf={} @bitSizeOf={}\n", .{ one_bit, @sizeOf(u1), @bitSizeOf(u1) });
+    std.io.print("u3  value={} @sizeOf={} @bitSizeOf={}\n", .{ small_unsigned, @sizeOf(u3), @bitSizeOf(u3) });
+    std.io.print("i7  value={} @sizeOf={} @bitSizeOf={}\n", .{ small_signed, @sizeOf(i7), @bitSizeOf(i7) });
+    std.io.print("i63 value={} @sizeOf={} @bitSizeOf={}\n", .{ wide_signed, @sizeOf(i63), @bitSizeOf(i63) });
+    std.io.print("u9 @sizeOf={} @bitSizeOf={} u33 @sizeOf={} @bitSizeOf={}\n", .{ @sizeOf(u9), @bitSizeOf(u9), @sizeOf(u33), @bitSizeOf(u33) });
+    std.io.print("u3 max={} i7 min={}\n", .{ u3_max, i7_min });
+
+    std.io.print("i32={} i64={} u32={} u64={}\n", .{ @sizeOf(i32), @sizeOf(i64), @sizeOf(u32), @sizeOf(u64) });
+    std.io.print("f32={} f64={} bool={} c_char={} void={}\n", .{ @sizeOf(f32), @sizeOf(f64), @sizeOf(bool), @sizeOf(c_char), @sizeOf(void) });
+    std.io.print("usize={} isize={}\n", .{ @sizeOf(usize), @sizeOf(isize) });
+
+    var v: i32 = 3;
+    var a: usize = v;
+    a = v;
+    takesUsize(v);
+    const c = @intCast(usize, v);
+    const back = @intCast(i32, c);
+    std.io.print("declared={} cast={} back={}\n", .{ a, c, back });
+
+    const exact: f32 = 1.5;
+    const inexact: f32 = 0.1;
+    std.io.print("f32 exact={} inexact={}\n", .{ exact, inexact });
+}
+</pre>
+<p>
+Build the compiler once from the committed seed, then emit and compile the
+program, exactly as in chapter 12:
+</p>
+<pre>
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/manual_seed
+</pre>
+<p>
+The result is <tt>/tmp/manual_seed/zig1_5_clean</tt> with the standard library
+beside it in <tt>/tmp/manual_seed/lib/</tt>. The two warned conversions are
+part of the build output; the program then runs to the end:
+</p>
+<pre>
+$ mkdir -p /tmp/manual_out
+$ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out docs/sf/manuals/src/vol2/types2.z98
+docs/sf/manuals/src/vol2/types2.z98:27:4: warning[3000]: type mismatch in variable declaration -- initialization type may not be compatible with declared type
+    var a: usize = v;
+    ^^^^^^^^^^^^^^^^^
+note: source: i32
+note: target: type
+docs/sf/manuals/src/vol2/types2.z98:28:6: warning[3000]: type mismatch in assignment -- internal type representations differ; generated code may be incorrect
+    a = v;
+      ^
+note: source: i32
+note: target: type
+$ cd /tmp/manual_out &amp;&amp; sh build_target.sh linux types2
+Building for linux...
+Built: types2
+$ ./types2
+u1  value=1 @sizeOf=1 @bitSizeOf=1
+u3  value=5 @sizeOf=1 @bitSizeOf=3
+i7  value=-3 @sizeOf=1 @bitSizeOf=7
+i63 value=-5 @sizeOf=8 @bitSizeOf=63
+u9 @sizeOf=2 @bitSizeOf=9 u33 @sizeOf=8 @bitSizeOf=33
+u3 max=7 i7 min=-64
+i32=4 i64=8 u32=4 u64=8
+f32=4 f64=8 bool=1 c_char=1 void=0
+usize=4 isize=4
+call site: 3
+declared=3 cast=3 back=3
+f32 exact=1.5 inexact=0.1
+</pre>
+<p>
+Twelve lines, and the chapter's two rules are both in the run. Lines one
+through nine are the width rule (carrier against declared width); lines ten
+and eleven are the conversion rule (implicit at the declaration and the call,
+explicit at the cast); the last line is the float rule. The exit status is 0;
+the warnings did not stop anything.
+</p>
+
+<h2>Running under Windows 98</h2>
+<p>
+The same program builds for Win9x. <tt>src/build_owc.bat</tt> compiles the
+emitted C89 with OpenWatcom's <tt>wcc386</tt> and links a console
+<tt>types2.exe</tt>; run from a Windows 98 command prompt, it prints the same
+twelve lines. The screenshot below will be captured on real hardware.
+</p>
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f0f0f0" class="placeholder">
+<tr>
+<td align="center">
+<i>Figure 19 &mdash; Win9x screenshot pending</i>
+</td>
+</tr>
+</table>
+<p><i>Figure 19. Running <tt>types2.exe</tt> under Windows 98.</i></p>
+
+<h2>Common mistakes</h2>
+<p>
+The mistakes below are the ones a C programmer makes first with this type
+set. Each has a corrected shape, and the conversion one is the reason the
+earlier sections are worded so carefully.
+</p>
+<p>
+<b>Assuming C's implicit integer conversions.</b> In C, assigning an
+<tt>int</tt> to a <tt>size_t</tt> is usually silent, and Z98 converts too
+&mdash; but not silently at the declaration. That form emits
+<tt>warning[3000]</tt>; at a call site it emits nothing. The corrected shape
+is not "write more casts"; it is "use <tt>@intCast</tt> when you mean the
+conversion". The explicit form is warning-free and checked, and it is what
+the compiler's own source uses. Do not come away from this chapter believing
+that Z98 rejects these conversions; it does not, as the transcript above
+shows.
+</p>
+<p>
+<b>Expecting <tt>@sizeOf</tt> to equal the declared width.</b> <tt>u3</tt> is
+one byte and three bits; <tt>i63</tt> is eight bytes and sixty-three bits.
+<tt>@sizeOf</tt> answers the storage question, <tt>@bitSizeOf</tt> answers the
+width question, and both are compile-time constants. If you need the storage
+to shrink to the width, you want a packed struct, not a narrower integer.
+</p>
+<p>
+<b>Assuming a <tt>1.5</tt> literal is <tt>f32</tt>.</b> A float literal is a
+double-precision value; it narrows at an <tt>f32</tt> site by value, silently.
+That works for literals. It does not extend to a typed <tt>f64</tt> value
+that is not exactly representable, and it never extends to a runtime
+<tt>f64</tt>: both of those reject with <tt>error[3000]</tt>, and
+<tt>@floatCast</tt> is the explicit form. In C the same code truncates
+without a word.
+</p>
+<p>
+<b>Spelling a width that does not exist.</b> There is no <tt>u0</tt>, no
+<tt>u65</tt>, and no <tt>i65</tt>. The compiler reports them as unresolved
+names (<tt>error[20]</tt>) plus an <tt>unknown type in variable declaration</tt>.
+Unsigned runs <tt>u1</tt> to <tt>u64</tt>; signed runs <tt>i1</tt> to
+<tt>i63</tt>, with the fixed <tt>i64</tt> as the 64-bit signed name.
+</p>
+<p>
+<b>Trusting <tt>noreturn</tt> to keep a function from returning.</b> The
+signature spelling is accepted, but it degrades to <tt>void</tt> and the
+compiler does not enforce it. The enforcement you get is <tt>@panic</tt>'s
+trap, which is what the example's <tt>stop</tt> actually does.
+</p>
+
+<h2>Where to go next</h2>
+<p>
+This page filled in the type names Volume I introduced. The next chapter in
+the volume is <b>Pointers</b> <i>(planned)</i>, chapter 3, where the types
+that point at other types get the same treatment: <tt>*T</tt>, <tt>*const
+T</tt>, <tt>*volatile T</tt>, <tt>[*]T</tt>, and the builtins that cast
+between them.
+</p>
+<p>
+Of the shipped chapters, the immediate continuation is
+<a href="vol2-12-error-unions.html">chapter 12, Error Unions &mdash; the First
+Big Shift</a>: types that carry failure. The arena
+(<a href="vol2-14-arena.html">chapter 14</a>) leans on <tt>usize</tt> and
+<tt>@sizeOf</tt>; the builtins tour
+(<a href="vol2-15-builtins.html">chapter 15</a>) covers
+<tt>@sizeOf</tt>, <tt>@bitSizeOf</tt>, <tt>@intCast</tt>, and
+<tt>@floatCast</tt> one by one.
+</p>
+<p>
+For lookup, <a href="vol4-15-builtins.html">Volume IV &mdash; Builtins</a> is
+the shipped reference for every builtin named here. Volume IV's type
+reference pages, including the primitive-and-width tables, are
+<i>(planned)</i>. Until they ship, the runnable example in
+<tt>docs/sf/manuals/src/vol2/types2.z98</tt> is the working reference, and
+<a href="toc.html">the Contents page</a> shows the volume's shape.
+</p>
+
+<p class="navbtns">
+<a href="vol2-01-honest-comparison.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol2-12-error-unions.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol2-01-honest-comparison.html">The Honest Comparison</a> | <a href="toc.html">Contents</a> | Next: <a href="vol2-12-error-unions.html">Error Unions &mdash; the First Big Shift</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
