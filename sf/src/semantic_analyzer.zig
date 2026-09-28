@@ -41,6 +41,13 @@ pub const SemanticAnalyzer = struct {
     stmt_work_cap: usize,
     current_fn_return: TypeId,
     current_fn_name: u32,
+    // FX12 (Volume II ch12): > 0 while a module-level `var`/`const`
+    // initializer is being resolved. Container scope has no function, so
+    // `current_fn_name == 0` there -- but also in the bare-resolver analyzer
+    // unit tests, which call `semanticAnalyzerResolveExpr` directly with no
+    // function context. This flag distinguishes the real container scope for
+    // the `error[3075]` "'try' outside function scope" reject.
+    container_init_depth: u32,
     coercion_table: *coercion_mod.CoercionTable,
     enum_value_table: *hash_mod.U32ToU32Map,
     // FB (D4): index-access node -> folded tuple ordinal. `t[0]` folds its
@@ -229,6 +236,7 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .stmt_work_cap = @intCast(usize, 0),
         .current_fn_return = @intCast(u32, 0),
         .current_fn_name = @intCast(u32, 0),
+        .container_init_depth = @intCast(u32, 0),
         .coercion_table = coercion_tab,
         .enum_value_table = enum_val_tab,
         .tuple_index_table = tuple_idx_tab,
@@ -3311,13 +3319,78 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
     return fnp.return_type;
 }
 
+// FX12 (Volume II ch12): shared level-0 `error[3075]` emitter for the `try`
+// enclosing-return rules. Deduped per try node (`diagnosticCollectorMarkNodeOnce`),
+// span on the `try`; an empty `note` adds no note. Every reject returns
+// `TYPE_UNDEFINED` (poison) so the enclosing site's ordinary compatibility
+// checks skip the already-rejected expression instead of cascading.
+fn semanticAnalyzerTryReject(self: *SemanticAnalyzer, node_idx: u32, msg: []const u8, note: []const u8) u32 {
+    if (diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) {
+        var tr_node = ast_mod.astStoreNodeAt(self.store, node_idx);
+        var tr_di = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3075_TRY_ENCLOSING_RETURN)), self.source_file_id, tr_node.span_start, tr_node.span_start + @intCast(u32, tr_node.span_len), msg);
+        if (note.len > @intCast(usize, 0)) {
+            _ = diag_mod.diagnosticCollectorAddNote(self.diag, tr_di, note);
+        }
+    }
+    return type_mod.TYPE_UNDEFINED;
+}
+
+// FX12 (Volume II ch12): Zig-0.15.2 `try` context rules. Check order mirrors
+// Zig: a `try` in real container scope rejects first (`'try' outside function
+// scope`, source order: module-level initializers), then a non-error-union
+// OPERAND (`expected error union type, found 'X'` + `consider omitting
+// 'try'`), then the enclosing function's return type (`expected type 'X',
+// found error set` + `function cannot return an error` for a non-error-union
+// return; `try error set may not be compatible with the enclosing function's
+// return type` for a set that is not a subset — set-only comparison, payload
+// equality is deliberately NOT required). A bare analyzer-resolver call with
+// no function/container context (the semantic unit tests) keeps the pre-3075
+// payload result for a well-formed operand. Anonymous/opaque operand sets
+// cannot be compared, so a non-error-union enclosing function is an
+// unconditional reject (documented bounded divergence).
 fn semanticAnalyzerResolveTryExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
     var inner = semanticAnalyzerResolveExpr(self, node.child_0);
-    if (inner == @intCast(u32, 0) or inner == type_mod.TYPE_VOID) return type_mod.TYPE_VOID;
+    if (inner == @intCast(u32, 0)) return type_mod.TYPE_VOID;
     var ty = self.registry.types_items[@intCast(usize, inner)];
+    if (self.current_fn_name == @intCast(u32, 0) and self.container_init_depth > @intCast(u32, 0)) {
+        var tc_msg: []const u8 = "'try' outside function scope";
+        var tc_none: []const u8 = "";
+        return semanticAnalyzerTryReject(self, node_idx, tc_msg, tc_none);
+    }
     if (ty.kind != type_mod.TypeKind.error_union_type) {
-        return type_mod.TYPE_VOID;
+        var to_p0: []const u8 = "expected error union type, found '";
+        var to_kind: []const u8 = diag_mod.typeKindSrcStr(ty.kind);
+        var to_p1: []const u8 = "'";
+        var to_parts: [3][]const u8 = [3][]const u8{ to_p0, to_kind[8..], to_p1 };
+        var to_msg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &to_parts[0], @intCast(u32, 3));
+        var to_note: []const u8 = "consider omitting 'try'";
+        return semanticAnalyzerTryReject(self, node_idx, to_msg, to_note);
+    }
+    if (self.current_fn_name == @intCast(u32, 0)) {
+        // No function to consult (bare-resolver unit-test context).
+        var tn_eu = self.registry.eu_items[@intCast(usize, ty.payload_idx)];
+        return tn_eu.payload;
+    }
+    var fn_ret = self.current_fn_return;
+    if (fn_ret != @intCast(u32, 0) and @intCast(usize, fn_ret) < self.registry.types_len) {
+        var fr_ty = self.registry.types_items[@intCast(usize, fn_ret)];
+        if (fr_ty.kind != type_mod.TypeKind.error_union_type) {
+            var ta_p0: []const u8 = "expected type '";
+            var ta_kind: []const u8 = diag_mod.typeKindSrcStr(fr_ty.kind);
+            var ta_p1: []const u8 = "', found error set";
+            var ta_parts: [3][]const u8 = [3][]const u8{ ta_p0, ta_kind[8..], ta_p1 };
+            var ta_msg = diag_mod.diagnosticBuilderMakeMsg(self.interner, &ta_parts[0], @intCast(u32, 3));
+            var ta_note: []const u8 = "function cannot return an error";
+            return semanticAnalyzerTryReject(self, node_idx, ta_msg, ta_note);
+        }
+        var eu_src = self.registry.eu_items[@intCast(usize, ty.payload_idx)];
+        var eu_tgt = self.registry.eu_items[@intCast(usize, fr_ty.payload_idx)];
+        if (!type_mod.errorSetIsSubset(self.registry, eu_src.error_set, eu_tgt.error_set)) {
+            var tb_msg: []const u8 = "try error set may not be compatible with the enclosing function's return type";
+            var tb_none: []const u8 = "";
+            return semanticAnalyzerTryReject(self, node_idx, tb_msg, tb_none);
+        }
     }
     var eu = self.registry.eu_items[@intCast(usize, ty.payload_idx)];
     return eu.payload;
@@ -4972,6 +5045,16 @@ pub fn semanticAnalyzerResolveFnBody(self: *SemanticAnalyzer, fn_decl_node: u32)
     var fn_rt = rtt_mod.resolvedTypeTableGet(self.type_table, proto.return_type_node);
     if (fn_rt) |frt| {
         self.current_fn_return = frt;
+    } else if (proto.return_type_node == @intCast(u32, 0)) {
+        // FX12 (Volume II ch12) hygiene: a function with no return-type
+        // annotation is `void` by construction (type_resolver's `rt_box`),
+        // not "unresolvable"; record the truthful type so `try` in it gets
+        // the non-error-union-enclosing reject.
+        self.current_fn_return = type_mod.TYPE_VOID;
+    } else {
+        // FX12 hygiene (ruled): a declared but UNRESOLVABLE return type must
+        // not let a later function inherit a stale `current_fn_return`.
+        self.current_fn_return = @intCast(u32, 0);
     }
     self.current_fn_name = proto.name_id;
     semanticAnalyzerResolveStmt(self, decl.child_0);
@@ -6425,7 +6508,11 @@ pub fn semanticAnalyzerResolveModuleVarDecl(self: *SemanticAnalyzer, decl_idx: u
         if (rt) |t| { decl_type = t; }
     }
     pushExpectedType(self, decl_type);
+    // FX12 (Volume II ch12): mark real container scope so a module-level
+    // initializer's `try` rejects as "'try' outside function scope".
+    self.container_init_depth += @intCast(u32, 1);
     var it = semanticAnalyzerResolveExpr(self, decl.child_1);
+    self.container_init_depth -= @intCast(u32, 1);
     popExpectedType(self);
     // Task 4 fix (review Important 3): an UNANNOTATED module binding whose
     // initializer folds to an integer that does not fit the default i32

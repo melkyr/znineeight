@@ -249,6 +249,19 @@ pub const ErrorCode = enum(u16) {
     // found M" wording). Replaces the `error[3043]` ICE net. Level 0, span on
     // the builtin call; rejects with 0 `.c`.
     ERR_3074_COMPTIME_BUILTIN_UNRESOLVED = 3074,
+    // FX12 (Volume II ch12): `try` must run in a function whose declared
+    // return type is an error union and whose error set contains the
+    // operand's; the operand itself must be an error union. Three Zig-shaped
+    // level-0 messages -- non-error-union enclosing return ("expected type
+    // 'X', found error set" + note "function cannot return an error"),
+    // incompatible sets ("try error set may not be compatible with the
+    // enclosing function's return type") and a non-error-union operand
+    // ("expected error union type, found 'X'" + note "consider omitting
+    // 'try'") -- plus Zig's "'try' outside function scope" for a
+    // container-level `try`. Span on the `try`; rejects with 0 `.c`.
+    // Anonymous/opaque operand sets (error_set 0) are a documented bounded
+    // divergence: the non-error-union-enclosing reject is unconditional.
+    ERR_3075_TRY_ENCLOSING_RETURN = 3075,
 };
 
 pub const ERR_1000_UNTERMINATED_STRING: u16 = 0;

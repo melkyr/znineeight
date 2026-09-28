@@ -86,6 +86,7 @@ Arbitrary-width integers carry an exact compile-time bit width, `u1`..`u64` unsi
 - **Coercion**:
   - A value of type `T` can be implicitly coerced to `!T` (success).
   - An error literal can be implicitly coerced to any error union `!T`.
+- **`try` context**: `try` unwraps an error union only inside a function that returns an error union whose error set contains the operand's set, and the operand itself must be an error union — enforced since FX12 with level-0 `error[3075]`; see §3.3 for the exact rules and the anonymous-set bounded divergence.
 - **Not supported**: `@errorName` and the `anyerror` type (see §7).
 
 ### 1.6 Optional Types
@@ -264,7 +265,11 @@ This approach maximizes performance on legacy hardware by minimizing the active 
 
 ### 3.3 Error Handling Expressions
 - `try expr`: Unwraps an error union. If `expr` is an error, it is returned from the current function. Otherwise, the payload is yielded.
-  - The enclosing function must return a compatible error union.
+  - The enclosing function must return a compatible error union. Enforced since FX12 with level-0 `error[3075]` (`ERR_3075_TRY_ENCLOSING_RETURN`), in Zig's check order:
+    - the operand must be an error union, else `expected error union type, found '<kind>'` + note `consider omitting 'try'` (`try 5;`, `try g() catch 5;`, `try voidFn()`);
+    - the enclosing function's declared return type must be an error union, else `expected type '<ret-kind>', found error set` + note `function cannot return an error`. This reject is **unconditional**: an anonymous/opaque operand set (`!T`, `error_set == 0`) cannot be distinguished from an empty set, so the theoretical Zig-valid empty-inferred-set shapes (`fn g() !void {}` with `try g();` in a `void` function) are a documented bounded divergence (§7.2, zero occurrences in the tree);
+    - the operand's error set must be a subset of the function's return set, else `try error set may not be compatible with the enclosing function's return type`. The comparison is **set-only** — payloads need not match, so an `E!void` operand in an `E!i32` function is legal; a named set versus an anonymous `!T` set always passes (the anonymous side is opaque);
+    - a `try` outside any function (a module-level initializer, `const x = try f();`) rejects with `'try' outside function scope`.
   - Example:
     ```zig
     fn mightFail() !i32 { return error.Bad; }
@@ -638,3 +643,4 @@ These were considered and are **not** planned for `zig1`; use the documented idi
   WRITE `arr[0] = 9` rejects `error[3002]`, and the aggregate-field form
   `&cs.a[i]` is `*const ElementType` since FX11). The field-bound guarantee
   itself is complete; this direct-binding residue is not scheduled.
+- **`try` bounded divergences (FX12, 2026-09-28):** the `try` context rules (§3.3) are Zig-0.15.2 parity except where the anonymous/opaque `!T` set (`error_set == 0`) erases information. A `try` in a NON-error-union-returning function is rejected **unconditionally**, so the theoretical Zig-valid shapes whose operand's inferred set is provably empty (`fn g() !void {}` plus `try g();` in a `void` function; zero occurrences in the tree) are rejected too — the ruled bounded divergence. A named operand set feeding a function with an anonymous `!T` set (and vice versa) is accepted because the opaque side is treated as compatible (set-only `errorSetIsSubset`). Two diagnostic-shape notes: a rejected `try` used as an arm of a `const`-bound `if` expression types the `if` `void` through the pre-existing arm fall-through, so the pre-existing `error[3000]: cannot declare variable of type void` co-fires (the reject fixture pins the value-discard form); a `try <unresolved-ident>` adds 3075 on top of the pre-existing `error[20]`. Fixtures: `repro/mi_matrix/try_return_type_reject_xmod` (`3075 9`), positive `repro/mi_matrix/stdlib_try_return_type_ok_xmod`, standalone `repro/try_enclosing_return_reject.z98` / `repro/try_enclosing_return_ok.z98`, and the Task 1 discovery repros `repro/try_void_err_reject.z98`, `try_i32_reject.z98`, `try_incompat_reject.z98`, `try_nonunion_reject.z98`, `try_void_reject.z98`.

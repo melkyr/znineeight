@@ -1,4 +1,75 @@
-# mi_matrix corpus — expected-fail manifest (v281 2026-09-28)
+# mi_matrix corpus — expected-fail manifest (v282 2026-09-28)
+
+## FX12 — `try` enclosing-return rules (v281 -> v282, 2026-09-28)
+
+Volume II defect-fix phase (task-FX12-F; source = the plan's FX12 bullet + the
+operator rulings 2026-09-28, from the Task 1 ch12 discovery). `try` never
+checked the enclosing function's return type: `try g();` in a `void` function
+silently dropped the error, in an `i32` function emitted gcc-invalid C, a
+mismatched error set was accepted, `try 5;` silently typed void, and a
+module-level `try` compiled.
+
+**Fix (`sf/src/semantic_analyzer.zig`, `sf/src/diagnostics.zig`; sema-only, no
+lowering/emitter change).** New level-0 `ERR_3075_TRY_ENCLOSING_RETURN = 3075`
+emitted by the new `semanticAnalyzerTryReject` (span on the `try`, deduped per
+node via `diagnosticCollectorMarkNodeOnce`, `TYPE_UNDEFINED` poison on reject).
+Check order mirrors Zig, with the exact messages:
+- container-level (real module initializer only — the new `container_init_depth`
+  counter is set around `semanticAnalyzerResolveModuleVarDecl` so the bare
+  analyzer unit tests keep the pre-3075 path): `'try' outside function scope`;
+- non-error-union operand: `expected error union type, found '<kind>'` + note
+  `consider omitting 'try'` (`try 5;`, `try g() catch 5;`, `try voidFn()`);
+- non-error-union enclosing return (unconditional): `expected type '<ret-kind>',
+  found error set` + note `function cannot return an error`;
+- `errorSetIsSubset(operand_set, fn_set)` false (set-only comparison — payload
+  equality deliberately NOT required, so an `E!void` operand in an `E!i32`
+  function is legal): `try error set may not be compatible with the enclosing
+  function's return type`.
+`semanticAnalyzerResolveFnBody` clears `current_fn_return` when a declared
+return type does not resolve (no stale inheritance) and records the truthful
+`TYPE_VOID` for a no-annotation function. `sf/src/tests/test_semantic_bin.zig`
+`testTryExprNotErrorUnion` updated to the new poison + 1-error behavior.
+
+**Corpus movement.** `-s0` classify 1069 = 909 OK / 53 GREEN / 107 FAIL ->
+**1071 = 910 OK / 53 GREEN / 108 FAIL / 0 ICE / 0 CRASH**; join-diff vs the
+pre-fix base over the 1069 common dirs **EMPTY**; the only dir-set additions
+are the two new fixtures below (reject FAIL, positive OK). FX6/FX11 reject
+censuses unchanged.
+
+**Fixtures.** Reject `repro/mi_matrix/try_return_type_reject_xmod` (main +
+helper, `expected.rc` 2, `expected_error.txt` `3075 9`, one diagnostic per
+site: A1 `void` fn, A2 `i32` fn, A3 cross-module set mismatch, A4 `try 5;`,
+nested-block `i32`, `?i32` return, if-value and switch-value payload shapes in
+a `void` fn, container-level `try`; rc 2 / 0 `.c`). Positive runtime
+`repro/mi_matrix/stdlib_try_return_type_ok_xmod` (main + helper, 8-line stdout
+golden, rc 0, 3x byte-exact; stdlib pin 264 -> 265). Standalone
+`repro/try_enclosing_return_reject.z98` (4 x 3075) and
+`repro/try_enclosing_return_ok.z98` (`ok=41 12 11 11 13 33`, rc 0); the Task 1
+discovery probes committed as `repro/try_void_err_reject.z98`,
+`repro/try_i32_reject.z98`, `repro/try_incompat_reject.z98`,
+`repro/try_nonunion_reject.z98`, `repro/try_void_reject.z98` (1 x 3075 each).
+
+**Gates (final compiler `7cce731f757e8458c25604557ddc3427`).** Seed two-hop
+closure hop1 == hop2 with explicit `FIXED_POINT_MD5` (seed v88 NOT rotated,
+archive `3db5ef392ecc349304ffdf14c618e530` byte-identical); 4-MD5 emitted C
+both modes **UNCHANGED 8/8**; `run_fixtures.sh` **265 PASS / 0 FAIL**; example
+matrix 24/24; `check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK;
+self-emission 48 `.c` + 48 `.h` / 0 PANIC; `sf/scripts/build_test.sh` 0/9
+pre-existing; `repro/vol2_defects/run_all.sh` 13/13.
+
+**Residuals (documented, not fixed).** (1) The ruled bounded divergence: a
+non-error-union enclosing function rejects unconditionally, so the theoretical
+Zig-valid empty-inferred-set shapes (`fn g() !void {}` + `try g();` in a `void`
+fn; zero occurrences in tree) reject too; named<->anonymous set relations
+always pass (the opaque side is treated as compatible). (2) A rejected `try`
+used as the arm of a `const`-bound `if` expression types the `if` `void`
+through the pre-existing arm fall-through, co-firing the pre-existing
+`error[3000]: cannot declare variable of type void` (the reject fixture pins
+the value-discard form to keep one 3075 per site); `try <unresolved-ident>`
+adds 3075 on top of the pre-existing `error[20]` cascade.
+
+**Codes.** 3075 (0 `.c`); the legacy `error[3000]` and the FX6/FX11 asserts are
+untouched.
 
 ## FX11 — aggregate-field-bound const-array decay (v280 -> v281, 2026-09-28)
 

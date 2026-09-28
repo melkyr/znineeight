@@ -587,7 +587,10 @@ fn testTryExprNotErrorUnion() void {
     var ident_idx = ast_mod.astStoreAddNode(&store, AstKind.ident_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), unid);
     var try_idx = ast_mod.astStoreAddNode(&store, AstKind.try_expr, @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0), ident_idx, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
     var tid = sa_mod.semanticAnalyzerResolveExpr(&sa, try_idx);
-    if (tid != type_mod.TYPE_VOID) { var fmsg: []const u8 = "testTryExprNotErrorUnion expected TYPE_VOID"; fail(fmsg); return; }
+    // FX12: a non-error-union operand is a level-0 `error[3075]` reject and the
+    // expression resolves to the poison type (was a silent `TYPE_VOID`).
+    if (tid != type_mod.TYPE_UNDEFINED) { var fmsg: []const u8 = "testTryExprNotErrorUnion expected TYPE_UNDEFINED"; fail(fmsg); return; }
+    if (diag.error_count != @intCast(u32, 1)) { var emsg: []const u8 = "testTryExprNotErrorUnion expected 1 error"; fail(emsg); return; }
     var tmsg: []const u8 = "testTryExprNotErrorUnion";
     ok(tmsg);
 }
