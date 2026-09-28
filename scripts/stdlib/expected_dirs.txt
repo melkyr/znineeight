@@ -70,6 +70,7 @@ repro/mi_matrix/stdlib_comptime_noreturn_if_xmod
 repro/mi_matrix/stdlib_comptime_true_if_xmod
 repro/mi_matrix/stdlib_cond_ok_xmod
 repro/mi_matrix/stdlib_const_decay_ok_xmod
+repro/mi_matrix/stdlib_const_field_decay_ok_xmod
 repro/mi_matrix/stdlib_crypto_crc32_xmod
 repro/mi_matrix/stdlib_crypto_md5_xmod
 repro/mi_matrix/stdlib_crypto_sha1_xmod

@@ -1684,7 +1684,7 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
             var fa_ety = self.registry.types_items[@intCast(usize, fa_elem)];
             if (fa_ety.kind == type_mod.TypeKind.array_type) {
                 var fa_elem_i = self.registry.array_items[@intCast(usize, fa_ety.payload_idx)].elem;
-                fa_elem = type_mod.typeRegistryGetOrCreatePtr(self.registry, fa_elem_i, false);
+                fa_elem = type_mod.typeRegistryGetOrCreatePtr(self.registry, fa_elem_i, semanticAnalyzerIsLValueConst(self, node_idx));
             }
             var fa_rm: []const u8 = "FA:TUP"; pal_mod.markerWriteInt(fa_rm, fa_elem);
             rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, fa_elem);
@@ -1720,7 +1720,7 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
                     var payload_rt = self.registry.types_items[@intCast(usize, payload_res)];
                     if (payload_rt.kind == type_mod.TypeKind.array_type) {
                         var payload_elem = self.registry.array_items[@intCast(usize, payload_rt.payload_idx)].elem;
-                        payload_res = type_mod.typeRegistryGetOrCreatePtr(self.registry, payload_elem, false);
+                        payload_res = type_mod.typeRegistryGetOrCreatePtr(self.registry, payload_elem, semanticAnalyzerIsLValueConst(self, node_idx));
                     }
                     var fpe_m: []const u8 = "FP:PAYLOAD\n"; pal_mod.markerWrite(fpe_m);
                     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, payload_res);
@@ -1859,7 +1859,7 @@ pub fn semanticAnalyzerResolveFieldAccess(self: *SemanticAnalyzer, node_idx: u32
             var rt = self.registry.types_items[@intCast(usize, result)];
             if (rt.kind == type_mod.TypeKind.array_type) {
                 var elem = self.registry.array_items[@intCast(usize, rt.payload_idx)].elem;
-                result = type_mod.typeRegistryGetOrCreatePtr(self.registry, elem, false);
+                result = type_mod.typeRegistryGetOrCreatePtr(self.registry, elem, semanticAnalyzerIsLValueConst(self, node_idx));
             }
             var ff_m: []const u8 = "FF:R"; pal_mod.markerWriteInt(ff_m, result);
             rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, result);
@@ -2534,6 +2534,92 @@ fn semanticAnalyzerMaybeDiagConstDiscard(self: *SemanticAnalyzer, span_node: u32
     return true;
 }
 
+// FX11 (Volume II const-decay holes): a const aggregate's array FIELD is
+// materialised by `semanticAnalyzerResolveFieldAccess` as a pointer to the
+// element (the C array decay), so the field access's TYPE no longer says
+// `array` and the FX6 predicates miss the field-bound family. This helper
+// recovers the DECLARED array type of a field access that resolved through
+// that decay: the access must be a (paren-wrapped) `field_access` whose
+// resolved type is a pointer, and the accessed member's declared type must be
+// an array — a genuine pointer-typed field (`q: *T`) never matches. Returns 0
+// for every non-field access and every field that is not an array.
+fn semanticAnalyzerFieldAccessArrayType(self: *SemanticAnalyzer, node_idx: u32) u32 {
+    if (node_idx == @intCast(u32, 0)) return @intCast(u32, 0);
+    var cur = node_idx;
+    var unwrap_n: u32 = @intCast(u32, 0);
+    while (unwrap_n < @intCast(u32, 8)) : (unwrap_n += @intCast(u32, 1)) {
+        var pn = ast_mod.astStoreNodeAt(self.store, cur);
+        if (pn.kind == AstKind.paren_expr and pn.child_0 != @intCast(u32, 0)) { cur = pn.child_0; } else { break; }
+    }
+    var bn = ast_mod.astStoreNodeAt(self.store, cur);
+    if (bn.kind != AstKind.field_access) return @intCast(u32, 0);
+    var fname: u32 = ast_mod.astStoreNodePayload(self.store, cur);
+    // The access itself must have resolved to the decayed element pointer.
+    var res_t: u32 = @intCast(u32, 0);
+    if (rtt_mod.resolvedTypeTableGet(self.type_table, cur)) |t| { res_t = t; } else { return @intCast(u32, 0); }
+    if (res_t == @intCast(u32, 0) or res_t == type_mod.TYPE_UNDEFINED or res_t == type_mod.TYPE_VOID) return @intCast(u32, 0);
+    if (@intCast(usize, res_t) >= self.registry.types_len) return @intCast(u32, 0);
+    var rty = self.registry.types_items[@intCast(usize, res_t)];
+    if (rty.kind != type_mod.TypeKind.ptr_type and rty.kind != type_mod.TypeKind.many_ptr_type) return @intCast(u32, 0);
+    var cont: u32 = @intCast(u32, 0);
+    if (rtt_mod.resolvedTypeTableGet(self.type_table, bn.child_0)) |t| { cont = t; } else { return @intCast(u32, 0); }
+    if (cont == @intCast(u32, 0) or cont == type_mod.TYPE_UNDEFINED or cont == type_mod.TYPE_VOID) return @intCast(u32, 0);
+    if (@intCast(usize, cont) >= self.registry.types_len) return @intCast(u32, 0);
+    var cty = self.registry.types_items[@intCast(usize, cont)];
+    if (cty.kind == type_mod.TypeKind.ptr_type or cty.kind == type_mod.TypeKind.many_ptr_type) {
+        cont = self.registry.ptr_items[@intCast(usize, cty.payload_idx)].base;
+        if (@intCast(usize, cont) >= self.registry.types_len) return @intCast(u32, 0);
+        cty = self.registry.types_items[@intCast(usize, cont)];
+    }
+    if (cty.kind == type_mod.TypeKind.tuple_type) {
+        var tord = type_mod.typeRegistryTupleOrdinalFromNameId(self.registry, fname) orelse return @intCast(u32, 0);
+        var tp = self.registry.tup_items[@intCast(usize, cty.payload_idx)];
+        if (tord >= @intCast(u32, tp.elems_count)) return @intCast(u32, 0);
+        var tet = self.registry.xt_items[@intCast(usize, tp.elems_start + tord)];
+        if (@intCast(usize, tet) < self.registry.types_len and self.registry.types_items[@intCast(usize, tet)].kind == type_mod.TypeKind.array_type) return tet;
+        return @intCast(u32, 0);
+    }
+    var fstart: usize = 0;
+    var fcount: usize = 0;
+    if (cty.kind == type_mod.TypeKind.struct_type) {
+        var sp = self.registry.st_items[@intCast(usize, cty.payload_idx)];
+        fstart = @intCast(usize, sp.fields_start);
+        fcount = @intCast(usize, sp.fields_count);
+    } else if (cty.kind == type_mod.TypeKind.union_type or cty.kind == type_mod.TypeKind.packed_union_type) {
+        var up = self.registry.un_items[@intCast(usize, cty.payload_idx)];
+        fstart = @intCast(usize, up.fields_start);
+        fcount = @intCast(usize, up.fields_count);
+    } else if (cty.kind == type_mod.TypeKind.tagged_union_type) {
+        var tp2 = self.registry.tu_items[@intCast(usize, cty.payload_idx)];
+        var payload_s: []const u8 = "payload";
+        var payload_id = interner_mod.stringInternerIntern(self.interner, payload_s);
+        if (fname == payload_id) {
+            var pfi: usize = 0;
+            while (pfi < @intCast(usize, tp2.fields_count)) : (pfi += 1) {
+                var fpe = self.registry.fe_items[@intCast(usize, tp2.fields_start) + pfi];
+                if (fpe.type_id != type_mod.TYPE_VOID) {
+                    if (@intCast(usize, fpe.type_id) < self.registry.types_len and self.registry.types_items[@intCast(usize, fpe.type_id)].kind == type_mod.TypeKind.array_type) return fpe.type_id;
+                    return @intCast(u32, 0);
+                }
+            }
+            return @intCast(u32, 0);
+        }
+        fstart = @intCast(usize, tp2.fields_start);
+        fcount = @intCast(usize, tp2.fields_count);
+    } else {
+        return @intCast(u32, 0);
+    }
+    var fi: usize = 0;
+    while (fi < fcount) : (fi += 1) {
+        var fe = self.registry.fe_items[fstart + fi];
+        if (fe.name_id == fname) {
+            if (@intCast(usize, fe.type_id) < self.registry.types_len and self.registry.types_items[@intCast(usize, fe.type_id)].kind == type_mod.TypeKind.array_type) return fe.type_id;
+            return @intCast(u32, 0);
+        }
+    }
+    return @intCast(u32, 0);
+}
+
 // FX6 (Volume II const-decay holes): an array VALUE carries no `const` flag on
 // its type — the qualifier lives on the BINDING — so the type-level
 // `semanticAnalyzerConstDiscard` cannot see `const arr` -> `[]T`/`[*]T`. This
@@ -2544,6 +2630,11 @@ fn semanticAnalyzerMaybeDiagConstDiscard(self: *SemanticAnalyzer, span_node: u32
 // their result TYPE (see `semanticAnalyzerResolveSliceExpr` /
 // `semanticAnalyzerResolveExpr`'s `address_of` arm), so they are rejected by
 // the type-level predicate through the ordinary sites.
+// FX11 extends the source side to a const aggregate's array FIELD: the access
+// resolved through `semanticAnalyzerResolveFieldAccess`'s decay to an element
+// pointer, so the declared array type (and the const binding behind it) is
+// recovered with `semanticAnalyzerFieldAccessArrayType`; the target families
+// are the same mutable slice / many-pointer.
 fn semanticAnalyzerConstArrayDecay(self: *SemanticAnalyzer, src_node: u32, src_type: u32, dst_type: u32) bool {
     if (src_type == @intCast(u32, 0) or dst_type == @intCast(u32, 0)) return false;
     if (src_type == type_mod.TYPE_UNDEFINED or dst_type == type_mod.TYPE_UNDEFINED) return false;
@@ -2552,17 +2643,33 @@ fn semanticAnalyzerConstArrayDecay(self: *SemanticAnalyzer, src_node: u32, src_t
     if (@intCast(usize, dst_type) >= self.registry.types_len) return false;
     var s = self.registry.types_items[@intCast(usize, src_type)];
     var d = self.registry.types_items[@intCast(usize, dst_type)];
-    if (s.kind != type_mod.TypeKind.array_type) return false;
+    var arr_elem: u32 = @intCast(u32, 0);
+    if (s.kind == type_mod.TypeKind.array_type) {
+        var arr = self.registry.array_items[@intCast(usize, s.payload_idx)];
+        arr_elem = arr.elem;
+    } else if (s.kind == type_mod.TypeKind.ptr_type or s.kind == type_mod.TypeKind.many_ptr_type) {
+        // FX11: the source is a const aggregate's array FIELD — the access
+        // decayed to the element pointer at field-resolution time, so the
+        // array-ness (and with it the binding's constness) is recovered from
+        // the field access; a real pointer-typed field never matches.
+        var fat = semanticAnalyzerFieldAccessArrayType(self, src_node);
+        if (fat == @intCast(u32, 0)) return false;
+        var farr = self.registry.array_items[@intCast(usize, self.registry.types_items[@intCast(usize, fat)].payload_idx)];
+        arr_elem = farr.elem;
+        var sfp = self.registry.ptr_items[@intCast(usize, s.payload_idx)];
+        if (sfp.base != arr_elem) return false;
+    } else {
+        return false;
+    }
     if (d.kind != type_mod.TypeKind.slice_type and d.kind != type_mod.TypeKind.many_ptr_type) return false;
     if ((d.flags & type_mod.CONST_FLAG) != @intCast(u8, 0)) return false;
     if (!semanticAnalyzerIsLValueConst(self, src_node)) return false;
-    var arr = self.registry.array_items[@intCast(usize, s.payload_idx)];
     if (d.kind == type_mod.TypeKind.slice_type) {
         var ds = self.registry.slice_items[@intCast(usize, d.payload_idx)];
-        return arr.elem == ds.elem;
+        return arr_elem == ds.elem;
     }
     var dp = self.registry.ptr_items[@intCast(usize, d.payload_idx)];
-    return arr.elem == dp.base;
+    return arr_elem == dp.base;
 }
 
 fn semanticAnalyzerMaybeDiagConstArrayDecay(self: *SemanticAnalyzer, span_node: u32, src_node: u32, src_type: u32, dst_type: u32) bool {
@@ -4340,11 +4447,38 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
             // constness. Deliberately array-only (a non-array operand keeps
             // the pre-existing pointer spelling) so the FX6 blast radius
             // stays inside the const-array-decay family.
+            // FX11 extends the const case to a const aggregate's array FIELD:
+            // the field access resolved through the decay as an element
+            // pointer, so the declared array type is recovered from the
+            // access and the pointer is rebuilt as `*[N]T` / `*const [N]T`
+            // (the constness comes from the l-value path). Non-array
+            // operands keep the pre-existing pointer spelling.
             var ao_const: bool = false;
+            var ao_base: u32 = base;
             if (self.registry.types_items[@intCast(usize, base)].kind == type_mod.TypeKind.array_type) {
                 ao_const = semanticAnalyzerIsLValueConst(self, node.child_0);
+            } else {
+                var ao_node = node.child_0;
+                var ao_un: u32 = @intCast(u32, 0);
+                while (ao_un < @intCast(u32, 8)) : (ao_un += @intCast(u32, 1)) {
+                    var an = ast_mod.astStoreNodeAt(self.store, ao_node);
+                    if (an.kind == AstKind.paren_expr and an.child_0 != @intCast(u32, 0)) { ao_node = an.child_0; } else { break; }
+                }
+                var ao_an = ast_mod.astStoreNodeAt(self.store, ao_node);
+                var ao_fat = semanticAnalyzerFieldAccessArrayType(self, ao_node);
+                if (ao_fat != @intCast(u32, 0)) {
+                    ao_base = ao_fat;
+                    ao_const = semanticAnalyzerIsLValueConst(self, ao_node);
+                } else if (ao_an.kind == AstKind.index_access) {
+                    // `&const_field_array[i]`: the element address of a const
+                    // aggregate's array field is `*const elem`.
+                    var ao_elem_base = ao_an.child_0;
+                    if (semanticAnalyzerFieldAccessArrayType(self, ao_elem_base) != @intCast(u32, 0) and semanticAnalyzerIsLValueConst(self, ao_elem_base)) {
+                        ao_const = true;
+                    }
+                }
             }
-            result = type_mod.typeRegistryGetOrCreatePtr(self.registry, base, ao_const);
+            result = type_mod.typeRegistryGetOrCreatePtr(self.registry, ao_base, ao_const);
         } else {
             result = type_mod.TYPE_VOID;
         }
@@ -5964,7 +6098,15 @@ fn semanticAnalyzerResolveSliceExpr(self: *SemanticAnalyzer, node_idx: u32) u32 
     // the target discards it. Deliberately array-only: a const-bound MUTABLE
     // slice (`const s: []T`) keeps its element mutability, matching Zig
     // (`s[0..]` is `[]T`).
+    // FX11 extends the same propagation to a const aggregate's array FIELD:
+    // the field path decides (the field access normally already resolves
+    // `*const T` for a const aggregate, so this is the belt-and-braces for a
+    // decay whose resolved pointer predates the settled const binding). A
+    // mutable aggregate's field and a genuine pointer-typed field keep their
+    // pre-existing mutability.
     if (bt.kind == type_mod.TypeKind.array_type and !se_is_const and semanticAnalyzerIsLValueConst(self, node.child_0)) {
+        se_is_const = true;
+    } else if ((bt.kind == type_mod.TypeKind.ptr_type or bt.kind == type_mod.TypeKind.many_ptr_type) and !se_is_const and semanticAnalyzerFieldAccessArrayType(self, node.child_0) != @intCast(u32, 0) and semanticAnalyzerIsLValueConst(self, node.child_0)) {
         se_is_const = true;
     }
     var ret = type_mod.typeRegistryGetOrCreateSlice(self.registry, self._stub_1, se_is_const);

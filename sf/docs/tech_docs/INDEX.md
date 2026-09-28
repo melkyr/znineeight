@@ -1030,10 +1030,11 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `semanticAnalyzerCheckIntrospectionBuiltin` | semantic_analyzer.zig |
 | `semanticAnalyzerConditionComptimeBool` | semantic_analyzer.zig (FX9: tri-state comptime bool fold of an `if` condition; `?false` distinguishes comptime-false from unknown so the untaken arm is skipped) |
 | `semanticAnalyzerConditionIsComptimeTrue` | semantic_analyzer.zig |
-| `semanticAnalyzerConstArrayDecay` | semantic_analyzer.zig (FX6: expression-level const-array-decay predicate — source `array_type`, target mutable `[]T`/`[*]T`, same element, source node a const l-value binding) |
+| `semanticAnalyzerConstArrayDecay` | semantic_analyzer.zig (FX6: expression-level const-array-decay predicate — source `array_type`, target mutable `[]T`/`[*]T`, same element, source node a const l-value binding; FX11: a pointer source that is a const aggregate's array-FIELD decay also matches, with the declared array type recovered by `semanticAnalyzerFieldAccessArrayType`) |
 | `semanticAnalyzerConstDiscard` | semantic_analyzer.zig (FC/D12; FX6: const-discard predicate — source const, target not, same effective elem/base across slice->slice / slice->many / ptr->ptr / many->many; FX6 adds ptr->slice and ptr->many for a pointee known-length array — the string-literal family) |
 | `semanticAnalyzerDiagAsyncBuiltinInDefer` | semantic_analyzer.zig |
 | `semanticAnalyzerDiagAsyncOutsideSuspending` | semantic_analyzer.zig |
+| `semanticAnalyzerFieldAccessArrayType` | semantic_analyzer.zig (FX11: recovers the DECLARED array type of a field access that resolved through the array-field element-pointer decay — paren-transparent `field_access`, pointer resolved type, struct/union/packed-union/tagged-union/tuple member declared `array_type`; 0 for non-fields and genuine pointer fields) |
 | `semanticAnalyzerFindTypeDecl` | semantic_analyzer.zig |
 | `semanticAnalyzerFloatNarrowArmStatus` | semantic_analyzer.zig (FX3 fix r1 + FX9 fix r1: one `if` arm / `switch` prong value must accept; `noreturn`/`undefined`/`f32` arms neutral) |
 | `semanticAnalyzerFloatNarrowIsNumeric` | semantic_analyzer.zig (FX3: f64/integer source classifier for the f32 narrowing) |

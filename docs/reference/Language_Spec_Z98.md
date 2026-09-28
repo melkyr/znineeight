@@ -485,12 +485,14 @@ initializers); no C is emitted.
   itself carries no qualifier, so the binding's `const` is what the coercion
   would discard; `[]const T` / `[*]const T` stay Allowed). Scope: arrays bound
   directly by an ident — a local `const`/`var`, a module constant, a parameter
-  or capture. An array reached through a FIELD of a const aggregate
-  (`const S = struct { a: [3]i32 }; const cs: S = ...;`) is a known deferred
-  gap (fix group FX11): a const aggregate's array field resolves through a
-  pointer-typed field access, so its slice/address/element forms
-  (`cs.a[0..]`, `&cs.a`, `var s: []i32 = cs.a[0..];`) still compile and can
-  alias const storage; Zig 0.15.2 rejects them.
+  or capture — and, since FX11, an array reached through a FIELD of a const
+  aggregate (`const S = struct { a: [3]i32 }; const cs: S = ...;`). The field
+  access is materialised as a `const` element pointer (`*const i32`) from the
+  binding, so `cs.a`, `cs.a[0..]` and `&cs.a` all discard `const` on a mutable
+  slice/many-pointer/pointer target exactly like the direct-binding forms
+  (Zig 0.15.2 rejects the same shapes). A mutable aggregate's field, a
+  const-bound aggregate's MUTABLE slice field (`struct { m: []i32 }`) and a
+  genuine pointer-typed field keep their pre-existing mutability.
 - a const array / `[]const T` / string-literal ELEMENT of an array literal
   whose declared element type is mutable (Forbidden: `[2][]i32{ c, c }` with
   `c: []const i32` rejects at the element span)
@@ -499,12 +501,13 @@ initializers); no C is emitted.
 - Slicing a `const` array or a `[]const T` yields `[]const T` (§1.4); the
   resulting slice then rejects at the ordinary sites if a mutable target is
   expected (`var s: []i32 = arr[0..];` where `arr` is `const`). This
-  propagation covers the same direct ident/module/parameter array bindings as
-  the bullet above (the FX11 field-bound deferral applies here too).
+  propagation covers the direct ident/module/parameter bindings and, since
+  FX11, a const aggregate's array field (`cs.a[0..]` is `[]const i32`).
 - `&arr` on a `const`-bound array is `*const [N]T`; coercing it to `*[N]T`,
   `[]T` or `[*]T` is the same level-0 const discard, while `*const [N]T` /
-  `[]const T` / `[*]const T` stay accepted (same direct-binding scope; `&cs.a`
-  on a const aggregate field is the FX11 deferral). A const-bound MUTABLE slice
+  `[]const T` / `[*]const T` stay accepted. The same applies to a const
+  aggregate's array field since FX11: `&cs.a` is `*const [3]i32` and
+  `&cs.a[i]` is `*const ElementType`. A const-bound MUTABLE slice
   (`const s: []T`) keeps element mutability: `s[0..]` is `[]T` and `&s[0]` is
   `*T`, matching Zig.
 
@@ -629,3 +632,9 @@ These were considered and are **not** planned for `zig1`; use the documented idi
 - Arithmetic folds over a DECLARED integer operand apply a **peer-fit rule**: an untyped operand's exact value and the exact result must fit the operand's sema type (including the unary `-`, nested arithmetic, and a name typed through an unannotated `const`'s initializer), so Zig-rejected shapes (`u - 300` on a `u8`, `0 - umax` and `-umax` on a `u64`) stay rejected. `~` is EXEMPT: Z98 folds the exact `-x - 1` while sema types `~x` as x's type and the runtime complement wraps — the accepted `(~u) != 0` class is runtime-equal to Zig, but a shape depending on the wrapped value (`(~u) == 4294967295` with `u: u32`) can false-reject (pre-existing divergence).
 - **Coercion happens only at materialisation**, against the target's exact width/signedness (`comptimeIntFitsType`), preserving the existing diagnostics (`error[3000]`/`[3050]`/`[3055]`/`[3059]`). Sites: typed `var`/`const` declarations, parameters, returns, `@intCast`/`@as` targets, enum backing/member values, and array sizes. The **array-size evaluator** folds exactly and accepts `0..0xFFFFFFFE` (the `0xFFFFFFFF` unfolding sentinel collision is pre-existing), so `[0 - 1]u8` is `error[3050]`, while `[1 << 4]u8`, `[(2 + 1) * 2]u8`, `[(1 << 200) >> 190]u8` and a module-const chain fold exactly. The **enum evaluator** materialises through the `[i64 min, u64 max]` member-storage window, so `enum(u64) { A = (1 << 200) >> 190 }` folds `1024`, while `enum { A = 18446744073709551615 + 1 }` and `enum(u64) { A = 18446744073709551615 * 2 }` are clean `error[3055]` rejects (the old 64-bit wrappers stored `0` / `2^64 - 2` silently).
 - **Remaining bounded divergences** (documented, deliberately not full parity): `const BIGFOLD = 1 << 100;` in a runtime/untyped slot rejects `error[3000]` where Zig accepts (Z98 has no >64-bit runtime integer slot; `repro/mi_matrix/comptime_coerce_reject_xmod`); `%` on signed comptime integers and `~` on `comptime_int` are accepted where Zig 0.15.2 requires `@rem` / rejects `~`; an over-u32 array size (`[1 << 40]u8`) is `error[3050]` although Zig accepts it at compile time (Z98's array length field is `u32`); **float comparisons fold (Task 9, Part II)** at the compiler's established `f64` precision with an exact-representability peer rule — an integer operand participates only when it fits the peer's significand (53 bits for `f64`/`comptime_float`, 24 for `f32`; its significant-bit count is `bitlen(magnitude) - trailing zeros`, corrected by Task 9 fix round 1), an `f32` operand against a non-`f32`-exact untyped literal declines, and `comptime_float` literals compare at `f64` rather than Zig's `f128` (bounded residual; `repro/mi_matrix/stdlib_comptime_float_compare_xmod` + `comptime_float_compare_reject_xmod`), while float comptime arithmetic precision stays out of scope; `@intToFloat` of a value above 2^53 may differ from a correctly-rounded conversion by 1 ulp; **runtime signed slice bounds** (a runtime `i32` bound such as `var i: i32 = -1; arr[i..4]` / `pa[i..4]`, and the accepted `mp[i..]`) are not coerced/rejected and bypass the `-fsafe` guards where Zig 0.15.2 compile-rejects (`expected type 'usize', found 'i32'`); a literal or comptime-folded negative bound still rejects `error[3062] type 'usize' cannot represent integer value '-1'` — systemic pre-existing laxity, no fix scheduled (see §1.4). Fixtures: `repro/mi_matrix/stdlib_comptime_compare_xmod`, `comptime_compare_reject_xmod`, `stdlib_comptime_float_compare_xmod`, `stdlib_comptime_noreturn_if_xmod`, `stdlib_comptime_bigint_arith_xmod`, `stdlib_comptime_coerce_typed_slots_xmod`, `comptime_coerce_reject_xmod`, `array_size_negative_reject_xmod`, `stdlib_comptime_constfold_exact_xmod`, `comptime_constfold_reject_xmod`; standalone repros under `repro/comptime_*.z98`.
+- **Const correctness residue (FX11 scope boundary):** the address of a const
+  array's ELEMENT in the direct-binding form, `const arr: [3]i32 = ...; var q:
+  *i32 = &arr[0];`, still yields a mutable `*i32` (pre-existing; the element
+  WRITE `arr[0] = 9` rejects `error[3002]`, and the aggregate-field form
+  `&cs.a[i]` is `*const ElementType` since FX11). The field-bound guarantee
+  itself is complete; this direct-binding residue is not scheduled.

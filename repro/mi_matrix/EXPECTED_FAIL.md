@@ -1,4 +1,73 @@
-# mi_matrix corpus — expected-fail manifest (v280 2026-09-28)
+# mi_matrix corpus — expected-fail manifest (v281 2026-09-28)
+
+## FX11 — aggregate-field-bound const-array decay (v280 -> v281, 2026-09-28)
+
+Volume II defect-fix phase, Stage 2b follow-up (task-FX11; source = the plan's
+FX11 bullet + the FX6 review Important 1 / FX6 report §10). The FX6
+const-decay guarantee covered direct ident/module/parameter array bindings; an
+array reached through a FIELD of a const aggregate resolved through the
+field-access decay as a mutable element pointer, so `cs.a[0..]`, `&cs.a`,
+`cs.a`, the `*const S` field (`cp.a`), the cross-module field and the
+array-literal element site compiled rc 0 and silently wrote const storage
+(Zig 0.15.2 rejects the same shapes).
+
+**Fix (`sf/src/semantic_analyzer.zig`; sema-only, no new code).**
+- `semanticAnalyzerResolveFieldAccess` builds the array-field decay pointer as
+  `*const T` when `semanticAnalyzerIsLValueConst(node_idx)` (struct/union/
+  packed-union fields, tuple elements, tagged-union payload), so the existing
+  type-level machinery rejects the mutable materialisations (`var q: *i32 =
+  cs.a` 3000; `cs.a[0] = 9` / `cs.a.* = 9` 3002; `var s: []i32 = cs.a[0..]`
+  3000), while a mutable aggregate's field, a const-bound aggregate's MUTABLE
+  slice field, and a genuine pointer-typed field keep their mutability.
+- New `semanticAnalyzerFieldAccessArrayType` recovers the DECLARED array type
+  of a decayed field access; it feeds the `semanticAnalyzerConstArrayDecay`
+  pointer-source arm (element site `[1][]i32{ cs.a }`), the `address_of` arm
+  (`&cs.a` -> `*[N]T`/`*const [N]T`, `&cs.a[i]` -> `*const elem`) and
+  `semanticAnalyzerResolveSliceExpr` (`cs.a[0..]` -> `[]const T`).
+- No new diagnostic code: the FC/FX6 level-0 `error[3000]` one-liner and the
+  Task 7B `error[3002]` lvalue guard are reused.
+
+**RED -> GREEN (measured; probes under `/tmp/fx11`).** All six listed shapes
+rc 2 / 0 `.c` / 1 x `error[3000]`; the same-type sibling holes are closed too
+(`var q: *i32 = cs.a`, `cs.a[0] = 9`, `cs.a.* = 9`, `&cs.a[0]`). The oracle
+(`/tmp/zig-x86_64-linux-0.15.2/zig build-exe -fno-emit-bin`) rejects every
+shape and accepts every const-adding control.
+
+**Fixtures.** Positive `stdlib_const_field_decay_ok_xmod` (main+helper,
+expected.txt `cfd=1 3 2 3 2 3 1 3 1 4 6 5 4 2 3`, expected.rc 0; stdlib pin
+263 -> 264, run_fixtures 263 -> 264 PASS), reject
+`const_field_decay_reject_xmod` (main+helper, expected.rc 2; 29 x
+`error[3000]`, 0 warnings, 0 `.c`), standalone `repro/const_field_decay.z98`
+(`ok=1 3 2 3 2 3 1 1 3 1 2`) and `repro/const_field_decay_reject.z98`
+(23 x `error[3000]`).
+
+**Corpus movement / migration.** Pre-migration the fix added exactly one mover
+over the 1067 HEAD dirs: `stdlib_method_syntax_ok_xmod` OK -> GREEN (its
+`const slice_pts: []Point = holder.pts[0..2]` row sliced a `const holder`
+aggregate's array field into a mutable slice — the closed hole; Zig 0.15.2
+rejects it). Migration applied (FX6 round-1 precedent): `const holder` ->
+`var holder`; every row and the stdout golden are unchanged. Final `-s0`
+classify on the frozen tree: **1069 = 909 OK / 53 GREEN / 107 FAIL / 0 ICE /
+0 CRASH**; join-diff vs HEAD over the 1067 common dirs **EMPTY**; the only
+dir-set additions are the two FX11 fixtures (reject GREEN, positive OK).
+
+**Gates.** Seed two-hop closure with explicit gate: hop1 == hop2 ==
+**`5ac51c323f6fbade04271c6884565ed4`** (seed v88 NOT rotated, archive
+`3db5ef392ecc349304ffdf14c618e530` unchanged); 4-MD5 emitted C both modes
+UNCHANGED 8/8; `run_fixtures.sh` 264 PASS / 0 FAIL; example matrix 24/24;
+`check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK; self-emission
+48 `.c` + 48 `.h` / 0 PANIC; `sf/scripts/build_test.sh` 0/9 pre-existing;
+`repro/vol2_defects/run_all.sh` 13/13. FX6 censuses/goldens unchanged
+(`repro/const_decay_reject.z98` 41 x 3000, `const_decay_reject_xmod` 23 x
+3000, `stdlib_const_decay_ok_xmod` PASS).
+
+**Residuals (documented, not fixed).** (1) Direct-binding `&const_arr[i]`
+still yields a mutable `*i32` (`const arr: [3]i32 = ...; var q: *i32 =
+&arr[0];`) — pre-existing, not field-bound; the field form `&cs.a[i]` is
+`*const elem` since FX11 (Language Spec §7.2). (2) The pre-existing inline
+nested-array-literal field initializer (`.a = .{ 1, 2, 3 }`) zeroes the field
+and drops the element tuple at lowering (present at HEAD, unrelated to FX11);
+the FX11 fixtures initialise from a named `garr` binding.
 
 ## FX8 — `labeled_stmt` analyzer traversal (v279 -> v280, 2026-09-28)
 
@@ -272,7 +341,8 @@ and the array-literal element site) is a pre-existing silent const-alias hole
 and a const aggregate's array field resolves through a pointer-typed field
 access, so the binding's constness is not propagated. FX6 fixtures never test
 or lower this sub-family (no FX6 gate movement from it); tracked as fix group
-**FX11**, queued after FX8.
+**FX11**, queued after FX8 — **CLOSED by FX11 (v280 -> v281, 2026-09-28; see
+the FX11 section above)**.
 
 ## FX5 — pointer / `*[N]T` slice siblings, runtime slice bounds, `pa.*[i]` (v269 -> v270, 2026-09-28; fix round 1 v270 -> v271; fix round 2 v271 -> v272, 2026-09-28)
 
