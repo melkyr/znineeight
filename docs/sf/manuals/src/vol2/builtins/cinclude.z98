@@ -1,0 +1,7 @@
+@cInclude("stdio.h");
+
+const std = @import("std");
+
+pub fn main() void {
+    std.io.print("include ok\n", .{});
+}

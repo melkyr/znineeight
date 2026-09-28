@@ -1,0 +1,974 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Builtins, in Full</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual builtins ptrCast ptrToInt intFromPtr intToPtr ptrFromInt fieldParentPtr bitCast volatileCast intCast floatCast intToFloat intToEnum enumToInt as sizeOf alignOf offsetOf bitSizeOf bitOffsetOf putChar stdoutWrite stderrWrite getChar exit sleepMs isWindows consoleClear consoleGotoxy consoleSetColor panic cVaStart cVaArg cVaEnd asyncInit asyncSuspend asyncResume asyncFrameSize import cInclude print error 3000">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol2-14-arena.html">
+<link rel="next" href="vol4-00-title.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume II &mdash; Learning Z98</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol2-00-title.html">How to read this</a><br>
+The honest comparison <i>(planned)</i><br>
+The type system <i>(planned)</i><br>
+Pointers <i>(planned)</i><br>
+Aggregates I: structs <i>(planned)</i><br>
+Aggregates II: packed structs <i>(planned)</i><br>
+Aggregates III: enums <i>(planned)</i><br>
+Aggregates IV: unions <i>(planned)</i><br>
+Aggregates V: tuples <i>(planned)</i><br>
+Arrays and slices <i>(planned)</i><br>
+Control flow, in full <i>(planned)</i><br>
+defer and errdefer <i>(planned)</i><br>
+<a href="vol2-12-error-unions.html">Error unions &mdash; the first big shift</a><br>
+Optionals <i>(planned)</i><br>
+<a href="vol2-14-arena.html">The arena &mdash; the second big shift</a><br>
+<b>Builtins, in full</b><br>
+No methods, no generics, no comptime <i>(planned)</i><br>
+The standard library tour <i>(planned)</i><br>
+print and the format string <i>(planned)</i><br>
+Idioms and best practices <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Builtins, in Full</h1>
+<p>
+Every language has a layer below its own syntax: the operations the compiler
+performs itself. Z98 calls them <b>builtins</b>. They are written
+<tt>@name(...)</tt> and recognized by name, and they are the escape hatch for
+the things a small, C89-shaped language cannot express as library code: a cast
+that promises a layout, a question about a type's size or alignment, a byte
+written to the console, an argument read out of a C variadic list, a coroutine
+suspended and resumed.
+</p>
+<p>
+The set is small on purpose. <b>Forty names, in six groups</b>: cast,
+conversion, and introspection (19), runtime (11), C varargs (3), async (4),
+declarations (2), and formatted <tt>print</tt> (1), plus the rule that ties them
+together &mdash; an unknown builtin is <tt>error[3000]</tt>. This chapter walks
+all forty. Where a one-line example teaches the builtin, it is in a table;
+where the behavior needs a program, the group has one. Every example was
+compiled by the seed-built compiler, every runnable program was run, and every
+transcript is the real output.
+</p>
+<p>
+The runnable examples live beside the other chapter samples. The main program is
+<tt>docs/sf/manuals/src/vol2/builtins.z98</tt>; the supporting programs are
+<tt>runtime.z98</tt>, <tt>console.z98</tt>, <tt>exit.z98</tt>,
+<tt>cvarargs.z98</tt>, <tt>async.z98</tt>, and <tt>cinclude.z98</tt> in
+<tt>docs/sf/manuals/src/vol2/builtins/</tt>.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> This is the whole builtin surface, and it is smaller
+than the surface of the Zig you may have used. There is no <tt>@typeInfo</tt>,
+no <tt>@errorName</tt>, no <tt>@typeName</tt>, no <tt>@memcpy</tt>, no
+<tt>@memset</tt>, no <tt>@min</tt>; there is no <tt>anytype</tt> and no
+<tt>comptime</tt>. What is here is the set the type system, the runtime, the C
+bridge, and the coroutines actually need. Two consequences are worth naming at
+the start. Code that reaches for a modern builtin gets
+<tt>error[3000]</tt>, and the supported answer is this page. And several
+builtins come in an old name and a modern alias &mdash;
+<tt>@ptrToInt</tt>/<tt>@intFromPtr</tt>,
+<tt>@intToPtr</tt>/<tt>@ptrFromInt</tt> &mdash; so two spellings compile where
+you might expect one to be missing. The missing names are not an oversight to
+work around; chapter 16 <i>(planned)</i> shows what replaces them in practice.
+</td>
+</tr>
+</table>
+
+<h2>The rule: unknown builtins are <tt>error[3000]</tt></h2>
+<p>
+Builtins are resolved by name, before any library could be involved. A call to
+<tt>@name(...)</tt> whose name is not in the supported set is rejected with the
+compiler's own error code, <tt>error[3000]</tt>. There is no runtime lookup, no
+extension mechanism, and no warning-then-continue: the name is either supported
+or it stops the build.
+</p>
+<p>
+Here is the reject, produced by a program whose only statement calls a builtin
+that does not exist:
+</p>
+<pre>
+$ mkdir -p /tmp/manual_out
+$ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out bad.z98
+bad.z98:4:4: error[3000]: unsupported builtin function
+    @frobnicate(5);
+    ^^^^^^^^^^^^^^
+</pre>
+<p>
+The message names the rule directly: <tt>unsupported builtin function</tt>. If
+the call's result is used, the compiler adds a second diagnostic at the
+declaration &mdash; <tt>error[3000]: cannot declare variable of type void</tt>
+&mdash; because an unresolved builtin has no type. The first error is the one to
+read; the second is the cascade.
+</p>
+<p>
+One more thing before the groups: <tt>@</tt> names are not keywords. They are
+seen only in call position, and the character is not available for ordinary
+identifiers, which is why library code never collides with a builtin.
+</p>
+
+<h2>Group A: cast, conversion, introspection (19)</h2>
+<p>
+This is the largest group, and it splits into four jobs. <b>Pointer casts</b>
+move between pointer types, or between pointers and integers:
+<tt>@ptrCast</tt>, <tt>@ptrToInt</tt>, <tt>@intFromPtr</tt>, <tt>@intToPtr</tt>,
+<tt>@ptrFromInt</tt>, <tt>@volatileCast</tt>. <b>Numeric conversions</b> change
+width, signedness, or representation: <tt>@intCast</tt>, <tt>@floatCast</tt>,
+<tt>@intToFloat</tt>, <tt>@bitCast</tt>. <b>Enum conversions</b> cross between
+an enum and its integer value: <tt>@intToEnum</tt>, <tt>@enumToInt</tt>.
+<b>Introspection</b> answers layout questions at compile time: <tt>@sizeOf</tt>,
+<tt>@alignOf</tt>, <tt>@offsetOf</tt>, <tt>@bitSizeOf</tt>,
+<tt>@bitOffsetOf</tt>. Two more fit their own slots: <tt>@as</tt> is an explicit
+coercion to a named type, and <tt>@fieldParentPtr</tt> recovers a containing
+struct from a pointer to one of its fields.
+</p>
+<p>
+The table is the reference; the program below it is the proof. Every example
+column is a line from that program or a direct variant of one.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left">Call</th>
+<th align="left">What it does</th>
+<th align="left">Verified example</th>
+</tr>
+<tr>
+<td><tt>@ptrCast(T, expr)</tt></td>
+<td>Explicit pointer cast. Both the target and the operand must be pointers.</td>
+<td><tt>const raw: [*]u8 = @ptrCast([*]u8, &amp;v);</tt></td>
+</tr>
+<tr>
+<td><tt>@ptrToInt(expr)</tt></td>
+<td>Pointer to <tt>usize</tt>.</td>
+<td><tt>const a: usize = @ptrToInt(p);</tt></td>
+</tr>
+<tr>
+<td><tt>@intFromPtr(expr)</tt></td>
+<td>Modern alias of <tt>@ptrToInt</tt>; same result.</td>
+<td><tt>@ptrToInt(p) == @intFromPtr(p)</tt> is <tt>true</tt></td>
+</tr>
+<tr>
+<td><tt>@intToPtr(T, expr)</tt></td>
+<td>Integer to pointer, result type named explicitly.</td>
+<td><tt>const p: *i32 = @intToPtr(*i32, addr);</tt></td>
+</tr>
+<tr>
+<td><tt>@ptrFromInt(expr)</tt></td>
+<td>Integer to pointer, result type taken from context.</td>
+<td><tt>const q: *i32 = @ptrFromInt(addr);</tt></td>
+</tr>
+<tr>
+<td><tt>@fieldParentPtr(T, "field", expr)</tt></td>
+<td>Pointer to the containing <tt>T</tt> from a pointer to one of its fields.</td>
+<td><tt>@fieldParentPtr(Vec, "y", py)</tt> recovers <tt>Vec</tt></td>
+</tr>
+<tr>
+<td><tt>@bitCast(T, expr)</tt></td>
+<td>Same-size bit reinterpretation.</td>
+<td><tt>const u: u32 = @bitCast(u32, x);</tt></td>
+</tr>
+<tr>
+<td><tt>@volatileCast(T, expr)</tt></td>
+<td>Remove the <tt>volatile</tt> qualifier; the base type must match.</td>
+<td><tt>const plain: *i32 = @volatileCast(*i32, vp);</tt></td>
+</tr>
+<tr>
+<td><tt>@intCast(T, expr)</tt></td>
+<td>Checked integer conversion / width change.</td>
+<td><tt>const b: u8 = @intCast(u8, 200);</tt></td>
+</tr>
+<tr>
+<td><tt>@floatCast(T, expr)</tt></td>
+<td>Float conversion; not runtime-checked, narrowing may lose precision.</td>
+<td><tt>const h: f32 = @floatCast(f32, d);</tt></td>
+</tr>
+<tr>
+<td><tt>@intToFloat(T, expr)</tt></td>
+<td>Integer to float.</td>
+<td><tt>const f: f64 = @intToFloat(f64, 3);</tt></td>
+</tr>
+<tr>
+<td><tt>@intToEnum(T, expr)</tt></td>
+<td>Integer to enum.</td>
+<td><tt>const c: Color = @intToEnum(Color, 1);</tt></td>
+</tr>
+<tr>
+<td><tt>@enumToInt(expr)</tt></td>
+<td>Enum to integer.</td>
+<td><tt>const n: i32 = @enumToInt(c);</tt></td>
+</tr>
+<tr>
+<td><tt>@as(T, expr)</tt></td>
+<td>Explicit coercion to a named type.</td>
+<td><tt>const f: i64 = @as(i64, 5);</tt></td>
+</tr>
+<tr>
+<td><tt>@sizeOf(T)</tt></td>
+<td>Byte size of a type (the carrier size).</td>
+<td><tt>@sizeOf(Vec)</tt> is <tt>8</tt></td>
+</tr>
+<tr>
+<td><tt>@alignOf(T)</tt></td>
+<td>Alignment of a type.</td>
+<td><tt>@alignOf(Vec)</tt> is <tt>4</tt></td>
+</tr>
+<tr>
+<td><tt>@offsetOf(T, "field")</tt></td>
+<td>Byte offset of a field; <tt>T</tt> must be a struct (packed included).</td>
+<td><tt>@offsetOf(Vec, "y")</tt> is <tt>4</tt></td>
+</tr>
+<tr>
+<td><tt>@bitSizeOf(T)</tt></td>
+<td>Declared bit size (not the carrier size).</td>
+<td><tt>@bitSizeOf(Flags)</tt> is <tt>8</tt></td>
+</tr>
+<tr>
+<td><tt>@bitOffsetOf(T, "field")</tt></td>
+<td>Bit offset of a field; struct-only like <tt>@offsetOf</tt>.</td>
+<td><tt>@bitOffsetOf(Flags, "b")</tt> is <tt>4</tt></td>
+</tr>
+</table>
+<p>
+A note on the checked casts. <tt>@intCast</tt> is one of the six runtime checks
+of the default <tt>-fsafe</tt> build: a value that does not fit traps instead of
+truncating. Under <tt>-ffast</tt> the check is omitted, like the arithmetic
+checks of Volume I. <tt>@floatCast</tt> is <b>not</b> checked; narrowing a
+float may lose precision silently. And <tt>@bitCast</tt> demands two equal-size
+types &mdash; it reinterprets bits rather than converting values, which is why
+<tt>-1</tt> reads back as <tt>ffffffff</tt>.
+</p>
+
+<h3>The cast and introspection program</h3>
+<p>
+<tt>builtins.z98</tt> exercises all nineteen Group A builtins and prints one
+line per family. Read it as the chapter's engine: each function is a complete,
+minimal use, and <tt>main</tt> prints its result.
+</p>
+<pre>
+const std = @import("std");
+
+const Vec = struct {
+    x: i32,
+    y: i32,
+};
+
+const Flags = packed struct {
+    a: u4,
+    b: u4,
+};
+
+const Color = enum(u8) {
+    red = 0,
+    green = 1,
+    blue = 2,
+};
+
+fn castRoundTrip() i32 {
+    var v: i32 = 42;
+    const raw: [*]u8 = @ptrCast([*]u8, &amp;v);
+    const p: *i32 = @ptrCast(*i32, raw);
+    return p.*;
+}
+
+fn ptrIntEq() bool {
+    var v: i32 = 7;
+    const p: *i32 = &amp;v;
+    return @ptrToInt(p) == @intFromPtr(p);
+}
+
+fn ptrRoundTrip() i32 {
+    var v: i32 = 42;
+    const addr: usize = @intFromPtr(&amp;v);
+    const p1: *i32 = @intToPtr(*i32, addr);
+    const p2: *i32 = @ptrFromInt(addr);
+    if (p1.* != p2.*) return -1;
+    return p2.*;
+}
+
+fn parentX() i32 {
+    var v = Vec{ .x = 11, .y = 22 };
+    const py: *i32 = &amp;v.y;
+    const pv: *Vec = @fieldParentPtr(Vec, "y", py);
+    return pv.x;
+}
+
+fn bitPattern() u32 {
+    const x: i32 = -1;
+    return @bitCast(u32, x);
+}
+
+fn volatileRead() i32 {
+    var reg: i32 = 9;
+    const vp: *volatile i32 = &amp;reg;
+    const plain: *i32 = @volatileCast(*i32, vp);
+    return plain.*;
+}
+
+fn narrow() u8 {
+    const wide: i32 = 200;
+    return @intCast(u8, wide);
+}
+
+fn half() f32 {
+    const d: f64 = 1.5;
+    return @floatCast(f32, d);
+}
+
+fn toFloat() f64 {
+    return @intToFloat(f64, 3);
+}
+
+fn pick() Color {
+    return @intToEnum(Color, 1);
+}
+
+fn number(c: Color) i32 {
+    return @enumToInt(c);
+}
+
+fn five() i64 {
+    return @as(i64, 5);
+}
+
+pub fn main() void {
+    std.io.print("ptrCast {}\n", .{castRoundTrip()});
+    std.io.print("ptrToInt eq {}\n", .{ptrIntEq()});
+    std.io.print("intToPtr/ptrFromInt {}\n", .{ptrRoundTrip()});
+    std.io.print("fieldParentPtr {}\n", .{parentX()});
+    std.io.print("bitCast {x}\n", .{bitPattern()});
+    std.io.print("volatileCast {}\n", .{volatileRead()});
+    std.io.print("intCast {}\n", .{narrow()});
+    std.io.print("floatCast {}\n", .{half()});
+    std.io.print("intToFloat {}\n", .{toFloat()});
+    std.io.print("intToEnum {} enumToInt {d}\n", .{ pick(), number(pick()) });
+    std.io.print("as {}\n", .{five()});
+    std.io.print("size align bits {d} {d} {d}\n", .{ @sizeOf(Vec), @alignOf(Vec), @bitSizeOf(Flags) });
+    std.io.print("offset y bitOffset b {d} {d}\n", .{ @offsetOf(Vec, "y"), @bitOffsetOf(Flags, "b") });
+}
+</pre>
+<p>
+The emitted C is compiled with <tt>gcc -m32</tt> and run, exactly as in
+chapters 12 and 14:
+</p>
+<pre>
+$ mkdir -p /tmp/manual_out
+$ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out docs/sf/manuals/src/vol2/builtins.z98
+$ cd /tmp/manual_out &amp;&amp; sh build_target.sh linux builtins
+Building for linux...
+Built: builtins
+$ ./builtins
+ptrCast 42
+ptrToInt eq true
+intToPtr/ptrFromInt 42
+fieldParentPtr 11
+bitCast ffffffff
+volatileCast 9
+intCast 200
+floatCast 1.5
+intToFloat 3
+intToEnum .green enumToInt 1
+as 5
+size align bits 8 4 8
+offset y bitOffset b 4 4
+</pre>
+<p>
+Line by line: the <tt>@ptrCast</tt> round trip reads the value back through a
+byte pointer; the two address spellings agree; integer-to-pointer and
+context-typed pointer-from-integer agree; <tt>@fieldParentPtr</tt> reaches
+back from <tt>v.y</tt> to <tt>v</tt> and reads <tt>x</tt>; <tt>-1</tt>
+through <tt>@bitCast</tt> is the all-ones pattern; <tt>@volatileCast</tt>
+removes the qualifier and the read survives; <tt>@intCast</tt> narrows
+<tt>200</tt>; <tt>@floatCast</tt> narrows the literal; <tt>@intToFloat</tt>
+widens the integer; <tt>@intToEnum</tt>/<tt>@enumToInt</tt> round-trip the
+number <tt>1</tt> and the name <tt>.green</tt>; <tt>@as</tt> names the type;
+and the last two lines are the whole layout family.
+</p>
+<p>
+One distinction from chapter 2 comes back here: <tt>@sizeOf(Vec)</tt> is the
+carrier size in bytes, while <tt>@bitSizeOf(Flags)</tt> is the declared width
+in bits. On a plain <tt>u3</tt> they disagree &mdash; one byte of carrier,
+three declared bits. Use <tt>@sizeOf</tt> for memory and <tt>@bitSizeOf</tt>
+for wire formats.
+</p>
+
+<h2>Group B: runtime (11)</h2>
+<p>
+These builtins talk to the machine. Eight are I/O and console calls, two
+terminate or delay the program, and one answers a target question at compile
+time. Each lowers to a call into the platform layer, with no hidden allocation.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left">Call</th>
+<th align="left">What it does</th>
+<th align="left">Verified example</th>
+</tr>
+<tr>
+<td><tt>@putChar(c)</tt></td>
+<td>Writes a single character.</td>
+<td><tt>@putChar('P');</tt></td>
+</tr>
+<tr>
+<td><tt>@stdoutWrite(ptr, len)</tt></td>
+<td>Writes <tt>len</tt> bytes to standard output.</td>
+<td><tt>@stdoutWrite(out.ptr, out.len);</tt></td>
+</tr>
+<tr>
+<td><tt>@stderrWrite(ptr, len)</tt></td>
+<td>Writes <tt>len</tt> bytes to standard error.</td>
+<td><tt>@stderrWrite(err.ptr, err.len);</tt></td>
+</tr>
+<tr>
+<td><tt>@getChar()</tt></td>
+<td>Reads a single character; blocks until one arrives.</td>
+<td><tt>return @getChar();</tt> &mdash; compiled, not called</td>
+</tr>
+<tr>
+<td><tt>@exit(code)</tt></td>
+<td>Terminates the process with <tt>code</tt>.</td>
+<td><tt>@exit(3);</tt></td>
+</tr>
+<tr>
+<td><tt>@sleepMs(ms)</tt></td>
+<td>Sleeps for <tt>ms</tt> milliseconds.</td>
+<td><tt>@sleepMs(5);</tt></td>
+</tr>
+<tr>
+<td><tt>@isWindows()</tt></td>
+<td>Compile-time-folded target predicate: true only for the Windows target.</td>
+<td><tt>if (@isWindows())</tt></td>
+</tr>
+<tr>
+<td><tt>@consoleClear()</tt></td>
+<td>Clears the console.</td>
+<td><tt>@consoleClear();</tt></td>
+</tr>
+<tr>
+<td><tt>@consoleGotoxy(x, y)</tt></td>
+<td>Moves the console cursor. Coordinates are zero-based.</td>
+<td><tt>@consoleGotoxy(0, 0);</tt></td>
+</tr>
+<tr>
+<td><tt>@consoleSetColor(fg, bg)</tt></td>
+<td>Sets the console colors.</td>
+<td><tt>@consoleSetColor(7, 0);</tt></td>
+</tr>
+<tr>
+<td><tt>@panic(msg)</tt></td>
+<td>Writes <tt>panic: &lt;msg&gt;</tt> to <b>stderr</b>, then traps. Typed <tt>noreturn</tt>; it is not a no-op and it cannot be caught.</td>
+<td><tt>@panic("stop");</tt> &mdash; compiled, not called</td>
+</tr>
+</table>
+<h3>The runtime program</h3>
+<p>
+<tt>runtime.z98</tt> runs the non-blocking, non-trapping half of the group:
+<tt>@putChar</tt>, both write calls, <tt>@isWindows</tt>, and
+<tt>@sleepMs</tt>. It also <b>declares</b> the two builtins this chapter will
+not execute: <tt>@getChar</tt> blocks on input, and <tt>@panic</tt> traps, so
+both are exercised in uncalled functions. Compiling the program with them
+present is the verification; calling them is the reader's business.
+</p>
+<pre>
+fn getCharOnce() u8 {
+    return @getChar();
+}
+
+fn die() noreturn {
+    @panic("stop");
+}
+
+pub fn main() void {
+    @putChar('P');
+    @putChar('Q');
+    @putChar('\n');
+
+    var out: []const u8 = "stdoutWrite\n";
+    @stdoutWrite(out.ptr, out.len);
+
+    if (@isWindows()) {
+        var win: []const u8 = "isWindows true\n";
+        @stdoutWrite(win.ptr, win.len);
+    } else {
+        var nowin: []const u8 = "isWindows false\n";
+        @stdoutWrite(nowin.ptr, nowin.len);
+    }
+
+    @sleepMs(5);
+    var slept: []const u8 = "slept 5 ms\n";
+    @stdoutWrite(slept.ptr, slept.len);
+
+    var err: []const u8 = "stderrWrite\n";
+    @stderrWrite(err.ptr, err.len);
+}
+</pre>
+<p>
+Run it, then look at the two streams separately. The first command's output is
+standard output; the second reads back the file the same run left on standard
+error:
+</p>
+<pre>
+$ ./runtime 2>err.txt
+PQ
+stdoutWrite
+isWindows false
+slept 5 ms
+$ cat err.txt
+stderrWrite
+</pre>
+<p>
+<tt>@putChar</tt> and <tt>@stdoutWrite</tt> travel the same path, so their
+output keeps call order. On the Linux build <tt>@isWindows()</tt> folds to
+<tt>false</tt>; the Windows build prints <tt>isWindows true</tt> from the
+identical source &mdash; the predicate is decided while compiling. The final
+line went to the other stream, which is why the second command is there.
+</p>
+<h3><tt>@exit</tt></h3>
+<p>
+<tt>exit.z98</tt> prints one line and leaves with status 3. There is no
+cleanup hook and no <tt>defer</tt> that runs afterward: the process is over.
+</p>
+<pre>
+const std = @import("std");
+
+pub fn main() void {
+    var msg: []const u8 = "before exit\n";
+    @stdoutWrite(msg.ptr, msg.len);
+    @exit(3);
+}
+</pre>
+<pre>
+$ ./exit; echo "rc=$?"
+before exit
+rc=3
+</pre>
+<h3>The console builtins</h3>
+<p>
+<tt>console.z98</tt> clears the screen, homes the cursor, sets white on black,
+and prints one line. On the Linux target the three calls lower to ANSI escape
+sequences, so the captured bytes need a viewer that shows control characters:
+<tt>cat -v</tt> renders the ESC byte as <tt>^[</tt>.
+</p>
+<pre>
+const std = @import("std");
+
+pub fn main() void {
+    @consoleClear();
+    @consoleGotoxy(0, 0);
+    @consoleSetColor(7, 0);
+    std.io.print("console ok\n", .{});
+}
+</pre>
+<pre>
+$ ./console | cat -v
+^[[2J^[[H^[[1;1H^[[37;40mconsole ok
+</pre>
+<p>
+Four escape sequences, then the text: clear, home, position, colors. On the
+Windows target the same builtins lower to the Win32 console API instead
+(<tt>SetConsoleCursorPosition</tt>, <tt>SetConsoleTextAttribute</tt>), which is
+the right behavior on a real Windows 98 machine. Note the zero-based
+coordinates: <tt>@consoleGotoxy(0, 0)</tt> emits the ANSI home sequence.
+</p>
+
+<h2>Group C: C varargs (3)</h2>
+<p>
+These three builtins walk a C <tt>va_list</tt>. <tt>va_list</tt> is a primitive
+type in Z98, not a library type, and the functions that use it are ordinary
+variadic functions declared with <tt>...</tt>. The working spelling is shown in
+the program; the <tt>@cVaArg</tt> call names the type it should read, and the
+list must be ended with <tt>@cVaEnd</tt>.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left">Call</th>
+<th align="left">What it does</th>
+<th align="left">Verified example</th>
+</tr>
+<tr>
+<td><tt>@cVaStart(ap)</tt></td>
+<td>Starts traversing the variadic arguments of the enclosing function.</td>
+<td><tt>@cVaStart(ap);</tt></td>
+</tr>
+<tr>
+<td><tt>@cVaArg(ap, T)</tt></td>
+<td>Reads the next argument as type <tt>T</tt>.</td>
+<td><tt>total += @cVaArg(ap, i32);</tt></td>
+</tr>
+<tr>
+<td><tt>@cVaEnd(ap)</tt></td>
+<td>Ends the traversal.</td>
+<td><tt>@cVaEnd(ap);</tt></td>
+</tr>
+</table>
+<h3>The varargs program</h3>
+<p>
+<tt>cvarargs.z98</tt> sums three integers passed through a C variadic list:
+</p>
+<pre>
+const std = @import("std");
+
+fn sum(count: i32, ...) i32 {
+    var ap: va_list = undefined;
+    @cVaStart(ap);
+    var total: i32 = 0;
+    var i: i32 = 0;
+    while (i &lt; count) : (i += 1) {
+        total += @cVaArg(ap, i32);
+    }
+    @cVaEnd(ap);
+    return total;
+}
+
+pub fn main() void {
+    std.io.print("sum={}\n", .{sum(3, 10, 20, 12)});
+}
+</pre>
+<pre>
+$ ./cvarargs
+sum=42
+</pre>
+<p>
+Two details carry the weight. The <tt>va_list</tt> is declared
+<tt>= undefined</tt> because <tt>@cVaStart</tt> initializes it; it does not
+zero a buffer for you. And <tt>@cVaArg</tt> takes the type as its second
+argument, so the reader's contract &mdash; "these arguments are <tt>i32</tt>"
+&mdash; is written in the code, not inferred. The list is read once; there is
+no rewind.
+</p>
+
+<h2>Group D: async / coroutines (4)</h2>
+<p>
+Z98's coroutines are cooperative and stackless. Four builtins drive them; the
+scheduler and the task bookkeeping live in <tt>std.async</tt>, not in the
+language. The machine model is worth one paragraph. A suspending function is
+compiled to a step machine; a coroutine owns a root frame in a buffer the
+caller supplies. Each resume runs from the last suspension point to the next,
+or to completion. The frame's layout, its step pointer, and the state word are
+the compiler's business.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left">Call</th>
+<th align="left">What it does</th>
+<th align="left">Verified example</th>
+</tr>
+<tr>
+<td><tt>@asyncInit(ctx, buf, fn, args)</tt></td>
+<td>Initializes a root frame for suspending function <tt>fn</tt> in <tt>buf</tt>; returns it as <tt>*void</tt>. Arguments are copied positionally from the <tt>args</tt> record.</td>
+<td><tt>@asyncInit(ctxp, &amp;fbuf, worker, args);</tt></td>
+</tr>
+<tr>
+<td><tt>@asyncSuspend(data)</tt></td>
+<td>An explicit suspension point; valid only inside a suspending function.</td>
+<td><tt>@asyncSuspend(null);</tt></td>
+</tr>
+<tr>
+<td><tt>@asyncResume(frame, arg)</tt></td>
+<td>Runs one step; returns <tt>null</tt> when the coroutine has finished, non-null while it is suspended.</td>
+<td><tt>more = @asyncResume(frame, null);</tt></td>
+</tr>
+<tr>
+<td><tt>@asyncFrameSize(fn)</tt></td>
+<td>Compile-time byte size of <tt>fn</tt>'s root frame.</td>
+<td><tt>@asyncFrameSize(worker)</tt> is <tt>88</tt></td>
+</tr>
+</table>
+<h3>The async program</h3>
+<p>
+<tt>async.z98</tt> runs one coroutine that suspends three times, counts its
+resumes, and prints the frame size the compiler computed:
+</p>
+<pre>
+const std = @import("std");
+
+const WArgs = struct { out: *i32 };
+
+fn worker(out: *i32) void {
+    var i: i32 = 0;
+    while (i &lt; 3) : (i += 1) {
+        @asyncSuspend(null);
+    }
+    out.* = i;
+}
+
+pub fn main() void {
+    std.io.print("frame={}\n", .{@asyncFrameSize(worker)});
+    var result: i32 = 0;
+    var cbuf: [64]u8 = undefined;
+    var fbuf: [128]u8 = undefined;
+    var wa: WArgs = WArgs{ .out = &amp;result };
+    var ctxp: *void = @ptrCast(*void, &amp;cbuf);
+    var args: *const void = @ptrCast(*const void, &amp;wa);
+    var frame: *void = @asyncInit(ctxp, &amp;fbuf, worker, args);
+    var more: ?*void = @asyncResume(frame, null);
+    var steps: i32 = 1;
+    while (more != null) {
+        more = @asyncResume(frame, null);
+        steps += 1;
+    }
+    std.io.print("n={} steps={}\n", .{ result, steps });
+}
+</pre>
+<pre>
+$ ./async
+frame=88
+n=3 steps=4
+</pre>
+<p>
+Read the counting line first. The loop resumes until <tt>@asyncResume</tt>
+returns <tt>null</tt>; the first three resumes stop at a suspension point and
+return non-null, and the fourth runs <tt>i</tt> to <tt>3</tt>, stores the
+result, and returns <tt>null</tt>. Four steps, three suspensions. The frame
+size is a compile-time literal, so the frame buffer can be checked against it
+under the default safe build. The <tt>ctx</tt> pointer is the per-task
+child-frame pool; this coroutine has no children, so the pool is configured but
+never used. Coroutines get their own chapters later: Volume III <i>(planned)</i>
+and the standard library tour <i>(planned)</i>.
+</p>
+
+<h2>Group E: declarations (2)</h2>
+<p>
+Two builtins are about code that comes from elsewhere. <tt>@import</tt> is used
+by every program in this manual; <tt>@cInclude</tt> is rarer and has one
+placement rule.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left">Call</th>
+<th align="left">What it does</th>
+<th align="left">Verified example</th>
+</tr>
+<tr>
+<td><tt>@import("file.zig")</tt></td>
+<td>Includes another module. The standard library is <tt>@import("std")</tt>; only a module's <tt>pub</tt> declarations are visible to an importer.</td>
+<td><tt>const std = @import("std");</tt></td>
+</tr>
+<tr>
+<td><tt>@cInclude("header.h")</tt></td>
+<td>Emits a C header include into the generated C for the module. <b>Module level only.</b></td>
+<td><tt>@cInclude("stdio.h");</tt></td>
+</tr>
+</table>
+<p>
+<tt>@import</tt> needs no example beyond the chapter's own first line,
+<tt>const std = @import("std");</tt>. <tt>@cInclude</tt> is shown by
+<tt>cinclude.z98</tt>, whose include sits above the import:
+</p>
+<pre>
+@cInclude("stdio.h");
+
+const std = @import("std");
+
+pub fn main() void {
+    std.io.print("include ok\n", .{});
+}
+</pre>
+<pre>
+$ ./cinclude
+include ok
+</pre>
+<p>
+The include leaves a mark in the generated C: the emitted module header
+contains <tt>#include "stdio.h"</tt> ahead of the module's forward
+declarations. It makes C declarations available to the generated code, which
+is why the standard library's own modules use it.
+</p>
+
+<h2>Group F: <tt>print</tt> (1)</h2>
+<p>
+The last entry is not spelled with an <tt>@</tt>, because it is not a builtin
+in the compiler's table: it is a <b>compiler special case</b> for calls whose
+callee is named <tt>print</tt>. The compiler parses the format string, checks
+each argument against its placeholder, and emits one print call per argument;
+the formatting bodies live in <tt>std.fmt</tt>, imported for you. This chapter
+has used it on almost every line above.
+</p>
+<p>
+The full story &mdash; the five specifiers, tuple-literal arguments, and the
+<tt>error[3013]</tt> rejections &mdash; belongs to chapter 18 <i>(planned)</i>.
+The one-line version: arguments must be a tuple literal, and the wrapper is
+<tt>std.io.print(fmt: [*]const c_char, ...) void</tt>.
+</p>
+
+<h2>Common mistakes</h2>
+<p>
+The mistakes below are the ones a reader arriving from modern Zig makes first.
+Each has a diagnostic or a corrected shape, and every diagnostic is a real
+capture.
+</p>
+<p>
+<b>Reaching for a builtin that does not exist here.</b> The modern Zig surface
+is much larger than Z98's. <tt>@errorName</tt>, <tt>@typeName</tt>,
+<tt>@memcpy</tt>, <tt>@memset</tt>, and <tt>@min</tt> each reject on this
+compiler with the same message:
+</p>
+<pre>
+error[3000]: unsupported builtin function
+</pre>
+<p>
+The mistake is not the intent; it is assuming the name carries over. Check the
+table before writing the call. The byte routines live in <tt>std.mem</tt>, and
+the remaining replacements belong to chapters 12, 16, and 18; printing a
+value's name is a chapter 18 topic.
+</p>
+<p>
+<b>Declaring <tt>anyerror</tt>.</b> Modern Zig has a dynamic error type;
+Z98 does not. A signature that names it stops with:
+</p>
+<pre>
+error[20]: identifier 'anyerror' is not declared or imported in this module
+</pre>
+<p>
+Write the set you mean, or use an inferred <tt>!T</tt> return. The same reason
+is why <tt>@errorName</tt> cannot exist: with no dynamic error type there is no
+runtime name table to index.
+</p>
+<p>
+<b>Putting <tt>@cInclude</tt> in a function body.</b> The include is a
+module-level declaration. In statement position the compiler reports an
+internal diagnostic, and its span even points at line 1 rather than at the
+call:
+</p>
+<pre>
+error[3020]: internal error: unhandled node kind in type resolution
+</pre>
+<p>
+Move it to the top of the file, above the imports. The placement rule is the
+whole fix.
+</p>
+<p>
+<b>Swapping <tt>@getChar</tt> and <tt>@putChar</tt>.</b> The names are a
+one-letter pair and mean opposite things: <tt>@putChar</tt> writes a byte,
+<tt>@getChar</tt> reads one and blocks until the user types it. A program that
+calls <tt>@getChar</tt> in a batch run waits for input that will never come.
+This chapter never executes it, and neither should a test program that is meant
+to finish on its own.
+</p>
+<p>
+<b>Expecting <tt>@panic</tt> to return, or to be caught.</b> It is typed
+<tt>noreturn</tt>: it writes <tt>panic: &lt;msg&gt;</tt> to stderr, then traps.
+There is no recovery path and no error tag to catch. If a program needs to end
+with a chosen status and a predictable transcript, use <tt>@exit</tt>, as
+<tt>exit.z98</tt> does. And if you want to see a trap for yourself, do it in a
+program you are willing to lose.
+</p>
+<p>
+<b>Interleaving <tt>std.io.print</tt> with <tt>@putChar</tt>/<tt>@stdoutWrite</tt>
+and expecting call-order output.</b> The two paths do not share a buffer:
+<tt>std.io.print</tt> writes through immediately, while <tt>@putChar</tt> and
+<tt>@stdoutWrite</tt> go through C's <tt>stdio</tt> and are flushed at exit. A
+program that alternates them prints the immediate lines first and the buffered
+lines last, whatever the source order. Keep one path per program &mdash; this
+chapter's programs do &mdash; or flush deliberately.
+</p>
+<p>
+<b>Forgetting that <tt>@intToPtr</tt> and <tt>@ptrFromInt</tt> differ.</b> Both
+turn an integer into a pointer, but <tt>@intToPtr</tt> names the result type in
+the call while <tt>@ptrFromInt</tt> takes it from context, so the context must
+be typed. With no declared type the compiler has nothing to resolve against.
+</p>
+
+<h2>Running under Windows 98</h2>
+<p>
+The cast and introspection program builds for the Win9x target and prints the
+same thirteen lines under wine. The placeholder below stands in for the
+screenshot that goes on real hardware.
+</p>
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f0f0f0" class="placeholder">
+<tr>
+<td align="center">
+<i>Figure 18 &mdash; Win9x screenshot pending</i>
+</td>
+</tr>
+</table>
+<p><i>Figure 18. Running <tt>builtins.exe</tt> under Windows 98.</i></p>
+<p>
+The one target-dependent line in the chapter is the runtime program's target
+answer: <tt>runtime.exe</tt> prints <tt>isWindows true</tt> where the Linux
+build printed <tt>isWindows false</tt>, because <tt>@isWindows()</tt> folds
+during compilation. The console builtins likewise switch lowerings: ANSI
+escapes on Linux, the Win32 console API on the Windows target, so a program
+that uses them is portable and still native. Everything else in the six
+groups is target-independent.
+</p>
+
+<h2>Where to go next</h2>
+<p>
+That is all forty names. The reading path for the first-batch chapters is
+<tt>vol2-12</tt> &rarr; <tt>vol2-14</tt> &rarr; this page, and the next shipped
+destination is the Reference. The next chapter in the volume is chapter 16,
+<b>No methods, no generics, no comptime</b> <i>(planned)</i>, which shows the
+patterns that replace the missing surface.
+</p>
+<p>
+For the shipped Reference, <a href="vol4-15-builtins.html">Volume IV &mdash;
+Builtins</a> is the lookup for the syntax and the argument shapes.
+</p>
+<ul>
+<li>Chapter 18, <b>print and the format string</b> <i>(planned)</i> &mdash;
+the one variadic form, all five specifiers, and the rejections.</li>
+<li>Chapter 17, <b>The standard library tour</b> <i>(planned)</i> &mdash;
+where <tt>std.async</tt>, <tt>std.mem</tt>, and the rest of the surface live.</li>
+<li>Volume III, <b>Coroutines &mdash; the third big shift</b> <i>(planned)</i>
+&mdash; the scheduler, frames, and real cooperative programs.</li>
+</ul>
+<p>
+Until they ship, the programs in
+<tt>docs/sf/manuals/src/vol2/builtins.z98</tt> and
+<tt>docs/sf/manuals/src/vol2/builtins/</tt> are the working reference, and
+<a href="toc.html">the Contents page</a> shows the volume's shape.
+</p>
+
+<p class="navbtns">
+<a href="vol2-14-arena.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol4-00-title.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol2-14-arena.html">The Arena &mdash; the Second Big Shift</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-00-title.html">Volume IV &mdash; Reference</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
