@@ -73,21 +73,60 @@ the chapter where that difference stops being a slogan and becomes something you
 type. It is the first big shift for a C programmer, and it is the one that
 changes how the rest of the manual reads.
 </p>
+<p>
+The chapter follows one question &mdash; "what happens when this fails?" &mdash;
+through the whole language: how a failure is named, how it is written into a
+function's type, how a caller passes it on or handles it, and how cleanup runs
+when it travels. By the end you can read a Z98 signature and know, without
+opening the body, exactly what can go wrong in it.
+</p>
 
 <table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
 <tr>
 <td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
 <td><b>Honest note.</b> If you come from C, your hands already know the old
 shapes: return <tt>-1</tt> and set <tt>errno</tt>, or carry a status variable
-down the function and <tt>goto cleanup</tt> when it goes bad. Both work, and Z98
-emits C89, so you can still write them. But the compiler cannot see them.
-Nothing forces the caller to check the <tt>-1</tt>; nothing runs the cleanup
-when a later step fails; the error is a convention between people, not a fact
-the tool can reason about. Here is the Z98 way: make the error part of the
-function's return type, propagate it with <tt>try</tt>, handle it with
-<tt>catch</tt>, and undo partial work with <tt>errdefer</tt>.</td>
+down the function and jump to a cleanup label when it goes bad. Z98 has no
+<tt>goto</tt> and no <tt>errno</tt>; the old habits do not survive the trip, and
+even where they did the compiler could not see them. Nothing forces the caller
+to check the <tt>-1</tt>; nothing runs the cleanup when a later step fails; the
+error is a convention between people, not a fact the tool can reason about.
+Here is the Z98 way: make the error part of the function's return type,
+propagate it with <tt>try</tt>, handle it with <tt>catch</tt>, and undo partial
+work with <tt>errdefer</tt>.</td>
 </tr>
 </table>
+
+<h2>The signature is the contract</h2>
+<p>
+Think about the C version of this chapter's example. To divide two integers and
+report a zero divisor, C offers a shelf of conventions: return <tt>-1</tt> and
+hope the caller knows; return <tt>INT_MIN</tt> and hope the caller checks; write
+the result through a pointer and return a status code; or set a flag in a
+global. Every one of them works, and every one of them is invisible in the
+function's type. <tt>int divide(int a, int b)</tt> tells the caller the
+arguments and the success type, and nothing else. What happens on failure is
+documentation, if you are lucky.
+</p>
+<p>
+Z98 moves the failure into the signature. The example's function begins:
+</p>
+<pre>
+fn divide(a: i32, b: i32) error{DivideByZero}!i32 {
+    if (b == 0) return error.DivideByZero;
+    return a / b;
+}
+</pre>
+<p>
+That return type is one line answering three questions at once: what the
+arguments are, what success looks like (<tt>i32</tt>), and exactly which
+failures are possible (<tt>DivideByZero</tt>). A caller cannot claim not to
+know. More importantly, the compiler will not let the caller forget: it rejects
+a statement that silently drops an error union (<tt>error[3015]</tt>, later in
+this chapter), and it rejects <tt>try</tt> in a function that has not promised
+to carry the error on (<tt>error[3075]</tt>). A signature you can trust is worth
+more than a comment you have to.
+</p>
 
 <h2>Error sets: <tt>error{...}</tt></h2>
 <p>
@@ -103,11 +142,20 @@ spacing is not significant. Each tag is a distinct value, not an integer you
 have to keep straight. A function that can fail returns the set as part of its
 type, so a caller reading the signature knows exactly what can go wrong.
 </p>
+<p>
+The name and the tags are yours to choose; the shape is what the language
+fixes. An error set is a <b>type</b>, and the tags in it are the only errors a
+value of that type can hold. When a function says
+<tt>error{DivideByZero, Bad}!i32</tt>, it is making a promise with two failure
+modes. There is no hidden registry of extra codes, and no standard "some error"
+type that can widen the list behind the caller's back; that is the
+<tt>anyerror</tt> section below.
+</p>
 
 <h2>Error unions: <tt>!T</tt> and <tt>E!T</tt></h2>
 <p>
-An <b>error union</b> is "a value of type <tt>T</tt>, or one of a set of errors".
-Write it with the error set, then a bang, then the payload type:
+An <b>error union</b> is "a value of type <tt>T</tt>, or one of a set of
+errors". Write it with the error set, then a bang, then the payload type:
 </p>
 <pre>
 fn divide(a: i32, b: i32) error{DivideByZero}!i32 {
@@ -120,7 +168,7 @@ fn divide(a: i32, b: i32) error{DivideByZero}!i32 {
 <tt>i32</tt>, failure is <tt>DivideByZero</tt>. If you name the set once, the
 signature reads <tt>MyErrors!i32</tt>; the two forms mean the same thing. The
 short form <tt>!T</tt> is an anonymous error union and is what <tt>main</tt>
-uses:
+uses, because the entry point has no caller to name a set for:
 </p>
 <pre>
 pub fn main() !void {
@@ -131,9 +179,25 @@ pub fn main() !void {
 A plain value of type <tt>T</tt> is implicitly coerced to <tt>!T</tt> as a
 success, and an error literal is implicitly coerced to any error union. That is
 why <tt>return a / b;</tt> above needs no wrapping: an <tt>i32</tt> becomes a
-successful <tt>error{DivideByZero}!i32</tt> on the way out. The compiler
-represents an error union as a C struct holding the payload and an error code,
-so on the wire it is still plain C89.
+successful <tt>error{DivideByZero}!i32</tt> on the way out, and
+<tt>return error.DivideByZero;</tt> becomes a failed one.
+</p>
+<p>
+The compiler represents an error union as a C struct holding the payload and an
+error code, so on the wire it is still plain C89. The example's type comes out
+as:
+</p>
+<pre>
+typedef struct {
+    union { int payload; int err; } data;
+    int is_error;
+} zT_0DA61B72_EU_6;
+</pre>
+<p>
+The mangled type name is irrelevant; the shape is the point. One union holds
+the payload or the tag, and one flag says which is live. There is no
+allocation, no tag stored in the payload, and nothing a C89 compiler cannot
+compile.
 </p>
 <p>
 A function returning <tt>!void</tt> (or <tt>ErrorSet!void</tt>) that falls off
@@ -158,6 +222,33 @@ If <tt>divide</tt> succeeds, <tt>ok</tt> is the quotient. If it fails,
 <tt>try</tt> is the everyday spelling of "I cannot handle this here; pass it
 on".
 </p>
+<p>
+<tt>try</tt> is not a wish, and the compiler holds you to the signature. A
+<tt>try</tt> in a function whose return type is <tt>void</tt> is rejected with
+<tt>error[3075]</tt>, plus a note explaining why:
+</p>
+<pre>
+error[3075]: expected type 'void', found error set
+note: function cannot return an error
+</pre>
+<p>
+An error set the enclosing function did not promise is rejected the same way:
+</p>
+<pre>
+error[3075]: try error set may not be compatible with the enclosing function's return type
+</pre>
+<p>
+And <tt>try</tt> applied to something that is not an error union is rejected
+too, because there is no error to unwrap:
+</p>
+<pre>
+error[3075]: expected error union type, found 'comptime_int'
+note: consider omitting 'try'
+</pre>
+<p>
+Each one points back at the same rule: if an error is going to travel, the
+signature has to say so.
+</p>
 
 <h2><tt>catch |err|</tt>: handle it</h2>
 <p>
@@ -177,9 +268,24 @@ const bad = divide(1, 0) catch |err| {
 The result type of a <tt>catch</tt> expression is the payload type of the
 operand, so the fallback must either produce that type or diverge. The block
 above diverges with <tt>return</tt>, which is why it can stand in for the
-<tt>i32</tt> that <tt>divide</tt> would have produced. Inside the block,
-<tt>err</tt> is an ordinary value you can inspect, and the spec's own example
-compares it:
+<tt>i32</tt> that <tt>divide</tt> would have produced. A fallback that produces
+the value outright drops the capture:
+</p>
+<pre>
+const safe = divide(1, 0) catch 0;
+</pre>
+<p>
+Inside a block, <tt>err</tt> is an ordinary value of the error set. On a named
+set it prints as <tt>error.Name</tt>:
+</p>
+<pre>
+const v = mayFail(0) catch |err| {
+    std.io.print("{}\n", .{err});
+    return;
+};
+</pre>
+<p>
+and it compares by tag, so the spec's own example works as written:
 </p>
 <pre>
 const res = mightFail() catch |err| {
@@ -187,6 +293,13 @@ const res = mightFail() catch |err| {
     return 1;
 };
 </pre>
+<p>
+The capture follows the set. For a typed union the tag has a name and
+<tt>{}</tt> prints it; for a bare <tt>!T</tt> union there is no named set to
+bind, so the capture carries the numeric code instead. That numeric fallback is
+a documented residual, not the shape to design around: when the error set
+matters, name it.
+</p>
 
 <h2><tt>error.Tag</tt>: the error value itself</h2>
 <p>
@@ -195,6 +308,12 @@ with no type name attached. You write it in a <tt>return</tt>, compare it with
 <tt>==</tt>, and coerce it into any error union. The tag in
 <tt>return error.DivideByZero;</tt> and the tag in
 <tt>err == error.DivideByZero</tt> are the same value.
+</p>
+<p>
+The tags of an error set are values, not just labels on the function. That is
+what makes the compare meaningful: the same tag value that was returned is the
+one the handler inspects, with no numeric mapping to remember and no
+<tt>switch</tt> over magic constants.
 </p>
 
 <h2><tt>errdefer</tt>: undo on the error path</h2>
@@ -206,7 +325,7 @@ the compiler runs it when the error leaves the scope, in reverse order of
 declaration, and never on the success path. Braces are optional:
 </p>
 <pre>
-fn check(a: i32, b: i32) MyError!i32 {
+fn check(a: i32, b: i32) error{DivideByZero}!i32 {
     errdefer std.io.print("errdefer ran\n");
     const v = try divide(a, b);
     return v;
@@ -231,6 +350,13 @@ of declaration. A dynamic error-union return is no exception: when
 <tt>return someErrorUnion;</tt> returns an error, the <tt>errdefer</tt> runs on
 the way out; when it returns success, the <tt>errdefer</tt> is skipped, just as
 for any other exit.
+</p>
+<p>
+The order is the useful part. If each resource is undone by the
+<tt>errdefer</tt> declared next to its acquisition, reverse order means the
+last thing acquired is the first thing released &mdash; the discipline a
+<tt>goto cleanup</tt> tail imposes by hand in C, except here the compiler lays
+it out at every exit and a reader can see it next to the code it protects.
 </p>
 
 <h2>The <tt>defer</tt>/<tt>errdefer</tt> control-flow rule</h2>
@@ -270,6 +396,13 @@ error[3016]: orelse requires an optional operand; use 'catch' for error unions
 So the rule is short: <tt>?T</tt> takes <tt>orelse</tt>, <tt>E!T</tt> takes
 <tt>catch</tt>. Use the wrong one and the compiler tells you which is which.
 </p>
+<p>
+Optionals are chapter 13's subject; here it is enough to keep the two apart. An
+error union is not a nullable value, and an optional is not a failure channel.
+If you find yourself wanting "the value, or a default" from a function that can
+fail, you are asking two questions at once &mdash; whether it failed, and what
+to use instead &mdash; and <tt>catch</tt> is the one that answers both.
+</p>
 
 <h2>Why there is no <tt>anyerror</tt></h2>
 <p>
@@ -278,8 +411,14 @@ Z98 does not. <tt>anyerror</tt> is not in the token set, and naming it is a
 compile error, not a silently accepted type:
 </p>
 <pre>
-error[3000]: unknown type in variable declaration
+error[20]: identifier 'anyerror' is not declared or imported in this module
 </pre>
+<p>
+The companion builtin is missing too. <tt>@errorName</tt> is not a Z98 builtin,
+and asking for it is rejected with
+<tt>error[3000]: unsupported builtin function</tt>. Without a universal error
+type there is no universal name to look up.
+</p>
 <p>
 The reason is the same one that runs through the whole language: errors are
 declared, not erased. A function says in its signature which errors it can
@@ -299,7 +438,9 @@ error[3015]: error union result is ignored; use 'try', 'catch', or assign the re
 </pre>
 <p>
 This is the compiler holding up its end of the bargain: if a function declares
-that it can fail, every call site has to say what it does about that.
+that it can fail, every call site has to say what it does about that. The three
+answers in the message are the three legitimate ones: pass it on
+(<tt>try</tt>), handle it (<tt>catch</tt>), or keep it in a variable for later.
 </p>
 
 <h2>The example</h2>
@@ -372,6 +513,93 @@ same two lines. The screenshot below will be captured on real hardware.
 </tr>
 </table>
 <p><i>Figure 16. Running <tt>error_unions.exe</tt> under Windows 98.</i></p>
+
+<h2>Common mistakes</h2>
+<p>
+The mistakes below are the ones a C programmer makes first. Each has a
+diagnostic or a corrected shape, and each diagnostic is the compiler pointing
+at the rule that was crossed, not scolding.
+</p>
+<p>
+<b>Reaching for <tt>-1</tt>, <tt>errno</tt>, or <tt>goto cleanup</tt>.</b> The
+old C shapes are not in the language: there is no <tt>goto</tt> statement,
+there is no <tt>errno</tt>, and a status <tt>int</tt> cannot carry a set of
+error tags. The compiler never sees a convention, so no convention can be
+enforced. The Z98 answer is the return type: put the failure in the signature
+and let <tt>try</tt>, <tt>catch</tt>, and <tt>errdefer</tt> do the work the
+convention used to do.
+</p>
+<p>
+<b>Using <tt>orelse</tt> on an error union.</b> <tt>orelse</tt> is the
+optional's operator, and an error union is a different type. The compiler
+rejects the confusion:
+</p>
+<pre>
+error[3016]: orelse requires an optional operand; use 'catch' for error unions
+</pre>
+<p>
+When the operation can fail, write <tt>catch</tt>; when it can be <i>absent</i>,
+write <tt>orelse</tt>. Chapter 13 <i>(planned)</i> is where the second one
+lives.
+</p>
+<p>
+<b>Naming <tt>anyerror</tt>.</b> There is no universal error type to name, so
+the name does not resolve:
+</p>
+<pre>
+error[20]: identifier 'anyerror' is not declared or imported in this module
+</pre>
+<p>
+Name the set the function can return, or use the anonymous <tt>!T</tt> when the
+set genuinely should not be written down.
+</p>
+<p>
+<b>Ignoring an error union.</b> Calling a fallible function and walking away
+throws the failure on the floor, and the compiler refuses to compile it:
+</p>
+<pre>
+error[3015]: error union result is ignored; use 'try', 'catch', or assign the result
+</pre>
+<p>
+<tt>try</tt> it if the caller cannot handle it, <tt>catch</tt> it if it can, or
+assign it to a named value and handle it before the value goes out of scope.
+</p>
+<p>
+<b><tt>try</tt> inside cleanup.</b> A <tt>defer</tt> or <tt>errdefer</tt> body
+cannot propagate a new error: the scope is already leaving, often because of an
+error, and a second error would replace the first. The compiler rejects it:
+</p>
+<pre>
+error[3054]: 'try' not allowed inside defer expression
+</pre>
+<p>
+Do the fallible work before the cleanup runs; leave the cleanup to undo what
+was already done. If the cleanup's job really can fail, that failure needs a
+home earlier in the flow, not on the way out.
+</p>
+
+<h2>Where to go next</h2>
+<p>
+This chapter's companion is chapter 13, <b>Optionals</b> <i>(planned)</i>: the
+same shape for "no value" rather than "no success", and the chapter that makes
+the <tt>orelse</tt> rejection above feel obvious instead of arbitrary.
+</p>
+<p>
+For the rules behind the diagnostics quoted here, the shipped Reference page is
+<a href="vol4-15-builtins.html">Volume IV &mdash; Builtins</a>, which documents
+the builtin call syntax the examples use. The formal error material is planned:
+</p>
+<ul>
+<li>Volume IV, <b>Errors</b> <i>(planned)</i> &mdash; error sets, error unions,
+and the full diagnostic list.</li>
+<li>Volume V, <b>errors</b> HOWTO <i>(planned)</i> &mdash; recipes for
+propagating, translating, and reporting errors in real programs.</li>
+</ul>
+<p>
+Until they ship, the runnable example in
+<tt>docs/sf/manuals/src/vol2/error_unions.z98</tt> is the working reference,
+and <a href="toc.html">the Contents page</a> shows the volume's shape.
+</p>
 
 <p class="navbtns">
 <a href="vol2-00-title.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
