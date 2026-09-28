@@ -1,4 +1,94 @@
-# mi_matrix corpus — expected-fail manifest (v269 2026-09-28)
+# mi_matrix corpus — expected-fail manifest (v270 2026-09-28)
+
+## FX5 — pointer / `*[N]T` slice siblings, runtime slice bounds, `pa.*[i]` (v269 -> v270, 2026-09-28)
+
+Volume II defect-fix phase, Stage 2b follow-up (task-FX5). Four sibling defects
+around slice lowering:
+
+1. `*[N]T[a..b]` with `a > 0` emitted `pa + a`, scaling the offset by the whole
+   ARRAY (`pa[1..2]` on `[5]i32` read garbage; FH-I `s0=-7700620`); the open ends
+   `pa[0..]`/`pa[1..]`/`pa[3..]` ICEd `error[3043]` (the len temp never existed).
+2. Runtime slice bounds were unchecked under `-fsafe` for arrays, slices,
+   `*[N]T` and many-ptrs (`arr[a..b]`/`s[a..b]` read out of bounds; `pa[a..b]`
+   both wrong-scaled and unchecked).
+3. `pa.*[i]` materialised the dereferenced array (`zT = *pa; zT[i]`), which gcc
+   rejects ("assignment to expression with array type").
+4. `mp[s..]` (many-item pointer, open end) ICEd `error[3043]`.
+
+**Fix (`sf/src/lower.zig` + `sf/src/semantic_analyzer.zig`).**
+- A `ptr_type`-whose-pointee-is-array base is `ptr_cast`-ed to its element
+  many-pointer FIRST, so a `start` offset scales by ONE element, and the pointee
+  length N becomes the static length (also the open-end effective end). A
+  struct/union array FIELD that decays to a `[*]T` temp recovers its declared
+  length (`sliceBaseStaticLen`: base-node resolved type then
+  `fieldStaticLenForBase`), so `h.arr[s..]`/`h.arr[a..b]` work.
+- `-fsafe` guard: closed ranges check `start <= end` and (length known)
+  `end <= len`; open ranges check `start <= len`; `[*]T` has no length so only
+  `start <= end`. Reuses the existing index-out-of-bounds `check_trap{kind=5}`
+  (the spec's six runtime checks have no separate slice trap and `pal_trap()`
+  carries no per-kind message); `emitSafeBoundLeTrap` also requires a signed
+  wider-than-usize bound to be `>= 0`, mirroring the index guard.
+  `emitSafeCheckSliceRange`/`emitSafeCheckSliceOpen` skip a comparison decided
+  at compile time (`sliceBoundComptimeI64` folds literals, arithmetic and
+  module/qualified consts), and a comptime end on a static-length base was
+  already checked by `error[3062]`; `-ffast` emits no check.
+- `pa.*[i]` (read, store, compound, `&pa.*[i]`) lowers the POINTER operand
+  (`indexBaseAfterArrayDeref`) so the emitter renders `(*pa)[i]` with the
+  static-N index guard.
+- Sema (`semanticAnalyzerResolveSliceExpr`): an open-ended many-item-pointer
+  slice (`mp[s..]`) clean-rejects level-0 `error[3067]`
+  (`slice of many-item pointer must be bounded`, deduped per node) unless the
+  base is a declared array FIELD; the former `error[3043]` ICE is gone. Zig
+  0.15.2 accepts `mp[s..]` only because it yields `[*]T`; Z98's frozen many-ptr
+  slice result is `[]T` (no length), so this is a documented divergence.
+- Result types are unchanged: `*[N]T` ranges keep the Z98 `[]T` slice (Zig's
+  `*[M]T` is documented divergence); `*T` legal slices keep FH's `*[0]T`/`*[1]T`.
+
+**Fixtures.**
+- positive `repro/mi_matrix/stdlib_ptr_array_slice_ok_xmod` (stdlib pin
+  **259 -> 260**): comptime ranges incl. start>0, nested, open ends, runtime
+  `pa[a..b]`/`pa[a..]`/`pa[0..b]`, cross-module `*[5]i32` helper, loop windows,
+  decayed struct array field (closed/open/runtime) and `pa.*[i]`
+  read/write/address/compound; golden 181 B / 17 lines, rc 0, 3x byte-exact and
+  byte-identical to the Zig-0.15.2 twin.
+- reject `repro/mi_matrix/ptr_array_slice_reject_xmod` (`expected_error.txt`:
+  `3067 6` + `3000 4`; rc 2 / 0 `.c`): `mp[0..]`, `mp[1..]`, runtime `mp[a..]`,
+  global `g_mp[2..]`, function parameter and cross-module helper sites, plus the
+  void-declaration cascade.
+- standalone `repro/ptr_array_slice.z98` (accept) +
+  `repro/ptr_array_slice_reject.z98` (3 x 3067).
+- PRE evidence: `pa[1..3]` `s0=-7700620`; `pa[0..]`/`pa[1..]`/`mp[0..]` rc 3
+  `error[3043]`; `pa.*[i]` gcc `assignment to expression with array type`;
+  `arr[a..b]` OOB read rc 0.
+
+**Movement.** Fixed point MOVED
+`0b3ea32bebe2eab92d0801fe0f48d094` -> **`b18f17f97cf0441198eb243ba30db210`**
+(hop1 == hop2, explicit `FIXED_POINT_MD5` gate; seed v88 **NOT rotated**).
+4-MD5 emitted-C: **the four `-fsafe` rows move** —
+gol `9e0b708e…` -> `9a927bf9fd9b588c0ea0e862e908b9fa`,
+lisp `ec14d644…` -> `823c88de345ba4555ea9395265821f9a`,
+json `5034a0c8…` -> `2821af2df01fa8cc9bbe58d81ffaa31f`,
+mud `2e92c1f2…` -> `b5a1d98e8caeb0fa3a2d25173ba95a63` — because the required
+`-fsafe` slice guards are emitted in the gate programs' own and std modules'
+runtime-bound slices (lisp `input_buf[0..len]`, mud `p.buffer[0..end]`, gol
+`std_str` splits, json `p.input[start..p.pos]`/`buffer[0..usize_size]`). The four
+`-ffast` rows are **UNCHANGED** (gol `c84a60c5…` / lisp `8273ea61…` /
+json `0e6d6497…` / mud `bda71b43…`). Runtime identity PRE<->POST is proven by
+execution: gol `fcbf7e7c…`, lisp `(+ 1 2)` `b3d9f897…`, json `8bda3d5a…`, mud
+canonical server `66c8f0ab…` / client `93147d0f…`, all rc 0 and byte-identical.
+Corpus `-s0` **1062 = 905 OK / 52 GREEN / 105 FAIL / 0 ICE / 0 CRASH**;
+full-classifier join-diff vs the FX10 baseline over the 1060 common dirs
+**EMPTY (zero movers)**; the 2 added dirs are the positive fixture (OK) and the
+reject fixture (GREEN via the 3000 cascade). Stdlib runtime **260 PASS / 0 FAIL**
+(pin 259 -> 260); example matrix **24/24**; `check_emit_support.sh` **7/7**;
+`verify_upgraded.sh` **CLOSEOUT OK**; build_test **0/9** (pre-existing retired
+zig0 baseline); self-emission rc 0 / **48 `.c` + 48 `.h`** / 0 PANIC;
+`run_all.sh` 13/13.
+
+**Boundary recorded:** an array VALUE deref copied into a variable
+(`var x = pa.*;` on `*[N]T`) still emits the pre-existing gcc-invalid
+`zT = *pa;` (out of FX5 scope; `pa.*[i]` is fixed). A `[*]T` range has no length,
+so `mp[a..b]` checks only `start <= end` (Zig-equal).
 
 ## FX10 — switch value-expression retyping at f32 sites (v268 -> v269, 2026-09-28)
 

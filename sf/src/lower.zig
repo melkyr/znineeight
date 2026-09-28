@@ -986,6 +986,127 @@ fn emitSafeCheckIndex(self: *LirLowerer, orig_base: u32, base_node: u32, idx_tem
     emitInst(self, LirInst{ .check_trap = .{ .cond = cond, .kind = @intCast(u8, 5) } });
 }
 
+// FX5 `-fsafe` slice-bound guard: one `lhs <= rhs` check_trap{kind=5}. The
+// spec's six runtime checks have no separate slice trap and `pal_trap()`
+// carries no per-kind message, so the existing index-out-of-bounds kind is
+// reused (spec §1.4: "a runtime bound keeps the -fsafe runtime check").
+// A bound whose type is a signed integer wider than `usize` additionally
+// requires `lhs >= 0`, mirroring `emitSafeCheckIndex`.
+fn emitSafeBoundLeTrap(self: *LirLowerer, lhs: u32, rhs: u32) void {
+    if (!self.ctx.safe_checks) return;
+    var reg = self.ctx.registry;
+    var lt = nextTemp(self, type_mod.TYPE_BOOL);
+    emitInst(self, LirInst{ .binary = .{ .op = BIN_LE, .lhs = lhs, .rhs = rhs, .result = lt } });
+    var cond = lt;
+    var lhs_ty = getTempType(self, lhs);
+    var lhs_bits = intCastTypeBits(reg, lhs_ty);
+    var usize_bits = intCastTypeBits(reg, type_mod.TYPE_USIZE);
+    if (intCastTypeIsSigned(reg, lhs_ty) != @intCast(u8, 0) and lhs_bits > usize_bits) {
+        var zero = nextTemp(self, lhs_ty);
+        emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = zero } });
+        var nonneg = nextTemp(self, type_mod.TYPE_BOOL);
+        emitInst(self, LirInst{ .binary = .{ .op = BIN_GE, .lhs = lhs, .rhs = zero, .result = nonneg } });
+        cond = nextTemp(self, type_mod.TYPE_BOOL);
+        emitInst(self, LirInst{ .binary = .{ .op = BIN_AND, .lhs = nonneg, .rhs = lt, .result = cond } });
+    }
+    emitInst(self, LirInst{ .check_trap = .{ .cond = cond, .kind = @intCast(u8, 5) } });
+}
+
+// FX5: the declared fixed length of a slice base whose lowered temp lost it (a
+// struct/union array field decays to a `[*]T` temp). Recovered from the base
+// node's resolved type or the container's field declaration; null when the
+// base is a genuine many-pointer/slice (no compile-time length).
+fn sliceBaseStaticLen(self: *LirLowerer, base_node: u32) ?u32 {
+    if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, base_node)) |rt| {
+        if (indexStaticLenForType(self.ctx.registry, rt)) |n| return n;
+    }
+    return fieldStaticLenForBase(self, base_node);
+}
+
+// FX5: the comptime integer value of a slice bound when the shared exact const
+// evaluator (`HEADER_SIZE`, `std.async.HEADER_SIZE`, const chains) or the
+// literal/arithmetic fold knows it. A known pair decides `start <= end` at
+// compile time; a known bound against a STATIC length is already checked by
+// sema's error[3062] path, so the runtime guard is skipped and the emitted C of
+// the untouched valid shapes stays byte-identical.
+fn sliceBoundComptimeI64(self: *LirLowerer, node_idx: u32) ?i64 {
+    if (node_idx == @intCast(u32, 0)) return null;
+    var env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner, .module_id = self.module_id, .source_file_id = @intCast(u32, 0), .diag = null, .local_consts = null, .local_types = null };
+    if (type_resolver.evalConstI64Full(&env, node_idx, @intCast(u32, 0))) |iv| return iv;
+    if (foldPrintArgIntExact(self, node_idx)) |fv| {
+        if (fv.kind == ce_mod.KIND_INT and ce_mod.comptimeIntFits64(fv.v)) {
+            return @bitCast(i64, ce_mod.ciToU64(fv.v));
+        }
+    }
+    return null;
+}
+
+// FX5 `-fsafe` closed-range checks (`base[start..end]`): `start <= end` (when a
+// start is present) and, when a length is known, `end <= len`. `len_static`
+// marks the compile-time N of an array/`*[N]T` (or a recovered struct array
+// field); a known end against it was already validated by sema, so only a
+// runtime end adds `end <= N`. A runtime slice `.len` always needs the check.
+fn emitSafeCheckSliceRange(self: *LirLowerer, start_temp: u32, end_temp: u32, len_ref: u32, len_static: u8, start_ct: ?i64, end_ct: ?i64) void {
+    if (!self.ctx.safe_checks) return;
+    if (start_temp != TEMP_NONE) {
+        var pair_decided_ok: u8 = @intCast(u8, 0);
+        if (start_ct) |sv| {
+            if (end_ct) |ev| {
+                if (sv <= ev) pair_decided_ok = @intCast(u8, 1);
+            }
+        }
+        if (pair_decided_ok == @intCast(u8, 0)) {
+            emitSafeBoundLeTrap(self, start_temp, end_temp);
+        }
+    }
+    if (len_ref != TEMP_NONE) {
+        if (len_static == @intCast(u8, 0) or end_ct == null) {
+            emitSafeBoundLeTrap(self, end_temp, len_ref);
+        }
+    }
+}
+
+// FX5 `-fsafe` open-range check (`base[start..]`): `start <= len` when a length
+// is known. A comptime start on a static-length base was checked by sema
+// (error[3062]), so no runtime guard is emitted; a runtime slice `.len` always
+// needs the check.
+fn emitSafeCheckSliceOpen(self: *LirLowerer, start_temp: u32, len_ref: u32, len_static: u8, start_ct: ?i64) void {
+    if (!self.ctx.safe_checks) return;
+    if (start_temp == TEMP_NONE) return;
+    if (len_ref == TEMP_NONE) return;
+    if (len_static != @intCast(u8, 0) and start_ct != null) return;
+    emitSafeBoundLeTrap(self, start_temp, len_ref);
+}
+
+// FX5: `pa.*[i]` — an index into a dereferenced pointer-to-array. Lowering the
+// deref materialises an array VALUE into a C temp (`zT = *pa;`), which gcc
+// rejects ("assignment to expression with array type"). The indexed array is
+// the pointer's pointee, so lower the POINTER instead: the emitter's
+// pointer-to-array base rule renders `(*pa)[i]` and `emitSafeCheckIndex` sees
+// the static length N. Parenthesized forms unwrap; anything else (a deref of a
+// non-array pointee, or a non-deref base) is returned unchanged.
+fn indexBaseAfterArrayDeref(self: *LirLowerer, base_node_idx: u32) u32 {
+    var cur = base_node_idx;
+    var guard: u32 = @intCast(u32, 0);
+    while (guard < @intCast(u32, 8)) : (guard += @intCast(u32, 1)) {
+        var n = ast_mod.astStoreNodeAt(self.ctx.store, cur);
+        if (n.kind == AstKind.paren_expr and n.child_0 != @intCast(u32, 0)) { cur = n.child_0; continue; }
+        if (n.kind != AstKind.deref or n.child_0 == @intCast(u32, 0)) return base_node_idx;
+        var res_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, cur) orelse return base_node_idx;
+        if (res_rt == type_mod.TYPE_UNDEFINED or @intCast(usize, res_rt) >= self.ctx.registry.types_len) return base_node_idx;
+        if (self.ctx.registry.types_items[@intCast(usize, res_rt)].kind != type_mod.TypeKind.array_type) return base_node_idx;
+        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, n.child_0) orelse return base_node_idx;
+        if (op_rt == type_mod.TYPE_UNDEFINED or @intCast(usize, op_rt) >= self.ctx.registry.types_len) return base_node_idx;
+        var op_ty = self.ctx.registry.types_items[@intCast(usize, op_rt)];
+        if (op_ty.kind != type_mod.TypeKind.ptr_type) return base_node_idx;
+        if (@intCast(usize, op_ty.payload_idx) >= self.ctx.registry.ptr_len) return base_node_idx;
+        var po = self.ctx.registry.ptr_items[@intCast(usize, op_ty.payload_idx)].base;
+        if (@intCast(usize, po) >= self.ctx.registry.types_len or self.ctx.registry.types_items[@intCast(usize, po)].kind != type_mod.TypeKind.array_type) return base_node_idx;
+        return n.child_0;
+    }
+    return base_node_idx;
+}
+
 pub fn createBlock(self: *LirLowerer) u32 {
     var id = self.func.blocks.len;
     var bb = BasicBlock{
@@ -2153,7 +2274,9 @@ fn lowerLValueAddr(self: *LirLowerer, lv_node_idx: u32, result_type: u32) u32 {
         // (one mechanism with `.0`/`._0`). The ordinal is the one sema folded
         // and recorded; an uninstrumented node (no table entry) keeps the
         // generic index path below.
-        var lv_ix_base = lowerExpr(self, lv_node.child_0);
+        // FX5: `&pa.*[i]` lowers the POINTER (see `indexBaseAfterArrayDeref`),
+        // so the array value is never materialised into a C temp.
+        var lv_ix_base = lowerExpr(self, indexBaseAfterArrayDeref(self, lv_node.child_0));
         var lv_ix_bt = getTempType(self, lv_ix_base);
         if (lv_ix_bt != type_mod.TYPE_UNDEFINED and lv_ix_bt != type_mod.TYPE_VOID and @intCast(usize, lv_ix_bt) < self.ctx.registry.types_len) {
             if (self.ctx.registry.types_items[@intCast(usize, lv_ix_bt)].kind == type_mod.TypeKind.tuple_type) {
@@ -2333,7 +2456,9 @@ fn lowerAssignLValue(self: *LirLowerer, lv_node_idx: u32, value_temp: u32, diag_
             emitInst(self, LirInst{ .store_local = .{ .name_id = name_id, .value = value_temp } });
         }
     } else if (lv_node.kind == AstKind.index_access) {
-        var base_temp = lowerExpr(self, lv_node.child_0);
+        // FX5: `pa.*[i] = v` stores through the dereferenced array; lower the
+        // pointer operand so the emitter renders `(*pa)[i] = v`.
+        var base_temp = lowerExpr(self, indexBaseAfterArrayDeref(self, lv_node.child_0));
         // FB (D4): `t[ord] = value` is the field store `t._<ord> = value`
         // (same mechanism as `.0`/`._0`). A base that is itself an l-value
         // chain (field/index/deref/paren) must be taken by ADDRESS, exactly
@@ -4231,7 +4356,9 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (rt_ao) |t| { if (t != type_mod.TYPE_UNDEFINED) { ao_box[0] = t; } } else { var rtm_ao: []const u8 = "RTMISS:n"; pal.markerWrite(rtm_ao); var rtmb_ao: [10]u8 = undefined; var rtml_ao = itoa_mod.itoa(node_idx, rtmb_ao[0..]); var rtms_ao: usize = @intCast(usize, 9) - @intCast(usize, rtml_ao); pal.markerWrite(rtmb_ao[rtms_ao..@intCast(usize, 9)]); var rtmnl_ao: []const u8 = "\n"; pal.markerWrite(rtmnl_ao); }
         return lowerLValueAddr(self, node.child_0, ao_box[0]);
     } else if (node.kind == AstKind.index_access) {
-        var base_temp = lowerExpr(self, node.child_0);
+        // FX5: `pa.*[i]` indexes the dereferenced array; lower the POINTER so
+        // the emitter renders `(*pa)[i]` instead of gcc-invalid `zT = *pa;`.
+        var base_temp = lowerExpr(self, indexBaseAfterArrayDeref(self, node.child_0));
         // FB (D4): a tuple base reads its sema-folded ordinal through the same
         // field mechanism as `.0`/`._0`; no runtime index is evaluated.
         var ixt_bt = getTempType(self, base_temp);
@@ -6835,27 +6962,47 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
              se_bt_box[0] = se_bt;
 
             var sec2_m: []const u8 = "SEC2:"; pal.markerWrite(sec2_m); var sec2_b: [10]u8 = undefined; var sec2_l = itoa_mod.itoa(node.child_2, sec2_b[0..]); var sec2_s: usize = @intCast(usize, 9) - @intCast(usize, sec2_l); pal.markerWrite(sec2_b[sec2_s..@intCast(usize, 9)]); var sec2_nl: []const u8 = "\n"; pal.markerWrite(sec2_nl);
-            var se_slice_ptr: u32 = se_base;
-            var se_slice_len_box: [1]u32 = [1]u32{TEMP_NONE};
-            if (se_bt != type_mod.TYPE_UNDEFINED) {
-                var se_bty = self.ctx.registry.types_items[@intCast(usize, se_bt)];
-                if (se_bty.kind == type_mod.TypeKind.slice_type) {
-                    var se_sl = self.ctx.registry.slice_items[@intCast(usize, se_bty.payload_idx)];
-                    var se_pty = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, se_sl.elem, false);
-                    se_slice_ptr = nextTemp(self, se_pty);
-                    var se_slnid = nameMapGet(self, se_base);
-                    emitInst(self, LirInst{ .load_field = .{ .name_id = se_slnid, .base = se_base, .field_id = type_mod.SLICE_FIELD_PTR, .result = se_slice_ptr } });
-                    se_slice_len_box[0] = nextTemp(self, type_mod.TYPE_USIZE);
-                     emitInst(self, LirInst{ .load_field = .{ .name_id = @intCast(u32, 0), .base = se_base, .field_id = type_mod.SLICE_FIELD_LEN, .result = se_slice_len_box[0] } });
-                } else if (se_bty.kind == type_mod.TypeKind.array_type) {
-                    var se_arr = self.ctx.registry.array_items[@intCast(usize, se_bty.payload_idx)];
-                    var se_mpty = type_mod.typeRegistryGetOrCreateManyPtr(self.ctx.registry, se_arr.elem, false);
-                    se_slice_ptr = nextTemp(self, se_mpty);
-                    emitInst(self, LirInst{ .ptr_cast = .{ .value = se_base, .target = se_mpty, .result = se_slice_ptr } });
-                    se_slice_len_box[0] = nextTemp(self, type_mod.TYPE_USIZE);
-                    emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, se_arr.length), .result = se_slice_len_box[0] } });
-                }
-            }
+             var se_slice_ptr: u32 = se_base;
+             var se_slice_len_box: [1]u32 = [1]u32{TEMP_NONE};
+             var se_len_static: u8 = @intCast(u8, 0);
+             if (se_bt != type_mod.TYPE_UNDEFINED) {
+                 var se_bty = self.ctx.registry.types_items[@intCast(usize, se_bt)];
+                 if (se_bty.kind == type_mod.TypeKind.slice_type) {
+                     var se_sl = self.ctx.registry.slice_items[@intCast(usize, se_bty.payload_idx)];
+                     var se_pty = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, se_sl.elem, false);
+                     se_slice_ptr = nextTemp(self, se_pty);
+                     var se_slnid = nameMapGet(self, se_base);
+                     emitInst(self, LirInst{ .load_field = .{ .name_id = se_slnid, .base = se_base, .field_id = type_mod.SLICE_FIELD_PTR, .result = se_slice_ptr } });
+                     se_slice_len_box[0] = nextTemp(self, type_mod.TYPE_USIZE);
+                      emitInst(self, LirInst{ .load_field = .{ .name_id = @intCast(u32, 0), .base = se_base, .field_id = type_mod.SLICE_FIELD_LEN, .result = se_slice_len_box[0] } });
+                 } else if (se_bty.kind == type_mod.TypeKind.array_type) {
+                     var se_arr = self.ctx.registry.array_items[@intCast(usize, se_bty.payload_idx)];
+                     var se_mpty = type_mod.typeRegistryGetOrCreateManyPtr(self.ctx.registry, se_arr.elem, false);
+                     se_slice_ptr = nextTemp(self, se_mpty);
+                     emitInst(self, LirInst{ .ptr_cast = .{ .value = se_base, .target = se_mpty, .result = se_slice_ptr } });
+                     se_slice_len_box[0] = nextTemp(self, type_mod.TYPE_USIZE);
+                     emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, se_arr.length), .result = se_slice_len_box[0] } });
+                     se_len_static = @intCast(u8, 1);
+                 } else if (se_bty.kind == type_mod.TypeKind.ptr_type) {
+                     // FX5: a pointer-to-array base (`*[N]T`) slices like the
+                     // array it points at. Cast to the element many-pointer
+                     // FIRST so a `start` offset scales by ONE element (the old
+                     // `pa + start` scaled by the whole array), and remember the
+                     // static length N (the open end `pa[s..]` effective end).
+                     if (@intCast(usize, se_bty.payload_idx) < self.ctx.registry.ptr_len) {
+                         var se_pa_pointee = self.ctx.registry.ptr_items[@intCast(usize, se_bty.payload_idx)].base;
+                         if (@intCast(usize, se_pa_pointee) < self.ctx.registry.types_len and self.ctx.registry.types_items[@intCast(usize, se_pa_pointee)].kind == type_mod.TypeKind.array_type) {
+                             var se_pa_arr = self.ctx.registry.array_items[@intCast(usize, self.ctx.registry.types_items[@intCast(usize, se_pa_pointee)].payload_idx)];
+                             var se_pa_mpty = type_mod.typeRegistryGetOrCreateManyPtr(self.ctx.registry, se_pa_arr.elem, false);
+                             se_slice_ptr = nextTemp(self, se_pa_mpty);
+                             emitInst(self, LirInst{ .ptr_cast = .{ .value = se_base, .target = se_pa_mpty, .result = se_slice_ptr } });
+                             se_slice_len_box[0] = nextTemp(self, type_mod.TYPE_USIZE);
+                             emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, se_pa_arr.length), .result = se_slice_len_box[0] } });
+                             se_len_static = @intCast(u8, 1);
+                         }
+                     }
+                 }
+             }
             if (node.child_2 != @intCast(u32, 0)) {
                 // FH (Volume II D10): a legal `*T` slice (`p[0..0]`/`[0..1]`/
                 // `[1..1]`) resolves to `*[N]T` (N = 0/1). Emit
@@ -6888,14 +7035,32 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 var se_end = lowerExpr(self, node.child_2);
                 var se_ptr = se_slice_ptr;
                 var se_len = se_end;
+                var se_start_temp: u32 = TEMP_NONE;
                 if (node.child_1 != @intCast(u32, 0)) {
                     var se_start = lowerExpr(self, node.child_1);
+                    se_start_temp = se_start;
                     var se_ppty2 = self.hoisted_temps.items[@intCast(usize, se_slice_ptr)].type_id;
                     se_ptr = nextTemp(self, se_ppty2);
                     emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = se_slice_ptr, .rhs = se_start, .result = se_ptr } });
                     se_len = nextTemp(self, type_mod.TYPE_USIZE);
                     emitInst(self, LirInst{ .binary = .{ .op = BIN_SUB, .lhs = se_end, .rhs = se_start, .result = se_len } });
                 }
+                // FX5: a decayed struct/union array-field base lost its
+                // length; materialise the declared N only when a runtime
+                // `end <= len` guard will actually use it, so the `-ffast`
+                // emission of untouched many-pointer ranges stays identical.
+                var se_chk_len = se_slice_len_box[0];
+                var se_chk_len_static = se_len_static;
+                var se_end_ct = sliceBoundComptimeI64(self, node.child_2);
+                if (se_chk_len == TEMP_NONE and self.ctx.safe_checks and se_end_ct == null) {
+                    if (sliceBaseStaticLen(self, node.child_0)) |se_rec_n| {
+                        se_chk_len = nextTemp(self, type_mod.TYPE_USIZE);
+                        emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, se_rec_n), .result = se_chk_len } });
+                        se_chk_len_static = @intCast(u8, 1);
+                    }
+                }
+                // FX5: `-fsafe` runtime bounds guard (start <= end, end <= len).
+                emitSafeCheckSliceRange(self, se_start_temp, se_end, se_chk_len, se_chk_len_static, sliceBoundComptimeI64(self, node.child_1), se_end_ct);
                 var se_result = nextTemp(self, st);
                 emitInst(self, LirInst{ .make_slice = .{ .ptr = se_ptr, .len = se_len, .result = se_result, .type_id = st } });
                 return se_result;
@@ -6903,10 +7068,23 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             var r1a_m: []const u8 = "R1A\n"; pal.markerWrite(r1a_m);
             if (node.child_1 != @intCast(u32, 0)) {
                 var se_start = lowerExpr(self, node.child_1);
+                // FX5: an open-end decayed array-field base (`h.arr[s..]`)
+                // recovers its declared length here (the effective end).
+                if (se_slice_len_box[0] == TEMP_NONE) {
+                    if (sliceBaseStaticLen(self, node.child_0)) |se_rec_n| {
+                        se_slice_len_box[0] = nextTemp(self, type_mod.TYPE_USIZE);
+                        emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, se_rec_n), .result = se_slice_len_box[0] } });
+                        se_len_static = @intCast(u8, 1);
+                    }
+                }
                 var se_ppty = self.hoisted_temps.items[@intCast(usize, se_slice_ptr)].type_id;
                 var se_new_ptr = nextTemp(self, se_ppty);
                 emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = se_slice_ptr, .rhs = se_start, .result = se_new_ptr } });
                 if (se_slice_len_box[0] != TEMP_NONE) {
+                    // FX5: `-fsafe` runtime guard (start <= len). `*[N]T` and
+                    // array bases use the static N; a slice uses its runtime
+                    // `.len`; a decayed array field recovered N above.
+                    emitSafeCheckSliceOpen(self, se_start, se_slice_len_box[0], se_len_static, sliceBoundComptimeI64(self, node.child_1));
                     var se_new_len = nextTemp(self, type_mod.TYPE_USIZE);
                     emitInst(self, LirInst{ .binary = .{ .op = BIN_SUB, .lhs = se_slice_len_box[0], .rhs = se_start, .result = se_new_len } });
                     var se_result = nextTemp(self, st);

@@ -1,0 +1,28 @@
+// ptr_array_slice.z98 — FX5 standalone accept repro (Volume II fix group).
+//
+// Before FX5: `pa[1..3]` scaled the start by the whole array (garbage),
+// `pa[1..]`/`pa[0..]` ICEd error[3043], and `pa.*[i]` emitted gcc-invalid C.
+// After: element-scaled ranges, open ends at the array length, `(*pa)[i]`.
+// Expected stdout (rc 0): the lines below, Zig-0.15.2-equal.
+const std = @import("std");
+
+pub fn main() void {
+    var arr = [5]i32{ 10, 20, 30, 40, 50 };
+    const pa: *[5]i32 = &arr;
+    const s13 = pa[1..3];
+    const s1o = pa[1..];
+    const s0o = pa[0..];
+    var a: usize = 1;
+    var b: usize = 4;
+    const r = pa[a..b];
+    const ro = pa[a..];
+    pa.*[2] = 99;
+    var i: usize = 2;
+    pa.*[i] += 1;
+    std.io.print("s13={} {} {}\n", .{ s13.len, s13[0], s13[1] });
+    std.io.print("s1o={} {} {}\n", .{ s1o.len, s1o[0], s1o[3] });
+    std.io.print("s0o={} {} {}\n", .{ s0o.len, s0o[0], s0o[4] });
+    std.io.print("r={} {} {}\n", .{ r.len, r[0], r[2] });
+    std.io.print("ro={} {} {}\n", .{ ro.len, ro[0], ro[3] });
+    std.io.print("star={} {} {}\n", .{ pa.*[1], pa.*[2], pa.*[4] });
+}

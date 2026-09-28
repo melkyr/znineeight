@@ -172,6 +172,7 @@ repro/mi_matrix/stdlib_print_autoimport_xmod
 repro/mi_matrix/stdlib_print_dispatch_xmod
 repro/mi_matrix/stdlib_print_fmt_valid_xmod
 repro/mi_matrix/stdlib_pub_visibility_ok_xmod
+repro/mi_matrix/stdlib_ptr_array_slice_ok_xmod
 repro/mi_matrix/stdlib_ptrarray_for_ok_xmod
 repro/mi_matrix/stdlib_ptrslice_ok_xmod
 repro/mi_matrix/stdlib_rle_decode_xmod
