@@ -99,13 +99,16 @@ zig0 baseline); self-emission rc 0 / **48 `.c` + 48 `.h`** / 0 PANIC;
   stdlib and the 4-MD5 gates are unchanged; the one-element-scaling start>0 fix
   requires the element-pointer form, and no byte anchor exists for the start=0
   form (known emission-shape divergence, semantically identical).
-- **Signed (`i32`) slice bounds bypass the `-fsafe` guards (systemic,
-  pre-existing):** `arr[-1..4]` / `pa[-1..4]` compile rc 0 under `-fsafe` and
-  read out of bounds; the newly accepted `mp[-1..]` silently reads OOB (pre-FX5
-  it was the `error[3043]` ICE). Zig 0.15.2 compile-rejects the coercion
-  (`expected type 'usize', found 'i32'`); the guard's nonneg conjunct mirrors
-  the index guard and only covers signed integers WIDER than `usize` (e.g.
-  `i64` on -m32), so equal-width `i32` escapes. Bounded; no fix scheduled.
+- **Runtime signed (`i32`) slice bounds bypass the `-fsafe` guards (systemic,
+  pre-existing):** a runtime `i32` bound (`var i: i32 = -1;` used as
+  `arr[i..4]` / `pa[i..4]`, and the newly accepted `mp[i..]`) compiles rc 0
+  under `-fsafe` and reads out of bounds; a literal (`arr[-1..4]`) or
+  comptime-folded (`const i: i32 = -1;`) negative bound still rejects
+  `error[3062]` (`type 'usize' cannot represent integer value '-1'`). Zig
+  0.15.2 compile-rejects any signed bound (`expected type 'usize', found
+  'i32'`); the guard's nonneg conjunct mirrors the index guard and only covers
+  signed integers WIDER than `usize` (e.g. `i64` on -m32), so equal-width
+  `i32` escapes. Bounded; no fix scheduled.
 - **`const s: []i32 = mp[1..]`** emits warning[3000] (source: many-pointer,
   target: slice) then gcc-invalid C — the same accepted-with-warning family as
   the pre-existing plain `const s: []i32 = mp;` (no ICE).
