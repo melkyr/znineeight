@@ -1,6 +1,6 @@
-# mi_matrix corpus — expected-fail manifest (v271 2026-09-28)
+# mi_matrix corpus — expected-fail manifest (v272 2026-09-28)
 
-## FX5 — pointer / `*[N]T` slice siblings, runtime slice bounds, `pa.*[i]` (v269 -> v270, 2026-09-28; fix round 1 v270 -> v271, 2026-09-28)
+## FX5 — pointer / `*[N]T` slice siblings, runtime slice bounds, `pa.*[i]` (v269 -> v270, 2026-09-28; fix round 1 v270 -> v271; fix round 2 v271 -> v272, 2026-09-28)
 
 Volume II defect-fix phase, Stage 2b follow-up (task-FX5). Four sibling defects
 around slice lowering:
@@ -56,7 +56,7 @@ around slice lowering:
   decayed struct array field (closed/open/runtime), `pa.*[i]`
   read/write/address/compound, and (fix round 1) `mp[0..]`, `mp[1..]`,
   `mp[a..]`, a cross-module `[*]i32` open end and a closed slice taken from an
-  open result; golden **237 B / 23 lines**, rc 0, 3x byte-exact and
+  open result; golden **237 B / 22 lines**, rc 0, 3x byte-exact and
   byte-identical to the Zig-0.15.2 twin.
 - reject `repro/mi_matrix/ptr_array_slice_reject_xmod` **removed** in fix round 1
   (every site — `mp[0..]`, `mp[1..]`, runtime `mp[a..]`, global `g_mp[2..]`,
@@ -92,12 +92,31 @@ example matrix **24/24**; `check_emit_support.sh` **7/7**;
 zig0 baseline); self-emission rc 0 / **48 `.c` + 48 `.h`** / 0 PANIC;
 `run_all.sh` 13/13.
 
-**Boundary recorded:** `mp[s..]` has no length, so there is no runtime guard on
-the form (Zig-equal); `mp[s..].len` rejects `error[3000]` (`many-item pointer
-has no field 'len'`), and coercing the result into a `[]T` slot is the
-pre-existing accepted-with-warning/gcc-invalid mismatch family. An array VALUE
-deref copied into a variable (`var x = pa.*;` on `*[N]T`) still emits the
-pre-existing gcc-invalid `zT = *pa;` (out of FX5 scope; `pa.*[i]` is fixed).
+**Residuals recorded (FX5 review resolution, 2026-09-28; docs-only, no code changes).**
+- **Start=0 closed `*[N]T` slices change emission shape:** `pa[0..2]` now emits
+  an element `int*` temp + `int_const` length instead of the pre-FX5
+  array-pointer temp (temp numbering shifts). Runtime values, goldens, corpus,
+  stdlib and the 4-MD5 gates are unchanged; the one-element-scaling start>0 fix
+  requires the element-pointer form, and no byte anchor exists for the start=0
+  form (known emission-shape divergence, semantically identical).
+- **Signed (`i32`) slice bounds bypass the `-fsafe` guards (systemic,
+  pre-existing):** `arr[-1..4]` / `pa[-1..4]` compile rc 0 under `-fsafe` and
+  read out of bounds; the newly accepted `mp[-1..]` silently reads OOB (pre-FX5
+  it was the `error[3043]` ICE). Zig 0.15.2 compile-rejects the coercion
+  (`expected type 'usize', found 'i32'`); the guard's nonneg conjunct mirrors
+  the index guard and only covers signed integers WIDER than `usize` (e.g.
+  `i64` on -m32), so equal-width `i32` escapes. Bounded; no fix scheduled.
+- **`const s: []i32 = mp[1..]`** emits warning[3000] (source: many-pointer,
+  target: slice) then gcc-invalid C — the same accepted-with-warning family as
+  the pre-existing plain `const s: []i32 = mp;` (no ICE).
+- **Comptime `mp[3..1]`** is accepted; it traps at run time under `-fsafe`
+  (`start <= end` guard) and is silent under `-ffast`, where Zig 0.15.2
+  compile-rejects start>end (pre-existing closed many-pointer acceptance).
+- `mp[s..]` has no length, so there is no runtime guard on the form
+  (Zig-equal); `mp[s..].len` rejects `error[3000]` (`many-item pointer has no
+  field 'len'`). An array VALUE deref copied into a variable
+  (`var x = pa.*;` on `*[N]T`) still emits the pre-existing gcc-invalid
+  `zT = *pa;` (out of FX5 scope; `pa.*[i]` is fixed).
 
 
 ## FX10 — switch value-expression retyping at f32 sites (v268 -> v269, 2026-09-28)
