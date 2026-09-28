@@ -8,23 +8,15 @@
 // integer literal), the operator-ruled R5 bounded residual — Zig accepts an
 // in-range comptime literal, Z98 rejects it (documented in EXPECTED_FAIL.md).
 //
-// Contract: dump rc=2, 0 `.c`, exactly 2 x error[3000], 0 x error[3013],
-// 0 x error[3063] (rc 2 / 0 `.c` reject class unchanged; the canonical
-// classifier bucket is GREEN because the bucket keys on the presence of
-// `error[3000]`). The argument-node span is the caret target (the two H9
-// unknown-specifier sites keep the existing fmt-string span).
-// FX6 migration: the two `error[3000]`s are the latent const-decay holes at
-// the G3/G4 `*[N]T`/`[*]T` rows (`const pp: *[3]i32 = &pa;`,
-// `const mp: [*]i32 = &ma;`) that FX6 now rejects. The 60 x error[3013]
-// print-format census is NOT co-emitted: `error[3013]` is produced by the
-// LOWERING pass, and a level-0 semantic error gates lowering out entirely
-// (`sf/src/main.zig`: after `phase_SemanticAnalysis`, `hasErrors` prints and
-// exits before `phase_LIRLowering`), so the two const-decay rejects pre-empt
-// the whole print-format census (a mixed `60 x 3013 + 2 x 3000` census is
-// impossible while lowering is gated out). The reject class is unchanged
-// (rc 2 / 0 `.c`); the bucket move FAIL -> GREEN is intended/accepted. To preserve the 3013
-// coverage instead, spell the two lines `*const [3]i32`/`[*]const i32` (legal
-// const-adding) — then the corpus shows zero movers.
+// Contract: dump rc=2, 0 `.c`, exactly 60 x error[3013], 0 x error[3063]
+// (canonical classifier FAIL). The argument-node span is the caret target (the
+// two H9 unknown-specifier sites keep the existing fmt-string span).
+// FX6 (Volume II) note: the G3/G4 pointer rows are spelled with the
+// const-preserving pointer types (`const pp: *const [3]i32 = &pa;`,
+// `const mp: [*]const i32 = &ma;`), so the fixture stays const-clean under the
+// FX6 const-decay rule; the mutable spellings were latent const-decay holes
+// (now `error[3000]` rejects) and a level-0 semantic error would gate out the
+// lowering pass that owns the 3013 census. The 60-row census is unchanged.
 const std = @import("std");
 const S = struct { a: i32, b: i32 };
 const U = union(enum) { a: i32, b: f32 };
@@ -99,11 +91,11 @@ pub fn main() void {
     const bp: *const [2]u8 = &ba;
     std.io.print("{}", .{bp});
     const pa = [3]i32{ 1, 2, 3 };
-    const pp: *[3]i32 = &pa;
+    const pp: *const [3]i32 = &pa;
     std.io.print("{}", .{pp});
     // G4: many-pointer `{}` (2 sites).
     const ma = [_]i32{ 1, 2, 3 };
-    const mp: [*]i32 = &ma;
+    const mp: [*]const i32 = &ma;
     std.io.print("{}", .{mp});
     var mb = [_]u8{ 'h', 'i', 0 };
     const mpb: [*]u8 = &mb;
