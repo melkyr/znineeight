@@ -2651,7 +2651,12 @@ fn semanticAnalyzerFloatNarrowArmStatus(self: *SemanticAnalyzer, arm_node: u32, 
     var arm_ty: u32 = @intCast(u32, 0);
     if (rtt_mod.resolvedTypeTableGet(self.type_table, arm_node)) |t| { arm_ty = t; }
     if (arm_ty == type_mod.TYPE_NORETURN) return FLOAT_NARROW_ACCEPT;
-    if (arm_ty == @intCast(u32, 0) or arm_ty == type_mod.TYPE_VOID or arm_ty == type_mod.TYPE_UNDEFINED) return FLOAT_NARROW_REJECT;
+    // FX9 fix round 1: `undefined` coerces to every type, so it is neutral
+    // exactly like a noreturn arm — the runtime-arm reject must not fire for
+    // it (`if (c) undefined else 2.5` is Zig-valid and was accepted by the
+    // seed and PRE `89aaf0ec`).
+    if (arm_ty == type_mod.TYPE_UNDEFINED) return FLOAT_NARROW_ACCEPT;
+    if (arm_ty == @intCast(u32, 0) or arm_ty == type_mod.TYPE_VOID) return FLOAT_NARROW_REJECT;
     // Only a genuine f32 arm is neutral. An `integer_literal` arm is
     // ASSIGNABLE to f32 but still has to pass the int-exactness check, so it
     // must fall through to the status (`if (c) 16777217 else 2.5` rejects).

@@ -512,12 +512,20 @@ At an `f32` expectation site the value decides, matching Zig 0.15.2:
   **comptime-known condition** makes the untaken arm unreachable, exactly as
   Zig skips its type check (`if (false) n else 2.5` accepts and yields 2.5;
   `if (true) n else 2.5` rejects because the bad arm is the taken one).
-- **Mixed float arms** stay accepted and become f32-typed: a runtime `f32`
-  arm beside a float literal or an exactly-representable typed `i32`/`f64`
+- **Mixed float arms** stay accepted and become f32-typed: for an `if` value
+  expression, a runtime `f32` arm beside a float literal or an
+  exactly-representable typed `i32`/`f64`
   (`return if (c > 0) x else 2.5;`, the nested
   `if (c > 0) (if (e > 0) x else 2.5) else 3.5`), each arm recording its own
-  narrowing. The `switch` form already accepted these
-  (`switch (c) { 1 => x, else => 2.5 }`).
+  narrowing. The `switch` form accepts a mixed arm list only when its FIRST
+  non-noreturn prong is `f32` (`switch (c) { 1 => x, else => 2.5 }`); a switch
+  whose first prong is a typed integer and a later prong a float is a
+  documented accepted-wrong residual (see the boundary note below), not part
+  of this rule.
+- An **`undefined` arm** is neutral: `undefined` coerces to every type (Zig's
+  `undefined` is a valid f32 value), so `if (c) undefined else 2.5` is
+  accepted with no narrowing reject, at every listed site and in either arm
+  position.
 
 Sites: function parameters, returns, struct/union/tagged-union field
 initializers (including union payloads), local and module-level declarations,
@@ -531,6 +539,15 @@ parser accumulates digits, so an extreme literal such as
 `3.4028234663852886e38` (f32 max) may not be the correctly-rounded f64 and a
 typed `const` of it can reject where Zig accepts; the value-aware rule is
 applied to the lexed value.
+
+Boundary (switch typed-int-first residual, candidate follow-up): a `switch`
+VALUE expression whose first prong is a typed integer and a later prong a
+float truncates instead of narrowing — `const C: i32 = 6;
+switch (c) { 1 => C, else => 2.5 }` yields `2` where Zig yields `2.5`, and
+`switch (c) { 1 => C, else => x }` (runtime `f32`) yields `3`/`4` where Zig
+yields `3.5`/`4.5` (declaration/argument forms too; reverse prong order is
+correct). The seed v88 was correct; this is an FX3-fix-round-1 regression and
+is documented, not fixed in FX9.
 
 Two further **pre-existing over-rejects** stay documented (the seed rejected
 these too, so they are not regressions): a **cross-module qualified const**

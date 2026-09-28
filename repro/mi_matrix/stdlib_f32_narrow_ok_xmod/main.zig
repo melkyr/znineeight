@@ -16,6 +16,11 @@
 // `i32`/`f64` arm (`if (c > 0) x else 2.5`), a nested mixed `if`, and
 // comptime-known conditions whose untaken arm is never analyzed
 // (`if (false) n else 2.5`); all are red→green against the PRE-FX9 compiler.
+// FX9 fix round 1 adds the `undefined`-arm controls: `undefined` coerces to
+// every type, so an `undefined` arm is neutral and does not trigger the
+// runtime-arm reject (`if (c > 0) undefined else 2.5` stays accepted like the
+// seed and Zig 0.15.2); the `und=` row pins only taken-literal values (a
+// taken `undefined` arm is unspecified and is never pinned).
 //
 // Contract: stdout below, rc 0, byte-exact 3x; every printed value is
 // byte-identical to the Zig-0.15.2 `std.debug.print` twin (the values chosen
@@ -42,6 +47,8 @@ fn retIfF(c: i32, x: f32) f32 { return if (c > 0) x else D; }
 fn retIfN(c: i32, e: i32, x: f32) f32 { return if (c > 0) (if (e > 0) x else 2.5) else 3.5; }
 fn retIfFalse(n: i32) f32 { return if (false) n else 2.5; }
 fn retIfTrue(n: i32) f32 { return if (true) 2.5 else n; }
+fn retUnd(c: i32) f32 { return if (c > 0) undefined else 2.5; }
+fn retUndR(c: i32) f32 { return if (c > 0) 6.5 else undefined; }
 
 pub fn main() void {
     var v1: f32 = 0.1;
@@ -56,6 +63,13 @@ pub fn main() void {
     var s1: S = S{ .x = 2.0 };
     var s2: S = S{ .x = D };
 
+    var cu: i32 = -1;
+    cu = cu;
+    const xu: f32 = if (cu > 0) undefined else 3.5;
+    var yu: f32 = 0.0;
+    yu = if (cu > 0) undefined else 4.5;
+    var su: S = S{ .x = if (cu > 0) undefined else 5.5 };
+
     var ua: U = U{ .a = 2.0 };
     var ub: U = U{ .a = @as(f64, 3.0) };
     var uc: U = U{ .a = C };
@@ -65,6 +79,7 @@ pub fn main() void {
     std.io.print("ret={} {} {}\n", .{ retLit(), retD(), retC() });
     std.io.print("ifs={} {} {} {}\n", .{ retIf(1), retIf(-1), retSwitch(1), vi });
     std.io.print("mix={} {} {} {} {} {} {} {} {}\n", .{ retIfX(1, 3.5), retIfX(-1, 3.5), retIfI(-1, 3.5), retIfF(-1, 3.5), retIfN(1, 1, 4.5), retIfN(1, -1, 4.5), retIfN(-1, 1, 4.5), retIfFalse(7), retIfTrue(7) });
+    std.io.print("und={} {} {} {} {} {}\n", .{ retUnd(-1), retUndR(1), xu, yu, su.x, take(if (cu > 0) undefined else 7.5) });
     std.io.print("decl={} {} {} {}\n", .{ v1, v2, v3, v4 });
     std.io.print("field={} {}\n", .{ s1.x, s2.x });
     std.io.print("union={} {} {}\n", .{ ua.a, ub.a, uc.a });

@@ -1,6 +1,6 @@
-# mi_matrix corpus — expected-fail manifest (v267 2026-09-27)
+# mi_matrix corpus — expected-fail manifest (v268 2026-09-27)
 
-## FX9 — runtime non-float arm at an f32 site (v266 -> v267, 2026-09-27)
+## FX9 — runtime non-float arm at an f32 site (v266 -> v267, 2026-09-27; fix round 1 v267 -> v268, 2026-09-27)
 
 Volume II defect-fix phase, Stage 2b follow-up (task-FX9). A runtime non-float
 arm feeding an f32 site through an `if`/`switch` VALUE expression was accepted
@@ -56,8 +56,38 @@ emission 48 `.c` + 48 `.h` / 0 `error[` / 0 PANIC; build_test 0/9
 (pre-existing retired-zig0 baseline). FX3 fprobe grid and the 48-case FX3-I
 grid are PRE<->POST identical (no accept/reject movement). Bounded residual:
 a comptime-known switch OPERAND (`switch (0) { 1 => n, else => 2.5 }`) stays
-over-rejected PRE and POST (pre-existing; Zig selects the else prong and
-accepts) — only `if` conditions gained reachability.
+over-rejected (FX3-introduced regression, fixed point `8233580f…` onward —
+the seed v88 accepted and ran it correctly `f=2.5`; residual stays
+documented, not fixed here) — only `if` conditions gained reachability.
+
+**Fix round 1 (v267 -> v268, 2026-09-27) — `undefined` arm narrowed to neutral.**
+The FX9-arm classifier hard-rejected a `TYPE_UNDEFINED` arm
+(`semanticAnalyzerFloatNarrowArmStatus`), so `if (c) undefined else 2.5` at an
+f32 site rejected `error[3000]` although the seed v88, PRE `89aaf0ec` and
+Zig 0.15.2 accept it (`undefined` coerces to every type). An `undefined` arm
+is now neutral exactly like a `noreturn` arm: `semanticAnalyzerFloatNarrowArmStatus`
+returns `FLOAT_NARROW_ACCEPT` for `TYPE_UNDEFINED`. Accepted shapes: return
+(both arm positions), declaration, assignment, struct field and call argument
+— the field/argument forms previously emitted gcc-invalid C (`'zT_N'
+undeclared`) or ICEd `error[3043]` and now compile and run. Fixture
+`stdlib_f32_narrow_ok_xmod` gains the `und=` row (11 lines / 196 B, 3x
+byte-exact, byte-identical to the Zig-0.15.2 twin; only taken-literal values
+are pinned — a taken `undefined` arm is unspecified). New standalone
+`repro/f32_undefined_arm_ok.z98` (`und=2.5 3.5 4.5 5.5 6.5 7.5`, rc 0, 3x
+deterministic). The runtime-arm reject is unchanged (e.g.
+`if (c) n else undefined` with runtime `n: i32` still rejects `source: i32`,
+matching Zig); the FX9 reject censuses stay 33 x `error[3000]` (fixture) /
+11 x (standalone) / 8 x (FX3 standalone), and the FX3 fprobe + FX3-I grids
+stay PRE<->POST identical. Fixed point `ee5f3070…` -> `5744b468…`.
+Bounded residual (candidate follow-up group, NOT fixed here): a `switch`
+VALUE expression whose FIRST prong is a typed integer and a later prong is a
+float truncates the float (`const C: i32 = 6;
+switch (c) { 1 => C, else => 2.5 }` -> `2`, Zig `2.5`; with `else => x`
+(runtime `f32`) -> `3`/`4`, Zig `3.5`/`4.5`; same at declaration/argument;
+reverse prong order correct). Seed v88 was correct; FX3-fix-r1 turned the
+shape into an accepted-wrong value (PRE `89aaf0ec` == this diff's parent).
+The FX9 arm-status switch interception accepts the prongs without retyping
+the switch; the FX9 retyping branch is `if`-only. Do NOT fix in FX9.
 
 ## FB2 — inferred tuple-element typing family (FD2 review Critical/Important 1-2) (v264 -> v265, 2026-09-27; fix round 1 v265 -> v266, 2026-09-27)
 
