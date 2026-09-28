@@ -540,14 +540,14 @@ parser accumulates digits, so an extreme literal such as
 typed `const` of it can reject where Zig accepts; the value-aware rule is
 applied to the lexed value.
 
-Boundary (switch typed-int-first residual, candidate follow-up): a `switch`
+Boundary (switch typed-int-first residual, fixed by FX10): a `switch`
 VALUE expression whose first prong is a typed integer and a later prong a
 float truncates instead of narrowing — `const C: i32 = 6;
 switch (c) { 1 => C, else => 2.5 }` yields `2` where Zig yields `2.5`, and
 `switch (c) { 1 => C, else => x }` (runtime `f32`) yields `3`/`4` where Zig
 yields `3.5`/`4.5` (declaration/argument forms too; reverse prong order is
 correct). The seed v88 was correct; this is an FX3-fix-round-1 regression and
-is documented, not fixed in FX9.
+is fixed by FX10 (not in FX9).
 
 Two further **pre-existing over-rejects** stay documented (the seed rejected
 these too, so they are not regressions): a **cross-module qualified const**

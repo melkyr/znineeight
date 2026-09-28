@@ -79,7 +79,7 @@ deterministic). The runtime-arm reject is unchanged (e.g.
 matching Zig); the FX9 reject censuses stay 33 x `error[3000]` (fixture) /
 11 x (standalone) / 8 x (FX3 standalone), and the FX3 fprobe + FX3-I grids
 stay PRE<->POST identical. Fixed point `ee5f3070…` -> `5744b468…`.
-Bounded residual (candidate follow-up group, NOT fixed here): a `switch`
+Bounded residual (FX10 owns the code fix; NOT fixed in FX9): a `switch`
 VALUE expression whose FIRST prong is a typed integer and a later prong is a
 float truncates the float (`const C: i32 = 6;
 switch (c) { 1 => C, else => 2.5 }` -> `2`, Zig `2.5`; with `else => x`
@@ -87,7 +87,7 @@ switch (c) { 1 => C, else => 2.5 }` -> `2`, Zig `2.5`; with `else => x`
 reverse prong order correct). Seed v88 was correct; FX3-fix-r1 turned the
 shape into an accepted-wrong value (PRE `89aaf0ec` == this diff's parent).
 The FX9 arm-status switch interception accepts the prongs without retyping
-the switch; the FX9 retyping branch is `if`-only. Do NOT fix in FX9.
+the switch; the FX9 retyping branch is `if`-only. FX10 owns the code fix.
 
 ## FB2 — inferred tuple-element typing family (FD2 review Critical/Important 1-2) (v264 -> v265, 2026-09-27; fix round 1 v265 -> v266, 2026-09-27)
 
