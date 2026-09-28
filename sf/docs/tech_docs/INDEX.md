@@ -1030,7 +1030,8 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `semanticAnalyzerCheckIntrospectionBuiltin` | semantic_analyzer.zig |
 | `semanticAnalyzerConditionComptimeBool` | semantic_analyzer.zig (FX9: tri-state comptime bool fold of an `if` condition; `?false` distinguishes comptime-false from unknown so the untaken arm is skipped) |
 | `semanticAnalyzerConditionIsComptimeTrue` | semantic_analyzer.zig |
-| `semanticAnalyzerConstDiscard` | semantic_analyzer.zig (FC/D12: const-discard predicate — source const, target not, same effective elem/base across slice->slice / slice->many / ptr->ptr / many->many) |
+| `semanticAnalyzerConstArrayDecay` | semantic_analyzer.zig (FX6: expression-level const-array-decay predicate — source `array_type`, target mutable `[]T`/`[*]T`, same element, source node a const l-value binding) |
+| `semanticAnalyzerConstDiscard` | semantic_analyzer.zig (FC/D12; FX6: const-discard predicate — source const, target not, same effective elem/base across slice->slice / slice->many / ptr->ptr / many->many; FX6 adds ptr->slice and ptr->many for a pointee known-length array — the string-literal family) |
 | `semanticAnalyzerDiagAsyncBuiltinInDefer` | semantic_analyzer.zig |
 | `semanticAnalyzerDiagAsyncOutsideSuspending` | semantic_analyzer.zig |
 | `semanticAnalyzerFindTypeDecl` | semantic_analyzer.zig |
@@ -1052,6 +1053,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `semanticAnalyzerIsBuiltinSupported` | semantic_analyzer.zig |
 | `semanticAnalyzerIsPointerFamilyKind` | semantic_analyzer.zig |
 | `semanticAnalyzerIsTypeValueCast` | semantic_analyzer.zig |
+| `semanticAnalyzerMaybeDiagConstArrayDecay` | semantic_analyzer.zig (FX6: level-0 `error[3000]` `cannot implicitly discard 'const' qualifier` for the expression-level const-array decay, deduped per node) |
 | `semanticAnalyzerMaybeDiagConstDiscard` | semantic_analyzer.zig (FC/D12: level-0 `error[3000]` `cannot implicitly discard 'const' qualifier`, deduped per node) |
 | `semanticAnalyzerMaybeDiagVolatileDrop` | semantic_analyzer.zig |
 | `semanticAnalyzerMaybeGateAliasDecl` | semantic_analyzer.zig |

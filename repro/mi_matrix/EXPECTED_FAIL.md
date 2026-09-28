@@ -1,4 +1,109 @@
-# mi_matrix corpus — expected-fail manifest (v272 2026-09-28)
+# mi_matrix corpus — expected-fail manifest (v273 2026-09-28)
+
+## FX6 — const-array decay / `"abc"`→`[]u8` / array-element const mismatch (v272 -> v273, 2026-09-28)
+
+Volume II defect-fix phase, Stage 2b follow-up (task-FX6). FC/D12 rejected the
+`[]const T` -> `[]T`/`[*]T` family, but three sibling const-violation holes
+stayed accepted at `97886e19` (FC-I §2.4/§7 Q3, ruled into FX6):
+
+1. a `const`-bound ARRAY value silently decayed to a mutable slice/many
+   (`const arr = [3]i32{1,2,3}; var s: []i32 = arr;` ran and mutated the const
+   binding's storage); the array type carries no `const` flag — the qualifier
+   lives on the BINDING — so the FC predicate could not see it, and
+   `arr[0..]` / `&arr` lost the binding's constness before the coercion site;
+2. a string literal (`*const [N]u8`) decayed to `[]u8`/`[*]u8` (`var s: []u8 =
+   "abc";` compiled and SIGSEGVed at run time — the literal is in rodata); the
+   ptr -> slice/many decays were outside FC's four-family predicate;
+3. an array-literal ELEMENT discarded const (`const a: []const i32 = ...; var
+   xs = [2][]i32{ a, a };` ran and mutated) — the element site was the one
+   materialisation path FC's site set did not cover.
+
+Official Zig 0.15.2 rejects every shape (`array literal requires address-of
+operator (&) ...`, or `expected type '[]T'/'[*]T'/'*[N]T', found
+'[]const T'/'*const [N]T'` + `note: cast discards const qualifier`). Spec basis:
+`docs/reference/Language_Spec_Z98.md` "Type Coercions / Const Correctness".
+
+**Fix (`sf/src/semantic_analyzer.zig`).**
+- `semanticAnalyzerConstDiscard` (FC) gains ptr -> slice and ptr -> many for a
+  pointer whose pointee is a KNOWN-LENGTH array (the string-literal family),
+  mirroring the assignability tables exactly (`qok` masked only volatile);
+- new expression-level twin `semanticAnalyzerConstArrayDecay` /
+  `semanticAnalyzerMaybeDiagConstArrayDecay` (same level-0 `error[3000]`
+  `cannot implicitly discard 'const' qualifier`, per-node dedup): source type
+  `array_type`, target mutable `[]T`/`[*]T`, same element, and
+  `semanticAnalyzerIsLValueConst(src_node)`; called at the local-decl,
+  assignment, module-var and `tryRecordCoercion` (return / call args / field
+  init) sites, plus the array-literal element site in
+  `semanticAnalyzerResolveArrayInit`;
+- `semanticAnalyzerResolveSliceExpr` types `arr[0..]` as `[]const T` when the
+  array binding is const (array-only: a const-bound mutable slice keeps
+  element mutability, Zig-equal);
+- `semanticAnalyzerResolveExpr`'s `address_of` arm rebuilds `&arr` as
+  `*const [N]T` for a const-bound array (array-only), so `*[N]T`/`[]T`/
+  `[*]T` targets reject through the type-level predicate.
+Legal const-ADDING directions (`[]const`/`[*]const`/`*const [N]T`, string
+literal -> const forms, mutable arrays, `[]T` -> `[]const T`/`[*]const T`,
+explicit `.ptr`) are unchanged.
+
+**Verification (compiler `/tmp/fx6/build/zig1_5_clean`, md5
+`1a258bd4bcb5194fc3256be0be456311`).** All three RED probes (R1 array decay,
+R2 string literal, R3 element mismatch) now reject rc 2 / 0 `.c` / 1 x
+`error[3000]` (R3: 1 per offending element); `arr[0..]`/`&arr`/`*[3]i32`
+variants reject; the parameter-binding shape (`fn f(a: [3]i32) []i32 { return
+a; }`) rejects too. Every control compiles/runs: mutable -> const slice/many,
+mutable-array slicing, `[]T` -> `[]const T`/`[*]const T`, `[]const T` ->
+`[*]const T`, string -> `[]const u8`/`[*]const u8`, explicit `.ptr`,
+`&arr[0]`, `const`-array -> `[]const`/`[*]const`/`*const [3]i32`, const-bound
+mutable slice reslicing. Standalone `repro/const_decay_reject.z98` (41 x
+`error[3000]`, 0 warnings, rc 2 / 0 `.c`, 3x deterministic) and
+`repro/const_decay_ok.z98` (rc 0, build+run `ok=1 97 98 98 99 45 3 1 2 3`).
+
+**Fixtures.** Reject `repro/mi_matrix/const_decay_reject_xmod` (main +
+helper + `expected.rc` = 2; 23 x `error[3000]`, 0 warnings, rc 2 / 0 `.c,
+GREEN; local sites + xmod call args + xmod returns). Positive
+`repro/mi_matrix/stdlib_const_decay_ok_xmod` (main + helper + `expected.txt`
+`cda=14 23 31 70 4 6 97 23 4 5 5 97 99` + `expected.rc` = 0, 3x byte-exact,
+Zig-0.15.2-twin byte-identical where the Z98 bare-array spellings are
+expressed with `&`), pinned in `scripts/stdlib/expected_dirs.txt`
+(**260 -> 261**).
+
+**Gates.** Fixed point MOVED `a9387d7e263b02c27c95239238152c4f` ->
+**`1a258bd4bcb5194fc3256be0be456311`** (explicit `FIXED_POINT_MD5` gate;
+hop1 == hop2; seed v88 NOT rotated, archive md5 `3db5ef39…` unchanged).
+4-MD5 emitted-C **UNCHANGED 8/8 both modes** (`-fsafe` gol `9a927bf9…` /
+lisp `823c88de…` / json `2821af2d…` / mud `b5a1d98e…`; `-ffast` gol
+`c84a60c5…` / lisp `8273ea61…` / json `0e6d6497…` / mud `bda71b43…`; 2x
+each), so every gate-program runtime output is byte-identical (game_of_life
+base<->FX6 execution re-checked identical; lisp/rogue goldens PASS inside
+`verify_upgraded.sh`). Stdlib **261 PASS / 0 FAIL**; example matrix
+**24/24**; `check_emit_support.sh` **7/7**; `verify_upgraded.sh` **CLOSEOUT
+OK**; self-emission rc 0 / **48 `.c` + 48 `.h`** / 0 PANIC / 0 `error[`;
+`build_test.sh` **0/9** (pre-existing retired-zig0 baseline);
+`repro/vol2_defects/run_all.sh` **13/13**.
+
+**Corpus movement (deviation from the brief's "only the new fixtures";
+disclosed, ruled pending).** `-s0` classify over the 1061 base dirs:
+**4 movers, zero other** —
+`repro/mi_matrix/typealias_slice_xmod` (OK -> GREEN),
+`typealias_pub_slice_xmod` (OK -> GREEN), `typealias_pub_mptr_xmod`
+(OK -> GREEN): each ends `const b = [_]T{...}` with `var s: []T = b;` /
+`var p: [*]u8 = &b;` — the exact R1 hole FX6 closes (Zig rejects:
+`array literal requires address-of operator` / `expected type '[*]u8',
+found '*const [2]u8'` + `cast discards const qualifier`); the fixtures were
+written for the A9F-a alias fix, not for constness, and relied on the hole;
+and `repro/mi_matrix/print_fmt_type_reject_xmod` (FAIL -> GREEN) gains 2 x
+`error[3000]` at its two latent const-decay lines (`const pp: *[3]i32 =
+&pa;`, `const mp: [*]i32 = &ma;`) on top of its 60 x `error[3013]` (still
+rc 2 / 0 `.c`; the classifier buckets it GREEN because the bucket keys on the
+presence of `error[3000]`). All four shapes are Zig-rejected const discards,
+i.e. correct statements of the FX6 rule; the fixtures used the closed hole.
+Proposed resolution (controller ruling needed): migrate the three
+`typealias_*` fixtures' `const b` -> `var b` (their documented contract is
+alias typing + runtime output, not constness) and allow
+`print_fmt_type_reject_xmod`'s 3060-something census to carry the 2 new
+`error[3000]`s (or convert those two lines to the `*const` spelling). No
+migration was applied unilaterally per the brief's STOP rule; the task report
+carries the full analysis.
 
 ## FX5 — pointer / `*[N]T` slice siblings, runtime slice bounds, `pa.*[i]` (v269 -> v270, 2026-09-28; fix round 1 v270 -> v271; fix round 2 v271 -> v272, 2026-09-28)
 

@@ -1,0 +1,207 @@
+// repro/const_decay_reject.z98 — standalone FX6 (Volume II) reproduction.
+//
+// FC (D12) rejects `[]const T` -> `[]T`/`[*]T` and the pointer/many siblings.
+// Three const-violation holes stayed accepted at the base:
+//   R1 a `const`-bound ARRAY value (the array type itself carries no const
+//      flag) silently decayed to a mutable `[]i32`/`[*]i32`, and the
+//      `arr[0..]`/`&arr` decays lost the binding's constness before the
+//      coercion site saw it;
+//   R2 a string literal (`*const [N]u8`) decayed to `[]u8`/`[*]u8` (runtime
+//      SIGSEGV: the literal lives in read-only memory);
+//   R3 an array-literal ELEMENT discarded const at the element site, the one
+//      materialisation path outside FC's site set (`[2][]i32{ c, c }` with
+//      `c: []const i32`).
+//
+// EXPECTED (after the fix): dump rc=2, 0 `.c`, exactly 41 level-0
+//   `error[3000]: cannot implicitly discard 'const' qualifier`,
+// 0 x `warning[3000]`, 0 other error codes. Every legal const-ADDING shape in
+// the same file adds NO diagnostic. Census: 4 module vars + 6 returns + 9
+// local decls + 4 assignments + 6 call args + 3 field inits + 9 array-literal
+// element sites = 41.
+const std = @import("std");
+
+const Holder = struct { m: []i32 };
+const ManyHolder = struct { mp: [*]i32 };
+const StrHolder = struct { s: []u8 };
+
+const garr = [3]i32{ 1, 2, 3 };
+
+// R1 module var (array value -> mutable slice / many-pointer).
+var gs: []i32 = garr;
+var gmp: [*]i32 = garr;
+// R2 module var (string literal -> mutable slice / many-pointer).
+var gstr: []u8 = "abc";
+var gstrp: [*]u8 = "abc";
+
+fn takeSlice(s: []i32) void {
+    s[0] = 9;
+}
+
+fn takeMany(p: [*]i32) void {
+    p[0] = 9;
+}
+
+fn takeU8(s: []u8) void {
+    s[0] = 9;
+}
+
+fn takeU8p(p: [*]u8) void {
+    p[0] = 9;
+}
+
+// R1 return (module const array, parameter binding, string literal).
+fn retArr() []i32 {
+    return garr;
+}
+
+fn retMany() [*]i32 {
+    return garr;
+}
+
+fn retParam(a: [3]i32) []i32 {
+    return a;
+}
+
+fn retManyParam(a: [3]i32) [*]i32 {
+    return a;
+}
+
+fn retStr() []u8 {
+    return "abc";
+}
+
+fn retStrMany() [*]u8 {
+    return "abc";
+}
+
+pub fn main() void {
+    var mut = [3]i32{ 7, 8, 9 };
+    var mutbuf = [3]u8{ 1, 2, 3 };
+    const arr = [3]i32{ 1, 2, 3 };
+    const tmp = [2]i32{ 4, 5 };
+    const c: []const i32 = tmp[0..];
+
+    // R1 local decl, direct array value.
+    var s: []i32 = arr;
+    var p: [*]i32 = arr;
+    // R1 local decl, `arr[0..]` slice decay.
+    var s2: []i32 = arr[0..];
+    var p2: [*]i32 = arr[0..];
+    // R1 local decl, `&arr` address decay.
+    var s3: []i32 = &arr;
+    var p3: [*]i32 = &arr;
+    var pp: *[3]i32 = &arr;
+    // R2 local decl, string literal.
+    var ss: []u8 = "abc";
+    var sp: [*]u8 = "abc";
+
+    // R1 assignment (array value).
+    var am: []i32 = mut;
+    am = arr;
+    var ap: [*]i32 = mut;
+    ap = arr;
+    // R2 assignment (string literal).
+    var asm: []u8 = mutbuf;
+    asm = "abc";
+    var apm: [*]u8 = mutbuf;
+    apm = "abc";
+
+    // R1 call arguments (module const array, local const array, `&arr`).
+    takeSlice(garr);
+    takeMany(garr);
+    takeSlice(arr);
+    takeMany(&arr);
+    // R2 call arguments (string literal).
+    takeU8("abc");
+    takeU8p("abc");
+
+    // R1/R2 field init.
+    var h: Holder = .{ .m = arr };
+    var mh: ManyHolder = .{ .mp = &arr };
+    var sh: StrHolder = .{ .s = "abc" };
+
+    // R1/R2 returns.
+    const r1 = retArr();
+    const r2 = retMany();
+    const r3 = retParam(arr);
+    const r4 = retManyParam(arr);
+    const r5 = retStr();
+    const r6 = retStrMany();
+
+    // R3 array-literal elements (slice/many, `[]const` value / string
+    // literal / const-array value).
+    var xs = [2][]i32{ c, c };
+    var ys = [2][]u8{ "ab", "cd" };
+    var zs = [1][]i32{ tmp };
+    var ms = [2][*]i32{ c, c };
+    var us = [2][*]u8{ "ab", "cd" };
+
+    // Legal const-ADDING directions: must add NO diagnostic.
+    const ok1: []const i32 = arr;
+    const ok2: []const i32 = arr[0..];
+    const ok3: [*]const i32 = arr;
+    const ok4: [*]const i32 = &arr;
+    const ok5: *const [3]i32 = &arr;
+    const ok6: []const i32 = &arr;
+    const ok7: []const u8 = "abc";
+    const ok8: [*]const u8 = "abc";
+    const ok9: []i32 = mut;
+    var ok10: []i32 = mut[0..];
+    var ok11: [*]i32 = mut;
+    var ok12: [*]i32 = &mut;
+    const ok13: *i32 = &mut[0];
+    const ok14: []const i32 = c;
+    const ok15: [*]const i32 = c;
+    const ok16: []const i32 = mut;
+    var ok17 = [2][]const i32{ c, c };
+    var ok18 = [2][]const u8{ "ab", "cd" };
+    var ok19 = [1][]const i32{ tmp };
+
+    _ = s;
+    _ = p;
+    _ = s2;
+    _ = p2;
+    _ = s3;
+    _ = p3;
+    _ = pp;
+    _ = ss;
+    _ = sp;
+    _ = am;
+    _ = ap;
+    _ = asm;
+    _ = apm;
+    _ = h;
+    _ = mh;
+    _ = sh;
+    _ = r1;
+    _ = r2;
+    _ = r3;
+    _ = r4;
+    _ = r5;
+    _ = r6;
+    _ = xs;
+    _ = ys;
+    _ = zs;
+    _ = ms;
+    _ = us;
+    _ = ok1;
+    _ = ok2;
+    _ = ok3;
+    _ = ok4;
+    _ = ok5;
+    _ = ok6;
+    _ = ok7;
+    _ = ok8;
+    _ = ok9;
+    _ = ok10;
+    _ = ok11;
+    _ = ok12;
+    _ = ok13;
+    _ = ok14;
+    _ = ok15;
+    _ = ok16;
+    _ = ok17;
+    _ = ok18;
+    _ = ok19;
+    std.io.print("unreachable\n", .{});
+}

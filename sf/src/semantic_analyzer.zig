@@ -2474,10 +2474,32 @@ fn semanticAnalyzerConstDiscard(self: *SemanticAnalyzer, src_type: u32, dst_type
     if ((s.flags & type_mod.CONST_FLAG) == @intCast(u8, 0)) return false;
     if ((d.flags & type_mod.CONST_FLAG) != @intCast(u8, 0)) return false;
     if (s.kind == type_mod.TypeKind.ptr_type) {
-        if (d.kind != type_mod.TypeKind.ptr_type) return false;
         var sp = self.registry.ptr_items[@intCast(usize, s.payload_idx)];
-        var dp = self.registry.ptr_items[@intCast(usize, d.payload_idx)];
-        return sp.base == dp.base;
+        if (d.kind == type_mod.TypeKind.ptr_type) {
+            var dp = self.registry.ptr_items[@intCast(usize, d.payload_idx)];
+            return sp.base == dp.base;
+        }
+        // FX6: a pointer-to-KNOWN-LENGTH-array (the string-literal family:
+        // `"abc"` is `*const [3]u8`) decays to a slice / many-pointer only
+        // through the same discard that the assignability tables below accept
+        // (they require the pointee to be an array, exactly mirrored here).
+        if (d.kind == type_mod.TypeKind.slice_type) {
+            if (@intCast(usize, sp.base) >= self.registry.types_len) return false;
+            var spo = self.registry.types_items[@intCast(usize, sp.base)];
+            if (spo.kind != type_mod.TypeKind.array_type) return false;
+            var arr = self.registry.array_items[@intCast(usize, spo.payload_idx)];
+            var ds = self.registry.slice_items[@intCast(usize, d.payload_idx)];
+            return arr.elem == ds.elem;
+        }
+        if (d.kind == type_mod.TypeKind.many_ptr_type) {
+            if (@intCast(usize, sp.base) >= self.registry.types_len) return false;
+            var spo2 = self.registry.types_items[@intCast(usize, sp.base)];
+            if (spo2.kind != type_mod.TypeKind.array_type) return false;
+            var arr2 = self.registry.array_items[@intCast(usize, spo2.payload_idx)];
+            var dp2 = self.registry.ptr_items[@intCast(usize, d.payload_idx)];
+            return arr2.elem == dp2.base;
+        }
+        return false;
     }
     if (s.kind == type_mod.TypeKind.many_ptr_type) {
         if (d.kind != type_mod.TypeKind.many_ptr_type) return false;
@@ -2505,6 +2527,48 @@ fn semanticAnalyzerMaybeDiagConstDiscard(self: *SemanticAnalyzer, span_node: u32
     // The module-var front-resolution fixpoint revisits every initializer on
     // each pass, so report once per node (the collector's shared marker is the
     // established dedup for diagnostics in this file).
+    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, span_node)) return true;
+    var cdrop_node = ast_mod.astStoreNodeAt(self.store, span_node);
+    var cdrop_msg: []const u8 = "cannot implicitly discard 'const' qualifier";
+    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, 3000), self.source_file_id, cdrop_node.span_start, cdrop_node.span_start + @intCast(u32, cdrop_node.span_len), cdrop_msg);
+    return true;
+}
+
+// FX6 (Volume II const-decay holes): an array VALUE carries no `const` flag on
+// its type — the qualifier lives on the BINDING — so the type-level
+// `semanticAnalyzerConstDiscard` cannot see `const arr` -> `[]T`/`[*]T`. This
+// expression-level twin matches exactly when the source expression is a
+// const-bound array l-value and the target is a MUTABLE slice / many-pointer
+// of the same element; the const-ADDING targets (`[]const T`, `[*]const T`)
+// and mutable arrays never match. `arr[0..]`/`&arr` carry the qualifier in
+// their result TYPE (see `semanticAnalyzerResolveSliceExpr` /
+// `semanticAnalyzerResolveExpr`'s `address_of` arm), so they are rejected by
+// the type-level predicate through the ordinary sites.
+fn semanticAnalyzerConstArrayDecay(self: *SemanticAnalyzer, src_node: u32, src_type: u32, dst_type: u32) bool {
+    if (src_type == @intCast(u32, 0) or dst_type == @intCast(u32, 0)) return false;
+    if (src_type == type_mod.TYPE_UNDEFINED or dst_type == type_mod.TYPE_UNDEFINED) return false;
+    if (src_type == dst_type) return false;
+    if (@intCast(usize, src_type) >= self.registry.types_len) return false;
+    if (@intCast(usize, dst_type) >= self.registry.types_len) return false;
+    var s = self.registry.types_items[@intCast(usize, src_type)];
+    var d = self.registry.types_items[@intCast(usize, dst_type)];
+    if (s.kind != type_mod.TypeKind.array_type) return false;
+    if (d.kind != type_mod.TypeKind.slice_type and d.kind != type_mod.TypeKind.many_ptr_type) return false;
+    if ((d.flags & type_mod.CONST_FLAG) != @intCast(u8, 0)) return false;
+    if (!semanticAnalyzerIsLValueConst(self, src_node)) return false;
+    var arr = self.registry.array_items[@intCast(usize, s.payload_idx)];
+    if (d.kind == type_mod.TypeKind.slice_type) {
+        var ds = self.registry.slice_items[@intCast(usize, d.payload_idx)];
+        return arr.elem == ds.elem;
+    }
+    var dp = self.registry.ptr_items[@intCast(usize, d.payload_idx)];
+    return arr.elem == dp.base;
+}
+
+fn semanticAnalyzerMaybeDiagConstArrayDecay(self: *SemanticAnalyzer, span_node: u32, src_node: u32, src_type: u32, dst_type: u32) bool {
+    if (!semanticAnalyzerConstArrayDecay(self, src_node, src_type, dst_type)) return false;
+    // Same per-node dedup as the type-level twin: the module-var
+    // front-resolution fixpoint revisits initializers.
     if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, span_node)) return true;
     var cdrop_node = ast_mod.astStoreNodeAt(self.store, span_node);
     var cdrop_msg: []const u8 = "cannot implicitly discard 'const' qualifier";
@@ -2703,6 +2767,7 @@ fn tryRecordCoercion(self: *SemanticAnalyzer, src_node: u32, src_type: u32, dst_
     if (src_type == type_mod.TYPE_UNDEFINED or src_type == dst_type) return;
     if (semanticAnalyzerMaybeDiagVolatileDrop(self, src_node, src_type, dst_type)) return;
     if (semanticAnalyzerMaybeDiagConstDiscard(self, src_node, src_type, dst_type)) return;
+    if (semanticAnalyzerMaybeDiagConstArrayDecay(self, src_node, src_node, src_type, dst_type)) return;
     if (!type_mod.typeRegistryIsAssignable(self.registry, src_type, dst_type)) {
         // FX3: a value-aware f64/integer -> f32 narrowing is recorded here, so
         // every `tryRecordCoercion` caller (call arguments, returns, field
@@ -3715,6 +3780,7 @@ fn semanticAnalyzerResolveAssign(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var eff_src = errLitSrcType(self, node.child_1, lhs, rhs);
     if (semanticAnalyzerMaybeDiagVolatileDrop(self, node.child_1, eff_src, lhs)) return type_mod.TYPE_VOID;
     if (semanticAnalyzerMaybeDiagConstDiscard(self, node.child_1, eff_src, lhs)) return type_mod.TYPE_VOID;
+    if (semanticAnalyzerMaybeDiagConstArrayDecay(self, node.child_1, node.child_1, eff_src, lhs)) return type_mod.TYPE_VOID;
     // FX3 (Volume II D6 extras): value-aware f64/integer -> f32 assignment.
     // An inexact comptime value rejects (it is otherwise assignable as an
     // int_literal); a literal/exact value records the narrowing. A runtime
@@ -4268,7 +4334,17 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
                     }
                 }
             }
-            result = type_mod.typeRegistryGetOrCreatePtr(self.registry, base, false);
+            // FX6 (Volume II const-decay holes): the address of a
+            // const-bound ARRAY is `*const [N]T` — the array type itself
+            // carries no flag, so `&arr` must consult the binding's
+            // constness. Deliberately array-only (a non-array operand keeps
+            // the pre-existing pointer spelling) so the FX6 blast radius
+            // stays inside the const-array-decay family.
+            var ao_const: bool = false;
+            if (self.registry.types_items[@intCast(usize, base)].kind == type_mod.TypeKind.array_type) {
+                ao_const = semanticAnalyzerIsLValueConst(self, node.child_0);
+            }
+            result = type_mod.typeRegistryGetOrCreatePtr(self.registry, base, ao_const);
         } else {
             result = type_mod.TYPE_VOID;
         }
@@ -5420,6 +5496,8 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                         // implicit volatile discard rejected; no coercion recorded
                     } else if (semanticAnalyzerMaybeDiagConstDiscard(self, node.child_1, it_eff, decl_type)) {
                         // implicit const discard rejected; no coercion recorded
+                    } else if (semanticAnalyzerMaybeDiagConstArrayDecay(self, node.child_1, node.child_1, it_eff, decl_type)) {
+                        // implicit const-array decay rejected; no coercion recorded
                     } else {
                     // FX3 (Volume II D6 extras): value-aware f64/integer ->
                     // f32 initialization. A literal/exactly-representable
@@ -5880,6 +5958,15 @@ fn semanticAnalyzerResolveSliceExpr(self: *SemanticAnalyzer, node_idx: u32) u32 
     if (bt.kind == type_mod.TypeKind.slice_type or bt.kind == type_mod.TypeKind.ptr_type or bt.kind == type_mod.TypeKind.many_ptr_type or bt.kind == type_mod.TypeKind.array_type) {
         if ((bt.flags & @intCast(u8, 1)) != @intCast(u8, 0)) se_is_const = true;
     }
+    // FX6 (Volume II const-decay holes): an array VALUE's `const` lives on the
+    // binding, not the type, so `arr[0..]` on a const-bound array must yield a
+    // const slice (Zig: `[]const T`) and then reject at the ordinary site if
+    // the target discards it. Deliberately array-only: a const-bound MUTABLE
+    // slice (`const s: []T`) keeps its element mutability, matching Zig
+    // (`s[0..]` is `[]T`).
+    if (bt.kind == type_mod.TypeKind.array_type and !se_is_const and semanticAnalyzerIsLValueConst(self, node.child_0)) {
+        se_is_const = true;
+    }
     var ret = type_mod.typeRegistryGetOrCreateSlice(self.registry, self._stub_1, se_is_const);
     self._stub_0 = saved;
     return ret;
@@ -6150,16 +6237,30 @@ fn semanticAnalyzerResolveArrayInit(self: *SemanticAnalyzer, node_idx: u32) u32 
      }
      var aei: usize = @intCast(usize, 0);
      while (aei < ec_n) : (aei += @intCast(usize, 1)) {
-         var el = ast_mod.astStoreNodeAt(self.store, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, aei)));
+         var el_ix = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, aei));
+         var el = ast_mod.astStoreNodeAt(self.store, el_ix);
          var el_tid: u32 = @intCast(u32, type_mod.TYPE_VOID);
          if (el.kind == AstKind.char_literal) { el_tid = type_mod.TYPE_U8; }
          else if (el.kind == AstKind.int_literal) { el_tid = type_mod.TYPE_U32; }
          else {
              if (elem_expected != @intCast(u32, type_mod.TYPE_UNDEFINED)) { pushExpectedType(self, elem_expected); }
-             el_tid = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, aei)));
+             el_tid = semanticAnalyzerResolveExpr(self, el_ix);
              if (elem_expected != @intCast(u32, type_mod.TYPE_UNDEFINED)) { popExpectedType(self); }
          }
          if (el_tid == type_mod.TYPE_VOID) { self._stub_0 = saved; return type_mod.TYPE_VOID; }
+         // FX6 (Volume II const-decay holes): the element site — the one
+         // materialisation path outside FC's site set. The array literal's
+         // declared element type is the coercion target for every element, so
+         // a `[]const T` element (or a string literal / const-array element)
+         // must not silently become a mutable element type.
+         if (elem_expected != @intCast(u32, type_mod.TYPE_UNDEFINED) and el_tid != elem_expected) {
+             var el_eff = errLitSrcType(self, el_ix, elem_expected, el_tid);
+             if (semanticAnalyzerMaybeDiagConstDiscard(self, el_ix, el_eff, elem_expected)) {
+                 // element-level const discard rejected
+             } else {
+                 _ = semanticAnalyzerMaybeDiagConstArrayDecay(self, el_ix, el_ix, el_eff, elem_expected);
+             }
+         }
          if (aei == @intCast(usize, 0)) { arr_elem_tid = el_tid; }
      }
      if (annot_tid != @intCast(u32, type_mod.TYPE_UNDEFINED)) { self._stub_0 = saved; return annot_tid; }
@@ -6208,6 +6309,9 @@ pub fn semanticAnalyzerResolveModuleVarDecl(self: *SemanticAnalyzer, decl_idx: u
             return it;
         }
         if (semanticAnalyzerMaybeDiagConstDiscard(self, decl.child_1, it_eff, decl_type)) {
+            return it;
+        }
+        if (semanticAnalyzerMaybeDiagConstArrayDecay(self, decl.child_1, decl.child_1, it_eff, decl_type)) {
             return it;
         }
         // FX3 (Volume II D6 extras): module-level value-aware f64/integer ->
