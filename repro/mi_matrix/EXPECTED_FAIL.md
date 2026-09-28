@@ -1,6 +1,6 @@
-# mi_matrix corpus — expected-fail manifest (v277 2026-09-28)
+# mi_matrix corpus — expected-fail manifest (v278 2026-09-28)
 
-## FX7 — switch-merge prong-name propagation (v276 -> v277, 2026-09-28)
+## FX7 — switch-merge prong-name propagation (v276 -> v277, 2026-09-28; closeout rulings v277 -> v278, 2026-09-28)
 
 Volume II defect-fix phase, Stage 2b follow-up (task-FX7; source = the plan's
 FX7 bullet + `task-FX2-I-report.md` §2.3/§2.4, measured on the FX2 compiler
@@ -25,11 +25,27 @@ merges keep the old drop (a1/a4 controls unchanged); the null/lifetime maps are
 untouched (their enclosing variables are seeded at declaration/param binding,
 so a prong-only name is necessarily a prong-local binding) — corpus,
 gate-program and self-emission stderr show zero null/lifetime movement, and a
-`error[3034]` null-after-switch control is pinned. Residual: an allocation
-freed INSIDE the prong and freed again after the switch joins to `unknown`, so
-the post-switch free is silent — the join cannot tell "freed in this prong"
-from "untracked on the other prongs"; reporting it would be a false positive
-on the untaken-prong path.
+`error[3034]` null-after-switch control is pinned.
+
+**Closeout rulings (v277 -> v278, 2026-09-28; docs-only, base `874a48e9`).**
+- **C1 ACCEPTED.** The fix removes the double-free pass's cross-mode duplicate
+  `warning[3037]` for prong-assigned names (synthetic probes n4b/n5b/n6b
+  3->2, 3->2, 2->1; the shared `analyzeExpr` emits the null deref warnings from
+  every pass). Ruling wording: "the cross-pass duplicate `warning[3037]`
+  removal stands (removed lines were duplicates/false positives; authoritative
+  diagnostics remain; zero corpus/gate movement)". Corpus, gate-program,
+  self-emission and `--track-memory` stderr were measured byte-identical.
+- **C2 = option (a), bounded residual ACCEPTED — no fix round, no new group.**
+  An allocation freed INSIDE the prong and freed again after the switch
+  (`allocFreeInProngThenFreeAfter`, probe a10: `p = arena_alloc(8);
+  arena_free(0, p);` in the prong, `arena_free(0, p);` after the switch) joins
+  to `AllocState.unknown`, so the post-switch free is silently marked freed.
+  The join cannot tell "freed in this prong" from "untracked on the other
+  prongs"; any definite value would report a false positive on the
+  untaken-prong path. PRE (`1a258bd4`) only warned `warning[3039]` here (not
+  the `error[3035]` class). Residual pinned in `repro/switch_merge_reject.z98`
+  (`allocFreeInProngThenFreeAfter`) and documented in
+  `docs/sf/STATIC_ANALYZERS_p2.md`.
 
 **Fixtures.** Positive `repro/mi_matrix/stdlib_analyzer_switch_merge_xmod`
 (local stub allocator; stdout 7 rows, rc 0, 3x; analyzer census documented:

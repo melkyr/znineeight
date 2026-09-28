@@ -178,7 +178,18 @@ join of "maybe allocated in this prong, untracked on the other prongs" (not
 would keep warning `WARN_6006`). If/else/while/for merges keep the drop, and
 the null/lifetime maps are not affected (their enclosing variables are seeded
 at declaration/param binding, so a prong-only name is a prong-local binding).
-Implementation: `sf/docs/tech_docs/06_static_analyzers.md`.
+Implementation: `sf/docs/tech_docs/06_static_analyzers.md`. **Bounded residual
+(operator-accepted 2026-09-28, option (a), no fix round):** an allocation freed
+INSIDE the prong and freed again after the switch
+(`switch (c) { true => { p = arena_alloc(a, N); arena_free(a, p); }, else => {} }
+arena_free(a, p);`) joins to `unknown`, so the post-switch free is silently
+marked `freed` — the join cannot tell "freed in this prong" from "untracked on
+the other prongs", and any definite join would be a false positive on the
+untaken-prong path. The same closeout ruling accepted the removal of the
+double-free pass's cross-mode duplicate `WARN_6002` lines for prong-assigned
+names (duplicates/false positives; authoritative null/lifetime diagnostics
+remain; zero corpus/gate movement). Recorded in
+`repro/mi_matrix/EXPECTED_FAIL.md` v278.
 
 ### 2.3 Iterative Function Visitor
 
