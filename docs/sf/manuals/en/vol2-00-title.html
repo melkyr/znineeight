@@ -5,7 +5,7 @@
 <title>Z98 Manual: Volume II &mdash; Learning Z98</title>
 <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
 <meta name="generator" content="z98doc 0.1">
-<meta name="keywords" content="Z98 manual volume II learning Z98 title page entry exit chapters">
+<meta name="keywords" content="Z98 manual volume II learning Z98 title page how to read entry exit reading paths chapter shape examples seed compiler planned chapters">
 <link rel="stylesheet" type="text/css" href="z98.css">
 <link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
 <link rel="home" href="index.html">
@@ -76,8 +76,75 @@ Volume I teaches programming. This volume teaches the language. It assumes you
 do not need the machine explained, and it spends its pages on the parts of Z98
 that differ from the languages you already know.
 </p>
+<p>
+<b>This volume assumes you program.</b> If you do not, read
+<a href="vol1-00-title.html">Volume I &mdash; Getting Started</a> first: it
+exists to get you to the point where this volume makes sense. Every chapter
+here takes "variable", "function", and "loop" as words you already use.
+</p>
+
+<h2>How to read this</h2>
+<p>
+The manual is six volumes. Each one states an entry state and an exit state,
+and a reader enters at the volume that matches their background and reads
+forward; nobody reads all six cover to cover. The paths printed on the back
+cover of every volume are:
+</p>
+<ul>
+<li><b>Never programmed</b> &rarr; I &rarr; II &rarr; III &rarr; IV/V as needed</li>
+<li><b>Knows C, C++, Java, or Python</b> &rarr; skim I &rarr; II &rarr; III &rarr; IV/V as needed</li>
+<li><b>Knows modern Zig</b> &rarr; II (for the differences) &rarr; III &rarr; IV/V</li>
+<li><b>Wants to use it now</b> &rarr; V &rarr; IV</li>
+<li><b>Maintainer</b> &rarr; VI &rarr; IV &rarr; the engineering docs</li>
+</ul>
+<p>
+This volume is the whole of the third path and the second stop on the first
+two.
+</p>
+
+<h3>How a chapter is built</h3>
+<p>
+A chapter is 8&ndash;14 pages. A chapter with a program opens with the
+argument, then works that program in full: the page shows the program, which
+is a real file under <tt>docs/sf/manuals/src/vol2/</tt>, and the transcript
+that file produced when it was compiled and run. The chapter closes with
+<b>Common mistakes</b> &mdash; the thing you will reach for from the language
+you already know, and the Z98 way instead &mdash; and <b>Where to go next</b>,
+which points at the next shipped chapter and the Reference pages for the same
+subject. A chapter that carries no program still ends with <b>Where to go
+next</b>.
+</p>
+<p>
+When a passage is a limit, a friction point, or an honest word about the era's
+other tools, it is set off as an <b>Honest note</b> in a grey box. The five
+callouts &mdash; note, tip, warn, caution, honest &mdash; are the ones
+<a href="vol1-00-title.html">Volume I</a> introduces and displays on its title
+page.
+</p>
+
+<h3>The examples and the compiler</h3>
+<p>
+The examples live in <tt>docs/sf/manuals/src/vol2/</tt>, beside the pages that
+use them. They are compiled with the compiler rebuilt from the committed seed;
+the rebuild recipe is in Volume I,
+<a href="vol1-04-installing.html">Installing the Toolchain</a>, under "Path
+one". This volume reuses the toolchain that chapter installs and does not
+repeat its commands.
+</p>
+
+<h3>Chapters and the sidebar</h3>
+<p>
+The sidebar on every page lists all 21 chapters of this volume. The chapter you
+are reading is shown in <b>bold</b>; a chapter whose page has not shipped yet
+is plain text marked <i>(planned)</i> and is not a link. The volume is
+published in batches, so until it is complete the Previous and Next buttons
+move to the nearest shipped chapter in that direction, skipping over the
+planned ones in between. The list below is the full volume.
+</p>
+
 <h2>Chapters</h2>
 <ul>
+<li><b>How to read this</b></li>
 <li>The honest comparison <i>(planned)</i></li>
 <li>The type system <i>(planned)</i></li>
 <li>Pointers <i>(planned)</i></li>
@@ -100,8 +167,9 @@ that differ from the languages you already know.
 <li>What you have learned, what is next <i>(planned)</i></li>
 </ul>
 <p>
-If you have never programmed, read <a href="vol1-00-title.html">Volume I</a>
-first. When this volume is done, continue to
+If you have never programmed, read <a href="vol1-00-title.html">Volume I
+&mdash; Getting Started</a> first. When this volume is done, continue to
+Volume III &mdash; Working in the Era <i>(planned)</i>, then
 <a href="vol4-00-title.html">Volume IV &mdash; Reference</a>.
 </p>
 <p class="navbtns">
@@ -111,7 +179,7 @@ first. When this volume is done, continue to
 &nbsp;&nbsp;
 <a href="vol2-12-error-unions.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
 </p>
-<p>Previous: <a href="toc.html">Contents</a> | <a href="toc.html">Contents</a> | Next: <a href="vol2-12-error-unions.html">Error Unions</a></p>
+<p>Previous: <a href="toc.html">Contents</a> | <a href="toc.html">Contents</a> | Next: <a href="vol2-12-error-unions.html">Error Unions &mdash; the First Big Shift</a></p>
 </td>
 </tr>
 </table>
