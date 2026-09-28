@@ -483,7 +483,14 @@ initializers); no C is emitted.
   `[*]const u8` / `*const u8`)
 - a `const`-bound ARRAY value -> `[]T` / `[*]T` (Forbidden: the array type
   itself carries no qualifier, so the binding's `const` is what the coercion
-  would discard; `[]const T` / `[*]const T` stay Allowed)
+  would discard; `[]const T` / `[*]const T` stay Allowed). Scope: arrays bound
+  directly by an ident — a local `const`/`var`, a module constant, a parameter
+  or capture. An array reached through a FIELD of a const aggregate
+  (`const S = struct { a: [3]i32 }; const cs: S = ...;`) is a known deferred
+  gap (fix group FX11): a const aggregate's array field resolves through a
+  pointer-typed field access, so its slice/address/element forms
+  (`cs.a[0..]`, `&cs.a`, `var s: []i32 = cs.a[0..];`) still compile and can
+  alias const storage; Zig 0.15.2 rejects them.
 - a const array / `[]const T` / string-literal ELEMENT of an array literal
   whose declared element type is mutable (Forbidden: `[2][]i32{ c, c }` with
   `c: []const i32` rejects at the element span)
@@ -491,10 +498,13 @@ initializers); no C is emitted.
 **Const propagation through decay:**
 - Slicing a `const` array or a `[]const T` yields `[]const T` (§1.4); the
   resulting slice then rejects at the ordinary sites if a mutable target is
-  expected (`var s: []i32 = arr[0..];` where `arr` is `const`).
+  expected (`var s: []i32 = arr[0..];` where `arr` is `const`). This
+  propagation covers the same direct ident/module/parameter array bindings as
+  the bullet above (the FX11 field-bound deferral applies here too).
 - `&arr` on a `const`-bound array is `*const [N]T`; coercing it to `*[N]T`,
   `[]T` or `[*]T` is the same level-0 const discard, while `*const [N]T` /
-  `[]const T` / `[*]const T` stay accepted. A const-bound MUTABLE slice
+  `[]const T` / `[*]const T` stay accepted (same direct-binding scope; `&cs.a`
+  on a const aggregate field is the FX11 deferral). A const-bound MUTABLE slice
   (`const s: []T`) keeps element mutability: `s[0..]` is `[]T` and `&s[0]` is
   `*T`, matching Zig.
 

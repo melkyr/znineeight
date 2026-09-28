@@ -1,4 +1,4 @@
-# mi_matrix corpus — expected-fail manifest (v275 2026-09-28)
+# mi_matrix corpus — expected-fail manifest (v276 2026-09-28)
 
 ## FX6 — const-array decay / `"abc"`→`[]u8` / array-element const mismatch (v272 -> v273, 2026-09-28; fix round 1 v273 -> v274, 2026-09-28; fix round 2 v274 -> v275, 2026-09-28)
 
@@ -111,6 +111,18 @@ are the two FX6 fixtures (`const_decay_reject_xmod` GREEN,
 `stdlib_const_decay_ok_xmod` OK). All four pre-migration shapes are
 Zig-0.15.2-rejected const discards, i.e. correct statements of the FX6 rule;
 the fixtures used the closed hole.
+
+**Deferred field-bound sub-family (FX11, operator ruling 2026-09-28).** The
+FX6 const-array guarantee covers direct ident/module/parameter array bindings
+only. An array reached through a FIELD of a const aggregate
+(`const S = struct { a: [3]i32 }; const cs: S = ...; var s: []i32 = cs.a[0..]`,
+plus `&cs.a`, a module-const field, a cross-module field, a `*const S` field
+and the array-literal element site) is a pre-existing silent const-alias hole
+(rc 0; Zig 0.15.2 rejects): the FX6 predicates fire on `array_type` operands,
+and a const aggregate's array field resolves through a pointer-typed field
+access, so the binding's constness is not propagated. FX6 fixtures never test
+or lower this sub-family (no FX6 gate movement from it); tracked as fix group
+**FX11**, queued after FX8.
 
 ## FX5 — pointer / `*[N]T` slice siblings, runtime slice bounds, `pa.*[i]` (v269 -> v270, 2026-09-28; fix round 1 v270 -> v271; fix round 2 v271 -> v272, 2026-09-28)
 
