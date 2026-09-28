@@ -98,8 +98,11 @@ against `docs/reference/Language_Spec_Z98.md` and the compiler source.
   spec-verified. At least one honesty callout. No sample.
 - **2 — The type system.** Primitives; arbitrary widths `u1`..`u64`;
   `isize`/`usize`; `bool`, `void`, `noreturn`, `c_char`. The width rule
-  (`@sizeOf` = carrier, `@bitSizeOf` = declared width). No implicit coercions
-  between `i32` and `usize`. Sample `types2.z98`.
+  (`@sizeOf` = carrier, `@bitSizeOf` = declared width). Integer-to-integer
+  conversions are implicit today (ruled 2026-09-28): `warning[3000]` at
+  declarations/assignments, silent at call sites; the chapter teaches
+  `@intCast` as the explicit, warning-free form and matches the measured
+  behavior. Sample `types2.z98`.
 - **3 — Pointers.** `*T`, `*const T`, `*volatile T`, `[*]T`, `**T`; `&`, `.*`;
   `ptr[i]` only on many-item pointers; `ptr.field` auto-deref; `const` is
   frontend-only; `volatile` is preserved; the pointer builtins (exact Z98
