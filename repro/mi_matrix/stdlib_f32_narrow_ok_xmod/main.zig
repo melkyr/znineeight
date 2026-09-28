@@ -21,6 +21,11 @@
 // runtime-arm reject (`if (c > 0) undefined else 2.5` stays accepted like the
 // seed and Zig 0.15.2); the `und=` row pins only taken-literal values (a
 // taken `undefined` arm is unspecified and is never pinned).
+// FX10 adds the switch value-expression retyping controls: a switch at an
+// f32 site whose FIRST prong is a typed value is retyped value-aware like the
+// `if` path, so a comptime-known exact `i32` first prong (`C`), a typed exact
+// `f64` first prong (`D`), a runtime `f32` else prong and the reverse/float-
+// first order all narrow instead of truncating (`swx=`/`swsites=` rows).
 //
 // Contract: stdout below, rc 0, byte-exact 3x; every printed value is
 // byte-identical to the Zig-0.15.2 `std.debug.print` twin (the values chosen
@@ -41,6 +46,15 @@ fn retD() f32 { return D; }
 fn retC() f32 { return C; }
 fn retIf(c: i32) f32 { return if (c > 0) 1.5 else 2.5; }
 fn retSwitch(c: i32) f32 { return switch (c) { 1 => 1.5, else => 2.5 }; }
+// FX10: the switch prong loop's value-blind unification used to let a typed
+// first prong win, truncating later float prongs. These pin the value-aware
+// retyping: exact typed `i32`/`f64` first prong, runtime `f32` else prong,
+// and the reverse (float-first) order.
+fn retSwC(c: i32) f32 { return switch (c) { 1 => C, else => 2.5 }; }
+fn retSwX(c: i32, x: f32) f32 { return switch (c) { 1 => C, else => x }; }
+fn retSwF(c: i32) f32 { return switch (c) { 1 => D, else => 2.5 }; }
+fn retSwRev(c: i32) f32 { return switch (c) { 1 => 2.5, else => C }; }
+fn retSwXFirst(c: i32, x: f32) f32 { return switch (c) { 1 => x, else => 2.5 }; }
 fn retIfX(c: i32, x: f32) f32 { return if (c > 0) x else 2.5; }
 fn retIfI(c: i32, x: f32) f32 { return if (c > 0) x else C; }
 fn retIfF(c: i32, x: f32) f32 { return if (c > 0) x else D; }
@@ -59,6 +73,15 @@ pub fn main() void {
     var c: i32 = 1;
     c = c + 1;
     const vi: f32 = if (c > 0) 1.5 else 2.5;
+
+    // FX10: switch value expressions at f32 sites, all four extra sites.
+    var sc: i32 = 1;
+    sc = sc;
+    const vsw: f32 = switch (sc) { 1 => C, else => 2.5 };
+    var vswa: f32 = 0.0;
+    vswa = switch (c) { 1 => C, else => 2.5 };
+    var vsws: S = S{ .x = switch (sc) { 1 => C, else => 2.5 } };
+    var vswu: U = U{ .a = switch (sc) { 1 => C, else => 2.5 } };
 
     var s1: S = S{ .x = 2.0 };
     var s2: S = S{ .x = D };
@@ -79,6 +102,8 @@ pub fn main() void {
     std.io.print("ret={} {} {}\n", .{ retLit(), retD(), retC() });
     std.io.print("ifs={} {} {} {}\n", .{ retIf(1), retIf(-1), retSwitch(1), vi });
     std.io.print("mix={} {} {} {} {} {} {} {} {}\n", .{ retIfX(1, 3.5), retIfX(-1, 3.5), retIfI(-1, 3.5), retIfF(-1, 3.5), retIfN(1, 1, 4.5), retIfN(1, -1, 4.5), retIfN(-1, 1, 4.5), retIfFalse(7), retIfTrue(7) });
+    std.io.print("swx={} {} {} {} {} {} {} {} {}\n", .{ retSwC(sc), retSwC(c), retSwX(sc, 3.5), retSwX(c, 3.5), retSwF(sc), retSwF(c), retSwRev(c), retSwXFirst(sc, 3.5), retSwXFirst(c, 3.5) });
+    std.io.print("swsites={} {} {} {} {}\n", .{ vsw, vswa, vsws.x, vswu.a, take(switch (sc) { 1 => C, else => 2.5 }) });
     std.io.print("und={} {} {} {} {} {}\n", .{ retUnd(-1), retUndR(1), xu, yu, su.x, take(if (cu > 0) undefined else 7.5) });
     std.io.print("decl={} {} {} {}\n", .{ v1, v2, v3, v4 });
     std.io.print("field={} {}\n", .{ s1.x, s2.x });

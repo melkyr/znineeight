@@ -3922,6 +3922,14 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
     var has_else: u8 = 0;
     var i: usize = 0;
     var sw_base: usize = self.stmt_work_len;
+    // FX10 (Volume II D6 extras follow-up): a switch VALUE expression at an
+    // f32 expectation site is typed value-aware AFTER the prong loop (mirror
+    // of `semanticAnalyzerResolveIfExpr`'s FX9 branch); the value-blind
+    // unification below is skipped for it so no widening is recorded on a
+    // prong. `unified` then only carries the first value prong's type as the
+    // no-type fallback for a rejecting switch.
+    var sw_f32_site: u8 = @intCast(u8, 0);
+    if (topExpectedType(self) == type_mod.TYPE_F32) { sw_f32_site = @intCast(u8, 1); }
 
     while (i < @intCast(usize, prongs_n)) : (i += 1) {
         var prong_i = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, i));
@@ -4038,6 +4046,9 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
         var pct_m: []const u8 = "PCT:n"; pal_mod.markerWriteInt(pct_m, prong.child_0); var pct_bm: []const u8 = "PCT:b"; pal_mod.markerWriteInt(pct_bm, bt); var pct_fm: []const u8 = "PCT:f"; pal_mod.markerWriteInt(pct_fm, self.current_fn_return);
         var swpb_im: []const u8 = "SWPB:i"; pal_mod.markerWriteInt(swpb_im, @intCast(u32, i)); var swpb_tm: []const u8 = "SWPB:t"; pal_mod.markerWriteInt(swpb_tm, bt);
         if (bt == type_mod.TYPE_NORETURN) {}
+        else if (sw_f32_site != @intCast(u8, 0)) {
+            if (unified == @intCast(u32, 0) and bt != @intCast(u32, 0)) { unified = bt; unified_node = prong.child_0; }
+        }
         else if (unified == @intCast(u32, 0)) {
             var sw_exp0 = topExpectedType(self);
             var sw_peer: u32 = sw_exp0;
@@ -4077,6 +4088,49 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
         // expressions (value and statement position). Deduped per switch node;
         // the zero-prong early returns above use the same reporter.
         semanticAnalyzerReportSwitchWithoutElse(self, node_idx);
+    }
+    // FX10 (Volume II D6 extras follow-up): value-aware result typing for a
+    // switch VALUE expression at an f32 expectation site, mirroring
+    // `semanticAnalyzerResolveIfExpr`'s FX9 branch. Every prong value is
+    // classified with the FX3 value rules (`semanticAnalyzerFloatNarrowArmStatus`):
+    // all acceptable => the switch types f32 and each non-f32 prong records its
+    // narrowing (lowering materialises it like the `if` path); otherwise the
+    // switch takes the offending prong's type so the enclosing f32 site's FX3
+    // status rejects with the offending arm's source/target notes. The switch
+    // OPERAND's comptime-ness is deliberately NOT used to skip prong
+    // classification (the `if` condition reachability has no switch analog
+    // here), so the documented `switch (0)` over-reject is unchanged.
+    if (sw_f32_site != @intCast(u8, 0)) {
+        var sw_all_ok: u8 = @intCast(u8, 1);
+        var sw_off_ty: u32 = @intCast(u32, 0);
+        var si: usize = 0;
+        while (si < @intCast(usize, prongs_n)) : (si += 1) {
+            var si_i = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, si));
+            var si_prong = ast_mod.astStoreNodeAt(self.store, si_i);
+            var si_st = semanticAnalyzerFloatNarrowArmStatus(self, si_prong.child_0, @intCast(u32, 1));
+            if (si_st != FLOAT_NARROW_ACCEPT) {
+                sw_all_ok = @intCast(u8, 0);
+                if (rtt_mod.resolvedTypeTableGet(self.type_table, si_prong.child_0)) |si_t| { sw_off_ty = si_t; }
+                break;
+            }
+        }
+        if (sw_all_ok != @intCast(u8, 0)) {
+            si = 0;
+            while (si < @intCast(usize, prongs_n)) : (si += 1) {
+                var sw_i = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, si));
+                var sw_prong = ast_mod.astStoreNodeAt(self.store, sw_i);
+                var sw_bt: u32 = @intCast(u32, 0);
+                if (rtt_mod.resolvedTypeTableGet(self.type_table, sw_prong.child_0)) |sw_t| { sw_bt = sw_t; }
+                if (sw_bt != @intCast(u32, 0) and sw_bt != type_mod.TYPE_F32) {
+                    tryRecordCoercion(self, sw_prong.child_0, sw_bt, type_mod.TYPE_F32);
+                }
+            }
+            var swu2_m: []const u8 = "SWU:n"; pal_mod.markerWriteInt(swu2_m, node_idx); var swu2_tm: []const u8 = "SWU:t"; pal_mod.markerWriteInt(swu2_tm, type_mod.TYPE_F32);
+            rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_F32);
+            self.switch_depth -= @intCast(u32, 1);
+            return type_mod.TYPE_F32;
+        }
+        if (sw_off_ty != @intCast(u32, 0)) { unified = sw_off_ty; }
     }
     if (unified == @intCast(u32, 0)) unified = type_mod.TYPE_NORETURN;
     rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, unified);

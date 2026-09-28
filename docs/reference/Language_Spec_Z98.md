@@ -512,16 +512,18 @@ At an `f32` expectation site the value decides, matching Zig 0.15.2:
   **comptime-known condition** makes the untaken arm unreachable, exactly as
   Zig skips its type check (`if (false) n else 2.5` accepts and yields 2.5;
   `if (true) n else 2.5` rejects because the bad arm is the taken one).
-- **Mixed float arms** stay accepted and become f32-typed: for an `if` value
-  expression, a runtime `f32` arm beside a float literal or an
-  exactly-representable typed `i32`/`f64`
+- **Mixed float arms** stay accepted and become f32-typed: for an `if` or
+  `switch` value expression, a runtime `f32` arm/prong beside a float literal
+  or an exactly-representable typed `i32`/`f64`
   (`return if (c > 0) x else 2.5;`, the nested
-  `if (c > 0) (if (e > 0) x else 2.5) else 3.5`), each arm recording its own
-  narrowing. The `switch` form accepts a mixed arm list only when its FIRST
-  non-noreturn prong is `f32` (`switch (c) { 1 => x, else => 2.5 }`); a switch
-  whose first prong is a typed integer and a later prong a float is a
-  documented accepted-wrong residual (see the boundary note below), not part
-  of this rule.
+  `if (c > 0) (if (e > 0) x else 2.5) else 3.5`,
+  `return switch (c) { 1 => x, else => 2.5 };`, and the typed-integer first
+  prong `const C: i32 = 6; return switch (c) { 1 => C, else => 2.5 };`
+  yielding `6`/`2.5`), each arm/prong recording its own narrowing. FX10
+  retypes the `switch` form value-aware exactly like the `if` form, so a
+  typed-integer first prong no longer wins the prong unification and
+  truncates a later float prong (before FX10 that shape yielded `2` where
+  Zig yields `2.5`; the seed v88 was correct).
 - An **`undefined` arm** is neutral: `undefined` coerces to every type (Zig's
   `undefined` is a valid f32 value), so `if (c) undefined else 2.5` is
   accepted with no narrowing reject, at every listed site and in either arm
@@ -540,14 +542,14 @@ parser accumulates digits, so an extreme literal such as
 typed `const` of it can reject where Zig accepts; the value-aware rule is
 applied to the lexed value.
 
-Boundary (switch typed-int-first residual, fixed by FX10): a `switch`
-VALUE expression whose first prong is a typed integer and a later prong a
-float truncates instead of narrowing — `const C: i32 = 6;
-switch (c) { 1 => C, else => 2.5 }` yields `2` where Zig yields `2.5`, and
-`switch (c) { 1 => C, else => x }` (runtime `f32`) yields `3`/`4` where Zig
-yields `3.5`/`4.5` (declaration/argument forms too; reverse prong order is
-correct). The seed v88 was correct; this is an FX3-fix-round-1 regression and
-is fixed by FX10 (not in FX9).
+Historical note (truncation fixed by FX10): a `switch` VALUE expression
+whose first prong is a typed integer and a later prong a float used to
+truncate instead of narrowing — `const C: i32 = 6;
+switch (c) { 1 => C, else => 2.5 }` yielded `2` where Zig yields `2.5`, and
+`switch (c) { 1 => C, else => x }` (runtime `f32`) yielded `3`/`4` where Zig
+yields `3.5`/`4.5` (declaration/argument forms too; reverse prong order was
+correct). The seed v88 was correct; the FX3 fix round 1 introduced the
+truncation and FX10 (the `switch` retyping above) fixed it.
 
 Two further **pre-existing over-rejects** stay documented (the seed rejected
 these too, so they are not regressions): a **cross-module qualified const**

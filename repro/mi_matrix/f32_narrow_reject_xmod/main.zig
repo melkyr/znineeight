@@ -15,12 +15,21 @@
 //     gcc-invalid C) or ICEd; Zig rejects `expected type 'f32', found
 //     'i32'`. A comptime-true condition makes the bad arm the taken one and
 //     still rejects (`if (true) n else 2.5`).
+//   * FX10: a `switch` VALUE expression at an f32 site whose prong is not
+//     value-aware narrowable — a runtime non-float prong (`retSwArm`), the
+//     int-inexact literal (`retSwInexact`) and typed-const (`retSwBadI`)
+//     prongs, and a runtime f64 prong (`retSwF64`), at return/assignment/
+//     field/argument sites. FX10's retyping only changes the ACCEPT side; the
+//     prong classification (and therefore this reject census) is unchanged
+//     from FX9 except that the reported `source:` is the offending prong's
+//     type.
 //
 // The int-literal shape (`take(16777217)`) is the Zig int-exactness reject the
 // operator ruling added: it was a silent round before FX3.
 //
 // Contract: rc 2, no `.c` emitted, the `error[3000]` census pinned in the
-// header (18 FX3 rows + 15 FX9 runtime-arm rows = 33); no ICE, no signal.
+// header (18 FX3 rows + 15 FX9 runtime-arm rows + 6 FX10 switch rows = 39);
+// no ICE, no signal, no warning.
 const std = @import("std");
 const helper = @import("helper.zig");
 
@@ -37,6 +46,9 @@ fn retInexact() f32 { return BadF; }
 fn retInexactI() f32 { return BadI; }
 fn retIfArm(c: i32, n: i32) f32 { return if (c > 0) n else 2.5; }
 fn retSwArm(c: i32, n: i32) f32 { return switch (c) { 1 => n, else => 2.5 }; }
+fn retSwInexact(c: i32) f32 { return switch (c) { 1 => 16777217, else => 2.5 }; }
+fn retSwBadI(c: i32) f32 { return switch (c) { 1 => BadI, else => 2.5 }; }
+fn retSwF64(c: i32, d: f64) f32 { return switch (c) { 1 => d, else => 2.5 }; }
 fn retIfArmI64(c: i32, n: i64) f32 { return if (c > 0) n else 2.5; }
 fn retIfArmU(c: i32, n: u32) f32 { return if (c > 0) n else 2.5; }
 fn retIfArmB(c: i32, b: bool) f32 { return if (c > 0) b else 2.5; }
@@ -97,6 +109,15 @@ pub fn main() void {
     x = if (c > 0) n else 2.5;
     const xb: f32 = switch (c) { 1 => n, else => 2.5 };
     _ = xb;
+    // FX10: switch reject rows (runtime non-float prong, int-inexact literal
+    // and typed-const prong, runtime f64 prong) across the sites.
+    x = switch (c) { 1 => n, else => 2.5 };
+    var sb: S = S{ .x = switch (c) { 1 => n, else => 2.5 } };
+    _ = sb;
+    _ = take(switch (c) { 1 => 16777217, else => 2.5 });
+    _ = retSwInexact(c);
+    _ = retSwBadI(c);
+    _ = retSwF64(c, d);
     var sa: S = S{ .x = if (c > 0) n else 2.5 };
     _ = sa;
     var uax: U = U{ .a = if (c > 0) n else 2.5 };

@@ -1,4 +1,78 @@
-# mi_matrix corpus — expected-fail manifest (v268 2026-09-27)
+# mi_matrix corpus — expected-fail manifest (v269 2026-09-28)
+
+## FX10 — switch value-expression retyping at f32 sites (v268 -> v269, 2026-09-28)
+
+Volume II defect-fix phase, Stage 2b follow-up (task-FX10). A `switch` VALUE
+expression at an f32 expectation site whose FIRST prong is a typed value was
+accepted and silently truncated: `const C: i32 = 6;
+return switch (c) { 1 => C, else => 2.5 };` yielded `2` (Zig 0.15.2 `2.5`), and
+with a runtime `f32` else prong (`else => x`) `x = 3.5` yielded `3` (Zig
+`3.5`); the same at declaration/assignment/field/argument sites. The seed v88
+was correct; FX3-fix-r1 (`20127360`) introduced the accepted-wrong behavior.
+Root cause: `semanticAnalyzerResolveSwitchExpr` unified the prongs
+value-blind, so the first prong's type won (`i32`), later float prongs were
+materialised into it (truncation), and the site's FX3 accept/the switch's
+`float_narrow` narrowing then looked correct. The FX9 retyping branch is
+`if`-only (`semanticAnalyzerResolveIfExpr`).
+
+**Fix (`sf/src/semantic_analyzer.zig`, `semanticAnalyzerResolveSwitchExpr`).**
+A new `sw_f32_site` flag (from `topExpectedType(self) == TYPE_F32`) makes the
+prong loop skip the value-blind unification, and after the loop a new FX10
+branch classifies EVERY prong value with FX3's
+`semanticAnalyzerFloatNarrowArmStatus` (`noreturn`/`undefined`/`f32` are
+neutral; everything else must value-aware narrow):
+
+- all prongs acceptable => the switch records `TYPE_F32` and each non-`f32`
+  prong gets its `tryRecordCoercion` narrowing (lowering materialises it like
+  the `if` path); this fixes the `2`/`3` truncation for a typed-int first
+  prong, a typed-exact-`f64` first prong, a runtime `f32` else prong and the
+  reverse (float-first) order;
+- otherwise the switch takes the offending prong's type, so the enclosing
+  f32 site's existing FX3 status rejects `error[3000]` with the offending
+  prong's `source:` note (the reject decision and census are unchanged from
+  FX9; only the note for e.g. an int-inexact literal prong (now
+  `comptime_int`) or a runtime-f64 else prong (now `f64`, was the first
+  prong's type) is the offending prong's type, mirroring the `if` path).
+
+The switch OPERAND's comptime-ness is deliberately NOT consulted (the `if`
+condition reachability has no switch analog here), so the documented
+`switch (0) { 1 => n, else => 2.5 }` over-reject stays unchanged (FX9
+residual, not touched).
+
+**Census / fixtures.** `repro/mi_matrix/stdlib_f32_narrow_ok_xmod` gains the
+`swx=` and `swsites=` rows covering the typed-int first prong (return ×2,
+declaration, assignment, struct field, union payload, argument), the runtime
+`f32` else prong, the typed-exact-`f64` first prong and the reverse order;
+golden 11 lines / 196 B -> **13 lines / 250 B**, rc 0, 3x byte-exact, and
+byte-identical to the Zig-0.15.2 `std.debug.print` twin. PRE the same rows
+printed `sw=6 2 6 3 ...` / `swsites=6 2 ...` (truncated). Reject
+`repro/mi_matrix/f32_narrow_reject_xmod` 33 -> **39 x `error[3000]`** (6 FX10
+switch rows: int-inexact literal prong, typed-inexact-const prong, runtime
+f64 prong, and a runtime-i32 prong at assignment/field/argument sites) — the
+reject decision is the FX9 classification's, the census growth is coverage.
+New standalone `repro/f32_narrow_switch.z98` (accept:
+`sw=6 2.5 6 3.5 2.5 2.5` / `rev=2.5 6 3.5 2.5` / `sites=6 2.5 6 6 6`, rc 0,
+Zig-twin byte-identical; PRE `sw=6 2 6 3` / `sites=6 2 ...`) and
+`repro/f32_narrow_switch_reject.z98` (6 x `error[3000]`, rc 2 / 0 `.c`, no
+warning). `repro/f32_runtime_arm_reject.z98` stays 11 x `error[3000]`,
+`repro/f32_narrow_reject.z98` 8 x, `repro/f32_narrow.z98` /
+`repro/f32_undefined_arm_ok.z98` rc 0.
+
+**Gates.** Fixed point `5744b468…` -> **`0b3ea32bebe2eab92d0801fe0f48d094`**
+(hop1 == hop2, explicit `FIXED_POINT_MD5` gate in a fresh seed rebuild; seed
+v88 NOT rotated, archive md5 `3db5ef39…` unchanged); 4-MD5 emitted-C
+UNCHANGED 8/8 (gol `9e0b708e…`, lisp `ec14d644…`, json `5034a0c8…`, mud
+`2e92c1f2…`, 2x deterministic); corpus `-s0` **1060 = 904 OK / 51 GREEN /
+105 FAIL / 0 ICE / 0 CRASH**, full-classifier join-diff vs the `e7cc3756`
+baseline EMPTY (dir set identical); `warning[3000]` full census 18, dir list
+byte-identical; stdlib **259 PASS / 0 FAIL** (pin unchanged); example matrix
+24/24; `check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK;
+self-emission 48 `.c` + 48 `.h` / 0 `error[` / 0 PANIC; build_test 0/9
+(pre-existing retired-zig0 baseline); `repro/vol2_defects/run_all.sh` 13/13
+`ok`. FX3 fprobe (14), FX3-I (48), FX9 probes (41) and FX9 edges (2 + helper)
+grids are PRE<->POST identical (rc / error codes / `source:` notes / stdout);
+the POST probe grid fixes the accepted-wrong values
+(`sw=6 2.5 6 3.5 2.5 2.5`, `sites=6 2.5 6 6 6 6 3.5 7`).
 
 ## FX9 — runtime non-float arm at an f32 site (v266 -> v267, 2026-09-27; fix round 1 v267 -> v268, 2026-09-27)
 
@@ -79,15 +153,16 @@ deterministic). The runtime-arm reject is unchanged (e.g.
 matching Zig); the FX9 reject censuses stay 33 x `error[3000]` (fixture) /
 11 x (standalone) / 8 x (FX3 standalone), and the FX3 fprobe + FX3-I grids
 stay PRE<->POST identical. Fixed point `ee5f3070…` -> `5744b468…`.
-Bounded residual (FX10 owns the code fix; NOT fixed in FX9): a `switch`
-VALUE expression whose FIRST prong is a typed integer and a later prong is a
-float truncates the float (`const C: i32 = 6;
-switch (c) { 1 => C, else => 2.5 }` -> `2`, Zig `2.5`; with `else => x`
-(runtime `f32`) -> `3`/`4`, Zig `3.5`/`4.5`; same at declaration/argument;
-reverse prong order correct). Seed v88 was correct; FX3-fix-r1 turned the
-shape into an accepted-wrong value (PRE `89aaf0ec` == this diff's parent).
-The FX9 arm-status switch interception accepts the prongs without retyping
-the switch; the FX9 retyping branch is `if`-only. FX10 owns the code fix.
+Bounded residual — **CLOSED/superseded (FX10, v268 -> v269, see the FX10
+section at the top of this manifest)**: a `switch` VALUE expression whose
+FIRST prong is a typed integer and a later prong is a float used to truncate
+the float (`const C: i32 = 6; switch (c) { 1 => C, else => 2.5 }` -> `2`, Zig
+`2.5`; with `else => x` (runtime `f32`) -> `3`/`4`, Zig `3.5`/`4.5`; same at
+declaration/argument; reverse prong order correct). Seed v88 was correct;
+FX3-fix-r1 turned the shape into an accepted-wrong value (PRE `89aaf0ec` ==
+the FX9 diff's parent). The FX9 arm-status switch interception accepted the
+prongs without retyping the switch; the FX9 retyping branch is `if`-only.
+FX10 adds the switch retyping branch and fixes this residual.
 
 ## FB2 — inferred tuple-element typing family (FD2 review Critical/Important 1-2) (v264 -> v265, 2026-09-27; fix round 1 v265 -> v266, 2026-09-27)
 
