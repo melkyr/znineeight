@@ -1,6 +1,6 @@
-# mi_matrix corpus — expected-fail manifest (v278 2026-09-28)
+# mi_matrix corpus — expected-fail manifest (v279 2026-09-28)
 
-## FX7 — switch-merge prong-name propagation (v276 -> v277, 2026-09-28; closeout rulings v277 -> v278, 2026-09-28)
+## FX7 — switch-merge prong-name propagation (v276 -> v277, 2026-09-28; closeout rulings v277 -> v278; I1 wording v278 -> v279, 2026-09-28)
 
 Volume II defect-fix phase, Stage 2b follow-up (task-FX7; source = the plan's
 FX7 bullet + `task-FX2-I-report.md` §2.3/§2.4, measured on the FX2 compiler
@@ -28,13 +28,20 @@ gate-program and self-emission stderr show zero null/lifetime movement, and a
 `error[3034]` null-after-switch control is pinned.
 
 **Closeout rulings (v277 -> v278, 2026-09-28; docs-only, base `874a48e9`).**
-- **C1 ACCEPTED.** The fix removes the double-free pass's cross-mode duplicate
-  `warning[3037]` for prong-assigned names (synthetic probes n4b/n5b/n6b
-  3->2, 3->2, 2->1; the shared `analyzeExpr` emits the null deref warnings from
-  every pass). Ruling wording: "the cross-pass duplicate `warning[3037]`
-  removal stands (removed lines were duplicates/false positives; authoritative
-  diagnostics remain; zero corpus/gate movement)". Corpus, gate-program,
+- **C1 ACCEPTED (wording scoped by the FX7 review, ruling (a) v278 -> v279).**
+  The fix removes the double-free pass's cross-mode duplicate `warning[3037]`
+  for prong-assigned names (synthetic probes n4b/n5b/n6b 3->2, 3->2, 2->1; the
+  shared `analyzeExpr` emits the null deref warnings from every pass). For the
+  probed shapes the removed lines were duplicates/false positives and the
+  authoritative null/lifetime diagnostics remain; corpus, gate-program,
   self-emission and `--track-memory` stderr were measured byte-identical.
+  **Bounded residual (review I1, accepted):** for a tracked LOCAL optional
+  assigned non-null in one prong and dereferenced after the switch
+  (`var p: ?*i32 = null; switch (c) { true => { p = &x; }, else => {} }
+  if (p.* == 0) {}`), the divergent null merge yields `unknown` (99), which the
+  deref check does not map to `maybe`, so one unique true-positive
+  `warning[3037]` that PRE emitted is no longer emitted. Warning-only; zero
+  corpus/gate/library impact; no valid program broken.
 - **C2 = option (a), bounded residual ACCEPTED — no fix round, no new group.**
   An allocation freed INSIDE the prong and freed again after the switch
   (`allocFreeInProngThenFreeAfter`, probe a10: `p = arena_alloc(8);

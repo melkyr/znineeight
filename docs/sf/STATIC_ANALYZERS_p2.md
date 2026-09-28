@@ -838,7 +838,7 @@ fn isArenaFree(ctx: *AnalyzerContext, expr_idx: u32) ?u32 {
 The analyzer maintains a LIFO queue of deferred actions. At scope exit:
 
 1. Execute deferred actions in reverse order.
-2. For each `defer arena_free(a, p)`: transition `p` from `allocated` → `freed`.
+2. For each `defer arena_free(a, p)`: transition `p` from `allocated` → `freed`. **Not implemented today (pre-existing):** `arena_alloc` + `defer arena_free` still warns `WARN_6005`; this is the intended contract, not current behavior.
 3. For each `errdefer arena_free(a, p)`: transition ONLY if exit is via error path.
 
 ```zig
