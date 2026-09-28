@@ -176,8 +176,9 @@ inserted into the enclosing state as `AllocState.unknown` — the conservative
 join of "maybe allocated in this prong, untracked on the other prongs" (not
 `allocated`, which would leak-report for the untaken prongs; not absent, which
 would keep warning `WARN_6006`). If/else/while/for merges keep the drop, and
-the null/lifetime maps are not affected (their enclosing variables are seeded
-at declaration/param binding, so a prong-only name is a prong-local binding).
+the null/lifetime maps are not affected (locals/params are seeded at
+declaration/binding; globals rely on their declared defaults and are not
+seeded, so the operational choice not to insert for those maps holds).
 Implementation: `sf/docs/tech_docs/06_static_analyzers.md`. **Bounded residual
 (operator-accepted 2026-09-28, option (a), no fix round):** an allocation freed
 INSIDE the prong and freed again after the switch
@@ -187,9 +188,15 @@ marked `freed` — the join cannot tell "freed in this prong" from "untracked on
 the other prongs", and any definite join would be a false positive on the
 untaken-prong path. The same closeout ruling accepted the removal of the
 double-free pass's cross-mode duplicate `WARN_6002` lines for prong-assigned
-names (duplicates/false positives; authoritative null/lifetime diagnostics
-remain; zero corpus/gate movement). Recorded in
-`repro/mi_matrix/EXPECTED_FAIL.md` v278.
+names (duplicates/false positives for the probed shapes; authoritative
+null/lifetime diagnostics remain; zero corpus/gate movement). **Second residual
+(review I1, operator ruling (a) 2026-09-28):** a tracked LOCAL optional assigned
+non-null in one prong and dereferenced after the switch (`var p: ?*i32 = null;
+switch (c) { true => { p = &x; }, else => {} } if (p.* == 0) {}`) loses one
+unique true-positive `WARN_6002` (the divergent null merge yields `unknown`/99,
+not `maybe`); warning-only, zero corpus/gate impact. Recorded in
+`repro/mi_matrix/EXPECTED_FAIL.md` v279.
+
 
 ### 2.3 Iterative Function Visitor
 
