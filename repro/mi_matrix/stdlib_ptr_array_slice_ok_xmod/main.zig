@@ -9,7 +9,9 @@
 //
 // FIX: a `*[N]T` base is cast to its element many-pointer before the offset
 // (`(T*)pa + start`), the omitted end is the array length N, and `pa.*[i]`
-// lowers the POINTER (`(*pa)[i]`). Result types stay the Z98 slice `[]T`.
+// lowers the POINTER (`(*pa)[i]`). `*[N]T` ranges keep the Z98 slice `[]T`;
+// an open-ended many-item-pointer range (`mp[s..]`, FX5 fix round 1) is
+// accepted as `[*]T` — the pointer offset by `start`, Zig 0.15.2 parity.
 //
 // Contract: stdout is byte-identical to the Zig-0.15.2 `std.debug.print`
 // twin (comparison only; per row), rc 0, byte-exact 3x. Every observation is
@@ -83,6 +85,23 @@ pub fn main() void {
     if (fo.len != 3 or fo[0] != 30 or fo[2] != 50) @panic("field open");
     if (fr.len != 3 or fr[0] != 20 or fr[2] != 40) @panic("field runtime");
 
+    // Many-item pointer open end: accepted as `[*]T` (Zig 0.15.2 parity), the
+    // pointer offset by `start` — no length (index it, pass it on, or slice it
+    // closed again). FX5 fix round 1, operator ruling.
+    var marr = [5]i32{ 10, 20, 30, 40, 50 };
+    const mp: [*]i32 = &marr;
+    const mo0 = mp[0..];
+    const mo1 = mp[1..];
+    var ma: usize = 2;
+    const mor = mp[ma..];
+    const mp2 = helper.midmp(mp);
+    if (mo0[0] != 10 or mo0[3] != 40) @panic("mp[0..]");
+    if (mo1[0] != 20 or mo1[2] != 40 or mo1[3] != 50) @panic("mp[1..]");
+    if (mor[0] != 30 or mor[1] != 40) @panic("mp[a..]");
+    if (mp2[0] != 20 or mp2[2] != 40) @panic("mp xmod");
+    const back: []i32 = mo1[0..2];
+    if (back.len != 2 or back[0] != 20 or back[1] != 30) @panic("closed from open");
+
     // `pa.*[i]`: index the dereferenced array directly (read/write/address).
     pa.*[2] = 99;
     pa.*[0] = 77;
@@ -108,5 +127,10 @@ pub fn main() void {
     std.io.print("f={} {} {}\n", .{ f.len, f[0], f[2] });
     std.io.print("fo={} {} {}\n", .{ fo.len, fo[0], fo[2] });
     std.io.print("fr={} {} {}\n", .{ fr.len, fr[0], fr[2] });
+    std.io.print("mo0={} {}\n", .{ mo0[0], mo0[3] });
+    std.io.print("mo1={} {} {}\n", .{ mo1[0], mo1[2], mo1[3] });
+    std.io.print("mor={} {}\n", .{ mor[0], mor[1] });
+    std.io.print("mp2={} {}\n", .{ mp2[0], mp2[2] });
+    std.io.print("back={} {} {}\n", .{ back.len, back[0], back[1] });
     std.io.print("star={} {} {} {}\n", .{ pa.*[0], pa.*[1], pa.*[2], pa.*[4] });
 }

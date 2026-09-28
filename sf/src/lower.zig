@@ -7092,6 +7092,16 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     var r1a_mks: []const u8 = "MKS:r"; pal.markerWrite(r1a_mks); var r1a_rb: [10]u8 = undefined; var r1a_rl = itoa_mod.itoa(se_result, r1a_rb[0..]); var r1a_rs: usize = @intCast(usize, 9) - @intCast(usize, r1a_rl); pal.markerWrite(r1a_rb[r1a_rs..@intCast(usize, 9)]); var r1a_nl: []const u8 = "\n"; pal.markerWrite(r1a_nl);
                     return se_result;
                 }
+                // FX5 fix round 1 (operator ruling): no length box and no
+                // recoverable static length means the base is a genuine
+                // many-item pointer (sema typed the form `[*]T`), so the
+                // open-ended range IS the element pointer offset by `start` —
+                // no `make_slice`, no length, no bounds check (Zig 0.15.2
+                // parity; replaces the former `error[3043]` ICE). A sema
+                // type-mismatched declaration (`const s: []i32 = mp[1..]`)
+                // keeps its warning[3000] and takes this pointer too, exactly
+                // like the plain `const s: []i32 = mp` shape.
+                return se_new_ptr;
             }
           } else {
              var ser_m: []const u8 = "SER:M\n"; pal.markerWrite(ser_m);

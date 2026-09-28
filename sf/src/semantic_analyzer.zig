@@ -1086,20 +1086,6 @@ fn semanticAnalyzerReportPtrSliceBounded(self: *SemanticAnalyzer, mark_node: u32
     _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3067_SINGLE_PTR_SLICE_BOUNDS)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), msg);
 }
 
-// FX5 (Volume II): 3067, the open-ended many-item-pointer slice (`mp[s..]`,
-// formerly the `error[3043]` ICE on the lowering path). Zig 0.15.2 accepts
-// this shape only because it yields `[*]T`; Z98's many-pointer slice result is
-// `[]T` and a many-item pointer carries no length, so the form clean-rejects.
-// The wording parallels Zig's single-item "must be bounded" message. A
-// struct/union array FIELD is exempt (its declared length is the effective
-// end); see the caller.
-fn semanticAnalyzerReportManyPtrSliceUnbounded(self: *SemanticAnalyzer, mark_node: u32) void {
-    if (!diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, mark_node)) return;
-    var msg: []const u8 = "slice of many-item pointer must be bounded";
-    var node = ast_mod.astStoreNodeAt(self.store, mark_node);
-    _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3067_SINGLE_PTR_SLICE_BOUNDS)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), msg);
-}
-
 // FH (Volume II D10): the single-item-pointer slice gate. Returns 0 when
 // `base_tid` is not a single-item pointer to a non-array pointee (the caller
 // keeps the ordinary slice path), 1 when one of the three Zig-legal comptime
@@ -5849,21 +5835,31 @@ fn semanticAnalyzerResolveSliceExpr(self: *SemanticAnalyzer, node_idx: u32) u32 
         self._stub_0 = saved;
         return sps_ret;
     }
-    // FX5 (Volume II): an open-ended many-item-pointer slice (`mp[s..]`) has no
-    // effective end (the `[]T` result this front end yields needs a length), so
-    // it clean-rejects instead of lowering to the former error[3043] ICE. A
-    // struct/union array FIELD is exempt: its declared fixed length supplies
-    // the end (recovered by the lowering). `*T` and `*[N]T` bases are handled
-    // above/on the ordinary path.
+    // FX5 fix round 1 (operator ruling): Zig 0.15.2 ACCEPTS an open-ended
+    // many-item-pointer range (`mp[s..]`, `mp[0..]`) and yields `[*]T` — the
+    // pointer offset by `start`, no length. Z98 now matches, so this form no
+    // longer rejects (the former lowering-path `error[3043]` ICE is gone and
+    // the interim `error[3067]` reject is withdrawn). The ordinary `[]T`
+    // result below still covers CLOSED many-pointer ranges and array/slice
+    // bases; a genuine `[*]T` base is the only shape reaching this arm (`h.arr`
+    // resolves as its declared array type, so field decays keep the slice
+    // path). Const/volatile qualifiers carry like the FH single-pointer gate.
     if (@intCast(usize, sps_base_tid) < self.registry.types_len and
         self.registry.types_items[@intCast(usize, sps_base_tid)].kind == type_mod.TypeKind.many_ptr_type and
         node.child_2 == @intCast(u32, 0)) {
-        var mp_slen = semanticAnalyzerStaticArrayLen(self, node.child_0);
-        if (mp_slen == null) {
-            semanticAnalyzerReportManyPtrSliceUnbounded(self, node_idx);
+        var mp_bt = self.registry.types_items[@intCast(usize, sps_base_tid)];
+        var mp_elem = type_mod.typeRegistryIndexedElemType(self.registry, sps_base_tid);
+        if (mp_elem == type_mod.TYPE_UNDEFINED) {
             self._stub_0 = saved;
             return type_mod.TYPE_VOID;
         }
+        var mp_is_const: bool = false;
+        if ((mp_bt.flags & @intCast(u8, 1)) != @intCast(u8, 0)) mp_is_const = true;
+        var mp_is_vol: bool = false;
+        if ((mp_bt.flags & @intCast(u8, 2)) != @intCast(u8, 0)) mp_is_vol = true;
+        var mp_ret = type_mod.typeRegistryGetOrCreateManyPtrQ(self.registry, mp_elem, mp_is_const, mp_is_vol);
+        self._stub_0 = saved;
+        return mp_ret;
     }
     // Task 17 (F): reject a comptime-known out-of-bounds constant slice-range
     // on a fixed-size array (the analogue of the index check). The `.len`

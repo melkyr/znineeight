@@ -206,10 +206,19 @@ diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prio
 
 | Entry Path | Reference md5 (default `-fsafe`; authoritative) | Historical `-ffast` byte-anchor (not re-measured since the C89-AHEAD split) |
 |---|---|---|
-| `examples/z98/mud_server/main.zig` | `2e92c1f22efedd8ae0c6aa2fc2c45d0e` | `ac1579907ce84efa2f9014187070bf94` |
-| `examples/z98/game_of_life/main.zig` | `9e0b708e18b6fd2b15f9b1e84b6b1571` | `e023d3cd0bfb23346ac800725c5192f1` |
-| `examples/z98/lisp_interpreter_curr/main.zig` | `ec14d644df5ae53f039b4988ac9d3d5e` | `21747e2acf177947ad499149bb3fdc98` |
-| `examples/z98/json_parser/main.zig` | `5034a0c85a84a14626673c33189ffba3` | `2f08bf260bf2b6813fa4d70ffbc88aa9` |
+| `examples/z98/mud_server/main.zig` | `b5a1d98e8caeb0fa3a2d25173ba95a63` | `ac1579907ce84efa2f9014187070bf94` |
+| `examples/z98/game_of_life/main.zig` | `9a927bf9fd9b588c0ea0e862e908b9fa` | `e023d3cd0bfb23346ac800725c5192f1` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `823c88de345ba4555ea9395265821f9a` | `21747e2acf177947ad499149bb3fdc98` |
+| `examples/z98/json_parser/main.zig` | `2821af2df01fa8cc9bbe58d81ffaa31f` | `2f08bf260bf2b6813fa4d70ffbc88aa9` |
+
+Re-baselined by the FX5 `-fsafe` slice-bounds guards (2026-09-28, operator ruling:
+the guards are emitted in the gate programs' own and `std` modules'
+runtime-bound slices); the live `-ffast` pins are gol
+`c84a60c5fc740d4935410ed4c43ee152`, lisp `8273ea61d844c613a6ab999f3d10c933`,
+json `0e6d64971a87e8cbc983b4f989e6500f`, mud
+`bda71b43cdfeebcc61f015d42565b626` (unchanged by FX5). Runtime-output identity
+is unchanged (gol `fcbf7e7c…`, lisp `(+ 1 2)` `b3d9f897…`, json `8bda3d5a…`,
+mud `66c8f0ab…`/`93147d0f…`).
 
 - Self-consistency gate: compare current zig1 `--dump-c89` against a pre-captured reference .c file. If the reference .c is outdated (intentional baseline change), re-capture via `cp /tmp/new.c /tmp/ref.c`. Never compare against parent-zig1 output directly — parent builds may fail silently.
 - Do **NOT** compare `zig1 --dump-c89` output against `zig0`'s C output. `zig0` emits a legacy bootstrap format that is byte-level incompatible with zig1.
