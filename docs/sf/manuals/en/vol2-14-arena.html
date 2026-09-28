@@ -38,6 +38,7 @@ Espa&ntilde;ol (not yet available) |
 <table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
 <tr>
 <td>
+<a href="vol2-00-title.html">How to read this</a><br>
 The honest comparison <i>(planned)</i><br>
 The type system <i>(planned)</i><br>
 Pointers <i>(planned)</i><br>
@@ -146,7 +147,7 @@ allocator in the surface to reach for.
 
 <h2>The arena API</h2>
 <p>
-Four declarations, a struct, and one error tag. Here is the module, with the
+A struct, three functions, and one error set. Here is the module, with the
 bodies trimmed for space:
 </p>
 <pre>
@@ -208,13 +209,10 @@ by casting that pointer with <tt>@ptrCast</tt> and computing the size with
 The API table, then, is four lines long:
 </p>
 <table width="100%" border="1" cellpadding="4" cellspacing="0">
-<thead>
 <tr>
 <th align="left">Call</th>
 <th align="left">Meaning</th>
 </tr>
-</thead>
-<tbody>
 <tr>
 <td><tt>std.arena.init(buf[0..])</tt></td>
 <td>Build an <tt>Arena</tt> over a byte slice. Success is an <tt>Arena</tt>,
@@ -236,7 +234,6 @@ reclaimed at once. There is no per-object free.</td>
 <td>The fields are public, so you can observe the cursor. The example below
 prints them.</td>
 </tr>
-</tbody>
 </table>
 <p>
 Because the target is C89, the arena lowers to a plain struct with no runtime
@@ -399,14 +396,11 @@ you can never reset without losing the long-lived data. The standard answer in
 Z98 is the <b>dual-arena pattern</b>: two arenas, two lifetimes.
 </p>
 <table width="100%" border="1" cellpadding="4" cellspacing="0">
-<thead>
 <tr>
 <th align="left">Arena</th>
 <th align="left">Holds</th>
 <th align="left">Reset</th>
 </tr>
-</thead>
-<tbody>
 <tr>
 <td><b>Permanent</b></td>
 <td>Data that lives for the whole run: global symbols, persistent nodes, the
@@ -419,7 +413,6 @@ structures the program is "about".</td>
 <td>At every phase boundary, after the phase's results are copied or
 summarized.</td>
 </tr>
-</tbody>
 </table>
 <p>
 The pattern is not a library feature; it is two <tt>Arena</tt> values. The
