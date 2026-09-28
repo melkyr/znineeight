@@ -3,11 +3,13 @@
 // RED (`7a9a9081`): `'s' undeclared` / incompatible assignment (silent bad C).
 // GREEN: compile/link/run clean, prints 10\n.
 // Fix (A9F-a): resolved named type written back to the imported alias symbol.
+// FX6 migration: the array binding is `var` (a `const` binding decaying to the
+// mutable `[]i32` alias is a const discard and now rejects).
 const lib = @import("mod_b.zig");
 const std = @import("std");
 
 pub fn main() void {
-    const b = [_]i32{ 10, 20, 30 };
+    var b = [_]i32{ 10, 20, 30 };
     var s: lib.T = b;
     std.io.printInt(lib.first(s));
     std.io.writeByte('\n');

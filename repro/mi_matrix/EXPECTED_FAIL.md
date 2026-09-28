@@ -1,6 +1,6 @@
-# mi_matrix corpus — expected-fail manifest (v273 2026-09-28)
+# mi_matrix corpus — expected-fail manifest (v274 2026-09-28)
 
-## FX6 — const-array decay / `"abc"`→`[]u8` / array-element const mismatch (v272 -> v273, 2026-09-28)
+## FX6 — const-array decay / `"abc"`→`[]u8` / array-element const mismatch (v272 -> v273, 2026-09-28; fix round 1 v273 -> v274, 2026-09-28)
 
 Volume II defect-fix phase, Stage 2b follow-up (task-FX6). FC/D12 rejected the
 `[]const T` -> `[]T`/`[*]T` family, but three sibling const-violation holes
@@ -59,7 +59,7 @@ mutable slice reslicing. Standalone `repro/const_decay_reject.z98` (41 x
 `repro/const_decay_ok.z98` (rc 0, build+run `ok=1 97 98 98 99 45 3 1 2 3`).
 
 **Fixtures.** Reject `repro/mi_matrix/const_decay_reject_xmod` (main +
-helper + `expected.rc` = 2; 23 x `error[3000]`, 0 warnings, rc 2 / 0 `.c,
+helper + `expected.rc` = 2; 23 x `error[3000]`, 0 warnings, rc 2 / 0 `.c`,
 GREEN; local sites + xmod call args + xmod returns). Positive
 `repro/mi_matrix/stdlib_const_decay_ok_xmod` (main + helper + `expected.txt`
 `cda=14 23 31 70 4 6 97 23 4 5 5 97 99` + `expected.rc` = 0, 3x byte-exact,
@@ -81,29 +81,42 @@ OK**; self-emission rc 0 / **48 `.c` + 48 `.h`** / 0 PANIC / 0 `error[`;
 `build_test.sh` **0/9** (pre-existing retired-zig0 baseline);
 `repro/vol2_defects/run_all.sh` **13/13**.
 
-**Corpus movement (deviation from the brief's "only the new fixtures";
-disclosed, ruled pending).** `-s0` classify over the 1061 base dirs:
-**4 movers, zero other** —
-`repro/mi_matrix/typealias_slice_xmod` (OK -> GREEN),
+**Corpus movement / migration (fix round 1 v273 -> v274; operator ruling A).**
+Pre-migration `-s0` classify over the 1061 base dirs showed **4 movers, zero
+other**: `repro/mi_matrix/typealias_slice_xmod` (OK -> GREEN),
 `typealias_pub_slice_xmod` (OK -> GREEN), `typealias_pub_mptr_xmod`
-(OK -> GREEN): each ends `const b = [_]T{...}` with `var s: []T = b;` /
-`var p: [*]u8 = &b;` — the exact R1 hole FX6 closes (Zig rejects:
-`array literal requires address-of operator` / `expected type '[*]u8',
-found '*const [2]u8'` + `cast discards const qualifier`); the fixtures were
-written for the A9F-a alias fix, not for constness, and relied on the hole;
-and `repro/mi_matrix/print_fmt_type_reject_xmod` (FAIL -> GREEN) gains 2 x
-`error[3000]` at its two latent const-decay lines (`const pp: *[3]i32 =
-&pa;`, `const mp: [*]i32 = &ma;`) on top of its 60 x `error[3013]` (still
-rc 2 / 0 `.c`; the classifier buckets it GREEN because the bucket keys on the
-presence of `error[3000]`). All four shapes are Zig-rejected const discards,
-i.e. correct statements of the FX6 rule; the fixtures used the closed hole.
-Proposed resolution (controller ruling needed): migrate the three
-`typealias_*` fixtures' `const b` -> `var b` (their documented contract is
-alias typing + runtime output, not constness) and allow
-`print_fmt_type_reject_xmod`'s 3060-something census to carry the 2 new
-`error[3000]`s (or convert those two lines to the `*const` spelling). No
-migration was applied unilaterally per the brief's STOP rule; the task report
-carries the full analysis.
+(OK -> GREEN) — each ended `const b = [_]T{...}` with `var s: []T = b;` /
+`var p: [*]u8 = &b;`, the exact R1 hole FX6 closes (Zig 0.15.2 rejects:
+`array literal requires address-of operator` / `expected type '[*]u8', found
+'*const [2]u8'` + `cast discards const qualifier`); the fixtures were written
+for the A9F-a alias fix, not for constness, and relied on the hole — and
+`print_fmt_type_reject_xmod` (FAIL -> GREEN).
+
+Migration applied (fixtures only, no `sf/src` change): the three `typealias_*`
+array bindings are now `var b` (headers note the FX6 migration), restoring
+their documented alias-typing contracts with base<->FX6 stdout byte-identical
+(`20\n` / `10\n` / `7\n`); the final `-s0` classify is **1063 = 906 OK / 53
+GREEN / 104 FAIL / 0 ICE / 0 CRASH**, join-diff vs `97886e19` over the 1061
+common dirs = **exactly `print_fmt_type_reject_xmod` FAIL -> GREEN** (the
+three `typealias_*` dirs are back to OK), and the only dir-set additions are
+the two FX6 fixtures (`const_decay_reject_xmod` GREEN,
+`stdlib_const_decay_ok_xmod` OK).
+
+`print_fmt_type_reject_xmod` keeps its two latent const-decay lines
+(`const pp: *[3]i32 = &pa;`, `const mp: [*]i32 = &ma;`) and its reject class
+(rc 2 / 0 `.c`, `expected.rc` = 2); its census is documented truthfully as
+**2 x `error[3000]`, 0 x `error[3013]`**. `error[3013]` is produced by the
+LOWERING pass, and a level-0 semantic error gates lowering out entirely
+(`sf/src/main.zig` prints and `pal.exit(2)` right after
+`phase_SemanticAnalysis`, before `phase_LIRLowering`), so the two const-decay
+rejects pre-empt the whole 60-row print-format census — a mixed
+`60 x 3013 + 2 x 3000` census is impossible while lowering is gated out. The
+FAIL -> GREEN bucket move is intended/accepted (the canonical classifier keys
+GREEN on the presence of `error[3000]`); to preserve the 3013 census instead,
+spell the two lines `*const [3]i32`/`[*]const i32` (legal const-adding), which
+yields zero corpus movers. All four pre-migration shapes are Zig-0.15.2-rejected
+const discards, i.e. correct statements of the FX6 rule; the fixtures used the
+closed hole.
 
 ## FX5 — pointer / `*[N]T` slice siblings, runtime slice bounds, `pa.*[i]` (v269 -> v270, 2026-09-28; fix round 1 v270 -> v271; fix round 2 v271 -> v272, 2026-09-28)
 
