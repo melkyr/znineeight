@@ -1,0 +1,75 @@
+const std = @import("std");
+
+const Entity = struct { x: i32, y: i32, vx: i32, vy: i32 };
+
+fn update(e: *Entity, dt: i32) void {
+    e.x += e.vx * dt;
+    e.y += e.vy * dt;
+    if (e.x < 0) { e.x = 0; e.vx = -e.vx; }
+    if (e.x > 100) { e.x = 100; e.vx = -e.vx; }
+    if (e.y < 0) { e.y = 0; e.vy = -e.vy; }
+    if (e.y > 60) { e.y = 60; e.vy = -e.vy; }
+}
+
+fn step(world: []Entity, dt: i32) void {
+    for (world) |_, i| {
+        update(&world[i], dt);
+    }
+}
+
+fn loadMap(arena: *std.arena.Arena, w: usize, h: usize) ![]u8 {
+    const raw = try std.arena.alloc(arena, w * h);
+    const map = @ptrCast([*]u8, raw)[0..w * h];
+    var r: usize = 0;
+    while (r < h) : (r += 1) {
+        var c: usize = 0;
+        while (c < w) : (c += 1) {
+            map[r * w + c] = @intCast(u8, (r + c) % 4);
+        }
+    }
+    return map;
+}
+
+const MoveArgs = struct { e: *Entity };
+
+var g_pool: [1024]u64 = undefined;
+var g_frame: [256]u8 = undefined;
+
+fn patrol(e: *Entity) void {
+    var i: i32 = 0;
+    while (i < 4) : (i += 1) {
+        e.x += e.vx;
+        _ = @asyncSuspend(null);
+    }
+}
+
+pub fn main() void {
+    var world = [2]Entity{
+        .{ .x = 10, .y = 10, .vx = 7, .vy = -3 },
+        .{ .x = 90, .y = 50, .vx = -9, .vy = 4 },
+    };
+    step(world[0..], 1);
+    std.io.print("entity 0 after update: {},{} v={},{}\n", .{ world[0].x, world[0].y, world[0].vx, world[0].vy });
+    std.io.print("entity 1 after update: {},{} v={},{}\n", .{ world[1].x, world[1].y, world[1].vx, world[1].vy });
+
+    var buf: [8192]u8 = undefined;
+    var arena = std.arena.init(buf[0..]);
+    const map = loadMap(&arena, 8, 4) catch {
+        std.io.print("map load failed\n", .{});
+        return;
+    };
+    var tsum: usize = 0;
+    for (map) |t| {
+        tsum = tsum + @intCast(usize, t);
+    }
+    std.io.print("tilemap 8x4 checksum={}\n", .{tsum});
+
+    var args = MoveArgs{ .e = &world[0] };
+    const ctx = std.async.contextInit(@ptrCast([*]u8, &g_pool)[0..8192]);
+    const frame = @asyncInit(ctx, @ptrCast([*]u8, &g_frame), patrol, @ptrCast(*const void, &args));
+    var r = @asyncResume(frame, null);
+    while (r != null) {
+        r = @asyncResume(frame, null);
+    }
+    std.io.print("entity 0 after patrol: {},{}\n", .{ world[0].x, world[0].y });
+}
