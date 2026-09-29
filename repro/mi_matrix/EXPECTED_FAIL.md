@@ -81,6 +81,56 @@ value base keeps its pre-existing `warning[3000]` f64->i32 shape. (3)
 `lowerFieldStore :2951/:2954` are untouched. (4) An unused `.tag`-switch
 capture is accepted (Z98 tolerance, same as enum/TU captures).
 
+### FX16-F fix round 1 — synthetic `.tag` shadows a member named `tag` (I2) + M1 pin + committed reject census (v286, 2026-09-29)
+
+Review Important **I2** (operator ruling: FIX): a union with a real member named
+`tag` made sema treat `.tag` as the synthetic u32 while lowering's generic
+tagged-union read arm found the real member first and read its PAYLOAD (PRE on
+the collision probe: `u.tag` printed 5, `u.tag == .tag` false, the switch fell
+to `else`, the pointer/param/global reads read 5, and the raw tag store read
+back the payload). **Fix (`sf/src/lower.zig` only):** the read arm checks the
+synthetic `tag` BEFORE the member walk when the base is a union VALUE; the
+type-base `U.tag` member-reference path (sema's `type_alias` arm resolves it as
+a member) and the post-walk synthetic fallback are unchanged. POST golden
+`0 1 0 1 0 1 1 1`. The analogous real member named `payload` keeps its
+pre-existing shadow behavior (out of ruling scope). Language_Spec §1.3
+documents the rule ("a member named `tag` is permanently shadowed by the
+synthetic tag; avoid naming a member `tag`").
+
+Review Important **I1**: the three new reject-census pins
+(`copied_tag_compare_reject_xmod/expected_error.txt` `3076 7`,
+`tagged_tag_switch_reject_xmod/expected_error.txt` `3071 2`,
+`tagged_payload_store_reject_xmod/expected_error.txt` `3000 9`) are now
+force-added (`git add -f`; `.gitignore` line 52 ignores `*.txt`), matching the
+7 already-tracked `expected_error.txt` siblings.
+
+Review Minor **M1** (pin; NO behavior change): the typed-binding copied-tag form
+`var b: bool = t == .m` rejects with the same level-0 `error[3076]` and
+additionally co-fires the pre-existing `warning[3000] type mismatch in variable
+declaration -- initialization type may not be compatible with declared type`
+(notes `source: void` / `target: bool`; the A4-rejected comparison still returns
+`void`). Pinned as the 7th site of the copied-tag fixture (census `3076 7`;
+rc 2 / 0 `.c`) and documented in its NOTES plus the standalone header.
+
+**Fixtures.** New positive `repro/mi_matrix/tagged_tag_member_shadow_xmod`
+(golden `0 1 0 1 0 1 1 1`, rc 0, 3x; PRE `5 0 0 9 5 0 5 0` payload read).
+**Corpus.** `-s0` 1083 = 917 OK / 55 GREEN / 111 FAIL -> **1084 = 918 OK /
+55 GREEN / 111 FAIL / 0 ICE / 0 CRASH**; zero common-dir movers vs the FX16-F
+final and vs the seed baseline; the only addition is the new fixture (the
+census pin texts are not dirs). No pre-existing corpus dir uses a member named
+`tag`.
+
+**Gates (final fixed point `207e23ee39120654d9b2c32d1426c704`).** Seed
+three-hop closure (moving point hop1 `8d3857f22a349a3e3710aad34b0b31eb` !=
+hop2 == hop3 == `207e23ee…`) with explicit `FIXED_POINT_MD5`; seed v88 NOT
+rotated (archive `3db5ef392ecc349304ffdf14c618e530` byte-identical). 4-MD5
+emitted C both modes **UNCHANGED 8/8**, 2x deterministic; `run_fixtures.sh`
+**266 PASS / 0 FAIL** (+ targeted 3 PASS for the new/touched positives);
+example matrix **24/24**; `check_emit_support.sh` **7/7**;
+`verify_upgraded.sh` **CLOSEOUT OK**; self-emission **48 `.c` + 48 `.h` /
+0 PANIC / 0 `error[`**; `sf/scripts/build_test.sh` **0/9**;
+`repro/vol2_defects/run_all.sh` **13/13**.
+
 ## FX15-F — whole-value nested packed moves (v284 -> v285, 2026-09-29)
 
 Volume II packed-aggregate amendment (task-FX15-F; source = the plan's FX15

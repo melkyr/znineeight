@@ -16,5 +16,7 @@ pub fn main() void {
     if (.Square == t) { std.io.printInt(1); } else { std.io.printInt(0); }
     if (.Circle < t) { std.io.printInt(1); } else { std.io.printInt(0); }
     if (t >= .Circle) { std.io.printInt(1); } else { std.io.printInt(0); }
+    var b: bool = t == .Circle;
+    _ = b;
     std.io.writeByte('\n');
 }

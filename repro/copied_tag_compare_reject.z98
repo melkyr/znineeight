@@ -6,7 +6,12 @@
 // makes exactly this shape a clean level-0 `error[3076]`. Contract: dump rc 2,
 // 0 `.c`, exactly 4 level-0 `error[3076]` (one per site, span on the literal),
 // no signals, no other codes. The A+ sugar shape `s.tag == .m` and typed-enum
-// compares (`c == .Red`) stay accepted.
+// compares (`c == .Red`) stay accepted. Note (fix round 1, M1): the
+// typed-binding spelling `var b: bool = t == .m` rejects with the same
+// `error[3076]` and additionally co-fires the pre-existing
+// `warning[3000] type mismatch in variable declaration` (`source: void` /
+// `target: bool`); this file keeps the value-discard forms so the census is
+// exactly the 4 errors.
 const std = @import("std");
 
 const Shape = union(enum) {

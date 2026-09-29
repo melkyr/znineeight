@@ -262,6 +262,23 @@ movers vs the 1078-dir baseline; +5 fixtures), and the new fixed point
 `FIXED_POINT_MD5` gate) is **`f54f3bbe1e9406596d2390725ec3c61c`**; seed v88 NOT
 rotated.
 
+FX16-F fix round 1 (2026-09-29; review Important I2, operator ruling: FIX): a
+real union member named `tag` no longer shadows the synthetic `.tag` in
+lowering — the generic tagged-union read arm checks the synthetic tag before
+the member walk for a union VALUE (sema already ruled that), so `u.tag` reads
+the ordinal and A+ compares/switches dispatch from it (PRE `5 0 0 9 5 0 5 0` ->
+POST `0 1 0 1 0 1 1 1`; fixture `tagged_tag_member_shadow_xmod`). The three new
+reject-census `expected_error.txt` pins are force-added (`git add -f`), and the
+typed-binding copied-tag form (`var b: bool = t == .m`) is pinned as an extra
+`error[3076]` + the pre-existing `warning[3000]` (census `3076 7`). All 8
+emitted-C pins stay **UNCHANGED 8/8** 2x; stdlib 266 PASS (targeted 3 PASS);
+matrix 24/24; emit 7/7; CLOSEOUT OK; self-emission 48/48 / 0 PANIC; corpus
+`-s0` **1084 = 918 OK / 55 GREEN / 111 FAIL / 0 ICE / 0 CRASH** (zero
+common-dir movers; +1 fixture), and the new fixed point (moving point hop1
+`8d3857f22a349a3e3710aad34b0b31eb` != hop2 == hop3, explicit
+`FIXED_POINT_MD5` gate) is **`207e23ee39120654d9b2c32d1426c704`**; seed v88 NOT
+rotated.
+
 - Self-consistency gate: compare current zig1 `--dump-c89` against a pre-captured reference .c file. If the reference .c is outdated (intentional baseline change), re-capture via `cp /tmp/new.c /tmp/ref.c`. Never compare against parent-zig1 output directly — parent builds may fail silently.
 - Do **NOT** compare `zig1 --dump-c89` output against `zig0`'s C output. `zig0` emits a legacy bootstrap format that is byte-level incompatible with zig1.
 
