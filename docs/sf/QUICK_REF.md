@@ -225,6 +225,15 @@ lisp `(+ 1 2)` `b3d9f897…`, json `8bda3d5a…`, mud
 hop3, explicit `FIXED_POINT_MD5` gate) is
 **`368c34e6cbfceda3091f53d2daac75eb`**; seed v88 NOT rotated (closeout-only).
 
+Re-verified by the FX15-F whole-value nested packed move fix (2026-09-29):
+`sf/src` lowering-only change, so all 8 emitted-C pins above are
+**UNCHANGED 8/8** and FX15 runtime-output identity PRE↔POST is byte-identical
+in both modes. The FX15-F fixed point (moving point hop1 `7ca45053…` != hop2 ==
+hop3, explicit `FIXED_POINT_MD5` gate) is
+**`1e898a16bac50bd2898262dd6bce176f`**; corpus `-s0` 1076 = 914 OK / 53 GREEN /
+109 FAIL with the single mover `packed_union_struct_wholemember_xmod`
+GREEN -> OK; seed v88 NOT rotated (closeout-only).
+
 - Self-consistency gate: compare current zig1 `--dump-c89` against a pre-captured reference .c file. If the reference .c is outdated (intentional baseline change), re-capture via `cp /tmp/new.c /tmp/ref.c`. Never compare against parent-zig1 output directly — parent builds may fail silently.
 - Do **NOT** compare `zig1 --dump-c89` output against `zig0`'s C output. `zig0` emits a legacy bootstrap format that is byte-level incompatible with zig1.
 

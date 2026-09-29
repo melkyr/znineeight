@@ -2620,12 +2620,10 @@ fn lowerTryNestedPackedLeafRead(self: *LirLowerer, node_idx: u32) u32 {
     var first_packed: u32 = @intCast(u32, 0);
     var leaf_field_ty: u32 = @intCast(u32, 0);
     if (lowerPackedChainAnalyze(self, node_idx, &holder, &off, &width, &depth, &first_packed, &leaf_field_ty) == @intCast(u8, 0)) return TEMP_NONE;
+    var whole_read_ty: u32 = @intCast(u32, 0);
     if (leaf_field_ty < @intCast(u32, self.ctx.registry.types_len)) {
-        var lf_ty = self.ctx.registry.types_items[@intCast(usize, leaf_field_ty)];
-        if (lf_ty.kind == type_mod.TypeKind.struct_type and (lf_ty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
-            var wsv_msg: []const u8 = "cannot read a whole packed-struct value out of a nested packed-struct field (bit-slice load not supported)";
-            _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, 3000), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), wsv_msg);
-            return nextTemp(self, leaf_field_ty);
+        if (type_mod.typeRegistryIsPacked(self.ctx.registry, leaf_field_ty)) {
+            whole_read_ty = leaf_field_ty;
         }
     }
     var leaf_ty: u32 = @intCast(u32, 0);
@@ -2640,10 +2638,56 @@ fn lowerTryNestedPackedLeafRead(self: *LirLowerer, node_idx: u32) u32 {
     if (got_leaf == @intCast(u8, 0)) return TEMP_NONE;
     var base_temp = lowerExpr(self, holder);
     if (base_temp == TEMP_NONE or base_temp >= @intCast(u32, self.hoisted_temps.len)) return TEMP_NONE;
+    if (whole_read_ty != @intCast(u32, 0)) {
+        var whole_temp = nextTemp(self, whole_read_ty);
+        if (lowerPackedWholeCopy(self, whole_temp, @intCast(u32, 0), base_temp, off, whole_read_ty, @intCast(u32, 0)) != @intCast(u8, 0)) return whole_temp;
+    }
     var result_temp = nextTemp(self, leaf_ty);
     var sf_nid = nameMapGet(self, base_temp);
     emitInst(self, LirInst{ .load_bitfield = .{ .base = base_temp, .result = result_temp, .name_id = sf_nid, .bit_offset = off, .bit_width = width } });
     return result_temp;
+}
+
+// FX15-F (A-full): a whole-value move of a nested packed aggregate is a
+// per-leaf move. `src_base` is a packed aggregate carrier (a value temp or a
+// pointer temp) read at bit offset `src_off`; `dst_base` is the packed
+// container carrier written at bit offset `dst_off`. Leaves are <= 31 bits
+// (sema packed-field gate), so the existing scalar load/store_bitfield ops
+// carry every leaf; nested packed-struct fields recurse with composed offsets
+// exactly like lowerPackedChainAnalyze. Shared by the literal, assignment and
+// read paths so all three agree.
+fn lowerPackedWholeCopy(self: *LirLowerer, dst_base: u32, dst_off: u32, src_base: u32, src_off: u32, ty_id: u32, depth: u32) u8 {
+    if (depth > @intCast(u32, 32)) return @intCast(u8, 0);
+    if (ty_id >= @intCast(u32, self.ctx.registry.types_len)) return @intCast(u8, 0);
+    var ty = self.ctx.registry.types_items[@intCast(usize, ty_id)];
+    if (ty.kind != type_mod.TypeKind.struct_type or (ty.flags & @intCast(u8, 0x10)) == @intCast(u8, 0)) return @intCast(u8, 0);
+    var fields: []FieldEntry = undefined;
+    type_mod.typeRegistryGetStructFields(self.ctx.registry, ty_id, &fields);
+    var pk_fields: []type_mod.PackedBitField = undefined;
+    if (!type_mod.typeRegistryGetPackedBitFields(self.ctx.registry, ty_id, &pk_fields)) return @intCast(u8, 0);
+    var i: usize = @intCast(usize, 0);
+    while (i < fields.len and i < pk_fields.len) : (i += @intCast(usize, 1)) {
+        var pkf = pk_fields[i];
+        var fty: u32 = fields[i].type_id;
+        if (type_mod.typeRegistryIsPacked(self.ctx.registry, fty)) {
+            if (lowerPackedWholeCopy(self, dst_base, dst_off + pkf.bit_offset, src_base, src_off + pkf.bit_offset, fty, depth + @intCast(u32, 1)) == @intCast(u8, 0)) return @intCast(u8, 0);
+        } else {
+            var leaf_val = nextTemp(self, fty);
+            emitInst(self, LirInst{ .load_bitfield = .{ .base = src_base, .result = leaf_val, .name_id = @intCast(u32, 0), .bit_offset = src_off + pkf.bit_offset, .bit_width = @intCast(u32, pkf.bit_width) } });
+            emitInst(self, LirInst{ .store_bitfield = .{ .base = dst_base, .value = leaf_val, .bit_offset = dst_off + pkf.bit_offset, .bit_width = @intCast(u32, pkf.bit_width) } });
+        }
+    }
+    return @intCast(u8, 1);
+}
+
+// FX15-F: true when `temp_id` carries a value of a packed-struct type (the
+// carrier model a whole-value per-leaf copy can read). `undefined` lowers to a
+// TYPE_UNDEFINED temp, so it is excluded here and keeps the old scalar-store
+// path; TEMP_NONE and out-of-range ids are never carriers.
+fn lowerTempIsPackedAggregate(self: *LirLowerer, temp_id: u32) bool {
+    if (temp_id == TEMP_NONE) return false;
+    if (temp_id >= @intCast(u32, self.hoisted_temps.len)) return false;
+    return type_mod.typeRegistryIsPacked(self.ctx.registry, self.hoisted_temps.items[@intCast(usize, temp_id)].type_id);
 }
 
 fn lowerTryNestedPackedLeafStore(self: *LirLowerer, node_idx: u32, value_temp: u32, diag_node_idx: u32) u8 {
@@ -2655,12 +2699,10 @@ fn lowerTryNestedPackedLeafStore(self: *LirLowerer, node_idx: u32, value_temp: u
     var first_packed: u32 = @intCast(u32, 0);
     var leaf_field_ty: u32 = @intCast(u32, 0);
     if (lowerPackedChainAnalyze(self, node_idx, &holder, &off, &width, &depth, &first_packed, &leaf_field_ty) == @intCast(u8, 0)) return @intCast(u8, 0);
+    var leaf_whole_ty: u32 = @intCast(u32, 0);
     if (leaf_field_ty < @intCast(u32, self.ctx.registry.types_len)) {
-        var lf_ty = self.ctx.registry.types_items[@intCast(usize, leaf_field_ty)];
-        if (lf_ty.kind == type_mod.TypeKind.struct_type and (lf_ty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
-            var wsv_msg: []const u8 = "cannot assign a whole packed-struct value to a nested packed-struct field (bit-slice store not supported)";
-            _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, 3000), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), wsv_msg);
-            return @intCast(u8, 1);
+        if (type_mod.typeRegistryIsPacked(self.ctx.registry, leaf_field_ty)) {
+            leaf_whole_ty = leaf_field_ty;
         }
     }
     if (first_packed + @intCast(u32, 1) < depth) {
@@ -2670,6 +2712,9 @@ fn lowerTryNestedPackedLeafStore(self: *LirLowerer, node_idx: u32, value_temp: u
     }
     var base_temp = lowerExpr(self, holder);
     if (base_temp == TEMP_NONE or base_temp >= @intCast(u32, self.hoisted_temps.len)) return @intCast(u8, 0);
+    if (leaf_whole_ty != @intCast(u32, 0) and lowerTempIsPackedAggregate(self, value_temp)) {
+        if (lowerPackedWholeCopy(self, base_temp, off, value_temp, @intCast(u32, 0), leaf_whole_ty, @intCast(u32, 0)) != @intCast(u8, 0)) return @intCast(u8, 1);
+    }
     emitInst(self, LirInst{ .store_bitfield = .{ .base = base_temp, .value = value_temp, .bit_offset = off, .bit_width = width } });
     return @intCast(u8, 1);
 }
@@ -2810,10 +2855,9 @@ fn lowerFieldStore(self: *LirLowerer, fa_node_idx: u32, value_temp: u32, diag_no
                 if (@intCast(usize, field_id) < pk_fields.len) {
                     if (@intCast(usize, field_id) < fields.len and fields[field_id].type_id < @intCast(u32, self.ctx.registry.types_len)) {
                         var mty = self.ctx.registry.types_items[@intCast(usize, fields[field_id].type_id)];
-                        if (mty.kind == type_mod.TypeKind.struct_type and (mty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
-                            var wsv_msg: []const u8 = "cannot assign a whole packed-struct value to a nested packed-struct field (bit-slice store not supported)";
-                            _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, 3000), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), wsv_msg);
-                            return;
+                        if (mty.kind == type_mod.TypeKind.struct_type and (mty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0) and lowerTempIsPackedAggregate(self, value_temp)) {
+                            var whole_pkf = pk_fields[@intCast(usize, field_id)];
+                            if (lowerPackedWholeCopy(self, base_temp, whole_pkf.bit_offset, value_temp, @intCast(u32, 0), fields[field_id].type_id, @intCast(u32, 0)) != @intCast(u8, 0)) return;
                         }
                     }
                     var pkf = pk_fields[@intCast(usize, field_id)];
@@ -2868,10 +2912,9 @@ fn lowerFieldStore(self: *LirLowerer, fa_node_idx: u32, value_temp: u32, diag_no
                     if (@intCast(usize, field_id) < pk_fields.len) {
                         if (@intCast(usize, field_id) < fields.len and fields[field_id].type_id < @intCast(u32, self.ctx.registry.types_len)) {
                             var mty = self.ctx.registry.types_items[@intCast(usize, fields[field_id].type_id)];
-                            if (mty.kind == type_mod.TypeKind.struct_type and (mty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
-                                var wsv_msg: []const u8 = "cannot assign a whole packed-struct value to a packed union member (bit-slice store not supported)";
-                                _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, 3000), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), wsv_msg);
-                                return;
+                            if (mty.kind == type_mod.TypeKind.struct_type and (mty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0) and lowerTempIsPackedAggregate(self, value_temp)) {
+                                var whole_upkf = pk_fields[@intCast(usize, field_id)];
+                                if (lowerPackedWholeCopy(self, base_temp, whole_upkf.bit_offset, value_temp, @intCast(u32, 0), fields[field_id].type_id, @intCast(u32, 0)) != @intCast(u8, 0)) return;
                             }
                         }
                         var pkf = pk_fields[@intCast(usize, field_id)];
@@ -5018,15 +5061,13 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                             var pk_fields: []type_mod.PackedBitField = undefined;
                             if (type_mod.typeRegistryGetPackedBitFields(self.ctx.registry, type_box[0], &pk_fields)) {
                                 if (fi < pk_fields.len) {
+                                    var pkf = pk_fields[fi];
                                     if (fields[fi].type_id < @intCast(u32, self.ctx.registry.types_len)) {
                                         var mty = self.ctx.registry.types_items[@intCast(usize, fields[fi].type_id)];
                                         if (mty.kind == type_mod.TypeKind.struct_type and (mty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
-                                            var wrv_msg: []const u8 = "cannot read a whole packed-struct value out of a nested packed-struct field (bit-slice load not supported)";
-                                            _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, 3000), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), wrv_msg);
-                                            return tid;
+                                            if (lowerPackedWholeCopy(self, tid, @intCast(u32, 0), base_temp, pkf.bit_offset, fields[fi].type_id, @intCast(u32, 0)) != @intCast(u8, 0)) return tid;
                                         }
                                     }
-                                    var pkf = pk_fields[fi];
                                     emitInst(self, LirInst{ .load_bitfield = .{ .base = base_temp, .result = tid, .name_id = sf_nid, .bit_offset = pkf.bit_offset, .bit_width = @intCast(u32, pkf.bit_width) } });
                                     return tid;
                                 }
@@ -5035,15 +5076,13 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                             var pk_fields: []type_mod.PackedBitField = undefined;
                             if (type_mod.typeRegistryGetPackedUnionBitFields(self.ctx.registry, type_box[0], &pk_fields)) {
                                 if (fi < pk_fields.len) {
+                                    var pkf = pk_fields[fi];
                                     if (fields[fi].type_id < @intCast(u32, self.ctx.registry.types_len)) {
                                         var mty = self.ctx.registry.types_items[@intCast(usize, fields[fi].type_id)];
                                         if (mty.kind == type_mod.TypeKind.struct_type and (mty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
-                                            var wrv_msg: []const u8 = "cannot read a whole packed-struct value out of a packed union member (bit-slice load not supported)";
-                                            _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, 3000), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), wrv_msg);
-                                            return tid;
+                                            if (lowerPackedWholeCopy(self, tid, @intCast(u32, 0), base_temp, pkf.bit_offset, fields[fi].type_id, @intCast(u32, 0)) != @intCast(u8, 0)) return tid;
                                         }
                                     }
-                                    var pkf = pk_fields[fi];
                                     emitInst(self, LirInst{ .load_bitfield = .{ .base = base_temp, .result = tid, .name_id = sf_nid, .bit_offset = pkf.bit_offset, .bit_width = @intCast(u32, pkf.bit_width) } });
                                     return tid;
                                 }
@@ -6656,8 +6695,20 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                     if (type_mod.typeRegistryGetPackedBitFields(self.ctx.registry, it, &pk_fields)) {
                                         if (fj < pk_fields.len) {
                                             var pkf = pk_fields[fj];
-                                            emitInst(self, LirInst{ .store_bitfield = .{ .base = base_temp, .value = val_temp, .bit_offset = pkf.bit_offset, .bit_width = @intCast(u32, pkf.bit_width) } });
-                                            packed_done = @intCast(u8, 1);
+                                            var lit_fty_wa: u32 = self.ctx.registry.fe_items[fs + fj].type_id;
+                                            // FX15-F: a field whose own type is a nested packed
+                                            // struct moves per leaf when the value carries a
+                                            // packed-struct carrier; `undefined` (a TYPE_UNDEFINED
+                                            // temp) keeps the old scalar store.
+                                            if (type_mod.typeRegistryIsPacked(self.ctx.registry, lit_fty_wa) and lowerTempIsPackedAggregate(self, val_temp)) {
+                                                if (lowerPackedWholeCopy(self, base_temp, pkf.bit_offset, val_temp, @intCast(u32, 0), lit_fty_wa, @intCast(u32, 0)) != @intCast(u8, 0)) {
+                                                    packed_done = @intCast(u8, 1);
+                                                }
+                                            }
+                                            if (packed_done == @intCast(u8, 0)) {
+                                                emitInst(self, LirInst{ .store_bitfield = .{ .base = base_temp, .value = val_temp, .bit_offset = pkf.bit_offset, .bit_width = @intCast(u32, pkf.bit_width) } });
+                                                packed_done = @intCast(u8, 1);
+                                            }
                                         }
                                     }
                                 }
@@ -6680,15 +6731,14 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                     var pk_fields: []type_mod.PackedBitField = undefined;
                                     if (type_mod.typeRegistryGetPackedUnionBitFields(self.ctx.registry, it, &pk_fields)) {
                                         if (fj < pk_fields.len) {
-                                            if (self.ctx.registry.fe_items[fs + fj].type_id < @intCast(u32, self.ctx.registry.types_len)) {
-                                                var mty = self.ctx.registry.types_items[@intCast(usize, self.ctx.registry.fe_items[fs + fj].type_id)];
-                                                if (mty.kind == type_mod.TypeKind.struct_type and (mty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
-                                                    var wsv_msg: []const u8 = "cannot assign a whole packed-struct value to a packed union member (bit-slice store not supported)";
-                                                    _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, 3000), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), wsv_msg);
-                                                    return base_temp;
+                                            var lit_u_fty: u32 = self.ctx.registry.fe_items[fs + fj].type_id;
+                                            var pkf = pk_fields[fj];
+                                            if (lit_u_fty < @intCast(u32, self.ctx.registry.types_len)) {
+                                                var mty = self.ctx.registry.types_items[@intCast(usize, lit_u_fty)];
+                                                if (lowerTempIsPackedAggregate(self, val_temp) and mty.kind == type_mod.TypeKind.struct_type and (mty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
+                                                    if (lowerPackedWholeCopy(self, base_temp, pkf.bit_offset, val_temp, @intCast(u32, 0), lit_u_fty, @intCast(u32, 0)) != @intCast(u8, 0)) break;
                                                 }
                                             }
-                                            var pkf = pk_fields[fj];
                                             emitInst(self, LirInst{ .store_bitfield = .{ .base = base_temp, .value = val_temp, .bit_offset = pkf.bit_offset, .bit_width = @intCast(u32, pkf.bit_width) } });
                                             break;
                                         }

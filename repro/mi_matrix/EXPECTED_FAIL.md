@@ -1,4 +1,78 @@
-# mi_matrix corpus — expected-fail manifest (v284 2026-09-29)
+# mi_matrix corpus — expected-fail manifest (v285 2026-09-29)
+
+## FX15-F — whole-value nested packed moves (v284 -> v285, 2026-09-29)
+
+Volume II packed-aggregate amendment (task-FX15-F; source = the plan's FX15
+bullet + `task-FX15-I-report.md` + the operator's A-full ruling from the Task 9
+ch5 review). A nested packed sub-container assigned as a whole value inside a
+packed struct literal over-accepted and emitted one `store_bitfield` of the
+whole aggregate carrier into a bit slice (gcc: "aggregate value used where an
+integer was expected"); the assignment form and the whole-value read cleanly
+rejected `error[3000]`, and packed-union whole-member moves rejected. Operator
+ruling A-full: support every whole-sub-container move per leaf on the literal,
+assignment, packed-union and read paths symmetrically.
+
+**Fix (`sf/src/lower.zig` only; no sema/emitter/LIR change).** New
+`lowerPackedWholeCopy(dst_base, dst_off, src_base, src_off, ty_id, depth)`
+walks the packed type's pk side table and emits one
+`load_bitfield`/`store_bitfield` per leaf (<= 31 bits, sema cap) with composed
+offsets like the Task-3 `lowerPackedChainAnalyze` chain; nested packed fields
+recurse. `lowerTempIsPackedAggregate` gates every store site so an `undefined`
+RHS (a `TYPE_UNDEFINED` temp; `TEMP_NONE` is also excluded) keeps the old
+scalar-store path. Call sites: the `struct_init` packed-struct field branch
+(the former Task-4 literal hole), the packed-union literal member branch,
+`lowerFieldStore`'s packed-struct and packed-union whole-field guards,
+`lowerTryNestedPackedLeafStore` (chained whole-sub store) and
+`lowerTryNestedPackedLeafRead` / the `field_access` struct + packed-union read
+guards (whole-value reads). Residual (unchanged, still clean-rejects): a
+whole-sub store whose chain crosses a byte-aligned container below the packed
+edge (`first_packed + 1 < depth`) has no addressable-lvalue model; the
+natural-holder `(void)` emitter defect (`dceFieldIsArray` packed clauses) is a
+separate adjacent residual, out of A-full scope.
+
+**Fixtures.** Positive runtime
+`repro/mi_matrix/packed_nested_wholeliteral_xmod` (main + helper; expected.txt
+10 lines `lit 5 2 1` / `val 3 1` / `deep 5 2 2` / `wide 1 7 9` /
+`assign 5 2 1` / `read 2 7` / `pu-l 2 7` / `pu-a 1 3 3` / `xmod 5 2 7` /
+`xmod2 4 1 0`, expected.rc 0, byte-exact 3x; Zig 0.15.2 twin byte-identical).
+Converted `packed_union_struct_wholemember_xmod` from the PACK-AGG F-1
+GREEN-guard contract to a positive pin (whole-member read `var c: Inner =
+u.b`, expected.txt `2 3`, rc 0) — the A-full ruling invalidated that guard.
+Reject residual NEW `packed_nested_whole_chain_reject_xmod` (natural-holder
+depth-3 whole-sub store: rc 2 / 0 `.c` / exactly 1 `error[3000]` deterministic
+3x, expected.rc 2, classify GREEN). Standalone `repro/packed_nested_whole.z98`
+(8-line stdout, RUNRC 0). stdlib pin unchanged (266 entries): the new fixtures
+are corpus dirs, not `stdlib_*` discovery members.
+
+**Corpus movement.** `-s0` classify 1074 = 912 OK / 53 GREEN / 109 FAIL ->
+**1076 = 914 OK / 53 GREEN / 109 FAIL / 0 ICE / 0 CRASH**; join-diff vs the
+FX14-F base over the 1074 common dirs = exactly one mover,
+`packed_union_struct_wholemember_xmod` GREEN -> OK (the superseded guard);
+additions = the two new fixtures (positive OK + reject GREEN). No other mover.
+
+**Gates (final compiler `1e898a16bac50bd2898262dd6bce176f`).** Seed three-hop
+closure (moving point hop1 `7ca45053…` != hop2 == hop3 == `1e898a16…`) with
+explicit `FIXED_POINT_MD5`; seed v88 NOT rotated (archive
+`3db5ef392ecc349304ffdf14c618e530` byte-identical). 4-MD5 emitted C both modes
+**UNCHANGED 8/8** (fsafe `6df1e4d2…`/`e27b7c35…`/`d51f17ae…`/`f3be9bb9…`,
+ffast `98e934f3…`/`2514f8b5…`/`e1cc386e…`/`66d547d4…`); PRE<->POST runtime
+identity byte-identical both modes (gates rc 0). `verify_upgraded.sh` CLOSEOUT
+OK; `run_fixtures.sh` 266 PASS / 0 FAIL; example matrix 24/24;
+`check_emit_support.sh` 7/7; self-emission 48 `.c` + 48 `.h` / 0 PANIC / 0
+`error[`; `sf/scripts/build_test.sh` 0/9 pre-existing retired-zig0 baseline;
+`repro/vol2_defects/run_all.sh` 13/13.
+
+**Supersedes.** The `packed_union_struct_wholemember_xmod` GREEN-guard rows in
+the C89-AHEAD green-guard table and the w3000 census note below (the fixture is
+now a positive OK pin); the PACK-AGG design/plan L3 policy lines scoping
+whole-sub-container moves OUT are amended (see
+`docs/superpowers/specs/2026-09-06-packed-struct-aggregates-design.md` §3 and
+`docs/superpowers/plans/2026-09-03-language-wins-r-i-plan.md` G1 ruling (b)).
+
+**Remaining residuals.** Chain-depth>=2 natural-holder whole-sub store (above);
+the natural-holder `(void)` emitter defect (adjacent, no owning task);
+`[2]Inner` array-literal (`zT_2` undeclared) and `?Inner` literal
+silent-wrong (n9/n11; separate, no owning task).
 
 ## FX14-F — pin the 32-bit layout model in the emitted C (v283 -> v284, 2026-09-29)
 

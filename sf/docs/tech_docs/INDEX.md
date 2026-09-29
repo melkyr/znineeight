@@ -657,6 +657,8 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `lowerLValueAddr` | lower.zig |
 | `lowerModuleInit` | lower.zig |
 | `lowerPackedChainAnalyze` | lower.zig |
+| `lowerPackedWholeCopy` | lower.zig (FX15-F: per-leaf whole-value nested packed move — recursive pk walk emitting one `load_bitfield`+`store_bitfield` per leaf; shared by literal/assignment/packed-union/read paths) |
+| `lowerTempIsPackedAggregate` | lower.zig (FX15-F: source-carrier gate for whole-value store sites; `undefined`/`TEMP_NONE`/out-of-range keep the scalar-store path) |
 | `lowerPrintArityReject` | lower.zig (FD1: level-0 `error[3061]` `expected 2 argument(s), found N` at a `print` call with more than two arguments) |
 | `lowerStmt` | lower.zig |
 | `lowerStmtBody` | lower.zig |
