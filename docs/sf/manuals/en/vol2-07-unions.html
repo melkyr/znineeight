@@ -400,12 +400,15 @@ variant stops compiling at every switch that still spells the old name.
 <td><b>Honest note.</b> The union surface is small, and its edges are worth
 knowing before they surprise you. The tag is one 32-bit number, not a named
 enum type: there is no <tt>@tagName</tt> and no reflection over variants, and
-the numbers live in declaration order. A tagged or packed union has no
-<tt>{}</tt> printer: printing one rejects
+the numbers live in declaration order. Whole-union printing is uneven. A bare
+union always compiles and prints the placeholder <tt>.{ ... }</tt>, never its
+fields. A tagged union prints its fields (<tt>.{ .circle = 3 }</tt>) as long
+as every variant carries a non-<tt>void</tt> payload; a naked tag or an
+explicit <tt>void</tt> variant makes printing reject
 <tt>error[3063]: print argument type is not supported (no std.fmt
-printer)</tt> whatever its payload, naked or not. A bare union does compile
-and prints the placeholder <tt>.{ ... }</tt> instead of its value. Print the
-fields instead, which is what the example does.
+printer)</tt>, even when that variant is not active. A packed union of
+<tt>bool</tt>/integer members prints its fields too, and a packed-struct
+member rejects the same way. The example prints fields directly.
 <tt>@offsetOf</tt> and <tt>@bitOffsetOf</tt> reject a union target with
 <tt>error[3072]</tt>, as the first section shows. A packed union admits only
 <tt>bool</tt>, &le;31-bit integers, and packed structs of them, and the
@@ -594,12 +597,15 @@ tag is stored and nothing is tracked; only <tt>union(enum)</tt> manages the
 tag for you.
 </p>
 <p>
-<b>Printing a whole union with <tt>{}</tt>.</b> The aggregate printers do not
-cover unions. A tagged or packed union rejects with
+<b>Printing a whole union with <tt>{}</tt>.</b> Each form behaves differently.
+A bare union compiles and prints the placeholder <tt>.{ ... }</tt>, not the
+value behind it. A tagged union prints its fields (<tt>.{ .circle = 3 }</tt>)
+as long as every variant carries a non-<tt>void</tt> payload; a naked tag or
+an explicit <tt>void</tt> variant makes printing reject with
 <tt>error[3063]: print argument type is not supported (no std.fmt
-printer)</tt> whatever its active variant; a bare union compiles and prints
-the placeholder <tt>.{ ... }</tt>, not the value behind it. Either way, print
-the fields you mean, as the example prints
+printer)</tt>, even when that variant is not the active one. A packed union of
+<tt>bool</tt>/integer members prints; a packed-struct member rejects the same
+way. Print the fields you mean, as the example prints
 <tt>flags.whole</tt> and <tt>s.tag</tt>.
 </p>
 <p>
