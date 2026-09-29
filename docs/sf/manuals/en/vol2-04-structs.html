@@ -11,7 +11,7 @@
 <link rel="home" href="index.html">
 <link rel="up" href="toc.html">
 <link rel="prev" href="vol2-03-pointers.html">
-<link rel="next" href="vol2-12-error-unions.html">
+<link rel="next" href="vol2-05-packed-structs.html">
 </head>
 <body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
 <table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
@@ -43,7 +43,7 @@ Espa&ntilde;ol (not yet available) |
 <a href="vol2-02-types.html">The type system</a><br>
 <a href="vol2-03-pointers.html">Pointers</a><br>
 <b>Aggregates I: structs</b><br>
-Aggregates II: packed structs <i>(planned)</i><br>
+<a href="vol2-05-packed-structs.html">Aggregates II: packed structs</a><br>
 Aggregates III: enums <i>(planned)</i><br>
 Aggregates IV: unions <i>(planned)</i><br>
 Aggregates V: tuples <i>(planned)</i><br>
@@ -285,8 +285,9 @@ supported 32-bit toolchain. Nothing promises the padding bytes hold any
 particular value, that a future compiler will not widen a field's carrier, or
 that a struct sent across a wire or a process boundary will be decoded the same
 way by other software. If the exact byte image is the point, either write the
-fields out one at a time or use the <tt>packed struct</tt> of the next chapter
-<i>(planned)</i>, which spells out every bit and removes the padding entirely.
+fields out one at a time or use the
+<a href="vol2-05-packed-structs.html"><tt>packed struct</tt> of the next
+chapter</a>, which spells out every bit and removes the padding entirely.
 A Z98 struct is a memory convenience, not an interface description.</td>
 </tr>
 </table>
@@ -497,8 +498,8 @@ naturally aligned, always, and there is no attribute to reach for. The three
 bytes after <tt>id</tt> and the four after <tt>origin</tt> are real, and
 <tt>@sizeOf(Sprite)</tt> is 32, not 25. If you are matching a wire format or a
 hardware register, a plain struct is the wrong tool &mdash; the next chapter,
-<tt>packed struct</tt> <i>(planned)</i>, is the right one, and it is where the
-bit-exact layout lives.
+<a href="vol2-05-packed-structs.html"><tt>packed struct</tt></a>, is the right
+one, and it is where the bit-exact layout lives.
 </p>
 <p>
 <b>Writing C's <tt>offsetof</tt>.</b> The C macro takes the member name as a
@@ -536,14 +537,14 @@ your back when a struct variable is declared or goes out of scope (chapter 16
 <h2>Where to go next</h2>
 <p>
 The next shipped chapter is
+<a href="vol2-05-packed-structs.html">chapter 5, Aggregates II: Packed
+Structs</a>, the exact-bit counterpart of this one: it is where
+<tt>@bitOffsetOf</tt> and <tt>@bitSizeOf</tt> live and where padding goes away
+on purpose. After it comes
 <a href="vol2-12-error-unions.html">chapter 12, Error Unions &mdash; the First
-Big Shift</a>. Before it, in numeric order, come the rest of the aggregates.
-<b>Packed structs</b> (chapter 5 <i>(planned)</i>) is the exact-bit counterpart
-of this chapter: it is where <tt>@bitOffsetOf</tt> and <tt>@bitSizeOf</tt>
-live and where padding goes away on purpose. After the aggregates come
-<b>arrays and slices</b> (chapter 9) and the aggregate-shaped <b>unions</b>
-(chapter 7), <b>enums</b> (chapter 6), and <b>tuples</b> (chapter 8), all
-<i>(planned)</i>.
+Big Shift</a>; in between come the rest of the aggregates in numeric order,
+<b>enums</b> (chapter 6), <b>unions</b> (chapter 7), <b>tuples</b> (chapter 8),
+and <b>arrays and slices</b> (chapter 9), all <i>(planned)</i>.
 </p>
 <p>
 For lookup,
@@ -564,9 +565,9 @@ Until they ship, the runnable example in
 &nbsp;&nbsp;
 <a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
 &nbsp;&nbsp;
-<a href="vol2-12-error-unions.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+<a href="vol2-05-packed-structs.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
 </p>
-<p>Previous: <a href="vol2-03-pointers.html">Pointers</a> | <a href="toc.html">Contents</a> | Next: <a href="vol2-12-error-unions.html">Error Unions &mdash; the First Big Shift</a></p>
+<p>Previous: <a href="vol2-03-pointers.html">Pointers</a> | <a href="toc.html">Contents</a> | Next: <a href="vol2-05-packed-structs.html">Aggregates II: Packed Structs</a></p>
 </td>
 </tr>
 </table>

@@ -43,7 +43,7 @@ Espa&ntilde;ol (not yet available) |
 <b>The type system</b><br>
 <a href="vol2-03-pointers.html">Pointers</a><br>
 <a href="vol2-04-structs.html">Aggregates I: structs</a><br>
-Aggregates II: packed structs <i>(planned)</i><br>
+<a href="vol2-05-packed-structs.html">Aggregates II: packed structs</a><br>
 Aggregates III: enums <i>(planned)</i><br>
 Aggregates IV: unions <i>(planned)</i><br>
 Aggregates V: tuples <i>(planned)</i><br>
@@ -243,7 +243,8 @@ takes eight; an <tt>i63</tt> takes eight. The carrier is what the C89
 compiler can move in one register, and Z98 does not hide the cost of the
 smaller widths behind bit-packing. If you need fields that actually occupy
 three bits side by side, that is the packed struct's job, and
-chapter&nbsp;5 <i>(planned)</i> is where it lives. An arbitrary-width
+<a href="vol2-05-packed-structs.html">chapter&nbsp;5</a> is where it lives. An
+arbitrary-width
 integer keeps <i>one</i> value inside the smallest whole carrier.</td>
 </tr>
 </table>
@@ -618,7 +619,9 @@ types that point at other types get the same treatment: <tt>*T</tt>,
 the builtins that cast between them.
 </p>
 <p>
-After pointers, the next shipped chapter is
+After pointers come the first two aggregate chapters,
+<a href="vol2-04-structs.html">chapter 4, Structs</a> and
+<a href="vol2-05-packed-structs.html">chapter 5, Packed Structs</a>, and then
 <a href="vol2-12-error-unions.html">chapter 12, Error Unions &mdash; the First
 Big Shift</a>: types that carry failure. The arena
 (<a href="vol2-14-arena.html">chapter 14</a>) leans on <tt>usize</tt> and

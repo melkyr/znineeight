@@ -1,0 +1,609 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Packed Structs</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual packed struct packed structs bitfield bit offset bitOffsetOf bitSizeOf LSB-first wire format hardware register little-endian">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol2-04-structs.html">
+<link rel="next" href="vol2-12-error-unions.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume II &mdash; Learning Z98</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol2-00-title.html">How to read this</a><br>
+<a href="vol2-01-honest-comparison.html">The honest comparison</a><br>
+<a href="vol2-02-types.html">The type system</a><br>
+<a href="vol2-03-pointers.html">Pointers</a><br>
+<a href="vol2-04-structs.html">Aggregates I: structs</a><br>
+<b>Aggregates II: packed structs</b><br>
+Aggregates III: enums <i>(planned)</i><br>
+Aggregates IV: unions <i>(planned)</i><br>
+Aggregates V: tuples <i>(planned)</i><br>
+Arrays and slices <i>(planned)</i><br>
+Control flow, in full <i>(planned)</i><br>
+defer and errdefer <i>(planned)</i><br>
+<a href="vol2-12-error-unions.html">Error unions &mdash; the first big shift</a><br>
+Optionals <i>(planned)</i><br>
+<a href="vol2-14-arena.html">The arena &mdash; the second big shift</a><br>
+<a href="vol2-15-builtins.html">Builtins, in full</a><br>
+No methods, no generics, no comptime <i>(planned)</i><br>
+The standard library tour <i>(planned)</i><br>
+print and the format string <i>(planned)</i><br>
+Idioms and best practices <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Aggregates II: Packed Structs</h1>
+<p>
+A <tt>packed struct</tt> is a struct written as bits. It declares named fields
+exactly like the struct of the last chapter. The literal, the dot, the nested
+access, and the assignment rules are all the same. The difference is the one
+word in front of the declaration: the compiler does not align the fields, does
+not insert padding, and does not round the layout to anyone's idea of a machine
+word. The fields are laid end to end, bit by bit, from the first bit of the
+first byte, and the byte image that comes out is exactly the one you described.
+</p>
+<p>
+That is what this type is for. A plain struct is a way to group memory; a packed
+struct is a way to describe a fixed sequence of bits. When the layout is the
+point &mdash; a hardware register on a nonstandard port, a byte in a file
+format, the header of a packet on the wire &mdash; a plain struct is the wrong
+tool, because the compiler is free to leave gaps in it. This chapter declares
+packed structs, works the bit arithmetic by hand, reads the layout with
+<tt>@bitOffsetOf</tt> and <tt>@bitSizeOf</tt>, views the result as bytes, and
+warns about the limit that keeps the type honest: no field may be wider than 31
+bits.
+</p>
+
+<h2>Adding one word to a struct</h2>
+<p>
+The syntax is the struct syntax with <tt>packed</tt> in front. The chapter's
+wire header is two 4-bit fields and a byte, a shape you will meet in real
+protocols under names like <i>version</i>, <i>flags</i>, and <i>length</i>:
+</p>
+<pre>
+const Header = packed struct {
+    version: u4,
+    flags: u4,
+    length: u8,
+};
+</pre>
+<p>
+A packed field may be <tt>bool</tt> (one bit) or an integer type whose declared
+width is at most 31 bits. <tt>u1</tt> through <tt>u31</tt> and <tt>i1</tt>
+through <tt>i31</tt> are all fair game, and so are the named widths
+<tt>u8</tt>, <tt>u16</tt>, <tt>i8</tt>, and so on. A field of type
+<tt>u32</tt> or wider is rejected, and so is anything that is not a boolean or
+an integer &mdash; a <tt>float</tt>, a pointer, or an ordinary struct has no
+defined place in a bit sequence. The exact diagnostics are in the honesty note
+later in the chapter.
+</p>
+<p>
+The difference from the last chapter's <tt>struct</tt> shows up immediately.
+The plain twin of <tt>Header</tt> &mdash; the same three fields without
+<tt>packed</tt> &mdash; spends a byte on each field, because each field must sit
+at its own byte offset:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Field</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Type</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Width</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Plain <tt>struct</tt></b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Packed <tt>struct</tt></b></th>
+</tr>
+<tr>
+<td><tt>version</tt></td>
+<td><tt>u4</tt></td>
+<td>4</td>
+<td>byte 0</td>
+<td>bits 0&ndash;3</td>
+</tr>
+<tr>
+<td><tt>flags</tt></td>
+<td><tt>u4</tt></td>
+<td>4</td>
+<td>byte 1</td>
+<td>bits 4&ndash;7</td>
+</tr>
+<tr>
+<td><tt>length</tt></td>
+<td><tt>u8</tt></td>
+<td>8</td>
+<td>byte 2</td>
+<td>bits 8&ndash;15</td>
+</tr>
+<tr>
+<td><b>total</b></td>
+<td></td>
+<td></td>
+<td><b>3 bytes, align 1</b></td>
+<td><b>16 bits = 2 bytes, align 1</b></td>
+</tr>
+</table>
+<p>
+The plain version measures <tt>@sizeOf</tt> 3 and <tt>@alignOf</tt> 1 here, and
+the packed version measures 2 and 1. The byte saved is real, but it is not the
+interesting part. The interesting part is that in the packed version every bit
+has an address you can name, and the two nibbles actually share byte 0.
+</p>
+
+<h2>LSB-first packing</h2>
+<p>
+The layout rule is one sentence: <b>fields are placed in declaration order,
+each one starting at the lowest bit that is still free.</b> That is called
+<i>LSB-first</i> packing, because the first field owns the least significant
+bit of the first byte. A field that does not fit in the rest of a byte
+continues in the next byte, starting at that byte's bit 0; nothing is inserted
+between fields. The last byte is used from the bottom up, and any bits above
+the last field are not part of any field.
+</p>
+<p>
+For <tt>Header</tt> the cursor is easy to follow: <tt>version</tt> takes bits
+0&ndash;3, <tt>flags</tt> takes the next four bits (4&ndash;7), and
+<tt>length</tt> needs eight bits, so it starts at bit 8 and fills all of byte 1.
+The whole type is 16 bits, which is 2 bytes; the run confirms
+<tt>@bitSizeOf(Header)</tt> is 16 and <tt>@sizeOf(Header)</tt> is 2.
+</p>
+<p>
+The same rule makes multi-byte fields land in little-endian order in the byte
+image. Take a wider field that straddles bytes:
+</p>
+<pre>
+const Word = packed struct {
+    low: u4,
+    high: u12,
+};
+</pre>
+<p>
+<tt>low</tt> is bits 0&ndash;3 and <tt>high</tt> is bits 4&ndash;15, so the pair
+is one 16-bit little-endian number whose low nibble lives in the first field.
+With <tt>low = 13</tt> and <tt>high = 2748</tt> (0xABC), the word is 0xABCD:
+byte 0 is 0xCD = 205 and byte 1 is 0xAB = 171. Both numbers are odd because
+<tt>low</tt> is the low nibble, not the high one; the first field is the least
+significant, always. The program prints 205 and 171 for exactly that reason.
+</p>
+
+<h2>The bit builtins</h2>
+<p>
+Four builtins read a type's layout without running anything. The last chapter
+met three of them on plain structs; on a packed struct they change one meaning
+each, and <tt>@bitOffsetOf</tt> joins them:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Builtin</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>On a plain struct</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>On a packed struct</b></th>
+</tr>
+<tr>
+<td><tt>@sizeOf(T)</tt></td>
+<td>padded byte size</td>
+<td>the total bits rounded up to whole bytes</td>
+</tr>
+<tr>
+<td><tt>@alignOf(T)</tt></td>
+<td>strictest field alignment</td>
+<td>always 1</td>
+</tr>
+<tr>
+<td><tt>@bitSizeOf(T)</tt></td>
+<td>byte size &times; 8</td>
+<td>the sum of the field widths</td>
+</tr>
+<tr>
+<td><tt>@bitOffsetOf(T, "f")</tt></td>
+<td>byte offset &times; 8</td>
+<td>the field's bit offset</td>
+</tr>
+<tr>
+<td><tt>@offsetOf(T, "f")</tt></td>
+<td>the byte offset</td>
+<td>the bit offset divided by 8, rounded down</td>
+</tr>
+</table>
+<p>
+The last row is the trap. <tt>@offsetOf</tt> is a byte answer, so on a packed
+struct it can only <i>round</i>; two fields that share a byte both report
+offset 0, and a field at bit 12 reports byte 1. For <tt>Header</tt> the program
+prints <tt>version=0 flags=0 length=1</tt>: the flags nibble is in byte 0, but
+the bit offset is 4, and <tt>@offsetOf</tt> cannot say so.
+<tt>@bitOffsetOf</tt> is the builtin that keeps the bit.
+</p>
+<p>
+On a plain struct the relationship runs the other way: there are no sub-byte
+fields, so <tt>@bitOffsetOf</tt> is just the byte offset multiplied by eight. A
+struct with a <tt>u8</tt> at offset 0 and a <tt>u32</tt> at offset 4 reports bit
+offsets 0 and 32. Both builtins are compile-time constants: they fold before
+any C is emitted, and they take the type and a string-literal field name, with
+the same field-name and target-type rejections the last chapter described
+(<tt>error[3072]</tt> for a non-struct target, <tt>error[3073]</tt> for a bad
+field name).
+</p>
+<p>
+There is one more useful fact about <tt>@sizeOf</tt>. It is the byte count, not
+the bit count, so a type of five bits still occupies one byte: a packed
+<tt>struct { a: u2, b: u3 }</tt> reports <tt>@bitSizeOf</tt> 5 and
+<tt>@sizeOf</tt> 1. The bits above the last field in that byte are not part of
+any field and are not written when the fields are written.
+</p>
+
+<h2>Reading the bytes</h2>
+<p>
+The point of a packed struct is the byte image, and Z98 makes it visible
+without a union or a cast to a number: take the address and view it as bytes.
+<tt>@ptrCast([*]const u8, &amp;h)</tt> gives a many-item pointer to the first
+byte, and <tt>p[0]</tt>, <tt>p[1]</tt>, and so on read the image in order. For
+<tt>Header</tt> with <tt>version = 6</tt>, <tt>flags = 10</tt>, and
+<tt>length = 200</tt>, byte 0 is 6 | (10 &lt;&lt; 4) = 166 and byte 1 is 200.
+</p>
+<p>
+Decoding runs the same arithmetic backwards. Read the two bytes as one
+little-endian 16-bit value, then mask and shift the fields out of it:
+</p>
+<pre>
+var raw: u16 = @intCast(u16, hp[0]) | (@intCast(u16, hp[1]) &lt;&lt; 8);
+var back: Header = .{
+    .version = @intCast(u4, raw &amp; 15),
+    .flags = @intCast(u4, (raw &gt;&gt; 4) &amp; 15),
+    .length = @intCast(u8, (raw &gt;&gt; 8) &amp; 255),
+};
+</pre>
+<p>
+The decoded fields are 6, 10, and 200 &mdash; the values the encoder was given.
+That round trip is the whole contract of the type: the field access writes and
+reads the bits, and a decoder that agrees on the packing gets the same values
+back. Printing a whole packed value with <tt>{}</tt> shows the named fields
+(<tt>.{ .version = 6, .flags = 10, .length = 200 }</tt>), but the bytes on the
+wire are the two numbers printed above.
+</p>
+<p>
+Two portability statements follow, and they are different statements. Within a
+running Z98 program, the layout is fixed by the language, not by the host C
+compiler: the emitted C for a packed struct is a small array of
+<tt>unsigned char</tt> plus shift-and-mask code, so every supported toolchain
+produces and consumes the same bytes. Across programs that were not compiled
+from Z98, nothing is guaranteed except the rule itself, which must be written
+down on both sides: fields in declaration order, LSB-first, little-endian for
+multi-byte fields. A big-endian receiver, or a C struct with hand-written
+bitfields, will disagree unless it is told the rule.
+</p>
+
+<h2>A hardware register</h2>
+<p>
+The other classic use is a memory-mapped register, where a datasheet draws a
+16-bit word as named bits. The control register below is the same shape as the
+header, but read left to right instead of first-to-last:
+</p>
+<pre>
+const Ctrl = packed struct {
+    enable: u1,
+    mode: u3,
+    divisor: u12,
+};
+</pre>
+<p>
+<tt>enable</tt> is bit 0, <tt>mode</tt> takes bits 1&ndash;3, and
+<tt>divisor</tt> takes the top twelve bits, 4&ndash;15. The type is 16 bits, 2
+bytes, alignment 1, and the fields behave exactly like the named bits a
+programmer would otherwise set with constants and shifts:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Field</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Type</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Width</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Bit offset</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Value</b></th>
+</tr>
+<tr>
+<td><tt>enable</tt></td>
+<td><tt>u1</tt></td>
+<td>1</td>
+<td>0</td>
+<td>1</td>
+</tr>
+<tr>
+<td><tt>mode</tt></td>
+<td><tt>u3</tt></td>
+<td>3</td>
+<td>1</td>
+<td>5</td>
+</tr>
+<tr>
+<td><tt>divisor</tt></td>
+<td><tt>u12</tt></td>
+<td>12</td>
+<td>4</td>
+<td>2748 (0xABC)</td>
+</tr>
+<tr>
+<td><b>total</b></td>
+<td></td>
+<td><b>16</b></td>
+<td></td>
+<td><b>0xABCB = 43979</b></td>
+</tr>
+</table>
+<p>
+The register word is 1 | (5 &lt;&lt; 1) | (2748 &lt;&lt; 4), which is 0xABCB;
+its bytes in memory are 0xCB = 203 then 0xAB = 171. That is what the program
+prints, and it matches the datasheet line for line. In C this shape is usually
+written with a word and a pile of masks; here the masks are the field widths.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> The 31-bit cap is not a detail to discover later; it is
+the price of the type. A packed field can be <tt>bool</tt> or an integer of at
+most 31 bits, so a <tt>u32</tt>, an <tt>i64</tt>, a <tt>float</tt>, a pointer,
+or an ordinary struct cannot appear at all, and the compiler rejects the
+declaration:
+<tt>error[3000]: packed struct field width must be &lt;= 31 bits (u32/i64 etc.
+packed fields are not supported yet)</tt> for a wide integer, and
+<tt>error[3000]: packed struct fields must be bool or an integer type (uN/iN);
+this field type is not allowed in a packed struct</tt> for anything else. A
+32-bit value fits as two 16-bit fields or as <tt>u24</tt> plus <tt>u8</tt>, and
+the program can define the split itself. What you do <i>not</i> get is one
+field spanning the whole word. The layout is also little-endian and LSB-first
+by definition; it is not a universal interchange format, and the emitted C does
+not fall back on the host compiler's bitfield rules. Within Z98 and its
+supported targets, the byte image is exact; outside that boundary, both sides
+must agree on the rule.</td>
+</tr>
+</table>
+
+<h2>The example</h2>
+<p>
+The whole chapter in one program. It declares the wire header and the control
+register, prints the size, the bit count, the bit offsets and the byte offsets,
+views each value as raw bytes, and decodes the header back from its bytes with
+shifts and masks. It is <tt>docs/sf/manuals/src/vol2/wire.z98</tt>:
+</p>
+<pre>
+const std = @import("std");
+
+// A 16-bit wire header: two 4-bit fields packed into the first byte, then
+// the payload length in the second byte. LSB-first.
+const Header = packed struct {
+    version: u4,
+    flags: u4,
+    length: u8,
+};
+
+// A 16-bit control register, read left to right on a datasheet:
+// enable (bit 0), mode (bits 1-3), divisor (bits 4-15).
+const Ctrl = packed struct {
+    enable: u1,
+    mode: u3,
+    divisor: u12,
+};
+
+pub fn main() void {
+    var h: Header = .{ .version = 6, .flags = 10, .length = 200 };
+    var hp = @ptrCast([*]const u8, &amp;h);
+
+    std.io.print("Header size={} bits={}\n", .{ @sizeOf(Header), @bitSizeOf(Header) });
+    std.io.print("Header bit offsets version={} flags={} length={}\n", .{
+        @bitOffsetOf(Header, "version"),
+        @bitOffsetOf(Header, "flags"),
+        @bitOffsetOf(Header, "length"),
+    });
+    std.io.print("Header byte offsets version={} flags={} length={}\n", .{
+        @offsetOf(Header, "version"),
+        @offsetOf(Header, "flags"),
+        @offsetOf(Header, "length"),
+    });
+    std.io.print("Header bytes {} {}\n", .{ hp[0], hp[1] });
+
+    var raw: u16 = @intCast(u16, hp[0]) | (@intCast(u16, hp[1]) &lt;&lt; 8);
+    var back: Header = .{
+        .version = @intCast(u4, raw &amp; 15),
+        .flags = @intCast(u4, (raw &gt;&gt; 4) &amp; 15),
+        .length = @intCast(u8, (raw &gt;&gt; 8) &amp; 255),
+    };
+    std.io.print("decoded version={} flags={} length={}\n", .{ back.version, back.flags, back.length });
+
+    var c: Ctrl = .{ .enable = 1, .mode = 5, .divisor = 2748 };
+    var cp = @ptrCast([*]const u8, &amp;c);
+    std.io.print("Ctrl size={} bits={}\n", .{ @sizeOf(Ctrl), @bitSizeOf(Ctrl) });
+    std.io.print("Ctrl bit offsets enable={} mode={} divisor={}\n", .{
+        @bitOffsetOf(Ctrl, "enable"),
+        @bitOffsetOf(Ctrl, "mode"),
+        @bitOffsetOf(Ctrl, "divisor"),
+    });
+    std.io.print("Ctrl bytes {} {}\n", .{ cp[0], cp[1] });
+    std.io.print("Ctrl fields enable={} mode={} divisor={}\n", .{ c.enable, c.mode, c.divisor });
+}
+</pre>
+<p>
+Build the compiler once from the committed seed, then emit and compile the
+program, exactly as in chapter&nbsp;3:
+</p>
+<pre>
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/manual_seed
+</pre>
+<p>
+The result is <tt>/tmp/manual_seed/zig1_5_clean</tt> with the standard library
+beside it in <tt>/tmp/manual_seed/lib/</tt>. This example compiles with no
+diagnostics; the program then runs to the end:
+</p>
+<pre>
+$ mkdir -p /tmp/manual_out
+$ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out docs/sf/manuals/src/vol2/wire.z98
+$ cd /tmp/manual_out &amp;&amp; sh build_target.sh linux wire
+Building for linux...
+Built: wire
+$ ./wire
+Header size=2 bits=16
+Header bit offsets version=0 flags=4 length=8
+Header byte offsets version=0 flags=0 length=1
+Header bytes 166 200
+decoded version=6 flags=10 length=200
+Ctrl size=2 bits=16
+Ctrl bit offsets enable=0 mode=1 divisor=4
+Ctrl bytes 203 171
+Ctrl fields enable=1 mode=5 divisor=2748
+</pre>
+<p>
+Nine lines, in three groups. The first four are the header's arithmetic: 16
+bits in 2 bytes; the fields' bit offsets 0, 4, and 8; the byte offsets 0, 0,
+and 1 that show <tt>@offsetOf</tt> rounding the flags nibble down into byte 0;
+and the raw bytes 166 and 200. The fifth line is the decode: the same bytes
+read back as 6, 10, and 200. The last four are the register: 16 bits, offsets
+0, 1, and 4, the bytes 203 and 171, and the field values 1, 5, and 2748. The
+exit status is 0.
+</p>
+
+<h2>Running under Windows 98</h2>
+<p>
+The same program builds for Win9x. <tt>src/build_owc.bat</tt> compiles the
+emitted C89 with OpenWatcom's <tt>wcc386</tt> and links a console
+<tt>wire.exe</tt>; run from a Windows 98 command prompt, it prints the same
+nine lines. The screenshot below will be captured on real hardware.
+</p>
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f0f0f0" class="placeholder">
+<tr>
+<td align="center">
+<i>Figure 22 &mdash; Win9x screenshot pending</i>
+</td>
+</tr>
+</table>
+<p><i>Figure 22. Running <tt>wire.exe</tt> under Windows 98.</i></p>
+
+<h2>Common mistakes</h2>
+<p>
+The mistakes below are the ones a programmer arriving from C makes first with
+packed structs. Each one has a corrected shape, and the corrected shape is the
+compiler's rule, not a style preference.
+</p>
+<p>
+<b>Assuming the platform's packing is the packing.</b> In C the byte image of a
+struct is the C compiler's business; <tt>#pragma pack</tt> and
+<tt>__attribute__((packed))</tt> change the rules from compiler to compiler,
+and hand-written C bitfields have implementation-defined order. Z98's packed
+layout is not the host compiler's layout: it is the language's rule, applied by
+the emitted C itself, which stores the value as bytes and moves the bits with
+explicit shifts. Do not prototype a packed struct by writing a C struct and
+checking its <tt>sizeof</tt>; the two agreements are different agreements.
+</p>
+<p>
+<b>Reaching for a 32-bit field.</b> <tt>u32</tt> packed fields do not exist
+yet, and neither do <tt>i32</tt>, <tt>u64</tt>, or any width above 31. The
+compiler rejects the declaration with <tt>error[3000]: packed struct field
+width must be &lt;= 31 bits</tt>. The fix is to split the value at a bit
+boundary the format already has &mdash; <tt>low: u16</tt> plus
+<tt>high: u16</tt>, or <tt>u24</tt> plus <tt>u8</tt> &mdash; and to define
+which half is which in the code that reads and writes it.
+</p>
+<p>
+<b>Assuming a bit order.</b> The fields are LSB-first: the first declared field
+owns bit 0 of byte 0, and a wider field's low bits come first in the byte
+stream. That is not what a datasheet drawn left to right implies, and it is not
+what a big-endian machine would produce. When two programs exchange these
+bytes, the order has to be part of the agreement, on both sides. The safest
+summary to remember is the one this chapter verified: declaration order,
+LSB-first, little-endian for multi-byte fields.
+</p>
+<p>
+<b>Asking <tt>@offsetOf</tt> for a bit offset.</b> The C reflex is
+<tt>offsetof</tt>, which is bytes only. On a packed struct
+<tt>@offsetOf(Header, "flags")</tt> compiles and answers 0, because the flags
+nibble lives in byte 0; the answer is rounded down, not rounded off. The
+builtin that takes bits seriously is <tt>@bitOffsetOf(Header, "flags")</tt>,
+which answers 4. Use <tt>@offsetOf</tt> for the byte a field starts in (the
+header's <tt>length</tt> is byte 1) and <tt>@bitOffsetOf</tt> for anything
+smaller.
+</p>
+<p>
+<b>Confusing <tt>@sizeOf</tt> with <tt>@bitSizeOf</tt>.</b> A packed type of 5
+bits still occupies a whole byte, so <tt>@sizeOf</tt> is 1 while
+<tt>@bitSizeOf</tt> is 5. The bits above the last field in the final byte
+belong to no field, are not written by the field stores, and must not be read
+as if they were data. When the bit count is what matters, ask for the bit
+count.
+</p>
+<p>
+<b>Treating the saved padding as free round-tripping.</b> A packed struct
+removes alignment padding, but it does not remove the need for a decoder. The
+bytes are still bytes: reading them requires the address, the length
+<tt>@sizeOf</tt> reports, and a reader that knows the format. Struct assignment
+still copies the value, and a pointer cast still views the live memory &mdash;
+neither one turns the value into a file on disk. If the bytes leave the
+program, make the format explicit, exactly as the example's decode line does.
+</p>
+
+<h2>Where to go next</h2>
+<p>
+The next shipped chapter is
+<a href="vol2-12-error-unions.html">chapter 12, Error Unions &mdash; the First
+Big Shift</a>. The rest of the aggregates are still to come in numeric order:
+<b>enums</b> (chapter 6), <b>unions</b> (chapter 7, which is where packed unions
+live), <b>tuples</b> (chapter 8), and <b>arrays and slices</b> (chapter 9), all
+<i>(planned)</i>. This chapter's predecessor,
+<a href="vol2-04-structs.html">Aggregates I: Structs</a>, is the plain-struct
+half of the same story: padding, alignment, and the offsets that packed structs
+replace with bits.
+</p>
+<p>
+For lookup,
+<a href="vol4-15-builtins.html">Volume IV &mdash; Builtins</a> is the shipped
+reference for <tt>@bitSizeOf</tt> and <tt>@bitOffsetOf</tt>, including the
+argument rules and the rejection codes. Volume IV's <b>Structs</b> reference
+page and Volume V's <b>port from C</b> HOWTO are <i>(planned)</i>; the latter is
+where the hand-written C bitfield idiom gets translated field by field.
+</p>
+<p>
+Until they ship, the runnable example in
+<tt>docs/sf/manuals/src/vol2/wire.z98</tt> is the working reference, and
+<a href="toc.html">the Contents page</a> shows the volume's shape.
+</p>
+
+<p class="navbtns">
+<a href="vol2-04-structs.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol2-12-error-unions.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol2-04-structs.html">Aggregates I: Structs</a> | <a href="toc.html">Contents</a> | Next: <a href="vol2-12-error-unions.html">Error Unions &mdash; the First Big Shift</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
