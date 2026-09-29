@@ -403,8 +403,10 @@ enum type: there is no <tt>@tagName</tt> and no reflection over variants, and
 the numbers live in declaration order. Whole-union printing is uneven. A bare
 union always compiles and prints the placeholder <tt>.{ ... }</tt>, never its
 fields. A tagged union prints its fields (<tt>.{ .circle = 3 }</tt>) as long
-as every variant carries a non-<tt>void</tt> payload; a naked tag or an
-explicit <tt>void</tt> variant makes printing reject
+as every variant carries a non-<tt>void</tt>, printable payload; a naked tag,
+an explicit <tt>void</tt> variant, or an unprintable payload (a packed struct,
+a pointer-to-array such as <tt>*const [4]u8</tt>, a struct wrapping a packed
+struct) makes printing reject
 <tt>error[3063]: print argument type is not supported (no std.fmt
 printer)</tt>, even when that variant is not active. A packed union of
 <tt>bool</tt>/integer members prints its fields too, and a packed-struct
@@ -600,8 +602,10 @@ tag for you.
 <b>Printing a whole union with <tt>{}</tt>.</b> Each form behaves differently.
 A bare union compiles and prints the placeholder <tt>.{ ... }</tt>, not the
 value behind it. A tagged union prints its fields (<tt>.{ .circle = 3 }</tt>)
-as long as every variant carries a non-<tt>void</tt> payload; a naked tag or
-an explicit <tt>void</tt> variant makes printing reject with
+as long as every variant carries a non-<tt>void</tt>, printable payload; a
+naked tag, an explicit <tt>void</tt> variant, or an unprintable payload (a
+packed struct, a pointer-to-array, a struct wrapping a packed struct) makes
+printing reject with
 <tt>error[3063]: print argument type is not supported (no std.fmt
 printer)</tt>, even when that variant is not the active one. A packed union of
 <tt>bool</tt>/integer members prints; a packed-struct member rejects the same
@@ -621,6 +625,82 @@ limited to <tt>bool</tt>, integers of at most 31 bits, and packed structs of
 them. A <tt>u32</tt> member rejects with the width rule, and an <tt>f32</tt>
 member rejects with the integer-only rule. Keep the wide fields in a bare or
 tagged union and use the packed form for the exact-bit layouts.
+</p>
+
+<h2>Coming from Zig</h2>
+<p>
+The tagged union is one of the places where this dialect is closest to the Zig
+it is a subset of, and one of the places where the remaining differences
+matter when porting code.
+</p>
+<p>
+<b>The union switch is the same.</b> <tt>switch (u) { .a =&gt; &hellip;,
+else =&gt; &hellip; }</tt> works as it does in Zig, with the payload captures
+and the mandatory <tt>else</tt> the earlier section described.
+</p>
+<p>
+<b>Pointer captures do not exist.</b> Zig's in-place mutation idiom,
+<tt>.a =&gt; |*p| p.* = &hellip;</tt>, is a parse reject here:
+<tt>error[2000]: expected identifier but found token</tt> points at the
+<tt>*</tt>. The supported mutation stores the whole union &mdash; tag and
+payload together:
+</p>
+<pre>
+u = .{ .a = 5 };
+</pre>
+<p>
+The same through a pointer: <tt>p.* = .{ .a = 21 };</tt>.
+</p>
+<p>
+<b>Tag inspection.</b> Zig has no <tt>.tag</tt> field; the oracle spells tag
+comparison <tt>std.meta.activeTag(u)</tt> (or
+<tt>@as(std.meta.Tag(U), u)</tt>) and dispatch <tt>switch (u)</tt>. Z98 keeps
+the whole-union forms &mdash; <tt>switch (u)</tt>, and equality with the
+variant named qualified when it has a payload (<tt>u == Shape.a</tt>) or
+shorthand for a naked variant (<tt>u == .empty</tt>; the shorthand on a
+payload variant rejects <tt>error[3008]: enum literal member requires
+payload</tt>) &mdash; and adds a direct
+<tt>u.tag</tt> access typed as a <tt>u32</tt> ordinal whose member-shaped uses
+are contextually sugared: <tt>u.tag == .a</tt>, <tt>u.tag != Shape.a</tt>, the
+relational comparisons, and <tt>switch (u.tag) { .a =&gt; &hellip;, else =&gt;
+&hellip; }</tt> all compare and switch ordinals. The sugar is per use, not per
+value: <tt>const t = u.tag;</tt> is a plain <tt>u32</tt> copy, and
+<tt>t == .a</tt> rejects <tt>error[3076]: unable to infer type of enum literal
+in comparison with a numeric operand</tt>. Numeric uses are unchanged:
+<tt>u.tag == 0</tt>, <tt>@enumToInt(u.tag)</tt>.
+</p>
+<p>
+<b>Payload stores are whole-union assignments.</b> A per-member store
+(<tt>x.i = 5</tt>), a whole nested payload store
+(<tt>b.box = .{ &hellip; }</tt>), and taking a payload member's address
+(<tt>&amp;x.i</tt>, <tt>b.box.w = 7</tt>) are clean rejects that name the
+supported form:
+</p>
+<pre>
+error[3000]: cannot store to a tagged-union payload member; assign the whole union instead (e.g. x = .{ .i = 5 })
+</pre>
+<p>
+The address forms use the twin wording, <tt>cannot take the address of a
+tagged-union payload member; assign the whole union instead</tt>. The
+mutation is the assignment above: <tt>x = .{ .i = 5 };</tt>.
+</p>
+<p>
+When a value needs frequent in-place mutation, the practical pattern is the
+one this manual's interpreter examples use: split the discriminant from the
+storage with a plain struct, a tag enum, and a bare union.
+</p>
+<pre>
+const Tag = enum { i, s };
+const Data = union { i: i32, s: u8 };
+const Value = struct { tag: Tag, data: Data };
+</pre>
+<p>
+The struct travels as one value, the tag is an enum (so
+<a href="vol2-06-enums.html">chapter&nbsp;6</a>'s switch rules apply), and the
+bare union's member is an ordinary field: <tt>v.data.i = 9;</tt> stores in
+place with no whole-value rebuild. That is the shape the interpreter's token
+and value types use, and the one to reach for when the tagged union's
+rebuild-a-whole-value style stops fitting.
 </p>
 
 <h2>Where to go next</h2>
