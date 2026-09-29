@@ -1,0 +1,568 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Enums</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual enum enums enum(uN) backing member intToEnum enumToInt switch ranges inclusive exclusive else 3068 3071">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol2-05-packed-structs.html">
+<link rel="next" href="vol2-12-error-unions.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume II &mdash; Learning Z98</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol2-00-title.html">How to read this</a><br>
+<a href="vol2-01-honest-comparison.html">The honest comparison</a><br>
+<a href="vol2-02-types.html">The type system</a><br>
+<a href="vol2-03-pointers.html">Pointers</a><br>
+<a href="vol2-04-structs.html">Aggregates I: structs</a><br>
+<a href="vol2-05-packed-structs.html">Aggregates II: packed structs</a><br>
+<b>Aggregates III: enums</b><br>
+Aggregates IV: unions <i>(planned)</i><br>
+Aggregates V: tuples <i>(planned)</i><br>
+Arrays and slices <i>(planned)</i><br>
+Control flow, in full <i>(planned)</i><br>
+defer and errdefer <i>(planned)</i><br>
+<a href="vol2-12-error-unions.html">Error unions &mdash; the first big shift</a><br>
+Optionals <i>(planned)</i><br>
+<a href="vol2-14-arena.html">The arena &mdash; the second big shift</a><br>
+<a href="vol2-15-builtins.html">Builtins, in full</a><br>
+No methods, no generics, no comptime <i>(planned)</i><br>
+The standard library tour <i>(planned)</i><br>
+print and the format string <i>(planned)</i><br>
+Idioms and best practices <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Aggregates III: Enums</h1>
+<p>
+An <tt>enum</tt> gives a name to each value in a small, fixed set. The last
+three chapters grouped memory into records; an enum does the opposite: it takes
+one integer and gives its interesting values names. A protocol's status byte, a
+token kind, a color &mdash; places where C programmers write
+<tt>#define RED 0</tt> or a handful of constants &mdash; become one type with a
+list of members:
+</p>
+<pre>
+const Color = enum { Red, Green, Blue };
+</pre>
+<p>
+That declaration creates a type, not an integer. Colors can be assigned,
+compared, and passed around, and the compiler knows the set. A <tt>switch</tt>
+over an enum can name ranges of members, the way a <tt>switch</tt> over
+integers names ranges of numbers. And crossing between the name and the number
+is an operation with a name: <tt>@enumToInt</tt> and <tt>@intToEnum</tt>, never
+an implicit step.
+</p>
+<p>
+This chapter declares plain enums and enums with an explicit backing integer,
+converts values in both directions, and switches over member ranges, including
+the mandatory <tt>else</tt> prong that catches everything the listed members do
+not. The example is <tt>docs/sf/manuals/src/vol2/color.z98</tt>.
+</p>
+
+<h2>A name for a small set</h2>
+<p>
+The syntax is <tt>enum</tt>, braces, and a comma-separated member list. The
+members are identifiers; by default they number from zero in declaration order.
+The declaration below is the chapter's <tt>Color</tt>, and the program prints
+the member <tt>Green</tt> and its number:
+</p>
+<pre>
+var c: Color = .Green;
+std.io.print("c={} int={d}\n", .{ c, @enumToInt(c) });
+</pre>
+<p>
+The short spelling <tt>.Green</tt> works wherever the compiler already knows
+the type &mdash; a typed declaration, an argument, a return &mdash; and the
+long spelling <tt>Color.Green</tt> works everywhere. Both are the same value.
+<tt>Red</tt> is 0, <tt>Green</tt> is 1, and <tt>Blue</tt> is 2, and the chapter
+program verifies that with <tt>@enumToInt</tt>.
+</p>
+<p>
+A plain enum like <tt>Color</tt> does not promise a width. The compiler picks
+the backing integer that stores the members, and the layout builtins report it.
+On this compiler a plain enum is backed by a 32-bit unsigned integer, so the
+three-member <tt>Color</tt> measures like the <tt>u32</tt> it is built on:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Type</b></th>
+<th align="left" bgcolor="#e8e0e0"><b><tt>@sizeOf</tt></b></th>
+<th align="left" bgcolor="#e8e0e0"><b><tt>@bitSizeOf</tt></b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Backing</b></th>
+</tr>
+<tr>
+<td><tt>Color</tt> (plain)</td>
+<td>4</td>
+<td>32</td>
+<td>32-bit unsigned</td>
+</tr>
+<tr>
+<td><tt>Code</tt> (<tt>enum(u8)</tt>)</td>
+<td>1</td>
+<td>8</td>
+<td><tt>u8</tt></td>
+</tr>
+</table>
+<p>
+The C habit is to reach for an <tt>int</tt> and a set of <tt>#define</tt>s, or
+a C <tt>enum</tt> whose members are really integers that travel anywhere. In
+Z98 the type is carried: an enum value is not an integer unless a conversion
+says so, an integer is not an enum unless a conversion says so, and a function
+that takes a <tt>Color</tt> cannot be handed a bare <tt>1</tt> without a
+diagnostic. That is the same bargain the last two chapters made with struct and
+packed struct layouts: the declaration says what the bytes mean, and the
+compiler holds the program to it.
+</p>
+
+<h2>Choosing the backing integer</h2>
+<p>
+When the width matters, name the backing type: <tt>enum(uN)</tt> stores every
+value in an unsigned integer of width <tt>N</tt>. The chapter's second enum is
+the status byte of a small protocol, spelled with a <tt>u8</tt> backing and
+explicit numbers:
+</p>
+<pre>
+const Code = enum(u8) { Ok = 0, Warning = 4, Error = 9 };
+</pre>
+<p>
+The explicit values are the members' numbers, exactly as written; the program
+prints <tt>0</tt>, <tt>4</tt>, and <tt>9</tt> for the three members with
+<tt>@enumToInt</tt>. The type measures <tt>@sizeOf</tt> 1 and
+<tt>@bitSizeOf</tt> 8 &mdash; one byte, which matters when the value is a field
+in a wire format or an entry in a table. A backing of <tt>u16</tt> or
+<tt>u32</tt> is chosen the same way. Only unsigned backings exist:
+<tt>enum(i32)</tt> is rejected with <tt>error[3000]: enum(iN) signed backings
+are not supported; use an unsigned backing (enum(uN))</tt>.
+</p>
+<p>
+Values may be explicit, automatic, or a mix. Automatic numbering starts at zero
+and continues from the previous member; after an explicit value, the next
+member continues from there:
+</p>
+<pre>
+const Level = enum { Low, Mid = 4, High };
+</pre>
+<p>
+<tt>Low</tt> is 0, <tt>Mid</tt> is 4, and <tt>High</tt> is 5. The numbers do
+not need to be contiguous, and that is the point of the explicit form: the gaps
+are as real as the values, and the switches later in this chapter skip them
+correctly. What the compiler does not have is a way to say "and any other
+number" &mdash; the member list is the whole type.
+</p>
+
+<h2>Members to numbers: @enumToInt</h2>
+<p>
+<tt>@enumToInt(e)</tt> reads the number under a member. The result has the
+backing integer's type: a <tt>u32</tt> for a plain enum like <tt>Color</tt>, a
+<tt>u8</tt> for the <tt>Code</tt> above. That matters when the number travels
+to a differently typed place; storing it in an <tt>i32</tt> is not free on
+this compiler: the declaration gets a <tt>warning[3000]</tt> whose note says
+<tt>source: u32</tt> and <tt>target: i32</tt>. The explicit form
+<tt>@intCast(i32, @enumToInt(c))</tt> says what is happening and is
+warning-free.
+</p>
+<p>
+Printing has one wrinkle worth learning now. A bare <tt>{}</tt> on an enum
+value prints the member name with a leading dot:
+</p>
+<pre>
+std.io.print("c={}\n", .{ c });              // c=.Green
+std.io.print("int={d}\n", .{ @enumToInt(c) }); // int=1
+</pre>
+<p>
+The first line prints <tt>.Green</tt>, and the second prints <tt>1</tt>. The
+wrinkle is that <tt>@enumToInt(c)</tt> still prints as <tt>.Green</tt> under
+<tt>{}</tt> &mdash; the member name, not the number &mdash; because the
+printer looks at where the value came from. Use <tt>{d}</tt> (or <tt>{x}</tt>)
+when the number is what you want to see, exactly as the example does.
+</p>
+
+<h2>Numbers to members: @intToEnum</h2>
+<p>
+<tt>@intToEnum(T, n)</tt> is the way back. It takes the type and an integer
+and produces a value of that enum type whose number is <tt>n</tt>. The chapter
+program decodes a <tt>Code</tt> from its number and checks that a <tt>Color</tt>
+read from number 1 is the same <tt>Green</tt> it started with:
+</p>
+<pre>
+var back: Color = @intToEnum(Color, 1);
+var same: bool = back == c;
+</pre>
+<p>
+The run prints <tt>back=.Green same=true</tt>. A conversion in each direction
+makes a round trip: <tt>@intToEnum(Color, @enumToInt(c))</tt> is the value you
+started with.
+</p>
+<p>
+One honest boundary belongs here rather than in a footnote:
+<tt>@intToEnum</tt> does not check the number against the member list. An
+integer with no member is accepted and produces an enum value whose only
+visible form is the fallback spelling <tt>@enumFromInt(n)</tt>; a probe on this
+compiler printed <tt>@enumFromInt(2)</tt> for a gap in a <tt>u8</tt> enum and
+<tt>@enumFromInt(7)</tt> for a plain enum with three members. An enum is a
+typed name for an integer, not a runtime membership test. The validation rule
+is the one stated in prose: the number should be one the enum declares, and
+the program that converts is the program that knows.
+</p>
+
+<h2>Switch: the exact prongs</h2>
+<p>
+Enums are made for <tt>switch</tt>. A prong may name a member with the short
+spelling (<tt>.Red</tt>) or the qualified one (<tt>Color.Red</tt>), the same
+two spellings as everywhere else, and several members may share a prong:
+</p>
+<pre>
+return switch (c) {
+    .Red, .Blue => "primary",
+    else => "unknown",
+};
+</pre>
+<p>
+Each prong matches the member's underlying number. Two rules come with the
+feature. First, the <tt>else</tt> prong is mandatory in Z98, in every switch,
+value or statement position; a switch that lists every member must still spell
+one out. Leaving it off is a compile-time reject, not a default:
+</p>
+<pre>
+error[3068]: switch must have an 'else' prong
+</pre>
+<p>
+This is one place where Z98 is stricter than the Zig it is a subset of: Zig
+rejects a redundant <tt>else</tt> on an otherwise exhaustive switch, while Z98
+requires one and tolerates it. The example's functions always carry a real
+fallback, so there is no doubt about what an unlisted value does.
+</p>
+<p>
+Second, a prong that names something the enum does not have is rejected
+instead of quietly falling to <tt>else</tt>. A typo such as
+<tt>Color.Purple</tt> reports
+<tt>error[3071]: no field or member function named 'Purple' in enum type</tt>,
+and a qualifier that names a different enum reports the type-mismatch
+<tt>error[3071]</tt> instead. The old C shape &mdash; a mistyped case label
+that simply never matches &mdash; cannot happen here.
+</p>
+
+<h2>Switch: ranges</h2>
+<p>
+A prong may match a run of members instead of one. The inclusive form
+<tt>start...end</tt> covers both ends; the exclusive form <tt>start..end</tt>
+covers the start and stops before the end:
+</p>
+<pre>
+Color.Red...Color.Green => "warm",   // Red and Green
+.Green.. .Blue => "acid",            // Green only
+</pre>
+<p>
+On an enum condition the endpoints resolve to the members' underlying numbers,
+so the inclusive range above is the run 0 through 1 and the exclusive range is
+the single value 1. The two bounds may be qualified members, shorthand
+literals, or a mix, and a range may share a switch with exact items, as the
+example's <tt>exclusiveBand</tt> does with <tt>.Red, .Blue</tt>. The
+<tt>else</tt> rule from the previous section applies unchanged.
+</p>
+<p>
+Ranges are a compile-time convenience: the compiler expands each one into the
+ordinary <tt>case</tt> labels of the emitted C. This is what makes gaps exact.
+The chapter's <tt>codeBand</tt> switches on <tt>Code.Ok...Code.Warning</tt>,
+which is the run 0 through 4; because <tt>Warning</tt> is 4, the prong matches
+both members, and <tt>Error</tt> at 9 is left to its own prong. The exclusive
+<tt>Code.Ok..Code.Error</tt> covers 0 through 8, so it too admits
+<tt>Warning</tt> but not <tt>Error</tt>. The emitted switch for the first of
+those is a handful of integer labels:
+</p>
+<pre>
+case 0: goto z_bb_1;
+case 1: goto z_bb_1;
+case 2: goto z_bb_1;
+case 3: goto z_bb_1;
+case 4: goto z_bb_1;
+case 9: goto z_bb_2;
+default: goto z_bb_3;
+</pre>
+<p>
+Nothing about the range survives to run time; the run and the gaps are already
+baked into the case list.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> The enum surface is deliberately small, and it is
+better to know its edges now. There are exactly two conversion builtins,
+<tt>@enumToInt</tt> and <tt>@intToEnum</tt>; the reflection builtins of modern
+Zig (<tt>@tagName</tt>, <tt>@memberCount</tt>, <tt>@memberName</tt>,
+<tt>@typeInfo</tt>) do not exist here &mdash; a probe on this compiler rejects
+<tt>@tagName(c)</tt> with <tt>error[3000]: unsupported builtin function</tt>.
+There is no open or catch-all form, no <tt>anyerror</tt> for enums: a member
+list with <tt>_</tt> in it is a parse error, so the set is fixed at the
+declaration. <tt>@intToEnum</tt> does not verify the member, as the previous
+section shows, so the enum does not enforce membership at run time. The only
+name the program can get back is what <tt>{}</tt> prints; if the program needs
+the name as data, it writes the table itself. And a plain enum is a 32-bit
+value whatever the member count is, so an enum used as a byte on the wire or in
+a table should say so: <tt>enum(u8)</tt>.</td>
+</tr>
+</table>
+
+<h2>The example</h2>
+<p>
+The whole chapter in one program. It declares the plain <tt>Color</tt> and the
+<tt>u8</tt>-backed <tt>Code</tt>, prints sizes, numbers, and names, round-trips
+a value through <tt>@intToEnum</tt> and <tt>@enumToInt</tt>, and switches over
+an inclusive range, an exclusive range, and an enum with a gap. It is
+<tt>docs/sf/manuals/src/vol2/color.z98</tt>:
+</p>
+<pre>
+const std = @import("std");
+
+// A plain enum. The compiler chooses the backing integer; on this
+// compiler it is a 32-bit unsigned type, which @sizeOf reports as 4.
+const Color = enum { Red, Green, Blue };
+
+// An enum with an explicit backing. enum(u8) stores every value in
+// one byte, the shape a wire field or a table of bytes wants.
+const Code = enum(u8) { Ok = 0, Warning = 4, Error = 9 };
+
+// Inclusive range: Red and Green match, Blue falls to else.
+fn inclusiveBand(c: Color) []const u8 {
+    return switch (c) {
+        Color.Red...Color.Green => "warm",
+        Color.Blue => "cool",
+        else => "unknown",
+    };
+}
+
+// Exclusive range: Green only. The exact prongs cover the other two,
+// and the else prong is still mandatory.
+fn exclusiveBand(c: Color) []const u8 {
+    return switch (c) {
+        .Green.. .Blue => "acid",
+        .Red, .Blue => "primary",
+        else => "unknown",
+    };
+}
+
+// Ranges on an enum(u8) use the underlying values, gaps included:
+// Ok is 0 and Warning is 4, so they share a band; Error is 9.
+fn codeBand(c: Code) []const u8 {
+    return switch (c) {
+        Code.Ok...Code.Warning => "quiet",
+        Code.Error => "loud",
+        else => "unknown",
+    };
+}
+
+pub fn main() void {
+    var c: Color = .Green;
+    std.io.print("Color size={} bits={}\n", .{ @sizeOf(Color), @bitSizeOf(Color) });
+    std.io.print("c={} int={d}\n", .{ c, @enumToInt(c) });
+
+    var back: Color = @intToEnum(Color, 1);
+    var same: bool = back == c;
+    std.io.print("back={} same={}\n", .{ back, same });
+
+    std.io.print("Code size={} bits={}\n", .{ @sizeOf(Code), @bitSizeOf(Code) });
+    std.io.print("Code ints {d} {d} {d}\n", .{ @enumToInt(Code.Ok), @enumToInt(Code.Warning), @enumToInt(Code.Error) });
+    var loud: Code = @intToEnum(Code, 9);
+    std.io.print("loud={} int={d}\n", .{ loud, @enumToInt(loud) });
+
+    std.io.print("inclusive Green={s} Blue={s}\n", .{ inclusiveBand(.Green), inclusiveBand(.Blue) });
+    std.io.print("exclusive Green={s} Red={s}\n", .{ exclusiveBand(.Green), exclusiveBand(.Red) });
+    std.io.print("code Warning={s} Error={s}\n", .{ codeBand(.Warning), codeBand(.Error) });
+}
+</pre>
+<p>
+Build the compiler once from the committed seed, then emit and compile the
+program, exactly as in chapter&nbsp;3:
+</p>
+<pre>
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/manual_seed
+</pre>
+<p>
+The result is <tt>/tmp/manual_seed/zig1_5_clean</tt> with the standard library
+beside it in <tt>/tmp/manual_seed/lib/</tt>. This example compiles with no
+diagnostics; the program then runs to the end:
+</p>
+<pre>
+$ mkdir -p /tmp/manual_out
+$ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out docs/sf/manuals/src/vol2/color.z98
+$ cd /tmp/manual_out &amp;&amp; sh build_target.sh linux color
+Building for linux...
+Built: color
+$ ./color
+Color size=4 bits=32
+c=.Green int=1
+back=.Green same=true
+Code size=1 bits=8
+Code ints 0 4 9
+loud=.Error int=9
+inclusive Green=warm Blue=cool
+exclusive Green=acid Red=primary
+code Warning=quiet Error=loud
+</pre>
+<p>
+Nine lines, in three groups. The first three are <tt>Color</tt>: 4 bytes and
+32 bits for the plain backing, the member's name and number, and the round trip
+through number 1. The next three are <tt>Code</tt>: 1 byte and 8 bits, the
+three explicit numbers 0, 4, and 9, and a decode of number 9 back to
+<tt>.Error</tt>. The last three are the switches: the inclusive range makes
+<tt>Green</tt> warm and sends <tt>Blue</tt> to <tt>cool</tt>; the exclusive
+range makes <tt>Green</tt> acid and sends <tt>Red</tt> to <tt>primary</tt>;
+and the gapped band puts <tt>Warning</tt> (4) with <tt>Ok</tt> (0) and gives
+<tt>Error</tt> (9) its own answer. The exit status is 0.
+</p>
+
+<h2>Running under Windows 98</h2>
+<p>
+The same program builds for Win9x. <tt>src/build_owc.bat</tt> compiles the
+emitted C89 with OpenWatcom's <tt>wcc386</tt> and links a console
+<tt>color.exe</tt>; run from a Windows 98 command prompt, it prints the same
+nine lines. The screenshot below will be captured on real hardware.
+</p>
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f0f0f0" class="placeholder">
+<tr>
+<td align="center">
+<i>Figure 23 &mdash; Win9x screenshot pending</i>
+</td>
+</tr>
+</table>
+<p><i>Figure 23. Running <tt>color.exe</tt> under Windows 98.</i></p>
+
+<h2>Common mistakes</h2>
+<p>
+The mistakes below are the ones a programmer arriving from C (or from a newer
+Zig) makes first with enums. Each one has a corrected shape, and the corrected
+shape is the compiler's rule, not a style preference.
+</p>
+<p>
+<b>Using the modern Zig spellings.</b> The builtins here are
+<tt>@enumToInt(e)</tt> and <tt>@intToEnum(T, n)</tt>. The newer names
+<tt>@intFromEnum</tt> and <tt>@enumFromInt</tt> are not implemented, and the
+compiler says so plainly:
+<tt>error[3000]: unsupported builtin function</tt>. When a builtin is not
+recognized, that is the diagnostic to look for.
+</p>
+<p>
+<b>Printing <tt>@enumToInt</tt> with <tt>{}</tt>.</b> The reflex is
+<tt>print("int={}", .{@enumToInt(c)})</tt> and the output is
+<tt>int=.Green</tt>, because the bare printer shows the member name for both an
+enum and its converted number. Use <tt>{d}</tt> for the number, or
+<tt>{x}</tt> for its hex form. If the page's example prints <tt>Code ints 0 4 9</tt>,
+that is because it asks for <tt>{d}</tt>.
+</p>
+<p>
+<b>Comparing members as integers.</b> <tt>a == b</tt> and <tt>a != b</tt> are
+supported directly on enum values; converting both sides with
+<tt>@enumToInt</tt> first is a C habit that adds a step and nothing else. The
+conversion builtins are for when the number is the point &mdash; a wire field,
+a table index, a printout &mdash; not for equality.
+</p>
+<p>
+<b>Forgetting the mandatory <tt>else</tt>.</b> Every switch in Z98 needs an
+<tt>else</tt> prong, even one whose items cover every member of the enum. The
+reject is <tt>error[3068]: switch must have an 'else' prong</tt>. If the case
+really is impossible, spell it honestly (<tt>else => {}</tt> for a statement
+switch, or a real fallback value); <tt>else => unreachable</tt> traps under
+both build modes, so reserve it for a branch the program proves it cannot
+reach.
+</p>
+<p>
+<b>Assuming the backing integer.</b> A plain enum is 4 bytes and 32 bits here
+regardless of how many members it has; three colors cost the same as a hundred.
+That is fine for a variable and wasteful for a million of them, a file record,
+or a wire field. When the width is part of the design, write
+<tt>enum(u8)</tt> (or <tt>u16</tt>, <tt>u32</tt>) and let the declaration carry
+the size.
+</p>
+<p>
+<b>Mixing enums and integers like C.</b> In C the two directions blur freely.
+Here <tt>var c: Color = 1;</tt> is diagnosed with a
+<tt>warning[3000]</tt> at the declaration, and <tt>var n: i32 = c;</tt> is an
+<tt>error[3000]</tt> outright. The explicit forms are
+<tt>@intToEnum(Color, 1)</tt> and <tt>@enumToInt(c)</tt>, plus
+<tt>@intCast</tt> when the result needs a different width or signedness. Both
+directions then say what they mean.
+</p>
+<p>
+<b>Typos that would have been silent.</b> A prong naming a member the enum
+does not have does not fall to <tt>else</tt>: <tt>Color.Purple</tt> rejects
+with <tt>error[3071]</tt> and a note at the declaration, and a qualifier that
+names a different enum rejects with the type-mismatch <tt>error[3071]</tt>.
+That is a feature to lean on when renaming members: the switches that still
+spell the old name stop compiling.
+</p>
+
+<h2>Where to go next</h2>
+<p>
+The next shipped chapter is
+<a href="vol2-12-error-unions.html">chapter 12, Error Unions &mdash; the First
+Big Shift</a>. The rest of the aggregates are still to come in numeric order:
+<b>unions</b> (chapter 7, where the tagged union's tag is an enum), <b>tuples</b>
+(chapter 8), and <b>arrays and slices</b> (chapter 9), all <i>(planned)</i>.
+This chapter's predecessor,
+<a href="vol2-05-packed-structs.html">Aggregates II: Packed Structs</a>, is the
+bit-level counterpart: its <tt>uN</tt> fields are the widths
+<tt>enum(uN)</tt> borrows for the backing integer.
+</p>
+<p>
+For lookup, <a href="vol4-15-builtins.html">Volume IV &mdash; Builtins</a> is
+the shipped reference for <tt>@intToEnum</tt> and <tt>@enumToInt</tt>, with the
+argument rules and the rejection codes. Volume IV's <b>Enums</b> reference page
+and Volume V's <b>port from C</b> HOWTO are <i>(planned)</i>; the latter is
+where a C <tt>enum</tt> full of <tt>#define</tt>d aliases gets translated
+member by member.
+</p>
+<p>
+Until they ship, the runnable example in
+<tt>docs/sf/manuals/src/vol2/color.z98</tt> is the working reference, and
+<a href="toc.html">the Contents page</a> shows the volume's shape.
+</p>
+
+<p class="navbtns">
+<a href="vol2-05-packed-structs.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol2-12-error-unions.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol2-05-packed-structs.html">Aggregates II: Packed Structs</a> | <a href="toc.html">Contents</a> | Next: <a href="vol2-12-error-unions.html">Error Unions &mdash; the First Big Shift</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>

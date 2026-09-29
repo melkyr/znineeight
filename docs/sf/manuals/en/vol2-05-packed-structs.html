@@ -11,7 +11,7 @@
 <link rel="home" href="index.html">
 <link rel="up" href="toc.html">
 <link rel="prev" href="vol2-04-structs.html">
-<link rel="next" href="vol2-12-error-unions.html">
+<link rel="next" href="vol2-06-enums.html">
 </head>
 <body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
 <table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
@@ -44,7 +44,7 @@ Espa&ntilde;ol (not yet available) |
 <a href="vol2-03-pointers.html">Pointers</a><br>
 <a href="vol2-04-structs.html">Aggregates I: structs</a><br>
 <b>Aggregates II: packed structs</b><br>
-Aggregates III: enums <i>(planned)</i><br>
+<a href="vol2-06-enums.html">Aggregates III: enums</a><br>
 Aggregates IV: unions <i>(planned)</i><br>
 Aggregates V: tuples <i>(planned)</i><br>
 Arrays and slices <i>(planned)</i><br>
@@ -575,11 +575,15 @@ program, make the format explicit, exactly as the example's decode line does.
 <h2>Where to go next</h2>
 <p>
 The next shipped chapter is
+<a href="vol2-06-enums.html">chapter 6, Aggregates III: Enums</a>: it gives
+names to a fixed set of integers, adds the conversion builtins
+<tt>@enumToInt</tt> and <tt>@intToEnum</tt>, and extends <tt>switch</tt> with
+ranges over member names. The rest of the aggregates are still to come in
+numeric order: <b>unions</b> (chapter 7, which is where packed unions live),
+<b>tuples</b> (chapter 8), and <b>arrays and slices</b> (chapter 9), all
+<i>(planned)</i>. The next big shift after this one is
 <a href="vol2-12-error-unions.html">chapter 12, Error Unions &mdash; the First
-Big Shift</a>. The rest of the aggregates are still to come in numeric order:
-<b>enums</b> (chapter 6), <b>unions</b> (chapter 7, which is where packed unions
-live), <b>tuples</b> (chapter 8), and <b>arrays and slices</b> (chapter 9), all
-<i>(planned)</i>. This chapter's predecessor,
+Big Shift</a>. This chapter's predecessor,
 <a href="vol2-04-structs.html">Aggregates I: Structs</a>, is the plain-struct
 half of the same story: padding, alignment, and the offsets that packed structs
 replace with bits.
@@ -603,9 +607,9 @@ Until they ship, the runnable example in
 &nbsp;&nbsp;
 <a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
 &nbsp;&nbsp;
-<a href="vol2-12-error-unions.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+<a href="vol2-06-enums.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
 </p>
-<p>Previous: <a href="vol2-04-structs.html">Aggregates I: Structs</a> | <a href="toc.html">Contents</a> | Next: <a href="vol2-12-error-unions.html">Error Unions &mdash; the First Big Shift</a></p>
+<p>Previous: <a href="vol2-04-structs.html">Aggregates I: Structs</a> | <a href="toc.html">Contents</a> | Next: <a href="vol2-06-enums.html">Aggregates III: Enums</a></p>
 </td>
 </tr>
 </table>
