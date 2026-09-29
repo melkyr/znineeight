@@ -1,0 +1,594 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Tuples</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual tuple tuples positional struct literal grouped return print argument list field access 3060 3062 3063 3065 3069 3070 3000 3072">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol2-07-unions.html">
+<link rel="next" href="vol2-12-error-unions.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume II &mdash; Learning Z98</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol2-00-title.html">How to read this</a><br>
+<a href="vol2-01-honest-comparison.html">The honest comparison</a><br>
+<a href="vol2-02-types.html">The type system</a><br>
+<a href="vol2-03-pointers.html">Pointers</a><br>
+<a href="vol2-04-structs.html">Aggregates I: structs</a><br>
+<a href="vol2-05-packed-structs.html">Aggregates II: packed structs</a><br>
+<a href="vol2-06-enums.html">Aggregates III: enums</a><br>
+<a href="vol2-07-unions.html">Aggregates IV: unions</a><br>
+<b>Aggregates V: tuples</b><br>
+Arrays and slices <i>(planned)</i><br>
+Control flow, in full <i>(planned)</i><br>
+defer and errdefer <i>(planned)</i><br>
+<a href="vol2-12-error-unions.html">Error unions &mdash; the first big shift</a><br>
+Optionals <i>(planned)</i><br>
+<a href="vol2-14-arena.html">The arena &mdash; the second big shift</a><br>
+<a href="vol2-15-builtins.html">Builtins, in full</a><br>
+No methods, no generics, no comptime <i>(planned)</i><br>
+The standard library tour <i>(planned)</i><br>
+print and the format string <i>(planned)</i><br>
+Idioms and best practices <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Aggregates V: Tuples</h1>
+<p>
+The tuple is the aggregate that has no names. A struct gives every field a
+name; a tuple gives every element a position. It is written down like a struct
+whose members are only types, built with a positional literal, and read back
+through an ordinal: <tt>p.0</tt>, the first element, <tt>p.1</tt>, the second.
+That is the whole feature.
+</p>
+<p>
+This is the last of the aggregate chapters. The previous four built records
+out of structs and packed structs, gave small sets of numbers names with enums,
+and overlapped storage with unions. The tuple adds no new storage rules; it
+takes the struct layout and removes the field names. What is left is exactly
+what a call boundary needs: an ordered bundle of values that everyone can
+address by position because there is nothing to get wrong about the spelling.
+</p>
+<p>
+The chapter's program is <tt>docs/sf/manuals/src/vol2/pair.z98</tt>. It uses a
+tuple for the two jobs the blueprint names for it &mdash; the argument list of
+<tt>print</tt>, and a function's grouped return &mdash; and shows the field
+access that unpacks the return:
+</p>
+<pre>
+17/5 = 3 remainder 2
+pair .{ 7, 3 }
+spellings 7 7 3 3
+copy 3 sum 10
+</pre>
+<p>
+Everything else about tuples in this chapter is measured on the compiler
+shipped with this manual, and every diagnostic quoted below is the one the
+compiler actually prints.
+</p>
+
+<h2>A struct with positional fields</h2>
+<p>
+A tuple type is a <tt>struct</tt> declaration whose members are plain types.
+The type is named the way every aggregate in this dialect is named, through a
+<tt>const</tt>:
+</p>
+<pre>
+const Pair = struct { i32, i32 };
+</pre>
+<p>
+That declaration names the type <tt>{i32, i32}</tt>: two elements, both
+<tt>i32</tt>, the first at position 0 and the second at position 1. A value of
+the type is built with an anonymous positional literal, <tt>.{ a, b }</tt>,
+where the elements appear in the order the type declares them:
+</p>
+<pre>
+const p: Pair = .{ 7, 3 };
+</pre>
+<p>
+The literal's elements are typed by what they are, and the literal is coerced
+to the surrounding tuple shape: write <tt>const q = .{ 7, 3 };</tt> and the
+compiler infers the same pair shape from the two values. The two spellings
+interchange freely; assignment and argument passing copy the elements
+field-wise, and a shape-identical tuple is assignable to a named type and back.
+The chapter's program leans on that: it copies a named <tt>Pair</tt> into
+another, and the chapter's probe copied an inferred <tt>.{ 7, 3 }</tt> into a
+<tt>Pair</tt> variable and printed <tt>7 3</tt>. A mismatched arity or element
+type is a clean reject, as elsewhere:
+</p>
+<pre>
+error[3000]: type mismatch in assignment -- internal type representations differ; generated code may be incorrect
+note: source: tuple
+note: target: tuple
+</pre>
+<p>
+Reading an element is the interesting part, because there are three spellings
+and they all lower to the same positional field: <tt>p.0</tt> and <tt>p.1</tt>
+(the spec's original spelling), <tt>p._0</tt> and <tt>p._1</tt> (the emitted C
+field spelling), and <tt>p[0]</tt> and <tt>p[1]</tt>. The chapter's program
+prints one line through all three spellings, using both positions:
+</p>
+<pre>
+std.io.print("spellings {} {} {} {}\n", .{ p.0, p._0, p[1], p.1 });
+// spellings 7 7 3 3
+</pre>
+<p>
+For C programmers the representation is exactly what the <tt>._0</tt> spelling
+suggests: the compiler lowers a tuple to a C struct whose fields are named
+<tt>_0</tt>, <tt>_1</tt>, and so on, in declaration order. The ordinal forms
+(<tt>.0</tt>, <tt>._0</tt>) and the comptime index form (<tt>t[0]</tt>) are
+front-end spellings for that same field; you never need to pick one because of
+where the value is stored.
+</p>
+<p>
+The index in bracket form must be comptime-known. A runtime index is rejected
+with the rule's own wording:
+</p>
+<pre>
+error[3069]: tuple field index must be comptime-known
+</pre>
+<p>
+An ordinal past the end of the tuple is rejected by name and count, and a
+negative one by the type the index has to have:
+</p>
+<pre>
+error[3070]: index 2 outside tuple of length 2
+error[3062]: type 'usize' cannot represent integer value '-1'
+</pre>
+<p>
+And a numeric member on something that is not a tuple is the ordinary
+unknown-member reject: a slice <tt>sl.73</tt> reports
+<tt>error[3060]: no field or member function named '73' in slice type</tt>,
+and an <tt>i32</tt> reports the same error with <tt>in type</tt>. A numeric
+member is never treated as a name lookup; if the base is not a tuple, there is
+nothing for the ordinal to mean.
+</p>
+<p>
+The layout follows the struct rules from
+<a href="vol2-04-structs.html">chapter&nbsp;4</a> with the frozen 32-bit
+alignment model of <a href="vol2-02-types.html">chapter&nbsp;2</a>: each
+element sits at its natural offset, the tuple's alignment is its widest
+element's, and the total is padded to that alignment. Probe types measure:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Type</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Elements</b></th>
+<th align="left" bgcolor="#e8e0e0"><b><tt>@sizeOf</tt></b></th>
+<th align="left" bgcolor="#e8e0e0"><b><tt>@alignOf</tt></b></th>
+<th align="left" bgcolor="#e8e0e0"><b><tt>@bitSizeOf</tt></b></th>
+</tr>
+<tr>
+<td><tt>Pair</tt></td>
+<td><tt>{i32, i32}</tt></td>
+<td>8</td>
+<td>4</td>
+<td>64</td>
+</tr>
+<tr>
+<td><tt>Wide</tt></td>
+<td><tt>{u8, i64, u8}</tt></td>
+<td>24</td>
+<td>8</td>
+<td>192</td>
+</tr>
+</table>
+<p>
+<tt>Wide</tt> is the interesting row: it is declared the same way,
+<tt>struct { u8, i64, u8 }</tt>, and the <tt>i64</tt> in the middle is size 8
+and alignment 8, so the first byte pads to offset 8 and the tuple ends at 24
+bytes. A tuple is a record with the same layout arithmetic as a named struct;
+the only difference is that its fields cannot be spelled with names.
+</p>
+<p>
+One introspection builtin does <em>not</em> take a tuple.
+<tt>@offsetOf</tt> and <tt>@bitOffsetOf</tt> expect a struct type, and a tuple
+type is rejected outright:
+</p>
+<pre>
+error[3072]: expected struct type, found 'Pair'
+</pre>
+<p>
+There is nothing surprising about the refusal: a tuple's members are
+positional, and the builtin asks for a field by name. Use
+<a href="vol2-04-structs.html">chapter&nbsp;4</a>'s named structs when an
+offset is part of the question. <tt>@sizeOf</tt>, <tt>@alignOf</tt>, and
+<tt>@bitSizeOf</tt> accept tuple types as the table above shows.
+</p>
+<p>
+Global tuple variables work like any other global; a module-level literal may
+even reference a global declared later in the file, because the module's
+initializers are emitted in dependency order. A probe compiled
+<tt>var g = .{ b, 7 }; const b = 5;</tt> and printed <tt>g 5 7</tt>. A cycle
+in that dependency graph is the one shape with no valid order, and it is a
+clean reject:
+</p>
+<pre>
+error[3064]: cyclic global initializer dependency
+</pre>
+<p>
+Cross-module tuples are ordinary values too: an imported module can export a
+tuple type and a function returning it, and the importing module can declare
+variables of that type, call the function, and copy the result. A probe's
+two-module program printed <tt>xmod 3 2 4 9</tt> for exactly that shape.
+</p>
+
+<h2>Why tuples exist</h2>
+<p>
+The blueprint gives the tuple two reasons to exist: <tt>print</tt> and grouped
+return values. Both are call-boundary jobs, and both are about handing over
+several values as one.
+</p>
+<p>
+The first reason is visible in every printing call in this manual. The second
+argument of <tt>print</tt> is a tuple literal:
+</p>
+<pre>
+std.io.print("{} {}\n", .{ 1.5, 7 });
+</pre>
+<p>
+The compiler decomposes that literal and emits one runtime print per
+placeholder, so the argument list is exactly an ordered bundle whose positions
+are fixed by the format string. The container may also be a tuple
+<em>variable</em>, which reads each element for its placeholder:
+</p>
+<pre>
+const t = .{ 1, 2, 3 };
+std.io.print("t {} {} {}\n", t);
+// t 1 2 3
+</pre>
+<p>
+The rule for what may be a container is narrow, and its diagnostic says so:
+</p>
+<pre>
+error[3065]: print arguments must be a tuple literal
+</pre>
+<p>
+That is the error for a bare value, a non-tuple variable, an expression such
+as <tt>a == b</tt>, or an anonymous struct initializer. A call with a format
+plus more than one container is rejected by arity instead:
+</p>
+<pre>
+error[3061]: expected 2 argument(s), found 3
+</pre>
+<p>
+The second reason is the grouped return. A function with several results to
+hand back declares one tuple return type and returns one literal:
+</p>
+<pre>
+fn divmod(a: i32, b: i32) Pair {
+    return .{ a / b, a % b };
+}
+</pre>
+<p>
+The caller receives one value and unpacks it by position:
+<tt>q.0</tt> is the quotient and <tt>q.1</tt> is the remainder. That is the
+shape the chapter's program prints as <tt>17/5 = 3 remainder 2</tt>. A tuple
+can be a parameter the same way &mdash; the program's <tt>sum</tt> takes a
+<tt>Pair</tt> and returns <tt>p.0 + p.1</tt> &mdash; and a tuple literal can be
+passed directly where a tuple parameter is expected, as in
+<tt>sum(.{ 1, 2 })</tt>.
+</p>
+<p>
+Those two jobs are the whole intended surface. Between the call and the
+return, a tuple is a transient: it carries the values across the boundary and
+the positions take their meaning from the callee's parameter list or the
+caller's format string. Storing one is where the trouble starts.
+</p>
+
+<h2>Why not to use them anywhere else</h2>
+<p>
+The tuple's lack of names is a convenience at a call boundary and a liability
+everywhere else. Four reasons, in the order they bite.
+</p>
+<p>
+<b>Positional access does not document itself.</b> <tt>q.0</tt> is a value
+whose meaning lives in the function that produced it; six months later the
+reader has to find <tt>divmod</tt> to learn that position 0 is the quotient.
+A named struct costs one declaration and makes every access self-describing,
+and the layout arithmetic is identical.
+</p>
+<pre>
+const Quotient = struct { q: i32, r: i32 };
+</pre>
+<p>
+<b>Layout introspection refuses tuples.</b> <tt>@offsetOf</tt> rejects a
+tuple with <tt>error[3072]</tt>, because there is no field name to ask about.
+When offsets, sizes, or a wire layout matter,
+<a href="vol2-04-structs.html">chapter&nbsp;4</a>'s structs and
+<a href="vol2-05-packed-structs.html">chapter&nbsp;5</a>'s packed structs are
+the tools; a tuple is the wrong container for a record whose bytes are part of
+the contract.
+</p>
+<p>
+<b>Serialization has nothing to hold on to.</b> The emitted C field names
+<tt>_0</tt>, <tt>_1</tt> are implementation spellings, not a data format; the
+order is the declaration order and the padding follows the alignment model.
+Writing a tuple to a file or a network buffer as if its C layout were the wire
+format is the same mistake as assuming a struct's padding. Use a packed
+struct (<a href="vol2-05-packed-structs.html">chapter&nbsp;5</a>) or an array
+(chapter&nbsp;9, <i>planned</i>) when bytes are the contract.
+</p>
+<p>
+<b>Tuples are structural, and walking them is not a thing.</b> Every
+<tt>struct { i32, i32 }</tt> is the same type for assignment purposes; two
+tuples with the same shape are interchangeable whether or not the program
+thinks of them as different concepts. And the index must be comptime-known
+(<tt>error[3069]</tt> on a runtime index), so a tuple cannot be iterated with a
+loop variable the way an array can. A tuple is a bundle, not a collection.
+</p>
+<p>
+The working rule: use a tuple at the boundary where the callee's parameter
+list or the format string supplies the names, and use a named struct or an
+array the moment the value gets stored or serialized.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> The tuple surface is small, and its edges are worth
+knowing before they surprise you. Printing a tuple with <tt>{}</tt> works and
+shows the elements in C-like braces (<tt>pair .{ 7, 3 }</tt>), but the printer
+is depth-limited: a nested tuple deeper than three levels prints its deepest
+level as <tt>.{ ... }</tt>, as in the probe line
+<tt>nested .{ .{ .{ .{ ... }, 3 }, 4 }, 5 }</tt>. An element whose type has no
+printer makes the whole tuple reject with
+<tt>error[3063]: print argument type is not supported (no std.fmt
+printer)</tt> &mdash; a type used as an element such as <tt>.{ i32, 5 }</tt>
+and a <tt>void</tt> element both reject that way. Chained access after an
+ordinal does not parse: <tt>e.0.w</tt> is
+<tt>error[2000]: expected field name or index after '.'</tt>, while
+<tt>(e.0).w</tt> and <tt>e[0].w</tt> read the struct field normally.
+<tt>@offsetOf</tt> rejects a tuple type (<tt>error[3072]</tt>), and a spelled
+tuple type with an array element is refused at the declaration with
+<tt>error[3000]: tuple types with array elements are not supported</tt>. A
+placeholder beyond the container's arity is silently dropped rather than
+diagnosed. An untyped integer literal element takes a carrier chosen from its
+value, so <tt>const big = .{ 3000000000, -3000000000 };</tt> prints
+<tt>3000000000 -3000000000</tt> exactly. And the copy is field-wise: a
+shape-identical tuple assigns to a named tuple type and back, but a
+mismatched arity or element type is <tt>error[3000]</tt>.</td>
+</tr>
+</table>
+
+<h2>The example</h2>
+<p>
+The whole chapter in one program. It declares <tt>Pair</tt>, returns one from
+<tt>divmod</tt>, passes one to <tt>sum</tt>, prints a whole tuple variable
+with <tt>{}</tt>, and reads the elements through all three access
+spellings. It is <tt>docs/sf/manuals/src/vol2/pair.z98</tt>:
+</p>
+<pre>
+const std = @import("std");
+
+// A tuple type: a struct whose members are just types, in order.
+const Pair = struct { i32, i32 };
+
+// A grouped return: the function's two results travel as one value.
+fn divmod(a: i32, b: i32) Pair {
+    return .{ a / b, a % b };
+}
+
+// A tuple parameter: the caller hands the two fields over as one value.
+fn sum(p: Pair) i32 {
+    return p.0 + p.1;
+}
+
+pub fn main() void {
+    // One tuple from a grouped return, unpacked by position.
+    const q = divmod(17, 5);
+    std.io.print("17/5 = {} remainder {}\n", .{ q.0, q.1 });
+
+    // A tuple variable printed whole with {}.
+    const p: Pair = .{ 7, 3 };
+    std.io.print("pair {}\n", .{p});
+
+    // All three spellings address the same positional field.
+    std.io.print("spellings {} {} {} {}\n", .{ p.0, p._0, p[1], p.1 });
+
+    // The copy is field-wise, and a tuple crosses a call as one value.
+    var copy: Pair = p;
+    std.io.print("copy {} sum {}\n", .{ copy.1, sum(copy) });
+}
+</pre>
+<p>
+Build the compiler once from the committed seed, then emit and compile the
+program, exactly as in chapter&nbsp;3:
+</p>
+<pre>
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/manual_seed
+</pre>
+<p>
+The result is <tt>/tmp/manual_seed/zig1_5_clean</tt> with the standard library
+beside it in <tt>/tmp/manual_seed/lib/</tt>. This example compiles with no
+diagnostics; the program then runs to the end:
+</p>
+<pre>
+$ mkdir -p /tmp/manual_out
+$ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out docs/sf/manuals/src/vol2/pair.z98
+$ cd /tmp/manual_out &amp;&amp; sh build_target.sh linux pair
+Building for linux...
+Built: pair
+$ ./pair
+17/5 = 3 remainder 2
+pair .{ 7, 3 }
+spellings 7 7 3 3
+copy 3 sum 10
+</pre>
+<p>
+Four lines. The first unpacks the grouped return: <tt>q.0</tt> is 3 and
+<tt>q.1</tt> is 2, the quotient and remainder of 17/5. The second prints a
+whole tuple variable through the tuple printer, braces and all. The third
+reads the two positions through all three spellings &mdash; <tt>.0</tt>,
+<tt>._0</tt>, <tt>[1]</tt>, and <tt>.1</tt> &mdash; showing that they are
+aliases for the positional field. The fourth copies the tuple field-wise into
+another variable and hands it to a function that takes a tuple parameter,
+returning the sum 10. The exit status is 0.
+</p>
+
+<h2>Running under Windows 98</h2>
+<p>
+The same program builds for Win9x. <tt>src/build_owc.bat</tt> compiles the
+emitted C89 with OpenWatcom's <tt>wcc386</tt> and links a console
+<tt>pair.exe</tt>; run from a Windows 98 command prompt, it prints the same
+four lines. The screenshot below will be captured on real hardware.
+</p>
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f0f0f0" class="placeholder">
+<tr>
+<td align="center">
+<i>Figure 25 &mdash; Win9x screenshot pending</i>
+</td>
+</tr>
+</table>
+<p><i>Figure 25. Running <tt>pair.exe</tt> under Windows 98.</i></p>
+
+<h2>Common mistakes</h2>
+<p>
+The mistakes below are the ones a programmer arriving from C (or from a newer
+Zig) makes first with tuples. Each one has a corrected shape, and the
+corrected shape is the compiler's rule, not a style preference.
+</p>
+<p>
+<b>Expecting named fields.</b> A tuple has no names. <tt>p.x</tt> is the
+ordinary unknown-member reject, <tt>error[3060]: no field or member function
+named 'x' in type</tt>, and the same happens to a numeric member on a
+non-tuple such as <tt>sl.73</tt>. In the other direction, an ordinal past the
+end reports <tt>error[3070]: index 2 outside tuple of length 2</tt>, a
+runtime index reports <tt>error[3069]: tuple field index must be
+comptime-known</tt>, and a negative index reports <tt>error[3062]: type
+'usize' cannot represent integer value '-1'</tt>. If a field needs a name,
+declare a named struct; if the access needs a loop, use an array.
+</p>
+<p>
+<b>Serializing them like structs.</b> A tuple lowers to a C struct with
+fields <tt>_0</tt>, <tt>_1</tt>, but that is emission detail: the field
+spellings are not a data format, the padding follows the alignment model, and
+<tt>@offsetOf</tt> refuses the type with <tt>error[3072]: expected struct
+type</tt>. Use a named struct when the field order is a contract, and a
+packed struct or an array when the bytes themselves are.
+</p>
+<p>
+<b>Chaining access after an ordinal.</b> <tt>e.0.w</tt> &mdash; an ordinal
+followed by a struct field &mdash; does not parse;
+<tt>error[2000]: expected field name or index after '.'</tt> points at the
+second dot. Parenthesize the element or index it, and the struct access
+works: <tt>(e.0).w</tt> and <tt>e[0].w</tt> are both accepted.
+</p>
+<p>
+<b>Passing something that is not a container to <tt>print</tt>.</b> The
+second argument must be a tuple literal (<tt>.{ ... }</tt>) or a tuple
+variable. A bare value, a non-tuple variable, an expression such as
+<tt>a == b</tt>, or an anonymous struct initializer rejects with
+<tt>error[3065]: print arguments must be a tuple literal</tt>; a format plus
+two containers rejects with <tt>error[3061]: expected 2 argument(s), found
+3</tt>. Wrap the arguments in <tt>.{ ... }</tt>, one container per call.
+</p>
+<p>
+<b>Assuming every tuple is printable.</b> An element type without a printer
+makes the whole tuple reject with <tt>error[3063]: print argument type is not
+supported (no std.fmt printer)</tt>; a type used as an element and a
+<tt>void</tt> element are the two measured cases. Print the elements you can
+print and leave the rest out of the format argument.
+</p>
+
+<h2>Coming from Zig</h2>
+<p>
+The tuple is one of the places where this dialect is closest to the Zig it is
+a subset of, and the differences that remain are small.
+</p>
+<p>
+<b>The literal and the index are the same.</b> <tt>.{ 1, 2 }</tt> is a tuple
+literal in both languages, and <tt>t[0]</tt> reads the first element in both.
+Measured on the Zig 0.15.2 oracle, <tt>const t = .{ 7, 8 };</tt> followed by
+<tt>t[0]</tt> and <tt>t[1]</tt> prints <tt>7 8</tt>.
+</p>
+<p>
+<b>The ordinal spellings are Z98 additions.</b> Zig rejects <tt>t.0</tt>
+with <tt>expected pointer dereference, optional unwrap, or field access,
+found 'a number literal'</tt>, and rejects <tt>t._0</tt> with <tt>no field
+named '_0' in tuple ...</tt>. Z98 accepts <tt>.0</tt>, <tt>._0</tt>, and
+<tt>t[0]</tt> as the same access, so code ported from Zig that used
+<tt>t[0]</tt> keeps working unchanged, and Z98 code may use whichever
+spelling is clearest.
+</p>
+<p>
+<b>Element types are concrete here.</b> In Zig, the elements of an untyped
+literal are comptime integers (the oracle's own diagnostic calls the element
+<tt>comptime comptime_int = 7</tt>); Z98 has no comptime, so an element takes
+a concrete carrier chosen from its value and a tuple's shape is settled at the
+declaration the way a struct's is. The layout and the printed values are the
+same either way; the difference only shows if ported code expected a
+comptime-known element type.
+</p>
+
+<h2>Where to go next</h2>
+<p>
+This chapter's predecessor is <a href="vol2-07-unions.html">Aggregates IV:
+Unions</a>, the chapter of overlapping storage. One aggregate chapter remains
+in numeric order: <b>arrays and slices</b> (chapter 9), the collection with a
+runtime length, still <i>(planned)</i>. The next shipped chapter is
+<a href="vol2-12-error-unions.html">chapter 12, Error Unions &mdash; the First
+Big Shift</a>, whose error sets and error unions are the place a payload and a
+tag travel together by design.
+</p>
+<p>
+For lookup, <a href="vol4-15-builtins.html">Volume IV &mdash; Builtins</a> is
+the shipped reference for <tt>@sizeOf</tt>, <tt>@alignOf</tt>,
+<tt>@bitSizeOf</tt>, and the <tt>@offsetOf</tt> reject on tuples. Volume IV's
+<b>Tuples</b> reference page and Volume V's <b>port from C</b> HOWTO are
+<i>(planned)</i>; the latter is where a C function that returned through
+out-parameters gets translated into a grouped return.
+</p>
+<p>
+Until they ship, the runnable example in
+<tt>docs/sf/manuals/src/vol2/pair.z98</tt> is the working reference, and
+<a href="toc.html">the Contents page</a> shows the volume's shape.
+</p>
+
+<p class="navbtns">
+<a href="vol2-07-unions.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol2-12-error-unions.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol2-07-unions.html">Aggregates IV: Unions</a> | <a href="toc.html">Contents</a> | Next: <a href="vol2-12-error-unions.html">Error Unions &mdash; the First Big Shift</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
