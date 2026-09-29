@@ -234,6 +234,19 @@ hop3, explicit `FIXED_POINT_MD5` gate) is
 109 FAIL with the single mover `packed_union_struct_wholemember_xmod`
 GREEN -> OK; seed v88 NOT rotated (closeout-only).
 
+FX15-F fix round 1 (2026-09-29; review Important F1) keeps the per-leaf
+recursion cap at 32 nesting levels and makes a failure a clean site
+`error[3000]` reject instead of the pre-fix whole-aggregate bitfield fall-
+through: field-type nesting 33 deep is accepted (fixture
+`packed_nested_whole_depth_ok_xmod`, golden `1 1`), 34 deep cleanly rejects
+(`packed_nested_whole_depth_reject_xmod`, 2x `error[3000]`, classify GREEN).
+All 8 emitted-C pins stay **UNCHANGED 8/8**, runtime identity stays
+byte-identical in both modes, stdlib 266 PASS / 0 FAIL, corpus `-s0`
+**1078 = 915 OK / 54 GREEN / 109 FAIL / 0 ICE / 0 CRASH** (zero common-dir
+movers vs the FX15-F corpus; +2 depth fixtures), and the new fixed point
+(moving point hop1 `a1537257…` != hop2 == hop3, explicit `FIXED_POINT_MD5`
+gate) is **`9d63b8cedaff9dff3ab73c2e847c6f60`**; seed v88 NOT rotated.
+
 - Self-consistency gate: compare current zig1 `--dump-c89` against a pre-captured reference .c file. If the reference .c is outdated (intentional baseline change), re-capture via `cp /tmp/new.c /tmp/ref.c`. Never compare against parent-zig1 output directly — parent builds may fail silently.
 - Do **NOT** compare `zig1 --dump-c89` output against `zig0`'s C output. `zig0` emits a legacy bootstrap format that is byte-level incompatible with zig1.
 

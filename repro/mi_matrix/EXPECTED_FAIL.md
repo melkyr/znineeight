@@ -74,6 +74,49 @@ the natural-holder `(void)` emitter defect (adjacent, no owning task);
 `[2]Inner` array-literal (`zT_2` undeclared) and `?Inner` literal
 silent-wrong (n9/n11; separate, no owning task).
 
+### FX15-F fix round 1 — bounded per-leaf recursion + clean depth reject (v285, 2026-09-29)
+
+Review finding Important F1: `lowerPackedWholeCopy`'s `depth > 32` failure fell
+through to the pre-fix whole-aggregate `store_bitfield`/`load_bitfield`, so a
+whole-value nested packed move at field-type nesting >= 34 was silently accepted
+and emitted gcc-invalid C (`aggregate value used where an integer was
+expected` / `incompatible types ... from type 'unsigned int'`).
+
+**Fix (`sf/src/lower.zig` only).** The 32-level recursion cap is kept (stack
+bounded) and every call site now turns a copy failure into that site's clean
+level-0 `error[3000]` (the former whole-value `bit-slice` messages): literal
+struct / assignment struct / chained store use the nested-store message,
+literal union / assignment union use the packed-union-store message, and the
+chained read / `field_access` struct read / packed-union read use the matching
+load messages. The `undefined` scalar-store fallback is unchanged. Measured
+boundary on the final compiler: field-type nesting **33 deep accepted** (gcc
+clean, runs), **34 deep rc 2 / 0 `.c` / one `error[3000]` per site** (identical
+to the PRE reject census for the assignment/read shapes).
+
+**Fixtures (new).** `packed_nested_whole_depth_ok_xmod` (L0..L33 chain,
+`o.a = m` + `var r: L32 = o.a`, golden `1 1`, rc 0, classify OK);
+`packed_nested_whole_depth_reject_xmod` (L0..L34 chain, assignment + read sites,
+2x `error[3000]` deterministic 3x, expected.rc 2, classify GREEN).
+
+**Corpus movement.** `-s0` 1076 = 914 OK / 53 GREEN / 109 FAIL ->
+**1078 = 915 OK / 54 GREEN / 109 FAIL / 0 ICE / 0 CRASH**; join-diff vs the
+initial FX15-F corpus over the 1076 common dirs **zero movers**; join-diff vs
+the FX14-F base is still the single contract mover
+(`packed_union_struct_wholemember_xmod` GREEN -> OK) plus 4 FX15-F fixtures.
+4-MD5 emitted C both modes **UNCHANGED 8/8**; runtime identity PRE<->POST
+byte-identical both modes; stdlib 266/266, matrix 24/24, check_emit 7/7,
+CLOSEOUT OK, self-emission 48 `.c` + 48 `.h`, build_test 0/9 pre-existing,
+run_all 13/13. Fix-round fixed point `1e898a16…` ->
+**`9d63b8cedaff9dff3ab73c2e847c6f60`** (moving point hop1 `a1537257…` !=
+hop2 == hop3, explicit gate; seed v88 NOT rotated).
+
+**Adjacent residual (noted, out of scope).** A leaf store into a packed field
+of a local array element (`var arr: [2]Outer = undefined; arr[0].inner.x = 2`)
+writes an element *copy*, so reading the element back shows stale bits — this
+is PRE-identical for leaf-only access and unchanged here; the whole-value path
+now writes through the element address correctly (`arr[0].inner = v` gives
+`2 7`). No owning task.
+
 ## FX14-F — pin the 32-bit layout model in the emitted C (v283 -> v284, 2026-09-29)
 
 Volume II layout-model amendment (task-FX14-F; source = the plan's FX14 bullet +
