@@ -833,7 +833,10 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
         var s: []const u8 = "signed char"; return s;
     }
     if (ty.kind == TypeKind.f32_type) { var s: []const u8 = "float"; return s; }
-    if (ty.kind == TypeKind.f64_type) { var s: []const u8 = "double"; return s; }
+    if (ty.kind == TypeKind.f64_type) {
+        var mid = nameManglerMangle(mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
+        return interner_mod.stringInternerGet(mangler.interner, mid);
+    }
     if (ty.kind == TypeKind.usize_type) { var s: []const u8 = "unsigned int"; return s; }
     if (ty.kind == TypeKind.isize_type) { var s: []const u8 = "int"; return s; }
     if (ty.kind == TypeKind.c_char_type) { var s: []const u8 = "char"; return s; }
@@ -900,7 +903,6 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
             if (et.kind == TypeKind.u8_type) { var s: []const u8 = "unsigned char*"; return s; }
             if (et.kind == TypeKind.u32_type) { var s: []const u8 = "unsigned int*"; return s; }
             if (et.kind == TypeKind.i32_type) { var s: []const u8 = "int*"; return s; }
-            if (et.kind == TypeKind.f64_type) { var s: []const u8 = "double*"; return s; }
             if (et.kind == TypeKind.c_char_type) { var s: []const u8 = "char*"; return s; }
             if (et.kind == TypeKind.usize_type) { var s: []const u8 = "unsigned int*"; return s; }
         }
@@ -1075,16 +1077,6 @@ pub fn emitIncludes(writer: *BufferedWriter) void {
     bufferedWriterWrite(writer, l1);
 }
 
-pub fn emitZigCompatH(writer: *BufferedWriter) void {
-    var l00: []const u8 = "/* zig_compat.h - C89 compatibility layer */\n";
-    bufferedWriterWrite(writer, l00);
-    var l01: []const u8 = "#ifndef ZIG_COMPAT_H\n";
-    bufferedWriterWrite(writer, l01);
-    var l02: []const u8 = "#define ZIG_COMPAT_H\n";
-    bufferedWriterWrite(writer, l02);
-    var l03: []const u8 = "\n#ifdef _MSC_VER\n    typedef __int64 z64;\n    typedef unsigned __int64 zu64;\n#elif defined(__WATCOMC__)\n    typedef long long z64;\n    typedef unsigned long long zu64;\n#else\n    typedef long long z64;\n    typedef unsigned long long zu64;\n#endif\n\n#if !defined(__cplusplus) && !defined(__WATCOMC__)\n    typedef signed char i8;\n    typedef short i16;\n    typedef int i32;\n    typedef z64 i64;\n    typedef unsigned char u8;\n    typedef unsigned short u16;\n    typedef unsigned int u32;\n    typedef zu64 u64;\n    typedef float f32;\n    typedef double f64;\n    typedef unsigned int usize;\n#endif\n\ntypedef int bool;\n#define true 1\n#define false 0\n\n#ifndef NULL\n#define NULL ((void*)0)\n#endif\n\n#endif /* ZIG_COMPAT_H */\n";
-    bufferedWriterWrite(writer, l03);
-}
 
 // Open DIR/<name> for writing; abort the compile on failure. Returns the fd.
 // The path buffer is fixed [512]u8; if dir+name would overflow it, abort with a
@@ -1474,6 +1466,8 @@ fn ctypeGuardWrite(writer: *BufferedWriter, kind: TypeKind) void {
         var tag: []const u8 = "ZIG_I64_"; bufferedWriterWrite(writer, tag);
     } else if (kind == TypeKind.u64_type) {
         var tag: []const u8 = "ZIG_U64_"; bufferedWriterWrite(writer, tag);
+    } else if (kind == TypeKind.f64_type) {
+        var tag: []const u8 = "ZIG_F64_"; bufferedWriterWrite(writer, tag);
     } else {
         var tag: []const u8 = "ZIG_TYPE_"; bufferedWriterWrite(writer, tag);
     }
@@ -1560,11 +1554,11 @@ fn emitPointeeDep(emitter: *C89Emitter, ptid: u32, seen: *U32ToU32Map, gated: u8
         return;
     }
     // A typedef with no forward declaration: fn-pointer, enum, error set,
-    // i64/u64 carrier, and packed struct/packed union (the shared-header
+    // i64/u64/f64 carrier, and packed struct/packed union (the shared-header
     // forward pass deliberately skips packed aggregates). `struct`/`union`/
     // `tagged union` get a forward typedef in the shared header, and scalars
     // have no definition.
-    if (pk == TypeKind.fn_type or pk == TypeKind.enum_type or pk == TypeKind.error_set_type or pk == TypeKind.i64_type or pk == TypeKind.u64_type or pk == TypeKind.packed_union_type) {
+    if (pk == TypeKind.fn_type or pk == TypeKind.enum_type or pk == TypeKind.error_set_type or pk == TypeKind.i64_type or pk == TypeKind.u64_type or pk == TypeKind.f64_type or pk == TypeKind.packed_union_type) {
         emitTypeDefOnce(emitter, ptid, seen, gated);
         return;
     }
@@ -1648,15 +1642,15 @@ pub fn computeSharedSet(reg: *TypeRegistry, emitter: *C89Emitter, alloc: *Sand) 
         if (hash_mod.u32ToU32MapGet(&emitter.pointer_only_map, ti) == null) {
             is_clsv = @intCast(u8, 1);
         }
-        var is_i64u64: u8 = @intCast(u8, 0);
-        if (ty.kind == TypeKind.i64_type or ty.kind == TypeKind.u64_type) {
-            is_i64u64 = @intCast(u8, 1);
+        var is_carrier64: u8 = @intCast(u8, 0);
+        if (ty.kind == TypeKind.i64_type or ty.kind == TypeKind.u64_type or ty.kind == TypeKind.f64_type) {
+            is_carrier64 = @intCast(u8, 1);
         }
         var is_fn_named: u8 = @intCast(u8, 0);
         if (ty.kind == TypeKind.fn_type and ty.name_id != @intCast(u32, 0)) {
             is_fn_named = @intCast(u8, 1);
         }
-        if (is_synthetic != @intCast(u8, 0) or is_clsv != @intCast(u8, 0) or is_i64u64 != @intCast(u8, 0) or is_fn_named != @intCast(u8, 0)) {
+        if (is_synthetic != @intCast(u8, 0) or is_clsv != @intCast(u8, 0) or is_carrier64 != @intCast(u8, 0) or is_fn_named != @intCast(u8, 0)) {
             hash_mod.u32ToU32MapPut(&emitter.shared_set, ti, @intCast(u32, 1));
         }
     }
@@ -2222,6 +2216,7 @@ fn emitTypeDefinition(emitter: *C89Emitter, tid: u32) void {
     if (ty.kind == TypeKind.tuple_type) { emitTupleType(emitter, tid); return; }
     if (ty.kind == TypeKind.i64_type) { emitInt64Type(emitter, tid); return; }
     if (ty.kind == TypeKind.u64_type) { emitUint64Type(emitter, tid); return; }
+    if (ty.kind == TypeKind.f64_type) { emitF64Type(emitter, tid); return; }
     if (ty.kind == TypeKind.fn_type) {
         if ((ty.flags & @intCast(u8, 1)) != @intCast(u8, 0)) { emitFnPtrType(emitter, tid); }
         return;
@@ -2349,13 +2344,19 @@ fn emitEnumType(emitter: *C89Emitter, tid: u32) void {
     var nl: []const u8 = "\n"; bufferedWriterWrite(&emitter.writer, nl);
 }
 
+// FX14: the Z98 layout model is frozen at 32-bit — i64/u64/f64 are size 8
+// align 8. The per-program carrier typedefs pin that alignment with
+// `Z98_ALIGN8` (defined in zig_compat.h; `__attribute__((aligned(8)))` on
+// gcc/clang/mingw, empty where the compiler's default already is /Zp8 / -zp8),
+// so every declaration routed through `getCTypeName` inherits the model
+// layout on every supported host compiler.
 fn emitInt64Type(emitter: *C89Emitter, tid: u32) void {
     var ty = emitter.registry.types_items[@intCast(usize, tid)];
     var mangled_id = nameManglerMangle(emitter.mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
     var mangled_name = interner_mod.stringInternerGet(emitter.interner, mangled_id);
     var td: []const u8 = "typedef long long "; bufferedWriterWrite(&emitter.writer, td);
     bufferedWriterWrite(&emitter.writer, mangled_name);
-    var sc: []const u8 = ";\n"; bufferedWriterWrite(&emitter.writer, sc);
+    var sc: []const u8 = " Z98_ALIGN8;\n"; bufferedWriterWrite(&emitter.writer, sc);
 }
 
 fn emitUint64Type(emitter: *C89Emitter, tid: u32) void {
@@ -2364,7 +2365,16 @@ fn emitUint64Type(emitter: *C89Emitter, tid: u32) void {
     var mangled_name = interner_mod.stringInternerGet(emitter.interner, mangled_id);
     var td: []const u8 = "typedef unsigned long long "; bufferedWriterWrite(&emitter.writer, td);
     bufferedWriterWrite(&emitter.writer, mangled_name);
-    var sc: []const u8 = ";\n"; bufferedWriterWrite(&emitter.writer, sc);
+    var sc: []const u8 = " Z98_ALIGN8;\n"; bufferedWriterWrite(&emitter.writer, sc);
+}
+
+fn emitF64Type(emitter: *C89Emitter, tid: u32) void {
+    var ty = emitter.registry.types_items[@intCast(usize, tid)];
+    var mangled_id = nameManglerMangle(emitter.mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
+    var mangled_name = interner_mod.stringInternerGet(emitter.interner, mangled_id);
+    var td: []const u8 = "typedef double "; bufferedWriterWrite(&emitter.writer, td);
+    bufferedWriterWrite(&emitter.writer, mangled_name);
+    var sc: []const u8 = " Z98_ALIGN8;\n"; bufferedWriterWrite(&emitter.writer, sc);
 }
 
 fn emitSliceType(emitter: *C89Emitter, tid: u32) void {

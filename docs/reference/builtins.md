@@ -29,6 +29,8 @@ Returns the alignment requirement of type `T` in bytes as a `usize` constant.
   - `i32`, `u32`, `f32`, `*T`, `usize`, `isize`: 4 bytes
   - `i64`, `u64`, `f64`: 8 bytes
 
+**Model pinned in the emitted C (FX14, 2026-09-29).** `@sizeOf`/`@alignOf`/`@offsetOf`/`@bitSizeOf` report the frozen 32-bit Z98 layout model, and the emitted C now produces exactly that layout on every supported host compiler. The per-program carrier typedefs (`typedef long long <carrier> Z98_ALIGN8;`, `typedef unsigned long long <carrier> Z98_ALIGN8;`, `typedef double <carrier> Z98_ALIGN8;`) and the shared `zig_compat.h` `z64`/`zu64`/`f64` typedefs carry `Z98_ALIGN8` — `__attribute__((aligned(8)))` on gcc/clang/mingw, empty on MSVC/Watcom (whose 32-bit defaults already align 64-bit scalars to 8). On `gcc -m32`, where the host ABI would otherwise align `long long`/`double` to 4, a `struct { a: u8, b: i64, c: u8 }` now measures `24/8/8/16` in the built binary — exactly what the compiler reports. Packed aggregates are exempt (bit-packed byte arrays). Overriding packing (`/Zp4`, `-zp4`) breaks the pin and is not supported. See Language Spec §1.1.
+
 ### `@offsetOf(T, field_name)`
 Returns the byte offset of a field within a **struct** as a `usize` constant.
 - **Syntax:** `@offsetOf(StructType, "field")`

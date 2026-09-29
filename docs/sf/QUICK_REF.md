@@ -206,19 +206,24 @@ diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prio
 
 | Entry Path | Reference md5 (default `-fsafe`; authoritative) | Historical `-ffast` byte-anchor (not re-measured since the C89-AHEAD split) |
 |---|---|---|
-| `examples/z98/mud_server/main.zig` | `b5a1d98e8caeb0fa3a2d25173ba95a63` | `ac1579907ce84efa2f9014187070bf94` |
-| `examples/z98/game_of_life/main.zig` | `9a927bf9fd9b588c0ea0e862e908b9fa` | `e023d3cd0bfb23346ac800725c5192f1` |
-| `examples/z98/lisp_interpreter_curr/main.zig` | `823c88de345ba4555ea9395265821f9a` | `21747e2acf177947ad499149bb3fdc98` |
-| `examples/z98/json_parser/main.zig` | `2821af2df01fa8cc9bbe58d81ffaa31f` | `2f08bf260bf2b6813fa4d70ffbc88aa9` |
+| `examples/z98/mud_server/main.zig` | `f3be9bb9ebc0c1c9799da2181e2fa7e8` | `ac1579907ce84efa2f9014187070bf94` |
+| `examples/z98/game_of_life/main.zig` | `6df1e4d2e9afa0f4163a7053f67384be` | `e023d3cd0bfb23346ac800725c5192f1` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `e27b7c35678974deb130cfc77cb08686` | `21747e2acf177947ad499149bb3fdc98` |
+| `examples/z98/json_parser/main.zig` | `d51f17aebdabcd009e453adb2e286d4e` | `2f08bf260bf2b6813fa4d70ffbc88aa9` |
 
-Re-baselined by the FX5 `-fsafe` slice-bounds guards (2026-09-28, operator ruling:
-the guards are emitted in the gate programs' own and `std` modules'
-runtime-bound slices); the live `-ffast` pins are gol
-`c84a60c5fc740d4935410ed4c43ee152`, lisp `8273ea61d844c613a6ab999f3d10c933`,
-json `0e6d64971a87e8cbc983b4f989e6500f`, mud
-`bda71b43cdfeebcc61f015d42565b626` (unchanged by FX5). Runtime-output identity
-is unchanged (gol `fcbf7e7c…`, lisp `(+ 1 2)` `b3d9f897…`, json `8bda3d5a…`,
-mud `66c8f0ab…`/`93147d0f…`).
+Re-baselined by the FX5 `-fsafe` slice-bounds guards (2026-09-28), then by the
+FX14 layout-model pin (2026-09-29, operator ruling A): every gate dump embeds
+the per-program 64-bit carrier typedef lines, which gained ` Z98_ALIGN8`, plus
+the new f64 carrier, so **both modes move 8/8**. Current live `-ffast` pins are
+gol `98e934f3e15be355d47e26ded595dc8a`, lisp
+`2514f8b5ddceacba67203af37a7346c3`, json
+`e1cc386e9d09e322a068731cb2061621`, mud
+`66d547d4a076fc2ce44d6d3aa3092c1d`. FX14 runtime-output identity PRE↔POST was
+re-proven by execution in both modes and is byte-identical (gol `fcbf7e7c…`,
+lisp `(+ 1 2)` `b3d9f897…`, json `8bda3d5a…`, mud
+`66c8f0ab…`/`93147d0f…`). The FX14-F fixed point (moving point hop1 != hop2 ==
+hop3, explicit `FIXED_POINT_MD5` gate) is
+**`368c34e6cbfceda3091f53d2daac75eb`**; seed v88 NOT rotated (closeout-only).
 
 - Self-consistency gate: compare current zig1 `--dump-c89` against a pre-captured reference .c file. If the reference .c is outdated (intentional baseline change), re-capture via `cp /tmp/new.c /tmp/ref.c`. Never compare against parent-zig1 output directly — parent builds may fail silently.
 - Do **NOT** compare `zig1 --dump-c89` output against `zig0`'s C output. `zig0` emits a legacy bootstrap format that is byte-level incompatible with zig1.

@@ -1,4 +1,98 @@
-# mi_matrix corpus — expected-fail manifest (v283 2026-09-28)
+# mi_matrix corpus — expected-fail manifest (v284 2026-09-29)
+
+## FX14-F — pin the 32-bit layout model in the emitted C (v283 -> v284, 2026-09-29)
+
+Volume II layout-model amendment (task-FX14-F; source = the plan's FX14 bullet +
+the operator rulings 2026-09-29, from the Task 8 ch4 review). The compiler is
+single-target 32-bit and its layout model is the contract (`i64`/`u64`/`f64`
+size 8 align 8, `type_registry.zig`), but the emitted C spelled those fields as
+plain `long long`/`double`, which i386 System V (`gcc -m32` — the manual's own
+transcript recipe) aligns to 4: `struct { a: u8, b: i64, c: u8 }` measured
+`16/4/4/12` in the built binary while Z98 printed `24/8/8/16`.
+
+**Fix (`sf/src/c89_emit.zig`, `sf/src/emit_support.zig`,
+`sf/src/include/zig_compat.h`).** Per-program carrier typedefs now pin the
+alignment: `emitInt64Type`/`emitUint64Type` emit `typedef ... <cname>
+Z98_ALIGN8;`; a new `emitF64Type` emits the f64 carrier `typedef double <cname>
+Z98_ALIGN8;` (previously `getCTypeName` returned bare `"double"`), wired through
+`getCTypeName` + the f64 pointee path, `ctypeGuardWrite` (`ZIG_F64_`),
+`computeSharedSet`, `emitPointeeDep` and `emitTypeDefinition`. The shared compat
+typedefs (`z64`/`zu64`/`f64` in `zig_compat.h` + the mirror in
+`emit_support.zig`, byte-checked by `check_emit_support.sh`) carry the same
+macro. `Z98_ALIGN8` is `__attribute__((aligned(8)))` on gcc/clang/mingw and
+empty on MSVC (`/Zp8` default) / OpenWatcom (`-zp8` 32-bit default), whose
+natural alignment already is 8; every declaration funnels through
+`getCTypeName`, so structs, unions, tagged unions, optionals, error unions,
+tuples, arrays and standalone vars inherit the model. The stale unused
+`c89_emit.emitZigCompatH` duplicate (no call sites; drift hazard) was deleted.
+No diagnostic, sema, lowering or folded-layout change.
+
+**Fixtures.** Positive runtime `repro/mi_matrix/stdlib_layout_align8_xmod`
+(main + helper; 63-line/848-byte golden, rc 0, 3x byte-exact) prints the folded
+model values for `S{u8,i64,u8}=24/8/8/16`, `F{u8,f64,u8}=24/8/8/16`,
+`M{i64,f64,u64}`, `A{u8,[2]i64,u8}`, `U`, `US`, `T`, `TS`, `O{u8,?i64,u8}`,
+`?i64`, `?u8`, `[2]f64` and the cross-module `helper.HS/HF`, then proves the
+REAL emitted-C layout in the built binary via `@ptrToInt` field offsets and
+`[2]T` strides for every 64-bit-bearing shape (all 22 real rows were `-bad` on
+the PRE compiler, all `-ok` POST). Standalone `repro/layout_align8.z98` (same
+assertions, no helper; 27-line stdout). Controls unchanged: `?u8` stays 8/4
+both sides; the packed byte-array emission and the no-64-bit bool fixture are
+byte-identical PRE/POST. stdlib pin 265 -> 266 entries
+(`scripts/stdlib/expected_dirs.txt`).
+
+**Corpus movement.** `-s0` classify 1073 = 911 OK / 53 GREEN / 109 FAIL ->
+**1074 = 912 OK / 53 GREEN / 109 FAIL / 0 ICE / 0 CRASH**; join-diff vs the
+FX13 base over the 1073 common dirs **EMPTY**; the only dir-set addition is the
+new fixture.
+
+**4-MD5 re-baseline (authorized; executed runtime identity).** All 8 pins move
+(every gate dump embeds the carrier typedef lines plus the f64 carrier):
+
+| entry | PRE `-fsafe` | POST `-fsafe` | PRE `-ffast` | POST `-ffast` |
+|---|---|---|---|---|
+| gol | `9a927bf9fd9b588c0ea0e862e908b9fa` | `6df1e4d2e9afa0f4163a7053f67384be` | `c84a60c5fc740d4935410ed4c43ee152` | `98e934f3e15be355d47e26ded595dc8a` |
+| lisp | `823c88de345ba4555ea9395265821f9a` | `e27b7c35678974deb130cfc77cb08686` | `8273ea61d844c613a6ab999f3d10c933` | `2514f8b5ddceacba67203af37a7346c3` |
+| json | `2821af2df01fa8cc9bbe58d81ffaa31f` | `d51f17aebdabcd009e453adb2e286d4e` | `0e6d64971a87e8cbc983b4f989e6500f` | `e1cc386e9d09e322a068731cb2061621` |
+| mud | `b5a1d98e8caeb0fa3a2d25173ba95a63` | `f3be9bb9ebc0c1c9799da2181e2fa7e8` | `bda71b43cdfeebcc61f015d42565b626` | `66d547d4a076fc2ce44d6d3aa3092c1d` |
+
+Runtime identity: the four games were built and run with PRE and POST in both
+modes; stdout is byte-identical (`cmp`) and rc 0 — gol `fcbf7e7c…`, lisp
+`(+ 1 2)` `b3d9f897…`, json `8bda3d5a…`, mud canonical server `66c8f0ab…` /
+client `93147d0f…` (the documented reference md5s, unchanged).
+
+**Fixed point.** First FX task that changes emitted self-C: moving point
+hop1 `aa0d31d4e73b502bdff1d4c13a080637` != hop2 == hop3
+**`368c34e6cbfceda3091f53d2daac75eb`** (explicit `FIXED_POINT_MD5` gate re-run
+OK; seed v88 NOT rotated, archive `3db5ef392ecc349304ffdf14c618e530`
+byte-identical).
+
+**Gates (final compiler `368c34e6…`).** stdlib `run_fixtures.sh` **266 PASS /
+0 FAIL** (pin 265 -> 266); example matrix 24/24; `check_emit_support.sh` 7/7;
+`verify_upgraded.sh` CLOSEOUT OK; self-emission 48 `.c` + 48 `.h` / 0 PANIC /
+0 `error[`; `sf/scripts/build_test.sh` 0/9 pre-existing;
+`repro/vol2_defects/run_all.sh` 13/13. Per-host: `gcc -m32` C probe against the
+emitted headers (compile-time asserts + runtime) `24/8/8/16`, compat
+`z64`/`f64` `24/8`, raw `long long`/`double` still `16/4`; strict
+`-std=c89 -pedantic -Werror` clean; mingw compile-time asserts pass and the
+`-osw` fixture built with mingw runs under wine with stdout byte-identical to
+the golden; MSVC `.bat`/wcc386 `.bat` carry no `/Zp`/`-zp` override.
+
+**Boundary census (no regression).** No hand-written runtime C or mirrored OS
+struct has a 64-bit field; the emitted `WSAData`, `SockAddrIn`, `TimeVal`,
+`IpAddr`, `TrapContext` struct bodies are byte-identical PRE/POST; packed
+aggregates stay byte-array carriers (a packed `u64` field rejects
+`error[3000]`); the corpus join-diff is EMPTY, so no existing program's class
+or printed output moved.
+
+**Residuals (documented).** (1) A user packing override (`/Zp4`, `-zp4`) breaks
+the pin on MSVC/OpenWatcom — `__declspec(align)` is not typedef-able on a
+fundamental type there, so the defaults (`/Zp8`/`-zp8`) are the supported
+configuration; recorded in the spec/builtins/tech docs. (2) OpenWatcom is
+doc-based only (wcc386 is not installed here); mingw/wine and gcc -m32 are
+executed. (3) MSVC is not executable here (no cl); its `.bat`/default `/Zp8`
+path is emission-inspected.
+
+**Codes.** None; no diagnostic/classifier change.
 
 ## FX13-F — unknown signature type names (v282 -> v283, 2026-09-28)
 

@@ -1,0 +1,140 @@
+// layout_align8.z98 — standalone reproduction for the FX14 layout-model pin.
+//
+// Compile (seed-built zig1 with its sibling lib/):
+//   <zig1> -ffast -o /tmp/layout8 repro/layout_align8.z98
+//   cd /tmp/layout8 && sh build_target.sh linux prog && ./prog ; echo "rc=$?"
+//
+// DEFECT (before the fix): the Z98 32-bit model registers i64/u64/f64 with
+// size 8 align 8 (`sf/src/type_registry.zig`), but the emitted C used plain
+// `long long`/`double` (`sf/src/c89_emit.zig` carrier typedefs; f64 bare
+// `double`), which i386 System V aligns to 4. `@sizeOf`/`@alignOf`/`@offsetOf`
+// reported the model while the built binary used 4-aligned layout.
+//
+// FIX (FX14-F): per-program carrier typedefs carry `Z98_ALIGN8`
+// (`__attribute__((aligned(8)))` on gcc/clang/mingw, empty on MSVC/OpenWatcom
+// whose 32-bit defaults already align 8), plus a new f64 carrier; the shared
+// zig_compat.h z64/zu64/f64 typedefs get it too. Model values are unchanged;
+// the real C layout now equals them on gcc -m32.
+//
+// EXPECTED after the fix: deterministic stdout below, RUNRC=0.
+//
+//   sizeof-S=24
+//   S-offb=8
+//   S-offc=16
+//   sizeof-F=24
+//   F-offb=8
+//   F-offc=16
+//   sizeof-MS=32
+//   MS-offm=8
+//   sizeof-A=32
+//   A-offb=8
+//   A-offc=24
+//   sizeof-T=16
+//   sizeof-TS=24
+//   TS-offt=8
+//   sizeof-O=32
+//   O-offo=8
+//   O-offc=24
+//   sizeof-opti64=16
+//   sizeof-optu8=8
+//   S-real-ok
+//   F-real-ok
+//   MS-real-ok
+//   A-real-ok
+//   TS-real-ok
+//   O-real-ok
+//   f64-roundtrip-ok
+//   done
+const std = @import("std");
+
+const S = struct { a: u8, b: i64, c: u8 };
+const F = struct { a: u8, b: f64, c: u8 };
+const M = struct { a: i64, b: f64, c: u64 };
+const MS = struct { a: u8, m: M };
+const A = struct { a: u8, b: [2]i64, c: u8 };
+const T = union(enum) { x: i64, y: u8 };
+const TS = struct { a: u8, t: T };
+const O = struct { a: u8, o: ?i64, c: u8 };
+
+fn pl(n: i32) void {
+    std.io.printInt(n);
+    std.io.print("\n");
+}
+
+fn okmark(cond: bool) void {
+    if (cond) {
+        std.io.print("-ok\n");
+    } else {
+        std.io.print("-bad\n");
+    }
+}
+
+fn idf(x: f64) f64 {
+    return x;
+}
+
+pub fn main() void {
+    std.io.print("sizeof-S="); pl(@intCast(i32, @sizeOf(S)));
+    std.io.print("S-offb="); pl(@intCast(i32, @offsetOf(S, "b")));
+    std.io.print("S-offc="); pl(@intCast(i32, @offsetOf(S, "c")));
+    std.io.print("sizeof-F="); pl(@intCast(i32, @sizeOf(F)));
+    std.io.print("F-offb="); pl(@intCast(i32, @offsetOf(F, "b")));
+    std.io.print("F-offc="); pl(@intCast(i32, @offsetOf(F, "c")));
+    std.io.print("sizeof-MS="); pl(@intCast(i32, @sizeOf(MS)));
+    std.io.print("MS-offm="); pl(@intCast(i32, @offsetOf(MS, "m")));
+    std.io.print("sizeof-A="); pl(@intCast(i32, @sizeOf(A)));
+    std.io.print("A-offb="); pl(@intCast(i32, @offsetOf(A, "b")));
+    std.io.print("A-offc="); pl(@intCast(i32, @offsetOf(A, "c")));
+    std.io.print("sizeof-T="); pl(@intCast(i32, @sizeOf(T)));
+    std.io.print("sizeof-TS="); pl(@intCast(i32, @sizeOf(TS)));
+    std.io.print("TS-offt="); pl(@intCast(i32, @offsetOf(TS, "t")));
+    std.io.print("sizeof-O="); pl(@intCast(i32, @sizeOf(O)));
+    std.io.print("O-offo="); pl(@intCast(i32, @offsetOf(O, "o")));
+    std.io.print("O-offc="); pl(@intCast(i32, @offsetOf(O, "c")));
+    std.io.print("sizeof-opti64="); pl(@intCast(i32, @sizeOf(?i64)));
+    std.io.print("sizeof-optu8="); pl(@intCast(i32, @sizeOf(?u8)));
+
+    var s: S = S{ .a = 1, .b = 2, .c = 3 };
+    var sa: [2]S = undefined;
+    sa[0] = s;
+    sa[1] = s;
+    std.io.print("S-real");
+    okmark(@intCast(i32, @ptrToInt(&sa[1])) - @intCast(i32, @ptrToInt(&sa[0])) == @intCast(i32, @sizeOf(S)) and @intCast(i32, @ptrToInt(&s.b)) - @intCast(i32, @ptrToInt(&s)) == @intCast(i32, @offsetOf(S, "b")) and @intCast(i32, @ptrToInt(&s.c)) - @intCast(i32, @ptrToInt(&s)) == @intCast(i32, @offsetOf(S, "c")));
+
+    var f: F = F{ .a = 1, .b = 2.5, .c = 3 };
+    var fa: [2]F = undefined;
+    fa[0] = f;
+    fa[1] = f;
+    std.io.print("F-real");
+    okmark(@intCast(i32, @ptrToInt(&fa[1])) - @intCast(i32, @ptrToInt(&fa[0])) == @intCast(i32, @sizeOf(F)) and @intCast(i32, @ptrToInt(&f.b)) - @intCast(i32, @ptrToInt(&f)) == @intCast(i32, @offsetOf(F, "b")) and @intCast(i32, @ptrToInt(&f.c)) - @intCast(i32, @ptrToInt(&f)) == @intCast(i32, @offsetOf(F, "c")));
+
+    var ms: MS = undefined;
+    std.io.print("MS-real");
+    okmark(@intCast(i32, @ptrToInt(&ms.m)) - @intCast(i32, @ptrToInt(&ms)) == @intCast(i32, @offsetOf(MS, "m")));
+
+    var a: A = A{ .a = 1, .b = [2]i64{ 2, 3 }, .c = 4 };
+    var aa: [2]A = undefined;
+    aa[0] = a;
+    aa[1] = a;
+    std.io.print("A-real");
+    okmark(@intCast(i32, @ptrToInt(&aa[1])) - @intCast(i32, @ptrToInt(&aa[0])) == @intCast(i32, @sizeOf(A)) and @intCast(i32, @ptrToInt(&a.b)) - @intCast(i32, @ptrToInt(&a)) == @intCast(i32, @offsetOf(A, "b")) and @intCast(i32, @ptrToInt(&a.c)) - @intCast(i32, @ptrToInt(&a)) == @intCast(i32, @offsetOf(A, "c")));
+
+    var ts: TS = undefined;
+    std.io.print("TS-real");
+    okmark(@intCast(i32, @ptrToInt(&ts.t)) - @intCast(i32, @ptrToInt(&ts)) == @intCast(i32, @offsetOf(TS, "t")));
+
+    var o: O = undefined;
+    var oa: [2]O = undefined;
+    oa[0] = o;
+    oa[1] = o;
+    std.io.print("O-real");
+    okmark(@intCast(i32, @ptrToInt(&oa[1])) - @intCast(i32, @ptrToInt(&oa[0])) == @intCast(i32, @sizeOf(O)) and @intCast(i32, @ptrToInt(&o.o)) - @intCast(i32, @ptrToInt(&o)) == @intCast(i32, @offsetOf(O, "o")) and @intCast(i32, @ptrToInt(&o.c)) - @intCast(i32, @ptrToInt(&o)) == @intCast(i32, @offsetOf(O, "c")));
+
+    if (idf(2.5) == @as(f64, 2.5)) {
+        std.io.print("f64-roundtrip-ok\n");
+    } else {
+        std.io.print("f64-roundtrip-bad\n");
+    }
+
+    std.io.print("done\n");
+}
