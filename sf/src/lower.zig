@@ -2413,6 +2413,15 @@ fn lowerLValueAddr(self: *LirLowerer, lv_node_idx: u32, result_type: u32) u32 {
             if (lvt_ord) |lvto| { field_id = lvto; found_f = @intCast(u8, 1); }
         }
         if (found_f == @intCast(u8, 0)) {
+            if (pkind == type_mod.TypeKind.tagged_union_type) {
+                // FX16-F (S2): clean level-0 reject for a nested store through
+                // a tagged-union payload member (was an error[3043] address-of
+                // ICE). A typed dummy keeps the caller flowing to a single
+                // diagnostic; no `.c` is emitted after the reject.
+                var tu_ao_msg: []const u8 = "cannot take the address of a tagged-union payload member; assign the whole union instead (e.g. x = .{ .i = 5 })";
+                _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, 3000), @intCast(u32, 0), lv_node.span_start, lv_node.span_start + @intCast(u32, lv_node.span_len), tu_ao_msg);
+                return nextTemp(self, result_type);
+            }
             iceAddrOfLValueUnsupported(self, lv_node_idx);
         }
         var tid = nextTemp(self, result_type);
@@ -2912,7 +2921,11 @@ fn lowerFieldStore(self: *LirLowerer, fa_node_idx: u32, value_temp: u32, diag_no
             } else if (field_name_id == pay_id) {
                 emitInst(self, LirInst{ .store_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = type_mod.TU_FIELD_PAYLOAD, .value = value_temp } });
             } else {
-                iceFieldStoreUnsupported(self, diag_node_idx);
+                // FX16-F (S2): clean level-0 reject naming the supported
+                // whole-union reassignment (was an error[3043] field-store ICE).
+                var tu_fs_msg: []const u8 = "cannot store to a tagged-union payload member; assign the whole union instead (e.g. x = .{ .i = 5 })";
+                _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, 3000), @intCast(u32, 0), fa_node.span_start, fa_node.span_start + @intCast(u32, fa_node.span_len), tu_fs_msg);
+                return;
             }
         } else if (kind == type_mod.TypeKind.union_type or kind == type_mod.TypeKind.packed_union_type) {
             var fields: []FieldEntry = undefined;
@@ -2993,6 +3006,12 @@ fn lowerSwitchCaseItemValue(self: *LirLowerer, item_idx: u32, cond_ty_id: ?u32) 
     }
     if (node.kind == AstKind.field_access) {
         var fa_name_id: u32 = ast_mod.astStoreNodePayload(self.ctx.store, item_idx);
+        // FX16-F (A+): an A+ `.tag` switch records the member ordinal in
+        // `enum_value_table` while the condition's own resolved type stays the
+        // u32 tag; honor the recorded ordinal here (identical to the value the
+        // condition-type member walk yields for all pre-existing switches).
+        var fa_ev = hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, item_idx);
+        if (fa_ev) |fv| { return @intCast(u64, fv); }
         // D2: a qualified/shorthand enum member or a tagged-union field tag.
         if (lowerSwitchCaseItemMemberValue(self, fa_name_id, cond_ty_id)) |mv| return mv;
         // FX1: a module-qualified constant (`mod.LO`, `mod.LOMEM`).
@@ -4995,6 +5014,21 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             } else if (kind == type_mod.TypeKind.struct_type or kind == type_mod.TypeKind.union_type or kind == type_mod.TypeKind.packed_union_type or kind == type_mod.TypeKind.tagged_union_type) {
                 var gape_fkb: []const u8 = "GAPE:fkb\n"; pal.markerWrite(gape_fkb);
                 if (kind == type_mod.TypeKind.tagged_union_type) {
+                    // FX16-F (A2/P1): a pointer base auto-derefs in sema
+                    // (`p.tag`/`p.member`), but this arm used to load the field
+                    // from the pointer temp itself (`zT = p`); load the pointee
+                    // first (the type_box base) so the field access is on a value.
+                    if (@intCast(usize, base_temp) < self.hoisted_temps.len) {
+                        var tu_bp_tid = self.hoisted_temps.items[@intCast(usize, base_temp)].type_id;
+                        if (tu_bp_tid != type_mod.TYPE_UNDEFINED and tu_bp_tid != type_mod.TYPE_VOID and @intCast(usize, tu_bp_tid) < self.ctx.registry.types_len) {
+                            var tu_bp_ty = self.ctx.registry.types_items[@intCast(usize, tu_bp_tid)];
+                            if (tu_bp_ty.kind == type_mod.TypeKind.ptr_type or tu_bp_ty.kind == type_mod.TypeKind.many_ptr_type) {
+                                var tu_ld = nextTemp(self, type_box[0]);
+                                emitInst(self, LirInst{ .load = .{ .ptr = base_temp, .result = tu_ld } });
+                                base_temp = tu_ld;
+                            }
+                        }
+                    }
                     var tp2 = self.ctx.registry.tu_items[@intCast(usize, ty.payload_idx)];
                     var tstart: usize = @intCast(usize, tp2.fields_start);
                     var tcount: usize = @intCast(usize, tp2.fields_count);
@@ -5047,7 +5081,18 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                                 emitInst(self, LirInst{ .load_field = .{ .name_id = sf_nid, .base = base_temp, .field_id = type_mod.TU_FIELD_PAYLOAD, .result = payload_temp } });
                                 return payload_temp;
                             }
-                            return emitTaggedUnionInit(self, type_box[0], @intCast(u32, tfi));
+                            // FX16-F (A3/R1): an A+ member operand records its
+                            // ordinal in enum_value_table and retypes itself to
+                            // the u32 tag; emit a plain integer constant then
+                            // (this also makes cross-module qualified relational
+                            // compares gcc-valid). Existing whole-union member
+                            // expressions have no table entry and keep the
+                            // union-tag init.
+                            var r1_init_ty = type_box[0];
+                            if (hash_mod.u32ToU32MapGet(self.ctx.enum_value_table, node_idx) != null) {
+                                if (fa_box[0] != type_mod.TYPE_UNDEFINED and fa_box[0] != type_mod.TYPE_VOID) { r1_init_ty = fa_box[0]; }
+                            }
+                            return emitTaggedUnionInit(self, r1_init_ty, @intCast(u32, tfi));
                         }
                     }
                     var gape_fno: []const u8 = "GAPE:fno\n"; pal.markerWrite(gape_fno);

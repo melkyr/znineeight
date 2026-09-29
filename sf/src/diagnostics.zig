@@ -262,6 +262,13 @@ pub const ErrorCode = enum(u16) {
     // Anonymous/opaque operand sets (error_set 0) are a documented bounded
     // divergence: the non-error-union-enclosing reject is unconditional.
     ERR_3075_TRY_ENCLOSING_RETURN = 3075,
+    // FX16-F (Volume II ch7): a bare enum literal compared against a numeric
+    // operand with no expected enum context (the copied-tag case
+    // `const t = s.tag; t == .m`) previously typed the comparison `void` and
+    // lowered the literal to its name-id (silently false). Level-0 message
+    // "unable to infer type of enum literal in comparison with a numeric
+    // operand"; span on the enum literal; rejects with 0 `.c`.
+    ERR_3076_ENUM_LITERAL_NUMERIC_COMPARE = 3076,
 };
 
 pub const ERR_1000_UNTERMINATED_STRING: u16 = 0;

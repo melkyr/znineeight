@@ -8109,7 +8109,18 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                                      bufferedWriterWrite(&emitter.writer, fname);
                                      found2 = @intCast(u8, 1);
                                      if (typeIsPtrKind(emitter.registry, fe.type_id) != @intCast(u8, 0)) { sf_cast = getCTypeName(emitter.registry, emitter.mangler, fe.type_id); }
-                                 } else if (pty.kind == type_mod.TypeKind.tuple_type) {
+                                  } else if (pty.kind == type_mod.TypeKind.tagged_union_type) {
+                                      // FX16-F (adjacent fold): a pointer base
+                                      // auto-derefs for the synthetic `tag`
+                                      // field (`p.tag = 1`); was an error[3043]
+                                      // store_field ICE. Only `tag` is handled:
+                                      // payload-member stores reject in lower.
+                                      if (sf.field_id == type_mod.TU_FIELD_TAG) {
+                                          var ptu_arrow: []const u8 = "->tag";
+                                          bufferedWriterWrite(&emitter.writer, ptu_arrow);
+                                          found2 = @intCast(u8, 1);
+                                      }
+                                  } else if (pty.kind == type_mod.TypeKind.tuple_type) {
                                      // FB (D4): pointer-to-tuple store -> `->_N`.
                                      var ptup_s: []const u8 = "->_"; bufferedWriterWrite(&emitter.writer, ptup_s);
                                      var ptup_sb: [16]u8 = undefined;

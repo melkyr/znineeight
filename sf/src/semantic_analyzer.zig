@@ -66,6 +66,11 @@ pub const SemanticAnalyzer = struct {
     // position that merely has `current_switch_cond_tu` in scope) keeps the
     // pre-existing expected-type fall-through.
     switch_case_item: u8,
+    // FX16-F (A+): 1 while resolving the prongs of a `switch (x.tag)` whose
+    // condition is a direct `.tag` access on a tagged union. The case context
+    // is the base union (member prongs resolve to tag ordinals); a `|c|`
+    // capture binds the u32 tag instead of a payload.
+    switch_is_tag: u8,
     defer_depth: u32,
     // Task 10D: scope-aware defer-context state for the Zig-matched control-flow
     // check. `defer_depth` is the `any_defer_node` marker (return/try). These
@@ -244,6 +249,7 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .current_switch_cond_tu = @intCast(u32, 0),
         .switch_depth = @intCast(u32, 0),
         .switch_case_item = @intCast(u8, 0),
+        .switch_is_tag = @intCast(u8, 0),
         .defer_depth = @intCast(u32, 0),
         .defer_inner_loops = @intCast(u32, 0),
         .defer_label_stack = undefined,
@@ -2305,6 +2311,52 @@ fn semanticAnalyzerResolveBitwise(self: *SemanticAnalyzer, node_idx: u32) u32 {
     return lhs;
 }
 
+// FX16-F (A+): the base tagged-union type of a syntactic `.tag` access.
+// Paren-transparent (up to 8); the base's resolved type is consulted (with an
+// on-demand resolve fallback), never re-resolved from scratch; pointer and
+// many-pointer bases auto-deref exactly like field-access resolution. Returns
+// 0 when the node is not a `.tag` access on a tagged union.
+fn semanticAnalyzerTagAccessUnion(self: *SemanticAnalyzer, node_idx: u32) u32 {
+    var cur = node_idx;
+    var depth: u32 = @intCast(u32, 0);
+    while (depth < @intCast(u32, 8)) : (depth += 1) {
+        var cn = ast_mod.astStoreNodeAt(self.store, cur);
+        if (cn.kind == AstKind.paren_expr and cn.child_0 != @intCast(u32, 0)) { cur = cn.child_0; } else { break; }
+    }
+    var n = ast_mod.astStoreNodeAt(self.store, cur);
+    if (n.kind != AstKind.field_access) return @intCast(u32, 0);
+    var tag_s: []const u8 = "tag";
+    var tag_id = interner_mod.stringInternerIntern(self.interner, tag_s);
+    if (ast_mod.astStoreNodePayload(self.store, cur) != tag_id) return @intCast(u32, 0);
+    var br = rtt_mod.resolvedTypeTableGet(self.type_table, n.child_0);
+    if (br == null) { var fbr = semanticAnalyzerResolveExpr(self, n.child_0); if (fbr != @intCast(u32, 0) and fbr != type_mod.TYPE_VOID and fbr != type_mod.TYPE_UNDEFINED) { br = fbr; } }
+    if (br) |bt0| {
+        var bt = bt0;
+        if (bt == @intCast(u32, 0) or bt == type_mod.TYPE_VOID or bt == type_mod.TYPE_UNDEFINED) return @intCast(u32, 0);
+        var bty = self.registry.types_items[@intCast(usize, bt)];
+        if (bty.kind == type_mod.TypeKind.ptr_type or bty.kind == type_mod.TypeKind.many_ptr_type) {
+            bt = self.registry.ptr_items[@intCast(usize, bty.payload_idx)].base;
+            bty = self.registry.types_items[@intCast(usize, bt)];
+        }
+        if (bty.kind == type_mod.TypeKind.tagged_union_type) return bt;
+    }
+    return @intCast(u32, 0);
+}
+
+// FX16-F (A+): ordinal (field index) of `name_id` in tagged union `tu`, or
+// 0xFFFFFFFF when absent.
+fn semanticAnalyzerTagUnionMemberIndex(self: *SemanticAnalyzer, tu: u32, name_id: u32) u32 {
+    var ty = self.registry.types_items[@intCast(usize, tu)];
+    var tp = self.registry.tu_items[@intCast(usize, ty.payload_idx)];
+    var fstart: usize = @intCast(usize, tp.fields_start);
+    var fcount: usize = @intCast(usize, tp.fields_count);
+    var fi: usize = 0;
+    while (fi < fcount) : (fi += 1) {
+        if (self.registry.fe_items[fstart + fi].name_id == name_id) return @intCast(u32, fi);
+    }
+    return @intCast(u32, 0xFFFFFFFF);
+}
+
 fn semanticAnalyzerResolveComparison(self: *SemanticAnalyzer, node_idx: u32, op_kind: AstKind) u32 {
     var cpe: []const u8 = "CPE"; pal_mod.markerWrite(cpe);
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
@@ -2318,19 +2370,94 @@ fn semanticAnalyzerResolveComparison(self: *SemanticAnalyzer, node_idx: u32, op_
         lhs = semanticAnalyzerResolveExpr(self, node.child_0);
         var peerk: u32 = 0;
         if (lhs != 0 and lhs != type_mod.TYPE_VOID and lhs != type_mod.TYPE_UNDEFINED) { peerk = @intCast(u32, @enumToInt(self.registry.types_items[@intCast(usize, lhs)].kind)); }
-        if ((c1n.kind == AstKind.error_literal and peerk == type_mod.TypeKind.error_set_type) or (c1n.kind == AstKind.enum_literal and peerk == type_mod.TypeKind.tagged_union_type)) {
+        if ((c1n.kind == AstKind.error_literal and peerk == type_mod.TypeKind.error_set_type) or (c1n.kind == AstKind.enum_literal and (peerk == type_mod.TypeKind.tagged_union_type or peerk == type_mod.TypeKind.enum_type))) {
             pushExpectedType(self, lhs); rhs = semanticAnalyzerResolveExpr(self, node.child_1); popExpectedType(self);
         } else { rhs = semanticAnalyzerResolveExpr(self, node.child_1); }
     } else if (c0_lit != @intCast(u8, 0) and c1_lit == @intCast(u8, 0)) {
         rhs = semanticAnalyzerResolveExpr(self, node.child_1);
         var peerk: u32 = 0;
         if (rhs != 0 and rhs != type_mod.TYPE_VOID and rhs != type_mod.TYPE_UNDEFINED) { peerk = @intCast(u32, @enumToInt(self.registry.types_items[@intCast(usize, rhs)].kind)); }
-        if ((c0n.kind == AstKind.error_literal and peerk == type_mod.TypeKind.error_set_type) or (c0n.kind == AstKind.enum_literal and peerk == type_mod.TypeKind.tagged_union_type)) {
+        if ((c0n.kind == AstKind.error_literal and peerk == type_mod.TypeKind.error_set_type) or (c0n.kind == AstKind.enum_literal and (peerk == type_mod.TypeKind.tagged_union_type or peerk == type_mod.TypeKind.enum_type))) {
             pushExpectedType(self, rhs); lhs = semanticAnalyzerResolveExpr(self, node.child_0); popExpectedType(self);
         } else { lhs = semanticAnalyzerResolveExpr(self, node.child_0); }
     } else {
         lhs = semanticAnalyzerResolveExpr(self, node.child_0);
         rhs = semanticAnalyzerResolveExpr(self, node.child_1);
+    }
+    // FX16-F (A+): `.tag` contextual sugar. When exactly one operand is a
+    // direct `.tag` access on a tagged union and the other is a member
+    // reference (shorthand `.m`, or a qualifier denoting the SAME union:
+    // `Shape.m` / `lib.Shape.m` / an alias), resolve the member to its tag
+    // ordinal and type the comparison `bool` for all six ops. Unrecognized
+    // shapes fall through unchanged (numeric compares, `.tag == .tag`,
+    // `s.tag == 0`, `@enumToInt`).
+    var tag_tu: u32 = @intCast(u32, 0);
+    var member_node: u32 = @intCast(u32, 0);
+    var tu0 = semanticAnalyzerTagAccessUnion(self, node.child_0);
+    var tu1 = semanticAnalyzerTagAccessUnion(self, node.child_1);
+    if (tu0 != @intCast(u32, 0) and tu1 == @intCast(u32, 0)) { tag_tu = tu0; member_node = node.child_1; }
+    else if (tu1 != @intCast(u32, 0) and tu0 == @intCast(u32, 0)) { tag_tu = tu1; member_node = node.child_0; }
+    if (tag_tu != @intCast(u32, 0)) {
+        var mn = ast_mod.astStoreNodeAt(self.store, member_node);
+        var pd: u32 = @intCast(u32, 0);
+        while (pd < @intCast(u32, 8)) : (pd += 1) {
+            if (mn.kind == AstKind.paren_expr and mn.child_0 != @intCast(u32, 0)) { member_node = mn.child_0; mn = ast_mod.astStoreNodeAt(self.store, member_node); } else { break; }
+        }
+        var m_name: u32 = @intCast(u32, 0);
+        var m_ok: u8 = @intCast(u8, 0);
+        if (mn.kind == AstKind.enum_literal) {
+            m_name = ast_mod.astStoreIdentifier(self.store, member_node);
+            m_ok = @intCast(u8, 1);
+        } else if (mn.kind == AstKind.field_access) {
+            var q_tid: u32 = @intCast(u32, 0);
+            var qn = ast_mod.astStoreNodeAt(self.store, mn.child_0);
+            if (qn.kind == AstKind.ident_expr) {
+                var q_name = ast_mod.astStoreIdentifier(self.store, mn.child_0);
+                var q_sym = sym_mod.symbolRegistryQualifiedLookup(self.symbols, self.module_id, q_name);
+                if (q_sym) |qs| { if (qs.kind == sym_mod.SymbolKind.type_alias) { q_tid = qs.type_id; } }
+            } else {
+                var qr = rtt_mod.resolvedTypeTableGet(self.type_table, mn.child_0);
+                if (qr) |qt| { q_tid = qt; }
+            }
+            if (q_tid == tag_tu) { m_name = ast_mod.astStoreNodePayload(self.store, member_node); m_ok = @intCast(u8, 1); }
+        }
+        if (m_ok != @intCast(u8, 0)) {
+            var mi = semanticAnalyzerTagUnionMemberIndex(self, tag_tu, m_name);
+            if (mi != @intCast(u32, 0xFFFFFFFF)) {
+                var tt_ty = self.registry.types_items[@intCast(usize, tag_tu)];
+                var tt_tp = self.registry.tu_items[@intCast(usize, tt_ty.payload_idx)];
+                hash_mod.u32ToU32MapPut(self.enum_value_table, member_node, mi);
+                rtt_mod.resolvedTypeTableSet(self.type_table, member_node, tt_tp.tag_type);
+                var cpt: []const u8 = "CPT"; pal_mod.markerWrite(cpt);
+                return type_mod.TYPE_BOOL;
+            }
+        }
+    }
+    // FX16-F (A4): a bare enum literal compared against a numeric operand with
+    // no expected enum context (the copied-tag case `const t = s.tag; t == .m`)
+    // is a clean level-0 reject instead of today's silent `void`/false. Scope
+    // is exactly that shape: no `.tag` sugar applied, a direct `enum_literal`
+    // child that resolved `void`, and a numeric peer. The reject is recorded
+    // once per literal node.
+    if (tag_tu == @intCast(u32, 0)) {
+        var el_node: u32 = @intCast(u32, 0);
+        var num_t: u32 = @intCast(u32, 0);
+        if (c1n.kind == AstKind.enum_literal and c0n.kind != AstKind.enum_literal and c0n.kind != AstKind.error_literal) { el_node = node.child_1; num_t = lhs; }
+        else if (c0n.kind == AstKind.enum_literal and c1n.kind != AstKind.enum_literal and c1n.kind != AstKind.error_literal) { el_node = node.child_0; num_t = rhs; }
+        if (el_node != @intCast(u32, 0)) {
+            var el_top: u32 = @intCast(u32, 0);
+            var el_rt = rtt_mod.resolvedTypeTableGet(self.type_table, el_node);
+            if (el_rt) |ert| { el_top = ert; }
+            if (el_top == @intCast(u32, 0) or el_top == type_mod.TYPE_VOID or el_top == type_mod.TYPE_UNDEFINED) {
+                if (type_mod.typeRegistryIsNumeric(self.registry, num_t)) {
+                    if (diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, el_node)) {
+                        var en = ast_mod.astStoreNodeAt(self.store, el_node);
+                        var en_msg: []const u8 = "unable to infer type of enum literal in comparison with a numeric operand";
+                        _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3076_ENUM_LITERAL_NUMERIC_COMPARE)), self.source_file_id, en.span_start, en.span_start + @intCast(u32, en.span_len), en_msg);
+                    }
+                }
+            }
+        }
     }
     if (lhs == @intCast(u32, 0) or rhs == @intCast(u32, 0)) { var cp0: []const u8 = "CP0"; pal_mod.markerWrite(cp0); return type_mod.TYPE_VOID; }
     if (lhs == type_mod.TYPE_INT_LIT and type_mod.typeRegistryIsNumeric(self.registry, rhs)) { var cp1: []const u8 = "CPB"; pal_mod.markerWrite(cp1); return type_mod.TYPE_BOOL; }
@@ -4143,8 +4270,15 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
     if (ast_mod.astStoreNodePayload(self.store, node_idx) == @intCast(u32, 0)) { var sep_m: []const u8 = "P0: n"; pal_mod.markerWrite(sep_m); var sep_b: [10]u8 = undefined; var sep_l = itoa_mod.itoa(node_idx, sep_b[0..]); var sep_s: usize = @intCast(usize, 9) - @intCast(usize, sep_l); pal_mod.markerWrite(sep_b[sep_s..@intCast(usize, 9)]); var sep_nl: []const u8 = "\n"; pal_mod.markerWrite(sep_nl); semanticAnalyzerReportSwitchWithoutElse(self, node_idx); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); self.switch_depth -= @intCast(u32, 1); return type_mod.TYPE_VOID; }
     var cond_type = semanticAnalyzerResolveExpr(self, node.child_0);
     self.current_switch_cond_tu = @intCast(u32, 0);
+    self.switch_is_tag = @intCast(u8, 0);
     var cond_es: u32 = @intCast(u32, 0);
-    if (cond_type != @intCast(u32, 0) and cond_type != type_mod.TYPE_VOID) {
+    var cond_tag_tu = semanticAnalyzerTagAccessUnion(self, node.child_0);
+    if (cond_tag_tu != @intCast(u32, 0)) {
+        // FX16-F (A+): `switch (x.tag)` resolves member prongs against the
+        // base union; the condition VALUE stays the u32 tag.
+        self.current_switch_cond_tu = cond_tag_tu;
+        self.switch_is_tag = @intCast(u8, 1);
+    } else if (cond_type != @intCast(u32, 0) and cond_type != type_mod.TYPE_VOID) {
         var cond_ty = self.registry.types_items[@intCast(usize, cond_type)];
         if (cond_ty.kind == type_mod.TypeKind.tagged_union_type or
             cond_ty.kind == type_mod.TypeKind.enum_type) {
@@ -4162,7 +4296,7 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
         }
     }
     var prongs_n = ast_mod.astStoreNodeExtraChildCount(self.store, node_idx);
-    if (prongs_n == @intCast(usize, 0)) { var pr0_m: []const u8 = "PL0:n"; pal_mod.markerWrite(pr0_m); var pr0_b: [10]u8 = undefined; var pr0_l = itoa_mod.itoa(node_idx, pr0_b[0..]); var pr0_s: usize = @intCast(usize, 9) - @intCast(usize, pr0_l); pal_mod.markerWrite(pr0_b[pr0_s..@intCast(usize, 9)]); var pr0_nl: []const u8 = "\n"; pal_mod.markerWrite(pr0_nl); semanticAnalyzerReportSwitchWithoutElse(self, node_idx); self.current_switch_cond_tu = @intCast(u32, 0); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); self.switch_depth -= @intCast(u32, 1); return type_mod.TYPE_VOID; }
+    if (prongs_n == @intCast(usize, 0)) { var pr0_m: []const u8 = "PL0:n"; pal_mod.markerWrite(pr0_m); var pr0_b: [10]u8 = undefined; var pr0_l = itoa_mod.itoa(node_idx, pr0_b[0..]); var pr0_s: usize = @intCast(usize, 9) - @intCast(usize, pr0_l); pal_mod.markerWrite(pr0_b[pr0_s..@intCast(usize, 9)]); var pr0_nl: []const u8 = "\n"; pal_mod.markerWrite(pr0_nl); semanticAnalyzerReportSwitchWithoutElse(self, node_idx); self.current_switch_cond_tu = @intCast(u32, 0); self.switch_is_tag = @intCast(u8, 0); rtt_mod.resolvedTypeTableSet(self.type_table, node_idx, type_mod.TYPE_VOID); self.switch_depth -= @intCast(u32, 1); return type_mod.TYPE_VOID; }
     var unified: u32 = @intCast(u32, 0);
     var unified_node: u32 = @intCast(u32, 0);
     var has_else: u8 = 0;
@@ -4227,6 +4361,14 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
                     }
                 }
                 semanticAnalyzerCheckLocalShadow(self, cap_name, sp_ns, sp_ne);
+                if (self.switch_is_tag != @intCast(u8, 0)) {
+                    // FX16-F (A1): a `.tag` switch capture binds a u32 COPY of
+                    // the tag ordinal (lowering's non-tagged-union capture arm
+                    // already emits exactly this copy).
+                    var tct_ty = self.registry.types_items[@intCast(usize, self.current_switch_cond_tu)];
+                    var tct_tp = self.registry.tu_items[@intCast(usize, tct_ty.payload_idx)];
+                    registerLocalDecl(self, cap_name, tct_tp.tag_type, sp_ns, sp_ne);
+                } else {
                 var sce_pm: []const u8 = "SCE:p"; pal_mod.markerWriteInt(sce_pm, cap_name);
                 var sce_lm: []const u8 = "SCE:l"; pal_mod.markerWriteInt(sce_lm, @intCast(u32, case_n));
                 if (@intCast(usize, case_n) > @intCast(usize, 0)) {
@@ -4259,6 +4401,7 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
                     var sce_rm: []const u8 = "SCE:R"; pal_mod.markerWriteInt(sce_rm, cap_name);
                     registerLocalDecl(self, cap_name, self.current_switch_cond_tu, sp_ns, sp_ne);
                 }
+                }
             }
         }
         if (cond_es != @intCast(u32, 0) and ast_mod.astStoreNodePayload(self.store, prong_i) != @intCast(u32, 0)) {
@@ -4279,9 +4422,11 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
          if (pbd_b0 != @intCast(u32, 0)) { var pbd_n = ast_mod.astStoreNodeAt(self.store, pbd_b0); pbd_k0 = @intCast(u32, @enumToInt(pbd_n.kind)); }
          var pbd_nm: []const u8 = "PBD:N"; pal_mod.markerWriteInt(pbd_nm, pbd_b0);
          var pbd_km: []const u8 = "PBD:K"; pal_mod.markerWriteInt(pbd_km, pbd_k0);
-          var saved_tu = self.current_switch_cond_tu;
-          var bt = semanticAnalyzerResolveExpr(self, prong.child_0);
-         self.current_switch_cond_tu = saved_tu;
+           var saved_tu = self.current_switch_cond_tu;
+           var saved_tag = self.switch_is_tag;
+           var bt = semanticAnalyzerResolveExpr(self, prong.child_0);
+          self.current_switch_cond_tu = saved_tu;
+          self.switch_is_tag = saved_tag;
         while (self.stmt_work_len > sw_base) {
             self.stmt_work_len -= @intCast(usize, 1);
             var wi = self.stmt_work_items[self.stmt_work_len];
@@ -4329,6 +4474,7 @@ fn semanticAnalyzerResolveSwitchExpr(self: *SemanticAnalyzer, node_idx: u32) u32
     }
 
     self.current_switch_cond_tu = @intCast(u32, 0);
+    self.switch_is_tag = @intCast(u8, 0);
     if (has_else == @intCast(u8, 0)) {
         // FA-a (D3): §3.1 makes the `else` prong mandatory in ALL switch
         // expressions (value and statement position). Deduped per switch node;
