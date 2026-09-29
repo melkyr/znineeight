@@ -1,0 +1,694 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: No Methods, No Generics, No Comptime</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual no methods no generics no comptime free functions receiver self parameter function pointer vtable init function concrete container builtins sizeOf alignOf offsetOf bitSizeOf intCast ptrCast bitCast as Type typeInfo error 3060 2000 20 3000 shapes2">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol2-15-builtins.html">
+<link rel="next" href="vol4-00-title.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume II &mdash; Learning Z98</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol2-00-title.html">How to read this</a><br>
+<a href="vol2-01-honest-comparison.html">The honest comparison</a><br>
+<a href="vol2-02-types.html">The type system</a><br>
+<a href="vol2-03-pointers.html">Pointers</a><br>
+<a href="vol2-04-structs.html">Aggregates I: structs</a><br>
+<a href="vol2-05-packed-structs.html">Aggregates II: packed structs</a><br>
+<a href="vol2-06-enums.html">Aggregates III: enums</a><br>
+<a href="vol2-07-unions.html">Aggregates IV: unions</a><br>
+<a href="vol2-08-tuples.html">Aggregates V: tuples</a><br>
+<a href="vol2-09-arrays-slices.html">Arrays and slices</a><br>
+<a href="vol2-10-control-flow.html">Control flow, in full</a><br>
+<a href="vol2-11-defer.html">defer and errdefer</a><br>
+<a href="vol2-12-error-unions.html">Error unions &mdash; the first big shift</a><br>
+<a href="vol2-13-optionals.html">Optionals</a><br>
+<a href="vol2-14-arena.html">The arena &mdash; the second big shift</a><br>
+<a href="vol2-15-builtins.html">Builtins, in full</a><br>
+<b>No methods, no generics, no comptime</b><br>
+The standard library tour <i>(planned)</i><br>
+print and the format string <i>(planned)</i><br>
+Idioms and best practices <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>No Methods, No Generics, No Comptime</h1>
+<p>
+<a href="vol2-15-builtins.html">Chapter&nbsp;15</a> listed the builtins one
+by one. This chapter is about the three Zig features whose absence those
+builtins help cover: methods, generics, and <tt>comptime</tt>. None of the
+three exists in Z98, and the compiler has no hidden version of any of them.
+What it has instead is three ordinary patterns. A receiver is an ordinary
+first parameter. Polymorphism is a struct of function pointers you build by
+hand. Compile-time work is a fixed list of builtin calls. The chapter's
+program, <tt>docs/sf/manuals/src/vol2/shapes2.z98</tt>, is a small shape
+interface built exactly that way.
+</p>
+<p>
+Two of the absences are load-bearing in daily code. Method syntax is the one
+every reader reaches for first, and <tt>obj.method()</tt> is rejected with a
+measured <tt>error[3060]</tt>. Generics are the one every library reaches
+for, and a <tt>comptime T: type</tt> or <tt>anytype</tt> parameter is
+rejected before it reaches the type checker. The third, <tt>comptime</tt>,
+is a keyword the compiler never sees at all: constant folding stays, but the
+user-facing surface is the builtin catalog, so <tt>@sizeOf</tt>,
+<tt>@offsetOf</tt>, <tt>@intCast</tt>, and <tt>@bitCast</tt> are how
+compile-time facts and conversions are spelled. <a href="vol2-12-error-unions.html">Chapter&nbsp;12</a>
+and <a href="vol2-14-arena.html">chapter&nbsp;14</a> moved failure and
+memory into types; this chapter moves behavior, containers, and compile-time
+work into patterns.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> You will reach for methods, generic containers, and
+<tt>comptime</tt>; here is the Z98 way. The C++ habit is to put behavior in
+the type (<tt>Shape::draw</tt>), to instantiate a container over the element
+(<tt>List&lt;Shape&gt;</tt>), and to let the compiler generate the per-type
+code. Z98 has none of that: behavior is free functions with the receiver as
+an ordinary parameter, the per-type code is written out by hand once for
+each type, and the compile-time work is a short list of builtins. What you
+gain is a compiler small enough to fit on the machine and a generated C
+program you can read line by line. What you lose is the compiler writing the
+repetition for you. The manual vtable below is the pattern that recovers
+polymorphism without the machinery, and it costs exactly one data pointer
+and one function pointer per operation.</td>
+</tr>
+</table>
+
+<h2><a name="methods"></a>No methods: free functions with a receiver</h2>
+<p>
+A method is two things at once: a receiver &mdash; the object the function
+operates on &mdash; and a call shorthand that hides it. Z98 keeps the
+receiver and drops the shorthand. The receiver is just the first parameter,
+and the call is just a call. The example's two dispatch functions are the
+pattern in miniature:
+</p>
+<pre>
+fn draw(s: Shape) void {
+    s.draw_fn(s.data);
+}
+
+fn area(s: Shape) f32 {
+    return s.area_fn(s.data);
+}
+</pre>
+<p>
+A caller writes <tt>draw(sh)</tt> and <tt>area(sh)</tt>, never
+<tt>sh.draw()</tt> or <tt>sh.area()</tt>. The compiler rejects the shorthand
+wherever it appears, because an aggregate type has fields but no function
+members. On a struct the rejection names the kind:
+</p>
+<pre>
+const S = struct { x: i32 };
+...
+const s = S{ .x = 1 };
+s.bar();
+// error[3060]: no field or member function named 'bar' in struct type
+// note: struct declared here
+</pre>
+<p>
+On a builtin scalar the same rule fires with the same wording, minus the
+kind:
+</p>
+<pre>
+const x: i32 = 5;
+x.foo();
+// error[3060]: no field or member function named 'foo' in type
+</pre>
+<p>
+The other half of the rule is at the declaration. A function written inside
+a struct is not a method that lost its receiver; it is a parse error,
+because the struct grammar has named fields or positional fields and nothing
+else:
+</p>
+<pre>
+const Counter = struct {
+    n: i32,
+
+    fn bump(self: *Counter) void {
+        self.n += 1;
+    }
+};
+// error[2000]: struct fields must be all named or all positional (tuple)
+</pre>
+<p>
+One dot spelling survives, and it is worth naming so its presence is not
+confusing: module members are reached with a dot (<tt>std.io.print</tt>),
+because a module is a namespace, not a value. The rule is about receivers,
+not about dots. A <tt>struct</tt> value never has functions; a module always
+does.
+</p>
+
+<h2><a name="vtables"></a>Manual virtual tables</h2>
+<p>
+The shape interface is a manual virtual table, and it is the direct
+translation of the method table a compiler would otherwise generate. The
+interface struct holds the operations as function pointers plus one erased
+data pointer; each concrete shape is an ordinary struct; each operation is a
+free function that takes the erased pointer and casts it back with
+<tt>@ptrCast</tt>:
+</p>
+<pre>
+const Shape = struct {
+    draw_fn: fn (*void) void,
+    area_fn: fn (*void) f32,
+    data: *void,
+};
+
+const Circle = struct { r: f32 };
+const Square = struct { side: f32 };
+
+fn circleDraw(data: *void) void {
+    const c = @ptrCast(*Circle, data);
+    std.io.print("circle r={}\n", .{c.r});
+}
+
+fn circleArea(data: *void) f32 {
+    const c = @ptrCast(*Circle, data);
+    const pi: f32 = 3.14159;
+    return pi * c.r * c.r;
+}
+</pre>
+<p>
+Construction is a struct literal that names the functions and stores the
+object's address as <tt>*void</tt>. <tt>@ptrCast</tt> names the result type
+in both directions, so the same pointer that went in as <tt>*Circle</tt>
+comes back out as <tt>*Circle</tt>:
+</p>
+<pre>
+fn circle_init(c: *Circle, r: f32) Shape {
+    c.r = r;
+    return Shape{ .draw_fn = circleDraw, .area_fn = circleArea, .data = @ptrCast(*void, c) };
+}
+</pre>
+<p>
+Dispatch is an ordinary call through the field, with the data pointer as the
+argument:
+</p>
+<pre>
+fn draw(s: Shape) void {
+    s.draw_fn(s.data);
+}
+</pre>
+<p>
+There is no receiver magic here and nothing to look up at run time: the
+field holds a C function pointer, and calling it compiles to a call through
+that pointer. The interface is not free, and the sample measures it. The
+first line of its output is:
+</p>
+<pre>
+Shape size=12 align=4 fn=4
+</pre>
+<p>
+Three words for the interface on the 32-bit target: two function pointers
+and the data pointer, at four bytes each. The emitted C for the two
+function-pointer types shows what a Z98 function pointer becomes:
+</p>
+<pre>
+typedef void (*zT_8BB7E506_FP_void_void_)(void*);
+typedef float (*zT_67B853D6_FP_float_void_)(void*);
+</pre>
+<p>
+The mangled names are irrelevant; the signatures are the claim.
+<tt>fn (*void) void</tt> becomes <tt>void (*)(void*)</tt> and
+<tt>fn (*void) f32</tt> becomes <tt>float (*)(void*)</tt>. A Z98 function
+pointer is an ordinary C function pointer with no hidden receiver argument,
+which is exactly why the receiver has to be passed by hand at every call.
+</p>
+<p>
+The data pointer is erased to <tt>*void</tt>, so the pair of function and
+data is a contract the type checker only partly sees: it knows the function
+signature, and it does not know what the function will cast the data to.
+Nothing stops a program from building a <tt>Shape</tt> whose operations cast
+a <tt>*Square</tt> to <tt>*Circle</tt>. The init functions below are where
+that contract is established, which is why they matter more here than a
+constructor in a language with classes.
+</p>
+
+<h2><a name="init"></a>The init-function pattern</h2>
+<p>
+An object is ready when two things are true: its payload fields are set, and
+an interface value names the operations. The init function does both. It
+takes the destination as its first parameter &mdash; the caller owns the
+storage &mdash; and returns the interface value:
+</p>
+<pre>
+fn square_init(s: *Square, side: f32) Shape {
+    s.side = side;
+    return Shape{ .draw_fn = squareDraw, .area_fn = squareArea, .data = @ptrCast(*void, s) };
+}
+</pre>
+<p>
+Callers declare the payload, then hand its address to the init function:
+</p>
+<pre>
+var sq: Square = undefined;
+var list: ShapeList = undefined;
+list.len = 0;
+shapeList_push(&amp;list, square_init(&amp;sq, 3.0));
+</pre>
+<p>
+The form the sample uses is not the only measured one. A value-returning
+<tt>fn shape_init(f: fn (*void) void, d: *void) Shape</tt> that does nothing
+but build the literal compiles and runs, and a pointer-init
+<tt>fn shape_init(s: *Shape, f: fn (*void) void, d: *void) void</tt> that
+fills an already-declared interface in place compiles and runs as well. The
+first form is used here because one call sets the payload and returns the
+interface that points at it, so the two cannot drift apart at the call site.
+</p>
+<p>
+Storage belongs to the caller because Z98 has no hidden allocation. The
+example puts the payloads on the stack, which is correct for the program's
+lifetime. When an object has to outlive the frame that created it,
+<a href="vol2-14-arena.html">chapter&nbsp;14</a>'s arena supplies the
+storage and the init function returns an error union, the way
+<tt>Point_init(arena: *std.arena.Arena, x: i32, y: i32) std.arena.ArenaError!*Point</tt>
+does in that chapter. The shape of the pattern is the same; only the source
+of the memory changes.
+</p>
+
+<h2><a name="generics"></a>No generics: concrete types instead</h2>
+<p>
+Zig's generics are built from type parameters: a <tt>comptime T: type</tt>
+parameter, an <tt>anytype</tt> parameter, and functions that are instantiated
+once per type. Z98 has none of the three, and each absence is enforced by a
+different phase. A <tt>comptime</tt> parameter never parses:
+</p>
+<pre>
+fn id(comptime T: type, x: T) T {
+    return x;
+}
+// error[2000]: expected ':' but found identifier
+</pre>
+<p>
+A plain <tt>type</tt> parameter parses, and then the name it binds never
+becomes a type the signature can use:
+</p>
+<pre>
+fn id(T: type, x: T) T {
+    return x;
+}
+// error[20]: identifier 'T' is not declared or imported in this module
+</pre>
+<p>
+<tt>anytype</tt> fails the same way from the caller's side: the parameter
+never becomes a name inside the function body.
+</p>
+<pre>
+fn show(x: anytype) void {
+    std.io.print("{}\n", .{x});
+}
+// error[20]: identifier 'x' is not declared or imported in this module
+</pre>
+<p>
+In place of a <tt>List(T)</tt>, write the concrete container. The example
+needs a list of shapes, so it declares exactly that type:
+</p>
+<pre>
+const ShapeList = struct {
+    items: [4]Shape,
+    len: i32,
+};
+
+fn shapeList_push(list: *ShapeList, s: Shape) void {
+    list.items[@intCast(usize, list.len)] = s;
+    list.len += 1;
+}
+</pre>
+<p>
+A second element type means a second container. That is not a workaround for
+a missing feature; it is the design. The compiler's own source, which is
+written in Z98, hand-writes the concrete hash maps it needs &mdash; the
+<tt>U64ToU32Map</tt> in <tt>sf/src/util/hash.zig</tt> is one &mdash; instead
+of instantiating a generic one. The repetition is real and the code is
+longer than the Zig version would be. In exchange, every type in the program
+is a concrete type at every phase: the type checker never has to instantiate
+anything, and the emitted C names real structs, not a template expansion.
+</p>
+
+<h2><a name="comptime"></a>No comptime: specific builtins instead</h2>
+<p>
+<tt>comptime</tt> is Zig's user-facing compile-time keyword. It does three
+jobs: evaluate constants, inspect and construct types, and instantiate the
+generic functions of the previous section. Z98 keeps constant folding inside
+the compiler but exposes no <tt>comptime</tt> surface at all. The
+replacement is the builtin catalog of
+<a href="vol2-15-builtins.html">chapter&nbsp;15</a>, and the three families
+that matter here are introspection (<tt>@sizeOf</tt>, <tt>@alignOf</tt>,
+<tt>@offsetOf</tt>, <tt>@bitSizeOf</tt>), conversion (<tt>@intCast</tt>,
+<tt>@ptrCast</tt>, <tt>@bitCast</tt>, <tt>@as</tt>), and target folding
+(<tt>@isWindows</tt>). A measured slice, compiled and run as a standalone
+program:
+</p>
+<pre>
+const std = @import("std");
+
+const Vec = struct { x: i32, y: i32 };
+const Flags = packed struct { a: u1, b: u1, c: u2 };
+const Color = enum { red, green };
+
+pub fn main() void {
+    std.io.print("size {} align {} offset {} bits {}\n", .{ @sizeOf(Vec), @alignOf(Vec), @offsetOf(Vec, "y"), @bitSizeOf(Flags) });
+
+    const wide: i32 = 200;
+    const narrow = @intCast(u8, wide);
+
+    var n: i32 = 42;
+    const raw = @ptrCast(*void, &amp;n);
+    const back = @ptrCast(*i32, raw);
+    const same = @intFromPtr(&amp;n) == @intFromPtr(raw);
+
+    const pattern = @bitCast(u32, @as(i32, -1));
+
+    std.io.print("intCast {} ptrCast {} {}\n", .{ narrow, back.*, same });
+    std.io.print("bitCast {x} as {} enum {} {d}\n", .{ pattern, @as(i64, 5), @intToEnum(Color, 1), @enumToInt(Color.green) });
+    std.io.print("isWindows {}\n", .{@isWindows()});
+}
+// size 8 align 4 offset 4 bits 4
+// intCast 200 ptrCast 42 true
+// bitCast ffffffff as 5 enum .green 1
+// isWindows false
+</pre>
+<p>
+Every one of those calls is in chapter&nbsp;15's inventory: the four
+introspection builtins fold to integers at compile time, the three
+conversions change width, representation, or pointer type, and
+<tt>@isWindows</tt> folds to the target's answer (<tt>false</tt> on the
+Linux build, <tt>true</tt> on the Win9x build). What is missing is the
+general facility around them. There is no <tt>@Type</tt> to build a type at
+compile time and no <tt>@typeInfo</tt> to inspect one; both are unsupported
+builtins, and so is any name the compiler does not know:
+</p>
+<pre>
+const T = @Type(5);
+// error[3000]: unsupported builtin function
+</pre>
+<p>
+The sample's first line is the same idea in miniature. <tt>@sizeOf(Shape)</tt>
+and <tt>@sizeOf(fn (*void) void)</tt> produce the two numbers the vtable
+section quoted, and there is no expression anywhere in the program that
+needs a compile-time type computation to produce them.
+</p>
+
+<h2>The example</h2>
+<p>
+The whole chapter in one program. Two concrete shapes and their operations
+are wrapped into a manual vtable by two init functions; a concrete
+<tt>ShapeList</tt> holds three interface values; <tt>main</tt> pushes them,
+then draws and measures each one through the function pointers. The first
+line is the interface's size, taken with <tt>@sizeOf</tt>. It is
+<tt>docs/sf/manuals/src/vol2/shapes2.z98</tt>:
+</p>
+<pre>
+const std = @import("std");
+
+const Shape = struct {
+    draw_fn: fn (*void) void,
+    area_fn: fn (*void) f32,
+    data: *void,
+};
+
+const Circle = struct { r: f32 };
+const Square = struct { side: f32 };
+
+fn circleDraw(data: *void) void {
+    const c = @ptrCast(*Circle, data);
+    std.io.print("circle r={}\n", .{c.r});
+}
+
+fn circleArea(data: *void) f32 {
+    const c = @ptrCast(*Circle, data);
+    const pi: f32 = 3.14159;
+    return pi * c.r * c.r;
+}
+
+fn squareDraw(data: *void) void {
+    const s = @ptrCast(*Square, data);
+    std.io.print("square side={}\n", .{s.side});
+}
+
+fn squareArea(data: *void) f32 {
+    const s = @ptrCast(*Square, data);
+    return s.side * s.side;
+}
+
+fn circle_init(c: *Circle, r: f32) Shape {
+    c.r = r;
+    return Shape{ .draw_fn = circleDraw, .area_fn = circleArea, .data = @ptrCast(*void, c) };
+}
+
+fn square_init(s: *Square, side: f32) Shape {
+    s.side = side;
+    return Shape{ .draw_fn = squareDraw, .area_fn = squareArea, .data = @ptrCast(*void, s) };
+}
+
+fn draw(s: Shape) void {
+    s.draw_fn(s.data);
+}
+
+fn area(s: Shape) f32 {
+    return s.area_fn(s.data);
+}
+
+const ShapeList = struct {
+    items: [4]Shape,
+    len: i32,
+};
+
+fn shapeList_push(list: *ShapeList, s: Shape) void {
+    list.items[@intCast(usize, list.len)] = s;
+    list.len += 1;
+}
+
+pub fn main() void {
+    std.io.print("Shape size={} align={} fn={}\n", .{ @sizeOf(Shape), @alignOf(Shape), @sizeOf(fn (*void) void) });
+
+    var c1: Circle = undefined;
+    var sq: Square = undefined;
+    var c2: Circle = undefined;
+
+    var list: ShapeList = undefined;
+    list.len = 0;
+    shapeList_push(&amp;list, circle_init(&amp;c1, 1.0));
+    shapeList_push(&amp;list, square_init(&amp;sq, 3.0));
+    shapeList_push(&amp;list, circle_init(&amp;c2, 2.0));
+
+    var i: i32 = 0;
+    while (i &lt; list.len) {
+        const sh = list.items[@intCast(usize, i)];
+        draw(sh);
+        std.io.print("  area {}\n", .{area(sh)});
+        i += 1;
+    }
+    std.io.print("shapes drawn {}\n", .{list.len});
+}
+</pre>
+<p>
+Build the compiler once from the committed seed, then emit and compile the
+program, exactly as in chapter&nbsp;15:
+</p>
+<pre>
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/manual_seed
+</pre>
+<p>
+The result is <tt>/tmp/manual_seed/zig1_5_clean</tt> with the standard
+library beside it in <tt>/tmp/manual_seed/lib/</tt>. This example compiles
+with no diagnostics; the program then runs to the end:
+</p>
+<pre>
+$ mkdir -p /tmp/manual_out
+$ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out docs/sf/manuals/src/vol2/shapes2.z98
+$ cd /tmp/manual_out &amp;&amp; sh build_target.sh linux shapes2
+Building for linux...
+Built: shapes2
+$ ./shapes2
+Shape size=12 align=4 fn=4
+circle r=1
+  area 3.14159
+square side=3
+  area 9
+circle r=2
+  area 12.56636
+shapes drawn 3
+</pre>
+<p>
+Four commands and eight lines of program output. The size line is
+the vtable's cost and the only <tt>@sizeOf</tt> call in the program. The
+three draw lines come through <tt>s.draw_fn(s.data)</tt> and the three area
+lines through <tt>s.area_fn(s.data)</tt>; each operation casts the erased
+pointer back to the concrete type it was built with. The last line counts
+the list, which is an ordinary concrete struct &mdash; no template was
+instantiated and no method was looked up. The exit status is 0.
+</p>
+
+<h2>Running under Windows 98</h2>
+<p>
+The same program builds for Win9x. <tt>src/build_owc.bat</tt> compiles the
+emitted C89 with OpenWatcom's <tt>wcc386</tt> and links a console
+<tt>shapes2.exe</tt>; run from a Windows 98 command prompt, it prints the
+same eight lines. The screenshot below will be captured on real hardware.
+</p>
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f0f0f0" class="placeholder">
+<tr>
+<td align="center">
+<i>Figure 30 &mdash; Win9x screenshot pending</i>
+</td>
+</tr>
+</table>
+<p><i>Figure 30. Running <tt>shapes2.exe</tt> under Windows 98.</i></p>
+<p>
+Two of the chapter's claims are target-independent and one is not. The
+function-pointer sizes, the vtable layout, and every rejection are the same
+on both targets. The <tt>@isWindows</tt> result in the builtin slice above
+is the only line that changes: it folds to <tt>true</tt> for the Win9x
+build, which is the point of a target-folding builtin.
+</p>
+
+<h2><a name="mistakes"></a>Common mistakes</h2>
+<p>
+The mistakes below are the ones a programmer arriving from a language with
+classes, templates, and compile-time evaluation makes first. Each has a
+measured diagnostic or a corrected shape, and each corrected shape is the
+compiler's rule, not a style preference.
+</p>
+<p>
+<b>Calling <tt>obj.method()</tt>.</b> The receiver is not hidden in Z98.
+Write the function free and pass the value:
+<tt>draw(sh)</tt>, not <tt>sh.draw()</tt>. The shorthand is rejected
+wherever it appears, with the type checker naming exactly what is missing:
+</p>
+<pre>
+error[3060]: no field or member function named 'bar' in struct type
+</pre>
+<p>
+<b>Declaring the method inside the struct.</b> A function written among the
+fields does not become a member; it does not parse. Structs have named
+fields or positional fields, and the parser says so:
+</p>
+<pre>
+error[2000]: struct fields must be all named or all positional (tuple)
+</pre>
+<p>
+The fix is the same as the previous item: a free function with the receiver
+as its first parameter.
+</p>
+<p>
+<b>Expecting a template to be instantiated.</b> A <tt>comptime T: type</tt>
+parameter stops the parse with
+<tt>error[2000]: expected ':' but found identifier</tt>; a <tt>type</tt>
+parameter leaves the bound name undeclared, so the signature fails with
+<tt>error[20]: identifier 'T' is not declared or imported in this module</tt>;
+and an <tt>anytype</tt> parameter leaves the argument's name undeclared in
+the body. There is no instantiation step to reach. Write the concrete type:
+the sample's <tt>ShapeList</tt> is a list of shapes, and a list of integers
+would be a second, separate container.
+</p>
+<p>
+<b>Reaching for <tt>comptime</tt> or <tt>@typeInfo</tt>.</b> The keyword does
+not parse, and the type-introspection builtins do not exist. <tt>@Type</tt>,
+<tt>@typeInfo</tt>, and any unknown builtin name are rejected as unsupported:
+</p>
+<pre>
+error[3000]: unsupported builtin function
+</pre>
+<p>
+The measured subset in chapter&nbsp;15's catalog is the whole surface. Reach
+for <tt>@sizeOf</tt>, <tt>@offsetOf</tt>, <tt>@intCast</tt>, and the rest of
+the inventory, and the question "what type is this, at compile time?"
+usually disappears &mdash; the program already knows, because it was written
+for one concrete type.
+</p>
+<p>
+<b>Forgetting the data contract.</b> The payload pointer is erased to
+<tt>*void</tt>, and the function pointer's signature is the only thing the
+vtable records. The cast back to <tt>*Circle</tt> inside the operation has
+to match what the init function stored. Build every interface through an
+init function, keep the payload and its operations in the same file, and
+the contract stays in one place instead of being spread across call sites.
+</p>
+
+<h2>Where to go next</h2>
+<p>
+The previous chapter is the catalog this page leans on:
+<a href="vol2-15-builtins.html">chapter&nbsp;15, Builtins, in Full</a>
+documents <tt>@sizeOf</tt>, <tt>@ptrCast</tt>, <tt>@intCast</tt>,
+<tt>@bitCast</tt>, and the other thirty-odd names, with the argument shapes
+and the rejections. The arena pattern behind the init functions is
+<a href="vol2-14-arena.html">chapter&nbsp;14</a>, and the payload structs are
+<a href="vol2-04-structs.html">chapter&nbsp;4</a>; the erased pointer is
+<a href="vol2-03-pointers.html">chapter&nbsp;3</a>'s.
+</p>
+<p>
+The next shipped destination is the Reference. The chapter in this volume
+that continues the pattern is planned:
+</p>
+<ul>
+<li>Chapter 17, <b>The standard library tour</b> <i>(planned)</i> &mdash;
+the concrete containers and modules that ship with the compiler.</li>
+<li>Chapter 19, <b>Idioms and best practices</b> <i>(planned)</i> &mdash;
+where the init-function and manual-vtable patterns are collected with the
+rest of the rules.</li>
+<li>Volume IV, <b>Reference</b> <i>(planned)</i> &mdash; the formal pages
+for functions, pointers, and the builtin catalog.</li>
+<li>Volume V, <b>Port from C</b> <i>(planned)</i> &mdash; the recipe that
+turns a C <tt>struct</tt> of function pointers into this chapter's
+vtable.</li>
+</ul>
+<p>
+For the shipped builtin reference, <a href="vol4-15-builtins.html">Volume IV
+&mdash; Builtins</a> is the lookup for every call used on this page. Until
+the planned chapters ship, the runnable example in
+<tt>docs/sf/manuals/src/vol2/shapes2.z98</tt> is the working reference, and
+<a href="toc.html">the Contents page</a> shows the volume's shape.
+</p>
+
+<p class="navbtns">
+<a href="vol2-15-builtins.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol4-00-title.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol2-15-builtins.html">Builtins, in Full</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-00-title.html">Volume IV &mdash; Reference</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
