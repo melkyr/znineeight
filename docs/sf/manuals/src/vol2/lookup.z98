@@ -1,0 +1,66 @@
+const std = @import("std");
+
+const Entry = struct {
+    key: i32,
+    value: i32,
+    next: ?*Entry,
+};
+
+fn lookup(head: ?*Entry, key: i32) ?*Entry {
+    var cur = head;
+    while (cur) |e| {
+        if (e.key == key) return e;
+        cur = e.next;
+    }
+    return null;
+}
+
+fn valueOrZero(head: ?*Entry, key: i32) i32 {
+    const e = lookup(head, key) orelse {
+        return 0;
+    };
+    return e.value;
+}
+
+pub fn main() void {
+    var third = Entry{ .key = 30, .value = 3, .next = null };
+    var second = Entry{ .key = 20, .value = 2, .next = &third };
+    var first = Entry{ .key = 10, .value = 1, .next = &second };
+    var fallback = Entry{ .key = 0, .value = -1, .next = null };
+    var head: ?*Entry = &first;
+
+    std.io.print("sizes: ?i32={} ?u8={} ?*Entry={} *Entry={}\n", .{ @sizeOf(?i32), @sizeOf(?u8), @sizeOf(?*Entry), @sizeOf(*Entry) });
+
+    if (lookup(head, 20)) |e| {
+        std.io.print("if: key 20 value {}\n", .{e.value});
+    } else {
+        std.io.print("if: key 20 missing\n", .{});
+    }
+
+    const found = lookup(head, 10) orelse &fallback;
+    std.io.print("orelse hit: {}\n", .{found.value});
+    const missing = lookup(head, 99) orelse &fallback;
+    std.io.print("orelse miss: {}\n", .{missing.value});
+
+    std.io.print("block: 30 -> {} 99 -> {}\n", .{ valueOrZero(head, 30), valueOrZero(head, 99) });
+
+    const absent = lookup(head, 99);
+    if (absent == null) {
+        std.io.print("absent == null\n", .{});
+    }
+    const present = lookup(head, 30);
+    if (present != null) {
+        std.io.print("present != null\n", .{});
+    }
+
+    var walk = head;
+    while (walk) |e| {
+        std.io.print("walk {} {}\n", .{ e.key, e.value });
+        walk = e.next;
+    }
+
+    head = null;
+    if (head == null) {
+        std.io.print("head nulled\n", .{});
+    }
+}

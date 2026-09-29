@@ -1,0 +1,572 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Optionals</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual optionals optional ?T null orelse if capture while capture payload has_value struct representation sentinel pointer 3016 3000 2000 3002">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol2-12-error-unions.html">
+<link rel="next" href="vol2-14-arena.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume II &mdash; Learning Z98</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol2-00-title.html">How to read this</a><br>
+<a href="vol2-01-honest-comparison.html">The honest comparison</a><br>
+<a href="vol2-02-types.html">The type system</a><br>
+<a href="vol2-03-pointers.html">Pointers</a><br>
+<a href="vol2-04-structs.html">Aggregates I: structs</a><br>
+<a href="vol2-05-packed-structs.html">Aggregates II: packed structs</a><br>
+<a href="vol2-06-enums.html">Aggregates III: enums</a><br>
+<a href="vol2-07-unions.html">Aggregates IV: unions</a><br>
+<a href="vol2-08-tuples.html">Aggregates V: tuples</a><br>
+<a href="vol2-09-arrays-slices.html">Arrays and slices</a><br>
+<a href="vol2-10-control-flow.html">Control flow, in full</a><br>
+<a href="vol2-11-defer.html">defer and errdefer</a><br>
+<a href="vol2-12-error-unions.html">Error unions &mdash; the first big shift</a><br>
+<b>Optionals</b><br>
+<a href="vol2-14-arena.html">The arena &mdash; the second big shift</a><br>
+<a href="vol2-15-builtins.html">Builtins, in full</a><br>
+No methods, no generics, no comptime <i>(planned)</i><br>
+The standard library tour <i>(planned)</i><br>
+print and the format string <i>(planned)</i><br>
+Idioms and best practices <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Optionals</h1>
+<p>
+<a href="vol2-12-error-unions.html">Chapter&nbsp;12</a> gave failure a place
+in the type: an error union is "a value, or an error". This chapter gives
+<i>absence</i> a place in the type. An optional is "a value of type
+<tt>T</tt>, or <tt>null</tt>", written <tt>?T</tt>. It is the language's
+answer to the question C answers with a sentinel: the search that did not
+find the key, the list whose end is marked by a special pointer, the number
+that is "not set".
+</p>
+<p>
+An optional is not an error channel, and chapter&nbsp;12's note about
+<tt>orelse</tt> said why: <tt>orelse</tt> belongs here, and <tt>catch</tt>
+belongs there. This chapter makes that separation concrete. It shows the
+three ways an optional is consumed &mdash; with <tt>orelse</tt>, with an
+<tt>if</tt> capture, and with a <tt>while</tt> capture &mdash; and it measures
+what an optional costs: every <tt>?T</tt> is a two-field C struct, even when
+<tt>T</tt> is a pointer. The chapter's program is
+<tt>docs/sf/manuals/src/vol2/lookup.z98</tt>, a small linked list of
+key/value entries; its lookup returns <tt>?*Entry</tt>, and the program
+consumes that result every way the language allows.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> You will reach for a sentinel pointer; here is the Z98
+way. The C habit is to return <tt>NULL</tt>, or <tt>-1</tt>, or a pointer to a
+static "empty" object, and to trust every caller to recognise the value. Z98
+moves the absence into the type: <tt>?T</tt> says "a <tt>T</tt>, or
+<tt>null</tt>", and the compiler makes you unwrap before you use it. The two
+unwraps name the two intents directly &mdash; <tt>orelse</tt> supplies the
+value to use instead, and a capture binds the value that is actually there.
+The cost is measured and real: the representation is a payload plus a flag for
+every optional, including <tt>?*T</tt>, so on the 32-bit target an optional
+pointer is twice the size of the pointer it wraps. That is the trade: a
+uniform shape and a four-byte flag in exchange for absence the compiler can
+see.</td>
+</tr>
+</table>
+
+<h2><a name="type"></a><tt>?T</tt>, <tt>null</tt>, and the implicit wrap</h2>
+<p>
+An optional type is written with a question mark in front of the payload
+type: <tt>?i32</tt> is "an <tt>i32</tt> or nothing"; <tt>?*Entry</tt> is "a
+pointer to <tt>Entry</tt> or nothing". The one literal is <tt>null</tt>. A
+plain value of type <tt>T</tt> coerces to <tt>?T</tt> automatically, so the
+only time a value needs a special spelling is when it is absent:
+</p>
+<pre>
+var x: ?i32 = null;
+if (x == null) {
+    std.io.print("x is absent\n", .{});
+}
+x = 42;
+std.io.print("x now {}\n", .{x orelse -1});
+x = null;
+if (x == null) {
+    std.io.print("x is absent again\n", .{});
+}
+const y: ?i32 = 7;
+std.io.print("y {}\n", .{y orelse -1});
+// x is absent
+// x now 42
+// x is absent again
+// y 7
+</pre>
+<p>
+The comparison forms are <tt>== null</tt> and <tt>!= null</tt>; both are
+ordinary boolean conditions, measured above and in the chapter's example.
+There is no separate "has value" operator and no way to ask for the value
+without naming what happens when it is missing. Assigning <tt>null</tt> to an
+optional that already holds a value is legal and returns it to the absent
+state, which the probe shows as <tt>x is absent again</tt>.
+</p>
+<p>
+The wrap is one-way and cheap; the unwrap is where the interesting forms
+live. <tt>orelse</tt> is the next section, and the capture forms are
+<a href="vol2-10-control-flow.html">chapter&nbsp;10</a>'s subject, revisited
+below with the optional type in view.
+</p>
+
+<h2><a name="representation"></a>The representation: one struct, pointers included</h2>
+<p>
+The compiler represents an optional as a C struct with two fields: the
+payload and an <tt>int</tt> flag that says whether the payload is live. The
+chapter's program prints the sizes first, and this is its first line:
+</p>
+<pre>
+sizes: ?i32=8 ?u8=8 ?*Entry=8 *Entry=4
+</pre>
+<p>
+Two things are visible there. First, the size does not track the payload
+width: <tt>?u8</tt>, whose payload is a single byte, is 8 bytes, because the
+C struct is the payload plus padding plus the four-byte flag. Second, and the
+point of this section, <tt>?*Entry</tt> is 8 bytes while <tt>*Entry</tt> is
+4: an optional pointer is <b>not</b> a pointer. It is the same two-field
+struct as every other optional, with a pointer in the value field. The
+emitted definitions for the chapter's types:
+</p>
+<pre>
+typedef struct { int value; int has_value; } zT_45E16F0B_Opt_6;
+typedef struct { zT_9CBFED33_Entry* value; int has_value; } zT_3BE2184E_Opt_61;
+</pre>
+<p>
+The mangled names are irrelevant; the shapes are the claim. There is no
+special case for pointers: no reserved null value, no sentinel, no tag packed
+into the low bit. The compiler has exactly one optional representation, and
+<tt>?*T</tt> uses it like everything else.
+</p>
+<p>
+That is a deliberate difference from official Zig&nbsp;0.15.2, where an
+optional pointer is the same size as the raw pointer because the all-zero
+address doubles as <tt>null</tt>. Measured side by side for the same type:
+the sample's <tt>?*Entry=8 *Entry=4</tt> above, against <tt>?*Entry=8
+*Entry=8</tt> from the official compiler on the development host. Z98 trades
+the extra bytes for one uniform rule that a C89 emitter can render without
+per-type decisions. On the 1998 target, where a pointer is four bytes, this
+is the difference between a free absence and one that costs two words.
+</p>
+<p>
+The safe build does not let a bad unwrap slip through at run time either. In
+the emitted C for the chapter's lookup, each payload read is guarded:
+</p>
+<pre>
+if (!(cur.has_value)) { pal_trap(); }
+e = cur.value;
+</pre>
+<p>
+The guard is part of the <tt>-fsafe</tt> null-unwrap check; it compiles away
+under <tt>-ffast</tt>, where a null optional read is undefined instead. The
+next sections are about writing code that never needs the guard to fire.
+</p>
+
+<h2><a name="orelse"></a><tt>orelse</tt>: the fallback operator</h2>
+<p>
+<tt>expr orelse fallback</tt> yields the payload when <tt>expr</tt> is
+present, and evaluates <tt>fallback</tt> when it is <tt>null</tt>. The value
+form supplies a value of the payload type directly. The chapter's program
+uses the same lookup twice, once with a hit and once with a miss, and the
+fallback entry shows which branch produced the printed value:
+</p>
+<pre>
+const found = lookup(head, 10) orelse &amp;fallback;
+std.io.print("orelse hit: {}\n", .{found.value});
+const missing = lookup(head, 99) orelse &amp;fallback;
+std.io.print("orelse miss: {}\n", .{missing.value});
+// orelse hit: 1
+// orelse miss: -1
+</pre>
+<p>
+The fallback can also be a block, which is the form to use when the absent
+case is an exit rather than a substitute value. The chapter's
+<tt>valueOrZero</tt> returns zero from the block when the lookup misses:
+</p>
+<pre>
+fn valueOrZero(head: ?*Entry, key: i32) i32 {
+    const e = lookup(head, key) orelse {
+        return 0;
+    };
+    return e.value;
+}
+</pre>
+<p>
+A block that falls off its end is not the shape to design around: a labeled
+block that breaks with a value is not implemented in Z98 (chapter&nbsp;10
+documents the value-less labeled block), so use the value expression when a
+value is what you have, and the block when the fallback is a
+<tt>return</tt> or a loop exit.
+</p>
+<p>
+<tt>orelse</tt> requires an <b>optional</b> operand, and the compiler keeps
+it apart from <tt>catch</tt>. Applied to an error union it rejects, exactly
+as chapter&nbsp;12 documented:
+</p>
+<pre>
+error[3016]: orelse requires an optional operand; use 'catch' for error unions
+</pre>
+<p>
+The rule is one line: <tt>?T</tt> takes <tt>orelse</tt>; <tt>E!T</tt> takes
+<tt>catch</tt>. If an operation can <i>fail</i>, the failure belongs in an
+error union; if it can be <i>absent</i>, the absence belongs in an optional.
+</p>
+
+<h2><a name="captures"></a>Unwrapping with <tt>if</tt> and <tt>while</tt></h2>
+<p>
+The capture is the second unwrap. <a href="vol2-10-control-flow.html">Chapter
+10</a> introduced the syntax; here is the optional's half of it. An
+<tt>if</tt> on an optional binds a payload only on the branch where the value
+exists, and the <tt>else</tt> arm handles the absent case. The chapter's
+program captures a lookup result:
+</p>
+<pre>
+if (lookup(head, 20)) |e| {
+    std.io.print("if: key 20 value {}\n", .{e.value});
+} else {
+    std.io.print("if: key 20 missing\n", .{});
+}
+// if: key 20 value 2
+</pre>
+<p>
+The capture is also an expression, with the <tt>else</tt> arm required when
+the value is used in a value position. The binding is an immutable copy, as
+chapter&nbsp;10's capture section showed (<tt>error[3002]</tt> for an
+assignment through it), and it is an ordinary value of the payload type, so
+field access on it works because the optional is gone by then.
+</p>
+<p>
+A <tt>while</tt> capture loops as long as the optional has a value. That is
+the shape for walking a chain whose end is <tt>null</tt>. The chapter's
+<tt>lookup</tt> walks the linked entries that way, and the program repeats
+the form at the call site:
+</p>
+<pre>
+fn lookup(head: ?*Entry, key: i32) ?*Entry {
+    var cur = head;
+    while (cur) |e| {
+        if (e.key == key) return e;
+        cur = e.next;
+    }
+    return null;
+}
+</pre>
+<pre>
+var walk = head;
+while (walk) |e| {
+    std.io.print("walk {} {}\n", .{ e.key, e.value });
+    walk = e.next;
+}
+// walk 10 1
+// walk 20 2
+// walk 30 3
+</pre>
+<p>
+The loop variable is reassigned through <tt>e.next</tt> each iteration, and
+the loop ends when the variable becomes <tt>null</tt>; the copy bound in
+<tt>|e|</tt> stays immutable. The <tt>?*T</tt> chain type is the replacement
+for the sentinel-terminated list: the tail is a value the type system knows
+about, not a pointer that happens to be special.
+</p>
+<p>
+There is no <tt>.?</tt> unwrap operator and no field access through an
+optional. Both shapes are rejected, and the two diagnostics measure the
+boundary:
+</p>
+<pre>
+std.io.print("{}\n", .{p.value});
+// error[3000]: cannot access field on optional type; use .? to unwrap first
+
+std.io.print("{}\n", .{p.?.value});
+// error[2000]: expected field name or index after '.'
+</pre>
+<p>
+The first message is the type checker pointing at the right concept, and the
+second is the parser saying the spelling does not exist. The two live unwraps
+are the capture and <tt>orelse</tt>; a program that wants the payload has to
+choose one of them.
+</p>
+
+<h2>The example</h2>
+<p>
+The whole chapter in one program. Three entries form a short linked list
+whose tail is <tt>null</tt>; <tt>lookup</tt> returns <tt>?*Entry</tt>;
+<tt>valueOrZero</tt> uses the <tt>orelse</tt> block; <tt>main</tt> consumes
+the lookup with an <tt>if</tt> capture, a value and a block <tt>orelse</tt>,
+the two null comparisons, and a <tt>while</tt> capture that prints the chain.
+The size line at the top is the representation section's evidence. It is
+<tt>docs/sf/manuals/src/vol2/lookup.z98</tt>:
+</p>
+<pre>
+const std = @import("std");
+
+const Entry = struct {
+    key: i32,
+    value: i32,
+    next: ?*Entry,
+};
+
+fn lookup(head: ?*Entry, key: i32) ?*Entry {
+    var cur = head;
+    while (cur) |e| {
+        if (e.key == key) return e;
+        cur = e.next;
+    }
+    return null;
+}
+
+fn valueOrZero(head: ?*Entry, key: i32) i32 {
+    const e = lookup(head, key) orelse {
+        return 0;
+    };
+    return e.value;
+}
+
+pub fn main() void {
+    var third = Entry{ .key = 30, .value = 3, .next = null };
+    var second = Entry{ .key = 20, .value = 2, .next = &amp;third };
+    var first = Entry{ .key = 10, .value = 1, .next = &amp;second };
+    var fallback = Entry{ .key = 0, .value = -1, .next = null };
+    var head: ?*Entry = &amp;first;
+
+    std.io.print("sizes: ?i32={} ?u8={} ?*Entry={} *Entry={}\n", .{ @sizeOf(?i32), @sizeOf(?u8), @sizeOf(?*Entry), @sizeOf(*Entry) });
+
+    if (lookup(head, 20)) |e| {
+        std.io.print("if: key 20 value {}\n", .{e.value});
+    } else {
+        std.io.print("if: key 20 missing\n", .{});
+    }
+
+    const found = lookup(head, 10) orelse &amp;fallback;
+    std.io.print("orelse hit: {}\n", .{found.value});
+    const missing = lookup(head, 99) orelse &amp;fallback;
+    std.io.print("orelse miss: {}\n", .{missing.value});
+
+    std.io.print("block: 30 -&gt; {} 99 -&gt; {}\n", .{ valueOrZero(head, 30), valueOrZero(head, 99) });
+
+    const absent = lookup(head, 99);
+    if (absent == null) {
+        std.io.print("absent == null\n", .{});
+    }
+    const present = lookup(head, 30);
+    if (present != null) {
+        std.io.print("present != null\n", .{});
+    }
+
+    var walk = head;
+    while (walk) |e| {
+        std.io.print("walk {} {}\n", .{ e.key, e.value });
+        walk = e.next;
+    }
+
+    head = null;
+    if (head == null) {
+        std.io.print("head nulled\n", .{});
+    }
+}
+</pre>
+<p>
+Build the compiler once from the committed seed, then emit and compile the
+program, exactly as in chapter&nbsp;12:
+</p>
+<pre>
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/manual_seed
+</pre>
+<p>
+The result is <tt>/tmp/manual_seed/zig1_5_clean</tt> with the standard library
+beside it in <tt>/tmp/manual_seed/lib/</tt>. This example compiles with no
+diagnostics; the program then runs to the end:
+</p>
+<pre>
+$ mkdir -p /tmp/manual_out
+$ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out docs/sf/manuals/src/vol2/lookup.z98
+$ cd /tmp/manual_out &amp;&amp; sh build_target.sh linux lookup
+Building for linux...
+Built: lookup
+$ ./lookup
+sizes: ?i32=8 ?u8=8 ?*Entry=8 *Entry=4
+if: key 20 value 2
+orelse hit: 1
+orelse miss: -1
+block: 30 -&gt; 3 99 -&gt; 0
+absent == null
+present != null
+walk 10 1
+walk 20 2
+walk 30 3
+head nulled
+</pre>
+<p>
+Eleven lines. The size line is the representation claim in numbers. The
+<tt>if</tt> capture finds key 20. The two <tt>orelse</tt> lines show the
+present and absent branches of the same expression; the block form answers
+<tt>30&nbsp;-&gt;&nbsp;3</tt> and <tt>99&nbsp;-&gt;&nbsp;0</tt> through
+<tt>valueOrZero</tt>. The null comparisons report both directions. The three
+<tt>walk</tt> lines are the <tt>while</tt> capture following the
+<tt>next</tt> pointers until the tail's <tt>null</tt>. The exit status is 0.
+</p>
+
+<h2>Running under Windows 98</h2>
+<p>
+The same program builds for Win9x. <tt>src/build_owc.bat</tt> compiles the
+emitted C89 with OpenWatcom's <tt>wcc386</tt> and links a console
+<tt>lookup.exe</tt>; run from a Windows 98 command prompt, it prints the same
+eleven lines. The screenshot below will be captured on real hardware.
+</p>
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f0f0f0" class="placeholder">
+<tr>
+<td align="center">
+<i>Figure 29 &mdash; Win9x screenshot pending</i>
+</td>
+</tr>
+</table>
+<p><i>Figure 29. Running <tt>lookup.exe</tt> under Windows 98.</i></p>
+
+<h2><a name="mistakes"></a>Common mistakes</h2>
+<p>
+The mistakes below are the ones a programmer arriving from C makes first with
+absent values. Each has a measured diagnostic or a corrected shape, and each
+corrected shape is the compiler's rule, not a style preference.
+</p>
+<p>
+<b>Reaching for a sentinel pointer.</b> The C version of the chapter's
+program ends its list with a magic pointer, returns <tt>NULL</tt> from the
+search, and maybe documents that <tt>-1</tt> means "not found" in some other
+function. Every caller has to know all of the conventions, and the compiler
+knows none of them. In Z98 the absence has one spelling, <tt>null</tt>, and
+one type, <tt>?T</tt>. The chain's tail is a <tt>null</tt> the type system
+sees, the lookup returns <tt>?*Entry</tt>, and the caller cannot use the
+result without choosing <tt>orelse</tt> or a capture. There is no sentinel
+value to collide with, because there is no sentinel.
+</p>
+<p>
+<b>Using <tt>orelse</tt> on an error union.</b> <tt>orelse</tt> is the
+optional's operator, and <tt>E!T</tt> is a different type. The compiler
+rejects the confusion and names the right tool:
+</p>
+<pre>
+error[3016]: orelse requires an optional operand; use 'catch' for error unions
+</pre>
+<p>
+When the operation can fail, write <tt>catch</tt>; when it can be absent,
+write <tt>orelse</tt>. Chapter&nbsp;12 is the other half of the rule.
+</p>
+<p>
+<b>Dereferencing a null optional.</b> There is no direct path: field access
+on an optional is rejected before any code is emitted, with
+<tt>error[3000]: cannot access field on optional type; use .? to unwrap
+first</tt>. The bypass a C programmer reaches for is to assert the value is
+there &mdash; <tt>p orelse unreachable</tt> &mdash; and the compiler takes
+that at its word. A measured probe declared a null <tt>?*Node</tt>, unwrapped
+it that way, compiled cleanly, and then trapped when it ran:
+<tt>Trace/breakpoint trap</tt>, exit status 133, no message, under both
+<tt>-fsafe</tt> and <tt>-ffast</tt>. The absent case is not free, it is just
+moved to where you chose to ignore it. Capture it or supply a fallback
+instead.
+</p>
+<p>
+<b>Expecting <tt>.?</tt> to work because the error suggests it.</b> The
+<tt>error[3000]</tt> message above says "use <tt>.?</tt> to unwrap first", but
+<tt>.?</tt> does not parse:
+</p>
+<pre>
+error[2000]: expected field name or index after '.'
+</pre>
+<p>
+The message names the right idea and the wrong spelling. The unwraps the
+language actually has are <tt>orelse</tt>, <tt>if (opt) |v|</tt>, and
+<tt>while (opt) |v|</tt>; use one of those, and the message never comes back.
+</p>
+<p>
+<b>Assigning through a capture.</b> The capture is an immutable copy of the
+payload, not a handle back into the optional. Writing to it is rejected with
+<tt>error[3002]: cannot assign to immutable variable</tt>, the same rule as
+chapter&nbsp;10's other captures. To advance a loop, assign the loop variable
+itself &mdash; <tt>walk = e.next;</tt> in the example &mdash; not the binding
+inside the bars.
+</p>
+
+<h2>Where to go next</h2>
+<p>
+This chapter's counterpart is <a href="vol2-12-error-unions.html">chapter
+12, Error Unions &mdash; the First Big Shift</a>: the same "one type, one
+unwrapping discipline" story for failure, with <tt>try</tt>,
+<tt>catch&nbsp;|err|</tt>, and <tt>errdefer</tt> where this page has
+<tt>orelse</tt> and captures. The next shipped chapter is
+<a href="vol2-14-arena.html">chapter&nbsp;14, The Arena &mdash; the Second
+Big Shift</a>, whose <tt>ArenaError![*]u8</tt> is an error union precisely so
+that exhaustion is a failure and never an optional. The capture syntax itself
+is <a href="vol2-10-control-flow.html">chapter&nbsp;10</a>'s, and the pointer
+type the example hands around is <a href="vol2-03-pointers.html">chapter
+3</a>'s.
+</p>
+<p>
+For the shipped Reference, <a href="vol4-15-builtins.html">Volume IV &mdash;
+Builtins</a> documents the builtin call syntax the examples use. The formal
+optional material is planned:
+</p>
+<ul>
+<li>Volume IV, <b>Optionals</b> <i>(planned)</i> &mdash; the optional type
+and the full unwrap reference.</li>
+<li>Volume V, <b>Port from C</b> <i>(planned)</i> &mdash; the recipe that
+turns a <tt>NULL</tt> return into <tt>?T</tt> and a sentinel-terminated list
+into a <tt>null</tt>-terminated chain.</li>
+</ul>
+<p>
+Until they ship, the runnable example in
+<tt>docs/sf/manuals/src/vol2/lookup.z98</tt> is the working reference, and
+<a href="toc.html">the Contents page</a> shows the volume's shape.
+</p>
+
+<p class="navbtns">
+<a href="vol2-12-error-unions.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol2-14-arena.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol2-12-error-unions.html">Error Unions &mdash; the First Big Shift</a> | <a href="toc.html">Contents</a> | Next: <a href="vol2-14-arena.html">The Arena &mdash; the Second Big Shift</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>

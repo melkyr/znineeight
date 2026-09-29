@@ -10,7 +10,7 @@
 <link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
 <link rel="home" href="index.html">
 <link rel="up" href="toc.html">
-<link rel="prev" href="vol2-12-error-unions.html">
+<link rel="prev" href="vol2-13-optionals.html">
 <link rel="next" href="vol2-15-builtins.html">
 </head>
 <body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
@@ -51,7 +51,7 @@ Espa&ntilde;ol (not yet available) |
 <a href="vol2-10-control-flow.html">Control flow, in full</a><br>
 <a href="vol2-11-defer.html">defer and errdefer</a><br>
 <a href="vol2-12-error-unions.html">Error unions &mdash; the first big shift</a><br>
-Optionals <i>(planned)</i><br>
+<a href="vol2-13-optionals.html">Optionals</a><br>
 <b>The arena &mdash; the second big shift</b><br>
 <a href="vol2-15-builtins.html">Builtins, in full</a><br>
 No methods, no generics, no comptime <i>(planned)</i><br>
@@ -592,8 +592,9 @@ error[3016]: orelse requires an optional operand; use 'catch' for error unions
 </pre>
 <p>
 Write <tt>try</tt> when the caller can pass the failure on, and
-<tt>catch |err|</tt> when it must handle it. Chapter 13 <i>(planned)</i> is
-where optionals and <tt>orelse</tt> live.
+<tt>catch |err|</tt> when it must handle it.
+<a href="vol2-13-optionals.html">Chapter&nbsp;13</a> is where optionals and
+<tt>orelse</tt> live.
 </p>
 <p>
 <b>Forgetting <tt>reset</tt> between phases.</b> The arena never reclaims on
@@ -629,9 +630,10 @@ the arena is dead &mdash; use the pointers from the current fill or none.
 
 <h2>Where to go next</h2>
 <p>
-This page is the next shipped chapter after chapter 12, so the reading path is
-<tt>vol2-12</tt> &rarr; this page &rarr; chapter 15. Chapter 13,
-<b>Optionals</b>, is <i>(planned)</i> in between, and chapter 15,
+This page is the next shipped chapter after
+<a href="vol2-13-optionals.html">chapter&nbsp;13, <b>Optionals</b></a>, so the
+reading path is <tt>vol2-12</tt> &rarr; <tt>vol2-13</tt> &rarr; this page
+&rarr; chapter 15. Chapter 15,
 <a href="vol2-15-builtins.html"><b>Builtins, in full</b></a>, is the next
 shipped page after this one; it is the definitive tour of the builtins this
 chapter used: <tt>@sizeOf</tt>, <tt>@ptrCast</tt>, and <tt>@intFromPtr</tt>.
@@ -655,13 +657,13 @@ Until they ship, the runnable example in
 </p>
 
 <p class="navbtns">
-<a href="vol2-12-error-unions.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+<a href="vol2-13-optionals.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
 &nbsp;&nbsp;
 <a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
 &nbsp;&nbsp;
 <a href="vol2-15-builtins.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
 </p>
-<p>Previous: <a href="vol2-12-error-unions.html">Error Unions &mdash; the First Big Shift</a> | <a href="toc.html">Contents</a> | Next: <a href="vol2-15-builtins.html">Builtins, in Full</a></p>
+<p>Previous: <a href="vol2-13-optionals.html">Optionals</a> | <a href="toc.html">Contents</a> | Next: <a href="vol2-15-builtins.html">Builtins, in Full</a></p>
 </td>
 </tr>
 </table>
