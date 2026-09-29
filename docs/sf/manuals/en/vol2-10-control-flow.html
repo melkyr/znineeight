@@ -184,9 +184,9 @@ fn classify(value: i32) i32 {
 
 <h2><a name="capture"></a>Capturing a payload: <tt>if (x) |v|</tt></h2>
 <p>
-When the condition is an optional &mdash; or an error union &mdash; the
-<tt>if</tt> can unwrap it with a capture. The capture binds the payload
-only on the branch where it exists, and it is an immutable copy:
+When the condition is an optional, the <tt>if</tt> can unwrap it with a
+capture. The capture binds the payload only on the branch where it
+exists, and it is an immutable copy:
 </p>
 <pre>
 var maybe: ?i32 = 5;
@@ -217,9 +217,8 @@ for (arr) |v| {
 // error[3002]: cannot assign to immutable variable
 </pre>
 <p>
-A capture on a condition that is neither optional nor an error union is
-rejected at the condition, with a message that says what the capture
-needs:
+A capture on a condition that is not an optional is rejected at the
+condition, with a message that says what the capture needs:
 </p>
 <pre>
 if (true) |v| { ... }
@@ -227,7 +226,7 @@ if (true) |v| { ... }
 </pre>
 <p>
 There is no <tt>else |err|</tt> spelling for the error case; it does not
-parse. Error-union captures and <tt>catch</tt> are
+parse. Error unions, <tt>try</tt>, and <tt>catch</tt> are
 <a href="vol2-12-error-unions.html">chapter&nbsp;12</a>'s territory:
 </p>
 <pre>
@@ -306,9 +305,14 @@ for (scores) |v, idx| {
 // for values 100 weighted 200
 </pre>
 <p>
-The index is a <tt>usize</tt>, so mixing it with an <tt>i32</tt> takes
-the explicit <tt>@intCast</tt> shown above; there is no implicit
-conversion. Both captures are immutable copies.
+The index is a <tt>usize</tt>. Conversions between <tt>usize</tt> and
+<tt>i32</tt> are implicit on this compiler: a declaration or assignment
+reports <tt>warning[3000]</tt>, a call argument is silent, and the value
+is converted unchecked, so a large index can wrap (a probe's
+<tt>4000000000</tt> became <tt>-294967296</tt> under both
+<tt>-fsafe</tt> and <tt>-ffast</tt>). <tt>@intCast</tt> is the explicit,
+warning-free form, and it is what the chapter's program uses. Both
+captures are immutable copies.
 </p>
 <p>
 A range is an iterable too. <tt>for&nbsp;(0..n)</tt> walks
@@ -466,7 +470,10 @@ switch (color) {
 <p>
 Loops can be labeled, and <tt>break</tt> or <tt>continue</tt> can name a
 label to leave or advance an outer loop rather than the innermost one.
-Labels must be unique within the function:
+Keep labels unique within a function by convention: the compiler does not
+reject a duplicate today, and a <tt>continue :outer</tt> then binds the
+nearest label with that name (a probe's nested duplicate continued the
+inner loop):
 </p>
 <pre>
 var pairs: i32 = 0;
@@ -550,9 +557,9 @@ the only thing standing between the <tt>else</tt> and a trap.
 <br><br>
 Captures are immutable copies. The loop variable is a fresh binding per
 iteration; there is no way to write back through it, and assignment
-rejects with <tt>error[3002]</tt>. The optional-capture condition must be
-an optional or an error union; anything else rejects at the condition
-with <tt>error[3058]</tt>. The error half of the capture,
+rejects with <tt>error[3002]</tt>. The capture condition must be an
+optional; anything else rejects at the condition with
+<tt>error[3058]</tt>. The error half of the capture,
 <tt>else&nbsp;|err|</tt>, does not parse at all
 (<tt>error[2000]: expected expression</tt>); error unions are
 <a href="vol2-12-error-unions.html">chapter&nbsp;12</a>.
@@ -863,9 +870,9 @@ or index the array itself when the element has to change.
 </p>
 <p>
 <b>Assuming a capture condition can be any expression.</b> A capture
-needs an optional or an error union; <tt>if&nbsp;(true)&nbsp;|v|</tt>
-rejects with <tt>error[3058]: capture condition must be an optional or
-error union type</tt>. And the whole condition must be a <tt>bool</tt>
+needs an optional; <tt>if&nbsp;(true)&nbsp;|v|</tt> rejects with
+<tt>error[3058]: capture condition must be an optional or error union
+type</tt>. And the whole condition must be a <tt>bool</tt>
 (or optional): a numeric condition is
 <tt>error[3058]: condition must be of type 'bool'</tt>, unlike C, where
 any non-zero number is true.
