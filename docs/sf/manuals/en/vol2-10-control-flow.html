@@ -1,0 +1,924 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Control Flow, in Full</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual control flow if else expression optional capture while continue-expression for index capture switch inclusive exclusive ranges else prong labeled loops labeled blocks break continue 3058 3059 3068 3000 2000 unreachable">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol2-09-arrays-slices.html">
+<link rel="next" href="vol2-12-error-unions.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume II &mdash; Learning Z98</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol2-00-title.html">How to read this</a><br>
+<a href="vol2-01-honest-comparison.html">The honest comparison</a><br>
+<a href="vol2-02-types.html">The type system</a><br>
+<a href="vol2-03-pointers.html">Pointers</a><br>
+<a href="vol2-04-structs.html">Aggregates I: structs</a><br>
+<a href="vol2-05-packed-structs.html">Aggregates II: packed structs</a><br>
+<a href="vol2-06-enums.html">Aggregates III: enums</a><br>
+<a href="vol2-07-unions.html">Aggregates IV: unions</a><br>
+<a href="vol2-08-tuples.html">Aggregates V: tuples</a><br>
+<a href="vol2-09-arrays-slices.html">Arrays and slices</a><br>
+<b>Control flow, in full</b><br>
+defer and errdefer <i>(planned)</i><br>
+<a href="vol2-12-error-unions.html">Error unions &mdash; the first big shift</a><br>
+Optionals <i>(planned)</i><br>
+<a href="vol2-14-arena.html">The arena &mdash; the second big shift</a><br>
+<a href="vol2-15-builtins.html">Builtins, in full</a><br>
+No methods, no generics, no comptime <i>(planned)</i><br>
+The standard library tour <i>(planned)</i><br>
+print and the format string <i>(planned)</i><br>
+Idioms and best practices <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Control Flow, in Full</h1>
+<p>
+Volume&nbsp;I showed the four shapes a program is built from &mdash;
+<tt>if</tt>, <tt>while</tt>, <tt>for</tt>, and <tt>switch</tt> &mdash; in
+their everyday forms. This chapter is the full surface, as the compiler
+actually accepts it: the value forms, the captures, the ranges, and the
+labels, each with the diagnostic it produces when it is used wrongly.
+</p>
+<p>
+Three rules are worth carrying in from the start, because they explain
+almost every difference from the C you already write. First, a
+<tt>switch</tt> must have an <tt>else</tt> prong, always, even when the
+cases cover the whole type. Second, a capture
+(<tt>if&nbsp;(x)&nbsp;|v|</tt>, <tt>for&nbsp;(arr)&nbsp;|v,&nbsp;i|</tt>) is
+an immutable copy of one element, not a reference. Third, the control-flow
+statements are also expressions where Zig makes them expressions: an
+<tt>if</tt> or a <tt>switch</tt> can compute a value, and its arms are
+ordinary expressions.
+</p>
+<p>
+The chapter's program is <tt>docs/sf/manuals/src/vol2/control.z98</tt>. It
+walks every construct family once, in one runnable program, and ends with
+the exhaustive enum switch that still writes its mandatory <tt>else</tt>:
+</p>
+<pre>
+ifstmt 8
+ifexpr 1
+classify -1 0 1
+capture 5
+capture expr -1
+while step i 6 sum 13
+while true 3
+while opt 6
+for values 100 weighted 200
+for range 6
+for explicit 110 6
+switch range 66
+switch const 7
+switch value 2
+labeled 2
+block true
+enum switch 3
+</pre>
+<p>
+Everything below is measured on the compiler shipped with this manual,
+and every diagnostic quoted is the one the compiler actually prints. Where
+the rule differs from official Zig&nbsp;0.15.2, the difference is called
+out at the point where it bites.
+</p>
+
+<h2><a name="if"></a><tt>if</tt> and <tt>if</tt> expressions</h2>
+<p>
+An <tt>if</tt> statement takes a condition that must be a <tt>bool</tt>.
+Braces are optional around a single statement; the condition is not an
+expression that can carry an assignment, so the C idiom
+<tt>if&nbsp;(a&nbsp;=&nbsp;3)</tt> does not parse. An <tt>if</tt> without
+<tt>else</tt> is a statement; an <tt>if</tt> used as a value must have
+both arms:
+</p>
+<pre>
+var n: i32 = 7;
+if (n > 5) n = 8 else n = 9;
+
+const kind: i32 = if (n == 8) 1 else 2;
+// ifstmt 8
+// ifexpr 1
+</pre>
+<p>
+The brace-less form has one trap: a semicolon may not sit between the
+first body and the <tt>else</tt>. The compiler names the fix:
+</p>
+<pre>
+if (x > 0) return 1; else return 0;
+// error[2000]: ';' not allowed before 'else' - use braces: if (cond) { ... } else { ... }
+</pre>
+<p>
+Write the braces, or omit the semicolon as in
+<tt>if&nbsp;(x&nbsp;&gt;&nbsp;0)&nbsp;return&nbsp;1&nbsp;else&nbsp;return&nbsp;0;</tt>.
+A condition of the wrong type is rejected before any C is emitted:
+</p>
+<pre>
+if (5) { ... }
+// error[3058]: condition must be of type 'bool'
+
+while (5) { break; }
+// error[3058]: condition must be of type 'bool'
+</pre>
+<p>
+A value <tt>if</tt> with only one arm is the other half of the rule.
+The missing arm would leave the value undefined, and the compiler refuses
+it rather than inventing a zero:
+</p>
+<pre>
+const x: i32 = if (c) 1;
+// error[3059]: if expression without 'else' cannot be used as a value (its type is 'void')
+</pre>
+<p>
+An assignment is a statement, not an expression, so
+<tt>if&nbsp;(a&nbsp;=&nbsp;3)</tt> is a parse error
+(<tt>error[2000]: expected ')' but found token</tt>). Use
+<tt>==</tt> for comparison.
+</p>
+<p>
+The arms may be <tt>if</tt> expressions themselves, and an arm may
+<tt>return</tt>; a function written as an <tt>if</tt>/<tt>else</tt>
+chain is the ordinary style:
+</p>
+<pre>
+fn classify(value: i32) i32 {
+    if (value &lt; 0) return -1;
+    if (value == 0) return 0;
+    return 1;
+}
+// classify -1 0 1
+</pre>
+
+<h2><a name="capture"></a>Capturing a payload: <tt>if (x) |v|</tt></h2>
+<p>
+When the condition is an optional &mdash; or an error union &mdash; the
+<tt>if</tt> can unwrap it with a capture. The capture binds the payload
+only on the branch where it exists, and it is an immutable copy:
+</p>
+<pre>
+var maybe: ?i32 = 5;
+if (maybe) |v| {
+    std.io.print("capture {}\n", .{v});
+} else {
+    std.io.print("capture none\n", .{});
+}
+// capture 5
+</pre>
+<p>
+The same form works in expression position, with the <tt>else</tt> arm
+standing in when the value is absent:
+</p>
+<pre>
+maybe = null;
+const fallback: i32 = if (maybe) |v| v else -1;
+// capture expr -1
+</pre>
+<p>
+The capture is not a handle back to the optional. Assigning through it
+reports the binding as immutable:
+</p>
+<pre>
+for (arr) |v| {
+    v = 9;
+}
+// error[3002]: cannot assign to immutable variable
+</pre>
+<p>
+A capture on a condition that is neither optional nor an error union is
+rejected at the condition, with a message that says what the capture
+needs:
+</p>
+<pre>
+if (true) |v| { ... }
+// error[3058]: capture condition must be an optional or error union type
+</pre>
+<p>
+There is no <tt>else |err|</tt> spelling for the error case; it does not
+parse. Error-union captures and <tt>catch</tt> are
+<a href="vol2-12-error-unions.html">chapter&nbsp;12</a>'s territory:
+</p>
+<pre>
+} else |err| {
+// error[2000]: expected expression
+</pre>
+
+<h2><a name="while"></a><tt>while</tt> and the continue-expression</h2>
+<p>
+A <tt>while</tt> loop takes a condition and a body; when the loop has a
+continue-expression after the colon, the expression runs after the body
+and before the condition is tested again:
+</p>
+<pre>
+var i: i32 = 0;
+var sum: i32 = 0;
+while (i &lt; 6) : (i += 1) {
+    if (i == 2) continue;
+    sum += i;
+}
+// while step i 6 sum 13
+</pre>
+<p>
+That output is the important measurement of this section. <tt>i</tt>
+ends at 6, not 5: the <tt>continue</tt> at <tt>i&nbsp;==&nbsp;2</tt> jumps
+to the continue-expression <tt>i&nbsp;+=&nbsp;1</tt> before the next
+condition test, so it does not skip the increment and does not spin. In a
+hand-written C loop that puts <tt>i++</tt> at the bottom of the body, the
+same <tt>continue</tt> would skip the increment; here the step is part of
+the loop header, and <tt>continue</tt> cannot reach it wrongly.
+</p>
+<p>
+<tt>while&nbsp;(true)</tt> plus an early <tt>break</tt> is the
+<tt>do&nbsp;...&nbsp;while</tt> replacement the language documents (there is
+no <tt>do</tt> statement):
+</p>
+<pre>
+var count: i32 = 0;
+while (true) {
+    if (count == 3) break;
+    count += 1;
+}
+// while true 3
+</pre>
+<p>
+When the condition is an optional, the capture form loops as long as the
+optional has a value. The loop variable can be reassigned to move toward
+the exit; the capture itself stays immutable:
+</p>
+<pre>
+var down: ?i32 = 3;
+var total: i32 = 0;
+while (down) |v| {
+    total += v;
+    down = if (v > 1) v - 1 else null;
+}
+// while opt 6
+</pre>
+
+<h2><a name="for"></a><tt>for</tt> over collections and ranges</h2>
+<p>
+The iteration statement has two halves: the iterable and the capture
+list. A collection &mdash; an array, a slice, a pointer to an array &mdash;
+hands out its elements, optionally with a second capture for the index:
+</p>
+<pre>
+var scores: [4]i32 = .{ 10, 20, 30, 40 };
+var values: i32 = 0;
+for (scores) |v| {
+    values += v;
+}
+var weighted: i32 = 0;
+for (scores) |v, idx| {
+    weighted += v * @intCast(i32, idx);
+}
+// for values 100 weighted 200
+</pre>
+<p>
+The index is a <tt>usize</tt>, so mixing it with an <tt>i32</tt> takes
+the explicit <tt>@intCast</tt> shown above; there is no implicit
+conversion. Both captures are immutable copies.
+</p>
+<p>
+A range is an iterable too. <tt>for&nbsp;(0..n)</tt> walks
+<tt>0</tt> through <tt>n&nbsp;-&nbsp;1</tt>, and the item already is the
+number, so the one-capture form is the range form:
+</p>
+<pre>
+var rsum: i32 = 0;
+for (0..4) |x| {
+    rsum += @intCast(i32, x);
+}
+// for range 6
+</pre>
+<p>
+The explicit index range, <tt>for&nbsp;(arr,&nbsp;start..end)</tt>, is the
+Zig&nbsp;0.15.2 form for looping over a collection while numbering the
+captures from <tt>start</tt>. It iterates <b>every</b> element of the
+iterable &mdash; <tt>end</tt> does not cut the iteration short. The index
+is <tt>start</tt> plus the iteration count, is <b>not</b> clamped to the
+iterable, and the form requires the index capture. When <tt>end</tt> is
+present it must satisfy <tt>end&nbsp;-&nbsp;start&nbsp;==&nbsp;arr.len</tt>;
+the open form <tt>start..</tt> has no length to check:
+</p>
+<pre>
+var tail: i32 = 0;
+for (scores, 1..) |v, idx| {
+    tail += v + @intCast(i32, idx);
+}
+var spanned: i32 = 0;
+for (scores, 0..scores.len) |v, idx| {
+    spanned += @intCast(i32, idx);
+}
+// for explicit 110 6
+</pre>
+<p>
+<tt>tail</tt> prints 110: the four elements are numbered 1, 2, 3, 4
+(10+1, 20+2, 30+3, 40+4) and all four are visited. The end expression may
+read <tt>.len</tt>, as <tt>spanned</tt> shows, and the compiler folds it.
+A length that is wrong at compile time is a rejection rather than a wrong
+loop:
+</p>
+<pre>
+for (arr, 0..3) |v, i| { ... }   // arr has four elements
+// error[3000]: non-matching for loop lengths: the index range and the iterable differ in length
+</pre>
+<p>
+When the end is a runtime value, the same check becomes a trap under
+<tt>-fsafe</tt> (exit status 133) and disappears under <tt>-ffast</tt>;
+<a href="#honest">the honesty note</a> states the split. The older Zig
+shape with two iterables in one loop, and its cousin with an explicit
+range over a range iterable, are parse errors:
+</p>
+<pre>
+for (a, b) |v| { ... }
+// error[2000]: expected token but found ')'
+
+for (0..5, 0..) |x, i| { ... }
+// error[2000]: expected ')' but found ','
+</pre>
+<p>
+One iterable per loop. When two collections have to move together, index
+one of them with the other's index capture.
+</p>
+
+<h2><a name="switch"></a><tt>switch</tt>, ranges, and the mandatory <tt>else</tt></h2>
+<p>
+<tt>switch</tt> compares one value against items and ranges. Items may be
+listed with commas, ranges come in two spellings &mdash;
+<tt>start...end</tt> includes both ends, <tt>start..end</tt> excludes the
+end &mdash; and the prongs may compute a value in statement position or be
+the value of a <tt>switch</tt> expression:
+</p>
+<pre>
+var grade: i32 = 87;
+var letter: i32 = 0;
+switch (grade) {
+    90...100 => letter = 65,
+    80..90 => letter = 66,
+    70..80 => letter = 67,
+    else => letter = 70,
+}
+// switch range 66
+
+const band: i32 = switch (grade) {
+    90...100 => 1,
+    80..90 => 2,
+    else => 3,
+};
+// switch value 2
+</pre>
+<p>
+The <tt>else</tt> prong is not optional, not even when the items obviously
+cover the whole type. This is a deliberate divergence from official Zig,
+which accepts an exhaustive <tt>switch</tt> without one. The compiler's
+rule is strict and uniform; there is no exhaustive-switch exception:
+</p>
+<pre>
+switch (x) {
+    1 => r = 1,
+}
+// error[3068]: switch must have an 'else' prong
+
+switch (c) {         // c: Color, an enum with three members
+    .Red => r = 1,
+    .Green => r = 2,
+    .Blue => r = 3,
+}
+// error[3068]: switch must have an 'else' prong
+</pre>
+<p>
+Case items resolve to compile-time values. Integer and character literals
+work directly; module-level <tt>const</tt>s work as items and as range
+bounds:
+</p>
+<pre>
+const LO: i32 = 100;
+const HI: i32 = 102;
+...
+switch (pick) {
+    LO...HI => slot = 7,
+    else => slot = 8,
+}
+// switch const 7
+</pre>
+<p>
+The constant must be declared at module scope. A <tt>const</tt> declared
+inside a function is not resolved by lowering, so a prong naming it matches
+nothing and the value silently takes <tt>else</tt>; <a href="#honest">the
+honesty note</a> records the measured behavior. Enum members work in both
+the shorthand and qualified spellings, and enum ranges expand to the
+members' underlying values, so <tt>enum(uN)</tt> gaps stay exact.
+</p>
+<p>
+Every prong that can run must produce a value when the <tt>switch</tt> is
+a value, and a divergent prong &mdash; <tt>return</tt>, <tt>break</tt>,
+<tt>continue</tt>, <tt>unreachable</tt> &mdash; is a legal arm with type
+<tt>noreturn</tt>. <tt>else</tt> still has to be written. The exhaustive
+enum switch in the chapter's program ends this way, and the reason carries
+a warning: <tt>unreachable</tt> is a live trap, not an optimization hint.
+If control reaches it, the program dies with the trap exit status
+(133) under <tt>-fsafe</tt> and under <tt>-ffast</tt> alike. Write it only
+where the branch is provably dead:
+</p>
+<pre>
+switch (color) {
+    .Red => rgb = 1,
+    .Green => rgb = 2,
+    .Blue => rgb = 3,
+    else => unreachable,
+}
+// enum switch 3
+</pre>
+
+<h2><a name="labels"></a>Labels: loops and blocks</h2>
+<p>
+Loops can be labeled, and <tt>break</tt> or <tt>continue</tt> can name a
+label to leave or advance an outer loop rather than the innermost one.
+Labels must be unique within the function:
+</p>
+<pre>
+var pairs: i32 = 0;
+outer: for (0..4) |a| {
+    var b: i32 = 0;
+    while (b &lt; 3) : (b += 1) {
+        if (b == 1) continue :outer;
+        if (a == 2) break :outer;
+        pairs += 1;
+    }
+}
+// labeled 2
+</pre>
+<p>
+At <tt>a&nbsp;==&nbsp;0</tt> the inner <tt>b&nbsp;==&nbsp;1</tt> continues
+the <b>outer</b> loop, which runs its step and moves to
+<tt>a&nbsp;==&nbsp;1</tt>; at <tt>a&nbsp;==&nbsp;2</tt> the labeled
+<tt>break</tt> leaves both loops. Two increments run in total, which is
+what <tt>pairs&nbsp;2</tt> reports. The unlabeled forms stay where they
+always were: the innermost loop.
+</p>
+<p>
+A block can carry a label too, and a value-less <tt>break :label</tt>
+leaves it early. This is control flow, not a value producer: a labeled
+block has no value of its own, and trying to give one back is a parse
+error.
+</p>
+<pre>
+var found: bool = false;
+lookup: {
+    if (grade &lt; 0) break :lookup;
+    found = true;
+}
+// block true
+</pre>
+<p>
+The value-producing spelling does not parse:
+</p>
+<pre>
+const x: i32 = blk: {
+    break :blk 1;
+};
+// error[2000]: expected ';' but found integer literal
+</pre>
+<p>
+When a value has to come out of a block, use an <tt>if</tt> expression, a
+<tt>switch</tt> expression, or a function call. A labeled block is for
+early exit only.
+</p>
+
+<h2><a name="honest"></a>Honesty: the edges of the measured rules</h2>
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> The mandatory <tt>else</tt> is a Z98 divergence:
+official Zig&nbsp;0.15.2 accepts an exhaustive <tt>switch</tt> with no
+<tt>else</tt>, and Z98 rejects it with <tt>error[3068]</tt>. The escape
+hatch for a genuinely impossible fall-through is
+<tt>else&nbsp;=&gt;&nbsp;unreachable</tt>, but it is a live trap: the
+chapter's probes reached it and the process died with exit status 133
+under both <tt>-fsafe</tt> and <tt>-ffast</tt>. It is not a "this cannot
+happen" annotation that costs nothing; it is the compiler placing a trap
+on the prong.
+<br><br>
+The explicit-index-range length check follows the same safe/fast split as
+the other runtime checks. A compile-time-known mismatch rejects before C
+is emitted (<tt>error[3000]</tt>); a runtime mismatch traps under the
+default <tt>-fsafe</tt>; under <tt>-ffast</tt> the check is gone and the
+loop walks the whole iterable with the wrong index labels, because the
+end value is only checked, never used to bound the iteration. A probe with
+a four-element array and a runtime end of three printed the full sum
+under <tt>-ffast</tt> instead of trapping.
+<br><br>
+Named case items and range bounds resolve at module scope. A
+function-local <tt>const</tt> is not resolved by lowering &mdash; a probe's
+local <tt>LO...HI</tt> range matched nothing and the value silently took
+the <tt>else</tt> prong, while the same constants declared at module scope
+matched. Keep switch constants where the module can see them, and prefer
+a real fallback over an <tt>unreachable</tt> one when a local constant is
+the only thing standing between the <tt>else</tt> and a trap.
+<br><br>
+Captures are immutable copies. The loop variable is a fresh binding per
+iteration; there is no way to write back through it, and assignment
+rejects with <tt>error[3002]</tt>. The optional-capture condition must be
+an optional or an error union; anything else rejects at the condition
+with <tt>error[3058]</tt>. The error half of the capture,
+<tt>else&nbsp;|err|</tt>, does not parse at all
+(<tt>error[2000]: expected expression</tt>); error unions are
+<a href="vol2-12-error-unions.html">chapter&nbsp;12</a>.
+<br><br>
+Switch ranges are compile-time: both endpoints must be literals, module
+constants, or enum members of the condition's type, and the range is
+expanded into sequential case labels before any C is emitted. That is why
+ranges cost nothing at runtime, and why a range whose endpoints are not
+constant has no case to emit.
+</td>
+</tr>
+</table>
+
+<h2>The example</h2>
+<p>
+The whole chapter in one program. It exercises the brace-less
+<tt>if</tt>/<tt>else</tt>, an <tt>if</tt> expression, optional captures in
+statement and expression position, the continue-expression with a
+<tt>continue</tt>, <tt>while&nbsp;(true)</tt>,
+<tt>while&nbsp;(opt)&nbsp;|v|</tt>, collection loops with and without an
+index, a range loop, explicit index ranges with an open and a
+<tt>.len</tt> end, an integer <tt>switch</tt> over inclusive and exclusive
+ranges, module-constant items, a value <tt>switch</tt>, labeled
+<tt>continue</tt>/<tt>break</tt>, a labeled block, and an exhaustive enum
+switch with <tt>else&nbsp;=&gt;&nbsp;unreachable</tt>. It is
+<tt>docs/sf/manuals/src/vol2/control.z98</tt>:
+</p>
+<pre>
+const std = @import("std");
+
+// Named constants can be switch items and range bounds.
+const LO: i32 = 100;
+const HI: i32 = 102;
+
+fn classify(value: i32) i32 {
+    // Brace-less if/else; the condition is a bool.
+    if (value &lt; 0) return -1;
+    if (value == 0) return 0;
+    return 1;
+}
+
+pub fn main() void {
+    // 1. if statements and if expressions.
+    var n: i32 = 7;
+    if (n &gt; 5) n = 8 else n = 9;
+    std.io.print("ifstmt {}\n", .{n});
+
+    const kind: i32 = if (n == 8) 1 else 2;
+    std.io.print("ifexpr {}\n", .{kind});
+    std.io.print("classify {} {} {}\n", .{ classify(-4), classify(0), classify(4) });
+
+    // 2. Optional capture, statement and expression.
+    var maybe: ?i32 = 5;
+    if (maybe) |v| {
+        std.io.print("capture {}\n", .{v});
+    } else {
+        std.io.print("capture none\n", .{});
+    }
+    maybe = null;
+    const fallback: i32 = if (maybe) |v| v else -1;
+    std.io.print("capture expr {}\n", .{fallback});
+
+    // 3. while, the continue-expression, and continue.
+    var i: i32 = 0;
+    var sum: i32 = 0;
+    while (i &lt; 6) : (i += 1) {
+        if (i == 2) continue;
+        sum += i;
+    }
+    std.io.print("while step i {} sum {}\n", .{ i, sum });
+
+    // while (true) plus break is the do/while replacement.
+    var count: i32 = 0;
+    while (true) {
+        if (count == 3) break;
+        count += 1;
+    }
+    std.io.print("while true {}\n", .{count});
+
+    // while (opt) |v| loops while the optional has a value.
+    var down: ?i32 = 3;
+    var total: i32 = 0;
+    while (down) |v| {
+        total += v;
+        down = if (v &gt; 1) v - 1 else null;
+    }
+    std.io.print("while opt {}\n", .{total});
+
+    // 4. for over a collection, with and without the index.
+    var scores: [4]i32 = .{ 10, 20, 30, 40 };
+    var values: i32 = 0;
+    for (scores) |v| {
+        values += v;
+    }
+    var weighted: i32 = 0;
+    for (scores) |v, idx| {
+        weighted += v * @intCast(i32, idx);
+    }
+    std.io.print("for values {} weighted {}\n", .{ values, weighted });
+
+    // 5. for over a range: the item is the number itself.
+    var rsum: i32 = 0;
+    for (0..4) |x| {
+        rsum += @intCast(i32, x);
+    }
+    std.io.print("for range {}\n", .{rsum});
+
+    // 6. Explicit index ranges keep the iterable whole.
+    var tail: i32 = 0;
+    for (scores, 1..) |v, idx| {
+        tail += v + @intCast(i32, idx);
+    }
+    var spanned: i32 = 0;
+    for (scores, 0..scores.len) |v, idx| {
+        spanned += @intCast(i32, idx);
+    }
+    std.io.print("for explicit {} {}\n", .{ tail, spanned });
+
+    // 7. switch over inclusive and exclusive ranges.
+    var grade: i32 = 87;
+    var letter: i32 = 0;
+    switch (grade) {
+        90...100 =&gt; letter = 65,
+        80..90 =&gt; letter = 66,
+        70..80 =&gt; letter = 67,
+        else =&gt; letter = 70,
+    }
+    std.io.print("switch range {}\n", .{letter});
+
+    // Named constants as items and bounds.
+    var pick: i32 = 101;
+    var slot: i32 = 0;
+    switch (pick) {
+        LO...HI =&gt; slot = 7,
+        else =&gt; slot = 8,
+    }
+    std.io.print("switch const {}\n", .{slot});
+
+    // A switch is also a value expression.
+    const band: i32 = switch (grade) {
+        90...100 =&gt; 1,
+        80..90 =&gt; 2,
+        else =&gt; 3,
+    };
+    std.io.print("switch value {}\n", .{band});
+
+    // 8. Labeled loops: break and continue reach the named loop.
+    var pairs: i32 = 0;
+    outer: for (0..4) |a| {
+        var b: i32 = 0;
+        while (b &lt; 3) : (b += 1) {
+            if (b == 1) continue :outer;
+            if (a == 2) break :outer;
+            pairs += 1;
+        }
+    }
+    std.io.print("labeled {}\n", .{pairs});
+
+    // A labeled block is exited with a value-less break.
+    var found: bool = false;
+    lookup: {
+        if (grade &lt; 0) break :lookup;
+        found = true;
+    }
+    std.io.print("block {}\n", .{found});
+
+    // Exhaustive enum switch still carries the mandatory else;
+    // unreachable is a live trap, not a no-op, so only write it
+    // where the branch really cannot run.
+    const Color = enum { Red, Green, Blue };
+    const color: Color = .Blue;
+    var rgb: i32 = 0;
+    switch (color) {
+        .Red =&gt; rgb = 1,
+        .Green =&gt; rgb = 2,
+        .Blue =&gt; rgb = 3,
+        else =&gt; unreachable,
+    }
+    std.io.print("enum switch {}\n", .{rgb});
+}
+</pre>
+<p>
+Build the compiler once from the committed seed, then emit and compile the
+program, exactly as in chapter&nbsp;3:
+</p>
+<pre>
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/manual_seed
+</pre>
+<p>
+The result is <tt>/tmp/manual_seed/zig1_5_clean</tt> with the standard
+library beside it in <tt>/tmp/manual_seed/lib/</tt>. This example compiles
+with no diagnostics; the program then runs to the end:
+</p>
+<pre>
+$ mkdir -p /tmp/manual_out
+$ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out docs/sf/manuals/src/vol2/control.z98
+$ cd /tmp/manual_out &amp;&amp; sh build_target.sh linux control
+Building for linux...
+Built: control
+$ ./control
+ifstmt 8
+ifexpr 1
+classify -1 0 1
+capture 5
+capture expr -1
+while step i 6 sum 13
+while true 3
+while opt 6
+for values 100 weighted 200
+for range 6
+for explicit 110 6
+switch range 66
+switch const 7
+switch value 2
+labeled 2
+block true
+enum switch 3
+</pre>
+<p>
+Seventeen lines. The first three cover <tt>if</tt>. The next two cover
+optional captures. The next three cover <tt>while</tt>, including the
+continue-expression whose <tt>continue</tt> still runs the step
+(<tt>sum&nbsp;13</tt> skips <tt>2</tt> but not the increment). The next
+three cover <tt>for</tt>: collection loops (<tt>100</tt>, weighted
+<tt>200</tt>), a range (<tt>6</tt>), and explicit index ranges
+(<tt>110</tt> for indices <tt>1..4</tt>, <tt>6</tt> from
+<tt>0..scores.len</tt>). The next three cover <tt>switch</tt>: a range
+match (<tt>66</tt>), a module-constant bound match (<tt>7</tt>), and a
+value <tt>switch</tt> (<tt>2</tt>). The last three cover labels and the
+enum <tt>switch</tt>: the labeled loop exits after two increments
+(<tt>2</tt>), the labeled block sets its flag (<tt>true</tt>), and the
+exhaustive enum <tt>switch</tt> produces the <tt>Blue</tt> value
+(<tt>3</tt>) without ever reaching its trap. The exit status is 0.
+</p>
+
+<h2>Running under Windows 98</h2>
+<p>
+The same program builds for Win9x. <tt>src/build_owc.bat</tt> compiles the
+emitted C89 with OpenWatcom's <tt>wcc386</tt> and links a console
+<tt>control.exe</tt>; run from a Windows 98 command prompt, it prints the
+same seventeen lines. The screenshot below will be captured on real
+hardware.
+</p>
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f0f0f0" class="placeholder">
+<tr>
+<td align="center">
+<i>Figure 27 &mdash; Win9x screenshot pending</i>
+</td>
+</tr>
+</table>
+<p><i>Figure 27. Running <tt>control.exe</tt> under Windows 98.</i></p>
+
+<h2><a name="mistakes"></a>Common mistakes</h2>
+<p>
+The mistakes below are the ones a programmer arriving from C (or from a
+newer Zig) makes first with control flow. Each corrected shape is the
+compiler's rule, not a style preference.
+</p>
+<p>
+<b>Writing C's <tt>for&nbsp;(;;)</tt>.</b> Z98 has no three-clause
+<tt>for</tt>. The counter loop is either a range loop &mdash;
+<tt>for&nbsp;(0..n)&nbsp;|i|</tt> &mdash; or
+<tt>while&nbsp;(true)</tt> with a <tt>break</tt>, which is also the
+documented replacement for <tt>do&nbsp;...&nbsp;while</tt>. A loop that
+needs an increment between iterations and a condition on top puts the
+increment in the continue-expression:
+<tt>while&nbsp;(i&nbsp;&lt;&nbsp;n)&nbsp;:&nbsp;(i&nbsp;+=&nbsp;1)</tt>.
+Do not keep state in the body and rely on <tt>continue</tt> to skip it:
+<tt>continue</tt> jumps to the step, so the step always runs.
+</p>
+<p>
+<b>Leaving the <tt>else</tt> prong off a <tt>switch</tt>.</b> Every
+<tt>switch</tt> needs one, and the compiler enforces it with
+<tt>error[3068]: switch must have an 'else' prong</tt> even when the items
+cover every member of an enum or both values of a <tt>bool</tt>. Official
+Zig accepts the exhaustive form, so code carried over from Zig needs the
+prong added. When the fall-through really cannot happen,
+<tt>else&nbsp;=&gt;&nbsp;unreachable</tt> is the last prong &mdash; but
+remember it traps when reached, under both <tt>-fsafe</tt> and
+<tt>-ffast</tt>, so prefer an empty block or a real fallback until the
+branch is proved dead.
+</p>
+<p>
+<b>Writing a value-labeled block.</b> The label on a block is for early
+exit, not for values: <tt>break&nbsp;:blk&nbsp;1;</tt> does not parse
+(<tt>error[2000]: expected ';' but found integer literal</tt>). Use an
+<tt>if</tt>, a <tt>switch</tt>, or a function when a value has to come
+out. The value-less <tt>break&nbsp;:blk;</tt> is the supported form, and
+it is the right tool for bailing out of a block early.
+</p>
+<p>
+<b>Expecting <tt>continue</tt> to skip a <tt>for</tt>'s increment.</b>
+In a C loop with the increment at the bottom of the body,
+<tt>continue</tt> skips it and can spin. In Z98 the increment is the
+continue-expression or the loop's own step, and <tt>continue</tt> runs it
+before the next condition test &mdash; that is what makes the
+<tt>while&nbsp;...&nbsp;:&nbsp;(step)</tt> and the range <tt>for</tt> safe
+with <tt>continue</tt>. What <tt>continue</tt> does skip is the rest of
+the body: any accumulation after the <tt>continue</tt> is skipped, which
+is the actual intent in most cases.
+</p>
+<p>
+<b>Assigning to a capture.</b> The capture is an immutable copy:
+<tt>for&nbsp;(arr)&nbsp;|v|&nbsp;{&nbsp;v&nbsp;=&nbsp;9;&nbsp;}</tt> is
+<tt>error[3002]: cannot assign to immutable variable</tt>, and the array
+is untouched. Accumulate into a <tt>var</tt> declared outside the loop,
+or index the array itself when the element has to change.
+</p>
+<p>
+<b>Assuming a capture condition can be any expression.</b> A capture
+needs an optional or an error union; <tt>if&nbsp;(true)&nbsp;|v|</tt>
+rejects with <tt>error[3058]: capture condition must be an optional or
+error union type</tt>. And the whole condition must be a <tt>bool</tt>
+(or optional): a numeric condition is
+<tt>error[3058]: condition must be of type 'bool'</tt>, unlike C, where
+any non-zero number is true.
+</p>
+<p>
+<b>Putting a semicolon before <tt>else</tt>.</b> The brace-less form does
+not allow it:
+<tt>error[2000]: ';' not allowed before 'else' - use braces: if (cond) {
+... } else { ... }</tt>. Write the braces or drop the semicolon. And do
+not reach for <tt>if&nbsp;(a&nbsp;=&nbsp;3)</tt> as an assignment:
+assignments are statements, so the parser stops at the <tt>=</tt>.
+</p>
+
+<h2>Where to go next</h2>
+<p>
+This chapter's predecessor is <a href="vol2-09-arrays-slices.html">Arrays
+and Slices</a>, whose collections are the iterables every <tt>for</tt>
+loop in this chapter walks. The next chapter in numeric order is
+<b>defer and errdefer</b> (chapter&nbsp;11), the scope-exit statements
+that run on the <tt>return</tt>, <tt>break</tt>, and <tt>continue</tt>
+paths this chapter just traced; it is still <i>(planned)</i>. The next
+shipped chapter is <a href="vol2-12-error-unions.html">chapter&nbsp;12,
+Error Unions &mdash; the First Big Shift</a>, where the error half of the
+capture forms, <tt>try</tt>, and <tt>catch&nbsp;|err|</tt> are documented.
+</p>
+<p>
+For lookup, <a href="vol2-06-enums.html">chapter&nbsp;6</a> covers the
+enum membership and range rules that <tt>switch</tt> builds on,
+<a href="vol2-08-tuples.html">chapter&nbsp;8</a> covers the tuple
+expressions this chapter uses in <tt>print</tt> argument lists, and
+<a href="vol2-03-pointers.html">chapter&nbsp;3</a> covers the
+pointer-to-array values that <tt>for</tt> also iterates. Volume&nbsp;IV's
+<b>Control flow</b> reference page and Volume&nbsp;V's <b>port from C</b>
+HOWTO are <i>(planned)</i>; the latter is where a C <tt>for&nbsp;(;;)</tt>
+gets its one translation into a Z98 loop.
+</p>
+<p>
+Until they ship, the runnable example in
+<tt>docs/sf/manuals/src/vol2/control.z98</tt> is the working reference, and
+<a href="toc.html">the Contents page</a> shows the volume's shape.
+</p>
+
+<p class="navbtns">
+<a href="vol2-09-arrays-slices.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol2-12-error-unions.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol2-09-arrays-slices.html">Arrays and Slices</a> | <a href="toc.html">Contents</a> | Next: <a href="vol2-12-error-unions.html">Error Unions &mdash; the First Big Shift</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
