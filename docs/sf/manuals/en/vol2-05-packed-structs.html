@@ -45,7 +45,7 @@ Espa&ntilde;ol (not yet available) |
 <a href="vol2-04-structs.html">Aggregates I: structs</a><br>
 <b>Aggregates II: packed structs</b><br>
 <a href="vol2-06-enums.html">Aggregates III: enums</a><br>
-Aggregates IV: unions <i>(planned)</i><br>
+<a href="vol2-07-unions.html">Aggregates IV: unions</a><br>
 Aggregates V: tuples <i>(planned)</i><br>
 Arrays and slices <i>(planned)</i><br>
 Control flow, in full <i>(planned)</i><br>
@@ -575,15 +575,16 @@ program, make the format explicit, exactly as the example's decode line does.
 <h2>Where to go next</h2>
 <p>
 The next shipped chapter is
-<a href="vol2-06-enums.html">chapter 6, Aggregates III: Enums</a>: it gives
-names to a fixed set of integers, adds the conversion builtins
-<tt>@enumToInt</tt> and <tt>@intToEnum</tt>, and extends <tt>switch</tt> with
-ranges over member names. The rest of the aggregates are still to come in
-numeric order: <b>unions</b> (chapter 7, which is where packed unions live),
-<b>tuples</b> (chapter 8), and <b>arrays and slices</b> (chapter 9), all
-<i>(planned)</i>. The next big shift after this one is
-<a href="vol2-12-error-unions.html">chapter 12, Error Unions &mdash; the First
-Big Shift</a>. This chapter's predecessor,
+<a href="vol2-07-unions.html">chapter 7, Aggregates IV: Unions</a>: it is
+where packed unions live, and where the 31-bit field rule and the whole-value
+per-leaf copies of this chapter carry over. The chapter before it,
+<a href="vol2-06-enums.html">chapter 6, Aggregates III: Enums</a>, gives names
+to a fixed set of integers and adds the conversion builtins
+<tt>@enumToInt</tt> and <tt>@intToEnum</tt>. The rest of the aggregates are
+still to come in numeric order: <b>tuples</b> (chapter 8) and <b>arrays and
+slices</b> (chapter 9), both <i>(planned)</i>. The next big shift after unions
+is <a href="vol2-12-error-unions.html">chapter 12, Error Unions &mdash; the
+First Big Shift</a>. This chapter's predecessor,
 <a href="vol2-04-structs.html">Aggregates I: Structs</a>, is the plain-struct
 half of the same story: padding, alignment, and the offsets that packed structs
 replace with bits.

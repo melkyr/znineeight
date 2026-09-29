@@ -1,0 +1,657 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Unions</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual union unions bare packed tagged naked tag anonymous struct payload variant switch capture 3068 3071 3072 3063">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol2-06-enums.html">
+<link rel="next" href="vol2-12-error-unions.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume II &mdash; Learning Z98</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol2-00-title.html">How to read this</a><br>
+<a href="vol2-01-honest-comparison.html">The honest comparison</a><br>
+<a href="vol2-02-types.html">The type system</a><br>
+<a href="vol2-03-pointers.html">Pointers</a><br>
+<a href="vol2-04-structs.html">Aggregates I: structs</a><br>
+<a href="vol2-05-packed-structs.html">Aggregates II: packed structs</a><br>
+<a href="vol2-06-enums.html">Aggregates III: enums</a><br>
+<b>Aggregates IV: unions</b><br>
+Aggregates V: tuples <i>(planned)</i><br>
+Arrays and slices <i>(planned)</i><br>
+Control flow, in full <i>(planned)</i><br>
+defer and errdefer <i>(planned)</i><br>
+<a href="vol2-12-error-unions.html">Error unions &mdash; the first big shift</a><br>
+Optionals <i>(planned)</i><br>
+<a href="vol2-14-arena.html">The arena &mdash; the second big shift</a><br>
+<a href="vol2-15-builtins.html">Builtins, in full</a><br>
+No methods, no generics, no comptime <i>(planned)</i><br>
+The standard library tour <i>(planned)</i><br>
+print and the format string <i>(planned)</i><br>
+Idioms and best practices <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Aggregates IV: Unions</h1>
+<p>
+A union is the aggregate that overlaps its members instead of stacking them.
+A struct gives every field its own bytes; a union gives every member the
+<em>same</em> bytes. Written down, a union looks like a struct with the fields
+on top of each other, and that is exactly the layout: one storage, read
+through whichever member the program names.
+</p>
+<p>
+The last three chapters built records out of structs and packed structs and
+gave small sets of numbers names with enums. This chapter adds the third
+aggregate shape, and it comes in three forms, because "one storage, many
+readings" means three different things:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Form</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Declaration</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>What it is for</b></th>
+</tr>
+<tr>
+<td><b>Bare union</b></td>
+<td><tt>union { &hellip; }</tt></td>
+<td>The C union: overlapping storage, interpreted by the program.</td>
+</tr>
+<tr>
+<td><b>Packed union</b></td>
+<td><tt>packed union { &hellip; }</tt></td>
+<td>Overlapping <em>bit</em> storage with no padding: registers, wire bytes, file fields.</td>
+</tr>
+<tr>
+<td><b>Tagged union</b></td>
+<td><tt>union(enum) { &hellip; }</tt></td>
+<td>A closed set of shapes with exactly one active; the compiler stores a tag that says which.</td>
+</tr>
+</table>
+<p>
+This chapter declares all three, reads and writes them, and switches over the
+tagged form with payload captures. The example is
+<tt>docs/sf/manuals/src/vol2/variant.z98</tt>.
+</p>
+
+<h2>Bare unions: one storage, many readings</h2>
+<p>
+The bare union is the C union. The syntax is <tt>union</tt>, braces, and a
+comma-separated field list; the members share their bytes:
+</p>
+<pre>
+const Bits = union {
+    f: f32,
+    u: u32,
+};
+</pre>
+<p>
+The members overlap at offset 0, and the size of the union is the size of its
+largest member, rounded up to the union's alignment (the largest member
+alignment). <tt>Bits</tt> holds an
+<tt>f32</tt> and a <tt>u32</tt>, both four bytes, so the type measures 4 bytes,
+aligns to 4, and is 32 bits wide. The chapter's program asks the compiler:
+</p>
+<pre>
+bits size=4 align=4 bits=32
+</pre>
+<p>
+Construction names the member that is being written, using the same dotted
+form as a struct: <tt>.{ .f = 1.5 }</tt>. Reading goes through a field access:
+<tt>bits.f</tt> or <tt>bits.u</tt>. Nothing stops the program from writing one
+member and reading another; that is what a union is for, and this compiler
+accepts it as the C reinterpretation it is. The program writes the float 1.5
+and reads the same four bytes as an unsigned integer:
+</p>
+<pre>
+var bits: Bits = .{ .f = 1.5 };
+std.io.print("bits f={} u={x}\n", .{ bits.f, bits.u });
+// bits f=1.5 u=3fc00000
+</pre>
+<p>
+<tt>3fc00000</tt> is the bit pattern of the 32-bit float 1.5, printed in hex
+by the <tt>{x}</tt> format. The pun works the other way too: the program then
+stores the integer <tt>0x3FC00000</tt> into <tt>bits.u</tt> and reads
+<tt>bits.f</tt> back as 1.5.
+</p>
+<p>
+A bare union is an ordinary value in every other respect. It can be assigned,
+passed to a function, and returned from one; each of those copies the same
+bytes. A probe on this compiler sent <tt>0x11223344</tt> through a parameter
+and a return and read <tt>a=11223344 b=11223344 c=11223344</tt>. Field access
+to a member the union does not have is the same unknown-member reject as any
+other aggregate: <tt>error[3060]: no field or member function named 'nope' in
+union type</tt>, with a <tt>union declared here</tt> note at the declaration.
+</p>
+<p>
+The reason to reach for a bare union is a task where the bytes are the point:
+talking to a C interface that uses a union, or reinterpreting one value's
+storage as another, where the program itself knows which member is live. The
+program must know: nothing in a bare union records which member was last
+written, and no read is checked. A naked member in a bare union &mdash;
+<tt>union { x: i32, empty }</tt> &mdash; is accepted by the compiler as a
+<tt>void</tt> field, but it is not a tag: the type still has no
+<tt>.tag</tt>, and asking for one is <tt>error[3060]</tt>. That mistake has
+its own item in the Common mistakes list.
+</p>
+<p>
+One layout builtin does <em>not</em> work on a union. <tt>@offsetOf</tt> and
+<tt>@bitOffsetOf</tt> take a struct type; a union target is rejected outright:
+</p>
+<pre>
+error[3072]: expected struct type, found 'Bits'
+</pre>
+<p>
+There is nothing to compute: every member of a union is at offset 0 and no
+union member has a distinct bit offset. When a union sits inside a struct, the
+struct's own layout is still measurable the normal way. A probe's
+<tt>struct { a: u8, bits: Bits }</tt> measured <tt>@sizeOf</tt> 8,
+<tt>@offsetOf(holder, "bits")</tt> 4, and <tt>@alignOf</tt> 4 &mdash; the union
+participates in the surrounding layout like any other field.
+</p>
+
+<h2>Packed unions: exact bits, no padding</h2>
+<p>
+A <tt>packed union</tt> overlaps its members at <em>bit</em> offset 0, with no
+padding at all. Every member is a <tt>bool</tt>, an integer of at most 31
+bits, or a packed struct of such fields; this is the same 31-bit rule the
+packed structs of chapter&nbsp;5 obey, for the same reason. The chapter's
+example views one byte as a whole, or as two nibbles:
+</p>
+<pre>
+const Halves = packed struct { lo: u4, hi: u4 };
+const Flags = packed union {
+    whole: u8,
+    halves: Halves,
+};
+</pre>
+<p>
+A packed struct packs its fields LSB-first, so <tt>Halves</tt> puts
+<tt>lo</tt> in the low nibble and <tt>hi</tt> in the high nibble, and the
+packed union overlays <tt>whole</tt> on top of both. Writing
+<tt>.whole = 0xAB</tt> and reading the nibbles shows the packing directly:
+<tt>0xAB</tt> is <tt>1010&nbsp;1011</tt> in binary, and the program prints
+<tt>lo=b hi=a</tt>.
+</p>
+<p>
+Whole-member moves work: assigning a <tt>Halves</tt> value to
+<tt>flags.halves</tt> and reading <tt>flags.whole</tt> back is supported, and
+the compiler lowers the move leaf by leaf &mdash; one bitfield store or load
+per scalar field, with the offsets composed. The chapter's program copies
+<tt>.{ .lo = 2, .hi = 7 }</tt> into the union and prints
+<tt>flags2 lo=2 hi=7 whole=72</tt>; the byte is the two nibbles in place.
+That per-leaf copy is bounded: a whole-member move nested past the compiler's
+recursion cap (34 packed levels in the compiler's own fixture) is a clean
+<tt>error[3000]</tt>, never a bad store.
+</p>
+<p>
+The size rules are the packed rules from chapter&nbsp;5. The union's total
+bits are the widest member's bits; <tt>@sizeOf</tt> is that total rounded up
+to whole bytes, at least one; <tt>@alignOf</tt> is 1. <tt>Flags</tt> measures
+1 byte, align 1, 8 bits, and a two-<tt>u4</tt> union measures 1, 1, and 4.
+</p>
+<p>
+The type gate is strict, and the diagnostics name the exact rule. A <tt>u32</tt>
+member is rejected because no packed field may exceed 31 bits:
+</p>
+<pre>
+error[3000]: packed union field width must be &lt;= 31 bits (u32/i64 etc. packed fields are not supported yet)
+</pre>
+<p>
+A float or pointer member names the other half of the rule:
+<tt>error[3000]: packed union fields must be bool or an integer type
+(uN/iN); this field type is not allowed in a packed union</tt>. There is no
+<tt>f32</tt> register member and no pointer member; if you need either, wrap
+the bytes in an integer and convert at the edges.
+</p>
+<p>
+The reason to reach for a packed union is the one from the packed structs
+chapter: a place where the bit layout is the contract. Hardware registers that
+alias one address in two ways, a byte that is sometimes a count and sometimes
+two flags, a file header field &mdash; those are packed-union jobs. The price
+is the same as before: members that are not byte-sized integers, and values
+that belong to the wire rather than to the program.
+</p>
+
+<h2>Tagged unions: a tag beside the payload</h2>
+<p>
+The third form is the one C programmers end up building by hand: a value that
+is exactly one of several different shapes. The declaration adds
+<tt>(enum)</tt> to the union, which tells the compiler to store a tag &mdash;
+a small number naming the active variant:
+</p>
+<pre>
+const Shape = union(enum) {
+    circle: i32,
+    empty,
+    box: struct { w: i32, h: i32 },
+};
+</pre>
+<p>
+Three declaration shortcuts are on display. A normal variant gives a name and
+a payload type (<tt>circle: i32</tt>). A variant written as a bare name
+(<tt>empty,</tt>) is a <b>naked tag</b>: it has no payload, and the compiler
+treats it as a <tt>void</tt> variant. And a variant's payload may be an
+anonymous struct written in place (<tt>box: struct { w: i32, h: i32 }</tt>) &mdash;
+the compiler declares the internal struct for you. Naked-tag sugar is a
+tagged-union feature: a bare member in a plain struct is a parse reject, and
+a bare member in a bare union is accepted only as a <tt>void</tt> field, not
+as a tag. The anonymous payload is the same
+<tt>struct</tt> syntax as everywhere else.
+</p>
+<p>
+Construction names the variant and gives its payload:
+<tt>.{ .circle = 2 }</tt>, <tt>.{ .box = .{ .w = 3, .h = 4 } }</tt>, or just
+<tt>.empty</tt> for a naked tag. The payload is read through the variant name:
+<tt>s.circle</tt>, <tt>s.box.w</tt>. The tag is read as <tt>s.tag</tt>, and it
+is a number, not an enum: it is stored as a 32-bit unsigned value and prints
+with <tt>{}</tt> as a plain number. The variants number from zero in
+declaration order, so the chapter's program prints <tt>circle tag=0</tt>,
+<tt>empty tag=1</tt>, and <tt>box tag=2</tt> as it rotates through the three.
+</p>
+<p>
+The layout follows from that description: a tagged union is a struct-like pair
+of the tag and the payload union. <tt>Shape</tt>'s tag is 4 bytes, its largest
+payload is the 8-byte <tt>box</tt> struct, and the type measures 12 bytes at
+alignment 4, 96 bits total. The width of the tag is fixed at one 32-bit unit
+whatever the variant count; a probe measured a two-<tt>u8</tt> tagged union as
+8 bytes, align 4, 64 bits, and a tagged union with only naked tags as 4, 4,
+and 32 (just the tag). The layout table for this chapter's types is:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Type</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Form</b></th>
+<th align="left" bgcolor="#e8e0e0"><b><tt>@sizeOf</tt></b></th>
+<th align="left" bgcolor="#e8e0e0"><b><tt>@alignOf</tt></b></th>
+<th align="left" bgcolor="#e8e0e0"><b><tt>@bitSizeOf</tt></b></th>
+</tr>
+<tr>
+<td><tt>Bits</tt></td>
+<td>bare union (<tt>f32</tt>/<tt>u32</tt>)</td>
+<td>4</td>
+<td>4</td>
+<td>32</td>
+</tr>
+<tr>
+<td><tt>Flags</tt></td>
+<td>packed union (<tt>u8</tt>/two <tt>u4</tt>)</td>
+<td>1</td>
+<td>1</td>
+<td>8</td>
+</tr>
+<tr>
+<td><tt>Shape</tt></td>
+<td>tagged (<tt>i32</tt>, naked, 8-byte struct)</td>
+<td>12</td>
+<td>4</td>
+<td>96</td>
+</tr>
+</table>
+<p>
+The tag is managed by the compiler at construction, but the payload is still
+read by the name you write; the tag tells you which name is live. The
+compiler-native way to act on it is the <tt>switch</tt> in the next section.
+To change which variant is active, assign the whole value: <tt>s = .{ .box =
+&hellip; };</tt> or <tt>s = .empty;</tt> stores the new tag and payload
+together. A tagged union can also be compared whole against a variant as a
+condition &mdash; <tt>if (s == Shape.empty)</tt> &mdash; which is how the
+chapter's program records the answer <tt>eq=true</tt>.
+</p>
+<p>
+The reason to reach for a tagged union is a closed set of shapes: an
+interpreter's values, a protocol message that is one of a handful of forms, a
+state that carries different data in different states. The C version of this
+pattern is a struct with a numeric tag and a bare union, plus a comment
+promising to keep them in sync. The Z98 version stores the tag for you, gives
+the variants names, and lets the switch name them. That is the shape to reach
+for by default; the bare and packed unions are the specialized ones.
+</p>
+
+<h2>Switching on a tagged union</h2>
+<p>
+A tagged union is made for <tt>switch</tt>. The condition is the union value;
+a prong names a variant, and by adding <tt>=&gt; |name|</tt> the prong also
+binds that variant's payload to <tt>name</tt>. Both spellings of a prong work
+and bind identically: the qualified <tt>Shape.circle</tt> and the shorthand
+<tt>.box</tt>. The chapter's <tt>area</tt> function uses one of each:
+</p>
+<pre>
+fn area(s: Shape) i32 {
+    return switch (s) {
+        Shape.circle => |r| r * r * 3,
+        .box => |b| b.w * b.h,
+        else => 0,
+    };
+}
+</pre>
+<p>
+Inside the first prong <tt>r</tt> is the <tt>i32</tt> payload of
+<tt>circle</tt>; inside the second, <tt>b</tt> is the anonymous struct payload
+of <tt>box</tt>, so <tt>b.w</tt> and <tt>b.h</tt> read its fields. The capture
+is immutable, like every loop and switch capture in Z98. A naked tag needs no
+capture; <tt>name</tt> in the example matches <tt>.empty</tt> with no binding.
+A statement switch uses the same shape, prong bodies with a
+<tt>|capture|</tt> and <tt>std.io.print</tt> inside.
+</p>
+<p>
+Two rules come with the feature. First, <tt>else</tt> is mandatory in every
+Z98 switch, switch expressions included; a switch that lists every variant
+still has to spell one out. Leaving it off is a compile-time reject:
+</p>
+<pre>
+error[3068]: switch must have an 'else' prong
+</pre>
+<p>
+In <tt>area</tt> the <tt>else</tt> is the real answer for <tt>empty</tt>: the
+naked tag has no measurement, and 0 is its area. In <tt>name</tt> every variant
+is listed and the <tt>else</tt>
+is redundant; Z98 tolerates a redundant <tt>else</tt> (unlike the Zig it is a
+subset of, which rejects one), so the fail-safe habit is always to keep it.
+</p>
+<p>
+Second, a prong that names something the union does not have is rejected
+instead of falling to <tt>else</tt>. A typo such as <tt>.bogus</tt> reports
+<tt>error[3071]: no field or member function named 'bogus' in union type</tt>
+with a <tt>union declared here</tt> note, and a qualifier that names a
+different type reports the type mismatch
+<tt>error[3071]: type mismatch in switch case item -- case item type may not
+be compatible with the switch condition type</tt>. As with enums, a renamed
+variant stops compiling at every switch that still spells the old name.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> The union surface is small, and its edges are worth
+knowing before they surprise you. The tag is one 32-bit number, not a named
+enum type: there is no <tt>@tagName</tt> and no reflection over variants, and
+the numbers live in declaration order. A whole union has no <tt>{}</tt>
+printer &mdash; printing any union with <tt>{}</tt> (bare, packed, or tagged,
+scalar or struct payload, naked or not) rejects
+<tt>error[3063]: print argument type is not supported (no std.fmt
+printer)</tt>; print the fields instead, which is what the example does.
+<tt>@offsetOf</tt> and <tt>@bitOffsetOf</tt> reject a union target with
+<tt>error[3072]</tt>, as the first section shows. A packed union admits only
+<tt>bool</tt>, &le;31-bit integers, and packed structs of them, and the
+per-leaf whole-member copy is bounded at the compiler's nesting cap. A bare
+union is unchecked reinterpretation: reading a member the program did not
+write gives the bytes read through that type, not an error. And payload
+construction narrows a float <em>literal</em> to an <tt>f32</tt> payload
+(<tt>.{ .f = 2.0 }</tt> prints <tt>f=2</tt>), but a typed <tt>f64</tt> value
+aimed at an <tt>f32</tt> payload is a compile-time
+<tt>error[3000]</tt> &mdash; there is no silent narrowing of runtime
+values.</td>
+</tr>
+</table>
+
+<h2>The example</h2>
+<p>
+The whole chapter in one program. It declares the bare <tt>Bits</tt>, the
+packed <tt>Flags</tt>, and the tagged <tt>Shape</tt>, prints each type's
+layout, puns through <tt>Bits</tt>, copies nibbles through <tt>Flags</tt>, and
+switches over <tt>Shape</tt> with both prong spellings and a payload capture
+each. It is <tt>docs/sf/manuals/src/vol2/variant.z98</tt>:
+</p>
+<pre>
+const std = @import("std");
+
+// A bare union: the C union. Its members overlap at offset 0, and the
+// program tracks which one is live; nothing else does.
+const Bits = union {
+    f: f32,
+    u: u32,
+};
+
+// A packed union: members overlap at bit offset 0, no padding, and every
+// member is a bool, an integer of at most 31 bits, or a packed struct of
+// them.
+const Halves = packed struct { lo: u4, hi: u4 };
+const Flags = packed union {
+    whole: u8,
+    halves: Halves,
+};
+
+// A tagged union: the compiler stores a tag beside a payload union.
+// `empty` is a naked tag (no payload); `box` carries an anonymous struct.
+const Shape = union(enum) {
+    circle: i32,
+    empty,
+    box: struct { w: i32, h: i32 },
+};
+
+// Both prong spellings bind the payload capture: qualified and shorthand.
+// The else prong is mandatory even when every variant is listed.
+fn area(s: Shape) i32 {
+    return switch (s) {
+        Shape.circle => |r| r * r * 3,
+        .box => |b| b.w * b.h,
+        else => 0,
+    };
+}
+
+fn name(s: Shape) []const u8 {
+    return switch (s) {
+        Shape.circle => "circle",
+        .box => |b| if (b.w == b.h) "square" else "box",
+        .empty => "empty",
+        else => "unknown",
+    };
+}
+
+pub fn main() void {
+    // Bare union: one storage, read through either member.
+    var bits: Bits = .{ .f = 1.5 };
+    std.io.print("bits f={} u={x}\n", .{ bits.f, bits.u });
+    bits.u = 0x3FC00000;
+    std.io.print("bits back f={}\n", .{bits.f});
+    std.io.print("bits size={} align={} bits={}\n", .{ @sizeOf(Bits), @alignOf(Bits), @bitSizeOf(Bits) });
+
+    // Packed union: one byte, members are bit fields.
+    var flags: Flags = .{ .whole = 0xAB };
+    std.io.print("flags lo={x} hi={x} whole={x}\n", .{ flags.halves.lo, flags.halves.hi, flags.whole });
+    var h: Halves = .{ .lo = 2, .hi = 7 };
+    flags.halves = h;
+    std.io.print("flags2 lo={d} hi={d} whole={x}\n", .{ flags.halves.lo, flags.halves.hi, flags.whole });
+    std.io.print("flags size={} align={} bits={}\n", .{ @sizeOf(Flags), @alignOf(Flags), @bitSizeOf(Flags) });
+
+    // Tagged union: tag, payload, and the switch.
+    var s: Shape = .{ .circle = 2 };
+    std.io.print("circle tag={} area={d}\n", .{ s.tag, area(s) });
+    s = .{ .box = .{ .w = 3, .h = 4 } };
+    std.io.print("box tag={} area={d} name={s}\n", .{ s.tag, area(s), name(s) });
+    s = .empty;
+    var is_empty: bool = false;
+    if (s == Shape.empty) {
+        is_empty = true;
+    }
+    std.io.print("empty tag={} area={d} eq={}\n", .{ s.tag, area(s), is_empty });
+    std.io.print("shape size={} align={}\n", .{ @sizeOf(Shape), @alignOf(Shape) });
+}
+</pre>
+<p>
+Build the compiler once from the committed seed, then emit and compile the
+program, exactly as in chapter&nbsp;3:
+</p>
+<pre>
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/manual_seed
+</pre>
+<p>
+The result is <tt>/tmp/manual_seed/zig1_5_clean</tt> with the standard library
+beside it in <tt>/tmp/manual_seed/lib/</tt>. This example compiles with no
+diagnostics; the program then runs to the end:
+</p>
+<pre>
+$ mkdir -p /tmp/manual_out
+$ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out docs/sf/manuals/src/vol2/variant.z98
+$ cd /tmp/manual_out &amp;&amp; sh build_target.sh linux variant
+Building for linux...
+Built: variant
+$ ./variant
+bits f=1.5 u=3fc00000
+bits back f=1.5
+bits size=4 align=4 bits=32
+flags lo=b hi=a whole=ab
+flags2 lo=2 hi=7 whole=72
+flags size=1 align=1 bits=8
+circle tag=0 area=12
+box tag=2 area=12 name=box
+empty tag=1 area=0 eq=true
+shape size=12 align=4
+</pre>
+<p>
+Ten lines, in four groups. The first three are the bare union: 1.5 with its
+integer bit pattern beside it, that integer pattern written back and read as
+1.5 again, and the 4/4/32 layout. The next three are the packed union:
+<tt>0xAB</tt> split into
+<tt>lo=b</tt> and <tt>hi=a</tt>, the whole-member copy of nibbles 2 and 7
+showing up as the byte <tt>0x72</tt>, and the 1/1/8 layout. The next three are
+the tagged union: the <tt>circle</tt> variant with tag 0 and its rough area
+12, the <tt>box</tt> variant with tag 2, its area 12, and the name
+<tt>box</tt>, then the naked <tt>empty</tt> tag with tag 1, area 0, and the
+equality check <tt>eq=true</tt>. The last line is the tagged layout, 12 bytes
+at alignment 4. The exit status is 0.
+</p>
+
+<h2>Running under Windows 98</h2>
+<p>
+The same program builds for Win9x. <tt>src/build_owc.bat</tt> compiles the
+emitted C89 with OpenWatcom's <tt>wcc386</tt> and links a console
+<tt>variant.exe</tt>; run from a Windows 98 command prompt, it prints the same
+ten lines. The screenshot below will be captured on real hardware.
+</p>
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f0f0f0" class="placeholder">
+<tr>
+<td align="center">
+<i>Figure 24 &mdash; Win9x screenshot pending</i>
+</td>
+</tr>
+</table>
+<p><i>Figure 24. Running <tt>variant.exe</tt> under Windows 98.</i></p>
+
+<h2>Common mistakes</h2>
+<p>
+The mistakes below are the ones a programmer arriving from C (or from a newer
+Zig) makes first with unions. Each one has a corrected shape, and the corrected
+shape is the compiler's rule, not a style preference.
+</p>
+<p>
+<b>Reaching for C's untagged union.</b> In C, a union of shapes and a
+separate <tt>int</tt> tag next to it is the idiom, and the compiler checks
+nothing. Here the tagged union exists: <tt>union(enum)</tt> stores the tag
+beside the payload, and the switch names the variants. Use a bare union only
+when the bytes themselves are the task, not when the set of shapes is.
+</p>
+<p>
+<b>Reading the wrong member.</b> A union read is a reinterpretation: read
+<tt>bits.u</tt> after writing <tt>bits.f</tt> and the program gets the bit
+pattern, with no diagnostic. On a tagged union the tag records which variant
+is live, so read the payload through the variant the switch selected; the
+<tt>switch</tt> with captures is the shape that keeps the two together.
+</p>
+<p>
+<b>Assuming a bare union has a tag.</b> It does not.
+<tt>union { f: f32, u: u32 }</tt> has no <tt>.tag</tt>, and asking for one
+rejects with <tt>error[3060]: no field or member function named 'tag' in union
+type</tt>. A naked member such as <tt>union { x: i32, empty }</tt> is accepted
+as a <tt>void</tt> field, which can make the declaration look tagged, but no
+tag is stored and nothing is tracked; only <tt>union(enum)</tt> manages the
+tag for you.
+</p>
+<p>
+<b>Printing a whole union with <tt>{}</tt>.</b> The aggregate printers do not
+cover unions: <tt>print("{}", .{bits})</tt> rejects with
+<tt>error[3063]: print argument type is not supported (no std.fmt
+printer)</tt>, and the same holds for a tagged union whatever its active
+variant. Print the fields you mean, as the example prints
+<tt>flags.whole</tt> and <tt>s.tag</tt>.
+</p>
+<p>
+<b>Asking <tt>@offsetOf</tt> for a union member.</b> Union members all sit at
+offset 0, so the builtin takes a struct and rejects a union outright:
+<tt>error[3072]: expected struct type</tt>. Put the union in a struct and ask
+for the struct field's offset instead, or read the union's member through a
+normal field access.
+</p>
+<p>
+<b>Assuming any member type works in a packed union.</b> Packed members are
+limited to <tt>bool</tt>, integers of at most 31 bits, and packed structs of
+them. A <tt>u32</tt> member rejects with the width rule, and an <tt>f32</tt>
+member rejects with the integer-only rule. Keep the wide fields in a bare or
+tagged union and use the packed form for the exact-bit layouts.
+</p>
+
+<h2>Where to go next</h2>
+<p>
+This chapter's predecessor is
+<a href="vol2-06-enums.html">Aggregates III: Enums</a>, the chapter that gives
+names to fixed sets of numbers. The rest of the aggregates are still to come in
+numeric order: <b>tuples</b> (chapter 8, the positional literal that
+<tt>print</tt> uses for its argument list) and <b>arrays and slices</b>
+(chapter 9), both <i>(planned)</i>. The next shipped chapter is
+<a href="vol2-12-error-unions.html">chapter 12, Error Unions &mdash; the First
+Big Shift</a>, whose error sets and error unions are the other place where a
+tag and a payload travel together.
+</p>
+<p>
+For lookup, <a href="vol4-15-builtins.html">Volume IV &mdash; Builtins</a> is
+the shipped reference for <tt>@sizeOf</tt>, <tt>@alignOf</tt>,
+<tt>@bitSizeOf</tt>, and the <tt>@offsetOf</tt>/<tt>@bitOffsetOf</tt> reject.
+Volume IV's <b>Unions</b> reference page and Volume V's <b>port from C</b>
+HOWTO are <i>(planned)</i>; the latter is where a C <tt>union</tt> plus a
+hand-written tag gets translated into <tt>union(enum)</tt>.
+</p>
+<p>
+Until they ship, the runnable example in
+<tt>docs/sf/manuals/src/vol2/variant.z98</tt> is the working reference, and
+<a href="toc.html">the Contents page</a> shows the volume's shape.
+</p>
+
+<p class="navbtns">
+<a href="vol2-06-enums.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol2-12-error-unions.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol2-06-enums.html">Aggregates III: Enums</a> | <a href="toc.html">Contents</a> | Next: <a href="vol2-12-error-unions.html">Error Unions &mdash; the First Big Shift</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>

@@ -45,7 +45,7 @@ Espa&ntilde;ol (not yet available) |
 <b>Aggregates I: structs</b><br>
 <a href="vol2-05-packed-structs.html">Aggregates II: packed structs</a><br>
 <a href="vol2-06-enums.html">Aggregates III: enums</a><br>
-Aggregates IV: unions <i>(planned)</i><br>
+<a href="vol2-07-unions.html">Aggregates IV: unions</a><br>
 Aggregates V: tuples <i>(planned)</i><br>
 Arrays and slices <i>(planned)</i><br>
 Control flow, in full <i>(planned)</i><br>
@@ -513,8 +513,9 @@ compile-time key into the type, not a value.
 <b>Using <tt>@offsetOf</tt> on a union.</b> Offsets are a struct idea. Asking a
 union for a field offset, or asking a pointer or a scalar, is rejected with
 <tt>error[3072]: expected struct type, found 'U'</tt> rather than folded to
-zero. Unions (chapter&nbsp;7 <i>(planned)</i>) overlap their members at offset
-zero by construction, so there is nothing for an offset to say.
+zero. <a href="vol2-07-unions.html">Unions (chapter&nbsp;7)</a> overlap their
+members at offset zero by construction, so there is nothing for an offset to
+say.
 </p>
 <p>
 <b>Treating a struct as bytes.</b> Because the padding bytes are indeterminate,
@@ -541,10 +542,11 @@ The next shipped chapter is
 Structs</a>, the exact-bit counterpart of this one: it is where
 <tt>@bitOffsetOf</tt> and <tt>@bitSizeOf</tt> live and where padding goes away
 on purpose. After it comes
-<a href="vol2-06-enums.html">chapter 6, Aggregates III: Enums</a>. The rest of
-the aggregates, <b>unions</b> (chapter 7), <b>tuples</b> (chapter 8), and
-<b>arrays and slices</b> (chapter 9), are still <i>(planned)</i>; the next
-shipped chapter after chapter 6 is
+<a href="vol2-06-enums.html">chapter 6, Aggregates III: Enums</a>. Then comes
+<a href="vol2-07-unions.html">chapter 7, Aggregates IV: Unions</a>, the
+one-storage-many-readings aggregate in all three forms. The rest of the
+aggregates, <b>tuples</b> (chapter 8) and <b>arrays and slices</b> (chapter 9),
+are still <i>(planned)</i>; the next shipped chapter after chapter 7 is
 <a href="vol2-12-error-unions.html">chapter 12, Error Unions &mdash; the First
 Big Shift</a>.
 </p>
