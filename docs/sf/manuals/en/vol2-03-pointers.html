@@ -1,0 +1,586 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Pointers</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual pointers single-item many-item const volatile multi-level address-of dereference indexing auto-deref ptrCast intFromPtr ptrFromInt bitCast volatileCast emitted C">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol2-02-types.html">
+<link rel="next" href="vol2-12-error-unions.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume II &mdash; Learning Z98</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol2-00-title.html">How to read this</a><br>
+<a href="vol2-01-honest-comparison.html">The honest comparison</a><br>
+<a href="vol2-02-types.html">The type system</a><br>
+<b>Pointers</b><br>
+Aggregates I: structs <i>(planned)</i><br>
+Aggregates II: packed structs <i>(planned)</i><br>
+Aggregates III: enums <i>(planned)</i><br>
+Aggregates IV: unions <i>(planned)</i><br>
+Aggregates V: tuples <i>(planned)</i><br>
+Arrays and slices <i>(planned)</i><br>
+Control flow, in full <i>(planned)</i><br>
+defer and errdefer <i>(planned)</i><br>
+<a href="vol2-12-error-unions.html">Error unions &mdash; the first big shift</a><br>
+Optionals <i>(planned)</i><br>
+<a href="vol2-14-arena.html">The arena &mdash; the second big shift</a><br>
+<a href="vol2-15-builtins.html">Builtins, in full</a><br>
+No methods, no generics, no comptime <i>(planned)</i><br>
+The standard library tour <i>(planned)</i><br>
+print and the format string <i>(planned)</i><br>
+Idioms and best practices <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Pointers</h1>
+<p>
+A C programmer already knows what a pointer is, and Z98 does not pretend
+otherwise. The vocabulary is the one you expect: <tt>&amp;x</tt> takes an
+address, <tt>p.*</tt> reads through it, and a struct pointer reaches a field
+with a dot rather than an arrow. What changes is how carefully the compiler
+watches the pointer and what survives into the C89 it emits. This chapter works
+the five pointer shapes, the two address operators, the indexing rule, the
+auto-deref rule, and the five pointer builtins, and it shows the emitted C for
+the two qualifiers that behave differently from C.
+</p>
+<p>
+The guiding fact is that Z98 splits the two qualifiers apart. <tt>const</tt> is
+a promise made to the Z98 frontend only; the C that comes out drops it. The
+emitted C is plain C, and a plain C pointer can be written through whether the
+source said <tt>const</tt> or not. <tt>volatile</tt> goes the other way: Z98
+keeps it in the emitted C, so the C compiler honors it too. One qualifier
+protects Z98 code from itself; the other protects a memory-mapped register from
+the optimizer. Everything below follows from that split and from an indexing
+rule that is stricter than C's.
+</p>
+
+<h2>The five pointer shapes</h2>
+<p>
+Z98 spells pointer types in the Zig style: a <tt>*</tt> followed by the pointee
+type. There are five shapes the chapter uses, and each is a distinct type to
+the compiler.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Shape</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Means</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Emits as</b></th>
+</tr>
+<tr>
+<td><tt>*T</tt></td>
+<td>One item; read and write through it</td>
+<td><tt>T*</tt></td>
+</tr>
+<tr>
+<td><tt>*const T</tt></td>
+<td>One item; read through it, not write (frontend-enforced)</td>
+<td><tt>T*</tt> (<tt>const</tt> dropped)</td>
+</tr>
+<tr>
+<td><tt>*volatile T</tt></td>
+<td>One item whose reads and writes the compiler must not elide</td>
+<td><tt>volatile T*</tt></td>
+</tr>
+<tr>
+<td><tt>[*]T</tt></td>
+<td>A many-item pointer with no length; C-style <tt>p[i]</tt></td>
+<td><tt>T*</tt></td>
+</tr>
+<tr>
+<td><tt>**T</tt></td>
+<td>A pointer to a pointer; multi-level runs deeper still</td>
+<td><tt>T**</tt></td>
+</tr>
+</table>
+<p>
+A <tt>[*]T</tt> is the shape C calls a plain <tt>T*</tt>: it points at the
+first of some number of items, and the number is not part of the type. The
+length-carrying shape is the slice, <tt>[]T</tt>, and it is chapter&nbsp;9
+<i>(planned)</i>. Z98 accepts <tt>[*]const T</tt> and <tt>[*]volatile T</tt>
+too, but not the slice-side <tt>[]volatile T</tt>; memory-mapped I/O uses
+<tt>*volatile T</tt> or <tt>[*]volatile T</tt>.
+</p>
+
+<h2><tt>&amp;</tt> and <tt>.*</tt></h2>
+<p>
+Two operators carry the basic reads. <tt>&amp;x</tt> produces a pointer to
+<tt>x</tt>, and <tt>p.*</tt> is the value the pointer points at. They compose
+with assignment, so <tt>p.* = 42;</tt> writes through the pointer and the
+underlying variable sees it:
+</p>
+<pre>
+var n: i32 = 41;
+var p: *i32 = &amp;n;
+p.* = 42;
+</pre>
+<p>
+The example's first line proves the round trip: it prints <tt>*T n=42
+p.*=42</tt>. Note the punctuation: Z98 dereferences with a postfix
+<tt>.*</tt>, not with C's prefix <tt>*</tt>. A C habit of writing <tt>*p = 42;
+</tt> does not transfer; the compiler wants <tt>p.* = 42;</tt>.
+</p>
+<p>
+<tt>&amp;</tt> needs an addressable value. It takes a variable, a field, or an
+array element; you cannot take the address of a literal or of a temporary. In
+C this is the same rule, so it should feel familiar.
+</p>
+
+<h2><tt>ptr.field</tt> auto-dereferences</h2>
+<p>
+A single-level pointer to a struct reaches a field with the ordinary dot, and
+the compiler inserts the dereference for you. This is the one place Z98 is
+more forgiving than C, where a <tt>struct Point *</tt> needs <tt>p-&gt;x</tt>:
+</p>
+<pre>
+var pt: Point = .{ .x = 1, .y = 2 };
+var sp: *Point = &amp;pt;
+sp.x = 5;
+</pre>
+<p>
+<tt>sp.x</tt> and <tt>sp.*.x</tt> are the same lvalue; the emitted C uses
+<tt>sp-&gt;x</tt>. Auto-deref applies through one level of pointer. A
+<tt>**Point</tt> needs its dereferences spelled out, exactly as in C.
+</p>
+
+<h2>Indexing belongs to many-item pointers</h2>
+<p>
+This is the rule that catches C programmers, because C lets you index any
+pointer. In Z98, <tt>p[i]</tt> is defined only for a many-item pointer
+(<tt>[*]T</tt>) and for a pointer to a fixed-size array (<tt>*[N]T</tt>, Zig's
+auto-deref indexing). Indexing any other single-item pointer &mdash; <tt>*T</tt>,
+<tt>*const T</tt>, <tt>*volatile T</tt>, or a multi-level pointer &mdash; is
+rejected at compile time:
+</p>
+<pre>
+error[3066]: type '*i32' does not support indexing
+note: operand must be an array, slice, tuple, or vector
+</pre>
+<p>
+That is Zig's own rule, not a Z98 invention. The reason is the type: a
+<tt>*i32</tt> promises exactly one <tt>i32</tt>, so an index other than zero is
+meaningless and even <tt>p[0]</tt> hides an intent the type does not carry. If
+you want an indexed run of items, ask for the type that says so. A
+<tt>[*]T</tt> says it with no length; a <tt>*[N]T</tt> says it with the length
+in the type; a slice says it with a length at runtime. The example uses a
+decayed array:
+</p>
+<pre>
+var arr: [3]i32 = .{ 10, 20, 30 };
+var mp: [*]i32 = arr;
+mp[1] = 25;
+</pre>
+<p>
+A fixed array coerces to a <tt>[*]T</tt> by giving up its length, which is why
+the coercion is written with the target type visible. After that, <tt>mp[0]</tt>
+through <tt>mp[2]</tt> are ordinary C subscripts. The type carries no length,
+so a many-pointer index is exactly as unchecked as C's <tt>p[i]</tt>; the
+checkable form is a slice, and that is chapter&nbsp;9's subject.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> <tt>const</tt> is a promise to the Z98 frontend, not to
+the C compiler. The emitted C for <tt>const cp: *const i32 = &amp;n;</tt> is
+<tt>int* cp;</tt> &mdash; the qualifier is gone. Z98 will reject an assignment
+through <tt>cp.*</tt>, but any C function that receives the pointer sees a
+plain <tt>int*</tt> and can write through it. <tt>volatile</tt> is the
+opposite: Z98 keeps it in the emitted C, so the C compiler honors it too. The
+two qualifiers promise to different audiences, and only one of those audiences
+is the C compiler.</td>
+</tr>
+</table>
+
+<h2><tt>const</tt> stops at the frontend</h2>
+<p>
+The <tt>*const T</tt> shape is the read-only one. A write through it is a
+compile error, and the diagnostic is the same one the language uses for an
+immutable variable:
+</p>
+<pre>
+error[3002]: cannot assign to immutable variable
+</pre>
+<p>
+Reads are ordinary, and the example prints <tt>*const T cp.*=42</tt> through a
+<tt>*const i32</tt> bound to the same variable that <tt>p</tt> points at. The
+guarantee is real inside Z98 and it costs nothing: the emitted C for the
+declaration is just <tt>int* cp;</tt>. That is the honest boundary drawn in the
+note above, and it is why the manual says <tt>const</tt> is a frontend
+guarantee rather than a C-level one.
+</p>
+
+<h2><tt>volatile</tt> survives into C</h2>
+<p>
+A <tt>*volatile T</tt> is read and written on exactly the terms you wrote, so
+the C compiler may not cache, reorder, or delete the access. Z98 enforces the
+qualifier at the frontend and then keeps it in the emitted C:
+</p>
+<pre>
+volatile int* vp;
+</pre>
+<p>
+The example writes <tt>vp.* = 9;</tt> and reads it back; the run shows
+<tt>*volatile T vn=9 vp.*=9</tt>. The important half is what you are not
+allowed to do. A <tt>*volatile T</tt> cannot quietly become a <tt>*T</tt>,
+because that would drop the guarantee while the code still looked correct:
+</p>
+<pre>
+var np: *i32 = vp;
+error[3000]: cannot implicitly discard 'volatile' qualifier; use @volatileCast to remove it
+</pre>
+<p>
+<tt>@ptrCast</tt> cannot discard it either; it reports
+<tt>@ptrCast cannot discard the 'volatile' qualifier; use @volatileCast to
+remove it</tt>. The only way from <tt>*volatile T</tt> to <tt>*T</tt> is
+<tt>@volatileCast</tt>, which names the removal on purpose. That is the
+difference between <tt>const</tt> and <tt>volatile</tt> in one sentence: Z98
+lets C forget the first and refuses to let it forget the second.
+</p>
+
+<h2>Multi-level pointers</h2>
+<p>
+<tt>**T</tt>, <tt>***T</tt>, and deeper are supported, and every level is
+dereferenced explicitly. The example takes the address of the <tt>*i32</tt> it
+already has:
+</p>
+<pre>
+var pp: **i32 = &amp;p;
+pp.*.* = 43;
+</pre>
+<p>
+<tt>pp.*</tt> is the inner <tt>*i32</tt> and <tt>pp.*.*</tt> is the
+<tt>i32</tt>, so the write lands on the same variable the chapter started with;
+the line prints <tt>**T n=43 pp.**=43</tt>. Deeper levels follow the same
+pattern, one <tt>.*</tt> per pointer hop.
+</p>
+
+<h2>The pointer builtins</h2>
+<p>
+Five builtins carry the casts and conversions that pointer code needs. They are
+recognized by name, and the name is the whole API; there is no pointer library
+to import.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Builtin</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Does</b></th>
+</tr>
+<tr>
+<td><tt>@ptrCast(T, expr)</tt></td>
+<td>Reinterpret a pointer as another pointer type; the target is explicit</td>
+</tr>
+<tr>
+<td><tt>@intFromPtr(expr)</tt> / <tt>@ptrToInt(expr)</tt></td>
+<td>Pointer to integer; the two names are the same operation</td>
+</tr>
+<tr>
+<td><tt>@intToPtr(T, expr)</tt></td>
+<td>Integer to pointer, result type named explicitly</td>
+</tr>
+<tr>
+<td><tt>@ptrFromInt(expr)</tt></td>
+<td>Integer to pointer, result type taken from context</td>
+</tr>
+<tr>
+<td><tt>@bitCast(T, expr)</tt></td>
+<td>Same-size integer-to-integer bit reinterpretation</td>
+</tr>
+<tr>
+<td><tt>@volatileCast(T, expr)</tt></td>
+<td>Remove <tt>volatile</tt>; source must be volatile and the base type must match</td>
+</tr>
+</table>
+<p>
+<tt>@ptrCast</tt> reinterprets without looking at the pointee. The example
+erases <tt>*i32</tt> to <tt>*void</tt> and casts it back, and the round trip
+returns <tt>43</tt> because the address never changed. This is the tool for the
+arena pattern later in the volume, where a block of bytes is cast to the type
+that will live in it.
+</p>
+<p>
+<tt>@intFromPtr</tt> and <tt>@ptrToInt</tt> are aliases: both turn a pointer
+into a <tt>usize</tt>, and the example shows both spellings agreeing on the
+same address. The reverse direction comes in two forms.
+<tt>@intToPtr(*i32, addr)</tt> names the result type inside the call;
+<tt>@ptrFromInt(addr)</tt> takes nothing but the integer and reads the result
+type from where the value is going. That second form needs a context to read
+from, so it must be assigned to an annotated variable or passed where the
+target type is known:
+</p>
+<pre>
+const from_addr: *i32 = @ptrFromInt(addr_from);
+</pre>
+<p>
+Written without that annotation, <tt>@ptrFromInt</tt> has nothing to infer the
+pointer type from and is rejected:
+</p>
+<pre>
+error[19]: cannot infer pointer type for @ptrFromInt; annotate the target variable type
+</pre>
+<p>
+<tt>@bitCast</tt> is the pointer chapter's integer tool rather than a pointer
+tool, but it belongs beside the casts because it reinterprets representation:
+same-size integers trade their bit pattern without arithmetic. The example
+turns <tt>i32 -1</tt> into <tt>u32</tt> and prints both views,
+<tt>@bitCast u32(-1)=4294967295 hex=ffffffff</tt>. The source and destination
+must be integers of equal size; <tt>@bitCast(u32, -1)</tt> with an untyped
+literal is rejected, so the value is bound to an <tt>i32</tt> first.
+</p>
+<p>
+<tt>@volatileCast</tt> is the only sanctioned way to shed
+<tt>volatile</tt>, and it insists on a real volatile source with the same base
+type. The example removes the qualifier from the <tt>*volatile i32</tt> it
+wrote earlier and prints the value it now reads: <tt>@volatileCast
+read=9</tt>.
+</p>
+
+<h2>The example</h2>
+<p>
+The whole chapter in one program. It declares one variable and takes every
+pointer shape at it, decays an array to a many-pointer, auto-dereferences a
+struct pointer, and exercises the five builtins in a round trip. It is
+<tt>docs/sf/manuals/src/vol2/pointers.z98</tt>:
+</p>
+<pre>
+const std = @import("std");
+
+const Point = struct {
+    x: i32,
+    y: i32,
+};
+
+pub fn main() void {
+    var n: i32 = 41;
+
+    var p: *i32 = &amp;n;
+    p.* = 42;
+    std.io.print("*T n={} p.*={}\n", .{ n, p.* });
+
+    const cp: *const i32 = &amp;n;
+    std.io.print("*const T cp.*={}\n", .{cp.*});
+
+    var vn: i32 = 7;
+    var vp: *volatile i32 = &amp;vn;
+    vp.* = 9;
+    std.io.print("*volatile T vn={} vp.*={}\n", .{ vn, vp.* });
+
+    var pp: **i32 = &amp;p;
+    pp.*.* = 43;
+    std.io.print("**T n={} pp.**={}\n", .{ n, pp.*.* });
+
+    var arr: [3]i32 = .{ 10, 20, 30 };
+    var mp: [*]i32 = arr;
+    mp[1] = 25;
+    std.io.print("[*]T mp[0]={} mp[1]={} mp[2]={}\n", .{ mp[0], mp[1], mp[2] });
+
+    var pt: Point = .{ .x = 1, .y = 2 };
+    var sp: *Point = &amp;pt;
+    sp.x = 5;
+    std.io.print("ptr.field x={} y={}\n", .{ sp.x, sp.y });
+
+    const erased: *void = @ptrCast(*void, p);
+    const restored: *i32 = @ptrCast(*i32, erased);
+    std.io.print("@ptrCast roundtrip={}\n", .{restored.*});
+
+    const addr_from: usize = @intFromPtr(p);
+    const addr_to: usize = @ptrToInt(p);
+    std.io.print("@intFromPtr!=0={} @ptrToInt!=0={}\n", .{ addr_from != 0, addr_to != 0 });
+
+    const from_addr: *i32 = @ptrFromInt(addr_from);
+    const to_addr: *i32 = @intToPtr(*i32, addr_from);
+    std.io.print("@ptrFromInt roundtrip={} @intToPtr roundtrip={}\n", .{ from_addr.*, to_addr.* });
+
+    var neg: i32 = -1;
+    const all_ones: u32 = @bitCast(u32, neg);
+    std.io.print("@bitCast u32(-1)={} hex={x}\n", .{ all_ones, all_ones });
+
+    const mutable: *i32 = @volatileCast(*i32, vp);
+    std.io.print("@volatileCast read={}\n", .{mutable.*});
+}
+</pre>
+<p>
+Build the compiler once from the committed seed, then emit and compile the
+program, exactly as in chapter 12:
+</p>
+<pre>
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/manual_seed
+</pre>
+<p>
+The result is <tt>/tmp/manual_seed/zig1_5_clean</tt> with the standard library
+beside it in <tt>/tmp/manual_seed/lib/</tt>. This example compiles with no
+diagnostics; the program then runs to the end:
+</p>
+<pre>
+$ mkdir -p /tmp/manual_out
+$ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out docs/sf/manuals/src/vol2/pointers.z98
+$ cd /tmp/manual_out &amp;&amp; sh build_target.sh linux pointers
+Building for linux...
+Built: pointers
+$ ./pointers
+*T n=42 p.*=42
+*const T cp.*=42
+*volatile T vn=9 vp.*=9
+**T n=43 pp.**=43
+[*]T mp[0]=10 mp[1]=25 mp[2]=30
+ptr.field x=5 y=2
+@ptrCast roundtrip=43
+@intFromPtr!=0=true @ptrToInt!=0=true
+@ptrFromInt roundtrip=43 @intToPtr roundtrip=43
+@bitCast u32(-1)=4294967295 hex=ffffffff
+@volatileCast read=9
+</pre>
+<p>
+Eleven lines. Lines one through six are the shapes: the one-pointer, the
+read-only pointer, the volatile pointer, the double pointer, the many-pointer
+with its indexed write, and the struct pointer's auto-deref. Lines seven
+through eleven are the builtins in order: the cast round trip, the two
+address-to-integer spellings, the two integer-to-address spellings, the
+bit-reinterpretation, and the sanctioned removal of <tt>volatile</tt>. The
+exit status is 0.
+</p>
+
+<h2>Running under Windows 98</h2>
+<p>
+The same program builds for Win9x. <tt>src/build_owc.bat</tt> compiles the
+emitted C89 with OpenWatcom's <tt>wcc386</tt> and links a console
+<tt>pointers.exe</tt>; run from a Windows 98 command prompt, it prints the same
+eleven lines. The screenshot below will be captured on real hardware.
+</p>
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f0f0f0" class="placeholder">
+<tr>
+<td align="center">
+<i>Figure 20 &mdash; Win9x screenshot pending</i>
+</td>
+</tr>
+</table>
+<p><i>Figure 20. Running <tt>pointers.exe</tt> under Windows 98.</i></p>
+
+<h2>Common mistakes</h2>
+<p>
+The mistakes below are the ones a C programmer makes first with Z98 pointers.
+Each one has a corrected shape, and the corrected shape is the compiler's rule,
+not a style preference.
+</p>
+<p>
+<b>Indexing a one-pointer.</b> In C, <tt>int *p</tt> and <tt>p[0]</tt> are
+synonyms for <tt>*p</tt>, and <tt>p[1]</tt> is how arrays are walked. In Z98,
+<tt>p[i]</tt> on a <tt>*i32</tt> is rejected with <tt>error[3066]</tt>. The
+corrected shape depends on what you mean: a single item keeps <tt>p.*</tt>, a
+run of items with no length becomes a <tt>[*]T</tt>, and a run with a known
+length becomes a <tt>*[N]T</tt> or a slice. Do not reach for a cast to silence
+it; the rejection is telling you the type does not say "an array".
+</p>
+<p>
+<b>Assuming <tt>const</tt> reaches C.</b> A <tt>*const T</tt> stops writes in
+Z98 and then emits as a plain <tt>T*</tt>. If a C function is handed that
+pointer, it can write through it, and the compiler that emits the C will not
+stop it. Read the qualifier as "the Z98 frontend will not let <i>this source</i>
+write through it", not as a guarantee that the object is immutable for the
+whole program. If that distinction matters, put the pointer behind an interface
+that does not hand it out.
+</p>
+<p>
+<b>Reaching for a modern-Zig pointer builtin.</b> The names here are the Z98
+names. <tt>@intFromPtr</tt>, <tt>@ptrFromInt</tt>, <tt>@bitCast</tt>, and
+<tt>@volatileCast</tt> all exist, but the modern Zig set is larger than this
+compiler implements, and an unsupported name is not close enough:
+<tt>@intFromFloat</tt>, for example, is
+</p>
+<pre>
+error[3000]: unsupported builtin function
+</pre>
+<p>
+The rule is that the builtins in the Reference are the builtins that exist; no
+other <tt>@name</tt> is treated as a near miss. The five on this page are
+cross-checked against <a href="vol4-15-builtins.html">Volume IV &mdash;
+Builtins</a>.
+</p>
+<p>
+<b>Forgetting that <tt>@ptrFromInt</tt> reads its type from context.</b>
+<tt>@intToPtr</tt> takes the result type as its first argument;
+<tt>@ptrFromInt</tt> does not, and an unannotated binding has nothing to infer
+from. The compiler says so rather than guessing:
+<tt>error[19]: cannot infer pointer type for @ptrFromInt; annotate the target
+variable type</tt>. Annotate the variable, or use <tt>@intToPtr</tt>.
+</p>
+<p>
+<b>Dropping <tt>volatile</tt> with <tt>@ptrCast</tt>.</b> A cast that removes
+the qualifier is rejected, and so is an implicit conversion. Use
+<tt>@volatileCast</tt>; a cast that leaves the qualifier in place is fine, but
+the removal is an operation with a name because it is a decision.
+</p>
+
+<h2>Where to go next</h2>
+<p>
+The next shipped chapter is
+<a href="vol2-12-error-unions.html">chapter 12, Error Unions &mdash; the First
+Big Shift</a>: the type that carries failure. The chapters in between &mdash;
+structs, packed structs, enums, unions, tuples, arrays and slices, control
+flow, and <tt>defer</tt> &mdash; are <i>(planned)</i>. The pointer's length is
+one of them: <b>arrays and slices</b> (chapter 9) is where <tt>[]T</tt> and
+<tt>*[N]T</tt> replace the bare <tt>[*]T</tt>.
+</p>
+<p>
+For lookup, <a href="vol4-15-builtins.html">Volume IV &mdash; Builtins</a> is
+the shipped reference for <tt>@ptrCast</tt>, <tt>@intFromPtr</tt>,
+<tt>@ptrToInt</tt>, <tt>@intToPtr</tt>, <tt>@ptrFromInt</tt>,
+<tt>@bitCast</tt>, <tt>@volatileCast</tt>, and <tt>@fieldParentPtr</tt>. The
+arena (<a href="vol2-14-arena.html">chapter 14</a>) is the first place
+<tt>@ptrCast</tt> earns its keep, casting a block of bytes into a typed
+object. Volume IV's <b>Pointers</b> reference page, and Volume V's C-interop
+HOWTO, are <i>(planned)</i>.
+</p>
+<p>
+Until they ship, the runnable example in
+<tt>docs/sf/manuals/src/vol2/pointers.z98</tt> is the working reference, and
+<a href="toc.html">the Contents page</a> shows the volume's shape.
+</p>
+
+<p class="navbtns">
+<a href="vol2-02-types.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol2-12-error-unions.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol2-02-types.html">The Type System</a> | <a href="toc.html">Contents</a> | Next: <a href="vol2-12-error-unions.html">Error Unions &mdash; the First Big Shift</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
