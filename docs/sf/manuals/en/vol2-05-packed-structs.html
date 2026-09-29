@@ -102,14 +102,16 @@ const Header = packed struct {
 };
 </pre>
 <p>
-A packed field may be <tt>bool</tt> (one bit) or an integer type whose declared
-width is at most 31 bits. <tt>u1</tt> through <tt>u31</tt> and <tt>i1</tt>
-through <tt>i31</tt> are all fair game, and so are the named widths
-<tt>u8</tt>, <tt>u16</tt>, <tt>i8</tt>, and so on. A field of type
-<tt>u32</tt> or wider is rejected, and so is anything that is not a boolean or
-an integer &mdash; a <tt>float</tt>, a pointer, or an ordinary struct has no
-defined place in a bit sequence. The exact diagnostics are in the honesty note
-later in the chapter.
+A packed field may be <tt>bool</tt> (one bit), an integer type whose declared
+width is at most 31 bits, or a nested <tt>packed struct</tt> admitted by its
+inner total width: its own fields obey the same rule, and the nested type as a
+whole may be wider than 31 bits. <tt>u1</tt> through <tt>u31</tt> and
+<tt>i1</tt> through <tt>i31</tt> are all fair game, and so are the named widths
+<tt>u8</tt>, <tt>u16</tt>, <tt>i8</tt>, and so on. An integer field of type
+<tt>u32</tt> or wider is rejected, and so is every other type &mdash; a
+<tt>float</tt>, a pointer, an array, or an ordinary struct has no defined
+place in a bit sequence. The exact diagnostics are in the honesty note later
+in the chapter.
 </p>
 <p>
 The difference from the last chapter's <tt>struct</tt> shows up immediately.
@@ -194,7 +196,8 @@ is one 16-bit little-endian number whose low nibble lives in the first field.
 With <tt>low = 13</tt> and <tt>high = 2748</tt> (0xABC), the word is 0xABCD:
 byte 0 is 0xCD = 205 and byte 1 is 0xAB = 171. Both numbers are odd because
 <tt>low</tt> is the low nibble, not the high one; the first field is the least
-significant, always. The program prints 205 and 171 for exactly that reason.
+significant, always. The control register later in the chapter prints 203 and
+171 for exactly the same reason.
 </p>
 
 <h2>The bit builtins</h2>
@@ -369,21 +372,23 @@ written with a word and a pile of masks; here the masks are the field widths.
 <tr>
 <td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
 <td><b>Honest note.</b> The 31-bit cap is not a detail to discover later; it is
-the price of the type. A packed field can be <tt>bool</tt> or an integer of at
-most 31 bits, so a <tt>u32</tt>, an <tt>i64</tt>, a <tt>float</tt>, a pointer,
-or an ordinary struct cannot appear at all, and the compiler rejects the
-declaration:
+the price of the type. A packed field can be <tt>bool</tt>, an integer of at
+most 31 bits, or a nested <tt>packed struct</tt> admitted by its inner total
+width (its own fields obey the same rule, and the nested type as a whole may
+be wider than 31 bits). A <tt>u32</tt>, an <tt>i64</tt>, a <tt>float</tt>, a
+pointer, an array, or an ordinary struct cannot appear at all, and the
+compiler rejects the declaration:
 <tt>error[3000]: packed struct field width must be &lt;= 31 bits (u32/i64 etc.
 packed fields are not supported yet)</tt> for a wide integer, and
 <tt>error[3000]: packed struct fields must be bool or an integer type (uN/iN);
 this field type is not allowed in a packed struct</tt> for anything else. A
 32-bit value fits as two 16-bit fields or as <tt>u24</tt> plus <tt>u8</tt>, and
 the program can define the split itself. What you do <i>not</i> get is one
-field spanning the whole word. The layout is also little-endian and LSB-first
-by definition; it is not a universal interchange format, and the emitted C does
-not fall back on the host compiler's bitfield rules. Within Z98 and its
-supported targets, the byte image is exact; outside that boundary, both sides
-must agree on the rule.</td>
+integer field spanning the whole word. The layout is also little-endian and
+LSB-first by definition; it is not a universal interchange format, and the
+emitted C does not fall back on the host compiler's bitfield rules. Within
+Z98 and its supported targets, the byte image is exact; outside that boundary,
+both sides must agree on the rule.</td>
 </tr>
 </table>
 
