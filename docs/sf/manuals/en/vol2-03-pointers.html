@@ -11,7 +11,7 @@
 <link rel="home" href="index.html">
 <link rel="up" href="toc.html">
 <link rel="prev" href="vol2-02-types.html">
-<link rel="next" href="vol2-12-error-unions.html">
+<link rel="next" href="vol2-04-structs.html">
 </head>
 <body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
 <table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
@@ -42,7 +42,7 @@ Espa&ntilde;ol (not yet available) |
 <a href="vol2-01-honest-comparison.html">The honest comparison</a><br>
 <a href="vol2-02-types.html">The type system</a><br>
 <b>Pointers</b><br>
-Aggregates I: structs <i>(planned)</i><br>
+<a href="vol2-04-structs.html">Aggregates I: structs</a><br>
 Aggregates II: packed structs <i>(planned)</i><br>
 Aggregates III: enums <i>(planned)</i><br>
 Aggregates IV: unions <i>(planned)</i><br>
@@ -547,12 +547,14 @@ the removal is an operation with a name because it is a decision.
 <h2>Where to go next</h2>
 <p>
 The next shipped chapter is
-<a href="vol2-12-error-unions.html">chapter 12, Error Unions &mdash; the First
-Big Shift</a>: the type that carries failure. The chapters in between &mdash;
-structs, packed structs, enums, unions, tuples, arrays and slices, control
-flow, and <tt>defer</tt> &mdash; are <i>(planned)</i>. The pointer's length is
-one of them: <b>arrays and slices</b> (chapter 9) is where <tt>[]T</tt> and
-<tt>*[N]T</tt> replace the bare <tt>[*]T</tt>.
+<a href="vol2-04-structs.html">chapter 4, Aggregates I: Structs</a>: the
+declaration, the field order and layout, and the <tt>@offsetOf</tt>,
+<tt>@sizeOf</tt>, and <tt>@alignOf</tt> builtins that read the layout back.
+The chapters between it and the next big shift &mdash; packed structs, enums,
+unions, tuples, arrays and slices, control flow, and <tt>defer</tt> &mdash; are
+<i>(planned)</i>. The pointer's length is one of them: <b>arrays and slices</b>
+(chapter 9) is where <tt>[]T</tt> and <tt>*[N]T</tt> replace the bare
+<tt>[*]T</tt>.
 </p>
 <p>
 For lookup, <a href="vol4-15-builtins.html">Volume IV &mdash; Builtins</a> is
@@ -575,9 +577,9 @@ Until they ship, the runnable example in
 &nbsp;&nbsp;
 <a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
 &nbsp;&nbsp;
-<a href="vol2-12-error-unions.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+<a href="vol2-04-structs.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
 </p>
-<p>Previous: <a href="vol2-02-types.html">The Type System</a> | <a href="toc.html">Contents</a> | Next: <a href="vol2-12-error-unions.html">Error Unions &mdash; the First Big Shift</a></p>
+<p>Previous: <a href="vol2-02-types.html">The Type System</a> | <a href="toc.html">Contents</a> | Next: <a href="vol2-04-structs.html">Aggregates I: Structs</a></p>
 </td>
 </tr>
 </table>

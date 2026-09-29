@@ -1,0 +1,52 @@
+const std = @import("std");
+
+const Vec2 = struct {
+    x: i32,
+    y: i32,
+};
+
+const Sprite = struct {
+    id: u8,
+    tint: u32,
+    width: u16,
+    height: u16,
+    origin: Vec2,
+    scale: i64,
+};
+
+pub fn main() void {
+    std.io.print("Vec2 size={} align={}\n", .{ @sizeOf(Vec2), @alignOf(Vec2) });
+    std.io.print("Sprite size={} align={}\n", .{ @sizeOf(Sprite), @alignOf(Sprite) });
+
+    std.io.print("Vec2 offsets x={} y={}\n", .{
+        @offsetOf(Vec2, "x"),
+        @offsetOf(Vec2, "y"),
+    });
+    std.io.print("Sprite offsets id={} tint={} width={} height={} origin={} scale={}\n", .{
+        @offsetOf(Sprite, "id"),
+        @offsetOf(Sprite, "tint"),
+        @offsetOf(Sprite, "width"),
+        @offsetOf(Sprite, "height"),
+        @offsetOf(Sprite, "origin"),
+        @offsetOf(Sprite, "scale"),
+    });
+
+    var s: Sprite = .{
+        .id = 7,
+        .tint = 0x00ff00,
+        .width = 16,
+        .height = 32,
+        .origin = .{ .x = 1, .y = 2 },
+        .scale = -3,
+    };
+    s.origin.x = 5;
+    std.io.print("fields id={} tint={} width={} height={} origin.x={} origin.y={} scale={}\n", .{
+        s.id,
+        s.tint,
+        s.width,
+        s.height,
+        s.origin.x,
+        s.origin.y,
+        s.scale,
+    });
+}

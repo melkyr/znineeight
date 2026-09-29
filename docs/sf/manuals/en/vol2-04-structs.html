@@ -1,0 +1,564 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Structs</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual struct structs aggregate field order layout offsetOf sizeOf alignOf nested structs padding C89">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol2-03-pointers.html">
+<link rel="next" href="vol2-12-error-unions.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume II &mdash; Learning Z98</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol2-00-title.html">How to read this</a><br>
+<a href="vol2-01-honest-comparison.html">The honest comparison</a><br>
+<a href="vol2-02-types.html">The type system</a><br>
+<a href="vol2-03-pointers.html">Pointers</a><br>
+<b>Aggregates I: structs</b><br>
+Aggregates II: packed structs <i>(planned)</i><br>
+Aggregates III: enums <i>(planned)</i><br>
+Aggregates IV: unions <i>(planned)</i><br>
+Aggregates V: tuples <i>(planned)</i><br>
+Arrays and slices <i>(planned)</i><br>
+Control flow, in full <i>(planned)</i><br>
+defer and errdefer <i>(planned)</i><br>
+<a href="vol2-12-error-unions.html">Error unions &mdash; the first big shift</a><br>
+Optionals <i>(planned)</i><br>
+<a href="vol2-14-arena.html">The arena &mdash; the second big shift</a><br>
+<a href="vol2-15-builtins.html">Builtins, in full</a><br>
+No methods, no generics, no comptime <i>(planned)</i><br>
+The standard library tour <i>(planned)</i><br>
+print and the format string <i>(planned)</i><br>
+Idioms and best practices <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Aggregates I: Structs</h1>
+<p>
+A struct is a bundle of named fields that travel together. You know the idea
+from C, and Z98 does not change the idea; it changes the spelling and it adds
+three builtins that let a program read the layout the compiler chose. This
+chapter declares structs, builds values, works the field order and the padding
+rule, reads the offsets with <tt>@offsetOf</tt>, <tt>@sizeOf</tt>, and
+<tt>@alignOf</tt>, and nests one struct inside another. It is the first of the
+five aggregate chapters; the zig-zag of parenthesis-free types, positional
+literals, and codegen-level introspection all start here.
+</p>
+<p>
+The guiding fact is that a Z98 struct is a C89 struct in all but name. The
+fields are laid out in the order you declare them, each field is stored at the
+next offset its alignment allows, and the whole thing is rounded up to the
+alignment of its most demanding field. The emitted C is a plain <tt>struct</tt>
+in that same order, so the offsets Z98 computes are the offsets gcc gives you
+when it compiles the result. The introspection builtins do not invent a layout;
+they report the one the C compiler will build.
+</p>
+
+<h2>A type is a named constant</h2>
+<p>
+Z98 declares a struct the Zig way: <tt>const</tt>, a name, and the type
+expression. The name is an ordinary constant that happens to denote a type, and
+every declaration that uses the struct refers to it by name.
+</p>
+<pre>
+const Vec2 = struct {
+    x: i32,
+    y: i32,
+};
+</pre>
+<p>
+<tt>Vec2</tt> is now a type. It is not a variable and it occupies no storage;
+it is the recipe. The chapter's other type, <tt>Sprite</tt>, is built on top of
+it and shows a nested struct:
+</p>
+<pre>
+const Sprite = struct {
+    id: u8,
+    tint: u32,
+    width: u16,
+    height: u16,
+    origin: Vec2,
+    scale: i64,
+};
+</pre>
+<p>
+The style rule is the one C uses for <tt>typedef struct</tt> names: a type name
+starts with a capital, a field name with a lowercase letter. There is no
+<tt>struct Sprite</tt> tag to keep separate from <tt>Sprite</tt>; there is one
+name and it names the type. A struct type carries no functions. Z98 has no
+method syntax, so the operations that belong to a type are free functions whose
+first parameter is the struct (chapter&nbsp;16 is the pattern in full).
+</p>
+
+<h2>Building a value</h2>
+<p>
+A variable of struct type is declared with a type annotation, and the literal
+on the right is a brace set with the field names spelled out:
+</p>
+<pre>
+var s: Sprite = .{
+    .id = 7,
+    .tint = 0x00ff00,
+    .width = 16,
+    .height = 32,
+    .origin = .{ .x = 1, .y = 2 },
+    .scale = -3,
+};
+</pre>
+<p>
+The leading dot on each field is required, and the literal is typed by the
+variable it initializes. A field you leave out is <i>not</i> zero-filled: the
+literal compiles, but the omitted field holds whatever the memory already
+contained, so it is usually garbage. This is the opposite of C's aggregate
+initializer, where the fields you skip are quietly zeroed, and it is the same
+"<tt>undefined</tt> is not zero" rule that runs through the whole language.
+Write every field you intend to read, or write <tt>= undefined</tt> and fill
+the value before using it. (A declaration with no initializer at all is
+rejected: <tt>var s: Sprite;</tt> reports <tt>error[3014]: variable must be
+initialized; use '= undefined' to opt out</tt>.)
+</p>
+<p>
+Once built, the value is read and written field by field with the ordinary dot.
+A nested struct reaches its inner field by chaining the dots, and the whole
+value behaves as one thing:
+</p>
+<pre>
+s.origin.x = 5;
+</pre>
+<p>
+Struct assignment copies. <tt>var copy: Sprite = s;</tt> produces an
+independent value; changing <tt>copy</tt> afterward leaves <tt>s</tt> alone.
+There is no reference semantics hiding in the <tt>=</tt>.
+</p>
+
+<h2>Field order is declaration order</h2>
+<p>
+The compiler lays a struct out with one simple rule. Start a cursor at offset
+zero. For each field in the order it was declared, round the cursor up to the
+field's alignment, record that as the field's offset, and advance the cursor by
+the field's size. When every field is placed, round the total up to the largest
+alignment any field required; that is the struct's size and alignment. Fields
+are never reordered, and no field is ever packed against its neighbor unless
+its alignment allows it. The same rule is what a C compiler applies to a plain
+<tt>struct</tt>, which is why the two agree.
+</p>
+<p>
+Worked for <tt>Sprite</tt>, with the cursor in the last column:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Field</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Type</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Size</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Align</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Offset</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Cursor after</b></th>
+</tr>
+<tr>
+<td><tt>id</tt></td>
+<td><tt>u8</tt></td>
+<td>1</td>
+<td>1</td>
+<td>0</td>
+<td>1</td>
+</tr>
+<tr>
+<td><tt>tint</tt></td>
+<td><tt>u32</tt></td>
+<td>4</td>
+<td>4</td>
+<td>4</td>
+<td>8</td>
+</tr>
+<tr>
+<td><tt>width</tt></td>
+<td><tt>u16</tt></td>
+<td>2</td>
+<td>2</td>
+<td>8</td>
+<td>10</td>
+</tr>
+<tr>
+<td><tt>height</tt></td>
+<td><tt>u16</tt></td>
+<td>2</td>
+<td>2</td>
+<td>10</td>
+<td>12</td>
+</tr>
+<tr>
+<td><tt>origin</tt></td>
+<td><tt>Vec2</tt></td>
+<td>8</td>
+<td>4</td>
+<td>12</td>
+<td>20</td>
+</tr>
+<tr>
+<td><tt>scale</tt></td>
+<td><tt>i64</tt></td>
+<td>8</td>
+<td>8</td>
+<td>24</td>
+<td>32</td>
+</tr>
+<tr>
+<td><b>total</b></td>
+<td></td>
+<td></td>
+<td><b>8</b></td>
+<td><b>32</b></td>
+<td></td>
+</tr>
+</table>
+<p>
+Two gaps fall out of the arithmetic. The <tt>u8</tt> <tt>id</tt> leaves the
+cursor at 1, and the <tt>u32</tt> <tt>tint</tt> cannot start there, so bytes 1
+through 3 are skipped and <tt>tint</tt> lands at 4. Later, <tt>origin</tt> ends
+at 20 and the <tt>i64</tt> <tt>scale</tt> needs an 8-byte boundary, so bytes 20
+through 23 are skipped and <tt>scale</tt> lands at 24. The struct ends at 32,
+already a multiple of 8. Those skipped bytes are called padding, and the layout
+builtins will show you exactly where they are.
+</p>
+<p>
+The order the fields are written is therefore a real decision, not a
+cosmetic one. The three fields <tt>{ a: u8, b: i64, c: u8 }</tt> occupy 24
+bytes: <tt>a</tt> at 0, seven bytes of padding, <tt>b</tt> at 8, <tt>c</tt> at
+16, rounded up to 24. Move the <tt>i64</tt> to the front and the same three
+fields occupy 16: <tt>b</tt> at 0, <tt>a</tt> at 8, <tt>c</tt> at 9, rounded up
+to 16. C programmers once learned to sort fields widest-first for exactly this
+reason, and the habit still pays here. (The chapter's own <tt>Sprite</tt> lands
+on 32 whichever way its fields are ordered, because 25 bytes of fields cannot
+round to less than the 8-byte multiple above them; the three-field example is
+where the effect of the padding rule shows plainly.)
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> The layout is consistent, but it is not a contract. The
+offsets in this chapter are the ones this compiler produces on this target
+(32-bit, little-endian, the Win9x-era ABI), and the emitted C hands the same
+order and alignments to gcc, so the two agree on your machine today. Nothing
+promises the padding bytes hold any particular value, that a future compiler
+will not widen a field's carrier, or that a struct sent across a wire or a
+process boundary will be decoded the same way by other software. If the exact
+byte image is the point, either write the fields out one at a time or use the
+<tt>packed struct</tt> of the next chapter, which spells out every bit and
+removes the padding entirely. A Z98 struct is a memory convenience, not an
+interface description.</td>
+</tr>
+</table>
+
+<h2>The layout builtins</h2>
+<p>
+Three builtins turn that arithmetic into values a program can print, compare,
+or feed to an allocator. They are compile-time constants, recognized by name,
+folded before any C is emitted, and they take the type rather than a value:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Builtin</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Answers</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Result for Sprite</b></th>
+</tr>
+<tr>
+<td><tt>@sizeOf(T)</tt></td>
+<td>Bytes one value of <tt>T</tt> occupies, padding included</td>
+<td><tt>32</tt></td>
+</tr>
+<tr>
+<td><tt>@alignOf(T)</tt></td>
+<td>The strictest alignment any field demands</td>
+<td><tt>8</tt></td>
+</tr>
+<tr>
+<td><tt>@offsetOf(T, "field")</tt></td>
+<td>Byte offset of one field from the start</td>
+<td>see below</td>
+</tr>
+</table>
+<p>
+<tt>@offsetOf</tt> is the one that takes an argument beyond the type: the field
+name, and the name must be a string literal. That is the difference from C's
+<tt>offsetof</tt> macro, which spells the field as a bare member designator.
+Passing a name computed at run time is rejected:
+</p>
+<pre>
+error[3073]: field name must be a string literal
+</pre>
+<p>
+So is an offset request for a name the struct does not have:
+</p>
+<pre>
+error[3073]: no field named 'zz' in struct 'S'
+</pre>
+<p>
+And <tt>@offsetOf</tt> insists the target really is a struct. A union, a
+pointer, or a scalar is rejected rather than folded to zero, because an offset
+into those types has no meaning:
+</p>
+<pre>
+error[3072]: expected struct type, found 'U'
+</pre>
+<p>
+The printed offsets for the example's two types are
+<tt>Vec2&nbsp;x=0&nbsp;y=4</tt> and
+<tt>Sprite&nbsp;id=0&nbsp;tint=4&nbsp;width=8&nbsp;height=10&nbsp;origin=12&nbsp;scale=24</tt>.
+Every one of those numbers is the third column of the table above; the builtin
+and the by-hand arithmetic are the same rule, and the run proves it.
+</p>
+
+<h2>Nested structs are stored inline</h2>
+<p>
+A field whose type is another struct is not a pointer and not a reference: the
+inner value lives inside the outer one, occupying its full size at its aligned
+offset. <tt>Sprite.origin</tt> is a <tt>Vec2</tt> occupying bytes 12 through 19,
+and <tt>@sizeOf(Sprite)</tt> includes all eight of them. Reaching a field of the
+inner struct chains the dots, <tt>s.origin.x</tt>, and taking the address of the
+inner value with <tt>&amp;s.origin</tt> gives a <tt>*Vec2</tt> as you would
+expect.
+</p>
+<p>
+The inner type's own layout is computed first, by the same rule, so a nested
+struct's size and alignment are just numbers the outer layout uses like any
+other field's. <tt>Vec2</tt> is two <tt>i32</tt> fields, so it is 8 bytes with
+alignment 4, and that is why <tt>origin</tt> lands at 12 rather than at 11.
+There is no depth limit worth worrying about, but a struct cannot contain itself
+by value; a struct that must point at another of its own type stores a pointer
+(<tt>next: *Node</tt>), exactly as in C.
+</p>
+
+<h2>The example</h2>
+<p>
+The whole chapter in one program. It declares a two-field struct and a six-field
+struct that nests the first, prints the size and alignment of both, prints every
+field offset of both, then builds a value, mutates one nested field, and prints
+the fields back. It is <tt>docs/sf/manuals/src/vol2/shapes.z98</tt>:
+</p>
+<pre>
+const std = @import("std");
+
+const Vec2 = struct {
+    x: i32,
+    y: i32,
+};
+
+const Sprite = struct {
+    id: u8,
+    tint: u32,
+    width: u16,
+    height: u16,
+    origin: Vec2,
+    scale: i64,
+};
+
+pub fn main() void {
+    std.io.print("Vec2 size={} align={}\n", .{ @sizeOf(Vec2), @alignOf(Vec2) });
+    std.io.print("Sprite size={} align={}\n", .{ @sizeOf(Sprite), @alignOf(Sprite) });
+
+    std.io.print("Vec2 offsets x={} y={}\n", .{
+        @offsetOf(Vec2, "x"),
+        @offsetOf(Vec2, "y"),
+    });
+    std.io.print("Sprite offsets id={} tint={} width={} height={} origin={} scale={}\n", .{
+        @offsetOf(Sprite, "id"),
+        @offsetOf(Sprite, "tint"),
+        @offsetOf(Sprite, "width"),
+        @offsetOf(Sprite, "height"),
+        @offsetOf(Sprite, "origin"),
+        @offsetOf(Sprite, "scale"),
+    });
+
+    var s: Sprite = .{
+        .id = 7,
+        .tint = 0x00ff00,
+        .width = 16,
+        .height = 32,
+        .origin = .{ .x = 1, .y = 2 },
+        .scale = -3,
+    };
+    s.origin.x = 5;
+    std.io.print("fields id={} tint={} width={} height={} origin.x={} origin.y={} scale={}\n", .{
+        s.id,
+        s.tint,
+        s.width,
+        s.height,
+        s.origin.x,
+        s.origin.y,
+        s.scale,
+    });
+}
+</pre>
+<p>
+Build the compiler once from the committed seed, then emit and compile the
+program, exactly as in chapter&nbsp;3:
+</p>
+<pre>
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/manual_seed
+</pre>
+<p>
+The result is <tt>/tmp/manual_seed/zig1_5_clean</tt> with the standard library
+beside it in <tt>/tmp/manual_seed/lib/</tt>. This example compiles with no
+diagnostics; the program then runs to the end:
+</p>
+<pre>
+$ mkdir -p /tmp/manual_out
+$ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out docs/sf/manuals/src/vol2/shapes.z98
+$ cd /tmp/manual_out &amp;&amp; sh build_target.sh linux shapes
+Building for linux...
+Built: shapes
+$ ./shapes
+Vec2 size=8 align=4
+Sprite size=32 align=8
+Vec2 offsets x=0 y=4
+Sprite offsets id=0 tint=4 width=8 height=10 origin=12 scale=24
+fields id=7 tint=65280 width=16 height=32 origin.x=5 origin.y=2 scale=-3
+</pre>
+<p>
+Five lines. The first two are the whole-struct facts: <tt>Vec2</tt> is 8 bytes
+aligned to 4, and <tt>Sprite</tt> is 32 bytes aligned to 8. The next two are the
+per-field offsets, matching the worked table. The last line proves the value
+itself: <tt>tint</tt> prints as <tt>65280</tt> (the decimal form of the
+<tt>0x00ff00</tt> written in the source), <tt>origin.x</tt> reads back as
+<tt>5</tt> after the mutation, and <tt>scale</tt> keeps its sign as
+<tt>-3</tt>. The exit status is 0.
+</p>
+
+<h2>Running under Windows 98</h2>
+<p>
+The same program builds for Win9x. <tt>src/build_owc.bat</tt> compiles the
+emitted C89 with OpenWatcom's <tt>wcc386</tt> and links a console
+<tt>shapes.exe</tt>; run from a Windows 98 command prompt, it prints the same
+five lines. The screenshot below will be captured on real hardware.
+</p>
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f0f0f0" class="placeholder">
+<tr>
+<td align="center">
+<i>Figure 21 &mdash; Win9x screenshot pending</i>
+</td>
+</tr>
+</table>
+<p><i>Figure 21. Running <tt>shapes.exe</tt> under Windows 98.</i></p>
+
+<h2>Common mistakes</h2>
+<p>
+The mistakes below are the ones a programmer arriving from C makes first with
+Z98 structs. Each one has a corrected shape, and the corrected shape is the
+compiler's rule, not a style preference.
+</p>
+<p>
+<b>Assuming the struct is packed.</b> In C a struct may happen to have no
+padding for small field sets, and the layout can be forced with
+<tt>#pragma pack</tt> or <tt>__attribute__((packed))</tt>. Z98 structs are
+naturally aligned, always, and there is no attribute to reach for. The three
+bytes after <tt>id</tt> and the four after <tt>origin</tt> are real, and
+<tt>@sizeOf(Sprite)</tt> is 32, not 25. If you are matching a wire format or a
+hardware register, a plain struct is the wrong tool &mdash; the next chapter,
+<tt>packed struct</tt> <i>(planned)</i>, is the right one, and it is where the
+bit-exact layout lives.
+</p>
+<p>
+<b>Writing C's <tt>offsetof</tt>.</b> The C macro takes the member name as a
+bare designator, <tt>offsetof(Sprite, tint)</tt>. The Z98 builtin takes the
+field name as a string literal, <tt>@offsetOf(Sprite, "tint")</tt>. The
+unquoted form does not compile, and a name computed at run time is rejected with
+<tt>error[3073]: field name must be a string literal</tt>. The name is a
+compile-time key into the type, not a value.
+</p>
+<p>
+<b>Using <tt>@offsetOf</tt> on a union.</b> Offsets are a struct idea. Asking a
+union for a field offset, or asking a pointer or a scalar, is rejected with
+<tt>error[3072]: expected struct type, found 'U'</tt> rather than folded to
+zero. Unions (chapter&nbsp;7 <i>(planned)</i>) overlap their members at offset
+zero by construction, so there is nothing for an offset to say.
+</p>
+<p>
+<b>Treating a struct as bytes.</b> Because the padding bytes are indeterminate,
+copying a struct with a raw byte copy and then sending those bytes somewhere can
+leak whatever was in the gaps and will not match a decoder that omits padding.
+Struct assignment in Z98 copies the value, field by field under the hood, which
+is safe; a hand-rolled <tt>@sizeOf</tt>-long byte copy is not. If the bytes are
+the protocol, serialize one field at a time.
+</p>
+<p>
+<b>Expecting a constructor or a method.</b> There is no <tt>Sprite.init()</tt>
+and no <tt>s.draw()</tt>. A struct is data and nothing else; the code that
+builds or uses one is a free function that takes the value or a pointer to it.
+Z98 has no methods, no constructors, and no destructors, so nothing runs behind
+your back when a struct variable is declared or goes out of scope (chapter 16
+<i>(planned)</i> covers the init-function pattern that replaces them).
+</p>
+
+<h2>Where to go next</h2>
+<p>
+The next shipped chapter is
+<a href="vol2-12-error-unions.html">chapter 12, Error Unions &mdash; the First
+Big Shift</a>. Before it, in numeric order, come the rest of the aggregates.
+<b>Packed structs</b> (chapter 5) is the exact-bit counterpart of this chapter:
+it is where <tt>@bitOffsetOf</tt> and <tt>@bitSizeOf</tt> live and where padding
+goes away on purpose. After the aggregates come <b>arrays and slices</b>
+(chapter 9) and the aggregate-shaped <b>unions</b> (chapter 7), <b>enums</b>
+(chapter 6), and <b>tuples</b> (chapter 8), all <i>(planned)</i>.
+</p>
+<p>
+For lookup,
+<a href="vol4-15-builtins.html">Volume IV &mdash; Builtins</a> is the shipped
+reference for <tt>@sizeOf</tt>, <tt>@alignOf</tt>, <tt>@offsetOf</tt>,
+<tt>@bitSizeOf</tt>, and <tt>@bitOffsetOf</tt>, with the argument rules and the
+rejection codes quoted above. Volume IV's <b>Structs</b> reference page and
+Volume V's <b>port from C</b> HOWTO are <i>(planned)</i>.
+</p>
+<p>
+Until they ship, the runnable example in
+<tt>docs/sf/manuals/src/vol2/shapes.z98</tt> is the working reference, and
+<a href="toc.html">the Contents page</a> shows the volume's shape.
+</p>
+
+<p class="navbtns">
+<a href="vol2-03-pointers.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol2-12-error-unions.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol2-03-pointers.html">Pointers</a> | <a href="toc.html">Contents</a> | Next: <a href="vol2-12-error-unions.html">Error Unions &mdash; the First Big Shift</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
