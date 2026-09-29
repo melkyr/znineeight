@@ -400,11 +400,12 @@ variant stops compiling at every switch that still spells the old name.
 <td><b>Honest note.</b> The union surface is small, and its edges are worth
 knowing before they surprise you. The tag is one 32-bit number, not a named
 enum type: there is no <tt>@tagName</tt> and no reflection over variants, and
-the numbers live in declaration order. A whole union has no <tt>{}</tt>
-printer &mdash; printing any union with <tt>{}</tt> (bare, packed, or tagged,
-scalar or struct payload, naked or not) rejects
+the numbers live in declaration order. A tagged or packed union has no
+<tt>{}</tt> printer: printing one rejects
 <tt>error[3063]: print argument type is not supported (no std.fmt
-printer)</tt>; print the fields instead, which is what the example does.
+printer)</tt> whatever its payload, naked or not. A bare union does compile
+and prints the placeholder <tt>.{ ... }</tt> instead of its value. Print the
+fields instead, which is what the example does.
 <tt>@offsetOf</tt> and <tt>@bitOffsetOf</tt> reject a union target with
 <tt>error[3072]</tt>, as the first section shows. A packed union admits only
 <tt>bool</tt>, &le;31-bit integers, and packed structs of them, and the
@@ -594,10 +595,11 @@ tag for you.
 </p>
 <p>
 <b>Printing a whole union with <tt>{}</tt>.</b> The aggregate printers do not
-cover unions: <tt>print("{}", .{bits})</tt> rejects with
+cover unions. A tagged or packed union rejects with
 <tt>error[3063]: print argument type is not supported (no std.fmt
-printer)</tt>, and the same holds for a tagged union whatever its active
-variant. Print the fields you mean, as the example prints
+printer)</tt> whatever its active variant; a bare union compiles and prints
+the placeholder <tt>.{ ... }</tt>, not the value behind it. Either way, print
+the fields you mean, as the example prints
 <tt>flags.whole</tt> and <tt>s.tag</tt>.
 </p>
 <p>
