@@ -30,6 +30,13 @@ fn loadMap(arena: *std.arena.Arena, w: usize, h: usize) ![]u8 {
     return map;
 }
 
+fn loadSave(ok: bool) !void {
+    defer std.io.print("save slot closed\n", .{});
+    errdefer std.io.print("save slot rolled back\n", .{});
+    if (!ok) return error.Corrupt;
+    std.io.print("save slot loaded\n", .{});
+}
+
 const MoveArgs = struct { e: *Entity };
 
 var g_pool: [1024]u64 = undefined;
@@ -62,7 +69,7 @@ pub fn main() void {
     for (map) |t| {
         tsum = tsum + @intCast(usize, t);
     }
-    std.io.print("tilemap 8x4 checksum={}\n", .{tsum});
+    std.io.print("tilemap len={} checksum={}\n", .{ map.len, tsum });
 
     var args = MoveArgs{ .e = &world[0] };
     const ctx = std.async.contextInit(@ptrCast([*]u8, &g_pool)[0..8192]);
@@ -72,4 +79,9 @@ pub fn main() void {
         r = @asyncResume(frame, null);
     }
     std.io.print("entity 0 after patrol: {},{}\n", .{ world[0].x, world[0].y });
+
+    loadSave(true) catch {};
+    loadSave(false) catch {
+        std.io.print("corrupt save rejected\n", .{});
+    };
 }

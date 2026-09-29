@@ -5,7 +5,7 @@
 <title>Z98 Manual: The Honest Comparison</title>
 <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
 <meta name="generator" content="z98doc 0.1">
-<meta name="keywords" content="Z98 manual honest comparison C89 C++98 modern Zig modern C error unions coroutines arena comptime introspection builtins generics classes exceptions threads preemption lisp evaluator entity loop tilemap syntax ergonomics">
+<meta name="keywords" content="Z98 manual honest comparison C89 C++98 era machine toolchain cost checked C89 contracts error unions defer errdefer coroutines slices bounds arena cost of bugs lisp evaluator entity loop tilemap">
 <link rel="stylesheet" type="text/css" href="z98.css">
 <link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
 <link rel="home" href="index.html">
@@ -68,353 +68,240 @@ What you have learned, what is next <i>(planned)</i><br>
 <td valign="top">
 <h1>The Honest Comparison</h1>
 <p>
-You already program, so this volume does not owe you "what is a variable".
-It owes you the harder answer: what <i>is</i> Z98, why does it exist, and why
-would you choose it? The answer this volume defends is the framing of the whole
-book: <b>Z98 is a higher-level C89, not a smaller modern Zig.</b>
+Z98 is <b>checked C89</b>: C89 with contracts in the type system. It is a
+language, a compiler, a target, and an output format, and the output format is
+C89. It exists for the 1998 machine, and it keeps that machine's cost model
+while moving the disciplines C89 leaves to the programmer into checks the
+compiler performs.
 </p>
 <p>
-That second half is not an apology, and this chapter is going to be clear about
-why. Z98 exists for one job: writing software that runs on the 1998 machine and
-is built by the 1998 toolchain. On that machine, a modern language is not on
-the menu. The honest comparison is not "Z98 versus the language you use today";
-it is Z98 versus C89, C++98, and assembly &mdash; the tools that were actually
-there. Set against those, Z98 is not a consolation prize. It is a deliberate
-step up: checked errors, an arena, coroutines, and compile-time introspection
-on top of the same C89 output, with no runtime the machine cannot carry.
+The comparison that matters is against the era's peers: C89, the baseline, and
+C++98, the era's heavyweight. This chapter is the map: what Z98 stops you from
+shipping, where it leads the era's languages, where they lead it, where they
+tie, and what the limits are &mdash; with the way over each.
 </p>
 
 <table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
 <tr>
-<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
-<td><b>Honest note.</b> This chapter compares languages, and comparison is
-opinion. The statements about C89, C++98, modern C, and modern Zig are era
-framing: context, not claims this manual's tooling verifies. Only the Z98
-column is checked, claim by claim, against the language reference and the
-compiler. When the two disagree, the Z98 column wins; when a sentence about
-another language ages badly, the Z98 column is still true.</td>
+<td valign="top" width="20"><img src="gfx/icon-note.gif" width="16" height="16" alt="Note"></td>
+<td><b>Era framing.</b> Statements in this chapter about era machines, era
+toolchains, C89, and C++98 are era context. Statements about Z98 are checked
+against <tt>docs/reference/Language_Spec_Z98.md</tt> and the compiler built
+from the committed seed, and the Z98 fragments on this page compile and run
+on it.</td>
 </tr>
 </table>
 
-<h2>The machine decides</h2>
+<h2>What Z98 is</h2>
 <p>
-A 1998 machine is a 32-bit x86 PC on Windows 95, 98, or NT, with tens of
-megabytes of RAM and no modern toolchain. You do not install today's compiler
-on it, and no current language runtime lives there. So when this chapter names
-modern Zig or modern C, it is naming Z98's lineage and its contrast &mdash; not
-a candidate for the target. <b>A modern Zig toolchain cannot be built for or
-run on the target machine.</b> Neither can today's C or C++ compilers. The
-candidates on that machine are the era's C89 toolchain, the era's C++98
-compilers, and assembly.
+C89 and C99 are ISO standards: documents that describe a language. Z98 is not
+a standard and is not competing to be one. Z98 is a language with its own
+specification, plus a compiler, plus a target (the era's 32-bit PCs), plus an
+output format (C89). Saying "Z98 is better than C89" would be a category
+error; the honest sentence is that Z98 is a <i>compiler over C89</i>. What it
+adds is not a new dialect of the standard. What it adds is checking.
 </p>
 <p>
-That changes what "worse than modern Zig" means. Of course a language from a
-newer world has more features; it targets a newer world. The question that
-actually decides a 1998 project is narrower: <b>does this give me more safety
-and less manual bookkeeping than the C89 I would otherwise write, without
-adding a runtime the machine cannot afford?</b> For Z98 the answer is yes, and
-the rest of the chapter shows the receipts.
+C89 leaves a specific set of disciplines to the programmer: matching every
+allocation with a free, checking every return code, keeping every index inside
+its array, pairing every acquire with a release, casting with care. Those rules
+lived in comments and code review. Z98 moves them into the type system and the
+analyzer, and still emits C89. Error handling becomes an error union in the
+signature. Cleanup becomes <tt>defer</tt> and <tt>errdefer</tt> in the
+language. Buffer length travels with the buffer as a slice. Suspension becomes
+a coroutine. The compiler holds you to all of it, and the machine still runs
+plain C89.
+</p>
+<p>
+<b>Why not C99, then?</b> Because the target's toolchain is C89. The 1998
+machine has C89 compilers, and Z98's output is written for exactly those
+compilers. C99 is a standard, not something the era's machine becomes; and a
+program that requires C99 has left the era target behind. A project aiming at
+a modern machine is a different project with different tools; this manual is
+about the era target. For a program that must run on the era's hardware and
+compile with the era's compilers, the choice is between C89 as written and C89
+with checks the C89 compiler cannot provide. That second thing is Z98.
+</p>
+
+<h2>The toolchain cost</h2>
+<p>
+The target here is a home-user machine of the era: a 32-bit PC running Windows
+95 or 98, with tens of megabytes of RAM. A modern compiler &mdash; gcc, mingw,
+or Zig &mdash; is built for a modern machine: it expects a modern operating
+system and far more memory than that machine has, and its binaries do not run
+there. Adopting one means adopting a new machine and a new OS. That is a fine
+decision, but it is a different target; the software is no longer for the
+machine the project set out to serve.
+</p>
+<p>
+Z98's toolchain cost is the opposite one. It emits C89, and C89 is what the
+compilers already on that machine accept &mdash; the era's C compilers,
+including the OpenWatcom path this manual uses for Win9x. There is no new
+runtime to install, no garbage collector, no unwinder, and no operating-system
+upgrade. The RAM the machine has is the RAM the program gets.
+</p>
+<p>
+That is the whole reason the comparison in this chapter is C89 and C++98. They
+are the peers that ran on the target. A feature scoreboard against a language
+that cannot run on the target would measure the wrong thing; what matters is
+what the target's toolchain can build, and what the target's machine can
+carry.
 </p>
 
 <h2>The comparison set</h2>
 <p>
-The table is the map. The rows are languages; the columns are the four
-questions that decide most projects: where memory comes from, how failure is
-reported, what you can build types out of, and what concurrency looks like.
+Three languages, one machine. The columns are the questions that decide an era
+project: what builds it, where memory comes from, how failure is reported, and
+what the compiler checks for you.
 </p>
 <table width="100%" border="1" cellpadding="4" cellspacing="0">
 <tr>
 <th align="left" bgcolor="#e8e0e0"><b>Language</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Toolchain</b></th>
 <th align="left" bgcolor="#e8e0e0"><b>Memory</b></th>
 <th align="left" bgcolor="#e8e0e0"><b>Failure</b></th>
-<th align="left" bgcolor="#e8e0e0"><b>Abstraction</b></th>
-<th align="left" bgcolor="#e8e0e0"><b>Concurrency</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>What the compiler checks</b></th>
 </tr>
 <tr>
 <td valign="top"><b>C89</b></td>
+<td valign="top">the era's C compilers</td>
 <td valign="top"><tt>malloc</tt>/<tt>free</tt> by hand</td>
 <td valign="top">return codes, <tt>errno</tt>, conventions</td>
-<td valign="top">structs, unions, enums, function pointers</td>
-<td valign="top">none in the language (OS APIs only)</td>
+<td valign="top">syntax and types only</td>
 </tr>
 <tr>
 <td valign="top"><b>C++98</b></td>
-<td valign="top"><tt>new</tt>/<tt>delete</tt>, constructors and destructors</td>
+<td valign="top">the era's C++ compilers</td>
+<td valign="top"><tt>new</tt>/<tt>delete</tt>, constructors, destructors</td>
 <td valign="top">exceptions: <tt>try</tt>/<tt>throw</tt>/<tt>catch</tt></td>
-<td valign="top">classes, templates, virtual dispatch</td>
-<td valign="top">none in the standard (OS APIs only)</td>
+<td valign="top">classes, templates, type rules</td>
 </tr>
 <tr>
 <td valign="top"><b>Z98</b></td>
+<td valign="top">emits C89; the same era C compilers</td>
 <td valign="top">arena over a buffer you supply</td>
 <td valign="top">error unions: <tt>try</tt>/<tt>catch</tt>/<tt>errdefer</tt></td>
-<td valign="top">structs, enums, unions, packed structs; no generics or classes</td>
-<td valign="top">cooperative coroutines (<tt>@async*</tt> + <tt>std.async</tt>)</td>
-</tr>
-<tr>
-<td valign="top"><b>modern C</b></td>
-<td valign="top"><tt>malloc</tt>/<tt>free</tt></td>
-<td valign="top">error codes (no exceptions)</td>
-<td valign="top">structs, unions, enums; <tt>_Generic</tt> selection</td>
-<td valign="top">C11 <tt>&lt;threads.h&gt;</tt> (optional), atomics</td>
-</tr>
-<tr>
-<td valign="top"><b>modern Zig</b></td>
-<td valign="top">allocator interface passed explicitly</td>
-<td valign="top">error unions: <tt>try</tt>/<tt>catch</tt></td>
-<td valign="top">structs, enums, unions, plus comptime generics</td>
-<td valign="top">threads (<tt>std.Thread</tt>)</td>
+<td valign="top">errors, lifetimes, suspension, bounds, casts</td>
 </tr>
 </table>
 <p>
-Read the Z98 row against the C89 row underneath it: the same machine, the same
-C89 output, but the failure story, the allocation story, and the concurrency
-story are all checked. Read the modern rows as context: they are where Z98's
-syntax comes from and what a newer machine would use, not what this one can
-run.
+Read the last column: that is the chapter. Z98 compiles to the same C89 the
+first row compiles to, for the same compilers, with the disciplines of the
+first row turned into things the compiler enforces.
 </p>
 
-<h2>What each language brings</h2>
+<h2>What Z98 stops you from shipping</h2>
 <p>
-One paragraph each. This is the era-framing part: it is the author's summary
-of the five languages, not a set of verified claims about the four that are
-not Z98.
+In 1998 a bug ships on a disk. There is no telemetry, no crash reporter, and
+no fix in an hour; the defects below are the ones a C89 codebase shipped most
+often. Each is a convention in C89 that becomes a check in Z98.
 </p>
 
-<h3>C89 &mdash; the baseline</h3>
+<h3>The error that went unchecked</h3>
 <p>
-C89 is the language Z98 emits and the language it improves on. Its virtues are
-the era's virtues: a small language, a small runtime, compilers almost
-everywhere, and output a 1998 machine runs comfortably. Its costs are also
-the era's: memory is <tt>malloc</tt>/<tt>free</tt> pairs you must match
-correctly, failure is a return code you must remember to check, and the
-language itself has no generics, no classes, and no exceptions. Everything is
-a function and a struct, and the discipline is entirely yours.
+In C89 a fallible function returns <tt>-1</tt>, or sets <tt>errno</tt>, or
+writes through an out-parameter, and the caller is trusted to notice. Forget
+the check and the program continues with bad data. Z98 puts the failure in the
+function's type &mdash; <tt>error{...}!T</tt> &mdash; so it cannot be ignored
+by accident:
+</p>
+<pre>
+error[3015]: error union result is ignored; use 'try', 'catch', or assign the result
+</pre>
+<p>
+<tt>try</tt> may only appear in a function whose return type carries the error;
+using it in a <tt>void</tt> function is rejected before the program is built:
+</p>
+<pre>
+error[3075]: expected type 'void', found error set
+note: function cannot return an error
+</pre>
+<p>
+The C89 program ran a forgotten check until it crashed on a user's machine.
+The Z98 program does not build.
 </p>
 
-<h3>C++98 &mdash; power with a runtime bill</h3>
+<h3>The index that walked off the array</h3>
 <p>
-C++98 adds what C89 lacks: classes and virtual dispatch, templates,
-exceptions, namespaces, operator overloading, and the beginnings of the
-standard library. On a 32 MB machine those are not free &mdash; exception
-machinery, vtables, RTTI, and template expansions all cost memory and code
-size, and the era's compiler support was uneven. C++98 is the right tool when
-you need its abstractions and can pay for them.
+In C89, <tt>map[r * w + c]</tt> is arithmetic on a pointer, and the compiler
+has no idea where the array ends. A bound computed from the wrong variable
+reads or writes whatever follows. Z98 slices carry their length, and indexing
+is checked. A bound the compiler can see is rejected at compile time:
+</p>
+<pre>
+error[3062]: index 5 outside array of length 3
+</pre>
+<p>
+A bound that only exists at runtime traps under the default safety mode
+(<tt>-fsafe</tt>) instead of corrupting memory. The same tilemap loader that
+walks off the end of a C89 array stops at the edge in Z98.
 </p>
 
-<h3>Z98 &mdash; C89 with the sharp edges filed</h3>
+<h3>The memory that leaked, dangled, or was freed twice</h3>
 <p>
-Z98 speaks Zig's syntax (a strict subset of it) and emits C89. Its additions
-are the four in the next section: error unions, coroutines, the arena, and the
-compile-time introspection builtins. Everything else is deliberately
-C89-shaped: structs, enums, unions, packed structs, arrays, slices, and free
-functions. There are no classes to pay for at runtime and no hidden
-allocations; when the compiler adds something, you can read the C89 it
-produces. That is the whole design in one sentence: keep the machine's cost
-model, raise the programmer's safety.
+C89's <tt>malloc</tt>/<tt>free</tt> discipline has one failure mode per line:
+an early return leaks, a stale pointer dangles, a duplicate cleanup path
+frees twice. Z98's memory story is the arena: one buffer, bump allocation, one
+reset. There is no per-object <tt>free</tt> to double, and no wrong pointer to
+pass to it. Allocation failure is an error union, so an exhausted arena is a
+caught error rather than a null dereference:
+</p>
+<pre>
+error.OutOfMemory
+</pre>
+<p>
+The arena's own limit is honest and small: memory lives until the reset, so
+the discipline is choosing the reset level well. That is one decision,
+reviewed in one place, instead of a <tt>free</tt> on every path through every
+function.
 </p>
 
-<h3>modern C &mdash; the same model, more facilities</h3>
+<h3>The pointer that was null</h3>
 <p>
-C99 and later made C easier without changing its model: declarations anywhere,
-<tt>//</tt> comments, fixed-width integer types, variadic macros. C11 added
-atomics and an optional threads library. Memory is still
-<tt>malloc</tt>/<tt>free</tt>, failure is still error codes, and there are
-still no classes and no exceptions. None of it is a target option in 1998.
+In C89 every pointer can be <tt>NULL</tt>, and every dereference is a bet. Z98
+splits the case in the type system: <tt>*T</tt> is not nullable, and absence is
+<tt>?T</tt>, which must be unwrapped explicitly with <tt>if (opt) |v|</tt> or
+<tt>orelse</tt>. There is no silent dereference of a maybe-null pointer,
+because the type does not allow one. When the analyzer cannot prove a
+dereference safe, it says so:
+</p>
+<pre>
+warning[3037]: potential null pointer dereference
+</pre>
+
+<h3>The cast that silently truncated</h3>
+<p>
+C89 converts integers and pointers implicitly, and truncation, sign change, or
+qualifier loss is silent. Z98 makes the dangerous conversions explicit and
+checks them. An implicit width mismatch at a declaration warns; a
+const or volatile discard is an error; a checked cast traps in the safety mode
+if the value does not fit:
+</p>
+<pre>
+warning[3000]: type mismatch in variable declaration -- initialization type may not be compatible with declared type
+error[3000]: cannot implicitly discard 'volatile' qualifier; use @volatileCast to remove it
+panic: integer cast overflow in @intCast
+</pre>
+<p>
+Those are the failure modes that made 1998 software expensive to get right.
+Z98 does not make them a checklist of features: it makes them things the
+compiler refuses to let through.
 </p>
 
-<h3>modern Zig &mdash; the syntax ancestor</h3>
+<h2>Side by side: the same evaluator in C89 and Z98</h2>
 <p>
-Modern Zig shares Z98's taste: explicit errors, explicit allocators, no hidden
-control flow, no exceptions. It is also far larger, and it is not available on
-the target. Full <tt>comptime</tt>, generics, <tt>anytype</tt>,
-<tt>@Type</tt>, <tt>@typeInfo</tt>, <tt>anyerror</tt>, and
-<tt>std.Thread</tt> are part of it, and a 1998 machine cannot host any of them.
-Z98 borrows Zig's syntax and its discipline; it does not pretend to be the
-same tool for the same machines.
-</p>
-
-<h2>What Z98 gives you that C89 does not</h2>
-<p>
-Four additions. Each one removes a class of bug or a pile of bookkeeping that
-C89 leaves to you, and each one lowers to plain C89 with no hidden runtime.
-</p>
-
-<h3>Error unions</h3>
-<p>
-In C89, failure is a convention. In Z98, failure is part of a function's type:
-<tt>error{Foo, Bar}!i32</tt> means "an <tt>i32</tt>, or one of these errors",
-and the compiler holds both sides of the contract. A caller propagates with
-<tt>try</tt>, handles with <tt>catch |err|</tt>, and undoes partial work with
-<tt>errdefer</tt>. A call whose result is an error union cannot be silently
-dropped; the compiler rejects it. Neither is <tt>try</tt> allowed in a
-function that never promised to carry an error on. In C89 the compiler will
-not notice a forgotten return code; in Z98 it will.
-</p>
-<p>
-Two absences define the design. There is no <tt>anyerror</tt> type and no
-<tt>@errorName</tt> builtin: an error is always a declared tag in a declared
-set, and the function signature is where a caller can read it. This is the
-first big shift, and <a href="vol2-12-error-unions.html">chapter 12</a> is
-devoted to it.
-</p>
-
-<h3>Coroutines</h3>
-<p>
-C89 has no concurrency in the language at all. Z98 has cooperative, stackless
-coroutines: four builtins &mdash; <tt>@asyncInit</tt>,
-<tt>@asyncSuspend</tt>, <tt>@asyncResume</tt>, <tt>@asyncFrameSize</tt>
-&mdash; plus a scheduler and a per-task frame pool in <tt>std.async</tt>. The
-frame lives in a buffer you provide; the coroutine's state is type-erased to
-<tt>*void</tt>; a suspension happens only where the code says
-<tt>@asyncSuspend</tt>; the driver resumes it with <tt>@asyncResume</tt>.
-There is no <tt>async</tt>/<tt>await</tt> keyword and no future type, and the
-scheduler is ordinary library code you can read.
-</p>
-<p>
-That shape is a promise, and on a single-core era machine it is a gift.
-Because nothing preempts a running coroutine, it keeps the machine until it
-reaches a suspension point, and shared state never changes under it at an
-arbitrary instruction boundary. There are no locks to buy, because there is
-nothing to lock against.
-</p>
-
-<h3>The arena</h3>
-<p>
-There is no <tt>malloc</tt>/<tt>free</tt> pair in Z98's memory model. You give
-<tt>std.arena.init</tt> a byte buffer; <tt>std.arena.alloc</tt> bumps within
-it and returns <tt>ArenaError![*]u8</tt>, or <tt>error.OutOfMemory</tt>;
-<tt>std.arena.reset</tt> reclaims everything at once. Allocation is fallible
-and it is an error union, so the same <tt>try</tt>/<tt>catch</tt> machinery
-from the previous section applies &mdash; <tt>orelse</tt> is the wrong
-operator for it and is rejected. Typed allocation goes through an init
-function that casts the raw block. There is no <tt>deinit</tt>: the reset is
-the whole lifetime story.
-</p>
-<p>
-The other half of the pattern is knowing when memory dies. Long-lived state
-and short-lived scratch work get separate arenas, so the scratch arena can be
-reset on a schedule without touching anything permanent. On a machine where
-fragmentation and leaks are the failure mode, a single reset is both simpler
-and safer than a <tt>free</tt> per object. This is the second big shift, and
-<a href="vol2-14-arena.html">chapter 14</a> carries it.
-</p>
-
-<h3>Comptime-introspection builtins</h3>
-<p>
-C89 gives you <tt>sizeof</tt> and <tt>offsetof</tt>. Z98 adds a family of
-compile-time questions about types and representation: <tt>@sizeOf</tt>,
-<tt>@alignOf</tt>, <tt>@offsetOf</tt>, <tt>@bitSizeOf</tt>,
-<tt>@bitOffsetOf</tt>, and checked conversions such as <tt>@intCast</tt>. The
-interesting pair is <tt>@sizeOf</tt>/<tt>@bitSizeOf</tt>, because integer
-types can be declared at exact widths &mdash; unsigned <tt>u1</tt> through
-<tt>u64</tt>, signed <tt>i1</tt> through <tt>i63</tt>:
-<tt>@sizeOf</tt> reports the C carrier the value is stored in, and
-<tt>@bitSizeOf</tt> reports the width you declared. A <tt>u3</tt> occupies one
-byte and knows it is three bits wide.
-</p>
-<p>
-What Z98 does <i>not</i> have is the general <tt>comptime</tt> system those
-builtins live beside in modern Zig. The answers are compile-time constants,
-not a metaprogramming language. The builtins are the replacement for most of
-what <tt>comptime</tt> is used for at this scale.
-</p>
-<p>
-Around those four additions sits the rest of the language: optionals
-(<tt>?T</tt>, <tt>null</tt>, <tt>orelse</tt>), <tt>defer</tt> and
-<tt>errdefer</tt>, fixed-size arrays and slices with <tt>.ptr</tt> and
-<tt>.len</tt>, packed structs, tagged unions, and enums with explicit backing
-widths. All of it lowers to C89, and none of it needs a garbage collector or
-an unwinder.
-</p>
-
-<h2>What Z98 does not give you &mdash; and what stands in for it</h2>
-<p>
-The limits are real, and this chapter will not pretend otherwise. They are
-also the limits of what the target machine can host, not a shortfall against a
-language that machine cannot run. Each one has an era-practical answer, and
-for most projects the answer is enough.
-</p>
-
-<h3>Generics, templates, and comptime</h3>
-<p>
-There are no generics: no type parameters, no <tt>anytype</tt>, no
-<tt>@Type</tt>, no <tt>@typeInfo</tt>, and no <tt>comptime</tt> beyond
-constant folding and the specific builtins. A <tt>comptime</tt> parameter does
-not parse; the compiler reports
-<tt>error[2000]: expected ':' but found identifier</tt>. A generic function
-is written as one function per concrete type, and container types are written
-out concretely. C89 had exactly the same hole, and C programmers solved it the
-same way for decades; where a type really needs to be open, C++98 templates
-are the alternative, at their known runtime and compile-time cost.
-</p>
-
-<h3>Classes and methods</h3>
-<p>
-There are no classes and no method syntax. Aggregate types cannot contain
-function declarations, so <tt>s.bar()</tt> is not a method call with a
-different spelling; it is rejected with
-<tt>error[3060]: no field or member function named 'bar' in struct type</tt>.
-The Z98 idiom is the C idiom made explicit and type-checked: free functions
-take the struct as their first parameter, and polymorphism is a struct holding
-a function pointer plus the data pointer &mdash; a manual vtable. If you wrote
-C89, you already wrote this pattern by hand; Z98 only stops you from getting
-the function-pointer type wrong.
-</p>
-
-<h3>Exceptions</h3>
-<p>
-There are no exceptions and no stack unwinding. The keywords <tt>try</tt> and
-<tt>catch</tt> are error-union operators, not exception handlers: nothing is
-thrown, nothing unwinds, and an error is a value that travels through return
-types until someone handles it. There is no <tt>throw</tt> statement (it does
-not parse), no <tt>anyerror</tt> to erase tags into, and no
-<tt>@errorName</tt> to recover their names. C++98 has exceptions; C89 does
-not. Z98 chooses the C89 answer and then makes it checked &mdash; which is an
-upgrade over unchecked error codes, not a downgrade from C++.
-</p>
-
-<h3>Threads and preemption</h3>
-<p>
-There is no thread API in the language and none in the shipped standard
-library. The era's machines mostly ran one thread and juggled, and the
-coroutines do not change that: they are cooperative and round-robin, resumed
-by a scheduler at explicit suspension points, never preempted. Nothing runs in
-parallel; nothing interrupts a running function at an arbitrary instruction.
-If a program needs real parallelism, it comes from an operating-system API
-reached through <tt>extern</tt> declarations &mdash; the same door C89 uses
-&mdash; or from another tool. On 16 MB, cooperative coroutines are usually the
-cheaper answer anyway.
-</p>
-
-<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
-<tr>
-<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
-<td><b>Honest note.</b> The right way to read that list is not "Z98 is
-missing things". It is: if a modern language is available to you, use it, and
-use it happily. On the target machine it is not available. Judged against what
-does run there &mdash; hand-checked C89, heavyweight C++98, or assembly &mdash;
-Z98 is the option that checks the most and surprises the least. The limits are
-the price of that; the next sections show what the price buys.</td>
-</tr>
-</table>
-
-<h2>Syntax ergonomics: the same evaluator in C89 and Z98</h2>
-<p>
-Abstract comparisons are cheap. Here is the same small task written twice. The
-task is a Lisp-style evaluator: a tree of expressions, a recursive
-<tt>eval</tt>, and one real failure mode (division by zero). It is a good
-probe because it forces every hard part of a system language: tagged data,
-allocation, recursion, dispatch, and error plumbing. C89 and Z98 solve all of
-it; the difference is how much of it you write and how much the compiler
-checks.
+Abstract lists are cheap, so here is the same small task written twice: a
+Lisp-style evaluator over a tree of expressions, with one real failure mode
+(division by zero). It forces every hard part of a system language &mdash;
+tagged data, allocation, recursion, dispatch, and error plumbing &mdash; and
+it shows exactly which C89 conventions become Z98 types.
 </p>
 
 <h3>C89: tag it, allocate it, plumb it, dispatch it</h3>
 <p>
 The C89 shape is an enum tag, a union payload, a <tt>malloc</tt>/<tt>free</tt>
 per node, and a status <tt>int</tt> threaded through every call. This is era
-framing, the same pattern every C programmer of the period wrote:
+framing, the pattern every C programmer of the period wrote:
 </p>
 <pre>
 typedef enum { E_NUM, E_NEG, E_ADD, E_SUB, E_MUL, E_DIV } EKind;
@@ -451,14 +338,10 @@ static int eval(const Expr *e, int *out)
 }
 </pre>
 <p>
-Count what the compiler cannot see. The tag and the union are separate
-declarations, and nothing stops a node from being built with the wrong tag for
-its payload. Every call site must declare a result variable, check the status,
-and have a cleanup path for the failure; a caller that forgets the check
-compiles and ships. Every node is a separate allocation and a matching
-<tt>free</tt> on every exit path, including the error paths. The
-<tt>default</tt> prong is needed because the compiler cannot prove the switch
-is exhaustive.
+The compiler cannot see the conventions. Nothing ties the tag to the union
+member. Nothing makes a caller check the status. Nothing pairs the
+<tt>malloc</tt> with a <tt>free</tt> on the error paths, and the
+<tt>default</tt> prong exists because the switch cannot be proven exhaustive.
 </p>
 
 <h3>Z98: one type, one switch, an error in the signature</h3>
@@ -495,22 +378,19 @@ fn eval(nodes: []Expr, i: u32) error{DivideByZero}!i32 {
 }
 </pre>
 <p>
-The tag is not a field you can desynchronise from its payload; it is the type.
-The switch binds the payload to a name, so <tt>b.l</tt> is a <tt>u32</tt> and
-not a blind union read. The failure is written into the signature as
-<tt>error{DivideByZero}!i32</tt>, so <tt>try</tt> can propagate it and the
-compiler refuses to let it be dropped. Nodes come from one arena slice instead
-of a <tt>malloc</tt> per node, so there is no <tt>free</tt> to match and no
-leak path. Indexing goes through a length-carrying slice, and under the
-default safety mode it is bounds-checked. The <tt>else =&gt; unreachable</tt>
-prong is the one piece of ceremony Z98 insists on: every switch names its
-fallback, and <tt>unreachable</tt> here means the compiler can see the prong
-can never run.
+The tag and the payload cannot drift apart; the switch binds the payload to a
+name, so <tt>b.l</tt> is a <tt>u32</tt>. The failure is written into the
+signature as <tt>error{DivideByZero}!i32</tt>, so <tt>try</tt> propagates it
+and the compiler refuses to let it be dropped. Nodes come from one arena slice
+instead of a <tt>malloc</tt> per node, and the index goes through a
+length-carrying slice. This is the convention-to-type move in one function:
+C89's tag discipline, status discipline, and allocation discipline are now
+parts of the language.
 </p>
 
 <h3>The example: <tt>lisp_eval.z98</tt></h3>
 <p>
-The chapter's first runnable program is that evaluator, complete:
+The first runnable program is that evaluator, complete:
 <tt>docs/sf/manuals/src/vol2/lisp_eval.z98</tt>. It builds a node pool over an
 arena, constructs <tt>(2+3)*(10-4)/2</tt>, evaluates it, then evaluates
 <tt>10/(10-10)</tt> and catches the error.
@@ -601,20 +481,20 @@ The first line is the successful evaluation: <tt>(2+3)</tt> is 5,
 the error path: the evaluator reaches a zero divisor, returns
 <tt>error.DivideByZero</tt>, and the <tt>catch</tt> at the call site handles it.
 The program exits 0. The compile is clean: no warnings, no casts to paper over,
-no <tt>free</tt>.
+and no <tt>free</tt> to match.
 </p>
 
-<h2>What replaces what in the era's game code</h2>
+<h2>Side by side: the era's game code</h2>
 <p>
-An evaluator is a compiler-shaped example. The same ergonomics show up in the
-two pieces of every era game: moving entities and loading a tilemap. Both are
-mostly C89 bookkeeping in C89, and both shrink in Z98.
+An evaluator is a compiler-shaped example. The same convention-to-type moves
+show up in the two pieces of every era game &mdash; moving entities and
+loading a tilemap &mdash; and in the cleanup code that surrounded both.
 </p>
 
 <h3>The entity update loop</h3>
 <p>
-C89 passes a bare pointer and a separate count, and trusts the loop bound. This
-is era framing:
+C89 passes a bare pointer and a separate count, and trusts the loop bound.
+This is era framing:
 </p>
 <pre>
 typedef struct { int x, y, vx, vy; } Entity;
@@ -634,8 +514,7 @@ void step(Entity *world, int n, int dt) {
 }
 </pre>
 <p>
-The Z98 shape is the same arithmetic with the array length attached to the
-data and an index that is checked:
+Z98 keeps the arithmetic and attaches the length to the data:
 </p>
 <pre>
 const Entity = struct { x: i32, y: i32, vx: i32, vy: i32 };
@@ -656,19 +535,18 @@ fn step(world: []Entity, dt: i32) void {
 }
 </pre>
 <p>
-The arithmetic is deliberately identical, because the win here is not shorter
-code. The win is that <tt>world</tt> carries its own length, so there is no
-separate <tt>n</tt> to pass or to get wrong, and under the default safety mode
-the index is checked at runtime. A bounds bug that would corrupt memory in
-C89 traps and tells you where.
+The win is not shorter code. The win is that <tt>world</tt> carries its own
+length, so there is no separate <tt>n</tt> to pass or to get wrong, and the
+index is checked in the default safety mode. A bounds bug that would corrupt
+memory in C89 stops and reports instead.
 </p>
 
 <h3>The tilemap loader</h3>
 <p>
-Loading a <tt>w</tt>&times;<tt>h</tt> grid in C89 means allocating, checking the
-allocation, filling with a manually computed index, checking the fill status,
-and freeing every path out. Length is a variable the caller keeps beside the
-pointer:
+Loading a <tt>w</tt>&times;<tt>h</tt> grid in C89 means allocating, checking
+the allocation, filling with a manually computed index, checking the fill
+status, and freeing every path out. Length is a variable the caller keeps
+beside the pointer:
 </p>
 <pre>
 static int load_map(unsigned char *map, int w, int h)
@@ -688,8 +566,9 @@ if (load_map(map, w, h) != 0) { free(map); return -1; }
 free(map);
 </pre>
 <p>
-In Z98 the loader returns either a slice or an error, and the slice carries its
-length. The allocation failure is in the type, and there is no <tt>free</tt>:
+In Z98 the loader returns either a slice or an error, and the slice carries
+its length. The allocation failure is in the type, and there is no
+<tt>free</tt>:
 </p>
 <pre>
 fn loadMap(arena: *std.arena.Arena, w: usize, h: usize) ![]u8 {
@@ -711,16 +590,64 @@ Three things are gone from the call site: the <tt>malloc</tt> result check
 (<tt>map.len</tt> is the slice's own), and the <tt>free</tt> and its error
 paths (the arena reset reclaims the map). The fill still writes through a
 manually computed index, and <tt>@intCast</tt> makes the narrowing to
-<tt>u8</tt> explicit and checked &mdash; but the failure and lifetime plumbing
-that made the C89 version long is in the type system now, not in your head.
+<tt>u8</tt> explicit and checked &mdash; but the failure and length plumbing
+that made the C89 version long is in the type system now.
+</p>
+
+<h3>The cleanup that lived on every path</h3>
+<p>
+C89 cleanup is a convention around a label: each resource is released in
+reverse order at one exit, and every early return must jump there. This is era
+framing:
+</p>
+<pre>
+static int load_save(World *w)
+{
+    FILE *f = NULL;
+    unsigned char *map = NULL;
+    int rc = -1;
+
+    f = fopen("world.dat", "rb");
+    if (f == NULL) goto cleanup;
+    map = malloc(w-&gt;w * w-&gt;h);
+    if (map == NULL) goto cleanup;
+    if (fread(map, 1, (size_t)(w-&gt;w * w-&gt;h), f) != (size_t)(w-&gt;w * w-&gt;h))
+        goto cleanup;
+    w-&gt;map = map;
+    map = NULL;
+    rc = 0;
+
+cleanup:
+    free(map);
+    if (f != NULL) fclose(f);
+    return rc;
+}
+</pre>
+<p>
+Z98 writes the cleanup next to the thing it cleans up, and the compiler lays
+the exits out:
+</p>
+<pre>
+fn loadSave(ok: bool) !void {
+    defer std.io.print("save slot closed\n", .{});
+    errdefer std.io.print("save slot rolled back\n", .{});
+    if (!ok) return error.Corrupt;
+    std.io.print("save slot loaded\n", .{});
+}
+</pre>
+<p>
+<tt>defer</tt> runs at every scope exit; <tt>errdefer</tt> runs only when the
+scope leaves with an error. The C89 version's correctness depends on every
+future edit remembering the label; the Z98 version's cleanup is attached to
+the declaration and cannot be skipped by an early return.
 </p>
 
 <h3>The example: <tt>game_loop.z98</tt></h3>
 <p>
-The second runnable program puts both together and adds a coroutine:
+The second runnable program puts the pieces together:
 <tt>docs/sf/manuals/src/vol2/game_loop.z98</tt>. It updates two entities,
-loads and checksums a tilemap, then runs a four-step patrol coroutine over the
-first entity.
+loads and measures a tilemap, runs a four-step patrol coroutine, then loads a
+save slot on the success and error paths.
 </p>
 <pre>
 const std = @import("std");
@@ -755,6 +682,13 @@ fn loadMap(arena: *std.arena.Arena, w: usize, h: usize) ![]u8 {
     return map;
 }
 
+fn loadSave(ok: bool) !void {
+    defer std.io.print("save slot closed\n", .{});
+    errdefer std.io.print("save slot rolled back\n", .{});
+    if (!ok) return error.Corrupt;
+    std.io.print("save slot loaded\n", .{});
+}
+
 const MoveArgs = struct { e: *Entity };
 
 var g_pool: [1024]u64 = undefined;
@@ -787,7 +721,7 @@ pub fn main() void {
     for (map) |t| {
         tsum = tsum + @intCast(usize, t);
     }
-    std.io.print("tilemap 8x4 checksum={}\n", .{tsum});
+    std.io.print("tilemap len={} checksum={}\n", .{ map.len, tsum });
 
     var args = MoveArgs{ .e = &amp;world[0] };
     const ctx = std.async.contextInit(@ptrCast([*]u8, &amp;g_pool)[0..8192]);
@@ -797,6 +731,11 @@ pub fn main() void {
         r = @asyncResume(frame, null);
     }
     std.io.print("entity 0 after patrol: {},{}\n", .{ world[0].x, world[0].y });
+
+    loadSave(true) catch {};
+    loadSave(false) catch {
+        std.io.print("corrupt save rejected\n", .{});
+    };
 }
 </pre>
 <p>
@@ -810,22 +749,29 @@ Built: game_loop
 $ ./game_loop
 entity 0 after update: 17,7 v=7,-3
 entity 1 after update: 81,54 v=-9,4
-tilemap 8x4 checksum=48
+tilemap len=32 checksum=48
 entity 0 after patrol: 45,7
+save slot loaded
+save slot closed
+save slot rolled back
+save slot closed
+corrupt save rejected
 </pre>
 <p>
 The first two lines are the stepped entities: the first moved to (17,7) and
 kept its velocity; the second moved to (81,54) without hitting a wall. The
-third line is the tilemap's length-carrying slice summed: 48. The fourth is
-the coroutine: four suspensions, each advancing <tt>x</tt> by 7, so the entity
-ends at 45.
+third line is the tilemap: a length-carrying slice whose 32 tiles sum to 48.
+The fourth is the coroutine: four suspensions, each advancing <tt>x</tt> by 7,
+so the entity ends at 45. The last five are the lifetime pair: the successful
+load closes its slot, and the corrupt save rolls back and still closes its
+slot before the call site reports it.
 </p>
 
 <h2>Coroutines: what they replace</h2>
 <p>
-Coroutines earn their place by deleting something. On the era's machines, a
-routine that paused and resumed was one of three things: a hand-rolled state
-machine, a callback chain, or a thread you juggled. All three put the
+Suspension is the third convention C89 leaves to you. A routine that pauses
+and resumes was one of three things on the era's machines: a hand-rolled
+state machine, a callback chain, or a thread you juggled. All three put the
 bookkeeping in your source.
 </p>
 <h3>The state machine you stop writing</h3>
@@ -852,7 +798,7 @@ int patrol_step(Patrol *p)
 }
 </pre>
 <p>
-In Z98 the same routine is written in the order it happens, and the pause is a
+In Z98 the routine is written in the order it happens, and the pause is a
 statement:
 </p>
 <pre>
@@ -865,65 +811,175 @@ fn patrol(e: *Entity) void {
 }
 </pre>
 <p>
-What was deleted: the state word, the index field, the re-entry <tt>switch</tt>,
-and the calling convention that told the caller whether to call again. The
-compiler synthesises the step machine, the frame layout, and the state word;
-<tt>std.async</tt> owns the scheduler and the frame pool. Against a callback
-chain, the win is the same: the logic reads top to bottom instead of being
-sliced across callbacks that pass a context pointer around. Against a thread,
-the win is the era's economics &mdash; a coroutine is a frame buffer, not a
-stack and a kernel object, and because nothing preempts, correctness does not
-depend on which lock you remembered to take.
+What was deleted: the state word, the index field, the re-entry
+<tt>switch</tt>, and the calling convention that told the caller whether to
+call again. The compiler synthesises the step machine, the frame layout, and
+the state word; <tt>std.async</tt> owns the scheduler and the frame pool.
+Because nothing preempts, the coroutine keeps the machine until it reaches a
+suspension point, shared state cannot change under it, and there are no locks
+to buy. A coroutine costs a frame buffer, not a stack and a kernel object
+&mdash; which is the only version of concurrency a 16 MB machine should be
+asked to run.
 </p>
 
-<h2>A higher-level C89, not a smaller modern Zig</h2>
+<h2>Where C89 and C++98 take the lead</h2>
 <p>
-Now the framing sentence from the top, defended. "Higher-level C89" means Z98
-raises the parts of C89 that produce the most expensive bugs &mdash; failure
-handling, memory lifetime, scheduling, and representation &mdash; while
-emitting plain C89 with no hidden runtime. An error union is a checked return
-code. The arena is a disciplined <tt>malloc</tt> with a single <tt>free</tt>.
-Coroutines are a state machine the compiler writes instead of you. The
-introspection builtins are <tt>sizeof</tt> grown up. Every one of them is
-visible in the emitted C, and none needs an unwinder, a garbage collector, a
-virtual machine, or a thread.
+Honesty is two-sided. Z98 checks more than C89 and less than C++98, and there
+are places the era's languages genuinely win.
 </p>
 <p>
-"Not a smaller modern Zig" means the missing features are not a queue of
-unfinished work; they are the boundary of the design. Modern Zig's headline
-abilities &mdash; general <tt>comptime</tt>, generics, <tt>anyerror</tt>,
-threads &mdash; are absent because the target machine cannot host them, and
-because the point was never to imitate a language that runs somewhere else.
-Z98 borrows Zig's syntax and its taste for explicitness; it does not borrow
-Zig's feature set, and it is not apologising for that.
+<b>C89 leads on ubiquity and on nothing-new.</b> Every era compiler accepts
+it, every era programmer reads it, and it asks for no toolchain change at all.
+There are decades of existing C89 code and libraries to link; Z98's output is
+C89, so it links with them directly. C89 also leads on total freedom: there is
+no checker to disagree with you, and when you know exactly what you are doing,
+that is a feature. And C89 is an ISO standard, with a stable document behind
+it.
 </p>
 <p>
-The practical consequence is what the rest of this volume teaches. A Z98
-program looks like a well-organized C89 program: structs and free functions,
-init functions instead of constructors, a struct of function pointers instead
-of a virtual table, arenas instead of ownership graphs, and error unions
-instead of status codes. If you write C89 today, you already know the shape.
-Z98 changes what the compiler checks, not what the machine does.
+<b>C++98 leads wherever abstraction is worth a runtime.</b> Templates give
+generic containers; classes give constructors and destructors, so cleanup runs
+automatically on every exit; exceptions unwind the stack to the handler; and
+operator overloading lets the standard library read naturally. When the memory
+budget carries the vtables and the exception machinery, C++98 gives leverage
+Z98 deliberately does not. A short era-framing sketch:
+</p>
+<pre>
+template &lt;typename T&gt;
+class Stack {
+public:
+    Stack() : data(new T[64]), count(0) {}
+    ~Stack() { delete[] data; }   /* cleanup on every exit path */
+
+    void push(const T&amp; v) { if (count &lt; 64) data[count++] = v; }
+    bool pop(T&amp; out) {
+        if (count == 0) return false;
+        out = data[--count];
+        return true;
+    }
+
+private:
+    T *data;
+    int count;
+};
+</pre>
+<p>
+The destructor is automatic, the container works for any <tt>T</tt>, and
+<tt>pop</tt> reports failure the C89 way, through a status and an
+out-parameter. The cost is a template expansion per type, a vtable-shaped
+object, and the exception tables the toolchain emits. Z98 makes the opposite
+trade: less abstraction, less runtime, more checking.
+</p>
+
+<h2>Where the three tie</h2>
+<p>
+The three languages are not worlds apart; they share the era's ground rules.
+All three produce native 32-bit code for the same machine with no interpreter
+and no garbage collector. All three compile with the era's toolchain, and Z98
+output can be linked with hand-written C89 in the same program. And all three
+look the same on the page: structs and free functions, init functions, arrays
+with a length kept nearby, a status or an error to check. A C89 programmer can
+read a Z98 program on the first pass; the differences are in what the compiler
+verifies, not in what the machine executes.
+</p>
+
+<h2>The limits, and the way over each</h2>
+<p>
+The limits are real and worth stating plainly. None of them is a dead end;
+each has a shape era programmers already used, and the shape still works on
+this compiler.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Limit</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>The way over it</b></th>
+</tr>
+<tr>
+<td valign="top">No generics or templates</td>
+<td valign="top">Concrete functions per type and explicit tables; a
+<tt>*void</tt> plus a function pointer where the type genuinely varies; the
+standard library's containers are written out concretely.</td>
+</tr>
+<tr>
+<td valign="top">No classes, no RAII</td>
+<td valign="top">A struct of function pointers is the manual vtable; init
+functions are the constructor; <tt>defer</tt>/<tt>errdefer</tt> and the arena
+are the destructor discipline.</td>
+</tr>
+<tr>
+<td valign="top">No exceptions</td>
+<td valign="top">Error unions carry the failure in the signature;
+<tt>try</tt> propagates, <tt>catch</tt> handles, <tt>errdefer</tt> rolls
+back. The checked path replaces the unwinding one.</td>
+</tr>
+<tr>
+<td valign="top">No threads, no preemption</td>
+<td valign="top">Coroutines and the <tt>std.async</tt> round-robin scheduler;
+suspension points are explicit, so no locks are needed. Real parallelism stays
+an OS concern.</td>
+</tr>
+<tr>
+<td valign="top">No general <tt>comptime</tt></td>
+<td valign="top">The introspection builtins answer the representation
+questions; everything else is ordinary concrete code and constant folding.</td>
+</tr>
+</table>
+<p>
+Two more limits deserve a line each, because they shape how a project is laid
+out. There is no package manager: third-party code is vendored into the tree,
+which is what the era did anyway. And the compiler enforces its rules rather
+strictly &mdash; an ignored error, an unhandled <tt>switch</tt>, an
+uninitialized variable, or control flow out of a <tt>defer</tt> body are build
+errors. That strictness is the product, not a defect, but it is a real
+adjustment for a programmer used to C89's silence.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> Every limit above is a deliberate trade against the
+era's machine, and every one has a way over it that stays inside the language
+and the toolchain. There is a way <i>around</i> Z98 too: when a project's core
+need is templates, RAII, or exceptions and the RAM can carry them, C++98 is
+the right tool. That is a project decision, not a verdict on this one.</td>
+</tr>
+</table>
+
+<h2>Checked C89</h2>
+<p>
+The frame of the chapter, said once more in plain words: Z98 is not a better
+C standard. It is a compiler that checks what C89 leaves to discipline and
+emits C89 for the era's machines. Error handling, cleanup, suspension, buffer
+length, bounds, nullability, and conversions &mdash; the things a C89 team
+keeps in comments and code review &mdash; are types, statements, and analyzers
+in Z98. The C89 compiler downstream still sees plain C89, and the 1998 machine
+still runs it.
+</p>
+<p>
+"We are a smaller language" would be the wrong summary, because the list of
+things Z98 gives is longer than the list it withholds. What it withholds is
+the abstraction machinery that needs a runtime the target cannot afford; what
+it gives is the checking that keeps an era-sized codebase correct without
+that runtime. It is C89 with contracts in the type system, and it is
+deliberately that.
 </p>
 
 <h2>What that means for you</h2>
 <p>
-Choose Z98 when the target is the era &mdash; a 1998 machine, a C89 toolchain,
-a small dependency surface &mdash; and when you want the compiler to enforce
-the disciplines C89 leaves to you. Choose C++98 when templates, classes, or
-exceptions are load-bearing and the memory budget can carry them. Choose
-modern C or modern Zig when the target is modern; they are excellent at that,
-and they are not available here. Judged against the tools that did run on the
-target, Z98 is the one that adds safety without adding a runtime.
+If the target is the era &mdash; a 1998 machine, the era's compilers, an
+era-sized memory budget &mdash; Z98 is the toolchain that keeps the machine's
+cost model and raises the floor on what the compiler catches. If the project
+carries templates, RAII, and exceptions as core needs and the RAM allows,
+C++98 is the era-appropriate choice. If the goal is hand-written C89 with no
+checker in the way, C89 is right there.
 </p>
 <p>
 The chapters between the mental shifts (3 through 11) teach the rest of the
-syntax at the same pace: pointers, aggregates, arrays and slices, control
-flow, and <tt>defer</tt>. If you come from C, expect the vocabulary to look
-familiar and the rules to be stricter. If you come from modern Zig, expect the
-vocabulary to look familiar and the feature set to be the era's. Both readers
-end the volume writing C89-shaped programs in Z98's syntax, with the compiler
-checking the parts C89 leaves to a comment.
+syntax: pointers, aggregates, arrays and slices, control flow, and
+<tt>defer</tt>. The two shifts themselves get their own chapters &mdash;
+<a href="vol2-12-error-unions.html">error unions (chapter 12)</a> and
+<a href="vol2-14-arena.html">the arena (chapter 14)</a> &mdash; and coroutines
+arrive in Volume III <i>(planned)</i>.
 </p>
 
 <h2>Common mistakes</h2>
@@ -936,14 +992,19 @@ that was crossed.
 <b>Reaching for <tt>malloc</tt> and <tt>free</tt>.</b> The base language's
 memory story is the arena: you hand <tt>std.arena.init</tt> a buffer and let
 <tt>try std.arena.alloc</tt> bump within it. There is no <tt>free</tt> to
-match, because there is no per-object lifetime; <tt>std.arena.reset</tt>
-reclaims the whole arena at once. If a C library you call hands you memory, it
-is still yours to release through that library, but the Z98 objects you build
-come from the arena.
+match; <tt>std.arena.reset</tt> reclaims the whole arena at once. If a C
+library you call hands you memory, that library still owns releasing it, but
+the Z98 objects you build come from the arena.
 </p>
 <p>
-<b>Expecting method syntax.</b> <tt>e.update(dt)</tt> is not a method call with
-a different spelling in Z98; it is a member lookup, and it fails:
+<b>Treating a slice as a pointer plus a length variable.</b> A slice
+(<tt>[]T</tt>) carries its own length; pass the slice and use <tt>.len</tt>.
+Keeping a separate length beside a raw pointer is exactly the convention Z98
+removed, and it re-introduces the bug the slice was there to prevent.
+</p>
+<p>
+<b>Expecting method syntax.</b> <tt>e.update(dt)</tt> is not a method call
+with a different spelling; it is a member lookup, and it fails:
 </p>
 <pre>
 error[3060]: no field or member function named 'update' in struct type
@@ -959,25 +1020,24 @@ parameter does not parse:
 error[2000]: expected ':' but found identifier
 </pre>
 <p>
-Write one function for the concrete type, or a small concrete container as the
-standard library does. Where a type genuinely must be open, that is what C++98
-templates are for; it is a reason to pick C++98 for that project, not a hole to
-paper over in Z98.
+Write one function for the concrete type, or a small concrete container. The
+limits table above is the map; C++98 is the tool when a type must genuinely
+stay open.
 </p>
 <p>
-<b>Treating <tt>try</tt>/<tt>catch</tt> as exceptions.</b> <tt>try</tt> and
-<tt>catch</tt> operate on error unions, which are values. Nothing unwinds, and
-a <tt>catch</tt> block must produce a value of the payload type or diverge
-(<tt>return</tt>, <tt>break</tt>, and so on). There is no <tt>throw</tt>, no
-<tt>anyerror</tt>, and no <tt>@errorName</tt>; the error is a declared tag in
-the function's signature.
+<b>Treating <tt>try</tt>/<tt>catch</tt> as exceptions.</b> They operate on
+error unions, which are values. Nothing unwinds, and a <tt>catch</tt> block
+must produce a value of the payload type or diverge (<tt>return</tt>,
+<tt>break</tt>, and so on). There is no <tt>throw</tt>, no <tt>anyerror</tt>,
+and no <tt>@errorName</tt>; the error is a declared tag in the function's
+signature.
 </p>
 <p>
 <b>Spawning a thread for a pause.</b> Z98 has no thread API; it has
 coroutines. A routine that needs to wait writes <tt>@asyncSuspend</tt> where
 the pause belongs and is driven by <tt>std.async</tt>, cooperative and
-round-robin. Reaching for threads on a 1998 machine is the expensive way to
-get the same single-core behaviour.
+round-robin. On a single-core era machine, that is the cheap and correct way
+to interleave work.
 </p>
 <p>
 <b>Leaving out <tt>else</tt> in a <tt>switch</tt>.</b> Every Z98
@@ -999,10 +1059,9 @@ The next shipped chapter is
 rule gets its full treatment. After it comes
 <a href="vol2-03-pointers.html">chapter 3, Pointers</a>, and then
 <a href="vol2-12-error-unions.html">chapter 12, Error Unions &mdash; the First
-Big Shift</a>, which takes the first row of the "gives" table apart in detail.
-The other two mental shifts are
-<a href="vol2-14-arena.html">the arena (chapter 14)</a> and, in Volume III,
-coroutines <i>(planned)</i>.
+Big Shift</a>, which takes error handling apart in detail. The other mental
+shifts are <a href="vol2-14-arena.html">the arena (chapter 14)</a> and, in
+Volume III, coroutines <i>(planned)</i>.
 </p>
 <p>
 For lookup, the shipped Reference page is
@@ -1017,8 +1076,8 @@ The runnable examples in <tt>docs/sf/manuals/src/vol2/lisp_eval.z98</tt> and
 this chapter. The rest of Volume II is <i>(planned)</i>: the aggregates,
 arrays, and control-flow chapters in between after
 <a href="vol2-03-pointers.html">pointers (chapter 3)</a>; chapter 16, No
-Methods, No Generics, No Comptime, where the manual patterns behind the "does
-not give" list are worked out; and the standard library tour (chapter 17).
+Methods, No Generics, No Comptime, where the manual patterns behind the limits
+table are worked out; and the standard library tour (chapter 17).
 <a href="toc.html">The Contents page</a> shows the whole volume.
 </p>
 
