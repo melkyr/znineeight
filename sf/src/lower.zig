@@ -5071,6 +5071,20 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                             }
                         }
                     }
+                    // FX16-F fix round 1 (I2): sema's field-access tag arm makes
+                    // the synthetic `.tag` shadow a real member named `tag` on a
+                    // union VALUE, so the read must agree — check the synthetic
+                    // tag BEFORE the member walk. A type-base member reference
+                    // (`U.tag`) keeps the member walk (sema's type_alias arm
+                    // resolves it as a member) and the post-walk fallback below.
+                    var tag_s: []const u8 = "tag";
+                    var tag_id = si_mod.stringInternerIntern(self.ctx.registry.interner, tag_s);
+                    if (field_name_id == tag_id and is_type_base == @intCast(u8, 0)) {
+                        var gape_ftgv: []const u8 = "GAPE:ftg\n"; pal.markerWrite(gape_ftgv);
+                        var sf_nid = nameMapGet(self, base_temp);
+                        emitInst(self, LirInst{ .load_field = .{ .name_id = sf_nid, .base = base_temp, .field_id = type_mod.TU_FIELD_TAG, .result = tid } });
+                        return tid;
+                    }
                     while (tfi < tcount) : (tfi += 1) {
                         if (self.ctx.registry.fe_items[tstart + tfi].name_id == field_name_id) {
                             var gape_fki: []const u8 = "GAPE:fki"; pal.markerWriteInt(gape_fki, @intCast(u32, tfi));
@@ -5104,8 +5118,6 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         emitInst(self, LirInst{ .load_field = .{ .name_id = sf_nid, .base = base_temp, .field_id = type_mod.TU_FIELD_PAYLOAD, .result = tid } });
                         return tid;
                     }
-                    var tag_s: []const u8 = "tag";
-                    var tag_id = si_mod.stringInternerIntern(self.ctx.registry.interner, tag_s);
                     if (field_name_id == tag_id) {
                         var gape_ftg: []const u8 = "GAPE:ftg\n"; pal.markerWrite(gape_ftg);
                         var sf_nid = nameMapGet(self, base_temp);
