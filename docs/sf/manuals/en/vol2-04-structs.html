@@ -82,9 +82,10 @@ The guiding fact is that a Z98 struct is a C89 struct in all but name. The
 fields are laid out in the order you declare them, each field is stored at the
 next offset its alignment allows, and the whole thing is rounded up to the
 alignment of its most demanding field. The emitted C is a plain <tt>struct</tt>
-in that same order, so the offsets Z98 computes are the offsets gcc gives you
-when it compiles the result. The introspection builtins do not invent a layout;
-they report the one the C compiler will build.
+in that same order, and Z98 pins the computed alignment into it, so the offsets
+the compiler folds are the offsets the compiled binary uses on every supported
+32-bit toolchain. The introspection builtins do not invent a layout; they
+report the one Z98 and the emitted C both build.
 </p>
 
 <h2>A type is a named constant</h2>
@@ -120,7 +121,8 @@ starts with a capital, a field name with a lowercase letter. There is no
 <tt>struct Sprite</tt> tag to keep separate from <tt>Sprite</tt>; there is one
 name and it names the type. A struct type carries no functions. Z98 has no
 method syntax, so the operations that belong to a type are free functions whose
-first parameter is the struct (chapter&nbsp;16 is the pattern in full).
+first parameter is the struct (chapter&nbsp;16 <i>(planned)</i> works the pattern
+in full).
 </p>
 
 <h2>Building a value</h2>
@@ -173,7 +175,13 @@ the field's size. When every field is placed, round the total up to the largest
 alignment any field required; that is the struct's size and alignment. Fields
 are never reordered, and no field is ever packed against its neighbor unless
 its alignment allows it. The same rule is what a C compiler applies to a plain
-<tt>struct</tt>, which is why the two agree.
+<tt>struct</tt>, with one caveat that the emitted C settles for you: on 32-bit
+hosts the C compiler's default alignment for a 64-bit type can be 4, not 8,
+while Z98's model says 8. The emitted C therefore declares its 64-bit carriers
+with an explicit 8-byte alignment, pinning the binary to the model instead of
+trusting the host default. That is what keeps the folded offsets and the
+running program's offsets equal; the example's <tt>i64 scale</tt> is the field
+that exercises it.
 </p>
 <p>
 Worked for <tt>Sprite</tt>, with the cursor in the last column:
@@ -271,15 +279,15 @@ where the effect of the padding rule shows plainly.)
 <td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
 <td><b>Honest note.</b> The layout is consistent, but it is not a contract. The
 offsets in this chapter are the ones this compiler produces on this target
-(32-bit, little-endian, the Win9x-era ABI), and the emitted C hands the same
-order and alignments to gcc, so the two agree on your machine today. Nothing
-promises the padding bytes hold any particular value, that a future compiler
-will not widen a field's carrier, or that a struct sent across a wire or a
-process boundary will be decoded the same way by other software. If the exact
-byte image is the point, either write the fields out one at a time or use the
-<tt>packed struct</tt> of the next chapter, which spells out every bit and
-removes the padding entirely. A Z98 struct is a memory convenience, not an
-interface description.</td>
+(32-bit, little-endian, the Win9x-era ABI), and the emitted C pins that same
+order and alignment, so the model and the compiled binary agree on every
+supported 32-bit toolchain. Nothing promises the padding bytes hold any
+particular value, that a future compiler will not widen a field's carrier, or
+that a struct sent across a wire or a process boundary will be decoded the same
+way by other software. If the exact byte image is the point, either write the
+fields out one at a time or use the <tt>packed struct</tt> of the next chapter
+<i>(planned)</i>, which spells out every bit and removes the padding entirely.
+A Z98 struct is a memory convenience, not an interface description.</td>
 </tr>
 </table>
 
@@ -338,8 +346,8 @@ error[3072]: expected struct type, found 'U'
 The printed offsets for the example's two types are
 <tt>Vec2&nbsp;x=0&nbsp;y=4</tt> and
 <tt>Sprite&nbsp;id=0&nbsp;tint=4&nbsp;width=8&nbsp;height=10&nbsp;origin=12&nbsp;scale=24</tt>.
-Every one of those numbers is the third column of the table above; the builtin
-and the by-hand arithmetic are the same rule, and the run proves it.
+Every one of those numbers is that field's offset in the worked table above; the
+builtin and the by-hand arithmetic are the same rule, and the run proves it.
 </p>
 
 <h2>Nested structs are stored inline</h2>
@@ -356,7 +364,8 @@ expect.
 The inner type's own layout is computed first, by the same rule, so a nested
 struct's size and alignment are just numbers the outer layout uses like any
 other field's. <tt>Vec2</tt> is two <tt>i32</tt> fields, so it is 8 bytes with
-alignment 4, and that is why <tt>origin</tt> lands at 12 rather than at 11.
+alignment 4; a nested struct contributes both numbers to the outer layout
+exactly as a scalar of the same size and alignment would.
 There is no depth limit worth worrying about, but a struct cannot contain itself
 by value; a struct that must point at another of its own type stores a pointer
 (<tt>next: *Node</tt>), exactly as in C.
@@ -510,9 +519,10 @@ zero by construction, so there is nothing for an offset to say.
 <b>Treating a struct as bytes.</b> Because the padding bytes are indeterminate,
 copying a struct with a raw byte copy and then sending those bytes somewhere can
 leak whatever was in the gaps and will not match a decoder that omits padding.
-Struct assignment in Z98 copies the value, field by field under the hood, which
-is safe; a hand-rolled <tt>@sizeOf</tt>-long byte copy is not. If the bytes are
-the protocol, serialize one field at a time.
+Struct assignment in Z98 copies the value; the emitted C is a single struct
+assignment (<tt>copy = s;</tt>), which is safe; a hand-rolled
+<tt>@sizeOf</tt>-long byte copy is not. If the bytes are the protocol, serialize
+one field at a time.
 </p>
 <p>
 <b>Expecting a constructor or a method.</b> There is no <tt>Sprite.init()</tt>
@@ -528,11 +538,12 @@ your back when a struct variable is declared or goes out of scope (chapter 16
 The next shipped chapter is
 <a href="vol2-12-error-unions.html">chapter 12, Error Unions &mdash; the First
 Big Shift</a>. Before it, in numeric order, come the rest of the aggregates.
-<b>Packed structs</b> (chapter 5) is the exact-bit counterpart of this chapter:
-it is where <tt>@bitOffsetOf</tt> and <tt>@bitSizeOf</tt> live and where padding
-goes away on purpose. After the aggregates come <b>arrays and slices</b>
-(chapter 9) and the aggregate-shaped <b>unions</b> (chapter 7), <b>enums</b>
-(chapter 6), and <b>tuples</b> (chapter 8), all <i>(planned)</i>.
+<b>Packed structs</b> (chapter 5 <i>(planned)</i>) is the exact-bit counterpart
+of this chapter: it is where <tt>@bitOffsetOf</tt> and <tt>@bitSizeOf</tt>
+live and where padding goes away on purpose. After the aggregates come
+<b>arrays and slices</b> (chapter 9) and the aggregate-shaped <b>unions</b>
+(chapter 7), <b>enums</b> (chapter 6), and <b>tuples</b> (chapter 8), all
+<i>(planned)</i>.
 </p>
 <p>
 For lookup,
