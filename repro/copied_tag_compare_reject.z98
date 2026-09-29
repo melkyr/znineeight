@@ -1,0 +1,25 @@
+// repro/copied_tag_compare_reject.z98 — standalone FX16-F (A4) reject mirror.
+//
+// `const t = s.tag;` is a plain u32 copy. A bare enum literal beside it has no
+// enum context, so before FX16-F each shape silently typed the comparison
+// `void` and compared against the literal's name-id (silently false). A4
+// makes exactly this shape a clean level-0 `error[3076]`. Contract: dump rc 2,
+// 0 `.c`, exactly 4 level-0 `error[3076]` (one per site, span on the literal),
+// no signals, no other codes. The A+ sugar shape `s.tag == .m` and typed-enum
+// compares (`c == .Red`) stay accepted.
+const std = @import("std");
+
+const Shape = union(enum) {
+    Circle: i32,
+    Square: f64,
+};
+
+pub fn main() void {
+    var s: Shape = Shape{ .Circle = @intCast(i32, 7) };
+    const t = s.tag;
+    if (t == .Circle) { std.io.printInt(1); } else { std.io.printInt(0); }
+    if (t != .Square) { std.io.printInt(1); } else { std.io.printInt(0); }
+    if (.Square == t) { std.io.printInt(1); } else { std.io.printInt(0); }
+    if (t < .Square) { std.io.printInt(1); } else { std.io.printInt(0); }
+    std.io.writeByte('\n');
+}

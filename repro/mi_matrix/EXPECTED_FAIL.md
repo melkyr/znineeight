@@ -1,4 +1,85 @@
-# mi_matrix corpus — expected-fail manifest (v285 2026-09-29)
+# mi_matrix corpus — expected-fail manifest (v286 2026-09-29)
+
+## FX16-F — tagged-union `.tag` sugar (A+) + payload-store rejects (S2/S1) + copied-tag reject (A4) (v285 -> v286, 2026-09-29)
+
+Volume II ch7 amendment (task-FX16-F; source = the plan's FX16 bullet + the
+operator's m0952 rulings + `task-FX16-I-report.md`). A direct `.tag` access on
+a tagged union (paren-transparent; pointer bases auto-deref) now resolves
+member literals/prongs against the base union and compares/switches tag
+ORDINALS while `.tag` stays typed `u32`: all six comparison ops (`s.tag == .m`,
+`!=`, `<`, `<=`, `>`, `>=`; shorthand, `Shape.m`, `lib.Shape.m`, alias,
+member-on-left, parens) yield `bool`, `switch (s.tag)` emits real `case`
+labels for shorthand/qualified/value forms, a `|c|` capture binds the ordinal
+as `u32`, pointer `.tag` reads dereference (P1) and cross-module qualified
+RELATIONAL compares use the retyped u32 (R1). A new level-0 `ERR_3076` rejects
+the copied-tag compare (`const t = s.tag; t == .m`) that previously compared
+silently false. The three tagged-union payload-store `error[3043]` ICEs become
+the S2 clean level-0 `error[3000]` rejects naming the supported whole-union
+reassignment. Adjacent folds: the plain-enum shorthand compare (`c == .Red`)
+and the pointer `.tag` store (`p.tag = 1`).
+
+**Fix (`sf/src/semantic_analyzer.zig`, `sf/src/lower.zig`, `sf/src/c89_emit.zig`, `sf/src/diagnostics.zig`).**
+Sema: new `semanticAnalyzerTagAccessUnion` (base union of a syntactic `.tag`
+access; rtt-consulted; ptr/many-ptr deref) + `semanticAnalyzerTagUnionMemberIndex`;
+a post-resolution comparison hook fills `enum_value_table[member]` +
+`rtt(member)=tag_type` and returns `TYPE_BOOL` for all six ops; the
+literal/else chain's expected-type push accepts an `enum_type` peer (adjacent
+plain-enum fix); a new A4 reject (`error[3076]`, span on the literal,
+per-literal dedupe) fires when no sugar applied and a direct `enum_literal`
+child resolved `void` beside a numeric operand; the switch gains
+`switch_is_tag` (init/zero-prong/end resets + prong-body save/restore), a
+`.tag` condition context and the u32 capture bind. Lowering: the
+`lowerSwitchCaseItemValue` `field_access` arm consults `enum_value_table`
+first; the generic tagged-union read arm derefs a pointer temp (P1) and uses
+the retyped init type for table-recorded members (R1); `lowerFieldStore`'s
+payload-member arm and `lowerLValueAddr`'s tagged-union pointee reject level-0
+`error[3000]` (address path returns a typed dummy: exactly one diagnostic per
+statement). Emitter: the `store_field` pointer-base arm handles
+`TU_FIELD_TAG` (`p->tag = v;`). Diagnostics: `ERR_3076_ENUM_LITERAL_NUMERIC_COMPARE`.
+
+**Corpus movement.** `-s0` classify 1078 = 915 OK / 54 GREEN / 109 FAIL ->
+**1083 = 917 OK / 55 GREEN / 111 FAIL / 0 ICE / 0 CRASH**; join-diff over the
+1078 common dirs **EMPTY**; additions = the 5 new fixtures below. The A4
+reject (class FAIL, the FX12/FX13 reject-class precedent) has ZERO existing
+corpus users (whole-corpus join-diff clean), as does the plain-enum compare
+fix.
+
+**Fixtures.** A+ positive `repro/mi_matrix/tagged_tag_sugar_xmod` (main +
+`lib.zig`; golden `expected.txt` `111111111100044403710153110111`, rc 0,
+byte-exact 3x; oracle twin `activeTag`/`switch` byte-identical). A+ switch
+rejects `repro/mi_matrix/tagged_tag_switch_reject_xmod` (`.Bogus` +
+`lib.Other.Red` -> `3071 2`, classify FAIL). A4 reject
+`repro/mi_matrix/copied_tag_compare_reject_xmod` (`3076 6`, classify FAIL) +
+standalone `repro/copied_tag_compare_reject.z98` (4 x 3076). S2 reject
+`repro/mi_matrix/tagged_payload_store_reject_xmod` (`expected_error.txt`
+`3000 9`: 6 store + 3 address sites, classify GREEN) + standalone
+`repro/tagged_payload_store_reject.z98` (2 x 3000). S2 positive control
+`repro/mi_matrix/tagged_payload_whole_reassign_xmod` (golden `5 7 9 11 21 7`,
+rc 0, 3x). All fixtures are corpus dirs, not `stdlib_*`, so
+`scripts/stdlib/expected_dirs.txt` stays 266.
+
+**Gates (final fixed point `f54f3bbe1e9406596d2390725ec3c61c`).** Seed
+three-hop closure (moving point hop1 `2cb6be18e68fd2cac6055f234ec9fc0d` !=
+hop2 == hop3 == `f54f3bbe…`) with explicit `FIXED_POINT_MD5`; seed v88 NOT
+rotated (archive `3db5ef392ecc349304ffdf14c618e530` byte-identical). 4-MD5
+emitted C both modes **UNCHANGED 8/8**, 2x deterministic (fsafe
+`6df1e4d2…`/`e27b7c35…`/`d51f17ae…`/`f3be9bb9…`, ffast
+`98e934f3…`/`2514f8b5…`/`e1cc386e…`/`66d547d4…`); `run_fixtures.sh` **266
+PASS / 0 FAIL** (+ targeted 2 PASS for the new positives); example matrix
+**24/24**; `check_emit_support.sh` **7/7**; `verify_upgraded.sh` **CLOSEOUT
+OK**; self-emission **48 `.c` + 48 `.h` / 0 PANIC / 0 `error[`**;
+`sf/scripts/build_test.sh` **0/9** pre-existing retired-zig0 baseline;
+`repro/vol2_defects/run_all.sh` **13/13**.
+
+**Residuals (documented, not fixed).** (1) A parenthesized bare enum literal
+beside a numeric operand (`t == (.m)`) is not in the A4 class (only a direct
+`enum_literal` child) and keeps the pre-existing silent `void`; no corpus
+user. (2) `p.payload = …` (whole payload pseudo-field on a pointer base) keeps
+the pre-existing emitter ICE — only `p.tag` is handled; `x.payload = …` on a
+value base keeps its pre-existing `warning[3000]` f64->i32 shape. (3)
+`iceAssignLValueUnsupported` (`:2513`) and the non-payload unsupported bases
+`lowerFieldStore :2951/:2954` are untouched. (4) An unused `.tag`-switch
+capture is accepted (Z98 tolerance, same as enum/TU captures).
 
 ## FX15-F — whole-value nested packed moves (v284 -> v285, 2026-09-29)
 

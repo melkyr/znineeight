@@ -247,6 +247,21 @@ movers vs the FX15-F corpus; +2 depth fixtures), and the new fixed point
 (moving point hop1 `a1537257…` != hop2 == hop3, explicit `FIXED_POINT_MD5`
 gate) is **`9d63b8cedaff9dff3ab73c2e847c6f60`**; seed v88 NOT rotated.
 
+FX16-F (2026-09-29; Volume II ch7 amendment, operator rulings m0952) implements
+the tagged-union `.tag` contextual sugar (A+: all six comparison ops, switch
+prongs/capture, P1 pointer reads, R1 cross-module relational), the S2/S1
+payload-store clean `error[3000]` rejects, the A4 copied-tag reject
+(`error[3076]`), and the adjacent plain-enum compare + pointer `.tag` store
+fixes. All 8 emitted-C pins stay **UNCHANGED 8/8** (2x deterministic), 4-MD5
+runtime identity not required (no pin moved), stdlib **266 PASS / 0 FAIL**,
+example matrix 24/24, emit support 7/7, `verify_upgraded.sh` CLOSEOUT OK,
+self-emission 48 `.c` + 48 `.h` / 0 PANIC, corpus `-s0`
+**1083 = 917 OK / 55 GREEN / 111 FAIL / 0 ICE / 0 CRASH** (zero common-dir
+movers vs the 1078-dir baseline; +5 fixtures), and the new fixed point
+(moving point hop1 `2cb6be18e68fd2cac6055f234ec9fc0d` != hop2 == hop3, explicit
+`FIXED_POINT_MD5` gate) is **`f54f3bbe1e9406596d2390725ec3c61c`**; seed v88 NOT
+rotated.
+
 - Self-consistency gate: compare current zig1 `--dump-c89` against a pre-captured reference .c file. If the reference .c is outdated (intentional baseline change), re-capture via `cp /tmp/new.c /tmp/ref.c`. Never compare against parent-zig1 output directly — parent builds may fail silently.
 - Do **NOT** compare `zig1 --dump-c89` output against `zig0`'s C output. `zig0` emits a legacy bootstrap format that is byte-level incompatible with zig1.
 
