@@ -372,7 +372,7 @@ a one-byte instruction where your program had a real one, and the breakpoint
 fires again forever. The sample reads the byte at the entry point before it
 patches, writes <tt>0xCC</tt>, confirms the write by reading the byte back, waits
 for the breakpoint, and restores the original byte before continuing. The
-<tt>4</tt> the sample prints after the patch is the decimal value of
+<tt>204</tt> the sample prints after the patch is the decimal value of
 <tt>0xCC</tt>.
 </p>
 <p>
@@ -380,10 +380,10 @@ The address to break on is the target's entry point, and the sample finds it the
 way a linker would: from the Portable Executable header. The two-byte
 <tt>MZ</tt> signature at the image base is followed at offset <tt>0x3C</tt> by
 <tt>e_lfanew</tt>, the file offset of the <tt>PE</tt> signature. The optional
-header begins eighteen bytes after that signature, and the entry-point relative
-virtual address is at offset <tt>0x10</tt> within the optional header &mdash;
-offset <tt>0x28</tt> from the <tt>PE</tt> signature overall. Adding the RVA to
-the image base gives the address to patch:
+header begins twenty-four bytes (<tt>0x18</tt>) after that signature, and the
+entry-point relative virtual address is at offset <tt>0x10</tt> within the
+optional header &mdash; offset <tt>0x28</tt> from the <tt>PE</tt> signature
+overall. Adding the RVA to the image base gives the address to patch:
 </p>
 <pre>
 const elfanew = readU32(target, base, 60);      /* e_lfanew at 0x3C */
