@@ -770,6 +770,7 @@ fn phase_StaticAnalyzers(ctx: *CompilerContext) void {
                 .in_defer_exec = @intCast(u8, 0),
                 .lifetime_analysis_mode = @intCast(u8, 0),
                 .doublefree_analysis_mode = @intCast(u8, 0),
+                .source_file_id = mods[mi].source_file_id,
             };
             az_mod.runAllAnalyzers(&ac, ast_root);
         }

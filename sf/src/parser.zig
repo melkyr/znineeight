@@ -1127,7 +1127,13 @@ pub fn parserParseType(self: *Parser) ParserError!u32 {
         parserAddError(self, ntok, pmsg);
         return error.UnexpectedToken;
     }
-    if (tok.kind == TokenKind.kw_anytype) { _ = parserAdvance(self); var z: u32 = @intCast(u32, 0); return z; }
+    if (tok.kind == TokenKind.kw_anytype) {
+        var at = parserAdvance(self);
+        var pt = ParseToken{ .kind = at.kind, .span_start = at.span_start, .span_len = at.span_len };
+        var aid = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, pt));
+        var aend: u32 = at.span_start + @intCast(u32, at.span_len);
+        return ast_mod.astStoreAddIdentifier(self.store, AstKind.ident_expr, aid, at.span_start, aend);
+    }
     var base = try parserParseTypeName(self);
     if (parserPeek(self).kind == TokenKind.bang) {
         _ = parserAdvance(self);

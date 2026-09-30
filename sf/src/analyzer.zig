@@ -386,6 +386,7 @@ pub const AnalyzerContext = struct {
     in_defer_exec: u8,
     lifetime_analysis_mode: u8,
     doublefree_analysis_mode: u8,
+    source_file_id: u32,
 };
 
 pub fn deferQueueEnsureCapacity(ctx: *AnalyzerContext, new_cap: usize) void {
@@ -419,9 +420,58 @@ pub fn analyzeSignature(ctx: *AnalyzerContext, fn_node_idx: u32) void {
         var pnode = ast_mod.astStoreNodeAt(ctx.store, ast_mod.astStoreGetExtraChildAt(ctx.store, param_payload, @intCast(u32, pi)));
         var type_expr = pnode.child_0;
         if (type_expr != @intCast(u32, 0)) validateSignatureType(ctx, type_expr, @intCast(u32, 0));
+        rejectAnytypeType(ctx, type_expr);
     }
     var ret_node = proto.return_type_node;
     if (ret_node != @intCast(u32, 0)) validateSignatureType(ctx, ret_node, @intCast(u32, 1));
+    rejectAnytypeType(ctx, ret_node);
+}
+
+// A1-F (Q3(i)): recursively reject the `anytype` marker in any signature/type
+// position -- a direct parameter/return, or nested inside a `?`/`*`/`[*]`/`[]`/
+// `[N]` wrapper, an `E!T` error union or a `fn(...)` pointer type. Level-0
+// `error[16]` (`ERR_2012_ANYTYPE_NOT_SUPPORTED`), one per anytype node
+// (`diagnosticCollectorMarkNodeOnce`), carrying the offending node's span and
+// the module's real source file id so the renderer prints `file:line:col` + a
+// caret. The top-level ident also reaches `validateSignatureType`; the shared
+// dedup keeps the census at exactly one diagnostic per node.
+fn rejectAnytypeType(ctx: *AnalyzerContext, type_node_idx: u32) void {
+    if (type_node_idx == @intCast(u32, 0)) return;
+    var tnode = ast_mod.astStoreNodeAt(ctx.store, type_node_idx);
+    var kind = tnode.kind;
+    if (kind == AstKind.ident_expr) {
+        var name_id = identNameId(ctx.store, type_node_idx);
+        var s_anytype: []const u8 = "anytype";
+        var anytype_nid = interner_mod.stringInternerIntern(ctx.interner, s_anytype);
+        if (name_id == anytype_nid) {
+            if (!diag_mod.diagnosticCollectorMarkNodeOnce(ctx.diag, type_node_idx)) return;
+            var amsg: []const u8 = "anytype not supported in Z98";
+            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2012_ANYTYPE_NOT_SUPPORTED)), ctx.source_file_id, tnode.span_start, tnode.span_start + @intCast(u32, tnode.span_len), amsg);
+        }
+        return;
+    }
+    if (kind == AstKind.ptr_type or kind == AstKind.many_ptr_type or
+        kind == AstKind.slice_type or kind == AstKind.optional_type or
+        kind == AstKind.array_type) {
+        rejectAnytypeType(ctx, tnode.child_0);
+        return;
+    }
+    if (kind == AstKind.error_union_type) {
+        rejectAnytypeType(ctx, tnode.child_0);
+        rejectAnytypeType(ctx, tnode.child_1);
+        return;
+    }
+    if (kind == AstKind.fn_type) {
+        rejectAnytypeType(ctx, tnode.child_0);
+        if (ast_mod.astStoreNodePayload(ctx.store, type_node_idx) != @intCast(u32, 0)) {
+            var ft_n = ast_mod.astStoreNodeExtraChildCount(ctx.store, type_node_idx);
+            var ft_i: usize = 0;
+            while (ft_i < @intCast(usize, ft_n)) : (ft_i += 1) {
+                rejectAnytypeType(ctx, ast_mod.astStoreNodeExtraChildAt(ctx.store, type_node_idx, @intCast(u32, ft_i)));
+            }
+        }
+        return;
+    }
 }
 
 pub fn validateSignatureType(ctx: *AnalyzerContext, type_node_idx: u32, is_return: u32) void {
@@ -458,8 +508,9 @@ pub fn validateSignatureType(ctx: *AnalyzerContext, type_node_idx: u32, is_retur
         var s_anytype: []const u8 = "anytype";
         var anytype_nid = interner_mod.stringInternerIntern(ctx.interner, s_anytype);
         if (name_id == anytype_nid) {
+            if (!diag_mod.diagnosticCollectorMarkNodeOnce(ctx.diag, type_node_idx)) return;
             var amsg: []const u8 = "anytype not supported in Z98";
-            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2012_ANYTYPE_NOT_SUPPORTED)), @intCast(u32, 0), tnode.span_start, tnode.span_start + @intCast(u32, tnode.span_len), amsg);
+            diag_mod.diagnosticCollectorAdd(ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_2012_ANYTYPE_NOT_SUPPORTED)), ctx.source_file_id, tnode.span_start, tnode.span_start + @intCast(u32, tnode.span_len), amsg);
         }
     }
 }

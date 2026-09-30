@@ -93,6 +93,7 @@ pub fn main() void {
         .in_defer_exec = @intCast(u8, 0),
         .lifetime_analysis_mode = @intCast(u8, 0),
         .doublefree_analysis_mode = @intCast(u8, 0),
+        .source_file_id = @intCast(u32, 0),
     };
     az_mod.runAllAnalyzers(&ac, ast_root);
 

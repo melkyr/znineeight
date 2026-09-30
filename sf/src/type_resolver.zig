@@ -2284,6 +2284,13 @@ pub fn typeResolverDiagnoseSignatureType(env: *TypeResolveEnv, node_idx: u32, de
         var nr_text: []const u8 = "noreturn";
         var nr_id = interner_mod.stringInternerIntern(env.interner, nr_text);
         if (name_id == nr_id) return;
+        // A1-F: the `anytype` marker is emitted as an `ident_expr` sentinel by
+        // the parser (S1) so the analyzer's ERR_2012 check can fire. Exempt it
+        // from this unknown-name walk exactly like `noreturn` so the reject is
+        // reported once as `error[16]` and not as a competing `error[20]`.
+        var at_text: []const u8 = "anytype";
+        var at_id = interner_mod.stringInternerIntern(env.interner, at_text);
+        if (name_id == at_id) return;
         if (!diag_mod.diagnosticCollectorMarkNodeOnce(diag, node_idx)) return;
         var ui1: []const u8 = "identifier '";
         var ui2: []const u8 = "' is not declared or imported in this module";
