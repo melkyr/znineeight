@@ -1,0 +1,1024 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: WinSock under Z98</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume III WinSock Winsock sockets std.net wsock32 Winsock 1.1 socket bind listen accept recv send select fd_set closesocket WSAStartup http-mini loopback blocking">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol3-11-talking-to-c.html">
+<link rel="next" href="toc.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume III &mdash; Working in the Era</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol3-00-title.html">How to read this</a><br>
+<a href="vol3-01-the-1998-machine.html">The 1998 machine</a><br>
+<a href="vol3-02-honesty-inventory.html">Honesty: what Z98 does and does not give you</a><br>
+<a href="vol3-03-when-c89.html">Honesty: when C89 is the better choice</a><br>
+<a href="vol3-04-when-cpp98.html">Honesty: when C++98 is the better choice</a><br>
+<a href="vol3-05-when-assembly.html">Honesty: when assembly is the better choice</a><br>
+<a href="vol3-06-era-limits.html">Honesty: what you cannot do on a Pentium II</a><br>
+<a href="vol3-07-friction.html">Honesty: the friction you will hit</a><br>
+<a href="vol3-08-win9x.html">Building for Win9x</a><br>
+<a href="vol3-09-coroutines.html">Coroutines &mdash; the third big shift</a><br>
+<a href="vol3-10-coroutine-program.html">A coroutine program</a><br>
+<a href="vol3-11-talking-to-c.html">Talking to C</a><br>
+<b>WinSock under Z98</b><br>
+The Win32 Debug API <i>(planned)</i><br>
+DirectX under CINTERFACE <i>(planned)</i><br>
+The debugger workflow <i>(planned)</i><br>
+Memory budgets <i>(planned)</i><br>
+Packaging and shipping <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>WinSock under Z98</h1>
+<p>
+A network program for this machine is a WinSock program. Windows 95 and 98 do
+not ship a BSD socket layer with the full modern surface; they ship Winsock,
+the Windows Sockets API, and everything that talks to the network &mdash; a
+browser, a mail client, a game's lobby, a small server on the LAN &mdash; goes
+through it. This chapter is how Z98 reaches that API, what the library actually
+gives you, and the one complete socket program the volume ships.
+</p>
+<p>
+The good news is that you already know the shape. <a
+href="vol3-11-talking-to-c.html">Chapter&nbsp;11</a> showed that a Z98 module is
+a C translation unit and that a C API is reached with <tt>extern</tt>
+declarations. Winsock is exactly that kind of API: a set of C functions from a
+system library (the 32-bit import library <tt>wsock32</tt>), declared with the
+Win32 <tt>stdcall</tt> convention, and compiled against the system header
+<tt>winsock.h</tt>. Z98 does not add a socket feature to the language for this.
+The standard library wraps the C functions, and you call the wrapper.
+</p>
+<p>
+That distinction matters more here than anywhere else in the volume, because
+the blueprint for this manual assumed something that is no longer true. It
+described emitter-level socket builtins &mdash; magic names like
+<tt>@socketCreate</tt> that the compiler itself lowered to Winsock calls. Those
+were removed. Sockets in Z98 are the ordinary <tt>std.net</tt> extern surface,
+which means the rules of <a href="vol3-11-talking-to-c.html">chapter&nbsp;11</a>
+apply unchanged: declarations, calling conventions, and the C ABI. This chapter
+documents what the compiler and the library actually do, not what the blueprint
+promised.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffffc8">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-note.gif" width="16" height="16" alt="Note"></td>
+<td><b>What is measured here.</b> Every Z98 and library statement on this page
+was checked against <tt>sf/src/std_net.zig</tt>, the Language Spec, and the
+compiler source, and every transcript is a real run of the seed-built
+<tt>zig1</tt>. The sample, <tt>http-mini.z98</tt>, is compiled and run on Linux
+and then cross-built with <tt>i686-w64-mingw32-gcc</tt> and run under a
+dedicated 32-bit wine prefix; its Windows transcript below is that run, and the
+wine capture matched the Linux capture byte for byte. The OpenWatcom
+<tt>build_owc.bat</tt> path is emitted and <b>not run here</b>, exactly as
+<a href="vol3-08-win9x.html">chapter&nbsp;8</a> states; the real-machine
+screenshot stays the figure. The Winsock revision Z98 binds is <b>1.1</b>
+(<tt>wsock32</tt>, initialized with <tt>WSAStartup(1,1)</tt>), not Winsock&nbsp;2,
+and this page never claims otherwise.</td>
+</tr>
+</table>
+
+<h2>One library, two operating systems</h2>
+<p>
+<tt>std.net</tt> is one module, <tt>sf/src/std_net.zig</tt>, re-exported by the
+standard library as <tt>std.net</tt>. It presents one small Z98 API and selects
+its implementation at compile time from the target. On Linux and the other Unix
+hosts it binds the C library's socket functions. On the Windows target it binds
+<tt>wsock32</tt>, the Winsock&nbsp;1.1 import library, through
+<tt>winsock.h</tt>. The selection is not a runtime check and not a build flag you
+set: the emitter knows the target, and the module's <tt>@isWindows()</tt> guards
+prune the branch that does not apply before the C is written.
+</p>
+<p>
+The mechanism is worth seeing, because it is the same target-selection pattern
+the rest of the volume uses. The module's first line pulls in a small
+target-neutral include file:
+</p>
+<pre>
+@cInclude("&lt;net_prelude.h&gt;");
+</pre>
+<p>
+<tt>net_prelude.h</tt> opens with a platform switch. On Windows it includes the
+Win32 and Winsock headers and names the import library:
+</p>
+<pre>
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include &lt;windows.h&gt;
+#include &lt;winsock.h&gt;
+#pragma comment(lib, "wsock32.lib")
+#else
+#include &lt;sys/socket.h&gt;
+#include &lt;netinet/in.h&gt;
+#include &lt;arpa/inet.h&gt;
+#include &lt;sys/select.h&gt;
+#include &lt;sys/time.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;netdb.h&gt;
+#include &lt;fcntl.h&gt;
+#endif
+</pre>
+<p>
+Whichever compiler builds the emitted C &mdash; <tt>gcc -m32</tt> on the host,
+<tt>i686-w64-mingw32-gcc</tt> or OpenWatcom's <tt>wcc386</tt> for the target
+&mdash; selects the branch, so the single declaration source for every Winsock
+function is the system header itself. That is the same rule as
+<a href="vol3-11-talking-to-c.html">chapter&nbsp;11</a>'s prototype rule: the
+header declares the function, the Z98 <tt>extern</tt> names it, and both
+compilers check the same text.
+</p>
+<p>
+The names are the only wrinkle. <tt>std.net</tt> owns the words
+<tt>accept</tt>, <tt>connect</tt>, <tt>send</tt>, <tt>recv</tt>, <tt>close</tt>,
+and <tt>select</tt> for its own public functions, so the raw externs are declared
+with an <tt>_os</tt> suffix and <tt>net_prelude.h</tt> maps them back to the real
+OS symbols:
+</p>
+<pre>
+#define accept_os accept
+#define connect_os connect
+#define send_os send
+#define recv_os recv
+#define close_os close
+#define select_os select
+</pre>
+<p>
+The aliases are declared after the includes, so they never rewrite the system
+headers; only the emitted <tt>std.net</tt> call sites &mdash; which compile into
+the same translation unit &mdash; are affected. The result is that the Z98
+source never names a Winsock symbol directly. You call a Z98 function, and the
+compiler emits a C call to the OS function. The next section is those functions.
+</p>
+
+<h2>The surface the standard library exposes</h2>
+<p>
+<tt>std.net</tt> is deliberately small. It is the subset a client or a small
+server needs, plus the readiness and UDP helpers the volume's examples use. Its
+public API is the following, and it is the same source for both targets.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<thead>
+<tr>
+<th align="left">Function</th>
+<th align="left">Returns</th>
+<th align="left">What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><tt>init()</tt></td>
+<td><tt>i32</tt></td>
+<td><tt>WSAStartup(1,1)</tt> on Windows; <tt>0</tt> elsewhere</td>
+</tr>
+<tr>
+<td><tt>cleanup()</tt></td>
+<td>void</td>
+<td><tt>WSACleanup()</tt> on Windows; nothing elsewhere</td>
+</tr>
+<tr>
+<td><tt>createTcpServer(port)</tt></td>
+<td><tt>i32</tt></td>
+<td>socket + bind; returns the listening handle or <tt>-1</tt></td>
+</tr>
+<tr>
+<td><tt>createTcpClient(port)</tt></td>
+<td><tt>i32</tt></td>
+<td>socket + connect to <tt>127.0.0.1</tt>; handle or <tt>-1</tt></td>
+</tr>
+<tr>
+<td><tt>bindListen(fd, backlog)</tt></td>
+<td><tt>i32</tt></td>
+<td>listen; returns <tt>0</tt> or <tt>-1</tt></td>
+</tr>
+<tr>
+<td><tt>accept(fd)</tt></td>
+<td><tt>i32</tt></td>
+<td>accept a pending connection; handle or <tt>-1</tt></td>
+</tr>
+<tr>
+<td><tt>connect(fd, port)</tt></td>
+<td><tt>i32</tt></td>
+<td>connect an existing handle; <tt>0</tt> or <tt>-1</tt></td>
+</tr>
+<tr>
+<td><tt>send(fd, buf, len)</tt></td>
+<td><tt>i32</tt></td>
+<td>send up to <tt>len</tt> bytes; count or <tt>-1</tt></td>
+</tr>
+<tr>
+<td><tt>recv(fd, buf, len)</tt></td>
+<td><tt>i32</tt></td>
+<td>receive up to <tt>len</tt> bytes; count or <tt>-1</tt></td>
+</tr>
+<tr>
+<td><tt>close(fd)</tt></td>
+<td>void</td>
+<td><tt>closesocket</tt> on Windows; <tt>close</tt> elsewhere</td>
+</tr>
+<tr>
+<td><tt>select(nfds, r, w, e, ms)</tt></td>
+<td><tt>i32</tt></td>
+<td>wait for readiness; ready count, <tt>0</tt> on timeout, <tt>-1</tt> on error</td>
+</tr>
+<tr>
+<td><tt>fdZero(s)</tt>, <tt>fdSet(fd, s)</tt>, <tt>fdIsset(fd, s)</tt></td>
+<td>void / void / <tt>bool</tt></td>
+<td>clear, set, and test a socket in an <tt>fd_set</tt></td>
+</tr>
+</tbody>
+</table>
+<p>
+There is a UDP surface as well &mdash; <tt>udpBind</tt>, <tt>udpSendTo</tt>,
+<tt>udpRecvFrom</tt>, and <tt>udpSetTimeout</tt>, each returning a
+<tt>NetError!T</tt> &mdash; and a non-blocking surface for the cooperative style
+of <a href="vol3-10-coroutine-program.html">chapter&nbsp;10</a>:
+<tt>setNonBlocking</tt>, <tt>recvNonBlocking</tt>, and
+<tt>sendNonBlocking</tt>. This chapter stays with the TCP surface because it is
+what the sample uses and what a first network program needs. The point is the
+shape: a handle is an <tt>i32</tt>, a transfer returns a byte count, and failure
+is a negative number.
+</p>
+
+<h3>The externs underneath</h3>
+<p>
+Under those public functions are the raw Winsock declarations, and reading them
+is the clearest statement of what Z98 is really calling. The socket calls and the
+<tt>_os</tt>-suffixed wrappers are all <tt>stdcall</tt>:
+</p>
+<pre>
+extern "stdcall" fn socket(af: i32, typ: i32, proto: i32) i32;
+extern "stdcall" fn bind(s: i32, name: *const void, namelen: i32) i32;
+extern "stdcall" fn listen(s: i32, backlog: i32) i32;
+extern "stdcall" fn accept_os(s: i32, addr: *void, addrlen: *void) i32;
+extern "stdcall" fn recv_os(s: i32, buf: [*]u8, len: i32, flags: i32) i32;
+extern "stdcall" fn send_os(s: i32, buf: [*]const u8, len: i32, flags: i32) i32;
+extern "stdcall" fn select_os(nfds: i32, readfds: *void, writefds: *void, exceptfds: *void, timeout: *const void) i32;
+extern "stdcall" fn closesocket(s: i32) i32;
+extern "stdcall" fn WSAStartup(wVersion: u16, lpWSAData: *void) i32;
+</pre>
+<p>
+That is the Winsock 1.1 entry set the blueprint named &mdash; <tt>socket</tt>,
+<tt>bind</tt>, <tt>listen</tt>, <tt>accept</tt>, <tt>recv</tt>, <tt>send</tt>,
+<tt>select</tt>, <tt>closesocket</tt>, <tt>WSAStartup</tt> &mdash; declared in
+Z98 with the types the C header uses. The convention is not optional here: the
+32-bit Windows API cleans its own stack, and
+<a href="vol3-11-talking-to-c.html">chapter&nbsp;11</a> showed that an unknown
+convention string stops the build with <tt>error[3045]</tt> while a wrong but
+accepted one corrupts the stack at the call. <tt>std_net.zig</tt> declares every
+Winsock entry <tt>stdcall</tt>, and the one POSIX-only helper,
+<tt>__errno_location</tt>, <tt>cdecl</tt>.
+</p>
+
+<h2>Starting Winsock: <tt>init</tt> and <tt>cleanup</tt></h2>
+<p>
+WinSock has a rule that no other library in this volume has: you must call
+<tt>WSAStartup</tt> before you call anything else. A program that calls
+<tt>socket</tt>, <tt>bind</tt>, or <tt>send</tt> first does not get a handle, it
+gets a failure. WinSock documents that failure as
+<tt>WSANOTINITIALISED</tt> (<tt>10093</tt>), read back with
+<tt>WSAGetLastError</tt>. It is the first mistake a WinSock program makes, and
+it is why <tt>std.net</tt> has an explicit <tt>init</tt> instead of doing the
+work lazily.
+</p>
+<p>
+<tt>std.net.init()</tt> runs the startup call on Windows and returns its result;
+on the Unix targets it is a no-op that returns <tt>0</tt>:
+</p>
+<pre>
+pub fn init() i32 {
+    if (@isWindows()) {
+        var wsa: WSAData = undefined;
+        const rc = WSAStartup(@intCast(u16, 0x0101), @ptrCast(*void, &amp;wsa));
+        return rc;
+    } else {
+        return 0;
+    }
+}
+</pre>
+<p>
+<tt>0x0101</tt> is the "1.1" the manual keeps repeating, and the emitted call
+shows the version word as the compiler wrote it:
+</p>
+<pre>
+zT_8 = ((zT_290557A7_FS_int_unsigned_sho)WSAStartup)((unsigned short)(257), (void*)((void*)zT_6));
+</pre>
+<p>
+The program's job is one line: check <tt>init()</tt> before creating a socket,
+and call <tt>cleanup()</tt> on the way out so <tt>WSACleanup</tt> releases the
+Winsock state. The sample does exactly that. <tt>cleanup</tt> is a no-op on the
+Unix targets, so the same source runs on both. If you skip <tt>init</tt> on
+Windows, the first socket call fails and the program's own error path runs
+instead of the network path &mdash; a failure that looks like "the network is
+down" but is really "the library was never started."
+</p>
+
+<h2>The handle is a signed <tt>i32</tt></h2>
+<p>
+This is the one place where the blueprint's description is actively wrong, and
+the correction is worth stating plainly. A WinSock socket is a <tt>SOCKET</tt>,
+which in C is an unsigned 32-bit integer, and the blueprint said Z98 had an
+"unsigned <tt>SOCKET</tt> comparison rule." It does not. <tt>std.net</tt>
+defines its handle as a plain signed integer:
+</p>
+<pre>
+pub const Socket = i32;
+</pre>
+<p>
+Every public function returns that <tt>i32</tt>, and failure is the value
+<tt>-1</tt>. The reason this is safe is the value WinSock itself uses for a bad
+handle. <tt>INVALID_SOCKET</tt> is <tt>(SOCKET)(~0)</tt>, all thirty-two bits
+set, which is exactly <tt>-1</tt> when the same bits are read as a signed
+<tt>i32</tt>. A real socket is a small positive index, so the failure value is
+distinct and the comparison is an ordinary signed comparison. There is no cast
+to unsigned and no all-ones literal to remember; the check is
+<tt>&lt; 0</tt> or <tt>== -1</tt>. The listening path shows both spellings in
+the same module, because the Windows and Unix branches are written separately:
+</p>
+<pre>
+const s = socket(@intCast(i32, 2), @intCast(i32, 1), @intCast(i32, 0));
+if (s == -1) return -1;      // Windows branch
+...
+if (s &lt; 0) return -1;        // Unix branch
+</pre>
+<p>
+The rule for the reader is therefore simple: a handle is signed, a negative
+return is a failure, and a non-negative return is a usable handle or a byte
+count. Do not store a handle in an unsigned type, and do not write a check like
+<tt>fd &gt;= 0</tt> as though the value could not be negative; it can, and
+<tt>-1</tt> is the sentinel. <a href="vol3-11-talking-to-c.html">
+Chapter&nbsp;11</a> made the same point about the C boundary in general: the
+sentinel is the library's convention and the Z98 declaration has to match it.
+</p>
+
+<h2>Binding and listening</h2>
+<p>
+A TCP server is two calls. <tt>createTcpServer(port)</tt> makes the socket and
+binds it to a port; <tt>bindListen(handle, backlog)</tt> puts it into the
+listening state. The first function is where the address structure lives:
+</p>
+<pre>
+pub fn createTcpServer(port: u16) i32 {
+    if (@isWindows()) {
+        const s = socket(@intCast(i32, 2), @intCast(i32, 1), @intCast(i32, 0));
+        if (s == -1) return -1;
+        var addr = SockAddrIn{
+            .sin_family = @intCast(u16, 2),
+            .sin_port = htons(port),
+            .sin_addr = htonl(@intCast(u32, 0)),
+            .sin_zero = [8]u8{ 0, 0, 0, 0, 0, 0, 0, 0 },
+        };
+        if (bind(s, @ptrCast(*const void, &amp;addr), @intCast(i32, 16)) == -1) {
+            _ = closesocket(s);
+            return -1;
+        }
+        return s;
+    }
+    ...
+}
+</pre>
+<p>
+The constants are the Winsock ones and they match the Unix ones: address family
+<tt>2</tt> is <tt>AF_INET</tt>, socket type <tt>1</tt> is
+<tt>SOCK_STREAM</tt>, protocol <tt>0</tt> lets the system choose TCP. The
+address is a sixteen-byte <tt>sockaddr_in</tt>: a family word, a network-order
+port, a network-order address, and eight bytes of padding. Setting
+<tt>sin_addr</tt> to <tt>htonl(0)</tt> is <tt>INADDR_ANY</tt>, which binds
+every interface on the machine; <tt>createTcpClient</tt> uses
+<tt>htonl(0x7F000001)</tt> instead, the loopback address <tt>127.0.0.1</tt>.
+</p>
+<p>
+The byte order is the classic socket detail. Network byte order is big-endian,
+and the machine is little-endian, so the port and the address go through
+<tt>htons</tt> and <tt>htonl</tt>. Those are real OS functions here &mdash;
+<tt>htons</tt>/<tt>htonl</tt> from <tt>wsock32</tt> on Windows, from libc
+elsewhere &mdash; but <tt>std.net</tt> also carries portable
+<tt>htonsManual</tt>/<tt>htonlManual</tt> byte-swaps for code that wants to be
+explicit. The address structure itself is the compiler's ordinary aligned
+struct, laid out by the same 32-bit model
+<a href="vol3-11-talking-to-c.html">chapter&nbsp;11</a> pinned, and passed by
+pointer, so no by-value ABI question arises.
+</p>
+<p>
+<tt>bindListen</tt> wraps <tt>listen</tt>. Its <tt>backlog</tt> argument is the
+number of pending connections the system will hold before an <tt>accept</tt>
+drains them; a small server uses a small number. The function returns
+<tt>0</tt> on success and <tt>-1</tt> on failure, so the caller composes it with
+the bind like this:
+</p>
+<pre>
+const server = std.net.createTcpServer(PORT);
+if (server &lt; 0) { ... }
+if (std.net.bindListen(server, 1) &lt; 0) { ... }
+</pre>
+<p>
+From that point the port is open and the system is completing handshakes into
+the backlog even before the program calls <tt>accept</tt>. That is what makes
+the sample's loopback design possible; it is also why a listener that is never
+accepted still holds a connection, briefly, until the backlog fills.
+</p>
+
+<h2>Accepting, sending, receiving, closing</h2>
+<p>
+Once a connection is pending, <tt>accept(server)</tt> returns a <b>new</b>
+handle for that connection and leaves the listening handle open for the next
+one. <tt>std.net</tt>'s accept passes null for the peer address:
+</p>
+<pre>
+const c = accept_os(fd, @ptrCast(*void, @intToPtr(*void, 0)), @ptrCast(*void, @intToPtr(*void, 0)));
+</pre>
+<p>
+It returns <tt>-1</tt> on failure and a fresh handle otherwise. The two sockets
+are independent: the listening handle stays bound to the port, and the accepted
+handle is the conversation. A server that accepts one connection and then wants
+another calls <tt>accept</tt> again on the same listening handle.
+</p>
+<p>
+<tt>send</tt> and <tt>recv</tt> move bytes. The signatures take a raw pointer
+and a length &mdash; the Z98 slice's pointer and length, as
+<a href="vol3-11-talking-to-c.html">chapter&nbsp;11</a> taught &mdash; and both
+return the number of bytes transferred, or <tt>-1</tt> on error. The detail that
+catches every first network program is that the count may be <b>short</b>.
+<tt>send</tt> is allowed to accept fewer bytes than you offered, and
+<tt>recv</tt> is allowed to return less than you asked for; TCP is a byte
+stream, not a record protocol. The sample therefore loops on <tt>send</tt>
+until the whole buffer is gone, and treats one <tt>recv</tt> as "whatever
+arrived," which is correct for a request that fits in one segment. A production
+server keeps reading until it has a complete request.
+</p>
+<pre>
+fn sendAll(fd: i32, buf: []const u8) bool {
+    var sent: usize = 0;
+    while (sent &lt; buf.len) {
+        const chunk = buf[sent..];
+        const n = std.net.send(fd, chunk.ptr, @intCast(i32, chunk.len));
+        if (n &lt;= 0) return false;
+        sent += @intCast(usize, n);
+    }
+    return true;
+}
+</pre>
+<p>
+<tt>close</tt> is the polite end. On Windows it calls <tt>closesocket</tt>; on
+the Unix targets it calls <tt>close</tt>. It returns nothing, so there is no
+result to check; the module hides the one-real-difference between the two
+worlds. A server closes the accepted handle when the conversation ends, and
+closes the listening handle at shutdown, then calls <tt>cleanup</tt>. The order
+matters on Windows: <tt>WSACleanup</tt> should follow the last
+<tt>closesocket</tt>.
+</p>
+
+<h2>Readiness: <tt>select</tt> and <tt>fd_set</tt></h2>
+<p>
+The socket calls above are blocking. <tt>accept</tt> waits for a connection,
+<tt>recv</tt> waits for data, and a program that calls them in the obvious order
+serves one client at a time and freezes whenever the client is slow. The way out
+is the readiness call, <tt>select</tt>: you ask the system which handles have
+something to do, and you only call the blocking function on a handle that is
+ready. It is the primitive under every single-threaded server, and it is the
+one the volume's coroutine chapter pairs with
+<a href="vol3-09-coroutines.html">coroutines</a>.
+</p>
+<p>
+<tt>std.net</tt>'s <tt>select</tt> takes a count, three optional handle sets, and
+a timeout in milliseconds:
+</p>
+<pre>
+pub fn select(nfds: i32, readfds: ?*u8, writefds: ?*u8, exceptfds: ?*u8, timeout_ms: i32) i32
+</pre>
+<p>
+The sets are <tt>?*u8</tt> because the underlying <tt>fd_set</tt> is an opaque
+blob &mdash; a Z98 type with no C equivalent that both systems agree on:
+</p>
+<pre>
+pub const fd_set = struct {
+    // Opaque fd_set blob (Windows 260B / Linux 128B layouts covered by 512B).
+    data: [128]u32,
+};
+</pre>
+<p>
+Five-hundred-twelve bytes is large enough for either system's structure, and the
+<tt>[128]u32</tt> member forces the four-byte alignment Winsock's
+<tt>select</tt> requires. You never read the
+blob; you cast its address to <tt>*u8</tt> and hand it to the three helpers.
+<tt>fdZero</tt> clears it, <tt>fdSet</tt> adds a handle, and
+<tt>fdIsset</tt> tests one after <tt>select</tt> returns:
+</p>
+<pre>
+var read_fds: std.net.fd_set = undefined;
+std.net.fdZero(@ptrCast(*u8, &amp;read_fds));
+std.net.fdSet(server, @ptrCast(*u8, &amp;read_fds));
+const ready = std.net.select(server + 1, @ptrCast(*u8, &amp;read_fds), null, null, 1000);
+if (ready &gt; 0 and std.net.fdIsset(server, @ptrCast(*u8, &amp;read_fds))) {
+    // accept() will not block
+}
+</pre>
+<p>
+The opacity is not laziness; the two systems genuinely disagree about what an
+<tt>fd_set</tt> is. Windows stores a count in the first word followed by the
+handles, so <tt>fdSet</tt> increments the count and writes the handle after it.
+The Unix layout is a bitmask, so <tt>fdSet</tt> sets one bit in one word. The
+helpers branch on <tt>@isWindows()</tt> and hide the difference, which is
+exactly the kind of per-OS detail a C89 project usually carries by hand. The
+<tt>nfds</tt> argument is the highest handle plus one on Unix; Windows ignores
+it, and passing <tt>server + 1</tt> is correct on both. A negative
+<tt>timeout_ms</tt> means "wait forever"; the sample passes <tt>1000</tt> so a
+missing connection is a timeout it can report rather than a hang.
+</p>
+<p>
+One honest limit belongs here. Winsock 1.1 offers <tt>select</tt> and blocking
+sockets; it does not offer the scalable event interfaces of later Winsock
+versions. For the machine this manual targets &mdash; one program, a handful of
+connections, 32&nbsp;MB &mdash; that is the right tool, and it is the same tool
+the Unix side provides, so the source stays one source. The way to serve many
+connections without threads is the pattern of
+<a href="vol3-10-coroutine-program.html">chapter&nbsp;10</a>: <tt>select</tt>
+says who is ready, and a coroutine per connection is resumed only when its
+socket is.
+</p>
+
+<h2>What was removed: the socket builtins</h2>
+<p>
+If you have seen an older draft or the blueprint, it may mention builtins such
+as <tt>@socketCreate</tt>. The compiler had emitter-level socket builtins once,
+and they were removed in favor of the <tt>std.net</tt> surface this chapter
+documents. A program that still calls one does not get a socket; it stops at the
+builtin:
+</p>
+<pre>
+$ /tmp/manual_seed/zig1_5_clean -o out sockbuiltin.z98
+sockbuiltin.z98:3:4: error[3000]: cannot declare variable of type void
+    var s = @socketCreate(2, 1, 0);
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+sockbuiltin.z98:3:12: error[3000]: unsupported builtin function
+    var s = @socketCreate(2, 1, 0);
+            ^^^^^^^^^^^^^^^^^^^^^^
+</pre>
+<p>
+The two diagnostics are the honest picture: the builtin has no implementation,
+so it resolves to <tt>void</tt>, and the compiler says both that no such builtin
+exists and that a variable cannot have that type. The way over is the one this
+chapter has been building: import <tt>std</tt> and call
+<tt>std.net</tt> functions. There is no socket syntax to learn and no compiler
+feature to wait for; sockets are ordinary <tt>extern</tt> calls behind a small
+Z98 API.
+</p>
+
+<h2>The sample: <tt>http-mini.z98</tt></h2>
+<p>
+The sample is a complete, if minimal, HTTP server. It binds a port, waits for a
+connection, reads one HTTP/1.0 request, and writes one fixed response. To make
+the transcript deterministic and to need no external client, both ends of the
+connection live in the same process: the program opens a loopback client to its
+own listener and then serves it. That exercises the whole surface &mdash;
+<tt>init</tt>, <tt>socket</tt>, <tt>bind</tt>, <tt>listen</tt>,
+<tt>select</tt>, <tt>fd_set</tt>, <tt>accept</tt>, <tt>send</tt>,
+<tt>recv</tt>, <tt>close</tt>, <tt>cleanup</tt> &mdash; without a second
+machine.
+</p>
+<pre>
+const std = @import("std");
+
+// http-mini: the smallest complete socket program. It binds a listener, opens
+// a loopback client, accepts the connection, reads one fixed HTTP/1.0 request,
+// and writes one fixed response. Keeping both ends in one process needs no
+// external client and makes the transcript the same on every run.
+const PORT: u16 = 18088;
+const BUF_SIZE: usize = 256;
+
+// The request the loopback client sends. It is fixed so the transcript is
+// reproducible.
+const REQUEST: []const u8 = "GET /hello HTTP/1.0\r\nHost: localhost\r\n\r\n";
+
+// The document and the response that carries it.
+const RESPONSE: []const u8 = "HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 15\r\nConnection: close\r\n\r\nhello from Z98\r\n";
+
+// send() may transfer fewer bytes than asked; sendAll loops until the buffer
+// is gone. A zero or negative return is the error channel at the C boundary.
+fn sendAll(fd: i32, buf: []const u8) bool {
+    var sent: usize = 0;
+    while (sent &lt; buf.len) {
+        const chunk = buf[sent..];
+        const n = std.net.send(fd, chunk.ptr, @intCast(i32, chunk.len));
+        if (n &lt;= 0) return false;
+        sent += @intCast(usize, n);
+    }
+    return true;
+}
+
+// The first line of an HTTP request, up to CR or LF.
+fn firstLine(buf: []const u8) []const u8 {
+    var i: usize = 0;
+    while (i &lt; buf.len) : (i += 1) {
+        if (buf[i] == '\r' or buf[i] == '\n') return buf[0..i];
+    }
+    return buf;
+}
+
+pub fn main() void {
+    if (std.net.init() != 0) {
+        std.io.print("http-mini: socket init failed\n", .{});
+        return;
+    }
+
+    const server = std.net.createTcpServer(PORT);
+    if (server &lt; 0) {
+        std.io.print("http-mini: bind failed on port {}\n", .{PORT});
+        std.net.cleanup();
+        return;
+    }
+    if (std.net.bindListen(server, 1) &lt; 0) {
+        std.io.print("http-mini: listen failed\n", .{});
+        std.net.close(server);
+        std.net.cleanup();
+        return;
+    }
+    std.io.print("http-mini: listening on port {}\n", .{PORT});
+
+    const client = std.net.createTcpClient(PORT);
+    if (client &lt; 0) {
+        std.io.print("http-mini: connect failed\n", .{});
+        std.net.close(server);
+        std.net.cleanup();
+        return;
+    }
+
+    var read_fds: std.net.fd_set = undefined;
+    std.net.fdZero(@ptrCast(*u8, &amp;read_fds));
+    std.net.fdSet(server, @ptrCast(*u8, &amp;read_fds));
+    const ready = std.net.select(server + 1, @ptrCast(*u8, &amp;read_fds), null, null, 1000);
+    if (ready &lt;= 0 or !std.net.fdIsset(server, @ptrCast(*u8, &amp;read_fds))) {
+        std.io.print("http-mini: no connection ready\n", .{});
+        std.net.close(client);
+        std.net.close(server);
+        std.net.cleanup();
+        return;
+    }
+
+    const conn = std.net.accept(server);
+    if (conn &lt; 0) {
+        std.io.print("http-mini: accept failed\n", .{});
+        std.net.close(client);
+        std.net.close(server);
+        std.net.cleanup();
+        return;
+    }
+    std.io.print("http-mini: accepted a connection\n", .{});
+
+    if (!sendAll(client, REQUEST)) {
+        std.io.print("http-mini: client send failed\n", .{});
+        std.net.close(conn);
+        std.net.close(client);
+        std.net.close(server);
+        std.net.cleanup();
+        return;
+    }
+
+    var req: [BUF_SIZE]u8 = undefined;
+    const got = std.net.recv(conn, &amp;req, @intCast(i32, BUF_SIZE));
+    if (got &lt;= 0) {
+        std.io.print("http-mini: recv failed\n", .{});
+        std.net.close(conn);
+        std.net.close(client);
+        std.net.close(server);
+        std.net.cleanup();
+        return;
+    }
+    const request: []const u8 = req[0..@intCast(usize, got)];
+    std.io.print("http-mini: request {s}\n", .{firstLine(request)});
+
+    if (!sendAll(conn, RESPONSE)) {
+        std.io.print("http-mini: response send failed\n", .{});
+        std.net.close(conn);
+        std.net.close(client);
+        std.net.close(server);
+        std.net.cleanup();
+        return;
+    }
+    std.io.print("http-mini: served {} bytes\n", .{@intCast(i32, RESPONSE.len)});
+
+    var resp: [BUF_SIZE]u8 = undefined;
+    const rgot = std.net.recv(client, &amp;resp, @intCast(i32, BUF_SIZE));
+    if (rgot &lt;= 0) {
+        std.io.print("http-mini: client recv failed\n", .{});
+        std.net.close(conn);
+        std.net.close(client);
+        std.net.close(server);
+        std.net.cleanup();
+        return;
+    }
+    std.io.print("http-mini: client received {} bytes\n", .{rgot});
+
+    std.net.close(conn);
+    std.net.close(client);
+    std.net.close(server);
+    std.net.cleanup();
+    std.io.print("http-mini: done\n", .{});
+}
+</pre>
+
+<h3>Walking the sample</h3>
+<p>
+The first two calls are the pair every WinSock program opens with:
+<tt>std.net.init()</tt> and the check of its result. On Windows that is
+<tt>WSAStartup(1,1)</tt>; on Linux it returns <tt>0</tt> and the branch never
+runs. Then <tt>createTcpServer(18088)</tt> makes the socket and binds it, and
+<tt>bindListen</tt> starts listening. If either fails the program prints one
+line and returns, so a reader never sees a heap of cascading errors from a
+missing port.
+</p>
+<p>
+The interesting move is the next one: the program calls
+<tt>createTcpClient(18088)</tt> on itself. The listener is already in
+<tt>listen</tt>, and the kernel completes the loopback handshake into the
+backlog, so <tt>connect</tt> returns a handle even though nothing has called
+<tt>accept</tt> yet. That is the ordinary behavior of a listening socket, and it
+is what lets one process play both roles. The client handle is a real
+<tt>std.net</tt> socket on <tt>127.0.0.1</tt>; the only thing unusual about it is
+that its peer is in the same executable.
+</p>
+<p>
+Before accepting, the program builds an <tt>fd_set</tt>, adds the listening
+handle, and calls <tt>select</tt> with a one-second timeout. This is the
+readiness check of the previous section: it proves the pending connection is
+there, so the following <tt>accept</tt> cannot block forever. The
+<tt>fdIsset</tt> test is the positive confirmation. Then <tt>accept</tt> returns
+the connection handle.
+</p>
+<p>
+The transfer is split between the two handles exactly as a real client and
+server would. The client sends the fixed request with <tt>sendAll</tt>; the
+server <tt>recv</tt>s it, slices off the first line, and prints it &mdash; the
+<tt>{s}</tt> specifier is the print formatter's string route, and the first line
+is the part a real server routes on. The server writes the fixed response with
+<tt>sendAll</tt>, the client <tt>recv</tt>s it back, and the program prints the
+byte count on each side. Finally it closes the connection handle, the client
+handle, and the listening handle, in that order, and calls
+<tt>std.net.cleanup()</tt>. Every failure path closes whatever it opened before
+returning, which on Windows is more than tidiness: it keeps the socket table
+from filling during a long run.
+</p>
+<p>
+Two choices are worth defending because a reader may wonder about them. The
+request and the response are constants, so the transcript is the same every run
+and the page can promise byte-for-byte parity; a real server would parse the
+path and build the response. And the port is a fixed high number,
+<tt>18088</tt>, which is enough for a program that connects to itself and moves
+on; a server that must coexist with others would make the port a command-line
+argument.
+</p>
+
+<h3>The transcript</h3>
+<p>
+Compiled with the seed-built compiler, linked with the standard Linux build
+script, and run:
+</p>
+<pre>
+$ mkdir -p out &amp;&amp; /tmp/manual_seed/zig1_5_clean -o out http-mini.z98
+$ cd out &amp;&amp; sh build_target.sh linux http-mini
+Building for linux...
+Built: http-mini
+$ ./http-mini
+http-mini: listening on port 18088
+http-mini: accepted a connection
+http-mini: request GET /hello HTTP/1.0
+http-mini: served 100 bytes
+http-mini: client received 100 bytes
+http-mini: done
+</pre>
+<p>
+Six lines, and each one is a different part of the socket surface reporting
+success: the bind and listen, the accept, the parsed request line, the response
+write, the client read, and the shutdown. The two <tt>100</tt>s are the same
+response counted at both ends &mdash; the server sending it and the client
+receiving it &mdash; which is the simplest possible proof that the bytes made
+the round trip.
+</p>
+
+<h2>Under Windows 98</h2>
+<p>
+The sample binds Winsock on Windows as well as on Linux, and the committed
+harness proves it. <tt>i686-w64-mingw32-gcc</tt> cross-compiles the
+<tt>-osw</tt> emission (which links <tt>-lwsock32</tt>), and the resulting
+<tt>prog.exe</tt> runs under a dedicated 32-bit wine prefix
+(<tt>wine-8.0</tt>). The parity run against the Linux baseline returned
+<tt>XRUNRC=0</tt>, <tt>WINE_RC=0</tt>, and <tt>PARITY=OK</tt>:
+</p>
+<pre>
+$ ZIG1=/tmp/manual_seed/zig1_5_clean PARITY_STRIP_CR=1 \
+    WINEPREFIX=/tmp/wine32 WINEARCH=win32 \
+    bash scripts/win32_cross/cross_parity.sh \
+    docs/sf/manuals/src/vol3/http-mini.z98 /dev/null \
+    /tmp/manual_win/http-mini.linuxstdout /tmp/manual_win/http-mini
+XRUNRC=0
+WINE_RC=0
+PARITY=OK
+</pre>
+<p>
+The capture is worth reporting, because it is stronger than the verdict line.
+The Windows stdout was 188 bytes and, like the <tt>getenv</tt> sample of
+<a href="vol3-11-talking-to-c.html">chapter&nbsp;11</a>, it matched the Linux
+baseline <b>byte for byte</b>: no carriage returns to normalize, because
+<tt>std.io.print</tt> writes through the compiler's own output path rather than
+the C run-time's text mode. The sockets underneath are the real thing: the
+emitted <tt>std_net</tt> module contains <tt>WSAStartup(257)</tt>, the
+<tt>winsock.h</tt> include, and the <tt>select</tt> call on the same
+<tt>fd_set</tt> blob this chapter described. The one thing this host cannot
+claim is OpenWatcom: <tt>-osw</tt> also writes <tt>build_owc.bat</tt> for
+<tt>wcc386</tt>/<tt>wlink</tt>, and it carries <tt>library wsock32</tt>, but
+OpenWatcom is not installed on the development host, so that script is
+<b>emitted and documented, not run</b>. The figure is the real-machine proof.
+</p>
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f0f0f0" class="placeholder">
+<tr>
+<td align="center">
+<i>Figure 37 &mdash; Win9x screenshot pending</i>
+</td>
+</tr>
+</table>
+<p><i>Figure 37. Running <tt>http-mini.exe</tt> under Windows 98.</i></p>
+
+<h2>The trade</h2>
+<p>
+The trade for using sockets in Z98 is the same trade as the rest of the C
+boundary, with one extra edge: you get the real API, and you pay for it in
+manual bookkeeping. There is no framework, no connection object, and no
+automatic lifetime. You call <tt>init</tt> and <tt>cleanup</tt>; you check every
+negative return; you close every handle on every path; and you remember that
+<tt>send</tt> and <tt>recv</tt> count bytes rather than deliver records. In
+exchange, the generated C is a sequence of Winsock calls a 1998 C programmer
+would recognize instantly, with no runtime to initialize and no glue to debug
+on the target machine.
+</p>
+<p>
+For the amount of networking most programs for this machine need &mdash; a
+client, or a small server on a LAN &mdash; that is the right side of the trade.
+The surface is nine functions and one blob. The cost is real only when the
+program wants many connections at once, and even then the answer is not a
+framework but the pattern this volume already gave you: <tt>select</tt> for
+readiness and <a href="vol3-10-coroutine-program.html">a coroutine per
+connection</a>.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> The sockets here are blocking by default, and that is a
+real limit of the simple reading of this API, not a bug. Call <tt>accept</tt>
+with no connection pending, or <tt>recv</tt> with no data on the socket, and the
+program waits &mdash; which on a single-threaded machine means the whole program
+waits. The way over is not to pretend it does not happen; it is to make the wait
+informed. Use <tt>select</tt> to learn which handles are ready, so the blocking
+call is only entered when it can complete, and use the non-blocking surface
+(<tt>setNonBlocking</tt>, <tt>recvNonBlocking</tt>, <tt>sendNonBlocking</tt>) or
+the coroutine scheduler of <a href="vol3-10-coroutine-program.html">
+chapter&nbsp;10</a> when the program has more than one thing to do. WinSock 1.1
+gives you exactly <tt>select</tt>; that is enough for this machine, and it is the
+same primitive the Unix side gives you, so the source stays one source.</td>
+</tr>
+</table>
+
+<h2><a name="common-mistakes">Common mistakes</a></h2>
+<p>
+These are the mistakes a first WinSock program makes, roughly in the order it
+makes them. Each is paired with the correction.
+</p>
+<p>
+<b>Calling a socket function before <tt>WSAStartup</tt>.</b> WinSock requires
+<tt>WSAStartup</tt> first; without it <tt>socket</tt> fails and the handle is
+<tt>-1</tt>. <tt>std.net.init()</tt> is that call, and its non-zero return is
+the startup failure. Call it before <tt>createTcpServer</tt> or
+<tt>createTcpClient</tt>, and call <tt>cleanup()</tt> at the end.
+</p>
+<p>
+<b>Treating the handle as unsigned.</b> There is no unsigned <tt>SOCKET</tt>
+rule in <tt>std.net</tt>; the handle is <tt>i32</tt> and failure is <tt>-1</tt>.
+Check <tt>&lt; 0</tt> (or <tt>== -1</tt>), and do not store handles in unsigned
+types or write <tt>&gt;= 0</tt> checks as though a negative value could not
+occur.
+</p>
+<p>
+<b>Assuming <tt>send</tt> sends everything.</b> A successful <tt>send</tt> may
+transfer fewer bytes than you passed; a short count is not an error. Loop until
+the buffer is gone, which is what the sample's <tt>sendAll</tt> does, and treat
+<tt>0</tt> or a negative return as failure.
+</p>
+<p>
+<b>Assuming one <tt>recv</tt> is one message.</b> TCP is a byte stream. A single
+<tt>recv</tt> may return part of a request, or two requests at once. For a small
+fixed request one read can be enough, as in the sample; a real server reads
+until it has a complete request line and body.
+</p>
+<p>
+<b>Reading <tt>fd_set</tt> directly.</b> The type is an opaque blob. Clear it
+with <tt>fdZero</tt>, add with <tt>fdSet</tt>, and test with
+<tt>fdIsset</tt>; never index the words yourself. The Windows layout (a count
+followed by handles) and the Unix layout (a bitmask) are different, and the
+helpers are the only portable way to touch it.
+</p>
+<p>
+<b>Forgetting the timeout on a blocking read.</b> A blocking <tt>accept</tt> or
+<tt>recv</tt> waits forever when nothing arrives. Use <tt>select</tt> with a
+millisecond timeout to bound the wait, as the sample does before its accept. A
+negative timeout means "block", which is the opposite of what a first server
+usually wants.
+</p>
+<p>
+<b>Forgetting <tt>extern "stdcall"</tt>.</b> Winsock is a <tt>stdcall</tt> API.
+Declaring an entry point <tt>cdecl</tt> links and then corrupts the stack at the
+call. The standard library is the reference: every Winsock extern in
+<tt>std_net.zig</tt> is <tt>stdcall</tt>, exactly as
+<a href="vol3-11-talking-to-c.html">chapter&nbsp;11</a> describes. Do not
+declare Winsock functions yourself when <tt>std.net</tt> already has them.
+</p>
+<p>
+<b>Reaching for the old socket builtins.</b> <tt>@socketCreate</tt> and its
+siblings were removed. The compiler reports <tt>error[3000]: unsupported builtin
+function</tt> and emits no C. Import <tt>std</tt> and use <tt>std.net</tt>.
+</p>
+<p>
+<b>Closing the listening handle when a connection ends.</b> <tt>accept</tt>
+returns a new handle for the connection; the listening handle stays open. Close
+the accepted handle when the conversation is over, and keep accepting on the
+listening handle. Confusing the two shuts down the server after one client.
+</p>
+
+<h2>Where to go next</h2>
+<p>
+This is the socket chapter, and it builds directly on
+<a href="vol3-11-talking-to-c.html">chapter&nbsp;11, Talking to C</a>: the
+Winsock functions are the same <tt>extern</tt> declarations and calling
+conventions, and <tt>std.net</tt> is a worked example of the pattern where the
+library wraps the raw externs in a small Z98 API. The other half of a networked
+program is concurrency, and that is
+<a href="vol3-10-coroutine-program.html">chapter&nbsp;10, A coroutine
+program</a>, whose server resumes a coroutine per connection only when
+<tt>select</tt> reports its socket ready. The next Win32 chapter is the Win32
+Debug API, chapter&nbsp;13 <i>(planned)</i>, which is built from the same
+<tt>extern</tt> rules on a much larger API.
+</p>
+<p>
+For the pieces this chapter leaned on, the standard library's own structure is
+introduced in <a href="vol2-17-stdlib.html">Volume II chapter&nbsp;17, The
+standard library tour</a>; the format specifiers used by the sample's
+<tt>print</tt> calls, including the <tt>{s}</tt> string route, are the subject of
+<a href="vol2-18-print.html">Volume II chapter&nbsp;18, print and the format
+string</a>; and the builtins that appear here, such as <tt>@intCast</tt> and
+<tt>@ptrCast</tt>, are catalogued in
+<a href="vol4-15-builtins.html">Volume&nbsp;IV &mdash; Builtins</a>. The
+target-selection machinery behind <tt>@isWindows()</tt> and the emitted build
+scripts is the story of <a href="vol3-08-win9x.html">chapter&nbsp;8, Building for
+Win9x</a>, and the era limits that make Winsock 1.1 the right choice rather than
+a missing feature are in <a href="vol3-06-era-limits.html">chapter&nbsp;6</a>.
+The whole volume, including this chapter, is listed on
+<a href="toc.html">the Contents page</a>.
+</p>
+
+<p class="navbtns">
+<a href="vol3-11-talking-to-c.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol3-11-talking-to-c.html">Talking to C</a> | <a href="toc.html">Contents</a> | Next: <a href="toc.html">Contents</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
