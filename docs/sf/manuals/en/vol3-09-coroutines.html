@@ -11,7 +11,7 @@
 <link rel="home" href="index.html">
 <link rel="up" href="toc.html">
 <link rel="prev" href="vol3-07-friction.html">
-<link rel="next" href="toc.html">
+<link rel="next" href="vol3-10-coroutine-program.html">
 </head>
 <body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
 <table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
@@ -48,7 +48,7 @@ The 1998 machine <i>(planned)</i><br>
 <a href="vol3-07-friction.html">Honesty: the friction you will hit</a><br>
 Building for Win9x <i>(planned)</i><br>
 <b>Coroutines &mdash; the third big shift</b><br>
-A coroutine program <i>(planned)</i><br>
+<a href="vol3-10-coroutine-program.html">A coroutine program</a><br>
 Talking to C <i>(planned)</i><br>
 WinSock under Z98 <i>(planned)</i><br>
 The Win32 Debug API <i>(planned)</i><br>
@@ -81,7 +81,7 @@ remember where it was, and be resumed later. The mechanism is called a
 This is the chapter the rest of the volume leans on. Chapter&nbsp;6 named
 <i>no multithreading worth the cost</i> as a limit of the era, and this is the
 way over it: not threads, not preemption, but cooperative tasks that yield by
-choice. Chapter&nbsp;10 <i>(planned)</i> turns the mechanism into a full program,
+choice. <a href="vol3-10-coroutine-program.html">Chapter&nbsp;10</a> turns the mechanism into a full program,
 and the network chapters use the same scheduler to give each connection its own
 little state machine without writing one. Before any of that, you need the
 mental model, because the surface is deliberately small and the compiler does
@@ -461,7 +461,7 @@ Two drive styles exist and they are not interchangeable. <tt>waitFor</tt> and
 <tt>waitAll</tt> tick <i>every</i> registered task, so they are right when the
 tasks you are not waiting on are safe to run. <tt>awaitTask</tt> parks only the
 currently running task on a dependency and is only legal inside a coroutine.
-Chapter&nbsp;10 <i>(planned)</i> and the network chapters use both, and the rule
+<a href="vol3-10-coroutine-program.html">Chapter&nbsp;10</a> and the network chapters use both, and the rule
 of thumb is in the tech doc: when other registered tasks would block, drive only
 the one you mean to.
 </p>
@@ -793,7 +793,7 @@ the state machine; two of them is one too many.
 
 <h2>Where to go next</h2>
 <p>
-Chapter&nbsp;10 <i>(planned)</i>, A coroutine program, takes this mechanism and
+<a href="vol3-10-coroutine-program.html">Chapter&nbsp;10</a>, A coroutine program, takes this mechanism and
 builds a full program on it, and the network chapters that follow give each
 connection its own task. The builtins themselves are catalogued in
 <a href="vol4-15-builtins.html">Volume IV &mdash; Builtins</a>, and the Language
@@ -822,9 +822,9 @@ walks the target that the harness above used.
 &nbsp;&nbsp;
 <a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
 &nbsp;&nbsp;
-<a href="toc.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+<a href="vol3-10-coroutine-program.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
 </p>
-<p>Previous: <a href="vol3-07-friction.html">Honesty: the friction you will hit</a> | <a href="toc.html">Contents</a> | Next: <a href="toc.html">Contents</a></p>
+<p>Previous: <a href="vol3-07-friction.html">Honesty: the friction you will hit</a> | <a href="toc.html">Contents</a> | Next: <a href="vol3-10-coroutine-program.html">A coroutine program</a></p>
 </td>
 </tr>
 </table>

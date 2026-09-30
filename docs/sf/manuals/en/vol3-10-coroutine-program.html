@@ -1,0 +1,830 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: A Coroutine Program</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume III coroutine program echo server line echo one coroutine per connection std.async scheduler std.net non-blocking std_stream SocketLineReader readSocketLineAsync waitAll loopback">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol3-09-coroutines.html">
+<link rel="next" href="toc.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume III &mdash; Working in the Era</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+How to read this <i>(planned)</i><br>
+The 1998 machine <i>(planned)</i><br>
+<a href="vol3-02-honesty-inventory.html">Honesty: what Z98 does and does not give you</a><br>
+<a href="vol3-03-when-c89.html">Honesty: when C89 is the better choice</a><br>
+<a href="vol3-04-when-cpp98.html">Honesty: when C++98 is the better choice</a><br>
+<a href="vol3-05-when-assembly.html">Honesty: when assembly is the better choice</a><br>
+<a href="vol3-06-era-limits.html">Honesty: what you cannot do on a Pentium II</a><br>
+<a href="vol3-07-friction.html">Honesty: the friction you will hit</a><br>
+Building for Win9x <i>(planned)</i><br>
+<a href="vol3-09-coroutines.html">Coroutines &mdash; the third big shift</a><br>
+<b>A coroutine program</b><br>
+Talking to C <i>(planned)</i><br>
+WinSock under Z98 <i>(planned)</i><br>
+The Win32 Debug API <i>(planned)</i><br>
+DirectX under CINTERFACE <i>(planned)</i><br>
+The debugger workflow <i>(planned)</i><br>
+Memory budgets <i>(planned)</i><br>
+Packaging and shipping <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>A Coroutine Program</h1>
+<p>
+<a href="vol3-09-coroutines.html">Chapter&nbsp;9</a> gave you the mechanism: a
+suspending function, a frame the compiler lays out, and a scheduler in
+<tt>std.async</tt> that drives it. This chapter spends that mechanism. It builds
+one small, complete program &mdash; a line echo server &mdash; and walks every
+line of it. The point is not the echo; the point is that the loop you would
+have written as a <tt>switch</tt> over a state variable is now an ordinary
+<tt>while</tt> loop that yields, and a network server is the shape where that
+trade pays for itself.
+</p>
+<p>
+The program is called <tt>echo.z98</tt> and it lives beside the other Volume III
+examples. It listens on a local port, accepts a connection, and runs one
+coroutine for that connection: read a line, echo it back, yield, repeat. To keep
+the chapter self-contained &mdash; and to make the program able to prove itself
+&mdash; a second coroutine in the same process plays the client. It sends three
+lines, waits for each echo, prints it, and closes. The scheduler drives both.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffffc8">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-note.gif" width="16" height="16" alt="Note"></td>
+<td><b>What is measured here.</b> Which of the blueprint's two permitted
+shapes this chapter uses was not chosen by taste. Task&nbsp;0 measured the
+transport on this host: after the <tt>WSAStartup</tt> fix, a Z98 server built
+with <tt>-osw</tt> binds, accepts, and serves under wine. The network shape is
+therefore the ruled one, and the alternate permitted shape &mdash; a cooperative
+task demo with N tasks suspending in a known order &mdash; was not needed.
+The program in this chapter is compiled with the seed-built compiler, run on
+Linux, and cross-built and run under the committed Windows harness. The
+transcript is that run, not a sketch.</td>
+</tr>
+</table>
+
+<h2>What the program is</h2>
+<p>
+An <i>echo server</i> is the smallest server that exercises the parts that
+matter. It does not parse a protocol or hold a conversation; it reads a line
+from a socket and writes the same line back. What makes it interesting is that
+the work for one connection is spread across time. A line may not be fully
+arrived when you look; the client may send the next line before you have
+finished the last; the connection may close between two reads. A C programmer
+answers all of that with a state machine: a <tt>state</tt> field, a
+<tt>switch</tt>, and a buffer whose position is part of the connection's
+persistent state. Chapter&nbsp;9 asked you to stop writing that. This chapter
+shows the replacement.
+</p>
+<p>
+The replacement is a function that looks synchronous. The connection handler
+loops: read a line, echo it, repeat. There is no <tt>state</tt> field in the
+handler and no <tt>switch</tt> you maintain. When a line is not there yet, the
+handler <i>suspends</i>; the scheduler parks it and runs somebody else; when the
+socket has data, the scheduler resumes the handler exactly where it stopped.
+The compiler, not you, wrote the state machine.
+</p>
+<p>
+That last sentence is the whole point, and the network is where it stops being
+an academic exercise. A single-threaded server is a program made of many
+half-finished tasks. Without coroutines you must encode each task's progress
+into data by hand. With coroutines you write each task as ordinary code and the
+compiler keeps the bookkeeping in a frame. The cost is one frame per task; the
+benefit is that the task reads like the algorithm it is.
+</p>
+
+<h2>The shape: one coroutine per connection</h2>
+<p>
+The blueprint names the shape directly: <i>one coroutine per connection</i>. It
+is a promise about how a real server is built, and it is worth stating honestly
+what the sample does and does not demonstrate.
+</p>
+<p>
+The sample accepts exactly one connection. A production server would loop:
+<tt>accept</tt> a socket, initialize a fresh task with
+<tt>@asyncInit</tt>, register it with the scheduler, and go back to
+<tt>accept</tt>. Each accepted connection gets its own coroutine, its own
+child-frame pool, and its own buffer; the tasks are independent because the
+scheduler interleaves them cooperatively, and there are no data races because
+nothing preempts anything. Chapter&nbsp;9's <tt>tasks.z98</tt> showed three
+tasks round-robin; here the tasks happen to come from sockets instead of a
+loop counter. The <tt>addTask</tt>/<tt>@asyncInit</tt> pair is the same.
+</p>
+<p>
+The sample limits itself to one connection for two reasons. The first is
+determinism: a single connection produces a transcript whose every line and
+every interleaving is fixed, so the chapter can promise that what is printed
+below is what the program prints. The second is self-containment: a server that
+waits for a client cannot be run by itself. Every Unix programmer knows the
+answer to that &mdash; open a second terminal &mdash; but a manual example has
+to build and run in one command to be verification rather than a story. So the
+program carries a client coroutine that connects to its own listener over
+loopback (<tt>127.0.0.1</tt>), and the two coroutines then talk to each other
+through the real socket path. It is the same bytes a remote client would send.
+The client coroutine exists to be the test; the server coroutine is the
+program.
+</p>
+<p>
+That decision has one visible consequence worth naming, because it is a real
+constraint and not a convenience. Because the client is in the same process,
+the program must not wait for a connection that no one will make. The
+connection is established before the scheduler starts: the program creates the
+listening socket, connects the client socket to it, and only then accepts. The
+client's <tt>connect</tt> completes against the listener's backlog, so the
+subsequent <tt>accept</tt> returns immediately. On a real deployment the
+<tt>accept</tt> blocks in an outer loop and each accepted socket is handed to
+its own task; here the accept is already done by the time the tasks run.
+</p>
+
+<h2>The scheduler, driven from main</h2>
+<p>
+Nothing in the program happens because of a hidden runtime. <tt>main</tt> owns
+everything: the sockets, the line readers, the buffers, the context pools, the
+root frames, and the scheduler. The tasks run only when <tt>main</tt> ticks the
+scheduler, and <tt>main</tt> ticks it in <tt>waitAll</tt> until both tasks have
+finished. That is the Volume III model of concurrency in one sentence: the
+machine is single-threaded and cooperative, and the program decides when work
+runs.
+</p>
+<p>
+Two details make this concrete. First, each task has a <i>root frame</i>, a
+fixed-size buffer that holds the coroutine's whole memory for its whole life,
+and a <i>child-frame pool</i>, the per-task arena that implicit awaits draw
+from. Both must be 8-aligned and both live in <tt>main</tt>, because the
+coroutine may be resumed on any tick and must never point at a buffer that has
+gone away. Second, the sockets are switched to non-blocking mode. A blocking
+<tt>recv</tt> inside a cooperative task would stall the scheduler and every
+other task with it; a non-blocking read that has no data returns a
+would-block, the task yields, and the scheduler moves on. This is exactly what
+makes the loop in the connection handler safe to write as a loop.
+</p>
+<p>
+The line reading itself is handled by <tt>std.stream</tt>, the standard
+library's stream module. Its <tt>SocketLineReader</tt> wraps a caller-owned
+socket and a caller-owned buffer and enforces the line contract you want:
+strip the terminating <tt>\n</tt> (and the <tt>\r</tt> of a <tt>\r\n</tt>),
+return the final unterminated line at end of input, and return <tt>null</tt>
+at end of file. Two entry points exist over that contract.
+<tt>readSocketLineSync</tt> blocks; it is for a blocking socket and a plain
+(non-suspending) caller. <tt>readSocketLineAsync</tt> is the one this program
+uses: it calls the same non-blocking read, and when the read would block it
+does <tt>@asyncSuspend</tt> and resumes on the next tick. That single fact is
+why the connection handler can be a loop instead of a state machine &mdash; the
+suspend-and-retry lives in the reader, and the handler just calls it.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Piece</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Owned by</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Role</b></th>
+</tr>
+<tr><td valign="top">listening socket</td><td valign="top"><tt>main</tt></td>
+<td valign="top">accepts the connection before the scheduler starts</td></tr>
+<tr><td valign="top">client socket</td><td valign="top"><tt>main</tt></td>
+<td valign="top">connects over loopback; the client task reads and writes it</td></tr>
+<tr><td valign="top"><tt>SocketLineReader</tt></td><td valign="top"><tt>main</tt></td>
+<td valign="top">one per socket; strips line endings, suspends on would-block</td></tr>
+<tr><td valign="top"><tt>Context</tt> + root frame</td><td valign="top"><tt>main</tt>, one pair per task</td>
+<td valign="top">the task's permanent memory, 8-aligned, backs the coroutine</td></tr>
+<tr><td valign="top"><tt>Scheduler</tt></td><td valign="top"><tt>main</tt></td>
+<td valign="top">wraps an array of <tt>*Task</tt>; <tt>waitAll</tt> drives it</td></tr>
+<tr><td valign="top"><tt>echoConnection</tt></td><td valign="top">the server</td>
+<td valign="top">one coroutine per connection: read a line, echo it, yield</td></tr>
+<tr><td valign="top"><tt>echoClient</tt></td><td valign="top">the test driver</td>
+<td valign="top">sends three lines, prints each echoed line, closes</td></tr>
+</table>
+<p>
+There are two coroutines here and each is suspending for a different reason,
+which is worth seeing. <tt>echoConnection</tt> contains no
+<tt>@asyncSuspend</tt> at all in its body. It becomes suspending because it
+calls <tt>readSocketLineAsync</tt>, which is suspending; the property
+propagates up the call graph exactly as <a href="vol3-09-coroutines.html">chapter&nbsp;9</a>
+described. <tt>echoClient</tt> is suspending for the same reason. Neither
+function says "I am a coroutine"; the compiler works it out from the calls they
+make.
+</p>
+
+<h2>The program</h2>
+<p>
+Here is <tt>echo.z98</tt> in full. It is a little longer than
+<tt>tasks.z98</tt> because a socket program has setup to do, but the coroutine
+half is small: two functions, and the loop in each looks like straight-line
+code.
+</p>
+<pre>
+const std = @import("std");
+const std_stream = @import("std_stream");
+
+const PORT: u16 = 18080;
+const BUF_SIZE: usize = 128;
+const POOL_WORDS: usize = 512;
+
+// The connection coroutine's parameters. The line reader and its buffer live
+// in `main` for the whole run, so each coroutine holds only a pointer to them.
+const ConnArgs = struct {
+    sock: i32,
+    lr: *std_stream.SocketLineReader,
+    echoed: *i32,
+};
+const ConnRec = struct { ca: *ConnArgs };
+
+const ClientArgs = struct {
+    sock: i32,
+    lr: *std_stream.SocketLineReader,
+};
+const ClientRec = struct { ca: *ClientArgs };
+
+fn sendLine(sock: i32, msg: []const u8) void {
+    _ = std.net.send(sock, msg.ptr, @intCast(i32, msg.len));
+}
+
+// One coroutine per connection: read a line, echo it back, yield.
+fn echoConnection(ca: *ConnArgs) void {
+    const nl: []const u8 = "\n";
+    while (true) {
+        const maybe = std_stream.readSocketLineAsync(ca.lr) catch return;
+        if (maybe) |line| {
+            _ = std.net.send(ca.sock, line.ptr, @intCast(i32, line.len));
+            _ = std.net.send(ca.sock, nl.ptr, @intCast(i32, nl.len));
+            ca.echoed.* += 1;
+        } else {
+            break;
+        }
+    }
+    std.net.close(ca.sock);
+}
+
+// A tiny client coroutine, so the program is its own test driver.
+fn echoClient(ca: *ClientArgs) void {
+    const m0: []const u8 = "hello, echo\n";
+    const m1: []const u8 = "coroutines are cooperative\n";
+    const m2: []const u8 = "goodbye\n";
+
+    sendLine(ca.sock, m0);
+    const e0 = std_stream.readSocketLineAsync(ca.lr) catch return;
+    if (e0) |line| {
+        std.io.print("client got: {s}\n", .{line});
+    }
+
+    sendLine(ca.sock, m1);
+    const e1 = std_stream.readSocketLineAsync(ca.lr) catch return;
+    if (e1) |line| {
+        std.io.print("client got: {s}\n", .{line});
+    }
+
+    sendLine(ca.sock, m2);
+    const e2 = std_stream.readSocketLineAsync(ca.lr) catch return;
+    if (e2) |line| {
+        std.io.print("client got: {s}\n", .{line});
+    }
+
+    std.net.close(ca.sock);
+}
+
+pub fn main() void {
+    if (std.net.init() != 0) {
+        std.io.print("socket init failed\n", .{});
+        return;
+    }
+
+    const server = std.net.createTcpServer(PORT);
+    if (server &lt; 0) {
+        std.io.print("could not create server\n", .{});
+        return;
+    }
+    if (std.net.bindListen(server, 5) &lt; 0) {
+        std.io.print("could not listen\n", .{});
+        return;
+    }
+
+    var client = std.net.createTcpClient(PORT);
+    if (client &lt; 0) {
+        std.io.print("could not connect\n", .{});
+        return;
+    }
+
+    var conn: i32 = -1;
+    var tries: usize = 0;
+    while (conn &lt; 0 and tries &lt; 100000) : (tries += 1) {
+        conn = std.net.accept(server);
+    }
+    if (conn &lt; 0) {
+        std.io.print("could not accept\n", .{});
+        return;
+    }
+
+    std.net.setNonBlocking(&amp;conn) catch return;
+    std.net.setNonBlocking(&amp;client) catch return;
+
+    // Reader and buffer live in main for the whole run.
+    var conn_buf: [BUF_SIZE]u8 = undefined;
+    var client_buf: [BUF_SIZE]u8 = undefined;
+    var conn_lr = std_stream.initSocketLineReader(&amp;conn, conn_buf[0..]);
+    var client_lr = std_stream.initSocketLineReader(&amp;client, client_buf[0..]);
+
+    var echoed: i32 = 0;
+    var ca = ConnArgs{ .sock = conn, .lr = &amp;conn_lr, .echoed = &amp;echoed };
+    var crec = ConnRec{ .ca = &amp;ca };
+    var cla = ClientArgs{ .sock = client, .lr = &amp;client_lr };
+    var clrec = ClientRec{ .ca = &amp;cla };
+
+    var conn_pool: [POOL_WORDS]u64 = undefined;
+    var conn_frame: [POOL_WORDS]u64 = undefined;
+    var client_pool: [POOL_WORDS]u64 = undefined;
+    var client_frame: [POOL_WORDS]u64 = undefined;
+    var tasks: [2]std.async.Task = undefined;
+    var task_ptrs: [2]*std.async.Task = undefined;
+    var sched_tasks: [2]*std.async.Task = undefined;
+    var sched = std.async.schedulerInit(sched_tasks[0..]);
+
+    // Client first: its first action sends a line, so the connection task
+    // always has data waiting when it runs.
+    task_ptrs[0] = &amp;tasks[0];
+    task_ptrs[0].ctx = std.async.contextInit(@ptrCast([*]u8, &amp;client_pool)[0 .. POOL_WORDS * 8]);
+    task_ptrs[0].frame = @asyncInit(task_ptrs[0].ctx, @ptrCast([*]u8, &amp;client_frame), echoClient, @ptrCast(*const void, &amp;clrec));
+    task_ptrs[0].state = .ready;
+    task_ptrs[0].cancel_requested = false;
+    task_ptrs[0].result = @ptrCast(*void, &amp;echoed);
+    task_ptrs[0].arg = @ptrCast(*void, &amp;clrec);
+    task_ptrs[0].waiting_on = task_ptrs[0];
+    task_ptrs[0].has_waiting_on = false;
+    _ = std.async.addTask(&amp;sched, task_ptrs[0]);
+
+    task_ptrs[1] = &amp;tasks[1];
+    task_ptrs[1].ctx = std.async.contextInit(@ptrCast([*]u8, &amp;conn_pool)[0 .. POOL_WORDS * 8]);
+    task_ptrs[1].frame = @asyncInit(task_ptrs[1].ctx, @ptrCast([*]u8, &amp;conn_frame), echoConnection, @ptrCast(*const void, &amp;crec));
+    task_ptrs[1].state = .ready;
+    task_ptrs[1].cancel_requested = false;
+    task_ptrs[1].result = @ptrCast(*void, &amp;echoed);
+    task_ptrs[1].arg = @ptrCast(*void, &amp;crec);
+    task_ptrs[1].waiting_on = task_ptrs[1];
+    task_ptrs[1].has_waiting_on = false;
+    _ = std.async.addTask(&amp;sched, task_ptrs[1]);
+
+    std.async.waitAll(&amp;sched) catch {
+        std.io.print("frame pool exhausted\n", .{});
+    };
+
+    std.net.close(server);
+    std.net.cleanup();
+    std.io.print("echoed {} lines\n", .{echoed});
+}
+</pre>
+
+<h2>Walking the program</h2>
+<p>
+The listing divides into four movements, and each is worth reading on its own:
+the two coroutines, the argument records they are initialized from, the setup
+in <tt>main</tt>, and the drive.
+</p>
+
+<h3>The connection coroutine</h3>
+<p>
+<tt>echoConnection</tt> is the server. It takes one argument, a pointer to a
+<tt>ConnArgs</tt> that carries the socket, a pointer to the line reader, and a
+pointer to the shared count of echoed lines. The body is the loop from
+chapter&nbsp;9's argument, made real:
+</p>
+<pre>
+while (true) {
+    const maybe = std_stream.readSocketLineAsync(ca.lr) catch return;
+    if (maybe) |line| {
+        _ = std.net.send(ca.sock, line.ptr, @intCast(i32, line.len));
+        _ = std.net.send(ca.sock, nl.ptr, @intCast(i32, nl.len));
+        ca.echoed.* += 1;
+    } else {
+        break;
+    }
+}
+std.net.close(ca.sock);
+</pre>
+<p>
+<tt>readSocketLineAsync</tt> returns an optional slice: a line when one is
+available, <tt>null</tt> at end of file. Under the covers it reads in
+non-blocking chunks; when a chunk would block it suspends, and the scheduler
+resumes the task on a later tick. The handler does not know or care how many
+ticks that takes. When a line comes back, the handler writes it to the socket
+with <tt>std.net.send</tt>, writes a newline after it, and counts it. Because
+the reader strips the newline, echoing the line means re-adding one explicitly.
+When the reader finally returns <tt>null</tt> &mdash; the peer closed &mdash;
+the loop breaks and the handler closes its own socket.
+</p>
+<p>
+Compare that to the C89 version. In C89 you would own a <tt>state</tt> field on
+the connection, a buffer and a <tt>pos</tt>, and a <tt>switch</tt> that resumes
+mid-line. Every early <tt>return</tt> when the data was not ready is a jump out
+of a function whose local variables then have to be fields, because they must
+survive. The Z98 handler keeps those locals &mdash; <tt>maybe</tt>, <tt>line</tt>,
+the constants &mdash; as locals, and the compiler hoists the ones that are live
+across a suspension into the frame. That hoisting is the whole trade: the
+compiler writes the state machine so that you do not.
+</p>
+<p>
+One detail is load-bearing and easy to miss. The reader and its buffer do
+<i>not</i> live in the coroutine's frame; the coroutine holds a pointer
+(<tt>ca.lr</tt>) to a reader that lives in <tt>main</tt>. This is deliberate.
+A reader is a fairly large struct, and keeping it in a caller-owned buffer
+rather than in the frame removes a whole class of "is this local still alive
+across the suspension?" questions. The rule the examples follow is general: the
+things a coroutine must not lose &mdash; frames, pools, readers, buffers that
+outlive a suspension &mdash; live in <tt>main</tt> or in a dedicated arena, and
+the coroutine holds pointers to them. What lives <i>in</i> the frame are the
+small locals the compiler is good at tracking.
+</p>
+
+<h3>The client coroutine</h3>
+<p>
+<tt>echoClient</tt> is the program's test driver, and it is deliberately dumb.
+It sends a line, then reads the echo, then prints it; it does that three times
+and closes. Each iteration is a send, an awaited read, and a print:
+</p>
+<pre>
+sendLine(ca.sock, m0);
+const e0 = std_stream.readSocketLineAsync(ca.lr) catch return;
+if (e0) |line| {
+    std.io.print("client got: {s}\n", .{line});
+}
+</pre>
+<p>
+The read after the send is what makes the interleaving deterministic. The
+client sends, then immediately asks for the echo. There is no echo yet, so the
+reader suspends the client task and returns control to the scheduler. The
+scheduler runs the connection task, which finds the line waiting and echoes it.
+On the next tick the client resumes, gets its echo, prints it, and sends the
+next line. The two coroutines hand the ball back and forth without either one
+blocking, and the transcript below is the exact order that produces.
+</p>
+<p>
+The three messages are ordinary constants:
+<tt>"hello, echo\n"</tt>, <tt>"coroutines are cooperative\n"</tt>, and
+<tt>"goodbye\n"</tt>. The newline matters: the line reader returns at a
+newline, so sending a line means sending the terminator with it. The echo
+returned to the client has no newline &mdash; the reader stripped it &mdash; so
+the print adds its own. That asymmetry is the reader's contract stated once,
+and the program relies on it in exactly one place on each side.
+</p>
+
+<h3>The argument records</h3>
+<p>
+<tt>@asyncInit</tt> copies an argument record <i>positionally</i> into the
+coroutine's parameters: the record's fields are the parameters, in order. So a
+one-parameter coroutine is initialized from a one-field record. That is why
+<tt>ConnRec</tt> is a record with one field, <tt>ca</tt>, matching
+<tt>echoConnection</tt>'s one parameter:
+</p>
+<pre>
+const ConnRec = struct { ca: *ConnArgs };
+...
+var crec = ConnRec{ .ca = &amp;ca };
+task_ptrs[1].frame = @asyncInit(task_ptrs[1].ctx, @ptrCast([*]u8, &amp;conn_frame), echoConnection, @ptrCast(*const void, &amp;crec));
+</pre>
+<p>
+The record is passed as a plain <tt>*const void</tt>. As chapter&nbsp;9 warned,
+a <tt>?*const void</tt> is a non-scalar optional in this position and emits
+invalid C89, so the cast is always to the non-optional <tt>*const void</tt>. The
+record must also outlive the coroutine, because <tt>@asyncInit</tt> stores it
+as the task's <tt>arg</tt> and the scheduler re-passes it on every resume. Both
+records here (<tt>crec</tt> and <tt>clrec</tt>) are locals in <tt>main</tt>,
+which is alive for the entire run.
+</p>
+
+<h3>The setup in main</h3>
+<p>
+The setup is the part a modern runtime would hide, and reading it is how you
+learn what a coroutine actually costs. In order:
+</p>
+<p>
+<b>Bring up the network.</b> <tt>std.net.init()</tt> runs
+<tt>WSAStartup(1,1)</tt> on Windows and is a no-op elsewhere; a non-zero return
+means the socket stack did not initialize. Then <tt>createTcpServer(PORT)</tt>
+makes and binds the listening socket, <tt>bindListen</tt> starts it listening,
+and <tt>createTcpClient(PORT)</tt> connects the client socket over loopback.
+On Windows the sockets are <tt>wsock32</tt> handles; the API is the same on
+both targets.
+</p>
+<p>
+<b>Accept the connection.</b> The accept loop retries until <tt>accept</tt>
+returns a socket. In a production server this is the outer loop; here it runs
+once, because the single connection is already in the listener's backlog.
+</p>
+<p>
+<b>Switch both sockets to non-blocking.</b>
+<tt>std.net.setNonBlocking</tt> is what makes the async reader safe. On a
+blocking socket a read with no data would stall the whole cooperative
+scheduler; on a non-blocking socket it returns would-block and the reader
+suspends. That is the contract the reader documents and this program depends
+on.
+</p>
+<p>
+<b>Build the readers and buffers.</b> Each socket gets a
+<tt>SocketLineReader</tt> and a 128-byte buffer, both in <tt>main</tt>. The
+buffers are ordinary byte arrays here rather than aligned <tt>u64</tt> arrays,
+because the reader is not a coroutine frame and does not carry the coroutine
+alignment requirement; the frame buffers are a different story.
+</p>
+<p>
+<b>Allocate the coroutine storage.</b> For each task there is a pool and a root
+frame, backed by <tt>[POOL_WORDS]u64</tt> arrays. The <tt>u64</tt> backing is
+not decoration: <tt>contextInit</tt> traps on a buffer that is not 8-aligned,
+and a bare <tt>[N]u8</tt> is only 1-aligned. The cast to <tt>[]u8</tt> gives
+the pool interface the byte view it wants. Each buffer is 512 <tt>u64</tt>
+words, 4&nbsp;KiB, which is far more than these shallow call chains need and a
+reminder that a pool is cheap when its size is fixed at compile time.
+</p>
+<p>
+<b>Initialize the tasks.</b> For each task: make the <tt>Context</tt> from the
+pool, initialize the root frame with <tt>@asyncInit</tt>, fill the remaining
+<tt>Task</tt> fields, and <tt>addTask</tt> it. The <tt>Task</tt> struct is the
+one from chapter&nbsp;9 &mdash; <tt>frame</tt>, <tt>ctx</tt>, <tt>state</tt>,
+<tt>cancel_requested</tt>, <tt>result</tt>, <tt>arg</tt>,
+<tt>waiting_on</tt>, <tt>has_waiting_on</tt> &mdash; and it stores no step
+pointer. The step is inside the frame, written by <tt>@asyncInit</tt>; the
+scheduler loads it through <tt>@asyncResume</tt>. That is why the same
+scheduler can drive a connection task and a client task whose functions have
+different types: the type is erased into the frame.
+</p>
+<p>
+The one ordering choice in the setup is that the client task is added first.
+<tt>tick</tt> walks tasks in registration order, so on the first tick the
+client runs first: it sends its first line and suspends waiting for the echo.
+Then the connection task runs and finds that line waiting. If the order were
+reversed the program would still be correct, just one tick later &mdash; the
+reader would suspend the connection task until the client's next turn &mdash;
+but "client first" makes the first tick do useful work and keeps the transcript
+easy to read.
+</p>
+
+<h3>The drive</h3>
+<p>
+The last movement is one call:
+</p>
+<pre>
+std.async.waitAll(&amp;sched) catch {
+    std.io.print("frame pool exhausted\n", .{});
+};
+</pre>
+<p>
+<tt>waitAll</tt> ticks the scheduler until every registered task is done or
+cancelled. Each tick resumes every ready task once, in order; a task that
+suspends is parked until the next tick. The two tasks take turns, the client
+finishes after its third echo and closes its socket, the connection task then
+reads end-of-file and finishes, and <tt>waitAll</tt> returns. The only error it
+can surface is <tt>error.OutOfFrame</tt> from a child-frame pool overflow,
+which the program reports rather than ignores. After the drive, <tt>main</tt>
+closes the listening socket, cleans up the socket stack, and prints the count.
+</p>
+
+<h2>The transcript</h2>
+<p>
+Compiled with the seed-built compiler, linked with the standard Linux build
+script, and run:
+</p>
+<pre>
+client got: hello, echo
+client got: coroutines are cooperative
+client got: goodbye
+echoed 3 lines
+</pre>
+<p>
+The three <tt>client got:</tt> lines are the client coroutine printing the
+echoes it received; the last line is <tt>main</tt> printing the counter that the
+connection coroutine incremented. The lines arrive in the order the messages
+were sent because the client waits for each echo before sending the next. No
+timing is involved. Because the scheduler is cooperative and single-threaded,
+the run is exactly reproducible, which is what makes a coroutine program
+testable in the first place.
+</p>
+
+<h2>Running under Windows 98</h2>
+<p>
+This is a network program, so it is also the first sample in the volume that
+proves the Windows socket path rather than just the console path. The
+committed harness cross-compiles the emitted C with
+<tt>i686-w64-mingw32-gcc</tt> through the emitted
+<tt>build_target.sh mingw</tt> branch (which links <tt>wsock32</tt> because the
+program imports <tt>std.net</tt>), then runs the resulting <tt>echo.exe</tt>
+under a dedicated 32-bit wine prefix. On this host the Windows run returned
+<tt>XRUNRC=0</tt> and <tt>WINE_RC=0</tt>, and its stdout was byte-identical to
+the Linux transcript above: the parity check reported <tt>PARITY=OK</tt>. The
+raw Windows stdout was already LF-terminated and matched the Linux baseline
+exactly, so the compare was an exact byte-match, not merely a normalized one.
+</p>
+<p>
+That is a stronger statement than chapter&nbsp;9 could make. Chapter&nbsp;9
+proved that coroutine <i>execution</i> runs under Windows. This chapter proves
+that coroutines <i>plus the Windows socket stack</i> run together: the server
+binds, accepts a loopback connection, reads non-blocking, suspends, resumes,
+and echoes, with the scheduler driving all of it. The transport was not taken
+on faith; it was measured before the chapter was written.
+</p>
+<p>
+The OpenWatcom path is separate. The <tt>-osw</tt> emit also writes
+<tt>build_owc.bat</tt> for <tt>wcc386</tt>/<tt>wlink</tt>, but OpenWatcom is
+not installed on the development host, so that script is <b>emitted and
+documented, not run here</b>. The figure below is the real-machine proof: the
+screenshot will be captured on Windows 98, from the OpenWatcom build, and shows
+the same four output lines.
+</p>
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f0f0f0" class="placeholder">
+<tr>
+<td align="center">
+<i>Figure 34 &mdash; Win9x screenshot pending</i>
+</td>
+</tr>
+</table>
+<p><i>Figure 34. Running <tt>echo.exe</tt> under Windows 98.</i></p>
+
+<h2>The trade</h2>
+<p>
+A coroutine per connection is not free, and the cost is easiest to see in a
+program this small. Four limits are worth naming, each with what you do
+instead.
+</p>
+<p>
+<b>A frame per connection is permanent memory.</b> Each task owns a root frame
+and a child-frame pool for its whole life. A server with a thousand connections
+owns a thousand frames and a thousand pools. The way over is to size them, not
+to fear them: <tt>@asyncFrameSize</tt> gives the exact root-frame size at compile
+time, the pool is yours to size, and both are fixed. A connection that is idle
+still costs its frame, so a server that must hold many idle connections
+budgets for them up front &mdash; which is the same arithmetic the era forces
+on every other kind of buffer.
+</p>
+<p>
+<b>Nothing preempts anything.</b> A connection coroutine that never suspends
+starves the rest. The way over is the same as chapter&nbsp;9's: suspend where
+the work genuinely pauses. Here every read suspends on would-block, so a task
+that is waiting for a client yields naturally and the scheduler runs another
+connection. A task doing a long computation between reads should be written to
+suspend at chunk boundaries, or split.
+</p>
+<p>
+<b>The scheduler is driven by you.</b> There is no event loop behind your back,
+and <tt>waitAll</tt> ticks every registered task. That is fine when every task
+is non-blocking, as here. It is not fine if a task blocks, because a tick would
+stall on it. The way over is the model this program already follows: make every
+socket non-blocking and let the async reader suspend instead of block. If you
+mix a blocking task into the scheduler, drive only the tasks you mean to, as
+the larger <tt>mud_server</tt> example does with <tt>select</tt>.
+</p>
+<p>
+<b>One root pool in a suspending <tt>main</tt> is fixed at 256 bytes.</b> A
+suspending <tt>pub fn main</tt> has a synthesized driver with a fixed pool, so
+its implicit awaits can overflow. This program sidesteps it the recommended way:
+<tt>main</tt> does not suspend. It sets up an explicit pool per task and drives
+them from outside, so the only pool that matters is the one it sized itself.
+</p>
+<p>
+None of those limits falls on the common case, and all of them are visible. You
+give up the machine's ability to schedule for you, and in exchange you own a
+program whose concurrency is a list of tasks and a tick, with no locks and no
+races.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> The client coroutine in this sample exists so the
+program can prove itself; a real client is another machine. Do not read the
+sample as a template for putting the client in the server. Read it as two
+things: the connection handler is the program, and the client is the test. The
+part that scales &mdash; accepting in a loop and initializing a task per socket
+&mdash; is exactly the part the sample does once, and the
+<tt>@asyncInit</tt>/<tt>addTask</tt> pair is the same whether you call it once
+or in a loop. The rest of the volume's network chapter
+(<a href="vol3-06-era-limits.html">chapter&nbsp;6</a>'s promised way over the
+no-threads limit) is this pattern applied to more connections.</td>
+</tr>
+</table>
+
+<h2>Common mistakes</h2>
+<p>
+These are the mistakes a reader makes first when turning the mechanism into a
+program. Each has a corrected shape.
+</p>
+<p>
+<b>Leaving the socket blocking.</b> The async reader assumes a non-blocking
+socket; on a blocking one, a read with no data does not yield, it waits. The
+scheduler then stalls on that one task and the other coroutines never run. The
+fix is one call per socket, <tt>std.net.setNonBlocking(&amp;sock)</tt>, before
+the task that reads it is registered.
+</p>
+<p>
+<b>Putting the reader and buffer in the coroutine frame.</b> A reader holds a
+slice into its buffer and the buffer must stay put across suspensions. Keeping
+both as locals in the suspending function works against the frame layout; the
+safe and idiomatic shape is to own them in <tt>main</tt> (or an arena) and give
+the coroutine a pointer, which is what <tt>ConnArgs.lr</tt> is.
+</p>
+<p>
+<b>Forgetting the newline.</b> The line reader stops at, and strips, the
+terminator. If you echo the returned slice with no terminator, the peer's next
+read never sees a complete line and the conversation hangs. The connection
+handler sends the line and then a newline, and the client prints the stripped
+echo with a freshline of its own. Watch both sides of any line protocol.
+</p>
+<p>
+<b>Sending the arg record as an optional.</b> The fourth argument to
+<tt>@asyncInit</tt> is <tt>@ptrCast(*const void, &amp;record)</tt>. A
+<tt>?*const void</tt> emits invalid C89 here. The record's field count must
+also match the coroutine's parameter count, because the copy is positional;
+<tt>ConnRec</tt> and <tt>ClientRec</tt> each have exactly one field for exactly
+one parameter.
+</p>
+<p>
+<b>Backing a pool or frame with <tt>[N]u8</tt>.</b> The pool and root frame
+must be 8-aligned, and a <tt>u8</tt> array is only 1-aligned;
+<tt>contextInit</tt> traps otherwise. Back both with <tt>[K]u64</tt> and cast a
+slice to <tt>[]u8</tt>. The readers' buffers are a different type and do not
+need this, but the coroutine storage does.
+</p>
+<p>
+<b>Expecting the program to work if you call it twice.</b> The fixed port makes
+a second concurrent run fail to bind. The error paths in <tt>main</tt> report
+each failure and return instead of crashing, which is the Z98 error-union
+habit; read them as the program telling you the port is in use, not as the
+socket stack being broken.
+</p>
+
+<h2>Where to go next</h2>
+<p>
+The mechanism was <a href="vol3-09-coroutines.html">chapter&nbsp;9, Coroutines
+&mdash; the third big shift</a>; this chapter is what the third shift is for.
+The coroutine-converted multi-connection server in the examples tree,
+<tt>examples/z98/mud_server</tt>, is this pattern with more connections and a
+readiness-gated drive, and it is the proof that the shape scales.
+</p>
+<p>
+The socket API behind this program is the <tt>std.net</tt> extern surface, and
+the harness that verified it under Windows is the same one the WinSock chapter
+will use; the detailed socket story is <i>(planned)</i> for
+chapter&nbsp;12. The line reader itself is documented with its file-based
+sibling in <a href="vol2-17-stdlib.html">Volume II chapter&nbsp;17, The
+standard library tour</a>, and the format string in the client's
+<tt>print</tt> is <a href="vol2-18-print.html">chapter&nbsp;18</a>. The
+scheduling primitives are catalogued in
+<a href="vol4-15-builtins.html">Volume IV &mdash; Builtins</a>.
+</p>
+<p>
+If the frame-and-pool model still feels unfamiliar, the two earlier shifts are
+<a href="vol2-12-error-unions.html">Volume II chapter&nbsp;12, Error
+unions</a> and <a href="vol2-14-arena.html">chapter&nbsp;14, The arena</a>; a
+coroutine's pool is an arena that happens to hold frames. The volume's
+inventory, <a href="vol3-02-honesty-inventory.html">chapter&nbsp;2</a>, lists
+coroutines among the things Z98 gives you, and
+<a href="vol3-06-era-limits.html">chapter&nbsp;6</a> states the limit this
+chapter is the way over. <a href="vol3-07-friction.html">Chapter&nbsp;7</a>
+warns that OpenWatcom is emitted-only on the development host; the Windows
+section above is the measured boundary.
+</p>
+
+<p class="navbtns">
+<a href="vol3-09-coroutines.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol3-09-coroutines.html">Coroutines &mdash; the third big shift</a> | <a href="toc.html">Contents</a> | Next: <a href="toc.html">Contents</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
