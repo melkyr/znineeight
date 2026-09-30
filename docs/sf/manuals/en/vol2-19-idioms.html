@@ -1,0 +1,565 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Idioms and Best Practices</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual idioms best practices arena ownership init functions manual vtables dual arenas runtime initialization undefined is not zero constructors destructors hidden allocations arena.z98 shapes2.z98">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol2-18-print.html">
+<link rel="next" href="vol4-00-title.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume II &mdash; Learning Z98</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol2-00-title.html">How to read this</a><br>
+<a href="vol2-01-honest-comparison.html">The honest comparison</a><br>
+<a href="vol2-02-types.html">The type system</a><br>
+<a href="vol2-03-pointers.html">Pointers</a><br>
+<a href="vol2-04-structs.html">Aggregates I: structs</a><br>
+<a href="vol2-05-packed-structs.html">Aggregates II: packed structs</a><br>
+<a href="vol2-06-enums.html">Aggregates III: enums</a><br>
+<a href="vol2-07-unions.html">Aggregates IV: unions</a><br>
+<a href="vol2-08-tuples.html">Aggregates V: tuples</a><br>
+<a href="vol2-09-arrays-slices.html">Arrays and slices</a><br>
+<a href="vol2-10-control-flow.html">Control flow, in full</a><br>
+<a href="vol2-11-defer.html">defer and errdefer</a><br>
+<a href="vol2-12-error-unions.html">Error unions &mdash; the first big shift</a><br>
+<a href="vol2-13-optionals.html">Optionals</a><br>
+<a href="vol2-14-arena.html">The arena &mdash; the second big shift</a><br>
+<a href="vol2-15-builtins.html">Builtins, in full</a><br>
+<a href="vol2-16-no-methods.html">No methods, no generics, no comptime</a><br>
+<a href="vol2-17-stdlib.html">The standard library tour</a><br>
+<a href="vol2-18-print.html">print and the format string</a><br>
+<b>Idioms and best practices</b><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Idioms and Best Practices</h1>
+<p>
+<a href="vol2-18-print.html">Chapter&nbsp;18</a> closed the language. The
+format string was the last surface feature this volume had to explain, and
+after it there is nothing new to introduce. This chapter is the one that
+collects the working habits the previous chapters have been demonstrating all
+along. Every idiom below was already taught by a chapter; none of them is a new
+compiler behavior, and this page adds no code of its own. It is the volume's
+cross-reference hub: when a later program needs the arena, the init function,
+the manual vtable, or the rule about uninitialized memory, this is the page
+that names where each one was learned.
+</p>
+<p>
+The six idioms are the ones that separate a Z98 program from a C program that
+happens to compile under Z98. The language spec keeps them in one place, its
+section 6, under the heading "Z98 Idioms and Best Practices", and the shipped
+chapters have each worked one in full. Read in order they are:
+</p>
+<ul>
+<li><b>Arena ownership</b> &mdash; the buffer is yours and the arena is a
+cursor over it; allocation is fallible and reclamation is one reset.
+(<a href="vol2-14-arena.html">Chapter&nbsp;14</a>.)</li>
+<li><b>Init functions</b> &mdash; an object becomes usable through a free
+function that fills its fields and returns it, because there are no
+constructors. (<a href="vol2-14-arena.html">Chapter&nbsp;14</a>,
+<a href="vol2-16-no-methods.html">chapter&nbsp;16</a>.)</li>
+<li><b>Manual virtual tables</b> &mdash; a struct of function pointers plus one
+erased data pointer, because there are no methods and no classes.
+(<a href="vol2-16-no-methods.html">Chapter&nbsp;16</a>.)</li>
+<li><b>Dual arenas</b> &mdash; one arena for data that lives for the whole run,
+one for data that dies every phase, so a reset never costs you the permanent
+state. (<a href="vol2-14-arena.html">Chapter&nbsp;14</a>.)</li>
+<li><b>Runtime initialization</b> &mdash; complex global state is built by a
+dedicated <tt>init()</tt> called at startup, not by a large constant
+initializer.</li>
+<li><b><tt>undefined</tt> is not zero</b> &mdash; an uninitialized value holds
+the poison fill under the default safe build and nothing at all under
+<tt>-ffast</tt>; it is never quietly zeroed. (<a href="vol2-14-arena.html">Chapter&nbsp;14</a>,
+<a href="vol2-04-structs.html">chapter&nbsp;4</a>.)</li>
+</ul>
+<p>
+The working programs behind the first four are the shipped examples
+<tt>docs/sf/manuals/src/vol2/arena.z98</tt> and
+<tt>docs/sf/manuals/src/vol2/shapes2.z98</tt>. Neither is reproduced here; this
+chapter cites them by path and describes the shape they share. If you want to
+see an idiom run, that is where to look.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> You will reach for the constructor and the destructor;
+here is the Z98 way. The habit is the deepest one a C++ programmer brings: an
+object knows how to create itself, and it knows how to clean itself up when its
+scope ends. Z98 has neither half of that pair. There is no constructor keyword,
+no destructor, no <tt>new</tt>, no <tt>delete</tt>, and no automatic call when a
+value goes out of scope. An object is ready when a free init function has filled
+its fields, and a resource is released when you release it &mdash; by
+<tt>defer</tt> at the end of a scope, by <tt>errdefer</tt> on the failure path,
+or by the one <tt>reset</tt> that ends a phase. The trade is the same one the
+whole language makes: you write the lifetime down instead of letting the
+compiler infer it, and in exchange nothing runs behind your back and the
+generated C has no hidden control flow. It is more spelling and fewer
+surprises.</td>
+</tr>
+</table>
+
+<h2><a name="ownership"></a>The arena owns the memory</h2>
+<p>
+The first idiom is the one the volume returns to in every later program: a
+program that needs storage whose count is only known at run time declares a
+byte buffer and hands an arena over it.
+<a href="vol2-14-arena.html">Chapter&nbsp;14</a> introduced the API and its four
+lines are the whole contract. <tt>std.arena.init(buf[0..])</tt> records the
+buffer's pointer, its capacity, and <tt>used = 0</tt>; <tt>std.arena.alloc</tt>
+bumps the cursor forward and returns <tt>ArenaError![*]u8</tt>;
+<tt>std.arena.reset</tt> puts the cursor back to zero; and the <tt>used</tt> and
+<tt>capacity</tt> fields are public so a program can observe the fill level.
+There is no <tt>deinit</tt>, because the arena owns nothing of its own &mdash;
+the bytes belong to the caller.
+</p>
+<p>
+Ownership is the part that is easy to say and easy to get wrong. The rule the
+spec states is that functions should accept a <tt>*std.arena.Arena</tt> rather
+than "owning" their memory: the caller declares the storage and decides its
+lifetime, and the callee receives a cursor it may bump. That is why
+<tt>Point_init</tt> in <tt>docs/sf/manuals/src/vol2/arena.z98</tt> takes an
+arena as its first parameter and returns a pointer, instead of allocating on
+its own and returning something whose storage it secretly manages. Any
+function on the page that allocates follows the same shape, and a caller that
+reads only the signature can see where the memory comes from and who can
+reclaim it.
+</p>
+<p>
+The second half of ownership is the reset. Chapter&nbsp;14's transcript makes
+the consequences concrete: after <tt>std.arena.reset(&amp;arena)</tt> the next
+allocation hands back the same bytes, and a pointer taken before the reset now
+reads the new object's fields. The transcript prints that aliasing as
+<tt>reused p.x=9</tt>. Nothing about the old pointer became invalid in the C
+sense &mdash; it still points at valid bytes &mdash; but its <i>ownership</i>
+contract ended with the reset. The corrected habit is a rule rather than a
+diagnostic, because the compiler cannot check it: after a reset, every pointer
+that came from the arena is dead, and only pointers from the current fill may
+be used.
+</p>
+<p>
+Two smaller rules ride along with arena ownership, and both come from the same
+chapter. Allocation is fallible, so <tt>try</tt> or <tt>catch</tt> unwraps it;
+<tt>orelse</tt> is rejected with
+<tt>error[3016]</tt> because <tt>orelse</tt> belongs to optionals. And a
+resource that lives outside the buffer &mdash; a file handle, a socket &mdash;
+must be closed before the arena is reset, because <tt>reset</tt> only moves a
+number; it runs no cleanup code. Chapter&nbsp;14 puts the arena's one signature
+where a reader can see it,
+<tt>std.arena.ArenaError![*]u8</tt>, and the phrase to carry away is: the
+success is raw bytes, the failure is <tt>error.OutOfMemory</tt>, and both are
+in the type.
+</p>
+
+<h2><a name="init"></a>Init functions build the object</h2>
+<p>
+A cursor of raw bytes is not yet a useful object, so every type that wants one
+gets an init function.
+<a href="vol2-14-arena.html">Chapter&nbsp;14</a> showed the four steps:
+compute the size with <tt>@sizeOf</tt>, ask the arena for that many bytes,
+promise the layout with <tt>@ptrCast</tt>, and fill the fields. Its
+<tt>Point_init</tt> is the pattern in one function, and its return type
+<tt>std.arena.ArenaError!*Point</tt> carries the allocation failure up to the
+caller. <a href="vol2-16-no-methods.html">Chapter&nbsp;16</a> then generalized
+the idea: an object is ready when its payload fields are set and, when it takes
+part in an interface, an interface value names its operations. The two jobs
+belong together in one function so they cannot drift apart at the call site.
+</p>
+<p>
+The spec names the same pattern in its initialization section, and it is worth
+restating why it is a function rather than a language feature. Z98 targets C89
+and avoids complex destructors, so the "constructor" is deliberately an
+ordinary function that takes a pointer to the destination and returns the
+initialized value. The caller owns the storage, which means the caller can put
+it on the stack, in a global buffer, or in an arena. Global aggregate
+constants use a related shape: the compiler's own source declares them as
+<tt>pub var</tt> and initializes them in a dedicated function rather than in a
+large literal. That is the next idiom but one, and it is the same idea at
+module scope.
+</p>
+<p>
+Chapter&nbsp;16 measured three accepted forms of the pattern, which is worth
+knowing because a reader may see any of them. A value-returning
+<tt>fn shape_init(f: fn (*void) void, d: *void) Shape</tt> that does nothing but
+build the literal compiles and runs; a pointer-init
+<tt>fn shape_init(s: *Shape, f: fn (*void) void, d: *void) void</tt> that fills
+an already-declared interface compiles and runs; and the form the sample uses
+takes the payload destination, fills it, and returns the interface in one call.
+The chapter chose the third because one call sets both halves, but the compiler
+does not force a favorite. The shape that matters is not which form you pick
+but that construction goes through a named function and not through a hidden
+language mechanism.
+</p>
+<p>
+The absence the idiom replaces is real: there is no constructor to call and no
+destructor to rely on.
+<a href="vol2-04-structs.html">Chapter&nbsp;4</a> already warned about the C++
+habit in its common-mistakes list &mdash; there is no <tt>Sprite.init()</tt>
+&mdash; and <a href="vol2-16-no-methods.html">chapter&nbsp;16</a> supplied the
+replacement in full. The sample's <tt>circle_init</tt> and <tt>square_init</tt>
+in <tt>docs/sf/manuals/src/vol2/shapes2.z98</tt> are init functions that also
+build the manual vtable, and they are the pattern exercised twice on two
+concrete types.
+</p>
+
+<h2><a name="vtables"></a>Manual virtual tables</h2>
+<p>
+The third idiom is the one the volume's second mental shift made necessary.
+Z98 has no methods and no classes, so polymorphism is not a language feature;
+it is a struct of function pointers that you build by hand.
+<a href="vol2-16-no-methods.html">Chapter&nbsp;16</a> writes the interface as
+<tt>struct { draw_fn: fn (*void) void, area_fn: fn (*void) f32, data: *void }</tt>:
+two operations and one erased data pointer. Each concrete shape is an ordinary
+struct, each operation is a free function that receives the erased pointer and
+casts it back with <tt>@ptrCast</tt>, and dispatch is an ordinary call through
+the field with the data pointer as the argument. There is no receiver magic
+and nothing to look up at run time.
+</p>
+<p>
+The chapter measured the cost and it is the reason the pattern is a best
+practice rather than a workaround. The sample's first output line is
+<tt>Shape size=12 align=4 fn=4</tt>: on the 32-bit target the interface is three
+words, two function pointers and the data pointer, at four bytes each. The
+emitted C shows a Z98 function pointer becoming an ordinary C function pointer
+&mdash; <tt>fn (*void) void</tt> becomes <tt>void (*)(void*)</tt> &mdash; with
+no hidden receiver argument. That is exactly why the receiver has to be passed
+by hand at every call, and it is why the generated C is readable line by line.
+</p>
+<p>
+The vtable's one real hazard is the erased data pointer. The type checker knows
+the function signature and does not know what the function will cast the data
+to, so a program can build a <tt>Shape</tt> whose operation casts a
+<tt>*Square</tt> to <tt>*Circle</tt>. Chapter&nbsp;16's answer is the reason the
+init-function idiom sits beside this one: the init function is where the
+payload and its operations are paired, so the contract lives in one place
+instead of being spread across call sites. Build every interface through an
+init function, keep the payload and its operations in the same file, and the
+cast back always matches what was stored. The sample does this in
+<tt>docs/sf/manuals/src/vol2/shapes2.z98</tt>, where <tt>circle_init</tt> and
+<tt>square_init</tt> are the only places a <tt>Shape</tt> is ever constructed.
+</p>
+<p>
+It is worth naming what a vtable is not, because the erasure invites the wrong
+comparison. A Z98 manual vtable is not a class with virtual functions and it is
+not a language object with a hidden type tag; it is a plain struct of C function
+pointers that you could have written in C89 by hand. The language adds no
+table, no metadata, and no dispatch. What it adds instead is the checker on the
+function-pointer signatures, so the fields of the vtable are typed even though
+the data behind them is not.
+</p>
+
+<h2><a name="dual"></a>Two arenas, two lifetimes</h2>
+<p>
+The fourth idiom is the answer to the question the single arena forces: what if
+some data must live for the whole run while other data dies every phase? One
+fill level cannot serve both, because any reset that reclaims the phase data
+would also throw away the permanent state.
+<a href="vol2-14-arena.html">Chapter&nbsp;14</a> gives the standard answer: the
+dual-arena pattern, two arenas with two lifetimes. The permanent arena holds
+data that lives for the whole run and is never reset, or is reset once at the
+very end; the scratch arena holds per-file, per-request, or per-phase working
+memory and is reset at every phase boundary, after the phase's results have
+been copied out or summarized.
+</p>
+<p>
+The pattern is not a library feature. It is two <tt>Arena</tt> values, and the
+chapter's <tt>dual</tt> function in <tt>docs/sf/manuals/src/vol2/arena.z98</tt>
+is the whole of it: it sets up both arenas, allocates into each, then resets
+only the scratch arena and prints both fill levels to show that the permanent
+data survived. The spec describes the same pattern for the same reason and
+names the Lisp interpreter as the working example &mdash; a compiler or
+interpreter is a loop of phases over permanent state, and the scratch arena is
+what lets the loop run again without leaking a phase's worth of memory into the
+next.
+</p>
+<p>
+On the era's hardware the pattern earns its keep twice over. It keeps the active
+working set small, because the scratch arena is sized for one phase rather than
+for the union of every phase the program will ever run, and it keeps allocation
+predictable, because the same phase run twice sees the same bumps in the same
+order. The chapter's own words are the best summary: reset the scratch arena
+when the phase ends, not when the arena is full. A missing reset does not fail
+quietly &mdash; <tt>used</tt> climbs to <tt>capacity</tt> and the next
+allocation is <tt>error.OutOfMemory</tt> &mdash; but the fix is one call at the
+phase boundary, and that is the discipline.
+</p>
+
+<h2><a name="runtime"></a>Runtime initialization</h2>
+<p>
+The fifth idiom moves the init function to module scope. For complex global
+state the spec's rule is explicit: avoid large constant initializers and use a
+dedicated <tt>init()</tt> function called at startup. Its example is a global
+array declared <tt>undefined</tt> and filled by a named function, the module
+counterpart of the <tt>Point_init</tt> pattern from
+<a href="vol2-14-arena.html">chapter&nbsp;14</a>. The compiler's own source
+follows the rule, and it is why global aggregates there are declared
+<tt>pub var</tt> and filled in an init function rather than in one enormous
+literal. The reason is not style: a C89 program has no place to run a
+non-constant global initializer before <tt>main</tt>, so the work has to happen
+in code you can point at.
+</p>
+<p>
+The rule interacts with the next idiom directly, because the global is declared
+<tt>undefined</tt> first. That <tt>undefined</tt> is a promise to the compiler
+that the value will be written before it is read, not a request for zeroes. The
+program then keeps the promise in the init function. This is the same
+declaration shape chapter&nbsp;4 describes for a local: write every field you
+intend to read, or write <tt>= undefined</tt> and fill the value before using
+it. <a href="vol2-04-structs.html">Chapter&nbsp;4</a> also names the diagnostic
+for a declaration with no initializer at all, <tt>error[3014]</tt>, whose
+message is the direct instruction: use <tt>= undefined</tt> to opt out.
+</p>
+<p>
+One global-initializer detail is worth recording here because it is the failure
+mode of the idiom. When globals do have literal initializers, the compiler
+orders them by dependency so a forward reference is materialized before use,
+and it rejects only a genuine cycle. <a href="vol2-08-tuples.html">Chapter&nbsp;8</a>
+captured that rejection: two globals whose initializers refer to each other are
+<tt>error[3064]: cyclic global initializer dependency</tt>. Runtime
+initialization sidesteps the whole question, because a function body is a
+sequence of statements rather than a graph of initializers; a cycle cannot be
+expressed when the assignment order is the order you wrote.
+</p>
+
+<h2><a name="undefined"></a><tt>undefined</tt> is not zero</h2>
+<p>
+The sixth idiom is the one that ruins a C programmer's first debugging session,
+so it is worth stating flatly: <b>an uninitialized value in Z98 is not zero.</b>
+The spec is unambiguous. Under the default safe build, <tt>-fsafe</tt>, storage
+initialized with <tt>undefined</tt> is byte-filled with <tt>0xAA</tt> so that an
+uninitialized read is visible. Under <tt>-ffast</tt> there is no fill at all,
+and the bytes hold whatever was there before. <a href="vol2-14-arena.html">Chapter&nbsp;14</a>
+put the poison value on the page: an uninitialized <tt>i32</tt> reads back as
+<tt>-1431655766</tt> (<tt>0xAAAAAAAA</tt>), a value that hides very well until
+it reaches a pointer or a loop bound. Neither mode zeroes.
+</p>
+<p>
+This is the opposite of the C habit it replaces, and the difference shows up in
+three places the earlier chapters each named. A struct literal that omits a
+field does not zero it: <a href="vol2-04-structs.html">chapter&nbsp;4</a>
+explains that the literal compiles and the omitted field holds whatever the
+memory contained, unlike C's aggregate initializer where the fields you skip
+are quietly zeroed. Arena memory is not zero either: <tt>std.arena.alloc</tt>
+moves a cursor and does not clear bytes, so the reused block in
+chapter&nbsp;14's transcript reads back as the new object's fields rather than
+as zeroes. And the poison itself is not a value you can test for and handle;
+<tt>0xAAAAAAAA</tt> is just a number that a program will happily add to an
+offset or use as an index.
+</p>
+<p>
+The corrected habit is the one both chapters reach for: set every field you are
+going to read. Reach for <tt>= undefined</tt> only when you mean it as a
+promise, and then keep the promise before the next read. The rule is not a
+safety net that will catch a forgotten assignment; it is a marker that makes
+one visible. If a program needs zeros, it has to write them, because no part of
+Z98 &mdash; not the declaration, not the arena, not the safe build &mdash; will
+write them for you.
+</p>
+
+<h2><a name="together"></a>The idioms together</h2>
+<p>
+The six are easier to keep once they are seen as one shape instead of six
+rules, and the two shipped examples are that shape split in half.
+<tt>docs/sf/manuals/src/vol2/arena.z98</tt> is the memory half and
+<tt>docs/sf/manuals/src/vol2/shapes2.z98</tt> is the object half. Read in
+order, they walk through the same sequence a real program does.
+</p>
+<p>
+Storage is declared first and owned by the caller. <tt>arena.z98</tt> opens
+with a byte buffer and an arena over it; <tt>shapes2.z98</tt> opens with the
+payload structs and a concrete list. In both cases the bytes exist before any
+object does, and no call in either program asks the system for memory. That is
+the first idiom in one sentence: the program owns the storage and the arena or
+the list is a cursor over it.
+</p>
+<p>
+Each object is then built by its init function rather than by a constructor.
+<tt>arena.z98</tt>'s <tt>Point_init</tt> takes the arena and returns a typed
+pointer; <tt>shapes2.z98</tt>'s <tt>circle_init</tt> and <tt>square_init</tt>
+take the payload destination and return an interface value. Both are ordinary
+functions with the destination as a parameter, and both are fallible where the
+storage is fallible, which is why <tt>arena.z98</tt>'s return type is an error
+union and its callers use <tt>try</tt>. Construction and ownership stay in the
+same signature, so a reader can see where the memory came from and how the
+object was made without leaving the call site.
+</p>
+<p>
+The object half of <tt>shapes2.z98</tt> adds the manual vtable, and it shows
+why the vtable and the init function are taught together. The interface struct
+holds the operations and one erased pointer; the init function is the only
+place the payload and its operations are paired; dispatch is an ordinary call
+through the field. Nothing about the interface outlives the payload the init
+function filled, and the payload lives in the storage the caller declared,
+which is the point where the object half meets the memory half.
+</p>
+<p>
+The dual-arena pattern is what lets the memory half run more than once.
+<tt>arena.z98</tt>'s <tt>dual</tt> function keeps one arena for the whole run
+and resets only the other, so the phase can repeat without discarding the
+permanent state. A global registry would go in the permanent arena, or in a
+<tt>pub var</tt> filled by a runtime init function when it is aggregate state
+rather than arena-backed state. And every value that is declared before it is
+filled &mdash; the payloads, the list, the buffer &mdash; is declared
+<tt>undefined</tt>, which is the marker that says a value is not yet written
+and is not zero. Fill it before you read it, and the six idioms become one
+discipline: declare the storage, build the object with a function, pair it
+with its operations, give the long-lived and short-lived data separate
+lifetimes, initialize global state at run time, and never read a value before
+something has written it.
+</p>
+
+<h2><a name="mistakes"></a>Common mistakes</h2>
+<p>
+The mistakes below are the ones that arrive with the habits of C, C++, or
+modern Zig. Each has a measured correction from a chapter already written, and
+each correction is the language's rule rather than a style preference.
+</p>
+<p>
+<b>Reaching for a constructor or a destructor.</b> There is no constructor
+keyword, no destructor, no <tt>new</tt>, and no <tt>delete</tt>. Construction
+is a named init function that fills a destination the caller owns;
+<a href="vol2-16-no-methods.html">chapter&nbsp;16</a> documents the pattern and
+<a href="vol2-04-structs.html">chapter&nbsp;4</a> records the rejection a C++
+reader meets first, <tt>Sprite.init()</tt> failing because a struct has fields
+and no members. Destruction is not automatic either. An object that owns an
+external resource must release it by hand before its storage is reclaimed,
+which in practice means <tt>defer</tt> or <tt>errdefer</tt> at the end of the
+owning scope, or an explicit close before the arena reset. There is no scope
+exit that runs code for you.
+</p>
+<p>
+<b>Zeroing by default.</b> C's <tt>{0}</tt> aggregate initializer and
+<tt>calloc</tt> have no counterpart. An omitted struct field holds garbage, an
+arena block holds whatever the last phase left there, and <tt>undefined</tt>
+holds the poison fill under <tt>-fsafe</tt> and nothing under <tt>-ffast</tt>.
+The correction is to write the fields you will read and to stop treating fresh
+storage as a zero page. If a value must start at zero, assign zero.
+</p>
+<p>
+<b>Expecting a hidden allocation.</b> No operation in the language allocates
+behind your back. A container does not grow itself &mdash; chapter&nbsp;16's
+<tt>ShapeList</tt> is a concrete struct with fixed capacity and a length field,
+and its <tt>shapeList_push</tt> writes into storage the caller declared. The
+standard library follows the same rule: <tt>std.arena.alloc</tt> bumps a buffer
+you supplied, the string and byte functions take slices you own, and there is no
+general-purpose allocator re-exported to reach for. When a program needs storage
+whose count is only known at run time, the answer is an arena and an init
+function, and both make the allocation visible in a signature.
+</p>
+<p>
+<b>Using <tt>orelse</tt> on a fallible call.</b> An allocation result is an
+error union, not an optional, so <tt>orelse</tt> is the wrong operator and the
+compiler says so with <tt>error[3016]</tt>. Write <tt>try</tt> when the caller
+can pass the failure on and <tt>catch |err|</tt> when it must handle it.
+Optionals and <tt>orelse</tt> live in
+<a href="vol2-13-optionals.html">chapter&nbsp;13</a>; error unions and
+<tt>try</tt>/<tt>catch</tt> live in
+<a href="vol2-12-error-unions.html">chapter&nbsp;12</a>.
+</p>
+<p>
+<b>Assuming a reset cleans up.</b> <tt>std.arena.reset</tt> sets <tt>used</tt>
+to zero and does nothing else. It does not zero bytes, does not run
+destructors, and does not close handles; a pointer from before the reset is
+still valid C memory, which is why the compiler cannot warn. The correction is
+the ownership rule from the first section: release external resources before
+the reset, and treat every pointer from the old fill as dead afterward.
+</p>
+
+<h2><a name="next"></a>Where to go next</h2>
+<p>
+This page is the third from the end of the volume, and it points back rather
+than forward. The previous chapter is
+<a href="vol2-18-print.html">chapter&nbsp;18, Print and the Format
+String</a>, which closed the language surface this chapter summarizes. The
+idioms here each have a home chapter:
+<a href="vol2-14-arena.html">chapter&nbsp;14</a> for arena ownership, init
+functions, and the dual-arena pattern;
+<a href="vol2-16-no-methods.html">chapter&nbsp;16</a> for init functions and
+manual virtual tables;
+<a href="vol2-04-structs.html">chapter&nbsp;4</a> for the
+"<tt>undefined</tt> is not zero" rule at a struct literal;
+<a href="vol2-12-error-unions.html">chapter&nbsp;12</a> and
+<a href="vol2-13-optionals.html">chapter&nbsp;13</a> for <tt>try</tt>,
+<tt>catch</tt>, and <tt>orelse</tt>; and
+<a href="vol2-11-defer.html">chapter&nbsp;11</a> for the <tt>defer</tt> and
+<tt>errdefer</tt> cleanup that replaces the destructor.
+</p>
+<p>
+The examples behind the patterns are
+<tt>docs/sf/manuals/src/vol2/arena.z98</tt> and
+<tt>docs/sf/manuals/src/vol2/shapes2.z98</tt>, with
+<a href="vol2-15-builtins.html">chapter&nbsp;15</a>'s builtin catalog as the
+lookup for <tt>@sizeOf</tt>, <tt>@ptrCast</tt>, and the rest of the calls the
+examples use. The formal reference for those calls is
+<a href="vol4-15-builtins.html">Volume IV &mdash; Builtins</a>.
+</p>
+<p>
+The remaining chapters of this volume and the volumes after it are planned:
+</p>
+<ul>
+<li>Chapter 20, <b>What you have learned, what is next</b>
+<i>(planned)</i> &mdash; the summary of the volume and the handoff to
+Volume III.</li>
+<li>Volume III, <b>Working in the Era</b> <i>(planned)</i> &mdash; where these
+idioms meet 1998 hardware, including the coroutines chapter that is the
+volume's third big shift.</li>
+<li>Volume IV, <b>Memory</b> <i>(planned)</i> &mdash; the formal arena and
+allocator reference, including the module surface.</li>
+<li>Volume V, <b>Use the arena correctly</b> <i>(planned)</i> &mdash; recipes
+for sizing buffers, phase resets, and the dual-arena pattern in real
+programs.</li>
+</ul>
+<p>
+Until they ship, <a href="toc.html">the Contents page</a> shows the volume's
+shape, and the two shipped examples above are the working reference for every
+idiom on this page.
+</p>
+
+<p class="navbtns">
+<a href="vol2-18-print.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol4-00-title.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol2-18-print.html">Print and the Format String</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-00-title.html">Volume IV &mdash; Reference</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
