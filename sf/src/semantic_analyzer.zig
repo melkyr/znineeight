@@ -2982,7 +2982,7 @@ fn semanticAnalyzerFloatNarrowRecord(self: *SemanticAnalyzer, src_node: u32, dst
 // site's existing `error[3000]` message plus source/target notes.
 // `mark_once` dedups a node an expected-type pass may revisit (field
 // initializers).
-fn semanticAnalyzerFloatNarrowReport(self: *SemanticAnalyzer, src_node: u32, src_ty: u32, dst_ty: u32, msg: []const u8, mark_once: bool) void {
+fn semanticAnalyzerTypeMismatchReport(self: *SemanticAnalyzer, src_node: u32, src_ty: u32, dst_ty: u32, msg: []const u8, mark_once: bool) void {
     if (mark_once and !diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, src_node)) return;
     var sn = ast_mod.astStoreNodeAt(self.store, src_node);
     var sp = sn.span_start;
@@ -3079,6 +3079,7 @@ fn resolveReturnStmt(self: *SemanticAnalyzer, node_idx: u32) void {
             var fr_reject: bool = ret_fst == FLOAT_NARROW_REJECT;
             if (!fr_assign and ret_fst == FLOAT_NARROW_NONE and isBShapeMismatch(self, ret_eff, self.current_fn_return, false)) { fr_reject = true; }
             if (!fr_assign and ret_fst == FLOAT_NARROW_NONE and self.current_fn_return == type_mod.TYPE_F32 and semanticAnalyzerFloatNarrowIsNumeric(self, ret_eff)) { fr_reject = true; }
+            if (!fr_assign and ret_fst == FLOAT_NARROW_NONE and semanticAnalyzerFnPtrSigMismatch(self, ret_eff, self.current_fn_return)) { fr_reject = true; }
             if (fr_reject) {
                 var rsp = node.span_start;
                 var rep = rsp + @intCast(u32, node.span_len);
@@ -3170,6 +3171,9 @@ fn semanticAnalyzerCallArgTolerated(self: *SemanticAnalyzer, src_ty: u32, tgt_ty
     if (src_ty == type_mod.TYPE_VOID) return true;
     if (semanticAnalyzerCallArgIntegerKind(self, src_ty) and semanticAnalyzerCallArgIntegerKind(self, tgt_ty)) return true;
     if (sk.kind == type_mod.TypeKind.error_set_type and semanticAnalyzerCallArgIntegerKind(self, tgt_ty)) return true;
+    // FX17: a function-pointer signature mismatch is never a tolerated
+    // conversion -- the pointer-family blanket below must not swallow it.
+    if (semanticAnalyzerFnPtrSigMismatch(self, src_ty, tgt_ty)) return false;
     if (semanticAnalyzerIsPointerFamilyKind(sk.kind) and semanticAnalyzerIsPointerFamilyKind(tk.kind)) return true;
     return false;
 }
@@ -3842,14 +3846,17 @@ fn semanticAnalyzerResolveStructInit(self: *SemanticAnalyzer, node_idx: u32) u32
                             var fi_assign = type_mod.typeRegistryIsAssignable(self.registry, init_type, field_type);
                             if (fi_fst == FLOAT_NARROW_REJECT) {
                                 var fi_msg: []const u8 = "type mismatch in field initialization -- initializer type may not be compatible with the field type";
-                                semanticAnalyzerFloatNarrowReport(self, fi_node.child_0, init_type, field_type, fi_msg, true);
+                                semanticAnalyzerTypeMismatchReport(self, fi_node.child_0, init_type, field_type, fi_msg, true);
                             } else if (fi_assign) {
                                 tryRecordCoercion(self, fi_node.child_0, init_type, field_type);
                             } else if (fi_fst == FLOAT_NARROW_ACCEPT) {
                                 semanticAnalyzerFloatNarrowRecord(self, fi_node.child_0, field_type);
+                            } else if (semanticAnalyzerFnPtrSigMismatch(self, init_type, field_type)) {
+                                var fi_fmsg: []const u8 = "type mismatch in field initialization -- initializer type may not be compatible with the field type";
+                                semanticAnalyzerTypeMismatchReport(self, fi_node.child_0, init_type, field_type, fi_fmsg, true);
                             } else if (field_type == type_mod.TYPE_F32 and semanticAnalyzerFloatNarrowIsNumeric(self, init_type)) {
                                 var fi_msg2: []const u8 = "type mismatch in field initialization -- initializer type may not be compatible with the field type";
-                                semanticAnalyzerFloatNarrowReport(self, fi_node.child_0, init_type, field_type, fi_msg2, true);
+                                semanticAnalyzerTypeMismatchReport(self, fi_node.child_0, init_type, field_type, fi_msg2, true);
                             } else {
                                 tryRecordCoercion(self, fi_node.child_0, init_type, field_type);
                             }
@@ -3890,14 +3897,17 @@ fn semanticAnalyzerResolveStructInit(self: *SemanticAnalyzer, node_idx: u32) u32
                             var fi_assign = type_mod.typeRegistryIsAssignable(self.registry, init_type, field_type);
                             if (fi_fst == FLOAT_NARROW_REJECT) {
                                 var fi_msg: []const u8 = "type mismatch in field initialization -- initializer type may not be compatible with the field type";
-                                semanticAnalyzerFloatNarrowReport(self, fi_node.child_0, init_type, field_type, fi_msg, true);
+                                semanticAnalyzerTypeMismatchReport(self, fi_node.child_0, init_type, field_type, fi_msg, true);
                             } else if (fi_assign) {
                                 tryRecordCoercion(self, fi_node.child_0, init_type, field_type);
                             } else if (fi_fst == FLOAT_NARROW_ACCEPT) {
                                 semanticAnalyzerFloatNarrowRecord(self, fi_node.child_0, field_type);
+                            } else if (semanticAnalyzerFnPtrSigMismatch(self, init_type, field_type)) {
+                                var fi_fmsg: []const u8 = "type mismatch in field initialization -- initializer type may not be compatible with the field type";
+                                semanticAnalyzerTypeMismatchReport(self, fi_node.child_0, init_type, field_type, fi_fmsg, true);
                             } else if (field_type == type_mod.TYPE_F32 and semanticAnalyzerFloatNarrowIsNumeric(self, init_type)) {
                                 var fi_msg2: []const u8 = "type mismatch in field initialization -- initializer type may not be compatible with the field type";
-                                semanticAnalyzerFloatNarrowReport(self, fi_node.child_0, init_type, field_type, fi_msg2, true);
+                                semanticAnalyzerTypeMismatchReport(self, fi_node.child_0, init_type, field_type, fi_msg2, true);
                             } else {
                                 tryRecordCoercion(self, fi_node.child_0, init_type, field_type);
                             }
@@ -3938,14 +3948,17 @@ fn semanticAnalyzerResolveStructInit(self: *SemanticAnalyzer, node_idx: u32) u32
                             var fi_assign = type_mod.typeRegistryIsAssignable(self.registry, init_type, field_type);
                             if (fi_fst == FLOAT_NARROW_REJECT) {
                                 var fi_msg: []const u8 = "type mismatch in field initialization -- initializer type may not be compatible with the field type";
-                                semanticAnalyzerFloatNarrowReport(self, fi_node.child_0, init_type, field_type, fi_msg, true);
+                                semanticAnalyzerTypeMismatchReport(self, fi_node.child_0, init_type, field_type, fi_msg, true);
                             } else if (fi_assign) {
                                 tryRecordCoercion(self, fi_node.child_0, init_type, field_type);
                             } else if (fi_fst == FLOAT_NARROW_ACCEPT) {
                                 semanticAnalyzerFloatNarrowRecord(self, fi_node.child_0, field_type);
+                            } else if (semanticAnalyzerFnPtrSigMismatch(self, init_type, field_type)) {
+                                var fi_fmsg: []const u8 = "type mismatch in field initialization -- initializer type may not be compatible with the field type";
+                                semanticAnalyzerTypeMismatchReport(self, fi_node.child_0, init_type, field_type, fi_fmsg, true);
                             } else if (field_type == type_mod.TYPE_F32 and semanticAnalyzerFloatNarrowIsNumeric(self, init_type)) {
                                 var fi_msg2: []const u8 = "type mismatch in field initialization -- initializer type may not be compatible with the field type";
-                                semanticAnalyzerFloatNarrowReport(self, fi_node.child_0, init_type, field_type, fi_msg2, true);
+                                semanticAnalyzerTypeMismatchReport(self, fi_node.child_0, init_type, field_type, fi_msg2, true);
                             } else {
                                 tryRecordCoercion(self, fi_node.child_0, init_type, field_type);
                             }
@@ -4097,7 +4110,7 @@ fn semanticAnalyzerResolveAssign(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var as_assign = type_mod.typeRegistryIsAssignable(self.registry, eff_src, lhs);
     if (as_fst == FLOAT_NARROW_REJECT) {
         var asr_msg: []const u8 = "type mismatch in assignment -- internal type representations differ; generated code may be incorrect";
-        semanticAnalyzerFloatNarrowReport(self, node.child_1, eff_src, lhs, asr_msg, false);
+        semanticAnalyzerTypeMismatchReport(self, node.child_1, eff_src, lhs, asr_msg, false);
         return type_mod.TYPE_VOID;
     }
     if (as_assign) {
@@ -4111,7 +4124,7 @@ fn semanticAnalyzerResolveAssign(self: *SemanticAnalyzer, node_idx: u32) u32 {
     }
     if (as_fst == FLOAT_NARROW_NONE and lhs == type_mod.TYPE_F32 and semanticAnalyzerFloatNarrowIsNumeric(self, eff_src)) {
         var asn_msg: []const u8 = "type mismatch in assignment -- internal type representations differ; generated code may be incorrect";
-        semanticAnalyzerFloatNarrowReport(self, node.child_1, eff_src, lhs, asn_msg, false);
+        semanticAnalyzerTypeMismatchReport(self, node.child_1, eff_src, lhs, asn_msg, false);
         return type_mod.TYPE_VOID;
     }
     var as2: []const u8 = "AS2"; pal_mod.markerWrite(as2);
@@ -5082,25 +5095,55 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     return result;
 }
 
-fn semanticAnalyzerFnPtrConvMismatch(self: *SemanticAnalyzer, src: u32, tgt: u32) bool {
+// FX17 (Volume II ch16): unwrap a function-pointer VALUE type to its `fn_type`.
+// A bare `fn(...)` type expression resolves to `*fn(...)`, and a
+// `?fn(...)`/`?*fn(...)` value adds one optional layer; both are unwrapped.
+// Returns 0 when the type is not a (possibly optional) function pointer.
+fn semanticAnalyzerFnValueType(self: *SemanticAnalyzer, tid: u32) u32 {
+    if (tid == @intCast(u32, 0)) return @intCast(u32, 0);
+    if (@intCast(usize, tid) >= self.registry.types_len) return @intCast(u32, 0);
+    var cur: u32 = tid;
+    var t = self.registry.types_items[@intCast(usize, cur)];
+    if (t.kind == type_mod.TypeKind.optional_type) {
+        cur = self.registry.opt_items[@intCast(usize, t.payload_idx)].payload;
+        if (@intCast(usize, cur) >= self.registry.types_len) return @intCast(u32, 0);
+        t = self.registry.types_items[@intCast(usize, cur)];
+    }
+    if (t.kind == type_mod.TypeKind.fn_type) return cur;
+    if (t.kind == type_mod.TypeKind.ptr_type) {
+        var b = self.registry.ptr_items[@intCast(usize, t.payload_idx)].base;
+        if (@intCast(usize, b) < self.registry.types_len and
+            self.registry.types_items[@intCast(usize, b)].kind == type_mod.TypeKind.fn_type) return b;
+    }
+    return @intCast(u32, 0);
+}
+
+// FX17: two (possibly optional) function-pointer values whose signatures
+// differ in return type, parameter count/types, variadic flag or calling
+// convention. `false` when either side is not a function pointer or when the
+// signatures match (callers must already know the pair is not assignable).
+fn semanticAnalyzerFnPtrSigMismatch(self: *SemanticAnalyzer, src: u32, tgt: u32) bool {
     if (src == tgt) return false;
-    if (@intCast(usize, src) >= self.registry.types_len or @intCast(usize, tgt) >= self.registry.types_len) return false;
-    var s = src;
-    var t = tgt;
-    var st = self.registry.types_items[@intCast(usize, s)];
-    if (st.kind == type_mod.TypeKind.ptr_type) {
-        s = self.registry.ptr_items[@intCast(usize, st.payload_idx)].base;
-        st = self.registry.types_items[@intCast(usize, s)];
+    var sf = semanticAnalyzerFnValueType(self, src);
+    if (sf == @intCast(u32, 0)) return false;
+    var tf = semanticAnalyzerFnValueType(self, tgt);
+    if (tf == @intCast(u32, 0)) return false;
+    if (sf == tf) return false;
+    var sfp = self.registry.fn_items[@intCast(usize, self.registry.types_items[@intCast(usize, sf)].payload_idx)];
+    var tfp = self.registry.fn_items[@intCast(usize, self.registry.types_items[@intCast(usize, tf)].payload_idx)];
+    if (sfp.return_type != tfp.return_type) return true;
+    if (sfp.params_count != tfp.params_count) return true;
+    if ((sfp.flags_packed & @intCast(u8, 3)) != (tfp.flags_packed & @intCast(u8, 3))) return true;
+    var fi: u16 = @intCast(u16, 0);
+    while (fi < sfp.params_count) : (fi += 1) {
+        if (self.registry.xt_items[@intCast(usize, sfp.params_start + @as(u32, fi))] !=
+            self.registry.xt_items[@intCast(usize, tfp.params_start + @as(u32, fi))]) return true;
     }
-    var tt = self.registry.types_items[@intCast(usize, t)];
-    if (tt.kind == type_mod.TypeKind.ptr_type) {
-        t = self.registry.ptr_items[@intCast(usize, tt.payload_idx)].base;
-        tt = self.registry.types_items[@intCast(usize, t)];
-    }
-    if (st.kind != type_mod.TypeKind.fn_type or tt.kind != type_mod.TypeKind.fn_type) return false;
-    var sfp = self.registry.fn_items[@intCast(usize, st.payload_idx)];
-    var tfp = self.registry.fn_items[@intCast(usize, tt.payload_idx)];
-    return (sfp.flags_packed & type_mod.FN_FLAG_STDCALL) != (tfp.flags_packed & type_mod.FN_FLAG_STDCALL);
+    return false;
+}
+
+fn semanticAnalyzerFnPtrConvMismatch(self: *SemanticAnalyzer, src: u32, tgt: u32) bool {
+    return semanticAnalyzerFnPtrSigMismatch(self, src, tgt);
 }
 
 // Track4 S25 Task 0q: the `(b)` invalid-Zig shapes promoted to a hard
@@ -5872,7 +5915,7 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
                     var vd_assign = type_mod.typeRegistryIsAssignable(self.registry, it_eff, decl_type);
                     if (vd_fst == FLOAT_NARROW_REJECT or (vd_fst == FLOAT_NARROW_NONE and decl_type == type_mod.TYPE_F32 and semanticAnalyzerFloatNarrowIsNumeric(self, it_eff) and !vd_assign)) {
                         var vd_msg: []const u8 = "type mismatch in variable declaration -- initialization type may not be compatible with declared type";
-                        semanticAnalyzerFloatNarrowReport(self, node.child_1, it_eff, decl_type, vd_msg, false);
+                        semanticAnalyzerTypeMismatchReport(self, node.child_1, it_eff, decl_type, vd_msg, false);
                     } else if (vd_fst == FLOAT_NARROW_ACCEPT and !vd_assign) {
                         semanticAnalyzerFloatNarrowRecord(self, node.child_1, decl_type);
                     } else {
@@ -6695,9 +6738,12 @@ pub fn semanticAnalyzerResolveModuleVarDecl(self: *SemanticAnalyzer, decl_idx: u
         var mv_assign = type_mod.typeRegistryIsAssignable(self.registry, it_eff, decl_type);
         if (mv_fst == FLOAT_NARROW_REJECT or (mv_fst == FLOAT_NARROW_NONE and decl_type == type_mod.TYPE_F32 and semanticAnalyzerFloatNarrowIsNumeric(self, it_eff) and !mv_assign)) {
             var mv_msg: []const u8 = "type mismatch in variable declaration -- initialization type may not be compatible with declared type";
-            semanticAnalyzerFloatNarrowReport(self, decl.child_1, it_eff, decl_type, mv_msg, false);
+            semanticAnalyzerTypeMismatchReport(self, decl.child_1, it_eff, decl_type, mv_msg, false);
         } else if (mv_fst == FLOAT_NARROW_ACCEPT and !mv_assign) {
             semanticAnalyzerFloatNarrowRecord(self, decl.child_1, decl_type);
+        } else if (!mv_assign and semanticAnalyzerFnPtrSigMismatch(self, it_eff, decl_type)) {
+            var mv2_msg: []const u8 = "type mismatch in variable declaration -- initialization type may not be compatible with declared type";
+            semanticAnalyzerTypeMismatchReport(self, decl.child_1, it_eff, decl_type, mv2_msg, false);
         } else {
         var ck = coercion_mod.classifyCoercion(self.registry, it_eff, decl_type);
         if (ck != coercion_mod.CoercionKind.none) {
