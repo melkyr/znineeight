@@ -1,0 +1,710 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: DirectX 7/8 under CINTERFACE</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume III DirectX DirectDraw DirectSound DirectInput COM CINTERFACE lpVtbl IUnknown QueryInterface AddRef Release HRESULT DirectDrawCreate DirectSoundCreate DirectInput8Create ddraw dsound dinput8 OpenWatcom wcc386 header pain reference counting vtable">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol3-13-debug-api.html">
+<link rel="next" href="toc.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume III &mdash; Working in the Era</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol3-00-title.html">How to read this</a><br>
+<a href="vol3-01-the-1998-machine.html">The 1998 machine</a><br>
+<a href="vol3-02-honesty-inventory.html">Honesty: what Z98 does and does not give you</a><br>
+<a href="vol3-03-when-c89.html">Honesty: when C89 is the better choice</a><br>
+<a href="vol3-04-when-cpp98.html">Honesty: when C++98 is the better choice</a><br>
+<a href="vol3-05-when-assembly.html">Honesty: when assembly is the better choice</a><br>
+<a href="vol3-06-era-limits.html">Honesty: what you cannot do on a Pentium II</a><br>
+<a href="vol3-07-friction.html">Honesty: the friction you will hit</a><br>
+<a href="vol3-08-win9x.html">Building for Win9x</a><br>
+<a href="vol3-09-coroutines.html">Coroutines &mdash; the third big shift</a><br>
+<a href="vol3-10-coroutine-program.html">A coroutine program</a><br>
+<a href="vol3-11-talking-to-c.html">Talking to C</a><br>
+<a href="vol3-12-winsock.html">WinSock under Z98</a><br>
+<a href="vol3-13-debug-api.html">The Win32 Debug API</a><br>
+<b>DirectX under CINTERFACE</b><br>
+The debugger workflow <i>(planned)</i><br>
+Memory budgets <i>(planned)</i><br>
+Packaging and shipping <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>DirectX 7/8 under CINTERFACE</h1>
+<p>
+DirectX is the part of the era machine that draws and plays sound. It is not a
+language feature and it is not a library that Z98 ships; it is a set of Microsoft
+COM objects that the operating system exposes, and the way a C program reaches
+them is the way it reaches any COM object: through a virtual function table you
+walk by hand. This chapter is about that table &mdash; what it looks like in C89,
+how a call through it is written, what the <tt>IUnknown</tt> base is for, and why
+the three creation functions that begin every DirectX program are the easy part
+while the headers that declare them are the hard part.
+</p>
+<p>
+It is also the one Win32 chapter in this volume with <b>no sample</b>. The
+blueprint's <tt>ddraw-mini.z98</tt> was dropped by the program's own Phase&nbsp;0
+ruling, and the reason is stated plainly here rather than hidden in a footnote:
+no DirectX SDK or DirectX header ships with Z98, and the graphical and audio
+paths this chapter describes are not something the volume's verifier can run on
+the development host. What is left is what can be said truthfully &mdash; era
+context about COM in C89 and about the header pain, mapped onto the manual-vtable
+idiom of <a href="vol2-16-no-methods.html">Volume&nbsp;II chapter&nbsp;16</a> and
+<a href="vol3-11-talking-to-c.html">chapter&nbsp;11</a>. The boundary is stated
+in full at <a href="#boundary">the end of the chapter</a>.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffffc8">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-note.gif" width="16" height="16" alt="Note"></td>
+<td><b>What is measured here, and what is not.</b> There is no code sample on
+this page and there is no figure: the <tt>ddraw-mini.z98</tt> program was dropped
+by ruling, and no DirectX SDK, header, or <tt>src/vol3/</tt> program for this
+chapter exists. The COM and DirectX statements below are <b>era context</b> about
+the SDK and the operating system, stated as facts about 1998&ndash;2001 Windows
+and marked as opinion where they are opinion; they cannot be compiled or run on
+this host. The <b>Z98-side</b> claims were checked on the seed-built compiler
+(v89): a struct of function pointers with an <tt>lpVtbl</tt> interface pointer
+lays out as the C headers do, a call through <tt>lpVtbl</tt> compiles and runs,
+<tt>*void</tt> and <tt>**void</tt> carry the interface and out-parameter, and a
+function-pointer type can name the <tt>stdcall</tt> convention. Those are
+measured; the DirectX API surface behind them is documented, not run.</td>
+</tr>
+</table>
+
+<h2>Why this chapter has no sample</h2>
+<p>
+The rest of Volume&nbsp;III tries to end every Win32 chapter with something that
+really ran: <a href="vol3-12-winsock.html">chapter&nbsp;12</a> binds a socket
+under wine, <a href="vol3-13-debug-api.html">chapter&nbsp;13</a> drives the real
+debug loop. This chapter cannot, and the honest move is to say why once and then
+get on with the useful part.
+</p>
+<p>
+Three things are true at the same time. First, DirectX is a <i>runtime</i>
+capability, not a header file: to compile a DirectX program you need the SDK's
+headers and import libraries, and none of them are in the repository or on this
+host. Second, the interesting behavior of DirectX &mdash; a display mode changes,
+a surface is blitted, a buffer plays &mdash; is device and driver behavior. Wine
+has built-in replacements for some of it, but the volume does not rely on them,
+does not test against them, and will not stake a claim on them; the verifier here
+is the mingw-plus-wine harness for ordinary Win32 calls, and a graphics stack is
+outside what that harness establishes. Third, even a program that compiled would
+be testing the development host's idea of 1998 graphics, not a Pentium&nbsp;II
+with an era driver. So the sample was dropped, and this page keeps only the parts
+that are about the interface: the COM ABI in C89, which is real and stable, and
+the Z98 mapping, which is measurable.
+</p>
+<p>
+That is a deliberate limit and not a hole. The chapter still earns its place
+because the COM-in-C89 material is exactly what a reader needs before touching
+any DirectX (or DirectShow, or any other COM) header, and because the header pain
+is real work that the rest of the volume's rules already tell you how to do.
+</p>
+
+<h2>DirectX on the 1998 machine</h2>
+<p>
+DirectX is an umbrella over several APIs that share one calling model:
+</p>
+<ul>
+<li><b>DirectDraw</b>, the 2D layer: create surfaces in video or system memory,
+blit, flip, and take over the display. It is the heart of a 2D game or a
+full-screen demo.</li>
+<li><b>Direct3D</b>, the 3D layer, which began as a retained-mode API bolted onto
+DirectDraw and became immediate-mode. On a Pentium&nbsp;II the practical use is a
+software or simple hardware rasterizer at low resolution &mdash; the limits of
+<a href="vol3-06-era-limits.html">chapter&nbsp;6</a> apply with full force.</li>
+<li><b>DirectSound</b>, the audio layer: a mixer and a set of playing buffers.</li>
+<li><b>DirectInput</b>, the input layer: keyboard, mouse, and joystick as
+devices, with force feedback in the later versions.</li>
+</ul>
+<p>
+The versions matter for the SDK but not for the C interface. The chapter's title
+names DirectX&nbsp;7 and DirectX&nbsp;8 because those are the generations whose
+C form this material is drawn from; the interface model below did not change
+between them, and it did not change from the earlier DirectX&nbsp;5 that shipped
+with Windows&nbsp;98. <i>Era opinion:</i> for the manual's 1998 target the reader
+will most often link whatever DirectX runtime the machine already has, and the
+binding is source-compatible across those versions for the calls named here.
+Treat the version numbers as a floor, not a feature list.
+</p>
+<p>
+The one fact that governs everything else is that <b>DirectX is COM</b>. An
+<tt>IDirectDraw</tt> is not a struct full of fields; it is a COM interface
+pointer. An <tt>IDirectSoundBuffer</tt> is another one. You do not call
+functions on them the C way &mdash; there are no exported <tt>DirectDrawFlip</tt>
+symbols &mdash; you call through the object's virtual function table. The three
+exports that do exist, the ones that <i>create</i> the objects, are named
+<tt>DirectDrawCreate</tt>, <tt>DirectSoundCreate</tt>, and
+<tt>DirectInput8Create</tt>, and they are the only ordinary functions in the
+story. Everything after them is <tt>lpVtbl</tt>.
+</p>
+
+<h2>COM in C89</h2>
+<p>
+COM was designed to be usable from C, which is a large part of why it is shaped
+the way it is. The model has exactly three pieces:
+</p>
+<p>
+<b>An interface is a pointer to a struct whose only member is a pointer to a
+table of function pointers.</b> In C, that second struct is called the vtable and
+the member is called <tt>lpVtbl</tt>. A call is two dereferences and a function
+call: take the object pointer, follow <tt>lpVtbl</tt> to the table, take the
+function pointer out of the table, and call it.
+</p>
+<p>
+<b>Every interface begins with the same three methods.</b> They are
+<tt>QueryInterface</tt>, <tt>AddRef</tt>, and <tt>Release</tt>, and together they
+make up an interface named <tt>IUnknown</tt>. Because every vtable starts with
+those three in that order, a pointer to any interface can be treated as a pointer
+to <tt>IUnknown</tt>; that is what lets COM pass objects around without knowing
+their concrete type.
+</p>
+<p>
+<b>Objects are reference-counted.</b> <tt>AddRef</tt> raises a counter,
+<tt>Release</tt> lowers it, and when it reaches zero the object destroys itself.
+There is no garbage collector and no <tt>free</tt> &mdash; the last
+<tt>Release</tt> is the deallocation. This is the single most important
+discipline of COM and the one a C programmer is most likely to get wrong.
+</p>
+<p>
+The reason this is called <tt>CINTERFACE</tt> is that the DirectX headers are
+written for both C and C++. In C++ an interface is a class with pure virtual
+methods and the compiler generates the vtable; the call <tt>p-&gt;Flip(...)</tt>
+hides the <tt>lpVtbl</tt> walk and passes the <tt>this</tt> pointer for you.
+Define the macro <tt>CINTERFACE</tt> before including the headers and they expose
+the C form instead: a <tt>struct</tt> of function pointers and an explicit
+<tt>This</tt> first argument. Z98 is not C++, so the C form is the one that
+matters here. <i>Era fact:</i> the DirectX SDK documentation of the period is
+written around this split, and every sample in it comes in a C and a C++ version
+that compile to the same calls.
+</p>
+
+<h2>The <tt>IUnknown</tt> base</h2>
+<p>
+Here is the base interface as the C headers present it. This is the shape every
+DirectX interface inherits by repeating these three entries at the front of its
+own vtable:
+</p>
+<pre>
+typedef struct IUnknownVtbl {
+    HRESULT (STDMETHODCALLTYPE *QueryInterface)(IUnknown *This,
+                                                REFIID riid,
+                                                void **ppvObject);
+    ULONG   (STDMETHODCALLTYPE *AddRef)(IUnknown *This);
+    ULONG   (STDMETHODCALLTYPE *Release)(IUnknown *This);
+} IUnknownVtbl;
+
+typedef struct IUnknown {
+    IUnknownVtbl *lpVtbl;
+} IUnknown;
+</pre>
+<p>
+Read it slowly, because all three of COM's ideas are in those ten lines. The
+interface is a one-member struct holding <tt>lpVtbl</tt>. The vtable is a struct
+of function pointers, not an array, so a compiler can give each method a name and
+a stable offset. Every method takes <tt>This</tt> as its first parameter: in C
+that is explicit, and it is the object pointer itself, passed back to the object
+so the method can find its data. The calling convention is
+<tt>STDMETHODCALLTYPE</tt>, which on 32-bit Windows is <tt>stdcall</tt>.
+</p>
+<p>
+<tt>QueryInterface</tt> is the type-safe cast of COM. You hand it the interface
+identifier you want (a <tt>REFIID</tt>, a pointer to a GUID) and it either returns
+that interface through the <tt>void **</tt> out-parameter or returns a failure
+code. <tt>AddRef</tt> and <tt>Release</tt> return the new reference count. A
+return type of <tt>HRESULT</tt> is the other COM habit: success is the specific
+value <tt>S_OK</tt> (zero), and the macros <tt>SUCCEEDED(hr)</tt> and
+<tt>FAILED(hr)</tt> test the sign bit. Comparing an <tt>HRESULT</tt> to
+<tt>true</tt> or <tt>false</tt> is one of the mistakes at the bottom of this
+page.
+</p>
+
+<h2><tt>lpVtbl</tt> calls</h2>
+<p>
+A call through the table is the whole technique. In C, setting the cooperative
+level on a DirectDraw object &mdash; the call that tells DirectDraw whether you
+want a window or the full screen &mdash; is written with three explicit steps:
+</p>
+<pre>
+IDirectDraw *dd = /* an interface pointer */;
+HRESULT hr;
+
+hr = dd-&gt;lpVtbl-&gt;SetCooperativeLevel(dd, hwnd, DDSCL_NORMAL);
+if (FAILED(hr)) {
+    /* handle it */
+}
+</pre>
+<p>
+The first argument is <tt>dd</tt> itself. That is not a formality: because C has
+no implicit <tt>this</tt>, the object pointer is just an ordinary argument, and
+the headers declare every method to take it. The compiler does not check that the
+<tt>dd</tt> you pass is the same object whose table you called through; the
+object's method assumes it, and a program that passes the wrong pointer gets
+nonsense. This is the price C pays for the convenience C++ hides.
+</p>
+<p>
+Now put the same shape in Z98. The declaration is a struct with a
+function-pointer member per method, and the interface is a struct whose only
+field is a pointer to the vtable:
+</p>
+<pre>
+const IUnknownVtbl = struct {
+    QueryInterface: extern "stdcall" fn (*void, *const u8, **void) i32,
+    AddRef:         extern "stdcall" fn (*void) u32,
+    Release:        extern "stdcall" fn (*void) u32,
+};
+
+const IUnknown = struct {
+    lpVtbl: *IUnknownVtbl,
+};
+</pre>
+<p>
+This is <a href="vol2-16-no-methods.html">Volume&nbsp;II chapter&nbsp;16</a>'s
+manual-vtable idiom with the COM names on it, and it was compile-checked on the
+seed compiler as a scratch fragment. Three facts came back from that check and
+they are the ones worth keeping:
+</p>
+<ul>
+<li>A function pointer is four bytes on the 32-bit target, so the three-entry
+<tt>IUnknownVtbl</tt> is <b>12 bytes</b>.</li>
+<li>The interface struct is exactly one pointer: <tt>@sizeOf(IUnknown)</tt> is
+<b>4 bytes</b>, and <tt>lpVtbl</tt> sits at offset zero.</li>
+<li>A call through the field &mdash; <tt>iu.lpVtbl.AddRef(self)</tt> with the
+object pointer passed by hand &mdash; compiles and runs, and the emitted C is a
+plain function-pointer call, which is precisely what the CINTERFACE macro
+produces from the header.</li>
+</ul>
+<p>
+There is no receiver magic in Z98, so the call reads <tt>lpVtbl.Method(self,
+...)</tt> rather than the C++ <tt>p-&gt;Method(...)</tt> or the C
+<tt>p-&gt;lpVtbl-&gt;Method(p, ...)</tt>. The semantics are the C ones: the
+object pointer is an ordinary first argument. That is the direct translation, and
+it is why the manual vtable is not a workaround here so much as a restatement of
+what COM already is. The type checker sees the function signature and the fact
+that the interface is a pointer; it cannot see that the table's <tt>This</tt>
+will be cast back to a concrete object inside the method, because that is a
+contract between the implementation and its callers, not between types.
+</p>
+
+<h3>The calling convention is part of the type</h3>
+<p>
+COM methods are <tt>stdcall</tt>, and a vtable whose entries are declared cdecl
+would corrupt the stack on the target even though it might compile. Z98 carries
+the convention on the function-pointer type, spelled after <tt>extern</tt>, so
+the declaration above is ABI-correct. On the Windows target the compiler emits
+the convention through a macro, <tt>Z98_STDCALL</tt>; at this writing it expands
+to <tt>__stdcall</tt> for MSVC and for OpenWatcom (which defines
+<tt>__WATCOMC__</tt>) and to <tt>__attribute__((stdcall))</tt> for gcc and mingw.
+On the Linux host the macro is empty, which is why a Linux probe of the same
+declaration is not a test of the Windows ABI &mdash; it is a test of the
+type-level shape only.
+</p>
+<p>
+The convention also has teeth at the type level. <a href="vol3-11-talking-to-c.html">Chapter&nbsp;11</a>
+introduced the rule that a function-pointer value may be assigned only to a
+target whose signature matches exactly, calling convention included. A plain
+(cdecl) Z98 function assigned into a <tt>stdcall</tt> vtable field is therefore
+rejected with <tt>error[3000]</tt>, before any C is emitted; the way to place
+such a function deliberately is an explicit <tt>@ptrCast</tt>, which is legal.
+This was measured on the seed compiler: the direct initializer failed with the
+type-mismatch error and the <tt>@ptrCast</tt> form emitted cleanly and ran. The
+rule is a feature here. A COM table with the wrong convention compiles to code
+that looks fine and falls apart at the call, and a diagnostic is a much better
+outcome than that.
+</p>
+
+<h2>Creating the objects</h2>
+<p>
+Nothing in the previous section creates anything. A COM object is created by a
+function exported from a DLL, and DirectX exports exactly one such function per
+API. The three that begin the three common programs are these, quoted from the
+era headers:
+</p>
+<pre>
+HRESULT DirectDrawCreate(GUID *lpGUID,
+                         LPDIRECTDRAW *lplpDD,
+                         IUnknown *pUnkOuter);
+
+HRESULT DirectSoundCreate(LPCGUID pcGuidDevice,
+                          LPDIRECTSOUND *ppDS,
+                          LPUNKNOWN pUnkOuter);
+
+HRESULT DirectInput8Create(HINSTANCE hinst,
+                           DWORD dwVersion,
+                           REFIID riidltf,
+                           LPVOID *ppvOut,
+                           LPUNKNOWN punkOuter);
+</pre>
+<p>
+The pattern is the same in all three, and it is the pattern to learn. The
+function takes a way to choose the device, a <b>pointer to an interface
+pointer</b> that it fills in, and an outer object for COM <i>aggregation</i> that
+is always <tt>NULL</tt> in ordinary use. It returns an <tt>HRESULT</tt>. The
+out-parameter is the creation's product: you declare a variable of the interface
+pointer type, pass its address, check the <tt>HRESULT</tt>, and from then on call
+through <tt>lpVtbl</tt>. In C the address-of a pointer is a <tt>**</tt>, and in
+Z98 the corresponding parameter type is <tt>**void</tt> &mdash; the double
+pointer verified in the scratch probe above.
+</p>
+<p>
+The differences between the three are worth naming because they trip people up.
+<tt>DirectDrawCreate</tt> takes a <tt>GUID *</tt> where <tt>NULL</tt> means the
+default display adapter; it returns an <tt>IDirectDraw</tt>, and the later
+<tt>DirectDrawCreateEx</tt> returns an <tt>IDirectDraw7</tt> instead.
+<tt>DirectSoundCreate</tt> takes an <tt>LPCGUID</tt> device identifier where
+<tt>NULL</tt> means the default playback device; it returns an
+<tt>IDirectSound</tt>, with <tt>DirectSoundCreate8</tt> for the
+<tt>IDirectSound8</tt> of the later SDK. <tt>DirectInput8Create</tt> is the odd
+one: it takes the instance handle, the DirectInput version word
+(<tt>DIRECTINPUT_VERSION</tt>), and the interface identifier
+<tt>IID_IDirectInput8</tt>, and creates the one DirectInput object the later SDK
+offers. The identifier argument is the same GUID mechanism
+<tt>QueryInterface</tt> uses, which is not a coincidence: DirectInput8Create is
+in effect a create-then-query folded into one call.
+</p>
+<p>
+The DLL names follow the API names: <tt>ddraw.dll</tt>, <tt>dsound.dll</tt>,
+<tt>dinput8.dll</tt>. Linking is against the SDK's import libraries
+(<tt>ddraw.lib</tt>, <tt>dsound.lib</tt>, <tt>dinput8.lib</tt> under Microsoft
+tools), and the GUID identifiers the later calls need are supplied either by
+including <tt>initguid.h</tt> once in one translation unit or by linking
+<tt>uuid.lib</tt>. None of that is Z98-specific; it is the ordinary Win32 link
+story of <a href="vol3-08-win9x.html">chapter&nbsp;8</a>, and it is the first
+place the header pain below turns into build-system pain.
+</p>
+
+<h2>The object behind the table</h2>
+<p>
+Once created, a DirectDraw program is a sequence of <tt>lpVtbl</tt> calls, and
+the order of the entries in the table is a version-specific fact that matters.
+The <tt>IDirectDraw</tt> vtable begins with <tt>QueryInterface</tt>,
+<tt>AddRef</tt>, and <tt>Release</tt>, and continues with the 2D operations:
+<tt>Compact</tt>, <tt>CreateClipper</tt>, <tt>CreatePalette</tt>,
+<tt>CreateSurface</tt>, <tt>DuplicateSurface</tt>, <tt>EnumDisplayModes</tt>,
+<tt>EnumSurfaces</tt>, <tt>FlipToGDISurface</tt>, <tt>GetCaps</tt>,
+<tt>GetDisplayMode</tt>, <tt>GetFourCCCodes</tt>, <tt>GetGDISurface</tt>,
+<tt>GetMonitorFrequency</tt>, <tt>GetScanLine</tt>,
+<tt>GetVerticalBlankStatus</tt>, <tt>Initialize</tt>,
+<tt>RestoreDisplayMode</tt>, <tt>SetCooperativeLevel</tt>,
+<tt>SetDisplayMode</tt>, and <tt>WaitForVerticalBlank</tt>.
+<tt>IDirectDraw7</tt> repeats that prefix and adds more entries after it, which
+is why a vtable pointer to one is not a vtable pointer to the other.
+</p>
+<p>
+This is the concrete meaning of an interface version in COM. A method is not
+looked up by name at run time; it is a fixed slot in a table, and the slot
+numbers are the ABI. Calling an <tt>IDirectDraw7</tt> method through an
+<tt>IDirectDraw</tt> vtable type does not fail cleanly &mdash; it calls whatever
+function happens to occupy that slot, with whatever arguments the wrong
+signature implies. The safe rules are the ones COM already gives you: request
+the interface version you actually need with <tt>QueryInterface</tt>, name the
+vtable type that matches it, and never retype an interface pointer with a cast.
+</p>
+<p>
+The 2D idiom itself is short and old: set the cooperative level to say whether
+you own the screen, set a display mode if you are going full-screen, create one
+or more surfaces, and then loop on <tt>Flip</tt> or a blit to present a frame.
+The details &mdash; pixel formats, the <tt>DDSCL_</tt> flags, whether a surface
+is in video or system memory &mdash; are the SDK documentation's business, and
+they change with the hardware. What is true across all of it is the call
+mechanism this chapter is about.
+</p>
+
+<h2>Header pain under OpenWatcom</h2>
+<p>
+Here is the friction the blueprint names, and it is worth being precise about
+what kind of problem it is. The DirectX SDK headers are not portable C89
+headers. They are Microsoft headers written to be consumed by Microsoft tools,
+and they lean on the compiler in ways a plain C89 compiler does not provide.
+</p>
+<ul>
+<li>They are written for two languages at once. Without <tt>CINTERFACE</tt> they
+expand to C++ classes with virtual methods; with it they expand to the C struct
+form. The macro <tt>interface</tt>, the <tt>DECLSPEC_UUID</tt> and
+<tt>__declspec(uuid(...))</tt> annotations, the <tt>STDMETHOD</tt> and
+<tt>STDMETHODCALLTYPE</tt> macros, and the <tt>PURE</tt> marker all exist to let
+one header serve both compilers.</li>
+<li>They assume the Windows headers and the SDK are on the include path in the
+right order, with the SDK's <tt>GUID</tt>, <tt>REFIID</tt>, <tt>HRESULT</tt>,
+<tt>LPVOID</tt>, and <tt>HINSTANCE</tt> types already defined by
+<tt>windows.h</tt> and the platform headers. Get the order wrong and the errors
+are type-name errors hundreds of lines from the cause.</li>
+<li>They define GUID values, which pulls in the <tt>initguid.h</tt> /
+<tt>uuid.lib</tt> convention above, and they use <tt>#pragma pack</tt> to pin
+struct layouts &mdash; a detail that matters because the same packing must be in
+force in every translation unit that touches a DirectX struct.</li>
+</ul>
+<p>
+OpenWatcom is a capable C compiler, but it is not the compiler the SDK was
+written for, and it has no DirectX headers of its own: you point its include
+path at the SDK's <tt>include</tt> directory and its linker at the SDK's import
+libraries. The emitted OpenWatcom script that <a href="vol3-08-win9x.html">chapter&nbsp;8</a>
+describes, <tt>build_owc.bat</tt>, calls <tt>wcc386</tt> with the language
+extensions turned off (<tt>/za</tt>) and warnings promoted to errors
+(<tt>/we</tt>) &mdash; both good defaults for the compiler's own output, and both
+unfriendly to headers that rely on extensions. <i>Era opinion, marked as such:</i>
+the combination is where most of the "DirectX under Watcom" frustration comes
+from. It is not that DirectX cannot be used from OpenWatcom; it is that the
+header path is a negotiation.
+</p>
+<p>
+The way over it is the one this volume has been teaching since
+<a href="vol3-11-talking-to-c.html">chapter&nbsp;11</a> and used again in
+<a href="vol3-13-debug-api.html">chapter&nbsp;13</a>: <b>declare the slice of the
+header you actually use, rather than compiling the whole header under a compiler
+it was not written for.</b> A DirectX program touches a handful of interfaces and
+perhaps a dozen methods each, and every one of them is a shape this chapter has
+already shown. The creation functions become <tt>extern "stdcall" fn</tt>
+declarations in the <tt>vol3-11</tt> style. The interfaces become vtable structs
+and one-member interface structs, laid out in the header's order. The GUID
+constants you need you define by hand or request with <tt>QueryInterface</tt>.
+This is more typing than an <tt>@cInclude</tt> would be &mdash; and Z98 has no
+<tt>@cImport</tt>, as chapters 11 and 13 measured &mdash; but it is honest about
+the boundary, it compiles under whatever era compiler you have, and it does not
+depend on the SDK's headers surviving a compiler they were not written for.
+</p>
+
+<h2>The trade</h2>
+<p>
+The trade for reaching DirectX from Z98 is the trade this whole volume keeps
+describing, with the graphics stack added. What you get is the real operating
+system service, at full speed, with no wrapper and no runtime; the generated C is
+the CINTERFACE C a 1998 programmer would have written, and the calls are the same
+calls. What you pay is that all of COM's bookkeeping is now yours: the
+<tt>lpVtbl</tt> walk is explicit, <tt>This</tt> is passed by hand, every
+<tt>AddRef</tt> has to be matched by a <tt>Release</tt>, every creation call's
+<tt>HRESULT</tt> has to be checked, and every interface has to be named at the
+right version. There is no destructor to run at scope exit and no smart pointer
+to save you; the compiler checks types but not lifetimes.
+</p>
+<p>
+For a program of the size this machine supports, that is the right side of the
+trade. A 2D game or a demo is a few thousand lines and a small number of objects,
+and the reference-counting discipline is easy to hold in your head once it is
+written down. The place it stops being the right trade is a large object graph
+where ownership is genuinely tangled; there, the C++ form of the same headers
+exists for a reason, and <a href="vol3-04-when-cpp98.html">chapter&nbsp;4</a>'s
+honest rules about C++98 on a 32&nbsp;MB machine are the ones to apply. Z98 does
+not pretend to make that easier; it makes the C path exact.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> This chapter describes an interface and a set of era
+facts; it does not ship a DirectX program and it does not claim to have run one.
+No DirectX SDK or header exists in this tree, and the graphical and audio stacks
+are not part of what the volume's Windows verifier establishes. Every COM
+statement here is a fact about the C ABI and the era SDKs; every Z98 statement
+was checked on the seed compiler; and the place a DirectX claim would become real
+is a Pentium&nbsp;II with a period driver, which is the reader's machine and not
+this host.</td>
+</tr>
+</table>
+
+<h2><a name="boundary">The boundary, stated plainly</a></h2>
+<p>
+Because the exact facts matter more than a smooth ending, here is the full
+account of what this page is and is not.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left">Claim</th>
+<th align="left">Status on this page</th>
+</tr>
+<tr>
+<td>COM interfaces are a vtable pointer behind a one-member struct; a call walks <tt>lpVtbl</tt> and passes <tt>This</tt></td>
+<td><b>Measured (Z98 side)</b> on seed v89: the structs lay out 4/12 bytes and a call through <tt>lpVtbl</tt> compiles and runs</td>
+</tr>
+<tr>
+<td>A function-pointer type can name the <tt>stdcall</tt> convention, and ABI-correct vtable entries need it</td>
+<td><b>Measured (Z98 side)</b>: the convention is part of the type; the emitted Windows typedef carries <tt>Z98_STDCALL</tt>; a cross-convention assignment is <tt>error[3000]</tt></td>
+</tr>
+<tr>
+<td><tt>*void</tt> / <tt>**void</tt> carry the interface pointer and an out-parameter</td>
+<td><b>Measured (Z98 side)</b> in the scratch fragment (self pointer, <tt>void **</tt> out-parameter)</td>
+</tr>
+<tr>
+<td><tt>DirectDrawCreate</tt>, <tt>DirectSoundCreate</tt>, <tt>DirectInput8Create</tt> signatures and DLL/import-library names</td>
+<td><b>Era context</b> from the DirectX SDK headers; cannot be compiled here (no SDK)</td>
+</tr>
+<tr>
+<td>The <tt>IDirectDraw</tt> vtable method order and versioning</td>
+<td><b>Era context</b>; the ordering is the SDK's ABI and is described, not exercised</td>
+</tr>
+<tr>
+<td>Header pain under OpenWatcom and the declare-the-slice workaround</td>
+<td><b>Era context and opinion</b>, marked as such; <tt>wcc386</tt> is not installed on this host and no SDK header is present</td>
+</tr>
+<tr>
+<td>That any of it draws, plays, or flips on the target</td>
+<td><b>Not claimed here.</b> No DirectX sample and no figure; the proof is a real machine with a period driver</td>
+</tr>
+</table>
+<p>
+Two boundaries are about the toolchain rather than the API. The first is
+OpenWatcom: the emitted <tt>build_owc.bat</tt> is documented and not run, exactly
+as <a href="vol3-08-win9x.html">chapter&nbsp;8</a> and
+<a href="vol3-13-debug-api.html">chapter&nbsp;13</a> say, so no statement here
+rests on having compiled a DirectX program with <tt>wcc386</tt>. The second is
+the verifier itself: the volume's Windows oracle runs ordinary Win32 and CRT
+programs under wine, and the DirectDraw and DirectSound paths are outside the
+capability it establishes, so the boundary is "described, not run" and not a
+claim about what wine can or cannot do. That is the honest classification, and it
+is the reason the sample was dropped rather than shipped with a caveat.
+</p>
+
+<h2><a name="common-mistakes">Common mistakes</a></h2>
+<p>
+These are the mistakes that cost a C programmer the most time in COM and
+DirectX, in roughly the order they are made. The chapter has no runnable sample,
+but the declarations above are real, so the corrections are concrete.
+</p>
+<p>
+<b>Forgetting <tt>CINTERFACE</tt>.</b> Include the DirectX headers without
+defining <tt>CINTERFACE</tt> first and you get the C++ classes, which a C89
+source file cannot use; the errors are about unknown types and missing
+<tt>-&gt;</tt> members. Define <tt>CINTERFACE</tt> before the first SDK include,
+in every translation unit that touches a DirectX type.
+</p>
+<p>
+<b>Forgetting to pass <tt>This</tt>.</b> In C there is no hidden receiver, so
+<tt>dd-&gt;lpVtbl-&gt;SetCooperativeLevel(hwnd, flags)</tt> is missing its first
+argument and passes the wrong values in the wrong registers. The object pointer
+is always the first argument: <tt>dd-&gt;lpVtbl-&gt;SetCooperativeLevel(dd, hwnd,
+flags)</tt>. In Z98, where there is no <tt>this</tt> and no method syntax, the
+same rule reads <tt>iface.lpVtbl.SetCooperativeLevel(self, hwnd, flags)</tt>.
+</p>
+<p>
+<b>Using method syntax in Z98.</b> Z98 has no methods, so
+<tt>iface.SetCooperativeLevel(...)</tt> does not exist. The call goes through
+the table member and passes the object pointer by hand. This is not a
+limitation to work around; it is the CINTERFACE call written out in full, which
+is what the rest of this chapter has been building toward.
+</p>
+<p>
+<b>Declaring the vtable cdecl when the API is stdcall.</b> The entries must be
+<tt>extern "stdcall" fn</tt> on the 32-bit Windows target. A cdecl declaration
+may compile and then corrupt the stack on the first call, because the callee and
+the caller disagree about who cleans up. Z98 helps here: the convention is part
+of the function-pointer type and a cross-convention assignment is
+<tt>error[3000]</tt>, so a vtable built from mismatched Z98 functions is stopped
+before emission.
+</p>
+<p>
+<b>Not checking the <tt>HRESULT</tt>.</b> DirectX creation and most methods
+return <tt>HRESULT</tt>. Ignoring it and using the out-parameter anyway means
+driving an uninitialized pointer; the failure surfaces later as a crash far from
+the call. Test with <tt>SUCCEEDED(hr)</tt> / <tt>FAILED(hr)</tt>, and never
+compare an <tt>HRESULT</tt> to <tt>true</tt> or <tt>false</tt> &mdash; success is
+the specific value <tt>S_OK</tt>, which is zero.
+</p>
+<p>
+<b>Leaking references.</b> Every object you create or <tt>QueryInterface</tt>
+for arrives with a reference you own, and the last <tt>Release</tt> destroys it.
+Forgetting a <tt>Release</tt> leaks the object and, for DirectDraw and
+DirectSound, often the underlying device; releasing twice corrupts the count and
+crashes. Decide on one owner per interface pointer and match every acquisition
+with exactly one release.
+</p>
+<p>
+<b>Retyping an interface pointer.</b> Casting an <tt>IDirectDraw7</tt> to an
+<tt>IDirectDraw</tt>, or naming the wrong vtable type, calls the wrong slot with
+the wrong signature. Interfaces are versioned through
+<tt>QueryInterface</tt>; ask for the version you need and use the matching vtable
+type rather than casting between them.
+</p>
+<p>
+<b>Mixing uninitialized storage with an out-parameter.</b> The creation
+functions take a pointer to an interface pointer; initialize the variable to a
+known value before the call so a failure cannot leave you reading an old pointer,
+and check the <tt>HRESULT</tt> before using whatever it wrote. The same care
+applies to <tt>**void</tt> out-parameters in Z98.
+</p>
+<p>
+<b>Wrestling the whole SDK header instead of declaring the slice.</b> Trying to
+make the complete DirectX headers compile under a compiler they were not written
+for can consume a day and leave the build dependent on a header negotiation.
+Declare the interfaces and methods you use, in the header's order, the way
+chapters 11 and 13 declare <tt>windows.h</tt>; the layout model guarantees the
+result and the build stops depending on the SDK's compiler assumptions.
+</p>
+
+<h2>Where to go next</h2>
+<p>
+The mechanics on this page are the mechanics of
+<a href="vol3-11-talking-to-c.html">chapter&nbsp;11, Talking to C</a>, with the
+COM names on them: <tt>extern</tt> declarations, a function-pointer struct, and
+the frozen 32-bit layout model of
+<a href="vol3-01-the-1998-machine.html">chapter&nbsp;1</a>. The interface idiom
+itself is <a href="vol2-16-no-methods.html">Volume&nbsp;II chapter&nbsp;16</a>'s
+manual vtable; read that first if the shape above is new. The other large Win32
+surface in the volume is <a href="vol3-13-debug-api.html">chapter&nbsp;13, the
+Win32 Debug API</a>, and the create-an-object-then-drive-it pattern is the same
+one <a href="vol3-12-winsock.html">chapter&nbsp;12</a> applies to Winsock, where
+the object is a socket rather than an interface. The build and link story
+underneath all of it, including the OpenWatcom boundary this chapter insists on,
+is <a href="vol3-08-win9x.html">chapter&nbsp;8, Building for Win9x</a>, and the
+reason the C path is worth taking at all is
+<a href="vol3-03-when-c89.html">chapter&nbsp;3</a>'s load-bearing fact that Z98
+emits C89.
+</p>
+<p>
+The next chapter, the debugger workflow <i>(planned)</i>, is the everyday
+alternative to the instrumentation a graphics program tends to need: gdb on the
+generated C needs no COM at all. The builtins named here, including
+<tt>@ptrCast</tt>, <tt>@sizeOf</tt>, and <tt>@intToPtr</tt>, are catalogued in
+<a href="vol4-15-builtins.html">Volume&nbsp;IV &mdash; Builtins</a>, and the
+whole volume, including this chapter, is listed on
+<a href="toc.html">the Contents page</a>.
+</p>
+
+<p class="navbtns">
+<a href="vol3-13-debug-api.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol3-13-debug-api.html">The Win32 Debug API</a> | <a href="toc.html">Contents</a> | Next: <a href="toc.html">Contents</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
