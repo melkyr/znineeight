@@ -1,4 +1,70 @@
-# mi_matrix corpus — expected-fail manifest (v286 2026-09-29)
+# mi_matrix corpus — expected-fail manifest (v287 2026-10-01)
+
+## FX17-F — function-pointer signature matching enforced at all coercion sites (v286 -> v287, 2026-10-01)
+
+Volume II ch16 amendment (task-FX17-F; source = the plan's FX17 bullet + the
+operator's m1012 rulings D1–D5; design in `task-FX17-I-report.md`). A
+signature-mismatched function-pointer coercion was accepted: the struct-literal
+field-init/return/module-var/call-arg-via-pointer shapes silently compiled
+rc 0, the local-decl/assign/field-assign shapes were only a level-1
+`warning[3000]`; gcc warned `-Wincompatible-pointer-types` and the call ran
+with garbage (`fn(*i32) void` -> `fn(*void) void`, Task 17). Zig 0.15.2 rejects
+every shape.
+
+**Fix (`sf/src/semantic_analyzer.zig` only; sema-only, no new code).** The
+stdcall-only `semanticAnalyzerFnPtrConvMismatch` becomes a delegate to the new
+`semanticAnalyzerFnPtrSigMismatch`, which compares two possibly-`?fn`-wrapped
+function-pointer values by return type, parameter count and parameter type ids,
+variadic flag and `FN_FLAG_STDCALL` (the new `semanticAnalyzerFnValueType`
+unwraps one optional layer then a bare `fn_type` or one pointer to it). The
+predicate is added at the four swallowing gaps: the call-argument tolerance
+guard (`semanticAnalyzerCallArgTolerated`, before the pointer-family blanket),
+the return reject (`resolveReturnStmt`), the three struct-literal field-init
+arms and the module `const`/`var` initializer; the existing local-decl/assign
+and field-assign mismatch branches reach level 0 through the delegate. Every
+site reuses its existing message plus the `source:`/`target:` kind notes as a
+**level-0 raw `error[3000]`** (D1; classifier GREEN bucket, no new code). The
+shared level-0 reporter is renamed `semanticAnalyzerFloatNarrowReport` ->
+`semanticAnalyzerTypeMismatchReport` (D5). Exact matches, named aliases,
+matching callconv pairs, `?fn` matches, `@ptrCast` and
+`@ptrToInt`/`@intToPtr` stay legal.
+
+**Fixtures.** Reject `repro/mi_matrix/fn_ptr_signature_reject_xmod` (main +
+helper; one mismatched statement per position, `expected_error.txt` `3000 23`,
+rc 2 / 0 `.c`, deterministic 3x, classify GREEN) + positive
+`repro/mi_matrix/fn_ptr_signature_ok_xmod` (golden `12`, rc 0, 3x, classify
+OK). Standalone `repro/fn_ptr_signature_reject.z98` (4 x `error[3000]`) and
+`repro/fn_ptr_signature_ok.z98` (dump rc 0, 1 x the `*const fn` residual
+warning). `scripts/stdlib/expected_dirs.txt` stays 266 (the new fixtures are
+corpus dirs, not `stdlib_*`).
+
+**Corpus movement.** `-s0` classify 1084 = 918 OK / 55 GREEN / 111 FAIL ->
+**1086 = 919 OK / 56 GREEN / 111 FAIL / 0 ICE / 0 CRASH**; join-diff vs the
+FX16-F-r1 baseline over the 1084 common dirs **zero movers**; the only
+dir-set additions are the two new fixtures (positive OK, reject GREEN).
+
+**Gates (final fixed point `8216fedc8dd69db084d453be80f3c010`).** Seed
+three-hop closure (moving point hop1 `9abebc39410001110ac0433a3a2a208b` !=
+hop2 == hop3, explicit `FIXED_POINT_MD5` gate) with the seed v88 NOT rotated
+(archive `3db5ef392ecc349304ffdf14c618e530` byte-identical). 4-MD5 emitted C
+both modes **UNCHANGED 8/8**, 2x deterministic (fsafe gol
+`6df1e4d2…`/lisp `e27b7c35…`/json `d51f17ae…`/mud `f3be9bb9…`, ffast gol
+`98e934f3…`/lisp `2514f8b5…`/json `e1cc386e…`/mud `66d547d4…`). `run_fixtures.sh`
+**266 PASS / 0 FAIL** (+ targeted PASS for the new positive); example matrix
+**24/24**; `check_emit_support.sh` **7/7**; `verify_upgraded.sh` **CLOSEOUT
+OK**; self-emission **48 `.c` + 48 `.h` / 0 PANIC / 0 `error[`**;
+`sf/scripts/build_test.sh` **0/9** pre-existing retired-zig0 baseline;
+`repro/vol2_defects/run_all.sh` **13/13**.
+
+**Residuals (D4, documented, not enforced).** (1) the `*const fn` double-pointer
+spelling keeps its pre-existing level-1 `warning[3000]`; (2) `null`/`undefined`
+-> a bare `fn` value stays accepted; (3) the parked explicit-deref call
+`s.draw_fn.*(...)` still compiles rc 0 and fails only at link
+(`undefined reference to 'zF_…_fnt_1_57'`). The `?fn` unwrap (D3) is included
+in the enforced set.
+
+**Codes.** `error[3000]` reused (level 0); no new code, no classifier change.
+
 
 ## FX16-F — tagged-union `.tag` sugar (A+) + payload-store rejects (S2/S1) + copied-tag reject (A4) (v285 -> v286, 2026-09-29)
 

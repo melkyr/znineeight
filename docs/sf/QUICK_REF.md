@@ -279,6 +279,26 @@ common-dir movers; +1 fixture), and the new fixed point (moving point hop1
 `FIXED_POINT_MD5` gate) is **`207e23ee39120654d9b2c32d1426c704`**; seed v88 NOT
 rotated.
 
+FX17-F (2026-10-01; Volume II ch16, operator rulings m1012 D1–D5) enforces
+function-pointer signature matching at every assignment/coercion position: a
+signature-mismatched coercion (`fn(*i32) void` -> `fn(*void) void`, wrong
+return/arity/callconv/variadic, through one `?fn` layer, cross-module, both
+directions) is now a level-0 raw `error[3000]` with the site's message plus
+`source:`/`target:` notes; the shared level-0 reporter is renamed
+`semanticAnalyzerFloatNarrowReport` -> `semanticAnalyzerTypeMismatchReport`.
+Exact matches, named aliases, callconv matches, `?fn`, `@ptrCast` and
+`@ptrToInt`/`@intToPtr` stay legal; the `*const fn` warning, `null`/`undefined`
+-> `fn`, and the parked `s.draw_fn.*(...)` link defect are documented residuals
+(not enforced). Fixtures `fn_ptr_signature_reject_xmod` (`3000 23`) /
+`fn_ptr_signature_ok_xmod` + standalone `repro/fn_ptr_signature_{reject,ok}.z98`.
+All 8 emitted-C pins stay **UNCHANGED 8/8** 2x; stdlib 266 PASS; matrix 24/24;
+emit 7/7; CLOSEOUT OK; self-emission 48/48 / 0 PANIC; build_test 0/9; run_all
+13/13; corpus `-s0` **1086 = 919 OK / 56 GREEN / 111 FAIL / 0 ICE / 0 CRASH**
+(zero common-dir movers; +2 fixtures); the FX17-F fixed point (moving point
+hop1 `9abebc39410001110ac0433a3a2a208b` != hop2 == hop3, explicit
+`FIXED_POINT_MD5` gate) is **`8216fedc8dd69db084d453be80f3c010`**; seed v88 NOT
+rotated.
+
 - Self-consistency gate: compare current zig1 `--dump-c89` against a pre-captured reference .c file. If the reference .c is outdated (intentional baseline change), re-capture via `cp /tmp/new.c /tmp/ref.c`. Never compare against parent-zig1 output directly — parent builds may fail silently.
 - Do **NOT** compare `zig1 --dump-c89` output against `zig0`'s C output. `zig0` emits a legacy bootstrap format that is byte-level incompatible with zig1.
 

@@ -38,7 +38,7 @@ Arbitrary-width integers carry an exact compile-time bit width, `u1`..`u64` unsi
 - **Auto-dereference**: `ptr.field` is automatically treated as `ptr->field` if `ptr` is a single-level pointer to a struct.
 - **Const Enforcement**: The Z98 frontend strictly enforces `const` qualifiers (e.g., you cannot assign to `*const T`). The C89 backend still **drops** `const` in emission (it is not rendered), so `const` remains a frontend-only guarantee.
 - **Volatile Enforcement**: `volatile` is enforced by the frontend **and preserved** in C89 emission. A `*volatile T` cannot be implicitly converted to `*T` (`error[3000]`); remove the qualifier only with `@volatileCast`, and `@ptrCast` cannot discard it. `*volatile T` renders as `volatile T*`.
-- **Function Pointers**: `fn(...) T` types are supported.
+- **Function Pointers**: `fn(...) T` types are supported. A function-pointer value may only be assigned or coerced to a target whose signature matches exactly (return type, parameter count/types, variadic flag and calling convention); a mismatch rejects with the level-0 site `error[3000]`, including through one level of `?fn` optional wrapping. Explicit `@ptrCast` and exact matches stay legal — see "Function-Pointer Signature Matching" under Type Coercions.
 - **Pointer Builtins**: Pointer casts and pointer/introspection are provided by builtins — `@ptrCast`, `@ptrToInt`/`@intFromPtr`, `@intToPtr`/`@ptrFromInt`, `@fieldParentPtr`, `@bitCast`, and `@as` (see §4).
 
 ### 1.3 Aggregates
@@ -534,6 +534,24 @@ A call is checked against the callee's signature at the call site.
 - **Still implicit**: Z98's established conversions are unchanged — integer <-> integer of any width/signedness (including `u32` <-> `usize` and narrowing), the pointer/slice/array coercions above, `@enumToInt(<error set>)` into an integer parameter, and `@intCast`-based conversions (which remain the explicit form for a narrowing the program does not want to rely on).
 
 This matches official Zig 0.15.2's rejection of wrong arity and cross-family argument types; the integer-conversion tolerance is the documented Z98 divergence retained for the existing corpus and the compiler's own source.
+
+### Function-Pointer Signature Matching (FX17-F, 2026-10-01)
+A function-pointer value may be assigned or coerced only to a target whose
+signature matches exactly: return type, parameter count and parameter types,
+the variadic flag, and the calling convention (`extern "stdcall"` vs cdecl).
+`fn(...)` type expressions, named function values, `?fn` values (one level of
+optional wrapping is unwrapped on either side) and cross-module function values
+are all covered. A mismatch is a level-0 `error[3000]` with the site's existing
+message plus `source:`/`target:` kind notes, at every assignment/coercion
+position: local declaration initializer, local assignment, struct-literal field
+initializer, field assignment, call argument (a direct function value or one
+reached through a function pointer), return, module `const`/`var` initializer,
+and both directions of a field-to-field assignment. It emits no C. Exact
+matches, named aliases, matching callconv-qualified pairs, `?fn` matches, and
+explicit `@ptrCast` (which may retype a mismatched signature) stay legal.
+Explicit `@ptrToInt`/`@intToPtr` round trips and `undefined` stay accepted.
+The `*const fn(...)` double-pointer spelling keeps its pre-existing level-1
+`warning[3000]` (it is not part of the enforced set).
 
 ### Value-Aware Narrowing to `f32`
 At an `f32` expectation site the value decides, matching Zig 0.15.2:

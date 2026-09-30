@@ -1042,10 +1042,12 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `semanticAnalyzerFloatNarrowArmStatus` | semantic_analyzer.zig (FX3 fix r1 + FX9 fix r1: one `if` arm / `switch` prong value must accept; `noreturn`/`undefined`/`f32` arms neutral) |
 | `semanticAnalyzerFloatNarrowIsNumeric` | semantic_analyzer.zig (FX3: f64/integer source classifier for the f32 narrowing) |
 | `semanticAnalyzerFloatNarrowRecord` | semantic_analyzer.zig (FX3: records `CoercionKind.float_narrow` on the value node) |
-| `semanticAnalyzerFloatNarrowReport` | semantic_analyzer.zig (FX3: level-0 `error[3000]` + source/target notes for a rejected narrowing) |
+| `semanticAnalyzerTypeMismatchReport` | semantic_analyzer.zig (FX3 as `semanticAnalyzerFloatNarrowReport`, renamed by FX17-F: level-0 `error[3000]` + source/target notes for a rejected narrowing or function-pointer signature mismatch) |
 | `semanticAnalyzerFloatNarrowStatus` | semantic_analyzer.zig (FX3: value-aware accept/round/reject decision at an f32 expectation site) |
 | `semanticAnalyzerFloatNarrowStatusDepth` | semantic_analyzer.zig (FX3 fix r1 + FX9: the depth-capped status; intercepts paren/`if_expr`/`swt_ex` BEFORE the numeric guard and classifies the reachable arms, so a runtime non-float arm rejects even when the expression is void/bool/pointer-typed; a comptime-known condition skips the untaken arm) |
-| `semanticAnalyzerFnPtrConvMismatch` | semantic_analyzer.zig |
+| `semanticAnalyzerFnPtrConvMismatch` | semantic_analyzer.zig (FX17-F: delegates to `semanticAnalyzerFnPtrSigMismatch`) |
+| `semanticAnalyzerFnPtrSigMismatch` | semantic_analyzer.zig (FX17-F: return/params/variadic/callconv mismatch of two possibly-`?fn`-wrapped function-pointer values) |
+| `semanticAnalyzerFnValueType` | semantic_analyzer.zig (FX17-F: unwrap a possibly-`?fn`-wrapped function-pointer value to its `fn_type`, else 0) |
 | `semanticAnalyzerForIndexBoundOk` | semantic_analyzer.zig |
 | `semanticAnalyzerGateEnumModuleDecl` | semantic_analyzer.zig |
 | `semanticAnalyzerGateEnumTypeDecl` | semantic_analyzer.zig |

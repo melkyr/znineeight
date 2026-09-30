@@ -1,0 +1,21 @@
+// repro/fn_ptr_signature_reject.z98 — FX17-F standalone reject (four headline
+// shapes, mirroring the Task 17 discovery repro).
+//
+// A signature-mismatched function-pointer coercion must reject with a level-0
+// `error[3000]` at each of: struct-literal field initializer, field assignment,
+// local declaration initializer and function return.
+//
+// Contract: rc 2, 0 emitted `.c`, exactly 4 x `error[3000]` (one per site).
+const Shape = struct { draw_fn: fn (*void) void, data: *void };
+
+fn wrongPtr(data: *i32) void { _ = data; }
+fn get() fn (*void) void { return wrongPtr; }
+
+pub fn main() void {
+    var n: i32 = 7;
+    var s = Shape{ .draw_fn = wrongPtr, .data = @ptrCast(*void, &n) };
+    s.draw_fn = wrongPtr;
+    const f: fn (*void) void = wrongPtr;
+    const g = get();
+    _ = f; _ = g; _ = s;
+}
