@@ -1,0 +1,369 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: What You Have Learned, What Is Next</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume II summary review what you have learned handoff Volume III working in the era coroutines twenty-first chapter">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol2-19-idioms.html">
+<link rel="next" href="vol4-00-title.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume II &mdash; Learning Z98</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol2-00-title.html">How to read this</a><br>
+<a href="vol2-01-honest-comparison.html">The honest comparison</a><br>
+<a href="vol2-02-types.html">The type system</a><br>
+<a href="vol2-03-pointers.html">Pointers</a><br>
+<a href="vol2-04-structs.html">Aggregates I: structs</a><br>
+<a href="vol2-05-packed-structs.html">Aggregates II: packed structs</a><br>
+<a href="vol2-06-enums.html">Aggregates III: enums</a><br>
+<a href="vol2-07-unions.html">Aggregates IV: unions</a><br>
+<a href="vol2-08-tuples.html">Aggregates V: tuples</a><br>
+<a href="vol2-09-arrays-slices.html">Arrays and slices</a><br>
+<a href="vol2-10-control-flow.html">Control flow, in full</a><br>
+<a href="vol2-11-defer.html">defer and errdefer</a><br>
+<a href="vol2-12-error-unions.html">Error unions &mdash; the first big shift</a><br>
+<a href="vol2-13-optionals.html">Optionals</a><br>
+<a href="vol2-14-arena.html">The arena &mdash; the second big shift</a><br>
+<a href="vol2-15-builtins.html">Builtins, in full</a><br>
+<a href="vol2-16-no-methods.html">No methods, no generics, no comptime</a><br>
+<a href="vol2-17-stdlib.html">The standard library tour</a><br>
+<a href="vol2-18-print.html">print and the format string</a><br>
+<a href="vol2-19-idioms.html">Idioms and best practices</a><br>
+<b>What you have learned, what is next</b><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>What You Have Learned, What Is Next</h1>
+<p>
+This is the last chapter of the volume, and it introduces nothing. Every
+chapter before it taught one part of Z98; this page gathers the parts, says
+plainly what you can now do, and points at the volume that comes after. It
+carries no program and no figure, because there is no new compiler behavior
+left to demonstrate. The volume is a closed set: if a sentence here claims
+something the chapters did not teach, it is a mistake on this page and not a
+feature of the language.
+</p>
+<p>
+The exit state printed on the title page is that you can write Z98 fluently,
+in its own syntax and its own idioms. The chapters measured that as they went.
+Every program in <tt>docs/sf/manuals/src/vol2/</tt> was compiled with the
+compiler rebuilt from the committed seed, run, and captured, and the transcripts
+on the pages are those captured outputs. The summary below is therefore a
+summary of things the volume has already shown working, not a promise about
+behavior this page adds.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> Finishing this volume makes you fluent in Z98; it does
+not make you ready to ship for 1998. Those are two different skills, and the
+blueprint keeps them in two different volumes. This volume taught the language
+and the compiler's behavior on the host machine. It did not teach how to fit a
+program into 32 MB, which C89 dialect OpenWatcom accepts, how to drive WinSock,
+or what the era's other tools do better. It also did not remove the language's
+own limits: there are still no generics, no templates, no classes, no
+exceptions, and no threads, and there is no allocator or destructor running
+behind your back. <a href="vol2-01-honest-comparison.html">Chapter&nbsp;1</a>
+set out those limits deliberately, and
+<a href="vol2-16-no-methods.html">chapter&nbsp;16</a> measured what replaces
+them. Volume III is where the machine and the honesty chapters live. Read this
+page as "I can write Z98", not as "I can ship on a Pentium II."</td>
+</tr>
+</table>
+
+<h2><a name="surface"></a>What you can now do</h2>
+<p>
+The language surface is complete. Each area below has a chapter behind it, and
+the chapter is where the measured behavior lives if you need to check a
+detail.
+</p>
+
+<h3>Types and pointers</h3>
+<p>
+You can name every primitive and every integer width.
+<a href="vol2-02-types.html">Chapter&nbsp;2</a> covered the primitives,
+arbitrary widths <tt>u1</tt> through <tt>u64</tt>, <tt>isize</tt> and
+<tt>usize</tt>, and <tt>bool</tt>, <tt>void</tt>, <tt>noreturn</tt>, and
+<tt>c_char</tt>; it fixed the width rule, that <tt>@sizeOf</tt> reports the
+carrier while <tt>@bitSizeOf</tt> reports the declared width; and it taught the
+current conversion behavior, that integer-to-integer conversions are implicit
+today with <tt>warning[3000]</tt> at declarations and assignments and silent at
+call sites, with <tt>@intCast</tt> as the explicit, warning-free form.
+</p>
+<p>
+You can work with every pointer form. <a href="vol2-03-pointers.html">Chapter&nbsp;3</a>
+covered <tt>*T</tt>, <tt>*const T</tt>, <tt>*volatile T</tt>, <tt>[*]T</tt>, and
+<tt>**T</tt>; address-of with <tt>&amp;</tt> and dereference with <tt>.*</tt>;
+indexing with <tt>ptr[i]</tt> only on a many-item pointer; field access through
+<tt>ptr.field</tt> with its automatic dereference; the rule that <tt>const</tt>
+is frontend-only while <tt>volatile</tt> is preserved in the emitted C; and the
+cast and conversion builtins the volume catalogued in
+<a href="vol2-15-builtins.html">chapter&nbsp;15</a>.
+</p>
+
+<h3>Aggregates</h3>
+<p>
+You can build every aggregate the language has, and inspect its layout when you
+need to. <a href="vol2-04-structs.html">Chapter&nbsp;4</a>: plain and nested
+structs, field order, and <tt>@offsetOf</tt>, <tt>@sizeOf</tt>, and
+<tt>@alignOf</tt>. <a href="vol2-05-packed-structs.html">Chapter&nbsp;5</a>:
+<tt>packed struct</tt>, LSB-first packing, the 31-bit field cap, and
+<tt>@bitOffsetOf</tt> and <tt>@bitSizeOf</tt>, for the two cases that earn them,
+hardware registers and wire formats.
+<a href="vol2-06-enums.html">Chapter&nbsp;6</a>: <tt>enum</tt> and
+<tt>enum(uN)</tt>, the enum conversion builtins, and enum ranges in
+<tt>switch</tt>. <a href="vol2-07-unions.html">Chapter&nbsp;7</a>: bare, packed,
+and tagged unions, naked tags, and anonymous struct payloads, and when each
+form is right. <a href="vol2-08-tuples.html">Chapter&nbsp;8</a>: tuples, why
+they exist (printing and grouped returns), and why not to use them for anything
+else. <a href="vol2-09-arrays-slices.html">Chapter&nbsp;9</a>: fixed arrays,
+slices, <tt>[]const T</tt>, <tt>.ptr</tt> and <tt>.len</tt>, slicing both
+forms, the array-to-slice coercion, and const propagation.
+</p>
+
+<h3>Control flow and cleanup</h3>
+<p>
+You can write the statements and the expressions.
+<a href="vol2-10-control-flow.html">Chapter&nbsp;10</a> covered <tt>if</tt> and
+<tt>if</tt> expressions, optional capture with <tt>if (x) |v|</tt>,
+<tt>while</tt> with a continue expression, <tt>while (opt) |v|</tt>,
+<tt>for</tt> with index capture, <tt>switch</tt> with inclusive and exclusive
+ranges and its mandatory <tt>else</tt> prong, labeled loops, and value-less
+labeled blocks. <a href="vol2-11-defer.html">Chapter&nbsp;11</a> added
+<tt>defer</tt> and <tt>errdefer</tt>: last-in-first-out ordering, execution on
+every path, and the rule that <tt>break</tt>, <tt>continue</tt>,
+<tt>return</tt>, and <tt>try</tt> are rejected inside a cleanup body.
+</p>
+
+<h3>Failure, absence, and memory</h3>
+<p>
+This is the half of the language the volume calls its mental shifts.
+<a href="vol2-12-error-unions.html">Chapter&nbsp;12</a> is the first: error sets
+and error unions, <tt>error{Foo, Bar}</tt>, <tt>!T</tt> and <tt>E!T</tt>,
+<tt>try</tt>, <tt>catch |err|</tt>, <tt>errdefer</tt>, and
+<tt>error.Tag</tt>; it explained why this replaces <tt>-1</tt> returns, why
+<tt>orelse</tt> is rejected on an error union, and why there is no
+<tt>anyerror</tt>. <a href="vol2-13-optionals.html">Chapter&nbsp;13</a> is the
+companion: <tt>?T</tt>, <tt>null</tt>, <tt>orelse</tt>,
+<tt>if (opt) |v|</tt>, <tt>while (opt) |v|</tt>, and why <tt>?*T</tt> keeps the
+same representation. <a href="vol2-14-arena.html">Chapter&nbsp;14</a> is the
+second shift: why there is no <tt>malloc</tt> and no <tt>free</tt>, the
+<tt>std.arena</tt> API, the <tt>ArenaError![*]u8</tt> result that is unwrapped
+with <tt>try</tt> or <tt>catch</tt> and never with <tt>orelse</tt>, and the
+dual-arena pattern for two lifetimes.
+</p>
+
+<h3>Builtins, the library, and output</h3>
+<p>
+<a href="vol2-15-builtins.html">Chapter&nbsp;15</a> catalogued every builtin the
+language has, grouped by use, with an example for each, and fixed the rule that
+an unknown builtin is <tt>error[3000]</tt>.
+<a href="vol2-16-no-methods.html">Chapter&nbsp;16</a> explained the absences
+that shape the rest: no methods, no generics, no <tt>comptime</tt> beyond the
+builtins, and the two patterns that replace them, the init function and the
+manual vtable. <a href="vol2-17-stdlib.html">Chapter&nbsp;17</a> named the
+thirteen modules the <tt>std</tt> namespace actually exports and gave the
+smallest call that proves each one is reachable.
+<a href="vol2-18-print.html">Chapter&nbsp;18</a> took apart the one variadic
+call, <tt>print</tt>, with its five specifiers, its tuple-literal argument form,
+and the diagnostics that fire when a format and its argument disagree.
+</p>
+
+<h2><a name="habits"></a>The habits you carry</h2>
+<p>
+<a href="vol2-19-idioms.html">Chapter&nbsp;19</a> collected the working habits
+the earlier chapters had been demonstrating all along. They are not features;
+they are what keeps a Z98 program a Z98 program rather than a C program that
+happens to compile under Z98. In the order the chapter lists them:
+</p>
+<ul>
+<li><b>Arena ownership</b> &mdash; the buffer is yours and the arena is a
+cursor over it; allocation is fallible and reclamation is one reset.
+(<a href="vol2-14-arena.html">Chapter&nbsp;14</a>.)</li>
+<li><b>Init functions</b> &mdash; an object becomes usable through a free
+function that fills its fields and returns it, because there are no
+constructors. (<a href="vol2-14-arena.html">Chapter&nbsp;14</a>,
+<a href="vol2-16-no-methods.html">chapter&nbsp;16</a>.)</li>
+<li><b>Manual virtual tables</b> &mdash; a struct of function pointers plus one
+erased data pointer, because there are no methods and no classes.
+(<a href="vol2-16-no-methods.html">Chapter&nbsp;16</a>.)</li>
+<li><b>Dual arenas</b> &mdash; one arena for data that lives for the whole run,
+one for data that dies every phase. (<a href="vol2-14-arena.html">Chapter&nbsp;14</a>.)</li>
+<li><b>Runtime initialization</b> &mdash; complex global state is built by a
+dedicated <tt>init()</tt> called at startup, not by a large constant
+initializer.</li>
+<li><b><tt>undefined</tt> is not zero</b> &mdash; an uninitialized value holds
+the poison fill under the default safe build and nothing at all under
+<tt>-ffast</tt>; it is never quietly zeroed.
+(<a href="vol2-14-arena.html">Chapter&nbsp;14</a>,
+<a href="vol2-04-structs.html">chapter&nbsp;4</a>.)</li>
+</ul>
+<p>
+The two working programs behind those habits are
+<tt>docs/sf/manuals/src/vol2/arena.z98</tt> for the memory half and
+<tt>docs/sf/manuals/src/vol2/shapes2.z98</tt> for the object half. Between them
+they exercise every idiom on the list, and
+<a href="vol2-19-idioms.html">chapter&nbsp;19</a> walks through the sequence
+they share.
+</p>
+
+<h2><a name="limits"></a>What the volume did not give you</h2>
+<p>
+The honesty in this volume is not an afterthought.
+<a href="vol2-01-honest-comparison.html">Chapter&nbsp;1</a> made the comparison
+explicit and framed Z98 as a higher-level C89, not a smaller modern Zig, and the
+chapters that followed kept the framing honest. So the summary would be false if
+it stopped at what you can do. Here is the other column, stated as plainly as
+the chapters stated it.
+</p>
+<p>
+There are no generics and no templates; a container is a concrete struct with a
+field per element type, the way <tt>ShapeList</tt> is in
+<a href="vol2-16-no-methods.html">chapter&nbsp;16</a>. There are no classes and
+no method syntax; a call is a free function and the receiver is an ordinary
+parameter. There are no exceptions; failure travels in the return type as an
+error union. There are no threads and no preemption, and no dynamic dispatch
+beyond the manual vtable you build yourself. There is no
+<tt>anyerror</tt>, and <tt>comptime</tt> does not exist beyond the specific
+builtins <a href="vol2-15-builtins.html">chapter&nbsp;15</a> catalogued. There
+is no constructor and no destructor, and no operation allocates behind your
+back; when a program needs storage it declares a buffer and hands an arena over
+it. The standard library is thirteen modules and, in the volume's own words, a
+set of concrete hand-written helpers rather than a convenience layer. The
+printer takes five specifiers and no width, precision, or alignment.
+</p>
+<p>
+None of that is a defect report. Each item is the trade the language made for
+deterministic C89 emission and no hidden control flow. What you get in return
+is that every call is a plain function you can read, the generated C has no
+machinery you did not write, and a printed value is always the value.
+</p>
+
+<h2><a name="handoff"></a>The handoff: Volume III, Working in the Era</h2>
+<p>
+The volume after this one is <b>Volume III &mdash; Working in the Era</b>
+<i>(planned)</i>. It has no shipped page yet. Its entry state is the exit state
+of this volume, someone fluent in Z98, and its exit state is someone who can
+ship software for 1998 hardware. Where this volume taught the language,
+Volume III is about the discipline, and the blueprint says it is heavier on
+prose than code because the era has more opinions than the language does.
+</p>
+<p>
+The material it adds is the material this volume deliberately left out. It
+opens on the 1998 machine: a Pentium II, 32 MB of memory, Windows 95 or 98,
+IDE drives, and a 640&times;480 screen, and the argument that memory, not CPU,
+is the binding constraint. Then come the six honesty chapters, which are the
+spine of the volume: what Z98 does and does not give you, and when C89, C++98,
+or assembly is the better choice; what you cannot do on a Pentium II; and the
+friction you will actually hit. From there it turns practical: building for
+Win9x with OpenWatcom, talking to C, WinSock, the Win32 Debug API, DirectX
+under <tt>CINTERFACE</tt>, the debugger workflow, memory budgets, and packaging
+and shipping.
+</p>
+<p>
+Volume III is also where the third mental shift lands. This volume had two,
+error unions in <a href="vol2-12-error-unions.html">chapter&nbsp;12</a> and the
+arena in <a href="vol2-14-arena.html">chapter&nbsp;14</a>; the blueprint's
+third is the coroutines chapter, III.9, where the suspending-function analysis
+and the <tt>std.async</tt> scheduler replace the state machine you would
+otherwise hand-roll. The builtins for that shift are already catalogued in
+<a href="vol2-15-builtins.html">chapter&nbsp;15</a>, and the module that drives
+them is in <a href="vol2-17-stdlib.html">chapter&nbsp;17</a>; Volume III is
+where they are put to work.
+</p>
+<p>
+What carries over unchanged is the working half of this volume: the error
+unions and the <tt>defer</tt> and <tt>errdefer</tt> cleanup, the arena and the
+dual-arena pattern, and the init function and manual vtable. What changes is
+the target. The same language, pointed at a machine with hard limits and an era
+with firm opinions about what software should weigh.
+</p>
+
+<h2><a name="next"></a>Where to go next</h2>
+<p>
+The previous chapter is the hub this summary draws on:
+<a href="vol2-19-idioms.html">chapter&nbsp;19, Idioms and best
+practices</a>. If you are looking for a specific part of the language, the
+<a href="toc.html">table of contents</a> lists all twenty-one chapters of this
+volume, and each chapter links the others it depends on.
+</p>
+<p>
+For lookup rather than reading, the shipped Reference pages are
+<a href="vol4-00-title.html">Volume IV &mdash; Reference</a> and, for the
+runtime calls behind the builtins and the formatter,
+<a href="vol4-15-builtins.html">Volume IV &mdash; Builtins</a>. The planned
+Reference pages for types, pointers, aggregates, errors, optionals, memory,
+and the standard library do not ship yet; until they do, the chapters here and
+the module sources <tt>sf/src/std_*.zig</tt> are the authority.
+</p>
+<p>
+If you arrived at this volume without having programmed before, the on-ramp is
+<a href="vol1-00-title.html">Volume I &mdash; Getting Started</a>. The volumes
+still to come are:
+</p>
+<ul>
+<li>Volume III, <b>Working in the Era</b> <i>(planned)</i> &mdash; the handoff
+described above, where Z98 meets 1998 hardware and the coroutines chapter
+lands.</li>
+<li>Volume IV, <b>Reference</b> &mdash; one page per topic for lookup; the
+title page and the builtins page ship today.</li>
+<li>Volume V, <b>HOWTO</b> <i>(planned)</i> &mdash; recipes for the specific
+tasks a Z98 program has to do.</li>
+<li>Volume VI, <b>Internals</b> <i>(planned)</i> &mdash; the compiler itself,
+for its maintainers.</li>
+</ul>
+<p>
+For now, the shortest path back into the material is the list of programs in
+<tt>docs/sf/manuals/src/vol2/</tt>. Each one is a complete file that compiles
+with the seed-built compiler and runs, and the chapter that names it has the
+transcript and the explanation.
+</p>
+
+<p class="navbtns">
+<a href="vol2-19-idioms.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol4-00-title.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol2-19-idioms.html">Idioms and Best Practices</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-00-title.html">Volume IV &mdash; Reference</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
