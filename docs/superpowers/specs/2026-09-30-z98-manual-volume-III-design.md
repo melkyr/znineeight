@@ -163,11 +163,9 @@ era.
   `WSAStartup`, `socket`, `bind`, `listen`, `accept`, `recv`, `send`, `select`,
   `closesocket`; the `SOCKET` unsigned-comparison rule; `fd_set` as an opaque
   blob. Any sample is Win-only and harness-verified where wine can run it; Task 0
-  measures the current wine bind class — the `WSAStartup` fix (std-net extern
-  work) is recorded as removing `10093`, while `scripts/win32_cross/cross_net.sh`
-  still assumes it, so if a real bind succeeds the sample is `wine-verified`,
-  otherwise the harness's wine-side control probe is the evidence and the live
-  bind is deferred to the figure. Sample `http-mini.z98` (Task 0 fixes the class).
+  measured the wine bind: it **succeeds** post-`WSAStartup` (`mud_server` server
+  `66c8f0ab…` / client `93147d0f…`), so the sample is `wine-verified` (the harness
+  now dumps with `-osw`; plan Amendment A0). Sample `http-mini.z98`.
 - **13 — The Win32 Debug API.** `CreateProcess` with
   `DEBUG_ONLY_THIS_PROCESS`, `WaitForDebugEvent`, `ContinueDebugEvent`,
   `GetThreadContext`, `ReadProcessMemory`, `WriteProcessMemory`, `INT3`
@@ -322,8 +320,11 @@ Binding, in addition to the Phase 0 spec (§6 HTML/CSS/JS/assets, §7 figures,
   goldens + the `stdlib_async_blocking_tick_two_xmod` two-client fixture);
   coroutine **execution** under wine is not previously recorded, so coroutine Win
   claims are new-verified. The wine winsock `10093` gap is **measured at Task 0**,
-  not assumed: if the post-`WSAStartup` build binds, chapter 12 is
-  `wine-verified`; otherwise `wine-cannot` with the control-probe evidence.
+  not assumed: Task 0 (2026-09-30) measured a **successful bind** post-`WSAStartup`
+  (`mud_server` server `66c8f0ab…` / client `93147d0f…`), so chapter 12 is
+  `wine-verified`. The harness itself now dumps with `-osw` (operator-ruled fix,
+  plan Amendment A0); `cross_net.sh`'s pre-`WSAStartup` expectations are
+  superseded and it needs a re-baseline run before use as a gate.
 - **STOP on a real compiler defect found while verifying a claim** (Phase 0
   §9/§11): report the minimal reproduction to the operator; do not fix
   `sf/src`, do not document around the defect, do not re-scope the chapter on
@@ -430,12 +431,10 @@ which re-verify their own claims.
   rewrite.
 - **Talking to C (ch11):** `extern fn` / `@cInclude` rules (module-level only),
   calling conventions, mangling, and the reserved-name rules.
-- **WinSock (ch12):** the actual `sf/src/std_net.zig` surface; run the harness on
-  a net entry and **measure** the wine bind class (`WSAStartup` is recorded as
-  removing `10093`, while `cross_net.sh` still assumes it) — if the bind succeeds
-  the sample is `wine-verified`; otherwise `wine-cannot` with the wine-side
-  control probe as the demonstrable evidence and the live bind deferred to the
-  figure.
+- **WinSock (ch12):** the actual `sf/src/std_net.zig` surface; Task 0 measured the
+  wine bind: it **succeeds** post-`WSAStartup`, so a `wine-verified` sample is
+  possible (the `cross_net.sh` `10093` text is superseded; the harness passes
+  `-osw`).
 - **Win32 Debug API (ch13):** whether the compiler can express the required
   `extern` surface; cross-build a `dbg-mini` probe and attempt a wine run (and
   `winedbg`), then rule wine-verified sample vs prose-plus-compile-only.
