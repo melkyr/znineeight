@@ -1,0 +1,692 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Honesty: The Friction You Will Hit</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume III honesty the friction you will hit OpenWatcom wcc386 wlink C89 dialect gcc mingw build_owc.bat seed model two-hop rebuild build_from_seed fixed point deterministic closure debugger UI gdb generated C errors numbered sparse diagnostics error 3013 3060 community forum">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol3-06-era-limits.html">
+<link rel="next" href="toc.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume III &mdash; Working in the Era</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+How to read this <i>(planned)</i><br>
+The 1998 machine <i>(planned)</i><br>
+<a href="vol3-02-honesty-inventory.html">Honesty: what Z98 does and does not give you</a><br>
+<a href="vol3-03-when-c89.html">Honesty: when C89 is the better choice</a><br>
+<a href="vol3-04-when-cpp98.html">Honesty: when C++98 is the better choice</a><br>
+<a href="vol3-05-when-assembly.html">Honesty: when assembly is the better choice</a><br>
+<a href="vol3-06-era-limits.html">Honesty: what you cannot do on a Pentium II</a><br>
+<b>Honesty: the friction you will hit</b><br>
+Building for Win9x <i>(planned)</i><br>
+Coroutines &mdash; the third big shift <i>(planned)</i><br>
+A coroutine program <i>(planned)</i><br>
+Talking to C <i>(planned)</i><br>
+WinSock under Z98 <i>(planned)</i><br>
+The Win32 Debug API <i>(planned)</i><br>
+DirectX under CINTERFACE <i>(planned)</i><br>
+The debugger workflow <i>(planned)</i><br>
+Memory budgets <i>(planned)</i><br>
+Packaging and shipping <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Honesty: The Friction You Will Hit</h1>
+<p>
+This is the last chapter of the honesty spine. The five before it answered
+questions about what Z98 is and what the machine can do:
+<a href="vol3-02-honesty-inventory.html">chapter&nbsp;2</a> gave the inventory,
+<a href="vol3-03-when-c89.html">chapters&nbsp;3</a>&ndash;<a
+href="vol3-05-when-assembly.html">5</a> said when to leave for another
+language, and <a href="vol3-06-era-limits.html">chapter&nbsp;6</a> named what
+the 1998 PC will not do in any language. This chapter is about neither the
+language nor the machine. It is about the workflow: the commands you type, the
+toolchain that turns your source into a shipping binary, and the friction you
+meet when you push against it for the first time.
+</p>
+<p>
+None of the five items below is a design flaw, and none of them is hidden. Each
+is a cost that a small, self-hosting, no-frills toolchain pays in a place a
+larger toolchain would hide: you are closer to the generated C, the compiler is
+rebuilt from a seed you can hold, the diagnostics come from the compiler's own
+tables, and the documentation is the manual you are reading. The blueprint's
+rule for this chapter is exact: <i>not pessimistic &mdash; accurate &mdash; and
+it ends by saying what to do about each</i>. So every friction below is stated
+once, plainly, and immediately paired with the move that gets you past it. A
+friction named without a way over would be a complaint, and the volume drops
+complaints.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffffc8">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-note.gif" width="16" height="16" alt="Note"></td>
+<td><b>What is measured here.</b> Statements about Z98's compiler are checked
+against the compiler built from the committed seed. The two-hop rebuild gate,
+the numbered diagnostics, and the gdb session in this chapter are real runs,
+captured on this host, and the transcripts are those runs. Statements about
+OpenWatcom's <tt>wcc386</tt> are a different kind: that compiler is not
+installed on this host, so its dialect is described from the emitted build
+script and the compiler's own compatibility header, and the text says so. The
+absence of a community forum is a statement about the project, marked where it
+appears; it is not an era claim.</td>
+</tr>
+</table>
+
+<h2>What you expect</h2>
+<p>
+A reader arriving from a modern toolchain expects the workflow to be a product.
+You install one thing, and it brings its own package manager, its own language
+server, its own debugger with a graphical front end, its own error reference on
+the web, and a community that has already answered your question. The compiler
+is a service you consume. When something is awkward, the ecosystem smooths it:
+the editor underlines the mistake, the debugger shows you the variable, and a
+search finds the error text with the fix beside it.
+</p>
+<p>
+That expectation is reasonable, and it is not what this workflow is. Z98 emits
+C89, so the debugger belongs to the C compiler, not to Z98. The compiler is
+self-hosting, so rebuilding it is a build of the compiler, not the install of
+one. The diagnostics are the compiler's own sentences, not a curated catalogue.
+And the community is, for now, the manual. None of that is an apology; it is a
+description of where the seams are. Knowing where the seams are is what lets
+you work without surprise, and the rest of this chapter is the seam-by-seam
+account.
+</p>
+<p>
+The one thing to keep out of your head is the modern scoreboard. Comparing this
+workflow to a modern toolchain measures nothing useful, because that toolchain
+was never a candidate for the target machine: it cannot be built for a 1998 PC
+and its binaries do not run there. The question is not whether this workflow is
+as smooth as a modern one. The question is whether each rough edge has a way
+over, and the answer for all five is yes.
+</p>
+
+<h2>What you get</h2>
+<p>
+Five frictions and their ways over. The table is the map; the sections after it
+are the argument. The last column names where in the volume each one becomes
+concrete, so a friction that is only a sentence here is a chapter later. Every
+item is stated as a fact about the current toolchain, and the two items that
+cannot be reproduced on this host are marked as observed.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>The friction</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>The way over</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Where it lands</b></th>
+</tr>
+<tr>
+<td valign="top">OpenWatcom's C89 dialect is not gcc's</td>
+<td valign="top">the emitted <tt>build_owc.bat</tt> names the flags
+(<tt>/za</tt>, <tt>/we</tt>, <tt>/dZIG_WIN32</tt>) and
+<tt>zig_compat.h</tt> carries the compiler branches; develop on the gcc/mingw
+path</td>
+<td valign="top">chapter&nbsp;8, Building for Win9x <i>(planned)</i>,
+and chapter&nbsp;17, Packaging <i>(planned)</i></td>
+</tr>
+<tr>
+<td valign="top">Rebuilding the compiler is a two-hop process</td>
+<td valign="top"><tt>scripts/seed/build_from_seed.sh</tt> runs the hops and
+gates the fixed-point closure; ordinary program builds are a single compiler
+pass</td>
+<td valign="top">the seed recipe in chapter&nbsp;0, How to read this
+<i>(planned)</i></td>
+</tr>
+<tr>
+<td valign="top">There is no debugger UI</td>
+<td valign="top">build the generated C with <tt>-g</tt> and run gdb; the
+compiler's own <tt>--markers</tt> trace is for bugs in the compiler</td>
+<td valign="top">chapter&nbsp;15, The debugger workflow <i>(planned)</i></td>
+</tr>
+<tr>
+<td valign="top">The errors are numbered but sparse</td>
+<td valign="top">read the four parts of a diagnostic &mdash; location, code,
+message, caret &mdash; then the Language Spec and
+<a href="vol1-13-reading-errors.html">Volume I chapter&nbsp;13</a></td>
+<td valign="top"><a href="vol1-13-reading-errors.html">Volume I
+chapter&nbsp;13, Reading the errors</a>, and the Language Spec</td>
+</tr>
+<tr>
+<td valign="top">There is no community forum yet</td>
+<td valign="top">the manual's <a href="search.html">Search</a> and
+<a href="toc.html">Contents</a>, the Reference volume, the examples tree, and
+the planned bug-report HOWTO</td>
+<td valign="top"><a href="vol4-15-builtins.html">Volume IV</a> and the
+Volume&nbsp;V HOWTO <i>(planned)</i></td>
+</tr>
+</table>
+
+<h3>OpenWatcom's C89 dialect is not gcc's</h3>
+<p>
+Z98 does not ship a backend for each compiler; it emits one dialect of C89 and
+lets a C compiler finish the job. That is the load-bearing fact of
+<a href="vol3-03-when-c89.html">chapter&nbsp;3</a>, and it is also the first
+friction, because &ldquo;C89&rdquo; is a smaller agreement than it sounds. The
+emitted C has to satisfy every C compiler you might build with, and those
+compilers do not agree on the edges. On this host two of the four candidate
+compilers are the gcc family &mdash; <tt>gcc</tt> for Linux and
+<tt>i686-w64-mingw32-gcc</tt> for Windows &mdash; and the emitter also targets
+Microsoft's <tt>cl</tt> and OpenWatcom's <tt>wcc386</tt>, neither of which can
+be run here.
+</p>
+<p>
+The friction is not that one of those compilers is broken. It is that each is a
+separate dialect, and the emitter has to speak all of them. The evidence is in
+the build scripts it writes for you. Emit a program for the Win9x target and
+the output directory contains three scripts: <tt>build_target.sh</tt> for
+gcc/mingw, <tt>build_target.bat</tt> for MSVC's <tt>cl</tt>, and
+<tt>build_owc.bat</tt> for OpenWatcom. The OpenWatcom script compiles every
+module with a command of exactly this shape:
+</p>
+<pre>
+wcc386 /za /we /dZIG_WIN32 /i=. hello_F63FD80A.c
+</pre>
+<p>
+and links with <tt>wlink system console op q opt stack=65536 &hellip; library
+wsock32</tt>. Read the flags as the dialect in miniature. <tt>/za</tt> turns
+OpenWatcom's language extensions <i>off</i>, asking for strict ANSI C;
+<tt>/we</tt> promotes every warning to an error; <tt>/dZIG_WIN32</tt> selects
+the Windows code path. The mingw script uses a completely different vocabulary
+&mdash; <tt>-m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign
+-Wno-implicit-function-declaration</tt> &mdash; and the fact that it needs three
+<tt>-Wno-</tt> flags tells you the emitted C leans on a small set of extensions
+that strict C89 does not have. The emitter is candid about this. Its
+compatibility header, <tt>zig_compat.h</tt>, branches on the compiler: for
+<tt>_MSC_VER</tt> it uses <tt>__int64</tt>; for <tt>__WATCOMC__</tt> it drops
+the alignment attribute and uses <tt>long long</tt>; for gcc and everything
+else it spells an 8-byte 64-bit scalar with <tt>__attribute__((aligned(8)))</tt>
+and calling conventions with <tt>__attribute__((stdcall))</tt>. In other words,
+the dialect differences are handled for you, at the header, by design.
+</p>
+<p>
+What can be measured here is the gcc end. Compiling the emitted <tt>hello</tt>
+with the strictest switch &mdash; <tt>gcc -m32 -std=c89 -pedantic -Wall</tt>
+&mdash; succeeds, and its only complaint about the language is that
+<tt>long long</tt> is not ISO C90; everything else is the harmless
+&ldquo;defined but not used&rdquo; set from the runtime header. That is exactly
+the one extension the gcc build flags silence with <tt>-Wno-long-long</tt>. The
+OpenWatcom end is the item that cannot be run on this host: <tt>wcc386</tt> is
+not installed, so the script above is <b>emitted and documented, not
+executed</b> here. Read it as the boundary it marks, not as a promise that was
+tested on your machine.
+</p>
+<p>
+The way over is built into the thing that causes the friction. The emitter
+already carries the per-compiler branches and already writes a script for each
+compiler, with the correct flags for that compiler baked in. The OpenWatcom
+script even carries its own warning policy: if <tt>/we</tt> fails the build on
+a warning you believe is harmless, you remove <tt>/we</tt> and see the warning
+without the failure; if a hard error remains after that, the emitted C is
+invalid for OpenWatcom and should be reported as a compiler bug. That is the
+right division of labor. You develop and test on the gcc/mingw path, which is
+the path this manual verified end to end, and you build the shipping Win9x
+binary with OpenWatcom on a machine that has it. If you do not have OpenWatcom,
+the mingw path produces a working Windows binary too; the OpenWatcom script
+exists because the era's own tool was OpenWatcom, not because it is the only
+way to ship.
+</p>
+
+<h3>Rebuilding the compiler is a two-hop process</h3>
+<p>
+A compiler you install is compiled once, by someone else, and you never see the
+build. Z98's compiler, <tt>zig1</tt>, is <i>self-hosting</i>: it is written in
+Z98 and compiles itself. That is a strong property &mdash; the compiler is
+subject to the language it implements &mdash; but it costs a rebuild shape you
+will meet the first time you change the compiler's own source.
+</p>
+<p>
+The rebuild is not one compile. It is a closure of two. A committed bootstrap
+seed, <tt>release/seed/zig1-seed.tgz</tt>, plays the part of a trusted first
+compiler. In the first hop the seed dumps the current compiler source,
+<tt>sf/src/main.zig</tt>, to C89, and gcc builds a new <tt>zig1</tt>. In the
+second hop that <i>new</i> compiler dumps the same source again, and gcc builds
+a second binary. Then the gate compares them byte for byte: the two binaries
+must have the same MD5, because the compiler is supposed to be deterministic.
+The closure is the whole point &mdash; a self-compiling compiler that produces
+a different binary on the second pass is not finished. Here is the gate from
+this host, run with the recipe in the box below:
+</p>
+<pre>
+[seed] hop1 binary md5: 8216fedc8dd69db084d453be80f3c010
+[seed] hop2 binary md5: 8216fedc8dd69db084d453be80f3c010
+[seed] two-hop closure OK: hop1 == hop2 == 8216fedc8dd69db084d453be80f3c010
+[seed] recorded fixed point OK: 8216fedc8dd69db084d453be80f3c010
+=== [seed] Done: /tmp/manual_seed ===
+</pre>
+<p>
+The recipe that produces that gate is one command, run from the repository
+root:
+</p>
+<pre>
+FIXED_POINT_MD5=8216fedc8dd69db084d453be80f3c010 \
+  bash scripts/seed/build_from_seed.sh \
+    release/seed/zig1-seed.tgz /tmp/manual_seed
+</pre>
+<p>
+The <tt>FIXED_POINT_MD5</tt> is optional; when set, the script refuses to
+succeed unless the closure lands on the known seed version. When it is unset,
+the script still runs both hops and prints both hashes, so you can see for
+yourself whether your change kept the fixed point or moved it. If the committed
+seed is older than the source you are building, the first hop produces a
+different binary on purpose, and the script proves convergence with a
+<i>third</i> hop instead of failing &mdash; the moving-point case, handled
+automatically.
+</p>
+<p>
+Two hops is the cost, and it is the honest cost of a deterministic
+self-hosting compiler: you build the compiler twice, because the second build
+is the proof. The way over is that you almost never pay it. You rebuild the
+compiler only when you change the compiler. To build an ordinary program you
+run <tt>zig1</tt> once &mdash; a single compiler pass that emits the C89 and
+the per-target build scripts &mdash; and then compile that C. The seed follows
+the compiler through the tree, and a seed archive is small enough to keep
+alongside a release, so you can always rebuild the compiler from a known state
+without needing a second compiler to start from. The two-hop cost is the floor
+under compiler work, not the cost of using the compiler.
+</p>
+
+<h3>There is no debugger UI</h3>
+<p>
+A modern workflow puts a debugger in the editor: click in the margin, set a
+breakpoint, step, and watch the variable. Z98 has no such thing. It ships no
+debugger UI, and &mdash; a correction the manual makes against the original
+blueprint &mdash; it ships no sidecar debugger either; there is no
+<tt>.z98dbg</tt> format anywhere in the toolchain. The compiler's job ends when
+it has written the C89.
+</p>
+<p>
+What you have instead is the C compiler's debugger, pointed at the generated C.
+That is not a consolation prize. The emitted C is plain, deterministic, and
+close to your source, and gdb finds it without ceremony. Rebuild the emitted
+program by hand with debug information, and a batch gdb session stops exactly
+where you asked:
+</p>
+<pre>
+Breakpoint 1 at 0x24df: file hello_F63FD80A.c, line 16.
+Breakpoint 1, main () at hello_F63FD80A.c:16
+16	    zF_780653D2___module_init();
+#0  main () at hello_F63FD80A.c:16
+</pre>
+<p>
+The invocation is ordinary gdb over a binary built with <tt>gcc -m32 -g</tt>.
+The one adjustment is that the file names are the emitter's, not yours: the
+module <tt>hello.z98</tt> becomes a C file with a hash suffix such as
+<tt>hello_F63FD80A.c</tt>, so the first thing you do is find the generated
+<tt>.c</tt> that corresponds to the Z98 module you are chasing. The function
+names are mangled in the same way &mdash; <tt>zF_780653D2___module_init</tt> is
+a module initializer &mdash; but they are stable across builds, which is all a
+breakpoint needs.
+</p>
+<p>
+The way over is to treat the generated C as the debugging surface, not as an
+opaque artifact. Build it with <tt>-g</tt>, set breakpoints in gdb against the
+generated file, and read the values there; the data layout is the Z98 layout,
+so a struct you declared is the struct you inspect. When the bug is not in your
+program but in the compiler that emitted it, the debugger is the wrong tool and
+the compiler's own trace is the right one: <tt>--markers</tt> writes the
+compiler's internal phase trace to the marker channel, which is how you watch a
+program make its way through the pipeline. The full workflow &mdash; the
+<tt>cd</tt> rule that keeps the emitted headers resolvable, the absolute
+include path, gdb, and markers &mdash; is
+chapter&nbsp;15 <i>(planned)</i>. There is no debugger UI today; there is gdb
+on code you can read.
+</p>
+
+<h3>The error messages are numbered but sparse</h3>
+<p>
+Modern compilers pair each error with a documentation page: a permanent link, a
+long explanation, the common causes, and the fix. Z98's diagnostics are the
+compiler's own sentences. Each carries a number, and the number is stable
+enough to cite; but the set is sparse. There is no dense catalogue, no online
+error index, and no paragraph per code. The message is one precise sentence,
+the location is exact, and then it is on you.
+</p>
+<p>
+Numbering is real. A few wrong programs show the shape. Asking <tt>print</tt>
+for a format specifier it does not know:
+</p>
+<pre>
+/tmp/t6/bad_print.z98:4:17: error[3013]: invalid print format specifier
+    std.io.print("{q}\n", .{1});
+                 ^^^^^^^
+</pre>
+<p>
+Calling a method on a struct in a language with no methods:
+</p>
+<pre>
+/tmp/t6/bad_method.z98:9:29: error[3060]: no field or member function named 'mag' in struct type
+    std.io.print("{}\n", .{p.mag()});
+                             ^^^
+/tmp/t6/bad_method.z98:3: note: struct declared here
+</pre>
+<p>
+and a plain syntax slip, reported by the parser before the semantic phases even
+run:
+</p>
+<pre>
+/tmp/t6/bad_syntax.z98:1:4: error[2000]: expected ';' but found identifier
+use std.io;
+    ^^^
+</pre>
+<p>
+Read one diagnostic and you can see its four parts: the
+<tt>file:line:column</tt> location, the bracket code, the message, and the
+caret span under the offending tokens, sometimes followed by a <tt>note</tt>
+that names the related declaration. The message is specific to the situation,
+not generic. It is what &ldquo;sparse&rdquo; means that when you go looking for
+more, there is no encyclopedia. The codes are grouped by the phase that added
+them and are not contiguous: in the semantic block 3016 sits next to 3020, and
+the 3020s give way to the 3040s, with the coroutine codes numbered apart. The
+number is a fingerprint for the check, not a chapter in a book.
+</p>
+<p>
+The way over is to read the four parts and to keep two references open. The
+caret and the note are usually enough to name the problem without any lookup at
+all; when they are not, the language reference is
+<tt>docs/reference/Language_Spec_Z98.md</tt>, which states the rule the
+diagnostic is enforcing, and
+<a href="vol1-13-reading-errors.html">Volume&nbsp;I chapter&nbsp;13, Reading
+the errors</a>, is the habit: read the first error, fix it, rebuild, and ignore
+the cascade, because one early parse error can manufacture a page of later
+ones. When you want the definitive list, the compiler's own source is the
+answer: <tt>sf/src/diagnostics.zig</tt> holds every code and its name, and it
+is authoritative in a way a generated web page never is. The numbering is not a
+user interface. It is a stable handle on the compiler's own checks.
+</p>
+
+<h3>There is no community forum yet</h3>
+<p>
+This is the one friction that is not about the machine and not about the
+compiler's design, and it is the only one in this chapter that is a statement
+about the project rather than about Z98: <b>there is no community forum
+yet</b>. There is no board where a question has already been asked and
+answered, no chat where a maintainer is idling, and no archive of other
+people's mistakes to search. If you are stuck, there is no crowd to ask.
+</p>
+<p>
+The reasons are structural, and stating them is not an excuse. Z98 is a
+deliberately small toolchain for a deliberately old target; it is not trying to
+grow an ecosystem, and most of the questions a reader will have are answered by
+the compiler itself rather than by a community. But the friction is real: the
+first time something confuses you, the nearest human may be far away, and the
+answer has to come from the documentation.
+</p>
+<p>
+The way over is that the documentation is built to be the substitute, and it is
+searchable. <a href="search.html">The Search page</a> indexes every page in the
+manual, so a word in an error message or a builtin name finds the chapter that
+discusses it; <a href="toc.html">the Contents</a> is one page that lists all
+six volumes, so you can see what the manual covers before you conclude that it
+does not; the Reference volume is for lookup, and its shipped pages today
+include <a href="vol4-15-builtins.html">Builtins</a> and
+<a href="vol4-24-html-style.html">HTML style</a>, with the rest
+<i>(planned)</i>; and the examples tree under <tt>examples/</tt> and
+<tt>docs/sf/manuals/src/</tt> holds complete, runnable programs rather than
+fragments. The manual also expects a bug-report page to exist in the
+Volume&nbsp;V HOWTO <i>(planned)</i>, so there is a named path for the case the
+documentation does not cover. Until a forum exists, the manual is the forum.
+That is an observation about where Z98 is today, marked as one, not a claim
+that it will always be so.
+</p>
+
+<h2>The trade</h2>
+<p>
+Read the five frictions together and one statement covers them. All five are
+the same trade seen from different angles: this toolchain trades ecosystem and
+polish for three properties it keeps instead &mdash; the output is C89 you can
+read, the compiler is deterministic to the byte, and the whole thing rebuilds
+from a seed you can hold in your hand. Each friction is the shadow of one of
+those properties. The dialect is the shadow of emitting one language for four
+compilers. The two-hop rebuild is the shadow of self-hosting and determinism
+together. No debugger UI is the shadow of ending at the C. Sparse diagnostics
+are the shadow of a compiler whose checks live in its own source rather than in
+a documentation team. No forum is the shadow of a small project.
+</p>
+<p>
+On the buying side, the properties are worth the roughness. The generated C can
+be inspected, hand-tuned, or replaced, which is the subject of
+<a href="vol3-05-when-assembly.html">chapter&nbsp;5</a>; the two-hop closure
+means the compiler cannot silently drift, because a non-identical second build
+fails the gate; and the absence of a large runtime &mdash; no garbage
+collector, no unwinder, no dynamic loader &mdash; is the same absence that
+made the program fit the machine in
+<a href="vol3-06-era-limits.html">chapter&nbsp;6</a>. On the paying side, none
+of that buys you a debugger window or a forum post. The friction is not
+imaginary and this chapter does not pretend otherwise.
+</p>
+<p>
+Where another tool genuinely wins, it wins for reasons the
+<a href="vol3-03-when-c89.html">chapters&nbsp;3</a>&ndash;<a
+href="vol3-05-when-assembly.html">5</a> already gave. If what you want is a
+mature toolchain with every convenience, the honest answer is that a modern
+toolchain has that and this one does not &mdash; but it also cannot target the
+machine, so the comparison does not apply to the job. The register of this
+chapter is the volume's register: state the cost, state the compensation, and
+move on. Each of the five frictions above ends in a way over, and not one of the
+ways over requires the ecosystem a modern toolchain brings. That is the point.
+The friction is what you pay for a toolchain small enough to understand, and
+the way over is what you already hold.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> The sharpest friction is not on this list because it is
+not a toolchain fact: it is the temptation to fight the toolchain instead of
+using it. You will want a graphical debugger, so you will not read the generated
+C. You will be annoyed by the two-hop rebuild, so you will reach for a rebuild
+shortcut that skips the closure gate. You will get a terse diagnostic and change
+code at random rather than read the caret. Every one of those moves trades a
+small inconvenience you can name for a larger problem you cannot see. The way
+over is the same in each case: use the seam as designed &mdash; gdb on the
+generated C, the seed script with its gate, the four parts of the diagnostic
+&mdash; and the friction stays a friction rather than becoming a defect.</td>
+</tr>
+</table>
+
+<h2>The way over it</h2>
+<a name="the-way-over-it"></a>
+<p>
+The way over friction is a set of habits, not a feature you install. Worked in
+order, they cover all five items above:
+</p>
+<p>
+<b>Step one: keep an inner loop you can actually run.</b> Develop and test on
+the gcc/mingw path, which this manual verified end to end; keep the OpenWatcom
+build for the shipping binary, on a machine that has <tt>wcc386</tt>. The
+emitted build scripts encode each compiler's flags, so you do not have to
+remember the dialect; you only have to choose the path you can run today.
+</p>
+<p>
+<b>Step two: rebuild the compiler only when you change the compiler.</b> Use
+<tt>scripts/seed/build_from_seed.sh</tt> and read the closure line it prints.
+When you set <tt>FIXED_POINT_MD5</tt>, the script refuses to pass unless the
+fixed point is unchanged; when you do not, it still proves hop&nbsp;1 equals
+hop&nbsp;2. Building an ordinary program is one compiler pass and a C compile,
+which is the common case and costs nothing like a two-hop rebuild.
+</p>
+<p>
+<b>Step three: debug the generated C.</b> Build the emitted C with <tt>gcc
+-m32 -g</tt> and use gdb against the generated file. Reach for the compiler's
+<tt>--markers</tt> trace only when the bug is in the compiler rather than in
+your program. The workflow is chapter&nbsp;15 <i>(planned)</i>.
+</p>
+<p>
+<b>Step four: read a diagnostic in its four parts.</b> Location, code, message,
+caret &mdash; and the <tt>note</tt> when there is one. The caret and the note
+usually name the problem; the Language Spec states the rule; Volume&nbsp;I
+<a href="vol1-13-reading-errors.html">chapter&nbsp;13</a> is the habit of
+fixing the first error and rebuilding; and <tt>sf/src/diagnostics.zig</tt> is
+the definitive code list.
+</p>
+<p>
+<b>Step five: when there is no forum, search the manual.</b> The
+<a href="search.html">Search</a> page indexes every page, the
+<a href="toc.html">Contents</a> lists all six volumes, the Reference volume is
+for lookup, and the examples tree is full programs. The manual is the knowledge
+base until a community exists.
+</p>
+<p>
+<b>Step six: never trade a check for convenience.</b> The same rule as
+<a href="vol3-06-era-limits.html">chapter&nbsp;6</a>: a friction is a reason to
+change how you work, never a reason to drop the error unions, the bounds
+checks, or the closure gate. The gate is the toolchain's whole promise. Keep
+it.
+</p>
+<p>
+Stated once, compactly, the frictions and their ways over:
+</p>
+<ul>
+<li><b>Another compiler's dialect?</b> The emitted build scripts carry that
+compiler's flags and the compatibility header carries its branches; run the
+path you have, ship with the path you can.</li>
+<li><b>A two-hop rebuild?</b> Run
+<tt>scripts/seed/build_from_seed.sh</tt>, read the closure line, and remember
+it is the price of a compiler proved deterministic &mdash; paid only when you
+change the compiler.</li>
+<li><b>No debugger UI?</b> gdb on the generated C; <tt>--markers</tt> for the
+compiler.</li>
+<li><b>Sparse errors?</b> Read the location, code, message, and caret; then the
+Language Spec and Volume&nbsp;I chapter&nbsp;13.</li>
+<li><b>No forum?</b> <a href="search.html">Search</a>, the
+<a href="toc.html">Contents</a>, the Reference, and the examples tree.</li>
+</ul>
+<p>
+If an item in the table had no line here, it would be a complaint, and the
+chapter would have dropped it rather than list it. Every friction above carries
+a way over, and none of the ways over requires the ecosystem a modern toolchain
+brings.
+</p>
+
+<h2>Common mistakes</h2>
+<p>
+The chapter has no code sample, because its subject is the workflow rather than
+a program. The mistakes below are workflow mistakes, and they are the ones a
+reader makes when a friction is treated as a defect to route around instead of
+a seam to use.
+</p>
+<p>
+<b>Expecting one compiler.</b> The emitted C is built by at least two
+compilers on the dev host and by OpenWatcom or MSVC on the target, and they are
+different dialects. That is why there are three build scripts and a
+compatibility header. Pick the script for the compiler you have; do not expect
+one command to fit them all.
+</p>
+<p>
+<b>Treating a seed rebuild as a one-hop build.</b> The closure gate is the
+second hop, and skipping it means you never learn whether your change kept the
+compiler deterministic. Run the script and read the <tt>hop1 == hop2</tt> line;
+a rebuild that skips the gate is not a verification, it is a hope.
+</p>
+<p>
+<b>Hunting for a debugger that is not there.</b> There is no Z98 debugger UI
+and no sidecar debugger. The debugging surface is the generated C: build it
+with <tt>-g</tt> and use gdb. Wishing for a debugger window costs time that
+reading the generated file would have spent well.
+</p>
+<p>
+<b>Fixing the first message and ignoring the caret.</b> A diagnostic is precise
+about where, and the caret is part of the message. Reading only the sentence
+and editing nearby code at random is how one error becomes three. Read the
+location and the span; fix that; rebuild.
+</p>
+<p>
+<b>Waiting for a forum.</b> There is no community forum yet, so a question
+posted nowhere gets no answer. Search the manual, read the Reference, and run
+the examples; in a self-hosting compiler the source tree is part of the
+documentation.
+</p>
+<p>
+<b>Loosening <tt>/we</tt> to make a warning go away.</b> The OpenWatcom script
+invites you to drop <tt>/we</tt> to <i>see</i> a warning, not to ship past a
+hard error. If a real error remains after the warnings are visible, the emitted
+C is wrong for that compiler and the correct move is to report it, not to
+disable the check that found it.
+</p>
+<p>
+<b>Rebuilding from source when a built compiler already exists.</b> The seed
+path is for changing the compiler. If you only need to compile a program, run
+the <tt>zig1</tt> you already have; the two-hop rebuild is not the cost of
+using the tool.
+</p>
+
+<h2>Where to go next</h2>
+<p>
+This ends the honesty spine. The volume now turns from what Z98 is and what the
+machine will not do to the work of shipping: chapter&nbsp;8, Building for Win9x
+<i>(planned)</i>, walks the <tt>hello.z98</tt> example through the
+<tt>-osw</tt> target and the OpenWatcom and mingw scripts named here, and it is
+where the dialect friction becomes a concrete build. The debugger workflow of
+this chapter is chapter&nbsp;15 <i>(planned)</i>; the memory budget that decides
+what fits is chapter&nbsp;16 <i>(planned)</i>; and chapter&nbsp;9, Coroutines
+&mdash; the third big shift <i>(planned)</i>, begins the second half of the
+volume.
+</p>
+<p>
+The honesty chapters behind this one are
+<a href="vol3-02-honesty-inventory.html">chapter&nbsp;2</a>, the inventory this
+chapter's list of ways over draws on, and chapters <a
+href="vol3-03-when-c89.html">3</a>, <a href="vol3-04-when-cpp98.html">4</a>, <a
+href="vol3-05-when-assembly.html">5</a>, and
+<a href="vol3-06-era-limits.html">6</a> &mdash; the last of which states the
+rule this chapter repeats: a limit with no way over is a complaint, and the
+volume drops it. The register behind the whole volume is
+<a href="vol2-01-honest-comparison.html">Volume II chapter&nbsp;1, The Honest
+Comparison</a>. For the habits named above,
+<a href="vol1-13-reading-errors.html">Volume I chapter&nbsp;13, Reading the
+errors</a> is the error-reading chapter, and
+<a href="vol2-15-builtins.html">Volume II chapter&nbsp;15, Builtins</a> and
+<a href="vol2-16-no-methods.html">chapter&nbsp;16</a> are the language
+background for the numbered diagnostics and the no-methods reject shown here.
+For lookup, <a href="vol4-15-builtins.html">Volume IV &mdash; Builtins</a>
+catalogues the builtins the compiler accepts, and
+<a href="toc.html">the Contents page</a> lists the whole volume.
+</p>
+
+<p class="navbtns">
+<a href="vol3-06-era-limits.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol3-06-era-limits.html">Honesty: what you cannot do on a Pentium II</a> | <a href="toc.html">Contents</a> | Next: <a href="toc.html">Contents</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
