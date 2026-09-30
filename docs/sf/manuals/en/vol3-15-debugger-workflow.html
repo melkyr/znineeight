@@ -184,9 +184,17 @@ Read the names and you already know the shape of the debug session. Your
 module, <tt>arena.z98</tt>, became <tt>arena_F3DC0DA4.c</tt>; the standard
 modules it pulled in each got their own hashed file; and the runtime and
 platform sources are sitting beside them. The hash suffix is the emitter's way
-of keeping module names unique and is stable for a given source path, so the
-file you open today is the file you open tomorrow. The build script carries the
-compile and link commands for the target &mdash; here Linux:
+of keeping module names unique, and it is derived from the module's path, so
+for your own module it is stable for a given source path &mdash; the file you
+open today is the file you open tomorrow. The standard modules are resolved
+from the compiler's own <tt>lib</tt> directory, so their hashes track the
+compiler's install path as well: the <tt>std_&hellip;</tt> names this listing
+shows belong to a compiler installed at <tt>/tmp/manual_seed</tt>, and a
+compiler built in another directory emits different <tt>std_&hellip;</tt>
+suffixes for the same program. Read the hashes in a transcript as belonging to
+the run that produced it, and grep the file in front of you for the real one.
+The build script carries the compile and link commands for the target &mdash;
+here Linux:
 </p>
 <pre>
 $ cd /tmp/manual_out
@@ -237,9 +245,11 @@ In file included from /tmp/manual_out/arena_F3DC0DA4.h:9,
 <p>
 The header exists. It is sitting in <tt>/tmp/manual_out</tt>. But the command
 was run from somewhere else, and <tt>-I&nbsp;.</tt> pointed at that somewhere
-else, so the include path never reached it. The fix is either to run from
-inside the directory, exactly as the build script does, or to name the
-directory absolutely:
+else, so the include path never reached it. (The
+<tt>std_net_&hellip;</tt> hash in that message is the same
+<tt>/tmp/manual_seed</tt> name discussed above; your compiler's will differ.)
+The fix is either to run from inside the directory, exactly as the build
+script does, or to name the directory absolutely:
 </p>
 <pre>
 $ gcc -m32 -std=c89 -I /tmp/manual_out -c /tmp/manual_out/arena_F3DC0DA4.c -o /tmp/manual_out/arena.o
@@ -354,6 +364,8 @@ $ grep -n 'Point_init' arena_F3DC0DA4.c
 31:zT_D17889A1_EU_47 zF_3439BCE0_Point_init(zT_F22A6288_Arena* arena, int x, int y) {
 144:    zT_22 = zF_3439BCE0_Point_init(zT_14, (int)((int)zT_18), (int)((int)zT_20));
 176:    zT_42 = zF_3439BCE0_Point_init(zT_34, (int)((int)zT_38), (int)((int)zT_40));
+312:    zT_31 = zF_3439BCE0_Point_init(zT_23, (int)((int)zT_27), (int)((int)zT_29));
+328:    zT_45 = zF_3439BCE0_Point_init(zT_37, (int)((int)zT_41), (int)((int)zT_43));
 </pre>
 <p>
 Now break on that name and run. This transcript stops at the first call, prints
@@ -422,11 +434,17 @@ your own local names, so the code reads as a slightly noisier version of what
 you wrote. <tt>zig_poison_fill</tt> is the safety machinery: the default
 <tt>-fsafe</tt> mode fills a fresh local with a poison pattern so that a read
 before a write is a visible, deterministic value rather than whatever happened
-to be on the stack. The <tt>EU_47</tt> return type is the error union
-<tt>ArenaError![*]u8</tt> lowered to a struct with an <tt>is_error</tt> flag
-and a payload; the <tt>if (zT_1) goto z_bb_1;</tt> style is how the emitter
-spells control flow, with a <tt>z_bb_0:</tt> label at every function entry
-because that is the self-recursion target the optimizer uses.
+to be on the stack. The <tt>EU_47</tt> return type is an error union lowered to
+a struct with an <tt>is_error</tt> flag and a payload, and the payload is the
+giveaway: in the generated <tt>zig_special_types.h</tt> it is a
+<tt>zT_EAA8EF31_Point*</tt>, which is exactly <tt>Point_init</tt>'s
+<tt>ArenaError!*Point</tt> return. The <tt>zT_4270ECBF_EU_16</tt> on line 33 is
+a different error union &mdash; <tt>ArenaError![*]u8</tt>, the type of
+<tt>allocBytes</tt>. The <tt>if (zT_1) goto z_bb_1;</tt> style is how the
+emitter spells control flow; the block labels are numbered from
+<tt>z_bb_1</tt>, and a <tt>z_bb_0:</tt> label is emitted only for a function
+whose block zero is a loop's self-recursion target, which is why this function
+has none.
 </p>
 <p>
 None of this has to be memorized. It only has to be <i>readable</i>, and it is,
