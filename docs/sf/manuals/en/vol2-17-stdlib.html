@@ -356,8 +356,9 @@ else.
 <p>
 <tt>std.math</tt> is integer-only and concrete: the signed helpers take
 <tt>i32</tt> and the unsigned helpers take <tt>u32</tt>. It is not a
-floating-point library. The functions are total over their domains; none of
-them traps.
+floating-point library. One result is out of range: <tt>abs</tt> of the most
+negative <tt>i32</tt> negates <tt>-2147483648</tt>, which overflows <tt>i32</tt>
+and traps under the default safety checks.
 </p>
 <pre>
 pub fn min(a: i32, b: i32) i32
@@ -574,8 +575,8 @@ path, and the <tt>slice</tt> view.
 
 <h2>The example</h2>
 <p>
-The whole tour in one program. It calls every one of the thirteen modules
-once, in the order they were presented, and prints one line for each result.
+The whole tour in one program. It calls every one of the thirteen modules and
+prints one line for each result.
 It is <tt>docs/sf/manuals/src/vol2/stdio.z98</tt>:
 </p>
 <pre>
