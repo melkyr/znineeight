@@ -154,22 +154,21 @@ cannot be reproduced on this host are marked as observed.
 (<tt>/za</tt>, <tt>/we</tt>, <tt>/dZIG_WIN32</tt>) and
 <tt>zig_compat.h</tt> carries the compiler branches; develop on the gcc/mingw
 path</td>
-<td valign="top">chapter&nbsp;8, Building for Win9x <i>(planned)</i>,
-and chapter&nbsp;17, Packaging <i>(planned)</i></td>
+<td valign="top"><a href="vol3-08-win9x.html">chapter&nbsp;8, Building for Win9x</a>,
+and <a href="vol3-17-packaging.html">chapter&nbsp;17, Packaging</a></td>
 </tr>
 <tr>
 <td valign="top">Rebuilding the compiler is a two-hop process</td>
 <td valign="top"><tt>scripts/seed/build_from_seed.sh</tt> runs the hops and
 gates the fixed-point closure; ordinary program builds are a single compiler
 pass</td>
-<td valign="top">the seed recipe in chapter&nbsp;0, How to read this
-<i>(planned)</i></td>
+<td valign="top">the seed recipe in <a href="vol3-00-title.html">chapter&nbsp;0, How to read this</a></td>
 </tr>
 <tr>
 <td valign="top">There is no debugger UI</td>
 <td valign="top">build the generated C with <tt>-g</tt> and run gdb; the
 compiler's own <tt>--markers</tt> trace is for bugs in the compiler</td>
-<td valign="top">chapter&nbsp;15, The debugger workflow <i>(planned)</i></td>
+<td valign="top"><a href="vol3-15-debugger-workflow.html">chapter&nbsp;15, The debugger workflow</a></td>
 </tr>
 <tr>
 <td valign="top">The errors are numbered but sparse</td>
@@ -361,7 +360,7 @@ compiler's internal phase trace to the marker channel, which is how you watch a
 program make its way through the pipeline. The full workflow &mdash; the
 <tt>cd</tt> rule that keeps the emitted headers resolvable, the absolute
 include path, gdb, and markers &mdash; is
-chapter&nbsp;15 <i>(planned)</i>. There is no debugger UI today; there is gdb
+<a href="vol3-15-debugger-workflow.html">chapter&nbsp;15</a>. There is no debugger UI today; there is gdb
 on code you can read.
 </p>
 
@@ -542,7 +541,7 @@ which is the common case and costs nothing like a two-hop rebuild.
 <b>Step three: debug the generated C.</b> Build the emitted C with <tt>gcc
 -m32 -g</tt> and use gdb against the generated file. Reach for the compiler's
 <tt>--markers</tt> trace only when the bug is in the compiler rather than in
-your program. The workflow is chapter&nbsp;15 <i>(planned)</i>.
+your program. The workflow is <a href="vol3-15-debugger-workflow.html">chapter&nbsp;15</a>.
 </p>
 <p>
 <b>Step four: read a diagnostic in its four parts.</b> Location, code, message,
@@ -646,13 +645,14 @@ using the tool.
 <h2>Where to go next</h2>
 <p>
 This ends the honesty spine. The volume now turns from what Z98 is and what the
-machine will not do to the work of shipping: chapter&nbsp;8, Building for Win9x
-<i>(planned)</i>, walks the <tt>hello.z98</tt> example through the
+machine will not do to the work of shipping: <a href="vol3-08-win9x.html">chapter&nbsp;8, Building for Win9x</a>,
+walks the <tt>hello.z98</tt> example through the
 <tt>-osw</tt> target and the OpenWatcom and mingw scripts named here, and it is
 where the dialect friction becomes a concrete build. The debugger workflow of
-this chapter is chapter&nbsp;15 <i>(planned)</i>; the memory budget that decides
-what fits is chapter&nbsp;16 <i>(planned)</i>; and chapter&nbsp;9, Coroutines
-&mdash; the third big shift <i>(planned)</i>, begins the second half of the
+this chapter is <a href="vol3-15-debugger-workflow.html">chapter&nbsp;15</a>; the memory budget that decides
+what fits is <a href="vol3-16-memory-budgets.html">chapter&nbsp;16</a>; and
+<a href="vol3-09-coroutines.html">chapter&nbsp;9, Coroutines
+&mdash; the third big shift</a>, begins the second half of the
 volume.
 </p>
 <p>

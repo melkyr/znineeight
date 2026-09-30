@@ -135,7 +135,7 @@ and it measures the wrong thing besides: a modern toolchain was never a
 candidate for this target, because it cannot be built for it and its binaries do
 not run on it. The frame is the working one. The envelope is given; the question
 is what fits inside it, and what you reach for when the thing you want does not.
-Chapter&nbsp;1, The 1998 Machine <i>(planned)</i> draws the envelope in full,
+<a href="vol3-01-the-1998-machine.html">Chapter&nbsp;1, The 1998 Machine</a> draws the envelope in full,
 and the CPU-versus-memory point it makes is the one that returns in every limit
 below: it is memory, not processor speed, that is the binding constraint.
 </p>
@@ -222,12 +222,12 @@ wanted. Render at 320&times;200 or 640&times;480, use 8-bit or 16-bit color, kee
 the polygon counts low, and lean on sprites and pre-rendered backgrounds, which
 is what the era's games actually did. Where an accelerator is present, target
 it through the era's 3D API &mdash; Direct3D&nbsp;7 or 8 under <tt>CINTERFACE</tt>,
-the subject of chapter&nbsp;14 <i>(planned)</i> &mdash; but never require it: the
+the subject of <a href="vol3-14-directx.html">chapter&nbsp;14</a> &mdash; but never require it: the
 baseline machine has to run the game, and the accelerator is an optional second
 path. The Z98 angle here is narrow and honest. The language contains no 3D and
 does not pretend to; the era's 3D is a set of COM interfaces reached through
 <tt>extern</tt> declarations and <tt>@cInclude</tt>, and the memory budget of
-chapter&nbsp;16 <i>(planned)</i> decides how much vertex and texture data can
+<a href="vol3-16-memory-budgets.html">chapter&nbsp;16</a> decides how much vertex and texture data can
 exist at once. Z98's contribution is the substrate the rest of the program is
 written on, not the renderer.
 </p>
@@ -254,7 +254,7 @@ the arena. A level's textures are a phase, not the whole game, so they belong in
 a pool that is sized once and reclaimed in a single <tt>reset</tt> when the
 level ends; <a href="vol2-14-arena.html">Volume II chapter&nbsp;14</a> measured
 the arena's <tt>cap</tt>/<tt>used</tt>/<tt>reset</tt> behavior, and
-chapter&nbsp;16 <i>(planned)</i> measures the budgeting and
+<a href="vol3-16-memory-budgets.html">chapter&nbsp;16</a> measures the budgeting and
 <tt>--track-memory</tt> that let you see the pool before it overflows. This is a
 marked opinion, but it is the manual's: the right texture budget is the largest
 one that still leaves the rest of the program its memory, and the arena is how
@@ -317,7 +317,7 @@ the era's interactive software.
 </p>
 <p>
 The way over is <tt>std.async</tt>, and it is the mental shift
-chapter&nbsp;9 <i>(planned)</i> takes apart. A routine that would have waited
+<a href="vol3-09-coroutines.html">chapter&nbsp;9</a> takes apart. A routine that would have waited
 writes the pause where the pause belongs:
 </p>
 <pre>
@@ -362,11 +362,12 @@ asynchronous network stack, no ready-made protocol.
 The way over is to speak the protocol yourself. <tt>std.net</tt> gives you
 sockets; the wire format is your code. Multiplex several connections with
 <tt>select</tt>, or give each connection a coroutine and let the scheduler
-interleave them, and the two approaches meet in chapter&nbsp;10
-<i>(planned)</i>. This much the Task&nbsp;0 inventory measured: a socket program
+interleave them, and the two approaches meet in
+<a href="vol3-10-coroutine-program.html">chapter&nbsp;10</a>.
+This much the Task&nbsp;0 inventory measured: a socket program
 built through the harness binds and serves under a 32-bit Wine environment on
-this host, so the surface is real and not merely described. Chapter&nbsp;12
-<i>(planned)</i> is the surface in full. The era framing is worth stating: in
+this host, so the surface is real and not merely described.
+<a href="vol3-12-winsock.html">Chapter&nbsp;12</a> is the surface in full. The era framing is worth stating: in
 1998 the network you reach is small. The web is young, bandwidth is thin, and a
 game's netcode or a simple client is built on raw sockets, exactly as Z98 asks
 you to build it.
@@ -442,7 +443,7 @@ promise broken. Worked in order:
 <b>Step one: write down the envelope.</b> Resolution and color depth, a memory
 ceiling for the whole program, the processor you are targeting, and the
 operating system. These are the terms every later decision is measured
-against, and they are the subject of chapter&nbsp;1 <i>(planned)</i>. An
+against, and they are the subject of <a href="vol3-01-the-1998-machine.html">chapter&nbsp;1</a>. An
 envelope that says 640&times;480 at 16 bits and a few megabytes of working set
 produces one design; an envelope copied from a modern machine produces a program
 that will not ship.
@@ -567,19 +568,21 @@ is a design decision; a limit paid for with a bug is a defect.
 <h2>Where to go next</h2>
 <p>
 This closes the honesty spine's account of the machine. The next chapter,
-chapter&nbsp;7, the friction you will hit <i>(planned)</i>, turns from what the
+<a href="vol3-07-friction.html">chapter&nbsp;7, the friction you will hit</a>, turns from what the
 machine cannot do to what the <i>toolchain</i> makes awkward &mdash; the
 OpenWatcom dialect, the two-hop seed rebuild, the numbered diagnostics &mdash;
 and ends each item with what to do about it. The two chapters that make the
-concurrency and network angles exact are chapter&nbsp;9, Coroutines &mdash; the
-third big shift <i>(planned)</i>, and chapter&nbsp;12, WinSock under Z98
-<i>(planned)</i>; the coroutine program is chapter&nbsp;10 <i>(planned)</i>.
+concurrency and network angles exact are
+<a href="vol3-09-coroutines.html">chapter&nbsp;9, Coroutines &mdash; the
+third big shift</a>, and <a href="vol3-12-winsock.html">chapter&nbsp;12, WinSock under Z98</a>;
+the coroutine program is <a href="vol3-10-coroutine-program.html">chapter&nbsp;10</a>.
 </p>
 <p>
-The era's 3D and audio surfaces are chapter&nbsp;14, DirectX 7/8 under
-CINTERFACE <i>(planned)</i>, and the memory budgets that decide every one of
-these trades are chapter&nbsp;16 <i>(planned)</i>; the machine itself is
-chapter&nbsp;1 <i>(planned)</i>. For the frame behind the whole volume,
+The era's 3D and audio surfaces are
+<a href="vol3-14-directx.html">chapter&nbsp;14, DirectX 7/8 under
+CINTERFACE</a>, and the memory budgets that decide every one of
+these trades are <a href="vol3-16-memory-budgets.html">chapter&nbsp;16</a>; the machine itself is
+<a href="vol3-01-the-1998-machine.html">chapter&nbsp;1</a>. For the frame behind the whole volume,
 <a href="vol2-01-honest-comparison.html">Volume II chapter&nbsp;1, The Honest
 Comparison</a> is the register, and
 <a href="vol3-02-honesty-inventory.html">chapter&nbsp;2</a> is the inventory

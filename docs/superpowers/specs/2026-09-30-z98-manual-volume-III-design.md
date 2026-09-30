@@ -1,8 +1,12 @@
 # Z98 Manual — Volume III (Working in the Era) — Design
 
-> **Status:** Draft (2026-09-30). Authored by brainstorming with the operator on
-> 2026-09-30; awaiting the operator's review before `writing-plans`. Program-level
-> spec: `2026-09-20-z98-manual-phase0-design.md` (binding; this document does not
+> **Status:** Implemented (2026-09-30, Task 20 closeout). All 19 chapters
+> (ch0–ch18) ship in `docs/sf/manuals/en/`, every example is re-run and every
+> transcript verified, and the navigation chain is continuous. Authored by
+> brainstorming with the operator on 2026-09-30; implemented by
+> `docs/superpowers/plans/2026-09-30-z98-manual-volume-III-plan.md` (Tasks
+> 0–20). Closeout recorded in §11. Program-level spec:
+> `2026-09-20-z98-manual-phase0-design.md` (binding; this document does not
 > restate its HTML/CSS/JS/asset rules — it cites them). Blueprint:
 > `docs/sf/manuals/manuals_blueprint.txt` Part 5.
 
@@ -137,7 +141,9 @@ era.
   emitted `.c` or a hand-written `.asm` and link it back. No sample.
 - **6 — Honesty: what you can't do on a Pentium II.** No hardware 3D at modern
   resolutions; no large textures; no real-time MP3 on a PII-233; no
-  multithreading worth the cost; no networking beyond WinSock 2. States plainly:
+  multithreading worth the cost; no networking beyond Winsock 1.1 (the measured
+  `wsock32` surface — corrected from the blueprint's "WinSock 2" at closeout).
+  States plainly:
   *the era had limits, and respecting them is the point.* The Z98 angle where
   one exists; otherwise an era fact. No sample.
 - **7 — Honesty: the friction you will hit.** OpenWatcom's C89 dialect is not
@@ -164,8 +170,10 @@ era.
   Sample `getenv.z98`.
 - **12 — WinSock under Z98.** The `std.net` extern surface (Phase 0 §3 rewrite):
   `WSAStartup`, `socket`, `bind`, `listen`, `accept`, `recv`, `send`, `select`,
-  `closesocket`; the `SOCKET` unsigned-comparison rule; `fd_set` as an opaque
-  blob. Any sample is Win-only and harness-verified where wine can run it; Task 0
+  `closesocket`; the `Socket = i32` declaration (measured at closeout — the
+  blueprint's "unsigned-`SOCKET` rule" was wrong for this compiler); `fd_set` as
+  an opaque blob. Any sample is Win-only and harness-verified where wine can run
+  it; Task 0
   measured the wine bind: it **succeeds** post-`WSAStartup` (`mud_server` server
   `66c8f0ab…` / client `93147d0f…`), so the sample is `wine-verified` (the harness
   now dumps with `-osw`; plan Amendment A0). Sample `http-mini.z98`.
@@ -173,9 +181,12 @@ era.
   `DEBUG_ONLY_THIS_PROCESS`, `WaitForDebugEvent`, `ContinueDebugEvent`,
   `GetThreadContext`, `ReadProcessMemory`, `WriteProcessMemory`, `INT3`
   patching, and the `_MEMORY_BASIC_INFORMATION` workaround. Any sample is
-  Win-only; Task 0 attempts the harness (including `winedbg`) and rules whether
-  a wine-verified sample exists or the chapter is prose plus compile-only
-  excerpts with the specific reason.
+  Win-only. **Supersession (closeout):** Task 0 classified this chapter as
+  compile-only, but Task 14 then measured the full debug API running under wine
+  (`dbg-mini.z98`; `XRUNRC=0`, `WINE_RC=0`, `PARITY=OK`, 270-byte LF transcript),
+  so the chapter ships a wine-verified sample. The Task 0 report is scratch and
+  its compile-only class is superseded by the Task 14 measurement recorded here
+  and in §11.
 - **14 — DirectX 7/8 under CINTERFACE.** COM in C89, `lpVtbl` calls, the
   `IUnknown` base, `DirectDrawCreate` / `DirectInput8Create` /
   `DirectSoundCreate`, header pain under OpenWatcom. No example (Phase 0 §3);
@@ -458,3 +469,42 @@ which re-verify their own claims.
 This spec is implemented by
 `docs/superpowers/plans/2026-09-30-z98-manual-volume-III-plan.md`. The
 program-level plan index is `2026-09-20-z98-manual-phase0-design.md` §12.
+
+## §11 Closeout (Task 20, 2026-09-30)
+
+**Rulings applied.**
+
+- Blueprint-vs-reality: chapter 6's "no networking beyond WinSock 2" is corrected
+  to Winsock 1.1 (`wsock32`); chapter 12's "unsigned-`SOCKET` rule" is corrected
+  to `Socket = i32`.
+- Amendment A0 (operator-ruled, plan): the `scripts/win32_cross/` dump now passes
+  `-osw` and links `-lwsock32`, so `std`-importing Win entries build and run
+  under wine.
+- Task-20 scope (operator ruling, plan commit `dc740dc6`): sweep every
+  body-prose `(planned)` reference to a shipped Volume III chapter; correct the
+  `QUICK_REF.md` spill-ladder numbers to the seed-v89 measurements; apply the
+  accumulated doc-correction list (this section, `docs/reference/name_mangling.md`,
+  the chapter-13 supersession). Writing-phase rule: no invented claims, and no
+  Volume III chapter calls an `anytype` function.
+
+**Seed rotation: none.** No compiler amendment landed in Volume III, so the fixed
+point is unchanged at `8216fedc8dd69db084d453be80f3c010` (seed v89, archive md5
+`a1549c5b5d9ad23da4d41d214d9ad3c5`). The Step 6 rotation condition is not met;
+`release/seed/` is untouched.
+
+**Residuals.**
+
+- The `anytype` call-path reject is parked (operator ruling): the scoped I/F is
+  appended after Task 20 and carries its own subsequent closeout rotation.
+- Unshipped link targets: most of Volume IV, all of Volume V and VI, and the
+  Win9x screenshot figures (which are the real-machine proof for the Win-only
+  chapters).
+- Coroutine execution under wine had no prior record before Task 0; it is now
+  measured (ch9/ch10) and the result is recorded on the pages.
+
+**Environment deviation (binding).** `docs/sf/manuals/build.sh` hangs at
+`rm -rf docs/sf/manuals/dist`, so `build.sh`/`serve.sh` are never run and `dist/`
+is never touched. The mechanical gate is `bash docs/sf/manuals/check.sh`; the
+search index is regenerated only through the `/tmp`-only workaround
+`/tmp/z98_build_tmp.sh`, whose output must byte-match the committed
+`en/search-data.js`.

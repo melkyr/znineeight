@@ -488,8 +488,9 @@ cross the boundary: a C++98 <tt>throw</tt> reaching a frame with no C++ unwinder
 is undefined behavior. The era's convention was exactly this: wrap the C++
 implementation in a small <tt>extern&nbsp;"C"</tt> surface that translates
 failures to status codes and out parameters. That surface is the C++ equivalent
-of the C89 header in the previous chapter, and chapter&nbsp;11, Talking to C
-<i>(planned)</i>, gives the full interop detail &mdash; the calling conventions,
+of the C89 header in the previous chapter, and
+<a href="vol3-11-talking-to-c.html">chapter&nbsp;11, Talking to C</a>
+gives the full interop detail &mdash; the calling conventions,
 the <tt>@cInclude</tt> rule, and the mangling of Z98's own names. The honest
 difference from the C89 case is that this wrapper is work you have to do, where
 the C89 seam was work you did not.
@@ -597,11 +598,11 @@ the new code be written in Z98 beside it.
 <h2>Where to go next</h2>
 <p>
 This is the second of the three "when another tool wins" chapters. The third is
-chapter&nbsp;5, when assembly is the better choice <i>(planned)</i>, which
+<a href="vol3-05-when-assembly.html">chapter&nbsp;5, when assembly is the better choice</a>, which
 covers the inner loops and interrupt handlers where even the emitted C89 is not
 tight enough. The full interop surface &mdash; the calling conventions, the
 struct-by-value ABI, the <tt>@cInclude</tt> rule, and the mangling of Z98's own
-names &mdash; is chapter&nbsp;11, Talking to C <i>(planned)</i>, and it is the
+names &mdash; is <a href="vol3-11-talking-to-c.html">chapter&nbsp;11, Talking to C</a>, and it is the
 chapter that makes the <tt>extern&nbsp;"C"</tt> seam on this page exact.
 </p>
 <p>

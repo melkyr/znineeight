@@ -153,10 +153,11 @@ Default `-s0` = all on disk. Deactivation order (oldest-spill-first): **S-AST �
 S-RES → S-SIDE → S-EXTRA** — `-s1` moves AST to RAM, `-s2` also LIR, ... `-s6` = all RAM (no spill
 files). S-EXTRA is the AST index-side `extra_children`/`extra_ranges` write-through pool pair
 (`.zig1_extra_ec.tmp` / `.zig1_extra_er.tmp`). Higher `-s` = more RAM, less disk I/O; emission is
-**byte-identical in every mode** (same data, different storage). Measured self-compile `pool=`
-(self-hosted binary, `--markers --track-memory`): `-s0` 13.8 M (all disk), `-s1` 33.1 M, `-s2`/`-s3` 70.0 M,
-`-s4` 73.0 M, `-s5` 74.0 M (S-EXTRA still on disk), `-s6` 77.0 M (all RAM). `-s0`/`-s1` fit the 64 MB `-mm` default; `-s2`+ **exceed the
-default and must be paired with `-mm128`** (else `memory limit exceeded`, rc=3). Range 0..6; bare
+**byte-identical in every mode** (same data, different storage). Measured self-compile
+(self-hosted binary, `--markers --track-memory`, seed v89): `-s0` pool &asymp; 20.6 M (all disk);
+`-s1` pool 57.4 M with 18.4 M live; `-s6` (all RAM) 130.6 M. `-s0` fits the 64 MB `-mm` default;
+`-s2`+ must be paired with `-mm128` (else `memory limit exceeded`, rc=3), and `-s6` needs the
+larger `-mm0` cap. Range 0..6; bare
 `-s` / non-digit / out-of-range (`-s7`) error rc=1. Per-level smoke: `.zig1_ast.tmp` absent at
 `-s1`, `.zig1_lir.tmp` absent at `-s2`, ..., `.zig1_extra_ec.tmp`/`.zig1_extra_er.tmp` absent at
 `-s6` — the spill-file ladder is the mode marker.
