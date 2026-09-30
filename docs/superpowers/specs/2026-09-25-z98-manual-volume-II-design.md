@@ -1,8 +1,10 @@
 # Z98 Manual — Volume II (Learning Z98) — Design
 
-> **Status:** Draft for operator review, 2026-09-25. Binding for the Volume II
-> plan (`docs/superpowers/plans/2026-09-25-z98-manual-volume-II-plan.md`) once
-> approved. Program-level spec: `2026-09-20-z98-manual-phase0-design.md`
+> **Status:** **Implemented** — whole Volume II complete at the Task-22
+> closeout (2026-09-30): all 21 chapters shipped, every example re-run and its
+> page transcript verified byte-for-byte, the navigation chain continuous, the
+> figure list 1:1, and the seed rotated once (v88 &rarr; v89). Program-level
+> spec: `2026-09-20-z98-manual-phase0-design.md`
 > (binding; this document does not restate its HTML/CSS/JS/asset rules — it
 > cites them). Blueprint: `docs/sf/manuals/manuals_blueprint.txt` Part 4.
 
@@ -334,3 +336,43 @@ which re-verify their own claims.
 This spec is implemented by
 `docs/superpowers/plans/2026-09-25-z98-manual-volume-II-plan.md`. The
 program-level plan index is `2026-09-20-z98-manual-phase0-design.md` §12.
+
+## §10 Closeout record (2026-09-30)
+
+**Operator rulings — scoped compiler amendments.** Task 0's capability
+inventory found twelve real compiler defects blocking chapters 3, 6, 7, 8, 9,
+10, 11, 12, and 18; the operator ruled the intake and fix order in the plan's
+"Defect intake" (D0–D13), "Defect fix phase" Stage 2a (FF-I … FX3-I) and
+Stage 2b (FG … FD2), and the later amendments FX1–FX17. Every fix followed the
+plan's amendment protocol (repro + `repro/mi_matrix/` fixture, the QUICK_REF
+gate battery, a two-hop closure verification, tech-doc updates). The final
+fixed-point-moving groups were the ch4 layout-model pin (FX14-F), the ch5
+nested-packed whole-value move (FX15-F), the ch7 tagged-union `.tag` sugar and
+payload-store clean rejects (FX16-F), and the ch16 function-pointer signature
+enforcement (FX17-F). The full ruling text and fixture/pin layout live in the
+plan.
+
+**Seed rotation.** The self-emission fixed point moved from the committed seed
+v88 (`a3928c11f9852db9646dff39006ef654`) to
+`8216fedc8dd69db084d453be80f3c010`. Task 22 rotated the seed once (v89) via
+`scripts/seed/archive_seed.sh` and re-verified `hop2 == hop3` from the new
+archive.
+
+**Residuals (documented, not fixed).** The per-chapter residual lists are in
+the workspace task reports
+(`.superpowers/sdd/2026-09-25-z98-manual-volume-II-plan/`) and in
+`repro/mi_matrix/EXPECTED_FAIL.md`; the pages document only verified behavior.
+Named residual examples: the ch16 explicit-deref call link defect
+`s.draw_fn.*(...)`; `noreturn` as an exempt unresolved type name (FX13); the
+`*const fn` and `null`/`undefined`-to-`fn` accepted shapes (FX17 D4); and the
+bounded shapes called out in FX14/FX15/FX16. Compiler residuals are out of this
+spec's scope and are tracked in the plan and `EXPECTED_FAIL.md`.
+
+**Environment deviation.** The Phase 0 gate `docs/sf/manuals/build.sh` hangs
+at its first step (`rm -rf docs/sf/manuals/dist` blocks at the filesystem
+level; `dist` is gitignored and was never deleted or repaired). The closeout
+used the read-only `docs/sf/manuals/check.sh` as the mechanical gate and
+regenerated the search index with a `/tmp`-only workaround (idempotent md5; no
+committed change). `serve.sh` was not launched; `check.sh` validates the same
+static set (links, `rel`, language bar, charset, forbidden list, figure 1:1,
+no-CSS baseline).

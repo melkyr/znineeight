@@ -109,7 +109,8 @@ builtins come in an old name and a modern alias &mdash;
 <tt>@ptrToInt</tt>/<tt>@intFromPtr</tt>,
 <tt>@intToPtr</tt>/<tt>@ptrFromInt</tt> &mdash; so two spellings compile where
 you might expect one to be missing. The missing names are not an oversight to
-work around; chapter 16 <i>(planned)</i> shows what replaces them in practice.
+work around; <a href="vol2-16-no-methods.html">chapter 16</a> shows what
+replaces them in practice.
 </td>
 </tr>
 </table>
@@ -762,7 +763,7 @@ size is a compile-time literal, so the frame buffer can be checked against it
 under the default safe build. The <tt>ctx</tt> pointer is the per-task
 child-frame pool; this coroutine has no children, so the pool is configured but
 never used. Coroutines get their own chapters later: Volume III <i>(planned)</i>
-and the standard library tour <i>(planned)</i>.
+and <a href="vol2-17-stdlib.html">the standard library tour</a>.
 </p>
 
 <h2>Group E: declarations (2)</h2>
@@ -824,7 +825,8 @@ has used it on almost every line above.
 </p>
 <p>
 The full story &mdash; the five specifiers, tuple-literal arguments, and the
-<tt>error[3013]</tt> rejections &mdash; belongs to chapter 18 <i>(planned)</i>.
+<tt>error[3013]</tt> rejections &mdash; belongs to
+<a href="vol2-18-print.html">chapter 18</a>.
 The one-line version: arguments must be a tuple literal, and the wrapper is
 <tt>std.io.print(fmt: [*]const c_char, ...) void</tt>.
 </p>
@@ -933,20 +935,22 @@ groups is target-independent.
 
 <h2>Where to go next</h2>
 <p>
-That is all forty names. The reading path for the first-batch chapters is
-<tt>vol2-12</tt> &rarr; <tt>vol2-14</tt> &rarr; this page, and the next shipped
+That is all forty names. The reading path is
+<tt>vol2-12</tt> &rarr; <tt>vol2-14</tt> &rarr; this page, and the next
 chapter is <a href="vol2-16-no-methods.html">chapter 16, No methods, no
 generics, no comptime</a>, which shows the patterns that replace the missing
-surface. That chapter's own next destination is the Reference.
+surface.
 </p>
 <p>
 For the shipped Reference, <a href="vol4-15-builtins.html">Volume IV &mdash;
 Builtins</a> is the lookup for the syntax and the argument shapes.
 </p>
 <ul>
-<li>Chapter 18, <b>print and the format string</b> <i>(planned)</i> &mdash;
+<li><a href="vol2-18-print.html">Chapter 18, <b>print and the format
+string</b></a> &mdash;
 the one variadic form, all five specifiers, and the rejections.</li>
-<li>Chapter 17, <b>The standard library tour</b> <i>(planned)</i> &mdash;
+<li><a href="vol2-17-stdlib.html">Chapter 17, <b>The standard library
+tour</b></a> &mdash;
 where <tt>std.async</tt>, <tt>std.mem</tt>, and the rest of the surface live.</li>
 <li>Volume III, <b>Coroutines &mdash; the third big shift</b> <i>(planned)</i>
 &mdash; the scheduler, frames, and real cooperative programs.</li>

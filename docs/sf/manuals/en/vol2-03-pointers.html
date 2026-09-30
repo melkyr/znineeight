@@ -129,8 +129,8 @@ the compiler.
 <p>
 A <tt>[*]T</tt> is the shape C calls a plain <tt>T*</tt>: it points at the
 first of some number of items, and the number is not part of the type. The
-length-carrying shape is the slice, <tt>[]T</tt>, and it is chapter&nbsp;9
-<i>(planned)</i>. Z98 accepts <tt>[*]const T</tt> and <tt>[*]volatile T</tt>
+length-carrying shape is the slice, <tt>[]T</tt>, and it is
+<a href="vol2-09-arrays-slices.html">chapter&nbsp;9</a>. Z98 accepts <tt>[*]const T</tt> and <tt>[*]volatile T</tt>
 too, but not the slice-side <tt>[]volatile T</tt>; memory-mapped I/O uses
 <tt>*volatile T</tt> or <tt>[*]volatile T</tt>.
 </p>
@@ -546,7 +546,7 @@ the removal is an operation with a name because it is a decision.
 
 <h2>Where to go next</h2>
 <p>
-The next shipped chapter is
+The next chapter is
 <a href="vol2-04-structs.html">chapter 4, Aggregates I: Structs</a>: the
 declaration, the field order and layout, and the <tt>@offsetOf</tt>,
 <tt>@sizeOf</tt>, and <tt>@alignOf</tt> builtins that read the layout back.
@@ -554,10 +554,10 @@ After it comes <a href="vol2-05-packed-structs.html">chapter 5, Aggregates II:
 Packed Structs</a>, then <a href="vol2-06-enums.html">chapter 6, Aggregates
 III: Enums</a>, then <a href="vol2-07-unions.html">chapter 7, Aggregates IV:
 Unions</a>. The rest of the run to the next big shift &mdash; tuples, arrays
-and slices, control flow, and <tt>defer</tt> &mdash; is still
-<i>(planned)</i>. The pointer's length is one of them: <b>arrays and slices</b>
-(chapter 9) is where <tt>[]T</tt> and <tt>*[N]T</tt> replace the bare
-<tt>[*]T</tt>.
+and slices, control flow, and <tt>defer</tt> &mdash; follows in numeric order.
+The pointer's length is one of them:
+<a href="vol2-09-arrays-slices.html">arrays and slices (chapter 9)</a> is where
+<tt>[]T</tt> and <tt>*[N]T</tt> replace the bare <tt>[*]T</tt>.
 </p>
 <p>
 For lookup, <a href="vol4-15-builtins.html">Volume IV &mdash; Builtins</a> is

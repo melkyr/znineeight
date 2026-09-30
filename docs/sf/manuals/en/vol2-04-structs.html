@@ -121,8 +121,9 @@ starts with a capital, a field name with a lowercase letter. There is no
 <tt>struct Sprite</tt> tag to keep separate from <tt>Sprite</tt>; there is one
 name and it names the type. A struct type carries no functions. Z98 has no
 method syntax, so the operations that belong to a type are free functions whose
-first parameter is the struct (chapter&nbsp;16 <i>(planned)</i> works the pattern
-in full).
+first parameter is the struct
+(<a href="vol2-16-no-methods.html">chapter&nbsp;16</a> works the pattern in
+full).
 </p>
 
 <h2>Building a value</h2>
@@ -531,13 +532,14 @@ one field at a time.
 and no <tt>s.draw()</tt>. A struct is data and nothing else; the code that
 builds or uses one is a free function that takes the value or a pointer to it.
 Z98 has no methods, no constructors, and no destructors, so nothing runs behind
-your back when a struct variable is declared or goes out of scope (chapter 16
-<i>(planned)</i> covers the init-function pattern that replaces them).
+your back when a struct variable is declared or goes out of scope
+(<a href="vol2-16-no-methods.html">chapter&nbsp;16</a> covers the init-function
+pattern that replaces them).
 </p>
 
 <h2>Where to go next</h2>
 <p>
-The next shipped chapter is
+The next chapter is
 <a href="vol2-05-packed-structs.html">chapter 5, Aggregates II: Packed
 Structs</a>, the exact-bit counterpart of this one: it is where
 <tt>@bitOffsetOf</tt> and <tt>@bitSizeOf</tt> live and where padding goes away
@@ -545,8 +547,9 @@ on purpose. After it comes
 <a href="vol2-06-enums.html">chapter 6, Aggregates III: Enums</a>. Then comes
 <a href="vol2-07-unions.html">chapter 7, Aggregates IV: Unions</a>, the
 one-storage-many-readings aggregate in all three forms. The rest of the
-aggregates, <b>tuples</b> (chapter 8) and <b>arrays and slices</b> (chapter 9),
-are still <i>(planned)</i>; the next shipped chapter after chapter 7 is
+aggregates, <a href="vol2-08-tuples.html"><b>tuples</b> (chapter 8)</a> and
+<a href="vol2-09-arrays-slices.html"><b>arrays and slices</b> (chapter 9)</a>,
+follow, and the first big shift after them is
 <a href="vol2-12-error-unions.html">chapter 12, Error Unions &mdash; the First
 Big Shift</a>.
 </p>
