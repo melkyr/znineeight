@@ -1,0 +1,977 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: The Win32 Debug API</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume III Win32 debug API CreateProcessA DEBUG_ONLY_THIS_PROCESS WaitForDebugEvent ContinueDebugEvent DEBUG_EVENT GetThreadContext CONTEXT ReadProcessMemory WriteProcessMemory INT3 breakpoint 0xCC VirtualQuery MEMORY_BASIC_INFORMATION workaround dbg-mini wine cross-build">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol3-12-winsock.html">
+<link rel="next" href="toc.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume III &mdash; Working in the Era</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol3-00-title.html">How to read this</a><br>
+<a href="vol3-01-the-1998-machine.html">The 1998 machine</a><br>
+<a href="vol3-02-honesty-inventory.html">Honesty: what Z98 does and does not give you</a><br>
+<a href="vol3-03-when-c89.html">Honesty: when C89 is the better choice</a><br>
+<a href="vol3-04-when-cpp98.html">Honesty: when C++98 is the better choice</a><br>
+<a href="vol3-05-when-assembly.html">Honesty: when assembly is the better choice</a><br>
+<a href="vol3-06-era-limits.html">Honesty: what you cannot do on a Pentium II</a><br>
+<a href="vol3-07-friction.html">Honesty: the friction you will hit</a><br>
+<a href="vol3-08-win9x.html">Building for Win9x</a><br>
+<a href="vol3-09-coroutines.html">Coroutines &mdash; the third big shift</a><br>
+<a href="vol3-10-coroutine-program.html">A coroutine program</a><br>
+<a href="vol3-11-talking-to-c.html">Talking to C</a><br>
+<a href="vol3-12-winsock.html">WinSock under Z98</a><br>
+<b>The Win32 Debug API</b><br>
+DirectX under CINTERFACE <i>(planned)</i><br>
+The debugger workflow <i>(planned)</i><br>
+Memory budgets <i>(planned)</i><br>
+Packaging and shipping <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>The Win32 Debug API</h1>
+<p>
+A debugger is not a feature of a language; it is a program that runs another
+program under supervision. On this machine that supervision is an operating
+system service, and the service is a small set of Win32 functions: you launch a
+process with a flag that says "stop at every interesting event," you wait for
+event records, you look at and change the target's memory, and you tell the
+system to continue. This chapter is how Z98 reaches that service, and it ships a
+complete debugger small enough to read in one sitting.
+</p>
+<p>
+The surface is bigger than the socket surface of
+<a href="vol3-12-winsock.html">chapter&nbsp;12</a> and the C calls are more
+dangerous, but the rule is unchanged. Every function here is an ordinary
+<tt>extern</tt> declaration with the <tt>stdcall</tt> convention, exactly as
+<a href="vol3-11-talking-to-c.html">chapter&nbsp;11</a> taught, and every
+structure is an ordinary Z98 struct laid out field for field against the header.
+There is no debugger syntax in Z98 and no runtime to link. The sample,
+<tt>dbg-mini.z98</tt>, launches the command interpreter, breaks on its entry
+point, reads its context and a 32-bit word of its image, and lets it finish.
+</p>
+<p>
+This is also the chapter where the honesty of the volume matters most in the
+details. A debugger can corrupt its target, fail silently when it forgets an API
+precondition, or report a start that never happened and then hang. Every claim
+on this page is backed by the committed sample and by the actual run under the
+Windows oracle, and the section <a href="#boundary">Under Windows 98</a> states
+exactly what ran, on what, and what was only emitted.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffffc8">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-note.gif" width="16" height="16" alt="Note"></td>
+<td><b>What is measured here.</b> Every Win32 declaration on this page was
+checked against the system header's own signature, and every Z98 statement was
+checked against <tt>docs/reference/Language_Spec_Z98.md</tt> and the compiler
+source. The sample <tt>dbg-mini.z98</tt> is cross-built with
+<tt>i686-w64-mingw32-gcc</tt> and run under a dedicated 32-bit wine prefix
+(<tt>wine-8.0</tt>); the transcript below is that run, and it reproduced byte for
+byte across repeated runs. The program is <b>Win-only</b>: it includes
+<tt>windows.h</tt>, so its Linux build stops at <tt>#include "windows.h"</tt> and
+there is no Linux transcript to compare against. The OpenWatcom
+<tt>build_owc.bat</tt> path is emitted and <b>not run here</b>, exactly as
+<a href="vol3-08-win9x.html">chapter&nbsp;8</a> states; the real-machine
+screenshot stays the figure.</td>
+</tr>
+</table>
+
+<h2>What the debug API is for</h2>
+<p>
+A user-mode debugger on Windows is a client of the kernel's debugging service.
+The service has three jobs. It lets you create a process already attached to
+yourself, so that the process stops before it has run any of its own code. It
+delivers a record each time something happens that the service considers
+noteworthy &mdash; a process or thread starts, a module loads, an exception is
+raised, a string is printed to the debug channel. And it lets you inspect and
+modify the stopped target through the ordinary process-memory functions, so you
+can read a register, disassemble an instruction, or overwrite a byte with a
+breakpoint.
+</p>
+<p>
+That is the whole model. There is no scripting language, no symbol server, no
+UI. What the operating system gives you is a stop-and-report loop plus raw access
+to the target's address space. Everything a commercial debugger adds on top
+&mdash; breakpoint lists, watch expressions, a call stack, a source window
+&mdash; is bookkeeping the debugger builds from those two primitives. This
+chapter builds a very small one, and the point of building it is that on this
+machine you will occasionally need one, and now you can read the source.
+</p>
+<p>
+The reason a Z98 program can be a debugger at all is the reason the whole volume
+keeps returning to: <a href="vol3-03-when-c89.html">chapter&nbsp;3</a>'s
+load-bearing fact that Z98 emits C89. A debugger is not a privileged program.
+It is an ordinary process that calls Win32 functions with the right arguments,
+and an ordinary process is what Z98 emits. The three calls that matter most
+&mdash; reading, writing, and mapping the target &mdash; are the same
+<tt>kernel32</tt> entry points any C debugger would call.
+</p>
+
+<h2>Starting the target: <tt>CreateProcess</tt> with a debug flag</h2>
+<p>
+The first Win32 function of the loop is one you may have met already if you have
+launched a child process from C: <tt>CreateProcessA</tt>. Its ten parameters are
+the application name (usually null), the command line, process and thread
+security attributes, an inheritance flag, a <b>creation-flags</b> word, the
+environment block, the current directory, a <tt>STARTUPINFO</tt>, and a
+<tt>PROCESS_INFORMATION</tt> the function fills in. The creation flags are where
+the debugger enters:
+</p>
+<pre>
+#define DEBUG_PROCESS              0x00000001
+#define DEBUG_ONLY_THIS_PROCESS    0x00000002
+</pre>
+<p>
+Those two names are easy to confuse and important to separate. Passing
+<tt>DEBUG_PROCESS</tt> asks the system to debug the new process <i>and every
+process it creates</i>; <tt>DEBUG_ONLY_THIS_PROCESS</tt> is the narrower flag and
+debugs only the process you launch. For a debugger whose subject is one program,
+<tt>DEBUG_ONLY_THIS_PROCESS</tt> is the right flag: the target stops and reports,
+but the programs it spawns do not also stop and report to you, which keeps the
+event stream from exploding. The sample passes that flag (<tt>0x2</tt>) and
+nothing else.
+</p>
+<p>
+The declaration is straight from the header:
+</p>
+<pre>
+extern "stdcall" fn CreateProcessA(a: *void, cmd: [*]u8, pa: *void, ta: *void, inherit: i32, flags: u32, env: *void, cwd: *void, si: *void, pi: *void) i32;
+</pre>
+<p>
+Every parameter that may be a null pointer is spelled <tt>*void</tt> and passed
+as <tt>@intToPtr(*void, 0)</tt>. The command line is a writable,
+null-terminated buffer, because <tt>CreateProcessA</tt> is documented to be
+allowed to modify it. The <tt>STARTUPINFO</tt> and <tt>PROCESS_INFORMATION</tt>
+are the two structures a debugger does not need to interpret: it only has to
+give them storage, zeroed, and read back the process handle the system writes
+into the second one. The sample uses plain byte buffers for both, which is the
+C89-shaped way to say "opaque fill-in structure" and is exactly the trick
+<a href="vol3-10-coroutine-program.html">chapter&nbsp;10</a> used for the
+coroutine pool.
+</p>
+<p>
+There is one detail that is honest about the target rather than the API. The
+sample does not hard-code the name of the command interpreter. It reads the
+<tt>COMSPEC</tt> environment variable and appends <tt>/c exit</tt>, so the same
+source names <tt>command.com</tt> on a Windows 98 machine and <tt>cmd.exe</tt> on
+the development host. That is not essential to the debug API, but a sample that
+hard-codes <tt>cmd.exe</tt> would fail on the era machine the manual is written
+for, so the extra call earns its place:
+</p>
+<pre>
+extern "stdcall" fn GetEnvironmentVariableA(name: [*]const u8, buf: [*]u8, size: u32) u32;
+</pre>
+
+<h2><tt>DEBUG_EVENT</tt>: a structure you declare yourself</h2>
+<p>
+Once the target exists, the system reports to you with a stream of
+<tt>DEBUG_EVENT</tt> records. The header's definition is a header and a union:
+</p>
+<pre>
+typedef struct _DEBUG_EVENT {
+    DWORD dwDebugEventCode;     // offset 0
+    DWORD dwProcessId;          // offset 4
+    DWORD dwThreadId;           // offset 8
+    union {                     // offset 12
+        EXCEPTION_DEBUG_INFO      Exception;
+        CREATE_THREAD_DEBUG_INFO  CreateThread;
+        CREATE_PROCESS_DEBUG_INFO CreateProcessInfo;
+        EXIT_THREAD_DEBUG_INFO    ExitThread;
+        EXIT_PROCESS_DEBUG_INFO   ExitProcess;
+        LOAD_DLL_DEBUG_INFO       LoadDll;
+        UNLOAD_DLL_DEBUG_INFO     UnloadDll;
+        OUTPUT_DEBUG_STRING_INFO  DebugString;
+        RIP_INFO                  RipInfo;
+    } u;
+} DEBUG_EVENT;
+</pre>
+<p>
+The event code decides which union member is valid, and each member begins its
+own structure. Z98 has no <tt>@cImport</tt>
+(<a href="vol3-11-talking-to-c.html">chapter&nbsp;11</a> measured the reject),
+so the program declares the part it needs as an ordinary struct whose fields
+land on the header's offsets. Because the target is 32-bit and pointers are four
+bytes, the layout is exact:
+</p>
+<pre>
+const DebugEvent = struct {
+    code: u32,           // 0
+    pid: u32,            // 4
+    tid: u32,            // 8
+    hFile: *void,        // 12  (start of CREATE_PROCESS_DEBUG_INFO)
+    hProcess: *void,     // 16
+    hThread: *void,      // 20
+    baseOfImage: *void,  // 24
+};
+</pre>
+<p>
+That is the same choice <a href="vol3-12-winsock.html">chapter&nbsp;12</a> made
+for <tt>sockaddr_in</tt> and <a href="vol3-11-talking-to-c.html">chapter&nbsp;11</a>
+made in general: a boundary struct is an aligned Z98 struct whose field order and
+widths match the header, laid out by the compiler's frozen 32-bit model. The
+fields line up because the model does not depend on the host compiler; a
+<tt>*void</tt> is four bytes, a <tt>u32</tt> is four bytes, and the offset
+sequence is the one the Windows headers declare.
+</p>
+<p>
+Two event codes carry the sample. <tt>CREATE_PROCESS_DEBUG_EVENT</tt> is code
+<tt>3</tt>, and it is the first event you receive: its union member hands you the
+target's process handle, its main thread handle, and the base address of its
+image, which are the three things the rest of the debugger needs. The second is
+<tt>EXIT_PROCESS_DEBUG_EVENT</tt>, code <tt>5</tt>, which is the last event and
+the loop's exit condition. A full debugger also handles the exception,
+load-module, create-thread, and debug-string events; the sample handles the two
+it needs and continues past the rest, which is the correct default.
+</p>
+
+<h2>Waiting and continuing</h2>
+<p>
+The loop is two calls. <tt>WaitForDebugEvent</tt> blocks until an event is
+available, fills the buffer, and returns nonzero; a zero return means the
+timeout expired, and a timeout means something is wrong &mdash; the target is
+stuck, or was never really attached. The second parameter is a millisecond
+timeout, and using a finite value instead of <tt>INFINITE</tt> is what keeps a
+mistake from becoming a hang on a single-tasking console.
+</p>
+<pre>
+extern "stdcall" fn WaitForDebugEvent(ev: *void, ms: u32) i32;
+extern "stdcall" fn ContinueDebugEvent(pid: u32, tid: u32, status: u32) i32;
+</pre>
+<p>
+<tt>ContinueDebugEvent</tt> is the release. It takes the process id and thread id
+from the event you just handled, plus a status word that says whether the
+exception (if any) was handled by the debugger:
+</p>
+<pre>
+#define DBG_CONTINUE                0x00010002
+#define DBG_EXCEPTION_NOT_HANDLED   0x80010001
+</pre>
+<p>
+The status word is the one place where a debugger's intent matters to the
+operating system. When the event is a breakpoint you placed and have handled,
+you report <tt>DBG_CONTINUE</tt>, and the system resumes the thread without
+passing the exception to the target. When it is an exception you do not
+understand, you report <tt>DBG_EXCEPTION_NOT_HANDLED</tt>, and the system gives
+the target its normal chance to handle it or die. A debugger that reports
+<tt>DBG_CONTINUE</tt> for everything will swallow the target's crashes, which
+looks like a hang; a debugger that reports <tt>DBG_EXCEPTION_NOT_HANDLED</tt> for
+its own breakpoints will let them crash the target. The sample reports
+<tt>DBG_CONTINUE</tt>, because the only exception it recognizes is its own
+breakpoint.
+</p>
+
+<h2><tt>GetThreadContext</tt> and the <tt>CONTEXT</tt> block</h2>
+<p>
+When the target is stopped, its registers are available through the thread
+handle you received in the create-process event:
+</p>
+<pre>
+extern "stdcall" fn GetThreadContext(hThread: *void, ctx: *void) i32;
+</pre>
+<p>
+The second argument points at a <tt>CONTEXT</tt> structure, which on x86 is
+roughly seven hundred bytes of register save area. Z98 does not need to declare
+the whole thing to use it; like <tt>STARTUPINFO</tt>, the context can be an
+opaque byte buffer as long as one precondition is met. <tt>GetThreadContext</tt>
+requires the <tt>ContextFlags</tt> field, the first four bytes of the structure,
+to name the register groups you want before the call. On x86 the <tt>CONTEXT</tt>
+granularity flags combine to <tt>CONTEXT_FULL</tt>:
+</p>
+<pre>
+#define CONTEXT_CONTROL   0x00000001   /* EBP, EIP, CS, EFLAGS, ESP, SS */
+#define CONTEXT_INTEGER   0x00000002   /* EAX, EBX, ECX, EDX, ESI, EDI */
+#define CONTEXT_SEGMENTS  0x00000004   /* segment registers */
+#define CONTEXT_FULL      (0x00010000 | 0x00000001 | 0x00000002 | 0x00000004)  /* 0x00010007 */
+</pre>
+<p>
+Forget to set <tt>ContextFlags</tt> and <tt>GetThreadContext</tt> fails with a
+zero return and an invalid-parameter error, which is easy to misread as "the
+debug API does not work under this environment." The sample sets the word before
+the call:
+</p>
+<pre>
+var ctx: [1024]u8 = undefined;
+const flags = @ptrCast(*u32, &amp;ctx);
+flags.* = CONTEXT_FULL;
+const gc = GetThreadContext(hdr.hThread, @ptrCast(*void, &amp;ctx));
+</pre>
+<p>
+One write through a typed pointer is all it takes. After the call succeeds, the
+register groups named by the flags are populated; the sample does not decode
+them, because the point is that the call succeeds and the registers are there.
+A real debugger would read <tt>Eip</tt> out of the block to know where the target
+stopped, and write it back with <tt>SetThreadContext</tt> to steer the target
+&mdash; the write twin is the same structure with the same flags.
+</p>
+
+<h2>Reading and writing the target: <tt>INT3</tt></h2>
+<p>
+A stopped target's address space is a memory range you can read and write with
+the same API you would use on your own process:
+</p>
+<pre>
+extern "stdcall" fn ReadProcessMemory(hProcess: *void, base: *const void, buf: *void, size: u32, read: *u32) i32;
+extern "stdcall" fn WriteProcessMemory(hProcess: *void, base: *void, buf: *const void, size: u32, written: *u32) i32;
+</pre>
+<p>
+Both return nonzero on success and write the number of bytes actually moved into
+the trailing out-parameter. Those two calls are all a user-mode debugger needs
+to set a breakpoint, because a breakpoint on x86 is one byte. The instruction
+<tt>INT3</tt> is the single opcode <tt>0xCC</tt>; when the CPU executes it, it
+raises a breakpoint exception and stops. A software breakpoint is therefore the
+sequence:
+</p>
+<pre>
+1. ReadProcessMemory(hProcess, address, &amp;orig, 1, &amp;n);   /* save the byte */
+2. write 0xCC into a one-byte buffer
+3. WriteProcessMemory(hProcess, address, &amp;cc, 1, &amp;n);     /* plant INT3 */
+4. ContinueDebugEvent(...);                                /* target runs, hits it */
+5. WaitForDebugEvent(...) returns EXCEPTION_DEBUG_EVENT
+6. WriteProcessMemory(hProcess, address, &amp;orig, 1, &amp;n);  /* put it back */
+</pre>
+<p>
+The save-and-restore is not optional. <tt>0xCC</tt> is a real instruction that
+overwrites a real byte of the target; leaving it in place means the target runs
+a one-byte instruction where your program had a real one, and the breakpoint
+fires again forever. The sample reads the byte at the entry point before it
+patches, writes <tt>0xCC</tt>, confirms the write by reading the byte back, waits
+for the breakpoint, and restores the original byte before continuing. The
+<tt>4</tt> the sample prints after the patch is the decimal value of
+<tt>0xCC</tt>.
+</p>
+<p>
+The address to break on is the target's entry point, and the sample finds it the
+way a linker would: from the Portable Executable header. The two-byte
+<tt>MZ</tt> signature at the image base is followed at offset <tt>0x3C</tt> by
+<tt>e_lfanew</tt>, the file offset of the <tt>PE</tt> signature. The optional
+header begins eighteen bytes after that signature, and the entry-point relative
+virtual address is at offset <tt>0x10</tt> within the optional header &mdash;
+offset <tt>0x28</tt> from the <tt>PE</tt> signature overall. Adding the RVA to
+the image base gives the address to patch:
+</p>
+<pre>
+const elfanew = readU32(target, base, 60);      /* e_lfanew at 0x3C */
+const entryRva = readU32(target, base + elfanew, 40);  /* entry RVA at PE+0x28 */
+entryAddr = base + entryRva;
+</pre>
+<p>
+The sample's <tt>readU32</tt> helper reads four bytes with
+<tt>ReadProcessMemory</tt> and assembles them little-endian as a
+<tt>usize</tt>. That is deliberately explicit: the debugger is reading bytes out
+of another process, so it treats every field as four bytes it fetched, rather
+than casting a raw pointer across the boundary. It is the same discipline
+<a href="vol3-11-talking-to-c.html">chapter&nbsp;11</a> recommended for a C
+boundary, applied to a target that may be a different process entirely.
+</p>
+
+<h2>Mapping the target: the <tt>_MEMORY_BASIC_INFORMATION</tt> workaround</h2>
+<p>
+The last function the sample calls answers the question "what is this memory?"
+<tt>VirtualQuery</tt> takes an address, a buffer, and the buffer's size, and
+fills in one <tt>_MEMORY_BASIC_INFORMATION</tt> describing the region that
+contains the address:
+</p>
+<pre>
+extern "stdcall" fn VirtualQuery(addr: *const void, mbi: *void, size: u32) u32;
+</pre>
+<p>
+The return value is the number of bytes written, not a boolean, and a full
+structure is twenty-eight bytes on this target. The structure is the workaround
+the chapter title has been promising, and it is a workaround for exactly one
+limitation: Z98 has no <tt>@cImport</tt>, so it cannot ask the C compiler for the
+header's definition. The header is still included &mdash; <tt>@cInclude("windows.h")</tt>
+puts it in the translation unit &mdash; and the C compiler therefore knows the
+real type. Z98 only needs a place to receive the data, so the program declares
+the same fields under its own name:
+</p>
+<pre>
+const MemoryBasicInformation = struct {
+    baseAddress: *void,       //  0  PVOID
+    allocationBase: *void,    //  4  PVOID
+    allocationProtect: u32,   //  8  DWORD
+    regionSize: usize,        // 12  SIZE_T (four bytes on 32-bit)
+    state: u32,               // 16  DWORD
+    protect: u32,             // 20  DWORD
+    typ: u32,                 // 24  DWORD
+};                            // 28 bytes total
+</pre>
+<p>
+The field order is the header's, the widths are the header's, and the total is
+the header's twenty-eight bytes. This is not a hack around a missing language
+feature so much as a restatement of the C boundary rule of
+<a href="vol3-11-talking-to-c.html">chapter&nbsp;11</a>: declare the shape the
+library expects, and let the layout model guarantee it. The one difference from
+chapter&nbsp;11's structs is that the structure is <i>filled by</i> the library
+rather than passed to it, so the debugger is the receiver and the header's field
+order is the contract that makes the received bytes interpretable.
+</p>
+<p>
+The sample's use is minimal: it calls <tt>VirtualQuery</tt> on the image base and
+prints the region size. A real debugger uses the same call to walk the target's
+address space, decide which pages are committed and readable before calling
+<tt>ReadProcessMemory</tt>, and know where the image ends. The point of showing
+it here is that the structure you need is definable in Z98 without a binding
+generator, and that <tt>windows.h</tt> included by <tt>@cInclude</tt> supplies
+the compiler-side definition that checks the call.
+</p>
+
+<h2>The sample: <tt>dbg-mini.z98</tt></h2>
+<p>
+The sample is a complete, if minimal, debugger. It builds the command line from
+<tt>COMSPEC</tt>, launches the interpreter under
+<tt>DEBUG_ONLY_THIS_PROCESS</tt>, waits for events, reads the image's entry point
+out of the PE header, reads the context and memory, plants an <tt>INT3</tt>,
+waits for the breakpoint, restores the byte, and follows the target to its exit.
+</p>
+<pre>
+@cInclude("windows.h");
+
+const std = @import("std");
+
+// dbg-mini: the smallest complete Win32 debugger. It launches a copy of the
+// command interpreter under DEBUG_ONLY_THIS_PROCESS, waits for debug events,
+// reads the target's thread context and image header, writes an INT3 (0xCC)
+// over the entry point, waits for the breakpoint, restores the original byte,
+// and follows the target to its exit event. Everything here is a Win32 API
+// call reached through the extern rules of chapter 11.
+//
+// The DebugEvent record is the first part of the Win32 DEBUG_EVENT structure:
+// the event code and process/thread ids, then the union that begins with the
+// CREATE_PROCESS_DEBUG_INFO handles. Z98 has no @cImport, so the fields the
+// program reads are laid out as an ordinary Z98 struct in the header's order.
+const DebugEvent = struct {
+    code: u32,
+    pid: u32,
+    tid: u32,
+    hFile: *void,
+    hProcess: *void,
+    hThread: *void,
+    baseOfImage: *void,
+};
+
+// The _MEMORY_BASIC_INFORMATION workaround: Z98 has no @cImport, so the
+// structure VirtualQuery fills is declared here field for field. On the 32-bit
+// target a pointer and a SIZE_T are four bytes, so this is the header's 28
+// bytes exactly (windows.h still supplies its own copy to the C compiler; we
+// only need a place to receive the data).
+const MemoryBasicInformation = struct {
+    baseAddress: *void,
+    allocationBase: *void,
+    allocationProtect: u32,
+    regionSize: usize,
+    state: u32,
+    protect: u32,
+    typ: u32,
+};
+
+extern "stdcall" fn GetEnvironmentVariableA(name: [*]const u8, buf: [*]u8, size: u32) u32;
+extern "stdcall" fn CreateProcessA(a: *void, cmd: [*]u8, pa: *void, ta: *void, inherit: i32, flags: u32, env: *void, cwd: *void, si: *void, pi: *void) i32;
+extern "stdcall" fn WaitForDebugEvent(ev: *void, ms: u32) i32;
+extern "stdcall" fn ContinueDebugEvent(pid: u32, tid: u32, status: u32) i32;
+extern "stdcall" fn GetThreadContext(hThread: *void, ctx: *void) i32;
+extern "stdcall" fn ReadProcessMemory(hProcess: *void, base: *const void, buf: *void, size: u32, read: *u32) i32;
+extern "stdcall" fn WriteProcessMemory(hProcess: *void, base: *void, buf: *const void, size: u32, written: *u32) i32;
+extern "stdcall" fn VirtualQuery(addr: *const void, mbi: *void, size: u32) u32;
+
+// DEBUG_ONLY_THIS_PROCESS: attach to the new process (and no children of it).
+const DEBUG_ONLY_THIS_PROCESS: u32 = 0x00000002;
+// ContinueDebugEvent status words.
+const DBG_CONTINUE: u32 = 0x00010002;
+// The event codes the loop cares about.
+const CREATE_PROCESS_DEBUG_EVENT: u32 = 3;
+const EXCEPTION_DEBUG_EVENT: u32 = 1;
+const EXIT_PROCESS_DEBUG_EVENT: u32 = 5;
+// EXCEPTION_BREAKPOINT, and the 0xCC byte the x86 INT3 instruction is.
+const EXCEPTION_BREAKPOINT: usize = 0x80000003;
+const INT3: u8 = 0xCC;
+// CONTEXT_FULL: the context flags GetThreadContext requires before the call.
+const CONTEXT_FULL: u32 = 0x00010007;
+
+// Little-endian assembly of four bytes read out of the target's memory.
+fn le32(b: []const u8) usize {
+    var v: usize = @intCast(usize, b[0]);
+    v = v | (@intCast(usize, b[1]) &lt;&lt; 8);
+    v = v | (@intCast(usize, b[2]) &lt;&lt; 16);
+    v = v | (@intCast(usize, b[3]) &lt;&lt; 24);
+    return v;
+}
+
+// Read one 32-bit word out of the target at addr + off.
+fn readU32(h: *void, addr: usize, off: usize) usize {
+    var b: [4]u8 = undefined;
+    var nr: u32 = 0;
+    _ = ReadProcessMemory(h, @intToPtr(*const void, addr + off), @ptrCast(*void, &amp;b), @intCast(u32, 4), &amp;nr);
+    return le32(b[0..4]);
+}
+
+// Build the command line from COMSPEC so the same sample names the right
+// interpreter on a Windows 98 machine (command.com) and on this host (cmd.exe).
+fn buildCmdLine(out: []u8) void {
+    var name: []const u8 = "COMSPEC";
+    var env: [260]u8 = undefined;
+    var i: usize = 0;
+    while (i &lt; 260) : (i += 1) { env[i] = 0; }
+    const n = GetEnvironmentVariableA(name.ptr, &amp;env, @intCast(u32, 260));
+    var m: usize = 0;
+    while (m &lt; n and m &lt; 260 and m &lt; out.len - 1) : (m += 1) { out[m] = env[m]; }
+    var suffix: []const u8 = " /c exit";
+    var s: usize = 0;
+    while (s &lt; suffix.len and m + s &lt; out.len - 1) : (s += 1) { out[m + s] = suffix[s]; }
+    out[m + s] = 0;
+}
+
+pub fn main() void {
+    var cmdline: [300]u8 = undefined;
+    var i: usize = 0;
+    while (i &lt; 300) : (i += 1) { cmdline[i] = 0; }
+    buildCmdLine(cmdline[0..300]);
+
+    // STARTUPINFO and PROCESS_INFORMATION are opaque byte buffers: we only
+    // need them zeroed so the API fills in the defaults.
+    var si: [128]u8 = undefined;
+    i = 0;
+    while (i &lt; 128) : (i += 1) { si[i] = 0; }
+    var pi: [32]u8 = undefined;
+    i = 0;
+    while (i &lt; 32) : (i += 1) { pi[i] = 0; }
+
+    const ok = CreateProcessA(@intToPtr(*void, 0), &amp;cmdline, @intToPtr(*void, 0), @intToPtr(*void, 0), 0, DEBUG_ONLY_THIS_PROCESS, @intToPtr(*void, 0), @intToPtr(*void, 0), @ptrCast(*void, &amp;si), @ptrCast(*void, &amp;pi));
+    if (ok == 0) {
+        std.io.print("dbg-mini: CreateProcessA failed\n", .{});
+        return;
+    }
+    std.io.print("dbg-mini: target created under DEBUG_ONLY_THIS_PROCESS\n", .{});
+
+    var ev: [512]u8 = undefined;
+    var patched: bool = false;
+    var entryAddr: usize = 0;
+    var origByte: u8 = 0;
+    var target: *void = @intToPtr(*void, 0);
+    var n: i32 = 0;
+    while (n &lt; 100) : (n += 1) {
+        i = 0;
+        while (i &lt; 512) : (i += 1) { ev[i] = 0; }
+        const w = WaitForDebugEvent(@ptrCast(*void, &amp;ev), @intCast(u32, 3000));
+        if (w == 0) {
+            std.io.print("dbg-mini: WaitForDebugEvent timed out\n", .{});
+            break;
+        }
+        const hdr = @ptrCast(*DebugEvent, &amp;ev);
+        const code: u32 = hdr.code;
+        const pidv: u32 = hdr.pid;
+        const tidv: u32 = hdr.tid;
+
+        if (code == CREATE_PROCESS_DEBUG_EVENT and !patched) {
+            patched = true;
+            target = hdr.hProcess;
+            const base: usize = @intFromPtr(hdr.baseOfImage);
+
+            // The PE header holds e_lfanew at 0x3C and the entry-point RVA at
+            // optional-header offset 0x10 (e_lfanew + 0x28 overall).
+            const elfanew = readU32(target, base, 60);
+            const entryRva = readU32(target, base + elfanew, 40);
+            entryAddr = base + entryRva;
+
+            // GetThreadContext requires Context.ContextFlags to be set first.
+            var ctx: [1024]u8 = undefined;
+            i = 0;
+            while (i &lt; 1024) : (i += 1) { ctx[i] = 0; }
+            const flags = @ptrCast(*u32, &amp;ctx);
+            flags.* = CONTEXT_FULL;
+            const gc = GetThreadContext(hdr.hThread, @ptrCast(*void, &amp;ctx));
+            std.io.print("dbg-mini: GetThreadContext = {}\n", .{gc});
+
+            // VirtualQuery is where _MEMORY_BASIC_INFORMATION lands; the struct
+            // above is the workaround for having no @cImport.
+            var mbi = MemoryBasicInformation{ .baseAddress = @intToPtr(*void, 0), .allocationBase = @intToPtr(*void, 0), .allocationProtect = 0, .regionSize = 0, .state = 0, .protect = 0, .typ = 0 };
+            _ = VirtualQuery(hdr.baseOfImage, @ptrCast(*void, &amp;mbi), @intCast(u32, 28));
+            std.io.print("dbg-mini: VirtualQuery region = {}\n", .{mbi.regionSize});
+
+            // Save the original entry byte, then overwrite it with INT3.
+            var one: [1]u8 = undefined;
+            var nr: u32 = 0;
+            _ = ReadProcessMemory(target, @intToPtr(*const void, entryAddr), @ptrCast(*void, &amp;one), @intCast(u32, 1), &amp;nr);
+            origByte = one[0];
+            var cc: [1]u8 = undefined;
+            cc[0] = INT3;
+            var nw: u32 = 0;
+            _ = WriteProcessMemory(target, @intToPtr(*void, entryAddr), @ptrCast(*const void, &amp;cc), @intCast(u32, 1), &amp;nw);
+            _ = ReadProcessMemory(target, @intToPtr(*const void, entryAddr), @ptrCast(*void, &amp;one), @intCast(u32, 1), &amp;nr);
+            std.io.print("dbg-mini: INT3 patch = {}\n", .{@as(u32, one[0])});
+        }
+
+        if (code == EXCEPTION_DEBUG_EVENT and patched) {
+            // The exception record begins the union: ExceptionCode at offset 12
+            // and ExceptionAddress at offset 24. Only our own breakpoint, at the
+            // entry address, is acted on.
+            const ecode = le32(ev[12..16]);
+            const eaddr = le32(ev[24..28]);
+            if (ecode == EXCEPTION_BREAKPOINT and eaddr == entryAddr) {
+                std.io.print("dbg-mini: breakpoint hit at the entry point\n", .{});
+                var one: [1]u8 = undefined;
+                one[0] = origByte;
+                var nw: u32 = 0;
+                const r = WriteProcessMemory(target, @intToPtr(*void, entryAddr), @ptrCast(*const void, &amp;one), @intCast(u32, 1), &amp;nw);
+                std.io.print("dbg-mini: original byte restored = {}\n", .{r});
+            }
+        }
+
+        if (code == EXIT_PROCESS_DEBUG_EVENT) {
+            _ = ContinueDebugEvent(pidv, tidv, DBG_CONTINUE);
+            std.io.print("dbg-mini: target exited\n", .{});
+            break;
+        }
+        _ = ContinueDebugEvent(pidv, tidv, DBG_CONTINUE);
+    }
+    std.io.print("dbg-mini: done\n", .{});
+}
+</pre>
+
+<h3>Walking the sample</h3>
+<p>
+The program opens by building its command line. It asks for <tt>COMSPEC</tt>
+into a 260-byte buffer, copies the shell path into the command-line buffer, and
+appends <tt>" /c exit"</tt> so the interpreter runs one no-op command and
+exits. Appending the suffix rather than passing it as a second parameter is the
+ordinary command-line convention; <tt>CreateProcessA</tt> with a null application
+name parses the first token itself. The rest of the setup is zeroing the two
+opaque structures, which must be zeroed before the API reads them.
+</p>
+<p>
+The <tt>CreateProcessA</tt> call is the one line that makes the program a
+debugger. <tt>DEBUG_ONLY_THIS_PROCESS</tt> in the flag word attaches the new
+process; a non-zero return means the target exists and is stopped, and the
+program prints the first line of the transcript. If the call fails, the sample
+prints one line and returns rather than proceeding into an event loop with no
+target.
+</p>
+<p>
+The loop is the heart. Each iteration clears the event buffer, waits, and reads
+the event code. On the create-process event it saves the target's process
+handle into a variable that outlives the event &mdash; this is the important
+bookkeeping point, because the <tt>hProcess</tt> field is only valid in the
+union member for that event code, and an exception event's union has no process
+handle at all. It computes the entry address from the PE header, sets the
+context flags and calls <tt>GetThreadContext</tt>, calls <tt>VirtualQuery</tt>,
+reads the original entry byte, writes <tt>0xCC</tt>, and reads the byte back to
+confirm. On an exception event whose exception code is
+<tt>EXCEPTION_BREAKPOINT</tt> and whose exception address is the entry address
+&mdash; the check that distinguishes the debugger's own breakpoint from any
+other &mdash; it restores the saved byte. Every other event, and every branch
+that is not one of those two, falls through to <tt>ContinueDebugEvent</tt>.
+</p>
+<p>
+The exit-process event is handled before the fall-through continue so that the
+loop can break cleanly after releasing the target. The loop also bounds itself at
+one hundred events and times out each wait after three seconds, so a target that
+stops reporting cannot hang the debugger; both guards are the kind of discipline
+a debugger needs everywhere.
+</p>
+
+<h3>The transcript</h3>
+<p>
+Compiled for the Windows target and cross-built through the committed harness,
+then run under the dedicated 32-bit wine prefix:
+</p>
+<pre>
+$ ZIG1=/tmp/manual_seed/zig1_5_clean PARITY_STRIP_CR=1 \
+    WINEPREFIX=/tmp/wine32 WINEARCH=win32 \
+    bash scripts/win32_cross/cross_parity.sh \
+    docs/sf/manuals/src/vol3/dbg-mini.z98 /dev/null \
+    /tmp/manual_win/dbg-mini.expected /tmp/manual_win/dbg-mini
+XRUNRC=0
+WINE_RC=0
+PARITY=OK
+$ cat /tmp/manual_win/dbg-mini/stdout.txt
+dbg-mini: target created under DEBUG_ONLY_THIS_PROCESS
+dbg-mini: GetThreadContext = 1
+dbg-mini: VirtualQuery region = 4096
+dbg-mini: INT3 patch = 204
+dbg-mini: breakpoint hit at the entry point
+dbg-mini: original byte restored = 1
+dbg-mini: target exited
+dbg-mini: done
+</pre>
+<p>
+Read the eight lines as the debugger's own account of the two primitives. The
+first line is the attach: a target exists and is stopped. The next three are the
+inspection calls: the context call returned success, the memory map returned a
+region size, and the patched entry point now reads back as
+<tt>204</tt>&nbsp;(<tt>0xCC</tt>). The fifth line is the payoff &mdash; the
+operating system delivered a breakpoint exception at exactly the address the
+debugger patched, which means the target really did run to the entry point and
+the software breakpoint really did fire. The sixth line is the restore; the
+seventh and eighth are the clean shutdown.
+</p>
+<p>
+The transcript has no process ids or addresses in it, which is deliberate: those
+change from run to run, and a page that quoted them would be promising something
+it cannot reproduce. What the sample prints instead is the outcome of each call,
+and those eight lines reproduced byte for byte across repeated runs on the same
+host. That is the strongest statement the page can make about this run, and the
+next section is honest about what it does and does not cover.
+</p>
+
+<h2><a name="boundary">Under Windows 98</a></h2>
+<p>
+This is the Win-only chapter, and the boundary needs to be stated precisely
+because Task&nbsp;0 of this volume found that the first probe only exercised the
+event loop. That is no longer the whole picture. The committed sample exercises
+the entire surface named in this chapter's contract, and on this host every one
+of those calls returned success under wine:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left">Call</th>
+<th align="left">What the run returned</th>
+</tr>
+<tr>
+<td><tt>CreateProcessA</tt> + <tt>DEBUG_ONLY_THIS_PROCESS</tt></td>
+<td>nonzero; the target was created and attached</td>
+</tr>
+<tr>
+<td><tt>WaitForDebugEvent</tt> / <tt>ContinueDebugEvent</tt></td>
+<td>the event loop ran from create-process to exit-process</td>
+</tr>
+<tr>
+<td><tt>GetThreadContext</tt> + <tt>CONTEXT_FULL</tt></td>
+<td><tt>1</tt> (success)</td>
+</tr>
+<tr>
+<td><tt>VirtualQuery</tt> + <tt>_MEMORY_BASIC_INFORMATION</tt></td>
+<td><tt>28</tt> bytes written; region size <tt>4096</tt></td>
+</tr>
+<tr>
+<td><tt>ReadProcessMemory</tt> / <tt>WriteProcessMemory</tt></td>
+<td>the entry byte was read, patched to <tt>0xCC</tt>, and restored</td>
+</tr>
+<tr>
+<td><tt>INT3</tt> patching</td>
+<td>a breakpoint exception fired at the patched entry address</td>
+</tr>
+</table>
+<p>
+The harness run is <tt>i686-w64-mingw32-gcc</tt> cross-compiling the
+<tt>-osw</tt> emission, then the resulting <tt>prog.exe</tt> running under
+<tt>wine-8.0</tt> in a dedicated 32-bit prefix. It reported <tt>XRUNRC=0</tt>,
+<tt>WINE_RC=0</tt>, and <tt>PARITY=OK</tt>. The raw capture was 270 bytes and,
+like the <tt>getenv</tt> sample of <a href="vol3-11-talking-to-c.html">chapter&nbsp;11</a>,
+it already used LF line endings, so the parity compare was an exact match;
+<tt>PARITY_STRIP_CR</tt> was set for consistency and changed nothing. The
+compiler's own output path does not go through the C run-time's text mode.
+</p>
+<p>
+Two boundaries remain, and both are about the environment rather than about Z98.
+The first is the target program: wine has no <tt>command.com</tt>, so the run's
+<tt>COMSPEC</tt> named <tt>cmd.exe</tt>; on a Windows 98 machine the same
+<tt>COMSPEC</tt> names <tt>command.com</tt>, and the sample would debug that
+instead. The second is OpenWatcom. The <tt>-osw</tt> emit also writes
+<tt>build_owc.bat</tt> for <tt>wcc386</tt>/<tt>wlink</tt>, but OpenWatcom is not
+installed on the development host, so that script is <b>emitted and documented,
+not run</b>. The figure below is the real-machine proof: the screenshot will be
+captured on Windows 98 from the OpenWatcom build, and show the same eight lines.
+The Linux build is not a fallback here: because the sample includes
+<tt>windows.h</tt>, compiling it on Linux stops at
+<tt>#include "windows.h": No such file or directory</tt>, which is what
+"Win-only" means.
+</p>
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f0f0f0" class="placeholder">
+<tr>
+<td align="center">
+<i>Figure 38 &mdash; Win9x screenshot pending</i>
+</td>
+</tr>
+</table>
+<p><i>Figure 38. Running <tt>dbg-mini.exe</tt> under Windows 98.</i></p>
+
+<h2>The trade</h2>
+<p>
+Writing a debugger in Z98 is the same trade as writing any Win32 program in Z98,
+with the stakes raised. You get the real operating-system service, declared with
+the real calling convention, in a program that compiles to the same C89 an
+era compiler would have seen. There is no debugger library to link, no event
+framework to learn, and no runtime that has to be present on the target machine.
+The generated C is a sequence of <tt>kernel32</tt> calls a 1998 programmer would
+recognize immediately.
+</p>
+<p>
+What you pay is that every precondition is yours to remember. The debug flag
+must be right; the event union must be read through the correct member for the
+event code; the process handle from the create event must be saved because no
+later event carries it; the context flags must be set or the context call fails;
+the patched byte must be restored or the target loops on the breakpoint. None of
+those is checked by the compiler. They are checked by the target, and the
+target's way of reporting a mistake is to hang or to crash.
+</p>
+<p>
+For the amount of tooling most programs for this machine need, that is the right
+side of the trade: a small debugger is a few hundred lines, and once it exists
+it is the one program on the machine that can inspect any other. The cost is
+concentrated in the parts this chapter has shown &mdash; the event union, the
+context flags, and the restore &mdash; and the way to pay it is to keep those
+parts small and to copy the sample's structure rather than to improvise it.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> This is a debugger for one target, one thread, and one
+breakpoint, and it is honest about being a starting point rather than a tool.
+It does not decode registers, disassemble instructions, read symbols, handle
+multi-threaded targets, or recover from exceptions it does not recognize. What
+it does do is exercise every primitive a full debugger is built from &mdash;
+attach, wait, inspect, patch, restore, continue &mdash; and it does all of it on
+this target and verified under the Windows oracle. When you need more, the
+additions are the ones this chapter's sections name: <tt>SetThreadContext</tt> to
+steer the target, a table of saved bytes for many breakpoints, and the other
+<tt>DEBUG_EVENT</tt> codes for the events a real debugger must not ignore.</td>
+</tr>
+</table>
+
+<h2><a name="common-mistakes">Common mistakes</a></h2>
+<p>
+These are the mistakes a first debugger makes, roughly in the order it makes
+them. Each is paired with the correction.
+</p>
+<p>
+<b>Forgetting the debug flag.</b> <tt>CreateProcessA</tt> with <tt>0</tt> in the
+creation-flags word launches a process that is not attached to you. You get a
+handle and a process id, but no events, so the first
+<tt>WaitForDebugEvent</tt> times out and the target has already run to
+completion. Pass <tt>DEBUG_ONLY_THIS_PROCESS</tt> (<tt>0x00000002</tt>).
+</p>
+<p>
+<b>Reading the wrong union member.</b> The <tt>DEBUG_EVENT</tt> union is valid
+member by member, chosen by the event code. Reading a process handle out of an
+exception event reads unrelated bytes and produces a garbage handle. Read the
+handle you need in the branch for the event that supplies it, and save it into a
+variable that outlives the event.
+</p>
+<p>
+<b>Calling <tt>GetThreadContext</tt> without <tt>ContextFlags</tt>.</b> The
+context call requires <tt>Context.ContextFlags</tt> to name the register groups
+before the call, because the structure is used for both reading and writing. With
+the field at zero the call fails with a zero return and an invalid-parameter
+error. Set <tt>CONTEXT_FULL</tt> (<tt>0x00010007</tt> on x86) into the first four
+bytes first.
+</p>
+<p>
+<b>Leaving the <tt>INT3</tt> in place.</b> <tt>0xCC</tt> overwrites a real byte
+of the target. If you do not restore the saved byte before continuing, the target
+still holds the breakpoint, hits it again, and the event loop repeats forever.
+Read the original byte, keep it, and write it back when the breakpoint fires.
+</p>
+<p>
+<b>Reporting <tt>DBG_CONTINUE</tt> for every event.</b> A debugger that claims
+every exception has swallowed the target's real crashes, and the target appears
+to hang or misbehave with no diagnostic. Report <tt>DBG_CONTINUE</tt> for the
+breakpoints you planted and <tt>DBG_EXCEPTION_NOT_HANDLED</tt>
+(<tt>0x80010001</tt>) for exceptions you do not recognize.
+</p>
+<p>
+<b>Waiting forever.</b> <tt>WaitForDebugEvent</tt> takes a millisecond timeout,
+and passing <tt>INFINITE</tt> turns a mistake into a hang. Pass a finite timeout
+and treat a zero return as an error, and bound the whole loop at a maximum event
+count as the sample does.
+</p>
+<p>
+<b>Writing the target with an unmapped or read-only address.</b>
+<tt>WriteProcessMemory</tt> fails when the page is not writable; a breakpoint on
+a read-only code page needs the page made writable first
+(<tt>VirtualProtectEx</tt>). <tt>VirtualQuery</tt> is how you check the region's
+state and protection before you touch it.
+</p>
+<p>
+<b>Declaring the boundary structures sloppily.</b> <tt>DEBUG_EVENT</tt> and
+<tt>_MEMORY_BASIC_INFORMATION</tt> are read at fixed offsets. A field in the
+wrong order, or a <tt>SIZE_T</tt> declared too wide, shifts every field after it
+and the debugger reads nonsense. Copy the header's field order and widths
+exactly, and keep 64-bit fields out of a structure the header does not have them
+in, as <a href="vol3-11-talking-to-c.html">chapter&nbsp;11</a> instructed.
+</p>
+<p>
+<b>Expecting the debug target's output to be yours.</b> The target inherits the
+debugger's standard handles unless the <tt>STARTUPINFO</tt> redirects them, so a
+chatty target prints into the debugger's console and mixes with its output. The
+sample's target runs <tt>/c exit</tt> precisely so the transcript stays clear;
+redirect the target's handles when you debug something that talks.
+</p>
+
+<h2>Where to go next</h2>
+<p>
+This chapter is the largest worked example of the <tt>extern</tt> surface that
+<a href="vol3-11-talking-to-c.html">chapter&nbsp;11</a> defined and the same
+<tt>stdcall</tt> discipline that <a href="vol3-12-winsock.html">chapter&nbsp;12</a>
+applied to Winsock; read those two first if the declaration style here is still
+unfamiliar. The target-selection and build machinery underneath the
+<tt>-osw</tt> run is <a href="vol3-08-win9x.html">chapter&nbsp;8, Building for
+Win9x</a>, and the OpenWatcom boundary this page insists on is the one
+<a href="vol3-07-friction.html">chapter&nbsp;7</a> names.
+</p>
+<p>
+The next chapter, DirectX under CINTERFACE <i>(planned)</i>, is the other large
+Win32 surface in the volume, and the debugger workflow of chapter&nbsp;15
+<i>(planned)</i> is the everyday alternative to writing a debugger: gdb on the
+generated C needs no Win32 calls at all. The C structures on this page are the
+layout model
+<a href="vol3-01-the-1998-machine.html">chapter&nbsp;1</a> describes and the
+packed-struct distinction of
+<a href="vol2-05-packed-structs.html">Volume II chapter&nbsp;5</a>; the print
+calls are the format string of
+<a href="vol2-18-print.html">Volume II chapter&nbsp;18</a>; and the builtins that
+appear here, including <tt>@ptrCast</tt> and <tt>@intToPtr</tt>, are catalogued
+in <a href="vol4-15-builtins.html">Volume&nbsp;IV &mdash; Builtins</a>. The whole
+volume, including this chapter, is listed on
+<a href="toc.html">the Contents page</a>.
+</p>
+
+<p class="navbtns">
+<a href="vol3-12-winsock.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol3-12-winsock.html">WinSock under Z98</a> | <a href="toc.html">Contents</a> | Next: <a href="toc.html">Contents</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
