@@ -1,0 +1,381 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: What You Have Learned, What Is Next</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume III summary review what you have learned handoff volume IV reference volume V howto volume VI internals shipping 1998 examples case studies seed compiler fixed point">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol3-17-packaging.html">
+<link rel="next" href="vol4-00-title.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume III &mdash; Working in the Era</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol3-00-title.html">How to read this</a><br>
+<a href="vol3-01-the-1998-machine.html">The 1998 machine</a><br>
+<a href="vol3-02-honesty-inventory.html">Honesty: what Z98 does and does not give you</a><br>
+<a href="vol3-03-when-c89.html">Honesty: when C89 is the better choice</a><br>
+<a href="vol3-04-when-cpp98.html">Honesty: when C++98 is the better choice</a><br>
+<a href="vol3-05-when-assembly.html">Honesty: when assembly is the better choice</a><br>
+<a href="vol3-06-era-limits.html">Honesty: what you cannot do on a Pentium II</a><br>
+<a href="vol3-07-friction.html">Honesty: the friction you will hit</a><br>
+<a href="vol3-08-win9x.html">Building for Win9x</a><br>
+<a href="vol3-09-coroutines.html">Coroutines &mdash; the third big shift</a><br>
+<a href="vol3-10-coroutine-program.html">A coroutine program</a><br>
+<a href="vol3-11-talking-to-c.html">Talking to C</a><br>
+<a href="vol3-12-winsock.html">WinSock under Z98</a><br>
+<a href="vol3-13-debug-api.html">The Win32 Debug API</a><br>
+<a href="vol3-14-directx.html">DirectX under CINTERFACE</a><br>
+<a href="vol3-15-debugger-workflow.html">The debugger workflow</a><br>
+<a href="vol3-16-memory-budgets.html">Memory budgets</a><br>
+<a href="vol3-17-packaging.html">Packaging and shipping</a><br>
+<b>What you have learned, what is next</b><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>What You Have Learned, What Is Next</h1>
+<p>
+This is the last chapter of Volume III, and like the last chapter of Volume II
+it introduces nothing. Every page before it taught one part of working in the
+era; this page gathers the parts, says plainly what you can now do, and points
+at where the rest of the manual goes from here. It carries no program and no
+figure, because there is no new compiler behavior left to demonstrate. The
+volume is a closed set: if a sentence here claims something the chapters did
+not teach, the sentence is wrong and the chapter is right.
+</p>
+<p>
+The exit state printed on the title page is that you can ship software for 1998
+hardware. The chapters measured that as they went. The programs in
+<tt>docs/sf/manuals/src/vol3/</tt> were compiled with the compiler rebuilt from
+the committed seed, run, and captured, and the Win9x-only ones were cross-built
+and run under wine; the transcripts on the pages are those captured outputs. So
+the summary below is a summary of things this volume has already shown working,
+not a promise about behavior this page adds.
+</p>
+<p>
+The compiler under test is the seed build whose two hops closed at
+<tt>8216fedc&hellip;</tt>, the recorded fixed point for seed v89. The recipe is
+the one <a href="vol3-00-title.html">the title page</a> gives: the committed
+seed compiles the current source, and the result compiles it again to the same
+binary. That the two builds agree is the gate that the compiler is self-hosting
+and deterministic, and it is what lets every transcript in this volume be tied
+to one exact compiler state rather than to "whatever was installed."
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> Finishing this volume means you can ship for 1998; it
+does not mean the whole era was proved here, and the difference matters. The
+Win9x claims were verified the only way this development host allows: the emitted
+C89 cross-compiled with <tt>i686-w64-mingw32-gcc</tt> and run under wine with
+line endings normalized. The OpenWatcom <tt>build_owc.bat</tt>/<tt>wcc386</tt>
+path is <b>emitted, not run</b>, and the real Windows&nbsp;98 screenshots remain
+pending figures, not claims. Some of this volume is also opinion, and says so
+where it is. Read it as a discipline you can apply on the machine you have, and
+read the Reference for lookup &mdash; not as a transcript of every machine the
+era shipped.</td>
+</tr>
+</table>
+
+<h2>What you can ship for 1998</h2>
+<p>
+The short answer is a program, built from Z98, that runs on the machine the era
+actually had. That breaks into the concrete things the second half of the volume
+delivered. Each row is something a chapter showed you how to do and, where the
+target allowed, ran.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>What you can do now</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Where it is measured</b></th>
+</tr>
+<tr>
+<td valign="top">Build a Z98 program for Win9x through the emitted C89 tree and
+the build scripts, and run it.</td>
+<td valign="top"><a href="vol3-08-win9x.html">Chapter&nbsp;8</a></td>
+</tr>
+<tr>
+<td valign="top">Write a program around coroutines &mdash; one task per
+connection, or N tasks suspending in a known order &mdash; instead of a
+hand-rolled state machine.</td>
+<td valign="top"><a href="vol3-09-coroutines.html">Chapter&nbsp;9</a>;
+<a href="vol3-10-coroutine-program.html">chapter&nbsp;10</a></td>
+</tr>
+<tr>
+<td valign="top">Call a C89 library from Z98 through <tt>extern fn</tt> and
+<tt>@cInclude</tt>, and link the emitted C89 against hand-written C.</td>
+<td valign="top"><a href="vol3-11-talking-to-c.html">Chapter&nbsp;11</a></td>
+</tr>
+<tr>
+<td valign="top">Open, bind, listen, accept, send, and receive with the
+<tt>std.net</tt> extern surface, and treat <tt>fd_set</tt> as the opaque blob it
+is.</td>
+<td valign="top"><a href="vol3-12-winsock.html">Chapter&nbsp;12</a></td>
+</tr>
+<tr>
+<td valign="top">Launch a process under the Win32 debug API, read its context
+and memory, and plant and restore an <tt>INT3</tt> breakpoint.</td>
+<td valign="top"><a href="vol3-13-debug-api.html">Chapter&nbsp;13</a></td>
+</tr>
+<tr>
+<td valign="top">Read the DirectX and COM shape under <tt>CINTERFACE</tt>, with
+the header pain marked and the example's absence explained.</td>
+<td valign="top"><a href="vol3-14-directx.html">Chapter&nbsp;14</a></td>
+</tr>
+<tr>
+<td valign="top">Debug the generated C with <tt>gdb</tt>, using the
+<tt>--markers</tt> output and the <tt>cd DIR</tt> and absolute <tt>-I</tt>
+rules.</td>
+<td valign="top"><a href="vol3-15-debugger-workflow.html">Chapter&nbsp;15</a></td>
+</tr>
+<tr>
+<td valign="top">Keep a program inside the era's memory budget, and find out
+where the bytes went with <tt>--track-memory</tt>.</td>
+<td valign="top"><a href="vol3-16-memory-budgets.html">Chapter&nbsp;16</a></td>
+</tr>
+<tr>
+<td valign="top">Assemble a release from the emitted tree and decide what goes
+on the diskette, and what does not.</td>
+<td valign="top"><a href="vol3-17-packaging.html">Chapter&nbsp;17</a></td>
+</tr>
+</table>
+<p>
+That is the exit state, and it is worth stating what it is not. It is not "I can
+write Z98" &mdash; Volume II gave you that, and this volume assumed it on every
+page. It is not "I can write C89", either; you can, because
+<a href="vol3-03-when-c89.html">chapter&nbsp;3</a> exists, but the language you
+ship in is still Z98. What this volume adds is the target. You can now point
+Z98 at a Pentium&nbsp;II with 32&nbsp;MB and hand someone something that runs
+there, and you can say without hedging which parts of that job Z98 is good for
+and where C89, C++98, or assembly does it better.
+</p>
+
+<h2>The volume in one argument</h2>
+<p>
+Under the practical list is a single argument, and the volume made it in order.
+It is worth restating, because a list can read as a feature count when the
+point is a discipline.
+</p>
+<p>
+<a href="vol3-01-the-1998-machine.html">Chapter&nbsp;1</a> fixed the machine:
+memory, not CPU, is the binding constraint, and every later decision follows
+from that. <a href="vol3-02-honesty-inventory.html">Chapter&nbsp;2</a> set the
+register with the full inventory of what Z98 gives and what it withholds, each
+absence paired with the era alternative that takes its place.
+<a href="vol3-03-when-c89.html">Chapters&nbsp;3</a>,
+<a href="vol3-04-when-cpp98.html">4</a>, and
+<a href="vol3-05-when-assembly.html">5</a> said plainly when another language
+wins, and the through-line is not "Z98 is always right" but the load-bearing
+fact that Z98 emits C89, so the two mix freely.
+<a href="vol3-06-era-limits.html">Chapter&nbsp;6</a> named what the machine
+cannot do, and <a href="vol3-07-friction.html">chapter&nbsp;7</a> named the
+friction you will hit &mdash; each item ending with what to do about it, not
+with a complaint.
+</p>
+<p>
+Then the volume split in two. <a href="vol3-09-coroutines.html">Chapters&nbsp;9</a>
+and <a href="vol3-10-coroutine-program.html">10</a> carried the mental shift:
+suspension is a language statement, a function with <tt>@asyncSuspend</tt> is
+compiled to a step machine, and <tt>std.async</tt> owns the scheduler and the
+per-task frame pool, so the state word and re-entry <tt>switch</tt> you would
+have hand-rolled are written for you. Chapters&nbsp;8 and
+11&ndash;17 were the practical half: build, interoperate, talk to the network,
+drive the debug API, shape DirectX, debug, budget memory, and package. The
+argument closes where it started &mdash; the era had limits, and respecting them
+is the point.
+</p>
+<p>
+None of that is a claim that the era is pleasant. It is a claim that the era is
+<i>knowable</i>, and that knowing it is the work the blueprint put in this
+volume rather than in the language. The language chapters taught you to write
+Z98; these taught you to ship it to a machine with a fixed memory ceiling, a
+C89 toolchain, and no network to fall back on.
+</p>
+
+<h2>Reference and HOWTO are for lookup</h2>
+<p>
+There is a second way to use this manual, and it is not reading front to back.
+A shipped program will send you to a page for one fact: the exact argument order
+of <tt>std.net.bind</tt>, what <tt>@intCast</tt> does with a negative value, the
+name of the OpenWatcom flag that turns warnings into errors, whether
+<tt>defer</tt> runs on the <tt>return</tt> path. For that you want the Reference
+and, when it ships, the HOWTO &mdash; not a chapter you read whole.
+</p>
+<p>
+The shipped Reference pages today are
+<a href="vol4-00-title.html">Volume&nbsp;IV &mdash; Reference</a>,
+<a href="vol4-15-builtins.html">Volume&nbsp;IV &mdash; Builtins</a>, and
+<a href="vol4-24-html-style.html">Volume&nbsp;IV &mdash; HTML style</a>. They
+are lookup material: the builtins page catalogues the runtime surface behind the
+introspection and conversion builtins this volume's programs use, and the style
+page is the contract the pages you are reading were written against. The rest of
+the Reference &mdash; the grammar, types, pointers, aggregates, errors,
+optionals, memory, the standard library, the PAL, diagnostics, and the command
+line &mdash; is <i>(planned)</i>.
+</p>
+<p>
+The HOWTO, <b>Volume&nbsp;V &mdash; HOWTO</b>, is entirely <i>(planned)</i>,
+and its subject is the other half of lookup: not "what does this word mean" but
+"how do I do this one task." Its table of contents already names the recipes
+this volume implies &mdash; rebuild the compiler from seed, target Win9x, use
+the arena correctly, write and drive a coroutine, sockets under Z98, C interop,
+link against C89 libraries, debug generated C, read the diagnostics, pack for
+diskette. Until those pages exist, the chapters here and the example programs
+are the authority, and
+<a href="vol4-15-builtins.html">the Builtins page</a> is the one lookup page
+that ships today.
+</p>
+
+<h2>The examples tree has full case studies</h2>
+<p>
+The manual ships its programs, not just fragments. Every chapter that teaches
+code names a complete file under <tt>docs/sf/manuals/src/</tt>, and the file is
+the case study for that chapter: you can open it, read it whole, compile it with
+the seed-built compiler, and compare your output to the transcript on the page.
+Volume&nbsp;II's programs are the language's case studies, and Volume&nbsp;III
+adds the era's. The Volume&nbsp;III set is:
+</p>
+<ul>
+<li><tt>docs/sf/manuals/src/vol3/hello.z98</tt> &mdash; the Win9x build
+walkthrough, from source to <tt>.exe</tt>
+(<a href="vol3-08-win9x.html">chapter&nbsp;8</a>).</li>
+<li><tt>docs/sf/manuals/src/vol3/tasks.z98</tt> &mdash; coroutines driven by
+<tt>std.async</tt>, with the frame size and the round-robin step order
+(<a href="vol3-09-coroutines.html">chapter&nbsp;9</a>).</li>
+<li><tt>docs/sf/manuals/src/vol3/echo.z98</tt> &mdash; a line echo server built
+from coroutines, one task per connection
+(<a href="vol3-10-coroutine-program.html">chapter&nbsp;10</a>).</li>
+<li><tt>docs/sf/manuals/src/vol3/getenv.z98</tt> &mdash; calling C through
+<tt>extern fn</tt> and reading the mangled emitted names
+(<a href="vol3-11-talking-to-c.html">chapter&nbsp;11</a>).</li>
+<li><tt>docs/sf/manuals/src/vol3/http-mini.z98</tt> &mdash; a WinSock server that
+serves one HTTP/1.0 request over the <tt>std.net</tt> surface
+(<a href="vol3-12-winsock.html">chapter&nbsp;12</a>).</li>
+<li><tt>docs/sf/manuals/src/vol3/dbg-mini.z98</tt> &mdash; launching a target
+under the Win32 debug API and planting an <tt>INT3</tt> breakpoint
+(<a href="vol3-13-debug-api.html">chapter&nbsp;13</a>).</li>
+</ul>
+<p>
+Chapters 14 through 17 ship no program, and the pages say why in each case:
+chapter&nbsp;14's DirectX example was dropped by ruling, and chapters&nbsp;15
+through&nbsp;17 teach a workflow, a budget, and a release shape whose evidence
+is the tool output and the emitted tree rather than a new program. The two
+programs behind the language's own working habits are Volume&nbsp;II's
+<tt>arena.z98</tt> for the memory half and <tt>shapes2.z98</tt> for the object
+half; if you arrived here fluent in Z98, those are the files to reread when an
+era program gets large.
+</p>
+<p>
+Running the set is deliberate work, not trivia. It is how you confirm that the
+compiler on your machine behaves like the one these pages were written against;
+if a transcript and your run disagree, the
+<a href="vol3-15-debugger-workflow.html">debugger workflow</a> is how you find
+out which side is wrong.
+</p>
+
+<h2>The handoff: Reference, HOWTO, Internals</h2>
+<p>
+The volumes after this one are three, and only the first has pages today. They
+are not three more languages; they are three different uses of the one you
+already know.
+</p>
+<ul>
+<li><b>Volume&nbsp;IV &mdash; Reference.</b> The lookup set for the language.
+Its <a href="vol4-00-title.html">title page</a> and
+<a href="vol4-15-builtins.html">builtins page</a> ship today, and the rest is
+<i>(planned)</i>. When you know the question &mdash; one builtin's behavior, one
+grammar rule, one command-line flag &mdash; this is where the answer belongs,
+not in a chapter you have to read to find the sentence.</li>
+<li><b>Volume&nbsp;V &mdash; HOWTO</b> <i>(planned)</i>. Recipes for the
+specific tasks a Z98 program has to do. The volume you just finished is written
+once and read as an argument; the HOWTO is written to be opened, run, and
+closed.</li>
+<li><b>Volume&nbsp;VI &mdash; Internals</b> <i>(planned)</i>. The compiler
+itself, for its maintainers: the allocator, the phases, the emitter, the async
+frame layout, the build. It is the volume the seed model points at &mdash;
+everything this manual taught you about determinism and the fixed point is
+implemented there.</li>
+</ul>
+<p>
+The path through them depends on why you picked up the manual. If you set out to
+ship software for 1998, you have what you came for, and the Reference is the one
+to keep open beside the editor. If you set out to understand Z98 itself, the
+Internals volume is the next stop, and the Reference is its companion. The
+volume index on <a href="toc.html">the Contents page</a> is the map of all six.
+</p>
+
+<h2>Where to go next</h2>
+<p>
+The chapter before this one is the volume's other summary of practice:
+<a href="vol3-17-packaging.html">chapter&nbsp;17, Packaging and shipping</a>,
+which is the last thing you do before someone else runs your program. If you are
+looking for a specific part of the volume,
+<a href="toc.html">the Contents page</a> lists all nineteen chapters, and each
+chapter links the others it depends on rather than repeating them.
+</p>
+<p>
+For lookup rather than reading, start with
+<a href="vol4-00-title.html">Volume&nbsp;IV &mdash; Reference</a> and, for the
+runtime calls behind the builtins,
+<a href="vol4-15-builtins.html">Volume&nbsp;IV &mdash; Builtins</a>. If you
+arrived at this volume without the language underneath it, the on-ramp is
+<a href="vol2-00-title.html">Volume&nbsp;II &mdash; Learning Z98</a>, and
+<a href="vol2-01-honest-comparison.html">its first chapter</a> is the comparison
+this volume's honesty chapters extend to the era.
+</p>
+<p>
+The shortest path back into the material is the list of programs above. Each one
+is a complete file that compiles with the seed-built compiler and runs, and the
+chapter that names it has the transcript and the explanation. That is the loop
+this manual was built for: read the argument once, then keep the Reference and
+the examples open while you ship. For now, the contents page shows what is
+planned and what has shipped, and the shipped Reference and example pages are
+the ones you can rely on today.
+</p>
+
+<p class="navbtns">
+<a href="vol3-17-packaging.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol4-00-title.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol3-17-packaging.html">Packaging and shipping</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-00-title.html">Volume IV &mdash; Reference</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
