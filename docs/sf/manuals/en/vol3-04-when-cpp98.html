@@ -1,0 +1,638 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Honesty: When C++98 Is the Better Choice</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume III honesty when C++98 is the better choice templates classes virtual dispatch vtable runtime cost MSVC 6 Borland 5.02 incomplete implementations manual vtable RAII exceptions fragile 32 MB extern C name mangling">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol3-03-when-c89.html">
+<link rel="next" href="toc.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume III &mdash; Working in the Era</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+How to read this <i>(planned)</i><br>
+The 1998 machine <i>(planned)</i><br>
+<a href="vol3-02-honesty-inventory.html">Honesty: what Z98 does and does not give you</a><br>
+<a href="vol3-03-when-c89.html">Honesty: when C89 is the better choice</a><br>
+<b>Honesty: when C++98 is the better choice</b><br>
+Honesty: when assembly is the better choice <i>(planned)</i><br>
+Honesty: what you cannot do on a Pentium II <i>(planned)</i><br>
+Honesty: the friction you will hit <i>(planned)</i><br>
+Building for Win9x <i>(planned)</i><br>
+Coroutines &mdash; the third big shift <i>(planned)</i><br>
+A coroutine program <i>(planned)</i><br>
+Talking to C <i>(planned)</i><br>
+WinSock under Z98 <i>(planned)</i><br>
+The Win32 Debug API <i>(planned)</i><br>
+DirectX under CINTERFACE <i>(planned)</i><br>
+The debugger workflow <i>(planned)</i><br>
+Memory budgets <i>(planned)</i><br>
+Packaging and shipping <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Honesty: When C++98 Is the Better Choice</h1>
+<p>
+<a href="vol3-03-when-c89.html">Chapter&nbsp;3</a> said plainly when C89 is the
+better choice and ended on the fact that makes the whole volume work: Z98 emits
+C89, so the two mix freely. This chapter is the next row of the inventory, and
+it is the harder one. C++98 is not a lower-level tool than Z98; it is a
+higher-level one. It gives abstract types with constructors and destructors,
+generic containers, exceptions that unwind the stack, and run-time type
+information &mdash; all things Z98 deliberately withholds. The question is not
+whether those are real features. They are. The question is what they cost on a
+32&nbsp;MB machine, and whether the module in front of you needs them.
+</p>
+<p>
+The verdict is plain, and it has two halves. There are projects, and parts of
+projects, where C++98 is the better choice, and the honest move is to say so and
+use it. And for most of the cases a reader brings to this chapter, the older
+C++98 machinery is heavier than the job, and Z98's manual-vtable idiom is the
+better trade. Both halves are true, and the chapter owes you both.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffffc8">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-note.gif" width="16" height="16" alt="Note"></td>
+<td><b>Era framing.</b> Statements here about the era's machines, toolchains,
+and compilers are era context, and where a statement is an opinion the text
+says so. Statements about Z98 are checked against
+<tt>docs/reference/Language_Spec_Z98.md</tt>, the compiler source, and the
+compiler built from the committed seed. The C++98 figures on this page were
+measured on this host with <tt>g++ -m32 -std=c++98</tt>; the exact commands and
+output are quoted verbatim. The era's own C++ compilers &mdash; MSVC&nbsp;6 and
+Borland&nbsp;C++&nbsp;5.02 &mdash; do not run on this host, and nothing here
+claims they were run.</td>
+</tr>
+</table>
+
+<h2>What you expect</h2>
+<p>
+After the previous chapter, a reader may expect this one to be symmetrical: it
+will name three or four C++98 cases and hand them back. That is half of it. But
+there is a trap in arriving at this chapter from either direction. Arriving from
+modern C++, a reader expects templates and classes to be the default and Z98 to
+be the thing you fall back to. Arriving from the previous chapter, a reader may
+expect C++98 to be a strictly richer tool that simply costs more, and therefore
+to be chosen whenever the budget allows. Neither reading is the one this chapter
+uses.
+</p>
+<p>
+The right frame is the one the volume keeps returning to. Both compilers produce
+32-bit native code for the same machine, and both link against the same objects.
+C++98 gives you abstraction the compiler implements with run-time machinery;
+Z98 withholds that abstraction and emits C89 with no machinery behind it. What
+C++98 adds is not free and it is not decoration: an object with virtual
+functions carries a hidden pointer, a class emits a table and its type
+information, a <tt>throw</tt> needs a runtime to unwind, and a template emits a
+copy per type. Those costs are affordable on this machine in bounded amounts and
+fragile when they spread. So the chapter's question, like the previous one, is
+per module: which abstraction does this module actually need, and is it worth
+the machinery it brings?
+</p>
+<p>
+There is one expectation this chapter has to set aside up front, because it is
+where the honest answer is least comfortable. A reader often assumes that
+because Z98 emits C89, mixing C++98 into a project is as seamless as mixing C89.
+It is not. C89 is the emission's own language, so the seam is invisible; C++98
+name-mangles and has its own object conventions, so the seam has to be a
+declared <tt>extern&nbsp;"C"</tt> boundary. That difference is shown in
+<a href="#the-way-over-it">The way over it</a>, and it is part of the trade
+rather than a footnote to it.
+</p>
+
+<h2>What you get</h2>
+<p>
+Four cases where C++98 is genuinely the better choice. The first decides most
+era projects, because it is the least arguable: a library that is C++98 and
+nothing else. The next two are feature cases, and they are where the cost shows
+up. The last is a toolchain case: the project already builds with MSVC&nbsp;6 or
+Borland&nbsp;5.02 and wants their idioms. Each case says plainly that C++98 wins
+it, and each is followed by the seam or the Z98 pattern that keeps the rest of
+the project in Z98 if only part of it is in question.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>The case</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Why C++98 is the better choice</b></th>
+</tr>
+<tr>
+<td valign="top">A library that ships as C++98</td>
+<td valign="top">its interface is classes and templates, and a C ABI call needs
+a wrapper unless the library already exposes one</td>
+</tr>
+<tr>
+<td valign="top">Templates, and the era's incomplete implementations are
+tolerable</td>
+<td valign="top">one generic container serves many element types without a
+hand-written copy for each</td>
+</tr>
+<tr>
+<td valign="top">Classes and virtual dispatch, and the runtime cost is
+accepted</td>
+<td valign="top">constructors and destructors run cleanup on every exit path,
+and a virtual call dispatches without a hand-written table</td>
+</tr>
+<tr>
+<td valign="top">Targeting MSVC&nbsp;6 or Borland&nbsp;5.02 specifically</td>
+<td valign="top">the project builds with those compilers already, and matching
+their idioms is the smaller decision</td>
+</tr>
+</table>
+
+<h3>A library that ships as C++98</h3>
+<p>
+This is the case that decides most era projects, and it is the direct analogue
+of the C89 library case in the previous chapter. A great deal of 1998 software
+ships as a C++98 header set plus a library. Its interface is classes; its
+generic parts are templates; and its header may be a maze of template
+definitions, inline functions, and default arguments that a C compiler cannot
+even parse. There is no C89 header to call through and no prospect of one being
+written before the project ships.
+</p>
+<p>
+The honest answer is to write the part that speaks to the library in C++98, or
+to call a wrapper the library already exposes. Both work, and both require the
+same boundary: because C++98 mangles names and C89 does not, a C++98 module that
+Z98 or C89 is to call must expose plain <tt>extern&nbsp;"C"</tt> entry points
+that do not throw across the boundary. Where the library already publishes such
+an interface, calling it from Z98 is a declaration and a link, and the seam is
+ordinary. Where it does not, you write a thin C++98 wrapper with
+<tt>extern&nbsp;"C"</tt> functions that translate status codes and out
+parameters &mdash; the same shape the era's C++ projects used to expose
+themselves to C callers. That wrapper is a real cost, and it is the price of the
+library's abstraction.
+</p>
+<p>
+This is an era fact, not an opinion: the libraries exist in C++98, and calling
+them from C++98 is the direct path. The seam that lets the rest of the project
+stay in Z98 is shown in <a href="#the-way-over-it">The way over it</a>, below.
+</p>
+
+<h3>Templates, and the era's incomplete implementations</h3>
+<p>
+Templates are the feature Z98 most deliberately lacks, and the one C++98 gives
+cleanly: one container written once, instantiated for every element type. The
+shape is the same one <a href="vol2-01-honest-comparison.html">Volume II
+chapter&nbsp;1</a> sketched, and it is what a C++98 reader would write for a
+bounded stack:
+</p>
+<pre>
+template &lt;typename T&gt;
+class Stack {
+public:
+    Stack() : count(0) {}
+    void push(const T&amp; v) { if (count &lt; 8) data[count++] = v; }
+    bool pop(T&amp; out) {
+        if (count == 0) return false;
+        out = data[--count];
+        return true;
+    }
+    int count;
+private:
+    T data[8];
+};
+</pre>
+<p>
+That fragment compiles under the era's C++98 dialect and runs. The transcript
+below is a real run on this host with <tt>g++ -m32 -std=c++98</tt>, which is the
+modern compiler that stands in for the era tools here:
+</p>
+<pre>
+$ g++ -m32 -std=c++98 -O0 stack.cpp -o stack
+$ ./stack
+out=3
+</pre>
+<p>
+The abstraction is real and the syntax is short, which is exactly why C++98 is
+the era-appropriate tool when a type genuinely must stay open. The cost is
+equally real, and it is easiest to see in the emitted objects: each
+instantiation is its own function. Compiling a small function template for
+<tt>int</tt>, <tt>long</tt>, and <tt>double</tt> and reading the symbols shows
+three separate bodies, one per type:
+</p>
+<pre>
+$ nm -C tmpl | grep ' twice'
+0000121c W double twice&lt;double&gt;(double)
+000011f4 W int twice&lt;int&gt;(int)
+00001208 W long twice&lt;long&gt;(long)
+</pre>
+<p>
+That is the trade in miniature. A generic container written once on the page
+becomes one copy of its code in the binary for each type it is used with, and
+the copies multiply with the number of types and the size of the template. On a
+machine where every kilobyte is budgeted, a template used across a wide set of
+types is not weightless; it is a deliberate expense.
+</p>
+<p>
+There is a second, era-specific cost, and the blueprint names it: the era's
+implementations were incomplete. MSVC&nbsp;6 and Borland&nbsp;C++&nbsp;5.02
+shipped around the time the 1998 standard was ratified, and neither implemented
+all of it. Member templates, partial specialization, and parts of the standard
+library were missing or buggy, and code that compiles cleanly on a modern
+compiler may need workarounds there. This is era context, and it is marked as
+opinion: the manual states it because it is the reason the blueprint says
+&ldquo;tolerate&rdquo; the implementations rather than simply use them. A
+template written for the era machine is a template written to that machine's
+dialect, not to the standard's full text. On this host, only modern
+<tt>g++</tt> and the mingw cross-compiler are available; the era compilers'
+specific gaps are theirs, not measured here.
+</p>
+<p>
+The way over, when you do not actually need the type to stay open, is the
+concrete container. Where a C++98 program writes <tt>Stack&lt;T&gt;</tt> once, a
+Z98 program writes <tt>IntStack</tt>, and a second, separate container for the
+next element type. The repetition is real, and it is the design:
+<a href="vol2-16-no-methods.html">Volume II chapter&nbsp;16</a> measures it, and
+the compiler's own source uses the same pattern for the concrete hash maps it
+needs. When a type must genuinely stay open and the memory can carry the
+expansions, C++98 is the better choice, and this case says so.
+</p>
+
+<h3>Classes, virtual dispatch, and the runtime cost</h3>
+<p>
+Classes are the second feature, and the one whose cost is easiest to quantify.
+A C++98 class gives constructors and destructors, so cleanup runs automatically
+on every exit path; it gives virtual functions, so a call dispatches on the
+object's dynamic type; and it gives operator overloading, so a library can read
+naturally. Z98 has none of these at the language level; it has the manual
+vtable, the init function, and <tt>defer</tt>/<tt>errdefer</tt> instead. The
+question is what the compiler adds to make C++98's version work, and the answer
+is measurable. This program prints the size of three shapes of object &mdash;
+plain, polymorphic, and a hand-built interface &mdash; all for the 32-bit
+target:
+</p>
+<pre>
+struct PlainOne { int a; };
+struct PlainTwo { int a; int b; };
+struct VOne { virtual int f() const { return 1; } int a; };
+struct VTwo {
+    virtual int f() const { return 1; }
+    virtual int g() const { return 2; }
+    int a;
+};
+struct ManualOne { int (*f)(const void*); const void* data; };
+struct ManualTwo { int (*f)(const void*); int (*g)(const void*); const void* data; };
+</pre>
+<p>
+The measured sizes are the argument:
+</p>
+<pre>
+$ g++ -m32 -std=c++98 -O0 cost.cpp -o cost
+$ ./cost
+PlainOne=4 PlainTwo=8 VOne=8 VTwo=8 ManualOne=8 ManualTwo=12
+</pre>
+<p>
+Read the line carefully. A plain object with one integer is four bytes. The same
+object made polymorphic is eight: the compiler adds one hidden pointer, the
+vtable pointer, and it adds it once per object regardless of how many virtual
+functions the class has &mdash; <tt>VOne</tt> and <tt>VTwo</tt> are both eight
+bytes, so a second and third virtual cost no more per object than the first.
+That is the per-object price. The per-class price is higher: each polymorphic
+class also emits its vtable, and with RTTI enabled its type information. The
+symbols are in the binary as soon as the class is:
+</p>
+<pre>
+$ nm -C rtti | grep -E ' (vtable|typeinfo) for '
+00003ee0 V typeinfo for Base
+00003ed4 V typeinfo for Derived
+00003ec8 V vtable for Base
+00003ebc V vtable for Derived
+</pre>
+<p>
+Those tables are emitted once per class, not per object, and for a program with
+a few dozen classes that is a few dozen small tables. The manual interface sits
+differently. A Z98 interface value is a data pointer plus one function pointer
+per operation: eight bytes for one operation, twelve for two, measured here as
+<tt>ManualOne=8 ManualTwo=12</tt>, and measured on the seed compiler in
+<a href="vol2-16-no-methods.html">Volume II chapter&nbsp;16</a> as the
+two-operation <tt>Shape</tt> at <tt>size=12 align=4 fn=4</tt>. The concrete
+object carries no hidden pointer of its own, no per-class table is emitted, and
+there is no type information. The cost moves from the object and the class onto
+the interface value, and the interface value is exactly as big as the operations
+you put in it.
+</p>
+<p>
+Exceptions are the third cost, and they are the heaviest. The language does not
+merely branch on failure; <tt>throw</tt> hands the failure to a runtime that
+walks the stack and runs destructors at each frame. Z98 has no such runtime
+because failure is a value in the return type. The references the linker has to
+satisfy for a program that throws are visible in its symbols:
+</p>
+<pre>
+$ nm exc | grep -E '__cxa_(throw|begin_catch|end_catch)|_Unwind_Resume'
+         U _Unwind_Resume@GCC_3.0
+         U __cxa_begin_catch@CXXABI_1.3
+         U __cxa_end_catch@CXXABI_1.3
+         U __cxa_throw@CXXABI_1.3
+</pre>
+<p>
+The unwinder (<tt>_Unwind_Resume</tt>) and the exception runtime
+(<tt>__cxa_throw</tt> and the catch entry points) are not free; they are code
+the toolchain links and tables it lays out per function that can unwind. On this
+host the unwinder lives in a shared library, so the visible size delta is
+modest &mdash; under a kilobyte of extra code and tables at <tt>-O0</tt>
+&mdash; but the era's static link puts the machinery in the binary, and the
+tables exist whether or not a throw ever runs. <tt>dynamic_cast</tt> has the same shape: it pulls in the
+type information tables above, which is the cost of having the run-time type
+oracle at all. This is a marked opinion, but it is the manual's: on a 32&nbsp;MB
+machine, exception handling is affordable for a bounded, exceptional path and
+expensive as a general control-flow habit.
+</p>
+<p>
+So the runtime cost of C++98's abstraction is the sum of four things: one hidden
+pointer per polymorphic object, one table plus type information per polymorphic
+class, a template body per instantiation, and the unwinder and its tables if
+exceptions are used. None is large on its own. Together, spread across a large
+program, they are the difference between a binary that fits the era machine
+comfortably and one that does not.
+</p>
+
+<h3>MSVC 6 and Borland C++ 5.02</h3>
+<p>
+The fourth case is the toolchain itself, and it is the one the manual can only
+state as era context. MSVC&nbsp;6 shipped <tt>cl</tt>; Borland&nbsp;C++&nbsp;5.02
+shipped <tt>bcc32</tt>. Both compile C++98 for this machine, both came with
+their own class libraries, their own extensions (<tt>__declspec</tt> and
+Borland's own dialects among them), their own project files, and their own
+debuggers. A project that already builds with one of them has a coherent world:
+the build script, the class library, and the debugger all agree.
+</p>
+<p>
+This is marked as opinion, because the manual does not run those compilers and
+will not pretend to. The case is not that MSVC or Borland is technically
+superior; it is that if a module must live inside a project whose build is one
+of them, matching that project's idioms is the smaller decision. Porting the
+module to Z98 buys the checks and costs a new build step and a new dialect for
+the people who maintain the project. Whether that is worth it is the same
+judgment the previous chapter made about maintaining C89, and it points the same
+way: keep the established module where it is, write the new module in Z98, and
+let the two link across the C ABI.
+</p>
+
+<h2>The trade</h2>
+<p>
+Choosing C++98 in any of these cases buys abstraction, and the bill is the
+machinery that makes the abstraction work. That is the whole trade, and both
+sides of it are real. On the buying side, a template is written once and serves
+every element type; a constructor and destructor run without being called, on
+every exit path including the one where an exception leaves the scope; a virtual
+call dispatches on the object's real type; an exception carries a failure up
+through frames that never named it; <tt>dynamic_cast</tt> answers what a value
+really is. Those are powerful things, and a program that needs them is better
+for having them. On the paying side, every polymorphic object is one word
+larger, every polymorphic class brings its table and type information, every
+template brings a body per type, and an exception path brings an unwinder and
+per-function tables. On a 32&nbsp;MB machine, with a 16&nbsp;MB peak budget, all
+of that competes with the program's own data.
+</p>
+<p>
+The honest verdict is the blueprint's, and it is not a dodge: on this machine,
+C++98 is <i>possible</i> but <i>fragile</i>. Possible, because a bounded use
+costs bounded memory, and the era shipped real C++98 programs on hardware like
+this. Fragile, because the costs are per object, per class, per type, and per
+potentially-unwinding function, so a design that leans on the abstraction
+multiplies them, and the failure mode is a binary that no longer fits the
+machine rather than a single mistake at a single line. The way to use C++98 well
+on the era machine is to use it where the abstraction is the point &mdash; a
+generic container over a handful of types, a class whose destructor is the only
+correct cleanup, a library whose interface is C++98 &mdash; and not as the
+default shape for every value.
+</p>
+<p>
+And this is where the chapter says the second half plainly: for a great many
+modules that reach for C++98's machinery, Z98's manual-vtable idiom is the
+better trade. If the module needs &ldquo;an object with behavior,&rdquo; a
+struct of function pointers plus an init function gives the same dispatch with
+no hidden pointer, no per-class table, and no type information, and
+<a href="vol2-16-no-methods.html">Volume II chapter&nbsp;16</a> measures it. If
+the module needs &ldquo;a container for the two element types we have,&rdquo; two
+concrete containers are the same code the template would have generated, written
+by hand and visible. If the module needs cleanup on every exit, the arena plus
+<tt>defer</tt>/<tt>errdefer</tt> gives it without an unwinder. C++98 is the
+better choice when its abstraction is genuinely needed; it is the heavier choice
+when the abstraction is a habit.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> The sharpest thing to say about C++98 on this machine is
+that its abstraction and its bill arrive together. A template, a class, and a
+<tt>throw</tt> each bring run-time machinery that Z98 was built to avoid, and
+the machinery is what makes the 32&nbsp;MB budget tight. The chapter does not
+say the abstraction is false or the price is unfair &mdash; it says both are
+real, and that the manual-vtable idiom is often the better trade because most
+era modules want the shape of the abstraction without the machinery behind it.
+Where the abstraction <i>is</i> the point, the previous paragraphs said so, and
+this page has not one word against using C++98 there.</td>
+</tr>
+</table>
+
+<h2>The way over it</h2>
+<a name="the-way-over-it"></a>
+<p>
+There are two ways over, and they answer different questions. The first is how
+to use C++98 in a project that is otherwise Z98 or C89. The second is how to get
+the same job done in Z98 when the abstraction turns out not to be needed.
+</p>
+<p>
+<b>Using C++98 across the seam.</b> Z98 emits C89, so the seam to C89 is
+invisible: both sides are plain C symbols. The seam to C++98 is real, because
+C++98 mangles names and C89 does not. The compiler's own name mangling is most
+of the story, and a two-line probe shows it. A C++ function gets an encoded
+symbol; the same function declared <tt>extern&nbsp;"C"</tt> keeps its plain name:
+</p>
+<pre>
+$ nm mangle | grep add
+0000117d T _Z11mangled_addii
+00001194 T unmangled_add
+</pre>
+<p>
+So a C++98 module that Z98 is to call must expose <tt>extern&nbsp;"C"</tt>
+entry points, and those entry points must be written not to let an exception
+cross the boundary: a C++98 <tt>throw</tt> reaching a frame with no C++ unwinder
+is undefined behavior. The era's convention was exactly this: wrap the C++
+implementation in a small <tt>extern&nbsp;"C"</tt> surface that translates
+failures to status codes and out parameters. That surface is the C++ equivalent
+of the C89 header in the previous chapter, and chapter&nbsp;11, Talking to C
+<i>(planned)</i>, gives the full interop detail &mdash; the calling conventions,
+the <tt>@cInclude</tt> rule, and the mangling of Z98's own names. The honest
+difference from the C89 case is that this wrapper is work you have to do, where
+the C89 seam was work you did not.
+</p>
+<p>
+<b>Getting the job done in Z98.</b> For each thing a module reaches for C++98
+to get, the volume has already named the Z98 shape that does it without the
+machinery, and each is available on the seed compiler:
+</p>
+<ul>
+<li><b>A generic container?</b> Write the concrete container, one per element
+type. It is the same code the template would generate, written by hand and
+readable in the source. <a href="vol2-16-no-methods.html">Volume II
+chapter&nbsp;16</a> is the measurement; the compiler's own concrete hash maps
+are the proof.</li>
+<li><b>An object with behavior?</b> A struct of function pointers plus one
+erased data pointer, built by an init function. That is the manual vtable, and
+it dispatches exactly as a virtual call does, with no hidden pointer and nothing
+to look up at run time.</li>
+<li><b>Cleanup on every exit?</b> <tt>defer</tt> and <tt>errdefer</tt> run
+cleanup as the scope exits, including the failure path, and the arena reclaims
+the whole region in one call. There is no destructor, and there is nothing to
+unwind.</li>
+<li><b>Failure across frames?</b> An error union carries the failure in the
+return type, <tt>try</tt> propagates it, <tt>catch</tt> handles it, and
+<tt>errdefer</tt> rolls back partial work. It is the checked path rather than
+the unwinding one, and it costs a branch, not a runtime.</li>
+<li><b>A type open across unknown element types at run time?</b> This is the one
+case with no Z98 shape that matches C++98's, because Z98 has no run-time type
+oracle and no open generics. When a program genuinely needs either, C++98 is the
+era tool, and the seam above is how it joins the project.</li>
+</ul>
+<p>
+Put together, the rule is the previous chapter's rule with C++98 in the other
+slot. Choose C++98 where its abstraction is the point and the 32&nbsp;MB budget
+carries the machinery; choose Z98 where the shape is wanted but the machinery is
+not; connect the two at the C ABI, with an <tt>extern&nbsp;"C"</tt> wrapper on
+the C++98 side. The decision is per module, and it is reversible, because both
+sides end up as object files the same linker accepts.
+</p>
+<p>
+The load-bearing fact of the previous chapter is unchanged and it is worth
+repeating here, because it is what makes the whole comparison usable:
+<b>Z98 emits C89, so it links with the era's objects directly</b>. The only
+addition C++98 makes is that its side of the seam has to be declared rather than
+assumed. That is the whole difference, and it is a difference in the wrapper,
+not in the machine.
+</p>
+
+<h2>Common mistakes</h2>
+<p>
+The mistakes below are the ones a reader makes when C++98 is treated as free, or
+when the seam to it is assumed to be as quiet as the seam to C89.
+</p>
+<p>
+<b>Treating C++98's abstraction as free.</b> It is not decoration. Every
+polymorphic object is one word larger, every polymorphic class brings a table
+and its type information, every template instantiation is a body in the binary,
+and exceptions bring an unwinder and per-function tables. None is large; all of
+them together, spread across a large program, are what makes the 32&nbsp;MB
+budget tight. The measure before the choice is the size of the objects and the
+number of types, and both are visible before you commit.
+</p>
+<p>
+<b>Expecting to call a C++98 method directly from Z98.</b> C++98 mangles names,
+so a call from C or Z98 cannot name the symbol. The way over is the
+<tt>extern&nbsp;"C"</tt> wrapper shown above. This is the one place the C++98
+seam is materially more work than the C89 seam, and it is the answer to the
+first mistake a reader makes after the previous chapter.
+</p>
+<p>
+<b>Letting an exception cross the <tt>extern&nbsp;"C"</tt> boundary.</b> A
+<tt>throw</tt> that leaves a C++98 translation unit into a frame compiled as C
+has no unwinder to catch it, and the behavior is undefined. The wrapper's job is
+to catch the exception inside C++98 and return a status or an out parameter that
+the C side can check. If that feels like reinventing error unions, it is: it is
+the C++ side doing by hand what Z98 does in the type.
+</p>
+<p>
+<b>Using exceptions for ordinary control flow.</b> A <tt>throw</tt>/<tt>catch</tt>
+pair for a condition the code expects is the most expensive way to write a
+branch on this machine, because it drags in the unwinder's tables for a path
+that is not exceptional. The Z98 shape is the error union, and the C++98 shape
+for a failure the caller expects is a return value it can check. Reserve
+exceptions for what they are for: a failure the local code cannot handle.
+</p>
+<p>
+<b>Assuming every era C++ compiler implements the whole standard.</b>
+MSVC&nbsp;6 and Borland&nbsp;5.02 predate or partly implement the 1998 standard,
+and a template that builds on a modern compiler may need workarounds there. This
+is era context and it is marked as opinion, but it is the reason a C++98 module
+for this machine is written to the machine's dialect rather than to the
+standard's full text, and it is why the blueprint says the era's implementations
+must be <i>tolerated</i>.
+</p>
+<p>
+<b>Rewriting a working C++98 module &ldquo;for purity.&rdquo;</b> The mirror of
+the previous chapter's <i>Common mistakes</i> and the same error: a stable,
+tested module is not improved by being moved to another language. If it is about
+to be reworked and its abstraction turns out not to be needed, that is the
+moment to move it. Until then, the module's job is to work, and the seam lets
+the new code be written in Z98 beside it.
+</p>
+
+<h2>Where to go next</h2>
+<p>
+This is the second of the three "when another tool wins" chapters. The third is
+chapter&nbsp;5, when assembly is the better choice <i>(planned)</i>, which
+covers the inner loops and interrupt handlers where even the emitted C89 is not
+tight enough. The full interop surface &mdash; the calling conventions, the
+struct-by-value ABI, the <tt>@cInclude</tt> rule, and the mangling of Z98's own
+names &mdash; is chapter&nbsp;11, Talking to C <i>(planned)</i>, and it is the
+chapter that makes the <tt>extern&nbsp;"C"</tt> seam on this page exact.
+</p>
+<p>
+For the frame behind this chapter, <a
+href="vol2-01-honest-comparison.html">Volume II chapter&nbsp;1, The Honest
+Comparison</a> is the register: Z98 as checked C89, standing between C89 and
+C++98 rather than above or below either. For the Z98 patterns that replace the
+abstraction, <a href="vol2-16-no-methods.html">Volume II chapter&nbsp;16, No
+methods, no generics, no comptime</a> measures the manual vtable, the init
+function, and the concrete container; <a href="vol2-14-arena.html">chapter&nbsp;14</a>
+measures the arena that replaces the destructor's job;
+<a href="vol2-12-error-unions.html">chapter&nbsp;12</a> measures the error
+unions that replace the exception's; and <a href="vol2-11-defer.html">chapter&nbsp;11</a>
+measures <tt>defer</tt> and <tt>errdefer</tt>, the cleanup discipline that needs
+no unwinder. The whole volume, including this chapter, is listed on
+<a href="toc.html">the Contents page</a>, and the previous chapter's seam &mdash;
+the one to C89, which needs no wrapper &mdash; is
+<a href="vol3-03-when-c89.html">chapter&nbsp;3</a>.
+</p>
+
+<p class="navbtns">
+<a href="vol3-03-when-c89.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol3-03-when-c89.html">Honesty: when C89 is the better choice</a> | <a href="toc.html">Contents</a> | Next: <a href="toc.html">Contents</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
