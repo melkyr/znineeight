@@ -601,8 +601,8 @@ std.async.waitAll(&amp;sched) catch {
 </pre>
 <p>
 <tt>waitAll</tt> ticks the scheduler until every registered task is done or
-cancelled. Each tick resumes every ready task once, in order; a task that
-suspends is parked until the next tick. The two tasks take turns, the client
+cancelled. Each tick resumes every runnable task &mdash; ready or suspended
+&mdash; once, in order; a task that suspends is parked until the next tick. The two tasks take turns, the client
 finishes after its third echo and closes its socket, the connection task then
 reads end-of-file and finishes, and <tt>waitAll</tt> returns. The only error it
 can surface is <tt>error.OutOfFrame</tt> from a child-frame pool overflow,
@@ -636,10 +636,9 @@ testable in the first place.
 This is a network program, so it is also the first sample in the volume that
 proves the Windows socket path rather than just the console path. The
 committed harness cross-compiles the emitted C with
-<tt>i686-w64-mingw32-gcc</tt> through the emitted
-<tt>build_target.sh mingw</tt> branch (which links <tt>wsock32</tt> because the
-program imports <tt>std.net</tt>), then runs the resulting <tt>echo.exe</tt>
-under a dedicated 32-bit wine prefix. On this host the Windows run returned
+<tt>i686-w64-mingw32-gcc</tt> directly and links <tt>wsock32</tt>
+unconditionally, then runs the resulting <tt>echo.exe</tt> under a dedicated
+32-bit wine prefix. On this host the Windows run returned
 <tt>XRUNRC=0</tt> and <tt>WINE_RC=0</tt>, and its stdout was byte-identical to
 the Linux transcript above: the parity check reported <tt>PARITY=OK</tt>. The
 raw Windows stdout was already LF-terminated and matched the Linux baseline
@@ -794,10 +793,10 @@ readiness-gated drive, and it is the proof that the shape scales.
 The socket API behind this program is the <tt>std.net</tt> extern surface, and
 the harness that verified it under Windows is the same one the WinSock chapter
 will use; the detailed socket story is <i>(planned)</i> for
-chapter&nbsp;12. The line reader itself is documented with its file-based
-sibling in <a href="vol2-17-stdlib.html">Volume II chapter&nbsp;17, The
-standard library tour</a>, and the format string in the client's
-<tt>print</tt> is <a href="vol2-18-print.html">chapter&nbsp;18</a>. The
+chapter&nbsp;12. The line reader itself, <tt>std.stream</tt>'s
+<tt>SocketLineReader</tt>, is defined in <tt>sf/src/std_stream.zig</tt>; its
+async reader is the shipped implementation, and the format string in the
+client's <tt>print</tt> is <a href="vol2-18-print.html">chapter&nbsp;18</a>. The
 scheduling primitives are catalogued in
 <a href="vol4-15-builtins.html">Volume IV &mdash; Builtins</a>.
 </p>
