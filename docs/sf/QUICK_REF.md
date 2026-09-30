@@ -131,20 +131,20 @@ gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
 - A compiler ICE shows as `dump rc=134` (SIGABRT) with a `PANIC:` line — note the panic text may land
   on **stdout** (`/tmp/x.c`), not stderr.
 
-### Windows (`-osw`) build — Win9x target; `-lwsock32` iff `std_net` is emitted  [updated: 2026-09-10]
+### Windows (`-osw`) build — Win9x target; every `std` import emits `std_net`, so link `-lwsock32`  [updated: 2026-09-30]
 
-EMITEMIT prunes modules with no value reference, so the emitted set follows what the program actually uses: a **stdio-only** `@import("std")` program emits **no `std_net_*.c/.h`** and needs **no `-lwsock32`**; only a program that value-references net keeps `std_net` and needs it.
-- `net_prelude.h` is now **emitted into the output dir by the compiler** (self-contained emission, alongside `zig_compat.h`/`zig_runtime.h`/`zig_runtime.c`/`zig_pal.c`/`c_exit.c`); it resolves via `-I .` in the dump dir. It is no longer pulled from `sf/src/include`. (Pre-EMITEMIT it was a committed-only header and every std importer linked wsock32 — that note is superseded.)
-- **PROBE (2026-09-10, EMITEMIT):** never-net `repro/mi_matrix/std_import_bare_xmod` `-osw` emits no `std_net`; mingw `-c` with an include dir lacking `net_prelude.h` rc=0, link **without** `-lwsock32` rc=0, `wine` runs. Net `repro/mi_matrix/net_bind_startup_xmod` emits `std_net`; link **without** `-lwsock32` FAILS (`undefined _imp__WSAStartup@8`), **with** rc=0.
-- The emitted companion `build_target.sh` already carries `-lwsock32` in its mingw branch iff `std_net` was emitted (the `.bat`/owc scripts likewise on `-osw`); prefer it:
+On seed v89 the `std` re-export pulls `std_net` in, so **every** `@import("std")` program — even a stdio-only one such as `docs/sf/manuals/src/vol3/hello.z98` — emits **`std_net_*.c/.h`** and its mingw link **needs `-lwsock32`** (without it: `undefined reference to '_imp__recv@16'` / `'_imp__WSAStartup@8'`). This is consistent with the `std_net` use-site-cast note above; the earlier "EMITEMIT prunes `std_net` from a never-net `std` import" claim does not hold for the seed-v89 re-export.
+- `net_prelude.h` is now **emitted into the output dir by the compiler** (self-contained emission, alongside `zig_compat.h`/`zig_runtime.h`/`zig_runtime.c`/`zig_pal.c`/`c_exit.c`); it resolves via `-I .` in the dump dir. It is no longer pulled from `sf/src/include`. (The pre-EMITEMIT header-location note is superseded: `net_prelude.h` is now emitted, while link-time `-lwsock32` is still needed by every `std` importer on seed v89.)
+- **PROBE (re-measured 2026-09-30, seed v89):** never-net `repro/mi_matrix/std_import_bare_xmod` `-osw` **does** emit `std_net_*.c/.h`; mingw link **without** `-lwsock32` FAILS (`undefined reference to '_imp__recv@16'`), **with** rc=0. `docs/sf/manuals/src/vol3/hello.z98` (only `std.io.print`) behaves identically. Net `repro/mi_matrix/net_bind_startup_xmod` likewise emits `std_net` and needs `-lwsock32`.
+- The emitted companion `build_target.sh` sets `LIBS="-lwsock32"` in its mingw branch for every `std`-importing program (the `.bat`/owc scripts likewise on `-osw`); prefer it:
 ```bash
 cd /workspace/znineeight
 # 1) emit the self-contained dir (default emission; no --dump-c89 needed)
 timeout 120 <zig1> -osw -o <dump> <entry.zig>
-# 2) build for windows (mingw gcc); the script adds -lwsock32 iff std_net was emitted
+# 2) build for windows (mingw gcc); the script links -lwsock32 (every std import emits std_net)
 cd <dump> && timeout 120 sh build_target.sh mingw
 ```
-- Harness wrapper: `scripts/win32_cross/cross_build_run.sh <zig1> <entry> <workdir> <exe> [-lwsock32]` — pass `-lwsock32` only for a net-using program.
+- Harness wrapper: `scripts/win32_cross/cross_build_run.sh <zig1> <entry> <workdir> <exe> [-lwsock32]` — `cross_build_run.sh` links `-lwsock32` unconditionally (Amendment A0), so no extra flag is needed.
 
 ### Spill level switch (`-s<N>`) — RAM/I-O tradeoff  [updated: 2026-09-17]
 
@@ -154,9 +154,9 @@ S-RES → S-SIDE → S-EXTRA** — `-s1` moves AST to RAM, `-s2` also LIR, ... `
 files). S-EXTRA is the AST index-side `extra_children`/`extra_ranges` write-through pool pair
 (`.zig1_extra_ec.tmp` / `.zig1_extra_er.tmp`). Higher `-s` = more RAM, less disk I/O; emission is
 **byte-identical in every mode** (same data, different storage). Measured self-compile
-(self-hosted binary, `--markers --track-memory`, seed v89): `-s0` pool &asymp; 20.6 M (all disk);
-`-s1` pool 57.4 M with 18.4 M live; `-s6` (all RAM) 130.6 M. `-s0` fits the 64 MB `-mm` default;
-`-s2`+ must be paired with `-mm128` (else `memory limit exceeded`, rc=3), and `-s6` needs the
+(self-hosted binary, `--markers --track-memory`, seed v89): `-s0` pool &asymp; 20.6 MB (all disk);
+`-s1` pool 57.4 MB with 18.4 MB live; `-s6` (all RAM) 130.6 MB. `-s0` fits the 64 MB `-mm` default;
+`-s2`–`-s5` must be paired with `-mm128` (else `memory limit exceeded`, rc=3), and `-s6` needs the
 larger `-mm0` cap. Range 0..6; bare
 `-s` / non-digit / out-of-range (`-s7`) error rc=1. Per-level smoke: `.zig1_ast.tmp` absent at
 `-s1`, `.zig1_lir.tmp` absent at `-s2`, ..., `.zig1_extra_ec.tmp`/`.zig1_extra_er.tmp` absent at
