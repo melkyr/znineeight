@@ -526,9 +526,33 @@ Which approach?
 
 ---
 
-## Deferred compiler I/F — `anytype` call-path reject (parked; run after all writing)
+## Amendment A1 (operator-ruled, 2026-09-30): `anytype` clean reject + negative controls
 
-The `anytype` call-path segfault observed during Task 1 (seed v89: `fn show(x: anytype) void { _ = x; }` + `show(5)` → rc 139) is **parked**, consistent with the earlier deferral in `docs/superpowers/plans/2026-08-06-compiler-gaps-plan.md` (AMENDMENT 5: "`anytype` (comptime-generic) support remains a separate future feature"). `anytype` is designed-unsupported (`sf/src/analyzer.zig:458` `ERR_2012_ANYTYPE_NOT_SUPPORTED`; `sf/src/parser.zig:1130` makes `parserParseType` return node 0 for `anytype`, so that check and the FX13-F signature walk skip it today).
+Operator rulings (m1358): **(1.a)** schedule this I/F as an amendment appended to this plan (this section supersedes the earlier parked "Deferred compiler I/F" note); **(2)** reuse the existing-but-dead `ERR_2012_ANYTYPE_NOT_SUPPORTED` = `error[2012]` ("anytype not supported in Z98"); **(3)** the FX13-F positive controls' `fn anyf(x: anytype) void {}` shape is NOT dropped — it becomes part of the **negative controls** that show `anytype` is unsupported; **(4)** reject the `anytype` marker in every signature/type position (parameter, return, nested fn-pointer arg type, etc.); do not implement generics; leave the `noreturn` exemption untouched.
 
-- **Writing-phase rule:** no Volume III chapter may call an `anytype` function — a call crashes today and is expected to be rejected once the reject path is fixed. Chapters may state that `anytype`/generics are unsupported.
-- **The scoped I/F that implements the clean reject is appended and executed AFTER all Volume III writing is complete (after Task 20)**, by operator ruling (2026-09-30): an **I** task to root-cause the parser-returns-0 / analyzer-dead-check path, then an **F** task delivering a clean level-0 reject (`error[16]`/`error[20]`) with a `repro/mi_matrix/` fixture, a standalone repro, and the standard gate battery. Seed rotation stays closeout-only; if this I/F lands after Task 20 it carries its own subsequent closeout rotation.
+Context: the call-path segfault observed during Task 1 (seed v89: `fn show(x: anytype) void { _ = x; }` + `show(5)` → rc 139) is caused by `parserParseType` returning node 0 for `anytype` (`sf/src/parser.zig:1130`; a second sighting classifies `is_type` at `:762`), so `analyzeSignature`'s `type_expr != 0` guard (`sf/src/analyzer.zig:421-424`) skips `validateSignatureType` and the `ERR_2012` check (`sf/src/analyzer.zig:458-462`) is dead. Consistent with `docs/superpowers/plans/2026-08-06-compiler-gaps-plan.md` AMENDMENT 5 (`anytype` ≠ variadic; comptime-generic support deferred).
+
+### Task A1-I: `anytype` reject — root cause + fix specification (read-only)
+
+**Files:**
+- Read-only: `sf/src/parser.zig`, `sf/src/analyzer.zig`, `sf/src/semantic_analyzer.zig`, `sf/src/type_resolver.zig`, `sf/src/lower.zig`, `sf/src/diagnostics.zig`; `repro/mi_matrix/sig_known_type_ok_xmod/`, `repro/sig_known_type_ok.z98`, `repro/mi_matrix/EXPECTED_FAIL.md`; `examples/zig0/**` (retired tree, census only); `docs/sf/manuals/src/**`.
+- Create (untracked): `.superpowers/sdd/2026-09-30-z98-manual-volume-III-plan/task-A1-I-report.md`. No `sf/src` edits, no commit.
+
+- [ ] **Step 1: Rebuild + reproduce.** Build the seed compiler (v89 recipe); reproduce the shape matrix — anytype declaration-only, anytype function called, return position, nested fn-pointer arg — and reconcile the ch2 probe's `error[20]` against the FX13-F positive fixture's rc 0 for `fn anyf(x: anytype) void {}` (pin exactly which shape yields which result).
+- [ ] **Step 2: Census every `anytype` use.** `sf/src/**` (compiler self-emission must stay clean), `examples/z98/**`, `repro/**`, `docs/sf/manuals/src/**`, and the retired `examples/zig0/**` (census only, not gated). List every site the reject would newly fail.
+- [ ] **Step 3: Pin every entry point.** Parameter type, return type, nested fn-pointer argument type, `var x: anytype`, `const T = anytype`, and the `:762` `is_type` path; record the exact AST node (or node 0 marker) produced for each and where sema sees it.
+- [ ] **Step 4: Specify the minimal fix.** Expected shape: emit `ERR_2012_ANYTYPE_NOT_SUPPORTED` (`error[2012]`, level-0, deduped, ASCII) at the offending parameter/return span from `analyzeSignature` when the anytype marker is present — e.g. a distinct parse-time sentinel instead of a bare node 0, or a `kw_anytype` check — while keeping the FX13-F unknown-name signature walk and the `noreturn` exemption intact. Give the exact code sites, the diagnostic shape/span, the blast radius, and the fixture-migration list (the two FX13-F controls).
+- [ ] **Step 5: Verification plan + predicted movement.** Fixtures (negative `repro/mi_matrix/anytype_reject_xmod/` with `expected.rc` + `expected_error.txt` census; standalone `repro/anytype_reject.z98`), the gate battery, and the prediction (expected: only the migrated control changes; no 4-MD5/corpus/stdlib movement). Write the report; no commit.
+
+### Task A1-F: `anytype` reject — implementation + controls
+
+**Files:**
+- Modify: `sf/src/**` (only the sites A1-I pins); `repro/mi_matrix/sig_known_type_ok_xmod/main.zig` (+ its header comment) and `repro/sig_known_type_ok.z98` (move the anytype shape out of the positive control; ruling 3).
+- Create: `repro/mi_matrix/anytype_reject_xmod/{main.zig,expected.rc,expected_error.txt}` (negative controls: declaration-only, called, return position, nested fn-pointer arg), `repro/anytype_reject.z98`; bump `repro/mi_matrix/EXPECTED_FAIL.md`; update the tech docs per `docs/sf/AGENTS.md` §1.1.1.
+
+- [ ] **Step 1: Implement the reject** exactly as A1-I specifies (level-0 `error[2012]`, deduped, ASCII, span on the offending type node).
+- [ ] **Step 2: Migrate the controls** — remove the accepted-anytype claim from the FX13-F positive fixture/repro and add the anytype shapes to the negative fixture/standalone (ruling 3). Keep the `noreturn` exemption unchanged.
+- [ ] **Step 3: Full gate battery verbatim** (self-compile two-hop closure, example matrix, 4-MD5 both modes, stdlib, corpus `-s0` + join-diff, `check_emit_support.sh`, `verify_upgraded.sh`); **STOP on unexpected movement**; record the moved fixed point. The seed is NOT rotated here.
+- [ ] **Step 4: Commit** `fix(sema): reject anytype in signatures` (plus a docs commit for the tech-doc/EXPECTED_FAIL changes if split); append the report.
+
+**Execution:** A1-I is dispatched read-only; A1-F follows after the I review (and any operator ruling the I surfaces). Seed rotation for this amendment is closeout-only and happens only if a later closeout is scheduled for it.
