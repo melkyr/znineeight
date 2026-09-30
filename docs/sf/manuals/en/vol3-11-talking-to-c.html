@@ -1,0 +1,858 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Talking to C</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume III talking to C C interop extern fn extern c extern stdcall calling convention cInclude module level struct by value ABI name mangling reserved identifiers getenv strlen export">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol3-10-coroutine-program.html">
+<link rel="next" href="toc.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume III &mdash; Working in the Era</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol3-00-title.html">How to read this</a><br>
+<a href="vol3-01-the-1998-machine.html">The 1998 machine</a><br>
+<a href="vol3-02-honesty-inventory.html">Honesty: what Z98 does and does not give you</a><br>
+<a href="vol3-03-when-c89.html">Honesty: when C89 is the better choice</a><br>
+<a href="vol3-04-when-cpp98.html">Honesty: when C++98 is the better choice</a><br>
+<a href="vol3-05-when-assembly.html">Honesty: when assembly is the better choice</a><br>
+<a href="vol3-06-era-limits.html">Honesty: what you cannot do on a Pentium II</a><br>
+<a href="vol3-07-friction.html">Honesty: the friction you will hit</a><br>
+<a href="vol3-08-win9x.html">Building for Win9x</a><br>
+<a href="vol3-09-coroutines.html">Coroutines &mdash; the third big shift</a><br>
+<a href="vol3-10-coroutine-program.html">A coroutine program</a><br>
+<b>Talking to C</b><br>
+WinSock under Z98 <i>(planned)</i><br>
+The Win32 Debug API <i>(planned)</i><br>
+DirectX under CINTERFACE <i>(planned)</i><br>
+The debugger workflow <i>(planned)</i><br>
+Memory budgets <i>(planned)</i><br>
+Packaging and shipping <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Talking to C</h1>
+<p>
+Sooner or later every program for this machine has to call something that is
+not Z98. It is the Win32 API, or a C89 library someone shipped as a
+<tt>.lib</tt> and a header, or the C run-time the operating system already
+provides. The 1998 machine is not a place where you can pretend those libraries
+do not exist; they are the platform. This chapter is the exact contract for
+reaching them from Z98, and for letting them reach back.
+</p>
+<p>
+It is also the shortest conceptual distance in the whole volume, because
+<a href="vol3-03-when-c89.html">chapter&nbsp;3</a> already stated the
+load-bearing fact: <b>Z98 emits C89</b>. A Z98 function is a C function by the
+time the linker sees it, and a Z98 module is a C translation unit. It is compiled
+by the same C compiler as everything else on the machine, against the same
+headers, with the same calling convention. So talking to C is not a bridge,
+a runtime, or a foreign-function interface. It is one C translation unit
+declaring a symbol that another translation unit defines, which is the oldest
+kind of interoperability there is.
+</p>
+<p>
+What this chapter fixes is the surface: how to write the declaration
+(<tt>extern fn</tt>), how to pull in the header (<tt>@cInclude</tt>, module level
+only), what calling conventions mean (<tt>"c"</tt>, <tt>"stdcall"</tt>), what
+happens to structs passed by value, which identifiers the language reserves, and
+how Z98 renames its own symbols so that they never collide with the C names it
+calls. Each of those is a rule with a diagnostic or an emitted line behind it,
+and each is shown from a run on the seed-built compiler.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffffc8">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-note.gif" width="16" height="16" alt="Note"></td>
+<td><b>What is measured here.</b> Every Z98 statement on this page was checked
+against <tt>docs/reference/Language_Spec_Z98.md</tt> and the compiler source, and
+every transcript is a real run of the seed-built <tt>zig1</tt>. The sample,
+<tt>getenv.z98</tt>, is compiled on Linux and cross-built and run under the
+committed Windows harness; its Windows output below is that run, not a sketch.
+The struct-by-value layout is inherited from the compiler's frozen 32-bit model
+(FX14) and the coroutine plan's Win32 ABI oracle, which matched
+<tt>WNDCLASSEX</tt>, <tt>POINT</tt>, and <tt>MSG</tt> against the system
+headers. Where this chapter states an era fact about the Win32 API it says so;
+where it states a Z98 fact it shows the emitted C or the diagnostic.</td>
+</tr>
+</table>
+
+<h2>The seam is the C ABI</h2>
+<p>
+Start with the model, because it removes most of the anxiety. A Z98 module
+compiles to one C translation unit and one header. A function you write becomes
+a C function; a struct you define becomes a C <tt>struct</tt>; a pointer becomes
+a C pointer. The emitted code is C89, so the seam between your module and a C
+library is the ordinary C ABI: symbol names, argument passing, and the calling
+convention. There is no marshalling layer, no generated glue, and no runtime
+that has to be initialized before the call.
+</p>
+<p>
+That means the declaration is the whole contract. When you write an
+<tt>extern</tt> declaration you are telling the compiler two things: that a
+symbol with this name exists somewhere else, and that it has this signature. The
+compiler checks your Z98 call sites against the signature you gave it. It does
+not, and cannot, check that the signature matches what the C library actually
+defines &mdash; that is the C ABI's job, and it is why the prototype in the
+library's header matters. If your Z98 declaration and the C header disagree, the
+type checker on the Z98 side is silent and the error shows up as a corrupted
+argument at run time. The chapter returns to this in
+<a href="#common-mistakes">Common mistakes</a>, because it is the one mistake in
+this area that the compiler cannot catch for you.
+</p>
+<p>
+The seam runs in both directions, and it is worth naming both now. In the first
+direction, Z98 calls out: you declare a C function and call it. In the second,
+C calls in: you mark a Z98 function so that the emitter writes its plain,
+unmangled name into the object file, and the C side calls it like any other C
+function. The two directions use the same ABI and the same linker; the only
+difference is which side writes the declaration.
+</p>
+
+<h2>Calling out: <tt>extern fn</tt></h2>
+<p>
+A C function that Z98 calls is declared with <tt>extern</tt>. The ordinary form
+names the return type and the parameters exactly as a Z98 function does, but
+there is no body and the declaration ends in a semicolon:
+</p>
+<pre>
+extern "c" fn getenv(name: [*]const u8) [*]u8;
+extern "c" fn strlen(s: [*]const u8) usize;
+</pre>
+<p>
+The type mapping is direct, and it is worth reading the two declarations above
+carefully. A C <tt>char *</tt> is <tt>[*]const u8</tt> when Z98 only reads
+through it and <tt>[*]u8</tt> when it may write through it; the
+<tt>[@intFromPtr]</tt>-style null check the sample uses reflects that a C
+pointer may be null where a Z98 many-pointer usually is not. A C <tt>size_t</tt>
+is <tt>usize</tt>, which on this 32-bit target is four bytes wide. The compiler
+emits the Z98 type as the matching C type in the declaration it writes into the
+module header.
+</p>
+<p>
+The calling convention is optional and the default is <tt>cdecl</tt>. Writing
+<tt>extern fn f()</tt> and <tt>extern "c" fn f()</tt> declare the same thing;
+the second is the explicit spelling, and the sample uses it because it documents
+the intent. The other convention on this target is <tt>stdcall</tt>, the one the
+32-bit Win32 API uses:
+</p>
+<pre>
+extern "stdcall" fn MessageBoxA(hwnd: ?*void, text: [*]const u8, caption: [*]const u8, flags: u32) i32;
+</pre>
+<p>
+A word about that declaration before the details below: <tt>?*void</tt> is the
+Z98 spelling of a possibly-null <tt>void *</tt> in a parameter position, but as
+<a href="vol3-09-coroutines.html">chapter&nbsp;9</a> and
+<a href="vol3-10-coroutine-program.html">chapter&nbsp;10</a> warned, a
+non-scalar optional in some positions emits invalid C89. At the extern boundary
+the safe habit is the one the sample follows: use <tt>[*]const u8</tt> for a
+string and an explicit null test rather than a rich optional type. The point of
+this chapter is the rule, not a Win32 tutorial; the API itself is
+chapter&nbsp;13, The Win32 Debug API <i>(planned)</i>.
+</p>
+
+<h3>The prototype rule</h3>
+<p>
+There is one asymmetry in the emitted C that is easy to miss and that costs a
+warning if you do. A <b>non-variadic</b> <tt>extern</tt> declaration does not by
+itself emit a prototype into the generated C. A variadic one does. The rule
+follows from what the C compiler needs: a call to a variadic function must have
+a prototype in scope so the default argument promotions are applied, while a
+fixed-argument call can be left to an implicit declaration.
+</p>
+<p>
+Emit a module that declares one of each and you can see it. The declaration
+</p>
+<pre>
+extern "c" fn printf(fmt: [*]const u8, ...) i32;
+extern "c" fn c_add(a: i32, b: i32) i32;
+</pre>
+<p>
+produces a module header whose forward declarations contain the variadic
+prototype and nothing for the fixed one:
+</p>
+<pre>
+/* Forward declarations */
+int printf(unsigned char*, ...);
+void zF_EA90E208_main(void);
+/* Storage globals (extern decls) */
+</pre>
+<p>
+The call site is ordinary either way &mdash; <tt>zT_6 = c_add((int)((int)zT_2),
+(int)((int)zT_4));</tt> &mdash; but the C compiler never saw a declaration of
+<tt>c_add</tt>. Under the supported build that is only a warning
+(<tt>-Wno-implicit-function-declaration</tt> is on, as
+<a href="vol3-05-when-assembly.html">chapter&nbsp;5</a> showed), and for a
+function whose return type is <tt>int</tt> the implicit declaration is correct
+by luck. It is not correct in general, and the fix is not to hope. <b>Put the C
+prototype in a header and include that header with <tt>@cInclude</tt>.</b> Then
+the C compiler has the real declaration, and it also checks your Z98-side
+argument types against the same text the library defines.
+</p>
+
+<h2><tt>@cInclude</tt>: module level, and only there</h2>
+<p>
+<tt>@cInclude("header.h")</tt> writes a C <tt>#include</tt> into the module's
+generated header. It is the way you bring the C library's own declarations into
+the translation unit, so that argument passing and returns are checked against
+the real header instead of an implicit declaration. The sample begins with two
+of them:
+</p>
+<pre>
+@cInclude("stdlib.h");
+@cInclude("string.h");
+</pre>
+<p>
+The emitted header carries the includes verbatim, in the order written, after
+the compiler's own runtime headers:
+</p>
+<pre>
+#include "zig_compat.h"
+#include "zig_special_types.h"
+#include "stdlib.h"
+#include "string.h"
+#include "std_io_59DB29D9.h"
+...
+</pre>
+<p>
+Two details in that listing are worth calling out. First, the include is emitted
+with quotes rather than angle brackets, exactly as written. That does not stop
+the compiler from finding the C library &mdash; a quoted include falls back to
+the system search path after the local one &mdash; but it does mean the header
+is searched for in the module's own directory first, which is what you want for
+a project header and harmless for a system one. Second, the includes land in
+the <i>module header</i>, not the <tt>.c</tt>. Every translation unit that
+includes this module's header &mdash; including the generated std modules
+&mdash; therefore sees the C declarations too, which is exactly what you want
+when a struct you defined for the C boundary has to be visible where the call
+is emitted.
+</p>
+<p>
+The rule that matters is where the builtin may appear: <b>module level only.</b>
+At the top of a file, beside the declarations, it is handled and emitted. In
+statement position, inside a function body, it parses but the type resolver has
+no case for the node, and the compiler reports an internal error rather than a
+designed diagnostic:
+</p>
+<pre>
+$ /tmp/manual_seed/zig1_5_clean -o out cinclude_stmt.z98
+cinclude_stmt.z98:1:2: error[3020]: internal error: unhandled node kind in type resolution
+pub fn main() void {
+  ^
+</pre>
+<p>
+Read that honestly: the location is not meaningful and the message says
+<i>internal error</i>. This is the compiler's existing behavior, not a designed
+rejection of the form, and it is the same reject that the Volume II baseline
+recorded; the chapter documents what is there. It emits no <tt>.c</tt> and
+returns a non-zero status, so the compiler does stop &mdash; you cannot ship a
+build that put an include in the wrong place. The way over is one line of
+discipline: <b>includes go at module level.</b> Move the statement to the top of
+the file and it compiles; the sample's two includes are where they belong.
+</p>
+
+<h2>Calling conventions</h2>
+<p>
+A calling convention is the agreement about how arguments are passed and who
+cleans up the stack. On this 32-bit target there are two that matter. The C
+default, <tt>cdecl</tt>, is what every ordinary C function and every libc
+function uses; the caller pushes the arguments and the caller pops them. The
+Win32 <tt>stdcall</tt> convention is what the 32-bit Windows API uses; the
+callee pops the stack, and a function whose declaration and definition disagree
+about that corrupts the stack.
+</p>
+<p>
+Z98 spells the convention as a string after <tt>extern</tt>. The accepted
+spellings are <tt>"c"</tt> (or <tt>"cdecl"</tt>) and <tt>"stdcall"</tt>.
+Anything else is rejected at the string, before any code is emitted:
+</p>
+<pre>
+$ /tmp/manual_seed/zig1_5_clean -o out callconv_bad.z98
+callconv_bad.z98:1:7: error[3045]: unknown calling convention in `extern`
+extern "watcom" fn foo(x: i32) i32;
+       ^^^^^^^^
+</pre>
+<p>
+<tt>error[3045]</tt> is a parser-level diagnostic: the parser classifies the
+string and, when it cannot, the build stops with no C. There is no silent
+fallback to <tt>cdecl</tt>, which is the safe choice &mdash; a <tt>stdcall</tt>
+function mis-declared as <tt>cdecl</tt> would link and then corrupt the stack on
+the era machine, and a diagnostic before emission is far better than that.
+</p>
+<p>
+The standard library is the reference for how this is done in practice. The
+networking module declares every Winsock entry point <tt>stdcall</tt> and the
+one POSIX-only helper <tt>cdecl</tt>, exactly because the two platforms differ:
+</p>
+<pre>
+extern "stdcall" fn socket(af: i32, typ: i32, proto: i32) i32;
+...
+extern "stdcall" fn WSAStartup(wVersion: u16, lpWSAData: *void) i32;
+extern "stdcall" fn WSAGetLastError() i32;
+extern "c" fn __errno_location() *i32;
+</pre>
+<p>
+The emitted C makes the convention a macro so that one source builds for every
+toolchain. The compiler writes this into <tt>zig_compat.h</tt>, and the standard
+headers beside the program:
+</p>
+<pre>
+#if !defined(_WIN32)
+#define Z98_STDCALL
+#elif defined(_MSC_VER) || defined(__WATCOMC__)
+#define Z98_STDCALL __stdcall
+#else
+#define Z98_STDCALL __attribute__((stdcall))
+#endif
+</pre>
+<p>
+Off Windows the macro is empty, because there is no <tt>stdcall</tt> in the
+Linux ABI and a Z98 program that declares a <tt>stdcall</tt> function would only
+do so when targeting Windows. On Windows it becomes the toolchain's own spelling
+&mdash; <tt>__stdcall</tt> for MSVC and for OpenWatcom's <tt>wcc386</tt>,
+<tt>__attribute__((stdcall))</tt> for mingw. That three-way spelling is the kind
+of detail a manual-vtable C89 project usually has to carry by hand; on this
+target the compiler carries it, and the declaration is all you write.
+</p>
+<p>
+One consequence reaches into the language's type rules. A function pointer's
+type includes its calling convention, so a function-pointer value may only be
+assigned or coerced to a target whose convention matches. A <tt>stdcall</tt>
+function value put in a <tt>cdecl</tt> function-pointer slot is rejected with
+the level-0 <tt>error[3000]</tt>, on every assignment and argument position
+(FX17-F). That is the type system enforcing the same ABI rule the parser
+enforces on the declaration string.
+</p>
+
+<h2>What crosses the boundary</h2>
+<p>
+The types that cross are the types C has. Integers map to their C widths, with
+<tt>usize</tt> and <tt>isize</tt> four bytes on this target; <tt>bool</tt> to
+C's one-byte boolean convention; pointers to pointers. A slice does not cross as
+a slice, because there is no C type for one: pass <tt>s.ptr</tt> and
+<tt>s.len</tt> as the two C parameters the library expects, which is exactly
+what a C caller would do with an array and a length. An enum crosses as its
+backing integer. A struct crosses as a C struct, including by value, which is
+the next section.
+</p>
+<p>
+What does <i>not</i> cross is the part of Z98 that has no C representation.
+Error unions and optionals are Z98 control-flow values, not C values; an
+<tt>E!T</tt> has no agreed C spelling, and a rich optional may be a tagged
+struct or a sentinel depending on the payload. Keep them on the Z98 side of the
+seam. The idiomatic shape is the one the sample uses for the null pointer: call
+the C function with the C-shaped arguments, then translate the result into Z98's
+world immediately. A C pointer that may be null is tested with
+<tt>@intFromPtr(v) != 0</tt> and turned into whatever Z98 value you want; a C
+integer error code is compared to its sentinel and turned into an error union.
+The boundary is where the two type systems meet, so do the translation once, at
+the call, rather than passing Z98-shaped values across.
+</p>
+<p>
+There is one more restriction worth stating because it is a real limit with a
+real way over. Z98 does not have <tt>extern struct</tt>, <tt>opaque</tt>, or
+<tt>vector</tt> types (Language Spec &sect;7.2). You define a boundary struct as
+an ordinary Z98 <tt>struct</tt> with the fields the C header declares, and you
+use a pointer to <tt>void</tt> where C uses an opaque handle. That is sufficient
+for every API this volume touches, and it is the same choice C89 forces on
+everyone: the handle is an address and the layout is whatever the header says.
+</p>
+
+<h2>Struct-by-value and the 32-bit layout</h2>
+<p>
+A Z98 struct is a C struct laid out by the same rules, so passing one by value
+to a C function is direct. Declare the struct, declare the extern with the
+struct as a parameter, and the emitter writes both the struct and the call:
+</p>
+<pre>
+const Point = struct { x: i32, y: i32 };
+const Boxed = struct { tag: u8, value: i64 };
+
+extern "c" fn c_point_sum(p: Point) i32;
+extern "c" fn c_boxed_take(b: Boxed) i32;
+</pre>
+<p>
+The emitted definitions are the C structs you would have written by hand, and
+the call is a by-value C call:
+</p>
+<pre>
+struct zT_EAA8EF31_Point {
+	int x;
+	int y;
+};
+struct zT_2E48BFE3_Boxed {
+	unsigned char tag;
+	zT_C69B2266_i64 value;
+};
+...
+zT_12 = p;
+zT_13 = c_point_sum(zT_12);
+</pre>
+<p>
+The layout is fixed by the compiler's frozen model (FX14), and the model is
+worth knowing because it is what makes the boundary predictable. On this 32-bit
+target <tt>i64</tt>, <tt>u64</tt>, and <tt>f64</tt> are size 8 and alignment 8;
+every struct, union, optional, error union, tuple, and array inherits the
+maximum alignment of its members, so any composite containing a 64-bit scalar is
+alignment 8 and padded accordingly. <tt>Boxed</tt> above is the example: a
+one-byte <tt>tag</tt>, seven bytes of padding, a 64-bit <tt>value</tt>, for a
+size of 16 and alignment 8. The compiler pins that model on every host compiler
+by routing every 64-bit declaration through an aligned carrier typedef
+(<tt>typedef long long &lt;carrier&gt; Z98_ALIGN8;</tt>), so gcc, mingw, MSVC,
+and OpenWatcom all produce the same bytes.
+</p>
+<p>
+That is also why the manual's rule for a struct that has to match an operating
+system structure is: define it without 64-bit fields unless the header really
+has them, and <b>do not override the packing</b>. The 32-bit defaults
+(<tt>/Zp8</tt> for MSVC, <tt>-zp8</tt> for OpenWatcom) already align 64-bit
+scalars to eight, and a <tt>/Zp4</tt> or <tt>-zp4</tt> override breaks the pin.
+Structures that genuinely must be byte-packed are a different feature &mdash;
+Z98's packed structs, the subject of
+<a href="vol2-05-packed-structs.html">Volume II chapter&nbsp;5</a> &mdash; and
+they reject 64-bit packed fields. Keep the two ideas apart: a boundary struct
+that matches an API is an ordinary aligned struct; a wire format is a packed
+one.
+</p>
+<p>
+The Win32 side of this inherited its proof rather than assuming it. The
+coroutine plan's ABI oracle cross-compiled the frame and <tt>Context</tt>
+layouts with <tt>i686-w64-mingw32-gcc</tt> and matched them, and the same oracle
+checked the system structures this chapter's boundary style produces:
+<tt>WNDCLASSEX</tt>, <tt>POINT</tt>, and <tt>MSG</tt> came out at the sizes and
+offsets the Windows headers define. A struct defined the Z98 way and passed by
+value is a struct the 32-bit Windows API accepts.
+</p>
+
+<h2>Names: reserved identifiers and mangling</h2>
+<p>
+C and Z98 disagree about which names belong to whom, and the compiler settles
+the disagreement in Z98's favor with two rules. The first rule is about the
+platform's reserved names. Identifiers beginning with two underscores are
+reserved for the C implementation, and the Language Spec states the Z98 side
+plainly: user-defined identifiers starting with <tt>__</tt> are automatically
+mangled to avoid collisions with internal compiler symbols. You may write them;
+the compiler will not let them collide with the runtime's.
+</p>
+<p>
+The second rule is broader, and it is the one that changes what you see in the
+emitted C: Z98 mangles <i>every</i> identifier it defines. The form is
+<tt>z&lt;kind&gt;_&lt;hash&gt;_&lt;name&gt;</tt>, where the kind character is
+<tt>F</tt> for a function, <tt>G</tt> for a module-level variable or constant,
+and <tt>T</tt> for a named type, the hash is an eight-hex-digit FNV-1a of the
+name, and the original name follows. So the function you wrote as <tt>find</tt>
+is emitted as <tt>zF_BDF0855A_find</tt>, a module variable <tt>counter</tt> as
+<tt>zG_9CACDE23_counter</tt>, and the type <tt>Point</tt> as
+ <tt>zT_EAA8EF31_Point</tt>. The design document behind the mangler is
+<tt>docs/reference/name_mangling.md</tt>; the emitted forms above are what the
+seed compiler actually writes, and it is the emitted form that the linker sees.
+What matters here is that the name in your source is never the symbol in the
+object file.
+
+</p>
+<p>
+Three special cases finish the rule. A name that is a C89 keyword is prefixed
+with <tt>z_</tt> instead, so a Z98 function named <tt>double</tt> &mdash;
+<tt>double</tt> is not a Z98 keyword &mdash; is emitted as <tt>z_double</tt>,
+and one named <tt>unsigned</tt> as <tt>z_unsigned</tt>. A name that begins with
+an underscore or a double underscore is pushed out of the reserved space by the
+same <tt>z</tt> prefix, so <tt>_Test</tt> becomes <tt>zF_839A0C56__Test</tt> and
+<tt>__foo</tt> becomes <tt>zF_69D92BAD___foo</tt>; the leading <tt>z</tt> is
+what keeps them from colliding with the runtime's own <tt>_</tt>-names. And the
+mangled name is truncated to 31 characters for MSVC 6 compatibility, with a
+numeric suffix appended when two mangled names would otherwise collide.
+</p>
+<p>
+Now the part that makes the seam work: <b>a name you declare <tt>extern</tt> is
+not mangled.</b> An extern declaration is a promise about an existing C symbol,
+so the emitter writes it exactly as you declared it. That is why the sample's
+calls to <tt>getenv</tt> and <tt>strlen</tt> appear in the generated C as
+<tt>getenv</tt> and <tt>strlen</tt>, and why the hand-written
+<tt>c_point_sum</tt> in the struct example is called under that plain name. The
+mangling rule applies to what Z98 defines; the extern rule applies to what Z98
+borrows.
+</p>
+<p>
+The reverse direction has its own keyword. An <tt>export</tt> function is a Z98
+function whose plain, unmangled name is written into the object file so that C
+can call it:
+</p>
+<pre>
+pub var counter: i32 = 3;
+
+export fn c_callable(x: i32) i32 {
+    return x + counter;
+}
+</pre>
+<p>
+The emitted definition keeps its C name, and the module header carries the
+prototype a C caller needs:
+</p>
+<pre>
+int zG_9CACDE23_counter;
+/* c_callable */
+int c_callable(int x) {
+    ...
+}
+...
+/* Forward declarations */
+int c_callable(int);
+void zF_EA90E208_main(void);
+</pre>
+<p>
+That closes the loop. <tt>extern</tt> borrows a C name; <tt>export</tt> lends
+one. A Z98 module can call into a C library and offer functions back to it, and
+the module's internal helpers keep their <tt>zF_</tt>-mangled names throughout,
+so nothing you define can accidentally shadow a C symbol and nothing C defines
+can accidentally shadow you.
+</p>
+
+<h2>The sample: <tt>getenv.z98</tt></h2>
+<p>
+The sample is small on purpose. It calls two C run-time functions through
+<tt>extern</tt>, handles the one case where a C function returns a pointer that
+may be null, and prints what it finds. It exercises the whole surface a first C
+call needs: a module-level include, a <tt>cdecl</tt> extern declaration, a
+pointer parameter, a pointer return, a null test, and an integer return value.
+</p>
+<pre>
+@cInclude("stdlib.h");
+@cInclude("string.h");
+
+const std = @import("std");
+
+extern "c" fn getenv(name: [*]const u8) [*]u8;
+extern "c" fn strlen(s: [*]const u8) usize;
+
+// Look up one environment variable. getenv returns a C `char *`: the address
+// of the value, or a null pointer when the name is not set.
+fn find(name: []const u8) [*]u8 {
+    return getenv(name.ptr);
+}
+
+pub fn main() void {
+    var present: []const u8 = "PATH";
+    var missing: []const u8 = "Z98_CH11_NOT_SET";
+
+    var p: [*]u8 = find(present);
+    if (@intFromPtr(p) != 0) {
+        std.io.print("PATH: set\n", .{});
+    } else {
+        std.io.print("PATH: unset\n", .{});
+    }
+
+    var q: [*]u8 = find(missing);
+    if (@intFromPtr(q) != 0) {
+        std.io.print("Z98_CH11_NOT_SET: set\n", .{});
+    } else {
+        std.io.print("Z98_CH11_NOT_SET: unset\n", .{});
+    }
+
+    var msg: []const u8 = "talking to C";
+    std.io.print("strlen: {}\n", .{strlen(msg.ptr)});
+}
+</pre>
+
+<h3>Walking the sample</h3>
+<p>
+The first two lines are the includes. They are module-level, so the compiler
+emits them into <tt>getenv</tt>'s generated header, and the C compiler then has
+the real prototypes of <tt>getenv</tt> and <tt>strlen</tt> when it compiles the
+call sites. Without them the same program still compiles under the supported
+build, but the calls are implicit declarations and the argument types are
+unchecked on the C side; the includes are how the declaration you wrote and the
+declaration the library defines stay the same.
+</p>
+<p>
+The two <tt>extern</tt> declarations are the contract. <tt>getenv</tt> takes a
+C string and returns a C string; both are <tt>getenv</tt>'s own types, so the
+Z98 spellings are a many-pointer to bytes in and a many-pointer to bytes out.
+<tt>strlen</tt> takes a C string and returns a <tt>size_t</tt>, which is
+<tt>usize</tt> here. The convention string <tt>"c"</tt> is explicit even though
+it is the default, because a declaration is documentation and a reader should
+not have to remember the default.
+</p>
+<p>
+The <tt>find</tt> helper is where the Z98-to-C translation happens. A Z98 slice
+carries its own pointer and length; C wants a pointer to a terminated string.
+The helper takes the slice but passes only <tt>name.ptr</tt> to <tt>getenv</tt>,
+and returns the raw C pointer. That keeps the seam narrow: one function turns a
+Z98 value into a C argument and a C result into a Z98 value, and the rest of the
+program never sees a half-translated type.
+</p>
+<p>
+In <tt>main</tt>, the null test is the C idiom translated honestly.
+<tt>getenv</tt> signals "not set" with a null pointer, and a Z98 many-pointer
+has no optional wrapper here, so the program tests the address with
+<tt>@intFromPtr(p) != 0</tt>. When the name is set, it prints a fixed line;
+when it is not, it prints the other. The two names are chosen so the result is
+deterministic on both targets: <tt>PATH</tt> is set in every environment the
+program runs in, and <tt>Z98_CH11_NOT_SET</tt> is chosen so that it is not.
+Finally <tt>strlen</tt> is called on a literal and its integer result is
+printed; the value <tt>12</tt> is a number computed by C and consumed by Z98.
+</p>
+
+<h3>The transcript</h3>
+<p>
+Compiled with the seed-built compiler, linked with the standard Linux build
+script, and run:
+</p>
+<pre>
+$ mkdir -p out && /tmp/manual_seed/zig1_5_clean -o out getenv.z98
+$ cd out && sh build_target.sh linux getenv
+Building for linux...
+Built: getenv
+$ ./getenv
+PATH: set
+Z98_CH11_NOT_SET: unset
+strlen: 12
+</pre>
+<p>
+The first two lines are the two calls into the environment; the last is C's
+<tt>strlen</tt> answering Z98's question with the length of <tt>"talking to
+C"</tt>, which is twelve bytes. Every line is the result of a call across the
+seam, and every one is reproducible because the environment is fixed before the
+run.
+</p>
+
+<h2>Under Windows 98</h2>
+<p>
+The sample calls functions the C run-time provides on both targets, so it is
+also a Windows sample: <tt>getenv</tt> and <tt>strlen</tt> are in the Windows
+C run-time exactly as they are in glibc. The committed harness cross-builds the
+emitted C with <tt>i686-w64-mingw32-gcc</tt> and runs the resulting
+<tt>prog.exe</tt> under a dedicated 32-bit wine prefix
+(<tt>wine-8.0</tt>). On this host the Windows run returned
+<tt>XRUNRC=0</tt> and <tt>WINE_RC=0</tt>, and the parity check reported
+<tt>PARITY=OK</tt>:
+</p>
+<pre>
+$ ZIG1=/tmp/manual_seed/zig1_5_clean PARITY_STRIP_CR=1 \
+    WINEPREFIX=/tmp/wine32 WINEARCH=win32 \
+    bash scripts/win32_cross/cross_parity.sh \
+    docs/sf/manuals/src/vol3/getenv.z98 /dev/null \
+    /tmp/manual_win/getenv.linuxstdout /tmp/manual_win/getenv
+XRUNRC=0
+WINE_RC=0
+PARITY=OK
+</pre>
+<p>
+The raw capture is worth reporting, because it is stronger than the verdict
+line. The Windows stdout was already LF-terminated and its 45 bytes matched the
+Linux baseline byte-for-byte, so the compare was an exact match rather than a
+normalized one; the <tt>PARITY_STRIP_CR</tt> setting was left in place for
+consistency with the other chapters but changed nothing. That is the expected
+result for this program: <tt>std.io.print</tt> writes through the compiler's own
+output path, not the C run-time's text mode, so there is no <tt>\n</tt> to
+<tt>\r\n</tt> translation to normalize away.
+</p>
+<p>
+The OpenWatcom path is the separate one. The <tt>-osw</tt> emit also writes
+<tt>build_owc.bat</tt> for <tt>wcc386</tt>/<tt>wlink</tt>, but OpenWatcom is not
+installed on the development host, so that script is <b>emitted and documented,
+not run here</b>. The figure below is the real-machine proof: the screenshot will
+be captured on Windows 98, from the OpenWatcom build, and shows the same three
+output lines.
+</p>
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f0f0f0" class="placeholder">
+<tr>
+<td align="center">
+<i>Figure 36 &mdash; Win9x screenshot pending</i>
+</td>
+</tr>
+</table>
+<p><i>Figure 36. Running <tt>getenv.exe</tt> under Windows 98.</i></p>
+
+<h2>The trade</h2>
+<p>
+The C seam is cheap by design, and the price is that it is manual. Z98 gives you
+the declaration, the include, the convention, and the ABI; it does not give you
+a binding generator. There is no <tt>@cImport</tt> &mdash; the Language Spec
+lists it among the designed-but-not-implemented features, and a program that
+tries it stops at <tt>error[3000]: unsupported builtin function</tt>. There is no
+tool that reads a header and produces Z98 declarations; every function you call,
+you declare. For a handful of run-time calls that is nothing. For a large API it
+is real typing, and the honest way to reduce it is to declare only the subset
+you use, in a module of your own, and treat that module as the binding.
+</p>
+<p>
+That is the trade in one sentence: you write the declarations, and in exchange
+the generated C is exactly the C you wrote &mdash; no glue layer to debug, no
+runtime to ship, no generated code that hides the ABI. On a machine with a
+16&nbsp;MB memory budget and no debugging UI, a seam that is <i>only</i> a
+declaration is the right side of the trade. The one thing you must do is
+double-check the declaration against the library's header, because the Z98 type
+checker cannot: it checks your calls against your declaration, and the C
+compiler checks the header when you include it. Include the header, and both
+checks are real.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> The C boundary is the one place in Z98 where a mistake
+the compiler stays silent about can still be fatal. Declare a function with the
+wrong signature, or forget <tt>extern "stdcall"</tt> on a Win32 entry point, and
+the program links and runs until the call corrupts an argument or the stack. The
+manual cannot type-check the library for you, but it can give you the habit that
+prevents the mistake: put the real prototype in a header, <tt>@cInclude</tt> it
+at module level, write the Z98 declaration to match the header line for line, and
+let both compilers check the same text. The extern seam is not dangerous because
+it is fragile; it is dangerous only when it is declared twice, differently.</td>
+</tr>
+</table>
+
+<h2><a name="common-mistakes">Common mistakes</a></h2>
+<p>
+These are the mistakes a reader makes first at the C boundary. Each has a
+corrected shape, and most of them are caught by a diagnostic if you let the
+compiler see the real declaration.
+</p>
+<p>
+<b>Putting <tt>@cInclude</tt> inside a function.</b> The builtin is module level
+only. In statement position the compiler reports
+<tt>error[3020]: internal error: unhandled node kind in type resolution</tt> and
+emits no C. Move the include to the top of the file, beside the declarations.
+The message says "internal error" because this is the compiler's pre-existing
+behavior, not a designed diagnostic; read it as "this form is not supported
+here."
+</p>
+<p>
+<b>Expecting a bare <tt>extern</tt> to emit a prototype.</b> A non-variadic
+extern declaration does not write a prototype into the generated C; only a
+variadic one does. The call then compiles as an implicit declaration, which is a
+warning under the supported build and can be wrong for any return type other
+than <tt>int</tt>. Put the prototype in a header and <tt>@cInclude</tt> it. That
+is the difference between the C compiler checking your call and guessing.
+</p>
+<p>
+<b>Letting the Z98 declaration drift from the header.</b> The type checker
+checks your call sites against your declaration, not against the library. If you
+write <tt>i32</tt> where the header says <tt>u32</tt>, or omit a parameter, the
+Z98 side is clean and the C side is an ABI bug. Write the declaration from the
+header, not from memory.
+</p>
+<p>
+<b>Forgetting <tt>extern "stdcall"</tt> on a Win32 entry point.</b> The 32-bit
+Windows API cleans its own stack; declaring an API function as the default
+<tt>cdecl</tt> links and then corrupts the stack at the call. The standard
+library is the pattern: every Winsock entry point is declared <tt>stdcall</tt>.
+An unknown convention string stops the build with <tt>error[3045]</tt>; a
+<i>wrong but accepted</i> convention does not.
+</p>
+<p>
+<b>Calling a Z98 function from C without <tt>export</tt>.</b> Z98 mangles every
+definition, so a function written as <tt>helper</tt> has the symbol
+<tt>zF_&lt;hash&gt;_helper</tt> and cannot be called by its source name from C.
+Mark the function <tt>export</tt> and the emitter writes the plain name and a
+prototype; leave it unmarked and C cannot find it.
+</p>
+<p>
+<b>Trying to use <tt>@cImport</tt>.</b> It is not implemented. The supported
+pattern is the one this chapter uses: bare <tt>extern</tt> declarations for the
+functions you call, plus <tt>@cInclude</tt> for the header that declares them.
+A program that writes <tt>@cImport</tt> stops at
+<tt>error[3000]: unsupported builtin function</tt>.
+</p>
+<p>
+<b>Passing a rich optional through the seam.</b> Error unions and optionals have
+no C representation, and a non-scalar optional in a boundary position can emit
+invalid C89 (the trap chapters
+<a href="vol3-09-coroutines.html">9</a> and
+<a href="vol3-10-coroutine-program.html">10</a> name). Pass C-shaped types
+&mdash; a pointer, a length, an integer code &mdash; and translate at the call.
+</p>
+<p>
+<b>Overriding the struct packing.</b> The 32-bit layout is pinned by the
+compiler's default alignment (8 for 64-bit scalars). A <tt>/Zp4</tt> or
+<tt>-zp4</tt> override breaks that pin and changes the bytes a boundary struct
+occupies. For a struct that must match an operating system structure, leave the
+default packing alone and define no 64-bit fields the header does not have.
+</p>
+<p>
+<b>Assuming the include uses angle brackets.</b> <tt>@cInclude("stdlib.h")</tt>
+is emitted as <tt>#include "stdlib.h"</tt>, with quotes. The quoted form still
+finds system headers, so this is usually invisible; it matters only when a
+header of the same name sits beside your module, which is precisely when you
+want the local one anyway.
+</p>
+
+<h2>Where to go next</h2>
+<p>
+This chapter is the exact form of the seam that
+<a href="vol3-03-when-c89.html">chapter&nbsp;3</a> said you could use freely
+and that <a href="vol3-05-when-assembly.html">chapter&nbsp;5</a> used to link a
+hand-written object. The two Win32 chapters continue it directly: WinSock under
+Z98 is chapter&nbsp;12 <i>(planned)</i>, and the Win32 Debug API is
+chapter&nbsp;13 <i>(planned)</i>; both are built out of the <tt>extern</tt>
+declarations and calling conventions on this page. The standard library itself
+is the largest
+worked example of the pattern &mdash; <tt>sf/src/std_net.zig</tt> is a
+target-selected set of <tt>extern</tt> declarations wrapped in a small Z98 API,
+and <a href="vol2-17-stdlib.html">Volume II chapter&nbsp;17, The standard
+library tour</a> is where that structure is introduced.
+</p>
+<p>
+For the Z98 values that stay on your side of the seam, the two that matter most
+are the ones with no C spelling:
+<a href="vol2-12-error-unions.html">Volume II chapter&nbsp;12, Error unions</a>
+and <a href="vol2-13-optionals.html">chapter&nbsp;13, Optionals</a>. The C
+pointer and integer translations on this page are how those values meet a C
+return code. The builtins that appear here, including the <tt>@intFromPtr</tt>
+null test, are catalogued in
+<a href="vol4-15-builtins.html">Volume IV &mdash; Builtins</a>, and the
+<tt>print</tt> calls are the format string of
+<a href="vol2-18-print.html">Volume II chapter&nbsp;18</a>. The volume's
+inventory, <a href="vol3-02-honesty-inventory.html">chapter&nbsp;2</a>, lists
+the C89 emission that makes this seam possible among the things Z98 gives you.
+The whole volume, including this chapter, is listed on
+<a href="toc.html">the Contents page</a>.
+</p>
+
+<p class="navbtns">
+<a href="vol3-10-coroutine-program.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol3-10-coroutine-program.html">A coroutine program</a> | <a href="toc.html">Contents</a> | Next: <a href="toc.html">Contents</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
