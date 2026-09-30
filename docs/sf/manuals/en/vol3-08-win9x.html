@@ -1,0 +1,647 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Building for Win9x</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume III building for win9x -osw windows target build_target.sh mingw build_target.bat MSVC cl build_owc.bat OpenWatcom wcc386 wlink ZIG_WIN32 _WIN32 WINVER 0x0410 hello.z98 wine cross-build 86Box Windows 98 command.com">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol3-07-friction.html">
+<link rel="next" href="vol3-09-coroutines.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume III &mdash; Working in the Era</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol3-00-title.html">How to read this</a><br>
+<a href="vol3-01-the-1998-machine.html">The 1998 machine</a><br>
+<a href="vol3-02-honesty-inventory.html">Honesty: what Z98 does and does not give you</a><br>
+<a href="vol3-03-when-c89.html">Honesty: when C89 is the better choice</a><br>
+<a href="vol3-04-when-cpp98.html">Honesty: when C++98 is the better choice</a><br>
+<a href="vol3-05-when-assembly.html">Honesty: when assembly is the better choice</a><br>
+<a href="vol3-06-era-limits.html">Honesty: what you cannot do on a Pentium II</a><br>
+<a href="vol3-07-friction.html">Honesty: the friction you will hit</a><br>
+<b>Building for Win9x</b><br>
+<a href="vol3-09-coroutines.html">Coroutines &mdash; the third big shift</a><br>
+<a href="vol3-10-coroutine-program.html">A coroutine program</a><br>
+Talking to C <i>(planned)</i><br>
+WinSock under Z98 <i>(planned)</i><br>
+The Win32 Debug API <i>(planned)</i><br>
+DirectX under CINTERFACE <i>(planned)</i><br>
+The debugger workflow <i>(planned)</i><br>
+Memory budgets <i>(planned)</i><br>
+Packaging and shipping <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Building for Win9x</h1>
+<p>
+The first seven chapters of this volume were about the machine and about the
+language. This chapter is about the step in between them: taking a program you
+have already written and turning it into something the 1998 machine can run.
+There is exactly one flag for that, <tt>-osw</tt>, and the chapter is mostly
+about what the flag writes into the output directory, what those files mean,
+and what the program does when it starts on Windows.
+</p>
+<p>
+The good news is the same fact this volume keeps returning to. The source does
+not change. A Z98 program is a Z98 program; <tt>-osw</tt> chooses the emitted
+build scripts and the emitted target header, not a second dialect. The sample
+for this chapter is Volume I's <tt>hello</tt>, adapted by one line, and it
+compiles and prints on the Linux host and on a 32-bit Windows target from the
+same text. What changes is everything around the source: the scripts, the
+runtime, and the machine you finally run it on.
+</p>
+<p>
+That last machine is the one thing this chapter cannot put in front of you
+directly. There is no Pentium II on the development host. So the chapter is
+explicit about the evidence at every step. The Linux run is real. The Windows
+run is real, but it is the program under wine on a 32-bit cross-build, not
+Windows 98. The OpenWatcom build script is real, and it is <b>emitted but not
+run here</b>. The screenshot will be captured on the real machine, and it is
+the figure at the foot of the page. Keeping those three kinds of evidence
+separate is the whole honesty of a chapter like this one.
+</p>
+
+<h2>What <tt>-osw</tt> writes</h2>
+<p>
+Start with the command and its output directory, because the scripts are the
+subject. The compiler emits C89 plus a small set of runtime and platform files,
+and it writes a build script beside them so you do not have to remember the
+flags. Emitting a program for the Windows target is one command:
+</p>
+<pre>
+$ mkdir -p out
+$ /tmp/manual_seed/zig1_5_clean -osw -o out hello.z98
+</pre>
+<p>
+<tt>-osl</tt> is the Linux target and it is the default; <tt>-osw</tt> is the
+Windows target. The flag is target selection, not code generation: the C89
+emitted for a given program is the same shape in both cases, and the guard
+macros discussed below are what the target adds. In the output directory you
+now find the emitted translation units and headers, the runtime pair, and
+<b>three</b> build scripts, one per era toolchain:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Script</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Toolchain</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>What it does</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>build_target.sh</tt></td>
+<td valign="top">gcc (Linux) or mingw (Windows)</td>
+<td valign="top">one script, two targets; the default is the Linux host, and
+<tt>sh build_target.sh mingw</tt> cross-compiles the Windows binary</td>
+</tr>
+<tr>
+<td valign="top"><tt>build_target.bat</tt></td>
+<td valign="top">MSVC <tt>cl</tt></td>
+<td valign="top">the Windows command-prompt build, compiled with
+<tt>cl</tt> and linked with <tt>link</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>build_owc.bat</tt></td>
+<td valign="top">OpenWatcom <tt>wcc386</tt>/<tt>wlink</tt></td>
+<td valign="top">the OpenWatcom 32-bit build, the classic era toolchain</td>
+</tr>
+</table>
+<p>
+The mingw branch is the one this host can actually run, and the flags matter
+because they are the contract between the emitted C and the compiler that
+builds it. The branch reads:
+</p>
+<pre>
+  mingw)
+    CC=i686-w64-mingw32-gcc
+    CFLAGS="-m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I ."
+    LDFLAGS="-m32"
+    LIBS="-lwsock32"
+    [ -n "$OUT" ] || OUT=prog.exe
+    ;;
+</pre>
+<p>
+Read the flags as the era story. <tt>-m32</tt> pins the 32-bit ABI. <tt>-std=c89
+-O0</tt> asks for the C89 dialect with no optimization, which is what the
+emitted code targets. The three <tt>-Wno-</tt> switches turn off warnings the
+emitted C89 would otherwise raise under a modern gcc: <tt>long long</tt> (not in
+C89), pointer-sign mismatches, and implicit function declarations. The
+<tt>-Wno-implicit-function-declaration</tt> is the one that corresponds to the
+interop rule from <a href="vol3-05-when-assembly.html">chapter&nbsp;5</a>: a
+bare non-variadic <tt>extern</tt> gets no emitted prototype, so the generated
+call is technically an implicit declaration. The header fix is the correct code;
+the switch keeps the supported build quiet. The mingw branch here carries
+<tt>-lwsock32</tt> because this dump emitted the <tt>std_net</tt> module (you can
+see <tt>std_net_A15200CC.c</tt> in the output directory), and that module
+references Winsock even though the program never opens a socket. A program whose
+emitted set omits <tt>std_net</tt> needs no socket library.
+</p>
+<p>
+The MSVC and OpenWatcom scripts encode the same idea with the era's own flags.
+The MSVC script compiles with <tt>cl /c /Za /W3 /WX /DZIG_WIN32 /I .</tt> and
+links with <tt>link /subsystem:console kernel32.lib &hellip; wsock32.lib</tt>.
+The OpenWatcom script uses <tt>wcc386 /za /we /dZIG_WIN32 /i=.</tt> and
+<tt>wlink system console op q opt stack=65536 &hellip; library wsock32</tt>.
+<tt>/Za</tt> and <tt>/za</tt> are the two compilers' "strict ANSI" switches, the
+counterparts of <tt>-std=c89</tt>; <tt>/WX</tt> and <tt>/we</tt> are their
+warnings-as-errors switches, and both scripts say so in a comment so a warning
+can be downgraded without giving up the build. The <tt>/DZIG_WIN32</tt> and
+<tt>/dZIG_WIN32</tt> are the target guard, which is the next section. The
+MSVC <tt>link</tt> line and the OpenWatcom <tt>wlink</tt> line both pull
+<tt>wsock32.lib</tt> for the same reason the mingw branch carries
+<tt>-lwsock32</tt>.
+</p>
+<p>
+One more thing about the script set is worth saying plainly, because it is the
+boundary of everything that follows. The emitted scripts are the interface to
+three toolchains. On this development host, exactly one of those toolchains is
+installed. <tt>i686-w64-mingw32-gcc</tt> is present and is used below;
+<tt>cl</tt> is not runnable here, and neither is <tt>wcc386</tt>. The two
+Windows-only scripts are therefore <b>emitted and documented, not executed</b>
+in this chapter's evidence. The chapter shows their exact text and their flags so
+you can run them on the era machine; it does not pretend it ran them.
+</p>
+
+<h2>The source, and the same source twice</h2>
+<p>
+Here is the whole sample. It is Volume I's <tt>hello</tt> with a second and
+third line added, so the transcript has enough shape to prove it ran:
+</p>
+<pre>
+const std = @import("std");
+
+// The same source builds for the Linux host and for the 32-bit Windows 9x
+// target. Nothing here is conditional: -osw chooses the emitted build scripts,
+// not the source, and the program prints the same text on both machines.
+pub fn main() void {
+    std.io.print("Hello from Z98!\n");
+    std.io.print("this is Volume III, chapter 8\n");
+    std.io.print("built for the 1998 machine\n");
+}
+</pre>
+<p>
+There is no <tt>#ifdef</tt> in it, no platform import, and no call to a
+Windows-only function. That is deliberate. A program that uses nothing but
+<tt>std.io.print</tt> should build unchanged on both targets, and the first
+proof of the chapter is that it does. The Linux baseline is captured first,
+because it is the parity target for the Windows run:
+</p>
+<pre>
+$ mkdir -p out && /tmp/manual_seed/zig1_5_clean -o out hello.z98
+$ cd out && sh build_target.sh linux hello
+Building for linux...
+Built: hello
+$ ./hello
+Hello from Z98!
+this is Volume III, chapter 8
+built for the 1998 machine
+</pre>
+<p>
+The build prints a page of <tt>-Wunused-function</tt> warnings from the shared
+runtime header &mdash; the runtime carries helpers a given program may not use,
+and gcc notices. They are omitted above for length; they are warnings, not
+errors, which is why the script's policy is warnings-not-errors. The three output
+lines are the baseline that the Windows transcript must match.
+</p>
+
+<h2>What the emitted C looks like</h2>
+<p>
+Before the Windows run, read the emitted C, because the guards live there and
+not in the source. Every Z98 function is mangled and every call is an ordinary C
+call. The sample's whole main translation unit is short enough to quote:
+</p>
+<pre>
+#include "hello_9C12B390.h"
+/* main */
+void zF_EA90E208_main(void) {
+    char* zT_0;
+    unsigned char* zT_1;
+    char* zT_2;
+    unsigned char* zT_3;
+    char* zT_4;
+    unsigned char* zT_5;
+    zT_1 = "Hello from Z98!\n";
+    zT_0 = zT_1;
+    zF_16378A88_print(zT_0);
+    zT_3 = "this is Volume III, chapter 8\n";
+    zT_2 = zT_3;
+    zF_16378A88_print(zT_2);
+    zT_5 = "built for the 1998 machine\n";
+    zT_4 = zT_5;
+    zF_16378A88_print(zT_4);
+    return;
+}
+
+int main(void) {
+    zF_780653D2___module_init();
+    zF_780653D2___module_init_1();
+    zF_EA90E208_main();
+    return 0;
+}
+</pre>
+<p>
+The <tt>zF_</tt> prefix and the hash are the identifier mangling
+<a href="vol3-03-when-c89.html">chapter&nbsp;3</a> introduced and
+<a href="vol3-05-when-assembly.html">chapter&nbsp;5</a> used to warn you not to
+try to override a function by its source name. The <tt>main</tt> at the bottom is
+the one plain name the linker needs, and it calls the module initializers and
+then your <tt>main</tt>. This is C89 a 1998 compiler can read: no
+<tt>//</tt> comments, declarations at the top of the block, no C99 features.
+</p>
+<p>
+The target guard is in the shared headers, not in the sample. The emitted
+<tt>zig_compat.h</tt> defines the calling-convention macro from the guard, so the
+same emitted C gets the right convention on each compiler &mdash; and gets an
+empty macro off Windows, which is what keeps the Linux emission byte-identical:
+</p>
+<pre>
+#if !defined(_WIN32)
+#define Z98_STDCALL
+#elif defined(_MSC_VER) || defined(__WATCOMC__)
+#define Z98_STDCALL __stdcall
+#else
+#define Z98_STDCALL __attribute__((stdcall))
+#endif
+</pre>
+<p>
+The emitted <tt>net_prelude.h</tt> selects the socket headers the same way: the
+<tt>_WIN32</tt> branch includes <tt>&lt;windows.h&gt;</tt> and
+<tt>&lt;winsock.h&gt;</tt>, the other branch includes the POSIX socket headers,
+and the <tt>_os</tt> aliases that map <tt>std_net</tt>'s public names to the real
+OS symbols are declared after the include so they never rewrite an OS header.
+Both headers show the same principle: <tt>_WIN32</tt> is a macro the toolchain
+sets, and the emitted C is written to be correct under it. It is not a Z98
+keyword, and the source never sees it.
+</p>
+
+<h2>The <tt>ZIG_WIN32</tt> guard and <tt>WINVER</tt></h2>
+<p>
+There are two guards in the picture and it helps to keep them apart.
+<tt>_WIN32</tt> is the C toolchain's own macro, and the emitted headers use it to
+pick a branch, as shown above. <tt>ZIG_WIN32</tt> is the guard the emitted
+Windows build scripts define on the command line &mdash; <tt>/DZIG_WIN32</tt> for
+<tt>cl</tt>, <tt>/dZIG_WIN32</tt> for <tt>wcc386</tt>, and it is the marker that
+says "this build is the Windows target". The bootstrap-era
+<tt>platform_win98.h</tt> header and its <tt>_MBCS</tt> define are gone: they
+belonged to an older tree, and they are not in this compiler's source and not in
+the emitted C. What the current target emits instead is the
+<tt>ZIG_WIN32</tt> guard in the scripts, plus the <tt>_WIN32</tt> branches in the
+headers.
+</p>
+<p>
+There is one place where the emitted C does define Windows version macros, and it
+is worth naming because a reader coming from the bootstrap era will ask about
+it. For a module that uses the <tt>@console*</tt> builtins, the emitter writes a
+version block ahead of <tt>&lt;windows.h&gt;</tt>. Here is the head of the
+emitted translation unit for
+<tt>docs/sf/manuals/src/vol2/builtins/console.z98</tt>:
+</p>
+<pre>
+#include "console_B29CA079.h"
+#ifdef _WIN32
+#define WINVER 0x0410
+#define _WIN32_WINDOWS 0x0410
+#define _WIN32_WINNT 0x0400
+#define NTDDI_VERSION 0x04000000
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#else
+#include <stdio.h>
+#endif
+extern void std_print_len(const char* s, unsigned int len);
+</pre>
+<p>
+So the measured reality is narrower than the old bootstrap story and wider than
+"no version macros at all". The bootstrap's <tt>platform_win98.h</tt> and
+<tt>_MBCS</tt> are gone; <tt>WINVER 0x0410</tt> <b>is</b> emitted, together with
+<tt>_WIN32_WINDOWS</tt>, <tt>_WIN32_WINNT</tt>, <tt>NTDDI_VERSION</tt>,
+<tt>WIN32_LEAN_AND_MEAN</tt>, and <tt>&lt;windows.h&gt;</tt>, but only for
+modules that use <tt>@console*</tt>. <tt>0x0410</tt> is Windows 98. The
+definition is guarded by <tt>#ifdef _WIN32</tt> so the Linux branch is
+unaffected, and it is at <tt>sf/src/c89_emit.zig:2816</tt> in the compiler
+source. A plain <tt>std.io</tt> program like this chapter's sample does not
+trigger it; the block appears only when a console builtin is used.
+</p>
+<p>
+Z98 can also ask the target question in source, with the compile-time builtin
+<tt>@isWindows()</tt>, which the Language Spec defines as a folded predicate that
+is true only for the Windows target. It is not needed in the sample, but it is
+the source-level counterpart of the emitted guard, so it is worth showing it
+verified. The probe is a single if:
+</p>
+<pre>
+const std = @import("std");
+
+pub fn main() void {
+    if (@isWindows()) {
+        std.io.print("this build targets Windows\n");
+    } else {
+        std.io.print("this build targets the host\n");
+    }
+}
+</pre>
+<p>
+Built for the Linux target, it prints the host line; built with <tt>-osw</tt>
+and cross-compiled, the same source prints the Windows line. Both are real runs
+on the seed compiler:
+</p>
+<pre>
+$ /tmp/manual_seed/zig1_5_clean -o out win.z98
+$ cd out && sh build_target.sh linux win && ./win
+this build targets the host
+
+$ /tmp/manual_seed/zig1_5_clean -osw -o out win.z98
+$ cd out && sh build_target.sh mingw win && wine win.exe
+this build targets Windows
+</pre>
+<p>
+The predicate folds at compile time, so it costs nothing at run time and the
+unused branch is not emitted. This is the honest way to write the rare
+program that must differ by target: put the difference behind
+<tt>@isWindows()</tt> in the source. What you should not reach for is a
+<tt>ZIG_WIN32</tt> test in Z98 source; <tt>ZIG_WIN32</tt> is a build-script
+define, and the language-level question is <tt>@isWindows()</tt>.
+</p>
+
+<h2>The Windows cross-build and run</h2>
+<p>
+Now the run that proves the program survives the trip. This host has
+<tt>i686-w64-mingw32-gcc</tt> and a 32-bit wine prefix at <tt>/tmp/wine32</tt>,
+and the committed harness <tt>scripts/win32_cross/</tt> composes the whole
+pipeline: it dumps the C89 with <tt>-osw</tt>, cross-compiles every emitted
+translation unit with mingw, links the executable, runs it under wine, and
+compares the captured stdout with the Linux baseline. The entry is given
+repo-relative because module resolution is relative to the working directory:
+</p>
+<pre>
+$ ZIG1=/tmp/manual_seed/zig1_5_clean PARITY_STRIP_CR=1 \
+    WINEPREFIX=/tmp/wine32 WINEARCH=win32 \
+    bash scripts/win32_cross/cross_parity.sh \
+    docs/sf/manuals/src/vol3/hello.z98 /dev/null \
+    /tmp/manual_win/hello.linuxstdout /tmp/manual_win/hello
+XRUNRC=0
+WINE_RC=0
+PARITY=OK
+</pre>
+<p>
+Three verdict lines, and each one is a distinct claim. <tt>XRUNRC=0</tt> means
+the dump and the mingw compile and link all succeeded. <tt>WINE_RC=0</tt> means
+the Windows executable ran to completion under wine. <tt>PARITY=OK</tt> means
+the captured stdout matches the Linux baseline. That is the whole of the
+Windows verification on this host, and it is the strongest statement the
+chapter can make without the era machine.
+</p>
+<p>
+One detail of the comparison is worth understanding rather than trusting. This
+program writes through the C runtime's text mode, so Windows translates each
+<tt>\n</tt> into <tt>\r\n</tt>. The raw captured stdout has carriage returns;
+with <tt>PARITY_STRIP_CR=1</tt> the harness strips them from a copy and compares
+the LF-normalized bytes, while keeping the raw file as evidence. The raw Windows
+stdout for this run is exactly:
+</p>
+<pre>
+Hello from Z98!^M
+this is Volume III, chapter 8^M
+built for the 1998 machine^M
+</pre>
+<p>
+where <tt>^M</tt> is the carriage return. Stripped of those, it is byte-for-byte
+the Linux output above. This is the normal result for a CRT-path program, and
+the harness records whether the comparison was normalized so there is no
+ambiguity later.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffffc8">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-note.gif" width="16" height="16" alt="Note"></td>
+<td><b>Era framing.</b> The Windows run above is wine on a 32-bit mingw
+cross-build, not Windows 98. It proves the emitted C89 compiles with a Windows
+toolchain and that the program logic runs when executed, which is what the
+harness can prove on this host. It does <i>not</i> prove behavior under the era
+kernel, and the chapter does not claim it does. Statements here about the era's
+toolchains and machine are era context; statements about Z98 are checked against
+<tt>docs/reference/Language_Spec_Z98.md</tt>, the compiler source, and the
+compiler built from the committed seed.</td>
+</tr>
+</table>
+
+<h2>OpenWatcom, <tt>cl</tt>, and the era toolchains</h2>
+<p>
+The reason there are three build scripts instead of one is that the era had more
+than one C compiler, and the one you used depended on what you already owned.
+MSVC <tt>cl</tt> came with Visual C++; Borland had its own; and OpenWatcom's
+<tt>wcc386</tt>/<tt>wlink</tt> pair was the tool many people reached for because
+it was cheap, fast, and produced tight 32-bit code. Z98 emits a script for each
+so the program can be built on whichever toolchain is on the machine. The
+OpenWatcom script is the one the volume's later chapters lean on, so read it in
+full:
+</p>
+<pre>
+@echo off
+REM build_owc.bat - generated by zig1 (OpenWatcom wcc386/wlink)
+setlocal
+if "%~1"=="" (set OUT=prog.exe) else (set OUT=%~1)
+echo Compiling...
+wcc386 /za /we /dZIG_WIN32 /i=. hello_9C12B390.c
+wcc386 /za /we /dZIG_WIN32 /i=. std_io_59DB29D9.c
+wcc386 /za /we /dZIG_WIN32 /i=. std_net_A15200CC.c
+wcc386 /za /we /dZIG_WIN32 /i=. zig_runtime.c
+wcc386 /za /we /dZIG_WIN32 /i=. zig_pal.c
+wcc386 /za /we /dZIG_WIN32 /i=. c_exit.c
+echo Linking...
+wlink system console op q opt stack=65536 file hello_9C12B390.obj,std_io_59DB29D9.obj,std_net_A15200CC.obj,zig_runtime.obj,zig_pal.obj,c_exit.obj library wsock32 name %OUT%
+echo Built: %OUT%
+</pre>
+<p>
+<tt>/za</tt> is strict ANSI, <tt>/we</tt> turns warnings into errors,
+<tt>/dZIG_WIN32</tt> is the target guard, and <tt>/i=.</tt> makes the current
+directory the include root. The link asks for a console subsystem, a 64 KB
+stack, and <tt>wsock32</tt>. For an OpenWatcom user this is the build, start to
+finish, and it is the script the socket-using samples in
+<a href="vol3-10-coroutine-program.html">chapter&nbsp;10</a> and chapter&nbsp;12
+<i>(planned)</i> are built with on the real machine.
+</p>
+<p>
+And here is where the chapter has to be exact about its own evidence.
+<tt>wcc386</tt> is <b>not installed on this development host</b>. The script
+above is emitted by the compiler, quoted from the actual output directory, and
+verified as text; it is not executed. Nothing in this manual should be read as
+saying OpenWatcom was run. The same applies to MSVC's <tt>cl</tt>: the
+<tt>build_target.bat</tt> is emitted and quoted, and it is not executed here.
+Only the mingw cross-build and the wine run above were executed. This is the
+honest split the whole volume uses: the mechanism is verified on the host, the
+era toolchain is documented and deferred to the machine.
+</p>
+<p>
+It is also why the OpenWatcom dialect is named as friction in
+<a href="vol3-07-friction.html">chapter&nbsp;7</a>. <tt>wcc386</tt> accepts C89,
+not gcc's dialect, and the emitted C89 is written to the intersection so a
+strict C89 compiler can read it. That is the same reason the flags include
+<tt>/Za</tt> and <tt>-std=c89</tt>: the target is the strict dialect, not the
+convenient one.
+</p>
+
+<h2>Running it on the era machine</h2>
+<p>
+The last step is the one the host cannot take. Move the output directory to the
+1998 machine, run the script that matches the toolchain installed there, and
+execute the binary. The chapter's figure is that moment: a Windows 98 command
+prompt showing <tt>hello.exe</tt> run from its build directory, printing the
+three lines. Everything before it &mdash; the same source, the mangled C, the
+guard, the cross-build, the parity &mdash; is what makes that moment
+unremarkable, which is the point.
+</p>
+<p>
+Most readers will not have a Pentium II either, and the honest alternative is an
+emulator. <b>86Box</b> is the usual choice: it emulates a period-correct 32-bit
+PC, including the BIOS, the IDE disk, and the VGA card, and it can run Windows 95
+or 98 closely enough for a console program. It is a different kind of evidence
+from wine: wine reimplements the Win32 API on Linux, while 86Box runs the real
+operating system on emulated hardware, so it exercises the era's own
+<tt>command.com</tt> and CRT. This chapter names 86Box as the practical path to
+the figure and does not claim to have run it here; the emulator, the era OS
+image, and the screenshot are all part of the figure's capture, on the figure's
+machine. The wine run above is the host-side proof that the program itself is
+correct.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> A cross-build under wine is not Windows 98, and an
+emulator is not the era's hardware either. This chapter is careful to say which
+one each claim rests on: the emitted C89 compiling with a Windows toolchain and
+the program logic running are proven here by mingw and wine; the build scripts
+for MSVC and OpenWatcom are emitted and quoted but not run here; and the real
+machine is the figure. When you ship, the machine that matters is yours. Build
+with the script that matches your toolchain, run it there, and let the
+screenshot be the proof rather than this page.</td>
+</tr>
+</table>
+
+<h2>Common mistakes</h2>
+<p>
+The mistakes below are the ones that come from a modern build habit rather than
+from Z98 itself.
+</p>
+<p>
+<b>Looking for a Windows header in the source.</b> There is nothing to include.
+The sample has no <tt>#ifdef</tt> and no platform import; <tt>-osw</tt> adds the
+target's headers and guards to the <i>emitted</i> C. If you reach for a Windows
+type in Z98 source, you are in
+chapter&nbsp;11's territory <i>(planned)</i> &mdash; that is interop, and it
+comes with its own rules.
+</p>
+<p>
+<b>Claiming OpenWatcom or MSVC was run because the script exists.</b> The
+compiler emits all three scripts on every <tt>-osw</tt> emit, whether or not the
+toolchain is installed. On a Linux host only the mingw branch is runnable.
+Quote the scripts as documentation; do not describe them as executed.
+</p>
+<p>
+<b>Testing <tt>ZIG_WIN32</tt> in portable code.</b> <tt>ZIG_WIN32</tt> is a
+command-line define the build script passes to the C compiler, not a Z98
+symbol. The source-level target predicate is <tt>@isWindows()</tt>. Using the
+script define in the wrong place is the mistake the two-guard section above
+exists to prevent.
+</p>
+<p>
+<b>Expecting the Windows stdout to be byte-identical without normalization.</b>
+The CRT text mode turns <tt>\n</tt> into <tt>\r\n</tt> on Windows. For a program
+on the <tt>std.io.print</tt> path the comparison is LF-normalized, and the raw
+file is kept. A program that writes through the PAL <tt>WriteFile</tt> path keeps
+strict byte parity; know which path your program is on before you call a parity
+mismatch a bug in the emission.
+</p>
+<p>
+<b>Moving one file instead of the output directory.</b> The emitted program is
+not a single <tt>.c</tt>. It is a directory of translation units, the runtime
+pair, the platform files, and the build script, and the script compiles all of
+them with <tt>-I .</tt>. Copy the whole directory to the era machine; carrying
+one file loses the runtime and the build fails at link time.
+</p>
+<p>
+<b>Assuming <tt>-osw</tt> changes the language.</b> It changes the target's
+build scripts and emitted headers, not the parser or the type checker. A program
+that compiles for Linux compiles for Windows unless it uses a platform-specific
+<tt>extern</tt> or builtin. If a change is needed, it is in the source and it
+should be behind <tt>@isWindows()</tt>; the flag alone will not paper over it.
+</p>
+
+<h2>Where to go next</h2>
+<p>
+This is the first chapter that produced a Windows executable, and the next
+chapters build on that footing. <a href="vol3-09-coroutines.html">Chapter&nbsp;9,
+Coroutines &mdash; the third big shift</a> is the mental shift the rest of the
+volume assumes, and it ships with a sample that is cross-built exactly the way
+the program on this page was. <a href="vol3-10-coroutine-program.html">
+Chapter&nbsp;10, A coroutine program</a> turns the mechanism into a complete
+program, and its sample is the first one in the volume to use the network side of
+the target.
+</p>
+<p>
+For the interop that a Windows program will eventually need, chapter&nbsp;11,
+Talking to C <i>(planned)</i>, is the whole surface: <tt>extern</tt>,
+<tt>@cInclude</tt>, the calling conventions, and the mangling this page's C
+showed. For the runtime checks the emitted C carries, the register is
+<a href="vol2-01-honest-comparison.html">Volume II chapter&nbsp;1, The Honest
+Comparison</a>, and the builtins used here, including <tt>@isWindows()</tt>, are
+catalogued in <a href="vol4-15-builtins.html">Volume IV &mdash; Builtins</a>.
+The packaging convention for shipping the built result is chapter&nbsp;17
+<i>(planned)</i>, and <a href="toc.html">the Contents page</a> lists the whole
+volume.
+</p>
+
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f0f0f0" class="placeholder">
+<tr>
+<td align="center">
+<i>Figure 35 &mdash; Win9x screenshot pending</i>
+</td>
+</tr>
+</table>
+<p><i>Figure 35. Running <tt>hello.exe</tt> under Windows 98.</i></p>
+
+<p class="navbtns">
+<a href="vol3-07-friction.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol3-09-coroutines.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol3-07-friction.html">Honesty: the friction you will hit</a> | <a href="toc.html">Contents</a> | Next: <a href="vol3-09-coroutines.html">Coroutines &mdash; the third big shift</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
