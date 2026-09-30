@@ -235,5 +235,8 @@ A claim that fails is fixed or removed — never shipped.
 3. `docs/superpowers/plans/2026-09-23-z98-manual-visual-polish-plan.md` —
    visual polish for the shipped Volume I/IV pages, complete.
 4. `docs/superpowers/specs/2026-09-25-z98-manual-volume-II-design.md` — Volume
-   II (Learning Z98) design of record; implemented by
-   `docs/superpowers/plans/2026-09-25-z98-manual-volume-II-plan.md` (next).
+   II (Learning Z98) design of record; **complete** (2026-09-30), implemented by
+   `docs/superpowers/plans/2026-09-25-z98-manual-volume-II-plan.md`, seed v89.
+5. `docs/superpowers/specs/2026-09-30-z98-manual-volume-III-design.md` — Volume
+   III (Working in the Era) design of record; implemented by
+   `docs/superpowers/plans/2026-09-30-z98-manual-volume-III-plan.md` (next).
