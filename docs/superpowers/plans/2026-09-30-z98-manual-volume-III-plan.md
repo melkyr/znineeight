@@ -523,3 +523,12 @@ Plan complete and saved to `docs/superpowers/plans/2026-09-30-z98-manual-volume-
 2. **Inline Execution** — execute tasks in this session using executing-plans, batch execution with checkpoints.
 
 Which approach?
+
+---
+
+## Deferred compiler I/F — `anytype` call-path reject (parked; run after all writing)
+
+The `anytype` call-path segfault observed during Task 1 (seed v89: `fn show(x: anytype) void { _ = x; }` + `show(5)` → rc 139) is **parked**, consistent with the earlier deferral in `docs/superpowers/plans/2026-08-06-compiler-gaps-plan.md` (AMENDMENT 5: "`anytype` (comptime-generic) support remains a separate future feature"). `anytype` is designed-unsupported (`sf/src/analyzer.zig:458` `ERR_2012_ANYTYPE_NOT_SUPPORTED`; `sf/src/parser.zig:1130` makes `parserParseType` return node 0 for `anytype`, so that check and the FX13-F signature walk skip it today).
+
+- **Writing-phase rule:** no Volume III chapter may call an `anytype` function — a call crashes today and is expected to be rejected once the reject path is fixed. Chapters may state that `anytype`/generics are unsupported.
+- **The scoped I/F that implements the clean reject is appended and executed AFTER all Volume III writing is complete (after Task 20)**, by operator ruling (2026-09-30): an **I** task to root-cause the parser-returns-0 / analyzer-dead-check path, then an **F** task delivering a clean level-0 reject (`error[16]`/`error[20]`) with a `repro/mi_matrix/` fixture, a standalone repro, and the standard gate battery. Seed rotation stays closeout-only; if this I/F lands after Task 20 it carries its own subsequent closeout rotation.
