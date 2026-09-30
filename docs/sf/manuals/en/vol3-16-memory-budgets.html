@@ -1,0 +1,708 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Memory Budgets</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume III memory budgets 16 MB peak budget compiler target-build policy host -mm default 64 MB -mm0 relax pool ceiling track-memory markers perm module scratch type_db pool total arena tiers dual-arena at scale spill ladder -s0 -s6 RAM disk checkCombinedPeak profiling OutOfMemory">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol3-15-debugger-workflow.html">
+<link rel="next" href="toc.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume III &mdash; Working in the Era</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol3-00-title.html">How to read this</a><br>
+<a href="vol3-01-the-1998-machine.html">The 1998 machine</a><br>
+<a href="vol3-02-honesty-inventory.html">Honesty: what Z98 does and does not give you</a><br>
+<a href="vol3-03-when-c89.html">Honesty: when C89 is the better choice</a><br>
+<a href="vol3-04-when-cpp98.html">Honesty: when C++98 is the better choice</a><br>
+<a href="vol3-05-when-assembly.html">Honesty: when assembly is the better choice</a><br>
+<a href="vol3-06-era-limits.html">Honesty: what you cannot do on a Pentium II</a><br>
+<a href="vol3-07-friction.html">Honesty: the friction you will hit</a><br>
+<a href="vol3-08-win9x.html">Building for Win9x</a><br>
+<a href="vol3-09-coroutines.html">Coroutines &mdash; the third big shift</a><br>
+<a href="vol3-10-coroutine-program.html">A coroutine program</a><br>
+<a href="vol3-11-talking-to-c.html">Talking to C</a><br>
+<a href="vol3-12-winsock.html">WinSock under Z98</a><br>
+<a href="vol3-13-debug-api.html">The Win32 Debug API</a><br>
+<a href="vol3-14-directx.html">DirectX under CINTERFACE</a><br>
+<a href="vol3-15-debugger-workflow.html">The debugger workflow</a><br>
+<b>Memory budgets</b><br>
+Packaging and shipping <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Memory Budgets</h1>
+<p>
+<a href="vol3-01-the-1998-machine.html">Chapter&nbsp;1</a> made the claim this
+chapter has to pay for: on the 1998 machine, memory &mdash; not the processor
+&mdash; is the binding constraint. A Pentium II at 233&nbsp;MHz has cycles to
+spare for the logic a program is made of; what it does not have is bytes. The
+number to design against is therefore a memory number, and the discipline of
+this volume is the discipline of staying inside it.
+</p>
+<p>
+There are two budgets in that sentence, and they are not the same budget. There
+is the <b>compiler's</b> budget: the tool that turns your Z98 into C89 is itself
+held to a peak-memory target, and it ships the instrument to measure that. And
+there is <b>your program's</b> budget: the number of bytes you, the author,
+decide the program may spend when it runs on the target. This chapter is the
+accounting for both. It shows how the compiler's budget is stated, how to read
+the peaks it reports, how the arena is organized into tiers, how the compiler
+trades disk for RAM when you ask it to, and when &mdash; and only when &mdash;
+loosening the compiler's memory gate is the right answer.
+</p>
+<p>
+The blueprint gives this chapter no sample program, and none is needed. The
+subject is a discipline, and the evidence is the compiler's own measurements.
+Every transcript below is a real run on this host: the seed-built compiler
+(v89, fixed point <tt>8216fedc&hellip;</tt>) profiling the
+<a href="vol2-14-arena.html">Volume&nbsp;II arena example</a>, then compiling
+itself. The numbers reproduce; the addresses and timings do not, which is why
+none of them appear.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffffc8">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-note.gif" width="16" height="16" alt="Note"></td>
+<td><b>What is measured here.</b> The compiler under test is the seed build
+<tt>/tmp/manual_seed/zig1_5_clean</tt>, fixed point
+<tt>8216fedc8dd69db084d453be80f3c010</tt>. The two workloads profiled are the
+Volume&nbsp;II arena example (<tt>docs/sf/manuals/src/vol2/arena.z98</tt>, a
+program whose whole point is a declared byte buffer) and the compiler's own
+source (<tt>sf/src/main.zig</tt>, the heaviest workload the toolchain has). All
+peaks are the compiler's allocator high-water marks, printed by
+<tt>--track-memory</tt>; the live in-use figures are copied from the same runs.
+If a number here and a number you measure differ in the kilobyte, the compiler
+or the source has moved, and the method &mdash; not the constant &mdash; is
+what to keep.</td>
+</tr>
+</table>
+
+<h2>Two budgets, one of them a policy</h2>
+<p>
+Start with the compiler's budget, because it is the one written down in the
+source and the one a reader is most likely to misread. The compiler carries two
+constants named for the peak memory it is designed to run within on the target
+machine:
+</p>
+<pre>
+pub const DEV_MAX_MEM: usize = 16 * 1024 * 1024;
+pub const RELEASE_MAX_MEM: usize = 16 * 1024 * 1024;
+</pre>
+<p>
+That is the <b>16&nbsp;MB target-build policy</b>: sixteen mebibytes
+(16&nbsp;&times;&nbsp;1024&nbsp;&times;&nbsp;1024 bytes) is the peak the
+compiler is built to hold when it runs on the 1998 machine, the same machine
+your compiled program runs on. It is a policy, not a promise the host gate
+enforces by default, and that distinction is the whole of this section.
+</p>
+<p>
+The host binary you run on the development machine defaults to a different
+number: <b>64&nbsp;MB</b>. The command-line gate &mdash; <tt>-mm&lt;N&gt;</tt>,
+N in decimal megabytes &mdash; is initialized from a constant named
+<tt>DEFAULT_MAX_MEM_KB</tt>, and its value is <tt>64&nbsp;&times;&nbsp;1024</tt>.
+So when you run the compiler without thinking about memory, the limit it
+actually checks against is four times the target policy. The two numbers answer
+two different questions:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Number</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Where it lives</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>What it is for</b></th>
+</tr>
+<tr>
+<td valign="top">16&nbsp;MB</td>
+<td valign="top"><tt>DEV_MAX_MEM</tt> / <tt>RELEASE_MAX_MEM</tt>,
+<tt>sf/src/allocator.zig</tt></td>
+<td valign="top">The target-build policy: the peak the compiler is designed to
+hold on the 1998 machine. A design statement about the era, not the default of
+a host run.</td>
+</tr>
+<tr>
+<td valign="top">64&nbsp;MB</td>
+<td valign="top"><tt>DEFAULT_MAX_MEM_KB</tt>, applied to
+<tt>cli.max_mem</tt></td>
+<td valign="top">The host default gate: the ceiling a development-host compile
+is stopped at unless you pass <tt>-mm&lt;N&gt;</tt>. Generous on purpose,
+because the host is not the target.</td>
+</tr>
+</table>
+<p>
+Why the gap? Because the target policy is a statement about <i>live</i> memory
+on a machine the compiler must share with Windows, and the host gate is a
+tripwire on a coarser number &mdash; the whole bump-pool high-water, which we
+will see is several times larger than the live figure. Setting the host gate at
+the target's live budget would make the compiler refuse to build itself on this
+host, where the pool high-water is legitimately above 16&nbsp;MB. The honest
+reading is the one this chapter keeps: <b>16&nbsp;MB is the policy for the
+machine; 64&nbsp;MB is the default for the host; they are not
+interchangeable.</b> If you set <tt>-mm16</tt> on the host because
+&ldquo;the target is 16&nbsp;MB,&rdquo; you will trip the gate on a normal
+self-compile, and the next section shows exactly that.
+</p>
+
+<h2>Profiling with <tt>--track-memory</tt></h2>
+<p>
+The instrument is built in. The compiler carries a memory profiler that reports
+the peak of each arena tier at the end of a compile, and it is turned on with
+<i>two</i> flags, not one. The rule is the one
+<a href="vol3-15-debugger-workflow.html">chapter&nbsp;15</a> stated in its
+note: <tt>--track-memory</tt> emits through the same channel as
+<tt>--markers</tt>, so it only shows anything when <tt>--markers</tt> is on as
+well. Both flags, or nothing. Here is the arena example, profiled:
+</p>
+<pre>
+$ /tmp/manual_seed/zig1_5_clean --markers --track-memory -o /tmp/manual_out \
+      docs/sf/manuals/src/vol2/arena.z98
+track-memory: perm=61K mod=365K scr=254K pool=2475K type_db=31K total=680K
+</pre>
+<p>
+One line, six fields, and every field a peak in kilobytes rather than a
+running total. Drop <tt>--markers</tt> and the profiler is silent &mdash; the
+compile still succeeds, it simply says nothing about memory:
+</p>
+<pre>
+$ /tmp/manual_seed/zig1_5_clean --track-memory -o /tmp/manual_out \
+      docs/sf/manuals/src/vol2/arena.z98
+$ echo $?
+0
+</pre>
+<p>
+That is a deliberate design, not a bug: the profiler shares the marker channel
+so that a diagnostic build pays for one output path, and the marker channel is
+off unless asked for. The pairs are the whole memory toolkit:
+<tt>--markers --track-memory</tt> for the peaks, and <tt>--markers</tt> alone
+for the running commentary behind them. Read the profiler's numbers as
+belonging to the compiler <i>at the moment it emitted that program</i>. They
+are not your program's runtime memory; they are the memory the compiler spent
+turning your source into C. The two are related only through the size and shape
+of what you wrote.
+</p>
+<p>
+Read the arena line field by field, because the field names are the compiler's
+own and they recur everywhere the memory model is discussed:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Field</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Tracks</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Arena example</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>perm</tt></td>
+<td valign="top">The <b>permanent</b> tier: data that lives for the whole
+compile &mdash; interned strings, the module registry, types that survive every
+phase.</td>
+<td valign="top">61K</td>
+</tr>
+<tr>
+<td valign="top"><tt>mod</tt></td>
+<td valign="top">The <b>module</b> tier: per-module and per-phase data that is
+reset between phases, the AST and the lowering structures included.</td>
+<td valign="top">365K</td>
+</tr>
+<tr>
+<td valign="top"><tt>scr</tt></td>
+<td valign="top">The <b>scratch</b> tier: short-lived working memory, reset
+aggressively during analysis so the peak is dominated by the largest single
+function, not by their sum.</td>
+<td valign="top">254K</td>
+</tr>
+<tr>
+<td valign="top"><tt>type_db</tt></td>
+<td valign="top">The type registry's own table &mdash; the store that gives
+every type its stable id.</td>
+<td valign="top">31K</td>
+</tr>
+<tr>
+<td valign="top"><tt>pool</tt></td>
+<td valign="top">The high-water of the single byte pool the tiers are carved
+from. It includes growth slack and the tiers not named above, so it is larger
+than <tt>total</tt>.</td>
+<td valign="top">2475K</td>
+</tr>
+<tr>
+<td valign="top"><tt>total</tt></td>
+<td valign="top">The sum of the three headline tiers,
+<tt>perm&nbsp;+&nbsp;mod&nbsp;+&nbsp;scr</tt> &mdash; the live in-use figure the
+target policy is really about.</td>
+<td valign="top">680K</td>
+</tr>
+</table>
+<p>
+The arithmetic checks: 61&nbsp;+&nbsp;365&nbsp;+&nbsp;254 = 680, so
+<tt>total</tt> is exactly the three-arena sum. And <tt>pool</tt> (2475K) is
+larger than <tt>total</tt> because it is a different measurement: the raw
+high-water of the one pool the compiler allocates all of its growable tiers
+from, which carries the growth slack each tier asked for and the tiers the
+line does not name. Keep the two apart and the line is unambiguous: the tiers
+are where the bytes went; <tt>pool</tt> is how far the underlying pool was
+pushed.
+</p>
+
+<h2>The arena tiers, and the ones the line does not show</h2>
+<p>
+The three headline tiers are the compiler's own instance of the
+<a href="vol2-14-arena.html">arena discipline</a>: a small permanent tier for
+what never dies, a module tier for what dies with a phase, a scratch tier for
+what dies with a function. It is the dual-arena pattern of Volume&nbsp;II
+chapter&nbsp;14, extended to three, because a compiler has two natural
+lifetimes to reclaim at rather than one. The reasoning is the same as the
+chapter that introduced it: data with different lifetimes should not share a
+fill level, or you can never reset the short-lived tier without losing the
+long-lived one.
+</p>
+<p>
+The <tt>--track-memory</tt> line reports the peaks of the three headline tiers,
+the type registry, and the pool. It does not report every internal tier, and
+the reason is worth knowing because it is the same reason the
+<a href="vol3-15-debugger-workflow.html">debugger chapter</a> gave: the
+compiler's internals are visible through <tt>--markers</tt> if you ask, and the
+tier names are in that stream. Filter the markers to the arena reports and the
+fuller set appears:
+</p>
+<pre>
+$ /tmp/manual_seed/zig1_5_clean --markers -o /tmp/manual_out \
+      docs/sf/manuals/src/vol2/arena.z98 2&gt; markers.txt
+$ grep -a '^arena ' markers.txt | sort -u
+arena diag_read: grew ...
+arena import_scratch: grew ...
+arena module: grew ...
+arena perm: grew ...
+arena scratch: grew ...
+arena type_db: grew ...
+</pre>
+<p>
+Those are the tiers that announce their growth: <tt>perm</tt>,
+<tt>module</tt>, <tt>scratch</tt>, and <tt>type_db</tt> as before, plus
+<tt>import_scratch</tt> (module-resolution working memory) and
+<tt>diag_read</tt> (the diagnostics store). The line each one writes is its
+growth, not its peak &mdash; the profiler prints the peak at the end, the
+markers narrate the journey. Between them you have the compiler's memory model
+in two views: where the bytes went, and when each tier asked for more.
+</p>
+<p>
+The design that makes the tiers pay off is the reset. On this compiler the
+scratch tier and the module tier are reset at phase boundaries, which is why
+the self-compile's live figure stays small even though the total work is large.
+The same lever in your own program is <tt>std.arena.reset</tt>, and it is the
+subject of the last section of this chapter. The principle is uniform: a tier
+with a lifetime should be reset at the boundary of that lifetime, and the
+permanent tier should never be reset at all.
+</p>
+
+<h2>The 16&nbsp;MB claim, measured</h2>
+<p>
+Now the claim itself. The compiler's heaviest workload is compiling its own
+source. Run it with the profiler and read the live figure and the pool figure
+together. At the default spill level (<tt>-s0</tt>, all spills on disk &mdash;
+the next section explains that flag), a full self-compile reports:
+</p>
+<pre>
+$ /tmp/manual_seed/zig1_5_clean --markers --track-memory -s0 \
+      -o /tmp/manual_out sf/src/main.zig
+track-memory: perm=981K mod=1022K scr=1024K pool=20644K type_db=346K total=3027K
+</pre>
+<p>
+Read the two last numbers as the two halves of the claim. The live in-use
+total is <b>3027K</b>, a little under 3&nbsp;MB &mdash; comfortably inside the
+16&nbsp;MB target-build policy, and that is the claim that <i>reproduces</i>:
+the compiler's three live arena tiers self-host in single-digit megabytes. The
+pool high-water is <b>20644K</b>, a little over 20&nbsp;MB, which is larger
+than the target policy &mdash; and that is the claim that does <i>not</i>
+reproduce, because <tt>pool</tt> is not the live figure. The pool carries the
+growth slack and the unnamed tiers, which is exactly why the host gate defaults
+to 64&nbsp;MB and not to 16.
+</p>
+<p>
+The distinction is not a dodge; it is testable in one command. Force the host
+gate down to the target policy and watch it stop the build on the pool number,
+not the live number:
+</p>
+<pre>
+$ /tmp/manual_seed/zig1_5_clean --markers --track-memory -s0 -mm16 \
+      -o /tmp/manual_out sf/src/main.zig
+memory limit exceeded: pool limit=16384K pool=20644K
+$ echo $?
+3
+</pre>
+<p>
+The gate compares the pool high-water to the limit and aborts the compile with
+status&nbsp;3 when it is over. At <tt>-mm16</tt> the pool figure (20644K)
+exceeds the limit (16384K) and the compile stops, even though the live figure
+is 3&nbsp;MB. That is the mechanism, and it is honest about what it measures: a
+conservative host tripwire on the pool, standing in for the live budget it
+cannot cheaply observe. The compiler's own budget policy lives in the
+constants; the runtime gate is a coarser instrument that defaults high so it
+does not fire on ordinary host work.
+</p>
+<p>
+Two smaller points settle the rest of the claim. First, the user-program case
+reproduces trivially: compiling the arena example, whose entire runtime working
+set is a 32-byte and a 64-byte buffer, costs the compiler 680K of live arena
+and a 2475K pool high-water. Whatever your program spends at run time, the
+compiler's cost to emit it is in this range unless the program is very large.
+Second, the live total at the default spill level is dominated by the three
+tiers in roughly equal measure &mdash; about a megabyte each on the self-compile
+&mdash; which is the shape the three-arena design predicts. There is no single
+tier hoarding the budget.
+</p>
+
+<h2>Disk or RAM: the <tt>-s</tt> spill ladder</h2>
+<p>
+The compiler's memory does not only depend on the input. It has a switch that
+trades disk for RAM, and the switch is the reason the host gate defaults to
+64&nbsp;MB. During a compile the compiler keeps six spill stores &mdash;
+intermediate structures it would rather write to a temporary file than hold in
+memory. The <tt>-s&lt;N&gt;</tt> flag chooses how many of those six live in RAM
+instead of on disk, from <tt>-s0</tt> (all on disk) to <tt>-s6</tt> (all in
+RAM). Higher levels are faster and larger; emission is identical in every mode,
+because the same data is merely stored differently. Measured on the
+self-compile:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Level</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Spills in RAM</b></th>
+<th align="left" bgcolor="#e8e0e0"><b><tt>pool</tt></b></th>
+<th align="left" bgcolor="#e8e0e0"><b><tt>total</tt></b></th>
+<th align="left" bgcolor="#e8e0e0"><b>At the 64&nbsp;MB default</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>-s0</tt></td>
+<td valign="top">none &mdash; all on disk</td>
+<td valign="top">20644K</td>
+<td valign="top">3027K</td>
+<td valign="top">rc&nbsp;0</td>
+</tr>
+<tr>
+<td valign="top"><tt>-s1</tt></td>
+<td valign="top">AST</td>
+<td valign="top">57433K</td>
+<td valign="top">18389K</td>
+<td valign="top">rc&nbsp;0</td>
+</tr>
+<tr>
+<td valign="top"><tt>-s2</tt></td>
+<td valign="top">AST, LIR</td>
+<td valign="top">127641K</td>
+<td valign="top">18389K</td>
+<td valign="top">rc&nbsp;3 &mdash; needs <tt>-mm128</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>-s6</tt></td>
+<td valign="top">all six</td>
+<td valign="top">133785K</td>
+<td valign="top">18389K</td>
+<td valign="top">rc&nbsp;3 &mdash; needs <tt>-mm0</tt></td>
+</tr>
+</table>
+<p>
+The table tells the story that makes the 16&nbsp;MB policy concrete. At the
+default <tt>-s0</tt>, the compiler keeps the spills on disk and the live arena
+total is 3027K &mdash; the fit-the-target setting. Move the first spill into
+RAM and the live total jumps to 18389K, a little over 18&nbsp;MB, because the
+AST spill alone is a 16&nbsp;MB module-tier allocation. The pool high-water
+climbs from 20&nbsp;MB to 57&nbsp;MB at <tt>-s1</tt>, then past the default
+gate at <tt>-s2</tt>. So the <b>default is the target setting</b>: all spills
+on disk, live total in low single-digit megabytes, and the disk pays the price
+in temporary-file I/O. The higher levels are a host convenience &mdash; trade
+I/O for speed &mdash; and they cost memory in exactly the way the target cannot
+afford.
+</p>
+<p>
+The switch is strict about its input. The valid range is 0 to 6; a bare
+<tt>-s</tt>, a non-digit, or an out-of-range level is a clean command-line
+error with status&nbsp;1, not a silent fallback:
+</p>
+<pre>
+$ /tmp/manual_seed/zig1_5_clean -s7 -o /tmp/manual_out docs/sf/manuals/src/vol2/arena.z98
+error: -s&lt;N&gt; spill level out of range (0..6: 0 = all on disk, 6 = all in RAM)
+$ /tmp/manual_seed/zig1_5_clean -s -o /tmp/manual_out docs/sf/manuals/src/vol2/arena.z98
+error: -s&lt;N&gt; requires a decimal level 0..6 (e.g. -s0 all on disk, -s6 all in RAM)
+</pre>
+<p>
+The per-level smoke test is the spill-file ladder: the temporary file for a
+spill disappears from the working directory once that spill is promoted to RAM.
+<tt>-s1</tt> leaves no AST spill file, <tt>-s2</tt> also leaves no LIR spill
+file, and so on to <tt>-s6</tt>, where the compiler writes no spill files at
+all. If you ever need to confirm which mode actually ran, the files on disk are
+the evidence.
+</p>
+
+<h2>When <tt>-mm0</tt> is the right answer</h2>
+<p>
+The <tt>-mm&lt;N&gt;</tt> gate was built to stop a runaway allocation before it
+eats the host. There is a case where the right move is not a bigger number but
+the removal of the ceiling altogether, and that case is <tt>-mm0</tt>. Zero is
+not &ldquo;zero megabytes&rdquo;; it is the switch that tells
+<tt>checkCombinedPeak</tt> to fall back to the static pool's own size as the
+limit. The pool is a fixed 256&nbsp;MiB reservation, so <tt>-mm0</tt> means
+&ldquo;the only limit is the pool itself&rdquo; &mdash; effectively no gate. The
+source says it in one line:
+</p>
+<pre>
+return mb * @intCast(u32, 1024); // -mm0 -&gt; 0 (checkCombinedPeak's max_mem==0 relax path)
+</pre>
+<p>
+That is why <tt>-mm0</tt>, not <tt>-mm128</tt>, is the call for the heaviest
+host run. The all-RAM self-compile peaks at 133785K, above 128&nbsp;MB, so even
+<tt>-mm128</tt> is too small for it; <tt>-mm0</tt> lets it finish:
+</p>
+<pre>
+$ /tmp/manual_seed/zig1_5_clean --markers --track-memory -s6 -mm0 \
+      -o /tmp/manual_out sf/src/main.zig
+track-memory: perm=981K mod=16384K scr=1024K pool=133785K type_db=562K total=18389K
+$ echo $?
+0
+</pre>
+<p>
+So <b>when is <tt>-mm0</tt> right?</b> When you are deliberately running the
+compiler at a heavy setting on the development host &mdash; the all-RAM
+<tt>-s6</tt> above, or a workload whose pool high-water you have decided the
+host can carry &mdash; and the gate is standing between you and the run rather
+than protecting anything. It is a host tool: it says nothing about the target.
+Never reach for <tt>-mm0</tt> to make a build &ldquo;fit a 1998
+machine&rdquo;; the pool ceiling is a property of the host binary, not of the
+era hardware, and the number that matters for the target is the live figure the
+same command prints.
+</p>
+<p>
+Prefer the smallest switch that works. <tt>-mm0</tt> is the blunt instrument;
+<tt>-mm128</tt> is the scalpel when 128&nbsp;MB is genuinely enough. And note
+that a small gate is useful, not hostile: run the arena example at
+<tt>-mm2</tt> and the compiler stops on the pool figure it exceeds, which is
+exactly the early warning the flag exists to give:
+</p>
+<pre>
+$ /tmp/manual_seed/zig1_5_clean -mm2 -o /tmp/manual_out docs/sf/manuals/src/vol2/arena.z98
+memory limit exceeded: pool limit=2048K pool=2475K
+$ echo $?
+3
+</pre>
+<p>
+The rule of thumb: leave the default alone for ordinary work, raise it to the
+measured need with a named <tt>-mm&lt;N&gt;</tt> when you know it, and use
+<tt>-mm0</tt> only when you have decided no gate is wanted for that run on that
+host.
+</p>
+
+<h2>Your own budget: the arena tiers at scale</h2>
+<p>
+The compiler's discipline is the pattern; your program is where you apply it.
+On the target, <a href="vol2-14-arena.html">Volume&nbsp;II chapter&nbsp;14</a>
+gave you the arena &mdash; one declared buffer, a bump cursor, a reset &mdash;
+and the dual-arena rule: a <b>permanent</b> arena for what lives for the whole
+run, never reset, and a <b>scratch</b> arena for per-phase work, reset at every
+phase boundary. At scale, the pattern is the same rule with more tiers, and the
+accounting is the compiler's own accounting applied to your buffers.
+</p>
+<p>
+The arithmetic is the point, so do it in bytes before the code exists. On the
+<a href="vol3-01-the-1998-machine.html">baseline machine</a> the pool is
+32&nbsp;MB shared with the operating system, which leaves far less than
+32&nbsp;MB for the program. Every byte the program asks for &mdash; the
+framebuffer, the level data, the per-connection state, the coroutine frames
+&mdash; comes out of that share. The three-arena shape turns "how much memory
+does this program use?" from a discovery into a sum: the permanent buffer plus
+the largest scratch buffer plus whatever the other tiers hold, all numbers you
+wrote down. The <tt>total</tt> field of the compiler's profile is the same
+arithmetic, one tier per line.
+</p>
+<p>
+At scale the second tier is not enough for every program, and the honest answer
+is to add a third rather than enlarge the first. A server that handles many
+connections wants a <b>per-connection</b> tier whose lifetime is one
+connection, sitting between the permanent tier and the per-phase scratch: a
+connection's buffers come from its own arena, and when the connection closes
+that arena resets and the bytes return at once, without touching the permanent
+data or waiting for a phase boundary. The
+<a href="vol3-09-coroutines.html">coroutine chapter</a> already uses exactly
+this shape for its child frames: a per-task pool whose <tt>Context</tt>
+occupies the first 16 bytes of a caller-supplied buffer, with the frames drawn
+from the bytes after it, each frame rounded to 8 bytes. That is a tier with a
+lifetime, backed by a buffer you declared, reset when the task ends &mdash; the
+same move as the compiler's module tier, at connection scale.
+</p>
+<p>
+The sizing rule follows from the lifetimes. Ask three questions of every
+buffer: <i>how long does it live</i>, <i>who resets it</i>, and <i>what is the
+largest single phase or connection it must hold</i>. A buffer whose answer is
+&ldquo;the whole run&rdquo; goes in the permanent arena and is sized once. A
+buffer whose answer is &ldquo;one phase&rdquo; or &ldquo;one connection&rdquo;
+goes in a tier that resets at that boundary, and is sized for the peak of a
+<i>single</i> phase &mdash; not the sum of all phases, because the reset means
+they never coexist. That last phrase is the memory the dual-arena pattern pays
+for: sizing the scratch tier for one phase instead of all of them is the whole
+return on the discipline.
+</p>
+<p>
+Two habits keep the accounting honest. First, keep the disk out of the hot
+path by spending memory deliberately &mdash; the same trade the compiler makes
+with <tt>-s0</tt>, seen from the other side: bytes held in RAM are I/O not
+paid. Second, measure with the instrument, not by feel. There is no
+<tt>--track-memory</tt> for your own program &mdash; the profiler reports the
+compiler's arenas, not yours &mdash; but your program <i>is</i> an arena, and
+<tt>arena.used</tt> and <tt>arena.capacity</tt> are public fields you can print
+at any boundary, exactly as the Volume&nbsp;II example does. The compiler's
+line is the pattern; <tt>arena.used</tt> is yours.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> The 16&nbsp;MB target is a policy, and the honest
+reading of the measurements is narrower than the slogan. The compiler's live
+arena tiers self-host in about 3&nbsp;MB at the default spill level, well inside
+the target; its raw pool high-water is about 20&nbsp;MB, which is why the host
+gate defaults to 64&nbsp;MB, and setting the gate to 16&nbsp;MB on the host
+stops the build. Neither number is a lie and neither is the whole truth: the
+policy is what the compiler is designed to hold on the 1998 machine, the gate
+is a coarser host tripwire, and the only way to know which you are looking at
+is to run <tt>--markers --track-memory</tt> and read
+<tt>total</tt>&nbsp;beside&nbsp;<tt>pool</tt>. On the target, the number that
+decides whether your program ships is the same discipline at the scale of your
+own buffers: size each tier to its lifetime, reset it at the boundary, and
+spend the ceiling deliberately rather than discovering it in a failed
+allocation.</td>
+</tr>
+</table>
+
+<h2>Common mistakes</h2>
+<p>
+The chapter has no sample program, but the memory discipline has a small set of
+failures that account for most of the confusion. They are listed in the order
+they are usually made.
+</p>
+<p>
+<b>Running <tt>--track-memory</tt> without <tt>--markers</tt>.</b> The profiler
+emits through the marker channel, so the pair is required. Without
+<tt>--markers</tt> the compile succeeds and prints nothing, and the natural
+conclusion &mdash; &ldquo;the numbers are unavailable&rdquo; &mdash; is wrong.
+Pass both flags.
+</p>
+<p>
+<b>Confusing the 16&nbsp;MB target policy with the 64&nbsp;MB host default.</b>
+The policy is what the compiler is designed to hold on the 1998 machine; the
+default is the tripwire a host run uses. They are different numbers on purpose,
+and setting <tt>-mm16</tt> on the host because the target is 16&nbsp;MB makes
+ordinary host work fail. Keep the two apart.
+</p>
+<p>
+<b>Reading <tt>pool</tt> as live memory.</b> <tt>pool</tt> is the raw
+high-water of the underlying byte pool, growth slack included; <tt>total</tt>
+is the live sum of the three headline tiers. The target budget is about live
+memory, so <tt>total</tt> is the figure to compare against 16&nbsp;MB, and
+<tt>pool</tt> is the figure the host gate checks. They are not interchangeable.
+</p>
+<p>
+<b>Assuming the compiler's profile is your program's memory.</b>
+<tt>--track-memory</tt> reports what the compiler spent emitting your program,
+not what your program spends when it runs. A program with a tiny source and a
+huge runtime buffer compiles cheaply and runs expensively; the profile will not
+show you the runtime cost. Track that with your own <tt>arena.used</tt>.
+</p>
+<p>
+<b>Leaving the spills in RAM on the machine that cannot afford them.</b> The
+default <tt>-s0</tt> keeps all six spills on disk and the live total small.
+Raising <tt>-s</tt> trades disk for speed and moves the AST spill &mdash; a
+16&nbsp;MB allocation &mdash; into RAM, pushing the live total over the target
+policy. Use the higher levels on the host, not when measuring the target.
+</p>
+<p>
+<b>Reaching for <tt>-mm0</tt> to &ldquo;make it fit.&rdquo;</b> Zero lifts the
+gate to the static pool ceiling. It is a host convenience for a run you have
+decided the host can carry, not a way to fit a program onto the era machine.
+Prefer the smallest <tt>-mm&lt;N&gt;</tt> that works.
+</p>
+<p>
+<b>Treating a small <tt>-mm</tt> gate as the enemy.</b> A gate that stops a
+compile is doing its job. Run a large program at <tt>-mm2</tt> and the compiler
+names the pool figure it exceeded and exits with status&nbsp;3; that is the
+early warning, not a defect.
+</p>
+<p>
+<b>Forgetting to reset the scratch tier.</b> An arena never reclaims on its
+own. A per-phase tier that is never reset climbs to its capacity and every
+later allocation fails with <tt>error.OutOfMemory</tt> even though the phase
+data is long dead. Reset at the boundary, not when the arena is full &mdash;
+the lesson of <a href="vol2-14-arena.html">Volume&nbsp;II chapter&nbsp;14</a>,
+restated here because memory budgets are where it stops being hygiene and
+starts being arithmetic.
+</p>
+
+<h2>Where to go next</h2>
+<p>
+The claim this chapter pays for is <a href="vol3-01-the-1998-machine.html">chapter&nbsp;1</a>'s:
+memory, not the processor, is the binding constraint, and the arena is how the
+language makes it explicit. The arena API, the dual-arena pattern, and the
+<tt>ArenaError![*]u8</tt> signature are <a href="vol2-14-arena.html">Volume&nbsp;II
+chapter&nbsp;14</a>; the size and layout of a struct you are counting bytes for
+is <a href="vol2-04-structs.html">chapter&nbsp;4</a>, and the builtins that
+compute those sizes are <a href="vol2-15-builtins.html">chapter&nbsp;15</a>.
+The profiler's companion channel is the <a href="vol3-15-debugger-workflow.html">debugger
+workflow</a>, and the per-connection tier is the
+<a href="vol3-09-coroutines.html">coroutine chapter</a>'s child-frame pool,
+worked end to end in <a href="vol3-10-coroutine-program.html">chapter&nbsp;10</a>.
+The disk side of the spill trade is the Win9x build's concern in
+<a href="vol3-08-win9x.html">chapter&nbsp;8</a>.
+</p>
+<p>
+The next chapter, chapter&nbsp;17, Packaging and shipping <i>(planned)</i>,
+turns a program that fits into a release that reaches a machine. For lookup,
+<a href="vol4-15-builtins.html">Volume&nbsp;IV &mdash; Builtins</a> catalogues
+the size and conversion builtins this chapter's arithmetic rests on, and
+<a href="vol4-00-title.html">the Reference volume</a> will hold the full
+command-line and marker references when its planned pages ship. Until then, the
+measuring commands on this page are the reference, and
+<a href="toc.html">the Contents page</a> shows the volume's shape.
+</p>
+
+<p class="navbtns">
+<a href="vol3-15-debugger-workflow.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol3-15-debugger-workflow.html">The debugger workflow</a> | <a href="toc.html">Contents</a> | Next: <a href="toc.html">Contents</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
