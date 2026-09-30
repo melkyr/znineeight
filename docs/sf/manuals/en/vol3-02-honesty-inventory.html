@@ -196,12 +196,13 @@ fn parse(n: i32) error{Negative}!u32 {
 </pre>
 <p>
 The caller unwraps with <tt>try</tt> to propagate or <tt>catch</tt> to handle;
-a result that is neither is rejected at compile time. The measured program
-behind <a href="vol2-12-error-unions.html">Volume II chapter&nbsp;12</a>
-prints <tt>ok=11</tt>, <tt>caught=100</tt>, <tt>err=2</tt>, and
-<tt>cleanup=8</tt>, exercising <tt>try</tt>, <tt>catch&nbsp;|err|</tt>, and
-<tt>errdefer</tt>. This replaces C89's convention of a sentinel return, a
-global <tt>errno</tt>, or an out-parameter the caller is trusted to check.
+a result that is neither is rejected at compile time. The chapter's shipped
+program behind <a href="vol2-12-error-unions.html">Volume II
+chapter&nbsp;12</a>, <tt>docs/sf/manuals/src/vol2/error_unions.z98</tt>,
+prints <tt>5</tt> from the successful division and
+<tt>caught: DivideByZero</tt> on the error path, exercising <tt>try</tt> and
+<tt>catch&nbsp;|err|</tt>. This replaces C89's convention of a sentinel return,
+a global <tt>errno</tt>, or an out-parameter the caller is trusted to check.
 </p>
 
 <h3>Optionals</h3>
@@ -215,11 +216,14 @@ const m = maybe(false) orelse 99;
 </pre>
 <p>
 <tt>*T</tt> is never nullable, so a dereference is never a silent bet on a
-null. The measured program behind <a href="vol2-13-optionals.html">Volume II
-chapter&nbsp;13</a> prints <tt>is_null=true</tt>, <tt>orelse=7</tt>, and
-<tt>fallback=-1</tt>. This replaces the C89 pattern where every pointer can be
-<tt>NULL</tt> and every value carries an untyped &ldquo;is this valid?&rdquo;
-flag.
+null. The chapter's shipped program behind
+<a href="vol2-13-optionals.html">Volume II chapter&nbsp;13</a>,
+<tt>docs/sf/manuals/src/vol2/lookup.z98</tt>, prints
+<tt>sizes: ?i32=8 ?u8=8 ?*Entry=8 *Entry=4</tt>, resolves a hit with
+<tt>orelse hit: 1</tt>, and falls back on a miss with
+<tt>orelse miss: -1</tt>. This replaces the C89 pattern where every pointer can
+be <tt>NULL</tt> and every value carries an untyped &ldquo;is this
+valid?&rdquo; flag.
 </p>
 
 <h3>Coroutines</h3>
@@ -239,10 +243,11 @@ fn worker(out: *i32) void {
 }
 </pre>
 <p>
-The measured program
+The shipped program
 <tt>docs/sf/manuals/src/vol2/builtins/async.z98</tt> reports
-<tt>frame=88</tt> and <tt>n=3 steps=4</tt> on this compiler; the Volume II
-program with a larger frame reports <tt>frame=120</tt>. This is the third
+<tt>frame=88</tt> and <tt>n=3 steps=4</tt> on this compiler, and the same
+<tt>@async*</tt> surface is catalogued in
+<a href="vol2-15-builtins.html">Volume II chapter&nbsp;15</a>. This is the third
 mental shift, and
 chapter&nbsp;9, Coroutines &mdash; the third big shift <i>(planned)</i> takes
 it apart. It replaces the
