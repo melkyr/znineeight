@@ -1,0 +1,570 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Honesty: When C89 Is the Better Choice</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume III honesty when C89 is the better choice interop extern mix freely C89 emission toolchain compatibility compiler support error unions coroutines dependency surface header prototype link static library reserved names">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol3-02-honesty-inventory.html">
+<link rel="next" href="toc.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume III &mdash; Working in the Era</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+How to read this <i>(planned)</i><br>
+The 1998 machine <i>(planned)</i><br>
+<a href="vol3-02-honesty-inventory.html">Honesty: what Z98 does and does not give you</a><br>
+<b>Honesty: when C89 is the better choice</b><br>
+Honesty: when C++98 is the better choice <i>(planned)</i><br>
+Honesty: when assembly is the better choice <i>(planned)</i><br>
+Honesty: what you cannot do on a Pentium II <i>(planned)</i><br>
+Honesty: the friction you will hit <i>(planned)</i><br>
+Building for Win9x <i>(planned)</i><br>
+Coroutines &mdash; the third big shift <i>(planned)</i><br>
+A coroutine program <i>(planned)</i><br>
+Talking to C <i>(planned)</i><br>
+WinSock under Z98 <i>(planned)</i><br>
+The Win32 Debug API <i>(planned)</i><br>
+DirectX under CINTERFACE <i>(planned)</i><br>
+The debugger workflow <i>(planned)</i><br>
+Memory budgets <i>(planned)</i><br>
+Packaging and shipping <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Honesty: When C89 Is the Better Choice</h1>
+<p>
+<a href="vol3-02-honesty-inventory.html">Chapter&nbsp;2</a> gave the inventory:
+what Z98 gives you, what it does not, and what to reach for instead. This is the
+first chapter that acts on one row of that inventory. The row is C89, and the
+verdict is plain: there are projects, and parts of projects, where plain C89 is
+the better choice, and the honest move is to say so and then use it.
+</p>
+<p>
+This is not a concession, and it is not an apology for Z98. It is the same
+tradeoff the whole volume is written in. The target machine&nbsp;&mdash; a
+32-bit Pentium-class PC running Windows 95 or 98&nbsp;&mdash; ran C89 before Z98
+existed and runs it still. Both tools compile to the same place and both link
+against the same objects. The question this chapter answers is a per-project and
+per-module question: given a task, which of the two is the smaller, safer, or
+more maintainable answer? Sometimes it is C89.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffffc8">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-note.gif" width="16" height="16" alt="Note"></td>
+<td><b>Era framing.</b> Statements here about the era's machines, toolchains,
+and libraries are era context, and where a statement is an opinion the text says
+so. Statements about Z98 are checked against
+<tt>docs/reference/Language_Spec_Z98.md</tt>, the compiler source, and the
+compiler built from the committed seed. The interop proof on this page was
+compiled and run on the seed-built compiler; the exact commands and output are
+quoted verbatim.</td>
+</tr>
+</table>
+
+<h2>What you expect</h2>
+<p>
+A reader arriving at a new compiler usually arrives expecting a replacement.
+The new tool is supposed to be the tool now, and the old one is supposed to be
+the thing you migrate away from. On that reading, "Z98 emits C89" sounds like a
+limitation&nbsp;&mdash; a sign that the new language has not really arrived, that
+it is only a layer over the old one. And if the new tool were a replacement, the
+right question would be whether it can do everything the old one can, and the
+absence of any feature would count against it.
+</p>
+<p>
+That is the wrong frame for this machine, and the previous chapter set it
+straight. Z98 is <b>checked C89</b>. It is deliberately built to stand beside
+C89 on the same machine and against the same libraries, not to replace it, and
+the emitted C is meant to be read by an era programmer and compiled by an era
+toolchain. Volume&nbsp;II chapter&nbsp;1, <a
+href="vol2-01-honest-comparison.html">The Honest Comparison</a>, is the long
+form of that framing. What it means in practice is that C89 is not the loser in
+a contest; it is one of the two available tools, and the reason Z98 can call
+C89 code at all is that the two share a calling convention and an object format.
+</p>
+<p>
+There is a second expectation, subtler: that a project has to be written in one
+language. It does not. The seam between Z98 and C89 is the ordinary C ABI, and
+on this machine that seam is exactly where the two meet. So the practical
+question is not "Z98 or C89" but "which module, and which seam". This chapter
+lists the six cases where the honest answer for a module is C89, and then shows
+the seam that lets the rest of the project stay in Z98.
+</p>
+
+<h2>What you get</h2>
+<p>
+Six cases where C89 is the better choice. They are not equal in weight. The
+first three are about the world a 1998 project actually lives in&nbsp;&mdash;
+libraries that exist only in C89, code already written in C89, and build
+toolchains that have to keep working without a new step. The last three are
+about measuring the tool and the task: the compilers a unit has to satisfy, the
+checks a program actually needs, and the size of what ships. Each case says
+plainly that C89 is the better choice, and each carries the seam that keeps Z98
+available if only part of the project is in question.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>The case</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Why C89 is the better choice</b></th>
+</tr>
+<tr>
+<td valign="top">A library that only exists in C89</td>
+<td valign="top">the header and the object are C89; there is no Z98 wrapper to
+call and no reason to write one before the library works</td>
+</tr>
+<tr>
+<td valign="top">Maintaining existing C89</td>
+<td valign="top">the code already builds and is understood; a rewrite buys
+checks at the cost of a rewrite</td>
+</tr>
+<tr>
+<td valign="top">Maximum toolchain compatibility</td>
+<td valign="top">a stock 1998 build&nbsp;&mdash; <tt>make</tt>, an IDE, or a
+batch file&nbsp;&mdash; needs no new tool on the target</td>
+</tr>
+<tr>
+<td valign="top">Widest compiler support</td>
+<td valign="top">C89 is the common language of the era's C compilers; a
+hand-written C89 unit asks for nothing beyond it</td>
+</tr>
+<tr>
+<td valign="top">No need for error unions or coroutines</td>
+<td valign="top">a small tool with no fallible operations and no interleaving
+gets little from the checks Z98 adds</td>
+</tr>
+<tr>
+<td valign="top">The smallest dependency surface</td>
+<td valign="top">a C89 unit links libc and nothing else; a Z98 program links
+its emitted runtime and modules as well</td>
+</tr>
+</table>
+
+<h3>A library that only exists in C89</h3>
+<p>
+This is the case that decides most era projects, and it is the first one
+because it is the least arguable. A great deal of the software a 1998 project
+depends on ships as a C89 header plus a static library. There is no Z98
+declaration for it, and there is no prospect of one being written before the
+project ships. The library works; the question is only how to call it.
+</p>
+<p>
+The honest answer is to write the part that speaks to the library in C89, or to
+declare the library's entry points as <tt>extern</tt> in Z98 and call them
+directly. Both work, and the reason both work is the seam this chapter is
+built around: the library's ABI is the ordinary C ABI, and Z98's output is C89
+that uses the same ABI. When the library is large, when its header is full of
+macros, or when the code around it is already written in the library's dialect,
+writing that module in C89 is the smaller decision. When only one or two
+functions are needed, an <tt>extern</tt> declaration in Z98 is smaller still.
+There is no loyalty owed either way, and this chapter is not asking for any.
+</p>
+<p>
+This is an era fact, not an opinion: the libraries exist in C89, and calling
+them from C89 is the direct path. The seam is shown in
+<a href="#the-way-over-it">The way over it</a>, below.
+</p>
+
+<h3>Maintaining existing C89</h3>
+<p>
+The second case is a codebase that is already C89 and already works. Rewriting
+a working module in Z98 is a real option, and on new code it usually pays: the
+type checks, the error unions, and the bounds checks catch mistakes that the
+C89 version would leave to testing. But on a module that is stable, tested, and
+understood by the people who maintain it, the rewrite is work spent to get back
+to where the project already is. Until the module is going to change again, that
+work buys nothing.
+</p>
+<p>
+This one is a judgment, and it is marked as one. The compiler does not know how
+stable your module is or how well your team knows it. The rule of thumb that
+respects both tools is the seam again: keep the stable C89 module as it is,
+write the new module in Z98, and let the two link. If the module is about to be
+reworked anyway, that is the moment to move it. The cost of a rewrite is
+measured in the same unit as the benefit&nbsp;&mdash; maintenance time&nbsp;&mdash;
+and the trade is only worth taking when the maintenance is going to happen.
+</p>
+
+<h3>Maximum toolchain compatibility</h3>
+<p>
+The third case is the build itself. A pure C89 project builds with the tools
+the era already provided: a <tt>make</tt>, an IDE's project file, a batch file
+that calls <tt>cl</tt> or <tt>wcc386</tt>. Z98 adds a step&nbsp;&mdash; the
+compiler runs first and produces the C89 that those tools then build&nbsp;&mdash;
+and on the target machine that step has to be carried. If a project must build
+with nothing but the stock era toolchain, if the Z98 compiler cannot be placed
+on the build machine, or if the build is a fixed corporate script that will not
+grow a step, then C89 is the answer that keeps the build working.
+</p>
+<p>
+This is an era-toolchain fact, and the manual does not pretend otherwise. Z98's
+own emitted build scripts are a good illustration of how small the added step
+can be when it is allowed: the compiler emits <tt>build_target.sh</tt> for the
+GNU toolchain, <tt>build_target.bat</tt> for MSVC <tt>cl</tt>, and
+<tt>build_owc.bat</tt> for OpenWatcom <tt>wcc386</tt>/<tt>wlink</tt>. On the
+development host only the mingw cross-build of the first is actually run; the
+MSVC and OpenWatcom scripts are emitted, not exercised. That is the honest
+boundary. Where the added step is acceptable, Z98 is the better tool; where it
+is not, C89 is.
+</p>
+
+<h3>Widest compiler support</h3>
+<p>
+The fourth case is close to the third but about the C compiler rather than the
+build driver. C89 is the common denominator of the era's C compilers: MSVC&nbsp;6,
+Borland&nbsp;5.02, Watcom, and <tt>gcc</tt> all accept it, and a hand-written
+C89 unit written to the common subset compiles under any of them without
+special-casing. Z98's emitted C is C89 too, and the compiler pins its layout
+model on all of those hosts&nbsp;&mdash; the emitted 64-bit declarations route
+through carry typedefs that are correct on GCC, Clang, mingw, MSVC, and Watcom.
+So this case is not "Z98's output is not portable". It is narrower: a
+hand-written C89 unit carries no emitter, no runtime, and no build step, and
+that is sometimes exactly what a small, widely built module wants.
+</p>
+<p>
+One honest detail belongs here. "C89" for this machine means C89 plus the
+64-bit <tt>long long</tt> extension the era's compilers all accepted. Z98's
+emitted C uses <tt>long long</tt> for its 64-bit types, and the emitted
+<tt>build_target.sh</tt> compiles with <tt>-Wno-long-long</tt> so that the
+strict-dialect warning does not drown the output. That is the one extension the
+emission relies on, and it is the same one an era programmer would reach for. A
+hand-written C89 unit that avoids 64-bit arithmetic avoids even that.
+</p>
+
+<h3>No need for error unions or coroutines</h3>
+<p>
+The fifth case measures the task rather than the world. Z98's checks earn their
+keep where a program can fail and where a program has to interleave. A small
+tool that cannot fail&nbsp;&mdash; one that reads no files, allocates nothing it
+did not declare, and has no error path&nbsp;&mdash; gets no benefit from error
+unions it never writes. A batch-style utility that runs to completion gets no
+benefit from coroutines. In those programs the checks have nothing to check,
+and the added vocabulary is a cost with no matching return.
+</p>
+<p>
+This is the case where the measurement cuts against Z98 hardest, and the
+chapter states it without hedging: if a program has no fallible operation and no
+interleaving, write it in C89 and be done. The moment the program grows a
+fallible operation or a pause, the balance changes, and that is the moment to
+reconsider&nbsp;&mdash; which the seam makes cheap. Z98 can call the C89 helper,
+and C89 can call the Z98 module. The decision is not made once and for all.
+</p>
+
+<h3>The smallest dependency surface</h3>
+<p>
+The sixth case is size. A C89 program links libc and its own objects. A Z98
+program links its own objects plus the emitted runtime&nbsp;&mdash;
+<tt>zig_runtime.c</tt>, <tt>zig_pal.c</tt>, and <tt>c_exit.c</tt>&nbsp;&mdash;
+and one emitted C module for each module the compiler resolves. The measured
+shape on the seed compiler is small: a Z98 program with no imports emits four C
+files&nbsp;&mdash; its own module plus the three runtime files&nbsp;&mdash; and
+a one-line program that imports <tt>std</tt> emitted seven, because the
+<tt>std</tt> import resolves modules the program never names, including
+<tt>std_net</tt>. The standard library is one import for convenience, not one
+module of code. A tiny utility that wants the least possible to carry is a real
+case for C89.
+</p>
+<p>
+For most programs the runtime is a rounding error: it is small, deterministic,
+and goes away when the program is statically linked. But "most programs" is not
+"all programs", and a utility that must ship as a single tiny object, or that
+must be understood by someone reading only the source in front of them, is
+better served by C89. The way over is the one this chapter keeps returning to:
+if the shipped surface is the binding constraint, write that utility in C89; if
+Z98's checks are worth the runtime to you, the runtime is what they cost. The
+seam lets the two live in one program either way.
+</p>
+
+<h2>The trade</h2>
+<p>
+Choosing C89 in any of these six cases means giving up the checks Z98 adds.
+That is the whole cost, and it is real. No error unions means a failure can be
+dropped by accident; no optionals means a null can be dereferenced without
+warning; no bounds checking means a slice can run off its end; no arena
+discipline means a <tt>free</tt> can be doubled or forgotten; no coroutines
+means a pause is a hand-rolled state machine. These are the disciplines C89
+leaves to the programmer, and choosing C89 leaves them there. The user who
+takes the C89 path is not getting the same program with a different coat of
+paint; they are choosing less machinery in exchange for fewer moving parts.
+</p>
+<p>
+What that buys is equally real, and it is why the choice is not a
+downgrade. C89 asks nothing new of the machine or the team. It has no emitter,
+no runtime, no build step, and no seed model. Its libraries already exist and
+already link. Its compiler is the one that shipped with the era's tools. Every
+C89 unit in a project is a unit that any era programmer can read, build, and
+replace, and that is a form of robustness the type checker cannot provide. The
+trade is not "safe versus unsafe"; it is "more checking versus fewer
+dependencies", and for some modules the second is the better buy.
+</p>
+<p>
+The reason this chapter can offer the trade without asking the project to
+choose sides is the property Z98 has and most new compilers do not: its output
+is the same C89 the other tool speaks. The two are not alternatives on this
+machine; they are two ends of one toolchain. That is the fact the next section
+proves, and it is what turns "which language?" into "which module?".
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> The sharpest thing to say about C89 is also the most
+useful: it is the one language on this machine that needs nothing from anyone.
+It asks for no runtime, no compiler step, and no new discipline from the team,
+and in exchange it hands every check back to the programmer. The chapter says
+plainly when that is the better deal. But because Z98 emits C89, taking the C89
+deal for one module does not close the door on Z98 for the next&nbsp;&mdash;
+the two link, and a project can hold both.</td>
+</tr>
+</table>
+
+<h2>The way over it</h2>
+<a name="the-way-over-it"></a>
+<p>
+The load-bearing fact is short: <b>Z98 emits C89, so you can mix the two
+freely</b>. This is not a slogan. It is a property you can test in four
+commands, and the rest of this section does exactly that: a Z98 module declares
+a <tt>extern</tt> function, a hand-written C89 file defines it, the emitted C
+compiles as C89, and the linked program runs. No glue, no wrapper generator, no
+foreign-function layer&nbsp;&mdash; two compilers producing objects that the
+same linker accepts.
+</p>
+<p>
+The Z98 side is one declaration and one call. The annotation
+<tt>@cInclude</tt> emits an ordinary <tt>#include</tt> for the library's
+header, and it belongs at module level:
+</p>
+<pre>
+@cInclude("c_add.h");
+
+const std = @import("std");
+
+extern "c" fn c_add(a: i32, b: i32) i32;
+
+pub fn main() void {
+    std.io.print("sum={}\n", .{c_add(20, 22)});
+}
+</pre>
+<p>
+The C89 side is the library itself&nbsp;&mdash; a header with the prototype and
+a translation unit with the definition:
+</p>
+<pre>
+/* c_add.h */
+int c_add(int a, int b);
+
+/* c_add.c */
+#include "c_add.h"
+int c_add(int a, int b) { return a + b; }
+</pre>
+<p>
+Compile the Z98 module with the seed-built compiler, copy the hand-written C89
+beside the emitted C, compile everything as C89, link, and run. The transcript
+is a real run on the seed compiler:
+</p>
+<pre>
+$ mkdir -p out && /tmp/manual_seed/zig1_5_clean -o out sum.z98
+$ cd out && cp ../c_add.h ../c_add.c .
+$ gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -I . -c *.c
+$ gcc -m32 *.o -o sum
+$ ./sum
+sum=42
+</pre>
+<p>
+That is the whole seam. The Z98 module and the C89 module are both object files
+by the time the linker sees them, and the linker does not care which compiler
+produced which. The same property is what lets a Z98 program link the era's
+static libraries, and what lets a C89 program call into a Z98 module compiled
+ahead of it. It is also why the hand-written library does not have to be ported,
+wrapped, or regenerated.
+</p>
+<p>
+The emitted C is C89, and the strict dialect agrees. Compiling the emitted
+translation unit with the pedantic flag set succeeds:
+</p>
+<pre>
+$ gcc -m32 -std=c89 -pedantic -Wall -I . -fsyntax-only sum_0430AE91.c
+$ echo $?
+0
+</pre>
+<p>
+It does warn, and the honest accounting of that warning belongs on this page.
+The emitted C uses <tt>long long</tt> for its 64-bit types&nbsp;&mdash; the one
+extension beyond C89 the era's compilers all accepted&nbsp;&mdash; and
+<tt>-pedantic</tt> reports it, along with a handful of unused runtime helpers
+and the POSIX seams in the platform layer. There are zero errors; the emitted
+translation unit is valid C89 under the compiler. The emitted
+<tt>build_target.sh</tt> compiles with <tt>-Wno-long-long</tt>,
+<tt>-Wno-pointer-sign</tt>, and <tt>-Wno-implicit-function-declaration</tt>
+precisely so those known warnings do not bury a real one. That flag set is the
+supported build; the pedantic line above is the proof that nothing in the
+emission is outside the dialect except the documented 64-bit extension.
+</p>
+<p>
+There is one seam worth naming before it bites. A bare, non-variadic
+<tt>extern</tt> declaration is known to the Z98 type checker, but the compiler
+emits no prototype for it in the generated C. The call in the emitted module is
+therefore an implicit declaration to the C compiler, which reports it at the
+call site:
+</p>
+<pre>
+warning: implicit declaration of function 'c_add' [-Wimplicit-function-declaration]
+    zT_6 = c_add((int)((int)zT_2), (int)((int)zT_4));
+</pre>
+<p>
+The way over is the <tt>@cInclude</tt> shown above: put the prototype in the
+library's header and include it, and the emitted C sees the declaration at the
+point of the call. The emitted <tt>build_target.sh</tt> also passes
+<tt>-Wno-implicit-function-declaration</tt>, so the supported build succeeds
+either way, but including the header is the correct code and the explicit
+declaration is what removes the warning. This is the same C convention the era
+used: declare the function before you call it.
+</p>
+<p>
+Two more properties keep the seam safe, and both are detailed in chapter&nbsp;11
+<i>(planned)</i>, Talking to C. First, identifiers beginning with
+<tt>__</tt> are reserved for the compiler and a user identifier that starts
+with them is mangled automatically, so the Z98 side cannot accidentally collide
+with the runtime's internals. Second, every Z98 identifier is mangled in the
+emitted C&nbsp;&mdash; functions become names like <tt>zF_EA90E208_main</tt>
+and types like <tt>zT_6</tt>&nbsp;&mdash; so a Z98 module and a C89 module can
+each define an ordinary-looking name without a link collision. The names you
+write in Z98 are not the names the linker sees, which is exactly what makes a
+mixed link predictable.
+</p>
+<p>
+Put together, the property gives the rule this chapter wants you to keep:
+choose C89 where it wins, choose Z98 where its checks earn their keep, and
+connect the two at the C ABI. The decision is per-module, and because both
+sides produce C89 objects, it is reversible. Nothing here said Z98 is always
+right. It said when C89 is better, and how to use it without leaving the rest of
+the project behind.
+</p>
+
+<h2>Common mistakes</h2>
+<p>
+The mistakes below are the ones a reader makes when the two tools are treated
+as rivals instead of as two halves of one toolchain.
+</p>
+<p>
+<b>Reading "C89 is better here" as a verdict on Z98.</b> The six cases are
+about modules and tasks, not about the language. A project can keep its checked
+core in Z98 and its C89-only library in C89, linked into one program, and that
+is the intended shape rather than a compromise. Treating the chapter as a
+scoreboard measures the wrong thing; the scoreboard is the one the volume
+refuses to keep.
+</p>
+<p>
+<b>Assuming the whole project must be one language.</b> The seam is the
+ordinary C ABI. There is no conversion layer to write and no runtime bridge to
+configure. If only one module needs C89, only that module is written in C89.
+</p>
+<p>
+<b>Calling an <tt>extern</tt> function and being surprised by the implicit
+declaration.</b> A non-variadic <tt>extern</tt> gets no emitted prototype, so
+the generated call is an implicit declaration to the C compiler. Declare the
+function in a header and <tt>@cInclude</tt> it. The supported build suppresses
+the warning anyway, but the header is the correct code:
+</p>
+<pre>
+/* in c_add.h, included from the Z98 module */
+int c_add(int a, int b);
+</pre>
+<p>
+<b>Assuming the emitted <tt>build_target.sh</tt> will link your C89 object for
+you.</b> The script compiles and links the Z98-emitted translation units. Your
+hand-written C89 object is yours to compile and add to the link&nbsp;&mdash; one
+extra <tt>gcc -c</tt> and one extra name on the link line, as the transcript
+above shows.
+</p>
+<p>
+<b>Believing the emitted C is not really C89.</b> It compiles as C89 under
+<tt>gcc -m32 -std=c89 -pedantic -Wall</tt> with zero errors. It uses
+<tt>long long</tt>, which is C99 in the letter and was universal in the era's
+compilers in practice; the emitted build scripts enable it explicitly. That is
+the single extension, and it is paired with the flag that names it.
+</p>
+<p>
+<b>Choosing C89 for a module that has grown a failure path.</b> The
+"no error unions needed" case is a measurement, not a permanent property. When
+the module gains a fallible operation or a pause, re-run the measurement. The
+seam makes moving that module to Z98 cheap, and leaving it in C89 is only the
+better choice while the measurement still says so.
+</p>
+
+<h2>Where to go next</h2>
+<p>
+This is the first of the "when another tool wins" chapters. The next two make
+the same honest comparison for the other two languages the machine offers:
+chapter&nbsp;4, when C++98 is the better choice <i>(planned)</i>, weighs the
+abstraction C++98 buys against the runtime it costs on a 32&nbsp;MB machine, and
+chapter&nbsp;5, when assembly is the better choice <i>(planned)</i>, covers the
+cases where the emitted C is not tight enough. The full interop surface&nbsp;&mdash;
+calling conventions, struct-by-value layout, and the reserved-name and mangling
+rules&nbsp;&mdash; is chapter&nbsp;11, Talking to C <i>(planned)</i>, which
+builds on the seam shown here.
+</p>
+<p>
+For the frame behind this chapter, <a
+href="vol2-01-honest-comparison.html">Volume II chapter&nbsp;1, The Honest
+Comparison</a> is the register: Z98 as checked C89, standing beside C89 rather
+than above it. For the checks that choosing C89 gives up,
+<a href="vol2-12-error-unions.html">Volume II chapter&nbsp;12</a> measures error
+unions, <a href="vol2-13-optionals.html">chapter&nbsp;13</a> measures optionals,
+<a href="vol2-14-arena.html">chapter&nbsp;14</a> measures the arena, and
+<a href="vol2-16-no-methods.html">chapter&nbsp;16</a> measures the idioms that
+replace the features Z98 withholds. The standard library the emitted modules
+come from is catalogued in <a href="vol2-17-stdlib.html">Volume II
+chapter&nbsp;17</a>, and the builtins used above are in
+<a href="vol4-15-builtins.html">Volume IV &mdash; Builtins</a>. The whole
+volume, including this chapter, is listed on <a href="toc.html">the Contents
+page</a>.
+</p>
+
+<p class="navbtns">
+<a href="vol3-02-honesty-inventory.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol3-02-honesty-inventory.html">Honesty: what Z98 does and does not give you</a> | <a href="toc.html">Contents</a> | Next: <a href="toc.html">Contents</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
