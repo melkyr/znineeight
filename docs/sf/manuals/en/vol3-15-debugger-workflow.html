@@ -1,0 +1,722 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: The Debugger Workflow</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume III debugger workflow gdb generated C gcc -g breakpoints mangled names zF_ hash suffix module_init backtrace cd DIR gotcha absolute -I include path net_prelude markers marker channel DC INT FWD P0 FE X IRP read markers track-memory no debugger UI no z98dbg compiler trace">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol3-14-directx.html">
+<link rel="next" href="toc.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume III &mdash; Working in the Era</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol3-00-title.html">How to read this</a><br>
+<a href="vol3-01-the-1998-machine.html">The 1998 machine</a><br>
+<a href="vol3-02-honesty-inventory.html">Honesty: what Z98 does and does not give you</a><br>
+<a href="vol3-03-when-c89.html">Honesty: when C89 is the better choice</a><br>
+<a href="vol3-04-when-cpp98.html">Honesty: when C++98 is the better choice</a><br>
+<a href="vol3-05-when-assembly.html">Honesty: when assembly is the better choice</a><br>
+<a href="vol3-06-era-limits.html">Honesty: what you cannot do on a Pentium II</a><br>
+<a href="vol3-07-friction.html">Honesty: the friction you will hit</a><br>
+<a href="vol3-08-win9x.html">Building for Win9x</a><br>
+<a href="vol3-09-coroutines.html">Coroutines &mdash; the third big shift</a><br>
+<a href="vol3-10-coroutine-program.html">A coroutine program</a><br>
+<a href="vol3-11-talking-to-c.html">Talking to C</a><br>
+<a href="vol3-12-winsock.html">WinSock under Z98</a><br>
+<a href="vol3-13-debug-api.html">The Win32 Debug API</a><br>
+<a href="vol3-14-directx.html">DirectX under CINTERFACE</a><br>
+<b>The debugger workflow</b><br>
+Memory budgets <i>(planned)</i><br>
+Packaging and shipping <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>The Debugger Workflow</h1>
+<p>
+By now two facts about this toolchain are settled. Z98 emits C89, and it emits
+no more than that &mdash; the compiler's job ends when it has written the C.
+The C compiler is the one that turns those files into a binary, and the C
+compiler's debugger, not a Z98 debugger, is the one that watches the binary
+run. That is the whole debugger story, and this chapter is how to use it:
+build the generated C with debug information, point <tt>gdb</tt> at it, and set
+breakpoints against the emitted files and their mangled names.
+</p>
+<p>
+There is a second surface, for a different bug. When the program is correct
+and the <i>compiler</i> is wrong, <tt>gdb</tt> is the wrong tool; the
+compiler's own trace is the right one. The compiler has a built-in marker
+channel, turned on with <tt>--markers</tt>, that reports what the pipeline is
+doing as it runs: which types it created, which strings it interned, how its
+arenas grew, which functions it has declared so far. Reading that stream is the
+second half of this chapter. One workflow is for your program; the other is for
+the compiler. Both are real, both are documented here from captured runs, and
+neither needs a feature Z98 does not have.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffffc8">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-note.gif" width="16" height="16" alt="Note"></td>
+<td><b>What is measured here.</b> This chapter has no sample program and no
+figure, because the blueprint gives neither and because the subject is a
+workflow rather than a program. Every transcript on the page is, nevertheless,
+a real run on this host: the seed-built compiler (v89, fixed point
+<tt>8216fedc&hellip;</tt>) emitting the Volume&nbsp;II arena example,
+<tt>gcc</tt>&nbsp;12.2 building the result with <tt>-m32 -g</tt>, and
+<tt>gdb</tt>&nbsp;13.1 resolving the generated C. The marker extracts are that
+same compile with <tt>--markers</tt>. Addresses in the gdb output vary from run
+to run; the file names, line numbers, and function names do not.</td>
+</tr>
+</table>
+
+<h2>Why this chapter has no sample</h2>
+<p>
+Every other chapter in the second half of this volume ends with a program that
+really ran: the coroutine scheduler of <a href="vol3-10-coroutine-program.html">chapter&nbsp;10</a>,
+the socket of <a href="vol3-12-winsock.html">chapter&nbsp;12</a>, the debug loop
+of <a href="vol3-13-debug-api.html">chapter&nbsp;13</a>. This chapter is
+different in kind. Its subject is not a program you write; it is what you do
+when a program you already wrote misbehaves. A sample here would be a bug, and
+a bug is not something the manual can ship as an example you are meant to
+reproduce.
+</p>
+<p>
+So the page uses the arena example of <a href="vol2-14-arena.html">Volume&nbsp;II
+chapter&nbsp;14</a> as its stand-in, compiles it, and debugs it, and every
+fragment below is copied from that session. You do not need that particular
+program to follow along; you need any program that compiles, because the
+technique is the same for all of them. The point of the chapter is the method,
+and the method is small.
+</p>
+
+<h2>The debugger belongs to the C compiler</h2>
+<p>
+A modern toolchain ships the debugger with the language: the compiler knows the
+source format, so the debugger knows it too, and the two agree on file names,
+line numbers, and variable names. Z98 breaks that assumption on purpose. It
+does not ship a debugger, and &mdash; the correction this manual makes against
+the original blueprint &mdash; it does not ship a sidecar debugger either:
+there is no <tt>.z98dbg</tt> format anywhere in the toolchain. What it ships is
+a program in C89.
+</p>
+<p>
+That is not a loss to work around; it is a change of instrument. The generated
+C is the same C a 1998 programmer would have written by hand: one plain
+function per Z98 function, a struct per struct, a file per module. It carries
+no <tt>#line</tt> directives &mdash; the emitted files were checked, and the
+preprocessor is never told to pretend the code came from a <tt>.z98</tt> file
+&mdash; so <tt>gdb</tt> reports the generated file names and line numbers
+directly. Those are stable across builds, which is all a breakpoint needs. The
+upshot is that you debug a language you can read, with a debugger that has
+existed for decades.
+</p>
+<p>
+The habit this chapter teaches is the one <a href="vol3-07-friction.html">chapter&nbsp;7</a>
+named as the way over its "no debugger UI" friction: treat the generated C as
+the debugging surface. The compiler has already done the hard part. It moved
+your program into C; the rest is standard C tooling.
+</p>
+
+<h2>Emit, then build</h2>
+<p>
+The first step is the one from <a href="vol3-08-win9x.html">chapter&nbsp;8</a>
+and every build in this volume: point the compiler at your source and an output
+directory. The directory must already exist. The compiler creates files but not
+the directory that holds them, and if it is missing it says so and stops:
+</p>
+<pre>
+$ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out docs/sf/manuals/src/vol2/arena.z98
+error: output directory does not exist: /tmp/manual_out
+</pre>
+<p>
+Create the directory, run the command again, and the result is a self-contained
+tree rather than one file. Here is the arena example's output directory with
+the directory created first:
+</p>
+<pre>
+$ mkdir -p /tmp/manual_out
+$ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out docs/sf/manuals/src/vol2/arena.z98
+$ ls /tmp/manual_out
+arena_F3DC0DA4.c      arena_F3DC0DA4.h      build_target.sh
+c_exit.c              net_prelude.h
+std_arena_7156573C.c  std_arena_7156573C.h
+std_fmt_5E28752C.c    std_fmt_5E28752C.h
+std_io_59DB29D9.c     std_io_59DB29D9.h
+std_net_A15200CC.c    std_net_A15200CC.h
+zig_compat.h          zig_pal.c
+zig_runtime.c         zig_runtime.h
+zig_special_types.h
+</pre>
+<p>
+Read the names and you already know the shape of the debug session. Your
+module, <tt>arena.z98</tt>, became <tt>arena_F3DC0DA4.c</tt>; the standard
+modules it pulled in each got their own hashed file; and the runtime and
+platform sources are sitting beside them. The hash suffix is the emitter's way
+of keeping module names unique and is stable for a given source path, so the
+file you open today is the file you open tomorrow. The build script carries the
+compile and link commands for the target &mdash; here Linux:
+</p>
+<pre>
+$ cd /tmp/manual_out
+$ sh build_target.sh linux arena
+Building for linux...
+$CC -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I . -c arena_F3DC0DA4.c
+&hellip;
+Built: arena
+</pre>
+<p>
+The script is the supported build, and the gdb workflow starts from it. It does
+not, however, pass <tt>-g</tt>, because a shipping build should not carry debug
+information; that is the one thing you add yourself, in the next section. If
+you want only to see the C without building it, <tt>--dump-c89</tt> remains the
+debug alias: with <tt>-o</tt> it writes the per-module <tt>.c</tt>/<tt>.h</tt>
+files, and without <tt>-o</tt> it writes a single file to standard output.
+</p>
+
+<h2>The <tt>cd DIR</tt> gotcha and the include path</h2>
+<p>
+Before the debug information, one trap, because it is the first wall a reader
+hits. The emitted tree carries its own headers, and the emitted C includes them
+by angle brackets &mdash; <tt>#include &lt;net_prelude.h&gt;</tt> and the like.
+An angle-bracket include is not searched for next to the including file; it is
+searched on the include path. The build script handles this by doing two things
+in one breath: it moves into its own directory, and it passes <tt>-I&nbsp;.</tt>.
+</p>
+<pre>
+cd "$(dirname "$0")"
+&hellip;
+CFLAGS="&hellip; -I ."
+</pre>
+<p>
+So the rule is the script's rule: <b>compile from inside the emitted
+directory, and let <tt>-I&nbsp;.</tt> point at it.</b> Break the first half of
+that rule and the second half silently stops meaning what you think it means. A
+reader who runs the compiler's flags from the repository root gets a startling
+error far from the real cause:
+</p>
+<pre>
+$ gcc -m32 -std=c89 -I . -c /tmp/manual_out/arena_F3DC0DA4.c
+In file included from /tmp/manual_out/arena_F3DC0DA4.h:9,
+                 from /tmp/manual_out/arena_F3DC0DA4.c:1:
+/tmp/manual_out/std_net_A15200CC.h:6:10: fatal error: net_prelude.h: No such file or directory
+    6 | #include <net_prelude.h>
+      |          ^~~~~~~~~~~~~~~
+</pre>
+<p>
+The header exists. It is sitting in <tt>/tmp/manual_out</tt>. But the command
+was run from somewhere else, and <tt>-I&nbsp;.</tt> pointed at that somewhere
+else, so the include path never reached it. The fix is either to run from
+inside the directory, exactly as the build script does, or to name the
+directory absolutely:
+</p>
+<pre>
+$ gcc -m32 -std=c89 -I /tmp/manual_out -c /tmp/manual_out/arena_F3DC0DA4.c -o /tmp/manual_out/arena.o
+</pre>
+<p>
+Both work; the absolute <tt>-I</tt> is the one to reach for when a script or a
+<tt>Makefile</tt> invokes <tt>gcc</tt> from a different working directory. The
+second half of the same trap is the object files. <tt>gcc -c DIR/*.c</tt> run
+from outside writes the <tt>.o</tt> files into the <i>caller's</i> directory,
+not into <tt>DIR</tt>, so a later link of <tt>DIR/*.o</tt> finds nothing.
+Compile inside <tt>DIR</tt>, or give every output an absolute path. Either way,
+know which directory the command thinks it is in.
+</p>
+
+<h2>Build with debug information</h2>
+<p>
+The build script is the ordinary build. For debugging you rebuild the emitted C
+by hand with <tt>-g</tt> added and <tt>-O0</tt> kept &mdash; the same flags the
+script uses, plus debug symbols and no optimization, so the source lines and
+the values you inspect are the ones the compiler actually meant. From inside
+the emitted directory:
+</p>
+<pre>
+$ cd /tmp/manual_out
+$ gcc -m32 -std=c89 -O0 -g -Wall -Wno-long-long -Wno-pointer-sign \
+    -Wno-implicit-function-declaration -I . -c *.c
+$ gcc -m32 -O0 *.o -o arena_g
+</pre>
+<p>
+Nothing Z98-specific happens in those two lines. <tt>-g</tt> is ordinary gcc
+debug information, and the layout it records is the Z98 layout, because the
+generated C has the Z98 layout: a struct you declared is the struct
+<tt>gdb</tt> inspects, field for field. That is the payoff of
+<a href="vol3-01-the-1998-machine.html">chapter&nbsp;1</a>'s frozen 32-bit
+layout model. The one adjustment to keep in mind is that the names in the
+symbol table are the emitter's, not yours, and the next section is how to find
+them.
+</p>
+<p>
+If you forget <tt>-g</tt>, <tt>gdb</tt> still runs the binary but has no
+source-level symbols: a breakpoint on <tt>main</tt> resolves to a bare address
+with no file and no line, and stepping shows instructions rather than C. The
+error is silent, so the habit is to add <tt>-g</tt> the first time, not after
+an hour of confused stepping.
+</p>
+
+<h2>A first gdb session</h2>
+<p>
+With a <tt>-g</tt> binary in hand, the session is standard. Start by stopping
+at the C entry point and asking where you are. This is a real batch session
+against the arena binary:
+</p>
+<pre>
+$ gdb -batch -ex 'set pagination off' -ex 'break main' -ex run \
+      -ex 'bt' -ex 'info line' --args ./arena_g
+Breakpoint 1 at 0x31e5: file arena_F3DC0DA4.c, line 406.
+
+Breakpoint 1, main () at arena_F3DC0DA4.c:406
+406	    zF_780653D2___module_init();
+#0  main () at arena_F3DC0DA4.c:406
+Line 406 of "arena_F3DC0DA4.c" starts at address 0x&hellip; &lt;main+29&gt; and ends at 0x&hellip; &lt;main+34&gt;.
+</pre>
+<p>
+Read it carefully, because it contains the first surprise. You asked for
+<tt>main</tt>, and you got a <tt>main</tt> &mdash; but not yours. The emitted
+tree has two: the C entry point, which the runtime calls, and your Z98
+<tt>pub fn main</tt>, which the C entry point calls after it has initialized
+the modules. The C entry point is the one gdb names plainly:
+</p>
+<pre>
+int main(void) {
+    zF_780653D2___module_init();
+    zF_780653D2___module_init_1();
+    zT_08A61393_EU_1 zT_main_result;
+    zT_main_result = zF_EA90E208_main();
+    return zT_main_result.is_error ? zT_main_result.err : 0;
+}
+</pre>
+<p>
+So <tt>break main</tt> stops in the module initializers, at
+<tt>arena_F3DC0DA4.c:406</tt>. That is a fine place to watch initialization
+happen, but to stop at the start of <i>your</i> program's own
+<tt>main</tt> &mdash; the body <tt>zF_EA90E208_main</tt>, declared at the top
+of the file and defined at line&nbsp;376 &mdash; you name that function
+directly. The section after the next one does exactly that for a function that
+takes arguments, so you can see values as well as lines.
+</p>
+
+<h2>Finding your function in the generated C</h2>
+<p>
+The names are the only part of the debug session that is genuinely different
+from ordinary C. Every Z98 function becomes a C function named
+<tt>zF_&lt;hash&gt;_&lt;name&gt;</tt>, where the hash is derived from the
+module and the trailing piece is your function's own name. The arena example
+compiles to these, among others:
+</p>
+<pre>
+zF_3439BCE0_Point_init(arena, x, y)
+zF_7F2346E9_single()
+zF_BE36B55F_dual()
+zF_EA90E208_main()
+</pre>
+<p>
+You do not have to guess the hash. It is printed in the generated file itself,
+in the comment above each definition, and the definition line is one <tt>grep</tt>
+away. This is the habit <tt>QUICK_REF.md</tt> records: search the generated C
+for the plain name, and the mangled name is on the line with it.
+</p>
+<pre>
+$ grep -n 'Point_init' arena_F3DC0DA4.c
+30:/* Point_init */
+31:zT_D17889A1_EU_47 zF_3439BCE0_Point_init(zT_F22A6288_Arena* arena, int x, int y) {
+144:    zT_22 = zF_3439BCE0_Point_init(zT_14, (int)((int)zT_18), (int)((int)zT_20));
+176:    zT_42 = zF_3439BCE0_Point_init(zT_34, (int)((int)zT_38), (int)((int)zT_40));
+</pre>
+<p>
+Now break on that name and run. This transcript stops at the first call, prints
+the two scalar parameters, and walks the stack back to the entry point:
+</p>
+<pre>
+$ gdb -batch -ex 'set pagination off' \
+      -ex 'break zF_3439BCE0_Point_init' -ex run \
+      -ex 'print x' -ex 'print y' -ex 'bt' --args ./arena_g
+Breakpoint 1 at 0x2548: file arena_F3DC0DA4.c, line 40.
+cap=32 used=0
+
+Breakpoint 1, zF_3439BCE0_Point_init (arena=0xffe38df8, x=3, y=4) at arena_F3DC0DA4.c:40
+40	    zig_poison_fill((void*)&zT_8, (unsigned int)sizeof zT_8);
+$1 = 3
+$2 = 4
+#0  zF_3439BCE0_Point_init (arena=0xffe38df8, x=3, y=4) at arena_F3DC0DA4.c:40
+#1  0x&hellip; in zF_7F2346E9_single () at arena_F3DC0DA4.c:144
+#2  0x&hellip; in zF_EA90E208_main () at arena_F3DC0DA4.c:384
+#3  0x&hellip; in main () at arena_F3DC0DA4.c:409
+</pre>
+<p>
+That is the whole technique. The breakpoint resolved to a generated file and a
+line; the arguments are the arguments your Z98 function declared; the
+backtrace is the call chain, with the Z98 functions in the middle and the C
+entry point at the bottom. <tt>cap=32 used=0</tt> is the program's own output
+that ran before the breakpoint. Everything after the break is ordinary gdb:
+<tt>next</tt>, <tt>step</tt>, <tt>print</tt>, <tt>finish</tt>, watchpoints,
+conditional breakpoints. None of it is Z98-specific, so there is nothing to
+translate.
+</p>
+<p>
+Two smaller habits make the names pleasant to work with. First, <tt>gdb</tt>
+completes: type <tt>zF_</tt> and the tab key lists the mangled functions, which
+is faster than copying a hash by hand. Second, a breakpoint by
+<i>file:line</i> works just as well once you have looked at the file
+&mdash; <tt>break arena_F3DC0DA4.c:40</tt> is the same breakpoint as the named
+one above. The name is stable across builds; the line number shifts when you
+edit the source, so use the name when you can.
+</p>
+
+<h2>Reading the generated C</h2>
+<p>
+The reason this workflow is workable is that the generated C is legible. Ask
+<tt>gdb</tt> to list the function you stopped in and you see the emitted body,
+not an opaque dump:
+</p>
+<pre>
+  31	zT_D17889A1_EU_47 zF_3439BCE0_Point_init(zT_F22A6288_Arena* arena, int x, int y) {
+  32	    zT_F22A6288_Arena* zT_4;
+  33	    zT_4270ECBF_EU_16 zT_8;
+  34	    unsigned char zT_9;
+  35	    int zT_10;
+  36	    zT_D17889A1_EU_47 zT_11;
+  37	    unsigned char* zT_12;
+  38	    zT_EAA8EF31_Point* zT_14;
+  39	    zT_D17889A1_EU_47 zT_15;
+  40	    zig_poison_fill((void*)&zT_8, (unsigned int)sizeof zT_8);
+  41	    unsigned char* raw;
+  42	    zT_EAA8EF31_Point* p;
+</pre>
+<p>
+The names tell you what the emitter did. The <tt>zT_</tt> locals are the
+temporaries it created; a few of them, like <tt>raw</tt> and <tt>p</tt>, keep
+your own local names, so the code reads as a slightly noisier version of what
+you wrote. <tt>zig_poison_fill</tt> is the safety machinery: the default
+<tt>-fsafe</tt> mode fills a fresh local with a poison pattern so that a read
+before a write is a visible, deterministic value rather than whatever happened
+to be on the stack. The <tt>EU_47</tt> return type is the error union
+<tt>ArenaError![*]u8</tt> lowered to a struct with an <tt>is_error</tt> flag
+and a payload; the <tt>if (zT_1) goto z_bb_1;</tt> style is how the emitter
+spells control flow, with a <tt>z_bb_0:</tt> label at every function entry
+because that is the self-recursion target the optimizer uses.
+</p>
+<p>
+None of this has to be memorized. It only has to be <i>readable</i>, and it is,
+which is the property the whole volume keeps returning to: the output is C89
+you can inspect, so when a value looks wrong you can look at the C that
+produced it. The layout model of <a href="vol3-01-the-1998-machine.html">chapter&nbsp;1</a>
+and the manual-vtable idiom of <a href="vol2-16-no-methods.html">Volume&nbsp;II
+chapter&nbsp;16</a> both come back here: the structs you print in gdb are laid
+out exactly as the C says, because the C <i>is</i> the layout.
+</p>
+
+<h2>Debugging the compiler: the <tt>--markers</tt> channel</h2>
+<p>
+Sometimes the bug is not in your program. The output is wrong, you have read
+your source twice, and the suspicion settles on the compiler that translated
+it. <tt>gdb</tt> is still a tool you can use &mdash; the compiler is a C
+program and can be built with <tt>-g</tt>, and
+<a href="vol3-07-friction.html">chapter&nbsp;7</a>'s two-hop seed rebuild is
+how you get a compiler binary to debug &mdash; but for most compiler bugs the
+faster instrument is the compiler's own trace. Z98 has one, and it is turned on
+with a single flag.
+</p>
+<p>
+<tt>--markers</tt> turns on the marker channel. The compiler writes a line to
+standard error every time something interesting happens in the pipeline:
+a type is created, a string is interned, an arena grows, a function is
+forward-declared. It is not a logging framework and it has no levels; it is a
+running commentary the compiler was built with so that its authors could watch
+a compile the way you watch a program. Without the flag the channel is quiet.
+With it, a single compile of the arena example produces a few thousand lines,
+and the first ones show the phases in order. Here is the top of that stream:
+</p>
+<pre>
+$ /tmp/manual_seed/zig1_5_clean --markers -o /tmp/manual_out docs/sf/manuals/src/vol2/arena.z98
+arena perm: grew 4096 -> 16384
+arena perm: grew 16384 -> 32768
+arena perm: grew 32768 -> 65536
+DC:k0n0t0
+DC:k1n0t1
+DC:k2n0t2
+DC:k3n0t3
+DC:k4n0t4
+&hellip;
+DC:k40n0t21
+INT:new1
+INT:new2
+INT:new3
+INT:new4
+&hellip;
+INT:new1259
+</pre>
+<p>
+and near the end, as the emitter writes out forward declarations and function
+bodies:
+</p>
+<pre>
+FWD:n=395 m=9
+P0:lc=2
+FE:p0
+FWD:n=397 m=9
+P0:lc=2
+FE:p0
+FWD:n=400 m=9
+P0:lc=2
+FE:p0
+</pre>
+<p>
+Those prefixes are shorthand, and the compiler's own source is the only
+authoritative dictionary for them. A few are worth learning because they cover
+most of the stream. <tt>DC:k&lt;kind&gt;n&lt;name&gt;t&lt;id&gt;</tt> comes
+from the type registry: it is announcing that a new type has been appended,
+carrying the type's kind, the id of its name string, and the new type's own id.
+<tt>X:&lt;id&gt;</tt> follows when that type is a struct. <tt>INT:new&lt;id&gt;</tt>
+is the string interner adding a new string, and <tt>INT:dup&lt;id&gt;</tt> is it
+reusing one it already had &mdash; watch those and you can see whether the same
+identifier is being interned once or a hundred times. <tt>arena
+&lt;name&gt;: grew old -&gt; new</tt> is the allocator reporting a bucket
+growth; the arena names &mdash; <tt>perm</tt>, <tt>module</tt>,
+<tt>scratch</tt>, <tt>type_db</tt>, <tt>import_scratch</tt>,
+<tt>diag_read</tt> &mdash; are the tiers of the compiler's own memory model,
+which is the subject of chapter&nbsp;16 <i>(planned)</i>. And <tt>FE:</tt>, <tt>FWD:n=&hellip; m=&hellip;</tt>, and
+<tt>P0:lc=</tt> are the emitter showing its work as it walks the functions.
+</p>
+<p>
+The practical steps are small. Capture the stream to a file, because it is
+larger than a terminal should show:
+</p>
+<pre>
+$ /tmp/manual_seed/zig1_5_clean --markers -o /tmp/manual_out docs/sf/manuals/src/vol2/arena.z98 2> markers.txt
+</pre>
+<p>
+then filter it. If you are chasing a type, look at the <tt>DC:</tt> lines; if
+you are chasing an identifier, count the <tt>INT:new</tt> lines; if a crash
+smells like memory pressure, follow the <tt>arena</tt> lines. One caution from
+the toolchain's own reference: read the file with <tt>grep -a</tt>, not
+<tt>strings</tt>. The marker channel can carry bytes that <tt>strings</tt>
+silently drops, so a pipeline built on <tt>strings</tt> can hide exactly the
+entry you were looking for.
+</p>
+<pre>
+$ grep -a '^INT:new' markers.txt | wc -l
+$ grep -a '^DC:' markers.txt | head
+$ grep -a '^arena ' markers.txt | tail
+</pre>
+<p>
+Two things about the markers are worth saying plainly. First, they are
+diagnostic text, not a contract. The labels and their meanings live in the
+compiler's source and can change with the compiler; a script that depends on a
+particular prefix is a script that may break at the next rebuild. Read them the
+way you read a compiler's internal comments, not the way you read a command-line
+interface. Second, they trace the <i>compiler</i>, not your program. If a value
+is wrong at run time, markers will not show it, because they are all gone by
+then &mdash; they were written while the compiler was producing the binary you
+are now running. That division is the whole reason this chapter has two halves:
+<tt>gdb</tt> for the binary, <tt>--markers</tt> for the build that made it.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffffc8">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-note.gif" width="16" height="16" alt="Note"></td>
+<td><b>A related switch.</b> The compiler's memory profiler is reachable
+through the same channel: <tt>--track-memory</tt> reports the peak of each
+arena, but it emits through the marker stream, so it only shows anything when
+<tt>--markers</tt> is on as well. The pairing and the numbers are
+chapter&nbsp;16 <i>(planned)</i>.</td>
+</tr>
+</table>
+
+<h2>Two debuggers, side by side</h2>
+<p>
+Put the two halves together and the decision is a single question: is the wrong
+answer in the program or in the compiler? The table is the map.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>What is wrong</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>The tool</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>How you reach it</b></th>
+</tr>
+<tr>
+<td valign="top">Your program computes the wrong value, crashes, or loops</td>
+<td valign="top"><tt>gdb</tt> on the generated C</td>
+<td valign="top">emit, build the C with <tt>-m32 -g -O0</tt>, break on the
+mangled <tt>zF_&hellip;</tt> name or the generated <tt>file:line</tt></td>
+</tr>
+<tr>
+<td valign="top">The compiler emits wrong C, rejects a valid program, or
+crashes</td>
+<td valign="top">the <tt>--markers</tt> trace, then <tt>gdb</tt> on the
+compiler</td>
+<td valign="top">rebuild the compiler through the seed script, capture
+<tt>--markers</tt> to a file, and read the pipeline; build the compiler itself
+with <tt>-g</tt> only if the trace is not enough</td>
+</tr>
+<tr>
+<td valign="top">You want to know how a Z98 construct lowers</td>
+<td valign="top">read the generated C</td>
+<td valign="top"><tt>--dump-c89</tt> for a single file, or open the module
+<tt>.c</tt> in the emitted directory</td>
+</tr>
+</table>
+<p>
+The first row is the common case and the one the debugger exists for. The third
+row is the pleasant surprise of a compiler that emits C: a great many questions
+about Z98's semantics are answered not by documentation but by reading the C it
+produced. The second row is the rare case, and even it does not require a
+debugger UI; it requires a trace and the discipline to read it.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> There is no debugger UI in Z98, and there is no
+sidecar debugger: there is no <tt>.z98dbg</tt>. If you came expecting a window
+with a variable pane and a call stack you can click, this toolchain does not
+have one and will not grow one soon. What it has instead is a generated C file
+that reads like the C a 1998 programmer wrote, and a marker stream that shows
+the compiler thinking. Both are seams rather than products: you point the
+tooling and read the output rather than clicking through a front end. That is
+the same trade <a href="vol3-07-friction.html">chapter&nbsp;7</a> named, and it
+is worth naming here one more time because debugging is where the absence is
+felt most. The compensation is real, though: the C you debug is the code you
+could ship, so the thing you learn in the debugger is knowledge about the
+binary, not knowledge about a source map.</td>
+</tr>
+</table>
+
+<h2>Common mistakes</h2>
+<p>
+The chapter has no program sample, but the workflow has a small set of failures
+that account for most of the wasted time. They are listed in the order they are
+usually made.
+</p>
+<p>
+<b>Running the compile from the wrong directory.</b> The emitted headers are
+included by angle brackets and found on the include path, so a relative
+<tt>-I&nbsp;.</tt> only works from inside the emitted directory. Run the build
+script, or pass the directory absolutely. The symptom is a
+<tt>fatal error: net_prelude.h: No such file or directory</tt> even though the
+header is plainly there.
+</p>
+<p>
+<b>Forgetting that <tt>gcc -c DIR/*.c</tt> writes into the caller's
+directory.</b> Compiling from outside <tt>DIR</tt> scatters the <tt>.o</tt>
+files next to you, not in <tt>DIR</tt>, and the link cannot find them. Do the
+compile inside <tt>DIR</tt>, as the build script does.
+</p>
+<p>
+<b>Building without <tt>-g</tt> and wondering why there are no line
+numbers.</b> The build script intentionally omits debug information. Add
+<tt>-g</tt> and keep <tt>-O0</tt>; then <tt>break</tt> resolves to the
+generated file and line, and <tt>print</tt> knows your variable names.
+</p>
+<p>
+<b>Breaking on <tt>main</tt> and expecting your program.</b> The plain C
+<tt>main</tt> is the runtime entry point, which initializes the modules before
+it calls your Z98 <tt>main</tt>. To stop at the start of your own program, break
+on the mangled <tt>zF_&hellip;_main</tt> instead.
+</p>
+<p>
+<b>Searching for a source file that is not there.</b> <tt>gdb</tt> reports the
+generated names &mdash; <tt>arena_F3DC0DA4.c</tt>, not <tt>arena.z98</tt>. There
+are no <tt>#line</tt> directives, so the debugger never pretends otherwise.
+Find the function's mangled name with <tt>grep</tt> in the generated file and
+break on that.
+</p>
+<p>
+<b>Hunting for <tt>.z98dbg</tt>.</b> The blueprint once imagined a sidecar
+debugger format; it does not exist. No file, no format, no tool. The debugging
+surface is the generated C.
+</p>
+<p>
+<b>Using <tt>--markers</tt> to find a bug in the program.</b> The markers trace
+the compiler as it builds your program; by the time your program runs, the
+markers are long gone. They answer compiler questions, not program questions.
+</p>
+<p>
+<b>Trusting a marker prefix as a stable interface.</b> The labels come from the
+compiler's own source and can change. Use them to look at a live compile, not
+as the contract of a permanent script.
+</p>
+<p>
+<b>Extracting markers with <tt>strings</tt>.</b> The marker channel can carry
+bytes that <tt>strings</tt> drops, silently losing entries. Use
+<tt>grep -a</tt> on the raw capture, as the toolchain's own reference insists.
+</p>
+<p>
+<b>Debugging optimized C.</b> Build with <tt>-O0</tt>. Optimization reorders
+statements and can make a source line step in an order that does not match the
+code you are reading, which turns a debugger into a source of confusion.
+</p>
+
+<h2>Where to go next</h2>
+<p>
+The ingredient this chapter relies on is the one
+<a href="vol3-03-when-c89.html">chapter&nbsp;3</a> made load-bearing: Z98
+emits C89, so the C toolchain &mdash; and its debugger &mdash; applies. The
+friction this chapter answers is <a href="vol3-07-friction.html">chapter&nbsp;7</a>'s
+"no debugger UI," and the build it starts from is
+<a href="vol3-08-win9x.html">chapter&nbsp;8</a>, where the same emitted tree
+and build script appear for the Win9x target. When the fix is to make the
+emitted C faster or tighter, the hand-off to hand-written assembly is
+<a href="vol3-05-when-assembly.html">chapter&nbsp;5</a>; when the fix is to
+reach data the program was not built to expose, the interop rules are
+<a href="vol3-11-talking-to-c.html">chapter&nbsp;11</a>. The memory profiler
+behind the <tt>--markers</tt> pairing is the subject of
+chapter&nbsp;16 <i>(planned)</i>,
+and the arena example this page debugged is
+<a href="vol2-14-arena.html">Volume&nbsp;II chapter&nbsp;14</a>.
+</p>
+<p>
+For lookup, <a href="vol4-15-builtins.html">Volume&nbsp;IV &mdash; Builtins</a>
+catalogues the language surface the generated C lowers to, and
+<a href="vol4-00-title.html">the Reference volume</a> will hold the marker and
+diagnostic references when the planned pages of it ship. The everyday
+debugger for the compiler's own output is <tt>gdb</tt>; the everyday reader of
+the generated C is you.
+</p>
+
+<p class="navbtns">
+<a href="vol3-14-directx.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol3-14-directx.html">DirectX under CINTERFACE</a> | <a href="toc.html">Contents</a> | Next: <a href="toc.html">Contents</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
