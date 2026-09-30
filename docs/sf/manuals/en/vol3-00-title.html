@@ -1,0 +1,262 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Volume III &mdash; Working in the Era</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume III working in the era title page how to read discipline not syntax entry exit states chapter shape callouts src/vol3 seed compiler two-hop recipe reading paths honesty opinion marked C89 C++98 assembly Pentium II Win9x">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="toc.html">
+<link rel="next" href="vol3-02-honesty-inventory.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume III &mdash; Working in the Era</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<b>How to read this</b><br>
+The 1998 machine <i>(planned)</i><br>
+<a href="vol3-02-honesty-inventory.html">Honesty: what Z98 does and does not give you</a><br>
+<a href="vol3-03-when-c89.html">Honesty: when C89 is the better choice</a><br>
+<a href="vol3-04-when-cpp98.html">Honesty: when C++98 is the better choice</a><br>
+<a href="vol3-05-when-assembly.html">Honesty: when assembly is the better choice</a><br>
+<a href="vol3-06-era-limits.html">Honesty: what you cannot do on a Pentium II</a><br>
+<a href="vol3-07-friction.html">Honesty: the friction you will hit</a><br>
+Building for Win9x <i>(planned)</i><br>
+<a href="vol3-09-coroutines.html">Coroutines &mdash; the third big shift</a><br>
+<a href="vol3-10-coroutine-program.html">A coroutine program</a><br>
+Talking to C <i>(planned)</i><br>
+WinSock under Z98 <i>(planned)</i><br>
+The Win32 Debug API <i>(planned)</i><br>
+DirectX under CINTERFACE <i>(planned)</i><br>
+The debugger workflow <i>(planned)</i><br>
+Memory budgets <i>(planned)</i><br>
+Packaging and shipping <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Volume III &mdash; Working in the Era</h1>
+<p>
+<b>Enter here if</b> you can write Z98. <b>Leave able to</b> ship software for
+1998 hardware &mdash; and able to say, without hedging, what Z98 is good for and
+when to reach for C89, C++98, or assembly instead.
+</p>
+<p>
+<a href="vol2-00-title.html">Volume II &mdash; Learning Z98</a> taught the
+language. This volume teaches the machine, the toolchain, and the limits. It
+assumes the fluency Volume II produced: that you can read Z98 syntax and
+idioms without stopping, that you know error unions, optionals, the arena, the
+introspection builtins, and coroutines, and that you have compiled and run a
+program on the seed-built compiler. Every chapter here takes all of that as
+given and does not repeat it.
+</p>
+<p>
+<b>This volume is about the discipline, not the syntax.</b> Naming a type and
+calling a function were the language's problems, and Volume II answered them.
+The problems left are the era's: a 32&nbsp;MB machine, a C89 toolchain, no
+garbage collector, no threads, and a small standard library. There is more
+judgement in these pages than in the two volumes before them, and more prose.
+That is the subject.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> Some of this volume is opinion &mdash; a judgement about
+what a 1998 project should do, not a measurement of what the compiler does. Where
+a passage is opinion, the text says so, in the sentence or in a box like this
+one. Where a passage is a fact about Z98 or the era toolchain, it was checked
+against <tt>docs/reference/Language_Spec_Z98.md</tt>, the compiler source, and
+the compiler built from the committed seed. The two are never mixed without a
+mark.</td>
+</tr>
+</table>
+
+<h2>How to read this</h2>
+<p>
+The manual is six volumes. Each states an entry state and an exit state, and a
+reader enters at the volume that matches their background and reads forward;
+nobody reads all six cover to cover. The paths printed on the back cover of
+every volume are:
+</p>
+<ul>
+<li><b>Never programmed</b> &rarr; I &rarr; II &rarr; III &rarr; IV/V as needed</li>
+<li><b>Knows C, C++, Java, or Python</b> &rarr; skim I &rarr; II &rarr; III &rarr; IV/V as needed</li>
+<li><b>Knows modern Zig</b> &rarr; II (for the differences) &rarr; III &rarr; IV/V</li>
+<li><b>Wants to use it now</b> &rarr; V &rarr; IV</li>
+<li><b>Maintainer</b> &rarr; VI &rarr; IV &rarr; the engineering docs</li>
+</ul>
+<p>
+This volume is the whole of the third path and the third stop on the first two.
+It is shorter than it looks: the honesty chapters are read once as an argument,
+and the chapters after them are looked up when a specific decision arrives. A
+reader shipping a program for a 1998 machine is the reader this volume was
+written for.
+</p>
+
+<h2>What this volume is not</h2>
+<p>
+It is not an apology. Z98 does not carry a modern runtime, and the target
+machine cannot afford one; that is a design decision, not a shortfall, and this
+volume does not defend it page after page. It is also not a scoreboard. A modern
+toolchain was never a candidate for a Pentium II running Windows 95/98 &mdash;
+it cannot be built for that machine or run on it &mdash; so comparing the two
+measures the wrong thing. The comparison that decides an era project is against
+the tools that actually ran there: C89, C++98, and assembly.
+</p>
+<p>
+The register is the tradeoff. Every limit is a fact, and every fact in this
+volume is paired with its way over: a Z98 idiom, a standard module, an era tool,
+or another language. When the other tool wins, the chapter says so outright.
+Chapters&nbsp;3, 4, and 5 are nothing but that statement, one language each, and
+the through-line is not "Z98 is always right" but <b>Z98 emits C89, so you can
+mix the two freely</b>.
+</p>
+
+<h2>How this volume is built</h2>
+
+<h3>How a chapter is built</h3>
+<p>
+A chapter is 10&ndash;18 pages, heavier on prose than code, because the era has
+more opinions than the language does. A chapter whose subject has a program
+opens with the argument, then works a real program in full: the page shows the
+source, which is a real file under <tt>docs/sf/manuals/src/vol3/</tt>, and the
+transcript that file produced when it was compiled and run. The chapter closes
+with <b>Common mistakes</b> &mdash; the thing you will reach for from the
+language you already know, and the era way instead &mdash; and <b>Where to go
+next</b>, which points at the nearest shipped chapter and the Reference pages
+for the same subject. A chapter that carries no program still ends with
+<b>Where to go next</b>. There is no "Check yourself" here; Volume I has the
+exercises, and this volume is for readers who already write the language.
+</p>
+
+<h3>The callouts</h3>
+<p>
+When a passage is a limit, a friction point, or an honest word about the era's
+other tools, it is set off as an <b>Honest note</b> in a warm grey box. The five
+callouts &mdash; note, tip, warn, caution, and honest &mdash; are the ones
+<a href="vol1-00-title.html">Volume&nbsp;I</a> introduces and displays on its
+title page. In this volume the honesty chapters carry the argument in the body
+and reserve the callout for the one thing on the page worth stopping for. The
+warm grey box is also where an opinion is marked when the opinion is the point.
+</p>
+
+<h3>The examples and the compiler</h3>
+<p>
+The examples live in <tt>docs/sf/manuals/src/vol3/</tt>, beside the pages that
+use them. They are compiled with the compiler rebuilt from the committed seed,
+the same toolchain <a href="vol1-04-installing.html">Volume&nbsp;I, Installing
+the Toolchain</a> builds, and this volume does not repeat that chapter's
+commands. The seed rebuild is two hops: the committed seed compiles the current
+compiler source, and the result compiles the source again to the same binary.
+Run from the repository root, because the source is read by a relative path:
+</p>
+<pre>
+$ bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/manual_seed
+...
+[seed] two-hop closure OK: hop1 == hop2 == 8216fedc8dd69db084d453be80f3c010
+=== [seed] Done: /tmp/manual_seed ===
+</pre>
+<p>
+The two builds agreeing is the gate that the compiler is self-hosting and
+deterministic; the recorded fixed point for the shipped seed is kept in
+<tt>release/seed/CHANGELOG.md</tt>, and this manual quotes it as the run that
+produced the pages. With the compiler in place, a Volume&nbsp;III program is
+emitted and built the same way as any other:
+</p>
+<pre>
+$ mkdir -p /tmp/manual_out
+$ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out docs/sf/manuals/src/vol3/tasks.z98
+$ cd /tmp/manual_out &amp;&amp; sh build_target.sh linux tasks
+</pre>
+<p>
+A Win9x-only program is a different case. The pages that ship one state exactly
+what was verified on the development host &mdash; the emitted C89 cross-compiled
+with the mingw toolchain and run under wine, with line-ending normalized output
+&mdash; and what is left to the real-machine screenshot. No page claims that
+OpenWatcom was run here when it was not.
+</p>
+
+<h3>Chapters and the sidebar</h3>
+<p>
+The sidebar on every Volume&nbsp;III page lists all 19 chapters of this volume.
+The chapter you are reading is shown in <b>bold</b>. A chapter whose page has
+shipped is a link; a chapter whose page has not is plain text marked
+<i>(planned)</i> and is not a link. The volume ships out of order &mdash; the
+register-setter and the mental shift first, then the rest &mdash; so the
+chapters you can follow on the first pass are the honest ones, and the planned
+ones fill in behind them. The list below is the full volume.
+</p>
+
+<h2>Chapters</h2>
+<ul>
+<li><b>How to read this</b></li>
+<li>The 1998 machine <i>(planned)</i></li>
+<li><a href="vol3-02-honesty-inventory.html">Honesty: what Z98 does and does not give you</a></li>
+<li><a href="vol3-03-when-c89.html">Honesty: when C89 is the better choice</a></li>
+<li><a href="vol3-04-when-cpp98.html">Honesty: when C++98 is the better choice</a></li>
+<li><a href="vol3-05-when-assembly.html">Honesty: when assembly is the better choice</a></li>
+<li><a href="vol3-06-era-limits.html">Honesty: what you cannot do on a Pentium II</a></li>
+<li><a href="vol3-07-friction.html">Honesty: the friction you will hit</a></li>
+<li>Building for Win9x <i>(planned)</i></li>
+<li><a href="vol3-09-coroutines.html">Coroutines &mdash; the third big shift</a></li>
+<li><a href="vol3-10-coroutine-program.html">A coroutine program</a></li>
+<li>Talking to C <i>(planned)</i></li>
+<li>WinSock under Z98 <i>(planned)</i></li>
+<li>The Win32 Debug API <i>(planned)</i></li>
+<li>DirectX under CINTERFACE <i>(planned)</i></li>
+<li>The debugger workflow <i>(planned)</i></li>
+<li>Memory budgets <i>(planned)</i></li>
+<li>Packaging and shipping <i>(planned)</i></li>
+<li>What you have learned, what is next <i>(planned)</i></li>
+</ul>
+<p>
+If you do not yet write Z98, read <a href="vol2-00-title.html">Volume&nbsp;II
+&mdash; Learning Z98</a> first. When this volume is done, the
+<a href="vol4-00-title.html">Volume&nbsp;IV &mdash; Reference</a> is the lookup
+set for the language the examples use, and the HOWTO and Internals volumes are
+<i>(planned)</i>.
+</p>
+<p class="navbtns">
+<a href="toc.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol3-02-honesty-inventory.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="toc.html">Contents</a> | <a href="toc.html">Contents</a> | Next: <a href="vol3-02-honesty-inventory.html">Honesty: what Z98 does and does not give you</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
