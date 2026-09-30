@@ -176,7 +176,7 @@ decimal, <tt>x</tt> for hexadecimal, <tt>c</tt> for a single character, and
 </table>
 <p>
 The forms are not interchangeable, and the type of each argument decides which
-ones are legal. The table below is the complete matrix. A cell that names a
+ones are legal. The table below is the measured matrix. A cell that names a
 diagnostic is a compile-time rejection, not a run-time branch.
 </p>
 <table width="100%" border="1" cellpadding="4" cellspacing="0">
@@ -237,12 +237,44 @@ diagnostic is a compile-time rejection, not a run-time branch.
 <td>3013</td>
 </tr>
 <tr>
-<td><tt>struct</tt>, <tt>union</tt>, tagged union, packed union, tuple</td>
+<td>a plain or nested <tt>struct</tt> whose fields are printable; a tuple</td>
 <td>the generated <tt>.{ ... }</tt> form</td>
 <td>3013</td>
 <td>3013</td>
 <td>3013</td>
 <td>3013</td>
+</tr>
+<tr>
+<td>a bare <tt>union</tt></td>
+<td>the placeholder <tt>.{ ... }</tt>; the fields are not walked</td>
+<td>3013</td>
+<td>3013</td>
+<td>3013</td>
+<td>3013</td>
+</tr>
+<tr>
+<td>a tagged union whose variants all carry a payload</td>
+<td>the active variant, <tt>.{ .tag = value }</tt></td>
+<td>3013</td>
+<td>3013</td>
+<td>3013</td>
+<td>3013</td>
+</tr>
+<tr>
+<td>a <tt>packed union</tt> whose members are all scalars</td>
+<td>the generated <tt>.{ ... }</tt> form</td>
+<td>3013</td>
+<td>3013</td>
+<td>3013</td>
+<td>3013</td>
+</tr>
+<tr>
+<td>a <tt>struct</tt> or packed union with a packed aggregate member, a tagged union with a naked-tag variant, or any aggregate with a slice, optional, error-union or <tt>void</tt> field</td>
+<td>3063</td>
+<td>3063</td>
+<td>3063</td>
+<td>3063</td>
+<td>3063</td>
 </tr>
 <tr>
 <td>a one-item pointer <tt>*T</tt> / <tt>*const T</tt></td>
@@ -280,13 +312,35 @@ hex &mdash; but because the address changes from run to run this chapter's
 transcript does not pin one.
 </p>
 <p>
-Aggregates are the one recursive case. A <tt>{}</tt> on a struct, union, or
-tuple walks the fields and writes them in Zig's struct-literal shape. The walk
-is capped at depth three; past that the generator writes <tt>.{ ... }</tt>
-instead of descending further. An aggregate whose fields cannot themselves be
-printed &mdash; one holding a slice, an optional, an error union, or a
-<tt>void</tt> &mdash; is refused as a whole, because the generated printer would
-have no final route for one of its fields.
+Aggregates are the one recursive case, and the word covers several printer
+routes. A plain <tt>struct</tt> and a tuple walk their fields and write Zig's
+struct-literal shape; a nested normal struct descends. A bare <tt>union</tt>
+has no tag to walk, so it prints the placeholder <tt>.{ ... }</tt> instead. A
+tagged union prints its active variant, as long as every variant carries a
+payload; a naked tag makes the whole value unprintable. A <tt>packed
+union</tt> prints when all of its members are scalars; a packed-struct member
+makes it unprintable. The walk is capped at depth three; past that the
+generated printer writes <tt>.{ ... }</tt> instead of descending further.
+</p>
+<pre>
+plain struct   .{ .x = 1, .y = 2 }
+nested struct  .{ .inner = .{ .a = 1, .b = true }, .z = 9 }
+tuple          .{ 1, 2, 3 }
+bare union     .{ ... }
+tagged union   .{ .a = 5 }
+tagged union with a naked tag
+  error[3063]: print argument type is not supported (no std.fmt printer)
+packed union with a packed-struct member
+  error[3063]: print argument type is not supported (no std.fmt printer)
+struct with a packed-struct field
+  error[3063]: print argument type is not supported (no std.fmt printer)
+</pre>
+<p>
+A struct holding a packed-struct field, a packed union holding a packed-struct
+member, a tagged union with a naked tag, and any aggregate holding a slice, an
+optional, an error union, or a <tt>void</tt> are all refused as a whole,
+because the generated printer would have no final route for one of the fields.
+Print those fields individually.
 </p>
 <p>
 Literal braces are written by doubling them. <tt>{{</tt> becomes one
