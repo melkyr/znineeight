@@ -192,14 +192,11 @@ server needs, plus the readiness and UDP helpers the volume's examples use. Its
 public API is the following, and it is the same source for both targets.
 </p>
 <table width="100%" border="1" cellpadding="4" cellspacing="0">
-<thead>
 <tr>
 <th align="left">Function</th>
 <th align="left">Returns</th>
 <th align="left">What it does</th>
 </tr>
-</thead>
-<tbody>
 <tr>
 <td><tt>init()</tt></td>
 <td><tt>i32</tt></td>
@@ -260,7 +257,6 @@ public API is the following, and it is the same source for both targets.
 <td>void / void / <tt>bool</tt></td>
 <td>clear, set, and test a socket in an <tt>fd_set</tt></td>
 </tr>
-</tbody>
 </table>
 <p>
 There is a UDP surface as well &mdash; <tt>udpBind</tt>, <tt>udpSendTo</tt>,
@@ -300,8 +296,8 @@ Z98 with the types the C header uses. The convention is not optional here: the
 <a href="vol3-11-talking-to-c.html">chapter&nbsp;11</a> showed that an unknown
 convention string stops the build with <tt>error[3045]</tt> while a wrong but
 accepted one corrupts the stack at the call. <tt>std_net.zig</tt> declares every
-Winsock entry <tt>stdcall</tt>, and the one POSIX-only helper,
-<tt>__errno_location</tt>, <tt>cdecl</tt>.
+Winsock entry <tt>stdcall</tt>, and its two POSIX-only helpers,
+<tt>__errno_location</tt> and <tt>fcntl</tt>, <tt>cdecl</tt>.
 </p>
 
 <h2>Starting Winsock: <tt>init</tt> and <tt>cleanup</tt></h2>
@@ -669,6 +665,9 @@ pub fn main() void {
     }
     std.io.print("http-mini: listening on port {}\n", .{PORT});
 
+    // The client end, in the same process. connect() completes because the
+    // listener is already in listen() and the kernel finishes the handshake
+    // into the backlog.
     const client = std.net.createTcpClient(PORT);
     if (client &lt; 0) {
         std.io.print("http-mini: connect failed\n", .{});
@@ -677,6 +676,8 @@ pub fn main() void {
         return;
     }
 
+    // Wait for the pending connection with select(). The fd_set is an opaque
+    // blob that the std.net helpers fill and test.
     var read_fds: std.net.fd_set = undefined;
     std.net.fdZero(@ptrCast(*u8, &amp;read_fds));
     std.net.fdSet(server, @ptrCast(*u8, &amp;read_fds));
@@ -887,9 +888,10 @@ on the target machine.
 <p>
 For the amount of networking most programs for this machine need &mdash; a
 client, or a small server on a LAN &mdash; that is the right side of the trade.
-The surface is nine functions and one blob. The cost is real only when the
-program wants many connections at once, and even then the answer is not a
-framework but the pattern this volume already gave you: <tt>select</tt> for
+The whole TCP surface is a dozen functions and one opaque blob. The cost is real
+only when the program wants many connections at once, and even then the answer
+is not a framework but the pattern this volume already gave you: <tt>select</tt>
+for
 readiness and <a href="vol3-10-coroutine-program.html">a coroutine per
 connection</a>.
 </p>
