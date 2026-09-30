@@ -1,0 +1,722 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Honesty: What Z98 Does and Does Not Give You</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume III honesty inventory gives does not give error unions optionals coroutines arena comptime introspection builtins deterministic C89 self-hosting generics templates classes exceptions RTTI threads preemption dynamic dispatch vtables anyerror comptime package manager IDE integration dynamic linking era alternatives register setter">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="toc.html">
+<link rel="next" href="toc.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume III &mdash; Working in the Era</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+How to read this <i>(planned)</i><br>
+The 1998 machine <i>(planned)</i><br>
+<b>Honesty: what Z98 does and does not give you</b><br>
+Honesty: when C89 is the better choice <i>(planned)</i><br>
+Honesty: when C++98 is the better choice <i>(planned)</i><br>
+Honesty: when assembly is the better choice <i>(planned)</i><br>
+Honesty: what you cannot do on a Pentium II <i>(planned)</i><br>
+Honesty: the friction you will hit <i>(planned)</i><br>
+Building for Win9x <i>(planned)</i><br>
+Coroutines &mdash; the third big shift <i>(planned)</i><br>
+A coroutine program <i>(planned)</i><br>
+Talking to C <i>(planned)</i><br>
+WinSock under Z98 <i>(planned)</i><br>
+The Win32 Debug API <i>(planned)</i><br>
+DirectX under CINTERFACE <i>(planned)</i><br>
+The debugger workflow <i>(planned)</i><br>
+Memory budgets <i>(planned)</i><br>
+Packaging and shipping <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Honesty: What Z98 Does and Does Not Give You</h1>
+<p>
+This is the register-setter for Volume III. Volume II taught the language and
+measured it on the seed-built compiler. This volume is about the machine, the
+toolchain, and the limits, and its register is the tradeoff &mdash; not the
+apology, and not a scoreboard. This chapter is the map: what Z98 gives you,
+what it does not, and what you reach for when it does not.
+</p>
+<p>
+You met the frame in
+<a href="vol2-01-honest-comparison.html">Volume II, chapter&nbsp;1, The Honest
+Comparison</a>: Z98 is <b>checked C89</b> &mdash; C89 with contracts in the
+type system. It emits C89 for the era's compilers, keeps the machine's cost
+model, and moves the disciplines C89 leaves to the programmer into checks the
+compiler performs. <a href="vol2-16-no-methods.html">Chapter&nbsp;16</a>
+measured the three absences that shape daily code &mdash; no methods, no
+generics, no <tt>comptime</tt> &mdash; and the patterns that replace them.
+This chapter is the full inventory those two pages implied: every item in the
+blueprint's gives/doesn't-give list, each paired with what you use instead.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffffc8">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-note.gif" width="16" height="16" alt="Note"></td>
+<td><b>Era framing.</b> Statements on this page about the era's machines,
+toolchains, C89, and C++98 are era context, and where they are opinion the
+text says so. Statements about Z98 are checked against
+<tt>docs/reference/Language_Spec_Z98.md</tt>, the compiler source, and the
+compiler built from the committed seed; the Z98 fragments here are drawn from
+programs Volume II already shipped, compiled, and ran.</td>
+</tr>
+</table>
+
+<h2>What you expect</h2>
+<p>
+If you arrive from a modern language, you arrive with a checklist. Generics.
+Classes and methods. Exceptions. Runtime type information. Threads. A package
+manager. An integrated development environment. Dynamic linking against
+libraries that ship as shared objects. A language without those feels smaller,
+and the first instinct is to read their absence as a deficiency to be
+weighed.
+</p>
+<p>
+That reading measures the wrong thing. A modern toolchain was never a
+candidate for the target machine: it expects a modern operating system and far
+more memory than a 1998 PC has, and its binaries do not run there. Adopting it
+means adopting a new machine and a new operating system. That is a fine
+decision, but it is a different project, and it no longer serves the machine
+the project set out to serve. The comparison that decides an era project is
+against the peers that actually ran on the target: C89 and C++98. Volume II
+chapter&nbsp;1 set that comparison out. This page states its inventory.
+</p>
+<p>
+There is a second expectation to set aside, and it is subtler. A reader
+assumes that a compiler with a small feature list must be a compiler with a
+large runtime doing the hidden work. The truth is the opposite. Z98's list is
+short because the runtime is short: there is no allocator the language calls
+on its own, no unwinder, no garbage collector, no dynamic loader, no package
+graph. What the language withholds is the machinery that needs a runtime the
+target cannot afford; what it gives is the checking that keeps an era-sized
+codebase correct without that runtime.
+</p>
+
+<h2>What you get</h2>
+<p>
+Seven things, each of which replaces a C89 discipline with a construct the
+compiler enforces. The table is the inventory; the sections after it are the
+detail, and the measured evidence for each lives in the Volume II chapter or
+the spec clause named in the last column.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>What you get</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>What it replaces</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Where it is measured</b></th>
+</tr>
+<tr>
+<td valign="top">Error unions</td>
+<td valign="top">unchecked return codes, <tt>errno</tt>, status
+out-parameters</td>
+<td valign="top"><a href="vol2-12-error-unions.html">Volume II
+chapter&nbsp;12</a></td>
+</tr>
+<tr>
+<td valign="top">Optionals</td>
+<td valign="top">the nullable pointer and the maybe-valid value</td>
+<td valign="top"><a href="vol2-13-optionals.html">Volume II
+chapter&nbsp;13</a></td>
+</tr>
+<tr>
+<td valign="top">Coroutines</td>
+<td valign="top">the hand-rolled <tt>switch</tt> state machine</td>
+<td valign="top"><a href="vol2-15-builtins.html">Volume II
+chapter&nbsp;15</a>; Language Spec &sect;4.1</td>
+</tr>
+<tr>
+<td valign="top">The arena</td>
+<td valign="top">the <tt>malloc</tt>/<tt>free</tt> discipline</td>
+<td valign="top"><a href="vol2-14-arena.html">Volume II
+chapter&nbsp;14</a></td>
+</tr>
+<tr>
+<td valign="top">Comptime-introspection builtins</td>
+<td valign="top">the compile-time <tt>sizeof</tt>/offset macros</td>
+<td valign="top"><a href="vol2-15-builtins.html">Volume II
+chapter&nbsp;15</a>; Language Spec &sect;4</td>
+</tr>
+<tr>
+<td valign="top">Deterministic C89 emission</td>
+<td valign="top">hand-written C you have to re-verify by eye</td>
+<td valign="top">the seed two-hop closure; the emitted-C gates</td>
+</tr>
+<tr>
+<td valign="top">A self-hosting compiler</td>
+<td valign="top">a compiler you cannot rebuild from its own source</td>
+<td valign="top">seed v89, two-hop closure <tt>8216fedc&hellip;</tt></td>
+</tr>
+</table>
+
+<h3>Error unions</h3>
+<p>
+The first big shift. A function that can fail says so in its type, and the
+failure cannot be dropped by accident:
+</p>
+<pre>
+fn parse(n: i32) error{Negative}!u32 {
+    if (n &lt; 0) return error.Negative;
+    return @intCast(u32, n);
+}
+</pre>
+<p>
+The caller unwraps with <tt>try</tt> to propagate or <tt>catch</tt> to handle;
+a result that is neither is rejected at compile time. The measured program
+behind <a href="vol2-12-error-unions.html">Volume II chapter&nbsp;12</a>
+prints <tt>ok=11</tt>, <tt>caught=100</tt>, <tt>err=2</tt>, and
+<tt>cleanup=8</tt>, exercising <tt>try</tt>, <tt>catch&nbsp;|err|</tt>, and
+<tt>errdefer</tt>. This replaces C89's convention of a sentinel return, a
+global <tt>errno</tt>, or an out-parameter the caller is trusted to check.
+</p>
+
+<h3>Optionals</h3>
+<p>
+Absence is a type, not a convention. <tt>?T</tt> is either a value or
+<tt>null</tt>, and it must be unwrapped explicitly with <tt>orelse</tt> or
+<tt>if (opt)&nbsp;|v|</tt>:
+</p>
+<pre>
+const m = maybe(false) orelse 99;
+</pre>
+<p>
+<tt>*T</tt> is never nullable, so a dereference is never a silent bet on a
+null. The measured program behind <a href="vol2-13-optionals.html">Volume II
+chapter&nbsp;13</a> prints <tt>is_null=true</tt>, <tt>orelse=7</tt>, and
+<tt>fallback=-1</tt>. This replaces the C89 pattern where every pointer can be
+<tt>NULL</tt> and every value carries an untyped &ldquo;is this valid?&rdquo;
+flag.
+</p>
+
+<h3>Coroutines</h3>
+<p>
+Suspension is a language statement. A function that contains
+<tt>@asyncSuspend</tt> is compiled to a step machine; <tt>@asyncInit</tt>,
+<tt>@asyncResume</tt>, and <tt>@asyncFrameSize</tt> drive it; <tt>std.async</tt>
+owns the scheduler and the per-task frame pool:
+</p>
+<pre>
+fn worker(out: *i32) void {
+    var i: i32 = 0;
+    while (i &lt; 3) : (i += 1) {
+        @asyncSuspend(null);
+    }
+    out.* = i;
+}
+</pre>
+<p>
+The measured program
+<tt>docs/sf/manuals/src/vol2/builtins/async.z98</tt> reports
+<tt>frame=88</tt> and <tt>n=3 steps=4</tt> on this compiler; the Volume II
+program with a larger frame reports <tt>frame=120</tt>. This is the third
+mental shift, and
+chapter&nbsp;9, Coroutines &mdash; the third big shift <i>(planned)</i> takes
+it apart. It replaces the
+hand-rolled state machine: a state word, an index, and a re-entry
+<tt>switch</tt> the compiler writes for you.
+</p>
+
+<h3>The arena</h3>
+<p>
+Memory comes from a buffer you supply. <tt>std.arena.init</tt> starts a
+cursor over it, <tt>std.arena.alloc</tt> is fallible (so exhaustion is a
+caught error, not a null dereference), and <tt>std.arena.reset</tt> reclaims
+the whole arena in one call. There is no per-object <tt>free</tt> to double
+and no wrong pointer to pass to one:
+</p>
+<pre>
+var buf: [32]u8 = undefined;
+var arena = std.arena.init(buf[0..]);
+const p = try Point_init(&amp;arena, 3, 4);
+</pre>
+<p>
+The measured program behind <a href="vol2-14-arena.html">Volume II
+chapter&nbsp;14</a> prints <tt>cap=32 used=0</tt>, <tt>p=3 4 used=8</tt>,
+<tt>used after reset=0</tt>, and catches <tt>error.OutOfMemory</tt> from an
+over-large request. The dual-arena pattern &mdash; one arena for the whole run,
+one for the phase &mdash; is measured in the same program.
+</p>
+
+<h3>Comptime-introspection builtins</h3>
+<p>
+The compile-time questions a C89 program answers with macros are answered by a
+fixed builtin catalog: introspection (<tt>@sizeOf</tt>, <tt>@alignOf</tt>,
+<tt>@offsetOf</tt>, <tt>@bitSizeOf</tt>), conversion
+(<tt>@intCast</tt>, <tt>@ptrCast</tt>, <tt>@bitCast</tt>, <tt>@as</tt>), and
+target folding (<tt>@isWindows</tt>):
+</p>
+<pre>
+@sizeOf(Vec)          // 8
+@alignOf(Vec)         // 4
+@offsetOf(Vec, "y")   // 4
+@bitSizeOf(u16)       // 16
+</pre>
+<p>
+Those four values are what this compiler folds for
+<tt>const Vec = struct { x: i32, y: i32 };</tt>, the same shape
+<a href="vol2-15-builtins.html">Volume II chapter&nbsp;15</a> catalogued. An
+unknown builtin is a clean <tt>error[3000]: unsupported builtin function</tt>.
+This replaces the preprocessor version of the same questions, and it is the
+whole of Z98's compile-time surface.
+</p>
+
+<h3>Deterministic C89 emission</h3>
+<p>
+The compiler's output is a function of its input, not of the wall clock or the
+run: emitting the same program twice produces byte-identical C. That property
+is a gate, not a hope. Four reference programs (game of life, the Lisp
+interpreter, the JSON parser, and <tt>mud_server</tt>) are dumped twice each
+and their emitted C must be byte-identical; the Volume II compiler work held
+that gate unchanged through every fix. It is what lets you diff generated C
+between builds, debug it with <tt>gdb</tt> (chapter&nbsp;15, <i>planned</i>),
+and trust that a rebuilt program is the same program. The alternative is
+hand-written C with no second emitter to compare against.
+</p>
+
+<h3>A self-hosting compiler</h3>
+<p>
+Z98's compiler is written in Z98, and it is rebuilt from a committed seed with
+only <tt>gcc</tt>: the seed compiles the current source, and the result
+compiles the source again to the same binary. On this run the two hops
+closed at <tt>8216fedc&hellip;</tt>, the recorded fixed point for seed v89.
+The practical consequence for you is the seed model: when the compiler is
+changed, rebuilding is a two-hop process, and the reason the compiler can be
+rebuilt on the era's machine at all is that it is small enough to fit the
+target's memory budget. A self-hosting compiler is also the strongest single
+proof that the language is complete enough to write real programs in.
+</p>
+
+<h2>What you do not get</h2>
+<p>
+This is the other column, and it is the one a modern checklist is looking for.
+Every row is a fact, and every row is paired with the era alternative that
+takes its place &mdash; a Z98 idiom, a standard module, or another language.
+There are no bare absences on this page.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>What you do not get</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>The era alternative</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Where it is measured</b></th>
+</tr>
+<tr>
+<td valign="top">Generics, templates</td>
+<td valign="top">a concrete type per element type; a <tt>*void</tt> plus a
+function pointer where the type genuinely varies; C++98 when a type must stay
+open</td>
+<td valign="top"><a href="vol2-16-no-methods.html">Volume II
+chapter&nbsp;16</a> (<tt>error[2000]</tt>)</td>
+</tr>
+<tr>
+<td valign="top">Classes, methods</td>
+<td valign="top">the manual vtable and init functions; free functions with the
+receiver as an ordinary first parameter</td>
+<td valign="top"><a href="vol2-16-no-methods.html">Volume II
+chapter&nbsp;16</a> (<tt>error[3060]</tt>)</td>
+</tr>
+<tr>
+<td valign="top">Exceptions</td>
+<td valign="top">error unions with <tt>try</tt>/<tt>catch</tt>/<tt>errdefer</tt>;
+C++98 if the RAM carries the unwinder</td>
+<td valign="top">Language Spec &sect;1.5, &sect;3.3</td>
+</tr>
+<tr>
+<td valign="top">RTTI</td>
+<td valign="top">the tag you write and the <tt>switch</tt> you write; an enum
+or union tag is the only type oracle the runtime has</td>
+<td valign="top">Language Spec &sect;7.2 (absence)</td>
+</tr>
+<tr>
+<td valign="top">Threads, preemption</td>
+<td valign="top">cooperative coroutines and the <tt>std.async</tt> round-robin
+scheduler; real parallelism is the operating system's job</td>
+<td valign="top">Language Spec &sect;7.2</td>
+</tr>
+<tr>
+<td valign="top">Dynamic dispatch beyond manual vtables</td>
+<td valign="top">the manual vtable: a struct of function pointers plus one
+erased data pointer, built by hand</td>
+<td valign="top"><a href="vol2-16-no-methods.html">Volume II
+chapter&nbsp;16</a></td>
+</tr>
+<tr>
+<td valign="top"><tt>anyerror</tt></td>
+<td valign="top">a declared error set, <tt>error{Foo, Bar}</tt>, or an
+anonymous <tt>!T</tt></td>
+<td valign="top">Language Spec &sect;1.5 (<tt>error[20]</tt>)</td>
+</tr>
+<tr>
+<td valign="top"><tt>comptime</tt> beyond the builtins</td>
+<td valign="top">the fixed builtin catalog of
+<a href="vol2-15-builtins.html">Volume II chapter&nbsp;15</a>; everything
+else is ordinary concrete code and constant folding</td>
+<td valign="top"><a href="vol2-16-no-methods.html">Volume II
+chapter&nbsp;16</a></td>
+</tr>
+<tr>
+<td valign="top">A package manager</td>
+<td valign="top">vendor the third-party source into the tree, which is what
+the era did anyway</td>
+<td valign="top">absence (no such feature)</td>
+</tr>
+<tr>
+<td valign="top">IDE integration</td>
+<td valign="top">the compiler's numbered diagnostics and a text editor; the
+build is a plain script you can read</td>
+<td valign="top">absence (no such feature)</td>
+</tr>
+<tr>
+<td valign="top">Dynamic linking to modern libraries</td>
+<td valign="top">link the era's C89 libraries and static objects; Z98's output
+<i>is</i> C89, so it links with them directly</td>
+<td valign="top">absence; Language Spec &sect;1</td>
+</tr>
+</table>
+
+<h3>Generics and templates</h3>
+<p>
+A <tt>comptime</tt> type parameter never parses, and a plain <tt>type</tt>
+parameter leaves the bound name undeclared, so there is no instantiation step
+to reach:
+</p>
+<pre>
+fn id(comptime T: type, x: T) T { return x; }
+// error[2000]: expected ':' but found identifier
+</pre>
+<p>
+The way over is the concrete container. Where a C++ library would write
+<tt>List&lt;T&gt;</tt> once, a Z98 program writes <tt>ShapeList</tt> for
+shapes and a second, separate container for the next element type. This is not
+a workaround for a missing feature; it is the design, and the compiler's own
+source does it &mdash; the concrete hash maps it needs are hand-written in
+<tt>sf/src/util/hash.zig</tt>. When a type genuinely must stay open and the
+32&nbsp;MB can carry the template expansions, C++98 is the era-appropriate
+tool, and chapter&nbsp;4 (<i>planned</i>) says so outright.
+</p>
+
+<h3>Classes and methods</h3>
+<p>
+An aggregate type has fields but no function members, so a call such as
+<tt>s.bar()</tt> is rejected where it appears:
+</p>
+<pre>
+const s = S{ .x = 1 };
+s.bar();
+// error[3060]: no field or member function named 'bar' in struct type
+</pre>
+<p>
+The way over is two patterns from
+<a href="vol2-16-no-methods.html">Volume II chapter&nbsp;16</a>: the receiver
+is an ordinary first parameter (<tt>draw(sh)</tt>, never <tt>sh.draw()</tt>),
+and polymorphism is a struct of function pointers plus one erased
+<tt>*void</tt>. The interface costs one data pointer and one function pointer
+per operation &mdash; measured as <tt>Shape size=12 align=4 fn=4</tt> on the
+32-bit target &mdash; and calling it compiles to a call through a C function
+pointer, with no receiver magic and nothing to look up at run time.
+</p>
+
+<h3>Exceptions</h3>
+<p>
+There are no exception keywords and nothing unwinds. Failure is a value in the
+return type, so the cost of a failure path is the cost of a branch, not the
+cost of an unwinder and its tables. The way over is the error union: the same
+<tt>try</tt>/<tt>catch</tt>/<tt>errdefer</tt> discipline that
+<a href="vol2-12-error-unions.html">Volume II chapter&nbsp;12</a> measures.
+Where the abstraction genuinely needs stack unwinding and the memory can carry
+it, C++98 supplies it, and chapter&nbsp;4 (<i>planned</i>) is where that trade
+is stated.
+</p>
+
+<h3>RTTI</h3>
+<p>
+There is no runtime type oracle: no type information travels with a value, and
+nothing can ask &ldquo;what type is this really?&rdquo; at run time. The way
+over is the tag you write. A tagged union carries its discriminant, a
+<tt>switch</tt> on it binds the payload and is exhaustive, and that is the only
+dispatch the program has. A C89 program of the era did the same thing with an
+enum field and a union, and Z98 simply folds the pair into one type. The manual
+vtable covers the object-style case, and its data contract &mdash; the function
+signature plus the erased pointer &mdash; is the whole of the type agreement.
+</p>
+
+<h3>Threads and preemption</h3>
+<p>
+There is no thread API, and nothing runs behind your back: a coroutine keeps
+the machine until it reaches a suspension point, so shared state cannot change
+under it and there are no locks to buy. The way over is the <tt>std.async</tt>
+scheduler, cooperative and round-robin, with suspension written where the pause
+belongs:
+</p>
+<pre>
+@asyncSuspend(null);
+</pre>
+<p>
+On a single-core era machine that is the cheap and correct way to interleave
+work; a coroutine costs a frame buffer, not a stack and a kernel object. Real
+parallelism, where it is needed at all, stays an operating-system concern and
+is reached through <tt>extern</tt> declarations, not through the language.
+</p>
+
+<h3>Manual vtables, in place of dynamic dispatch</h3>
+<p>
+There is no language-level dynamic dispatch. What there is, is the idiom the
+compiler would otherwise generate for you, written by hand:
+</p>
+<pre>
+const Shape = struct {
+    draw_fn: fn (*void) void,
+    data: *void,
+};
+</pre>
+<p>
+Construction is an init function that stores the operation and the object's
+address; dispatch is an ordinary call through the field. The measured program
+behind <a href="vol2-16-no-methods.html">Volume II chapter&nbsp;16</a> builds
+two concrete shapes into three interface values and prints
+<tt>shapes drawn 3</tt>. The interface's contract is partly outside the type
+checker &mdash; the erased pointer's real type is a promise the init function
+keeps &mdash; which is why the init function matters more here than a
+constructor does in a language with classes.
+</p>
+
+<h3><tt>anyerror</tt>, and <tt>comptime</tt> beyond the builtins</h3>
+<p>
+<tt>anyerror</tt> is not a type the compiler knows:
+</p>
+<pre>
+fn f(e: anyerror) void {}
+// error[20]: identifier 'anyerror' is not declared or imported in this module
+</pre>
+<p>
+Failures are declared, not erased: write <tt>error{Foo, Bar}</tt> or an
+anonymous <tt>!T</tt>, and the compiler tracks the set. In the same way,
+<tt>comptime</tt> exists only as the builtin catalog; there is no
+<tt>@Type</tt> to build a type at compile time and no <tt>@typeInfo</tt> to
+inspect one. The way over for both is the same as for generics: name the
+concrete thing, and use the introspection builtins for the representation
+questions they were built to answer.
+</p>
+
+<h3>A package manager, an IDE, and dynamic linking</h3>
+<p>
+These three are absences of tooling rather than of language, and each has the
+era's answer. Third-party code is vendored into the tree, because that is what
+a 1998 project shipped and because a package graph cannot resolve without a
+network and a runtime to fetch through. Editing is a text editor and the
+compiler's numbered diagnostics, because the manual's own site is hand-authored
+plain HTML for the same reason: no external resources and no framework to
+depend on. And a modern shared library is not something the target can load;
+Z98 emits C89, and C89 links against the era's static libraries and object
+files directly, which is the same seam <a href="vol2-01-honest-comparison.html">Volume
+II chapter&nbsp;1</a> describes as the language's reason for existing.
+</p>
+
+<h2>The trade</h2>
+<p>
+Read the two tables together and one trade appears under every row. The
+compiler withholds the machinery that needs a runtime, and in exchange the
+runtime is nothing you did not write. There is no allocator called for you, no
+unwinder, no garbage collector, no dynamic loader, no package graph. A call is
+a call. Storage is a buffer you declared. A failure is a branch. A pause is a
+statement. The generated C89 has no machinery in it that a 1998 programmer
+reading the output would not recognise.
+</p>
+<p>
+That is what buys the two facts at the bottom of the gives table. The emission
+is deterministic, so the generated C can be diffed and debugged like source
+you wrote. And the compiler is small enough to rebuild itself on the target
+within the memory budget, which is why the seed model can rebuild it with
+nothing but <tt>gcc</tt>. A language with classes, exceptions, and a package
+manager is not the same size, and pretending otherwise would be the modern
+scoreboard this volume refuses to keep.
+</p>
+<p>
+The trade is not free, and honesty requires naming the winner where another
+tool wins. C89 wins on ubiquity and on asking for nothing new; its output is
+already the output Z98 produces, so you can mix the two freely &mdash; that is
+the load-bearing fact of chapter&nbsp;3 (<i>planned</i>). C++98 wins wherever abstraction is worth a runtime:
+templates, constructors and destructors, and exceptions unwind the stack for
+you, and when the 32&nbsp;MB can carry the vtables and the unwinder, that
+leverage is real. Assembly wins where the C89 emission is not tight enough.
+Those are the subjects of chapters 3, 4, and 5, and this page is the inventory
+they each draw on.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> The sharpest limit is not a missing feature; it is that
+nothing is hidden. There is no runtime behind your back to allocate, unwind,
+collect, dispatch, or resolve, and that is deliberate. It means the trade is
+reversible at the seam: because Z98 emits C89, when a project's core need is
+templates, RAII, or exceptions and the memory can carry them, you can compile
+that part in C++98 and link it, or move the project there outright. Nothing on
+this page says Z98 is always right. It says what it gives, what it does not,
+and what to reach for instead.</td>
+</tr>
+</table>
+
+<h2>The way over it</h2>
+<p>
+The way over each absence is an era shape that already existed, and it still
+works on this compiler. Stated once, compactly:
+</p>
+<ul>
+<li><b>Need a generic container?</b> Write the concrete one. A second element
+type means a second container; the repetition is real and the types stay
+concrete in every phase. When the type must genuinely stay open, C++98.</li>
+<li><b>Need objects with behavior?</b> Free functions with the receiver first,
+plus a manual vtable for polymorphism and init functions to establish the
+contract. This is the direct translation of the method table a compiler would
+otherwise generate.</li>
+<li><b>Need failure to unwind through frames?</b> An error union carries the
+failure in the signature, <tt>try</tt> propagates it, <tt>catch</tt> handles
+it, and <tt>errdefer</tt> rolls back the partial work. The checked path
+replaces the unwinding one.</li>
+<li><b>Need to know a type at run time?</b> Write the tag and switch on it.
+The discriminant is the type oracle.</li>
+<li><b>Need concurrency?</b> A coroutine suspends and resumes; the scheduler is
+round-robin and cooperative, so no locks are needed. Real parallelism is the
+OS's.</li>
+<li><b>Need third-party code?</b> Vendor it into the tree. Need an editor?
+Use a text editor and read the compiler's numbered diagnostics. Need a library?
+Link the era's C89 objects, because that is what your output already is.</li>
+</ul>
+<p>
+If an item in the tables had no line here, it would be a complaint, and this
+chapter would have dropped it rather than list it. Every limit in the
+doesn't-give table carries a way over, and three of the ways over &mdash; C89,
+C++98, and assembly &mdash; are whole chapters with their own verdicts.
+</p>
+
+<h2>Common mistakes</h2>
+<p>
+The mistakes below are the ones a reader arriving with a modern checklist makes
+first. Each is a misreading of the inventory, not a defect in it.
+</p>
+<p>
+<b>Reading the list as a scoreboard.</b> The inventory is not a verdict that
+Z98 is smaller or weaker; a modern toolchain was never a candidate for the
+target. The honest summary is the one <a href="vol2-01-honest-comparison.html">Volume
+II chapter&nbsp;1</a> gives: Z98 is not a better C standard, it is a compiler
+that checks what C89 leaves to discipline and emits C89 for the era's machines.
+The things it withholds are the abstraction machinery that needs a runtime the
+target cannot afford.
+</p>
+<p>
+<b>Reaching for a feature and expecting it to be there.</b> A
+<tt>comptime</tt> type parameter does not parse, method syntax does not
+resolve, and <tt>anyerror</tt> is not a name the compiler knows. The measured
+diagnostics are:
+</p>
+<pre>
+error[2000]: expected ':' but found identifier
+error[3060]: no field or member function named 'bar' in struct type
+error[20]: identifier 'anyerror' is not declared or imported in this module
+</pre>
+<p>
+Each points at the rule that was crossed, and each has the corrected shape in
+the section above. There is no hidden form of the feature to find.
+</p>
+<p>
+<b>Treating a limit as a defect to file.</b> Every absence in this chapter is
+a deliberate trade against the era's machine, and the way over stays inside the
+language, the standard library, or the toolchain. Filing the absence of
+templates as a bug asks the language to become a different language with a
+different runtime; the epoch-appropriate answer is C++98 or the concrete
+container.
+</p>
+<p>
+<b>Assuming a convenience layer.</b> The standard library is a set of concrete
+hand-written helpers, not a framework; it is the thirteen modules
+<a href="vol2-17-stdlib.html">Volume II chapter&nbsp;17</a> names, and the
+printer takes five specifiers and no width, precision, or alignment. There is
+no package manager to fetch a fuller one, so third-party code is vendored and
+reviewed like source.
+</p>
+<p>
+<b>Expecting storage to appear.</b> No operation allocates behind your back.
+When a program needs storage it declares a buffer and hands an arena over it;
+when it needs an object it uses an init function and owns the storage. Reaching
+for an allocator that is not there is the mistake; declaring the buffer is the
+habit.
+</p>
+<p>
+<b>Spawning a thread for a pause.</b> There is no thread API. A routine that
+needs to wait writes <tt>@asyncSuspend</tt> where the pause belongs and is
+driven by <tt>std.async</tt>. On the era's single-core machine, that is the
+cheap and correct interleaving, and it costs a frame buffer rather than a stack
+and a kernel object.
+</p>
+
+<h2>Where to go next</h2>
+<p>
+This chapter sets the register for the honesty spine. The rest of it follows:
+chapter&nbsp;3, when C89 is the better choice; chapter&nbsp;4, when C++98 is
+the better choice; chapter&nbsp;5, when assembly is the better choice; then
+chapter&nbsp;6, what you cannot do on a Pentium II; and chapter&nbsp;7, the
+friction you will hit. All of them are <i>(planned)</i>. The third big shift is
+chapter&nbsp;9, Coroutines &mdash; the third big shift <i>(planned)</i>, and
+<a href="toc.html">the Contents page</a> shows the whole volume.
+</p>
+<p>
+Two Volume II chapters carry the measured detail behind the tables here:
+<a href="vol2-01-honest-comparison.html">chapter&nbsp;1, The Honest
+Comparison</a>, which is the register this page extends, and
+<a href="vol2-16-no-methods.html">chapter&nbsp;16, No methods, no generics, no
+comptime</a>, which measures the manual vtable, the init function, and the
+three absences. For lookup, <a href="vol4-15-builtins.html">Volume IV
+&mdash; Builtins</a> is the shipped reference for every builtin named on this
+page, including the four <tt>@async*</tt> builtins and the introspection
+family. The rest of Volume IV, and the Reference pages for the type system,
+errors, and optionals, are <i>(planned)</i>.
+</p>
+
+<p class="navbtns">
+<a href="toc.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="toc.html">Contents</a> | <a href="toc.html">Contents</a> | Next: <a href="toc.html">Contents</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
