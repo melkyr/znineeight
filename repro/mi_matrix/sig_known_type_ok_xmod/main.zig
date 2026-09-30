@@ -13,7 +13,6 @@
 //   * a BARE cross-module name `T` (declared only in helper.zig) resolved by
 //     the global name-cache scan;
 //   * implicit-void return;
-//   * `anytype` parameter (node 0, never resolved, never diagnosed);
 //   * the operator-ruled `noreturn` exemption (no registry name exists; it
 //     stays degraded to void in signatures and is NOT diagnosed).
 //
@@ -78,8 +77,6 @@ fn xbare(t: T) T {
     return t;
 }
 
-fn anyf(x: anytype) void {}
-
 extern "c" fn trap() noreturn;
 
 pub fn main() void {
@@ -107,5 +104,4 @@ pub fn main() void {
     std.io.print("\n");
     std.io.printInt(xbare(8));
     std.io.print("\n");
-    _ = anyf;
 }

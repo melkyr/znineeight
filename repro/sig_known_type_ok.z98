@@ -4,8 +4,9 @@
 // Every valid signature type form must stay accepted and runtime-correct
 // after FX13-F: forward alias, forward struct, self-referential struct, alias
 // chain, `error{...}` set, `E!T` error union, `u4`/`u7`, `c_char`/`bool`,
-// named fn-pointer parameter, implicit-void return, `anytype`, and the
-// operator-ruled `noreturn` exemption (degraded to void, never diagnosed).
+// named fn-pointer parameter, implicit-void return, and the operator-ruled
+// `noreturn` exemption (degraded to void, never diagnosed). The `anytype`
+// signature shape is now rejected (see `repro/mi_matrix/anytype_reject_xmod`).
 //
 // Contract: rc 0, RUNRC 0, deterministic stdout below, 3x byte-exact.
 const std = @import("std");
@@ -58,8 +59,6 @@ fn apply(cb: fn (i32) i32, x: i32) i32 {
 fn inc(v: i32) i32 {
     return v + 1;
 }
-
-fn anyf(x: anytype) void {}
 
 fn stop() noreturn {
     while (true) {}

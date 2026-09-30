@@ -1,4 +1,60 @@
-# mi_matrix corpus — expected-fail manifest (v287 2026-10-01)
+# mi_matrix corpus — expected-fail manifest (v288 2026-09-30)
+
+## A1-F — `anytype` rejected in every signature type position (v287 -> v288, 2026-09-30)
+
+Volume III Amendment A1 (operator rulings m1358/m1368; investigation
+`task-A1-I-report.md`). `anytype` was not rejected: `parserParseType` returned a
+bare node 0 (`sf/src/parser.zig:1130`), so `analyzeSignature`'s `type_expr != 0`
+guard skipped the dead `ERR_2012` check and `resolveFnSignatures` built a
+`fn_type` with `params_count`=1 but an empty `xt_items`; calling such a function
+segfaulted (`fn show(x: anytype) void { _ = x; }` + `show(5)` -> rc 139).
+
+**Fix (`sf/src/parser.zig` + `type_resolver.zig` + `analyzer.zig`; sema-only, no
+lowering/emitter change).** S1: the parser emits an `ident_expr` `anytype`
+sentinel carrying the token span (the param is now type-resolved to
+`TYPE_UNDEFINED` and appended, so the count/`xt_items` desync and the segfault
+disappear). S2: `typeResolverDiagnoseSignatureType` exempts the `anytype` ident
+beside `noreturn`, so the unknown-name walk emits no competing `error[20]`.
+S3: `analyzeSignature` runs a recursive `rejectAnytypeType` scan (wrappers,
+`E!T`, `fn(...)`) and the existing `ERR_2012_ANYTYPE_NOT_SUPPORTED` check gains
+`diagnosticCollectorMarkNodeOnce` dedup; both emissions now carry the offending
+node's real span and the module's file id (Q3(i)), rendering
+`file:line:col: error[16]: anytype not supported in Z98` + caret. Per m1368
+Q1(a) the reused enum prints **`error[16]`** (its ordinal; the `= 2012` plan
+text was NOT forced); Q2(a) leaves `var x: anytype`'s pre-existing `error[20]` +
+`error[3000]` reject as-is (only signature positions route through `ERR_2012`);
+the `noreturn` exemption is untouched.
+
+**Fixtures (ruling 3).** The FX13-F positive control's `fn anyf(x: anytype) void
+{}` shape moved to the negative control `repro/mi_matrix/anytype_reject_xmod`
+(main only; `expected.rc` 2, `expected_error.txt` `16 4`, rc 2 / 0 `.c`, exactly
+4 x `error[16]`: declaration-only, called, return position, nested fn-pointer
+arg; classify FAIL) + standalone `repro/anytype_reject.z98` (same census). The
+two positive controls lost the accepted-`anytype` bullet/function
+(`sig_known_type_ok_xmod` header; `sig_known_type_ok.z98` header) and stay
+rc 0 / RUNRC 0 with their pinned stdout.
+
+**Corpus movement.** `-s0` classify 1086 = 919 OK / 56 GREEN / 111 FAIL ->
+**1087 = 919 OK / 56 GREEN / 112 FAIL / 0 ICE / 0 CRASH**; join-diff vs the
+FX17-F baseline over the 1086 common dirs **zero movers**; the only dir-set
+addition is the new reject fixture. The migrated positive stays OK.
+
+**Gates (new fixed point `f78bebc448e267b32419afdb13afb386`).** Seed two-hop
+closure hop1 == hop2 with explicit `FIXED_POINT_MD5` gate; seed v89 NOT rotated
+(archive byte-identical). 4-MD5 emitted C both modes **UNCHANGED 8/8**, 2x
+deterministic (fsafe gol `6df1e4d2…`/lisp `e27b7c35…`/json `d51f17ae…`/mud
+`f3be9bb9…`, ffast gol `98e934f3…`/lisp `2514f8b5…`/json `e1cc386e…`/mud
+`66d547d4…`). `run_fixtures.sh` 266 PASS / 0 FAIL; example matrix 24/24;
+`check_emit_support.sh` 7/7; `verify_upgraded.sh` CLOSEOUT OK; self-emission
+48 `.c` + 48 `.h` / 0 PANIC; `sf/scripts/build_test.sh` 0/9 pre-existing
+retired-zig0 baseline.
+
+**Residuals.** (1) The shipped Volume II page
+`docs/sf/manuals/en/vol2-16-no-methods.html:330-334,617` still documents the
+old `error[20]`-on-`x` behavior; per Q3(ii) it was NOT touched (parked).
+`docs/reference/Language_Spec_Z98.md:111` likewise still lists `anytype`
+parameters as resolving. (2) `examples/zig0/**` (retired, not gated) has four
+`args: anytype` stdlib stubs that would now reject if compiled.
 
 ## FX17-F — function-pointer signature matching enforced at all coercion sites (v286 -> v287, 2026-10-01)
 
@@ -428,7 +484,8 @@ error unions (`E!T`, `!T`), fn-pointer parameter/return types and `mod.member`
 are all walked; the leaf ident carries the span, while `mod.unknown` reports
 the whole `mod.unknown` node. Called from `resolveFnSignatures` on the return
 and every parameter whose `resolveTypeExprFull` result is `TYPE_UNDEFINED`
-(implicit-`void` returns and `anytype` params are node 0 and never trigger).
+(implicit-`void` returns are node 0 and never trigger; `anytype` is superseded
+by A1-F, which now routes the signature marker to `error[16]`).
 Enforced in every loaded module. `noreturn` is the operator-ruled exemption:
 the resolver has no registered name for it, so the exemption is keyed on the
 ident text `noreturn` at the unresolved leaf and nothing is registered — the 6
@@ -453,7 +510,7 @@ site: bare param, bare return, `*`/`[3]`/`?`/`[]`-wrapped param,
 8` byte-exact 3x, RUNRC 0): forward alias, forward struct, self-referential
 struct, alias chain, `error{...}` set, `u4`/`u7`, `c_char`/`bool`, named
 fn-pointer, cross-module `helper.Good`, the bare global-scan name `T`,
-implicit-void return, `anytype`, and the `noreturn` exemption shape
+implicit-void return, and the `noreturn` exemption shape
 (`extern "c" fn trap() noreturn;` unreferenced — a *referenced* extern
 noreturn decl emits a call with no C definition and needs `noreturn`'s
 deferred C companion). Standalone `repro/sig_unknown_type_reject.z98`

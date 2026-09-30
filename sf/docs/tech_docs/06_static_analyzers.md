@@ -271,11 +271,9 @@ recycled scratch memory that now held a live `StateMap` (D1 SIGSEGV).
 
 ### analyzeSignature (`sf/src/analyzer.zig`)
 
-`[inference: iterate param types → validateSignatureType; validate return type]`
+`[inference: iterate param types → validateSignatureType + rejectAnytypeType; validate return type + rejectAnytypeType]`
 
-First pass over function signatures. Validates parameter types and return type for completeness.
-
----
+First pass over function signatures. Validates parameter types and return type for completeness, then runs the recursive `anytype` reject over the same type nodes.
 
 ### validateSignatureType (`sf/src/analyzer.zig`)
 
@@ -285,7 +283,15 @@ Checks performed:
 - `unresolved_name` or incomplete `struct_type`/`union_type`/`tagged_union_type`/`enum_type` → `ERR_2011_INCOMPLETE_TYPE`
 - `void_type` as param → `ERR_2010_VOID_PARAMETER`
 - `size > 64` on return type → `WARN_7010_LARGE_RETURN`
-- `anytype` ident → `ERR_2012_ANYTYPE_NOT_SUPPORTED`
+- `anytype` ident → `ERR_2012_ANYTYPE_NOT_SUPPORTED` (deduped via `diagnosticCollectorMarkNodeOnce`; A1-F passes the module's real `ctx.source_file_id`, so it renders `file:line:col` + caret). Direct ident only — nested/wrapped `anytype` is handled by `rejectAnytypeType`.
+
+---
+
+### rejectAnytypeType (`sf/src/analyzer.zig`)
+
+`[inference: recurse the type-expression tree; on an ident_expr named 'anytype' emit ERR_2012 once per node]`
+
+A1-F helper called from `analyzeSignature` for every parameter type and the return node. Walks `ptr_type`/`many_ptr_type`/`slice_type`/`optional_type`/`array_type` (child_0), `error_union_type` (child_0 + child_1) and `fn_type` (child_0 return + payload extra children) to reach each leaf, emitting level-0 `ERR_2012_ANYTYPE_NOT_SUPPORTED` (`error[16]`) with the leaf span and `ctx.source_file_id`, deduped via the shared `diagnosticCollectorMarkNodeOnce` (one diagnostic per node; the parser's S1 `anytype` sentinel re-activated the previously-dead check).
 
 ---
 
@@ -812,7 +818,7 @@ or direct GDB breakpoints on the analyzer entry points.
 | `ERR_2005_DOUBLE_FREE` | error | Freeing already-freed pointer |
 | `ERR_2010_VOID_PARAMETER` | error | `void` used as parameter type |
 | `ERR_2011_INCOMPLETE_TYPE` | error | Incomplete type in function signature |
-| `ERR_2012_ANYTYPE_NOT_SUPPORTED` | error | `anytype` in signature |
+| `ERR_2012_ANYTYPE_NOT_SUPPORTED` | error | `anytype` in a signature/type position (direct or nested; renders as `error[16]`, one per node, with file:line:col + caret — A1-F) |
 | `ERR_2020_RETURNING_ADDRESS_OF_LOCAL` | error | Returning `&local` from function |
 | `ERR_2021_RETURNING_ADDRESS_OF_PARAM` | error | Returning `&param` from function |
 | `WARN_6001_UNINIT_DEREF` | warning | Dereference of uninitialized pointer |

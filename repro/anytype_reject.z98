@@ -1,0 +1,13 @@
+// repro/anytype_reject.z98 — standalone A1-F anytype reject control.
+//
+// Same census as repro/mi_matrix/anytype_reject_xmod: every `anytype`
+// signature/type position rejects with level-0 `error[16]`
+// (`ERR_2012_ANYTYPE_NOT_SUPPORTED`), rc 2, 0 emitted `.c`.
+//
+// census: 16 4
+fn declOnly(x: anytype) void {}
+fn called(x: anytype) void {}
+fn returnsAny() anytype { }
+fn nested(cb: fn (anytype) void) void {}
+
+pub fn main() void { called(5); }
