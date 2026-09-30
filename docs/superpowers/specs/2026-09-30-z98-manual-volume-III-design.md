@@ -84,8 +84,11 @@ ruled at the program level and are not open questions for Task 0:
   the gdb-on-generated-C workflow only.
 - Emitter-level socket builtins (III.12) were removed; sockets are the
   `std.net` extern surface — chapter 12 is rewritten to `std.net`.
-- `platform_win98.h`, `WINVER=0x0410`, `_MBCS` (III.8) are bootstrap-era only —
-  chapter 8 is rewritten to the current `-osw` target.
+- `platform_win98.h` and `_MBCS` (III.8) are bootstrap-era only (not in
+  `sf/src` or the emitted C); `WINVER=0x0410` **is** emitted with
+  `_WIN32_WINDOWS`/`_WIN32_WINNT`/`NTDDI_VERSION`/`WIN32_LEAN_AND_MEAN` +
+  `<windows.h>` by `sf/src/c89_emit.zig:2816` for modules using `@console*` —
+  chapter 8 is rewritten to the measured `-osw` target.
 - The DirectX `ddraw-mini.z98` example (III.14) is **dropped**; chapter 14's
   era-context prose stays only where verifiable.
 - Sample names in the blueprint are aspirational; each is authored fresh under
@@ -426,9 +429,9 @@ which re-verify their own claims.
 - **Win9x build (ch8):** prove the `scripts/win32_cross/` harness end-to-end on
   a manual example (wine version, LF-normalized parity); the current `-osw`
   target and its scripts, the `build_target.sh mingw` flags, and the fact that
-  `build_owc.bat`/`wcc386` is emitted-only on this host; which of the
-  blueprint's `platform_win98.h`/`WINVER`/`_MBCS` claims survive the Phase 0 §3
-  rewrite.
+  `build_owc.bat`/`wcc386` is emitted-only on this host; and the Phase 0 §3
+  rewrite (bootstrap `platform_win98.h`/`_MBCS` gone, `WINVER 0x0410` emitted
+  for `@console*` modules, `ZIG_WIN32` current).
 - **Talking to C (ch11):** `extern fn` / `@cInclude` rules (module-level only),
   calling conventions, mangling, and the reserved-name rules.
 - **WinSock (ch12):** the actual `sf/src/std_net.zig` surface; Task 0 measured the
