@@ -1,0 +1,609 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Honesty: What You Cannot Do on a Pentium II</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume III honesty what you cannot do on a Pentium II era limits hardware 3D software rendering textures memory MP3 MOD MIDI multithreading threads cooperative coroutines std.async WinSock Winsock 1.1 wsock32 std.net arena memory budget 32 MB">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol3-05-when-assembly.html">
+<link rel="next" href="toc.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume III &mdash; Working in the Era</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+How to read this <i>(planned)</i><br>
+The 1998 machine <i>(planned)</i><br>
+<a href="vol3-02-honesty-inventory.html">Honesty: what Z98 does and does not give you</a><br>
+<a href="vol3-03-when-c89.html">Honesty: when C89 is the better choice</a><br>
+<a href="vol3-04-when-cpp98.html">Honesty: when C++98 is the better choice</a><br>
+<a href="vol3-05-when-assembly.html">Honesty: when assembly is the better choice</a><br>
+<b>Honesty: what you cannot do on a Pentium II</b><br>
+Honesty: the friction you will hit <i>(planned)</i><br>
+Building for Win9x <i>(planned)</i><br>
+Coroutines &mdash; the third big shift <i>(planned)</i><br>
+A coroutine program <i>(planned)</i><br>
+Talking to C <i>(planned)</i><br>
+WinSock under Z98 <i>(planned)</i><br>
+The Win32 Debug API <i>(planned)</i><br>
+DirectX under CINTERFACE <i>(planned)</i><br>
+The debugger workflow <i>(planned)</i><br>
+Memory budgets <i>(planned)</i><br>
+Packaging and shipping <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Honesty: What You Cannot Do on a Pentium II</h1>
+<p>
+The three chapters before this one answered a question about tools: when C89
+wins, when C++98 wins, when assembly wins. This chapter asks a different
+question, and it is the last of the honesty spine that is about a hard boundary.
+It asks what the machine itself will not let you do. The answer is not in
+Z98's feature list and not in the C89 emitter. It is in the 1998 PC: one
+32-bit processor, a fixed amount of memory, a display that is small by modern
+standards, and no hardware that a modern project would recognize. Some things a
+modern program assumes it can do are not available there, and no choice of
+language changes that.
+</p>
+<p>
+The distinction that organizes the chapter is the one between a <i>language</i>
+limit and a <i>machine</i> limit. A language limit is something you can leave:
+if you want templates, you write that module in C++98, and
+<a href="vol3-04-when-cpp98.html">chapter&nbsp;4</a> said so. A machine limit is
+something every tool on the machine shares. Z98, C89, C++98, and assembly all
+run on the same processor, use the same memory, and write to the same display.
+Swapping the language does not move the boundary. What the language can do is
+make the parts of the work that are <i>not</i> the bottleneck cheaper to write
+and harder to get wrong; it cannot make the bottleneck disappear. This chapter
+names the bottlenecks, pairs each with its way over, and states the rule the
+volume is built on: <b>the era had limits, and respecting them is the point</b>.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffffc8">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-note.gif" width="16" height="16" alt="Note"></td>
+<td><b>Era framing.</b> Statements here about the era's processors, memory,
+display hardware, audio, and operating system are era context, and where a
+statement is an opinion the text says so. This host has no Pentium II, no
+1998 display adapter, and no Windows 95/98, so an era hardware claim cannot be
+run here; the text marks those as the era's facts and readings rather than
+measurements. Statements about Z98 are a different kind, and those are checked
+against <tt>docs/reference/Language_Spec_Z98.md</tt>, the compiler source, and
+the compiler built from the committed seed: the concurrency and networking
+limits are the compiler's own, and the evidence for them is named where they
+appear.</td>
+</tr>
+</table>
+
+<h2>What you expect</h2>
+<p>
+A reader arriving from a modern machine expects a limit to be a feature that is
+missing, and a missing feature to be something a library can supply. That is
+usually true. Need a data structure? Write it. Need a protocol? Link a library
+that speaks it. The compiler is the constraint, and the constraint bends when
+you write or fetch the right code. This chapter is about the limits where that
+reading fails, because the constraint is not in the compiler and not in any
+library. It is the machine.
+</p>
+<p>
+There are two ways to get this wrong, and they look opposite but come from the
+same place. The first is to blame the language for the machine: to say Z98
+&ldquo;cannot do 3D&rdquo; when the truth is that this class of machine cannot
+do the 3D the reader has in mind, in any language. The second is the opposite
+error, and it is the more common one: to believe that enough cleverness beats
+the envelope &mdash; that a hand-tuned rasterizer, a smarter allocator, or a
+better algorithm will let a 233&nbsp;MHz machine hold a 1024&times;768
+32-bit framebuffer and a scene with tens of thousands of polygons at a playable
+rate. It will not. The machine sets an <i>envelope</i>, and the work of the era
+is designed inside it.
+</p>
+<p>
+So the frame for this chapter is not &ldquo;look how little the old machine
+could do.&rdquo; That would be the modern scoreboard the volume refuses to keep,
+and it measures the wrong thing besides: a modern toolchain was never a
+candidate for this target, because it cannot be built for it and its binaries do
+not run on it. The frame is the working one. The envelope is given; the question
+is what fits inside it, and what you reach for when the thing you want does not.
+Chapter&nbsp;1, The 1998 Machine <i>(planned)</i> draws the envelope in full,
+and the CPU-versus-memory point it makes is the one that returns in every limit
+below: it is memory, not processor speed, that is the binding constraint.
+</p>
+
+<h2>What you get</h2>
+<p>
+Five hard limits and their ways over. The table is the map; the sections after it
+are the argument. Each limit is stated as an era fact or an era reading and
+marked as such; each is paired with the era's answer, because a limit with no
+way over is a complaint, and the volume drops complaints. The last column names
+the Z98 angle where one exists &mdash; the place where the language or its
+standard library does something about the limit rather than simply standing
+under it.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>The limit</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>The way over</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>The Z98 angle</b></th>
+</tr>
+<tr>
+<td valign="top">No hardware 3D at modern resolutions</td>
+<td valign="top">render small in software; target the era 3D API as an optional
+path; cut geometry and use sprites</td>
+<td valign="top">3D is an <tt>extern</tt> surface (chapter&nbsp;14,
+<i>planned</i>); the memory budget decides what vertex and texture data fits</td>
+</tr>
+<tr>
+<td valign="top">No large textures</td>
+<td valign="top">small palettized and tiled textures, a bounded cache that
+streams, procedural art</td>
+<td valign="top">the arena bounds the texture pool and reclaims a level's
+textures in one reset (<a href="vol2-14-arena.html">Volume II
+chapter&nbsp;14</a>; chapter&nbsp;16, <i>planned</i>)</td>
+</tr>
+<tr>
+<td valign="top">No real-time MP3 at fidelity alongside the rest</td>
+<td valign="top">MOD/tracker music, MIDI, CD audio, or a short pre-mixed buffer</td>
+<td valign="top">audio is another <tt>extern</tt> surface; the cooperative
+scheduler is not a real-time engine</td>
+</tr>
+<tr>
+<td valign="top">No multithreading worth the cost</td>
+<td valign="top">cooperative coroutines for concurrency; OS threads only for
+genuine blocking I/O</td>
+<td valign="top"><tt>std.async</tt>: round-robin, cooperative, no locks needed
+(chapter&nbsp;9, <i>planned</i>)</td>
+</tr>
+<tr>
+<td valign="top">No networking beyond the socket API</td>
+<td valign="top">speak the protocol yourself over TCP or UDP; multiplex with
+<tt>select</tt></td>
+<td valign="top"><tt>std.net</tt> is the socket surface (chapter&nbsp;12,
+<i>planned</i>)</td>
+</tr>
+</table>
+
+<h3>No hardware 3D at modern resolutions</h3>
+<p>
+This is an era fact, marked as one, and it needs a careful statement because the
+era did have 3D. By 1998 there were real 3D accelerators &mdash; 3dfx's Voodoo2,
+NVIDIA's RIVA&nbsp;128, and others &mdash; and games that used them. The limit
+is about the machine this volume targets, which is the baseline: a Pentium II
+with 32&nbsp;MB of memory and the display the era shipped. On that machine the
+processor is the renderer. The resolution and color depth a modern project
+assumes &mdash; 1024&times;768 or more, 32 bits per pixel, a depth buffer, heavy
+overdraw &mdash; are not reachable in software at an interactive rate, and no
+article about the era claims otherwise.
+</p>
+<p>
+The numbers make it concrete. A 640&times;480 framebuffer at 16 bits per pixel
+is about 600&nbsp;KB, and clearing and filling it costs memory bandwidth on
+every frame; at 320&times;200 it is about 128&nbsp;KB, and the era's software
+renderers were designed around exactly that smaller buffer. The point is not
+that the processor is slow in the abstract. The point is that a frame has a
+budget, and geometry, textures, and shading all spend from it. A software
+rasterizer can draw a simple scene at a small resolution; it cannot draw a
+modern scene at a modern resolution, and the difference is an order of
+magnitude, not a tuning pass.
+</p>
+<p>
+The way over is to design inside the resolution, not to fight for the one you
+wanted. Render at 320&times;200 or 640&times;480, use 8-bit or 16-bit color, keep
+the polygon counts low, and lean on sprites and pre-rendered backgrounds, which
+is what the era's games actually did. Where an accelerator is present, target
+it through the era's 3D API &mdash; Direct3D&nbsp;7 or 8 under <tt>CINTERFACE</tt>,
+the subject of chapter&nbsp;14 <i>(planned)</i> &mdash; but never require it: the
+baseline machine has to run the game, and the accelerator is an optional second
+path. The Z98 angle here is narrow and honest. The language contains no 3D and
+does not pretend to; the era's 3D is a set of COM interfaces reached through
+<tt>extern</tt> declarations and <tt>@cInclude</tt>, and the memory budget of
+chapter&nbsp;16 <i>(planned)</i> decides how much vertex and texture data can
+exist at once. Z98's contribution is the substrate the rest of the program is
+written on, not the renderer.
+</p>
+
+<h3>No large textures</h3>
+<p>
+This limit is the previous one wearing different clothes, and it is the reason
+the chapter keeps saying that memory is the binding constraint. Texture memory
+is the clearest arithmetic in the whole volume. A single 32-bit
+1024&times;1024 texture is 4&nbsp;MB: the size is
+1024&nbsp;&times;&nbsp;1024&nbsp;&times;&nbsp;4&nbsp;bytes. Four of them are
+16&nbsp;MB, which is the entire peak budget the compiler itself is held to
+(chapter&nbsp;16, <i>planned</i>), before the program has a framebuffer, a
+working set, or a line of logic. An 8-bit 256&times;256 texture, by contrast, is
+64&nbsp;KB, and a whole atlas of them fits where one modern texture does not.
+</p>
+<p>
+The way over is the era's texture discipline: palettized 8-bit art, small
+tiles assembled into larger pictures, a handful of distinct textures rather than
+hundreds, and a bounded cache that holds only the textures the current scene
+needs and streams the rest off disk. Procedural and tiled art stretches a small
+palette across a large world for almost nothing. The Z98 angle is real and it is
+the arena. A level's textures are a phase, not the whole game, so they belong in
+a pool that is sized once and reclaimed in a single <tt>reset</tt> when the
+level ends; <a href="vol2-14-arena.html">Volume II chapter&nbsp;14</a> measured
+the arena's <tt>cap</tt>/<tt>used</tt>/<tt>reset</tt> behavior, and
+chapter&nbsp;16 <i>(planned)</i> measures the budgeting and
+<tt>--track-memory</tt> that let you see the pool before it overflows. This is a
+marked opinion, but it is the manual's: the right texture budget is the largest
+one that still leaves the rest of the program its memory, and the arena is how
+you enforce it.
+</p>
+
+<h3>No real-time MP3 on a PII-233</h3>
+<p>
+The blueprint states this one plainly, and the manual repeats it as the era's
+reading: decoding and mixing an MP3 stream at fidelity while the rest of the
+program runs does not fit the machine. It is an era claim about the <i>whole</i>
+machine being busy, and it is marked as such &mdash; it cannot be measured on
+this host, which has no Pentium II and no 1998 sound hardware. The honest
+version of the claim is not that no MP3 decoder existed for the era. A dedicated
+player with the whole processor to itself could decode a stream on hardware like
+this. The claim is that a game or a full-screen application cannot also hold a
+frame budget while the processor decodes audio, and that is a statement about
+the envelope, not about the codec.
+</p>
+<p>
+The way over is the era's sound. Tracker modules (MOD and its descendants) mix
+cheaply because they are small samples and pattern data rather than a
+compressed stream; MIDI costs almost nothing to play and offloads synthesis to
+the sound card's wavetable; Red Book CD audio is played by the drive and costs
+the processor nothing at all; and a short piece mixed into a buffer once can be
+looped for free. The right answer is to choose the audio to the budget: a
+menu can afford more than a busy scene, and the scene's music is the first thing
+to give. The Z98 angle is mostly a warning dressed as an angle. Audio is another
+<tt>extern</tt> surface, and the cooperative scheduler of the next section is
+not a real-time engine: a coroutine keeps the machine until it suspends, so it
+cannot promise to fill the sound buffer on a deadline. The buffer is filled by
+the sound hardware's DMA, and the code hands it data in time; the scheduler
+schedules, and the deadline belongs to the hardware.
+</p>
+
+<h3>No multithreading worth the cost</h3>
+<p>
+This is the limit with the strongest Z98 answer, and it is worth separating the
+two things people mean by &ldquo;threads.&rdquo; On a single-core Pentium II,
+extra threads do not give extra compute. The processor can run one instruction
+stream at a time; two threads that both want to do arithmetic take turns, and
+the total is the same work plus the cost of switching. Windows 95/98 did have
+threads, and they were useful for one thing: letting a program wait on a slow
+device &mdash; a socket, a disk &mdash; without freezing everything else. They
+were not useful for making a program's own calculation faster, and the era's
+threaded code was hard precisely because shared state needed locks and the
+locks were easy to get wrong.
+</p>
+<p>
+Z98's position is a language fact, and it is in the spec. The compiler has no
+thread API and no preemption; its concurrency is the cooperative, round-robin
+coroutine described in <a href="vol2-15-builtins.html">Volume II
+chapter&nbsp;15</a> and specified in <tt>docs/reference/Language_Spec_Z98.md</tt>
+&sect;4.1 and &sect;7.2, which states plainly that preemption, threads, and
+typed futures are not implemented and that the <tt>@async*</tt> coroutines are
+cooperative and round-robin only. A coroutine keeps the machine until it
+reaches a suspension point, so no shared value can change under it and there
+are no locks to buy. That property is the reason the limit is not a hardship for
+the era's interactive software.
+</p>
+<p>
+The way over is <tt>std.async</tt>, and it is the mental shift
+chapter&nbsp;9 <i>(planned)</i> takes apart. A routine that would have waited
+writes the pause where the pause belongs:
+</p>
+<pre>
+@asyncSuspend(null);
+</pre>
+<p>
+The scheduler in <tt>sf/src/std_async.zig</tt> &mdash; <tt>Scheduler</tt>,
+<tt>addTask</tt>, <tt>tick</tt>, <tt>waitAll</tt>, <tt>suspendUntil</tt> &mdash;
+resumes every runnable task once per tick and lets a task suspend until the
+thing it is waiting for is ready. The shipped coroutine program
+<tt>docs/sf/manuals/src/vol2/builtins/async.z98</tt> reports <tt>frame=88</tt>
+and <tt>n=3 steps=4</tt> on this compiler. Real parallelism, where a program
+genuinely needs it, is the operating system's job and is reached through
+<tt>extern</tt> declarations, not through the language; but on one core, and for
+the era's workload, cooperative concurrency is not a compromise. This is a
+marked opinion, and it is the manual's: interlacing work with
+<tt>std.async</tt> is the correct model for this machine, and it removes a
+whole class of bugs that locks only ever manage.
+</p>
+
+<h3>No networking beyond the socket API</h3>
+<p>
+The blueprint says &ldquo;no networking beyond what WinSock&nbsp;2
+provides,&rdquo; and the manual has to correct the version, because the compiler
+was measured and the blueprint was aspirational. Z98's network surface is
+<tt>std.net</tt>, and on the Windows target it binds <b>Winsock&nbsp;1.1</b>
+through <tt>wsock32</tt>, initializing with <tt>WSAStartup(1,1)</tt>
+(<tt>sf/src/std_net.zig</tt>). The system may supply Winsock&nbsp;2, but the
+surface Z98 offers is the classic 1.1 socket API and not a byte more. On the
+Linux side of this host the same surface runs over libc, which is why the
+chapter can cite it as a compiler fact rather than a Windows-only one. What is
+in the surface is the socket primitive set: <tt>init</tt>, TCP server and client
+creation, <tt>bindListen</tt>, <tt>accept</tt>, <tt>connect</tt>, <tt>send</tt>,
+<tt>recv</tt>, <tt>close</tt>, and <tt>select</tt>, plus non-blocking modes and
+UDP helpers. Handles are signed <tt>i32</tt> with <tt>-1</tt> for failure, and
+<tt>fd_set</tt> is an opaque <tt>[128]u32</tt> blob passed to <tt>select</tt>.
+What is <i>not</i> in it is everything a modern program means by
+&ldquo;networking&rdquo;: no HTTP client, no TLS, no DNS resolution helper, no
+asynchronous network stack, no ready-made protocol.
+</p>
+<p>
+The way over is to speak the protocol yourself. <tt>std.net</tt> gives you
+sockets; the wire format is your code. Multiplex several connections with
+<tt>select</tt>, or give each connection a coroutine and let the scheduler
+interleave them, and the two approaches meet in chapter&nbsp;10
+<i>(planned)</i>. This much the Task&nbsp;0 inventory measured: a socket program
+built through the harness binds and serves under a 32-bit Wine environment on
+this host, so the surface is real and not merely described. Chapter&nbsp;12
+<i>(planned)</i> is the surface in full. The era framing is worth stating: in
+1998 the network you reach is small. The web is young, bandwidth is thin, and a
+game's netcode or a simple client is built on raw sockets, exactly as Z98 asks
+you to build it.
+</p>
+
+<h2>The trade</h2>
+<p>
+Read the five limits together and one statement covers all of them: the
+envelope is fixed, and the way over is always a change to the design rather
+than a missing feature. That is the trade, and it cuts both ways. On the
+buying side, a program designed inside the envelope runs &mdash; on the machine
+the project set out to serve, with the memory it actually has &mdash; and it
+stays small enough to understand and to debug. The era's software was shaped by
+this discipline, and the programs that are remembered are largely the ones that
+were designed to the machine rather than against it. On the paying side, the
+feature you wanted is still gone. You cannot have the modern resolution, the
+modern texture, the compressed soundtrack, the parallel speedup, or the network
+stack. No Z98 idiom conjures those back, because they are not language
+properties; they are the machine's.
+</p>
+<p>
+Where another tool genuinely wins, it wins in the chapters before this one. If
+the limit is code generation &mdash; a hot loop that even the checked emission
+cannot tighten &mdash; assembly is the answer
+(<a href="vol3-05-when-assembly.html">chapter&nbsp;5</a>). If the limit is an
+abstraction the design needs, C++98 is the answer
+(<a href="vol3-04-when-cpp98.html">chapter&nbsp;4</a>). If it is a library that
+already exists in C89, C89 is the answer
+(<a href="vol3-03-when-c89.html">chapter&nbsp;3</a>). What none of those
+chapters does is raise the envelope, and that is the honest core of this one.
+Z98's contribution is not that it outruns the machine; it is that the parts of
+the program that are not the bottleneck are written in a language whose runtime
+is small enough to leave the machine room to breathe. No hidden allocator, no
+unwinder, no garbage collector, no dynamic loader &mdash; the absence this
+volume's <a href="vol3-02-honesty-inventory.html">chapter&nbsp;2</a> listed as
+a trade is also, here, the reason the program fits.
+</p>
+<p>
+The register matters as much as the arithmetic. This chapter does not apologize
+for the machine, and it does not pretend the limits are virtues. It says what
+the machine will not do and what you do instead, in the same breath, because
+that is the only useful form of the answer. A limit named without a way over is
+a complaint, and the volume drops it; a limit named with its way over is a
+design constraint you can work with. This is a marked opinion: the craft of
+the era lived in designing inside the envelope &mdash; in choosing the small
+resolution, the tiled texture, the tracker module, the cooperative task &mdash;
+and the discipline is the point, not a consolation for hardware that is old.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> The single sharpest limit is memory, and every other
+limit in this chapter is a version of it. The framebuffer, the textures, the
+audio buffer, the per-connection state, and the coroutine frames all spend from
+the same 32&nbsp;MB, against the same 16&nbsp;MB peak budget the compiler is
+held to. That is why the answers above all look alike: render smaller, cache
+less, mix cheaper, share the machine cooperatively, speak the protocol
+yourself. Respect the memory budget and the machine stays usable; ignore it and
+none of the other cleverness helps. The era had limits, and respecting them is
+the point.</td>
+</tr>
+</table>
+
+<h2>The way over it</h2>
+<a name="the-way-over-it"></a>
+<p>
+The way over a machine limit is a recipe, not a library. It begins before the
+first line of code and it ends with a feature cut rather than a correctness
+promise broken. Worked in order:
+</p>
+<p>
+<b>Step one: write down the envelope.</b> Resolution and color depth, a memory
+ceiling for the whole program, the processor you are targeting, and the
+operating system. These are the terms every later decision is measured
+against, and they are the subject of chapter&nbsp;1 <i>(planned)</i>. An
+envelope that says 640&times;480 at 16 bits and a few megabytes of working set
+produces one design; an envelope copied from a modern machine produces a program
+that will not ship.
+</p>
+<p>
+<b>Step two: design the content to the envelope.</b> Textures, audio, geometry,
+entity counts, and connection counts are chosen against the ceiling, not
+afterwards. This is where the texture and audio limits are actually met: at
+design time, where a 64&nbsp;KB texture is an artistic choice rather than a
+late optimization.
+</p>
+<p>
+<b>Step three: measure in the target's terms.</b> The compiler can show you
+what a program uses; <tt>--track-memory</tt> reports the arena peaks, and
+<tt>-mm0</tt> relaxes the combined-peak check when a program has a reason to
+exceed it (chapter&nbsp;16, <i>planned</i>). Measure before the envelope is
+breached, not after.
+</p>
+<p>
+<b>Step four: use the Z98 angles where the limit is structural.</b> When the
+limit is concurrency, the answer is <tt>std.async</tt> (chapter&nbsp;9,
+<i>planned</i>). When it is storage, the answer is the arena
+(<a href="vol2-14-arena.html">Volume II chapter&nbsp;14</a>). When it is the
+network, the answer is <tt>std.net</tt> (chapter&nbsp;12, <i>planned</i>). These
+are the places the language and its library do real work against the envelope.
+</p>
+<p>
+<b>Step five: when the limit is not structural, use the other tool.</b> A hot
+loop that must be tight is <a href="vol3-05-when-assembly.html">chapter&nbsp;5</a>;
+an abstraction the design needs is <a href="vol3-04-when-cpp98.html">chapter&nbsp;4</a>;
+a library already written in C89 is <a href="vol3-03-when-c89.html">chapter&nbsp;3</a>.
+The envelope does not change; only the language of the part that meets it does.
+</p>
+<p>
+<b>Step six: if it still does not fit, cut the feature &mdash; never the
+checks.</b> The one thing the envelope must not cost is the correctness the
+language exists to provide. Turning off a bounds check to save a kilobyte, or
+dropping a failure path to save a frame, trades a limit you can design around
+for a bug you cannot. When a feature does not fit, the feature goes.
+</p>
+<p>
+Stated once, compactly, the limits and their ways over:
+</p>
+<ul>
+<li><b>3D at a modern resolution?</b> Render small in software, use the era 3D
+API as an optional accelerator path, and cut geometry. The baseline machine
+must run the game.</li>
+<li><b>Textures too large?</b> Palettized, tiled, and small; a bounded arena
+cache that holds the current level and resets when the level ends.</li>
+<li><b>Music too expensive?</b> A tracker module, MIDI, CD audio, or a short
+mixed buffer; choose the audio to the frame budget.</li>
+<li><b>Need concurrency?</b> A coroutine suspends where the work waits;
+<tt>std.async</tt> is round-robin and cooperative, so no locks are needed, and
+real parallelism stays the operating system's.</li>
+<li><b>Need the network?</b> The <tt>std.net</tt> socket surface, with the
+protocol written by hand and connections multiplexed with <tt>select</tt> or
+with coroutines.</li>
+<li><b>Running out of memory?</b> That is the limit under all the others: size
+the arenas, budget the working set, and measure with
+<tt>--track-memory</tt>.</li>
+</ul>
+<p>
+If an item in the table had no line here, it would be a complaint, and the
+chapter would have dropped it rather than list it. Every limit above carries a
+way over, and three of the ways over &mdash; C89, C++98, and assembly &mdash;
+are whole chapters with their own verdicts.
+</p>
+
+<h2>Common mistakes</h2>
+<p>
+The chapter has no code sample, because the limits it describes are not fixed
+by code. The mistakes below are design mistakes, and they are the ones a reader
+makes when the machine is treated as a detail rather than as the target.
+</p>
+<p>
+<b>Blaming the language for the machine.</b> &ldquo;Z98 cannot do 3D&rdquo; is
+the wrong sentence. The machine cannot do the 3D you meant, in any language;
+Z98's part is to call the era's 3D API through <tt>extern</tt> and to keep the
+rest of the program small enough to leave room for it. A limit that survives a
+change of language is not a language limit.
+</p>
+<p>
+<b>Believing cleverness beats the envelope.</b> A better algorithm helps, and
+the chapter would not deny it; the envelope is still the envelope. A
+1024&times;1024 32-bit texture is 4&nbsp;MB no matter how well the code is
+written, and a single-core processor cannot compute two instruction streams at
+once no matter how many threads you start. Tune after you have designed to the
+envelope, not instead of it.
+</p>
+<p>
+<b>Designing to the accelerator instead of the baseline.</b> The machine this
+volume targets may or may not have a 3D card. A program that requires one does
+not ship to the baseline. Target the small path and treat the accelerator as an
+optional improvement, which is what the era's own dual-path games did.
+</p>
+<p>
+<b>Spawning a thread to solve a design that should be cooperative.</b> On one
+core there is no parallel speedup for computation, and the locks that shared
+state demands are new bugs. The Z98 shape is a coroutine that suspends where the
+work waits; reach for OS threads through <tt>extern</tt> only when the job is
+genuinely blocking I/O that the scheduler cannot cover.
+</p>
+<p>
+<b>Assuming the network is the modern one.</b> <tt>std.net</tt> is sockets &mdash;
+Winsock&nbsp;1.1 on the Windows target, libc elsewhere &mdash; not an HTTP
+client and not a TLS stack. The protocol is your code, and the era's protocols
+are the ones that fit the wire.
+</p>
+<p>
+<b>Measuring on the development host.</b> This host is not the target. A
+program that is comfortable here can still be over the era's memory budget, and
+a texture that loads instantly here can still be too large there. Measure the
+program the way the target would, with the budget in front of you.
+</p>
+<p>
+<b>Cutting a check to fit the envelope.</b> The limits are a reason to cut a
+feature, not a reason to drop the error unions, the bounds checks, or the
+failure paths that are the language's whole point. A limit that costs a feature
+is a design decision; a limit paid for with a bug is a defect.
+</p>
+
+<h2>Where to go next</h2>
+<p>
+This closes the honesty spine's account of the machine. The next chapter,
+chapter&nbsp;7, the friction you will hit <i>(planned)</i>, turns from what the
+machine cannot do to what the <i>toolchain</i> makes awkward &mdash; the
+OpenWatcom dialect, the two-hop seed rebuild, the numbered diagnostics &mdash;
+and ends each item with what to do about it. The two chapters that make the
+concurrency and network angles exact are chapter&nbsp;9, Coroutines &mdash; the
+third big shift <i>(planned)</i>, and chapter&nbsp;12, WinSock under Z98
+<i>(planned)</i>; the coroutine program is chapter&nbsp;10 <i>(planned)</i>.
+</p>
+<p>
+The era's 3D and audio surfaces are chapter&nbsp;14, DirectX 7/8 under
+CINTERFACE <i>(planned)</i>, and the memory budgets that decide every one of
+these trades are chapter&nbsp;16 <i>(planned)</i>; the machine itself is
+chapter&nbsp;1 <i>(planned)</i>. For the frame behind the whole volume,
+<a href="vol2-01-honest-comparison.html">Volume II chapter&nbsp;1, The Honest
+Comparison</a> is the register, and
+<a href="vol3-02-honesty-inventory.html">chapter&nbsp;2</a> is the inventory
+this chapter draws on. The concurrency and arena shapes named above are
+measured in <a href="vol2-15-builtins.html">Volume II chapter&nbsp;15,
+Builtins</a> and <a href="vol2-14-arena.html">chapter&nbsp;14, The arena</a>,
+and the no-methods, no-generics limits that shape the code around them are in
+<a href="vol2-16-no-methods.html">chapter&nbsp;16</a>. For lookup,
+<a href="vol4-15-builtins.html">Volume IV &mdash; Builtins</a> catalogues every
+builtin named here, including the four <tt>@async*</tt> builtins, and
+<a href="toc.html">the Contents page</a> lists the whole volume.
+</p>
+
+<p class="navbtns">
+<a href="vol3-05-when-assembly.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol3-05-when-assembly.html">Honesty: when assembly is the better choice</a> | <a href="toc.html">Contents</a> | Next: <a href="toc.html">Contents</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
