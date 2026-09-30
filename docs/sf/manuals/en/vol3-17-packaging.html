@@ -1,0 +1,607 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Packaging and Shipping</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume III packaging and shipping release distributable diskette floppy 1.44 MB self-extracting archives build_owc.bat OpenWatcom wcc386 wlink build_target.sh mingw build_target.bat MSVC cl emitted C89 tree dist floppy-N one language per disk runtime sources zig_runtime zig_pal c_exit">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol3-16-memory-budgets.html">
+<link rel="next" href="toc.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume III &mdash; Working in the Era</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol3-00-title.html">How to read this</a><br>
+<a href="vol3-01-the-1998-machine.html">The 1998 machine</a><br>
+<a href="vol3-02-honesty-inventory.html">Honesty: what Z98 does and does not give you</a><br>
+<a href="vol3-03-when-c89.html">Honesty: when C89 is the better choice</a><br>
+<a href="vol3-04-when-cpp98.html">Honesty: when C++98 is the better choice</a><br>
+<a href="vol3-05-when-assembly.html">Honesty: when assembly is the better choice</a><br>
+<a href="vol3-06-era-limits.html">Honesty: what you cannot do on a Pentium II</a><br>
+<a href="vol3-07-friction.html">Honesty: the friction you will hit</a><br>
+<a href="vol3-08-win9x.html">Building for Win9x</a><br>
+<a href="vol3-09-coroutines.html">Coroutines &mdash; the third big shift</a><br>
+<a href="vol3-10-coroutine-program.html">A coroutine program</a><br>
+<a href="vol3-11-talking-to-c.html">Talking to C</a><br>
+<a href="vol3-12-winsock.html">WinSock under Z98</a><br>
+<a href="vol3-13-debug-api.html">The Win32 Debug API</a><br>
+<a href="vol3-14-directx.html">DirectX under CINTERFACE</a><br>
+<a href="vol3-15-debugger-workflow.html">The debugger workflow</a><br>
+<a href="vol3-16-memory-budgets.html">Memory budgets</a><br>
+<b>Packaging and shipping</b><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Packaging and Shipping</h1>
+<p>
+<a href="vol3-08-win9x.html">Chapter&nbsp;8</a> got a Z98 program to a
+<tt>.exe</tt>, and <a href="vol3-16-memory-budgets.html">chapter&nbsp;16</a>
+made it small enough to fit the machine it runs on. This chapter is the last
+step: turning the output directory the compiler writes into something you can
+hand to another person, and that person can run on a 1998 machine without you
+standing next to them.
+</p>
+<p>
+There is no <tt>zig1 package</tt> command, and this chapter will not pretend
+there is. The compiler does not produce an installer; it produces C89 and the
+scripts to build it. So the release you ship is a decision you make from the
+pieces the compiler leaves on disk, and the honest work of this chapter is to
+show you exactly what those pieces are, which of them a release needs, and which
+of them are era convention rather than a Z98 feature. The blueprint gives this
+chapter no sample program, and none is needed: the evidence is the compiler's
+actual output tree and the build scripts it writes.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffffc8">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-note.gif" width="16" height="16" alt="Note"></td>
+<td><b>What is measured here.</b> The compiler under test is the seed build
+<tt>/tmp/manual_seed/zig1_5_clean</tt>, fixed point
+<tt>8216fedc8dd69db084d453be80f3c010</tt>. The output tree quoted below is the
+real result of
+<tt>zig1&nbsp;-osw&nbsp;-o&nbsp;out&nbsp;docs/sf/manuals/src/vol1/hello.z98</tt>
+run on this host; the two companion scripts are the tracked files
+<tt>docs/sf/manuals/src/build_linux.sh</tt> and
+<tt>docs/sf/manuals/src/build_owc.bat</tt>. The module-name suffixes the tree
+shows are <b>path-derived</b>: they are stable for a given source path and a
+given compiler install path, and a different path yields different suffixes
+(the same fact <a href="vol3-15-debugger-workflow.html">chapter&nbsp;15</a>
+established for the debugger). Nothing on this page claims OpenWatcom or MSVC
+was run; on this host they are <b>emitted, not executed</b>, exactly as
+<a href="vol3-08-win9x.html">chapter&nbsp;8</a> stated. No <tt>dist/</tt> tree
+is generated by this chapter.</td>
+</tr>
+</table>
+
+<h2>What a release has to answer</h2>
+<p>
+Every distributable answers two questions, and they are not the same question.
+The first is <b>can the user run it?</b> That is a compiled binary: something
+double-clickable on the target machine. The second is <b>can the user rebuild
+it?</b> That is source plus a build script: the emitted C89 and the command
+lines that turn it back into the binary. A release can answer either, or both,
+and the choice is a tradeoff rather than a default.
+</p>
+<p>
+On a modern machine the answer is usually &ldquo;the source, from a package
+manager&rdquo; or &ldquo;the binary, from an app store,&rdquo; and the toolchain
+that builds it is assumed to be present. The 1998 machine has neither
+assumption. The user may have an OpenWatcom install, or MSVC, or neither; they
+may have the Z98 compiler, or only a C compiler, or only the ability to run an
+<tt>.exe</tt>. This is why the answer this volume has been building toward is
+the same one <a href="vol3-03-when-c89.html">chapter&nbsp;3</a> gave: Z98 emits
+C89, so a Z98 release can hand the user C89 and a script, and the user builds it
+with whatever C compiler the era put on their machine.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Release shape</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>The user needs</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Buys you</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Costs you</b></th>
+</tr>
+<tr>
+<td valign="top">The binary alone</td>
+<td valign="top">nothing but the target machine</td>
+<td valign="top">smallest download; runs at once</td>
+<td valign="top">no rebuild, no source to read or repair;
+one target per binary</td>
+</tr>
+<tr>
+<td valign="top">The C89 tree and the build scripts</td>
+<td valign="top">a C compiler and the platform SDK</td>
+<td valign="top">rebuildable and portable across the era's compilers;
+readable source</td>
+<td valign="top">larger; the user must know how to run a build</td>
+</tr>
+<tr>
+<td valign="top">Both</td>
+<td valign="top">either</td>
+<td valign="top">runs immediately and rebuilds if wanted</td>
+<td valign="top">largest; duplicates the program in two forms</td>
+</tr>
+</table>
+<p>
+The rest of this chapter works through the middle row, because that is the one
+that is specific to Z98. A binary-alone release is a fact about your C linker,
+not about this language; a source release is the one the compiler's own output
+makes possible. Where the two differ, the page says so.
+</p>
+
+<h2>What the compiler hands you</h2>
+<p>
+Emit a program for Windows and the compiler writes a complete, self-contained
+tree into the output directory. It is not a single <tt>.c</tt> file and it is
+not a project file for an IDE; it is every source the build needs, side by side,
+including the runtime and the platform layer. Here is the tree for
+<tt>vol1/hello.z98</tt>, the four-line program from
+<a href="vol3-08-win9x.html">chapter&nbsp;8</a>:
+</p>
+<pre>
+$ mkdir -p out
+$ /tmp/manual_seed/zig1_5_clean -osw -o out docs/sf/manuals/src/vol1/hello.z98
+$ ls out
+build_owc.bat        build_target.bat     build_target.sh
+c_exit.c             hello_F63FD80A.c     hello_F63FD80A.h
+net_prelude.h        std_io_59DB29D9.c    std_io_59DB29D9.h
+std_net_A15200CC.c   std_net_A15200CC.h   zig_compat.h
+zig_pal.c            zig_runtime.c        zig_runtime.h
+zig_special_types.h
+</pre>
+<p>
+Read the listing in four groups, because that is how a release is assembled.
+There is <b>your module</b> (<tt>hello_&hellip;.c</tt> and its header). There
+are the <b>standard modules</b> the program pulled in by importing
+<tt>std</tt>: <tt>std_io</tt> and, because the seed emits the network
+translation unit for every <tt>std</tt>-importing program, <tt>std_net</tt>.
+There are the <b>runtime and platform sources</b>: <tt>zig_runtime.c</tt>,
+<tt>zig_pal.c</tt>, <tt>c_exit.c</tt>, plus the headers <tt>zig_runtime.h</tt>,
+<tt>zig_special_types.h</tt>, <tt>zig_compat.h</tt>, and
+<tt>net_prelude.h</tt>. And there are the <b>build scripts</b>:
+<tt>build_target.sh</tt>, <tt>build_target.bat</tt>, and
+<tt>build_owc.bat</tt>, one per target toolchain.
+</p>
+<p>
+Two properties of the tree matter for packaging. The first is that it is
+<b>self-contained</b>: every <tt>.c</tt> a module needs is in the directory, so
+a release is a file copy, not a dependency resolution. The second is that the
+standard modules and the runtime are <b>copied into the tree</b>, not referenced
+from the compiler's install. You do not have to ship the compiler, and the user
+does not have to install it; they need a C compiler and the platform headers the
+era already had.
+</p>
+<p>
+The tree also contains files you should <i>not</i> ship: the compiler's own
+scratch files, written into the same directory and named with a leading dot
+(<tt>.zig1_ast.tmp</tt>, <tt>.zig1_lir.tmp</tt>, and the rest). They are
+intermediate state the compiler needed while emitting and are dead weight in the
+bundle. Delete them, or copy only the files you mean to ship, before you pack.
+</p>
+<p>
+If the program is a library rather than an application &mdash; C89 the user will
+link into their own program &mdash; the tree is the same shape minus the entry
+point, and the interface is the one
+<a href="vol3-11-talking-to-c.html">chapter&nbsp;11</a> described: the exported
+symbols carry the emitter's mangled names, and the C side reaches them through
+<tt>extern</tt> declarations or <tt>@cInclude</tt>. That path is a packaging
+choice too, but the chapter that owns it is chapter&nbsp;11, and this page does
+not restate it.
+</p>
+
+<h2>The <tt>build_owc.bat</tt> convention</h2>
+<p>
+The three build scripts are the release's build contract, and the OpenWatcom one
+is the chapter's named subject because it is the classic era toolchain: cheap,
+fast, and good at tight 32-bit code. The compiler writes a per-program
+<tt>build_owc.bat</tt> into every output directory, and the manual also ships a
+companion, <tt>docs/sf/manuals/src/build_owc.bat</tt>, that follows the same
+convention for the whole example tree. Here is the companion, which is a stable
+tracked file rather than a generated one:
+</p>
+<pre>
+@echo off
+REM build_owc.bat - build the manual's Z98 example programs for Win9x with
+REM OpenWatcom. This is the Win9x companion to build_linux.sh.
+REM
+REM Emit the Windows-target C89 for an example first:
+REM     zig1 -osw -o out hello.z98
+REM zig1 writes a self-contained tree into out\ and, because the target is
+REM Windows, its own build_target.bat (MSVC) and build_owc.bat (OpenWatcom).
+REM This companion follows those emitted conventions; run it from inside an
+REM emitted output directory to compile every .c and link one console exe:
+REM
+REM     cd out
+REM     build_owc.bat [OUT]
+REM
+REM wcc386 /za /we /dZIG_WIN32 /i=.  strict ANSI C, warnings as errors
+REM wlink system console op q opt stack=65536 ... library wsock32
+REM wsock32 matches the emitted build_owc.bat: the seed emits std_net_*.c for
+REM every @import("std") program, so the socket symbols must resolve.
+setlocal
+if "%~1"=="" (set OUT=prog.exe) else (set OUT=%~1)
+echo Compiling...
+wcc386 /za /we /dZIG_WIN32 /i=. *.c
+if errorlevel 1 goto fail
+echo Linking...
+wlink system console op q opt stack=65536 file {*.obj} library wsock32 name %OUT%
+if errorlevel 1 goto fail
+echo Built: %OUT%
+goto :eof
+:fail
+echo Build failed.
+exit /b 1
+</pre>
+<p>
+Read the flags as the dialect in miniature, the way
+<a href="vol3-07-friction.html">chapter&nbsp;7</a> read the emitted per-module
+lines. <tt>/za</tt> turns OpenWatcom's extensions off and asks for strict ANSI
+C; <tt>/we</tt> promotes every warning to an error, so the build is a
+correctness gate as well as a compile; <tt>/dZIG_WIN32</tt> selects the Windows
+code path; <tt>/i=.</tt> makes the current directory the include root, which is
+why the companion must be run from inside the emitted tree. The link asks for a
+console subsystem, a 64&nbsp;KB stack, and <tt>wsock32</tt>, and
+<tt>stack=65536</tt> is the same figure the emitted per-program script uses.
+</p>
+<p>
+The generated per-program script is the same command with the module list spelled
+out. Its compile lines and link line look like this, with the path-derived
+suffixes the tree above showed:
+</p>
+<pre>
+wcc386 /za /we /dZIG_WIN32 /i=. hello_F63FD80A.c
+wcc386 /za /we /dZIG_WIN32 /i=. std_io_59DB29D9.c
+wcc386 /za /we /dZIG_WIN32 /i=. std_net_A15200CC.c
+wcc386 /za /we /dZIG_WIN32 /i=. zig_runtime.c
+wcc386 /za /we /dZIG_WIN32 /i=. zig_pal.c
+wcc386 /za /we /dZIG_WIN32 /i=. c_exit.c
+wlink system console op q opt stack=65536 file hello_F63FD80A.obj,std_io_59DB29D9.obj,std_net_A15200CC.obj,zig_runtime.obj,zig_pal.obj,c_exit.obj library wsock32 name prog.exe
+</pre>
+<p>
+Both scripts carry a warning-policy comment at the top, and it is worth reading
+before you edit anything: <tt>/we</tt> is deliberate, and if a build fails on a
+warning you believe is harmless, the script tells you to drop <tt>/we</tt> and
+see the warning. If a hard error remains after that, the emitted C is not valid
+for OpenWatcom and should be reported as a bug rather than papered over.
+</p>
+<p>
+And here is the boundary this manual has to keep, because a claim about a
+toolchain that was never run is exactly the kind of thing that breaks a reader's
+trust. <tt>wcc386</tt> and <tt>wlink</tt> are <b>not installed on this
+development host</b>. The script above is <b>emitted</b>, quoted from the
+directory the compiler wrote and from the tracked companion, and it is
+<b>not executed</b>. Nothing in this volume should be read as saying OpenWatcom
+was run. The same is true of MSVC's <tt>cl</tt>: its <tt>build_target.bat</tt> is
+emitted and quoted, and it is not executed here. What <i>was</i> run is the
+mingw path on the emitted C89, under wine, with LF-normalized stdout parity
+&mdash; the harness <a href="vol3-08-win9x.html">chapter&nbsp;8</a> described.
+The era toolchains are the release's contract; the mingw-and-wine run is the
+local proof that the C89 those toolchains would compile is real.
+</p>
+
+<h2>Three build scripts, one release</h2>
+<p>
+The compiler writes one script per C compiler the era offered, and a release
+ships whichever one matches the user's machine. The choice is not Z98's; it is
+the user's, and the scripts exist so the choice does not require you to guess.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Script</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Toolchain</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>What it is for</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>build_target.sh</tt></td>
+<td valign="top">gcc on era Linux, or mingw on Windows</td>
+<td valign="top">one script, two targets; the default is the Linux host, and
+<tt>sh build_target.sh mingw</tt> cross-compiles the Windows binary. This is the
+only branch this host can execute.</td>
+</tr>
+<tr>
+<td valign="top"><tt>build_target.bat</tt></td>
+<td valign="top">MSVC <tt>cl</tt> and <tt>link</tt></td>
+<td valign="top">the Windows command-prompt build. Emitted here; not run here,
+because <tt>cl</tt> is not installed.</td>
+</tr>
+<tr>
+<td valign="top"><tt>build_owc.bat</tt></td>
+<td valign="top">OpenWatcom <tt>wcc386</tt> and <tt>wlink</tt></td>
+<td valign="top">the OpenWatcom 32-bit build, the classic era toolchain. Emitted
+here; not run here, because <tt>wcc386</tt> is not installed.</td>
+</tr>
+</table>
+<p>
+The shapes differ because the compilers differ, not because the program does.
+The mingw and gcc branches use the flag vocabulary of the gcc family
+(<tt>-m32 -std=c89 -O0 -Wall</tt> and three <tt>-Wno-</tt> flags for the small
+extensions strict C89 lacks); the MSVC script uses <tt>/c /Za /W3 /WX
+/DZIG_WIN32</tt> and links <tt>kernel32.lib</tt> and <tt>wsock32.lib</tt>; the
+OpenWatcom script uses <tt>/za /we /dZIG_WIN32</tt> and links
+<tt>wsock32</tt>. All three compile the same emitted C89 and produce the same
+program, which is the load-bearing fact of <a href="vol3-03-when-c89.html">
+chapter&nbsp;3</a>: because Z98 emits C89, the release is portable across the
+era's C compilers without the program knowing which one will build it.
+</p>
+<p>
+One consequence is worth stating plainly. A release that ships all three scripts
+is <i>larger than it needs to be for any one user</i>, and a release that ships
+only the script for your own compiler asks the user to have the same one. The
+honest middle is the source tree plus the scripts, which is small next to the
+era's media and lets each user pick their toolchain:
+</p>
+<pre>
+$ wc -c out/*.c out/*.h out/*.sh out/*.bat | tail -1
+124340 total
+</pre>
+<p>
+About 121&nbsp;KB of C89 for the four-line program, including the runtime and
+the standard modules it pulled in. The number is dominated by the runtime and
+the standard library, not by the program, so it does not grow much as the
+program does; the next section is about what that buys on the era's media, and
+it is where the number stops being academic.
+</p>
+
+<h2>What goes on the diskette</h2>
+<p>
+The era's medium is the 3.5-inch, 1.44&nbsp;MB floppy, and it is not a
+constraint to design around, it is simply the envelope the release has to fit or
+be split across. The blueprint's own framing is the correct one: a
+four-diskette set was a normal release, and once an archive format is in play
+the size is not the binding constraint at all. What matters is that the release
+is <b>self-describing</b> and <b>copy-installable</b>: the user should be able to
+put the disk in, copy something to the hard drive, and run it, with no
+dependency on a network none of these machines had.
+</p>
+<p>
+The compiler's output tree gives you the first property for free and asks you to
+decide the second. Because every source is in one flat directory and the include
+root is the current directory (<tt>/i=.</tt> or <tt>-I .</tt>), the release is a
+file copy with no path rewriting, which is precisely what makes it a diskette
+release and not merely a directory on your machine. A Z98 application diskette
+therefore holds what the output tree holds, filtered to what the user needs:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>On the diskette</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Why</b></th>
+</tr>
+<tr>
+<td valign="top">The compiled <tt>.exe</tt> (or the Linux binary)</td>
+<td valign="top">the run-it-now path, for a user who has no C compiler</td>
+</tr>
+<tr>
+<td valign="top">The emitted <tt>.c</tt> / <tt>.h</tt> files</td>
+<td valign="top">the rebuild path, and the readable source</td>
+</tr>
+<tr>
+<td valign="top">The build script(s) for the target toolchain(s)</td>
+<td valign="top">the command lines, so the user does not reconstruct them</td>
+</tr>
+<tr>
+<td valign="top">A short readme</td>
+<td valign="top">which script to run, and what the program does &mdash; the one
+file the compiler does not write for you</td>
+</tr>
+</table>
+<p>
+Do not ship the compiler's scratch <tt>.zig1_*.tmp</tt> files, and do not ship
+the emitted tree without the runtime sources: <tt>zig_runtime.c</tt>,
+<tt>zig_pal.c</tt>, and <tt>c_exit.c</tt> are as much part of the program as
+your own module is. The compiler writes them beside your source precisely so
+that a release is a directory rather than a dependency graph, and a release that
+drops them is not smaller, it is broken.
+</p>
+<p>
+The manual you are reading is itself a diskette artifact, and its shape is the
+same idea at the scale of a whole document set. The blueprint fixes the rules:
+pages in a language are <b>flat siblings</b> (every link is
+<tt>vol3-06-era-limits.html</tt>, never a path), assets are <b>self-contained
+per language</b> so one diskette can ship one language with no dangling
+reference, and the short page names and depth-one links are what make the whole
+thing a file copy. The generated <tt>dist/</tt> tree the blueprint describes
+&mdash; a <tt>cd/</tt> directory and <tt>floppy-1/</tt> through
+<tt>floppy-N/</tt>, one per language per medium &mdash; is the build that packs
+it. That build is out of scope for this volume and is not generated here; this
+page describes the shape, and the HOWTO's
+<tt>vol5-19-pack-for-diskette</tt> <i>(planned)</i> is where the packing itself
+will live.
+</p>
+
+<h2>Self-extracting archives</h2>
+<p>
+The era's answer to &ldquo;how do I get a multi-diskette archive onto the hard
+drive without asking the user to own an unzip tool&rdquo; was the
+<b>self-extracting archive</b>: a single <tt>.exe</tt> that contains the
+compressed files and the unpacker together, so double-clicking it is the whole
+installation. The packager builds the archive as an executable, splits it across
+floppies when it is larger than 1.44&nbsp;MB, and the user runs disk one and
+feeds the rest when prompted. It is a genuinely good fit for the machine and the
+medium, and it is the convention a 1998 release was expected to follow.
+</p>
+<p>
+This is era practice and <b>opinion, not a Z98 feature</b>, and the chapter
+marks it as such. The compiler emits C89 and a build script; it has no packer
+and no archive format, and it should not, because the format is the packager's
+tool and not the language's job. What the language contributes is that the thing
+being packed is a self-contained tree with a build that works from the current
+directory, which is exactly what an archive needs to reconstruct. The rest
+&mdash; which packer, how many disks, whether the archive installs to
+<tt>C:\PROGRAM</tt> or runs in place &mdash; is your release's convention, and
+the era's tools (the self-extractors that shipped with the common archivers, and
+the installers of the day) are what you would reach for.
+</p>
+<p>
+The honest cost is that a self-extracting archive holds a compressed copy inside
+an executable, so it is larger than the files it contains, and a split archive
+is larger still. On a machine with 32&nbsp;MB of disk to spare that is a real
+trade, and the alternative &mdash; a plain copy of the tree, uncompressed, plus
+a one-line readme &mdash; is often the better one for a small program. Reach for
+the self-extractor when the release is large enough that the floppy split is
+unavoidable or the user genuinely cannot run a build; for a few hundred kilobytes
+of C89, the copy is honest and sufficient.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> This chapter describes the shape of a release; it does
+not build one. No <tt>dist/</tt> tree is generated, no archive is packed, and
+neither OpenWatcom nor MSVC was run to produce the scripts quoted above &mdash;
+they are <b>emitted</b> by <tt>zig1&nbsp;-osw</tt> and verified as text, exactly
+as <a href="vol3-08-win9x.html">chapter&nbsp;8</a> stated. The only build that
+actually ran on this host is the emitted C89 through mingw and wine, with
+LF-normalized stdout parity. The era toolchains are the release's contract; the
+screenshot on a real Windows&nbsp;98 machine remains the operator's job, and it
+is the figure on <a href="vol3-08-win9x.html">chapter&nbsp;8</a>, not a claim
+this page makes. When a claim here and the tools on your machine disagree, the
+tools win: the output tree and the scripts are what the compiler actually wrote,
+and the method &mdash; emit, then ship the tree &mdash; is what to keep.</td>
+</tr>
+</table>
+
+<h2>Common mistakes</h2>
+<p>
+Packaging is where a program that built and ran on your machine fails on someone
+else's, and the failures are a small set. They are listed in the order they are
+usually made.
+</p>
+<p>
+<b>Shipping the compiler's scratch files.</b> The output directory contains
+<tt>.zig1_ast.tmp</tt>, <tt>.zig1_lir.tmp</tt>, and the rest of the hidden
+<tt>.zig1_*.tmp</tt> intermediate files. They are dead weight and they are not
+source. Copy the files you mean to ship, or delete the scratch files, before you
+pack.
+</p>
+<p>
+<b>Shipping the tree without the runtime sources.</b> <tt>zig_runtime.c</tt>,
+<tt>zig_pal.c</tt>, and <tt>c_exit.c</tt> are not optional extras; they are the
+program's runtime and its platform layer. A release that drops them does not
+link. The tree is self-contained on purpose &mdash; keep it that way.
+</p>
+<p>
+<b>Claiming OpenWatcom or MSVC built it when only the script was emitted.</b>
+The scripts are the contract; on this host they are quoted, not run. If you tell
+a reader the release was built with <tt>wcc386</tt>, you owe them the run that
+proves it, and on this host you do not have it. Say instead which path you
+verified &mdash; the mingw-and-wine run on the emitted C89 &mdash; and let the
+real-machine screenshot carry the rest.
+</p>
+<p>
+<b>Treating the path-derived module suffixes as stable names.</b> The
+<tt>_F63FD80A</tt> style suffix is derived from the module's source path and the
+compiler's install path. A release built from a different directory gets
+different suffixes, and a script that hard-codes a suffix from your machine will
+fail to find the file on someone else's. Ship the script the compiler wrote; do
+not hand-edit module names into it.
+</p>
+<p>
+<b>Shipping C89 without the build scripts, or scripts without the sources.</b>
+The two halves are a pair. The source tree plus the scripts is the rebuildable
+release; either one alone is incomplete, and a user who has both but not the
+matching pair cannot build.
+</p>
+<p>
+<b>Overriding the struct packing.</b> The emitted C's layout has a default
+packing, and forcing a different one (the era flags like <tt>/Zp4</tt> or
+<tt>-zp4</tt>) changes the layout the program was compiled against and breaks it.
+Build with the scripts as written; if you must change a flag, change it in the
+script and rebuild the whole tree, never half of it.
+</p>
+<p>
+<b>Assuming every target needs every script.</b> You need the script for the
+toolchain the user has, or all three if you do not know. Shipping the MSVC script
+to a user with only OpenWatcom is a file they cannot use; shipping all three is a
+slightly larger diskette. Weigh the two; do not assume.
+</p>
+<p>
+<b>Forgetting that the release is the tree, not your working directory.</b> The
+include root is the output directory, not the repository. A release packed from
+the repository root, with the source files at their development paths, will not
+build from the current-directory convention the scripts assume. Pack the output
+tree as it was emitted.
+</p>
+<p>
+<b>Reaching for the era's packers when a copy would do.</b> A self-extracting
+archive is the right tool for a large, split release and the wrong one for a few
+hundred kilobytes of C89. Use the smallest release that solves the actual
+problem.
+</p>
+
+<h2>Where to go next</h2>
+<p>
+The two halves of this chapter's subject are a build that ran and a build that
+is only a contract. The build that ran is
+<a href="vol3-08-win9x.html">chapter&nbsp;8</a>, which took
+<tt>hello.z98</tt> from source to <tt>.exe</tt> through the mingw-and-wine path
+and quoted the same emitted scripts from the generated side. The fact that lets
+the release be C89 rather than a Z98 binary is
+<a href="vol3-03-when-c89.html">chapter&nbsp;3</a>, and the interface you ship
+when the release is a library rather than an application is
+<a href="vol3-11-talking-to-c.html">chapter&nbsp;11</a>. The size of what you
+are shipping, and the discipline that keeps it inside the machine,
+is <a href="vol3-16-memory-budgets.html">chapter&nbsp;16</a>; the runtime
+checks that make a shipped binary fail loudly rather than silently are the
+<a href="vol2-01-honest-comparison.html">Volume&nbsp;II honest comparison</a>.
+The emitted names a script has to carry are the subject of
+<a href="vol3-15-debugger-workflow.html">chapter&nbsp;15</a>, and the toolchain
+frictions the scripts exist to paper over are listed in
+<a href="vol3-07-friction.html">chapter&nbsp;7</a>.
+</p>
+<p>
+The final chapter, chapter&nbsp;18, What you have learned, what is next
+<i>(planned)</i>, closes the volume: what shipping for 1998 means once you have
+done it, and where the Reference, the HOWTO, and the examples tree take you from
+here. For lookup, <a href="vol4-15-builtins.html">Volume&nbsp;IV &mdash;
+Builtins</a> catalogues the runtime surface the emitted tree carries, and
+<a href="vol4-00-title.html">the Reference volume</a> will hold the full
+command-line and build-script references when its planned pages ship. Until then,
+the emitted scripts on this page are the reference, and
+<a href="toc.html">the Contents page</a> shows the volume's shape.
+</p>
+
+<p class="navbtns">
+<a href="vol3-16-memory-budgets.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol3-16-memory-budgets.html">Memory budgets</a> | <a href="toc.html">Contents</a> | Next: <a href="toc.html">Contents</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
