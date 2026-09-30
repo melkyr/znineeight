@@ -90,14 +90,15 @@ ruled at the program level and are not open questions for Task 0:
   era-context prose stays only where verifiable.
 - Sample names in the blueprint are aspirational; each is authored fresh under
   `docs/sf/manuals/src/vol3/` and must compile+run (or, for a Win9x-only
-  program, compile and be `wine`-verified) before it ships.
+  program, compile and pass the Windows verification harness) before it ships.
 
 ### 2.2 Must cover
 
 Each chapter task reads its entry here verbatim and verifies every claim
 against `docs/reference/Language_Spec_Z98.md`, the compiler source, and — for
-era and toolchain claims — the actual toolchain (`-osw`, OpenWatcom/mingw,
-`wine`) or the blueprint's reading of the era.
+era and toolchain claims — the actual toolchain (`-osw`, the
+`scripts/win32_cross/` mingw+wine harness) or the blueprint's reading of the
+era.
 
 - **0 — Title and how to read this.** Volume III is about the discipline, not
   the syntax. It assumes Volume II's fluency. Entry/exit states; how the volume
@@ -161,14 +162,17 @@ era and toolchain claims — the actual toolchain (`-osw`, OpenWatcom/mingw,
 - **12 — WinSock under Z98.** The `std.net` extern surface (Phase 0 §3 rewrite):
   `WSAStartup`, `socket`, `bind`, `listen`, `accept`, `recv`, `send`, `select`,
   `closesocket`; the `SOCKET` unsigned-comparison rule; `fd_set` as an opaque
-  blob. Any sample is Win-only and `wine`/compile-verified. Sample
-  `http-mini.z98` (Task 0 confirms feasibility).
+  blob. Any sample is Win-only and harness-verified where wine can run it; the
+  known wine winsock failure (`10093`, cannot bind) is answered with the
+  harness's wine-side control probe, the real bind deferred to the figure.
+  Sample `http-mini.z98` (Task 0 fixes the class).
 - **13 — The Win32 Debug API.** `CreateProcess` with
   `DEBUG_ONLY_THIS_PROCESS`, `WaitForDebugEvent`, `ContinueDebugEvent`,
   `GetThreadContext`, `ReadProcessMemory`, `WriteProcessMemory`, `INT3`
   patching, and the `_MEMORY_BASIC_INFORMATION` workaround. Any sample is
-  Win-only; Task 0 rules whether a runnable/`wine`-verifiable sample exists or
-  the chapter is prose plus compile-only excerpts.
+  Win-only; Task 0 attempts the harness (including `winedbg`) and rules whether
+  a wine-verified sample exists or the chapter is prose plus compile-only
+  excerpts with the specific reason.
 - **14 — DirectX 7/8 under CINTERFACE.** COM in C89, `lpVtbl` calls, the
   `IUnknown` base, `DirectDrawCreate` / `DirectInput8Create` /
   `DirectSoundCreate`, header pain under OpenWatcom. No example (Phase 0 §3);
@@ -297,9 +301,18 @@ Binding, in addition to the Phase 0 spec (§6 HTML/CSS/JS/assets, §7 figures,
   toolchain only (Phase 0 §3). Every syntax, builtin, diagnostic, and `std`
   claim is cross-checked against `docs/reference/Language_Spec_Z98.md` and the
   compiler source; every example is compiled with the seed-built `zig1` and
-  `gcc -m32` and actually run; a `-osw`/Win9x claim is emitted with `-osw` and
-  run under `wine`. A claim that cannot be reproduced is fixed or dropped —
-  never shipped.
+  `gcc -m32` and actually run. A claim that cannot be reproduced is fixed or
+  dropped — never shipped.
+- **Windows verification (the Win9x oracle on this host).** A Win-target claim
+  is verified on the emitted C89 through the committed `scripts/win32_cross/`
+  harness: `i686-w64-mingw32-gcc` cross-compile (preferring the emitted
+  `build_target.sh mingw` branch, which carries `-lwsock32` iff `std_net` was
+  emitted), run under a dedicated 32-bit wine prefix
+  (`WINEPREFIX=/tmp/wine32 WINEARCH=win32`), with LF-normalized parity for
+  CRT-path stdout and the raw capture kept as evidence. The emitted OpenWatcom
+  `build_owc.bat`/`wcc386` path is **emitted-only** on this host — no page may
+  claim it was run. A Win-only sample the harness cannot run is a STOP and an
+  operator ruling, never a silent compile-only fallback.
 - **STOP on a real compiler defect found while verifying a claim** (Phase 0
   §9/§11): report the minimal reproduction to the operator; do not fix
   `sf/src`, do not document around the defect, do not re-scope the chapter on
@@ -349,10 +362,12 @@ Per chapter (Phase 0 §8):
 2. Every syntax/builtin claim is cross-checked against
    `docs/reference/Language_Spec_Z98.md` and, where needed, the compiler
    source.
-3. `-osw`/Win9x claims are emitted with `-osw` and run under `wine`; a
-   Win9x-only sample that cannot run on the host is compile-verified and its
-   transcript is marked as captured under `wine` or deferred to the operator's
-   screenshot.
+3. `-osw`/Win9x claims are verified with the `scripts/win32_cross/` harness
+   (mingw cross-compile + 32-bit wine run + LF-normalized parity; raw capture
+   kept as evidence) — never by emission alone. A Win9x-only sample the harness
+   cannot run (e.g. the chapter-12 winsock `10093` gap) STOPs for an operator
+   ruling; the page states the verified boundary and defers the real-machine
+   proof to the operator's screenshot figure.
 4. `bash docs/sf/manuals/check.sh` passes (links, `rel`, language bar,
    charset, forbidden list, figure 1:1, no-CSS baseline). **`build.sh` is not
    run** (Phase 0 environment deviation, §9); the search index is regenerated
@@ -380,7 +395,7 @@ cd /tmp/manual_out && timeout 120 sh build_target.sh linux <prog>
 
 | Task | Content |
 |---|---|
-| 0 | Read-only capability inventory: map every chapter's "Must cover" claims against the seed-v89 compiler, the Language Spec, and the era toolchain (`-osw`, OpenWatcom/mingw, `wine`); resolve the blueprint-vs-reality corrections (§2.1); inventory the closed Volume II residuals that touch Volume III topics; establish the coroutine API and frame ABI; establish the Win9x build path and the `std.net` socket surface; rule which of chapters 12/13 can ship a real sample; report the next free figure number (expected 33) and the predicted compiler I/F pairs. No source changes. |
+| 0 | Read-only **delta inventory + claim-scope ruling** (not a re-measure of the Volume II language surface): prove the `scripts/win32_cross/` harness end-to-end on a manual example (wine version, LF-normalized parity); classify every Volume III claim as inherited-verified / new-verified / defect→amendment / wine-verified / wine-cannot / compile-only / prose-opinion / cannot-verify-here; resolve the blueprint-vs-reality corrections (§2.1) and probe ch12/13/14 under wine; inventory the closed Volume II residuals touching Volume III topics; establish the coroutine API and frame ABI; report the next free figure number (expected 33) and the predicted compiler I/F pairs. No source changes. |
 | 1 | Chapter 2 — the inventory and the register-setter. |
 | 2–6 | Chapters 3, 4, 5, 6, 7 — the honesty spine. |
 | 7–8 | Chapters 9, 10 — coroutines (the mental shift) and the coroutine program. |
@@ -396,18 +411,23 @@ which re-verify their own claims.
 - **Coroutines (ch9/10):** the exact `@async*` names, semantics, and frame ABI
   against the seed; `std.async`'s scheduler API; whether the blueprint's
   `tasks.z98`/`echo.z98` shapes reproduce.
-- **Win9x build (ch8):** the current `-osw` target and its scripts, the exact
-  `build_owc.bat`/`wcc386` flags, and which of the blueprint's `platform_win98.h`
-  / `WINVER` / `_MBCS` claims survive the Phase 0 §3 rewrite.
+- **Win9x build (ch8):** prove the `scripts/win32_cross/` harness end-to-end on
+  a manual example (wine version, LF-normalized parity); the current `-osw`
+  target and its scripts, the `build_target.sh mingw` flags, and the fact that
+  `build_owc.bat`/`wcc386` is emitted-only on this host; which of the
+  blueprint's `platform_win98.h`/`WINVER`/`_MBCS` claims survive the Phase 0 §3
+  rewrite.
 - **Talking to C (ch11):** `extern fn` / `@cInclude` rules (module-level only),
   calling conventions, mangling, and the reserved-name rules.
-- **WinSock (ch12):** the actual `sf/src/std_net.zig` surface; whether an
-  `http-mini` sample is feasible and `wine`-verifiable.
+- **WinSock (ch12):** the actual `sf/src/std_net.zig` surface; run the harness on
+  a net entry and record the expected wine class (`wine-cannot` for bind,
+  `10093`), with the wine-side control probe as the demonstrable evidence and
+  the live bind deferred to the figure.
 - **Win32 Debug API (ch13):** whether the compiler can express the required
-  `extern` surface and whether a sample can be compile-only or `wine`-verified;
-  rule sample vs prose-only.
-- **DirectX (ch14):** confirm the example is dropped and the prose is
-  verifiable.
+  `extern` surface; cross-build a `dbg-mini` probe and attempt a wine run (and
+  `winedbg`), then rule wine-verified sample vs prose-plus-compile-only.
+- **DirectX (ch14):** confirm the example is dropped, the DirectDraw/DirectSound
+  paths are wine-untestable here, and the prose is verifiable.
 - **Debugger workflow (ch15):** the gdb-on-generated-C recipe, `--markers`, the
   `cd DIR` and absolute `-I` gotchas (`.z98dbg` dropped).
 - **Memory budgets (ch16):** `--track-memory`, the arena tiers, `-mm0`, and

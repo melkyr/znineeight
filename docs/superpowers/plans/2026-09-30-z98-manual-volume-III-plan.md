@@ -6,7 +6,7 @@
 
 **Architecture:** One plan, 19 chapter tasks plus a read-only capability inventory (Task 0) and a whole-set closeout (Task 20). The register-setter (chapter 2) and the mental shift (chapters 9–10) ship first, then the honesty spine (3–7), then the numeric fill (0, 1, 8, 11–18). Each chapter task: read its contract from the spec, verify feasibility (STOP if it fails), author the example under `src/vol3/`, capture the real transcript, write the page from the shipped template, cross-check every claim against `docs/reference/Language_Spec_Z98.md`, the compiler source, and the actual toolchain, add the figure placeholder and matching `todo-figures-list.html` row, wire the chapter's navigation, gate with `check.sh` + the index workaround, and commit. The site is correct after every commit; Task 20 is the whole-set review and verification sweep. The plan is website-only **except** operator-ruled scoped compiler I/F amendments.
 
-**Tech Stack:** Hand-authored HTML 4.0 Transitional, CSS1, 1998-era vanilla JavaScript (`doc.js`), GIF assets, Python 3 standard library (`check.py`), the seed-built `zig1` + `gcc -m32`, `-osw`/OpenWatcom + `wine` for Win9x claims, git.
+**Tech Stack:** Hand-authored HTML 4.0 Transitional, CSS1, 1998-era vanilla JavaScript (`doc.js`), GIF assets, Python 3 standard library (`check.py`), the seed-built `zig1` + `gcc -m32`, the committed `scripts/win32_cross/` harness (`i686-w64-mingw32-gcc` + 32-bit `wine`) for Win9x claims, git.
 
 **Spec:** `docs/superpowers/specs/2026-09-30-z98-manual-volume-III-design.md` (binding for this plan). Program-level spec: `docs/superpowers/specs/2026-09-20-z98-manual-phase0-design.md` (binding for every volume). Blueprint: `docs/sf/manuals/manuals_blueprint.txt` Part 5.
 
@@ -27,7 +27,8 @@
 - **Asset restrictions (phase0 §6.4).** GIF only; XBM alternates under `gfx/xbm/`.
 - **Forbidden list (phase0 §6.5, checker-enforced).** HTML5 structural tags; `<div>` structure; PNG/SVG/web fonts; external resources (any `http://`/`https://` in `href`/`src`); inline `<style>`; `<script src>` other than `doc.js`; > 2048 bytes of JS; CSS2/CSS3.
 - **Figures (phase0 §7).** Terminal transcripts are real runs in `<pre>`, not figures. Win9x screenshots are placeholder boxes plus a `todo-figures-list.html` row, 1:1 by figure number. The next free global figure number is **33** (32 is the last used by `vol2-18-print.html`); Task 0 confirms. Chapter-shipping figures in this plan: chapter 9 → 33, chapter 10 → 34, chapter 8 → 35, chapter 11 → 36, chapter 12 → 37 (only if it ships a sample), chapter 13 → 38 (only if it ships a sample).
-- **Content verification (phase0 §8; spec §7).** Every example is compiled with the seed-built `zig1` and `gcc -m32`, actually run, and its transcript matched to the prose byte-for-byte; `-osw`/Win9x claims are run under `wine`; every syntax/builtin claim is cross-checked against `docs/reference/Language_Spec_Z98.md` and source.
+- **Content verification (phase0 §8; spec §7).** Every example is compiled with the seed-built `zig1` and `gcc -m32`, actually run, and its transcript matched to the prose byte-for-byte; every syntax/builtin claim is cross-checked against `docs/reference/Language_Spec_Z98.md` and source.
+- **Windows verification — the Win9x oracle on this host (binding).** A Win-target claim is verified on the emitted C89 through the committed `scripts/win32_cross/` harness, **not** by emission alone: `i686-w64-mingw32-gcc` cross-compile (prefer the emitted `build_target.sh mingw` branch, which carries `-lwsock32` iff `std_net` was emitted), run under a dedicated 32-bit wine prefix (`WINEPREFIX=/tmp/wine32 WINEARCH=win32`, initialized once with `wineboot -i`; never touch the operator's wine config), `timeout`-guarded, stdout compared with `scripts/win32_cross/cross_parity.sh`. CRT-path stdout is CRLF under wine, so parity is **LF-normalized** (`PARITY_STRIP_CR=1`) with the raw `stdout.txt` kept as evidence; PAL `WriteFile`-path programs keep strict byte parity. **The emitted OpenWatcom `build_owc.bat`/`wcc386` path is emitted-only on this host — no page may claim it was run.** A Win-only sample the harness cannot run is a **STOP → operator ruling** (drop / prose-with-boundary / a blueprint-permitted Linux shape); a silent compile-only fallback is forbidden. The known wine winsock limitation (`socket()`/bind fails with `WSANOTINITIALISED`, 10093) is expected for chapter 12 and is answered with the harness's wine-side control probe, the real bind deferred to the operator's Win9x figure.
 - **Chapter shape (spec §4.2).** h1 title; **10–18 pages** of prose; a runnable example with its transcript where the page index gives a sample; a "Common mistakes" subsection wherever the chapter has code; a "Where to go next" cross-reference subsection; the §3 honesty pattern in chapters 2–7; one honesty callout wherever a limit/friction/era alternative is touched. No "Check yourself" (as Volume II).
 - **Cross-references (spec §4.3).** Only files that exist may be `<a>`-linked. All Volume II chapters (`vol2-00` … `vol2-20`) and the shipped Reference pages (`vol4-00-title.html`, `vol4-15-builtins.html`, `vol4-24-html-style.html`) are linkable. Planned targets (most of Volume IV, all of Volume V/VI) are named in prose with `(planned)` and no link.
 - **Navigation, non-contiguous shipping (spec §4.4).** The sidebar lists all 19 chapters on every shipped Volume III page (shipped = link, unshipped = `<i>(planned)</i>`). `rel` prev/next and the footer point at the **nearest shipped page** in that direction (or `toc.html` at the start). Task 20 restores the continuous chain; the last chapter's `next` is `vol4-00-title.html`.
@@ -54,7 +55,34 @@ Compile and run an example (recipe in `docs/sf/QUICK_REF.md`):
 cd /tmp/manual_out && timeout 120 sh build_target.sh linux <prog>
 ```
 
-Capture stdout, stderr, and `rc` as the transcript. For a `-osw`/Win9x claim, emit with `-osw` and run the `.exe` under `wine`. If the emitted script's argument order or default name differs, use the recipe in `docs/sf/QUICK_REF.md` verbatim. Every binary runs under `timeout 120`.
+Capture stdout, stderr, and `rc` as the transcript. Every binary runs under `timeout 120`.
+
+### Windows verification recipe (for Win9x claims)
+
+First capture the linux baseline, then cross-build + wine-run the same entry through the harness (`entry` is repo-relative because module resolution is CWD-relative):
+
+```bash
+# 1. linux baseline (the parity target)
+/tmp/manual_seed/zig1_5_clean -o /tmp/manual_out docs/sf/manuals/src/vol3/<prog>.z98
+cd /tmp/manual_out && timeout 120 sh build_target.sh linux <prog> > /tmp/manual_win/<prog>.linuxstdout
+
+# 2. one-time: dedicated 32-bit wine prefix (never touch the operator's wine config)
+export WINEPREFIX=/tmp/wine32 WINEARCH=win32 && wineboot -i
+
+# 3. cross-build + wine run + LF-normalized parity
+ZIG1=/tmp/manual_seed/zig1_5_clean CROSS_EXTRA_LIBS="" PARITY_STRIP_CR=1 \
+WINEPREFIX=/tmp/wine32 WINEARCH=win32 \
+  bash scripts/win32_cross/cross_parity.sh \
+  docs/sf/manuals/src/vol3/<prog>.z98 /dev/null \
+  /tmp/manual_win/<prog>.linuxstdout /tmp/manual_win/<prog>
+# verdict lines: XRUNRC=0, WINE_RC=0, PARITY=OK (raw stdout.txt kept as evidence)
+
+# build-only form (when only the cross-link is at stake):
+bash scripts/win32_cross/cross_build_run.sh /tmp/manual_seed/zig1_5_clean \
+  docs/sf/manuals/src/vol3/<prog>.z98 /tmp/manual_win/build /tmp/manual_win/<prog>.exe
+```
+
+`CROSS_EXTRA_LIBS="-lwsock32"` only when the entry's program emits `std_net` and the emitted `build_target.sh mingw` branch does not already carry it. If the emitted script's argument order or default name differs, use `docs/sf/QUICK_REF.md` verbatim. Record the wine version, the exact command, and whether the parity compare was LF-normalized (CRT-path programs) in the task report and, where it matters, on the page.
 
 ---
 
@@ -87,9 +115,9 @@ Capture stdout, stderr, and `rc` as the transcript. For a `-osw`/Win9x claim, em
 Every chapter task follows this shape. Steps are written out per task below; the shared rules are:
 
 1. **Read the sources** — the chapter's contract in spec §2.2, the blueprint Part 5 row, and the spec §3 tone rules; list the exact claims to verify.
-2. **Verify feasibility first (STOP if it fails)** where the chapter depends on an API/behavior/toolchain that may not exist (coroutines, `std.net`, Win32 APIs, `-osw`); report to the operator instead of inventing it.
-3. **Author the example(s)** under `src/vol3/`, compile+run with the seed compiler, and capture the exact transcript (or `-osw` emit + `wine` run for Win-only).
-4. **Write the page** from the `vol4-24-html-style.html` skeleton — sidebar (all 19 Volume III chapters, shipped ones linked, unshipped `(planned)`), language bar, `rel` home/up/prev/next (nearest shipped), 10–18 pages of prose per the chapter's "Must cover" list, the runnable example(s) with transcripts in `<pre>`, the §3 honesty pattern for chapters 2–7, "Common mistakes" wherever there is code, "Where to go next" (existing pages only), one honesty callout where warranted, and the Win9x note where the chapter ships a program.
+2. **Verify feasibility first (STOP if it fails)** where the chapter depends on an API/behavior/toolchain that may not exist (coroutines, `std.net`, Win32 APIs, `-osw`); report to the operator instead of inventing it. A Win-only sample must clear the "Windows verification recipe" (the harness) before it is authored; `wine-cannot` is a STOP and an operator ruling, never a compile-only fallback.
+3. **Author the example(s)** under `src/vol3/`, compile+run with the seed compiler, and capture the exact transcript; for a Win-only sample, capture the harness verdict (cross-build + wine run + LF-normalized parity) per the "Windows verification recipe".
+4. **Write the page** from the `vol4-24-html-style.html` skeleton — sidebar (all 19 Volume III chapters, shipped ones linked, unshipped `(planned)`), language bar, `rel` home/up/prev/next (nearest shipped), 10–18 pages of prose per the chapter's "Must cover" list, the runnable example(s) with transcripts in `<pre>`, the §3 honesty pattern for chapters 2–7, "Common mistakes" wherever there is code, "Where to go next" (existing pages only), one honesty callout where warranted, and the Win9x note where the chapter ships a program (the note states exactly what was verified here — mingw cross-build + wine run with LF-normalized parity — and that the OpenWatcom `build_owc.bat`/`wcc386` script is emitted, not run on this host; the real-machine screenshot stays the figure placeholder).
 5. **Cross-check every claim** against `docs/reference/Language_Spec_Z98.md`, the compiler source, and the actual toolchain.
 6. **Figures:** add the placeholder box and the matching `todo-figures-list.html` row (1:1) using the chapter's figure number (task table above).
 7. **Wire the chapter:** flip this chapter's sidebar entry from `(planned)` to a link on every shipped `en/vol3-*.html` page, in `en/toc.html`, and in `en/vol3-00-title.html` if it exists; set the new page's `rel`/footer prev/next to its nearest shipped neighbors and update those neighbors' `rel`/footer; link the chapter from `en/index.html`/`readme.html` where the volume index lists chapters.
@@ -98,24 +126,27 @@ Every chapter task follows this shape. Steps are written out per task below; the
 
 ---
 
-### Task 0: Capability inventory (read-only)
+### Task 0: Delta inventory + claim-scope ruling (read-only)
 
 **Files:**
-- Read-only: `sf/src/**` (as needed), `docs/reference/Language_Spec_Z98.md`, `docs/reference/builtins.md`, `repro/mi_matrix/EXPECTED_FAIL.md`, `docs/sf/QUICK_REF.md`, `docs/sf/manuals/**`.
+- Read-only: `.superpowers/sdd/2026-09-25-z98-manual-volume-II-plan/task-0-report.md` and the Volume II spec §10 (the inherited baseline), `sf/src/**` (as needed), `docs/reference/Language_Spec_Z98.md`, `docs/reference/builtins.md`, `repro/mi_matrix/EXPECTED_FAIL.md`, `docs/sf/QUICK_REF.md`, `scripts/win32_cross/**` (the commit-time harness), `docs/sf/manuals/**`.
 - Create (untracked): `.superpowers/sdd/2026-09-30-z98-manual-volume-III-plan/task-0-report.md`.
 - No `sf/src` edits, no commit.
 
 **Interfaces:**
-- Consumes: the spec's chapter contracts (§2.2), the ruled phase0 §3 corrections (§2.1), and the open items (§9).
-- Produces: the capability matrix the chapter tasks rely on — for each chapter 0–18, every "Must cover" claim marked **verified on seed v89** / **needs a corrected claim** / **defect → amendment**; the coroutine API + frame ABI; the Win9x build path; the `std.net` socket surface; which of chapters 12/13 can ship a real sample; the Z98 spellings the blueprint gets wrong; the closed Volume II residuals touching Volume III topics; the next free figure number; and the predicted compiler I/F pairs.
+- Consumes: the spec's chapter contracts (§2.2), the ruled phase0 §3 corrections (§2.1), the open items (§9), and the Volume II baseline (its Task 0 report + closeout §10).
+- Produces: the **delta matrix** the chapter tasks rely on — for each chapter 0–18, every "Must cover" claim classified as **inherited-verified** (cite the Volume II report line/commit), **new-verified** (probe here), **new-corrected**, **defect → amendment**, **wine-verified / wine-parity-CRLF / wine-cannot (specific gap)**, **compile-only (specific reason)**, **prose/era-opinion (marked)**, or **cannot-verify-here (why)**; the coroutine API + frame ABI; the Win9x build path proven end-to-end under wine; the `std.net` surface and the wine winsock gap; which of chapters 12/13 can ship a real sample (and in which wine class); the next free figure number; and the predicted compiler I/F pairs.
+
+**Don't-list (do not re-measure).** This is a *delta* inventory, not a re-run of the Volume II capability matrix. Do NOT re-derive the language surface already shipped and verified in Volume II (types, pointers, aggregates, arrays/slices, control flow, `defer`, error unions, optionals, arena, builtins, `print`, the stdlib tour, enums/unions/tuples), the 4-MD5/corpus/stdlib gates, self-emission, or the closed parity residuals. Cite them as inherited-verified.
 
 - [ ] **Step 1: Build the compiler** per "Compiler under test" and record its md5 (`md5sum /tmp/manual_seed/zig1_5_clean`).
-- [ ] **Step 2: Build the capability matrix** — for each chapter 0–18, reproduce each "Must cover" item (spec §2.2) against the compiler and the Language Spec with small `.z98` probes (compile+run). Cover at minimum: the coroutine builtins and frame ABI (ch9/10), the current `-osw` build path and its scripts (ch8), `extern fn`/`@cInclude`/mangling (ch11), the `std.net` surface (ch12), the Win32 extern surface for the debug API (ch13), the gdb/`--markers` workflow (ch15), `--track-memory`/`-mm0`/arena tiers (ch16), and the build-script shape (ch17). Record verdicts with the probe command and output.
-- [ ] **Step 3: Apply and verify the phase0 §3 corrections** — confirm `.z98dbg` absence, the socket-builtin removal, the current Win9x target (vs `platform_win98.h`/`WINVER`/`_MBCS`), and DirectX-header absence; record the exact replacement wording each chapter uses.
-- [ ] **Step 4: Inventory the residuals** — read `repro/mi_matrix/EXPECTED_FAIL.md` and the Volume II closeout record (its spec §10) for residuals touching Volume III topics; for each, note whether a chapter's "Must cover" item depends on it.
-- [ ] **Step 5: Confirm the figure numbering** — the highest used figure number in `todo-figures-list.html` (expected 32; next free 33) and the per-chapter assignment in Global Constraints.
-- [ ] **Step 6: Predict the compiler I/F pairs** — the claims most likely to fail (highest risk first: coroutines, `std.net`, the Win32 debug API, `-osw`), with the probe evidence.
-- [ ] **Step 7: Write the report** to the workspace path above and return a summary. No commit.
+- [ ] **Step 2: Prove the Windows path end-to-end (STOP if it fails).** Initialize `/tmp/wine32` (`wineboot -i`); run the harness on a manual example (e.g. `docs/sf/manuals/src/vol1/hello.z98` or `vol2/arena.z98`) per the "Windows verification recipe"; record `wine --version`, the exact command, `XRUNRC`/`WINE_RC`/`PARITY`, and whether the compare was LF-normalized. If wine or the mingw toolchain is missing/broken, STOP and report before any Win chapter.
+- [ ] **Step 3: Build the delta matrix.** For each of the 7 new surfaces — (a) coroutines as a programming model (ch9/10), (b) the Win9x build workflow and scripts (ch8), (c) the C-interop contract (ch11), (d) the `std.net` socket surface + the wine winsock gap (ch12), (e) the Win32 debug-API expressibility (ch13), (f) the C89/C++98/asm mixing proofs (ch3/4/5), (g) the gdb/`--markers` and `--track-memory`/`-mm0`/tiers user claims (ch15/16) — probe and classify every claim in spec §2.2 using the vocabulary above. Record the probe command and output for each new-verified claim; for each inherited claim cite the Volume II source.
+- [ ] **Step 4: Apply and verify the phase0 §3 corrections** — confirm `.z98dbg` absence, the socket-builtin removal, the current Win9x target (vs `platform_win98.h`/`WINVER`/`_MBCS`), and DirectX-header absence; record the exact replacement wording each chapter uses. Probe ch12/13/14 under wine to fix each chapter's class (ch12 expected `wine-cannot` for bind; ch13/ch14 to be measured).
+- [ ] **Step 5: Inventory the residuals** — read `repro/mi_matrix/EXPECTED_FAIL.md` and the Volume II closeout (its spec §10); for each residual touching a Volume III topic, note whether a chapter's "Must cover" item depends on it.
+- [ ] **Step 6: Confirm the figure numbering** — the highest used figure number in `todo-figures-list.html` (expected 32; next free 33) and the per-chapter assignment in Global Constraints; adjust the assignment if a Win sample drops to prose-only per Step 4.
+- [ ] **Step 7: Predict the compiler I/F pairs** — the claims most likely to fail (highest risk first: coroutines, `std.net`, the Win32 debug API, `-osw`), with the probe evidence.
+- [ ] **Step 8: Write the report** to the workspace path above and return a summary. No commit.
 
 ---
 
@@ -252,8 +283,8 @@ Every chapter task follows this shape. Steps are written out per task below; the
 - Consumes: spec §2.2 chapter 10; blueprint line 187; Task 7's verified API.
 - Produces: the worked coroutine program.
 
-- [ ] **Step 1: Verify feasibility (STOP if it fails)** — the blueprint's "one coroutine per connection / line echo server" needs a working transport; determine from Task 0 whether `std.net` runs on the Linux host. If not, use the alternative the blueprint explicitly permits: **a cooperative task demo with N tasks suspending in a known order**. Report which shape was chosen.
-- [ ] **Step 2: Author `echo.z98`** — the chosen shape; compile+run; capture the transcript (a network shape is `wine`/Win-only and compile+`wine`-verified).
+- [ ] **Step 1: Verify feasibility (STOP if it fails)** — the blueprint's "one coroutine per connection / line echo server" needs a working transport. Task 0 fixes the class: if the harness proves the network path wine-runnable, use it; if it is `wine-cannot` (the known winsock 10093 gap), use the blueprint-permitted **cooperative task demo with N tasks suspending in a known order**. Report which shape and why.
+- [ ] **Step 2: Author `echo.z98`** — the chosen shape; compile+run on Linux and capture the transcript; if the network shape is chosen, also capture the harness verdict (cross-build + wine + LF-normalized parity; `CROSS_EXTRA_LIBS="-lwsock32"` iff `std_net` is emitted and the emitted branch does not already carry it).
 - [ ] **Step 3: Write the page** — the program walked line by line; the scheduler; 10–18 pages.
 - [ ] **Step 4: Figure 34 + wire + verify** per the shared shape.
 - [ ] **Step 5: Commit** `docs(manual): add Volume III chapter 10 — a coroutine program`.
@@ -303,8 +334,8 @@ Every chapter task follows this shape. Steps are written out per task below; the
 - Consumes: spec §2.2 chapter 8; blueprint line 185; Task 0's `-osw` verdict.
 - Produces: the Win9x build chapter and its `hello.z98`.
 
-- [ ] **Step 1: Verify the build path first (STOP if it fails)** — emit `hello.z98` with `-osw`, inspect the emitted `build_owc.bat`/`build_target.bat`, build with mingw and run under `wine`; record the exact commands. Confirm which of the blueprint's `platform_win98.h`/`WINVER`/`_MBCS` claims survive the Phase 0 §3 rewrite (they do not; use the current target).
-- [ ] **Step 2: Author `hello.z98`** — the Win9x walkthrough program (from Volume I's hello, adapted); compile+`-osw` emit+`wine` run; capture.
+- [ ] **Step 1: Verify the build path first (STOP if it fails)** — run the "Windows verification recipe" harness end-to-end on `hello.z98` (cross-build with `i686-w64-mingw32-gcc`, wine run under `/tmp/wine32`, LF-normalized parity); inspect the emitted `build_target.bat`/`build_owc.bat`; record the exact commands and the `build_target.sh mingw` branch flags. Confirm which of the blueprint's `platform_win98.h`/`WINVER`/`_MBCS` claims survive the Phase 0 §3 rewrite (they do not; use the current `-osw` target). The OpenWatcom script is emitted-only — the page must not claim it was run here.
+- [ ] **Step 2: Author `hello.z98`** — the Win9x walkthrough program (from Volume I's hello, adapted); capture both transcripts: the Linux run and the harness (cross-build + wine + parity).
 - [ ] **Step 3: Write the page** — OpenWatcom, the build scripts, `_WIN32`, running under 86Box/the era OS; 10–18 pages.
 - [ ] **Step 4: Figure 35 + wire + verify** per the shared shape.
 - [ ] **Step 5: Commit** `docs(manual): add Volume III chapter 8 — building for Win9x`.
@@ -341,8 +372,8 @@ Every chapter task follows this shape. Steps are written out per task below; the
 - Consumes: spec §2.2 chapter 12; blueprint line 189; Task 0's `std.net` surface verdict.
 - Produces: the WinSock chapter; the `std.net`-based sample if feasible.
 
-- [ ] **Step 1: Verify the `std.net` surface first (STOP/report if the blueprint's API does not exist)** — enumerate the actual `sf/src/std_net.zig` extern surface; confirm the `WSAStartup`/`socket`/`bind`/`listen`/`accept`/`recv`/`send`/`select`/`closesocket` shapes and the `SOCKET` unsigned-comparison rule; confirm `fd_set` is an opaque blob.
-- [ ] **Step 2: Rule the sample** — if a Win-only `http-mini.z98` compiles and is `wine`-verifiable, author it; otherwise the chapter ships compile-only excerpts and no figure, and the task says so.
+- [ ] **Step 1: Verify the `std.net` surface first (STOP/report if the blueprint's API does not exist)** — enumerate the actual `sf/src/std_net.zig` extern surface; confirm the `WSAStartup`/`socket`/`bind`/`listen`/`accept`/`recv`/`send`/`select`/`closesocket` shapes and the `SOCKET` unsigned-comparison rule; confirm `fd_set` is an opaque blob. Then run the harness on a net entry and record its verdict, including the expected wine limitation (`socket()`/bind fails with `WSANOTINITIALISED`, 10093).
+- [ ] **Step 2: Rule the sample (operator)** — if the harness proves the Win-only `http-mini.z98` path wine-runnable, author it and take the parity transcript; if it is `wine-cannot` (the 10093 gap), ship the chapter with the harness's wine-side control-probe evidence (the socket surface it *can* demonstrate) and defer the live bind/serve to the real-Win9x figure, stating the boundary on the page. A compile-only fallback still needs the operator ruling.
 - [ ] **Step 3: Write the page** — the socket surface, the comparison rule, `fd_set`; 10–18 pages.
 - [ ] **Step 4: Figure 37 (iff a sample shipped) + wire + verify** per the shared shape.
 - [ ] **Step 5: Commit** `docs(manual): add Volume III chapter 12 — WinSock under Z98`.
@@ -360,8 +391,8 @@ Every chapter task follows this shape. Steps are written out per task below; the
 - Consumes: spec §2.2 chapter 13; blueprint line 190; Task 0's Win32-extern feasibility verdict.
 - Produces: the debug-API chapter; the sample if feasible.
 
-- [ ] **Step 1: Verify expressibility first (STOP/report if it fails)** — can the compiler express the required `extern` surface (`CreateProcess`, `WaitForDebugEvent`, `ContinueDebugEvent`, `GetThreadContext`, `ReadProcessMemory`, `WriteProcessMemory`, `INT3` patching, `_MEMORY_BASIC_INFORMATION`)? At minimum compile a probe; run under `wine` only if the sample is feasible.
-- [ ] **Step 2: Rule the sample** — runnable/`wine`-verifiable `dbg-mini.z98`, or prose + compile-only excerpts with no figure. Say which.
+- [ ] **Step 1: Verify expressibility first (STOP/report if it fails)** — can the compiler express the required `extern` surface (`CreateProcess`, `WaitForDebugEvent`, `ContinueDebugEvent`, `GetThreadContext`, `ReadProcessMemory`, `WriteProcessMemory`, `INT3` patching, `_MEMORY_BASIC_INFORMATION`)? Cross-build a `dbg-mini` probe through the harness and attempt a wine run (and `winedbg` where useful); record the class (`wine-verified` / `wine-parity-CRLF` / `wine-cannot` with the exact failure).
+- [ ] **Step 2: Rule the sample** — a `wine`-verified `dbg-mini.z98`, or (if `wine-cannot`) prose + compile-only excerpts with the specific reason and no figure, pending the operator's ruling.
 - [ ] **Step 3: Write the page** — the API walkthrough and the `_MEMORY_BASIC_INFORMATION` workaround; 10–18 pages.
 - [ ] **Step 4: Figure 38 (iff a sample shipped) + wire + verify** per the shared shape.
 - [ ] **Step 5: Commit** `docs(manual): add Volume III chapter 13 — the Win32 Debug API`.
@@ -378,7 +409,7 @@ Every chapter task follows this shape. Steps are written out per task below; the
 - Consumes: spec §2.2 chapter 14; blueprint line 191; the phase0 §3 ruling (example dropped).
 - Produces: the DirectX era-context chapter, no sample.
 
-- [ ] **Step 1: Verify what prose is defensible** — confirm no DirectX headers/example exist in the repo (phase0 §3); keep era-context statements only where verifiable (to the extent the declared target/COM-in-C89 facts are checkable), and mark opinion.
+- [ ] **Step 1: Verify what prose is defensible** — confirm no DirectX headers/example exist in the repo (phase0 §3) and record that the DirectDraw/DirectSound paths are **wine-untestable here** (the era-OS graphics/sound stack is not a wine capability we rely on); keep era-context statements only where verifiable (to the extent the declared target/COM-in-C89 facts are checkable), mark opinion, and state the boundary on the page.
 - [ ] **Step 2: Write the page** — COM in C89, `lpVtbl` calls, the `IUnknown` base, `DirectDrawCreate`/`DirectInput8Create`/`DirectSoundCreate`, header pain under OpenWatcom; explicitly no sample (ruled). 10–18 pages.
 - [ ] **Step 3: Wire + verify + commit** `docs(manual): add Volume III chapter 14 — DirectX under CINTERFACE`.
 
@@ -426,7 +457,7 @@ Every chapter task follows this shape. Steps are written out per task below; the
 - Consumes: spec §2.2 chapter 17; blueprint line 194.
 - Produces: the packaging chapter, no sample (no `dist/` generation).
 
-- [ ] **Step 1: Verify what reproduces** — the release shape (`build_owc.bat` convention, what goes on the diskette, self-extracting archives) only to the extent the repo's scripts and Task 0 support it; mark opinion; never generate `dist/`.
+- [ ] **Step 1: Verify what reproduces** — the release shape (`build_owc.bat` convention — **emitted, not run on this host**, what goes on the diskette, self-extracting archives) only to the extent the repo's scripts and Task 0 support it; mark opinion; never generate `dist/`.
 - [ ] **Step 2: Write the page** — the release shape and the era distribution constraints; 10–18 pages.
 - [ ] **Step 3: Wire + verify + commit** `docs(manual): add Volume III chapter 17 — packaging and shipping`.
 
@@ -458,13 +489,13 @@ Every chapter task follows this shape. Steps are written out per task below; the
 - Consumes: every chapter task; the amendment tasks if any.
 - Produces: the verified, continuously-navigable Volume III; the spec status; the rotated seed iff the fixed point moved.
 
-- [ ] **Step 1: Re-run every example** — all `docs/sf/manuals/src/vol3/*.z98` compile+run on the current seed; each page transcript matches byte-for-byte (`-osw`+`wine` for Win-only).
+- [ ] **Step 1: Re-run every example** — all `docs/sf/manuals/src/vol3/*.z98` compile+run on the current seed; each page transcript matches byte-for-byte; every Win-only sample re-runs through the "Windows verification recipe" harness (cross-build + wine + LF-normalized parity).
 - [ ] **Step 2: Navigation continuity** — no shipped Volume III chapter carries `(planned)` in its own row; the `rel` chain is continuous `toc.html → vol3-00 → … → vol3-18 → vol4-00-title.html`; every sidebar lists 19 chapters; `vol2-20-whats-next.html` and any other page naming Volume III as `(planned)` links the title page.
 - [ ] **Step 3: Figure audit** — `todo-figures-list.html` is 1:1 with on-page placeholders, numbers unique, no gaps.
 - [ ] **Step 4: Gates** — `bash docs/sf/manuals/check.sh` passes; the `/tmp` index regeneration byte-matches the committed `en/search-data.js` idempotently. Do NOT run `build.sh`.
 - [ ] **Step 5: Spec status** — set the Volume III spec's status to **Implemented** and record the closeout (rulings, seed rotation, residuals, environment deviation).
 - [ ] **Step 6: Seed rotation (iff an amendment moved the fixed point)** — `bash scripts/seed/archive_seed.sh <zig1> <gen_dir> release/seed/zig1-seed.tgz --update-changelog`; verify the post-rotation two-hop closure; update the QUICK_REF "Current seed" block.
-- [ ] **Step 7: Whole-set review** — dispatch the final whole-branch review over the Volume III range; fix or park per the loop.
+- [ ] **Step 7: Whole-set review + Windows-claim audit** — no shipped Volume III page asserts an OpenWatcom run or a Win9x run the harness did not perform; every Win9x note names what was verified (mingw+wine, LF-normalized) and what is the figure's job. Also qualify any already-shipped Volume I/II sentence that states `wcc386`/`build_owc.bat` ran without evidence (docs-only; touching pages outside Volume III needs an operator ruling). Then dispatch the final whole-branch review over the Volume III range; fix or park per the loop.
 - [ ] **Step 8: Commit** `docs(manual): Volume III closeout — whole-set review and verification sweep`.
 
 ---
@@ -475,7 +506,7 @@ Every chapter task follows this shape. Steps are written out per task below; the
 
 **Placeholder scan.** No `TBD`/`TODO`; the two genuinely Task-0-dependent samples (ch12, ch13) are written as explicit conditional branches with the ruling recorded in the task, not left vague. The ch10 sample has the blueprint's own permitted alternative (cooperative task demo) written in as the fallback.
 
-**Consistency.** Chapter numbers, page filenames, sample names, task numbers, and figure numbers are consistent between the spec's §2.1 table and this plan's task headers (Task 1 = ch2 … Task 19 = ch18; Task 20 closeout; figures 33–38). The harness/evidence vocabulary (seed v89 fixed point `8216fedc…`, `check.sh`, the `/tmp` index workaround, `-osw`+`wine`) is identical throughout.
+**Consistency.** Chapter numbers, page filenames, sample names, task numbers, and figure numbers are consistent between the spec's §2.1 table and this plan's task headers (Task 1 = ch2 … Task 19 = ch18; Task 20 closeout; figures 33–38). The evidence vocabulary (seed v89 fixed point `8216fedc…`, `check.sh`, the `/tmp` index workaround, the `scripts/win32_cross/` harness + 32-bit wine prefix + LF-normalized parity) is identical throughout.
 
 ## Execution Handoff
 
