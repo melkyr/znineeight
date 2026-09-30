@@ -12,11 +12,13 @@
 #   extra args: additional link libs/flags appended to the win32 link line
 #
 # Pipeline (Task-0 recipe):
-#   1. (cd repo-root && <zig1> --dump-c89 --output-dir <workdir>/dump <entry>)
+#   1. (cd repo-root && <zig1> -osw --dump-c89 --output-dir <workdir>/dump <entry>)
 #      gate: rc=0 AND 0 'error[' AND 0 'PANIC'
 #   2. i686-w64-mingw32-gcc -std=c89 -m32 -Wall -Wno-long-long -Wno-pointer-sign
 #      -I sf/src/include  -c  each emitted .c -> .o
-#   3. i686-w64-mingw32-gcc -m32 -o <exe_out> *.o zig_runtime.c zig_pal.c [extra libs]
+#   3. i686-w64-mingw32-gcc -m32 -o <exe_out> *.o zig_runtime.c zig_pal.c -lwsock32 [extra libs]
+#      (-lwsock32 is unconditional: every std-importing entry emits std_net, and
+#       the lib is harmless on non-net programs.)
 #
 # Prints one machine-readable verdict line:  XRUNRC=<value>
 #   <value> 0        build+link OK
@@ -54,7 +56,7 @@ fail() {
 
 # ---- Step 1: dump C89 (fresh dir, repo-root CWD) ---------------------------
 (
-    cd "$ROOT" && timeout "$TIMEOUT_DUMP" "$ZIG1" --dump-c89 --output-dir "$DUMPDIR" "$ENTRY"
+    cd "$ROOT" && timeout "$TIMEOUT_DUMP" "$ZIG1" -osw --dump-c89 --output-dir "$DUMPDIR" "$ENTRY"
 ) >"$DUMPDIR/dump.log" 2>&1
 DUMP_RC=$?
 NERR=$(grep -c 'error\[' "$DUMPDIR/dump.log" 2>/dev/null || true)
@@ -101,7 +103,7 @@ fi
 
 # ---- Step 3: mingw link -> exe ---------------------------------------------
 if ! timeout "$TIMEOUT_CC" "$CROSS_GCC" -m32 -o "$EXE_OUT" \
-    "$DUMPDIR"/*.o "${LINK_RT[@]}" \
+    "$DUMPDIR"/*.o "${LINK_RT[@]}" -lwsock32 \
     "${EXTRA_LIBS[@]}" >>"$DUMPDIR/ld.log" 2>&1; then
     tail -20 "$DUMPDIR/ld.log"
     fail LINKFAIL

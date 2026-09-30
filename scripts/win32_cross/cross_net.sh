@@ -21,13 +21,12 @@
 # the demo block ('i') and then breaks the game loop ('q') -> main returns ->
 # full stdout flushed. Deterministic 3x.
 #
-# Known win32 gap (recorded, NOT fixed — zero source edits): the F6 std_net
-# emission's init()/cleanup() are empty stubs that never call WSAStartup, so on
-# the win32 path socket() fails with WSANOTINITIALISED (10093) under wine (and
-# would on real win9x). mud_server cannot create its server socket and exits;
-# rogue net_main catches the init failure and degrades to local-only mode. A
-# wine-side control probe proves wine's winsock surface (bind/listen/connect-to-
-# 0.0.0.0/accept/select/send/recv) works once WSAStartup has run.
+# Winsock under wine (post-S2 WSAStartup fix, re-measured 2026-09-30): std_net
+# now calls WSAStartup, so socket()/bind succeed under wine — the old
+# WSANOTINITIALISED (10093) gap is SUPERSEDED. Volume III Task 0 measured a
+# successful mud_server bind under wine (server stdout md5 66c8f0ab…, client
+# 93147d0f…). The Phase A/B verdict text below still carries the pre-fix
+# expectations and needs a re-baseline run before it is used as a gate.
 #
 # Output is LF-normalized before parity (PARITY_STRIP_CR criterion, AMENDMENT 1):
 # CRT text mode translates \n -> \r\n on the std_io fwrite path under win32.
@@ -73,7 +72,7 @@ port4000_listen() {
 build_from() {
     local cwd=$1 entry=$2 outdir=$3 exe=$4; shift 4
     rm -rf "$outdir"; mkdir -p "$outdir/dump"
-    (cd "$cwd" && timeout "$TIMEOUT_DUMP" "$ZIG1" --dump-c89 --output-dir "$outdir/dump" "$entry") >"$outdir/dump.log" 2>&1
+    (cd "$cwd" && timeout "$TIMEOUT_DUMP" "$ZIG1" -osw --dump-c89 --output-dir "$outdir/dump" "$entry") >"$outdir/dump.log" 2>&1
     local rc=$?
     local nerr npan
     nerr=$(grep -c 'error\[' "$outdir/dump.log" 2>/dev/null || true)
@@ -208,7 +207,7 @@ if ! build_from "$ROOT" "examples/z98/mud_server/main.zig" "$W/A-win-mud" \
 fi
 echo "  A-win build OK (link set: zig_runtime.c + zig_pal.c + -lwsock32)"
 
-# A2: wine run (mud_server cannot bind — known WSAStartup gap) ---------------
+# A2: wine run (post-WSAStartup: mud_server IS expected to bind) -------------
 ( timeout -k 2 12 env WINEPREFIX="$WINEPREFIX" WINEARCH=win32 \
       wine "$W/A-win-mud/prog.exe" </dev/null \
       >"$W/A-win.out" 2>"$W/A-win.err" )
@@ -220,9 +219,9 @@ timeout 6 "$W/A-lin-cli/prog" >"$W/A-win-cli.out" 2>"$W/A-win-cli.err"
 echo "    linux client vs wine server rc=$? (connect refused expected, no listener)"
 
 echo "  A verdict: wine stdout = '$(cat "$W/A-win.out")'"
-echo "    cross rc=0 | wine rc=$A_WIN_RC | parity=DIFF vs linux golden (server cannot"
-echo "    bind: socket()=WSANOTINITIALISED 10093, no WSAStartup in F6 std_net init)"
-echo "    class=gap (source/emission) — NOT environment, NOT toolchain"
+echo "    cross rc=0 | wine rc=$A_WIN_RC | Task 0 (2026-09-30) measured a successful"
+echo "    mud_server bind under wine post-WSAStartup (server 66c8f0ab…, client"
+echo "    93147d0f…); the old 10093 gap is superseded — re-baseline this phase."
 
 # ---------------------------------------------------------------------------
 echo
@@ -257,15 +256,15 @@ if cmp -s "$W/B-srvrun/stdout.norm" "$NETEXP"; then
 else
     echo "  B parity: PARITY=DIFF (LF-normalized) — expected signature:"
     diff "$W/B-srvrun/stdout.norm" "$NETEXP"
-    echo "  B class=gap (WSAStartup) — server degraded to local-only; every other"
-    echo "    line byte-identical to the net golden (boot + demo block)"
+    echo "  B class=re-baseline-needed — the post-WSAStartup server no longer"
+    echo "    degrades to local-only; update this phase's golden before gating"
 fi
 
 # B3: wine client against the degraded (local-only) server -------------------
 timeout 6 env WINEPREFIX="$WINEPREFIX" WINEARCH=win32 \
     wine "$W/B-win-cli/prog.exe" >"$W/B-srvrun/client.out" 2>"$W/B-srvrun/client.err"
 B_CLI_RC=$?
-echo "  B-win client: rc=$B_CLI_RC (socket() fails 10093 — no listener, expected)"
+echo "  B-win client: rc=$B_CLI_RC (post-WSAStartup: a listener may be up; re-baseline)"
 
 # ---------------------------------------------------------------------------
 echo
@@ -281,6 +280,6 @@ if [ "$FAILED" -ne 0 ]; then
     exit 1
 fi
 echo
-echo "NET VERDICT: evidence reproduced (win32 WSAStartup gap confirmed; env clean)"
+echo "NET VERDICT: evidence reproduced (post-WSAStartup wine results; env clean)"
 echo "evidence: $W"
 exit 0
