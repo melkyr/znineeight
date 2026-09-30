@@ -1,0 +1,714 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Honesty: When Assembly Is the Better Choice</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume III honesty when assembly is the better choice inner loops ISR interrupt handler emitted C gcc -S hand-written asm extern fn -ffast -fsafe checked arithmetic drop to assembly link back volatile memory-mapped I/O calling convention">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol3-04-when-cpp98.html">
+<link rel="next" href="toc.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume III &mdash; Working in the Era</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+How to read this <i>(planned)</i><br>
+The 1998 machine <i>(planned)</i><br>
+<a href="vol3-02-honesty-inventory.html">Honesty: what Z98 does and does not give you</a><br>
+<a href="vol3-03-when-c89.html">Honesty: when C89 is the better choice</a><br>
+<a href="vol3-04-when-cpp98.html">Honesty: when C++98 is the better choice</a><br>
+<b>Honesty: when assembly is the better choice</b><br>
+Honesty: what you cannot do on a Pentium II <i>(planned)</i><br>
+Honesty: the friction you will hit <i>(planned)</i><br>
+Building for Win9x <i>(planned)</i><br>
+Coroutines &mdash; the third big shift <i>(planned)</i><br>
+A coroutine program <i>(planned)</i><br>
+Talking to C <i>(planned)</i><br>
+WinSock under Z98 <i>(planned)</i><br>
+The Win32 Debug API <i>(planned)</i><br>
+DirectX under CINTERFACE <i>(planned)</i><br>
+The debugger workflow <i>(planned)</i><br>
+Memory budgets <i>(planned)</i><br>
+Packaging and shipping <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Honesty: When Assembly Is the Better Choice</h1>
+<p>
+<a href="vol3-03-when-c89.html">Chapter&nbsp;3</a> said when C89 wins, and
+<a href="vol3-04-when-cpp98.html">chapter&nbsp;4</a> said when C++98 wins. This
+is the third and last of those chapters, and it is the deepest step down the
+machine. Below C89 there is one more language, and it is the only one the
+processor actually understands. There are places where it is the better choice,
+and the honest move is to say which ones and then show how to drop into it and
+come back.
+</p>
+<p>
+This is not a retreat, and it is not a claim that Z98's output is bad. It is
+the same tradeoff the whole volume is written in, moved one rung down. Z98 emits
+C89; a C89 compiler turns that into assembly; and the assembly is a language you
+can write by hand where the generated sequence is not the sequence you need.
+The question, as in the previous two chapters, is per routine: does this one
+function need an instruction sequence the compiler will not give it? Sometimes
+the answer is yes, and assembly is the right tool. Most of the time it is no,
+and the first thing to do is not write assembly at all.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffffc8">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-note.gif" width="16" height="16" alt="Note"></td>
+<td><b>Era framing.</b> Statements here about the era's machines, assemblers,
+and interrupt hardware are era context, and where a statement is an opinion the
+text says so. Statements about Z98 are checked against
+<tt>docs/reference/Language_Spec_Z98.md</tt>, the compiler source, and the
+compiler built from the committed seed. The assembly on this page was produced
+on this host with <tt>gcc -m32 -S</tt> and the seed-built compiler, and the
+hand-written source is GNU assembler input. The era's assemblers &mdash;
+MASM/TASM on DOS or Windows, or OpenWatcom's <tt>wasm</tt> &mdash; do not run on
+this host, and nothing here claims they were run. The instruction set is the
+same 32-bit x86; the syntax and the assembler are not.</td>
+</tr>
+</table>
+
+<h2>What you expect</h2>
+<p>
+A reader arriving from a modern toolchain expects one of two things, and both are
+wrong for this machine. The first is that you can drop a small inline assembly
+block into a function the way modern C compilers allow, and let the compiler
+schedule around it. Z98 offers no such thing, and the reason is not an
+oversight. The second is the opposite: that a language which emits readable C89
+has made assembly unnecessary, so the chapter is only a formality. That is also
+wrong. Emitted C runs through a C compiler, and a C compiler produces the
+sequence its own costs and rules lead it to &mdash; not the sequence a specific
+routine needs.
+</p>
+<p>
+The right frame is the one the volume keeps using. There is no rivalry between
+Z98 and the layers under it; there is a stack, and you are allowed to stand on
+whatever rung the job needs. Z98 is a checked language that emits C89; C89 is a
+portable language that a compiler turns into assembly; assembly is what the
+processor runs. Each rung gives up checking and portability and gains control.
+The question this chapter answers is which routines earn that trade, and how to
+make the step down and back without leaving the type checker everywhere else.
+</p>
+<p>
+There is one expectation worth setting aside before the evidence, because it is
+where readers most often waste a day. Assembly on this target is not a way to
+make a whole program faster. A hand-written loop beats the compiler on a short,
+hot, well-understood routine; across a program, the compiler usually wins,
+because it sees the whole function and the register allocator is better at book
+keeping than a person. The chapter says plainly that for a hot inner loop or an
+interrupt handler, assembly is sometimes the better choice, and it says just as
+plainly that for almost everything else it is not.
+</p>
+
+<h2>What you get</h2>
+<p>
+Four things, in the order you meet them. First, the C89 emission itself, so you
+can see exactly what the compiler produces for a trivial function and what the
+default run-time checks cost. Second, the honest fact that inline assembly is
+not a Z98 feature, and what to use instead. Third, the two ways to reach
+assembly anyway: drop to the emitted C, or write a routine by hand. Fourth, the
+cases where that step is the better choice &mdash; an inner loop, an interrupt
+handler &mdash; and the case where Z98 already has the feature and no assembly is
+needed at all.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>The case</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Why assembly is the better choice</b></th>
+</tr>
+<tr>
+<td valign="top">A hot inner loop the compiler will not tighten</td>
+<td valign="top">a measured leaf routine beats the emitted C when the
+instruction sequence, not the algorithm, is the cost</td>
+</tr>
+<tr>
+<td valign="top">An interrupt handler (ISR)</td>
+<td valign="top">the hardware and the OS fix the entry convention, and the entry
+sequence is assembly by definition</td>
+</tr>
+<tr>
+<td valign="top">An instruction the C compiler will not emit</td>
+<td valign="top">port I/O, <tt>rdtsc</tt>, <tt>lock</tt> prefixes, and
+MMX/SSE are reachable only through an assembler</td>
+</tr>
+<tr>
+<td valign="top">Memory-mapped I/O</td>
+<td valign="top">this one is <i>not</i> a reason to use assembly: Z98 has
+<tt>*volatile T</tt> and <tt>@volatileCast</tt> for it, below</td>
+</tr>
+</table>
+
+<h3>The emission is not assembly</h3>
+<p>
+Start with what the compiler actually produces. This Z98 function returns its
+argument doubled, and it is deliberately trivial so the generated code is easy
+to read:
+</p>
+<pre>
+fn twice(x: i32) i32 {
+    return x + x;
+}
+</pre>
+<p>
+Compiled with the default safety mode, <tt>-fsafe</tt>, the emitted C is not a
+single expression. It carries the compiler's run-time checks, because integer
+overflow is one of the six checks that are on by default. The six are the
+checked integer cast, division or modulo by zero, the shift count, the null
+unwrap, an out-of-bounds index, and integer overflow:
+</p>
+<pre>
+/* twice */
+int zF_B4A7D5F3_twice(int x) {
+    int zT_1;
+    unsigned int zT_2;
+    unsigned char zT_4;
+    zT_1 = zig_wrap_add_s(((long long)(x)), ((long long)(x)), 32u);
+    zT_2 = zig_overflow_flag_add_s(((long long)(x)), ((long long)(x)), 32u);
+    zT_4 = zT_2 == (unsigned int)(0);
+    if (!(zT_4)) { pal_trap(); }
+    return zT_1;
+}
+</pre>
+<p>
+That is a faithful translation of a checked add, and it is not what a
+hand-written leaf looks like. The same function emitted with <tt>-ffast</tt>,
+which disables the six run-time checks, is the expression you wrote:
+</p>
+<pre>
+/* twice */
+int zF_B4A7D5F3_twice(int x) {
+    return (int)(x + x);
+}
+</pre>
+<p>
+This contrast is the first and most important fact of the chapter. The checks
+are a real cost, they are on by default, and the first thing to reach for when a
+routine is too slow is <tt>-ffast</tt>, not an assembler. The compiler's own
+self-build uses <tt>-ffast</tt>; a user program defaults to <tt>-fsafe</tt>. The
+trade is the one
+<a href="vol3-02-honesty-inventory.html">chapter&nbsp;2</a> described: the
+checks are why you chose Z98, and <tt>-ffast</tt> is how you tell the compiler
+you will accept the C semantics for a whole build when that is what the program
+needs. Only after <tt>-ffast</tt> has been measured is assembly the next
+question.
+</p>
+<p>
+The other thing to notice is the name. The function you wrote as <tt>twice</tt>
+is emitted as <tt>zF_B4A7D5F3_twice</tt>. Z98 mangles its identifiers, so the
+symbol in the object file is not the name in your source. That matters later,
+when a hand-written routine has to carry a name the linker can see, and it is
+the same mangling <a href="vol3-03-when-c89.html">chapter&nbsp;3</a> used to
+show that a Z98 module and a C89 module can each define an ordinary name without
+colliding.
+</p>
+
+<h3>There is no inline assembly</h3>
+<p>
+Z98 has no inline assembly, and this is a language fact, not a policy. There is
+no <tt>asm</tt> keyword and no assembly builtin; a probe that writes the C and
+C++ form is rejected before any code is emitted:
+</p>
+<pre>
+$ /tmp/manual_seed/zig1_5_clean -o out inline_asm.z98
+inline_asm.z98:4:8: error[2000]: expected ';' but found token
+    asm volatile ("nop");
+        ^^^^^^^^
+inline_asm.z98:4:8: error[2000]: unexpected token
+    asm volatile ("nop");
+        ^^^^^^^^
+inline_asm.z98:5:0: error[2000]: expected expression
+}
+^
+inline_asm.z98:5:0: error[2000]: unexpected token
+}
+^
+</pre>
+<p>
+The token <tt>asm</tt> is not recognized, so the parser stops at it. The only
+assembly in the tree lives in the fixed platform layer &mdash; the trap sequence
+in <tt>zig_pal.c</tt> and bytes inside the seed runtime &mdash; and that is not
+part of the language. The parser has no <tt>asm</tt> token and the semantic pass
+has no assembly builtin, so this is not something a future chapter can promise;
+the feature does not exist.
+</p>
+<p>
+The way over is the one the previous chapters already established: an assembly
+routine is a separately compiled object, and Z98 calls it through an ordinary
+<tt>extern</tt> declaration and the C ABI. You do not inline assembly into Z98;
+you write it beside Z98 and link it, exactly as
+<a href="vol3-03-when-c89.html">chapter&nbsp;3</a> linked a C function.
+</p>
+
+<h3>Dropping to the emitted C</h3>
+<p>
+The first path down is to start from the C the compiler already emitted and turn
+it into assembly with the host compiler. The emitted main translation unit
+contains the call to the hand-written symbol, and compiling that unit with
+<tt>gcc -m32 -S</tt> produces the assembly the C compiler would have assembled:
+</p>
+<pre>
+$ mkdir -p out && /tmp/manual_seed/zig1_5_clean -o out asm.z98
+$ cd out && cp ../asm_forty_two.h ../asm_forty_two.s .
+$ gcc -m32 -S -I . asm_FF935E89.c -o asm.s
+$ grep asm_forty_two asm.s
+	call	asm_forty_two@PLT
+</pre>
+<p>
+The assembly for the checked <tt>twice</tt> is the second thing worth reading,
+because it makes the run-time-check cost concrete. This is the emitted C
+compiled to assembly, with the CFA directives removed for length:
+</p>
+<pre>
+zF_B4A7D5F3_twice:
+	pushl	%ebp
+	movl	%esp, %ebp
+	pushl	%esi
+	pushl	%ebx
+	subl	$16, %esp
+	call	__x86.get_pc_thunk.si
+	addl	$_GLOBAL_OFFSET_TABLE_, %esi
+	movl	8(%ebp), %eax
+	movl	%eax, %ecx
+	movl	%eax, %ebx
+	sarl	$31, %ebx
+	movl	8(%ebp), %eax
+	cltd
+	subl	$4, %esp
+	pushl	$32
+	pushl	%ebx
+	pushl	%ecx
+	pushl	%edx
+	pushl	%eax
+	call	zig_wrap_add_s
+	addl	$24, %esp
+	movl	%eax, -12(%ebp)
+	movl	8(%ebp), %eax
+	movl	%eax, %ecx
+	movl	%eax, %ebx
+	sarl	$31, %ebx
+	movl	8(%ebp), %eax
+	cltd
+	subl	$4, %esp
+	pushl	$32
+	pushl	%ebx
+	pushl	%ecx
+	pushl	%edx
+	pushl	%eax
+	call	zig_overflow_flag_add_s
+	addl	$24, %esp
+	movl	%eax, -16(%ebp)
+	cmpl	$0, -16(%ebp)
+	sete	%al
+	movb	%al, -17(%ebp)
+	cmpb	$0, -17(%ebp)
+	jne	.L181
+	movl	%esi, %ebx
+	call	pal_trap@PLT
+.L181:
+	movl	-12(%ebp), %eax
+	leal	-8(%ebp), %esp
+	popl	%ebx
+	popl	%esi
+	popl	%ebp
+	ret
+</pre>
+<p>
+Read it against the four lines <tt>-ffast</tt> produces. The checked version
+sets up a frame, calls a wrap helper, calls an overflow-flag helper, branches on
+the flag, and calls a trap. The unchecked version is a load, an add, and a
+return. Neither is wrong: the first is the semantics you asked for, and the
+second is the semantics you accepted. The point for this chapter is that the
+generated assembly is a starting point you can read and, if a routine genuinely
+needs it, take over. The <tt>__x86.get_pc_thunk</tt> and GOT setup are a modern
+position-independent Linux artifact of this host; the era's non-PIC flat target
+does not carry them.
+</p>
+<p>
+Dropping to the emitted C means this: take the emitted <tt>.c</tt>, compile it
+with <tt>gcc -m32 -S</tt>, keep the resulting <tt>.s</tt> beside your source,
+hand-edit the routine whose sequence you need to change, assemble it, and put it
+on the link line in place of the compiler's object for that unit. You are not
+editing the compiler and you are not forking the emitter; you are taking one
+translation unit down a rung.
+</p>
+
+<h3>Hand-written assembly, linked back</h3>
+<p>
+The second path is to write the routine by hand and call it from Z98. This is
+the direct analogue of the C89 seam, with a <tt>.s</tt> in place of the
+<tt>.c</tt>. The hand-written side is a leaf routine that returns a constant:
+</p>
+<pre>
+	.text
+	.globl asm_forty_two
+	.type asm_forty_two, @function
+asm_forty_two:
+	movl $42, %eax
+	ret
+	.size asm_forty_two, .-asm_forty_two
+</pre>
+<p>
+Its prototype goes in a header, for the same reason the previous chapter put
+<tt>c_add</tt>'s prototype in one: a bare non-variadic <tt>extern</tt> gets no
+emitted prototype, so without a header the generated C call is an implicit
+declaration to the C compiler.
+</p>
+<pre>
+/* asm_forty_two.h */
+int asm_forty_two(void);
+</pre>
+<p>
+The Z98 side declares the routine as <tt>extern "c"</tt>, includes the header,
+and calls it like any other function:
+</p>
+<pre>
+@cInclude("asm_forty_two.h");
+
+const std = @import("std");
+
+extern "c" fn asm_forty_two() i32;
+
+fn twice(x: i32) i32 {
+    return x + x;
+}
+
+pub fn main() void {
+    std.io.print("twice={}\n", .{twice(21)});
+    std.io.print("asm={}\n", .{asm_forty_two()});
+}
+</pre>
+<p>
+The emitted main translation unit contains an ordinary call to the declared
+name, and the compiler writes the prototype into the module header from the
+<tt>@cInclude</tt>:
+</p>
+<pre>
+    std_print("asm=");
+    zT_4 = asm_forty_two();
+    zF_9FD0BAD6_printI32(zT_4);
+</pre>
+<p>
+Compile, assemble the hand-written source, link everything together, and run.
+The transcript is a real run on the seed compiler:
+</p>
+<pre>
+$ mkdir -p out && /tmp/manual_seed/zig1_5_clean -o out asm.z98
+$ cd out && cp ../asm_forty_two.h ../asm_forty_two.s .
+$ gcc -m32 -std=c89 -O0 -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I . -c *.c
+$ gcc -m32 -Wa,--noexecstack -c asm_forty_two.s -o asm_forty_two.o
+$ gcc -m32 *.o -o asm
+$ ./asm
+twice=42
+asm=42
+</pre>
+<p>
+That is the whole drop-and-link-back path. The emitted Z98 module and the
+hand-written assembly are both object files by the time the linker sees them,
+and the linker does not care which produced which. Z98 keeps its checks and its
+error unions for the hundreds of routines that do not need assembly; the one
+leaf routine that does is written by hand and called across the C ABI. The
+calling convention is the ordinary one, and the routine is a leaf that takes no
+arguments and returns in <tt>%eax</tt>; a routine with arguments uses the same
+register and stack conventions the compiler uses for any C function.
+</p>
+
+<h3>Inner loops and interrupt handlers</h3>
+<p>
+Now the cases where the step down is the better choice. The first is a hot inner
+loop. You reach it the way you reach any optimization: by measuring, not by
+guessing. Compile with <tt>-ffast</tt>, find the routine the profiler or the
+clock blames, and look at its emitted assembly. If the compiler already produces
+the tight sequence &mdash; and for most short functions it does &mdash; there is
+nothing to do. If the routine is a tight leaf whose cost is the instruction
+sequence itself, and if a hand-written version measurably beats the compiler's,
+then for that routine assembly is the better choice, and it is the better choice
+for a reason you can show: fewer instructions, no helper calls, the loop
+variable left in a register. A hand-written loop for a long function with many
+live values is a losing trade, because register allocation across a whole
+function is exactly what the compiler is good at.
+</p>
+<p>
+The second case is the interrupt handler, and here the honest split matters. On
+the era machine the hardware and the OS decide how an interrupt is entered: which
+stack, which registers are saved, how the handler returns. That entry sequence is
+assembly by definition, and no C compiler will write it for you, because the
+contract is not the C calling convention. This is era context and it is marked
+as such: this host has no DOS or Windows 9x kernel, so an interrupt handler
+cannot be run here, and this chapter does not claim it was. What transfers is
+the mechanism. The handler's assembly entry can save the machine state and then
+call a Z98 function compiled as ordinary C89, so the work of the handler is
+written in Z98 and only the fixed entry and exit are assembly. That is the same
+link-back shown above, entered from the other direction.
+</p>
+<p>
+The third case is an instruction the C compiler will not emit for you: port
+I/O, a time-stamp read, an atomic prefix, or an MMX/SSE sequence. When the
+instruction is the requirement, the assembler is the only tool that can express
+it, and the routine is normally a tiny wrapper around that one instruction. The
+compiler is not being obstinate; those instructions are outside the C89 abstract
+machine, so the language has no way to ask for them.
+</p>
+<p>
+The fourth case is worth naming because it is the one that looks like a reason
+for assembly and is not. Memory-mapped I/O does not need an assembler in Z98.
+The language has <tt>*volatile T</tt> and <tt>[*]volatile T</tt> for exactly
+this, and it enforces the qualifier: a <tt>*volatile T</tt> cannot be silently
+converted to <tt>*T</tt>, and <tt>@volatileCast</tt> is the one explicit way to
+drop the qualifier. A hardware register at a fixed address is a
+<tt>*volatile u32</tt>, read and written in Z98, with the compiler forbidden to
+cache the read. Reach for assembly when you need the <i>instruction</i>; for the
+<i>address</i>, Z98 already has the feature. That distinction is checkable in
+the Language Spec, and it keeps the chapter from recommending assembly where the
+language is sufficient.
+</p>
+
+<h2>The trade</h2>
+<p>
+Choosing assembly for a routine buys control and pays for it in every kind of
+safety the rest of the project has. On the buying side, the sequence is exactly
+what you wrote: no helper call around an arithmetic operation, no run-time
+check you did not ask for, no instruction the compiler would not emit, no
+register allocation decision you disagree with. For a five-instruction leaf in a
+loop that runs a million times, that is a real gain, and it is the gain the
+chapter says is worth taking.
+</p>
+<p>
+On the paying side, the routine is outside everything the language provides. It
+is outside the type checker, so a wrong operand size is not a diagnostic but a
+corrupted register. It is outside the error-union model, so a failure has no
+place to go. It is outside the static analyzers, so an out-of-bounds access is
+not caught. It is fixed to one instruction set and one assembler's syntax, so it
+does not port &mdash; the same routine written for one era assembler is not the
+text another accepts. And it is the least readable code in the project: a future
+maintainer must know the calling convention and the register use from memory,
+because the routine has no signature that says what it takes.
+</p>
+<p>
+The honest verdict is therefore narrow and firm. For a measured hot inner loop
+and for the fixed entry of an interrupt handler, assembly is sometimes the
+better choice, and the manual says so without hedging. For everything else, the
+order of operations is measure, then <tt>-ffast</tt>, then &mdash; only if the
+C compiler genuinely cannot produce what the routine needs &mdash; a hand-written
+leaf. That ordering is the chapter's opinion, and it is marked as one; it is
+also the ordering the era's own programmers used, because writing a whole
+program in assembly was the thing C89 was invented to stop.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> Assembly is the sharpest tool on the machine and the
+least forgiving. It can be the right answer for one leaf routine &mdash; a hot
+inner loop or the fixed entry of an interrupt handler &mdash; and it is the
+wrong answer for a program. The chapter's rule is the rule of the whole tradeoff
+series: measure first, try <tt>-ffast</tt> before an assembler, and hand-write
+only the routine the measurement points at. Z98 emits C89, so that one routine
+is an object file beside the rest; nothing else in the project has to give up
+its checks because one function went down a rung.</td>
+</tr>
+</table>
+
+<h2>The way over it</h2>
+<a name="the-way-over-it"></a>
+<p>
+The way over is a short recipe with a decision at the top. Work it in order, and
+stop as soon as the routine is fast enough.
+</p>
+<p>
+<b>Step one: measure.</b> Build with <tt>-ffast</tt> and find out whether the
+routine is actually the cost. This is not ceremony. The default <tt>-fsafe</tt>
+emission carries the six run-time checks, so a first measurement under
+<tt>-fsafe</tt> often shows a cost that is the checks, not the algorithm. The
+honest first move for a slow inner loop is <tt>-ffast</tt>, because it removes
+the checks without giving up the language.
+</p>
+<p>
+<b>Step two: read the emitted assembly.</b> Run <tt>gcc -m32 -S</tt> on the
+emitted translation unit and read the routine. If the compiler already produces
+the sequence you want, stop; there is nothing to hand-write. If it does not, the
+assembly you are reading is the exact starting point for the drop.
+</p>
+<p>
+<b>Step three: drop.</b> Either take the emitted <tt>.c</tt>, compile it to
+<tt>.s</tt>, and hand-edit the one routine, or write a fresh <tt>.s</tt> and
+declare it in Z98 with <tt>extern "c"</tt> and a header prototype. Both end the
+same way: a hand-written object on the link line.
+</p>
+<pre>
+$ mkdir -p out && /tmp/manual_seed/zig1_5_clean -o out asm.z98
+$ cd out && cp ../asm_forty_two.h ../asm_forty_two.s .
+$ gcc -m32 -S -I . asm_FF935E89.c -o asm.s        # read the hand-off
+$ gcc -m32 -std=c89 -O0 -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I . -c *.c
+$ gcc -m32 -Wa,--noexecstack -c asm_forty_two.s -o asm_forty_two.o
+$ gcc -m32 *.o -o asm
+$ ./asm
+twice=42
+asm=42
+</pre>
+<p>
+<b>Keep the assembly with the source.</b> The emitted dump tree is not a
+project file. Its filenames carry a hash of the input path and content
+(<tt>asm_FF935E89.c</tt> here), and re-emitting produces them fresh. The
+hand-written <tt>.s</tt>, its header, and the one line that adds its object to
+the link are the parts that belong in the project; the emitted <tt>.c</tt> is
+regenerated every build. If you hand-edit an emitted translation unit, keep the
+edited <tt>.s</tt> beside your source and put it on the link line, rather than
+editing the dump tree in place.
+</p>
+<p>
+<b>Name the symbol in plain C.</b> The linker sees the emitted C, so a
+hand-written routine must carry a plain C symbol, and the Z98 side declares that
+same plain name with <tt>extern "c"</tt>. You cannot cleanly replace an emitted
+Z98 function from assembly by its source name, because Z98 mangles its
+identifiers: the function above is <tt>zF_B4A7D5F3_twice</tt> in the object
+file, not <tt>twice</tt>. The pattern that works is the one shown: the
+hand-written routine has its own plain name, and Z98 calls it as an
+<tt>extern</tt>.
+</p>
+<p>
+Put together, the rule is the previous chapters' rule with the assembler in the
+last slot. Choose assembly where the instruction sequence is the requirement and
+the routine is small and measured; choose Z98 everywhere else; connect the two
+at the C ABI. The load-bearing fact of chapter&nbsp;3 is what makes this usable
+here too: <b>Z98 emits C89, so its objects link with a hand-written
+object</b>, whether that object came from a C89 compiler or an assembler. The
+step down does not change the machine or the linker; it changes the language of
+one routine.
+</p>
+<p>
+There is one lingering question the recipe does not answer, and the honest
+answer is that it is an era question rather than a Z98 one. On the real machine
+the assembler is the era's, and its syntax is not GNU assembler's. The
+instruction set is the same 32-bit x86, so the routine you tuned on this host
+transfers, but the source text does not; you rewrite it in the era assembler's
+dialect, and OpenWatcom's <tt>wasm</tt> is the one that belongs with the
+<tt>build_owc.bat</tt> path. That boundary is stated rather than hidden: the
+mechanism is verified here, the era assembler is not run here.
+</p>
+
+<h2>Common mistakes</h2>
+<p>
+The mistakes below are the ones a reader makes when the layer under the language
+is treated as the first answer instead of the last.
+</p>
+<p>
+<b>Reaching for the assembler before measuring.</b> A slow routine is far more
+often a <tt>-fsafe</tt>-vs-<tt>-ffast</tt> difference or an algorithmic problem
+than a code-generation problem. Build with <tt>-ffast</tt>, measure, and read
+the emitted assembly before writing any. The chapter's whole ordering exists to
+prevent this one mistake.
+</p>
+<p>
+<b>Trying to write inline assembly in Z98.</b> There is no <tt>asm</tt> keyword
+and no assembly builtin; the parser rejects the token. The way over is an
+<tt>extern "c"</tt> declaration plus a hand-written <tt>.s</tt>, linked like any
+other object. Do not wait for an inline-asm feature; it does not exist.
+</p>
+<p>
+<b>Calling a hand-written routine without a prototype.</b> A bare non-variadic
+<tt>extern</tt> gets no emitted prototype, so the generated call is an implicit
+declaration to the C compiler. Put the prototype in a header and
+<tt>@cInclude</tt> it, exactly as chapter&nbsp;3 does for a C function. The
+supported build suppresses the warning, but the header is the correct code.
+</p>
+<p>
+<b>Expecting to override a Z98 function by name from assembly.</b> Z98 mangles
+its identifiers, so the symbol is <tt>zF_&lt;hash&gt;_name</tt>, not
+<tt>name</tt>. A hand-written routine carries its own plain name and is called
+through <tt>extern</tt>; it does not replace an emitted Z98 function by
+pretending to be it.
+</p>
+<p>
+<b>Editing the emitted C in the dump tree.</b> The dump directory is
+regenerated on every build with hash-named files, so an edit there is lost. Keep
+the tuned <tt>.s</tt> in the project and add its object to the link; leave the
+emitted C to the compiler.
+</p>
+<p>
+<b>Assuming assembly ports.</b> It is the least portable code on the machine:
+one instruction set, one assembler syntax. The era assembler is not GNU
+assembler, so even a routine tuned on this host has to be retyped in the era's
+dialect. Portability is one of the things the step down gives up, and it is
+given up on purpose.
+</p>
+<p>
+<b>Writing the whole program in assembly.</b> The compiler wins across a
+function with many live values, and it certainly wins across a program. The step
+down is for a measured leaf, not a design. If a program feels like it wants to
+be all assembly, that is a signal to re-measure, not to keep going.
+</p>
+
+<h2>Where to go next</h2>
+<p>
+This closes the three "when another tool wins" chapters. The next chapter,
+chapter&nbsp;6, what you cannot do on a Pentium II <i>(planned)</i>, turns from
+the tools to the machine itself: the era limits that no choice of language
+removes, and the way each is respected. The full interop surface &mdash; the
+calling conventions, the struct-by-value ABI, the <tt>@cInclude</tt> rule, and
+the mangling of Z98's own names &mdash; is chapter&nbsp;11, Talking to C
+<i>(planned)</i>, and it is the chapter that makes the <tt>extern</tt> seam on
+this page exact.
+</p>
+<p>
+For the frame behind this chapter, <a
+href="vol2-01-honest-comparison.html">Volume II chapter&nbsp;1, The Honest
+Comparison</a> is the register: Z98 as checked C89, standing on the same stack
+rather than above it. The runtime checks that <tt>-ffast</tt> removes are the
+subject of <a href="vol2-16-no-methods.html">Volume II chapter&nbsp;16, No
+methods, no generics, no comptime</a>, and the builtins used above, including
+<tt>@volatileCast</tt>, are catalogued in
+<a href="vol4-15-builtins.html">Volume IV &mdash; Builtins</a>. The two earlier
+"another tool wins" chapters are <a href="vol3-03-when-c89.html">chapter&nbsp;3,
+when C89 is the better choice</a> and
+<a href="vol3-04-when-cpp98.html">chapter&nbsp;4, when C++98 is the better
+choice</a>. The whole volume, including this chapter, is listed on
+<a href="toc.html">the Contents page</a>.
+</p>
+
+<p class="navbtns">
+<a href="vol3-04-when-cpp98.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol3-04-when-cpp98.html">Honesty: when C++98 is the better choice</a> | <a href="toc.html">Contents</a> | Next: <a href="toc.html">Contents</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
