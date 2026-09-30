@@ -1,0 +1,833 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Coroutines &mdash; The Third Big Shift</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume III coroutines third big shift suspending function @asyncInit @asyncSuspend @asyncResume @asyncFrameSize state word width frame layout child frame pool std.async scheduler cooperative stackless state machine switch state variable">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol3-07-friction.html">
+<link rel="next" href="toc.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume III &mdash; Working in the Era</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+How to read this <i>(planned)</i><br>
+The 1998 machine <i>(planned)</i><br>
+<a href="vol3-02-honesty-inventory.html">Honesty: what Z98 does and does not give you</a><br>
+<a href="vol3-03-when-c89.html">Honesty: when C89 is the better choice</a><br>
+<a href="vol3-04-when-cpp98.html">Honesty: when C++98 is the better choice</a><br>
+<a href="vol3-05-when-assembly.html">Honesty: when assembly is the better choice</a><br>
+<a href="vol3-06-era-limits.html">Honesty: what you cannot do on a Pentium II</a><br>
+<a href="vol3-07-friction.html">Honesty: the friction you will hit</a><br>
+Building for Win9x <i>(planned)</i><br>
+<b>Coroutines &mdash; the third big shift</b><br>
+A coroutine program <i>(planned)</i><br>
+Talking to C <i>(planned)</i><br>
+WinSock under Z98 <i>(planned)</i><br>
+The Win32 Debug API <i>(planned)</i><br>
+DirectX under CINTERFACE <i>(planned)</i><br>
+The debugger workflow <i>(planned)</i><br>
+Memory budgets <i>(planned)</i><br>
+Packaging and shipping <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Coroutines &mdash; The Third Big Shift</h1>
+<p>
+Volume II described two shifts in how you think about a program. The first was
+the <a href="vol2-12-error-unions.html">error union</a>: a failure became a value
+the type system carries, not a flag you might forget. The second was the
+<a href="vol2-14-arena.html">arena</a>: memory acquired a lifetime you can plan
+instead of a call you must pair. This chapter is the third shift, and it is the
+one that changes the shape of a function. A Z98 function does not have to run to
+completion before it can do anything else. It can <i>suspend</i> in the middle,
+remember where it was, and be resumed later. The mechanism is called a
+<i>coroutine</i>, and in Z98 it is built into the language as four
+<tt>@async*</tt> builtins plus the ordinary library module <tt>std.async</tt>.
+</p>
+<p>
+This is the chapter the rest of the volume leans on. Chapter&nbsp;6 named
+<i>no multithreading worth the cost</i> as a limit of the era, and this is the
+way over it: not threads, not preemption, but cooperative tasks that yield by
+choice. Chapter&nbsp;10 <i>(planned)</i> turns the mechanism into a full program,
+and the network chapters use the same scheduler to give each connection its own
+little state machine without writing one. Before any of that, you need the
+mental model, because the surface is deliberately small and the compiler does
+real work underneath it that you should be able to read.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffffc8">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-note.gif" width="16" height="16" alt="Note"></td>
+<td><b>What is measured here.</b> Every builtin name, every frame number, and
+the state-word width in this chapter were read from the compiler built from the
+committed seed, not from a design document. The <tt>tasks.z98</tt> program is
+compiled and run in this chapter, and the transcript is that run. The emitted C
+quoted below is the compiler's own output for that program, with the identifiers
+as they appear in the dump. Where a statement is a promise of the design rather
+than a measurement, the text says which.</td>
+</tr>
+</table>
+
+<h2>What you expect</h2>
+<p>
+If you have written concurrent code in a modern language, three words arrive
+with the idea of a coroutine: a keyword, a future, and a scheduler. You expect
+<tt>async</tt> in front of a function and <tt>await</tt> in front of a call, a
+typed handle you can pass around and await more than once, and a runtime that
+decides what runs when. You expect the language to hide the bookkeeping: the
+compiler stores the suspension points, the runtime moves the frames, and you
+write straight-line code that magically pauses.
+</p>
+<p>
+Z98 gives you the pause and the resume, and it gives you a scheduler, but it
+refuses the rest of the packaging. There is no <tt>async</tt> keyword and no
+<tt>await</tt> keyword. There is no <tt>Future(T)</tt> type, and there cannot
+be one, because Z98 has no generics. A coroutine's state is erased to
+<tt>*void</tt>, and the thing that drives it is not a hidden runtime but a
+library you can read. You are closer to the machine than a modern language puts
+you, and that closeness is the point on a 1998 PC: nothing is allocated that you
+did not ask for, and no scheduler thread exists because there are no threads
+worth their cost on this machine.
+</p>
+<p>
+The honest way to hold the difference is this: Z98 ships the hard part (the
+compiler rewriting a suspending function into a resumable step machine) and
+leaves the visible part (which task runs next, how many run, when one waits on
+another) to a library you drive from <tt>main</tt>. That division is why the
+chapter is mostly about a frame and a scheduler and not about syntax. The syntax
+is a single call, <tt>@asyncSuspend(null)</tt>, and it marks the place where the
+function is allowed to stop.
+</p>
+
+<h2>A function that suspends</h2>
+<p>
+The compiler does not make every function resumable. It would be wasteful and
+unnecessary. Instead it computes which functions <i>suspending</i>, and only
+those are rewritten. The rule is stated exactly in the Language Spec and the
+compiler implements it literally: a function is suspending when its body
+directly contains <tt>@asyncSuspend</tt>, or when it directly calls a function
+that is suspending. The property is a fixed point over the call graph. If
+<tt>a</tt> calls <tt>b</tt> and <tt>b</tt> calls <tt>@asyncSuspend</tt>, then
+<tt>b</tt> is suspending and so is <tt>a</tt>, and the analysis keeps
+propagating until nothing new is marked. Mutual recursion is ordinary
+propagation, not recursive descent, so a cycle cannot hang the compiler.
+</p>
+<p>
+The analysis runs once, early, before type resolution, and it is program-wide:
+it sees every module, so a suspending function in one file makes its callers
+suspending in another. This matters as soon as you put a coroutine in a helper
+module, which is what a real program does. The property is also not something
+you write down. You never declare a function suspending; it is suspending
+because of what its body does.
+</p>
+<p>
+The one restriction that follows is that a suspending function's address may not
+be taken. That is diagnostic <tt>error[3017]</tt>, and it is deliberate: a
+suspending function has been replaced by a step machine, and a raw function
+pointer to it would be a pointer to a function that no longer has the signature
+you think it has. Here is the compiler refusing the address of the tiny
+suspending function from the sample, when a program tries to store it:
+</p>
+<pre>
+error[3017]: taking the address of a suspending function is not allowed
+</pre>
+<p>
+The compiler also refuses <tt>@asyncFrameSize</tt> on a function that is not
+suspending, because a function with no suspension points has no frame to size.
+That is <tt>error[3046]</tt>, and it is the first mistake a reader makes when
+they reach for the builtin with the wrong function:
+</p>
+<pre>
+bad_frame.z98:3:44: error[3046]: @asyncFrameSize argument must be a known suspending function
+std.io.print("{}\n", .{@asyncFrameSize(plain)});
+                             ^^^^^^^^^^^^^^^^^^^^^^
+</pre>
+<p>
+And the builtins that only make sense at a suspension point are rejected inside
+<tt>defer</tt> and <tt>errdefer</tt>, because a deferred block that suspends
+would have to be re-entered on every resume, which the model does not support.
+That is <tt>error[3019]</tt>:
+</p>
+<pre>
+bad_defer.z98:2:26: error[3019]: @async builtin used inside a defer/errdefer body
+fn f() void { defer { _ = @asyncSuspend(null); } }
+                          ^^^^^^^^^^^^^^^^^^^
+</pre>
+<p>
+Read those three diagnostics together and the boundary is clear. A suspending
+function is a distinct kind of function, the compiler knows which functions those
+are without being told, and it refuses the operations that would break the model.
+There is one more diagnostic in the family, <tt>error[3018]</tt>, for
+<tt>@asyncSuspend</tt> used where no suspension is possible; it is part of the
+same family and the Language Spec lists it beside the others.
+</p>
+
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Builtin</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Result</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>What it does</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>@asyncFrameSize(fn)</tt></td>
+<td valign="top">integer constant</td>
+<td valign="top">the byte size of <tt>fn</tt>'s root frame; <tt>fn</tt> must
+be a known suspending function, else <tt>error[3046]</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>@asyncInit(ctx, buf, fn, args)</tt></td>
+<td valign="top"><tt>*void</tt></td>
+<td valign="top">initialize a fresh root frame for <tt>fn</tt> in <tt>buf</tt>,
+using the per-task pool <tt>ctx</tt>; returns the frame</td>
+</tr>
+<tr>
+<td valign="top"><tt>@asyncSuspend(data)</tt></td>
+<td valign="top"><tt>*void</tt></td>
+<td valign="top">an explicit suspension point; valid only inside a suspending
+function, and not inside <tt>defer</tt>/<tt>errdefer</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>@asyncResume(frame, arg)</tt></td>
+<td valign="top"><tt>?*void</tt></td>
+<td valign="top">resume a step; returns <tt>null</tt> when the coroutine has
+finished and a non-null value while it is still suspended</td>
+</tr>
+</table>
+
+<h2>The step machine</h2>
+<p>
+When a function is suspending, the compiler does not emit its body as an
+ordinary function. It emits a <i>step</i> function named
+<tt>__Z98Step_&lt;f&gt;</tt> with a fixed shape:
+</p>
+<pre>
+fn __Z98Step_&lt;f&gt;(frame: *void, arg: ?*void) ?*void
+</pre>
+<p>
+The step loads a hidden <i>state</i> word out of the frame, jumps to the resume
+segment for whatever suspension point that word names, and runs forward until it
+reaches the next <tt>@asyncSuspend</tt> or the end of the function. At a
+suspension it saves the values it will need, writes the next state number, and
+returns a non-null <tt>?*void</tt> to say &quot;I am still suspended&quot;. At
+the end it returns <tt>null</tt> to say &quot;I am done&quot;. The original
+synchronous body is not emitted at all; it has been replaced.
+</p>
+<p>
+The driver that actually resumes a step is <tt>@asyncResume(frame, arg)</tt>. It
+reads the pointer-sized <i>step word</i> stored at offset zero of the frame,
+calls the step with <tt>(frame, arg)</tt>, and returns the step's result. For the
+sample in this chapter, the compiler wrote the step word and the state word like
+this in the emitted C (the frame pointer is <tt>zT_67</tt>, the step function is
+<tt>zF_CD850BCC___Z98Step_task</tt>):
+</p>
+<pre>
+zT_95 = zF_CD850BCC___Z98Step_task;
+zT_100 = (unsigned int*)(...zT_67... + 0);
+*zT_100 = (unsigned int)(zT_95);                 /* step word  @ offset 0 */
+zT_104 = (void**)(...zT_67... + 4);
+*zT_104 = zT_65;                                  /* ctx pointer @ offset 4 */
+zT_109 = (unsigned char*)(...zT_67... + 8);
+*zT_109 = (unsigned char)(0);                     /* state = 0   @ offset 8 */
+zT_113 = (zT_CFCE7101_TaskArgs**)(...zT_67... + 12);
+*zT_113 = zT_85;                                  /* parameter   @ offset 12 */
+</pre>
+<p>
+Notice what is <i>not</i> there. There is no saved program counter, no machine
+stack, no per-coroutine stack allocation. The coroutine's whole memory is the
+frame buffer you supplied, and its position is the state word inside it. That is
+what &quot;stackless&quot; means, and it is why a coroutine is cheap enough for
+this machine. The cost of a coroutine is the size of its frame, and the frame is
+a struct the compiler computes at compile time.
+</p>
+
+<h2>The frame</h2>
+<p>
+A frame is laid out in a fixed order, and the order is worth memorizing because
+the emitted C will refer to it by offset. The header is three fields: the step
+word at offset&nbsp;0, the context pointer at the next pointer-sized slot, and
+the state word after that. Then come the coroutine's parameters in declaration
+order, then any locals that are live across a suspension, then hidden tail slots
+for the awaits it performs. The Language Spec states the order as
+<tt>{step, ctx, state}</tt> followed by parameters, live values, and child/result
+slots.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Order</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Field</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Meaning</b></th>
+</tr>
+<tr><td valign="top">0</td><td valign="top"><tt>step</tt></td>
+<td valign="top">pointer-sized address of <tt>__Z98Step_&lt;f&gt;</tt></td></tr>
+<tr><td valign="top">1</td><td valign="top"><tt>ctx</tt></td>
+<td valign="top">the per-task child-frame pool pointer</td></tr>
+<tr><td valign="top">2</td><td valign="top"><tt>state</tt></td>
+<td valign="top"><tt>u8</tt>, <tt>u16</tt>, or <tt>u32</tt> (see below)</td></tr>
+<tr><td valign="top">3</td><td valign="top"><tt>param</tt></td>
+<td valign="top">each coroutine parameter, in order</td></tr>
+<tr><td valign="top">4</td><td valign="top"><tt>live</tt></td>
+<td valign="top">each local live across at least one suspension</td></tr>
+<tr><td valign="top">5</td><td valign="top"><tt>child</tt></td>
+<td valign="top">one child-frame slot when the function awaits</td></tr>
+<tr><td valign="top">6</td><td valign="top"><tt>result</tt></td>
+<td valign="top">one slot for a value returned through an await</td></tr>
+<tr><td valign="top">7</td><td valign="top"><tt>parent_result</tt></td>
+<td valign="top">one slot per value-returning await, in program order</td></tr>
+</table>
+<p>
+For the sample's <tt>task</tt>, the emitted frame is 168 bytes and the offsets
+are <tt>step</tt>&nbsp;=&nbsp;0, <tt>ctx</tt>&nbsp;=&nbsp;4,
+<tt>state</tt>&nbsp;=&nbsp;8, the <tt>ta</tt> parameter at&nbsp;12, and four live
+values (a counter, the loop bound, a comparison temp, and the id temp) at
+16, 20, 24, and 28. The frame size is larger than the fields you can see because
+the compiler sizes it from a conservative AST-level pass that reserves room for
+every reachable node, then pads the result up to a multiple of 8. The precise
+LIR pass checks that its own smaller layout fits inside that reservation; the
+authoritative size is the padded, conservative one, and it is what
+<tt>@asyncFrameSize</tt> returns.
+</p>
+<p>
+That padding is not cosmetic. Every frame is rounded up to 8 bytes so that
+consecutive frames in a pool stay 8-aligned given an 8-aligned pool base. On a
+32-bit target that keeps a <tt>f64</tt> or a pointer inside any frame correctly
+aligned. The sample prints its own frame size at the top of the transcript:
+</p>
+<pre>
+frame size = 168
+</pre>
+<p>
+Use <tt>@asyncFrameSize(fn)</tt> to size the buffer, never a guess. It is a
+compile-time constant, so it can size a fixed array directly, and it is
+correct across compiler versions in a way a hard number is not.
+</p>
+
+<h2>The state word</h2>
+<p>
+The state word is the smallest integer that can name every suspension point in
+the function. The compiler counts the suspension points and picks the width:
+<tt>u8</tt> when the count is at most 255, <tt>u16</tt> when it is at most
+65535, and <tt>u32</tt> otherwise. The rule is deliberately frugal: a coroutine
+that suspends three times does not carry a four-byte state word, and on a
+machine where memory is the binding constraint that choice is worth stating
+plainly. The width is decided once, in the same analysis that computes the
+frame sizes, and the transform fails closed if it ever sees more points than the
+chosen width can name.
+</p>
+<p>
+The sample's <tt>task</tt> has a single <tt>@asyncSuspend</tt> program point,
+reached twice at run time because it sits inside the loop. One program point
+fits in a byte with room to spare, so the state word is a single byte, and the
+dispatch guard allows the two states that point needs. The emitted C says so: the state is written through an
+<tt>unsigned char*</tt> at offset&nbsp;8, and the step's dispatch is a
+<tt>switch</tt> on that <tt>unsigned char</tt> with a trap if it ever exceeds the
+known maximum:
+</p>
+<pre>
+zT_30 = *zT_29;                                  /* load state (u8) */
+zT_32 = zT_30 &lt;= (unsigned char)(1);
+if (!(zT_32)) { pal_trap(); }
+switch (zT_30) {
+case 0: goto z_bb_2;
+case 1: goto z_bb_5;
+default: goto z_bb_1;
+}
+</pre>
+<p>
+There is a pleasant consequence you should notice: the state word already names
+the resume segment, so the resume logic is a bounded <tt>switch</tt> over small
+integers. That is exactly the shape you would write by hand, except the compiler
+writes it for you, for every suspension point, and keeps it consistent when you
+move a line.
+</p>
+
+<h2>The child-frame pool</h2>
+<p>
+So far a coroutine suspends only where you told it to. The more interesting case
+is a suspending function that <i>calls</i> another suspending function. That call
+is an <i>implicit await</i>: the caller allocates a child frame for the callee,
+copies the arguments into it, drives the child forward, and yields to its own
+driver while the child is still suspended. When the child returns, the caller
+delivers the awaited value and pops the child frame. You did not write
+<tt>await</tt>; the direct call is the await.
+</p>
+<p>
+Child frames come from a per-task pool owned by a <tt>Context</tt>. The Context
+occupies the first 16 bytes of a caller-supplied buffer and the pool bytes follow
+it. Its header is <tt>{used@0, capacity@4, oom@8}</tt> with padding to 16, and
+the usable pool starts at <tt>ctx + 16</tt>. The 16-byte header (not the 12 you
+might write after seeing only three 4-byte fields) is what keeps
+<tt>ctx + 16</tt> 8-aligned whenever the caller's buffer is 8-aligned. That is
+why the sample backs both its pools and its root frames with
+<tt>[K]u64</tt> arrays and never with a bare <tt>[N]u8</tt>: a <tt>u8</tt> array
+is only 1-aligned, and <tt>contextInit</tt> traps on a misaligned buffer on
+purpose rather than corrupting every frame that follows.
+</p>
+<p>
+Allocation is a bump pointer. <tt>contextAlloc</tt> rounds <tt>used</tt> up to a
+multiple of 8, checks that the rounded size still fits in <tt>capacity</tt>, and
+on exhaustion sets a sticky <tt>oom</tt> flag and returns
+<tt>error.OutOfFrame</tt> instead of crashing. A child frame is reclaimed either
+when it returns (the transform pops it) or explicitly with
+<tt>contextMark</tt>&thinsp;/&thinsp;<tt>contextRelease</tt>, which bracket the
+pool like a stack. Bounded, deterministic, and no allocator call in sight. If
+your coroutine's implicit awaits need more room than a pool holds, the failure
+is a named error you can handle, not a corrupt heap.
+</p>
+
+<h2>The scheduler</h2>
+<p>
+The language provides the step machine and the frame; it deliberately does not
+provide a policy for which coroutine runs when. That lives in
+<tt>std.async</tt>, an ordinary module you can read in full. The model is
+round-robin and cooperative: a task runs until it suspends, and the scheduler
+moves to the next ready task. Nothing preempts anything, so there are no data
+races between tasks and no need for locks &mdash; a direct consequence of the
+era's <a href="vol3-06-era-limits.html">no threads worth the cost</a>.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Piece</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>What it is</b></th>
+</tr>
+<tr><td valign="top"><tt>Context</tt></td>
+<td valign="top">the per-task child-frame pool described above</td></tr>
+<tr><td valign="top"><tt>Task</tt></td>
+<td valign="top"><tt>{ frame, ctx, state, cancel_requested, result, arg,
+waiting_on, has_waiting_on }</tt>; it stores <b>no</b> step pointer</td></tr>
+<tr><td valign="top"><tt>Scheduler</tt></td>
+<td valign="top"><tt>{ tasks: [*]*Task, capacity, count, current, in_task }</tt>;
+wraps a caller-owned array of task pointers</td></tr>
+<tr><td valign="top"><tt>schedulerInit(tasks)</tt></td>
+<td valign="top">wrap a caller-owned <tt>[]*Task</tt></td></tr>
+<tr><td valign="top"><tt>addTask(s, t)</tt></td>
+<td valign="top">register a task; idempotent, and resets a settled task in
+place so slots can be reused</td></tr>
+<tr><td valign="top"><tt>tick(s)</tt></td>
+<td valign="top">resume every ready or suspended task once, in order</td></tr>
+<tr><td valign="top"><tt>waitAll(s)</tt></td>
+<td valign="top">tick until every task is done or cancelled</td></tr>
+<tr><td valign="top"><tt>waitFor(s, t)</tt></td>
+<td valign="top">tick until <tt>t</tt> settles; safe from <tt>main</tt></td></tr>
+<tr><td valign="top"><tt>awaitTask(s, t)</tt></td>
+<td valign="top">a coroutine waits on another task; <b>coroutine-internal
+only</b></td></tr>
+<tr><td valign="top"><tt>cancel(s, t)</tt> / <tt>cancelAll(s)</tt></td>
+<td valign="top">request cooperative cancellation, observed at a tick boundary</td></tr>
+</table>
+<p>
+The detail that makes the design click is the one you cannot see from the table:
+<tt>Task</tt> stores no step function. When <tt>tick</tt> resumes a task it calls
+<tt>@asyncResume(t.frame, t.arg)</tt>, and <tt>@asyncResume</tt> reads the step
+word out of the frame. That is why one scheduler can drive tasks built from
+completely different suspending functions without knowing their types &mdash;
+the type is erased into the frame, and the frame remembers. It is also why the
+scheduler needs no generics and works on this machine.
+</p>
+<p>
+Two drive styles exist and they are not interchangeable. <tt>waitFor</tt> and
+<tt>waitAll</tt> tick <i>every</i> registered task, so they are right when the
+tasks you are not waiting on are safe to run. <tt>awaitTask</tt> parks only the
+currently running task on a dependency and is only legal inside a coroutine.
+Chapter&nbsp;10 <i>(planned)</i> and the network chapters use both, and the rule
+of thumb is in the tech doc: when other registered tasks would block, drive only
+the one you mean to.
+</p>
+
+<h2>The program</h2>
+<p>
+Here is <tt>tasks.z98</tt> in full. Three tasks, each suspending twice, are
+registered with one scheduler and driven to completion. The program prints the
+frame size, then every step in the order the round-robin scheduler runs it, then
+the number of tasks that finished.
+</p>
+<pre>
+const std = @import("std");
+
+// The @asyncInit argument record's fields ARE the coroutine's parameters, so
+// this one-field record maps positionally onto task's single `ta` parameter.
+const TaskArgs = struct {
+    id: i32,
+    budget: i32,
+    done: *i32,
+};
+
+const TaskArgsRec = struct { ta: *TaskArgs };
+
+// A suspending function: its body contains @asyncSuspend. The compiler rewrites
+// it into a step machine and chooses its state word from the suspension count.
+fn task(ta: *TaskArgs) void {
+    var step: i32 = 0;
+    while (step &lt; ta.budget) : (step += 1) {
+        std.io.print("task {} step {}\n", .{ ta.id, step });
+        @asyncSuspend(null);
+    }
+    ta.done.* += 1;
+    std.io.print("task {} done\n", .{ta.id});
+}
+
+const NTASKS: usize = 3;
+const BUDGET: i32 = 2;
+const POOL_WORDS: usize = 64;
+
+pub fn main() void {
+    std.io.print("frame size = {}\n", .{@asyncFrameSize(task)});
+
+    // Per-task child-frame pool and root frame. Both buffers must be
+    // 8-aligned, so back them with [K]u64, never a bare [N]u8.
+    var pools: [NTASKS][POOL_WORDS]u64 = undefined;
+    var frames: [NTASKS][POOL_WORDS]u64 = undefined;
+    var tasks: [NTASKS]std.async.Task = undefined;
+    var task_ptrs: [NTASKS]*std.async.Task = undefined;
+    var args: [NTASKS]TaskArgs = undefined;
+    var recs: [NTASKS]TaskArgsRec = undefined;
+    var sched_tasks: [NTASKS]*std.async.Task = undefined;
+
+    var done: i32 = 0;
+    var sched = std.async.schedulerInit(sched_tasks[0..]);
+
+    var i: usize = 0;
+    while (i &lt; NTASKS) : (i += 1) {
+        args[i] = TaskArgs{
+            .id = @intCast(i32, i),
+            .budget = BUDGET,
+            .done = &amp;done,
+        };
+        recs[i] = TaskArgsRec{ .ta = &amp;args[i] };
+        task_ptrs[i] = &amp;tasks[i];
+        task_ptrs[i].ctx = std.async.contextInit(
+            @ptrCast([*]u8, &amp;pools[i])[0 .. POOL_WORDS * 8],
+        );
+        task_ptrs[i].frame = @asyncInit(
+            task_ptrs[i].ctx,
+            @ptrCast([*]u8, &amp;frames[i]),
+            task,
+            @ptrCast(*const void, &amp;recs[i]),
+        );
+        task_ptrs[i].state = .ready;
+        task_ptrs[i].cancel_requested = false;
+        task_ptrs[i].result = @ptrCast(*void, &amp;done);
+        task_ptrs[i].arg = @ptrCast(*void, &amp;recs[i]);
+        task_ptrs[i].waiting_on = task_ptrs[i];
+        task_ptrs[i].has_waiting_on = false;
+        _ = std.async.addTask(&amp;sched, task_ptrs[i]);
+    }
+
+    std.async.waitAll(&amp;sched) catch {
+        std.io.print("pool exhausted\n", .{});
+        return;
+    };
+    std.io.print("done = {}\n", .{done});
+}
+</pre>
+<p>
+Read it in three movements. First the coroutine: <tt>task</tt> loops, prints,
+and suspends. The <tt>@asyncSuspend(null)</tt> is the only new syntax, and the
+loop is perfectly ordinary &mdash; that is the whole point of the rewrite, that
+you write a loop and the compiler makes it resumable. Second the setup: for each
+task the program builds an 8-aligned pool, turns it into a <tt>Context</tt>,
+initializes a root frame with <tt>@asyncInit</tt>, and fills the <tt>Task</tt>
+fields. The args record <tt>TaskArgsRec{ ta }</tt> has one field, matching the
+one parameter of <tt>task</tt>; <tt>@asyncInit</tt> copies it positionally, and
+it must be passed as a plain <tt>*const void</tt>, never a
+<tt>?*const void</tt>. Third the drive: <tt>waitAll</tt> ticks the scheduler
+until every task has returned <tt>null</tt>.
+</p>
+<p>
+The captured run is the cleanest possible demonstration of round-robin order.
+Each of the three tasks prints its step, and the ticks interleave them
+deterministically:
+</p>
+<pre>
+frame size = 168
+task 0 step 0
+task 1 step 0
+task 2 step 0
+task 0 step 1
+task 1 step 1
+task 2 step 1
+task 0 done
+task 1 done
+task 2 done
+done = 3
+</pre>
+<p>
+The order is not luck and not timing. <tt>tick</tt> walks the registered tasks
+in the order they were added, so task&nbsp;0 runs, suspends, and yields to
+task&nbsp;1, which suspends and yields to task&nbsp;2. On the next tick each
+resumes at its saved state, prints its second step, suspends again. On the third
+tick each falls out of its loop and finishes. Because the scheduler is
+cooperative and single-threaded, that order is exactly reproducible, which is
+what makes a coroutine program testable.
+</p>
+
+<h2>Why this replaces hand-rolled state machines</h2>
+<p>
+Every experienced C programmer has written the thing this chapter is asking you
+to stop writing. You have a job that must happen over several calls &mdash;
+read a line, then a header, then a body; walk a path across several frames; send
+a big response without blocking on the send. So you add a field to a struct,
+call it <tt>state</tt>, and write a <tt>switch</tt>:
+</p>
+<pre>
+switch (conn-&gt;state) {
+case READ_LINE:  ... if (no newline yet) return;  conn-&gt;state = READ_HEADER;  /* fall */
+case READ_HEADER: ... conn-&gt;state = READ_BODY;   /* fall */
+case READ_BODY:   ... conn-&gt;state = DONE;
+}
+</pre>
+<p>
+This works, and it is the right thing to do in C89, where you have no better
+option. It is also where the bugs live. The state is an <tt>int</tt> that the
+type system cannot check, so a missing transition is a silent stall and a
+repeated one is a loop nobody meant. Every local that must survive the return
+has to be promoted into the struct by hand, so the function's live state is
+scattered across the file. The <tt>switch</tt> has to be re-entered from the top
+on every call, so the same code does a little work and returns, inverts the
+natural shape of an algorithm that wants to read a line and then use it.
+</p>
+<p>
+The Z98 way is the same algorithm with the bookkeeping removed. You write the
+plain, blocking version of the function:</p>
+<pre>
+fn handle(conn: *Conn) void {
+    var line: []const u8 = readLine(conn);
+    std.io.print("got {}\n", .{line});
+    var body: []const u8 = readBody(conn);
+    send(conn, body);
+}
+</pre>
+<p>
+and if <tt>readLine</tt> and <tt>readBody</tt> are suspending, then <tt>handle</tt>
+is suspending too, and the compiler does the state-machine work you used to do
+by hand. There is no <tt>state</tt> field in your struct, no <tt>switch</tt> to
+keep exhaustive, no locals to hoist. The suspension points become numbered
+resume segments in the step; the locals live across a suspension become frame
+fields the compiler lays out; and the resume logic is the compiler's bounded
+<tt>switch</tt> on the state byte, not yours. When you will reach for a
+<tt>switch</tt> on a state variable &mdash; and you will, because that is the
+habit a C programmer carries &mdash; that is the signal to write the function
+straight through and put <tt>@asyncSuspend</tt> where the <tt>return</tt> used to
+be. The state variable is still there. You just stopped writing it.
+</p>
+<p>
+The trade is real, so state it. The compiler's step machine is conservative: it
+reserves frame space for every reachable node, so a hand-tuned state machine can
+sometimes be smaller, and a coroutine is a struct in a buffer you must keep alive
+for the task's whole life. It also cannot express a suspension inside
+<tt>defer</tt>, and a suspending function's address cannot be taken. None of
+those costs falls on the common case, and all of them are visible in the
+emitted C, which is the compensation this whole volume keeps returning to. You
+give up a little control and you stop writing the bug-prone part.
+</p>
+
+<h2>Running under Windows 98</h2>
+<p>
+Coroutines are implemented in the compiler and the runtime, not in the operating
+system, so <tt>tasks.z98</tt> cross-builds for Win9x exactly like any other
+program. The committed <tt>scripts/win32_cross/</tt> harness cross-compiles the
+emitted C with <tt>i686-w64-mingw32-gcc</tt> through the
+<tt>build_target.sh mingw</tt> branch, then runs the resulting <tt>tasks.exe</tt>
+under a dedicated 32-bit wine prefix. On this host the captured Windows stdout
+was byte-identical to the Linux transcript above &mdash; <tt>XRUNRC=0</tt>,
+<tt>WINE_RC=0</tt>, <tt>PARITY=OK</tt>. This is the new verification the coroutine
+work needed: coroutine <i>execution</i> under Windows was not previously
+recorded, and it now runs.
+</p>
+<p>
+The OpenWatcom path is a different matter. The <tt>-osw</tt> emit also writes
+<tt>build_owc.bat</tt> for <tt>wcc386</tt>/<tt>wlink</tt>, but OpenWatcom is not
+installed on the development host, so that script is <b>emitted and documented,
+not run here</b>. The screenshot below will be captured on real Windows 98
+hardware, from the OpenWatcom build, and is the proof for the machine itself;
+the harness result above is the proof that the program logic runs unchanged on a
+Windows target.
+</p>
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f0f0f0" class="placeholder">
+<tr>
+<td align="center">
+<i>Figure 33 &mdash; Win9x screenshot pending</i>
+</td>
+</tr>
+</table>
+<p><i>Figure 33. Running <tt>tasks.exe</tt> under Windows 98.</i></p>
+
+<h2>The trade</h2>
+<p>
+The third shift buys a way to write long-lived, multi-step logic without
+threads, and it pays for that with a smaller, stricter model than a modern
+runtime. Four limits are worth naming, each with what you do instead.
+</p>
+<p>
+<b>No preemption and no threads.</b> A coroutine yields only where
+<tt>@asyncSuspend</tt> says so, and the scheduler is round-robin. A task that
+never suspends starves the others. That is not a bug to route around; it is the
+property that makes locks unnecessary and the program deterministic. The way
+over is to place your suspension points where the work genuinely pauses &mdash;
+a read that would have blocked, a send that would have filled a buffer &mdash;
+which is exactly where the old state machine returned anyway.
+</p>
+<p>
+<b>No typed futures.</b> There is no <tt>Future(T)</tt> because there are no
+generics. A coroutine's state is erased to <tt>*void</tt> and a result slot is a
+<tt>*void</tt> you point at your own storage. The way over is the
+<tt>result</tt> field of <tt>Task</tt> and the args record pattern: you own the
+storage, you know its type, and the erasure happens only at the scheduler
+boundary where nothing needs the type. It is more typing than
+<tt>await future</tt> and it is completely transparent.
+</p>
+<p>
+<b>The scheduler is driven by you.</b> Nothing runs until a tick or a wait call
+does it. That is another way of saying the same absence: there is no event-loop
+thread behind your back. The way over is the drive table above; the choice
+between <tt>waitFor</tt> and <tt>awaitTask</tt> is the only real decision, and
+the tech doc states the rule.
+</p>
+<p>
+<b>The root-main pool is fixed at 256 bytes.</b> A suspending <tt>pub fn
+main</tt> gets a synthesized synchronous driver, and that driver's child-frame
+pool is a fixed 256 bytes, so a <tt>main</tt> whose implicit awaits need more
+overflows. A non-suspending <tt>main</tt> that drives an explicit pool &mdash;
+which is what this sample does &mdash; has no such cap. The way over is to keep
+the scheduler in <tt>main</tt> and let the tasks, not <tt>main</tt>, suspend.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> The strongest temptation with coroutines is to reach for
+the compiler's machinery when a plain function would do. Not every function that
+calls a loop, or returns early, or keeps a cursor is a state machine waiting to
+be suspended; most are ordinary functions and should stay ordinary. A suspending
+function costs a frame in permanent memory for the task's whole life, and a
+suspension point is a promise that the function will be re-entered, which is
+true only when a scheduler actually drives it. Reach for <tt>@asyncSuspend</tt>
+when the work genuinely spans time &mdash; a read, a send, a multi-frame
+animation &mdash; and keep the rest synchronous. The compiler will tell you when
+a function is suspending; it will not tell you when it should not be.</td>
+</tr>
+</table>
+
+<h2>Common mistakes</h2>
+<p>
+The mistakes below are the ones a reader makes first with coroutines, and each
+has a diagnostic or a corrected shape.
+</p>
+<p>
+<b>Passing the args record as <tt>?*const void</tt>.</b> The fourth argument to
+<tt>@asyncInit</tt> is <tt>@ptrCast(*const void, &amp;record)</tt>, a plain
+<tt>*const void</tt>. A <tt>?*const void</tt> is a non-scalar optional in this
+position and emits invalid C89. The record is quite literally the parameter
+list: its fields are copied positionally into the coroutine's parameters, so the
+number and order must match exactly.
+</p>
+<p>
+<b>Backing a pool or frame with <tt>[N]u8</tt>.</b> A <tt>u8</tt> array is
+1-aligned, and <tt>contextInit</tt> traps on a misaligned buffer. Back the
+context and the root frame with a <tt>[K]u64</tt> array and cast a slice to
+<tt>[]u8</tt>. This is a <tt>-fsafe</tt> trap, not undefined behavior, so you
+will see it immediately &mdash; but you will see it as a crash on the first run
+unless you follow the rule.
+</p>
+<p>
+<b>Taking the address of a suspending function.</b> It is <tt>error[3017]</tt>
+by design: the function is a step machine, and a function pointer to it would
+not have the signature you expect. If you need to select behavior, select data
+(a task's args record) and self-dispatch through <tt>@asyncResume</tt>; the
+scheduler already does exactly this.
+</p>
+<p>
+<b>Expecting a suspending function to still be callable synchronously.</b> Only
+the root <tt>pub fn main</tt> and an <tt>export fn</tt> keep a synthesized
+synchronous entry. Every other suspending function is replaced by its step and
+must be driven through a frame. Calling it as an ordinary function is not
+something you can accidentally do, but expecting its synchronous body to exist
+is a design misread.
+</p>
+<p>
+<b>Forgetting the frame must outlive the task.</b> The root frame you hand to
+<tt>@asyncInit</tt> is where the coroutine lives. If it is a local in a function
+that returns, the task resumes into stale memory. Put the frames and pools in
+memory that lives as long as the scheduler &mdash; a permanent buffer or a
+dedicated arena, never the short-lived scratch arena that gets reset.
+</p>
+<p>
+<b>Reaching for <tt>switch</tt> on a state variable.</b> The habit is stronger
+than the need. If you catch yourself adding a <tt>state</tt> field and a
+<tt>switch</tt> to a struct only to make one function resumable, write the
+function straight through and suspend instead. The compiler's step machine is
+the state machine; two of them is one too many.
+</p>
+
+<h2>Where to go next</h2>
+<p>
+Chapter&nbsp;10 <i>(planned)</i>, A coroutine program, takes this mechanism and
+builds a full program on it, and the network chapters that follow give each
+connection its own task. The builtins themselves are catalogued in
+<a href="vol4-15-builtins.html">Volume IV &mdash; Builtins</a>, and the Language
+Spec at <tt>docs/reference/Language_Spec_Z98.md</tt> §4.1 is the normative
+statement of the frame/step ABI quoted here.
+</p>
+<p>
+The shifts before this one are
+<a href="vol2-12-error-unions.html">Volume II chapter&nbsp;12, Error
+unions</a> and <a href="vol2-14-arena.html">chapter&nbsp;14, The arena</a>; if
+the frame-and-pool model feels familiar, it is because an arena and a coroutine
+pool are the same idea at different scales. The builtins chapter
+<a href="vol2-15-builtins.html">Volume II chapter&nbsp;15</a> introduces the
+four <tt>@async*</tt> builtins, and
+<a href="vol2-16-no-methods.html">chapter&nbsp;16</a> explains why coroutine
+state must be erased to <tt>*void</tt>. The volume's inventory,
+<a href="vol3-02-honesty-inventory.html">chapter&nbsp;2</a>, lists coroutines
+among the things Z98 gives you, and
+<a href="vol3-06-era-limits.html">chapter&nbsp;6</a> states the limit this
+chapter is the way over. Chapter&nbsp;8 <i>(planned)</i>, Building for Win9x,
+walks the target that the harness above used.
+</p>
+
+<p class="navbtns">
+<a href="vol3-07-friction.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol3-07-friction.html">Honesty: the friction you will hit</a> | <a href="toc.html">Contents</a> | Next: <a href="toc.html">Contents</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
