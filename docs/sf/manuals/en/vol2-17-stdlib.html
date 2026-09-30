@@ -1,0 +1,805 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: The Standard Library Tour</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual standard library std tour io fmt arena str mem math debug net async bits os time buf module re-export std.zig stdio.z98">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol2-16-no-methods.html">
+<link rel="next" href="vol4-00-title.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume II &mdash; Learning Z98</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol2-00-title.html">How to read this</a><br>
+<a href="vol2-01-honest-comparison.html">The honest comparison</a><br>
+<a href="vol2-02-types.html">The type system</a><br>
+<a href="vol2-03-pointers.html">Pointers</a><br>
+<a href="vol2-04-structs.html">Aggregates I: structs</a><br>
+<a href="vol2-05-packed-structs.html">Aggregates II: packed structs</a><br>
+<a href="vol2-06-enums.html">Aggregates III: enums</a><br>
+<a href="vol2-07-unions.html">Aggregates IV: unions</a><br>
+<a href="vol2-08-tuples.html">Aggregates V: tuples</a><br>
+<a href="vol2-09-arrays-slices.html">Arrays and slices</a><br>
+<a href="vol2-10-control-flow.html">Control flow, in full</a><br>
+<a href="vol2-11-defer.html">defer and errdefer</a><br>
+<a href="vol2-12-error-unions.html">Error unions &mdash; the first big shift</a><br>
+<a href="vol2-13-optionals.html">Optionals</a><br>
+<a href="vol2-14-arena.html">The arena &mdash; the second big shift</a><br>
+<a href="vol2-15-builtins.html">Builtins, in full</a><br>
+<a href="vol2-16-no-methods.html">No methods, no generics, no comptime</a><br>
+<b>The standard library tour</b><br>
+print and the format string <i>(planned)</i><br>
+Idioms and best practices <i>(planned)</i><br>
+What you have learned, what is next <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>The Standard Library Tour</h1>
+<p>
+<a href="vol2-14-arena.html">Chapter&nbsp;14</a> used the arena.
+<a href="vol2-16-no-methods.html">Chapter&nbsp;16</a> built a shape
+interface by hand. Both leaned on code that already arrives with the
+compiler: <tt>std.arena</tt>, <tt>std.io</tt>, and the rest of the
+<tt>std</tt> namespace. This chapter is the tour. It does not list every
+function in every module; it names every module the <tt>std</tt> namespace
+actually exports, says what each one is for, and gives the smallest call
+that proves it is there. The chapter's program,
+<tt>docs/sf/manuals/src/vol2/stdio.z98</tt>, touches all thirteen modules in
+one run.
+</p>
+<p>
+Thirteen is a small number, and the size is deliberate. The compiler's
+runtime library directory carries more files than the <tt>std</tt> namespace
+re-exports; only the names in this chapter resolve as <tt>std.&lt;name&gt;</tt>.
+The formal lookup for the language-level calls these modules are built from
+is <a href="vol4-15-builtins.html">Volume IV &mdash; Builtins</a>. The
+planned Reference stdlib page, which will document every function of every
+module, does not ship yet.
+</p>
+
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#e8e0e0">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-honest.gif" width="16" height="16" alt="Honest"></td>
+<td><b>Honest note.</b> You will reach for a standard library; here is how
+small this one is. The library is thirteen modules, and most of them are
+short. There is no formatted input, no floating-point math beyond the
+printer, no dynamic array in the compiler sense, no hash map, no string
+object. What exists is a set of concrete, hand-written helpers: an arena you
+own, byte slices you slice yourself, a formatting engine behind
+<tt>print</tt>, and thin wrappers over the operating system. The list below
+is not a subset chosen for a tour; it is the whole surface. What you gain is
+that every function is a plain Z98 function you can read in the compiler's
+source, with no hidden allocation and no dispatch you did not write. What
+you lose is the convenience layer a larger language would have built on top
+of it.</td>
+</tr>
+</table>
+
+<h2><a name="whatships"></a>What ships in <tt>std</tt></h2>
+<p>
+The module <tt>sf/src/std.zig</tt> is nothing but a list of re-exports. It
+declares exactly thirteen names; each maps to one <tt>std_*.zig</tt> file in
+the compiler's library directory. Every name is reachable as
+<tt>std.&lt;name&gt;</tt> and nothing else is. The blueprint for this volume
+named eight of them; the other five are part of the same surface and are
+covered here so the list is complete.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left">Name</th>
+<th align="left">Source file</th>
+<th align="left">What it holds</th>
+</tr>
+<tr>
+<td><tt>std.io</tt></td>
+<td><tt>std_io.zig</tt></td>
+<td>Byte and string output, single characters, a signed-integer printer, the <tt>print</tt> entry point, file I/O, sleep.</td>
+</tr>
+<tr>
+<td><tt>std.fmt</tt></td>
+<td><tt>std_fmt.zig</tt></td>
+<td>The formatting bodies behind <tt>print</tt>; auto-imported when a <tt>print</tt> is lowered.</td>
+</tr>
+<tr>
+<td><tt>std.arena</tt></td>
+<td><tt>std_arena.zig</tt></td>
+<td>The bump allocator of chapter&nbsp;14.</td>
+</tr>
+<tr>
+<td><tt>std.str</tt></td>
+<td><tt>std_str.zig</tt></td>
+<td>Byte-slice string operations: compare, search, trim, split, join, replace.</td>
+</tr>
+<tr>
+<td><tt>std.mem</tt></td>
+<td><tt>std_mem.zig</tt></td>
+<td>Raw copy, zero, and compare over many-item pointers with a count.</td>
+</tr>
+<tr>
+<td><tt>std.math</tt></td>
+<td><tt>std_math.zig</tt></td>
+<td>Integer min/max, clamp, absolute value, power-of-two and alignment helpers.</td>
+</tr>
+<tr>
+<td><tt>std.debug</tt></td>
+<td><tt>std_debug.zig</tt></td>
+<td>Logging, <tt>assert</tt>, <tt>panic</tt>, the trap handler, and core-dump writing.</td>
+</tr>
+<tr>
+<td><tt>std.net</tt></td>
+<td><tt>std_net.zig</tt></td>
+<td>Target-selected TCP and UDP bindings, byte-order helpers, <tt>select</tt>, non-blocking modes.</td>
+</tr>
+<tr>
+<td><tt>std.async</tt></td>
+<td><tt>std_async.zig</tt></td>
+<td>The cooperative scheduler and per-task child-frame pool for coroutines.</td>
+</tr>
+<tr>
+<td><tt>std.bits</tt></td>
+<td><tt>std_bits.zig</tt></td>
+<td>Integer bit operations: popcount, leading/trailing zeros, rotate, extract, insert.</td>
+</tr>
+<tr>
+<td><tt>std.os</tt></td>
+<td><tt>std_os.zig</tt></td>
+<td>Process-level information: arguments, environment, current directory, exit.</td>
+</tr>
+<tr>
+<td><tt>std.time</tt></td>
+<td><tt>std_time.zig</tt></td>
+<td>Monotonic and wall-clock time, and sleep.</td>
+</tr>
+<tr>
+<td><tt>std.buf</tt></td>
+<td><tt>std_buf.zig</tt></td>
+<td>A growable byte buffer backed by an arena.</td>
+</tr>
+</table>
+<p>
+The directory holds more <tt>std_*.zig</tt> files than these thirteen. A name
+that is not in the table above is not part of the <tt>std</tt> namespace. The
+compiler rejects it rather than resolving it, for example:
+</p>
+<pre>
+const S = @sizeOf(std.base64);
+// error[3074]: unable to resolve type argument
+</pre>
+<p>
+That is the measured diagnostic for a name outside the re-export list. The
+same file may exist on disk and be used internally; it is simply not part of
+the public surface a program can name through <tt>std</tt>.
+</p>
+
+<h2><a name="io"></a>std.io</h2>
+<p>
+<tt>std.io</tt> is where bytes leave and enter the program. Output splits
+into two families, and the difference matters when you mix them. The
+builtin-backed functions (<tt>write</tt>, <tt>writeByte</tt>,
+<tt>printInt</tt>) write through the standard output builtins; <tt>print</tt>
+is the compiler's format-string entry point and routes through
+<tt>std.fmt</tt>. On the POSIX target the builtin path is buffered and the
+<tt>print</tt> path is not, so a program that interleaves the two can see
+its lines reorder. Use one family for a single output stream.
+</p>
+<pre>
+pub fn writeByte(c: u8) void
+pub fn write(data: []const u8) void
+pub fn writeStr(s: [*]const c_char) void
+pub fn print(s: [*]const c_char, ...) void
+pub fn printInt(n: i32) void
+pub fn readByte() u8
+pub fn sleepMs(ms: u32) void
+</pre>
+<p>
+File I/O is a small PAL surface, not C's <tt>stdio.h</tt>. There is no
+<tt>FILE*</tt> and no <tt>fopen</tt>; a handle is a <tt>usize</tt> that
+arrives as an optional because open can fail:
+</p>
+<pre>
+pub fn fileOpen(path: []const u8, write_mode: bool) ?usize
+pub fn fileWrite(fd: usize, data: []const u8) void
+pub fn fileRead(fd: usize, buf: []u8) usize
+pub fn fileClose(fd: usize) void
+</pre>
+<p>
+<tt>fileOpen</tt> returns <tt>null</tt> on failure, so it is consumed with
+<tt>orelse</tt>, not <tt>catch</tt>; <tt>fileRead</tt> returns the byte count
+and reports 0 at end of file.
+</p>
+
+<h2><a name="fmt"></a>std.fmt</h2>
+<p>
+<tt>std.fmt</tt> is the engine under <tt>std.io.print</tt>. You almost never
+call it directly: whenever the compiler lowers a <tt>print</tt>, it
+auto-imports this module and emits a call into the right formatting body for
+each argument's type. The functions are public so that the generated code can
+name them, and they are listed here so the surface is not a mystery.
+</p>
+<pre>
+pub fn printI32(v: i32) void
+pub fn printU32(v: u32) void
+pub fn printI64(v: i64) void
+pub fn printU64(v: u64) void
+pub fn printF64(v: f64) void
+pub fn printBool(v: bool) void
+pub fn printChar(c: u8) void
+pub fn printStr(ptr: [*]const u8, len: usize) void
+pub fn printHexU32(v: u32) void
+pub fn printHexI32(v: i32) void
+pub fn printHexU64(v: u64) void
+pub fn printHexI64(v: i64) void
+</pre>
+<p>
+The format string itself, the accepted specifiers, and the rejections are
+the subject of <a href="vol2-15-builtins.html">chapter&nbsp;15</a>'s Group F
+and of the planned chapter 18. This page only claims the module exists and
+that <tt>print</tt> is built on it.
+</p>
+
+<h2><a name="arena"></a>std.arena</h2>
+<p>
+The arena is the volume's second mental shift and
+<a href="vol2-14-arena.html">chapter&nbsp;14</a> is devoted to it. The whole
+module is four declarations: a struct, an initializer, one fallible
+allocator, and a reset. There is no <tt>free</tt> and no <tt>deinit</tt>;
+reclaiming memory means resetting the bump pointer.
+</p>
+<pre>
+pub const Arena = struct { data: [*]u8, capacity: usize, used: usize };
+pub fn init(data: []u8) Arena
+pub const ArenaError = error{OutOfMemory};
+pub fn alloc(self: *Arena, size: usize) ArenaError![*]u8
+pub fn reset(self: *Arena) void
+</pre>
+<p>
+<tt>alloc</tt> returns a raw <tt>[*]u8</tt>, not a typed pointer. Casting it
+to the type you asked for is the caller's job, which is why the sample casts
+the result to <tt>*Point</tt> before storing fields. The arena never
+allocates: you hand it a slice you already own.
+</p>
+
+<h2><a name="str"></a>std.str</h2>
+<p>
+<tt>std.str</tt> operates on byte slices, never on NUL-terminated strings.
+The original helpers cover the common inspection tasks; the additions cover
+the string work a 1998 program actually does, including allocation. The
+allocating functions take an arena and return an error union whose only
+error is the arena's <tt>OutOfMemory</tt>.
+</p>
+<pre>
+pub fn len(s: []const u8) usize
+pub fn eql(a: []const u8, b: []const u8) bool
+pub fn copy(dst: []u8, src: []const u8) void
+pub fn copyZ(dst: [*]u8, src: []const u8) usize
+pub fn findChar(s: []const u8, c: u8) ?usize
+pub fn startsWith(s: []const u8, prefix: []const u8) bool
+pub fn endsWith(s: []const u8, suffix: []const u8) bool
+pub fn toUpper(s: []u8) void
+pub fn toLower(s: []u8) void
+pub fn split(arena: *Arena, s: []const u8, sep: u8) ![][]const u8
+pub fn splitLines(arena: *Arena, s: []const u8) ![][]const u8
+pub fn join(arena: *Arena, parts: [][]const u8, sep: []const u8) ![]u8
+pub fn trim(s: []const u8) []const u8
+pub fn trimLeft(s: []const u8, chars: []const u8) []const u8
+pub fn trimRight(s: []const u8, chars: []const u8) []const u8
+pub fn indexOf(s: []const u8, needle: []const u8) ?usize
+pub fn lastIndexOf(s: []const u8, needle: []const u8) ?usize
+pub fn eqIgnoreCase(a: []const u8, b: []const u8) bool
+pub fn replace(arena: *Arena, s: []const u8, from: []const u8, to: []const u8) ![]u8
+pub fn count(s: []const u8, needle: u8) usize
+pub fn repeat(arena: *Arena, s: []const u8, n: usize) ![]u8
+</pre>
+<p>
+The zero-copy functions return views into the input: <tt>split</tt> and
+<tt>splitLines</tt> allocate only the outer array of slices, and the
+<tt>trim</tt> family returns a narrower slice over the same bytes. Only
+<tt>join</tt>, <tt>replace</tt>, and <tt>repeat</tt> allocate a new string,
+and they read their input without mutating it, so <tt>from</tt> and <tt>to</tt>
+may alias <tt>s</tt>.
+</p>
+
+<h2><a name="mem"></a>std.mem</h2>
+<p>
+<tt>std.mem</tt> is the lowest-level module: raw memory over many-item
+pointers with an explicit count. There is no allocation here and no length
+tracking. Every call names its element width in the function name, because
+Z98 has no generic <tt>copy</tt>.
+</p>
+<pre>
+pub fn copyU8(dst: [*]u8, src: [*]const u8, n: usize) void
+pub fn copyU32(dst: [*]u32, src: [*]const u32, n: usize) void
+pub fn copyU64(dst: [*]u64, src: [*]const u64, n: usize) void
+pub fn zeroU8(dst: [*]u8, n: usize) void
+pub fn eqlU8(a: [*]const u8, b: [*]const u8, n: usize) bool
+</pre>
+<p>
+The sample calls <tt>zeroU8</tt> on a small stack array to show the shape:
+cast the array to <tt>[*]u8</tt>, pass the count, and read the elements back.
+This is the module you reach for when you have bytes and a count, and nothing
+else.
+</p>
+
+<h2><a name="math"></a>std.math</h2>
+<p>
+<tt>std.math</tt> is integer-only and concrete: the signed helpers take
+<tt>i32</tt> and the unsigned helpers take <tt>u32</tt>. It is not a
+floating-point library. The functions are total over their domains; none of
+them traps.
+</p>
+<pre>
+pub fn min(a: i32, b: i32) i32
+pub fn max(a: i32, b: i32) i32
+pub fn minU(a: u32, b: u32) u32
+pub fn maxU(a: u32, b: u32) u32
+pub fn abs(n: i32) i32
+pub fn clamp(v: i32, lo: i32, hi: i32) i32
+pub fn clampU(v: u32, lo: u32, hi: u32) u32
+pub fn isPowerOfTwoU32(n: u32) bool
+pub fn alignUp(n: u32, alignment: u32) u32
+pub fn alignDown(n: u32, alignment: u32) u32
+</pre>
+<p>
+If you need a float square root or a sine, you write it yourself or call a
+C function through an <tt>extern</tt> declaration. The forty builtins of
+<a href="vol2-15-builtins.html">chapter&nbsp;15</a> do not include a math
+library either.
+</p>
+
+<h2><a name="debug"></a>std.debug</h2>
+<p>
+<tt>std.debug</tt> is the logging and assertion module. <tt>log</tt> and
+<tt>logInt</tt> write to standard output; <tt>assert</tt> and <tt>panic</tt>
+write a message and then trap, which means they never return. That is the
+point: a failed assertion is a termination, not an error to recover from.
+</p>
+<pre>
+pub fn log(msg: []const u8) void
+pub fn logInt(tag: []const u8, n: i32) void
+pub fn assert(cond: bool) void
+pub fn panic(msg: []const u8) noreturn
+pub const DebugError = error{CoreDumpWriteFailed};
+pub fn writeCoreDump(ctx: *const TrapContext, path: []const u8) DebugError!void
+</pre>
+<p>
+The module also owns the trap surface. <tt>setTrapHandler</tt> installs a
+handler that receives the register context, and <tt>backtrace</tt> walks the
+frame chain into a <a href="#buf">std.buf</a> buffer. The default handler
+writes <tt>core.dump</tt> and aborts. This is the machinery behind a real
+crash report, and it is small enough to read in one sitting.
+</p>
+
+<h2><a name="net"></a>std.net</h2>
+<p>
+<tt>std.net</tt> is a set of target-selected bindings, not a protocol
+framework. On Windows it reaches Winsock 1.1; on the POSIX target it reaches
+libc. The public API hides the per-OS symbols behind names such as
+<tt>accept</tt> and <tt>close</tt>, and the byte-order helpers have portable
+manual variants so a program can be tested without a live socket.
+</p>
+<pre>
+pub const Socket = i32;
+pub const NetError = error{ WouldBlock, Timeout, ConnRefused, ConnReset, NotConnected, AddrInUse, InvalidAddr, Io };
+pub const IpAddr = struct { a: u8, b: u8, c: u8, d: u8 };
+pub fn init() i32
+pub fn cleanup() void
+pub fn createTcpServer(port: u16) i32
+pub fn createTcpClient(port: u16) i32
+pub fn udpBind(port: u16) NetError!Socket
+pub fn udpSendTo(s: *Socket, addr: IpAddr, port: u16, data: []const u8) NetError!void
+pub fn udpRecvFrom(s: *Socket, buf: []u8, out_addr: *IpAddr, out_port: *u16) NetError!usize
+pub fn select(nfds: i32, readfds: ?*u8, writefds: ?*u8, exceptfds: ?*u8, timeout_ms: i32) i32
+pub fn setNonBlocking(s: *Socket) NetError!void
+pub fn htonsManual(x: u16) u16
+pub fn htonlManual(x: u32) u32
+</pre>
+<p>
+The sample calls <tt>htonsManual</tt>, the portable byte swap, so the
+transcript is deterministic and needs no network. A real program calls
+<tt>init</tt> once before any socket operation and <tt>cleanup</tt> when it
+is finished.
+</p>
+
+<h2><a name="async"></a>std.async</h2>
+<p>
+The coroutine builtins live in the language; the bookkeeping lives here.
+<tt>std.async</tt> supplies a cooperative scheduler and a per-task child-frame
+pool. The caller owns every buffer: the root frame is a slice you pass in,
+and the <tt>Context</tt> sits at the head of another slice you supply. The
+header is sixteen bytes, and the buffer must be eight-aligned so that child
+frames holding eight-byte members stay aligned.
+</p>
+<pre>
+pub const TaskState = enum(u8) { ready, running, suspended, done, cancelled };
+pub const FrameError = error{OutOfFrame};
+pub const HEADER_SIZE: usize = 16;
+pub const Context = struct { used: usize, capacity: usize, oom: bool };
+pub fn contextInit(buf: []u8) *Context
+pub fn contextAlloc(ctx: *Context, size: usize) FrameError![*]u8
+pub fn contextMark(ctx: *Context) usize
+pub fn contextRelease(ctx: *Context, mark: usize) void
+pub const Scheduler = struct { tasks: [*]*Task, capacity: usize, count: usize, current: usize, in_task: bool };
+pub fn schedulerInit(tasks: []*Task) Scheduler
+pub fn addTask(s: *Scheduler, t: *Task) bool
+pub fn tick(s: *Scheduler) FrameError!void
+pub fn waitAll(s: *Scheduler) FrameError!void
+</pre>
+<p>
+The sample initializes a <tt>Context</tt> over a stack buffer that is backed
+by <tt>[16]u64</tt>, which forces the eight-byte alignment the module
+requires, and reads back the usable capacity. The builtins that drive the
+frames, and the shape of a suspending function, are
+<a href="vol2-15-builtins.html">chapter&nbsp;15</a>'s Group D.
+</p>
+
+<h2><a name="bits"></a>std.bits</h2>
+<p>
+<tt>std.bits</tt> is pure computation on <tt>u32</tt> and <tt>u64</tt>. Z98
+has no bit builtins beyond <tt>@bitCast</tt>, so every operation is a
+hand-written loop. All functions are total except <tt>extract</tt> and
+<tt>insert</tt>, which trap when the offset and length fall outside a
+32-bit word.
+</p>
+<pre>
+pub fn popcount32(x: u32) u32
+pub fn popcount64(x: u64) u32
+pub fn clz32(x: u32) u32
+pub fn ctz32(x: u32) u32
+pub fn rotl32(x: u32, n: u32) u32
+pub fn rotr32(x: u32, n: u32) u32
+pub fn bitrev32(x: u32) u32
+pub fn mask(bits: u32) u32
+pub fn extract(x: u32, off: u32, len: u32) u32
+pub fn insert(x: u32, val: u32, off: u32, len: u32) u32
+pub fn isPow2(x: u32) bool
+pub fn nextPow2(x: u32) u32
+</pre>
+<p>
+<tt>clz32(0)</tt> and <tt>ctz32(0)</tt> return the width (32), and
+<tt>nextPow2(0)</tt> returns 1, so the total functions stay total even at
+their edges.
+</p>
+
+<h2><a name="os"></a>std.os</h2>
+<p>
+<tt>std.os</tt> exposes process-level information. The argument surface is
+deliberately explicit: the compiler's <tt>main</tt> wrapper forwards
+<tt>argc</tt> and <tt>argv</tt> only when the Z98 <tt>main</tt> declares
+them, and the user passes them to <tt>initArgs</tt> once. After that,
+<tt>argc</tt> and <tt>argv</tt> are ordinary reads.
+</p>
+<pre>
+pub fn initArgs(arg_count: i32, arg_values: [*]*const u8) void
+pub fn argc() usize
+pub fn argv(i: usize) []const u8
+pub fn exit(code: i32) noreturn
+pub fn env(name: []const u8) ?[]const u8
+pub fn cwd(arena: *Arena) OsError![]u8
+pub const OsError = error{ OutOfMemory, CwdFailed };
+</pre>
+<p>
+<tt>env</tt> returns an optional because the name may be unset;
+<tt>cwd</tt> takes an arena because the current directory is copied into
+memory you own. The sample calls <tt>initArgs</tt> at the top of
+<tt>main</tt> and later checks that <tt>argc</tt> is at least one and that
+the current directory is non-empty.
+</p>
+
+<h2><a name="time"></a>std.time</h2>
+<p>
+<tt>std.time</tt> provides a monotonic counter, a wall clock, and sleep.
+<tt>ticksMs</tt> is milliseconds since boot on Windows and wall-clock
+milliseconds since the epoch on POSIX, truncated to 32 bits; it wraps every
+49.7 days. <tt>highRes</tt> is the monotonic source, with its unit given by
+<tt>highResFreq</tt>.
+</p>
+<pre>
+pub fn ticksMs() u32
+pub fn highRes() u64
+pub fn highResFreq() u64
+pub fn clockMonotonicAvailable() bool
+pub fn wallClockUnix() i64
+pub fn sleepMs(ms: u32) void
+</pre>
+<p>
+The sample only asserts that <tt>ticksMs</tt> is non-negative, a comparison
+that is always true for an unsigned value but proves the call links and
+runs. Timing code belongs in a program that can afford to sleep; here the
+goal is only to show the module is present.
+</p>
+
+<h2><a name="buf"></a>std.buf</h2>
+<p>
+<tt>std.buf</tt> is a growable byte buffer. It is bytes only, not a general
+container, and it owns no storage: the arena behind it does. Growth doubles
+the capacity, and <tt>clear</tt> keeps the storage while resetting the
+length. There is no <tt>deinit</tt>; resetting the arena reclaims everything.
+The endian-tagged append functions exist because wire formats and file
+formats need them.
+</p>
+<pre>
+pub const Buf = struct { arena: *Arena, data: []u8, len: usize };
+pub fn init(arena: *Arena) Buf
+pub fn initCapacity(arena: *Arena, cap: usize) !Buf
+pub fn capacity(b: *Buf) usize
+pub fn slice(b: *Buf) []u8
+pub fn clear(b: *Buf) void
+pub fn append(b: *Buf, bytes: []const u8) !void
+pub fn appendByte(b: *Buf, byte: u8) !void
+pub fn appendU16BE(b: *Buf, v: u16) !void
+pub fn appendU16LE(b: *Buf, v: u16) !void
+pub fn appendU32BE(b: *Buf, v: u32) !void
+pub fn appendU32LE(b: *Buf, v: u32) !void
+pub fn appendU64BE(b: *Buf, v: u64) !void
+pub fn appendU64LE(b: *Buf, v: u64) !void
+</pre>
+<p>
+The sample appends a single little-endian <tt>u32</tt> and reads the first
+byte back: <tt>0x11223344</tt> stored little-endian puts <tt>0x44</tt> at
+index zero. That one line exercises the arena-backed buffer, the append
+path, and the <tt>slice</tt> view.
+</p>
+
+<h2>The example</h2>
+<p>
+The whole tour in one program. It calls every one of the thirteen modules
+once, in the order they were presented, and prints one line for each result.
+It is <tt>docs/sf/manuals/src/vol2/stdio.z98</tt>:
+</p>
+<pre>
+const std = @import("std");
+
+const Point = struct { x: i32, y: i32 };
+
+pub fn main(argc: i32, argv: [*]*const u8) void {
+    std.os.initArgs(argc, argv);
+
+    std.io.print("std.io ready\n", .{});
+
+    const greeting: []const u8 = "hello, z98";
+    const prefix: []const u8 = "hello";
+    std.io.print("str len={} starts={} find={}\n", .{ std.str.len(greeting), std.str.startsWith(greeting, prefix), std.str.findChar(greeting, ',') != null });
+
+    var bytes: [4]u8 = undefined;
+    std.mem.zeroU8(@ptrCast([*]u8, &amp;bytes), 4);
+    std.io.print("mem zeroed={} {} {} {}\n", .{ bytes[0], bytes[1], bytes[2], bytes[3] });
+
+    std.io.print("math max={} clamp={}\n", .{ std.math.max(3, 4), std.math.clamp(9, 0, 5) });
+
+    std.debug.assert(greeting.len &gt; 0);
+    std.io.print("debug assert ok\n", .{});
+
+    var backing: [256]u8 = undefined;
+    var arena = std.arena.init(backing[0..256]);
+    const p = std.arena.alloc(&amp;arena, @sizeOf(Point)) catch return;
+    const pt = @ptrCast(*Point, p);
+    pt.x = 3;
+    pt.y = 4;
+    std.io.print("arena used={} point={} {}\n", .{ arena.used, pt.x, pt.y });
+    std.arena.reset(&amp;arena);
+
+    std.io.print("bits pop={} clz={}\n", .{ std.bits.popcount32(0xF0), std.bits.clz32(1) });
+
+    std.io.print("net port={x}\n", .{ std.net.htonsManual(0x1234) });
+
+    var pool: [16]u64 = undefined;
+    const ctx = std.async.contextInit(@ptrCast([*]u8, &amp;pool)[0..128]);
+    std.io.print("async header={} capacity={}\n", .{ std.async.HEADER_SIZE, ctx.capacity });
+
+    var cwdbuf: [4096]u8 = undefined;
+    var cwd_arena = std.arena.init(cwdbuf[0..4096]);
+    const cwd = std.os.cwd(&amp;cwd_arena) catch return;
+    std.io.print("os argc&gt;=1={} cwd_nonempty={}\n", .{ std.os.argc() &gt;= 1, cwd.len &gt; 0 });
+
+    var bufbuf: [64]u8 = undefined;
+    var buf_arena = std.arena.init(bufbuf[0..64]);
+    var b = std.buf.init(&amp;buf_arena);
+    std.buf.appendU32LE(&amp;b, 0x11223344) catch return;
+    const bs = std.buf.slice(&amp;b);
+    std.io.print("buf len={} byte0={x}\n", .{ bs.len, bs[0] });
+
+    std.io.print("time ticks&gt;=0={}\n", .{ std.time.ticksMs() &gt;= 0 });
+
+    std.fmt.printI32(-99);
+    std.io.print("\n", .{});
+}
+</pre>
+<p>
+Build the compiler once from the committed seed, then emit and compile the
+program, exactly as in chapter&nbsp;15:
+</p>
+<pre>
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/manual_seed
+</pre>
+<p>
+The result is <tt>/tmp/manual_seed/zig1_5_clean</tt> with the standard
+library beside it in <tt>/tmp/manual_seed/lib/</tt>. This example compiles
+with no diagnostics; the program then runs to the end:
+</p>
+<pre>
+$ mkdir -p /tmp/manual_out
+$ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out docs/sf/manuals/src/vol2/stdio.z98
+$ cd /tmp/manual_out &amp;&amp; sh build_target.sh linux stdio
+Building for linux...
+Built: stdio
+$ ./stdio
+std.io ready
+str len=10 starts=true find=1
+mem zeroed=0 0 0 0
+math max=4 clamp=5
+debug assert ok
+arena used=8 point=3 4
+bits pop=4 clz=31
+net port=3412
+async header=16 capacity=112
+os argc&gt;=1=true cwd_nonempty=true
+buf len=4 byte0=44
+time ticks&gt;=0=true
+-99
+</pre>
+<p>
+Thirteen lines, one per module, and an exit status of 0. Read the numbers
+back against the sections above. The arena reports eight bytes used for one
+<tt>Point</tt>; the async header is the declared sixteen, leaving 112 of the
+128-byte pool; the network helper turns port <tt>0x1234</tt> around to the
+byte-swapped <tt>3412</tt>; the buffer's first little-endian byte is
+<tt>0x44</tt>. The final <tt>-99</tt> is <tt>std.fmt.printI32</tt> writing
+the last value with no format string, which is why it has no label and no
+trailing newline of its own.
+</p>
+
+<h2>Running under Windows 98</h2>
+<p>
+The same program builds for Win9x. <tt>src/build_owc.bat</tt> compiles the
+emitted C89 with OpenWatcom's <tt>wcc386</tt> and links a console
+<tt>stdio.exe</tt>; run from a Windows 98 command prompt, it prints the same
+thirteen lines. Every module in the tour is target-selected already:
+<tt>std.net</tt>, <tt>std.os</tt>, and <tt>std.time</tt> choose their OS
+binding at compile time, so the same source emits the Win9x calls when it is
+built for that target. The screenshot below will be captured on real
+hardware.
+</p>
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f0f0f0" class="placeholder">
+<tr>
+<td align="center">
+<i>Figure 31 &mdash; Win9x screenshot pending</i>
+</td>
+</tr>
+</table>
+<p><i>Figure 31. Running <tt>stdio.exe</tt> under Windows 98.</i></p>
+<p>
+Every line matches. The emitted program was also built for the Win9x target
+and run under wine, and it printed the same thirteen lines, because the tour
+reduces its target-dependent values to booleans before printing them. The
+values behind those booleans do vary &mdash; <tt>ticksMs</tt> and the
+argument count are live &mdash; but the output does not. The tour is about
+proving the modules are reachable and callable, not about pinning values
+that are defined to vary.
+</p>
+
+<h2><a name="mistakes"></a>Common mistakes</h2>
+<p>
+The mistakes below come from arriving with a C standard library in your
+head. Each has a measured correction.
+</p>
+<p>
+<b>Assuming <tt>stdio.h</tt> and POSIX APIs.</b> There is no <tt>FILE</tt>,
+no <tt>fopen</tt>, no <tt>printf</tt> with percent verbs, and no
+<tt>errno</tt>. <tt>std.io.print</tt> is a format-string entry point whose
+only specifier syntax is the brace form of
+<a href="vol2-15-builtins.html">chapter&nbsp;15</a>; it is not
+<tt>printf</tt>. Files are opened with <tt>std.io.fileOpen</tt>, which
+returns <tt>?usize</tt>, so failure is handled with <tt>orelse</tt>:
+</p>
+<pre>
+const fd = std.io.fileOpen(name, false) orelse return;
+</pre>
+<p>
+A C <tt>errno</tt> check after a failed call has nothing to read. Error
+information in Z98 is in the return type, which is why the arena returns
+<tt>ArenaError![*]u8</tt> and the socket functions return
+<tt>NetError!T</tt>.
+</p>
+<p>
+<b>Assuming more modules ship than the thirteen.</b> The library directory
+holds more <tt>std_*.zig</tt> files than the <tt>std</tt> namespace
+re-exports, and a name that is not in the table above is not reachable
+through <tt>std</tt>. The compiler says so at the point of use:
+</p>
+<pre>
+const S = @sizeOf(std.base64);
+// error[3074]: unable to resolve type argument
+</pre>
+<p>
+Check the re-export list in <tt>sf/src/std.zig</tt> before you reach for a
+name. If it is not one of the thirteen, it is not part of the documented
+surface, whatever else exists on disk.
+</p>
+<p>
+<b>Mixing the buffered and unbuffered output paths.</b>
+<tt>std.io.write</tt> and <tt>std.io.printInt</tt> go through the standard
+output builtins, while <tt>std.io.print</tt> goes through
+<tt>std.fmt</tt>. On the POSIX target the first path is buffered and the
+second is not, so interleaving them can reorder the transcript. This is why
+the sample uses <tt>std.io.print</tt> for every line and calls
+<tt>std.fmt.printI32</tt> only at the very end, with no other family's
+output in flight.
+</p>
+
+<h2>Where to go next</h2>
+<p>
+The previous chapter is the pattern this page's modules are used with:
+<a href="vol2-16-no-methods.html">chapter&nbsp;16, No methods, no generics,
+no comptime</a>. The arena that <tt>std.arena</tt> implements is
+<a href="vol2-14-arena.html">chapter&nbsp;14</a>; the builtins these modules
+are built from are <a href="vol2-15-builtins.html">chapter&nbsp;15</a>; and
+the byte slices every string function takes are
+<a href="vol2-09-arrays-slices.html">chapter&nbsp;9</a>.
+</p>
+<p>
+The formal lookup for the language-level calls is
+<a href="vol4-15-builtins.html">Volume IV &mdash; Builtins</a>. The chapters
+that continue this volume are planned:
+</p>
+<ul>
+<li>Chapter 18, <b>print and the format string</b> <i>(planned)</i> &mdash;
+the accepted specifiers and rejections of the entry point
+<tt>std.io.print</tt> is built on.</li>
+<li>Chapter 19, <b>Idioms and best practices</b> <i>(planned)</i> &mdash;
+where the arena, buffer, and init-function patterns are collected.</li>
+</ul>
+<p>
+A planned Reference stdlib page will document every function of every module
+in the table above; it does not ship yet. Until then, the runnable example in
+<tt>docs/sf/manuals/src/vol2/stdio.z98</tt> is the working reference for the
+shape of a call, and the module sources
+<tt>sf/src/std_*.zig</tt> are the authority for a signature this chapter did
+not quote.
+</p>
+
+<p class="navbtns">
+<a href="vol2-16-no-methods.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol4-00-title.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol2-16-no-methods.html">No Methods, No Generics, No Comptime</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-00-title.html">Volume IV &mdash; Reference</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
