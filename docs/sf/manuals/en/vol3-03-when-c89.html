@@ -233,12 +233,13 @@ grow a step, then C89 is the answer that keeps the build working.
 This is an era-toolchain fact, and the manual does not pretend otherwise. Z98's
 own emitted build scripts are a good illustration of how small the added step
 can be when it is allowed: the compiler emits <tt>build_target.sh</tt> for the
-GNU toolchain, <tt>build_target.bat</tt> for MSVC <tt>cl</tt>, and
-<tt>build_owc.bat</tt> for OpenWatcom <tt>wcc386</tt>/<tt>wlink</tt>. On the
-development host only the mingw cross-build of the first is actually run; the
-MSVC and OpenWatcom scripts are emitted, not exercised. That is the honest
-boundary. Where the added step is acceptable, Z98 is the better tool; where it
-is not, C89 is.
+GNU toolchain, and for the Windows target it also emits
+<tt>build_target.bat</tt> for MSVC <tt>cl</tt> and <tt>build_owc.bat</tt> for
+OpenWatcom <tt>wcc386</tt>/<tt>wlink</tt>. A default Linux emission produces
+only <tt>build_target.sh</tt>. On the development host only the mingw
+cross-build of that GNU script is actually run; the MSVC and OpenWatcom scripts
+are emitted, not exercised. That is the honest boundary. Where the added step is
+acceptable, Z98 is the better tool; where it is not, C89 is.
 </p>
 
 <h3>Widest compiler support</h3>
@@ -355,7 +356,7 @@ the two link, and a project can hold both.</td>
 <a name="the-way-over-it"></a>
 <p>
 The load-bearing fact is short: <b>Z98 emits C89, so you can mix the two
-freely</b>. This is not a slogan. It is a property you can test in four
+freely</b>. This is not a slogan. It is a property you can test in five
 commands, and the rest of this section does exactly that: a Z98 module declares
 a <tt>extern</tt> function, a hand-written C89 file defines it, the emitted C
 compiles as C89, and the linked program runs. No glue, no wrapper generator, no
@@ -412,8 +413,9 @@ ahead of it. It is also why the hand-written library does not have to be ported,
 wrapped, or regenerated.
 </p>
 <p>
-The emitted C is C89, and the strict dialect agrees. Compiling the emitted
-translation unit with the pedantic flag set succeeds:
+The emitted C is C89, and the strict dialect agrees on the program's own
+translation unit. Compiling that main translation unit with the pedantic flag
+set succeeds:
 </p>
 <pre>
 $ gcc -m32 -std=c89 -pedantic -Wall -I . -fsyntax-only sum_0430AE91.c
@@ -421,7 +423,10 @@ $ echo $?
 0
 </pre>
 <p>
-It does warn, and the honest accounting of that warning belongs on this page.
+That check covers the emitted main translation unit, not the shared runtime
+translation units, which the emitted <tt>build_target.sh</tt> builds with the
+documented suppressions. It does warn, and the honest accounting of that warning
+belongs on this page.
 The emitted C uses <tt>long long</tt> for its 64-bit types&nbsp;&mdash; the one
 extension beyond C89 the era's compilers all accepted&nbsp;&mdash; and
 <tt>-pedantic</tt> reports it, along with a handful of unused runtime helpers
@@ -458,12 +463,13 @@ Two more properties keep the seam safe, and both are detailed in chapter&nbsp;11
 <i>(planned)</i>, Talking to C. First, identifiers beginning with
 <tt>__</tt> are reserved for the compiler and a user identifier that starts
 with them is mangled automatically, so the Z98 side cannot accidentally collide
-with the runtime's internals. Second, every Z98 identifier is mangled in the
-emitted C&nbsp;&mdash; functions become names like <tt>zF_EA90E208_main</tt>
-and types like <tt>zT_6</tt>&nbsp;&mdash; so a Z98 module and a C89 module can
-each define an ordinary-looking name without a link collision. The names you
-write in Z98 are not the names the linker sees, which is exactly what makes a
-mixed link predictable.
+with the runtime's internals. Second, Z98's functions are mangled in the
+emitted C&nbsp;&mdash; a function you call <tt>main</tt> is emitted as
+<tt>zF_EA90E208_main</tt>, and the compiler's own generated temporaries carry
+<tt>zT_</tt> names such as <tt>zT_6</tt>&nbsp;&mdash; so a Z98 module and a C89
+module can each define an ordinary-looking name without a link collision. The
+names you write in Z98 are not the names the linker sees, which is exactly what
+makes a mixed link predictable.
 </p>
 <p>
 Put together, the property gives the rule this chapter wants you to keep:
