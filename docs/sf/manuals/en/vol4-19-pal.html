@@ -1,0 +1,450 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: The Platform Layer</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual reference platform abstraction layer PAL pal.zig zig_pal.c internal contract file open read write close stdout stderr stream exit args trap getDefaultLibPath markers">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol4-15-builtins.html">
+<link rel="next" href="vol4-21-diagnostics.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume IV &mdash; Reference</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+How to use the Reference <i>(planned)</i><br>
+The full grammar <i>(planned)</i><br>
+Types <i>(planned)</i><br>
+Pointers <i>(planned)</i><br>
+Structs <i>(planned)</i><br>
+Enums <i>(planned)</i><br>
+Unions <i>(planned)</i><br>
+Tuples <i>(planned)</i><br>
+Arrays and slices <i>(planned)</i><br>
+Errors <i>(planned)</i><br>
+Optionals <i>(planned)</i><br>
+Aliases <i>(planned)</i><br>
+Statements <i>(planned)</i><br>
+Control flow <i>(planned)</i><br>
+Error expressions <i>(planned)</i><br>
+<a href="vol4-15-builtins.html">Builtins</a><br>
+Async <i>(planned)</i><br>
+Memory <i>(planned)</i><br>
+The standard library <i>(planned)</i><br>
+<b>The PAL</b><br>
+Markers <i>(planned)</i><br>
+<a href="vol4-21-diagnostics.html">Diagnostics</a><br>
+<a href="vol4-22-cli.html">The command line</a><br>
+Limits <i>(planned)</i><br>
+<a href="vol4-24-html-style.html">HTML style</a><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>The platform layer</h1>
+<p>
+The platform abstraction layer (PAL) is the compiler's internal contract with
+the host operating system. The Z98 side is <tt>sf/src/pal.zig</tt>; the C side
+is <tt>sf/src/include/zig_pal.c</tt>. The compiler's Z98 sources reach the OS
+only through the <tt>extern "c"</tt> declarations that sit between the two, so
+every host-specific call is isolated in this one layer.
+</p>
+<p>
+<b>The PAL is not part of the Z98 language.</b> No <tt>pal</tt> symbol is
+reachable from user code unless a program declares its own <tt>extern</tt>
+prototypes. Z98 programs use the standard library instead; see
+<a href="vol2-17-stdlib.html">Volume II, The standard library tour</a> and the
+Volume IV standard library page (planned). This page is a compiler
+contributor's lookup.
+</p>
+
+<h2>Documented subset</h2>
+<p>
+The tables below list the callable public surface of <tt>sf/src/pal.zig</tt>:
+every <tt>pub fn</tt> and every <tt>pub const</tt>, followed by the C functions
+in <tt>zig_pal.c</tt> that implement them. Three things are deliberately out of
+scope, and the page states them rather than inventing a symbol:
+</p>
+<ul>
+<li>The debug marker channel <tt>markerWrite</tt>, <tt>markerWriteInt</tt>, and
+<tt>markerWriteInt64</tt> is compiled off (<tt>g_markers_debug = 0</tt>, so the
+functions emit nothing). The live measurement markers are the subject of the
+markers page (planned).</li>
+<li>The private <tt>const</tt> values and the libc <tt>extern "c"</tt> bindings
+(<tt>fopen</tt>, <tt>fread</tt>, <tt>fwrite</tt>, <tt>fclose</tt>,
+<tt>fseek</tt>, <tt>ftell</tt>, <tt>c_exit</tt>) are implementation details of
+the public functions, not a callable surface of their own.</li>
+<li>Categories a PAL often owns but the compiler PAL does not: <b>memory</b> is
+the arena allocator (<tt>sf/src/allocator.zig</tt>), <b>console</b> is the two
+stream functions below, <b>platform detection</b> is the language builtin
+<tt>@isWindows()</tt> (see <a href="vol4-15-builtins.html">Builtins</a>), and
+<b>time and sleep</b> belong to <tt>std.time</tt> and
+<tt>std.io.sleepMs</tt>, not to the compiler PAL.</li>
+</ul>
+
+<h2>File functions</h2>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Function</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>readFile</tt></td>
+<td valign="top"><tt>pub fn readFile(path: []const u8, alloc: *Sand) ?[]u8</tt></td>
+<td valign="top"><tt>?[]u8</tt>; <tt>null</tt> on any failure (path of 511 bytes or more, open failure, empty file, allocation failure, or a short read)</td>
+<td valign="top">Read a whole file into arena <tt>alloc</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>fileExists</tt></td>
+<td valign="top"><tt>pub fn fileExists(path: []const u8) bool</tt></td>
+<td valign="top"><tt>bool</tt></td>
+<td valign="top">Report whether <tt>path</tt> opens for reading.</td>
+</tr>
+<tr>
+<td valign="top"><tt>dirExists</tt></td>
+<td valign="top"><tt>pub fn dirExists(path: []const u8) bool</tt></td>
+<td valign="top"><tt>bool</tt> (backed by <tt>pal_dir_exists</tt>)</td>
+<td valign="top">Report whether <tt>path</tt> is an existing directory.</td>
+</tr>
+<tr>
+<td valign="top"><tt>fileOpen</tt></td>
+<td valign="top"><tt>pub fn fileOpen(path: []const u8, flags: i32) usize</tt></td>
+<td valign="top"><tt>usize</tt>; <tt>INVALID_FD</tt> on a too-long path or an open failure</td>
+<td valign="top">Open a file; <tt>flags</tt> is <tt>FILE_OPEN_WRITE</tt> or <tt>FILE_OPEN_READ</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>fileWrite</tt></td>
+<td valign="top"><tt>pub fn fileWrite(fd: usize, msg: []const u8) void</tt></td>
+<td valign="top"><tt>void</tt>; the byte count is discarded</td>
+<td valign="top">Write all of <tt>msg</tt> at descriptor <tt>fd</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>fileRead</tt></td>
+<td valign="top"><tt>pub fn fileRead(fd: usize, buf: []u8) usize</tt></td>
+<td valign="top">bytes read (<tt>0</tt> at end of file), or <tt>INVALID_FD</tt> when the C call returns a negative count</td>
+<td valign="top">Read up to <tt>buf.len</tt> bytes from <tt>fd</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>fileClose</tt></td>
+<td valign="top"><tt>pub fn fileClose(fd: usize) void</tt></td>
+<td valign="top"><tt>void</tt>; the close result is discarded</td>
+<td valign="top">Close descriptor <tt>fd</tt>.</td>
+</tr>
+</table>
+
+<h2>Streaming stdio</h2>
+<p>
+These wrap C stdio (<tt>fopen</tt>/<tt>fread</tt>/<tt>fwrite</tt>/<tt>fclose</tt>/
+<tt>fseek</tt>) for the LIR spill store. They are strict: a short read, a short
+write, or a failed seek is fatal and reports through <tt>panic.zig</tt>.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Function</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>streamOpen</tt></td>
+<td valign="top"><tt>pub fn streamOpen(path: []const u8, mode: [*]const u8) ?*void</tt></td>
+<td valign="top"><tt>?*void</tt>; <tt>null</tt> on a too-long path or a failed <tt>fopen</tt></td>
+<td valign="top">Open a C stdio stream by mode string.</td>
+</tr>
+<tr>
+<td valign="top"><tt>streamClose</tt></td>
+<td valign="top"><tt>pub fn streamClose(file: *void) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Close a C stdio stream.</td>
+</tr>
+<tr>
+<td valign="top"><tt>streamWrite</tt></td>
+<td valign="top"><tt>pub fn streamWrite(file: *void, buf: []const u8) void</tt></td>
+<td valign="top"><tt>void</tt>; a short write panics (<tt>pal.zig:147</tt>)</td>
+<td valign="top">Write all of <tt>buf</tt> to the stream.</td>
+</tr>
+<tr>
+<td valign="top"><tt>streamRead</tt></td>
+<td valign="top"><tt>pub fn streamRead(file: *void, buf: []u8) void</tt></td>
+<td valign="top"><tt>void</tt>; a short read panics (<tt>pal.zig:157</tt>)</td>
+<td valign="top">Fill all of <tt>buf</tt> from the stream.</td>
+</tr>
+<tr>
+<td valign="top"><tt>streamSeek</tt></td>
+<td valign="top"><tt>pub fn streamSeek(file: *void, offset: i32) void</tt></td>
+<td valign="top"><tt>void</tt>; a nonzero <tt>fseek</tt> result panics (<tt>pal.zig:166</tt>)</td>
+<td valign="top">Seek to absolute <tt>offset</tt>.</td>
+</tr>
+</table>
+
+<h2>Standard streams</h2>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Function</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>stdout_write</tt></td>
+<td valign="top"><tt>pub fn stdout_write(msg: []const u8) void</tt></td>
+<td valign="top"><tt>void</tt>; the write count is discarded</td>
+<td valign="top">Write bytes to file descriptor 1 (<tt>ext_c.write(1, ...)</tt>).</td>
+</tr>
+<tr>
+<td valign="top"><tt>stderr_write</tt></td>
+<td valign="top"><tt>pub fn stderr_write(msg: []const u8) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Write bytes to file descriptor 2; the compiler's whole diagnostic channel.</td>
+</tr>
+</table>
+
+<h2>Process and arguments</h2>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Function</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>exit</tt></td>
+<td valign="top"><tt>pub fn exit(code: u8) void</tt></td>
+<td valign="top">does not return (calls <tt>c_exit</tt>, then loops)</td>
+<td valign="top">Terminate with <tt>code</tt>; the trailing loop is unreachable.</td>
+</tr>
+<tr>
+<td valign="top"><tt>initArgs</tt></td>
+<td valign="top"><tt>pub fn initArgs(argc: i32, argv: [*]*const u8) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Save the process argument vector for <tt>argCount</tt>/<tt>argGet</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>argCount</tt></td>
+<td valign="top"><tt>pub fn argCount() i32</tt></td>
+<td valign="top">saved argument count</td>
+<td valign="top">Number of arguments passed to <tt>initArgs</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>argGet</tt></td>
+<td valign="top"><tt>pub fn argGet(i: i32) [*]const u8</tt></td>
+<td valign="top">pointer to argument <tt>i</tt> (no bounds check)</td>
+<td valign="top">Fetch a saved argument for the CLI parser.</td>
+</tr>
+</table>
+
+<h2>Paths and the marker channel</h2>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Function</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>getDefaultLibPath</tt></td>
+<td valign="top"><tt>pub fn getDefaultLibPath(buf: [*]u8, bufsize: i32) i32</tt></td>
+<td valign="top">length written excluding the NUL, or <tt>0</tt> on failure (backed by <tt>pal_get_default_lib_path</tt>)</td>
+<td valign="top">Compute the compiler-relative <tt>&lt;exe_dir&gt;/lib</tt> path.</td>
+</tr>
+<tr>
+<td valign="top"><tt>markersEnabled</tt></td>
+<td valign="top"><tt>pub fn markersEnabled(on: u32) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Turn the measurement-marker channel on or off.</td>
+</tr>
+<tr>
+<td valign="top"><tt>isMarkersEnabled</tt></td>
+<td valign="top"><tt>pub fn isMarkersEnabled() bool</tt></td>
+<td valign="top"><tt>bool</tt></td>
+<td valign="top">Whether the channel is currently enabled.</td>
+</tr>
+<tr>
+<td valign="top"><tt>measureMarkerWrite</tt></td>
+<td valign="top"><tt>pub fn measureMarkerWrite(msg: []const u8) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Write a measurement marker to stderr when enabled.</td>
+</tr>
+<tr>
+<td valign="top"><tt>measureMarkerWriteInt</tt></td>
+<td valign="top"><tt>pub fn measureMarkerWriteInt(prefix: []const u8, value: u32) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Write <tt>prefix</tt> and a decimal <tt>u32</tt> marker line.</td>
+</tr>
+<tr>
+<td valign="top"><tt>measureMarkerWriteInt64</tt></td>
+<td valign="top"><tt>pub fn measureMarkerWriteInt64(prefix: []const u8, value: u64) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Write <tt>prefix</tt> and a decimal <tt>u64</tt> marker line.</td>
+</tr>
+</table>
+
+<h2>Constants</h2>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Name</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Declaration</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Meaning</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>INVALID_FD</tt></td>
+<td valign="top"><tt>pub const INVALID_FD: usize = @intCast(usize, 0xFFFFFFFF);</tt></td>
+<td valign="top">Sentinel returned by <tt>fileOpen</tt> and <tt>fileRead</tt> on failure.</td>
+</tr>
+<tr>
+<td valign="top"><tt>FILE_OPEN_WRITE</tt></td>
+<td valign="top"><tt>pub const FILE_OPEN_WRITE: i32 = 0;</tt></td>
+<td valign="top">Truncate/create write mode for <tt>fileOpen</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>FILE_OPEN_READ</tt></td>
+<td valign="top"><tt>pub const FILE_OPEN_READ: i32 = 1;</tt></td>
+<td valign="top">Read-only open mode for <tt>fileOpen</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>g_markers_debug</tt></td>
+<td valign="top"><tt>pub const g_markers_debug: u32 = 0;</tt></td>
+<td valign="top">Gate for the debug marker channel; <tt>0</tt> compiles it off.</td>
+</tr>
+</table>
+
+<h2>The C side</h2>
+<p>
+<tt>sf/src/include/zig_pal.c</tt> implements the functions above and is linked
+into every emitted program. <tt>PlatFile</tt> is <tt>void*</tt> on
+<tt>_WIN32</tt> and <tt>int</tt> elsewhere; <tt>PLAT_INVALID_FILE</tt> is
+<tt>(void*)-1</tt> or <tt>-1</tt> accordingly. The <tt>TrapContext</tt> struct
+is ten <tt>unsigned int</tt> fields (<tt>eip, esp, ebp, eflags, eax, ebx, ecx,
+edx, esi, edi</tt>) and mirrors <tt>std.debug.TrapContext</tt>.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Function</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>pal_print_stdout</tt></td>
+<td valign="top"><tt>void pal_print_stdout(const char* msg, usize len)</tt></td>
+<td valign="top">Write to stdout (<tt>WriteConsoleA</tt>/<tt>WriteFile</tt> on Windows, <tt>write(1, ...)</tt> on POSIX).</td>
+</tr>
+<tr>
+<td valign="top"><tt>pal_print_stderr</tt></td>
+<td valign="top"><tt>void pal_print_stderr(const char* msg, usize len)</tt></td>
+<td valign="top">Write to stderr (same split on descriptor 2).</td>
+</tr>
+<tr>
+<td valign="top"><tt>pal_file_open</tt></td>
+<td valign="top"><tt>PlatFile pal_file_open(const char* path, int flags)</tt></td>
+<td valign="top">Open by <tt>PAL_FILE_OPEN_WRITE</tt>/<tt>READ</tt>; <tt>PLAT_INVALID_FILE</tt> on failure.</td>
+</tr>
+<tr>
+<td valign="top"><tt>pal_file_read</tt></td>
+<td valign="top"><tt>int pal_file_read(PlatFile fd, char* buf, unsigned int len)</tt></td>
+<td valign="top">Read up to <tt>len</tt> bytes; <tt>-1</tt> on error.</td>
+</tr>
+<tr>
+<td valign="top"><tt>pal_file_write</tt></td>
+<td valign="top"><tt>int pal_file_write(PlatFile fd, const char* buf, unsigned int len)</tt></td>
+<td valign="top">Write all <tt>len</tt> bytes; <tt>-1</tt> on error.</td>
+</tr>
+<tr>
+<td valign="top"><tt>pal_file_close</tt></td>
+<td valign="top"><tt>int pal_file_close(PlatFile fd)</tt></td>
+<td valign="top">Close; <tt>0</tt> on success, <tt>-1</tt> on error.</td>
+</tr>
+<tr>
+<td valign="top"><tt>pal_dir_exists</tt></td>
+<td valign="top"><tt>int pal_dir_exists(const char* path)</tt></td>
+<td valign="top">Nonzero when <tt>path</tt> is a directory.</td>
+</tr>
+<tr>
+<td valign="top"><tt>pal_get_default_lib_path</tt></td>
+<td valign="top"><tt>int pal_get_default_lib_path(char* buf, int bufsize)</tt></td>
+<td valign="top">Compute <tt>&lt;exe_dir&gt;/lib</tt>; length or <tt>0</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>pal_set_trap_handler</tt></td>
+<td valign="top"><tt>void pal_set_trap_handler(void (*h)(TrapContext*))</tt></td>
+<td valign="top">Install the trap hook; the Z98 entry point is <tt>std.debug.setTrapHandler</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>pal_trap</tt></td>
+<td valign="top"><tt>void pal_trap(void)</tt></td>
+<td valign="top">Invoke the handler, then <tt>int3</tt> (or <tt>pal_abort</tt> elsewhere).</td>
+</tr>
+<tr>
+<td valign="top"><tt>pal_abort</tt></td>
+<td valign="top"><tt>void pal_abort(void)</tt></td>
+<td valign="top"><tt>TerminateProcess(GetCurrentProcess(), 3)</tt> on Windows, <tt>abort()</tt> on POSIX.</td>
+</tr>
+<tr>
+<td valign="top"><tt>pal_i64_to_str</tt></td>
+<td valign="top"><tt>int pal_i64_to_str(i64 value, char* buf, int bufsize)</tt></td>
+<td valign="top">Decimal signed 64-bit conversion; returns the length.</td>
+</tr>
+<tr>
+<td valign="top"><tt>pal_u64_to_str</tt></td>
+<td valign="top"><tt>int pal_u64_to_str(u64 value, char* buf, int bufsize)</tt></td>
+<td valign="top">Decimal unsigned 64-bit conversion; returns the length.</td>
+</tr>
+<tr>
+<td valign="top"><tt>pal_f64_to_str</tt></td>
+<td valign="top"><tt>int pal_f64_to_str(f64 value, char* buf, int bufsize)</tt></td>
+<td valign="top">Decimal float conversion; an integral value has no fraction.</td>
+</tr>
+</table>
+
+<h2>See also</h2>
+<p>
+<a href="vol4-15-builtins.html">Builtins</a> for <tt>@isWindows()</tt> and the
+other compile-time builtins, <a href="vol2-17-stdlib.html">Volume II, The
+standard library tour</a> for the user-facing layer above the PAL, and the
+Volume IV standard library and markers pages (both planned).
+</p>
+
+<p class="navbtns">
+<a href="vol4-15-builtins.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol4-21-diagnostics.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol4-15-builtins.html">Builtins</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-21-diagnostics.html">Diagnostics</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
