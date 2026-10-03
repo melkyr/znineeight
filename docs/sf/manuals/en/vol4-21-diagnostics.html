@@ -86,13 +86,17 @@ read the ordinal from the <b>Printed</b> column.
 </p>
 <p>
 The level is the first word: <tt>error</tt> (level 0), <tt>warning</tt> (level
-1), or <tt>info</tt> (level 2). Names are printed as the compiler prints them
-(<tt>ERR_*</tt>, <tt>WARN_*</tt>, <tt>INFO_*</tt>). The <b>Emission site</b>
+1), or <tt>info</tt> (level 2). The human-readable printer emits
+<tt>[file:]line:col: error[N]: &lt;message&gt;</tt> (or
+<tt>error[N]: &lt;message&gt;</tt> when a code is raised without a source
+location); the <tt>ERR_*</tt>, <tt>WARN_*</tt>, and <tt>INFO_*</tt> spellings
+are enum member names only and are <b>not</b> printed. The <b>Emission site</b>
 column names the <tt>file:line</tt> that raises the code; a message assembled
 at run time from fragments is shown in its assembled form and the site is where
-it is assembled. Rows marked <i>reserved</i> are enum members with no emission
-site at seed v90; they are listed because they are members, but they are not
-raised.
+it is assembled. A code with several distinct message shapes lists them
+separated by <tt>/</tt>, with run-time text marked <tt>&lt;...&gt;</tt>. Rows
+marked <i>reserved</i> are enum members with no emission site at seed v90; they
+are listed because they are members, but they are not raised.
 </p>
 
 <h2>The codes</h2>
@@ -118,20 +122,20 @@ raised.
 <tr>
 <td valign="top"><tt>error[2]</tt></td>
 <td valign="top"><tt>ERR_1002_INVALID_CHAR_LITERAL</tt></td>
-<td valign="top">empty character literal / expected closing '"'</td>
+<td valign="top">empty character literal / expected closing ' in character literal</td>
 <td valign="top"><tt>lexer.zig:348,363</tt></td>
 </tr>
 <tr>
 <td valign="top"><tt>error[3]</tt></td>
 <td valign="top"><tt>ERR_1003_INVALID_ESCAPE</tt></td>
-<td valign="top">invalid escape sequence (assembled from fragments)</td>
-<td valign="top"><tt>lexer.zig:522</tt></td>
+<td valign="top">\x requires at least one hex digit</td>
+<td valign="top"><tt>lexer.zig:520-522</tt></td>
 </tr>
 <tr>
 <td valign="top"><tt>error[4]</tt></td>
 <td valign="top"><tt>ERR_1004_BARE_AT_SIGN</tt></td>
-<td valign="top">bare '@' (assembled from fragments)</td>
-<td valign="top"><tt>lexer.zig:165</tt></td>
+<td valign="top">bare '@' is not valid; expected builtin name (e.g., @sizeOf)</td>
+<td valign="top"><tt>lexer.zig:164-165</tt></td>
 </tr>
 <tr>
 <td valign="top"><tt>error[5]</tt></td>
@@ -142,8 +146,8 @@ raised.
 <tr>
 <td valign="top"><tt>error[8]</tt></td>
 <td valign="top"><tt>ERR_2000_UNEXPECTED_TOKEN</tt></td>
-<td valign="top">unexpected token '&lt;x&gt;' (emitted as numeric code 2000)</td>
-<td valign="top"><tt>parser.zig:254</tt></td>
+<td valign="top">site-dependent parser error (emitted as numeric code 2000); e.g. "unexpected token" / "cannot slice base type: expected array, slice, or many-pointer"</td>
+<td valign="top"><tt>parser.zig:254,1548</tt>; <tt>semantic_analyzer.zig:6293</tt></td>
 </tr>
 <tr>
 <td valign="top"><tt>error[9]</tt></td>
@@ -214,14 +218,14 @@ raised.
 <tr>
 <td valign="top"><tt>error[3031]</tt></td>
 <td valign="top"><tt>ERR_2021_RETURNING_ADDRESS_OF_PARAM</tt></td>
-<td valign="top">returning address of function parameter '&lt;x&gt;' (assembled from fragments)</td>
-<td valign="top"><tt>analyzer.zig:167,171</tt></td>
+<td valign="top">returning address of parameter '&lt;x&gt;' (assembled from fragments; fallback without a name: returning address of function parameter)</td>
+<td valign="top"><tt>analyzer.zig:167</tt></td>
 </tr>
 <tr>
 <td valign="top"><tt>error[19]</tt></td>
 <td valign="top"><tt>ERR_3000_TYPE_MISMATCH</tt></td>
-<td valign="top">type mismatch at the named site, with <tt>source:</tt>/<tt>target:</tt> notes; 52 emission sites</td>
-<td valign="top"><tt>semantic_analyzer.zig:4746,4778</tt>; <tt>lower.zig:2422...</tt></td>
+<td valign="top">site-dependent; e.g. "cannot infer pointer type for @ptrFromInt; annotate the target variable type" / "@bitCast requires same-size integer source and destination types" (the two named sites); further context-specific messages at the many numeric-3000 sites (e.g. lower.zig:2422 "cannot take the address of a tagged-union payload member; assign the whole union instead (e.g. x = .{ .i = 5 })")</td>
+<td valign="top"><tt>semantic_analyzer.zig:4746,4778</tt>; numeric-3000 sites incl. <tt>lower.zig:2422</tt></td>
 </tr>
 <tr>
 <td valign="top"><tt>error[20]</tt></td>
@@ -238,8 +242,8 @@ raised.
 <tr>
 <td valign="top"><tt>error[22]</tt></td>
 <td valign="top"><tt>ERR_3003_MISSING_RETURN</tt></td>
-<td valign="top">non-void function may fall through (emitted as numeric code 3003)</td>
-<td valign="top"><tt>constraint_checker.zig:17</tt></td>
+<td valign="top">return with no value in function returning non-void / missing return: not all control paths return a value</td>
+<td valign="top"><tt>constraint_checker.zig:17</tt>; <tt>semantic_analyzer.zig:3058,5255</tt></td>
 </tr>
 <tr>
 <td valign="top"><tt>error[23]</tt></td>
@@ -341,7 +345,7 @@ raised.
 <td valign="top"><tt>error[3020]</tt></td>
 <td valign="top"><tt>ERR_3020_UNHANDLED_NODE_KIND</tt></td>
 <td valign="top">internal error: unhandled node kind in type resolution (emitted as numeric code 3020)</td>
-<td valign="top"><tt>parser.zig</tt> / <tt>type_resolver.zig</tt></td>
+<td valign="top"><tt>semantic_analyzer.zig:5081-5082</tt></td>
 </tr>
 <tr>
 <td valign="top"><tt>error[3045]</tt></td>
@@ -358,8 +362,8 @@ raised.
 <tr>
 <td valign="top"><tt>error[3048]</tt></td>
 <td valign="top"><tt>ERR_3048_CANNOT_READ_FILE</tt></td>
-<td valign="top">cannot read file (assembled from fragments)</td>
-<td valign="top"><tt>import_resolver.zig:86</tt>; <tt>main.zig:1030</tt>; <tt>module_registry.zig:365</tt></td>
+<td valign="top">could not read imported file '&lt;path&gt;' / could not resolve imported file '&lt;name&gt;' (assembled from fragments)</td>
+<td valign="top"><tt>import_resolver.zig:85</tt>; <tt>main.zig:1026</tt>; <tt>module_registry.zig:361</tt></td>
 </tr>
 <tr>
 <td valign="top"><tt>error[3049]</tt></td>
@@ -418,8 +422,8 @@ raised.
 <tr>
 <td valign="top"><tt>error[3058]</tt></td>
 <td valign="top"><tt>ERR_3058_CONDITION_NOT_BOOL</tt></td>
-<td valign="top">invalid condition / expected type 'bool', found ... / expected optional type, found ...</td>
-<td valign="top"><tt>semantic_analyzer.zig:5471</tt></td>
+<td valign="top">invalid condition / condition must be of type 'bool' / capture condition must be an optional or error union type</td>
+<td valign="top"><tt>semantic_analyzer.zig:5460-5466</tt></td>
 </tr>
 <tr>
 <td valign="top"><tt>error[3059]</tt></td>
@@ -442,7 +446,7 @@ raised.
 <tr>
 <td valign="top"><tt>error[3062]</tt></td>
 <td valign="top"><tt>ERR_3062_INDEX_OUT_OF_BOUNDS</tt></td>
-<td valign="top">index N outside array of length L (and the slice-bound variants)</td>
+<td valign="top">index &lt;N&gt; outside array of length &lt;L&gt; / end index &lt;N&gt; out of bounds for array of length &lt;L&gt; / start index &lt;S&gt; is larger than end index &lt;E&gt; / type 'usize' cannot represent integer value '&lt;N&gt;' (all assembled from fragments)</td>
 <td valign="top"><tt>semantic_analyzer.zig:880,895,911,925</tt></td>
 </tr>
 <tr>
@@ -532,8 +536,8 @@ raised.
 <tr>
 <td valign="top"><tt>error[3024]</tt></td>
 <td valign="top"><tt>ERR_4000_INVALID_CONTROL_FLOW</tt></td>
-<td valign="top">reserved &mdash; no emission at seed v90</td>
-<td valign="top">&mdash;</td>
+<td valign="top">topological sort violation: import not resolved</td>
+<td valign="top"><tt>module_registry.zig:715-717</tt></td>
 </tr>
 <tr>
 <td valign="top"><tt>error[3025]</tt></td>
@@ -568,7 +572,7 @@ raised.
 <tr>
 <td valign="top"><tt>error[3042]</tt></td>
 <td valign="top"><tt>ERR_9000_OOM</tt></td>
-<td valign="top">allocator out of memory (emitted as numeric code 3042)</td>
+<td valign="top">non-value base expression in field access (code 3042 is emitted here as a numeric literal; the <tt>ERR_9000_OOM</tt> member name has no emission site)</td>
 <td valign="top"><tt>lower.zig:4858</tt></td>
 </tr>
 <tr>
@@ -598,8 +602,8 @@ raised.
 <tr>
 <td valign="top"><tt>warning[7]</tt></td>
 <td valign="top"><tt>WARN_1011_INTEGER_OVERFLOW</tt></td>
-<td valign="top">integer literal overflow (assembled from fragments)</td>
-<td valign="top"><tt>lexer.zig:429</tt></td>
+<td valign="top">integer literal overflow; value truncated</td>
+<td valign="top"><tt>lexer.zig:427</tt></td>
 </tr>
 <tr>
 <td valign="top"><tt>warning[13]</tt></td>
@@ -682,7 +686,7 @@ raised.
 </table>
 <p>
 The table has 96 rows, one per <tt>ErrorCode</tt> member. Every code is listed;
-the 17 rows marked <i>reserved</i> have no emission site at seed v90.
+the 16 rows marked <i>reserved</i> have no emission site at seed v90.
 </p>
 
 <h2>See also</h2>
