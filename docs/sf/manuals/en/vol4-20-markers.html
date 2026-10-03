@@ -1,0 +1,260 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Pipeline Markers</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual reference markers --markers --track-memory measureMarkerWrite g_markers_debug string interner arena import resolution type registry symbol registration lowering emission pipeline stderr">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol4-19-pal.html">
+<link rel="next" href="vol4-21-diagnostics.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume IV &mdash; Reference</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+How to use the Reference <i>(planned)</i><br>
+The full grammar <i>(planned)</i><br>
+Types <i>(planned)</i><br>
+Pointers <i>(planned)</i><br>
+Structs <i>(planned)</i><br>
+Enums <i>(planned)</i><br>
+Unions <i>(planned)</i><br>
+Tuples <i>(planned)</i><br>
+Arrays and slices <i>(planned)</i><br>
+Errors <i>(planned)</i><br>
+Optionals <i>(planned)</i><br>
+Aliases <i>(planned)</i><br>
+Statements <i>(planned)</i><br>
+Control flow <i>(planned)</i><br>
+Error expressions <i>(planned)</i><br>
+<a href="vol4-15-builtins.html">Builtins</a><br>
+Async <i>(planned)</i><br>
+Memory <i>(planned)</i><br>
+The standard library <i>(planned)</i><br>
+<a href="vol4-19-pal.html">The PAL</a><br>
+<b>Markers</b><br>
+<a href="vol4-21-diagnostics.html">Diagnostics</a><br>
+<a href="vol4-22-cli.html">The command line</a><br>
+Limits <i>(planned)</i><br>
+<a href="vol4-24-html-style.html">HTML style</a><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Pipeline markers</h1>
+<p>
+With <tt>--markers</tt>, <tt>zig1</tt> writes a stream of measurement markers to
+standard error, one per line, as it runs the compilation pipeline. Each marker
+is a terse record keyed to the phase or component that produced it. This page is
+the lookup for that stream.
+</p>
+<p>
+The markers are produced by <tt>pal.measureMarkerWrite</tt>,
+<tt>pal.measureMarkerWriteInt</tt>, and <tt>pal.measureMarkerWriteInt64</tt>
+(<tt>sf/src/pal.zig:252</tt>). Every call site in the compiler is listed below.
+</p>
+
+<h2>Enabling the channel</h2>
+<p>
+<tt>--markers</tt> calls <tt>pal.markersEnabled(1)</tt>
+(<tt>sf/src/main.zig:149</tt>). A marker is written only while
+<tt>isMarkersEnabled()</tt> is true; each <tt>measureMarkerWrite*</tt> function
+tests that flag before writing anything. Without the flag the compiler is
+silent on this channel.
+</p>
+<p>
+<tt>--track-memory</tt> rides the same channel: its one-line report is written
+through <tt>measureMarkerWrite</tt>, so the memory report also needs
+<tt>--markers</tt> on. The marker stream and the compiler's diagnostics both go
+to standard error; redirect one to separate them.
+</p>
+
+<h2>The <tt>g_markers_debug</tt> gate</h2>
+<p>
+A second gate, <tt>pal.g_markers_debug</tt> (<tt>sf/src/pal.zig:210</tt>), is
+<tt>0</tt> in the shipped compiler. It controls the older debug channel
+(<tt>markerWrite</tt>, <tt>markerWriteInt</tt>, <tt>markerWriteInt64</tt>),
+which is therefore compiled off. The letter-code pipeline markers
+(<tt>I</tt>, <tt>S</tt>, <tt>T</tt>, <tt>A</tt>, <tt>L</tt>, <tt>C</tt>,
+<tt>M</tt>, <tt>R</tt>, <tt>F</tt>, <tt>.</tt>, and <tt>E</tt>) and the
+per-node debug traces (<tt>INT:dup</tt>, <tt>IRD:</tt>, <tt>IRV:</tt>,
+<tt>E2B:</tt>, <tt>VFLOW:</tt>, <tt>FL:</tt>) are <b>not</b> live output of the
+current compiler. They are source-level debug instrumentation; only the
+<tt>measureMarkerWrite*</tt> sites tabulated below are emitted by
+<tt>--markers</tt>.
+</p>
+
+<h2>Marker table</h2>
+<p>
+Each placeholder is a decimal number unless stated. The source column names the
+emitting call site; the phase is the pipeline pass or component that owns it.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Marker</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Phase / component</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Meaning</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Source</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>INT:new&lt;n&gt;</tt></td>
+<td valign="top">String interner</td>
+<td valign="top">A new string was interned; <tt>n</tt> is its index.</td>
+<td valign="top"><tt>string_interner.zig:125</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>arena &lt;name&gt;: grew &lt;old&gt; -&gt; &lt;new&gt;</tt></td>
+<td valign="top">Arena allocation</td>
+<td valign="top">Arena <tt>&lt;name&gt;</tt> grew from <tt>&lt;old&gt;</tt> to <tt>&lt;new&gt;</tt> bytes. Names observed include <tt>perm</tt>, <tt>module</tt>, <tt>scratch</tt>, <tt>import_scratch</tt>, <tt>diag_read</tt>, and <tt>type_db</tt>.</td>
+<td valign="top"><tt>allocator.zig:193&ndash;206</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>IRP:m&lt;n&gt;</tt></td>
+<td valign="top">Import resolution</td>
+<td valign="top">Module id <tt>n</tt> was parsed.</td>
+<td valign="top"><tt>import_resolver.zig:103</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>IRP:n&lt;n&gt;</tt></td>
+<td valign="top">Import resolution</td>
+<td valign="top">AST root node index <tt>n</tt> of the parsed module.</td>
+<td valign="top"><tt>import_resolver.zig:104</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>IRP:p&lt;n&gt;</tt></td>
+<td valign="top">Import resolution</td>
+<td valign="top">Packed root-node payload <tt>n</tt>.</td>
+<td valign="top"><tt>import_resolver.zig:105</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>IRN:n&lt;n&gt;</tt></td>
+<td valign="top">Import resolution (pass end)</td>
+<td valign="top">Total AST node count after resolution is <tt>n</tt>.</td>
+<td valign="top"><tt>import_resolver.zig:148</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>IRE:x&lt;n&gt;</tt></td>
+<td valign="top">Import resolution (pass end)</td>
+<td valign="top">Total extra-child count after resolution is <tt>n</tt>.</td>
+<td valign="top"><tt>import_resolver.zig:149</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>DC:k&lt;kind&gt;n&lt;name&gt;t&lt;id&gt;</tt></td>
+<td valign="top">Type registry</td>
+<td valign="top">Type id <tt>t</tt> was created: kind ordinal <tt>k</tt>, name id <tt>n</tt>, type id <tt>t</tt>.</td>
+<td valign="top"><tt>type_registry.zig:202&ndash;211</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>X:&lt;id&gt;</tt></td>
+<td valign="top">Type registry</td>
+<td valign="top">Struct type <tt>&lt;id&gt;</tt> registered; emitted after the <tt>DC:</tt> line when the type kind is a struct.</td>
+<td valign="top"><tt>type_registry.zig:212&ndash;213</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>RaD12:n&lt;id&gt;</tt></td>
+<td valign="top">Symbol registration</td>
+<td valign="top">A global <tt>var</tt> declaration was registered; <tt>&lt;id&gt;</tt> is its name id. The <tt>Ra</tt> fragment precedes <tt>D12:n</tt> on the same line.</td>
+<td valign="top"><tt>symbol_registrator.zig:250&ndash;254</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>MT</tt></td>
+<td valign="top">LIR lowering</td>
+<td valign="top">A basic block was marked terminated.</td>
+<td valign="top"><tt>lower.zig:612&ndash;615</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>FE:p&lt;n&gt;</tt></td>
+<td valign="top">C89 emission</td>
+<td valign="top">The output buffer was flushed; <tt>n</tt> is the position after the reset (always <tt>0</tt>).</td>
+<td valign="top"><tt>c89_emit.zig:51</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>FE:&lt;name&gt;:&lt;type&gt;</tt></td>
+<td valign="top">C89 emission</td>
+<td valign="top">A struct field was emitted: name id <tt>&lt;name&gt;</tt>, type id <tt>&lt;type&gt;</tt>.</td>
+<td valign="top"><tt>c89_emit.zig:2074&ndash;2078</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>FWD:n=&lt;name&gt; m=&lt;mod&gt;</tt></td>
+<td valign="top">C89 emission</td>
+<td valign="top">A function signature was emitted: name id <tt>&lt;name&gt;</tt>, module id <tt>&lt;mod&gt;</tt>.</td>
+<td valign="top"><tt>c89_emit.zig:2573</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>P0:lc=&lt;n&gt;</tt></td>
+<td valign="top">C89 emission</td>
+<td valign="top">A function body was opened with <tt>n</tt> locals.</td>
+<td valign="top"><tt>c89_emit.zig:3413&ndash;3415</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>D2:t&lt;id&gt;n&lt;name&gt;m&lt;mod&gt;</tt></td>
+<td valign="top">C89 emission</td>
+<td valign="top">A tagged-union type was handled in the shared-header sub-pass: type id, name id, module id.</td>
+<td valign="top"><tt>c89_emit.zig:1877&ndash;1884</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>D2:&lt;value&gt;</tt></td>
+<td valign="top">C89 emission</td>
+<td valign="top">A float constant was formatted for output; <tt>&lt;value&gt;</tt> is the decimal text.</td>
+<td valign="top"><tt>c89_emit.zig:8655&ndash;8657</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>track-memory: perm=&lt;n&gt;K mod=&lt;n&gt;K scr=&lt;n&gt;K pool=&lt;n&gt;K type_db=&lt;n&gt;K total=&lt;n&gt;K</tt></td>
+<td valign="top">Pipeline end (<tt>--track-memory</tt>)</td>
+<td valign="top">Peak memory by arena in KiB; <tt>total</tt> is <tt>perm + mod + scr</tt>. Emitted at the end of the compilation, before diagnostics are printed.</td>
+<td valign="top"><tt>main.zig:408&ndash;435</tt></td>
+</tr>
+</table>
+
+<h2>See also</h2>
+<p>
+<a href="vol4-19-pal.html">The platform layer</a> for the
+<tt>measureMarkerWrite*</tt> functions and the <tt>g_markers_debug</tt>
+constant, <a href="vol4-22-cli.html">The command line</a> for <tt>--markers</tt>
+and <tt>--track-memory</tt>, and <a href="vol4-21-diagnostics.html">Diagnostics</a>
+for the separate compiler diagnostic stream.
+</p>
+
+<p class="navbtns">
+<a href="vol4-19-pal.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol4-21-diagnostics.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol4-19-pal.html">The platform layer</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-21-diagnostics.html">Diagnostics</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
