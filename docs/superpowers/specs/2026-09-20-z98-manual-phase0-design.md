@@ -238,5 +238,9 @@ A claim that fails is fixed or removed — never shipped.
    II (Learning Z98) design of record; **complete** (2026-09-30), implemented by
    `docs/superpowers/plans/2026-09-25-z98-manual-volume-II-plan.md`, seed v89.
 5. `docs/superpowers/specs/2026-09-30-z98-manual-volume-III-design.md` — Volume
-   III (Working in the Era) design of record; implemented by
-   `docs/superpowers/plans/2026-09-30-z98-manual-volume-III-plan.md` (next).
+   III (Working in the Era) design of record; **complete**; implemented by
+   `docs/superpowers/plans/2026-09-30-z98-manual-volume-III-plan.md`; seed
+   rotated v89 → v90 at the Amendment A1 (anytype reject) closeout.
+6. `docs/superpowers/specs/2026-10-03-z98-manual-volume-IV-design.md` — Volume
+   IV (Reference) design of record; implemented by
+   `docs/superpowers/plans/2026-10-03-z98-manual-volume-IV-plan.md` (next).
