@@ -1,0 +1,709 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Diagnostics</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual diagnostics reference error codes warning info enum ordinal message emission site ErrorCode">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol4-15-builtins.html">
+<link rel="next" href="vol4-24-html-style.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume IV &mdash; Reference</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+How to use the Reference <i>(planned)</i><br>
+The full grammar <i>(planned)</i><br>
+Types <i>(planned)</i><br>
+Pointers <i>(planned)</i><br>
+Structs <i>(planned)</i><br>
+Enums <i>(planned)</i><br>
+Unions <i>(planned)</i><br>
+Tuples <i>(planned)</i><br>
+Arrays and slices <i>(planned)</i><br>
+Errors <i>(planned)</i><br>
+Optionals <i>(planned)</i><br>
+Aliases <i>(planned)</i><br>
+Statements <i>(planned)</i><br>
+Control flow <i>(planned)</i><br>
+Error expressions <i>(planned)</i><br>
+<a href="vol4-15-builtins.html">Builtins</a><br>
+Async <i>(planned)</i><br>
+Memory <i>(planned)</i><br>
+The standard library <i>(planned)</i><br>
+The PAL <i>(planned)</i><br>
+Markers <i>(planned)</i><br>
+<b>Diagnostics</b><br>
+The command line <i>(planned)</i><br>
+Limits <i>(planned)</i><br>
+<a href="vol4-24-html-style.html">HTML style</a><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Diagnostics</h1>
+<p>
+This page lists every member of the compiler's <tt>ErrorCode</tt> enum
+(<tt>sf/src/diagnostics.zig</tt>), alphabetically by name, with the number the
+compiler prints and the message it prints by default.
+</p>
+<p>
+<b>The printed number is the enum value, not the number in the name.</b> The
+<tt>ERR_####</tt> suffix is only a label; several names share a suffix and the
+suffix does not match the ordinal. For example,
+<tt>ERR_2012_ANYTYPE_NOT_SUPPORTED</tt> prints <tt>error[16]</tt>, and
+<tt>ERR_1001_UNTERMINATED_BLOCK_COMMENT</tt> prints <tt>error[1]</tt>. Always
+read the ordinal from the <b>Printed</b> column.
+</p>
+<p>
+The level is the first word: <tt>error</tt> (level 0), <tt>warning</tt> (level
+1), or <tt>info</tt> (level 2). Names are printed as the compiler prints them
+(<tt>ERR_*</tt>, <tt>WARN_*</tt>, <tt>INFO_*</tt>). The <b>Emission site</b>
+column names the <tt>file:line</tt> that raises the code; a message assembled
+at run time from fragments is shown in its assembled form and the site is where
+it is assembled. Rows marked <i>reserved</i> are enum members with no emission
+site at seed v90; they are listed because they are members, but they are not
+raised.
+</p>
+
+<h2>The codes</h2>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Printed</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Name</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Default message</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Emission site</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>error[0]</tt></td>
+<td valign="top"><tt>ERR_1000_UNTERMINATED_STRING</tt></td>
+<td valign="top">unterminated string literal</td>
+<td valign="top"><tt>lexer.zig:324</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[1]</tt></td>
+<td valign="top"><tt>ERR_1001_UNTERMINATED_BLOCK_COMMENT</tt></td>
+<td valign="top">unterminated block comment</td>
+<td valign="top"><tt>lexer.zig:257</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[2]</tt></td>
+<td valign="top"><tt>ERR_1002_INVALID_CHAR_LITERAL</tt></td>
+<td valign="top">empty character literal / expected closing '"'</td>
+<td valign="top"><tt>lexer.zig:348,363</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3]</tt></td>
+<td valign="top"><tt>ERR_1003_INVALID_ESCAPE</tt></td>
+<td valign="top">invalid escape sequence (assembled from fragments)</td>
+<td valign="top"><tt>lexer.zig:522</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[4]</tt></td>
+<td valign="top"><tt>ERR_1004_BARE_AT_SIGN</tt></td>
+<td valign="top">bare '@' (assembled from fragments)</td>
+<td valign="top"><tt>lexer.zig:165</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[5]</tt></td>
+<td valign="top"><tt>ERR_1005_UNRECOGNIZED_CHAR</tt></td>
+<td valign="top">unrecognized character: '&lt;c&gt;' (assembled from fragments)</td>
+<td valign="top"><tt>lexer.zig:175-182</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[8]</tt></td>
+<td valign="top"><tt>ERR_2000_UNEXPECTED_TOKEN</tt></td>
+<td valign="top">unexpected token '&lt;x&gt;' (emitted as numeric code 2000)</td>
+<td valign="top"><tt>parser.zig:254</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[9]</tt></td>
+<td valign="top"><tt>ERR_2001_MISSING_SEMICOLON</tt></td>
+<td valign="top">reserved &mdash; no emission at seed v90</td>
+<td valign="top">&mdash;</td>
+</tr>
+<tr>
+<td valign="top"><tt>error[10]</tt></td>
+<td valign="top"><tt>ERR_2002_UNCLOSED_BRACE</tt></td>
+<td valign="top">reserved &mdash; no emission at seed v90</td>
+<td valign="top">&mdash;</td>
+</tr>
+<tr>
+<td valign="top"><tt>error[11]</tt></td>
+<td valign="top"><tt>ERR_2003_EXPECTED_EXPRESSION</tt></td>
+<td valign="top">reserved &mdash; no emission at seed v90</td>
+<td valign="top">&mdash;</td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3034]</tt></td>
+<td valign="top"><tt>ERR_2004_DEFINITE_NULL_DEREF</tt></td>
+<td valign="top">definite null pointer dereference</td>
+<td valign="top"><tt>analyzer.zig:528</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[12]</tt></td>
+<td valign="top"><tt>ERR_2004_EXPECTED_TYPE</tt></td>
+<td valign="top">reserved &mdash; no emission at seed v90</td>
+<td valign="top">&mdash;</td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3035]</tt></td>
+<td valign="top"><tt>ERR_2005_DOUBLE_FREE</tt></td>
+<td valign="top">double free of pointer '&lt;x&gt;' (assembled from fragments)</td>
+<td valign="top"><tt>analyzer.zig:261</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[14]</tt></td>
+<td valign="top"><tt>ERR_2010_VOID_PARAMETER</tt></td>
+<td valign="top">void not allowed as parameter type</td>
+<td valign="top"><tt>analyzer.zig:499</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[15]</tt></td>
+<td valign="top"><tt>ERR_2011_INCOMPLETE_TYPE</tt></td>
+<td valign="top">incomplete type '&lt;x&gt;' in function signature (assembled from fragments)</td>
+<td valign="top"><tt>analyzer.zig:495</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[16]</tt></td>
+<td valign="top"><tt>ERR_2012_ANYTYPE_NOT_SUPPORTED</tt></td>
+<td valign="top">anytype not supported in Z98</td>
+<td valign="top"><tt>analyzer.zig:449,513</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[17]</tt></td>
+<td valign="top"><tt>ERR_2013_OPAQUE_NOT_SUPPORTED</tt></td>
+<td valign="top">reserved &mdash; no emission at seed v90</td>
+<td valign="top">&mdash;</td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3030]</tt></td>
+<td valign="top"><tt>ERR_2020_RETURNING_ADDRESS_OF_LOCAL</tt></td>
+<td valign="top">returning address of local variable '&lt;x&gt;' (assembled from fragments)</td>
+<td valign="top"><tt>analyzer.zig:123,127</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3031]</tt></td>
+<td valign="top"><tt>ERR_2021_RETURNING_ADDRESS_OF_PARAM</tt></td>
+<td valign="top">returning address of function parameter '&lt;x&gt;' (assembled from fragments)</td>
+<td valign="top"><tt>analyzer.zig:167,171</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[19]</tt></td>
+<td valign="top"><tt>ERR_3000_TYPE_MISMATCH</tt></td>
+<td valign="top">type mismatch at the named site, with <tt>source:</tt>/<tt>target:</tt> notes; 52 emission sites</td>
+<td valign="top"><tt>semantic_analyzer.zig:4746,4778</tt>; <tt>lower.zig:2422...</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[20]</tt></td>
+<td valign="top"><tt>ERR_3001_UNDEFINED_SYMBOL</tt></td>
+<td valign="top">identifier '&lt;x&gt;' is not declared or imported in this module</td>
+<td valign="top"><tt>type_resolver.zig:2300,2344</tt>; <tt>semantic_analyzer.zig:713</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[21]</tt></td>
+<td valign="top"><tt>ERR_3002_INVALID_ASSIGNMENT</tt></td>
+<td valign="top">cannot assign to immutable variable (emitted as numeric code 3002)</td>
+<td valign="top"><tt>semantic_analyzer.zig</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[22]</tt></td>
+<td valign="top"><tt>ERR_3003_MISSING_RETURN</tt></td>
+<td valign="top">non-void function may fall through (emitted as numeric code 3003)</td>
+<td valign="top"><tt>constraint_checker.zig:17</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[23]</tt></td>
+<td valign="top"><tt>ERR_3004_SWITCH_NOT_EXHAUSTIVE</tt></td>
+<td valign="top">reserved &mdash; superseded by <tt>error[3068]</tt></td>
+<td valign="top">&mdash;</td>
+</tr>
+<tr>
+<td valign="top"><tt>error[24]</tt></td>
+<td valign="top"><tt>ERR_3005_CIRCULAR_TYPE_DEPENDENCY</tt></td>
+<td valign="top">circular type dependency detected (type refers to itself)</td>
+<td valign="top"><tt>type_resolver.zig:581</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[25]</tt></td>
+<td valign="top"><tt>ERR_3006_INVALID_COERCION</tt></td>
+<td valign="top">reserved &mdash; no emission at seed v90</td>
+<td valign="top">&mdash;</td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3007]</tt></td>
+<td valign="top"><tt>ERR_3007_VISIBILITY_VIOLATION</tt></td>
+<td valign="top">'&lt;x&gt;' is not marked 'pub' (assembled from fragments)</td>
+<td valign="top"><tt>type_resolver.zig:1746</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3008]</tt></td>
+<td valign="top"><tt>ERR_3008_ENUM_LITERAL_REQUIRES_PAYLOAD</tt></td>
+<td valign="top">enum literal member requires payload</td>
+<td valign="top"><tt>semantic_analyzer.zig:3781</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3009]</tt></td>
+<td valign="top"><tt>ERR_3009_UNKNOWN_ENUM_LITERAL_MEMBER</tt></td>
+<td valign="top">unknown enum literal member</td>
+<td valign="top"><tt>semantic_analyzer.zig:3789</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3010]</tt></td>
+<td valign="top"><tt>ERR_3010_CANNOT_INFER_ENUM_LITERAL_TYPE</tt></td>
+<td valign="top">unable to infer type of enum literal without context</td>
+<td valign="top"><tt>semantic_analyzer.zig:5896</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3011]</tt></td>
+<td valign="top"><tt>ERR_3011_ERROR_LITERAL_NOT_IN_SET</tt></td>
+<td valign="top">error literal not found in error set</td>
+<td valign="top"><tt>semantic_analyzer.zig:4615</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3012]</tt></td>
+<td valign="top"><tt>ERR_3012_VARARGS_INVALID</tt></td>
+<td valign="top">@cVaStart used in a non-variadic function / variadic function must have at least one fixed parameter / variadic functions cannot use the stdcall calling convention</td>
+<td valign="top"><tt>lower.zig:5848,9278</tt>; <tt>semantic_analyzer.zig:5195</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3013]</tt></td>
+<td valign="top"><tt>ERR_3013_INVALID_PRINT_SPECIFIER</tt></td>
+<td valign="top">invalid print format specifier / invalid print format specifier for the argument type</td>
+<td valign="top"><tt>lower.zig:1864</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3014]</tt></td>
+<td valign="top"><tt>ERR_3014_USE_OF_UNDEFINED_VARIABLE</tt></td>
+<td valign="top">variable must be initialized; use '= undefined' to opt out</td>
+<td valign="top"><tt>semantic_analyzer.zig:5866</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3015]</tt></td>
+<td valign="top"><tt>ERR_3015_ERROR_IGNORED</tt></td>
+<td valign="top">error union result is ignored; use 'try', 'catch', or assign the result</td>
+<td valign="top"><tt>semantic_analyzer.zig:6082</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3016]</tt></td>
+<td valign="top"><tt>ERR_3016_ORELSE_REQUIRES_OPTIONAL</tt></td>
+<td valign="top">orelse requires an optional operand; use 'catch' for error unions</td>
+<td valign="top"><tt>semantic_analyzer.zig:3555</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3017]</tt></td>
+<td valign="top"><tt>ERR_3017_SUSPENDING_FUNCTION_POINTER</tt></td>
+<td valign="top">taking the address of a suspending function is not allowed</td>
+<td valign="top"><tt>lower.zig:3763</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3018]</tt></td>
+<td valign="top"><tt>ERR_3018_ASYNC_SUSPEND_OUTSIDE_SUSPENDING</tt></td>
+<td valign="top">@asyncSuspend used outside a suspending function</td>
+<td valign="top"><tt>semantic_analyzer.zig:397</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3019]</tt></td>
+<td valign="top"><tt>ERR_3019_ASYNC_BUILTIN_IN_DEFER</tt></td>
+<td valign="top">@async builtin used inside a defer/errdefer body</td>
+<td valign="top"><tt>semantic_analyzer.zig:406</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3020]</tt></td>
+<td valign="top"><tt>ERR_3020_UNHANDLED_NODE_KIND</tt></td>
+<td valign="top">internal error: unhandled node kind in type resolution (emitted as numeric code 3020)</td>
+<td valign="top"><tt>parser.zig</tt> / <tt>type_resolver.zig</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3045]</tt></td>
+<td valign="top"><tt>ERR_3045_UNKNOWN_CALLING_CONVENTION</tt></td>
+<td valign="top">unknown calling convention in `extern` (emitted as numeric code 3045)</td>
+<td valign="top"><tt>parser.zig:1231,1674</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3046]</tt></td>
+<td valign="top"><tt>ERR_3046_ASYNC_FRAME_SIZE_INVALID</tt></td>
+<td valign="top">@asyncFrameSize argument must be a known suspending function</td>
+<td valign="top"><tt>semantic_analyzer.zig:4825</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3048]</tt></td>
+<td valign="top"><tt>ERR_3048_CANNOT_READ_FILE</tt></td>
+<td valign="top">cannot read file (assembled from fragments)</td>
+<td valign="top"><tt>import_resolver.zig:86</tt>; <tt>main.zig:1030</tt>; <tt>module_registry.zig:365</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3049]</tt></td>
+<td valign="top"><tt>ERR_3049_PTRCAST_REQUIRES_TWO_ARGS</tt></td>
+<td valign="top">@ptrCast requires exactly two arguments: @ptrCast(T, expr)</td>
+<td valign="top"><tt>semantic_analyzer.zig:4854</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3050]</tt></td>
+<td valign="top"><tt>ERR_3050_ARRAY_SIZE_NOT_CONSTANT</tt></td>
+<td valign="top">array size is not a constant expression</td>
+<td valign="top"><tt>type_resolver.zig:2052</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3051]</tt></td>
+<td valign="top"><tt>ERR_3051_RETURN_INSIDE_DEFER</tt></td>
+<td valign="top">cannot return from defer expression</td>
+<td valign="top"><tt>semantic_analyzer.zig:474</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3052]</tt></td>
+<td valign="top"><tt>ERR_3052_BREAK_OUT_OF_DEFER</tt></td>
+<td valign="top">cannot break out of defer expression</td>
+<td valign="top"><tt>semantic_analyzer.zig:482</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3053]</tt></td>
+<td valign="top"><tt>ERR_3053_CONTINUE_OUT_OF_DEFER</tt></td>
+<td valign="top">cannot continue out of defer expression</td>
+<td valign="top"><tt>semantic_analyzer.zig:488</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3054]</tt></td>
+<td valign="top"><tt>ERR_3054_TRY_INSIDE_DEFER</tt></td>
+<td valign="top">'try' not allowed inside defer expression</td>
+<td valign="top"><tt>semantic_analyzer.zig:477</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3055]</tt></td>
+<td valign="top"><tt>ERR_3055_ENUM_VALUE_NOT_CONSTANT</tt></td>
+<td valign="top">enum member value is not a comptime-known integer expression</td>
+<td valign="top"><tt>type_resolver.zig:1446,1544</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3056]</tt></td>
+<td valign="top"><tt>ERR_3056_CALL_TARGET_NOT_CALLABLE</tt></td>
+<td valign="top">expression is not callable (emitted as numeric code 3056)</td>
+<td valign="top"><tt>lower.zig:5639</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3057]</tt></td>
+<td valign="top"><tt>ERR_3057_LOCAL_SHADOW</tt></td>
+<td valign="top">local declaration shadows an earlier declaration in an enclosing scope / local declaration shadows an outer-scope declaration</td>
+<td valign="top"><tt>semantic_analyzer.zig:582,594</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3058]</tt></td>
+<td valign="top"><tt>ERR_3058_CONDITION_NOT_BOOL</tt></td>
+<td valign="top">invalid condition / expected type 'bool', found ... / expected optional type, found ...</td>
+<td valign="top"><tt>semantic_analyzer.zig:5471</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3059]</tt></td>
+<td valign="top"><tt>ERR_3059_IF_WITHOUT_ELSE</tt></td>
+<td valign="top">if expression without 'else' cannot be used as a value (its type is 'void')</td>
+<td valign="top"><tt>semantic_analyzer.zig:3640</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3060]</tt></td>
+<td valign="top"><tt>ERR_3060_METHOD_SYNTAX_NOT_SUPPORTED</tt></td>
+<td valign="top">no field or member function named '&lt;x&gt;' in &lt;kind&gt; type (assembled from fragments)</td>
+<td valign="top"><tt>semantic_analyzer.zig:1324</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3061]</tt></td>
+<td valign="top"><tt>ERR_3061_WRONG_ARGUMENT_COUNT</tt></td>
+<td valign="top">expected N argument(s), found M / expected at least N argument(s), found M</td>
+<td valign="top"><tt>semantic_analyzer.zig:3118</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3062]</tt></td>
+<td valign="top"><tt>ERR_3062_INDEX_OUT_OF_BOUNDS</tt></td>
+<td valign="top">index N outside array of length L (and the slice-bound variants)</td>
+<td valign="top"><tt>semantic_analyzer.zig:880,895,911,925</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3063]</tt></td>
+<td valign="top"><tt>ERR_3063_PRINT_TYPE_NOT_SUPPORTED</tt></td>
+<td valign="top">print argument type is not supported (no std.fmt printer)</td>
+<td valign="top"><tt>lower.zig:1531-1622</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3064]</tt></td>
+<td valign="top"><tt>ERR_3064_CYCLIC_GLOBAL_INIT</tt></td>
+<td valign="top">cyclic global initializer dependency</td>
+<td valign="top"><tt>lower.zig:9489</tt>; <tt>main.zig:1076</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3065]</tt></td>
+<td valign="top"><tt>ERR_3065_PRINT_CONTAINER_NOT_TUPLE</tt></td>
+<td valign="top">print arguments must be a tuple literal</td>
+<td valign="top"><tt>lower.zig:1703</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3066]</tt></td>
+<td valign="top"><tt>ERR_3066_SINGLE_PTR_INDEX</tt></td>
+<td valign="top">type '&lt;T&gt;' does not support indexing + note operand must be an array, slice, tuple, or vector; type-base variant: unable to resolve comptime value + note types must be comptime-known</td>
+<td valign="top"><tt>semantic_analyzer.zig:1060,1071</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3067]</tt></td>
+<td valign="top"><tt>ERR_3067_SINGLE_PTR_SLICE_BOUNDS</tt></td>
+<td valign="top">slice of single-item pointer must be bounded / must have comptime-known bounds / bounds [0..0], [0..1], or [1..1]</td>
+<td valign="top"><tt>semantic_analyzer.zig:1081,1090,1100</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3068]</tt></td>
+<td valign="top"><tt>ERR_3068_SWITCH_WITHOUT_ELSE</tt></td>
+<td valign="top">switch must have an 'else' prong</td>
+<td valign="top"><tt>semantic_analyzer.zig:4164</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3069]</tt></td>
+<td valign="top"><tt>ERR_3069_TUPLE_INDEX_NOT_COMPTIME</tt></td>
+<td valign="top">tuple field index must be comptime-known</td>
+<td valign="top"><tt>semantic_analyzer.zig:952</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3070]</tt></td>
+<td valign="top"><tt>ERR_3070_TUPLE_INDEX_OUT_OF_RANGE</tt></td>
+<td valign="top">index N outside tuple of length L (assembled from fragments)</td>
+<td valign="top"><tt>semantic_analyzer.zig:942</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3071]</tt></td>
+<td valign="top"><tt>ERR_3071_SWITCH_CASE_QUALIFIER</tt></td>
+<td valign="top">type mismatch in switch case item -- case item type may not be compatible with the switch condition type / no field or member function named '&lt;x&gt;' in union/enum type</td>
+<td valign="top"><tt>semantic_analyzer.zig:4175-4193</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3072]</tt></td>
+<td valign="top"><tt>ERR_3072_OFFSET_TARGET_NOT_STRUCT</tt></td>
+<td valign="top">expected struct type, found '&lt;X&gt;'</td>
+<td valign="top"><tt>semantic_analyzer.zig:1434</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3073]</tt></td>
+<td valign="top"><tt>ERR_3073_OFFSET_UNKNOWN_FIELD</tt></td>
+<td valign="top">no field named '&lt;x&gt;' in struct '&lt;S&gt;'</td>
+<td valign="top"><tt>semantic_analyzer.zig:1441,1461</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3074]</tt></td>
+<td valign="top"><tt>ERR_3074_COMPTIME_BUILTIN_UNRESOLVED</tt></td>
+<td valign="top">unable to resolve comptime value for introspection builtin</td>
+<td valign="top"><tt>lower.zig:5835</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3075]</tt></td>
+<td valign="top"><tt>ERR_3075_TRY_ENCLOSING_RETURN</tt></td>
+<td valign="top">expected error union type, found '&lt;kind&gt;' / expected type '&lt;ret&gt;', found error set / try error set may not be compatible with the enclosing function's return type / 'try' outside function scope</td>
+<td valign="top"><tt>semantic_analyzer.zig:3461</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3076]</tt></td>
+<td valign="top"><tt>ERR_3076_ENUM_LITERAL_NUMERIC_COMPARE</tt></td>
+<td valign="top">unable to infer type of enum literal in comparison with a numeric operand</td>
+<td valign="top"><tt>semantic_analyzer.zig:2456</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3024]</tt></td>
+<td valign="top"><tt>ERR_4000_INVALID_CONTROL_FLOW</tt></td>
+<td valign="top">reserved &mdash; no emission at seed v90</td>
+<td valign="top">&mdash;</td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3025]</tt></td>
+<td valign="top"><tt>ERR_4001_UNRESOLVED_TYPE_IN_LOWER</tt></td>
+<td valign="top">reserved &mdash; no emission at seed v90</td>
+<td valign="top">&mdash;</td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3026]</tt></td>
+<td valign="top"><tt>ERR_4002_DEFER_IN_INVALID_SCOPE</tt></td>
+<td valign="top">reserved &mdash; no emission at seed v90</td>
+<td valign="top">&mdash;</td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3027]</tt></td>
+<td valign="top"><tt>ERR_5000_C89_UNSUPPORTED_FEATURE</tt></td>
+<td valign="top">reserved &mdash; no emission at seed v90</td>
+<td valign="top">&mdash;</td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3028]</tt></td>
+<td valign="top"><tt>ERR_5001_MANGLE_OVERFLOW</tt></td>
+<td valign="top">reserved &mdash; no emission at seed v90</td>
+<td valign="top">&mdash;</td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3029]</tt></td>
+<td valign="top"><tt>ERR_5002_EMPTY_AGGREGATE</tt></td>
+<td valign="top">reserved &mdash; no emission at seed v90</td>
+<td valign="top">&mdash;</td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3042]</tt></td>
+<td valign="top"><tt>ERR_9000_OOM</tt></td>
+<td valign="top">allocator out of memory (emitted as numeric code 3042)</td>
+<td valign="top"><tt>lower.zig:4858</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[3043]</tt></td>
+<td valign="top"><tt>ERR_9001_ICE</tt></td>
+<td valign="top">internal compiler error; many sites, including async frame layout</td>
+<td valign="top"><tt>async_state_machine.zig</tt>; <tt>c89_emit.zig</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>error[9999]</tt></td>
+<td valign="top"><tt>ERR_9999_TOO_MANY_ERRORS</tt></td>
+<td valign="top">too many errors, stopping (the overflow path hard-codes the printed code 9999)</td>
+<td valign="top"><tt>diagnostics.zig:479-495</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>info[3040]</tt></td>
+<td valign="top"><tt>INFO_7001_OWNERSHIP_TRANSFERRED</tt></td>
+<td valign="top">ownership of '&lt;x&gt;' transferred to function (assembled from fragments; level is a runtime variable)</td>
+<td valign="top"><tt>analyzer.zig:356</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>warning[6]</tt></td>
+<td valign="top"><tt>WARN_1010_UNRECOGNIZED_ESCAPE</tt></td>
+<td valign="top">unrecognized escape sequence (assembled from fragments)</td>
+<td valign="top"><tt>lexer.zig:549</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>warning[7]</tt></td>
+<td valign="top"><tt>WARN_1011_INTEGER_OVERFLOW</tt></td>
+<td valign="top">integer literal overflow (assembled from fragments)</td>
+<td valign="top"><tt>lexer.zig:429</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>warning[13]</tt></td>
+<td valign="top"><tt>WARN_2010_DEPRECATED_SYNTAX</tt></td>
+<td valign="top">reserved &mdash; no emission at seed v90</td>
+<td valign="top">&mdash;</td>
+</tr>
+<tr>
+<td valign="top"><tt>warning[3021]</tt></td>
+<td valign="top"><tt>WARN_3010_UNUSED_VARIABLE</tt></td>
+<td valign="top">reserved &mdash; no emission at seed v90</td>
+<td valign="top">&mdash;</td>
+</tr>
+<tr>
+<td valign="top"><tt>warning[3022]</tt></td>
+<td valign="top"><tt>WARN_3011_UNREACHABLE_CODE</tt></td>
+<td valign="top">reserved &mdash; no emission at seed v90</td>
+<td valign="top">&mdash;</td>
+</tr>
+<tr>
+<td valign="top"><tt>warning[3023]</tt></td>
+<td valign="top"><tt>WARN_3023_MODULE_AS_VALUE</tt></td>
+<td valign="top">module used as value expression</td>
+<td valign="top"><tt>lower.zig:4652</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>warning[3047]</tt></td>
+<td valign="top"><tt>WARN_3047_ASYNC_FRAME_LARGE</tt></td>
+<td valign="top">reserved &mdash; no emission at seed v90</td>
+<td valign="top">&mdash;</td>
+</tr>
+<tr>
+<td valign="top"><tt>warning[3036]</tt></td>
+<td valign="top"><tt>WARN_6001_UNINIT_DEREF</tt></td>
+<td valign="top">dereference of uninitialized pointer</td>
+<td valign="top"><tt>analyzer.zig:531</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>warning[3037]</tt></td>
+<td valign="top"><tt>WARN_6002_POTENTIAL_NULL_DEREF</tt></td>
+<td valign="top">potential null pointer dereference</td>
+<td valign="top"><tt>analyzer.zig:534</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>warning[3038]</tt></td>
+<td valign="top"><tt>WARN_6005_MEMORY_LEAK</tt></td>
+<td valign="top">memory leak: pointer '&lt;x&gt;' not freed / ... overwritten before free (assembled from fragments)</td>
+<td valign="top"><tt>analyzer.zig:285,305</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>warning[3039]</tt></td>
+<td valign="top"><tt>WARN_6006_FREEING_UNTRACKED</tt></td>
+<td valign="top">freeing untracked pointer '&lt;x&gt;' (assembled from fragments)</td>
+<td valign="top"><tt>analyzer.zig:271</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>warning[3032]</tt></td>
+<td valign="top"><tt>WARN_6010_RETURNING_POINTER_VIA_VARIABLE</tt></td>
+<td valign="top">returning pointer to local via variable '&lt;x&gt;' (assembled from fragments)</td>
+<td valign="top"><tt>analyzer.zig:152,156</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>warning[3033]</tt></td>
+<td valign="top"><tt>WARN_6011_RETURNING_SLICE_OF_LOCAL</tt></td>
+<td valign="top">returning slice of local array '&lt;x&gt;' (assembled from fragments)</td>
+<td valign="top"><tt>analyzer.zig:138,142</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>warning[3041]</tt></td>
+<td valign="top"><tt>WARN_7002_ANALYZER_BUDGET_EXCEEDED</tt></td>
+<td valign="top">per-function analyzer budget exceeded</td>
+<td valign="top"><tt>analyzer.zig:917</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>warning[18]</tt></td>
+<td valign="top"><tt>WARN_7010_LARGE_RETURN</tt></td>
+<td valign="top">return type exceeds 64 bytes; may cause issues on MSVC 6.0</td>
+<td valign="top"><tt>analyzer.zig:504</tt></td>
+</tr>
+</table>
+<p>
+The table has 96 rows, one per <tt>ErrorCode</tt> member. Every code is listed;
+the 17 rows marked <i>reserved</i> have no emission site at seed v90.
+</p>
+
+<h2>See also</h2>
+<p>
+<a href="vol1-13-reading-errors.html">Volume I, Reading the errors</a> for the
+reader's view of a diagnostic, and
+<a href="vol2-12-error-unions.html">Volume II, Error unions</a> for the language
+construct behind many of these codes.
+</p>
+
+<p class="navbtns">
+<a href="vol4-15-builtins.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol4-24-html-style.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol4-15-builtins.html">Builtins</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-24-html-style.html">HTML style</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
