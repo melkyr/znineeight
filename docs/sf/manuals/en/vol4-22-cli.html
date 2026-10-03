@@ -1,0 +1,439 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: The Command Line</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual zig1 command line CLI options flags reference output-dir dump-c89 max-mem spill level markers track-memory target fsafe ffast diagnostics seed">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol4-21-diagnostics.html">
+<link rel="next" href="vol4-24-html-style.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume IV &mdash; Reference</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+How to use the Reference <i>(planned)</i><br>
+The full grammar <i>(planned)</i><br>
+Types <i>(planned)</i><br>
+Pointers <i>(planned)</i><br>
+Structs <i>(planned)</i><br>
+Enums <i>(planned)</i><br>
+Unions <i>(planned)</i><br>
+Tuples <i>(planned)</i><br>
+Arrays and slices <i>(planned)</i><br>
+Errors <i>(planned)</i><br>
+Optionals <i>(planned)</i><br>
+Aliases <i>(planned)</i><br>
+Statements <i>(planned)</i><br>
+Control flow <i>(planned)</i><br>
+Error expressions <i>(planned)</i><br>
+<a href="vol4-15-builtins.html">Builtins</a><br>
+Async <i>(planned)</i><br>
+Memory <i>(planned)</i><br>
+The standard library <i>(planned)</i><br>
+The PAL <i>(planned)</i><br>
+Markers <i>(planned)</i><br>
+<a href="vol4-21-diagnostics.html">Diagnostics</a><br>
+<b>The command line</b><br>
+Limits <i>(planned)</i><br>
+<a href="vol4-24-html-style.html">HTML style</a><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>The command line</h1>
+<p>
+<tt>zig1</tt> is the Z98 compiler. It reads one input file, runs the pipeline,
+and, when asked, writes C89 to standard output or to an output directory. This
+page is the lookup for every option the shipped <tt>zig1</tt> accepts, quoted
+from <tt>sf/src/main.zig</tt> (<tt>parseArgs</tt>, <tt>main.zig:1551-1711</tt>,
+and the helper parsers through <tt>main.zig:1881</tt>).
+</p>
+<p>
+Options may appear before or after the input file, in any order. Each is applied
+as it is read, so when two options set the same thing the last one wins. Any
+argument that is not a recognized option is taken as the input file, and the
+last such argument wins. With no input file at all, <tt>zig1</tt> prints its
+short usage text and exits 0.
+</p>
+
+<h2>Synopsis</h2>
+<pre>
+zig1 [options] &lt;input.z98&gt;
+</pre>
+<p>
+The text below is what <tt>zig1</tt> prints when it is invoked with no input
+file (to stderr, exit 0). It documents only a subset of the options; the full
+set is the table further down.
+</p>
+<pre>
+zig1 - Z98 self-hosted compiler - usage: zig1 [options] &lt;input.zig&gt;
+  -mm&lt;N&gt;    hard pool budget in MB (default 64; pool.peak over budget -> ICE rc=3)
+  -s&lt;N&gt;     spill level 0..6 (default 0 = all spills on disk; -s1..-s6 deactivate the
+            first N spills to RAM in order AST,LIR,HASH,RES,SIDE,EXTRA: higher -s = more RAM,
+            less disk I/O (pool= rises; -s6 = all in RAM -> pair with -mm128)
+  -osl       compile target = linux (default); -osw = windows
+  --target &lt;linux|windows&gt;  long-form target alias for -osl/-osw
+</pre>
+
+<h2>Options</h2>
+<p>
+An option whose Argument column names a value consumes the next argument. The
+single-token options (<tt>-mm&lt;N&gt;</tt>, <tt>-s&lt;N&gt;</tt>) take their
+value attached, with no space.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Flag</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Argument</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Default</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Effect</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>-o</tt>, <tt>--output-dir</tt></td>
+<td valign="top">directory</td>
+<td valign="top">unset (<tt>.</tt> is used for spill paths)</td>
+<td valign="top">Marks <tt>output_dir_set</tt> and names the output directory. The directory must already exist; otherwise <tt>error: output directory does not exist: &lt;dir&gt;</tt> and exit 1. Setting it enables full per-module C89 emission and the build scripts. <tt>main.zig:1642-1647</tt>, <tt>main.zig:170-178</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>--dump-c89</tt></td>
+<td valign="top">none</td>
+<td valign="top">off</td>
+<td valign="top">Enters the C89 emission phase. Without <tt>-o</tt> it writes one combined C translation unit to standard output; with <tt>-o</tt> the output directory is written as usual. With neither, the pipeline stops after analysis and emits no C. <tt>main.zig:1623-1624</tt>, <tt>main.zig:1184</tt>, <tt>main.zig:1538-1544</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>-m</tt>, <tt>--max-mem</tt></td>
+<td valign="top">size: digits with optional <tt>k</tt>/<tt>m</tt>/<tt>g</tt></td>
+<td valign="top">65536 (KB), i.e. 64 MB</td>
+<td valign="top">Sets the pool budget in KB. The digits are accumulated and multiplied by 1024 (<tt>k</tt>), 1024&sup2; (<tt>m</tt>), or 1024&sup3; (<tt>g</tt>), case-insensitively; other bytes are ignored. <tt>--max-mem 65536</tt> and <tt>--max-mem 64k</tt> are both 64 MB. <tt>main.zig:1625-1629</tt>, <tt>main.zig:1742-1760</tt>, <tt>allocator.zig:260</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>-mm&lt;N&gt;</tt></td>
+<td valign="top">decimal MB, one token</td>
+<td valign="top">64 (MB)</td>
+<td valign="top">The compact MB form of the pool budget; any argument beginning <tt>-mm</tt> is taken as this option. The value is clamped to the 256 MB static pool. <tt>-mm0</tt> relaxes the gate (zero means no limit). A non-numeric or trailing-garbage value prints <tt>error: -mm&lt;N&gt; requires a decimal MB size (e.g. -mm64)</tt> and exits 1. <tt>main.zig:1630-1632</tt>, <tt>main.zig:1776-1801</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>-s&lt;N&gt;</tt></td>
+<td valign="top">decimal 0..6, one token</td>
+<td valign="top">0</td>
+<td valign="top">Spill level: how many of the six spill stores live in RAM. 0 puts all six on disk; level <tt>N</tt> moves the first <tt>N</tt> to RAM in the order AST, LIR, HASH, RES, SIDE, EXTRA, so higher is more RAM and less disk I/O. A bare <tt>-s</tt>, a non-digit, or a value above 6 exits 1. <tt>main.zig:1633-1636</tt>, <tt>main.zig:1803-1851</tt>, <tt>spill_store.zig:16</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>-e</tt>, <tt>--max-errors</tt></td>
+<td valign="top">integer</td>
+<td valign="top">256</td>
+<td valign="top">Maximum number of diagnostics collected before the compiler stops with <tt>too many errors, stopping</tt>. Non-digit characters are ignored by the parser. <tt>main.zig:1637-1641</tt>, <tt>main.zig:1762-1774</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>-q</tt>, <tt>--quiet</tt></td>
+<td valign="top">none</td>
+<td valign="top">off</td>
+<td valign="top">Sets the <tt>quiet</tt> field. At seed v90 no code reads that field, so the option is accepted but has no observable effect. <tt>main.zig:1648-1649</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>--test</tt></td>
+<td valign="top">none</td>
+<td valign="top">off</td>
+<td valign="top">Test mode. It exits 1; the intended message (<tt>use test_main.zig for test mode</tt>) is written through the compiled-off debug marker channel, so nothing is printed. Use the separate test binaries for the test suite. <tt>main.zig:160-165</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>--sanity-test</tt></td>
+<td valign="top">none</td>
+<td valign="top">off</td>
+<td valign="top">Runs the lexer sanity check and returns (exit 0). <tt>main.zig:150-159</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>-W</tt>, <tt>--warnings-as-errors</tt></td>
+<td valign="top">none</td>
+<td valign="top">off</td>
+<td valign="top">Turns warnings into a failure: if any warning was collected, all diagnostics are printed and the compiler exits 1. <tt>main.zig:1654-1655</tt>, <tt>main.zig:404-407</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>--warn-error</tt></td>
+<td valign="top">none</td>
+<td valign="top">off</td>
+<td valign="top">Same effect as <tt>-W</tt>: it sets both <tt>warnings_as_errors</tt> and <tt>warn_error</tt>. <tt>main.zig:1676-1678</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>--warn-all</tt></td>
+<td valign="top">none</td>
+<td valign="top">off</td>
+<td valign="top">Sets <tt>warn_all</tt>, which is passed to the analyzer; it can raise a level-1 warning where it otherwise would not (for example the ownership-transfer report). <tt>main.zig:1674-1675</tt>, <tt>main.zig:768</tt>, <tt>analyzer.zig:355</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>--color</tt></td>
+<td valign="top"><tt>auto</tt> | <tt>always</tt> | <tt>never</tt></td>
+<td valign="top"><tt>auto</tt></td>
+<td valign="top">Parsed and stored; anything other than <tt>always</tt>/<tt>never</tt> yields <tt>auto</tt>. At seed v90 no code reads the field, so it has no observable effect. <tt>main.zig:1656-1660</tt>, <tt>main.zig:1853-1860</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>--error-format</tt></td>
+<td valign="top"><tt>human</tt> | <tt>json</tt> | <tt>sarif</tt></td>
+<td valign="top"><tt>human</tt></td>
+<td valign="top">Parsed and stored; anything other than <tt>json</tt>/<tt>sarif</tt> yields <tt>human</tt>. At seed v90 no code reads the field, so diagnostics always print in the human format. <tt>main.zig:1661-1664</tt>, <tt>main.zig:1862-1869</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>--track-memory</tt></td>
+<td valign="top">none</td>
+<td valign="top">off</td>
+<td valign="top">Emits a peak-memory report through the marker channel: <tt>track-memory: perm=&lt;n&gt;K mod=&lt;n&gt;K scr=&lt;n&gt;K pool=&lt;n&gt;K type_db=&lt;n&gt;K total=&lt;n&gt;K</tt>. The channel is enabled by <tt>--markers</tt>, so the two flags are used together; without <tt>--markers</tt> nothing is printed. <tt>main.zig:1666-1667</tt>, <tt>main.zig:408-435</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>--no-null-check</tt></td>
+<td valign="top">none</td>
+<td valign="top">off</td>
+<td valign="top">Disables the null-pointer analyzer. <tt>main.zig:1668-1669</tt>, <tt>main.zig:743</tt>, <tt>main.zig:765</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>--no-lifetime-check</tt></td>
+<td valign="top">none</td>
+<td valign="top">off</td>
+<td valign="top">Disables the lifetime analyzer. <tt>main.zig:1670-1671</tt>, <tt>main.zig:743</tt>, <tt>main.zig:766</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>--no-leak-check</tt></td>
+<td valign="top">none</td>
+<td valign="top">off</td>
+<td valign="top">Disables the leak/double-free analyzer. <tt>main.zig:1672-1673</tt>, <tt>main.zig:743</tt>, <tt>main.zig:767</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>-I</tt>, <tt>--lib-dir</tt></td>
+<td valign="top">directory</td>
+<td valign="top">none</td>
+<td valign="top">Appends a module/library search directory. At most 16 are recorded; further occurrences are ignored. <tt>main.zig:1681-1686</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>--markers</tt></td>
+<td valign="top">none</td>
+<td valign="top">off</td>
+<td valign="top">Enables the marker channel (<tt>pal.markersEnabled(1)</tt>). The measurement markers are then written to stderr. <tt>main.zig:1679-1680</tt>, <tt>main.zig:149</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>-osl</tt></td>
+<td valign="top">none</td>
+<td valign="top">(default)</td>
+<td valign="top">Compile target Linux (<tt>target_is_windows = false</tt>). <tt>main.zig:1687-1688</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>-osw</tt></td>
+<td valign="top">none</td>
+<td valign="top">off</td>
+<td valign="top">Compile target Windows (<tt>target_is_windows = true</tt>); also emits the Windows build scripts. <tt>main.zig:1689-1690</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>--target</tt></td>
+<td valign="top"><tt>linux</tt> | <tt>windows</tt></td>
+<td valign="top"><tt>linux</tt></td>
+<td valign="top">Long-form target alias. Any other value prints <tt>error: --target must be 'linux' or 'windows'</tt> and exits 1. <tt>main.zig:1691-1695</tt>, <tt>main.zig:1871-1881</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>-fsafe</tt></td>
+<td valign="top">none</td>
+<td valign="top">(default)</td>
+<td valign="top">Enables the runtime checks and the <tt>undefined</tt> poison (<tt>safe_checks = true</tt>). This is the default mode. <tt>main.zig:1699-1701</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>-ffast</tt></td>
+<td valign="top">none</td>
+<td valign="top">off</td>
+<td valign="top">Disables the runtime checks and the poison (<tt>safe_checks = false</tt>). <tt>main.zig:1696-1698</tt></td>
+</tr>
+</table>
+
+<h2>The input file</h2>
+<p>
+The one positional argument is the file to compile. It may appear anywhere among
+the options; the last non-option argument seen becomes the input file. If no
+input file is given, <tt>zig1</tt> prints the usage text and returns 0. If the
+file cannot be read, it prints <tt>error: could not read input file</tt> and
+exits 1. The input path may be absolute or relative to the current directory.
+</p>
+
+<h2>Output and the emitted files</h2>
+<p>
+With <tt>-o DIR</tt> the compiler writes a self-contained C89 tree into
+<tt>DIR</tt> (the directory must already exist) and returns. The emitted set is:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>File</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Content</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>&lt;module&gt;_&lt;hash&gt;.c</tt>, <tt>.h</tt></td>
+<td valign="top">One pair per emitted module, carrying that module's functions, types, and declarations.</td>
+</tr>
+<tr>
+<td valign="top"><tt>zig_special_types.h</tt>, <tt>zig_compat.h</tt>, <tt>zig_runtime.h</tt></td>
+<td valign="top">Shared type and runtime headers.</td>
+</tr>
+<tr>
+<td valign="top"><tt>zig_runtime.c</tt>, <tt>zig_pal.c</tt>, <tt>c_exit.c</tt></td>
+<td valign="top">The runtime and platform sources needed to link the output.</td>
+</tr>
+<tr>
+<td valign="top"><tt>net_prelude.h</tt></td>
+<td valign="top">Emitted when <tt>std_net</tt> is in the module set.</td>
+</tr>
+<tr>
+<td valign="top"><tt>build_target.sh</tt></td>
+<td valign="top">A build script, <tt>sh build_target.sh [TARGET] [OUT]</tt>, with <tt>TARGET</tt> <tt>linux</tt> (default) or <tt>mingw</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>build_target.bat</tt>, <tt>build_owc.bat</tt></td>
+<td valign="top">The MSVC and OpenWatcom scripts, emitted only for the Windows target (<tt>-osw</tt>).</td>
+</tr>
+</table>
+<p>
+With <tt>--dump-c89</tt> and no <tt>-o</tt>, the compiler writes one combined C
+translation unit to standard output instead, for pasting into a single-file
+build. <tt>c89_emit.zig:10358-10506</tt> emits the build scripts;
+<tt>main.zig:1182-1544</tt> drives the two paths.
+</p>
+
+<h2>Memory and spill options</h2>
+<p>
+The pool budget (<tt>-m</tt>/<tt>--max-mem</tt>, or <tt>-mm&lt;N&gt;</tt>) and
+the spill level (<tt>-s&lt;N&gt;</tt>) trade RAM for disk I/O. Both are checked
+from the source of record: <tt>main.zig:1723-1851</tt> and
+<tt>allocator.zig:288-302</tt>. The budget is compared against the pool peak
+after each phase; over budget prints <tt>memory limit exceeded</tt> and exits 3.
+Because the six spills hold AST, LIR, HASH, RES, SIDE, and EXTRA data,
+<tt>-s0</tt> is the low-memory default and <tt>-s6</tt> keeps everything in RAM.
+</p>
+
+<h2>Target and safety options</h2>
+<p>
+The target defaults to Linux and is set by the last of <tt>-osl</tt>,
+<tt>-osw</tt>, or <tt>--target</tt>. It selects the emitted build scripts and
+the platform headers; it does not change the Z98 source. Safety defaults to
+<tt>-fsafe</tt> (runtime checks plus the <tt>undefined</tt> poison); the last of
+<tt>-fsafe</tt> and <tt>-ffast</tt> wins.
+</p>
+
+<h2>Diagnostic and analyzer options</h2>
+<p>
+<tt>-e</tt>/<tt>--max-errors</tt> caps the count of diagnostics. The three
+<tt>--no-*-check</tt> options switch off the corresponding static analyzers.
+<tt>-W</tt>/<tt>--warnings-as-errors</tt> and <tt>--warn-error</tt> make any
+warning a failure; <tt>--warn-all</tt> lets the analyzer raise reports it would
+otherwise suppress. <tt>--color</tt>, <tt>--error-format</tt>, and
+<tt>-q</tt>/<tt>--quiet</tt> are accepted and stored but have no reader at seed
+v90.
+</p>
+
+<h2>Declared but not wired</h2>
+<p>
+The following spellings are present in <tt>main.zig</tt> but no branch of
+<tt>parseArgs</tt> matches them. An argument that is one of them therefore falls
+through to the input-file case and is used as the file name:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Spelling</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Status</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>--dump-types</tt></td>
+<td valign="top">Declared (<tt>main.zig:73</tt>, <tt>main.zig:1584</tt>); never matched. <tt>zig1 --dump-types</tt> alone tries to read a file named <tt>--dump-types</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>--dump-lir</tt></td>
+<td valign="top">Declared (<tt>main.zig:74</tt>, <tt>main.zig:1585</tt>); never matched, same fall-through.</td>
+</tr>
+<tr>
+<td valign="top"><tt>-t</tt>, <tt>-a</tt>, <tt>-y</tt>, <tt>-l</tt></td>
+<td valign="top">Declared (<tt>main.zig:1605-1608</tt>); never matched in <tt>zig1</tt>, same fall-through. <tt>-t</tt> is matched only by the separate <tt>sf/src/main_dump.zig</tt> entry.</td>
+</tr>
+<tr>
+<td valign="top"><tt>--dump-tokens</tt>, <tt>--dump-ast</tt></td>
+<td valign="top">Not options of <tt>zig1</tt> at all; they belong to the separate <tt>sf/src/main_dump.zig</tt> entry (<tt>main_dump.zig:221-222</tt>).</td>
+</tr>
+</table>
+<p>
+There are no data-file options: no <tt>--d*</tt> spelling is parsed.
+<tt>--dump-c89</tt> is the only dump option of the shipped <tt>zig1</tt>.
+</p>
+
+<h2>The seed build recipe</h2>
+<p>
+The compiler under test is rebuilt from the committed seed, not from a retired
+bootstrap. The recipe, the fixed-point gate, and the current seed values are in
+<tt>docs/sf/QUICK_REF.md</tt>; the one-command form is
+<tt>bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz &lt;out_dir&gt;</tt>,
+which produces <tt>&lt;out_dir&gt;/zig1_5_clean</tt> and <tt>&lt;out_dir&gt;/lib/</tt>.
+</p>
+
+<h2>Exit status</h2>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Code</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Meaning</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>0</tt></td>
+<td valign="top">Success; also the no-input-file case, where the usage text is printed.</td>
+</tr>
+<tr>
+<td valign="top"><tt>1</tt></td>
+<td valign="top">A malformed <tt>-mm</tt>/<tt>-s</tt> value; a missing output directory; an unreadable input file; <tt>--test</tt>; an invalid <tt>--target</tt>; or warnings present under <tt>-W</tt>/<tt>--warn-error</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>3</tt></td>
+<td valign="top">Pool peak over the <tt>-mm</tt>/<tt>-m</tt> budget (<tt>memory limit exceeded</tt>; the usage text calls this an ICE).</td>
+</tr>
+</table>
+
+<h2>See also</h2>
+<p>
+<a href="vol4-21-diagnostics.html">Diagnostics</a> for the numbers the compiler
+prints, <a href="vol3-16-memory-budgets.html">Volume III, Memory budgets</a> for
+the reasoning behind the pool and spill options, and
+<a href="vol3-08-win9x.html">Volume III, Building for Win9x</a> for the Windows
+target.
+</p>
+
+<p class="navbtns">
+<a href="vol4-21-diagnostics.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol4-24-html-style.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol4-21-diagnostics.html">Diagnostics</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-24-html-style.html">HTML style</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
