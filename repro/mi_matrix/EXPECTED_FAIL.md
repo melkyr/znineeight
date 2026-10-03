@@ -52,8 +52,10 @@ retired-zig0 baseline.
 **Residuals.** (1) The shipped Volume II page
 `docs/sf/manuals/en/vol2-16-no-methods.html:330-334,617` still documents the
 old `error[20]`-on-`x` behavior; per Q3(ii) it was NOT touched (parked).
-`docs/reference/Language_Spec_Z98.md:111` likewise still lists `anytype`
-parameters as resolving. (2) `examples/zig0/**` (retired, not gated) has four
+`docs/reference/Language_Spec_Z98.md:111` was updated by `0538e450` to state that
+`anytype` is rejected in signatures, so the earlier "still lists `anytype`
+parameters as resolving" note is stale (folded at the A1 closeout). (2)
+`examples/zig0/**` (retired, not gated) has four
 `args: anytype` stdlib stubs that would now reject if compiled.
 
 ## FX17-F — function-pointer signature matching enforced at all coercion sites (v286 -> v287, 2026-10-01)

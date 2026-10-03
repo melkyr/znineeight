@@ -24,13 +24,14 @@ in the next section; that is the only supported path.
 `release/seed/CHANGELOG.md`, full recipes + current md5s in
 `release/seed/SEED_README.txt`).
 
-**Current seed: v89.** Archive md5 `a1549c5b5d9ad23da4d41d214d9ad3c5`; archived binary md5
-(= v89's rotation fixed point) `8216fedc8dd69db084d453be80f3c010`; `gen/` 45 `.c` + 46 `.h`;
+**Current seed: v90.** Archive md5 `430f4f9ce415852b4ca5b1bb01261189`; archived binary md5
+(= v90's rotation fixed point) `f78bebc448e267b32419afdb13afb386`; `gen/` 45 `.c` + 46 `.h`;
 `lib/` 30 std `.zig`. **This block is updated at every plan closeout that rotates the seed**;
 the branch's in-progress fixed point is recorded in the active plan's workspace ledger.
 The FX14-F–FX17-F notes below record each amendment's own fixed point and its
 "seed v88 NOT rotated (closeout-only)" status at the time; the Volume II Task 22
-closeout (2026-09-30) has since rotated the seed to v89 at this fixed point.
+closeout (2026-09-30) rotated the seed to v89, and the Amendment A1 closeout
+(2026-10-03) rotated it again to v90 at this fixed point.
 
 Top-level `zig1-seed/`: `zig1` (reference binary), `gen/` (its self-emission C89
 module set — 45 `.c` + 46 `.h`, including `zig_special_types.h`; the emitted
