@@ -138,6 +138,12 @@ typedef struct { int value; int has_value; } zT_..._Opt_...;        // ?i32
 typedef struct { zT_..._T* value; int has_value; } zT_..._Opt_...;  // ?*T
 typedef struct { int has_value; } zT_..._Opt_...;                   // ?void
 </pre>
+<p>
+In a <tt>?void</tt> function the valueless <tt>return;</tt> and falling off the
+end of the body both yield the <b>present</b> optional (a void payload) &mdash;
+only <tt>return null;</tt> is absent. The lowering builds the present value
+with <tt>wrap_optional</tt> exactly as a non-void optional wraps a payload.
+</p>
 <table width="100%" border="1" cellpadding="4" cellspacing="0">
 <tr>
 <th align="left" bgcolor="#e8e0e0"><b>Type</b></th>
