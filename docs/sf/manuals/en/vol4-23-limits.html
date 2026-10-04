@@ -1,0 +1,430 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Limits</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume IV reference limits limitations known limitations workarounds not yet supported permanently dropped designed not implemented anyerror anytype generics comptime threads preemption noreturn opaque vector errorName cImport static do while runtime safety fsafe ffast diagnostics">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol4-22-cli.html">
+<link rel="next" href="vol4-24-html-style.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume IV &mdash; Reference</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+How to use the Reference <i>(planned)</i><br>
+<a href="vol4-01-grammar.html">The full grammar</a><br>
+<a href="vol4-02-types.html">Types</a><br>
+<a href="vol4-03-pointers.html">Pointers</a><br>
+<a href="vol4-04-structs.html">Structs</a><br>
+<a href="vol4-05-enums.html">Enums</a><br>
+<a href="vol4-06-unions.html">Unions</a><br>
+<a href="vol4-07-tuples.html">Tuples</a><br>
+<a href="vol4-08-arrays-slices.html">Arrays and slices</a><br>
+<a href="vol4-09-errors.html">Errors</a><br>
+<a href="vol4-10-optionals.html">Optionals</a><br>
+<a href="vol4-11-aliases.html">Aliases</a><br>
+<a href="vol4-12-statements.html">Statements</a><br>
+<a href="vol4-13-control-flow.html">Control flow</a><br>
+<a href="vol4-14-error-expressions.html">Error expressions</a><br>
+<a href="vol4-15-builtins.html">Builtins</a><br>
+<a href="vol4-16-async.html">Async</a><br>
+<a href="vol4-17-memory.html">Memory</a><br>
+<a href="vol4-18-stdlib.html">The standard library</a><br>
+<a href="vol4-19-pal.html">The PAL</a><br>
+<a href="vol4-20-markers.html">Markers</a><br>
+<a href="vol4-21-diagnostics.html">Diagnostics</a><br>
+<a href="vol4-22-cli.html">The command line</a><br>
+<b>Limits</b><br>
+<a href="vol4-24-html-style.html">HTML style</a><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Limits</h1>
+<p>
+The honest list. This page states what Z98 is known to limit and what it does
+not yet support, drawn from the Language Spec's &sect;5 (known limitations and
+workarounds) and &sect;7 (not yet supported) and checked against the compiler
+built from the committed seed. Each entry is a fact; where the language
+provides a way over it, the way over is named in the same row.
+</p>
+<p>
+Three lists follow. The first is the set of limits that ship with the language
+and their workarounds. The second is the set of features permanently dropped
+from the design. The third is the set of features designed but not implemented
+in the current self-hosted <tt>zig1</tt>. The exact codes and messages are
+quoted from the Language Spec and the shipped pages; the snippet diagnostics
+below were re-run on the seed compiler.
+</p>
+
+<h2>Known limitations and workarounds</h2>
+<p>
+These are the limits the language itself carries, from spec &sect;5. None is
+silent: a limit that reaches the compiler is a numbered diagnostic, and a limit
+that does not is paired with the idiom that works.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Limit</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>The way over</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Diagnostic or source</b></th>
+</tr>
+<tr>
+<td valign="top">No <tt>anyerror</tt></td>
+<td valign="top">Declare the set (<tt>const MyError = error{ Bad };</tt>) or
+use an anonymous error union <tt>!T</tt>. Failures are declared, not erased.</td>
+<td valign="top"><tt>error[20]</tt> for the undeclared name; spec &sect;1.5,
+&sect;7.2</td>
+</tr>
+<tr>
+<td valign="top">No generics</td>
+<td valign="top">Write one concrete function or container per type; use a
+<tt>*void</tt> plus a function pointer where the type genuinely varies. The
+standard library's containers are written out concretely.</td>
+<td valign="top"><tt>anytype</tt> parameter is <tt>error[16]</tt>; a
+<tt>comptime</tt> parameter is <tt>error[2000]</tt>; spec &sect;4</td>
+</tr>
+<tr>
+<td valign="top">No anonymous aggregate type declarations</td>
+<td valign="top">Name the type with a <tt>const</tt> assignment. Anonymous
+<tt>struct</tt> type expressions, tuple literals <tt>.{}</tt>, and anonymous
+struct payloads in tagged-union variants are parsed.</td>
+<td valign="top">spec &sect;1.3, &sect;5</td>
+</tr>
+<tr>
+<td valign="top">Strict coercion</td>
+<td valign="top">There is no implicit conversion between <tt>i32</tt> and
+<tt>usize</tt>; spell it: <tt>@intCast(usize, x)</tt> or
+<tt>@intCast(i32, x)</tt>.</td>
+<td valign="top">spec &sect;1</td>
+</tr>
+<tr>
+<td valign="top">No method syntax</td>
+<td valign="top">Call a free function with the receiver as an ordinary
+parameter: <tt>update(&amp;e, dt)</tt>, never <tt>e.update(dt)</tt>. The one
+exception is a call whose callee is named <tt>print</tt>, which gets
+format-string lowering.</td>
+<td valign="top"><tt>error[3060]: no field or member function named '...' in
+struct type</tt>; spec &sect;4</td>
+</tr>
+<tr>
+<td valign="top">AST lifting</td>
+<td valign="top">Most control-flow expressions (<tt>if</tt>, <tt>switch</tt>,
+<tt>try</tt>, <tt>catch</tt>, <tt>orelse</tt>) are transformed into statement
+blocks with temporaries, so they can be used inside expressions while the
+output stays C89.</td>
+<td valign="top">automatic; no diagnostic; spec &sect;5</td>
+</tr>
+<tr>
+<td valign="top">Runtime safety is a mode</td>
+<td valign="top"><tt>-fsafe</tt> (the default) enables six runtime checks:
+checked cast, division and modulo by zero, shift count, null unwrap, index out
+of bounds, and integer overflow. A failed check calls <tt>pal_trap</tt>.
+<tt>-ffast</tt> disables all six. <tt>unreachable</tt> and <tt>@panic</tt> trap
+in both modes, and under <tt>-fsafe</tt> storage set to <tt>undefined</tt> is
+byte-filled with <tt>0xAA</tt> so a read is visible.</td>
+<td valign="top"><a href="vol4-22-cli.html">The command line</a> for
+<tt>-fsafe</tt>/<tt>-ffast</tt>; spec &sect;5</td>
+</tr>
+<tr>
+<td valign="top">Compile-time rejects</td>
+<td valign="top">Several constructs C89 accepts silently are rejects here:
+an uninitialized <tt>var</tt> (<tt>error[3014]</tt>), a discarded error union
+(<tt>error[3015]</tt>), a non-void function that can fall off its end
+(<tt>error[3003]</tt>), <tt>orelse</tt> on a non-optional operand
+(<tt>error[3016]</tt>), indexing a single-item pointer
+(<tt>error[3066]</tt>), an illegal single-item-pointer slice bound
+(<tt>error[3067]</tt>), a call whose argument count does not match
+(<tt>error[3061]</tt>), a call argument in a different type family
+(<tt>error[3000]</tt>), a <tt>print</tt> argument container that is not a
+tuple (<tt>error[3065]</tt>), a non-comptime tuple index
+(<tt>error[3069]</tt>), and an out-of-range tuple ordinal
+(<tt>error[3070]</tt>).</td>
+<td valign="top"><a href="vol4-21-diagnostics.html">Diagnostics</a> lists every
+code; spec &sect;5</td>
+</tr>
+</table>
+<p>
+Two of these limits have a direct snippet. A function parameter declared
+<tt>anytype</tt> and one declared with a <tt>comptime</tt> type are both
+rejected at the signature:
+</p>
+<pre>
+fn f(x: anytype) void { _ = x; }
+// error[16]: anytype not supported in Z98
+
+fn id(comptime T: type, x: T) T { return x; }
+// error[2000]: expected ':' but found identifier
+</pre>
+<p>
+A member call on a value is rejected where it appears, with a note naming the
+declaration:
+</p>
+<pre>
+const s = S{ .x = 1 };
+s.bar();
+// error[3060]: no field or member function named 'bar' in struct type
+// note: struct declared here
+</pre>
+
+<h2>Permanently dropped</h2>
+<p>
+These features were considered for Z98 and are not planned for <tt>zig1</tt>
+(spec &sect;7.1). The documented idiom replaces each. One earlier entry has
+moved: <tt>volatile</tt> qualifiers are <b>no longer</b> dropped, so
+<tt>*volatile T</tt>, <tt>[*]volatile T</tt>, and <tt>@volatileCast</tt> are
+supported.
+</p>
+
+<h3><tt>static</tt> declarations</h3>
+<p>
+The <tt>static</tt> keyword is not in the token set, so <tt>static var</tt> does
+not parse. Use a container-level <tt>var</tt> for state that persists across
+calls:
+</p>
+<pre>
+static var g: i32 = 0;
+// error[2000]: expected ';' but found 'var'
+
+var g: i32 = 0; // file/container scope, persists across calls
+fn bump() void { g = g + 1; }
+</pre>
+
+<h3><tt>do ... while</tt> loops</h3>
+<p>
+<tt>do ... while</tt> is dropped. Use the equivalent <tt>while (true)</tt> with
+an early <tt>break</tt>:
+</p>
+<pre>
+do { body(); } while (cond);
+// error[2000]: expected ';' but found 'while'
+
+while (true) {
+    body();
+    if (!cond) break;
+}
+</pre>
+<p>
+Caveat: <tt>continue</tt> in this emulation skips the condition test and
+re-enters the body, unlike a real <tt>do ... while</tt>.
+</p>
+
+<h2>Designed, not implemented</h2>
+<p>
+These features appear in Z98 design and plan documents but are not implemented
+in the current self-hosted compiler (spec &sect;7.2). Do not rely on them. Each
+row names the shipped substitute.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Feature</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Status</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>The way over</b></th>
+</tr>
+<tr>
+<td valign="top">Value-producing labelled blocks</td>
+<td valign="top"><tt>const n = blk: { ... break :blk 1; };</tt> does not parse.
+Only value-less <tt>break :blk;</tt> is supported.</td>
+<td valign="top">Assign through an ordinary statement or a named local instead
+of producing a value from the block.</td>
+</tr>
+<tr>
+<td valign="top"><tt>@errorName</tt></td>
+<td valign="top">Not implemented; the builtin is
+<tt>error[3000]: unsupported builtin function</tt>.</td>
+<td valign="top">Keep the failing error in a declared set and <tt>switch</tt>
+on it; format the name yourself.</td>
+</tr>
+<tr>
+<td valign="top"><tt>extern struct</tt>, <tt>opaque</tt>, <tt>vector</tt>
+types</td>
+<td valign="top">Not accepted as types. <tt>extern struct</tt> rejects
+<tt>error[2000]: expected 'fn' after extern calling convention</tt>;
+<tt>opaque</tt> is <tt>error[20]</tt>.</td>
+<td valign="top">Use a plain <tt>struct</tt> and reach a C ABI through
+<tt>extern fn</tt> declarations and <tt>@cInclude</tt>.</td>
+</tr>
+<tr>
+<td valign="top">Generics, <tt>anytype</tt> parameters, <tt>@Type</tt>,
+<tt>@typeInfo</tt>, and <tt>comptime</tt></td>
+<td valign="top">Not implemented. <tt>anytype</tt> is <tt>error[16]</tt>;
+<tt>@Type</tt>, <tt>@typeInfo</tt>, and any <tt>comptime</tt> parameter reject
+(<tt>error[3000]</tt> or <tt>error[2000]</tt>).</td>
+<td valign="top">Concrete code per type plus the fixed builtin catalog; the
+introspection builtins (<tt>@sizeOf</tt>, <tt>@alignOf</tt>,
+<tt>@offsetOf</tt>, <tt>@bitSizeOf</tt>) answer the representation
+questions.</td>
+</tr>
+<tr>
+<td valign="top"><tt>anyerror</tt></td>
+<td valign="top">Not a type. It is <b>not</b> exempt from the signature name
+rule: <tt>fn f(e: anyerror)</tt> rejects <tt>error[20]</tt>.</td>
+<td valign="top">A declared error set or an anonymous <tt>!T</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>noreturn</tt> as a signature type</td>
+<td valign="top">Not registered as a type name, so a parameter or return type
+spelling it does not resolve. By operator ruling the six <tt>std</tt>
+signatures that spell it keep degrading to <tt>void</tt> and emit no
+diagnostic; a real <tt>noreturn</tt> type with a C companion is deferred.
+<tt>noreturn</tt> remains usable as the compiler's internal divergence result
+type.</td>
+<td valign="top">Do not spell <tt>noreturn</tt> in a signature; use
+<tt>void</tt>, or an error union when the call can fail.</td>
+</tr>
+<tr>
+<td valign="top"><tt>@cImport</tt></td>
+<td valign="top">Not implemented; it rejects
+<tt>error[3000]: unsupported builtin function</tt>.</td>
+<td valign="top">Bare <tt>extern</tt> declarations plus a module-level
+<tt>@cInclude("header.h");</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std.Io</tt> / an event-loop interface, preemption,
+threads, and typed futures (<tt>Future(T)</tt>)</td>
+<td valign="top">The <tt>@async*</tt> coroutines are cooperative and
+round-robin only, and coroutine state is type-erased to <tt>*void</tt>.</td>
+<td valign="top">The <tt>std.async</tt> scheduler; real parallelism stays an
+operating-system concern reached through <tt>extern</tt> declarations, not
+through the language.</td>
+</tr>
+<tr>
+<td valign="top">Arbitrary compile-time integer semantics</td>
+<td valign="top">Implemented, with a 256-bit magnitude cap; values are
+signedness-free until materialised. A bounded set of divergences remains in
+spec &sect;7.2.</td>
+<td valign="top">Use <tt>@intCast</tt>/<tt>@as</tt> at materialisation sites;
+the arrays page and the diagnostics page carry the rejection shapes.</td>
+</tr>
+</table>
+<p>
+The compile-time integer divergences in spec &sect;7.2 are deliberate and
+documented rather than silent: a stack value needing more than 64 bits in a
+runtime slot (<tt>const BIGFOLD = 1 &lt;&lt; 100;</tt>) rejects
+<tt>error[3000]</tt>; an array size above <tt>0xFFFFFFFE</tt> is
+<tt>error[3050]</tt> because the array-length field is <tt>u32</tt>;
+<tt>%</tt> on a signed compile-time integer and <tt>~</tt> on a
+<tt>comptime_int</tt> are accepted where Zig 0.15.2 requires <tt>@rem</tt> or
+rejects; float comparisons fold at the compiler's <tt>f64</tt> precision; and
+runtime signed slice bounds (such as <tt>arr[i..4]</tt> with a runtime
+<tt>i32</tt>) are not rejected where Zig compile-rejects. The
+<a href="vol4-08-arrays-slices.html">arrays and slices</a> page states the
+array-size boundary.
+</p>
+
+<h3>Spec snippet checks</h3>
+<p>
+The value-producing labelled block and the unsupported builtins above are
+verified against the seed compiler; each line is a fragment of a function
+body, shown with the diagnostic it produces:
+</p>
+<pre>
+const n = blk: { break :blk 1; };
+// error[2000]: expected ';' but found integer literal
+
+_ = @typeInfo(i32);
+// error[3000]: unsupported builtin function
+
+_ = @errorName(e);
+// error[3000]: unsupported builtin function
+</pre>
+<p>
+The substitutes compile: a value-less labelled block
+(<tt>blk: { break :blk; }</tt>), a named struct, and a module-level
+<tt>@cInclude</tt> are all accepted with no diagnostic.
+</p>
+
+<h2>Absences of tooling</h2>
+<p>
+Three items are absences of tooling rather than of the language. Each has the
+era's answer, and each is measured in
+<a href="vol3-02-honesty-inventory.html">Volume III, the honesty inventory</a>.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Absent</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>The era alternative</b></th>
+</tr>
+<tr>
+<td valign="top">A package manager</td>
+<td valign="top">Vendor the third-party source into the tree, which is what a
+1998 project shipped.</td>
+</tr>
+<tr>
+<td valign="top">IDE integration</td>
+<td valign="top">A text editor and the compiler's numbered diagnostics; the
+build is a plain script you can read.</td>
+</tr>
+<tr>
+<td valign="top">Dynamic linking to modern libraries</td>
+<td valign="top">Link the era's C89 static libraries and object files; Z98's
+output is C89, so it links with them directly.</td>
+</tr>
+</table>
+<p>
+The concurrency and networking limits are the compiler's own and are stated in
+the spec: no thread API and no preemption, and the network surface is the
+classic socket API, not an HTTP or TLS stack. The
+<a href="vol3-06-era-limits.html">Pentium II limits</a> chapter pairs each
+machine limit with its way over.
+</p>
+
+<h2>See also</h2>
+<p>
+<a href="vol4-21-diagnostics.html">Diagnostics</a> for the code and message of
+every reject named here, <a href="vol4-22-cli.html">The command line</a> for the
+<tt>-fsafe</tt>/<tt>-ffast</tt> modes and the rest of the compiler flags,
+<a href="vol4-08-arrays-slices.html">arrays and slices</a> for the array-size
+boundary, <a href="vol4-16-async.html">Async</a> for the cooperative coroutine
+model, and <a href="vol4-18-stdlib.html">the standard library</a> for the
+concrete containers that replace generics. The language arguments are in
+<a href="vol2-01-honest-comparison.html">Volume II, the honest comparison</a>,
+<a href="vol3-02-honesty-inventory.html">Volume III, the honesty inventory</a>,
+and <a href="vol3-06-era-limits.html">Volume III, what you cannot do on a
+Pentium II</a>.
+</p>
+
+<p class="navbtns">
+<a href="vol4-22-cli.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol4-24-html-style.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol4-22-cli.html">The command line</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-24-html-style.html">HTML style</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
