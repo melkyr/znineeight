@@ -304,6 +304,32 @@ hop1 `9abebc39410001110ac0433a3a2a208b` != hop2 == hop3, explicit
 `FIXED_POINT_MD5` gate) is **`8216fedc8dd69db084d453be80f3c010`**; seed v88 NOT
 rotated.
 
+A2-F (2026-10-04; Volume IV Amendment A2, operator m1470) fixes D1 (two
+sub-byte `enum(uN)` backings aliased one member table -> a spurious
+`error[3000]` at the first enum) and D2 (an empty named `struct {}` aliased a
+foreign `StructPayload` / segfaulted; `@sizeOf/@alignOf/@bitSizeOf` were
+`12/4/96` instead of `1/1/8`). `populateTypePayload`
+(`sf/src/symbol_registrator.zig`) gains a `tid` parameter and back-patches
+`payload_idx` on `types_items[tid]` (the old `types_len-1` named the
+`arb_uint_type` appended while resolving a non-power-of-two backing); container
+kinds no longer early-return on a missing payload / zero children and the
+struct branch always `stAppend`s, so `struct {}` gets `StructPayload{count=0}`
+and reaches the `layoutCompute` min-1 clamp (size 1 / align 1); `emitStructType`
+(`sf/src/c89_emit.zig`) emits `unsigned char _[1];` for an empty non-packed
+struct. Fixtures
+`repro/mi_matrix/{enum_subbyte_backing,empty_named_struct,empty_named_struct_field}_xmod`
++ standalone
+`repro/{enum_subbyte_backing,empty_named_struct,empty_named_struct_bare}.z98`.
+All 8 emitted-C pins stay **UNCHANGED 8/8** both modes; example matrix 24/24;
+stdlib **266 PASS / 0 FAIL**; emit 7/7; `verify_upgraded.sh` CLOSEOUT OK;
+self-emission 48 `.c` + 48 `.h` / 0 PANIC; corpus `-s0`
+**1090 = 922 OK / 56 GREEN / 112 FAIL / 0 ICE / 0 CRASH** (the only class movers
+are the two new A2-F fixtures `enum_subbyte_backing_xmod` GREEN -> OK and
+`empty_named_struct_field_xmod` FAIL -> OK; zero pre-existing movers); the new
+fixed point (moving point hop1 `7fc608358f4f6af5abab43e633d44f83` == hop2,
+explicit `FIXED_POINT_MD5` gate) is **`7fc608358f4f6af5abab43e633d44f83`**; seed
+v90 NOT rotated.
+
 - Self-consistency gate: compare current zig1 `--dump-c89` against a pre-captured reference .c file. If the reference .c is outdated (intentional baseline change), re-capture via `cp /tmp/new.c /tmp/ref.c`. Never compare against parent-zig1 output directly — parent builds may fail silently.
 - Do **NOT** compare `zig1 --dump-c89` output against `zig0`'s C output. `zig0` emits a legacy bootstrap format that is byte-level incompatible with zig1.
 

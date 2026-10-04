@@ -1,4 +1,57 @@
-# mi_matrix corpus — expected-fail manifest (v288 2026-09-30)
+# mi_matrix corpus — expected-fail manifest (v289 2026-10-04)
+
+## A2-F — sub-byte enum backing + empty named-struct layout (v288 -> v289, 2026-10-04)
+
+Volume IV Amendment A2 (operator m1470; investigation `task-A2-I-report.md`).
+Two defects in `populateTypePayload` (`sf/src/symbol_registrator.zig`), the
+branch that binds a container's `payload_idx` to a registry slot.
+
+**D1 — arbitrary-width `enum(uN)` backing.** The enum branch wrote the payload
+index onto `types_items[types_len-1]`, but resolving a non-power-of-two backing
+(`u3`, `u5`, ...) first appends an `arb_uint_type`
+(`sf/src/type_registry.zig` `typeRegistryGetOrCreateArbInt`), so `types_len-1`
+named the backing, not the enum. Every arb-backed enum kept `payload_idx = 0`
+and aliased the first enum's member table; `enumReevaluateAll` then overwrote
+the earlier enum's members and the backing gate raised a **spurious
+`error[3000]`** at the first enum:
+`const Small = enum(u3){A,B,C}; const Wide = enum(u5){X=0,Y=31};` -> rc 2,
+0 `.c` (each enum alone is rc 0; either order of a non-sub-byte backing is
+fine).
+
+**D2 — empty named `struct {}`.** `populateTypePayload` early-returned for a
+container with no children, so `struct {}` never got a `StructPayload` and kept
+`payload_idx = 0`, aliasing `st_items[0]` (another struct's fields) or
+uninitialized memory. `@sizeOf`/`@alignOf`/`@bitSizeOf` printed `12/4/96`
+(aliased std `Arena`), a bare `const E = struct {};` segfaulted (rc 139), and
+nesting `E` as a field rejected `error[24]` circular (`layoutCompute` never
+reached the min-1 clamp).
+
+**Fix.** `populateTypePayload` gains a `tid: u32` parameter and every branch
+back-patches `payload_idx` on `types_items[tid]` (call sites updated:
+`symbol_registrator.zig` x2 + `type_resolver.zig` `registerContainerType`);
+container kinds no longer early-return on a missing payload / zero children and
+the struct branch always `stAppend`s, so an empty struct gets
+`StructPayload{fields_count = 0}` and `layoutCompute`'s min-1 clamp yields
+size 1 / align 1; `emitStructType` (`sf/src/c89_emit.zig`) emits
+`unsigned char _[1];` for an empty non-packed struct so the C layout matches.
+The Z98 model is size 1 / align 1 / bitSize 8 (an intentional divergence from
+Zig's 0/1/0, per the min-1 rule and the plan wording).
+
+**Fixtures.** `repro/mi_matrix/enum_subbyte_backing_xmod`
+(`expected.rc` 0, stdout `enum subbyte backing ok`; seed v90 classify GREEN
+[0 `.c` + `error[3000]`] -> OK), `repro/mi_matrix/empty_named_struct_xmod`
+(`expected.rc` 0, stdout `1\n1\n8`; seed v90 prints `12\n4\n96`; classify stays
+OK - the classifier is compile-only, but the runtime golden is the pin),
+`repro/mi_matrix/empty_named_struct_field_xmod` (`expected.rc` 0, stdout
+`1\n1\n2`; seed v90 classify FAIL [`error[24]`] -> OK), plus standalone
+`repro/enum_subbyte_backing.z98`, `repro/empty_named_struct.z98`,
+`repro/empty_named_struct_bare.z98`.
+
+**Corpus movement.** `-s0` classify 1087 = 919 OK / 56 GREEN / 112 FAIL ->
+**1090 = 922 OK / 56 GREEN / 112 FAIL / 0 ICE / 0 CRASH**; the only class
+movers are the two new A2-F fixtures above (`enum_subbyte_backing_xmod`
+GREEN -> OK, `empty_named_struct_field_xmod` FAIL -> OK); the 1087 pre-existing
+dirs are **zero movers**. Seed v90 NOT rotated (closeout-only).
 
 ## A1-F — `anytype` rejected in every signature type position (v287 -> v288, 2026-09-30)
 
