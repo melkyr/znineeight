@@ -1,0 +1,504 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Tuples</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual tuple tuples positional anonymous struct literal .0 ._0 indexed comptime field access _0 _1 coercion named assignability element typing carrier FB2 3000 3060 3061 3062 3063 3064 3065 3069 3070 3072 2000 array element chained offsetOf print">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol4-06-unions.html">
+<link rel="next" href="vol4-15-builtins.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume IV &mdash; Reference</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+How to use the Reference <i>(planned)</i><br>
+<a href="vol4-01-grammar.html">The full grammar</a><br>
+<a href="vol4-02-types.html">Types</a><br>
+<a href="vol4-03-pointers.html">Pointers</a><br>
+<a href="vol4-04-structs.html">Structs</a><br>
+<a href="vol4-05-enums.html">Enums</a><br>
+<a href="vol4-06-unions.html">Unions</a><br>
+<b>Tuples</b><br>
+Arrays and slices <i>(planned)</i><br>
+Errors <i>(planned)</i><br>
+Optionals <i>(planned)</i><br>
+Aliases <i>(planned)</i><br>
+Statements <i>(planned)</i><br>
+Control flow <i>(planned)</i><br>
+Error expressions <i>(planned)</i><br>
+<a href="vol4-15-builtins.html">Builtins</a><br>
+Async <i>(planned)</i><br>
+Memory <i>(planned)</i><br>
+<a href="vol4-18-stdlib.html">The standard library</a><br>
+<a href="vol4-19-pal.html">The PAL</a><br>
+<a href="vol4-20-markers.html">Markers</a><br>
+<a href="vol4-21-diagnostics.html">Diagnostics</a><br>
+<a href="vol4-22-cli.html">The command line</a><br>
+Limits <i>(planned)</i><br>
+<a href="vol4-24-html-style.html">HTML style</a><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Tuples</h1>
+<p>
+A <b>tuple</b> is a struct with no field names: an ordered bundle of values
+addressed by position. Its type is written as a <tt>struct</tt> whose members
+are only types (<tt>struct { i32, i32 }</tt>), its value as a positional
+anonymous literal (<tt>.{ 7, 3 }</tt>), and its elements are read through an
+ordinal. This page is the lookup for the type and literal syntax, the three
+access spellings and the comptime-index rules, tuple reads, writes and address,
+coercion and named-tuple assignability, element typing, layout and
+introspection, printing, globals, and the limits.
+</p>
+<p>
+The authority is the parser (<tt>parserParseStructType</tt> at
+<tt>sf/src/parser.zig:1318-1385</tt>, positional branch at
+<tt>:1352-1369</tt>), the <tt>.N</tt>/<tt>._N</tt> member path
+(<tt>sf/src/semantic_analyzer.zig:1683-1707</tt>), the <tt>t[N]</tt> index path
+(<tt>sf/src/semantic_analyzer.zig:6192-6247</tt>), the ordinal decoder
+(<tt>sf/src/type_registry.zig:610-628</tt>), tuple assignability
+(<tt>sf/src/type_registry.zig:1340-1359</tt>), the array-element reject
+(<tt>sf/src/type_resolver.zig:1505-1522</tt>), and the emitted C model
+(<tt>emitTupleType</tt> at <tt>sf/src/c89_emit.zig:2173-2195</tt>). Every rule
+below was reproduced on the fixed compiler (md5
+<tt>7fc608358f4f6af5abab43e633d44f83</tt>); the reused fixture or sample is
+named where one exists.
+</p>
+
+<h2>Type syntax and literals</h2>
+<p>
+A tuple type is a <tt>struct</tt> declaration whose members are plain types
+instead of <tt>name: T</tt> fields. It is named through a <tt>const</tt>, the
+way every aggregate in Z98 is. A value is built with a positional anonymous
+literal, <tt>.{ v1, v2 }</tt>, whose elements appear in declaration order; the
+literal takes its shape from context, or is inferred from its element values.
+</p>
+<pre>
+const Pair = struct { i32, i32 };   // a tuple type: two i32 positions
+const t = .{ 7, 8 };                 // inferred tuple literal
+const p: Pair = .{ 7, 3 };           // literal coerced to the named type
+fn divmod(a: i32, b: i32) Pair {     // grouped return
+    return .{ a / b, a % b };
+}
+</pre>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Form</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Spelling</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Meaning</b></th>
+</tr>
+<tr>
+<td valign="top">type</td>
+<td valign="top"><tt>const T = struct { T1, T2 }; </tt></td>
+<td valign="top">Every member is a type in position order; no names.</td>
+</tr>
+<tr>
+<td valign="top">literal</td>
+<td valign="top"><tt>.{ v1, v2 }</tt></td>
+<td valign="top">Anonymous positional value; the surrounding type supplies the shape.</td>
+</tr>
+<tr>
+<td valign="top">inline type</td>
+<td valign="top"><tt>fn f() struct { i32, i32 }</tt></td>
+<td valign="top">The type may be written in a signature; it behaves as a named tuple type.</td>
+</tr>
+</table>
+<p>
+Members must be <em>all named or all positional</em>. A mixed declaration
+rejects level-0 <tt>error[2000]</tt>
+<tt>struct fields must be all named or all positional (tuple)</tt> at the
+offending member, and a positional member in a <tt>packed struct</tt> rejects
+<tt>error[2000]</tt> <tt>packed structs cannot have positional tuple fields</tt>.
+A trailing comma is optional. The empty literal <tt>.{ }</tt> is accepted as a
+<tt>print</tt> argument container with zero elements.
+</p>
+
+<h2>Element access: the three spellings</h2>
+<p>
+An element is addressed by its ordinal. All three spellings lower to the same
+positional field: <tt>.0</tt>/<tt>.1</tt> (the original spelling), <tt>._0</tt>
+/ <tt>._1</tt> (the emitted C field spelling), and <tt>t[0]</tt>/<tt>t[1]</tt>
+(a comptime-known index).
+</p>
+<pre>
+const p: Pair = .{ 7, 3 };
+std.io.print("{} {} {}\n", .{ p.0, p._0, p[1] });   // 7 7 3
+</pre>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Spelling</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Lowering</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>t.N</tt>, <tt>t._N</tt></td>
+<td valign="top">The parser canonicalizes the numeric member to its decimal text; sema decodes the ordinal textually and reads the positional field. The name-id space is never consulted.</td>
+</tr>
+<tr>
+<td valign="top"><tt>t[N]</tt></td>
+<td valign="top">The index is folded to a comptime value, bounds-checked, and recorded for lowering (local <tt>const</tt> indices count as comptime-known); the element type is then used as the field type.</td>
+</tr>
+</table>
+<p>
+The C89 representation is exactly what <tt>._0</tt> suggests: a tuple lowers to
+a C struct whose fields are <tt>_0</tt>, <tt>_1</tt>, and so on, in declaration
+order.
+</p>
+<pre>
+typedef struct {
+	unsigned int _0;
+	zT_C69B2266_i64 _1;
+} zT_F9C653E5_Tup_343;
+</pre>
+<p>
+The reused fixture <tt>repro/mi_matrix/stdlib_tuple_model_ok_xmod</tt> exercises
+all three spellings on the same element (writes through <tt>.0</tt>,
+<tt>._1</tt>, and <tt>[0]</tt>, and a local-<tt>const</tt> index) and prints
+<tt>tp=12/20 us0=11 e1=20 ci=20 ...</tt>, reproduced here.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Index shape</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Code</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Message (measured)</b></th>
+</tr>
+<tr>
+<td valign="top">runtime index, <tt>var i: usize = 1; p[i]</tt></td>
+<td valign="top"><tt>error[3069]</tt></td>
+<td valign="top"><tt>tuple field index must be comptime-known</tt> (at the index expression)</td>
+</tr>
+<tr>
+<td valign="top">ordinal past the end, <tt>p.9</tt>, <tt>p._9</tt>, <tt>p[9]</tt></td>
+<td valign="top"><tt>error[3070]</tt></td>
+<td valign="top"><tt>index 9 outside tuple of length 2</tt> (at the index expression)</td>
+</tr>
+<tr>
+<td valign="top">negative index, <tt>p[-1]</tt></td>
+<td valign="top"><tt>error[3062]</tt></td>
+<td valign="top"><tt>type 'usize' cannot represent integer value '-1'</tt></td>
+</tr>
+<tr>
+<td valign="top">numeric member on a non-tuple, <tt>x.73</tt> (<tt>x: i32</tt>)</td>
+<td valign="top"><tt>error[3060]</tt></td>
+<td valign="top"><tt>no field or member function named '73' in type</tt> (a numeric member is never an interned name)</td>
+</tr>
+</table>
+<p>
+The reject census is pinned by
+<tt>repro/mi_matrix/tuple_model_reject_xmod</tt> (a local <tt>const</tt> index
+is accepted; <tt>.73</tt> on a non-tuple, a runtime index, and both ordinal
+forms past the end reject; a negative index uses the array path's
+<tt>error[3062]</tt>).
+</p>
+
+<h2>Reads, writes, and address</h2>
+<p>
+Every spelling is an lvalue on the tuple's real storage: a write through
+<tt>.0</tt>, <tt>._1</tt>, or <tt>[0]</tt> updates the same positional field,
+and the address of an element may be taken and dereferenced.
+</p>
+<pre>
+var p: Pair = .{ 7, 3 };
+p.0 = p.0 + 1;
+p._1 = p._1 + 1;
+p[0] = p[0] + 1;
+const ep: *i32 = &amp;p.0;
+ep.* = ep.* + 1;
+</pre>
+<p>
+A tuple is copied field-wise. A named tuple type and a shape-identical tuple
+assign to each other, cross a call as one value (parameter or return), and may
+be a tuple-typed field or a module global. The reused fixture
+<tt>stdlib_tuple_model_ok_xmod</tt> covers the literal-to-named copy, the
+named-to-named copy, a cross-module parameter and return, a cross-module
+module global, and the address-and-deref write.
+</p>
+
+<h2>Coercion and named-tuple assignability</h2>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>From <tt>&rarr;</tt> to</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Result</b></th>
+</tr>
+<tr>
+<td valign="top">anonymous literal <tt>.{ 1, 2 }</tt> &rarr; named <tt>Pair</tt></td>
+<td valign="top">Assignable; lowered field-wise.</td>
+</tr>
+<tr>
+<td valign="top">inferred tuple &rarr; shape-identical named tuple</td>
+<td valign="top">Assignable (same arity and element types).</td>
+</tr>
+<tr>
+<td valign="top">named tuple &rarr; shape-identical named tuple</td>
+<td valign="top">Assignable; a field-wise copy (declaration, assignment, argument, return).</td>
+</tr>
+<tr>
+<td valign="top">literal <tt>.{ 1, 2, 3 }</tt> &rarr; fixed array <tt>[3]u32</tt></td>
+<td valign="top">Assignable when the count matches and every element coerces to the element type (the array path; see the arrays page).</td>
+</tr>
+<tr>
+<td valign="top">mismatched arity or element type</td>
+<td valign="top">Level-0 <tt>error[3000]</tt>; a distinct spelled tuple type with an array element is a separate <tt>error[3000]</tt> (below).</td>
+</tr>
+</table>
+<p>
+An arity mismatch (<tt>A = struct { i32, i32 }</tt> assigned to
+<tt>B = struct { i32, i32, i32 }</tt>) and an element mismatch
+(<tt>A</tt> assigned to <tt>C = struct { i32, f32 }</tt>) both report the
+level-0 declaration mismatch with the tuple identity:
+</p>
+<pre>
+error[3000]: type mismatch in variable declaration -- initialization type may not be compatible with declared type
+note: source: tuple
+note: target: tuple
+</pre>
+
+<h2>Element typing (FB2)</h2>
+<p>
+An inferred tuple literal types each element by what it is, not by a fallback.
+An untyped integer literal element takes its value-chosen carrier: <tt>i32</tt>
+when the value fits, otherwise <tt>u32</tt>/<tt>i64</tt>/<tt>u64</tt>. The
+tuple's C field type matches the value, so a wide literal is not silently
+truncated.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Literal</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Tuple type</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Printed</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>.{ 3000000000, -3000000000 }</tt></td>
+<td valign="top"><tt>{u32, i64}</tt></td>
+<td valign="top"><tt>3000000000 -3000000000</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>.{ 1 << 100, 1 }</tt></td>
+<td valign="top">level-0 <tt>error[3000]</tt> <tt>comptime integer value does not fit the target type</tt></td>
+<td valign="top">&mdash;</td>
+</tr>
+<tr>
+<td valign="top"><tt>.{ vf(), 1 }</tt> (<tt>vf() void</tt>)</td>
+<td valign="top"><tt>void</tt> element; <tt>print</tt> rejects <tt>error[3063]</tt></td>
+<td valign="top">&mdash;</td>
+</tr>
+<tr>
+<td valign="top"><tt>.{ i32, 5 }</tt> (a TYPE as an element)</td>
+<td valign="top"><tt>print</tt> rejects <tt>error[3063]</tt></td>
+<td valign="top">&mdash;</td>
+</tr>
+</table>
+<p>
+A <tt>void</tt>-typed struct field read is a real void value
+(<tt>struct { v: void, a: i32 }</tt> is legal; <tt>s.v</tt> reads void), so it
+rejects in a tuple <tt>print</tt> the same way. These value-chosen carriers and
+rejects are pinned by
+<tt>repro/mi_matrix/stdlib_print_tuple_var_ok_xmod</tt> and
+<tt>repro/mi_matrix/tuple_elem_type_reject_xmod</tt>.
+</p>
+
+<h2>Layout and introspection</h2>
+<p>
+A tuple takes the struct layout arithmetic of the frozen 32-bit model: each
+element sits at its natural offset, the tuple's alignment is its widest
+element's alignment, and the total is padded to that alignment.
+<tt>@sizeOf</tt>, <tt>@alignOf</tt>, and <tt>@bitSizeOf</tt> accept a tuple
+type.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Type</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Elements</b></th>
+<th align="left" bgcolor="#e8e0e0"><b><tt>@sizeOf</tt> / <tt>@alignOf</tt> / <tt>@bitSizeOf</tt></b></th>
+</tr>
+<tr>
+<td valign="top"><tt>Pair</tt></td>
+<td valign="top"><tt>{i32, i32}</tt></td>
+<td valign="top">8 / 4 / 64</td>
+</tr>
+<tr>
+<td valign="top"><tt>Wide</tt></td>
+<td valign="top"><tt>{u8, i64, u8}</tt></td>
+<td valign="top">24 / 8 / 192</td>
+</tr>
+</table>
+<p>
+<tt>Wide</tt> shows the 64-bit pin: the <tt>i64</tt> element is size 8 and
+alignment 8, so the leading <tt>u8</tt> pads to offset 8 and the tuple ends at
+24 bytes. <tt>@offsetOf</tt> and <tt>@bitOffsetOf</tt> expect a struct and
+reject a tuple type outright &mdash; there is no field name to ask about:
+</p>
+<pre>
+error[3072]: expected struct type, found 'Pair'
+</pre>
+<p>
+Put the tuple's elements in a named struct, or ask for the offset of a struct
+that holds the tuple, when an offset is part of the question.
+</p>
+
+<h2>Printing a tuple</h2>
+<p>
+A whole tuple prints through the aggregate printer with <tt>{}</tt>, in
+positional braces. The argument container of <tt>print</tt> may be a tuple
+literal or a tuple variable; a tuple variable reads each element through the
+same positional-field mechanism as <tt>.N</tt>/<tt>t[0]</tt>.
+</p>
+<pre>
+const p: Pair = .{ 7, 3 };
+std.io.print("pair {}\n", .{p});          // pair .{ 7, 3 }
+std.io.print("pair {}\n", p);              // pair .{ 7, 3 } (variable container)
+</pre>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Print shape</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Result (measured)</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>{}</tt> on a tuple</td>
+<td valign="top"><tt>.{ 1, 2 }</tt> (all elements, declaration order).</td>
+</tr>
+<tr>
+<td valign="top">nested tuple deeper than three levels</td>
+<td valign="top">the deepest level prints the depth placeholder <tt>.{ ... }</tt>, e.g. <tt>.{ .{ .{ .{ ... }, 3 }, 4 }, 5 }</tt>.</td>
+</tr>
+<tr>
+<td valign="top">element with no printer (a <tt>void</tt> element, a TYPE element)</td>
+<td valign="top"><tt>error[3063]</tt> <tt>print argument type is not supported (no std.fmt printer)</tt>.</td>
+</tr>
+<tr>
+<td valign="top">container that is neither a tuple literal nor a tuple variable</td>
+<td valign="top"><tt>error[3065]</tt> <tt>print arguments must be a tuple literal</tt>.</td>
+</tr>
+<tr>
+<td valign="top">a format plus more than one container</td>
+<td valign="top"><tt>error[3061]</tt> <tt>expected 2 argument(s), found 3</tt>.</td>
+</tr>
+</table>
+<p>
+A placeholder beyond the container's arity is silently dropped, and a
+placeholder-free format does not evaluate the container. An explicit specifier
+such as <tt>{d}</tt> on a tuple is the ordinary format-specifier reject
+(<tt>error[3013]</tt>) documented on the builtins page. The tuple-variable
+print path is pinned by <tt>stdlib_print_tuple_var_ok_xmod</tt>; the container
+gate by <tt>repro/mi_matrix/print_nontuple_container_reject_xmod</tt>.
+</p>
+
+<h2>Globals and cycles</h2>
+<p>
+A module-level tuple literal may reference a global declared later in the file:
+the module's initializers are emitted in dependency order, so the referenced
+value is materialized first. A global tuple variable is read and written like
+any other.
+</p>
+<pre>
+var g = .{ b, 7 };
+const b = 5;
+// prints: g 5 7
+</pre>
+<p>
+A cycle in that dependency graph has no valid order and clean-rejects the
+level-0 <tt>error[3064]</tt> <tt>cyclic global initializer dependency</tt>.
+This is pinned by <tt>repro/mi_matrix/stdlib_print_tuple_fwd_ok_xmod</tt> (a
+forward reference) and <tt>repro/mi_matrix/tuple_fwd_global_reject_xmod</tt> (a
+cycle).
+</p>
+
+<h2>Limits</h2>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Shape</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Rule (measured)</b></th>
+</tr>
+<tr>
+<td valign="top">spelled tuple type with an array element, <tt>struct { [2]i32, i32 }</tt></td>
+<td valign="top">Level-0 <tt>error[3000]</tt> <tt>tuple types with array elements are not supported</tt> at the array element (no field-wise C assignment for an array element).</td>
+</tr>
+<tr>
+<td valign="top">inferred tuple literal holding an array</td>
+<td valign="top">Accepted for layout and element reads by position; printing the whole tuple (literal aggregate or variable) rejects <tt>error[3063]</tt>.</td>
+</tr>
+<tr>
+<td valign="top">chained access after an ordinal, <tt>e.0.w</tt></td>
+<td valign="top">Level-0 <tt>error[2000]</tt> <tt>expected field name or index after '.'</tt>; parenthesize or index the element (<tt>(e.0).w</tt>, <tt>e[0].w</tt>) and the struct access works.</td>
+</tr>
+<tr>
+<td valign="top"><tt>@offsetOf</tt> / <tt>@bitOffsetOf</tt> on a tuple type</td>
+<td valign="top">Level-0 <tt>error[3072]</tt> <tt>expected struct type, found '&lt;T&gt;'</tt> (the tuple type name varies).</td>
+</tr>
+<tr>
+<td valign="top">runtime index or loop-variable iteration</td>
+<td valign="top">Not supported: the index must be comptime-known (<tt>error[3069]</tt>); a tuple is a bundle, not a collection.</td>
+</tr>
+<tr>
+<td valign="top">field names and type identity</td>
+<td valign="top">There are no field names (<tt>p.x</tt> is the unknown-member reject <tt>error[3060]</tt>), and two tuples of the same shape are the same type for assignment purposes.</td>
+</tr>
+</table>
+<p>
+The full grammar of the tuple type and literal is on the grammar page; the
+<tt>struct { [2]i32, i32 }</tt> parse accept and reject are listed there too.
+This reference page ships no runnable sample and no figure.
+</p>
+
+<h2>See also</h2>
+<p>
+<a href="vol4-04-structs.html">Structs</a> for the named-field layout
+arithmetic the tuple inherits and the <tt>@offsetOf</tt> forms;
+<a href="vol4-06-unions.html">Unions</a> for the other aggregate with
+positional payload access; <a href="vol4-01-grammar.html">The full grammar</a>
+for the tuple productions and the parse-time rejects;
+<a href="vol4-15-builtins.html">Builtins</a> for <tt>@sizeOf</tt>,
+<tt>@alignOf</tt>, <tt>@bitSizeOf</tt>, <tt>@offsetOf</tt>, and every
+<tt>print</tt> rule; <a href="vol4-21-diagnostics.html">Diagnostics</a> for
+<tt>error[2000]</tt>, <tt>error[3000]</tt>, <tt>error[3060]</tt>,
+<tt>error[3061]</tt>, <tt>error[3062]</tt>, <tt>error[3063]</tt>,
+<tt>error[3064]</tt>, <tt>error[3065]</tt>, <tt>error[3069]</tt>,
+<tt>error[3070]</tt>, and <tt>error[3072]</tt>; and
+<a href="vol2-08-tuples.html">Volume II, Tuples</a> for the teaching narrative
+and the runnable <tt>pair.z98</tt> sample.
+</p>
+
+<p class="navbtns">
+<a href="vol4-06-unions.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol4-15-builtins.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol4-06-unions.html">Unions</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-15-builtins.html">Builtins</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
