@@ -1,0 +1,1479 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: The Standard Library</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual reference standard library std re-export io fmt arena str mem math debug net async bits os time buf signatures error sets std.zig concrete no generics">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol4-15-builtins.html">
+<link rel="next" href="vol4-19-pal.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume IV &mdash; Reference</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+How to use the Reference <i>(planned)</i><br>
+The full grammar <i>(planned)</i><br>
+Types <i>(planned)</i><br>
+Pointers <i>(planned)</i><br>
+Structs <i>(planned)</i><br>
+Enums <i>(planned)</i><br>
+Unions <i>(planned)</i><br>
+Tuples <i>(planned)</i><br>
+Arrays and slices <i>(planned)</i><br>
+Errors <i>(planned)</i><br>
+Optionals <i>(planned)</i><br>
+Aliases <i>(planned)</i><br>
+Statements <i>(planned)</i><br>
+Control flow <i>(planned)</i><br>
+Error expressions <i>(planned)</i><br>
+<a href="vol4-15-builtins.html">Builtins</a><br>
+Async <i>(planned)</i><br>
+Memory <i>(planned)</i><br>
+<b>The standard library</b><br>
+<a href="vol4-19-pal.html">The PAL</a><br>
+<a href="vol4-20-markers.html">Markers</a><br>
+<a href="vol4-21-diagnostics.html">Diagnostics</a><br>
+<a href="vol4-22-cli.html">The command line</a><br>
+Limits <i>(planned)</i><br>
+<a href="vol4-24-html-style.html">HTML style</a><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>The standard library</h1>
+<p>
+<tt>@import("std")</tt> resolves to <tt>sf/src/std.zig</tt>, which does nothing
+but re-export thirteen modules. This page is the lookup for that surface: one
+section per re-exported module, every public declaration quoted verbatim from
+the <tt>sf/src/std_*.zig</tt> file that defines it, with its return type and
+error set. The language-level calls these modules are built from are on
+<a href="vol4-15-builtins.html">Builtins</a>; the tutorial treatment is
+<a href="vol2-17-stdlib.html">Volume II, The standard library tour</a>.
+</p>
+<p>
+The surface is <b>concrete only</b>. Z98 has no generics, no <tt>anytype</tt>,
+and no <tt>@Type</tt>, so no module is parameterized: where a generic language
+would write one <tt>copy</tt> or one <tt>popcount</tt>, these modules ship a
+named variant per element width or signedness (<tt>copyU8</tt>/<tt>copyU32</tt>,
+<tt>popcount32</tt>/<tt>popcount64</tt>, <tt>printI32</tt>/<tt>printU32</tt>,
+and so on). Every function is a plain Z98 function that can be read in the
+source.
+</p>
+<p>
+Two modules name an imported type through a file-local alias. Quoted verbatim,
+those signatures read <tt>*arena_mod.Arena</tt> (an alias for
+<tt>std.arena.Arena</tt>, used by <tt>std.str</tt>, <tt>std.os</tt>, and
+<tt>std.buf</tt>) and <tt>*buf_mod.Buf</tt> (an alias for
+<tt>std.buf.Buf</tt>, used by <tt>std.debug.backtrace</tt>). The signature is
+otherwise exactly as the source writes it.
+</p>
+
+<h2>The re-export set</h2>
+<p>
+<tt>sf/src/std.zig</tt> in full:
+</p>
+<pre>
+pub const io = @import("std_io.zig");
+pub const fmt = @import("std_fmt.zig");
+pub const arena = @import("std_arena.zig");
+pub const str = @import("std_str.zig");
+pub const mem = @import("std_mem.zig");
+pub const math = @import("std_math.zig");
+pub const debug = @import("std_debug.zig");
+pub const net = @import("std_net.zig");
+pub const async = @import("std_async.zig");
+pub const bits = @import("std_bits.zig");
+pub const os = @import("std_os.zig");
+pub const time = @import("std_time.zig");
+pub const buf = @import("std_buf.zig");
+</pre>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Name</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Source file</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Holds</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>std.io</tt></td>
+<td valign="top"><tt>std_io.zig</tt></td>
+<td valign="top">Byte and string output, a signed-integer printer, the <tt>print</tt> entry point, file I/O, sleep.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std.fmt</tt></td>
+<td valign="top"><tt>std_fmt.zig</tt></td>
+<td valign="top">The formatting bodies behind <tt>print</tt>; auto-imported when a <tt>print</tt> is lowered.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std.arena</tt></td>
+<td valign="top"><tt>std_arena.zig</tt></td>
+<td valign="top">The bump allocator: a struct, an initializer, one fallible allocator, a reset.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std.str</tt></td>
+<td valign="top"><tt>std_str.zig</tt></td>
+<td valign="top">Byte-slice string operations: compare, search, trim, split, join, replace, repeat.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std.mem</tt></td>
+<td valign="top"><tt>std_mem.zig</tt></td>
+<td valign="top">Raw copy, zero, and compare over many-item pointers with a count.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std.math</tt></td>
+<td valign="top"><tt>std_math.zig</tt></td>
+<td valign="top">Integer min/max, clamp, absolute value, power-of-two and alignment helpers.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std.debug</tt></td>
+<td valign="top"><tt>std_debug.zig</tt></td>
+<td valign="top">Logging, <tt>assert</tt>, <tt>panic</tt>, the trap handler, backtrace, and core-dump writing.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std.net</tt></td>
+<td valign="top"><tt>std_net.zig</tt></td>
+<td valign="top">Target-selected TCP and UDP bindings, byte-order helpers, <tt>select</tt>, non-blocking modes, <tt>fd_set</tt> helpers.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std.async</tt></td>
+<td valign="top"><tt>std_async.zig</tt></td>
+<td valign="top">The cooperative scheduler and per-task child-frame pool for coroutines.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std.bits</tt></td>
+<td valign="top"><tt>std_bits.zig</tt></td>
+<td valign="top">Integer bit operations: popcount, leading/trailing zeros, rotate, extract, insert.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std.os</tt></td>
+<td valign="top"><tt>std_os.zig</tt></td>
+<td valign="top">Process-level information: arguments, environment, current directory, exit.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std.time</tt></td>
+<td valign="top"><tt>std_time.zig</tt></td>
+<td valign="top">Monotonic and wall-clock time, and sleep.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std.buf</tt></td>
+<td valign="top"><tt>std_buf.zig</tt></td>
+<td valign="top">A growable byte buffer backed by an arena.</td>
+</tr>
+</table>
+
+<h2><a name="io"></a>std.io</h2>
+<p>
+<tt>std.io</tt> is where bytes leave and enter the program. Output splits into
+two families: the builtin-backed functions (<tt>write</tt>, <tt>writeByte</tt>,
+<tt>printInt</tt>) and <tt>print</tt>, the compiler's format-string entry point
+that routes through <tt>std.fmt</tt>. File I/O is a PAL surface, not C
+<tt>stdio.h</tt>: a handle is a <tt>usize</tt> that arrives as an optional
+because open can fail.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Function</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>writeByte</tt></td>
+<td valign="top"><tt>pub fn writeByte(c: u8) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Write one byte through <tt>@putChar</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>write</tt></td>
+<td valign="top"><tt>pub fn write(data: []const u8) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Write a byte slice through <tt>@stdoutWrite</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>writeStr</tt></td>
+<td valign="top"><tt>pub fn writeStr(s: [*]const c_char) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Write a NUL-terminated C string; length is found by scanning.</td>
+</tr>
+<tr>
+<td valign="top"><tt>print</tt></td>
+<td valign="top"><tt>pub fn print(s: [*]const c_char, ...) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Format-string entry point; the compiler lowers it into <tt>std.fmt</tt> calls. The only variadic form Z98 supports.</td>
+</tr>
+<tr>
+<td valign="top"><tt>printInt</tt></td>
+<td valign="top"><tt>pub fn printInt(n: i32) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Write a signed 32-bit integer in decimal.</td>
+</tr>
+<tr>
+<td valign="top"><tt>readByte</tt></td>
+<td valign="top"><tt>pub fn readByte() u8</tt></td>
+<td valign="top"><tt>u8</tt></td>
+<td valign="top">Read one byte through <tt>@getChar</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>sleepMs</tt></td>
+<td valign="top"><tt>pub fn sleepMs(ms: u32) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Sleep for <tt>ms</tt> milliseconds (<tt>@sleepMs</tt>).</td>
+</tr>
+<tr>
+<td valign="top"><tt>fileOpen</tt></td>
+<td valign="top"><tt>pub fn fileOpen(path: []const u8, write_mode: bool) ?usize</tt></td>
+<td valign="top"><tt>?usize</tt>; <tt>null</tt> on open failure or a path of 511 bytes or more</td>
+<td valign="top">Open <tt>path</tt>: truncate/create when <tt>write_mode</tt> is true, read-only otherwise. Consume with <tt>orelse</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>fileWrite</tt></td>
+<td valign="top"><tt>pub fn fileWrite(fd: usize, data: []const u8) void</tt></td>
+<td valign="top"><tt>void</tt>; the byte count is discarded</td>
+<td valign="top">Write all of <tt>data</tt> at descriptor <tt>fd</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>fileRead</tt></td>
+<td valign="top"><tt>pub fn fileRead(fd: usize, buf: []u8) usize</tt></td>
+<td valign="top">bytes read; <tt>0</tt> at end of file and <tt>0</tt> on a read error (v1 has no separate read-error channel)</td>
+<td valign="top">Read up to <tt>buf.len</tt> bytes from <tt>fd</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>fileClose</tt></td>
+<td valign="top"><tt>pub fn fileClose(fd: usize) void</tt></td>
+<td valign="top"><tt>void</tt>; the close result is discarded</td>
+<td valign="top">Close descriptor <tt>fd</tt>.</td>
+</tr>
+</table>
+<p>
+The private constants <tt>INVALID_FD</tt>, <tt>FILE_OPEN_WRITE</tt>, and
+<tt>FILE_OPEN_READ</tt> are not <tt>pub</tt>, so they are not reachable as
+<tt>std.io.INVALID_FD</tt>; <tt>fileOpen</tt> reports failure through the
+optional itself.
+</p>
+
+<h2><a name="fmt"></a>std.fmt</h2>
+<p>
+<tt>std.fmt</tt> is the engine under <tt>std.io.print</tt>. It is auto-imported
+whenever a <tt>print</tt> is lowered, so a user never imports it by hand; its
+functions are public so the generated cross-module calls can name them. The
+format string, the accepted specifiers, and the rejections are on
+<a href="vol2-15-builtins.html">Volume II, Builtins</a> and
+<a href="vol2-18-print.html">print and the format string</a>.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Function</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>printI32</tt></td>
+<td valign="top"><tt>pub fn printI32(v: i32) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Write <tt>v</tt> as decimal.</td>
+</tr>
+<tr>
+<td valign="top"><tt>printU32</tt></td>
+<td valign="top"><tt>pub fn printU32(v: u32) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Write <tt>v</tt> as unsigned decimal.</td>
+</tr>
+<tr>
+<td valign="top"><tt>printI64</tt></td>
+<td valign="top"><tt>pub fn printI64(v: i64) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Write <tt>v</tt> as decimal.</td>
+</tr>
+<tr>
+<td valign="top"><tt>printU64</tt></td>
+<td valign="top"><tt>pub fn printU64(v: u64) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Write <tt>v</tt> as unsigned decimal.</td>
+</tr>
+<tr>
+<td valign="top"><tt>printF64</tt></td>
+<td valign="top"><tt>pub fn printF64(v: f64) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Write <tt>v</tt> as decimal; an integral value has no fraction.</td>
+</tr>
+<tr>
+<td valign="top"><tt>printBool</tt></td>
+<td valign="top"><tt>pub fn printBool(v: bool) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Write <tt>true</tt> or <tt>false</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>printChar</tt></td>
+<td valign="top"><tt>pub fn printChar(c: u8) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Write one byte.</td>
+</tr>
+<tr>
+<td valign="top"><tt>printStr</tt></td>
+<td valign="top"><tt>pub fn printStr(ptr: [*]const u8, len: usize) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Write <tt>len</tt> bytes from <tt>ptr</tt> (no NUL scan).</td>
+</tr>
+<tr>
+<td valign="top"><tt>printHexU32</tt></td>
+<td valign="top"><tt>pub fn printHexU32(v: u32) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Write <tt>v</tt> as lower-case hex (no <tt>0x</tt>).</td>
+</tr>
+<tr>
+<td valign="top"><tt>printHexI32</tt></td>
+<td valign="top"><tt>pub fn printHexI32(v: i32) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Write <tt>v</tt> as hex; a negative value prints <tt>-</tt> then the hex magnitude (not two's complement).</td>
+</tr>
+<tr>
+<td valign="top"><tt>printHexU64</tt></td>
+<td valign="top"><tt>pub fn printHexU64(v: u64) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Write <tt>v</tt> as lower-case hex.</td>
+</tr>
+<tr>
+<td valign="top"><tt>printHexI64</tt></td>
+<td valign="top"><tt>pub fn printHexI64(v: i64) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Write <tt>v</tt> as hex; negatives as <tt>-</tt> plus magnitude.</td>
+</tr>
+</table>
+
+<h2><a name="arena"></a>std.arena</h2>
+<p>
+The arena is a bump allocator. You supply the storage; it never allocates. There
+is no <tt>free</tt> and no <tt>deinit</tt> &mdash; reclaiming memory means
+resetting the bump pointer. See <a href="vol2-14-arena.html">Volume II, The
+arena</a>.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Name</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Declaration</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>Arena</tt></td>
+<td valign="top"><tt>pub const Arena = struct { data: [*]u8, capacity: usize, used: usize };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">The bump state: backing pointer, capacity, and bytes used.</td>
+</tr>
+<tr>
+<td valign="top"><tt>init</tt></td>
+<td valign="top"><tt>pub fn init(data: []u8) Arena</tt></td>
+<td valign="top"><tt>Arena</tt></td>
+<td valign="top">Wrap a caller-owned slice as a fresh arena (<tt>used</tt> set to 0).</td>
+</tr>
+<tr>
+<td valign="top"><tt>ArenaError</tt></td>
+<td valign="top"><tt>pub const ArenaError = error{OutOfMemory};</tt></td>
+<td valign="top">error set</td>
+<td valign="top">The module's one error; returned by <tt>alloc</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>alloc</tt></td>
+<td valign="top"><tt>pub fn alloc(self: *Arena, size: usize) ArenaError![*]u8</tt></td>
+<td valign="top"><tt>[*]u8</tt>; <tt>error.OutOfMemory</tt> when <tt>used + size &gt; capacity</tt></td>
+<td valign="top">Bump-allocate <tt>size</tt> bytes; the raw pointer is cast by the caller.</td>
+</tr>
+<tr>
+<td valign="top"><tt>reset</tt></td>
+<td valign="top"><tt>pub fn reset(self: *Arena) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Set <tt>used</tt> back to 0; storage and capacity are kept.</td>
+</tr>
+</table>
+
+<h2><a name="str"></a>std.str</h2>
+<p>
+<tt>std.str</tt> operates on byte slices, never NUL-terminated strings. The
+zero-copy functions return views into the input: <tt>split</tt> and
+<tt>splitLines</tt> allocate only the outer array of slices, and the
+<tt>trim</tt> family returns a narrower slice over the same bytes. Only
+<tt>join</tt>, <tt>replace</tt>, and <tt>repeat</tt> allocate a new string, and
+they read their input without mutating it, so <tt>from</tt> and <tt>to</tt> may
+alias <tt>s</tt>. The allocating functions name their error with <tt>!</tt>; it
+is inferred as the arena's <tt>error{OutOfMemory}</tt>.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Function</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>len</tt></td>
+<td valign="top"><tt>pub fn len(s: []const u8) usize</tt></td>
+<td valign="top"><tt>usize</tt></td>
+<td valign="top">Length of a byte slice.</td>
+</tr>
+<tr>
+<td valign="top"><tt>eql</tt></td>
+<td valign="top"><tt>pub fn eql(a: []const u8, b: []const u8) bool</tt></td>
+<td valign="top"><tt>bool</tt></td>
+<td valign="top">Byte-wise equality.</td>
+</tr>
+<tr>
+<td valign="top"><tt>copy</tt></td>
+<td valign="top"><tt>pub fn copy(dst: []u8, src: []const u8) void</tt></td>
+<td valign="top"><tt>void</tt>; a silent no-op when <tt>src.len &gt; dst.len</tt></td>
+<td valign="top">Copy <tt>src</tt> into <tt>dst</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>copyZ</tt></td>
+<td valign="top"><tt>pub fn copyZ(dst: [*]u8, src: []const u8) usize</tt></td>
+<td valign="top"><tt>usize</tt> (<tt>src.len</tt>)</td>
+<td valign="top">Copy <tt>src</tt> and append a NUL terminator.</td>
+</tr>
+<tr>
+<td valign="top"><tt>findChar</tt></td>
+<td valign="top"><tt>pub fn findChar(s: []const u8, c: u8) ?usize</tt></td>
+<td valign="top"><tt>?usize</tt>; <tt>null</tt> when absent</td>
+<td valign="top">First index of byte <tt>c</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>startsWith</tt></td>
+<td valign="top"><tt>pub fn startsWith(s: []const u8, prefix: []const u8) bool</tt></td>
+<td valign="top"><tt>bool</tt></td>
+<td valign="top">Does <tt>s</tt> begin with <tt>prefix</tt>?</td>
+</tr>
+<tr>
+<td valign="top"><tt>endsWith</tt></td>
+<td valign="top"><tt>pub fn endsWith(s: []const u8, suffix: []const u8) bool</tt></td>
+<td valign="top"><tt>bool</tt></td>
+<td valign="top">Does <tt>s</tt> end with <tt>suffix</tt>?</td>
+</tr>
+<tr>
+<td valign="top"><tt>toUpper</tt></td>
+<td valign="top"><tt>pub fn toUpper(s: []u8) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">ASCII upper-case <tt>s</tt> in place.</td>
+</tr>
+<tr>
+<td valign="top"><tt>toLower</tt></td>
+<td valign="top"><tt>pub fn toLower(s: []u8) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">ASCII lower-case <tt>s</tt> in place.</td>
+</tr>
+<tr>
+<td valign="top"><tt>split</tt></td>
+<td valign="top"><tt>pub fn split(arena: *arena_mod.Arena, s: []const u8, sep: u8) ![][]const u8</tt></td>
+<td valign="top">slices into <tt>s</tt>; <tt>error{OutOfMemory}</tt> (inferred)</td>
+<td valign="top">Split on byte <tt>sep</tt>; only the outer slice array is allocated.</td>
+</tr>
+<tr>
+<td valign="top"><tt>splitLines</tt></td>
+<td valign="top"><tt>pub fn splitLines(arena: *arena_mod.Arena, s: []const u8) ![][]const u8</tt></td>
+<td valign="top">slices into <tt>s</tt>; <tt>error{OutOfMemory}</tt> (inferred)</td>
+<td valign="top">Split on <tt>\n</tt>, stripping one trailing <tt>\r</tt> per segment.</td>
+</tr>
+<tr>
+<td valign="top"><tt>join</tt></td>
+<td valign="top"><tt>pub fn join(arena: *arena_mod.Arena, parts: [][]const u8, sep: []const u8) ![]u8</tt></td>
+<td valign="top">new slice; <tt>error{OutOfMemory}</tt> (inferred)</td>
+<td valign="top">Concatenate <tt>parts</tt> with <tt>sep</tt> between them.</td>
+</tr>
+<tr>
+<td valign="top"><tt>trim</tt></td>
+<td valign="top"><tt>pub fn trim(s: []const u8) []const u8</tt></td>
+<td valign="top">view into <tt>s</tt></td>
+<td valign="top">Strip ASCII whitespace from both ends.</td>
+</tr>
+<tr>
+<td valign="top"><tt>trimLeft</tt></td>
+<td valign="top"><tt>pub fn trimLeft(s: []const u8, chars: []const u8) []const u8</tt></td>
+<td valign="top">view into <tt>s</tt></td>
+<td valign="top">Strip leading bytes present in <tt>chars</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>trimRight</tt></td>
+<td valign="top"><tt>pub fn trimRight(s: []const u8, chars: []const u8) []const u8</tt></td>
+<td valign="top">view into <tt>s</tt></td>
+<td valign="top">Strip trailing bytes present in <tt>chars</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>indexOf</tt></td>
+<td valign="top"><tt>pub fn indexOf(s: []const u8, needle: []const u8) ?usize</tt></td>
+<td valign="top"><tt>?usize</tt>; <tt>null</tt> when absent; an empty <tt>needle</tt> matches at 0</td>
+<td valign="top">First index of <tt>needle</tt> in <tt>s</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>lastIndexOf</tt></td>
+<td valign="top"><tt>pub fn lastIndexOf(s: []const u8, needle: []const u8) ?usize</tt></td>
+<td valign="top"><tt>?usize</tt>; an empty <tt>needle</tt> matches at <tt>s.len</tt></td>
+<td valign="top">Last index of <tt>needle</tt> in <tt>s</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>eqIgnoreCase</tt></td>
+<td valign="top"><tt>pub fn eqIgnoreCase(a: []const u8, b: []const u8) bool</tt></td>
+<td valign="top"><tt>bool</tt></td>
+<td valign="top">ASCII case-insensitive equality; non-alphabetic bytes must match exactly.</td>
+</tr>
+<tr>
+<td valign="top"><tt>replace</tt></td>
+<td valign="top"><tt>pub fn replace(arena: *arena_mod.Arena, s: []const u8, from: []const u8, to: []const u8) ![]u8</tt></td>
+<td valign="top">new slice; <tt>error{OutOfMemory}</tt> (inferred)</td>
+<td valign="top">Replace every non-overlapping <tt>from</tt> with <tt>to</tt>; an empty <tt>from</tt> copies <tt>s</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>count</tt></td>
+<td valign="top"><tt>pub fn count(s: []const u8, needle: u8) usize</tt></td>
+<td valign="top"><tt>usize</tt></td>
+<td valign="top">Count occurrences of byte <tt>needle</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>repeat</tt></td>
+<td valign="top"><tt>pub fn repeat(arena: *arena_mod.Arena, s: []const u8, n: usize) ![]u8</tt></td>
+<td valign="top">new slice; <tt>error{OutOfMemory}</tt> (inferred)</td>
+<td valign="top">Concatenate <tt>s</tt> with itself <tt>n</tt> times.</td>
+</tr>
+</table>
+
+<h2><a name="mem"></a>std.mem</h2>
+<p>
+<tt>std.mem</tt> is the lowest-level module: raw memory over many-item pointers
+with an explicit count, and no allocation or length tracking. Every call names
+its element width in the function name, because Z98 has no generic
+<tt>copy</tt>.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Function</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>copyU8</tt></td>
+<td valign="top"><tt>pub fn copyU8(dst: [*]u8, src: [*]const u8, n: usize) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Copy <tt>n</tt> bytes.</td>
+</tr>
+<tr>
+<td valign="top"><tt>copyU32</tt></td>
+<td valign="top"><tt>pub fn copyU32(dst: [*]u32, src: [*]const u32, n: usize) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Copy <tt>n</tt> <tt>u32</tt> elements.</td>
+</tr>
+<tr>
+<td valign="top"><tt>copyU64</tt></td>
+<td valign="top"><tt>pub fn copyU64(dst: [*]u64, src: [*]const u64, n: usize) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Copy <tt>n</tt> <tt>u64</tt> elements.</td>
+</tr>
+<tr>
+<td valign="top"><tt>zeroU8</tt></td>
+<td valign="top"><tt>pub fn zeroU8(dst: [*]u8, n: usize) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Write <tt>n</tt> zero bytes.</td>
+</tr>
+<tr>
+<td valign="top"><tt>eqlU8</tt></td>
+<td valign="top"><tt>pub fn eqlU8(a: [*]const u8, b: [*]const u8, n: usize) bool</tt></td>
+<td valign="top"><tt>bool</tt></td>
+<td valign="top">Compare <tt>n</tt> bytes for equality.</td>
+</tr>
+</table>
+
+<h2><a name="math"></a>std.math</h2>
+<p>
+<tt>std.math</tt> is integer-only and concrete: the signed helpers take
+<tt>i32</tt> and the unsigned helpers take <tt>u32</tt>. It is not a
+floating-point library.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Function</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>min</tt></td>
+<td valign="top"><tt>pub fn min(a: i32, b: i32) i32</tt></td>
+<td valign="top"><tt>i32</tt></td>
+<td valign="top">Smaller of two signed values.</td>
+</tr>
+<tr>
+<td valign="top"><tt>max</tt></td>
+<td valign="top"><tt>pub fn max(a: i32, b: i32) i32</tt></td>
+<td valign="top"><tt>i32</tt></td>
+<td valign="top">Larger of two signed values.</td>
+</tr>
+<tr>
+<td valign="top"><tt>minU</tt></td>
+<td valign="top"><tt>pub fn minU(a: u32, b: u32) u32</tt></td>
+<td valign="top"><tt>u32</tt></td>
+<td valign="top">Smaller of two unsigned values.</td>
+</tr>
+<tr>
+<td valign="top"><tt>maxU</tt></td>
+<td valign="top"><tt>pub fn maxU(a: u32, b: u32) u32</tt></td>
+<td valign="top"><tt>u32</tt></td>
+<td valign="top">Larger of two unsigned values.</td>
+</tr>
+<tr>
+<td valign="top"><tt>abs</tt></td>
+<td valign="top"><tt>pub fn abs(n: i32) i32</tt></td>
+<td valign="top"><tt>i32</tt>; <tt>abs</tt> of the most negative <tt>i32</tt> overflows and traps under the default <tt>-fsafe</tt> checks</td>
+<td valign="top">Absolute value.</td>
+</tr>
+<tr>
+<td valign="top"><tt>clamp</tt></td>
+<td valign="top"><tt>pub fn clamp(v: i32, lo: i32, hi: i32) i32</tt></td>
+<td valign="top"><tt>i32</tt></td>
+<td valign="top">Constrain <tt>v</tt> to <tt>[lo, hi]</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>clampU</tt></td>
+<td valign="top"><tt>pub fn clampU(v: u32, lo: u32, hi: u32) u32</tt></td>
+<td valign="top"><tt>u32</tt></td>
+<td valign="top">Constrain <tt>v</tt> to <tt>[lo, hi]</tt>, unsigned.</td>
+</tr>
+<tr>
+<td valign="top"><tt>isPowerOfTwoU32</tt></td>
+<td valign="top"><tt>pub fn isPowerOfTwoU32(n: u32) bool</tt></td>
+<td valign="top"><tt>bool</tt>; <tt>false</tt> for 0</td>
+<td valign="top">Is <tt>n</tt> a power of two?</td>
+</tr>
+<tr>
+<td valign="top"><tt>alignUp</tt></td>
+<td valign="top"><tt>pub fn alignUp(n: u32, alignment: u32) u32</tt></td>
+<td valign="top"><tt>u32</tt></td>
+<td valign="top">Round <tt>n</tt> up to a multiple of <tt>alignment</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>alignDown</tt></td>
+<td valign="top"><tt>pub fn alignDown(n: u32, alignment: u32) u32</tt></td>
+<td valign="top"><tt>u32</tt></td>
+<td valign="top">Round <tt>n</tt> down to a multiple of <tt>alignment</tt>.</td>
+</tr>
+</table>
+
+<h2><a name="debug"></a>std.debug</h2>
+<p>
+<tt>std.debug</tt> is the logging and assertion module. <tt>log</tt> and
+<tt>logInt</tt> write to standard output; <tt>assert</tt> and <tt>panic</tt>
+write a message and then trap, so they never return. The module also owns the
+trap surface: <tt>setTrapHandler</tt> installs a handler that receives the
+register context, and <tt>backtrace</tt> walks the frame chain into a
+<a href="#buf">std.buf</a> buffer.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Name</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature / declaration</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>log</tt></td>
+<td valign="top"><tt>pub fn log(msg: []const u8) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Write <tt>msg</tt> bytes verbatim through <tt>@stdoutWrite</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>logInt</tt></td>
+<td valign="top"><tt>pub fn logInt(tag: []const u8, n: i32) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Write <tt>tag</tt>, <tt>:</tt>, a space, signed decimal <tt>n</tt>, and a newline.</td>
+</tr>
+<tr>
+<td valign="top"><tt>assert</tt></td>
+<td valign="top"><tt>pub fn assert(cond: bool) void</tt></td>
+<td valign="top"><tt>void</tt>; on <tt>false</tt> writes <tt>assertion failed</tt> then traps</td>
+<td valign="top">Abort when <tt>cond</tt> is false.</td>
+</tr>
+<tr>
+<td valign="top"><tt>panic</tt></td>
+<td valign="top"><tt>pub fn panic(msg: []const u8) noreturn</tt></td>
+<td valign="top"><tt>noreturn</tt>; writes <tt>panic: </tt>, <tt>msg</tt>, then traps</td>
+<td valign="top">Terminate with a printed message.</td>
+</tr>
+<tr>
+<td valign="top"><tt>TrapContext</tt></td>
+<td valign="top"><tt>pub const TrapContext = struct { eip: u32, esp: u32, ebp: u32, eflags: u32, eax: u32, ebx: u32, ecx: u32, edx: u32, esi: u32, edi: u32 };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">Ten <tt>u32</tt> registers captured by the trap; layout mirrors the C side.</td>
+</tr>
+<tr>
+<td valign="top"><tt>DebugError</tt></td>
+<td valign="top"><tt>pub const DebugError = error{CoreDumpWriteFailed};</tt></td>
+<td valign="top">error set</td>
+<td valign="top">The module's one error; returned by <tt>writeCoreDump</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>setTrapHandler</tt></td>
+<td valign="top"><tt>pub fn setTrapHandler(h: ?fn(*TrapContext) void) void</tt></td>
+<td valign="top"><tt>void</tt>; <tt>null</tt> uninstalls</td>
+<td valign="top">Install (or clear) the trap hook.</td>
+</tr>
+<tr>
+<td valign="top"><tt>backtrace</tt></td>
+<td valign="top"><tt>pub fn backtrace(ctx: *const TrapContext, out: *buf_mod.Buf) !void</tt></td>
+<td valign="top"><tt>error{OutOfMemory}</tt> (inferred from <tt>std.buf</tt>)</td>
+<td valign="top">Walk the <tt>ebp</tt> frame chain and append each frame pointer to <tt>out</tt> as little-endian <tt>u32</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>defaultTrapHandler</tt></td>
+<td valign="top"><tt>pub fn defaultTrapHandler(ctx: *TrapContext) noreturn</tt></td>
+<td valign="top"><tt>noreturn</tt></td>
+<td valign="top">Write <tt>core.dump</tt> then abort; the dump's own error is swallowed.</td>
+</tr>
+<tr>
+<td valign="top"><tt>writeCoreDump</tt></td>
+<td valign="top"><tt>pub fn writeCoreDump(ctx: *const TrapContext, path: []const u8) DebugError!void</tt></td>
+<td valign="top"><tt>error.CoreDumpWriteFailed</tt> when the file cannot be opened</td>
+<td valign="top">Dump the register context as one <tt>name=decimal</tt> line per field, in struct order.</td>
+</tr>
+</table>
+
+<h2><a name="net"></a>std.net</h2>
+<p>
+<tt>std.net</tt> is a set of target-selected bindings, not a protocol
+framework. On Windows it reaches Winsock 1.1 (<tt>wsock32</tt>,
+<tt>WSAStartup(1,1)</tt>); on the POSIX target it reaches libc. The public API
+hides the per-OS symbols behind names such as <tt>accept</tt> and
+<tt>close</tt>. <tt>Socket</tt> is a signed <tt>i32</tt> where <tt>-1</tt>
+signals failure. <tt>NetError</tt> deliberately excludes <tt>OutOfMemory</tt>
+(no path allocates); an unrecognised OS code collapses to <tt>Io</tt>, and a
+receive-path <tt>WouldBlock</tt> is normalised to <tt>Timeout</tt>.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Name</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature / declaration</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>fd_set</tt></td>
+<td valign="top"><tt>pub const fd_set = struct { data: [128]u32 };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">Opaque <tt>fd_set</tt> blob ([128]<tt>u32</tt> forces the 4-byte alignment WinSock's <tt>select</tt> requires).</td>
+</tr>
+<tr>
+<td valign="top"><tt>Socket</tt></td>
+<td valign="top"><tt>pub const Socket = i32;</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">A socket descriptor; <tt>-1</tt> is failure.</td>
+</tr>
+<tr>
+<td valign="top"><tt>NetError</tt></td>
+<td valign="top"><tt>pub const NetError = error { WouldBlock, Timeout, ConnRefused, ConnReset, NotConnected, AddrInUse, InvalidAddr, Io };</tt></td>
+<td valign="top">error set</td>
+<td valign="top">The module's one error set for the fallible wrappers.</td>
+</tr>
+<tr>
+<td valign="top"><tt>IpAddr</tt></td>
+<td valign="top"><tt>pub const IpAddr = struct { a: u8, b: u8, c: u8, d: u8 };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">A dotted-quad IPv4 address, high byte first.</td>
+</tr>
+<tr>
+<td valign="top"><tt>htons</tt></td>
+<td valign="top"><tt>pub extern "stdcall" fn htons(x: u16) u16</tt></td>
+<td valign="top"><tt>u16</tt></td>
+<td valign="top">Host-to-network short, from the OS (Winsock/libc); requires the net prelude.</td>
+</tr>
+<tr>
+<td valign="top"><tt>htonl</tt></td>
+<td valign="top"><tt>pub extern "stdcall" fn htonl(x: u32) u32</tt></td>
+<td valign="top"><tt>u32</tt></td>
+<td valign="top">Host-to-network long, from the OS.</td>
+</tr>
+<tr>
+<td valign="top"><tt>htonsManual</tt></td>
+<td valign="top"><tt>pub fn htonsManual(x: u16) u16</tt></td>
+<td valign="top"><tt>u16</tt></td>
+<td valign="top">Portable byte-swap of a 16-bit value.</td>
+</tr>
+<tr>
+<td valign="top"><tt>htonlManual</tt></td>
+<td valign="top"><tt>pub fn htonlManual(x: u32) u32</tt></td>
+<td valign="top"><tt>u32</tt></td>
+<td valign="top">Portable byte-swap of a 32-bit value.</td>
+</tr>
+<tr>
+<td valign="top"><tt>init</tt></td>
+<td valign="top"><tt>pub fn init() i32</tt></td>
+<td valign="top"><tt>i32</tt>; 0 on POSIX, the <tt>WSAStartup</tt> result on Windows</td>
+<td valign="top">Initialise the network stack; call once before any socket use.</td>
+</tr>
+<tr>
+<td valign="top"><tt>cleanup</tt></td>
+<td valign="top"><tt>pub fn cleanup() void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Release the network stack (<tt>WSACleanup</tt> on Windows; no-op on POSIX).</td>
+</tr>
+<tr>
+<td valign="top"><tt>createTcpServer</tt></td>
+<td valign="top"><tt>pub fn createTcpServer(port: u16) i32</tt></td>
+<td valign="top">socket <tt>i32</tt>, or <tt>-1</tt> on failure</td>
+<td valign="top">Create and bind a TCP socket (any local address) to <tt>port</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>createTcpClient</tt></td>
+<td valign="top"><tt>pub fn createTcpClient(port: u16) i32</tt></td>
+<td valign="top">socket <tt>i32</tt>, or <tt>-1</tt> on failure</td>
+<td valign="top">Create and connect a TCP socket to <tt>127.0.0.1:port</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>bindListen</tt></td>
+<td valign="top"><tt>pub fn bindListen(fd: i32, backlog: i32) i32</tt></td>
+<td valign="top">0 on success, <tt>-1</tt> on failure</td>
+<td valign="top">Mark a bound socket listening with <tt>backlog</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>accept</tt></td>
+<td valign="top"><tt>pub fn accept(fd: i32) i32</tt></td>
+<td valign="top">connection socket <tt>i32</tt>, or <tt>-1</tt> on failure</td>
+<td valign="top">Accept one pending connection (address is ignored).</td>
+</tr>
+<tr>
+<td valign="top"><tt>connect</tt></td>
+<td valign="top"><tt>pub fn connect(fd: i32, port: u16) i32</tt></td>
+<td valign="top">0 on success, <tt>-1</tt> on failure</td>
+<td valign="top">Connect <tt>fd</tt> to <tt>127.0.0.1:port</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>send</tt></td>
+<td valign="top"><tt>pub fn send(fd: i32, buf: [*]const u8, len: i32) i32</tt></td>
+<td valign="top">bytes sent, or an OS error code</td>
+<td valign="top">Blocking send of <tt>len</tt> bytes.</td>
+</tr>
+<tr>
+<td valign="top"><tt>recv</tt></td>
+<td valign="top"><tt>pub fn recv(fd: i32, buf: [*]u8, len: i32) i32</tt></td>
+<td valign="top">bytes received, or an OS error code</td>
+<td valign="top">Blocking receive of up to <tt>len</tt> bytes.</td>
+</tr>
+<tr>
+<td valign="top"><tt>close</tt></td>
+<td valign="top"><tt>pub fn close(fd: i32) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Close a socket using the target's call (<tt>closesocket</tt>/<tt>close</tt>).</td>
+</tr>
+<tr>
+<td valign="top"><tt>udpBind</tt></td>
+<td valign="top"><tt>pub fn udpBind(port: u16) NetError!Socket</tt></td>
+<td valign="top"><tt>NetError!Socket</tt></td>
+<td valign="top">Create a UDP socket bound to <tt>port</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>udpSendTo</tt></td>
+<td valign="top"><tt>pub fn udpSendTo(s: *Socket, addr: IpAddr, port: u16, data: []const u8) NetError!void</tt></td>
+<td valign="top"><tt>NetError!void</tt></td>
+<td valign="top">Send one datagram to <tt>addr:port</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>udpRecvFrom</tt></td>
+<td valign="top"><tt>pub fn udpRecvFrom(s: *Socket, buf: []u8, out_addr: *IpAddr, out_port: *u16) NetError!usize</tt></td>
+<td valign="top"><tt>NetError!usize</tt></td>
+<td valign="top">Receive one datagram, writing the source address and port out; truncation is not detectable.</td>
+</tr>
+<tr>
+<td valign="top"><tt>udpSetTimeout</tt></td>
+<td valign="top"><tt>pub fn udpSetTimeout(s: *Socket, ms: u32) NetError!void</tt></td>
+<td valign="top"><tt>NetError!void</tt></td>
+<td valign="top">Set <tt>SO_RCVTIMEO</tt> (a DWORD of milliseconds on Windows, a <tt>timeval</tt> on POSIX).</td>
+</tr>
+<tr>
+<td valign="top"><tt>select</tt></td>
+<td valign="top"><tt>pub fn select(nfds: i32, readfds: ?*u8, writefds: ?*u8, exceptfds: ?*u8, timeout_ms: i32) i32</tt></td>
+<td valign="top">ready count, or an OS error code; <tt>timeout_ms &lt; 0</tt> blocks</td>
+<td valign="top">Wait for readiness on the three sets.</td>
+</tr>
+<tr>
+<td valign="top"><tt>setNonBlocking</tt></td>
+<td valign="top"><tt>pub fn setNonBlocking(s: *Socket) NetError!void</tt></td>
+<td valign="top"><tt>NetError!void</tt></td>
+<td valign="top">Flip a connected socket to non-blocking.</td>
+</tr>
+<tr>
+<td valign="top"><tt>recvNonBlocking</tt></td>
+<td valign="top"><tt>pub fn recvNonBlocking(s: *Socket, buf: []u8) NetError!usize</tt></td>
+<td valign="top"><tt>NetError!usize</tt>; <tt>error.WouldBlock</tt> means retry later; 0 at peer close</td>
+<td valign="top">Non-blocking receive on a socket already set non-blocking.</td>
+</tr>
+<tr>
+<td valign="top"><tt>sendNonBlocking</tt></td>
+<td valign="top"><tt>pub fn sendNonBlocking(s: *Socket, buf: []const u8) NetError!usize</tt></td>
+<td valign="top"><tt>NetError!usize</tt>; <tt>error.WouldBlock</tt> means retry later</td>
+<td valign="top">Non-blocking send on a socket already set non-blocking.</td>
+</tr>
+<tr>
+<td valign="top"><tt>fdZero</tt></td>
+<td valign="top"><tt>pub fn fdZero(s: *u8) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Clear a portable <tt>fd_set</tt> blob.</td>
+</tr>
+<tr>
+<td valign="top"><tt>fdSet</tt></td>
+<td valign="top"><tt>pub fn fdSet(fd: i32, s: *u8) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Add <tt>fd</tt> to a portable <tt>fd_set</tt> blob.</td>
+</tr>
+<tr>
+<td valign="top"><tt>fdIsset</tt></td>
+<td valign="top"><tt>pub fn fdIsset(fd: i32, s: *u8) bool</tt></td>
+<td valign="top"><tt>bool</tt></td>
+<td valign="top">Test whether <tt>fd</tt> is in a portable <tt>fd_set</tt> blob.</td>
+</tr>
+</table>
+<p>
+The non-blocking wrappers have no executor and no poll loop: the caller drives
+readiness and treats <tt>error.WouldBlock</tt> as "yield and retry next tick".
+See <a href="vol3-12-winsock.html">Volume III, WinSock under Z98</a> for the
+worked socket path.
+</p>
+
+<h2><a name="async"></a>std.async</h2>
+<p>
+The coroutine builtins live in the language; the bookkeeping lives here.
+<tt>std.async</tt> is a concrete cooperative scheduler with a per-task LIFO
+child-frame pool; there are no generics and no module-scope mutable globals, so
+the caller supplies all storage. The root frame lives in the buffer passed to
+<tt>@asyncInit</tt> and is outside the pool; the <tt>Context</tt> sits at the
+head of a caller-supplied buffer that must be 8-aligned. The compiler side of
+this contract is on the async page (planned); the four <tt>@async*</tt>
+builtins are on <a href="vol4-15-builtins.html">Builtins</a>.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Name</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature / declaration</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>TaskState</tt></td>
+<td valign="top"><tt>pub const TaskState = enum(u8) { ready = 0, running = 1, suspended = 2, done = 3, cancelled = 4 };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">Cooperative task lifecycle.</td>
+</tr>
+<tr>
+<td valign="top"><tt>FrameError</tt></td>
+<td valign="top"><tt>pub const FrameError = error{OutOfFrame};</tt></td>
+<td valign="top">error set</td>
+<td valign="top">Pool exhaustion, surfaced by the scheduler free functions.</td>
+</tr>
+<tr>
+<td valign="top"><tt>StepFn</tt></td>
+<td valign="top"><tt>pub const StepFn = fn(frame: *void, arg: ?*void) ?*void;</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">Documentation alias for the <tt>__async_step_&lt;f&gt;</tt> ABI; null means terminal. The scheduler self-dispatches via <tt>@asyncResume</tt> and never stores one.</td>
+</tr>
+<tr>
+<td valign="top"><tt>HEADER_SIZE</tt></td>
+<td valign="top"><tt>pub const HEADER_SIZE: usize = 16;</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">Bytes at the head of the pool buffer reserved for the <tt>Context</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>Context</tt></td>
+<td valign="top"><tt>pub const Context = struct { used: usize, capacity: usize, oom: bool };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">Per-task child-frame pool header; <tt>capacity</tt> is usable bytes after the 16-byte header, <tt>oom</tt> is sticky.</td>
+</tr>
+<tr>
+<td valign="top"><tt>contextInit</tt></td>
+<td valign="top"><tt>pub fn contextInit(buf: []u8) *Context</tt></td>
+<td valign="top"><tt>*Context</tt>; traps when <tt>buf.ptr</tt> is not 8-aligned or <tt>buf.len &lt; 16</tt></td>
+<td valign="top">Place the <tt>Context</tt> at the head of <tt>buf</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>contextAlloc</tt></td>
+<td valign="top"><tt>pub fn contextAlloc(ctx: *Context, size: usize) FrameError![*]u8</tt></td>
+<td valign="top"><tt>FrameError![*]u8</tt>; sets <tt>ctx.oom</tt> on exhaustion</td>
+<td valign="top">Bump-allocate an 8-aligned child frame.</td>
+</tr>
+<tr>
+<td valign="top"><tt>contextMark</tt></td>
+<td valign="top"><tt>pub fn contextMark(ctx: *Context) usize</tt></td>
+<td valign="top"><tt>usize</tt></td>
+<td valign="top">Save the bump mark before a child frame.</td>
+</tr>
+<tr>
+<td valign="top"><tt>contextRelease</tt></td>
+<td valign="top"><tt>pub fn contextRelease(ctx: *Context, mark: usize) void</tt></td>
+<td valign="top"><tt>void</tt>; <tt>mark &gt; used</tt> traps under <tt>-fsafe</tt></td>
+<td valign="top">Rewind the bump pointer to <tt>mark</tt>, reclaiming the child frame.</td>
+</tr>
+<tr>
+<td valign="top"><tt>Task</tt></td>
+<td valign="top"><tt>pub const Task = struct { frame: *void, ctx: *Context, state: TaskState, cancel_requested: bool, result: *void, arg: *void, waiting_on: *Task, has_waiting_on: bool };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">One cooperative task: root frame, pool, state, cancellation, result slot, resume arg, dependency.</td>
+</tr>
+<tr>
+<td valign="top"><tt>Scheduler</tt></td>
+<td valign="top"><tt>pub const Scheduler = struct { tasks: [*]*Task, capacity: usize, count: usize, current: usize, in_task: bool };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">A caller-owned array of task pointers plus the current index.</td>
+</tr>
+<tr>
+<td valign="top"><tt>schedulerInit</tt></td>
+<td valign="top"><tt>pub fn schedulerInit(tasks: []*Task) Scheduler</tt></td>
+<td valign="top"><tt>Scheduler</tt></td>
+<td valign="top">Wrap a caller array as an empty scheduler.</td>
+</tr>
+<tr>
+<td valign="top"><tt>addTask</tt></td>
+<td valign="top"><tt>pub fn addTask(s: *Scheduler, t: *Task) bool</tt></td>
+<td valign="top"><tt>bool</tt>; <tt>false</tt> for an active duplicate or a full scheduler</td>
+<td valign="top">Register <tt>t</tt>; idempotent (a settled registered task is reset to <tt>ready</tt>).</td>
+</tr>
+<tr>
+<td valign="top"><tt>removeTask</tt></td>
+<td valign="top"><tt>pub fn removeTask(s: *Scheduler, t: *Task) void</tt></td>
+<td valign="top"><tt>void</tt>; no-op when not registered</td>
+<td valign="top">Retire <tt>t</tt> and compact the tail; valid from a non-suspending context.</td>
+</tr>
+<tr>
+<td valign="top"><tt>tick</tt></td>
+<td valign="top"><tt>pub fn tick(s: *Scheduler) FrameError!void</tt></td>
+<td valign="top"><tt>FrameError!void</tt></td>
+<td valign="top">Resume every ready/suspended task once; stops early if a pool overflowed.</td>
+</tr>
+<tr>
+<td valign="top"><tt>suspend</tt></td>
+<td valign="top"><tt>pub fn suspend(s: *Scheduler, t: *Task) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Mark <tt>t</tt> suspended (cooperative yield bookkeeping).</td>
+</tr>
+<tr>
+<td valign="top"><tt>suspendUntil</tt></td>
+<td valign="top"><tt>pub fn suspendUntil(pred: fn() bool) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Yield via <tt>@asyncSuspend(null)</tt> once per tick until <tt>pred()</tt> is true; the caller must be a suspending function.</td>
+</tr>
+<tr>
+<td valign="top"><tt>waitAll</tt></td>
+<td valign="top"><tt>pub fn waitAll(s: *Scheduler) FrameError!void</tt></td>
+<td valign="top"><tt>FrameError!void</tt></td>
+<td valign="top">Tick until every task is done or cancelled.</td>
+</tr>
+<tr>
+<td valign="top"><tt>waitFor</tt></td>
+<td valign="top"><tt>pub fn waitFor(s: *Scheduler, t: *Task) FrameError!void</tt></td>
+<td valign="top"><tt>FrameError!void</tt>; panics if <tt>t</tt> is neither registered nor settled</td>
+<td valign="top">Drive the scheduler until <tt>t</tt> is settled; needs no caller frame.</td>
+</tr>
+<tr>
+<td valign="top"><tt>awaitTask</tt></td>
+<td valign="top"><tt>pub fn awaitTask(s: *Scheduler, t: *Task) void</tt></td>
+<td valign="top"><tt>void</tt>; panics outside a task or with no registered task</td>
+<td valign="top">Suspend the currently running task until <tt>t</tt> is settled.</td>
+</tr>
+<tr>
+<td valign="top"><tt>cancel</tt></td>
+<td valign="top"><tt>pub fn cancel(s: *Scheduler, t: *Task) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Request cooperative cancellation, observed at the next tick boundary.</td>
+</tr>
+<tr>
+<td valign="top"><tt>cancelAll</tt></td>
+<td valign="top"><tt>pub fn cancelAll(s: *Scheduler) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Request cancellation of every task not already done.</td>
+</tr>
+</table>
+
+<h2><a name="bits"></a>std.bits</h2>
+<p>
+<tt>std.bits</tt> is pure computation on <tt>u32</tt> and <tt>u64</tt>. Z98 has
+no bit builtins beyond <tt>@bitCast</tt>, so every operation is a hand-written
+loop. All functions are total except <tt>extract</tt> and <tt>insert</tt>, which
+trap on out-of-range offsets via <tt>unreachable</tt> (<tt>off &lt; 32</tt>,
+<tt>len &le; 32</tt>, and <tt>off + len &le; 32</tt>).
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Function</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>popcount32</tt></td>
+<td valign="top"><tt>pub fn popcount32(x: u32) u32</tt></td>
+<td valign="top"><tt>u32</tt></td>
+<td valign="top">Number of set bits.</td>
+</tr>
+<tr>
+<td valign="top"><tt>popcount64</tt></td>
+<td valign="top"><tt>pub fn popcount64(x: u64) u32</tt></td>
+<td valign="top"><tt>u32</tt></td>
+<td valign="top">Number of set bits in a 64-bit value.</td>
+</tr>
+<tr>
+<td valign="top"><tt>clz32</tt></td>
+<td valign="top"><tt>pub fn clz32(x: u32) u32</tt></td>
+<td valign="top"><tt>u32</tt>; <tt>clz32(0)</tt> is 32</td>
+<td valign="top">Count leading zeros.</td>
+</tr>
+<tr>
+<td valign="top"><tt>clz64</tt></td>
+<td valign="top"><tt>pub fn clz64(x: u64) u32</tt></td>
+<td valign="top"><tt>u32</tt>; <tt>clz64(0)</tt> is 64</td>
+<td valign="top">Count leading zeros.</td>
+</tr>
+<tr>
+<td valign="top"><tt>ctz32</tt></td>
+<td valign="top"><tt>pub fn ctz32(x: u32) u32</tt></td>
+<td valign="top"><tt>u32</tt>; <tt>ctz32(0)</tt> is 32</td>
+<td valign="top">Count trailing zeros.</td>
+</tr>
+<tr>
+<td valign="top"><tt>ctz64</tt></td>
+<td valign="top"><tt>pub fn ctz64(x: u64) u32</tt></td>
+<td valign="top"><tt>u32</tt>; <tt>ctz64(0)</tt> is 64</td>
+<td valign="top">Count trailing zeros.</td>
+</tr>
+<tr>
+<td valign="top"><tt>rotl32</tt></td>
+<td valign="top"><tt>pub fn rotl32(x: u32, n: u32) u32</tt></td>
+<td valign="top"><tt>u32</tt></td>
+<td valign="top">Rotate left by <tt>n</tt> (mod 32).</td>
+</tr>
+<tr>
+<td valign="top"><tt>rotr32</tt></td>
+<td valign="top"><tt>pub fn rotr32(x: u32, n: u32) u32</tt></td>
+<td valign="top"><tt>u32</tt></td>
+<td valign="top">Rotate right by <tt>n</tt> (mod 32).</td>
+</tr>
+<tr>
+<td valign="top"><tt>bitrev32</tt></td>
+<td valign="top"><tt>pub fn bitrev32(x: u32) u32</tt></td>
+<td valign="top"><tt>u32</tt></td>
+<td valign="top">Reverse the 32 bit order.</td>
+</tr>
+<tr>
+<td valign="top"><tt>mask</tt></td>
+<td valign="top"><tt>pub fn mask(bits: u32) u32</tt></td>
+<td valign="top"><tt>u32</tt>; defined for <tt>bits</tt> in [0, 32]</td>
+<td valign="top">Low <tt>bits</tt> bits set.</td>
+</tr>
+<tr>
+<td valign="top"><tt>extract</tt></td>
+<td valign="top"><tt>pub fn extract(x: u32, off: u32, len: u32) u32</tt></td>
+<td valign="top"><tt>u32</tt>; out-of-range offset/length traps</td>
+<td valign="top">Extract the <tt>len</tt>-bit field at <tt>off</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>insert</tt></td>
+<td valign="top"><tt>pub fn insert(x: u32, val: u32, off: u32, len: u32) u32</tt></td>
+<td valign="top"><tt>u32</tt>; out-of-range offset/length traps; <tt>len == 0</tt> returns <tt>x</tt></td>
+<td valign="top">Insert the low <tt>len</tt> bits of <tt>val</tt> at <tt>off</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>isPow2</tt></td>
+<td valign="top"><tt>pub fn isPow2(x: u32) bool</tt></td>
+<td valign="top"><tt>bool</tt>; <tt>false</tt> for 0</td>
+<td valign="top">Is <tt>x</tt> a power of two?</td>
+</tr>
+<tr>
+<td valign="top"><tt>nextPow2</tt></td>
+<td valign="top"><tt>pub fn nextPow2(x: u32) u32</tt></td>
+<td valign="top"><tt>u32</tt>; <tt>nextPow2(0)</tt> and <tt>nextPow2(1)</tt> are 1; returns 0 when no representable power exists</td>
+<td valign="top">Next power of two at or above <tt>x</tt>.</td>
+</tr>
+</table>
+
+<h2><a name="os"></a>std.os</h2>
+<p>
+<tt>std.os</tt> exposes process-level information. The argument surface is
+explicit: the compiler's <tt>main</tt> wrapper forwards <tt>argc</tt> and
+<tt>argv</tt> only when the Z98 <tt>main</tt> declares them, and the user calls
+<tt>initArgs</tt> once. After that, <tt>argc</tt> and <tt>argv</tt> are ordinary
+reads. <tt>cwd</tt> takes an arena because the directory is copied into memory
+you own.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Name</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>OsError</tt></td>
+<td valign="top"><tt>pub const OsError = error{ OutOfMemory, CwdFailed };</tt></td>
+<td valign="top">error set</td>
+<td valign="top">The arena's <tt>OutOfMemory</tt> plus a failed or oversized directory query.</td>
+</tr>
+<tr>
+<td valign="top"><tt>initArgs</tt></td>
+<td valign="top"><tt>pub fn initArgs(arg_count: i32, arg_values: [*]*const u8) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Save the process argument vector; must run before <tt>argc</tt>/<tt>argv</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>argc</tt></td>
+<td valign="top"><tt>pub fn argc() usize</tt></td>
+<td valign="top"><tt>usize</tt></td>
+<td valign="top">Number of arguments passed to <tt>initArgs</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>argv</tt></td>
+<td valign="top"><tt>pub fn argv(i: usize) []const u8</tt></td>
+<td valign="top">slice aliasing the saved pointer</td>
+<td valign="top">Argument <tt>i</tt> as a byte slice.</td>
+</tr>
+<tr>
+<td valign="top"><tt>exit</tt></td>
+<td valign="top"><tt>pub fn exit(code: i32) noreturn</tt></td>
+<td valign="top"><tt>noreturn</tt></td>
+<td valign="top">Terminate the process (<tt>@exit</tt>, then an unreachable loop).</td>
+</tr>
+<tr>
+<td valign="top"><tt>env</tt></td>
+<td valign="top"><tt>pub fn env(name: []const u8) ?[]const u8</tt></td>
+<td valign="top"><tt>?[]const u8</tt>; <tt>null</tt> when unset or the name is 256 bytes or more</td>
+<td valign="top">Read an environment variable.</td>
+</tr>
+<tr>
+<td valign="top"><tt>cwd</tt></td>
+<td valign="top"><tt>pub fn cwd(arena: *arena_mod.Arena) OsError![]u8</tt></td>
+<td valign="top"><tt>OsError![]u8</tt></td>
+<td valign="top">Copy the current working directory into the arena (4096-byte buffer).</td>
+</tr>
+</table>
+
+<h2><a name="time"></a>std.time</h2>
+<p>
+<tt>std.time</tt> provides a monotonic counter, a wall clock, and sleep.
+<tt>ticksMs</tt> is milliseconds since boot on Windows and wall-clock
+milliseconds since the epoch on POSIX, truncated to 32 bits; it wraps every
+49.7 days. <tt>highRes</tt> is the monotonic source, with its unit given by
+<tt>highResFreq</tt>.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Function</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>ticksMs</tt></td>
+<td valign="top"><tt>pub fn ticksMs() u32</tt></td>
+<td valign="top"><tt>u32</tt>; wraps about every 49.7 days</td>
+<td valign="top">Milliseconds since boot (Windows) or since the epoch truncated to 32 bits (POSIX).</td>
+</tr>
+<tr>
+<td valign="top"><tt>highRes</tt></td>
+<td valign="top"><tt>pub fn highRes() u64</tt></td>
+<td valign="top"><tt>u64</tt></td>
+<td valign="top">High-resolution monotonic counter; falls back to <tt>ticksMs() * 1000</tt> when unusable.</td>
+</tr>
+<tr>
+<td valign="top"><tt>clockMonotonicAvailable</tt></td>
+<td valign="top"><tt>pub fn clockMonotonicAvailable() bool</tt></td>
+<td valign="top"><tt>bool</tt>; always <tt>false</tt> on Windows</td>
+<td valign="top">Whether the POSIX target has <tt>clock_gettime(CLOCK_MONOTONIC)</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>highResFreq</tt></td>
+<td valign="top"><tt>pub fn highResFreq() u64</tt></td>
+<td valign="top"><tt>u64</tt></td>
+<td valign="top">Ticks per second for <tt>highRes</tt> (the QPC frequency on Windows; 1e9 or 1e6 on POSIX).</td>
+</tr>
+<tr>
+<td valign="top"><tt>wallClockUnix</tt></td>
+<td valign="top"><tt>pub fn wallClockUnix() i64</tt></td>
+<td valign="top"><tt>i64</tt></td>
+<td valign="top">UTC seconds since the epoch.</td>
+</tr>
+<tr>
+<td valign="top"><tt>sleepMs</tt></td>
+<td valign="top"><tt>pub fn sleepMs(ms: u32) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Sleep for <tt>ms</tt> milliseconds (wraps <tt>@sleepMs</tt> directly).</td>
+</tr>
+</table>
+
+<h2><a name="buf"></a>std.buf</h2>
+<p>
+<tt>std.buf</tt> is a growable byte buffer. It is bytes only, not a general
+container, and it owns no storage: the arena behind it does. Growth doubles the
+capacity, and <tt>clear</tt> keeps the storage while resetting the length. There
+is no <tt>deinit</tt>; resetting the arena reclaims everything. The
+endian-tagged append functions exist because wire and file formats need them.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Name</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signature / declaration</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Returns / error</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Purpose</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>Buf</tt></td>
+<td valign="top"><tt>pub const Buf = struct { arena: *arena_mod.Arena, data: []u8, len: usize };</tt></td>
+<td valign="top">&mdash;</td>
+<td valign="top">The buffer: its arena, its backing storage, and its logical length.</td>
+</tr>
+<tr>
+<td valign="top"><tt>init</tt></td>
+<td valign="top"><tt>pub fn init(arena: *arena_mod.Arena) Buf</tt></td>
+<td valign="top"><tt>Buf</tt></td>
+<td valign="top">Empty buffer over <tt>arena</tt> (zero capacity until the first append).</td>
+</tr>
+<tr>
+<td valign="top"><tt>initCapacity</tt></td>
+<td valign="top"><tt>pub fn initCapacity(arena: *arena_mod.Arena, cap: usize) !Buf</tt></td>
+<td valign="top"><tt>Buf</tt>; <tt>error{OutOfMemory}</tt> (inferred)</td>
+<td valign="top">Empty buffer with <tt>cap</tt> bytes reserved.</td>
+</tr>
+<tr>
+<td valign="top"><tt>capacity</tt></td>
+<td valign="top"><tt>pub fn capacity(b: *Buf) usize</tt></td>
+<td valign="top"><tt>usize</tt></td>
+<td valign="top">Backing storage size.</td>
+</tr>
+<tr>
+<td valign="top"><tt>slice</tt></td>
+<td valign="top"><tt>pub fn slice(b: *Buf) []u8</tt></td>
+<td valign="top">view of the first <tt>len</tt> bytes</td>
+<td valign="top">The written bytes; valid until the next growing append.</td>
+</tr>
+<tr>
+<td valign="top"><tt>clear</tt></td>
+<td valign="top"><tt>pub fn clear(b: *Buf) void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">Reset length to 0, keeping storage and capacity.</td>
+</tr>
+<tr>
+<td valign="top"><tt>reserve</tt></td>
+<td valign="top"><tt>pub fn reserve(b: *Buf, extra: usize) !void</tt></td>
+<td valign="top"><tt>error{OutOfMemory}</tt> (inferred); <tt>b</tt> is untouched on failure</td>
+<td valign="top">Ensure <tt>len + extra</tt> bytes fit, doubling capacity as needed.</td>
+</tr>
+<tr>
+<td valign="top"><tt>append</tt></td>
+<td valign="top"><tt>pub fn append(b: *Buf, bytes: []const u8) !void</tt></td>
+<td valign="top"><tt>error{OutOfMemory}</tt> (inferred)</td>
+<td valign="top">Append a byte slice.</td>
+</tr>
+<tr>
+<td valign="top"><tt>appendByte</tt></td>
+<td valign="top"><tt>pub fn appendByte(b: *Buf, byte: u8) !void</tt></td>
+<td valign="top"><tt>error{OutOfMemory}</tt> (inferred)</td>
+<td valign="top">Append one byte.</td>
+</tr>
+<tr>
+<td valign="top"><tt>appendU16BE</tt></td>
+<td valign="top"><tt>pub fn appendU16BE(b: *Buf, v: u16) !void</tt></td>
+<td valign="top"><tt>error{OutOfMemory}</tt> (inferred)</td>
+<td valign="top">Append <tt>v</tt> big-endian.</td>
+</tr>
+<tr>
+<td valign="top"><tt>appendU16LE</tt></td>
+<td valign="top"><tt>pub fn appendU16LE(b: *Buf, v: u16) !void</tt></td>
+<td valign="top"><tt>error{OutOfMemory}</tt> (inferred)</td>
+<td valign="top">Append <tt>v</tt> little-endian.</td>
+</tr>
+<tr>
+<td valign="top"><tt>appendU32BE</tt></td>
+<td valign="top"><tt>pub fn appendU32BE(b: *Buf, v: u32) !void</tt></td>
+<td valign="top"><tt>error{OutOfMemory}</tt> (inferred)</td>
+<td valign="top">Append <tt>v</tt> big-endian.</td>
+</tr>
+<tr>
+<td valign="top"><tt>appendU32LE</tt></td>
+<td valign="top"><tt>pub fn appendU32LE(b: *Buf, v: u32) !void</tt></td>
+<td valign="top"><tt>error{OutOfMemory}</tt> (inferred)</td>
+<td valign="top">Append <tt>v</tt> little-endian.</td>
+</tr>
+<tr>
+<td valign="top"><tt>appendU64BE</tt></td>
+<td valign="top"><tt>pub fn appendU64BE(b: *Buf, v: u64) !void</tt></td>
+<td valign="top"><tt>error{OutOfMemory}</tt> (inferred)</td>
+<td valign="top">Append <tt>v</tt> big-endian.</td>
+</tr>
+<tr>
+<td valign="top"><tt>appendU64LE</tt></td>
+<td valign="top"><tt>pub fn appendU64LE(b: *Buf, v: u64) !void</tt></td>
+<td valign="top"><tt>error{OutOfMemory}</tt> (inferred)</td>
+<td valign="top">Append <tt>v</tt> little-endian.</td>
+</tr>
+</table>
+
+<h2><a name="not-reexported"></a>Modules shipped but not re-exported</h2>
+<p>
+The library directory beside the compiler holds more <tt>std_*.zig</tt> files
+than the thirteen re-exports. A name that is not in the table above does not
+resolve as <tt>std.&lt;name&gt;</tt>; the compiler rejects it (the measured
+diagnostic is <tt>error[3074]</tt>, shown on
+<a href="vol2-17-stdlib.html">Volume II, The standard library tour</a>).
+Reachable modules that exist in <tt>sf/src</tt> but are <b>not</b> part of the
+<tt>std</tt> namespace: <tt>std_base64</tt>, <tt>std_crypto</tt>,
+<tt>std_file</tt>, <tt>std_heap</tt>, <tt>std_hex</tt>, <tt>std_map</tt>,
+<tt>std_parse</tt>, <tt>std_rle</tt>, <tt>std_sort</tt>, <tt>std_stdin</tt>,
+<tt>std_stream</tt>, and <tt>std_utf8</tt>. Four further files
+(<tt>std_file_pal</tt>, <tt>std_os_pal</tt>, <tt>std_stdin_pal</tt>, and
+<tt>std_time_pal</tt>) are the per-OS support layer used by re-exported modules;
+they are not public modules at all.
+</p>
+
+<h2>See also</h2>
+<p>
+<a href="vol4-15-builtins.html">Builtins</a> for the language-level calls these
+modules wrap, <a href="vol2-17-stdlib.html">Volume II, The standard library
+tour</a> for the worked tour and the runnable
+<tt>docs/sf/manuals/src/vol2/stdio.z98</tt>, <a href="vol2-14-arena.html">The
+arena</a> for the allocator behind <tt>std.arena</tt>,
+<a href="vol2-18-print.html">print and the format string</a> for what
+<tt>std.fmt</tt> serves, and <a href="vol4-19-pal.html">The platform layer</a>
+for the compiler-internal contract beneath the file, time, and OS modules.
+</p>
+
+<p class="navbtns">
+<a href="vol4-15-builtins.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol4-19-pal.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol4-15-builtins.html">Builtins</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-19-pal.html">The platform layer</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
