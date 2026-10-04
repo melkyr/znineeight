@@ -185,3 +185,32 @@ Each page task repeats this shape; its own block lists Files/Consumes/Must-cover
 - **Placeholder scan:** Task 0 fills the mechanical tables; no task says "TBD" — T1–T22 name their exact source and must-cover list.
 - **Type consistency:** page filenames, task numbers, and commit-message convention match the spec index; `rel`/sidebar rules match Volume III's shipped pattern.
 - **Ordering:** big mechanical pages (diagnostics, CLI, PAL, markers, stdlib, grammar) are Tasks 1–6 per the operator ruling; narrative/type pages follow; shipped pages are audited last but before closeout.
+
+---
+
+## Amendment A2 — enum sub-byte backing + empty named-struct layout (operator-ruled m1470)
+
+**Origin:** found while authoring Volume IV page 04 (`structs`) and page 05 (`enums`). Operator ruling m1470: D1 = option 2, D2 = option 2 if small scoped; **one I/F pair covers both**.
+
+**D1 — sub-byte enum backing interaction (seed v90, `f78bebc448e267b32419afdb13afb386`).** Reproduced:
+- `const Small = enum(u3) { A, B, C };` alone → rc 0.
+- `const Wide = enum(u5) { X = 0, Y = 31 };` alone → rc 0.
+- **Both together** → rc 2, `error[3000]: enum tag value does not fit the enum backing width (must fit 2^N - 1); no silent truncation` at the `u3` enum. Zig 0.15.2 accepts both.
+
+**D2 — empty named-struct layout.** `const E = struct {};` compiles rc 0 but reports a bogus layout `12/4/96` (the layout pass never ran; contradicts the min-1 rule at `type_resolver.zig:304`).
+
+### Task A2-I: read-only investigation (both defects)
+- [ ] Reproduce both with minimal programs (record exact rc/stdout/stderr).
+- [ ] Root-cause each in `sf/src/**`; establish correct semantics (oracle = Zig 0.15.2 for validity).
+- [ ] Specify the minimal fix per defect and the blast radius (self-emission, corpus, stdlib, 4-MD5).
+- [ ] Specify the fixtures: `repro/mi_matrix/enum_subbyte_backing_xmod/` and `repro/mi_matrix/empty_named_struct_xmod/`, plus standalone `repro/` programs.
+- [ ] Report `task-A2-I-report.md`; no `sf/src` edits; no commit.
+
+### Task A2-F: implement both fixes
+- [ ] Implement the two minimal fixes; add the fixtures + standalones.
+- [ ] Run the QUICK_REF gate battery verbatim (self-compile two-hop closure, example matrix, 4-MD5 emitted-C, stdlib runtime gate, corpus `-s0`, `check_emit_support.sh`, `verify_upgraded.sh`); **STOP on unexpected movement**.
+- [ ] Update tech docs per `docs/sf/AGENTS.md` §1.1.1 + `docs/sf/QUICK_REF.md`; bump `repro/mi_matrix/EXPECTED_FAIL.md`; verify the two-hop closure and record the moved fixed point.
+- [ ] Commit the fix(es) (`fix(...)` messages); then a docs commit updating `docs/sf/manuals/en/vol4-05-enums.html` (sub-byte boundary note) and `docs/sf/manuals/en/vol4-04-structs.html` (empty-struct note) to the fixed behavior.
+- [ ] Seed rotation stays closeout-only (Task 26).
+
+**Sequence:** A2 runs after Task 10's page commit `e8a85200` and before Task 11. **Task 10's review/closure is ON HOLD until A2-F lands** (its boundary note changes).
