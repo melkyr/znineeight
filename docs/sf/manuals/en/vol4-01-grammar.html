@@ -1,0 +1,699 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: The Full Grammar</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual grammar reference EBNF parser productions precedence lexical tokens declarations types expressions statements rejected">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol4-00-title.html">
+<link rel="next" href="vol4-15-builtins.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume IV &mdash; Reference</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+How to use the Reference <i>(planned)</i><br>
+<b>The full grammar</b><br>
+Types <i>(planned)</i><br>
+Pointers <i>(planned)</i><br>
+Structs <i>(planned)</i><br>
+Enums <i>(planned)</i><br>
+Unions <i>(planned)</i><br>
+Tuples <i>(planned)</i><br>
+Arrays and slices <i>(planned)</i><br>
+Errors <i>(planned)</i><br>
+Optionals <i>(planned)</i><br>
+Aliases <i>(planned)</i><br>
+Statements <i>(planned)</i><br>
+Control flow <i>(planned)</i><br>
+Error expressions <i>(planned)</i><br>
+<a href="vol4-15-builtins.html">Builtins</a><br>
+Async <i>(planned)</i><br>
+Memory <i>(planned)</i><br>
+<a href="vol4-18-stdlib.html">The standard library</a><br>
+<a href="vol4-19-pal.html">The PAL</a><br>
+<a href="vol4-20-markers.html">Markers</a><br>
+<a href="vol4-21-diagnostics.html">Diagnostics</a><br>
+<a href="vol4-22-cli.html">The command line</a><br>
+Limits <i>(planned)</i><br>
+<a href="vol4-24-html-style.html">HTML style</a><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>The Full Grammar</h1>
+<p>
+This page is the complete grammar of Z98. It is transcribed from the
+compiler's parser, <tt>sf/src/parser.zig</tt>, which is the authority: the
+Language Specification has no full grammar (section 3.1 carries only a
+<tt>switch</tt> fragment), and where the two disagree the parser wins. Every
+production below is the shape <tt>parser.zig</tt> accepts; a rule the parser
+enforces in code rather than as a clean production is described in the text and
+its source line is cited. The lexical classes come from <tt>sf/src/lexer.zig</tt>
+and the token set from <tt>sf/src/token.zig</tt>.
+</p>
+<p>
+The parser is recursive descent with a precedence climber for expressions
+(<tt>parserParseExprPrec</tt>, <tt>parser.zig:272</tt>). The productions run
+from <tt>parserParsePrimary</tt> (<tt>parser.zig:391</tt>) and
+<tt>parserParseType</tt> (<tt>parser.zig:1099</tt>) to
+<tt>parserParseStatement</tt> (<tt>parser.zig:1501</tt>) and
+<tt>parserParseBlock</tt> (<tt>parser.zig:2140</tt>).
+</p>
+
+<h2>Notation</h2>
+<pre>
+  ::=          a production
+  |            an alternative
+  ( x )        grouping
+  { x }        zero or more
+  [ x ]        optional
+  'x'          a literal token
+  IDENT etc.   a lexical class (next section)
+</pre>
+
+<h2>Lexical tokens</h2>
+<p>
+The lexer (<tt>lexer.zig:47</tt>) skips spaces, tabs, carriage returns, and
+comments before each token. Comments are line comments (<tt>//</tt> to end of
+line) and block comments (<tt>/* ... */</tt>); an unterminated block comment is
+<tt>error[1]</tt> (<tt>lexer.zig:257</tt>). The token classes are:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Class</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Spelling</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Source</b></th>
+</tr>
+<tr>
+<td valign="top">identifier</td>
+<td valign="top"><tt>[A-Za-z_][A-Za-z0-9_]*</tt> (not a keyword)</td>
+<td valign="top"><tt>lexer.zig:436</tt></td>
+</tr>
+<tr>
+<td valign="top">underscore</td>
+<td valign="top">a lone <tt>_</tt></td>
+<td valign="top"><tt>lexer.zig:445</tt></td>
+</tr>
+<tr>
+<td valign="top">builtin identifier</td>
+<td valign="top"><tt>@</tt> immediately followed by a name; <tt>@cInclude</tt> is its own class</td>
+<td valign="top"><tt>lexer.zig:471</tt></td>
+</tr>
+<tr>
+<td valign="top">integer literal</td>
+<td valign="top">decimal, or <tt>0x</tt>/<tt>0X</tt> hex, <tt>0o</tt>/<tt>0O</tt> octal, <tt>0b</tt>/<tt>0B</tt> binary; <tt>_</tt> separators are ignored</td>
+<td valign="top"><tt>lexer.zig:377</tt></td>
+</tr>
+<tr>
+<td valign="top">float literal</td>
+<td valign="top">decimal digits with a <tt>.</tt> (not followed by another <tt>.</tt>) or an <tt>e</tt>/<tt>E</tt> exponent; no hex floats</td>
+<td valign="top"><tt>lexer.zig:399</tt></td>
+</tr>
+<tr>
+<td valign="top">string literal</td>
+<td valign="top">double-quoted, escape sequences processed, interned</td>
+<td valign="top"><tt>lexer.zig:289</tt></td>
+</tr>
+<tr>
+<td valign="top">character literal</td>
+<td valign="top">single-quoted one character or one escape</td>
+<td valign="top"><tt>lexer.zig:344</tt></td>
+</tr>
+<tr>
+<td valign="top">keywords</td>
+<td valign="top">the 38 words listed below</td>
+<td valign="top"><tt>token.zig:149</tt></td>
+</tr>
+<tr>
+<td valign="top">punctuation / operators</td>
+<td valign="top">the fixed set listed below</td>
+<td valign="top"><tt>token.zig:12</tt></td>
+</tr>
+</table>
+<p>
+The 38 keywords are <tt>const</tt>, <tt>var</tt>, <tt>fn</tt>, <tt>pub</tt>,
+<tt>extern</tt>, <tt>export</tt>, <tt>test</tt>, <tt>struct</tt>,
+<tt>enum</tt>, <tt>union</tt>, <tt>packed</tt>, <tt>if</tt>, <tt>else</tt>,
+<tt>while</tt>, <tt>for</tt>, <tt>switch</tt>, <tt>return</tt>,
+<tt>break</tt>, <tt>continue</tt>, <tt>defer</tt>, <tt>errdefer</tt>,
+<tt>try</tt>, <tt>catch</tt>, <tt>orelse</tt>, <tt>error</tt>, <tt>and</tt>,
+<tt>or</tt>, <tt>true</tt>, <tt>false</tt>, <tt>null</tt>,
+<tt>undefined</tt>, <tt>unreachable</tt>, <tt>void</tt>, <tt>bool</tt>,
+<tt>noreturn</tt>, <tt>c_char</tt>, <tt>anytype</tt>, <tt>volatile</tt>
+(<tt>token.zig:153-192</tt>). The primitive type names <tt>i8</tt>, <tt>u8</tt>,
+<tt>i32</tt>, <tt>usize</tt>, <tt>isize</tt>, <tt>f32</tt>, <tt>f64</tt>, the
+arbitrary-width names (<tt>u1</tt>&hellip;<tt>u64</tt>, <tt>i1</tt>&hellip;
+<tt>i63</tt>), and every user name are <b>identifiers</b>, not keywords; the type
+resolver gives them meaning.
+</p>
+<p>
+The punctuation and operator tokens are:
+</p>
+<pre>
+  ( ) [ ] { } ; : , . @ _ ? ! + - * / % &amp; | ^ ~ &lt;&lt; &gt;&gt; == != &lt; &lt;= &gt; &gt;=
+  = += -= *= /= %= &amp;= |= ^= &lt;&lt;= &gt;&gt;= +% -% *% +%= -%= *%= +| -| *| &lt;&lt;|
+  +|= -|= *|= &lt;&lt;|= .. ... .{ .* =&gt;
+</pre>
+<p>
+A bare <tt>@</tt> not followed by a name is <tt>error[4]</tt>
+(<tt>lexer.zig:163</tt>). An integer literal that does not fit in <tt>u64</tt>
+truncates with <tt>warning[7]</tt> (<tt>lexer.zig:426</tt>); an unknown escape
+is <tt>warning[6]</tt> (<tt>lexer.zig:549</tt>).
+</p>
+
+<h2>Module and items</h2>
+<p>
+A module is a flat sequence of statements. <tt>parserParseModuleRoot</tt>
+(<tt>parser.zig:1542</tt>) calls <tt>parserParseStatement</tt> for every item,
+so the <i>item</i> production is exactly the <i>statement</i> production:
+</p>
+<pre>
+  module_root ::= { item }
+  item        ::= statement
+</pre>
+<p>
+On a parse failure the parser records an <tt>error[2000]</tt> node and skips
+tokens until a synchronizing one (<tt>;</tt>, <tt>}</tt>, <tt>fn</tt>,
+<tt>const</tt>, <tt>var</tt>, <tt>pub</tt>, <tt>test</tt>, or end of file),
+then keeps parsing, so one bad item does not hide the rest
+(<tt>parser.zig:258,1546-1553</tt>).
+</p>
+
+<h2>Declarations</h2>
+<pre>
+  declaration ::= var_decl | pub_decl | extern_decl | export_decl
+                | fn_decl | test_decl | container_decl
+
+  var_decl    ::= ( 'const' | 'var' ) ( IDENT | '_' ) [ ':' type ] [ '=' expr ] ';'
+
+  pub_decl    ::= 'pub' ( fn_decl | var_decl | test_decl | extern_decl | export_decl )
+  extern_decl ::= 'extern' [ STRING ] ( fn_decl | var_decl )
+  export_decl ::= 'export' ( fn_decl | var_decl )
+
+  test_decl   ::= 'test' [ STRING ] block
+
+  fn_decl     ::= 'fn' IDENT '(' param_list ')' [ ret ] ( ';' | block )
+  param_list  ::= [ param { ',' param } [ ',' ] ] [ '...' ]
+  param       ::= IDENT ':' type
+  ret         ::= ':' type
+                | type      ; colon omitted; only when the next token is not ';' or '{'
+                | epsilon   ; empty: the return type is void
+
+  container_decl    ::= struct_decl | enum_decl | union_decl
+  struct_decl       ::= 'struct' [ IDENT ] '{' [ struct_field { ',' struct_field } [ ',' ] ] '}'
+  struct_field      ::= IDENT ':' type
+  enum_decl         ::= 'enum' [ '(' type ')' ] [ IDENT ] '{' [ enum_field { ',' enum_field } [ ',' ] ] '}'
+  enum_field        ::= IDENT [ '=' expr ]
+  union_decl        ::= 'union' [ '(' 'enum' ')' ] [ IDENT ] '{' [ union_field { ',' union_field } [ ',' ] ] '}'
+  union_field       ::= IDENT [ ':' type ]
+</pre>
+<p>
+Notes on the declaration forms, all keyed to <tt>parser.zig</tt>:
+</p>
+<ul>
+<li><tt>const</tt> and <tt>var</tt> are the same production; <tt>const</tt>
+sets the immutable flag (<tt>parser.zig:1596-1633</tt>). A declaration may omit
+its type, its initializer, or both, but must end with <tt>;</tt>. The name may
+be <tt>_</tt>.</li>
+<li><tt>pub</tt> must be followed by one of <tt>fn</tt>, <tt>const</tt>,
+<tt>var</tt>, <tt>test</tt>, <tt>extern</tt>, or <tt>export</tt>; anything else
+is <tt>error[2000]</tt> &ldquo;expected fn/const/var after pub&rdquo;
+(<tt>parser.zig:1634-1645</tt>).</li>
+<li><tt>extern</tt> takes an optional calling-convention string. The only
+accepted values are <tt>"c"</tt>, <tt>"cdecl"</tt>, and <tt>"stdcall"</tt>; any
+other string is <tt>error[3045]</tt> &ldquo;unknown calling convention in
+`extern`&rdquo; (<tt>parser.zig:1651-1658,1665-1685</tt>). <tt>extern</tt> and
+<tt>export</tt> likewise require <tt>fn</tt>/<tt>const</tt>/<tt>var</tt>
+(<tt>parser.zig:1682,1692</tt>).</li>
+<li>A function parameter is always <tt>IDENT ':' type</tt>. The variadic
+<tt>...</tt> may appear only once and must be last; it sets the variadic flag
+and terminates the list (<tt>parser.zig:1709-1713</tt>).</li>
+<li>The return type's colon is optional: <tt>fn f() i32</tt> and
+<tt>fn f(): i32</tt> are the same. With neither a colon nor a type before
+<tt>;</tt> or <tt>{</tt>, the return is <tt>void</tt>
+(<tt>parser.zig:1736-1742</tt>).</li>
+<li>A container declared with <tt>container_decl</tt> may carry a name after
+the optional backing clause; a bare <tt>struct { ... }</tt> used as a
+<i>type</i> has no name (next section).</li>
+</ul>
+
+<h2>Types</h2>
+<pre>
+  type      ::= '*' ptrquals type
+              | '[' '*' ']' ptrquals type
+              | '[' ']' [ 'const' ] type
+              | '[' expr ']' type
+              | '?' type
+              | '!' type
+              | 'error' '{' [ IDENT { ',' IDENT } [ ',' ] ] '}' [ '!' type ]
+              | type_name '!' type
+              | 'extern' [ STRING ] 'fn' fnptr_params [ ret ]
+              | 'fn' fnptr_params [ ret ]
+              | 'struct' '{' struct_body '}'
+              | 'packed' 'struct' '{' struct_body '}'
+              | 'enum' [ '(' type ')' ] '{' [ enum_field { ',' enum_field } [ ',' ] ] '}'
+              | 'union' [ '(' 'enum' ')' ] '{' [ union_field { ',' union_field } [ ',' ] ] '}'
+              | 'packed' 'union' '{' [ union_field { ',' union_field } [ ',' ] ] '}'
+              | 'anytype'
+              | type_name
+
+  ptrquals  ::= { 'const' | 'volatile' }
+  type_name ::= IDENT { '.' IDENT }
+
+  fnptr_params ::= '(' [ fnptr_param { ',' fnptr_param } [ ',' ] ] ')'
+  fnptr_param  ::= type | IDENT ':' type
+
+  struct_body  ::= [ named_field { ',' named_field } [ ',' ] ]
+                 | [ tuple_field { ',' tuple_field } [ ',' ] ]
+  named_field  ::= IDENT ':' type
+  tuple_field  ::= type
+</pre>
+<p>
+The type forms correspond one-to-one to parser functions:
+<tt>parserParsePtrType</tt> (<tt>parser.zig:1164</tt>),
+<tt>parserParseBracketType</tt> (<tt>parser.zig:1175</tt>),
+<tt>parserParseOptionalType</tt> (<tt>parser.zig:1206</tt>),
+<tt>parserParseErrorUnionType</tt> (<tt>parser.zig:1214</tt>),
+<tt>parserParseErrorSetDecl</tt> (<tt>parser.zig:1289</tt>),
+<tt>parserParseExternFnType</tt> (<tt>parser.zig:1222</tt>),
+<tt>parserParseFnType</tt> (<tt>parser.zig:1244</tt>),
+<tt>parserParseStructType</tt> (<tt>parser.zig:1318</tt>),
+<tt>parserParseEnumType</tt> (<tt>parser.zig:1387</tt>),
+<tt>parserParseUnionType</tt> (<tt>parser.zig:1427</tt>), and
+<tt>parserParseTypeName</tt> (<tt>parser.zig:1483</tt>). The dispatch is
+<tt>parserParseType</tt> (<tt>parser.zig:1099</tt>).
+</p>
+<ul>
+<li><b>Pointers.</b> <tt>*T</tt> is a single-item pointer; <tt>[*]T</tt> is a
+many-item pointer. Both take a qualifier list of <tt>const</tt> and
+<tt>volatile</tt> in any order (<tt>*const volatile u8</tt> is legal;
+<tt>parser.zig:1148-1161</tt>). A qualifier may not follow <tt>[]</tt>: the
+slice production admits only <tt>const</tt> (<tt>parser.zig:1186-1196</tt>), so
+<tt>[]volatile T</tt> is a parse error.</li>
+<li><b>Arrays and slices.</b> <tt>[N]T</tt> parses its length as a full
+assignment-precedence expression, then <tt>]</tt>, then the element type. The
+inferred-length spelling <tt>[_]T</tt> is not a distinct production; <tt>_</tt>
+is parsed as an expression and the form is rejected later.</li>
+<li><b>Error sets and unions.</b> <tt>error { ... }</tt> is a set;
+<tt>error { ... } ! T</tt> and <tt>Name ! T</tt> are error unions
+(<tt>parser.zig:1107-1116,1137-1145,1294-1316</tt>).</li>
+<li><b>Function-pointer types.</b> A parameter may be a bare type or
+<tt>IDENT ':' type</tt>. The variadic <tt>...</tt> is rejected here with
+<tt>error[2000]</tt> &ldquo;varargs not allowed in function pointer types&rdquo;
+(<tt>parser.zig:1250-1256</tt>).</li>
+<li><b>Structs and tuples.</b> <tt>struct { name: T, ... }</tt> is a named
+struct; <tt>struct { T1, T2, ... }</tt> is a positional tuple <i>type</i>. The
+two kinds may not be mixed: the parser rejects a mixture with
+<tt>error[2000]</tt> &ldquo;struct fields must be all named or all positional
+(tuple)&rdquo; (<tt>parser.zig:1326-1369</tt>). A <tt>packed struct</tt> may not
+use positional tuple fields (<tt>parser.zig:1358-1361</tt>).</li>
+<li><b>Enums.</b> The backing type is optional and appears before the brace:
+<tt>enum(u8) { ... }</tt> (<tt>parser.zig:1390-1394</tt>).</li>
+<li><b>Unions.</b> <tt>union { ... }</tt> is bare, <tt>union(enum) { ... }</tt>
+is tagged, and <tt>packed union { ... }</tt> is packed. A tagged union field may
+omit its type (a naked tag, treated as <tt>void</tt>); a bare-union field may
+also omit it at parse time, and the resolver rejects that afterward
+(<tt>parser.zig:1427-1481</tt>). A packed union may not be tagged:
+<tt>packed union(enum)</tt> is <tt>error[2000]</tt> &ldquo;packed unions cannot
+be tagged (union(enum))&rdquo; (<tt>parser.zig:1437-1441</tt>).</li>
+<li><b><tt>packed</tt>.</b> The <tt>packed</tt> keyword must be followed by
+<tt>struct</tt> or <tt>union</tt>; otherwise <tt>error[2000]</tt>
+(<tt>parser.zig:1121-1128</tt>).</li>
+<li><b><tt>anytype</tt>.</b> The parser accepts <tt>anytype</tt> as a type leaf
+(<tt>parser.zig:1130-1136</tt>); it is the semantic analyzer that rejects it in
+every signature and type position with <tt>error[16]</tt> since Amendment A1
+(<tt>analyzer.zig:449,513</tt>).</li>
+</ul>
+
+<h2>Expressions</h2>
+<p>
+Expressions are parsed by precedence climbing. The precedence levels are the
+<tt>Prec</tt> enum (<tt>parser.zig:2185</tt>) and the operator-to-level map is
+<tt>getInfixInfo</tt> (<tt>parser.zig:2216</tt>). Higher binds tighter.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Level</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Name</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Operators</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Assoc.</b></th>
+</tr>
+<tr><td valign="top">1</td><td valign="top">assignment</td><td valign="top"><tt>= += -= *= /= %= &amp;= |= ^= &lt;&lt;= &gt;&gt;= +%= -%= *%= +|= -|= *|= &lt;&lt;|=</tt></td><td valign="top">right</td></tr>
+<tr><td valign="top">2</td><td valign="top">orelse</td><td valign="top"><tt>orelse</tt></td><td valign="top">right</td></tr>
+<tr><td valign="top">3</td><td valign="top">catch</td><td valign="top"><tt>catch</tt></td><td valign="top">right</td></tr>
+<tr><td valign="top">4</td><td valign="top">bool or</td><td valign="top"><tt>or</tt></td><td valign="top">left</td></tr>
+<tr><td valign="top">5</td><td valign="top">bool and</td><td valign="top"><tt>and</tt></td><td valign="top">left</td></tr>
+<tr><td valign="top">6</td><td valign="top">comparison</td><td valign="top"><tt>== != &lt; &lt;= &gt; &gt;=</tt></td><td valign="top">left</td></tr>
+<tr><td valign="top">7</td><td valign="top">bit or</td><td valign="top"><tt>|</tt></td><td valign="top">left</td></tr>
+<tr><td valign="top">8</td><td valign="top">bit xor</td><td valign="top"><tt>^</tt></td><td valign="top">left</td></tr>
+<tr><td valign="top">9</td><td valign="top">bit and</td><td valign="top"><tt>&amp;</tt></td><td valign="top">left</td></tr>
+<tr><td valign="top">10</td><td valign="top">shift</td><td valign="top"><tt>&lt;&lt; &gt;&gt; &lt;&lt;|</tt></td><td valign="top">left</td></tr>
+<tr><td valign="top">11</td><td valign="top">additive</td><td valign="top"><tt>+ - +% -% +| -|</tt></td><td valign="top">left</td></tr>
+<tr><td valign="top">12</td><td valign="top">multiply</td><td valign="top"><tt>* / % *% *|</tt></td><td valign="top">left</td></tr>
+<tr><td valign="top">13</td><td valign="top">prefix</td><td valign="top"><tt>- -% ! ~ &amp;</tt></td><td valign="top">&mdash;</td></tr>
+<tr><td valign="top">14</td><td valign="top">postfix</td><td valign="top">call, index, slice, field, deref, struct init</td><td valign="top">&mdash;</td></tr>
+</table>
+<p>
+The <tt>assignment</tt>, <tt>orelse</tt>, and <tt>catch</tt> levels are
+right-associative; the binary arithmetic, bit, shift, comparison, and logical
+levels are left-associative. The prefix operators and the postfix chain are not
+binary levels. <tt>catch</tt> and <tt>orelse</tt> are handled specially rather
+than as ordinary binary operators because each may take a capture and a block
+right-hand side (<tt>parser.zig:304-314,566-593</tt>).
+</p>
+<pre>
+  expr       ::= assignment
+
+  assignment ::= orelse [ assign_op assignment ]
+  orelse     ::= catch [ 'orelse' ( block | orelse ) ]
+  catch      ::= bool_or [ 'catch' [ '|' capture '|' ] ( block | catch ) ]
+  bool_or    ::= bool_and { 'or' bool_and }
+  bool_and   ::= comparison { 'and' comparison }
+  comparison ::= bit_or { cmp_op bit_or }
+  bit_or     ::= bit_xor { '|' bit_xor }
+  bit_xor    ::= bit_and { '^' bit_and }
+  bit_and    ::= shift { '&amp;' shift }
+  shift      ::= additive { shift_op additive }
+  additive   ::= multiply { add_op multiply }
+  multiply   ::= prefix { mul_op prefix }
+  prefix     ::= prefix_op prefix | postfix
+  postfix    ::= primary { postfix_op }
+
+  assign_op  ::= '=' | '+=' | '-=' | '*=' | '/=' | '%=' | '&amp;=' | '|=' | '^='
+               | '&lt;&lt;=' | '&gt;&gt;=' | '+%=' | '-%=' | '*%=' | '+|=' | '-|=' | '*|=' | '&lt;&lt;|='
+  cmp_op     ::= '==' | '!=' | '&lt;' | '&lt;=' | '&gt;' | '&gt;='
+  shift_op   ::= '&lt;&lt;' | '&gt;&gt;' | '&lt;&lt;|'
+  add_op     ::= '+' | '-' | '+%' | '-%' | '+|' | '-|'
+  mul_op     ::= '*' | '/' | '%' | '*%' | '*|'
+  prefix_op  ::= '-' | '-%' | '!' | '~' | '&amp;'
+
+  postfix_op ::= '.*'
+               | '.' ( IDENT | INT )
+               | '[' index_or_slice ']'
+               | '(' [ arg_list ] ')'
+               | '{' [ field_init_list ] '}'
+  index_or_slice    ::= expr | expr '..' [ expr ]
+  arg_list          ::= expr { ',' expr } [ ',' ]
+  field_init_list   ::= field_init { ',' field_init } [ ',' ]
+  field_init        ::= '.' IDENT '=' expr
+</pre>
+<p>
+The postfix chain is applied left to right
+(<tt>parserParsePostfixChain</tt>, <tt>parser.zig:460</tt>). The valid starts of
+a primary expression are:
+</p>
+<pre>
+  primary ::= INT | FLOAT | STRING | CHAR
+            | 'true' | 'false' | 'null' | 'undefined' | 'unreachable'
+            | '_'
+            | IDENT
+            | IDENT '!' type            ; error-union type in expression position
+            | IDENT ':' block           ; labeled block expression
+            | builtin_call
+            | '@cInclude' '(' STRING ')'
+            | 'error' '.' IDENT         ; error literal
+            | 'error' '{' ... '}' [ '!' type ]
+            | 'try' prefix
+            | '(' expr_orelse ')'
+            | anon_literal
+            | '.' IDENT                 ; enum literal
+            | if_expr
+            | switch_expr
+            | array_type [ array_init ]
+            | type                      ; any other type form in expression position
+            | 'return' [ expr ]
+            | 'break' [ ':' IDENT ]
+            | 'continue' [ ':' IDENT ]
+            | block
+
+  builtin_call ::= BUILTIN '(' [ builtin_arg { ',' builtin_arg } [ ',' ] ] ')'
+  builtin_arg  ::= type | expr
+
+  anon_literal ::= '.{' '}'                                      ; empty struct literal
+                 | '.{' field_init { ',' field_init } [ ',' ] '}' ; named struct literal
+                 | '.{' expr { ',' expr } [ ',' ] '}'             ; tuple literal
+
+  array_type   ::= '[' '*' ']' ptrquals type
+                 | '[' ']' [ 'const' ] type
+                 | '[' expr ']' type
+  array_init   ::= '{' [ expr { ',' expr } [ ',' ] ] '}'
+
+  if_expr     ::= 'if' '(' expr_orelse ')' [ capture ] expr [ 'else' expr ]
+  switch_expr ::= 'switch' '(' expr_orelse ')' '{' { switch_prong [ ',' ] } '}'
+  switch_prong ::= 'else' '=&gt;' [ capture ] prong_body
+                 | case_item { ',' case_item } '=&gt;' [ capture ] prong_body
+  case_item   ::= expr_assign [ ( '..' | '...' ) expr_assign ]
+  prong_body  ::= block | expr_assign
+
+  capture      ::= IDENT | '_'
+  expr_orelse  ::= expr restricted to precedence 2 and tighter (assignment excluded)
+  expr_assign  ::= expr restricted to precedence 1 and tighter
+</pre>
+<p>
+Where the parser deviates from a clean production:
+</p>
+<ul>
+<li><b>Assignment is not an expression in a condition.</b> Conditions and
+parenthesized expressions are parsed at the <tt>prec_orelse</tt> level, which
+excludes the <tt>assignment</tt> level, so <tt>if (a = 3)</tt>,
+<tt>while (a = 3)</tt>, <tt>switch (a = 3)</tt>, and <tt>(a = 3)</tt> fail at
+the closing delimiter with <tt>error[2000]</tt>
+(<tt>parser.zig:721-731,939-947,979-984,1776-1780,1854-1859</tt>).</li>
+<li><b>Expression depth.</b> The climber increments a depth counter and calls
+<tt>@panic("max expression recursion depth exceeded")</tt> past 12 nested
+expression levels (<tt>parser.zig:272-277</tt>). This is a hard compiler abort,
+not a diagnostic.</li>
+<li><b>Numeric members.</b> <tt>.0</tt>, <tt>.1</tt>, &hellip; are parsed as
+field accesses, but the integer token is canonicalized to its decimal text and
+interned rather than read as a string id
+(<tt>parser.zig:493-506</tt>). The resolver later decides whether the base is a
+tuple; a numeric member on a non-tuple is <tt>error[3060]</tt>.</li>
+<li><b>Call arguments and builtin arguments.</b> A call argument is an
+expression. A builtin argument is a type when it begins with <tt>*</tt>,
+<tt>[</tt>, <tt>?</tt>, <tt>!</tt>, <tt>fn</tt>, <tt>struct</tt>,
+<tt>enum</tt>, <tt>union</tt>, <tt>error</tt>, or <tt>anytype</tt>, and an
+expression otherwise (<tt>parser.zig:748-772</tt>).</li>
+</ul>
+
+<h2>Statements</h2>
+<pre>
+  statement ::= declaration
+              | if_stmt | while_stmt | for_stmt | switch_stmt
+              | return_stmt | break_stmt | continue_stmt
+              | defer_stmt | errdefer_stmt
+              | block
+              | ';' statement
+              | IDENT ':' statement
+              | expr_stmt
+
+  expr_stmt   ::= expr_assign [ ';' ]   ; the ';' may be omitted iff the next token is '}'
+
+  if_stmt     ::= 'if' '(' expr_orelse ')' [ capture ] ( block | expr_assign )
+                  [ 'else' ( if_stmt | block | expr_assign ) ]
+  while_stmt  ::= 'while' '(' expr_orelse ')' [ capture ] [ ':' '(' expr ')' ]
+                  ( block | expr_assign ) [ ';' ]
+  for_stmt    ::= 'for' '(' for_pattern ')' [ for_capture ] ( block | expr_assign ) [ ';' ]
+  for_pattern ::= expr [ '..' expr ]
+                | expr ',' expr '..' [ expr ]
+  for_capture ::= '|' capture [ ',' IDENT ] '|'
+
+  switch_stmt ::= switch_expr
+  return_stmt ::= 'return' [ expr ] ';'
+  break_stmt  ::= 'break' [ ':' IDENT ] ';'
+  continue_stmt ::= 'continue' [ ':' IDENT ] ';'
+  defer_stmt  ::= 'defer' statement
+  errdefer_stmt ::= 'errdefer' statement
+
+  block ::= '{' { statement } '}'
+</pre>
+<ul>
+<li><b>The dispatcher.</b> <tt>parserParseStatement</tt>
+(<tt>parser.zig:1501</tt>) chooses by the first token. A leading <tt>;</tt> is
+consumed recursively as an empty statement, so runs of semicolons are accepted
+(<tt>parser.zig:1524-1527</tt>). An identifier followed by <tt>:</tt> is a
+labeled statement; otherwise the statement is an expression statement
+(<tt>parser.zig:1528-1531</tt>).</li>
+<li><b>Statement body braces.</b> The bodies of <tt>if</tt>, <tt>while</tt>,
+<tt>for</tt>, <tt>defer</tt>, and <tt>errdefer</tt> may be a block or a single
+statement/expression; no synthetic braces are inserted by the parser. Only
+<tt>if</tt> requires an explicit <tt>else</tt> when it is used as a value
+(enforced by the analyzer, <tt>semantic_analyzer.zig:3640</tt>).</li>
+<li><b><tt>switch</tt> as a statement.</b> <tt>parserParseSwitchStmt</tt> wraps
+the switch expression in an expression statement
+(<tt>parser.zig:1981-1983</tt>), so a statement-position switch needs no
+semicolon; the mandatory <tt>else</tt> prong is a semantic rule
+(<tt>error[3068]</tt>, <tt>semantic_analyzer.zig:4164</tt>), not a parse rule.</li>
+<li><b>The semicolon before <tt>else</tt>.</b> The statement <tt>if</tt> form
+rejects a <tt>;</tt> that immediately precedes <tt>else</tt> with
+<tt>error[2000]</tt> &ldquo;';' not allowed before 'else' - use braces: if (cond)
+{ ... } else { ... }&rdquo; (<tt>parser.zig:1836-1843</tt>). Write the braces, or
+omit the semicolon as in <tt>if (a) return 1 else return 0;</tt>.</li>
+<li><b>Loop captures.</b> <tt>while</tt> and <tt>for</tt> accept a capture
+after the <tt>)</tt>; <tt>for</tt> allows a second, comma-separated index
+capture. The capture name may be <tt>_</tt>. The optional
+<tt>while ... : (expr)</tt> continue expression is parsed at the lowest
+precedence (<tt>parser.zig:1861-1875,1877-1883,1944-1961</tt>).</li>
+<li><b>For patterns.</b> <tt>for</tt> accepts a plain expression, a
+<tt>start..end</tt> range, or an explicit index range: an iterable, a comma,
+then <tt>start..</tt> or <tt>start..end</tt>. The index range builds a
+<tt>for_index_range</tt> node; no other multi-object <tt>for</tt> form is
+accepted (<tt>parser.zig:1906-1941</tt>).</li>
+<li><b><tt>defer</tt> and <tt>errdefer</tt>.</b> Both take a single
+<i>statement</i>, which is usually a block or an expression statement
+(<tt>parser.zig:2049-2062</tt>).</li>
+</ul>
+
+<h2>Constructs Z98 rejects</h2>
+<p>
+The following shapes are the ones a reader is most likely to try and be
+refused. Each row names the shape, the diagnostic, and the line that enforces
+it. Where the diagnostic is a semantic pass rather than the parser, that is
+said explicitly.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Rejected shape</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Result</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Enforced at</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>[*c]T</tt> (C-pointer many-item form)</td>
+<td valign="top"><tt>error[2000]</tt>: expected ']' but found identifier; only <tt>const</tt>/<tt>volatile</tt> qualify a many-pointer</td>
+<td valign="top"><tt>parser.zig:1177-1179</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>if (a = 3)</tt>, <tt>while (a = 3)</tt>, <tt>switch (a = 3)</tt>, <tt>(a = 3)</tt></td>
+<td valign="top"><tt>error[2000]</tt>: assignment is not an expression in a condition or a parenthesized expression</td>
+<td valign="top"><tt>parser.zig:726,946,983,1780,1858</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>if (c) return 1; else return 0;</tt></td>
+<td valign="top"><tt>error[2000]</tt>: ';' not allowed before 'else'</td>
+<td valign="top"><tt>parser.zig:1836-1843</tt></td>
+</tr>
+<tr>
+<td valign="top">Mixed struct fields, <tt>struct { a: i32, i32 }</tt></td>
+<td valign="top"><tt>error[2000]</tt>: struct fields must be all named or all positional (tuple)</td>
+<td valign="top"><tt>parser.zig:1338-1356</tt></td>
+</tr>
+<tr>
+<td valign="top">Positional tuple fields in a packed struct</td>
+<td valign="top"><tt>error[2000]</tt>: packed structs cannot have positional tuple fields</td>
+<td valign="top"><tt>parser.zig:1358-1361</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>packed union(enum)</tt></td>
+<td valign="top"><tt>error[2000]</tt>: packed unions cannot be tagged</td>
+<td valign="top"><tt>parser.zig:1437-1441</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>packed</tt> not followed by <tt>struct</tt>/<tt>union</tt></td>
+<td valign="top"><tt>error[2000]</tt>: expected 'struct' or 'union' after 'packed'</td>
+<td valign="top"><tt>parser.zig:447-449,1126-1128</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>fn(...) T</tt> function-pointer type</td>
+<td valign="top"><tt>error[2000]</tt>: varargs not allowed in function pointer types</td>
+<td valign="top"><tt>parser.zig:1251-1255</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>[]volatile T</tt> slice</td>
+<td valign="top"><tt>error[2000]</tt>: a slice qualifier may only be <tt>const</tt></td>
+<td valign="top"><tt>parser.zig:1186-1196</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>pub</tt> followed by anything but <tt>fn</tt>/<tt>const</tt>/<tt>var</tt>/<tt>test</tt>/<tt>extern</tt>/<tt>export</tt> (e.g. <tt>pub static var</tt>)</td>
+<td valign="top"><tt>error[2000]</tt>: expected fn/const/var after pub</td>
+<td valign="top"><tt>parser.zig:1634-1645</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>extern</tt>/<tt>export</tt> not followed by <tt>fn</tt>/<tt>const</tt>/<tt>var</tt></td>
+<td valign="top"><tt>error[2000]</tt>: expected fn/const/var after extern/export</td>
+<td valign="top"><tt>parser.zig:1682,1692</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>static var</tt>, <tt>anyerror</tt>, <tt>comptime</tt>, <tt>do</tt>, <tt>opaque</tt>, <tt>vector</tt></td>
+<td valign="top">not keywords; lexed as identifiers and refused in context (e.g. <tt>static var</tt> is <tt>error[2000]</tt> after <tt>pub</tt>)</td>
+<td valign="top"><tt>token.zig:149-192</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>anytype</tt> in a signature or type position</td>
+<td valign="top">parses, then <tt>error[16]</tt>: anytype not supported in Z98</td>
+<td valign="top"><tt>analyzer.zig:449,513</tt> (semantic)</td>
+</tr>
+<tr>
+<td valign="top"><tt>switch</tt> without an <tt>else</tt> prong</td>
+<td valign="top">parses, then <tt>error[3068]</tt>: switch must have an 'else' prong</td>
+<td valign="top"><tt>semantic_analyzer.zig:4164</tt> (semantic)</td>
+</tr>
+<tr>
+<td valign="top">Tuple type with an array element, <tt>struct { [2]i32, i32 }</tt></td>
+<td valign="top">parses, then <tt>error[3000]</tt>: tuple types with array elements are not supported</td>
+<td valign="top"><tt>type_resolver.zig:1517</tt> (semantic)</td>
+</tr>
+</table>
+<p>
+Two further boundaries are parser facts rather than diagnostics: the
+expression-nesting depth cap (12, then <tt>@panic</tt>,
+<tt>parser.zig:274</tt>), and the module-level recovery described above. There
+is no <tt>comptime</tt>, no generics, no <tt>@cImport</tt>, no value-producing
+labeled block, and no <tt>anyerror</tt> type in the grammar; those absences are
+the grammar, not omissions from it. See
+<a href="vol2-16-no-methods.html">Volume II, No methods, no generics, no
+comptime</a>, and the Limits page when it ships.
+</p>
+
+<h2>See also</h2>
+<p>
+<a href="vol2-02-types.html">Volume II, The type system</a> for the semantics
+behind these type forms; <a href="vol2-10-control-flow.html">Volume II, Control
+flow, in full</a> for the statement forms; <a href="vol4-15-builtins.html">the
+Builtins page</a> for the builtin names that appear as <tt>BUILTIN</tt>; and
+<a href="vol4-21-diagnostics.html">the Diagnostics page</a> for every code
+quoted here.
+</p>
+
+<p class="navbtns">
+<a href="vol4-00-title.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol4-15-builtins.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol4-00-title.html">Volume IV &mdash; Reference</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-15-builtins.html">Builtins</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
