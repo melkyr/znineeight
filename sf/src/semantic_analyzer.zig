@@ -3064,6 +3064,12 @@ fn resolveReturnStmt(self: *SemanticAnalyzer, node_idx: u32) void {
         pushExpectedType(self, self.current_fn_return);
         var ret_val = semanticAnalyzerResolveExpr(self, node.child_0);
         popExpectedType(self);
+        // A5-F: reject a TYPE VALUE referenced by name in a return
+        // (`return A;`), reusing the site's level-0 `error[3000]`.
+        if (self.current_fn_return != @intCast(u32, 0) and semanticAnalyzerExprIsTypeValue(self, node.child_0)) {
+            var rtv_msg: []const u8 = "type mismatch in return statement -- value type may not be compatible with the function return type";
+            semanticAnalyzerTypeMismatchReport(self, node.child_0, type_mod.TYPE_TYPE, self.current_fn_return, rtv_msg, false);
+        }
         if (self.current_fn_return != @intCast(u32, 0) and self.current_fn_return != type_mod.TYPE_VOID) {
 
             var t2f_nm: []const u8 = "T2F:C"; pal_mod.markerWriteInt(t2f_nm, node.child_0);
@@ -3307,6 +3313,12 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
             if (has_params != @intCast(u8, 0) and ai < @intCast(usize, pcount)) {
                 var carg_n = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai));
                 var carg_eff = errLitSrcType(self, carg_n, expected, dxc_at);
+                // A5-F: reject a TYPE VALUE referenced by name as a call
+                // argument (`f(A)`), reusing the site's level-0 `error[3000]`.
+                if (semanticAnalyzerExprIsTypeValue(self, carg_n)) {
+                    var cav_msg: []const u8 = "type mismatch in function argument -- argument type may not be compatible with the parameter type";
+                    semanticAnalyzerTypeMismatchReport(self, carg_n, type_mod.TYPE_TYPE, expected, cav_msg, false);
+                }
                 // FX3 (Volume II D6 extras): a value-aware f64/integer -> f32
                 // argument is accepted (and recorded) instead of rejected; an
                 // inexact comptime integer literal (an otherwise-assignable
@@ -3407,6 +3419,12 @@ fn semanticAnalyzerResolveFnCall(self: *SemanticAnalyzer, node_idx: u32) u32 {
         if (param_type == type_mod.TYPE_VOID) { if (arg_type != type_mod.TYPE_UNDEFINED) { hash_mod.u32ToU32MapPut(self.call_arg_types, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai)), arg_type); } }
         var carg_n = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, ai));
         var carg_eff = errLitSrcType(self, carg_n, param_type, arg_type);
+        // A5-F: reject a TYPE VALUE referenced by name as a call argument on
+        // the fn-value path, reusing the site's level-0 `error[3000]`.
+        if (semanticAnalyzerExprIsTypeValue(self, carg_n)) {
+            var cav_msg: []const u8 = "type mismatch in function argument -- argument type may not be compatible with the parameter type";
+            semanticAnalyzerTypeMismatchReport(self, carg_n, type_mod.TYPE_TYPE, param_type, cav_msg, false);
+        }
         // FX3 (Volume II D6 extras): value-aware f64/integer -> f32 argument
         // acceptance/reject, same rule as the direct-call path above.
         var carg_fst = semanticAnalyzerFloatNarrowStatus(self, carg_n, carg_eff, param_type);
@@ -4097,6 +4115,13 @@ fn semanticAnalyzerResolveAssign(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var rhs = semanticAnalyzerResolveExpr(self, node.child_1);
     popExpectedType(self);
     if (lhs == @intCast(u32, 0) or rhs == @intCast(u32, 0)) { var as0: []const u8 = "AS0"; pal_mod.markerWrite(as0); return type_mod.TYPE_VOID; }
+    // A5-F: reject a TYPE VALUE referenced by name on the RHS of an assignment
+    // (`x = A;`), reusing the site's level-0 `error[3000]`.
+    if (semanticAnalyzerExprIsTypeValue(self, node.child_1)) {
+        var asv_msg: []const u8 = "type mismatch in assignment -- internal type representations differ; generated code may be incorrect";
+        semanticAnalyzerTypeMismatchReport(self, node.child_1, type_mod.TYPE_TYPE, lhs, asv_msg, false);
+        return type_mod.TYPE_VOID;
+    }
     var eff_src = errLitSrcType(self, node.child_1, lhs, rhs);
     if (semanticAnalyzerMaybeDiagVolatileDrop(self, node.child_1, eff_src, lhs)) return type_mod.TYPE_VOID;
     if (semanticAnalyzerMaybeDiagConstDiscard(self, node.child_1, eff_src, lhs)) return type_mod.TYPE_VOID;
@@ -6430,6 +6455,25 @@ fn semanticAnalyzerTupleElemIsTypeValue(self: *SemanticAnalyzer, elem_idx: u32) 
     return false;
 }
 
+// A5-F: is an expression a TYPE VALUE referenced by name? A `type_alias`
+// symbol (or a builtin primitive name, or a `module.T` field) used in a value
+// position resolves to the aliased concrete type id, indistinguishable from a
+// real value of that type by the TypeId alone. This paren-transparent wrapper
+// over `semanticAnalyzerTupleElemIsTypeValue` lets the binding/value sites
+// detect the shape from the AST/symbol and reject it with the existing
+// level-0 `error[3000]`.
+fn semanticAnalyzerExprIsTypeValue(self: *SemanticAnalyzer, node_idx: u32) bool {
+    var idx = node_idx;
+    var guard: usize = @intCast(usize, 0);
+    while (guard < @intCast(usize, 8)) : (guard += @intCast(usize, 1)) {
+        if (idx == @intCast(u32, 0)) return false;
+        var n = ast_mod.astStoreNodeAt(self.store, idx);
+        if (n.kind == AstKind.paren_expr) { idx = n.child_0; continue; }
+        return semanticAnalyzerTupleElemIsTypeValue(self, idx);
+    }
+    return false;
+}
+
 // FB2 fix round 1 (Volume II): does a VOID-typed tuple element come from an
 // UNRESOLVED reference rather than a genuine void value? Only two shapes can
 // be transient here: a bare ident (paren-transparent), which is an
@@ -6703,6 +6747,26 @@ pub fn semanticAnalyzerResolveModuleVarDecl(self: *SemanticAnalyzer, decl_idx: u
     var it = semanticAnalyzerResolveExpr(self, decl.child_1);
     self.container_init_depth -= @intCast(u32, 1);
     popExpectedType(self);
+    // A5-F: reject a module-scope binding whose initializer is a TYPE VALUE
+    // referenced by name (`var x = A;` / `var x = i32;` / `var x = type;` /
+    // `const T = type;`). The resolved type id erases a `type_alias` to its
+    // underlying concrete type, so detect the initializer shape and reject
+    // with the site's existing level-0 `error[3000]`.
+    if (semanticAnalyzerExprIsTypeValue(self, decl.child_1)) {
+        var mvd_is_const = (decl.flags & @intCast(u8, 1)) == @intCast(u8, 0);
+        var mvd_reject: bool = !mvd_is_const;          // var x = A; / var x = i32; / var x = type;
+        if (mvd_is_const) {
+            var mvd_init_node = ast_mod.astStoreNodeAt(self.store, decl.child_1);
+            if (mvd_init_node.kind == AstKind.ident_expr and it == type_mod.TYPE_TYPE) mvd_reject = true; // const T = type;
+        }
+        if (mvd_reject) {
+            var mvd_dst: u32 = decl_type;
+            if (mvd_dst == type_mod.TYPE_UNDEFINED) mvd_dst = type_mod.TYPE_TYPE;
+            var mvd_msg: []const u8 = "type mismatch in variable declaration -- initialization type may not be compatible with declared type";
+            semanticAnalyzerTypeMismatchReport(self, decl.child_1, type_mod.TYPE_TYPE, mvd_dst, mvd_msg, true);
+            return it;
+        }
+    }
     // Task 4 fix (review Important 3): an UNANNOTATED module binding whose
     // initializer folds to an integer that does not fit the default i32
     // materialisation takes the value-based type, mirroring the function-local
