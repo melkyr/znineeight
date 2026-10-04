@@ -264,3 +264,28 @@ Zig 0.15.2 prints `present`. Silent wrong value. Page 10 makes no `?void` runtim
 - [ ] Seed rotation stays closeout-only (Task 26).
 
 **Sequence:** A4 runs after Task 15 (commit `efacc0c4`) and before Task 16.
+
+## Amendment A5 — type/alias value position must clean-reject (operator-ruled m1544)
+
+**Origin:** found while probing Volume IV page 11 (`aliases`); Task-16 review (F1). Operator ruling (m1538 option 1; m1544: reuse the existing diagnostic; include `const T = type` in the reject).
+
+**Defect (reviewer-verified, base fp `c1746347cbcdbb39385f325be20b9b6b`).** A type/alias value in a **value position** at module scope compiles rc 0 and emits a poison read:
+```zig
+const A = i32;
+var x = A;              // rc 0; emitted: int zT_1; zig_poison_fill(...); x = zT_1;
+```
+Zig 0.15.2 rejects (`variable of type 'type' must be const or comptime`). Local type values already clean-reject (`semantic_analyzer.zig:5811-5823`), so module-scope acceptance is inconsistent. The bare `const T = type;` shape is also in scope (m1544): it compiles rc 0 and `T` is unusable.
+
+### Task A5-I: read-only investigation
+- [ ] Reproduce all value-position shapes at module scope: `var x = A;` (alias), `var x = i32;` (builtin type), assignment `x = A;`, call arg `f(A)`, return `return A;`, and bare `const T = type;`. Confirm the local forms already reject.
+- [ ] Confirm the Zig 0.15.2 oracle rejection for each.
+- [ ] Root-cause in `sf/src/**`: why local type values clean-reject (`semantic_analyzer.zig:5811-5823`) but module scope is accepted; whether the module-scope var/const init path skips the type-value check.
+- [ ] Specify the minimal fix — reuse the existing raw level-0 `error[3000]` and its existing source/target notes (no new diagnostic code); reject at module scope and for `const T = type`. Blast radius (`sf/src`, `examples/z98`, `docs/sf/manuals/src`, `repro`, retired `examples/zig0`); fixtures `repro/mi_matrix/alias_value_reject_xmod` + `repro/alias_value_reject.z98`; verification plan.
+- [ ] Report `task-A5-I-report.md`; no `sf/src` edits; no commit.
+
+### Task A5-F: implement
+- [ ] Implement the minimal reject; add fixture + standalone; run the QUICK_REF gate battery verbatim (**STOP on unexpected movement**); update tech docs + QUICK_REF + EXPECTED_FAIL; record the moved fixed point; commit the fix.
+- [ ] Reword `docs/sf/manuals/en/vol4-11-aliases.html`: F1 value-position row now documents the clean reject; F2 header ("every type form is a legal alias target") corrected; F3 authority naming (`const_alias_prepass.zig` unwired) corrected.
+- [ ] Seed rotation stays closeout-only (Task 26).
+
+**Sequence:** A5 runs after Task 16 (commit `5db52869`) and before Task 17.
