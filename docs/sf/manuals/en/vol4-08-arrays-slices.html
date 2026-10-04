@@ -1,0 +1,664 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Arrays and Slices</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual array arrays slice slices fixed-size N inferred length sentinel len ptr many-item pointer pointer-to-array indexing bounds slicing ranges coercion const propagation decay string literal u8 3050 3062 3066 3067 3000 3002 for iteration">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol4-07-tuples.html">
+<link rel="next" href="vol4-15-builtins.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume IV &mdash; Reference</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+How to use the Reference <i>(planned)</i><br>
+<a href="vol4-01-grammar.html">The full grammar</a><br>
+<a href="vol4-02-types.html">Types</a><br>
+<a href="vol4-03-pointers.html">Pointers</a><br>
+<a href="vol4-04-structs.html">Structs</a><br>
+<a href="vol4-05-enums.html">Enums</a><br>
+<a href="vol4-06-unions.html">Unions</a><br>
+<a href="vol4-07-tuples.html">Tuples</a><br>
+<b>Arrays and slices</b><br>
+Errors <i>(planned)</i><br>
+Optionals <i>(planned)</i><br>
+Aliases <i>(planned)</i><br>
+Statements <i>(planned)</i><br>
+Control flow <i>(planned)</i><br>
+Error expressions <i>(planned)</i><br>
+<a href="vol4-15-builtins.html">Builtins</a><br>
+Async <i>(planned)</i><br>
+Memory <i>(planned)</i><br>
+<a href="vol4-18-stdlib.html">The standard library</a><br>
+<a href="vol4-19-pal.html">The PAL</a><br>
+<a href="vol4-20-markers.html">Markers</a><br>
+<a href="vol4-21-diagnostics.html">Diagnostics</a><br>
+<a href="vol4-22-cli.html">The command line</a><br>
+Limits <i>(planned)</i><br>
+<a href="vol4-24-html-style.html">HTML style</a><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Arrays and slices</h1>
+<p>
+An <b>array</b> is an aggregate whose length is part of its type:
+<tt>[N]T</tt> is exactly <tt>N</tt> values of type <tt>T</tt>, known at compile
+time. A <b>slice</b> is the runtime pair <tt>{ pointer, length }</tt> written
+<tt>[]T</tt>, so one parameter type can accept an array of any size. A
+<b>many-item pointer</b> <tt>[*]T</tt> is a pointer with no length, and a
+<b>pointer-to-array</b> <tt>*[N]T</tt> is a pointer whose pointee length is
+still in the type. This page is the lookup for the type syntax, the literals,
+indexing and bounds, slicing, <tt>.len</tt>/<tt>.ptr</tt>, the coercion and
+<tt>const</tt> rules, string literals, the operators, and <tt>for</tt>
+iteration.
+</p>
+<p>
+The authority is the parser bracket type
+(<tt>parserParseBracketType</tt> at <tt>sf/src/parser.zig:1175-1204</tt>), the
+single-item-pointer slice gate and the comptime index/slice-bound checks
+(<tt>sf/src/semantic_analyzer.zig:1052-1250</tt>), the array-size fold
+(<tt>sf/src/type_resolver.zig:2010-2060</tt>), and the emitted slice structure
+(<tt>emitSliceType</tt> at <tt>sf/src/c89_emit.zig:2383-2414</tt>). Every rule
+below was reproduced on the fixed compiler (md5
+<tt>7fc608358f4f6af5abab43e633d44f83</tt>); reused fixtures and samples are
+named where one exists.
+</p>
+
+<h2>Type syntax</h2>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Form</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Meaning</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>[N]T</tt></td>
+<td valign="top">Fixed-size array; <tt>N</tt> is a compile-time constant and is part of the type.</td>
+</tr>
+<tr>
+<td valign="top"><tt>[_]T</tt></td>
+<td valign="top">Inferred length; written on the array literal's type prefix (<tt>[_]i32{ ... }</tt>), not as a declaration type.</td>
+</tr>
+<tr>
+<td valign="top"><tt>[]T</tt>, <tt>[]const T</tt></td>
+<td valign="top">Slice: a pointer plus a runtime length; <tt>[]const T</tt> is the read-only view.</td>
+</tr>
+<tr>
+<td valign="top"><tt>[*]T</tt>, <tt>[*]const T</tt></td>
+<td valign="top">Many-item pointer: a pointer with no length.</td>
+</tr>
+<tr>
+<td valign="top"><tt>*[N]T</tt>, <tt>*const [N]T</tt></td>
+<td valign="top">Pointer whose pointee is a fixed-size array; the length stays in the type.</td>
+</tr>
+</table>
+<pre>
+var scores: [5]i32 = .{ 10, 20, 30, 40, 50 };   // fixed array
+var inferred = [_]i32{ 1, 2, 3 };               // [_] infers length 3
+var s: []i32 = scores;                          // slice: pointer + length
+const view: []const i32 = scores[0..];          // read-only slice
+const pa: *[5]i32 = &amp;scores;                    // pointer-to-array
+</pre>
+<p>
+<tt>N</tt> must be a compile-time constant. A non-constant size rejects level-0
+<tt>error[3050]</tt> <tt>array size is not a constant expression</tt> at the
+size expression; <tt>[_]T</tt> is exempt because its length comes from the
+literal.
+</p>
+<pre>
+var n: i32 = 4;
+var a: [n]i32 = undefined;
+// error[3050]: array size is not a constant expression
+</pre>
+
+<h2>Sentinel and volatile forms are not supported</h2>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Form</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Result (measured)</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>[N:0]T</tt> (sentinel-terminated array)</td>
+<td valign="top">Parse reject: level-0 <tt>error[2000]</tt> <tt>expected ']' but found ':'</tt> (plus <tt>unexpected token</tt>). Z98 has no sentinel array type; a string literal is typed <tt>*const [N]u8</tt>, not <tt>*const [N:0]u8</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>[]volatile T</tt></td>
+<td valign="top">Parse reject (<tt>error[2000]</tt>); use <tt>[*]volatile T</tt> for memory-mapped I/O (the spec's qualified-pointer scope).</td>
+</tr>
+</table>
+
+<h2>Array literals</h2>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Spelling</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Shape</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>.{ v1, v2, v3 }</tt></td>
+<td valign="top">Untyped positional literal; takes its element type from the surrounding array type.</td>
+</tr>
+<tr>
+<td valign="top"><tt>[N]T{ v1, v2, v3 }</tt></td>
+<td valign="top">Typed literal; the element type is spelled on the literal. Required when the literal sits inside a larger initializer.</td>
+</tr>
+<tr>
+<td valign="top"><tt>[_]T{ v1, v2, v3 }</tt></td>
+<td valign="top">Typed literal with the length inferred from the element count.</td>
+</tr>
+</table>
+<pre>
+var a: [3]i32 = .{ 1, 2, 3 };            // untyped
+var b: [3]u8 = [3]u8{ 1, 2, 3 };         // typed
+var c: [3]i32 = [_]i32{ 4, 5, 6 };       // inferred length, annotated array
+var d = [_]i32{ 7, 8, 9 };               // inferred array type (length 3)
+</pre>
+<p>
+The literal's count and element types are not hard-enforced against the
+declared array type. An element-count mismatch is accepted with a level-1
+<tt>warning[3000]</tt> <tt>type mismatch in variable declaration -- initialization
+type may not be compatible with declared type</tt> (with <tt>source: tuple</tt>
+and <tt>target: array</tt>); extra elements are ignored and a short literal
+leaves the remaining elements uninitialized. A non-conforming element type is
+the same warning.
+</p>
+<pre>
+var a: [3]i32 = .{ 1, 2 };
+// warning[3000]: ... source: tuple / target: array ; a[2] is uninitialized
+</pre>
+
+<h2>Slices: a pointer plus a length</h2>
+<p>
+A slice lowers to an 8-byte C struct, one 32-bit pointer plus one 32-bit
+length, so <tt>@sizeOf([]i32)</tt> and <tt>@sizeOf([]const u8)</tt> are both 8.
+An array's size is <tt>N</tt> times its element size.
+</p>
+<pre>
+typedef struct { int* ptr; unsigned int len; } zT_..._Slice_...;   // c89_emit.zig:2409
+</pre>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Base</b></th>
+<th align="left" bgcolor="#e8e0e0"><b><tt>.len</tt></b></th>
+<th align="left" bgcolor="#e8e0e0"><b><tt>.ptr</tt></b></th>
+</tr>
+<tr>
+<td valign="top"><tt>[N]T</tt></td>
+<td valign="top"><tt>usize</tt></td>
+<td valign="top">Reject <tt>error[3060]</tt> <tt>no field or member function named 'ptr' in array type</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>[]T</tt></td>
+<td valign="top"><tt>usize</tt></td>
+<td valign="top"><tt>[*]T</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>[]const T</tt></td>
+<td valign="top"><tt>usize</tt></td>
+<td valign="top"><tt>[*]const T</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>[*]T</tt></td>
+<td valign="top">Reject <tt>error[3000]</tt> <tt>many-item pointer has no field 'len'</tt></td>
+<td valign="top">n/a (already a many-item pointer)</td>
+</tr>
+<tr>
+<td valign="top"><tt>*[N]T</tt> / <tt>*const [N]T</tt></td>
+<td valign="top"><tt>N</tt> as <tt>usize</tt></td>
+<td valign="top">n/a</td>
+</tr>
+<tr>
+<td valign="top">struct/union array field</td>
+<td valign="top"><tt>usize</tt> (the declared length)</td>
+<td valign="top">n/a</td>
+</tr>
+</table>
+<pre>
+const hello: []const u8 = "z98 rocks";
+const bytes: [*]const u8 = hello.ptr;
+std.io.print("{s} len {} first {}\n", .{ hello, hello.len, bytes[0] });
+// z98 rocks len 9 first 122
+</pre>
+<p>
+The <tt>.len</tt> of an array field is pinned by
+<tt>repro/mi_matrix/len_array_field_xmod</tt> (local, by-value, by-pointer,
+global, union and nested positions all report 4).
+</p>
+
+<h2>Indexing and bounds</h2>
+<p>
+<tt>base[i]</tt> accepts a fixed array, a slice, a many-item pointer, a
+pointer-to-array, and a struct/union array field. For a slice the index is the
+pointer index, <tt>base.ptr[i]</tt>. A bare single-item pointer <tt>*T</tt>
+whose pointee is not an array does not support indexing.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Shape</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Result (measured)</b></th>
+</tr>
+<tr>
+<td valign="top">index a <tt>*T</tt>, <tt>p[0]</tt> or <tt>p[i]</tt></td>
+<td valign="top"><tt>error[3066]</tt> <tt>type '*i32' does not support indexing</tt>, note <tt>operand must be an array, slice, tuple, or vector</tt>.</td>
+</tr>
+<tr>
+<td valign="top">comptime index past the end, <tt>scores[5]</tt> on <tt>[5]i32</tt></td>
+<td valign="top"><tt>error[3062]</tt> <tt>index 5 outside array of length 5</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>scores[scores.len]</tt></td>
+<td valign="top">The same <tt>error[3062]</tt>; <tt>.len</tt> folds to the constant.</td>
+</tr>
+<tr>
+<td valign="top">negative comptime index, <tt>scores[-1]</tt></td>
+<td valign="top"><tt>error[3062]</tt> <tt>type 'usize' cannot represent integer value '-1'</tt>.</td>
+</tr>
+</table>
+<p>
+A runtime index is not a compile-time error. Under the default <tt>-fsafe</tt>
+it keeps a bounds check that traps (<tt>check_trap{kind=5}</tt>, exit status
+133); under <tt>-ffast</tt> the guard is removed and the access reads whatever
+is there.
+</p>
+<pre>
+var arr: [4]i32 = .{ 10, 20, 30, 40 };
+var i: usize = 7;
+std.io.print("{}\n", .{ arr[i] });   // default -fsafe: traps (exit 133)
+                                      // -ffast: runs, prints 40
+</pre>
+<p>
+The positive boundaries are pinned by
+<tt>repro/mi_matrix/stdlib_comptime_index_ok_xmod</tt>: in-range comptime
+indexes (a literal, a <tt>const</tt>, a <tt>*[5]i32</tt>, a struct field) and a
+runtime in-range index all compile and run.
+</p>
+
+<h2>Slicing</h2>
+<p>
+<tt>base[start..end]</tt> is inclusive of <tt>start</tt>, exclusive of
+<tt>end</tt>. The <tt>end</tt> may be omitted (<tt>base[start..]</tt>, running
+to the end of the source); the <tt>start</tt> may not be (<tt>base[..end]</tt>
+does not parse). <tt>base[len..]</tt> and <tt>base[len..len]</tt> are legal
+empty slices.
+</p>
+<pre>
+const mid: []i32 = scores[1..3];    // two elements
+const tail: []i32 = scores[3..];    // runs to the end
+const none: []i32 = scores[5..5];   // the empty slice
+var bad = scores[..2];
+// error[2000]: expected expression
+// error[2000]: unexpected token
+</pre>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Base</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Result type</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Rule</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>[N]T</tt> / <tt>[]T</tt></td>
+<td valign="top"><tt>[]T</tt> (<tt>[]const T</tt> when the base is const)</td>
+<td valign="top">Slicing a <tt>const</tt> array or a <tt>[]const T</tt> yields <tt>[]const T</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>*[N]T</tt> / <tt>*const [N]T</tt></td>
+<td valign="top"><tt>[]T</tt> / <tt>[]const T</tt></td>
+<td valign="top">Legal for every comptime or runtime bound; the omitted end is <tt>N</tt>; the pointer scales by ONE element (<tt>(T*)pa + start</tt>).</td>
+</tr>
+<tr>
+<td valign="top"><tt>[*]T</tt>, open end <tt>mp[s..]</tt></td>
+<td valign="top"><tt>[*]T</tt></td>
+<td valign="top">Accepted: the pointer offset by <tt>start</tt>, still with no length (Zig 0.15.2 parity). Constness carries.</td>
+</tr>
+<tr>
+<td valign="top"><tt>[*]T</tt>, closed <tt>mp[s..e]</tt></td>
+<td valign="top"><tt>[]T</tt></td>
+<td valign="top">A real slice; length <tt>e - s</tt>.</td>
+</tr>
+<tr>
+<td valign="top">single-item <tt>*T</tt></td>
+<td valign="top"><tt>*[0]T</tt> / <tt>*[1]T</tt></td>
+<td valign="top">Only <tt>p[0..0]</tt>, <tt>p[0..1]</tt>, <tt>p[1..1]</tt>. Any other bound is <tt>error[3067]</tt>.</td>
+</tr>
+</table>
+<pre>
+const pa: *[4]i32 = &amp;arr;
+const s1: []i32 = pa[1..3];
+const s2: []i32 = pa[2..];
+const s3: []i32 = pa[4..];
+pa.*[0] = 11;                        // index the dereferenced array
+// pa 1..3 -> len 2, [0] 20 ; pa.* -> index 0 is now 11
+</pre>
+<p>
+Comptime-known bounds on a fixed-length base are checked at compile time with
+<tt>error[3062]</tt>, matching Zig 0.15.2:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Shape (<tt>[4]i32</tt> base)</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Message (measured)</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>scores[1..5]</tt></td>
+<td valign="top"><tt>end index 5 out of bounds for array of length 4</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>scores[3..1]</tt></td>
+<td valign="top"><tt>start index 3 is larger than end index 1</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>scores[6..]</tt></td>
+<td valign="top"><tt>start index 6 is larger than end index 4</tt> (the open-ended effective end is the length)</td>
+</tr>
+<tr>
+<td valign="top"><tt>scores[-1..2]</tt></td>
+<td valign="top"><tt>type 'usize' cannot represent integer value '-1'</tt></td>
+</tr>
+</table>
+<p>
+A closed range whose present <tt>end</tt> is runtime (<tt>arr[7..ri]</tt>) is
+not compile-checked. The single-item-pointer rejects are:
+</p>
+<pre>
+var a = p[0..2];   // error[3067]: slice of single-item pointer must have bounds [0..0], [0..1], or [1..1]
+var b = p[0..];    // error[3067]: slice of single-item pointer must be bounded
+var c = p[0..n];   // error[3067]: unable to resolve comptime value
+                   // note: slice of single-item pointer must have comptime-known bounds
+</pre>
+
+<h3>Runtime bounds checks</h3>
+<p>
+Under the default <tt>-fsafe</tt>, a runtime-capable slice range traps the same
+way an index does: for <tt>base[start..end]</tt> the checks are
+<tt>start &lt;= end</tt> and, when the length is known, <tt>end &lt;= len</tt>;
+for <tt>base[start..]</tt> the check is <tt>start &lt;= len</tt>. A many-item
+pointer has no length, so only <tt>start &lt;= end</tt> applies. A bound that is
+a signed integer wider than <tt>usize</tt> also requires <tt>&gt;= 0</tt>.
+<tt>-ffast</tt> emits none of these guards. Compile-time-known bound pairs on a
+static-length base are already checked by <tt>error[3062]</tt> and emit no
+runtime guard.
+</p>
+<p>
+<b>Signed-bound residual.</b> A runtime equal-width signed bound is neither
+coerced nor rejected: <tt>var i: i32 = -1; var s: []i32 = arr[i..4];</tt>
+compiles rc 0 and bypasses the guards (under <tt>-fsafe</tt> it reads before
+the array). A literal or comptime-folded negative bound still rejects
+<tt>error[3062] type 'usize' cannot represent integer value '-1'</tt>.
+</p>
+
+<h2>Coercion and const correctness</h2>
+<p>
+The implicit coercions below are allowed at assignments to <tt>[*]T</tt> or
+<tt>[]T</tt> variables, at call arguments, and at returns; they are not allowed
+in arithmetic or comparisons. The rule is one line: a conversion may add
+<tt>const</tt>, never discard it.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Conversion</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Result</b></th>
+</tr>
+<tr>
+<td valign="top">mutable <tt>[N]T</tt> &rarr; <tt>[]T</tt> / <tt>[*]T</tt></td>
+<td valign="top">Allowed</td>
+</tr>
+<tr>
+<td valign="top"><tt>[]T</tt> &rarr; <tt>[]const T</tt> / <tt>[*]const T</tt></td>
+<td valign="top">Allowed</td>
+</tr>
+<tr>
+<td valign="top"><tt>[]T</tt> / <tt>[]const T</tt> &rarr; <tt>[*]T</tt> / <tt>[*]const T</tt></td>
+<td valign="top">Allowed (via <tt>.ptr</tt>)</td>
+</tr>
+<tr>
+<td valign="top"><tt>[]const T</tt> &rarr; <tt>[]T</tt> / <tt>[*]T</tt></td>
+<td valign="top"><tt>error[3000]</tt></td>
+</tr>
+<tr>
+<td valign="top">const-bound <tt>[N]T</tt> &rarr; <tt>[]T</tt> / <tt>[*]T</tt></td>
+<td valign="top"><tt>error[3000]</tt></td>
+</tr>
+<tr>
+<td valign="top">string literal <tt>"abc"</tt> &rarr; <tt>[]u8</tt> / <tt>[*]u8</tt> / <tt>[]u8</tt>-element</td>
+<td valign="top"><tt>error[3000]</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>&amp;constarr</tt> (<tt>*const [N]T</tt>) &rarr; <tt>[]T</tt> / <tt>[*]T</tt></td>
+<td valign="top"><tt>error[3000]</tt></td>
+</tr>
+<tr>
+<td valign="top">const aggregate's array field, <tt>cs.a[0..]</tt> / <tt>&amp;cs.a</tt> &rarr; mutable</td>
+<td valign="top"><tt>error[3000]</tt></td>
+</tr>
+</table>
+<p>
+Every forbidden conversion is the level-0 diagnostic
+<tt>error[3000]</tt> <tt>cannot implicitly discard 'const' qualifier</tt>,
+emitted at the site that would discard the qualifier; no C is emitted.
+</p>
+<pre>
+const ca: [3]i32 = [3]i32{ 1, 2, 3 };
+var s: []i32 = ca;        // error[3000]: cannot implicitly discard 'const' qualifier
+var p: [*]i32 = ca;       // error[3000]
+var q: []i32 = ca[0..];   // error[3000]
+var r: [*]i32 = &amp;ca;      // error[3000]
+</pre>
+<p>
+Propagation follows the decay through slicing: slicing a <tt>const</tt> array
+or a <tt>[]const T</tt> produces a <tt>[]const T</tt>, which then rejects at a
+mutable target. The same guarantee reaches an array through a field of a
+<tt>const</tt> aggregate (FX11): <tt>cs.a[0..]</tt> is <tt>[]const i32</tt> and
+<tt>&amp;cs.a</tt> is <tt>*const [3]i32</tt>, while a mutable aggregate's field
+keeps its mutability. An array-literal element whose declared element type is
+mutable may not take a const slice/string element (FX6):
+</p>
+<pre>
+const S = struct { a: [3]i32 };
+const cs: S = .{ .a = [3]i32{ 4, 5, 6 } };
+const ok1: []const i32 = cs.a[0..];       // accepted
+const ok2: *const [3]i32 = &amp;cs.a;         // accepted
+var bad1: []i32 = cs.a[0..];              // error[3000]
+var bad2: [*]i32 = &amp;cs.a;                 // error[3000]
+
+const c: []const i32 = &amp;.{ 1, 2, 3 };
+var arr: [2][]i32 = [2][]i32{ c, c };     // error[3000] at each element
+</pre>
+
+<h2>String literals</h2>
+<p>
+A string literal is a constant byte array: <tt>"hello"</tt> is typed
+<tt>*const [5]u8</tt> (a pointer to a fixed-size array, no sentinel). It
+coerces implicitly to the const byte views <tt>[]const u8</tt>,
+<tt>[*]const u8</tt>, and the legacy single-item pointer <tt>*const u8</tt>;
+the mutable forms reject <tt>error[3000]</tt>.
+</p>
+<pre>
+const hello: []const u8 = "z98 rocks";   // len 9
+const p: [*]const u8 = hello.ptr;        // many-item, const
+const q: *const [9]u8 = "z98 rocks";     // pointer-to-array form (q.len == 9)
+</pre>
+<p>
+The legacy <tt>*const u8</tt> binding is accepted without a diagnostic, but a
+single-item pointer does not support indexing: <tt>one[0]</tt> is
+<tt>error[3066]</tt>. Bind the literal to a slice and index that, or use
+<tt>one.*</tt> for the first byte.
+</p>
+<pre>
+const one: *const u8 = "hello";
+var bad = one[0];
+// error[3066]: type '*const u8' does not support indexing
+</pre>
+<p>
+Printing follows the byte view: <tt>{s}</tt> prints a <tt>[]u8</tt> or
+<tt>[]const u8</tt> as text and <tt>{c}</tt> prints one byte as its character.
+Plain <tt>{}</tt> on a slice is <tt>error[3013]</tt>; plain <tt>{}</tt> on an
+array is <tt>error[3063]</tt>.
+</p>
+
+<h2>Operators</h2>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Expression</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Result</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>a[i]</tt>, <tt>s[i]</tt>, <tt>p[i]</tt>, <tt>pa[i]</tt></td>
+<td valign="top">Element access (see indexing and bounds).</td>
+</tr>
+<tr>
+<td valign="top"><tt>a.len</tt>, <tt>s.len</tt>, <tt>pa.len</tt>, <tt>field.len</tt></td>
+<td valign="top"><tt>usize</tt>; a many-item pointer has no <tt>.len</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>s.ptr</tt> / <tt>cs.ptr</tt></td>
+<td valign="top"><tt>[*]T</tt> / <tt>[*]const T</tt>; an array value has no <tt>.ptr</tt> (<tt>error[3060]</tt>).</td>
+</tr>
+<tr>
+<td valign="top"><tt>a == b</tt>, <tt>a != b</tt> on two arrays</td>
+<td valign="top">Accepted; compares the two storage addresses, not the element contents. Two identically filled arrays compare <tt>false</tt>; an array compares <tt>true</tt> only against itself. In a <tt>bool</tt> context it behaves as a boolean; the comparison expression itself types as <tt>void</tt>, so binding it to an explicit <tt>bool</tt> emits <tt>warning[3000]</tt>.</td>
+</tr>
+<tr>
+<td valign="top">arithmetic (<tt>+</tt>, <tt>-</tt>, ...) on an array or slice</td>
+<td valign="top">Rejected: the result types <tt>void</tt> (<tt>error[3000]</tt> <tt>cannot declare variable of type void</tt>).</td>
+</tr>
+<tr>
+<td valign="top"><tt>==</tt>, <tt>!=</tt>, <tt>&lt;</tt>, ... on slices</td>
+<td valign="top">Not supported: the frontend accepts the comparison but the emitted C is invalid (<tt>invalid operands to binary !=</tt>). Compare <tt>.len</tt> and elements.</td>
+</tr>
+</table>
+
+<h2><tt>for</tt> iteration</h2>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Iterable / form</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Behavior</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>for (arr) |v|</tt>, <tt>for (slice) |v|</tt>, <tt>for (pa) |v|</tt></td>
+<td valign="top">Visits every element; a pointer-to-array auto-derefs and iterates the pointee array. A <tt>*[0]T</tt> iterates zero times.</td>
+</tr>
+<tr>
+<td valign="top"><tt>for (arr) |v, i|</tt></td>
+<td valign="top">The index capture is allowed without an explicit range; <tt>i</tt> runs <tt>0</tt>..<tt>len-1</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>for (arr, start..) |v, i|</tt></td>
+<td valign="top">Iterates every element; the capture is <tt>start + j</tt> (j = the 0-based count) and is not clamped.</td>
+</tr>
+<tr>
+<td valign="top"><tt>for (arr, start..end) |v, i|</tt></td>
+<td valign="top">Same, but <tt>end - start</tt> must equal the iterable's length; otherwise <tt>error[3000]</tt> <tt>non-matching for loop lengths: the index range and the iterable differ in length</tt>.</td>
+</tr>
+<tr>
+<td valign="top">explicit index range without an index capture</td>
+<td valign="top"><tt>error[3000]</tt> <tt>explicit index range requires an index capture ('|item, index|')</tt>.</td>
+</tr>
+<tr>
+<td valign="top">a range iterable (<tt>0..5</tt>)</td>
+<td valign="top">Iterated as a range of integers; the same list applies to the control-flow page.</td>
+</tr>
+</table>
+<pre>
+for (arr) |v| { }                 // every element
+for (arr) |v, i| { }              // index 0..len-1
+for (arr, 1..) |v, i| { }         // index 1..len
+for (arr, 0..arr.len) |v, i| { }  // explicit full range
+</pre>
+<p>
+These rules are pinned by <tt>repro/mi_matrix/stdlib_ptr_array_slice_ok_xmod</tt>
+(pointer-to-array iteration, open-ended many-item-pointer slices, and
+<tt>pa.*[i]</tt> reads/writes) and by the <tt>for</tt> forms in the same
+fixture's cross-module helper.
+</p>
+
+<h2>Limits and residuals</h2>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Shape</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Rule (measured)</b></th>
+</tr>
+<tr>
+<td valign="top">runtime signed slice bound, <tt>var i: i32 = -1; arr[i..4]</tt></td>
+<td valign="top">Accepted rc 0 and unguarded; under <tt>-fsafe</tt> it reads out of bounds. A literal or folded negative bound rejects <tt>error[3062]</tt>. Systemic pre-existing laxity, no fix scheduled.</td>
+</tr>
+<tr>
+<td valign="top">address of a const array's element, <tt>&amp;ca[0]</tt></td>
+<td valign="top">Still yields a mutable <tt>*i32</tt>, and a write through it reaches the storage, though <tt>ca[0] = 9</tt> rejects <tt>error[3002]</tt>. The aggregate-field form <tt>&amp;cs.a[i]</tt> carries the qualifier correctly; direct-binding residue, not scheduled.</td>
+</tr>
+<tr>
+<td valign="top">module-scope array from an untyped literal, <tt>var ga: [3]i32 = .{ 1, 2, 3 };</tt></td>
+<td valign="top">The untyped literal is typed as a tuple and the emitted C assigns it to a C array (<tt>gcc: assignment to expression with array type</tt>). Spell the element type (<tt>[3]i32{ ... }</tt>) at module scope or initialize locally. The struct-field <tt>.{ ... }</tt> variant is covered on the Volume II page.</td>
+</tr>
+<tr>
+<td valign="top"><tt>[_]T</tt> as a declaration type, <tt>var x: [_]i32 = ...</tt></td>
+<td valign="top">Not a declaration type. Write the length (<tt>[N]T</tt>) or infer from the literal (<tt>var x = [_]i32{ ... }</tt>).</td>
+</tr>
+<tr>
+<td valign="top"><tt>[N:0]T</tt> sentinel arrays / <tt>[]volatile T</tt></td>
+<td valign="top">Not supported (parse rejects); strings are <tt>*const [N]u8</tt>, and <tt>[]volatile T</tt> is spelled <tt>[*]volatile T</tt>.</td>
+</tr>
+<tr>
+<td valign="top">slice comparison, <tt>s == t</tt> / <tt>s != t</tt></td>
+<td valign="top">Frontend-accepted, emitted C invalid. Compare <tt>.len</tt> and elements.</td>
+</tr>
+</table>
+
+<h2>See also</h2>
+<p>
+<a href="vol4-03-pointers.html">Pointers</a> for the single-item, many-item and
+pointer-to-array forms and the <tt>error[3066]</tt>/<tt>error[3067]</tt> gate;
+<a href="vol4-04-structs.html">Structs</a> for array and slice fields and the
+layout model; <a href="vol4-07-tuples.html">Tuples</a> for the positional
+literal that the untyped <tt>.{ ... }</tt> form shares;
+<a href="vol4-01-grammar.html">The full grammar</a> for the bracket-type and
+slice-expression productions; <a href="vol4-21-diagnostics.html">Diagnostics</a>
+for <tt>error[2000]</tt>, <tt>error[3000]</tt>, <tt>error[3002]</tt>,
+<tt>error[3050]</tt>, <tt>error[3060]</tt>, <tt>error[3062]</tt>,
+<tt>error[3066]</tt>, <tt>error[3067]</tt>; and
+<a href="vol2-09-arrays-slices.html">Volume II, Arrays and Slices</a> for the
+teaching narrative and the runnable <tt>strings.z98</tt> sample.
+</p>
+
+<p class="navbtns">
+<a href="vol4-07-tuples.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol4-15-builtins.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol4-07-tuples.html">Tuples</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-15-builtins.html">Builtins</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
