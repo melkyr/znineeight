@@ -280,6 +280,13 @@ while <tt>@bitSizeOf</tt> reports the declared width; this matches
 and alignment to the outer layout like any other field.
 </p>
 <p>
+An empty struct <tt>struct {}</tt> has no fields, so the cursor stays at 0 and
+the min-1 rule gives it size <b>1</b> / align <b>1</b> (<tt>@bitSizeOf</tt> is
+8); the emitted C body is <tt>unsigned char _[1];</tt> so the built binary's
+layout agrees with the folded one. Nesting an empty struct as a field therefore
+advances the outer cursor by one byte.
+</p>
+<p>
 Worked for the two three-field examples and for the Volume II <tt>Sprite</tt>:
 </p>
 <table width="100%" border="1" cellpadding="4" cellspacing="0">

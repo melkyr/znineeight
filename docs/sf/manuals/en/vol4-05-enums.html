@@ -192,23 +192,20 @@ inferred <tt>Color</tt> and the <tt>u8</tt>-backed <tt>Code</tt> and prints
 </tr>
 </table>
 <p>
-The grammar and the gate both accept any unsigned width <tt>u1</tt>&hellip;<tt>u64</tt>,
-but on the current seed only the byte-multiple widths are reliable. A sub-byte
-backing (<tt>u1</tt>&hellip;<tt>u7</tt>) is a rough edge: an enum that uses one is
-rejected with a <b>spurious</b> <tt>error[3000]</tt> <tt>enum tag value does not
-fit the enum backing width</tt> when another sub-byte-backed enum with an
-explicit top-bit member is also present. Minimal reproduction on seed v90:
+The grammar and the gate accept any unsigned width <tt>u1</tt>&hellip;<tt>u64</tt>,
+including sub-byte widths (<tt>u1</tt>&hellip;<tt>u7</tt>). A sub-byte-backed
+enum measures as the declared width's carrier, and several such enums may
+coexist in one program; each is a distinct type with its own member set:
 </p>
 <pre>
-const Small = enum(u3) { A, B, C };     // member values 0, 1, 2 fit u3
-const Wide  = enum(u5) { X = 0, Y = 31 };
-// error[3000]: enum tag value does not fit the enum backing width
-//   (must fit 2^N - 1); no silent truncation   -- at Small
+const Small = enum(u3) { A, B, C };        // member values 0, 1, 2 fit u3
+const Wide  = enum(u5) { X = 0, Y = 31 };  // explicit top-bit member fits u5
+// both compile; Small measures 1/1, bitSize 3; Wide measures 1/1, bitSize 5
 </pre>
 <p>
-Use a byte-multiple backing (<tt>u8</tt>, <tt>u16</tt>, <tt>u32</tt>,
-<tt>u64</tt>) for portable code; this boundary is recorded for the compiler, not
-recommended.
+Every member value must still fit its declared width; a value that does not is
+a clean <tt>error[3000]</tt> (<tt>enum tag value does not fit the enum backing
+width (must fit 2^N - 1); no silent truncation</tt>).
 </p>
 
 <h2>Member values and auto-increment</h2>
