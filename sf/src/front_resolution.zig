@@ -189,9 +189,13 @@ fn resolveStmtTypesRec(ct: *FrontResCtx, module_id: u32, node_idx: u32, depth: u
     }
     if (node.kind == AstKind.array_init or node.kind == AstKind.struct_init or node.kind == AstKind.tuple_literal) {
         if (node.child_0 != 0) {
-            var rtype = resolveTypeExpr(ct, module_id, node.child_0, scope, source_file_id);
-            if (rtype != type_mod.TYPE_UNDEFINED) {
-                resolved_type_table.resolvedTypeTableSet(ct.resolved_types, node.child_0, rtype);
+            // Task A3-F: never resolve an aggregate literal's own inferred `[_]T`
+            // annotation as a concrete type; it is handled by the array-init path.
+            if (!type_resolver.typeResolverIsInferredLenArray(ct.store, ct.interner, node.child_0)) {
+                var rtype = resolveTypeExpr(ct, module_id, node.child_0, scope, source_file_id);
+                if (rtype != type_mod.TYPE_UNDEFINED) {
+                    resolved_type_table.resolvedTypeTableSet(ct.resolved_types, node.child_0, rtype);
+                }
             }
         }
     }

@@ -1,4 +1,50 @@
-# mi_matrix corpus — expected-fail manifest (v289 2026-10-04)
+# mi_matrix corpus — expected-fail manifest (v290 2026-10-04)
+
+## A3-F — `[_]T` outside the inferred-length positions clean-rejects (v289 -> v290, 2026-10-04)
+
+Volume IV Amendment A3 (operator m1500; investigation `task-A3-I-report.md`).
+`[_]T` (the inferred-length array form) is legal ONLY as the outer annotation of
+an array literal (`[_]T{...}` / `[N]T = [_]T{...}`); in every position requiring
+a concrete type the baseline compiled rc 0 and emitted invalid C (a local
+`var x: [_]i32 = .{1,2,3}` emitted `zT_1 = x;` -> gcc `'x' undeclared`; a struct
+field was dropped; a parameter degraded to C `int`; a module var became an
+anonymous tuple; a return became `void`; a bare alias leaked `TYPE_UNDEFINED`).
+
+**Fix.** New shared detector `typeResolverIsInferredLenArray`
+(`sf/src/type_resolver.zig`) identifies an `array_type` whose size child is the
+`_` ident. The `array_type` arm of `resolveTypeExprFull` no longer silently
+returns `TYPE_UNDEFINED` for `_`: it emits level-0 `error[3000]`
+`unable to infer array size` (Zig 0.15.2 oracle text) at the `_` span (per-node
+dedupe via `diagnosticCollectorMarkNodeOnce`), reusing the existing raw 3000
+slot (`ERR_3050_ARRAY_SIZE_NOT_CONSTANT` remains for the genuinely non-constant
+size). The kind-agnostic child-0 recursion (`type_resolver.zig`) is guarded so
+an aggregate literal's own `[_]T` annotation is never resolved as a type; the
+two allowed annotation sites are guarded in `front_resolution.zig`
+(`resolveStmtTypesRec`) and `semantic_analyzer.zig`
+(`semanticAnalyzerResolveArrayInit`), so `[_]T{...}`, `var a = [_]T{...}`,
+`var a: [3]T = [_]T{...}` and `[_][2]T{...}` stay rc 0. Nested inferred
+(`[2][_]T{...}`, `[_][_]T{...}`) rejects, matching Zig 0.15.2.
+
+**Fixtures.** `repro/mi_matrix/array_inferred_len_decl_reject_xmod`
+(`expected.rc` 2, `expected_error.txt` `3000 5`: struct field, param, return,
+bare alias, module var; classify GREEN) + standalone
+`repro/array_inferred_len_decl_reject.z98` (1 x `error[3000]`, the local-decl
+headline shape). `expected_error.txt` is force-added (`git add -f`; `.gitignore`
+ignores `*.txt`).
+
+**Corpus movement.** `-s0` classify 1090 = 922 OK / 56 GREEN / 112 FAIL ->
+**1091 = 922 OK / 57 GREEN / 112 FAIL / 0 ICE / 0 CRASH**; join-diff vs the base
+fp `7fc60835` over the 1091 common dirs is exactly the new reject fixture
+(`array_inferred_len_decl_reject_xmod` FAIL -> GREEN) — **zero pre-existing
+movers**. Seed v90 NOT rotated (closeout-only).
+
+**Gates (new fixed point `2794fe04e0828c95dd5c2c6fecdea362`).** Seed two-hop
+closure hop1 == hop2 with explicit `FIXED_POINT_MD5` gate; 4-MD5 emitted-C both
+modes **UNCHANGED 8/8**; legal-program emitted C byte-identical (only the
+nondeterministic `.zig1_*.tmp` spill files differ); stdlib **266 PASS / 0 FAIL**;
+example matrix **24/24**; `check_emit_support.sh` **7/7**;
+`verify_upgraded.sh` **CLOSEOUT OK**; self-emission **48 `.c` + 48 `.h` /
+0 PANIC**.
 
 ## A2-F — sub-byte enum backing + empty named-struct layout (v288 -> v289, 2026-10-04)
 

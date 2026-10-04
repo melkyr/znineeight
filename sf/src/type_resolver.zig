@@ -1756,6 +1756,23 @@ fn typeResolverCheckMemberVisibility(env: *TypeResolveEnv, node_idx: u32, name_i
     return false;
 }
 
+// Task A3-F (Amendment A3): an `array_type` node whose size child is the
+// inferred-length `_` ident. Such a type is legal ONLY as the outer annotation
+// of an array literal (`[_]T{...}` / `[N]T = [_]T{...}`); everywhere a concrete
+// type is required it must clean-reject (`error[3000] unable to infer array
+// size`, Zig 0.15.2 oracle text).
+pub fn typeResolverIsInferredLenArray(store: *AstStore, interner: *StringInterner, node_idx: u32) bool {
+    if (node_idx == @intCast(u32, 0)) return false;
+    var nd = ast_mod.astStoreNodeAt(store, node_idx);
+    if (nd.kind != AstKind.array_type) return false;
+    if (nd.child_1 == @intCast(u32, 0)) return false;
+    var sz = ast_mod.astStoreNodeAt(store, nd.child_1);
+    if (sz.kind != AstKind.ident_expr) return false;
+    var nm = ast_mod.astStoreIdentifier(store, nd.child_1);
+    var tx = interner_mod.stringInternerGet(interner, nm);
+    return tx.len == @intCast(usize, 1) and tx[0] == @intCast(u8, '_');
+}
+
 pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type_mod.TypeId {
     if (depth > @intCast(u32, 16)) return type_mod.TYPE_UNDEFINED;
     var node = ast_mod.astStoreNodeAt(env.store, node_idx);
@@ -1952,6 +1969,11 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
         return type_mod.typeRegistryGetOrCreatePtr(env.typereg, fnt_tid, false);
     }
     if (node.child_0 != 0) {
+        // Task A3-F: an aggregate literal's own `[_]T` annotation is not a
+        // concrete type; do not recurse into it as if the init node were a type.
+        if ((node.kind == AstKind.array_init or node.kind == AstKind.struct_init or node.kind == AstKind.tuple_literal) and typeResolverIsInferredLenArray(env.store, env.interner, node.child_0)) {
+            return type_mod.TYPE_UNDEFINED;
+        }
         var child_type = resolveTypeExprFull(env, node.child_0, depth + @intCast(u32, 1));
         if (child_type == type_mod.TYPE_UNDEFINED) return type_mod.TYPE_UNDEFINED;
         if (node.kind == AstKind.ptr_type or node.kind == AstKind.many_ptr_type) {
@@ -2034,18 +2056,30 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
                     else { var am: []const u8 = "a"; pal_mod.markerWrite(am); }
                     return at;
                 }
-                // Task 2c-F: the size expression could not be const-folded.
-                // Emit a hard error (deduped per node) instead of silently
-                // returning TYPE_UNDEFINED and letting invalid C be emitted
-                // downstream. `[_]T` (inferred length) is handled by the
-                // array-init path, not here, so it is never an error.
+                // Task 2c-F / Task A3-F: the size expression could not be
+                // const-folded. Emit a hard error (deduped per node) instead of
+                // silently returning TYPE_UNDEFINED and letting invalid C be
+                // emitted downstream. The inferred-length `_` reaching this arm
+                // means the type was used where a concrete type is required
+                // (the allowed literal/initializer annotation sites are guarded
+                // before recursion), so reject it exactly as Zig 0.15.2 does.
                 var sz_is_inferred: bool = false;
                 if (sz_node.kind == AstKind.ident_expr) {
                     var sz_name = ast_mod.astStoreIdentifier(env.store, node.child_1);
                     var sz_text = interner_mod.stringInternerGet(env.interner, sz_name);
                     if (sz_text.len == @intCast(usize, 1) and sz_text[0] == @intCast(u8, '_')) { sz_is_inferred = true; }
                 }
-                if (!sz_is_inferred) {
+                if (sz_is_inferred) {
+                    if (env.diag) |dg| {
+                        if (diag_mod.diagnosticCollectorMarkNodeOnce(dg, node_idx)) {
+                            var ail_msg: []const u8 = "unable to infer array size";
+                            _ = diag_mod.diagnosticCollectorAdd(dg, @intCast(u8, 0),
+                                @intCast(u16, 3000),
+                                env.source_file_id, sz_node.span_start,
+                                sz_node.span_start + @intCast(u32, sz_node.span_len), ail_msg);
+                        }
+                    }
+                } else {
                     if (env.diag) |dg| {
                         if (diag_mod.diagnosticCollectorMarkNodeOnce(dg, node_idx)) {
                             var asn_msg: []const u8 = "array size is not a constant expression";

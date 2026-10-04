@@ -330,6 +330,28 @@ fixed point (moving point hop1 `7fc608358f4f6af5abab43e633d44f83` == hop2,
 explicit `FIXED_POINT_MD5` gate) is **`7fc608358f4f6af5abab43e633d44f83`**; seed
 v90 NOT rotated.
 
+A3-F (2026-10-04; Volume IV Amendment A3, operator m1500) makes `[_]T` (the
+inferred-length array form) a clean level-0 `error[3000]`
+(`unable to infer array size`, Zig 0.15.2 oracle text, span on the `_`) wherever
+a concrete type is required — a function-local/module declaration, a struct
+field, a parameter, a return type, an `@as`/cast target, a bare alias, or a
+nested inferred element (`[2][_]T{...}` / `[_][_]T{...}`). New shared detector
+`typeResolverIsInferredLenArray` (`sf/src/type_resolver.zig`); the `array_type`
+arm no longer silently returns `TYPE_UNDEFINED` for `_` and the aggregate-literal
+child-0 recursion is guarded; the three allowed literal/initializer sites are
+guarded in `type_resolver.zig`, `front_resolution.zig` and
+`semanticAnalyzerResolveArrayInit`. `[_]T{...}` / `[N]T = [_]T{...}` /
+`[_][2]T{...}` stay rc 0. Fixtures
+`repro/mi_matrix/array_inferred_len_decl_reject_xmod` (`3000 5`) + standalone
+`repro/array_inferred_len_decl_reject.z98` (`3000 1`). All 8 emitted-C pins stay
+**UNCHANGED 8/8** both modes; example matrix 24/24; stdlib **266 PASS / 0 FAIL**;
+emit 7/7; `verify_upgraded.sh` CLOSEOUT OK; self-emission 48 `.c` + 48 `.h` /
+0 PANIC; corpus `-s0` **1091 = 922 OK / 57 GREEN / 112 FAIL / 0 ICE / 0 CRASH**
+(the only mover is the new reject fixture FAIL -> GREEN; zero pre-existing
+movers); the new fixed point (moving point hop1 == hop2, explicit
+`FIXED_POINT_MD5` gate) is **`2794fe04e0828c95dd5c2c6fecdea362`**; seed v90 NOT
+rotated.
+
 - Self-consistency gate: compare current zig1 `--dump-c89` against a pre-captured reference .c file. If the reference .c is outdated (intentional baseline change), re-capture via `cp /tmp/new.c /tmp/ref.c`. Never compare against parent-zig1 output directly — parent builds may fail silently.
 - Do **NOT** compare `zig1 --dump-c89` output against `zig0`'s C output. `zig0` emits a legacy bootstrap format that is byte-level incompatible with zig1.
 

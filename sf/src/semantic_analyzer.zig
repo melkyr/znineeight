@@ -6608,7 +6608,7 @@ fn semanticAnalyzerResolveArrayInit(self: *SemanticAnalyzer, node_idx: u32) u32 
         // inferring u32 from its integer elements (which mis-sizes the rows).
         if (annot_tid == @intCast(u32, type_mod.TYPE_UNDEFINED)) {
             var ann_kind_node = ast_mod.astStoreNodeAt(self.store, node.child_0);
-            if (ann_kind_node.kind == AstKind.array_type) {
+            if (ann_kind_node.kind == AstKind.array_type and !type_resolver.typeResolverIsInferredLenArray(self.store, self.interner, node.child_0)) {
                 var tre_env0 = type_resolver.TypeResolveEnv{ .store = self.store, .typereg = self.registry, .symbol_reg = self.symbols, .interner = self.interner, .module_id = self.module_id, .diag = self.diag, .local_consts = &self.local_consts, .local_types = &self.local_types, .source_file_id = self.source_file_id };
                 var at0 = type_resolver.resolveTypeExprFull(&tre_env0, node.child_0, @intCast(u32, 0));
                 if (at0 != @intCast(u32, type_mod.TYPE_UNDEFINED)) {
