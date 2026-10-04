@@ -343,3 +343,29 @@ Zig 0.15.2 rejects (`use of undeclared identifier 'v'`) — the capture is scope
 - [ ] Seed rotation stays closeout-only (Task 26).
 
 **Sequence (m1596 deferral):** A7 follows A6 at the **end of the volume** — run **A7-I → (A7-M if needed) → A7-F after A6-F and before Task 26 closeout**. Page 13's capture-scope reword is assigned to A7-F; the current acceptance is a collected edge-case defect.
+
+## Amendment A8 — `if`/`while` error-union capture must bind the payload and accept `else |e|` (operator-ruled m1617)
+
+**Origin:** found while authoring Volume IV page 14 (`error-expressions`); Task-19 implementer STOP. Operator ruling (m1617 option 1): open a scoped amendment **deferred to the end of the volume**, and author page 14 against the assumed final behavior.
+
+**Defect (implementer-verified, base fp `821481e69df63fc0cf69176fdaaf9dd9`).** Error-union capture in condition position is accepted but wrong:
+```zig
+if (eu) |v| { use(v); } else |e| { use(e); }
+```
+`if (eu) |v|` / `while (eu) |v|` compile rc 0 but the capture binds the **whole error union** (not the success payload), so the emitted C fails gcc (`used struct type value where scalar is required`). The `else |e|` form is `error[2000]: expected expression`. Loci: `semanticAnalyzerCaptureType` (`sf/src/semantic_analyzer.zig:635`) and `bindOptionalCapture` (`sf/src/lower.zig:3676`). Zig 0.15.2 accepts and binds the payload / error correctly. Everything else on page 14 reproduces (`try`, `catch`/`|err|`, `orelse`, `if (opt) |v|`, and diagnostics 3075/3016/3058/3059/3015/3002).
+
+### Task A8-I: read-only investigation
+- [ ] Reproduce at fp `821481e6…` for `if`/`while` error-union captures and the `else |e|` form; confirm the Zig 0.15.2 acceptance and payload/error binding.
+- [ ] Root-cause in `sf/src/semantic_analyzer.zig` / `sf/src/lower.zig`: why the capture binds the whole EU (`semanticAnalyzerCaptureType` `:635`, `bindOptionalCapture` `:3676`), and why `else |e|` is a parse reject; specify the minimal fix (payload binding on the success path, error binding on the `else |e|` path; `while (eu)` loop conditions per Zig), or a documented clean reject if full support is infeasible.
+- [ ] Blast radius (`sf/src`, corpus, `examples/z98`, `docs/sf/manuals/src/**`, `repro/**`, `examples/zig0/**`); fixtures `repro/mi_matrix/eu_capture_reject_xmod` (or `_ok` if implemented) + standalone; verification plan (Zig oracle, corpus classify join-diff, 4-MD5, stdlib, example matrix, self-emission).
+- [ ] Report `task-A8-I-report.md`; no `sf/src` edits; no commit.
+
+### Task A8-M: migration (only if A8-I finds in-tree reliance)
+- [ ] Find/migrate any program relying on the current EU-capture shape; record the census; report `task-A8-M-report.md`; no `sf/src` edits; no commit.
+
+### Task A8-F: implement
+- [ ] Implement the minimal fix (or the ruled clean reject); add fixture + standalone; run the QUICK_REF gate battery verbatim (**STOP on unexpected movement**); update tech docs + QUICK_REF + EXPECTED_FAIL; record the moved fixed point; commit.
+- [ ] Reword `docs/sf/manuals/en/vol4-14-error-expressions.html`: the error-union capture binds the payload (and `else |e|` the error) per the landed behavior.
+- [ ] Seed rotation stays closeout-only (Task 26).
+
+**Sequence (m1617 deferral):** A8 follows A6/A7 at the **end of the volume** — run **A8-I → (A8-M if needed) → A8-F after A7-F and before Task 26 closeout**. Page 14's error-union-capture reword is assigned to A8-F; Task 19 authors the page against the assumed final behavior.
