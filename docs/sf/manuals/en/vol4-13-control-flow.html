@@ -1,0 +1,486 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Control flow</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual control flow if else while for switch capture break continue labels labeled block range prong mandatory else index range exhaustive unreachable 3057 3058 3059 3068 3071 3000 3001 3002 2000">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol4-12-statements.html">
+<link rel="next" href="vol4-15-builtins.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume IV &mdash; Reference</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+How to use the Reference <i>(planned)</i><br>
+<a href="vol4-01-grammar.html">The full grammar</a><br>
+<a href="vol4-02-types.html">Types</a><br>
+<a href="vol4-03-pointers.html">Pointers</a><br>
+<a href="vol4-04-structs.html">Structs</a><br>
+<a href="vol4-05-enums.html">Enums</a><br>
+<a href="vol4-06-unions.html">Unions</a><br>
+<a href="vol4-07-tuples.html">Tuples</a><br>
+<a href="vol4-08-arrays-slices.html">Arrays and slices</a><br>
+<a href="vol4-09-errors.html">Errors</a><br>
+<a href="vol4-10-optionals.html">Optionals</a><br>
+<a href="vol4-11-aliases.html">Aliases</a><br>
+<a href="vol4-12-statements.html">Statements</a><br>
+<b>Control flow</b><br>
+Error expressions <i>(planned)</i><br>
+<a href="vol4-15-builtins.html">Builtins</a><br>
+Async <i>(planned)</i><br>
+Memory <i>(planned)</i><br>
+<a href="vol4-18-stdlib.html">The standard library</a><br>
+<a href="vol4-19-pal.html">The PAL</a><br>
+<a href="vol4-20-markers.html">Markers</a><br>
+<a href="vol4-21-diagnostics.html">Diagnostics</a><br>
+<a href="vol4-22-cli.html">The command line</a><br>
+Limits <i>(planned)</i><br>
+<a href="vol4-24-html-style.html">HTML style</a><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Control flow</h1>
+<p>
+<b>Control flow</b> is the set of statement forms that choose, repeat, or
+dispatch: <tt>if</tt>/<tt>else</tt>, <tt>while</tt>, <tt>for</tt>,
+<tt>switch</tt>, the labels and the <tt>break</tt>/<tt>continue</tt> transfers
+that target them. This page is the lookup for each form, its captures, the
+mandatory <tt>switch</tt> <tt>else</tt>, and the diagnostics that bound them.
+</p>
+<p>
+Authority: the spelling is <tt>docs/reference/Language_Spec_Z98.md</tt>
+&sect;3.1&ndash;&sect;3.2. The parser entries are <tt>parserParseIfStmt</tt>
+(<tt>parser.zig:1776</tt>), <tt>parserParseWhileStmt</tt> (<tt>:1854</tt>),
+<tt>parserParseForStmt</tt> (<tt>:1906</tt>), <tt>parserParseSwitchExpr</tt>
+(<tt>:979</tt>), <tt>parserParseLabeledStmt</tt> (<tt>:1573</tt>),
+<tt>parserParseBreakExpr</tt> (<tt>:2000</tt>), and
+<tt>parserParseContinueExpr</tt> (<tt>:2017</tt>). The semantic rules are
+<tt>semanticAnalyzerReportSwitchWithoutElse</tt>
+(<tt>semantic_analyzer.zig:4185</tt>), <tt>semanticAnalyzerCheckConditionType</tt>
+(<tt>:5481</tt>), <tt>semanticAnalyzerCaptureType</tt> (<tt>:635</tt>),
+<tt>semanticAnalyzerResolveForHeader</tt> (<tt>:5631</tt>),
+<tt>semanticAnalyzerResolveWhileHeader</tt> (<tt>:5705</tt>), and
+<tt>semanticAnalyzerReportSwitchCaseQualifier</tt> (<tt>:4200</tt>); the
+transfers lower at <tt>lower.zig:8342</tt> (<tt>break</tt>) and <tt>:8367</tt>
+(<tt>continue</tt>). Every rule below was reproduced on the fixed compiler
+(md5 <tt>821481e69df63fc0cf69176fdaaf9dd9</tt>); reused
+<tt>repro/mi_matrix/*</tt> fixtures and
+<tt>docs/sf/manuals/src/vol2/control.z98</tt> are named where one exists.
+</p>
+
+<h2><tt>if</tt>: statement and expression</h2>
+<p>
+The <tt>if</tt> statement runs one arm on a <tt>bool</tt> condition; braces are
+optional and a single-statement body is normalized into a synthetic block. The
+<tt>if</tt> expression yields a value and needs both arms.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Form</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Rule (measured)</b></th>
+</tr>
+<tr><td valign="top"><tt>if (cond) statement</tt><br><tt>if (cond) statement else statement</tt></td><td valign="top">Statement form; braces optional; the body may itself be an <tt>if</tt>.</td></tr>
+<tr><td valign="top"><tt>if (cond) a else b</tt></td><td valign="top">Expression form; braces not required; used as a value, an <tt>else</tt> is required.</td></tr>
+<tr><td valign="top"><tt>if (cond) statement; else ...</tt></td><td valign="top"><tt>error[2000]</tt> <tt>';' not allowed before 'else' - use braces: if (cond) { ... } else { ... }</tt>. Omit the semicolon, or brace both arms.</td></tr>
+<tr><td valign="top"><tt>if (non-bool)</tt> (no capture)</td><td valign="top"><tt>error[3058]</tt> <tt>condition must be of type 'bool'</tt>.</td></tr>
+<tr><td valign="top"><tt>if (opt) |v| ...</tt></td><td valign="top">Capture form; binds the payload on the present branch. The <tt>else</tt> arm sees the absent case.</td></tr>
+<tr><td valign="top"><tt>if (x) |v| ...</tt>, <tt>x</tt> not optional</td><td valign="top"><tt>error[3058]</tt> <tt>capture condition must be an optional or error union type</tt>.</td></tr>
+<tr><td valign="top"><tt>value = if (cond) a;</tt></td><td valign="top"><tt>error[3059]</tt> <tt>if expression without 'else' cannot be used as a value (its type is 'void')</tt>, unless the condition is comptime-known true.</td></tr>
+</table>
+<pre>
+fn classify(value: i32) i32 {
+    if (value &lt; 0) return -1;             // braces omitted
+    if (value == 0) return 0;
+    return 1;
+}
+
+var n: i32 = 7;
+if (n &gt; 5) n = 8 else n = 9;              // brace-less, no ';' before else
+const kind: i32 = if (n == 8) 1 else 2;   // if expression
+
+var maybe: ?i32 = 5;
+if (maybe) |v| {                          // optional capture
+    std.io.print("capture {}\n", .{v});
+} else {
+    std.io.print("capture none\n", .{});
+}
+const fallback: i32 = if (maybe) |v| v else -1;   // capture in expression
+</pre>
+<p>
+The value <tt>if</tt> merges the two arm types; a non-<tt>void</tt> arm with no
+<tt>else</tt> is the <tt>error[3059]</tt> above. A capture condition is an
+optional or an error union; a plain <tt>bool</tt> is written without bars. The
+error half of a capture, <tt>else |err|</tt>, does not parse at all
+(<tt>error[2000] expected expression</tt>) &mdash; error unions are the
+Error expressions page's subject (planned).
+</p>
+
+<h2><tt>while</tt>: condition, continue-expression, capture</h2>
+<p>
+<tt>while (cond) : (iter) body</tt> tests <tt>cond</tt>, runs the body, then
+evaluates <tt>iter</tt> before testing <tt>cond</tt> again. Braces are optional
+and the continue-expression is optional.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Form</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Rule (measured)</b></th>
+</tr>
+<tr><td valign="top"><tt>while (cond) body</tt></td><td valign="top">Plain loop; the condition must be <tt>bool</tt>.</td></tr>
+<tr><td valign="top"><tt>while (cond) : (iter) body</tt></td><td valign="top"><tt>iter</tt> runs after the body on each iteration, before the condition is re-tested; <tt>continue</tt> still reaches it.</td></tr>
+<tr><td valign="top"><tt>while (true) { ... break; }</tt></td><td valign="top">The do/while replacement; <tt>do ... while</tt> is dropped. A <tt>continue</tt> here skips the exit test and re-enters the body.</td></tr>
+<tr><td valign="top"><tt>while (opt) |v| body</tt></td><td valign="top">Capture form for an optional; loops while the value is present and ends when it is <tt>null</tt>.</td></tr>
+<tr><td valign="top"><tt>while (non-bool)</tt>, <tt>while (x) |v|</tt> non-optional</td><td valign="top"><tt>error[3058]</tt>, the same two messages as <tt>if</tt>.</td></tr>
+</table>
+<pre>
+var i: i32 = 0;
+var sum: i32 = 0;
+while (i &lt; 6) : (i += 1) {       // iter runs after the body
+    if (i == 2) continue;
+    sum += i;
+}                                 // i 6, sum 13
+
+var count: i32 = 0;
+while (true) {                    // do/while replacement
+    if (count == 3) break;
+    count += 1;
+}
+
+var down: ?i32 = 3;
+var total: i32 = 0;
+while (down) |v| {                // optional capture
+    total += v;
+    down = if (v &gt; 1) v - 1 else null;
+}
+</pre>
+
+<h2><tt>for</tt>: iterables, captures, and ranges</h2>
+<p>
+<tt>for (iterable) |item| body</tt> visits every element; a second capture
+provides the index. Braces are optional.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Iterable</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Item type (measured)</b></th>
+</tr>
+<tr><td valign="top">array <tt>[N]T</tt></td><td valign="top"><tt>T</tt>, by value.</td></tr>
+<tr><td valign="top">slice <tt>[]T</tt></td><td valign="top"><tt>T</tt>, by value.</td></tr>
+<tr><td valign="top">pointer-to-array <tt>*[N]T</tt></td><td valign="top">auto-derefs and visits the <tt>T</tt> elements; no explicit deref needed.</td></tr>
+<tr><td valign="top">range <tt>start..end</tt></td><td valign="top"><tt>usize</tt>; <tt>end</tt> is exclusive. The inclusive <tt>start...end</tt> spelling does not parse.</td></tr>
+</table>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Form</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Rule (measured)</b></th>
+</tr>
+<tr><td valign="top"><tt>for (x) |item| body</tt></td><td valign="top">One capture; iterates every element.</td></tr>
+<tr><td valign="top"><tt>for (x) |item, index| body</tt></td><td valign="top">Second capture is the <tt>usize</tt> index, counting from 0.</td></tr>
+<tr><td valign="top"><tt>for (x) |_| body</tt>, <tt>|_, index|</tt></td><td valign="top"><tt>_</tt> discards a capture; a discarded name is not bound and cannot be accessed.</td></tr>
+<tr><td valign="top"><tt>for (arr, start..) |item, index|</tt></td><td valign="top">Explicit index range, open end; the index is <tt>start + j</tt> for the j-th iteration, <b>not</b> clamped to the iterable.</td></tr>
+<tr><td valign="top"><tt>for (arr, start..end) |item, index|</tt></td><td valign="top">Closed index range; <tt>start</tt>/<tt>end</tt> are <tt>usize</tt>-compatible unsigned integers. Requires <tt>end - start == arr.len</tt>.</td></tr>
+<tr><td valign="top"><tt>for (arr, 0..) |item|</tt></td><td valign="top"><tt>error[3000]</tt> <tt>explicit index range requires an index capture ('|item, index|')</tt>.</td></tr>
+<tr><td valign="top"><tt>for (arr, 0..2) |item, i|</tt> (len 3)</td><td valign="top"><tt>error[3000]</tt> <tt>non-matching for loop lengths: the index range and the iterable differ in length</tt> (when both lengths are known).</td></tr>
+<tr><td valign="top"><tt>for (0..5, 0..) |x, i|</tt></td><td valign="top"><tt>error[2000]</tt> <tt>expected ')' but found ','</tt> &mdash; an explicit index range needs an array, slice, or pointer-to-array iterable.</td></tr>
+<tr><td valign="top">assigning to <tt>|item|</tt> or <tt>|index|</tt></td><td valign="top"><tt>error[3002]</tt> <tt>cannot assign to immutable variable</tt>.</td></tr>
+</table>
+<pre>
+var scores: [4]i32 = .{ 10, 20, 30, 40 };
+var values: i32 = 0;
+for (scores) |v| values += v;                          // one capture
+
+var weighted: i32 = 0;
+for (scores) |v, idx| weighted += v * @intCast(i32, idx);
+
+var rsum: i32 = 0;
+for (0..4) |x| rsum += @intCast(i32, x);               // range iterable
+
+var tail: i32 = 0;
+for (scores, 1..) |v, idx| tail += v + @intCast(i32, idx);
+var spanned: i32 = 0;
+for (scores, 0..scores.len) |v, idx| spanned += @intCast(i32, idx);
+</pre>
+<p>
+The whole-loop excerpt above is from <tt>docs/sf/manuals/src/vol2/control.z98</tt>;
+the array, index, range, and explicit-index-range paths were compiled and run
+on the fixed compiler (rows <tt>for values 100 weighted 200</tt>, <tt>for range
+6</tt>, <tt>for explicit 110 6</tt>). A slice iterable and a
+<tt>*[N]T</tt> iterable were each compiled and run separately (both sum
+<tt>6</tt>); <tt>continue</tt> through a <tt>for</tt> step is pinned by
+<tt>repro/mi_matrix/stdlib_for_continue_xmod</tt>.
+</p>
+<p>
+For a closed index range whose lengths are not known at compile time,
+mismatched lengths and an <tt>end</tt> below <tt>start</tt> are runtime traps
+under <tt>-fsafe</tt> rather than compile errors.
+</p>
+
+<h2><tt>switch</tt>: prongs, ranges, and the mandatory <tt>else</tt></h2>
+<p>
+<tt>switch (expr) { pattern =&gt; body, ... else =&gt; body, }</tt> matches one
+value against comma-separated items and ranges. The condition is a tagged
+union, an integer, an enum, or a boolean.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Case item</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Rule (measured)</b></th>
+</tr>
+<tr><td valign="top">literal</td><td valign="top">Integer, character, and <tt>true</tt>/<tt>false</tt> literals.</td></tr>
+<tr><td valign="top">enum member</td><td valign="top">Shorthand (<tt>.Red</tt>) or qualified (<tt>Color.Red</tt>, <tt>shapes.Color.Red</tt>).</td></tr>
+<tr><td valign="top">module constant</td><td valign="top">A module-scope <tt>const</tt> integer, a module-qualified constant (<tt>mod.LO</tt>), an enum-member constant, or an alias chain; the initializer may be constant arithmetic.</td></tr>
+<tr><td valign="top">range <tt>start...end</tt></td><td valign="top">Inclusive; both bounds are compile-time constants of the condition's type.</td></tr>
+<tr><td valign="top">range <tt>start..end</tt></td><td valign="top">Exclusive; <tt>start</tt> included, <tt>end</tt> excluded.</td></tr>
+<tr><td valign="top">enum range</td><td valign="top">Resolves by each member's underlying value, so <tt>enum(uN)</tt> gaps are exact.</td></tr>
+</table>
+<pre>
+var grade: i32 = 87;
+var letter: i32 = 0;
+switch (grade) {
+    90...100 =&gt; letter = 65,      // inclusive
+    80..90 =&gt; letter = 66,        // exclusive
+    70..80 =&gt; letter = 67,
+    else =&gt; letter = 70,          // mandatory
+}
+
+const LO: i32 = 100;
+const HI: i32 = 102;
+switch (pick) {
+    LO...HI =&gt; slot = 7,          // module constants as bounds
+    else =&gt; slot = 8,
+}
+
+const Color = enum { Red, Green, Blue };
+switch (c) {
+    Color.Red...Color.Green =&gt; r = 10,   // enum range, underlying values
+    .Red... .Blue =&gt; r = 80,             // shorthand endpoints
+    else =&gt; r = 20,
+}
+</pre>
+<p>
+Ranges are compile-time and expand into sequential C <tt>case</tt> labels, so
+they cost nothing at runtime. Named constants and enum ranges are pinned by
+<tt>repro/mi_matrix/stdlib_switch_case_consts_xmod</tt> (rows include
+<tt>intrange 10 10 20</tt>, <tt>enexact 50 60</tt>, <tt>boolp 90 92</tt>) and
+<tt>repro/mi_matrix/stdlib_switch_enum_range_xmod</tt> (rows include
+<tt>incl 10 10 20</tt>, <tt>gaps 100 100 100</tt>); plain integer and character
+ranges are pinned by <tt>repro/mi_matrix/switch_case_range_xmod</tt>
+(<tt>130 47</tt>). Two boundaries are measured: a negative-valued named
+constant is not resolved, and a function-local <tt>const</tt> is not resolved
+by lowering; in both cases the item matches nothing and the value silently
+takes <tt>else</tt>.
+</p>
+
+<h3>The mandatory <tt>else</tt></h3>
+<p>
+Every <tt>switch</tt> must spell an <tt>else</tt> prong, in statement and value
+position alike, even when the items cover the whole type. A <tt>switch</tt>
+without one, including the empty <tt>switch (x) {}</tt>, is level-0
+<tt>error[3068]</tt> <tt>switch must have an 'else' prong</tt> at the switch
+node (rc 2, 0 <tt>.c</tt>). This is a deliberate divergence from official Zig,
+which accepts an exhaustive switch without an <tt>else</tt>. Because
+<tt>else</tt> is required, an exhaustive switch must still write one out.
+</p>
+<pre>
+switch (x) {
+    1 =&gt; r = 1,
+}
+// error[3068]: switch must have an 'else' prong
+
+const Color = enum { Red, Green, Blue };
+switch (color) {
+    .Red =&gt; rgb = 1,
+    .Green =&gt; rgb = 2,
+    .Blue =&gt; rgb = 3,
+    else =&gt; unreachable,          // reachable only if the value is wrong
+}
+// enum switch 3
+</pre>
+<p>
+A redundant <tt>else</tt> on an exhaustive switch is <b>tolerated</b>
+(<tt>switch (c) { .red, .green, .blue, else =&gt; ... }</tt> compiles and runs;
+Zig rejects it as an unreachable prong). <tt>unreachable</tt> is a live
+<tt>pal_trap()</tt>, not a no-op, under <tt>-fsafe</tt> and <tt>-ffast</tt>
+alike &mdash; write <tt>else =&gt; {}</tt> or a real fallback when the branch
+can run. The statement example above is from
+<tt>docs/sf/manuals/src/vol2/control.z98</tt> (<tt>enum switch 3</tt>).
+</p>
+
+<h3>Prong captures and qualifiers</h3>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Shape</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Rule (measured)</b></th>
+</tr>
+<tr><td valign="top">tagged-union prong <tt>.m =&gt; |val| body</tt></td><td valign="top">Binds an immutable reference to the payload for that tag; shorthand and qualified spellings bind identically.</td></tr>
+<tr><td valign="top">enum prong <tt>.red =&gt; |v| body</tt></td><td valign="top">Binds the switch <b>operand</b> (the enum value), matching Zig. An unused capture is accepted by Z98 (Zig rejects it).</td></tr>
+<tr><td valign="top"><tt>else =&gt; |c| body</tt></td><td valign="top"><tt>error[3001]</tt> <tt>switch else-prong capture (else =&gt; |capture|) is not supported</tt>.</td></tr>
+<tr><td valign="top">capture on an integer prong</td><td valign="top">Not bound; a use of the name rejects <tt>error[20] identifier '&lt;x&gt;' is not declared or imported in this module</tt>.</td></tr>
+<tr><td valign="top">foreign qualifier (<tt>B.x</tt> on an <tt>A</tt> switch)</td><td valign="top"><tt>error[3071]</tt> <tt>type mismatch in switch case item -- case item type may not be compatible with the switch condition type</tt>.</td></tr>
+<tr><td valign="top">unknown member (<tt>Shape.bogus</tt>, <tt>.bogus</tt>)</td><td valign="top"><tt>error[3071]</tt> <tt>no field or member function named '&lt;x&gt;' in union type</tt> (or <tt>... in enum type</tt>); a related span notes the declaration.</td></tr>
+</table>
+<p>
+The qualifier and member rejects are pinned by
+<tt>repro/mi_matrix/switch_case_qualifier_reject_xmod</tt> (12 primary
+<tt>error[3071]</tt> sites). The whole-union <tt>.tag</tt> switch form, its
+<tt>|c|</tt> ordinal capture, and payload rules are on the
+<a href="vol4-06-unions.html">Unions</a> page; the enum operand rules are on
+the <a href="vol4-05-enums.html">Enums</a> page.
+</p>
+
+<h2>Labels, <tt>break</tt>, and <tt>continue</tt></h2>
+<p>
+A loop or a bare block can carry a label; a transfer names it to leave or
+advance an outer construct rather than the innermost one.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Form</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Rule (measured)</b></th>
+</tr>
+<tr><td valign="top"><tt>label: while ...</tt>, <tt>label: for ...</tt></td><td valign="top">A labeled loop; <tt>break :label</tt>/<tt>continue :label</tt> target it.</td></tr>
+<tr><td valign="top"><tt>blk: { ... }</tt></td><td valign="top">A labeled block; a value-less <tt>break :blk;</tt> leaves it early. It is a statement, not a value producer.</td></tr>
+<tr><td valign="top"><tt>break</tt></td><td valign="top">Exits the innermost <tt>while</tt> or <tt>for</tt>.</td></tr>
+<tr><td valign="top"><tt>break :label</tt></td><td valign="top">Exits the matching loop or labeled block.</td></tr>
+<tr><td valign="top"><tt>continue</tt></td><td valign="top">Jumps to the next iteration of the innermost <tt>while</tt> or <tt>for</tt> (for a <tt>for</tt>, through its implicit step).</td></tr>
+<tr><td valign="top"><tt>continue :label</tt></td><td valign="top">Jumps to the next iteration of the matching loop.</td></tr>
+<tr><td valign="top"><tt>break :blk value;</tt></td><td valign="top"><tt>error[2000]</tt> <tt>expected ';' but found ...</tt> &mdash; a value-producing labeled block is not implemented.</td></tr>
+<tr><td valign="top">duplicate labels in one function</td><td valign="top">Accepted; the compiler does not reject a duplicate, and a <tt>continue :outer</tt> binds the nearest label with that name. Keep labels unique by convention.</td></tr>
+</table>
+<pre>
+var pairs: i32 = 0;
+outer: for (0..4) |a| {
+    var b: i32 = 0;
+    while (b &lt; 3) : (b += 1) {
+        if (b == 1) continue :outer;
+        if (a == 2) break :outer;
+        pairs += 1;
+    }
+}
+// labeled 2
+
+var found: bool = false;
+lookup: {
+    if (grade &lt; 0) break :lookup;
+    found = true;
+}
+// block true
+</pre>
+<p>
+A transfer inside <tt>defer</tt>/<tt>errdefer</tt> that leaves the body is
+rejected (<tt>error[3051]</tt> return, <tt>error[3052]</tt> break,
+<tt>error[3053]</tt> continue, <tt>error[3054]</tt> try); a target declared
+inside the body stays legal. See the
+<a href="vol4-12-statements.html">Statements</a> page. Labeled statements and
+their transfers are pinned by
+<tt>repro/mi_matrix/emission_labeled_ctrl_xmod</tt> (run on the fixed compiler
+as <tt>3</tt>, <tt>6</tt>, <tt>10</tt>, <tt>1</tt> for a labeled block, a
+labeled <tt>while</tt>, a labeled switch-in-loop, and a literal
+<tt>break :blk</tt>).
+</p>
+
+<h2>Capture rules</h2>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Rule</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Measured</b></th>
+</tr>
+<tr><td valign="top"><tt>if</tt>/<tt>while</tt> capture conditions are optionals or error unions.</td><td valign="top">A capture on any other condition is <tt>error[3058] capture condition must be an optional or error union type</tt>.</td></tr>
+<tr><td valign="top"><tt>switch</tt> prong captures bind the condition's payload.</td><td valign="top">A tagged-union prong binds the payload; an enum prong binds the operand; an <tt>else</tt> prong may not capture.</td></tr>
+<tr><td valign="top">All captures are immutable.</td><td valign="top">Assignment through an <tt>if</tt>/<tt>while</tt>/<tt>for</tt>/<tt>switch</tt> capture is <tt>error[3002]</tt> <tt>cannot assign to immutable variable</tt>.</td></tr>
+<tr><td valign="top">A capture may not shadow or redeclare an enclosing name.</td><td valign="top"><tt>error[3057] local declaration shadows an earlier declaration in an enclosing scope</tt>, with a note at the previous declaration.</td></tr>
+<tr><td valign="top"><tt>_</tt> discards a capture.</td><td valign="top">A discarded name is not bound; it may be reused freely.</td></tr>
+<tr><td valign="top">A capture is scoped to its construct.</td><td valign="top">A <tt>while</tt>/<tt>for</tt>/switch capture is visible in the body or prong only. In the current compiler an <tt>if</tt> capture is also visible in the <tt>else</tt> arm; on the absent path that storage is undefined, so a use there reads garbage (measured <tt>-247245648</tt> for a null optional; Zig rejects the use). Do not read an <tt>if</tt> capture in its <tt>else</tt> arm.</td></tr>
+</table>
+<p>
+The shadow rejects are pinned by
+<tt>repro/mi_matrix/shadow_reject_xmod</tt> (one site per capture form,
+including <tt>if</tt>, <tt>while</tt>, <tt>for</tt>, and switch-prong captures).
+The <tt>for</tt> index capture, when present, is a separate immutable
+<tt>usize</tt> binding.
+</p>
+
+<h2>Diagnostic index</h2>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Code</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Message</b></th>
+</tr>
+<tr><td valign="top"><tt>error[20]</tt></td><td valign="top"><tt>identifier '&lt;x&gt;' is not declared or imported in this module</tt> (a capture used on a prong that does not bind one).</td></tr>
+<tr><td valign="top"><tt>error[2000]</tt></td><td valign="top">Parse rejects: <tt>';' not allowed before 'else' ...</tt>; <tt>expected expression</tt> for <tt>else |err|</tt>; <tt>expected ';' but found ...</tt> for a value-producing labeled block; <tt>expected ')' but found ','</tt> for an index range over a range iterable.</td></tr>
+<tr><td valign="top"><tt>error[3000]</tt></td><td valign="top"><tt>explicit index range requires an index capture ('|item, index|')</tt>; <tt>non-matching for loop lengths: the index range and the iterable differ in length</tt>.</td></tr>
+<tr><td valign="top"><tt>error[3001]</tt></td><td valign="top"><tt>switch else-prong capture (else =&gt; |capture|) is not supported</tt>.</td></tr>
+<tr><td valign="top"><tt>error[3002]</tt></td><td valign="top"><tt>cannot assign to immutable variable</tt> (assignment through a capture).</td></tr>
+<tr><td valign="top"><tt>error[3057]</tt></td><td valign="top"><tt>local declaration shadows an earlier declaration in an enclosing scope</tt> (capture shadows an outer binding).</td></tr>
+<tr><td valign="top"><tt>error[3058]</tt></td><td valign="top"><tt>condition must be of type 'bool'</tt>; with a capture, <tt>capture condition must be an optional or error union type</tt>.</td></tr>
+<tr><td valign="top"><tt>error[3059]</tt></td><td valign="top"><tt>if expression without 'else' cannot be used as a value (its type is 'void')</tt>.</td></tr>
+<tr><td valign="top"><tt>error[3068]</tt></td><td valign="top"><tt>switch must have an 'else' prong</tt>.</td></tr>
+<tr><td valign="top"><tt>error[3071]</tt></td><td valign="top"><tt>type mismatch in switch case item -- case item type may not be compatible with the switch condition type</tt>; <tt>no field or member function named '&lt;x&gt;' in union type</tt>/<tt>in enum type</tt>.</td></tr>
+</table>
+<p>
+For the full code list see the
+<a href="vol4-21-diagnostics.html">Diagnostics</a> page; the printed number is
+the enum ordinal, not the <tt>ERR_####</tt> suffix.
+</p>
+
+<h2>See also</h2>
+<p>
+<a href="vol4-12-statements.html">Statements</a> for declarations, assignment,
+blocks, and <tt>defer</tt>/<tt>errdefer</tt>;
+Error expressions (planned) for <tt>try</tt>, <tt>catch</tt>, and the error
+half of a capture;
+<a href="vol4-10-optionals.html">Optionals</a> for <tt>?T</tt>,
+<tt>orelse</tt>, and the optional capture forms;
+<a href="vol4-05-enums.html">Enums</a> for backing types and enum switch
+rules; <a href="vol4-06-unions.html">Unions</a> for tagged-union prongs, the
+<tt>.tag</tt> switch, and payload captures;
+<a href="vol4-01-grammar.html">The full grammar</a> for the control-flow
+productions and precedence; and the Volume II chapter
+<a href="vol2-10-control-flow.html">Control flow, in full</a>.
+</p>
+
+<p class="navbtns">
+<a href="vol4-12-statements.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol4-15-builtins.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol4-12-statements.html">Statements</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-15-builtins.html">Builtins</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
