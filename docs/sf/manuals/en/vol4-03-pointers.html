@@ -1,0 +1,539 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Pointers</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual pointers reference single-item many-item const volatile multi-level address-of dereference indexing auto-deref pointer slicing arithmetic ptrCast intFromPtr ptrFromInt intToPtr bitCast volatileCast fieldParentPtr">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol4-02-types.html">
+<link rel="next" href="vol4-15-builtins.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume IV &mdash; Reference</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+How to use the Reference <i>(planned)</i><br>
+<a href="vol4-01-grammar.html">The full grammar</a><br>
+<a href="vol4-02-types.html">Types</a><br>
+<b>Pointers</b><br>
+Structs <i>(planned)</i><br>
+Enums <i>(planned)</i><br>
+Unions <i>(planned)</i><br>
+Tuples <i>(planned)</i><br>
+Arrays and slices <i>(planned)</i><br>
+Errors <i>(planned)</i><br>
+Optionals <i>(planned)</i><br>
+Aliases <i>(planned)</i><br>
+Statements <i>(planned)</i><br>
+Control flow <i>(planned)</i><br>
+Error expressions <i>(planned)</i><br>
+<a href="vol4-15-builtins.html">Builtins</a><br>
+Async <i>(planned)</i><br>
+Memory <i>(planned)</i><br>
+<a href="vol4-18-stdlib.html">The standard library</a><br>
+<a href="vol4-19-pal.html">The PAL</a><br>
+<a href="vol4-20-markers.html">Markers</a><br>
+<a href="vol4-21-diagnostics.html">Diagnostics</a><br>
+<a href="vol4-22-cli.html">The command line</a><br>
+Limits <i>(planned)</i><br>
+<a href="vol4-24-html-style.html">HTML style</a><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Pointers</h1>
+<p>
+A <b>pointer</b> is a value holding the address of another value. Z98 spells
+pointer types in the Zig style &mdash; a <tt>*</tt> followed by the pointee type
+&mdash; and it splits the two qualifiers: <tt>const</tt> is enforced by the
+frontend and dropped from the emitted C, while <tt>volatile</tt> is enforced by
+the frontend and <b>preserved</b> in the emitted C. This page is the lookup for
+the pointer shapes, the address and dereference operators, the indexing and
+slicing rules, pointer arithmetic, and the pointer builtins.
+</p>
+<p>
+The authority is the parser (<tt>sf/src/parser.zig</tt>: <tt>parserParsePtrQualifiers</tt>
+at <tt>1148-1162</tt>, <tt>parserParsePtrType</tt> at <tt>1164-1173</tt>, and
+<tt>parserParseBracketType</tt> at <tt>1175-1204</tt>), the single-item-pointer
+checks in <tt>sf/src/semantic_analyzer.zig</tt> (<tt>semanticAnalyzerReportIllegalPtrIndex</tt>
+at <tt>1052-1073</tt> and <tt>semanticAnalyzerCheckSinglePtrSlice</tt> at
+<tt>1108-1180</tt>), both diagnostic codes <tt>error[3066]</tt>/<tt>error[3067]</tt>,
+and the qualifier rules (<tt>semanticAnalyzerVolatileDrop</tt> at
+<tt>2584-2590</tt> and <tt>semanticAnalyzerConstDiscard</tt> at
+<tt>2601-2670</tt>). Every rule and reject below was reproduced on seed v90 with
+a seed probe; the reused fixtures are named where one exists.
+</p>
+
+<h2>Pointer shapes</h2>
+<p>
+Each shape is a distinct type. All pointers are 4 bytes with alignment 4 in the
+32-bit model (see <a href="vol4-02-types.html">Types</a>). The
+&ldquo;C89 emission&rdquo; column is the measured spelling of a parameter of that
+type in the generated C.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Spelling</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Kind</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>C89 emission</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Notes</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>*T</tt></td>
+<td valign="top">single-item pointer</td>
+<td valign="top"><tt>T*</tt></td>
+<td valign="top">One item; read and write through <tt>p.*</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>*const T</tt></td>
+<td valign="top">single-item, read-only</td>
+<td valign="top"><tt>T*</tt> (<tt>const</tt> dropped)</td>
+<td valign="top">Writing through it is a frontend reject; the qualifier is not emitted.</td>
+</tr>
+<tr>
+<td valign="top"><tt>*volatile T</tt></td>
+<td valign="top">single-item, volatile</td>
+<td valign="top"><tt>volatile T*</tt></td>
+<td valign="top">Reads and writes may not be elided; the qualifier is emitted.</td>
+</tr>
+<tr>
+<td valign="top"><tt>*const volatile T</tt></td>
+<td valign="top">single-item, both qualifiers</td>
+<td valign="top"><tt>volatile T*</tt> (<tt>const</tt> dropped)</td>
+<td valign="top">Both flags are accepted; the parser records them independently.</td>
+</tr>
+<tr>
+<td valign="top"><tt>[*]T</tt></td>
+<td valign="top">many-item pointer</td>
+<td valign="top"><tt>T*</tt></td>
+<td valign="top">Points at a run of items; carries no length; C-style <tt>p[i]</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>[*]const T</tt></td>
+<td valign="top">many-item, read-only</td>
+<td valign="top"><tt>T*</tt> (<tt>const</tt> dropped)</td>
+<td valign="top">Writing through an element is a frontend reject.</td>
+</tr>
+<tr>
+<td valign="top"><tt>[*]volatile T</tt></td>
+<td valign="top">many-item, volatile</td>
+<td valign="top"><tt>volatile T*</tt></td>
+<td valign="top">For memory-mapped runs of registers.</td>
+</tr>
+<tr>
+<td valign="top"><tt>**T</tt>, <tt>***T</tt>, &hellip;</td>
+<td valign="top">multi-level pointer</td>
+<td valign="top"><tt>T**</tt>, <tt>T***</tt>, &hellip;</td>
+<td valign="top">Every level is dereferenced explicitly, one <tt>.*</tt> per hop.</td>
+</tr>
+<tr>
+<td valign="top"><tt>*[N]T</tt></td>
+<td valign="top">pointer to a fixed-size array</td>
+<td valign="top"><tt>Arr_T_N*</tt></td>
+<td valign="top">Auto-deref indexing: <tt>pa[i]</tt> indexes the pointee array.</td>
+</tr>
+<tr>
+<td valign="top"><tt>fn(P) T</tt>, <tt>?fn(P) T</tt></td>
+<td valign="top">function pointer (optional-wrapped)</td>
+<td valign="top">function-pointer typedef</td>
+<td valign="top">A function value coerces only to an <b>exact</b> signature match; see below.</td>
+</tr>
+</table>
+<p>
+<tt>[]T</tt> and <tt>[]const T</tt> are the length-carrying slices, not pointer
+types; they are the
+arrays and slices topic <i>(planned)</i>. A slice coerces
+to a many-item pointer through its <tt>.ptr</tt>.
+</p>
+
+<h2>const stops at the frontend; volatile reaches C</h2>
+<p>
+The two qualifiers promise to different audiences. A <tt>*const T</tt> stops a
+write in Z98 source and then emits as a plain <tt>T*</tt>, so a C function that
+receives it can still write through it. A <tt>*volatile T</tt> is emitted as
+<tt>volatile T*</tt>, so the C compiler honors it as well. Measured emissions:
+<tt>*const u32</tt> &rarr; <tt>unsigned int*</tt>; <tt>*volatile u32</tt> &rarr;
+<tt>volatile unsigned int*</tt>; <tt>[*]const u32</tt> &rarr; <tt>unsigned int*</tt>;
+<tt>[*]volatile u32</tt> &rarr; <tt>volatile unsigned int*</tt>;
+<tt>*const volatile u32</tt> &rarr; <tt>volatile unsigned int*</tt>.
+</p>
+<p>
+An implicit pointer coercion may <b>add</b> a qualifier but must never
+<b>discard</b> one. Both discard directions are level-0
+<tt>error[3000]</tt>; the volatile rule also blocks <tt>@ptrCast</tt>.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Coercion</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Result</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Diagnostic</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>*T</tt> &rarr; <tt>*const T</tt> / <tt>*volatile T</tt></td>
+<td valign="top">accepted</td>
+<td valign="top">&mdash;</td>
+</tr>
+<tr>
+<td valign="top"><tt>*const T</tt> &rarr; <tt>*T</tt></td>
+<td valign="top">rejected</td>
+<td valign="top"><tt>error[3000]</tt> <tt>cannot implicitly discard 'const' qualifier</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>*volatile T</tt> &rarr; <tt>*T</tt></td>
+<td valign="top">rejected</td>
+<td valign="top"><tt>error[3000]</tt> <tt>cannot implicitly discard 'volatile' qualifier; use @volatileCast to remove it</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>[*]const T</tt> &rarr; <tt>[*]T</tt></td>
+<td valign="top">rejected</td>
+<td valign="top"><tt>error[3000]</tt> <tt>cannot implicitly discard 'const' qualifier</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>[]const T</tt> &rarr; <tt>[]T</tt> / <tt>[*]T</tt></td>
+<td valign="top">rejected</td>
+<td valign="top"><tt>error[3000]</tt> <tt>cannot implicitly discard 'const' qualifier</tt></td>
+</tr>
+</table>
+<p>
+The only sanctioned removal of <tt>volatile</tt> is
+<tt>@volatileCast(T, expr)</tt>, which requires a volatile source and a
+destination with the same base type. <tt>const</tt> has no removal builtin; a
+const-discarding cast is written with <tt>@ptrCast</tt> and is a deliberate
+reinterpretation, not an implicit coercion.
+</p>
+
+<h2>Address-of and dereference</h2>
+<ul>
+<li><b><tt>&amp;x</tt></b> produces a pointer to <tt>x</tt>. The operand must be
+an <b>lvalue</b>: a variable, a field, or an array element. Taking the address of
+a literal or a temporary is rejected with <tt>error[3043]</tt>
+<tt>internal: unsupported address-of l-value</tt> (measured for <tt>&amp;5</tt>
+and <tt>&amp;f()</tt>).</li>
+<li><b><tt>p.*</tt></b> is the value the pointer points at; <tt>p.* = v</tt>
+writes through it. Dereference is the <b>postfix</b> <tt>.*</tt>, not C's prefix
+<tt>*</tt>. Multi-level pointers dereference one hop at a time:
+<tt>pp.*.*</tt> reaches the <tt>i32</tt> behind a <tt>**i32</tt>.</li>
+<li><b><tt>ptr.field</tt></b> auto-dereferences a single-level pointer to a
+struct (emitted as <tt>ptr-&gt;field</tt>). It applies through exactly one
+pointer level; a <tt>**Point</tt> needs <tt>pp.*.field</tt>.</li>
+</ul>
+
+<h2>Indexing: <tt>p[i]</tt></h2>
+<p>
+<tt>p[i]</tt> is defined only for a many-item pointer (<tt>[*]T</tt>, no length)
+and for a pointer to a fixed-size array (<tt>*[N]T</tt>, Zig's auto-deref
+indexing). Indexing any other single-item pointer &mdash; <tt>*T</tt>,
+<tt>*const T</tt>, <tt>*volatile T</tt>, or a multi-level pointer &mdash; is a
+compile-time reject, even for index <tt>0</tt>. A many-pointer index is as
+unchecked as C's <tt>p[i]</tt>; the length-checked form is a slice.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Base</b></th>
+<th align="left" bgcolor="#e8e0e0"><b><tt>base[i]</tt></b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Diagnostic (measured)</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>[*]T</tt>, <tt>[*]const T</tt>, <tt>[*]volatile T</tt></td>
+<td valign="top">accepted</td>
+<td valign="top">&mdash;</td>
+</tr>
+<tr>
+<td valign="top"><tt>*[N]T</tt></td>
+<td valign="top">accepted (auto-deref)</td>
+<td valign="top">&mdash;</td>
+</tr>
+<tr>
+<td valign="top">struct/union array field <tt>s.arr[i]</tt></td>
+<td valign="top">accepted (element decay)</td>
+<td valign="top">&mdash;</td>
+</tr>
+<tr>
+<td valign="top"><tt>*T</tt> / <tt>*const T</tt> / <tt>*volatile T</tt></td>
+<td valign="top">rejected</td>
+<td valign="top"><tt>error[3066]</tt> <tt>type '*T' does not support indexing</tt> + note <tt>operand must be an array, slice, tuple, or vector</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>**T</tt> (multi-level)</td>
+<td valign="top">rejected</td>
+<td valign="top"><tt>error[3066]</tt> <tt>type '**T' does not support indexing</tt> + the same note</td>
+</tr>
+<tr>
+<td valign="top"><tt>type</tt> base <tt>(*p)[i]</tt></td>
+<td valign="top">rejected</td>
+<td valign="top"><tt>error[3066]</tt> <tt>unable to resolve comptime value</tt> + note <tt>types must be comptime-known</tt></td>
+</tr>
+</table>
+<p>
+The message spells the base type backward, including its qualifiers and levels
+(<tt>*i32</tt>, <tt>*const i32</tt>, <tt>*volatile i32</tt>, <tt>**i32</tt>).
+Measured: <tt>var p: *i32; p[0]</tt> reports <tt>type '*i32' does not support
+indexing</tt>; <tt>pp[0]</tt> on <tt>**i32</tt> reports <tt>type '**i32' does not
+support indexing</tt>; <tt>(*p)[0]</tt> reports the <tt>unable to resolve
+comptime value</tt> wording.
+</p>
+
+<h2>Slicing a single-item pointer</h2>
+<p>
+A <tt>*T</tt> (or <tt>*const T</tt>/<tt>*volatile T</tt>) may be sliced only
+with the three comptime-known bounds below; the result carries the base's
+qualifiers. Every other form rejects <tt>error[3067]</tt>. The reused fixture
+<tt>repro/mi_matrix/stdlib_ptrslice_ok_xmod</tt> pins the three legal forms and
+their qualifier carry.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Form on <tt>p: *T</tt></b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Result type</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Diagnostic (measured)</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>p[0..0]</tt></td>
+<td valign="top"><tt>*[0]T</tt></td>
+<td valign="top">&mdash;</td>
+</tr>
+<tr>
+<td valign="top"><tt>p[0..1]</tt></td>
+<td valign="top"><tt>*[1]T</tt></td>
+<td valign="top">&mdash;</td>
+</tr>
+<tr>
+<td valign="top"><tt>p[1..1]</tt></td>
+<td valign="top"><tt>*[0]T</tt></td>
+<td valign="top">&mdash;</td>
+</tr>
+<tr>
+<td valign="top"><tt>p[0..]</tt> (open)</td>
+<td valign="top">rejected</td>
+<td valign="top"><tt>error[3067]</tt> <tt>slice of single-item pointer must be bounded</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>p[0..n]</tt> (runtime)</td>
+<td valign="top">rejected</td>
+<td valign="top"><tt>error[3067]</tt> <tt>unable to resolve comptime value</tt> + note <tt>slice of single-item pointer must have comptime-known bounds</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>p[0..2]</tt>, <tt>p[1..0]</tt>, <tt>p[-1..1]</tt></td>
+<td valign="top">rejected</td>
+<td valign="top"><tt>error[3067]</tt> <tt>slice of single-item pointer must have bounds [0..0], [0..1], or [1..1]</tt></td>
+</tr>
+</table>
+<p>
+<tt>*[N]T</tt> slicing (and <tt>pa.*[i]</tt>) follows the ordinary array/slice
+path documented on the arrays and slices page (<i>planned</i>).
+For a <tt>*T</tt> result of length zero, <tt>.len</tt> is <tt>0</tt> and an index
+rejects <tt>error[3062]</tt>; the emitted C array typedef is clamped to
+<tt>[1]</tt> (C89 has no zero-length array), which is a C-model clamp only.
+</p>
+
+<h2>Pointer arithmetic</h2>
+<p>
+The arithmetic operators are accepted for pointer operands. An integer offset
+scales by the pointee size (ordinary C pointer arithmetic); subtracting two
+pointers yields the signed difference of the two addresses.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Expression</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Result</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Emission / measured value</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>ptr + i</tt>, <tt>ptr - i</tt></td>
+<td valign="top">same pointer type as <tt>ptr</tt></td>
+<td valign="top">C pointer arithmetic, scaled by the pointee size. Measured: <tt>mp + 2</tt> on <tt>[*]i32</tt> reads element 2; on a single-item <tt>*i32</tt>, <tt>p + 1</tt> emits <tt>p + 1</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>i + ptr</tt></td>
+<td valign="top">same pointer type as <tt>ptr</tt></td>
+<td valign="top">Commutative form, accepted.</td>
+</tr>
+<tr>
+<td valign="top"><tt>ptr1 - ptr2</tt></td>
+<td valign="top"><tt>isize</tt></td>
+<td valign="top">A signed subtraction of the two <b>addresses</b>. Measured: <tt>q - mp</tt> for <tt>q = mp + 2</tt> over <tt>[*]i32</tt> yields <tt>8</tt> (the byte offset), not <tt>2</tt> (the element count).</td>
+</tr>
+</table>
+<p>
+The offset operand is an unsigned integer or an untyped integer literal;
+<tt>ptr + i</tt> is typed the pointer, and <tt>ptr1 - ptr2</tt> is typed
+<tt>isize</tt> (<tt>semanticAnalyzerResolveArithmetic</tt>,
+<tt>semantic_analyzer.zig:2277-2284</tt>). Because indexing a single-item
+pointer is still rejected (above), the idiomatic way to step an item pointer is
+<tt>p + n</tt> followed by <tt>(p + n).*</tt>, or an explicit <tt>[*]T</tt>.
+</p>
+
+<h2>Function pointers</h2>
+<p>
+A function pointer is a <tt>fn(P1, P2) T</tt> type, optionally wrapped once as
+<tt>?fn(...) T</tt>. A function value may be assigned or coerced only to a target
+whose signature matches <b>exactly</b>: return type, parameter count and types,
+variadic flag, and calling convention. A mismatch is a level-0
+<tt>error[3000]</tt> at the coercion site, including through one level of
+<tt>?fn</tt> wrapping; an explicit <tt>@ptrCast</tt> to a mismatched signature
+stays legal. The reused fixtures
+<tt>repro/mi_matrix/fn_ptr_signature_ok_xmod</tt> and
+<tt>repro/mi_matrix/fn_ptr_signature_reject_xmod</tt> pin the accept/reject sets.
+See the coercion table on <a href="vol4-02-types.html">Types</a>.
+</p>
+
+<h2>Pointer builtins</h2>
+<p>
+Casts and pointer/introspection are provided by builtins, recognized by name;
+there is no pointer library. The full entries are on the
+<a href="vol4-15-builtins.html">Builtins</a> page. The pointer set and its
+measured rejects:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Builtin</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Result</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Reject (measured)</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>@ptrCast(T, expr)</tt></td>
+<td valign="top">Reinterpret a pointer as pointer type <tt>T</tt>, without looking at the pointee.</td>
+<td valign="top"><tt>error[3049]</tt> <tt>@ptrCast requires exactly two arguments: @ptrCast(T, expr)</tt>; <tt>error[3000]</tt> <tt>@ptrCast cannot discard the 'volatile' qualifier; use @volatileCast to remove it</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>@ptrToInt(expr)</tt> / <tt>@intFromPtr(expr)</tt></td>
+<td valign="top">Pointer to <tt>usize</tt>; the two names are the same operation.</td>
+<td valign="top">&mdash;</td>
+</tr>
+<tr>
+<td valign="top"><tt>@intToPtr(T, expr)</tt></td>
+<td valign="top">Integer to pointer, result type named explicitly.</td>
+<td valign="top">&mdash;</td>
+</tr>
+<tr>
+<td valign="top"><tt>@ptrFromInt(expr)</tt></td>
+<td valign="top">Integer to pointer, result type taken from context.</td>
+<td valign="top"><tt>error[19]</tt> <tt>cannot infer pointer type for @ptrFromInt; annotate the target variable type</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>@bitCast(T, expr)</tt></td>
+<td valign="top">Same-size integer-to-integer bit reinterpretation.</td>
+<td valign="top"><tt>error[19]</tt> <tt>@bitCast requires same-size integer source and destination types</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>@volatileCast(T, expr)</tt></td>
+<td valign="top">Remove <tt>volatile</tt>; source must be a volatile pointer and <tt>T</tt> the same base type.</td>
+<td valign="top"><tt>error[3000]</tt> <tt>@volatileCast requires a volatile pointer source and a destination with the same base type</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>@fieldParentPtr(T, "field", expr)</tt></td>
+<td valign="top"><tt>*T</tt> to the containing struct from a pointer to one of its fields.</td>
+<td valign="top">&mdash;</td>
+</tr>
+</table>
+<p>
+<tt>@intFromPtr</tt>/<tt>@ptrFromInt</tt> are the modern aliases of
+<tt>@ptrToInt</tt>/<tt>@intToPtr</tt>. The reused fixture
+<tt>repro/mi_matrix/builtin_ptr_roundtrip_xmod</tt> round-trips a
+<tt>@intFromPtr</tt> address through <tt>@ptrFromInt</tt> and stores
+<tt>42</tt>; <tt>repro/mi_matrix/builtin_fieldparentptr_xmod</tt> recovers
+<tt>&amp;outer</tt> from <tt>&amp;outer.inner</tt> and prints <tt>1</tt>. The
+Volume II sample <tt>docs/sf/manuals/src/vol2/pointers.z98</tt> (rebuilt and run
+on seed v90) exercises all six casts and prints the round trips.
+</p>
+
+<h2>Measured rejects</h2>
+<p>
+The pointer-specific diagnostics below were each reproduced on seed v90. Codes
+are the printed ordinals; see <a href="vol4-21-diagnostics.html">Diagnostics</a>
+for the full set.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Construct</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Code</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Message (measured)</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>[*:0]T</tt> (sentinel many-pointer)</td>
+<td valign="top"><tt>error[2000]</tt></td>
+<td valign="top"><tt>expected ']' but found ':'</tt> (the parser accepts only <tt>[*]</tt>).</td>
+</tr>
+<tr>
+<td valign="top"><tt>[*c]T</tt> (C many-pointer)</td>
+<td valign="top"><tt>error[2000]</tt></td>
+<td valign="top"><tt>expected ']' but found identifier</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>[]volatile T</tt> (volatile slice)</td>
+<td valign="top"><tt>error[2000]</tt></td>
+<td valign="top"><tt>expected ':' but found ')'</tt>; a slice carries <tt>const</tt> only. Use <tt>[*]volatile T</tt> for memory-mapped runs.</td>
+</tr>
+<tr>
+<td valign="top"><tt>*volatile fn(...)</tt></td>
+<td valign="top"><tt>warning[3000]</tt></td>
+<td valign="top">Not a supported function-pointer form: a function value coerces to <tt>*volatile fn</tt> with <tt>type mismatch&hellip;</tt> (<tt>source: function</tt> / <tt>target: pointer</tt>).</td>
+</tr>
+<tr>
+<td valign="top"><tt>var p: [*]T = &amp;scalar;</tt></td>
+<td valign="top"><tt>error[3000]</tt></td>
+<td valign="top">A scalar <tt>*T</tt> does not implicitly broaden to <tt>[*]T</tt> (<tt>source: pointer</tt> / <tt>target: many-pointer</tt>). An array or slice does; a <tt>*[N]T</tt> does.</td>
+</tr>
+<tr>
+<td valign="top"><tt>&amp;literal</tt>, <tt>&amp;temporary</tt></td>
+<td valign="top"><tt>error[3043]</tt></td>
+<td valign="top"><tt>internal: unsupported address-of l-value</tt>.</td>
+</tr>
+</table>
+
+<h2>See also</h2>
+<p>
+<a href="vol4-02-types.html">Types</a> for the 32-bit pointer layout and the
+coercion table; <a href="vol4-15-builtins.html">Builtins</a> for every cast and
+introspection builtin; the arrays and slices page (<i>planned</i>) for
+<tt>[]T</tt>, <tt>*[N]T</tt>, and <tt>.len</tt>/<tt>.ptr</tt>;
+<a href="vol4-21-diagnostics.html">Diagnostics</a> for <tt>error[2000]</tt>,
+<tt>error[3000]</tt>, <tt>error[3043]</tt>, <tt>error[3049]</tt>,
+<tt>error[3066]</tt>, and <tt>error[3067]</tt>; and
+<a href="vol2-03-pointers.html">Volume II, Pointers</a> for the teaching
+narrative and the runnable sample.
+</p>
+
+<p class="navbtns">
+<a href="vol4-02-types.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol4-15-builtins.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol4-02-types.html">Types</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-15-builtins.html">Builtins</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
