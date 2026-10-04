@@ -1,0 +1,347 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Statements</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual statements declaration assignment expression statement var const defer errdefer block scope discard underscore immutable semicolon 20 2000 3002 3014 3015 3051 3052 3053 3054">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol4-11-aliases.html">
+<link rel="next" href="vol4-15-builtins.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume IV &mdash; Reference</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+How to use the Reference <i>(planned)</i><br>
+<a href="vol4-01-grammar.html">The full grammar</a><br>
+<a href="vol4-02-types.html">Types</a><br>
+<a href="vol4-03-pointers.html">Pointers</a><br>
+<a href="vol4-04-structs.html">Structs</a><br>
+<a href="vol4-05-enums.html">Enums</a><br>
+<a href="vol4-06-unions.html">Unions</a><br>
+<a href="vol4-07-tuples.html">Tuples</a><br>
+<a href="vol4-08-arrays-slices.html">Arrays and slices</a><br>
+<a href="vol4-09-errors.html">Errors</a><br>
+<a href="vol4-10-optionals.html">Optionals</a><br>
+<a href="vol4-11-aliases.html">Aliases</a><br>
+<b>Statements</b><br>
+Control flow <i>(planned)</i><br>
+Error expressions <i>(planned)</i><br>
+<a href="vol4-15-builtins.html">Builtins</a><br>
+Async <i>(planned)</i><br>
+Memory <i>(planned)</i><br>
+<a href="vol4-18-stdlib.html">The standard library</a><br>
+<a href="vol4-19-pal.html">The PAL</a><br>
+<a href="vol4-20-markers.html">Markers</a><br>
+<a href="vol4-21-diagnostics.html">Diagnostics</a><br>
+<a href="vol4-22-cli.html">The command line</a><br>
+Limits <i>(planned)</i><br>
+<a href="vol4-24-html-style.html">HTML style</a><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Statements</h1>
+<p>
+A <b>statement</b> is one action inside a block or at module scope: a declaration,
+an assignment, an expression evaluated for its effect, a nested block, a
+control-flow construct, or a <tt>defer</tt>/<tt>errdefer</tt>. This page is the
+lookup for the statement forms, the declaration and assignment rules, the explicit
+discard <tt>_ = expr;</tt>, blocks and scope, <tt>defer</tt>/<tt>errdefer</tt>
+ordering, and the statement-level syntax rules.
+</p>
+<p>
+Authority: the spelling is <tt>docs/reference/Language_Spec_Z98.md</tt> &sect;3.1;
+the statement dispatcher is <tt>parserParseStatement</tt> (<tt>parser.zig:1501</tt>),
+with declarations in <tt>parserParseVarDecl</tt> (<tt>parser.zig:1596</tt>),
+<tt>defer</tt>/<tt>errdefer</tt> in <tt>parserParseDeferStmt</tt>
+(<tt>parser.zig:2049</tt>), and blocks in <tt>parserParseBlock</tt>
+(<tt>parser.zig:2140</tt>). The const write guard is
+<tt>semantic_analyzer.zig:4105</tt>, the missing-initializer guard is
+<tt>semantic_analyzer.zig:5891</tt>, the ignored-error guard is
+<tt>semantic_analyzer.zig:6107</tt>, and the defer control-flow guard is
+<tt>semantic_analyzer.zig:473</tt>. Every rule below was reproduced on the fixed
+compiler (md5 <tt>821481e69df63fc0cf69176fdaaf9dd9</tt>); reused
+<tt>repro/mi_matrix/*</tt> fixtures and <tt>docs/sf/manuals/src/vol2/defer.z98</tt>
+are named where one exists.
+</p>
+
+<h2>Statement forms</h2>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Form</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Spelling</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Notes</b></th>
+</tr>
+<tr><td valign="top">local declaration</td><td valign="top"><tt>var name[: T] = init;</tt><br><tt>const name[: T] = init;</tt></td><td valign="top"><tt>var</tt> is mutable, <tt>const</tt> immutable; the annotation is optional; see Declarations.</td></tr>
+<tr><td valign="top">container declaration</td><td valign="top"><tt>const</tt>/<tt>var</tt>/<tt>pub const</tt>, <tt>fn</tt>, <tt>extern</tt>, <tt>export</tt>, <tt>test</tt>, <tt>struct</tt>/<tt>enum</tt>/<tt>union</tt></td><td valign="top">At module scope the dispatcher accepts the same declaration family; these are the grammar and type pages' subjects.</td></tr>
+<tr><td valign="top">assignment</td><td valign="top"><tt>lhs = rhs;</tt><br><tt>lhs op= rhs;</tt></td><td valign="top"><tt>lhs</tt> must be a mutable l-value; assignments are right-associative; see Assignment.</td></tr>
+<tr><td valign="top">expression statement</td><td valign="top"><tt>expr;</tt></td><td valign="top">A call or other expression evaluated for its effect; see Expression statements and discard.</td></tr>
+<tr><td valign="top">discard</td><td valign="top"><tt>_ = expr;</tt></td><td valign="top">Explicitly evaluates <tt>expr</tt> and drops the result.</td></tr>
+<tr><td valign="top">block</td><td valign="top"><tt>{ ... }</tt></td><td valign="top">A nested scope; see Blocks and scope.</td></tr>
+<tr><td valign="top"><tt>defer</tt>/<tt>errdefer</tt></td><td valign="top"><tt>defer statement</tt><br><tt>errdefer statement</tt></td><td valign="top">Schedules the inner statement for scope exit; see <tt>defer</tt> and <tt>errdefer</tt>.</td></tr>
+<tr><td valign="top">control flow</td><td valign="top"><tt>if</tt>, <tt>while</tt>, <tt>for</tt>, <tt>switch</tt>, <tt>return</tt>, <tt>break</tt>, <tt>continue</tt>, <tt>label: statement</tt></td><td valign="top">The Control flow page (planned) owns these; this page keeps only the statement-level syntax rules.</td></tr>
+<tr><td valign="top">empty statement</td><td valign="top"><tt>;</tt></td><td valign="top">Parsed and skipped.</td></tr>
+</table>
+
+<h2>Declarations</h2>
+<p>
+A <tt>var</tt> binding is mutable; a <tt>const</tt> binding is immutable. The type
+annotation is optional and the initializer supplies the type when it is omitted. An
+initializer is required unless it is <tt>undefined</tt>.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Form</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Result (measured)</b></th>
+</tr>
+<tr><td valign="top"><tt>var x: u32 = 0;</tt></td><td valign="top">Mutable local.</td></tr>
+<tr><td valign="top"><tt>const limit: u32 = 3;</tt></td><td valign="top">Immutable local.</td></tr>
+<tr><td valign="top"><tt>var x = 0;</tt></td><td valign="top">Type inferred from the initializer.</td></tr>
+<tr><td valign="top"><tt>var x: u32 = undefined;</tt></td><td valign="top">Accepted; the binding is uninitialized until the first store (verified: assigns then prints).</td></tr>
+<tr><td valign="top"><tt>var x: u32;</tt></td><td valign="top"><tt>error[3014]</tt> <tt>variable must be initialized; use '= undefined' to opt out</tt>, rc 2, 0 <tt>.c</tt>.</td></tr>
+</table>
+<pre>
+var total: i32 = 0;
+const limit: i32 = 3;
+var scratch: i32 = undefined;
+total = limit;
+scratch = total;
+</pre>
+<h2>Assignment</h2>
+<p>
+<tt>lhs = rhs;</tt> stores <tt>rhs</tt> into the mutable place <tt>lhs</tt>. The
+compound spellings fold the operator into the store. All assignment operators share
+the assignment precedence and associate to the right.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Operators</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Meaning</b></th>
+</tr>
+<tr><td valign="top"><tt>=</tt></td><td valign="top">Plain store.</td></tr>
+<tr><td valign="top"><tt>+=</tt> <tt>-=</tt> <tt>*=</tt> <tt>/=</tt> <tt>%=</tt></td><td valign="top">Arithmetic compound store.</td></tr>
+<tr><td valign="top"><tt>&lt;&lt;=</tt> <tt>&gt;&gt;=</tt> <tt>&amp;=</tt> <tt>|=</tt> <tt>^=</tt></td><td valign="top">Shift and bitwise compound store.</td></tr>
+<tr><td valign="top"><tt>+%=</tt> <tt>-%=</tt> <tt>*%=</tt></td><td valign="top">Wrapping compound store.</td></tr>
+<tr><td valign="top"><tt>+|=</tt> <tt>-|=</tt> <tt>*|=</tt> <tt>&lt;&lt;|=</tt></td><td valign="top">Saturating compound store.</td></tr>
+</table>
+<p>
+Only a mutable l-value may be assigned. Writing to an immutable l-value &mdash; a
+<tt>const</tt> binding, a module <tt>const</tt>, a function parameter, a loop
+capture, a <tt>*const T</tt> dereference, or a <tt>[]const T</tt> element &mdash; is
+level-0 <tt>error[3002]</tt> <tt>cannot assign to immutable variable</tt> with
+rc 2 and 0 <tt>.c</tt>. A <tt>const</tt> binding whose pointee is mutable
+(<tt>const p: *T</tt>, <tt>const s: []T</tt>) still allows a write through the
+pointee.
+</p>
+<pre>
+// accepted -- repro/mi_matrix/const_assign_ok_xmod
+var v: u32 = 1;
+v = 2;
+v += 1;                       // prints 3
+
+var arr: [3]u32 = .{ 10, 20, 30 };
+const p: *u32 = &amp;arr[0];
+p.* = 5;                      // prints 5 (mutable pointee)
+
+const s: []u32 = &amp;arr;
+s[1] = 7;                     // prints 7
+</pre>
+<pre>
+// rejected -- repro/mi_matrix/const_assign_reject_xmod (12 sites)
+const x: u32 = 1;
+x = 2;                        // error[3002]: cannot assign to immutable variable
+
+fn setParam(x: u32) void {
+    x = 2;                    // error[3002] -- parameters are immutable
+}
+</pre>
+<p>
+Assignment is a statement, not an expression: it cannot appear in a condition
+(<tt>if (a = 3)</tt>, <tt>while (a = 0)</tt>, <tt>switch (a = 3)</tt>) or inside a
+parenthesized expression (<tt>var b = (a = 3);</tt>). Each is a parse-level
+<tt>error[2000]</tt> (<tt>expected ')' but found token</tt> / <tt>unexpected
+token</tt>), fixture <tt>repro/mi_matrix/cond_assign_reject_xmod</tt>.
+</p>
+
+<h2>Expression statements and discard</h2>
+<p>
+An expression statement evaluates an expression for its effect and drops the
+result. A call whose value is unused is the common case; <tt>_ = expr;</tt> is the
+explicit discard, used to consume a value on purpose (and to silence an otherwise
+unused binding). An undeclared name on the right of a discard is still resolved:
+<tt>_ = nope;</tt> is level-0 <tt>error[20]</tt> <tt>identifier 'nope' is not
+declared or imported in this module</tt>, rc 2, 0 <tt>.c</tt>.
+</p>
+<pre>
+const unused: u32 = 42;
+_ = unused;                   // explicit discard, accepted
+
+fn mightFail() !void { return error.Bad; }
+
+pub fn main() void {
+    mightFail();              // error[3015]: error union result is ignored;
+                              // use 'try', 'catch', or assign the result
+}
+</pre>
+<p>
+Ignoring an error-union result without <tt>try</tt>, <tt>catch</tt>, or an
+assignment is level-0 <tt>error[3015]</tt> (<tt>repro/mi_matrix/diag_ignored_error_xmod</tt>).
+The check is error-union-only.
+</p>
+
+<h2>Blocks and scope</h2>
+<p>
+<tt>{ ... }</tt> groups statements into a scope. A binding declared inside the
+block is scoped to it. The block is a statement in its own right, and the bodies of
+<tt>if</tt>, <tt>while</tt>, and <tt>for</tt> take either a braced block or a single
+statement; a single statement is normalized into a synthetic block, so braces are
+optional there. An empty statement <tt>;</tt> is parsed and skipped.
+</p>
+<pre>
+{
+    defer note("block-defer");
+    note("block-body");
+}                             // prints "block-body" then "block-defer"
+</pre>
+<p>
+<tt>repro/mi_matrix/stdlib_defer_switch_block_xmod</tt> pins the block body/defer
+ordering inside a bare block and a switch prong.
+</p>
+
+<h2><tt>defer</tt> and <tt>errdefer</tt></h2>
+<p>
+<tt>defer statement</tt> schedules the inner statement to run when the enclosing
+scope exits; <tt>errdefer statement</tt> schedules it only when that scope exits
+with an error. Both take an optional braced body and the inner statement carries its
+own terminating <tt>;</tt>. Deferred statements run in reverse order of declaration
+(LIFO) and on every exit path of the scope &mdash; normal completion,
+<tt>return</tt>, <tt>break</tt>, and <tt>continue</tt>.
+</p>
+<pre>
+// docs/sf/manuals/src/vol2/defer.z98 (trimmed)
+fn loadConfig(ok: bool) !i32 {
+    defer note("config: defer (always)");
+    errdefer note("config: errdefer (rollback)");
+    note("config: body");
+    if (!ok) return error.BadConfig;
+    return 11;
+}
+// success prints: config: body, config: defer (always)
+// failure prints: config: body, config: errdefer (rollback), config: defer (always)
+</pre>
+<pre>
+{
+    defer note("inner B");
+    defer note("inner A");
+    note("block body");
+}                             // prints: block body, inner A, inner B
+</pre>
+<p>
+Control flow <b>out of</b> a defer body is rejected, matching official Zig. A nested
+<tt>fn</tt> resets the restriction, and a <tt>break</tt>/<tt>continue</tt> whose
+target loop or labeled block is declared <b>inside</b> the body is allowed.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Code</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Message</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Shape</b></th>
+</tr>
+<tr><td valign="top"><tt>error[3051]</tt></td><td valign="top"><tt>cannot return from defer expression</tt></td><td valign="top"><tt>return</tt> anywhere inside a <tt>defer</tt>/<tt>errdefer</tt> body.</td></tr>
+<tr><td valign="top"><tt>error[3052]</tt></td><td valign="top"><tt>cannot break out of defer expression</tt></td><td valign="top"><tt>break</tt> that transfers control out of the body.</td></tr>
+<tr><td valign="top"><tt>error[3053]</tt></td><td valign="top"><tt>cannot continue out of defer expression</tt></td><td valign="top"><tt>continue</tt> that transfers control out of the body.</td></tr>
+<tr><td valign="top"><tt>error[3054]</tt></td><td valign="top"><tt>'try' not allowed inside defer expression</tt></td><td valign="top"><tt>try</tt> inside the body.</td></tr>
+</table>
+<p>
+All four reject at level 0 (rc 2, 0 <tt>.c</tt>); the rejected and accepted halves
+are pinned by <tt>repro/mi_matrix/defer_control_flow_reject_xmod</tt> and
+<tt>repro/mi_matrix/stdlib_defer_control_flow_xmod</tt>.
+</p>
+
+<h2>Statement-level syntax rules</h2>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Rule</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Measured</b></th>
+</tr>
+<tr><td valign="top">Declarations and expression statements end with <tt>;</tt>; so do <tt>return</tt>, <tt>break</tt>, and <tt>continue</tt>.</td><td valign="top">The parser expects the terminator at statement end.</td></tr>
+<tr><td valign="top">A <tt>;</tt> may not precede <tt>else</tt>.</td><td valign="top"><tt>error[2000]</tt> <tt>';' not allowed before 'else' - use braces: if (cond) { ... } else { ... }</tt>. Use braces, or omit the semicolon (<tt>if (a) return 1 else return 0;</tt> &mdash; verified).</td></tr>
+<tr><td valign="top">An empty statement <tt>;</tt> is legal.</td><td valign="top">Parsed and skipped; a run of <tt>; ;</tt> is a no-op.</td></tr>
+<tr><td valign="top">Assignment may not appear in a condition or a parenthesized expression.</td><td valign="top"><tt>error[2000]</tt> at parse time (<tt>repro/mi_matrix/cond_assign_reject_xmod</tt>).</td></tr>
+<tr><td valign="top">Braces are optional around a single <tt>if</tt>/<tt>while</tt>/<tt>for</tt> body.</td><td valign="top">The single statement is normalized into a synthetic block.</td></tr>
+</table>
+
+<h2>Diagnostic index</h2>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Code</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Message</b></th>
+</tr>
+<tr><td valign="top"><tt>error[20]</tt></td><td valign="top"><tt>identifier '&lt;x&gt;' is not declared or imported in this module</tt> (undeclared name on the right of a discard).</td></tr>
+<tr><td valign="top"><tt>error[2000]</tt></td><td valign="top">Parse-level rejects: <tt>expected ')' but found token</tt> / <tt>unexpected token</tt> (assignment in a condition, parenthesized assignment), and <tt>';' not allowed before 'else' - use braces: if (cond) { ... } else { ... }</tt>.</td></tr>
+<tr><td valign="top"><tt>error[3002]</tt></td><td valign="top"><tt>cannot assign to immutable variable</tt> (write to a <tt>const</tt>, parameter, capture, or const view).</td></tr>
+<tr><td valign="top"><tt>error[3014]</tt></td><td valign="top"><tt>variable must be initialized; use '= undefined' to opt out</tt>.</td></tr>
+<tr><td valign="top"><tt>error[3015]</tt></td><td valign="top"><tt>error union result is ignored; use 'try', 'catch', or assign the result</tt>.</td></tr>
+<tr><td valign="top"><tt>error[3051]</tt></td><td valign="top"><tt>cannot return from defer expression</tt>.</td></tr>
+<tr><td valign="top"><tt>error[3052]</tt></td><td valign="top"><tt>cannot break out of defer expression</tt>.</td></tr>
+<tr><td valign="top"><tt>error[3053]</tt></td><td valign="top"><tt>cannot continue out of defer expression</tt>.</td></tr>
+<tr><td valign="top"><tt>error[3054]</tt></td><td valign="top"><tt>'try' not allowed inside defer expression</tt>.</td></tr>
+</table>
+
+<h2>See also</h2>
+<p>
+<a href="vol4-01-grammar.html">The full grammar</a> for the statement productions;
+<a href="vol4-02-types.html">Types</a> for the coercions an assignment obeys;
+<a href="vol4-09-errors.html">Errors</a> for the error-union behavior behind
+<tt>error[3015]</tt>; <a href="vol4-10-optionals.html">Optionals</a> for
+<tt>orelse</tt>; <a href="vol4-11-aliases.html">Aliases</a> for declaration
+positions; <a href="vol4-21-diagnostics.html">Diagnostics</a> for the full code
+list; and the Volume II chapters
+<a href="vol2-10-control-flow.html">Control flow, in full</a> and
+<a href="vol2-11-defer.html">defer and errdefer</a>.
+</p>
+
+<p class="navbtns">
+<a href="vol4-11-aliases.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol4-15-builtins.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol4-11-aliases.html">Aliases</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-15-builtins.html">Builtins</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
