@@ -1,0 +1,297 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Type aliases</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual type aliases alias const T pub const cross-module declaration use annotation parameter return field array size name erased local alias 16 20 2000 3000 3007 3064 3072">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol4-10-optionals.html">
+<link rel="next" href="vol4-15-builtins.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume IV &mdash; Reference</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+How to use the Reference <i>(planned)</i><br>
+<a href="vol4-01-grammar.html">The full grammar</a><br>
+<a href="vol4-02-types.html">Types</a><br>
+<a href="vol4-03-pointers.html">Pointers</a><br>
+<a href="vol4-04-structs.html">Structs</a><br>
+<a href="vol4-05-enums.html">Enums</a><br>
+<a href="vol4-06-unions.html">Unions</a><br>
+<a href="vol4-07-tuples.html">Tuples</a><br>
+<a href="vol4-08-arrays-slices.html">Arrays and slices</a><br>
+<a href="vol4-09-errors.html">Errors</a><br>
+<a href="vol4-10-optionals.html">Optionals</a><br>
+<b>Aliases</b><br>
+Statements <i>(planned)</i><br>
+Control flow <i>(planned)</i><br>
+Error expressions <i>(planned)</i><br>
+<a href="vol4-15-builtins.html">Builtins</a><br>
+Async <i>(planned)</i><br>
+Memory <i>(planned)</i><br>
+<a href="vol4-18-stdlib.html">The standard library</a><br>
+<a href="vol4-19-pal.html">The PAL</a><br>
+<a href="vol4-20-markers.html">Markers</a><br>
+<a href="vol4-21-diagnostics.html">Diagnostics</a><br>
+<a href="vol4-22-cli.html">The command line</a><br>
+Limits <i>(planned)</i><br>
+<a href="vol4-24-html-style.html">HTML style</a><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Type aliases</h1>
+<p>
+A <b>type alias</b> binds a name to a type: <tt>const T = &lt;type&gt;;</tt>. Once
+declared, <tt>T</tt> is a type name and may be used anywhere the underlying type
+may. This page is the lookup for the declaration sites, the alias targets, the
+positions an alias may appear, the <tt>pub</tt> cross-module rules, and the
+measured limits.
+</p>
+<p>
+Authority: the spelling is <tt>docs/reference/Language_Spec_Z98.md</tt> &sect;1.7;
+registration is the <tt>var_decl</tt> branch of
+<tt>symbol_registrator.zig:248</tt> (with the alias write-back in
+<tt>front_resolution.zig</tt> and <tt>const_alias_prepass.zig</tt>); resolution
+is <tt>type_resolver.resolveTypeExprFull</tt>
+(<tt>type_resolver.zig:1776</tt>); the local-alias guard is
+<tt>semantic_analyzer.zig:5811</tt>. Every rule below was reproduced on the fixed
+compiler (md5 <tt>c1746347cbcdbb39385f325be20b9b6b</tt>); reused
+<tt>repro/mi_matrix/typealias_*</tt> fixtures are named where one exists.
+</p>
+
+<h2>Syntax and declaration site</h2>
+<p>
+The alias is a module-scope declaration whose value is a type. The documented
+spelling is <tt>const</tt>; adding <tt>pub</tt> makes the alias visible to
+importers. A function-local alias is rejected.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Form</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Scope</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Result (measured)</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>const T = &lt;type&gt;;</tt></td>
+<td valign="top">module</td>
+<td valign="top">Registers <tt>T</tt> as a type alias: it is a type name in annotation, parameter, return, field, element, wrapper, and builtin positions.</td>
+</tr>
+<tr>
+<td valign="top"><tt>pub const T = &lt;type&gt;;</tt></td>
+<td valign="top">module</td>
+<td valign="top">As <tt>const</tt>, and visible to importers as <tt>mod.T</tt> or <tt>@import("m.zig").T</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>const T = &lt;type&gt;;</tt></td>
+<td valign="top">function body</td>
+<td valign="top"><tt>error[3000]</tt> <tt>local type aliases are not supported; bind the container declaration directly</tt>, plus a follow-on <tt>error[20]</tt> for every use of <tt>T</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>const T: type = &lt;type&gt;;</tt></td>
+<td valign="top">module</td>
+<td valign="top">Not an alias. <tt>T</tt> is a value whose type is <tt>type</tt>; using it as a type mismatches (<tt>target: type</tt>).</td>
+</tr>
+</table>
+<pre>
+const MyInt = i32;                          // primitive
+const Buf   = []u8;                         // slice
+const Point = struct { x: i32, y: i32 };    // anonymous aggregate
+pub const Color = enum { Red, Green, Blue };
+const Num   = MyInt;                        // alias of an alias
+</pre>
+<p>
+The registrar keys on the declaration's initializer being a type expression, so a
+module-scope <tt>var V = i32;</tt> also names a type in type positions
+(measured). The Reference documents the <tt>const</tt> form.
+</p>
+
+<h2>Alias targets</h2>
+<p>
+Every type form is a legal alias target except the two marker names <tt>noreturn</tt>
+and <tt>anytype</tt>. Sizes below are <tt>@sizeOf</tt> of the alias.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Target kind</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Example</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Measured</b></th>
+</tr>
+<tr><td valign="top">primitive</td><td valign="top"><tt>const N = i32;</tt></td><td valign="top"><tt>typealias_prim_xmod</tt> prints <tt>42</tt>; used in annotation, parameter, and return positions.</td></tr>
+<tr><td valign="top">arbitrary width</td><td valign="top"><tt>const U = u7;</tt> (<tt>i5</tt>, <tt>u12</tt>, <tt>u33</tt>)</td><td valign="top"><tt>typealias_aint_xmod</tt> prints <tt>5 -3 4000 8</tt>; <tt>@sizeOf(u33)</tt> is <tt>8</tt>.</td></tr>
+<tr><td valign="top">array</td><td valign="top"><tt>const A = [3]i32;</tt></td><td valign="top"><tt>typealias_arr_xmod</tt> prints <tt>6</tt>; size <tt>12</tt>.</td></tr>
+<tr><td valign="top">slice</td><td valign="top"><tt>const S = []i32;</tt></td><td valign="top"><tt>typealias_slice_xmod</tt> prints <tt>20</tt>; size <tt>8</tt>.</td></tr>
+<tr><td valign="top">many-item pointer</td><td valign="top"><tt>const M = [*]u8;</tt></td><td valign="top"><tt>typealias_mptr_xmod</tt> prints <tt>15</tt>; size <tt>4</tt>.</td></tr>
+<tr><td valign="top">single-item pointer</td><td valign="top"><tt>const P = *u8;</tt></td><td valign="top"><tt>typealias_ptr_xmod</tt> prints <tt>42 4 41</tt>; size <tt>4</tt>.</td></tr>
+<tr><td valign="top">optional</td><td valign="top"><tt>const O = ?i32;</tt></td><td valign="top"><tt>typealias_opt_xmod</tt> prints <tt>42 8 7</tt>; size <tt>8</tt>.</td></tr>
+<tr><td valign="top">error union</td><td valign="top"><tt>const E = error{Bad}!i32;</tt></td><td valign="top"><tt>typealias_eu_xmod</tt> prints <tt>42 8 7</tt>; size <tt>8</tt>.</td></tr>
+<tr><td valign="top">error set</td><td valign="top"><tt>const E = error{Bad, Worse};</tt></td><td valign="top">Usable as <tt>E!i32</tt>; <tt>@sizeOf(E)</tt> is <tt>0</tt> (measured).</td></tr>
+<tr><td valign="top">function type</td><td valign="top"><tt>const F = fn(i32) i32;</tt></td><td valign="top"><tt>typealias_fn_xmod</tt> prints <tt>42 4 7</tt>; it resolves to a pointer-to-function, size <tt>4</tt>.</td></tr>
+<tr><td valign="top">named / anonymous aggregate</td><td valign="top"><tt>struct</tt>, <tt>enum</tt>, <tt>union</tt>, tuple <tt>struct { i32, i32 }</tt></td><td valign="top"><tt>typealias_agg_xmod</tt> prints <tt>16</tt>; an anonymous struct alias, an enum alias, and a union alias print <tt>20</tt>; a tuple alias prints <tt>7</tt>.</td></tr>
+<tr><td valign="top">alias of an alias</td><td valign="top"><tt>const B = A;</tt></td><td valign="top"><tt>typealias_chain_arr_xmod</tt> prints <tt>15</tt>; a forward chain <tt>const A = B; const B = i32;</tt> prints <tt>5</tt>.</td></tr>
+<tr><td valign="top"><tt>bool</tt> / <tt>void</tt> / <tt>usize</tt> / <tt>c_char</tt></td><td valign="top"><tt>const B = bool;</tt></td><td valign="top">All usable in signature and value positions; a probe prints <tt>65</tt>.</td></tr>
+<tr><td valign="top"><tt>noreturn</tt></td><td valign="top"><tt>const NR = noreturn;</tt></td><td valign="top"><b>Rejected:</b> <tt>error[2000] expected expression</tt> / <tt>unexpected token</tt> at the parser.</td></tr>
+<tr><td valign="top"><tt>anytype</tt></td><td valign="top"><tt>const A = anytype;</tt></td><td valign="top"><b>Rejected:</b> <tt>error[2000] expected expression</tt> as an alias value; in a signature it is <tt>error[16] anytype not supported in Z98</tt>.</td></tr>
+</table>
+
+<h2>Where an alias may be used</h2>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Position</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Example</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Measured</b></th>
+</tr>
+<tr><td valign="top">variable / const annotation</td><td valign="top"><tt>var x: T = v;</tt></td><td valign="top"><tt>typealias_prim_xmod</tt>.</td></tr>
+<tr><td valign="top">parameter and return</td><td valign="top"><tt>fn f(p: T) T</tt></td><td valign="top"><tt>typealias_ptr/opt/eu/fn_xmod</tt>.</td></tr>
+<tr><td valign="top">extern <tt>fn</tt> / fn-pointer signature</td><td valign="top"><tt>extern fn f(p: T) R;</tt></td><td valign="top">Resolves in an <tt>extern fn</tt> declaration and in a named fn type (<tt>typealias_fn_xmod</tt>).</td></tr>
+<tr><td valign="top">struct / union field</td><td valign="top"><tt>const Box = struct { v: T };</tt></td><td valign="top">A primitive field emits <tt>int</tt>; a self-referential <tt>?*Node</tt> field prints <tt>3</tt>.</td></tr>
+<tr><td valign="top">array element</td><td valign="top"><tt>const Arr = [4]Elem;</tt></td><td valign="top">A value const supplies the length, a type alias the element; prints <tt>28</tt>.</td></tr>
+<tr><td valign="top">inside a wrapper</td><td valign="top"><tt>*I</tt>, <tt>[*]I</tt>, <tt>[]I</tt>, <tt>[2]I</tt>, <tt>?I</tt>, <tt>E!I</tt></td><td valign="top">All resolve; a probe summing through every wrapper prints <tt>16</tt>.</td></tr>
+<tr><td valign="top">array-size expression</td><td valign="top"><tt>const N = [@sizeOf(MyInt)]u8;</tt></td><td valign="top">Folds to length <tt>4</tt>.</td></tr>
+<tr><td valign="top"><tt>@sizeOf</tt> / <tt>@alignOf</tt> operand</td><td valign="top"><tt>@sizeOf(T)</tt></td><td valign="top"><tt>typealias_forms_control_xmod</tt>.</td></tr>
+<tr><td valign="top"><tt>@intCast</tt> / <tt>@ptrCast</tt> target</td><td valign="top"><tt>@intCast(I, x)</tt>, <tt>@ptrCast(P, e)</tt></td><td valign="top">A probe prints <tt>130</tt>.</td></tr>
+<tr><td valign="top">aggregate literal name</td><td valign="top"><tt>Point{ .x = 1, .y = 2 }</tt></td><td valign="top"><tt>typealias_agg_xmod</tt>; an in-module anonymous alias prints <tt>20</tt>.</td></tr>
+<tr><td valign="top">not a type position (value)</td><td valign="top"><tt>var x = T;</tt></td><td valign="top">Compiles with no diagnostic; <tt>x</tt> reads poison. See the limits below.</td></tr>
+</table>
+
+<h2><tt>pub</tt> and cross-module rules</h2>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Rule</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Example</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Measured</b></th>
+</tr>
+<tr><td valign="top">module-scope <tt>pub const</tt> is visible to importers</td><td valign="top"><tt>pub const T = i32;</tt></td><td valign="top"><tt>typealias_prim_xmod</tt> prints <tt>42</tt>.</td></tr>
+<tr><td valign="top">qualified member</td><td valign="top"><tt>lib.T</tt></td><td valign="top"><tt>typealias_pub_aint/arr/mptr/slice_xmod</tt> print <tt>6 6 7 10</tt>.</td></tr>
+<tr><td valign="top">direct-import member</td><td valign="top"><tt>@import("dep.zig").T</tt></td><td valign="top">A probe resolves it as a parameter type.</td></tr>
+<tr><td valign="top">alias of a module member</td><td valign="top"><tt>const X = dep.T;</tt></td><td valign="top">A probe prints <tt>11</tt>.</td></tr>
+<tr><td valign="top">re-export of a module member</td><td valign="top"><tt>pub const P = dep.Point;</tt></td><td valign="top">A re-export through a middle module resolves as <tt>mid.P</tt>; prints <tt>15</tt>.</td></tr>
+<tr><td valign="top">alias chain across modules</td><td valign="top"><tt>pub const NumAlias = Num;</tt></td><td valign="top">Used as <tt>dep.NumAlias</tt>.</td></tr>
+<tr><td valign="top">bare cross-module name</td><td valign="top">unqualified <tt>Num</tt> with <tt>const dep = @import("dep.zig");</tt> in scope</td><td valign="top">Resolves through the compiler's global name-cache scan; prints <tt>3</tt>.</td></tr>
+<tr><td valign="top">private alias</td><td valign="top"><tt>const Hidden = i32;</tt> used as <tt>dep.Hidden</tt></td><td valign="top"><tt>error[3007]</tt> <tt>'Hidden' is not marked 'pub'</tt>.</td></tr>
+<tr><td valign="top">forward / self reference</td><td valign="top"><tt>const P = Q; const Q = struct { ... };</tt></td><td valign="top">Resolves; prints <tt>9</tt> (and a forward primitive alias prints <tt>5</tt>).</td></tr>
+<tr><td valign="top">alias cycle</td><td valign="top"><tt>const A = B; const B = A;</tt></td><td valign="top"><tt>error[3064]</tt> <tt>cyclic global initializer dependency</tt>.</td></tr>
+</table>
+<p>
+An alias used in a type position that names nothing resolvable is a level-0
+<tt>error[20]</tt>, emitted once per unresolved leaf. A wrapper is walked to its
+inner leaf: <tt>*Bogus</tt>, <tt>?Bogus</tt>, and <tt>[3]Bogus</tt> each report
+<tt>Bogus</tt> once. A qualified <tt>mod.unknown</tt> reports the whole node.
+</p>
+
+<h2>Name erasure and measured limits</h2>
+<p>
+An alias is resolved to its underlying type at registration. Two measured
+behaviors follow.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Case</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Measured</b></th>
+</tr>
+<tr>
+<td valign="top">Alias to a primitive or an existing named type</td>
+<td valign="top">Erased. <tt>const MyInt = i32;</tt> emits a field as <tt>int</tt>; <tt>MyInt</tt> appears nowhere in the <tt>.c</tt>. <tt>@offsetOf(MyInt, "x")</tt> reports <tt>error[3072]</tt> <tt>expected struct type, found 'i32'</tt>, and a call mismatch note reads <tt>target: i32</tt>.</td>
+</tr>
+<tr>
+<td valign="top">Alias naming an anonymous aggregate</td>
+<td valign="top">Adopted as the type's name. <tt>const Point = struct { ... };</tt> emits <tt>struct zT_EAA8EF31_Point</tt> in the header and C, the same symbol in-module and cross-module.</td>
+</tr>
+<tr>
+<td valign="top">Function-local alias</td>
+<td valign="top"><tt>error[3000] local type aliases are not supported; bind the container declaration directly</tt>. Compound local forms (<tt>*E</tt>, <tt>E!i32</tt>, <tt>[2]E</tt>, <tt>?E</tt>) reject with one <tt>error[3000]</tt> each.</td>
+</tr>
+<tr>
+<td valign="top">Annotated as <tt>type</tt></td>
+<td valign="top"><tt>const T: type = i32;</tt> is not an alias; <tt>T</tt> is a value of type <tt>type</tt> and a type use mismatches.</td>
+</tr>
+<tr>
+<td valign="top">Inferred-length array</td>
+<td valign="top"><tt>const A = [_]i32;</tt> rejects <tt>error[3000] unable to infer array size</tt>.</td>
+</tr>
+<tr>
+<td valign="top">Alias in a value position</td>
+<td valign="top"><tt>var x = T;</tt> compiles with no diagnostic; lowering reads uninitialized poison. The alias is a type, not a value.</td>
+</tr>
+<tr>
+<td valign="top"><tt>@sizeOf</tt> of each target</td>
+<td valign="top">Measured line for <tt>[3]i32 []i32 [*]u8 *u8 struct{i32,i32} enum union ?i32 error{Bad}!i32 fn(i32)i32 u33</tt> is <tt>12 8 4 4 8 4 4 8 8 4 8</tt>.</td>
+</tr>
+</table>
+
+<h2>Diagnostic index</h2>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Code</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Message</b></th>
+</tr>
+<tr><td valign="top"><tt>error[16]</tt></td><td valign="top"><tt>anytype not supported in Z98</tt> (anytype in a signature or type wrapper).</td></tr>
+<tr><td valign="top"><tt>error[20]</tt></td><td valign="top"><tt>identifier '&lt;x&gt;' is not declared or imported in this module</tt> (unresolved alias in a type position; once per leaf).</td></tr>
+<tr><td valign="top"><tt>error[2000]</tt></td><td valign="top"><tt>expected expression</tt> / <tt>unexpected token</tt> (<tt>const A = anytype;</tt>, <tt>const NR = noreturn;</tt>).</td></tr>
+<tr><td valign="top"><tt>error[3000]</tt></td><td valign="top"><tt>local type aliases are not supported; bind the container declaration directly</tt>; <tt>unable to infer array size</tt>; <tt>type mismatch in variable declaration</tt>/<tt>function argument</tt> (notes name the underlying type).</td></tr>
+<tr><td valign="top"><tt>error[3007]</tt></td><td valign="top"><tt>'&lt;x&gt;' is not marked 'pub'</tt> (cross-module use of a private alias).</td></tr>
+<tr><td valign="top"><tt>error[3064]</tt></td><td valign="top"><tt>cyclic global initializer dependency</tt> (alias cycle).</td></tr>
+<tr><td valign="top"><tt>error[3072]</tt></td><td valign="top"><tt>expected struct type, found '&lt;X&gt;'</tt> (<tt>@offsetOf</tt> on a non-struct alias; the alias is erased).</td></tr>
+</table>
+
+<h2>See also</h2>
+<p>
+<a href="vol4-02-types.html">Types</a> for the type-kind list and the coercion
+table; <a href="vol4-03-pointers.html">Pointers</a>,
+<a href="vol4-04-structs.html">Structs</a>,
+<a href="vol4-05-enums.html">Enums</a>,
+<a href="vol4-06-unions.html">Unions</a>,
+<a href="vol4-07-tuples.html">Tuples</a>,
+<a href="vol4-08-arrays-slices.html">Arrays and slices</a>,
+<a href="vol4-09-errors.html">Errors</a>, and
+<a href="vol4-10-optionals.html">Optionals</a> for the aliased target pages;
+<a href="vol4-01-grammar.html">The full grammar</a> for the declaration and type
+productions; <a href="vol4-15-builtins.html">Builtins</a> for
+<tt>@sizeOf</tt>/<tt>@alignOf</tt> and the cast builtins; and
+<a href="vol4-21-diagnostics.html">Diagnostics</a> for the full code list.
+</p>
+
+<p class="navbtns">
+<a href="vol4-10-optionals.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol4-15-builtins.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol4-10-optionals.html">Optionals</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-15-builtins.html">Builtins</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
