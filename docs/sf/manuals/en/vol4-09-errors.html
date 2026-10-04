@@ -1,0 +1,575 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Errors</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual errors error set error union error.Name try catch errdefer enclosing return 3075 anyerror anytype errorName error capture print precedence 3011 3013 3015 3016 3051 3052 3053 3054 3060">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol4-08-arrays-slices.html">
+<link rel="next" href="vol4-15-builtins.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume IV &mdash; Reference</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+How to use the Reference <i>(planned)</i><br>
+<a href="vol4-01-grammar.html">The full grammar</a><br>
+<a href="vol4-02-types.html">Types</a><br>
+<a href="vol4-03-pointers.html">Pointers</a><br>
+<a href="vol4-04-structs.html">Structs</a><br>
+<a href="vol4-05-enums.html">Enums</a><br>
+<a href="vol4-06-unions.html">Unions</a><br>
+<a href="vol4-07-tuples.html">Tuples</a><br>
+<a href="vol4-08-arrays-slices.html">Arrays and slices</a><br>
+<b>Errors</b><br>
+Optionals <i>(planned)</i><br>
+Aliases <i>(planned)</i><br>
+Statements <i>(planned)</i><br>
+Control flow <i>(planned)</i><br>
+Error expressions <i>(planned)</i><br>
+<a href="vol4-15-builtins.html">Builtins</a><br>
+Async <i>(planned)</i><br>
+Memory <i>(planned)</i><br>
+<a href="vol4-18-stdlib.html">The standard library</a><br>
+<a href="vol4-19-pal.html">The PAL</a><br>
+<a href="vol4-20-markers.html">Markers</a><br>
+<a href="vol4-21-diagnostics.html">Diagnostics</a><br>
+<a href="vol4-22-cli.html">The command line</a><br>
+Limits <i>(planned)</i><br>
+<a href="vol4-24-html-style.html">HTML style</a><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Errors</h1>
+<p>
+An <b>error set</b> <tt>error{ Foo, Bar }</tt> is a named type whose values are
+error tags. An <b>error union</b> <tt>E!T</tt> (or the anonymous <tt>!T</tt>) is
+"a <tt>T</tt>, or one error from the set". The literal <tt>error.Tag</tt> is the
+value of one tag. This page is the lookup for the set/union syntax, the
+<tt>try</tt>/<tt>catch</tt>/<tt>errdefer</tt> operators and their enclosing-return
+rules, the error-capture printing rules, and the absence of a universal error
+type.
+</p>
+<p>
+The authority is the parser (<tt>parser.zig:2185</tt> <tt>Prec</tt>,
+<tt>:566-593</tt> catch right-hand side, <tt>:869-875</tt> <tt>try</tt>),
+the type layer (<tt>type_registry.zig:87</tt> <tt>ErrorSetPayload</tt>,
+<tt>:665-699</tt> error-set identity/member lookup, <tt>:1234-1247</tt>
+error-union assignability, <tt>:1375-1395</tt> <tt>errorSetIsSubset</tt>), the
+semantic rules (<tt>semantic_analyzer.zig:3482-3528</tt> <tt>try</tt>,
+<tt>:4589-4623</tt> error literal, <tt>:4912-4948</tt> <tt>catch</tt>), and the
+emitter (<tt>c89_emit.zig:2265-2292</tt> <tt>emitErrorSetType</tt>,
+<tt>:2459-2480</tt> <tt>emitErrorUnionType</tt>). Every rule below was
+reproduced on the fixed compiler (md5
+<tt>2794fe04e0828c95dd5c2c6fecdea362</tt>); reused fixtures are named where one
+exists.
+</p>
+
+<h2>Error sets: <tt>error{ ... }</tt></h2>
+<p>
+A named error set is a <tt>const</tt>-bound <tt>error{ ... }</tt> declaration.
+The tags are the members, each a distinct value; the name is a type usable as an
+error-set type and as the left side of an error union.
+</p>
+<pre>
+const MyErrors = error{ DivideByZero, Bad };
+const Both     = error{ DivideByZero, Bad, Worse };
+</pre>
+<pre>
+fn divide(a: i32, b: i32) error{DivideByZero}!i32 {
+    if (b == 0) return error.DivideByZero;
+    return a / b;
+}
+</pre>
+<p>
+An error set is emitted as an <tt>int</tt> typedef plus one <tt>#define</tt> per
+tag (<tt>emitErrorSetType</tt>); the numeric value is the compiler-assigned
+global error code, not the declaration order. A qualified member access on a set
+that has no such tag is <tt>error[3060]</tt>:
+</p>
+<pre>
+typedef int zT_..._E;
+#define zT_..._E_Foo 1
+
+const E = error{ Foo, Bar };
+fn f() E { return E.Zzz; }
+// error[3060]: no field or member function named 'Zzz' in error set type
+</pre>
+<p>
+An error set with no members (<tt>error{}</tt>) is legal and empty; it can flow
+through an error-union type but no <tt>error.Tag</tt> literal fits it.
+</p>
+
+<h2>Error literals: <tt>error.Tag</tt></h2>
+<p>
+<tt>error.TagName</tt> is an <i>unqualified</i> literal. Its type is resolved
+from the expected type (an error set, or the set of an expected error union); the
+tag must be a member of that set. Assigning an error literal to any error union
+is the failure coercion.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Shape</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Result (measured)</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>return error.DivideByZero;</tt> in a function returning <tt>error{DivideByZero}!T</tt></td>
+<td valign="top">Accepted; a failed error union.</td>
+</tr>
+<tr>
+<td valign="top"><tt>return error.Nope;</tt> where the expected set has no <tt>Nope</tt></td>
+<td valign="top">Level-0 <tt>error[3011]</tt> <tt>error literal not found in error set</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>err == error.Bad</tt> inside a <tt>catch |err|</tt></td>
+<td valign="top">Accepted; compares by tag (the same value that was returned).</td>
+</tr>
+<tr>
+<td valign="top"><tt>@enumToInt(err)</tt> on a named-set capture</td>
+<td valign="top">Accepted; yields the tag's numeric code.</td>
+</tr>
+</table>
+<pre>
+const E = error{ Foo, Bar };
+fn f() E!void { return error.Nope; }
+// error[3011]: error literal not found in error set
+</pre>
+<p>
+Tags of different sets that share a spelling compare equal through the shared
+value; named sets with different membership still compare by tag. This is pinned
+by <tt>repro/mi_matrix/anon_errset_comparison</tt> (anonymous <tt>!T</tt> operand)
+and <tt>repro/mi_matrix/errset_cross_set_compare</tt> (anonymous into a named set,
+and a subset set into a superset set).
+</p>
+
+<h2>Error unions: <tt>!T</tt> and <tt>E!T</tt></h2>
+<p>
+<tt>E!T</tt> names the set; <tt>!T</tt> is the anonymous form. Both are the same
+runtime shape. The emitter uses a C struct with a union payload/error code and an
+<tt>is_error</tt> flag:
+</p>
+<pre>
+typedef struct { union { int payload; int err; } data; int is_error; } zT_..._EU_6;
+typedef struct { int err; int is_error; } zT_..._EU_...;   // T is void
+</pre>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Coercion</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Rule</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>T</tt> &rarr; <tt>!T</tt> / <tt>E!T</tt></td>
+<td valign="top">Allowed; the success value (<tt>wrap_error_success</tt>).</td>
+</tr>
+<tr>
+<td valign="top">error literal &rarr; any error union</td>
+<td valign="top">Allowed when the tag is a member of the union's set (<tt>wrap_error_err</tt>).</td>
+</tr>
+<tr>
+<td valign="top"><tt>Fs!T</tt> &rarr; <tt>Ft!T</tt></td>
+<td valign="top">Allowed when the <b>payload TypeId is identical</b> and <tt>Fs</tt> is a subset of <tt>Ft</tt> (<tt>errorSetIsSubset</tt>). A narrower destination set rejects with <tt>error[3000]</tt>, as does a differing payload.</td>
+</tr>
+<tr>
+<td valign="top">anonymous &harr; named set</td>
+<td valign="top">Always treated as compatible (the opaque side is <tt>error_set == 0</tt>); an anonymous <tt>!T</tt> value may be assigned to a named union and vice versa.</td>
+</tr>
+<tr>
+<td valign="top"><tt>!void</tt> / <tt>E!void</tt> falling off the end of the body</td>
+<td valign="top">Implicit success; no final <tt>return</tt> is required.</td>
+</tr>
+</table>
+<pre>
+const E = error{X};
+const F = error{X, Y};
+
+fn g() F!i32 { return 7; }
+var a: E!i32 = 0;
+a = g();            // error[3000]: E is not a superset of F
+var b: F!i32 = 0;
+b = a;              // accepted (E subset F, same i32 payload)
+</pre>
+<p>
+The same-payload subset path and the anonymous/named path run at runtime in
+<tt>repro/mi_matrix/stdlib_try_return_type_ok_xmod</tt> and
+<tt>repro/mi_matrix/errset_cross_set_compare</tt>. The payload-differing
+EU-to-EU reject is pinned by <tt>repro/mi_matrix/eu_payload_diff_reject_xmod</tt>.
+</p>
+
+<h2><tt>try</tt> and the enclosing-return rules (FX12)</h2>
+<p>
+<tt>try expr</tt> unwraps an error union: on success it yields the payload; on
+error it returns that error from the <i>current function</i>. Since FX12 the
+enclosing function is checked, level-0 <tt>error[3075]</tt>, in this order:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Prong</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Message (verbatim)</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Note</b></th>
+</tr>
+<tr>
+<td valign="top">context: <tt>try</tt> at container/global scope</td>
+<td valign="top"><tt>'try' outside function scope</tt></td>
+<td valign="top">&mdash;</td>
+</tr>
+<tr>
+<td valign="top">operand is not an error union</td>
+<td valign="top"><tt>expected error union type, found '&lt;kind&gt;'</tt></td>
+<td valign="top"><tt>consider omitting 'try'</tt></td>
+</tr>
+<tr>
+<td valign="top">enclosing function does not return an error union</td>
+<td valign="top"><tt>expected type '&lt;ret-kind&gt;', found error set</tt></td>
+<td valign="top"><tt>function cannot return an error</tt></td>
+</tr>
+<tr>
+<td valign="top">operand's set is not a subset of the function's set</td>
+<td valign="top"><tt>try error set may not be compatible with the enclosing function's return type</tt></td>
+<td valign="top">&mdash;</td>
+</tr>
+</table>
+<p>
+<tt>&lt;ret-kind&gt;</tt> is the enclosing return kind (<tt>void</tt>,
+<tt>i32</tt>, <tt>optional</tt>, &hellip;); <tt>&lt;kind&gt;</tt> is the operand
+kind (<tt>comptime_int</tt>, <tt>void</tt>, <tt>i32</tt>, &hellip;). Each prong is
+deduped per <tt>try</tt> node and emits zero <tt>.c</tt> on reject.
+</p>
+<pre>
+fn g() E!void { return error.Boom; }
+fn bad1() void { try g(); }
+// error[3075]: expected type 'void', found error set
+// note: function cannot return an error
+
+fn bad2() i32 { return try 5; }
+// error[3075]: expected error union type, found 'comptime_int'
+// note: consider omitting 'try'
+
+const ctry = try g();
+// error[3075]: 'try' outside function scope
+</pre>
+<p>
+The set comparison is <b>set-only</b>: payloads need not match, so an
+<tt>E!void</tt> operand in an <tt>E!i32</tt> function is legal, and a named set
+versus an anonymous <tt>!T</tt> set always passes. A function with a
+non-error-union return is rejected <b>unconditionally</b>: the opaque
+<tt>!T</tt> side (<tt>error_set == 0</tt>) cannot be distinguished from an empty
+set, so the Zig-valid empty-inferred-set shape is a documented bounded
+divergence (<tt>docs/reference/Language_Spec_Z98.md</tt> &sect;7.2).
+</p>
+<p>
+The positive and negative contracts are pinned by
+<tt>repro/mi_matrix/stdlib_try_return_type_ok_xmod</tt> (stdout
+<tt>41 12 11 11 13 33 77 ok</tt>) and
+<tt>repro/mi_matrix/try_return_type_reject_xmod</tt> (rc 2, 0 <tt>.c</tt>,
+<tt>3075 9</tt> across the four prongs).
+</p>
+
+<h2><tt>catch</tt>: handle it</h2>
+<p>
+<tt>expr catch |err| fallback</tt> evaluates <tt>expr</tt>; on success the
+payload is yielded and the fallback is skipped; on error the tag is bound to
+<tt>err</tt> and the fallback is evaluated. The result type is the payload type
+of the operand; the fallback must produce that type or diverge.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Form</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Meaning</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>eu catch |err| expr</tt></td>
+<td valign="top">Binds the error tag; <tt>err</tt> is typed as the union's error set.</td>
+</tr>
+<tr>
+<td valign="top"><tt>eu catch expr</tt></td>
+<td valign="top">Capture omitted; the fallback is evaluated on error.</td>
+</tr>
+<tr>
+<td valign="top"><tt>eu catch { ... }</tt></td>
+<td valign="top">Block fallback; use <tt>return</tt>/<tt>break</tt> to diverge.</td>
+</tr>
+<tr>
+<td valign="top"><tt>eu catch unreachable</tt></td>
+<td valign="top">Accepted; a live trap (<tt>pal_trap</tt>) on the error path.</td>
+</tr>
+<tr>
+<td valign="top"><tt>opt orelse fallback</tt> on an error union</td>
+<td valign="top">Rejected: <tt>error[3016]</tt> <tt>orelse requires an optional operand; use 'catch' for error unions</tt>.</td>
+</tr>
+</table>
+<p>
+<tt>catch</tt> is right-associative, so <tt>a catch b catch c</tt> is
+<tt>a catch (b catch c)</tt>. On a <b>named</b> set the capture is an ordinary
+error-set value (it prints as <tt>error.Name</tt> and compares by tag); on a bare
+<tt>!T</tt> union the capture keeps the numeric <tt>i32</tt> code (a documented
+residual &mdash; see the printing table below). The <tt>catch</tt> forms are
+pinned by <tt>repro/mi_matrix/eu_err_catch</tt> and <tt>.../eu_val_catch</tt>
+(fallbacks on the error and success paths).
+</p>
+
+<h2><tt>errdefer</tt>: undo on the error path</h2>
+<p>
+<tt>errdefer statement</tt> schedules code that runs only when the scope exits
+<i>with an error</i>; it is skipped on every success exit. Multiple
+<tt>errdefer</tt>s run in reverse order of declaration, and an
+<tt>errdefer</tt>/<tt>defer</tt> pair runs the <tt>errdefer</tt> first.
+</p>
+<pre>
+fn g() E!i32 { return error.Boom; }
+
+fn work() E!i32 {
+    errdefer std.io.print("undo\n");
+    const v = try g();
+    return v;
+}
+</pre>
+<p>
+An explicit <tt>return error.Tag;</tt> is an error exit, and a dynamic error-union
+return (<tt>return x;</tt> where <tt>x: E!T</tt>, or <tt>return try x;</tt>) also
+runs the pending <tt>errdefer</tt> when the value is in its error state and skips
+it on success. This is pinned by
+<tt>repro/mi_matrix/stdlib_errdefer_dyn_xmod</tt> (cases <tt>varErr</tt>,
+<tt>varOk</tt>, <tt>callErr</tt>, <tt>callOk</tt>, <tt>voidErr</tt>,
+<tt>voidOk</tt>, <tt>ctrlErr</tt>, <tt>tryDyn</tt>, and the nested
+<tt>errdefer</tt>-then-<tt>defer</tt> order).
+</p>
+<p>
+The body of a <tt>defer</tt>/<tt>errdefer</tt> may not redirect the scope's exit:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Inside the body</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Result</b></th>
+</tr>
+<tr><td valign="top"><tt>return</tt></td><td valign="top"><tt>error[3051]</tt> <tt>cannot return from defer expression</tt></td></tr>
+<tr><td valign="top"><tt>break</tt> out of the body</td><td valign="top"><tt>error[3052]</tt> <tt>cannot break out of defer expression</tt></td></tr>
+<tr><td valign="top"><tt>continue</tt> out of the body</td><td valign="top"><tt>error[3053]</tt> <tt>cannot continue out of defer expression</tt></td></tr>
+<tr><td valign="top"><tt>try</tt></td><td valign="top"><tt>error[3054]</tt> <tt>'try' not allowed inside defer expression</tt></td></tr>
+</table>
+<p>
+Control flow that stays inside the body (a <tt>break</tt>/<tt>continue</tt>
+targeting a loop or labeled block declared inside it) is allowed.
+</p>
+
+<h2>Error-capture and error-set printing</h2>
+<p>
+An error-set value prints with <tt>{}</tt> as <tt>error.Name</tt>; the explicit
+numeric specifiers are rejected for it. The bare <tt>!T</tt> capture is the one
+residual shape.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Value / format</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Result (measured)</b></th>
+</tr>
+<tr>
+<td valign="top">named-set value or capture, <tt>print("{}", .{e})</tt></td>
+<td valign="top"><tt>error.Name</tt> (e.g. <tt>error.Bar</tt>).</td>
+</tr>
+<tr>
+<td valign="top">error-set value, <tt>{d}</tt> or <tt>{x}</tt></td>
+<td valign="top"><tt>error[3013]</tt> <tt>invalid print format specifier for the argument type</tt>.</td>
+</tr>
+<tr>
+<td valign="top">bare <tt>!T</tt> capture, <tt>print("{}", .{e})</tt></td>
+<td valign="top">The numeric <tt>i32</tt> code (no set name to bind).</td>
+</tr>
+</table>
+<pre>
+const E = error{ Foo, Bar };
+fn f() E!i32 { return error.Bar; }
+
+fn show() void {
+    const v = f() catch |e| { std.io.print("e={}\n", .{e}); return; };
+    _ = v;
+}
+// e=error.Bar
+</pre>
+<p>
+The named-set capture path is pinned by
+<tt>repro/mi_matrix/stdlib_errset_capture_qualified_xmod</tt>
+(<tt>direct=error.Bar</tt>, <tt>cap=error.Bar</tt>, <tt>xcap=error.Bar</tt>) and
+by <tt>repro/mi_matrix/stdlib_print_enum_errset_xmod</tt> (<tt>errs error.A error.B</tt>).
+</p>
+
+<h2>No universal error type</h2>
+<p>
+Z98 has no <tt>anyerror</tt> and no <tt>@errorName</tt>. Both names are errors,
+not silently accepted types or builtins.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Shape</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Result (measured)</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>var x: anyerror = undefined;</tt></td>
+<td valign="top"><tt>error[20]</tt> <tt>identifier 'anyerror' is not declared or imported in this module</tt> (plus <tt>error[3000]</tt> <tt>unknown type in variable declaration</tt> at the declaration).</td>
+</tr>
+<tr>
+<td valign="top"><tt>fn f(e: anyerror) void</tt></td>
+<td valign="top">The same <tt>error[20]</tt>: <tt>anyerror</tt> is not exempt from the signature name rule.</td>
+</tr>
+<tr>
+<td valign="top"><tt>@errorName(e)</tt></td>
+<td valign="top"><tt>error[3000]</tt> <tt>unsupported builtin function</tt> (<tt>@errorName</tt> is not a Z98 builtin).</td>
+</tr>
+<tr>
+<td valign="top"><tt>anytype</tt> in a type or signature position</td>
+<td valign="top"><tt>error[16]</tt> <tt>anytype not supported in Z98</tt>, once per <tt>anytype</tt> node (Amendment A1: <tt>fn f(x: anytype)</tt>, <tt>fn f() anytype</tt>, <tt>?anytype</tt>, <tt>[*]anytype</tt>, <tt>fn (anytype) void</tt>).</td>
+</tr>
+</table>
+<p>
+Without a universal error type there is no universal name to look up: group tags
+by naming a set, or use the anonymous <tt>!T</tt> when the set genuinely should
+not be written down.
+</p>
+
+<h2>Operator precedence interactions</h2>
+<p>
+<tt>try</tt> is a prefix operator parsed at the <tt>prefix</tt> level
+(<tt>parser.zig:869-875</tt>), so it binds to the tightest following operand.
+<tt>catch</tt> and <tt>orelse</tt> are infix operators at the two loosest binary
+levels (<tt>orelse</tt> 2, <tt>catch</tt> 3; <tt>parser.zig:2185-2201</tt>), both
+right-associative; the full table is on
+<a href="vol4-01-grammar.html">the grammar page</a>.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Written</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Parses as</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Why</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>try f() + 1</tt></td>
+<td valign="top"><tt>(try f()) + 1</tt></td>
+<td valign="top"><tt>try</tt> binds its operand at the prefix level, above every infix operator.</td>
+</tr>
+<tr>
+<td valign="top"><tt>try f() catch d</tt></td>
+<td valign="top"><tt>(try f()) catch d</tt></td>
+<td valign="top"><tt>try</tt> consumes <tt>f()</tt> before the infix loop sees <tt>catch</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>a catch b catch c</tt></td>
+<td valign="top"><tt>a catch (b catch c)</tt></td>
+<td valign="top"><tt>catch</tt> is right-associative.</td>
+</tr>
+<tr>
+<td valign="top"><tt>a catch b == c</tt></td>
+<td valign="top"><tt>a catch (b == c)</tt></td>
+<td valign="top"><tt>catch</tt> sits below <tt>==</tt>, so the comparison is part of the catch right-hand side.</td>
+</tr>
+<tr>
+<td valign="top"><tt>a orelse b catch c</tt></td>
+<td valign="top"><tt>a orelse (b catch c)</tt></td>
+<td valign="top">Larger level binds tighter; <tt>catch</tt> (3) &gt; <tt>orelse</tt> (2), so the <tt>catch</tt> is the <tt>orelse</tt> right-hand side.</td>
+</tr>
+</table>
+<p>
+The practical consequence: to compare a caught value, parenthesize the
+<tt>catch</tt> &mdash; <tt>(a catch b) == c</tt>. As measured, the unparenthesized
+<tt>fi(0) catch 0 == 0</tt> types as the payload (<tt>source: i32</tt>), so
+binding it to <tt>bool</tt> is a <tt>warning[3000]</tt> rather than the bool
+comparison of the parenthesized form.
+</p>
+<pre>
+const x = (f() catch 0) == 0;   // compare the caught result
+const y = f() catch (0 == 0);   // fallback is the bool comparison
+</pre>
+
+<h2>Ignoring an error union</h2>
+<p>
+A statement whose result is an error union may not be discarded:
+</p>
+<pre>
+fn f() E!i32 { return error.Foo; }
+pub fn main() void { f(); }
+// error[3015]: error union result is ignored; use 'try', 'catch', or assign the result
+</pre>
+<p>
+The three legitimate answers are exactly the message's list: propagate
+(<tt>try</tt>), handle (<tt>catch</tt>), or keep it in a variable.
+</p>
+
+<h2>Diagnostic index</h2>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Code</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Message</b></th>
+</tr>
+<tr><td valign="top"><tt>error[16]</tt></td><td valign="top"><tt>anytype not supported in Z98</tt></td></tr>
+<tr><td valign="top"><tt>error[20]</tt></td><td valign="top"><tt>identifier 'anyerror' is not declared or imported in this module</tt></td></tr>
+<tr><td valign="top"><tt>error[3000]</tt></td><td valign="top"><tt>unsupported builtin function</tt> (<tt>@errorName</tt>); EU assignability mismatch; <tt>unknown type in variable declaration</tt></td></tr>
+<tr><td valign="top"><tt>error[3011]</tt></td><td valign="top"><tt>error literal not found in error set</tt></td></tr>
+<tr><td valign="top"><tt>error[3013]</tt></td><td valign="top"><tt>invalid print format specifier for the argument type</tt></td></tr>
+<tr><td valign="top"><tt>error[3015]</tt></td><td valign="top"><tt>error union result is ignored; use 'try', 'catch', or assign the result</tt></td></tr>
+<tr><td valign="top"><tt>error[3016]</tt></td><td valign="top"><tt>orelse requires an optional operand; use 'catch' for error unions</tt></td></tr>
+<tr><td valign="top"><tt>error[3051]</tt></td><td valign="top"><tt>cannot return from defer expression</tt></td></tr>
+<tr><td valign="top"><tt>error[3052]</tt></td><td valign="top"><tt>cannot break out of defer expression</tt></td></tr>
+<tr><td valign="top"><tt>error[3053]</tt></td><td valign="top"><tt>cannot continue out of defer expression</tt></td></tr>
+<tr><td valign="top"><tt>error[3054]</tt></td><td valign="top"><tt>'try' not allowed inside defer expression</tt></td></tr>
+<tr><td valign="top"><tt>error[3060]</tt></td><td valign="top"><tt>no field or member function named '&lt;x&gt;' in error set type</tt></td></tr>
+<tr><td valign="top"><tt>error[3075]</tt></td><td valign="top">the <tt>try</tt> enclosing-return prongs above</td></tr>
+</table>
+
+<h2>See also</h2>
+<p>
+<a href="vol4-21-diagnostics.html">Diagnostics</a> for the full code table;
+<a href="vol4-01-grammar.html">The full grammar</a> for the precedence table and
+the <tt>try</tt>/<tt>catch</tt> productions;
+<a href="vol4-08-arrays-slices.html">Arrays and slices</a> for the
+const/mutability rules that coercion shares;
+<a href="vol4-15-builtins.html">Builtins</a> for <tt>@enumToInt</tt> and the
+builtin call set; <a href="vol2-12-error-unions.html">Volume II, Error
+Unions</a> for the teaching narrative and the runnable
+<tt>error_unions.z98</tt> sample; and
+<a href="vol2-11-defer.html">Volume II, defer and errdefer</a> for the cleanup
+ordering idiom. Optionals (<tt>?T</tt>, <tt>orelse</tt>, <tt>.?</tt>) are the
+subject of the planned Volume IV optionals page.
+</p>
+
+<p class="navbtns">
+<a href="vol4-08-arrays-slices.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol4-15-builtins.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol4-08-arrays-slices.html">Arrays and slices</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-15-builtins.html">Builtins</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
