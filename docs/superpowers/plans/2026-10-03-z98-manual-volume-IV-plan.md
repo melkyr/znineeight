@@ -237,3 +237,30 @@ Each page task repeats this shape; its own block lists Files/Consumes/Must-cover
 - [ ] Seed rotation stays closeout-only (Task 26).
 
 **Sequence:** A3 runs after Task 13 (commit `2b0ee60c`) and before Task 14.
+
+---
+
+## Amendment A4 — `?void` present value must be preserved (operator-ruled m1523)
+
+**Origin:** found while probing Volume IV page 10 (`optionals`); Task-15 review. Operator ruling m1523: option 1 — scoped I/F.
+
+**Defect (controller-verified, seed-side fp `2794fe04e0828c95dd5c2c6fecdea362`).** In a `?void`-returning function, `return;` yields the **absent** value:
+```zig
+fn done(flag: bool) ?void { if (flag) { return; } return null; }
+// if (done(true)) |_| print("present") else print("absent")   →  Z98 prints "absent"
+```
+Zig 0.15.2 prints `present`. Silent wrong value. Page 10 makes no `?void` runtime claim, so this is a compiler defect, not a page defect.
+
+### Task A4-I: read-only investigation
+- [ ] Reproduce all `?void` shapes: `return;` in a `?void` fn; `return {}`/`return undefined` if legal; `var x: ?void = {}`/`= null`; `if (x) |_|`/`x == null`/`x != null`; assigning `?void` results; passing `?void`.
+- [ ] Confirm the Zig 0.15.2 oracle behavior for each shape.
+- [ ] Root-cause in `sf/src/**` (how `return;` / the void payload interacts with the optional `has_value` model at sema/lowering/emission).
+- [ ] Specify the minimal fix; blast radius (self-emission, corpus, stdlib, 4-MD5); fixtures `repro/mi_matrix/optional_void_present_xmod` + standalone; verification plan.
+- [ ] Report `task-A4-I-report.md`; no `sf/src` edits; no commit.
+
+### Task A4-F: implement
+- [ ] Implement the minimal fix; add fixture + standalone; run the QUICK_REF gate battery verbatim (**STOP on unexpected movement**); update tech docs + QUICK_REF + EXPECTED_FAIL; record the moved fixed point; commit the fix.
+- [ ] Docs commit: if page 10 said anything about `?void` shape that changes, correct it; otherwise no manual change.
+- [ ] Seed rotation stays closeout-only (Task 26).
+
+**Sequence:** A4 runs after Task 15 (commit `efacc0c4`) and before Task 16.
