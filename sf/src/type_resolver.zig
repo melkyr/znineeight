@@ -1717,7 +1717,7 @@ pub fn registerContainerType(env: *TypeResolveEnv, node_idx: u32, kind: AstKind,
             }
         }
     } else {
-        sym_reg.populateTypePayload(env.typereg, env.store, kind, node_idx, env.symbol_reg);
+        sym_reg.populateTypePayload(env.typereg, env.store, kind, node_idx, tid, env.symbol_reg);
     }
     return tid;
 }

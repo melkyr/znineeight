@@ -2068,6 +2068,9 @@ fn emitStructType(emitter: *C89Emitter, tid: u32) void {
     var es0a: []const u8 = "struct "; bufferedWriterWrite(&emitter.writer, es0a);
     bufferedWriterWrite(&emitter.writer, mangled_name);
     var es0: []const u8 = " {\n"; bufferedWriterWrite(&emitter.writer, es0);
+    if (fcount == 0) {
+        var es0z: []const u8 = "\tunsigned char _[1];\n"; bufferedWriterWrite(&emitter.writer, es0z);
+    }
     var i: usize = @intCast(usize, 0);
     while (i < fcount) : (i += @intCast(usize, 1)) {
         var fe = reg.fe_items[fstart + i];
