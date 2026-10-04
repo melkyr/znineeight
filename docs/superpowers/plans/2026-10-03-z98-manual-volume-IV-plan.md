@@ -289,3 +289,28 @@ Zig 0.15.2 rejects (`variable of type 'type' must be const or comptime`). Local 
 - [ ] Seed rotation stays closeout-only (Task 26).
 
 **Sequence:** A5 runs after Task 16 (commit `5db52869`) and before Task 17.
+
+## Amendment A6 — assignment must not be an expression (operator-ruled m1570)
+
+**Origin:** found while probing Volume IV page 12 (`statements`); Task-17 review (F1). Operator ruling (m1570 option 1): make Z98 reject assignment-as-expression at the statement/initializer/return positions, matching Zig.
+
+**Defect (reviewer-verified, base fp `821481e69df63fc0cf69176fdaaf9dd9`).** The compiler accepts an assignment where an expression is expected, in three positions:
+```zig
+a = b = 2;              // rc 0; a == b == 2
+var b: i32 = a = 3;     // rc 0; a == 3, b == 3
+return a = 3;           // rc 0
+```
+Zig 0.15.2 rejects each (`error: expected ';' after statement`). Conditions (`if (a = 3)`) and parenthesized init (`var b = (a = 3);`) already reject (Task 9B: `parser.zig:942-944`, `parser.zig:723-725`), but the expression-statement path (`parserParseExprStmt`, `sf/src/parser.zig:1560-1566`), the var-initializer path, and the return path still parse at `Prec.assignment`, and `getInfixInfo` (`sf/src/parser.zig:2218-2225`) makes `=` right-associative.
+
+### Task A6-I: read-only investigation
+- [ ] Reproduce all three positions on the base fp (`a = b = 2;`, `var b: i32 = a = 3;`, `return a = 3;`) and confirm the condition/parenthesized forms already reject. Confirm the Zig 0.15.2 rejection for each.
+- [ ] Root-cause in `sf/src/parser.zig` (the three parse paths and the precedence each uses) and specify the minimal change that rejects assignment-as-expression while still parsing an assignment *statement* (e.g. parse the expression at `Prec.prec_orelse` and handle `=` at the statement level).
+- [ ] Blast radius (`sf/src`, `examples/z98`, `docs/sf/manuals/src`, `repro`, retired `examples/zig0`): does any gated program rely on assignment-as-expression? Fixtures `repro/mi_matrix/assignment_expr_reject_xmod` + `repro/assignment_expr_reject.z98`; verification plan (Zig oracle, corpus classify join-diff, 4-MD5, stdlib, example matrix, self-emission).
+- [ ] Report `task-A6-I-report.md`; no `sf/src` edits; no commit.
+
+### Task A6-F: implement
+- [ ] Implement the minimal parser change; add fixture + standalone; run the QUICK_REF gate battery verbatim (**STOP on unexpected movement**); update tech docs + QUICK_REF + EXPECTED_FAIL; record the moved fixed point; commit the fix.
+- [ ] Reword `docs/sf/manuals/en/vol4-12-statements.html`: the "assignment is not an expression" claim now holds; correct the `:107` right-associativity wording and the report F2/F3 notes.
+- [ ] Seed rotation stays closeout-only (Task 26).
+
+**Sequence:** A6 runs after Task 17 (commit `0724b838`) and before Task 17's fix round and Task 18.
