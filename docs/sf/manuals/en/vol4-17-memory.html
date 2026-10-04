@@ -1,0 +1,413 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Memory and the arena</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual memory arena std.arena init alloc reset ArenaError OutOfMemory dual-arena permanent scratch init-function pattern compiler allocator tiers Sand CompilerAlloc permanent module scratch lir_read emission pool 256 MiB DEV_MAX_MEM RELEASE_MAX_MEM DEFAULT_MAX_MEM_KB -mm -mm0 -s spill ladder checkCombinedPeak 16 MB budget @sizeOf @ptrCast">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol4-16-async.html">
+<link rel="next" href="vol4-18-stdlib.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume IV &mdash; Reference</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+How to use the Reference <i>(planned)</i><br>
+<a href="vol4-01-grammar.html">The full grammar</a><br>
+<a href="vol4-02-types.html">Types</a><br>
+<a href="vol4-03-pointers.html">Pointers</a><br>
+<a href="vol4-04-structs.html">Structs</a><br>
+<a href="vol4-05-enums.html">Enums</a><br>
+<a href="vol4-06-unions.html">Unions</a><br>
+<a href="vol4-07-tuples.html">Tuples</a><br>
+<a href="vol4-08-arrays-slices.html">Arrays and slices</a><br>
+<a href="vol4-09-errors.html">Errors</a><br>
+<a href="vol4-10-optionals.html">Optionals</a><br>
+<a href="vol4-11-aliases.html">Aliases</a><br>
+<a href="vol4-12-statements.html">Statements</a><br>
+<a href="vol4-13-control-flow.html">Control flow</a><br>
+<a href="vol4-14-error-expressions.html">Error expressions</a><br>
+<a href="vol4-15-builtins.html">Builtins</a><br>
+<a href="vol4-16-async.html">Async</a><br>
+<b>Memory</b><br>
+<a href="vol4-18-stdlib.html">The standard library</a><br>
+<a href="vol4-19-pal.html">The PAL</a><br>
+<a href="vol4-20-markers.html">Markers</a><br>
+<a href="vol4-21-diagnostics.html">Diagnostics</a><br>
+<a href="vol4-22-cli.html">The command line</a><br>
+Limits <i>(planned)</i><br>
+<a href="vol4-24-html-style.html">HTML style</a><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Memory and the arena</h1>
+<p>
+Z98's dynamic memory is <b>arena allocation</b>: a program declares a byte
+buffer, hands <tt>std.arena</tt> a cursor over it, and reclaims everything at
+once with <tt>reset</tt>. There is no <tt>malloc</tt>, no <tt>free</tt>, and no
+general-purpose allocator in the <tt>std</tt> surface. The compiler is built on
+the same pattern, extended to five tiers under one static pool and guarded by
+the <tt>-mm</tt> budget gate. This page is the lookup for the arena API, the
+init/reset patterns, the dual-arena rule, the compiler's tiers, and the
+16&nbsp;MB target budget.
+</p>
+<p>
+Authority: the library arena is <tt>sf/src/std_arena.zig</tt> (re-exported as
+<tt>std.arena</tt> at <tt>std.zig:3</tt>); the compiler's own tiers and budget
+constants are <tt>sf/src/allocator.zig</tt>; the <tt>-mm</tt>/<tt>-s</tt> flags
+are parsed in <tt>sf/src/main.zig</tt> (<tt>parseMMBytes</tt>,
+<tt>parseSLevel</tt>). The normative prose is
+<tt>docs/reference/Language_Spec_Z98.md</tt> &sect;2. Every value and message
+below was reproduced on the fixed compiler (md5
+<tt>821481e69df63fc0cf69176fdaaf9dd9</tt>); reused material is named where one
+exists.
+</p>
+
+<h2>The <tt>std.arena</tt> API</h2>
+<p>
+The standard library re-exports the arena as <tt>std.arena</tt>
+(<tt>std.zig:3</tt>). The module <tt>sf/src/std_arena.zig</tt> is a struct,
+three functions, and one error set:
+</p>
+<pre>
+pub const Arena = struct {
+    data: [*]u8,
+    capacity: usize,
+    used: usize,
+};
+
+pub fn init(data: []u8) Arena { ... }
+
+pub const ArenaError = error{OutOfMemory};
+
+pub fn alloc(self: *Arena, size: usize) ArenaError![*]u8 { ... }
+
+pub fn reset(self: *Arena) void { ... }
+</pre>
+<p>
+Z98 has no method syntax, so the three functions are free functions called with
+the arena as the first argument. The fields are public, so the cursor is
+observable.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Signature</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Semantics</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>std.arena.init(data: []u8) Arena</tt></td>
+<td valign="top">Record <tt>data.ptr</tt> as <tt>data</tt>, <tt>data.len</tt> as
+<tt>capacity</tt>, and set <tt>used = 0</tt>. Infallible: the buffer already
+exists, so there is nothing to fail.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std.arena.alloc(self: *Arena, size: usize) ArenaError![*]u8</tt></td>
+<td valign="top">If <tt>used + size &gt; capacity</tt>, return
+<tt>error.OutOfMemory</tt>; otherwise return <tt>data + used</tt> and advance
+<tt>used</tt> by <tt>size</tt>. There is no alignment argument; the result is a
+raw byte position.</td>
+</tr>
+<tr>
+<td valign="top"><tt>std.arena.reset(self: *Arena) void</tt></td>
+<td valign="top">Set <tt>used = 0</tt>. Every allocation made through the arena
+is reclaimed at once. It does not zero the bytes and runs no code.</td>
+</tr>
+<tr>
+<td valign="top"><tt>Arena.data</tt>, <tt>Arena.capacity</tt>, <tt>Arena.used</tt></td>
+<td valign="top">Public fields: the backing byte pointer, the buffer length, and
+the live cursor. There is no <tt>deinit</tt>.</td>
+</tr>
+</table>
+<pre>
+var arena = std.arena.init(buf[0..]);   // buf is a caller-declared [N]u8
+</pre>
+
+<h2>Allocation and the init-function pattern</h2>
+<p>
+<tt>alloc</tt> is a cursor bump. Because the result carries no type, the
+standard shape is a constructor that allocates, casts with <tt>@ptrCast</tt>,
+sizes with <tt>@sizeOf</tt>, fills the fields, and returns the typed pointer.
+Reused from <tt>docs/sf/manuals/src/vol2/arena.z98</tt>:
+</p>
+<pre>
+const Point = struct {
+    x: i32,
+    y: i32,
+};
+
+fn Point_init(arena: *std.arena.Arena, x: i32, y: i32) std.arena.ArenaError!*Point {
+    const raw = try std.arena.alloc(arena, @sizeOf(Point));
+    const p = @ptrCast(*Point, raw);
+    p.x = x;
+    p.y = y;
+    return p;
+}
+</pre>
+<p>
+The result type is <tt>ArenaError![*]u8</tt> &mdash; an error union, not an
+optional. The tools are <tt>try</tt> (propagate) and <tt>catch</tt> (handle);
+<tt>orelse</tt> is rejected with the message that names the right one:
+</p>
+<pre>
+error[3016]: orelse requires an optional operand; use 'catch' for error unions
+</pre>
+<p>
+An allocation result also cannot be silently discarded (<tt>error[3015]</tt>).
+The full example program runs to this exact output on the fixed compiler:
+</p>
+<pre>
+cap=32 used=0
+p=3 4 used=8
+used after reset=0
+p2=9 8 reused p.x=9
+caught: error.OutOfMemory
+perm=3 4 scratch=5 6
+perm used=8 scratch used=8
+scratch used after reset=0 perm used=8
+</pre>
+
+<h2>Reclaiming memory: <tt>reset</tt>, not <tt>free</tt></h2>
+<p>
+There is no per-object free and no <tt>deinit</tt>. <tt>reset</tt> sets
+<tt>used</tt> back to zero, and reclamation is all-at-once. Three rules follow
+from that shape:
+</p>
+<ul>
+<li>An object that owns an external resource &mdash; a file handle, a socket
+&mdash; must release it before the reset; the arena knows nothing about it.</li>
+<li>Memory obtained from <tt>std.arena.alloc</tt> must not be passed to
+<tt>free()</tt>.</li>
+<li>After a reset the old pointers are not invalidated, only reused: the next
+<tt>alloc</tt> hands out the same addresses. The transcript above shows
+<tt>p.x</tt> reading the new object's <tt>9</tt>. Ownership ended at the reset;
+the address did not.</li>
+</ul>
+
+<h2>The dual-arena pattern</h2>
+<p>
+One arena forces long-lived and transient data to share a fill level, so the
+short-lived tier can never be reset without losing the long-lived one. The
+standard answer is two arenas with two lifetimes:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Arena</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Holds</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Reset</b></th>
+</tr>
+<tr>
+<td valign="top"><b>Permanent</b></td>
+<td valign="top">Data that lives for the whole run: global symbols, persistent
+nodes, the structures the program is "about".</td>
+<td valign="top">Never, or once at the very end.</td>
+</tr>
+<tr>
+<td valign="top"><b>Scratch</b> (transient)</td>
+<td valign="top">Temporary data: per-file, per-request, or per-phase working
+memory.</td>
+<td valign="top">At every phase boundary, after the phase's results are copied
+or summarized.</td>
+</tr>
+</table>
+<p>
+The pattern is two <tt>Arena</tt> values, not a library feature. The compiler
+extends it to five tiers (below), and the coroutine
+<tt>Context</tt> is a per-task tier built on the same buffer-plus-cursor shape.
+</p>
+
+<h2>The compiler's allocator: five tiers, one pool</h2>
+<p>
+The compiler is itself an arena program. <tt>sf/src/allocator.zig</tt> defines
+<tt>Sand</tt> &mdash; a named bump arena that tracks a peak and can grow
+&mdash; and a <tt>CompilerAlloc</tt> of five tiers backed by a single static
+pool:
+</p>
+<pre>
+pub const Sand = struct {
+    start: [*]u8,
+    pos: usize,
+    end: usize,
+    peak: usize,
+    name: []const u8,
+    growable: ?*GrowableSand,
+};
+
+pub const CompilerAlloc = struct {
+    permanent: Sand,
+    module: Sand,
+    scratch: Sand,
+    lir_read: Sand,
+    emission: Sand,
+    max_mem: u32,
+};
+</pre>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Tier</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Lifetime / contents</b></th>
+</tr>
+<tr><td valign="top"><tt>permanent</tt></td>
+<td valign="top">The whole compile: interned strings, the module registry, types
+that survive every phase.</td></tr>
+<tr><td valign="top"><tt>module</tt></td>
+<td valign="top">Per module and per phase, reset at phase boundaries: the AST
+and the lowering structures.</td></tr>
+<tr><td valign="top"><tt>scratch</tt></td>
+<td valign="top">Short-lived working memory, reset aggressively during
+analysis so the peak is the largest single function, not their sum.</td></tr>
+<tr><td valign="top"><tt>lir_read</tt></td>
+<td valign="top">LIR structures read back after lowering.</td></tr>
+<tr><td valign="top"><tt>emission</tt></td>
+<td valign="top">C89 emission working memory.</td></tr>
+</table>
+<p>
+All five are growable sub-arenas drawn from one <tt>Sand</tt> that is never
+reset:
+</p>
+<pre>
+pub const POOL_SIZE: usize = 268435456; // 256 MiB measurement pool; sized to measured peak + margin in Task 12
+var memory_pool_buf: [POOL_SIZE]u8 = undefined;
+var pool: Sand = undefined; // monotonic bump over memory_pool_buf; never reset
+</pre>
+<p>
+<tt>Sand</tt> exposes <tt>sandInit</tt>, <tt>sandAlloc</tt>,
+<tt>sandReset</tt>, <tt>sandResetPeak</tt>, and the in-place realloc helpers;
+<tt>GrowableSand</tt> wraps a <tt>Sand</tt> as a chain of doubling segments
+drawn from a backing tier (the five tiers start at 4&nbsp;KB each). The
+<tt>--markers --track-memory</tt> pair prints the per-tier peaks
+(<tt>perm</tt>, <tt>mod</tt>, <tt>scr</tt>, <tt>type_db</tt>, <tt>pool</tt>,
+and <tt>total</tt>); <tt>--track-memory</tt> emits through the marker channel,
+so both flags are required.
+</p>
+
+<h2>The <tt>-mm</tt> budget gate and the 16&nbsp;MB target</h2>
+<p>
+The compiler carries two budget numbers in <tt>sf/src/allocator.zig</tt> beside
+the gate's host default:
+</p>
+<pre>
+pub const DEV_MAX_MEM: usize = 16 * 1024 * 1024;
+pub const RELEASE_MAX_MEM: usize = 16 * 1024 * 1024;
+pub const DEFAULT_MAX_MEM_KB: usize = 64 * 1024;
+</pre>
+<p>
+<tt>DEV_MAX_MEM</tt> and <tt>RELEASE_MAX_MEM</tt> are both 16&nbsp;MiB and
+state the <b>target-build policy</b>: the peak the compiler is designed to hold
+when it runs on the 1998 machine. <tt>DEFAULT_MAX_MEM_KB</tt> is 64&nbsp;MB and
+supplies the <b>host default</b> of the <tt>-mm&lt;N&gt;</tt> gate. The two
+numbers answer different questions on purpose &mdash; policy versus host
+tripwire &mdash; and the measured accounting is on
+<a href="vol3-16-memory-budgets.html">Memory budgets</a>.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Flag</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Meaning</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Default</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>-mm&lt;N&gt;</tt></td>
+<td valign="top">Stop the compile when the pool high-water exceeds N&nbsp;MB.
+The gate checks the pool, not the live tier sum. As a host tripwire it defaults
+high so ordinary host work does not trip it.</td>
+<td valign="top">64&nbsp;MB (<tt>DEFAULT_MAX_MEM_KB</tt>)</td>
+</tr>
+<tr>
+<td valign="top"><tt>-mm0</tt></td>
+<td valign="top">Relax path: <tt>checkCombinedPeak</tt> falls back to the static
+pool size as the limit. This is "no gate", not "zero megabytes".</td>
+<td valign="top">off</td>
+</tr>
+<tr>
+<td valign="top"><tt>-s&lt;N&gt;</tt></td>
+<td valign="top">Spill ladder, N = 0..6: how many of the six spills live in RAM
+instead of on disk (order AST, LIR, HASH, RES, SIDE, EXTRA). <tt>-s0</tt> is all
+on disk, <tt>-s6</tt> all in RAM; emission is identical in every mode.</td>
+<td valign="top"><tt>-s0</tt> (all on disk)</td>
+</tr>
+</table>
+<p>
+<tt>checkCombinedPeak</tt> divides the pool high-water by 1024, compares it to
+<tt>max_mem</tt> (in KB), and on overflow prints
+</p>
+<pre>
+memory limit exceeded: pool limit=&lt;N&gt;K pool=&lt;M&gt;K
+</pre>
+<p>
+then aborts with status&nbsp;3. A malformed gate is a clean command-line error
+with status&nbsp;1:
+</p>
+<pre>
+error: -mm&lt;N&gt; requires a decimal MB size (e.g. -mm64)
+error: -s&lt;N&gt; requires a decimal level 0..6 (e.g. -s0 all on disk, -s6 all in RAM)
+</pre>
+<p>
+<tt>-mm&lt;N&gt;</tt> is clamped to the static pool ceiling
+(<tt>POOL_SIZE</tt> = 256&nbsp;MiB), so a budget at or above it can never trip
+the gate. The measured self-compile figures and the choice between
+<tt>-mm&lt;N&gt;</tt>, <tt>-mm0</tt>, and the spill levels are on
+<a href="vol3-16-memory-budgets.html">Memory budgets</a>; the full flag
+catalogue is on <a href="vol4-22-cli.html">The command line</a>.
+</p>
+
+<h2>See also</h2>
+<p>
+<a href="vol2-14-arena.html">Volume II, The Arena &mdash; the second big
+shift</a> for the worked single/dual example and the <tt>malloc</tt> contrast;
+<a href="vol3-16-memory-budgets.html">Volume III, Memory budgets</a> for the
+measured 16&nbsp;MB-versus-64&nbsp;MB accounting and the spill ladder;
+<a href="vol4-18-stdlib.html">The standard library</a> for <tt>std.arena</tt>
+beside the other re-exported modules;
+<a href="vol4-16-async.html">Async and coroutines</a> for the <tt>Context</tt>
+child-frame pool built on the same buffer-plus-cursor shape;
+<a href="vol4-15-builtins.html">Builtins</a> for <tt>@sizeOf</tt>,
+<tt>@ptrCast</tt>, and <tt>@intFromPtr</tt>;
+<a href="vol4-22-cli.html">The command line</a> for the full flag set; and
+<a href="vol3-09-coroutines.html">Volume III, Coroutines</a> for a per-task
+tier in a complete program.
+</p>
+
+<p class="navbtns">
+<a href="vol4-16-async.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol4-18-stdlib.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol4-16-async.html">Async and coroutines</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-18-stdlib.html">The standard library</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
