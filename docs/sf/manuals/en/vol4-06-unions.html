@@ -1,0 +1,513 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Unions</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual union unions bare packed tagged union(enum) naked void payload tag .tag synthetic u32 ordinal comparison switch capture whole-union reassignment store reject 3000 3063 3072 3060 3076 3068 layout LSB-first 31 bits">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol4-05-enums.html">
+<link rel="next" href="vol4-15-builtins.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume IV &mdash; Reference</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+How to use the Reference <i>(planned)</i><br>
+<a href="vol4-01-grammar.html">The full grammar</a><br>
+<a href="vol4-02-types.html">Types</a><br>
+<a href="vol4-03-pointers.html">Pointers</a><br>
+<a href="vol4-04-structs.html">Structs</a><br>
+<a href="vol4-05-enums.html">Enums</a><br>
+<b>Unions</b><br>
+Tuples <i>(planned)</i><br>
+Arrays and slices <i>(planned)</i><br>
+Errors <i>(planned)</i><br>
+Optionals <i>(planned)</i><br>
+Aliases <i>(planned)</i><br>
+Statements <i>(planned)</i><br>
+Control flow <i>(planned)</i><br>
+Error expressions <i>(planned)</i><br>
+<a href="vol4-15-builtins.html">Builtins</a><br>
+Async <i>(planned)</i><br>
+Memory <i>(planned)</i><br>
+<a href="vol4-18-stdlib.html">The standard library</a><br>
+<a href="vol4-19-pal.html">The PAL</a><br>
+<a href="vol4-20-markers.html">Markers</a><br>
+<a href="vol4-21-diagnostics.html">Diagnostics</a><br>
+<a href="vol4-22-cli.html">The command line</a><br>
+Limits <i>(planned)</i><br>
+<a href="vol4-24-html-style.html">HTML style</a><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Unions</h1>
+<p>
+A <b>union</b> overlaps its members on one storage instead of giving each its
+own bytes. Z98 has three forms: the <b>bare union</b> (<tt>union { ... }</tt>,
+the C union), the <b>packed union</b> (<tt>packed union { ... }</tt>,
+bit-overlaid storage), and the <b>tagged union</b> (<tt>union(enum) { ... }</tt>,
+a compiler-managed tag beside a payload). This page is the lookup for the
+declaration syntax and member shapes, the layout rules, the synthetic
+<tt>.tag</tt> field and its member sugar, payload access and the whole-union
+reassignment idiom, the payload-store rejects, the packed-union member gate,
+and the print forms.
+</p>
+<p>
+The authority is the parser (<tt>parserParseUnionType</tt> at
+<tt>sf/src/parser.zig:1427-1481</tt>), the tag/payload registration
+(<tt>sf/src/symbol_registrator.zig:148-197</tt>, tag type fixed at
+<tt>TYPE_U32</tt> at <tt>:177</tt>), the packed-union layout
+(<tt>sf/src/type_registry.zig:1120-1177</tt>), the <tt>.tag</tt> sugar
+(<tt>sf/src/semantic_analyzer.zig:2314-2456</tt>, switch condition at
+<tt>:4288</tt>), the payload-store rejects (<tt>sf/src/lower.zig:2421</tt> and
+<tt>:2926</tt>), and the print validator
+(<tt>printFmtAggFieldsOk</tt> at <tt>sf/src/lower.zig:1470-1514</tt>,
+<tt>printFmtCheck</tt> at <tt>:1528</tt>). Every rule below was reproduced on
+the fixed compiler (md5 <tt>7fc608358f4f6af5abab43e633d44f83</tt>); the reused
+fixture or sample is named where one exists.
+</p>
+
+<h2>Declaration syntax and the three forms</h2>
+<p>
+A union declaration is an ordinary <tt>const</tt> whose value denotes a type.
+Members are comma-separated field declarations; a trailing comma is optional.
+The form is chosen by what follows <tt>union</tt>.
+</p>
+<pre>
+const Bits = union { f: f32, u: u32 };             // bare union
+const Flags = packed union { whole: u8, lo: u4 };  // packed union
+const Shape = union(enum) {                        // tagged union
+    circle: i32,
+    empty,
+    box: struct { w: i32, h: i32 },
+};
+</pre>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Form</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Spelling</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Meaning</b></th>
+</tr>
+<tr>
+<td valign="top">bare</td>
+<td valign="top"><tt>const U = union { field: T, ... };</tt></td>
+<td valign="top">The C union: one storage, the program tracks the live member.</td>
+</tr>
+<tr>
+<td valign="top">packed</td>
+<td valign="top"><tt>const U = packed union { field: uN, ... };</tt></td>
+<td valign="top">Members overlap at <b>bit</b> offset 0, no padding.</td>
+</tr>
+<tr>
+<td valign="top">tagged</td>
+<td valign="top"><tt>const U = union(enum) { field: T, ... };</tt></td>
+<td valign="top">The compiler stores a <tt>u32</tt> tag naming the live variant.</td>
+</tr>
+</table>
+<p>
+A tagged union is <em>not</em> a packed union: writing <tt>packed
+union(enum)</tt> is rejected at parse time. Level-0 <tt>error[2000]</tt>
+<tt>packed unions cannot be tagged (union(enum)); packed union is an untagged
+container</tt> is reported at the <tt>(enum)</tt>, followed by a second
+<tt>error[2000]</tt> <tt>unexpected token</tt> at the brace.
+</p>
+
+<h3>Naked versus payload members</h3>
+<p>
+A member may carry a payload type (<tt>name: T</tt>) or be written as a bare
+name (<tt>name,</tt>). The bare-name form is <b>naked-tag sugar</b>: it is
+admitted only in a tagged union and is treated as an explicit <tt>void</tt>
+payload. In a bare union a bare member is accepted as a plain <tt>void</tt>
+field (not a tag); in a struct it is a parse reject.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Member spelling</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Tagged union</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Bare union</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Struct</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>name: T</tt></td>
+<td valign="top">A variant with payload type <tt>T</tt>.</td>
+<td valign="top">A field of type <tt>T</tt>.</td>
+<td valign="top">A field of type <tt>T</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>name: void</tt></td>
+<td valign="top">A variant with an explicit <tt>void</tt> payload.</td>
+<td valign="top">A <tt>void</tt> field.</td>
+<td valign="top">A <tt>void</tt> field (measurable; not printable).</td>
+</tr>
+<tr>
+<td valign="top"><tt>name,</tt></td>
+<td valign="top">Naked tag: shorthand for <tt>name: void</tt>.</td>
+<td valign="top">Accepted as a <tt>void</tt> field; the type still has no tag.</td>
+<td valign="top"><tt>error[2000]</tt> <tt>struct fields must be all named or all positional (tuple)</tt>.</td>
+</tr>
+</table>
+<p>
+A variant payload may be an anonymous struct written in place
+(<tt>box: struct { w: i32, h: i32 }</tt>); the compiler declares the internal
+struct. Payload reads reach its fields directly: <tt>s.box.w</tt>. The reused
+sample <tt>docs/sf/manuals/src/vol2/variant.z98</tt> declares all three forms,
+the naked <tt>empty</tt> tag, and the anonymous <tt>box</tt> payload.
+</p>
+
+<h2>Layout</h2>
+<p>
+The frozen 32-bit model applies to all three forms. A bare union is the size of
+its largest member, rounded up to the largest member alignment. A tagged union
+is the <tt>u32</tt> tag plus a payload union wide enough for the largest
+variant, laid out as a struct pair. A packed union is measured in bits.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Type (measure)</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Form</b></th>
+<th align="left" bgcolor="#e8e0e0"><b><tt>@sizeOf</tt> / <tt>@alignOf</tt> / <tt>@bitSizeOf</tt></b></th>
+</tr>
+<tr>
+<td valign="top"><tt>Bits { f: f32, u: u32 }</tt></td>
+<td valign="top">bare</td>
+<td valign="top">4 / 4 / 32</td>
+</tr>
+<tr>
+<td valign="top"><tt>union { i: i32, u: u32 }</tt></td>
+<td valign="top">bare</td>
+<td valign="top">4 / 4 / 32</td>
+</tr>
+<tr>
+<td valign="top"><tt>union(enum) { a: i32, b: u32 }</tt></td>
+<td valign="top">tagged</td>
+<td valign="top">8 / 4 / 64 (tag 4 + payload 4)</td>
+</tr>
+<tr>
+<td valign="top"><tt>union(enum) { a, b, c }</tt> (all naked)</td>
+<td valign="top">tagged</td>
+<td valign="top">4 / 4 / 32 (the tag only)</td>
+</tr>
+<tr>
+<td valign="top"><tt>union(enum) { a: i32, b: void }</tt></td>
+<td valign="top">tagged</td>
+<td valign="top">8 / 4 / 64</td>
+</tr>
+<tr>
+<td valign="top"><tt>Shape { circle: i32, empty, box: struct { w: i32, h: i32 } }</tt></td>
+<td valign="top">tagged</td>
+<td valign="top">12 / 4 / 96 (tag 4 + 8-byte payload + pad)</td>
+</tr>
+<tr>
+<td valign="top"><tt>packed union { a: u4, b: u12 }</tt></td>
+<td valign="top">packed</td>
+<td valign="top">2 / 1 / 12 (widest member)</td>
+</tr>
+<tr>
+<td valign="top"><tt>packed union { x: bool, y: u1 }</tt></td>
+<td valign="top">packed</td>
+<td valign="top">1 / 1 / 1</td>
+</tr>
+<tr>
+<td valign="top"><tt>packed union { a: u8, s: Inner }</tt>, <tt>Inner = packed struct { p: u4, q: u4 }</tt></td>
+<td valign="top">packed</td>
+<td valign="top">1 / 1 / 8 (the packed-struct member is 8 bits)</td>
+</tr>
+</table>
+<p>
+A union embedded in a struct participates in the outer layout normally. The
+reused fixture <tt>repro/mi_matrix/sizeof_struct_union_xmod</tt> holds a bare
+<tt>union { I: i64, S: []const u8, F: f64 }</tt> in a struct and measures the
+struct as 16 / 8 (reproduced as <tt>24</tt> when size and align are summed).
+<tt>@offsetOf</tt>/<tt>@bitOffsetOf</tt> reject a union target: level-0
+<tt>error[3072]</tt> <tt>expected struct type, found 'Raw'</tt> (the type name
+varies); the reused repro <tt>repro/union_offset_reject.z98</tt> pins three
+<tt>error[3072]</tt> rows for a bare union, a tagged union, and a packed union.
+Put the union in a struct and ask for the struct field's offset instead.
+</p>
+
+<h2>Packed-union member rules</h2>
+<p>
+Packed members overlap at bit offset 0, packed LSB-first, with no padding. A
+member is admitted only if it is <tt>bool</tt>, an integer of at most 31 bits,
+or a <tt>packed struct</tt> whose inner total width is the member's width (the
+&le;31-bit cap applies to the <tt>bool</tt>/integer leaves). The type's total
+bits are the widest member; <tt>@sizeOf</tt> is
+<tt>max(1, (total_bits + 7) / 8)</tt> and <tt>@alignOf</tt> is 1.
+</p>
+<pre>
+const U = packed union { a: u4, b: u12 };
+var u: U = .{ .b = 3000 };
+// @sizeOf(U) is 2; u.a reads the low 4 bits: 3000 &amp; 0xF = 8
+</pre>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Member written</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Code</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Message (measured)</b></th>
+</tr>
+<tr>
+<td valign="top">an integer wider than 31 bits (<tt>u32</tt>, <tt>i64</tt>)</td>
+<td valign="top"><tt>error[3000]</tt></td>
+<td valign="top"><tt>packed union field width must be &lt;= 31 bits (u32/i64 etc. packed fields are not supported yet)</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>f32</tt>/<tt>f64</tt>, a pointer, or any non-integer</td>
+<td valign="top"><tt>error[3000]</tt></td>
+<td valign="top"><tt>packed union fields must be bool or an integer type (uN/iN); this field type is not allowed in a packed union</tt></td>
+</tr>
+</table>
+<p>
+A whole-member move of a packed-struct member (<tt>flags.halves = h</tt>, a
+whole-value read <tt>var c: Inner = u.b;</tt>, or a struct-literal element)
+lowers per leaf: one scalar bitfield load or store per leaf with composed
+offsets. The reused fixtures
+<tt>repro/mi_matrix/packed_union_xmod</tt> (prints <tt>2 8</tt>) and
+<tt>repro/mi_matrix/packed_union_struct_wholemember_xmod</tt> (prints
+<tt>2 3</tt>) pin the overlap and the per-leaf copy. The per-leaf recursion is
+bounded at 32 packed levels (<tt>lowerPackedWholeCopy</tt>,
+<tt>sf/src/lower.zig:2674</tt>); a deeper whole-value move is a clean level-0
+<tt>error[3000]</tt>, never a bad store.
+</p>
+
+<h2>Tagged unions: members and payload access</h2>
+<p>
+Construction names the variant and supplies its payload:
+<tt>.{ .circle = 2 }</tt>, <tt>.{ .box = .{ .w = 3, .h = 4 } }</tt>, or the
+naked <tt>.empty</tt>. A payload is read through the variant name
+(<tt>s.circle</tt>, <tt>s.box.w</tt>), and a whole tagged union is compared
+against a variant (<tt>s == Shape.circle</tt>, <tt>s == .empty</tt>). The
+reused sample <tt>src/vol2/variant.z98</tt> prints <tt>circle tag=0 area=12</tt>,
+<tt>box tag=2 area=12 name=box</tt>, and <tt>empty tag=1 area=0 eq=true</tt>.
+The tag ordinal is the variant's declaration order, starting at 0.
+</p>
+<p>
+The supported way to change the active variant is <b>whole-union
+reassignment</b>: the new tag and payload are stored together. Per-member
+payload stores and taking a payload member's address are rejects (S2).
+</p>
+<pre>
+var x: U = .{ .i = 1 };
+x = .{ .i = 5 };          // reassign tag and payload
+x = .{ .box = .{ .w = 9 } };
+var p: *U = &amp;x;
+p.* = U{ .i = 21 };       // through a pointer
+</pre>
+<p>
+The reused standalone <tt>repro/tagged_payload_store_reject.z98</tt> pins both
+rejects (two level-0 <tt>error[3000]</tt>, one per offending statement):
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Shape</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Code</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Message (measured)</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>x.i = 5</tt>, <tt>b.box = .{ ... }</tt></td>
+<td valign="top"><tt>error[3000]</tt></td>
+<td valign="top"><tt>cannot store to a tagged-union payload member; assign the whole union instead (e.g. x = .{ .i = 5 })</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>&amp;x.i</tt>, <tt>b.box.w = 7</tt></td>
+<td valign="top"><tt>error[3000]</tt></td>
+<td valign="top"><tt>cannot take the address of a tagged-union payload member; assign the whole union instead (e.g. x = .{ .i = 5 })</tt></td>
+</tr>
+</table>
+<p>
+The example in both messages is fixed wording; it does not rename the
+variable or the field. Before the payload-store fix these shapes were internal
+<tt>error[3043]</tt> ICEs. A whole-union <tt>switch</tt> with payload captures
+works normally (both the qualified <tt>Shape.circle</tt> and shorthand
+<tt>.box</tt> prong spellings bind the payload identically), and the mandatory
+<tt>else</tt> applies here as everywhere: a switch without it rejects level-0
+<tt>error[3068]</tt> <tt>switch must have an 'else' prong</tt>. The reused
+fixture <tt>repro/mi_matrix/tagged_union_cmp_xmod</tt> pins a cross-module
+whole-union <tt>==</tt> against a variant (prints <tt>1</tt>).
+</p>
+
+<h2>The <tt>.tag</tt> field of a tagged union</h2>
+<p>
+A tagged union has a synthetic <tt>.tag</tt> field typed <tt>u32</tt>. It holds
+the live variant's ordinal (declaration order), independent of any payload.
+A direct <tt>.tag</tt> access is paren-transparent and a pointer or
+many-pointer base auto-dereferences (<tt>p.tag</tt>, <tt>(*p).tag</tt>), so the
+read is of the pointee's ordinal and <tt>p.tag = v</tt> stores through it.
+</p>
+<p>
+A member-shaped use of <tt>.tag</tt> gets contextual member sugar: an enum
+literal compared against the tag resolves against the base union's members and
+compares ordinals, yielding <tt>bool</tt>. All six comparison ops are hooked,
+the member may be on either side, and the qualifier may be shorthand,
+container-qualified, or a same-type alias.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Use (measured on the fixed compiler)</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Result</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>s.tag</tt></td>
+<td valign="top">The ordinal as <tt>u32</tt> (variant 0 prints <tt>0</tt>).</td>
+</tr>
+<tr>
+<td valign="top"><tt>s.tag == .circle</tt>, <tt>s.tag != Shape.circle</tt>, <tt>s.tag &lt; Shape.empty</tt>, <tt>&lt;=</tt>, <tt>&gt;</tt>, <tt>&gt;=</tt></td>
+<td valign="top"><tt>bool</tt>; the member resolves to its ordinal and both sides are compared as ordinals.</td>
+</tr>
+<tr>
+<td valign="top"><tt>Shape.circle == s.tag</tt> (member on the left)</td>
+<td valign="top"><tt>bool</tt>; accepted.</td>
+</tr>
+<tr>
+<td valign="top"><tt>s.tag == ShapeAlias.circle</tt> (<tt>const ShapeAlias = Shape;</tt>)</td>
+<td valign="top"><tt>bool</tt>; a same-type alias qualifier is accepted.</td>
+</tr>
+<tr>
+<td valign="top"><tt>switch (s.tag) { .circle =&gt; ..., Shape.empty =&gt; ..., else =&gt; ... }</tt></td>
+<td valign="top">Member prongs resolve to ordinal <tt>case</tt> labels; the mandatory <tt>else</tt> applies.</td>
+</tr>
+<tr>
+<td valign="top"><tt>switch (s.tag) { 0 =&gt; ..., else =&gt; ... }</tt></td>
+<td valign="top">Numeric prongs are unchanged.</td>
+</tr>
+<tr>
+<td valign="top"><tt>switch (s.tag) { .box =&gt; |v| ... }</tt></td>
+<td valign="top">The capture binds a <tt>u32</tt> copy of the ordinal (there is no payload).</td>
+</tr>
+<tr>
+<td valign="top"><tt>s.tag == 0</tt>, <tt>@enumToInt(s.tag)</tt>, <tt>const t = s.tag;</tt></td>
+<td valign="top">Plain numeric uses; <tt>t</tt> is a <tt>u32</tt> copy. <tt>switch (s)</tt> on the whole union is unchanged.</td>
+</tr>
+<tr>
+<td valign="top"><tt>const t = s.tag; t == .circle</tt></td>
+<td valign="top">Level-0 <tt>error[3076]</tt> <tt>unable to infer type of enum literal in comparison with a numeric operand</tt> (the sugar is per use, not per value).</td>
+</tr>
+</table>
+<p>
+The reject on the copied tag is exactly the class the reused standalone
+<tt>repro/copied_tag_compare_reject.z98</tt> pins (four <tt>error[3076]</tt>,
+one per comparison site, span on the literal). A typed-enum compare
+(<tt>c == .Red</tt>) stays accepted.
+</p>
+<h3>A member named <tt>tag</tt></h3>
+<p>
+A union member named <tt>tag</tt> is permanently shadowed by the synthetic
+tag. Every <tt>.tag</tt> access on the union &mdash; value or pointer base
+&mdash; reads or writes the ordinal, never the same-named member's payload.
+The collision is accepted silently, but avoid the name. The member still exists
+as a variant: it may be used in a switch prong capture, in whole-union equality
+(<tt>u == U.tag</tt>), and in an initializer (<tt>u = .{ .tag = 99 }</tt>). A
+probe on <tt>union(enum) { tag: i32, other: i32 }</tt> printed the ordinal
+<tt>0</tt> for <tt>u.tag</tt> after <tt>.{ .tag = 99 }</tt>, while
+<tt>switch (u) { .tag =&gt; |v| ... }</tt> captured <tt>99</tt> and
+<tt>u == U.tag</tt> was true.
+</p>
+
+<h2>Printing a union</h2>
+<p>
+A bare <tt>{}</tt> chooses the form's printer. A bare union always compiles and
+prints the depth placeholder <tt>.{ ... }</tt>, never its fields. A tagged
+union prints its active variant (<tt>.{ .circle = 3 }</tt>) only when every
+variant carries a non-<tt>void</tt>, printable payload; the naked tag, an
+explicit <tt>void</tt> variant, or an unprintable payload makes the argument
+reject even when that variant is not active. A packed union of
+<tt>bool</tt>/integer members prints its fields; a packed-struct member is an
+unprintable payload.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Value, printed with <tt>{}</tt></b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Result (measured)</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>union { f: f32, u: u32 }</tt></td>
+<td valign="top"><tt>.{ ... }</tt> (placeholder, always).</td>
+</tr>
+<tr>
+<td valign="top"><tt>union(enum) { circle: i32, box: struct { w: i32, h: i32 } }</tt></td>
+<td valign="top"><tt>.{ .circle = 3 }</tt>, <tt>.{ .box = .{ .w = 1, .h = 2 } }</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>union(enum) { circle: i32, empty }</tt> (naked tag)</td>
+<td valign="top"><tt>error[3063]</tt> <tt>print argument type is not supported (no std.fmt printer)</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>union(enum) { circle: i32, empty: void }</tt></td>
+<td valign="top"><tt>error[3063]</tt> (same message).</td>
+</tr>
+<tr>
+<td valign="top"><tt>packed union { whole: u8, lo: u4 }</tt></td>
+<td valign="top"><tt>.{ .whole = 5, .lo = 5 }</tt> (all fields, in declaration order).</td>
+</tr>
+<tr>
+<td valign="top"><tt>packed union { whole: u8, halves: Halves }</tt></td>
+<td valign="top"><tt>error[3063]</tt> (packed-struct member is unprintable).</td>
+</tr>
+</table>
+<p>
+The full aggregate-print closure rule and the other <tt>error[3063]</tt>
+shapes (array, slice, optional, error-union, <tt>void</tt>, nested packed
+aggregate fields) are on the builtins page. To avoid the reject, print the
+fields you mean (<tt>flags.whole</tt>, <tt>s.tag</tt>, a captured payload).
+An explicit specifier such as <tt>{d}</tt> on a union is a separate reject,
+<tt>error[3013]</tt> <tt>invalid print format specifier for the argument
+type</tt>.
+</p>
+
+<h2>See also</h2>
+<p>
+<a href="vol4-05-enums.html">Enums</a> for the <tt>.tag</tt> value as a typed
+enum and the switch rules; <a href="vol4-04-structs.html">Structs</a> for
+packed-struct layout and the <tt>@offsetOf</tt> forms;
+<a href="vol4-15-builtins.html">Builtins</a> for the full print table and
+every builtin; <a href="vol4-21-diagnostics.html">Diagnostics</a> for
+<tt>error[2000]</tt>, <tt>error[3000]</tt>, <tt>error[3060]</tt>,
+<tt>error[3063]</tt>, <tt>error[3068]</tt>, <tt>error[3072]</tt>, and
+<tt>error[3076]</tt>; and
+<a href="vol2-07-unions.html">Volume II, Unions</a> for the teaching narrative
+and the runnable <tt>variant.z98</tt> sample.
+</p>
+
+<p class="navbtns">
+<a href="vol4-05-enums.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol4-15-builtins.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol4-05-enums.html">Enums</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-15-builtins.html">Builtins</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
