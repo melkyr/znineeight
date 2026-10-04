@@ -1,0 +1,629 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Structs</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual struct structs packed structs reference aggregate declaration field order literal omitted uninitialized layout alignment padding offsetOf bitOffsetOf bitSizeOf sizeOf alignOf align8 LSB-first bitfield">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol4-03-pointers.html">
+<link rel="next" href="vol4-15-builtins.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume IV &mdash; Reference</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+How to use the Reference <i>(planned)</i><br>
+<a href="vol4-01-grammar.html">The full grammar</a><br>
+<a href="vol4-02-types.html">Types</a><br>
+<a href="vol4-03-pointers.html">Pointers</a><br>
+<b>Structs</b><br>
+Enums <i>(planned)</i><br>
+Unions <i>(planned)</i><br>
+Tuples <i>(planned)</i><br>
+Arrays and slices <i>(planned)</i><br>
+Errors <i>(planned)</i><br>
+Optionals <i>(planned)</i><br>
+Aliases <i>(planned)</i><br>
+Statements <i>(planned)</i><br>
+Control flow <i>(planned)</i><br>
+Error expressions <i>(planned)</i><br>
+<a href="vol4-15-builtins.html">Builtins</a><br>
+Async <i>(planned)</i><br>
+Memory <i>(planned)</i><br>
+<a href="vol4-18-stdlib.html">The standard library</a><br>
+<a href="vol4-19-pal.html">The PAL</a><br>
+<a href="vol4-20-markers.html">Markers</a><br>
+<a href="vol4-21-diagnostics.html">Diagnostics</a><br>
+<a href="vol4-22-cli.html">The command line</a><br>
+Limits <i>(planned)</i><br>
+<a href="vol4-24-html-style.html">HTML style</a><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Structs</h1>
+<p>
+A <b>struct</b> is a named bundle of fields laid out in declaration order.
+Z98 spells the type <tt>const S = struct { field: T, ... };</tt>; a variable of
+that type is built with a brace literal <tt>.{ .field = value, ... }</tt> and
+read with the ordinary dot. This page is the lookup for the declaration syntax,
+the literal and field-access rules (including the uninitialized-field behavior),
+the 32-bit layout model (declaration order, per-field <tt>alignUp</tt>, total
+rounded to the maximum alignment, and the align-8 model for <tt>i64</tt>,
+<tt>u64</tt>, <tt>f64</tt>), the layout builtins and their rejects, and the
+<tt>packed struct</tt> bit rules.
+</p>
+<p>
+The authority is the parser (<tt>parserParseStructType</tt> at
+<tt>sf/src/parser.zig:1318-1385</tt>), the layout math
+(<tt>layoutCompute</tt> at <tt>sf/src/type_resolver.zig:275-401</tt>, with
+<tt>alignUp</tt> at <tt>sf/src/type_registry.zig:336</tt>), the packed layout
+(<tt>typeRegistryComputePackedLayout</tt> at
+<tt>sf/src/type_registry.zig:1052-1087</tt>), the packed-field gate
+(<tt>semanticAnalyzerGatePackedFields</tt> at
+<tt>sf/src/semantic_analyzer.zig:1996-2034</tt> and
+<tt>semanticAnalyzerPackedFieldTypeAllowed</tt> at
+<tt>sf/src/semantic_analyzer.zig:1980-1994</tt>), and the introspection check
+(<tt>semanticAnalyzerCheckIntrospectionBuiltin</tt> at
+<tt>sf/src/semantic_analyzer.zig:1390-1463</tt>). Every rule and reject below
+was reproduced on seed v90; the reused fixture or sample is named where one
+exists.
+</p>
+
+<h2>Declaration syntax</h2>
+<p>
+A struct declaration is an ordinary <tt>const</tt> whose value happens to denote
+a type. The name occupies no storage; it is the recipe. Fields are written
+<tt>name: Type</tt>, comma-separated, in the order they will occupy memory.
+</p>
+<pre>
+const Vec2 = struct {
+    x: i32,
+    y: i32,
+};
+</pre>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Form</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Spelling</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Notes</b></th>
+</tr>
+<tr>
+<td valign="top">named struct</td>
+<td valign="top"><tt>const S = struct { name: T, ... };</tt></td>
+<td valign="top">The form this page documents. A trailing comma is optional.</td>
+</tr>
+<tr>
+<td valign="top">tuple type</td>
+<td valign="top"><tt>struct { T1, T2, ... }</tt></td>
+<td valign="top">Positional elements; documented on the tuples page (<i>planned</i>). The emitted C fields are <tt>_0</tt>, <tt>_1</tt>, &hellip;</td>
+</tr>
+<tr>
+<td valign="top">packed struct</td>
+<td valign="top"><tt>const P = packed struct { name: uN, ... };</tt></td>
+<td valign="top">Bit-packed; see <a href="#packed">Packed structs</a> below.</td>
+</tr>
+</table>
+<p>
+The parser requires a struct to be <b>all named or all positional</b>. A mix is
+<tt>error[2000]</tt> <tt>struct fields must be all named or all positional
+(tuple)</tt>, and a positional field inside a <tt>packed struct</tt> is
+<tt>error[2000]</tt> <tt>packed structs cannot have positional tuple
+fields</tt> (both measured; each specific message is followed by a generic
+<tt>error[2000] unexpected token</tt> at the same span).
+</p>
+<p>
+A struct type carries no functions. There is no method syntax and no field named
+by a call; an operation that belongs to a type is a free function whose first
+parameter is the value or a pointer to it. See
+<a href="vol4-02-types.html">Types</a> for the type-kind list and
+<a href="vol4-03-pointers.html">Pointers</a> for <tt>ptr.field</tt>
+auto-dereference.
+</p>
+
+<h2>Literals and field access</h2>
+<p>
+A struct value is built from a brace literal with the field names spelled after
+a leading dot. The literal has no type of its own; it is typed by the
+destination (the variable's annotation, an assignment target, or a call
+parameter).
+</p>
+<pre>
+var s: Sprite = .{
+    .id = 7,
+    .origin = .{ .x = 1, .y = 2 },
+    .scale = -3,
+};
+</pre>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Rule</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Behavior (measured on seed v90)</b></th>
+</tr>
+<tr>
+<td valign="top">Field names</td>
+<td valign="top">Each field is written <tt>.name = value</tt>; the leading dot is required.</td>
+</tr>
+<tr>
+<td valign="top">Typing</td>
+<td valign="top">The literal is typed by its context. A nested struct field takes its own brace literal.</td>
+</tr>
+<tr>
+<td valign="top">Omitted fields</td>
+<td valign="top"><b>Not zero-filled.</b> A literal that omits a field compiles, and the omitted field holds whatever the memory already contained. Write every field you intend to read, or write <tt>= undefined</tt> and fill the value before use.</td>
+</tr>
+<tr>
+<td valign="top">No initializer</td>
+<td valign="top"><tt>var s: S;</tt> with no initializer rejects <tt>error[3014]</tt> <tt>variable must be initialized; use '= undefined' to opt out</tt>. Writing <tt>var s: S = undefined;</tt> is accepted.</td>
+</tr>
+<tr>
+<td valign="top">Read / write</td>
+<td valign="top"><tt>s.f</tt> reads or (in assignment position) writes the field. Nested access chains the dots: <tt>s.origin.x = 5;</tt>.</td>
+</tr>
+<tr>
+<td valign="top">Pointer base</td>
+<td valign="top"><tt>p.f</tt> on a single-level pointer to struct auto-dereferences (emitted as <tt>p-&gt;f</tt>); a <tt>**S</tt> needs <tt>pp.*.f</tt>.</td>
+</tr>
+<tr>
+<td valign="top">Address of a field</td>
+<td valign="top"><tt>&amp;s.f</tt> is a pointer to the field type (<tt>&amp;s.origin</tt> is a <tt>*Vec2</tt>).</td>
+</tr>
+<tr>
+<td valign="top">Assignment</td>
+<td valign="top">Struct assignment copies the value: <tt>var copy: Sprite = s;</tt> is independent of <tt>s</tt> afterward.</td>
+</tr>
+<tr>
+<td valign="top"><tt>void</tt> field</td>
+<td valign="top">A <tt>void</tt> field is legal and readable. It receives the current offset and adds no size and no alignment; measured, <tt>struct { v: void, a: i32, w: void, b: u8 }</tt> is size 8, alignment 4, with <tt>a</tt> at 0 and <tt>b</tt> at 4.</td>
+</tr>
+</table>
+<p>
+The uninitialized-field rule is the language-wide &ldquo;<tt>undefined</tt> is
+not zero&rdquo; rule. This program sets only the named fields and reads them
+back; a field left out of the literal would carry indeterminate bytes:
+</p>
+<pre>
+var s: Sprite = .{ .id = 7, .origin = .{ .x = 1, .y = 2 } };
+std.io.print("{} {} {}\n", .{ s.id, s.origin.x, s.origin.y });
+// 7 1 2
+</pre>
+<p>
+The reuse source is the Volume II sample <tt>src/vol2/shapes.z98</tt>, which
+builds a nested two-struct value and prints every field; its measured output is
+reproduced in the layout section below.
+</p>
+
+<h2>Layout model</h2>
+<p>
+The layout rule is one sentence. Start a cursor at offset 0. For each field in
+<b>declaration order</b>, round the cursor up to the field's alignment, record
+that as the field's offset, and advance the cursor by the field's size. When
+every field is placed, round the total up to the largest alignment any field
+required; that is the struct's size and alignment. Fields are never reordered.
+This is exactly <tt>layoutCompute</tt>
+(<tt>sf/src/type_resolver.zig:285-303</tt>) with
+<tt>alignUp(v, a) = (v + a - 1) &amp; ~(a - 1)</tt>
+(<tt>sf/src/type_registry.zig:336</tt>).
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Type</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Size</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Align</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Notes</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">0</td>
+<td valign="top">0</td>
+<td valign="top">A field of this type adds nothing to the cursor.</td>
+</tr>
+<tr>
+<td valign="top"><tt>bool</tt></td>
+<td valign="top">1</td>
+<td valign="top">1</td>
+<td valign="top">Also <tt>u8</tt>, <tt>i8</tt>, <tt>c_char</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>u16</tt> / <tt>i16</tt></td>
+<td valign="top">2</td>
+<td valign="top">2</td>
+<td valign="top">&nbsp;</td>
+</tr>
+<tr>
+<td valign="top"><tt>u32</tt> / <tt>i32</tt> / <tt>usize</tt> / <tt>isize</tt> / pointer</td>
+<td valign="top">4</td>
+<td valign="top">4</td>
+<td valign="top">The 32-bit model makes all pointers 4/4.</td>
+</tr>
+<tr>
+<td valign="top"><tt>u64</tt> / <tt>i64</tt> / <tt>f64</tt></td>
+<td valign="top">8</td>
+<td valign="top">8</td>
+<td valign="top">See the align-8 model below.</td>
+</tr>
+</table>
+<p>
+An arbitrary-width integer uses the smallest power-of-two carrier that holds
+the width, so <tt>@sizeOf</tt>/<tt>@alignOf</tt> report the carrier (1/2/4/8)
+while <tt>@bitSizeOf</tt> reports the declared width; this matches
+<a href="vol4-02-types.html">Types</a>. A nested struct contributes its own size
+and alignment to the outer layout like any other field.
+</p>
+<p>
+Worked for the two three-field examples and for the Volume II <tt>Sprite</tt>:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Type</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Size / Align</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Offsets (measured)</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>struct { a: u8, b: i64, c: u8 }</tt></td>
+<td valign="top">24 / 8</td>
+<td valign="top"><tt>a</tt> 0, <tt>b</tt> 8, <tt>c</tt> 16</td>
+</tr>
+<tr>
+<td valign="top"><tt>struct { b: i64, a: u8, c: u8 }</tt></td>
+<td valign="top">16 / 8</td>
+<td valign="top"><tt>b</tt> 0, <tt>a</tt> 8, <tt>c</tt> 9</td>
+</tr>
+<tr>
+<td valign="top"><tt>Vec2 { x: i32, y: i32 }</tt></td>
+<td valign="top">8 / 4</td>
+<td valign="top"><tt>x</tt> 0, <tt>y</tt> 4</td>
+</tr>
+<tr>
+<td valign="top"><tt>Sprite { id: u8, tint: u32, width: u16, height: u16, origin: Vec2, scale: i64 }</tt></td>
+<td valign="top">32 / 8</td>
+<td valign="top"><tt>id</tt> 0, <tt>tint</tt> 4, <tt>width</tt> 8, <tt>height</tt> 10, <tt>origin</tt> 12, <tt>scale</tt> 24</td>
+</tr>
+</table>
+<p>
+Field order is therefore a real decision. The same three fields
+<tt>{ a: u8, b: i64, c: u8 }</tt> occupy 24 bytes, but moving the <tt>i64</tt>
+first drops the total to 16. Measured output for the layout probe on seed v90:
+</p>
+<pre>
+S 24/8/0 8 16
+Sbit 0 64 128
+R 16/8 0 8 9
+Vec2 8/4 0 4
+Sprite 32/8 0 4 8 10 12 24
+</pre>
+<p>
+The <tt>Sbit</tt> row is the byte offset times eight: on a plain struct,
+<tt>@bitOffsetOf</tt> is <tt>@offsetOf</tt> &times; 8.
+</p>
+
+<h2>Frozen align-8 model (FX14)</h2>
+<p>
+The compiler is single-target 32-bit and its layout model is the contract:
+<tt>i64</tt>, <tt>u64</tt>, and <tt>f64</tt> are size 8 / alignment 8, and every
+composite that contains one inherits the maximum member alignment. So
+<tt>struct { a: u8, b: i64, c: u8 }</tt> is 24 bytes, alignment 8, with
+<tt>b</tt> at 8 and <tt>c</tt> at 16. The emitted C <b>pins</b> that model on
+every supported host compiler: each program's 64-bit declarations route through
+per-program carrier typedefs
+</p>
+<pre>
+typedef long long &lt;carrier&gt; Z98_ALIGN8;
+typedef unsigned long long &lt;carrier&gt; Z98_ALIGN8;
+typedef double &lt;carrier&gt; Z98_ALIGN8;
+</pre>
+<p>
+and the shared <tt>zig_compat.h</tt> typedefs <tt>z64</tt>/<tt>zu64</tt>/<tt>f64</tt>
+carry the same <tt>Z98_ALIGN8</tt>. On gcc/clang/mingw that macro is
+<tt>__attribute__((aligned(8)))</tt>; on MSVC/OpenWatcom it is empty because
+their 32-bit defaults (<tt>/Zp8</tt>, <tt>-zp8</tt>) already align 64-bit
+scalars to 8. A packing override such as <tt>/Zp4</tt> or <tt>-zp4</tt> breaks
+the pin and is not supported. Packed aggregates are exempt (they are bit-packed
+byte arrays; a 64-bit packed field rejects <tt>error[3000]</tt>).
+</p>
+<p>
+The reused fixture <tt>repro/mi_matrix/stdlib_layout_align8_xmod</tt> pins both
+sides of the model: it prints the folded <tt>@sizeOf</tt>/<tt>@alignOf</tt>/
+<tt>@offsetOf</tt> values and then measures the real emitted-C layout in the
+built binary with <tt>@ptrToInt</tt> field offsets and array strides. Its 22
+real-layout rows all report <tt>-ok</tt>, including the cross-module
+<tt>helper.HS { a: u8, b: i64, c: u8 }</tt> row. The Volume II sample
+<tt>src/vol2/shapes.z98</tt> exercises the same model for <tt>Vec2</tt> and
+<tt>Sprite</tt>.
+</p>
+
+<h2>Layout builtins</h2>
+<p>
+Five builtins read a type's layout at compile time. They are recognized by
+name, folded before any C is emitted, and take the type rather than a value.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Form</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Plain struct</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Packed struct</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>@sizeOf(T)</tt></td>
+<td valign="top">padded byte size</td>
+<td valign="top"><tt>(total_bits + 7) / 8</tt>, minimum 1</td>
+</tr>
+<tr>
+<td valign="top"><tt>@alignOf(T)</tt></td>
+<td valign="top">strictest field alignment</td>
+<td valign="top">1</td>
+</tr>
+<tr>
+<td valign="top"><tt>@bitSizeOf(T)</tt></td>
+<td valign="top">byte size &times; 8</td>
+<td valign="top">sum of the field widths</td>
+</tr>
+<tr>
+<td valign="top"><tt>@offsetOf(T, "f")</tt></td>
+<td valign="top">the byte offset</td>
+<td valign="top">the field's bit offset divided by 8 (rounded down)</td>
+</tr>
+<tr>
+<td valign="top"><tt>@bitOffsetOf(T, "f")</tt></td>
+<td valign="top">byte offset &times; 8</td>
+<td valign="top">the field's bit offset</td>
+</tr>
+</table>
+<p>
+<tt>@offsetOf</tt> and <tt>@bitOffsetOf</tt> are <b>struct-only</b> (packed
+structs included). Every union kind, and every scalar, pointer, enum, array,
+slice, optional, or error-union target, rejects <tt>error[3072]</tt>
+<tt>expected struct type, found 'X'</tt> rather than folding to zero. The field
+name must be a string literal naming an existing field:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Construct</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Code</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Message (measured)</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>@offsetOf(U, "x")</tt> on a union</td>
+<td valign="top"><tt>error[3072]</tt></td>
+<td valign="top"><tt>expected struct type, found 'U'</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>@bitOffsetOf(U, "x")</tt> on a union</td>
+<td valign="top"><tt>error[3072]</tt></td>
+<td valign="top"><tt>expected struct type, found 'U'</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>@offsetOf(S, name)</tt> non-literal name</td>
+<td valign="top"><tt>error[3073]</tt></td>
+<td valign="top"><tt>field name must be a string literal</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>@offsetOf(S, "zz")</tt> unknown field</td>
+<td valign="top"><tt>error[3073]</tt></td>
+<td valign="top"><tt>no field named 'zz' in struct 'S'</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>@offsetOf(S)</tt> wrong argument count</td>
+<td valign="top"><tt>error[3074]</tt></td>
+<td valign="top"><tt>expected 2 argument(s), found 1</tt></td>
+</tr>
+</table>
+<p>
+The reused fixtures <tt>repro/mi_matrix/builtin_offsetof_xmod</tt> and
+<tt>repro/mi_matrix/builtin_bitoffsetof_xmod</tt> pin the plain-struct forms:
+for <tt>struct { c: u8, b: u32, d: u16 }</tt> the byte offsets are
+<tt>0 4 8</tt> and the bit offsets are <tt>0 32 64</tt>. The corrected rule
+here supersedes any older text that allowed a union target with offset 0; the
+printed reference for these builtins is
+<a href="vol4-15-builtins.html">Builtins</a>.
+</p>
+
+<h2><a name="packed">Packed structs</a></h2>
+<p>
+A <tt>packed struct</tt> is a struct written as bits. The fields are placed in
+declaration order, each starting at the lowest bit still free (<b>LSB-first</b>),
+with no padding between fields. A field that does not fit in the rest of a byte
+continues at bit 0 of the next byte.
+</p>
+<pre>
+const Header = packed struct {
+    version: u4,
+    flags: u4,
+    length: u8,
+};
+</pre>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Rule</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Detail</b></th>
+</tr>
+<tr>
+<td valign="top">Admitted fields</td>
+<td valign="top"><tt>bool</tt> (one bit) or an integer type whose declared width is at most 31 bits (<tt>u1</tt>&hellip;<tt>u31</tt>, <tt>i1</tt>&hellip;<tt>i31</tt>, and the named widths). A nested <tt>packed struct</tt> is admitted by its <b>inner total width</b>, even when that exceeds 31 bits; its own fields obey the same rule.</td>
+</tr>
+<tr>
+<td valign="top">Bit order</td>
+<td valign="top">Declaration order, LSB-first; multi-byte fields land little-endian in the byte image.</td>
+</tr>
+<tr>
+<td valign="top">Size / align</td>
+<td valign="top"><tt>@sizeOf</tt> is <tt>(total_bits + 7) / 8</tt>, minimum 1; <tt>@alignOf</tt> is 1. The emitted C is a byte array plus shift-and-mask code, not the host's bitfields.</td>
+</tr>
+<tr>
+<td valign="top"><tt>@bitSizeOf</tt></td>
+<td valign="top">The sum of the field widths. Bits above the last field belong to no field and are not written by the field stores.</td>
+</tr>
+<tr>
+<td valign="top">Access</td>
+<td valign="top">Field reads and writes lower to generated bitfield load/store code. Whole-value moves of a nested packed sub-container (a literal element, a whole-field assignment, a whole-value read, or through a <tt>packed union</tt> member) lower <b>per leaf</b>: one bitfield load/store per leaf with composed offsets.</td>
+</tr>
+</table>
+<p>
+Two clean rejects remain, both level-0 <tt>error[3000]</tt>:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Shape</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Message (measured)</b></th>
+</tr>
+<tr>
+<td valign="top">A whole-sub-container <b>store</b> whose access chain crosses a byte-aligned (natural) container field below the packed edge &mdash; no addressable-lvalue model for the bit slice. The symmetric whole-value <b>read</b> of the same chain works.</td>
+<td valign="top"><tt>cannot write a packed-struct leaf through a byte-aligned container field in a nested packed struct (unsupported store path)</tt></td>
+</tr>
+<tr>
+<td valign="top">A whole-value move of a type nested deeper than 32 packed levels (the per-leaf copy recursion is bounded), on either the store or the read site.</td>
+<td valign="top"><tt>cannot assign a whole packed-struct value to a nested packed-struct field (bit-slice store not supported)</tt> / <tt>cannot read a whole packed-struct value out of a nested packed-struct field (bit-slice load not supported)</tt></td>
+</tr>
+</table>
+<p>
+A wide <tt>bool</tt>/integer field is rejected by the declaration gate before any
+layout runs:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Construct</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Code</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Message (measured)</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>packed struct { a: u32 }</tt></td>
+<td valign="top"><tt>error[3000]</tt></td>
+<td valign="top"><tt>packed struct field width must be &lt;= 31 bits (u32/i64 etc. packed fields are not supported yet)</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>packed struct { a: f32 }</tt></td>
+<td valign="top"><tt>error[3000]</tt></td>
+<td valign="top"><tt>packed struct fields must be bool or an integer type (uN/iN); this field type is not allowed in a packed struct</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>packed struct { u1, u1 }</tt> positional</td>
+<td valign="top"><tt>error[2000]</tt></td>
+<td valign="top"><tt>packed structs cannot have positional tuple fields</tt></td>
+</tr>
+</table>
+<p>
+Measured layout and behavior on seed v90:
+</p>
+<pre>
+Outer { head: u2, inner: Inner, tail: u2 }, Inner { a: u3, b: u3 }
+Outer 2/1 bits=10 offbits_inner=2 offbyte_inner=0 3 5 6 3
+Mix { x: u1, y: u3, z: u4 } 1/1 bits=8 byte=155 1 5 9
+P { a: u12, b: u4 } 2/1 bits=16 b bit=12 byte=1
+Q { a: u2, b: u3 } 1/1 bits=5
+OuterBig { head: u1, inner: Big { a: u31, b: u31 }, tail: u1 } 8/1 bits=64
+</pre>
+<p>
+The <tt>OuterBig</tt> row is the nested-member rule: the inner type is 62 bits,
+wider than 31, and is still admitted as a member because a packed struct is
+admitted by its inner total width. The reused fixture
+<tt>repro/mi_matrix/packed_l3_nested_xmod</tt> pins the nested read-back
+(<tt>2 5 6 3 3</tt>), and
+<tt>repro/mi_matrix/packed_nested_wholeliteral_xmod</tt> pins the per-leaf
+whole-value moves. The boundary fixtures are
+<tt>repro/mi_matrix/packed_nested_whole_chain_reject_xmod</tt> (chain store
+reject),
+<tt>repro/mi_matrix/packed_nested_whole_depth_ok_xmod</tt> (a chain 33 packed
+levels deep still lowers per leaf and runs), and
+<tt>repro/mi_matrix/packed_nested_whole_depth_reject_xmod</tt> (one level
+deeper clean-rejects).
+</p>
+<p>
+Padding bits are not data. A packed struct whose total bits are not a multiple
+of 8 leaves the high bits of the last byte outside every field; they are not
+written by the field stores and must not be read as if they were. Read the
+declared fields; the reused Volume II sample <tt>src/vol2/wire.z98</tt> shows
+the field-wise encode/decode.
+</p>
+
+<h2>Measured gcc -m32 layout</h2>
+<p>
+The folded model values and the real layout of the built binary agree on
+<tt>gcc -m32</tt>, which is the transcript recipe's compiler. The emitted C keeps
+declaration order and routes the 64-bit fields through the aligned carriers, so
+the host's own 32-bit default (which would align a bare <tt>long long</tt> to 4)
+does not decide the layout:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Type</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Model = real (gcc -m32)</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Offsets</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>struct { a: u8, b: i64, c: u8 }</tt></td>
+<td valign="top">size 24, align 8</td>
+<td valign="top"><tt>a</tt> 0, <tt>b</tt> 8, <tt>c</tt> 16</td>
+</tr>
+<tr>
+<td valign="top"><tt>struct { b: i64, a: u8, c: u8 }</tt></td>
+<td valign="top">size 16, align 8</td>
+<td valign="top"><tt>b</tt> 0, <tt>a</tt> 8, <tt>c</tt> 9</td>
+</tr>
+</table>
+<p>
+The check is the <tt>stdlib_layout_align8_xmod</tt> fixture: each row measures
+the running binary's real offset with <tt>@ptrToInt</tt> and compares it with
+the compiler's folded value, and every row is <tt>-ok</tt>. This is a
+layout-consistency pin, not a wire-format or cross-compiler ABI contract; if the
+exact byte image is the point, serialize fields one at a time or use a
+<tt>packed struct</tt>.
+</p>
+
+<h2>See also</h2>
+<p>
+<a href="vol4-02-types.html">Types</a> for the primitive sizes, alignments, and
+the coercion table; <a href="vol4-03-pointers.html">Pointers</a> for
+auto-dereference and the pointer builtins;
+<a href="vol4-15-builtins.html">Builtins</a> for the full builtin list;
+<a href="vol4-21-diagnostics.html">Diagnostics</a> for
+<tt>error[2000]</tt>, <tt>error[3000]</tt>, <tt>error[3014]</tt>,
+<tt>error[3072]</tt>, <tt>error[3073]</tt>, and <tt>error[3074]</tt>; the enums,
+unions, tuples, and arrays-and-slices pages (<i>planned</i>); and
+<a href="vol2-04-structs.html">Volume II, Structs</a> plus
+<a href="vol2-05-packed-structs.html">Volume II, Packed Structs</a> for the
+teaching narrative and the runnable samples.
+</p>
+
+<p class="navbtns">
+<a href="vol4-03-pointers.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol4-15-builtins.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol4-03-pointers.html">Pointers</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-15-builtins.html">Builtins</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
