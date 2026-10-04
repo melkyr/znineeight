@@ -1,4 +1,60 @@
-# mi_matrix corpus — expected-fail manifest (v291 2026-10-04)
+# mi_matrix corpus — expected-fail manifest (v292 2026-10-04)
+
+## A5-F — type/alias values clean-reject in value positions (v291 -> v292, 2026-10-04)
+
+Volume IV Amendment A5 (operator m1538/m1544; investigation
+`task-A5-I-report.md`). A type alias used in a value position resolved to its
+underlying concrete type id (`semanticAnalyzerResolveIdent` returns
+`s.type_id` for a `type_alias` symbol), indistinguishable from a real value of
+that type by the TypeId alone, so the module binding path and the three
+value-position sites accepted the program: `const A = i32; var x = A;`
+compiled rc 0 and the emitted C read uninitialized poison; `const T = type;`
+compiled rc 0 and emitted an uncompilable `zT_..._type` placeholder.
+
+**Fix (`sf/src/semantic_analyzer.zig` only; no new diagnostic code, no
+`front_resolution.zig`/lowering/emitter change).** New paren-transparent
+predicate `semanticAnalyzerExprIsTypeValue` wraps the existing
+`semanticAnalyzerTupleElemIsTypeValue` (a `type_alias` symbol, a builtin
+primitive name-cache hit, or a `module.T` field access), plus five guard
+blocks, each reusing the site's existing level-0 raw `error[3000]` message and
+the `semanticAnalyzerTypeMismatchReport` source/target notes:
+(1) module binding `semanticAnalyzerResolveModuleVarDecl` rejects
+`var x = A;` / `var x = i32;` / `var x = type;` and `const T = type;` (keeps
+`const A = i32;` / `const B = A;` accepted); (2) assignment
+`semanticAnalyzerResolveAssign`; (3) return `resolveReturnStmt`; (4) call arg
+`semanticAnalyzerResolveFnCall` direct path; (5) the fn-value path. The notes
+read `source: type` / `target: type` (unannotated / bare builtin / metatype) or
+the annotation's kind.
+
+**Fixtures.** `repro/mi_matrix/alias_value_reject_xmod` (`expected.rc` 2,
+`expected_error.txt` `3000 6`: `const T = type;`, `var x = A;`,
+`var y = i32;`, `return A;`, `z = A;`, `take(A)`; classify GREEN) + standalone
+`repro/alias_value_reject.z98` (1 x `error[3000]`, the headline shape).
+`expected_error.txt` is force-added (`git add -f`; `.gitignore` ignores `*.txt`).
+
+**Corpus movement.** `-s0` classify 1092 = 923 OK / 57 GREEN / 112 FAIL ->
+**1093 = 923 OK / 58 GREEN / 112 FAIL / 0 ICE / 0 CRASH**; join-diff vs the base
+fp `c1746347` over the 1093 common dirs is exactly the new reject fixture
+(`alias_value_reject_xmod` FAIL -> GREEN) — **zero pre-existing movers** (the
+1232-entry emit/hash census moved only the two new fixtures).
+
+**Gates (new fixed point `821481e69df63fc0cf69176fdaaf9dd9`).** Seed two-hop
+closure hop1 == hop2; 4-MD5 emitted-C both modes **UNCHANGED 8/8**; example
+matrix **24/24**; stdlib **266 PASS / 0 FAIL**; `check_emit_support.sh`
+**7/7**; `verify_upgraded.sh` **CLOSEOUT OK**; self-emission **48 `.c` + 48
+`.h` / 0 PANIC**; `build_test.sh` **0/9** (pre-existing); `run_all.sh`
+**13/13**. Seed v90 NOT rotated (closeout-only).
+
+**PARKED residuals (A5-I §6; same root cause, out of the operator's listed
+scope; do NOT fold).** (1) function-local `var x = i32;` / `var x = A;`
+(module alias) still compile rc 0 — the local guard
+(`semantic_analyzer.zig:5797`) checks container decls, local named types, and
+compound exprs only, not builtin/module-alias idents. (2) module
+`var X = struct {...};` (skipped by `front_resolution.zig:95`) and
+`var X = *i32;` / other compound type exprs still compile rc 0. (3) if a local
+variable shadows a module type-alias name, the already-invalid program
+(`error[3057]`) additionally emits spurious `error[3000]`s because the
+predicate consults only the symbol registry, not `local_decl_names`.
 
 ## A4-F — a valueless `?void` return is present, not absent (v290 -> v291, 2026-10-04)
 

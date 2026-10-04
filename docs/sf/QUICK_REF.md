@@ -375,6 +375,30 @@ the runtime golden); the new fixed point (moving point hop1 == hop2, explicit
 rotated. Residual (out of scope, do NOT fix): `return <void expr>;` in a `?void`
 function still ICEs `error[3043]` — identical on base and fixed.
 
+A5-F (2026-10-04; Volume IV Amendment A5, operator m1538/m1544) makes a
+type/alias value in a value position a clean level-0 `error[3000]`: a
+module-scope binding (`var x = A;` / `var x = i32;` / `var x = type;` /
+`const T = type;`), an assignment RHS (`x = A;`), a call argument (direct and
+fn-value paths), and a `return A;`. New paren-transparent predicate
+`semanticAnalyzerExprIsTypeValue` (`sf/src/semantic_analyzer.zig`) wraps the
+existing `semanticAnalyzerTupleElemIsTypeValue` (`type_alias` symbol / builtin
+primitive name-cache hit / `module.T` field access); five guard blocks reuse
+the site's existing raw level-0 `error[3000]` +
+`semanticAnalyzerTypeMismatchReport` source/target notes (`source: type`). No
+new error code; no `front_resolution.zig`/lowering/emitter change.
+`const A = i32;` / `const B = A;` stay accepted (oracle-legal). Fixtures
+`repro/mi_matrix/alias_value_reject_xmod` (`3000 6`, classify GREEN) +
+standalone `repro/alias_value_reject.z98` (`3000 1`). All 8 emitted-C pins stay
+**UNCHANGED 8/8** both modes; example matrix 24/24; stdlib **266 PASS / 0
+FAIL**; emit 7/7; `verify_upgraded.sh` CLOSEOUT OK; self-emission 48 `.c` + 48
+`.h` / 0 PANIC; build_test 0/9 (pre-existing); run_all 13/13; corpus `-s0`
+**1093 = 923 OK / 58 GREEN / 112 FAIL / 0 ICE / 0 CRASH** (the only movers are
+the two new A5-F fixtures; zero pre-existing movers); the new fixed point
+(moving point hop1 == hop2, explicit `FIXED_POINT_MD5` gate) is
+**`821481e69df63fc0cf69176fdaaf9dd9`**; seed v90 NOT rotated. PARKED (A5-I §6,
+same root cause, do NOT fold): function-local `var x = i32;` / `var x = A;`;
+module `var X = struct {...};` / `var X = *i32;`; shadow-diagnostic noise.
+
 - Self-consistency gate: compare current zig1 `--dump-c89` against a pre-captured reference .c file. If the reference .c is outdated (intentional baseline change), re-capture via `cp /tmp/new.c /tmp/ref.c`. Never compare against parent-zig1 output directly — parent builds may fail silently.
 - Do **NOT** compare `zig1 --dump-c89` output against `zig0`'s C output. `zig0` emits a legacy bootstrap format that is byte-level incompatible with zig1.
 
