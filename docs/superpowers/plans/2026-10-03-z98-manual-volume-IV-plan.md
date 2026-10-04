@@ -214,3 +214,26 @@ Each page task repeats this shape; its own block lists Files/Consumes/Must-cover
 - [ ] Seed rotation stays closeout-only (Task 26).
 
 **Sequence:** A2 runs after Task 10's page commit `e8a85200` and before Task 11. **Task 10's review/closure is ON HOLD until A2-F lands** (its boundary note changes).
+
+---
+
+## Amendment A3 — `[_]T` as a declaration type must clean-reject (operator-ruled m1500)
+
+**Origin:** found while authoring Volume IV page 08 (`arrays and slices`); Task-13 review Medium. Operator ruling m1500(1): open the scoped I/F — **parity is required; a gcc failure is not a Z98 failure this early** (Z98 must reject or handle it itself). Operator m1500(2)(3): also fix the Vol II stale warning claim and the page-01/page-08 `[_]T` wording inconsistency.
+
+**Defect.** `var x: [_]i32 = .{1,2,3};` (and any `[_]T` used where a concrete type is required) compiles rc 0 but the emitted C fails (`'x' undeclared`). `[_]T` is the inferred-length form valid only in the array-literal/initializer position (`const a = [_]T{...}` / `var a = [_]T{...}`); as a declaration type Zig rejects it. Parity = a clean Z98 reject (confirm the exact Zig 0.15.2 behavior in A3-I).
+
+### Task A3-I: read-only investigation
+- [ ] Reproduce (`var x: [_]i32 = …`, struct field, param, return, cast target) and record exact rc/stderr.
+- [ ] Confirm the Zig 0.15.2 oracle behavior for each shape.
+- [ ] Root-cause in `sf/src/**` (why the frontend accepts it and the inference path emits invalid C).
+- [ ] Specify the minimal fix: reject `[_]T` outside the allowed literal/initializer positions with a clean level-0 diagnostic (reuse `error[2000]` or an existing code; no new code unless ruled).
+- [ ] Blast radius (self-emission, corpus, stdlib, 4-MD5); fixtures `repro/mi_matrix/array_inferred_len_decl_reject_xmod` + standalone; verification plan.
+- [ ] Report `task-A3-I-report.md`; no `sf/src` edits; no commit.
+
+### Task A3-F: implement
+- [ ] Implement the minimal clean reject; add the fixture + standalone; run the QUICK_REF gate battery verbatim (**STOP on unexpected movement**); update tech docs + QUICK_REF + EXPECTED_FAIL; record the moved fixed point; commit the fix.
+- [ ] Docs commit: fix `docs/sf/manuals/en/vol4-08-arrays-slices.html` and `docs/sf/manuals/en/vol4-01-grammar.html` to the fixed `[_]T` rule; fix the stale `*const u8 = "literal"` warning claim in `docs/sf/manuals/en/vol2-09-arrays-slices.html` (Vol II, docs-only).
+- [ ] Seed rotation stays closeout-only (Task 26).
+
+**Sequence:** A3 runs after Task 13 (commit `2b0ee60c`) and before Task 14.
