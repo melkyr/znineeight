@@ -317,3 +317,29 @@ Zig 0.15.2 rejects each (`error: expected ';' after statement`). Conditions (`if
 - [ ] Seed rotation stays closeout-only (Task 26).
 
 **Sequence (m1582 deferral):** A6 is deferred to the **end of the volume** so the manual writing continues first. Task A6-I is DONE; run **A6-M (migration)** then **A6-F (implement, split per reject family)** **after all page tasks (through Task 25) and before Task 26 closeout**. The manual pages (including Task 17's page 12) write the **assumed final behavior** (assignment is not an expression); the current compiler acceptance is a collected defect for the after-manual/before-next-volume work.
+
+## Amendment A7 — `if` capture must not be visible in the `else` arm (operator-ruled m1596)
+
+**Origin:** found while probing Volume IV page 13 (`control-flow`); Task-18 review F1. Operator ruling (m1596 option 1): make the capture scope local to the then-arm so an `else`-arm use rejects cleanly; **deferred to the end of the volume, after A6-F**, because it is an edge case (not self-hosting-blocking, not delivery-blocking).
+
+**Defect (reviewer-verified, base fp `821481e69df63fc0cf69176fdaaf9dd9`).** An `if`/`while` capture stays in scope in the `else` arm; Z98 accepts the program (rc 0, no diagnostic) and the `else` arm reads uninitialized storage (varies per run):
+```zig
+if (opt) |v| { use(v); } else { use(v); }   // rc 0; else reads garbage
+```
+Zig 0.15.2 rejects (`use of undeclared identifier 'v'`) — the capture is scoped to the then-arm only. Page 13 documents the boundary (`vol4-13-control-flow.html:424`, `:883-884`) and ships a non-reproducible measured garbage value (Task-18 review F2).
+
+### Task A7-I: read-only investigation
+- [ ] Reproduce at fp `821481e6…` for `if` and `while` captures (then-arm payload, else-arm use); confirm the Zig rejection.
+- [ ] Root-cause in `sf/src/semantic_analyzer.zig` / `sf/src/lower.zig`: where the capture local is registered and why it stays in scope for the else arm; specify the minimal fix (register the capture in a scope closed at the end of the then-arm so the else-arm use becomes `error[20] undeclared` like Zig, or a clean level-0 code).
+- [ ] Blast radius (`sf/src`, corpus, `examples/z98`, `docs/sf/manuals/src/**`, `repro/**`, `examples/zig0/**`); fixtures `repro/mi_matrix/if_capture_else_reject_xmod` + standalone; verification plan (Zig oracle, corpus classify join-diff, 4-MD5, stdlib, example matrix, self-emission).
+- [ ] Report `task-A7-I-report.md`; no `sf/src` edits; no commit.
+
+### Task A7-M: migration (only if A7-I finds in-tree reliance)
+- [ ] Find/migrate any program relying on an else-arm capture; record the census; report `task-A7-M-report.md`; no `sf/src` edits; no commit.
+
+### Task A7-F: implement
+- [ ] Implement the minimal capture-scope fix; add fixture + standalone; run the QUICK_REF gate battery verbatim (**STOP on unexpected movement**); update tech docs + QUICK_REF + EXPECTED_FAIL; record the moved fixed point; commit.
+- [ ] Reword `docs/sf/manuals/en/vol4-13-control-flow.html`: the capture is scoped to the then-arm, an else-arm use now rejects, and drop the non-reproducible garbage value.
+- [ ] Seed rotation stays closeout-only (Task 26).
+
+**Sequence (m1596 deferral):** A7 follows A6 at the **end of the volume** — run **A7-I → (A7-M if needed) → A7-F after A6-F and before Task 26 closeout**. Page 13's capture-scope reword is assigned to A7-F; the current acceptance is a collected edge-case defect.
