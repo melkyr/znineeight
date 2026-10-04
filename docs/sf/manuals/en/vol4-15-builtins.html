@@ -225,8 +225,12 @@ const a: usize = @alignOf(Point);
 
 <h3>@offsetOf(T, "field")</h3>
 <p>
-Byte offset of a field within a struct or union. The field name is a string
-literal; for a union the offset is 0.
+Byte offset of a field within a struct (packed structs included). <tt>T</tt>
+must be a struct: a union, enum, scalar, pointer, array, slice, or other
+non-struct target rejects <tt>error[3072]: expected struct type, found
+'&lt;X&gt;'</tt>. The field name is a string literal naming an existing field;
+an unknown field rejects <tt>error[3073]: no field named '&lt;x&gt;' in struct
+'&lt;S&gt;'</tt>.
 </p>
 <pre>
 const off: usize = @offsetOf(Point, "y");
@@ -242,7 +246,9 @@ const bits: usize = @bitSizeOf(Point);
 
 <h3>@bitOffsetOf(T, "field")</h3>
 <p>
-Bit offset of a field within a struct or union.
+Bit offset of a field within a struct (a packed struct returns the packed bit
+offset). <tt>T</tt> is struct-only, exactly as for <tt>@offsetOf</tt>; a union
+or other non-struct target rejects <tt>error[3072]</tt>.
 </p>
 <pre>
 const bit: usize = @bitOffsetOf(Point, "y");
@@ -343,11 +349,13 @@ These access a C <tt>va_list</tt> inside a variadic function.
 
 <h3>@cVaStart</h3>
 <p>
-Initializes a C <tt>va_list</tt>. It is only valid in a variadic function.
+Initializes a C <tt>va_list</tt>. It is only valid in a variadic function. The
+<tt>va_list</tt> value is passed directly (the address-of spelling
+<tt>@cVaStart(&amp;ap)</tt> is also accepted).
 </p>
 <pre>
-var vl: va_list = undefined;
-@cVaStart(&amp;vl);
+var ap: va_list = undefined;
+@cVaStart(ap);
 </pre>
 
 <h3>@cVaArg(ap, T)</h3>
@@ -355,7 +363,7 @@ var vl: va_list = undefined;
 Fetches the next argument from the list as type <tt>T</tt>.
 </p>
 <pre>
-var n: i32 = @cVaArg(&amp;vl, i32);
+var n: i32 = @cVaArg(ap, i32);
 </pre>
 
 <h3>@cVaEnd</h3>
@@ -363,7 +371,7 @@ var n: i32 = @cVaArg(&amp;vl, i32);
 Finishes the traversal of the list.
 </p>
 <pre>
-@cVaEnd(&amp;vl);
+@cVaEnd(ap);
 </pre>
 
 <h2>Async / coroutines</h2>
@@ -419,9 +427,10 @@ var r: ?*void = @asyncResume(frame, arg);
 <p>
 Includes another module. The path is resolved relative to the current module.
 The standard library is imported as <tt>@import("std")</tt>, which re-exports
-<tt>io</tt>, <tt>arena</tt>, <tt>str</tt>, <tt>mem</tt>, <tt>math</tt>,
-<tt>debug</tt>, <tt>net</tt>, <tt>async</tt>, <tt>bits</tt>, <tt>os</tt>,
-<tt>time</tt>, and <tt>buf</tt>; symbols are reached with dot notation.
+<tt>io</tt>, <tt>fmt</tt>, <tt>arena</tt>, <tt>str</tt>, <tt>mem</tt>,
+<tt>math</tt>, <tt>debug</tt>, <tt>net</tt>, <tt>async</tt>, <tt>bits</tt>,
+<tt>os</tt>, <tt>time</tt>, and <tt>buf</tt>; symbols are reached with dot
+notation.
 </p>
 <pre>
 const std = @import("std");
