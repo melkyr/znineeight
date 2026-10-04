@@ -1,0 +1,477 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Error expressions</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual error expressions error union optional try catch orelse if capture while capture else capture payload error tag 3075 3016 3058 3059 3015 3002 2000 3013">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol4-13-control-flow.html">
+<link rel="next" href="vol4-15-builtins.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume IV &mdash; Reference</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+How to use the Reference <i>(planned)</i><br>
+<a href="vol4-01-grammar.html">The full grammar</a><br>
+<a href="vol4-02-types.html">Types</a><br>
+<a href="vol4-03-pointers.html">Pointers</a><br>
+<a href="vol4-04-structs.html">Structs</a><br>
+<a href="vol4-05-enums.html">Enums</a><br>
+<a href="vol4-06-unions.html">Unions</a><br>
+<a href="vol4-07-tuples.html">Tuples</a><br>
+<a href="vol4-08-arrays-slices.html">Arrays and slices</a><br>
+<a href="vol4-09-errors.html">Errors</a><br>
+<a href="vol4-10-optionals.html">Optionals</a><br>
+<a href="vol4-11-aliases.html">Aliases</a><br>
+<a href="vol4-12-statements.html">Statements</a><br>
+<a href="vol4-13-control-flow.html">Control flow</a><br>
+<b>Error expressions</b><br>
+<a href="vol4-15-builtins.html">Builtins</a><br>
+Async <i>(planned)</i><br>
+Memory <i>(planned)</i><br>
+<a href="vol4-18-stdlib.html">The standard library</a><br>
+<a href="vol4-19-pal.html">The PAL</a><br>
+<a href="vol4-20-markers.html">Markers</a><br>
+<a href="vol4-21-diagnostics.html">Diagnostics</a><br>
+<a href="vol4-22-cli.html">The command line</a><br>
+Limits <i>(planned)</i><br>
+<a href="vol4-24-html-style.html">HTML style</a><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Error expressions</h1>
+<p>
+<b>Error expressions</b> are the operators and capture forms that consume an
+error union or an optional inside a larger expression: <tt>try</tt>,
+<tt>catch</tt>, <tt>orelse</tt>, and the <tt>if</tt>/<tt>while</tt> capture.
+This page is the lookup for each form, the capture it binds, the value it
+yields, and the diagnostics that bound it. The <tt>?T</tt> type itself is on
+the <a href="vol4-10-optionals.html">Optionals</a> page; the error-union type
+and <tt>error.Name</tt> literals are on the
+<a href="vol4-09-errors.html">Errors</a> page.
+</p>
+<p>
+Authority: the parser parses <tt>try</tt> at the prefix level
+(<tt>parser.zig:869-875</tt>) and <tt>catch</tt>/<tt>orelse</tt> as the two
+loosest right-associative infix levels (<tt>catch</tt> 3, <tt>orelse</tt> 2;
+<tt>parser.zig:2185-2189</tt>, <tt>:2228</tt>); the <tt>if</tt>/<tt>while</tt> capture node is
+<tt>parserParseIfStmt</tt> (<tt>parser.zig:1776</tt>) and
+<tt>parserParseWhileStmt</tt> (<tt>:1854</tt>); the semantic rules are
+<tt>semantic_analyzer.zig:3476</tt> and <tt>:3500</tt> (<tt>try</tt>),
+<tt>:3548</tt> (<tt>orelse</tt>), <tt>:3627</tt> (value <tt>if</tt>),
+<tt>:4937</tt> (<tt>catch</tt>), <tt>:5481</tt> (condition/capture type);
+the capture binding is <tt>bindOptionalCapture</tt> (<tt>lower.zig:3676</tt>).
+Every rule below was reproduced on the fixed compiler (md5
+<tt>821481e69df63fc0cf69176fdaaf9dd9</tt>) unless the text says otherwise;
+reused fixtures are named where one exists.
+</p>
+
+<h2><tt>try</tt>: propagate the error</h2>
+<p>
+<tt>try expr</tt> unwraps an error union: on a success it yields the payload,
+on an error it returns that error from the <b>current function</b>. It is a
+prefix operator, so it binds its operand more tightly than any infix operator.
+</p>
+<pre>
+fn mightFail() !i32 { return error.Bad; }
+
+fn callIt() !i32 {
+    const val = try mightFail();   // error returns; success yields the payload
+    return val + 1;
+}
+</pre>
+<p>
+The enclosing function is checked, level-0 <tt>error[3075]</tt>, in this order:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Prong</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Message (verbatim)</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Note</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>try</tt> outside any function (module initializer)</td>
+<td valign="top"><tt>'try' outside function scope</tt></td>
+<td valign="top">&mdash;</td>
+</tr>
+<tr>
+<td valign="top">operand is not an error union</td>
+<td valign="top"><tt>expected error union type, found '&lt;kind&gt;'</tt></td>
+<td valign="top"><tt>consider omitting 'try'</tt></td>
+</tr>
+<tr>
+<td valign="top">enclosing function does not return an error union</td>
+<td valign="top"><tt>expected type '&lt;ret-kind&gt;', found error set</tt></td>
+<td valign="top"><tt>function cannot return an error</tt></td>
+</tr>
+<tr>
+<td valign="top">operand set is not a subset of the function's set</td>
+<td valign="top"><tt>try error set may not be compatible with the enclosing function's return type</tt></td>
+<td valign="top">&mdash;</td>
+</tr>
+</table>
+<p>
+<tt>&lt;kind&gt;</tt> is the operand's kind (<tt>comptime_int</tt>,
+<tt>void</tt>, <tt>i32</tt>, <tt>optional</tt>, &hellip;);
+<tt>&lt;ret-kind&gt;</tt> is the enclosing return kind. Each prong is deduped
+per <tt>try</tt> node and emits zero <tt>.c</tt> on reject.
+</p>
+<pre>
+fn g() E!void { return error.Boom; }
+fn bad1() void { try g(); }
+// error[3075]: expected type 'void', found error set
+// note: function cannot return an error
+
+fn bad2() i32 { return try 5; }
+// error[3075]: expected error union type, found 'comptime_int'
+// note: consider omitting 'try'
+
+const ctry = try g();
+// error[3075]: 'try' outside function scope
+</pre>
+<p>
+The set comparison is <b>set-only</b>: payloads need not match, so an
+<tt>E!void</tt> operand in an <tt>E!i32</tt> function is legal, and a named set
+versus an anonymous <tt>!T</tt> set (<tt>error_set == 0</tt>) always passes.
+A function with a non-error-union return is rejected <b>unconditionally</b>,
+because the opaque anonymous side cannot be distinguished from an empty set;
+the Zig-valid empty-inferred-set shape is a documented bounded divergence
+(<tt>docs/reference/Language_Spec_Z98.md</tt> &sect;7.2). The positive contract
+is pinned by <tt>repro/mi_matrix/stdlib_try_return_type_ok_xmod</tt> (stdout
+<tt>41 12 11 11 13 33 77 ok</tt>); the four reject prongs by
+<tt>repro/mi_matrix/try_return_type_reject_xmod</tt> (rc 2, 0 <tt>.c</tt>,
+<tt>3075 9</tt>).
+</p>
+<p>
+Note the binding: an unparenthesized <tt>try g() catch 5</tt> parses as
+<tt>(try g()) catch 5</tt>, so it reports the enclosing-return rule; write
+<tt>try (g() catch 5)</tt> to make the operand the <tt>catch</tt> result.
+</p>
+
+<h2><tt>catch</tt>: handle the error</h2>
+<p>
+<tt>expr catch |err| fallback</tt> evaluates <tt>expr</tt>; on success the
+payload is yielded and the fallback is <b>not</b> evaluated; on error the tag
+is bound to <tt>err</tt> and the fallback is evaluated. The result type is the
+payload type of the operand, and the fallback must produce that type or
+diverge (<tt>return</tt>, <tt>break</tt>, &hellip;). <tt>catch</tt> is
+right-associative, so <tt>a catch b catch c</tt> is <tt>a catch (b catch c)</tt>.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Form</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Meaning (measured)</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>eu catch |err| expr</tt></td>
+<td valign="top">Binds the error tag; <tt>err</tt> is typed as the union's error set (<tt>err: E</tt> for <tt>E!T</tt>).</td>
+</tr>
+<tr>
+<td valign="top"><tt>eu catch expr</tt></td>
+<td valign="top">Capture omitted; the fallback is evaluated on the error path.</td>
+</tr>
+<tr>
+<td valign="top"><tt>eu catch { ... }</tt></td>
+<td valign="top">Block fallback; use <tt>return</tt>/<tt>break</tt> to diverge, or make the block yield the payload type.</td>
+</tr>
+<tr>
+<td valign="top"><tt>eu catch unreachable</tt></td>
+<td valign="top">Accepted; a live trap (<tt>pal_trap</tt>) on the error path, not a no-op.</td>
+</tr>
+</table>
+<pre>
+const res = mightFail() catch |err| {
+    if (err == error.Bad) return 0;
+    return 1;
+};
+</pre>
+<p>
+On a <b>named</b> set the capture is an ordinary error-set value: it prints
+with <tt>{}</tt> as <tt>error.Name</tt> and rejects an explicit
+<tt>{d}</tt>/<tt>{x}</tt> with <tt>error[3013]</tt>, like any other error-set
+value. On a bare <tt>!T</tt> union (no named set) the capture keeps the numeric
+<tt>i32</tt> code &mdash; a documented residual. The success and error
+fallback paths are pinned by <tt>repro/mi_matrix/eu_val_catch</tt> and
+<tt>eu_err_catch</tt>; the named-set capture print by
+<tt>repro/mi_matrix/stdlib_errset_capture_qualified_xmod</tt>
+(<tt>direct=error.Bar</tt>, <tt>cap=error.Bar</tt>, <tt>xcap=error.Bar</tt>).
+</p>
+
+<h2><tt>orelse</tt>: the optional fallback</h2>
+<p>
+<tt>expr orelse fallback</tt> yields the payload on the present path and
+evaluates the fallback on the <tt>null</tt> path. It requires an
+<b>optional</b> operand; an error union is handled with <tt>catch</tt>. The
+result type is the payload type, the fallback must produce that type or
+diverge, and <tt>orelse</tt> is right-associative.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Form</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Meaning (measured)</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>opt orelse value</tt></td>
+<td valign="top">Value fallback; the payload or <tt>value</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>opt orelse { ... }</tt></td>
+<td valign="top">Block fallback; make it yield a value or diverge.</td>
+</tr>
+<tr>
+<td valign="top"><tt>opt orelse return X</tt></td>
+<td valign="top">The current function exits with <tt>X</tt> on <tt>null</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>opt orelse unreachable</tt></td>
+<td valign="top">Accepted; a live <tt>pal_trap()</tt> on the <tt>null</tt> path (rc 133), not a no-op.</td>
+</tr>
+<tr>
+<td valign="top"><tt>non-opt orelse ...</tt>, or an error-union operand</td>
+<td valign="top"><tt>error[3016]</tt> <tt>orelse requires an optional operand; use 'catch' for error unions</tt>.</td>
+</tr>
+</table>
+<pre>
+var a = maybe(5) orelse 0;             // 5
+var b = maybe(-1) orelse 99;           // 99
+var c = maybe(7) orelse unreachable;   // 7
+var d = useReturn(-1) orelse 88;       // 88 (the fallback returns)
+var e = useBlock(-1) orelse 77;        // 77 (the fallback block returns)
+</pre>
+<p>
+The value, block, <tt>unreachable</tt>, and <tt>return</tt> fallbacks are
+pinned by <tt>repro/mi_matrix/orelse_optional_control_xmod</tt> (printed lines
+<tt>5</tt>, <tt>99</tt>, <tt>7</tt>, <tt>88</tt>, <tt>77</tt>); the non-optional
+reject by <tt>repro/mi_matrix/orelse_requires_optional_xmod</tt> (rc 2, zero
+<tt>.c</tt>) and the trap by <tt>trap_orelse_unreachable_xmod</tt> (rc 133).
+A block fallback that does not diverge and does not yield a value leaves the
+result reading an uninitialized join temporary &mdash; compile-clean and
+undefined; write a value or make the block diverge.
+</p>
+
+<h2>Capture: <tt>if (opt) |v|</tt>, <tt>while (opt) |v|</tt></h2>
+<p>
+A capture binds the unwrapped value of its condition. The condition must be an
+optional or an error union; anything else is rejected. The binding is an
+immutable copy &mdash; reassign the source, never the capture.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Form</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Meaning (measured)</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>if (opt) |v| ... else ...</tt></td>
+<td valign="top">Binds <tt>v</tt> (payload type) on present; the <tt>else</tt> arm runs on <tt>null</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>if (opt) |v| expr else expr</tt></td>
+<td valign="top">Value form; the <tt>else</tt> arm is required when the result is used.</td>
+</tr>
+<tr>
+<td valign="top"><tt>while (opt) |v| ...</tt></td>
+<td valign="top">Loops while the optional is present; ends when it becomes <tt>null</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>if (cond) |v|</tt>, <tt>cond</tt> not optional or error union</td>
+<td valign="top"><tt>error[3058]</tt> <tt>capture condition must be an optional or error union type</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>if (non-bool)</tt>, no capture</td>
+<td valign="top"><tt>error[3058]</tt> <tt>condition must be of type 'bool'</tt>.</td>
+</tr>
+<tr>
+<td valign="top">assigning through <tt>|v|</tt></td>
+<td valign="top"><tt>error[3002]</tt> <tt>cannot assign to immutable variable</tt>.</td>
+</tr>
+</table>
+<pre>
+if (lookup(head, 20)) |e| {
+    std.io.print("value {}\n", .{e.value});
+} else {
+    std.io.print("missing\n", .{});
+}
+
+const a = if (get(3)) |x| x else 0;   // value form: else is required
+
+var cur: ?i32 = 0;
+while (cur) |v| {
+    sum = sum + v;
+    cur = next(v);                    // reassign the loop variable, not v
+}
+</pre>
+<p>
+The capture is scoped to the then-arm (and to each loop body). A use in the
+<tt>else</tt> arm is a compile error &mdash; the capture does not exist there
+(Zig <tt>use of undeclared identifier</tt>; Amendment A7 scopes the current
+build to match). A value <tt>if</tt> with no <tt>else</tt> and a
+non-<tt>void</tt> type is <tt>error[3059]</tt> unless its condition is
+comptime-known true.
+</p>
+
+<h2>Capture over an error union: <tt>if (eu) |v| else |e|</tt></h2>
+<p>
+An <tt>if</tt>/<tt>while</tt> capture may take an error-union condition, written
+with an error arm <tt>else |e|</tt>. On the success path the capture binds the
+<b>payload</b> (<tt>v: T</tt> for <tt>E!T</tt>); the error arm binds the
+error-set value (<tt>e: E</tt>). This is the error-union counterpart of the
+optional capture above.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Form</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Rule (final)</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>if (eu) |v| ... else |e| ...</tt></td>
+<td valign="top">The error-union capture form. Success binds the payload <tt>v: T</tt>; the error path binds the error <tt>e: E</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>while (eu) |v| ... else |e| ...</tt></td>
+<td valign="top">Loops while the condition is a success, binding the payload <tt>v</tt> each iteration; when it yields an error the loop ends and <tt>else |e|</tt> runs with that error.</td>
+</tr>
+<tr>
+<td valign="top"><tt>if (eu) |v|</tt> or <tt>while (eu) |v|</tt> with no <tt>else |e|</tt></td>
+<td valign="top">Rejected: an error-union capture needs the error arm. Zig 0.15.2 reports <tt>expected optional type, found 'E!T'</tt>, because a bare <tt>|v|</tt> is taken as an optional capture.</td>
+</tr>
+<tr>
+<td valign="top"><tt>if (cond) |v|</tt>, <tt>cond</tt> neither optional nor error union</td>
+<td valign="top"><tt>error[3058]</tt> <tt>capture condition must be an optional or error union type</tt>.</td>
+</tr>
+</table>
+<pre>
+if (h(flag)) |v| {
+    std.io.print("ok {}\n", .{v});     // v is the success payload
+} else |e| {
+    std.io.print("err {}\n", .{e});    // e is the error-set value
+}
+</pre>
+<p>
+<b>Current-seed note.</b> This error-union capture rule is the final
+behavior; the current seed build does not implement it correctly (the capture
+binds the whole error union and <tt>else |e|</tt> does not parse yet). The
+defect is scoped as Amendment <b>A8</b>, deferred to the end of Volume IV; use
+<tt>catch</tt> for error unions until it lands.
+</p>
+
+<h2><tt>orelse</tt>, <tt>catch</tt>, and <tt>try</tt> precedence</h2>
+<p>
+<tt>try</tt> is a prefix operator and binds more tightly than every infix
+operator. <tt>catch</tt> (level 3) binds tighter than <tt>orelse</tt> (level 2);
+both are right-associative. The full table is on
+<a href="vol4-01-grammar.html">the grammar page</a>.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Written</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Parses as</b></th>
+</tr>
+<tr><td valign="top"><tt>try f() + 1</tt></td><td valign="top"><tt>(try f()) + 1</tt></td></tr>
+<tr><td valign="top"><tt>try f() catch d</tt></td><td valign="top"><tt>(try f()) catch d</tt></td></tr>
+<tr><td valign="top"><tt>a catch b catch c</tt></td><td valign="top"><tt>a catch (b catch c)</tt></td></tr>
+<tr><td valign="top"><tt>a orelse b orelse c</tt></td><td valign="top"><tt>a orelse (b orelse c)</tt></td></tr>
+<tr><td valign="top"><tt>a orelse b catch c</tt></td><td valign="top"><tt>a orelse (b catch c)</tt></td></tr>
+</table>
+<p>
+As measured, <tt>catch</tt> and <tt>orelse</tt> sit below <tt>==</tt>, so
+<tt>fi(0) catch 0 == 0</tt> types as the payload (<tt>source: i32</tt>) and
+binding it to <tt>bool</tt> is a <tt>warning[3000]</tt>. To compare a caught
+value, parenthesize the <tt>catch</tt>: <tt>(f() catch 0) == 0</tt>.
+</p>
+
+<h2>Discarding an error union</h2>
+<p>
+A statement whose result is an error union may not be silently discarded:
+</p>
+<pre>
+fn f() E!i32 { return error.Foo; }
+pub fn main() void { f(); }
+// error[3015]: error union result is ignored; use 'try', 'catch', or assign the result
+</pre>
+<p>
+The three legitimate answers are exactly the message's list: propagate
+(<tt>try</tt>), handle (<tt>catch</tt>), or keep the result in a variable.
+</p>
+
+<h2>Diagnostic index</h2>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Code</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Message</b></th>
+</tr>
+<tr><td valign="top"><tt>error[2000]</tt></td><td valign="top">Parse rejects: <tt>';' not allowed before 'else'</tt>; an <tt>else |e|</tt> error capture on the current seed build (<tt>expected expression</tt>; see A8).</td></tr>
+<tr><td valign="top"><tt>error[3002]</tt></td><td valign="top"><tt>cannot assign to immutable variable</tt> (assignment through an <tt>if</tt>/<tt>while</tt> capture).</td></tr>
+<tr><td valign="top"><tt>error[3013]</tt></td><td valign="top"><tt>invalid print format specifier for the argument type</tt> (an explicit <tt>{d}</tt>/<tt>{x}</tt> on an error-set capture).</td></tr>
+<tr><td valign="top"><tt>error[3015]</tt></td><td valign="top"><tt>error union result is ignored; use 'try', 'catch', or assign the result</tt>.</td></tr>
+<tr><td valign="top"><tt>error[3016]</tt></td><td valign="top"><tt>orelse requires an optional operand; use 'catch' for error unions</tt>.</td></tr>
+<tr><td valign="top"><tt>error[3058]</tt></td><td valign="top"><tt>condition must be of type 'bool'</tt>; with a capture, <tt>capture condition must be an optional or error union type</tt>.</td></tr>
+<tr><td valign="top"><tt>error[3059]</tt></td><td valign="top"><tt>if expression without 'else' cannot be used as a value (its type is 'void')</tt> (unless the condition is comptime-known true).</td></tr>
+<tr><td valign="top"><tt>error[3075]</tt></td><td valign="top">The <tt>try</tt> enclosing-return prongs above, deduped per <tt>try</tt> node.</td></tr>
+<tr><td valign="top"><tt>warning[3000]</tt></td><td valign="top"><tt>type mismatch in variable declaration</tt> (a caught/orelse result compared unparenthesized, so the payload is bound where a <tt>bool</tt> was declared).</td></tr>
+</table>
+<p>
+For the full code list see the
+<a href="vol4-21-diagnostics.html">Diagnostics</a> page; the printed number is
+the enum ordinal, not the <tt>ERR_####</tt> suffix.
+</p>
+
+<h2>See also</h2>
+<p>
+<a href="vol4-09-errors.html">Errors</a> for error sets, error unions,
+<tt>error.Name</tt> literals, <tt>errdefer</tt>, and the error-union
+representation; <a href="vol4-10-optionals.html">Optionals</a> for <tt>?T</tt>,
+<tt>null</tt>, the representation, and the <tt>.?</tt> boundary;
+<a href="vol4-13-control-flow.html">Control flow</a> for the
+<tt>if</tt>/<tt>while</tt> statement and value forms and the switch prong
+captures; <a href="vol4-01-grammar.html">The full grammar</a> for the
+<tt>try</tt>/<tt>catch</tt>/<tt>orelse</tt> productions and the precedence
+table; and the Volume II chapters
+<a href="vol2-12-error-unions.html">Error Unions</a> and
+<a href="vol2-13-optionals.html">Optionals</a> for the teaching narrative.
+</p>
+
+<p class="navbtns">
+<a href="vol4-13-control-flow.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol4-15-builtins.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol4-13-control-flow.html">Control flow</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-15-builtins.html">Builtins</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
