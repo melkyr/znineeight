@@ -1,0 +1,668 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Types</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual types reference primitives integers arbitrary width usize isize bool void noreturn c_char coercion layout alignment kind">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol4-01-grammar.html">
+<link rel="next" href="vol4-15-builtins.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume IV &mdash; Reference</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+How to use the Reference <i>(planned)</i><br>
+<a href="vol4-01-grammar.html">The full grammar</a><br>
+<b>Types</b><br>
+Pointers <i>(planned)</i><br>
+Structs <i>(planned)</i><br>
+Enums <i>(planned)</i><br>
+Unions <i>(planned)</i><br>
+Tuples <i>(planned)</i><br>
+Arrays and slices <i>(planned)</i><br>
+Errors <i>(planned)</i><br>
+Optionals <i>(planned)</i><br>
+Aliases <i>(planned)</i><br>
+Statements <i>(planned)</i><br>
+Control flow <i>(planned)</i><br>
+Error expressions <i>(planned)</i><br>
+<a href="vol4-15-builtins.html">Builtins</a><br>
+Async <i>(planned)</i><br>
+Memory <i>(planned)</i><br>
+<a href="vol4-18-stdlib.html">The standard library</a><br>
+<a href="vol4-19-pal.html">The PAL</a><br>
+<a href="vol4-20-markers.html">Markers</a><br>
+<a href="vol4-21-diagnostics.html">Diagnostics</a><br>
+<a href="vol4-22-cli.html">The command line</a><br>
+Limits <i>(planned)</i><br>
+<a href="vol4-24-html-style.html">HTML style</a><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Types</h1>
+<p>
+A <b>type</b> is a name for a set of values and the operations that are legal on
+them. This page is the lookup for the Z98 type system: the primitive scalars,
+the arbitrary-width integers, the four special scalars, the list of type kinds,
+the coercion rules, and the frozen 32-bit layout model.
+</p>
+<p>
+The authority is the compiler's type registry, <tt>sf/src/type_registry.zig</tt>.
+The <tt>TypeKind</tt> enum (<tt>type_registry.zig:41-60</tt>) is the complete list
+of kinds the compiler knows; the primitives are registered with their size and
+alignment in <tt>typeRegistryRegisterPrimitives</tt>
+(<tt>type_registry.zig:722-764</tt>). The size, alignment, and bit-width values
+below are measured on seed v90 with a <tt>@sizeOf</tt>/<tt>@alignOf</tt>/
+<tt>@bitSizeOf</tt> probe; the same values appear in the reused Volume II sample
+<tt>src/vol2/types2.z98</tt>.
+</p>
+
+<h2>Primitive scalars</h2>
+<p>
+The scalar names, their C89 carrier, and their model size, alignment, and bit
+width (measured on seed v90). The special scalars <tt>bool</tt>, <tt>c_char</tt>,
+<tt>void</tt>, and <tt>noreturn</tt> are explained after the table.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Type</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>C89 carrier</b></th>
+<th align="left" bgcolor="#e8e0e0"><b><tt>@sizeOf</tt></b></th>
+<th align="left" bgcolor="#e8e0e0"><b><tt>@alignOf</tt></b></th>
+<th align="left" bgcolor="#e8e0e0"><b><tt>@bitSizeOf</tt></b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Signed</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>i8</tt></td>
+<td valign="top"><tt>signed char</tt></td>
+<td valign="top">1</td>
+<td valign="top">1</td>
+<td valign="top">8</td>
+<td valign="top">yes</td>
+</tr>
+<tr>
+<td valign="top"><tt>i16</tt></td>
+<td valign="top"><tt>short</tt></td>
+<td valign="top">2</td>
+<td valign="top">2</td>
+<td valign="top">16</td>
+<td valign="top">yes</td>
+</tr>
+<tr>
+<td valign="top"><tt>i32</tt></td>
+<td valign="top"><tt>int</tt></td>
+<td valign="top">4</td>
+<td valign="top">4</td>
+<td valign="top">32</td>
+<td valign="top">yes</td>
+</tr>
+<tr>
+<td valign="top"><tt>i64</tt></td>
+<td valign="top"><tt>__int64</tt></td>
+<td valign="top">8</td>
+<td valign="top">8</td>
+<td valign="top">64</td>
+<td valign="top">yes</td>
+</tr>
+<tr>
+<td valign="top"><tt>u8</tt></td>
+<td valign="top"><tt>unsigned char</tt></td>
+<td valign="top">1</td>
+<td valign="top">1</td>
+<td valign="top">8</td>
+<td valign="top">no</td>
+</tr>
+<tr>
+<td valign="top"><tt>u16</tt></td>
+<td valign="top"><tt>unsigned short</tt></td>
+<td valign="top">2</td>
+<td valign="top">2</td>
+<td valign="top">16</td>
+<td valign="top">no</td>
+</tr>
+<tr>
+<td valign="top"><tt>u32</tt></td>
+<td valign="top"><tt>unsigned int</tt></td>
+<td valign="top">4</td>
+<td valign="top">4</td>
+<td valign="top">32</td>
+<td valign="top">no</td>
+</tr>
+<tr>
+<td valign="top"><tt>u64</tt></td>
+<td valign="top"><tt>unsigned __int64</tt></td>
+<td valign="top">8</td>
+<td valign="top">8</td>
+<td valign="top">64</td>
+<td valign="top">no</td>
+</tr>
+<tr>
+<td valign="top"><tt>isize</tt></td>
+<td valign="top"><tt>int</tt> (32-bit)</td>
+<td valign="top">4</td>
+<td valign="top">4</td>
+<td valign="top">32</td>
+<td valign="top">yes</td>
+</tr>
+<tr>
+<td valign="top"><tt>usize</tt></td>
+<td valign="top"><tt>unsigned int</tt> (32-bit)</td>
+<td valign="top">4</td>
+<td valign="top">4</td>
+<td valign="top">32</td>
+<td valign="top">no</td>
+</tr>
+<tr>
+<td valign="top"><tt>f32</tt></td>
+<td valign="top"><tt>float</tt></td>
+<td valign="top">4</td>
+<td valign="top">4</td>
+<td valign="top">32</td>
+<td valign="top">float</td>
+</tr>
+<tr>
+<td valign="top"><tt>f64</tt></td>
+<td valign="top"><tt>double</tt></td>
+<td valign="top">8</td>
+<td valign="top">8</td>
+<td valign="top">64</td>
+<td valign="top">float</td>
+</tr>
+<tr>
+<td valign="top"><tt>bool</tt></td>
+<td valign="top"><tt>unsigned char</tt> (1 / 0)</td>
+<td valign="top">1</td>
+<td valign="top">1</td>
+<td valign="top">1</td>
+<td valign="top">no</td>
+</tr>
+<tr>
+<td valign="top"><tt>c_char</tt></td>
+<td valign="top"><tt>char</tt></td>
+<td valign="top">1</td>
+<td valign="top">1</td>
+<td valign="top">8</td>
+<td valign="top">yes</td>
+</tr>
+<tr>
+<td valign="top"><tt>void</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">0</td>
+<td valign="top">0</td>
+<td valign="top">0</td>
+<td valign="top">n/a</td>
+</tr>
+<tr>
+<td valign="top"><tt>noreturn</tt></td>
+<td valign="top"><tt>void</tt></td>
+<td valign="top">0</td>
+<td valign="top">0</td>
+<td valign="top">0</td>
+<td valign="top">n/a</td>
+</tr>
+</table>
+<p>
+<tt>c_char</tt> is the C <tt>char</tt> type: a 1-byte scalar whose signedness is
+implementation-defined; the registry models it as signed
+(<tt>type_registry.zig:318-320</tt>). <tt>bool</tt> is an unsigned byte holding
+<tt>1</tt>/<tt>0</tt> and prints as <tt>true</tt>/<tt>false</tt>. The
+<tt>noreturn</tt> row is the registry's model (<tt>type_registry.zig:726</tt>);
+<tt>noreturn</tt> is the type of a diverging expression and the sole exemption
+from the <tt>anytype</tt> rule below, but it is <b>not</b> accepted as a
+<tt>@sizeOf</tt>/<tt>@alignOf</tt>/<tt>@bitSizeOf</tt> operand (measured:
+<tt>@sizeOf(noreturn)</tt> is a parse <tt>error[2000]</tt>).
+</p>
+
+<h2>Arbitrary-width integers</h2>
+<p>
+Any <tt>uN</tt> or <tt>iN</tt> name whose width is in range is an
+arbitrary-width integer. The legal ranges are <b><tt>u1</tt>&hellip;<tt>u64</tt></b>
+and <b><tt>i1</tt>&hellip;<tt>i63</tt></b> (<tt>parseArbIntWidth</tt>,
+<tt>type_registry.zig:774-797</tt>). The power-of-two names
+<tt>u8</tt>/<tt>u16</tt>/<tt>u32</tt>/<tt>u64</tt> and
+<tt>i8</tt>/<tt>i16</tt>/<tt>i32</tt>/<tt>i64</tt> are the fixed-width scalars
+above (the name cache binds them to the primitive, so they are not separate
+arbitrary-width kinds); the remaining widths &mdash; <tt>u1</tt>&hellip;<tt>u7</tt>,
+<tt>u9</tt>&hellip;<tt>u15</tt>, <tt>u17</tt>&hellip;<tt>u31</tt>,
+<tt>u33</tt>&hellip;<tt>u63</tt> and the signed twins through <tt>i63</tt> &mdash;
+are stored in the smallest power-of-two C carrier that holds the declared width.
+The arbitrary-width kinds are <tt>arb_uint_type</tt> and <tt>arb_int_type</tt>
+(<tt>type_registry.zig:58</tt>).
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Declared width N</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Carrier <tt>@sizeOf</tt> / <tt>@alignOf</tt></b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Example: <tt>@bitSizeOf</tt></b></th>
+</tr>
+<tr>
+<td valign="top">1&ndash;8</td>
+<td valign="top">1 / 1</td>
+<td valign="top"><tt>u1</tt> = 1, <tt>u7</tt> = 7, <tt>i1</tt> = 1</td>
+</tr>
+<tr>
+<td valign="top">9&ndash;16</td>
+<td valign="top">2 / 2</td>
+<td valign="top"><tt>u9</tt> = 9, <tt>i9</tt> = 9</td>
+</tr>
+<tr>
+<td valign="top">17&ndash;32</td>
+<td valign="top">4 / 4</td>
+<td valign="top"><tt>u17</tt> = 17, <tt>i17</tt> = 17</td>
+</tr>
+<tr>
+<td valign="top">33&ndash;64</td>
+<td valign="top">8 / 8</td>
+<td valign="top"><tt>u33</tt> = 33, <tt>i63</tt> = 63</td>
+</tr>
+</table>
+<p>
+<tt>@sizeOf</tt> and <tt>@alignOf</tt> report the <b>carrier</b>; <tt>@bitSizeOf</tt>
+reports the <b>declared width</b> (<tt>type_registry.zig:799-826</tt>). Arithmetic
+results are masked (unsigned) or sign-extended (signed) back to the declared
+width. A value may be written in its declared range (<tt>const a: u3 = 7;</tt>,
+<tt>const b: i7 = -64;</tt>) but an overflowing runtime operation is a checked
+trap under the default <tt>-fsafe</tt>; under <tt>-ffast</tt> the wrap is visible
+(measured: <tt>u3</tt> <tt>7 + 1</tt> = <tt>0</tt>, <tt>i7</tt> <tt>63 + 1</tt> =
+<tt>-64</tt>). <tt>@intCast</tt> to an arbitrary width is range-checked (an
+out-of-range value is <tt>error[3000]</tt>); the range check, like the other
+runtime checks, is enabled by default and disabled by <tt>-ffast</tt> (see the
+<a href="vol4-22-cli.html">command line</a>).
+</p>
+<p>
+A width outside the ranges is not a type: <tt>parseArbIntWidth</tt> returns 0 and
+no type is registered for the name, so a resolved use reports the ordinary
+unresolved identifier &mdash; measured, <tt>fn f(x: u65)</tt> gives
+<tt>error[20]: identifier 'u65' is not declared or imported in this module</tt>.
+An enum may also take an explicit arbitrary backing width, <tt>enum(uN)</tt>.
+</p>
+<p>
+The reused Volume II program <tt>src/vol2/types2.z98</tt> prints the carrier and
+bit-width rules; its measured output on seed v90 is:
+</p>
+<pre>
+const one_bit: u1 = 1;
+const small_unsigned: u3 = 5;
+const small_signed: i7 = -3;
+const wide_signed: i63 = -5;
+const u3_max: u3 = 7;
+const i7_min: i7 = -64;
+
+u1  value=1 @sizeOf=1 @bitSizeOf=1
+u3  value=5 @sizeOf=1 @bitSizeOf=3
+i7  value=-3 @sizeOf=1 @bitSizeOf=7
+i63 value=-5 @sizeOf=8 @bitSizeOf=63
+u9 @sizeOf=2 @bitSizeOf=9 u33 @sizeOf=8 @bitSizeOf=33
+u3 max=7 i7 min=-64
+</pre>
+
+<h2>usize and isize</h2>
+<p>
+<tt>usize</tt> and <tt>isize</tt> are the platform-sized integers. Z98 is
+single-target and its <tt>usize</tt>/<tt>isize</tt> are the 32-bit unsigned and
+signed <tt>int</tt>: both are size 4 and alignment 4
+(<tt>type_registry.zig:735-736</tt>). They are distinct kinds
+(<tt>usize_type</tt>/<tt>isize_type</tt>) even though they share the
+<tt>i32</tt>/<tt>u32</tt> C carrier.
+</p>
+
+<h2>bool, void, noreturn, and c_char</h2>
+<ul>
+<li><b><tt>bool</tt></b> &mdash; the two values <tt>true</tt> and <tt>false</tt>,
+stored as an <tt>unsigned char</tt> <tt>1</tt>/<tt>0</tt>; size 1, alignment 1,
+<tt>@bitSizeOf</tt> 1.</li>
+<li><b><tt>void</tt></b> &mdash; the empty type, size 0, alignment 0; the return
+type of a function that produces no value and the element type of nothing.</li>
+<li><b><tt>noreturn</tt></b> &mdash; the type of a diverging expression (a
+<tt>return</tt>, <tt>break</tt>, <tt>continue</tt>, <tt>unreachable</tt>, or a
+call to a never-returning function). It is the one exemption to the
+<tt>anytype</tt> rejection (next section) and degrades to <tt>void</tt> with no
+diagnostic; it is not a usable <tt>@sizeOf</tt> operand (see above). A switch
+whose every prong diverges has result type <tt>noreturn</tt>.</li>
+<li><b><tt>c_char</tt></b> &mdash; the C <tt>char</tt> type, 1 byte; signedness
+is implementation-defined and the registry models it as signed.</li>
+</ul>
+
+<h2>Type kinds</h2>
+<p>
+The user-facing kinds of <tt>TypeKind</tt> and their spelling. The dedicated
+Volume IV page for each kind is planned; until it ships, each row links the
+Volume II chapter that covers the kind today. The grammar page lists the exact
+spelling the parser accepts for each form.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Kind</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Spelling</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Volume IV page</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Volume II now</b></th>
+</tr>
+<tr>
+<td valign="top">pointer / many-item pointer</td>
+<td valign="top"><tt>*T</tt>, <tt>*const T</tt>, <tt>*volatile T</tt>, <tt>[*]T</tt></td>
+<td valign="top">Pointers <i>(planned)</i></td>
+<td valign="top"><a href="vol2-03-pointers.html">Pointers</a></td>
+</tr>
+<tr>
+<td valign="top">array</td>
+<td valign="top"><tt>[N]T</tt></td>
+<td valign="top">Arrays and slices <i>(planned)</i></td>
+<td valign="top"><a href="vol2-09-arrays-slices.html">Arrays and slices</a></td>
+</tr>
+<tr>
+<td valign="top">slice</td>
+<td valign="top"><tt>[]T</tt>, <tt>[]const T</tt></td>
+<td valign="top">Arrays and slices <i>(planned)</i></td>
+<td valign="top"><a href="vol2-09-arrays-slices.html">Arrays and slices</a></td>
+</tr>
+<tr>
+<td valign="top">struct / packed struct</td>
+<td valign="top"><tt>struct { &hellip; }</tt>, <tt>packed struct { &hellip; }</tt></td>
+<td valign="top">Structs <i>(planned)</i></td>
+<td valign="top"><a href="vol2-04-structs.html">Structs</a>, <a href="vol2-05-packed-structs.html">Packed structs</a></td>
+</tr>
+<tr>
+<td valign="top">enum</td>
+<td valign="top"><tt>enum { &hellip; }</tt>, <tt>enum(uN) { &hellip; }</tt></td>
+<td valign="top">Enums <i>(planned)</i></td>
+<td valign="top"><a href="vol2-06-enums.html">Enums</a></td>
+</tr>
+<tr>
+<td valign="top">union / packed union / tagged union</td>
+<td valign="top"><tt>union { &hellip; }</tt>, <tt>packed union { &hellip; }</tt>, <tt>union(enum) { &hellip; }</tt></td>
+<td valign="top">Unions <i>(planned)</i></td>
+<td valign="top"><a href="vol2-07-unions.html">Unions</a></td>
+</tr>
+<tr>
+<td valign="top">tuple</td>
+<td valign="top"><tt>struct { T1, T2 }</tt>, <tt>.{ v1, v2 }</tt></td>
+<td valign="top">Tuples <i>(planned)</i></td>
+<td valign="top"><a href="vol2-08-tuples.html">Tuples</a></td>
+</tr>
+<tr>
+<td valign="top">optional</td>
+<td valign="top"><tt>?T</tt></td>
+<td valign="top">Optionals <i>(planned)</i></td>
+<td valign="top"><a href="vol2-13-optionals.html">Optionals</a></td>
+</tr>
+<tr>
+<td valign="top">error set / error union</td>
+<td valign="top"><tt>error { &hellip; }</tt>, <tt>!T</tt>, <tt>E!T</tt></td>
+<td valign="top">Errors <i>(planned)</i></td>
+<td valign="top"><a href="vol2-12-error-unions.html">Error unions</a></td>
+</tr>
+<tr>
+<td valign="top">function</td>
+<td valign="top"><tt>fn(P1, P2) T</tt></td>
+<td valign="top">Pointers (function pointers) <i>(planned)</i></td>
+<td valign="top"><a href="vol2-03-pointers.html">Pointers</a></td>
+</tr>
+<tr>
+<td valign="top">alias</td>
+<td valign="top"><tt>const T = &lt;type&gt;;</tt></td>
+<td valign="top">Aliases <i>(planned)</i></td>
+<td valign="top"><a href="vol2-02-types.html">The type system</a></td>
+</tr>
+</table>
+<p>
+The remaining <tt>TypeKind</tt> members are either the scalar kinds listed above
+(<tt>void_type</tt>, <tt>bool_type</tt>, <tt>noreturn_type</tt>, the
+<tt>i*</tt>/<tt>u*</tt>/<tt>f*</tt> kinds, <tt>isize_type</tt>/<tt>usize_type</tt>,
+<tt>c_char_type</tt>), the arbitrary-width kinds, or compiler-internal transient
+kinds that are not written in source (<tt>type_type</tt>, <tt>module_type</tt>,
+<tt>null_type</tt>, <tt>undefined_type</tt>, <tt>integer_literal_type</tt>,
+<tt>unresolved_name</tt>, the <tt>anon_*</tt> literals, <tt>va_list_type</tt>,
+and <tt>none_sentinel</tt>). Aliases name a type but are erased at registration:
+diagnostics and emitted C report the underlying type, never the alias name.
+</p>
+
+<h2>Coercions</h2>
+<p>
+Z98 accepts a value of one type where another is expected only in the cases
+below. A coercion that fails is a compile-time <tt>error[3000]</tt> unless the
+row names another code. The set is quoted from the compiler's coercion rules and
+the Type Coercions section of the specification; the dedicated Reference page for
+each target is planned, so each row links the current Volume II coverage.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>From &rarr; To</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Rule</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>On failure</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Page</b></th>
+</tr>
+<tr>
+<td valign="top">integer &rarr; integer, any width/signedness</td>
+<td valign="top">Implicit, including narrowing and <tt>i32</tt>&nbsp;&harr;&nbsp;<tt>usize</tt>. A <tt>warning[3000]</tt> at a declaration or assignment; silent at a call argument.</td>
+<td valign="top">never rejected for family alone</td>
+<td valign="top"><a href="vol2-02-types.html">The type system</a></td>
+</tr>
+<tr>
+<td valign="top"><tt>@intCast(T, e)</tt></td>
+<td valign="top">The explicit, range-checked form; not required for an implicit integer conversion.</td>
+<td valign="top"><tt>error[3000]</tt> when the value does not fit</td>
+<td valign="top"><a href="vol4-15-builtins.html">Builtins</a></td>
+</tr>
+<tr>
+<td valign="top"><tt>[N]T</tt> &rarr; <tt>[]T</tt></td>
+<td valign="top">Implicit array-to-slice (constness propagates).</td>
+<td valign="top"><tt>error[3000]</tt> discarding <tt>const</tt></td>
+<td valign="top"><a href="vol2-09-arrays-slices.html">Arrays and slices</a></td>
+</tr>
+<tr>
+<td valign="top"><tt>[]T</tt> &rarr; <tt>[*]T</tt></td>
+<td valign="top">Implicit, via the slice's <tt>.ptr</tt>.</td>
+<td valign="top"><tt>error[3000]</tt> discarding <tt>const</tt></td>
+<td valign="top"><a href="vol2-09-arrays-slices.html">Arrays and slices</a></td>
+</tr>
+<tr>
+<td valign="top"><tt>[N]T</tt> &rarr; <tt>[*]T</tt></td>
+<td valign="top">Implicit, via <tt>&amp;arr[0]</tt>.</td>
+<td valign="top"><tt>error[3000]</tt> discarding <tt>const</tt></td>
+<td valign="top"><a href="vol2-09-arrays-slices.html">Arrays and slices</a></td>
+</tr>
+<tr>
+<td valign="top">string literal <tt>*const [N]u8</tt></td>
+<td valign="top">To <tt>[]const u8</tt>, <tt>[*]const u8</tt>, or <tt>*const u8</tt>.</td>
+<td valign="top"><tt>error[3000]</tt> to a mutable target</td>
+<td valign="top"><a href="vol2-09-arrays-slices.html">Arrays and slices</a></td>
+</tr>
+<tr>
+<td valign="top">any &rarr; const-discarding form</td>
+<td valign="top">Forbidden: <tt>[]const T</tt>&nbsp;&rarr;&nbsp;<tt>[]T</tt>, <tt>*const T</tt>&nbsp;&rarr;&nbsp;<tt>*T</tt>, <tt>[N]T</tt>&nbsp;&rarr;&nbsp;<tt>[]T</tt> from a <tt>const</tt> binding, and the string-literal case to a mutable target.</td>
+<td valign="top"><tt>error[3000]</tt> <tt>cannot implicitly discard 'const' qualifier</tt></td>
+<td valign="top"><a href="vol2-09-arrays-slices.html">Arrays and slices</a></td>
+</tr>
+<tr>
+<td valign="top"><tt>T</tt> &rarr; <tt>?T</tt></td>
+<td valign="top">Implicit wrap (present value).</td>
+<td valign="top">&mdash;</td>
+<td valign="top"><a href="vol2-13-optionals.html">Optionals</a></td>
+</tr>
+<tr>
+<td valign="top"><tt>null</tt> &rarr; <tt>?T</tt></td>
+<td valign="top">Implicit absent value.</td>
+<td valign="top">&mdash;</td>
+<td valign="top"><a href="vol2-13-optionals.html">Optionals</a></td>
+</tr>
+<tr>
+<td valign="top"><tt>T</tt> &rarr; <tt>!T</tt> / <tt>E!T</tt></td>
+<td valign="top">Implicit success value.</td>
+<td valign="top">&mdash;</td>
+<td valign="top"><a href="vol2-12-error-unions.html">Error unions</a></td>
+</tr>
+<tr>
+<td valign="top"><tt>error.Name</tt> &rarr; any <tt>!T</tt></td>
+<td valign="top">Implicit error literal.</td>
+<td valign="top">&mdash;</td>
+<td valign="top"><a href="vol2-12-error-unions.html">Error unions</a></td>
+</tr>
+<tr>
+<td valign="top">function &rarr; function pointer</td>
+<td valign="top">Only an <b>exact</b> signature match: return type, parameter count/types, variadic flag, and calling convention. One level of <tt>?fn</tt> wrapping is unwrapped.</td>
+<td valign="top"><tt>error[3000]</tt> mismatch (explicit <tt>@ptrCast</tt> stays legal)</td>
+<td valign="top"><a href="vol2-03-pointers.html">Pointers</a></td>
+</tr>
+<tr>
+<td valign="top">float sources &rarr; <tt>f32</tt></td>
+<td valign="top">Value-aware: an untyped float literal rounds; a typed comptime value must be exactly representable; a runtime <tt>f64</tt>/integer rejects.</td>
+<td valign="top"><tt>error[3000]</tt></td>
+<td valign="top"><a href="vol2-02-types.html">The type system</a></td>
+</tr>
+<tr>
+<td valign="top"><tt>undefined</tt> &rarr; any <tt>T</tt></td>
+<td valign="top">Neutral; the opt-out for the <tt>error[3014]</tt> "must be initialized" rule.</td>
+<td valign="top">&mdash;</td>
+<td valign="top"><a href="vol2-02-types.html">The type system</a></td>
+</tr>
+<tr>
+<td valign="top"><tt>anytype</tt></td>
+<td valign="top">Not a resolvable type in any signature or type position (Amendment A1); <tt>noreturn</tt> is the sole exemption.</td>
+<td valign="top"><tt>error[16]</tt> <tt>anytype not supported in Z98</tt></td>
+<td valign="top"><a href="vol4-01-grammar.html">Grammar</a></td>
+</tr>
+</table>
+<p>
+The specification's section&nbsp;5 wording &mdash; "there is no implicit coercion
+between <tt>i32</tt> and <tt>usize</tt>" &mdash; is <b>superseded</b> by the
+Type Coercions section and by measured behaviour: integer-to-integer conversion of
+any width and signedness (including <tt>i32</tt>&nbsp;&harr;&nbsp;<tt>usize</tt>
+and narrowing) is accepted implicitly, and <tt>@intCast</tt> is the explicit,
+range-checked form rather than a requirement. The reused sample
+<tt>src/vol2/types2.z98</tt> demonstrates this: the declaration
+<tt>var a: usize = v;</tt> and the assignment <tt>a = v;</tt> from
+<tt>v: i32</tt> compile with <tt>warning[3000]</tt>, and passing <tt>v</tt> to a
+<tt>usize</tt> parameter is silent. The const-discard and function-pointer rules,
+by contrast, are level-0 rejects and emit no C.
+</p>
+
+<h2>Layout and alignment (the align-8 model)</h2>
+<p>
+The compiler is single-target 32-bit and its layout model is the contract
+(FX14). The scalar sizes and alignments are in the first table; the composite
+rules are:
+</p>
+<ul>
+<li><tt>i64</tt>, <tt>u64</tt>, and <tt>f64</tt> are size 8 and alignment 8. A
+struct, union, tagged union, optional, error union, tuple, or array inherits the
+maximum alignment of its members/elements, so any composite containing an
+<tt>i64</tt>/<tt>u64</tt>/<tt>f64</tt> is alignment 8 and is padded accordingly.</li>
+<li>Packed aggregates are the exception: their fields are bit-packed LSB-first
+with alignment 1 and size <tt>(total_bits + 7) / 8</tt>. A 64-bit packed field
+rejects <tt>error[3000]</tt> (<tt>typeRegistryComputePackedLayout</tt>,
+<tt>type_registry.zig:1052-1087</tt>).</li>
+<li>Emitted C <b>pins</b> the model on every supported host: the 64-bit carriers
+are declared with <tt>Z98_ALIGN8</tt> (<tt>__attribute__((aligned(8)))</tt> on
+GCC/Clang/mingw; empty on MSVC/Watcom, whose 32-bit defaults already align
+64-bit scalars to 8). A <tt>/Zp4</tt> or <tt>-zp4</tt> packing override is not
+supported.</li>
+</ul>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Type</b></th>
+<th align="left" bgcolor="#e8e0e0"><b><tt>@sizeOf</tt></b></th>
+<th align="left" bgcolor="#e8e0e0"><b><tt>@alignOf</tt></b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Notes</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>*i32</tt></td>
+<td valign="top">4</td>
+<td valign="top">4</td>
+<td valign="top">All pointers are 32-bit in the model.</td>
+</tr>
+<tr>
+<td valign="top"><tt>[]u8</tt></td>
+<td valign="top">8</td>
+<td valign="top">4</td>
+<td valign="top">A slice is a <tt>.ptr</tt> plus a <tt>.len</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>?i32</tt></td>
+<td valign="top">8</td>
+<td valign="top">4</td>
+<td valign="top">Payload plus a presence flag.</td>
+</tr>
+<tr>
+<td valign="top"><tt>error{ Foo, Bar }!i32</tt></td>
+<td valign="top">8</td>
+<td valign="top">4</td>
+<td valign="top">Payload plus an error code.</td>
+</tr>
+<tr>
+<td valign="top"><tt>[3]i32</tt></td>
+<td valign="top">12</td>
+<td valign="top">4</td>
+<td valign="top"><tt>element size &times; length</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>struct { a: u8, b: i64, c: u8 }</tt></td>
+<td valign="top">24</td>
+<td valign="top">8</td>
+<td valign="top">Offsets <tt>a</tt>=0, <tt>b</tt>=8, <tt>c</tt>=16; padded to alignment 8.</td>
+</tr>
+</table>
+<p>
+The struct row is the specification's worked example; its offsets were measured
+with <tt>@offsetOf</tt> and reproduce exactly. Because the 64-bit scalar forces
+alignment 8, <tt>b</tt> starts at 8 and the trailing byte <tt>c</tt> is followed
+by seven bytes of padding. See the Structs page (<i>planned</i>) for the packed
+bit rules and the <a href="vol4-15-builtins.html">Builtins page</a> for
+<tt>@sizeOf</tt>, <tt>@alignOf</tt>, <tt>@offsetOf</tt>, <tt>@bitOffsetOf</tt>,
+and <tt>@bitSizeOf</tt>.
+</p>
+
+<h2>See also</h2>
+<p>
+<a href="vol4-01-grammar.html">The full grammar</a> for the exact type syntax
+each kind accepts; <a href="vol2-02-types.html">Volume II, The type system</a>
+for the teaching narrative behind these tables;
+<a href="vol4-15-builtins.html">Builtins</a> for the introspection and cast
+builtins; and <a href="vol4-21-diagnostics.html">Diagnostics</a> for every code
+quoted here.
+</p>
+
+<p class="navbtns">
+<a href="vol4-01-grammar.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol4-15-builtins.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol4-01-grammar.html">The full grammar</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-15-builtins.html">Builtins</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
