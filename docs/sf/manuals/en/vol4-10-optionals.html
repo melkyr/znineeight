@@ -1,0 +1,409 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Optionals</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual optionals optional ?T null orelse if capture while capture unwrap has_value representation optional pointer ?*T assignment undefined 3016 3000 3002 3014 3058 3059 2000">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol4-09-errors.html">
+<link rel="next" href="vol4-15-builtins.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume IV &mdash; Reference</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+How to use the Reference <i>(planned)</i><br>
+<a href="vol4-01-grammar.html">The full grammar</a><br>
+<a href="vol4-02-types.html">Types</a><br>
+<a href="vol4-03-pointers.html">Pointers</a><br>
+<a href="vol4-04-structs.html">Structs</a><br>
+<a href="vol4-05-enums.html">Enums</a><br>
+<a href="vol4-06-unions.html">Unions</a><br>
+<a href="vol4-07-tuples.html">Tuples</a><br>
+<a href="vol4-08-arrays-slices.html">Arrays and slices</a><br>
+<a href="vol4-09-errors.html">Errors</a><br>
+<b>Optionals</b><br>
+Aliases <i>(planned)</i><br>
+Statements <i>(planned)</i><br>
+Control flow <i>(planned)</i><br>
+Error expressions <i>(planned)</i><br>
+<a href="vol4-15-builtins.html">Builtins</a><br>
+Async <i>(planned)</i><br>
+Memory <i>(planned)</i><br>
+<a href="vol4-18-stdlib.html">The standard library</a><br>
+<a href="vol4-19-pal.html">The PAL</a><br>
+<a href="vol4-20-markers.html">Markers</a><br>
+<a href="vol4-21-diagnostics.html">Diagnostics</a><br>
+<a href="vol4-22-cli.html">The command line</a><br>
+Limits <i>(planned)</i><br>
+<a href="vol4-24-html-style.html">HTML style</a><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Optionals</h1>
+<p>
+An <b>optional type</b> <tt>?T</tt> is "a value of type <tt>T</tt>, or
+<tt>null</tt>". The literal <tt>null</tt> is the absent value and is
+optional-only. A plain <tt>T</tt> coerces to <tt>?T</tt> (present); the two
+ways to get the payload back are <tt>orelse</tt> and a capture
+(<tt>if (opt) |v|</tt>, <tt>while (opt) |v|</tt>). This page is the lookup for
+the type, its representation, the unwrap forms, and the diagnostics that
+bound them.
+</p>
+<p>
+Authority: the parser <tt>parserParseOptionalType</tt>
+(<tt>parser.zig:1206</tt>); the type layer and emitter
+(<tt>emitOptionalType</tt>, <tt>c89_emit.zig:2415</tt>); the semantic rules
+(<tt>orelse</tt> <tt>semantic_analyzer.zig:3530</tt>, field access
+<tt>:1667</tt>, value <tt>if</tt> <tt>:3609</tt>, condition and capture
+<tt>:5456</tt>); and the <tt>-fsafe</tt> unwrap guard (<tt>lower.zig:744</tt>,
+<tt>c89_emit.zig:9668</tt>). Every rule below was reproduced on the fixed
+compiler (md5 <tt>2794fe04e0828c95dd5c2c6fecdea362</tt>); reused fixtures are
+named where one exists.
+</p>
+
+<h2>The type: <tt>?T</tt> and <tt>null</tt></h2>
+<p>
+<tt>?T</tt> is the prefix <tt>?</tt> applied to a type, so <tt>?i32</tt>,
+<tt>?*Entry</tt>, <tt>?[]u8</tt>, and <tt>?bool</tt> are all optionals. The
+payload is <tt>T</tt>, and <tt>null</tt> is the only literal the optional
+family introduces.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Coercion</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Rule (measured)</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>T</tt> &rarr; <tt>?T</tt></td>
+<td valign="top">Allowed; wraps the value as present (<tt>wrap_optional</tt>). Works at initialization, assignment, a <tt>?T</tt> argument, and <tt>return</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>null</tt> &rarr; <tt>?T</tt></td>
+<td valign="top">Allowed for any optional type (<tt>wrap_optional_null</tt>).</td>
+</tr>
+<tr>
+<td valign="top"><tt>?T</tt> &rarr; <tt>?T</tt></td>
+<td valign="top">Allowed; an ordinary copy, present or absent.</td>
+</tr>
+<tr>
+<td valign="top"><tt>?T</tt> &rarr; <tt>T</tt></td>
+<td valign="top">Not implicit. A payload-position use without an unwrap is a level-1 <tt>warning[3000]</tt> type mismatch at a declaration, not a silent unwrap.</td>
+</tr>
+</table>
+<pre>
+var a: ?i32 = 42;     // T -&gt; ?T, present
+var b: ?i32 = null;   // absent
+var c: ?i32 = a;      // copy
+a = null;             // present -&gt; absent
+</pre>
+
+<h2>Representation: one struct, pointers included</h2>
+<p>
+A non-void optional is one C struct: the payload plus an <tt>int</tt> flag
+named <tt>has_value</tt>. There is no special case for pointers.
+</p>
+<pre>
+typedef struct { int value; int has_value; } zT_..._Opt_...;        // ?i32
+typedef struct { zT_..._T* value; int has_value; } zT_..._Opt_...;  // ?*T
+typedef struct { int has_value; } zT_..._Opt_...;                   // ?void
+</pre>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Type</b></th>
+<th align="left" bgcolor="#e8e0e0"><b><tt>@sizeOf</tt></b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Note</b></th>
+</tr>
+<tr><td valign="top"><tt>?i32</tt></td><td valign="top">8</td><td valign="top">4-byte payload + 4-byte flag.</td></tr>
+<tr><td valign="top"><tt>?u8</tt></td><td valign="top">8</td><td valign="top">Size does not track payload width; alignment pads the <tt>int</tt> flag.</td></tr>
+<tr><td valign="top"><tt>?bool</tt></td><td valign="top">8</td><td valign="top">&mdash;</td></tr>
+<tr><td valign="top"><tt>?*T</tt></td><td valign="top">8</td><td valign="top">An optional pointer is <b>not</b> a pointer.</td></tr>
+<tr><td valign="top"><tt>*T</tt></td><td valign="top">4</td><td valign="top">The raw pointer, half the optional's size.</td></tr>
+<tr><td valign="top"><tt>?f64</tt></td><td valign="top">16</td><td valign="top">Payload is align 8; the flag floats to offset 8 and the struct pads to 16.</td></tr>
+</table>
+<p>
+Measured on the fixed compiler, the size line is
+<tt>8 8 8 4 16 8</tt> for <tt>?i32&nbsp;?u8&nbsp;?*T&nbsp;*T&nbsp;?f64&nbsp;?bool</tt>.
+The uniform shape is the single rule the C89 emitter renders; it is not the
+official-Zig optional-pointer optimization, where an all-zero address doubles
+as <tt>null</tt>.
+</p>
+
+<h2>Capture: <tt>if (opt) |v|</tt> and <tt>while (opt) |v|</tt></h2>
+<p>
+A capture binds the payload on the present branch. The binding is an immutable
+copy of the payload; advance a loop by reassigning the loop variable, never the
+binding. On an <tt>if</tt>, the <tt>else</tt> arm sees the absent case.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Form</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Meaning (measured)</b></th>
+</tr>
+<tr><td valign="top"><tt>if (opt) |v| ... else ...</tt></td><td valign="top">Binds <tt>v</tt> (payload type) on present; the <tt>else</tt> arm runs on <tt>null</tt>.</td></tr>
+<tr><td valign="top"><tt>if (opt) |v| expr else expr</tt></td><td valign="top">Value form; the <tt>else</tt> arm is required when the result is used (see <tt>error[3059]</tt>).</td></tr>
+<tr><td valign="top"><tt>while (opt) |v| ...</tt></td><td valign="top">Loops while the optional is present; ends when it becomes <tt>null</tt>.</td></tr>
+<tr><td valign="top"><tt>if (opt) ...</tt> (no capture)</td><td valign="top"><tt>error[3058]</tt> <tt>condition must be of type 'bool'</tt>.</td></tr>
+<tr><td valign="top"><tt>if (non-opt) |v| ...</tt></td><td valign="top"><tt>error[3058]</tt> <tt>capture condition must be an optional or error union type</tt>.</td></tr>
+<tr><td valign="top">assigning through <tt>|v|</tt></td><td valign="top"><tt>error[3002]</tt> <tt>cannot assign to immutable variable</tt>.</td></tr>
+</table>
+<pre>
+if (lookup(head, 20)) |e| {
+    std.io.print("value {}\n", .{e.value});
+} else {
+    std.io.print("missing\n", .{});
+}
+
+const a = if (get(3)) |x| x else 0;   // value form: else is required
+
+var cur: ?i32 = 0;
+while (cur) |v| {
+    sum = sum + v;
+    cur = next(v);                    // reassign the loop variable
+}
+</pre>
+<p>
+A capture condition must be an optional or an error union; a plain
+<tt>bool</tt> condition is written without bars. The value form with a capture
+and no <tt>else</tt> is the <tt>error[3059]</tt> case in the diagnostic index.
+</p>
+
+<h2><tt>orelse</tt>: the fallback operator</h2>
+<p>
+<tt>expr orelse fallback</tt> yields the payload on the present path and
+evaluates the fallback on the <tt>null</tt> path. The result type is the payload
+type, and the fallback must produce that type or diverge. <tt>orelse</tt> is
+right-associative, so <tt>a orelse b orelse c</tt> is
+<tt>a orelse (b orelse c)</tt>; its precedence is level 2, below
+<tt>catch</tt> (3), as listed on
+<a href="vol4-01-grammar.html">the grammar page</a>.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Form</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Meaning (measured)</b></th>
+</tr>
+<tr><td valign="top"><tt>opt orelse value</tt></td><td valign="top">Value fallback; the payload or the value.</td></tr>
+<tr><td valign="top"><tt>opt orelse { ... }</tt></td><td valign="top">Block fallback; use <tt>return</tt>/<tt>break</tt> to diverge.</td></tr>
+<tr><td valign="top"><tt>opt orelse unreachable</tt></td><td valign="top">Accepted; a live <tt>pal_trap()</tt> on the <tt>null</tt> path.</td></tr>
+<tr><td valign="top"><tt>opt orelse return X</tt></td><td valign="top">Return fallback; the current function exits on <tt>null</tt>.</td></tr>
+<tr><td valign="top"><tt>non-opt orelse ...</tt></td><td valign="top"><tt>error[3016]</tt> <tt>orelse requires an optional operand; use 'catch' for error unions</tt> (also for an error-union operand).</td></tr>
+</table>
+<pre>
+var a = maybe(5) orelse 0;            // 5
+var b = maybe(-1) orelse 99;          // 99
+var c = maybe(7) orelse unreachable;  // 7
+var d = useReturn(-1) orelse 88;      // 88 (fallback returns)
+var e = useBlock(-1) orelse 77;       // 77 (fallback block returns)
+</pre>
+<p>
+The value, block, <tt>unreachable</tt>, and <tt>return</tt> fallbacks are
+pinned by <tt>repro/mi_matrix/orelse_optional_control_xmod</tt> (printed lines
+<tt>5</tt>, <tt>99</tt>, <tt>7</tt>, <tt>88</tt>, <tt>77</tt>). The reject is pinned by
+<tt>repro/mi_matrix/orelse_requires_optional_xmod</tt> (rc 2, zero
+<tt>.c</tt>). An error union is handled with <tt>catch</tt>, never
+<tt>orelse</tt>.
+</p>
+<p>
+<b><tt>orelse unreachable</tt> is a live trap.</b> <tt>unreachable</tt> lowers
+to <tt>pal_trap()</tt>, not a no-op; a <tt>null</tt> operand terminates with
+<tt>SIGTRAP</tt> (exit status <tt>133</tt>) under both <tt>-fsafe</tt> and
+<tt>-ffast</tt>. Pinned by
+<tt>repro/mi_matrix/trap_orelse_unreachable_xmod</tt> (stdout empty, rc 133).
+Use it only when the optional is provably present.
+</p>
+<p>
+<b>Fall-through block residual.</b> A block fallback that does <b>not</b>
+diverge (no <tt>return</tt>/<tt>break</tt>/<tt>continue</tt>) leaves the
+<tt>orelse</tt> result reading the uninitialized join temporary. The program
+compiles with no diagnostic and does not trap; the result is undefined.
+Measured:
+</p>
+<pre>
+var x = get(-1) orelse { std.io.print("fallthrough\n", .{}); };
+// prints "fallthrough"; x is then uninitialized (measured x=-338013008,
+// varying per run) -- no error and no trap.
+</pre>
+<p>
+Write a value expression (<tt>opt orelse 0</tt>) when a value is what you
+have, or make the block diverge (<tt>{ return 0; }</tt>), which is the
+<tt>useBlock</tt> path of <tt>orelse_optional_control_xmod</tt>.
+</p>
+
+<h2><tt>.?</tt> and the unwrap trap</h2>
+<p>
+Z98 has no <tt>.?</tt> unwrap operator. <tt>p.?</tt> is a parser reject:
+</p>
+<pre>
+error[2000]: expected field name or index after '.'
+</pre>
+<p>
+Direct field access on an optional is rejected too, and its message names
+<tt>.?</tt>:
+</p>
+<pre>
+error[3000]: cannot access field on optional type; use .? to unwrap first
+</pre>
+<p>
+The suggestion is a spelling the parser does not implement. Under
+<tt>-fsafe</tt>, a payload read is preceded by the guard
+<tt>if (!(opt.has_value)) { pal_trap(); }</tt> (<tt>emitUnwrapOptional</tt>,
+<tt>lower.zig:744</tt>); on the capture and <tt>orelse</tt> paths the branch
+condition has already checked <tt>has_value</tt>, so that guard is redundant,
+and the trap a program can actually reach is <tt>orelse unreachable</tt>. The
+unwraps the language has are <tt>orelse</tt>, <tt>if (opt) |v|</tt>, and
+<tt>while (opt) |v|</tt>.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Shape</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Result (measured)</b></th>
+</tr>
+<tr><td valign="top"><tt>p.?</tt></td><td valign="top"><tt>error[2000]</tt> <tt>expected field name or index after '.'</tt></td></tr>
+<tr><td valign="top"><tt>p.x</tt> on <tt>?S</tt></td><td valign="top"><tt>error[3000]</tt> <tt>cannot access field on optional type; use .? to unwrap first</tt></td></tr>
+<tr><td valign="top"><tt>if (p) |v| ...</tt></td><td valign="top">Accepted; <tt>v</tt> is the payload.</td></tr>
+<tr><td valign="top"><tt>p orelse d</tt></td><td valign="top">Accepted; payload or <tt>d</tt>.</td></tr>
+<tr><td valign="top"><tt>p orelse unreachable</tt></td><td valign="top">Accepted; live trap on <tt>null</tt> (rc 133).</td></tr>
+</table>
+<p>
+The rejected field-access shape is pinned by
+<tt>repro/mi_matrix/field_access_optional</tt> (rc 2, zero <tt>.c</tt>).
+</p>
+
+<h2>Assignment, <tt>null</tt>, and <tt>undefined</tt></h2>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Shape</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Result (measured)</b></th>
+</tr>
+<tr><td valign="top"><tt>var x: ?T = v;</tt></td><td valign="top">Accepted; present.</td></tr>
+<tr><td valign="top"><tt>var x: ?T = null;</tt></td><td valign="top">Accepted; absent.</td></tr>
+<tr><td valign="top"><tt>x = null;</tt></td><td valign="top">Accepted; resets a present optional to absent.</td></tr>
+<tr><td valign="top"><tt>x = v;</tt></td><td valign="top">Accepted; wraps an absent optional to present.</td></tr>
+<tr><td valign="top"><tt>var x: ?T;</tt></td><td valign="top"><tt>error[3014]</tt> <tt>variable must be initialized; use '= undefined' to opt out</tt>.</td></tr>
+<tr><td valign="top"><tt>var x: ?T = undefined;</tt></td><td valign="top">Accepted; the flag is poison and any use is undefined.</td></tr>
+<tr><td valign="top"><tt>var n: T = opt;</tt></td><td valign="top"><tt>warning[3000]</tt> <tt>type mismatch in variable declaration</tt>; the payload is not unwrapped.</td></tr>
+</table>
+<pre>
+var x: ?i32 = undefined;   // opts out of error[3014]
+if (x) |v| { ... }         // v reads the poison storage (measured v=-1431655766)
+</pre>
+<p>
+<tt>undefined</tt> is not a valid absent value. Under <tt>-fsafe</tt> the
+optional's storage is poison-filled, so the flag is whatever the poison bytes
+happen to be; compare with <tt>null</tt> or assign a real payload instead.
+</p>
+
+<h2>Optionals in signatures and structs</h2>
+<p>
+<tt>?T</tt> is usable in every type position: a parameter, a return type, a
+struct field, or a <tt>const</tt> alias. A plain <tt>T</tt> wraps at the
+call/return boundary, and <tt>null</tt> is a legal argument for a <tt>?T</tt>
+parameter.
+</p>
+<pre>
+const Box = struct { item: ?i32, name: []const u8 };
+
+fn find(b: Box) ?i32 {
+    if (b.item) |v| return v + 100;   // capture, then use the payload
+    return null;
+}
+fn pick(seed: i32) ?i32 { if (seed &gt; 0) return seed; return null; }
+fn unwrapOr(o: ?i32, d: i32) i32 { return o orelse d; }
+
+var a = Box{ .item = 7, .name = "a" };
+var b = Box{ .item = null, .name = "b" };
+// find(a) orelse -1 -&gt; 107 ; find(b) orelse -1 -&gt; -1
+// pick(5) orelse 0 -&gt; 5 ; unwrapOr(pick(-1), 42) -&gt; 42
+</pre>
+<p>
+An optional struct field must be unwrapped with a capture or <tt>orelse</tt>
+before its payload is read; accessing a field through the optional itself is
+the <tt>error[3000]</tt> above. An optional pointer field such as
+<tt>next: ?*Entry</tt> is the replacement for a sentinel-terminated chain: the
+tail is a <tt>null</tt> the type system sees [see
+<tt>docs/sf/manuals/src/vol2/lookup.z98</tt>, whose <tt>while (cur) |e|</tt>
+walk follows <tt>?*Entry</tt> links].
+</p>
+
+<h2>Diagnostic index</h2>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Code</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Message</b></th>
+</tr>
+<tr><td valign="top"><tt>error[2000]</tt></td><td valign="top"><tt>expected field name or index after '.'</tt> (<tt>.?</tt> does not parse)</td></tr>
+<tr><td valign="top"><tt>error[3000]</tt></td><td valign="top"><tt>cannot access field on optional type; use .? to unwrap first</tt></td></tr>
+<tr><td valign="top"><tt>error[3002]</tt></td><td valign="top"><tt>cannot assign to immutable variable</tt> (assignment through a capture)</td></tr>
+<tr><td valign="top"><tt>error[3014]</tt></td><td valign="top"><tt>variable must be initialized; use '= undefined' to opt out</tt></td></tr>
+<tr><td valign="top"><tt>error[3016]</tt></td><td valign="top"><tt>orelse requires an optional operand; use 'catch' for error unions</tt></td></tr>
+<tr><td valign="top"><tt>error[3058]</tt></td><td valign="top"><tt>condition must be of type 'bool'</tt>; with a capture, <tt>capture condition must be an optional or error union type</tt></td></tr>
+<tr><td valign="top"><tt>error[3059]</tt></td><td valign="top"><tt>if expression without 'else' cannot be used as a value (its type is 'void')</tt></td></tr>
+<tr><td valign="top"><tt>warning[3000]</tt></td><td valign="top"><tt>type mismatch in variable declaration</tt> (an optional bound where the payload type is declared)</td></tr>
+</table>
+<p>
+For the <tt>error[3059]</tt> rule: a value <tt>if</tt> needs an <tt>else</tt>
+unless the condition is comptime-known true. <tt>const v = if (true) 5;</tt>
+compiles; <tt>const v = if (false) 5;</tt> and
+<tt>const v = if (get()) |x| x;</tt> both reject <tt>error[3059]</tt>.
+</p>
+
+<h2>See also</h2>
+<p>
+<a href="vol4-09-errors.html">Errors</a> for the error-union half of the
+unwrap rule (<tt>try</tt>, <tt>catch</tt>, <tt>errdefer</tt>, <tt>error[3016]</tt>
+from the other side); <a href="vol4-01-grammar.html">The full grammar</a> for
+the <tt>?</tt> type production, the <tt>orelse</tt> precedence, and the capture
+syntax; <a href="vol4-02-types.html">Types</a> for where optional appears in the
+type table; <a href="vol4-15-builtins.html">Builtins</a> for
+<tt>@sizeOf</tt>/<tt>@alignOf</tt>; <a href="vol2-13-optionals.html">Volume II,
+Optionals</a> for the teaching narrative and the runnable
+<tt>lookup.z98</tt> sample; and
+<a href="vol2-10-control-flow.html">Volume II, Control Flow</a> for the
+<tt>if</tt>/<tt>while</tt> capture forms.
+</p>
+
+<p class="navbtns">
+<a href="vol4-09-errors.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol4-15-builtins.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol4-09-errors.html">Errors</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-15-builtins.html">Builtins</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
