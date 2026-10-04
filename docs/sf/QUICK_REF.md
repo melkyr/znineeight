@@ -352,6 +352,29 @@ movers); the new fixed point (moving point hop1 == hop2, explicit
 `FIXED_POINT_MD5` gate) is **`2794fe04e0828c95dd5c2c6fecdea362`**; seed v90 NOT
 rotated.
 
+A4-F (2026-10-04; Volume IV Amendment A4, operator m1523) fixes the lost
+`?void` present value: `return;` (and falling off the end of the body) in a
+`?void` function now yields the **present** optional (Zig 0.15.2 parity).
+`emitValuelessReturn` (`sf/src/lower.zig`) had handled `error_union` present
+construction but had no `optional_type` sibling, so a valueless `?void` return
+lowered to `.ret_void`, which `c89_emit.zig` materialised as
+`zT_ret_void = {0}` -> `has_value = 0` (absent). The fix adds the symmetric
+optional branch: for an optional whose payload is `void`, emit `wrap_optional`
+on a fresh void temp + `.ret`; `return null`/`{}`/`undefined` and non-void
+optionals are unchanged (the `opay != void` arm keeps `.ret_void`). Lowering-
+only; no new `LirInst`. Fixtures `repro/mi_matrix/optional_void_present_xmod`
+(golden `present/absent/present/present/absent`, rc 0; baseline prints line 1
+and 3 as `absent` — RED) + standalone `repro/optional_void_present.z98`. All 8
+emitted-C pins stay **UNCHANGED 8/8** both modes; non-`?void` emitted C
+byte-identical (6/6); example matrix 24/24; stdlib **266 PASS / 0 FAIL**; emit
+7/7; `verify_upgraded.sh` CLOSEOUT OK; self-emission 48 `.c` + 48 `.h` /
+0 PANIC; corpus `-s0` **1092 = 923 OK / 57 GREEN / 112 FAIL / 0 ICE / 0 CRASH**
+(zero common-dir movers; the new fixture classifies OK either way — the pin is
+the runtime golden); the new fixed point (moving point hop1 == hop2, explicit
+`FIXED_POINT_MD5` gate) is **`c1746347cbcdbb39385f325be20b9b6b`**; seed v90 NOT
+rotated. Residual (out of scope, do NOT fix): `return <void expr>;` in a `?void`
+function still ICEs `error[3043]` — identical on base and fixed.
+
 - Self-consistency gate: compare current zig1 `--dump-c89` against a pre-captured reference .c file. If the reference .c is outdated (intentional baseline change), re-capture via `cp /tmp/new.c /tmp/ref.c`. Never compare against parent-zig1 output directly — parent builds may fail silently.
 - Do **NOT** compare `zig1 --dump-c89` output against `zig0`'s C output. `zig0` emits a legacy bootstrap format that is byte-level incompatible with zig1.
 

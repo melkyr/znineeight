@@ -1,4 +1,47 @@
-# mi_matrix corpus — expected-fail manifest (v290 2026-10-04)
+# mi_matrix corpus — expected-fail manifest (v291 2026-10-04)
+
+## A4-F — a valueless `?void` return is present, not absent (v290 -> v291, 2026-10-04)
+
+Volume IV Amendment A4 (operator m1523; investigation `task-A4-I-report.md`).
+`emitValuelessReturn` (`sf/src/lower.zig`) handled the `error_union` present
+construction but had no `optional_type` sibling, so `return;` and fall-off-the-
+end in a `?void` function lowered to `.ret_void`, which `c89_emit.zig`
+materialised as `zT_ret_void = {0}` -> `has_value = 0` (**absent**). Zig 0.15.2
+treats both as the **present** optional (payload void).
+
+**Fix (`sf/src/lower.zig` only; lowering-only — no new `LirInst`, no emitter
+change).** `emitValuelessReturn` gains an `else if (rty.kind ==
+type_mod.TypeKind.optional_type)` branch: when the optional payload is
+`TYPE_VOID`, emit `wrap_optional` on a fresh void temp then `.ret` (present,
+symmetric to the existing `wrap_error_ok` branch); the `opay != void` arm keeps
+`.ret_void` for the sema-rejected optional(non-void) bare-return case.
+`return null`/`{}`/`undefined` construction and non-void optionals are
+unchanged.
+
+**Fixtures.** Runtime GREEN `repro/mi_matrix/optional_void_present_xmod`
+(`main.zig` + `expected.txt` 38 bytes `present\nabsent\npresent\npresent\nabsent`
++ `expected.rc` 0; baseline prints line 1 and 3 as `absent` — RED; fixed is
+byte-identical to the Zig 0.15.2 oracle) + standalone
+`repro/optional_void_present.z98` (`present`, rc 0). This is a documentary
+entry: the value fix is a GREEN run fixture, not a reject census, and the
+compile-only classifier buckets it OK on both compilers (the pin is the runtime
+golden). `expected.txt`/`expected.rc` are not git-ignored (no force-add).
+
+**Corpus movement.** `-s0` classify 1091 -> **1092 = 923 OK / 57 GREEN / 112
+FAIL / 0 ICE / 0 CRASH**; join-diff vs the base fp `2794fe04` over the 1092
+common dirs **EMPTY** (the new fixture classifies OK on both; zero movers).
+
+**Gates (new fixed point `c1746347cbcdbb39385f325be20b9b6b`).** Seed two-hop
+closure hop1 == hop2 with explicit `FIXED_POINT_MD5` gate; 4-MD5 emitted-C both
+modes **UNCHANGED 8/8**; non-`?void` emitted C byte-identical (6/6); stdlib
+**266 PASS / 0 FAIL**; example matrix **24/24**; `check_emit_support.sh` **7/7**;
+`verify_upgraded.sh` **CLOSEOUT OK**; self-emission **48 `.c` + 48 `.h` /
+0 PANIC**. Seed v90 NOT rotated (closeout-only).
+
+**Residual (out of scope, do NOT fix).** `return <void expr>;` in a `?void`
+function (`fn v() void {} fn f() ?void { return v(); }`) ICEs `error[3043]`
+(rc 3) identically on base and fixed; Zig 0.15.2 accepts it. Pre-existing,
+separate from A4.
 
 ## A3-F — `[_]T` outside the inferred-length positions clean-rejects (v289 -> v290, 2026-10-04)
 

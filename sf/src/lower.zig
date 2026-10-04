@@ -9210,6 +9210,16 @@ fn emitValuelessReturn(self: *LirLowerer) void {
         var eures = nextTemp(self, self.func.return_type);
         emitInst(self, LirInst{ .wrap_error_ok = .{ .value = ptmp, .result = eures, .type_id = self.func.return_type } });
         emitInst(self, LirInst{ .ret = eures });
+    } else if (rty.kind == type_mod.TypeKind.optional_type) {
+        var opay = self.ctx.registry.opt_items[@intCast(usize, rty.payload_idx)].payload;
+        if (opay == type_mod.TYPE_VOID) {
+            var optmp = nextTemp(self, opay);
+            var ores = nextTemp(self, self.func.return_type);
+            emitInst(self, LirInst{ .wrap_optional = .{ .value = optmp, .result = ores, .type_id = self.func.return_type } });
+            emitInst(self, LirInst{ .ret = ores });
+        } else {
+            emitInst(self, LirInst{ .ret_void = {} });
+        }
     } else {
         emitInst(self, LirInst{ .ret_void = {} });
     }
