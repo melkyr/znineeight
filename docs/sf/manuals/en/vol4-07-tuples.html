@@ -368,15 +368,19 @@ that holds the tuple, when an offset is part of the question.
 
 <h2>Printing a tuple</h2>
 <p>
-A whole tuple prints through the aggregate printer with <tt>{}</tt>, in
-positional braces. The argument container of <tt>print</tt> may be a tuple
-literal or a tuple variable; a tuple variable reads each element through the
-same positional-field mechanism as <tt>.N</tt>/<tt>t[0]</tt>.
+When a tuple is an element of the printed container (<tt>{p}</tt>), it prints
+through the aggregate printer with <tt>{}</tt>, in positional braces. A tuple
+variable used as the container itself prints element-wise: each <tt>{}</tt>
+consumes one element in declaration order, so the tuple braces do not appear.
+The argument container of <tt>print</tt> may be a tuple literal or a tuple
+variable; a variable reads each element through the same positional-field
+mechanism as <tt>.N</tt>/<tt>t[0]</tt>.
 </p>
 <pre>
 const p: Pair = .{ 7, 3 };
-std.io.print("pair {}\n", .{p});          // pair .{ 7, 3 }
-std.io.print("pair {}\n", p);              // pair .{ 7, 3 } (variable container)
+std.io.print("pair {}\n", .{p});          // pair .{ 7, 3 } (tuple is an element)
+std.io.print("pair {} {}\n", p);           // pair 7 3 (variable container, element-wise)
+std.io.print("pair {}\n", p);              // pair 7 (one placeholder consumes p[0])
 </pre>
 <table width="100%" border="1" cellpadding="4" cellspacing="0">
 <tr>
@@ -445,7 +449,7 @@ cycle).
 </tr>
 <tr>
 <td valign="top">inferred tuple literal holding an array</td>
-<td valign="top">Accepted for layout and element reads by position; printing the whole tuple (literal aggregate or variable) rejects <tt>error[3063]</tt>.</td>
+<td valign="top">Accepted for layout and element reads by position; an element read <tt>t[0]</tt> decays to <tt>*i32</tt>, and printing the whole tuple (literal aggregate or variable) rejects <tt>error[3063]</tt>.</td>
 </tr>
 <tr>
 <td valign="top">chained access after an ordinal, <tt>e.0.w</tt></td>
@@ -467,7 +471,6 @@ cycle).
 <p>
 The full grammar of the tuple type and literal is on the grammar page; the
 <tt>struct { [2]i32, i32 }</tt> parse accept and reject are listed there too.
-This reference page ships no runnable sample and no figure.
 </p>
 
 <h2>See also</h2>
