@@ -1,0 +1,542 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Enums</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual enum enums enum(uN) backing type member values auto increment dot member enumToInt intToEnum intFromEnum enumFromInt unsupported builtin switch range inclusive exclusive qualified shorthand else 3068 3071 tag printing">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol4-04-structs.html">
+<link rel="next" href="vol4-15-builtins.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume IV &mdash; Reference</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+How to use the Reference <i>(planned)</i><br>
+<a href="vol4-01-grammar.html">The full grammar</a><br>
+<a href="vol4-02-types.html">Types</a><br>
+<a href="vol4-03-pointers.html">Pointers</a><br>
+<a href="vol4-04-structs.html">Structs</a><br>
+<b>Enums</b><br>
+Unions <i>(planned)</i><br>
+Tuples <i>(planned)</i><br>
+Arrays and slices <i>(planned)</i><br>
+Errors <i>(planned)</i><br>
+Optionals <i>(planned)</i><br>
+Aliases <i>(planned)</i><br>
+Statements <i>(planned)</i><br>
+Control flow <i>(planned)</i><br>
+Error expressions <i>(planned)</i><br>
+<a href="vol4-15-builtins.html">Builtins</a><br>
+Async <i>(planned)</i><br>
+Memory <i>(planned)</i><br>
+<a href="vol4-18-stdlib.html">The standard library</a><br>
+<a href="vol4-19-pal.html">The PAL</a><br>
+<a href="vol4-20-markers.html">Markers</a><br>
+<a href="vol4-21-diagnostics.html">Diagnostics</a><br>
+<a href="vol4-22-cli.html">The command line</a><br>
+Limits <i>(planned)</i><br>
+<a href="vol4-24-html-style.html">HTML style</a><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Enums</h1>
+<p>
+An <b>enum</b> names the members of a small, fixed set over one integer: the
+compiler assigns each member a number and carries the set as a type. The
+declaration is <tt>const E = enum { Member, ... };</tt>; the backing integer may
+be named with <tt>enum(uN)</tt>. This page is the lookup for the declaration
+syntax and backing widths, member values and the auto-increment rule,
+<tt>.member</tt> access, <tt>@enumToInt</tt>/<tt>@intToEnum</tt>, the
+<tt>switch</tt> rules (the mandatory <tt>else</tt>, exact and range prongs, and
+the qualifier rejects), and the print forms.
+</p>
+<p>
+The authority is the parser (<tt>parserParseEnumType</tt> at
+<tt>sf/src/parser.zig:1387-1424</tt>), the default backing and member
+registration (<tt>sf/src/symbol_registrator.zig:200-227</tt>, default
+<tt>TYPE_U32</tt> at <tt>:203</tt>), the shared member walk
+(<tt>enumMembersResolve</tt> at <tt>sf/src/type_resolver.zig:1316-1380</tt>),
+the backing gate (<tt>semanticAnalyzerGateEnumTypeDecl</tt> at
+<tt>sf/src/semantic_analyzer.zig:2141-2214</tt>), the conversion typing
+(<tt>sf/src/semantic_analyzer.zig:4885-4897</tt> and
+<tt>sf/src/lower.zig:6262-6265</tt>), the switch-else reject
+(<tt>sf/src/semantic_analyzer.zig:4160-4165</tt>), the case-qualifier reject
+(<tt>sf/src/semantic_analyzer.zig:4175-4197</tt>), and the case-item lowering
+(<tt>lowerSwitchCaseItemValue</tt> at <tt>sf/src/lower.zig:2982</tt>). Every
+rule below was reproduced on seed v90; the reused fixture or sample is named
+where one exists.
+</p>
+
+<h2>Declaration syntax and backing type</h2>
+<p>
+An enum declaration is an ordinary <tt>const</tt> whose value denotes a type.
+Members are comma-separated identifiers; a trailing comma is optional. The
+backing integer is inferred (a <tt>u32</tt>) unless an explicit unsigned backing
+is written after <tt>enum</tt> in parentheses.
+</p>
+<pre>
+const Color = enum { Red, Green, Blue };          // inferred backing: u32
+const Code = enum(u8) { Ok = 0, Warning = 4, Error = 9 };
+</pre>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Form</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Spelling</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Backing</b></th>
+</tr>
+<tr>
+<td valign="top">inferred</td>
+<td valign="top"><tt>const E = enum { Member, ... };</tt></td>
+<td valign="top"><tt>u32</tt> (4 bytes / 32 bits), whatever the member count.</td>
+</tr>
+<tr>
+<td valign="top">explicit</td>
+<td valign="top"><tt>const E = enum(uN) { Member, ... };</tt></td>
+<td valign="top">An unsigned integer of width <tt>N</tt>; the enum measures as that backing.</td>
+</tr>
+</table>
+<p>
+The inferred backing is fixed at <tt>u32</tt>; the compiler does not shrink it
+to fit the member count. The explicit backing sets both the storage width and
+the range each member value must fit. Measured on seed v90:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Enum</b></th>
+<th align="left" bgcolor="#e8e0e0"><b><tt>@sizeOf</tt> / <tt>@bitSizeOf</tt></b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Notes</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>enum { ... }</tt></td>
+<td valign="top">4 / 32</td>
+<td valign="top">Fixed <tt>u32</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>enum(u8) { ... }</tt></td>
+<td valign="top">1 / 8</td>
+<td valign="top">One byte; the wire/table width.</td>
+</tr>
+<tr>
+<td valign="top"><tt>enum(u16) { ... }</tt></td>
+<td valign="top">2 / 16</td>
+<td valign="top">&nbsp;</td>
+</tr>
+<tr>
+<td valign="top"><tt>enum(u32) { ... }</tt></td>
+<td valign="top">4 / 32</td>
+<td valign="top">Same as the inferred backing.</td>
+</tr>
+<tr>
+<td valign="top"><tt>enum(u64) { ... }</tt></td>
+<td valign="top">8 / 64</td>
+<td valign="top">Align 8, like <tt>u64</tt>.</td>
+</tr>
+</table>
+<p>
+Only unsigned backings are accepted; the reject is level-0 <tt>error[3000]</tt>.
+The reused sample <tt>docs/sf/manuals/src/vol2/color.z98</tt> declares the
+inferred <tt>Color</tt> and the <tt>u8</tt>-backed <tt>Code</tt> and prints
+<tt>Color size=4 bits=32</tt> and <tt>Code size=1 bits=8</tt>.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Backing written</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Code</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Message (measured)</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>enum(i32)</tt>, <tt>enum(i8)</tt>, any <tt>iN</tt></td>
+<td valign="top"><tt>error[3000]</tt></td>
+<td valign="top"><tt>enum(iN) signed backings are not supported; use an unsigned backing (enum(uN))</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>enum(bool)</tt></td>
+<td valign="top"><tt>error[3000]</tt></td>
+<td valign="top"><tt>bool is not a valid enum backing; use an unsigned integer type (uN)</tt></td>
+</tr>
+<tr>
+<td valign="top">a non-integer, non-bool name</td>
+<td valign="top"><tt>error[3000]</tt></td>
+<td valign="top"><tt>invalid enum backing type; enum(uN) requires an unsigned integer type (uN)</tt></td>
+</tr>
+</table>
+<p>
+The grammar and the gate both accept any unsigned width <tt>u1</tt>&hellip;<tt>u64</tt>,
+but on the current seed only the byte-multiple widths are reliable. A sub-byte
+backing (<tt>u1</tt>&hellip;<tt>u7</tt>) is a rough edge: an enum that uses one is
+rejected with a <b>spurious</b> <tt>error[3000]</tt> <tt>enum tag value does not
+fit the enum backing width</tt> when another sub-byte-backed enum with an
+explicit top-bit member is also present. Minimal reproduction on seed v90:
+</p>
+<pre>
+const Small = enum(u3) { A, B, C };     // member values 0, 1, 2 fit u3
+const Wide  = enum(u5) { X = 0, Y = 31 };
+// error[3000]: enum tag value does not fit the enum backing width
+//   (must fit 2^N - 1); no silent truncation   -- at Small
+</pre>
+<p>
+Use a byte-multiple backing (<tt>u8</tt>, <tt>u16</tt>, <tt>u32</tt>,
+<tt>u64</tt>) for portable code; this boundary is recorded for the compiler, not
+recommended.
+</p>
+
+<h2>Member values and auto-increment</h2>
+<p>
+Each member takes an implicit number by declaration order unless a
+<tt>= value</tt> is written. The auto counter starts at zero; an explicit value
+sets the member's number and the next member's auto counter continues from
+there. Explicit values may be any comptime-known integer expression and need
+not be contiguous.
+</p>
+<pre>
+const Level = enum { Low, Mid = 4, High, Neg = 100, After };
+//                            Low=0  Mid=4  High=5  Neg=100  After=101
+</pre>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Rule</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Behavior (measured on seed v90)</b></th>
+</tr>
+<tr>
+<td valign="top">Implicit value</td>
+<td valign="top">The current auto counter; it starts at 0 and is set to <tt>value + 1</tt> after every member.</td>
+</tr>
+<tr>
+<td valign="top">Explicit value</td>
+<td valign="top"><tt>Member = expr</tt>; <tt>expr</tt> must fold to a comptime-known integer (constant arithmetic is allowed).</td>
+</tr>
+<tr>
+<td valign="top">Gaps</td>
+<td valign="top">Values need not be contiguous; a range prong over a gap matches only the members, using their exact numbers.</td>
+</tr>
+<tr>
+<td valign="top">Uniqueness</td>
+<td valign="top">Two members may not share a number; a duplicate is a level-0 reject.</td>
+</tr>
+<tr>
+<td valign="top">Backing range</td>
+<td valign="top">Every member value must fit the backing width: at most <tt>2^N - 1</tt> for <tt>enum(uN)</tt>; there is no silent truncation.</td>
+</tr>
+</table>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Construct</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Code</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Message (measured)</b></th>
+</tr>
+<tr>
+<td valign="top">a non-constant initializer</td>
+<td valign="top"><tt>error[3055]</tt></td>
+<td valign="top"><tt>enum member value is not a comptime-known integer expression</tt></td>
+</tr>
+<tr>
+<td valign="top">an out-of-range <tt>@as</tt>/<tt>@intCast</tt> initializer</td>
+<td valign="top"><tt>error[3055]</tt></td>
+<td valign="top"><tt>enum member value is not a comptime-known integer expression</tt> (the constant is not materializable at the target width; the reused fixture is <tt>repro/mi_matrix/enum_init_cast_range_reject_xmod</tt>)</td>
+</tr>
+<tr>
+<td valign="top">two members with the same value</td>
+<td valign="top"><tt>error[3055]</tt></td>
+<td valign="top"><tt>duplicate enum tag value (tag values must be unique)</tt></td>
+</tr>
+<tr>
+<td valign="top">a member value above <tt>2^N - 1</tt></td>
+<td valign="top"><tt>error[3000]</tt></td>
+<td valign="top"><tt>enum tag value does not fit the enum backing width (must fit 2^N - 1); no silent truncation</tt></td>
+</tr>
+</table>
+
+<h2>Member access and conversion</h2>
+<p>
+A member is named with a leading dot in a typed context
+(<tt>.Green</tt>), or qualified by the enum type (<tt>Color.Green</tt>,
+<tt>colors.Color.Red</tt>). Both denote the same value. An enum value is not an
+integer and an integer is not an enum: crossing between them is an explicit
+builtin.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Form</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Result</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Notes</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>.Member</tt></td>
+<td valign="top">the enum value</td>
+<td valign="top">Shorthand; needs a known enum type from context.</td>
+</tr>
+<tr>
+<td valign="top"><tt>E.Member</tt></td>
+<td valign="top">the enum value</td>
+<td valign="top">Qualified by the type; works everywhere the type name is in scope, including <tt>mod.E.Member</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>@enumToInt(e)</tt></td>
+<td valign="top">the backing integer</td>
+<td valign="top"><tt>u32</tt> for an inferred enum, <tt>u8</tt>/<tt>u16</tt>/<tt>u64</tt> for an explicit backing.</td>
+</tr>
+<tr>
+<td valign="top"><tt>@intToEnum(E, n)</tt></td>
+<td valign="top">the enum value</td>
+<td valign="top">Lowers to a plain integer cast; no runtime membership check.</td>
+</tr>
+</table>
+<p>
+A round trip is exact: <tt>@intToEnum(Color, @enumToInt(c)) == c</tt>. An
+integer that names no member is still accepted by <tt>@intToEnum</tt> and
+produces an enum value whose only printable name is the fallback spelling
+<tt>@enumFromInt(n)</tt>; a probe of <tt>@intToEnum(Color, 7)</tt> on a
+three-member inferred enum printed <tt>@enumFromInt(7)</tt>. The enum is a typed
+name for an integer, not a runtime membership test.
+</p>
+<p>
+The modern Zig spellings <tt>@intFromEnum</tt> and <tt>@enumFromInt</tt> are
+<b>not implemented</b>. Each is rejected with level-0 <tt>error[3000]</tt>
+<tt>unsupported builtin function</tt>. (<tt>@enumFromInt(n)</tt> appears only as
+the printer's fallback text for an out-of-range enum value, not as a callable
+builtin.)
+</p>
+
+<h2>Switch over enums</h2>
+<p>
+An enum is a valid <tt>switch</tt> condition. A prong may list exact members or
+a range; the short and qualified spellings both work as case items. Every switch
+in Z98 requires an <tt>else</tt> prong.
+</p>
+<pre>
+fn band(c: Color) i32 {
+    return switch (c) {
+        Color.Red...Color.Green => 10,   // inclusive: Red and Green
+        .Blue => 20,
+        else => 30,                       // mandatory
+    };
+}
+</pre>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Rule</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Behavior (measured on seed v90)</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>else</tt> mandatory</td>
+<td valign="top">A switch without an <tt>else</tt> rejects level-0 <tt>error[3068]</tt> <tt>switch must have an 'else' prong</tt>, in value or statement position.</td>
+</tr>
+<tr>
+<td valign="top">Exact items</td>
+<td valign="top">A literal member (shorthand or qualified), a compile-time integer literal, or an identifier naming a comptime constant. Several items may share a prong: <tt>.Red, .Blue => ...</tt>.</td>
+</tr>
+<tr>
+<td valign="top">Inclusive range</td>
+<td valign="top"><tt>start...end</tt> matches both bounds by their underlying values; expanded to one C <tt>case</tt> per value.</td>
+</tr>
+<tr>
+<td valign="top">Exclusive range</td>
+<td valign="top"><tt>start..end</tt> matches <tt>start</tt> and stops before <tt>end</tt>.</td>
+</tr>
+<tr>
+<td valign="top">Gaps</td>
+<td valign="top">Because endpoints resolve to member values, an <tt>enum(uN)</tt> with gaps is exact; <tt>Code.Ok..Code.Error</tt> covers 0&hellip;8 and admits <tt>Warning</tt> (4) but not <tt>Error</tt> (9).</td>
+</tr>
+<tr>
+<td valign="top">Mixed endpoints</td>
+<td valign="top">The bounds may be qualified, shorthand, or one of each: <tt>.Red...Color.Blue</tt>.</td>
+</tr>
+<tr>
+<td valign="top">Enum capture</td>
+<td valign="top">A prong capture on an enum binds the operand value (type: the enum): <tt>.red => |v| ...</tt>. An unused capture is accepted (a Z98 tolerance).</td>
+</tr>
+</table>
+<p>
+The reused fixture <tt>repro/mi_matrix/stdlib_switch_enum_range_xmod</tt> pins
+all of this in one run: inclusive, exclusive, mixed, shorthand, half-shorthand,
+<tt>enum(u8)</tt> gaps, module-qualified (<tt>colors.Color.Red...colors.Color.Green</tt>),
+and mixed exact/range prongs all take the expected prong, and the statement form
+matches the value form. Its output is reproduced verbatim by the seed.
+</p>
+<p>
+A prong that names a member the enum does not have, or a qualifier that names a
+different enum, is a level-0 reject rather than a silent fall-through to
+<tt>else</tt>:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Shape</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Code</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Message (measured)</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>E.Purple</tt> / <tt>.Purple</tt> (unknown member)</td>
+<td valign="top"><tt>error[3071]</tt></td>
+<td valign="top"><tt>no field or member function named 'Purple' in enum type</tt>, with a related <tt>enum declared here</tt> span</td>
+</tr>
+<tr>
+<td valign="top"><tt>B.p</tt> on an <tt>A</tt> condition (foreign qualifier)</td>
+<td valign="top"><tt>error[3071]</tt></td>
+<td valign="top"><tt>type mismatch in switch case item -- case item type may not be compatible with the switch condition type</tt></td>
+</tr>
+</table>
+<p>
+A same-type alias qualifier (<tt>const C = A; C.x</tt>) and a module-qualified
+prong are valid. The rejected shapes and their messages are measured against
+<tt>repro/mi_matrix/switch_case_qualifier_reject_xmod</tt>.
+</p>
+
+<h2>Printing an enum</h2>
+<p>
+The print forms are chosen by the specifier. A bare <tt>{}</tt> prints the
+member name with a leading dot; <tt>{d}</tt> prints the number in decimal and
+<tt>{x}</tt> in hexadecimal. The character and string specifiers are rejects.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Value</b></th>
+<th align="left" bgcolor="#e8e0e0"><b><tt>{}</tt></b></th>
+<th align="left" bgcolor="#e8e0e0"><b><tt>{d}</tt></b></th>
+<th align="left" bgcolor="#e8e0e0"><b><tt>{x}</tt></b></th>
+</tr>
+<tr>
+<td valign="top">enum value <tt>e</tt> (<tt>e = .Green</tt>, ordinal 1)</td>
+<td valign="top"><tt>.Green</tt></td>
+<td valign="top"><tt>1</tt></td>
+<td valign="top"><tt>1</tt></td>
+</tr>
+<tr>
+<td valign="top">enum value with a value of 16 (<tt>enum(u8)</tt>)</td>
+<td valign="top"><tt>.Member</tt></td>
+<td valign="top"><tt>16</tt></td>
+<td valign="top"><tt>10</tt></td>
+</tr>
+<tr>
+<td valign="top"><tt>@enumToInt(e)</tt> used directly as the argument</td>
+<td valign="top"><tt>.Green</tt> (the printer keeps the member)</td>
+<td valign="top"><tt>1</tt></td>
+<td valign="top"><tt>1</tt></td>
+</tr>
+<tr>
+<td valign="top">an integer variable holding the ordinal</td>
+<td valign="top"><tt>1</tt></td>
+<td valign="top"><tt>1</tt></td>
+<td valign="top"><tt>1</tt></td>
+</tr>
+<tr>
+<td valign="top">an out-of-range value from <tt>@intToEnum(E, 7)</tt></td>
+<td valign="top"><tt>@enumFromInt(7)</tt></td>
+<td valign="top"><tt>7</tt></td>
+<td valign="top"><tt>7</tt></td>
+</tr>
+</table>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Specifier</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Result</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>{c}</tt> or <tt>{s}</tt> on an enum</td>
+<td valign="top"><tt>error[3013]</tt> <tt>invalid print format specifier for the argument type</tt></td>
+</tr>
+</table>
+<p>
+The reused sample <tt>src/vol2/color.z98</tt> shows both sides:
+<tt>std.io.print("c={} int={d}\n", .{ c, @enumToInt(c) })</tt> prints
+<tt>c=.Green int=1</tt>. The full print table is on the builtins page;
+see <a href="vol4-15-builtins.html">Builtins</a>.
+</p>
+
+<h2>The <tt>.tag</tt> field of a tagged union</h2>
+<p>
+A tagged union (<tt>union(enum)</tt>) has a synthetic <tt>.tag</tt> field typed
+<tt>u32</tt> that holds the variant ordinal (declaration order), independent of
+any payload. This is the cross-reference point for the enums page; the full
+rules are on the unions page (<i>planned</i>).
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Use</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Status (measured on seed v90)</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>s.tag</tt></td>
+<td valign="top">Reads the ordinal as <tt>u32</tt>; a pointer base (<tt>p.tag</tt>) auto-dereferences. <tt>p.tag = v</tt> stores through it.</td>
+</tr>
+<tr>
+<td valign="top"><tt>s.tag == .m</tt> / <tt>s.tag != E.m</tt> / ordering</td>
+<td valign="top">Member sugar: the member resolves against the union and the comparison is on ordinals, yielding <tt>bool</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>switch (s.tag) { .m => ..., E.m => ..., else => ... }</tt></td>
+<td valign="top">Member prongs accepted; the switch is on ordinals and never inspects a payload. Numeric prongs (<tt>0</tt>, <tt>1</tt>) are unchanged.</td>
+</tr>
+<tr>
+<td valign="top"><tt>@enumToInt(s.tag)</tt></td>
+<td valign="top">The numeric ordinal, as an ordinary <tt>u32</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>const t = s.tag; t == .m</tt></td>
+<td valign="top">Rejects level-0 <tt>error[3076]</tt> <tt>unable to infer type of enum literal in comparison with a numeric operand</tt>.</td>
+</tr>
+</table>
+<p>
+A union member named <tt>tag</tt> is permanently shadowed by the synthetic tag.
+See <a href="vol2-07-unions.html">Volume II, Unions</a> for the teaching
+narrative and the shipped unions reference (<i>planned</i>) for the variant
+rules.
+</p>
+
+<h2>See also</h2>
+<p>
+<a href="vol4-02-types.html">Types</a> for the <tt>uN</tt>/<tt>iN</tt> backing
+widths and the coercion table; <a href="vol4-04-structs.html">Structs</a> for the
+aggregate declarations that share the <tt>const X = ...;</tt> form;
+<a href="vol4-15-builtins.html">Builtins</a> for the full print table and every
+builtin; <a href="vol4-21-diagnostics.html">Diagnostics</a> for
+<tt>error[3000]</tt>, <tt>error[3055]</tt>, <tt>error[3068]</tt>,
+<tt>error[3071]</tt>, and <tt>error[3076]</tt>; and
+<a href="vol2-06-enums.html">Volume II, Enums</a> for the narrative chapter and
+the runnable <tt>color.z98</tt> sample.
+</p>
+
+<p class="navbtns">
+<a href="vol4-04-structs.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol4-15-builtins.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol4-04-structs.html">Structs</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-15-builtins.html">Builtins</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
