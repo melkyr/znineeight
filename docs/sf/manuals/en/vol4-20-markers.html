@@ -80,7 +80,7 @@ the lookup for that stream.
 <p>
 The markers are produced by <tt>pal.measureMarkerWrite</tt>,
 <tt>pal.measureMarkerWriteInt</tt>, and <tt>pal.measureMarkerWriteInt64</tt>
-(<tt>sf/src/pal.zig:252</tt>). Every call site in the compiler is listed below.
+(<tt>sf/src/pal.zig:252</tt>). Every distinct marker is listed below.
 </p>
 
 <h2>Enabling the channel</h2>
@@ -217,8 +217,8 @@ emitting call site; the phase is the pipeline pass or component that owns it.
 </tr>
 <tr>
 <td valign="top"><tt>D2:t&lt;id&gt;n&lt;name&gt;m&lt;mod&gt;</tt></td>
-<td valign="top">C89 emission</td>
-<td valign="top">A tagged-union type was handled in the shared-header sub-pass: type id, name id, module id.</td>
+<td valign="top">C89 emission (single-file <tt>emitSpecialTypes</tt> sub-pass)</td>
+<td valign="top">A tagged-union type was emitted in the single-file <tt>emitSpecialTypes</tt> sub-pass: type id, name id, module id.</td>
 <td valign="top"><tt>c89_emit.zig:1877&ndash;1884</tt></td>
 </tr>
 <tr>
@@ -234,6 +234,17 @@ emitting call site; the phase is the pipeline pass or component that owns it.
 <td valign="top"><tt>main.zig:408&ndash;435</tt></td>
 </tr>
 </table>
+<p>
+<tt>D2:t&lt;id&gt;n&lt;name&gt;m&lt;mod&gt;</tt> is the one marker emitted on the
+single-file emission path only. <tt>emitSpecialTypes</tt>
+(<tt>sf/src/c89_emit.zig:1806</tt>) reaches the <tt>D2:</tt> site at
+<tt>:1877&ndash;1884</tt>, and it is called from <tt>emitModule</tt>
+(<tt>:3069,3076</tt>) &mdash; the <tt>--dump-c89</tt> / no-<tt>-o</tt> path. The
+shared-header path (<tt>emitSharedHeader</tt>, <tt>:1685</tt>;
+<tt>sf/src/main.zig:1388</tt>) never calls it, so <tt>-o &lt;dir&gt;</tt> writes
+no <tt>D2:t&lt;id&gt;n&lt;name&gt;m&lt;mod&gt;</tt> line. Run
+<tt>zig1 --markers --dump-c89 &lt;file&gt;</tt> to see it.
+</p>
 
 <h2>See also</h2>
 <p>
