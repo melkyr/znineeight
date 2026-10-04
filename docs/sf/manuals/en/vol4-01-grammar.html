@@ -324,9 +324,11 @@ slice production admits only <tt>const</tt> (<tt>parser.zig:1186-1196</tt>), so
 assignment-precedence expression, then <tt>]</tt>, then the element type. There
 is no separate inferred-length production: <tt>[_]T</tt> matches the general
 <tt>'[' expr ']' type</tt> form with <tt>_</tt> parsed as a primary expression,
-and the length is inferred from the initializer / array literal. Both
-<tt>var a = [_]i32{ 1, 2, 3 };</tt> and the bare type <tt>[_]i32</tt> are
-accepted.</li>
+and the length is inferred from the initializer / array literal.
+<tt>var a = [_]i32{ 1, 2, 3 };</tt> (and the annotated
+<tt>var a: [3]i32 = [_]i32{ ... };</tt>) is accepted; the bare type
+<tt>[_]i32</tt> used where a concrete type is required rejects level-0
+<tt>error[3000]</tt> <tt>unable to infer array size</tt>.</li>
 <li><b>Error sets and unions.</b> <tt>error { ... }</tt> is a set;
 <tt>error { ... } ! T</tt> and <tt>Name ! T</tt> are error unions
 (<tt>parser.zig:1107-1116,1137-1145,1294-1316</tt>).</li>

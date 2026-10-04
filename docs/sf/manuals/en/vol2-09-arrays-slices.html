@@ -421,20 +421,17 @@ var s: []u8 = "abc";    // error[3000]: cannot implicitly discard 'const' qualif
 var p: [*]u8 = "abc";   // error[3000]: cannot implicitly discard 'const' qualifier
 </pre>
 <p>
-The third literal form, <tt>*const u8</tt>, is accepted but produces a
-level-0 warning from the declaration check:
+The third literal form, <tt>*const u8</tt>, is accepted cleanly at module
+scope &mdash; matching Zig 0.15.2, which also accepts the module-level binding
+(a function-local declaration of the same form is rejected by Zig, and in Z98
+still emits the level-0 declaration-mismatch warning):
 </p>
 <pre>
 const one: *const u8 = "hello";
-// warning[3000]: type mismatch in variable declaration -- initialization type
-// may not be compatible with declared type
-// note: source: pointer
-// note: target: pointer
 </pre>
 <p>
-The program builds and runs; the warning is recorded rather than
-recommended. Bind to <tt>[]const u8</tt> and take <tt>.ptr</tt> when a
-single-item pointer is wanted.
+The program builds and runs. Bind to <tt>[]const u8</tt> and take
+<tt>.ptr</tt> when a portable single-item pointer is wanted.
 </p>
 
 <h2>Const propagation</h2>

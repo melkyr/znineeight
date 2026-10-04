@@ -107,7 +107,7 @@ named where one exists.
 </tr>
 <tr>
 <td valign="top"><tt>[_]T</tt></td>
-<td valign="top">Inferred length; written on the array literal's type prefix (<tt>[_]i32{ ... }</tt>), not as a declaration type.</td>
+<td valign="top">Inferred length; legal only on the array literal's own type prefix (<tt>[_]i32{ ... }</tt>). In any position that needs a concrete type (a declaration, field, parameter, return, alias or cast target) it rejects level-0 <tt>error[3000]</tt> <tt>unable to infer array size</tt>.</td>
 </tr>
 <tr>
 <td valign="top"><tt>[]T</tt>, <tt>[]const T</tt></td>
@@ -132,13 +132,18 @@ const pa: *[5]i32 = &amp;scores;                    // pointer-to-array
 <p>
 <tt>N</tt> must be a compile-time constant. A non-constant size rejects level-0
 <tt>error[3050]</tt> <tt>array size is not a constant expression</tt> at the
-size expression; <tt>[_]T</tt> is exempt because its length comes from the
-literal.
+size expression. The inferred <tt>[_]T</tt> needs no size because its length
+comes from the literal it annotates; used where a concrete type is required it
+rejects level-0 <tt>error[3000]</tt> <tt>unable to infer array size</tt> at the
+<tt>_</tt> (Zig 0.15.2 wording).
 </p>
 <pre>
 var n: i32 = 4;
 var a: [n]i32 = undefined;
 // error[3050]: array size is not a constant expression
+
+var x: [_]i32 = .{ 1, 2, 3 };
+// error[3000]: unable to infer array size
 </pre>
 
 <h2>Sentinel and volatile forms are not supported</h2>
@@ -620,7 +625,7 @@ fixture's cross-module helper.
 </tr>
 <tr>
 <td valign="top"><tt>[_]T</tt> as a declaration type, <tt>var x: [_]i32 = ...</tt></td>
-<td valign="top">Not a declaration type. Write the length (<tt>[N]T</tt>) or infer from the literal (<tt>var x = [_]i32{ ... }</tt>).</td>
+<td valign="top">Rejected level-0 <tt>error[3000]</tt> <tt>unable to infer array size</tt> (the <tt>_</tt> span). Write the length (<tt>[N]T</tt>) or infer from the literal (<tt>var x = [_]i32{ ... }</tt>). The same reject covers a struct field, a parameter, a return type, a bare alias and an <tt>@as</tt> target.</td>
 </tr>
 <tr>
 <td valign="top"><tt>[N:0]T</tt> sentinel arrays / <tt>[]volatile T</tt></td>
