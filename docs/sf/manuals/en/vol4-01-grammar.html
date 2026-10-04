@@ -321,9 +321,12 @@ many-item pointer. Both take a qualifier list of <tt>const</tt> and
 slice production admits only <tt>const</tt> (<tt>parser.zig:1186-1196</tt>), so
 <tt>[]volatile T</tt> is a parse error.</li>
 <li><b>Arrays and slices.</b> <tt>[N]T</tt> parses its length as a full
-assignment-precedence expression, then <tt>]</tt>, then the element type. The
-inferred-length spelling <tt>[_]T</tt> is not a distinct production; <tt>_</tt>
-is parsed as an expression and the form is rejected later.</li>
+assignment-precedence expression, then <tt>]</tt>, then the element type. There
+is no separate inferred-length production: <tt>[_]T</tt> matches the general
+<tt>'[' expr ']' type</tt> form with <tt>_</tt> parsed as a primary expression,
+and the length is inferred from the initializer / array literal. Both
+<tt>var a = [_]i32{ 1, 2, 3 };</tt> and the bare type <tt>[_]i32</tt> are
+accepted.</li>
 <li><b>Error sets and unions.</b> <tt>error { ... }</tt> is a set;
 <tt>error { ... } ! T</tt> and <tt>Name ! T</tt> are error unions
 (<tt>parser.zig:1107-1116,1137-1145,1294-1316</tt>).</li>
@@ -345,7 +348,8 @@ omit its type (a naked tag, treated as <tt>void</tt>); a bare-union field may
 also omit it at parse time, and the resolver rejects that afterward
 (<tt>parser.zig:1427-1481</tt>). A packed union may not be tagged:
 <tt>packed union(enum)</tt> is <tt>error[2000]</tt> &ldquo;packed unions cannot
-be tagged (union(enum))&rdquo; (<tt>parser.zig:1437-1441</tt>).</li>
+be tagged (union(enum)); packed union is an untagged container&rdquo;
+(<tt>parser.zig:1437-1441</tt>).</li>
 <li><b><tt>packed</tt>.</b> The <tt>packed</tt> keyword must be followed by
 <tt>struct</tt> or <tt>union</tt>; otherwise <tt>error[2000]</tt>
 (<tt>parser.zig:1121-1128</tt>).</li>
@@ -487,7 +491,8 @@ Where the parser deviates from a clean production:
 parenthesized expressions are parsed at the <tt>prec_orelse</tt> level, which
 excludes the <tt>assignment</tt> level, so <tt>if (a = 3)</tt>,
 <tt>while (a = 3)</tt>, <tt>switch (a = 3)</tt>, and <tt>(a = 3)</tt> fail at
-the closing delimiter with <tt>error[2000]</tt>
+the closing delimiter with <tt>error[2000]: expected ')' but found token</tt>
+&mdash; a missing-delimiter diagnostic, not a dedicated assignment message
 (<tt>parser.zig:721-731,939-947,979-984,1776-1780,1854-1859</tt>).</li>
 <li><b>Expression depth.</b> The climber increments a depth counter and calls
 <tt>@panic("max expression recursion depth exceeded")</tt> past 12 nested
@@ -593,7 +598,7 @@ said explicitly.
 </tr>
 <tr>
 <td valign="top"><tt>if (a = 3)</tt>, <tt>while (a = 3)</tt>, <tt>switch (a = 3)</tt>, <tt>(a = 3)</tt></td>
-<td valign="top"><tt>error[2000]</tt>: assignment is not an expression in a condition or a parenthesized expression</td>
+<td valign="top"><tt>error[2000]</tt>: expected ')' but found token (the parser reports the missing close delimiter; &ldquo;assignment is not an expression&rdquo; is the underlying rule, not the diagnostic text)</td>
 <td valign="top"><tt>parser.zig:726,946,983,1780,1858</tt></td>
 </tr>
 <tr>
@@ -613,7 +618,7 @@ said explicitly.
 </tr>
 <tr>
 <td valign="top"><tt>packed union(enum)</tt></td>
-<td valign="top"><tt>error[2000]</tt>: packed unions cannot be tagged</td>
+<td valign="top"><tt>error[2000]</tt>: packed unions cannot be tagged (union(enum)); packed union is an untagged container</td>
 <td valign="top"><tt>parser.zig:1437-1441</tt></td>
 </tr>
 <tr>
@@ -628,7 +633,7 @@ said explicitly.
 </tr>
 <tr>
 <td valign="top"><tt>[]volatile T</tt> slice</td>
-<td valign="top"><tt>error[2000]</tt>: a slice qualifier may only be <tt>const</tt></td>
+<td valign="top"><tt>error[2000]</tt>: expected ';' but found identifier in type position (as in <tt>const T = []volatile u8;</tt>), or expected ':' but found ')' in a parameter (as in <tt>fn f(x: []volatile u8)</tt>)</td>
 <td valign="top"><tt>parser.zig:1186-1196</tt></td>
 </tr>
 <tr>
