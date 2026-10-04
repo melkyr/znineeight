@@ -275,9 +275,12 @@ pinned by <tt>repro/mi_matrix/orelse_optional_control_xmod</tt> (printed lines
 <tt>5</tt>, <tt>99</tt>, <tt>7</tt>, <tt>88</tt>, <tt>77</tt>); the non-optional
 reject by <tt>repro/mi_matrix/orelse_requires_optional_xmod</tt> (rc 2, zero
 <tt>.c</tt>) and the trap by <tt>trap_orelse_unreachable_xmod</tt> (rc 133).
-A block fallback that does not diverge and does not yield a value leaves the
-result reading an uninitialized join temporary &mdash; compile-clean and
-undefined; write a value or make the block diverge.
+A block fallback supplies the fallback value; a block that neither yields a
+value nor diverges leaves the result an uninitialized join temporary with no
+diagnostic &mdash; undefined. An <b>empty</b> fallback block (<tt>orelse {}</tt>)
+is worse: the current seed build emits invalid C (<tt>'zT_8' undeclared</tt>)
+&mdash; a known defect scheduled under Amendment <b>A9</b> (deferred). Write a
+value or make the block diverge.
 </p>
 
 <h2>Capture: <tt>if (opt) |v|</tt>, <tt>while (opt) |v|</tt></h2>
@@ -430,7 +433,7 @@ The three legitimate answers are exactly the message's list: propagate
 <th align="left" bgcolor="#e8e0e0"><b>Code</b></th>
 <th align="left" bgcolor="#e8e0e0"><b>Message</b></th>
 </tr>
-<tr><td valign="top"><tt>error[2000]</tt></td><td valign="top">Parse rejects: <tt>';' not allowed before 'else'</tt>; an <tt>else |e|</tt> error capture on the current seed build (<tt>expected expression</tt>; see A8).</td></tr>
+<tr><td valign="top"><tt>error[2000]</tt></td><td valign="top">Parse rejects: <tt>';' not allowed before 'else' - use braces: if (cond) { ... } else { ... }</tt>; an <tt>else |e|</tt> error capture on the current seed build (<tt>expected expression</tt>; see A8).</td></tr>
 <tr><td valign="top"><tt>error[3002]</tt></td><td valign="top"><tt>cannot assign to immutable variable</tt> (assignment through an <tt>if</tt>/<tt>while</tt> capture).</td></tr>
 <tr><td valign="top"><tt>error[3013]</tt></td><td valign="top"><tt>invalid print format specifier for the argument type</tt> (an explicit <tt>{d}</tt>/<tt>{x}</tt> on an error-set capture).</td></tr>
 <tr><td valign="top"><tt>error[3015]</tt></td><td valign="top"><tt>error union result is ignored; use 'try', 'catch', or assign the result</tt>.</td></tr>
@@ -438,7 +441,7 @@ The three legitimate answers are exactly the message's list: propagate
 <tr><td valign="top"><tt>error[3058]</tt></td><td valign="top"><tt>condition must be of type 'bool'</tt>; with a capture, <tt>capture condition must be an optional or error union type</tt>.</td></tr>
 <tr><td valign="top"><tt>error[3059]</tt></td><td valign="top"><tt>if expression without 'else' cannot be used as a value (its type is 'void')</tt> (unless the condition is comptime-known true).</td></tr>
 <tr><td valign="top"><tt>error[3075]</tt></td><td valign="top">The <tt>try</tt> enclosing-return prongs above, deduped per <tt>try</tt> node.</td></tr>
-<tr><td valign="top"><tt>warning[3000]</tt></td><td valign="top"><tt>type mismatch in variable declaration</tt> (a caught/orelse result compared unparenthesized, so the payload is bound where a <tt>bool</tt> was declared).</td></tr>
+<tr><td valign="top"><tt>warning[3000]</tt></td><td valign="top"><tt>type mismatch in variable declaration -- initialization type may not be compatible with declared type</tt> (a caught/orelse result compared unparenthesized, so the payload is bound where a <tt>bool</tt> was declared).</td></tr>
 </table>
 <p>
 For the full code list see the
