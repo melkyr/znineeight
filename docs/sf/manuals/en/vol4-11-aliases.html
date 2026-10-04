@@ -81,12 +81,15 @@ measured limits.
 <p>
 Authority: the spelling is <tt>docs/reference/Language_Spec_Z98.md</tt> &sect;1.7;
 registration is the <tt>var_decl</tt> branch of
-<tt>symbol_registrator.zig:248</tt> (with the alias write-back in
-<tt>front_resolution.zig</tt> and <tt>const_alias_prepass.zig</tt>); resolution
+<tt>symbol_registrator.zig:248</tt>, with the alias write-back in
+<tt>front_resolution.zig</tt> (the <tt>const_alias_prepass.zig</tt> prepass is
+retained but dormant &mdash; 0 <tt>CAP</tt> hits); resolution
 is <tt>type_resolver.resolveTypeExprFull</tt>
 (<tt>type_resolver.zig:1776</tt>); the local-alias guard is
-<tt>semantic_analyzer.zig:5811</tt>. Every rule below was reproduced on the fixed
-compiler (md5 <tt>c1746347cbcdbb39385f325be20b9b6b</tt>); reused
+<tt>semantic_analyzer.zig:5840</tt> and the value-position guard is
+<tt>semanticAnalyzerExprIsTypeValue</tt> (<tt>semantic_analyzer.zig:6465</tt>).
+Every rule below was reproduced on the fixed
+compiler (md5 <tt>821481e69df63fc0cf69176fdaaf9dd9</tt>); reused
 <tt>repro/mi_matrix/typealias_*</tt> fixtures are named where one exists.
 </p>
 
@@ -131,15 +134,19 @@ pub const Color = enum { Red, Green, Blue };
 const Num   = MyInt;                        // alias of an alias
 </pre>
 <p>
-The registrar keys on the declaration's initializer being a type expression, so a
-module-scope <tt>var V = i32;</tt> also names a type in type positions
-(measured). The Reference documents the <tt>const</tt> form.
+The registrar keys on the declaration's initializer being a type expression, but a
+module-scope <tt>var V = i32;</tt> binds a <tt>type</tt> value with <tt>var</tt>
+and is rejected (<tt>error[3000]</tt>, <tt>source: type</tt> /
+<tt>target: type</tt>): a type value must be <tt>const</tt>/comptime. The
+Reference documents the <tt>const</tt> form.
 </p>
 
 <h2>Alias targets</h2>
 <p>
-Every type form is a legal alias target except the two marker names <tt>noreturn</tt>
-and <tt>anytype</tt>. Sizes below are <tt>@sizeOf</tt> of the alias.
+Every type form is a legal alias target except the two marker names
+<tt>noreturn</tt> and <tt>anytype</tt> (parser <tt>error[2000]</tt>) and the
+<tt>type</tt> metatype itself (<tt>const T = type;</tt> is <tt>error[3000]</tt>;
+Z98 does not model the metatype). Sizes below are <tt>@sizeOf</tt> of the alias.
 </p>
 <table width="100%" border="1" cellpadding="4" cellspacing="0">
 <tr>
@@ -181,7 +188,7 @@ and <tt>anytype</tt>. Sizes below are <tt>@sizeOf</tt> of the alias.
 <tr><td valign="top"><tt>@sizeOf</tt> / <tt>@alignOf</tt> operand</td><td valign="top"><tt>@sizeOf(T)</tt></td><td valign="top"><tt>typealias_forms_control_xmod</tt>.</td></tr>
 <tr><td valign="top"><tt>@intCast</tt> / <tt>@ptrCast</tt> target</td><td valign="top"><tt>@intCast(I, x)</tt>, <tt>@ptrCast(P, e)</tt></td><td valign="top">A probe prints <tt>130</tt>.</td></tr>
 <tr><td valign="top">aggregate literal name</td><td valign="top"><tt>Point{ .x = 1, .y = 2 }</tt></td><td valign="top"><tt>typealias_agg_xmod</tt>; an in-module anonymous alias prints <tt>20</tt>.</td></tr>
-<tr><td valign="top">not a type position (value)</td><td valign="top"><tt>var x = T;</tt></td><td valign="top">Compiles with no diagnostic; <tt>x</tt> reads poison. See the limits below.</td></tr>
+<tr><td valign="top">not a type position (value)</td><td valign="top"><tt>var x = T;</tt></td><td valign="top"><tt>error[3000]</tt> <tt>type mismatch in variable declaration</tt> (<tt>source: type</tt>, <tt>target: type</tt>); rc 2, 0 <tt>.c</tt>. A type value must be <tt>const</tt>/comptime. See the limits below.</td></tr>
 </table>
 
 <h2><tt>pub</tt> and cross-module rules</h2>
@@ -241,7 +248,7 @@ behaviors follow.
 </tr>
 <tr>
 <td valign="top">Alias in a value position</td>
-<td valign="top"><tt>var x = T;</tt> compiles with no diagnostic; lowering reads uninitialized poison. The alias is a type, not a value.</td>
+<td valign="top"><tt>var x = T;</tt> rejects with <tt>error[3000]</tt> at the initializer (<tt>source: type</tt>, <tt>target: type</tt> or the annotation's kind); rc 2, 0 <tt>.c</tt>. The same guard rejects a bare builtin (<tt>var y = i32;</tt>), the metatype (<tt>const T = type;</tt>), and a named type value on the RHS of an assignment, a call argument, or a <tt>return</tt> (<tt>source: type</tt>). The alias is a type, not a value. Function-local <tt>var x = i32;</tt> / <tt>var x = A;</tt> remain accepted (documented residual).</td>
 </tr>
 <tr>
 <td valign="top"><tt>@sizeOf</tt> of each target</td>
@@ -258,7 +265,7 @@ behaviors follow.
 <tr><td valign="top"><tt>error[16]</tt></td><td valign="top"><tt>anytype not supported in Z98</tt> (anytype in a signature or type wrapper).</td></tr>
 <tr><td valign="top"><tt>error[20]</tt></td><td valign="top"><tt>identifier '&lt;x&gt;' is not declared or imported in this module</tt> (unresolved alias in a type position; once per leaf).</td></tr>
 <tr><td valign="top"><tt>error[2000]</tt></td><td valign="top"><tt>expected expression</tt> / <tt>unexpected token</tt> (<tt>const A = anytype;</tt>, <tt>const NR = noreturn;</tt>).</td></tr>
-<tr><td valign="top"><tt>error[3000]</tt></td><td valign="top"><tt>local type aliases are not supported; bind the container declaration directly</tt>; <tt>unable to infer array size</tt>; <tt>type mismatch in variable declaration</tt>/<tt>function argument</tt> (notes name the underlying type).</td></tr>
+<tr><td valign="top"><tt>error[3000]</tt></td><td valign="top"><tt>local type aliases are not supported; bind the container declaration directly</tt>; <tt>unable to infer array size</tt>; <tt>type mismatch in variable declaration</tt>/<tt>assignment</tt>/<tt>function argument</tt>/<tt>return statement</tt> (notes name the underlying type). The <tt>source: type</tt> note marks a type value used in a value position (module binding, <tt>const T = type;</tt>, assignment RHS, call argument, or <tt>return</tt>).</td></tr>
 <tr><td valign="top"><tt>error[3007]</tt></td><td valign="top"><tt>'&lt;x&gt;' is not marked 'pub'</tt> (cross-module use of a private alias).</td></tr>
 <tr><td valign="top"><tt>error[3064]</tt></td><td valign="top"><tt>cyclic global initializer dependency</tt> (alias cycle).</td></tr>
 <tr><td valign="top"><tt>error[3072]</tt></td><td valign="top"><tt>expected struct type, found '&lt;X&gt;'</tt> (<tt>@offsetOf</tt> on a non-struct alias; the alias is erased).</td></tr>
