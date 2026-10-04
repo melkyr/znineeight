@@ -226,7 +226,7 @@ fn bump() void { g = g + 1; }
 an early <tt>break</tt>:
 </p>
 <pre>
-do { body(); } while (cond);
+do {} while (cond);
 // error[2000]: expected ';' but found 'while'
 
 while (true) {
@@ -293,14 +293,19 @@ rule: <tt>fn f(e: anyerror)</tt> rejects <tt>error[20]</tt>.</td>
 </tr>
 <tr>
 <td valign="top"><tt>noreturn</tt> as a signature type</td>
-<td valign="top">Not registered as a type name, so a parameter or return type
-spelling it does not resolve. By operator ruling the six <tt>std</tt>
-signatures that spell it keep degrading to <tt>void</tt> and emit no
-diagnostic; a real <tt>noreturn</tt> type with a C companion is deferred.
+<td valign="top">Not registered as a type name. In a signature it degrades with no
+diagnostic: a parameter becomes C <tt>int</tt> and a return becomes
+<tt>void</tt>. The exemption is keyed on the identifier text <tt>noreturn</tt>
+at any signature, not only the six <tt>std</tt> ones, so
+<tt>fn f(x: noreturn) void</tt> and <tt>fn f() noreturn {}</tt> both compile
+rc 0. Outside a signature the name rejects: a local
+<tt>var x: noreturn;</tt> gives <tt>error[20]</tt> and <tt>error[3000]</tt>.
+A real <tt>noreturn</tt> type with a C companion is deferred;
 <tt>noreturn</tt> remains usable as the compiler's internal divergence result
 type.</td>
-<td valign="top">Do not spell <tt>noreturn</tt> in a signature; use
-<tt>void</tt>, or an error union when the call can fail.</td>
+<td valign="top">Do not spell <tt>noreturn</tt> in a declaration; a signature
+silently degrades. Use <tt>void</tt>, or an error union when the call can
+fail.</td>
 </tr>
 <tr>
 <td valign="top"><tt>@cImport</tt></td>
