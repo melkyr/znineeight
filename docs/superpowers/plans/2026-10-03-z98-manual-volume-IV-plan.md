@@ -369,3 +369,29 @@ if (eu) |v| { use(v); } else |e| { use(e); }
 - [ ] Seed rotation stays closeout-only (Task 26).
 
 **Sequence (m1617 deferral):** A8 follows A6/A7 at the **end of the volume** — run **A8-I → (A8-M if needed) → A8-F after A7-F and before Task 26 closeout**. Page 14's error-union-capture reword is assigned to A8-F; Task 19 authors the page against the assumed final behavior.
+
+## Amendment A9 — `orelse { … }` block fallback must not emit invalid C for an empty block (operator-ruled m1626)
+
+**Origin:** found in the Task-19 review (Volume IV page 14) while verifying the `orelse` block-fallback claim. Operator ruling (m1626 option 1): open a scoped amendment **deferred to the end of the volume**.
+
+**Defect (reviewer-verified, base fp `821481e69df63fc0cf69176fdaaf9dd9`).** A non-diverging `orelse { … }` block fallback with an **empty** block compiles rc 0 but emits gcc-invalid C:
+```zig
+var a = maybe(-1) orelse {};
+```
+emits `zT_7 = zT_8;` with `zT_8` undeclared → gcc `error: 'zT_8' undeclared`. A **non-empty** fallback block (the shape page 10 measured) compiles/runs; its result is an uninitialized join temporary (undefined). Page 14 (`vol4-14-error-expressions.html:278-281`) and page 10 (`vol4-10-optionals.html`) describe this residual — the current "compile-clean" wording is false for the empty block.
+
+### Task A9-I: read-only investigation
+- [ ] Reproduce at fp `821481e6…`: the empty-block `orelse {}` (rc 0, gcc-invalid C) vs a non-empty block (compiles/runs) on `var`/const; confirm the Zig 0.15.2 behavior.
+- [ ] Root-cause in `sf/src/lower.zig` / `sf/src/semantic_analyzer.zig`: why the block `orelse` join temp is uninitialized/undeclared for an empty block; specify the minimal fix (a clean level-0 reject or a correctly-materialized fallback), or the ruled clean-reject boundary.
+- [ ] Blast radius (`sf/src`, corpus, `examples/z98`, `docs/sf/manuals/src/**`, `repro/**`, `examples/zig0/**`); fixtures `repro/mi_matrix/orelse_block_reject_xmod` (or `_ok`) + standalone; verification plan.
+- [ ] Report `task-A9-I-report.md`; no `sf/src` edits; no commit.
+
+### Task A9-M: migration (only if A9-I finds in-tree reliance)
+- [ ] Find/migrate any program relying on the current `orelse {}` shape; record the census; report `task-A9-M-report.md`; no `sf/src` edits; no commit.
+
+### Task A9-F: implement
+- [ ] Implement the minimal fix (or the ruled clean reject); add fixture + standalone; run the QUICK_REF gate battery verbatim (**STOP on unexpected movement**); update tech docs + QUICK_REF + EXPECTED_FAIL; record the moved fixed point; commit.
+- [ ] Reword `docs/sf/manuals/en/vol4-10-optionals.html` and `docs/sf/manuals/en/vol4-14-error-expressions.html` to the landed behavior.
+- [ ] Seed rotation stays closeout-only (Task 26).
+
+**Sequence (m1626 deferral):** A9 follows A6/A7/A8 at the **end of the volume** — run **A9-I → (A9-M if needed) → A9-F after A8-F and before Task 26 closeout**. Pages 10 and 14 reword to the landed behavior; the Task-19 page fix (now) only removes the false "compile-clean" wording and keeps the A9 note.
