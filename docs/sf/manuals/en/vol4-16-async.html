@@ -1,0 +1,570 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Async and coroutines</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual async coroutines suspending function @asyncInit @asyncSuspend @asyncResume @asyncFrameSize frame step ABI state word width Context header child frame pool std.async Task Scheduler tick awaitTask waitFor suspendUntil two-context rule 3017 3018 3019 3046">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol4-15-builtins.html">
+<link rel="next" href="vol4-18-stdlib.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume IV &mdash; Reference</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+How to use the Reference <i>(planned)</i><br>
+<a href="vol4-01-grammar.html">The full grammar</a><br>
+<a href="vol4-02-types.html">Types</a><br>
+<a href="vol4-03-pointers.html">Pointers</a><br>
+<a href="vol4-04-structs.html">Structs</a><br>
+<a href="vol4-05-enums.html">Enums</a><br>
+<a href="vol4-06-unions.html">Unions</a><br>
+<a href="vol4-07-tuples.html">Tuples</a><br>
+<a href="vol4-08-arrays-slices.html">Arrays and slices</a><br>
+<a href="vol4-09-errors.html">Errors</a><br>
+<a href="vol4-10-optionals.html">Optionals</a><br>
+<a href="vol4-11-aliases.html">Aliases</a><br>
+<a href="vol4-12-statements.html">Statements</a><br>
+<a href="vol4-13-control-flow.html">Control flow</a><br>
+<a href="vol4-14-error-expressions.html">Error expressions</a><br>
+<a href="vol4-15-builtins.html">Builtins</a><br>
+<b>Async</b><br>
+Memory <i>(planned)</i><br>
+<a href="vol4-18-stdlib.html">The standard library</a><br>
+<a href="vol4-19-pal.html">The PAL</a><br>
+<a href="vol4-20-markers.html">Markers</a><br>
+<a href="vol4-21-diagnostics.html">Diagnostics</a><br>
+<a href="vol4-22-cli.html">The command line</a><br>
+Limits <i>(planned)</i><br>
+<a href="vol4-24-html-style.html">HTML style</a><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Async and coroutines</h1>
+<p>
+<b>Async</b> is Z98's cooperative, stackless coroutine facility: four
+<tt>@async*</tt> builtins in the language plus the ordinary library module
+<tt>std.async</tt>. There is no <tt>async</tt>/<tt>await</tt> keyword and no
+<tt>Future(T)</tt>; coroutine state is type-erased to <tt>*void</tt>. This page
+is the lookup for the builtins, the frame/step ABI, the <tt>std.async</tt>
+surface, and the rule that decides which context may call which primitive.
+</p>
+<p>
+Authority: the builtins are resolved and typed in
+<tt>semantic_analyzer.zig:4840-4876</tt> and lowered in
+<tt>lower.zig:5924-6087</tt>; the suspension analysis and state-width rule are
+<tt>async_analysis.zig:317-524</tt>; the frame layout is
+<tt>async_frame_layout.zig:606-666</tt>; the library is
+<tt>sf/src/std_async.zig</tt> (re-exported as <tt>std.async</tt> at
+<tt>std.zig:9</tt>). The normative prose is
+<tt>docs/reference/Language_Spec_Z98.md</tt> &sect;4.1. Every value and message
+below was reproduced on the fixed compiler (md5
+<tt>821481e69df63fc0cf69176fdaaf9dd9</tt>); reused fixtures are named where one
+exists.
+</p>
+
+<h2>Suspending functions</h2>
+<p>
+A function is <b>suspending</b> when its body directly contains
+<tt>@asyncSuspend</tt>, or directly calls a function that is suspending. The
+property propagates over the direct-call graph (mutual recursion is ordinary
+propagation) and is computed once, program-wide, before type resolution. It is
+never declared.
+</p>
+<p>
+Every suspending function is replaced by a <i>step machine</i> with the fixed
+shape below; the original synchronous body is not emitted. Only the root
+<tt>pub fn main</tt> keeps its source name and signature plus a synthesized
+synchronous driver that zero-initializes its root frame and drives its own step
+to completion. <tt>main</tt> and <tt>export fn</tt> are ordinary for suspension
+analysis: either may be suspending, and a non-suspending
+<tt>main</tt>/<tt>export fn</tt>/helper may host a <tt>std.async</tt> loop.
+</p>
+<pre>
+fn __Z98Step_&lt;f&gt;(frame: *void, arg: ?*void) ?*void
+</pre>
+<p>
+The step loads its hidden <tt>state</tt> word, jumps to the resume segment for
+the current suspension point, runs to the next suspension or the end, saves the
+values it will need, and returns <tt>null</tt> at completion (a non-<tt>null</tt>
+result means still suspended). A suspending function's address may not be taken:
+<tt>error[3017]</tt>.
+</p>
+<pre>
+fn worker(out: *i32) void {
+    var i: i32 = 0;
+    while (i &lt; 3) : (i += 1) {
+        @asyncSuspend(null);      // suspension point
+    }
+    out.* = i;
+}
+</pre>
+
+<h2>The four builtins</h2>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Signature</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Result</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Semantics</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>@asyncInit(ctx, buf, fn, args)</tt></td>
+<td valign="top"><tt>*void</tt></td>
+<td valign="top">Initialize a fresh root frame for the suspending function
+<tt>fn</tt> in <tt>buf</tt>, using the per-task pool <tt>ctx</tt>, and return the
+frame. It zero-fills the frame, writes the <tt>__Z98Step_&lt;fn&gt;</tt> word at
+offset&nbsp;0, stores <tt>ctx</tt> and <tt>state = 0</tt>, resets the Context
+header (<tt>used = 0</tt>, sticky <tt>oom = 0</tt>; the caller supplied
+<tt>capacity</tt>), and copies the <tt>args</tt> record <b>positionally</b> into
+<tt>fn</tt>'s parameters.</td>
+</tr>
+<tr>
+<td valign="top"><tt>@asyncSuspend(data)</tt></td>
+<td valign="top"><tt>*void</tt></td>
+<td valign="top">An explicit suspension point. Valid only inside a suspending
+function (<tt>error[3018]</tt> otherwise) and rejected inside
+<tt>defer</tt>/<tt>errdefer</tt> (<tt>error[3019]</tt>). <tt>data</tt> is
+accepted and type-checked but is not propagated: a suspended step returns a
+non-<tt>null</tt> <tt>?*void</tt> sentinel.</td>
+</tr>
+<tr>
+<td valign="top"><tt>@asyncResume(frame, arg)</tt></td>
+<td valign="top"><tt>?*void</tt></td>
+<td valign="top">Load the step word at <tt>frame + 0</tt>, call
+<tt>__Z98Step_&lt;f&gt;(frame, arg)</tt>, and return its result:
+<tt>null</tt> when the coroutine has finished, non-<tt>null</tt> while it is
+still suspended. It updates no scheduler state; the caller owns that.</td>
+</tr>
+<tr>
+<td valign="top"><tt>@asyncFrameSize(fn)</tt></td>
+<td valign="top">untyped integer literal</td>
+<td valign="top">Compile-time byte size of <tt>fn</tt>'s root frame. <tt>fn</tt>
+must resolve to a known suspending function, else <tt>error[3046]</tt>.</td>
+</tr>
+</table>
+<p>
+<tt>args</tt> must be a plain <tt>*const void</tt>, written
+<tt>@ptrCast(*const void, &amp;record)</tt>. A <tt>?*const void</tt> is a
+non-scalar optional in this position and emits invalid C89. The record's fields
+<i>are</i> the coroutine's parameters, so their number and order must match
+<tt>fn</tt> exactly. A minimal initialize-and-drive loop over the reusable
+sample <tt>docs/sf/manuals/src/vol2/builtins/async.z98</tt> (measured
+<tt>frame=88</tt>, <tt>n=3 steps=4</tt>):
+</p>
+<pre>
+var args: *const void = @ptrCast(*const void, &amp;wa);
+var frame: *void = @asyncInit(ctxp, &amp;fbuf, worker, args);
+var more: ?*void = @asyncResume(frame, null);
+while (more != null) {
+    more = @asyncResume(frame, null);
+}
+</pre>
+<p>
+A direct call from one suspending function to another is an <b>implicit
+await</b>: the caller's step allocates a child frame from its Context pool,
+copies the arguments into it, and drives the child; while the child is still
+suspended the caller yields to its own driver. There is no <tt>await</tt>
+keyword &mdash; the call is the await. Reused from
+<tt>repro/mi_matrix/async_await_xmod</tt> (measured
+<tt>@asyncFrameSize(caller) == 72</tt>):
+</p>
+<pre>
+fn callee(out: *i32) void { @asyncSuspend(null); out.* = 10; }
+fn caller(out: *i32) void { var t: i32 = 0; callee(&amp;t); out.* = t; }
+</pre>
+
+<h2>Frame and step ABI</h2>
+<p>
+Each coroutine owns one root frame in a caller-supplied, 8-aligned buffer. The
+frame is laid out in a fixed order; on the 32-bit target a pointer is four bytes,
+so the header is <tt>step@0</tt>, <tt>ctx@4</tt>, <tt>state@8</tt>, and the first
+parameter follows at the next aligned offset (offset&nbsp;12 for a 4-byte
+parameter). The exact order:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>#</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Field</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Meaning</b></th>
+</tr>
+<tr><td valign="top">0</td><td valign="top"><tt>step</tt></td>
+<td valign="top">pointer-sized address of <tt>__Z98Step_&lt;f&gt;</tt> at offset&nbsp;0</td></tr>
+<tr><td valign="top">1</td><td valign="top"><tt>ctx</tt></td>
+<td valign="top">the per-task Context pool pointer, at the next pointer-sized slot</td></tr>
+<tr><td valign="top">2</td><td valign="top"><tt>state</tt></td>
+<td valign="top"><tt>u8</tt>, <tt>u16</tt>, or <tt>u32</tt> (see below)</td></tr>
+<tr><td valign="top">3</td><td valign="top"><tt>param</tt></td>
+<td valign="top">each coroutine parameter, in declaration order</td></tr>
+<tr><td valign="top">4</td><td valign="top"><tt>live</tt></td>
+<td valign="top">each local live across at least one suspension</td></tr>
+<tr><td valign="top">5</td><td valign="top"><tt>child</tt></td>
+<td valign="top">one child-frame slot when the function awaits</td></tr>
+<tr><td valign="top">6</td><td valign="top"><tt>result</tt></td>
+<td valign="top">one slot for a value returned through an await</td></tr>
+<tr><td valign="top">7</td><td valign="top"><tt>parent_result</tt></td>
+<td valign="top">one slot per value-returning await, in program order</td></tr>
+</table>
+<p>
+The real layout is built by <tt>async_frame_layout.zig:606-666</tt>, which
+appends the fields in that order, aligns each to its type's alignment, then pads
+the whole frame up to a multiple of 8 (Rule A). The authoritative
+<tt>@asyncFrameSize</tt> is a conservative, per-function upper bound, not a
+universal constant. The emitted C for the sample
+<tt>docs/sf/manuals/src/vol3/tasks.z98</tt> shows the header directly (frame
+pointer <tt>zT_67</tt>, step <tt>zF_CD850BCC___Z98Step_task</tt>):
+</p>
+<pre>
+zT_100 = (unsigned int*)(...zT_67... + 0);
+*zT_100 = (unsigned int)(zT_95);              /* step word  @ offset 0 */
+zT_104 = (void**)(...zT_67... + 4);
+*zT_104 = zT_65;                              /* ctx pointer @ offset 4 */
+zT_109 = (unsigned char*)(...zT_67... + 8);
+*zT_109 = (unsigned char)(0);                 /* state = 0  @ offset 8 */
+zT_113 = (...TaskArgs**)(...zT_67... + 12);
+*zT_113 = zT_85;                              /* parameter  @ offset 12 */
+</pre>
+
+<h3>State word</h3>
+<p>
+The <tt>state</tt> word is the smallest integer that can name every suspension
+point in the function (<tt>async_analysis.zig:517-524</tt>):
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Suspension points</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>State type</b></th>
+</tr>
+<tr><td valign="top">at most 255</td><td valign="top"><tt>u8</tt></td></tr>
+<tr><td valign="top">at most 65535</td><td valign="top"><tt>u16</tt></td></tr>
+<tr><td valign="top">more</td><td valign="top"><tt>u32</tt></td></tr>
+</table>
+<p>
+Measured: the sample <tt>task</tt> has one suspension point, so the state store
+is an <tt>unsigned char</tt> at offset&nbsp;8;
+<tt>repro/mi_matrix/async_state_width_xmod</tt>'s <tt>worker</tt> has 300
+points, so its state store is an <tt>unsigned short</tt> at offset&nbsp;8
+(<tt>@asyncFrameSize</tt> and the runtime loop both pass).
+
+<h3>Frame sizes are per function</h3>
+<p>
+Never hard-code a frame size; use <tt>@asyncFrameSize(fn)</tt> to size the
+buffer. Fresh measurements on the fixed compiler:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Function (source)</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>@asyncFrameSize</b></th>
+</tr>
+<tr><td valign="top"><tt>worker</tt> (vol2/builtins/async.z98)</td><td valign="top">88</td></tr>
+<tr><td valign="top"><tt>task</tt> (vol3/tasks.z98)</td><td valign="top">168</td></tr>
+<tr><td valign="top"><tt>worker</tt> (async_frame_xmod)</td><td valign="top">72</td></tr>
+<tr><td valign="top"><tt>caller</tt> (async_await_xmod)</td><td valign="top">72</td></tr>
+<tr><td valign="top"><tt>level1</tt> (async_pool_xmod)</td><td valign="top">80</td></tr>
+</table>
+
+<h2>Context header (16 bytes)</h2>
+<p>
+A <tt>Context</tt> sits at the head of a caller-supplied buffer;
+<tt>HEADER_SIZE</tt> is <b>16</b>, not 12, so that <tt>pool_base = ctx + 16</tt>
+stays 8-aligned whenever <tt>ctx</tt> is 8-aligned. The caller's buffer
+<b>must</b> be 8-aligned; <tt>contextInit</tt> traps on a misaligned buffer
+rather than corrupting every child frame. Back it with an 8-aligned type such as
+<tt>[K]u64</tt>, never a bare <tt>[N]u8</tt>. On the 32-bit target:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Offset</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Field</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Meaning</b></th>
+</tr>
+<tr><td valign="top">0</td><td valign="top"><tt>used: usize</tt></td>
+<td valign="top">bump pointer; rounded up to 8 before each <tt>contextAlloc</tt></td></tr>
+<tr><td valign="top">4</td><td valign="top"><tt>capacity: usize</tt></td>
+<td valign="top">usable pool bytes after the header (<tt>buf.len - 16</tt>)</td></tr>
+<tr><td valign="top">8</td><td valign="top"><tt>oom: bool</tt></td>
+<td valign="top">sticky exhaustion flag</td></tr>
+<tr><td valign="top">9..15</td><td valign="top">padding</td>
+<td valign="top">keeps the pool base at 8-alignment</td></tr>
+</table>
+<p>
+The pool itself is a per-task LIFO bump stack, not a general allocator. A root
+frame lives in <tt>buf</tt> <i>outside</i> the pool; the Context owns child
+frames only. <tt>contextAlloc</tt> rounds <tt>used</tt> up to 8, and on
+exhaustion sets the sticky <tt>oom</tt> and returns <tt>error.OutOfFrame</tt>
+instead of crashing. A child is reclaimed when it returns, or explicitly with
+<tt>contextMark</tt>/<tt>contextRelease</tt>. Verified by
+<tt>stdlib_async_headerexact_xmod</tt> (a buffer of exactly 16 bytes yields
+<tt>capacity == 0</tt> and <tt>OutOfFrame</tt> with <tt>used == 0</tt>) and
+<tt>stdlib_async_f64align_xmod</tt> (an allocated <tt>f64</tt> container is
+8-aligned and round-trips).
+</p>
+
+<h2><tt>-fsafe</tt> checks</h2>
+<p>
+Under the default <tt>-fsafe</tt> mode, the coroutine builtins add two runtime
+checks; <tt>-ffast</tt> emits neither. The alignment check in
+<tt>contextInit</tt> is independent of the mode and always traps.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Site</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Condition</b></th>
+</tr>
+<tr><td valign="top"><tt>@asyncResume(frame, arg)</tt></td>
+<td valign="top">Traps if the frame's step word (offset&nbsp;0) is zero
+(<tt>lower.zig:6057-6062</tt>).</td></tr>
+<tr><td valign="top"><tt>@asyncInit(ctx, buf, fn, args)</tt></td>
+<td valign="top">Traps when the frame size is compile-time known <b>and</b>
+<tt>buf</tt> points at a concrete <tt>[N]u8</tt> array with
+<tt>N &lt; @asyncFrameSize(fn)</tt> (<tt>lower.zig:5966-5997</tt>). A slice or
+many-pointer buffer (<tt>[]u8</tt>/<tt>[*]u8</tt>) has no compile-time length, so
+the check is skipped.</td></tr>
+<tr><td valign="top"><tt>contextInit(buf)</tt></td>
+<td valign="top">Traps (both modes) if <tt>buf.ptr</tt> is not 8-aligned; under
+<tt>-fsafe</tt> the <tt>buf.len - 16</tt> subtraction also traps when
+<tt>buf.len &lt; 16</tt>.</td></tr>
+</table>
+
+<h2>The <tt>std.async</tt> surface</h2>
+<p>
+The scheduler and per-task child-frame pool are library code, re-exported as
+<tt>std.async</tt> (<tt>std_async.zig</tt>). Concrete only &mdash; no generics.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Symbol</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Definition</b></th>
+</tr>
+<tr><td valign="top"><tt>TaskState</tt></td>
+<td valign="top"><tt>enum(u8) { ready = 0, running = 1, suspended = 2, done = 3,
+cancelled = 4 }</tt></td></tr>
+<tr><td valign="top"><tt>FrameError</tt></td>
+<td valign="top"><tt>error{OutOfFrame}</tt></td></tr>
+<tr><td valign="top"><tt>StepFn</tt></td>
+<td valign="top"><tt>fn(frame: *void, arg: ?*void) ?*void</tt> &mdash; the
+documented <tt>__async_step_&lt;f&gt;</tt> ABI alias only; the scheduler never
+stores or passes one.</td></tr>
+<tr><td valign="top"><tt>HEADER_SIZE</tt></td>
+<td valign="top"><tt>usize = 16</tt></td></tr>
+<tr><td valign="top"><tt>Context</tt></td>
+<td valign="top"><tt>{ used: usize, capacity: usize, oom: bool }</tt> plus
+padding to 16 bytes; the pool header.</td></tr>
+<tr><td valign="top"><tt>Task</tt></td>
+<td valign="top"><tt>{ frame: *void, ctx: *Context, state: TaskState,
+cancel_requested: bool, result: *void, arg: *void, waiting_on: *Task,
+has_waiting_on: bool }</tt>. Stores <b>no</b> step pointer.</td></tr>
+<tr><td valign="top"><tt>Scheduler</tt></td>
+<td valign="top"><tt>{ tasks: [*]*Task, capacity: usize, count: usize,
+current: usize, in_task: bool }</tt>; wraps a caller-owned array of pointers.</td></tr>
+</table>
+
+<h3>Functions</h3>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Signature</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Semantics (measured)</b></th>
+</tr>
+<tr><td valign="top"><tt>schedulerInit(tasks: []*Task) Scheduler</tt></td>
+<td valign="top">Wrap a caller-owned array of task pointers; <tt>count = 0</tt>,
+<tt>current = 0</tt>, <tt>in_task = false</tt>.</td></tr>
+<tr><td valign="top"><tt>addTask(s, t) bool</tt></td>
+<td valign="top">Register <tt>t</tt>. Idempotent: a registered, settled
+(<tt>done</tt>/<tt>cancelled</tt>) task is reset in place to <tt>ready</tt>
+(clearing <tt>cancel_requested</tt> and <tt>has_waiting_on</tt>) and
+<tt>true</tt> is returned; a registered, still-active task is left untouched
+(<tt>false</tt>); a new task is appended (<tt>false</tt> when at capacity).</td></tr>
+<tr><td valign="top"><tt>removeTask(s, t) void</tt></td>
+<td valign="top">Retire <tt>t</tt>, compacting the tail so <tt>count</tt> drops
+by one; no-op when <tt>t</tt> is not registered. Valid from any non-suspending
+context; do not remove a task a coroutine is currently awaiting.</td></tr>
+<tr><td valign="top"><tt>tick(s) FrameError!void</tt></td>
+<td valign="top">Resume every ready or suspended task once, in registration
+order. Sets <tt>running</tt> before the resume, then <tt>done</tt> if the step
+returned <tt>null</tt> and <tt>suspended</tt> otherwise. A task with
+<tt>cancel_requested</tt> becomes <tt>cancelled</tt>; a task with
+<tt>has_waiting_on</tt> is skipped until its dependency settles. Returns
+<tt>error.OutOfFrame</tt> (stopping further resumes) if a resumed task's pool
+overflowed.</td></tr>
+<tr><td valign="top"><tt>waitAll(s) FrameError!void</tt></td>
+<td valign="top">Tick until every registered task is <tt>done</tt> or
+<tt>cancelled</tt>.</td></tr>
+<tr><td valign="top"><tt>waitFor(s, t) FrameError!void</tt></td>
+<td valign="top">Tick until <tt>t</tt> settles, even if other tasks also run.
+Panics if <tt>t</tt> is neither registered nor already settled (hang guard).</td></tr>
+<tr><td valign="top"><tt>awaitTask(s, t) void</tt></td>
+<td valign="top">Suspend the currently running task until <tt>t</tt> settles;
+does not tick. Panics if there is no running task (<tt>in_task == false</tt>) or
+no registered task.</td></tr>
+<tr><td valign="top"><tt>suspend(s, t) void</tt></td>
+<td valign="top">Mark <tt>t</tt> suspended (yield bookkeeping only).</td></tr>
+<tr><td valign="top"><tt>suspendUntil(pred: fn() bool) void</tt></td>
+<td valign="top">Yield via <tt>@asyncSuspend(null)</tt> once per tick until
+<tt>pred()</tt> is true. <tt>pred</tt> is a non-suspending function pointer; the
+caller must be suspending.</td></tr>
+<tr><td valign="top"><tt>cancel(s, t) void</tt> / <tt>cancelAll(s) void</tt></td>
+<td valign="top">Request cooperative cancellation, observed at the next tick
+boundary.</td></tr>
+<tr><td valign="top"><tt>contextInit(buf: []u8) *Context</tt></td>
+<td valign="top">Place the Context at the head of <tt>buf</tt>; trap if
+misaligned; set <tt>capacity = buf.len - 16</tt>, <tt>used = 0</tt>,
+<tt>oom = false</tt>.</td></tr>
+<tr><td valign="top"><tt>contextAlloc(ctx, size) FrameError![*]u8</tt></td>
+<td valign="top">Round <tt>used</tt> up to 8, return an 8-aligned pointer, and
+advance <tt>used</tt>; on exhaustion set sticky <tt>oom</tt> and return
+<tt>error.OutOfFrame</tt>.</td></tr>
+<tr><td valign="top"><tt>contextMark(ctx) usize</tt> /
+<tt>contextRelease(ctx, mark) void</tt></td>
+<td valign="top">Bracket a child frame like a stack: <tt>contextMark</tt>
+returns the current <tt>used</tt>; <tt>contextRelease</tt> restores
+<tt>used</tt> to <tt>mark</tt>.</td></tr>
+</table>
+<p>
+Because <tt>Task</tt> stores no step pointer, one scheduler drives tasks built
+from different suspending functions: <tt>tick</tt> calls
+<tt>@asyncResume(t.frame, t.arg)</tt> and the frame's offset-0 step word
+supplies the function. The setup shape from
+<tt>docs/sf/manuals/src/vol3/tasks.z98</tt> (three tasks, round-robin, measured
+stdout ending <tt>done = 3</tt>):
+</p>
+<pre>
+var ctx = std.async.contextInit(@ptrCast([*]u8, &amp;pools[i])[0 .. POOL_WORDS * 8]);
+task_ptrs[i].ctx = ctx;
+task_ptrs[i].frame = @asyncInit(ctx, @ptrCast([*]u8, &amp;frames[i]), task,
+                                @ptrCast(*const void, &amp;recs[i]));
+_ = std.async.addTask(&amp;sched, task_ptrs[i]);
+...
+std.async.waitAll(&amp;sched) catch { ... };
+</pre>
+<p>
+A predicate-driven yield, from
+<tt>repro/mi_matrix/stdlib_async_suspenduntil_stress_xmod</tt> (each coroutine
+resumes on the first tick its predicate flips &mdash; measured resume ticks
+<tt>3 1 6 2 7 4</tt> for flip ticks <tt>3 1 6 2 7 4</tt>):
+</p>
+<pre>
+fn ready0() bool { return g_tick &gt;= g_flip[0]; }   // non-suspending predicate
+fn worker0(c: *CoCtx) void { _ = c; sa.suspendUntil(ready0); g_resume[0] = g_tick; }
+</pre>
+
+<h2>The two-context rule</h2>
+<p>
+<tt>awaitTask</tt> and <tt>waitFor</tt> look alike but are not interchangeable,
+because <tt>awaitTask</tt> suspends the <i>current</i> task and so needs a
+current task to suspend.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Caller context</b></th>
+<th align="left" bgcolor="#e8e0e0"><b><tt>waitFor</tt></b></th>
+<th align="left" bgcolor="#e8e0e0"><b><tt>awaitTask</tt></b></th>
+</tr>
+<tr><td valign="top"><tt>main</tt>, <tt>export fn</tt>, or any plain
+non-suspending helper</td>
+<td valign="top">Valid. Ticks the scheduler; needs no caller frame.</td>
+<td valign="top">Panics: <tt>std.async: awaitTask called from a non-suspending
+context</tt>.</td></tr>
+<tr><td valign="top">Inside a running task (<tt>s.in_task == true</tt>)</td>
+<td valign="top">Valid, but also ticks unrelated ready tasks.</td>
+<td valign="top">Valid. Parks only the current task on the dependency.</td></tr>
+</table>
+<pre>
+std.async.waitFor(&amp;s, t) catch { ... };   // from main / a helper
+...
+std.async.awaitTask(&amp;s, t);               // from inside a task only
+</pre>
+<p>
+Verified: <tt>repro/mi_matrix/stdlib_async_waitfor_helper_xmod</tt> calls
+<tt>waitFor</tt> from a plain helper and prints <tt>10</tt> then <tt>3</tt>
+(<tt>done</tt>); <tt>stdlib_async_await_nonctx_xmod</tt> calls
+<tt>awaitTask</tt> from <tt>main</tt> and traps (rc 133) with the exact message
+above. A task whose awaited dependency also has other registered work should
+use <tt>awaitTask</tt>; a driver with no current task must use
+<tt>waitFor</tt>.
+</p>
+
+<h2>Diagnostic index</h2>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Code</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Message (verbatim)</b></th>
+</tr>
+<tr><td valign="top"><tt>error[3017]</tt></td>
+<td valign="top"><tt>taking the address of a suspending function is not allowed</tt></td></tr>
+<tr><td valign="top"><tt>error[3018]</tt></td>
+<td valign="top"><tt>@asyncSuspend used outside a suspending function</tt>
+(reachable at module scope, e.g. <tt>const x: *void = @asyncSuspend(null);</tt>)</td></tr>
+<tr><td valign="top"><tt>error[3019]</tt></td>
+<td valign="top"><tt>@async builtin used inside a defer/errdefer body</tt></td></tr>
+<tr><td valign="top"><tt>error[3046]</tt></td>
+<td valign="top"><tt>@asyncFrameSize argument must be a known suspending
+function</tt></td></tr>
+</table>
+<p>
+All are level-0 rejects (rc&nbsp;2, zero emitted <tt>.c</tt>). For the full code
+list see the <a href="vol4-21-diagnostics.html">Diagnostics</a> page; the printed
+number is the enum ordinal, not the <tt>ERR_####</tt> suffix.
+</p>
+
+<h2>See also</h2>
+<p>
+<a href="vol4-15-builtins.html">Builtins</a> for the builtin catalogue and the
+formatted-print special case;
+<a href="vol4-18-stdlib.html">The standard library</a> for
+<tt>std.async</tt> beside the other re-exported modules;
+the Memory page (planned) for the arena behind the caller-supplied buffers;
+
+<a href="vol3-09-coroutines.html">Volume III, Coroutines &mdash; the third big
+shift</a> and <a href="vol3-10-coroutine-program.html">A coroutine program</a>
+for the worked frame/step walk-through and the full <tt>tasks.z98</tt>;
+<a href="vol2-15-builtins.html">Volume II, Builtins</a> for the first
+introduction of the four builtins;
+<a href="vol2-16-no-methods.html">No methods, no generics, no comptime</a> for
+why coroutine state is erased to <tt>*void</tt>; and
+<a href="vol3-06-era-limits.html">Volume III, Honesty: what you cannot do on a
+Pentium II</a> for the no-threads limit this mechanism is the way over.
+</p>
+
+<p class="navbtns">
+<a href="vol4-15-builtins.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol4-18-stdlib.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol4-15-builtins.html">Builtins</a> | <a href="toc.html">Contents</a> | Next: <a href="vol4-18-stdlib.html">The standard library</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
