@@ -421,7 +421,7 @@ labeled <tt>while</tt>, a labeled switch-in-loop, and a literal
 <tr><td valign="top">All captures are immutable.</td><td valign="top">Assignment through an <tt>if</tt>/<tt>while</tt>/<tt>for</tt>/<tt>switch</tt> capture is <tt>error[3002]</tt> <tt>cannot assign to immutable variable</tt>.</td></tr>
 <tr><td valign="top">A capture may not shadow or redeclare an enclosing name.</td><td valign="top"><tt>error[3057] local declaration shadows an earlier declaration in an enclosing scope</tt>, with a note at the previous declaration.</td></tr>
 <tr><td valign="top"><tt>_</tt> discards a capture.</td><td valign="top">A discarded name is not bound; it may be reused freely.</td></tr>
-<tr><td valign="top">A capture is scoped to its construct.</td><td valign="top">A <tt>while</tt>/<tt>for</tt>/switch capture is visible in the body or prong only. In the current compiler an <tt>if</tt> capture is also visible in the <tt>else</tt> arm; on the absent path that storage is undefined, so a use there reads garbage (measured <tt>-247245648</tt> for a null optional; Zig rejects the use). Do not read an <tt>if</tt> capture in its <tt>else</tt> arm.</td></tr>
+<tr><td valign="top">A capture is scoped to its construct.</td><td valign="top">A <tt>while</tt>/<tt>for</tt>/switch capture is visible in the body or prong only. In the current compiler an <tt>if</tt> capture is also visible in the <tt>else</tt> arm; on the absent path that storage is undefined, so a use there reads garbage (the value varies, uninitialized; Zig rejects the use). Do not read an <tt>if</tt> capture in its <tt>else</tt> arm.</td></tr>
 </table>
 <p>
 The shadow rejects are pinned by
