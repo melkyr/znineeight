@@ -45,7 +45,7 @@ Espa&ntilde;ol (not yet available) |
 Target Win9x <i>(planned)</i><br>
 Target Linux <i>(planned)</i><br>
 <a href="vol5-06-arena.html">Use the arena correctly</a><br>
-Model and propagate errors <i>(planned)</i><br>
+<a href="vol5-07-errors.html">Model and propagate errors</a><br>
 Write and drive a coroutine <i>(planned)</i><br>
 Read, write, and test files <i>(planned)</i><br>
 Sockets under Z98 <i>(planned)</i><br>
@@ -81,8 +81,8 @@ it links back to the Reference for the underlying rules. This page lists the
 <p>
 A shipped page is a link; a page that has not shipped is plain text marked
 <i>(planned)</i>. This index and guides 01 (rebuild the compiler from seed),
-02 (build a single file), 03 (build multiple modules), and 06 (correct arena
-use) are shipped so far.
+02 (build a single file), 03 (build multiple modules), 06 (correct arena use),
+and 07 (model and propagate errors) are shipped so far.
 </p>
 
 <h2>A&ndash;Z index</h2>
@@ -96,7 +96,7 @@ use) are shipped so far.
 <li><b>Link Z98 output against C89 libraries</b> &mdash; Link Z98-emitted objects with hand-written C89 code. <i>(planned)</i></li>
 <li><b>Linux ELF</b> &mdash; Choose the default Linux target and the gcc -m32 path behind it. <i>(planned)</i></li>
 <li><b>--markers, pal.markerWrite*</b> &mdash; Enable --markers and read the compiler's marker stream. <i>(planned)</i></li>
-<li><b>Model and propagate errors</b> &mdash; Use error unions, try and catch, errdefer, and the enclosing-return rule. <i>(planned)</i></li>
+<li><a href="vol5-07-errors.html">Model and propagate errors</a> &mdash; Use error unions, try and catch, errdefer, and the enclosing-return rule.</li>
 <li><a href="vol5-03-build-multi.html">Multiple modules</a> &mdash; Split a program across @import modules and build each emitted file.</li>
 <li><a href="vol5-02-build-single.html">One .z98 to an executable</a> &mdash; Compile one source file, link it, and run the native executable.</li>
 <li><b>Produce one language's manual</b> &mdash; Build one language's manual from the page template. <i>(planned)</i></li>
@@ -134,7 +134,7 @@ sequence; the filenames number 01 to 23 across the themes.
 <h3>Language practices</h3>
 <ul>
 <li><a href="vol5-06-arena.html">Correct arena use, dual-arena</a> &mdash; Initialize an arena over a buffer, allocate, reset, and split it in two.</li>
-<li><b>Model and propagate errors</b> &mdash; Use error unions, try and catch, errdefer, and the enclosing-return rule. <i>(planned)</i></li>
+<li><a href="vol5-07-errors.html">Model and propagate errors</a> &mdash; Use error unions, try and catch, errdefer, and the enclosing-return rule.</li>
 <li><b>Write and drive a coroutine</b> &mdash; Use the async builtins and the Context, Task, and Scheduler driver. <i>(planned)</i></li>
 <li><b>Read, write, exists</b> &mdash; Open, read, write, seek, size, rename, and check files. <i>(planned)</i></li>
 </ul>

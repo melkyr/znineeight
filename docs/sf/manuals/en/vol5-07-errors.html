@@ -1,0 +1,441 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Model and Propagate Errors</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume V HOWTO errors error set error union error.Name try catch errdefer propagation enclosing return 3075 3015 3016 20 stdlib_errdefer errdefer_dyn samepayload try_return_type">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol5-06-arena.html">
+<link rel="next" href="toc.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume V &mdash; HOWTO</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol5-00-index.html">Index &mdash; A&ndash;Z, grouped by theme</a><br>
+<a href="vol5-01-build-compiler.html">Rebuild the compiler from seed</a><br>
+<a href="vol5-02-build-single.html">Build a single file</a><br>
+<a href="vol5-03-build-multi.html">Build multiple modules</a><br>
+Target Win9x <i>(planned)</i><br>
+Target Linux <i>(planned)</i><br>
+<a href="vol5-06-arena.html">Use the arena correctly</a><br>
+<b>Model and propagate errors</b><br>
+Write and drive a coroutine <i>(planned)</i><br>
+Read, write, and test files <i>(planned)</i><br>
+Sockets under Z98 <i>(planned)</i><br>
+C interop <i>(planned)</i><br>
+Link Z98 output against C89 libraries <i>(planned)</i><br>
+Debug generated C <i>(planned)</i><br>
+Use markers <i>(planned)</i><br>
+Read the diagnostics <i>(planned)</i><br>
+Port from C <i>(planned)</i><br>
+Port from C++98 <i>(planned)</i><br>
+Port from Python <i>(planned)</i><br>
+Pack for diskette <i>(planned)</i><br>
+Build a multilingual manual <i>(planned)</i><br>
+Build the static site <i>(planned)</i><br>
+Contribute <i>(planned)</i><br>
+Report a bug <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Model and Propagate Errors</h1>
+<p>
+This guide declares an error set, returns a failure as an error union,
+propagates it with <tt>try</tt>, handles it with <tt>catch</tt> and
+<tt>errdefer</tt>, and gets the compiler's diagnostic when a <tt>try</tt> has
+no error-returning function to propagate into.
+</p>
+
+<h2>Prerequisites</h2>
+<ul>
+<li>The compiler rebuilt from the seed at
+<tt>/tmp/manual_seed/zig1_5_clean</tt>, with the standard library beside it in
+<tt>/tmp/manual_seed/lib/</tt>. If it is not there yet, follow
+<a href="vol5-01-build-compiler.html">Rebuild the compiler from seed</a>
+first.</li>
+<li>A Linux host with a 32-bit-capable <tt>gcc</tt> (the emitted script uses
+<tt>gcc -m32 -std=c89</tt>).</li>
+<li>The repository checked out, so the shipped sample
+<tt>docs/sf/manuals/src/vol2/error_unions.z98</tt>, the error-union fixtures
+under <tt>repro/mi_matrix/</tt>, and the standalone reject program
+<tt>repro/try_enclosing_return_reject.z98</tt> are present. Every command runs
+from the repository root, <tt>/workspace/znineeight</tt>.</li>
+<li>For the lookup rules behind the operators, keep the Volume&nbsp;IV
+<a href="vol4-09-errors.html">Errors</a> page open.</li>
+</ul>
+
+<h2>The sample</h2>
+<p>
+An <b>error set</b> <tt>error{DivideByZero}</tt> is a named type whose values
+are error tags. An <b>error union</b> <tt>error{DivideByZero}!i32</tt> is
+"an <tt>i32</tt>, or one error from that set". The literal
+<tt>error.DivideByZero</tt> is the value of one tag. The shipped sample
+<tt>docs/sf/manuals/src/vol2/error_unions.z98</tt> is the whole idea in
+nineteen lines:
+</p>
+<pre>
+const std = @import("std");
+
+fn divide(a: i32, b: i32) error{DivideByZero}!i32 {
+    if (b == 0) return error.DivideByZero;
+    return a / b;
+}
+
+pub fn main() !void {
+    const ok = try divide(10, 2);
+    std.io.printInt(@intCast(i32, ok));
+    std.io.print("\n");
+
+    const bad = divide(1, 0) catch |err| {
+        std.io.print("caught: DivideByZero\n");
+        return;
+    };
+    std.io.printInt(@intCast(i32, bad));
+    std.io.print("\n");
+}
+</pre>
+<p>
+<tt>divide</tt> promises, in its signature, exactly one failure:
+<tt>DivideByZero</tt>. <tt>try divide(10, 2)</tt> unwraps the success payload
+and binds <tt>ok</tt>; on an error it would return that error from the
+<i>current</i> function, so the line after it would not run. The second call
+does not propagate: <tt>divide(1, 0) catch |err| { ... }</tt> handles the
+failure where it happens and the capture <tt>err</tt> is the tag. There is no
+status variable and no sentinel value anywhere.
+</p>
+<p>
+The anonymous form <tt>!T</tt> is the same runtime shape with no named set;
+<tt>main</tt> returns <tt>!void</tt>, so it can pass any error on. Z98 has no
+<tt>anyerror</tt>: errors are declared, not erased. The three ways to answer a
+call that can fail are <tt>try</tt> (pass it on), <tt>catch</tt> (handle it),
+or assign the union to a variable for later.
+</p>
+<p>
+<tt>errdefer statement</tt> schedules cleanup that runs only when the scope
+leaves <i>with an error</i>. It is the structured replacement for a
+<tt>goto cleanup</tt> tail: you put the undo next to the resource it undoes,
+the compiler runs pending <tt>errdefer</tt>s in reverse order of declaration,
+and it runs none of them on a success exit. An explicit
+<tt>return error.Tag;</tt> and a dynamic error-union return
+(<tt>return x;</tt> where <tt>x</tt> is an error union) are both error exits,
+so both run the pending <tt>errdefer</tt> when the value is in its error state.
+</p>
+
+<h2>Steps</h2>
+<ol>
+<li>
+<p>
+Start at the repository root.
+</p>
+<pre>
+$ cd /workspace/znineeight
+</pre>
+</li>
+<li>
+<p>
+Create the output folder. The compiler writes its emitted tree there but will
+not create the folder itself.
+</p>
+<pre>
+$ mkdir -p /tmp/manual_out
+</pre>
+</li>
+<li>
+<p>
+Translate the sample to C89. <tt>-o</tt> names the output folder; the last
+argument is the source file.
+</p>
+<pre>
+$ timeout 120 /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out docs/sf/manuals/src/vol2/error_unions.z98
+</pre>
+<p>
+The command is silent on success. It emits one C89 pair per module, the
+runtime, and the companion build script.
+</p>
+</li>
+<li>
+<p>
+Build the executable. Run the emitted script from inside the output folder and
+give it the target <tt>linux</tt> and the program name <tt>error_unions</tt>.
+</p>
+<pre>
+$ cd /tmp/manual_out &amp;&amp; timeout 120 sh build_target.sh linux error_unions
+Building for linux...
+Built: error_unions
+</pre>
+<p>
+The generated C draws many <tt>gcc</tt> warnings; they are expected and do not
+stop the build, because the script does not pass <tt>-Werror</tt>. Look for
+<tt>Built: error_unions</tt>.
+</p>
+</li>
+<li>
+<p>
+Run it.
+</p>
+<pre>
+$ timeout 120 ./error_unions
+5
+caught: DivideByZero
+</pre>
+<p>
+The first line is the successful <tt>try divide(10, 2)</tt>. The second is the
+<tt>catch</tt> block handling <tt>divide(1, 0)</tt>; the program never reaches
+the <tt>printInt(bad)</tt> line after the catch, because the block diverges with
+<tt>return</tt>. The program exits with status <tt>0</tt>.
+</p>
+</li>
+<li>
+<p>
+Check the <tt>errdefer</tt> contract against the committed fixture. The
+fixture pins five cases: an explicit <tt>return error.Boom</tt>, a conditional
+explicit error return, a <tt>try</tt> propagation, a
+<tt>catch |err| { return err; }</tt> re-raise, and a plain successful
+<tt>return</tt>. The standard-library gate emits the fixture, links it through
+<tt>build_target.sh</tt>, runs it three times, and diffs the result
+byte-for-byte against the committed <tt>expected.txt</tt> and
+<tt>expected.rc</tt>.
+</p>
+<pre>
+$ bash scripts/stdlib/verify_stdlib.sh /tmp/manual_seed/zig1_5_clean repro/mi_matrix/stdlib_errdefer_xmod
+== std-lib runtime gate ==
+   zig1: /tmp/manual_seed/zig1_5_clean
+PASS repro/mi_matrix/stdlib_errdefer_xmod
+----------------------------------------
+run_fixtures: 1 PASS / 0 FAIL over 1 dirs
+STDLIB GATE OK
+</pre>
+<p>
+The fixture's nine-line transcript is <tt>direct-undo</tt>,
+<tt>direct-caught</tt>, <tt>cond-undo</tt>, <tt>cond-caught</tt>,
+<tt>try-undo</tt>, <tt>try-caught</tt>, <tt>errvar-undo</tt>,
+<tt>errvar-caught</tt>, <tt>done</tt>. The <tt>success-undo</tt> line is
+absent on every run: <tt>errdefer</tt> did <i>not</i> fire on the successful
+exit.
+</p>
+</li>
+<li>
+<p>
+Check the dynamic error-union return. Returning an error-union <i>value</i>
+(<tt>return x;</tt> or <tt>return g();</tt>) has no static error literal to
+classify, so the compiler inspects the value at run time and runs the pending
+<tt>errdefer</tt> only when it is in its error state.
+</p>
+<pre>
+$ bash scripts/stdlib/verify_stdlib.sh /tmp/manual_seed/zig1_5_clean repro/mi_matrix/stdlib_errdefer_dyn_xmod
+== std-lib runtime gate ==
+   zig1: /tmp/manual_seed/zig1_5_clean
+PASS repro/mi_matrix/stdlib_errdefer_dyn_xmod
+----------------------------------------
+run_fixtures: 1 PASS / 0 FAIL over 1 dirs
+STDLIB GATE OK
+</pre>
+<p>
+Across twenty-one lines, every error case prints <tt>undo</tt> before its
+<tt>-caught</tt> line and every success case prints its payload
+(<tt>42</tt>, <tt>7</tt>, <tt>voidOk-ok</tt>, <tt>9</tt>) with no
+<tt>undo</tt>. The nested case prints <tt>nested-errdefer</tt> before
+<tt>nested-defer</tt>: the <tt>errdefer</tt> runs first on the error exit, in
+reverse order of declaration.
+</p>
+</li>
+<li>
+<p>
+Check that an error-union-to-error-union coercion with the same payload is
+legal. Widening a subset set into a superset set (<tt>F!i32</tt> into
+<tt>E!i32</tt>, with <tt>F</tt> a subset of <tt>E</tt>) is accepted and runs
+the <tt>errdefer</tt> on the error arm only.
+</p>
+<pre>
+$ bash scripts/stdlib/verify_stdlib.sh /tmp/manual_seed/zig1_5_clean repro/mi_matrix/stdlib_eu_samepayload_xmod
+== std-lib runtime gate ==
+   zig1: /tmp/manual_seed/zig1_5_clean
+PASS repro/mi_matrix/stdlib_eu_samepayload_xmod
+----------------------------------------
+run_fixtures: 1 PASS / 0 FAIL over 1 dirs
+STDLIB GATE OK
+</pre>
+<p>
+The six-line transcript is <tt>undo</tt>, <tt>ederr-caught</tt>, <tt>7</tt>,
+<tt>noederr-caught</tt>, <tt>7</tt>, <tt>done</tt>. The tag is checked with
+<tt>if (c != error.Boom)</tt>, so the widened set preserves the tag value, not
+just the payload. A destination set that is <i>not</i> a superset, or a
+different payload type, rejects with <tt>error[3000]</tt>.
+</p>
+</li>
+<li>
+<p>
+Meet the enclosing-return rule. <tt>try</tt> already returns the error from the
+current function, so the compiler checks that the enclosing function can
+actually carry it. The standalone reject program combines all four prongs; run
+the compiler directly and read the diagnostics (no program is built).
+</p>
+<pre>
+$ timeout 120 /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out repro/try_enclosing_return_reject.z98
+repro/try_enclosing_return_reject.z98:21:4: error[3075]: expected type 'void', found error set
+    try g();
+    ^^^
+note: function cannot return an error
+repro/try_enclosing_return_reject.z98:25:4: error[3075]: expected type 'i32', found error set
+    try g();
+    ^^^
+note: function cannot return an error
+repro/try_enclosing_return_reject.z98:34:4: error[3075]: try error set may not be compatible with the enclosing function's return type
+    try gE2();
+    ^^^
+repro/try_enclosing_return_reject.z98:38:4: error[3075]: expected error union type, found 'comptime_int'
+    try 5;
+    ^^^
+note: consider omitting 'try'
+</pre>
+<p>
+The command exits with status <tt>2</tt> and emits no <tt>.c</tt> file. The four
+messages are the four prongs, in order: the enclosing function does not return
+an error union (<tt>a1</tt>, <tt>a2</tt>); the operand's set is not a subset of
+the function's set (<tt>a3</tt>); and the operand is not an error union at all
+(<tt>a4</tt>). A fifth prong, <tt>'try' outside function scope</tt>, fires for a
+<tt>try</tt> at container scope. The fix is always in the signature: make the
+enclosing function return the union (or a superset), or replace <tt>try</tt>
+with <tt>catch</tt>.
+</p>
+</li>
+<li>
+<p>
+Confirm the rule is reject-only. The positive control exercises every legal
+shape &mdash; same set, superset set, anonymous operand and signature,
+<tt>E!T</tt> from <tt>E!void</tt>, <tt>if</tt>/<tt>switch</tt> values, a nested
+block, a local error-union variable, and a <tt>!void</tt> fall-off &mdash; and
+must stay accepted and runtime-correct.
+</p>
+<pre>
+$ bash scripts/stdlib/verify_stdlib.sh /tmp/manual_seed/zig1_5_clean repro/mi_matrix/stdlib_try_return_type_ok_xmod
+== std-lib runtime gate ==
+   zig1: /tmp/manual_seed/zig1_5_clean
+PASS repro/mi_matrix/stdlib_try_return_type_ok_xmod
+----------------------------------------
+run_fixtures: 1 PASS / 0 FAIL over 1 dirs
+STDLIB GATE OK
+</pre>
+<p>
+Its nine-line transcript is <tt>41</tt>, <tt>12</tt>, <tt>11</tt>, <tt>11</tt>,
+<tt>13</tt>, <tt>33</tt>, <tt>77</tt>, <tt>ok</tt>. The set comparison is
+set-only: payloads need not match, so an <tt>E!void</tt> operand in an
+<tt>E!i32</tt> function is legal. The block-bodied catch re-propagation shapes
+are pinned separately by <tt>repro/mi_matrix/catch_ret_err_*</tt>.
+</p>
+</li>
+</ol>
+
+<h2>Verify it worked</h2>
+<p>
+The two-line <tt>error_unions</tt> transcript in Step 5 is the recorded measured
+output of <tt>docs/sf/manuals/src/vol2/error_unions.z98</tt>; running the four
+commands in Steps 2&ndash;5 reproduces it exactly and exits with status
+<tt>0</tt>. Steps 6&ndash;8 are the second half: three committed standard-library
+fixtures pass byte-for-byte, pinning <tt>errdefer</tt> on every error exit and
+none on a success exit, the dynamic error-union return path, and the
+same-payload widening coercion. Step 9 shows the enclosing-return rule reject
+with four level-0 <tt>error[3075]</tt> messages and no output file; Step 10's
+positive control shows that every legal <tt>try</tt> shape stays accepted.
+</p>
+
+<h2>Common mistakes</h2>
+<ul>
+<li><b>Ignoring an error union.</b> A statement whose result is an error union
+and is discarded is rejected:
+<tt>error[3015]: error union result is ignored; use 'try', 'catch', or assign
+the result</tt>. There are exactly three answers: pass it on, handle it, or
+keep it in a variable.</li>
+<li><b>Reaching for <tt>orelse</tt>.</b> <tt>orelse</tt> belongs to optionals
+(<tt>?T</tt>), not to error unions. Asking it to handle one is rejected:
+<tt>error[3016]: orelse requires an optional operand; use 'catch' for error
+unions</tt>.</li>
+<li><b>Propagating into a function that cannot return an error.</b> A
+<tt>try</tt> in a <tt>void</tt> (or otherwise non-union) function is rejected
+with <tt>error[3075]: expected type 'void', found error set</tt> and
+<tt>note: function cannot return an error</tt>; a set the function did not
+promise is rejected with <tt>error[3075]: try error set may not be compatible
+with the enclosing function's return type</tt>; and a <tt>try</tt> on a
+non-union is rejected with <tt>error[3075]: expected error union type, found
+'comptime_int'</tt> and <tt>note: consider omitting 'try'</tt>. Fix the
+signature or use <tt>catch</tt>.</li>
+<li><b>Naming <tt>anyerror</tt>.</b> There is no universal error type.
+<tt>anyerror</tt> is not in the token set, so naming it is
+<tt>error[20]: identifier 'anyerror' is not declared or imported in this
+module</tt>; the companion <tt>@errorName</tt> is an unsupported builtin
+(<tt>error[3000]</tt>). Name a set, or write the anonymous <tt>!T</tt>.</li>
+<li><b>Redirecting the exit from cleanup.</b> A <tt>defer</tt>/<tt>errdefer</tt>
+body runs while the scope is being left, so it may not redirect that exit:
+<tt>return</tt> in the body is <tt>error[3051]</tt>, and <tt>try</tt> in the
+body is <tt>error[3054]</tt> (propagating from cleanup would replace the error
+already on its way out). Control flow that stays inside the body is fine.</li>
+<li><b>Expecting <tt>errdefer</tt> on success.</b> An <tt>errdefer</tt> runs
+only on an error exit; the success cases in the Step&nbsp;6 and Step&nbsp;7
+fixtures deliberately print no <tt>undo</tt> line. If you need undo on both
+paths, use <tt>defer</tt>; if you need it next to the resource, use
+<tt>errdefer</tt> and let reverse order do the unwinding.</li>
+<li><b>Assuming <tt>reset</tt>-style cleanup frees memory.</b> An
+<tt>errdefer</tt> only calls the code you wrote; it has no allocator magic. The
+arena undo discipline is the subject of the
+<a href="vol5-06-arena.html">previous guide</a>.</li>
+</ul>
+
+<h2>Where to go next</h2>
+<p>
+The full rules behind these operators &mdash; error-set identity, the coercion
+table, capture printing, and the argument-order rules &mdash; are in
+Volume&nbsp;IV's <a href="vol4-09-errors.html">Errors</a> page. Volume&nbsp;II's
+<a href="vol2-11-defer.html">defer and errdefer</a> page covers the cleanup
+operators in their language context, and
+<a href="vol2-12-error-unions.html">Error Unions</a> is the narrative treatment.
+For the rest of the language practices, the
+<a href="vol5-06-arena.html">arena guide</a> precedes this one and the
+coroutine guide <i>(planned)</i> follows; return to the
+<a href="vol5-00-index.html">HOWTO index</a> for the full list.
+</p>
+
+<p class="navbtns">
+<a href="vol5-06-arena.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol5-06-arena.html">Correct arena use</a> | <a href="toc.html">Contents</a> | Next: <a href="toc.html">Contents</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
