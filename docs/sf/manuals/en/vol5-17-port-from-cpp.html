@@ -1,0 +1,533 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Port a C++98 File to Z98</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume V HOWTO port from C++98 translate templates concrete container RAII defer errdefer destructor exceptions error unions throw catch manual vtable dynamic_cast RTTI extern C name mangling seam honesty MSVC Borland">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol5-16-port-from-c.html">
+<link rel="next" href="toc.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume V &mdash; HOWTO</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol5-00-index.html">Index &mdash; A&ndash;Z, grouped by theme</a><br>
+<a href="vol5-01-build-compiler.html">Rebuild the compiler from seed</a><br>
+<a href="vol5-02-build-single.html">Build a single file</a><br>
+<a href="vol5-03-build-multi.html">Build multiple modules</a><br>
+Target Win9x <i>(planned)</i><br>
+Target Linux <i>(planned)</i><br>
+<a href="vol5-06-arena.html">Use the arena correctly</a><br>
+<a href="vol5-07-errors.html">Model and propagate errors</a><br>
+<a href="vol5-08-coroutines.html">Write and drive a coroutine</a><br>
+<a href="vol5-09-files.html">Read, write, and test files</a><br>
+Sockets under Z98 <i>(planned)</i><br>
+<a href="vol5-11-c-interop.html">Call C from Z98</a><br>
+<a href="vol5-12-c89-interop.html">Link Z98 output against C89 libraries</a><br>
+Debug generated C <i>(planned)</i><br>
+Use markers <i>(planned)</i><br>
+Read the diagnostics <i>(planned)</i><br>
+<a href="vol5-16-port-from-c.html">Port from C</a><br>
+<b>Port from C++98</b><br>
+Port from Python <i>(planned)</i><br>
+Pack for diskette <i>(planned)</i><br>
+Build a multilingual manual <i>(planned)</i><br>
+Build the static site <i>(planned)</i><br>
+Contribute <i>(planned)</i><br>
+Report a bug <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Port a C++98 File to Z98</h1>
+<p>
+This guide translates a C++98 file to Z98 one idiom at a time. Three of C++98's
+abstractions have a Z98 shape &mdash; a template becomes a concrete container, a
+destructor becomes <tt>defer</tt>, and an exception becomes an error union &mdash;
+and one honestly does not: the run-time type oracle, where Z98's answer is the
+manual vtable or a C++98 module kept behind an <tt>extern&nbsp;"C"</tt> seam. It
+is the C++ companion to
+<a href="vol5-16-port-from-c.html">Port a C File to Z98</a>, and it is the
+harder of the two because C++98 sits <i>above</i> Z98 rather than beside it.
+</p>
+
+<h2>Prerequisites</h2>
+<ul>
+<li>The compiler rebuilt from the seed at
+<tt>/tmp/manual_seed/zig1_5_clean</tt>, with the standard library beside it in
+<tt>/tmp/manual_seed/lib/</tt>. If it is not there yet, follow
+<a href="vol5-01-build-compiler.html">Rebuild the compiler from seed</a>
+first.</li>
+<li>A Linux host with a 32-bit-capable <tt>g++ -m32 -std=c++98</tt>. That modern
+compiler is what stands in for the era's MSVC&nbsp;6 and Borland&nbsp;C++&nbsp;5.02
+on this host; the C++ figures quoted below are the ones measured with it in
+<a href="vol3-04-when-cpp98.html">Volume&nbsp;III, Honesty: When C++98 Is the
+Better Choice</a>. The era tools themselves are not run here and the guide does
+not claim they were.</li>
+<li>The repository checked out, so the Z98 samples below are present. Every
+command runs from the repository root, <tt>/workspace/znineeight</tt>.</li>
+<li>The language practices the port rests on:
+<a href="vol5-07-errors.html">Model and propagate errors</a> for error unions,
+<a href="vol5-06-arena.html">Use the arena correctly</a> for object lifetime,
+and <a href="vol5-16-port-from-c.html">Port a C File to Z98</a> for the idiom
+checklist this guide extends.</li>
+</ul>
+
+<h2>The idea</h2>
+<p>
+A C++98 port is not symmetrical with a C89 port. In a C89 file the discipline is
+carried by convention &mdash; a status <tt>int</tt>, a hand-written
+<tt>free</tt> &mdash; and Z98 moves each convention into the type system, so the
+translation is mostly mechanical. C++98 is the other direction: it gives
+abstraction the compiler implements with run-time machinery, and Z98 deliberately
+withholds that machinery. A polymorphic object carries a hidden pointer, a class
+emits a table and its type information, a template emits a body per type, and a
+<tt>throw</tt> needs an unwinder. The port's job is to keep the module's behavior
+while dropping the machinery, and to say plainly which parts cannot be dropped.
+</p>
+<p>
+So the checklist has two columns. What translates has a Z98 shape, and the guide
+builds that shape and runs it. What does not translate has no Z98 equivalent at
+all &mdash; Z98 has no run-time type oracle and no open generic &mdash; and there
+the honest move is to leave that part in C++98 and join it at the declared
+<tt>extern&nbsp;"C"</tt> boundary. Both columns are real; a port that pretends
+the second column is empty is the port this guide exists to prevent.
+</p>
+
+<h2>Steps</h2>
+<ol>
+<li>
+<p>
+<b>Templates: <tt>Stack&lt;T&gt;</tt> to one concrete container per element
+type.</b> A template is the abstraction Z98 most deliberately lacks. C++98 writes
+one container once and instantiates it for every element type; the shape a C++98
+reader reaches for is the bounded stack from
+<a href="vol2-01-honest-comparison.html">Volume&nbsp;II, The Honest
+Comparison</a>:
+</p>
+<pre>
+template &lt;typename T&gt;
+class Stack {
+public:
+    Stack() : count(0) {}
+    void push(const T&amp; v) { if (count &lt; 8) data[count++] = v; }
+    bool pop(T&amp; out) {
+        if (count == 0) return false;
+        out = data[--count];
+        return true;
+    }
+    int count;
+private:
+    T data[8];
+};
+</pre>
+<p>
+It compiles and runs; the transcript is the one measured on this host in
+<a href="vol3-04-when-cpp98.html">Volume&nbsp;III chapter&nbsp;4</a>:
+</p>
+<pre>
+$ g++ -m32 -std=c++98 -O0 stack.cpp -o stack
+$ ./stack
+out=3
+</pre>
+<p>
+The cost is not on the page, it is in the binary. Each instantiation is its own
+function body, one per type. The probe below uses a separate small function
+template, <tt>twice</tt>, not the <tt>Stack</tt> above, because one body per
+type is easiest to see on the smallest template:
+</p>
+<pre>
+$ nm -C tmpl | grep ' twice'
+0000121c W double twice&lt;double&gt;(double)
+000011f4 W int twice&lt;int&gt;(int)
+00001208 W long twice&lt;long&gt;(long)
+</pre>
+<p>
+The Z98 replacement is the concrete container: one struct and one set of
+functions for the element type you actually have, written by hand and readable
+in the source. It is the same code the template would have generated, made
+visible. The shipped sample
+<tt>docs/sf/manuals/src/vol2/shapes2.z98</tt> is exactly this shape for a list
+of interface values:
+</p>
+<pre>
+const ShapeList = struct {          /* Z98: one concrete container per element type */
+    items: [4]Shape,
+    len: i32,
+};
+
+fn shapeList_push(list: *ShapeList, s: Shape) void {
+    list.items[@intCast(usize, list.len)] = s;
+    list.len += 1;
+}
+</pre>
+<p>
+<a href="vol2-16-no-methods.html">Volume&nbsp;II chapter&nbsp;16</a> measures the
+idiom and the compiler's own source uses the same pattern for its concrete hash
+maps. Choose Z98 when the element types are a handful and known; keep the
+template in C++98 when the type genuinely must stay open across the program, or
+when a wide set of types makes the per-instantiation bodies the deliberate cost
+you have accepted.
+</p>
+</li>
+<li>
+<p>
+<b>RAII: a destructor to <tt>defer</tt> and <tt>errdefer</tt>.</b> A C++98 class
+runs its destructor automatically on every exit path, including the one where an
+exception leaves the scope, which is the feature that makes RAII work. Z98 has no
+destructor; it has <tt>defer</tt>, which runs on every exit, and
+<tt>errdefer</tt>, which runs only on the failure path. Register the release once
+where the resource is acquired and the language runs it as the scope closes:
+</p>
+<pre>
+defer close(f);            /* runs on every exit from the scope */
+errdefer release(conn);    /* runs only when the function fails */
+</pre>
+<p>
+The shipped sample <tt>docs/sf/manuals/src/vol2/defer.z98</tt> walks the success
+path, the error path, and the loop exits; its output is recorded in
+<a href="vol2-11-defer.html">Volume&nbsp;II chapter&nbsp;11</a>. Build and run it
+the ordinary way:
+</p>
+<pre>
+$ mkdir -p /tmp/portcpp_defer
+$ timeout 120 /tmp/manual_seed/zig1_5_clean -o /tmp/portcpp_defer docs/sf/manuals/src/vol2/defer.z98
+$ cd /tmp/portcpp_defer &amp;&amp; timeout 120 sh build_target.sh linux defer
+Building for linux...
+Built: defer
+$ timeout 120 ./defer
+success: block body
+success: inner A
+success: inner B
+config: body
+config: defer (always)
+success: outer defer
+success value 12
+config: body
+config: errdefer (rollback)
+config: defer (always)
+error: errdefer 2
+error: errdefer 1
+error: defer
+error path caught
+commit: release reader
+commit: roll back transaction
+commit: release writer
+commit failed
+loop defer
+loop tail
+loop defer
+break-loop defer
+break-loop defer
+</pre>
+<p>
+For the object whose whole lifetime is owned by one region, the arena removes the
+release entirely: allocate from the region, reset it once, and there is no
+per-object destructor to write and no unwinder to run it. That is
+<a href="vol5-06-arena.html">Use the arena correctly</a> and
+<a href="vol2-14-arena.html">Volume&nbsp;II chapter&nbsp;14</a>.
+</p>
+</li>
+<li>
+<p>
+<b>Exceptions: <tt>throw</tt> to an error union.</b> C++98's <tt>throw</tt> is
+the heaviest abstraction in the module, because the failure is handed to a
+runtime that walks the stack. The references the linker must satisfy for a
+program that throws are visible in its symbols:
+</p>
+<pre>
+$ nm exc | grep -E '__cxa_(throw|begin_catch|end_catch)|_Unwind_Resume'
+         U _Unwind_Resume@GCC_3.0
+         U __cxa_begin_catch@CXXABI_1.3
+         U __cxa_end_catch@CXXABI_1.3
+         U __cxa_throw@CXXABI_1.3
+</pre>
+<p>
+Z98 has no such runtime because failure is a value in the return type. The
+translation of a throwing function is an error union, <tt>try</tt> to propagate,
+<tt>catch</tt> to handle, and <tt>errdefer</tt> to roll back partial work:
+</p>
+<pre>
+fn divide(a: i32, b: i32) error{DivideByZero}!i32 {
+    if (b == 0) return error.DivideByZero;
+    return a / b;
+}
+</pre>
+<p>
+The shipped sample <tt>docs/sf/manuals/src/vol2/error_unions.z98</tt> is the
+worked version; its output is recorded in
+<a href="vol2-12-error-unions.html">Volume&nbsp;II chapter&nbsp;12</a>:
+</p>
+<pre>
+$ mkdir -p /tmp/portcpp_eu
+$ timeout 120 /tmp/manual_seed/zig1_5_clean -o /tmp/portcpp_eu docs/sf/manuals/src/vol2/error_unions.z98
+$ cd /tmp/portcpp_eu &amp;&amp; timeout 120 sh build_target.sh linux error_unions
+Building for linux...
+Built: error_unions
+$ timeout 120 ./error_unions
+5
+caught: DivideByZero
+</pre>
+<p>
+The checked path costs a branch, not a runtime. The full error mechanics are
+<a href="vol5-07-errors.html">Model and propagate errors</a>.
+</p>
+</li>
+<li>
+<p>
+<b>What honestly does not translate: the run-time type oracle and the open
+generic.</b> C++98's virtual dispatch is only half the story; the other half is
+that a program can ask a pointer what it really is. <tt>dynamic_cast</tt> and
+RTTI need the type information tables the compiler emits per polymorphic class:
+</p>
+<pre>
+$ nm -C rtti | grep -E ' (vtable|typeinfo) for '
+00003ee0 V typeinfo for Base
+00003ed4 V typeinfo for Derived
+00003ec8 V vtable for Base
+00003ebc V vtable for Derived
+</pre>
+<p>
+Z98 has no run-time type oracle. What it has is the manual vtable: a struct of
+function pointers plus one erased data pointer, built by an init function, with
+the type known at the call site. The shipped sample
+<tt>docs/sf/manuals/src/vol2/shapes2.z98</tt> builds one and measures it:
+</p>
+<pre>
+$ mkdir -p /tmp/portcpp_shapes2
+$ timeout 120 /tmp/manual_seed/zig1_5_clean -o /tmp/portcpp_shapes2 docs/sf/manuals/src/vol2/shapes2.z98
+$ cd /tmp/portcpp_shapes2 &amp;&amp; timeout 120 sh build_target.sh linux shapes2
+Building for linux...
+Built: shapes2
+$ timeout 120 ./shapes2
+Shape size=12 align=4 fn=4
+circle r=1
+  area 3.14159
+square side=3
+  area 9
+circle r=2
+  area 12.56636
+shapes drawn 3
+</pre>
+<p>
+Dispatch through the manual vtable is exactly as fast and exactly as small as the
+interface value you put in it &mdash; three words for the measured
+<tt>Shape</tt> &mdash; and it carries no hidden pointer and no per-class table.
+But it dispatches only to the operations the interface declares, for types the
+call site already knows. A program that genuinely needs to name a type at run
+time, or a container that must stay open across element types it never sees, has
+no Z98 shape that matches. That part is the honest exception: keep it in C++98,
+and connect it at the seam in the next step.
+</p>
+</li>
+<li>
+<p>
+<b>The seam: <tt>extern&nbsp;"C"</tt>, because C++98 mangles and Z98 does
+not.</b> A C89 module joins a Z98 project invisibly, because Z98 emits C89. A
+C++98 module does not, because its names are encoded. A two-line probe shows the
+difference, and it is the measured transcript from
+<a href="vol3-04-when-cpp98.html">Volume&nbsp;III chapter&nbsp;4</a>:
+</p>
+<pre>
+$ nm mangle | grep add
+0000117d T _Z11mangled_addii
+00001194 T unmangled_add
+</pre>
+<p>
+So a C++98 module that Z98 is to call must expose plain
+<tt>extern&nbsp;"C"</tt> entry points, and those entry points must be written not
+to let an exception cross: a <tt>throw</tt> reaching a frame compiled as C has no
+unwinder to catch it and the behavior is undefined. The wrapper translates
+failures to status codes and out parameters &mdash; the C++ side doing by hand
+what Z98 does in the type. The full interop surface is
+<a href="vol5-11-c-interop.html">Call C from Z98</a> and
+<a href="vol5-12-c89-interop.html">Link Z98 output against C89 libraries</a>.
+</p>
+</li>
+<li>
+<p>
+<b>Decide per module, and write the decision down.</b> A port is a sequence of
+per-module choices, not one verdict. Use the table below for each module in
+front of you; it is the trade of
+<a href="vol3-04-when-cpp98.html">Volume&nbsp;III chapter&nbsp;4</a> reduced to a
+checklist.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>The module needs</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Z98 shape</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>keep C++98 when</b></th>
+</tr>
+<tr>
+<td valign="top">a container for a few known element types</td>
+<td valign="top">one concrete container per type</td>
+<td valign="top">the type must genuinely stay open</td>
+</tr>
+<tr>
+<td valign="top">cleanup on every exit</td>
+<td valign="top"><tt>defer</tt>/<tt>errdefer</tt>, or the arena reset</td>
+<td valign="top">a destructor is the only correct cleanup and the unwinder is
+affordable</td>
+</tr>
+<tr>
+<td valign="top">an expected failure carried across frames</td>
+<td valign="top">an error union with <tt>try</tt>/<tt>catch</tt></td>
+<td valign="top">the failure is truly exceptional and the module already throws</td>
+</tr>
+<tr>
+<td valign="top">an object with behavior, type known at the call site</td>
+<td valign="top">the manual vtable</td>
+<td valign="top">the dispatch must choose on a run-time type</td>
+</tr>
+<tr>
+<td valign="top">a run-time type oracle or an open generic</td>
+<td valign="top">none</td>
+<td valign="top">always &mdash; join it with <tt>extern&nbsp;"C"</tt></td>
+</tr>
+</table>
+</li>
+</ol>
+
+<h2>Verify it worked</h2>
+<p>
+All three Z98 twins above build with the seed compiler and run to the ends their
+recorded transcripts reach. The <tt>defer.z98</tt> transcript is in its step
+above; the other two are the recorded output of
+<a href="vol2-12-error-unions.html">Volume&nbsp;II chapter&nbsp;12</a> and
+<a href="vol2-16-no-methods.html">chapter&nbsp;16</a>, reproduced by the commands
+in the steps:
+</p>
+<pre>
+$ ./error_unions
+5
+caught: DivideByZero
+$ ./shapes2
+Shape size=12 align=4 fn=4
+circle r=1
+  area 3.14159
+square side=3
+  area 9
+circle r=2
+  area 12.56636
+shapes drawn 3
+</pre>
+<p>
+On the C++98 side, the measured facts are the three that bound the trade: the
+template body appears once per instantiation
+(<tt>twice&lt;int&gt;</tt>, <tt>twice&lt;long&gt;</tt>,
+<tt>twice&lt;double&gt;</tt>), a polymorphic object is one word larger and a
+polymorphic class brings its <tt>vtable</tt> and <tt>typeinfo</tt>, and a
+<tt>throw</tt> pulls in <tt>__cxa_throw</tt> and <tt>_Unwind_Resume</tt>. The
+acceptance test for the port is that every abstraction with a Z98 shape has a
+twin that builds and runs, and that the one with no shape is named and left where
+it belongs rather than half-translated.
+</p>
+
+<h2>Common mistakes</h2>
+<ul>
+<li><b>Dropping the error union.</b> The C++98 habit of ignoring a return value
+meets a compiler that refuses:
+<pre>
+error[3015]: error union result is ignored; use 'try', 'catch', or assign the result
+</pre>
+Use <tt>try</tt> to propagate or <tt>catch</tt> to handle. This is measured in
+<a href="vol2-12-error-unions.html">Volume&nbsp;II chapter&nbsp;12</a>.</li>
+<li><b>Propagating from a <tt>void</tt> function.</b> C++98 can throw from
+anywhere; a Z98 <tt>try</tt> needs a return type that can carry the error:
+<pre>
+error[3075]: expected type 'void', found error set
+note: function cannot return an error
+</pre>
+Declare the function <tt>error{DivideByZero}!i32</tt>, not <tt>void</tt>.</li>
+<li><b>Calling a C++98 method directly from Z98.</b> The name is mangled, so the
+symbol Z98 would link against does not exist under that name. Expose an
+<tt>extern&nbsp;"C"</tt> wrapper and call that.</li>
+<li><b>Letting an exception cross the <tt>extern&nbsp;"C"</tt> boundary.</b> A
+<tt>throw</tt> that leaves C++98 into a frame compiled as C has no unwinder to
+catch it, and the behavior is undefined. Catch inside the wrapper and return a
+status or an out parameter the C side can check.</li>
+<li><b>Using exceptions for ordinary control flow.</b> The most expensive way to
+write a branch on this machine is a <tt>throw</tt>/<tt>catch</tt> for a
+condition the caller expects, because it drags in the unwinder's tables for a
+path that is not exceptional. The Z98 shape is the error union; the C++98 shape
+for an expected failure is a return value the caller checks.</li>
+<li><b>Assuming the era C++ compiler implements the whole 1998 standard.</b>
+MSVC&nbsp;6 and Borland&nbsp;C++&nbsp;5.02 shipped around ratification and
+neither implemented all of it; member templates, partial specialization, and
+parts of the standard library were missing or buggy. A template written for the
+era machine is written to that machine's dialect. This is era context and marked
+as opinion in <a href="vol3-04-when-cpp98.html">Volume&nbsp;III chapter&nbsp;4</a>,
+and the era tools are not measured on this host.</li>
+<li><b>Rewriting a working C++98 module &ldquo;for purity.&rdquo;</b> A stable,
+tested module is not improved by being moved to another language. Move it when
+it is about to be reworked and its abstraction turns out not to be needed; until
+then let it work and write the new code in Z98 beside it.</li>
+</ul>
+
+<h2>Where to go next</h2>
+<p>
+The C port this guide extends, and the idiom checklist it shares, is
+<a href="vol5-16-port-from-c.html">Port a C File to Z98</a>. The seam that lets
+a C++98 module join a Z98 program is
+<a href="vol5-11-c-interop.html">Call C from Z98</a> and
+<a href="vol5-12-c89-interop.html">Link Z98 output against C89 libraries</a>. The
+language practices behind the translations are
+<a href="vol5-07-errors.html">Model and propagate errors</a> for error unions,
+<a href="vol5-06-arena.html">Use the arena correctly</a> for object lifetime, and
+the volume&nbsp;II chapters that measure each shape:
+<a href="vol2-11-defer.html">chapter&nbsp;11</a>,
+<a href="vol2-12-error-unions.html">chapter&nbsp;12</a>,
+<a href="vol2-14-arena.html">chapter&nbsp;14</a>, and
+<a href="vol2-16-no-methods.html">chapter&nbsp;16</a>. The language-level rules
+behind error unions and <tt>defer</tt> are
+<a href="vol4-01-grammar.html">Volume&nbsp;IV &mdash; Grammar</a> and
+<a href="vol4-09-errors.html">Errors</a>, and the limits Z98 retains are
+<a href="vol4-23-limits.html">Limits</a>. The framing and the C++98 measurements
+are <a href="vol3-04-when-cpp98.html">Volume&nbsp;III chapter&nbsp;4</a>. Return
+to the <a href="vol5-00-index.html">HOWTO index</a> for the full list.
+</p>
+
+<p class="navbtns">
+<a href="vol5-16-port-from-c.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol5-16-port-from-c.html">Port a C File to Z98</a> | <a href="toc.html">Contents</a> | Next: <a href="toc.html">Contents</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
