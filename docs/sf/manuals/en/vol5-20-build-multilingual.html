@@ -151,13 +151,13 @@ $ rm -rf /tmp/z98_ml
 $ mkdir -p /tmp/z98_ml
 $ cp -R docs/sf/manuals/en /tmp/z98_ml/es
 $ ls /tmp/z98_ml/es/*.html | wc -l
-106
+109
 $ ls /tmp/z98_ml/es | grep -v '\.html$' | tr '\n' ' '
 doc.js gfx search-data.js z98-print.css z98.css
 </pre>
 <p>
 The copy carries the stylesheets, the one behaviour script, the GIF assets, and
-the 106 English pages. Because the edition keeps the same filenames, the
+the 109 English pages. Because the edition keeps the same filenames, the
 sibling links a page carries (<tt>toc.html</tt>,
 <tt>vol5-01-build-compiler.html</tt>, and so on) all stay inside the new root
 and keep resolving with no editing.
@@ -249,7 +249,7 @@ including the English-only <tt>lang</tt>/charset check above.
 <pre>
 $ cd /workspace/znineeight
 $ bash docs/sf/manuals/check.sh
-check.py: OK - 109 HTML pages, links, rel, lang, forbidden list, figures, no-CSS baseline
+check.py: OK - 112 HTML pages, links, rel, lang, forbidden list, figures, no-CSS baseline
 </pre>
 <p>
 The count is the number of pages the checker walked, this guide included; a
@@ -288,14 +288,14 @@ its assets, and the gate is still green with the copy staged outside the tree:
 </p>
 <pre>
 $ ls /tmp/z98_ml/es/*.html | wc -l
-106
+109
 $ ls /tmp/z98_ml/es | grep -v '\.html$' | tr '\n' ' '
 doc.js gfx search-data.js z98-print.css z98.css
 $ bash docs/sf/manuals/check.sh
-check.py: OK - 109 HTML pages, links, rel, lang, forbidden list, figures, no-CSS baseline
+check.py: OK - 112 HTML pages, links, rel, lang, forbidden list, figures, no-CSS baseline
 </pre>
 <p>
-The 106 pages are every page in <tt>en/</tt>, and the five non-page entries are
+The 109 pages are every page in <tt>en/</tt>, and the five non-page entries are
 the stylesheets, the behaviour script, the asset directory, and the generated
 index data &mdash; the same tree <tt>en/</tt> carries. The language bar still
 renders its two non-English names, and the Chinese name adds no byte above

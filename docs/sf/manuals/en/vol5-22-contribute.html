@@ -189,9 +189,9 @@ index must match a fresh regeneration byte for byte:
 </p>
 <pre>
 $ bash docs/sf/manuals/check.sh
-check.py: OK - 111 HTML pages, links, rel, lang, forbidden list, figures, no-CSS baseline
+check.py: OK - 112 HTML pages, links, rel, lang, forbidden list, figures, no-CSS baseline
 $ bash /tmp/z98_build_tmp.sh
-build_tmp: indexed 108 pages, copied 150 files to /tmp/z98_dist_tmp
+build_tmp: indexed 109 pages, copied 151 files to /tmp/z98_dist_tmp
 $ diff /tmp/z98_search-data.regen.js docs/sf/manuals/en/search-data.js
 $
 </pre>
@@ -283,16 +283,16 @@ change owns:
 <pre>
 $ cd /workspace/znineeight
 $ bash docs/sf/manuals/check.sh
-check.py: OK - 111 HTML pages, links, rel, lang, forbidden list, figures, no-CSS baseline
+check.py: OK - 112 HTML pages, links, rel, lang, forbidden list, figures, no-CSS baseline
 $ bash /tmp/z98_build_tmp.sh
-build_tmp: indexed 108 pages, copied 150 files to /tmp/z98_dist_tmp
+build_tmp: indexed 109 pages, copied 151 files to /tmp/z98_dist_tmp
 $ diff /tmp/z98_search-data.regen.js docs/sf/manuals/en/search-data.js
 $
 </pre>
 <p>
-The gate walked 111 pages with no broken link, missing <tt>rel</tt>, wrong
+The gate walked 112 pages with no broken link, missing <tt>rel</tt>, wrong
 charset, forbidden tag, orphan figure, or CSS dependency; the generator indexed
-all 108 English pages and copied the tree into <tt>/tmp/z98_dist_tmp</tt>,
+all 109 English pages and copied the tree into <tt>/tmp/z98_dist_tmp</tt>,
 leaving <tt>dist/</tt> untouched; and the silent <tt>diff</tt> confirms the
 index is current. The committed diff should contain only the guide page, the
 sidebar and <tt>toc.html</tt> links, the index entries, the neighbouring

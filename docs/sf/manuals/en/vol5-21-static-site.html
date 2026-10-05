@@ -122,7 +122,7 @@ search-data.js
 z98-print.css
 z98.css
 $ ls en/*.html | wc -l
-107
+109
 </pre>
 <p>
 The one non-page file the generator owns is <tt>en/search-data.js</tt>; the
@@ -140,7 +140,7 @@ problem, naming the offending file.
 <pre>
 $ cd /workspace/znineeight
 $ bash docs/sf/manuals/check.sh
-check.py: OK - 110 HTML pages, links, rel, lang, forbidden list, figures, no-CSS baseline
+check.py: OK - 112 HTML pages, links, rel, lang, forbidden list, figures, no-CSS baseline
 </pre>
 <p>
 The nine checks, in order: every local <tt>href</tt>/<tt>src</tt> resolves to an
@@ -195,7 +195,7 @@ $ grep -n 'EN_DIR=\|DIST_DIR=\|SEARCH_DATA=' /tmp/z98_build_tmp.sh
 6:DIST_DIR="/tmp/z98_dist_tmp"
 7:SEARCH_DATA="/tmp/z98_search-data.regen.js"
 $ bash /tmp/z98_build_tmp.sh
-build_tmp: indexed 107 pages, copied 149 files to /tmp/z98_dist_tmp
+build_tmp: indexed 109 pages, copied 151 files to /tmp/z98_dist_tmp
 </pre>
 <p>
 The loop scans <tt>en/*.html</tt> in filename order and records each page's
@@ -255,17 +255,17 @@ the shipped one exactly:
 <pre>
 $ cd /workspace/znineeight
 $ bash docs/sf/manuals/check.sh
-check.py: OK - 110 HTML pages, links, rel, lang, forbidden list, figures, no-CSS baseline
+check.py: OK - 112 HTML pages, links, rel, lang, forbidden list, figures, no-CSS baseline
 $ bash /tmp/z98_build_tmp.sh
-build_tmp: indexed 107 pages, copied 149 files to /tmp/z98_dist_tmp
+build_tmp: indexed 109 pages, copied 151 files to /tmp/z98_dist_tmp
 $ diff /tmp/z98_search-data.regen.js docs/sf/manuals/en/search-data.js
 $
 </pre>
 <p>
-The gate walked 110 pages &mdash; the 107 English pages, the root selector,
+The gate walked 112 pages &mdash; the 109 English pages, the root selector,
 <tt>readme.html</tt>, and <tt>todo-figures-list.html</tt> &mdash; and found no
 broken link, missing <tt>rel</tt>, wrong charset, forbidden tag, orphan figure,
-or CSS dependency. The generator indexed all 107 English pages and copied the
+or CSS dependency. The generator indexed all 109 English pages and copied the
 whole tree into <tt>/tmp/z98_dist_tmp</tt>, leaving <tt>dist/</tt> untouched;
 the silent <tt>diff</tt> confirms the shipped <tt>en/search-data.js</tt> is
 byte-identical to a fresh regeneration. If the diff is nonempty, the index is
