@@ -1,0 +1,437 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Targeting Win9x</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume V HOWTO target win9x windows 9x exe -osw emit build_target.sh build_target.bat build_owc.bat mingw i686-w64-mingw32-gcc wine cross_parity parity real machine 86Box OpenWatcom MSVC cl wcc386 wlink winsock -lwsock32 net_prelude zig_compat hello">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol5-03-build-multi.html">
+<link rel="next" href="vol5-06-arena.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume V &mdash; HOWTO</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol5-00-index.html">Index &mdash; A&ndash;Z, grouped by theme</a><br>
+<a href="vol5-01-build-compiler.html">Rebuild the compiler from seed</a><br>
+<a href="vol5-02-build-single.html">Build a single file</a><br>
+<a href="vol5-03-build-multi.html">Build multiple modules</a><br>
+<b>Target Win9x</b><br>
+Target Linux <i>(planned)</i><br>
+<a href="vol5-06-arena.html">Use the arena correctly</a><br>
+<a href="vol5-07-errors.html">Model and propagate errors</a><br>
+<a href="vol5-08-coroutines.html">Write and drive a coroutine</a><br>
+<a href="vol5-09-files.html">Read, write, and test files</a><br>
+Sockets under Z98 <i>(planned)</i><br>
+<a href="vol5-11-c-interop.html">Call C from Z98</a><br>
+<a href="vol5-12-c89-interop.html">Link Z98 output against C89 libraries</a><br>
+Debug generated C <i>(planned)</i><br>
+Use markers <i>(planned)</i><br>
+Read the diagnostics <i>(planned)</i><br>
+<a href="vol5-16-port-from-c.html">Port from C</a><br>
+<a href="vol5-17-port-from-cpp.html">Port from C++98</a><br>
+<a href="vol5-18-port-from-python.html">Port from Python</a><br>
+Pack for diskette <i>(planned)</i><br>
+Build a multilingual manual <i>(planned)</i><br>
+Build the static site <i>(planned)</i><br>
+Contribute <i>(planned)</i><br>
+Report a bug <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Targeting Win9x</h1>
+<p>
+This guide turns one <tt>.z98</tt> file into a 32-bit Windows&nbsp;9x executable:
+it emits the Windows tree with <tt>-osw</tt>, reads the three build scripts it
+writes, cross-builds and runs the result on this host with mingw and wine, and
+states the step that has to happen on the real machine.
+</p>
+
+<h2>Prerequisites</h2>
+<ul>
+<li>The compiler rebuilt from the seed at
+<tt>/tmp/manual_seed/zig1_5_clean</tt>, with the standard library beside it in
+<tt>/tmp/manual_seed/lib/</tt>. If it is not there yet, follow
+<a href="vol5-01-build-compiler.html">Rebuild the compiler from seed</a>
+first.</li>
+<li>The mingw cross compiler <tt>i686-w64-mingw32-gcc</tt> and a 32-bit wine
+prefix at <tt>/tmp/wine32</tt>. These are what let this host build and run the
+Windows binary; a host without them can still run the emit step, and the emitted
+build scripts remain the path on the era machine.</li>
+<li>The repository checked out, so the committed sample
+<tt>docs/sf/manuals/src/vol3/hello.z98</tt> is present. Every command runs from
+the repository root, <tt>/workspace/znineeight</tt>.</li>
+</ul>
+
+<h2>The sample</h2>
+<p>
+The sample is Volume&nbsp;III's <tt>hello</tt>, the same source Volume&nbsp;III
+built for the Linux host and then cross-built for Windows. It uses nothing but
+<tt>std.io.print</tt>, so it has no platform import and no <tt>#ifdef</tt>:
+<tt>-osw</tt> chooses the emitted build scripts and headers, not the source.
+</p>
+<pre>
+const std = @import("std");
+
+pub fn main() void {
+    std.io.print("Hello from Z98!\n");
+    std.io.print("this is Volume III, chapter 8\n");
+    std.io.print("built for the 1998 machine\n");
+}
+</pre>
+
+<h2>Steps</h2>
+<ol>
+<li>
+<p>
+Start at the repository root.
+</p>
+<pre>
+$ cd /workspace/znineeight
+</pre>
+</li>
+<li>
+<p>
+Create the output folder. The compiler writes its emitted tree there but will
+not create the folder itself.
+</p>
+<pre>
+$ mkdir -p /tmp/manual_osw
+</pre>
+</li>
+<li>
+<p>
+Emit the Windows tree. <tt>-osw</tt> selects the Windows target;
+<tt>-o</tt> names the output folder; the last argument is the entry source
+file. <tt>-osl</tt> is the Linux target and is the default.
+</p>
+<pre>
+$ timeout 120 /tmp/manual_seed/zig1_5_clean -osw -o /tmp/manual_osw docs/sf/manuals/src/vol3/hello.z98
+</pre>
+<p>
+The command is silent on success.
+</p>
+</li>
+<li>
+<p>
+Look at what it emitted. There is a paired <tt>.c</tt> and <tt>.h</tt> for the
+program module and for each standard-library module it reaches, the runtime
+sources and shared headers, and <b>three</b> build scripts:
+</p>
+<pre>
+$ cd /tmp/manual_osw &amp;&amp; ls -1
+build_owc.bat
+build_target.bat
+build_target.sh
+c_exit.c
+hello_9C12B390.c
+hello_9C12B390.h
+net_prelude.h
+std_io_59DB29D9.c
+std_io_59DB29D9.h
+std_net_A15200CC.c
+std_net_A15200CC.h
+zig_compat.h
+zig_pal.c
+zig_runtime.c
+zig_runtime.h
+zig_special_types.h
+</pre>
+<p>
+The module file names are <tt>&lt;source-basename&gt;_&lt;hash&gt;.c</tt> and
+<tt>.h</tt>; the hash is derived from the module's resolved path, so it changes
+if you move the tree and you should not hard-code it. <tt>net_prelude.h</tt> is
+present because every <tt>@import("std")</tt> program emits the network module,
+<tt>std_net</tt>; that is why the Windows link needs the winsock library below.
+</p>
+</li>
+<li>
+<p>
+Read the build scripts, because they are the whole Windows target. The first is
+one script with two targets. Its <tt>mingw</tt> branch is the one this host can
+run, and it is where the link libraries are chosen:
+</p>
+<pre>
+  mingw)
+    CC=i686-w64-mingw32-gcc
+    CFLAGS="-m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I ."
+    LDFLAGS="-m32"
+    LIBS="-lwsock32"
+    [ -n "$OUT" ] || OUT=prog.exe
+    ;;
+</pre>
+<p>
+<tt>-m32</tt> pins the 32-bit ABI, <tt>-std=c89 -O0</tt> asks for the dialect
+the emitted code targets, and <tt>-lwsock32</tt> is the winsock library every
+<tt>std</tt> importer needs. The script compiles each emitted <tt>.c</tt> and
+links the objects in a deterministic modules-then-runtime order (comment and
+header lines omitted):
+</p>
+<pre>
+$CC $CFLAGS -c hello_9C12B390.c
+$CC $CFLAGS -c std_io_59DB29D9.c
+$CC $CFLAGS -c std_net_A15200CC.c
+$CC $CFLAGS -c zig_runtime.c
+$CC $CFLAGS -c zig_pal.c
+$CC $CFLAGS -c c_exit.c
+# Link order: modules first, runtime sources last (intentional).
+# The GNU linker is link-order-sensitive; this is our deterministic order,
+# not the seed recipe's alphabetical *.o glob.
+$CC $LDFLAGS hello_9C12B390.o std_io_59DB29D9.o std_net_A15200CC.o zig_runtime.o zig_pal.o c_exit.o -o "$OUT" $LIBS
+echo "Built: $OUT"
+</pre>
+<p>
+The second script is the MSVC <tt>cl</tt> build, <tt>build_target.bat</tt>
+(comment lines omitted):
+</p>
+<pre>
+@echo off
+REM build_target.bat - generated by zig1 (MSVC cl)
+setlocal
+if "%~1"=="" (set OUT=prog.exe) else (set OUT=%~1)
+set CFLAGS=/c /Za /W3 /WX /DZIG_WIN32 /I .
+echo Compiling...
+cl %CFLAGS% hello_9C12B390.c
+cl %CFLAGS% std_io_59DB29D9.c
+cl %CFLAGS% std_net_A15200CC.c
+cl %CFLAGS% zig_runtime.c
+cl %CFLAGS% zig_pal.c
+cl %CFLAGS% c_exit.c
+echo Linking...
+link /subsystem:console kernel32.lib hello_9C12B390.obj std_io_59DB29D9.obj std_net_A15200CC.obj zig_runtime.obj zig_pal.obj c_exit.obj wsock32.lib /out:%OUT%
+echo Built: %OUT%
+</pre>
+<p>
+and the third is the OpenWatcom <tt>wcc386</tt>/<tt>wlink</tt> build,
+<tt>build_owc.bat</tt> (comment lines omitted):
+</p>
+<pre>
+@echo off
+REM build_owc.bat - generated by zig1 (OpenWatcom wcc386/wlink)
+setlocal
+if "%~1"=="" (set OUT=prog.exe) else (set OUT=%~1)
+echo Compiling...
+wcc386 /za /we /dZIG_WIN32 /i=. hello_9C12B390.c
+wcc386 /za /we /dZIG_WIN32 /i=. std_io_59DB29D9.c
+wcc386 /za /we /dZIG_WIN32 /i=. std_net_A15200CC.c
+wcc386 /za /we /dZIG_WIN32 /i=. zig_runtime.c
+wcc386 /za /we /dZIG_WIN32 /i=. zig_pal.c
+wcc386 /za /we /dZIG_WIN32 /i=. c_exit.c
+echo Linking...
+wlink system console op q opt stack=65536 file hello_9C12B390.obj,std_io_59DB29D9.obj,std_net_A15200CC.obj,zig_runtime.obj,zig_pal.obj,c_exit.obj library wsock32 name %OUT%
+echo Built: %OUT%
+</pre>
+<p>
+<tt>/Za</tt> and <tt>/za</tt> are strict-ANSI switches, the counterparts of
+<tt>-std=c89</tt>; <tt>/DZIG_WIN32</tt> and <tt>/dZIG_WIN32</tt> are the target
+guard the scripts define; and the MSVC and OpenWatcom links both pull in
+<tt>wsock32</tt>. The emitted scripts are the interface to three toolchains, but
+only mingw is installed here. <tt>cl</tt> and <tt>wcc386</tt> are <b>emitted and
+documented, not executed</b> on this host; they are the path on the era machine.
+</p>
+</li>
+<li>
+<p>
+Build the Windows executable with the emitted script's <tt>mingw</tt> branch.
+Run it from inside the output folder and give it a program name (without the
+<tt>.exe</tt>):
+</p>
+<pre>
+$ cd /tmp/manual_osw
+$ timeout 120 sh build_target.sh mingw hello
+Building for mingw...
+Built: hello
+</pre>
+<p>
+The generated C draws a long list of <tt>gcc</tt> warnings; they are expected
+and do not stop the build, because the script does not pass <tt>-Werror</tt>.
+<tt>hello.exe</tt> is the result.
+</p>
+</li>
+<li>
+<p>
+Run it under wine. The 32-bit prefix is the one the committed harness uses:
+</p>
+<pre>
+$ timeout 120 env WINEPREFIX=/tmp/wine32 WINEARCH=win32 wine hello.exe
+Hello from Z98!
+this is Volume III, chapter 8
+built for the 1998 machine
+</pre>
+<p>
+This is a real run of the Windows executable, not a claim about Windows&nbsp;98.
+The program writes through the C runtime's text mode, so Windows translates each
+<tt>\n</tt> into <tt>\r\n</tt>; the raw captured stdout therefore has a carriage
+return at the end of every line (<tt>^M</tt>). The comparison that matters is
+against the Linux baseline after those carriage returns are stripped.
+</p>
+</li>
+<li>
+<p>
+Use the committed harness for the gated verification. It composes the whole
+pipeline &mdash; emit with <tt>-osw</tt>, mingw cross-compile and link, wine run,
+and an LF-normalized byte comparison against a Linux baseline &mdash; and prints
+three verdict lines. Build the Linux baseline first, then point the harness at
+it:
+</p>
+<pre>
+$ mkdir -p /tmp/manual_win/ref
+$ timeout 120 /tmp/manual_seed/zig1_5_clean -o /tmp/manual_win/ref docs/sf/manuals/src/vol3/hello.z98
+$ cd /tmp/manual_win/ref &amp;&amp; timeout 120 sh build_target.sh linux hello &amp;&amp; timeout 120 ./hello &gt; /tmp/manual_win/hello.linuxstdout
+$ cd /workspace/znineeight
+$ timeout 120 env ZIG1=/tmp/manual_seed/zig1_5_clean PARITY_STRIP_CR=1 \
+    WINEPREFIX=/tmp/wine32 WINEARCH=win32 \
+    bash scripts/win32_cross/cross_parity.sh \
+    docs/sf/manuals/src/vol3/hello.z98 /dev/null \
+    /tmp/manual_win/hello.linuxstdout /tmp/manual_win/hello
+XRUNRC=0
+WINE_RC=0
+PARITY=OK
+</pre>
+<p>
+<tt>XRUNRC=0</tt> means the emit and the mingw compile and link all succeeded.
+<tt>WINE_RC=0</tt> means the Windows executable ran to completion under wine.
+<tt>PARITY=OK</tt> means the captured stdout matches the Linux baseline once
+<tt>PARITY_STRIP_CR</tt> has removed the carriage returns. That is the whole of
+the Windows verification this host can make.
+</p>
+</li>
+</ol>
+
+<h2>Verify it worked</h2>
+<p>
+The verification is the three verdict lines above: <tt>XRUNRC=0</tt>,
+<tt>WINE_RC=0</tt>, and <tt>PARITY=OK</tt>. If you prefer to see the raw Windows
+stdout, it is the wine output in step&nbsp;7 with a trailing <tt>^M</tt> on each
+line; the LF-normalized copy is byte-for-byte the Linux baseline printed by the
+same source.
+</p>
+<table width="100%" cellpadding="6" cellspacing="0" border="0" bgcolor="#ffffc8">
+<tr>
+<td valign="top" width="20"><img src="gfx/icon-note.gif" width="16" height="16" alt="Note"></td>
+<td><b>Real machine.</b> The run above is wine on a 32-bit mingw cross-build,
+not Windows&nbsp;98. It proves the emitted C89 compiles with a Windows toolchain
+and that the program logic runs; it does not prove behavior under the era kernel.
+To take the last step, copy the whole output directory to the Windows machine and
+run the script that matches the toolchain installed there &mdash;
+<tt>build_target.bat</tt> for MSVC <tt>cl</tt> or <tt>build_owc.bat</tt> for
+OpenWatcom <tt>wcc386</tt>/<tt>wlink</tt> &mdash; then run <tt>hello.exe</tt> from
+a <tt>command.com</tt> prompt. Without period hardware, the usual alternative is
+an emulator such as 86Box, which runs the real operating system on emulated
+hardware. The screenshot of that moment is figure&nbsp;39 at the foot of this
+page; the wine parity above is the host-side proof.</td>
+</tr>
+</table>
+
+<h2>Common mistakes</h2>
+<ul>
+<li><b>Forgetting to create the output folder.</b> The compiler requires the
+folder to exist and fails with
+<tt>error: output directory does not exist: /tmp/manual_osw</tt> (exit code
+<tt>1</tt>). Run <tt>mkdir -p</tt> first.</li>
+<li><b>Running the build script from the wrong folder.</b>
+<tt>build_target.sh</tt>, <tt>build_target.bat</tt>, and <tt>build_owc.bat</tt>
+all use relative paths and a current-directory include root, so <tt>cd</tt> into
+the output folder before running one.</li>
+<li><b>Trying to run the <tt>.bat</tt> scripts on the Linux host.</b> The
+compiler emits all three scripts on every <tt>-osw</tt> emit, but <tt>cl</tt> and
+<tt>wcc386</tt> are Windows toolchains. On this host only the <tt>mingw</tt>
+branch of <tt>build_target.sh</tt> runs; the two <tt>.bat</tt> files are for the
+era machine.</li>
+<li><b>Linking by hand without <tt>-lwsock32</tt>.</b> Every
+<tt>@import("std")</tt> program emits <tt>std_net</tt>, so a hand-written mingw
+link fails with <tt>undefined reference to '_imp__recv@16'</tt> or
+<tt>'_imp__WSAStartup@8'</tt>. The emitted script already passes
+<tt>-lwsock32</tt>; prefer running it.</li>
+<li><b>Reading the <tt>gcc</tt> warnings as failure.</b> The mingw build prints
+hundreds of warnings but succeeds; look for <tt>Built: hello</tt>, not for an
+empty error stream.</li>
+<li><b>Expecting byte-identical stdout without normalization.</b> The CRT text
+mode turns <tt>\n</tt> into <tt>\r\n</tt> on Windows, so the harness compares an
+LF-normalized copy and keeps the raw file as evidence. A parity mismatch on
+carriage returns alone is not an emission bug.</li>
+<li><b>Assuming <tt>-osw</tt> changes the language.</b> It selects the emitted
+target scripts and headers, not the parser or the type checker. The source-level
+target predicate, if you need one, is <tt>@isWindows()</tt>, not a
+<tt>ZIG_WIN32</tt> test in Z98 source.</li>
+<li><b>Moving one file instead of the output directory.</b> The emitted program
+is not a single <tt>.c</tt>; it is the whole directory of translation units,
+runtime sources, headers, and the build script. Copy the directory to the era
+machine, or the link loses the runtime.</li>
+</ul>
+
+<h2>Where to go next</h2>
+<p>
+For the adjacent jobs, go back to
+<a href="vol5-03-build-multi.html">Multiple modules</a> for the multi-module
+emit, or forward to <a href="vol5-06-arena.html">Correct arena use, dual-arena</a>
+for the memory practice. Volume&nbsp;III's
+<a href="vol3-08-win9x.html">Building for Win9x</a> carries the era framing and
+the underlying cross-build story; Volume&nbsp;III's
+<a href="vol3-11-talking-to-c.html">Talking to C</a> covers the <tt>extern</tt>
+and calling-convention rules a Windows program eventually needs, and
+<a href="vol3-12-winsock.html">WinSock under Z98</a> is the network side.
+</p>
+<p>
+For the rules behind the commands on this page, see the
+<a href="vol4-22-cli.html">Volume&nbsp;IV command-line Reference</a>
+(<tt>-osw</tt>, <tt>-osl</tt>, <tt>-o</tt>, and <tt>--dump-c89</tt>), the
+<a href="vol4-19-pal.html">Volume&nbsp;IV PAL Reference</a> for the platform
+layer the runtime uses, and
+<a href="vol4-15-builtins.html">Volume&nbsp;IV Builtins</a> for
+<tt>@isWindows()</tt> and the other compile-time predicates.
+</p>
+
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f0f0f0" class="placeholder">
+<tr>
+<td align="center">
+<i>Figure 39 &mdash; Win9x screenshot pending</i>
+</td>
+</tr>
+</table>
+<p><i>Figure 39. Running <tt>hello.exe</tt> under Windows 98.</i></p>
+
+<p class="navbtns">
+<a href="vol5-03-build-multi.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol5-06-arena.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol5-03-build-multi.html">Build multiple modules</a> | <a href="toc.html">Contents</a> | Next: <a href="vol5-06-arena.html">Use the arena correctly</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
