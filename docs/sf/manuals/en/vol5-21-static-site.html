@@ -1,0 +1,301 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Build the Static Site</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume V HOWTO static site doc generator check.sh check.py validator search-data.js search index build_tmp dist build.sh serve.sh hang offline template rel sidebar language bar planned">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol5-20-build-multilingual.html">
+<link rel="next" href="toc.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume V &mdash; HOWTO</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol5-00-index.html">Index &mdash; A&ndash;Z, grouped by theme</a><br>
+<a href="vol5-01-build-compiler.html">Rebuild the compiler from seed</a><br>
+<a href="vol5-02-build-single.html">Build a single file</a><br>
+<a href="vol5-03-build-multi.html">Build multiple modules</a><br>
+<a href="vol5-04-target-win9x.html">Target Win9x</a><br>
+<a href="vol5-05-target-linux.html">Target Linux</a><br>
+<a href="vol5-06-arena.html">Use the arena correctly</a><br>
+<a href="vol5-07-errors.html">Model and propagate errors</a><br>
+<a href="vol5-08-coroutines.html">Write and drive a coroutine</a><br>
+<a href="vol5-09-files.html">Read, write, and test files</a><br>
+<a href="vol5-10-sockets.html">Sockets under Z98</a><br>
+<a href="vol5-11-c-interop.html">Call C from Z98</a><br>
+<a href="vol5-12-c89-interop.html">Link Z98 output against C89 libraries</a><br>
+<a href="vol5-13-debugger.html">Debug generated C</a><br>
+<a href="vol5-14-markers.html">Use markers</a><br>
+<a href="vol5-15-diagnostics.html">Read the diagnostics</a><br>
+<a href="vol5-16-port-from-c.html">Port from C</a><br>
+<a href="vol5-17-port-from-cpp.html">Port from C++98</a><br>
+<a href="vol5-18-port-from-python.html">Port from Python</a><br>
+<a href="vol5-19-pack-for-diskette.html">Pack for diskette</a><br>
+<a href="vol5-20-build-multilingual.html">Build a multilingual manual</a><br>
+<b>Build the static site</b><br>
+Contribute <i>(planned)</i><br>
+Report a bug <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Build the Static Site</h1>
+<p>
+This guide runs the manual's document pipeline: the checker that validates
+every page and the generator that rebuilds the search index. It ships no
+program, and the artifact it operates on is the documentation tree itself; it
+also states the one step that is not runnable on this host, the <tt>dist</tt>
+build, with the workaround that replaces it.
+</p>
+
+<h2>Prerequisites</h2>
+<ul>
+<li>The repository checked out at <tt>/workspace/znineeight</tt>, with the
+shipped English edition under <tt>docs/sf/manuals/en/</tt>. This guide needs no
+compiler; it is a documentation task.</li>
+<li>Python&nbsp;3, which <tt>docs/sf/manuals/check.sh</tt> runs through
+<tt>check.py</tt>.</li>
+<li>The HTML contract every page obeys, on
+<a href="vol4-24-html-style.html">Volume&nbsp;IV &mdash; HTML style</a>: the
+doctype, the ISO-8859-1 meta, the <tt>rel</tt> links, the sidebar, the language
+bar, and the prev/contents/next footer.</li>
+<li>The <a href="vol5-00-index.html">HOWTO index</a>, for how the volume is laid
+out.</li>
+</ul>
+
+<h2>The idea</h2>
+<p>
+The manual is a flat static tree: one page per topic, always at depth one inside
+<tt>en/</tt>, and no server. Two scripts generate the site from that source
+tree. <tt>build.sh</tt> assembles a <tt>dist/</tt> copy and regenerates
+<tt>en/search-data.js</tt>; <tt>check.sh</tt> validates the source tree and
+writes nothing. On this host <tt>build.sh</tt> cannot run (step&nbsp;3), so the
+pipeline is exercised as its two halves: the gate, and an index-regeneration
+script that writes only under <tt>/tmp</tt>. The search index is the only
+generated file in the tree; every HTML page is hand-authored.
+</p>
+
+<h2>Steps</h2>
+<ol>
+<li>
+<p>
+<b>Read the tree layout.</b> Confirm the source shape: a few root pages, one
+flat <tt>en/</tt> directory, and the generated search index sitting beside the
+hand-authored assets.
+</p>
+<pre>
+$ cd /workspace/znineeight/docs/sf/manuals
+$ ls en | grep -v '\.html$'
+doc.js
+gfx
+search-data.js
+z98-print.css
+z98.css
+$ ls en/*.html | wc -l
+107
+</pre>
+<p>
+The one non-page file the generator owns is <tt>en/search-data.js</tt>; the
+stylesheets, <tt>doc.js</tt>, and the <tt>gfx/</tt> assets are hand-authored.
+The full layout is in <tt>docs/sf/manuals/README.md</tt>.
+</p>
+</li>
+<li>
+<p>
+<b>Run the gate.</b> <tt>check.sh</tt> wraps <tt>check.py</tt>, a Python&nbsp;3
+standard-library validator. It parses every <tt>*.html</tt> under
+<tt>docs/sf/manuals/</tt> except <tt>dist/</tt>, and fails nonzero on the first
+problem, naming the offending file.
+</p>
+<pre>
+$ cd /workspace/znineeight
+$ bash docs/sf/manuals/check.sh
+check.py: OK - 110 HTML pages, links, rel, lang, forbidden list, figures, no-CSS baseline
+</pre>
+<p>
+The nine checks, in order: every local <tt>href</tt>/<tt>src</tt> resolves to an
+existing file; every <tt>en/</tt> page carries the four
+<tt>rel=&quot;home|up|prev|next&quot;</tt> links; the language bar links only
+the shipped language root (<tt>en/</tt>); <tt>lang=&quot;en&quot;</tt> and the
+ISO-8859-1 <tt>&lt;meta&gt;</tt> are present; the forbidden list (HTML5
+structural tags, <tt>&lt;div&gt;</tt>, PNG/SVG/web fonts, external
+<tt>http(s)://</tt>, inline <tt>&lt;style&gt;</tt>, any <tt>&lt;script
+src&gt;</tt> other than <tt>doc.js</tt>, and CSS2/CSS3 tokens) is clean;
+<tt>doc.js</tt> is within its 2048-byte cap; the two stylesheets carry no
+CSS2/CSS3 tokens; the figure placeholders match
+<tt>todo-figures-list.html</tt> one-to-one; and the no-CSS baseline survives
+with the stylesheet links stripped. The printed count is the number of pages
+walked, this guide included. A green run means the tree is internally
+consistent before it is ever copied.
+</p>
+</li>
+<li>
+<p>
+<b>Know why <tt>build.sh</tt> and <tt>serve.sh</tt> are not run here.</b>
+<tt>build.sh</tt> is the documented assembler: it clears and recreates
+<tt>dist/</tt>, regenerates <tt>en/search-data.js</tt>, and copies the root
+pages plus the whole <tt>en/</tt> tree into <tt>dist/</tt>. Its first action is
+the recursive delete of the output directory:
+</p>
+<pre>
+$ grep -n 'rm -rf' docs/sf/manuals/build.sh
+26:rm -rf "$DIST_DIR"
+</pre>
+<p>
+On this host that <tt>rm -rf docs/sf/manuals/dist</tt> hangs, so
+<tt>build.sh</tt> never reaches its generator, and <tt>serve.sh</tt> (a
+<tt>python3 -m http.server</tt> preview of the same directory) is not needed.
+<b>Do not run <tt>build.sh</tt> or <tt>serve.sh</tt>, and do not touch
+<tt>dist/</tt>.</b> The site is static, so the source tree is readable
+directly. The validation half is the gate in step&nbsp;2; the generator's
+search-index half has a <tt>/tmp</tt>-only substitute in the next step.
+</p>
+</li>
+<li>
+<p>
+<b>Regenerate the search index with the host workaround.</b> The substitute runs
+the same loop as <tt>build.sh</tt> but writes nothing into the tree: its
+directory variables point at <tt>en/</tt> for input and
+<tt>/tmp/z98_dist_tmp</tt> and <tt>/tmp/z98_search-data.regen.js</tt> for
+output.
+</p>
+<pre>
+$ grep -n 'EN_DIR=\|DIST_DIR=\|SEARCH_DATA=' /tmp/z98_build_tmp.sh
+5:EN_DIR="$SCRIPT_DIR/en"
+6:DIST_DIR="/tmp/z98_dist_tmp"
+7:SEARCH_DATA="/tmp/z98_search-data.regen.js"
+$ bash /tmp/z98_build_tmp.sh
+build_tmp: indexed 107 pages, copied 149 files to /tmp/z98_dist_tmp
+</pre>
+<p>
+The loop scans <tt>en/*.html</tt> in filename order and records each page's
+<tt>&lt;title&gt;</tt>, <tt>&lt;meta name="keywords"&gt;</tt> content, and first
+<tt>&lt;h1&gt;</tt>, escaping backslashes and double quotes and flattening
+newlines, into one JavaScript array:
+</p>
+<pre>
+$ grep -n 'for page in' /tmp/z98_build_tmp.sh
+14:	for page in "$EN_DIR"/*.html; do
+$ head -c 120 docs/sf/manuals/en/search-data.js; echo
+var z98SearchData = [{file:"index.html",title:"Z98 Manual: English Edition",keywords:"Z98 manual English title page",hea
+</pre>
+<p>
+The shipped <tt>en/search-data.js</tt> is that generated file, so the two must
+match byte for byte. Compare them:
+</p>
+<pre>
+$ diff /tmp/z98_search-data.regen.js docs/sf/manuals/en/search-data.js
+$
+</pre>
+<p>
+<tt>diff</tt> prints nothing and exits zero when the files are identical. A
+nonempty diff means the tree changed since the index was last generated; after
+reading it, copy the regenerated file over
+<tt>docs/sf/manuals/en/search-data.js</tt>. Never hand-edit the index &mdash; it
+is generated data, and the gate does not size-cap it for that reason.
+</p>
+</li>
+<li>
+<p>
+<b>Add a page.</b> Authoring a guide is the workflow every shipped
+<tt>vol5-*</tt> page follows. Copy the canonical skeleton
+<tt>en/vol4-24-html-style.html</tt> to the new flat filename under
+<tt>en/</tt>; set its <tt>&lt;title&gt;</tt>, <tt>keywords</tt> meta, and
+<tt>&lt;h1&gt;</tt>; and keep the doctype, the four <tt>rel</tt> links, the
+sidebar, the language bar, the prev/contents/next footer, and the single
+<tt>doc.js</tt> include exactly as the skeleton ships them. Link only files that
+exist; a target that has not shipped is prose <tt>(planned)</tt>. Then wire the
+page into the tree in the same change: its sidebar row becomes a link on every
+shipped page, its row in <tt>toc.html</tt> and its entries in the A&ndash;Z and
+themed lists of <a href="vol5-00-index.html">the HOWTO index</a> stop being
+<tt>(planned)</tt>, and the nearest shipped neighbours&rsquo; <tt>rel</tt> and
+footer links are re-pointed at it. Because the generator globs
+<tt>en/*.html</tt>, a new page needs no separate registration: it is discovered
+by the next regeneration in step&nbsp;4, and its index entry is inserted at its
+filename position.
+</p>
+</li>
+</ol>
+
+<h2>Verify it worked</h2>
+<p>
+The tree is consistent when the gate is green and the regenerated index matches
+the shipped one exactly:
+</p>
+<pre>
+$ cd /workspace/znineeight
+$ bash docs/sf/manuals/check.sh
+check.py: OK - 110 HTML pages, links, rel, lang, forbidden list, figures, no-CSS baseline
+$ bash /tmp/z98_build_tmp.sh
+build_tmp: indexed 107 pages, copied 149 files to /tmp/z98_dist_tmp
+$ diff /tmp/z98_search-data.regen.js docs/sf/manuals/en/search-data.js
+$
+</pre>
+<p>
+The gate walked 110 pages &mdash; the 107 English pages, the root selector,
+<tt>readme.html</tt>, and <tt>todo-figures-list.html</tt> &mdash; and found no
+broken link, missing <tt>rel</tt>, wrong charset, forbidden tag, orphan figure,
+or CSS dependency. The generator indexed all 107 English pages and copied the
+whole tree into <tt>/tmp/z98_dist_tmp</tt>, leaving <tt>dist/</tt> untouched;
+the silent <tt>diff</tt> confirms the shipped <tt>en/search-data.js</tt> is
+byte-identical to a fresh regeneration. If the diff is nonempty, the index is
+stale: copy the regenerated file over, re-run the gate, and ship both together.
+</p>
+
+<h2>Where to go next</h2>
+<p>
+The page contract the skeleton carries is
+<a href="vol4-24-html-style.html">Volume&nbsp;IV &mdash; HTML style</a>, and the
+rest of the rules live in the
+<a href="vol4-00-title.html">Volume&nbsp;IV Reference</a>. The previous guide is
+<a href="vol5-20-build-multilingual.html">Build a Multilingual Manual</a>,
+which copies this tree into a language edition and points back here for the
+search index. The next guide, <tt>Contribute</tt> (not shipped yet; it is
+<tt>(planned)</tt>), covers the repository layout and the seed and edit rules.
+Return to the <a href="vol5-00-index.html">HOWTO index</a> for the whole volume.
+</p>
+
+<p class="navbtns">
+<a href="vol5-20-build-multilingual.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol5-20-build-multilingual.html">Build a Multilingual Manual</a> | <a href="toc.html">Contents</a> | Next: <a href="toc.html">Contents</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
