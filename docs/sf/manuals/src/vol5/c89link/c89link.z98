@@ -1,0 +1,15 @@
+// c89link.z98 - link a Z98-emitted object against a hand-written C89 object.
+// The Z98 module borrows c89_apply from c89lib.c and lends z98_tax back to it,
+// so the call crosses the seam in both directions.
+const std = @import("std");
+
+extern "c" fn c89_apply(base: i32, rate: i32) i32;
+
+export fn z98_tax(amount: i32) i32 {
+    return amount + 5;
+}
+
+pub fn main() void {
+    std.io.printInt(c89_apply(200, 10));
+    std.io.writeByte('\n');
+}

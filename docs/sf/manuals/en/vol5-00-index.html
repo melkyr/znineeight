@@ -50,7 +50,7 @@ Target Linux <i>(planned)</i><br>
 <a href="vol5-09-files.html">Read, write, and test files</a><br>
 Sockets under Z98 <i>(planned)</i><br>
 <a href="vol5-11-c-interop.html">Call C from Z98</a><br>
-Link Z98 output against C89 libraries <i>(planned)</i><br>
+<a href="vol5-12-c89-interop.html">Link Z98 output against C89 libraries</a><br>
 Debug generated C <i>(planned)</i><br>
 Use markers <i>(planned)</i><br>
 Read the diagnostics <i>(planned)</i><br>
@@ -83,7 +83,8 @@ A shipped page is a link; a page that has not shipped is plain text marked
 <i>(planned)</i>. This index and guides 01 (rebuild the compiler from seed),
 02 (build a single file), 03 (build multiple modules), 06 (correct arena use),
 07 (model and propagate errors), 08 (write and drive a coroutine), 09
-(read, write, and check files), and 11 (call C from Z98) are shipped so far.
+(read, write, and check files), 11 (call C from Z98), and 12 (link against C89)
+are shipped so far.
 </p>
 
 <h2>A&ndash;Z index</h2>
@@ -94,7 +95,7 @@ A shipped page is a link; a page that has not shipped is plain text marked
 <li><b>For readers from a modern dynamic language</b> &mdash; Port Python's dynamic types, containers, exceptions, and GC. <i>(planned)</i></li>
 <li><b>gdb on the generated C</b> &mdash; Build with debug info and debug the emitted C with gdb. <i>(planned)</i></li>
 <li><a href="vol5-00-index.html">Index</a> &mdash; This page: the A&ndash;Z and themed map of Volume&nbsp;V.</li>
-<li><b>Link Z98 output against C89 libraries</b> &mdash; Link Z98-emitted objects with hand-written C89 code. <i>(planned)</i></li>
+<li><a href="vol5-12-c89-interop.html">Link Z98 output against C89 libraries</a> &mdash; Link Z98-emitted objects with hand-written C89 code.</li>
 <li><b>Linux ELF</b> &mdash; Choose the default Linux target and the gcc -m32 path behind it. <i>(planned)</i></li>
 <li><b>--markers, pal.markerWrite*</b> &mdash; Enable --markers and read the compiler's marker stream. <i>(planned)</i></li>
 <li><a href="vol5-07-errors.html">Model and propagate errors</a> &mdash; Use error unions, try and catch, errdefer, and the enclosing-return rule.</li>
@@ -143,7 +144,7 @@ sequence; the filenames number 01 to 23 across the themes.
 <h3>Interop and porting</h3>
 <ul>
 <li><a href="vol5-11-c-interop.html">extern fn, @cInclude</a> &mdash; Declare and call C functions from Z98.</li>
-<li><b>Link Z98 output against C89 libraries</b> &mdash; Link Z98-emitted objects with hand-written C89 code. <i>(planned)</i></li>
+<li><a href="vol5-12-c89-interop.html">Link Z98 output against C89 libraries</a> &mdash; Link Z98-emitted objects with hand-written C89 code.</li>
 <li><b>Translate a C file, idiom by idiom</b> &mdash; Port C types, arrays, errors, cleanup, and ownership to Z98. <i>(planned)</i></li>
 <li><b>Translate a C++98 file, honestly</b> &mdash; Port templates, RAII, and exceptions, and say what does not translate. <i>(planned)</i></li>
 <li><b>For readers from a modern dynamic language</b> &mdash; Port Python's dynamic types, containers, exceptions, and GC. <i>(planned)</i></li>
