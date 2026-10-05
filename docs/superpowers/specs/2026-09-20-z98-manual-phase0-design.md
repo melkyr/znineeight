@@ -245,5 +245,7 @@ A claim that fails is fixed or removed — never shipped.
    IV (Reference) design of record; **complete** (2026-10-05, Task 26 closeout);
    implemented by
    `docs/superpowers/plans/2026-10-03-z98-manual-volume-IV-plan.md`; seed rotated
-   v90 → v91 at fixed point `0b8c3e4ac0b1fc49c0bdf8caf9d39945`. Next = the Volume
-   V (HOWTO) design/plan.
+   v90 → v91 at fixed point `0b8c3e4ac0b1fc49c0bdf8caf9d39945`.
+7. `docs/superpowers/specs/2026-10-05-z98-manual-volume-V-design.md` — Volume V
+   (HOWTO) design of record; implemented by
+   `docs/superpowers/plans/2026-10-05-z98-manual-volume-V-plan.md`.
