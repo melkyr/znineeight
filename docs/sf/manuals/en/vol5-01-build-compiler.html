@@ -1,0 +1,247 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Rebuild the Compiler from Seed</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume V HOWTO rebuild compiler from seed zig1 seed archive build_from_seed FIXED_POINT_MD5 two-hop closure fixed point gcc lib zig1_5_clean release seed v91">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol5-00-index.html">
+<link rel="next" href="toc.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume V &mdash; HOWTO</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol5-00-index.html">Index &mdash; A&ndash;Z, grouped by theme</a><br>
+<b>Rebuild the compiler from seed</b><br>
+Build a single file <i>(planned)</i><br>
+Build multiple modules <i>(planned)</i><br>
+Target Win9x <i>(planned)</i><br>
+Target Linux <i>(planned)</i><br>
+Use the arena correctly <i>(planned)</i><br>
+Model and propagate errors <i>(planned)</i><br>
+Write and drive a coroutine <i>(planned)</i><br>
+Read, write, and test files <i>(planned)</i><br>
+Sockets under Z98 <i>(planned)</i><br>
+C interop <i>(planned)</i><br>
+Link Z98 output against C89 libraries <i>(planned)</i><br>
+Debug generated C <i>(planned)</i><br>
+Use markers <i>(planned)</i><br>
+Read the diagnostics <i>(planned)</i><br>
+Port from C <i>(planned)</i><br>
+Port from C++98 <i>(planned)</i><br>
+Port from Python <i>(planned)</i><br>
+Pack for diskette <i>(planned)</i><br>
+Build a multilingual manual <i>(planned)</i><br>
+Build the static site <i>(planned)</i><br>
+Contribute <i>(planned)</i><br>
+Report a bug <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Rebuild the Compiler from Seed</h1>
+<p>
+This guide rebuilds the reference compiler <tt>zig1</tt> from the committed
+seed archive and checks that the two-hop build closes on the recorded fixed
+point.
+</p>
+
+<h2>Prerequisites</h2>
+<ul>
+<li>A Linux host with <tt>bash</tt> and a 32-bit-capable <tt>gcc</tt> (the
+build uses <tt>gcc -m32 -std=c89</tt>).</li>
+<li>The repository checked out with the committed seed
+<tt>release/seed/zig1-seed.tgz</tt> (current seed <b>v91</b>) and the script
+<tt>scripts/seed/build_from_seed.sh</tt> present.</li>
+<li>Every command runs from the repository root, <tt>/workspace/znineeight</tt>.
+No <tt>zig0</tt> is needed: this is the zig0-independent rebuild path, and
+<tt>gcc</tt> alone builds it.</li>
+</ul>
+
+<h2>What the seed build is</h2>
+<p>
+<tt>zig0</tt> is retired. The only supported way to rebuild <tt>zig1</tt> is
+from the rotating seed: the archive <tt>release/seed/zig1-seed.tgz</tt> holds a
+reference compiler binary, its self-emission C89, its runtime, and the standard
+library. The build script runs that reference compiler over the current
+<tt>sf/src</tt> to produce a new compiler, then does it a second time and checks
+that the two builds are byte-identical. That is the <b>two-hop closure</b>: the
+compiler reproduces itself. The provenance and rotation history of the seed live
+in <tt>release/seed/CHANGELOG.md</tt>.
+</p>
+
+<h2>Steps</h2>
+<ol>
+<li>
+<p>
+Start at the repository root. The dump must run with the relative
+<tt>sf/src/main.zig</tt> path because the module basename-hash tokens are
+path-derived, so a run from elsewhere does not reproduce the fixed point.
+</p>
+<pre>
+$ cd /workspace/znineeight
+</pre>
+</li>
+<li>
+<p>
+Run the seed build with the recorded fixed point as a hard gate. The first
+argument is the committed seed archive; the second is a fresh output folder
+(the script removes it first).
+</p>
+<pre>
+$ FIXED_POINT_MD5=0b8c3e4ac0b1fc49c0bdf8caf9d39945 \
+&gt;   bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/manual_seed
+</pre>
+<p>
+<tt>FIXED_POINT_MD5</tt> is optional, but with it a closure that does not equal
+the recorded point fails the build instead of passing silently.
+</p>
+</li>
+<li>
+<p>
+Read the gate. A successful run prints the hop md5s, the closure verdict, the
+fixed-point check, and the <tt>Done</tt> marker:
+</p>
+<pre>
+[seed] hop1 binary md5: 0b8c3e4ac0b1fc49c0bdf8caf9d39945
+[seed] hop2 binary md5: 0b8c3e4ac0b1fc49c0bdf8caf9d39945
+[seed] two-hop closure OK: hop1 == hop2 == 0b8c3e4ac0b1fc49c0bdf8caf9d39945
+[seed] recorded fixed point OK: 0b8c3e4ac0b1fc49c0bdf8caf9d39945
+=== [seed] Done: /tmp/manual_seed ===
+</pre>
+<p>
+<tt>=== [seed] Done: &lt;out_dir&gt; ===</tt> is the success marker. If the
+committed seed predates the current source, hop1 differs and the script verifies
+the moving point as hop2 == hop3 and prints a three-hop closure line instead.
+</p>
+</li>
+<li>
+<p>
+The compiler and its standard library land beside each other in the output
+folder:
+</p>
+<pre>
+$ ls /tmp/manual_seed
+_unpack  gen  hop2  lib  zig1_5_clean
+</pre>
+<p>
+The compiler is <tt>/tmp/manual_seed/zig1_5_clean</tt>; the standard library is
+<tt>/tmp/manual_seed/lib/</tt> (30 <tt>.zig</tt> files). The compiler resolves
+<tt>@import("std")</tt> from the <tt>lib</tt> folder beside itself, so keep them
+together. <tt>_unpack/</tt> is the unpacked seed, and <tt>gen/</tt> and
+<tt>hop2/</tt> are build scratch; none of the three is needed afterward.
+</p>
+</li>
+<li>
+<p>
+Confirm the compiler's identity. It must be the fixed point recorded for the
+current seed:
+</p>
+<pre>
+$ md5sum /tmp/manual_seed/zig1_5_clean
+0b8c3e4ac0b1fc49c0bdf8caf9d39945  /tmp/manual_seed/zig1_5_clean
+</pre>
+</li>
+</ol>
+
+<h2>Verify it worked</h2>
+<p>
+A clean run of the two commands produces exactly this transcript (long gcc
+warning output omitted). The two hop md5s are equal, the closure is
+<tt>OK</tt>, the recorded fixed point matches, and the compiler binary hashes to
+the same value on disk.
+</p>
+<pre>
+$ cd /workspace/znineeight
+$ FIXED_POINT_MD5=0b8c3e4ac0b1fc49c0bdf8caf9d39945 \
+&gt;   bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/manual_seed
+[seed] hop1 binary md5: 0b8c3e4ac0b1fc49c0bdf8caf9d39945
+[seed] hop2 binary md5: 0b8c3e4ac0b1fc49c0bdf8caf9d39945
+[seed] two-hop closure OK: hop1 == hop2 == 0b8c3e4ac0b1fc49c0bdf8caf9d39945
+[seed] recorded fixed point OK: 0b8c3e4ac0b1fc49c0bdf8caf9d39945
+=== [seed] Done: /tmp/manual_seed ===
+$ md5sum /tmp/manual_seed/zig1_5_clean
+0b8c3e4ac0b1fc49c0bdf8caf9d39945  /tmp/manual_seed/zig1_5_clean
+$ ls /tmp/manual_seed/lib | wc -l
+30
+</pre>
+
+<h2>Common mistakes</h2>
+<ul>
+<li><b>Running from the wrong directory.</b> The dump needs the relative
+<tt>sf/src/main.zig</tt> path from the repository root; from anywhere else the
+basename-hash tokens change and the fixed point does not reproduce. Always
+<tt>cd /workspace/znineeight</tt> first.</li>
+<li><b>Pointing the output folder at something you need.</b> The script does
+<tt>rm -rf &lt;out_dir&gt;</tt>. Never point it at <tt>/tmp/fx_subfolder</tt>
+(that holds the zig0 current-cycle reference compiler) or any other working
+directory. Use a dedicated folder such as <tt>/tmp/manual_seed</tt>.</li>
+<li><b>Leaving out the gate.</b> Without <tt>FIXED_POINT_MD5</tt> a closure can
+still finish on a moved point when the seed predates the source. Set the gate to
+the fixed point recorded for the current seed.</li>
+<li><b>Mistaking the missing-seed fallback for an error.</b> If the seed binary
+is absent, the script auto-reconstructs it from the archive's own <tt>gen/</tt> C
+with <tt>gcc</tt> and prints a
+<tt>[seed] seed binary missing &mdash; falling back</tt> line. That is expected
+and still produces the fixed point.</li>
+<li><b>Looking for a binary named <tt>zig1</tt>.</b> The output binary is named
+<tt>zig1_5_clean</tt> in the output folder, with <tt>lib/</tt> beside it.</li>
+</ul>
+
+<h2>Where to go next</h2>
+<p>
+Use the compiler you just built: the next guide, <b>One <tt>.z98</tt> to an
+executable</b> <i>(planned)</i>, emits, builds, and runs a single-file program.
+Return to the <a href="vol5-00-index.html">HOWTO index</a> for the other jobs.
+For the rules behind the flags the recipe runs, see the
+<a href="vol4-22-cli.html">Volume&nbsp;IV command-line page</a>
+(<tt>-ffast</tt>, <tt>--dump-c89</tt>, <tt>--output-dir</tt>, and the
+<tt>-mm</tt>/<tt>-s</tt> memory and spill switches). The same build, framed for a
+first-time reader, is Volume&nbsp;I's
+<a href="vol1-04-installing.html">Installing the Toolchain</a>.
+</p>
+
+<p class="navbtns">
+<a href="vol5-00-index.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol5-00-index.html">Index &mdash; A&ndash;Z, grouped by theme</a> | <a href="toc.html">Contents</a> | Next: <a href="toc.html">Contents</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
