@@ -1,0 +1,372 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Report a Bug</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume V HOWTO report bug bug report reproduction minimal program compiler fixed point md5sum exact command expected actual output diagnostic exit status run_all.sh mi_matrix NOTES.md RED ok crash reject accept gccfail wrong runok fixedreject amendment">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol5-22-contribute.html">
+<link rel="next" href="toc.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume V &mdash; HOWTO</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol5-00-index.html">Index &mdash; A&ndash;Z, grouped by theme</a><br>
+<a href="vol5-01-build-compiler.html">Rebuild the compiler from seed</a><br>
+<a href="vol5-02-build-single.html">Build a single file</a><br>
+<a href="vol5-03-build-multi.html">Build multiple modules</a><br>
+<a href="vol5-04-target-win9x.html">Target Win9x</a><br>
+<a href="vol5-05-target-linux.html">Target Linux</a><br>
+<a href="vol5-06-arena.html">Use the arena correctly</a><br>
+<a href="vol5-07-errors.html">Model and propagate errors</a><br>
+<a href="vol5-08-coroutines.html">Write and drive a coroutine</a><br>
+<a href="vol5-09-files.html">Read, write, and test files</a><br>
+<a href="vol5-10-sockets.html">Sockets under Z98</a><br>
+<a href="vol5-11-c-interop.html">Call C from Z98</a><br>
+<a href="vol5-12-c89-interop.html">Link Z98 output against C89 libraries</a><br>
+<a href="vol5-13-debugger.html">Debug generated C</a><br>
+<a href="vol5-14-markers.html">Use markers</a><br>
+<a href="vol5-15-diagnostics.html">Read the diagnostics</a><br>
+<a href="vol5-16-port-from-c.html">Port from C</a><br>
+<a href="vol5-17-port-from-cpp.html">Port from C++98</a><br>
+<a href="vol5-18-port-from-python.html">Port from Python</a><br>
+<a href="vol5-19-pack-for-diskette.html">Pack for diskette</a><br>
+<a href="vol5-20-build-multilingual.html">Build a multilingual manual</a><br>
+<a href="vol5-21-static-site.html">Build the static site</a><br>
+<a href="vol5-22-contribute.html">Contribute</a><br>
+<b>Report a bug</b><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Report a Bug</h1>
+<p>
+This guide turns a failing Z98 program into a bug report: the compiler fixed
+point, the smallest program that still fails, the exact command, the expected
+and actual output, and the diagnostic quoted verbatim &mdash; and shows how to
+reduce a program until nothing can be removed without changing the failure.
+</p>
+
+<h2>Prerequisites</h2>
+<ul>
+<li>The repository checked out at <tt>/workspace/znineeight</tt> and the
+compiler rebuilt from the seed at <tt>/tmp/manual_seed/zig1_5_clean</tt>, with
+the standard library beside it in <tt>/tmp/manual_seed/lib/</tt>. If it is not
+there yet, follow <a href="vol5-01-build-compiler.html">Rebuild the Compiler
+from Seed</a>.</li>
+<li><a href="vol5-02-build-single.html">Build a Single File</a>, for the
+<tt>zig1 -o DIR prog.z98</tt> then <tt>build_target.sh</tt> recipe, and
+<a href="vol5-15-diagnostics.html">Read the Diagnostics</a>, for the four parts
+of a message and the exit statuses.</li>
+<li>The reproduction fixtures under <tt>repro/</tt>: <tt>repro/mi_matrix/</tt>
+holds the large pinned corpus of green and reject cases, and
+<tt>repro/vol2_defects/</tt> holds the defect set with its runner and
+<tt>README.md</tt>.</li>
+<li><a href="vol5-22-contribute.html">Contribute</a>, whose seed and amendment
+section governs what happens when a report turns out to be a real compiler
+defect.</li>
+</ul>
+
+<h2>The idea</h2>
+<p>
+A bug report is a reproduction. Five fields make it actionable, and the same
+five make it a regression test after it is fixed: the compiler that produced the
+result (identified by its fixed point), the smallest program that still fails,
+the exact command, the expected and actual output, and the diagnostic. The
+repository already stores reports in exactly that shape, so writing one is not
+free prose &mdash; it is a fixture under <tt>repro/</tt>. A report that omits the
+compiler, the command, or the verbatim diagnostic cannot be reproduced, and a
+report whose program still contains unrelated code cannot be reduced.
+</p>
+<p>
+The reduction is the work. You begin with the program that fails, delete a
+declaration, a statement, or a branch, and recompile; if the same failure
+survives, the deletion stays. You stop when removing anything else would change
+the result, so that the program states one fact about the compiler and nothing
+else. The corpus's small <tt>main.zig</tt> files are the product of that loop.
+</p>
+
+<h2>Steps</h2>
+<ol>
+<li>
+<p>
+<b>Pin the compiler.</b> The same source can behave differently on two builds,
+so a report names the compiler by its fixed point &mdash; the seed build's md5,
+the value its two-hop closure gate reproduces:
+</p>
+<pre>
+$ md5sum /tmp/manual_seed/zig1_5_clean
+0b8c3e4ac0b1fc49c0bdf8caf9d39945  /tmp/manual_seed/zig1_5_clean
+</pre>
+<p>
+That hex string is the compiler's identity for the report. If the reader built
+the compiler from the same seed, <tt>md5sum</tt> prints the same value; if it
+does not, the two reports are not comparable. The rebuild command is the one in
+<a href="vol5-01-build-compiler.html">Rebuild the Compiler from Seed</a>; its
+gate ends <tt>=== [seed] Done: /tmp/manual_seed ===</tt>. Record the
+<tt>md5sum</tt> line, not a version label.
+</p>
+</li>
+<li>
+<p>
+<b>Minimise the program.</b> Delete until the failure is the only thing left.
+Keep a name that is declared and the one construct that misbehaves; drop every
+import, every print, and every function the failure does not touch. The body of
+a pinned reject fixture is the result &mdash; two lines of code and the two
+captures that trip the rule:
+</p>
+<pre>
+body of repro/mi_matrix/error_union_capture_reject_xmod/main.zig
+(comment header omitted)
+const E = error{Bad};
+fn h() E!i32 { return 42; }
+
+pub fn main() void {
+    if (h()) |v| {
+        _ = v;
+    }
+    while (h()) |v| {
+        _ = v;
+        break;
+    }
+}
+</pre>
+<p>
+The fixture keeps one <tt>if</tt> and one <tt>while</tt> because it pins both
+spellings of one rule; a report needs only the first failing one. The command to
+re-check after each deletion is the one in the next step. When no import
+remains, the program no longer depends on the module graph, and when no
+unrelated statement remains, the output cannot be blamed on them.
+</p>
+</li>
+<li>
+<p>
+<b>Record the exact command.</b> Write the command character for character, as
+you ran it. The output directory for <tt>-o</tt> must already exist:
+</p>
+<pre>
+$ mkdir -p /tmp/manual_bug
+$ timeout 120 /tmp/manual_seed/zig1_5_clean -o /tmp/manual_bug repro/mi_matrix/error_union_capture_reject_xmod/main.zig
+</pre>
+<p>
+An absolute path or a relative one both work, but the report must say which.
+The <tt>mkdir -p</tt> is part of the command because <tt>-o</tt> does not create
+the directory; invoking it against a missing one is a status-1 usage error, not
+the bug:
+</p>
+<pre>
+$ timeout 120 /tmp/manual_seed/zig1_5_clean -o /tmp/manual_bug_nope repro/mi_matrix/error_union_capture_reject_xmod/main.zig
+error: output directory does not exist: /tmp/manual_bug_nope
+$ echo $?
+1
+</pre>
+<p>
+Run every binary under <tt>timeout 120</tt> so a hung compiler cannot stall the
+report; a timeout is itself a result worth recording. Redirect standard output
+and standard error to separate files if the two streams interleave in the
+terminal.
+</p>
+</li>
+<li>
+<p>
+<b>Capture the expected and actual output.</b> The actual output is what the
+command just printed; the expected output is what the language rule says should
+happen. The fixture stores both sides, so the comparison is a <tt>diff</tt>, not
+a judgement. Run the command and read the exit status:
+</p>
+<pre>
+$ timeout 120 /tmp/manual_seed/zig1_5_clean -o /tmp/manual_bug repro/mi_matrix/error_union_capture_reject_xmod/main.zig
+repro/mi_matrix/error_union_capture_reject_xmod/main.zig:16:14: error[3058]: error union capture is not supported; use 'catch', 'switch', or 'orelse'
+    if (h()) |v| {
+              ^
+repro/mi_matrix/error_union_capture_reject_xmod/main.zig:19:17: error[3058]: error union capture is not supported; use 'catch', 'switch', or 'orelse'
+    while (h()) |v| {
+                 ^
+$ echo $?
+2
+</pre>
+<p>
+The expected side is the pinned census and status:
+</p>
+<pre>
+$ cat repro/mi_matrix/error_union_capture_reject_xmod/expected_error.txt
+3058 2
+$ cat repro/mi_matrix/error_union_capture_reject_xmod/expected.rc
+2
+</pre>
+<p>
+Here expected and actual agree: two <tt>error[3058]</tt> lines and exit status
+<tt>2</tt>, with no <tt>.c</tt> emitted. That is what a resolved report looks
+like, and it is why the fixture is also the regression pin. A new report uses
+the same two fields with the two sides differing: the wrong diagnostic, the
+missing reject, the wrong stdout, or the wrong status. For a program that builds
+and runs but prints the wrong bytes, the <tt>expected.txt</tt> golden beside a
+green fixture is the expected side and the program's stdout is the actual side;
+<tt>repro/vol2_defects/</tt> calls that failure kind <tt>wrong</tt>.
+</p>
+</li>
+<li>
+<p>
+<b>Quote the diagnostic verbatim.</b> Paste the whole block: the header
+<tt>file:line:column: level[code]: message</tt>, the repeated source line, and
+the caret line, with the carets exactly where the compiler put them. Do not
+paraphrase the message or trim the caret, and do not summarise several
+diagnostics as one. The bracket number is meaningful on its own &mdash; it is
+whatever the emission site passed, not the digits in the code's name &mdash; so
+the message and the caret are what identify the site. The reading method is on
+<a href="vol5-15-diagnostics.html">Read the Diagnostics</a>, and the code
+catalogue is <a href="vol4-21-diagnostics.html">Volume&nbsp;IV &mdash;
+Diagnostics</a>.
+</p>
+</li>
+<li>
+<p>
+<b>Run the reproduction set.</b> The defect set ships a runner that compiles and
+runs every case with the seed compiler and prints one line each, so a report can
+be checked in place. It prints <tt>&lt;case&gt;: rc=&lt;n&gt; &lt;RED|ok&gt;</tt>,
+where <tt>RED</tt> means the expected defect reproduced and <tt>ok</tt> means it
+did not:
+</p>
+<pre>
+$ sh repro/vol2_defects/run_all.sh
+D01_defer_segfault: rc=0 ok
+D02_enum_switch_ranges: rc=0 ok
+D03_missing_else: rc=2 ok
+D04_tuple: rc=0 ok
+D05_slice_to_manyptr: rc=0 ok
+D06_float_union: rc=0 ok
+D07_nontuple_print: rc=2 ok
+D08_errset_capture: rc=0 ok
+D09_bare_union_offsetof: rc=2 ok
+D10_single_ptr_index: rc=2 ok
+D11_qualified_capture: rc=0 ok
+D12_const_discard_slice: rc=2 ok
+S01_print_nontuple_args: rc=2 ok
+</pre>
+<p>
+Each case declares its expected failure kind, which fixes what <tt>RED</tt>
+means for it: <tt>crash</tt> (the compiler must die from a signal),
+<tt>reject</tt> (it must reject), <tt>accept</tt> (it must wrongly accept),
+<tt>gccfail</tt> (the emitted C must fail under <tt>gcc</tt>), <tt>wrong</tt>
+(the run's stdout must differ from <tt>expected.txt</tt>), <tt>runok</tt> (it
+must build, run, and match), and <tt>fixedreject</tt> (it must reject with the
+exact <tt>&lt;code&gt; &lt;count&gt;</tt> census in <tt>expected_error.txt</tt>).
+The kinds, the per-case claims, and the fixture layout are in
+<tt>repro/vol2_defects/README.md</tt>; every stage runs under <tt>timeout
+120</tt>.
+</p>
+</li>
+<li>
+<p>
+<b>File it in the repository's shape.</b> A report enters the corpus as a
+directory, not an issue thread. The smallest fixture is a program, a status, and
+a census or a stdout golden:
+</p>
+<pre>
+$ ls repro/mi_matrix/error_union_capture_reject_xmod
+expected.rc
+expected_error.txt
+main.zig
+</pre>
+<p>
+The names carry the fields: <tt>main.zig</tt> is the minimal program;
+<tt>expected.rc</tt> is the exit status; <tt>expected.txt</tt> is the expected
+stdout for a program that should build and run, or <tt>expected_error.txt</tt>
+is the <tt>&lt;code&gt; &lt;count&gt;</tt> diagnostic census for one that should
+reject; and a <tt>NOTES.md</tt>, where the corpus keeps one, records the defect
+claim, the exact commands, the seed md5, and the observed versus expected
+output. A fixture that ships <tt>expected_error.txt</tt> must be force-added,
+because the repository ignores <tt>*.txt</tt> by default. The compiler fixed
+point from step&nbsp;1, the command from step&nbsp;3, and the diagnostic from
+step&nbsp;5 are already inside it.
+</p>
+<p>
+If the reduction exposes a real compiler defect, <b>stop</b>: report the minimal
+reproduction and do not patch <tt>sf/src</tt> around it or document around it. A
+fix enters only as an operator-ruled amendment, as a read-only investigation
+followed by a fix task that adds the fixture above; that rule is
+<a href="vol5-22-contribute.html">Contribute</a>, step&nbsp;4.
+</p>
+</li>
+</ol>
+
+<h2>Verify it worked</h2>
+<p>
+A report is complete when the five fields can be read off it and a second
+machine can reproduce the result. For the worked example they assemble as:
+</p>
+<pre>
+compiler:   0b8c3e4ac0b1fc49c0bdf8caf9d39945  (zig1_5_clean)
+program:    repro/mi_matrix/error_union_capture_reject_xmod/main.zig
+command:    /tmp/manual_seed/zig1_5_clean -o /tmp/manual_bug repro/mi_matrix/error_union_capture_reject_xmod/main.zig
+expected:   rc 2; expected_error.txt "3058 2"
+actual:     rc 2; two error[3058] blocks
+diagnostic: error[3058]: error union capture is not supported; use 'catch', 'switch', or 'orelse'
+</pre>
+<p>
+The runner closes the loop: every case prints one line and the set is read as a
+whole, <tt>RED</tt> for a reproduced defect and <tt>ok</tt> for one that no
+longer reproduces. The commands in steps&nbsp;1, 2, 3, 4, and 6 were run against
+the seed compiler at <tt>/tmp/manual_seed</tt> and their output is quoted above.
+If a fresh <tt>md5sum</tt> matches the fixed point, the exact command prints the
+same diagnostic, and the exit status is the one in <tt>expected.rc</tt>, the
+report is reproducible.
+</p>
+
+<h2>Where to go next</h2>
+<p>
+The code catalogue every diagnostic is checked against is
+<a href="vol4-21-diagnostics.html">Volume&nbsp;IV &mdash; Diagnostics</a>, and
+the rest of the rules live in the
+<a href="vol4-00-title.html">Volume&nbsp;IV Reference</a>. The previous guide is
+<a href="vol5-22-contribute.html">Contribute</a>, which carries the seed and
+amendment protocol that receives a real defect. The companion reading method is
+<a href="vol5-15-diagnostics.html">Read the Diagnostics</a>. Return to the
+<a href="vol5-00-index.html">HOWTO index</a> for the whole volume, or the
+<a href="toc.html">Contents</a> for the whole manual.
+</p>
+
+<p class="navbtns">
+<a href="vol5-22-contribute.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol5-22-contribute.html">Contribute</a> | <a href="toc.html">Contents</a> | Next: <a href="toc.html">Contents</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
