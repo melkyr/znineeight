@@ -38,7 +38,7 @@ Espa&ntilde;ol (not yet available) |
 <table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
 <tr>
 <td>
-How to use the Reference <i>(planned)</i><br>
+<b>How to use the Reference</b><br>
 <a href="vol4-01-grammar.html">The full grammar</a><br>
 <a href="vol4-02-types.html">Types</a><br>
 <a href="vol4-03-pointers.html">Pointers</a><br>
@@ -77,12 +77,70 @@ the answer and get back to work.
 </p>
 <p>
 This volume is not read in order. It is the lookup set: the grammar, the type
-system, every builtin, the diagnostics, and the limits. The pages are terse on
-purpose and cross-reference each other.
+system, every builtin, the diagnostics, and the limits. This page is the map
+&mdash; what the volume is, how to search it, and where each topic lives. The
+pages are terse on purpose and cross-reference each other.
 </p>
+
+<h2>What the Reference is</h2>
+<p>
+The Reference is a direct port of
+<tt>docs/reference/Language_Spec_Z98.md</tt>, restructured for lookup rather
+than linear reading. <a href="vol2-00-title.html">Volume&nbsp;II</a> teaches
+the language and <a href="vol3-00-title.html">Volume&nbsp;III</a> frames the
+era; this volume is where a reader lands from a search or a cross-reference and
+needs the exact rule, the exact signature, or the exact diagnostic.
+</p>
+<p>
+The source of record is the compiler under <tt>sf/src/</tt>. The Language
+Specification is the starting text, but it has known stale spots, so every
+claim here was re-verified against the compiler built from the committed seed.
+Where a rule has a boundary, the Reference states the boundary and stops; the
+honesty arguments belong to Volumes&nbsp;II and III.
+</p>
+
+<h2>How to look something up</h2>
+<p>
+Each page opens with a one-line definition and then gives the exact material as
+tables and lists. Signatures, fields, flags, codes, and messages are quoted
+verbatim; a value that could not be reproduced is not shipped. The pages are
+built to be skimmed, not read:
+</p>
+<ul>
+<li><b>You know the topic.</b> Use the sidebar or the
+<a href="toc.html">Contents</a>; the map below lists all 25 pages.</li>
+<li><b>You have a symptom.</b> Start at
+<a href="vol4-21-diagnostics.html">Diagnostics</a>, which lists every code
+alphabetically by name with its printed ordinal and its exact default
+message.</li>
+<li><b>You have a type, a keyword, or an operator.</b> Start at
+<a href="vol4-02-types.html">Types</a>,
+<a href="vol4-01-grammar.html">The full grammar</a>, or
+<a href="vol4-15-builtins.html">Builtins</a>, then follow the page's "See
+also" line.</li>
+<li><b>You need a signature or a flag.</b> The
+<a href="vol4-18-stdlib.html">standard library</a>,
+<a href="vol4-19-pal.html">PAL</a>, and
+<a href="vol4-22-cli.html">command line</a> pages quote them from source.</li>
+</ul>
+<p>
+Pages link only to targets that exist. A shipped page is a link; a page from a
+volume that has not shipped is plain prose marked <i>(planned)</i>.
+</p>
+
+<h2>What is not here</h2>
+<p>
+The Reference ships no runnable chapter samples and no Win9x screenshot
+figures; the programs and screenshots belong to Volumes&nbsp;I&ndash;III. A
+snippet here is a short, verified illustration of one rule, not a program to
+build. A page may close with a short "See also" list of existing pages, and it
+does not carry the honesty or mistake callouts that Volumes&nbsp;II and III
+use.
+</p>
+
 <h2>Chapters</h2>
 <ul>
-<li>How to use the Reference <i>(planned)</i></li>
+<li><b>How to use the Reference</b></li>
 <li><a href="vol4-01-grammar.html">The full grammar</a></li>
 <li><a href="vol4-02-types.html">Types</a></li>
 <li><a href="vol4-03-pointers.html">Pointers</a></li>
@@ -109,8 +167,11 @@ purpose and cross-reference each other.
 <li><a href="vol4-24-html-style.html">HTML style</a></li>
 </ul>
 <p>
-For the language proper, see <a href="vol2-00-title.html">Volume II</a>; for
-tasks, see Volume V; for the compiler, see Volume VI.
+For the language proper, see <a href="vol2-00-title.html">Volume&nbsp;II
+&mdash; Learning Z98</a>; for the era toolchain and its limits, see
+<a href="vol3-00-title.html">Volume&nbsp;III &mdash; Working in the Era</a>.
+This volume is the lookup set both of them point at. The HOWTO and Internals
+volumes are <i>(planned)</i>.
 </p>
 <p class="navbtns">
 <a href="toc.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
