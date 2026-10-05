@@ -82,15 +82,15 @@ ordering, and the statement-level syntax rules.
 <p>
 Authority: the spelling is <tt>docs/reference/Language_Spec_Z98.md</tt> &sect;3.1;
 the statement dispatcher is <tt>parserParseStatement</tt> (<tt>parser.zig:1501</tt>),
-with declarations in <tt>parserParseVarDecl</tt> (<tt>parser.zig:1596</tt>),
+with declarations in <tt>parserParseVarDecl</tt> (<tt>parser.zig:1609</tt>),
 <tt>defer</tt>/<tt>errdefer</tt> in <tt>parserParseDeferStmt</tt>
-(<tt>parser.zig:2049</tt>), and blocks in <tt>parserParseBlock</tt>
-(<tt>parser.zig:2140</tt>). The const write guard is
+(<tt>parser.zig:2062</tt>), and blocks in <tt>parserParseBlock</tt>
+(<tt>parser.zig:2153</tt>). The const write guard is
 <tt>semantic_analyzer.zig:4105</tt>, the missing-initializer guard is
 <tt>semantic_analyzer.zig:5891</tt>, the ignored-error guard is
 <tt>semantic_analyzer.zig:6107</tt>, and the defer control-flow guard is
 <tt>semantic_analyzer.zig:473</tt>. Every rule below was reproduced on the fixed
-compiler (md5 <tt>821481e69df63fc0cf69176fdaaf9dd9</tt>); reused
+compiler (md5 <tt>17a88daf2402eb8d6ca53d09eb005f8e</tt>); reused
 <tt>repro/mi_matrix/*</tt> fixtures and <tt>docs/sf/manuals/src/vol2/defer.z98</tt>
 are named where one exists.
 </p>
@@ -104,7 +104,7 @@ are named where one exists.
 </tr>
 <tr><td valign="top">local declaration</td><td valign="top"><tt>var name[: T] = init;</tt><br><tt>const name[: T] = init;</tt></td><td valign="top"><tt>var</tt> is mutable, <tt>const</tt> immutable; the annotation is optional; see Declarations.</td></tr>
 <tr><td valign="top">container declaration</td><td valign="top"><tt>const</tt>/<tt>var</tt>/<tt>pub const</tt>, <tt>fn</tt>, <tt>extern</tt>, <tt>export</tt>, <tt>test</tt>, <tt>struct</tt>/<tt>enum</tt>/<tt>union</tt></td><td valign="top">At module scope the dispatcher accepts the same declaration family; these are the grammar and type pages' subjects.</td></tr>
-<tr><td valign="top">assignment</td><td valign="top"><tt>lhs = rhs;</tt><br><tt>lhs op= rhs;</tt></td><td valign="top"><tt>lhs</tt> must be a mutable l-value; assignments are right-associative; see Assignment.</td></tr>
+<tr><td valign="top">assignment</td><td valign="top"><tt>lhs = rhs;</tt><br><tt>lhs op= rhs;</tt></td><td valign="top"><tt>lhs</tt> must be a mutable l-value; assignment is a statement, not an expression (one per statement; not associative); see Assignment.</td></tr>
 <tr><td valign="top">expression statement</td><td valign="top"><tt>expr;</tt></td><td valign="top">A call or other expression evaluated for its effect; see Expression statements and discard.</td></tr>
 <tr><td valign="top">discard</td><td valign="top"><tt>_ = expr;</tt></td><td valign="top">Explicitly evaluates <tt>expr</tt> and drops the result.</td></tr>
 <tr><td valign="top">block</td><td valign="top"><tt>{ ... }</tt></td><td valign="top">A nested scope; see Blocks and scope.</td></tr>
@@ -140,8 +140,11 @@ scratch = total;
 <h2>Assignment</h2>
 <p>
 <tt>lhs = rhs;</tt> stores <tt>rhs</tt> into the mutable place <tt>lhs</tt>. The
-compound spellings fold the operator into the store. All assignment operators share
-the assignment precedence and associate to the right.
+compound spellings fold the operator into the store. Assignment is a statement,
+not an expression: one statement holds exactly one assignment operator, and both
+sides are ordinary (non-assignment) expressions. A chained or nested assignment
+(<tt>a = b = 2;</tt>, <tt>var c: i32 = a = 3;</tt>, <tt>return a = 3;</tt>) is a
+parse-level <tt>error[2000]</tt>.
 </p>
 <table width="100%" border="1" cellpadding="4" cellspacing="0">
 <tr>
@@ -186,11 +189,22 @@ fn setParam(x: u32) void {
 }
 </pre>
 <p>
-Assignment is a statement, not an expression: it cannot appear in a condition
-(<tt>if (a = 3)</tt>, <tt>while (a = 0)</tt>, <tt>switch (a = 3)</tt>) or inside a
-parenthesized expression (<tt>var b = (a = 3);</tt>). Each is a parse-level
-<tt>error[2000]</tt> (<tt>expected ')' but found token</tt> / <tt>unexpected
-token</tt>), fixture <tt>repro/mi_matrix/cond_assign_reject_xmod</tt>.
+Assignment is a statement, not an expression: it may not appear anywhere an
+expression is expected &mdash; a condition (<tt>if (a = 3)</tt>,
+<tt>while (a = 0)</tt>, <tt>switch (a = 3)</tt>), a parenthesized expression
+(<tt>var b = (a = 3);</tt>), a declaration initializer
+(<tt>var b: i32 = a = 3;</tt>), a <tt>return</tt> value (<tt>return a = 3;</tt>),
+a call or builtin argument (<tt>f(a = 3)</tt>), an index or slice bound
+(<tt>arr[a = 0]</tt>), a struct/tuple/array-literal element, an
+<tt>if</tt>/<tt>switch</tt> arm, or a <tt>for</tt> bound
+(<tt>for (0..a = 3)</tt>). Each is a parse-level <tt>error[2000]</tt>; the
+wording is <tt>expected ')' / ']' / ',' / ';' but found token</tt> (companion
+<tt>unexpected token</tt>), fixtures
+<tt>repro/mi_matrix/cond_assign_reject_xmod</tt> and
+<tt>repro/mi_matrix/assignment_expr_reject_xmod</tt>. A single assignment as a
+statement body remains legal, including an unbraced
+<tt>if (c) a = b;</tt>, a <tt>while (...) : (i += 1)</tt> continue expression,
+and a switch prong body <tt>x =&gt; a = b</tt>.
 </p>
 
 <h2>Expression statements and discard</h2>
@@ -297,7 +311,7 @@ are pinned by <tt>repro/mi_matrix/defer_control_flow_reject_xmod</tt> and
 <tr><td valign="top">Declarations and expression statements end with <tt>;</tt>; so do <tt>return</tt>, <tt>break</tt>, and <tt>continue</tt>.</td><td valign="top">The parser expects the terminator at statement end.</td></tr>
 <tr><td valign="top">A <tt>;</tt> may not precede <tt>else</tt>.</td><td valign="top"><tt>error[2000]</tt> <tt>';' not allowed before 'else' - use braces: if (cond) { ... } else { ... }</tt>. Use braces, or omit the semicolon (<tt>if (a) return 1 else return 0;</tt> &mdash; verified).</td></tr>
 <tr><td valign="top">An empty statement <tt>;</tt> is legal.</td><td valign="top">Parsed and skipped; a run of <tt>; ;</tt> is a no-op.</td></tr>
-<tr><td valign="top">Assignment may not appear in a condition or a parenthesized expression.</td><td valign="top"><tt>error[2000]</tt> at parse time (<tt>repro/mi_matrix/cond_assign_reject_xmod</tt>).</td></tr>
+<tr><td valign="top">Assignment may not appear where an expression is expected &mdash; a condition, a parenthesized expression, an initializer, a return value, a call or builtin argument, an index/slice bound, a literal element, an <tt>if</tt>/<tt>switch</tt> arm, or a <tt>for</tt> bound.</td><td valign="top"><tt>error[2000]</tt> at parse time (<tt>repro/mi_matrix/cond_assign_reject_xmod</tt>, <tt>repro/mi_matrix/assignment_expr_reject_xmod</tt>).</td></tr>
 <tr><td valign="top">Braces are optional around a single <tt>if</tt>/<tt>while</tt>/<tt>for</tt> body.</td><td valign="top">The single statement is normalized into a synthetic block.</td></tr>
 </table>
 
@@ -308,7 +322,7 @@ are pinned by <tt>repro/mi_matrix/defer_control_flow_reject_xmod</tt> and
 <th align="left" bgcolor="#e8e0e0"><b>Message</b></th>
 </tr>
 <tr><td valign="top"><tt>error[20]</tt></td><td valign="top"><tt>identifier '&lt;x&gt;' is not declared or imported in this module</tt> (undeclared name on the right of a discard).</td></tr>
-<tr><td valign="top"><tt>error[2000]</tt></td><td valign="top">Parse-level rejects: <tt>expected ')' but found token</tt> / <tt>unexpected token</tt> (assignment in a condition, parenthesized assignment), and <tt>';' not allowed before 'else' - use braces: if (cond) { ... } else { ... }</tt>.</td></tr>
+<tr><td valign="top"><tt>error[2000]</tt></td><td valign="top">Parse-level rejects: <tt>expected ')' / ']' / ',' / ';' but found token</tt> / <tt>unexpected token</tt> (assignment where an expression is expected &mdash; a condition, a parenthesized expression, an initializer, a return value, a call argument, an index, a literal element, an arm, or a for bound), and <tt>';' not allowed before 'else' - use braces: if (cond) { ... } else { ... }</tt>.</td></tr>
 <tr><td valign="top"><tt>error[3002]</tt></td><td valign="top"><tt>cannot assign to immutable variable</tt> (write to a <tt>const</tt>, parameter, capture, or const view).</td></tr>
 <tr><td valign="top"><tt>error[3014]</tt></td><td valign="top"><tt>variable must be initialized; use '= undefined' to opt out</tt>.</td></tr>
 <tr><td valign="top"><tt>error[3015]</tt></td><td valign="top"><tt>error union result is ignored; use 'try', 'catch', or assign the result</tt>.</td></tr>

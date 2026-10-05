@@ -1,4 +1,64 @@
-# mi_matrix corpus — expected-fail manifest (v292 2026-10-04)
+# mi_matrix corpus — expected-fail manifest (v293 2026-10-05)
+
+## A6-F — assignment is not an expression (v292 -> v293, 2026-10-05)
+
+Volume IV Amendment A6 (operator m1570/m1582/m1691/m1693; investigation
+`task-A6-I-report.md`, migration census `task-A6-M-report.md`). The generic
+Pratt loop (`getInfixInfo` maps every assignment operator to
+`Prec.assignment` = 1) admitted `=` wherever an expression was expected, so
+`a = b = 2;` / `var b: i32 = a = 3;` / `return a = 3;` compiled rc 0 and the
+inner assignment lowered as a value (Zig 0.15.2 rejects). Full sweep: 28
+low-precedence call sites — 21 must-reject expression positions + 7 legitimate
+statement-body positions.
+
+**Fix (`sf/src/parser.zig` only; no sema/lowering/emitter change;
+`getInfixInfo` unchanged).** (a) The 21 must-reject positions parse at
+`Prec.prec_orelse` (was `Prec.none`/`Prec.assignment`): index `:520`, slice-high
+`:528`, call arg `:550`, struct field-init `:602`, builtin arg `:767`, tuple
+elem `:887`, array-literal elem `:920`, value-if then/else `:964/:968`, switch
+case item/`..`/`...` `:1026/:1031/:1035`, array-type size `:1198`, enum member
+value `:1406`, var-init `:1619`, for pattern/range/index bounds
+`:1909/:1912/:1925/:1932`, return `:1990`, container enum member value `:2113`.
+(b) The 7 legitimate statement-body positions use the new shared
+`parserParseStmtBodyExpr` helper (parse LHS at `prec_orelse`, consume exactly
+one assignment op, parse RHS at `prec_orelse`, emit `plain_assign`/`*_assign`):
+`parserParseExprStmt` `:1566` and the unbraced bodies/prongs at
+`:1081/:1820/:1833/:1881/:1889/:1968`; a nested `=` still rejects with
+`error[2000]`.
+
+**Fixtures (new).** `repro/mi_matrix/assignment_expr_reject_xmod`
+(`expected.rc` 2; `expected_error.txt` `2000 18`; rc 2 / 0 `.c`; classifier
+**FAIL** — a documented **green-guard**: a correct oracle-matching reject with
+`error[2000]`, the same bucket as `parsergap_strict_comma_xmod` /
+`parsergap_selfblok_xmod`) + standalone `repro/assignment_expr_reject.z98`
+(`2000 4`). The counts include `parserSynchronize` recovery diagnostics;
+`expected_error.txt` is force-added (`git add -f`; `.gitignore` ignores `*.txt`).
+
+**Corpus movement.** `-s0` classify, same tree, base fp `821481e6`
+(1094 = 924 OK / 58 GREEN / 112 FAIL) -> post **1094 = 923 OK / 58 GREEN / 113
+FAIL / 0 ICE / 0 CRASH**; join-diff over the 1094 common dirs is exactly the new
+fixture (`assignment_expr_reject_xmod` OK -> FAIL by the raw classifier,
+declared green-guard) — **zero pre-existing movers**.
+
+**Gates (new fixed point `17a88daf2402eb8d6ca53d09eb005f8e`, hop1 == hop2).**
+4-MD5 emitted-C both modes **UNCHANGED 8/8**; example matrix **24/24**; stdlib
+**266 PASS / 0 FAIL**; `check_emit_support.sh` **7/7**; `verify_upgraded.sh`
+**CLOSEOUT OK**; self-emission **48 `.c` + 48 `.h` / 0 PANIC**; `build_test.sh`
+**0/9** (pre-existing); `run_all.sh` **13/13**. Seed v90 NOT rotated
+(closeout-only).
+
+**Green-guard set (error[2000] additions).** `assignment_expr_reject_xmod`
+(`error[2000]`, rc 2 / 0 `.c`) joins `strictzig_brace_if_xmod`,
+`parsergap_selfblok_xmod`, `parsergap_strict_comma_xmod` (all `error[2000]`) in
+the documented green-guard set; it is a correct rejection matching Zig 0.15.2,
+not a compiler gap.
+
+**PARKED residual (A6-M §6.3; do NOT fold).** A *value*-switch prong keeps
+accepting an assignment and Z98 does not type the void prong against the
+switch's type: `var y: i32 = switch (x) { 2 => a = 3, else => 0 };` stays rc 0
+(the assignment itself is legal in a prong), while Zig rejects
+`expected type 'i32', found 'void'`. Switch-value-arm typing is a separate
+defect.
 
 ## A5-F — type/alias values clean-reject in value positions (v291 -> v292, 2026-10-04)
 

@@ -399,6 +399,36 @@ the two new A5-F fixtures; zero pre-existing movers); the new fixed point
 same root cause, do NOT fold): function-local `var x = i32;` / `var x = A;`;
 module `var X = struct {...};` / `var X = *i32;`; shadow-diagnostic noise.
 
+A6-F (2026-10-05; Volume IV Amendment A6, operator m1570/m1582/m1691/m1693)
+makes assignment a statement, not an expression: the 21 expression positions
+(index/slice, call/builtin args, struct/tuple/array literals, value-if
+branches, switch case items/ranges, array-type size, enum member values, for
+pattern/bounds, var-init, return) now parse at `Prec.prec_orelse`, so
+`a = b = 2;` / `var c: i32 = a = 3;` / `return a = 3;` / `f(a = 3)` /
+`arr[a = 0]` / `for (0..a = 3)` reject rc 2 / 0 `.c` with
+`error[2000]: expected ';' but found token` (parser `error[2000]` wording kept,
+not Zig's `expected ';' after statement`). The 7 legitimate statement-body
+positions (expr stmt, unbraced if/then, if/else, while body, while
+continue-expr, for body, switch prong body) keep exactly one assignment working
+via the new shared `parserParseStmtBodyExpr` helper (`sf/src/parser.zig`); a
+nested `=` still rejects. `sf/src/parser.zig` only; `getInfixInfo`, sema,
+lowering and the emitter unchanged. Fixtures
+`repro/mi_matrix/assignment_expr_reject_xmod` (`expected.rc` 2,
+`expected_error.txt` `2000 18`, FAIL-by-classifier -> declared a green-guard)
++ standalone `repro/assignment_expr_reject.z98` (`2000 4`). All 8 emitted-C pins
+stay **UNCHANGED 8/8** both modes; example matrix 24/24; stdlib **266 PASS / 0
+FAIL**; emit 7/7; `verify_upgraded.sh` CLOSEOUT OK; self-emission 48 `.c` + 48
+`.h` / 0 PANIC; build_test 0/9 (pre-existing); run_all 13/13; corpus `-s0`
+**1094 = 923 OK / 58 GREEN / 113 FAIL / 0 ICE / 0 CRASH** (only mover = the new
+fixture OK -> FAIL by the raw classifier, declared green-guard; zero
+pre-existing movers); the new fixed point (moving point hop1 == hop2, explicit
+`FIXED_POINT_MD5` gate) is **`17a88daf2402eb8d6ca53d09eb005f8e`**; seed v90 NOT
+rotated. PARKED (do NOT fold): a *value*-switch prong keeps accepting an
+assignment and Z98 does not type the void prong against the switch type —
+`var y: i32 = switch (x) { 2 => a = 3, else => 0 };` stays rc 0 (Zig rejects
+`expected type 'i32', found 'void'`); switch-value-arm typing, a separate
+defect.
+
 - Self-consistency gate: compare current zig1 `--dump-c89` against a pre-captured reference .c file. If the reference .c is outdated (intentional baseline change), re-capture via `cp /tmp/new.c /tmp/ref.c`. Never compare against parent-zig1 output directly — parent builds may fail silently.
 - Do **NOT** compare `zig1 --dump-c89` output against `zig0`'s C output. `zig0` emits a legacy bootstrap format that is byte-level incompatible with zig1.
 
