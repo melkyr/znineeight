@@ -632,11 +632,26 @@ fn semanticAnalyzerNthIdentSpan(self: *SemanticAnalyzer, from: u32, limit: u32, 
     return true;
 }
 
-fn semanticAnalyzerCaptureType(self: *SemanticAnalyzer, cond_type: u32) u32 {
+// A8-F (Volume IV Amendment A8, operator option A): the no-else error-union
+// condition capture (`if (eu) |v|` / `while (eu) |v|`) is not supported. The
+// old behavior accepted it (rc 0) and emitted gcc-invalid C because the capture
+// bound the whole error union; Zig 0.15.2 rejects the same no-else shape
+// (`expected optional type, found 'E!T'`). Reject it cleanly with the existing
+// level-0 `ERR_3058` condition diagnostic so the post-sema `hasErrors` gate
+// exits rc 2 before any lowering. Optional captures are unchanged, and
+// `else |e|` remains the pre-existing parse reject (no feature added).
+fn semanticAnalyzerCaptureType(self: *SemanticAnalyzer, cond_type: u32, cap_node_idx: u32) u32 {
     if (cond_type == type_mod.TYPE_VOID) return type_mod.TYPE_VOID;
     var capt_ty = self.registry.types_items[@intCast(usize, cond_type)];
     if (capt_ty.kind == type_mod.TypeKind.optional_type) {
         return self.registry.opt_items[@intCast(usize, capt_ty.payload_idx)].payload;
+    }
+    if (capt_ty.kind == type_mod.TypeKind.error_union_type) {
+        if (diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, cap_node_idx)) {
+            var eu_cap_msg: []const u8 = "error union capture is not supported; use 'catch', 'switch', or 'orelse'";
+            var eu_cap_node = ast_mod.astStoreNodeAt(self.store, cap_node_idx);
+            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3058_CONDITION_NOT_BOOL)), self.source_file_id, eu_cap_node.span_start, eu_cap_node.span_start + @intCast(u32, eu_cap_node.span_len), eu_cap_msg);
+        }
     }
     return cond_type;
 }
@@ -5512,7 +5527,7 @@ fn semanticAnalyzerResolveIfHeader(self: *SemanticAnalyzer, node_idx: u32) void 
         var icap_node = ast_mod.astStoreNodeAt(self.store, icap_idx);
         if (icap_node.kind == AstKind.if_capture) {
             semanticAnalyzerCheckLocalShadow(self, ast_mod.astStoreNodePayload(self.store, icap_idx), icap_node.span_start, icap_node.span_start + @intCast(u32, icap_node.span_len));
-            registerLocalDecl(self, ast_mod.astStoreNodePayload(self.store, icap_idx), semanticAnalyzerCaptureType(self, icond_t), icap_node.span_start, icap_node.span_start + @intCast(u32, icap_node.span_len));
+            registerLocalDecl(self, ast_mod.astStoreNodePayload(self.store, icap_idx), semanticAnalyzerCaptureType(self, icond_t, icap_idx), icap_node.span_start, icap_node.span_start + @intCast(u32, icap_node.span_len));
         }
     }
     var icap_present = ast_mod.astStoreNodePayload(self.store, node_idx) != @intCast(u32, 0);
@@ -5723,7 +5738,7 @@ fn semanticAnalyzerResolveWhileHeader(self: *SemanticAnalyzer, node_idx: u32) vo
         var wcap_node = ast_mod.astStoreNodeAt(self.store, wcap_idx);
         if (wcap_node.kind == AstKind.while_capture) {
             semanticAnalyzerCheckLocalShadow(self, ast_mod.astStoreNodePayload(self.store, wcap_idx), wcap_node.span_start, wcap_node.span_start + @intCast(u32, wcap_node.span_len));
-            registerLocalDecl(self, ast_mod.astStoreNodePayload(self.store, wcap_idx), semanticAnalyzerCaptureType(self, wcond_t), wcap_node.span_start, wcap_node.span_start + @intCast(u32, wcap_node.span_len));
+            registerLocalDecl(self, ast_mod.astStoreNodePayload(self.store, wcap_idx), semanticAnalyzerCaptureType(self, wcond_t, wcap_idx), wcap_node.span_start, wcap_node.span_start + @intCast(u32, wcap_node.span_len));
         }
     }
     var wcap_present = ast_mod.astStoreNodePayload(self.store, node_idx) != @intCast(u32, 0);

@@ -429,6 +429,33 @@ assignment and Z98 does not type the void prong against the switch type —
 `expected type 'i32', found 'void'`); switch-value-arm typing, a separate
 defect.
 
+A8-F (2026-10-05; Volume IV Amendment A8, operator m1617 ruled option A —
+reduced, reject-only) clean-rejects the no-`else` error-union condition capture.
+`if (eu) |v|` / `while (eu) |v|` (no `else |e|`) compiled rc 0 on the base but
+the capture bound the whole error union, so the emitted C failed gcc (`used
+struct type value where scalar is required`); Zig 0.15.2 rejects the same
+no-else shape (`expected optional type, found 'E!T'`). `semanticAnalyzerCaptureType`
+(`sf/src/semantic_analyzer.zig:635`) now detects an `error_union_type`
+condition and emits the existing level-0 `error[3058]`
+(`ERR_3058_CONDITION_NOT_BOOL`) with `error union capture is not supported; use
+'catch', 'switch', or 'orelse'` at the capture span; the post-sema `hasErrors`
+gate exits rc 2 / 0 `.c` before LIR lowering, so the lowering capture/condition
+paths are never reached. Optional `if (opt) |v|` is unchanged; the Zig
+`else |e|` error arm stays the pre-existing parse reject (`error[2000]`) — no
+feature, no payload binding, no while-else plumbing (the Zig parity form is a
+parked residual, recorded on page 14). The diagnostic enum is unchanged (3058
+reused). Fixture `repro/mi_matrix/error_union_capture_reject_xmod` (`3058 2`,
+rc 2 / 0 `.c`, class FAIL — an intentional oracle-matching reject, not a
+green-guard) + standalone `repro/error_union_capture_reject.z98` (`3058 1`).
+All 8 emitted-C pins stay **UNCHANGED 8/8** both modes; example matrix 24/24;
+stdlib **266 PASS / 0 FAIL**; emit 7/7; `verify_upgraded.sh` CLOSEOUT OK;
+self-emission 48 `.c` + 48 `.h` / 0 PANIC; build_test 0/9 (pre-existing);
+run_all 13/13; corpus `-s0` **1096 = 923 OK / 58 GREEN / 115 FAIL / 0 ICE / 0
+CRASH** (base excluding the new fixture 1095 = 923/58/114; join-diff empty —
+zero pre-existing movers; the only addition is the new FAIL fixture); the new
+fixed point (moving point hop1 == hop2, explicit `FIXED_POINT_MD5` gate) is
+**`ca21a1bab9fa185f43b99eeb4bd7b847`**; seed v90 NOT rotated.
+
 A7-F (2026-10-05; Volume IV Amendment A7, operator m1596) scopes the
 `if (opt) |v|` capture to the then arm (Zig parity): the capture was registered
 in `semanticAnalyzerResolveIfHeader` (`sf/src/semantic_analyzer.zig:5507`) and

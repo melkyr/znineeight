@@ -1,0 +1,17 @@
+// repro/error_union_capture_reject.z98 — A8-F standalone reject control.
+//
+// An error-union condition capture without an `else |e|` arm is not supported
+// (Volume IV Amendment A8, operator option A). Baseline (fp 2719c557) compiled
+// this rc 0 and emitted gcc-invalid C (the capture bound the whole error union).
+// Fixed: rc 2, 0 `.c`,
+//   error[3058]: error union capture is not supported; use 'catch', 'switch', or 'orelse'
+// Zig 0.15.2 rejects the same shape (`expected optional type, found 'error{Bad}!i32'`).
+// census: 3058 1
+const E = error{Bad};
+fn h() E!i32 { return 42; }
+
+pub fn main() void {
+    if (h()) |v| {
+        _ = v;
+    }
+}

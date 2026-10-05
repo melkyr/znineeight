@@ -1,4 +1,53 @@
-# mi_matrix corpus — expected-fail manifest (v294 2026-10-05)
+# mi_matrix corpus — expected-fail manifest (v295 2026-10-05)
+
+## A8-F — clean-reject the no-else error-union condition capture (v294 -> v295, 2026-10-05)
+
+Volume IV Amendment A8 (operator m1617; **reduced scope, operator-ruled option
+A: reject-only**; investigation `task-A8-I-report.md`). A condition that
+resolves to an **error union** captured as `if (eu) |v|` / `while (eu) |v|`
+(no `else |e|`) compiled rc 0 and the capture bound the **whole error union**,
+so the emitted C failed gcc (`used struct type value where scalar is required`).
+Zig 0.15.2 rejects the same no-else shape (`expected optional type, found
+'E!T'`).
+
+**Fix (`sf/src/semantic_analyzer.zig` only; analyzer-only, no new diagnostic
+code, no parser/lowering/emitter change).** `semanticAnalyzerCaptureType`
+(`:635`) now detects an `error_union_type` condition and emits the existing
+level-0 `error[3058]` (`ERR_3058_CONDITION_NOT_BOOL`) with
+`error union capture is not supported; use 'catch', 'switch', or 'orelse'` at
+the capture span. The post-sema `hasErrors` gate exits rc 2 / 0 `.c` before LIR
+lowering, so the lowering capture/condition paths are never reached. The
+optional capture path (`if (opt) |v|`) is untouched, and the Zig `else |e|`
+error arm stays the pre-existing parse reject (`error[2000]`) — **no feature,
+no payload binding, no while-else plumbing** was added. `error[3058]` is reused
+verbatim as the code; only the message differs by condition kind.
+
+**Fixture (new).** `repro/mi_matrix/error_union_capture_reject_xmod`
+(`expected.rc` 2; `expected_error.txt` `3058 2`: one `if` + one `while`
+no-else capture, one diagnostic each, no cascade) + standalone
+`repro/error_union_capture_reject.z98` (`3058 1`). rc 2 / 0 `.c`; the canonical
+classifier buckets non-`error[3000]` rejects as **FAIL**, so this is an
+intentional, oracle-matching reject — **NOT** a green-guard (green-guards are
+reserved for `error[3000]`). `expected_error.txt` is force-added (`git add -f`;
+`.gitignore` ignores `*.txt`).
+
+**Corpus movement.** `-s0` classify, same tree, base fp `2719c557`
+(excluding the new fixture: 1095 = 923 OK / 58 GREEN / 114 FAIL) -> post
+**1096 = 923 OK / 58 GREEN / 115 FAIL / 0 ICE / 0 CRASH**; join-diff vs the base
+over all common dirs (the new fixture is FAIL in both) is **EMPTY** — zero
+pre-existing movers; the only dir-set addition is the new fixture.
+
+**Gates (new fixed point `ca21a1bab9fa185f43b99eeb4bd7b847`, hop1 == hop2).**
+Seed two-hop closure; 4-MD5 emitted-C both modes **UNCHANGED 8/8**; example
+matrix **24/24**; stdlib **266 PASS / 0 FAIL**; `check_emit_support.sh`
+**7/7**; `verify_upgraded.sh` **CLOSEOUT OK**; self-emission **48 `.c` + 48
+`.h` / 0 PANIC**; `build_test.sh` **0/9** (pre-existing); `run_all.sh`
+**13/13**. Seed v90 NOT rotated (closeout-only).
+
+**Parked (do NOT fold).** Zig `if (eu) |v| ... else |e| ...` / `while (eu) |v|
+... else |e| ...` parity (payload `v: T`, error `e: E`) is a documented
+residual; the page (`docs/sf/manuals/en/vol4-14-error-expressions.html`) records
+it as the deferred A8 gap.
 
 ## A7-F — the `if` capture is scoped to the then arm (v293 -> v294, 2026-10-05)
 

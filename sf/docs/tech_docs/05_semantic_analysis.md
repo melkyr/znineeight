@@ -342,7 +342,7 @@ fi from 0..fields_count:
 | 26 | `break_stmt` / `continue_stmt` | `[inference: return TYPE_VOID]` | `TYPE_VOID` |
 | 27 | `var_decl` / `defer_stmt` / `errdefer_stmt` / `labeled_stmt` | → `semanticAnalyzerResolveStmtIter` | `TYPE_VOID` |
 | 28 | `if_expr` | → `semanticAnalyzerResolveIfExpr` | unified then/else type |
-| 29 | `if_stmt` | `[inference: resolve header, push children to worklist]` (A7-F: the capture is scoped to the then arm; an else-arm use is `error[20]`) | `TYPE_VOID` |
+| 29 | `if_stmt` | `[inference: resolve header, push children to worklist]` (A7-F: the capture is scoped to the then arm; an else-arm use is `error[20]`; A8-F: an error-union condition capture is level-0 `error[3058]`) | `TYPE_VOID` |
 | 30 | `for_stmt` | → `semanticAnalyzerResolveForHeader` | `TYPE_VOID` |
 | 31 | `while_stmt` | → `semanticAnalyzerResolveWhileHeader` | `TYPE_VOID` |
 | 32 | `swt_ex` | → `semanticAnalyzerResolveSwitchExpr` | unified prong type |
@@ -714,15 +714,15 @@ Unification first honors an expected type from the enclosing context (`topExpect
 
 ### semanticAnalyzerCaptureType (`semantic_analyzer.zig`)
 
-`[inference: if optional → unwrap payload; else return cond_type as-is]`
+`[inference: if optional → unwrap payload; if error union → report error[3058] and return cond_type; else return cond_type as-is]`
 
-Unwraps optional types in if/while/for capture expressions. If cond_type is optional, returns the payload type; otherwise returns cond_type unchanged.
+Unwraps optional types in if/while capture expressions. If cond_type is optional, returns the payload type; otherwise returns cond_type unchanged. `[updated: 2026-10-05 — A8-F (Volume IV Amendment A8, operator option A, reduced scope): an error-union condition capture (`if (eu) |v|` / `while (eu) |v|`, no `else |e|`) is clean-rejected with the existing level-0 `error[3058]` (`ERR_3058_CONDITION_NOT_BOOL`) and the message `error union capture is not supported; use 'catch', 'switch', or 'orelse'`, deduped per capture node via `diagnosticCollectorMarkNodeOnce`. The post-sema `hasErrors` gate exits rc 2 / 0 `.c` before LIR lowering, so the capture/condition lowering paths are never reached. Optional captures are unchanged; the Zig `else |e|` error arm stays the pre-existing parse reject (no feature). The function signature gained a `cap_node_idx` argument (the capture node, for the diagnostic span).]`
 
 ### semanticAnalyzerResolveIfHeader / ForHeader / WhileHeader
 
 `resolveIfHeader` (`semantic_analyzer.zig`):
 `[inference: resolve condition → if_capture → registerLocalDecl with captured type → validate condition type]`
-Capture unwraps optional via `semanticAnalyzerCaptureType`. After resolving the condition and registering any capture, `semanticAnalyzerCheckConditionType(node_idx, cond_idx, cond_t, has_capture)` validates it: with no capture the condition must be `bool`, and with a capture it must be optional or error-union; a violation emits level-0 `error[3058]` (`ERR_3058_CONDITION_NOT_BOOL`) at the condition (rc=2, 0 `.c`). A condition already typed `void`/`undefined`/`noreturn` is skipped so an earlier diagnostic (e.g. an undeclared identifier) is not cascaded. `[updated: 2026-09-22 — Task 9B (c, m1240 ruling 5): rejects a non-`bool` `if` condition (`if (a)` with i32/u32/pointer/enum/optional) and a non-optional capture condition (`if (q) |v|` with a non-optional `q`), matching official Zig 0.15.2 ("expected type 'bool'" / "expected optional type"). Deduped via `diagnosticCollectorMarkNodeOnce`.] [updated: 2026-10-05 — A7-F: the header only registers the capture; it is now closed at the end of the then arm by each of its three callers (the statement walker, the `ResolveExpr` `if_stmt` arm, and `semanticAnalyzerResolveIfExpr`), so it is not visible in the `else` arm (an else-arm use is level-0 `error[20]`). Analyzer-only; no new code.]`
+Capture unwraps optional via `semanticAnalyzerCaptureType`. After resolving the condition and registering any capture, `semanticAnalyzerCheckConditionType(node_idx, cond_idx, cond_t, has_capture)` validates it: with no capture the condition must be `bool`, and with a capture it must be optional or error-union; a violation emits level-0 `error[3058]` (`ERR_3058_CONDITION_NOT_BOOL`) at the condition (rc=2, 0 `.c`). A condition already typed `void`/`undefined`/`noreturn` is skipped so an earlier diagnostic (e.g. an undeclared identifier) is not cascaded. `[updated: 2026-09-22 — Task 9B (c, m1240 ruling 5): rejects a non-`bool` `if` condition (`if (a)` with i32/u32/pointer/enum/optional) and a non-optional capture condition (`if (q) |v|` with a non-optional `q`), matching official Zig 0.15.2 ("expected type 'bool'" / "expected optional type"). Deduped via `diagnosticCollectorMarkNodeOnce`.] [updated: 2026-10-05 — A7-F: the header only registers the capture; it is now closed at the end of the then arm by each of its three callers (the statement walker, the `ResolveExpr` `if_stmt` arm, and `semanticAnalyzerResolveIfExpr`), so it is not visible in the `else` arm (an else-arm use is level-0 `error[20]`). Analyzer-only; no new code.] [updated: 2026-10-05 — A8-F: an error-union condition with a capture is rejected earlier, inside `semanticAnalyzerCaptureType`, with level-0 `error[3058]` (`error union capture is not supported; ...`), so `semanticAnalyzerCheckConditionType`'s "optional or error-union" accept path is reached only for optional captures; the EU condition never produces a capture local for lowering.]`
 
 `resolveForHeader` (`semantic_analyzer.zig`):
 `[inference: resolve iterable → slice/array/pointer-to-array/range → element type → register capture + index]`
@@ -730,7 +730,7 @@ If payload (capture name), register local decl with element type. If child_2 (in
 
 `resolveWhileHeader` (`semantic_analyzer.zig`):
 `[inference: resolve condition → while_capture → registerLocalDecl → validate condition type]`
-Same capture logic as if-header, and the same `semanticAnalyzerCheckConditionType` validation (no capture requires `bool`; a capture requires optional/error-union; level-0 `error[3058]`). Also resolves `child_2` (the `while` continue expression) so nested field stores there have resolved types. `[updated: 2026-09-22 — Task 9B (c): the shared condition-type check covers `while (a)` with a non-`bool` condition.]`
+Same capture logic as if-header, and the same `semanticAnalyzerCheckConditionType` validation (no capture requires `bool`; a capture requires optional/error-union; level-0 `error[3058]`). Also resolves `child_2` (the `while` continue expression) so nested field stores there have resolved types. `[updated: 2026-09-22 — Task 9B (c): the shared condition-type check covers `while (a)` with a non-`bool` condition.]` `[updated: 2026-10-05 — A8-F: an error-union condition capture (`while (eu) |v|`) is rejected by `semanticAnalyzerCaptureType` with level-0 `error[3058]` before the condition check, so no EU capture local is registered; optional `while (opt) |v|` is unchanged.]`
 
 ### semaTraceStep (`semantic_analyzer.zig`)
 

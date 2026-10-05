@@ -88,12 +88,12 @@ loosest right-associative infix levels (<tt>catch</tt> 3, <tt>orelse</tt> 2;
 <tt>parser.zig:2185-2189</tt>, <tt>:2228</tt>); the <tt>if</tt>/<tt>while</tt> capture node is
 <tt>parserParseIfStmt</tt> (<tt>parser.zig:1776</tt>) and
 <tt>parserParseWhileStmt</tt> (<tt>:1854</tt>); the semantic rules are
-<tt>semantic_analyzer.zig:3476</tt> and <tt>:3500</tt> (<tt>try</tt>),
-<tt>:3548</tt> (<tt>orelse</tt>), <tt>:3627</tt> (value <tt>if</tt>),
-<tt>:4937</tt> (<tt>catch</tt>), <tt>:5481</tt> (condition/capture type);
+<tt>semantic_analyzer.zig:3491</tt> and <tt>:3515</tt> (<tt>try</tt>),
+<tt>:3563</tt> (<tt>orelse</tt>), <tt>:3642</tt> (value <tt>if</tt>),
+<tt>:4958</tt> (<tt>catch</tt>), <tt>:5504</tt> (condition/capture type);
 the capture binding is <tt>bindOptionalCapture</tt> (<tt>lower.zig:3676</tt>).
 Every rule below was reproduced on the fixed compiler (md5
-<tt>821481e69df63fc0cf69176fdaaf9dd9</tt>) unless the text says otherwise;
+<tt>ca21a1bab9fa185f43b99eeb4bd7b847</tt>) unless the text says otherwise;
 reused fixtures are named where one exists.
 </p>
 
@@ -286,8 +286,9 @@ value or make the block diverge.
 <h2>Capture: <tt>if (opt) |v|</tt>, <tt>while (opt) |v|</tt></h2>
 <p>
 A capture binds the unwrapped value of its condition. The condition must be an
-optional or an error union; anything else is rejected. The binding is an
-immutable copy &mdash; reassign the source, never the capture.
+optional; an error-union condition is <b>not supported</b> (see the next
+section) &mdash; anything else is rejected. The binding is an immutable copy
+&mdash; reassign the source, never the capture.
 </p>
 <table width="100%" border="1" cellpadding="4" cellspacing="0">
 <tr>
@@ -307,8 +308,8 @@ immutable copy &mdash; reassign the source, never the capture.
 <td valign="top">Loops while the optional is present; ends when it becomes <tt>null</tt>.</td>
 </tr>
 <tr>
-<td valign="top"><tt>if (cond) |v|</tt>, <tt>cond</tt> not optional or error union</td>
-<td valign="top"><tt>error[3058]</tt> <tt>capture condition must be an optional or error union type</tt>.</td>
+<td valign="top"><tt>if (cond) |v|</tt>, <tt>cond</tt> not an optional</td>
+<td valign="top"><tt>error[3058]</tt> <tt>capture condition must be an optional or error union type</tt> (a non-capturable condition; an error-union condition instead gets the dedicated reject below).</td>
 </tr>
 <tr>
 <td valign="top"><tt>if (non-bool)</tt>, no capture</td>
@@ -343,49 +344,61 @@ non-<tt>void</tt> type is <tt>error[3059]</tt> unless its condition is
 comptime-known true.
 </p>
 
-<h2>Capture over an error union: <tt>if (eu) |v| else |e|</tt></h2>
+<h2>Capture over an error union: not supported</h2>
 <p>
-An <tt>if</tt>/<tt>while</tt> capture may take an error-union condition, written
-with an error arm <tt>else |e|</tt>. On the success path the capture binds the
-<b>payload</b> (<tt>v: T</tt> for <tt>E!T</tt>); the error arm binds the
-error-set value (<tt>e: E</tt>). This is the error-union counterpart of the
-optional capture above.
+An error-union condition may <b>not</b> be captured. There is no payload or
+error binding, and the Zig error arm <tt>else |e|</tt> does not parse. Use
+<tt>catch</tt> (with an error capture), a <tt>switch (eu)</tt>, or
+<tt>orelse</tt> on an optional instead.
 </p>
 <table width="100%" border="1" cellpadding="4" cellspacing="0">
 <tr>
 <th align="left" bgcolor="#e8e0e0"><b>Form</b></th>
-<th align="left" bgcolor="#e8e0e0"><b>Rule (final)</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Rule (measured)</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>if (eu) |v| ...</tt>, <tt>while (eu) |v| ...</tt></td>
+<td valign="top">Rejected: <tt>error[3058]</tt> <tt>error union capture is not supported; use 'catch', 'switch', or 'orelse'</tt>. rc 2, no C emitted.</td>
 </tr>
 <tr>
 <td valign="top"><tt>if (eu) |v| ... else |e| ...</tt></td>
-<td valign="top">The error-union capture form. Success binds the payload <tt>v: T</tt>; the error path binds the error <tt>e: E</tt>.</td>
+<td valign="top">Rejected: <tt>error[2000]</tt> <tt>expected expression</tt> at the <tt>else |</tt> arm (the error arm is not implemented).</td>
 </tr>
 <tr>
-<td valign="top"><tt>while (eu) |v| ... else |e| ...</tt></td>
-<td valign="top">Loops while the condition is a success, binding the payload <tt>v</tt> each iteration; when it yields an error the loop ends and <tt>else |e|</tt> runs with that error.</td>
+<td valign="top"><tt>if (opt) |v| ... else ...</tt></td>
+<td valign="top">Accepted; the ordinary optional capture above is unaffected.</td>
 </tr>
 <tr>
-<td valign="top"><tt>if (eu) |v|</tt> or <tt>while (eu) |v|</tt> with no <tt>else |e|</tt></td>
-<td valign="top">Rejected: an error-union capture needs the error arm. Zig 0.15.2 reports <tt>expected optional type, found 'E!T'</tt>, because a bare <tt>|v|</tt> is taken as an optional capture.</td>
-</tr>
-<tr>
-<td valign="top"><tt>if (cond) |v|</tt>, <tt>cond</tt> neither optional nor error union</td>
+<td valign="top"><tt>if (cond) |v|</tt>, <tt>cond</tt> not an optional</td>
 <td valign="top"><tt>error[3058]</tt> <tt>capture condition must be an optional or error union type</tt>.</td>
 </tr>
 </table>
 <pre>
-if (h(flag)) |v| {
-    std.io.print("ok {}\n", .{v});     // v is the success payload
-} else |e| {
-    std.io.print("err {}\n", .{e});    // e is the error-set value
+// Supported: capture an optional.
+var maybe: ?i32 = 3;
+if (maybe) |v| {
+    std.io.print("got {}\n", .{v});
+} else {
+    std.io.print("none\n", .{});
 }
+
+// Not supported: an error-union condition capture. Use `catch` instead.
+// if (h(flag)) |v| { ... }                  // error[3058]
+// if (h(flag)) |v| { ... } else |e| { ... } // error[2000]
+const v = h(flag) catch |e| {
+    std.io.print("err {}\n", .{e});
+    return;
+};
+_ = v;
 </pre>
 <p>
-<b>Current-seed note.</b> This error-union capture rule is the final
-behavior; the current seed build does not implement it correctly (the capture
-binds the whole error union and <tt>else |e|</tt> does not parse yet). The
-defect is scoped as Amendment <b>A8</b>, deferred to the end of Volume IV; use
-<tt>catch</tt> for error unions until it lands.
+<b>Residual (parked).</b> Zig 0.15.2 accepts
+<tt>if (eu) |v| ... else |e| ...</tt> (and the <tt>while</tt> form), binding the
+payload <tt>v: T</tt> on success and the error <tt>e: E</tt> on failure; Z98
+does not implement that form yet. The no-<tt>else</tt> form is rejected by both:
+Zig reports <tt>expected optional type, found 'E!T'</tt>, Z98 reports the
+<tt>error[3058]</tt> above. The Zig <tt>else |e|</tt> parity gap is documented
+here as a deferred residual (Amendment A8, reduced to reject-only).
 </p>
 
 <h2><tt>orelse</tt>, <tt>catch</tt>, and <tt>try</tt> precedence</h2>
@@ -433,12 +446,12 @@ The three legitimate answers are exactly the message's list: propagate
 <th align="left" bgcolor="#e8e0e0"><b>Code</b></th>
 <th align="left" bgcolor="#e8e0e0"><b>Message</b></th>
 </tr>
-<tr><td valign="top"><tt>error[2000]</tt></td><td valign="top">Parse rejects: <tt>';' not allowed before 'else' - use braces: if (cond) { ... } else { ... }</tt>; an <tt>else |e|</tt> error capture on the current seed build (<tt>expected expression</tt>; see A8).</td></tr>
+<tr><td valign="top"><tt>error[2000]</tt></td><td valign="top">Parse rejects: <tt>';' not allowed before 'else' - use braces: if (cond) { ... } else { ... }</tt>; an <tt>else |e|</tt> error capture (<tt>expected expression</tt>; the error arm is not implemented).</td></tr>
 <tr><td valign="top"><tt>error[3002]</tt></td><td valign="top"><tt>cannot assign to immutable variable</tt> (assignment through an <tt>if</tt>/<tt>while</tt> capture).</td></tr>
 <tr><td valign="top"><tt>error[3013]</tt></td><td valign="top"><tt>invalid print format specifier for the argument type</tt> (an explicit <tt>{d}</tt>/<tt>{x}</tt> on an error-set capture).</td></tr>
 <tr><td valign="top"><tt>error[3015]</tt></td><td valign="top"><tt>error union result is ignored; use 'try', 'catch', or assign the result</tt>.</td></tr>
 <tr><td valign="top"><tt>error[3016]</tt></td><td valign="top"><tt>orelse requires an optional operand; use 'catch' for error unions</tt>.</td></tr>
-<tr><td valign="top"><tt>error[3058]</tt></td><td valign="top"><tt>condition must be of type 'bool'</tt>; with a capture, <tt>capture condition must be an optional or error union type</tt>.</td></tr>
+<tr><td valign="top"><tt>error[3058]</tt></td><td valign="top">Condition/capture rejects: <tt>condition must be of type 'bool'</tt>; with a capture, <tt>capture condition must be an optional or error union type</tt>; an error-union condition capture, <tt>error union capture is not supported; use 'catch', 'switch', or 'orelse'</tt>.</td></tr>
 <tr><td valign="top"><tt>error[3059]</tt></td><td valign="top"><tt>if expression without 'else' cannot be used as a value (its type is 'void')</tt> (unless the condition is comptime-known true).</td></tr>
 <tr><td valign="top"><tt>error[3075]</tt></td><td valign="top">The <tt>try</tt> enclosing-return prongs above, deduped per <tt>try</tt> node.</td></tr>
 <tr><td valign="top"><tt>warning[3000]</tt></td><td valign="top"><tt>type mismatch in variable declaration -- initialization type may not be compatible with declared type</tt> (a caught/orelse result compared unparenthesized, so the payload is bound where a <tt>bool</tt> was declared).</td></tr>
