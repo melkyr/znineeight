@@ -49,7 +49,7 @@ Target Linux <i>(planned)</i><br>
 <a href="vol5-08-coroutines.html">Write and drive a coroutine</a><br>
 <a href="vol5-09-files.html">Read, write, and test files</a><br>
 Sockets under Z98 <i>(planned)</i><br>
-C interop <i>(planned)</i><br>
+<a href="vol5-11-c-interop.html">Call C from Z98</a><br>
 Link Z98 output against C89 libraries <i>(planned)</i><br>
 Debug generated C <i>(planned)</i><br>
 Use markers <i>(planned)</i><br>
@@ -82,15 +82,15 @@ it links back to the Reference for the underlying rules. This page lists the
 A shipped page is a link; a page that has not shipped is plain text marked
 <i>(planned)</i>. This index and guides 01 (rebuild the compiler from seed),
 02 (build a single file), 03 (build multiple modules), 06 (correct arena use),
-07 (model and propagate errors), 08 (write and drive a coroutine), and 09
-(read, write, and check files) are shipped so far.
+07 (model and propagate errors), 08 (write and drive a coroutine), 09
+(read, write, and check files), and 11 (call C from Z98) are shipped so far.
 </p>
 
 <h2>A&ndash;Z index</h2>
 <ul>
 <li><b>Build the floppy distribution</b> &mdash; Assemble the self-contained output and package a diskette image. <i>(planned)</i></li>
 <li><a href="vol5-06-arena.html">Correct arena use, dual-arena</a> &mdash; Initialize an arena over a buffer, allocate, reset, and split it in two.</li>
-<li><b>extern fn, @cInclude</b> &mdash; Declare and call C functions from Z98. <i>(planned)</i></li>
+<li><a href="vol5-11-c-interop.html">extern fn, @cInclude</a> &mdash; Declare and call C functions from Z98.</li>
 <li><b>For readers from a modern dynamic language</b> &mdash; Port Python's dynamic types, containers, exceptions, and GC. <i>(planned)</i></li>
 <li><b>gdb on the generated C</b> &mdash; Build with debug info and debug the emitted C with gdb. <i>(planned)</i></li>
 <li><a href="vol5-00-index.html">Index</a> &mdash; This page: the A&ndash;Z and themed map of Volume&nbsp;V.</li>
@@ -142,7 +142,7 @@ sequence; the filenames number 01 to 23 across the themes.
 
 <h3>Interop and porting</h3>
 <ul>
-<li><b>extern fn, @cInclude</b> &mdash; Declare and call C functions from Z98. <i>(planned)</i></li>
+<li><a href="vol5-11-c-interop.html">extern fn, @cInclude</a> &mdash; Declare and call C functions from Z98.</li>
 <li><b>Link Z98 output against C89 libraries</b> &mdash; Link Z98-emitted objects with hand-written C89 code. <i>(planned)</i></li>
 <li><b>Translate a C file, idiom by idiom</b> &mdash; Port C types, arrays, errors, cleanup, and ownership to Z98. <i>(planned)</i></li>
 <li><b>Translate a C++98 file, honestly</b> &mdash; Port templates, RAII, and exceptions, and say what does not translate. <i>(planned)</i></li>

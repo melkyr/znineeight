@@ -1,0 +1,441 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Call C from Z98</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume V HOWTO C interop extern fn extern c extern cdecl extern stdcall calling convention cInclude module level struct by value ABI 32-bit layout Z98_STDCALL getenv strlen include ok foreign function declaration export">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol5-09-files.html">
+<link rel="next" href="toc.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume V &mdash; HOWTO</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol5-00-index.html">Index &mdash; A&ndash;Z, grouped by theme</a><br>
+<a href="vol5-01-build-compiler.html">Rebuild the compiler from seed</a><br>
+<a href="vol5-02-build-single.html">Build a single file</a><br>
+<a href="vol5-03-build-multi.html">Build multiple modules</a><br>
+Target Win9x <i>(planned)</i><br>
+Target Linux <i>(planned)</i><br>
+<a href="vol5-06-arena.html">Use the arena correctly</a><br>
+<a href="vol5-07-errors.html">Model and propagate errors</a><br>
+<a href="vol5-08-coroutines.html">Write and drive a coroutine</a><br>
+<a href="vol5-09-files.html">Read, write, and test files</a><br>
+Sockets under Z98 <i>(planned)</i><br>
+<b>Call C from Z98</b><br>
+Link Z98 output against C89 libraries <i>(planned)</i><br>
+Debug generated C <i>(planned)</i><br>
+Use markers <i>(planned)</i><br>
+Read the diagnostics <i>(planned)</i><br>
+Port from C <i>(planned)</i><br>
+Port from C++98 <i>(planned)</i><br>
+Port from Python <i>(planned)</i><br>
+Pack for diskette <i>(planned)</i><br>
+Build a multilingual manual <i>(planned)</i><br>
+Build the static site <i>(planned)</i><br>
+Contribute <i>(planned)</i><br>
+Report a bug <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Call C from Z98</h1>
+<p>
+This guide declares a C function with <tt>extern fn</tt>, brings in its real
+header with <tt>@cInclude</tt>, selects the right calling convention, and lets a
+struct cross the boundary by value.
+</p>
+
+<h2>Prerequisites</h2>
+<ul>
+<li>The compiler rebuilt from the seed at
+<tt>/tmp/manual_seed/zig1_5_clean</tt>, with the standard library beside it in
+<tt>/tmp/manual_seed/lib/</tt>. If it is not there yet, follow
+<a href="vol5-01-build-compiler.html">Rebuild the compiler from seed</a>
+first.</li>
+<li>A Linux host with a 32-bit-capable <tt>gcc</tt> (the emitted script uses
+<tt>gcc -m32 -std=c89</tt>).</li>
+<li>The repository checked out, so the shipped samples
+<tt>docs/sf/manuals/src/vol2/builtins/cinclude.z98</tt> and
+<tt>docs/sf/manuals/src/vol3/getenv.z98</tt> are present. Every command runs
+from the repository root, <tt>/workspace/znineeight</tt>.</li>
+<li>For the full contract beneath this procedure, keep
+<a href="vol3-11-talking-to-c.html">Volume&nbsp;III &mdash; Talking to C</a>
+open.</li>
+</ul>
+
+<h2>The idea</h2>
+<p>
+There is no marshalling layer to learn. Z98 emits C89, so a Z98 module is a C
+translation unit and a Z98 function is a C function by the time the linker sees
+it. The seam between your module and a C library is the ordinary C ABI, and the
+only thing you write is the declaration. Two directives cover it:
+<tt>extern fn</tt> borrows a C symbol, and <tt>@cInclude</tt> pulls the library's
+own header into the generated translation unit so both compilers check the same
+text.
+</p>
+<p>
+The declaration is the whole contract, and the compiler cannot verify it against
+the library for you. The Z98 type checker checks your call sites against the
+signature you wrote; the C compiler checks your call against the header when you
+include it. Include the real header and both checks are real.
+</p>
+
+<h2>Steps</h2>
+<ol>
+<li>
+<p>
+Start at the repository root and make an output directory. The compiler requires
+the output directory to exist.
+</p>
+<pre>
+$ cd /workspace/znineeight
+$ mkdir -p /tmp/manual_out
+</pre>
+</li>
+<li>
+<p>
+Bring a C header in with <tt>@cInclude</tt>. The shipped sample
+<tt>docs/sf/manuals/src/vol2/builtins/cinclude.z98</tt> puts one module-level
+include above its declarations, then prints a line:
+</p>
+<pre>
+@cInclude("stdio.h");
+
+const std = @import("std");
+
+pub fn main() void {
+    std.io.print("include ok\n", .{});
+}
+</pre>
+<p>
+Emit, link, and run it:
+</p>
+<pre>
+$ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out docs/sf/manuals/src/vol2/builtins/cinclude.z98
+$ cd /tmp/manual_out && sh build_target.sh linux cinclude
+Building for linux...
+Built: cinclude
+$ ./cinclude
+include ok
+</pre>
+<p>
+The include is emitted into the sample's generated <i>header</i>, verbatim and
+in the order written, right after the compiler's own runtime headers:
+</p>
+<pre>
+#include "zig_compat.h"
+#include "zig_special_types.h"
+#include "stdio.h"
+#include "std_io_59DB29D9.h"
+</pre>
+<p>
+That placement matters: every translation unit that includes this module's
+header sees the C declaration too. Note the quotes &mdash;
+<tt>@cInclude("stdio.h")</tt> emits <tt>#include "stdio.h"</tt>, not angle
+brackets. A quoted include still finds system headers, so this is invisible
+until a header of the same name sits beside your module, which is when you want
+the local one anyway.
+</p>
+</li>
+<li>
+<p>
+Declare and call C functions with <tt>extern fn</tt>. The shipped sample
+<tt>docs/sf/manuals/src/vol3/getenv.z98</tt> declares two C run-time functions,
+calls them, and translates the one C result that can be null:
+</p>
+<pre>
+@cInclude("stdlib.h");
+@cInclude("string.h");
+
+const std = @import("std");
+
+extern "c" fn getenv(name: [*]const u8) [*]u8;
+extern "c" fn strlen(s: [*]const u8) usize;
+
+// Look up one environment variable. getenv returns a C `char *`: the address
+// of the value, or a null pointer when the name is not set.
+fn find(name: []const u8) [*]u8 {
+    return getenv(name.ptr);
+}
+
+pub fn main() void {
+    var present: []const u8 = "PATH";
+    var missing: []const u8 = "Z98_CH11_NOT_SET";
+
+    var p: [*]u8 = find(present);
+    if (@intFromPtr(p) != 0) {
+        std.io.print("PATH: set\n", .{});
+    } else {
+        std.io.print("PATH: unset\n", .{});
+    }
+
+    var q: [*]u8 = find(missing);
+    if (@intFromPtr(q) != 0) {
+        std.io.print("Z98_CH11_NOT_SET: set\n", .{});
+    } else {
+        std.io.print("Z98_CH11_NOT_SET: unset\n", .{});
+    }
+
+    var msg: []const u8 = "talking to C";
+    std.io.print("strlen: {}\n", .{strlen(msg.ptr)});
+}
+</pre>
+<p>
+Emit, link, and run it:
+</p>
+<pre>
+$ /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out docs/sf/manuals/src/vol3/getenv.z98
+$ cd /tmp/manual_out && sh build_target.sh linux getenv
+Building for linux...
+Built: getenv
+$ ./getenv
+PATH: set
+Z98_CH11_NOT_SET: unset
+strlen: 12
+</pre>
+<p>
+The type mapping is direct. A C <tt>char *</tt> is <tt>[*]const u8</tt> when Z98
+only reads through it and <tt>[*]u8</tt> when it may write; a C
+<tt>size_t</tt> is <tt>usize</tt>, four bytes on this 32-bit target. A slice
+does not cross, because there is no C type for one: pass <tt>s.ptr</tt> and
+<tt>s.len</tt> as the two C parameters the library expects, exactly as a C
+caller would. <tt>getenv</tt> signals &ldquo;not set&rdquo; with a null pointer,
+and the sample translates that C fact into a Z98 decision once, at the call,
+with <tt>@intFromPtr(p) != 0</tt>. Error unions and optionals have no C
+representation; keep them on the Z98 side of the seam.
+</p>
+</li>
+<li>
+<p>
+Choose the calling convention. It is a string after <tt>extern</tt>, and the
+default is <tt>cdecl</tt>: <tt>extern fn f()</tt> and
+<tt>extern "c" fn f()</tt> declare the same thing. The other convention on this
+target is <tt>"stdcall"</tt>, the one the 32-bit Win32 API uses:
+</p>
+<pre>
+extern "stdcall" fn MessageBoxA(hwnd: ?*void, text: [*]const u8, cap: [*]const u8, typ: u32) i32;
+</pre>
+<p>
+The accepted spellings are <tt>"c"</tt> (or <tt>"cdecl"</tt>) and
+<tt>"stdcall"</tt>. Anything else is rejected at the string, before any C is
+emitted. The Volume&nbsp;III
+<a href="vol3-11-talking-to-c.html">Talking to C</a> page measured a one-line
+probe with <tt>extern "watcom"</tt>, and it stops like this:
+</p>
+<pre>
+$ /tmp/manual_seed/zig1_5_clean -o out callconv_bad.z98
+callconv_bad.z98:1:7: error[3045]: unknown calling convention in `extern`
+extern "watcom" fn foo(x: i32) i32;
+       ^^^^^^^^
+</pre>
+<p>
+There is no silent fallback to <tt>cdecl</tt>, which is the safe choice: a
+<tt>stdcall</tt> function mis-declared as <tt>cdecl</tt> would link and then
+corrupt the stack. The emitted C carries the convention as a macro so one
+source builds for every toolchain. The compiler writes this into
+<tt>zig_compat.h</tt>:
+</p>
+<pre>
+#if !defined(_WIN32)
+#define Z98_STDCALL
+#elif defined(_MSC_VER) || defined(__WATCOMC__)
+#define Z98_STDCALL __stdcall
+#else
+#define Z98_STDCALL __attribute__((stdcall))
+#endif
+</pre>
+<p>
+Off Windows the macro is empty, so a Linux default-cdecl build is unchanged. On
+Windows it becomes the toolchain's own spelling. A function pointer's type
+includes its convention, so a <tt>stdcall</tt> function value may not be
+assigned to a <tt>cdecl</tt> slot; that mismatch is rejected with the level-0
+<tt>error[3000]</tt>.
+</p>
+</li>
+<li>
+<p>
+Pass a struct by value. A Z98 struct is a C struct with the same layout, so the
+declaration is direct. Define both shapes and declare one extern for each, as
+the Volume&nbsp;III sample does:
+</p>
+<pre>
+const Point = struct { x: i32, y: i32 };
+const Boxed = struct { tag: u8, value: i64 };
+
+extern "c" fn c_point_sum(p: Point) i32;
+extern "c" fn c_boxed_take(b: Boxed) i32;
+</pre>
+<p>
+The emission is recorded on the
+<a href="vol3-11-talking-to-c.html">Talking to C</a> page. The generated C
+contains the C structs you would have written by hand, and the call is an
+ordinary by-value C call, with the value copied into a temporary:
+</p>
+<pre>
+struct zT_EAA8EF31_Point {
+	int x;
+	int y;
+};
+struct zT_2E48BFE3_Boxed {
+	unsigned char tag;
+	zT_C69B2266_i64 value;
+};
+...
+zT_12 = p;
+zT_13 = c_point_sum(zT_12);
+</pre>
+<p>
+The layout is fixed by the compiler's frozen 32-bit model. On this target
+<tt>i64</tt>, <tt>u64</tt>, and <tt>f64</tt> are size 8 and alignment 8, and any
+composite containing one inherits that alignment. <tt>Boxed</tt> above is the
+example: a one-byte <tt>tag</tt>, seven bytes of padding, then the 64-bit
+<tt>value</tt> &mdash; size 16, alignment 8. Every 64-bit declaration is routed
+through an aligned carrier typedef so gcc, mingw, MSVC, and OpenWatcom all
+produce the same bytes. Define a boundary struct the way the header declares it
+and do not override the packing.
+</p>
+</li>
+</ol>
+
+<h2>Verify it worked</h2>
+<p>
+The transcripts in Steps&nbsp;2&ndash;3 are the recorded output of the committed
+samples; re-running those commands reproduces them. Step&nbsp;2 shows a
+module-level <tt>@cInclude</tt> emitting <tt>include ok</tt>. Step&nbsp;3 shows
+two <tt>extern "c"</tt> calls returning across the seam: <tt>PATH</tt> is set,
+the deliberately absent name is unset, and C's <tt>strlen</tt> answers
+<tt>12</tt> for <tt>"talking to C"</tt>. Step&nbsp;4 documents the accepted
+spellings (<tt>cdecl</tt> and <tt>stdcall</tt>) and shows the parser rejecting
+an unknown convention with <tt>error[3045]</tt>; that reject, and the
+include-in-function reject in Common mistakes, are the measured rejects recorded
+on the Volume&nbsp;III <a href="vol3-11-talking-to-c.html">Talking to C</a> page
+rather than fresh runs here. Step&nbsp;5 is likewise the struct emission
+recorded on that page, cited rather than re-emitted. If your <tt>include ok</tt>
+and your three <tt>getenv</tt> lines match, the C seam is wired correctly.
+</p>
+
+<h2>Common mistakes</h2>
+<ul>
+<li><b>Putting <tt>@cInclude</tt> inside a function.</b> The builtin is module
+level only. In statement position it parses but the type resolver has no case
+for it, and the compiler reports an internal error rather than a designed
+diagnostic. This is the reject measured in Volume&nbsp;III:
+<pre>
+$ /tmp/manual_seed/zig1_5_clean -o out cinclude_stmt.z98
+cinclude_stmt.z98:1:2: error[3020]: internal error: unhandled node kind in type resolution
+pub fn main() void {
+  ^
+</pre>
+Move the include to the top of the file, beside the declarations. It emits no
+<tt>.c</tt> and returns a non-zero status, so the misplaced build cannot ship.</li>
+<li><b>Expecting a bare <tt>extern</tt> to emit a prototype.</b> A non-variadic
+extern declaration does not write a prototype into the generated C; only a
+variadic one does. The call then compiles as an implicit declaration, which is a
+warning under the supported build and wrong for any return type other than
+<tt>int</tt>. Put the prototype in a header and <tt>@cInclude</tt> it.</li>
+<li><b>Letting the declaration drift from the header.</b> The Z98 type checker
+checks your call sites against your declaration, not against the library. Write
+<tt>i32</tt> where the header says <tt>u32</tt>, or omit a parameter, and the Z98
+side is clean while the C side is an ABI bug. Write the declaration from the
+header, line for line, not from memory.</li>
+<li><b>Forgetting <tt>extern "stdcall"</tt> on a Win32 entry point.</b> The
+32-bit Windows API pops its own stack; declaring an API function as
+<tt>cdecl</tt> links and then corrupts the stack at the call. An unknown
+convention string stops the build with <tt>error[3045]</tt>; a <i>wrong but
+accepted</i> convention does not.</li>
+<li><b>Passing a rich optional or an error union through the seam.</b> Neither
+has an agreed C spelling, and a non-scalar optional in a boundary position can
+emit invalid C89. Pass C-shaped values &mdash; a pointer, a length, an integer
+code &mdash; and translate the result once, at the call.</li>
+<li><b>Trying to use <tt>@cImport</tt>.</b> It is not implemented. The supported
+pattern is a bare <tt>extern</tt> declaration for each function you call, plus
+<tt>@cInclude</tt> for the header that declares it. A program that writes
+<tt>@cImport</tt> stops at <tt>error[3000]: unsupported builtin function</tt>.</li>
+<li><b>Overriding the struct packing.</b> The 32-bit layout is pinned by the
+compiler's default alignment (8 for 64-bit scalars). A <tt>/Zp4</tt> or
+<tt>-zp4</tt> override changes the bytes a boundary struct occupies, so a struct
+that must match an operating system structure should leave the default alone and
+declare no 64-bit field the header does not have. Z98 has no
+<tt>extern struct</tt>, <tt>opaque</tt>, or <tt>vector</tt> type: define a
+boundary struct as an ordinary <tt>struct</tt>, and use <tt>*void</tt> where C
+uses an opaque handle.</li>
+<li><b>Calling a Z98 function from C without <tt>export</tt>.</b> Z98 mangles
+every name it defines, so a function written as <tt>helper</tt> has the symbol
+<tt>zF_&lt;hash&gt;_helper</tt> and C cannot find it by its source name. An
+<tt>export fn</tt> writes the plain, unmangled name and a prototype instead. An
+<tt>extern</tt>, by contrast, is never mangled: it is a promise about an
+existing C symbol and is emitted exactly as declared.</li>
+</ul>
+
+<h2>Where to go next</h2>
+<p>
+The exact contract behind every step here &mdash; the prototype rule, the
+include placement, the convention macro, struct-by-value layout, reserved
+identifiers, and name mangling &mdash; is
+<a href="vol3-11-talking-to-c.html">Volume&nbsp;III, Talking to C</a>.
+<tt>@cInclude</tt> is catalogued with the other builtins in
+<a href="vol4-15-builtins.html">Volume&nbsp;IV &mdash; Builtins</a>, the
+<tt>extern</tt> grammar in <a href="vol4-01-grammar.html">Grammar</a>, and the
+Platform Abstraction Layer that the standard library's own externs resolve
+against in <a href="vol4-19-pal.html">The PAL</a>; the
+<a href="vol4-23-limits.html">Limits</a> page lists
+<tt>extern struct</tt>/<tt>opaque</tt>/<tt>vector</tt> among the forms Z98 does
+not accept.
+</p>
+<p>
+The values that stay on your side of the seam are covered by
+<a href="vol2-12-error-unions.html">Volume&nbsp;II, Error unions</a> and
+<a href="vol2-13-optionals.html">Optionals</a>, and
+<a href="vol2-17-stdlib.html">The standard library</a> is the largest worked
+example of wrapping a set of <tt>extern</tt> declarations in a small Z98 API.
+The companion job, linking a Z98-emitted object against a hand-written C89
+object, is the next guide in this volume (guide&nbsp;12, planned). The
+<a href="vol5-09-files.html">files guide</a> precedes this one; return to the
+<a href="vol5-00-index.html">HOWTO index</a> for the full list.
+</p>
+
+<p class="navbtns">
+<a href="vol5-09-files.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol5-09-files.html">Read, Write, and Check Files</a> | <a href="toc.html">Contents</a> | Next: <a href="toc.html">Contents</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
