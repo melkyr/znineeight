@@ -561,7 +561,7 @@ statement/expression; no synthetic braces are inserted by the parser. Only
 the switch expression in an expression statement
 (<tt>parser.zig:1994-1996</tt>), so a statement-position switch needs no
 semicolon; the mandatory <tt>else</tt> prong is a semantic rule
-(<tt>error[3068]</tt>, <tt>semantic_analyzer.zig:4164</tt>), not a parse rule.</li>
+(<tt>error[3068]</tt>, <tt>semantic_analyzer.zig:4361</tt>), not a parse rule.</li>
 <li><b>The semicolon before <tt>else</tt>.</b> The statement <tt>if</tt> form
 rejects a <tt>;</tt> that immediately precedes <tt>else</tt> with
 <tt>error[2000]</tt> &ldquo;';' not allowed before 'else' - use braces: if (cond)

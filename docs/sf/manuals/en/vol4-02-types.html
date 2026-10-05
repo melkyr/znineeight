@@ -451,8 +451,8 @@ diagnostics and emitted C report the underlying type, never the alias name.
 Z98 accepts a value of one type where another is expected only in the cases
 below. A coercion that fails is a compile-time <tt>error[3000]</tt> unless the
 row names another code. The set is quoted from the compiler's coercion rules and
-the Type Coercions section of the specification; the dedicated Reference page for
-each target is planned, so each row links the current Volume II coverage.
+the Type Coercions section of the specification; the dedicated Reference pages
+for these targets have shipped, and each row links the closest coverage.
 </p>
 <table width="100%" border="1" cellpadding="4" cellspacing="0">
 <tr>
@@ -635,7 +635,8 @@ supported.</li>
 The struct row is the specification's worked example; its offsets were measured
 with <tt>@offsetOf</tt> and reproduce exactly. Because the 64-bit scalar forces
 alignment 8, <tt>b</tt> starts at 8 and the trailing byte <tt>c</tt> is followed
-by seven bytes of padding. See the Structs page (<i>planned</i>) for the packed
+by seven bytes of padding. See the
+<a href="vol4-04-structs.html">Structs page</a> for the packed
 bit rules and the <a href="vol4-15-builtins.html">Builtins page</a> for
 <tt>@sizeOf</tt>, <tt>@alignOf</tt>, <tt>@offsetOf</tt>, <tt>@bitOffsetOf</tt>,
 and <tt>@bitSizeOf</tt>.
