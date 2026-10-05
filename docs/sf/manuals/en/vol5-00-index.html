@@ -47,7 +47,7 @@ Target Linux <i>(planned)</i><br>
 <a href="vol5-06-arena.html">Use the arena correctly</a><br>
 <a href="vol5-07-errors.html">Model and propagate errors</a><br>
 <a href="vol5-08-coroutines.html">Write and drive a coroutine</a><br>
-Read, write, and test files <i>(planned)</i><br>
+<a href="vol5-09-files.html">Read, write, and test files</a><br>
 Sockets under Z98 <i>(planned)</i><br>
 C interop <i>(planned)</i><br>
 Link Z98 output against C89 libraries <i>(planned)</i><br>
@@ -82,8 +82,8 @@ it links back to the Reference for the underlying rules. This page lists the
 A shipped page is a link; a page that has not shipped is plain text marked
 <i>(planned)</i>. This index and guides 01 (rebuild the compiler from seed),
 02 (build a single file), 03 (build multiple modules), 06 (correct arena use),
-07 (model and propagate errors), and 08 (write and drive a coroutine) are
-shipped so far.
+07 (model and propagate errors), 08 (write and drive a coroutine), and 09
+(read, write, and check files) are shipped so far.
 </p>
 
 <h2>A&ndash;Z index</h2>
@@ -101,7 +101,7 @@ shipped so far.
 <li><a href="vol5-03-build-multi.html">Multiple modules</a> &mdash; Split a program across @import modules and build each emitted file.</li>
 <li><a href="vol5-02-build-single.html">One .z98 to an executable</a> &mdash; Compile one source file, link it, and run the native executable.</li>
 <li><b>Produce one language's manual</b> &mdash; Build one language's manual from the page template. <i>(planned)</i></li>
-<li><b>Read, write, exists</b> &mdash; Open, read, write, seek, size, rename, and check files. <i>(planned)</i></li>
+<li><a href="vol5-09-files.html">Read, write, exists</a> &mdash; Open, read, write, seek, size, rename, and check files.</li>
 <li><b>Reading the error[N] codes</b> &mdash; Read the printed ordinals, the source notes, and common fixes. <i>(planned)</i></li>
 <li><a href="vol5-01-build-compiler.html">Rebuild zig1 from seed</a> &mdash; Build the reference compiler from the committed seed and check the two-hop closure.</li>
 <li><b>Repo layout, patches</b> &mdash; Find the repo layout and prepare a patch under the edit and seed rules. <i>(planned)</i></li>
@@ -137,7 +137,7 @@ sequence; the filenames number 01 to 23 across the themes.
 <li><a href="vol5-06-arena.html">Correct arena use, dual-arena</a> &mdash; Initialize an arena over a buffer, allocate, reset, and split it in two.</li>
 <li><a href="vol5-07-errors.html">Model and propagate errors</a> &mdash; Use error unions, try and catch, errdefer, and the enclosing-return rule.</li>
 <li><a href="vol5-08-coroutines.html">Write and drive a coroutine</a> &mdash; Use the async builtins and the Context, Task, and Scheduler driver.</li>
-<li><b>Read, write, exists</b> &mdash; Open, read, write, seek, size, rename, and check files. <i>(planned)</i></li>
+<li><a href="vol5-09-files.html">Read, write, exists</a> &mdash; Open, read, write, seek, size, rename, and check files.</li>
 </ul>
 
 <h3>Interop and porting</h3>

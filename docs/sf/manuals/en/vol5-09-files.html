@@ -1,0 +1,350 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Read, Write, and Check Files</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume V HOWTO files read write exists std.io fileOpen fileWrite fileRead fileClose std_file open readAll writeAll seek size rename remove flush FileError OpenFailed PAL arena binary-safe stdlib_fileio_xmod stdlib_file_exists_xmod">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol5-08-coroutines.html">
+<link rel="next" href="toc.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume V &mdash; HOWTO</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol5-00-index.html">Index &mdash; A&ndash;Z, grouped by theme</a><br>
+<a href="vol5-01-build-compiler.html">Rebuild the compiler from seed</a><br>
+<a href="vol5-02-build-single.html">Build a single file</a><br>
+<a href="vol5-03-build-multi.html">Build multiple modules</a><br>
+Target Win9x <i>(planned)</i><br>
+Target Linux <i>(planned)</i><br>
+<a href="vol5-06-arena.html">Use the arena correctly</a><br>
+<a href="vol5-07-errors.html">Model and propagate errors</a><br>
+<a href="vol5-08-coroutines.html">Write and drive a coroutine</a><br>
+<b>Read, write, and test files</b><br>
+Sockets under Z98 <i>(planned)</i><br>
+C interop <i>(planned)</i><br>
+Link Z98 output against C89 libraries <i>(planned)</i><br>
+Debug generated C <i>(planned)</i><br>
+Use markers <i>(planned)</i><br>
+Read the diagnostics <i>(planned)</i><br>
+Port from C <i>(planned)</i><br>
+Port from C++98 <i>(planned)</i><br>
+Port from Python <i>(planned)</i><br>
+Pack for diskette <i>(planned)</i><br>
+Build a multilingual manual <i>(planned)</i><br>
+Build the static site <i>(planned)</i><br>
+Contribute <i>(planned)</i><br>
+Report a bug <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Read, Write, and Check Files</h1>
+<p>
+This guide writes a file byte-for-byte and reads it back through the two Z98
+file surfaces &mdash; the low-level <tt>std.io</tt> PAL wrapper, which reports
+failure through an optional, and the higher-level <tt>std_file</tt> layer, which
+reports failure through a returned error union &mdash; then probes for a
+path's existence and catches an open failure.
+</p>
+
+<h2>Prerequisites</h2>
+<ul>
+<li>The compiler rebuilt from the seed at
+<tt>/tmp/manual_seed/zig1_5_clean</tt>, with the standard library beside it in
+<tt>/tmp/manual_seed/lib/</tt>. If it is not there yet, follow
+<a href="vol5-01-build-compiler.html">Rebuild the compiler from seed</a>
+first.</li>
+<li>A Linux host with a 32-bit-capable <tt>gcc</tt> (the emitted script uses
+<tt>gcc -m32 -std=c89</tt>).</li>
+<li>The repository checked out, so the file fixtures under
+<tt>repro/mi_matrix/stdlib_file*_xmod</tt> and the standard-library gate
+<tt>scripts/stdlib/verify_stdlib.sh</tt> are present. Every command runs from
+the repository root, <tt>/workspace/znineeight</tt>.</li>
+<li>For the two surfaces and the PAL contract beneath them, keep the
+Volume&nbsp;IV <a href="vol4-18-stdlib.html">Standard library</a> and
+<a href="vol4-19-pal.html">The PAL</a> pages open.</li>
+</ul>
+
+<h2>The idea</h2>
+<p>
+Z98 ships two file surfaces, and the difference is only in how they report
+failure. The lower one, <tt>std.io</tt> (<tt>sf/src/std_io.zig</tt>), wraps the
+compiler's Platform Abstraction Layer directly: the four
+<tt>pal_file_*</tt> externs are declared in that module and resolve at link time
+against <tt>zig_pal.c</tt>. A descriptor is a <tt>usize</tt>;
+<tt>fileOpen</tt> returns <tt>?usize</tt>, so <tt>null</tt> is the only
+open-failure channel and it is consumed with <tt>orelse</tt>, never
+<tt>catch</tt>.
+</p>
+<pre>
+pub fn fileOpen(path: []const u8, write_mode: bool) ?usize
+pub fn fileWrite(fd: usize, data: []const u8) void
+pub fn fileRead(fd: usize, buf: []u8) usize
+pub fn fileClose(fd: usize) void
+</pre>
+<p>
+<tt>fileWrite</tt> writes the whole slice and discards the count.
+<tt>fileRead</tt> returns the bytes read, and in v1 that same <tt>0</tt> means
+both end of file and a read error: there is no separate read-error channel, so
+<tt>fileOpen</tt> is the one place an open failure surfaces. There is no delete:
+the PAL wrapper has no remove primitive.
+</p>
+<p>
+The higher surface, <tt>std_file</tt> (<tt>sf/src/std_file.zig</tt>), is
+binary-safe and owns the opaque OS handle (<tt>CreateFileA</tt> on Win32,
+<tt>open(2)</tt> on POSIX). Every fallible call returns a
+<tt>FileError!&hellip;</tt> union that you check with <tt>try</tt> or
+<tt>catch</tt>; <tt>readAll</tt> allocates the whole file from the arena you
+pass, and <tt>writeAll</tt> loops on short writes and flushes. Its error set is
+one per module:
+</p>
+<pre>
+pub const FileError = error{ OpenFailed, ReadFailed, WriteFailed,
+    SeekFailed, SizeFailed, FlushFailed, RemoveFailed, RenameFailed,
+    OutOfMemory };
+pub const Mode = enum { Read, Write, Append, ReadWrite };
+pub const SeekWhence = enum { Set, Cur, End };
+</pre>
+<p>
+The public names are <tt>open</tt>, <tt>read</tt>, <tt>write</tt>,
+<tt>close</tt>, <tt>seek</tt>, <tt>size</tt>, <tt>flush</tt>,
+<tt>exists</tt>, <tt>remove</tt>, <tt>rename</tt>, <tt>readAll</tt>, and
+<tt>writeAll</tt>. One of them is deliberately different:
+<tt>exists(path) bool</tt> is a pure probe with <b>no</b> error channel. It
+returns <tt>false</tt> for an absent or inaccessible path and <tt>true</tt> for
+a present regular file, and it is never wrapped in <tt>catch</tt>.
+</p>
+
+<h2>Steps</h2>
+<ol>
+<li>
+<p>
+Start at the repository root.
+</p>
+<pre>
+$ cd /workspace/znineeight
+</pre>
+</li>
+<li>
+<p>
+Round-trip through the low-level <tt>std.io</tt> PAL surface. The fixture
+<tt>repro/mi_matrix/stdlib_fileio_xmod</tt> imports <tt>std</tt>, opens a temp
+file in write mode, writes <tt>"round trip\n"</tt>, closes it, reopens it in
+read mode, reads it back, and asserts the bytes are identical. Run it through
+the standard-library gate, which emits the fixture, links it with the binding
+<tt>gcc -m32 -std=c89</tt> flag set, runs it three times, and diffs the result
+byte-for-byte against the committed <tt>expected.txt</tt> and
+<tt>expected.rc</tt>.
+</p>
+<pre>
+$ bash scripts/stdlib/verify_stdlib.sh /tmp/manual_seed/zig1_5_clean repro/mi_matrix/stdlib_fileio_xmod
+== std-lib runtime gate ==
+   zig1: /tmp/manual_seed/zig1_5_clean
+PASS repro/mi_matrix/stdlib_fileio_xmod
+----------------------------------------
+run_fixtures: 1 PASS / 0 FAIL over 1 dirs
+STDLIB GATE OK
+</pre>
+<p>
+Its six-line golden is <tt>1</tt>, <tt>1</tt>, <tt>11</tt>, <tt>1</tt>,
+<tt>5</tt>, <tt>1</tt>: the write-mode open returned a valid handle, the
+read-mode open did too, <tt>11</tt> bytes came back (the length of
+<tt>"round trip\n"</tt>), the buffer compared byte-equal to what was written,
+<tt>findChar</tt> found the space at index <tt>5</tt> through its optional and
+<tt>orelse</tt>, and a <tt>for</tt> loop over the slice counted one
+<tt>t</tt>.
+</p>
+</li>
+<li>
+<p>
+Now use the <tt>std_file</tt> error-union surface: write a file, read it back,
+probe existence, and catch an open failure. Run the four fixtures together.
+</p>
+<pre>
+$ bash scripts/stdlib/verify_stdlib.sh /tmp/manual_seed/zig1_5_clean repro/mi_matrix/stdlib_file_write_xmod repro/mi_matrix/stdlib_file_read_xmod repro/mi_matrix/stdlib_file_exists_xmod repro/mi_matrix/stdlib_file_openerr_xmod
+== std-lib runtime gate ==
+   zig1: /tmp/manual_seed/zig1_5_clean
+PASS repro/mi_matrix/stdlib_file_write_xmod
+PASS repro/mi_matrix/stdlib_file_read_xmod
+PASS repro/mi_matrix/stdlib_file_exists_xmod
+PASS repro/mi_matrix/stdlib_file_openerr_xmod
+----------------------------------------
+run_fixtures: 4 PASS / 0 FAIL over 4 dirs
+STDLIB GATE OK
+</pre>
+<p>
+<tt>stdlib_file_write_xmod</tt> opens with <tt>f.Mode.Write</tt>, writes
+<tt>"hello "</tt> and <tt>"world"</tt> as two calls &mdash; each returning
+<tt>FileError!usize</tt>, checked <tt>6</tt> then <tt>5</tt> &mdash; reads the
+eleven bytes back with <tt>readAll</tt>, and prints <tt>file write ok</tt>.
+<tt>stdlib_file_read_xmod</tt> reads <tt>5</tt>, then <tt>6</tt>, then
+<tt>0</tt> at end of file (end of file is not an error), and prints
+<tt>file read ok</tt>. <tt>stdlib_file_exists_xmod</tt> asserts <tt>false</tt>
+before creation, <tt>true</tt> after <tt>writeAll</tt>, and <tt>false</tt> again
+after <tt>remove</tt>, printing <tt>file exists ok</tt>.
+</p>
+<p>
+<tt>stdlib_file_openerr_xmod</tt> is the returned-error check. It calls
+<tt>f.open(&amp;g_arena, "t_openerr_missing.txt", f.Mode.Read)</tt> on a path
+that does not exist; POSIX <tt>open(2)</tt> returns <tt>ENOENT</tt>, the layer
+maps it to <tt>error.OpenFailed</tt>, and the fixture catches exactly that value
+and prints <tt>file openerr ok</tt>. Only Read mode is a failure path here:
+<tt>Write</tt>, <tt>Append</tt>, and <tt>ReadWrite</tt> create-or-open by
+design, so they never fail on a missing path.
+</p>
+</li>
+<li>
+<p>
+Exercise the rest of the surface in one batch: open, whole-file read and write,
+seek, size, rename, remove, close, flush, and a large binary stress round-trip.
+</p>
+<pre>
+$ bash scripts/stdlib/verify_stdlib.sh /tmp/manual_seed/zig1_5_clean repro/mi_matrix/stdlib_file_open_xmod repro/mi_matrix/stdlib_file_readall_xmod repro/mi_matrix/stdlib_file_writeall_xmod repro/mi_matrix/stdlib_file_seek_xmod repro/mi_matrix/stdlib_file_size_xmod repro/mi_matrix/stdlib_file_rename_xmod repro/mi_matrix/stdlib_file_remove_xmod repro/mi_matrix/stdlib_file_close_xmod repro/mi_matrix/stdlib_file_flush_xmod repro/mi_matrix/stdlib_file_stress_xmod
+== std-lib runtime gate ==
+   zig1: /tmp/manual_seed/zig1_5_clean
+PASS repro/mi_matrix/stdlib_file_open_xmod
+PASS repro/mi_matrix/stdlib_file_readall_xmod
+PASS repro/mi_matrix/stdlib_file_writeall_xmod
+PASS repro/mi_matrix/stdlib_file_seek_xmod
+PASS repro/mi_matrix/stdlib_file_size_xmod
+PASS repro/mi_matrix/stdlib_file_rename_xmod
+PASS repro/mi_matrix/stdlib_file_remove_xmod
+PASS repro/mi_matrix/stdlib_file_close_xmod
+PASS repro/mi_matrix/stdlib_file_flush_xmod
+PASS repro/mi_matrix/stdlib_file_stress_xmod
+----------------------------------------
+run_fixtures: 10 PASS / 0 FAIL over 10 dirs
+STDLIB GATE OK
+</pre>
+<p>
+Each prints one <tt>&hellip; ok</tt> line. The <tt>seek</tt> fixture drives
+<tt>SeekWhence.Set</tt> (absolute), <tt>.End</tt> (from the end, negative
+offset), and <tt>.Cur</tt> (relative) and checks the returned absolute offset;
+<tt>size</tt> shows the length is stable across a read; <tt>close</tt> proves a
+closed handle no longer blocks a rename; <tt>flush</tt> forces the OS buffer to
+disk. The <tt>stress</tt> fixture is the binary contract: it writes a
+<tt>10000</tt>-byte pattern with embedded CR, LF, NUL, and <tt>0xFF</tt> bytes
+at pinned offsets, reads it back in <tt>777</tt>-byte chunks to end of file,
+seeks around it, and overwrites a <tt>500</tt>-byte region in place &mdash;
+preserving the bytes before and after. Binary safety is byte-exact, not
+line-oriented.
+</p>
+</li>
+</ol>
+
+<h2>Verify it worked</h2>
+<p>
+The three gate runs in Steps&nbsp;2&ndash;4 are the recorded measured output of
+the committed fixtures; re-running the commands reproduces them exactly, and
+each ends in <tt>STDLIB GATE OK</tt> and <tt>0 FAIL</tt>. Step&nbsp;2 shows the
+<tt>std.io</tt> PAL round-trip: a valid write handle, a valid read handle,
+<tt>11</tt> bytes back, a byte-equal buffer. Step&nbsp;3 shows the
+<tt>std_file</tt> error-union layer writing and reading with checked counts,
+probing existence three times around create and remove, and catching
+<tt>error.OpenFailed</tt> from a Read-mode open of a missing path. Step&nbsp;4
+pins the remaining operations plus the <tt>10000</tt>-byte binary stress
+round-trip. A passing gate means the emitted program's stdout matched the
+committed <tt>expected.txt</tt> byte-for-byte and its exit code matched
+<tt>expected.rc</tt>.
+</p>
+
+<h2>Common mistakes</h2>
+<ul>
+<li><b>Consuming the wrong layer with the wrong operator.</b>
+<tt>std.io.fileOpen</tt> returns <tt>?usize</tt>, so consume it with
+<tt>orelse</tt>; writing <tt>catch</tt> against an optional is a type error.
+<tt>std_file.open</tt> returns <tt>FileError!File</tt>, so consume it with
+<tt>try</tt> or <tt>catch</tt>; <tt>orelse</tt> there is wrong. The two
+surfaces look alike and fail differently.</li>
+<li><b>Reading a <tt>0</tt> from <tt>std.io.fileRead</tt> as a failure.</b>
+<tt>0</tt> is end of file, and in v1 it is also what a read error returns
+&mdash; there is no separate read-error channel. Use <tt>std_file.read</tt>
+when you need <tt>error.ReadFailed</tt> distinguished from a clean
+<tt>0</tt>-byte end of file.</li>
+<li><b>Wrapping <tt>exists</tt> in <tt>catch</tt>.</b> <tt>std_file.exists</tt>
+returns a plain <tt>bool</tt> and is a pure probe: <tt>false</tt> for an absent
+or inaccessible path, <tt>true</tt> for a present regular file. There is no
+error to catch; it tests <tt>access(2)</tt> on POSIX and
+<tt>GetFileAttributesA</tt> on Win32.</li>
+<li><b>Assuming open never truncates.</b> <tt>Mode.Write</tt> maps to
+<tt>O_WRONLY|O_CREAT|O_TRUNC</tt> (<tt>CREATE_ALWAYS</tt>) and destroys any
+existing content; <tt>Mode.ReadWrite</tt> maps to <tt>O_RDWR|O_CREAT</tt>
+(<tt>OPEN_ALWAYS</tt>) and opens without truncating; <tt>Mode.Append</tt> seeks
+to the end. A Read-mode open of a missing path is <tt>error.OpenFailed</tt>. If
+you want to keep what is there, seek before you write.</li>
+<li><b>Leaving a handle open before rename or remove.</b> A live handle can
+block <tt>MoveFileA</tt>/<tt>DeleteFileA</tt> on Win32. Call
+<tt>close(&amp;file)</tt> first; <tt>stdlib_file_close_xmod</tt> demonstrates
+that the rename only succeeds after the close.</li>
+<li><b>Assuming <tt>std_file.write</tt> writes everything.</b> It may return
+fewer bytes than <tt>buf.len</tt>; loop on the returned count, or call
+<tt>writeAll</tt>, which loops and flushes for you. The
+<tt>write</tt>/<tt>stress</tt> fixtures assert the exact per-call count for
+this reason.</li>
+<li><b>Overflowing the path buffer.</b> <tt>std.io.fileOpen</tt> copies into a
+<tt>512</tt>-byte stack buffer and returns <tt>null</tt> for a path of
+<tt>511</tt> bytes or more; <tt>std_file</tt> uses a <tt>4096</tt>-byte
+<tt>PATH_BUF</tt>. Neither creates directories, so a missing parent directory
+is an <tt>error.OpenFailed</tt>, not a created tree.</li>
+</ul>
+
+<h2>Where to go next</h2>
+<p>
+The function-by-function contract for <tt>std.io</tt>, <tt>std_file</tt>, and
+the rest of the standard library is in Volume&nbsp;IV's
+<a href="vol4-18-stdlib.html">Standard library</a> page, and the PAL surface
+underneath both layers is in <a href="vol4-19-pal.html">The PAL</a>.
+Volume&nbsp;II's <a href="vol2-17-stdlib.html">The standard library</a> page is
+the narrative tour, and <a href="vol2-14-arena.html">Arena allocator</a> covers
+the arena that <tt>readAll</tt> allocates from. For reading from standard input
+instead of a file, see <a href="vol1-14-line-counter.html">Line counter</a>.
+The <a href="vol5-08-coroutines.html">coroutine guide</a> precedes this one and
+is the last shipped guide so far; return to the
+<a href="vol5-00-index.html">HOWTO index</a> for the full list.
+</p>
+
+<p class="navbtns">
+<a href="vol5-08-coroutines.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol5-08-coroutines.html">Write and drive a coroutine</a> | <a href="toc.html">Contents</a> | Next: <a href="toc.html">Contents</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
