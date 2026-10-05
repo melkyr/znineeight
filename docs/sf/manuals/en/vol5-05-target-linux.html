@@ -1,0 +1,393 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Targeting Linux</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume V HOWTO target linux elf default gcc -m32 build_target.sh -osl -osw --target mingw choose the target emit link run hello 32-bit i386">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol5-04-target-win9x.html">
+<link rel="next" href="vol5-06-arena.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume V &mdash; HOWTO</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol5-00-index.html">Index &mdash; A&ndash;Z, grouped by theme</a><br>
+<a href="vol5-01-build-compiler.html">Rebuild the compiler from seed</a><br>
+<a href="vol5-02-build-single.html">Build a single file</a><br>
+<a href="vol5-03-build-multi.html">Build multiple modules</a><br>
+<a href="vol5-04-target-win9x.html">Target Win9x</a><br>
+<b>Target Linux</b><br>
+<a href="vol5-06-arena.html">Use the arena correctly</a><br>
+<a href="vol5-07-errors.html">Model and propagate errors</a><br>
+<a href="vol5-08-coroutines.html">Write and drive a coroutine</a><br>
+<a href="vol5-09-files.html">Read, write, and test files</a><br>
+Sockets under Z98 <i>(planned)</i><br>
+<a href="vol5-11-c-interop.html">Call C from Z98</a><br>
+<a href="vol5-12-c89-interop.html">Link Z98 output against C89 libraries</a><br>
+Debug generated C <i>(planned)</i><br>
+Use markers <i>(planned)</i><br>
+Read the diagnostics <i>(planned)</i><br>
+<a href="vol5-16-port-from-c.html">Port from C</a><br>
+<a href="vol5-17-port-from-cpp.html">Port from C++98</a><br>
+<a href="vol5-18-port-from-python.html">Port from Python</a><br>
+Pack for diskette <i>(planned)</i><br>
+Build a multilingual manual <i>(planned)</i><br>
+Build the static site <i>(planned)</i><br>
+Contribute <i>(planned)</i><br>
+Report a bug <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Targeting Linux</h1>
+<p>
+This guide builds the default Linux target: it emits the C89 tree, reads the
+generated <tt>build_target.sh</tt>, compiles the emitted C with
+<tt>gcc -m32</tt>, and runs the 32-bit ELF result.
+</p>
+
+<h2>Prerequisites</h2>
+<ul>
+<li>The compiler rebuilt from the seed at
+<tt>/tmp/manual_seed/zig1_5_clean</tt>, with the standard library beside it in
+<tt>/tmp/manual_seed/lib/</tt>. If it is not there yet, follow
+<a href="vol5-01-build-compiler.html">Rebuild the compiler from seed</a>
+first.</li>
+<li>A Linux host whose <tt>gcc</tt> can target 32-bit x86. The emitted Linux
+script builds with <tt>gcc -m32</tt>, so the host needs the 32-bit C library and
+startup objects as well as the compiler; without them the link fails but the
+emit step still succeeds.</li>
+<li>The repository checked out, so the shipped sample
+<tt>docs/sf/manuals/src/vol1/hello.z98</tt> is present. Every command runs from
+the repository root, <tt>/workspace/znineeight</tt>.</li>
+</ul>
+
+<h2>The sample</h2>
+<p>
+The sample is the hello from Volume&nbsp;I, kept at
+<tt>docs/sf/manuals/src/vol1/hello.z98</tt>. It uses nothing but
+<tt>std.io.print</tt>, so the target choice changes only the emitted build
+scripts and platform headers, never the source:
+</p>
+<pre>
+const std = @import("std");
+
+pub fn main() !void {
+    std.io.print("Hello from Z98!\n");
+}
+</pre>
+
+<h2>Steps</h2>
+<ol>
+<li>
+<p>
+Start at the repository root.
+</p>
+<pre>
+$ cd /workspace/znineeight
+</pre>
+</li>
+<li>
+<p>
+Create the output folder. The compiler writes its emitted tree there but will
+not create the folder itself.
+</p>
+<pre>
+$ mkdir -p /tmp/manual_linux
+</pre>
+</li>
+<li>
+<p>
+Emit the Linux tree. Linux is the default target, so no target flag is needed:
+<tt>-o</tt> names the output folder and the last argument is the source file.
+The explicit spelling of the same target is <tt>-osl</tt>; both produce the
+identical tree.
+</p>
+<pre>
+$ timeout 120 /tmp/manual_seed/zig1_5_clean -o /tmp/manual_linux docs/sf/manuals/src/vol1/hello.z98
+</pre>
+<p>
+The command is silent on success and exits <tt>0</tt>.
+</p>
+</li>
+<li>
+<p>
+Read the emitted <tt>build_target.sh</tt>. It is the whole Linux build: one
+script with a <tt>linux</tt> branch and a <tt>mingw</tt> branch, defaulting to
+<tt>linux</tt>. Its first argument is the target <i>word</i> the script builds,
+<tt>linux</tt> or <tt>mingw</tt> &mdash; not the compiler's <tt>-osl</tt>
+flag. The measured script is:
+</p>
+<pre>
+#!/bin/sh
+chmod +x "$0" 2&gt;/dev/null || true
+# build_target.sh - generated by zig1
+# usage: sh build_target.sh [TARGET] [OUT]
+#   TARGET: linux (default) or mingw
+#   OUT:    output binary (default: prog on linux, prog.exe on mingw)
+# WARNING POLICY: this script does NOT enable warnings-as-errors (no -Werror here),
+# so compiler warnings are non-fatal and the build still produces the binary.
+# If the build stops with a hard error, the emitted C is invalid for this toolchain:
+# please report it as a bug (include the failing compiler output above).
+# If you add -Werror yourself, drop it to see the warning without failing.
+set -e
+cd "$(dirname "$0")"
+TARGET=${1:-linux}
+OUT=$2
+case "$TARGET" in
+  linux)
+    CC=gcc
+    CFLAGS="-m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I ."
+    LDFLAGS="-m32 -O0"
+    LIBS=""
+    [ -n "$OUT" ] || OUT=prog
+    ;;
+  mingw)
+    CC=i686-w64-mingw32-gcc
+    CFLAGS="-m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I ."
+    LDFLAGS="-m32"
+    LIBS="-lwsock32"
+    [ -n "$OUT" ] || OUT=prog.exe
+    ;;
+  *)
+    echo "Unknown target: $TARGET"; exit 1
+    ;;
+esac
+echo "Building for $TARGET..."
+$CC $CFLAGS -c hello_F63FD80A.c
+$CC $CFLAGS -c std_io_59DB29D9.c
+$CC $CFLAGS -c std_net_A15200CC.c
+$CC $CFLAGS -c zig_runtime.c
+$CC $CFLAGS -c zig_pal.c
+$CC $CFLAGS -c c_exit.c
+# Link order: modules first, runtime sources last (intentional).
+# The GNU linker is link-order-sensitive; this is our deterministic order,
+# not the seed recipe's alphabetical *.o glob.
+$CC $LDFLAGS hello_F63FD80A.o std_io_59DB29D9.o std_net_A15200CC.o zig_runtime.o zig_pal.o c_exit.o -o "$OUT" $LIBS
+echo "Built: $OUT"
+</pre>
+<p>
+The module file names are <tt>&lt;source-basename&gt;_&lt;hash&gt;.c</tt>; the
+hash is derived from the module's resolved path, so it changes if you move the
+tree and you should not hard-code it. The runtime sources
+(<tt>zig_runtime.c</tt>, <tt>zig_pal.c</tt>, <tt>c_exit.c</tt>) are always
+linked; every <tt>@import("std")</tt> program also emits the network module,
+<tt>std_net</tt>, even when it opens no socket.
+</p>
+</li>
+<li>
+<p>
+Read the <tt>linux</tt> branch, because it is the Linux target. <tt>CC</tt> is
+the host <tt>gcc</tt>; <tt>-m32</tt> pins the output to 32-bit x86; the
+<tt>linux</tt> branch links no extra library (<tt>LIBS=""</tt>). The
+<tt>-std=c89 -O0</tt> pair asks for the dialect the emitted code targets; the
+<tt>-Wno-*</tt> switches keep the generated C's known warnings non-fatal, and
+no <tt>-Werror</tt> is passed.
+</p>
+<pre>
+  linux)
+    CC=gcc
+    CFLAGS="-m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I ."
+    LDFLAGS="-m32 -O0"
+    LIBS=""
+    [ -n "$OUT" ] || OUT=prog
+    ;;
+</pre>
+<p>
+The <tt>mingw</tt> branch is the Windows side of the same script; it swaps in
+<tt>i686-w64-mingw32-gcc</tt> and adds <tt>-lwsock32</tt>. That path is the
+subject of <a href="vol5-04-target-win9x.html">Target Win9x</a>.
+</p>
+</li>
+<li>
+<p>
+Build the executable with the emitted script's default <tt>linux</tt> branch.
+Run it from inside the output folder and give it the target word and the
+program name:
+</p>
+<pre>
+$ cd /tmp/manual_linux
+$ timeout 120 sh build_target.sh linux hello
+Building for linux...
+Built: hello
+</pre>
+<p>
+The generated C draws a long list of <tt>gcc</tt> warnings. They are expected
+and do not stop the build, because the script does not pass <tt>-Werror</tt>.
+A successful build ends with <tt>Built: hello</tt>.
+</p>
+</li>
+<li>
+<p>
+Run it, and confirm the artifact is a 32-bit ELF executable.
+</p>
+<pre>
+$ timeout 120 ./hello
+Hello from Z98!
+$ file hello
+hello: ELF 32-bit LSB pie executable, Intel 80386, version 1 (SYSV), dynamically linked, interpreter /lib/ld-linux.so.2, BuildID[sha1]=fc3a7a60aa4b8c01c615ddd7b599f623a561c934, for GNU/Linux 3.2.0, not stripped
+</pre>
+<p>
+<tt>-m32</tt> is why the type line reads <tt>ELF 32-bit ... Intel 80386</tt>,
+not 64-bit; that is the ABI the emitted C89 and the runtime are built for.
+</p>
+</li>
+</ol>
+
+<h2>Choosing the target</h2>
+<p>
+The compile target is a compiler flag; the default is Linux. The last one on
+the command line wins:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Flag</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Effect</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>(none)</tt></td>
+<td valign="top">Linux. The same as <tt>-osl</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>-osl</tt></td>
+<td valign="top">Linux target, written out explicitly.</td>
+</tr>
+<tr>
+<td valign="top"><tt>-osw</tt></td>
+<td valign="top">Windows target. Also emits <tt>build_target.bat</tt> and <tt>build_owc.bat</tt> beside <tt>build_target.sh</tt>.</td>
+</tr>
+<tr>
+<td valign="top"><tt>--target linux</tt></td>
+<td valign="top">Long-form Linux spelling.</td>
+</tr>
+<tr>
+<td valign="top"><tt>--target windows</tt></td>
+<td valign="top">Long-form Windows spelling; any other value prints <tt>error: --target must be 'linux' or 'windows'</tt> and exits <tt>1</tt>.</td>
+</tr>
+</table>
+<p>
+The flag selects the emitted build scripts and platform headers; it does not
+change the parser or the type checker. The emitted <tt>build_target.sh</tt> is
+the same file for both targets, carrying both branches, so you choose twice:
+the compiler flag chooses the tree, and the script's first argument
+(<tt>linux</tt> or <tt>mingw</tt>) chooses which branch to build. On a Linux
+host, the default &mdash; no flag, then <tt>sh build_target.sh linux hello</tt>
+&mdash; is the whole procedure.
+</p>
+
+<h2>Verify it worked</h2>
+<p>
+A clean run produces exactly this transcript, with the <tt>gcc</tt> warning
+text omitted. The emit prints nothing, the build script reports
+<tt>Built: hello</tt>, and the program prints its one line.
+</p>
+<pre>
+$ cd /workspace/znineeight
+$ mkdir -p /tmp/manual_linux
+$ timeout 120 /tmp/manual_seed/zig1_5_clean -o /tmp/manual_linux docs/sf/manuals/src/vol1/hello.z98
+$ cd /tmp/manual_linux &amp;&amp; timeout 120 sh build_target.sh linux hello
+Building for linux...
+Built: hello
+$ timeout 120 ./hello
+Hello from Z98!
+</pre>
+<p>
+The compile-to-C89 step is silent on standard output; the build script reports
+<tt>Building for linux...</tt>/<tt>Built: hello</tt>, and its <tt>gcc</tt>
+warnings go to standard error. <tt>./hello</tt> prints
+<tt>Hello from Z98!</tt> and exits <tt>0</tt>.
+</p>
+
+<h2>Common mistakes</h2>
+<ul>
+<li><b>Forgetting to create the output folder.</b> The compiler requires the
+folder to exist and fails with <tt>error: output directory does not exist:
+/tmp/manual_linux</tt> (exit code <tt>1</tt>). Run <tt>mkdir -p</tt> first.</li>
+<li><b>Confusing the compiler flag with the script argument.</b> The compiler
+takes <tt>-osl</tt>/<tt>-osw</tt> (or <tt>--target</tt>) at emit time; the
+generated script takes the bare word <tt>linux</tt> or <tt>mingw</tt> as its
+first argument. <tt>sh build_target.sh windows hello</tt> fails with
+<tt>Unknown target: windows</tt>; use <tt>sh build_target.sh linux hello</tt>.</li>
+<li><b>Running the build script from the wrong folder.</b>
+<tt>build_target.sh</tt> uses relative paths and a current-directory include
+root, so <tt>cd</tt> into the output folder before running it.</li>
+<li><b>A host without 32-bit support.</b> The <tt>linux</tt> branch builds with
+<tt>gcc -m32</tt>; on a host missing the 32-bit C library it fails at the link
+with missing <tt>Scrt1.o</tt>/<tt>-lc</tt>. That is a host setup gap, not an
+emission bug; the emit in step&nbsp;3 still succeeds.</li>
+<li><b>Reading the <tt>gcc</tt> warnings as failure.</b> The build prints
+hundreds of warnings but succeeds; look for <tt>Built: hello</tt>, not for an
+empty error stream.</li>
+<li><b>Expecting <tt>--target</tt> to accept other names.</b> Only
+<tt>linux</tt> and <tt>windows</tt> are accepted; anything else prints
+<tt>error: --target must be 'linux' or 'windows'</tt> and exits <tt>1</tt>.</li>
+<li><b>Assuming the target changes the program.</b> It selects the emitted
+build scripts and headers, not the parser or the type checker. A source-level
+target predicate, if you need one, is <tt>@isWindows()</tt>.</li>
+</ul>
+
+<h2>Where to go next</h2>
+<p>
+For the adjacent jobs, go back to
+<a href="vol5-04-target-win9x.html">Target Win9x</a> for the same emit and
+build steps aimed at 32-bit Windows, or forward to
+<a href="vol5-06-arena.html">Correct arena use, dual-arena</a> for the memory
+practice. The single-file version of this recipe is
+<a href="vol5-02-build-single.html">One .z98 to an executable</a>.
+</p>
+<p>
+For the rules behind the commands on this page, see the
+<a href="vol4-22-cli.html">Volume&nbsp;IV command-line Reference</a>
+(<tt>-osl</tt>, <tt>-osw</tt>, <tt>--target</tt>, <tt>-o</tt>), and the
+<a href="vol4-19-pal.html">Volume&nbsp;IV PAL Reference</a> for the platform
+layer the runtime uses. Volume&nbsp;III's
+<a href="vol3-08-win9x.html">Building for Win9x</a> is the companion
+cross-build story, and Volume&nbsp;I's
+<a href="vol1-05-first-program.html">Your First Program</a> introduces the
+sample.
+</p>
+
+<p class="navbtns">
+<a href="vol5-04-target-win9x.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol5-06-arena.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol5-04-target-win9x.html">Target Win9x</a> | <a href="toc.html">Contents</a> | Next: <a href="vol5-06-arena.html">Use the arena correctly</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>

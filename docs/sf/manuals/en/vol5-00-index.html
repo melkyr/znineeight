@@ -43,7 +43,7 @@ Espa&ntilde;ol (not yet available) |
 <a href="vol5-02-build-single.html">Build a single file</a><br>
 <a href="vol5-03-build-multi.html">Build multiple modules</a><br>
 <a href="vol5-04-target-win9x.html">Target Win9x</a><br>
-Target Linux <i>(planned)</i><br>
+<a href="vol5-05-target-linux.html">Target Linux</a><br>
 <a href="vol5-06-arena.html">Use the arena correctly</a><br>
 <a href="vol5-07-errors.html">Model and propagate errors</a><br>
 <a href="vol5-08-coroutines.html">Write and drive a coroutine</a><br>
@@ -82,7 +82,7 @@ it links back to the Reference for the underlying rules. This page lists the
 A shipped page is a link; a page that has not shipped is plain text marked
 <i>(planned)</i>. This index and guides 01 (rebuild the compiler from seed),
 02 (build a single file), 03 (build multiple modules), 04 (target Win9x),
-06 (correct arena use),
+05 (target Linux), 06 (correct arena use),
 07 (model and propagate errors), 08 (write and drive a coroutine), 09
 (read, write, and check files), 11 (call C from Z98), 12 (link against C89),
 16 (translate a C file), 17 (translate a C++98 file), and 18 (translate a Python
@@ -98,7 +98,7 @@ file) are shipped so far.
 <li><b>gdb on the generated C</b> &mdash; Build with debug info and debug the emitted C with gdb. <i>(planned)</i></li>
 <li><a href="vol5-00-index.html">Index</a> &mdash; This page: the A&ndash;Z and themed map of Volume&nbsp;V.</li>
 <li><a href="vol5-12-c89-interop.html">Link Z98 output against C89 libraries</a> &mdash; Link Z98-emitted objects with hand-written C89 code.</li>
-<li><b>Linux ELF</b> &mdash; Choose the default Linux target and the gcc -m32 path behind it. <i>(planned)</i></li>
+<li><a href="vol5-05-target-linux.html">Linux ELF</a> &mdash; Choose the default Linux target and the gcc -m32 path behind it.</li>
 <li><b>--markers, pal.markerWrite*</b> &mdash; Enable --markers and read the compiler's marker stream. <i>(planned)</i></li>
 <li><a href="vol5-07-errors.html">Model and propagate errors</a> &mdash; Use error unions, try and catch, errdefer, and the enclosing-return rule.</li>
 <li><a href="vol5-03-build-multi.html">Multiple modules</a> &mdash; Split a program across @import modules and build each emitted file.</li>
@@ -155,7 +155,7 @@ sequence; the filenames number 01 to 23 across the themes.
 <h3>Targets</h3>
 <ul>
 <li><a href="vol5-04-target-win9x.html">Win9x .exe</a> &mdash; Emit and cross-build a 32-bit Windows 9x executable.</li>
-<li><b>Linux ELF</b> &mdash; Choose the default Linux target and the gcc -m32 path behind it. <i>(planned)</i></li>
+<li><a href="vol5-05-target-linux.html">Linux ELF</a> &mdash; Choose the default Linux target and the gcc -m32 path behind it.</li>
 <li><b>WinSock under Z98</b> &mdash; Drive the std.net surface from WSAStartup to the socket lifecycle. <i>(planned)</i></li>
 </ul>
 
