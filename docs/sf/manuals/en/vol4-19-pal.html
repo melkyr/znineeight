@@ -82,8 +82,8 @@ every host-specific call is isolated in this one layer.
 <b>The PAL is not part of the Z98 language.</b> No <tt>pal</tt> symbol is
 reachable from user code unless a program declares its own <tt>extern</tt>
 prototypes. Z98 programs use the standard library instead; see
-<a href="vol2-17-stdlib.html">Volume II, The standard library tour</a> and the
-Volume IV standard library page (planned). This page is a compiler
+<a href="vol2-17-stdlib.html">Volume II, The standard library tour</a> and
+<a href="vol4-18-stdlib.html">the Volume IV standard library page</a>. This page is a compiler
 contributor's lookup.
 </p>
 
@@ -98,7 +98,7 @@ scope, and the page states them rather than inventing a symbol:
 <li>The debug marker channel <tt>markerWrite</tt>, <tt>markerWriteInt</tt>, and
 <tt>markerWriteInt64</tt> is compiled off (<tt>g_markers_debug = 0</tt>, so the
 functions emit nothing). The live measurement markers are the subject of the
-markers page (planned).</li>
+markers page <a href="vol4-20-markers.html">Markers</a>.</li>
 <li>The private <tt>const</tt> values and the libc <tt>extern "c"</tt> bindings
 (<tt>fopen</tt>, <tt>fread</tt>, <tt>fwrite</tt>, <tt>fclose</tt>,
 <tt>fseek</tt>, <tt>ftell</tt>, <tt>c_exit</tt>) are implementation details of
@@ -430,8 +430,9 @@ edx, esi, edi</tt>) and mirrors <tt>std.debug.TrapContext</tt>.
 <p>
 <a href="vol4-15-builtins.html">Builtins</a> for <tt>@isWindows()</tt> and the
 other compile-time builtins, <a href="vol2-17-stdlib.html">Volume II, The
-standard library tour</a> for the user-facing layer above the PAL, and the
-Volume IV standard library and markers pages (both planned).
+standard library tour</a> for the user-facing layer above the PAL, and
+<a href="vol4-18-stdlib.html">the Volume IV standard library</a> and
+<a href="vol4-20-markers.html">markers</a> pages.
 </p>
 
 <p class="navbtns">

@@ -210,12 +210,16 @@ Images are GIF only: no PNG, no SVG, no web fonts. Keep the exact sizes: logo
 
 <h3>The forbidden list</h3>
 <p>
-The checker rejects any page that carries an HTML5 structural tag, a
-<tt>&lt;div&gt;</tt>, an inline <tt>&lt;style&gt;</tt>, a
-<tt>&lt;script src&gt;</tt> other than <tt>doc.js</tt>, an external resource (an
-<tt>http://</tt> or <tt>https://</tt> URL in an <tt>href</tt> or <tt>src</tt>), a
-non-GIF image or a web font, more than 2 KB of JavaScript, or a CSS2/CSS3 token
-in either stylesheet.
+The checker rejects a page that carries one of the HTML5 structural tags
+<tt>&lt;section&gt;</tt>, <tt>&lt;article&gt;</tt>, <tt>&lt;nav&gt;</tt>,
+<tt>&lt;header&gt;</tt>, <tt>&lt;footer&gt;</tt>, <tt>&lt;main&gt;</tt>, or
+<tt>&lt;figure&gt;</tt>; a <tt>&lt;div&gt;</tt>; an inline
+<tt>&lt;style&gt;</tt>; a <tt>&lt;script src&gt;</tt> other than
+<tt>doc.js</tt>; an external resource (an <tt>http://</tt> or <tt>https://</tt>
+URL in an <tt>href</tt> or <tt>src</tt>); a non-GIF image or a web font; more
+than 2 KB of JavaScript; or a CSS2/CSS3 token in either stylesheet. The style
+spec also forbids <tt>&lt;thead&gt;</tt>/<tt>&lt;tbody&gt;</tt>, but the checker
+does not yet enforce those two tags.
 </p>
 
 <h2>Admonitions</h2>

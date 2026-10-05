@@ -24,14 +24,15 @@ in the next section; that is the only supported path.
 `release/seed/CHANGELOG.md`, full recipes + current md5s in
 `release/seed/SEED_README.txt`).
 
-**Current seed: v90.** Archive md5 `430f4f9ce415852b4ca5b1bb01261189`; archived binary md5
-(= v90's rotation fixed point) `f78bebc448e267b32419afdb13afb386`; `gen/` 45 `.c` + 46 `.h`;
+**Current seed: v91.** Archive md5 `39669954c928df59263e5d03cbaacd1d`; archived binary md5
+(= v91's rotation fixed point) `0b8c3e4ac0b1fc49c0bdf8caf9d39945`; `gen/` 45 `.c` + 46 `.h`;
 `lib/` 30 std `.zig`. **This block is updated at every plan closeout that rotates the seed**;
 the branch's in-progress fixed point is recorded in the active plan's workspace ledger.
 The FX14-F–FX17-F notes below record each amendment's own fixed point and its
 "seed v88 NOT rotated (closeout-only)" status at the time; the Volume II Task 22
-closeout (2026-09-30) rotated the seed to v89, and the Amendment A1 closeout
-(2026-10-03) rotated it again to v90 at this fixed point.
+closeout (2026-09-30) rotated the seed to v89; the Amendment A1 closeout
+(2026-10-03) rotated it to v90; and the Volume IV Task 26 closeout (2026-10-05)
+rotated it to v91 at this fixed point.
 
 Top-level `zig1-seed/`: `zig1` (reference binary), `gen/` (its self-emission C89
 module set — 45 `.c` + 46 `.h`, including `zig_special_types.h`; the emitted
@@ -488,7 +489,7 @@ fixed point (moving point hop1 == hop2, explicit `FIXED_POINT_MD5` gate) is
 
 A7-F (2026-10-05; Volume IV Amendment A7, operator m1596) scopes the
 `if (opt) |v|` capture to the then arm (Zig parity): the capture was registered
-in `semanticAnalyzerResolveIfHeader` (`sf/src/semantic_analyzer.zig:5507`) and
+in `semanticAnalyzerResolveIfHeader` (`sf/src/semantic_analyzer.zig:5680`) and
 stayed live across the `else` arm, so `if (opt) |v| { ... } else { use(v); }`
 compiled rc 0 and read uninitialized storage. Three analyzer sites close it:
 `semanticAnalyzerResolveIfExpr` (save before the header, restore after the then

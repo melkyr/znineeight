@@ -87,7 +87,7 @@ The parser is recursive descent with a precedence climber for expressions
 from <tt>parserParsePrimary</tt> (<tt>parser.zig:391</tt>) and
 <tt>parserParseType</tt> (<tt>parser.zig:1099</tt>) to
 <tt>parserParseStatement</tt> (<tt>parser.zig:1501</tt>) and
-<tt>parserParseBlock</tt> (<tt>parser.zig:2140</tt>).
+<tt>parserParseBlock</tt> (<tt>parser.zig:2153</tt>).
 </p>
 
 <h2>Notation</h2>
@@ -242,26 +242,26 @@ Notes on the declaration forms, all keyed to <tt>parser.zig</tt>:
 </p>
 <ul>
 <li><tt>const</tt> and <tt>var</tt> are the same production; <tt>const</tt>
-sets the immutable flag (<tt>parser.zig:1596-1633</tt>). A declaration may omit
+sets the immutable flag (<tt>parser.zig:1609-1646</tt>). A declaration may omit
 its type, its initializer, or both, but must end with <tt>;</tt>. The name may
 be <tt>_</tt>.</li>
 <li><tt>pub</tt> must be followed by one of <tt>fn</tt>, <tt>const</tt>,
 <tt>var</tt>, <tt>test</tt>, <tt>extern</tt>, or <tt>export</tt>; anything else
 is <tt>error[2000]</tt> &ldquo;expected fn/const/var after pub&rdquo;
-(<tt>parser.zig:1634-1645</tt>).</li>
+(<tt>parser.zig:1647-1658</tt>).</li>
 <li><tt>extern</tt> takes an optional calling-convention string. The only
 accepted values are <tt>"c"</tt>, <tt>"cdecl"</tt>, and <tt>"stdcall"</tt>; any
 other string is <tt>error[3045]</tt> &ldquo;unknown calling convention in
-`extern`&rdquo; (<tt>parser.zig:1651-1658,1665-1685</tt>). <tt>extern</tt> and
+`extern`&rdquo; (<tt>parser.zig:1664-1671,1678-1698</tt>). <tt>extern</tt> and
 <tt>export</tt> likewise require <tt>fn</tt>/<tt>const</tt>/<tt>var</tt>
-(<tt>parser.zig:1682,1692</tt>).</li>
+(<tt>parser.zig:1695,1705</tt>).</li>
 <li>A function parameter is always <tt>IDENT ':' type</tt>. The variadic
 <tt>...</tt> may appear only once and must be last; it sets the variadic flag
-and terminates the list (<tt>parser.zig:1709-1713</tt>).</li>
+and terminates the list (<tt>parser.zig:1723-1727</tt>).</li>
 <li>The return type's colon is optional: <tt>fn f() i32</tt> and
 <tt>fn f(): i32</tt> are the same. With neither a colon nor a type before
 <tt>;</tt> or <tt>{</tt>, the return is <tt>void</tt>
-(<tt>parser.zig:1736-1742</tt>).</li>
+(<tt>parser.zig:1749-1755</tt>).</li>
 <li>A container declared with <tt>container_decl</tt> may carry a name after
 the optional backing clause; a bare <tt>struct { ... }</tt> used as a
 <i>type</i> has no name (next section).</li>
@@ -320,8 +320,8 @@ many-item pointer. Both take a qualifier list of <tt>const</tt> and
 <tt>parser.zig:1148-1161</tt>). A qualifier may not follow <tt>[]</tt>: the
 slice production admits only <tt>const</tt> (<tt>parser.zig:1186-1196</tt>), so
 <tt>[]volatile T</tt> is a parse error.</li>
-<li><b>Arrays and slices.</b> <tt>[N]T</tt> parses its length as a full
-assignment-precedence expression, then <tt>]</tt>, then the element type. There
+<li><b>Arrays and slices.</b> <tt>[N]T</tt> parses its length as an
+expression at the <tt>orelse</tt> level (assignment excluded), then <tt>]</tt>, then the element type. There
 is no separate inferred-length production: <tt>[_]T</tt> matches the general
 <tt>'[' expr ']' type</tt> form with <tt>_</tt> parsed as a primary expression,
 and the length is inferred from the initializer / array literal.
@@ -364,8 +364,8 @@ every signature and type position with <tt>error[16]</tt> since Amendment A1
 <h2>Expressions</h2>
 <p>
 Expressions are parsed by precedence climbing. The precedence levels are the
-<tt>Prec</tt> enum (<tt>parser.zig:2185</tt>) and the operator-to-level map is
-<tt>getInfixInfo</tt> (<tt>parser.zig:2216</tt>). Higher binds tighter.
+<tt>Prec</tt> enum (<tt>parser.zig:2198</tt>) and the operator-to-level map is
+<tt>getInfixInfo</tt> (<tt>parser.zig:2229</tt>). Higher binds tighter.
 </p>
 <table width="100%" border="1" cellpadding="4" cellspacing="0">
 <tr>
@@ -374,7 +374,7 @@ Expressions are parsed by precedence climbing. The precedence levels are the
 <th align="left" bgcolor="#e8e0e0"><b>Operators</b></th>
 <th align="left" bgcolor="#e8e0e0"><b>Assoc.</b></th>
 </tr>
-<tr><td valign="top">1</td><td valign="top">assignment</td><td valign="top"><tt>= += -= *= /= %= &amp;= |= ^= &lt;&lt;= &gt;&gt;= +%= -%= *%= +|= -|= *|= &lt;&lt;|=</tt></td><td valign="top">right</td></tr>
+<tr><td valign="top">1</td><td valign="top">assignment</td><td valign="top"><tt>= += -= *= /= %= &amp;= |= ^= &lt;&lt;= &gt;&gt;= +%= -%= *%= +|= -|= *|= &lt;&lt;|=</tt></td><td valign="top">non-associative (statement)</td></tr>
 <tr><td valign="top">2</td><td valign="top">orelse</td><td valign="top"><tt>orelse</tt></td><td valign="top">right</td></tr>
 <tr><td valign="top">3</td><td valign="top">catch</td><td valign="top"><tt>catch</tt></td><td valign="top">right</td></tr>
 <tr><td valign="top">4</td><td valign="top">bool or</td><td valign="top"><tt>or</tt></td><td valign="top">left</td></tr>
@@ -390,17 +390,20 @@ Expressions are parsed by precedence climbing. The precedence levels are the
 <tr><td valign="top">14</td><td valign="top">postfix</td><td valign="top">call, index, slice, field, deref, struct init</td><td valign="top">&mdash;</td></tr>
 </table>
 <p>
-The <tt>assignment</tt>, <tt>orelse</tt>, and <tt>catch</tt> levels are
-right-associative; the binary arithmetic, bit, shift, comparison, and logical
-levels are left-associative. The prefix operators and the postfix chain are not
-binary levels. <tt>catch</tt> and <tt>orelse</tt> are handled specially rather
-than as ordinary binary operators because each may take a capture and a block
-right-hand side (<tt>parser.zig:304-314,566-593</tt>).
+The <tt>orelse</tt> and <tt>catch</tt> levels are right-associative; the binary
+arithmetic, bit, shift, comparison, and logical levels are left-associative.
+<tt>assignment</tt> is not an expression operator: a statement body accepts at
+most one assignment, parsed as <tt>stmt_body ::= orelse [ assign_op orelse ]</tt>,
+so a chained <tt>a = b = 2</tt> rejects (Amendment A6-F). The prefix operators
+and the postfix chain are not binary levels. <tt>catch</tt> and <tt>orelse</tt>
+are handled specially rather than as ordinary binary operators because each may
+take a capture and a block right-hand side
+(<tt>parser.zig:304-314,566-593</tt>).
 </p>
 <pre>
-  expr       ::= assignment
+  expr       ::= orelse
 
-  assignment ::= orelse [ assign_op assignment ]
+  stmt_body  ::= orelse [ assign_op orelse ]   ; statement bodies only
   orelse     ::= catch [ 'orelse' ( block | orelse ) ]
   catch      ::= bool_or [ 'catch' [ '|' capture '|' ] ( block | catch ) ]
   bool_or    ::= bool_and { 'or' bool_and }
@@ -478,12 +481,11 @@ a primary expression are:
   switch_expr ::= 'switch' '(' expr_orelse ')' '{' { switch_prong [ ',' ] } '}'
   switch_prong ::= 'else' '=&gt;' [ capture ] prong_body
                  | case_item { ',' case_item } '=&gt;' [ capture ] prong_body
-  case_item   ::= expr_assign [ ( '..' | '...' ) expr_assign ]
-  prong_body  ::= block | expr_assign
+  case_item   ::= expr_orelse [ ( '..' | '...' ) expr_orelse ]
+  prong_body  ::= block | stmt_body
 
   capture      ::= IDENT | '_'
-  expr_orelse  ::= expr restricted to precedence 2 and tighter (assignment excluded)
-  expr_assign  ::= expr restricted to precedence 1 and tighter
+  expr_orelse  ::= expr (assignment is not an expression level)
 </pre>
 <p>
 Where the parser deviates from a clean production:
@@ -495,7 +497,7 @@ excludes the <tt>assignment</tt> level, so <tt>if (a = 3)</tt>,
 <tt>while (a = 3)</tt>, <tt>switch (a = 3)</tt>, and <tt>(a = 3)</tt> fail at
 the closing delimiter with <tt>error[2000]: expected ')' but found token</tt>
 &mdash; a missing-delimiter diagnostic, not a dedicated assignment message
-(<tt>parser.zig:721-731,939-947,979-984,1776-1780,1854-1859</tt>).</li>
+(<tt>parser.zig:721-731,939-947,979-984,1789-1793,1867-1872</tt>).</li>
 <li><b>Expression depth.</b> The climber increments a depth counter and calls
 <tt>@panic("max expression recursion depth exceeded")</tt> past 12 nested
 expression levels (<tt>parser.zig:272-277</tt>). This is a hard compiler abort,
@@ -523,13 +525,13 @@ expression otherwise (<tt>parser.zig:748-772</tt>).</li>
               | IDENT ':' statement
               | expr_stmt
 
-  expr_stmt   ::= expr_assign [ ';' ]   ; the ';' may be omitted iff the next token is '}'
+  expr_stmt   ::= stmt_body [ ';' ]   ; the ';' may be omitted iff the next token is '}'
 
-  if_stmt     ::= 'if' '(' expr_orelse ')' [ capture ] ( block | expr_assign )
-                  [ 'else' ( if_stmt | block | expr_assign ) ]
-  while_stmt  ::= 'while' '(' expr_orelse ')' [ capture ] [ ':' '(' expr ')' ]
-                  ( block | expr_assign ) [ ';' ]
-  for_stmt    ::= 'for' '(' for_pattern ')' [ for_capture ] ( block | expr_assign ) [ ';' ]
+  if_stmt     ::= 'if' '(' expr_orelse ')' [ capture ] ( block | stmt_body )
+                  [ 'else' ( if_stmt | block | stmt_body ) ]
+  while_stmt  ::= 'while' '(' expr_orelse ')' [ capture ] [ ':' '(' stmt_body ')' ]
+                  ( block | stmt_body ) [ ';' ]
+  for_stmt    ::= 'for' '(' for_pattern ')' [ for_capture ] ( block | stmt_body ) [ ';' ]
   for_pattern ::= expr [ '..' expr ]
                 | expr ',' expr '..' [ expr ]
   for_capture ::= '|' capture [ ',' IDENT ] '|'
@@ -557,27 +559,27 @@ statement/expression; no synthetic braces are inserted by the parser. Only
 (enforced by the analyzer, <tt>semantic_analyzer.zig:3640</tt>).</li>
 <li><b><tt>switch</tt> as a statement.</b> <tt>parserParseSwitchStmt</tt> wraps
 the switch expression in an expression statement
-(<tt>parser.zig:1981-1983</tt>), so a statement-position switch needs no
+(<tt>parser.zig:1994-1996</tt>), so a statement-position switch needs no
 semicolon; the mandatory <tt>else</tt> prong is a semantic rule
 (<tt>error[3068]</tt>, <tt>semantic_analyzer.zig:4164</tt>), not a parse rule.</li>
 <li><b>The semicolon before <tt>else</tt>.</b> The statement <tt>if</tt> form
 rejects a <tt>;</tt> that immediately precedes <tt>else</tt> with
 <tt>error[2000]</tt> &ldquo;';' not allowed before 'else' - use braces: if (cond)
-{ ... } else { ... }&rdquo; (<tt>parser.zig:1836-1843</tt>). Write the braces, or
+{ ... } else { ... }&rdquo; (<tt>parser.zig:1849-1856</tt>). Write the braces, or
 omit the semicolon as in <tt>if (a) return 1 else return 0;</tt>.</li>
 <li><b>Loop captures.</b> <tt>while</tt> and <tt>for</tt> accept a capture
 after the <tt>)</tt>; <tt>for</tt> allows a second, comma-separated index
 capture. The capture name may be <tt>_</tt>. The optional
 <tt>while ... : (expr)</tt> continue expression is parsed at the lowest
-precedence (<tt>parser.zig:1861-1875,1877-1883,1944-1961</tt>).</li>
+precedence (<tt>parser.zig:1874-1888,1890-1896,1957-1974</tt>).</li>
 <li><b>For patterns.</b> <tt>for</tt> accepts a plain expression, a
 <tt>start..end</tt> range, or an explicit index range: an iterable, a comma,
 then <tt>start..</tt> or <tt>start..end</tt>. The index range builds a
 <tt>for_index_range</tt> node; no other multi-object <tt>for</tt> form is
-accepted (<tt>parser.zig:1906-1941</tt>).</li>
+accepted (<tt>parser.zig:1919-1954</tt>).</li>
 <li><b><tt>defer</tt> and <tt>errdefer</tt>.</b> Both take a single
 <i>statement</i>, which is usually a block or an expression statement
-(<tt>parser.zig:2049-2062</tt>).</li>
+(<tt>parser.zig:2062-2075</tt>).</li>
 </ul>
 
 <h2>Constructs Z98 rejects</h2>
@@ -601,12 +603,12 @@ said explicitly.
 <tr>
 <td valign="top"><tt>if (a = 3)</tt>, <tt>while (a = 3)</tt>, <tt>switch (a = 3)</tt>, <tt>(a = 3)</tt></td>
 <td valign="top"><tt>error[2000]</tt>: expected ')' but found token (the parser reports the missing close delimiter; &ldquo;assignment is not an expression&rdquo; is the underlying rule, not the diagnostic text)</td>
-<td valign="top"><tt>parser.zig:726,946,983,1780,1858</tt></td>
+<td valign="top"><tt>parser.zig:726,946,983,1793,1871</tt></td>
 </tr>
 <tr>
 <td valign="top"><tt>if (c) return 1; else return 0;</tt></td>
 <td valign="top"><tt>error[2000]</tt>: ';' not allowed before 'else'</td>
-<td valign="top"><tt>parser.zig:1836-1843</tt></td>
+<td valign="top"><tt>parser.zig:1849-1856</tt></td>
 </tr>
 <tr>
 <td valign="top">Mixed struct fields, <tt>struct { a: i32, i32 }</tt></td>
@@ -641,12 +643,12 @@ said explicitly.
 <tr>
 <td valign="top"><tt>pub</tt> followed by anything but <tt>fn</tt>/<tt>const</tt>/<tt>var</tt>/<tt>test</tt>/<tt>extern</tt>/<tt>export</tt> (e.g. <tt>pub static var</tt>)</td>
 <td valign="top"><tt>error[2000]</tt>: expected fn/const/var after pub</td>
-<td valign="top"><tt>parser.zig:1634-1645</tt></td>
+<td valign="top"><tt>parser.zig:1647-1658</tt></td>
 </tr>
 <tr>
 <td valign="top"><tt>extern</tt>/<tt>export</tt> not followed by <tt>fn</tt>/<tt>const</tt>/<tt>var</tt></td>
 <td valign="top"><tt>error[2000]</tt>: expected fn/const/var after extern/export</td>
-<td valign="top"><tt>parser.zig:1682,1692</tt></td>
+<td valign="top"><tt>parser.zig:1695,1705</tt></td>
 </tr>
 <tr>
 <td valign="top"><tt>static var</tt>, <tt>anyerror</tt>, <tt>comptime</tt>, <tt>do</tt>, <tt>opaque</tt>, <tt>vector</tt></td>
@@ -661,7 +663,7 @@ said explicitly.
 <tr>
 <td valign="top"><tt>switch</tt> without an <tt>else</tt> prong</td>
 <td valign="top">parses, then <tt>error[3068]</tt>: switch must have an 'else' prong</td>
-<td valign="top"><tt>semantic_analyzer.zig:4164</tt> (semantic)</td>
+<td valign="top"><tt>semantic_analyzer.zig:4361</tt> (semantic)</td>
 </tr>
 <tr>
 <td valign="top">Tuple type with an array element, <tt>struct { [2]i32, i32 }</tt></td>
@@ -677,7 +679,7 @@ is no <tt>comptime</tt>, no generics, no <tt>@cImport</tt>, no value-producing
 labeled block, and no <tt>anyerror</tt> type in the grammar; those absences are
 the grammar, not omissions from it. See
 <a href="vol2-16-no-methods.html">Volume II, No methods, no generics, no
-comptime</a>, and the Limits page when it ships.
+comptime</a>, and <a href="vol4-23-limits.html">the Limits page</a>.
 </p>
 
 <h2>See also</h2>

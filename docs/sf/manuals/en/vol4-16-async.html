@@ -83,13 +83,13 @@ surface, and the rule that decides which context may call which primitive.
 Authority: the builtins are resolved and typed in
 <tt>semantic_analyzer.zig:4840-4876</tt> and lowered in
 <tt>lower.zig:5924-6087</tt>; the suspension analysis and state-width rule are
-<tt>async_analysis.zig:317-524</tt>; the frame layout is
-<tt>async_frame_layout.zig:606-666</tt>; the library is
+<tt>async_analysis.zig:178-320,520-531</tt>; the frame layout is
+<tt>async_frame_layout.zig:522-672</tt>; the library is
 <tt>sf/src/std_async.zig</tt> (re-exported as <tt>std.async</tt> at
 <tt>std.zig:9</tt>). The normative prose is
 <tt>docs/reference/Language_Spec_Z98.md</tt> &sect;4.1. Every value and message
 below was reproduced on the fixed compiler (md5
-<tt>821481e69df63fc0cf69176fdaaf9dd9</tt>); reused fixtures are named where one
+<tt>0b8c3e4ac0b1fc49c0bdf8caf9d39945</tt>); reused fixtures are named where one
 exists.
 </p>
 
@@ -235,7 +235,7 @@ parameter). The exact order:
 <td valign="top">one slot per value-returning await, in program order</td></tr>
 </table>
 <p>
-The real layout is built by <tt>async_frame_layout.zig:606-666</tt>, which
+The real layout is built by <tt>async_frame_layout.zig:522-672</tt>, which
 appends the fields in that order, aligns each to its type's alignment, then pads
 the whole frame up to a multiple of 8 (Rule A). The authoritative
 <tt>@asyncFrameSize</tt> is a conservative, per-function upper bound, not a
@@ -257,7 +257,7 @@ zT_113 = (...TaskArgs**)(...zT_67... + 12);
 <h3>State word</h3>
 <p>
 The <tt>state</tt> word is the smallest integer that can name every suspension
-point in the function (<tt>async_analysis.zig:517-524</tt>):
+point in the function (<tt>async_analysis.zig:520-531</tt>):
 </p>
 <table width="100%" border="1" cellpadding="4" cellspacing="0">
 <tr>
@@ -541,7 +541,7 @@ number is the enum ordinal, not the <tt>ERR_####</tt> suffix.
 formatted-print special case;
 <a href="vol4-18-stdlib.html">The standard library</a> for
 <tt>std.async</tt> beside the other re-exported modules;
-the Memory page (planned) for the arena behind the caller-supplied buffers;
+<a href="vol4-17-memory.html">the Memory page</a> for the arena behind the caller-supplied buffers;
 
 <a href="vol3-09-coroutines.html">Volume III, Coroutines &mdash; the third big
 shift</a> and <a href="vol3-10-coroutine-program.html">A coroutine program</a>

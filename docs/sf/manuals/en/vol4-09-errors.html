@@ -81,17 +81,17 @@ rules, the error-capture printing rules, and the absence of a universal error
 type.
 </p>
 <p>
-The authority is the parser (<tt>parser.zig:2185</tt> <tt>Prec</tt>,
+The authority is the parser (<tt>parser.zig:2198</tt> <tt>Prec</tt>,
 <tt>:566-593</tt> catch right-hand side, <tt>:869-875</tt> <tt>try</tt>),
 the type layer (<tt>type_registry.zig:87</tt> <tt>ErrorSetPayload</tt>,
 <tt>:665-699</tt> error-set identity/member lookup, <tt>:1234-1247</tt>
 error-union assignability, <tt>:1375-1395</tt> <tt>errorSetIsSubset</tt>), the
-semantic rules (<tt>semantic_analyzer.zig:3482-3528</tt> <tt>try</tt>,
-<tt>:4589-4623</tt> error literal, <tt>:4912-4948</tt> <tt>catch</tt>), and the
+semantic rules (<tt>semantic_analyzer.zig:3502-3573</tt> <tt>try</tt>,
+<tt>:4786</tt> error literal, <tt>:5109</tt> <tt>catch</tt>), and the
 emitter (<tt>c89_emit.zig:2265-2292</tt> <tt>emitErrorSetType</tt>,
 <tt>:2459-2480</tt> <tt>emitErrorUnionType</tt>). Every rule below was
 reproduced on the fixed compiler (md5
-<tt>2794fe04e0828c95dd5c2c6fecdea362</tt>); reused fixtures are named where one
+<tt>0b8c3e4ac0b1fc49c0bdf8caf9d39945</tt>); reused fixtures are named where one
 exists.
 </p>
 
@@ -460,7 +460,7 @@ not be written down.
 <tt>try</tt> is a prefix operator parsed at the <tt>prefix</tt> level
 (<tt>parser.zig:869-875</tt>), so it binds to the tightest following operand.
 <tt>catch</tt> and <tt>orelse</tt> are infix operators at the two loosest binary
-levels (<tt>orelse</tt> 2, <tt>catch</tt> 3; <tt>parser.zig:2185-2201</tt>), both
+levels (<tt>orelse</tt> 2, <tt>catch</tt> 3; <tt>parser.zig:2198-2214</tt>), both
 right-associative; the full table is on
 <a href="vol4-01-grammar.html">the grammar page</a>.
 </p>

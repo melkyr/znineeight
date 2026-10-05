@@ -86,11 +86,11 @@ with declarations in <tt>parserParseVarDecl</tt> (<tt>parser.zig:1609</tt>),
 <tt>defer</tt>/<tt>errdefer</tt> in <tt>parserParseDeferStmt</tt>
 (<tt>parser.zig:2062</tt>), and blocks in <tt>parserParseBlock</tt>
 (<tt>parser.zig:2153</tt>). The const write guard is
-<tt>semantic_analyzer.zig:4105</tt>, the missing-initializer guard is
-<tt>semantic_analyzer.zig:5891</tt>, the ignored-error guard is
-<tt>semantic_analyzer.zig:6107</tt>, and the defer control-flow guard is
-<tt>semantic_analyzer.zig:473</tt>. Every rule below was reproduced on the fixed
-compiler (md5 <tt>17a88daf2402eb8d6ca53d09eb005f8e</tt>); reused
+<tt>semantic_analyzer.zig:4282</tt>, the missing-initializer guard is
+<tt>semantic_analyzer.zig:6071</tt>, the ignored-error guard is
+<tt>semantic_analyzer.zig:6303</tt>, and the defer control-flow guard is
+<tt>semantic_analyzer.zig:433</tt>. Every rule below was reproduced on the fixed
+compiler (md5 <tt>0b8c3e4ac0b1fc49c0bdf8caf9d39945</tt>); reused
 <tt>repro/mi_matrix/*</tt> fixtures and <tt>docs/sf/manuals/src/vol2/defer.z98</tt>
 are named where one exists.
 </p>
@@ -109,7 +109,7 @@ are named where one exists.
 <tr><td valign="top">discard</td><td valign="top"><tt>_ = expr;</tt></td><td valign="top">Explicitly evaluates <tt>expr</tt> and drops the result.</td></tr>
 <tr><td valign="top">block</td><td valign="top"><tt>{ ... }</tt></td><td valign="top">A nested scope; see Blocks and scope.</td></tr>
 <tr><td valign="top"><tt>defer</tt>/<tt>errdefer</tt></td><td valign="top"><tt>defer statement</tt><br><tt>errdefer statement</tt></td><td valign="top">Schedules the inner statement for scope exit; see <tt>defer</tt> and <tt>errdefer</tt>.</td></tr>
-<tr><td valign="top">control flow</td><td valign="top"><tt>if</tt>, <tt>while</tt>, <tt>for</tt>, <tt>switch</tt>, <tt>return</tt>, <tt>break</tt>, <tt>continue</tt>, <tt>label: statement</tt></td><td valign="top">The Control flow page (planned) owns these; this page keeps only the statement-level syntax rules.</td></tr>
+<tr><td valign="top">control flow</td><td valign="top"><tt>if</tt>, <tt>while</tt>, <tt>for</tt>, <tt>switch</tt>, <tt>return</tt>, <tt>break</tt>, <tt>continue</tt>, <tt>label: statement</tt></td><td valign="top"><a href="vol4-13-control-flow.html">The Control flow page</a> owns these; this page keeps only the statement-level syntax rules.</td></tr>
 <tr><td valign="top">empty statement</td><td valign="top"><tt>;</tt></td><td valign="top">Parsed and skipped.</td></tr>
 </table>
 

@@ -81,20 +81,20 @@ mandatory <tt>switch</tt> <tt>else</tt>, and the diagnostics that bound them.
 <p>
 Authority: the spelling is <tt>docs/reference/Language_Spec_Z98.md</tt>
 &sect;3.1&ndash;&sect;3.2. The parser entries are <tt>parserParseIfStmt</tt>
-(<tt>parser.zig:1776</tt>), <tt>parserParseWhileStmt</tt> (<tt>:1854</tt>),
-<tt>parserParseForStmt</tt> (<tt>:1906</tt>), <tt>parserParseSwitchExpr</tt>
-(<tt>:979</tt>), <tt>parserParseLabeledStmt</tt> (<tt>:1573</tt>),
-<tt>parserParseBreakExpr</tt> (<tt>:2000</tt>), and
-<tt>parserParseContinueExpr</tt> (<tt>:2017</tt>). The semantic rules are
+(<tt>parser.zig:1789</tt>), <tt>parserParseWhileStmt</tt> (<tt>:1867</tt>),
+<tt>parserParseForStmt</tt> (<tt>:1919</tt>), <tt>parserParseSwitchExpr</tt>
+(<tt>:979</tt>), <tt>parserParseLabeledStmt</tt> (<tt>:1586</tt>),
+<tt>parserParseBreakExpr</tt> (<tt>:2013</tt>), and
+<tt>parserParseContinueExpr</tt> (<tt>:2030</tt>). The semantic rules are
 <tt>semanticAnalyzerReportSwitchWithoutElse</tt>
-(<tt>semantic_analyzer.zig:4191</tt>), <tt>semanticAnalyzerCheckConditionType</tt>
-(<tt>:5489</tt>), <tt>semanticAnalyzerCaptureType</tt> (<tt>:635</tt>),
-<tt>semanticAnalyzerResolveForHeader</tt> (<tt>:5639</tt>),
-<tt>semanticAnalyzerResolveWhileHeader</tt> (<tt>:5713</tt>), and
-<tt>semanticAnalyzerReportSwitchCaseQualifier</tt> (<tt>:4206</tt>); the
-transfers lower at <tt>lower.zig:8342</tt> (<tt>break</tt>) and <tt>:8367</tt>
+(<tt>semantic_analyzer.zig:4357</tt>), <tt>semanticAnalyzerCheckConditionType</tt>
+(<tt>:5662</tt>), <tt>semanticAnalyzerCaptureType</tt> (<tt>:654</tt>),
+<tt>semanticAnalyzerResolveForHeader</tt> (<tt>:5812</tt>),
+<tt>semanticAnalyzerResolveWhileHeader</tt> (<tt>:5886</tt>), and
+<tt>semanticAnalyzerReportSwitchCaseQualifier</tt> (<tt>:4372</tt>); the
+transfers lower at <tt>lower.zig:8355</tt> (<tt>break</tt>) and <tt>:8381</tt>
 (<tt>continue</tt>). Every rule below was reproduced on the fixed compiler
-(md5 <tt>2719c55740724c2eb06b58c3e4ab970f</tt>); reused
+(md5 <tt>0b8c3e4ac0b1fc49c0bdf8caf9d39945</tt>); reused
 <tt>repro/mi_matrix/*</tt> fixtures and
 <tt>docs/sf/manuals/src/vol2/control.z98</tt> are named where one exists.
 </p>
@@ -143,7 +143,7 @@ The value <tt>if</tt> merges the two arm types; a non-<tt>void</tt> arm with no
 optional or an error union; a plain <tt>bool</tt> is written without bars. The
 error half of a capture, <tt>else |err|</tt>, does not parse at all
 (<tt>error[2000] expected expression</tt>) &mdash; error unions are the
-Error expressions page's subject (planned).
+<a href="vol4-14-error-expressions.html">Error expressions page</a>'s subject.
 </p>
 
 <h2><tt>while</tt>: condition, continue-expression, capture</h2>

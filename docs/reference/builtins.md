@@ -72,7 +72,7 @@ These built-ins are validated during type checking but are emitted as specific C
 ### `@ptrCast(T, expr)`
 Performs an explicit pointer cast.
 - **Syntax:** `@ptrCast(*TargetType, pointer_expression)`
-- **Constraints:** Both the target type and the expression must be pointer types.
+- **Constraints:** The compiler does **not** require both sides to be pointer types: `@ptrCast(*u8, x)` with an integer `x`, and `@ptrCast(u8, p)` with a pointer `p`, both compile. The only rejected shape is dropping a `volatile` qualifier (`@ptrCast cannot discard the 'volatile' qualifier; use @volatileCast to remove it`); use `@volatileCast` for that.
 - **C89 Emission:** `(TargetType*)pointer_expression`
 
 ### `@intCast(T, expr)`
@@ -155,4 +155,4 @@ Resumes the coroutine rooted at `frame`.
 ---
 
 ## Unsupported Built-ins
-Most other Zig built-ins (e.g., `@typeInfo`, `@as`, `@typeName`) are currently **REJECTED** by the bootstrap compiler to maintain simplicity and C89 compatibility.
+Most other Zig built-ins (e.g., `@typeInfo`, `@typeName`) are currently **REJECTED** by the bootstrap compiler to maintain simplicity and C89 compatibility.

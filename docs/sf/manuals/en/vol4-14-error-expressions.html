@@ -85,15 +85,15 @@ and <tt>error.Name</tt> literals are on the
 Authority: the parser parses <tt>try</tt> at the prefix level
 (<tt>parser.zig:869-875</tt>) and <tt>catch</tt>/<tt>orelse</tt> as the two
 loosest right-associative infix levels (<tt>catch</tt> 3, <tt>orelse</tt> 2;
-<tt>parser.zig:2185-2189</tt>, <tt>:2228</tt>); the <tt>if</tt>/<tt>while</tt> capture node is
-<tt>parserParseIfStmt</tt> (<tt>parser.zig:1776</tt>) and
-<tt>parserParseWhileStmt</tt> (<tt>:1854</tt>); the semantic rules are
-<tt>semantic_analyzer.zig:3491</tt> and <tt>:3515</tt> (<tt>try</tt>),
-<tt>:3563</tt> (<tt>orelse</tt>), <tt>:3642</tt> (value <tt>if</tt>),
-<tt>:4958</tt> (<tt>catch</tt>), <tt>:5504</tt> (condition/capture type);
+<tt>parser.zig:2198-2202</tt>, <tt>:2229</tt>); the <tt>if</tt>/<tt>while</tt> capture node is
+<tt>parserParseIfStmt</tt> (<tt>parser.zig:1789</tt>) and
+<tt>parserParseWhileStmt</tt> (<tt>:1867</tt>); the semantic rules are
+<tt>semantic_analyzer.zig:3502-3573</tt> (<tt>try</tt>),
+<tt>:3574</tt> (<tt>orelse</tt>), <tt>:3787</tt> (value <tt>if</tt>),
+<tt>:5109</tt> (<tt>catch</tt>), <tt>:5662</tt> (condition/capture type);
 the capture binding is <tt>bindOptionalCapture</tt> (<tt>lower.zig:3676</tt>).
 Every rule below was reproduced on the fixed compiler (md5
-<tt>ca21a1bab9fa185f43b99eeb4bd7b847</tt>) unless the text says otherwise;
+<tt>0b8c3e4ac0b1fc49c0bdf8caf9d39945</tt>) unless the text says otherwise;
 reused fixtures are named where one exists.
 </p>
 

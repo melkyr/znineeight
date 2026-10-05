@@ -89,7 +89,7 @@ are parsed in <tt>sf/src/main.zig</tt> (<tt>parseMMBytes</tt>,
 <tt>parseSLevel</tt>). The normative prose is
 <tt>docs/reference/Language_Spec_Z98.md</tt> &sect;2. Every value and message
 below was reproduced on the fixed compiler (md5
-<tt>821481e69df63fc0cf69176fdaaf9dd9</tt>); reused material is named where one
+<tt>0b8c3e4ac0b1fc49c0bdf8caf9d39945</tt>); reused material is named where one
 exists.
 </p>
 
@@ -115,8 +115,9 @@ pub fn alloc(self: *Arena, size: usize) ArenaError![*]u8 { ... }
 pub fn reset(self: *Arena) void { ... }
 </pre>
 <p>
-Z98 has no method syntax, so the three functions are free functions called with
-the arena as the first argument. The fields are public, so the cursor is
+Z98 has no method syntax, so they are free functions: <tt>init</tt> takes the
+buffer and returns the arena, and <tt>alloc</tt>/<tt>reset</tt> take the arena
+as the first argument. The fields are public, so the cursor is
 observable.
 </p>
 <table width="100%" border="1" cellpadding="4" cellspacing="0">
@@ -157,7 +158,7 @@ var arena = std.arena.init(buf[0..]);   // buf is a caller-declared [N]u8
 <tt>alloc</tt> is a cursor bump. Because the result carries no type, the
 standard shape is a constructor that allocates, casts with <tt>@ptrCast</tt>,
 sizes with <tt>@sizeOf</tt>, fills the fields, and returns the typed pointer.
-Reused from <tt>docs/sf/manuals/src/vol2/arena.z98</tt>:
+Adapted from <tt>docs/sf/manuals/src/vol2/arena.z98</tt>:
 </p>
 <pre>
 const Point = struct {
@@ -280,8 +281,10 @@ pub const CompilerAlloc = struct {
 <td valign="top">The whole compile: interned strings, the module registry, types
 that survive every phase.</td></tr>
 <tr><td valign="top"><tt>module</tt></td>
-<td valign="top">Per module and per phase, reset at phase boundaries: the AST
-and the lowering structures.</td></tr>
+<td valign="top">Per module; <i>not</i> reset at phase boundaries. It holds the
+AST, tokens, and per-module symbol tables and persists until the module's
+<tt>.c</tt>/<tt>.h</tt> are emitted and its diagnostics flushed, because
+diagnostic spans reference AST source positions.</td></tr>
 <tr><td valign="top"><tt>scratch</tt></td>
 <td valign="top">Short-lived working memory, reset aggressively during
 analysis so the peak is the largest single function, not their sum.</td></tr>
