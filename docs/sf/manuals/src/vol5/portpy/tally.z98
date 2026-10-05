@@ -1,0 +1,70 @@
+// tally.z98 - the Z98 twin of tally.py: static types, a manual table held in a
+// slice, error unions in place of exceptions, and an arena in place of the GC.
+const std = @import("std");
+
+const Row = struct { name: u32, qty: i32 };
+const Total = struct { name: u32, sum: i32 };
+const Tally = struct { items: []Total, len: u32 };
+
+fn nameOf(id: u32) []const u8 {
+    if (id == 0) return "apples";
+    return "pears";
+}
+
+fn tally(rows: []const Row, out: []Total) Tally {
+    var t = Tally{ .items = out, .len = 0 };
+    for (rows) |row| {
+        var found = false;
+        var i: u32 = 0;
+        while (i < t.len) : (i += 1) {
+            const slot = t.items[@intCast(usize, i)];
+            if (slot.name == row.name) {
+                t.items[@intCast(usize, i)].sum += row.qty;
+                found = true;
+            }
+        }
+        if (!found) {
+            t.items[@intCast(usize, t.len)] = .{ .name = row.name, .sum = row.qty };
+            t.len += 1;
+        }
+    }
+    return t;
+}
+
+fn average(t: Tally) error{EmptyTally}!i32 {
+    if (t.len == 0) return error.EmptyTally;
+    var sum: i32 = 0;
+    var i: u32 = 0;
+    while (i < t.len) : (i += 1) {
+        sum += t.items[@intCast(usize, i)].sum;
+    }
+    return sum / @intCast(i32, t.len);
+}
+
+pub fn main() !void {
+    var buf: [4096]u8 = undefined;
+    var arena = std.arena.init(buf[0..]);
+    const raw = try std.arena.alloc(&arena, @sizeOf(Total) * 8);
+    const space = @ptrCast([*]Total, raw)[0..8];
+
+    var rows: [4]Row = undefined;
+    rows[0] = .{ .name = 0, .qty = 3 };
+    rows[1] = .{ .name = 1, .qty = 2 };
+    rows[2] = .{ .name = 0, .qty = 5 };
+    rows[3] = .{ .name = 1, .qty = 4 };
+
+    const t = tally(rows[0..], space);
+    var i: u32 = 0;
+    while (i < t.len) : (i += 1) {
+        const total = t.items[@intCast(usize, i)];
+        std.io.print("{s} {}\n", .{ nameOf(total.name), total.sum });
+    }
+    std.io.print("average {}\n", .{ try average(t) });
+
+    const empty = tally(rows[0..0], space);
+    _ = average(empty) catch {
+        std.io.print("caught empty tally\n", .{});
+        return;
+    };
+    std.io.print("unreachable\n", .{});
+}

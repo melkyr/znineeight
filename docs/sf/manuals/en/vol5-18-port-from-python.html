@@ -1,0 +1,605 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Port a Python File to Z98</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume V HOWTO port from Python dynamic language dynamic typing static types dict list manual structure slice exceptions error unions GC garbage collector arena tally translate">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol5-17-port-from-cpp.html">
+<link rel="next" href="toc.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume V &mdash; HOWTO</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol5-00-index.html">Index &mdash; A&ndash;Z, grouped by theme</a><br>
+<a href="vol5-01-build-compiler.html">Rebuild the compiler from seed</a><br>
+<a href="vol5-02-build-single.html">Build a single file</a><br>
+<a href="vol5-03-build-multi.html">Build multiple modules</a><br>
+Target Win9x <i>(planned)</i><br>
+Target Linux <i>(planned)</i><br>
+<a href="vol5-06-arena.html">Use the arena correctly</a><br>
+<a href="vol5-07-errors.html">Model and propagate errors</a><br>
+<a href="vol5-08-coroutines.html">Write and drive a coroutine</a><br>
+<a href="vol5-09-files.html">Read, write, and test files</a><br>
+Sockets under Z98 <i>(planned)</i><br>
+<a href="vol5-11-c-interop.html">Call C from Z98</a><br>
+<a href="vol5-12-c89-interop.html">Link Z98 output against C89 libraries</a><br>
+Debug generated C <i>(planned)</i><br>
+Use markers <i>(planned)</i><br>
+Read the diagnostics <i>(planned)</i><br>
+<a href="vol5-16-port-from-c.html">Port from C</a><br>
+<a href="vol5-17-port-from-cpp.html">Port from C++98</a><br>
+<b>Port from Python</b><br>
+Pack for diskette <i>(planned)</i><br>
+Build a multilingual manual <i>(planned)</i><br>
+Build the static site <i>(planned)</i><br>
+Contribute <i>(planned)</i><br>
+Report a bug <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Port a Python File to Z98</h1>
+<p>
+This guide translates a small Python program to Z98 one idiom at a time. Python
+is the first language in this volume that carries none of its discipline in the
+source: there are no type annotations at rest, no manual memory, and no
+declared failures, so every convention the C and C++98 ports could read off the
+page has to be reconstructed and then written down. The Python original is
+committed at <tt>docs/sf/manuals/src/vol5/portpy/tally.py</tt>; its Z98 twin is
+<tt>docs/sf/manuals/src/vol5/portpy/tally.z98</tt>. It is the dynamic-language
+companion to <a href="vol5-16-port-from-c.html">Port a C File to Z98</a> and
+<a href="vol5-17-port-from-cpp.html">Port a C++98 File to Z98</a>, and the
+hardest of the three to estimate, because Python's brevity hides the work the
+interpreter is doing at run time.
+</p>
+
+<h2>Prerequisites</h2>
+<ul>
+<li>The compiler rebuilt from the seed at
+<tt>/tmp/manual_seed/zig1_5_clean</tt>, with the standard library beside it in
+<tt>/tmp/manual_seed/lib/</tt>. If it is not there yet, follow
+<a href="vol5-01-build-compiler.html">Rebuild the compiler from seed</a>
+first.</li>
+<li>A Linux host with the system <tt>python3</tt>, to run the original, and a
+32-bit-capable <tt>gcc</tt>, which the emitted Z98 build script uses. The Python
+transcript below was measured with <tt>Python&nbsp;3.11.2</tt>.</li>
+<li>The repository checked out, so the two source files above are present. Every
+command runs from the repository root, <tt>/workspace/znineeight</tt>.</li>
+<li>The language practices the port rests on:
+<a href="vol5-07-errors.html">Model and propagate errors</a> for error unions
+and <a href="vol5-06-arena.html">Use the arena correctly</a> for object
+lifetime. The static type system is
+<a href="vol2-02-types.html">Volume&nbsp;II chapter&nbsp;2</a> and
+<a href="vol4-02-types.html">Volume&nbsp;IV &mdash; Types</a>.</li>
+</ul>
+
+<h2>The idea</h2>
+<p>
+A Python program is short because most of its structure is implicit. A name
+carries whatever object it was bound to last; a <tt>dict</tt> and a
+<tt>list</tt> are supplied by the language; a missing key is a
+<tt>KeyError</tt> and an invalid state is a <tt>ValueError</tt>; and memory is
+reclaimed whenever the interpreter decides it is unreachable. None of those
+facts is written in the file, and the reader is expected to hold them in their
+head.
+</p>
+<p>
+Z98 makes each of them explicit, and that is the whole port. The dynamic type
+becomes a declared one, the <tt>dict</tt> becomes a table you write and scan,
+the exception becomes a value in the return type, and the garbage collector
+becomes an arena over a buffer you supply and reset. The behavior is unchanged;
+the bookkeeping Python did for you is now on the page. The guide keeps the
+original and the twin side by side so the trade is visible rather than
+asserted.
+</p>
+
+<h2>Steps</h2>
+<ol>
+<li>
+<p>
+Read the Python original. It is a tally: a list of <tt>(name, quantity)</tt>
+rows, a <tt>dict</tt> that accumulates by key, a division that fails on an
+empty input, and an automatic-free lifetime.
+</p>
+<pre>
+# tally.py - a Python original: dynamic types, a dict and a list, an exception,
+# and automatic memory. Its Z98 twin is tally.z98.
+rows = [("apples", 3), ("pears", 2), ("apples", 5), ("pears", 4)]
+
+
+def tally(rows):
+    totals = {}
+    for name, qty in rows:
+        totals[name] = totals.get(name, 0) + qty
+    return totals
+
+
+def average(totals):
+    if len(totals) == 0:
+        raise ValueError("empty tally")
+    return sum(totals.values()) // len(totals)
+
+
+def main():
+    totals = tally(rows)
+    for name in ("apples", "pears"):
+        print(name, totals[name])
+    print("average", average(totals))
+    try:
+        average({})
+    except ValueError:
+        print("caught empty tally")
+
+
+main()
+</pre>
+<p>
+Nothing in the file says what a row is, what a key is, what
+<tt>average</tt> can fail with, or when the memory is released. Every one of
+those omissions is a line the Z98 twin has to state.
+</p>
+</li>
+<li>
+<p>
+Run the Python original, so you have the behavior to match. The interpreter is
+the system <tt>python3</tt>; there is no build step and no declared failure.
+</p>
+<pre>
+$ cd /workspace/znineeight
+$ timeout 120 python3 docs/sf/manuals/src/vol5/portpy/tally.py
+apples 8
+pears 6
+average 7
+caught empty tally
+</pre>
+<p>
+The four lines are the contract the port must meet: the accumulated totals in
+first-seen order, the integer average of the totals, and the caught failure on
+the empty input.
+</p>
+</li>
+<li>
+<p>
+<b>Dynamic typing to static types.</b> A Python name is a reference with no
+declared type; <tt>name</tt> is whatever the tuple held and <tt>qty</tt> is
+whatever the caller put there. Z98 states both. The row and the running total
+become structs with bounded integer fields:
+</p>
+<pre>
+rows = [("apples", 3), ("pears", 2), ...]   # Python: no element types
+totals[name] = totals.get(name, 0) + qty    # name: any hashable, qty: any number
+</pre>
+<pre>
+const Row = struct { name: u32, qty: i32 };   /* Z98: both fields declared */
+const Total = struct { name: u32, sum: i32 };
+</pre>
+<p>
+The Python key is a string; the Z98 twin uses an interned integer id, which is
+how the compiler's own concrete hash maps key their entries. The id is turned
+back into a name only at the print. The type rules are
+<a href="vol2-02-types.html">Volume&nbsp;II chapter&nbsp;2</a> and
+<a href="vol4-02-types.html">Volume&nbsp;IV &mdash; Types</a>.
+</p>
+</li>
+<li>
+<p>
+<b>Dicts and lists to a manual table and a slice.</b> The <tt>dict</tt> is the
+part with no Z98 counterpart you can reach for; the language has arrays and
+slices, not hash tables. The twin writes the table Python supplied as a struct
+over a slice plus a length, and scans it linearly. The <tt>list</tt> of tuples
+becomes a fixed array of <tt>Row</tt>; the accumulation becomes one lookup loop:
+</p>
+<pre>
+def tally(rows):
+    totals = {}
+    for name, qty in rows:
+        totals[name] = totals.get(name, 0) + qty
+    return totals
+</pre>
+<pre>
+fn tally(rows: []const Row, out: []Total) Tally {
+    var t = Tally{ .items = out, .len = 0 };
+    for (rows) |row| {
+        var found = false;
+        var i: u32 = 0;
+        while (i &lt; t.len) : (i += 1) {
+            const slot = t.items[@intCast(usize, i)];
+            if (slot.name == row.name) {
+                t.items[@intCast(usize, i)].sum += row.qty;
+                found = true;
+            }
+        }
+        if (!found) {
+            t.items[@intCast(usize, t.len)] = .{ .name = row.name, .sum = row.qty };
+            t.len += 1;
+        }
+    }
+    return t;
+}
+</pre>
+<p>
+Two Python conveniences are deliberately gone. A <tt>dict</tt> lookup by key is
+this scan, written out; and the negative index and step slice have no Z98 form,
+because a slice is a pointer plus a length and its bounds are checked. The
+shipped samples <tt>docs/sf/manuals/src/vol2/lookup.z98</tt> and
+<tt>docs/sf/manuals/src/vol2/strings.z98</tt> are the worked versions of the
+found-or-absent search and of the array-to-slice view. The rules are
+<a href="vol2-09-arrays-slices.html">Volume&nbsp;II chapter&nbsp;9</a> and
+<a href="vol4-08-arrays-slices.html">Volume&nbsp;IV &mdash; Arrays and
+Slices</a>.
+</p>
+</li>
+<li>
+<p>
+<b>Exceptions to error unions.</b> Python signals an invalid state by raising
+and leaves the recovery to any frame that installs a handler. Z98 puts the
+failure in the function's return type, so the caller cannot ignore it and the
+handler is an ordinary expression:
+</p>
+<pre>
+def average(totals):
+    if len(totals) == 0:
+        raise ValueError("empty tally")     # Python: unwinds the stack
+    return sum(totals.values()) // len(totals)
+</pre>
+<pre>
+fn average(t: Tally) error{EmptyTally}!i32 {
+    if (t.len == 0) return error.EmptyTally; /* Z98: a value in the return type */
+    var sum: i32 = 0;
+    var i: u32 = 0;
+    while (i &lt; t.len) : (i += 1) {
+        sum += t.items[@intCast(usize, i)].sum;
+    }
+    return sum / @intCast(i32, t.len);
+}
+</pre>
+<p>
+<tt>try</tt> propagates an error and <tt>catch</tt> handles one, exactly where
+Python wrote <tt>try</tt>/<tt>except</tt>. The shipped sample
+<tt>docs/sf/manuals/src/vol2/error_unions.z98</tt> is the worked version; the
+mechanics are <a href="vol5-07-errors.html">Model and propagate errors</a> and
+<a href="vol4-09-errors.html">Volume&nbsp;IV &mdash; Errors</a>. One Python
+habit does <i>not</i> carry over: <tt>/</tt> in Z98 truncates toward zero where
+Python's <tt>//</tt> floors, so a negative operand is where the two languages
+disagree.
+</p>
+</li>
+<li>
+<p>
+<b>Garbage collection to the arena.</b> Python reclaims a <tt>dict</tt> or a
+node whenever it becomes unreachable. Z98 has no collector and no per-object
+<tt>free</tt>; the program allocates out of a buffer it supplies and releases
+the whole region in one reset. The twin takes a stack buffer, initializes the
+arena over it, and allocates the total table from it:
+</p>
+<pre>
+totals = {}                                 # Python: reclaimed when unreachable
+</pre>
+<pre>
+var buf: [4096]u8 = undefined;
+var arena = std.arena.init(buf[0..]);
+const raw = try std.arena.alloc(&amp;arena, @sizeOf(Total) * 8);
+const space = @ptrCast([*]Total, raw)[0..8];
+</pre>
+<p>
+<tt>std.arena.alloc</tt> returns an error union, so exhausting the buffer is a
+caught <tt>error.OutOfMemory</tt> rather than a null dereference, and there is
+no <tt>free</tt> to forget or to call twice. The shipped sample
+<tt>docs/sf/manuals/src/vol2/arena.z98</tt> measures the full surface; the guide
+is <a href="vol5-06-arena.html">Use the arena correctly</a>, and the rules are
+<a href="vol4-17-memory.html">Volume&nbsp;IV &mdash; Memory</a>.
+</p>
+</li>
+<li>
+<p>
+Read the Z98 twin. It is the whole program, and it ships at
+<tt>docs/sf/manuals/src/vol5/portpy/tally.z98</tt>:
+</p>
+<pre>
+const std = @import("std");
+
+const Row = struct { name: u32, qty: i32 };
+const Total = struct { name: u32, sum: i32 };
+const Tally = struct { items: []Total, len: u32 };
+
+fn nameOf(id: u32) []const u8 {
+    if (id == 0) return "apples";
+    return "pears";
+}
+
+fn tally(rows: []const Row, out: []Total) Tally {
+    var t = Tally{ .items = out, .len = 0 };
+    for (rows) |row| {
+        var found = false;
+        var i: u32 = 0;
+        while (i &lt; t.len) : (i += 1) {
+            const slot = t.items[@intCast(usize, i)];
+            if (slot.name == row.name) {
+                t.items[@intCast(usize, i)].sum += row.qty;
+                found = true;
+            }
+        }
+        if (!found) {
+            t.items[@intCast(usize, t.len)] = .{ .name = row.name, .sum = row.qty };
+            t.len += 1;
+        }
+    }
+    return t;
+}
+
+fn average(t: Tally) error{EmptyTally}!i32 {
+    if (t.len == 0) return error.EmptyTally;
+    var sum: i32 = 0;
+    var i: u32 = 0;
+    while (i &lt; t.len) : (i += 1) {
+        sum += t.items[@intCast(usize, i)].sum;
+    }
+    return sum / @intCast(i32, t.len);
+}
+
+pub fn main() !void {
+    var buf: [4096]u8 = undefined;
+    var arena = std.arena.init(buf[0..]);
+    const raw = try std.arena.alloc(&amp;arena, @sizeOf(Total) * 8);
+    const space = @ptrCast([*]Total, raw)[0..8];
+
+    var rows: [4]Row = undefined;
+    rows[0] = .{ .name = 0, .qty = 3 };
+    rows[1] = .{ .name = 1, .qty = 2 };
+    rows[2] = .{ .name = 0, .qty = 5 };
+    rows[3] = .{ .name = 1, .qty = 4 };
+
+    const t = tally(rows[0..], space);
+    var i: u32 = 0;
+    while (i &lt; t.len) : (i += 1) {
+        const total = t.items[@intCast(usize, i)];
+        std.io.print("{s} {}\n", .{ nameOf(total.name), total.sum });
+    }
+    std.io.print("average {}\n", .{ try average(t) });
+
+    const empty = tally(rows[0..0], space);
+    _ = average(empty) catch {
+        std.io.print("caught empty tally\n", .{});
+        return;
+    };
+    std.io.print("unreachable\n", .{});
+}
+</pre>
+<p>
+<tt>tally</tt> is the accumulation loop in one place; <tt>average</tt> is the
+same division, now able to say how it fails; <tt>main</tt> owns the one buffer
+that replaced the collector. The rows index each other by integer and the names
+are interned ids, which is what lets the whole program live without a heap.
+</p>
+</li>
+<li>
+<p>
+Build and run the Z98 twin, exactly as in
+<a href="vol5-02-build-single.html">Build a single file</a>. The emitted
+<tt>gcc</tt> prints many warnings from the runtime's unused static helpers; the
+build is not red and the binary runs.
+</p>
+<pre>
+$ rm -rf /tmp/portpy_z98
+$ mkdir -p /tmp/portpy_z98
+$ timeout 120 /tmp/manual_seed/zig1_5_clean -o /tmp/portpy_z98 docs/sf/manuals/src/vol5/portpy/tally.z98
+$ cd /tmp/portpy_z98 &amp;&amp; timeout 120 sh build_target.sh linux tally
+Building for linux...
+Built: tally
+$ timeout 120 ./tally
+apples 8
+pears 6
+average 7
+caught empty tally
+</pre>
+<p>
+The compiler requires the output directory to exist, which is why the commands
+create <tt>/tmp/portpy_z98</tt> first.
+</p>
+</li>
+<li>
+<p>
+Confirm the port by the emitted type. The failure Python described in prose
+&mdash; <tt>raise ValueError</tt> &mdash; is now a real return type in the
+generated C89:
+</p>
+<pre>
+$ grep -n 'average(' /tmp/portpy_z98/tally_*.c | head -1
+189:zT_0DA61B72_EU_6 zF_175EB228_average(zT_851341DD_Tally t) {
+</pre>
+<p>
+<tt>zT_..._EU_6</tt> is the emitted error-union struct: the six-byte payload plus
+the error tag the caller must check. The slice type carries the table's length
+into the function, and the mangled name is the ordinary C symbol the linker
+sees. The mangling rules are in <tt>docs/reference/name_mangling.md</tt> and
+<tt>docs/reference/c89_emission.md</tt>.
+</p>
+</li>
+<li>
+<p>
+Know what a Python reader will miss. These are the conveniences with no Z98
+form; each is a place a direct transliteration stalls:
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left" bgcolor="#e8e0e0"><b>Python reaches for</b></th>
+<th align="left" bgcolor="#e8e0e0"><b>Z98 shape instead</b></th>
+</tr>
+<tr>
+<td valign="top"><tt>dict</tt> literals and <tt>d[key]</tt></td>
+<td valign="top">a struct over a slice and a scan; the compiler writes its own
+maps the same way</td>
+</tr>
+<tr>
+<td valign="top"><tt>list</tt> methods (<tt>append</tt>, <tt>sort</tt>,
+<tt>extend</tt>)</td>
+<td valign="top">a fixed array plus a length, or the <tt>std</tt> sort/containers
+you call by free function</td>
+</tr>
+<tr>
+<td valign="top">negative indices and <tt>s[a:b:c]</tt> with a step</td>
+<td valign="top">a slice is a pointer plus a length; bounds are checked and
+there is no step</td>
+</tr>
+<tr>
+<td valign="top">duck typing and <tt>hasattr</tt></td>
+<td valign="top">a declared type at the call site; the manual vtable if a
+run-time choice is truly needed</td>
+</tr>
+<tr>
+<td valign="top">exception hierarchies and <tt>finally</tt></td>
+<td valign="top">a named error set with <tt>try</tt>/<tt>catch</tt>/
+<tt>errdefer</tt></td>
+</tr>
+<tr>
+<td valign="top">garbage collection and object graphs</td>
+<td valign="top">one arena over a buffer and its reset; no per-object
+release</td>
+</tr>
+<tr>
+<td valign="top">strings as objects (<tt>s.upper()</tt>, <tt>+</tt>)</td>
+<td valign="top"><tt>[]const u8</tt> bytes and the <tt>std</tt> string
+functions</td>
+</tr>
+<tr>
+<td valign="top">generators, decorators, and comprehensions</td>
+<td valign="top">an explicit coroutine (<a href="vol5-08-coroutines.html">Write
+and drive a coroutine</a>) or an ordinary loop</td>
+</tr>
+</table>
+</li>
+</ol>
+
+<h2>Verify it worked</h2>
+<p>
+Both programs print the same four lines and exit <tt>0</tt>:
+</p>
+<pre>
+apples 8
+pears 6
+average 7
+caught empty tally
+</pre>
+<p>
+The first two lines are the accumulation: three apples plus five is eight, two
+pears plus four is six, printed in the first-seen order both languages
+preserve. The third is the average, <tt>(8 + 6) / 2</tt> is seven. The fourth is
+the failure path: the empty tally reaches the raise and reports it instead of
+dividing by zero.
+</p>
+<p>
+Agreement of the two outputs is the port's acceptance test. The Python version
+raised <tt>ValueError</tt> and the Z98 version returned
+<tt>error.EmptyTally</tt>, but the observable behavior is identical, and the
+Z98 side did it with no collector, no per-object release, and no unchecked
+failure. If you see all four lines from both programs, the translation holds at
+the two places a dynamic-language port can silently break: the keyed lookup and
+the failure path.
+</p>
+
+<h2>Common mistakes</h2>
+<ul>
+<li><b>Ignoring the error union.</b> The Python habit of catching broadly, or of
+letting an exception fall through, meets a compiler that refuses a dropped
+result:
+<pre>
+error[3015]: error union result is ignored; use 'try', 'catch', or assign the result
+</pre>
+Use <tt>try</tt> to propagate or <tt>catch</tt> to handle, as <tt>main</tt>
+does.</li>
+<li><b>Propagating from a <tt>void</tt> function.</b> Python can raise from
+anywhere; a Z98 <tt>try</tt> needs a return type that can carry the error:
+<pre>
+error[3075]: expected type 'void', found error set
+note: function cannot return an error
+</pre>
+Declare the function <tt>error{EmptyTally}!i32</tt>, not <tt>void</tt>.</li>
+<li><b>Reaching for a <tt>dict</tt> literal.</b> There is no hash-table literal
+in Z98. Write the table as a struct over a slice and the lookup as a scan, or
+call a <tt>std</tt> container; do not transliterate <tt>{}</tt> and
+<tt>d[key]</tt>.</li>
+<li><b>Expecting automatic memory.</b> There is no collector and no per-object
+<tt>free</tt>. Allocate from an arena and decide where the reset goes; a
+Python-style object graph that outlives its region has no Z98 shape and must be
+re-homed.</li>
+<li><b>Using a negative index or a step slice.</b> A Z98 slice has no negative
+offset and no <tt>a:b:c</tt> step; both are Python list conveniences, not
+language primitives.</li>
+<li><b>Assuming <tt>/</tt> floors.</b> Python's <tt>//</tt> floors toward
+negative infinity; Z98's <tt>/</tt> truncates toward zero. They agree on the
+positive quantities here and diverge on a negative one.</li>
+<li><b>Treating a string as an object.</b> A Z98 string is a
+<tt>[]const u8</tt> byte view; there is no <tt>.upper()</tt>, no
+<tt>+</tt>-concatenation, and compared with the <tt>std</tt> string functions
+rather than by value.</li>
+</ul>
+
+<h2>Where to go next</h2>
+<p>
+The other two translations are
+<a href="vol5-16-port-from-c.html">Port a C File to Z98</a> and
+<a href="vol5-17-port-from-cpp.html">Port a C++98 File to Z98</a>. The language
+practices behind the twin are
+<a href="vol5-07-errors.html">Model and propagate errors</a> for error unions
+and <a href="vol5-06-arena.html">Use the arena correctly</a> for lifetime; the
+coroutine the dynamic-language reader may want in place of a generator is
+<a href="vol5-08-coroutines.html">Write and drive a coroutine</a>. The
+Volume&nbsp;IV Reference carries the rules this port leans on:
+<a href="vol4-01-grammar.html">Grammar</a>,
+<a href="vol4-02-types.html">Types</a>,
+<a href="vol4-08-arrays-slices.html">Arrays and Slices</a>,
+<a href="vol4-09-errors.html">Errors</a>,
+<a href="vol4-17-memory.html">Memory</a>, and
+<a href="vol4-23-limits.html">Limits</a>. The era framing that compares Z98 to
+the languages that ran on the target is
+<a href="vol2-01-honest-comparison.html">Volume&nbsp;II, Honesty: When C89 Is
+the Better Choice</a>, and the measured pairing it prints with the shared
+evaluator is <a href="vol2-19-idioms.html">Volume&nbsp;II chapter&nbsp;19</a>.
+Return to the <a href="vol5-00-index.html">HOWTO index</a> for the full list.
+</p>
+
+<p class="navbtns">
+<a href="vol5-17-port-from-cpp.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol5-17-port-from-cpp.html">Port a C++98 File to Z98</a> | <a href="toc.html">Contents</a> | Next: <a href="toc.html">Contents</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
