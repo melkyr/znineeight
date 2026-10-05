@@ -1,0 +1,393 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Trace with Markers</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume V HOWTO markers --markers --track-memory measureMarkerWrite markerWrite markerWriteInt markerWriteInt64 g_markers_debug markersEnabled pal.zig stderr grep -a INT new DC arena FWD P0 FE marker stream compiler trace">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol5-13-debugger.html">
+<link rel="next" href="vol5-16-port-from-c.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume V &mdash; HOWTO</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol5-00-index.html">Index &mdash; A&ndash;Z, grouped by theme</a><br>
+<a href="vol5-01-build-compiler.html">Rebuild the compiler from seed</a><br>
+<a href="vol5-02-build-single.html">Build a single file</a><br>
+<a href="vol5-03-build-multi.html">Build multiple modules</a><br>
+<a href="vol5-04-target-win9x.html">Target Win9x</a><br>
+<a href="vol5-05-target-linux.html">Target Linux</a><br>
+<a href="vol5-06-arena.html">Use the arena correctly</a><br>
+<a href="vol5-07-errors.html">Model and propagate errors</a><br>
+<a href="vol5-08-coroutines.html">Write and drive a coroutine</a><br>
+<a href="vol5-09-files.html">Read, write, and test files</a><br>
+<a href="vol5-10-sockets.html">Sockets under Z98</a><br>
+<a href="vol5-11-c-interop.html">Call C from Z98</a><br>
+<a href="vol5-12-c89-interop.html">Link Z98 output against C89 libraries</a><br>
+<a href="vol5-13-debugger.html">Debug generated C</a><br>
+<b>Use markers</b><br>
+Read the diagnostics <i>(planned)</i><br>
+<a href="vol5-16-port-from-c.html">Port from C</a><br>
+<a href="vol5-17-port-from-cpp.html">Port from C++98</a><br>
+<a href="vol5-18-port-from-python.html">Port from Python</a><br>
+Pack for diskette <i>(planned)</i><br>
+Build a multilingual manual <i>(planned)</i><br>
+Build the static site <i>(planned)</i><br>
+Contribute <i>(planned)</i><br>
+Report a bug <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Trace with Markers</h1>
+<p>
+This guide turns on the compiler's marker channel with
+<tt>--markers</tt>, captures the stream to a file, and reads it to see what
+the compiler did while it built a program.
+</p>
+
+<h2>Prerequisites</h2>
+<ul>
+<li>The compiler rebuilt from the seed at
+<tt>/tmp/manual_seed/zig1_5_clean</tt>, with the standard library beside it in
+<tt>/tmp/manual_seed/lib/</tt>. If it is not there yet, follow
+<a href="vol5-01-build-compiler.html">Rebuild the compiler from seed</a>
+first.</li>
+<li>The repository checked out, so the sample
+<tt>docs/sf/manuals/src/vol2/arena.z98</tt> is present. Every command runs from
+the repository root, <tt>/workspace/znineeight</tt>.</li>
+<li>A POSIX shell with <tt>grep</tt>. The marker channel is text on standard
+error, so the only other tool needed is a way to filter it.</li>
+<li>No prior guide is required. This is the compiler-side half of
+<a href="vol5-13-debugger.html">Debug the generated C</a>, which debugs the
+binary; markers debug the build that produced it.</li>
+</ul>
+
+<h2>Steps</h2>
+<ol>
+<li>
+<p>
+Turn on the channel. <tt>--markers</tt> is the only switch; without it the
+compiler writes nothing to the marker channel. Redirect standard error to a
+file, because the stream is longer than a terminal should show. The compiler
+creates files but not the output directory, so create it first:
+</p>
+<pre>
+$ cd /workspace/znineeight
+$ rm -rf /tmp/manual_markers
+$ mkdir -p /tmp/manual_markers
+$ timeout 120 /tmp/manual_seed/zig1_5_clean --markers -o /tmp/manual_markers docs/sf/manuals/src/vol2/arena.z98 2> /tmp/markers.txt
+$ wc -l /tmp/markers.txt
+2206 /tmp/markers.txt
+</pre>
+<p>
+Two thousand lines from one small compile. The same compile without the flag
+is silent on that channel:
+</p>
+<pre>
+$ rm -rf /tmp/manual_plain
+$ mkdir -p /tmp/manual_plain
+$ timeout 120 /tmp/manual_seed/zig1_5_clean -o /tmp/manual_plain docs/sf/manuals/src/vol2/arena.z98 2> /tmp/plain_err.txt
+$ wc -l /tmp/plain_err.txt
+0 /tmp/plain_err.txt
+</pre>
+<p>
+The flag is parsed in <tt>sf/src/main.zig:149</tt>, where it calls
+<tt>pal.markersEnabled(1)</tt>. The markers and the compiler's diagnostics both
+go to standard error, so always redirect the stream when a compile might also
+emit an error.
+</p>
+</li>
+<li>
+<p>
+Read the top of the stream. It shows the pipeline phases in order: allocation,
+then the type registry, then the string interner.
+</p>
+<pre>
+$ head -28 /tmp/markers.txt
+arena perm: grew 4096 -&gt; 16384
+arena perm: grew 16384 -&gt; 32768
+arena perm: grew 32768 -&gt; 65536
+DC:k0n0t0
+DC:k1n0t1
+DC:k2n0t2
+DC:k3n0t3
+DC:k4n0t4
+DC:k5n0t5
+DC:k6n0t6
+DC:k7n0t7
+DC:k8n0t8
+DC:k9n0t9
+DC:k10n0t10
+DC:k11n0t11
+DC:k12n0t12
+DC:k13n0t13
+DC:k14n0t14
+DC:k15n0t15
+DC:k16n0t16
+DC:k33n0t17
+DC:k34n0t18
+DC:k35n0t19
+DC:k31n0t20
+DC:k40n0t21
+INT:new1
+INT:new2
+INT:new3
+</pre>
+<p>
+<tt>arena &lt;name&gt;: grew &lt;old&gt; -&gt; &lt;new&gt;</tt> is an allocator
+bucket growth; the named arenas &mdash; <tt>perm</tt>, <tt>module</tt>,
+<tt>scratch</tt>, <tt>type_db</tt>, <tt>import_scratch</tt>,
+<tt>diag_read</tt> &mdash; are the compiler's own memory tiers.
+<tt>DC:k&lt;kind&gt;n&lt;name&gt;t&lt;id&gt;</tt> is the type registry announcing
+a new type, carrying its kind, the id of its name string, and the new type id.
+</p>
+</li>
+<li>
+<p>
+Filter the stream. Every marker begins on its own line, so <tt>grep</tt> is the
+whole query language. Count the phases to see the shape of a compile:
+</p>
+<pre>
+$ wc -l /tmp/markers.txt
+2206 /tmp/markers.txt
+$ grep -a -c '^INT:new' /tmp/markers.txt
+1259
+$ grep -a -c '^DC:' /tmp/markers.txt
+401
+$ grep -a -c '^arena ' /tmp/markers.txt
+29
+$ grep -a -c '^FWD:' /tmp/markers.txt
+66
+</pre>
+<p>
+<tt>INT:new&lt;id&gt;</tt> is the string interner adding a string. Its reuse
+partner <tt>INT:dup&lt;id&gt;</tt> belongs to the compiled-off debug channel
+(step&nbsp;4), so it never appears in this capture; <tt>INT:new</tt> is the only
+interner marker the live stream emits. For the tail of the stream, where the
+emitter writes forward declarations and function bodies, filter those prefixes:
+</p>
+<pre>
+$ grep -a '^DC:' /tmp/markers.txt | head -5
+DC:k0n0t0
+DC:k1n0t1
+DC:k2n0t2
+DC:k3n0t3
+DC:k4n0t4
+$ grep -a '^arena ' /tmp/markers.txt | tail -3
+arena scratch: grew 65536 -&gt; 131072
+arena scratch: grew 131072 -&gt; 262144
+arena scratch: grew 262144 -&gt; 524288
+$ grep -a -A2 'FWD:n=613 m=9' /tmp/markers.txt
+FWD:n=613 m=9
+P0:lc=0
+FE:p0
+</pre>
+<p>
+<tt>FWD:n=&lt;name&gt; m=&lt;mod&gt;</tt> is a function signature emitted,
+<tt>P0:lc=&lt;n&gt;</tt> opens a function body with <tt>n</tt> locals, and
+<tt>FE:p0</tt> is the output buffer flushed. The <tt>613</tt> is an interned
+<tt>name</tt> id, not a line number. Read the capture with <tt>grep -a</tt>,
+never <tt>strings</tt>: the marker channel can carry bytes that
+<tt>strings</tt> silently drops.
+</p>
+</li>
+<li>
+<p>
+Know which API produces what you are reading. The live stream comes from the
+<tt>measureMarkerWrite*</tt> family in <tt>sf/src/pal.zig</tt>:
+</p>
+<pre>
+pub fn measureMarkerWrite(msg: []const u8) void {
+    if (g_markers_enabled != @intCast(u32, 0)) {
+        stderr_write(msg);
+    }
+}
+</pre>
+<p>
+That is the whole gate (<tt>sf/src/pal.zig:252&ndash;256</tt>):
+<tt>measureMarkerWrite</tt>, <tt>measureMarkerWriteInt</tt>, and
+<tt>measureMarkerWriteInt64</tt> test <tt>isMarkersEnabled()</tt> and write
+straight to standard error. The flag that turns them on is the
+<tt>g_markers_enabled</tt> word set by <tt>markersEnabled(on: u32)</tt>
+(<tt>sf/src/pal.zig:197&ndash;205</tt>).
+</p>
+<p>
+The older <tt>markerWrite</tt>, <tt>markerWriteInt</tt>, and
+<tt>markerWriteInt64</tt> (<tt>sf/src/pal.zig:214&ndash;250</tt>) sit behind a
+second gate, <tt>g_markers_debug</tt> (<tt>sf/src/pal.zig:210</tt>), which is
+<tt>0</tt> in the shipped compiler:
+</p>
+<pre>
+pub const g_markers_debug: u32 = 0;
+
+pub fn markerWrite(msg: []const u8) void {
+    if (g_markers_debug != @intCast(u32, 0)) {
+        if (g_markers_enabled != @intCast(u32, 0)) {
+            stderr_write(msg);
+        }
+    }
+}
+</pre>
+<p>
+Because <tt>g_markers_debug</tt> is <tt>0</tt>, those three functions are
+compiled off and emit nothing, with or without <tt>--markers</tt>. They are the
+source-level debug channel; the letter-code pipeline markers (<tt>I</tt>,
+<tt>S</tt>, <tt>T</tt>, <tt>L</tt>, <tt>C</tt>) and the per-node traces
+(<tt>INT:dup</tt>, <tt>IRD:</tt>, <tt>IRV:</tt>) are the same kind of
+compile-time instrumentation and are not live output either. Only the
+<tt>measureMarkerWrite*</tt> sites produce the stream you just captured.
+</p>
+</li>
+<li>
+<p>
+The same channel carries the memory report. <tt>--track-memory</tt> writes its
+one-line peak-memory summary through <tt>measureMarkerWrite</tt>, so it also
+needs <tt>--markers</tt> on:
+</p>
+<pre>
+$ rm -rf /tmp/manual_tm
+$ mkdir -p /tmp/manual_tm
+$ timeout 120 /tmp/manual_seed/zig1_5_clean --markers --track-memory -o /tmp/manual_tm docs/sf/manuals/src/vol2/arena.z98 2> /tmp/markers_tm.txt
+$ grep -a 'track-memory' /tmp/markers_tm.txt
+track-memory: perm=61K mod=365K scr=254K pool=2475K type_db=31K total=680K
+</pre>
+<p>
+The figures are kilobytes of peak use per arena, with <tt>total</tt> the sum of
+<tt>perm</tt>, <tt>mod</tt>, and <tt>scr</tt>. Without <tt>--markers</tt> the
+report is silent too, because the memory line rides the marker gate. This is the
+same budget instrument described in <a href="vol4-17-memory.html">Volume&nbsp;IV
+&mdash; Memory and the arena</a> and <a href="vol3-16-memory-budgets.html">Volume&nbsp;III
+&mdash; Memory budgets</a>.
+</p>
+</li>
+<li>
+<p>
+Two things about markers are worth saying plainly. First, they are diagnostic
+text, not a contract: the prefixes live in the compiler's source and can change
+with the compiler, so a script that depends on one prefix is a script that may
+break at the next rebuild. Read them the way you read a compiler's internal
+comments. Second, they trace the <i>compiler</i>, not your program. By the time
+your binary runs, the markers are gone. If a value is wrong at run time, markers
+will not show it &mdash; use <tt>gdb</tt> on the generated C, as
+<a href="vol5-13-debugger.html">Debug the generated C</a> shows. Markers answer
+compiler questions: which type was created, how many strings were interned, which
+arena grew, which function was emitted.
+</p>
+</li>
+</ol>
+
+<h2>Verify it worked</h2>
+<p>
+The transcripts above are the captured output of those commands against a
+compiler installed at <tt>/tmp/manual_seed</tt>. Four things together prove the
+channel is wired. Step&nbsp;1 shows one compile producing
+<tt>2206</tt> marker lines and the same compile without <tt>--markers</tt>
+producing <tt>0</tt>. Step&nbsp;2 shows the phases in order: arena growth, then
+<tt>DC:</tt> type-registry lines, then <tt>INT:</tt> interner lines.
+Step&nbsp;3's counts &mdash; <tt>1259</tt> <tt>INT:new</tt>, <tt>401</tt>
+<tt>DC:</tt>, <tt>29</tt> <tt>arena</tt>, <tt>66</tt> <tt>FWD:</tt> &mdash;
+are all present in the <tt>2206</tt>-line file. Step&nbsp;5's
+<tt>track-memory</tt> line appears only because <tt>--markers</tt> is on, which
+confirms that the report and the stream share one gate. If you see those, the
+compiler trace is one flag away.
+</p>
+
+<h2>Common mistakes</h2>
+<ul>
+<li><b>Forgetting to redirect standard error.</b> Markers and diagnostics share
+standard error, so an unredirected <tt>--markers</tt> compile floods the
+terminal with two thousand lines and buries any real error. Always add
+<tt>2&gt; /tmp/markers.txt</tt>.</li>
+<li><b>Filtering with <tt>strings</tt>.</b> The marker channel can carry bytes
+that <tt>strings</tt> drops, silently losing entries. Use <tt>grep -a</tt> on
+the raw capture.</li>
+<li><b>Expecting the flag to trace your program.</b> Markers trace the compiler
+as it builds your program. They are gone by run time; use <tt>gdb</tt> for the
+binary.</li>
+<li><b>Looking for <tt>markerWrite</tt> output.</b> The shipped compiler has
+<tt>g_markers_debug = 0</tt>, so <tt>markerWrite</tt>,
+<tt>markerWriteInt</tt>, and <tt>markerWriteInt64</tt> are compiled off. The
+live stream comes from <tt>measureMarkerWrite*</tt>; read that API when you
+extend the instrumentation.</li>
+<li><b>Expecting <tt>--track-memory</tt> on its own.</b> The memory summary is
+written through the marker channel, so it needs <tt>--markers</tt> too.</li>
+<li><b>Mixing the marker tree with the plain tree.</b> <tt>--markers</tt> emits
+an instrumented tree: the generated C carries extra
+<tt>/*==MARKER_&hellip;==*/</tt> and <tt>/*==LF:&hellip;==*/</tt> comment lines,
+so its line numbers no longer match a plain build. In the run above the same
+module is <tt>413</tt> lines in <tt>/tmp/manual_plain/arena_F3DC0DA4.c</tt> and
+<tt>462</tt> lines in <tt>/tmp/manual_markers/arena_F3DC0DA4.c</tt>. Keep the
+marker tree and the tree you debug with <tt>gdb</tt> apart, or the breakpoint
+lands on the wrong line.</li>
+<li><b>Treating a marker prefix as an interface.</b> The prefixes are
+diagnostic text that can change with the compiler. Script them only with that
+caveat in mind.</li>
+</ul>
+
+<h2>Where to go next</h2>
+<p>
+The marker channel is catalogued with every prefix, phase, and emitting source
+site in <a href="vol4-20-markers.html">Volume&nbsp;IV &mdash; Pipeline
+markers</a>; that page is the lookup for the stream this guide captures. The
+functions behind it are specified in <a href="vol4-19-pal.html">Volume&nbsp;IV
+&mdash; The platform layer</a>, and <tt>--markers</tt> and
+<tt>--track-memory</tt> sit with the other flags in
+<a href="vol4-22-cli.html">Volume&nbsp;IV &mdash; The command line</a>. The
+long-form treatment of the same two halves is
+<a href="vol3-15-debugger-workflow.html">Volume&nbsp;III &mdash; The Debugger
+Workflow</a>.
+</p>
+<p>
+The companion guide is
+<a href="vol5-13-debugger.html">Debug the generated C</a>: <tt>gdb</tt> for the
+binary, markers for the build. The next shipped guide is
+<a href="vol5-16-port-from-c.html">Port a C File to Z98</a>; reading the
+diagnostics, guide&nbsp;15, is planned. Return to the
+<a href="vol5-00-index.html">HOWTO index</a> for the full list.
+</p>
+
+<p class="navbtns">
+<a href="vol5-13-debugger.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol5-16-port-from-c.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol5-13-debugger.html">Debug the Generated C</a> | <a href="toc.html">Contents</a> | Next: <a href="vol5-16-port-from-c.html">Port a C File to Z98</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>

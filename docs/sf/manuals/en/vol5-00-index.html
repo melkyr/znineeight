@@ -52,7 +52,7 @@ Espa&ntilde;ol (not yet available) |
 <a href="vol5-11-c-interop.html">Call C from Z98</a><br>
 <a href="vol5-12-c89-interop.html">Link Z98 output against C89 libraries</a><br>
 <a href="vol5-13-debugger.html">Debug generated C</a><br>
-Use markers <i>(planned)</i><br>
+<a href="vol5-14-markers.html">Use markers</a><br>
 Read the diagnostics <i>(planned)</i><br>
 <a href="vol5-16-port-from-c.html">Port from C</a><br>
 <a href="vol5-17-port-from-cpp.html">Port from C++98</a><br>
@@ -85,7 +85,7 @@ A shipped page is a link; a page that has not shipped is plain text marked
 05 (target Linux), 06 (correct arena use),
 07 (model and propagate errors), 08 (write and drive a coroutine), 09
 (read, write, and check files), 10 (sockets under Z98), 11 (call C from Z98),
-12 (link against C89), 13 (debug the generated C),
+12 (link against C89), 13 (debug the generated C), 14 (trace with markers),
 16 (translate a C file), 17 (translate a C++98 file), and 18 (translate a Python
 file) are shipped so far.
 </p>
@@ -100,7 +100,7 @@ file) are shipped so far.
 <li><a href="vol5-00-index.html">Index</a> &mdash; This page: the A&ndash;Z and themed map of Volume&nbsp;V.</li>
 <li><a href="vol5-12-c89-interop.html">Link Z98 output against C89 libraries</a> &mdash; Link Z98-emitted objects with hand-written C89 code.</li>
 <li><a href="vol5-05-target-linux.html">Linux ELF</a> &mdash; Choose the default Linux target and the gcc -m32 path behind it.</li>
-<li><b>--markers, pal.markerWrite*</b> &mdash; Enable --markers and read the compiler's marker stream. <i>(planned)</i></li>
+<li><a href="vol5-14-markers.html">--markers, pal.markerWrite*</a> &mdash; Enable --markers and read the compiler's marker stream.</li>
 <li><a href="vol5-07-errors.html">Model and propagate errors</a> &mdash; Use error unions, try and catch, errdefer, and the enclosing-return rule.</li>
 <li><a href="vol5-03-build-multi.html">Multiple modules</a> &mdash; Split a program across @import modules and build each emitted file.</li>
 <li><a href="vol5-02-build-single.html">One .z98 to an executable</a> &mdash; Compile one source file, link it, and run the native executable.</li>
@@ -163,7 +163,7 @@ sequence; the filenames number 01 to 23 across the themes.
 <h3>Tooling</h3>
 <ul>
 <li><a href="vol5-13-debugger.html">gdb on the generated C</a> &mdash; Build with debug info and debug the emitted C with gdb.</li>
-<li><b>--markers, pal.markerWrite*</b> &mdash; Enable --markers and read the compiler's marker stream. <i>(planned)</i></li>
+<li><a href="vol5-14-markers.html">--markers, pal.markerWrite*</a> &mdash; Enable --markers and read the compiler's marker stream.</li>
 <li><b>Reading the error[N] codes</b> &mdash; Read the printed ordinals, the source notes, and common fixes. <i>(planned)</i></li>
 </ul>
 
