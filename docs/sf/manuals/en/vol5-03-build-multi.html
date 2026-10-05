@@ -1,0 +1,343 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Building Multiple Modules</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume V HOWTO build multiple modules @import module resolution emitted per-module files shared header zig_compat zig_special_types build_target.sh link linux zig1 aux colors forward reference">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol5-02-build-single.html">
+<link rel="next" href="toc.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume V &mdash; HOWTO</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol5-00-index.html">Index &mdash; A&ndash;Z, grouped by theme</a><br>
+<a href="vol5-01-build-compiler.html">Rebuild the compiler from seed</a><br>
+<a href="vol5-02-build-single.html">Build a single file</a><br>
+<b>Build multiple modules</b><br>
+Target Win9x <i>(planned)</i><br>
+Target Linux <i>(planned)</i><br>
+Use the arena correctly <i>(planned)</i><br>
+Model and propagate errors <i>(planned)</i><br>
+Write and drive a coroutine <i>(planned)</i><br>
+Read, write, and test files <i>(planned)</i><br>
+Sockets under Z98 <i>(planned)</i><br>
+C interop <i>(planned)</i><br>
+Link Z98 output against C89 libraries <i>(planned)</i><br>
+Debug generated C <i>(planned)</i><br>
+Use markers <i>(planned)</i><br>
+Read the diagnostics <i>(planned)</i><br>
+Port from C <i>(planned)</i><br>
+Port from C++98 <i>(planned)</i><br>
+Port from Python <i>(planned)</i><br>
+Pack for diskette <i>(planned)</i><br>
+Build a multilingual manual <i>(planned)</i><br>
+Build the static site <i>(planned)</i><br>
+Contribute <i>(planned)</i><br>
+Report a bug <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Building Multiple Modules</h1>
+<p>
+This guide emits a program split across <tt>@import</tt> modules, reads the
+per-module C89 files and the shared header it produces, then builds and links
+the multi-module executable.
+</p>
+
+<h2>Prerequisites</h2>
+<ul>
+<li>The compiler rebuilt from the seed at
+<tt>/tmp/manual_seed/zig1_5_clean</tt>, with the standard library beside it in
+<tt>/tmp/manual_seed/lib/</tt>. If it is not there yet, follow
+<a href="vol5-01-build-compiler.html">Rebuild the compiler from seed</a>
+first.</li>
+<li>A Linux host with a 32-bit-capable <tt>gcc</tt> (the emitted script uses
+<tt>gcc -m32 -std=c89</tt>).</li>
+<li>The repository checked out, so the committed cross-module program
+<tt>repro/mi_matrix/stdlib_print_tuple_fwd_ok_xmod/</tt> is present. Every
+command runs from the repository root, <tt>/workspace/znineeight</tt>.</li>
+</ul>
+
+<h2>The sample</h2>
+<p>
+In Z98 one source file is one <b>module</b>. A module names the other modules it
+uses with <tt>@import</tt> at file scope, and a module member marked
+<tt>pub</tt> is visible to importers. The example is the committed multi-module
+program <tt>repro/mi_matrix/stdlib_print_tuple_fwd_ok_xmod/</tt>, which has
+three source modules. Its entry module <tt>main.zig</tt> begins with three
+imports:
+</p>
+<pre>
+const std = @import("std");
+const colors = @import("colors.zig");
+const aux = @import("aux.zig");
+</pre>
+<p>
+The two helper modules are small. <tt>colors.zig</tt> exports two constants:
+</p>
+<pre>
+pub const C = 5;
+pub const C2: i32 = 5 + 7;
+</pre>
+<p>
+and <tt>aux.zig</tt> (comment lines omitted) imports <tt>colors.zig</tt> and re-exports one of its
+constants, so the import graph is <tt>main &rarr; {colors, aux}</tt> and
+<tt>aux &rarr; colors</tt>:
+</p>
+<pre>
+const colors = @import("colors.zig");
+
+pub const A: i32 = colors.C2;
+</pre>
+<p>
+The rest of <tt>main.zig</tt> is the fixture's own test body (it pins a batch of
+forward-reference cases); this guide does not need it. An import path is
+resolved relative to the <i>importing</i> file's directory, so
+<tt>@import("colors.zig")</tt> finds the file that sits beside the importer.
+A bare name such as <tt>@import("std")</tt> is resolved by the compiler from the
+<tt>lib/</tt> folder beside the compiler binary, not from the current
+directory.
+</p>
+
+<h2>Steps</h2>
+<ol>
+<li>
+<p>
+Start at the repository root.
+</p>
+<pre>
+$ cd /workspace/znineeight
+</pre>
+</li>
+<li>
+<p>
+Create the output folder. The compiler writes its emitted tree there but will
+not create the folder itself.
+</p>
+<pre>
+$ mkdir -p /tmp/manual_out
+</pre>
+</li>
+<li>
+<p>
+Translate the entry module to C89. <tt>-o</tt> names the output folder; the last
+argument is the entry source file (the module with the program entry point).
+</p>
+<pre>
+$ timeout 120 /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out repro/mi_matrix/stdlib_print_tuple_fwd_ok_xmod/main.zig
+</pre>
+<p>
+The command is silent on success. The compiler walks the import graph and emits
+one C89 pair for every module it reaches, plus the runtime and a build script.
+</p>
+</li>
+<li>
+<p>
+Look at what it emitted. There is a paired <tt>.c</tt> and <tt>.h</tt> for each
+module, a self-contained runtime, the shared headers, and the companion script:
+</p>
+<pre>
+$ cd /tmp/manual_out &amp;&amp; ls -1
+aux_D076CD51.c
+aux_D076CD51.h
+build_target.sh
+c_exit.c
+colors_0FD2B3D9.c
+colors_0FD2B3D9.h
+main_38FC891C.c
+main_38FC891C.h
+net_prelude.h
+std_fmt_5E28752C.c
+std_fmt_5E28752C.h
+std_io_59DB29D9.c
+std_io_59DB29D9.h
+std_net_A15200CC.c
+std_net_A15200CC.h
+zig_compat.h
+zig_pal.c
+zig_runtime.c
+zig_runtime.h
+zig_special_types.h
+</pre>
+<p>
+Each module file is named
+<tt>&lt;source-basename&gt;_&lt;hash&gt;.c</tt> and <tt>.h</tt>; the hash is
+derived from the module's resolved path, so it changes if you move the tree, and
+you should not hard-code it. The three program modules are <tt>main</tt>,
+<tt>aux</tt>, and <tt>colors</tt>; <tt>std_io</tt>, <tt>std_fmt</tt>, and
+<tt>std_net</tt> are the standard-library modules the program actually reaches,
+emitted the same way. Every module header includes the shared
+<tt>zig_compat.h</tt> and <tt>zig_special_types.h</tt>, and <tt>main_*.h</tt>
+includes the headers of the modules that <tt>main</tt> imports (including
+<tt>colors_*.h</tt> and <tt>aux_*.h</tt>). <tt>zig_runtime.c</tt>,
+<tt>zig_pal.c</tt>, and <tt>c_exit.c</tt> are the runtime and PAL sources;
+<tt>net_prelude.h</tt> is present because the standard library emits its network
+module. <tt>build_target.sh</tt> is the generated build script.
+</p>
+</li>
+<li>
+<p>
+Build the executable. Run the emitted script from inside the output folder and
+give it the target <tt>linux</tt> and a program name.
+</p>
+<pre>
+$ timeout 120 sh build_target.sh linux prog
+Building for linux...
+Built: prog
+</pre>
+<p>
+The script compiles every emitted module and runtime <tt>.c</tt> with
+<tt>gcc -m32 -std=c89</tt>, then links the object files in an intentional
+<i>modules-then-runtime</i> order (the module objects first, the runtime objects
+last), which is deterministic rather than an alphabetical glob. The
+<tt>Building for linux...</tt> and <tt>Built: prog</tt> lines are its own report.
+The generated C draws a long list of <tt>gcc</tt> warnings; they are expected
+and do not stop the build, because the script does not pass <tt>-Werror</tt>.
+</p>
+</li>
+<li>
+<p>
+Run it.
+</p>
+<pre>
+$ timeout 120 ./prog
+small=.{ 5, 7 }
+max=.{ 2147483647, 7 }
+char=.{ 65, 7 }
+xmod=.{ 5, 7 }
+paren=.{ 5, 7 }
+u32=.{ 5, 7 }
+i32=.{ 5, 7 }
+two=.{ 5, 2147483647 }
+back=.{ 12, 7 }
+ann=.{ 12, 7 }
+neg=.{ -5, 7 }
+as=.{ 5, 7 }
+xc2=.{ 12, 7 }
+imp=.{ 5, 7 }
+chain=.{ 12, 7 }
+stf=.{ .{ .a = 12, .b = 2 }, 7 }
+call=.{ 12, 7 }
+pair=.{ .{ .a = 1, .b = 2 }, 7 }
+direct=.{ .a = 1, .b = 2 }
+big=.{ 3000000000, 7 }
+float=.{ 1.5, 7 }
+bool=.{ true, 7 }
+</pre>
+<p>
+The lines <tt>xmod</tt>, <tt>imp</tt>, and <tt>chain</tt> are the cross-module
+ones: <tt>xmod</tt> and <tt>imp</tt> read <tt>colors</tt> and <tt>chain</tt>
+reaches <tt>colors.C2</tt> through <tt>aux</tt>.
+</p>
+</li>
+</ol>
+
+<h2>Verify it worked</h2>
+<p>
+The committed fixture pins both the program's standard output and its exit
+code. The standard-library gate emits the fixture, compiles every emitted
+<tt>.c</tt>, links it through <tt>build_target.sh</tt>, runs it three times, and
+diffs the result byte-for-byte against the committed
+<tt>expected.txt</tt> and <tt>expected.rc</tt>:
+</p>
+<pre>
+$ cd /workspace/znineeight
+$ bash scripts/stdlib/verify_stdlib.sh /tmp/manual_seed/zig1_5_clean repro/mi_matrix/stdlib_print_tuple_fwd_ok_xmod
+== std-lib runtime gate ==
+   zig1: /tmp/manual_seed/zig1_5_clean
+PASS repro/mi_matrix/stdlib_print_tuple_fwd_ok_xmod
+----------------------------------------
+run_fixtures: 1 PASS / 0 FAIL over 1 dirs
+STDLIB GATE OK
+</pre>
+<p>
+<tt>PASS</tt> means the 22-line transcript above and the exit code <tt>0</tt>
+matched the goldens on all three runs; <tt>STDLIB GATE OK</tt> is the wrapper's
+overall verdict.
+</p>
+
+<h2>Common mistakes</h2>
+<ul>
+<li><b>Forgetting to create the output folder.</b> The compiler requires the
+folder to exist and fails with
+<tt>error: output directory does not exist: /tmp/manual_out</tt> (exit code
+<tt>1</tt>). Run <tt>mkdir -p</tt> first.</li>
+<li><b>Naming a helper module as the entry.</b> The last argument must be the
+module with <tt>pub fn main</tt>. Pointing <tt>-o</tt> at <tt>aux.zig</tt>
+emits a tree without the program entry point, and the final link has no
+<tt>main</tt>.</li>
+<li><b>Assuming imports are relative to the current directory.</b> An
+<tt>@import("colors.zig")</tt> path is resolved relative to the file that
+contains it; keep the modules together, or fix the path in the importing
+file.</li>
+<li><b>Running the build script from the wrong folder.</b>
+<tt>build_target.sh</tt> uses relative paths to the generated files, so
+<tt>cd</tt> into the output folder before running it.</li>
+<li><b>Editing the emitted <tt>.c</tt>/<tt>.h</tt> files.</b> They are
+regenerated on every emit, along with the path-derived name hashes. Edit the
+source modules and re-emit.</li>
+<li><b>Reading the <tt>gcc</tt> warnings as failure.</b> The build prints
+hundreds of warnings but succeeds; look for <tt>Built: prog</tt>, not for an
+empty error stream.</li>
+</ul>
+
+<h2>Where to go next</h2>
+<p>
+Return to the <a href="vol5-00-index.html">HOWTO index</a> for the other jobs,
+or go back to <a href="vol5-02-build-single.html">One <tt>.z98</tt> to an
+executable</a> for the single-file case. Larger real multi-module programs are
+built the same way: <tt>examples/z98/lzw</tt> (five modules) and
+<tt>examples/z98/json_parser</tt> (four) both emit with
+<tt>zig1 -o DIR main.zig</tt> and build with <tt>sh build_target.sh</tt> from
+the output folder. For the rules behind the flags the recipe runs, see the
+<a href="vol4-22-cli.html">Volume&nbsp;IV command-line page</a>
+(<tt>-o</tt>, <tt>--output-dir</tt>, and <tt>--dump-c89</tt>); for the grammar
+of imports and items, see <a href="vol4-01-grammar.html">The Full Grammar</a>.
+</p>
+
+<p class="navbtns">
+<a href="vol5-02-build-single.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol5-02-build-single.html">One .z98 to an executable</a> | <a href="toc.html">Contents</a> | Next: <a href="toc.html">Contents</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
