@@ -44,7 +44,7 @@ Espa&ntilde;ol (not yet available) |
 <a href="vol5-03-build-multi.html">Build multiple modules</a><br>
 Target Win9x <i>(planned)</i><br>
 Target Linux <i>(planned)</i><br>
-Use the arena correctly <i>(planned)</i><br>
+<a href="vol5-06-arena.html">Use the arena correctly</a><br>
 Model and propagate errors <i>(planned)</i><br>
 Write and drive a coroutine <i>(planned)</i><br>
 Read, write, and test files <i>(planned)</i><br>
@@ -81,13 +81,14 @@ it links back to the Reference for the underlying rules. This page lists the
 <p>
 A shipped page is a link; a page that has not shipped is plain text marked
 <i>(planned)</i>. This index and guides 01 (rebuild the compiler from seed),
-02 (build a single file), and 03 (build multiple modules) are shipped so far.
+02 (build a single file), 03 (build multiple modules), and 06 (correct arena
+use) are shipped so far.
 </p>
 
 <h2>A&ndash;Z index</h2>
 <ul>
 <li><b>Build the floppy distribution</b> &mdash; Assemble the self-contained output and package a diskette image. <i>(planned)</i></li>
-<li><b>Correct arena use, dual-arena</b> &mdash; Initialize an arena over a buffer, allocate, reset, and split it in two. <i>(planned)</i></li>
+<li><a href="vol5-06-arena.html">Correct arena use, dual-arena</a> &mdash; Initialize an arena over a buffer, allocate, reset, and split it in two.</li>
 <li><b>extern fn, @cInclude</b> &mdash; Declare and call C functions from Z98. <i>(planned)</i></li>
 <li><b>For readers from a modern dynamic language</b> &mdash; Port Python's dynamic types, containers, exceptions, and GC. <i>(planned)</i></li>
 <li><b>gdb on the generated C</b> &mdash; Build with debug info and debug the emitted C with gdb. <i>(planned)</i></li>
@@ -132,7 +133,7 @@ sequence; the filenames number 01 to 23 across the themes.
 
 <h3>Language practices</h3>
 <ul>
-<li><b>Correct arena use, dual-arena</b> &mdash; Initialize an arena over a buffer, allocate, reset, and split it in two. <i>(planned)</i></li>
+<li><a href="vol5-06-arena.html">Correct arena use, dual-arena</a> &mdash; Initialize an arena over a buffer, allocate, reset, and split it in two.</li>
 <li><b>Model and propagate errors</b> &mdash; Use error unions, try and catch, errdefer, and the enclosing-return rule. <i>(planned)</i></li>
 <li><b>Write and drive a coroutine</b> &mdash; Use the async builtins and the Context, Task, and Scheduler driver. <i>(planned)</i></li>
 <li><b>Read, write, exists</b> &mdash; Open, read, write, seek, size, rename, and check files. <i>(planned)</i></li>

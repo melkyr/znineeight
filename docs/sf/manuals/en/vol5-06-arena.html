@@ -1,0 +1,342 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Correct Arena Use</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume V HOWTO arena std.arena init alloc reset backing buffer dual arena scratch permanent OutOfMemory lifetime reset reuse">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol5-03-build-multi.html">
+<link rel="next" href="toc.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume V &mdash; HOWTO</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol5-00-index.html">Index &mdash; A&ndash;Z, grouped by theme</a><br>
+<a href="vol5-01-build-compiler.html">Rebuild the compiler from seed</a><br>
+<a href="vol5-02-build-single.html">Build a single file</a><br>
+<a href="vol5-03-build-multi.html">Build multiple modules</a><br>
+Target Win9x <i>(planned)</i><br>
+Target Linux <i>(planned)</i><br>
+<b>Use the arena correctly</b><br>
+Model and propagate errors <i>(planned)</i><br>
+Write and drive a coroutine <i>(planned)</i><br>
+Read, write, and test files <i>(planned)</i><br>
+Sockets under Z98 <i>(planned)</i><br>
+C interop <i>(planned)</i><br>
+Link Z98 output against C89 libraries <i>(planned)</i><br>
+Debug generated C <i>(planned)</i><br>
+Use markers <i>(planned)</i><br>
+Read the diagnostics <i>(planned)</i><br>
+Port from C <i>(planned)</i><br>
+Port from C++98 <i>(planned)</i><br>
+Port from Python <i>(planned)</i><br>
+Pack for diskette <i>(planned)</i><br>
+Build a multilingual manual <i>(planned)</i><br>
+Build the static site <i>(planned)</i><br>
+Contribute <i>(planned)</i><br>
+Report a bug <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Correct Arena Use</h1>
+<p>
+This guide wraps an arena around a fixed backing buffer, allocates a record from
+it, resets the cursor, and splits the work across a <i>permanent</i> and a
+<i>scratch</i> arena so long-lived data survives a scratch reset.
+</p>
+
+<h2>Prerequisites</h2>
+<ul>
+<li>The compiler rebuilt from the seed at
+<tt>/tmp/manual_seed/zig1_5_clean</tt>, with the standard library beside it in
+<tt>/tmp/manual_seed/lib/</tt>. If it is not there yet, follow
+<a href="vol5-01-build-compiler.html">Rebuild the compiler from seed</a>
+first.</li>
+<li>A Linux host with a 32-bit-capable <tt>gcc</tt> (the emitted script uses
+<tt>gcc -m32 -std=c89</tt>).</li>
+<li>The repository checked out, so the shipped sample
+<tt>docs/sf/manuals/src/vol2/arena.z98</tt> and the committed per-arena fixture
+<tt>repro/mi_matrix/stdlib_arena_xmod/</tt> are present. Every command runs from
+the repository root, <tt>/workspace/znineeight</tt>.</li>
+</ul>
+
+<h2>The sample</h2>
+<p>
+An arena is a bump allocator over a buffer you supply. It has no
+<tt>malloc</tt> and no <tt>free</tt>: <tt>alloc</tt> hands out the next slice and
+advances a cursor, and <tt>reset</tt> puts the cursor back to zero. In Z98 the
+whole surface is four names in <tt>std.arena</tt> (the source is
+<tt>sf/src/std_arena.zig</tt>):
+</p>
+<pre>
+pub const Arena = struct {
+    data: [*]u8,
+    capacity: usize,
+    used: usize,
+};
+
+pub fn init(data: []u8) Arena
+pub fn alloc(self: *Arena, size: usize) ArenaError![*]u8
+pub const ArenaError = error{OutOfMemory};
+pub fn reset(self: *Arena) void
+</pre>
+<p>
+<tt>init</tt> records the buffer's base pointer and length and sets
+<tt>used</tt> to zero; each <tt>alloc</tt> returns <tt>self.data + self.used</tt>
+and advances <tt>used</tt>, or returns <tt>error.OutOfMemory</tt> when the
+request does not fit. The shipped sample
+<tt>docs/sf/manuals/src/vol2/arena.z98</tt> exercises both the single-arena arc
+and the dual-arena pattern. Its two driver functions are:
+</p>
+<pre>
+fn single() !void {
+    var buf: [32]u8 = undefined;
+    var arena = std.arena.init(buf[0..]);
+    std.io.print("cap={} used={}\n", .{ arena.capacity, arena.used });
+
+    const p = try Point_init(&amp;arena, 3, 4);
+    std.io.print("p={} {} used={}\n", .{ p.x, p.y, arena.used });
+
+    std.arena.reset(&amp;arena);
+    std.io.print("used after reset={}\n", .{arena.used});
+
+    const p2 = try Point_init(&amp;arena, 9, 8);
+    std.io.print("p2={} {} reused p.x={}\n", .{ p2.x, p2.y, p.x });
+
+    const big = allocBytes(&amp;arena, 64) catch |err| {
+        std.io.print("caught: {}\n", .{err});
+        return;
+    };
+    std.io.print("unreachable {}\n", .{@intFromPtr(big)});
+}
+
+fn dual() !void {
+    var perm_buf: [128]u8 = undefined;
+    var scratch_buf: [64]u8 = undefined;
+    var perm = std.arena.init(perm_buf[0..]);
+    var scratch = std.arena.init(scratch_buf[0..]);
+
+    const p = try Point_init(&amp;perm, 3, 4);
+    const q = try Point_init(&amp;scratch, 5, 6);
+    std.io.print("perm={} {} scratch={} {}\n", .{ p.x, p.y, q.x, q.y });
+    std.io.print("perm used={} scratch used={}\n", .{ perm.used, scratch.used });
+
+    std.arena.reset(&amp;scratch);
+    std.io.print("scratch used after reset={} perm used={}\n", .{ scratch.used, perm.used });
+}
+</pre>
+<p>
+The key property to watch: <tt>reset</tt> rewinds the cursor, it does not zero
+the bytes and it does not invalidate the pointers the arena already handed out.
+That is why the sample prints <tt>reused p.x=9</tt> after the reset &mdash; the
+old <tt>p</tt> now aliases the new object. This is the ownership rule that makes
+the split-arena discipline necessary: a value whose lifetime must outlive a
+reset has to come from an arena that is not being reset.
+</p>
+
+<h2>Steps</h2>
+<ol>
+<li>
+<p>
+Start at the repository root.
+</p>
+<pre>
+$ cd /workspace/znineeight
+</pre>
+</li>
+<li>
+<p>
+Create the output folder. The compiler writes its emitted tree there but will
+not create the folder itself.
+</p>
+<pre>
+$ mkdir -p /tmp/manual_out
+</pre>
+</li>
+<li>
+<p>
+Translate the sample to C89. <tt>-o</tt> names the output folder; the last
+argument is the source file.
+</p>
+<pre>
+$ timeout 120 /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out docs/sf/manuals/src/vol2/arena.z98
+</pre>
+<p>
+The command is silent on success. It emits one C89 pair per module, the
+runtime, and the companion build script.
+</p>
+</li>
+<li>
+<p>
+Build the executable. Run the emitted script from inside the output folder and
+give it the target <tt>linux</tt> and the program name <tt>arena</tt>.
+</p>
+<pre>
+$ cd /tmp/manual_out &amp;&amp; timeout 120 sh build_target.sh linux arena
+Building for linux...
+Built: arena
+</pre>
+<p>
+The generated C draws many <tt>gcc</tt> warnings; they are expected and do not
+stop the build, because the script does not pass <tt>-Werror</tt>. Look for
+<tt>Built: arena</tt>.
+</p>
+</li>
+<li>
+<p>
+Run it.
+</p>
+<pre>
+$ timeout 120 ./arena
+cap=32 used=0
+p=3 4 used=8
+used after reset=0
+p2=9 8 reused p.x=9
+caught: error.OutOfMemory
+perm=3 4 scratch=5 6
+perm used=8 scratch used=8
+scratch used after reset=0 perm used=8
+</pre>
+<p>
+Read the output as the arena's arc. The 32-byte buffer starts at
+<tt>cap=32 used=0</tt>. One <tt>Point</tt> is eight bytes (<tt>2 &times;
+i32</tt>), so <tt>used=8</tt> and the fields read back as written. <tt>reset</tt>
+returns the cursor to <tt>used=0</tt>, then the same eight bytes are handed out
+again &mdash; the old <tt>p</tt> is not invalidated, it is simply reused, so
+<tt>p.x</tt> now reads the new object's <tt>9</tt>. The 64-byte request cannot fit
+in the 32-byte buffer and the failure is typed and caught:
+<tt>caught: error.OutOfMemory</tt>; the program never reaches the
+<tt>unreachable</tt> line. The second half allocates from two distinct buffers:
+the permanent arena holds its object, the scratch arena holds its own, and after
+<tt>reset(&amp;scratch)</tt> the scratch cursor is zero while
+<tt>perm used=8</tt> still stands.
+</p>
+</li>
+<li>
+<p>
+Confirm the per-arena guarantee against the committed fixture. This is the
+sanity check that a second arena over a <i>distinct</i> buffer is truly
+independent: exhausting one must not affect the other, and resetting one must
+not corrupt the other's bytes. The standard-library gate emits the fixture,
+links it through <tt>build_target.sh</tt>, runs it three times, and diffs the
+result byte-for-byte against the committed <tt>expected.txt</tt> and
+<tt>expected.rc</tt>.
+</p>
+<pre>
+$ bash scripts/stdlib/verify_stdlib.sh /tmp/manual_seed/zig1_5_clean repro/mi_matrix/stdlib_arena_xmod
+== std-lib runtime gate ==
+   zig1: /tmp/manual_seed/zig1_5_clean
+PASS repro/mi_matrix/stdlib_arena_xmod
+----------------------------------------
+run_fixtures: 1 PASS / 0 FAIL over 1 dirs
+STDLIB GATE OK
+</pre>
+<p>
+<tt>PASS</tt> means the fixture's 13-line transcript (a <tt>1</tt> for each
+guarantee, then <tt>2</tt>, <tt>0</tt>, <tt>99</tt>) and the exit code
+<tt>0</tt> matched the goldens on all three runs; <tt>STDLIB GATE OK</tt> is the
+wrapper's overall verdict.
+</p>
+</li>
+</ol>
+
+<h2>Verify it worked</h2>
+<p>
+The eight-line <tt>arena</tt> transcript above is the recorded measured output
+of <tt>docs/sf/manuals/src/vol2/arena.z98</tt>; running the four commands in
+Steps 2&ndash;5 reproduces it exactly and exits with status <tt>0</tt>. The
+per-arena fixture pass in Step 6 is the second half of the check: it pins that
+two arenas over different buffers do not alias, that an alloc past one arena's
+capacity returns its own failure, and that <tt>reset</tt> frees only the arena it
+names.
+</p>
+
+<h2>Common mistakes</h2>
+<ul>
+<li><b>Forgetting to create the output folder.</b> The compiler requires the
+folder to exist and fails with
+<tt>error: output directory does not exist: /tmp/manual_out</tt> (exit code
+<tt>1</tt>). Run <tt>mkdir -p</tt> first.</li>
+<li><b>Believing <tt>reset</tt> frees or clears memory.</b> It only sets
+<tt>used</tt> back to zero. The bytes stay put and every pointer the arena
+returned stays valid but aliases whatever is allocated next &mdash; that is why
+<tt>p.x</tt> reads <tt>9</tt> after the reset. Do not read through an old pointer
+after a reset.</li>
+<li><b>Letting a long-lived value share the scratch arena.</b> If a value must
+outlive a reset, allocate it from the permanent arena and reset only the
+scratch one. The dual-arena pattern is exactly this: <tt>perm</tt> is never
+reset, <tt>scratch</tt> is reset as often as needed, and
+<tt>perm used=8</tt> survives <tt>reset(&amp;scratch)</tt>.</li>
+<li><b>Forgetting to check the error union.</b> <tt>alloc</tt> returns
+<tt>ArenaError![*]u8</tt>. A <tt>try</tt> propagates
+<tt>error.OutOfMemory</tt>; a <tt>catch</tt> handles it, as the sample's
+<tt>allocBytes(&amp;arena, 64) catch |err|</tt> does. There is no <tt>orelse</tt>
+path for this type.</li>
+<li><b>Under-sizing the backing buffer.</b> An arena never grows. If the total
+of all live allocations can exceed <tt>capacity</tt>, <tt>alloc</tt> returns
+<tt>error.OutOfMemory</tt>; budget the buffer for the worst case, or fall back
+to a larger one.</li>
+<li><b>Assuming arenas share state.</b> Each arena owns the buffer passed to
+<tt>init</tt>. Two arenas over distinct buffers are independent: exhausting or
+resetting one leaves the other's cursor and bytes untouched, which is what the
+Step 6 fixture proves.</li>
+</ul>
+
+<h2>Where to go next</h2>
+<p>
+Return to the <a href="vol5-00-index.html">HOWTO index</a> for the other jobs,
+or go back to <a href="vol5-03-build-multi.html">Building Multiple Modules</a>
+for the multi-module build. For the full rules behind the arena &mdash;
+<tt>ArenaError!</tt> versus optionals, the init-function pattern, and the
+dual-arena rationale &mdash; see Volume&nbsp;II's
+<a href="vol2-14-arena.html">The Arena</a>. The same allocator backs the
+compiler's own three-arena hierarchy; the generated code and the command-line
+switches that tune it are on the
+<a href="vol4-22-cli.html">Volume&nbsp;IV command-line page</a>.
+</p>
+
+<p class="navbtns">
+<a href="vol5-03-build-multi.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol5-03-build-multi.html">Build multiple modules</a> | <a href="toc.html">Contents</a> | Next: <a href="toc.html">Contents</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
