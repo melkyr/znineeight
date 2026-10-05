@@ -429,6 +429,31 @@ assignment and Z98 does not type the void prong against the switch type —
 `expected type 'i32', found 'void'`); switch-value-arm typing, a separate
 defect.
 
+A7-F (2026-10-05; Volume IV Amendment A7, operator m1596) scopes the
+`if (opt) |v|` capture to the then arm (Zig parity): the capture was registered
+in `semanticAnalyzerResolveIfHeader` (`sf/src/semantic_analyzer.zig:5507`) and
+stayed live across the `else` arm, so `if (opt) |v| { ... } else { use(v); }`
+compiled rc 0 and read uninitialized storage. Three analyzer sites close it:
+`semanticAnalyzerResolveIfExpr` (save before the header, restore after the then
+branch), the `ResolveExpr` `if_stmt` arm (push a capture pop-marker between the
+else and then work items), and the statement-walker `if_stmt` arm (a second pop
+marker between the else and then pushes). An else-arm use is now the existing
+level-0 `error[20]` (`identifier 'v' is not declared or imported in this
+module`); analyzer-only, no new code, no parser/lowering/emitter change. The
+same fix drops the false `error[3057]` on the legitimate `else if (b) |v|`
+same-name form (Zig accepts; 0 in-tree). Fixture
+`repro/mi_matrix/if_capture_else_reject_xmod` (`20 2`, rc 2 / 0 `.c`, class
+FAIL — an intentional oracle-matching reject, the `undef_ident_*` bucket, not a
+green-guard) + standalone `repro/if_capture_else_reject.z98` (`20 1`). All 8
+emitted-C pins stay **UNCHANGED 8/8** both modes; example matrix 24/24; stdlib
+**266 PASS / 0 FAIL**; emit 7/7; `verify_upgraded.sh` CLOSEOUT OK; self-emission
+48 `.c` + 48 `.h` / 0 PANIC; build_test 0/9 (pre-existing); run_all 13/13;
+corpus `-s0` **1095 = 923 OK / 58 GREEN / 114 FAIL / 0 ICE / 0 CRASH** (join-diff
+vs base `17a88daf` empty over the 1094 common dirs; the only addition is the new
+fixture); the new fixed point (moving point hop1 == hop2, explicit
+`FIXED_POINT_MD5` gate) is **`2719c55740724c2eb06b58c3e4ab970f`**; seed v90 NOT
+rotated.
+
 - Self-consistency gate: compare current zig1 `--dump-c89` against a pre-captured reference .c file. If the reference .c is outdated (intentional baseline change), re-capture via `cp /tmp/new.c /tmp/ref.c`. Never compare against parent-zig1 output directly — parent builds may fail silently.
 - Do **NOT** compare `zig1 --dump-c89` output against `zig0`'s C output. `zig0` emits a legacy bootstrap format that is byte-level incompatible with zig1.
 

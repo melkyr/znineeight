@@ -1,0 +1,18 @@
+// repro/if_capture_else_reject.z98 — A7-F standalone reject control.
+//
+// Baseline (fp 17a88daf): an `if (opt) |v|` capture stayed live across the else
+// arm, so this compiled rc 0 and the else arm read uninitialized storage.
+// Fixed: rc 2, 0 `.c`,
+//   error[20]: identifier 'v' is not declared or imported in this module
+// Zig 0.15.2 rejects the same shape (`use of undeclared identifier 'v'`).
+// census: 20 1
+fn maybe() ?i32 { return null; }
+
+pub fn main() void {
+    const opt = maybe();
+    if (opt) |v| {
+        _ = v;
+    } else {
+        _ = v;
+    }
+}

@@ -342,7 +342,7 @@ fi from 0..fields_count:
 | 26 | `break_stmt` / `continue_stmt` | `[inference: return TYPE_VOID]` | `TYPE_VOID` |
 | 27 | `var_decl` / `defer_stmt` / `errdefer_stmt` / `labeled_stmt` | → `semanticAnalyzerResolveStmtIter` | `TYPE_VOID` |
 | 28 | `if_expr` | → `semanticAnalyzerResolveIfExpr` | unified then/else type |
-| 29 | `if_stmt` | `[inference: resolve header, push children to worklist]` | `TYPE_VOID` |
+| 29 | `if_stmt` | `[inference: resolve header, push children to worklist]` (A7-F: the capture is scoped to the then arm; an else-arm use is `error[20]`) | `TYPE_VOID` |
 | 30 | `for_stmt` | → `semanticAnalyzerResolveForHeader` | `TYPE_VOID` |
 | 31 | `while_stmt` | → `semanticAnalyzerResolveWhileHeader` | `TYPE_VOID` |
 | 32 | `swt_ex` | → `semanticAnalyzerResolveSwitchExpr` | unified prong type |
@@ -644,7 +644,7 @@ Mirrors zig0's `TypeChecker::isLValueConst` (`src/bootstrap/type_checker.cpp:647
 Worklist (stack-based) traversal. Pushes stmt children in reverse order for pre-order processing. Handles:
 - `block` → push children in reverse (last first for correct order after pop).
 - `var_decl` → **Task B2 first:** a `const` with no annotation whose initializer is one of the four container decls is a function-local named type: run the packed-field / local-enum gates, `registerContainerType`, `layoutEnsure`, record the binding in `local_decl_names`/`local_decl_types`, push it into `local_types`, set the RTT entries, and skip the value path (NO `nameCachePut`). A `const` whose initializer is an ident naming a local type (`const F = E;`) is a local type alias → `error[3000]` + skip. **Task B2 final fix wave:** the guard is extended so ANY local `const`/`var` binding whose initializer names a `type` value clean-rejects (`error[3000]` + skip): a `var` binding of a container type (`a local type value must be declared with 'const'`), and a compound type-expression initializer (`*E`/`E!i32`/`[N]E`/`?E`/`fn(...)`/`[]E`/`[*]E`, detected by `type_resolver.isCompoundTypeExprKind`; same alias message). Otherwise resolve the type annotation (ident_expr via `resolveExpr` with a `resolveTypeExprFull` fallback, else RTT / `resolveTypeExprFull`). Resolve init with push/pop expected type. Infer an error-literal type by scanning the registry for a containing error set; emit `ERR_3010` for an un-inferable enum literal. Record coercions (with a `volatile`-drop guard). Push a function-local `const` into `local_consts`. Register local decl + name cache; diagnostics for mismatches. **Task 4:** after `decl_type = it` for an unannotated binding, if the inferred type is an integer type (`INT_LIT`/`I32`) a fresh `comptimeEvalEvaluate` probe (`local_consts` wired, no diagnostics) folds the initializer; when the exact integer does not fit i32 it takes `comptimeIntUntypedType` (U32/I64/U64), so the binding, its slot and all later references are consistent (`const bigu = 2000000000 + 1000000000;` → u32).
-- `if_stmt` → resolve header, push else then then (for correct worklist order).
+- `if_stmt` → resolve header, push the capture pop-marker, else, then, then a second pop marker (so the pop order is then → pop(capture) → else → pop(scope)). `[updated: 2026-10-05 — A7-F: the `if (opt) |v|` capture is scoped to the then arm only (Zig parity); the capture is registered by the header, is in scope for the then arm, is popped by the inserted marker, and is absent for the else arm, where a use now resolves to level-0 `error[20]` — analyzer-only, no new code.]`
 - `while_stmt` → resolve header, push body.
 - `for_stmt` → resolve header, push body.
 - `return_stmt` → `resolveReturnStmt`.
@@ -710,6 +710,8 @@ Unification first honors an expected type from the enclosing context (`topExpect
 - else is VOID → return then
 - Otherwise → return TYPE_VOID (type mismatch)
 
+`[updated: 2026-10-05 — A7-F]` The capture introduced by the header is scoped to the then branch: the function saves `local_decl_count` before `semanticAnalyzerResolveIfHeader`, resolves the then branch (`child_1`), and restores `local_decl_count` before resolving the else branch (`child_2`), so an `if (opt) |v| ... else v` use of `v` in the else branch resolves as undeclared (`error[20]`). Analyzer-only.
+
 ### semanticAnalyzerCaptureType (`semantic_analyzer.zig`)
 
 `[inference: if optional → unwrap payload; else return cond_type as-is]`
@@ -720,7 +722,7 @@ Unwraps optional types in if/while/for capture expressions. If cond_type is opti
 
 `resolveIfHeader` (`semantic_analyzer.zig`):
 `[inference: resolve condition → if_capture → registerLocalDecl with captured type → validate condition type]`
-Capture unwraps optional via `semanticAnalyzerCaptureType`. After resolving the condition and registering any capture, `semanticAnalyzerCheckConditionType(node_idx, cond_idx, cond_t, has_capture)` validates it: with no capture the condition must be `bool`, and with a capture it must be optional or error-union; a violation emits level-0 `error[3058]` (`ERR_3058_CONDITION_NOT_BOOL`) at the condition (rc=2, 0 `.c`). A condition already typed `void`/`undefined`/`noreturn` is skipped so an earlier diagnostic (e.g. an undeclared identifier) is not cascaded. `[updated: 2026-09-22 — Task 9B (c, m1240 ruling 5): rejects a non-`bool` `if` condition (`if (a)` with i32/u32/pointer/enum/optional) and a non-optional capture condition (`if (q) |v|` with a non-optional `q`), matching official Zig 0.15.2 ("expected type 'bool'" / "expected optional type"). Deduped via `diagnosticCollectorMarkNodeOnce`.]`
+Capture unwraps optional via `semanticAnalyzerCaptureType`. After resolving the condition and registering any capture, `semanticAnalyzerCheckConditionType(node_idx, cond_idx, cond_t, has_capture)` validates it: with no capture the condition must be `bool`, and with a capture it must be optional or error-union; a violation emits level-0 `error[3058]` (`ERR_3058_CONDITION_NOT_BOOL`) at the condition (rc=2, 0 `.c`). A condition already typed `void`/`undefined`/`noreturn` is skipped so an earlier diagnostic (e.g. an undeclared identifier) is not cascaded. `[updated: 2026-09-22 — Task 9B (c, m1240 ruling 5): rejects a non-`bool` `if` condition (`if (a)` with i32/u32/pointer/enum/optional) and a non-optional capture condition (`if (q) |v|` with a non-optional `q`), matching official Zig 0.15.2 ("expected type 'bool'" / "expected optional type"). Deduped via `diagnosticCollectorMarkNodeOnce`.] [updated: 2026-10-05 — A7-F: the header only registers the capture; it is now closed at the end of the then arm by each of its three callers (the statement walker, the `ResolveExpr` `if_stmt` arm, and `semanticAnalyzerResolveIfExpr`), so it is not visible in the `else` arm (an else-arm use is level-0 `error[20]`). Analyzer-only; no new code.]`
 
 `resolveForHeader` (`semantic_analyzer.zig`):
 `[inference: resolve iterable → slice/array/pointer-to-array/range → element type → register capture + index]`

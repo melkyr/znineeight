@@ -3626,8 +3626,14 @@ fn semanticAnalyzerConditionIsComptimeTrue(self: *SemanticAnalyzer, cond_idx: u3
 
 fn semanticAnalyzerResolveIfExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
     var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    // A7-F: the `if (x) |v|` capture is scoped to the THEN arm only (Zig
+    // parity). Save before the header registers it and restore right after the
+    // then-branch, before the else-branch is resolved, so an else-arm use
+    // resolves as undeclared (`error[20]`).
+    var ifexpr_cap_saved: u32 = @intCast(u32, self.local_decl_count);
     semanticAnalyzerResolveIfHeader(self, node_idx);
     var then_type = semanticAnalyzerResolveExpr(self, node.child_1);
+    self.local_decl_count = @intCast(usize, ifexpr_cap_saved);
     if (node.child_2 == @intCast(u32, 0)) {
         // Task 9B (b, m1240 ruling 3): a value `if` without `else` is rejected
         // unless the then-branch is void/noreturn or the condition is
@@ -4989,8 +4995,10 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
           result = semanticAnalyzerResolveIfExpr(self, node_idx);
           self.local_decl_count = @intCast(usize, ifexpr_scope_saved);
       } else if (node.kind == AstKind.if_stmt) {
+          var ies_scope_saved: u32 = @intCast(u32, self.local_decl_count);
           semanticAnalyzerResolveIfHeader(self, node_idx);
           if (node.child_2 != @intCast(u32, 0)) { semanticAnalyzerStmtWorkPush(self, node.child_2); }
+          semanticAnalyzerStmtWorkPush(self, @intCast(u32, 0x80000000) | ies_scope_saved);
           if (node.child_1 != @intCast(u32, 0)) { semanticAnalyzerStmtWorkPush(self, node.child_1); }
           result = type_mod.TYPE_VOID;
        } else if (node.kind == AstKind.for_stmt) {
@@ -6028,13 +6036,18 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
             }
             }
         } else if (node.kind == AstKind.if_stmt) {
-             // Task 7D: scope the if-capture to the branches.
+             // A7-F: the capture is scoped to the THEN arm only (Zig parity).
+             // Register it in the header, walk the then-arm (child_1), pop it,
+             // then walk the else-arm (child_2) so an else-arm use resolves as
+             // undeclared (`error[20]`). The trailing pop restores the outer
+             // scope after the else-arm.
              var if_scope_saved: u32 = @intCast(u32, self.local_decl_count);
              semanticAnalyzerResolveIfHeader(self, node_idx);
              semanticAnalyzerStmtWorkPush(self, @intCast(u32, 0x80000000) | if_scope_saved);
              if (node.child_2 != @intCast(u32, 0)) {
                  semanticAnalyzerStmtWorkPush(self, node.child_2);
              }
+             semanticAnalyzerStmtWorkPush(self, @intCast(u32, 0x80000000) | if_scope_saved);
              if (node.child_1 != @intCast(u32, 0)) {
                  semanticAnalyzerStmtWorkPush(self, node.child_1);
              }

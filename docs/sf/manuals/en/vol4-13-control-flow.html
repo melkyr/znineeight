@@ -87,14 +87,14 @@ Authority: the spelling is <tt>docs/reference/Language_Spec_Z98.md</tt>
 <tt>parserParseBreakExpr</tt> (<tt>:2000</tt>), and
 <tt>parserParseContinueExpr</tt> (<tt>:2017</tt>). The semantic rules are
 <tt>semanticAnalyzerReportSwitchWithoutElse</tt>
-(<tt>semantic_analyzer.zig:4185</tt>), <tt>semanticAnalyzerCheckConditionType</tt>
-(<tt>:5481</tt>), <tt>semanticAnalyzerCaptureType</tt> (<tt>:635</tt>),
-<tt>semanticAnalyzerResolveForHeader</tt> (<tt>:5631</tt>),
-<tt>semanticAnalyzerResolveWhileHeader</tt> (<tt>:5705</tt>), and
-<tt>semanticAnalyzerReportSwitchCaseQualifier</tt> (<tt>:4200</tt>); the
+(<tt>semantic_analyzer.zig:4191</tt>), <tt>semanticAnalyzerCheckConditionType</tt>
+(<tt>:5489</tt>), <tt>semanticAnalyzerCaptureType</tt> (<tt>:635</tt>),
+<tt>semanticAnalyzerResolveForHeader</tt> (<tt>:5639</tt>),
+<tt>semanticAnalyzerResolveWhileHeader</tt> (<tt>:5713</tt>), and
+<tt>semanticAnalyzerReportSwitchCaseQualifier</tt> (<tt>:4206</tt>); the
 transfers lower at <tt>lower.zig:8342</tt> (<tt>break</tt>) and <tt>:8367</tt>
 (<tt>continue</tt>). Every rule below was reproduced on the fixed compiler
-(md5 <tt>821481e69df63fc0cf69176fdaaf9dd9</tt>); reused
+(md5 <tt>2719c55740724c2eb06b58c3e4ab970f</tt>); reused
 <tt>repro/mi_matrix/*</tt> fixtures and
 <tt>docs/sf/manuals/src/vol2/control.z98</tt> are named where one exists.
 </p>
@@ -114,7 +114,7 @@ optional and a single-statement body is normalized into a synthetic block. The
 <tr><td valign="top"><tt>if (cond) a else b</tt></td><td valign="top">Expression form; braces not required; used as a value, an <tt>else</tt> is required.</td></tr>
 <tr><td valign="top"><tt>if (cond) statement; else ...</tt></td><td valign="top"><tt>error[2000]</tt> <tt>';' not allowed before 'else' - use braces: if (cond) { ... } else { ... }</tt>. Omit the semicolon, or brace both arms.</td></tr>
 <tr><td valign="top"><tt>if (non-bool)</tt> (no capture)</td><td valign="top"><tt>error[3058]</tt> <tt>condition must be of type 'bool'</tt>.</td></tr>
-<tr><td valign="top"><tt>if (opt) |v| ...</tt></td><td valign="top">Capture form; binds the payload on the present branch. The <tt>else</tt> arm sees the absent case.</td></tr>
+<tr><td valign="top"><tt>if (opt) |v| ...</tt></td><td valign="top">Capture form; binds the payload on the present branch, scoped to the then arm. The <tt>else</tt> arm sees the absent case and cannot use the capture (<tt>error[20]</tt>).</td></tr>
 <tr><td valign="top"><tt>if (x) |v| ...</tt>, <tt>x</tt> not optional</td><td valign="top"><tt>error[3058]</tt> <tt>capture condition must be an optional or error union type</tt>.</td></tr>
 <tr><td valign="top"><tt>value = if (cond) a;</tt></td><td valign="top"><tt>error[3059]</tt> <tt>if expression without 'else' cannot be used as a value (its type is 'void')</tt>, unless the condition is comptime-known true.</td></tr>
 </table>
@@ -421,7 +421,7 @@ labeled <tt>while</tt>, a labeled switch-in-loop, and a literal
 <tr><td valign="top">All captures are immutable.</td><td valign="top">Assignment through an <tt>if</tt>/<tt>while</tt>/<tt>for</tt>/<tt>switch</tt> capture is <tt>error[3002]</tt> <tt>cannot assign to immutable variable</tt>.</td></tr>
 <tr><td valign="top">A capture may not shadow or redeclare an enclosing name.</td><td valign="top"><tt>error[3057] local declaration shadows an earlier declaration in an enclosing scope</tt>, with a note at the previous declaration.</td></tr>
 <tr><td valign="top"><tt>_</tt> discards a capture.</td><td valign="top">A discarded name is not bound; it may be reused freely.</td></tr>
-<tr><td valign="top">A capture is scoped to its construct.</td><td valign="top">A <tt>while</tt>/<tt>for</tt>/switch capture is visible in the body or prong only. In the current compiler an <tt>if</tt> capture is also visible in the <tt>else</tt> arm; on the absent path that storage is undefined, so a use there reads garbage (the value varies, uninitialized; Zig rejects the use). Do not read an <tt>if</tt> capture in its <tt>else</tt> arm.</td></tr>
+<tr><td valign="top">A capture is scoped to its construct.</td><td valign="top">A <tt>while</tt>/<tt>for</tt>/switch capture is visible in the body or prong only, and an <tt>if</tt> capture is visible in the then arm only. An <tt>else</tt>-arm use of an <tt>if</tt> capture is <tt>error[20]</tt> <tt>identifier '&lt;x&gt;' is not declared or imported in this module</tt> (rc 2, no C emitted), matching Zig's <tt>use of undeclared identifier</tt>; do not read an <tt>if</tt> capture in its <tt>else</tt> arm.</td></tr>
 </table>
 <p>
 The shadow rejects are pinned by
@@ -437,7 +437,7 @@ The <tt>for</tt> index capture, when present, is a separate immutable
 <th align="left" bgcolor="#e8e0e0"><b>Code</b></th>
 <th align="left" bgcolor="#e8e0e0"><b>Message</b></th>
 </tr>
-<tr><td valign="top"><tt>error[20]</tt></td><td valign="top"><tt>identifier '&lt;x&gt;' is not declared or imported in this module</tt> (a capture used on a prong that does not bind one).</td></tr>
+<tr><td valign="top"><tt>error[20]</tt></td><td valign="top"><tt>identifier '&lt;x&gt;' is not declared or imported in this module</tt> (a capture used on a prong that does not bind one, or an <tt>if</tt> capture used in its <tt>else</tt> arm).</td></tr>
 <tr><td valign="top"><tt>error[2000]</tt></td><td valign="top">Parse rejects: <tt>';' not allowed before 'else' ...</tt>; <tt>expected expression</tt> for <tt>else |err|</tt>; <tt>expected ';' but found ...</tt> for a value-producing labeled block; <tt>expected ')' but found ','</tt> for an index range over a range iterable.</td></tr>
 <tr><td valign="top"><tt>error[3000]</tt></td><td valign="top"><tt>explicit index range requires an index capture ('|item, index|')</tt>; <tt>non-matching for loop lengths: the index range and the iterable differ in length</tt>.</td></tr>
 <tr><td valign="top"><tt>error[3001]</tt></td><td valign="top"><tt>switch else-prong capture (else =&gt; |capture|) is not supported</tt>.</td></tr>

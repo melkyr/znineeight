@@ -1,4 +1,58 @@
-# mi_matrix corpus — expected-fail manifest (v293 2026-10-05)
+# mi_matrix corpus — expected-fail manifest (v294 2026-10-05)
+
+## A7-F — the `if` capture is scoped to the then arm (v293 -> v294, 2026-10-05)
+
+Volume IV Amendment A7 (operator m1596; investigation `task-A7-I-report.md`).
+An `if (opt) |v|` capture was registered in `semanticAnalyzerResolveIfHeader`
+(`sf/src/semantic_analyzer.zig:5507`) and stayed live across the `else` arm at
+all three callers, so `if (opt) |v| { ... } else { use(v); }` compiled rc 0 and
+the `else` arm read uninitialized storage (the value varied per run). Zig 0.15.2
+rejects (`use of undeclared identifier 'v'`). A single-site fix is incomplete:
+the statement walker, the `ResolveExpr` `if_stmt` arm, and
+`semanticAnalyzerResolveIfExpr` each needed the capture closed at the end of the
+then arm.
+
+**Fix (`sf/src/semantic_analyzer.zig` only; analyzer-only, no new diagnostic
+code, no parser/lowering/emitter change).** (a) `semanticAnalyzerResolveIfExpr`
+saves `local_decl_count` before the header and restores it immediately after
+resolving the then branch, before the else branch. (b) the `ResolveExpr`
+`if_stmt` arm saves before the header and pushes a capture pop-marker between
+the else and then work items (LIFO: then, pop, else). (c) the statement-walker
+`if_stmt` arm inserts a second `0x80000000 | if_scope_saved` pop marker between
+the else and then pushes, so processing is then → pop(capture) → else →
+pop(scope): the capture is in scope only in the then arm. An else-arm use now
+resolves to the existing level-0 `error[20]` (`ERR_3001_UNDEFINED_SYMBOL`) —
+the `error[20]` wording is reused verbatim; no lowering change is needed because
+the post-sema `hasErrors` gate exits rc 2 / 0 `.c` before LIR lowering. The
+same fix drops the false `error[3057]` on the legitimate `else if (b) |v|`
+same-name form (Zig accepts; 0 in-tree occurrences, no migration).
+
+**Fixture (new).** `repro/mi_matrix/if_capture_else_reject_xmod`
+(`expected.rc` 2; `expected_error.txt` `20 2`: one if-statement else-arm use +
+one if-expression else-arm use, one diagnostic each, no cascade) + standalone
+`repro/if_capture_else_reject.z98` (`20 1`). rc 2 / 0 `.c`; the canonical
+classifier buckets non-`error[3000]` rejects as **FAIL**, so this is an
+intentional, oracle-matching reject — the same documented-FAIL bucket as the
+`undef_ident_*_reject_xmod` family — NOT a green-guard (green-guards are
+reserved for `error[3000]`). `expected_error.txt` is force-added (`git add -f`;
+`.gitignore` ignores `*.txt`).
+
+**Corpus movement.** `-s0` classify, same tree, base fp `17a88daf`
+(1094 = 923 OK / 58 GREEN / 113 FAIL) -> post **1095 = 923 OK / 58 GREEN / 114
+FAIL / 0 ICE / 0 CRASH**; join-diff vs the base over the 1094 common dirs is
+**EMPTY** (zero class movers); the only dir-set addition is the new fixture
+(`if_capture_else_reject_xmod`, FAIL). **Zero pre-existing movers.**
+
+**Gates (new fixed point `2719c55740724c2eb06b58c3e4ab970f`, hop1 == hop2).**
+Seed two-hop closure; 4-MD5 emitted-C both modes **UNCHANGED 8/8**; example
+matrix **24/24**; stdlib **266 PASS / 0 FAIL**; `check_emit_support.sh`
+**7/7**; `verify_upgraded.sh` **CLOSEOUT OK**; self-emission **48 `.c` + 48
+`.h` / 0 PANIC**; `build_test.sh` **0/9** (pre-existing); `run_all.sh`
+**13/13**. Seed v90 NOT rotated (closeout-only).
+
+**Zig-legal side effect.** The `else if (b) |v|` same-name form is accepted
+(oracle rc 0); the base compiler falsely rejected it `error[3057]`. No in-tree
+occurrence; nothing to migrate.
 
 ## A6-F — assignment is not an expression (v292 -> v293, 2026-10-05)
 
