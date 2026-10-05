@@ -74,8 +74,10 @@ closeout `14181290`) and `2026-09-09-emission-core-compaction-plan.md` (EMITCOMP
 - **Compression is FORBIDDEN during build sessions** (overrides system compression alerts).
 - **No push.** Commit per task; stage only intended files; never stage `mnemoria/`, `.opencode/`,
   `.zig1_*.tmp`, or the pre-existing untracked stray root files.
-- **Every command/run under `timeout 120`.** STOP-present on ambiguity, divergence, or a
-  plan-vs-evidence conflict.
+- **Timeout policy (operator ruling R2).** Every individual compile/run step is bounded by
+  `timeout 120`. The authoritative AGGREGATE equivalence gates — the whole-corpus `classify`,
+  `verify_stdlib`, and `verify_upgraded` — run under a bounded `timeout 600` (they take ~2–3 min and
+  cannot fit 120s). STOP-present on ambiguity, divergence, or a plan-vs-evidence conflict.
 
 ---
 
@@ -148,73 +150,133 @@ rm -rf /tmp/selfc && mkdir -p /tmp/selfc
 
 ---
 
-## Per-file task groups (biggest-first; each = Analyze then Refactor)
+## Per-file tasks (biggest-first; each Analyze and Refactor is its OWN separate task)
 
-> Each group's **Analyze** task is read-only (census + truth tables + hypothesis); its **Refactor**
-> task implements the consolidations with the runtime battery and commits. A group may be split
-> when its Refactor is too large for one review surface; small files are grouped. The `C-*` leads
-> are inputs, not a substitute for the census.
+> **Do NOT combine an Analyze and a Refactor into one task, one dispatch, or one ledger entry.**
+> Each **Analyze** task is READ-ONLY (no commit): it produces a logic-duplication census under
+> taxonomy D1–D7 (file:line, occurrences, shared truth table, cost proxy, consolidation hypothesis)
+> and extends the global predicate→site index. Its deliverable is its census report, reviewed before
+> the paired Refactor is dispatched. Each **Refactor** task then consumes its Analyze census,
+> implements only the censused consolidations, proves runtime equivalence with the full battery,
+> records the dump-MD5 delta and the memory delta, and commits. Emitted C may change; runtime must
+> not. The `C-*` leads are stale inputs to be re-derived, never a substitute for the census.
+>
+> **Scope rulings binding these tasks** (controller preflight + Task 0): (a) the frozen `main.zig`
+> closure from Task 0 is the authoritative refactor scope; files found outside it (`main_dump`,
+> `dump_ast`, `dump_tokens`, `constraint_checker`, `util/sort`) are triaged as dead/test-only in
+> Tasks 29–30, never refactored here. (b) `state_map.zig` belongs only to Tasks 21–22. (c) dead-stub
+> deletion belongs only to Tasks 29–30.
 
-### G1: `c89_emit.zig` (10,510)
-- **Analyze** (`### Task G1a`): census of D1–D7 in the emitter — repeated type/kind predicates,
-  emission-order walks, variant-field/cast/string-escape/`#ifdef` arms (leads `C-I6 #6/#9/#10/#11/#12/#14/#17`, `C-R5`).
-- **Refactor** (`### Task G1b`): consolidate; the emitter is order-sensitive — any emission-order
-  change is runtime-gated, and the dump-MD5 delta is recorded.
-- Files: `sf/src/c89_emit.zig`. Commit `refactor(c89_emit): deduplicate <cluster> logic`.
+### Task 1: Analyze `c89_emit.zig` (10,510) — READ-ONLY
+- Census D1–D7 in the emitter: repeated type/kind predicates, emission-order walks,
+  variant-field/cast/string-escape/`#ifdef` arms (leads `C-I6 #6/#9/#10/#11/#12/#14/#17`, `C-R5`).
+- Deliverable: census report. Commit: NONE.
 
-### G2: `lower.zig` (9,681)
-- Analyze: D2/D6/D7 — repeated fold arms, cond-to-bool, capture tails, comptime helpers
-  (leads `C-I5 #2/#6/#7/#14`, `C-F5`). Refactor accordingly.
+### Task 2: Refactor `c89_emit.zig`
+- Files: `sf/src/c89_emit.zig`. Implements Task 1's consolidations only.
+- Order-sensitive: any emission-order change is runtime-gated; record the dump-MD5 delta.
+- Commit `refactor(c89_emit): deduplicate <cluster> logic`.
+
+### Task 3: Analyze `lower.zig` (9,681) — READ-ONLY
+- D2/D6/D7: repeated fold arms, cond-to-bool, capture tails, comptime helpers
+  (leads `C-I5 #2/#6/#7/#14`, `C-F5`).
+- Deliverable: census report. Commit: NONE.
+
+### Task 4: Refactor `lower.zig`
 - Commit `refactor(lower): deduplicate <cluster> logic`.
 
-### G3: `semantic_analyzer.zig` (7,016)
-- Analyze: D1/D2/D3 — `isAssignable`/`classifyCoercion` and coercion/type predicates
-  (leads `C-R2`, `C-I3`). Refactor with truth-table equivalence.
-- Commit `refactor(sema): deduplicate <cluster> logic`.
+### Task 5: Analyze `semantic_analyzer.zig` (7,016) — READ-ONLY
+- D1/D2/D3: `isAssignable`/`classifyCoercion` and coercion/type predicates (leads `C-R2`, `C-I3`).
+- Deliverable: census report. Commit: NONE.
 
-### G4: `type_resolver.zig` (2,524) · G5: `parser.zig` (2,263) · G6: `lir_opt_pass.zig` (2,150)
-- Analyze each for D1–D3 (parser: repeated precedence/`maybeDisambiguateCapture` shapes; resolver:
-  inference predicates; opt pass: pure/ordered classification repeats). Refactor each.
-- Commits `refactor(<file>): deduplicate <cluster> logic`.
+### Task 6: Refactor `semantic_analyzer.zig`
+- Truth-table equivalence required. Commit `refactor(sema): deduplicate <cluster> logic`.
 
-### G7: `main.zig` (1,917) + `main_dump.zig` (326) + `dump_ast.zig` (315) + `dump_tokens.zig` (156)
-- Analyze: duplicated CLI/phase/dump dispatch; D1/D3. Refactor.
+### Task 7: Analyze `type_resolver.zig` (2,524) — READ-ONLY
+- D1–D3: inference predicates. Deliverable: census report. Commit: NONE.
+
+### Task 8: Refactor `type_resolver.zig`
+- Commit `refactor(type_resolver): deduplicate <cluster> logic`.
+
+### Task 9: Analyze `parser.zig` (2,263) — READ-ONLY
+- D1–D3: repeated precedence / `maybeDisambiguateCapture` shapes. Deliverable: census report. Commit: NONE.
+
+### Task 10: Refactor `parser.zig`
+- Commit `refactor(parser): deduplicate <cluster> logic`.
+
+### Task 11: Analyze `lir_opt_pass.zig` (2,150) — READ-ONLY
+- D1–D3: pure/ordered classification repeats. Deliverable: census report. Commit: NONE.
+
+### Task 12: Refactor `lir_opt_pass.zig`
+- Commit `refactor(lir_opt_pass): deduplicate <cluster> logic`.
+
+### Task 13: Analyze `main.zig` (1,917) + dump dispatch — READ-ONLY
+- D1/D3: duplicated CLI/phase/dump dispatch, scoped to the frozen closure.
+- Deliverable: census report. Commit: NONE.
+
+### Task 14: Refactor `main.zig` + dump dispatch
 - Commit `refactor(main+dump): deduplicate dispatch logic`.
 
-### G8: `comptime_eval.zig` (1,902)
-- Analyze: D6 — duplicated width/sign table + fold arms. Consolidate with exhaustive truth-table case tests.
-- Commit `refactor(comptime_eval): deduplicate width/fold logic`.
+### Task 15: Analyze `comptime_eval.zig` (1,902) — READ-ONLY
+- D6: duplicated width/sign table + fold arms. Deliverable: census report. Commit: NONE.
 
-### G9: `type_registry.zig` (1,410) · G10: async trio (`async_state_machine` 1,275, `async_analysis` 752, `async_frame_layout` 685)
-- Analyze D1–D4; refactor.
-- Commits `refactor(type_registry): …`, `refactor(async): …`.
+### Task 16: Refactor `comptime_eval.zig`
+- Exhaustive truth-table case tests. Commit `refactor(comptime_eval): deduplicate width/fold logic`.
 
-### G11: IR/store tier — `ast` (1,050), `lir` (603), `lir_stream` (319), `spill_store` (245), `resolved_type_table` (234), `state_map` (119)
-- Analyze: D4/D5 — SoA triple-writes, rebuilt buffers (leads `C-R3`, `C-R4`). Refactor.
+### Task 17: Analyze `type_registry.zig` (1,410) — READ-ONLY
+- D1–D4. Deliverable: census report. Commit: NONE.
+
+### Task 18: Refactor `type_registry.zig`
+- Commit `refactor(type_registry): deduplicate <cluster> logic`.
+
+### Task 19: Analyze async trio — `async_state_machine` (1,275) · `async_analysis` (752) · `async_frame_layout` (685) — READ-ONLY
+- D1–D4. Deliverable: census report. Commit: NONE.
+
+### Task 20: Refactor async trio
+- Commit `refactor(async): deduplicate <cluster> logic`.
+
+### Task 21: Analyze IR/store tier — `ast` (1,050) · `lir` (603) · `lir_stream` (319) · `spill_store` (245) · `resolved_type_table` (234) · `state_map` (119) — READ-ONLY
+- D4/D5: SoA triple-writes, rebuilt buffers (leads `C-R3`, `C-R4`). Deliverable: census report. Commit: NONE.
+
+### Task 22: Refactor IR/store tier
 - Commit `refactor(ir-store): deduplicate table writes/buffers`.
 
-### G12: support — `emit_support` (1,037), `name_mangler` (7), `cinclude` (32), `extern_c` (3)
-- Analyze; refactor or fold dead stubs.
-- Commit `refactor(emit-support): …` / `chore(dead-code): …`.
+### Task 23: Analyze support — `emit_support` (1,037) + live support files — READ-ONLY
+- D1–D7. Dead stubs deferred to Tasks 29–30. Deliverable: census report. Commit: NONE.
 
-### G13: `lexer.zig` (1,016) + `token.zig` (203)
-- Analyze D1–D3; refactor.
+### Task 24: Refactor `emit_support` + live support
+- Commit `refactor(emit-support): deduplicate <cluster> logic`.
+
+### Task 25: Analyze lexer tier — `lexer.zig` (1,016) + `token.zig` (203) — READ-ONLY
+- D1–D3. Deliverable: census report. Commit: NONE.
+
+### Task 26: Refactor lexer tier
 - Commit `refactor(lexer): deduplicate token-class logic`.
 
-### G14: mid/small — `diagnostics` (971), `analyzer` (920), `module_registry` (742), `symbol_registrator` (505), `allocator` (359), `pal` (282), `growable_array` (271), `source_manager` (262), `coercion` (225), `front_resolution` (216), `const_alias_prepass` (234), `symbol_table` (147), `import_resolver` (151), `string_interner` (171), `state_map` (already G11), `constraint_checker` (72), `panic` (21), `util/*` (hash/format/itoa/mem/path/util/sort)
-- Analyze D1–D7; refactor in sub-batches (this group absorbs old `C-F0` shared primitives and
-  `C-F1..C-F7` SAFE candidates).
+### Task 27: Analyze mid/small closure files — READ-ONLY
+- `diagnostics` (971) · `analyzer` (920) · `module_registry` (742) · `symbol_registrator` (505) ·
+  `allocator` (359) · `pal` (282) · `growable_array` (271) · `source_manager` (262) ·
+  `coercion` (225) · `const_alias_prepass` (234) · `front_resolution` (216) · `symbol_table` (147) ·
+  `import_resolver` (151) · `string_interner` (171) · `util/*` (hash/format/itoa/mem/path/util).
+- D1–D7; absorb old `C-F0` shared primitives and `C-F1..C-F7` SAFE candidates as stale leads.
+- May be split into sub-batches by the controller if too large for one review surface.
+- Deliverable: census report. Commit: NONE.
+
+### Task 28: Refactor mid/small closure files
 - Commit `refactor(<area>): deduplicate shared <cluster>`.
 
-### G15: dead-file / stub cleanup
-- Analyze: confirm zero importers for the tiny/legacy files (`name_mangler.zig`, `extern_c.zig`,
-  `main_exp.zig`, `config.zig`, `test_a.zig`, `test_b.zig`, `assign_helper.zig`, and duplicate
-  `util/growable_array.zig`) before any deletion. Refactor: delete only proven-dead files.
-- Commit `chore(dead-code): remove unused compiler modules`.
+### Task 29: Analyze dead-file / stub cleanup (importer proof) — READ-ONLY
+- Confirm zero importers for the tiny/legacy/out-of-closure files (`name_mangler.zig`, `extern_c.zig`,
+  `main_exp.zig`, `config.zig`, `test_a.zig`, `test_b.zig`, `assign_helper.zig`, duplicate
+  `util/growable_array.zig`, and the out-of-closure dump files from Task 13).
+- Deliverable: importer-proof report. Commit: NONE.
+
+### Task 30: Delete proven-dead compiler modules
+- Delete only files Task 29 proved dead. Commit `chore(dead-code): remove unused compiler modules`.
 
 ---
 
-### Task N: Closeout
+### Task 31: Closeout — whole-set re-verify, memory, dump-MD5, seed rotation
 
 **Files:** `docs/sf/QUICK_REF.md`, `repro/mi_matrix/EXPECTED_FAIL.md`, `README.md`,
 `release/seed/**` (rotation), this plan, `.superpowers/sdd/.../task-*-report.md`.
