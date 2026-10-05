@@ -1,0 +1,193 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Volume V &mdash; HOWTO Index</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume V HOWTO index A to Z build run language practices interop porting targets tooling distribution meta planned">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="toc.html">
+<link rel="next" href="toc.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume V &mdash; HOWTO</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol5-00-index.html">Index &mdash; A&ndash;Z, grouped by theme</a><br>
+Rebuild the compiler from seed <i>(planned)</i><br>
+Build a single file <i>(planned)</i><br>
+Build multiple modules <i>(planned)</i><br>
+Target Win9x <i>(planned)</i><br>
+Target Linux <i>(planned)</i><br>
+Use the arena correctly <i>(planned)</i><br>
+Model and propagate errors <i>(planned)</i><br>
+Write and drive a coroutine <i>(planned)</i><br>
+Read, write, and test files <i>(planned)</i><br>
+Sockets under Z98 <i>(planned)</i><br>
+C interop <i>(planned)</i><br>
+Link Z98 output against C89 libraries <i>(planned)</i><br>
+Debug generated C <i>(planned)</i><br>
+Use markers <i>(planned)</i><br>
+Read the diagnostics <i>(planned)</i><br>
+Port from C <i>(planned)</i><br>
+Port from C++98 <i>(planned)</i><br>
+Port from Python <i>(planned)</i><br>
+Pack for diskette <i>(planned)</i><br>
+Build a multilingual manual <i>(planned)</i><br>
+Build the static site <i>(planned)</i><br>
+Contribute <i>(planned)</i><br>
+Report a bug <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Volume V &mdash; HOWTO Index</h1>
+<p>
+<b>Enter here if</b> you know the job you need done. <b>Leave able to</b> do
+it, step by step. Volume&nbsp;V is the task-oriented companion to the
+<a href="vol4-00-title.html">Volume&nbsp;IV Reference</a>: each guide is a
+numbered procedure with exact commands and a <i>Verify it worked</i> step, and
+it links back to the Reference for the underlying rules. This page lists the
+24 pages of the volume A&ndash;Z and grouped by theme.
+</p>
+<p>
+A shipped page is a link; a page that has not shipped is plain text marked
+<i>(planned)</i>. Only this index is shipped so far.
+</p>
+
+<h2>A&ndash;Z index</h2>
+<ul>
+<li><b>Build the floppy distribution</b> &mdash; Assemble the self-contained output and package a diskette image. <i>(planned)</i></li>
+<li><b>Correct arena use, dual-arena</b> &mdash; Initialize an arena over a buffer, allocate, reset, and split it in two. <i>(planned)</i></li>
+<li><b>extern fn, @cInclude</b> &mdash; Declare and call C functions from Z98. <i>(planned)</i></li>
+<li><b>For readers from a modern dynamic language</b> &mdash; Port Python's dynamic types, containers, exceptions, and GC. <i>(planned)</i></li>
+<li><b>gdb on the generated C</b> &mdash; Build with debug info and debug the emitted C with gdb. <i>(planned)</i></li>
+<li><a href="vol5-00-index.html">Index</a> &mdash; This page: the A&ndash;Z and themed map of Volume&nbsp;V.</li>
+<li><b>Link Z98 output against C89 libraries</b> &mdash; Link Z98-emitted objects with hand-written C89 code. <i>(planned)</i></li>
+<li><b>Linux ELF</b> &mdash; Choose the default Linux target and the gcc -m32 path behind it. <i>(planned)</i></li>
+<li><b>--markers, pal.markerWrite*</b> &mdash; Enable --markers and read the compiler's marker stream. <i>(planned)</i></li>
+<li><b>Model and propagate errors</b> &mdash; Use error unions, try and catch, errdefer, and the enclosing-return rule. <i>(planned)</i></li>
+<li><b>Multiple modules</b> &mdash; Split a program across @import modules and build each emitted file. <i>(planned)</i></li>
+<li><b>One .z98 to an executable</b> &mdash; Compile one source file, link it, and run the native executable. <i>(planned)</i></li>
+<li><b>Produce one language's manual</b> &mdash; Build one language's manual from the page template. <i>(planned)</i></li>
+<li><b>Read, write, exists</b> &mdash; Open, read, write, seek, size, rename, and check files. <i>(planned)</i></li>
+<li><b>Reading the error[N] codes</b> &mdash; Read the printed ordinals, the source notes, and common fixes. <i>(planned)</i></li>
+<li><b>Rebuild zig1 from seed</b> &mdash; Build the reference compiler from the committed seed and check the two-hop closure. <i>(planned)</i></li>
+<li><b>Repo layout, patches</b> &mdash; Find the repo layout and prepare a patch under the edit and seed rules. <i>(planned)</i></li>
+<li><b>The doc generator itself</b> &mdash; Run the gate and search-index pipeline that builds the site. <i>(planned)</i></li>
+<li><b>Translate a C file, idiom by idiom</b> &mdash; Port C types, arrays, errors, cleanup, and ownership to Z98. <i>(planned)</i></li>
+<li><b>Translate a C++98 file, honestly</b> &mdash; Port templates, RAII, and exceptions, and say what does not translate. <i>(planned)</i></li>
+<li><b>What to include, how to reduce</b> &mdash; Write a bug report and reduce it to a minimal reproduction. <i>(planned)</i></li>
+<li><b>Win9x .exe</b> &mdash; Emit and cross-build a 32-bit Windows 9x executable. <i>(planned)</i></li>
+<li><b>WinSock under Z98</b> &mdash; Drive the std.net surface from WSAStartup to the socket lifecycle. <i>(planned)</i></li>
+<li><b>Write and drive a coroutine</b> &mdash; Use the async builtins and the Context, Task, and Scheduler driver. <i>(planned)</i></li>
+</ul>
+
+<h2>By theme</h2>
+<p>
+The same 24 pages, grouped by the job they do. The order follows the authoring
+sequence; the filenames number 01 to 23 across the themes.
+</p>
+
+<h3>Start here</h3>
+<ul>
+<li><a href="vol5-00-index.html">Index &mdash; A&ndash;Z, grouped by theme</a> &mdash; This page.</li>
+</ul>
+
+<h3>Build and run</h3>
+<ul>
+<li><b>Rebuild zig1 from seed</b> &mdash; Build the reference compiler from the committed seed and check the two-hop closure. <i>(planned)</i></li>
+<li><b>One .z98 to an executable</b> &mdash; Compile one source file, link it, and run the native executable. <i>(planned)</i></li>
+<li><b>Multiple modules</b> &mdash; Split a program across @import modules and build each emitted file. <i>(planned)</i></li>
+</ul>
+
+<h3>Language practices</h3>
+<ul>
+<li><b>Correct arena use, dual-arena</b> &mdash; Initialize an arena over a buffer, allocate, reset, and split it in two. <i>(planned)</i></li>
+<li><b>Model and propagate errors</b> &mdash; Use error unions, try and catch, errdefer, and the enclosing-return rule. <i>(planned)</i></li>
+<li><b>Write and drive a coroutine</b> &mdash; Use the async builtins and the Context, Task, and Scheduler driver. <i>(planned)</i></li>
+<li><b>Read, write, exists</b> &mdash; Open, read, write, seek, size, rename, and check files. <i>(planned)</i></li>
+</ul>
+
+<h3>Interop and porting</h3>
+<ul>
+<li><b>extern fn, @cInclude</b> &mdash; Declare and call C functions from Z98. <i>(planned)</i></li>
+<li><b>Link Z98 output against C89 libraries</b> &mdash; Link Z98-emitted objects with hand-written C89 code. <i>(planned)</i></li>
+<li><b>Translate a C file, idiom by idiom</b> &mdash; Port C types, arrays, errors, cleanup, and ownership to Z98. <i>(planned)</i></li>
+<li><b>Translate a C++98 file, honestly</b> &mdash; Port templates, RAII, and exceptions, and say what does not translate. <i>(planned)</i></li>
+<li><b>For readers from a modern dynamic language</b> &mdash; Port Python's dynamic types, containers, exceptions, and GC. <i>(planned)</i></li>
+</ul>
+
+<h3>Targets</h3>
+<ul>
+<li><b>Win9x .exe</b> &mdash; Emit and cross-build a 32-bit Windows 9x executable. <i>(planned)</i></li>
+<li><b>Linux ELF</b> &mdash; Choose the default Linux target and the gcc -m32 path behind it. <i>(planned)</i></li>
+<li><b>WinSock under Z98</b> &mdash; Drive the std.net surface from WSAStartup to the socket lifecycle. <i>(planned)</i></li>
+</ul>
+
+<h3>Tooling</h3>
+<ul>
+<li><b>gdb on the generated C</b> &mdash; Build with debug info and debug the emitted C with gdb. <i>(planned)</i></li>
+<li><b>--markers, pal.markerWrite*</b> &mdash; Enable --markers and read the compiler's marker stream. <i>(planned)</i></li>
+<li><b>Reading the error[N] codes</b> &mdash; Read the printed ordinals, the source notes, and common fixes. <i>(planned)</i></li>
+</ul>
+
+<h3>Distribution and meta</h3>
+<ul>
+<li><b>Build the floppy distribution</b> &mdash; Assemble the self-contained output and package a diskette image. <i>(planned)</i></li>
+<li><b>Produce one language's manual</b> &mdash; Build one language's manual from the page template. <i>(planned)</i></li>
+<li><b>The doc generator itself</b> &mdash; Run the gate and search-index pipeline that builds the site. <i>(planned)</i></li>
+<li><b>Repo layout, patches</b> &mdash; Find the repo layout and prepare a patch under the edit and seed rules. <i>(planned)</i></li>
+<li><b>What to include, how to reduce</b> &mdash; Write a bug report and reduce it to a minimal reproduction. <i>(planned)</i></li>
+</ul>
+
+<h2>Where to go next</h2>
+<p>
+Start with the <a href="toc.html">Contents</a> for the whole manual, or open
+the <a href="vol4-00-title.html">Volume&nbsp;IV Reference</a> to look up a
+rule. As each guide ships, its row here becomes a link and its sidebar entry
+stops being <i>(planned)</i>; the continuous previous/next chain is restored at
+Volume&nbsp;V closeout.
+</p>
+<p class="navbtns">
+<a href="toc.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="toc.html">Contents</a> | <a href="toc.html">Contents</a> | Next: <a href="toc.html">Contents</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
