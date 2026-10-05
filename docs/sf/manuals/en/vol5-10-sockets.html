@@ -1,0 +1,479 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Sockets under Z98</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume V HOWTO sockets winsock std.net wsock32 Winsock 1.1 WSAStartup socket bind listen accept recv send select fd_set closesocket -lwsock32 net_prelude stdcall extern lifecycle http-mini mud_server cross_parity wine PARITY loopback">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol5-09-files.html">
+<link rel="next" href="vol5-11-c-interop.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume V &mdash; HOWTO</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol5-00-index.html">Index &mdash; A&ndash;Z, grouped by theme</a><br>
+<a href="vol5-01-build-compiler.html">Rebuild the compiler from seed</a><br>
+<a href="vol5-02-build-single.html">Build a single file</a><br>
+<a href="vol5-03-build-multi.html">Build multiple modules</a><br>
+<a href="vol5-04-target-win9x.html">Target Win9x</a><br>
+<a href="vol5-05-target-linux.html">Target Linux</a><br>
+<a href="vol5-06-arena.html">Use the arena correctly</a><br>
+<a href="vol5-07-errors.html">Model and propagate errors</a><br>
+<a href="vol5-08-coroutines.html">Write and drive a coroutine</a><br>
+<a href="vol5-09-files.html">Read, write, and test files</a><br>
+<b>Sockets under Z98</b><br>
+<a href="vol5-11-c-interop.html">Call C from Z98</a><br>
+<a href="vol5-12-c89-interop.html">Link Z98 output against C89 libraries</a><br>
+Debug generated C <i>(planned)</i><br>
+Use markers <i>(planned)</i><br>
+Read the diagnostics <i>(planned)</i><br>
+<a href="vol5-16-port-from-c.html">Port from C</a><br>
+<a href="vol5-17-port-from-cpp.html">Port from C++98</a><br>
+<a href="vol5-18-port-from-python.html">Port from Python</a><br>
+Pack for diskette <i>(planned)</i><br>
+Build a multilingual manual <i>(planned)</i><br>
+Build the static site <i>(planned)</i><br>
+Contribute <i>(planned)</i><br>
+Report a bug <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Sockets under Z98</h1>
+<p>
+This guide starts WinSock with <tt>WSAStartup</tt>, runs the TCP socket
+lifecycle through the <tt>std.net</tt> surface, builds a complete loopback
+sample on Linux and under wine, and links the Windows build with
+<tt>-lwsock32</tt>.
+</p>
+
+<h2>Prerequisites</h2>
+<ul>
+<li>The compiler rebuilt from the seed at
+<tt>/tmp/manual_seed/zig1_5_clean</tt>, with the standard library beside it in
+<tt>/tmp/manual_seed/lib/</tt>. If it is not there yet, follow
+<a href="vol5-01-build-compiler.html">Rebuild the compiler from seed</a>
+first.</li>
+<li>A Linux host with a 32-bit-capable <tt>gcc</tt> and <tt>bash</tt> (the
+sample uses the loopback device, so no network is needed).</li>
+<li>For the Win9x step, the committed cross harness under
+<tt>scripts/win32_cross/</tt> plus <tt>i686-w64-mingw32-gcc</tt> and 32-bit
+<tt>wine</tt>. On a real Windows 9x machine use the emitted
+<tt>build_target.bat</tt> instead; the OpenWatcom <tt>build_owc.bat</tt> path is
+emitted but not run on this host.</li>
+<li>The repository checked out, so the sample
+<tt>docs/sf/manuals/src/vol3/http-mini.z98</tt>, the server example
+<tt>examples/z98/mud_server</tt>, and the portable fixtures under
+<tt>repro/mi_matrix/stdlib_net_*_xmod</tt> are present. Every command runs from
+the repository root, <tt>/workspace/znineeight</tt>.</li>
+<li>For the surface and the platform layer beneath it, keep the Volume&nbsp;IV
+<a href="vol4-18-stdlib.html">Standard library</a> and
+<a href="vol4-19-pal.html">The PAL</a> pages open.</li>
+</ul>
+
+<h2>The idea</h2>
+<p>
+<tt>std.net</tt> is not a protocol framework; it is a set of target-selected
+<tt>extern</tt> bindings, one module, <tt>sf/src/std_net.zig</tt>, re-exported by
+the standard library. On the Windows target it binds <tt>wsock32</tt>, the
+Winsock&nbsp;1.1 import library, through <tt>winsock.h</tt>; on Linux it binds
+the C library's socket functions. The target is chosen at compile time: the
+module's <tt>@isWindows()</tt> guards prune the branch that does not apply
+before any C is written, so one source serves both.
+</p>
+<p>
+The first line of the module pulls in a small target-neutral header,
+<tt>net_prelude.h</tt>, which opens with a platform switch: <tt>windows.h</tt>
+and <tt>winsock.h</tt> plus <tt>#pragma comment(lib, "wsock32.lib")</tt> on
+Windows, the POSIX socket headers otherwise. The system header is the single
+declaration source for every entry point. Because <tt>std.net</tt> owns the
+words <tt>accept</tt>, <tt>connect</tt>, <tt>send</tt>, <tt>recv</tt>,
+<tt>close</tt>, and <tt>select</tt>, the raw externs are declared with an
+<tt>_os</tt> suffix that <tt>net_prelude.h</tt> maps back to the real OS symbol.
+</p>
+<p>
+<tt>std.net</tt> declares <b>19</b> <tt>extern "stdcall"</tt> functions in all.
+The blocking TCP and startup core is these fifteen:
+</p>
+<pre>
+pub extern "stdcall" fn htons(x: u16) u16;
+pub extern "stdcall" fn htonl(x: u32) u32;
+extern "stdcall" fn socket(af: i32, typ: i32, proto: i32) i32;
+extern "stdcall" fn bind(s: i32, name: *const void, namelen: i32) i32;
+extern "stdcall" fn listen(s: i32, backlog: i32) i32;
+extern "stdcall" fn setsockopt(s: i32, level: i32, optname: i32, optval: *const void, optlen: i32) i32;
+extern "stdcall" fn accept_os(s: i32, addr: *void, addrlen: *void) i32;
+extern "stdcall" fn connect_os(s: i32, name: *const void, namelen: i32) i32;
+extern "stdcall" fn send_os(s: i32, buf: [*]const u8, len: i32, flags: i32) i32;
+extern "stdcall" fn recv_os(s: i32, buf: [*]u8, len: i32, flags: i32) i32;
+extern "stdcall" fn select_os(nfds: i32, readfds: *void, writefds: *void, exceptfds: *void, timeout: *const void) i32;
+extern "stdcall" fn close_os(fd: i32) i32;
+extern "stdcall" fn closesocket(s: i32) i32;
+extern "stdcall" fn WSAStartup(wVersion: u16, lpWSAData: *void) i32;
+extern "stdcall" fn WSACleanup() i32;
+</pre>
+<p>
+Four more &mdash; <tt>sendto</tt>, <tt>recvfrom</tt>, <tt>WSAGetLastError</tt>,
+and <tt>ioctlsocket</tt> &mdash; back the UDP and non-blocking surfaces. The
+convention is not optional: Winsock cleans its own stack, and declaring an entry
+point <tt>cdecl</tt> links and then corrupts the stack at the call. Every
+Winsock entry in <tt>std_net.zig</tt> is <tt>stdcall</tt>.
+</p>
+<p>
+The public API is the small surface those externs wrap. A socket is an
+<tt>i32</tt> and failure is <tt>-1</tt>; a transfer returns a byte count and a
+negative number is the error channel.
+</p>
+<table width="100%" border="1" cellpadding="4" cellspacing="0">
+<tr>
+<th align="left">Function</th>
+<th align="left">Returns</th>
+<th align="left">What it does</th>
+</tr>
+<tr>
+<td><tt>init()</tt></td>
+<td><tt>i32</tt></td>
+<td><tt>WSAStartup(1,1)</tt> on Windows; <tt>0</tt> elsewhere</td>
+</tr>
+<tr>
+<td><tt>cleanup()</tt></td>
+<td>void</td>
+<td><tt>WSACleanup()</tt> on Windows; nothing elsewhere</td>
+</tr>
+<tr>
+<td><tt>createTcpServer(port)</tt></td>
+<td><tt>i32</tt></td>
+<td><tt>socket</tt> + <tt>bind</tt>; listening handle or <tt>-1</tt></td>
+</tr>
+<tr>
+<td><tt>createTcpClient(port)</tt></td>
+<td><tt>i32</tt></td>
+<td><tt>socket</tt> + <tt>connect</tt> to <tt>127.0.0.1</tt>; handle or <tt>-1</tt></td>
+</tr>
+<tr>
+<td><tt>bindListen(fd, backlog)</tt></td>
+<td><tt>i32</tt></td>
+<td><tt>listen</tt>; <tt>0</tt> or <tt>-1</tt></td>
+</tr>
+<tr>
+<td><tt>accept(fd)</tt></td>
+<td><tt>i32</tt></td>
+<td>accept a pending connection; handle or <tt>-1</tt></td>
+</tr>
+<tr>
+<td><tt>connect(fd, port)</tt></td>
+<td><tt>i32</tt></td>
+<td>connect an existing handle; <tt>0</tt> or <tt>-1</tt></td>
+</tr>
+<tr>
+<td><tt>send(fd, buf, len)</tt> / <tt>recv(fd, buf, len)</tt></td>
+<td><tt>i32</tt></td>
+<td>transfer up to <tt>len</tt> bytes; count or <tt>-1</tt></td>
+</tr>
+<tr>
+<td><tt>close(fd)</tt></td>
+<td>void</td>
+<td><tt>closesocket</tt> on Windows; <tt>close</tt> elsewhere</td>
+</tr>
+<tr>
+<td><tt>select(nfds, r, w, e, ms)</tt></td>
+<td><tt>i32</tt></td>
+<td>wait for readiness; ready count, <tt>0</tt> on timeout, <tt>-1</tt> on error</td>
+</tr>
+<tr>
+<td><tt>fdZero(s)</tt>, <tt>fdSet(fd, s)</tt>, <tt>fdIsset(fd, s)</tt></td>
+<td>void / void / <tt>bool</tt></td>
+<td>clear, set, and test a socket in an <tt>fd_set</tt></td>
+</tr>
+</table>
+<p>
+WinSock adds one rule no other library here has: call <tt>WSAStartup</tt> before
+anything else. A program that calls <tt>socket</tt>, <tt>bind</tt>, or
+<tt>send</tt> first does not get a handle, it gets a failure. The driver is
+<tt>std.net.init()</tt>, which is that call on Windows and a <tt>0</tt>-returning
+no-op elsewhere; <tt>cleanup()</tt> releases it. The lifecycle in between is the
+same list whatever the program: create, bind, listen, select for readiness,
+accept, transfer, close &mdash; and close every handle on every path.
+</p>
+
+<h2>Steps</h2>
+<ol>
+<li>
+<p>
+Start at the repository root.
+</p>
+<pre>
+$ cd /workspace/znineeight
+</pre>
+</li>
+<li>
+<p>
+Run the committed portable net fixtures through the standard-library gate. The
+<tt>stdlib_net_*_xmod</tt> fixtures exercise the UDP surface
+(<tt>udpBind</tt>, <tt>udpSendTo</tt>, <tt>udpRecvFrom</tt>) and the
+non-blocking surface over real loopback sockets; each fixture declares its port
+in a <tt>ports.txt</tt>. The gate emits each fixture, links it with the
+<tt>gcc -m32 -std=c89</tt> flag set, runs it, and diffs stdout and the exit code
+against the committed goldens.
+</p>
+<pre>
+$ timeout 120 bash scripts/stdlib/verify_stdlib.sh /tmp/manual_seed/zig1_5_clean repro/mi_matrix/stdlib_net_udp_loopback_xmod repro/mi_matrix/stdlib_net_udp_bind_xmod repro/mi_matrix/stdlib_net_udp_sendto_xmod repro/mi_matrix/stdlib_net_udp_recvfrom_xmod repro/mi_matrix/stdlib_net_setnonblocking_xmod
+== std-lib runtime gate ==
+   zig1: /tmp/manual_seed/zig1_5_clean
+PASS repro/mi_matrix/stdlib_net_udp_loopback_xmod
+PASS repro/mi_matrix/stdlib_net_udp_bind_xmod
+PASS repro/mi_matrix/stdlib_net_udp_sendto_xmod
+PASS repro/mi_matrix/stdlib_net_udp_recvfrom_xmod
+PASS repro/mi_matrix/stdlib_net_setnonblocking_xmod
+----------------------------------------
+run_fixtures: 5 PASS / 0 FAIL over 5 dirs
+STDLIB GATE OK
+</pre>
+</li>
+<li>
+<p>
+Build and run the complete sample on Linux. <tt>http-mini.z98</tt> binds a
+listener, opens a loopback client to its own port, waits with <tt>select</tt>,
+accepts, reads one fixed HTTP/1.0 request, and writes one fixed response. Emit
+it, run the emitted Linux build script, and run the program.
+</p>
+<pre>
+$ rm -rf /tmp/manual_out16 &amp;&amp; mkdir -p /tmp/manual_out16
+$ timeout 120 /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out16 docs/sf/manuals/src/vol3/http-mini.z98
+$ cd /tmp/manual_out16 &amp;&amp; timeout 120 sh build_target.sh linux http-mini
+Building for linux...
+Built: http-mini
+$ timeout 120 ./http-mini | tee /tmp/manual_out16/http-mini.linuxstdout
+http-mini: listening on port 18088
+http-mini: accepted a connection
+http-mini: request GET /hello HTTP/1.0
+http-mini: served 100 bytes
+http-mini: client received 100 bytes
+http-mini: done
+</pre>
+<p>
+Six lines, one per part of the lifecycle: bind and listen, accept, the parsed
+request line, the response write, the client read, and the shutdown. The two
+<tt>100</tt>s are the same response counted at both ends &mdash; the server
+sending it and the client receiving it &mdash; the simplest proof that the
+bytes made the round trip. On Linux <tt>init()</tt> returned <tt>0</tt> and the
+<tt>WSAStartup</tt> branch never ran.
+</p>
+</li>
+<li>
+<p>
+Cross-build the same sample for Win9x and run it under wine. The committed
+harness emits with <tt>-osw</tt>, compiles the C89 with
+<tt>i686-w64-mingw32-gcc</tt>, links the Windows import library
+<tt>-lwsock32</tt>, runs the <tt>.exe</tt> under a dedicated 32-bit wine prefix,
+and compares the captured stdout byte-for-byte against the Linux baseline. Save
+the Linux output from Step&nbsp;3 as the parity base first.
+</p>
+<pre>
+$ cd /workspace/znineeight
+$ timeout 120 env ZIG1=/tmp/manual_seed/zig1_5_clean PARITY_STRIP_CR=1 \
+    WINEPREFIX=/tmp/wine32 WINEARCH=win32 \
+    bash scripts/win32_cross/cross_parity.sh \
+    docs/sf/manuals/src/vol3/http-mini.z98 /dev/null \
+    /tmp/manual_out16/http-mini.linuxstdout /tmp/manual_win16/http-mini
+XRUNRC=0
+WINE_RC=0
+PARITY=OK
+</pre>
+<p>
+<tt>XRUNRC=0</tt> is the cross-build (dump, compile, link), <tt>WINE_RC=0</tt>
+is the wine process, and <tt>PARITY=OK</tt> means the Windows stdout matched the
+Linux baseline byte-for-byte. This host measured the Windows run as
+<tt>wine-8.0</tt>; the bind succeeds because <tt>std.net</tt> now calls
+<tt>WSAStartup</tt> first. The one thing this host cannot claim is OpenWatcom:
+<tt>-osw</tt> also writes <tt>build_owc.bat</tt> for <tt>wcc386</tt>/<tt>wlink</tt>,
+carrying <tt>library wsock32</tt>, and that script is emitted and documented,
+not run. The figure is the real-machine proof.
+</p>
+<p>
+<tt>-lwsock32</tt> is not optional on the Windows side. Every
+<tt>@import("std")</tt> program emits the network module <tt>std_net_*.c</tt>,
+even a stdio-only one, so the mingw link needs the winsock import library. The
+emitted <tt>build_target.sh</tt> sets <tt>LIBS="-lwsock32"</tt> in its mingw
+branch for exactly this reason; a hand-rolled link without it fails with
+<tt>undefined reference to '_imp__recv@16'</tt> or
+<tt>'_imp__WSAStartup@8'</tt>.
+</p>
+<table width="100%" border="1" cellpadding="6" cellspacing="0" bgcolor="#f0f0f0" class="placeholder">
+<tr>
+<td align="center">
+<i>Figure 40 &mdash; Win9x screenshot pending</i>
+</td>
+</tr>
+</table>
+<p><i>Figure 40. Running <tt>http-mini.exe</tt> under Windows 98.</i></p>
+</li>
+<li>
+<p>
+Run the real server. <tt>examples/z98/mud_server</tt> is a
+coroutine-per-client TCP server on port 4000: it starts the network stack,
+binds, accepts, and drives one conversation with each client. Build it on Linux
+and drive it with the committed demo session, which starts the server, sends
+<tt>look</tt>, <tt>north</tt>, and <tt>quit</tt> from one client, and captures
+both streams.
+</p>
+<pre>
+$ rm -rf /tmp/manual_out_mud &amp;&amp; mkdir -p /tmp/manual_out_mud
+$ timeout 120 /tmp/manual_seed/zig1_5_clean -o /tmp/manual_out_mud examples/z98/mud_server/main.zig
+$ cd /tmp/manual_out_mud &amp;&amp; timeout 120 sh build_target.sh linux mud_server
+Building for linux...
+Built: mud_server
+$ cd /workspace/znineeight
+$ timeout 120 bash examples/z98/mud_server/demo/session.sh \
+    /tmp/manual_out_mud/mud_server /tmp/mud_srv.out /tmp/mud_cli.out
+$ md5sum /tmp/mud_srv.out /tmp/mud_cli.out
+66c8f0abb926cca7baf9a0d1692ab318  /tmp/mud_srv.out
+93147d0f0bbd983a9d844fea8b7a6fa7  /tmp/mud_cli.out
+$ cat /tmp/mud_srv.out
+MUD server listening on port 4000
+New client connected
+Client disconnected
+</pre>
+<p>
+The two md5s match the committed goldens
+<tt>demo/canonical_expected.txt</tt> and
+<tt>demo/canonical_client_expected.txt</tt>. The same server cross-builds for
+Win9x through the same harness &mdash; Volume&nbsp;III recorded the
+post-<tt>WSAStartup</tt> bind under wine as successful, with the same server and
+client md5s, and the six language limits the example works around are in
+<tt>examples/z98/mud_server/missing_features_mud.md</tt>.
+</p>
+</li>
+</ol>
+
+<h2>Verify it worked</h2>
+<p>
+Each step above is a recorded run of a committed artifact, so re-running the
+commands reproduces it. Step&nbsp;2's gate must end in <tt>STDLIB GATE OK</tt>
+and <tt>0 FAIL</tt>: the five loopback and non-blocking fixtures matched their
+committed stdout and exit code. Step&nbsp;3 must print the six lines with the
+two <tt>100</tt>s. Step&nbsp;4 must print <tt>XRUNRC=0</tt>, <tt>WINE_RC=0</tt>,
+and <tt>PARITY=OK</tt> &mdash; the Win9x build bound its socket under
+<tt>wine-8.0</tt> and matched the Linux baseline byte-for-byte, which is the
+measured wine bind class. Step&nbsp;5 must end with the two md5s
+<tt>66c8f0abb926cca7baf9a0d1692ab318</tt> and
+<tt>93147d0f0bbd983a9d844fea8b7a6fa7</tt> and the three server lines.
+</p>
+
+<h2>Common mistakes</h2>
+<ul>
+<li><b>Calling a socket function before <tt>WSAStartup</tt>.</b> WinSock requires
+it first; without it <tt>socket</tt> fails and the handle is <tt>-1</tt>, with
+<tt>WSANOTINITIALISED</tt> (<tt>10093</tt>) from
+<tt>WSAGetLastError</tt>. Call <tt>std.net.init()</tt> before
+<tt>createTcpServer</tt> or <tt>createTcpClient</tt>, and call
+<tt>cleanup()</tt> at the end.</li>
+<li><b>Treating the handle as unsigned.</b> There is no unsigned socket rule in
+<tt>std.net</tt>: the handle is <tt>i32</tt> and failure is <tt>-1</tt>. Check
+<tt>&lt; 0</tt> or <tt>== -1</tt>; do not store handles in unsigned types.</li>
+<li><b>Assuming <tt>send</tt> sends everything.</b> A successful <tt>send</tt>
+may transfer fewer bytes than you passed; a short count is not an error. Loop
+until the buffer is gone, and treat <tt>0</tt> or a negative return as
+failure. The sample's <tt>sendAll</tt> is that loop.</li>
+<li><b>Assuming one <tt>recv</tt> is one message.</b> TCP is a byte stream: a
+single <tt>recv</tt> may return part of a request or two requests at once. For
+the sample's fixed request one read is enough; a real server reads until it has
+a complete request line and body.</li>
+<li><b>Reading <tt>fd_set</tt> directly.</b> The type is an opaque blob. Clear
+it with <tt>fdZero</tt>, add with <tt>fdSet</tt>, and test with
+<tt>fdIsset</tt>. The Windows layout (a count followed by handles) and the
+POSIX layout (a bitmask) differ, and the helpers are the portable way to touch
+it.</li>
+<li><b>Forgetting the timeout on a blocking read.</b> A blocking <tt>accept</tt>
+or <tt>recv</tt> waits forever when nothing arrives. Use <tt>select</tt> with a
+millisecond timeout before the blocking call, as the sample does; a negative
+timeout means block, the opposite of what a first server wants.</li>
+<li><b>Forgetting <tt>extern "stdcall"</tt>.</b> Winsock is a <tt>stdcall</tt>
+API. Declaring an entry point <tt>cdecl</tt> links and then corrupts the stack
+at the call. Do not declare the Winsock functions yourself: <tt>std.net</tt>
+already has them with the right convention.</li>
+<li><b>Reaching for the old socket builtins.</b> <tt>@socketCreate</tt> and its
+siblings were removed; the compiler stops with
+<tt>error[3000]: unsupported builtin function</tt> and emits no C. Import
+<tt>std</tt> and use <tt>std.net</tt>.</li>
+<li><b>Closing the listening handle when a connection ends.</b> <tt>accept</tt>
+returns a new handle for the connection; the listening handle stays open. Close
+the accepted handle when the conversation is over and keep accepting on the
+listening handle, or the server shuts down after one client.</li>
+<li><b>Dropping <tt>-lwsock32</tt> in a hand-rolled Windows link.</b> Every
+<tt>std</tt> importer emits <tt>std_net</tt>, so the mingw link needs the
+winsock library even for a program that never opens a socket. Prefer the
+emitted <tt>build_target.sh</tt>, whose mingw branch already adds it.</li>
+</ul>
+
+<h2>Where to go next</h2>
+<p>
+The function-by-function contract for <tt>std.net</tt>, the UDP and
+non-blocking surfaces, and the rest of the standard library is in
+Volume&nbsp;IV's <a href="vol4-18-stdlib.html">Standard library</a> page, and
+the platform layer the runtime resolves against is
+<a href="vol4-19-pal.html">The PAL</a>. The <tt>@isWindows()</tt> predicate and
+the target flags behind <tt>-osw</tt> and <tt>-osl</tt> are in
+<a href="vol4-22-cli.html">Volume&nbsp;IV &mdash; Command line</a> and
+<a href="vol4-15-builtins.html">Builtins</a>.
+</p>
+<p>
+The narrative socket chapter with the same sample is Volume&nbsp;III's
+<a href="vol3-12-winsock.html">WinSock under Z98</a>, which builds directly on
+<a href="vol3-11-talking-to-c.html">Talking to C</a>; the concurrency half of a
+networked program is <a href="vol3-10-coroutine-program.html">A coroutine
+program</a>, and the Win9x target story is
+<a href="vol3-08-win9x.html">Building for Win9x</a>. For the pieces this guide
+leaned on, see <a href="vol2-17-stdlib.html">The standard library</a> and
+<a href="vol2-18-print.html">print and the format string</a>. In this volume,
+<a href="vol5-04-target-win9x.html">Target Win9x</a> covers the
+<tt>-osw</tt> emit and the cross harness in full, the
+<a href="vol5-09-files.html">files guide</a> precedes this one, and the
+<a href="vol5-11-c-interop.html">C interop guide</a> follows it. Return to the
+<a href="vol5-00-index.html">HOWTO index</a> for the full list.
+</p>
+
+<p class="navbtns">
+<a href="vol5-09-files.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="vol5-11-c-interop.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol5-09-files.html">Read, Write, and Check Files</a> | <a href="toc.html">Contents</a> | Next: <a href="vol5-11-c-interop.html">Call C from Z98</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
