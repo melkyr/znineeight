@@ -172,10 +172,33 @@ rm -rf /tmp/selfc && mkdir -p /tmp/selfc
   variant-field/cast/string-escape/`#ifdef` arms (leads `C-I6 #6/#9/#10/#11/#12/#14/#17`, `C-R5`).
 - Deliverable: census report. Commit: NONE.
 
-### Task 2: Refactor `c89_emit.zig`
-- Files: `sf/src/c89_emit.zig`. Implements Task 1's consolidations only.
-- Order-sensitive: any emission-order change is runtime-gated; record the dump-MD5 delta.
-- Commit `refactor(c89_emit): deduplicate <cluster> logic`.
+### Task 2: Refactor `c89_emit.zig` — executed as increments 2a/2b/2c
+> Operator ruling (2026-10-05): Task 2 is too large and order-sensitive for one review surface, so it
+> runs as three sequential, separately-reviewed, separately-committed increments. Each increment runs
+> the full battery, records its dump-MD5 delta and its `-s0` pool/RSS delta, and commits only
+> `sf/src/c89_emit.zig`. All three target the same file.
+
+### Task 2a: Refactor `c89_emit.zig` — compiler-side, no emitted-text change (LOW risk)
+- Clusters: D1-1 hoisted-temp lookup; D1-3 is-main (+ delete the dead `is_main`@2572); D1-6 delete
+  the dead `getCheckedCastFnName`@5705; D1-7 include predicates; D5-1/D5-2 itoa/marker helpers;
+  D5-4 `cnameDedupKey`; D5-6 dedup sets; D6-4 `float_const` single-format; D3-10 build-script loops;
+  plus the Task 1 census gap `nameManglerPopulateKeywords` (487-551), folded in by operator ruling.
+- Expected: measurable `-s0` pool delta; dump-MD5 ideally unchanged (record regardless).
+- Commit `refactor(c89_emit): deduplicate compiler-side logic (2a)`.
+
+### Task 2b: Refactor `c89_emit.zig` — emitted-text refactors (MED risk)
+- Clusters: D7-1 field ladder; D7-2/D2-3 variant field; D7-3/D6-3 array copy/zero; D3-8 cast helper;
+  D7-4 call args; D5-5 synthetic names; D3-5/D6-1 type passes; D3-6/D3-7 module/signature; D3-9
+  optional/EU; D3-11 `#define`; D1-4 global externs; D1-2 int-kind tables; D3-3 LirInst descriptor;
+  D4-1 writes.
+- Emitted C may change; runtime-equivalence gated; record the dump-MD5 delta.
+- Commit `refactor(c89_emit): deduplicate emitted-text logic (2b)`.
+
+### Task 2c: Refactor `c89_emit.zig` — order-sensitive (HIGH risk)
+- Clusters: D3-2/D2-1/D2-2 `tstEdges` single walker (topo order → 4 MD5 gates); D7-5 string escape;
+  D7-6 `#ifdef` arms; D7-7 binary/unary; D7-8 print route; D6-2 int-const fold.
+- Runtime-equivalence gated; dump-MD5 deltas recorded.
+- Commit `refactor(c89_emit): deduplicate order-sensitive logic (2c)`.
 
 ### Task 3: Analyze `lower.zig` (9,681) — READ-ONLY
 - D2/D6/D7: repeated fold arms, cond-to-bool, capture tails, comptime helpers
