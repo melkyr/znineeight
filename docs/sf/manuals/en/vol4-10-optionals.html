@@ -249,21 +249,29 @@ to <tt>pal_trap()</tt>, not a no-op; a <tt>null</tt> operand terminates with
 Use it only when the optional is provably present.
 </p>
 <p>
-<b>Fall-through block residual.</b> A block fallback that does <b>not</b>
-diverge (no <tt>return</tt>/<tt>break</tt>/<tt>continue</tt>) leaves the
-<tt>orelse</tt> result reading the uninitialized join temporary. The program
-compiles with no diagnostic and does not trap; the result is undefined.
-Measured:
+<b>Value-less block fallback is rejected in a value position.</b> A block
+fallback that does <b>not</b> diverge (no <tt>return</tt>/<tt>break</tt>/
+<tt>continue</tt>) and yields no value cannot be used as a value. In a value
+position &mdash; a typed <tt>var</tt>/<tt>const</tt>, a <tt>return</tt>, or a
+nested expression &mdash; it is a clean level-0 reject (Zig 0.15.2:
+<tt>expected type 'i32', found 'void'</tt>). The direct discard and a bare
+statement expression are accepted; the discard keeps a declared, uninitialized
+join temporary, so its emitted C is valid. Measured:
 </p>
 <pre>
-var x = get(-1) orelse { std.io.print("fallthrough\n", .{}); };
-// prints "fallthrough"; x is then uninitialized (measured x=-338013008,
-// varying per run) -- no error and no trap.
+var x: i32 = get(-1) orelse { std.io.print("fallthrough\n", .{}); };
+// error[3059]: orelse block fallback without a value cannot be used as a value
+
+_ = get(-1) orelse {};                 // accepted: value discarded (valid C)
+get(-1) orelse {};                     // accepted: bare-statement tolerance
 </pre>
 <p>
 Write a value expression (<tt>opt orelse 0</tt>) when a value is what you
 have, or make the block diverge (<tt>{ return 0; }</tt>), which is the
-<tt>useBlock</tt> path of <tt>orelse_optional_control_xmod</tt>.
+<tt>useBlock</tt> path of <tt>orelse_optional_control_xmod</tt>. The value
+positions are pinned by
+<tt>repro/mi_matrix/orelse_empty_block_reject_xmod</tt> (<tt>3059 5</tt>,
+rc 2, zero <tt>.c</tt>).
 </p>
 
 <h2><tt>.?</tt> and the unwrap trap</h2>
@@ -374,14 +382,17 @@ walk follows <tt>?*Entry</tt> links].
 <tr><td valign="top"><tt>error[3014]</tt></td><td valign="top"><tt>variable must be initialized; use '= undefined' to opt out</tt></td></tr>
 <tr><td valign="top"><tt>error[3016]</tt></td><td valign="top"><tt>orelse requires an optional operand; use 'catch' for error unions</tt></td></tr>
 <tr><td valign="top"><tt>error[3058]</tt></td><td valign="top"><tt>condition must be of type 'bool'</tt>; with a capture, <tt>capture condition must be an optional or error union type</tt></td></tr>
-<tr><td valign="top"><tt>error[3059]</tt></td><td valign="top"><tt>if expression without 'else' cannot be used as a value (its type is 'void')</tt></td></tr>
+<tr><td valign="top"><tt>error[3059]</tt></td><td valign="top"><tt>if expression without 'else' cannot be used as a value (its type is 'void')</tt>; also <tt>orelse block fallback without a value cannot be used as a value</tt> (a non-diverging value-less <tt>orelse</tt> block in a value position)</td></tr>
 <tr><td valign="top"><tt>warning[3000]</tt></td><td valign="top"><tt>type mismatch in variable declaration</tt> (an optional bound where the payload type is declared)</td></tr>
 </table>
 <p>
 For the <tt>error[3059]</tt> rule: a value <tt>if</tt> needs an <tt>else</tt>
 unless the condition is comptime-known true. <tt>const v = if (true) 5;</tt>
 compiles; <tt>const v = if (false) 5;</tt> and
-<tt>const v = if (get()) |x| x;</tt> both reject <tt>error[3059]</tt>.
+<tt>const v = if (get()) |x| x;</tt> both reject <tt>error[3059]</tt>. A
+non-diverging value-less <tt>orelse</tt> block in a value position reuses
+<tt>error[3059]</tt> with the orelse-tailored message; a direct <tt>_ =</tt>
+discard or a bare-statement use stays accepted.
 </p>
 
 <h2>See also</h2>

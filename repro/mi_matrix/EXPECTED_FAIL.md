@@ -1,4 +1,66 @@
-# mi_matrix corpus — expected-fail manifest (v295 2026-10-05)
+# mi_matrix corpus — expected-fail manifest (v296 2026-10-05)
+
+## A9-F — reject a value-less `orelse` fallback in a value position (v295 -> v296, 2026-10-05)
+
+Volume IV Amendment A9 (operator m1740; investigation `task-A9-I-report.md`). A
+non-diverging value-less/empty `orelse { ... }` fallback used in a **value
+position** — a typed/untyped `var` or `const`, a `return`, or a nested
+expression — compiled rc 0 on the base fixed point (`ca21a1ba`) but emitted
+gcc-invalid C: `zT_7 = zT_8;` with `zT_8` undeclared for an empty block, or a
+self-read of the uninitialized target for a non-empty value-less block. Zig
+0.15.2 rejects every value position (`expected type 'i32', found 'void'`).
+
+**Fix (sema + lowering; no new diagnostic code, no parser/emitter change).**
+`semanticAnalyzerResolveOrelseExpr` (`sf/src/semantic_analyzer.zig`) now
+rejects at level 0, **reusing** `ERR_3059_IF_WITHOUT_ELSE` with the
+orelse-tailored message
+`orelse block fallback without a value cannot be used as a value`, when
+`semaOrelseFallbackIsValueless` (empty / statement-ended / assignment-ended /
+labeled block, or a no-`else` `if`) **or** the fallback's resolved type is
+`TYPE_VOID` (a bare void call the parser does not wrap in `expr_stmt`) holds and
+`semaOrelseFallbackDiverges` is false (`return`/`break`/`continue`/noreturn
+leave the expression, so the in-tree `orelse { ...; continue; }` and
+`orelse blk: { return null; }` fallbacks stay legal). New `discard_rhs_node` and
+`stmt_expr_node` analyzer markers exempt the direct `_ = ...;` discard (Zig
+discards an undefined value) and the bare-statement expression (parked
+tolerance). `sf/src/lower.zig` renames `lowerCatchBodyIsValueless` ->
+`lowerBodyIsValueless` and reuses it in the `orelse` null branch so the accepted
+discard keeps a declared-but-uninitialized join temp instead of assigning the
+undeclared `TYPE_VOID` temp. rc 2 / 0 `.c`; the post-sema `hasErrors` gate exits
+before LIR lowering.
+
+**Fixture (new).** `repro/mi_matrix/orelse_empty_block_reject_xmod`
+(`expected.rc` 2; `expected_error.txt` `3059 5`: one diagnostic per value
+position — `return`, typed `var`, `const`, value-less block, nested `+ 1` — no
+cascade) + standalone `repro/orelse_empty_block_reject.z98` (`3059 1`). The
+fixture also carries the accepted direct-discard (`_ = maybe(-1) orelse {};`)
+and bare-statement lines, which add no diagnostic. `expected_error.txt` is
+force-added (`git add -f`; `.gitignore` ignores `*.txt`). The canonical
+classifier buckets non-`error[3000]` rejects as **FAIL** — an intentional,
+oracle-matching reject, **NOT** a green-guard.
+
+**Corpus movement.** `-s0` classify, same tree, base fp `ca21a1ba`
+(1097 dirs incl. the new fixture: 923 OK / 58 GREEN / 116 FAIL) -> post
+**1097 = 923 OK / 58 GREEN / 116 FAIL / 0 ICE / 0 CRASH** (the new reject
+fixture is FAIL in both); join-diff vs the base over all common dirs is
+**EMPTY** — zero pre-existing movers (including the previously-moving
+`emission_orelse_labeled_xmod`, now OK again). The only dir-set addition is the
+new fixture.
+
+**Gates (new fixed point `0b8c3e4ac0b1fc49c0bdf8caf9d39945`, hop1 == hop2).**
+Seed two-hop closure; 4-MD5 emitted-C both modes **UNCHANGED 8/8**; example
+matrix **24/24**; stdlib **266 PASS / 0 FAIL**; `check_emit_support.sh`
+**7/7**; `verify_upgraded.sh` **CLOSEOUT OK**; self-emission **48 `.c` + 48
+`.h` / 0 PANIC**; `build_test.sh` **0/9** (pre-existing); `run_all.sh`
+**13/13**. Seed v90 NOT rotated (closeout-only).
+
+**Accepted / parked.** `_ = maybe(-1) orelse {};` (and the non-empty value-less
+discard) is accepted and emits valid C; a bare-statement
+`maybe(-1) orelse {};` is parked as Z98's existing unused-expression tolerance
+(Zig rejects it, `incompatible types: 'i32' and 'void'`) — not rejected by this
+task. An untyped-position value-less fallback is rejected with the typed
+wording (`expected type ...` vs Zig's `incompatible types: ...`): a documented
+wording-only residual.
 
 ## A8-F — clean-reject the no-else error-union condition capture (v294 -> v295, 2026-10-05)
 

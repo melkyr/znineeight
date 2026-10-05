@@ -276,11 +276,14 @@ pinned by <tt>repro/mi_matrix/orelse_optional_control_xmod</tt> (printed lines
 reject by <tt>repro/mi_matrix/orelse_requires_optional_xmod</tt> (rc 2, zero
 <tt>.c</tt>) and the trap by <tt>trap_orelse_unreachable_xmod</tt> (rc 133).
 A block fallback supplies the fallback value; a block that neither yields a
-value nor diverges leaves the result an uninitialized join temporary with no
-diagnostic &mdash; undefined. An <b>empty</b> fallback block (<tt>orelse {}</tt>)
-is worse: the current seed build emits invalid C (<tt>'zT_8' undeclared</tt>)
-&mdash; a known defect scheduled under Amendment <b>A9</b> (deferred). Write a
-value or make the block diverge.
+value nor diverges cannot be used as a value. In a value position (a typed
+<tt>var</tt>/<tt>const</tt>, a <tt>return</tt>, or a nested expression) it is a
+clean level-0 reject, <tt>error[3059]</tt> <tt>orelse block fallback without a
+value cannot be used as a value</tt> (Volume IV Amendment <b>A9</b>); an
+<b>empty</b> fallback block (<tt>orelse {}</tt>) is rejected the same way
+(Zig 0.15.2: <tt>expected type 'i32', found 'void'</tt>). The direct <tt>_ =</tt>
+discard and a bare-statement use stay accepted. Write a value or make the block
+diverge.
 </p>
 
 <h2>Capture: <tt>if (opt) |v|</tt>, <tt>while (opt) |v|</tt></h2>
@@ -341,7 +344,9 @@ The capture is scoped to the then-arm (and to each loop body). A use in the
 (Zig <tt>use of undeclared identifier</tt>; Amendment A7 scopes the current
 build to match). A value <tt>if</tt> with no <tt>else</tt> and a
 non-<tt>void</tt> type is <tt>error[3059]</tt> unless its condition is
-comptime-known true.
+comptime-known true. A non-diverging value-less <tt>orelse</tt> block in a
+value position reuses <tt>error[3059]</tt> with the orelse-tailored message
+(Volume IV Amendment A9; see the optionals page and the diagnostic index).
 </p>
 
 <h2>Capture over an error union: not supported</h2>
@@ -452,7 +457,7 @@ The three legitimate answers are exactly the message's list: propagate
 <tr><td valign="top"><tt>error[3015]</tt></td><td valign="top"><tt>error union result is ignored; use 'try', 'catch', or assign the result</tt>.</td></tr>
 <tr><td valign="top"><tt>error[3016]</tt></td><td valign="top"><tt>orelse requires an optional operand; use 'catch' for error unions</tt>.</td></tr>
 <tr><td valign="top"><tt>error[3058]</tt></td><td valign="top">Condition/capture rejects: <tt>condition must be of type 'bool'</tt>; with a capture, <tt>capture condition must be an optional or error union type</tt>; an error-union condition capture, <tt>error union capture is not supported; use 'catch', 'switch', or 'orelse'</tt>.</td></tr>
-<tr><td valign="top"><tt>error[3059]</tt></td><td valign="top"><tt>if expression without 'else' cannot be used as a value (its type is 'void')</tt> (unless the condition is comptime-known true).</td></tr>
+<tr><td valign="top"><tt>error[3059]</tt></td><td valign="top"><tt>if expression without 'else' cannot be used as a value (its type is 'void')</tt> (unless the condition is comptime-known true); also <tt>orelse block fallback without a value cannot be used as a value</tt> (a non-diverging value-less <tt>orelse</tt> block in a value position).</td></tr>
 <tr><td valign="top"><tt>error[3075]</tt></td><td valign="top">The <tt>try</tt> enclosing-return prongs above, deduped per <tt>try</tt> node.</td></tr>
 <tr><td valign="top"><tt>warning[3000]</tt></td><td valign="top"><tt>type mismatch in variable declaration -- initialization type may not be compatible with declared type</tt> (a caught/orelse result compared unparenthesized, so the payload is bound where a <tt>bool</tt> was declared).</td></tr>
 </table>

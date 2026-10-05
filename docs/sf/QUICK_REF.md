@@ -429,6 +429,36 @@ assignment and Z98 does not type the void prong against the switch type —
 `expected type 'i32', found 'void'`); switch-value-arm typing, a separate
 defect.
 
+A9-F (2026-10-05; Volume IV Amendment A9, operator m1740) clean-rejects a
+non-diverging value-less/empty `orelse { ... }` fallback in a VALUE position.
+`var a: i32 = maybe(-1) orelse {};` (and `const`, `return`, nested, and a
+non-empty value-less block) compiled rc 0 on the base but emitted gcc-invalid C
+(`zT_7 = zT_8;`, `'zT_8' undeclared`; a non-empty block self-read the
+uninitialized target); Zig 0.15.2 rejects the value positions (`expected type
+'i32', found 'void'`). `semanticAnalyzerResolveOrelseExpr`
+(`sf/src/semantic_analyzer.zig`) now emits the existing level-0
+`error[3059]` (`ERR_3059_IF_WITHOUT_ELSE`, reused — no new enum member) with
+`orelse block fallback without a value cannot be used as a value` at the
+fallback span, when `semaOrelseFallbackIsValueless` (empty / statement-ended /
+assignment-ended / labeled block, or a no-`else` `if`) or `rhs_result ==
+TYPE_VOID` holds and `semaOrelseFallbackDiverges` is false; new
+`discard_rhs_node`/`stmt_expr_node` markers exempt the direct `_ = ...;`
+discard (Zig discards an undefined value) and the bare-statement form (parked
+tolerance). `lower.zig` renames `lowerCatchBodyIsValueless` ->
+`lowerBodyIsValueless` and reuses it in the `orelse` null branch, so the
+accepted discard keeps a declared-but-uninitialized join temp (valid C; the
+void temp is no longer assigned into the join). Fixture
+`repro/mi_matrix/orelse_empty_block_reject_xmod` (`3059 5`, rc 2 / 0 `.c`, class
+FAIL — an intentional oracle-matching reject, not a green-guard) + standalone
+`repro/orelse_empty_block_reject.z98` (`3059 1`). All 8 emitted-C pins stay
+**UNCHANGED 8/8** both modes; example matrix 24/24; stdlib **266 PASS / 0 FAIL**;
+emit 7/7; `verify_upgraded.sh` CLOSEOUT OK; self-emission 48 `.c` + 48 `.h` / 0
+PANIC; build_test 0/9 (pre-existing); run_all 13/13; corpus `-s0`
+**1097 = 923 OK / 58 GREEN / 116 FAIL / 0 ICE / 0 CRASH** (base same; join-diff
+empty — zero pre-existing movers; the only addition is the new FAIL fixture);
+the new fixed point (moving point hop1 == hop2, explicit `FIXED_POINT_MD5`
+gate) is **`0b8c3e4ac0b1fc49c0bdf8caf9d39945`**; seed v90 NOT rotated.
+
 A8-F (2026-10-05; Volume IV Amendment A8, operator m1617 ruled option A —
 reduced, reject-only) clean-rejects the no-`else` error-union condition capture.
 `if (eu) |v|` / `while (eu) |v|` (no `else |e|`) compiled rc 0 on the base but

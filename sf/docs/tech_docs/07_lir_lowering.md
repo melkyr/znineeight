@@ -757,6 +757,8 @@ lowerExpr(lhs) → lhs_temp
 → join_bb
 ```
 
+`[updated: 2026-10-05 — A9-F (Volume IV Amendment A9, operator m1740): the null branch's `materializeInto`/`.assign(join_temp)` is now skipped when `lowerBodyIsValueless` (the former `lowerCatchBodyIsValueless`, renamed and reused at both `catch` and `orelse`; a labeled block recurses through `child_0`) says the fallback yields no value and `block_terminated == 0`. Sema rejects the value positions, so the legal forms that reach lowering are the direct `_ = ...;` discard and a bare-statement expression; both previously assigned the undeclared `TYPE_VOID` temp into the join temp (`join = void_temp` → gcc `'zT_N' undeclared`) and now keep a declared-but-uninitialized join temp that is only `(void)`-cast. Valid value/diverging fallbacks are unchanged, so all 8 emitted-C pins stay UNCHANGED 8/8.]`
+
 ### Slice Expression
 ```
 lowerExpr(base) → base_temp

@@ -6,7 +6,7 @@
 
 | Artifact | Count | Notes |
 |----------|-------|-------|
-| `SemanticAnalyzer` fields | 89 | 54 non-`_name_id` (adds `local_decl_spans_start`/`local_decl_spans_end`, Task 18; adds `switch_case_item`, FX4) + 35 `_name_id` (the 35th is `discard_name_id`; 34 builtin name IDs, 11 socket IDs removed) |
+| `SemanticAnalyzer` fields | 91 | 56 non-`_name_id` (adds `local_decl_spans_start`/`local_decl_spans_end`, Task 18; adds `switch_case_item`, FX4; adds `discard_rhs_node`/`stmt_expr_node`, A9-F) + 35 `_name_id` (the 35th is `discard_name_id`; 34 builtin name IDs, 11 socket IDs removed) |
 | Expression kind dispatch arms | 47+ | Every `AstKind` handled in `semanticAnalyzerResolveExpr` |
 | `CoercionKind` variants | 18 | `none` through `float_narrow` (row 17 `tuple_to_tuple`, row 18 `float_narrow`; the latter is sema-recorded only) |
 | Coercion checks in `classifyCoercion` | ~20 | noreturn/undefined, null, optional, error union, ptr/slice/many-ptr (qualifier-monotone), array, widening, literal |
@@ -338,7 +338,7 @@ fi from 0..fields_count:
 | 22 | `bit_not` | → `semanticAnalyzerResolveBitNot` | integer type or VOID |
 | 23 | `try_expr` | → `semanticAnalyzerResolveTryExpr` (FX12: enforce the enclosing-return rules, `error[3075]`) | error union payload (or `TYPE_UNDEFINED` poison on reject) |
 | 24 | `catch_expr` | `[inference: unwrap error union + capture]` | payload type |
-| 25 | `orelse_expr` | → `semanticAnalyzerResolveOrelseExpr` | optional payload |
+| 25 | `orelse_expr` | → `semanticAnalyzerResolveOrelseExpr` (A9-F: a non-diverging value-less `orelse` block in a value position is level-0 `error[3059]`) | optional payload |
 | 26 | `break_stmt` / `continue_stmt` | `[inference: return TYPE_VOID]` | `TYPE_VOID` |
 | 27 | `var_decl` / `defer_stmt` / `errdefer_stmt` / `labeled_stmt` | → `semanticAnalyzerResolveStmtIter` | `TYPE_VOID` |
 | 28 | `if_expr` | → `semanticAnalyzerResolveIfExpr` | unified then/else type |
@@ -694,6 +694,8 @@ Cases:
 - Inner is `TYPE_NULL` and expected type is non-zero: if expected is optional, extract payload, add `wrap_optional_null` coercion, return payload.
 - Inner is `optional_type`: extract payload, add `unwrap_optional` coercion; if an `orelse` RHS exists, push the payload as its expected type, resolve it, and record a coercion; return payload.
 - Otherwise emit `ERR_3016` "orelse requires an optional operand; use 'catch' for error unions" and return `TYPE_UNDEFINED`.
+
+`[updated: 2026-10-05 — A9-F (Volume IV Amendment A9, operator m1740): a non-diverging value-less `orelse { ... }` fallback in a VALUE position is a clean level-0 reject, reusing `ERR_3059_IF_WITHOUT_ELSE` with the orelse-tailored message `orelse block fallback without a value cannot be used as a value` (no new enum member). A fallback is value-less when `semaOrelseFallbackIsValueless` says so (empty/statement-ended/assignment-ended block — including a labeled block, via `child_0` — or a no-`else` `if`) or its resolved `rhs_result` is `TYPE_VOID` (a bare void call the parser does not wrap in `expr_stmt`); it is still accepted when `semaOrelseFallbackDiverges` proves every path leaves the expression (`return`/`break`/`continue`/noreturn, blocks and labeled blocks recursed, switch/while via `astTerminates`). Two `SemanticAnalyzer` markers exempt the direct discard (`discard_rhs_node`, set around the `_ = ...;` RHS in `semanticAnalyzerResolveAssign`, both sides paren-unwrapped by `semaUnwrapParens`) and a bare-statement expression (`stmt_expr_node`, set in the `semanticAnalyzerResolveStmtIter` expression-statement arm and in the `ResolveExpr` `expr_stmt` arm) — so `_ = maybe(-1) orelse {};` (Zig: discard an undefined value) and `maybe(-1) orelse {};` (parked tolerance) stay accepted. Deduped per orelse node via `diagnosticCollectorMarkNodeOnce`. The post-sema `hasErrors` gate exits rc 2 / 0 `.c` before LIR lowering. Fixture `repro/mi_matrix/orelse_empty_block_reject_xmod` (`3059 5`, rc 2, class FAIL) + standalone `repro/orelse_empty_block_reject.z98` (`3059 1`).]`
 
 ### semanticAnalyzerResolveIfExpr (`semantic_analyzer.zig`)
 

@@ -6390,7 +6390,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                  // `_ = f() catch |e| { ... };`). Such a result can only be
                  // discarded, so skip the err-branch join assignment.
                  var err_val_has_value: u8 = @intCast(u8, 1);
-                 if (lowerCatchBodyIsValueless(self, node.child_1)) {
+                 if (lowerBodyIsValueless(self, node.child_1)) {
                      err_val_has_value = @intCast(u8, 0);
                  } else {
                      var ev_ty: u32 = getTempType(self, err_val);
@@ -6443,7 +6443,13 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         } else {
             var null_val = lowerExpr(self, node.child_1);
             var oe_an = ast_mod.astStoreNodeAt(self.ctx.store, node.child_1);
-            if (self.block_terminated == @intCast(u8, 0)) {
+            // A9-F: a value-less fallback (empty/statement-only block) has no
+            // value to store into the payload-typed join temp. Sema rejects the
+            // value positions; the legal discard/bare-statement forms reach here
+            // and must skip the assignment (the void temp is undeclared, so
+            // `join = void_temp` is gcc-invalid) and leave the join temp
+            // declared-but-uninitialized for its `(void)` discard.
+            if (self.block_terminated == @intCast(u8, 0) and !lowerBodyIsValueless(self, node.child_1)) {
                 var oe_int: SrcIntent = SrcIntent.value;
                 if (oe_an.kind == AstKind.null_literal) { oe_int = SrcIntent.null_src; }
                 if (oe_an.kind == AstKind.error_literal) { oe_int = SrcIntent.error_src; }
@@ -7459,13 +7465,21 @@ fn lowerIsAssignmentKind(kind: AstKind) bool {
     return false;
 }
 
-// True when a catch body produces no value: an empty block, or a block whose
-// last item is a statement (assignment, var decl, value-less if/while/for,
-// return/break/continue, defer). Such a catch can only appear where its result
-// is discarded; its err branch must not store a value into the payload-typed
-// join temp.
-fn lowerCatchBodyIsValueless(self: *LirLowerer, node_idx: u32) bool {
+// True when a catch/orelse body produces no value: an empty block, or a block
+// whose last item is a statement (assignment, var decl, value-less
+// if/while/for, return/break/continue, defer). Such a body can only appear where
+// its result is discarded; its fail branch must not store a value into the
+// payload-typed join temp. A9-F reuses this for `orelse` (renamed from
+// lowerCatchBodyIsValueless) so a discarded value-less `orelse {}` keeps a
+// declared-but-uninitialized join temp instead of the void-temp assignment that
+// emitted gcc-invalid C.
+fn lowerBodyIsValueless(self: *LirLowerer, node_idx: u32) bool {
     var nd = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    // A labeled block (`blk: { ... }`) is void-valued; recurse into its body.
+    if (nd.kind == AstKind.labeled_stmt) {
+        if (nd.child_0 == @intCast(u32, 0)) return false;
+        return lowerBodyIsValueless(self, nd.child_0);
+    }
     if (nd.kind == AstKind.block) {
         var n = ast_mod.astStoreNodeExtraChildCount(self.ctx.store, node_idx);
         if (n == @intCast(u32, 0)) return true;

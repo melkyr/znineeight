@@ -97,6 +97,15 @@ pub const SemanticAnalyzer = struct {
     // Task 7D: the interned `_` (discard) name id. `_` may be re-bound freely
     // (it is not an identifier), so the shadow check skips it.
     discard_name_id: u32,
+    // A9-F (Volume IV Amendment A9, operator m1740): markers that let
+    // `semanticAnalyzerResolveOrelseExpr` tell a value-position value-less
+    // `orelse` fallback (rejected) from a direct `_ = ...;` discard RHS
+    // (accepted) and a bare-statement expression (parked tolerance).
+    // `discard_rhs_node` is the paren-unwrapped RHS of the active `_ = ...;`;
+    // `stmt_expr_node` is the paren-unwrapped expression of the active
+    // expression statement. Both are 0 when no such resolution is active.
+    discard_rhs_node: u32,
+    stmt_expr_node: u32,
     // Task 2c-F: function-local `const` scope (variant (e)); reset per fn body.
     local_consts: type_resolver.LocalConstScope,
     // Task B2: function-local named-type scope; reset per fn body.
@@ -263,6 +272,8 @@ pub fn semanticAnalyzerInit(alloc: *Sand, type_table: *ResolvedTypeTable, diag: 
         .local_decl_count = @intCast(usize, 0),
         .local_decl_cap = @intCast(usize, 0),
         .discard_name_id = und_name_id,
+        .discard_rhs_node = @intCast(u32, 0),
+        .stmt_expr_node = @intCast(u32, 0),
         .local_consts = type_resolver.localConstScopeInit(alloc),
         .local_types = type_resolver.localTypeScopeInit(alloc),
         .packed_gate_items = undefined,
@@ -3597,8 +3608,142 @@ fn semanticAnalyzerResolveOrelseExpr(self: *SemanticAnalyzer, node_idx: u32) u32
         if (rhs_result != @intCast(u32, 0) and rhs_result != type_mod.TYPE_VOID) {
             tryRecordCoercion(self, node.child_1, rhs_result, opt.payload);
         }
+        // A9-F: a non-diverging value-less `orelse { ... }` fallback in a
+        // value position emits C that references an undeclared TYPE_VOID temp
+        // (or, for a non-empty block, reads the uninitialized target); Zig
+        // 0.15.2 rejects it (`expected type 'T', found 'void'`). Reject it at
+        // level 0 with the reused ERR_3059 code. The direct `_ = ...;` discard
+        // and a bare-statement expression stay accepted (parked tolerance).
+        // A value-less fallback is either AST-shaped (empty/statement-ended/
+        // assignment-ended block, no-else `if`) or resolves to `void` (a bare
+        // void call the parser did not wrap in `expr_stmt`). The AST shape is
+        // still required for assignment-ended blocks, whose last child resolves
+        // to the assignment's type rather than `void`.
+        if ((semaOrelseFallbackIsValueless(self, node.child_1) or rhs_result == type_mod.TYPE_VOID)
+            and !semaOrelseFallbackDiverges(self, node.child_1)
+            and semaUnwrapParens(self, node_idx) != self.discard_rhs_node
+            and semaUnwrapParens(self, node_idx) != self.stmt_expr_node) {
+            if (diag_mod.diagnosticCollectorMarkNodeOnce(self.diag, node_idx)) {
+                var ov_msg: []const u8 = "orelse block fallback without a value cannot be used as a value";
+                var ov_fb = ast_mod.astStoreNodeAt(self.store, node.child_1);
+                _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3059_IF_WITHOUT_ELSE)), self.source_file_id, ov_fb.span_start, ov_fb.span_start + @intCast(u32, ov_fb.span_len), ov_msg);
+            }
+            return type_mod.TYPE_VOID;
+        }
     }
     return opt.payload;
+}
+
+// A9-F (Volume IV Amendment A9, operator m1740). `lowerCatchBodyIsValueless`
+// (sf/src/lower.zig) is mirrored here so sema's value-position reject and
+// lowering's join-assignment guard stay in lockstep.
+fn semaIsNoValueStmtKind(kind: AstKind) bool {
+    if (kind == AstKind.return_stmt) return true;
+    if (kind == AstKind.break_stmt) return true;
+    if (kind == AstKind.continue_stmt) return true;
+    if (kind == AstKind.block) return true;
+    if (kind == AstKind.var_decl) return true;
+    if (kind == AstKind.expr_stmt) return true;
+    if (kind == AstKind.defer_stmt) return true;
+    if (kind == AstKind.if_stmt) return true;
+    if (kind == AstKind.while_stmt) return true;
+    if (kind == AstKind.for_stmt) return true;
+    return false;
+}
+
+fn semaIsAssignmentKind(kind: AstKind) bool {
+    if (kind == AstKind.plain_assign) return true;
+    if (kind == AstKind.add_assign) return true;
+    if (kind == AstKind.sub_assign) return true;
+    if (kind == AstKind.mul_assign) return true;
+    if (kind == AstKind.div_assign) return true;
+    if (kind == AstKind.mod_assign) return true;
+    if (kind == AstKind.shl_assign) return true;
+    if (kind == AstKind.shr_assign) return true;
+    if (kind == AstKind.and_assign) return true;
+    if (kind == AstKind.xor_assign) return true;
+    if (kind == AstKind.or_assign) return true;
+    if (kind == AstKind.wrap_add_assign) return true;
+    if (kind == AstKind.wrap_sub_assign) return true;
+    if (kind == AstKind.wrap_mul_assign) return true;
+    if (kind == AstKind.sat_add_assign) return true;
+    if (kind == AstKind.sat_sub_assign) return true;
+    if (kind == AstKind.sat_mul_assign) return true;
+    if (kind == AstKind.sat_shl_assign) return true;
+    return false;
+}
+
+fn semaOrelseFallbackIsValueless(self: *SemanticAnalyzer, node_idx: u32) bool {
+    if (node_idx == @intCast(u32, 0)) return false;
+    var nd = ast_mod.astStoreNodeAt(self.store, node_idx);
+    // A labeled block (`blk: { ... }`) is a statement whose value is void; its
+    // valuelessness follows its body (child_0).
+    if (nd.kind == AstKind.labeled_stmt) {
+        if (nd.child_0 == @intCast(u32, 0)) return false;
+        return semaOrelseFallbackIsValueless(self, nd.child_0);
+    }
+    if (nd.kind == AstKind.block) {
+        var n = ast_mod.astStoreNodeExtraChildCount(self.store, node_idx);
+        if (n == @intCast(u32, 0)) return true;
+        var last = ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, n - @intCast(u32, 1));
+        var last_nd = ast_mod.astStoreNodeAt(self.store, last);
+        if (semaIsNoValueStmtKind(last_nd.kind)) return true;
+        if (semaIsAssignmentKind(last_nd.kind)) return true;
+        if (last_nd.kind == AstKind.if_expr and last_nd.child_2 == @intCast(u32, 0)) return true;
+        return false;
+    }
+    if (semaIsNoValueStmtKind(nd.kind)) return true;
+    if (semaIsAssignmentKind(nd.kind)) return true;
+    return false;
+}
+
+// A9-F: true when a non-diverging value-less `orelse` fallback is impossible —
+// i.e. every path through it leaves the expression (return / break / continue /
+// noreturn). This is `astTerminates` extended with break/continue, which do
+// diverge from the enclosing `orelse` (Zig accepts `var x = f() orelse
+// { continue; };`) but are NOT "definitely return" for the missing-return gate.
+fn semaOrelseFallbackDiverges(self: *SemanticAnalyzer, node_idx: u32) bool {
+    if (node_idx == @intCast(u32, 0)) return false;
+    var node = ast_mod.astStoreNodeAt(self.store, node_idx);
+    if (node.kind == AstKind.return_stmt) return true;
+    if (node.kind == AstKind.break_stmt) return true;
+    if (node.kind == AstKind.continue_stmt) return true;
+    if (rtt_mod.resolvedTypeTableGet(self.type_table, node_idx)) |t| {
+        if (t == type_mod.TYPE_NORETURN) return true;
+    }
+    // A labeled block (`blk: { return x; }`) diverges when its body does.
+    if (node.kind == AstKind.labeled_stmt) {
+        if (node.child_0 == @intCast(u32, 0)) return false;
+        return semaOrelseFallbackDiverges(self, node.child_0);
+    }
+    if (node.kind == AstKind.block) {
+        var ch_n = ast_mod.astStoreNodeExtraChildCount(self.store, node_idx);
+        var bi: usize = @intCast(usize, 0);
+        while (bi < @intCast(usize, ch_n)) : (bi += 1) {
+            if (semaOrelseFallbackDiverges(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, bi)))) return true;
+        }
+        return false;
+    }
+    if (node.kind == AstKind.if_stmt or node.kind == AstKind.if_expr) {
+        if (node.child_2 == @intCast(u32, 0)) return false;
+        return semaOrelseFallbackDiverges(self, node.child_1) and semaOrelseFallbackDiverges(self, node.child_2);
+    }
+    if (node.kind == AstKind.expr_stmt) {
+        if (node.child_0 == @intCast(u32, 0)) return false;
+        return semaOrelseFallbackDiverges(self, node.child_0);
+    }
+    // switch / while / declarations: reuse the definite-return probe.
+    return astTerminates(self, node_idx);
+}
+
+fn semaUnwrapParens(self: *SemanticAnalyzer, node_idx: u32) u32 {
+    var n = node_idx;
+    while (n != @intCast(u32, 0)) {
+        var nd = ast_mod.astStoreNodeAt(self.store, n);
+        if (nd.kind != AstKind.paren_expr) return n;
+        n = nd.child_0;
+    }
+    return n;
 }
 
 // Task 9B (b, m1240 ruling 3): is an `if`/`while` condition comptime-known-true?
@@ -4114,7 +4259,13 @@ fn semanticAnalyzerResolveAssign(self: *SemanticAnalyzer, node_idx: u32) u32 {
         if (lhs_node.kind == AstKind.ident_expr) {
             var us_str: []const u8 = "_";
             if (ast_mod.astStoreIdentifier(self.store, node.child_0) == interner_mod.stringInternerIntern(self.interner, us_str)) {
+                // A9-F: expose the discard RHS to the orelse reject so
+                // `_ = maybe(-1) orelse {};` (Zig: discard an undefined value)
+                // stays accepted while a value-position fallback rejects.
+                var ase_drn_saved: u32 = self.discard_rhs_node;
+                self.discard_rhs_node = semaUnwrapParens(self, node.child_1);
                 _ = semanticAnalyzerResolveExpr(self, node.child_1);
+                self.discard_rhs_node = ase_drn_saved;
                 return type_mod.TYPE_VOID;
             }
         }
@@ -5052,7 +5203,14 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
         resolveReturnStmt(self, node_idx);
         result = type_mod.TYPE_NORETURN;
     } else if (node.kind == AstKind.expr_stmt) {
+        // A9-F: expose the bare-statement expression to the orelse reject so
+        // `maybe(-1) orelse {};` (a statement-position expression whose value
+        // is dropped, DCE-clean) stays accepted (parked tolerance), while a
+        // value-position fallback rejects.
+        var ee_saved: u32 = self.stmt_expr_node;
+        self.stmt_expr_node = semaUnwrapParens(self, node.child_0);
         result = semanticAnalyzerResolveExpr(self, node.child_0);
+        self.stmt_expr_node = ee_saved;
     } else if (node.kind == AstKind.import_expr) {
         result = type_mod.TYPE_VOID;
      } else if (node.kind == AstKind.block) {
@@ -6126,7 +6284,18 @@ pub fn semanticAnalyzerResolveStmtIter(self: *SemanticAnalyzer, root_node: u32) 
             var els_nm: []const u8 = "ELS:n"; pal_mod.markerWriteInt(els_nm, node_idx);
             var els_km: []const u8 = "ELS:k"; pal_mod.markerWriteInt(els_km, @intCast(u32, @enumToInt(node.kind)));
             if (node.child_0 != @intCast(u32, 0)) { var els_c0m: []const u8 = "ELS:c"; pal_mod.markerWriteInt(els_c0m, node.child_0); }
+            // A9-F: a bare expression statement is lowered here without an
+            // `expr_stmt` wrapper (`parserParseExprStmt` -> the expression node
+            // itself), so mark it as statement-position for the orelse reject.
+            // `maybe(-1) orelse {};` stays accepted (parked tolerance).
+            var els_se_saved: u32 = self.stmt_expr_node;
+            if (node.kind == AstKind.expr_stmt) {
+                self.stmt_expr_node = semaUnwrapParens(self, node.child_0);
+            } else {
+                self.stmt_expr_node = semaUnwrapParens(self, node_idx);
+            }
             var els_r = semanticAnalyzerResolveExpr(self, node_idx);
+            self.stmt_expr_node = els_se_saved;
             if (els_r != @intCast(u32, 0) and @intCast(usize, els_r) < self.registry.types_len and
                 self.registry.types_items[@intCast(usize, els_r)].kind == type_mod.TypeKind.error_union_type) {
                 var eisp = node.span_start;
