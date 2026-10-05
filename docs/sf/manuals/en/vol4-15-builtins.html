@@ -92,8 +92,13 @@ result type.
 
 <h3>@ptrCast(T, expr)</h3>
 <p>
-Explicit pointer cast. Both the target type and the expression must be pointer
-types.
+Explicit cast of <tt>expr</tt> to the target type <tt>T</tt>. The compiler does
+<i>not</i> require both sides to be pointer types: <tt>@ptrCast(*u8, x)</tt>
+with an integer <tt>x</tt>, and <tt>@ptrCast(u8, p)</tt> with a pointer
+<tt>p</tt>, both compile. The only rejected shape is dropping a
+<tt>volatile</tt> qualifier (<tt>@ptrCast cannot discard the 'volatile'
+qualifier; use @volatileCast to remove it</tt>); use <tt>@volatileCast</tt>
+for that.
 </p>
 <pre>
 var p: *u8 = @ptrCast(*u8, q);
@@ -453,8 +458,10 @@ one runtime print call per argument. The arguments must be a tuple literal
 (<tt>.{...}</tt>) or a tuple variable. The specifiers are <tt>{}</tt> (default,
 decimal), <tt>{d}</tt> (decimal), <tt>{x}</tt> (hex), <tt>{c}</tt> (character),
 and <tt>{s}</tt> (string); any other specifier is rejected with
-<tt>error[3013]</tt>. This is the only variadic form Z98 supports; there is no
-<tt>anytype</tt>. The shipped wrapper is
+<tt>error[3013]</tt>. This tuple-argument form is the only variadic <i>call</i>
+form Z98 provides beyond C-style variadic functions
+(<tt>fn f(count: i32, ...)</tt>, read with <tt>@cVaStart</tt>/<tt>@cVaArg</tt>/
+<tt>@cVaEnd</tt>); there is no <tt>anytype</tt>. The shipped wrapper is
 <tt>std.io.print(s: [*]const c_char, ...) void</tt>.
 </p>
 <pre>
