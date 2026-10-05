@@ -47,7 +47,7 @@ Espa&ntilde;ol (not yet available) |
 <a href="vol5-06-arena.html">Use the arena correctly</a><br>
 <a href="vol5-07-errors.html">Model and propagate errors</a><br>
 <a href="vol5-08-coroutines.html">Write and drive a coroutine</a><br>
-<a href="vol5-09-files.html">Read, write, and test files</a><br>
+<a href="vol5-09-files.html">Read, write, exists</a><br>
 <a href="vol5-10-sockets.html">Sockets under Z98</a><br>
 <a href="vol5-11-c-interop.html">Call C from Z98</a><br>
 <a href="vol5-12-c89-interop.html">Link Z98 output against C89 libraries</a><br>
@@ -220,14 +220,14 @@ cross-compile harness. The full procedure is the guide
 <li><b>Forgetting to create the output folder.</b> The compiler requires the
 folder to exist and fails with <tt>error: output directory does not exist:
 /tmp/manual_out</tt> (exit code <tt>1</tt>). Run <tt>mkdir -p</tt> first.</li>
-<li><b>Running the build script from the wrong folder.</b> <tt>build_target.sh</tt>
-uses relative paths to the generated files, so <tt>cd</tt> into the output
-folder before running it.</li>
+<li><b>Assuming the build script needs a particular working directory.</b>
+<tt>build_target.sh</tt> begins with <tt>cd "$(dirname "$0")"</tt>, so it finds
+its generated files no matter where you invoke it.</li>
 <li><b>Naming the target wrong.</b> The script takes the operating system
 (<tt>linux</tt>, or <tt>mingw</tt> for Windows) and then the program name:
 <tt>sh build_target.sh linux hello</tt>.</li>
 <li><b>Reading the <tt>gcc</tt> warnings as failure.</b> The build prints
-hundreds of warnings but succeeds; look for <tt>Built: hello</tt>, not for an
+about 126 warnings but succeeds; look for <tt>Built: hello</tt>, not for an
 empty error stream.</li>
 <li><b>Expecting a binary named <tt>zig1</tt>.</b> The rebuilt compiler is
 <tt>zig1_5_clean</tt>, and the produced program is named after the argument you

@@ -47,7 +47,7 @@ Espa&ntilde;ol (not yet available) |
 <a href="vol5-06-arena.html">Use the arena correctly</a><br>
 <b>Model and propagate errors</b><br>
 <a href="vol5-08-coroutines.html">Write and drive a coroutine</a><br>
-<a href="vol5-09-files.html">Read, write, and test files</a><br>
+<a href="vol5-09-files.html">Read, write, exists</a><br>
 <a href="vol5-10-sockets.html">Sockets under Z98</a><br>
 <a href="vol5-11-c-interop.html">Call C from Z98</a><br>
 <a href="vol5-12-c89-interop.html">Link Z98 output against C89 libraries</a><br>
@@ -291,7 +291,8 @@ The six-line transcript is <tt>undo</tt>, <tt>ederr-caught</tt>, <tt>7</tt>,
 <tt>noederr-caught</tt>, <tt>7</tt>, <tt>done</tt>. The tag is checked with
 <tt>if (c != error.Boom)</tt>, so the widened set preserves the tag value, not
 just the payload. A destination set that is <i>not</i> a superset, or a
-different payload type, rejects with <tt>error[3000]</tt>.
+different payload type, rejects with <tt>error[3000]</tt> (pinned by
+<tt>repro/mi_matrix/eu_payload_diff_reject_xmod</tt>).
 </p>
 </li>
 <li>
@@ -348,7 +349,7 @@ run_fixtures: 1 PASS / 0 FAIL over 1 dirs
 STDLIB GATE OK
 </pre>
 <p>
-Its nine-line transcript is <tt>41</tt>, <tt>12</tt>, <tt>11</tt>, <tt>11</tt>,
+Its eight-line transcript is <tt>41</tt>, <tt>12</tt>, <tt>11</tt>, <tt>11</tt>,
 <tt>13</tt>, <tt>33</tt>, <tt>77</tt>, <tt>ok</tt>. The set comparison is
 set-only: payloads need not match, so an <tt>E!void</tt> operand in an
 <tt>E!i32</tt> function is legal. The block-bodied catch re-propagation shapes

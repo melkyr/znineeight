@@ -47,7 +47,7 @@ Espa&ntilde;ol (not yet available) |
 <a href="vol5-06-arena.html">Use the arena correctly</a><br>
 <a href="vol5-07-errors.html">Model and propagate errors</a><br>
 <a href="vol5-08-coroutines.html">Write and drive a coroutine</a><br>
-<a href="vol5-09-files.html">Read, write, and test files</a><br>
+<a href="vol5-09-files.html">Read, write, exists</a><br>
 <a href="vol5-10-sockets.html">Sockets under Z98</a><br>
 <a href="vol5-11-c-interop.html">Call C from Z98</a><br>
 <a href="vol5-12-c89-interop.html">Link Z98 output against C89 libraries</a><br>
@@ -157,7 +157,7 @@ holds the large pinned corpus of green and reject cases.</li>
 <li><tt>examples/z98</tt> &mdash; the canonical example programs.</li>
 <li><tt>scripts/</tt> &mdash; the helpers: <tt>seed/</tt>,
 <tt>corpus/</tt>, <tt>stdlib/</tt>, <tt>win32_cross/</tt>,
-<tt>closeout/</tt>.</li>
+<tt>closeout/</tt>, <tt>memory/</tt>, <tt>self_compile/</tt>.</li>
 <li><tt>release/seed</tt> &mdash; the committed <tt>zig1-seed.tgz</tt> and its
 rotation changelog.</li>
 </ul>
@@ -173,11 +173,26 @@ valid. Regular-expression text transforms (<tt>sed</tt>, Python
 newlines, string literals, and multi-line structures and cannot be reverted
 without discarding real work (see <tt>docs/sf/AGENTS.md</tt> &sect;X.3 and
 &sect;X.7). Run every binary under a timeout so a hung tool cannot stall the
-session:
+session; the compiler rebuild, for example:
 </p>
 <pre>
-$ timeout 120 ./sf/build/zig1 --test
+$ timeout 120 bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/manual_seed
+...
+=== [seed] Done: /tmp/manual_seed ===
 </pre>
+<p>
+That is the only supported build path. The in-tree
+<tt>sf/scripts/build_test.sh</tt> is a <tt>zig0</tt>-based harness and no longer
+builds current <tt>sf/src</tt>: <tt>zig0</tt> is retired and aborts on
+<tt>sf/src/main.zig:994</tt> (<tt>@intToPtr</tt>), so a contributor who runs it
+gets nine <tt>FAIL (zig0)</tt> lines and no suite. The release and seed
+<tt>zig1</tt> binary likewise has no <tt>--test</tt> mode: reading
+<tt>--test</tt> makes it exit <tt>1</tt> without printing, because that mode is
+reserved for <tt>sf/src/test_main.zig</tt> (see the
+<a href="vol4-22-cli.html">command line</a> reference). Verify the compiler with
+the seed rebuild (step&nbsp;4) and behavior with the committed
+<tt>repro/mi_matrix/</tt> fixtures and their golden transcripts.
+</p>
 </li>
 <li>
 <p>

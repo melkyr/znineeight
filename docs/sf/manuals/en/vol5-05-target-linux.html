@@ -47,7 +47,7 @@ Espa&ntilde;ol (not yet available) |
 <a href="vol5-06-arena.html">Use the arena correctly</a><br>
 <a href="vol5-07-errors.html">Model and propagate errors</a><br>
 <a href="vol5-08-coroutines.html">Write and drive a coroutine</a><br>
-<a href="vol5-09-files.html">Read, write, and test files</a><br>
+<a href="vol5-09-files.html">Read, write, exists</a><br>
 <a href="vol5-10-sockets.html">Sockets under Z98</a><br>
 <a href="vol5-11-c-interop.html">Call C from Z98</a><br>
 <a href="vol5-12-c89-interop.html">Link Z98 output against C89 libraries</a><br>
@@ -338,15 +338,15 @@ takes <tt>-osl</tt>/<tt>-osw</tt> (or <tt>--target</tt>) at emit time; the
 generated script takes the bare word <tt>linux</tt> or <tt>mingw</tt> as its
 first argument. <tt>sh build_target.sh windows hello</tt> fails with
 <tt>Unknown target: windows</tt>; use <tt>sh build_target.sh linux hello</tt>.</li>
-<li><b>Running the build script from the wrong folder.</b>
-<tt>build_target.sh</tt> uses relative paths and a current-directory include
-root, so <tt>cd</tt> into the output folder before running it.</li>
+<li><b>Assuming the build script needs a particular working directory.</b>
+<tt>build_target.sh</tt> begins with <tt>cd "$(dirname "$0")"</tt>, so it finds
+its generated files and include root no matter where you invoke it.</li>
 <li><b>A host without 32-bit support.</b> The <tt>linux</tt> branch builds with
 <tt>gcc -m32</tt>; on a host missing the 32-bit C library it fails at the link
 with missing <tt>Scrt1.o</tt>/<tt>-lc</tt>. That is a host setup gap, not an
 emission bug; the emit in step&nbsp;3 still succeeds.</li>
 <li><b>Reading the <tt>gcc</tt> warnings as failure.</b> The build prints
-hundreds of warnings but succeeds; look for <tt>Built: hello</tt>, not for an
+about 126 warnings but succeeds; look for <tt>Built: hello</tt>, not for an
 empty error stream.</li>
 <li><b>Expecting <tt>--target</tt> to accept other names.</b> Only
 <tt>linux</tt> and <tt>windows</tt> are accepted; anything else prints

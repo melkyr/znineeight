@@ -47,7 +47,7 @@ Espa&ntilde;ol (not yet available) |
 <a href="vol5-06-arena.html">Use the arena correctly</a><br>
 <a href="vol5-07-errors.html">Model and propagate errors</a><br>
 <a href="vol5-08-coroutines.html">Write and drive a coroutine</a><br>
-<a href="vol5-09-files.html">Read, write, and test files</a><br>
+<a href="vol5-09-files.html">Read, write, exists</a><br>
 <a href="vol5-10-sockets.html">Sockets under Z98</a><br>
 <a href="vol5-11-c-interop.html">Call C from Z98</a><br>
 <a href="vol5-12-c89-interop.html">Link Z98 output against C89 libraries</a><br>
@@ -142,8 +142,8 @@ gate ends <tt>=== [seed] Done: /tmp/manual_seed ===</tt>. Record the
 <b>Minimise the program.</b> Delete until the failure is the only thing left.
 Keep a name that is declared and the one construct that misbehaves; drop every
 import, every print, and every function the failure does not touch. The body of
-a pinned reject fixture is the result &mdash; two lines of code and the two
-captures that trip the rule:
+a pinned reject fixture is the result &mdash; two setup declarations (an error
+set and a function) and the two captures that trip the rule:
 </p>
 <pre>
 body of repro/mi_matrix/error_union_capture_reject_xmod/main.zig

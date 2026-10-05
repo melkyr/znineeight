@@ -2,7 +2,7 @@
   "http://www.w3.org/TR/REC-html40/loose.dtd">
 <html lang="en">
 <head>
-<title>Z98 Manual: Read, Write, and Check Files</title>
+<title>Z98 Manual: Read, write, exists</title>
 <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
 <meta name="generator" content="z98doc 0.1">
 <meta name="keywords" content="Z98 manual volume V HOWTO files read write exists std.io fileOpen fileWrite fileRead fileClose std_file open readAll writeAll seek size rename remove flush FileError OpenFailed PAL arena binary-safe stdlib_fileio_xmod stdlib_file_exists_xmod">
@@ -47,7 +47,7 @@ Espa&ntilde;ol (not yet available) |
 <a href="vol5-06-arena.html">Use the arena correctly</a><br>
 <a href="vol5-07-errors.html">Model and propagate errors</a><br>
 <a href="vol5-08-coroutines.html">Write and drive a coroutine</a><br>
-<b>Read, write, and test files</b><br>
+<b>Read, write, exists</b><br>
 <a href="vol5-10-sockets.html">Sockets under Z98</a><br>
 <a href="vol5-11-c-interop.html">Call C from Z98</a><br>
 <a href="vol5-12-c89-interop.html">Link Z98 output against C89 libraries</a><br>
@@ -69,7 +69,7 @@ Espa&ntilde;ol (not yet available) |
 </td>
 <td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
 <td valign="top">
-<h1>Read, Write, and Check Files</h1>
+<h1>Read, write, exists</h1>
 <p>
 This guide writes a file byte-for-byte and reads it back through the two Z98
 file surfaces &mdash; the low-level <tt>std.io</tt> PAL wrapper, which reports
@@ -301,8 +301,10 @@ error to catch; it tests <tt>access(2)</tt> on POSIX and
 <tt>O_WRONLY|O_CREAT|O_TRUNC</tt> (<tt>CREATE_ALWAYS</tt>) and destroys any
 existing content; <tt>Mode.ReadWrite</tt> maps to <tt>O_RDWR|O_CREAT</tt>
 (<tt>OPEN_ALWAYS</tt>) and opens without truncating; <tt>Mode.Append</tt> seeks
-to the end. A Read-mode open of a missing path is <tt>error.OpenFailed</tt>. If
-you want to keep what is there, seek before you write.</li>
+to the end. A Read-mode open of a missing path is <tt>error.OpenFailed</tt>. To
+preserve what is already there, open with <tt>Mode.ReadWrite</tt> (or
+<tt>Mode.Append</tt>); a seek only positions the cursor within a non-truncating
+mode and cannot undo the truncation <tt>Mode.Write</tt> performs at open.</li>
 <li><b>Leaving a handle open before rename or remove.</b> A live handle can
 block <tt>MoveFileA</tt>/<tt>DeleteFileA</tt> on Win32. Call
 <tt>close(&amp;file)</tt> first; <tt>stdlib_file_close_xmod</tt> demonstrates

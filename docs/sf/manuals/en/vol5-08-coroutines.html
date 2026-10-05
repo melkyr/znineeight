@@ -47,7 +47,7 @@ Espa&ntilde;ol (not yet available) |
 <a href="vol5-06-arena.html">Use the arena correctly</a><br>
 <a href="vol5-07-errors.html">Model and propagate errors</a><br>
 <b>Write and drive a coroutine</b><br>
-<a href="vol5-09-files.html">Read, write, and test files</a><br>
+<a href="vol5-09-files.html">Read, write, exists</a><br>
 <a href="vol5-10-sockets.html">Sockets under Z98</a><br>
 <a href="vol5-11-c-interop.html">Call C from Z98</a><br>
 <a href="vol5-12-c89-interop.html">Link Z98 output against C89 libraries</a><br>
@@ -128,7 +128,9 @@ per-task <tt>Context</tt> pool. And every frame is padded up to a multiple of
 root frame with an array of <tt>u64</tt>, never with a bare array of
 <tt>u8</tt>: a <tt>u8</tt> array is only 1-aligned, and <tt>contextInit</tt>
 traps on a misaligned buffer on purpose rather than corrupting every child frame
-that follows.
+that follows. The shipped sample below still backs its frames with
+<tt>[64]u8</tt> and <tt>[128]u8</tt> and runs because the host stack happens to
+be 8-aligned; for your own code, back frames with an array of <tt>u64</tt>.
 </p>
 
 <h2>Steps</h2>
@@ -172,9 +174,10 @@ it the target <tt>linux</tt> and the program name <tt>async</tt>.
 $ cd /tmp/manual_out &amp;&amp; timeout 120 sh build_target.sh linux async
 Building for linux...
 Built: async
-$ timeout 120 ./async
+$ timeout 120 ./async; echo $?
 frame=88
 n=3 steps=4
+0
 </pre>
 <p>
 The first line is <tt>@asyncFrameSize(worker)</tt>. The second counts the
@@ -380,7 +383,7 @@ guide</a> precedes this one and the
 &nbsp;&nbsp;
 <a href="vol5-09-files.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
 </p>
-<p>Previous: <a href="vol5-07-errors.html">Model and propagate errors</a> | <a href="toc.html">Contents</a> | Next: <a href="vol5-09-files.html">Read, write, and test files</a></p>
+<p>Previous: <a href="vol5-07-errors.html">Model and propagate errors</a> | <a href="toc.html">Contents</a> | Next: <a href="vol5-09-files.html">Read, write, exists</a></p>
 </td>
 </tr>
 </table>

@@ -47,7 +47,7 @@ Espa&ntilde;ol (not yet available) |
 <a href="vol5-06-arena.html">Use the arena correctly</a><br>
 <a href="vol5-07-errors.html">Model and propagate errors</a><br>
 <a href="vol5-08-coroutines.html">Write and drive a coroutine</a><br>
-<a href="vol5-09-files.html">Read, write, and test files</a><br>
+<a href="vol5-09-files.html">Read, write, exists</a><br>
 <a href="vol5-10-sockets.html">Sockets under Z98</a><br>
 <a href="vol5-11-c-interop.html">Call C from Z98</a><br>
 <a href="vol5-12-c89-interop.html">Link Z98 output against C89 libraries</a><br>
@@ -98,7 +98,8 @@ the repository root, <tt>/workspace/znineeight</tt>.</li>
 The sample is Volume&nbsp;III's <tt>hello</tt>, the same source Volume&nbsp;III
 built for the Linux host and then cross-built for Windows. It uses nothing but
 <tt>std.io.print</tt>, so it has no platform import and no <tt>#ifdef</tt>:
-<tt>-osw</tt> chooses the emitted build scripts and headers, not the source.
+<tt>-osw</tt> chooses the emitted build scripts and headers, not the source
+(comment lines omitted):
 </p>
 <pre>
 const std = @import("std");
@@ -194,8 +195,8 @@ run, and it is where the link libraries are chosen:
 <tt>-m32</tt> pins the 32-bit ABI, <tt>-std=c89 -O0</tt> asks for the dialect
 the emitted code targets, and <tt>-lwsock32</tt> is the winsock library every
 <tt>std</tt> importer needs. The script compiles each emitted <tt>.c</tt> and
-links the objects in a deterministic modules-then-runtime order (comment and
-header lines omitted):
+links the objects in a deterministic modules-then-runtime order (header lines
+omitted; link-order comment retained):
 </p>
 <pre>
 $CC $CFLAGS -c hello_9C12B390.c
@@ -359,10 +360,9 @@ page; the wine parity above is the host-side proof.</td>
 folder to exist and fails with
 <tt>error: output directory does not exist: /tmp/manual_osw</tt> (exit code
 <tt>1</tt>). Run <tt>mkdir -p</tt> first.</li>
-<li><b>Running the build script from the wrong folder.</b>
-<tt>build_target.sh</tt>, <tt>build_target.bat</tt>, and <tt>build_owc.bat</tt>
-all use relative paths and a current-directory include root, so <tt>cd</tt> into
-the output folder before running one.</li>
+<li><b>Assuming the shell build script needs a particular working directory.</b>
+<tt>build_target.sh</tt> begins with <tt>cd "$(dirname "$0")"</tt>, so it runs
+from anywhere; the two <tt>.bat</tt> scripts are for the era machine, below.</li>
 <li><b>Trying to run the <tt>.bat</tt> scripts on the Linux host.</b> The
 compiler emits all three scripts on every <tt>-osw</tt> emit, but <tt>cl</tt> and
 <tt>wcc386</tt> are Windows toolchains. On this host only the <tt>mingw</tt>
@@ -374,7 +374,7 @@ link fails with <tt>undefined reference to '_imp__recv@16'</tt> or
 <tt>'_imp__WSAStartup@8'</tt>. The emitted script already passes
 <tt>-lwsock32</tt>; prefer running it.</li>
 <li><b>Reading the <tt>gcc</tt> warnings as failure.</b> The mingw build prints
-hundreds of warnings but succeeds; look for <tt>Built: hello</tt>, not for an
+about 142 warnings but succeeds; look for <tt>Built: hello</tt>, not for an
 empty error stream.</li>
 <li><b>Expecting byte-identical stdout without normalization.</b> The CRT text
 mode turns <tt>\n</tt> into <tt>\r\n</tt> on Windows, so the harness compares an

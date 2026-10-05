@@ -47,7 +47,7 @@ Espa&ntilde;ol (not yet available) |
 <a href="vol5-06-arena.html">Use the arena correctly</a><br>
 <a href="vol5-07-errors.html">Model and propagate errors</a><br>
 <a href="vol5-08-coroutines.html">Write and drive a coroutine</a><br>
-<a href="vol5-09-files.html">Read, write, and test files</a><br>
+<a href="vol5-09-files.html">Read, write, exists</a><br>
 <a href="vol5-10-sockets.html">Sockets under Z98</a><br>
 <a href="vol5-11-c-interop.html">Call C from Z98</a><br>
 <a href="vol5-12-c89-interop.html">Link Z98 output against C89 libraries</a><br>
@@ -295,7 +295,9 @@ $ timeout 120 zip -r /tmp/z98_disk/z98-hello-floppy1.zip .
 </pre>
 <p>
 About 122&nbsp;KB of C89 and scripts compress to roughly 25&nbsp;KB, well
-inside the 1.44&nbsp;MB of a 3.5-inch floppy. Size is not the binding
+inside the 1.44&nbsp;MB of a 3.5-inch floppy. The exact archive byte count
+varies with the file mtimes captured at pack time; the entry and file counts
+below (<tt>18</tt> and <tt>17</tt>) are stable. Size is not the binding
 constraint here; self-description is.
 </p>
 </li>

@@ -47,7 +47,7 @@ Espa&ntilde;ol (not yet available) |
 <a href="vol5-06-arena.html">Use the arena correctly</a><br>
 <a href="vol5-07-errors.html">Model and propagate errors</a><br>
 <a href="vol5-08-coroutines.html">Write and drive a coroutine</a><br>
-<a href="vol5-09-files.html">Read, write, and test files</a><br>
+<a href="vol5-09-files.html">Read, write, exists</a><br>
 <b>Sockets under Z98</b><br>
 <a href="vol5-11-c-interop.html">Call C from Z98</a><br>
 <a href="vol5-12-c89-interop.html">Link Z98 output against C89 libraries</a><br>
@@ -163,7 +163,7 @@ negative number is the error channel.
 <tr>
 <td><tt>init()</tt></td>
 <td><tt>i32</tt></td>
-<td><tt>WSAStartup(1,1)</tt> on Windows; <tt>0</tt> elsewhere</td>
+<td><tt>WSAStartup(0x0101, &amp;wsa)</tt> on Windows; <tt>0</tt> elsewhere</td>
 </tr>
 <tr>
 <td><tt>cleanup()</tt></td>
@@ -470,7 +470,7 @@ leaned on, see <a href="vol2-17-stdlib.html">The standard library</a> and
 &nbsp;&nbsp;
 <a href="vol5-11-c-interop.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
 </p>
-<p>Previous: <a href="vol5-09-files.html">Read, Write, and Check Files</a> | <a href="toc.html">Contents</a> | Next: <a href="vol5-11-c-interop.html">Call C from Z98</a></p>
+<p>Previous: <a href="vol5-09-files.html">Read, write, exists</a> | <a href="toc.html">Contents</a> | Next: <a href="vol5-11-c-interop.html">Call C from Z98</a></p>
 </td>
 </tr>
 </table>
