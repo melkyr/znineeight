@@ -54,7 +54,7 @@ Sockets under Z98 <i>(planned)</i><br>
 Debug generated C <i>(planned)</i><br>
 Use markers <i>(planned)</i><br>
 Read the diagnostics <i>(planned)</i><br>
-Port from C <i>(planned)</i><br>
+<a href="vol5-16-port-from-c.html">Port from C</a><br>
 Port from C++98 <i>(planned)</i><br>
 Port from Python <i>(planned)</i><br>
 Pack for diskette <i>(planned)</i><br>
@@ -83,8 +83,8 @@ A shipped page is a link; a page that has not shipped is plain text marked
 <i>(planned)</i>. This index and guides 01 (rebuild the compiler from seed),
 02 (build a single file), 03 (build multiple modules), 06 (correct arena use),
 07 (model and propagate errors), 08 (write and drive a coroutine), 09
-(read, write, and check files), 11 (call C from Z98), and 12 (link against C89)
-are shipped so far.
+(read, write, and check files), 11 (call C from Z98), 12 (link against C89),
+and 16 (translate a C file) are shipped so far.
 </p>
 
 <h2>A&ndash;Z index</h2>
@@ -107,7 +107,7 @@ are shipped so far.
 <li><a href="vol5-01-build-compiler.html">Rebuild zig1 from seed</a> &mdash; Build the reference compiler from the committed seed and check the two-hop closure.</li>
 <li><b>Repo layout, patches</b> &mdash; Find the repo layout and prepare a patch under the edit and seed rules. <i>(planned)</i></li>
 <li><b>The doc generator itself</b> &mdash; Run the gate and search-index pipeline that builds the site. <i>(planned)</i></li>
-<li><b>Translate a C file, idiom by idiom</b> &mdash; Port C types, arrays, errors, cleanup, and ownership to Z98. <i>(planned)</i></li>
+<li><a href="vol5-16-port-from-c.html">Translate a C file, idiom by idiom</a> &mdash; Port C types, arrays, errors, cleanup, and ownership to Z98.</li>
 <li><b>Translate a C++98 file, honestly</b> &mdash; Port templates, RAII, and exceptions, and say what does not translate. <i>(planned)</i></li>
 <li><b>What to include, how to reduce</b> &mdash; Write a bug report and reduce it to a minimal reproduction. <i>(planned)</i></li>
 <li><b>Win9x .exe</b> &mdash; Emit and cross-build a 32-bit Windows 9x executable. <i>(planned)</i></li>
@@ -145,7 +145,7 @@ sequence; the filenames number 01 to 23 across the themes.
 <ul>
 <li><a href="vol5-11-c-interop.html">extern fn, @cInclude</a> &mdash; Declare and call C functions from Z98.</li>
 <li><a href="vol5-12-c89-interop.html">Link Z98 output against C89 libraries</a> &mdash; Link Z98-emitted objects with hand-written C89 code.</li>
-<li><b>Translate a C file, idiom by idiom</b> &mdash; Port C types, arrays, errors, cleanup, and ownership to Z98. <i>(planned)</i></li>
+<li><a href="vol5-16-port-from-c.html">Translate a C file, idiom by idiom</a> &mdash; Port C types, arrays, errors, cleanup, and ownership to Z98.</li>
 <li><b>Translate a C++98 file, honestly</b> &mdash; Port templates, RAII, and exceptions, and say what does not translate. <i>(planned)</i></li>
 <li><b>For readers from a modern dynamic language</b> &mdash; Port Python's dynamic types, containers, exceptions, and GC. <i>(planned)</i></li>
 </ul>

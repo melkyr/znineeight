@@ -1,0 +1,524 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN"
+  "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html lang="en">
+<head>
+<title>Z98 Manual: Port a C File to Z98</title>
+<meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<meta name="generator" content="z98doc 0.1">
+<meta name="keywords" content="Z98 manual volume V HOWTO port from C translate C89 idiom types union enum arrays slices errors error union try catch cleanup defer ownership arena malloc free lisp evaluator">
+<link rel="stylesheet" type="text/css" href="z98.css">
+<link rel="stylesheet" type="text/css" href="z98-print.css" media="print">
+<link rel="home" href="index.html">
+<link rel="up" href="toc.html">
+<link rel="prev" href="vol5-12-c89-interop.html">
+<link rel="next" href="toc.html">
+</head>
+<body bgcolor="#fffff0" text="#000000" link="#000080" vlink="#800080" alink="#800080">
+<table width="100%" cellpadding="2" cellspacing="0" border="0" bgcolor="#c8c0a0" class="langbar">
+<tr>
+<td align="right">
+English |
+Espa&ntilde;ol (not yet available) |
+&#31616;&#20307;&#20013;&#25991; (not yet available)
+</td>
+</tr>
+</table>
+<table width="760" align="center" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td width="160" valign="top" bgcolor="#c8c0a0" class="sidebar">
+<font size="1">
+<p><b>Z98 Manual</b></p>
+<p>
+<a href="index.html">Title page</a><br>
+<a href="toc.html">Contents</a><br>
+<a href="readme.html">Read me</a><br>
+<a href="search.html">Search</a>
+</p>
+<p><b>Volume V &mdash; HOWTO</b></p>
+<table id="toc" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td>
+<a href="vol5-00-index.html">Index &mdash; A&ndash;Z, grouped by theme</a><br>
+<a href="vol5-01-build-compiler.html">Rebuild the compiler from seed</a><br>
+<a href="vol5-02-build-single.html">Build a single file</a><br>
+<a href="vol5-03-build-multi.html">Build multiple modules</a><br>
+Target Win9x <i>(planned)</i><br>
+Target Linux <i>(planned)</i><br>
+<a href="vol5-06-arena.html">Use the arena correctly</a><br>
+<a href="vol5-07-errors.html">Model and propagate errors</a><br>
+<a href="vol5-08-coroutines.html">Write and drive a coroutine</a><br>
+<a href="vol5-09-files.html">Read, write, and test files</a><br>
+Sockets under Z98 <i>(planned)</i><br>
+<a href="vol5-11-c-interop.html">Call C from Z98</a><br>
+<a href="vol5-12-c89-interop.html">Link Z98 output against C89 libraries</a><br>
+Debug generated C <i>(planned)</i><br>
+Use markers <i>(planned)</i><br>
+Read the diagnostics <i>(planned)</i><br>
+<b>Port from C</b><br>
+Port from C++98 <i>(planned)</i><br>
+Port from Python <i>(planned)</i><br>
+Pack for diskette <i>(planned)</i><br>
+Build a multilingual manual <i>(planned)</i><br>
+Build the static site <i>(planned)</i><br>
+Contribute <i>(planned)</i><br>
+Report a bug <i>(planned)</i><br>
+</td>
+</tr>
+</table>
+</font>
+</td>
+<td width="1" bgcolor="#000000"><img src="gfx/bullet.gif" width="1" height="1" alt=""></td>
+<td valign="top">
+<h1>Port a C File to Z98</h1>
+<p>
+This guide translates a small C89 program to Z98 one idiom at a time, then
+builds both programs and runs them to show they behave the same. The pairing is
+the one printed in the manual: the C89 evaluator from
+<a href="vol2-01-honest-comparison.html">Volume&nbsp;II, Honesty: When C89 Is
+the Better Choice</a>, and its Z98 twin. The C original is committed at
+<tt>docs/sf/manuals/src/vol5/portc/lisp_eval.c</tt>; its Z98 twin is the
+shipped sample <tt>docs/sf/manuals/src/vol2/lisp_eval.z98</tt>.
+</p>
+
+<h2>Prerequisites</h2>
+<ul>
+<li>The compiler rebuilt from the seed at
+<tt>/tmp/manual_seed/zig1_5_clean</tt>, with the standard library beside it in
+<tt>/tmp/manual_seed/lib/</tt>. If it is not there yet, follow
+<a href="vol5-01-build-compiler.html">Rebuild the compiler from seed</a>
+first.</li>
+<li>A Linux host with a 32-bit-capable <tt>gcc</tt>. The C original and the
+emitted Z98 build script both use <tt>gcc -m32 -std=c89</tt>.</li>
+<li>The repository checked out, so the two source files above are present.
+Every command runs from the repository root, <tt>/workspace/znineeight</tt>.</li>
+<li>The language practices behind the port:
+<a href="vol5-07-errors.html">Model and propagate errors</a> for error unions
+and <a href="vol5-06-arena.html">Use the arena correctly</a> for the node
+pool. The C89 seam itself is
+<a href="vol5-12-c89-interop.html">Link Z98 output against C89 libraries</a>.</li>
+</ul>
+
+<h2>The idea</h2>
+<p>
+A port is not a rewrite. Most of the C file survives line for line: the
+arithmetic, the recursion, the shape of the <tt>switch</tt>. What changes is the
+small set of C89 conventions that Z98 moves into the type system. This guide
+names those conventions, shows the Z98 replacement for each, and then proves the
+two programs agree. The checklist is deliberately short &mdash; types, arrays to
+slices, errors, cleanup to <tt>defer</tt>, and ownership to the arena &mdash;
+because those five are where a C89 file carries its discipline by hand.
+</p>
+
+<h2>Steps</h2>
+<ol>
+<li>
+<p>
+Read the C original. It is the Volume&nbsp;II evaluator completed into one
+buildable file: an enum tag and a union payload per node, a status
+<tt>int</tt> threaded through every call, and a hand-rolled pool of nodes freed
+once at the end.
+</p>
+<pre>
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+
+typedef enum { E_NUM, E_NEG, E_ADD, E_SUB, E_MUL, E_DIV } EKind;
+
+typedef struct Expr {
+    EKind kind;
+    union {
+        int num;
+        struct Expr *neg;
+        struct { struct Expr *l, *r; } bin;
+    } u;
+} Expr;
+
+/* 0 = success, -1 = divide by zero; the result comes back through *out */
+static int eval(const Expr *e, int *out)
+{
+    int l, r;
+    switch (e-&gt;kind) {
+    case E_NUM: *out = e-&gt;u.num; return 0;
+    case E_NEG:
+        if (eval(e-&gt;u.neg, &amp;l) != 0) return -1;
+        *out = -l; return 0;
+    case E_ADD:
+        if (eval(e-&gt;u.bin.l, &amp;l) != 0) return -1;
+        if (eval(e-&gt;u.bin.r, &amp;r) != 0) return -1;
+        *out = l + r; return 0;
+    case E_SUB:
+        if (eval(e-&gt;u.bin.l, &amp;l) != 0) return -1;
+        if (eval(e-&gt;u.bin.r, &amp;r) != 0) return -1;
+        *out = l - r; return 0;
+    case E_MUL:
+        if (eval(e-&gt;u.bin.l, &amp;l) != 0) return -1;
+        if (eval(e-&gt;u.bin.r, &amp;r) != 0) return -1;
+        *out = l * r; return 0;
+    case E_DIV:
+        if (eval(e-&gt;u.bin.l, &amp;l) != 0) return -1;
+        if (eval(e-&gt;u.bin.r, &amp;r) != 0) return -1;
+        if (r == 0) return -1;
+        *out = l / r; return 0;
+    default: return -1;
+    }
+}
+
+/* A hand-rolled arena: one malloc'd block of nodes, bump-allocated. */
+typedef struct Pool { Expr *nodes; int used; } Pool;
+
+static Expr *make(Pool *p, EKind kind)
+{
+    Expr *e = &amp;p-&gt;nodes[p-&gt;used++];
+    e-&gt;kind = kind;
+    return e;
+}
+</pre>
+<p>
+The driver below allocates a 64-node block, builds
+<tt>(2+3)*(10-4)/2</tt>, evaluates it, then evaluates <tt>10/(10-10)</tt> and
+reports the failure, before freeing the block once. The rest of the file
+(<tt>mknum</tt>, <tt>mkbin</tt>, and <tt>main</tt>) is the same
+construct-and-evaluate shape as the Z98 twin.
+</p>
+</li>
+<li>
+<p>
+Build and run the C original, so you have a baseline to compare against. The
+flags are the era set: 32-bit, C89, no optimization, warnings on.
+</p>
+<pre>
+$ cd /workspace/znineeight
+$ timeout 120 gcc -m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign \
+      -o /tmp/portc_c docs/sf/manuals/src/vol5/portc/lisp_eval.c
+$ timeout 120 /tmp/portc_c
+eval((2+3)*(10-4)/2) = 15
+eval(10/(10-10)) caught DivideByZero
+</pre>
+<p>
+That clean compile and the two lines are the contract the port must meet.
+</p>
+</li>
+<li>
+<p>
+Translate the five C idioms. Work through them in this order; each has a short
+before and after taken from the two files.
+</p>
+
+<h3>Types: tag plus union to <tt>union(enum)</tt></h3>
+<p>
+C89 keeps the discriminator and the payload in two places, and nothing ties them
+together. Z98 makes them one sum type whose <tt>switch</tt> binds the payload:
+</p>
+<pre>
+typedef enum { E_NUM, ... } EKind;          /* C89: tag ... */
+typedef struct Expr { EKind kind;
+    union { int num; ... } u; } Expr;       /* ... plus a separate union payload */
+</pre>
+<pre>
+const Expr = union(enum) {                  /* Z98: one type */
+    num: i32,
+    neg: u32,
+    add: Bin, sub: Bin, mul: Bin, div: Bin,
+};
+</pre>
+<p>
+The bounded integer types (<tt>i32</tt>, <tt>u32</tt>) replace <tt>int</tt>, and
+the recursion by pointer becomes a recursion by index.
+</p>
+
+<h3>Arrays to slices: a base pointer plus a count to <tt>[]Expr</tt></h3>
+<p>
+The C node pool is an <tt>Expr&nbsp;*</tt> and a separate <tt>used</tt> count,
+so every access carries an implied bound the compiler cannot see. The Z98 twin
+hands <tt>eval</tt> a slice, which carries its own length:
+</p>
+<pre>
+int eval(const Expr *e, int *out);          /* C89: pointer, no length */
+</pre>
+<pre>
+fn eval(nodes: []Expr, i: u32) error{DivideByZero}!i32
+</pre>
+<p>
+Indexing a slice is checked in the default safety mode. Integer indices
+(<tt>i32</tt>, <tt>u32</tt>, <tt>usize</tt>) are accepted directly; the
+<tt>@intCast(usize, i)</tt> in the twin is not required, it records that the
+value is an offset and keeps the arithmetic explicit. A non-integer index is
+the actual mistake, and the emitter does not catch it &mdash; the generated C
+then fails to compile.
+</p>
+
+<h3>Errors: a status <tt>int</tt> and an out-parameter to an error union</h3>
+<p>
+The C evaluator signals failure with <tt>-1</tt> and writes its result through
+<tt>*out</tt>; the caller is trusted to check the status. Z98 puts the failure in
+the return type, so the result and the error travel together:
+</p>
+<pre>
+static int eval(const Expr *e, int *out)    /* C89: -1 = divide by zero */
+{
+    ...
+    if (r == 0) return -1;
+}
+</pre>
+<pre>
+fn eval(nodes: []Expr, i: u32) error{DivideByZero}!i32 {
+    ...
+    if (rhs == 0) return error.DivideByZero;
+    return (try eval(nodes, b.l)) / rhs;
+}
+</pre>
+<p>
+<tt>try</tt> propagates the error and the compiler refuses to let it be dropped;
+the call site uses <tt>catch</tt>. This is the error-union material of
+<a href="vol5-07-errors.html">Model and propagate errors</a>.
+</p>
+
+<h3>Cleanup to <tt>defer</tt>: hand-written release to scope exit</h3>
+<p>
+C89 runs its cleanup by hand on every path: the C original frees the block after
+the last evaluation. Where the resource is not arena-backed &mdash; a file, a
+writer, a lock &mdash; Z98 states the release once with <tt>defer</tt> (always)
+and <tt>errdefer</tt> (only on the error path), and the language runs it at scope
+exit. In this particular port the arena removes the release entirely, so there
+is nothing left to defer; the committed sample
+<tt>docs/sf/manuals/src/vol2/defer.z98</tt> is the worked demonstration of the
+idiom.
+</p>
+
+<h3>Ownership to the arena: <tt>malloc</tt>/<tt>free</tt> to <tt>std.arena</tt></h3>
+<p>
+The C original already hand-rolls an arena: one <tt>malloc</tt> for a block of
+nodes, bump allocation through <tt>pool.used</tt>, and one <tt>free</tt> at the
+end. The port keeps that idea and drops the two libc calls, because Z98 ships
+the arena:
+</p>
+<pre>
+pool.nodes = (Expr *)malloc(sizeof(Expr) * 64);   /* C89: allocate ... */
+...
+free(pool.nodes);                                  /* ... and free by hand */
+</pre>
+<pre>
+var buf: [8192]u8 = undefined;
+var arena = std.arena.init(buf[0..]);
+const raw = try std.arena.alloc(&amp;arena, @sizeOf(Expr) * 64);
+var pool = Pool{ .nodes = @ptrCast([*]Expr, raw)[0..64], .used = 0 };
+</pre>
+<p>
+There is no per-object <tt>free</tt> to match, so an early return cannot leak
+and a stale pointer cannot be freed twice. Exhausting the arena is a caught
+error, not a null dereference.
+</p>
+</li>
+<li>
+<p>
+Read the Z98 twin. It is the whole program, and it already ships at
+<tt>docs/sf/manuals/src/vol2/lisp_eval.z98</tt>:
+</p>
+<pre>
+const std = @import("std");
+
+const Bin = struct { l: u32, r: u32 };
+
+const Expr = union(enum) {
+    num: i32,
+    neg: u32,
+    add: Bin,
+    sub: Bin,
+    mul: Bin,
+    div: Bin,
+};
+
+const Pool = struct { nodes: []Expr, used: u32 };
+
+fn make(pool: *Pool, e: Expr) u32 {
+    const i = pool.used;
+    pool.nodes[@intCast(usize, i)] = e;
+    pool.used = i + 1;
+    return i;
+}
+
+fn eval(nodes: []Expr, i: u32) error{DivideByZero}!i32 {
+    switch (nodes[@intCast(usize, i)]) {
+        .num => |v| return v,
+        .neg => |j| return -(try eval(nodes, j)),
+        .add => |b| return (try eval(nodes, b.l)) + (try eval(nodes, b.r)),
+        .sub => |b| return (try eval(nodes, b.l)) - (try eval(nodes, b.r)),
+        .mul => |b| return (try eval(nodes, b.l)) * (try eval(nodes, b.r)),
+        .div => |b| {
+            const rhs = try eval(nodes, b.r);
+            if (rhs == 0) return error.DivideByZero;
+            return (try eval(nodes, b.l)) / rhs;
+        },
+        else => unreachable,
+    }
+}
+
+pub fn main() !void {
+    var buf: [8192]u8 = undefined;
+    var arena = std.arena.init(buf[0..]);
+    const raw = try std.arena.alloc(&amp;arena, @sizeOf(Expr) * 64);
+    var pool = Pool{ .nodes = @ptrCast([*]Expr, raw)[0..64], .used = 0 };
+
+    const two = make(&amp;pool, .{ .num = 2 });
+    const three = make(&amp;pool, .{ .num = 3 });
+    const ten = make(&amp;pool, .{ .num = 10 });
+    const four = make(&amp;pool, .{ .num = 4 });
+
+    const sum = make(&amp;pool, .{ .add = .{ .l = two, .r = three } });
+    const diff = make(&amp;pool, .{ .sub = .{ .l = ten, .r = four } });
+    const product = make(&amp;pool, .{ .mul = .{ .l = sum, .r = diff } });
+    const answer = make(&amp;pool, .{ .div = .{ .l = product, .r = two } });
+
+    std.io.print("eval((2+3)*(10-4)/2) = {}\n", .{ try eval(pool.nodes, answer) });
+
+    const zero = make(&amp;pool, .{ .sub = .{ .l = ten, .r = ten } });
+    const bad = make(&amp;pool, .{ .div = .{ .l = ten, .r = zero } });
+    _ = eval(pool.nodes, bad) catch {
+        std.io.print("eval(10/(10-10)) caught DivideByZero\n", .{});
+        return;
+    };
+    std.io.print("unreachable\n", .{});
+}
+</pre>
+<p>
+<tt>make</tt> is the pool bump in one place, exactly as the C
+<tt>make</tt>; <tt>eval</tt> is the same recursion with <tt>try</tt> where C
+checked <tt>-1</tt>. The nodes reference each other by <tt>u32</tt> index rather
+than by pointer, which is what lets the whole graph live in one slice.
+</p>
+</li>
+<li>
+<p>
+Build and run the Z98 twin, exactly as in
+<a href="vol5-02-build-single.html">Build a single file</a>. The emitted
+<tt>gcc</tt> prints many warnings from the runtime's unused static helpers; the
+build is not red and the binary runs.
+</p>
+<pre>
+$ rm -rf /tmp/portc_z98
+$ mkdir -p /tmp/portc_z98
+$ timeout 120 /tmp/manual_seed/zig1_5_clean -o /tmp/portc_z98 docs/sf/manuals/src/vol2/lisp_eval.z98
+$ cd /tmp/portc_z98 && timeout 120 sh build_target.sh linux lisp_eval
+Building for linux...
+Built: lisp_eval
+$ timeout 120 ./lisp_eval
+eval((2+3)*(10-4)/2) = 15
+eval(10/(10-10)) caught DivideByZero
+</pre>
+<p>
+The compiler requires the output directory to exist, which is why the commands
+create <tt>/tmp/portc_z98</tt> first.
+</p>
+</li>
+<li>
+<p>
+Confirm the port by the emitted type. The error union the C status encoded by
+convention is now a real return type in the generated C89:
+</p>
+<pre>
+$ grep -n 'eval(' /tmp/portc_z98/lisp_eval_69EA6B8C.c | head -1
+34:zT_0DA61B72_EU_6 zF_08D22E0F_eval(zT_C1D41244_Slice_zT_3D06A9CE_E nodes, unsigned int i) {
+</pre>
+<p>
+<tt>zT_..._EU_6</tt> is the emitted error-union struct, the slice type carries
+the length into the function, and the mangled name is the ordinary C symbol the
+linker sees. The mangling rules are in
+<tt>docs/reference/name_mangling.md</tt> and
+<tt>docs/reference/c89_emission.md</tt>; the emitted file is the subject of
+<a href="vol5-12-c89-interop.html">Link Z98 output against C89 libraries</a>.
+</p>
+</li>
+</ol>
+
+<h2>Verify it worked</h2>
+<p>
+Both programs print the same two lines and exit <tt>0</tt>:
+</p>
+<pre>
+eval((2+3)*(10-4)/2) = 15
+eval(10/(10-10)) caught DivideByZero
+</pre>
+<p>
+The first line is the successful evaluation: <tt>(2+3)</tt> is 5,
+<tt>(10-4)</tt> is 6, the product is 30, and 30/2 is 15. The second line is the
+error path: the evaluator reaches a zero divisor and reports it.
+</p>
+<p>
+Agreement of the two outputs is the port's acceptance test. The C version
+returns <tt>-1</tt> and the Z98 version returns
+<tt>error.DivideByZero</tt>, but the observable behavior is identical, and the
+Z98 side did it without a per-node <tt>free</tt> and without an unchecked
+status. If you see both lines from both binaries, the translation holds at the
+one place a port can silently break: the failure path.
+</p>
+
+<h2>Common mistakes</h2>
+<ul>
+<li><b>Ignoring the error union.</b> The direct translation of C89's unchecked
+status is a dropped Z98 result, which the compiler rejects:
+<pre>
+error[3015]: error union result is ignored; use 'try', 'catch', or assign the result
+</pre>
+Use <tt>try</tt> to propagate or <tt>catch</tt> to handle, as <tt>main</tt> does.</li>
+<li><b>Returning an error from a <tt>void</tt> function.</b> C's
+<tt>int status</tt> can be dropped from any function; a Z98 <tt>try</tt> needs a
+return type that can carry the error:
+<pre>
+error[3075]: expected type 'void', found error set
+note: function cannot return an error
+</pre>
+Declare the function <tt>error{DivideByZero}!i32</tt>, not <tt>void</tt>.</li>
+<li><b>Using a non-integer index.</b> An integer index &mdash; <tt>i32</tt>,
+<tt>u32</tt>, <tt>usize</tt> &mdash; is fine; the <tt>@intCast</tt> in the twin
+is optional, not required. A float is the real error, and the compiler emits it
+without complaint, so the failure surfaces only in the generated C:
+<pre>
+error: array subscript is not an integer
+    zT_5 = zT_2[i];
+</pre>
+Index with an integer type, or cast to <tt>usize</tt> at the use as the twin
+does.</li>
+<li><b>Porting the pointer graph instead of the indices.</b> Keeping
+<tt>struct Expr *</tt> links in Z98 fights the arena and the checks. Store
+indices into one <tt>[]Expr</tt> as the twin does; the recursion is the same and
+the graph stays in one buffer.</li>
+<li><b>Forgetting a literal bound is still a bound.</b> The C pool is fixed at
+64 nodes; in the twin a slice index past 64 traps under the default safety mode.
+That is the point &mdash; a bound bug that corrupts memory in C89 stops and
+reports in Z98.</li>
+<li><b>Writing the <tt>free</tt> by hand.</b> The arena has no per-object
+release. Porting the <tt>free(pool.nodes)</tt> line is not only unnecessary, it
+has no counterpart; lifetime is the arena's reset. Use <tt>defer</tt> only for
+resources the arena does not own.</li>
+</ul>
+
+<h2>Where to go next</h2>
+<p>
+The C89 convention-to-type moves in this guide are the subject of
+<a href="vol2-01-honest-comparison.html">Volume&nbsp;II, Honesty: When C89 Is
+the Better Choice</a>, which prints the same pairing in full. The error mechanics
+are <a href="vol5-07-errors.html">Model and propagate errors</a>; the pool and
+reset rules are <a href="vol5-06-arena.html">Use the arena correctly</a>; and the
+seam that lets C and Z98 sit in one program is
+<a href="vol5-12-c89-interop.html">Link Z98 output against C89 libraries</a>.
+For the language-level rules behind <tt>union(enum)</tt>, <tt>try</tt>, and
+<tt>defer</tt>, see <a href="vol4-01-grammar.html">Volume&nbsp;IV &mdash;
+Grammar</a> and <a href="vol4-23-limits.html">Limits</a>. The C++98 port, which
+must be honest about what does <i>not</i> translate, is guide&nbsp;17, planned;
+return to the <a href="vol5-00-index.html">HOWTO index</a> for the full list.
+</p>
+
+<p class="navbtns">
+<a href="vol5-12-c89-interop.html"><img src="gfx/btn-prev.gif" width="88" height="24" border="0" alt="Previous" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-index.gif" width="88" height="24" border="0" alt="Contents" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+&nbsp;&nbsp;
+<a href="toc.html"><img src="gfx/btn-next.gif" width="88" height="24" border="0" alt="Next" onmouseover="swap(this)" onmouseout="swap(this)"></a>
+</p>
+<p>Previous: <a href="vol5-12-c89-interop.html">Link Z98 Output Against C89</a> | <a href="toc.html">Contents</a> | Next: <a href="toc.html">Contents</a></p>
+</td>
+</tr>
+</table>
+<script type="text/javascript" src="doc.js"></script>
+</body>
+</html>
