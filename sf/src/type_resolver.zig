@@ -94,18 +94,34 @@ pub fn localTypeScopeInit(alloc: *Sand) LocalTypeScope {
     };
 }
 
+// D1-5/D5-1: shared grow + lookup bodies for the twin `LocalTypeScope` /
+// `LocalConstScope` name scopes. Both are a parallel pair of u32 arrays
+// scanned newest-first; only the field names differ.
+fn nameScopeGrowPair(alloc: *Sand, names: *[*]u32, values: *[*]u32, count: usize, cap: *usize, min_cap: usize) void {
+    var nc: usize = if (cap.* < min_cap) min_cap else cap.* * 2;
+    var raw_n = alloc_mod.sandAlloc(alloc, nc * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable;
+    var raw_v = alloc_mod.sandAlloc(alloc, nc * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable;
+    var nn = @ptrCast([*]u32, raw_n);
+    var nv = @ptrCast([*]u32, raw_v);
+    var i: usize = 0;
+    while (i < count) : (i += 1) { nn[i] = names.*[i]; nv[i] = values.*[i]; }
+    names.* = nn;
+    values.* = nv;
+    cap.* = nc;
+}
+
+fn nameScopeLookup(names: [*]u32, values: [*]u32, count: usize, name_id: u32) ?u32 {
+    var i: usize = count;
+    while (i > @intCast(usize, 0)) {
+        i -= @intCast(usize, 1);
+        if (names[i] == name_id) return values[i];
+    }
+    return null;
+}
+
 pub fn localTypeScopePush(scope: *LocalTypeScope, name_id: u32, type_id: u32) void {
     if (scope.count >= scope.cap) {
-        var nc: usize = if (scope.cap < @intCast(usize, 8)) @intCast(usize, 8) else scope.cap * 2;
-        var raw_n = alloc_mod.sandAlloc(scope.alloc, nc * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable;
-        var raw_t = alloc_mod.sandAlloc(scope.alloc, nc * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable;
-        var nn = @ptrCast([*]u32, raw_n);
-        var nt = @ptrCast([*]u32, raw_t);
-        var i: usize = 0;
-        while (i < scope.count) : (i += 1) { nn[i] = scope.names[i]; nt[i] = scope.types[i]; }
-        scope.names = nn;
-        scope.types = nt;
-        scope.cap = nc;
+        nameScopeGrowPair(scope.alloc, &scope.names, &scope.types, scope.count, &scope.cap, @intCast(usize, 8));
     }
     scope.names[scope.count] = name_id;
     scope.types[scope.count] = type_id;
@@ -113,12 +129,7 @@ pub fn localTypeScopePush(scope: *LocalTypeScope, name_id: u32, type_id: u32) vo
 }
 
 pub fn localTypeScopeLookup(scope: *LocalTypeScope, name_id: u32) ?u32 {
-    var i: usize = scope.count;
-    while (i > @intCast(usize, 0)) {
-        i -= @intCast(usize, 1);
-        if (scope.names[i] == name_id) return scope.types[i];
-    }
-    return null;
+    return nameScopeLookup(scope.names, scope.types, scope.count, name_id);
 }
 
 // Task 2c-F: a name -> var_decl-node scope for function-local `const`s. A local
@@ -146,16 +157,7 @@ pub fn localConstScopeInit(alloc: *Sand) LocalConstScope {
 
 pub fn localConstScopePush(scope: *LocalConstScope, name_id: u32, decl_node: u32) void {
     if (scope.count >= scope.cap) {
-        var nc: usize = if (scope.cap < @intCast(usize, 8)) @intCast(usize, 8) else scope.cap * 2;
-        var raw_n = alloc_mod.sandAlloc(scope.alloc, nc * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable;
-        var raw_d = alloc_mod.sandAlloc(scope.alloc, nc * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable;
-        var nn = @ptrCast([*]u32, raw_n);
-        var nd = @ptrCast([*]u32, raw_d);
-        var i: usize = 0;
-        while (i < scope.count) : (i += 1) { nn[i] = scope.names[i]; nd[i] = scope.nodes[i]; }
-        scope.names = nn;
-        scope.nodes = nd;
-        scope.cap = nc;
+        nameScopeGrowPair(scope.alloc, &scope.names, &scope.nodes, scope.count, &scope.cap, @intCast(usize, 8));
     }
     scope.names[scope.count] = name_id;
     scope.nodes[scope.count] = decl_node;
@@ -163,12 +165,7 @@ pub fn localConstScopePush(scope: *LocalConstScope, name_id: u32, decl_node: u32
 }
 
 pub fn localConstScopeLookup(scope: *LocalConstScope, name_id: u32) ?u32 {
-    var i: usize = scope.count;
-    while (i > @intCast(usize, 0)) {
-        i -= @intCast(usize, 1);
-        if (scope.names[i] == name_id) return scope.nodes[i];
-    }
-    return null;
+    return nameScopeLookup(scope.names, scope.nodes, scope.count, name_id);
 }
 
 pub const ClassificationResult = struct {
@@ -192,25 +189,28 @@ pub const TypeResolver = struct {
     alloc: *Sand,
 };
 
-fn dependEnsureCapacity(self: *TypeResolver) void {
-    if (self.depend_len < self.depend_cap) return;
-    var nc: usize = if (self.depend_cap < 8) @intCast(usize, 8) else self.depend_cap * 2;
-    if (self.depend_cap > 0) {
-        var grown = alloc_mod.sandTryReallocInPlace(self.alloc,
-            @ptrCast([*]u8, self.depend_items),
-            self.depend_cap * @intCast(usize, 8),
-            nc * @intCast(usize, 8),
-            @intCast(usize, 4));
-        if (grown != null) {
-            self.depend_cap = nc;
-            return;
-        }
+// D5-1: the one in-place-or-reallocate grow body shared by the u32 worklist and
+// the DepEdge dependency table (element size 4 vs 8, min cap 64 vs 8). `cap`
+// (element count), not bytes, is the growth unit; the fallback copies the live
+// bytes exactly as the old typed copy loops did.
+fn rawArrayEnsureCapacity(alloc: *Sand, items: *[*]u8, len: usize, cap: *usize, elem_size: usize, min_cap: usize) void {
+    if (len < cap.*) return;
+    var nc: usize = if (cap.* < min_cap) min_cap else cap.* * 2;
+    if (cap.* > 0) {
+        var grown = alloc_mod.sandTryReallocInPlace(alloc, items.*, cap.* * elem_size, nc * elem_size, @intCast(usize, 4));
+        if (grown != null) { cap.* = nc; return; }
     }
-    var raw = alloc_mod.sandAlloc(self.alloc, nc * @intCast(usize, 8), @intCast(usize, 4)) catch unreachable;
-    var new_items = @ptrCast([*]DepEdge, raw);
-    for (self.depend_items[0..self.depend_len]) |item, i| { new_items[i] = item; }
-    self.depend_items = new_items;
-    self.depend_cap = nc;
+    var raw = alloc_mod.sandAlloc(alloc, nc * elem_size, @intCast(usize, 4)) catch unreachable;
+    var ei: usize = 0;
+    while (ei < len * elem_size) : (ei += 1) { raw[ei] = items.*[ei]; }
+    items.* = raw;
+    cap.* = nc;
+}
+
+fn dependEnsureCapacity(self: *TypeResolver) void {
+    var p: [*]u8 = @ptrCast([*]u8, self.depend_items);
+    rawArrayEnsureCapacity(self.alloc, &p, self.depend_len, &self.depend_cap, @intCast(usize, 8), @intCast(usize, 8));
+    self.depend_items = @ptrCast([*]DepEdge, p);
 }
 
 pub fn typeResolverAddEdge(self: *TypeResolver, from: u32, to: u32) void {
@@ -220,24 +220,9 @@ pub fn typeResolverAddEdge(self: *TypeResolver, from: u32, to: u32) void {
 }
 
 fn worklistEnsureCapacity(self: *TypeResolver) void {
-    if (self.worklist_len < self.worklist_cap) return;
-    var nc: usize = if (self.worklist_cap < 64) @intCast(usize, 64) else self.worklist_cap * 2;
-    if (self.worklist_cap > 0) {
-        var grown = alloc_mod.sandTryReallocInPlace(self.alloc,
-            @ptrCast([*]u8, self.worklist_items),
-            self.worklist_cap * @intCast(usize, 4),
-            nc * @intCast(usize, 4),
-            @intCast(usize, 4));
-        if (grown != null) {
-            self.worklist_cap = nc;
-            return;
-        }
-    }
-    var raw = alloc_mod.sandAlloc(self.alloc, nc * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable;
-    var new_items = @ptrCast([*]u32, raw);
-    for (self.worklist_items[0..self.worklist_len]) |item, i| { new_items[i] = item; }
-    self.worklist_items = new_items;
-    self.worklist_cap = nc;
+    var p: [*]u8 = @ptrCast([*]u8, self.worklist_items);
+    rawArrayEnsureCapacity(self.alloc, &p, self.worklist_len, &self.worklist_cap, @intCast(usize, 4), @intCast(usize, 64));
+    self.worklist_items = @ptrCast([*]u32, p);
 }
 
 fn worklistPush(self: *TypeResolver, id: u32) void {
@@ -263,6 +248,16 @@ fn inDegreeEnsureCapacity(self: *TypeResolver, capacity: usize) void {
 
 fn alignUp(v: u32, a: u32) u32 {
     return (v + a - @intCast(u32, 1)) & ~(a - @intCast(u32, 1));
+}
+
+// D5-2: the repeated "itoa into a stack buffer, then markerWrite the digits"
+// idiom, reduced to its one fact (decimal u32 digits, no prefix, no newline).
+// Callers that want a prefix + trailing newline use `pal.markerWriteInt`.
+fn markerU32(value: u32) void {
+    var b: [12]u8 = undefined;
+    var l = itoa_mod.itoa(value, b[0..]);
+    var s: usize = @intCast(usize, 11) - @intCast(usize, l);
+    pal_mod.markerWrite(b[s..@intCast(usize, 11)]);
 }
 
 // Task 11H (Option B, AMENDMENT 10): the ONE shared, order-independent layout
@@ -590,41 +585,30 @@ pub fn typeResolverResolve(self: *TypeResolver) void {
     }
 }
 
+// D1-2: the six kinds shared by every aggregate-layout category below. The
+// three category predicates deliberately differ (do not blind-merge): only
+// `fieldEmbedsByValue` treats `enum`/`error_set` as by-value aggregates; only
+// `requiresFullDef` adds `optional`/`error_union`; `layoutFieldNeedsEdge` is
+// the union of the other two plus `enum`.
+fn kindIsAggregateCore(kind: TypeKind) bool {
+    return kind == TypeKind.struct_type or kind == TypeKind.tagged_union_type or
+        kind == TypeKind.union_type or kind == TypeKind.packed_union_type or
+        kind == TypeKind.array_type or kind == TypeKind.tuple_type;
+}
+
 fn fieldEmbedsByValue(kind: TypeKind) bool {
-    if (kind == TypeKind.struct_type) return true;
-    if (kind == TypeKind.tagged_union_type) return true;
-    if (kind == TypeKind.union_type) return true;
-    if (kind == TypeKind.packed_union_type) return true;
-    if (kind == TypeKind.array_type) return true;
-    if (kind == TypeKind.tuple_type) return true;
-    if (kind == TypeKind.enum_type) return true;          // ADD — inline typedef integer alias
-    if (kind == TypeKind.error_set_type) return true;     // ADD — inline typedef integer alias
-    return false;
+    return kindIsAggregateCore(kind) or kind == TypeKind.enum_type or   // ADD — inline typedef integer alias
+        kind == TypeKind.error_set_type;                                // ADD — inline typedef integer alias
 }
 
 fn requiresFullDef(kind: TypeKind) bool {
-    if (kind == TypeKind.struct_type) return true;
-    if (kind == TypeKind.tagged_union_type) return true;
-    if (kind == TypeKind.union_type) return true;
-    if (kind == TypeKind.packed_union_type) return true;
-    if (kind == TypeKind.array_type) return true;
-    if (kind == TypeKind.tuple_type) return true;
-    if (kind == TypeKind.optional_type) return true;
-    if (kind == TypeKind.error_union_type) return true;
-    return false;
+    return kindIsAggregateCore(kind) or kind == TypeKind.optional_type or
+        kind == TypeKind.error_union_type;
 }
 
 fn layoutFieldNeedsEdge(kind: TypeKind) bool {
-    if (kind == TypeKind.struct_type) return true;
-    if (kind == TypeKind.tagged_union_type) return true;
-    if (kind == TypeKind.union_type) return true;
-    if (kind == TypeKind.packed_union_type) return true;
-    if (kind == TypeKind.enum_type) return true;
-    if (kind == TypeKind.array_type) return true;
-    if (kind == TypeKind.tuple_type) return true;
-    if (kind == TypeKind.optional_type) return true;
-    if (kind == TypeKind.error_union_type) return true;
-    return false;
+    return kindIsAggregateCore(kind) or kind == TypeKind.enum_type or
+        kind == TypeKind.optional_type or kind == TypeKind.error_union_type;
 }
 
 fn layoutAddTypeEdge(self: *TypeResolver, field_type: u32, container_tid: u32) void {
@@ -879,12 +863,7 @@ pub fn classifyTypeEmissionGroups(self: *TypeResolver, perm_alloc: *Sand) Classi
         }
     }
 
-    var cls_m: []const u8 = "CLS:c"; pal_mod.markerWrite(cls_m);
-    var cls_b: [10]u8 = undefined;
-    var cls_l = itoa_mod.itoa(plen, cls_b[0..]);
-    var cls_s: usize = @intCast(usize, 9) - @intCast(usize, cls_l);
-    pal_mod.markerWrite(cls_b[cls_s..@intCast(usize, 9)]);
-    var cls_nl: []const u8 = "\n"; pal_mod.markerWrite(cls_nl);
+    var cls_m: []const u8 = "CLS:c"; pal_mod.markerWrite(cls_m); markerU32(plen); var cls_nl: []const u8 = "\n"; pal_mod.markerWrite(cls_nl);
     ti = 0;
     while (ti < tl) : (ti += 1) {
         if (pointer_only[ti] != @intCast(u8, 0)) {
@@ -892,16 +871,10 @@ pub fn classifyTypeEmissionGroups(self: *TypeResolver, perm_alloc: *Sand) Classi
         } else {
             var pfx: []const u8 = "CLS:v"; pal_mod.markerWrite(pfx);
         }
-        var ctb: [10]u8 = undefined;
-        var ctl = itoa_mod.itoa(@intCast(u32, ti), ctb[0..]);
-        var cts: usize = @intCast(usize, 9) - @intCast(usize, ctl);
-        pal_mod.markerWrite(ctb[cts..@intCast(usize, 9)]);
+        markerU32(@intCast(u32, ti));
         var ck: []const u8 = "k";
         pal_mod.markerWrite(ck);
-        var ckb: [10]u8 = undefined;
-        var ckl = itoa_mod.itoa(@intCast(u32, @enumToInt(self.registry.types_items[ti].kind)), ckb[0..]);
-        var cks: usize = @intCast(usize, 9) - @intCast(usize, ckl);
-        pal_mod.markerWrite(ckb[cks..@intCast(usize, 9)]);
+        markerU32(@intCast(u32, @enumToInt(self.registry.types_items[ti].kind)));
         var cnl: []const u8 = "\n"; pal_mod.markerWrite(cnl);
     }
 
@@ -910,20 +883,7 @@ pub fn classifyTypeEmissionGroups(self: *TypeResolver, perm_alloc: *Sand) Classi
 
 fn growWpEdges(perm_a: *Sand, wp_to_ptr: *[*]u32, wp_next_ptr: *[*]u32, cap_ptr: *usize, count: u32) void {
     if (@intCast(usize, count) < cap_ptr.*) return;
-    var old_cap = cap_ptr.*;
-    var new_cap: usize = old_cap * 2;
-    var new_to_raw = alloc_mod.sandAlloc(perm_a, 4 * new_cap, 4) catch unreachable;
-    var new_nx_raw = alloc_mod.sandAlloc(perm_a, 4 * new_cap, 4) catch unreachable;
-    var new_to: [*]u32 = @ptrCast([*]u32, new_to_raw);
-    var new_nx: [*]u32 = @ptrCast([*]u32, new_nx_raw);
-    var ci: usize = 0;
-    while (ci < @intCast(usize, count)) : (ci += 1) {
-        new_to[ci] = wp_to_ptr.*[ci];
-        new_nx[ci] = wp_next_ptr.*[ci];
-    }
-    wp_to_ptr.* = new_to;
-    wp_next_ptr.* = new_nx;
-    cap_ptr.* = new_cap;
+    nameScopeGrowPair(perm_a, wp_to_ptr, wp_next_ptr, @intCast(usize, count), cap_ptr, @intCast(usize, 0));
 }
 
 pub fn typeResolverGetSorted(self: *TypeResolver) []u32 {
@@ -1303,6 +1263,25 @@ fn symbolLookupAllModules(env: *TypeResolveEnv, name_id: u32) ?*sym_mod.Symbol {
     }
     return null;
 }
+
+// D1-3: the symbol-table type-id lookup fact (the first symbol in a module with
+// a non-zero `type_id`) and its all-module first-match scan, shared by
+// `resolveTypeExprFull`'s current-module and all-module symbol arms.
+fn symbolTypeIdOfModule(env: *TypeResolveEnv, module_id: u32, name_id: u32) u32 {
+    if (sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, module_id, name_id)) |s| {
+        if (s.type_id != @intCast(u32, 0)) return s.type_id;
+    }
+    return @intCast(u32, 0);
+}
+
+fn symbolLookupTypeAllModules(env: *TypeResolveEnv, name_id: u32) u32 {
+    var si: usize = 0;
+    while (si < @intCast(usize, env.symbol_reg.tables_len)) : (si += 1) {
+        var t = symbolTypeIdOfModule(env, @intCast(u32, si), name_id);
+        if (t != @intCast(u32, 0)) return t;
+    }
+    return @intCast(u32, 0);
+}
 // Task 11J: the ONE shared enum-member walk (AMENDMENT 10: no duplicated
 // fold/cascade logic). Computes every member value with a fresh `auto_val`
 // cascade, exactly mirroring Zig's ordinal rule: `value = auto_val` unless an
@@ -1382,6 +1361,18 @@ pub fn enumMembersResolve(
     return true;
 }
 
+// D3-4: the ONE ERR_3055 report for a failed shared enum-member walk, shared by
+// the post-layout re-evaluation pass and the local/inline enum validation.
+fn reportEnumWalkFailure(diag: *DiagnosticCollector, store: *AstStore, source_file_id: u32, fail_node: u32, fail_kind: u32) void {
+    var fn_ = ast_mod.astStoreNodeAt(store, fail_node);
+    var sp = fn_.span_start;
+    var ep = sp + @intCast(u32, fn_.span_len);
+    var msg: []const u8 = "enum member value is not a comptime-known integer expression";
+    if (fail_kind == @intCast(u32, 2)) { msg = "duplicate enum tag value (tag values must be unique)"; }
+    _ = diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0),
+        @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3055_ENUM_VALUE_NOT_CONSTANT)),
+        source_file_id, sp, ep, msg);
+}
 
 // Task 11J: post-layout enum re-evaluation (Option B, P1). Runs at the end of
 // `phase_TypeResolution`, after `typeResolverResolve` has laid out every type
@@ -1438,14 +1429,7 @@ pub fn enumReevaluateAll(
             var fail_node: u32 = 0;
             var fail_kind: u32 = 0;
             if (!enumMembersResolve(&env, enum_node, false, ep.members_start, true, false, &count, &fail_node, &fail_kind)) {
-                var fn_ = ast_mod.astStoreNodeAt(store, fail_node);
-                var sp = fn_.span_start;
-                var ep_ = sp + @intCast(u32, fn_.span_len);
-                var msg: []const u8 = "enum member value is not a comptime-known integer expression";
-                if (fail_kind == @intCast(u32, 2)) { msg = "duplicate enum tag value (tag values must be unique)"; }
-                _ = diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0),
-                    @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3055_ENUM_VALUE_NOT_CONSTANT)),
-                    mods[mi].source_file_id, sp, ep_, msg);
+                reportEnumWalkFailure(diag, store, mods[mi].source_file_id, fail_node, fail_kind);
             }
         }
     }
@@ -1536,14 +1520,7 @@ pub fn validateLocalEnum(env: *TypeResolveEnv, enum_node: u32) void {
     var fail_node: u32 = 0;
     var fail_kind: u32 = 0;
     if (!enumMembersResolve(env, enum_node, false, @intCast(u32, 0), true, true, &count, &fail_node, &fail_kind)) {
-        var fn_ = ast_mod.astStoreNodeAt(env.store, fail_node);
-        var sp = fn_.span_start;
-        var ep = sp + @intCast(u32, fn_.span_len);
-        var msg: []const u8 = "enum member value is not a comptime-known integer expression";
-        if (fail_kind == @intCast(u32, 2)) { msg = "duplicate enum tag value (tag values must be unique)"; }
-        _ = diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0),
-            @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3055_ENUM_VALUE_NOT_CONSTANT)),
-            env.source_file_id, sp, ep, msg);
+        reportEnumWalkFailure(diag, env.store, env.source_file_id, fail_node, fail_kind);
     }
 }
 
@@ -1805,22 +1782,13 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
         }
         var n2: []const u8 = "N2"; pal_mod.markerWrite(n2);
         if (env.module_id != MODULE_ID_NONE) {
-            var sym_cur = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, env.module_id, name_id);
-            if (sym_cur) |s| {
-                if (s.type_id != @intCast(u32, 0)) {
-                    return s.type_id;
-                }
-            }
+            var sym_cur_tid = symbolTypeIdOfModule(env, env.module_id, name_id);
+            if (sym_cur_tid != @intCast(u32, 0)) return sym_cur_tid;
         }
-        var si: usize = 0;
-        while (si < @intCast(usize, env.symbol_reg.tables_len)) : (si += 1) {
-            var sym = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, @intCast(u32, si), name_id);
-            if (sym) |s| {
-                if (s.type_id != @intCast(u32, 0)) {
-                    var ops_m: []const u8 = "OPTVOID:ids"; pal_mod.markerWriteInt(ops_m, s.type_id);
-                    return s.type_id;
-                }
-            }
+        var all_tid = symbolLookupTypeAllModules(env, name_id);
+        if (all_tid != @intCast(u32, 0)) {
+            var ops_m: []const u8 = "OPTVOID:ids"; pal_mod.markerWriteInt(ops_m, all_tid);
+            return all_tid;
         }
         var opm4f_m: []const u8 = "OPTVOID:idF"; pal_mod.markerWriteInt(opm4f_m, name_id);
         var arbu: bool = false;
@@ -1977,24 +1945,19 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
         var child_type = resolveTypeExprFull(env, node.child_0, depth + @intCast(u32, 1));
         if (child_type == type_mod.TYPE_UNDEFINED) return type_mod.TYPE_UNDEFINED;
         if (node.kind == AstKind.ptr_type or node.kind == AstKind.many_ptr_type) {
-            var ptm: []const u8 = "PTR:i"; pal_mod.markerWrite(ptm);
-            var ptib: [10]u8 = undefined; var ptil = itoa_mod.itoa(node_idx, ptib[0..]); var ptis: usize = @intCast(usize, 9) - @intCast(usize, ptil); pal_mod.markerWrite(ptib[ptis..@intCast(usize, 9)]);
-            var ptkm: []const u8 = "k"; pal_mod.markerWrite(ptkm);
-            var ptkb: [10]u8 = undefined; var ptkl = itoa_mod.itoa(@intCast(u32, @enumToInt(node.kind)), ptkb[0..]); var ptks: usize = @intCast(usize, 9) - @intCast(usize, ptkl); pal_mod.markerWrite(ptkb[ptks..@intCast(usize, 9)]);
-            var ptcm: []const u8 = "c"; pal_mod.markerWrite(ptcm);
-            var ptcb: [10]u8 = undefined; var ptcl = itoa_mod.itoa(child_type, ptcb[0..]); var ptcs: usize = @intCast(usize, 9) - @intCast(usize, ptcl); pal_mod.markerWrite(ptcb[ptcs..@intCast(usize, 9)]);
+            var ptm: []const u8 = "PTR:i"; pal_mod.markerWrite(ptm); markerU32(node_idx);
+            var ptkm: []const u8 = "k"; pal_mod.markerWrite(ptkm); markerU32(@intCast(u32, @enumToInt(node.kind)));
+            var ptcm: []const u8 = "c"; pal_mod.markerWrite(ptcm); markerU32(child_type);
             var is_const: bool = (node.flags & @intCast(u8, 1)) != @intCast(u8, 0);
             var is_volatile: bool = (node.flags & @intCast(u8, 2)) != @intCast(u8, 0);
             if (node.kind == AstKind.ptr_type) {
                 var ptr_tid = type_mod.typeRegistryGetOrCreatePtrQ(env.typereg, child_type, is_const, is_volatile);
-                var ppm: []const u8 = "P"; pal_mod.markerWrite(ppm);
-                var ppb: [10]u8 = undefined; var ppl = itoa_mod.itoa(ptr_tid, ppb[0..]); var pps: usize = @intCast(usize, 9) - @intCast(usize, ppl); pal_mod.markerWrite(ppb[pps..@intCast(usize, 9)]);
+                var ppm: []const u8 = "P"; pal_mod.markerWrite(ppm); markerU32(ptr_tid);
                 var pnl: []const u8 = "\n"; pal_mod.markerWrite(pnl);
                 return ptr_tid;
             } else {
                 var ptr_tid2 = type_mod.typeRegistryGetOrCreateManyPtrQ(env.typereg, child_type, is_const, is_volatile);
-                var ppm2: []const u8 = "M"; pal_mod.markerWrite(ppm2);
-                var ppb2: [10]u8 = undefined; var ppl2 = itoa_mod.itoa(ptr_tid2, ppb2[0..]); var pps2: usize = @intCast(usize, 9) - @intCast(usize, ppl2); pal_mod.markerWrite(ppb2[pps2..@intCast(usize, 9)]);
+                var ppm2: []const u8 = "M"; pal_mod.markerWrite(ppm2); markerU32(ptr_tid2);
                 var pnl2: []const u8 = "\n"; pal_mod.markerWrite(pnl2);
                 return ptr_tid2;
             }
@@ -2002,14 +1965,8 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
         if (node.kind == AstKind.slice_type) {
             var is_const: bool = (node.flags & @intCast(u8, 1)) != @intCast(u8, 0);
             var sl_tid = type_mod.typeRegistryGetOrCreateSlice(env.typereg, child_type, is_const);
-            var sl_e: [20]u8 = undefined;
-            var sl_el = itoa_mod.itoa(child_type, sl_e[0..]);
-            var sl_es: usize = @intCast(usize, 19) - @intCast(usize, sl_el);
-            var sm: []const u8 = "SL:e"; pal_mod.markerWrite(sm); pal_mod.markerWrite(sl_e[sl_es..@intCast(usize, 19)]);
-            var sl_r: [20]u8 = undefined;
-            var sl_rl = itoa_mod.itoa(sl_tid, sl_r[0..]);
-            var sl_rs: usize = @intCast(usize, 19) - @intCast(usize, sl_rl);
-            var s2: []const u8 = "s"; pal_mod.markerWrite(s2); pal_mod.markerWrite(sl_r[sl_rs..@intCast(usize, 19)]);
+            var sm: []const u8 = "SL:e"; pal_mod.markerWrite(sm); markerU32(child_type);
+            var s2: []const u8 = "s"; pal_mod.markerWrite(s2); markerU32(sl_tid);
             var s3: []const u8 = "\n"; pal_mod.markerWrite(s3);
             return sl_tid;
         }
@@ -2021,11 +1978,7 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
         }
         if (node.kind == AstKind.array_type) {
             var t0m: []const u8 = "T0"; pal_mod.markerWrite(t0m);
-            var t1m: []const u8 = "T1e"; pal_mod.markerWrite(t1m);
-            var t1b: [20]u8 = undefined;
-            var t1l = itoa_mod.itoa(child_type, t1b[0..]);
-            var t1s: usize = @intCast(usize, 19) - @intCast(usize, t1l);
-            pal_mod.markerWrite(t1b[t1s..@intCast(usize, 19)]);
+            var t1m: []const u8 = "T1e"; pal_mod.markerWrite(t1m); markerU32(child_type);
             if (node.child_1 != 0) {
                 var sz_node = ast_mod.astStoreNodeAt(env.store, node.child_1);
                 var arr_len: u32 = @intCast(u32, 0);
@@ -2040,18 +1993,10 @@ pub fn resolveTypeExprFull(env: *TypeResolveEnv, node_idx: u32, depth: u32) type
                     arr_len = alf;
                     arr_resolved = true;
                 }
-                var t2m: []const u8 = "T2L"; pal_mod.markerWrite(t2m);
-                var t2b: [20]u8 = undefined;
-                var t2l = itoa_mod.itoa(arr_len, t2b[0..]);
-                var t2s: usize = @intCast(usize, 19) - @intCast(usize, t2l);
-                pal_mod.markerWrite(t2b[t2s..@intCast(usize, 19)]);
+                var t2m: []const u8 = "T2L"; pal_mod.markerWrite(t2m); markerU32(arr_len);
                 if (arr_resolved) {
                     var at = type_mod.typeRegistryGetOrCreateArray(env.typereg, child_type, arr_len);
-                    var t3m: []const u8 = "T3a"; pal_mod.markerWrite(t3m);
-                    var t3b: [20]u8 = undefined;
-                    var t3l = itoa_mod.itoa(at, t3b[0..]);
-                    var t3s: usize = @intCast(usize, 19) - @intCast(usize, t3l);
-                    pal_mod.markerWrite(t3b[t3s..@intCast(usize, 19)]);
+                    var t3m: []const u8 = "T3a"; pal_mod.markerWrite(t3m); markerU32(at);
                     if (at != type_mod.TYPE_UNDEFINED) { var am: []const u8 = "A"; pal_mod.markerWrite(am); }
                     else { var am: []const u8 = "a"; pal_mod.markerWrite(am); }
                     return at;
@@ -2115,10 +2060,8 @@ pub fn resolveDeclAggregateFieldTypes(env: *TypeResolveEnv, mod_id: u32, decl_id
                 var fd = ast_mod.astStoreNodeAt(env.store, fchild);
                 if (fd.kind == AstKind.field_decl and fd.child_0 != 0) {
                     var ft = resolveTypeExprFull(env, fd.child_0, @intCast(u32, 0));
-                    var b2_pn: []const u8 = "B2:p"; pal_mod.markerWrite(b2_pn);
-                    var b2_pb: [20]u8 = undefined; var b2_pl = itoa_mod.itoa(ast_mod.astStoreNodePayload(env.store, fchild), b2_pb[0..]); var b2_ps: usize = @intCast(usize, 19) - @intCast(usize, b2_pl); pal_mod.markerWrite(b2_pb[b2_ps..@intCast(usize, 19)]);
-                    var b2_tn: []const u8 = "t"; pal_mod.markerWrite(b2_tn);
-                    var b2_tb: [20]u8 = undefined; var b2_tl = itoa_mod.itoa(ft, b2_tb[0..]); var b2_ts: usize = @intCast(usize, 19) - @intCast(usize, b2_tl); pal_mod.markerWrite(b2_tb[b2_ts..@intCast(usize, 19)]);
+                    var b2_pn: []const u8 = "B2:p"; pal_mod.markerWrite(b2_pn); markerU32(ast_mod.astStoreNodePayload(env.store, fchild));
+                    var b2_tn: []const u8 = "t"; pal_mod.markerWrite(b2_tn); markerU32(ft);
                     if (ft != type_mod.TYPE_UNDEFINED) {
                         env.typereg.fe_items[@intCast(usize, sp.fields_start) + fi2].type_id = ft;
                         var fsw_nm: []const u8 = "FSW:n"; pal_mod.markerWriteInt(fsw_nm, @intCast(u32, @intCast(usize, sp.fields_start) + fi2));
@@ -2150,10 +2093,8 @@ pub fn resolveDeclAggregateFieldTypes(env: *TypeResolveEnv, mod_id: u32, decl_id
                     var ft = resolveTypeExprFull(env, fd.child_0, @intCast(u32, 0));
                     var dft_nm: []const u8 = "DFT:n"; pal_mod.markerWriteInt(dft_nm, @intCast(u32, fi2));
                     var dft_tm: []const u8 = "DFT:t"; pal_mod.markerWriteInt(dft_tm, ft);
-                    var b2_pn: []const u8 = "B2:p"; pal_mod.markerWrite(b2_pn);
-                    var b2_pb: [20]u8 = undefined; var b2_pl = itoa_mod.itoa(ast_mod.astStoreNodePayload(env.store, ast_mod.astStoreNodeExtraChildAt(env.store, decl.child_1, @intCast(u32, fi2))), b2_pb[0..]); var b2_ps: usize = @intCast(usize, 19) - @intCast(usize, b2_pl); pal_mod.markerWrite(b2_pb[b2_ps..@intCast(usize, 19)]);
-                    var b2_tn: []const u8 = "t"; pal_mod.markerWrite(b2_tn);
-                    var b2_tb: [20]u8 = undefined; var b2_tl = itoa_mod.itoa(ft, b2_tb[0..]); var b2_ts: usize = @intCast(usize, 19) - @intCast(usize, b2_tl); pal_mod.markerWrite(b2_tb[b2_ts..@intCast(usize, 19)]);
+                    var b2_pn: []const u8 = "B2:p"; pal_mod.markerWrite(b2_pn); markerU32(ast_mod.astStoreNodePayload(env.store, ast_mod.astStoreNodeExtraChildAt(env.store, decl.child_1, @intCast(u32, fi2))));
+                    var b2_tn: []const u8 = "t"; pal_mod.markerWrite(b2_tn); markerU32(ft);
                     var dtwr_m: []const u8 = "DTWR\n"; pal_mod.markerWrite(dtwr_m);
                     if (ft != type_mod.TYPE_UNDEFINED) {
                         env.typereg.fe_items[@intCast(usize, tp.fields_start) + fi2].type_id = ft;
@@ -2307,6 +2248,17 @@ fn resolveAggregateFieldTypesAll(env: *TypeResolveEnv, mods: []mr_mod.ModuleEntr
 // member names, container-literal field types and non-module field bases are
 // deliberately out of scope (FX13-I §7). Depth-capped like
 // `resolveTypeExprFull` so the walk cannot recurse past the resolver's bound.
+// D3-4: the shared ERR_3001 "identifier '<x>' is not declared or imported"
+// report used by both the ident and module-member unresolved leaves.
+fn reportUndefinedSymbol(diag: *DiagnosticCollector, interner: *StringInterner, source_file_id: u32, span_start: u32, span_len: u32, name_id: u32) void {
+    var ui1: []const u8 = "identifier '";
+    var ui2: []const u8 = "' is not declared or imported in this module";
+    var uitext = interner_mod.stringInternerGet(interner, name_id);
+    var uiparts: [3][]const u8 = [3][]const u8{ ui1, uitext, ui2 };
+    var uimsg = diag_mod.diagnosticBuilderMakeMsg(interner, &uiparts[0], @intCast(u32, 3));
+    _ = diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3001_UNDEFINED_SYMBOL)), source_file_id, span_start, span_start + span_len, uimsg);
+}
+
 pub fn typeResolverDiagnoseSignatureType(env: *TypeResolveEnv, node_idx: u32, depth: u32) void {
     if (node_idx == @intCast(u32, 0)) return;
     if (depth > @intCast(u32, 16)) return;
@@ -2326,12 +2278,7 @@ pub fn typeResolverDiagnoseSignatureType(env: *TypeResolveEnv, node_idx: u32, de
         var at_id = interner_mod.stringInternerIntern(env.interner, at_text);
         if (name_id == at_id) return;
         if (!diag_mod.diagnosticCollectorMarkNodeOnce(diag, node_idx)) return;
-        var ui1: []const u8 = "identifier '";
-        var ui2: []const u8 = "' is not declared or imported in this module";
-        var uitext = interner_mod.stringInternerGet(env.interner, name_id);
-        var uiparts: [3][]const u8 = [3][]const u8{ ui1, uitext, ui2 };
-        var uimsg = diag_mod.diagnosticBuilderMakeMsg(env.interner, &uiparts[0], @intCast(u32, 3));
-        _ = diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3001_UNDEFINED_SYMBOL)), env.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), uimsg);
+        reportUndefinedSymbol(diag, env.interner, env.source_file_id, node.span_start, @intCast(u32, node.span_len), name_id);
         return;
     }
     if (node.kind == AstKind.field_access) {
@@ -2370,12 +2317,7 @@ pub fn typeResolverDiagnoseSignatureType(env: *TypeResolveEnv, node_idx: u32, de
             var fd_ms = sym_mod.symbolRegistryQualifiedLookup(env.symbol_reg, fd_mod_id, fd_member);
             if (fd_ms == null) {
                 if (diag_mod.diagnosticCollectorMarkNodeOnce(diag, node_idx)) {
-                    var fm1: []const u8 = "identifier '";
-                    var fm2: []const u8 = "' is not declared or imported in this module";
-                    var fmtext = interner_mod.stringInternerGet(env.interner, fd_member);
-                    var fmparts: [3][]const u8 = [3][]const u8{ fm1, fmtext, fm2 };
-                    var fmmsg = diag_mod.diagnosticBuilderMakeMsg(env.interner, &fmparts[0], @intCast(u32, 3));
-                    _ = diag_mod.diagnosticCollectorAdd(diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3001_UNDEFINED_SYMBOL)), env.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), fmmsg);
+                    reportUndefinedSymbol(diag, env.interner, env.source_file_id, node.span_start, @intCast(u32, node.span_len), fd_member);
                 }
             }
             return;
