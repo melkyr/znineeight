@@ -101,7 +101,8 @@ The `diag_read` carve Task 0 measured (Σ of `new` over the 7 `arena diag_read: 
 **4,654,398 B = 4,545.3 K** (4,658,494 B including the un-logged initial 4096 segment).
 
 **Reconciliation (the gap is real and is the headline):**
-4,545.3 K carve = **2,913.4 K live payload + 1,635.9 K unused segment tail**.
+4,545.3 K carve = **2,913.4 K live payload + 1,631.9 K unused segment tail** (logged carve;
+**1,635.9 K** including the 4,096 B un-logged first segment).
 The carve overstates retained *bytes* by **~1,636 K (36%)**. This is not a measurement artifact: it is
 the `growableSandGrow` sizing policy (`allocator.zig:118-157`) interacting with whole-file requests.
 Each fault asks for a whole file (up to 597 K) plus its index; when that does not fit in the current
