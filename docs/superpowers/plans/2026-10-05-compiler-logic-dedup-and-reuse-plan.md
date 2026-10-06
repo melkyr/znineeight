@@ -186,13 +186,28 @@ rm -rf /tmp/selfc && mkdir -p /tmp/selfc
 - Expected: measurable `-s0` pool delta; dump-MD5 ideally unchanged (record regardless).
 - Commit `refactor(c89_emit): deduplicate compiler-side logic (2a)`.
 
-### Task 2b: Refactor `c89_emit.zig` — emitted-text refactors (MED risk)
-- Clusters: D7-1 field ladder; D7-2/D2-3 variant field; D7-3/D6-3 array copy/zero; D3-8 cast helper;
-  D7-4 call args; D5-5 synthetic names; D3-5/D6-1 type passes; D3-6/D3-7 module/signature; D3-9
-  optional/EU; D3-11 `#define`; D1-4 global externs; D1-2 int-kind tables; D3-3 LirInst descriptor;
-  D4-1 writes.
-- Emitted C may change; runtime-equivalence gated; record the dump-MD5 delta.
-- Commit `refactor(c89_emit): deduplicate emitted-text logic (2b)`.
+### Task 2b: Refactor `c89_emit.zig` — emitted-text refactors — split into 2b1/2b2/2b3
+> Operator ruling (2026-10-05): 2b bundles ~15 emitted-text clusters — too large for one review
+> surface — so it runs as three sequential, separately-reviewed, separately-committed area
+> increments. Each runs the full battery, records its dump-MD5 delta and `-s0` pool/RSS delta, and
+> commits only `sf/src/c89_emit.zig`. Emitted C may change; runtime equivalence is the oracle.
+
+### Task 2b1: Refactor `c89_emit.zig` — field/call emission helpers (MED risk)
+- Clusters: D7-1 field-name resolution ladder; D7-2/D2-3 variant-field designator; D7-3/D6-3 array
+  copy/zero; D7-4 call-argument loop; the four retained D1-1 sites (variant-src `emitFieldAssign`;
+  `getTempEffType`; `.load_field res_ty`; `.store_field sf_src_ty`).
+- Commit `refactor(c89_emit): deduplicate field/call emission (2b1)`.
+
+### Task 2b2: Refactor `c89_emit.zig` — type/decl emission (MED risk)
+- Clusters: D5-5 synthetic type-name builders; D3-5/D6-1 `emitSharedHeader`≡`emitSpecialTypes`
+  passes; D3-6 `emitModule`/`emitModuleFile`; D3-7 `emitFunctionSignature`/`emitFunctionForwardDecl`;
+  D3-11 `#define` macro loops; D1-4 global extern decl emission.
+- Commit `refactor(c89_emit): deduplicate type/decl emission (2b2)`.
+
+### Task 2b3: Refactor `c89_emit.zig` — semantic tables / opcode descriptors (MED risk)
+- Clusters: D1-2 int-kind truth tables; D3-3 LirInst shape descriptors; D4-1 `written_type` writes;
+  D3-8 cast-emission helper; D3-9 optional/EU wrap-unwrap ladder.
+- Commit `refactor(c89_emit): deduplicate semantic tables/descriptors (2b3)`.
 
 ### Task 2c: Refactor `c89_emit.zig` — order-sensitive (HIGH risk)
 - Clusters: D3-2/D2-1/D2-2 `tstEdges` single walker (topo order → 4 MD5 gates); D7-5 string escape;
