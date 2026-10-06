@@ -220,8 +220,28 @@ rm -rf /tmp/selfc && mkdir -p /tmp/selfc
   (leads `C-I5 #2/#6/#7/#14`, `C-F5`).
 - Deliverable: census report. Commit: NONE.
 
-### Task 4: Refactor `lower.zig`
-- Commit `refactor(lower): deduplicate <cluster> logic`.
+### Task 4: Refactor `lower.zig` — split into 4a/4b/4c
+> Operator ruling (2026-10-05): the census's top clusters are temp-order/emitted-text observable, so
+> Task 4 runs as three sequential, separately-reviewed, separately-committed area increments. Each
+> runs the full battery, records its dump-MD5 delta and `-s0` pool/RSS delta, and commits only
+> `sf/src/lower.zig`. Emitted C may change; runtime equivalence is the oracle.
+
+### Task 4a: Refactor `lower.zig` — field/compound lowering ladders (MED risk)
+- Clusters: D7-1 compound-assign arm template (34 arms); D3-1/D7-9 field-access/store/addr ladders
+  (~450 ln); D7-9 packed field store/load; D7-5 for-loop skeleton.
+- Commit `refactor(lower): deduplicate field/compound lowering (4a)`.
+
+### Task 4b: Refactor `lower.zig` — call/expr lowering (MED risk)
+- Clusters: D7-2/D4-1 call-argument loops; D7-4/D3-2 switch expr-vs-stmt; D6-1/D7-6 binary/unary arm
+  prologue+shape; D7-3 capture-binding tail.
+- Commit `refactor(lower): deduplicate call/expr lowering (4b)`.
+
+### Task 4c: Refactor `lower.zig` — data-structure/printer/value helpers (LOW–MED risk)
+- Clusters: D5-2 `LirFunction` header rebuild; D5-1 ArrayList grow boilerplate; D1-2 `printFmt` kind
+  ladders; D4-2 local-decl SoA writes; D5-4 `TypeResolveEnv` rebuild; D1-1 int width/signedness;
+  D1-4 `resolvedTypeTableGet`; D1-5 ICE helpers; D6-2 fold-lookup; D2-1 condition tag; D1-6/D6-3
+  AST-kind sets; D3-5 eu_box; D1-3 symbol predicates; D2-2 synthName; D5-5 marker/itoa; D5-3 hoistTemps.
+- Commit `refactor(lower): deduplicate data-structure/value helpers (4c)`.
 
 ### Task 5: Analyze `semantic_analyzer.zig` (7,016) — READ-ONLY
 - D1/D2/D3: `isAssignable`/`classifyCoercion` and coercion/type predicates (leads `C-R2`, `C-I3`).
