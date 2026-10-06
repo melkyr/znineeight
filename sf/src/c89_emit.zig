@@ -1323,73 +1323,15 @@ fn tstSeenInRange(reg: *TypeRegistry, start: u32, count: u32, tid: u32) bool {
     return false;
 }
 
-fn tstEdgesCount(reg: *TypeRegistry, ti: u32) u32 {
-    var ty = reg.types_items[@intCast(usize, ti)];
-    var c: u32 = @intCast(u32, 0);
-    if (ty.kind == TypeKind.struct_type) {
-        var sp = reg.st_items[@intCast(usize, ty.payload_idx)];
-        var i: usize = @intCast(usize, 0);
-        while (i < @intCast(usize, sp.fields_count)) : (i += 1) {
-            var ft = reg.fe_items[@intCast(usize, sp.fields_start) + i].type_id;
-            if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) {
-                if (!tstSeenInRange(reg, sp.fields_start, @intCast(u32, i), ft)) c += 1;
-            }
-        }
-    } else if (ty.kind == TypeKind.tagged_union_type) {
-        var tp = reg.tu_items[@intCast(usize, ty.payload_idx)];
-        var i: usize = @intCast(usize, 0);
-        while (i < @intCast(usize, tp.fields_count)) : (i += 1) {
-            var ft = reg.fe_items[@intCast(usize, tp.fields_start) + i].type_id;
-            if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) {
-                if (!tstSeenInRange(reg, tp.fields_start, @intCast(u32, i), ft)) c += 1;
-            }
-        }
-        if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, tp.tag_type)].kind) and tp.tag_type != ti) {
-            if (!tstSeenInRange(reg, tp.fields_start, tp.fields_count, tp.tag_type)) c += 1;
-        }
-    } else if (ty.kind == TypeKind.array_type) {
-        var et = reg.array_items[@intCast(usize, ty.payload_idx)].elem;
-        if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, et)].kind) and et != ti) c += 1;
-    } else if (ty.kind == TypeKind.error_union_type) {
-        var eup = reg.eu_items[@intCast(usize, ty.payload_idx)].payload;
-        if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, eup)].kind) and eup != ti) c += 1;
-    } else if (ty.kind == TypeKind.optional_type) {                              // ADD
-        var op = reg.opt_items[@intCast(usize, ty.payload_idx)].payload;
-        if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, op)].kind) and op != ti) c += 1;
-    } else if (ty.kind == TypeKind.slice_type) {                                 // ADD
-        var se = reg.slice_items[@intCast(usize, ty.payload_idx)].elem;
-        var sek = reg.types_items[@intCast(usize, se)].kind;
-        if (c89NeedsEmitEdge(sek) and se != ti and (sek == TypeKind.enum_type or sek == TypeKind.error_set_type)) c += 1;
-    } else if (ty.kind == TypeKind.union_type) {                                 // ADD
-        var up = reg.un_items[@intCast(usize, ty.payload_idx)];
-        var i: usize = @intCast(usize, 0);
-        while (i < @intCast(usize, up.fields_count)) : (i += 1) {
-            var ft = reg.fe_items[@intCast(usize, up.fields_start) + i].type_id;
-            if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) {
-                if (!tstSeenInRange(reg, up.fields_start, @intCast(u32, i), ft)) c += 1;
-            }
-        }
-    } else if (ty.kind == TypeKind.tuple_type) {
-        // Task 4 (z98-print-formatting): tuple elements live in `xt_items`, not
-        // `fe_items`; count each distinct dependent element type once.
-        var tup = reg.tup_items[@intCast(usize, ty.payload_idx)];
-        var i: usize = @intCast(usize, 0);
-        while (i < @intCast(usize, tup.elems_count)) : (i += 1) {
-            var et = reg.xt_items[@intCast(usize, tup.elems_start) + i];
-            if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, et)].kind) and et != ti) {
-                var dup: u8 = @intCast(u8, 0);
-                var j: usize = @intCast(usize, 0);
-                while (j < i) : (j += 1) {
-                    if (reg.xt_items[@intCast(usize, tup.elems_start) + j] == et) { dup = @intCast(u8, 1); break; }
-                }
-                if (dup == @intCast(u8, 0)) c += 1;
-            }
-        }
-    }
-    return c;
-}
-
-fn tstEdgesFill(reg: *TypeRegistry, ti: u32, tgt: [*]u32, start: u32) void {
+// D3-2/D2-1: the single deduped value-embedding edge walker shared by
+// count / fill / membership. When `has_out` is non-zero the walk writes the
+// ordered deduped edge list at `tgt[start..]`; the return is the edge count.
+// When `probe` is non-zero the walk returns 1 as soon as `probe_target` is a
+// member (skipping the dedup work, since membership is dedup-invariant) and 0
+// otherwise. Callers that do not write pass a throwaway one-word buffer.
+// Order is preserved exactly as the former `tstEdgesFill`.
+fn tstEdgesWalk(reg: *TypeRegistry, ti: u32, tgt: [*]u32, start: u32, has_out: u8, probe: u32, probe_target: u32) u32 {
+    var out: [*]u32 = tgt;
     var ty = reg.types_items[@intCast(usize, ti)];
     var off: u32 = start;
     if (ty.kind == TypeKind.struct_type) {
@@ -1398,8 +1340,11 @@ fn tstEdgesFill(reg: *TypeRegistry, ti: u32, tgt: [*]u32, start: u32) void {
         while (i < @intCast(usize, sp.fields_count)) : (i += 1) {
             var ft = reg.fe_items[@intCast(usize, sp.fields_start) + i].type_id;
             if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) {
-                if (!tstSeenInRange(reg, sp.fields_start, @intCast(u32, i), ft)) {
-                    tgt[@intCast(usize, off)] = ft; off += 1;
+                if (probe != @intCast(u32, 0)) {
+                    if (ft == probe_target) return @intCast(u32, 1);
+                } else if (!tstSeenInRange(reg, sp.fields_start, @intCast(u32, i), ft)) {
+                    if (has_out != @intCast(u8, 0)) { out[@intCast(usize, off)] = ft; }
+                    off += 1;
                 }
             }
         }
@@ -1409,45 +1354,58 @@ fn tstEdgesFill(reg: *TypeRegistry, ti: u32, tgt: [*]u32, start: u32) void {
         while (i < @intCast(usize, tp.fields_count)) : (i += 1) {
             var ft = reg.fe_items[@intCast(usize, tp.fields_start) + i].type_id;
             if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) {
-                if (!tstSeenInRange(reg, tp.fields_start, @intCast(u32, i), ft)) {
-                    tgt[@intCast(usize, off)] = ft; off += 1;
+                if (probe != @intCast(u32, 0)) {
+                    if (ft == probe_target) return @intCast(u32, 1);
+                } else if (!tstSeenInRange(reg, tp.fields_start, @intCast(u32, i), ft)) {
+                    if (has_out != @intCast(u8, 0)) { out[@intCast(usize, off)] = ft; }
+                    off += 1;
                 }
             }
         }
         if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, tp.tag_type)].kind) and tp.tag_type != ti) {
-            if (!tstSeenInRange(reg, tp.fields_start, tp.fields_count, tp.tag_type)) {
-                tgt[@intCast(usize, off)] = tp.tag_type; off += 1;
+            if (probe != @intCast(u32, 0)) {
+                if (tp.tag_type == probe_target) return @intCast(u32, 1);
+            } else if (!tstSeenInRange(reg, tp.fields_start, tp.fields_count, tp.tag_type)) {
+                if (has_out != @intCast(u8, 0)) { out[@intCast(usize, off)] = tp.tag_type; }
+                off += 1;
             }
         }
     } else if (ty.kind == TypeKind.array_type) {
         var et = reg.array_items[@intCast(usize, ty.payload_idx)].elem;
         if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, et)].kind) and et != ti) {
-            tgt[@intCast(usize, off)] = et; off += 1;
+            if (probe != @intCast(u32, 0)) { if (et == probe_target) return @intCast(u32, 1); }
+            else { if (has_out != @intCast(u8, 0)) { out[@intCast(usize, off)] = et; } off += 1; }
         }
     } else if (ty.kind == TypeKind.error_union_type) {
         var eup = reg.eu_items[@intCast(usize, ty.payload_idx)].payload;
         if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, eup)].kind) and eup != ti) {
-            tgt[@intCast(usize, off)] = eup; off += 1;
+            if (probe != @intCast(u32, 0)) { if (eup == probe_target) return @intCast(u32, 1); }
+            else { if (has_out != @intCast(u8, 0)) { out[@intCast(usize, off)] = eup; } off += 1; }
         }
-    } else if (ty.kind == TypeKind.optional_type) {                              // ADD
+    } else if (ty.kind == TypeKind.optional_type) {
         var op = reg.opt_items[@intCast(usize, ty.payload_idx)].payload;
         if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, op)].kind) and op != ti) {
-            tgt[@intCast(usize, off)] = op; off += 1;
+            if (probe != @intCast(u32, 0)) { if (op == probe_target) return @intCast(u32, 1); }
+            else { if (has_out != @intCast(u8, 0)) { out[@intCast(usize, off)] = op; } off += 1; }
         }
-    } else if (ty.kind == TypeKind.slice_type) {                                 // ADD
+    } else if (ty.kind == TypeKind.slice_type) {
         var se = reg.slice_items[@intCast(usize, ty.payload_idx)].elem;
         var sek = reg.types_items[@intCast(usize, se)].kind;
         if (c89NeedsEmitEdge(sek) and se != ti and (sek == TypeKind.enum_type or sek == TypeKind.error_set_type)) {
-            tgt[@intCast(usize, off)] = se; off += 1;
+            if (probe != @intCast(u32, 0)) { if (se == probe_target) return @intCast(u32, 1); }
+            else { if (has_out != @intCast(u8, 0)) { out[@intCast(usize, off)] = se; } off += 1; }
         }
-    } else if (ty.kind == TypeKind.union_type) {                                 // ADD
+    } else if (ty.kind == TypeKind.union_type) {
         var up = reg.un_items[@intCast(usize, ty.payload_idx)];
         var i: usize = @intCast(usize, 0);
         while (i < @intCast(usize, up.fields_count)) : (i += 1) {
             var ft = reg.fe_items[@intCast(usize, up.fields_start) + i].type_id;
             if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) {
-                if (!tstSeenInRange(reg, up.fields_start, @intCast(u32, i), ft)) {
-                    tgt[@intCast(usize, off)] = ft; off += 1;
+                if (probe != @intCast(u32, 0)) {
+                    if (ft == probe_target) return @intCast(u32, 1);
+                } else if (!tstSeenInRange(reg, up.fields_start, @intCast(u32, i), ft)) {
+                    if (has_out != @intCast(u8, 0)) { out[@intCast(usize, off)] = ft; }
+                    off += 1;
                 }
             }
         }
@@ -1457,57 +1415,39 @@ fn tstEdgesFill(reg: *TypeRegistry, ti: u32, tgt: [*]u32, start: u32) void {
         while (i < @intCast(usize, tup.elems_count)) : (i += 1) {
             var et = reg.xt_items[@intCast(usize, tup.elems_start) + i];
             if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, et)].kind) and et != ti) {
-                var dup: u8 = @intCast(u8, 0);
-                var j: usize = @intCast(usize, 0);
-                while (j < i) : (j += 1) {
-                    if (reg.xt_items[@intCast(usize, tup.elems_start) + j] == et) { dup = @intCast(u8, 1); break; }
+                if (probe != @intCast(u32, 0)) {
+                    if (et == probe_target) return @intCast(u32, 1);
+                } else {
+                    var dup: u8 = @intCast(u8, 0);
+                    var j: usize = @intCast(usize, 0);
+                    while (j < i) : (j += 1) {
+                        if (reg.xt_items[@intCast(usize, tup.elems_start) + j] == et) { dup = @intCast(u8, 1); break; }
+                    }
+                    if (dup == @intCast(u8, 0)) {
+                        if (has_out != @intCast(u8, 0)) { out[@intCast(usize, off)] = et; }
+                        off += 1;
+                    }
                 }
-                if (dup == @intCast(u8, 0)) { tgt[@intCast(usize, off)] = et; off += 1; }
             }
         }
     }
+    if (probe != @intCast(u32, 0)) return @intCast(u32, 0);
+    return off - start;
+}
+
+fn tstEdgesCount(reg: *TypeRegistry, ti: u32) u32 {
+    var dummy: [1]u32 = undefined;
+    return tstEdgesWalk(reg, ti, @ptrCast([*]u32, &dummy[0]), @intCast(u32, 0), @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0));
+}
+
+fn tstEdgesFill(reg: *TypeRegistry, ti: u32, tgt: [*]u32, start: u32) void {
+    _ = tstEdgesWalk(reg, ti, tgt, start, @intCast(u8, 1), @intCast(u32, 0), @intCast(u32, 0));
 }
 
 fn tstIsDep(reg: *TypeRegistry, ti: u32, target: u32) bool {
-    var ty = reg.types_items[@intCast(usize, ti)];
+    var dummy: [1]u32 = undefined;
     if (!c89NeedsEmitEdge(reg.types_items[@intCast(usize, target)].kind) or target == ti) return false;
-    if (ty.kind == TypeKind.struct_type) {
-        var sp = reg.st_items[@intCast(usize, ty.payload_idx)];
-        var i: usize = @intCast(usize, 0);
-        while (i < @intCast(usize, sp.fields_count)) : (i += 1) {
-            if (reg.fe_items[@intCast(usize, sp.fields_start) + i].type_id == target) return true;
-        }
-    } else if (ty.kind == TypeKind.tagged_union_type) {
-        var tp = reg.tu_items[@intCast(usize, ty.payload_idx)];
-        if (tp.tag_type == target) return true;
-        var i: usize = @intCast(usize, 0);
-        while (i < @intCast(usize, tp.fields_count)) : (i += 1) {
-            if (reg.fe_items[@intCast(usize, tp.fields_start) + i].type_id == target) return true;
-        }
-    } else if (ty.kind == TypeKind.array_type) {
-        if (reg.array_items[@intCast(usize, ty.payload_idx)].elem == target) return true;
-
-    } else if (ty.kind == TypeKind.error_union_type) {
-        if (reg.eu_items[@intCast(usize, ty.payload_idx)].payload == target) return true;
-    } else if (ty.kind == TypeKind.optional_type) {                              // ADD
-        if (reg.opt_items[@intCast(usize, ty.payload_idx)].payload == target) return true;
-    } else if (ty.kind == TypeKind.slice_type) {                                 // ADD
-        var se = reg.slice_items[@intCast(usize, ty.payload_idx)].elem;
-        var sek = reg.types_items[@intCast(usize, se)].kind;
-        if (se == target and (sek == TypeKind.enum_type or sek == TypeKind.error_set_type)) return true;
-    } else if (ty.kind == TypeKind.union_type) {                                 // ADD
-        var up = reg.un_items[@intCast(usize, ty.payload_idx)];
-        var i: usize = @intCast(usize, 0);
-        while (i < @intCast(usize, up.fields_count)) : (i += 1) {
-            if (reg.fe_items[@intCast(usize, up.fields_start) + i].type_id == target) return true;
-        }
-    } else if (ty.kind == TypeKind.tuple_type) {
-        var tup = reg.tup_items[@intCast(usize, ty.payload_idx)];
-        var i: usize = @intCast(usize, 0);
-        while (i < @intCast(usize, tup.elems_count)) : (i += 1) {
-            if (reg.xt_items[@intCast(usize, tup.elems_start) + i] == target) return true;
-        }
-    }
+    if (tstEdgesWalk(reg, ti, @ptrCast([*]u32, &dummy[0]), @intCast(u32, 0), @intCast(u8, 0), @intCast(u32, 1), target) != @intCast(u32, 0)) return true;
     return false;
 }
 
@@ -4290,7 +4230,7 @@ fn emitValueExpr(emitter: *C89Emitter, temp_id: u32, depth: u32) void {
 fn nestEmitDefRvalue(emitter: *C89Emitter, inst: lir_mod.LirInst, depth: u32) void {
     switch (inst) {
         .binary => |b| { nestEmitBinExpr(emitter, b.op, b.lhs, b.rhs, b.result, depth); },
-        .unary => |u| { nestEmitUnaryExpr(emitter, u.op, u.operand, u.result, depth); },
+        .unary => |u| { emitUnaryRvalue(emitter, u.op, u.operand, u.result, depth); },
         .int_cast => |c| {
             var ctype = getCTypeName(emitter.registry, emitter.mangler, c.target);
             emitCastRvalue(emitter, ctype, c.value, depth, "");
@@ -4315,7 +4255,11 @@ fn nestEmitDefRvalue(emitter: *C89Emitter, inst: lir_mod.LirInst, depth: u32) vo
             var ctype = getCTypeName(emitter.registry, emitter.mangler, type_mod.TYPE_USIZE);
             emitCastRvalue(emitter, ctype, pti.value, depth, "");
         },
-        .int_const => |ic| { nestWriteIntConstRvalue(emitter, ic.value, ic.result); },
+        .int_const => |ic| {
+            var ic_ht = hoistedTypeOf(emitter, ic.result);
+            var ic_tid = intConstTypeForValue(emitter.registry, ic.value, ic_ht);
+            writeIntConstRvalue(emitter, ic.value, ic_tid, "");
+        },
         .bool_const => |bc| {
             if (bc.value != @intCast(u8, 0)) {
                 var s: []const u8 = "1";
@@ -4405,11 +4349,19 @@ fn nestEmitBinExpr(emitter: *C89Emitter, op: u8, lhs_t: u32, rhs_t: u32, res_t: 
             if (rt.kind == type_mod.TypeKind.tagged_union_type) { rhs_is_tag = @intCast(u8, 1); }
         }
     }
+    var lhs_name = resolveTempName(emitter, lhs_t);
+    var rhs_name = resolveTempName(emitter, rhs_t);
+    emitBinRvalueText(emitter, op, lhs_t, rhs_t, lhs_name, rhs_name, depth, lhs_is_tag, rhs_is_tag);
+}
+
+// D7-7: the shared binary operand text (width casts, shift-operand
+// parenthesization, tagged-union `.tag` suffix). The def arm writes its
+// `result = ` lead first; the nested rvalue path writes the text alone.
+fn emitBinRvalueText(emitter: *C89Emitter, op: u8, lhs_t: u32, rhs_t: u32, lhs_name: []const u8, rhs_name: []const u8, depth: u32, lhs_is_tag: u8, rhs_is_tag: u8) void {
+    var sp: []const u8 = " ";
     var op_str = getBinOpStr(op);
     var is_shift_op: u8 = @intCast(u8, 0);
     if (op == @intCast(u8, 8) or op == @intCast(u8, 9)) { is_shift_op = @intCast(u8, 1); }
-    var lhs_name = resolveTempName(emitter, lhs_t);
-    var rhs_name = resolveTempName(emitter, rhs_t);
     var lhs_paren: u8 = @intCast(u8, 0);
     if (is_shift_op != @intCast(u8, 0) and !isAtomicCOperand(lhs_name)) { lhs_paren = @intCast(u8, 1); }
     var rhs_paren: u8 = @intCast(u8, 0);
@@ -4482,7 +4434,7 @@ fn nestEmitBinExpr(emitter: *C89Emitter, op: u8, lhs_t: u32, rhs_t: u32, res_t: 
 
 // Rvalue-only mirror of the .unary def arm (single `result = <rvalue>;`
 // statement shape; width-wrap-needed results excluded at decision time).
-fn nestEmitUnaryExpr(emitter: *C89Emitter, op: u8, operand_t: u32, res_t: u32, depth: u32) void {
+fn emitUnaryRvalue(emitter: *C89Emitter, op: u8, operand_t: u32, res_t: u32, depth: u32) void {
     if (op == @intCast(u8, 3)) {
         var wty: u32 = @intCast(u32, 0);
         var wsg: u8 = @intCast(u8, 0);
@@ -4509,11 +4461,13 @@ fn nestEmitUnaryExpr(emitter: *C89Emitter, op: u8, operand_t: u32, res_t: u32, d
     emitValueExpr(emitter, operand_t, depth);
 }
 
-// Rvalue-only mirror of the .int_const def arm value text.
-fn nestWriteIntConstRvalue(emitter: *C89Emitter, value: u64, result_temp: u32) void {
+// D6-2: the shared signed/width/mask/min-literal fold that renders one integer
+// constant. `prefix` is the already-selected assignment lead (`" = "` for a
+// plain value, `".tag = "` for a tagged-union discriminant); the nested rvalue
+// path passes an empty prefix.
+fn writeIntConstRvalue(emitter: *C89Emitter, value: u64, temp_type_id: u32, prefix: []const u8) void {
     var ib: [32]u8 = undefined;
-    var ht_found_tid = hoistedTypeOf(emitter, result_temp);
-    var temp_type_id = intConstTypeForValue(emitter.registry, value, ht_found_tid);
+    if (prefix.len != @intCast(usize, 0)) { bufferedWriterWrite(&emitter.writer, prefix); }
     var ict_bty = emitter.registry.types_items[@intCast(usize, temp_type_id)];
     var is_signed: u8 = @intCast(u8, 0);
     var width_bits: u32 = @intCast(u32, 32);
@@ -5531,6 +5485,22 @@ fn printNameRouteKind(k: TypeKind) bool {
     return false;
 }
 
+// D7-8: the shared `{}`/field print-route classification, in the exact probe
+// order both `emitAggValue` and `.print_val` used (pointer before aggregate
+// before name before scalar). Callers keep their own argument/depth/indent
+// rendering.
+const kPrintRoutePtr: u8 = @intCast(u8, 0);
+const kPrintRouteAgg: u8 = @intCast(u8, 1);
+const kPrintRouteName: u8 = @intCast(u8, 2);
+const kPrintRouteScalar: u8 = @intCast(u8, 3);
+
+fn printValueRoute(k: TypeKind) u8 {
+    if (k == TypeKind.ptr_type or k == TypeKind.many_ptr_type) return kPrintRoutePtr;
+    if (printAggKind(k)) return kPrintRouteAgg;
+    if (printNameRouteKind(k)) return kPrintRouteName;
+    return kPrintRouteScalar;
+}
+
 // prefix + decimal type id, interned (the generated printer/table naming rule).
 fn typeIdName(emitter: *C89Emitter, prefix: []const u8, tid: u32) []const u8 {
     var buf: [64]u8 = undefined;
@@ -5590,18 +5560,19 @@ fn aggAccessAppendIndex(buf: *[kAggAccessCap]u8, pos: usize, idx: u32) usize {
 // a top-level argument (the validator admits only kinds with a final route).
 fn emitAggValue(emitter: *C89Emitter, tid: u32, access: []const u8) void {
     var ty = emitter.registry.types_items[@intCast(usize, tid)];
-    if (ty.kind == TypeKind.ptr_type or ty.kind == TypeKind.many_ptr_type) {
+    var route = printValueRoute(ty.kind);
+    if (route == kPrintRoutePtr) {
         // Task 6: pointer / fn-pointer field -> the Zig `{any}` pointer route
         // (one-pointer: address or pointee delegation; many-pointer: address
         // only), nested at depth d - 1.
         emitPtrValuePrint(emitter, tid, @intCast(u8, 0), @intCast(u32, 0), access, @intCast(u8, 0));
-    } else if (printAggKind(ty.kind)) {
+    } else if (route == kPrintRouteAgg) {
         var pname = aggPrinterName(emitter, tid);
         bufferedWriterWrite(&emitter.writer, pname);
         var o1: []const u8 = "("; bufferedWriterWrite(&emitter.writer, o1);
         bufferedWriterWrite(&emitter.writer, access);
         var o2: []const u8 = ", d - 1);\n"; bufferedWriterWrite(&emitter.writer, o2);
-    } else if (printNameRouteKind(ty.kind)) {
+    } else if (route == kPrintRouteName) {
         var pname = namePrinterName(emitter, tid);
         bufferedWriterWrite(&emitter.writer, pname);
         var o1: []const u8 = "("; bufferedWriterWrite(&emitter.writer, o1);
@@ -5698,14 +5669,7 @@ fn emitNameBlob(emitter: *C89Emitter, name: []const u8, kind: TypeKind, count: u
             nid = reg.xn_items[start + mi];
         }
         var mname = interner_mod.stringInternerGet(emitter.interner, nid);
-        var bi: usize = @intCast(usize, 0);
-        while (bi < mname.len) : (bi += @intCast(usize, 1)) {
-            var c = mname[bi];
-            if (c == @intCast(u8, 92)) { var eb: []const u8 = "\\\\"; bufferedWriterWrite(&emitter.writer, eb); }
-            else if (c == @intCast(u8, 34)) { var eq: []const u8 = "\\\""; bufferedWriterWrite(&emitter.writer, eq); }
-            else if (c >= @intCast(u8, 32) and c < @intCast(u8, 127)) { bufferedWriterWriteByte(&emitter.writer, c); }
-            else { var ed: []const u8 = "."; bufferedWriterWrite(&emitter.writer, ed); }
-        }
+        emitCStringBytes(&emitter.writer, mname, kStrEscBlob);
     }
     var t2: []const u8 = "\";\n"; bufferedWriterWrite(&emitter.writer, t2);
 }
@@ -6605,22 +6569,45 @@ fn emitNeededTupleAt(emitter: *C89Emitter, tid: u32, seen: *U32ToU32Map) void {
     emitTypeDefOnce(emitter, tid, seen, @intCast(u8, 1));
 }
 
-fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
-    var s: []const u8 = "\"";
-    bufferedWriterWrite(writer, s);
+// D7-5: the three former string-escape truth tables, unified behind an explicit
+// mode. `kStrEscFull`: full C literal (`\n \t \r \\ \"`, raw >=32, `.` below);
+// `kStrEscConst`: `.string_const` (`\n \t \r`, `\\`/`\"`, every other byte raw,
+// including controls); `kStrEscBlob`: `emitNameBlob` (`\\`/`\"`, printable
+// 32..126 raw, `.` otherwise). `emitCStringBytes` writes only the escaped
+// bytes; `emitCStringLiteralEx` wraps them in one quote pair.
+const kStrEscFull: u8 = @intCast(u8, 0);
+const kStrEscConst: u8 = @intCast(u8, 1);
+const kStrEscBlob: u8 = @intCast(u8, 2);
+
+fn emitCStringBytes(writer: *BufferedWriter, str: []const u8, mode: u8) void {
     var i: usize = @intCast(usize, 0);
     while (i < str.len) : (i += @intCast(usize, 1)) {
         var c = str[i];
-        if (c == @intCast(u8, 10)) { var esc: []const u8 = "\\n"; bufferedWriterWrite(writer, esc); }
+        if (c == @intCast(u8, 92)) { var esc: []const u8 = "\\\\"; bufferedWriterWrite(writer, esc); }
+        else if (c == @intCast(u8, 34)) { var esc: []const u8 = "\\\""; bufferedWriterWrite(writer, esc); }
+        else if (mode == kStrEscBlob) {
+            if (c >= @intCast(u8, 32) and c < @intCast(u8, 127)) { bufferedWriterWriteByte(writer, c); }
+            else { var esc: []const u8 = "."; bufferedWriterWrite(writer, esc); }
+        }
+        else if (c == @intCast(u8, 10)) { var esc: []const u8 = "\\n"; bufferedWriterWrite(writer, esc); }
         else if (c == @intCast(u8, 9)) { var esc: []const u8 = "\\t"; bufferedWriterWrite(writer, esc); }
         else if (c == @intCast(u8, 13)) { var esc: []const u8 = "\\r"; bufferedWriterWrite(writer, esc); }
-        else if (c == @intCast(u8, 92)) { var esc: []const u8 = "\\\\"; bufferedWriterWrite(writer, esc); }
-        else if (c == @intCast(u8, 34)) { var esc: []const u8 = "\\\""; bufferedWriterWrite(writer, esc); }
         else if (c >= @intCast(u8, 32)) { bufferedWriterWriteByte(writer, c); }
+        else if (mode == kStrEscConst) { bufferedWriterWriteByte(writer, c); }
         else { var esc: []const u8 = "."; bufferedWriterWrite(writer, esc); }
     }
+}
+
+fn emitCStringLiteralEx(writer: *BufferedWriter, str: []const u8, mode: u8) void {
+    var s: []const u8 = "\"";
+    bufferedWriterWrite(writer, s);
+    emitCStringBytes(writer, str, mode);
     var se: []const u8 = "\"";
     bufferedWriterWrite(writer, se);
+}
+
+fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
+    emitCStringLiteralEx(writer, str, kStrEscFull);
 }
 
  fn resolveTempName(emitter: *C89Emitter, temp_id: u32) []const u8 {
@@ -7776,38 +7763,6 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                     if (rty.kind == type_mod.TypeKind.tagged_union_type) { rhs_is_tag = @intCast(u8, 1); }
                 }
             }
-            var op_str = getBinOpStr(b.op);
-            var is_shift_op: u8 = @intCast(u8, 0);
-            if (b.op == @intCast(u8, 8) or b.op == @intCast(u8, 9)) { is_shift_op = @intCast(u8, 1); }
-            var lhs_paren: u8 = @intCast(u8, 0);
-            if (is_shift_op != @intCast(u8, 0) and !isAtomicCOperand(lhs)) { lhs_paren = @intCast(u8, 1); }
-            var rhs_paren: u8 = @intCast(u8, 0);
-            if (is_shift_op != @intCast(u8, 0) and !isAtomicCOperand(rhs)) { rhs_paren = @intCast(u8, 1); }
-            var lhs_cast: []const u8 = "";
-            var rhs_cast: []const u8 = "";
-            if (b.op >= @intCast(u8, 10)) {
-                var l_sgn: i8 = @intCast(i8, -1);
-                var r_sgn: i8 = @intCast(i8, -1);
-                var l_tyid: u32 = @intCast(u32, 0);
-                var r_tyid: u32 = @intCast(u32, 0);
-                var l_sg: u8 = @intCast(u8, 0);
-                var r_sg: u8 = @intCast(u8, 0);
-                if (getTempEffType(emitter, b.lhs, &l_tyid, &l_sg) == @intCast(u8, 1)) {
-                    l_sgn = classifyIntSignedness(emitter.registry, l_tyid);
-                }
-                if (getTempEffType(emitter, b.rhs, &r_tyid, &r_sg) == @intCast(u8, 1)) {
-                    r_sgn = classifyIntSignedness(emitter.registry, r_tyid);
-                }
-                if (l_sgn == @intCast(i8, 1) and r_sgn == @intCast(i8, 0)) {
-                    if (intTypeByteWidth(emitter.registry, r_tyid) >= intTypeByteWidth(emitter.registry, l_tyid)) {
-                        lhs_cast = getCTypeName(emitter.registry, emitter.mangler, r_tyid);
-                    }
-                } else if (l_sgn == @intCast(i8, 0) and r_sgn == @intCast(i8, 1)) {
-                    if (intTypeByteWidth(emitter.registry, l_tyid) >= intTypeByteWidth(emitter.registry, r_tyid)) {
-                        rhs_cast = getCTypeName(emitter.registry, emitter.mangler, l_tyid);
-                    }
-                }
-            }
             var bnr_m: []const u8 = "BNR:r"; pal.markerWrite(bnr_m);
             var bnr_rb: [10]u8 = undefined; var bnr_rl = itoa_mod.itoa(@intCast(u32, result.len), bnr_rb[0..]); var bnr_rs: usize = @intCast(usize, 9) - @intCast(usize, bnr_rl); pal.markerWrite(bnr_rb[bnr_rs..@intCast(usize, 9)]);
             var bnr_lm: []const u8 = "l"; pal.markerWrite(bnr_lm);
@@ -7817,46 +7772,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             bufferedWriterWrite(&emitter.writer, result);
             var s: []const u8 = " = ";
             bufferedWriterWrite(&emitter.writer, s);
-            if (lhs_cast.len != @intCast(usize, 0)) {
-                var lc0: []const u8 = "("; bufferedWriterWrite(&emitter.writer, lc0);
-                bufferedWriterWrite(&emitter.writer, lhs_cast);
-                var lc1: []const u8 = ")"; bufferedWriterWrite(&emitter.writer, lc1);
-            }
-            if (lhs_paren != @intCast(u8, 0)) {
-                var lp: []const u8 = "(";
-                bufferedWriterWrite(&emitter.writer, lp);
-            }
-            emitValueExpr(emitter, b.lhs, @intCast(u32, 0));
-            if (lhs_is_tag != @intCast(u8, 0)) {
-                var tag_s: []const u8 = ".tag";
-                bufferedWriterWrite(&emitter.writer, tag_s);
-            }
-            if (lhs_paren != @intCast(u8, 0)) {
-                var rp: []const u8 = ")";
-                bufferedWriterWrite(&emitter.writer, rp);
-            }
-            var sp: []const u8 = " ";
-            bufferedWriterWrite(&emitter.writer, sp);
-            bufferedWriterWrite(&emitter.writer, op_str);
-            bufferedWriterWrite(&emitter.writer, sp);
-            if (rhs_cast.len != @intCast(usize, 0)) {
-                var rc0: []const u8 = "("; bufferedWriterWrite(&emitter.writer, rc0);
-                bufferedWriterWrite(&emitter.writer, rhs_cast);
-                var rc1: []const u8 = ")"; bufferedWriterWrite(&emitter.writer, rc1);
-            }
-            if (rhs_paren != @intCast(u8, 0)) {
-                var rp2: []const u8 = "(";
-                bufferedWriterWrite(&emitter.writer, rp2);
-            }
-            emitValueExpr(emitter, b.rhs, @intCast(u32, 0));
-            if (rhs_is_tag != @intCast(u8, 0)) {
-                var tag_s: []const u8 = ".tag";
-                bufferedWriterWrite(&emitter.writer, tag_s);
-            }
-            if (rhs_paren != @intCast(u8, 0)) {
-                var rp3: []const u8 = ")";
-                bufferedWriterWrite(&emitter.writer, rp3);
-            }
+            emitBinRvalueText(emitter, b.op, b.lhs, b.rhs, lhs, rhs, @intCast(u32, 0), lhs_is_tag, rhs_is_tag);
             var s2: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, s2);
             }
@@ -7865,42 +7781,13 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
         },
         .unary => |u| {
             var result = resolveTempName(emitter, u.result);
-            if (u.op == @intCast(u8, 3)) {
-                var wty: u32 = @intCast(u32, 0);
-                var wsg: u8 = @intCast(u8, 0);
-                getTempTypeInfo(emitter, u.result, u.operand, @intCast(u32, 0), &wty, &wsg);
-                bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
-                bufferedWriterWrite(&emitter.writer, result);
-                var s: []const u8 = " = ";
-                bufferedWriterWrite(&emitter.writer, s);
-                if (wsg != @intCast(u8, 0)) {
-                    var o1: []const u8 = "("; bufferedWriterWrite(&emitter.writer, o1);
-                    var ct = getCTypeName(emitter.registry, emitter.mangler, wty);
-                    bufferedWriterWrite(&emitter.writer, ct);
-                    var o2: []const u8 = ")(0u - ("; bufferedWriterWrite(&emitter.writer, o2);
-                    var ut = getUnsignedCTypeName(emitter.registry, emitter.mangler, wty);
-                    bufferedWriterWrite(&emitter.writer, ut);
-                    var o3: []const u8 = ")"; bufferedWriterWrite(&emitter.writer, o3);
-                    emitValueExpr(emitter, u.operand, @intCast(u32, 0));
-                    var o4: []const u8 = ")"; bufferedWriterWrite(&emitter.writer, o4);
-                } else {
-                    var op_str = getUnOpStr(u.op);
-                    bufferedWriterWrite(&emitter.writer, op_str);
-                    emitValueExpr(emitter, u.operand, @intCast(u32, 0));
-                }
-                var s2: []const u8 = ";\n";
-                bufferedWriterWrite(&emitter.writer, s2);
-            } else {
-            var op_str = getUnOpStr(u.op);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             bufferedWriterWrite(&emitter.writer, result);
             var s: []const u8 = " = ";
             bufferedWriterWrite(&emitter.writer, s);
-            bufferedWriterWrite(&emitter.writer, op_str);
-            emitValueExpr(emitter, u.operand, @intCast(u32, 0));
+            emitUnaryRvalue(emitter, u.op, u.operand, u.result, @intCast(u32, 0));
             var s2: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, s2);
-            }
             // A18: arbitrary-width normalization moved to a separate
             // `width_wrap` LIR op emitted by lowering (byte-identical text).
         },
@@ -7908,80 +7795,18 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             var result = resolveTempName(emitter, ic.result);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             bufferedWriterWrite(&emitter.writer, result);
-            var is_tagged_union: u8 = @intCast(u8, 0);
-            var temp_type_id: u32 = @intCast(u32, 0);
-            temp_type_id = type_mod.TYPE_USIZE;
-            var is_signed: u8 = @intCast(u8, 0);
-            var width_bits: u32 = @intCast(u32, 32);
             var ht_found_tid: u32 = @intCast(u32, 0);
             ht_found_tid = type_mod.TYPE_USIZE;
             var ict_found = hoistedTypeOf(emitter, ic.result);
             if (ict_found != @intCast(u32, 0)) { ht_found_tid = ict_found; }
-            temp_type_id = intConstTypeForValue(emitter.registry, ic.value, ht_found_tid);
+            var temp_type_id = intConstTypeForValue(emitter.registry, ic.value, ht_found_tid);
             var ict_bty = emitter.registry.types_items[@intCast(usize, temp_type_id)];
-            if (ict_bty.kind == type_mod.TypeKind.i8_type or ict_bty.kind == type_mod.TypeKind.i16_type or ict_bty.kind == type_mod.TypeKind.i32_type or ict_bty.kind == type_mod.TypeKind.i64_type or ict_bty.kind == type_mod.TypeKind.isize_type or ict_bty.kind == type_mod.TypeKind.arb_int_type) {
-                is_signed = @intCast(u8, 1);
-            }
-            if (ict_bty.kind == type_mod.TypeKind.arb_uint_type or ict_bty.kind == type_mod.TypeKind.arb_int_type) {
-                width_bits = @intCast(u32, type_mod.typeRegistryIntWidthBits(emitter.registry, temp_type_id));
-            } else {
-                width_bits = @intCast(u32, ict_bty.size * @intCast(u32, 8));
-            }
+            var ict_prefix: []const u8 = " = ";
             if (ict_bty.kind == type_mod.TypeKind.tagged_union_type) {
-                is_tagged_union = @intCast(u8, 1);
-            }
-            if (is_tagged_union != @intCast(u8, 0)) {
                 var tag_dot: []const u8 = ".tag = ";
-                bufferedWriterWrite(&emitter.writer, tag_dot);
-            } else {
-                var s: []const u8 = " = ";
-                bufferedWriterWrite(&emitter.writer, s);
+                ict_prefix = tag_dot;
             }
-            var ib: [32]u8 = undefined;
-            var neg_magnitude: u8 = @intCast(u8, 0);
-            if (is_signed != @intCast(u8, 0)) {
-                var masked = ic.value;
-                if (width_bits < @intCast(u32, 64)) {
-                    var wbm = (@intCast(u64, 1) << @intCast(u64, width_bits)) - @intCast(u64, 1);
-                    masked = masked & wbm;
-                }
-                var sb = @intCast(u8, width_bits - @intCast(u32, 1));
-                var sign_bit = @intCast(u64, 1) << @intCast(u64, sb);
-                if ((masked & sign_bit) != @intCast(u64, 0)) {
-                    var magnitude: u64 = undefined;
-                    if (width_bits < @intCast(u32, 64)) {
-                        var wbm2 = @intCast(u64, 1) << @intCast(u64, width_bits);
-                        magnitude = wbm2 - masked;
-                    } else {
-                        magnitude = @intCast(u64, 0) - masked;
-                    }
-                    neg_magnitude = @intCast(u8, 1);
-                    if (!writeMinSignedIntLiteral(emitter, temp_type_id, width_bits, magnitude)) {
-                        var cname = getCTypeName(emitter.registry, emitter.mangler, temp_type_id);
-                        var lp: []const u8 = "(";
-                        bufferedWriterWrite(&emitter.writer, lp);
-                        bufferedWriterWrite(&emitter.writer, cname);
-                        var rp: []const u8 = ")-";
-                        bufferedWriterWrite(&emitter.writer, rp);
-                        var il = itoa_mod.itoa64(magnitude, ib[0..]);
-                        var is_idx = @intCast(u32, @intCast(u32, 31) - il);
-                        var is_start: usize = @intCast(usize, is_idx);
-                        var is_end: usize = @intCast(usize, 31);
-                        bufferedWriterWrite(&emitter.writer, ib[is_start..is_end]);
-                        var nsuf = intLitSuffixNeg(magnitude);
-                        bufferedWriterWrite(&emitter.writer, nsuf);
-                    }
-                }
-            }
-            if (neg_magnitude == @intCast(u8, 0)) {
-                var il = itoa_mod.itoa64(ic.value, ib[0..]);
-                var is_idx = @intCast(u32, @intCast(u32, 31) - il);
-                var is_start: usize = @intCast(usize, is_idx);
-                var is_end: usize = @intCast(usize, 31);
-                bufferedWriterWrite(&emitter.writer, ib[is_start..is_end]);
-                var usuf = intLitSuffixUns(ic.value);
-                bufferedWriterWrite(&emitter.writer, usuf);
-            }
+            writeIntConstRvalue(emitter, ic.value, temp_type_id, ict_prefix);
             var s2: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, s2);
         },
@@ -8022,33 +7847,10 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             var str = interner_mod.stringInternerGet(emitter.interner, sc.string_id);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             bufferedWriterWrite(&emitter.writer, result);
-            var s: []const u8 = " = \"";
+            var s: []const u8 = " = ";
             bufferedWriterWrite(&emitter.writer, s);
-            var si: usize = @intCast(usize, 0);
-            while (si < str.len) : (si += @intCast(usize, 1)) {
-                var b = str[si];
-                if (b == @intCast(u8, '\n')) {
-                    var esc: []const u8 = "\\n";
-                    bufferedWriterWrite(&emitter.writer, esc);
-                } else if (b == @intCast(u8, '\t')) {
-                    var esc: []const u8 = "\\t";
-                    bufferedWriterWrite(&emitter.writer, esc);
-                } else if (b == @intCast(u8, '\r')) {
-                    var esc: []const u8 = "\\r";
-                    bufferedWriterWrite(&emitter.writer, esc);
-                } else if (b == @intCast(u8, '"') or b == @intCast(u8, '\\')) {
-                    var bs: []const u8 = "\\";
-                    bufferedWriterWrite(&emitter.writer, bs);
-                    var ch: [1]u8 = undefined;
-                    ch[0] = b;
-                    bufferedWriterWrite(&emitter.writer, ch[0..1]);
-                } else {
-                    var ch: [1]u8 = undefined;
-                    ch[0] = b;
-                    bufferedWriterWrite(&emitter.writer, ch[0..1]);
-                }
-            }
-            var s2: []const u8 = "\";\n";
+            emitCStringLiteralEx(&emitter.writer, str, kStrEscConst);
+            var s2: []const u8 = ";\n";
             bufferedWriterWrite(&emitter.writer, s2);
         },
         .null_const => |nc| {
@@ -8607,12 +8409,13 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
         },
         .print_val => |p| {
             var ty = emitter.registry.types_items[@intCast(usize, p.type_id)];
-            if (ty.kind == TypeKind.ptr_type or ty.kind == TypeKind.many_ptr_type) {
+            var route = printValueRoute(ty.kind);
+            if (route == kPrintRoutePtr) {
                 // Task 6: pointer / fn-pointer `{}` -> Zig's `T@hex` / pointee
                 // delegation route (top-level depth = kPrintAggMaxDepth).
                 bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                 emitPtrValuePrint(emitter, p.type_id, @intCast(u8, 1), p.value, "", @intCast(u8, 1));
-            } else if (printAggKind(ty.kind)) {
+            } else if (route == kPrintRouteAgg) {
                 // Task 4: aggregate/tuple `{}` -> the generated per-type printer
                 // (`z98_print<Kind>_<tid>(value, depth)`; depth starts at Zig's
                 // std.fmt.default_max_depth).
@@ -8629,7 +8432,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                 bufferedWriterWrite(&emitter.writer, adb[ads..@intCast(usize, 15)]);
                 var arp: []const u8 = ");\n";
                 bufferedWriterWrite(&emitter.writer, arp);
-            } else if (printNameRouteKind(ty.kind) and p.implicit != @intCast(u8, 0)) {
+            } else if (route == kPrintRouteName and p.implicit != @intCast(u8, 0)) {
                 // Task 5: bare `{}` on an enum -> `.member`; on an error set ->
                 // `error.Name`, through the generated name-table printer. An
                 // explicit `{d}`/`{x}` on an enum stays on the numeric route.
