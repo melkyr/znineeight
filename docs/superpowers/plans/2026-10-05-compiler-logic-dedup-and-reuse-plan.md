@@ -388,3 +388,28 @@ rm -rf /tmp/selfc && mkdir -p /tmp/selfc
 - `pool=` is the monotonic carve of the shared `memory_pool_buf` (never reset); report it *and* RSS.
 - Keep the plan's per-file reports under
   `.superpowers/sdd/2026-10-05-compiler-logic-dedup-and-reuse-plan/`.
+
+---
+
+## Closeout (2026-10-06) — closed after Task 10; Tasks 11–31 deferred
+
+**Status:** the dangerous high-duplication sites are consolidated; this is enough, maintainable win
+for now. Tasks 11–31 (`lir_opt_pass`, `main`+dump, `comptime_eval`, `type_registry`, async trio,
+IR/store, `emit_support`, `lexer`+`token`, mid/small, dead cleanup, closeout) are **DEFERRED — not
+executed**; resume only when maintenance warrants.
+
+**Delivered (Tasks 0–10):** Tasks 2/4/6/8/10 consolidated `c89_emit.zig` (10,510→9,599),
+`lower.zig` (net −155 lines), `semantic_analyzer.zig` (7,016→6,739), `type_resolver.zig` (net −58),
+`parser.zig` (net −104): ~1,505 lines of duplicated logic removed across the five highest-duplication
+files, plus dead-code removal (`is_main`, `getCheckedCastFnName`) and shared helpers (hoisted-temp
+lookup, itoa/marker, dedup-key, field/call/type emission, coercion/qualifier gates, array/loop
+skeletons).
+
+**Measured effect:** self-compile `-s0` `pool` 20,759K → ~19,300K (net ~−1.5 MB; noisy ±0.7 MB from
+cross-arena segment-reuse ordering), RSS ~22.7 MB → ~20 MB, wall ~4.8 s → ~4.1 s. **Emitted C stayed
+byte-identical throughout** (8/8 dump-MD5 gates + `--markers` stderr), corpus 923 OK / 58 GREEN /
+116 FAIL diff-empty, stdlib 266/0, runtime goldens exact, no runtime regression.
+
+**Why stop:** memory wins were concentrated (Task 2a −1,062K; Task 4b −1,042K); the remaining
+per-file refactors are low-yield, and the residual gap to 16,384K is dominated by non-duplication
+structural consumers — deferred to the follow-on `2026-10-06-zig1-nonast-memory` spec/plan.
