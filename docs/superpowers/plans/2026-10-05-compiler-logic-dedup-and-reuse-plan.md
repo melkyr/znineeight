@@ -247,8 +247,29 @@ rm -rf /tmp/selfc && mkdir -p /tmp/selfc
 - D1/D2/D3: `isAssignable`/`classifyCoercion` and coercion/type predicates (leads `C-R2`, `C-I3`).
 - Deliverable: census report. Commit: NONE.
 
-### Task 6: Refactor `semantic_analyzer.zig`
-- Truth-table equivalence required. Commit `refactor(sema): deduplicate <cluster> logic`.
+### Task 6: Refactor `semantic_analyzer.zig` — split into 6a/6b/6c
+> Operator ruling (2026-10-05): the census's top clusters plus the 100-call `resolveExpr` hub make one
+> refactor too risky, so Task 6 runs as three sequential, separately-reviewed, separately-committed
+> area increments. Each runs the full battery, records its dump-MD5 delta and `-s0` pool/RSS delta,
+> and commits only `sf/src/semantic_analyzer.zig`. Do NOT disturb `semanticAnalyzerResolveExpr`'s
+> resolution order. The cross-file `C-R2` classifiers (`type_registry.zig`/`coercion.zig`) are NOT in
+> sema scope.
+
+### Task 6a: Refactor `semantic_analyzer.zig` — coercion/type-decision reshaping (MED risk)
+- Clusters: D3-1 coercion site ladder (10 ladders); D1-3 qualifier-transition predicates (6);
+  D3-5 packed-gate ladders; D1-2 type-kind membership tables (exact membership preserved).
+- Commit `refactor(sema): deduplicate coercion/type-decision logic (6a)`.
+
+### Task 6b: Refactor `semantic_analyzer.zig` — structural node/loop emitters (LOW–MED risk)
+- Clusters: D3-7 struct-init field loops (3); D3-3 AST-kind set reuse; D5-1 grow-into-sand bodies (6);
+  D7-2 paren unwrap (9); D4-2/D1-5 local-decl writes; D5-2 `TypeResolveEnv`; D1-6 field-name interning;
+  D5-3/D6-1 comptime-eval prologue; D4-1 enum dual writes.
+- Commit `refactor(sema): deduplicate structural node/loop logic (6b)`.
+
+### Task 6c: Refactor `semantic_analyzer.zig` — dispatch/unification + re-entrancy (HIGH risk)
+- Clusters: D3-4 builtin dispatch table; D3-2 if/switch unification; D2-2 `_stub_0` save/restore
+  (re-entrancy — preserve exact save/restore semantics).
+- Commit `refactor(sema): deduplicate dispatch/unification logic (6c)`.
 
 ### Task 7: Analyze `type_resolver.zig` (2,524) — READ-ONLY
 - D1–D3: inference predicates. Deliverable: census report. Commit: NONE.
