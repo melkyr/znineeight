@@ -30,6 +30,12 @@ pub const ParseToken = struct {
     span_len: u16,
 };
 
+const ParseCapture = struct {
+    name_id: u32,
+    tok_start: u32,
+    tok_len: u16,
+};
+
 pub const Parser = struct {
     use_lex: bool,
     lex: *Lexer,
@@ -140,6 +146,15 @@ pub fn parserTokenText(self: *Parser, tok: ParseToken) []const u8 {
     var start = @intCast(usize, tok.span_start);
     var end: usize = start + @intCast(usize, tok.span_len);
     return self.source_ptr[start..end];
+}
+
+fn parserInternParseToken(self: *Parser, pt: ParseToken) u32 {
+    return string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, pt));
+}
+
+fn parserInternTokenText(self: *Parser, tok: Token) u32 {
+    var pt = ParseToken{ .kind = tok.kind, .span_start = tok.span_start, .span_len = tok.span_len };
+    return string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, pt));
 }
 
 fn parserPullOne(self: *Parser) void {
@@ -321,55 +336,11 @@ pub fn parserParseExprPrec(self: *Parser, min_prec: Prec) ParserError!u32 {
 }
 
 fn parserAddBinary(self: *Parser, tok: Token, lhs: u32, rhs: u32) ParserError!u32 {
-    var kind: AstKind = undefined;
+    var kind: AstKind = AstKind.err;
     var found: u8 = 0;
-    switch (tok.kind) {
-        TokenKind.plus => { kind = AstKind.add; found = 1; },
-        TokenKind.minus => { kind = AstKind.sub; found = 1; },
-        TokenKind.star => { kind = AstKind.mul; found = 1; },
-        TokenKind.slash => { kind = AstKind.div; found = 1; },
-        TokenKind.percent => { kind = AstKind.mod_op; found = 1; },
-        TokenKind.ampersand => { kind = AstKind.bit_and; found = 1; },
-        TokenKind.pipe => { kind = AstKind.bit_or; found = 1; },
-        TokenKind.caret => { kind = AstKind.bit_xor; found = 1; },
-        TokenKind.shl => { kind = AstKind.shl; found = 1; },
-        TokenKind.shr => { kind = AstKind.shr; found = 1; },
-        TokenKind.kw_and => { kind = AstKind.bool_and; found = 1; },
-        TokenKind.kw_or => { kind = AstKind.bool_or; found = 1; },
-        TokenKind.eq_eq => { kind = AstKind.cmp_eq; found = 1; },
-        TokenKind.bang_eq => { kind = AstKind.cmp_ne; found = 1; },
-        TokenKind.less => { kind = AstKind.cmp_lt; found = 1; },
-        TokenKind.less_eq => { kind = AstKind.cmp_le; found = 1; },
-        TokenKind.greater => { kind = AstKind.cmp_gt; found = 1; },
-        TokenKind.greater_eq => { kind = AstKind.cmp_ge; found = 1; },
-        TokenKind.eq => { kind = AstKind.plain_assign; found = 1; },
-        TokenKind.plus_eq => { kind = AstKind.add_assign; found = 1; },
-        TokenKind.minus_eq => { kind = AstKind.sub_assign; found = 1; },
-        TokenKind.star_eq => { kind = AstKind.mul_assign; found = 1; },
-        TokenKind.plus_pct => { kind = AstKind.wrap_add; found = 1; },
-        TokenKind.minus_pct => { kind = AstKind.wrap_sub; found = 1; },
-        TokenKind.star_pct => { kind = AstKind.wrap_mul; found = 1; },
-        TokenKind.plus_pct_eq => { kind = AstKind.wrap_add_assign; found = 1; },
-        TokenKind.minus_pct_eq => { kind = AstKind.wrap_sub_assign; found = 1; },
-        TokenKind.star_pct_eq => { kind = AstKind.wrap_mul_assign; found = 1; },
-        TokenKind.plus_pipe => { kind = AstKind.sat_add; found = 1; },
-        TokenKind.minus_pipe => { kind = AstKind.sat_sub; found = 1; },
-        TokenKind.star_pipe => { kind = AstKind.sat_mul; found = 1; },
-        TokenKind.shl_pipe => { kind = AstKind.sat_shl; found = 1; },
-        TokenKind.plus_pipe_eq => { kind = AstKind.sat_add_assign; found = 1; },
-        TokenKind.minus_pipe_eq => { kind = AstKind.sat_sub_assign; found = 1; },
-        TokenKind.star_pipe_eq => { kind = AstKind.sat_mul_assign; found = 1; },
-        TokenKind.shl_pipe_eq => { kind = AstKind.sat_shl_assign; found = 1; },
-        TokenKind.slash_eq => { kind = AstKind.div_assign; found = 1; },
-        TokenKind.percent_eq => { kind = AstKind.mod_assign; found = 1; },
-        TokenKind.shl_eq => { kind = AstKind.shl_assign; found = 1; },
-        TokenKind.shr_eq => { kind = AstKind.shr_assign; found = 1; },
-        TokenKind.ampersand_eq => { kind = AstKind.and_assign; found = 1; },
-        TokenKind.pipe_eq => { kind = AstKind.or_assign; found = 1; },
-        TokenKind.caret_eq => { kind = AstKind.xor_assign; found = 1; },
-        TokenKind.kw_catch => { kind = AstKind.catch_expr; found = 1; },
-        TokenKind.kw_orelse => { kind = AstKind.orelse_expr; found = 1; },
-        else => {},
+    if (getInfixInfo(tok.kind)) |op| {
+        kind = op.ast_kind;
+        found = 1;
     }
     if (found == 0) {
         var add_msg: []const u8 = "invalid token in expression";
@@ -380,11 +351,8 @@ fn parserAddBinary(self: *Parser, tok: Token, lhs: u32, rhs: u32) ParserError!u3
     if (kind == AstKind.catch_expr) {
         return ast_mod.astStoreAddNode(self.store, kind, 0, tok.span_start, end, lhs, rhs, self.catch_capture, 0);
     }
-    var bok: []const u8 = "BOP:tk"; pal.markerWrite(bok);
-    var bokb: [10]u8 = undefined; var bokl = itoa_mod.itoa(@enumToInt(tok.kind), bokb[0..]); var boks: usize = @intCast(usize, 9) - @intCast(usize, bokl); pal.markerWrite(bokb[boks..@intCast(usize, 9)]);
-    var bokk: []const u8 = "ak"; pal.markerWrite(bokk);
-    var bokkb: [10]u8 = undefined; var bokkl = itoa_mod.itoa(@enumToInt(kind), bokkb[0..]); var bokks: usize = @intCast(usize, 9) - @intCast(usize, bokkl); pal.markerWrite(bokkb[bokks..@intCast(usize, 9)]);
-    var boknl: []const u8 = " "; pal.markerWrite(boknl);
+    var bok: []const u8 = "BOP:tk"; pal.markerWriteInt(bok, @intCast(u32, @enumToInt(tok.kind)));
+    var bokk: []const u8 = "ak"; pal.markerWriteInt(bokk, @intCast(u32, @enumToInt(kind)));
     return ast_mod.astStoreAddNode(self.store, kind, 0, tok.span_start, end, lhs, rhs, 0, 0);
 }
 
@@ -432,22 +400,8 @@ pub fn parserParsePrimary(self: *Parser) ParserError!u32 {
     if (tok.kind == TokenKind.kw_if) return parserParseIfExpr(self);
     if (tok.kind == TokenKind.kw_switch) return parserParseSwitchExpr(self);
     if (tok.kind == TokenKind.lbracket) return parserParseArrayLiteral(self);
-    if (tok.kind == TokenKind.star) return parserParsePtrType(self);
-    if (tok.kind == TokenKind.question_mark) return parserParseOptionalType(self);
-    if (tok.kind == TokenKind.kw_extern) return parserParseExternFnType(self);
-    if (tok.kind == TokenKind.kw_fn) return parserParseFnType(self, CALL_CONV_CDECL);
-    if (tok.kind == TokenKind.kw_struct) return parserParseStructType(self, 0);
-    if (tok.kind == TokenKind.kw_enum) return parserParseEnumType(self);
-    if (tok.kind == TokenKind.kw_union) return parserParseUnionType(self, 0);
-    if (tok.kind == TokenKind.kw_packed) {
-        _ = parserAdvance(self);
-        var ntok = parserPeek(self);
-        if (ntok.kind == TokenKind.kw_struct) return parserParseStructType(self, 1);
-        if (ntok.kind == TokenKind.kw_union) return parserParseUnionType(self, 1);
-        var pmsg: []const u8 = "expected 'struct' or 'union' after 'packed'";
-        parserAddError(self, ntok, pmsg);
-        return error.UnexpectedToken;
-    }
+    var leading = try parserParseTypeLeading(self);
+    if (leading) |n| return n;
     if (tok.kind == TokenKind.kw_return) return parserParseReturnExpr(self);
     if (tok.kind == TokenKind.kw_break) return parserParseBreakExpr(self);
     if (tok.kind == TokenKind.kw_continue) return parserParseContinueExpr(self);
@@ -555,11 +509,7 @@ fn parserParseFnCall(self: *Parser, base: u32) ParserError!u32 {
     }
     var rparen = try parserExpect(self, TokenKind.rparen);
     var end: u32 = rparen.span_start + @intCast(u32, rparen.span_len);
-    var payload: u32 = 0;
-    if (self.child_buf_len > saved_fncall) {
-        payload = ast_mod.astStoreAddExtraChildren(self.store, self.child_buf_items[saved_fncall..self.child_buf_len]);
-    }
-    self.child_buf_len = saved_fncall;
+    var payload = parserListEnd(self, saved_fncall);
     return ast_mod.astStoreAddNode(self.store, AstKind.fn_call, 0, lparen.span_start, end, base, 0, 0, payload);
 }
 
@@ -609,12 +559,7 @@ fn parserParseFieldInitListNamed(self: *Parser) ParserError!u32 {
         if (parserPeek(self).kind == TokenKind.comma) _ = parserAdvance(self);
     }
     var rbrace = try parserExpect(self, TokenKind.rbrace);
-    var payload: u32 = 0;
-    if (self.child_buf_len > saved_child_len) {
-        payload = ast_mod.astStoreAddExtraChildren(self.store, self.child_buf_items[saved_child_len..self.child_buf_len]);
-    }
-    self.child_buf_len = saved_child_len;
-    return payload;
+    return parserListEnd(self, saved_child_len);
 }
 
 fn parserParseStructInit(self: *Parser, base: u32) ParserError!u32 {
@@ -657,6 +602,38 @@ fn u32ArrayListAppendInner(items: *[*]u32, len: *usize, capacity: *usize, arena:
 
 fn parserPushU32(self: *Parser, buf: *[*]u32, len: *usize, cap: *usize, v: u32) void {
     u32ArrayListAppendInner(buf, len, cap, self.allocator, v);
+}
+
+fn parserListEnd(self: *Parser, saved: usize) u32 {
+    var payload: u32 = 0;
+    if (self.child_buf_len > saved) {
+        payload = ast_mod.astStoreAddExtraChildren(self.store, self.child_buf_items[saved..self.child_buf_len]);
+    }
+    self.child_buf_len = saved;
+    return payload;
+}
+
+fn parserParseCaptureName(self: *Parser) ParserError!ParseCapture {
+    _ = parserAdvance(self);
+    var name_tok: ParseToken = undefined;
+    if (parserPeek(self).kind == TokenKind.underscore) {
+        name_tok = try parserExpect(self, TokenKind.underscore);
+    } else {
+        name_tok = try parserExpect(self, TokenKind.identifier);
+    }
+    return ParseCapture{
+        .name_id = parserInternParseToken(self, name_tok),
+        .tok_start = name_tok.span_start,
+        .tok_len = name_tok.span_len,
+    };
+}
+
+fn parserParseExprListBrace(self: *Parser) ParserError!void {
+    while (parserPeek(self).kind != TokenKind.rbrace and parserPeek(self).kind != TokenKind.eof) {
+        var val = try parserParseExprPrec(self, Prec.prec_orelse);
+        u32ArrayListAppendInner(&self.child_buf_items, &self.child_buf_len, &self.child_buf_capacity, self.allocator, val);
+        if (parserPeek(self).kind == TokenKind.comma) _ = parserAdvance(self);
+    }
 }
 
 fn parserParseIntLiteral(self: *Parser) ParserError!u32 {
@@ -704,8 +681,7 @@ fn parserParseSingleToken(self: *Parser, kind: AstKind) ParserError!u32 {
 
 fn parserParseIdentExpr(self: *Parser) ParserError!u32 {
     var tok = parserAdvance(self);
-    var pt = ParseToken{ .kind = tok.kind, .span_start = tok.span_start, .span_len = tok.span_len };
-    var id = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, pt));
+    var id = parserInternTokenText(self, tok);
     var end: u32 = tok.span_start + @intCast(u32, tok.span_len);
     return ast_mod.astStoreAddIdentifier(self.store, AstKind.ident_expr, id, tok.span_start, end);
 }
@@ -772,11 +748,7 @@ fn parserParseBuiltinCall(self: *Parser) ParserError!u32 {
      }
     var rparen = parserAdvance(self);
     end = rparen.span_start + @intCast(u32, rparen.span_len);
-    var payload: u32 = 0;
-    if (self.child_buf_len > saved_builtin) {
-        payload = ast_mod.astStoreAddExtraChildren(self.store, self.child_buf_items[saved_builtin..self.child_buf_len]);
-    }
-    self.child_buf_len = saved_builtin;
+    var payload = parserListEnd(self, saved_builtin);
     return ast_mod.astStoreAddNode(self.store, AstKind.builtin_call, 0, tok.span_start, end, id, 0, 0, payload);
 }
 
@@ -859,8 +831,7 @@ fn parserParseErrorLiteral(self: *Parser) ParserError!u32 {
     }
     _ = try parserExpect(self, TokenKind.dot);
     var name_tok = try parserExpect(self, TokenKind.identifier);
-    var pt = ParseToken{ .kind = name_tok.kind, .span_start = name_tok.span_start, .span_len = name_tok.span_len };
-    var name_id = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, pt));
+    var name_id = parserInternParseToken(self, name_tok);
     var end: u32 = name_tok.span_start + @intCast(u32, name_tok.span_len);
     return ast_mod.astStoreAddNode(self.store, AstKind.error_literal, 0,
         kw.span_start, end, 0, 0, 0, name_id);
@@ -883,18 +854,9 @@ fn parserParseAnonymousLiteral(self: *Parser) ParserError!u32 {
             dot.span_start, self.last_end, 0, 0, 0, payload);
     }
     var saved_child_len = self.child_buf_len;
-    while (parserPeek(self).kind != TokenKind.rbrace and parserPeek(self).kind != TokenKind.eof) {
-        var val = try parserParseExprPrec(self, Prec.prec_orelse);
-        u32ArrayListAppendInner(&self.child_buf_items, &self.child_buf_len,
-            &self.child_buf_capacity, self.allocator, val);
-        if (parserPeek(self).kind == TokenKind.comma) _ = parserAdvance(self);
-    }
+    try parserParseExprListBrace(self);
     var rbrace = try parserExpect(self, TokenKind.rbrace);
-    var payload: u32 = 0;
-    if (self.child_buf_len > saved_child_len) {
-        payload = ast_mod.astStoreAddExtraChildren(self.store, self.child_buf_items[saved_child_len..self.child_buf_len]);
-    }
-    self.child_buf_len = saved_child_len;
+    var payload = parserListEnd(self, saved_child_len);
     return ast_mod.astStoreAddNode(self.store, AstKind.tuple_literal, 0,
         dot.span_start, rbrace.span_start + @intCast(u32, rbrace.span_len),
         0, 0, 0, payload);
@@ -916,21 +878,11 @@ fn parserParseArrayLiteral(self: *Parser) ParserError!u32 {
     }
     _ = parserAdvance(self);
     var saved_child_len = self.child_buf_len;
-    while (parserPeek(self).kind != TokenKind.rbrace and parserPeek(self).kind != TokenKind.eof) {
-        var val = try parserParseExprPrec(self, Prec.prec_orelse);
-        u32ArrayListAppendInner(&self.child_buf_items, &self.child_buf_len,
-            &self.child_buf_capacity, self.allocator, val);
-        if (parserPeek(self).kind == TokenKind.comma) _ = parserAdvance(self);
-    }
+    try parserParseExprListBrace(self);
     var rbrace = try parserExpect(self, TokenKind.rbrace);
     var gap: []const u8 = "";
     _ = gap;
-    var payload: u32 = 0;
-    if (self.child_buf_len > saved_child_len) {
-        payload = ast_mod.astStoreAddExtraChildren(self.store,
-            self.child_buf_items[saved_child_len..self.child_buf_len]);
-    }
-    self.child_buf_len = saved_child_len;
+    var payload = parserListEnd(self, saved_child_len);
     return ast_mod.astStoreAddNode(self.store, AstKind.array_init, 0,
         tok.span_start, rbrace.span_start + @intCast(u32, rbrace.span_len),
         type_node, 0, 0, payload);
@@ -947,19 +899,11 @@ fn parserParseIfExpr(self: *Parser) ParserError!u32 {
     _ = try parserExpect(self, TokenKind.rparen);
     var capture_node: u32 = 0;
     if (parserPeek(self).kind == TokenKind.pipe) {
-        _ = parserAdvance(self);
-        var name_tok: ParseToken = undefined;
-        if (parserPeek(self).kind == TokenKind.underscore) {
-            name_tok = try parserExpect(self, TokenKind.underscore);
-        } else {
-            name_tok = try parserExpect(self, TokenKind.identifier);
-        }
+        var cap = try parserParseCaptureName(self);
         _ = try parserExpect(self, TokenKind.pipe);
-        var pt = ParseToken{ .kind = name_tok.kind, .span_start = name_tok.span_start, .span_len = name_tok.span_len };
-        var name_id = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, pt));
         capture_node = ast_mod.astStoreAddNode(self.store, AstKind.if_capture, 0,
-            name_tok.span_start, name_tok.span_start + @intCast(u32, name_tok.span_len),
-            0, 0, 0, name_id);
+            cap.tok_start, cap.tok_start + @intCast(u32, cap.tok_len),
+            0, 0, 0, cap.name_id);
     }
     var then_body = try parserParseExprPrec(self, Prec.prec_orelse);
     var else_body: u32 = 0;
@@ -997,15 +941,12 @@ pub fn parserParseSwitchExpr(self: *Parser) ParserError!u32 {
     }
     _ = try parserExpect(self, TokenKind.rbrace);
 
-    var payload: u32 = 0;
-    if (self.child_buf_len > saved_switch) {
-        payload = ast_mod.astStoreAddExtraChildren(self.store, self.child_buf_items[saved_switch..self.child_buf_len]);
-    }
-    self.child_buf_len = saved_switch;
+    var payload = parserListEnd(self, saved_switch);
     var end_pos: u32 = kw_tok.span_start + @intCast(u32, kw_tok.span_len);
     var pswe_node = ast_mod.astStoreAddNode(self.store, AstKind.swt_ex, 0,
         kw_tok.span_start, end_pos, cond, 0, 0, payload);
-    var pswe_b: [10]u8 = undefined; var pswe_l = itoa_mod.itoa(pswe_node, pswe_b[0..]); var pswe_s: usize = @intCast(usize, 9) - @intCast(usize, pswe_l); var pswe_m: []const u8 = "PSWE:n"; pal.markerWrite(pswe_m); pal.markerWrite(pswe_b[pswe_s..@intCast(usize, 9)]); var pswe_pm: []const u8 = "p"; pal.markerWrite(pswe_pm); var pswe_pb: [10]u8 = undefined;     var pswe_pl = itoa_mod.itoa(payload, pswe_pb[0..]); var pswe_ps: usize = @intCast(usize, 9) - @intCast(usize, pswe_pl); pal.markerWrite(pswe_pb[pswe_ps..@intCast(usize, 9)]); var pswe_nl: []const u8 = "\n"; pal.markerWrite(pswe_nl);
+    var pswe_nm: []const u8 = "PSWE:n"; pal.markerWriteInt(pswe_nm, pswe_node);
+    var pswe_pm: []const u8 = "p"; pal.markerWriteInt(pswe_pm, payload);
     return pswe_node;
 }
 
@@ -1055,20 +996,11 @@ fn parserParseSwitchProng(self: *Parser) ParserError!u32 {
     var flags: u8 = 0;
     var capture_name: u32 = 0;
     if (parserPeek(self).kind == TokenKind.pipe) {
-        _ = parserAdvance(self);
-        var name_tok: ParseToken = undefined;
-        if (parserPeek(self).kind == TokenKind.underscore) {
-            name_tok = try parserExpect(self, TokenKind.underscore);
-        } else {
-            name_tok = try parserExpect(self, TokenKind.identifier);
-        }
+        var cap = try parserParseCaptureName(self);
         _ = try parserExpect(self, TokenKind.pipe);
-        var pt = ParseToken{ .kind = name_tok.kind, .span_start = name_tok.span_start, .span_len = name_tok.span_len };
-        capture_name = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, pt));
+        capture_name = cap.name_id;
         flags = 16;
-        var cpm: []const u8 = "CPT:n"; pal.markerWrite(cpm);
-        var cpnb: [10]u8 = undefined; var cpnl = itoa_mod.itoa(capture_name, cpnb[0..]); var cpns: usize = @intCast(usize, 9) - @intCast(usize, cpnl); pal.markerWrite(cpnb[cpns..@intCast(usize, 9)]);
-        var cpem: []const u8 = "\n"; pal.markerWrite(cpem);
+        var cpm: []const u8 = "CPT:n"; pal.markerWriteInt(cpm, capture_name);
     }
     if (is_else != 0) {
         flags = flags | 1;
@@ -1081,29 +1013,43 @@ fn parserParseSwitchProng(self: *Parser) ParserError!u32 {
         body = try parserParseStmtBodyExpr(self);
     }
 
-    var pcb_m: []const u8 = "PCB:n"; pal.markerWrite(pcb_m);
-    var pcb_nb: [10]u8 = undefined; var pcb_nl = itoa_mod.itoa(@intCast(u32, case_len), pcb_nb[0..]); var pcb_ns: usize = @intCast(usize, 9) - @intCast(usize, pcb_nl); pal.markerWrite(pcb_nb[pcb_ns..@intCast(usize, 9)]);
-    var pcb_pm: []const u8 = "p="; pal.markerWrite(pcb_pm);
-    var pcb_pb: [10]u8 = undefined; var pcb_pl = itoa_mod.itoa(flags, pcb_pb[0..]); var pcb_ps: usize = @intCast(usize, 9) - @intCast(usize, pcb_pl); pal.markerWrite(pcb_pb[pcb_ps..@intCast(usize, 9)]);
-    var pcb_n: []const u8 = "\n"; pal.markerWrite(pcb_n);
+    var pcb_m: []const u8 = "PCB:n"; pal.markerWriteInt(pcb_m, @intCast(u32, case_len));
+    var pcb_pm: []const u8 = "p="; pal.markerWriteInt(pcb_pm, @intCast(u32, flags));
     var pcb_sm: []const u8 = "PCB:S"; pal.markerWriteInt(pcb_sm, @intCast(u32, case_len));
     var items_payload: u32 = ast_mod.astStoreAddExtraChildren(self.store, case_items[0..case_len]);
-    var ppl_m: []const u8 = "PPL:n"; pal.markerWrite(ppl_m);
-    var ppl_pb: [10]u8 = undefined;     var ppl_pl = itoa_mod.itoa(items_payload, ppl_pb[0..]); var ppl_ps: usize = @intCast(usize, 9) - @intCast(usize, ppl_pl); pal.markerWrite(ppl_pb[ppl_ps..@intCast(usize, 9)]);
-    var ppl_n: []const u8 = "\n"; pal.markerWrite(ppl_n);
+    var ppl_m: []const u8 = "PPL:n"; pal.markerWriteInt(ppl_m, items_payload);
     var end_pos: u32 = start_tok.span_start + @intCast(u32, start_tok.span_len);
     return ast_mod.astStoreAddNode(self.store, AstKind.swt_prong, flags,
         start_tok.span_start, end_pos, body, capture_name, 0, items_payload);
 }
 
+fn parserParseTypeLeading(self: *Parser) ParserError!?u32 {
+    var tok = parserPeek(self);
+    if (tok.kind == TokenKind.star) return try parserParsePtrType(self);
+    if (tok.kind == TokenKind.question_mark) return try parserParseOptionalType(self);
+    if (tok.kind == TokenKind.kw_extern) return try parserParseExternFnType(self);
+    if (tok.kind == TokenKind.kw_fn) return try parserParseFnType(self, CALL_CONV_CDECL);
+    if (tok.kind == TokenKind.kw_struct) return try parserParseStructType(self, 0);
+    if (tok.kind == TokenKind.kw_enum) return try parserParseEnumType(self);
+    if (tok.kind == TokenKind.kw_union) return try parserParseUnionType(self, 0);
+    if (tok.kind == TokenKind.kw_packed) {
+        _ = parserAdvance(self);
+        var ntok = parserPeek(self);
+        if (ntok.kind == TokenKind.kw_struct) return try parserParseStructType(self, 1);
+        if (ntok.kind == TokenKind.kw_union) return try parserParseUnionType(self, 1);
+        var pmsg: []const u8 = "expected 'struct' or 'union' after 'packed'";
+        parserAddError(self, ntok, pmsg);
+        return error.UnexpectedToken;
+    }
+    return null;
+}
+
 pub fn parserParseType(self: *Parser) ParserError!u32 {
     var tok = parserPeek(self);
-    if (tok.kind == TokenKind.star) return parserParsePtrType(self);
+    var leading = try parserParseTypeLeading(self);
+    if (leading) |n| return n;
     if (tok.kind == TokenKind.lbracket) return parserParseBracketType(self);
-    if (tok.kind == TokenKind.question_mark) return parserParseOptionalType(self);
     if (tok.kind == TokenKind.bang) return parserParseErrorUnionType(self);
-    if (tok.kind == TokenKind.kw_extern) return parserParseExternFnType(self);
-    if (tok.kind == TokenKind.kw_fn) return parserParseFnType(self, CALL_CONV_CDECL);
     if (tok.kind == TokenKind.kw_error) {
         var es = try parserParseErrorSetDecl(self);
         if (parserPeek(self).kind == TokenKind.bang) {
@@ -1115,22 +1061,9 @@ pub fn parserParseType(self: *Parser) ParserError!u32 {
         }
         return es;
     }
-    if (tok.kind == TokenKind.kw_struct) return parserParseStructType(self, 0);
-    if (tok.kind == TokenKind.kw_enum) return parserParseEnumType(self);
-    if (tok.kind == TokenKind.kw_union) return parserParseUnionType(self, 0);
-    if (tok.kind == TokenKind.kw_packed) {
-        _ = parserAdvance(self);
-        var ntok = parserPeek(self);
-        if (ntok.kind == TokenKind.kw_struct) return parserParseStructType(self, 1);
-        if (ntok.kind == TokenKind.kw_union) return parserParseUnionType(self, 1);
-        var pmsg: []const u8 = "expected 'struct' or 'union' after 'packed'";
-        parserAddError(self, ntok, pmsg);
-        return error.UnexpectedToken;
-    }
     if (tok.kind == TokenKind.kw_anytype) {
         var at = parserAdvance(self);
-        var pt = ParseToken{ .kind = at.kind, .span_start = at.span_start, .span_len = at.span_len };
-        var aid = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, pt));
+        var aid = parserInternTokenText(self, at);
         var aend: u32 = at.span_start + @intCast(u32, at.span_len);
         return ast_mod.astStoreAddIdentifier(self.store, AstKind.ident_expr, aid, at.span_start, aend);
     }
@@ -1298,8 +1231,7 @@ fn parserParseErrorSetDeclBody(self: *Parser, kw: Token) ParserError!u32 {
     var member_cap: usize = @intCast(usize, 0);
     while (parserPeek(self).kind != TokenKind.rbrace) {
         var tag_tok = try parserExpect(self, TokenKind.identifier);
-        var pt = ParseToken{ .kind = tag_tok.kind, .span_start = tag_tok.span_start, .span_len = tag_tok.span_len };
-        var tag_id = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, pt));
+        var tag_id = parserInternParseToken(self, tag_tok);
         parserPushU32(self, &member_buf, &member_count, &member_cap, tag_id);
         if (parserPeek(self).kind == TokenKind.comma) {
             _ = parserAdvance(self);
@@ -1342,8 +1274,7 @@ fn parserParseStructType(self: *Parser, is_packed: u8) ParserError!u32 {
             saw_named = @intCast(u8, 1);
             var name_tok = try parserExpect(self, TokenKind.identifier);
             _ = try parserExpect(self, TokenKind.colon);
-            var npt = ParseToken{ .kind = name_tok.kind, .span_start = name_tok.span_start, .span_len = name_tok.span_len };
-            var name_id = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, npt));
+            var name_id = parserInternParseToken(self, name_tok);
             var field_type = try parserParseType(self);
             var field_node = ast_mod.astStoreAddNode(self.store, AstKind.field_decl, 0,
                 name_tok.span_start, name_tok.span_start + @intCast(u32, name_tok.span_len),
@@ -1398,8 +1329,7 @@ fn parserParseEnumType(self: *Parser) ParserError!u32 {
     var members_cap: usize = @intCast(usize, 0);
     while (parserPeek(self).kind != TokenKind.rbrace) {
         var name_tok = try parserExpect(self, TokenKind.identifier);
-        var mpt = ParseToken{ .kind = name_tok.kind, .span_start = name_tok.span_start, .span_len = name_tok.span_len };
-        var name_id = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, mpt));
+        var name_id = parserInternParseToken(self, name_tok);
         var value_expr: u32 = 0;
         if (parserPeek(self).kind == TokenKind.eq) {
             _ = parserAdvance(self);
@@ -1447,8 +1377,7 @@ fn parserParseUnionType(self: *Parser, is_packed: u8) ParserError!u32 {
     var fields_cap: usize = @intCast(usize, 0);
     while (parserPeek(self).kind != TokenKind.rbrace) {
         var name_tok = try parserExpect(self, TokenKind.identifier);
-        var upt = ParseToken{ .kind = name_tok.kind, .span_start = name_tok.span_start, .span_len = name_tok.span_len };
-        var name_id = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, upt));
+        var name_id = parserInternParseToken(self, name_tok);
         var field_node: u32 = 0;
         if (parserPeek(self).kind == TokenKind.colon) {
             _ = parserAdvance(self);
@@ -1482,15 +1411,13 @@ fn parserParseUnionType(self: *Parser, is_packed: u8) ParserError!u32 {
 
 fn parserParseTypeName(self: *Parser) ParserError!u32 {
     var tok = parserAdvance(self);
-    var pt = ParseToken{ .kind = tok.kind, .span_start = tok.span_start, .span_len = tok.span_len };
-    var name_id = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, pt));
+    var name_id = parserInternTokenText(self, tok);
     var node = ast_mod.astStoreAddIdentifier(self.store, AstKind.ident_expr, name_id, tok.span_start,
         tok.span_start + @intCast(u32, tok.span_len));
     while (parserPeek(self).kind == TokenKind.dot) {
         _ = parserAdvance(self);
         var field_tok = try parserExpect(self, TokenKind.identifier);
-        var fpt = ParseToken{ .kind = field_tok.kind, .span_start = field_tok.span_start, .span_len = field_tok.span_len };
-        var field_id = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, fpt));
+        var field_id = parserInternParseToken(self, field_tok);
         node = ast_mod.astStoreAddNode(self.store, AstKind.field_access, 0,
             tok.span_start, field_tok.span_start + @intCast(u32, field_tok.span_len),
             node, 0, 0, field_id);
@@ -1500,7 +1427,7 @@ fn parserParseTypeName(self: *Parser) ParserError!u32 {
 
 pub fn parserParseStatement(self: *Parser) ParserError!u32 {
     var tok = parserPeek(self);
-    var pstk_m: []const u8 = "PSTK:k"; pal.markerWrite(pstk_m); var pstk_b: [10]u8 = undefined; var pstk_l = itoa_mod.itoa(@intCast(u32, @enumToInt(tok.kind)), pstk_b[0..]); var pstk_s: usize = @intCast(usize, 9) - @intCast(usize, pstk_l); pal.markerWrite(pstk_b[pstk_s..@intCast(usize, 9)]); var pstk_nl: []const u8 = "\n"; pal.markerWrite(pstk_nl);
+    var pstk_m: []const u8 = "PSTK:k"; pal.markerWriteInt(pstk_m, @intCast(u32, @enumToInt(tok.kind)));
     if (tok.kind == TokenKind.kw_const) { var varc_s: []const u8 = "VARC"; pal.markerWrite(varc_s); return parserParseVarDecl(self, false, false, false, false); }
     if (tok.kind == TokenKind.kw_var) { var varv_s: []const u8 = "VARV"; pal.markerWrite(varv_s); return parserParseVarDecl(self, true, false, false, false); }
     if (tok.kind == TokenKind.kw_pub) return parserParsePubDecl(self);
@@ -1728,8 +1655,7 @@ fn parserParseFnDecl(self: *Parser, is_pub: bool, is_extern: bool, is_test: bool
         var param_tok = try parserExpect(self, TokenKind.identifier);
         _ = try parserExpect(self, TokenKind.colon);
         var param_type = try parserParseType(self);
-        var param_name_id = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self,
-            ParseToken{ .kind = param_tok.kind, .span_start = param_tok.span_start, .span_len = param_tok.span_len }));
+        var param_name_id = parserInternParseToken(self, param_tok);
         var param_node = ast_mod.astStoreAddNode(self.store, AstKind.param_decl, 0,
             param_tok.span_start, self.last_end, param_type, 0, 0, param_name_id);
         u32ArrayListAppendInner(&self.child_buf_items, &self.child_buf_len, &self.child_buf_capacity, self.allocator, param_node);
@@ -1768,17 +1694,9 @@ fn parserParseFnDecl(self: *Parser, is_pub: bool, is_extern: bool, is_test: bool
         var dmsg: []const u8 = "DP:child_buf_stale\n"; pal.markerWrite(dmsg);
     }
 
-    var name_id = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self,
-        ParseToken{ .kind = name_tok.kind, .span_start = name_tok.span_start, .span_len = name_tok.span_len }));
+    var name_id = parserInternParseToken(self, name_tok);
     var pmsg: []const u8 = "P:";
-    pal.markerWrite(pmsg);
-    var pa_buf: [20]u8 = undefined;
-    var pa_val: u32 = @intCast(u32, param_count);
-    var pa_len = itoa_mod.itoa(pa_val, pa_buf[0..]);
-    var pa_start: usize = @intCast(usize, 19) - @intCast(usize, pa_len);
-    pal.markerWrite(pa_buf[pa_start .. @intCast(usize, 19)]);
-    var pnl: []const u8 = "\n";
-    pal.markerWrite(pnl);
+    pal.markerWriteInt(pmsg, @intCast(u32, param_count));
     var proto: FnProto = FnProto{ .name_id = name_id, .params_start = param_start, .params_count = param_count, .call_conv = call_conv, .return_type_node = ret_type_node };
     var proto_idx: u32 = ast_mod.astStoreAddFnProto(self.store, proto);
     self.child_buf_len = 0;
@@ -1791,39 +1709,15 @@ fn parserParseIfStmt(self: *Parser) ParserError!u32 {
     _ = try parserExpect(self, TokenKind.lparen);
     // Task 9B (a): exclude assignment from the condition (see parserParseIfExpr).
     var cond = try parserParseExprPrec(self, Prec.prec_orelse);
-    var pc0: []const u8 = "PIF:c="; pal.markerWrite(pc0);
-    var pc0b: [10]u8 = undefined; var pc0l = itoa_mod.itoa(cond, pc0b[0..]); var pc0s: usize = @intCast(usize, 9) - @intCast(usize, pc0l); pal.markerWrite(pc0b[pc0s..@intCast(usize, 9)]);
-    var pck: []const u8 = "k"; pal.markerWrite(pck);
-    var cond_n = ast_mod.astStoreNodeAt(self.store, cond);
-    var pckb: [10]u8 = undefined; var pckl = itoa_mod.itoa(@intCast(u32, @enumToInt(cond_n.kind)), pckb[0..]); var pcks: usize = @intCast(usize, 9) - @intCast(usize, pckl); pal.markerWrite(pckb[pcks..@intCast(usize, 9)]);
-    var pc1: []const u8 = "c1"; pal.markerWrite(pc1);
-    var pc1b: [10]u8 = undefined; var pc1l = itoa_mod.itoa(cond_n.child_0, pc1b[0..]); var pc1s: usize = @intCast(usize, 9) - @intCast(usize, pc1l); pal.markerWrite(pc1b[pc1s..@intCast(usize, 9)]);
-    var pc2: []const u8 = "c2"; pal.markerWrite(pc2);
-    var pc2b: [10]u8 = undefined; var pc2l = itoa_mod.itoa(cond_n.child_1, pc2b[0..]); var pc2s: usize = @intCast(usize, 9) - @intCast(usize, pc2l); pal.markerWrite(pc2b[pc2s..@intCast(usize, 9)]);
-    var pck1: []const u8 = "k1"; pal.markerWrite(pck1);
-    var cn1 = ast_mod.astStoreNodeAt(self.store, cond_n.child_0);
-    var pck1b: [10]u8 = undefined; var pck1l = itoa_mod.itoa(@intCast(u32, @enumToInt(cn1.kind)), pck1b[0..]); var pck1s: usize = @intCast(usize, 9) - @intCast(usize, pck1l); pal.markerWrite(pck1b[pck1s..@intCast(usize, 9)]);
-    var pck2: []const u8 = "k2"; pal.markerWrite(pck2);
-    var cn2 = ast_mod.astStoreNodeAt(self.store, cond_n.child_1);
-    var pck2b: [10]u8 = undefined; var pck2l = itoa_mod.itoa(@intCast(u32, @enumToInt(cn2.kind)), pck2b[0..]); var pck2s: usize = @intCast(usize, 9) - @intCast(usize, pck2l); pal.markerWrite(pck2b[pck2s..@intCast(usize, 9)]);
-    var pknl: []const u8 = "\n"; pal.markerWrite(pknl);
     _ = try parserExpect(self, TokenKind.rparen);
 
     var capture_node: u32 = 0;
     if (parserPeek(self).kind == TokenKind.pipe) {
-        _ = parserAdvance(self);
-        var name_tok: ParseToken = undefined;
-        if (parserPeek(self).kind == TokenKind.underscore) {
-            name_tok = try parserExpect(self, TokenKind.underscore);
-        } else {
-            name_tok = try parserExpect(self, TokenKind.identifier);
-        }
+        var cap = try parserParseCaptureName(self);
         _ = try parserExpect(self, TokenKind.pipe);
-        var pt = ParseToken{ .kind = name_tok.kind, .span_start = name_tok.span_start, .span_len = name_tok.span_len };
-        var name_id = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, pt));
         capture_node = ast_mod.astStoreAddNode(self.store, AstKind.if_capture, 0,
-            name_tok.span_start, name_tok.span_start + @intCast(u32, name_tok.span_len),
-            0, 0, 0, name_id);
+            cap.tok_start, cap.tok_start + @intCast(u32, cap.tok_len),
+            0, 0, 0, cap.name_id);
     }
 
     var then_body: u32 = undefined;
@@ -1833,7 +1727,8 @@ fn parserParseIfStmt(self: *Parser) ParserError!u32 {
         then_body = try parserParseStmtBodyExpr(self);
     }
 
-    var pif_m: []const u8 = "PIF:b"; pal.markerWrite(pif_m); var pif_b: [10]u8 = undefined; var pif_l = itoa_mod.itoa(then_body, pif_b[0..]); var pif_s: usize = @intCast(usize, 9) - @intCast(usize, pif_l); pal.markerWrite(pif_b[pif_s..@intCast(usize, 9)]); var pif_km: []const u8 = "k"; pal.markerWrite(pif_km); var pif_kb: [10]u8 = undefined; var pif_kl = itoa_mod.itoa(@intCast(u32, @enumToInt(ast_mod.astStoreNodeAt(self.store, then_body).kind)), pif_kb[0..]); var pif_ks: usize = @intCast(usize, 9) - @intCast(usize, pif_kl); pal.markerWrite(pif_kb[pif_ks..@intCast(usize, 9)]); var pif_nl: []const u8 = "\n"; pal.markerWrite(pif_nl);
+    var pif_m: []const u8 = "PIF:b"; pal.markerWriteInt(pif_m, then_body);
+    var pif_km: []const u8 = "k"; pal.markerWriteInt(pif_km, @intCast(u32, @enumToInt(ast_mod.astStoreNodeAt(self.store, then_body).kind)));
 
     var else_node: u32 = 0;
     if (parserPeek(self).kind == TokenKind.kw_else) {
@@ -1874,16 +1769,10 @@ fn parserParseWhileStmt(self: *Parser) ParserError!u32 {
     var capture_name: u32 = 0;
     var cap_node: u32 = 0;
     if (parserPeek(self).kind == TokenKind.pipe) {
-        _ = parserAdvance(self);
-        var cap_tok: ParseToken = undefined;
-        if (parserPeek(self).kind == TokenKind.underscore) {
-            cap_tok = try parserExpect(self, TokenKind.underscore);
-        } else {
-            cap_tok = try parserExpect(self, TokenKind.identifier);
-        }
-        capture_name = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, cap_tok));
+        var cap = try parserParseCaptureName(self);
+        capture_name = cap.name_id;
         cap_node = ast_mod.astStoreAddNode(self.store, AstKind.while_capture, 0,
-            cap_tok.span_start, cap_tok.span_start + @intCast(u32, cap_tok.span_len), 0, 0, 0, capture_name);
+            cap.tok_start, cap.tok_start + @intCast(u32, cap.tok_len), 0, 0, 0, capture_name);
         _ = try parserExpect(self, TokenKind.pipe);
     }
 
@@ -1909,8 +1798,7 @@ fn parserParseWhileStmt(self: *Parser) ParserError!u32 {
         var last = self.last_tok;
         end_pos = last.span_start + @intCast(u32, last.span_len);
     } else end_pos = kw.span_start;
-    var zzz_sz = "ZZZ_ASTNODE_SZ_24_BEFORE_WHILESTMT_ASTSTOREADDNODE";
-    var zzz_buf_c2: [10]u8 = undefined; var zzz_c2e_m: []const u8 = "PTC2:e"; pal.markerWrite(zzz_c2e_m); var zzz_c2e_l = itoa_mod.itoa(continue_expr, zzz_buf_c2[0..]); var zzz_c2e_s: usize = @intCast(usize, 9) - @intCast(usize, zzz_c2e_l); pal.markerWrite(zzz_buf_c2[zzz_c2e_s..@intCast(usize, 9)]); var zzz_c2e_nl: []const u8 = "\n"; pal.markerWrite(zzz_c2e_nl);
+    var zzz_c2e_m: []const u8 = "PTC2:e"; pal.markerWriteInt(zzz_c2e_m, continue_expr);
     var zzz_c2 = continue_expr;
     return ast_mod.astStoreAddNode(self.store, AstKind.while_stmt, 0,
         kw.span_start, end_pos, cond, body, zzz_c2, cap_node);
@@ -1957,19 +1845,12 @@ fn parserParseForStmt(self: *Parser) ParserError!u32 {
     var capture_name: u32 = 0;
     var index_name: u32 = 0;
     if (parserPeek(self).kind == TokenKind.pipe) {
-        _ = parserAdvance(self);
-        var cap_tok: ParseToken = undefined;
-        if (parserPeek(self).kind == TokenKind.underscore) {
-            cap_tok = try parserExpect(self, TokenKind.underscore);
-        } else {
-            cap_tok = try parserExpect(self, TokenKind.identifier);
-        }
-        capture_name = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, cap_tok));
+        var cap = try parserParseCaptureName(self);
+        capture_name = cap.name_id;
         if (parserPeek(self).kind == TokenKind.comma) {
             _ = parserAdvance(self);
             var idx_tok = try parserExpect(self, TokenKind.identifier);
-            index_name = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self,
-                ParseToken{ .kind = idx_tok.kind, .span_start = idx_tok.span_start, .span_len = idx_tok.span_len }));
+            index_name = parserInternParseToken(self, idx_tok);
         }
         _ = try parserExpect(self, TokenKind.pipe);
     }
@@ -2016,8 +1897,7 @@ fn parserParseBreakExpr(self: *Parser) ParserError!u32 {
     if (parserPeek(self).kind == TokenKind.colon) {
         _ = parserAdvance(self);
         var label_tok = try parserExpect(self, TokenKind.identifier);
-        var pt = ParseToken{ .kind = label_tok.kind, .span_start = label_tok.span_start, .span_len = label_tok.span_len };
-        label_id = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, pt));
+        label_id = parserInternParseToken(self, label_tok);
     }
     var end_pos: u32 = kw.span_start + @intCast(u32, kw.span_len);
     if (self.last_tok_valid) {
@@ -2033,8 +1913,7 @@ fn parserParseContinueExpr(self: *Parser) ParserError!u32 {
     if (parserPeek(self).kind == TokenKind.colon) {
         _ = parserAdvance(self);
         var label_tok = try parserExpect(self, TokenKind.identifier);
-        var pt = ParseToken{ .kind = label_tok.kind, .span_start = label_tok.span_start, .span_len = label_tok.span_len };
-        label_id = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, pt));
+        label_id = parserInternParseToken(self, label_tok);
     }
     var end_pos: u32 = kw.span_start + @intCast(u32, kw.span_len);
     if (self.last_tok_valid) {
@@ -2078,8 +1957,7 @@ fn parserParseTestDecl(self: *Parser) ParserError!u32 {
     var name_id: u32 = 0;
     if (parserPeek(self).kind == TokenKind.string_literal) {
         var name_tok = parserAdvance(self);
-        var npt = ParseToken{ .kind = name_tok.kind, .span_start = name_tok.span_start, .span_len = name_tok.span_len };
-        name_id = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, npt));
+        name_id = parserInternTokenText(self, name_tok);
     }
     var body = try parserParseBlock(self);
     var end_pos: u32 = undefined;
@@ -2108,8 +1986,7 @@ fn parserParseContainerDecl(self: *Parser, kind: AstKind) ParserError!u32 {
     }
     if (parserPeek(self).kind == TokenKind.identifier) {
         var name_tok = parserAdvance(self);
-        var pt = ParseToken{ .kind = name_tok.kind, .span_start = name_tok.span_start, .span_len = name_tok.span_len };
-        name_id = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, pt));
+        name_id = parserInternTokenText(self, name_tok);
     }
     _ = try parserExpect(self, TokenKind.lbrace);
     var fields_buf: [*]u32 = undefined;
@@ -2117,8 +1994,7 @@ fn parserParseContainerDecl(self: *Parser, kind: AstKind) ParserError!u32 {
     var fields_cap: usize = @intCast(usize, 0);
     while (parserPeek(self).kind != TokenKind.rbrace) {
         var ftok = try parserExpect(self, TokenKind.identifier);
-        var fpt = ParseToken{ .kind = ftok.kind, .span_start = ftok.span_start, .span_len = ftok.span_len };
-        var fid = string_interner_mod.stringInternerIntern(self.interner, parserTokenText(self, fpt));
+        var fid = parserInternParseToken(self, ftok);
         if (kind == AstKind.enum_decl) {
             var ev: u32 = 0;
             if (parserPeek(self).kind == TokenKind.eq) {
@@ -2191,7 +2067,8 @@ fn parserParseBlock(self: *Parser) ParserError!u32 {
         payload = ast_mod.astStoreAddExtraChildren(self.store, slice);
     }
     self.child_buf_len = saved_len;
-    var plen_m: []const u8 = "PLEN:l"; pal.markerWrite(plen_m); var plen_lb: [10]u8 = undefined; var plen_ll = itoa_mod.itoa(@intCast(u32, local_len), plen_lb[0..]); var plen_ls: usize = @intCast(usize, 9) - @intCast(usize, plen_ll); pal.markerWrite(plen_lb[plen_ls..@intCast(usize, 9)]); var plen_pm: []const u8 = "p"; pal.markerWrite(plen_pm); var plen_pb: [10]u8 = undefined;     var plen_pl = itoa_mod.itoa(payload, plen_pb[0..]); var plen_ps: usize = @intCast(usize, 9) - @intCast(usize, plen_pl); pal.markerWrite(plen_pb[plen_ps..@intCast(usize, 9)]); var plen_nl: []const u8 = "\n"; pal.markerWrite(plen_nl);
+    var plen_m: []const u8 = "PLEN:l"; pal.markerWriteInt(plen_m, @intCast(u32, local_len));
+    var plen_pm: []const u8 = "p"; pal.markerWriteInt(plen_pm, payload);
     return ast_mod.astStoreAddNode(self.store, AstKind.block, 0, lbrace.span_start, rbrace.span_start + @intCast(u32, rbrace.span_len), 0, 0, 0, payload);
 }
 
@@ -2222,42 +2099,61 @@ pub fn precFromInt(v: u8) Prec {
 }
 
 pub const OpInfo = struct {
+    ast_kind: AstKind,
     prec: Prec,
     right_assoc: bool,
 };
 
 pub fn getInfixInfo(kind: TokenKind) ?OpInfo {
-    if (kind == TokenKind.eq or kind == TokenKind.plus_eq or
-        kind == TokenKind.minus_eq or kind == TokenKind.star_eq or
-        kind == TokenKind.slash_eq or kind == TokenKind.percent_eq or
-        kind == TokenKind.shl_eq or kind == TokenKind.shr_eq or
-        kind == TokenKind.ampersand_eq or kind == TokenKind.pipe_eq or
-        kind == TokenKind.caret_eq or kind == TokenKind.plus_pct_eq or
-        kind == TokenKind.minus_pct_eq or kind == TokenKind.star_pct_eq or
-        kind == TokenKind.plus_pipe_eq or kind == TokenKind.minus_pipe_eq or
-        kind == TokenKind.star_pipe_eq or kind == TokenKind.shl_pipe_eq) return OpInfo{ .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.eq) return OpInfo{ .ast_kind = AstKind.plain_assign, .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.plus_eq) return OpInfo{ .ast_kind = AstKind.add_assign, .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.minus_eq) return OpInfo{ .ast_kind = AstKind.sub_assign, .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.star_eq) return OpInfo{ .ast_kind = AstKind.mul_assign, .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.slash_eq) return OpInfo{ .ast_kind = AstKind.div_assign, .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.percent_eq) return OpInfo{ .ast_kind = AstKind.mod_assign, .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.shl_eq) return OpInfo{ .ast_kind = AstKind.shl_assign, .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.shr_eq) return OpInfo{ .ast_kind = AstKind.shr_assign, .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.ampersand_eq) return OpInfo{ .ast_kind = AstKind.and_assign, .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.pipe_eq) return OpInfo{ .ast_kind = AstKind.or_assign, .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.caret_eq) return OpInfo{ .ast_kind = AstKind.xor_assign, .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.plus_pct_eq) return OpInfo{ .ast_kind = AstKind.wrap_add_assign, .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.minus_pct_eq) return OpInfo{ .ast_kind = AstKind.wrap_sub_assign, .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.star_pct_eq) return OpInfo{ .ast_kind = AstKind.wrap_mul_assign, .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.plus_pipe_eq) return OpInfo{ .ast_kind = AstKind.sat_add_assign, .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.minus_pipe_eq) return OpInfo{ .ast_kind = AstKind.sat_sub_assign, .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.star_pipe_eq) return OpInfo{ .ast_kind = AstKind.sat_mul_assign, .prec = Prec.assignment, .right_assoc = true };
+    if (kind == TokenKind.shl_pipe_eq) return OpInfo{ .ast_kind = AstKind.sat_shl_assign, .prec = Prec.assignment, .right_assoc = true };
 
-    if (kind == TokenKind.kw_orelse) return OpInfo{ .prec = Prec.prec_orelse, .right_assoc = true };
-    if (kind == TokenKind.kw_catch) return OpInfo{ .prec = Prec.prec_catch, .right_assoc = true };
+    if (kind == TokenKind.kw_orelse) return OpInfo{ .ast_kind = AstKind.orelse_expr, .prec = Prec.prec_orelse, .right_assoc = true };
+    if (kind == TokenKind.kw_catch) return OpInfo{ .ast_kind = AstKind.catch_expr, .prec = Prec.prec_catch, .right_assoc = true };
 
-    if (kind == TokenKind.kw_or) return OpInfo{ .prec = Prec.bool_or, .right_assoc = false };
-    if (kind == TokenKind.kw_and) return OpInfo{ .prec = Prec.bool_and, .right_assoc = false };
+    if (kind == TokenKind.kw_or) return OpInfo{ .ast_kind = AstKind.bool_or, .prec = Prec.bool_or, .right_assoc = false };
+    if (kind == TokenKind.kw_and) return OpInfo{ .ast_kind = AstKind.bool_and, .prec = Prec.bool_and, .right_assoc = false };
 
-    if (kind == TokenKind.eq_eq or kind == TokenKind.bang_eq or
-        kind == TokenKind.less or kind == TokenKind.less_eq or
-        kind == TokenKind.greater or kind == TokenKind.greater_eq)
-        return OpInfo{ .prec = Prec.comparison, .right_assoc = false };
+    if (kind == TokenKind.eq_eq) return OpInfo{ .ast_kind = AstKind.cmp_eq, .prec = Prec.comparison, .right_assoc = false };
+    if (kind == TokenKind.bang_eq) return OpInfo{ .ast_kind = AstKind.cmp_ne, .prec = Prec.comparison, .right_assoc = false };
+    if (kind == TokenKind.less) return OpInfo{ .ast_kind = AstKind.cmp_lt, .prec = Prec.comparison, .right_assoc = false };
+    if (kind == TokenKind.less_eq) return OpInfo{ .ast_kind = AstKind.cmp_le, .prec = Prec.comparison, .right_assoc = false };
+    if (kind == TokenKind.greater) return OpInfo{ .ast_kind = AstKind.cmp_gt, .prec = Prec.comparison, .right_assoc = false };
+    if (kind == TokenKind.greater_eq) return OpInfo{ .ast_kind = AstKind.cmp_ge, .prec = Prec.comparison, .right_assoc = false };
 
-    if (kind == TokenKind.pipe) return OpInfo{ .prec = Prec.bit_or, .right_assoc = false };
-    if (kind == TokenKind.caret) return OpInfo{ .prec = Prec.bit_xor, .right_assoc = false };
-    if (kind == TokenKind.ampersand) return OpInfo{ .prec = Prec.bit_and, .right_assoc = false };
-    if (kind == TokenKind.shl or kind == TokenKind.shr or
-        kind == TokenKind.shl_pipe) return OpInfo{ .prec = Prec.shift, .right_assoc = false };
-    if (kind == TokenKind.plus or kind == TokenKind.minus or
-        kind == TokenKind.plus_pct or kind == TokenKind.minus_pct or
-        kind == TokenKind.plus_pipe or kind == TokenKind.minus_pipe) return OpInfo{ .prec = Prec.additive, .right_assoc = false };
-    if (kind == TokenKind.star or kind == TokenKind.slash or kind == TokenKind.percent or
-        kind == TokenKind.star_pct or kind == TokenKind.star_pipe) return OpInfo{ .prec = Prec.multiply, .right_assoc = false };
+    if (kind == TokenKind.pipe) return OpInfo{ .ast_kind = AstKind.bit_or, .prec = Prec.bit_or, .right_assoc = false };
+    if (kind == TokenKind.caret) return OpInfo{ .ast_kind = AstKind.bit_xor, .prec = Prec.bit_xor, .right_assoc = false };
+    if (kind == TokenKind.ampersand) return OpInfo{ .ast_kind = AstKind.bit_and, .prec = Prec.bit_and, .right_assoc = false };
+    if (kind == TokenKind.shl) return OpInfo{ .ast_kind = AstKind.shl, .prec = Prec.shift, .right_assoc = false };
+    if (kind == TokenKind.shr) return OpInfo{ .ast_kind = AstKind.shr, .prec = Prec.shift, .right_assoc = false };
+    if (kind == TokenKind.shl_pipe) return OpInfo{ .ast_kind = AstKind.sat_shl, .prec = Prec.shift, .right_assoc = false };
+    if (kind == TokenKind.plus) return OpInfo{ .ast_kind = AstKind.add, .prec = Prec.additive, .right_assoc = false };
+    if (kind == TokenKind.minus) return OpInfo{ .ast_kind = AstKind.sub, .prec = Prec.additive, .right_assoc = false };
+    if (kind == TokenKind.plus_pct) return OpInfo{ .ast_kind = AstKind.wrap_add, .prec = Prec.additive, .right_assoc = false };
+    if (kind == TokenKind.minus_pct) return OpInfo{ .ast_kind = AstKind.wrap_sub, .prec = Prec.additive, .right_assoc = false };
+    if (kind == TokenKind.plus_pipe) return OpInfo{ .ast_kind = AstKind.sat_add, .prec = Prec.additive, .right_assoc = false };
+    if (kind == TokenKind.minus_pipe) return OpInfo{ .ast_kind = AstKind.sat_sub, .prec = Prec.additive, .right_assoc = false };
+    if (kind == TokenKind.star) return OpInfo{ .ast_kind = AstKind.mul, .prec = Prec.multiply, .right_assoc = false };
+    if (kind == TokenKind.slash) return OpInfo{ .ast_kind = AstKind.div, .prec = Prec.multiply, .right_assoc = false };
+    if (kind == TokenKind.percent) return OpInfo{ .ast_kind = AstKind.mod_op, .prec = Prec.multiply, .right_assoc = false };
+    if (kind == TokenKind.star_pct) return OpInfo{ .ast_kind = AstKind.wrap_mul, .prec = Prec.multiply, .right_assoc = false };
+    if (kind == TokenKind.star_pipe) return OpInfo{ .ast_kind = AstKind.sat_mul, .prec = Prec.multiply, .right_assoc = false };
 
     return null;
 }
