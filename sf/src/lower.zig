@@ -111,6 +111,33 @@ pub const SemanticContext = struct {
     print_value_lowered: u8,
 };
 
+// Shared typed-array grow primitive (D5-1): double the capacity from a min of 8,
+// try an in-place realloc, else allocate + byte-copy. `elem_size` is the element
+// stride; the caller casts the returned raw pointer back to its element type.
+// Behaviour is identical to the four former per-struct EnsureCapacity bodies
+// (same growth sequence, same allocator calls, same byte content).
+fn arrayListEnsureCapacityBytes(allocator: *Sand, items: [*]u8, len: usize, capacity: *usize, elem_size: usize, new_capacity: usize) [*]u8 {
+    if (new_capacity <= capacity.*) return items;
+    var new_cap = new_capacity;
+    if (new_cap < capacity.* * 2) new_cap = capacity.* * 2;
+    if (new_cap < @intCast(usize, 8)) new_cap = @intCast(usize, 8);
+    if (capacity.* > 0) {
+        var grown = alloc_mod.sandTryReallocInPlace(allocator, items, capacity.* * elem_size, new_cap * elem_size, @intCast(usize, 4));
+        if (grown != null) {
+            capacity.* = new_cap;
+            return items;
+        }
+    }
+    var raw = alloc_mod.sandAlloc(allocator, elem_size * new_cap, @intCast(usize, 4)) catch unreachable;
+    var total: usize = len * elem_size;
+    var bi: usize = 0;
+    while (bi < total) : (bi += @intCast(usize, 1)) {
+        raw[bi] = items[bi];
+    }
+    capacity.* = new_cap;
+    return raw;
+}
+
 pub const DeferActionArrayList = struct {
     items: [*]DeferAction,
     len: usize,
@@ -128,28 +155,9 @@ pub fn deferActionArrayListInit(allocator: *Sand) DeferActionArrayList {
 }
 
 pub fn deferActionArrayListEnsureCapacity(self: *DeferActionArrayList, new_capacity: usize) void {
-    if (new_capacity <= self.capacity) return;
-    var new_cap = new_capacity;
-    if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
-    if (new_cap < @intCast(usize, 8)) new_cap = @intCast(usize, 8);
-    if (self.capacity > 0) {
-        var grown = alloc_mod.sandTryReallocInPlace(self.allocator,
-            @ptrCast([*]u8, self.items),
-            self.capacity * @sizeOf(DeferAction),
-            new_cap * @sizeOf(DeferAction),
-            @intCast(usize, 4));
-        if (grown != null) {
-            self.capacity = new_cap;
-            return;
-        }
-    }
-    var raw = alloc_mod.sandAlloc(self.allocator, @sizeOf(DeferAction) * new_cap, @intCast(usize, 4)) catch unreachable;
-    var new_items = @ptrCast([*]DeferAction, raw);
-    for (self.items[0..self.len]) |item, i| {
-        new_items[i] = item;
-    }
-    self.items = new_items;
-    self.capacity = new_cap;
+    var cur: [*]u8 = @ptrCast([*]u8, self.items);
+    var nb = arrayListEnsureCapacityBytes(self.allocator, cur, self.len, &self.capacity, @sizeOf(DeferAction), new_capacity);
+    self.items = @ptrCast([*]DeferAction, nb);
 }
 
 pub fn deferActionArrayListAppend(self: *DeferActionArrayList, value: DeferAction) void {
@@ -179,28 +187,9 @@ pub fn loopInfoArrayListInit(allocator: *Sand) LoopInfoArrayList {
 }
 
 pub fn loopInfoArrayListEnsureCapacity(self: *LoopInfoArrayList, new_capacity: usize) void {
-    if (new_capacity <= self.capacity) return;
-    var new_cap = new_capacity;
-    if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
-    if (new_cap < @intCast(usize, 8)) new_cap = @intCast(usize, 8);
-    if (self.capacity > 0) {
-        var grown = alloc_mod.sandTryReallocInPlace(self.allocator,
-            @ptrCast([*]u8, self.items),
-            self.capacity * @sizeOf(LoopInfo),
-            new_cap * @sizeOf(LoopInfo),
-            @intCast(usize, 4));
-        if (grown != null) {
-            self.capacity = new_cap;
-            return;
-        }
-    }
-    var raw = alloc_mod.sandAlloc(self.allocator, @sizeOf(LoopInfo) * new_cap, @intCast(usize, 4)) catch unreachable;
-    var new_items = @ptrCast([*]LoopInfo, raw);
-    for (self.items[0..self.len]) |item, i| {
-        new_items[i] = item;
-    }
-    self.items = new_items;
-    self.capacity = new_cap;
+    var cur: [*]u8 = @ptrCast([*]u8, self.items);
+    var nb = arrayListEnsureCapacityBytes(self.allocator, cur, self.len, &self.capacity, @sizeOf(LoopInfo), new_capacity);
+    self.items = @ptrCast([*]LoopInfo, nb);
 }
 
 pub fn loopInfoArrayListAppend(self: *LoopInfoArrayList, value: LoopInfo) void {
@@ -230,28 +219,9 @@ pub fn switchInfoArrayListInit(allocator: *Sand) SwitchInfoArrayList {
 }
 
 pub fn switchInfoArrayListEnsureCapacity(self: *SwitchInfoArrayList, new_capacity: usize) void {
-    if (new_capacity <= self.capacity) return;
-    var new_cap = new_capacity;
-    if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
-    if (new_cap < @intCast(usize, 8)) new_cap = @intCast(usize, 8);
-    if (self.capacity > 0) {
-        var grown = alloc_mod.sandTryReallocInPlace(self.allocator,
-            @ptrCast([*]u8, self.items),
-            self.capacity * @sizeOf(SwitchInfo),
-            new_cap * @sizeOf(SwitchInfo),
-            @intCast(usize, 4));
-        if (grown != null) {
-            self.capacity = new_cap;
-            return;
-        }
-    }
-    var raw = alloc_mod.sandAlloc(self.allocator, @sizeOf(SwitchInfo) * new_cap, @intCast(usize, 4)) catch unreachable;
-    var new_items = @ptrCast([*]SwitchInfo, raw);
-    for (self.items[0..self.len]) |item, i| {
-        new_items[i] = item;
-    }
-    self.items = new_items;
-    self.capacity = new_cap;
+    var cur: [*]u8 = @ptrCast([*]u8, self.items);
+    var nb = arrayListEnsureCapacityBytes(self.allocator, cur, self.len, &self.capacity, @sizeOf(SwitchInfo), new_capacity);
+    self.items = @ptrCast([*]SwitchInfo, nb);
 }
 
 pub fn switchInfoArrayListAppend(self: *SwitchInfoArrayList, value: SwitchInfo) void {
@@ -285,28 +255,9 @@ pub fn scopeNodeArrayListInit(allocator: *Sand) ScopeNodeArrayList {
 }
 
 pub fn scopeNodeArrayListEnsureCapacity(self: *ScopeNodeArrayList, new_capacity: usize) void {
-    if (new_capacity <= self.capacity) return;
-    var new_cap = new_capacity;
-    if (new_cap < self.capacity * 2) new_cap = self.capacity * 2;
-    if (new_cap < @intCast(usize, 8)) new_cap = @intCast(usize, 8);
-    if (self.capacity > 0) {
-        var grown = alloc_mod.sandTryReallocInPlace(self.allocator,
-            @ptrCast([*]u8, self.items),
-            self.capacity * @sizeOf(ScopeNode),
-            new_cap * @sizeOf(ScopeNode),
-            @intCast(usize, 4));
-        if (grown != null) {
-            self.capacity = new_cap;
-            return;
-        }
-    }
-    var raw = alloc_mod.sandAlloc(self.allocator, @sizeOf(ScopeNode) * new_cap, @intCast(usize, 4)) catch unreachable;
-    var new_items = @ptrCast([*]ScopeNode, raw);
-    for (self.items[0..self.len]) |item, i| {
-        new_items[i] = item;
-    }
-    self.items = new_items;
-    self.capacity = new_cap;
+    var cur: [*]u8 = @ptrCast([*]u8, self.items);
+    var nb = arrayListEnsureCapacityBytes(self.allocator, cur, self.len, &self.capacity, @sizeOf(ScopeNode), new_capacity);
+    self.items = @ptrCast([*]ScopeNode, nb);
 }
 
 pub fn scopeNodeArrayListAppend(self: *ScopeNodeArrayList, value: ScopeNode) void {
@@ -632,6 +583,23 @@ pub fn emitInst(self: *LirLowerer, inst: LirInst) void {
 
 // A18: true iff `tyid` is an arbitrary-width int whose declared bit width is
 // narrower than its C carrier (the emitter's former `intTypeNeedsWidthWrap`).
+// D5-4: build the `TypeResolveEnv` this lowerer uses everywhere; only `diag`
+// varies between callers (null for the no-emit passes, the live collector for
+// the switch-case resolver). Replaces the nine field-by-field literals.
+fn lowerTypeResolveEnv(self: *LirLowerer, diag: ?*diag_mod.DiagnosticCollector) type_resolver.TypeResolveEnv {
+    return type_resolver.TypeResolveEnv{
+        .store = self.ctx.store,
+        .typereg = self.ctx.registry,
+        .symbol_reg = self.ctx.symbol_tables,
+        .interner = self.ctx.registry.interner,
+        .module_id = self.module_id,
+        .source_file_id = @intCast(u32, 0),
+        .diag = diag,
+        .local_consts = null,
+        .local_types = null,
+    };
+}
+
 fn lowerTypeNeedsWidthWrap(reg: *type_mod.TypeRegistry, tyid: u32) u8 {
     if (tyid == type_mod.TYPE_VOID or @intCast(usize, tyid) >= reg.types_len) return @intCast(u8, 0);
     var ty = reg.types_items[@intCast(usize, tyid)];
@@ -1031,7 +999,7 @@ fn sliceBaseStaticLen(self: *LirLowerer, base_node: u32) ?u32 {
 // the untouched valid shapes stays byte-identical.
 fn sliceBoundComptimeI64(self: *LirLowerer, node_idx: u32) ?i64 {
     if (node_idx == @intCast(u32, 0)) return null;
-    var env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner, .module_id = self.module_id, .source_file_id = @intCast(u32, 0), .diag = null, .local_consts = null, .local_types = null };
+    var env = lowerTypeResolveEnv(self, null);
     if (type_resolver.evalConstI64Full(&env, node_idx, @intCast(u32, 0))) |iv| return iv;
     if (foldPrintArgIntExact(self, node_idx)) |fv| {
         if (fv.kind == ce_mod.KIND_INT and ce_mod.comptimeIntFits64(fv.v)) {
@@ -1151,6 +1119,15 @@ fn printFmtKindIsIntegerLike(k: type_mod.TypeKind) bool {
     return false;
 }
 
+// D1-2: the aggregate kinds (the named container kinds the print printer can
+// recurse into). Kept next to `printFmtKindIsIntegerLike` and reused by the
+// pointer-route, field-route and top-level argument ladders so the three
+// membership lists cannot drift.
+fn printFmtKindIsAggregate(kind: type_mod.TypeKind) bool {
+    if (kind == type_mod.TypeKind.struct_type or kind == type_mod.TypeKind.union_type or kind == type_mod.TypeKind.tagged_union_type or kind == type_mod.TypeKind.tuple_type or kind == type_mod.TypeKind.packed_union_type) return true;
+    return false;
+}
+
 // Task 3 (H6): a TYPE used as a value (`print("{}", .{u32})`, `.{S}`,
 // `.{mod.Type}`) resolves to the named type's own id, so it cannot be told
 // apart from a value of that type by the type alone. Detect it from the AST /
@@ -1227,7 +1204,7 @@ fn printFmtPtrPointeeOk(reg: *type_mod.TypeRegistry, tid: u32, depth: u32) bool 
 // `fn () void` still render exactly).
 fn printFmtPtrRouteOk(reg: *type_mod.TypeRegistry, pk: type_mod.TypeKind, ptid: u32, depth: u32, is_many: u8) bool {
     if (is_many == @intCast(u8, 0)) {
-        if (pk == type_mod.TypeKind.struct_type or pk == type_mod.TypeKind.union_type or pk == type_mod.TypeKind.tagged_union_type or pk == type_mod.TypeKind.tuple_type or pk == type_mod.TypeKind.packed_union_type) {
+        if (printFmtKindIsAggregate(pk)) {
             return printFmtAggFieldsOk(reg, ptid, depth + @intCast(u32, 1));
         }
         if (pk == type_mod.TypeKind.enum_type) return true;
@@ -1453,7 +1430,7 @@ fn printFmtAggFieldKindOk(reg: *type_mod.TypeRegistry, tid: u32, is_packed: u8, 
         return false;
     }
     if (is_packed != @intCast(u8, 0)) return false;
-    if (kind == type_mod.TypeKind.struct_type or kind == type_mod.TypeKind.union_type or kind == type_mod.TypeKind.tagged_union_type or kind == type_mod.TypeKind.tuple_type or kind == type_mod.TypeKind.packed_union_type) {
+    if (printFmtKindIsAggregate(kind)) {
         // Controller ruling R8 (fix round 1): a packed struct/packed union
         // nested inside another aggregate's printer walks the pre-existing
         // broken packed-VALUE C model (a packed struct is a byte carrier with
@@ -1608,7 +1585,7 @@ fn printFmtCheck(self: *LirLowerer, arg_node_idx: u32, tid: u32, spec_fmt: u8, h
     if (kind == type_mod.TypeKind.array_type) {
         return printFmtReject(self, arg_node_idx, reject_3063, @intCast(u8, 1));
     }
-    if (kind == type_mod.TypeKind.struct_type or kind == type_mod.TypeKind.union_type or kind == type_mod.TypeKind.tagged_union_type or kind == type_mod.TypeKind.tuple_type or kind == type_mod.TypeKind.packed_union_type) {
+    if (printFmtKindIsAggregate(kind)) {
         if (has_explicit != @intCast(u8, 0)) return printFmtReject(self, arg_node_idx, reject_3013, @intCast(u8, 0));
         // Task 4: the aggregate is printable only if every value the generated
         // printer would read has a final field route (see printFmtAggFieldsOk).
@@ -2001,18 +1978,7 @@ fn growLocalDecls(self: *LirLowerer) void {
     self.local_decl_cap = new_cap;
 }
 
-fn addLocalDecl(self: *LirLowerer, name_id: u32, type_id: u32, temp: u32, at_depth: u32, is_capture: u8) void {
-    if (self.local_decl_count >= self.local_decl_cap) { growLocalDecls(self); }
-    self.local_decl_names[self.local_decl_count] = name_id;
-    self.local_decl_src_names[self.local_decl_count] = name_id;
-    self.local_decl_types[self.local_decl_count] = type_id;
-    self.local_decl_temps[self.local_decl_count] = temp;
-    self.local_decl_kinds[self.local_decl_count] = @intCast(u8, @enumToInt(self.ctx.registry.types_items[@intCast(usize, type_id)].kind));
-    self.local_decl_is_capture[self.local_decl_count] = is_capture;
-    self.local_decl_scopes[self.local_decl_count] = at_depth;
-    self.local_decl_scope_nodes[self.local_decl_count] = scopeNodeForDepth(self, at_depth);
-    self.local_decl_fn[self.local_decl_count] = self.fn_seq;
-    self.local_decl_count += @intCast(usize, 1);
+fn localDeclMarkMarkers(name_id: u32, temp: u32, type_id: u32) void {
     var adm: []const u8 = "AID:n"; pal.markerWrite(adm);
     var adnb: [10]u8 = undefined; var adnl = itoa_mod.itoa(name_id, adnb[0..]); var adns: usize = @intCast(usize, 9) - @intCast(usize, adnl); pal.markerWrite(adnb[adns..@intCast(usize, 9)]);
     var adtm: []const u8 = "t"; pal.markerWrite(adtm);
@@ -2027,7 +1993,7 @@ fn addLocalDecl(self: *LirLowerer, name_id: u32, type_id: u32, temp: u32, at_dep
     var adc_nl2: []const u8 = "\n"; pal.markerWrite(adc_nl2);
 }
 
-fn addLocalDeclRenamed(self: *LirLowerer, src_name: u32, name_id: u32, type_id: u32, temp: u32, at_depth: u32, is_capture: u8) void {
+fn localDeclPushRow(self: *LirLowerer, src_name: u32, name_id: u32, type_id: u32, temp: u32, at_depth: u32, is_capture: u8) void {
     if (self.local_decl_count >= self.local_decl_cap) { growLocalDecls(self); }
     self.local_decl_names[self.local_decl_count] = name_id;
     self.local_decl_src_names[self.local_decl_count] = src_name;
@@ -2039,18 +2005,15 @@ fn addLocalDeclRenamed(self: *LirLowerer, src_name: u32, name_id: u32, type_id: 
     self.local_decl_scope_nodes[self.local_decl_count] = scopeNodeForDepth(self, at_depth);
     self.local_decl_fn[self.local_decl_count] = self.fn_seq;
     self.local_decl_count += @intCast(usize, 1);
-    var adm: []const u8 = "AID:n"; pal.markerWrite(adm);
-    var adnb: [10]u8 = undefined; var adnl = itoa_mod.itoa(name_id, adnb[0..]); var adns: usize = @intCast(usize, 9) - @intCast(usize, adnl); pal.markerWrite(adnb[adns..@intCast(usize, 9)]);
-    var adtm: []const u8 = "t"; pal.markerWrite(adtm);
-    var adtb: [10]u8 = undefined; var adtl = itoa_mod.itoa(temp, adtb[0..]); var adts: usize = @intCast(usize, 9) - @intCast(usize, adtl); pal.markerWrite(adtb[adts..@intCast(usize, 9)]);
-    var adym: []const u8 = "Y"; pal.markerWrite(adym);
-    var adyb: [10]u8 = undefined; var adyl = itoa_mod.itoa(type_id, adyb[0..]); var adys: usize = @intCast(usize, 9) - @intCast(usize, adyl); pal.markerWrite(adyb[adys..@intCast(usize, 9)]);
-    var adcm: []const u8 = "c"; pal.markerWrite(adcm);
-    var adc_nm: []const u8 = "ADC:n"; pal.markerWrite(adc_nm);
-    var adc_nb: [10]u8 = undefined; var adc_nl = itoa_mod.itoa(name_id, adc_nb[0..]); var adc_ns: usize = @intCast(usize, 9) - @intCast(usize, adc_nl); pal.markerWrite(adc_nb[adc_ns..@intCast(usize, 9)]);
-    var adc_tm: []const u8 = "t"; pal.markerWrite(adc_tm);
-    var adc_tb: [10]u8 = undefined; var adc_tl = itoa_mod.itoa(type_id, adc_tb[0..]); var adc_ts: usize = @intCast(usize, 9) - @intCast(usize, adc_tl); pal.markerWrite(adc_tb[adc_ts..@intCast(usize, 9)]);
-    var adc_nl2: []const u8 = "\n"; pal.markerWrite(adc_nl2);
+    localDeclMarkMarkers(name_id, temp, type_id);
+}
+
+fn addLocalDecl(self: *LirLowerer, name_id: u32, type_id: u32, temp: u32, at_depth: u32, is_capture: u8) void {
+    localDeclPushRow(self, name_id, name_id, type_id, temp, at_depth, is_capture);
+}
+
+fn addLocalDeclRenamed(self: *LirLowerer, src_name: u32, name_id: u32, type_id: u32, temp: u32, at_depth: u32, is_capture: u8) void {
+    localDeclPushRow(self, src_name, name_id, type_id, temp, at_depth, is_capture);
 }
 fn synthName(self: *LirLowerer, name_id: u32) u32 {
     var orig_str = si_mod.stringInternerGet(self.ctx.registry.interner, name_id);
@@ -2080,17 +2043,7 @@ fn maybeDisambiguateCapture(self: *LirLowerer, capture_name: u32, variant_type_i
         // var-decl type_rename path). `lowerFn`'s per-function reset scopes
         // this table to the current function, so no fn_seq filter is needed.
         if (self.local_decl_names[eli] == capture_name and self.local_decl_types[eli] != variant_type_id) {
-            var orig_str = si_mod.stringInternerGet(self.ctx.registry.interner, capture_name);
-            var name_buf: [96]u8 = undefined;
-            var np: usize = @intCast(usize, 0);
-            while (np < orig_str.len and np < @intCast(usize, 95)) : (np += 1) { name_buf[np] = orig_str[np]; }
-            name_buf[np] = @intCast(u8, '_'); np += 1;
-            var sc = self.synth_name_counter; self.synth_name_counter = sc + @intCast(u32, 1);
-            var scb: [16]u8 = undefined; var scl = itoa_mod.itoa(sc, scb[0..]);
-            var sc_start: usize = @intCast(usize, 15) - @intCast(usize, scl);
-            var sci: usize = sc_start;
-            while (sci < sc_start + @intCast(usize, scl) and np < @intCast(usize, 95)) : (sci += 1) { name_buf[np] = scb[sci]; np += 1; }
-            var syn_id = si_mod.stringInternerIntern(self.ctx.registry.interner, name_buf[0..np]);
+            var syn_id = synthName(self, capture_name);
             _ = hash_mod.u32ToU32MapPut(&self.capture_shadow, capture_name, syn_id);
             return syn_id;
         }
@@ -2133,13 +2086,12 @@ fn iceInvalidIndex(self: *LirLowerer, what: []const u8, idx: u32, len: u32) void
     diag_mod.diagnosticCollectorFlushAndExit(self.ctx.diag, @intCast(u32, 3));
 }
 
-fn iceSliceUnsupported(self: *LirLowerer, node_idx: u32) void {
+fn iceReportNode(self: *LirLowerer, msg_prefix: []const u8, node_idx: u32) void {
     var node_id_buf: [10]u8 = undefined;
     var node_id_l = itoa_mod.itoa(node_idx, node_id_buf[0..]);
-    var p0: []const u8 = "internal: unsupported slice_expr form/base (node ";
     var p1: []const u8 = ")";
     var node_id_s: usize = @intCast(usize, 9) - @intCast(usize, node_id_l);
-    var parts: [3][]const u8 = [3][]const u8{ p0, node_id_buf[node_id_s..@intCast(usize, 9)], p1 };
+    var parts: [3][]const u8 = [3][]const u8{ msg_prefix, node_id_buf[node_id_s..@intCast(usize, 9)], p1 };
     var msg = diag_mod.diagnosticBuilderMakeMsg(self.ctx.diag.interner, &parts[0], @intCast(u32, 3));
     var start: u32 = 0;
     var end: u32 = 0;
@@ -2150,63 +2102,26 @@ fn iceSliceUnsupported(self: *LirLowerer, node_idx: u32) void {
     }
     diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_9001_ICE)), @intCast(u32, 0), start, end, msg);
     diag_mod.diagnosticCollectorFlushAndExit(self.ctx.diag, @intCast(u32, 3));
+}
+
+fn iceSliceUnsupported(self: *LirLowerer, node_idx: u32) void {
+    var p0: []const u8 = "internal: unsupported slice_expr form/base (node ";
+    iceReportNode(self, p0, node_idx);
 }
 
 fn iceFieldStoreUnsupported(self: *LirLowerer, node_idx: u32) void {
-    var node_id_buf: [10]u8 = undefined;
-    var node_id_l = itoa_mod.itoa(node_idx, node_id_buf[0..]);
     var p0: []const u8 = "internal: unsupported field-store base (node ";
-    var p1: []const u8 = ")";
-    var node_id_s: usize = @intCast(usize, 9) - @intCast(usize, node_id_l);
-    var parts: [3][]const u8 = [3][]const u8{ p0, node_id_buf[node_id_s..@intCast(usize, 9)], p1 };
-    var msg = diag_mod.diagnosticBuilderMakeMsg(self.ctx.diag.interner, &parts[0], @intCast(u32, 3));
-    var start: u32 = 0;
-    var end: u32 = 0;
-    if (@intCast(usize, node_idx) < self.ctx.store.nodes.len) {
-        var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
-        start = node.span_start;
-        end = node.span_start + @intCast(u32, node.span_len);
-    }
-    diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_9001_ICE)), @intCast(u32, 0), start, end, msg);
-    diag_mod.diagnosticCollectorFlushAndExit(self.ctx.diag, @intCast(u32, 3));
+    iceReportNode(self, p0, node_idx);
 }
 
 fn iceAssignLValueUnsupported(self: *LirLowerer, node_idx: u32) void {
-    var node_id_buf: [10]u8 = undefined;
-    var node_id_l = itoa_mod.itoa(node_idx, node_id_buf[0..]);
     var p0: []const u8 = "internal: unsupported assignment l-value (node ";
-    var p1: []const u8 = ")";
-    var node_id_s: usize = @intCast(usize, 9) - @intCast(usize, node_id_l);
-    var parts: [3][]const u8 = [3][]const u8{ p0, node_id_buf[node_id_s..@intCast(usize, 9)], p1 };
-    var msg = diag_mod.diagnosticBuilderMakeMsg(self.ctx.diag.interner, &parts[0], @intCast(u32, 3));
-    var start: u32 = 0;
-    var end: u32 = 0;
-    if (@intCast(usize, node_idx) < self.ctx.store.nodes.len) {
-        var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
-        start = node.span_start;
-        end = node.span_start + @intCast(u32, node.span_len);
-    }
-    diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_9001_ICE)), @intCast(u32, 0), start, end, msg);
-    diag_mod.diagnosticCollectorFlushAndExit(self.ctx.diag, @intCast(u32, 3));
+    iceReportNode(self, p0, node_idx);
 }
 
 fn iceAddrOfLValueUnsupported(self: *LirLowerer, node_idx: u32) void {
-    var node_id_buf: [10]u8 = undefined;
-    var node_id_l = itoa_mod.itoa(node_idx, node_id_buf[0..]);
     var p0: []const u8 = "internal: unsupported address-of l-value (node ";
-    var p1: []const u8 = ")";
-    var node_id_s: usize = @intCast(usize, 9) - @intCast(usize, node_id_l);
-    var parts: [3][]const u8 = [3][]const u8{ p0, node_id_buf[node_id_s..@intCast(usize, 9)], p1 };
-    var msg = diag_mod.diagnosticBuilderMakeMsg(self.ctx.diag.interner, &parts[0], @intCast(u32, 3));
-    var start: u32 = 0;
-    var end: u32 = 0;
-    if (@intCast(usize, node_idx) < self.ctx.store.nodes.len) {
-        var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
-        start = node.span_start;
-        end = node.span_start + @intCast(u32, node.span_len);
-    }
-    diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_9001_ICE)), @intCast(u32, 0), start, end, msg);
-    diag_mod.diagnosticCollectorFlushAndExit(self.ctx.diag, @intCast(u32, 3));
+    iceReportNode(self, p0, node_idx);
 }
 
 // Task 2f-F: does `temp` hold a pointer to a fixed array (a decayed
@@ -3189,7 +3104,7 @@ fn lowerSwitchCaseItemMemberValue(self: *LirLowerer, name_id: u32, cond_ty_id: ?
 // reference whose initializer is not an integer constant is re-checked
 // structurally for an enum-member value.
 fn lowerSwitchCaseItemConstValue(self: *LirLowerer, node_idx: u32, cond_ty_id: ?u32) ?u64 {
-    var env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner, .module_id = self.module_id, .source_file_id = @intCast(u32, 0), .diag = self.ctx.diag, .local_consts = null, .local_types = null };
+    var env = lowerTypeResolveEnv(self, self.ctx.diag);
     if (type_resolver.evalConstI64Full(&env, node_idx, @intCast(u32, 0))) |iv| {
         if (iv >= @intCast(i64, 0)) return @intCast(u64, iv);
         return null;
@@ -3269,8 +3184,7 @@ fn lowerSwitchCaseItemConstDecl(self: *LirLowerer, node_idx: u32) ?u32 {
 fn lowerSwitchCaseItemIsConstGlobal(s: *sym_mod.Symbol) bool {
     // Symbol flags bit0 is `is_mutable` (parser): a `var` case item is not a
     // compile-time constant (Zig rejects it), so only `const` globals resolve.
-    if (s.kind != sym_mod.SymbolKind.global) return false;
-    return (@intCast(u16, s.flags) & @intCast(u16, 1)) == @intCast(u16, 0);
+    return symbolIsConstGlobal(s);
 }
 
 fn lowerAppendSwitchCaseItem(self: *LirLowerer, item_idx: u32, prong_bb_id: u32, cond_ty_id: ?u32) void {
@@ -3390,6 +3304,19 @@ fn intCastTypeIsSigned(reg: *type_mod.TypeRegistry, tid: u32) u8 {
     if (tid == type_mod.TYPE_BOOL) return @intCast(u8, 0);
     if (type_mod.typeRegistryIntIsSigned(reg, tid)) return @intCast(u8, 1);
     return @intCast(u8, 0);
+}
+
+// D3-5: the error-union type a temp holds, or TYPE_UNDEFINED when the temp is
+// not an error union. Shared by the try_expr and catch_expr boxes.
+fn euTypeOfTemp(self: *LirLowerer, temp_id: u32) u32 {
+    var eu_type = getTempType(self, temp_id);
+    if (eu_type != type_mod.TYPE_UNDEFINED) {
+        var ty = self.ctx.registry.types_items[@intCast(usize, eu_type)];
+        if (ty.kind == type_mod.TypeKind.error_union_type) {
+            return eu_type;
+        }
+    }
+    return type_mod.TYPE_UNDEFINED;
 }
 
 fn euPayloadOf(self: *LirLowerer, tid: u32) u32 {
@@ -3967,14 +3894,25 @@ fn bindOptionalCapture(self: *LirLowerer, capture_node: u32, cond_temp: u32) voi
     bindCapture(self, cap_name_orig, cap_name, cap_type, cap_temp, self.scope_depth + @intCast(u32, 1));
 }
 
+// D1-3: shared symbol-flag predicates. `Symbol.flags` bit2 (0x04) marks a
+// type-only binding; bit0 is `is_mutable`. A storage global is a `global`
+// symbol that is not type-only; a const global is a `global` symbol whose
+// bit0 is clear.
+fn symbolIsStorageGlobal(s: *sym_mod.Symbol) bool {
+    if (s.kind != sym_mod.SymbolKind.global) return false;
+    return (@intCast(u16, s.flags) & @intCast(u16, 0x04)) == @intCast(u16, 0);
+}
+
+fn symbolIsConstGlobal(s: *sym_mod.Symbol) bool {
+    if (s.kind != sym_mod.SymbolKind.global) return false;
+    return (@intCast(u16, s.flags) & @intCast(u16, 1)) == @intCast(u16, 0);
+}
+
 fn isStorageGlobal(self: *LirLowerer, name_id: u32) bool {
     if (self.ctx.has_symbols == @intCast(u8, 0)) return false;
     var sg_sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, name_id);
     if (sg_sym) |sgss| {
-        if (sgss.kind == sym_mod.SymbolKind.global) {
-            if ((@intCast(u16, sgss.flags) & @intCast(u16, 0x04)) != @intCast(u16, 0)) return false;
-            return true;
-        }
+        return symbolIsStorageGlobal(sgss);
     }
     return false;
 }
@@ -3985,7 +3923,7 @@ fn lowerGlobalRef(self: *LirLowerer, s: sym_mod.Symbol, name_id: u32) u32 {
     var lgr_nl: []const u8 = " "; pal.markerWrite(lgr_nl);
     var dn_type = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, s.decl_node);
     var tid_type = if (dn_type) |dt| dt else type_mod.TYPE_UNDEFINED;
-    if ((@intCast(u16, s.flags) & @intCast(u16, 0x04)) != @intCast(u16, 0)) {
+    if (!symbolIsStorageGlobal(&s)) {
         var tid_e = nextTemp(self, tid_type);
         emitInst(self, LirInst{ .decl_local = .{ .name_id = name_id, .type_id = tid_type, .temp = tid_e } });
         return tid_e;
@@ -4136,7 +4074,7 @@ fn lowerModuleMemberValue(self: *LirLowerer, target_mod: u32, field_name_id: u32
         } else if (ts.kind == sym_mod.SymbolKind.global) {
             var gbl_type = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, ts.decl_node);
             var gbl_tid = if (gbl_type) |gt| gt else type_mod.TYPE_UNDEFINED;
-            if ((@intCast(u16, ts.flags) & @intCast(u16, 1)) == @intCast(u16, 0)) {
+            if (symbolIsConstGlobal(ts)) {
                 var gd_node = ast_mod.astStoreNodeAt(self.ctx.store, ts.decl_node);
                 if (gd_node.child_1 != 0) {
                     var gi_node = ast_mod.astStoreNodeAt(self.ctx.store, gd_node.child_1);
@@ -4735,7 +4673,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
          var sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, self.module_id, name_id);
          if (sym) |s| {
                if (s.kind == sym_mod.SymbolKind.global) {
-                   if ((@intCast(u16, s.flags) & @intCast(u16, 1)) == @intCast(u16, 0)) {
+                   if (symbolIsConstGlobal(s)) {
                       var decl_node = ast_mod.astStoreNodeAt(store, s.decl_node);
                       if (decl_node.child_1 != 0) {
                           var init_node = ast_mod.astStoreNodeAt(store, decl_node.child_1);
@@ -5776,7 +5714,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             }
             if (node.child_0 == self.field_parent_ptr_name_id) {
                 if (ec_n >= @intCast(usize, 3)) {
-                    var fpp_env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner, .module_id = self.module_id, .source_file_id = @intCast(u32, 0), .diag = null, .local_consts = null, .local_types = null };
+                    var fpp_env = lowerTypeResolveEnv(self, null);
                     var fpp_outer = type_resolver.resolveTypeExprFull(&fpp_env, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)), @intCast(u32, 0));
                     if (fpp_outer != type_mod.TYPE_UNDEFINED) {
                         var fpp_oty = self.ctx.registry.types_items[@intCast(usize, fpp_outer)];
@@ -5812,7 +5750,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             }
             if (node.child_0 == self.bitcast_name_id) {
                 if (ec_n >= @intCast(usize, 2)) {
-                    var bc_env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner, .module_id = self.module_id, .source_file_id = @intCast(u32, 0), .diag = null, .local_consts = null, .local_types = null };
+                    var bc_env = lowerTypeResolveEnv(self, null);
                     var bc_dst = type_resolver.resolveTypeExprFull(&bc_env, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)), @intCast(u32, 0));
                     if (bc_dst != type_mod.TYPE_UNDEFINED) {
                         var bc_arg = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 1)));
@@ -5837,7 +5775,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         }
                     } else {
                         if (ec_n >= @intCast(usize, 1)) {
-                            var ct_env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner, .module_id = self.module_id, .source_file_id = @intCast(u32, 0), .diag = null, .local_consts = null, .local_types = null };
+                            var ct_env = lowerTypeResolveEnv(self, null);
                             var ct = type_resolver.resolveTypeExprFull(&ct_env, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)), @intCast(u32, 0));
                             if (ct != type_mod.TYPE_UNDEFINED) {
                                 fold_ty_box[0] = ct;
@@ -5860,7 +5798,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         if (t == type_mod.TYPE_F32 or t == type_mod.TYPE_F64) { ft = t; }
                     }
                     if (ft == type_mod.TYPE_UNDEFINED and ec_n >= @intCast(usize, 1)) {
-                        var ff_env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner, .module_id = self.module_id, .source_file_id = @intCast(u32, 0), .diag = null, .local_consts = null, .local_types = null };
+                        var ff_env = lowerTypeResolveEnv(self, null);
                         var ft2 = type_resolver.resolveTypeExprFull(&ff_env, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)), @intCast(u32, 0));
                         if (ft2 == type_mod.TYPE_F32 or ft2 == type_mod.TYPE_F64) { ft = ft2; }
                     }
@@ -5943,7 +5881,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             if (node.child_0 == self.cvaarg_name_id) {
                 if (ec_n >= @intCast(usize, 2)) {
                     var vat = vaListArgTemp(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)));
-                    var ct_env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner, .module_id = self.module_id, .source_file_id = @intCast(u32, 0), .diag = null, .local_consts = null, .local_types = null };
+                    var ct_env = lowerTypeResolveEnv(self, null);
                     var vatid = type_resolver.resolveTypeExprFull(&ct_env, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 1)), @intCast(u32, 0));
                     var vares = nextTemp(self, vatid);
                     emitInst(self, LirInst{ .va_arg = .{ .va_list_temp = vat, .type_id = vatid, .result = vares } });
@@ -6269,7 +6207,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var ty_node = ast_mod.astStoreNodeAt(store, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)));
         t_target = type_mod.TYPE_U32;
         if (ty_node.kind == AstKind.fn_type) {
-            var fc_env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner, .module_id = self.module_id, .source_file_id = @intCast(u32, 0), .diag = null, .local_consts = null, .local_types = null };
+            var fc_env = lowerTypeResolveEnv(self, null);
             var fc_t = type_resolver.resolveTypeExprFull(&fc_env, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)), @intCast(u32, 0));
             if (fc_t != type_mod.TYPE_UNDEFINED) {
                 t_target = fc_t;
@@ -6283,7 +6221,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 var fcm: []const u8 = "FNT:t"; pal.markerWrite(fcm);
             }
         } else {
-            var ct_env = type_resolver.TypeResolveEnv{ .store = self.ctx.store, .typereg = self.ctx.registry, .symbol_reg = self.ctx.symbol_tables, .interner = self.ctx.registry.interner, .module_id = self.module_id, .source_file_id = @intCast(u32, 0), .diag = null, .local_consts = null, .local_types = null };
+            var ct_env = lowerTypeResolveEnv(self, null);
             var ct = type_resolver.resolveTypeExprFull(&ct_env, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, 0)), @intCast(u32, 0));
             if (ct != type_mod.TYPE_UNDEFINED) { t_target = ct; }
         }
@@ -6354,16 +6292,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
             return nextTemp(self, type_mod.TYPE_VOID);
     } else if (node.kind == AstKind.try_expr) {
         var inner_temp = lowerExpr(self, node.child_0);
-        var eu_box: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
-        {
-            var eu_type = getTempType(self, inner_temp);
-            if (eu_type != type_mod.TYPE_UNDEFINED) {
-                var ty = self.ctx.registry.types_items[@intCast(usize, eu_type)];
-                if (ty.kind == type_mod.TypeKind.error_union_type) {
-                    eu_box[0] = eu_type;
-                }
-            }
-        }
+        var eu_box: [1]u32 = [1]u32{euTypeOfTemp(self, inner_temp)};
         if (eu_box[0] != type_mod.TYPE_UNDEFINED) {
             var is_err_temp = nextTemp(self, type_mod.TYPE_U8);
             emitInst(self, LirInst{ .check_error = .{ .value = inner_temp, .result = is_err_temp } });
@@ -6409,16 +6338,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         }
     } else if (node.kind == AstKind.catch_expr) {
         var lhs_temp = lowerExpr(self, node.child_0);
-        var eu_box: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
-        {
-            var eu_type_catch = getTempType(self, lhs_temp);
-            if (eu_type_catch != type_mod.TYPE_UNDEFINED) {
-                var ty_c = self.ctx.registry.types_items[@intCast(usize, eu_type_catch)];
-                if (ty_c.kind == type_mod.TypeKind.error_union_type) {
-                    eu_box[0] = eu_type_catch;
-                }
-            }
-        }
+        var eu_box: [1]u32 = [1]u32{euTypeOfTemp(self, lhs_temp)};
         if (eu_box[0] != type_mod.TYPE_UNDEFINED) {
             var is_err_temp = nextTemp(self, type_mod.TYPE_U8);
             emitInst(self, LirInst{ .check_error = .{ .value = lhs_temp, .result = is_err_temp } });
@@ -8958,6 +8878,19 @@ fn emitValuelessReturn(self: *LirLowerer) void {
     }
 }
 
+// D5-2: the shared `LirFunction` header initialization (empty typed lists +
+// the poison flag) used by both `lowerFn` and `lowerModuleInit`. Callers set
+// the name/return/flag fields that differ.
+fn lirFunctionInitHeader(self: *LirLowerer, func_ptr: *LirFunction) void {
+    func_ptr.params = lir_mod.lirParamArrayListInit(self.alloc);
+    func_ptr.blocks = lir_mod.basicBlockArrayListInit(self.alloc);
+    func_ptr.hoisted_temps = lir_mod.tempDeclArrayListInit(self.alloc);
+    func_ptr.switch_cases = lir_mod.switchCaseArrayListInit(self.alloc);
+    func_ptr.side_table = lir_mod.lirSideEntryArrayListInit(self.alloc);
+    func_ptr.temp_variant_sub_field = hash_mod.u32ToU32MapInit(self.alloc);
+    func_ptr.poison_uninit = @intCast(u8, if (self.ctx.safe_checks) 1 else 0);
+}
+
 pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
     self.fn_seq = self.fn_seq + @intCast(u32, 1);
     // Task 10 bookkeeping hygiene: the function-scoped capture/local state
@@ -8994,18 +8927,12 @@ pub fn lowerFn(self: *LirLowerer, fn_node: u32) LirFunction {
     var rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, proto.return_type_node);
     if (rt) |_| { var dr: []const u8 = "HR"; pal.markerWrite(dr); } else { var dr: []const u8 = "MR"; pal.markerWrite(dr); }
     func_ptr.return_type = if (rt) |tid| tid else type_mod.TYPE_VOID;
-    func_ptr.params = lir_mod.lirParamArrayListInit(self.alloc);
-    func_ptr.blocks = lir_mod.basicBlockArrayListInit(self.alloc);
-    func_ptr.hoisted_temps = lir_mod.tempDeclArrayListInit(self.alloc);
-    func_ptr.switch_cases = lir_mod.switchCaseArrayListInit(self.alloc);
-    func_ptr.side_table = lir_mod.lirSideEntryArrayListInit(self.alloc);
-    func_ptr.temp_variant_sub_field = hash_mod.u32ToU32MapInit(self.alloc);
+    lirFunctionInitHeader(self, func_ptr);
     func_ptr.is_extern = @intCast(u8, if ((node.flags & @intCast(u8, 0x04)) != 0) 1 else 0);
     func_ptr.is_pub = @intCast(u8, if ((node.flags & @intCast(u8, 0x02)) != 0) 1 else 0);
     func_ptr.is_export = @intCast(u8, if ((node.flags & @intCast(u8, 0x08)) != 0) 1 else 0);
     func_ptr.is_variadic = @intCast(u8, 0);
     func_ptr.call_conv = proto.call_conv;
-    func_ptr.poison_uninit = @intCast(u8, if (self.ctx.safe_checks) 1 else 0);
     var frt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, fn_node);
     if (frt) |frt_id| {
         var fty = self.ctx.registry.types_items[@intCast(usize, frt_id)];
@@ -9096,18 +9023,12 @@ pub fn lowerModuleInit(self: *LirLowerer, root_idx: u32, mod_id: u32, dep_map: *
     func_ptr.name_id = init_name_id;
     func_ptr.module_id = mod_id;
     func_ptr.return_type = type_mod.TYPE_VOID;
-    func_ptr.params = lir_mod.lirParamArrayListInit(self.alloc);
-    func_ptr.blocks = lir_mod.basicBlockArrayListInit(self.alloc);
-    func_ptr.hoisted_temps = lir_mod.tempDeclArrayListInit(self.alloc);
-    func_ptr.switch_cases = lir_mod.switchCaseArrayListInit(self.alloc);
-    func_ptr.side_table = lir_mod.lirSideEntryArrayListInit(self.alloc);
-    func_ptr.temp_variant_sub_field = hash_mod.u32ToU32MapInit(self.alloc);
+    lirFunctionInitHeader(self, func_ptr);
     func_ptr.is_extern = @intCast(u8, 0);
     func_ptr.is_pub = @intCast(u8, 0);
     func_ptr.is_export = @intCast(u8, 0);
     func_ptr.is_variadic = @intCast(u8, 0);
     func_ptr.call_conv = @intCast(u8, 0);
-    func_ptr.poison_uninit = @intCast(u8, if (self.ctx.safe_checks) 1 else 0);
     self.func = func_ptr;
     self.current_bb = createBlock(self);
     emitInst(self, LirInst{ .loop_header = @intCast(u32, 0) });
