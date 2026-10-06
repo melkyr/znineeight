@@ -2266,6 +2266,24 @@ fn lowerArrayElemTupleCoerce(self: *LirLowerer, elem_tid: u32, val_temp: u32, no
     return applyCoercion(self, val_temp, coercion_mod.CoercionEntry{ .node_idx = node_idx, .kind = ck, .target_type = elem_tid });
 }
 
+// Task 4a (D3-1): shared field-name to ordinal lookup for a struct/union
+// container. Returns 0xFFFFFFFF when no field matches; each caller maps that
+// sentinel to its own not-found behaviour. Pure — no LIR, no markers — so the
+// store/address ladders keep their exact emitted text.
+fn lowerFindFieldOrdinal(self: *LirLowerer, container_tid: u32, field_name_id: u32, is_union: u8) u32 {
+    var fields: []FieldEntry = undefined;
+    if (is_union != @intCast(u8, 0)) {
+        type_mod.typeRegistryGetUnionFields(self.ctx.registry, container_tid, &fields);
+    } else {
+        type_mod.typeRegistryGetStructFields(self.ctx.registry, container_tid, &fields);
+    }
+    var fi: usize = 0;
+    while (fi < fields.len) : (fi += 1) {
+        if (fields[fi].name_id == field_name_id) return @intCast(u32, fi);
+    }
+    return @intCast(u32, 0xFFFFFFFF);
+}
+
 fn lowerLValueAddr(self: *LirLowerer, lv_node_idx: u32, result_type: u32) u32 {
     var store = self.ctx.store;
     var lv_node = ast_mod.astStoreNodeAt(store, lv_node_idx);
@@ -2394,19 +2412,11 @@ fn lowerLValueAddr(self: *LirLowerer, lv_node_idx: u32, result_type: u32) u32 {
         var field_id: u32 = @intCast(u32, 0);
         var found_f: u8 = @intCast(u8, 0);
         if (pkind == type_mod.TypeKind.struct_type) {
-            var fields: []FieldEntry = undefined;
-            type_mod.typeRegistryGetStructFields(self.ctx.registry, pointee_ty, &fields);
-            var fi: usize = 0;
-            while (fi < fields.len) : (fi += 1) {
-                if (fields[fi].name_id == field_name_id) { field_id = @intCast(u32, fi); found_f = @intCast(u8, 1); break; }
-            }
+            var lva_fid = lowerFindFieldOrdinal(self, pointee_ty, field_name_id, @intCast(u8, 0));
+            if (lva_fid != @intCast(u32, 0xFFFFFFFF)) { field_id = lva_fid; found_f = @intCast(u8, 1); }
         } else if (pkind == type_mod.TypeKind.union_type) {
-            var fields: []FieldEntry = undefined;
-            type_mod.typeRegistryGetUnionFields(self.ctx.registry, pointee_ty, &fields);
-            var fi: usize = 0;
-            while (fi < fields.len) : (fi += 1) {
-                if (fields[fi].name_id == field_name_id) { field_id = @intCast(u32, fi); found_f = @intCast(u8, 1); break; }
-            }
+            var lva_fid = lowerFindFieldOrdinal(self, pointee_ty, field_name_id, @intCast(u8, 1));
+            if (lva_fid != @intCast(u32, 0xFFFFFFFF)) { field_id = lva_fid; found_f = @intCast(u8, 1); }
         } else if (pkind == type_mod.TypeKind.tuple_type) {
             // FB (D4): `&t.N`/`&t._N` -> positional field address.
             var lvt_ord = type_mod.typeRegistryTupleOrdinalFromNameId(self.ctx.registry, field_name_id);
@@ -2436,6 +2446,98 @@ fn lowerDerefStore(self: *LirLowerer, deref_node_idx: u32, value_temp: u32) void
     var deref_node = ast_mod.astStoreNodeAt(self.ctx.store, deref_node_idx);
     var ptr_temp = lowerExpr(self, deref_node.child_0);
     emitInst(self, LirInst{ .store = .{ .ptr = ptr_temp, .value = value_temp } });
+}
+
+// Task 4a (D7-5): shared for-loop CFG skeleton. The range and iterable forms
+// build the identical header/step/exit control flow; only the condition operand
+// pair and the step increment differ (and the iterable form's body prologue).
+// `lowerLoopOpen` creates the four blocks and enters the cond block;
+// `lowerLoopBranchBody` emits the conditional branch and opens the body;
+// `lowerLoopToStep` closes the body into the step block; `lowerLoopClose` jumps
+// back to the condition and restores the enclosing label. Block creation order
+// and emitted LIR are byte-identical to the former inline copies.
+fn lowerLoopOpen(self: *LirLowerer, cond_out: *u32, body_out: *u32, exit_out: *u32, step_out: *u32, saved_out: *u32) void {
+    var cond_bb = createBlock(self);
+    var body_bb = createBlock(self);
+    var exit_bb = createBlock(self);
+    var step_bb = createBlock(self);
+    var saved_label = self.current_label;
+    var loop_info = LoopInfo{ .header_bb = step_bb, .exit_bb = exit_bb, .scope_depth = self.scope_depth, .label_id = self.current_label, .is_loop = @intCast(u8, 1) };
+    loopInfoArrayListAppend(&self.loop_stack, loop_info);
+    self.current_label = @intCast(u32, 0);
+    emitInst(self, LirInst{ .jump = cond_bb });
+    self.current_bb = cond_bb;
+    cond_out.* = cond_bb;
+    body_out.* = body_bb;
+    exit_out.* = exit_bb;
+    step_out.* = step_bb;
+    saved_out.* = saved_label;
+}
+
+fn lowerLoopBranchBody(self: *LirLowerer, cmp_temp: u32, body_bb: u32, exit_bb: u32) void {
+    emitInst(self, LirInst{ .branch = .{ .cond = cmp_temp, .then_bb = body_bb, .else_bb = exit_bb } });
+    self.current_bb = body_bb;
+    self.block_terminated = @intCast(u8, 0);
+}
+
+fn lowerLoopToStep(self: *LirLowerer, step_bb: u32) void {
+    if (self.block_terminated == @intCast(u8, 0)) {
+        emitInst(self, LirInst{ .jump = step_bb });
+    }
+    self.current_bb = step_bb;
+    self.block_terminated = @intCast(u8, 0);
+}
+
+fn lowerLoopClose(self: *LirLowerer, cond_bb: u32, exit_bb: u32, saved_label: u32) void {
+    emitInst(self, LirInst{ .jump = cond_bb });
+    self.current_bb = exit_bb;
+    self.loop_stack.len = self.loop_stack.len - @intCast(usize, 1);
+    self.current_label = saved_label;
+}
+
+// Task 4a (D7-1): one template for every `x op= y` compound-assignment arm.
+// Both lowerExprImpl (value form) and lowerStmt (statement form) route their
+// op-kind arms through this. `mode` selects the emission shape: 0 = checked
+// arith (emitArith), 1 = div/mod guard + plain binary, 2 = shift guard +
+// checked arith, 3 = shift guard + plain binary, 4 = plain binary. The exact
+// temp-allocation order and emitted ops of the former per-arm copies are
+// preserved. `stmt_add_markers` reproduces the statement-only add_assign
+// ADE/BIO marker pair at the identical stream position.
+fn lowerCompoundAssign(self: *LirLowerer, node_idx: u32, check_op: u8, bin_op: u8, mode: u8, stmt_add_markers: u8) u32 {
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    if (stmt_add_markers != @intCast(u8, 0)) {
+        var ade_m: []const u8 = "ADE:p\n"; pal.markerWrite(ade_m);
+    }
+    var lhs_val = lowerExpr(self, node.child_0);
+    var rhs_val = lowerExpr(self, node.child_1);
+    var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
+    var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+    if (op_rt) |t| { op_r_box[0] = t; }
+    if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
+    var op_r = nextTemp(self, op_r_box[0]);
+    if (mode == @intCast(u8, 0)) {
+        emitArith(self, check_op, bin_op, lhs_val, rhs_val, op_r, getTempType(self, lhs_val));
+    } else if (mode == @intCast(u8, 1)) {
+        emitSafeCheckDivMod(self, lhs_val, rhs_val);
+        emitInst(self, LirInst{ .binary = .{ .op = bin_op, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+    } else if (mode == @intCast(u8, 2)) {
+        emitSafeCheckShift(self, lhs_val, rhs_val);
+        emitArith(self, check_op, bin_op, lhs_val, rhs_val, op_r, getTempType(self, lhs_val));
+    } else if (mode == @intCast(u8, 3)) {
+        emitSafeCheckShift(self, lhs_val, rhs_val);
+        emitInst(self, LirInst{ .binary = .{ .op = bin_op, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+    } else {
+        emitInst(self, LirInst{ .binary = .{ .op = bin_op, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
+    }
+    if (stmt_add_markers != @intCast(u8, 0)) {
+        var bio_m: []const u8 = "BIO:r"; pal.markerWrite(bio_m);
+        var bio_rb: [10]u8 = undefined; var bio_rl = itoa_mod.itoa(op_r, bio_rb[0..]); var bio_rs: usize = @intCast(usize, 9) - @intCast(usize, bio_rl); pal.markerWrite(bio_rb[bio_rs..@intCast(usize, 9)]);
+        var bio_om: []const u8 = "o"; pal.markerWrite(bio_om);
+        var bio_ob: [10]u8 = undefined; var bio_ol = itoa_mod.itoa(@intCast(u32, bin_op), bio_ob[0..]); var bio_os: usize = @intCast(usize, 9) - @intCast(usize, bio_ol); pal.markerWrite(bio_ob[bio_os..@intCast(usize, 9)]);
+        var bio_nl: []const u8 = "\n"; pal.markerWrite(bio_nl);
+    }
+    lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
+    return op_r;
 }
 
 fn lowerCompoundLValueStore(self: *LirLowerer, node_idx: u32, lhs_val: u32, op_r: u32) void {
@@ -2743,6 +2845,77 @@ fn lowerTryNestedPackedLeafStore(self: *LirLowerer, node_idx: u32, value_temp: u
     return @intCast(u8, 1);
 }
 
+// Task 4a (D7-9): shared packed-member store. Given the packed container type,
+// the resolved field ordinal, the base (carrier) temp and the value temp, emits
+// the whole-value per-leaf copy for a nested packed-struct field (with the
+// caller's reject message on depth-cap failure) or the scalar `store_bitfield`.
+// Returns 0 when the container carries no packed bit-field table or the ordinal
+// is out of range, so the caller emits the ordinary `store_field`; returns 1
+// when a bit-field store (or its reject) was emitted.
+fn lowerPackedMemberStore(self: *LirLowerer, container_tid: u32, field_id: u32, base_temp: u32, value_temp: u32, is_packed_union: u8, nested_msg: []const u8) u8 {
+    var pk_fields: []type_mod.PackedBitField = undefined;
+    if (is_packed_union != @intCast(u8, 0)) {
+        if (!type_mod.typeRegistryGetPackedUnionBitFields(self.ctx.registry, container_tid, &pk_fields)) return @intCast(u8, 0);
+    } else {
+        if (!type_mod.typeRegistryGetPackedBitFields(self.ctx.registry, container_tid, &pk_fields)) return @intCast(u8, 0);
+    }
+    if (@intCast(usize, field_id) >= pk_fields.len) return @intCast(u8, 0);
+    var fields: []FieldEntry = undefined;
+    if (is_packed_union != @intCast(u8, 0)) {
+        type_mod.typeRegistryGetUnionFields(self.ctx.registry, container_tid, &fields);
+    } else {
+        type_mod.typeRegistryGetStructFields(self.ctx.registry, container_tid, &fields);
+    }
+    if (@intCast(usize, field_id) < fields.len and fields[field_id].type_id < @intCast(u32, self.ctx.registry.types_len)) {
+        var mty = self.ctx.registry.types_items[@intCast(usize, fields[field_id].type_id)];
+        if (mty.kind == type_mod.TypeKind.struct_type and (mty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0) and lowerTempIsPackedAggregate(self, value_temp)) {
+            var whole_pkf = pk_fields[@intCast(usize, field_id)];
+            if (lowerPackedWholeCopy(self, base_temp, whole_pkf.bit_offset, value_temp, @intCast(u32, 0), fields[field_id].type_id, @intCast(u32, 0)) != @intCast(u8, 0)) return @intCast(u8, 1);
+            // FX15-F fix round 1: depth-cap failure is a clean reject.
+            _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, 3000), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nested_msg);
+            return @intCast(u8, 1);
+        }
+    }
+    var pkf = pk_fields[@intCast(usize, field_id)];
+    emitInst(self, LirInst{ .store_bitfield = .{ .base = base_temp, .value = value_temp, .bit_offset = pkf.bit_offset, .bit_width = @intCast(u32, pkf.bit_width) } });
+    return @intCast(u8, 1);
+}
+
+// Task 4a (D7-9): shared packed-member load. Mirror of
+// `lowerPackedMemberStore` for a read: emits the whole-value per-leaf copy into
+// `result_tid` for a nested packed-struct field (with the caller's reject
+// message on depth-cap failure) or the scalar `load_bitfield`. Returns 0 when
+// the container carries no packed bit-field table or the ordinal is out of
+// range, so the caller emits the ordinary `load_field`; returns 1 when a
+// bit-field load (or its reject) was emitted.
+fn lowerPackedMemberLoad(self: *LirLowerer, container_tid: u32, field_id: u32, base_temp: u32, result_tid: u32, name_id_arg: u32, is_packed_union: u8, nested_msg: []const u8) u8 {
+    var pk_fields: []type_mod.PackedBitField = undefined;
+    if (is_packed_union != @intCast(u8, 0)) {
+        if (!type_mod.typeRegistryGetPackedUnionBitFields(self.ctx.registry, container_tid, &pk_fields)) return @intCast(u8, 0);
+    } else {
+        if (!type_mod.typeRegistryGetPackedBitFields(self.ctx.registry, container_tid, &pk_fields)) return @intCast(u8, 0);
+    }
+    if (@intCast(usize, field_id) >= pk_fields.len) return @intCast(u8, 0);
+    var fields: []FieldEntry = undefined;
+    if (is_packed_union != @intCast(u8, 0)) {
+        type_mod.typeRegistryGetUnionFields(self.ctx.registry, container_tid, &fields);
+    } else {
+        type_mod.typeRegistryGetStructFields(self.ctx.registry, container_tid, &fields);
+    }
+    var pkf = pk_fields[@intCast(usize, field_id)];
+    if (@intCast(usize, field_id) < fields.len and fields[field_id].type_id < @intCast(u32, self.ctx.registry.types_len)) {
+        var mty = self.ctx.registry.types_items[@intCast(usize, fields[field_id].type_id)];
+        if (mty.kind == type_mod.TypeKind.struct_type and (mty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
+            if (lowerPackedWholeCopy(self, result_tid, @intCast(u32, 0), base_temp, pkf.bit_offset, fields[field_id].type_id, @intCast(u32, 0)) != @intCast(u8, 0)) return @intCast(u8, 1);
+            // FX15-F fix round 1: depth-cap failure is a clean reject.
+            _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, 3000), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), nested_msg);
+            return @intCast(u8, 1);
+        }
+    }
+    emitInst(self, LirInst{ .load_bitfield = .{ .base = base_temp, .result = result_tid, .name_id = name_id_arg, .bit_offset = pkf.bit_offset, .bit_width = @intCast(u32, pkf.bit_width) } });
+    return @intCast(u8, 1);
+}
+
 fn lowerFieldStore(self: *LirLowerer, fa_node_idx: u32, value_temp: u32, diag_node_idx: u32) void {
     var fa_node = ast_mod.astStoreNodeAt(self.ctx.store, fa_node_idx);
     var field_name_id: u32 = ast_mod.astStoreNodePayload(self.ctx.store, fa_node_idx);
@@ -2864,36 +3037,10 @@ fn lowerFieldStore(self: *LirLowerer, fa_node_idx: u32, value_temp: u32, diag_no
             kind = ty.kind;
         }
         if (kind == type_mod.TypeKind.struct_type) {
-            var fields: []FieldEntry = undefined;
-            type_mod.typeRegistryGetStructFields(self.ctx.registry, type_box[0], &fields);
-            var fi: usize = 0;
-            var field_id: u32 = @intCast(u32, 0);
-            while (fi < fields.len) : (fi += 1) {
-                if (fields[fi].name_id == field_name_id) {
-                    field_id = @intCast(u32, fi);
-                    break;
-                }
-            }
-            var pk_fields: []type_mod.PackedBitField = undefined;
-            if (type_mod.typeRegistryGetPackedBitFields(self.ctx.registry, type_box[0], &pk_fields)) {
-                if (@intCast(usize, field_id) < pk_fields.len) {
-                    if (@intCast(usize, field_id) < fields.len and fields[field_id].type_id < @intCast(u32, self.ctx.registry.types_len)) {
-                        var mty = self.ctx.registry.types_items[@intCast(usize, fields[field_id].type_id)];
-                        if (mty.kind == type_mod.TypeKind.struct_type and (mty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0) and lowerTempIsPackedAggregate(self, value_temp)) {
-                            var whole_pkf = pk_fields[@intCast(usize, field_id)];
-                            if (lowerPackedWholeCopy(self, base_temp, whole_pkf.bit_offset, value_temp, @intCast(u32, 0), fields[field_id].type_id, @intCast(u32, 0)) != @intCast(u8, 0)) return;
-                            // FX15-F fix round 1: depth-cap failure is a clean reject.
-                            var wsv_msg: []const u8 = "cannot assign a whole packed-struct value to a nested packed-struct field (bit-slice store not supported)";
-                            _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, 3000), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), wsv_msg);
-                            return;
-                        }
-                    }
-                    var pkf = pk_fields[@intCast(usize, field_id)];
-                    emitInst(self, LirInst{ .store_bitfield = .{ .base = base_temp, .value = value_temp, .bit_offset = pkf.bit_offset, .bit_width = @intCast(u32, pkf.bit_width) } });
-                } else {
-                    emitInst(self, LirInst{ .store_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = field_id, .value = value_temp } });
-                }
-            } else {
+            var field_id = lowerFindFieldOrdinal(self, type_box[0], field_name_id, @intCast(u8, 0));
+            if (field_id == @intCast(u32, 0xFFFFFFFF)) field_id = @intCast(u32, 0);
+            var pk_s_msg: []const u8 = "cannot assign a whole packed-struct value to a nested packed-struct field (bit-slice store not supported)";
+            if (lowerPackedMemberStore(self, type_box[0], field_id, base_temp, value_temp, @intCast(u8, 0), pk_s_msg) == @intCast(u8, 0)) {
                 emitInst(self, LirInst{ .store_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = field_id, .value = value_temp } });
             }
         } else if (kind == type_mod.TypeKind.tuple_type) {
@@ -2928,36 +3075,11 @@ fn lowerFieldStore(self: *LirLowerer, fa_node_idx: u32, value_temp: u32, diag_no
                 return;
             }
         } else if (kind == type_mod.TypeKind.union_type or kind == type_mod.TypeKind.packed_union_type) {
-            var fields: []FieldEntry = undefined;
-            type_mod.typeRegistryGetUnionFields(self.ctx.registry, type_box[0], &fields);
-            var fi: usize = 0;
-            var field_id: u32 = @intCast(u32, 0);
-            while (fi < fields.len) : (fi += 1) {
-                if (fields[fi].name_id == field_name_id) {
-                    field_id = @intCast(u32, fi);
-                    break;
-                }
-            }
+            var field_id = lowerFindFieldOrdinal(self, type_box[0], field_name_id, @intCast(u8, 1));
+            if (field_id == @intCast(u32, 0xFFFFFFFF)) field_id = @intCast(u32, 0);
             if (kind == type_mod.TypeKind.packed_union_type) {
-                var pk_fields: []type_mod.PackedBitField = undefined;
-                if (type_mod.typeRegistryGetPackedUnionBitFields(self.ctx.registry, type_box[0], &pk_fields)) {
-                    if (@intCast(usize, field_id) < pk_fields.len) {
-                        if (@intCast(usize, field_id) < fields.len and fields[field_id].type_id < @intCast(u32, self.ctx.registry.types_len)) {
-                            var mty = self.ctx.registry.types_items[@intCast(usize, fields[field_id].type_id)];
-                            if (mty.kind == type_mod.TypeKind.struct_type and (mty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0) and lowerTempIsPackedAggregate(self, value_temp)) {
-                                var whole_upkf = pk_fields[@intCast(usize, field_id)];
-                                if (lowerPackedWholeCopy(self, base_temp, whole_upkf.bit_offset, value_temp, @intCast(u32, 0), fields[field_id].type_id, @intCast(u32, 0)) != @intCast(u8, 0)) return;
-                                // FX15-F fix round 1: depth-cap failure is a clean reject.
-                                var wsv_msg: []const u8 = "cannot assign a whole packed-struct value to a packed union member (bit-slice store not supported)";
-                                _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, 3000), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), wsv_msg);
-                                return;
-                            }
-                        }
-                        var pkf = pk_fields[@intCast(usize, field_id)];
-                        emitInst(self, LirInst{ .store_bitfield = .{ .base = base_temp, .value = value_temp, .bit_offset = pkf.bit_offset, .bit_width = @intCast(u32, pkf.bit_width) } });
-                        return;
-                    }
-                }
+                var pk_u_msg: []const u8 = "cannot assign a whole packed-struct value to a packed union member (bit-slice store not supported)";
+                if (lowerPackedMemberStore(self, type_box[0], field_id, base_temp, value_temp, @intCast(u8, 1), pk_u_msg) != @intCast(u8, 0)) return;
             }
             emitInst(self, LirInst{ .store_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = field_id, .value = value_temp } });
         } else {
@@ -5138,43 +5260,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         var gape_fki: []const u8 = "GAPE:fki"; pal.markerWriteInt(gape_fki, @intCast(u32, fi));
                         var sf_nid = nameMapGet(self, base_temp);
                         if (kind == type_mod.TypeKind.struct_type) {
-                            var pk_fields: []type_mod.PackedBitField = undefined;
-                            if (type_mod.typeRegistryGetPackedBitFields(self.ctx.registry, type_box[0], &pk_fields)) {
-                                if (fi < pk_fields.len) {
-                                    var pkf = pk_fields[fi];
-                                    if (fields[fi].type_id < @intCast(u32, self.ctx.registry.types_len)) {
-                                        var mty = self.ctx.registry.types_items[@intCast(usize, fields[fi].type_id)];
-                                        if (mty.kind == type_mod.TypeKind.struct_type and (mty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
-                                            if (lowerPackedWholeCopy(self, tid, @intCast(u32, 0), base_temp, pkf.bit_offset, fields[fi].type_id, @intCast(u32, 0)) != @intCast(u8, 0)) return tid;
-                                            // FX15-F fix round 1: depth-cap failure is a clean reject.
-                                            var wrv_msg: []const u8 = "cannot read a whole packed-struct value out of a nested packed-struct field (bit-slice load not supported)";
-                                            _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, 3000), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), wrv_msg);
-                                            return tid;
-                                        }
-                                    }
-                                    emitInst(self, LirInst{ .load_bitfield = .{ .base = base_temp, .result = tid, .name_id = sf_nid, .bit_offset = pkf.bit_offset, .bit_width = @intCast(u32, pkf.bit_width) } });
-                                    return tid;
-                                }
-                            }
+                            var pk_rs_msg: []const u8 = "cannot read a whole packed-struct value out of a nested packed-struct field (bit-slice load not supported)";
+                            if (lowerPackedMemberLoad(self, type_box[0], @intCast(u32, fi), base_temp, tid, sf_nid, @intCast(u8, 0), pk_rs_msg) != @intCast(u8, 0)) return tid;
                         } else if (kind == type_mod.TypeKind.packed_union_type) {
-                            var pk_fields: []type_mod.PackedBitField = undefined;
-                            if (type_mod.typeRegistryGetPackedUnionBitFields(self.ctx.registry, type_box[0], &pk_fields)) {
-                                if (fi < pk_fields.len) {
-                                    var pkf = pk_fields[fi];
-                                    if (fields[fi].type_id < @intCast(u32, self.ctx.registry.types_len)) {
-                                        var mty = self.ctx.registry.types_items[@intCast(usize, fields[fi].type_id)];
-                                        if (mty.kind == type_mod.TypeKind.struct_type and (mty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
-                                            if (lowerPackedWholeCopy(self, tid, @intCast(u32, 0), base_temp, pkf.bit_offset, fields[fi].type_id, @intCast(u32, 0)) != @intCast(u8, 0)) return tid;
-                                            // FX15-F fix round 1: depth-cap failure is a clean reject.
-                                            var wrv_msg: []const u8 = "cannot read a whole packed-struct value out of a packed union member (bit-slice load not supported)";
-                                            _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, 3000), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), wrv_msg);
-                                            return tid;
-                                        }
-                                    }
-                                    emitInst(self, LirInst{ .load_bitfield = .{ .base = base_temp, .result = tid, .name_id = sf_nid, .bit_offset = pkf.bit_offset, .bit_width = @intCast(u32, pkf.bit_width) } });
-                                    return tid;
-                                }
-                            }
+                            var pk_ru_msg: []const u8 = "cannot read a whole packed-struct value out of a packed union member (bit-slice load not supported)";
+                            if (lowerPackedMemberLoad(self, type_box[0], @intCast(u32, fi), base_temp, tid, sf_nid, @intCast(u8, 1), pk_ru_msg) != @intCast(u8, 0)) return tid;
                         }
                         emitInst(self, LirInst{ .load_field = .{ .name_id = sf_nid, .base = base_temp, .field_id = @intCast(u32, fi), .result = tid } });
                         return tid;
@@ -6783,35 +6873,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     while (fj < fc) : (fj += @intCast(usize, 1)) {
                         if (self.ctx.registry.fe_items[fs + fj].name_id == fi_name_id) {
                             if (!is_undef_arr_field) {
-                                var pk_fields: []type_mod.PackedBitField = undefined;
-                                var packed_done: u8 = @intCast(u8, 0);
-                                if (type_mod.typeRegistryIsPacked(self.ctx.registry, it)) {
-                                    if (type_mod.typeRegistryGetPackedBitFields(self.ctx.registry, it, &pk_fields)) {
-                                        if (fj < pk_fields.len) {
-                                            var pkf = pk_fields[fj];
-                                            var lit_fty_wa: u32 = self.ctx.registry.fe_items[fs + fj].type_id;
-                                            // FX15-F: a field whose own type is a nested packed
-                                            // struct moves per leaf when the value carries a
-                                            // packed-struct carrier; `undefined` (a TYPE_UNDEFINED
-                                            // temp) keeps the old scalar store.
-                                            if (type_mod.typeRegistryIsPacked(self.ctx.registry, lit_fty_wa) and lowerTempIsPackedAggregate(self, val_temp)) {
-                                                if (lowerPackedWholeCopy(self, base_temp, pkf.bit_offset, val_temp, @intCast(u32, 0), lit_fty_wa, @intCast(u32, 0)) != @intCast(u8, 0)) {
-                                                    packed_done = @intCast(u8, 1);
-                                                } else {
-                                                    // FX15-F fix round 1: depth-cap failure is a clean reject.
-                                                    var wsv_msg: []const u8 = "cannot assign a whole packed-struct value to a nested packed-struct field (bit-slice store not supported)";
-                                                    _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, 3000), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), wsv_msg);
-                                                    return base_temp;
-                                                }
-                                            }
-                                            if (packed_done == @intCast(u8, 0)) {
-                                                emitInst(self, LirInst{ .store_bitfield = .{ .base = base_temp, .value = val_temp, .bit_offset = pkf.bit_offset, .bit_width = @intCast(u32, pkf.bit_width) } });
-                                                packed_done = @intCast(u8, 1);
-                                            }
-                                        }
-                                    }
-                                }
-                                if (packed_done == @intCast(u8, 0)) {
+                                var lit_pks_msg: []const u8 = "cannot assign a whole packed-struct value to a nested packed-struct field (bit-slice store not supported)";
+                                if (lowerPackedMemberStore(self, it, @intCast(u32, fj), base_temp, val_temp, @intCast(u8, 0), lit_pks_msg) == @intCast(u8, 0)) {
                                     emitInst(self, LirInst{ .assign_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = @intCast(u32, fj), .src = val_temp } });
                                 }
                             }
@@ -6827,25 +6890,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         if (self.ctx.registry.fe_items[fs + fj].name_id == fi_name_id) {
                             if (!is_undef_arr_field and self.ctx.registry.fe_items[fs + fj].type_id != type_mod.TYPE_VOID) {
                                 if (ts.kind == type_mod.TypeKind.packed_union_type) {
-                                    var pk_fields: []type_mod.PackedBitField = undefined;
-                                    if (type_mod.typeRegistryGetPackedUnionBitFields(self.ctx.registry, it, &pk_fields)) {
-                                        if (fj < pk_fields.len) {
-                                            var lit_u_fty: u32 = self.ctx.registry.fe_items[fs + fj].type_id;
-                                            var pkf = pk_fields[fj];
-                                            if (lit_u_fty < @intCast(u32, self.ctx.registry.types_len)) {
-                                                var mty = self.ctx.registry.types_items[@intCast(usize, lit_u_fty)];
-                                                if (lowerTempIsPackedAggregate(self, val_temp) and mty.kind == type_mod.TypeKind.struct_type and (mty.flags & @intCast(u8, 0x10)) != @intCast(u8, 0)) {
-                                                    if (lowerPackedWholeCopy(self, base_temp, pkf.bit_offset, val_temp, @intCast(u32, 0), lit_u_fty, @intCast(u32, 0)) != @intCast(u8, 0)) break;
-                                                    // FX15-F fix round 1: depth-cap failure is a clean reject.
-                                                    var wsv_msg: []const u8 = "cannot assign a whole packed-struct value to a packed union member (bit-slice store not supported)";
-                                                    _ = diag_mod.diagnosticCollectorAdd(self.ctx.diag, @intCast(u8, 0), @intCast(u16, 3000), @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0), wsv_msg);
-                                                    break;
-                                                }
-                                            }
-                                            emitInst(self, LirInst{ .store_bitfield = .{ .base = base_temp, .value = val_temp, .bit_offset = pkf.bit_offset, .bit_width = @intCast(u32, pkf.bit_width) } });
-                                            break;
-                                        }
-                                    }
+                                    var lit_pku_msg: []const u8 = "cannot assign a whole packed-struct value to a packed union member (bit-slice store not supported)";
+                                    if (lowerPackedMemberStore(self, it, @intCast(u32, fj), base_temp, val_temp, @intCast(u8, 1), lit_pku_msg) != @intCast(u8, 0)) break;
                                 }
                                 emitInst(self, LirInst{ .assign_field = .{ .name_id = @intCast(u32, 0), .base = base_temp, .field_id = @intCast(u32, fj), .src = val_temp } });
                             }
@@ -7262,156 +7308,40 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
           var ret0_m: []const u8 = "RET0\n"; pal.markerWrite(ret0_m);
           iceSliceUnsupported(self, node_idx);
           return @intCast(u32, 0);
-     } else if (node.kind == AstKind.add_assign) {
-        var lhs_val = lowerExpr(self, node.child_0);
-        var rhs_val = lowerExpr(self, node.child_1);
-        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
-        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        if (op_rt) |t| { op_r_box[0] = t; }
-        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
-        var op_r = nextTemp(self, op_r_box[0]);
-        emitArith(self, lir_mod.CHECK_OP_ADD, BIN_ADD, lhs_val, rhs_val, op_r, getTempType(self, lhs_val));
-        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
-        return op_r;
+    } else if (node.kind == AstKind.add_assign) {
+        return lowerCompoundAssign(self, node_idx, lir_mod.CHECK_OP_ADD, BIN_ADD, @intCast(u8, 0), @intCast(u8, 0));
     } else if (node.kind == AstKind.sub_assign) {
-        var lhs_val = lowerExpr(self, node.child_0);
-        var rhs_val = lowerExpr(self, node.child_1);
-        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
-        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        if (op_rt) |t| { op_r_box[0] = t; }
-        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
-        var op_r = nextTemp(self, op_r_box[0]);
-        emitArith(self, lir_mod.CHECK_OP_SUB, BIN_SUB, lhs_val, rhs_val, op_r, getTempType(self, lhs_val));
-        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
-        return op_r;
+        return lowerCompoundAssign(self, node_idx, lir_mod.CHECK_OP_SUB, BIN_SUB, @intCast(u8, 0), @intCast(u8, 0));
     } else if (node.kind == AstKind.mul_assign) {
-        var lhs_val = lowerExpr(self, node.child_0);
-        var rhs_val = lowerExpr(self, node.child_1);
-        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
-        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        if (op_rt) |t| { op_r_box[0] = t; }
-        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
-        var op_r = nextTemp(self, op_r_box[0]);
-        emitArith(self, lir_mod.CHECK_OP_MUL, BIN_MUL, lhs_val, rhs_val, op_r, getTempType(self, lhs_val));
-        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
-        return op_r;
-    } else if (node.kind == AstKind.wrap_add_assign or node.kind == AstKind.wrap_sub_assign or node.kind == AstKind.wrap_mul_assign) {
-        var lhs_val = lowerExpr(self, node.child_0);
-        var rhs_val = lowerExpr(self, node.child_1);
-        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
-        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        if (op_rt) |t| { op_r_box[0] = t; }
-        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
-        var op_r = nextTemp(self, op_r_box[0]);
-        if (node.kind == AstKind.wrap_add_assign) {
-            emitInst(self, LirInst{ .binary = .{ .op = BIN_WADD, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        } else if (node.kind == AstKind.wrap_sub_assign) {
-            emitInst(self, LirInst{ .binary = .{ .op = BIN_WSUB, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        } else {
-            emitInst(self, LirInst{ .binary = .{ .op = BIN_WMUL, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        }
-        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
-        return op_r;
-    } else if (node.kind == AstKind.sat_add_assign or node.kind == AstKind.sat_sub_assign or node.kind == AstKind.sat_mul_assign or node.kind == AstKind.sat_shl_assign) {
-        var lhs_val = lowerExpr(self, node.child_0);
-        var rhs_val = lowerExpr(self, node.child_1);
-        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
-        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        if (op_rt) |t| { op_r_box[0] = t; }
-        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
-        var op_r = nextTemp(self, op_r_box[0]);
-        if (node.kind == AstKind.sat_add_assign) {
-            emitInst(self, LirInst{ .binary = .{ .op = BIN_SADD, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        } else if (node.kind == AstKind.sat_sub_assign) {
-            emitInst(self, LirInst{ .binary = .{ .op = BIN_SSUB, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        } else if (node.kind == AstKind.sat_mul_assign) {
-            emitInst(self, LirInst{ .binary = .{ .op = BIN_SMUL, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        } else {
-            emitInst(self, LirInst{ .binary = .{ .op = BIN_SSHL, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        }
-        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
-        return op_r;
+        return lowerCompoundAssign(self, node_idx, lir_mod.CHECK_OP_MUL, BIN_MUL, @intCast(u8, 0), @intCast(u8, 0));
+    } else if (node.kind == AstKind.wrap_add_assign) {
+        return lowerCompoundAssign(self, node_idx, @intCast(u8, 0), BIN_WADD, @intCast(u8, 4), @intCast(u8, 0));
+    } else if (node.kind == AstKind.wrap_sub_assign) {
+        return lowerCompoundAssign(self, node_idx, @intCast(u8, 0), BIN_WSUB, @intCast(u8, 4), @intCast(u8, 0));
+    } else if (node.kind == AstKind.wrap_mul_assign) {
+        return lowerCompoundAssign(self, node_idx, @intCast(u8, 0), BIN_WMUL, @intCast(u8, 4), @intCast(u8, 0));
+    } else if (node.kind == AstKind.sat_add_assign) {
+        return lowerCompoundAssign(self, node_idx, @intCast(u8, 0), BIN_SADD, @intCast(u8, 4), @intCast(u8, 0));
+    } else if (node.kind == AstKind.sat_sub_assign) {
+        return lowerCompoundAssign(self, node_idx, @intCast(u8, 0), BIN_SSUB, @intCast(u8, 4), @intCast(u8, 0));
+    } else if (node.kind == AstKind.sat_mul_assign) {
+        return lowerCompoundAssign(self, node_idx, @intCast(u8, 0), BIN_SMUL, @intCast(u8, 4), @intCast(u8, 0));
+    } else if (node.kind == AstKind.sat_shl_assign) {
+        return lowerCompoundAssign(self, node_idx, @intCast(u8, 0), BIN_SSHL, @intCast(u8, 4), @intCast(u8, 0));
     } else if (node.kind == AstKind.div_assign) {
-        var lhs_val = lowerExpr(self, node.child_0);
-        var rhs_val = lowerExpr(self, node.child_1);
-        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
-        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        if (op_rt) |t| { op_r_box[0] = t; }
-        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
-        var op_r = nextTemp(self, op_r_box[0]);
-        emitSafeCheckDivMod(self, lhs_val, rhs_val);
-        emitInst(self, LirInst{ .binary = .{ .op = BIN_DIV, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
-        return op_r;
+        return lowerCompoundAssign(self, node_idx, @intCast(u8, 0), BIN_DIV, @intCast(u8, 1), @intCast(u8, 0));
     } else if (node.kind == AstKind.mod_assign) {
-        var lhs_val = lowerExpr(self, node.child_0);
-        var rhs_val = lowerExpr(self, node.child_1);
-        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
-        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        if (op_rt) |t| { op_r_box[0] = t; }
-        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
-        var op_r = nextTemp(self, op_r_box[0]);
-        emitSafeCheckDivMod(self, lhs_val, rhs_val);
-        emitInst(self, LirInst{ .binary = .{ .op = BIN_MOD, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
-        return op_r;
+        return lowerCompoundAssign(self, node_idx, @intCast(u8, 0), BIN_MOD, @intCast(u8, 1), @intCast(u8, 0));
     } else if (node.kind == AstKind.shl_assign) {
-        var lhs_val = lowerExpr(self, node.child_0);
-        var rhs_val = lowerExpr(self, node.child_1);
-        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
-        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        if (op_rt) |t| { op_r_box[0] = t; }
-        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
-        var op_r = nextTemp(self, op_r_box[0]);
-        emitSafeCheckShift(self, lhs_val, rhs_val);
-        emitArith(self, lir_mod.CHECK_OP_SHL, BIN_SHL, lhs_val, rhs_val, op_r, getTempType(self, lhs_val));
-        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
-        return op_r;
+        return lowerCompoundAssign(self, node_idx, lir_mod.CHECK_OP_SHL, BIN_SHL, @intCast(u8, 2), @intCast(u8, 0));
     } else if (node.kind == AstKind.shr_assign) {
-        var lhs_val = lowerExpr(self, node.child_0);
-        var rhs_val = lowerExpr(self, node.child_1);
-        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
-        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        if (op_rt) |t| { op_r_box[0] = t; }
-        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
-        var op_r = nextTemp(self, op_r_box[0]);
-        emitSafeCheckShift(self, lhs_val, rhs_val);
-        emitInst(self, LirInst{ .binary = .{ .op = BIN_SHR, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
-        return op_r;
+        return lowerCompoundAssign(self, node_idx, @intCast(u8, 0), BIN_SHR, @intCast(u8, 3), @intCast(u8, 0));
     } else if (node.kind == AstKind.and_assign) {
-        var lhs_val = lowerExpr(self, node.child_0);
-        var rhs_val = lowerExpr(self, node.child_1);
-        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
-        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        if (op_rt) |t| { op_r_box[0] = t; }
-        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
-        var op_r = nextTemp(self, op_r_box[0]);
-        emitInst(self, LirInst{ .binary = .{ .op = BIN_AND, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
-        return op_r;
+        return lowerCompoundAssign(self, node_idx, @intCast(u8, 0), BIN_AND, @intCast(u8, 4), @intCast(u8, 0));
     } else if (node.kind == AstKind.xor_assign) {
-        var lhs_val = lowerExpr(self, node.child_0);
-        var rhs_val = lowerExpr(self, node.child_1);
-        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
-        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        if (op_rt) |t| { op_r_box[0] = t; }
-        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
-        var op_r = nextTemp(self, op_r_box[0]);
-        emitInst(self, LirInst{ .binary = .{ .op = BIN_XOR, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
-        return op_r;
+        return lowerCompoundAssign(self, node_idx, @intCast(u8, 0), BIN_XOR, @intCast(u8, 4), @intCast(u8, 0));
     } else if (node.kind == AstKind.or_assign) {
-        var lhs_val = lowerExpr(self, node.child_0);
-        var rhs_val = lowerExpr(self, node.child_1);
-        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
-        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        if (op_rt) |t| { op_r_box[0] = t; }
-        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
-        var op_r = nextTemp(self, op_r_box[0]);
-        emitInst(self, LirInst{ .binary = .{ .op = BIN_OR, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
-        return op_r;
+        return lowerCompoundAssign(self, node_idx, @intCast(u8, 0), BIN_OR, @intCast(u8, 4), @intCast(u8, 0));
     } else if (node.kind == AstKind.block) {
         var blk_n = ast_mod.astStoreNodeExtraChildCount(self.ctx.store, node_idx);
         if (blk_n > @intCast(u32, 0)) {
@@ -7895,29 +7825,19 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                 if (ast_mod.astStoreNodePayload(store, node_idx) != @intCast(u32, 0)) {
                     var fcapr = maybeDisambiguateCapture(self, ast_mod.astStoreNodePayload(store, node_idx), cap_type); addLocalDecl(self, fcapr, cap_type, start_temp, self.scope_depth + @intCast(u32, 1), @intCast(u8, 1)); emitInst(self, LirInst{ .decl_local = .{ .name_id = fcapr, .type_id = cap_type, .temp = start_temp } });
                 }
-            var cond_bb = createBlock(self);
-            var body_bb = createBlock(self);
-            var exit_bb = createBlock(self);
-            var step_bb = createBlock(self);
-            var saved_label = self.current_label;
-            var loop_info = LoopInfo{ .header_bb = step_bb, .exit_bb = exit_bb, .scope_depth = self.scope_depth, .label_id = self.current_label, .is_loop = @intCast(u8, 1) };
-            loopInfoArrayListAppend(&self.loop_stack, loop_info);
-            self.current_label = @intCast(u32, 0);
-            emitInst(self, LirInst{ .jump = cond_bb });
-            self.current_bb = cond_bb;
+            var fr_cond: u32 = @intCast(u32, 0);
+            var fr_body: u32 = @intCast(u32, 0);
+            var fr_exit: u32 = @intCast(u32, 0);
+            var fr_step: u32 = @intCast(u32, 0);
+            var fr_saved: u32 = @intCast(u32, 0);
+            lowerLoopOpen(self, &fr_cond, &fr_body, &fr_exit, &fr_step, &fr_saved);
             var cmp_op = if (pattern.kind == AstKind.range_inclusive) BIN_LE else BIN_LT;
             var cmp_temp = nextTemp(self, type_mod.TYPE_BOOL);
             emitInst(self, LirInst{ .binary = .{ .op = cmp_op, .lhs = start_temp, .rhs = end_temp, .result = cmp_temp } });
-            emitInst(self, LirInst{ .branch = .{ .cond = cmp_temp, .then_bb = body_bb, .else_bb = exit_bb } });
-            self.current_bb = body_bb;
-            self.block_terminated = @intCast(u8, 0);
+            lowerLoopBranchBody(self, cmp_temp, fr_body, fr_exit);
             var fbr_m: []const u8 = "FBR:"; pal.markerWrite(fbr_m);
             lowerStmtBody(self, node.child_1);
-            if (self.block_terminated == @intCast(u8, 0)) {
-                emitInst(self, LirInst{ .jump = step_bb });
-            }
-            self.current_bb = step_bb;
-            self.block_terminated = @intCast(u8, 0);
+            lowerLoopToStep(self, fr_step);
             var fbi_m: []const u8 = "FBI:n"; pal.markerWrite(fbi_m);
             var fbi_nb: [10]u8 = undefined; var fbi_nl = itoa_mod.itoa(node.child_1, fbi_nb[0..]); var fbi_ns: usize = @intCast(usize, 9) - @intCast(usize, fbi_nl); pal.markerWrite(fbi_nb[fbi_ns..@intCast(usize, 9)]);
             var fbi_nl2: []const u8 = "\n"; pal.markerWrite(fbi_nl2);
@@ -7928,11 +7848,8 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = start_temp, .rhs = one_r, .result = nxt } });
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = start_temp, .src = nxt } });
             start_temp = nxt;
-            emitInst(self, LirInst{ .jump = cond_bb });
-            self.current_bb = exit_bb;
+            lowerLoopClose(self, fr_cond, fr_exit, fr_saved);
             self.block_terminated = @intCast(u8, 0);
-            self.loop_stack.len = self.loop_stack.len - @intCast(usize, 1);
-            self.current_label = saved_label;
         } else {
             // Task 11 fix round (review Important I1): evaluate the for-header
             // inputs in SOURCE order — iterable, then start, then end (official
@@ -8006,20 +7923,15 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             }
             var idx_temp = nextTemp(self, type_mod.TYPE_USIZE);
             emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = idx_temp } });
-            var cond_bb = createBlock(self);
-            var body_bb = createBlock(self);
-            var exit_bb = createBlock(self);
-            var step_bb = createBlock(self);
-            var saved_label = self.current_label;
-            var loop_info = LoopInfo{ .header_bb = step_bb, .exit_bb = exit_bb, .scope_depth = self.scope_depth, .label_id = self.current_label, .is_loop = @intCast(u8, 1) };
-            loopInfoArrayListAppend(&self.loop_stack, loop_info);
-            self.current_label = @intCast(u32, 0);
-            emitInst(self, LirInst{ .jump = cond_bb });
-            self.current_bb = cond_bb;
+            var it_cond: u32 = @intCast(u32, 0);
+            var it_body: u32 = @intCast(u32, 0);
+            var it_exit: u32 = @intCast(u32, 0);
+            var it_step: u32 = @intCast(u32, 0);
+            var it_saved: u32 = @intCast(u32, 0);
+            lowerLoopOpen(self, &it_cond, &it_body, &it_exit, &it_step, &it_saved);
             var cmp_temp = nextTemp(self, type_mod.TYPE_BOOL);
             emitInst(self, LirInst{ .binary = .{ .op = BIN_LT, .lhs = idx_temp, .rhs = len_temp, .result = cmp_temp } });
-            emitInst(self, LirInst{ .branch = .{ .cond = cmp_temp, .then_bb = body_bb, .else_bb = exit_bb } });
-            self.current_bb = body_bb;
+            lowerLoopBranchBody(self, cmp_temp, it_body, it_exit);
             // Task 2g-F (a) + fix round 1: a for-loop item that is itself a
             // fixed array (a multi-dimensional row) is a BY-VALUE copy (real
             // Zig `for |row|` semantics). Materialize an array-typed temp and
@@ -8046,11 +7958,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             if (node.child_2 != @intCast(u32, 0)) { var icaps = maybeDisambiguateCapture(self, node.child_2, type_mod.TYPE_USIZE); addLocalDecl(self, icaps, type_mod.TYPE_USIZE, idx_cap_temp, self.scope_depth + @intCast(u32, 1), @intCast(u8, 1)); emitInst(self, LirInst{ .decl_local = .{ .name_id = icaps, .type_id = type_mod.TYPE_USIZE, .temp = idx_cap_temp } }); }
             self.block_terminated = @intCast(u8, 0);
             lowerStmtBody(self, node.child_1);
-            if (self.block_terminated == @intCast(u8, 0)) {
-                emitInst(self, LirInst{ .jump = step_bb });
-            }
-            self.current_bb = step_bb;
-            self.block_terminated = @intCast(u8, 0);
+            lowerLoopToStep(self, it_step);
             var one_s = nextTemp(self, type_mod.TYPE_USIZE);
             emitInst(self, LirInst{ .int_const = .{ .value = @intCast(u64, 1), .result = one_s } });
             var nxt_idx = nextTemp(self, type_mod.TYPE_USIZE);
@@ -8058,10 +7966,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = idx_temp, .rhs = one_s, .result = nxt_idx } });
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = idx_temp, .src = nxt_idx } });
             idx_temp = nxt_idx;
-            emitInst(self, LirInst{ .jump = cond_bb });
-            self.current_bb = exit_bb;
-            self.loop_stack.len = self.loop_stack.len - @intCast(usize, 1);
-            self.current_label = saved_label;
+            lowerLoopClose(self, it_cond, it_exit, it_saved);
          }
      } else if (node.kind == AstKind.swt_ex) {
          var swt_m: []const u8 = "SWT:s\n"; pal.markerWrite(swt_m);
@@ -8589,149 +8494,39 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             pal.markerWrite(und4);
         }
     } else if (node.kind == AstKind.add_assign) {
-        var ade_m: []const u8 = "ADE:p\n"; pal.markerWrite(ade_m);
-        var lhs_val = lowerExpr(self, node.child_0);
-        var rhs_val = lowerExpr(self, node.child_1);
-        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
-        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        if (op_rt) |t| { op_r_box[0] = t; }
-        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
-        var op_r = nextTemp(self, op_r_box[0]);
-        emitArith(self, lir_mod.CHECK_OP_ADD, BIN_ADD, lhs_val, rhs_val, op_r, getTempType(self, lhs_val));
-        var bio_m: []const u8 = "BIO:r"; pal.markerWrite(bio_m);
-        var bio_rb: [10]u8 = undefined; var bio_rl = itoa_mod.itoa(op_r, bio_rb[0..]); var bio_rs: usize = @intCast(usize, 9) - @intCast(usize, bio_rl); pal.markerWrite(bio_rb[bio_rs..@intCast(usize, 9)]);
-        var bio_om: []const u8 = "o"; pal.markerWrite(bio_om);
-        var bio_ob: [10]u8 = undefined; var bio_ol = itoa_mod.itoa(@intCast(u32, BIN_ADD), bio_ob[0..]); var bio_os: usize = @intCast(usize, 9) - @intCast(usize, bio_ol); pal.markerWrite(bio_ob[bio_os..@intCast(usize, 9)]);
-        var bio_nl: []const u8 = "\n"; pal.markerWrite(bio_nl);
-        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
+        _ = lowerCompoundAssign(self, node_idx, lir_mod.CHECK_OP_ADD, BIN_ADD, @intCast(u8, 0), @intCast(u8, 1));
     } else if (node.kind == AstKind.sub_assign) {
-        var lhs_val = lowerExpr(self, node.child_0);
-        var rhs_val = lowerExpr(self, node.child_1);
-        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
-        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        if (op_rt) |t| { op_r_box[0] = t; }
-        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
-        var op_r = nextTemp(self, op_r_box[0]);
-        emitArith(self, lir_mod.CHECK_OP_SUB, BIN_SUB, lhs_val, rhs_val, op_r, getTempType(self, lhs_val));
-        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
+        _ = lowerCompoundAssign(self, node_idx, lir_mod.CHECK_OP_SUB, BIN_SUB, @intCast(u8, 0), @intCast(u8, 0));
     } else if (node.kind == AstKind.mul_assign) {
-        var lhs_val = lowerExpr(self, node.child_0);
-        var rhs_val = lowerExpr(self, node.child_1);
-        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
-        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        if (op_rt) |t| { op_r_box[0] = t; }
-        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
-        var op_r = nextTemp(self, op_r_box[0]);
-        emitArith(self, lir_mod.CHECK_OP_MUL, BIN_MUL, lhs_val, rhs_val, op_r, getTempType(self, lhs_val));
-        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
-    } else if (node.kind == AstKind.wrap_add_assign or node.kind == AstKind.wrap_sub_assign or node.kind == AstKind.wrap_mul_assign) {
-        var lhs_val = lowerExpr(self, node.child_0);
-        var rhs_val = lowerExpr(self, node.child_1);
-        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
-        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        if (op_rt) |t| { op_r_box[0] = t; }
-        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
-        var op_r = nextTemp(self, op_r_box[0]);
-        if (node.kind == AstKind.wrap_add_assign) {
-            emitInst(self, LirInst{ .binary = .{ .op = BIN_WADD, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        } else if (node.kind == AstKind.wrap_sub_assign) {
-            emitInst(self, LirInst{ .binary = .{ .op = BIN_WSUB, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        } else {
-            emitInst(self, LirInst{ .binary = .{ .op = BIN_WMUL, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        }
-        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
-    } else if (node.kind == AstKind.sat_add_assign or node.kind == AstKind.sat_sub_assign or node.kind == AstKind.sat_mul_assign or node.kind == AstKind.sat_shl_assign) {
-        var lhs_val = lowerExpr(self, node.child_0);
-        var rhs_val = lowerExpr(self, node.child_1);
-        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
-        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        if (op_rt) |t| { op_r_box[0] = t; }
-        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
-        var op_r = nextTemp(self, op_r_box[0]);
-        if (node.kind == AstKind.sat_add_assign) {
-            emitInst(self, LirInst{ .binary = .{ .op = BIN_SADD, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        } else if (node.kind == AstKind.sat_sub_assign) {
-            emitInst(self, LirInst{ .binary = .{ .op = BIN_SSUB, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        } else if (node.kind == AstKind.sat_mul_assign) {
-            emitInst(self, LirInst{ .binary = .{ .op = BIN_SMUL, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        } else {
-            emitInst(self, LirInst{ .binary = .{ .op = BIN_SSHL, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        }
-        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
+        _ = lowerCompoundAssign(self, node_idx, lir_mod.CHECK_OP_MUL, BIN_MUL, @intCast(u8, 0), @intCast(u8, 0));
+    } else if (node.kind == AstKind.wrap_add_assign) {
+        _ = lowerCompoundAssign(self, node_idx, @intCast(u8, 0), BIN_WADD, @intCast(u8, 4), @intCast(u8, 0));
+    } else if (node.kind == AstKind.wrap_sub_assign) {
+        _ = lowerCompoundAssign(self, node_idx, @intCast(u8, 0), BIN_WSUB, @intCast(u8, 4), @intCast(u8, 0));
+    } else if (node.kind == AstKind.wrap_mul_assign) {
+        _ = lowerCompoundAssign(self, node_idx, @intCast(u8, 0), BIN_WMUL, @intCast(u8, 4), @intCast(u8, 0));
+    } else if (node.kind == AstKind.sat_add_assign) {
+        _ = lowerCompoundAssign(self, node_idx, @intCast(u8, 0), BIN_SADD, @intCast(u8, 4), @intCast(u8, 0));
+    } else if (node.kind == AstKind.sat_sub_assign) {
+        _ = lowerCompoundAssign(self, node_idx, @intCast(u8, 0), BIN_SSUB, @intCast(u8, 4), @intCast(u8, 0));
+    } else if (node.kind == AstKind.sat_mul_assign) {
+        _ = lowerCompoundAssign(self, node_idx, @intCast(u8, 0), BIN_SMUL, @intCast(u8, 4), @intCast(u8, 0));
+    } else if (node.kind == AstKind.sat_shl_assign) {
+        _ = lowerCompoundAssign(self, node_idx, @intCast(u8, 0), BIN_SSHL, @intCast(u8, 4), @intCast(u8, 0));
     } else if (node.kind == AstKind.div_assign) {
-        var lhs_val = lowerExpr(self, node.child_0);
-        var rhs_val = lowerExpr(self, node.child_1);
-        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
-        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        if (op_rt) |t| { op_r_box[0] = t; }
-        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
-        var op_r = nextTemp(self, op_r_box[0]);
-        emitSafeCheckDivMod(self, lhs_val, rhs_val);
-        emitInst(self, LirInst{ .binary = .{ .op = BIN_DIV, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
+        _ = lowerCompoundAssign(self, node_idx, @intCast(u8, 0), BIN_DIV, @intCast(u8, 1), @intCast(u8, 0));
     } else if (node.kind == AstKind.mod_assign) {
-        var lhs_val = lowerExpr(self, node.child_0);
-        var rhs_val = lowerExpr(self, node.child_1);
-        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
-        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        if (op_rt) |t| { op_r_box[0] = t; }
-        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
-        var op_r = nextTemp(self, op_r_box[0]);
-        emitSafeCheckDivMod(self, lhs_val, rhs_val);
-        emitInst(self, LirInst{ .binary = .{ .op = BIN_MOD, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
+        _ = lowerCompoundAssign(self, node_idx, @intCast(u8, 0), BIN_MOD, @intCast(u8, 1), @intCast(u8, 0));
     } else if (node.kind == AstKind.shl_assign) {
-        var lhs_val = lowerExpr(self, node.child_0);
-        var rhs_val = lowerExpr(self, node.child_1);
-        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
-        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        if (op_rt) |t| { op_r_box[0] = t; }
-        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
-        var op_r = nextTemp(self, op_r_box[0]);
-        emitSafeCheckShift(self, lhs_val, rhs_val);
-        emitArith(self, lir_mod.CHECK_OP_SHL, BIN_SHL, lhs_val, rhs_val, op_r, getTempType(self, lhs_val));
-        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
+        _ = lowerCompoundAssign(self, node_idx, lir_mod.CHECK_OP_SHL, BIN_SHL, @intCast(u8, 2), @intCast(u8, 0));
     } else if (node.kind == AstKind.shr_assign) {
-        var lhs_val = lowerExpr(self, node.child_0);
-        var rhs_val = lowerExpr(self, node.child_1);
-        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
-        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        if (op_rt) |t| { op_r_box[0] = t; }
-        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
-        var op_r = nextTemp(self, op_r_box[0]);
-        emitSafeCheckShift(self, lhs_val, rhs_val);
-        emitInst(self, LirInst{ .binary = .{ .op = BIN_SHR, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
+        _ = lowerCompoundAssign(self, node_idx, @intCast(u8, 0), BIN_SHR, @intCast(u8, 3), @intCast(u8, 0));
     } else if (node.kind == AstKind.and_assign) {
-        var lhs_val = lowerExpr(self, node.child_0);
-        var rhs_val = lowerExpr(self, node.child_1);
-        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
-        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        if (op_rt) |t| { op_r_box[0] = t; }
-        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
-        var op_r = nextTemp(self, op_r_box[0]);
-        emitInst(self, LirInst{ .binary = .{ .op = BIN_AND, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
+        _ = lowerCompoundAssign(self, node_idx, @intCast(u8, 0), BIN_AND, @intCast(u8, 4), @intCast(u8, 0));
     } else if (node.kind == AstKind.xor_assign) {
-        var lhs_val = lowerExpr(self, node.child_0);
-        var rhs_val = lowerExpr(self, node.child_1);
-        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
-        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        if (op_rt) |t| { op_r_box[0] = t; }
-        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
-        var op_r = nextTemp(self, op_r_box[0]);
-        emitInst(self, LirInst{ .binary = .{ .op = BIN_XOR, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
+        _ = lowerCompoundAssign(self, node_idx, @intCast(u8, 0), BIN_XOR, @intCast(u8, 4), @intCast(u8, 0));
     } else if (node.kind == AstKind.or_assign) {
-        var lhs_val = lowerExpr(self, node.child_0);
-        var rhs_val = lowerExpr(self, node.child_1);
-        var op_r_box: [1]u32 = [1]u32{type_mod.TYPE_U32};
-        var op_rt = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        if (op_rt) |t| { op_r_box[0] = t; }
-        if (op_rt == null) { var flb2: []const u8 = "C3opFLB\n"; pal.markerWrite(flb2); }
-        var op_r = nextTemp(self, op_r_box[0]);
-        emitInst(self, LirInst{ .binary = .{ .op = BIN_OR, .lhs = lhs_val, .rhs = rhs_val, .result = op_r } });
-        lowerCompoundLValueStore(self, node_idx, lhs_val, op_r);
+        _ = lowerCompoundAssign(self, node_idx, @intCast(u8, 0), BIN_OR, @intCast(u8, 4), @intCast(u8, 0));
       } else if (node.kind == AstKind.expr_stmt) {
           lowerStmtBody(self, node.child_0);
       } else {
