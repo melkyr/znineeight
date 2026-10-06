@@ -3302,6 +3302,53 @@ fn lowerAppendSwitchCaseItem(self: *LirLowerer, item_idx: u32, prong_bb_id: u32,
     }
 }
 
+fn lowerSwitchDispatch(self: *LirLowerer, node_idx: u32, cond_temp: u32, cond_ty_id: ?u32, prong_start_out: *u32, else_bb_out: *u32, exit_bb_out: *u32, cases_start_out: *u32, else_target_out: *u32) void {
+    var store = self.ctx.store;
+    var prong_n = ast_mod.astStoreNodeExtraChildCount(store, node_idx);
+    var switch_bb = self.current_bb;
+    var prong_start = @intCast(u32, self.func.blocks.len);
+    var pi: usize = 0;
+    while (pi < @intCast(usize, prong_n)) : (pi += 1) { _ = createBlock(self); }
+    var else_bb = createBlock(self);
+    var exit_bb = createBlock(self);
+    var cases_start = @intCast(u32, self.func.switch_cases.len);
+    pi = 0;
+    while (pi < @intCast(usize, prong_n)) : (pi += 1) {
+        var prong_idx = ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, pi));
+        var prong_node = ast_mod.astStoreNodeAt(store, prong_idx);
+        if ((prong_node.flags & @intCast(u8, 1)) != @intCast(u8, 0)) { continue; }
+        var prong_bb_id = prong_start + @intCast(u32, pi);
+        var case_n = ast_mod.astStoreNodeExtraChildCount(store, prong_idx);
+        var ci: usize = 0;
+        while (ci < @intCast(usize, case_n)) : (ci += 1) {
+            lowerAppendSwitchCaseItem(self, ast_mod.astStoreNodeExtraChildAt(store, prong_idx, @intCast(u32, ci)), prong_bb_id, cond_ty_id);
+        }
+    }
+    var sc_len = @intCast(u32, self.func.switch_cases.len);
+    var cases_count: u32 = sc_len - cases_start;
+    var else_target = else_bb;
+    pi = 0;
+    while (pi < @intCast(usize, prong_n)) : (pi += 1) {
+        var prong_node = ast_mod.astStoreNodeAt(store, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, pi)));
+        if ((prong_node.flags & @intCast(u8, 1)) != @intCast(u8, 0)) {
+            else_target = prong_start + @intCast(u32, pi);
+            break;
+        }
+    }
+    self.current_bb = switch_bb;
+    emitInst(self, LirInst{ .switch_br = .{ .cond = cond_temp, .cases_start = cases_start, .cases_count = cases_count, .else_bb = else_target } });
+    if (else_target == else_bb) {
+        self.current_bb = else_bb;
+        emitInst(self, LirInst{ .nop = {} });
+        self.block_terminated = @intCast(u8, 1);
+    }
+    prong_start_out.* = prong_start;
+    else_bb_out.* = else_bb;
+    exit_bb_out.* = exit_bb;
+    cases_start_out.* = cases_start;
+    else_target_out.* = else_target;
+}
+
 fn getTempType(self: *LirLowerer, temp_id: u32) u32 {
     if (@intCast(usize, temp_id) >= self.hoisted_temps.len) {
         var ws: []const u8 = "temp";
@@ -3795,6 +3842,82 @@ fn emitTaggedUnionInit(self: *LirLowerer, tu_type_id: u32, variant_index: u32) u
     return struct_tid;
 }
 
+fn resolveRtypeOrU32(self: *LirLowerer, node_idx: u32) u32 {
+    var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
+    if (res) |rrt| { return rrt; }
+    return type_mod.TYPE_U32;
+}
+
+fn lowerBinaryArm(self: *LirLowerer, node_idx: u32, op: u8) u32 {
+    var rtype: u32 = resolveRtypeOrU32(self, node_idx);
+    if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
+    var node = ast_mod.astStoreNodeAt(self.ctx.store, node_idx);
+    var lhs = lowerExpr(self, node.child_0);
+    var rhs = lowerExpr(self, node.child_1);
+    var tid = nextTemp(self, rtype);
+    emitInst(self, LirInst{ .binary = .{ .op = op, .lhs = lhs, .rhs = rhs, .result = tid } });
+    return tid;
+}
+
+fn lowerWrapArithOp(kind: AstKind) u8 {
+    if (kind == AstKind.wrap_add) { return BIN_WADD; }
+    if (kind == AstKind.wrap_sub) { return BIN_WSUB; }
+    return BIN_WMUL;
+}
+
+fn lowerSatArithOp(kind: AstKind) u8 {
+    if (kind == AstKind.sat_add) { return BIN_SADD; }
+    if (kind == AstKind.sat_sub) { return BIN_SSUB; }
+    if (kind == AstKind.sat_mul) { return BIN_SMUL; }
+    return BIN_SSHL;
+}
+
+fn lowerPreallocArgs(self: *LirLowerer, count: usize) u32 {
+    var args_start = self.temp_counter;
+    var pi: usize = 0;
+    while (pi < count) : (pi += 1) { _ = nextTemp(self, type_mod.TYPE_UNDEFINED); }
+    return args_start;
+}
+
+fn bindCapture(self: *LirLowerer, orig_name: u32, name_id: u32, type_id: u32, temp: u32, at_depth: u32) void {
+    if (name_id != orig_name) {
+        addLocalDeclRenamed(self, orig_name, name_id, type_id, temp, at_depth, @intCast(u8, 1));
+    } else {
+        addLocalDecl(self, name_id, type_id, temp, at_depth, @intCast(u8, 1));
+    }
+    emitInst(self, LirInst{ .decl_local = .{ .name_id = name_id, .type_id = type_id, .temp = temp } });
+}
+
+fn lowerCallArgMaterialize(self: *LirLowerer, node_idx: u32, ai: u32, is_ex: u8, cs_msg: []const u8) u32 {
+    var arg_node = ast_mod.astStoreNodeExtraChildAt(self.ctx.store, node_idx, ai);
+    var arg_val = lowerExpr(self, arg_node);
+    if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, arg_node)) |pt| {
+        if (pt != type_mod.TYPE_UNDEFINED and is_ex == @intCast(u8, 0)) {
+            var st = getTempType(self, arg_val);
+            if (st == type_mod.TYPE_NULL) { pal.markerWrite(cs_msg); }
+            var ck = coercion_mod.classifyCoercion(self.ctx.registry, st, pt);
+            var ce: CoercionEntry = undefined;
+            ce.node_idx = arg_node;
+            ce.kind = ck;
+            ce.target_type = pt;
+            checkArgReturnIntFits(self, ce.node_idx, pt);
+            arg_val = applyCoercion(self, arg_val, ce);
+        }
+        if (is_ex == @intCast(u8, 1) and pt != type_mod.TYPE_UNDEFINED) {
+            var et = self.ctx.registry.types_items[@intCast(usize, pt)];
+            if (et.kind == type_mod.TypeKind.optional_type) {
+                var eo = self.ctx.registry.opt_items[@intCast(usize, et.payload_idx)];
+                if (@intCast(usize, arg_val) < self.hoisted_temps.len and getTempType(self, arg_val) != type_mod.TYPE_NULL) {
+                    var ua = nextTemp(self, eo.payload);
+                    emitInst(self, LirInst{ .unwrap_optional_abi = .{ .value = arg_val, .result = ua } });
+                    arg_val = ua;
+                }
+            }
+        }
+    }
+    return arg_val;
+}
+
 fn bindOptionalCapture(self: *LirLowerer, capture_node: u32, cond_temp: u32) void {
     var cap = ast_mod.astStoreNodeAt(self.ctx.store, capture_node);
     var cap_name: u32 = ast_mod.astStoreNodePayload(self.ctx.store, capture_node);
@@ -3841,12 +3964,7 @@ fn bindOptionalCapture(self: *LirLowerer, capture_node: u32, cond_temp: u32) voi
         emitInst(self, LirInst{ .assign = .{ .dst = bound, .src = cond_temp, .name_id = cap_name } });
         cap_temp = bound;
     }
-    if (cap_name != cap_name_orig) {
-        addLocalDeclRenamed(self, cap_name_orig, cap_name, cap_type, cap_temp, self.scope_depth + @intCast(u32, 1), @intCast(u8, 1));
-    } else {
-        addLocalDecl(self, cap_name, cap_type, cap_temp, self.scope_depth + @intCast(u32, 1), @intCast(u8, 1));
-    }
-    emitInst(self, LirInst{ .decl_local = .{ .name_id = cap_name, .type_id = cap_type, .temp = cap_temp } });
+    bindCapture(self, cap_name_orig, cap_name, cap_type, cap_temp, self.scope_depth + @intCast(u32, 1));
 }
 
 fn isStorageGlobal(self: *LirLowerer, name_id: u32) bool {
@@ -4227,8 +4345,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
     } else if (node.kind == AstKind.import_expr) {
         return @intCast(u32, 0);
     } else if (node.kind == AstKind.add) {
-        var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
+        var rtype: u32 = resolveRtypeOrU32(self, node_idx);
         if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
@@ -4246,8 +4363,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         emitArith(self, lir_mod.CHECK_OP_ADD, BIN_ADD, lhs, rhs, tid, rtype);
         return tid;
     } else if (node.kind == AstKind.sub) {
-        var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
+        var rtype: u32 = resolveRtypeOrU32(self, node_idx);
         if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
@@ -4258,8 +4374,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         emitArith(self, lir_mod.CHECK_OP_SUB, BIN_SUB, lhs, rhs, tid, rtype);
         return tid;
     } else if (node.kind == AstKind.mul) {
-        var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
+        var rtype: u32 = resolveRtypeOrU32(self, node_idx);
         if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
@@ -4270,40 +4385,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         emitArith(self, lir_mod.CHECK_OP_MUL, BIN_MUL, lhs, rhs, tid, rtype);
         return tid;
     } else if (node.kind == AstKind.wrap_add or node.kind == AstKind.wrap_sub or node.kind == AstKind.wrap_mul) {
-        var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
-        if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
-        var lhs = lowerExpr(self, node.child_0);
-        var rhs = lowerExpr(self, node.child_1);
-        var tid = nextTemp(self, rtype);
-        if (node.kind == AstKind.wrap_add) {
-            emitInst(self, LirInst{ .binary = .{ .op = BIN_WADD, .lhs = lhs, .rhs = rhs, .result = tid } });
-        } else if (node.kind == AstKind.wrap_sub) {
-            emitInst(self, LirInst{ .binary = .{ .op = BIN_WSUB, .lhs = lhs, .rhs = rhs, .result = tid } });
-        } else {
-            emitInst(self, LirInst{ .binary = .{ .op = BIN_WMUL, .lhs = lhs, .rhs = rhs, .result = tid } });
-        }
-        return tid;
+        return lowerBinaryArm(self, node_idx, lowerWrapArithOp(node.kind));
     } else if (node.kind == AstKind.sat_add or node.kind == AstKind.sat_sub or node.kind == AstKind.sat_mul or node.kind == AstKind.sat_shl) {
-        var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
-        if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
-        var lhs = lowerExpr(self, node.child_0);
-        var rhs = lowerExpr(self, node.child_1);
-        var tid = nextTemp(self, rtype);
-        if (node.kind == AstKind.sat_add) {
-            emitInst(self, LirInst{ .binary = .{ .op = BIN_SADD, .lhs = lhs, .rhs = rhs, .result = tid } });
-        } else if (node.kind == AstKind.sat_sub) {
-            emitInst(self, LirInst{ .binary = .{ .op = BIN_SSUB, .lhs = lhs, .rhs = rhs, .result = tid } });
-        } else if (node.kind == AstKind.sat_mul) {
-            emitInst(self, LirInst{ .binary = .{ .op = BIN_SMUL, .lhs = lhs, .rhs = rhs, .result = tid } });
-        } else {
-            emitInst(self, LirInst{ .binary = .{ .op = BIN_SSHL, .lhs = lhs, .rhs = rhs, .result = tid } });
-        }
-        return tid;
+        return lowerBinaryArm(self, node_idx, lowerSatArithOp(node.kind));
     } else if (node.kind == AstKind.div) {
-        var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
+        var rtype: u32 = resolveRtypeOrU32(self, node_idx);
         if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
@@ -4312,8 +4398,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         emitInst(self, LirInst{ .binary = .{ .op = BIN_DIV, .lhs = lhs, .rhs = rhs, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.mod_op) {
-        var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
+        var rtype: u32 = resolveRtypeOrU32(self, node_idx);
         if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
@@ -4322,35 +4407,13 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         emitInst(self, LirInst{ .binary = .{ .op = BIN_MOD, .lhs = lhs, .rhs = rhs, .result = tid } });
         return tid;
     } else if (node.kind == AstKind.bit_and) {
-        var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
-        if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
-        var lhs = lowerExpr(self, node.child_0);
-        var rhs = lowerExpr(self, node.child_1);
-        var tid = nextTemp(self, rtype);
-        emitInst(self, LirInst{ .binary = .{ .op = BIN_AND, .lhs = lhs, .rhs = rhs, .result = tid } });
-        return tid;
+        return lowerBinaryArm(self, node_idx, BIN_AND);
     } else if (node.kind == AstKind.bit_or) {
-        var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
-        if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
-        var lhs = lowerExpr(self, node.child_0);
-        var rhs = lowerExpr(self, node.child_1);
-        var tid = nextTemp(self, rtype);
-        emitInst(self, LirInst{ .binary = .{ .op = BIN_OR, .lhs = lhs, .rhs = rhs, .result = tid } });
-        return tid;
+        return lowerBinaryArm(self, node_idx, BIN_OR);
     } else if (node.kind == AstKind.bit_xor) {
-        var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
-        if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
-        var lhs = lowerExpr(self, node.child_0);
-        var rhs = lowerExpr(self, node.child_1);
-        var tid = nextTemp(self, rtype);
-        emitInst(self, LirInst{ .binary = .{ .op = BIN_XOR, .lhs = lhs, .rhs = rhs, .result = tid } });
-        return tid;
+        return lowerBinaryArm(self, node_idx, BIN_XOR);
     } else if (node.kind == AstKind.shl) {
-        var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
+        var rtype: u32 = resolveRtypeOrU32(self, node_idx);
         if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
@@ -4360,8 +4423,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         emitArith(self, lir_mod.CHECK_OP_SHL, BIN_SHL, lhs, rhs, tid, getTempType(self, lhs));
         return tid;
     } else if (node.kind == AstKind.shr) {
-        var res = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
-        var rtype: u32 = if (res) |rrt| rrt else type_mod.TYPE_U32;
+        var rtype: u32 = resolveRtypeOrU32(self, node_idx);
         if (lowerFoldedIntConst(self, node_idx, rtype, @intCast(u8, 1))) |fctid| { return fctid; }
         var lhs = lowerExpr(self, node.child_0);
         var rhs = lowerExpr(self, node.child_1);
@@ -5344,10 +5406,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                        }
                         return @intCast(u32, 0);
                    }
-                        var args_start = self.temp_counter;
-                      var ai: usize = 0;
-                      while (ai < ec_n) : (ai += 1) { _ = nextTemp(self, type_mod.TYPE_UNDEFINED); }
-                      ai = 0;
+                         var args_start = lowerPreallocArgs(self, ec_n);
+                       var ai: usize = 0;
                 var is_ex: u8 = fp.is_extern;
                 while (ai < ec_n) : (ai += 1) {
                     var arg_null_ty: u32 = @intCast(u32, 0);
@@ -5393,14 +5453,14 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                     if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ai)))) |pt| { sbox[0] = pt; }
                     else { sbox[0] = self.hoisted_temps.items[@intCast(usize, arg_val)].type_id; }
                     if (arg_null_ty != @intCast(u32, 0)) { sbox[0] = arg_null_ty; }
-                    self.hoisted_temps.items[@intCast(usize, args_start) + ai].type_id = sbox[0];
                     if (is_ex == @intCast(u8, 1) and sbox[0] != type_mod.TYPE_UNDEFINED) {
                         var sti = self.ctx.registry.types_items[@intCast(usize, sbox[0])];
                         if (sti.kind == type_mod.TypeKind.optional_type) {
                             var sio = self.ctx.registry.opt_items[@intCast(usize, sti.payload_idx)];
-                            self.hoisted_temps.items[@intCast(usize, args_start) + ai].type_id = sio.payload;
+                            sbox[0] = sio.payload;
                         }
                     }
+                    self.hoisted_temps.items[@intCast(usize, args_start) + ai].type_id = sbox[0];
                 }
                 var result: u32 = @intCast(u32, 0);
                 var optva_m: []const u8 = "OPTVOID:rt"; pal.markerWriteInt(optva_m, fp.return_type);
@@ -5422,26 +5482,11 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                  if (fptr_pointee.kind == type_mod.TypeKind.fn_type) {
                      var fpfp = self.ctx.registry.fn_items[@intCast(usize, fptr_pointee.payload_idx)];
                      var fpi_callee = lowerExpr(self, node.child_0);
-                     var fpi_args_start = self.temp_counter;
+                     var fpi_args_start = lowerPreallocArgs(self, ec_n);
                      var fpi_ai: usize = @intCast(usize, 0);
-                     while (fpi_ai < ec_n) : (fpi_ai += @intCast(usize, 1)) { _ = nextTemp(self, type_mod.TYPE_UNDEFINED); }
-                     fpi_ai = @intCast(usize, 0);
                      while (fpi_ai < ec_n) : (fpi_ai += @intCast(usize, 1)) {
-                         var fpi_arg = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, fpi_ai)));
-                         if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, fpi_ai)))) |fpi_pt| {
-                             if (fpi_pt != type_mod.TYPE_UNDEFINED) {
-                                 var st = getTempType(self, fpi_arg);
-                                  if (st == type_mod.TYPE_NULL) { var cs6_m: []const u8 = "CS6\n"; pal.markerWrite(cs6_m); }
-                                  var ck = coercion_mod.classifyCoercion(self.ctx.registry, st, fpi_pt);
-                                 var ce: CoercionEntry = undefined;
-                                 ce.node_idx = ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, fpi_ai));
-                                 ce.kind = ck;
-                                 ce.target_type = fpi_pt;
-                                 // Task 4 fix (review Important 2): bare-literal arg.
-                                 checkArgReturnIntFits(self, ce.node_idx, fpi_pt);
-                                 fpi_arg = applyCoercion(self, fpi_arg, ce);
-                             }
-                         }
+                         var cs6_m: []const u8 = "CS6\n";
+                         var fpi_arg = lowerCallArgMaterialize(self, node_idx, @intCast(u32, fpi_ai), @intCast(u8, 0), cs6_m);
                          emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = fpi_args_start + @intCast(u32, fpi_ai), .src = fpi_arg } });
                          var fpi_slot: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
                          if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, fpi_ai)))) |fpi_pt| { fpi_slot[0] = fpi_pt; }
@@ -5513,50 +5558,24 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         var field_sym = sym_mod.symbolRegistryQualifiedLookup(self.ctx.symbol_tables, target_mod_id, inner_field_name_id);
                         if (field_sym) |fs| { var a3: []const u8 = "F3a1"; pal.markerWrite(a3);
                             if (fs.kind == @intCast(u8, 3)) {
-                                 var call_ns: u32 = self.temp_counter;
+                                 var call_ns: u32 = lowerPreallocArgs(self, ec_n);
                                  var ai: usize = 0;
-                                 while (ai < ec_n) : (ai += 1) { _ = nextTemp(self, type_mod.TYPE_UNDEFINED); }
-                                 ai = 0;
                                   var is_ex: u8 = @intCast(u8, if ((fs.flags & @intCast(u16, 4)) != @intCast(u16, 0)) @intCast(usize, 1) else @intCast(usize, 0));
                                   while (ai < ec_n) : (ai += 1) {
-                                       var call_val = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ai)));
-                                       if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ai)))) |pt| {
-                                           if (pt != type_mod.TYPE_UNDEFINED and is_ex == @intCast(u8, 0)) {
-                                               var st = getTempType(self, call_val);
-                                                if (st == type_mod.TYPE_NULL) { var cs7_m: []const u8 = "CS7\n"; pal.markerWrite(cs7_m); }
-                                                var ck = coercion_mod.classifyCoercion(self.ctx.registry, st, pt);
-                                               var ce: CoercionEntry = undefined;
-                                               ce.node_idx = ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ai));
-                                               ce.kind = ck;
-                                               ce.target_type = pt;
-                                               // Task 4 fix (review Important 2): bare-literal arg.
-                                               checkArgReturnIntFits(self, ce.node_idx, pt);
-                                               call_val = applyCoercion(self, call_val, ce);
-                                           }
-                                           if (is_ex == @intCast(u8, 1) and pt != type_mod.TYPE_UNDEFINED) {
-                                               var et = self.ctx.registry.types_items[@intCast(usize, pt)];
-                                               if (et.kind == type_mod.TypeKind.optional_type) {
-                                                   var eo = self.ctx.registry.opt_items[@intCast(usize, et.payload_idx)];
-                                                   if (@intCast(usize, call_val) < self.hoisted_temps.len and getTempType(self, call_val) != type_mod.TYPE_NULL) {
-                                                       var ua = nextTemp(self, eo.payload);
-                                                       emitInst(self, LirInst{ .unwrap_optional_abi = .{ .value = call_val, .result = ua } });
-                                                       call_val = ua;
-                    }
-                }
-            }
-        }
+                                       var cs7_m: []const u8 = "CS7\n";
+                                       var call_val = lowerCallArgMaterialize(self, node_idx, @intCast(u32, ai), is_ex, cs7_m);
                                        emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = call_ns + @intCast(u32, ai), .src = call_val } });
                                        var slot_tid_a: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
                                        if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ai)))) |pt2| { slot_tid_a[0] = pt2; var hx: []const u8 = "H"; pal.markerWrite(hx); }
                                        else { slot_tid_a[0] = self.hoisted_temps.items[@intCast(usize, call_val)].type_id; var mx: []const u8 = "M"; pal.markerWrite(mx); }
-                                       self.hoisted_temps.items[@intCast(usize, call_ns) + ai].type_id = slot_tid_a[0];
                                        if (is_ex == @intCast(u8, 1) and slot_tid_a[0] != type_mod.TYPE_UNDEFINED) {
                                            var sti = self.ctx.registry.types_items[@intCast(usize, slot_tid_a[0])];
                                            if (sti.kind == type_mod.TypeKind.optional_type) {
                                                var sio = self.ctx.registry.opt_items[@intCast(usize, sti.payload_idx)];
-                                               self.hoisted_temps.items[@intCast(usize, call_ns) + ai].type_id = sio.payload;
+                                               slot_tid_a[0] = sio.payload;
                                            }
                                        }
+                                       self.hoisted_temps.items[@intCast(usize, call_ns) + ai].type_id = slot_tid_a[0];
                                   }
                                  var args_count: u32 = @intCast(u32, ec_n);
                                  self._fn_ret_type = type_mod.TYPE_UNDEFINED;
@@ -5602,50 +5621,24 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 if (sm.kind == @intCast(u8, 0)) { var d3m: []const u8 = "D3:SKIPn"; pal.markerWrite(d3m); var d3nb: [10]u8 = undefined; var d3nl = itoa_mod.itoa(callee_name_id, d3nb[0..]); var d3ns: usize = @intCast(usize, 9) - @intCast(usize, d3nl); pal.markerWrite(d3nb[d3ns..@intCast(usize, 9)]); var d3kn: []const u8 = "k0"; pal.markerWrite(d3kn); }
                 else if (sm.kind == @intCast(u8, 1)) { var d3m: []const u8 = "D3:SKIPn"; pal.markerWrite(d3m); var d3nb: [10]u8 = undefined; var d3nl = itoa_mod.itoa(callee_name_id, d3nb[0..]); var d3ns: usize = @intCast(usize, 9) - @intCast(usize, d3nl); pal.markerWrite(d3nb[d3ns..@intCast(usize, 9)]); var d3kn: []const u8 = "k1"; pal.markerWrite(d3kn); }
                 else if (sm.kind == @intCast(u8, 2) or sm.kind == @intCast(u8, 3)) { var d3m: []const u8 = "D3:OKn"; pal.markerWrite(d3m); var d3nb: [10]u8 = undefined; var d3nl = itoa_mod.itoa(callee_name_id, d3nb[0..]); var d3ns: usize = @intCast(usize, 9) - @intCast(usize, d3nl); pal.markerWrite(d3nb[d3ns..@intCast(usize, 9)]); var d3kn: []const u8 = "k"; pal.markerWrite(d3kn); var d3kb: [10]u8 = undefined; var d3kl = itoa_mod.itoa(@intCast(u32, @enumToInt(sm.kind)), d3kb[0..]); var d3ks: usize = @intCast(usize, 9) - @intCast(usize, d3kl); pal.markerWrite(d3kb[d3ks..@intCast(usize, 9)]);
-                    var args_start = self.temp_counter;
+                    var args_start = lowerPreallocArgs(self, ec_n);
                     var ai: usize = 0;
-                    while (ai < ec_n) : (ai += 1) { _ = nextTemp(self, type_mod.TYPE_UNDEFINED); }
-                    ai = 0;
                     var is_ex: u8 = @intCast(u8, if ((sm.flags & @intCast(u16, 4)) != @intCast(u16, 0)) @intCast(usize, 1) else @intCast(usize, 0));
                     while (ai < ec_n) : (ai += 1) {
-                        var arg_val = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ai)));
-                        if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ai)))) |pt| {
-                            if (pt != type_mod.TYPE_UNDEFINED and is_ex == @intCast(u8, 0)) {
-                                var st = getTempType(self, arg_val);
-                                if (st == type_mod.TYPE_NULL) { var cs8_m: []const u8 = "CS8\n"; pal.markerWrite(cs8_m); }
-                                var ck = coercion_mod.classifyCoercion(self.ctx.registry, st, pt);
-                                var ce: CoercionEntry = undefined;
-                                ce.node_idx = ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ai));
-                                ce.kind = ck;
-                                ce.target_type = pt;
-                                // Task 4 fix (review Important 2): bare-literal arg.
-                                checkArgReturnIntFits(self, ce.node_idx, pt);
-                                arg_val = applyCoercion(self, arg_val, ce);
-                            }
-                            if (is_ex == @intCast(u8, 1) and pt != type_mod.TYPE_UNDEFINED) {
-                                var et = self.ctx.registry.types_items[@intCast(usize, pt)];
-                                if (et.kind == type_mod.TypeKind.optional_type) {
-                                    var eo = self.ctx.registry.opt_items[@intCast(usize, et.payload_idx)];
-                                    if (@intCast(usize, arg_val) < self.hoisted_temps.len and getTempType(self, arg_val) != type_mod.TYPE_NULL) {
-                                        var ua = nextTemp(self, eo.payload);
-                                        emitInst(self, LirInst{ .unwrap_optional_abi = .{ .value = arg_val, .result = ua } });
-                                        arg_val = ua;
-                                    }
-                                }
-                            }
-                        }
+                        var cs8_m: []const u8 = "CS8\n";
+                        var arg_val = lowerCallArgMaterialize(self, node_idx, @intCast(u32, ai), is_ex, cs8_m);
                         emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = args_start + @intCast(u32, ai), .src = arg_val } });
                         var slot_tid_b: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
                         if (hash_mod.u32ToU32MapGet(self.ctx.call_arg_types, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ai)))) |pt2| { slot_tid_b[0] = pt2; var hx2: u32 = 1; if (hx2 == 1) { var px: usize = 999999; hx2 = 0; } }
                         else { slot_tid_b[0] = getTempType(self, arg_val); var mx2: u32 = 2; if (mx2 == 2) { var qx: usize = 999998; mx2 = 0; } }
-                        self.hoisted_temps.items[@intCast(usize, args_start) + ai].type_id = slot_tid_b[0];
                         if (is_ex == @intCast(u8, 1) and slot_tid_b[0] != type_mod.TYPE_UNDEFINED) {
                             var sti = self.ctx.registry.types_items[@intCast(usize, slot_tid_b[0])];
                             if (sti.kind == type_mod.TypeKind.optional_type) {
                                 var sio = self.ctx.registry.opt_items[@intCast(usize, sti.payload_idx)];
-                                self.hoisted_temps.items[@intCast(usize, args_start) + ai].type_id = sio.payload;
+                                slot_tid_b[0] = sio.payload;
                             }
                         }
+                        self.hoisted_temps.items[@intCast(usize, args_start) + ai].type_id = slot_tid_b[0];
                     }
                     var args_count: u32 = @intCast(u32, ec_n);
                     self._fn_ret_type = type_mod.TYPE_UNDEFINED;
@@ -5732,10 +5725,8 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 return ct_dummy;
             }
         }
-        var args_start = self.temp_counter;
+        var args_start = lowerPreallocArgs(self, ec_n);
         var ai2: usize = 0;
-        while (ai2 < ec_n) : (ai2 += 1) { _ = nextTemp(self, type_mod.TYPE_UNDEFINED); }
-        ai2 = 0;
         while (ai2 < ec_n) : (ai2 += 1) {
             var arg_val = lowerExpr(self, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ai2)));
             emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = args_start + @intCast(u32, ai2), .src = arg_val } });
@@ -6457,8 +6448,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 var err_code_temp = nextTemp(self, err_cap_type);
                 emitInst(self, LirInst{ .unwrap_error_code = .{ .value = lhs_temp, .result = err_code_temp } });
                 var catch_cap_name = maybeDisambiguateCapture(self, ast_mod.astStoreNodePayload(self.ctx.store, node.child_2), err_cap_type);
-                addLocalDecl(self, catch_cap_name, err_cap_type, err_code_temp, self.scope_depth, @intCast(u8, 1));
-                emitInst(self, LirInst{ .decl_local = .{ .name_id = catch_cap_name, .type_id = err_cap_type, .temp = err_code_temp } });
+                bindCapture(self, catch_cap_name, catch_cap_name, err_cap_type, err_code_temp, self.scope_depth);
                 var decl_m: []const u8 = "DECL:t"; pal.markerWrite(decl_m); var decl_b: [10]u8 = undefined; var decl_l = itoa_mod.itoa(err_code_temp, decl_b[0..]); var decl_s: usize = @intCast(usize, 9) - @intCast(usize, decl_l); pal.markerWrite(decl_b[decl_s..@intCast(usize, 9)]); var decl_bb: []const u8 = "b"; pal.markerWrite(decl_bb); var decl_bb_b: [10]u8 = undefined; var decl_bb_l = itoa_mod.itoa(@intCast(u32, self.current_bb), decl_bb_b[0..]); var decl_bb_s: usize = @intCast(usize, 9) - @intCast(usize, decl_bb_l); pal.markerWrite(decl_bb_b[decl_bb_s..@intCast(usize, 9)]); var decl_nl: []const u8 = "\n"; pal.markerWrite(decl_nl);
             }
             var err_val = lowerExprOrBlock(self, node.child_1);
@@ -6995,43 +6985,13 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         if (result_tid != type_mod.TYPE_NORETURN) { result_temp = nextTemp(self, result_tid); }
         var sw_all_terminated: u8 = @intCast(u8, 1);
         var prong_n = ast_mod.astStoreNodeExtraChildCount(store, node_idx);
-        var switch_bb = self.current_bb;
-        var prong_start = @intCast(u32, self.func.blocks.len);
         var pi: usize = 0;
-        while (pi < @intCast(usize, prong_n)) : (pi += 1) { _ = createBlock(self); }
-        var else_bb = createBlock(self);
-        var exit_bb = createBlock(self);
-        var cases_start = @intCast(u32, self.func.switch_cases.len);
-        pi = 0;
-        while (pi < @intCast(usize, prong_n)) : (pi += 1) {
-            var prong_idx = ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, pi));
-            var prong_node = ast_mod.astStoreNodeAt(store, prong_idx);
-            if ((prong_node.flags & @intCast(u8, 1)) != @intCast(u8, 0)) { continue; }
-            var prong_bb_id = prong_start + @intCast(u32, pi);
-            var case_n = ast_mod.astStoreNodeExtraChildCount(store, prong_idx);
-            var ci: usize = 0;
-            while (ci < @intCast(usize, case_n)) : (ci += 1) {
-                lowerAppendSwitchCaseItem(self, ast_mod.astStoreNodeExtraChildAt(store, prong_idx, @intCast(u32, ci)), prong_bb_id, cond_ty_id);
-            }
-        }
-        var sc_len = @intCast(u32, self.func.switch_cases.len);
-        var cases_count: u32 = sc_len - cases_start;
-        var else_target = else_bb;
-        pi = 0;
-        while (pi < @intCast(usize, prong_n)) : (pi += 1) {
-            var prong_node = ast_mod.astStoreNodeAt(store, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, pi)));
-            if ((prong_node.flags & @intCast(u8, 1)) != @intCast(u8, 0)) {
-                else_target = prong_start + @intCast(u32, pi);
-                break;
-            }
-        }
-        self.current_bb = switch_bb;
-        emitInst(self, LirInst{ .switch_br = .{ .cond = cond_temp, .cases_start = cases_start, .cases_count = cases_count, .else_bb = else_target } });
-        if (else_target == else_bb) {
-            self.current_bb = else_bb;
-            emitInst(self, LirInst{ .nop = {} });
-            self.block_terminated = @intCast(u8, 1);
-        }
+        var prong_start: u32 = @intCast(u32, 0);
+        var else_bb: u32 = @intCast(u32, 0);
+        var exit_bb: u32 = @intCast(u32, 0);
+        var cases_start: u32 = @intCast(u32, 0);
+        var else_target: u32 = @intCast(u32, 0);
+        lowerSwitchDispatch(self, node_idx, cond_temp, cond_ty_id, &prong_start, &else_bb, &exit_bb, &cases_start, &else_target);
 
         pi = 0;
         while (pi < @intCast(usize, prong_n)) : (pi += 1) {
@@ -7068,12 +7028,10 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         var payload_temp = nextTemp(self, fe.type_id);
                         _ = hash_mod.u32ToU32MapPut(&self.func.temp_variant_sub_field, payload_temp, @intCast(u32, 0));
                          emitInst(self, LirInst{ .load_field = .{ .name_id = @intCast(u32, 0), .base = tu_base_box[0], .field_id = type_mod.TU_FIELD_PAYLOAD, .result = payload_temp } });
-                        addLocalDecl(self, capture_name, fe.type_id, payload_temp, self.scope_depth + @intCast(u32, 1), @intCast(u8, 1));
-                        emitInst(self, LirInst{ .decl_local = .{ .name_id = capture_name, .type_id = fe.type_id, .temp = payload_temp } });
+                        bindCapture(self, capture_name, capture_name, fe.type_id, payload_temp, self.scope_depth + @intCast(u32, 1));
                     }
                      } else {
-                         addLocalDecl(self, capture_name, tu_type_box[0], tu_base_box[0], self.scope_depth + @intCast(u32, 1), @intCast(u8, 1));
-                         emitInst(self, LirInst{ .decl_local = .{ .name_id = capture_name, .type_id = tu_type_box[0], .temp = tu_base_box[0] } });
+                         bindCapture(self, capture_name, capture_name, tu_type_box[0], tu_base_box[0], self.scope_depth + @intCast(u32, 1));
                      }
                     } else {
                         // FE (D11): a non-tagged-union operand (an enum, or any
@@ -7086,8 +7044,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                         // capture's C name from aliasing the switch condition.
                         var enum_cap_temp = nextTemp(self, tu_type_box[0]);
                         emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = enum_cap_temp, .src = tu_base_box[0] } });
-                        addLocalDecl(self, capture_name, tu_type_box[0], enum_cap_temp, self.scope_depth + @intCast(u32, 1), @intCast(u8, 1));
-                        emitInst(self, LirInst{ .decl_local = .{ .name_id = capture_name, .type_id = tu_type_box[0], .temp = enum_cap_temp } });
+                        bindCapture(self, capture_name, capture_name, tu_type_box[0], enum_cap_temp, self.scope_depth + @intCast(u32, 1));
                     }
                 }
             }
@@ -7823,7 +7780,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                 var cap_type = if (pat_type) |pt| pt else type_mod.TYPE_U32;
                 var end_temp = lowerExpr(self, pattern.child_1);
                 if (ast_mod.astStoreNodePayload(store, node_idx) != @intCast(u32, 0)) {
-                    var fcapr = maybeDisambiguateCapture(self, ast_mod.astStoreNodePayload(store, node_idx), cap_type); addLocalDecl(self, fcapr, cap_type, start_temp, self.scope_depth + @intCast(u32, 1), @intCast(u8, 1)); emitInst(self, LirInst{ .decl_local = .{ .name_id = fcapr, .type_id = cap_type, .temp = start_temp } });
+                    var fcapr = maybeDisambiguateCapture(self, ast_mod.astStoreNodePayload(store, node_idx), cap_type); bindCapture(self, fcapr, fcapr, cap_type, start_temp, self.scope_depth + @intCast(u32, 1));
                 }
             var fr_cond: u32 = @intCast(u32, 0);
             var fr_body: u32 = @intCast(u32, 0);
@@ -7949,13 +7906,13 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             }
             var item_temp = nextTemp(self, item_tid_type);
             emitInst(self, LirInst{ .load_index = .{ .name_id = @intCast(u32, 0), .base = ptr_temp, .index = idx_temp, .result = item_temp, .decay = item_decay } });
-            if (ast_mod.astStoreNodePayload(store, node_idx) != @intCast(u32, 0)) { var fcaps = maybeDisambiguateCapture(self, ast_mod.astStoreNodePayload(store, node_idx), item_tid_type); addLocalDecl(self, fcaps, item_tid_type, item_temp, self.scope_depth + @intCast(u32, 1), @intCast(u8, 1)); emitInst(self, LirInst{ .decl_local = .{ .name_id = fcaps, .type_id = item_tid_type, .temp = item_temp } }); }
+            if (ast_mod.astStoreNodePayload(store, node_idx) != @intCast(u32, 0)) { var fcaps = maybeDisambiguateCapture(self, ast_mod.astStoreNodePayload(store, node_idx), item_tid_type); bindCapture(self, fcaps, fcaps, item_tid_type, item_temp, self.scope_depth + @intCast(u32, 1)); }
             var idx_cap_temp = idx_temp;
             if (idx_range == @intCast(u8, 1) and node.child_2 != @intCast(u32, 0)) {
                 idx_cap_temp = nextTemp(self, type_mod.TYPE_USIZE);
                 emitInst(self, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = start_temp, .rhs = idx_temp, .result = idx_cap_temp } });
             }
-            if (node.child_2 != @intCast(u32, 0)) { var icaps = maybeDisambiguateCapture(self, node.child_2, type_mod.TYPE_USIZE); addLocalDecl(self, icaps, type_mod.TYPE_USIZE, idx_cap_temp, self.scope_depth + @intCast(u32, 1), @intCast(u8, 1)); emitInst(self, LirInst{ .decl_local = .{ .name_id = icaps, .type_id = type_mod.TYPE_USIZE, .temp = idx_cap_temp } }); }
+            if (node.child_2 != @intCast(u32, 0)) { var icaps = maybeDisambiguateCapture(self, node.child_2, type_mod.TYPE_USIZE); bindCapture(self, icaps, icaps, type_mod.TYPE_USIZE, idx_cap_temp, self.scope_depth + @intCast(u32, 1)); }
             self.block_terminated = @intCast(u8, 0);
             lowerStmtBody(self, node.child_1);
             lowerLoopToStep(self, it_step);
@@ -7986,43 +7943,13 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
             }
          }
         var prong_n = ast_mod.astStoreNodeExtraChildCount(store, node_idx);
-        var switch_bb = self.current_bb;
-        var prong_start = @intCast(u32, self.func.blocks.len);
         var pi: usize = 0;
-        while (pi < @intCast(usize, prong_n)) : (pi += 1) { _ = createBlock(self); }
-        var else_bb = createBlock(self);
-        var exit_bb = createBlock(self);
-        var cases_start = @intCast(u32, self.func.switch_cases.len);
-        pi = 0;
-        while (pi < @intCast(usize, prong_n)) : (pi += 1) {
-            var prong_idx = ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, pi));
-            var prong_node = ast_mod.astStoreNodeAt(store, prong_idx);
-            if ((prong_node.flags & @intCast(u8, 1)) != @intCast(u8, 0)) { continue; }
-            var prong_bb_id = prong_start + @intCast(u32, pi);
-            var case_n = ast_mod.astStoreNodeExtraChildCount(store, prong_idx);
-            var ci: usize = 0;
-            while (ci < @intCast(usize, case_n)) : (ci += 1) {
-                lowerAppendSwitchCaseItem(self, ast_mod.astStoreNodeExtraChildAt(store, prong_idx, @intCast(u32, ci)), prong_bb_id, cond_ty_id);
-            }
-        }
-        var sc_len = @intCast(u32, self.func.switch_cases.len);
-        var cases_count: u32 = sc_len - cases_start;
-        var else_target = else_bb;
-        pi = 0;
-        while (pi < @intCast(usize, prong_n)) : (pi += 1) {
-            var prong_node = ast_mod.astStoreNodeAt(store, ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, pi)));
-            if ((prong_node.flags & @intCast(u8, 1)) != @intCast(u8, 0)) {
-                else_target = prong_start + @intCast(u32, pi);
-                break;
-            }
-        }
-        self.current_bb = switch_bb;
-        emitInst(self, LirInst{ .switch_br = .{ .cond = cond_temp, .cases_start = cases_start, .cases_count = cases_count, .else_bb = else_target } });
-        if (else_target == else_bb) {
-            self.current_bb = else_bb;
-            emitInst(self, LirInst{ .nop = {} });
-            self.block_terminated = @intCast(u8, 1);
-        }
+        var prong_start: u32 = @intCast(u32, 0);
+        var else_bb: u32 = @intCast(u32, 0);
+        var exit_bb: u32 = @intCast(u32, 0);
+        var cases_start: u32 = @intCast(u32, 0);
+        var else_target: u32 = @intCast(u32, 0);
+        lowerSwitchDispatch(self, node_idx, cond_temp, cond_ty_id, &prong_start, &else_bb, &exit_bb, &cases_start, &else_target);
         var exit_preds: u32 = @intCast(u32, 0);
 
         pi = 0;
@@ -8048,13 +7975,11 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                                var payload_temp2 = nextTemp(self, fe2.type_id);
                               _ = hash_mod.u32ToU32MapPut(&self.func.temp_variant_sub_field, payload_temp2, @intCast(u32, 0));
                                emitInst(self, LirInst{ .load_field = .{ .name_id = @intCast(u32, 0), .base = tu_base_box2[0], .field_id = type_mod.TU_FIELD_PAYLOAD, .result = payload_temp2 } });
-                               addLocalDecl(self, capture_name, fe2.type_id, payload_temp2, self.scope_depth + @intCast(u32, 1), @intCast(u8, 1));
-                               emitInst(self, LirInst{ .decl_local = .{ .name_id = capture_name, .type_id = fe2.type_id, .temp = payload_temp2 } });
+                                bindCapture(self, capture_name, capture_name, fe2.type_id, payload_temp2, self.scope_depth + @intCast(u32, 1));
                                var scap2_d: []const u8 = "SCAP2:d"; pal.markerWriteInt(scap2_d, capture_name);
                            }
                        } else {
-                           addLocalDecl(self, capture_name, tu_type_box2[0], tu_base_box2[0], self.scope_depth + @intCast(u32, 1), @intCast(u8, 1));
-                           emitInst(self, LirInst{ .decl_local = .{ .name_id = capture_name, .type_id = tu_type_box2[0], .temp = tu_base_box2[0] } });
+                            bindCapture(self, capture_name, capture_name, tu_type_box2[0], tu_base_box2[0], self.scope_depth + @intCast(u32, 1));
                        }
                       } else {
                           // FE (D11): non-tagged-union operand (enum) binds a
@@ -8064,8 +7989,7 @@ pub fn lowerStmt(self: *LirLowerer, node_idx: u32) void {
                           // the switch condition.
                           var enum_cap_temp2 = nextTemp(self, tu_type_box2[0]);
                           emitInst(self, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = enum_cap_temp2, .src = tu_base_box2[0] } });
-                          addLocalDecl(self, capture_name, tu_type_box2[0], enum_cap_temp2, self.scope_depth + @intCast(u32, 1), @intCast(u8, 1));
-                          emitInst(self, LirInst{ .decl_local = .{ .name_id = capture_name, .type_id = tu_type_box2[0], .temp = enum_cap_temp2 } });
+                          bindCapture(self, capture_name, capture_name, tu_type_box2[0], enum_cap_temp2, self.scope_depth + @intCast(u32, 1));
                       }
                   }
               }
