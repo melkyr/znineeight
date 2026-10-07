@@ -24,8 +24,8 @@ in the next section; that is the only supported path.
 `release/seed/CHANGELOG.md`, full recipes + current md5s in
 `release/seed/SEED_README.txt`).
 
-**Current seed: v93.** Archive md5 `84d295ae04e20c4b722ed219bd9a74f1`; archived binary md5
-(= v93's rotation fixed point) `44b8e7fff5a115743ab5c62adb849555`; `gen/` 45 `.c` + 46 `.h`;
+**Current seed: v93.** Archive md5 `e1955908f3aa58992592f9c021c36d42`; archived binary md5
+(= v93's rotation fixed point) `639902d5146233091f6b2f98508ce3eb`; `gen/` 45 `.c` + 46 `.h`;
 `lib/` 30 std `.zig`. **This block is updated at every plan closeout that rotates the seed**;
 the branch's in-progress fixed point is recorded in the active plan's workspace ledger.
 The FX14-F–FX17-F notes below record each amendment's own fixed point and its
@@ -33,8 +33,10 @@ The FX14-F–FX17-F notes below record each amendment's own fixed point and its
 closeout (2026-09-30) rotated the seed to v89; the Amendment A1 closeout
 (2026-10-03) rotated it to v90; the Volume IV Task 26 closeout (2026-10-05)
 rotated it to v91; the 2026-10-06 rotation moved it to v92; and the zig1
-structural live-set reduction closeout (2026-10-07) rotated it to v93 at this
-fixed point — the `-s0` self-compile now carves pool ≈11,965 K with peak RSS
+structural live-set reduction closeout (2026-10-07) rotated it to v93; the
+final-review fix wave (guard the narrowed `Type.payload_idx`/`Type.alignment`
+casts, `sf/src/type_registry.zig`) moved v93's fixed point `44b8e7ff…` →
+`639902d5…` — the `-s0` self-compile now carves pool ≈11,965 K with peak RSS
 median ≈16.0 MB (down from the post-L3 14,924 K / ≈17.4 MB).
 
 Top-level `zig1-seed/`: `zig1` (reference binary), `gen/` (its self-emission C89

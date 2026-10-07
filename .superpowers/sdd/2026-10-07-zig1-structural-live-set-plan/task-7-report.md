@@ -163,3 +163,99 @@ bash scripts/seed/archive_seed.sh /tmp/struct_seed7/zig1_5_clean /tmp/struct_see
 4. **Pool drop not independently isolated** (carried from Task 6): the −2,109 K pool fall across
    the comptime fix exceeds the isolated fold carve; output equivalence, not a carve model, is the
    evidence.
+
+---
+
+## Final-review fix wave (2026-10-07)
+
+Whole-branch review `bb46dee4..b8cd33da` returned **no Critical**. The operator ruled on the
+follow-ups: **(1)** add the missing narrowed-column overflow guard (Important I1/I2); **(2)** apply
+both doc corrections (M1, M5). This wave did exactly that; no unrelated change, no rewiring, no
+push; branch `zig1_improvements`.
+
+### I1/I2 — guard the narrowed `Type` casts (`sf/src/type_registry.zig` + call sites)
+
+Root cause (review): the `Type` u16/u8 narrowing has an inconsistent overflow policy —
+`name_id`/`module_id` writes route through `typeNarrowU16`/`typeNarrowU8` (clean
+`error: type_registry <field> exceeds <limit> (value <v>)` + `pal.exit`), but `payload_idx`
+(`@intCast(u16, …)`) and computed `alignment` (`@intCast(u8, …)`) did not, so a pathological
+input would silently truncate.
+
+- `typeNarrowU16`/`typeNarrowU8` were made `pub` (`type_registry.zig:197,202`) so external
+  writers use the **same** helper — failure mode unchanged.
+- **Every** remaining runtime-valued write to the two narrowed columns now routes through the
+  guard, not just the external sites the review enumerated (a partial fix would have left the same
+  inconsistency inside `type_registry.zig`):
+  - `payload_idx`→u16: `symbol_registrator.zig:127,156,184,195,224,240`;
+    `type_resolver.zig:1602,1638,1681,1691`; and internally
+    `type_registry.zig:531,553,578,609,639,680,698,764,790` (`self.<kind>_len - 1`).
+  - computed `alignment`→u8: `type_resolver.zig:298,299,306,324,325,352,359,369,375,392,393,581`;
+    and internally `type_registry.zig:607,637,678,928`.
+  - Left as raw `@intCast` **only** the compile-time-literal stores (`payload_idx = 0`;
+    `alignment = 0/1/4/8`), which cannot truncate (the review's phrase was "computed alignment").
+- No guard site was ambiguous; every listed line was verified to be an actual narrowed WRITE before
+  editing (the caveat's "reads / already-cast" cases were checked individually).
+
+### M1 — `FoldVal` size doc correction (no code change)
+
+`FoldVal`'s true target layout is the emitted `gcc -m32` C struct **12 B, align 4** (`u64` is 8 B
+align 4 on i386). The compiler's own `@sizeOf`/`@alignOf` use an 8-byte `u64` alignment model, so
+the fold-table array is allocated at a **16-byte stride**. Corrected the comments in
+`sf/src/comptime_eval.zig:46-70` and the three stale spots in
+`sf/docs/tech_docs/04_comptime_eval.md` (header note, `ComptimeFoldTable` table row incl. the
+"`FoldVal` 8-byte aligned" cell, and the "Exact fold table" paragraph). No code change.
+
+### M5 — CHANGELOG blank line
+
+Restored the missing blank line between the v93 entry and the `## 2026-10-06 — seed v92` heading in
+`release/seed/CHANGELOG.md`.
+
+### Re-verification battery (new binary)
+
+Built from the committed v93 seed against current `sf/src` (no `FIXED_POINT_MD5` pin):
+
+```
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/fw_seed
+[seed] two-hop closure OK: hop1 == hop2 == 639902d5146233091f6b2f98508ce3eb
+```
+
+| gate | observed | pinned / expected | verdict |
+|---|---|---|---|
+| seed closure | `hop1 == hop2 == 639902d5146233091f6b2f98508ce3eb` | — | **PASS** |
+| dump-MD5 (`-fsafe` ×4 + `-ffast` ×4) | 8 hashes | 8 pins | **8/8 PASS** (delta 0) |
+| corpus `scripts/corpus/classify` | `1097 = 923 OK / 58 GREEN / 116 FAIL` | same | **0 ICE / 0 CRASH; exact** |
+| `verify_stdlib.sh` | `266 PASS / 0 FAIL over 266 dirs` | 266/0 | **STDLIB GATE OK** |
+| examples matrix | `MATRIX total=24 ok=24 dumpfail=0 gccfail=0 linkfail=0` | 24/24 | **PASS** |
+| goldens gol/lisp/json/mud | `fcbf7e7c…` / `b3d9f897…` / `8bda3d5a…` / srv `66c8f0ab…` cli `93147d0f…` | same | **all pinned** |
+| semantic markers (in-session) | base 48856 / new 48856 filtered, `diff` rc 0 | byte-identical | **diff 0** |
+| peak RSS (`/usr/bin/time -v`, `-s0`, median of 5) | 16036/16028/15992/16180/16020 K | ≤16,384 K | **median 16,028 K** |
+
+- Markers compared in-session between the committed v93 seed binary
+  (`/tmp/fw_seed/_unpack/zig1-seed/zig1`, md5 `44b8e7ff…`) and the new binary (`639902d5…`), the
+  identical input `sf/src/main.zig`, with `arena .*: grew` + `track-memory:` filtered. Residual 0.
+- `track-memory` at HEAD: `perm=761K mod=1023K scr=1020K pool=11965K type_db=249K total=2804K`
+  (pool unchanged — the guard is code-size only).
+
+### Seed re-rotation (v93 re-baselined to the new fixed point)
+
+The guard change moved the fixed point, so the v93 archive no longer matched HEAD. Re-ran the
+rotation (same plan closeout) with `scripts/seed/archive_seed.sh <new-binary> /tmp/fw_seed/gen
+release/seed/zig1-seed.tgz`. **Per the operator's "amending the v93 entry", the entry was edited
+in place (not a new v94)**: `release/seed/CHANGELOG.md`'s v93 heading/fields now record HEAD
+`b8cd33da`, seed binary + fixed point `639902d5146233091f6b2f98508ce3eb`, self-emission C
+45 `.c` + 46 `.h` (9,815,724 bytes) and **archive md5
+`e1955908f3aa58992592f9c021c36d42`** (was `84d295ae…` / `44b8e7ff…`). A provenance sentence
+records the `44b8e7ff…` → `639902d5…` re-baseline. `docs/sf/QUICK_REF.md`'s seed block was
+updated to the new archive md5 + fixed point (pool/RSS figures unchanged). The archive's
+self-contained `gcc` rebuild reproduced `639902d5…`.
+
+### Concerns
+
+1. **v93 amended rather than v94.** The literal archive command carries `--update-changelog`, which
+   would auto-increment to v94; the operator's explicit "amending the v93 entry (same plan
+   closeout)" was followed instead (script run without the flag, v93 fields edited in place).
+2. **Fix-wave RSS margin unchanged** (~356 K under the 16,384 K target; median 16,028 K vs Task 7's
+   16,152 K) — host-load-sensitive as before.
+3. **Literal-literal `@intCast` stores remain unguarded by design** (`payload_idx = 0`,
+   `alignment = 0/1/4/8`): compile-time constants cannot exceed the column ceiling, so no
+   truncation is possible.

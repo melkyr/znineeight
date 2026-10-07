@@ -124,7 +124,7 @@ pub fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, d
             var tup_last: usize = type_reg.tup_len - @intCast(usize, 1);
             var tup_idx: u32 = @intCast(u32, tup_last);
             var tty = type_reg.types_items[@intCast(usize, tid)];
-            tty.payload_idx = @intCast(u16, tup_idx);
+            tty.payload_idx = type_mod.typeNarrowU16("payload_idx", tup_idx);
             type_reg.types_items[@intCast(usize, tid)] = tty;
         }
         return;
@@ -153,7 +153,7 @@ pub fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, d
         var st_last: usize = type_reg.st_len - @intCast(usize, 1);
         var st_idx: u32 = @intCast(u32, st_last);
         var ty = type_reg.types_items[@intCast(usize, tid)];
-        ty.payload_idx = @intCast(u16, st_idx);
+        ty.payload_idx = type_mod.typeNarrowU16("payload_idx", st_idx);
         type_reg.types_items[@intCast(usize, tid)] = ty;
     }
     if (decl_kind == AstKind.union_decl) {
@@ -181,7 +181,7 @@ pub fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, d
             var tu_last: usize = type_reg.tu_len - @intCast(usize, 1);
             var tu_idx: u32 = @intCast(u32, tu_last);
             var ty = type_reg.types_items[@intCast(usize, tid)];
-            ty.payload_idx = @intCast(u16, tu_idx);
+            ty.payload_idx = type_mod.typeNarrowU16("payload_idx", tu_idx);
             type_reg.types_items[@intCast(usize, tid)] = ty;
         } else {
             type_mod.unAppend(type_reg, type_mod.UnionPayload{
@@ -192,7 +192,7 @@ pub fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, d
             var un_last: usize = type_reg.un_len - @intCast(usize, 1);
             var un_idx: u32 = @intCast(u32, un_last);
             var ty = type_reg.types_items[@intCast(usize, tid)];
-            ty.payload_idx = @intCast(u16, un_idx);
+            ty.payload_idx = type_mod.typeNarrowU16("payload_idx", un_idx);
             type_reg.types_items[@intCast(usize, tid)] = ty;
         }
     }
@@ -221,7 +221,7 @@ pub fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, d
         var en_last: usize = type_reg.en_len - @intCast(usize, 1);
         var en_idx: u32 = @intCast(u32, en_last);
         var ty = type_reg.types_items[@intCast(usize, tid)];
-        ty.payload_idx = @intCast(u16, en_idx);
+        ty.payload_idx = type_mod.typeNarrowU16("payload_idx", en_idx);
         type_reg.types_items[@intCast(usize, tid)] = ty;
     }
     if (decl_kind == AstKind.error_set_decl) {
@@ -237,7 +237,7 @@ pub fn populateTypePayload(type_reg: *type_mod.TypeRegistry, store: *AstStore, d
         var es_last: usize = type_reg.es_len - @intCast(usize, 1);
         var es_idx: u32 = @intCast(u32, es_last);
         var ty = type_reg.types_items[@intCast(usize, tid)];
-        ty.payload_idx = @intCast(u16, es_idx);
+        ty.payload_idx = type_mod.typeNarrowU16("payload_idx", es_idx);
         type_reg.types_items[@intCast(usize, tid)] = ty;
     }
 }

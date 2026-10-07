@@ -194,12 +194,12 @@ fn typeDbCeiling(field: []const u8, value: u32, limit: u32) void {
     pal_mod.exit(@intCast(u8, 1));
 }
 
-fn typeNarrowU16(field: []const u8, value: u32) u16 {
+pub fn typeNarrowU16(field: []const u8, value: u32) u16 {
     if (value > @intCast(u32, 65535)) typeDbCeiling(field, value, @intCast(u32, 65535));
     return @intCast(u16, value);
 }
 
-fn typeNarrowU8(field: []const u8, value: u32) u8 {
+pub fn typeNarrowU8(field: []const u8, value: u32) u8 {
     if (value > @intCast(u32, 255)) typeDbCeiling(field, value, @intCast(u32, 255));
     return @intCast(u8, value);
 }
@@ -528,7 +528,7 @@ pub fn typeRegistryGetOrCreatePtrQ(self: *TypeRegistry, base: TypeId, is_const: 
         .iw = @intCast(u8, 0),
         .size = @intCast(u32, 4), .alignment = @intCast(u8, 4),
         .name_id = @intCast(u16, 0),
-        .module_id = @intCast(u8, 0), .payload_idx = @intCast(u16, self.ptr_len - @intCast(usize, 1)),
+        .module_id = @intCast(u8, 0), .payload_idx = typeNarrowU16("payload_idx", @intCast(u32, self.ptr_len - @intCast(usize, 1))),
     });
     hash_mod.u64ToU32MapPut(&self.ptr_cache, key, tid);
     return tid;
@@ -550,7 +550,7 @@ pub fn typeRegistryGetOrCreateManyPtrQ(self: *TypeRegistry, base: TypeId, is_con
         .iw = @intCast(u8, 0),
         .size = @intCast(u32, 4), .alignment = @intCast(u8, 4),
         .name_id = @intCast(u16, 0),
-        .module_id = @intCast(u8, 0), .payload_idx = @intCast(u16, self.ptr_len - @intCast(usize, 1)),
+        .module_id = @intCast(u8, 0), .payload_idx = typeNarrowU16("payload_idx", @intCast(u32, self.ptr_len - @intCast(usize, 1))),
     });
     hash_mod.u64ToU32MapPut(&self.many_ptr_cache, key, tid);
     return tid;
@@ -575,7 +575,7 @@ pub fn typeRegistryGetOrCreateSlice(self: *TypeRegistry, elem: TypeId, is_const:
         .iw = @intCast(u8, 0),
         .size = @intCast(u32, 8), .alignment = @intCast(u8, 4),
         .name_id = @intCast(u16, 0),
-        .module_id = @intCast(u8, 0), .payload_idx = @intCast(u16, self.slice_len - @intCast(usize, 1)),
+        .module_id = @intCast(u8, 0), .payload_idx = typeNarrowU16("payload_idx", @intCast(u32, self.slice_len - @intCast(usize, 1))),
     });
     hash_mod.u64ToU32MapPut(&self.slice_cache, key, tid);
     var u2n_m: []const u8 = "U2N:e"; pal_mod.markerWrite(u2n_m);
@@ -604,9 +604,9 @@ pub fn typeRegistryGetOrCreateOptional(self: *TypeRegistry, payload: TypeId) u32
     var tid = typeRegistryAppend(self, Type{
         .kind = TypeKind.optional_type, .state = opt_state, .flags = @intCast(u8, 0),
         .iw = @intCast(u8, 0),
-        .size = opt_size, .alignment = @intCast(u8, opt_align),
+        .size = opt_size, .alignment = typeNarrowU8("alignment", opt_align),
         .name_id = @intCast(u16, 0),
-        .module_id = @intCast(u8, 0), .payload_idx = @intCast(u16, self.opt_len - @intCast(usize, 1)),
+        .module_id = @intCast(u8, 0), .payload_idx = typeNarrowU16("payload_idx", @intCast(u32, self.opt_len - @intCast(usize, 1))),
     });
     if (opt_state == @intCast(u8, 2)) hash_mod.u32ToU32MapPut(&self.optional_cache, payload, tid);
     return tid;
@@ -634,9 +634,9 @@ pub fn typeRegistryGetOrCreateErrorUnion(self: *TypeRegistry, payload: TypeId, e
     var tid = typeRegistryAppend(self, Type{
         .kind = TypeKind.error_union_type, .state = eu_state, .flags = @intCast(u8, 0),
         .iw = @intCast(u8, 0),
-        .size = eu_size, .alignment = @intCast(u8, eu_align),
+        .size = eu_size, .alignment = typeNarrowU8("alignment", eu_align),
         .name_id = @intCast(u16, 0),
-        .module_id = @intCast(u8, 0), .payload_idx = @intCast(u16, self.eu_len - @intCast(usize, 1)),
+        .module_id = @intCast(u8, 0), .payload_idx = typeNarrowU16("payload_idx", @intCast(u32, self.eu_len - @intCast(usize, 1))),
     });
     hash_mod.u64ToU32MapPut(&self.eu_cache, eu_key, tid);
     return tid;
@@ -675,9 +675,9 @@ pub fn typeRegistryGetOrCreateArray(self: *TypeRegistry, elem: TypeId, length: u
     var tid = typeRegistryAppend(self, Type{
         .kind = TypeKind.array_type, .state = arr_state, .flags = @intCast(u8, 0),
         .iw = @intCast(u8, 0),
-        .size = arr_size, .alignment = @intCast(u8, arr_align),
+        .size = arr_size, .alignment = typeNarrowU8("alignment", arr_align),
         .name_id = @intCast(u16, 0),
-        .module_id = @intCast(u8, 0), .payload_idx = @intCast(u16, self.array_len - @intCast(usize, 1)),
+        .module_id = @intCast(u8, 0), .payload_idx = typeNarrowU16("payload_idx", @intCast(u32, self.array_len - @intCast(usize, 1))),
     });
     var o2m: []const u8 = "O2N"; pal_mod.markerWrite(o2m);
     var o2b: [20]u8 = undefined;
@@ -695,7 +695,7 @@ pub fn typeRegistryGetOrCreateTuple(self: *TypeRegistry, elems_start: u32, elems
         .iw = @intCast(u8, 0),
         .size = @intCast(u32, 0), .alignment = @intCast(u8, 1),
         .name_id = @intCast(u16, 0),
-        .module_id = @intCast(u8, 0), .payload_idx = @intCast(u16, self.tup_len - @intCast(usize, 1)),
+        .module_id = @intCast(u8, 0), .payload_idx = typeNarrowU16("payload_idx", @intCast(u32, self.tup_len - @intCast(usize, 1))),
     });
     return tid;
 }
@@ -761,7 +761,7 @@ pub fn typeRegistryTupleOrdinalFromNameId(self: *TypeRegistry, name_id: u32) ?u3
         .iw = @intCast(u8, 0),
         .size = @intCast(u32, 4), .alignment = @intCast(u8, 4),
         .name_id = typeNarrowU16("name_id", name_id),
-        .module_id = @intCast(u8, 0), .payload_idx = @intCast(u16, self.fn_len - @intCast(usize, 1)),
+        .module_id = @intCast(u8, 0), .payload_idx = typeNarrowU16("payload_idx", @intCast(u32, self.fn_len - @intCast(usize, 1))),
     });
     if (conv_bit != @intCast(u8, 0)) { self.types_items[@intCast(usize, tid)].flags = self.types_items[@intCast(usize, tid)].flags | @intCast(u8, 1); }
     var p2sb: [20]u8 = undefined; var p2sl = itoa_mod.itoa(tid, p2sb[0..]); var p2ss: usize = @intCast(usize, 19) - @intCast(usize, p2sl); pal_mod.markerWrite(p2sb[p2ss..@intCast(usize, 19)]);
@@ -787,7 +787,7 @@ pub fn typeRegistryGetOrCreateErrorSet(self: *TypeRegistry, tags_start: u32, tag
         .iw = @intCast(u8, 0),
         .size = @intCast(u32, 4), .alignment = @intCast(u8, 4),
         .name_id = @intCast(u16, 0),
-        .module_id = @intCast(u8, 0), .payload_idx = @intCast(u16, self.es_len - @intCast(usize, 1)),
+        .module_id = @intCast(u8, 0), .payload_idx = typeNarrowU16("payload_idx", @intCast(u32, self.es_len - @intCast(usize, 1))),
     });
     hash_mod.u64ToU32MapPut(&self.es_cache, key, tid);
     return tid;
@@ -925,7 +925,7 @@ pub fn typeRegistryGetOrCreateArbInt(self: *TypeRegistry, name: []const u8) u32 
         .flags = @intCast(u8, 0),
         .iw = @intCast(u8, arb_w),
         .size = carrier,
-        .alignment = @intCast(u8, carrier),
+        .alignment = typeNarrowU8("alignment", carrier),
         .name_id = @intCast(u16, 0),
         .module_id = @intCast(u8, 0),
         .payload_idx = @intCast(u16, 0),

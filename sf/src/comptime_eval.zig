@@ -43,7 +43,7 @@ pub const ComptimeVal = struct {
     float_bits: u64,
 };
 
-// Task 6 R1: dense fold-table element, 16 B. The common case (a value whose
+// Task 6 R1: dense fold-table element. The common case (a value whose
 // exact magnitude fits in 64 bits, i.e. `ComptimeInt.len <= 2`) is inlined as a
 // u64 magnitude plus a sign bit; a value needing more than 64 magnitude bits
 // lives in the rare `wide_ints` side pool and stores only its u32 index here.
@@ -53,6 +53,12 @@ pub const ComptimeVal = struct {
 // `ComptimeVal`'s 256-bit magnitude is over-provision for the observed
 // population. `neg` is kept separately because a u64 two's-complement pattern
 // is ambiguous for `-1` vs `u64max`.
+//
+// Size: the emitted C struct on the `gcc -m32` seed target is 12 B, align 4
+// (there `u64` is 8 B with align 4). The compiler's own `@sizeOf`/`@alignOf`
+// use an 8-byte `u64` alignment model, so allocating a `FoldVal` array uses a
+// 16-byte stride (8-byte-aligned `u64` + 4 flag bytes rounded up) — the
+// allocation stride, not 12 B, is what the compact table assumes.
 const FoldVal = struct {
     small: u64,
     kind: u8,
@@ -61,8 +67,9 @@ const FoldVal = struct {
     _pad: u8,
 };
 
-// The fold table keeps the EXACT folded value: a dense array of 16-B `FoldVal`
-// records plus a rare side pool for integers wider than 64 magnitude bits. Node
+// The fold table keeps the EXACT folded value: a dense array of `FoldVal`
+// records (12 B / align 4 in the emitted C, allocated at a 16-byte stride; see
+// above) plus a rare side pool for integers wider than 64 magnitude bits. Node
 // -> dense slot in `slots`; `Get` reconstructs the value BY VALUE, so no
 // consumer ever retains a pointer into `vals`/`wide_ints` and the `wide_ints`
 // pool is addressed by u32 index (growth cannot dangle a stored value). Both
