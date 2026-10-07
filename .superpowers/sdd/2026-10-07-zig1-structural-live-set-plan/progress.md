@@ -28,3 +28,7 @@ Seed v92 (archive md5 `3cacdd44df75c0ce96abfd51af93f928`).
 Task 0: complete (commit c8b87daa, baseline adopted verbatim; no sf/src change, no measurement).
 Task 1: complete (commit 5ea9b91d, interner analysis; review clean after 1 fix round — gap corrected to 1,040K).
 Task 2: complete (R1 u16 bucket slots + wide fallback/migration, R2 drop InternEntry.hash; dump-MD5 8/8 delta 0, corpus 923/58/116, stdlib 266/0, examples 24/24, goldens 4/4, markers byte-identical; RSS median 17,096K (-332K) -> STOP-GATE NOT met, proceed to Task 3).
+Task 2: complete (commits 5ea9b91d..25809d0b, review clean; new fixed point 9cdcc97bb8dc0a0b94e29b9e981e5376; dump-MD5 8/8 delta 0; corpus 923/58/116; stdlib 266/0; examples 24/24; markers identical; RSS median ~17.08-17.10 MB ~-282..-332K; pool -491K). STOP-GATE NOT met (17,096K > 16,384K) -> proceed to Task 3.
+Task 2: minor (deferred): sf/src/string_interner.zig migration allocates count=buckets_len but does not update buckets_capacity (safe under cap==len invariant; latent).
+Task 2: minor (deferred): sf/docs/tech_docs/00_shared_infra.md still documents buckets_items:[*]u32 and deleted ensureCapacityBuckets/appendBucket -> update at Task 7 closeout.
+Task 2: minor (deferred): R1 wide fallback unexercised by any fixture (correct by static reasoning only).
