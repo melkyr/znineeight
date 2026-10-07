@@ -17,7 +17,7 @@ Seed v92 (archive md5 `3cacdd44df75c0ce96abfd51af93f928`).
 ## Todos
 - [x] Task 0 baseline adoption
 - [x] Task 1 interner investigate
-- [ ] Task 2 interner fix (+STOP-GATE)
+- [x] Task 2 interner fix (+STOP-GATE)
 - [ ] Task 3 type-registry investigate
 - [ ] Task 4 type-registry fix (+STOP-GATE)
 - [ ] Task 5 comptime investigate
@@ -26,3 +26,5 @@ Seed v92 (archive md5 `3cacdd44df75c0ce96abfd51af93f928`).
 
 
 Task 0: complete (commit c8b87daa, baseline adopted verbatim; no sf/src change, no measurement).
+Task 1: complete (commit 5ea9b91d, interner analysis; review clean after 1 fix round — gap corrected to 1,040K).
+Task 2: complete (R1 u16 bucket slots + wide fallback/migration, R2 drop InternEntry.hash; dump-MD5 8/8 delta 0, corpus 923/58/116, stdlib 266/0, examples 24/24, goldens 4/4, markers byte-identical; RSS median 17,096K (-332K) -> STOP-GATE NOT met, proceed to Task 3).
