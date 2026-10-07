@@ -89,27 +89,29 @@ Arena layout is strictly linear within a segment — no free, no coalesce. Reset
 
 ---
 
-## 2. `string_interner.zig` — FNV-1a String Interner
+## 2. `string_interner.zig` — FNV-1a String Interner [updated: 2026-10-07 — zig1 structural live-set (Task 2): 2-byte `u16` bucket slots (with a `u32` wide fallback + one-time migration), the entry `hash` column dropped (`InternEntry` is now 12 B), and `ensureCapacityBuckets`/`appendBucket` removed]
 
 ### Structs
 
-**`InternEntry`** — Hash table entry. `text` (slice into arena), `hash` (FNV-1a), `next` (open-chaining link to next entry in same bucket). [inference]
+**`InternEntry`** — Hash table entry. `text` (slice into arena), `next` (open-chaining link to next entry in same bucket). The stored `hash` column was dropped in Task 2 (search recomputes `fnv1a` only on rehash); the layout is `{ text 8 B, next 4 B }` = **12 B**, align 4. [inference]
 
-**`StringInterner`** — Interner state. Separate arrays for buckets (`buckets_items: [*]u32`, bucket index → entry ID, plus `buckets_len`/`buckets_capacity`) and entries (`entries_items: [*]InternEntry`, plus `entries_len`/`entries_capacity`). Entry 0 is the sentinel (empty string, hash 0, next 0). Two `*Sand` allocator references: `entries_allocator` and `allocator` (both point to the same arena — permanent). [inference]
+**`StringInterner`** — Interner state. Buckets live in a width-dispatched pair of arrays: `buckets_narrow_items: [*]u16` (2 B/slot) or `buckets_wide_items: [*]u32` (4 B/slot), selected by `buckets_is_wide`; a slot stores an entry index with `0` = empty. `buckets_len` = slot count, `buckets_capacity` = allocated slot capacity. Entries: `entries_items: [*]InternEntry`, plus `entries_len`/`entries_capacity`. Entry 0 is the sentinel (empty string, next 0). Two `*Sand` allocator references: `entries_allocator` and `allocator` (both point to the same arena — permanent). [inference]
 
 ### Function Walkthrough
 
 | Function | Vis. | Purpose | Called By | Calls | Key Decisions | Markers |
 |----------|------|---------|-----------|-------|---------------|---------|
-| `ensureCapacityBuckets` | private | Grow bucket array to at least `new_capacity`. Doubles on growth, min 8. Allocates via `sandAlloc`, copies old entries. | `stringInternerGrowBuckets` | `alloc_mod.sandAlloc` | Growth factor 2x, min 8. Raw memory, no initialization of new slots (caller handles). | None [inference] |
-| `ensureCapacityEntries` | private | Same pattern but for `InternEntry` arrays. Element size = 16 bytes (text ptr + hash u32 + next u32 + padding). | `appendEntry` | `alloc_mod.sandAlloc` | Same 2x growth, min 8. | None [inference] |
-| `appendBucket` | private | Ensure capacity for +1, then append `value`. | (now unused — `stringInternerInit` pre-sizes buckets) | `ensureCapacityBuckets` | Wraps ensure+store+increment pattern. | None [inference] |
+| `internerBucketsAllocNarrow` | private | Allocate `count` 2-byte bucket slots (align 2) and store as `buckets_narrow_items`. | `stringInternerInit`, `stringInternerGrowBuckets` | `alloc_mod.sandAlloc` | Narrow (u16) slot width. | None [inference] |
+| `internerBucketsAllocWide` | private | Allocate `count` 4-byte bucket slots (align 4) and store as `buckets_wide_items`. | `stringInternerInit`, `stringInternerMakeBucketsWide`, `stringInternerGrowBuckets` | `alloc_mod.sandAlloc` | Wide (u32) fallback. | None [inference] |
+| `internerBucketGet` / `internerBucketSet` / `internerBucketZero` | private | Width-dispatched bucket slot read/write/zero (`buckets_is_wide` selects the array; `Set` `@intCast`s to u16 on the narrow path). | `stringInternerIntern`, `stringInternerGrowBuckets`, `stringInternerInit` | (none) | One representation for all bucket access; keeps `u16` stores explicit. | None [inference] |
+| `ensureCapacityEntries` | private | Grow `InternEntry` array to at least `new_capacity`. Doubles on growth, min 8. Allocates via `sandAlloc`, copies old entries. | `appendEntry` | `alloc_mod.sandAlloc` | Element size = `@sizeOf(InternEntry)` (12 B since Task 2). | None [inference] |
 | `appendEntry` | private | Ensure capacity for +1, then append `InternEntry`. | `stringInternerIntern` | `ensureCapacityEntries` | Wraps ensure+store+increment pattern. | None [inference] |
-| `stringInternerInit` | pub | Create interner with `bucket_count` initial buckets. Pre-sizes buckets (4 B each, zeroed) and entries (16 B each) in single allocations instead of the growth chain; entry capacity is `max(bucket_count/2, 8)` to land near the load-factor 0.5 bound without growth. Entry 0 is the sentinel (empty string, hash 0, next 0). | `main.zig` setup, test harness | `alloc_mod.sandAlloc` | Entry 0 reserved as null/sentinel. All buckets initially empty. | None [inference] |
-| `stringInternerIntern` | pub | Intern a string. Hash via `fnv1a`, find bucket, walk chain for match. If found, return existing ID. Otherwise: copy to arena, append entry (head-insert into bucket chain), grow buckets if load factor > 0.5. Emits markers for trace. | All phases needing string dedup. Called by `diagnosticCollectorAdd`, `diagnosticBuilderMakeMsg`, lexer/parser. | `hash_mod.fnv1a`, `mem_mod.mem_eql`, `stringInternerCopyToArena`, `appendEntry`, `stringInternerGrowBuckets`, `pal.markerWriteInt`, `pal.measureMarkerWriteInt` | FNV-1a hash. Open chaining. Bucket doubling at 50% load. String copied to arena (no original ref kept). Grows to 8 buckets if started empty. | `INT:tl` (text len), `INT:t0` (first char), `INT:dup` (existing ID) via `markerWriteInt`; `INT:new` (new ID) via `measureMarkerWriteInt` [inference] |
+| `stringInternerInit` | pub | Create interner with `bucket_count` initial buckets. Selects the narrow `u16` array unless `bucket_count > NARROW_BUCKET_MAX_BC` (131,070). Pre-sizes buckets and entries in single allocations instead of the growth chain; entry capacity is `max(bucket_count/2, 8)` to land near the load-factor 0.5 bound without growth. Entry 0 is the sentinel (empty string, next 0). | `main.zig` setup, test harness | `internerBucketsAllocNarrow`/`Wide`, `internerBucketZero`, `alloc_mod.sandAlloc` | Entry 0 reserved as null/sentinel. All buckets initially empty. Narrow slots safe while entry capacity ≤ 65,535. | None [inference] |
+| `stringInternerIntern` | pub | Intern a string. Hash via `fnv1a`, find bucket, walk chain for match. If found, return existing ID. Otherwise: if the new entry index would cross `MAX_U16_ENTRY_INDEX` (65,535) on the narrow path, call `stringInternerMakeBucketsWide`; copy to arena, append entry (head-insert into bucket chain), grow buckets if load factor > 0.5. Emits markers for trace. | All phases needing string dedup. Called by `diagnosticCollectorAdd`, `diagnosticBuilderMakeMsg`, lexer/parser. | `hash_mod.fnv1a`, `mem_mod.mem_eql`, `stringInternerCopyToArena`, `appendEntry`, `internerBucketGet`/`Set`, `stringInternerMakeBucketsWide`, `stringInternerGrowBuckets`, `pal.markerWriteInt`, `pal.measureMarkerWriteInt` | FNV-1a hash. Open chaining. Bucket doubling at 50% load. String copied to arena (no original ref kept). Grows to 8 buckets if started empty. Lookup compares `mem_eql` only (no stored-hash fast reject). | `INT:tl` (text len), `INT:t0` (first char), `INT:dup` (existing ID) via `markerWriteInt`; `INT:new` (new ID) via `measureMarkerWriteInt` [inference] |
 | `stringInternerGet` | pub | Lookup interned string by ID. Indexes into entries array, returns `entry.text`. ID 0 returns the empty-string sentinel. | `diagnosticBuilderMakeMsg`, `type_resolver.zig`, `analyzer.zig`, `symbol_registrator.zig`, import resolver | (none) | O(1) lookup. | None [inference] |
 | `stringInternerCopyToArena` | private | Copy string bytes into arena (byte-level alignment=1). Returns raw ptr. | `stringInternerIntern` | `alloc_mod.sandAlloc` | Byte copy, no null terminator. | None [inference] |
-| `stringInternerGrowBuckets` | private | Set `buckets_len=0`, ensure capacity for `new_bucket_count`, zero all buckets, then walk entries 1..N, computing new bucket index = hash % new_count, setting entry.next to current bucket head and bucket head to entry ID. | `stringInternerIntern` (when load > 0.5) | `ensureCapacityBuckets` | Full rehash of all entries. Old bucket array leaked (arena allocated, never freed). | None [inference] |
+| `stringInternerMakeBucketsWide` | private | One-time migration of a narrow (u16) bucket array to a wide (u32) array of the same count: allocate+zero the u32 slots, then rehash entries 1..N (recompute `fnv1a(entry.text)`, relink `next`). No-op if already wide. | `stringInternerIntern` (entry index > 65,535) | `internerBucketsAllocWide` | Rehash recomputes the hash (the stored column is gone). | None [inference] |
+| `stringInternerGrowBuckets` | private | Set `buckets_len=0`, grow capacity if needed (2x, min 8) in the CURRENT width, zero all `new_count` slots, then walk entries 1..N, computing new bucket index = `hash % new_count`, relinking each chain via the width-dispatched accessors. | `stringInternerIntern` (when load > 0.5) | `internerBucketsAllocNarrow`/`Wide`, `internerBucketZero`/`Get`/`Set`, `hash_mod.fnv1a` | Full rehash; recomputes `fnv1a(entry.text)` (no stored hash). Old bucket array leaked (arena allocated, never freed). | None [inference] |
 
 ### Data Flow — Interning
 
@@ -117,14 +119,15 @@ Arena layout is strictly linear within a segment — no free, no coalesce. Reset
 stringInternerIntern("foo"):
   1. hash = fnv1a("foo")           -- 32-bit FNV-1a
   2. if buckets_len == 0 → grow to 8 buckets
-  3. bucket = hash % buckets_len    -- index into bucket array
+  3. bucket = hash % buckets_len    -- index into bucket array (narrow u16 or wide u32)
   4. Walk chain: entries[buckets[bucket]].next...
-  5. If match (hash + mem_eql) → return existing ID
+  5. If mem_eql(entry.text, "foo") → return existing ID
   6. If no match:
-     a. Copy "foo" to arena via sandAlloc
-     b. appendEntry with .text=copied, .hash=hash, .next=current bucket head
-     c. buckets[bucket] = new entry ID
-     d. If (entry_count * 2 > bucket_count) → grow buckets (double + rehash)
+     a. if narrow and new_idx > 65,535 → stringInternerMakeBucketsWide (u16 → u32, rehash)
+     b. Copy "foo" to arena via sandAlloc
+     c. appendEntry with .text=copied, .next=current bucket head
+     d. buckets[bucket] = new entry ID (width-dispatched store)
+     e. If (entry_count * 2 > bucket_count) → grow buckets (double + rehash)
   7. Return new entry ID
 ```
 

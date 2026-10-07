@@ -18,11 +18,11 @@ Seed v92 (archive md5 `3cacdd44df75c0ce96abfd51af93f928`).
 - [x] Task 0 baseline adoption
 - [x] Task 1 interner investigate
 - [x] Task 2 interner fix (+STOP-GATE)
-- [ ] Task 3 type-registry investigate
+- [x] Task 3 type-registry investigate
 - [x] Task 4 type-registry fix (+STOP-GATE)
-- [ ] Task 5 comptime investigate
+- [x] Task 5 comptime investigate
 - [x] Task 6 comptime fix
-- [ ] Task 7 closeout + seed v93
+- [x] Task 7 closeout + seed v93
 
 
 Task 0: complete (commit c8b87daa, baseline adopted verbatim; no sf/src change, no measurement).
@@ -47,3 +47,11 @@ Task 5: minor (deferred): R2 mechanism geometric sum 393,168B vs correct 785,664
 Task 6: complete (R1 FoldVal 16B tag {small,kind,neg,wide} + index-addressed wide_ints[*]ComptimeInt for len>2; R2 source-hint pre-size via comptimeFoldTableInitSized + u32ToU32MapInitCap, doubling kept as soft floor; main.zig:199 fold_hint=source.len/9 -> cap 16,384). New fixed point/binary md5 44b8e7fff5a115743ab5c62adb849555; dump-MD5 8/8 delta 0; corpus 923/58/116/0/0; stdlib 266/0; examples 24/24; goldens 4/4; markers byte-identical in-session (48851 lines, diff 0); track-memory pool 14074K->11965K. RSS 8-pair median base 16,904K / new 16,174K (-730K). STOP-GATE MET (16,174K <= 16,384K) -> Task 7 closeout.
 Task 6: wide-path verified with /tmp fixtures (1<<70, u64max*3, 20-value wide_ints growth): old vs new identical error[3000]/emitted .c; small neg/zero/bool/float round-trip fixtures byte-identical.
 Task 6: minor (deferred): stop-gate margin ~210K (1/8 new samples 16,432K); pool drop -2109K exceeds ~1.8MB fold carve, not independently isolated (no instrumentation).
+Task 6: complete (commits 45ecd226..d69f10e7, review clean; new fixed point 44b8e7fff5a115743ab5c62adb849555; FoldVal 16B + wide side pool + pre-size; dump-MD5 8/8; corpus 923/58/116; stdlib 266/0; examples 24/24; markers identical; pool 14074K->11965K; wide path exercised (gdb 20 encodes/20 decodes, pool 0->16->32); RSS median 16,174K (impl) / 15,938K (rev)). STOP-GATE MET (<=16,384K) -> STOP fixes, go to Task 7 closeout.
+Task 6: minor (deferred): report lists c.zig (u64max*3) as wide path but it compiles rc0 via paren_expr; wide path genuinely proven by h.zig + d/e/f/g (gdb) instead.
+Task 6: minor (deferred): _pad never initialized (stored, never read/compared); foldCapFromHint can spin on >2.4GB source (unreachable).
+Task 7: complete (re-verify at HEAD d69f10e7: fresh seed rebuild /tmp/struct_seed7 -> hop1==hop2==44b8e7fff5a115743ab5c62adb849555; dump-MD5 8/8; corpus 1097=923/58/116/0/0; stdlib 266/0; examples 24/24; goldens gol/lisp/json/mud all pinned; markers byte-identical in-session 48851/48851 diff 0; self-compile rc0 48c/48h; final RSS 5-run median 16,152K <= 16,384K; pool 11,965K/type_db 249K). Fixed points recorded c8b87daa/25809d0b/da376da0/d69f10e7 with zero dump-MD5 delta at every fix.
+Task 7: docs updated (QUICK_REF seed v93 + self-compile figures; tech_docs 00_shared_infra §2 interner; 03_type_resolution Type 16B; INDEX Table A Type; 04_comptime_eval FoldVal storage).
+Task 7: seed rotated v92->v93 (archive md5 3cacdd44df75c0ce96abfd51af93f928 -> 84d295ae04e20c4b722ed219bd9a74f1; CHANGELOG v93 HEAD d69f10e7 fixed point 44b8e7ff...; gen 45c+46h 9803909B).
+Task 7: minor (deferred): two Task-4-edited test binaries (test_semantic_bin.zig, test_sym_reg_bin.zig) NOT runtime-verified — build_test.sh 0/9 (zig0 retired) and a direct seed-compiler build both fail on pre-existing semanticAnalyzerInit 8-arg vs 17-arg drift (error[3061]), not on the narrowed Type columns.
+Task 7: deferred structures recorded (AST window/value-pool representation, hash-map single interleaved array, one-use retention: classify work arrays + symbol registry).

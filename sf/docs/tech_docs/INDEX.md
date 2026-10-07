@@ -1484,7 +1484,7 @@ primitive while `FIRST_USER_TYPE` read 20); the source constant is left unchange
 | `AstStore` | ast.zig | Disk-backed node + payload blocks; `AstValuePool` for extra_children/extra_ranges/identifiers/int_values; growable arrays for float_values/string_values/fn_protos; block_table, 8 resident slots, spill |
 | `AstValuePool` | ast.zig | Write-once append-only disk-backed pool (4/8-byte elements) with resident tail block + 8-slot fault-in cache |
 | `FnProto` | ast.zig | Function prototype (name_id, params_start, params_count, call_conv, return_type_node) |
-| `Type` | type_registry.zig | 32-byte runtime type descriptor (kind, state, flags, is_signed, width_bits, size, alignment, name_id, c_name_id, module_id, payload_idx) |
+| `Type` | type_registry.zig | 16-byte runtime type descriptor (size, name_id u16, payload_idx u16, kind, module_id u8, flags u8, state u8, iw u8, alignment u8) |
 | `TypeKind` | type_registry.zig | 44 variants (enum u8: 0-43) |
 | `TypeRegistry` | type_registry.zig | Type storage + per-kind payload arrays + ptr/slice/optional/array/eu/es/name caches |
 | `TypeId` | type_registry.zig | Alias for `u32` |
