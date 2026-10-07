@@ -773,6 +773,7 @@ fn phase_StaticAnalyzers(ctx: *CompilerContext) void {
                 .source_file_id = mods[mi].source_file_id,
             };
             az_mod.runAllAnalyzers(&ac, ast_root);
+            sm_mod.sourceManagerResetFaults(ctx.source_man);
         }
     }
 }
