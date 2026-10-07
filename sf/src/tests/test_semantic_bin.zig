@@ -237,7 +237,7 @@ fn testResolveStructField() void {
     var stid = type_mod.typeRegistryRegisterNamedType(&typereg, @intCast(u32, 0), snid, type_mod.TypeKind.struct_type);
 
     var ty = typereg.types_items[@intCast(usize, stid)];
-    ty.payload_idx = pidx;
+    ty.payload_idx = @intCast(u16, pidx);
     typereg.types_items[@intCast(usize, stid)] = ty;
 
     var store = ast_mod.astStoreInit(&arena);
@@ -344,7 +344,7 @@ fn testResolveFieldNotFound() void {
     var snid = interner_mod.stringInternerIntern(&interner, sn);
     var stid = type_mod.typeRegistryRegisterNamedType(&typereg, @intCast(u32, 0), snid, type_mod.TypeKind.struct_type);
     var ty = typereg.types_items[@intCast(usize, stid)];
-    ty.payload_idx = pidx;
+    ty.payload_idx = @intCast(u16, pidx);
     typereg.types_items[@intCast(usize, stid)] = ty;
 
     var store = ast_mod.astStoreInit(&arena);

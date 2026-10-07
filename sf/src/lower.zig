@@ -1267,7 +1267,7 @@ fn printFmtPointeeNameLen(reg: *type_mod.TypeRegistry, tid: u32, depth: u32, len
     if (k == type_mod.TypeKind.c_char_type) { len.* += 6; return true; }
     if (k == type_mod.TypeKind.arb_uint_type or k == type_mod.TypeKind.arb_int_type) {
         len.* += 1;  // "u" / "i"
-        len.* += printFmtU32DecLen(@intCast(u32, ty.width_bits));
+        len.* += printFmtU32DecLen(@intCast(u32, ty.iw));
         return true;
     }
     if (k == type_mod.TypeKind.bool_type) { len.* += 4; return true; }

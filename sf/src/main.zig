@@ -187,6 +187,12 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     };
      var interner_bc: u32 = @intCast(u32, source.len) + @intCast(u32, source.len / @intCast(usize, 4));
      if (interner_bc < @intCast(u32, 4096)) interner_bc = @intCast(u32, 4096);
+     // Task 4 R1: source-derived soft floors for the type registry pre-size.
+     // Hints are a floor, NEVER a hard cap — growth resumes if exceeded.
+     var type_hint: u32 = @intCast(u32, source.len / @intCast(usize, 32));
+     if (type_hint < @intCast(u32, 4096)) type_hint = @intCast(u32, 4096);
+     var name_hint: u32 = @intCast(u32, source.len / @intCast(usize, 10));
+     if (name_hint < @intCast(u32, 2048)) name_hint = @intCast(u32, 2048);
      var interner = interner_mod.stringInternerInit(&compiler_alloc.permanent, interner_bc);
      var source_man = sm_mod.sourceManagerInit(&compiler_alloc.permanent);
      var diag = diag_mod.diagnosticCollectorInit(&compiler_alloc.permanent, &source_man, &interner);
@@ -198,7 +204,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
      var type_db_arena: alloc_mod.GrowableSand = undefined;
      var type_db_name: []const u8 = "type_db";
      alloc_mod.growableSandInit(&type_db_arena, alloc_mod.poolPtr(), 4096, type_db_name);
-     var typereg = type_mod.typeRegistryInit(&type_db_arena.view, &interner);
+     var typereg = type_mod.typeRegistryInitSized(&type_db_arena.view, &interner, type_hint, name_hint);
      type_mod.typeRegistryRegisterPrimitives(&typereg);
      var store = ast_mod.astStoreInit(&compiler_alloc.module);
      var ast_spill_path: [512]u8 = undefined;

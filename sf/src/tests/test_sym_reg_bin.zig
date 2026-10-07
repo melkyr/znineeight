@@ -248,7 +248,7 @@ fn testEnumLayout(interner: *interner_mod.StringInterner) void {
     var en_payload_idx = tr.en_len - 1;
     var tid = type_mod.typeRegistryRegisterNamedType(&tr, @intCast(u32, 0), nid, TypeKind.enum_type);
     var ety = tr.types_items[@intCast(usize, tid)];
-    ety.payload_idx = @intCast(u32, en_payload_idx);
+    ety.payload_idx = @intCast(u16, en_payload_idx);
     tr.types_items[@intCast(usize, tid)] = ety;
     var resolver = type_resolver.typeResolverInit(&tr, undefined, &a);
     var dg = sym_reg.depGraphInit(&a);
@@ -273,7 +273,7 @@ fn testUnionLayout(interner: *interner_mod.StringInterner) void {
     var nid = interner_mod.stringInternerIntern(interner, s);
     var tid = type_mod.typeRegistryRegisterNamedType(&tr, @intCast(u32, 0), nid, TypeKind.union_type);
     var uty = tr.types_items[@intCast(usize, tid)];
-    uty.payload_idx = @intCast(u32, un_payload_idx);
+    uty.payload_idx = @intCast(u16, un_payload_idx);
     tr.types_items[@intCast(usize, tid)] = uty;
     var resolver = type_resolver.typeResolverInit(&tr, undefined, &a);
     var dg = sym_reg.depGraphInit(&a);
@@ -298,7 +298,7 @@ fn testTaggedUnionLayout(interner: *interner_mod.StringInterner) void {
     var nid = interner_mod.stringInternerIntern(interner, s);
     var tid = type_mod.typeRegistryRegisterNamedType(&tr, @intCast(u32, 0), nid, TypeKind.tagged_union_type);
     var tuty = tr.types_items[@intCast(usize, tid)];
-    tuty.payload_idx = @intCast(u32, tu_payload_idx);
+    tuty.payload_idx = @intCast(u16, tu_payload_idx);
     tr.types_items[@intCast(usize, tid)] = tuty;
     var resolver = type_resolver.typeResolverInit(&tr, undefined, &a);
     var dg = sym_reg.depGraphInit(&a);
@@ -371,7 +371,7 @@ fn testTupleLayout(interner: *interner_mod.StringInterner) void {
     var nid = interner_mod.stringInternerIntern(interner, s);
     var tid = type_mod.typeRegistryRegisterNamedType(&tr, @intCast(u32, 0), nid, TypeKind.tuple_type);
     var tty = tr.types_items[@intCast(usize, tid)];
-    tty.payload_idx = @intCast(u32, tup_payload_idx);
+    tty.payload_idx = @intCast(u16, tup_payload_idx);
     tr.types_items[@intCast(usize, tid)] = tty;
     var resolver = type_resolver.typeResolverInit(&tr, undefined, &a);
     var dg = sym_reg.depGraphInit(&a);
@@ -394,7 +394,7 @@ fn testTupleEmptyLayout(interner: *interner_mod.StringInterner) void {
     var nid = interner_mod.stringInternerIntern(interner, s);
     var tid = type_mod.typeRegistryRegisterNamedType(&tr, @intCast(u32, 0), nid, TypeKind.tuple_type);
     var tty = tr.types_items[@intCast(usize, tid)];
-    tty.payload_idx = @intCast(u32, tup_payload_idx);
+    tty.payload_idx = @intCast(u16, tup_payload_idx);
     tr.types_items[@intCast(usize, tid)] = tty;
     var resolver = type_resolver.typeResolverInit(&tr, undefined, &a);
     var dg = sym_reg.depGraphInit(&a);
@@ -983,7 +983,7 @@ fn testStructLayout(interner: *interner_mod.StringInterner) void {
     var tid = type_mod.typeRegistryRegisterNamedType(&tr, @intCast(u32, 0), nid, TypeKind.struct_type);
 
     var sty = tr.types_items[@intCast(usize, tid)];
-    sty.payload_idx = @intCast(u32, st_payload_idx);
+    sty.payload_idx = @intCast(u16, st_payload_idx);
     tr.types_items[@intCast(usize, tid)] = sty;
 
     var resolver = type_resolver.typeResolverInit(&tr, &diag, &a);
@@ -1052,11 +1052,11 @@ fn testCircularCycle(interner: *interner_mod.StringInterner) void {
     var b_sp_idx = tr.st_len - 1;
 
     var aty = tr.types_items[@intCast(usize, a_tid)];
-    aty.payload_idx = @intCast(u32, a_sp_idx);
+    aty.payload_idx = @intCast(u16, a_sp_idx);
     tr.types_items[@intCast(usize, a_tid)] = aty;
 
     var bty = tr.types_items[@intCast(usize, b_tid)];
-    bty.payload_idx = @intCast(u32, b_sp_idx);
+    bty.payload_idx = @intCast(u16, b_sp_idx);
     tr.types_items[@intCast(usize, b_tid)] = bty;
 
     var dg = sym_reg.depGraphInit(&a);

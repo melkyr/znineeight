@@ -1043,8 +1043,9 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
         var o_pref: []const u8 = "Opt_";
         return syntheticTypeName(mangler, o_pref, o_empty, o_dig[o_ds..@intCast(usize, 9)], @intCast(usize, 63));
     }
-    if (ty.c_name_id != 0) {
-        return interner_mod.stringInternerGet(mangler.interner, ty.c_name_id);
+    var c_nid = type_mod.typeRegistryCNameIdGet(reg, tid);
+    if (c_nid != 0) {
+        return interner_mod.stringInternerGet(mangler.interner, c_nid);
     }
     if (ty.kind == TypeKind.error_union_type) {
         var ep = reg.eu_items[@intCast(usize, ty.payload_idx)];
@@ -1121,7 +1122,7 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
             var pref: []const u8 = "ES_";
             var pi: usize = @intCast(usize, 0);
             while (pi < pref.len and p < @intCast(usize, 63)) : (pi += @intCast(usize, 1)) { buf[p] = pref[pi]; p += @intCast(usize, 1); }
-            var pl = ty.payload_idx;
+            var pl: u32 = @intCast(u32, ty.payload_idx);
             var di: usize = p;
             while (pl > @intCast(u32, 0) or di == p) : (di += @intCast(usize, 1)) {
                 buf[di] = @intCast(u8, @intCast(u32, '0') + (pl % @intCast(u32, 10)));
@@ -2400,7 +2401,7 @@ fn emitErrorUnionType(emitter: *C89Emitter, tid: u32) void {
         var s3: []const u8 = ";\n";
         bufferedWriterWrite(&emitter.writer, s3);
     }
-    reg.types_items[@intCast(usize, tid)].c_name_id = interner_mod.stringInternerIntern(emitter.interner, mangled_c_name);
+    type_mod.typeRegistryCNameIdSet(reg, tid, interner_mod.stringInternerIntern(emitter.interner, mangled_c_name));
 }
 
 fn mangleLocalName(mangler: *NameMangler, interner: *StringInterner, name_id: u32) []const u8 {
@@ -5929,7 +5930,7 @@ fn zigPrintNameAppend(emitter: *C89Emitter, tid: u32, depth: u32, buf: *[kZigPri
         } else {
             if (!zigNamePut(buf, pos, "i")) return false;
         }
-        return zigNamePutU32(buf, pos, @intCast(u32, ty.width_bits));
+        return zigNamePutU32(buf, pos, @intCast(u32, ty.iw));
     }
     if (k == TypeKind.error_set_type) {
         if (@intCast(usize, ty.payload_idx) >= emitter.registry.es_len) return false;
