@@ -128,7 +128,12 @@ fn growableSandGrow(gs: *GrowableSand, view: *Sand, size: usize) bool {
     var new_size: usize = gs.last.size * 2; // capped doubling 4→8→16→…→2 MiB
     var max_segment: usize = @intCast(usize, 1 * 1024 * 1024);
     if (new_size > max_segment) new_size = max_segment;
-    if (size > new_size) new_size = size; // exact-fit final segment to the requested size
+    if (size * 4 <= old_size) {
+        new_size = size + size / 2;
+        if (new_size < 4096) new_size = 4096;
+    } else if (size > new_size) {
+        new_size = size;
+    }
     if (seg_free_head != null) {
         if (popFreeBestFit(new_size)) |seg| {
             var seg_cap: usize = seg.end;
