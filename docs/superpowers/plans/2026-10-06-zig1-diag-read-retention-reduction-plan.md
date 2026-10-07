@@ -91,6 +91,26 @@ reports (`docs/superpowers/plans/2026-10-06-zig1-nonast-memory-plan.md`).
 - [ ] **Step 3:** Commit `perf(allocator): bound diag_read segment tail (L6)`. **Gate:** battery
   byte-identical; pool falls; no other arena regresses beyond noise.
 
+### Task 3b: L6 re-design — a rule that lowers BOTH `pool` and RSS
+
+**Files:** Report: `.superpowers/sdd/2026-10-06-zig1-diag-read-retention-reduction-plan/task-3b-report.md`.
+
+Context: Task 3 R-c was reverted (`841be07c`) — it lowered `pool` (14,019 K) but **raised** RSS
+(~18,324 K vs the L3 baseline ~17,580 K). The binding spec's "L6 re-design (post-Task-3)" section
+governs. `pool` is the `-mm16` metric; **RSS is the real-hardware goal.**
+
+- [ ] **Step 1:** Read the spec's "L6 re-design" section. Starting from the current L3-only tree,
+  evaluate the candidate directions by **throwaway** measurement (one at a time; revert each with
+  `edit` before the next — never `git checkout`).
+- [ ] **Step 2:** Per candidate, measure `pool` (`--track-memory`), RSS (`/usr/bin/time -v`,
+  **median of ≥3**), the `arena <name>: grew` event count, and per-arena carve (esp. `source`,
+  `type_db`, `module`, `diag_read`); run the byte-identical battery (semantic markers **in-session**).
+- [ ] **Step 3:** Recommend a rule **iff** it satisfies the binding gate: `pool` ≤ 14,924 K AND
+  RSS ≤ ~17,580 K (within stated noise) AND battery byte-identical. Otherwise recommend **L3-only /
+  L6 NO-GO**.
+- [ ] **Step 4:** Write the report and commit `docs: diag_read retention plan — Task 3b L6 re-design`.
+  Do **not** commit a source rule — the operator approves the chosen rule before any L6 source lands.
+
 ### Task 4 (OPTIONAL / DEFERRED): L1 — line-index `u32` → `u16`/delta
 
 **Files:** `sf/src/source_manager.zig:163-178`. Implement ONLY if the operator requests it; ≤103 K

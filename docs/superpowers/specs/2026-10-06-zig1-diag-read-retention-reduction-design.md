@@ -87,3 +87,48 @@ clean. The chosen rule must be justified by measured per-arena carve + pool, byt
 - L2/L4/L5 (disconfirmed NO-GO by the spike); the exhausted allocator free-list levers (F-1/I-F1),
   M5 Token packing, I-COMPACT, S-INTERNER; the C89 back-end toolchain; the deferred logic-dedup
   Tasks 11–31 (not memory levers).
+
+## L6 re-design (post-Task-3): the rule MUST lower both `pool` and RSS
+
+### What Task 3 showed
+
+- Task 2 (L3 only): `-s0` `pool` **14,924 K**, RSS **~17,580 K**.
+- Task 3 R-c (small-request branch): `pool` **14,019 K** (−905 K) but RSS **~18,324 K** (+~0.7 MB) —
+  **rejected**. Cause: fragmentation (grew events 42→90; `source` began carving 1,157 K that was
+  previously free-list reuse; `type_db` split into 40 small segments).
+- R-b: pool 14,216 K, RSS ~18,336 K. R-a: pool 15,229 K (regresses), RSS ~17,412 K.
+- `pool` is the `-mm16` accountability metric; **RSS is the real-hardware goal.** A rule that wins
+  `pool` but loses RSS is not a fix.
+
+### Objective
+
+Find an L6 rule (or targeted fault-path change) that **lowers `pool` below the L3 baseline
+(14,924 K) AND does not raise RSS above the L3 baseline (~17,580 K)**, with the byte-identical
+battery. If no such rule exists, L3-only stands and L6 is NO-GO.
+
+### Must-measure signals (per candidate)
+
+`pool` (`--track-memory`); RSS (`/usr/bin/time -v`, **median of ≥3**); number of `arena <name>: grew`
+events; per-arena carve (esp. `source`, `type_db`, `module`, `diag_read`). Fragmentation is the
+failure mode to avoid, so the grew-event count and the `source`/`type_db` carve are first-class.
+
+### Candidate directions (evaluate by measurement; no exact-fit)
+
+- **Fragmentation-free bucketing:** instead of `1.5×request` (R-c), round a small-request segment up
+  to a coarse minimum (or a small fixed set of sizes) so many tiny `type_db`/`source` segments do not
+  appear.
+- **Targeted fault-path right-size (no global policy change):** at `source_manager.zig:161-174`,
+  reserve a diag_read segment sized `file_size + bounded_slack` (slack proportional, not exact) so the
+  16 B header + index land in the same segment, avoiding the global `growableSandGrow` change.
+- **Cap-only (R-b) re-evaluated on RSS**, only if a cap arm can avoid the `source`/`type_db`
+  fragmentation.
+- **R-e structural:** give the header+index their own small arena so the fault arena holds only
+  content, removing the cross-arena interplay.
+- **Investigate why R-c made `source` carve 1,157 K** (was reuse) — the segment-reuse ordering itself
+  may be the dominant RSS driver, and a rule that preserves reuse ordering could win both.
+
+### Gate (binding)
+
+Battery byte-identical (corpus diff-empty; goldens exact; stdlib 266/0; examples 24/24; dump-MD5 8/8;
+semantic markers identical **in-session**), AND `pool` ≤ 14,924 K, AND RSS ≤ ~17,580 K (within
+measurement noise, with a stated margin). Any candidate that raises RSS is NO-GO regardless of pool.
