@@ -43,28 +43,75 @@ pub const ComptimeVal = struct {
     float_bits: u64,
 };
 
-// Task 4 (Task 1 §6.2): the fold table keeps the EXACT folded value, not a
-// 64-bit pattern. Node -> slot in a dense `ComptimeVal` array; both live in the
-// module arena. Exact storage is required because the u64 pattern cannot
-// distinguish `-1` from `18446744073709551615`, and because a folded value
-// outside [i64 min, u64 max] must be rejected at the materialisation site
-// (Task 1 §8 risk 1) instead of silently vanishing from the table.
+// Task 6 R1: dense fold-table element, 16 B. The common case (a value whose
+// exact magnitude fits in 64 bits, i.e. `ComptimeInt.len <= 2`) is inlined as a
+// u64 magnitude plus a sign bit; a value needing more than 64 magnitude bits
+// lives in the rare `wide_ints` side pool and stores only its u32 index here.
+// `kind` mirrors KIND_INT/KIND_BOOL/KIND_FLOAT; for KIND_FLOAT `small` holds the
+// f64 bit pattern and the reconstructed integer is always zero. Rationale
+// (Task 5 §1.4): no self-compile fold stores more than 64 bits, so the 48-byte
+// `ComptimeVal`'s 256-bit magnitude is over-provision for the observed
+// population. `neg` is kept separately because a u64 two's-complement pattern
+// is ambiguous for `-1` vs `u64max`.
+const FoldVal = struct {
+    small: u64,
+    kind: u8,
+    neg: u8,
+    wide: u8,
+    _pad: u8,
+};
+
+// The fold table keeps the EXACT folded value: a dense array of 16-B `FoldVal`
+// records plus a rare side pool for integers wider than 64 magnitude bits. Node
+// -> dense slot in `slots`; `Get` reconstructs the value BY VALUE, so no
+// consumer ever retains a pointer into `vals`/`wide_ints` and the `wide_ints`
+// pool is addressed by u32 index (growth cannot dangle a stored value). Both
+// arrays live in the module arena.
 pub const ComptimeFoldTable = struct {
     slots: hash_mod.U32ToU32Map,
-    vals: [*]ComptimeVal,
+    vals: [*]FoldVal,
+    wide_ints: [*]ComptimeInt,
+    wide_len: usize,
+    wide_cap: usize,
     len: usize,
     capacity: usize,
     alloc: *alloc_mod.Sand,
 };
 
+fn foldCapFromHint(hint: usize) usize {
+    var cap: usize = @intCast(usize, 16);
+    while (cap < hint) { cap = cap * @intCast(usize, 2); }
+    return cap;
+}
+
 pub fn comptimeFoldTableInit(alloc: *alloc_mod.Sand) ComptimeFoldTable {
-    return ComptimeFoldTable{
+    return comptimeFoldTableInitSized(alloc, @intCast(usize, 0));
+}
+
+// Task 6 R2: source-derived pre-size. `hint` is a soft FLOOR, never a hard cap:
+// the slot map is seeded through the existing `u32ToU32MapInitCap`, `vals` is
+// carved once at the next power of two >= hint, and both fall back to their
+// normal doubling if an input exceeds the seed. A zero hint reproduces the
+// legacy zero-cap growth exactly (the test binaries' entry point).
+pub fn comptimeFoldTableInitSized(alloc: *alloc_mod.Sand, hint: usize) ComptimeFoldTable {
+    var t = ComptimeFoldTable{
         .slots = hash_mod.u32ToU32MapInit(alloc),
         .vals = undefined,
+        .wide_ints = undefined,
+        .wide_len = @intCast(usize, 0),
+        .wide_cap = @intCast(usize, 0),
         .len = @intCast(usize, 0),
         .capacity = @intCast(usize, 0),
         .alloc = alloc,
     };
+    if (hint > @intCast(usize, 0)) {
+        var cap = foldCapFromHint(hint);
+        t.slots = hash_mod.u32ToU32MapInitCap(alloc, hint);
+        var raw = alloc_mod.sandAlloc(alloc, @sizeOf(FoldVal) * cap, @intCast(usize, 8)) catch unreachable;
+        t.vals = @ptrCast([*]FoldVal, raw);
+        t.capacity = cap;
+    }
+    return t;
 }
 
 fn comptimeFoldTableGrow(self: *ComptimeFoldTable) void {
@@ -72,28 +119,85 @@ fn comptimeFoldTableGrow(self: *ComptimeFoldTable) void {
     var old_vals = self.vals;
     var new_cap: usize = @intCast(usize, 16);
     if (old_cap >= @intCast(usize, 16)) { new_cap = old_cap * @intCast(usize, 2); }
-    var raw = alloc_mod.sandAlloc(self.alloc, @sizeOf(ComptimeVal) * new_cap, @intCast(usize, 8)) catch unreachable;
-    var new_vals = @ptrCast([*]ComptimeVal, raw);
+    var raw = alloc_mod.sandAlloc(self.alloc, @sizeOf(FoldVal) * new_cap, @intCast(usize, 8)) catch unreachable;
+    var new_vals = @ptrCast([*]FoldVal, raw);
     var i: usize = 0;
     while (i < self.len) : (i += @intCast(usize, 1)) { new_vals[i] = old_vals[i]; }
     self.vals = new_vals;
     self.capacity = new_cap;
 }
 
+fn comptimeFoldTableGrowWide(self: *ComptimeFoldTable) void {
+    var old_cap = self.wide_cap;
+    var new_cap: usize = @intCast(usize, 16);
+    if (old_cap >= @intCast(usize, 16)) { new_cap = old_cap * @intCast(usize, 2); }
+    var raw = alloc_mod.sandAlloc(self.alloc, @sizeOf(ComptimeInt) * new_cap, @intCast(usize, 4)) catch unreachable;
+    var new_ints = @ptrCast([*]ComptimeInt, raw);
+    var i: usize = 0;
+    while (i < self.wide_len) : (i += @intCast(usize, 1)) { new_ints[i] = self.wide_ints[i]; }
+    self.wide_ints = new_ints;
+    self.wide_cap = new_cap;
+}
+
+// Encode an exact `ComptimeVal` into the 16-B dense record. Integer/bool values
+// with `len <= 2` inline; a wider integer is appended to the side pool.
+fn foldValEncode(self: *ComptimeFoldTable, v: ComptimeVal) FoldVal {
+    var fv: FoldVal = undefined;
+    fv.kind = v.kind;
+    if (v.kind == KIND_FLOAT) {
+        fv.small = v.float_bits;
+        fv.neg = @intCast(u8, 0);
+        fv.wide = @intCast(u8, 0);
+        return fv;
+    }
+    if (v.v.len > @intCast(u8, 2)) {
+        if (self.wide_len >= self.wide_cap) { comptimeFoldTableGrowWide(self); }
+        var idx = self.wide_len;
+        self.wide_ints[idx] = v.v;
+        self.wide_len = idx + @intCast(usize, 1);
+        fv.small = @intCast(u64, idx);
+        fv.neg = @intCast(u8, 0);
+        fv.wide = @intCast(u8, 1);
+        return fv;
+    }
+    var mag: u64 = @intCast(u64, 0);
+    if (v.v.len > @intCast(u8, 0)) { mag = @intCast(u64, v.v.mag[0]); }
+    if (v.v.len > @intCast(u8, 1)) { mag = mag | (@intCast(u64, v.v.mag[1]) << @intCast(u64, 32)); }
+    fv.small = mag;
+    fv.neg = @intCast(u8, 0);
+    if (v.v.neg and mag != @intCast(u64, 0)) { fv.neg = @intCast(u8, 1); }
+    fv.wide = @intCast(u8, 0);
+    return fv;
+}
+
+// Decode a 16-B record back to the exact `ComptimeVal` by value.
+fn foldValDecode(self: *ComptimeFoldTable, fv: FoldVal) ComptimeVal {
+    if (fv.kind == KIND_FLOAT) {
+        return ComptimeVal{ .v = ciZeroInt(), .kind = KIND_FLOAT, .float_bits = fv.small };
+    }
+    if (fv.wide == @intCast(u8, 1)) {
+        return ComptimeVal{ .v = self.wide_ints[@intCast(usize, fv.small)], .kind = fv.kind, .float_bits = @intCast(u64, 0) };
+    }
+    var ci = ciFromU64(fv.small);
+    if (fv.neg != @intCast(u8, 0) and !ciIsZero(ci)) { ci.neg = true; }
+    return ComptimeVal{ .v = ci, .kind = fv.kind, .float_bits = @intCast(u64, 0) };
+}
+
 pub fn comptimeFoldTablePut(self: *ComptimeFoldTable, node_idx: u32, v: ComptimeVal) void {
+    var fv = foldValEncode(self, v);
     if (hash_mod.u32ToU32MapGet(&self.slots, node_idx)) |slot| {
-        self.vals[@intCast(usize, slot)] = v;
+        self.vals[@intCast(usize, slot)] = fv;
         return;
     }
     if (self.len >= self.capacity) { comptimeFoldTableGrow(self); }
-    self.vals[self.len] = v;
+    self.vals[self.len] = fv;
     hash_mod.u32ToU32MapPut(&self.slots, node_idx, @intCast(u32, self.len));
     self.len += 1;
 }
 
 pub fn comptimeFoldTableGet(self: *ComptimeFoldTable, node_idx: u32) ?ComptimeVal {
     if (hash_mod.u32ToU32MapGet(&self.slots, node_idx)) |slot| {
-        if (@intCast(usize, slot) < self.len) { return self.vals[@intCast(usize, slot)]; }
+        if (@intCast(usize, slot) < self.len) { return foldValDecode(self, self.vals[@intCast(usize, slot)]); }
     }
     return null;
 }

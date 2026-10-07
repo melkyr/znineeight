@@ -21,7 +21,7 @@ Seed v92 (archive md5 `3cacdd44df75c0ce96abfd51af93f928`).
 - [ ] Task 3 type-registry investigate
 - [x] Task 4 type-registry fix (+STOP-GATE)
 - [ ] Task 5 comptime investigate
-- [ ] Task 6 comptime fix
+- [x] Task 6 comptime fix
 - [ ] Task 7 closeout + seed v93
 
 
@@ -41,3 +41,9 @@ Task 4: complete (commits 3b600121..da376da0, review clean; new fixed point 078e
 Task 4: minor (deferred): payload_idx u16 cast has NO ceiling guard (unchecked @intCast under -ffast; silent truncation if >65,535 payload entries; unreachable on all gates) - consider one-line guard or explicit waiver at Task 7.
 Task 4: minor (deferred): computed alignment writers unguarded (>255 truncation; implausible); report says test_sym_reg_bin "9 sites" but 8.
 Task 4: deferred action: run sf/scripts/build_test.sh at Task 7 to cover the two edited test binaries (test_semantic_bin.zig, test_sym_reg_bin.zig), outside the battery.
+Task 5: complete (commit 45ecd226, comptime analysis; review clean after 1 fix round). Top: R1 element 48->16B (small-int inline + rare wide-int side pool) ~0.25-0.38 MiB touched; R2 pre-size vals+slots ~0.9 MiB carve. High-water verdict: GENUINE lever (module reset only at main.zig:407; post-reset lir_read/emission reuse seg_free_head, no carve row).
+Task 5: minor (deferred): headline ">64-bit via << or overflowing *" omits `~` of a near-max u64 operand (<=65 bits, 3 limbs); non-material (closure has zero `const ~`).
+Task 5: minor (deferred): R2 mechanism geometric sum 393,168B vs correct 785,664B (pre-existing, unchanged).
+Task 6: complete (R1 FoldVal 16B tag {small,kind,neg,wide} + index-addressed wide_ints[*]ComptimeInt for len>2; R2 source-hint pre-size via comptimeFoldTableInitSized + u32ToU32MapInitCap, doubling kept as soft floor; main.zig:199 fold_hint=source.len/9 -> cap 16,384). New fixed point/binary md5 44b8e7fff5a115743ab5c62adb849555; dump-MD5 8/8 delta 0; corpus 923/58/116/0/0; stdlib 266/0; examples 24/24; goldens 4/4; markers byte-identical in-session (48851 lines, diff 0); track-memory pool 14074K->11965K. RSS 8-pair median base 16,904K / new 16,174K (-730K). STOP-GATE MET (16,174K <= 16,384K) -> Task 7 closeout.
+Task 6: wide-path verified with /tmp fixtures (1<<70, u64max*3, 20-value wide_ints growth): old vs new identical error[3000]/emitted .c; small neg/zero/bool/float round-trip fixtures byte-identical.
+Task 6: minor (deferred): stop-gate margin ~210K (1/8 new samples 16,432K); pool drop -2109K exceeds ~1.8MB fold carve, not independently isolated (no instrumentation).

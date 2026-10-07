@@ -193,6 +193,11 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
      if (type_hint < @intCast(u32, 4096)) type_hint = @intCast(u32, 4096);
      var name_hint: u32 = @intCast(u32, source.len / @intCast(usize, 10));
      if (name_hint < @intCast(u32, 2048)) name_hint = @intCast(u32, 2048);
+     // Task 6 R2: source-derived soft floor for the comptime fold table. The
+     // self-compile folds ~8-12k values; /9 lands `vals`/`slots` at cap 16,384
+     // so no abandoned geometric generation is carved. Floor, never a hard cap.
+     var fold_hint: u32 = @intCast(u32, source.len / @intCast(usize, 9));
+     if (fold_hint < @intCast(u32, 16)) fold_hint = @intCast(u32, 16);
      var interner = interner_mod.stringInternerInit(&compiler_alloc.permanent, interner_bc);
      var source_man = sm_mod.sourceManagerInit(&compiler_alloc.permanent);
      var diag = diag_mod.diagnosticCollectorInit(&compiler_alloc.permanent, &source_man, &interner);
@@ -307,7 +312,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
     var error_code_registry = hash_mod.u32ToU32MapInit(&compiler_alloc.emission);
      var call_arg_types = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
      var call_param_map = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
-     var comptime_folds = ce_mod.comptimeFoldTableInit(&compiler_alloc.module);
+     var comptime_folds = ce_mod.comptimeFoldTableInitSized(&compiler_alloc.module, @intCast(usize, fold_hint));
      var exported = hash_mod.u64ToU32MapInit(&compiler_alloc.emission);
      var suspending_fns = hash_mod.u64ToU32MapInit(&compiler_alloc.module);
      var frame_sizes = hash_mod.u64ToU32MapInit(&compiler_alloc.module);
