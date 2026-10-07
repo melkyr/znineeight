@@ -27,10 +27,11 @@ below is stated as **resident at `-s0` (touched pages)**; carved-but-unwritten t
 
 1. **Value range.** Every folded value *stored* at self-compile fits in **≤64 bits (≤2 limbs)**; the
    256-bit `mag[8]u32` is dead weight for **all** stored entries. Static producer analysis (§1.4)
-   shows the only ways to get a >64-bit stored value are `~` (a 256-bit complement), `<<` beyond
-   bit 64, or an overflowing `*`/`+` — and **none occurs** in the 45-module self-compile closure. The
-   full-width path must be *retained* for corpus/stdlib correctness, so the fix is a **narrow common
-   case + a rare wide side pool**, not a hard 64-bit truncation.
+   shows the only ways to get a >64-bit stored value are `<<` beyond bit 64, or an overflowing
+   `*`/`+` (`~x = -x-1` is exact and, for a ≤64-bit operand, is only ≤3 limbs / ≤65 bits — see
+   §1.4) — and **none occurs** in the 45-module self-compile closure. The full-width path must be
+   *retained* for corpus/stdlib correctness, so the fix is a **narrow common case + a rare wide side
+   pool**, not a hard 64-bit truncation.
 2. **High-water verdict.** The fold table is **NOT a pure high-water non-lever**: it lives in the
    `module` arena, which is reset *after* lowering (`main.zig:407`), and the post-reset
    emission/`lir_read` phases **carve ~0 new pool bytes** (they reuse `seg_free_head`; the Task-0
@@ -102,14 +103,14 @@ pub const ComptimeFoldTable = struct {
 | **live total at cap** | **933,888 B = 912 KiB** | brief's ≈912 KiB; confirmed |
 | `slots` cumulative carve (keys+values+occupied) | ≈**294,840 B** | `(4+4)·32760 + 1·32760`, geometric-to-16,384 |
 | **live+abandoned carve** | ≈**1,866,936 B ≈ 1,823 KiB** | vals + slots |
-| fold entry count `len` | **∈ [8,193, 12,288]** | 11 `vals` grows ⇒ `len > 8,192`; `slots` cap 16,384 ⇒ `count·4 < 16,384·3` |
+| fold entry count `len` | **∈ [8,193, 12,287]** | 11 `vals` grows ⇒ `len > 8,192`; `slots` cap 16,384 ⇒ `count·4 < 16,384·3` |
 | `@sizeOf` in closure | 172 | dominant fold producer (all u32-bounded) |
 | `@alignOf / @offsetOf / @bitSizeOf / @bitOffsetOf` | 12 / 11 / 10 / 11 | u32/u64-bounded |
 
 `len` is bounded, not measured directly: `vals` grew at `len == 8,192` (cap 8,192→16,384, the 11th
 call) and never made a 12th call (cap stayed 16,384 ⇒ `len < 16,384`); the inferred `slots` cap of
-16,384 requires `count ≤ 12,288` (at 12,289 the map grows to 32,768). So **≈8.2 K–12.3 K folded
-values** at self-compile.
+16,384 requires `count < 12,288` (grow fires at `count·4 ≥ 16,384·3`, so `count == 12,288` already
+grows to 32,768). So **≈8.2 K–12.29 K folded values** at self-compile.
 
 ### 1.4 Value-range evidence — how many stored values need the 256-bit `mag[8]u32`?
 
@@ -136,16 +137,19 @@ Producer widths:
   with `v = ciZeroInt()` (`len = 0`) and `float_bits: u64`.
 - **`const` arithmetic** (`:1829-1834` → `comptimeEvalBinOp`): exact `ciAdd`/`ciSub`/`ciMul`/`ciDivMod`/
   `ciBitAnd/Or/Xor`/`ciShl`/`ciShr`; operand magnitudes are themselves ≤64-bit by the rules above.
-  - `negate`/`~` (`:1789-1826`): `ciNeg` keeps ≤3 limbs; **`ciBitNot` always emits a full 8-limb
-    (256-bit) complement** (`ciMagNot` `:311-317`, then `ciNormalize`).
-  - `mul` of two u64 values and `shl` can exceed 64 bits in principle.
+  - `negate`/`~` (`:1789-1826`): `ciNeg` keeps ≤3 limbs; **`ciBitNot` is exact `~x = -x-1`
+    (`comptime_eval.zig:604-614`, via `ciMagAddOne`/`ciMagSubOne`), so a ≤64-bit operand yields at
+    most ≤3 limbs (≤65 bits), NOT a 256-bit complement.** `ciMagNot` (`:311-317`) is called only by
+    `ciBitAnd`/`ciBitOr` (`:558,578`), never by `~`.
 
-**Closure scan for the only >64-bit producers (`~`, `<<`, huge products):**
+**Closure scan for the producers that can reach the wide side (>64 bits): `<<`, overflowing
+`*`/`+`, and `~` of a wide value:**
 
 - `grep -rnE "=\s*~|const [A-Za-z_]+[^=]*=[^=]*~" sf/src/*.zig` → the **only** `const`-adjacent `~`
   is `c89_emit.zig:6875` `var clear_val: u32 = ~(win_mask << inbyte_lo) …`, which is a **`var`**
   (bit0 set) and therefore **skipped** by the `flags&1==0` gate. No module-scope or const
-  `const … = ~ …` exists in the closure ⇒ **0 stored 256-bit complements.**
+  `const … = ~ …` exists in the closure at all; and even a `~` of a ≤64-bit operand would be
+  `-x-1` (≤3 limbs), not a wide value. ⇒ **0 stored >64-bit values from `~`.**
 - Module-scope `const` shifts: none (all `<<` are inside functions / runtime `var`s).
 - Module-scope products are small: `DEV_MAX_MEM = 16*1024*1024` (2²⁴), `RELEASE_MAX_MEM` (2²⁴),
   `PER_FUNC_BUDGET = 512*1024` (2¹⁹), `DEFAULT_MAX_MEM_KB = 64*1024` (2¹⁶) — **no product approaches
@@ -154,12 +158,13 @@ Producer widths:
 **Conclusion.** At self-compile, **every stored `ComptimeVal` fits ≤64 bits (INT `len ≤ 2`), is a
 bool, or is a float** ⇒ **0 values require the full `mag[8]u32`**. The 32-byte magnitude is pure
 over-provision for the observed population. Because the compiler must stay exact on other inputs
-(`~small`, `1 << 100`-class, the documented bounded divergences), the stored representation must
+(`1 << 100`-class, the documented bounded divergences), the stored representation must
 keep a **rare wide side path** — exactly the brief's leading lead.
 
 *Caveat:* the exact value histogram cannot be measured here (no instrumentation permitted; no existing
 marker records `ComptimeInt.len`). The evidence is a **static producer + literal-typing** argument,
-which is complete for the `~`/shift/overflow classes that are the only routes to `len > 2`.
+which is complete for the `<<`/overflow classes that are the only routes to `len > 2` (`~` of a
+≤64-bit operand is bounded to ≤65 bits).
 
 ### 1.5 Arena wiring and the high-water crux (`allocator.zig:17-157`, `main.zig:310,407`)
 
@@ -178,7 +183,7 @@ which is complete for the `~`/shift/overflow classes that are the only routes to
   **no `emission` and no `lir_read` row** ⇒ in the self-compile the emission and LIR-stream phases
   carve **≈0 new pool bytes** — they run entirely out of `seg_free_head`/`scratch`.
 
-**Verdict.** Since (a) `module` is the largest single carved arena (5.25 MiB), (b) it is only reset
+**Verdict.** Since (a) `module` is the largest single carved arena (5.13 MiB = 5,382,144 B), (b) it is only reset
 *after* lowering, and (c) the post-reset emission phases add no new carve, the global `pool`/RSS
 high-water is reached **while the module arena — and therefore the fold table — is live**. Bytes not
 allocated into the fold table therefore do **not** raise the high-water, i.e. **shrinking the table
@@ -258,13 +263,16 @@ so growth cannot dangle a retained wide value (§1.6).
   side pool), `:83-92` (`Put` encodes), `:94-99` (`Get` decodes). Call sites are unchanged in shape
   (Put/Get signatures keep `ComptimeVal` by value), so §1.6's 3+6+helper sites need **no edits**
   beyond recompilation — but each must be re-verified against the encoder/decoder.
-- **Resident prize.** Element 48→16: **live (32 B × 16,384) = 524,288 B = 0.50 MiB**; cumulative
-  carve **(32 × 32,752) = 1,048,064 B ≈ 1.0 MiB**. The 16-B ceiling at cap 16,384 is 262,144 B
-  (0.25 MiB). RSS effect is discounted by the segment-ladder masking above (expect roughly half, i.e.
-  **≈0.2–0.5 MiB**, cf. Task-4's measured under-delivery). No change to `slots`.
+- **Resident prize (touched).** Element 48→16: the dense `vals` prefix is contiguous, so **touched
+  live saving = 32 B × `len` = 32 × 8,193…12,287 = 262,176…393,184 B ≈ 0.25–0.38 MiB**. The final
+  array's *carved* size (cap 16,384) falls 786,432 → 262,144 B (a 0.50 MiB carve reduction), but only
+  `len × 16` of that is touched; cumulative carve saving **32 × 32,752 = 1,048,064 B ≈ 1.0 MiB**.
+  RSS effect is discounted by the segment-ladder masking above (expect roughly half, i.e.
+  **≈0.1–0.3 MiB**, cf. Task-4's measured under-delivery). No change to `slots`.
 - **Risk.** **Med.** New encode/decode must preserve exact semantics for negative small ints
   (`neg` bit), zero-length (`-0` normalized to 0), `KIND_FLOAT` (`float_bits`), and bools; the wide
-  path must be exercised by a targeted fixture (a `const`/module-scope `~` or `1 << 70`) **before**
+  path must be exercised by a targeted fixture (a genuine wide value such as `1 << 70`, or `~` of a
+  wide u64-max-ish value) **before**
   trusting the battery. Index-based side pool ⇒ no dangling. Fully expressible in the seed model.
 - **Gate.** Common + a new wide-value fixture + markers byte-identical + `--track-memory mod`/`pool` +
   RSS median ≥3.
@@ -277,10 +285,13 @@ so growth cannot dangle a retained wide value (§1.6).
   **existing** `hash_mod.u32ToU32MapInitCap(alloc, hint)` (`util/hash.zig:39`, already used in
   emission and by Task-4 R1) and a new `comptimeFoldTableInitSized(alloc, hint)`.
 - **Sites.** `comptime_eval.zig:60-68` (init), `:70-81` (keep doubling as the soft fallback),
-  `main.zig:310` (thread a hint). Hint mirrors the landed interner/type-registry pre-size:
-  `max(4096, source.len/8)` ⇒ self-compile ≈12,580 ⇒ `vals`/`slots` cap 16,384.
-- **Resident prize.** No change to live bytes; **removes ≈933 KB of cumulative carve** (vals 785,664 B
-  + slots ≈147,384 B). RSS effect again sub-linear (segment-ladder masking); **≈0.1–0.3 MiB**.
+  `main.zig:310` (thread a hint). The **pattern mirrors** the landed source-length-seeded pre-sizes
+  (types `source.len/32`, names `source.len/10`, interner `len + len/4` — `main.zig:188-194`) without
+  reusing their formulas; a self-compile hint chosen to land `vals`/`slots` at cap 16,384.
+- **Resident prize (touched).** Every abandoned old array was **written through** before abandon
+  (`vals` grew whenever `len == cap`, so the old array was full), so its bytes are touched: **vals
+  785,664 B + slots ≈147,384 B ≈ 0.9 MiB of touched bytes removed**, and ≈0.93 MiB of cumulative
+  carve. RSS effect sub-linear (segment-ladder masking); **≈0.1–0.3 MiB**.
   `*InitCap` zeroes only `slots.occupied` (cap bytes, ≤ the abandoned occupied it replaces); `vals`
   is bump-allocated and **not zeroed**, so an unused tail is carved-but-not-resident.
 - **Risk.** **Low–Med.** Soft floor only: an undershoot resumes doubling (correct, residual waste
@@ -294,7 +305,8 @@ so growth cannot dangle a retained wide value (§1.6).
   folds). Move the f64 into the same rare side pool as R1 (or a parallel float pool), leaving
   `ComptimeVal` = `ComptimeInt (36) + kind (1)` ⇒ padded to **40 B**.
 - **Sites.** `comptime_eval.zig:40-44`, `:1477`, `:83-99`, and the read at `lower.zig:5814/5826`.
-- **Resident prize.** **live (8 × 16,384) = 131,072 B = 0.125 MiB**; cumulative 262,016 B. Small.
+- **Resident prize (touched).** **8 B × `len` = 8 × 8,193…12,287 = 65,544…98,296 B ≈ 0.06–0.09 MiB**;
+  carve 262,016 B. Small.
 - **Risk.** **Low.** It is a strict subset of R1's change; if R1 lands, R3 is subsumed. Only useful as
   a fallback if the full 16-B design is judged too risky.
 - **Gate.** Common + float fixtures (`@intToFloat`/`@floatCast`) byte-identical.
@@ -305,7 +317,8 @@ so growth cannot dangle a retained wide value (§1.6).
   (keys 4 + values 2 + occupied 1 = 7 B/slot) saves 2 B/slot. This is a **column narrowing**, not the
   deferred interleaved-single-array hash-map restructure.
 - **Sites.** `util/hash.zig` (new narrow map or generics), `comptime_eval.zig:53,62,84-90,95`.
-- **Resident prize.** **live (2 × 16,384) = 32,768 B**; cumulative ≈65 K. Very small.
+- **Resident prize (touched).** A hash map scatters writes across the whole table, so effectively all
+  cap pages are touched: **≈ 2 B × cap = 32,768 B**; cumulative ≈65 K. Very small.
 - **Risk.** **Low.** Slot ceiling 65,535 requires a fallback (entries could exceed it on huge input);
   keep the `u32` path.
 - **Gate.** Common + markers byte-identical.
@@ -361,20 +374,23 @@ so growth cannot dangle a retained wide value (§1.6).
 
 ### Ranking and honest total
 
-| rank | candidate | resident prize (live / cumulative carve) | confidence | risk |
+| rank | candidate | resident prize (touched / cumulative carve) | confidence | risk |
 |---:|---|---:|---|---|
-| 1 | **R1** narrow element 48→16 + wide side pool | **0.50 MiB / ~1.0 MiB** (RSS ≈0.2–0.5 MiB) | Med | Med |
-| 2 | **R2** pre-size `vals`+`slots` | 0 / **~0.93 MiB** (RSS ≈0.1–0.3 MiB) | Med | Low–Med |
+| 1 | **R1** narrow element 48→16 + wide side pool | **0.25–0.38 MiB / ~1.0 MiB** (RSS ≈0.1–0.3 MiB) | Med | Med |
+| 2 | **R2** pre-size `vals`+`slots` | **~0.9 MiB / ~0.93 MiB** (RSS ≈0.1–0.3 MiB) | Med | Low–Med |
 | 3 | **R4** `slots` value `u32`→`u16` | 32 KiB / ~65 KiB | High | Low |
-| 4 | **R3** drop `float_bits` (48→40) | 0.125 MiB / ~0.26 MiB (subsumed by R1) | High | Low |
+| 4 | **R3** drop `float_bits` (48→40) | 0.06–0.09 MiB / ~0.26 MiB (subsumed by R1) | High | Low |
 | 5 | **R5** value interning | uncertain, overlaps R1 | Low | Med–High |
 | — | R6 node-indexed slot column | — | — | **rejected** |
 
-R1+R2 are **complementary** (pre-size the *narrowed* table): together they would place
-`16,384 × 16 = 262,144 B` once instead of the current 1,866,936 B, a ~1.6 MiB carve reduction with a
-0.5 MiB live reduction. The remaining gap after Task 4 is **≈496 K**, so R1 alone (if it delivers
-even a third of its 0.5 MiB live prize) **plausibly reaches the 16,384 K stop-gate**. Task 6 must
-measure honestly (median ≥3) and not claim the projection.
+**Resident figures use `len ∈ [8,193, 12,287]` (written/touched entries), not cap 16,384.** The
+dense `vals` prefix is contiguous, so its touched bytes are `len × elem`; the hash-map columns are
+scattered, so effectively the whole cap is touched. R1+R2 are **complementary** (pre-size the
+*narrowed* table): together they would allocate `16,384 × 16 = 262,144 B` once instead of the current
+1,866,936 B (a ~1.6 MiB carve reduction) and remove the 933 KB of fully-written abandoned
+generations (a materially larger touched reduction than R1 alone). The remaining gap after Task 4 is
+**≈496 K**, so either R1 or R2 delivering a third of its touched prize **plausibly reaches the
+16,384 K stop-gate**. Task 6 must measure honestly (median ≥3) and not claim the projection.
 
 ### Closed levers — explicitly NOT re-opened
 
@@ -401,14 +417,15 @@ push**. Pre-existing untracked root strays (`anytype_pos.z98`, `fi.err`, `for_cl
    (§1.5), so shrinking it lowers the high-water — but `GrowableSand` doubles whole segments and the
    `module` ladder is shared with the AST node buffers, so expect materially less than the byte
    prize (Task-4 precedent: 380–400 K projected → ≈150–220 K measured). Task 6 must not assume 1:1.
-2. **`len` is bounded, not measured.** `[8,193, 12,288]` follows from the 11 `vals` grows and the
+2. **`len` is bounded, not measured.** `[8,193, 12,287]` follows from the 11 `vals` grows and the
    inferred `slots` cap; it is not a direct marker. The Fix must re-derive or simply pre-size to
    16,384.
 3. **Value-range evidence is static.** No existing marker records `ComptimeInt.len`; the "0 values
-   need >64 bits at self-compile" claim rests on the exhaustive producer scan for `~`/shift/
-   overflowing product. The wide side path (R1) must be exercised by a dedicated fixture
-   (`const … = ~small` or `1 << 70` at module scope) so corpus/stdlib exactness is proven, not
-   assumed.
+   need >64 bits at self-compile" claim rests on the exhaustive producer scan for `<<` /
+   overflowing product (`~` of a ≤64-bit operand is bounded to ≤65 bits). The wide side path (R1)
+   must be exercised by a dedicated fixture
+   (a genuine wide value such as `1 << 70`, or `~` of a wide u64-max-ish value) so corpus/stdlib
+   exactness is proven, not assumed.
 4. **Copy-site blast radius.** Put (3) and Get (6) keep their signatures under R1, but the encoder/
    decoder in `comptime_eval.zig` and the `.float_bits` reads (`lower.zig:5814/5826`) must all agree;
    `ciIntVal`/`comptimeValStoreU64` and the two test binaries are the other `ComptimeVal` value
@@ -416,5 +433,5 @@ push**. Pre-existing untracked root strays (`anytype_pos.z98`, `fi.err`, `for_cl
 5. **R2's hint is data-dependent.** As with the interner/registry pre-sizes, probe the corpus/stdlib
    before fixing the hint; an undershoot only loses the saving, never correctness.
 6. **Stop-gate may or may not fire.** Best realizable R1+R2 ≈0.3–0.8 MiB vs the ≈496 K gap. If R1
-   lands near its live ceiling (0.5 MiB) the gate is likely met; if it under-delivers like Task-4 R1
-   (<0.3 MiB), the plan proceeds to Task 7 without the target being met.
+   lands near its touched ceiling (≈0.38 MiB) the gate is likely met; if it under-delivers like
+   Task-4 R1 (<0.3 MiB), the plan proceeds to Task 7 without the target being met.
