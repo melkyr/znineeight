@@ -15,8 +15,8 @@ Seed v92 (archive md5 `3cacdd44df75c0ce96abfd51af93f928`).
 - Scan result: clean. Proceed.
 
 ## Todos
-- [ ] Task 0 baseline adoption
-- [ ] Task 1 interner investigate
+- [x] Task 0 baseline adoption
+- [x] Task 1 interner investigate
 - [ ] Task 2 interner fix (+STOP-GATE)
 - [ ] Task 3 type-registry investigate
 - [ ] Task 4 type-registry fix (+STOP-GATE)
@@ -24,3 +24,5 @@ Seed v92 (archive md5 `3cacdd44df75c0ce96abfd51af93f928`).
 - [ ] Task 6 comptime fix
 - [ ] Task 7 closeout + seed v93
 
+
+Task 0: complete (commit c8b87daa, baseline adopted verbatim; no sf/src change, no measurement).
