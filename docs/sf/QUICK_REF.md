@@ -43,8 +43,11 @@ Top-level `zig1-seed/`: `zig1` (reference binary), `gen/` (its self-emission C89
 module set — 45 `.c` + 46 `.h`, including `zig_special_types.h`; the emitted
 runtime/support sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/`
 (the emitted 5: `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`,
-`zig_runtime.c`, `zig_pal.c` — NO `net_prelude.h`), `lib/` (all 32 std `.zig`:
-`std.zig` plus the 31 `std_*.zig`), and `SEED_README.txt`.
+`zig_runtime.c`, `zig_pal.c` — NO `net_prelude.h`), `lib/` (the tracked seed
+archive is **v94, predating M0: 30 std `.zig` = `std.zig` plus 29 `std_*.zig`**;
+a fresh `scripts/seed/build_from_seed.sh` copies the current `sf/src` set
+(31 `std_*.zig` + `std.zig` = 32) into the produced compiler's `lib/`, and those
+modules enter the archive at a future seed rotation), and `SEED_README.txt`.
 
 **Std-module inventory:** the `sf/src` std set is **31** `std_*.zig` + `std.zig`
 (`std_io`, `std_fmt`, `std_arena`, `std_str`, `std_mem`, `std_math`, `std_debug`,
