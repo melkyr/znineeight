@@ -276,7 +276,7 @@ const Handshake = struct {
 };
 const MsgType = enum(u8) { choke=0, unchoke=1, interested=2, not_interested=3,
                            have=4, bitfield=5, request=6, piece=7, cancel=8 };
-const Message = struct { id: MsgType, payload: []const u8 };
+const Message = struct { id: MsgType, payload: []const u8, is_keep_alive: bool };
 
 const BlockState = enum(u8) { missing, requested, received, verified, failed };
 const PieceState = struct {
@@ -290,7 +290,7 @@ const Peer = struct {
     addr: PeerAddr, sock: std.net.Socket, peer_id: [20]u8,
     am_choking: bool, am_interested: bool, peer_choking: bool, peer_interested: bool,
     bitfield: []u8, request_queue: RequestQueue,
-    read_buf: [16384]u8, read_state: ReadState,
+    read_buf: [65536]u8, read_state: ReadState,
     last_recv_ms: u32, last_send_ms: u32, down_bytes: u64, up_bytes: u64,
 };
 const Scheduler = struct {
@@ -313,7 +313,14 @@ const Stats = struct { downloaded: u64, uploaded: u64, left: u64, peer_count: u3
 > different `[]synthetic` types collapse to one C typedef. **Rule:** a Z98
 > slice `[]T` is safe only when `T` is a primitive or a *named* type
 > (struct/union/enum); never `[]` a synthetic type — use flat bytes, a fixed
-> `[N]T`, or a named wrapper. `info_hash` semantics are unchanged.
+> `info_hash` semantics are unchanged.
+>
+> **Amendment — M2 Task 1 (2026-10-08):** the per-peer message buffer is **65536 bytes**
+> (`read_buf: [65536]u8`), not 16384 — a `piece` message carrying a full 16 KB block has a
+> 16393-byte body, which exceeds 16384 (`std_stream.MsgReader` returns `FrameTooLarge`
+> when the declared length exceeds `buf.len`). Separately, `Message` gains an explicit
+> `is_keep_alive: bool`; a BitTorrent keep-alive is a length-0 frame with no id, so
+> `MsgType` remains the spec's 0..8 and is **not** extended.
 
 ## §7 Resume
 
