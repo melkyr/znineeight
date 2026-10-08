@@ -214,10 +214,17 @@ pub fn noteHave(s: *Scheduler, p: *peer.Peer, index: u32) void {
 }
 
 // Mark piece `index` requested and record the owner stashed by `pickPiece`.
+// A claim on a piece that is not `missing` would be a double-claim (two peers
+// asked for the same piece); `pickPiece` selects only `missing` pieces and
+// pick/claim are consecutive with no suspension between them, so this never
+// fires — it is the assertion that the invariant holds.
 pub fn claim(s: *Scheduler, index: u32) void {
     var n: u32 = @intCast(u32, s.piece_state.len);
     if (index >= n) return;
     var ui: usize = @intCast(usize, index);
+    if (s.piece_state[ui].state != piece.BlockState.missing) {
+        @panic("scheduler: claim of a non-missing piece (double claim)");
+    }
     s.piece_state[ui].state = piece.BlockState.requested;
     if (ui < s.piece_owner.len) s.piece_owner[ui] = s.pending_owner;
 }

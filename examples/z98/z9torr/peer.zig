@@ -42,12 +42,18 @@ const torrent = @import("torrent.zig");
 const tracker = @import("tracker.zig");
 const resumemod = @import("resume.zig");
 const filemod = @import("std_file.zig");
+const ratelimit = @import("ratelimit.zig");
 
 pub const PeerError = wire.PeerError;
 
 const HANDSHAKE_LEN: usize = 68;
 const KEEPALIVE_MS: u32 = 120000;
 const CONNECT_TIMEOUT_MS: u32 = 10000;
+
+// Debug switch (wired by main from Z9TORR_CLAIM_LOG): when set, each scheduler
+// claim prints one `claim slot=.. piece=..` line so a test can assert no two
+// peers are asked for the same piece.
+pub var log_claims: bool = false;
 
 pub const Peer = struct {
     addr: tracker.PeerAddr,
@@ -101,6 +107,11 @@ pub const RunCtx = struct {
     verified_count: u32,
     ok: bool,
     exit_class: u8,
+    // Global token buckets shared by every peer (spec §6/§9 M3). `rate == 0`
+    // means unlimited; main owns the buckets and rewires `last_refill_ms` to the
+    // start time so the first refill does not credit a startup burst.
+    down_bucket: *ratelimit.TokenBucket,
+    up_bucket: *ratelimit.TokenBucket,
 };
 
 // Zero-length slices returned to callers that need a valid-but-empty slice
@@ -169,19 +180,58 @@ fn makeHandshake(t: torrent.Torrent, peer_id: [20]u8, out: *wire.Handshake) void
 // this module no longer carries a private copy.
 
 
+// Return block `begin` of `ps` to `missing` so a later tick can request it.
+fn revertBlock(ps: *piece.PieceState, begin: u32) void {
+    var bi: u32 = begin / piece.BLOCK_SIZE;
+    if (bi < ps.nblocks) ps.blocks[@intCast(usize, bi)] = piece.BlockState.missing;
+}
+
 // Fill the request window from `ps` and send the requests (no-op while the
 // peer is choking). Small messages go through the blocking wire writers.
-fn sendRequests(peer: *Peer, ps: *piece.PieceState) void {
-    if (peer.peer_choking) return;
+//
+// M3 rate gate (spec §9): every outbound `request` is charged to the GLOBAL
+// token buckets. `--max-up` reserves the 13 request bytes about to be sent;
+// `--max-down` reserves the block payload the request will bring back (the
+// download-only client throttles by not requesting faster than the down rate).
+// `rate == 0` means unlimited. A block that cannot be afforded is returned to
+// `missing` (with every later unsent block in this window) and the window stops.
+//
+// Returns true when the caller may block on the socket read (something was sent,
+// nothing was left to send, or the write failed — the read path will surface it).
+// Returns false only when the rate gate stopped us before sending anything: the
+// caller must yield and retry, because there is no in-flight data to read.
+fn sendRequests(ctx: *RunCtx, peer: *Peer, ps: *piece.PieceState) bool {
+    if (peer.peer_choking) return true;
     var q: piece.RequestQueue = undefined;
     piece.nextRequests(ps, &q);
     var i: u32 = 0;
+    var sent: u32 = 0;
     while (i < q.tail) : (i += 1) {
         var r = q.in_flight[@intCast(usize, i)];
-        wire.writeRequest(peer.sock, r.index, r.begin, r.length) catch return;
+
+        var afford: bool = true;
+        if (ctx.up_bucket.rate != 0) {
+            ratelimit.refill(ctx.up_bucket, std.time.ticksMs());
+            if (!ratelimit.take(ctx.up_bucket, @intCast(u32, 13))) afford = false;
+        }
+        if (afford and ctx.down_bucket.rate != 0) {
+            ratelimit.refill(ctx.down_bucket, std.time.ticksMs());
+            if (!ratelimit.take(ctx.down_bucket, r.length)) afford = false;
+        }
+        if (!afford) {
+            var k: u32 = i;
+            while (k < q.tail) : (k += 1) {
+                revertBlock(ps, q.in_flight[@intCast(usize, k)].begin);
+            }
+            return sent > 0;
+        }
+
+        wire.writeRequest(peer.sock, r.index, r.begin, r.length) catch return true;
         peer.last_send_ms = std.time.ticksMs();
         peer.up_bytes += 13;
+        sent += 1;
     }
+    return true;
 }
 
 fn nextMissing(ctx: *RunCtx) u32 {
@@ -219,7 +269,17 @@ fn acquirePiece(ctx: *RunCtx, peer: *Peer) u8 {
         piece.pieceInit(ctx.arena, ctx.t, &peer.ps, cur) catch return 2;
         seedPartial(ctx, &peer.ps);
         peer.have_piece = true;
-        sendRequests(peer, &peer.ps);
+        if (log_claims) {
+            var c1: []const u8 = "claim slot=";
+            std.io.write(c1);
+            std.io.printInt(@intCast(i32, peer.slot));
+            var c2: []const u8 = " piece=";
+            std.io.write(c2);
+            std.io.printInt(@intCast(i32, cur));
+            var cn: []const u8 = "\n";
+            std.io.write(cn);
+        }
+        _ = sendRequests(ctx, peer, &peer.ps);
         return 0;
     }
     return 1;
@@ -369,6 +429,18 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
             peer.last_send_ms = now;
         }
 
+        // M3 rate gate: retry any requests an earlier tick could not afford
+        // (unlimited buckets make this a no-op once the window is full). If the
+        // gate stopped us before sending anything, yield and retry next tick
+        // instead of blocking in `readMessageAsync` (nothing is in flight, so it
+        // would never wake).
+        if (peer.have_piece) {
+            if (!sendRequests(ctx, peer, &peer.ps)) {
+                _ = @asyncSuspend(null);
+                continue;
+            }
+        }
+
         // A peer that finished (or could not claim) a piece retries once a new
         // message (`unchoke`/`have`/`bitfield`) may have made a piece eligible.
         if (!peer.have_piece) {
@@ -393,7 +465,7 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
             switch (msg.id) {
                 .unchoke => {
                     peer.peer_choking = false;
-                    if (peer.have_piece) sendRequests(peer, &peer.ps);
+                    if (peer.have_piece) { _ = sendRequests(ctx, peer, &peer.ps); }
                 },
                 .choke => {
                     peer.peer_choking = true;
@@ -456,7 +528,7 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
                             switch (r) {
                                 .Continue => {
                                     saveResume(ctx, &peer.ps);
-                                    sendRequests(peer, &peer.ps);
+                                    _ = sendRequests(ctx, peer, &peer.ps);
                                 },
                                 .Complete => {
                                     piece.bitSet(ctx.verified_bits, idx);

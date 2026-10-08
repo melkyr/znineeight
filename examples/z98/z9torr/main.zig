@@ -10,27 +10,50 @@ const std_net = @import("std_net");
 const piecemod = @import("piece.zig");
 const peermod = @import("peer.zig");
 const trackerlib = @import("tracker.zig");
+const schedmod = @import("scheduler.zig");
+const ratelimit = @import("ratelimit.zig");
+const statsmod = @import("stats.zig");
 
 // One torrent arena (spec §9), backed by a static buffer. Never reset.
 var g_arena_buf: [4194304]u8 = undefined;
 
-// M2 Task 4 — single-peer download state. The async frame pool and the root
-// frame buffer are 8-aligned (`[N]u64`); the two scratch arenas are reset per
-// use (work: per `onBlock` verify; save: per resume sidecar write). The peer,
-// ctx, args record and Task are file-scope globals so the coroutine holds
-// stable pointers across suspensions (spec §12 risk 1).
-var g_async_storage: [32 * 1024]u64 = undefined;
-var g_frame_storage: [2048]u64 = undefined;
+// M3 multi-peer download state. A fixed cap on live peer coroutines bounds the
+// coroutine frame pools and the scheduler's per-peer `Peer` slots (each embeds a
+// 64 KiB `read_buf`); `--max-peers` is clamped to it. Every coroutine's mutable
+// state lives in file-scope storage (spec §12 risk 1) so its pointers stay
+// stable across suspensions.
+// `sizeof(Peer)` is ~64.4 KiB (the embedded 64 KiB `read_buf`), so 16 peers
+// need ~1.03 MiB of the 2 MiB scheduler arena; the frame pools add 768 KiB. The
+// whole run stays well under the 16 MB target.
+const MAX_RUNTIME_PEERS: usize = 16;
+const PEER_CTX_U64: usize = 4096;       // 32 KiB child-frame pool per peer
+const PEER_CTX_BYTES: usize = PEER_CTX_U64 * 8;
+const PEER_FRAME_U64: usize = 2048;     // 16 KiB root frame per peer
+const PEER_FRAME_BYTES: usize = PEER_FRAME_U64 * 8;
+// Give up (spec §8 exit 4) when no piece verifies for this long (no usable peer).
+const STALL_MS: u32 = 60000;
+
+// The context/frame buffers are `[N]u64` so `contextInit`/`@asyncInit` get the
+// 8-aligned storage they require (a bare `[N]u8` is 1-aligned and traps).
+var g_ctx_buf: [MAX_RUNTIME_PEERS * PEER_CTX_U64]u64 = undefined;
+var g_frame_buf: [MAX_RUNTIME_PEERS * PEER_FRAME_U64]u64 = undefined;
 var g_work_buf: [1048576]u8 = undefined;
 var g_save_buf: [262144]u8 = undefined;
+// Dedicated scheduler arena: `schedulerInit` carves `max_peers * sizeof(Peer)`
+// (≈64 KiB each) here, keeping the torrent arena free for metadata/piece state.
+var g_sched_buf: [2097152]u8 = undefined;
 var g_work_arena: std.arena.Arena = undefined;
 var g_save_arena: std.arena.Arena = undefined;
-var g_peer: peermod.Peer = undefined;
+var g_sched_arena: std.arena.Arena = undefined;
 var g_pctx: peermod.RunCtx = undefined;
+var g_sched: schedmod.Scheduler = undefined;
+var g_down_bucket: ratelimit.TokenBucket = undefined;
+var g_up_bucket: ratelimit.TokenBucket = undefined;
 
 const PeerArgs = struct { ctx: *peermod.RunCtx, peer: *peermod.Peer };
-var g_peer_args: PeerArgs = undefined;
-var g_task: std.async.Task = undefined;
+var g_peer_args: [MAX_RUNTIME_PEERS]PeerArgs = undefined;
+var g_tasks: [MAX_RUNTIME_PEERS]std.async.Task = undefined;
+var g_task_ptrs: [MAX_RUNTIME_PEERS]*std.async.Task = undefined;
 
 fn writeText(s: []const u8) void {
     std.io.write(s);
@@ -55,6 +78,25 @@ fn zeroStats() trackerlib.Stats {
         .window_up = [5]u32{ 0, 0, 0, 0, 0 },
         .window_idx = 0,
     };
+}
+
+// Index of the first inactive scheduler peer slot (== `peers.len` if full).
+fn firstInactiveSlot() usize {
+    var j: usize = 0;
+    while (j < g_sched.peers.len) : (j += 1) {
+        if (!g_sched.peers[j].active) return j;
+    }
+    return g_sched.peers.len;
+}
+
+// Bytes covered by the verified pieces in `bits` (for the progress line).
+fn verifiedBytes(t: torrentlib.Torrent, bits: []u8, n: u32) u64 {
+    var total: u64 = 0;
+    var i: u32 = 0;
+    while (i < n) : (i += 1) {
+        if (piecemod.bitGet(bits, i)) total += @intCast(u64, diskmod.pieceLength(t, i));
+    }
+    return total;
 }
 
 fn parseSeed(sv: []const u8) u32 {
@@ -186,7 +228,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     writeText(hex);
     writeText(nl);
 
-    // ---- M2 Task 4: single-peer download ----------------------------------
+    // ---- M3: multi-peer download ------------------------------------------
     // The metadata above is always printed (M1 contract). The client always
     // attempts the tracker: an announce failure is a tracker/network error
     // (spec §8 exit 3); a tracker that yields no peers is a peer error (exit 4).
@@ -238,30 +280,38 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     g_work_arena = std.arena.init(g_work_buf[0..]);
     g_save_arena = std.arena.init(g_save_buf[0..]);
 
-    g_peer = peermod.Peer{
-        .addr = ann.peers[0],
-        .sock = @intCast(i32, -1),
-        .peer_id = peer_id,
-        .am_choking = true,
-        .am_interested = false,
-        .peer_choking = true,
-        .peer_interested = false,
-        .last_recv_ms = 0,
-        .last_send_ms = 0,
-        .down_bytes = 0,
-        .up_bytes = 0,
-        .read_buf = undefined,
-        .ps = peermod.zeroPieceState(),
-        .io = peermod.zeroPieceIO(),
-        .hs = peermod.zeroHandshake(),
-        .rhs = peermod.zeroHandshake(),
-        .bitfield = peermod.emptyU8(),
-        .rarest = peermod.emptyU32(),
-        .sched = null,
-        .slot = 0,
-        .have_piece = false,
-        .active = true,
+    // Global token buckets (spec §6/§9 M3). `0` = unlimited; `last_refill_ms`
+    // starts at "now" so the first refill credits no startup burst.
+    var now0: u32 = std.time.ticksMs();
+    g_down_bucket = ratelimit.bucketInit(args.max_down);
+    g_up_bucket = ratelimit.bucketInit(args.max_up);
+    ratelimit.refill(&g_down_bucket, now0);
+    ratelimit.refill(&g_up_bucket, now0);
+
+    // Scheduler over up to `--max-peers` slots, clamped to the runtime cap and
+    // the announced peer count. Seed `piece_state` from the resume bits so
+    // rarest-first never re-picks an already-verified piece (T2 concern 1).
+    var want: u32 = args.max_peers;
+    if (want == 0) want = 1;
+    if (want > @intCast(u32, MAX_RUNTIME_PEERS)) want = @intCast(u32, MAX_RUNTIME_PEERS);
+    if (@intCast(usize, want) > ann.peers.len) want = @intCast(u32, ann.peers.len);
+
+    g_sched_arena = std.arena.init(g_sched_buf[0..]);
+    g_sched = schedmod.schedulerInit(&g_sched_arena, t, want) catch {
+        filemod.close(&out);
+        std_net.cleanup();
+        var omsg: []const u8 = "z9torr: disk error\n";
+        std.io.write(omsg);
+        std.os.exit(@intCast(i32, cli.exitCodeFor(cli.FailureClass.disk)));
+        return;
     };
+    var seed_i: u32 = 0;
+    while (seed_i < n_pieces) : (seed_i += 1) {
+        if (piecemod.bitGet(rstate.completed_bits, seed_i)) {
+            g_sched.piece_state[@intCast(usize, seed_i)].state = piecemod.BlockState.verified;
+        }
+    }
+
     g_pctx = peermod.RunCtx{
         .arena = &arena,
         .work_arena = &g_work_arena,
@@ -274,32 +324,127 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         .verified_count = verified_count,
         .ok = false,
         .exit_class = 4,
+        .down_bucket = &g_down_bucket,
+        .up_bucket = &g_up_bucket,
     };
-    g_peer_args = PeerArgs{ .ctx = &g_pctx, .peer = &g_peer };
 
-    var async_ctx: *std.async.Context = std.async.contextInit(@ptrCast([*]u8, &g_async_storage)[0 .. 32 * 1024 * 8]);
-    var frame_ptr: [*]u8 = @ptrCast([*]u8, &g_frame_storage);
-    g_task.frame = @asyncInit(async_ctx, frame_ptr, peermod.peerRun, @ptrCast(*const void, &g_peer_args));
-    g_task.ctx = async_ctx;
-    g_task.arg = @ptrCast(*void, &g_peer_args);
-    g_task.result = @ptrCast(*void, &g_peer_args);
-    g_task.state = std.async.TaskState.ready;
-    g_task.cancel_requested = false;
-    g_task.waiting_on = &g_task;
-    g_task.has_waiting_on = false;
+    if (std.os.env("Z9TORR_CLAIM_LOG")) |ev| {
+        _ = ev;
+        peermod.log_claims = true;
+    }
 
-    var task_ptrs: [1]*std.async.Task = undefined;
-    task_ptrs[0] = &g_task;
-    var sched = std.async.schedulerInit(task_ptrs[0..]);
-    _ = std.async.addTask(&sched, &g_task);
-    std.async.waitFor(&sched, &g_task) catch {};
+    // Spawn one peer coroutine per announced address (capped). `addPeer` picks
+    // the first free slot and rejects duplicate/recent addresses; the slot it
+    // uses is the first inactive slot found immediately before the call.
+    var n_spawned: u32 = 0;
+    var ai: usize = 0;
+    while (ai < ann.peers.len and n_spawned < want) : (ai += 1) {
+        var slot: usize = firstInactiveSlot();
+        if (slot >= g_sched.peers.len) break;
+        if (!schedmod.addPeer(&g_sched, ann.peers[ai])) continue;
+        g_peer_args[slot] = PeerArgs{ .ctx = &g_pctx, .peer = &g_sched.peers[slot] };
+
+        var ctx_slice: []u8 = @ptrCast([*]u8, &g_ctx_buf)[slot * PEER_CTX_BYTES .. (slot + 1) * PEER_CTX_BYTES];
+        var async_ctx: *std.async.Context = std.async.contextInit(ctx_slice);
+        var frame_ptr: [*]u8 = @ptrCast([*]u8, &g_frame_buf) + slot * PEER_FRAME_BYTES;
+        g_tasks[slot].frame = @asyncInit(async_ctx, frame_ptr, peermod.peerRun, @ptrCast(*const void, &g_peer_args[slot]));
+        g_tasks[slot].ctx = async_ctx;
+        g_tasks[slot].arg = @ptrCast(*void, &g_peer_args[slot]);
+        g_tasks[slot].result = @ptrCast(*void, &g_peer_args[slot]);
+        g_tasks[slot].state = std.async.TaskState.ready;
+        g_tasks[slot].cancel_requested = false;
+        g_tasks[slot].waiting_on = &g_tasks[slot];
+        g_tasks[slot].has_waiting_on = false;
+        g_task_ptrs[slot] = &g_tasks[slot];
+        n_spawned += 1;
+    }
+    if (n_spawned == 0) {
+        filemod.close(&out);
+        std_net.cleanup();
+        var zmsg: []const u8 = "z9torr: peer error\n";
+        std.io.write(zmsg);
+        std.os.exit(@intCast(i32, cli.exitCodeFor(cli.FailureClass.peer)));
+        return;
+    }
+
+    var sched = std.async.schedulerInit(g_task_ptrs[0..@intCast(usize, n_spawned)]);
+    var ti: usize = 0;
+    while (ti < @intCast(usize, n_spawned)) : (ti += 1) {
+        _ = std.async.addTask(&sched, g_task_ptrs[ti]);
+    }
+
+    // Drive the peers. `tick` resumes every live peer once; stop as soon as all
+    // pieces verify, no peer is live, or nothing has progressed for `STALL_MS`.
+    // A 1 Hz sampled progress line renders through `statsRender`.
+    var last_progress_ms: u32 = std.time.ticksMs();
+    var last_verified: u32 = g_pctx.verified_count;
+    var line_buf: [statsmod.STATS_LINE_MAX]u8 = undefined;
+    var st: trackerlib.Stats = zeroStats();
+    var last_sample_ms: u32 = std.time.ticksMs();
+    var last_down_bytes: u64 = 0;
+    var last_up_bytes: u64 = 0;
+    var win_idx: u32 = 0;
+
+    while (true) {
+        std.async.tick(&sched) catch {};
+
+        if (g_pctx.verified_count != last_verified) {
+            last_verified = g_pctx.verified_count;
+            last_progress_ms = std.time.ticksMs();
+        }
+        if (g_pctx.verified_count >= n_pieces) break;
+        if (std.time.ticksMs() - last_progress_ms > STALL_MS) break;
+
+        var live: bool = false;
+        var lt: usize = 0;
+        while (lt < @intCast(usize, n_spawned)) : (lt += 1) {
+            var ts = g_tasks[lt].state;
+            if (ts != std.async.TaskState.done and ts != std.async.TaskState.cancelled) live = true;
+        }
+        if (!live) break;
+
+        var nowm: u32 = std.time.ticksMs();
+        if (nowm - last_sample_ms >= 1000) {
+            var dsum: u64 = 0;
+            var usum: u64 = 0;
+            var pc: u32 = 0;
+            var pj: usize = 0;
+            while (pj < @intCast(usize, n_spawned)) : (pj += 1) {
+                if (g_sched.peers[pj].active) {
+                    dsum += g_sched.peers[pj].down_bytes;
+                    usum += g_sched.peers[pj].up_bytes;
+                    pc += 1;
+                }
+            }
+            var ddelta: u64 = dsum - last_down_bytes;
+            var udelta: u64 = usum - last_up_bytes;
+            last_down_bytes = dsum;
+            last_up_bytes = usum;
+            st.window_down[@intCast(usize, win_idx)] = @intCast(u32, ddelta);
+            st.window_up[@intCast(usize, win_idx)] = @intCast(u32, udelta);
+            win_idx = (win_idx + 1) % 5;
+            st.window_idx = win_idx;
+            st.downloaded = verifiedBytes(t, rstate.completed_bits, n_pieces);
+            if (st.downloaded > t.total_length) st.downloaded = t.total_length;
+            st.left = t.total_length - st.downloaded;
+            st.peer_count = pc;
+            st.down_rate = @intCast(u32, ddelta);
+            st.up_rate = @intCast(u32, udelta);
+            st.started_ms = now0;
+            var ln: []const u8 = statsmod.statsRender(&st, line_buf[0..]);
+            var cr: []const u8 = "\r";
+            std.io.write(cr);
+            std.io.write(ln);
+            last_sample_ms = nowm;
+        }
+    }
 
     filemod.close(&out);
 
-    if (!g_pctx.ok) {
+    if (g_pctx.verified_count < n_pieces) {
+        std_net.cleanup();
         var emsg: []const u8 = "z9torr: peer error\n";
         std.io.write(emsg);
-        std_net.cleanup();
         std.os.exit(@intCast(i32, g_pctx.exit_class));
         return;
     }
@@ -308,18 +453,26 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     stats2.downloaded = t.total_length;
     _ = trackerlib.announce(&arena, t, peer_id, @intCast(u16, 6881), trackerlib.AnnounceEvent.completed, stats2) catch {};
 
-    var okline: []const u8 = "z9torr: download complete\n";
+    var okline: []const u8 = "\nz9torr: download complete\n";
     std.io.write(okline);
 
     // B3=A: one-line fetch metric for tier2's resume gate. `down_bytes` is the
-    // received `piece` payload total for this run; `up_bytes` is 13 bytes per
-    // request message (peer.zig sendRequests), so requests = up_bytes / 13.
+    // received `piece` payload total; `up_bytes` is 13 bytes per request message
+    // (peer.zig sendRequests), so requests = up_bytes / 13. Both are summed over
+    // the peers spawned this run.
+    var total_down: u64 = 0;
+    var total_up: u64 = 0;
+    var sj: usize = 0;
+    while (sj < @intCast(usize, n_spawned)) : (sj += 1) {
+        total_down += g_sched.peers[sj].down_bytes;
+        total_up += g_sched.peers[sj].up_bytes;
+    }
     var sline: []const u8 = "summary: fetched=";
     writeText(sline);
-    writeU64(g_peer.down_bytes);
+    writeU64(total_down);
     var rline: []const u8 = " requests=";
     writeText(rline);
-    writeU64(g_peer.up_bytes / 13);
+    writeU64(total_up / 13);
     writeText(nl);
 
     std_net.cleanup();
