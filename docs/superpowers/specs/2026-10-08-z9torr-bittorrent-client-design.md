@@ -356,9 +356,9 @@ The user sees one human-readable line; detail goes to stderr under
 ## §10 Test infrastructure (repository conventions)
 
 Everything lives under `examples/z98/z9torr/`. Adding `main.zig` makes the
-example auto-join `scripts/corpus/list_corpus_dirs.sh` (the matrix becomes
-**25**; update the hardcoded `21/24` counts in `README.md:39,257` and the
-`docs/sf/QUICK_REF.md` baselines).
+example auto-join `scripts/corpus/list_corpus_dirs.sh`. (Doc-count updates in
+`README.md:39,257` and the `docs/sf/QUICK_REF.md` baselines are optional
+hygiene, not a gate.)
 
 - **Fixtures/goldens:** `testdata/` holds deterministically generated torrents
   and their expected SHA-1 + info_hash text (committed; regenerating requires
@@ -378,16 +378,19 @@ example auto-join `scripts/corpus/list_corpus_dirs.sh` (the matrix becomes
   resume** test (kill mid-download, re-run, confirm it finishes and both the
   completed pieces and the partial piece were reused — asserted via the
   client's own progress output and total bytes fetched).
-- **Gates (per plan):** `dump-MD5 8/8` (gol/lisp/json/mud), corpus classify
-  unchanged except the new dir, `verify_stdlib` 266→(266+new)/0, examples
-  matrix 25/25, in-session markers byte-identical, and **compiler fixed point
-  unmoved**.
+- **Gates (per plan; operator amendment 2026-10-08):** the compiler and its
+  sources are not modified, so compiler-only gates (fixed point, dump-MD5,
+  corpus classify) are intentionally not run. M0's measure is the std lib's
+  own harness — `scripts/stdlib/verify_stdlib.sh`, 266→280 PASS / 0 FAIL — with
+  its R7 fixtures. M1–M4's measure is the example's own `tests/tier1.sh`
+  (parse/ref_check), `tests/tier2.sh` (download + resume), and
+  `tests/tier4_wine.sh` (Wine smoke).
 
 ## §11 Milestones and plan index
 
 | Milestone | Plan | Deliverable |
 |---|---|---|
-| **M0 — std prerequisites** | `docs/superpowers/plans/2026-10-08-z9torr-m0-std-prerequisites-plan.md` | `std_net` primitives + `std_bencode` + `std_http`, each with R7 fixtures, copy-list/QUICK_REF updates; fixed point unmoved. |
+| **M0 — std prerequisites** | `docs/superpowers/plans/2026-10-08-z9torr-m0-std-prerequisites-plan.md` | `std_net` primitives + `std_bencode` + `std_http`, each with R7 fixtures, copy-list/QUICK_REF updates; measured by `verify_stdlib`. |
 | **M1 — core (pure)** | `docs/superpowers/plans/2026-10-08-z9torr-m1-core-plan.md` | Example skeleton + CLI + torrent parse + testdata/ref_check/tier1; `z9torr <file>` reports torrent metadata. |
 | **M2 — single-peer download + resume** | `docs/superpowers/plans/2026-10-08-z9torr-m2-single-peer-download-plan.md` | Protocol modules + mock peer/tracker + tier2; downloads a single-file torrent end-to-end with cross-restart resume. |
 | **M3 — multi-peer** | `docs/superpowers/plans/2026-10-08-z9torr-m3-multi-peer-plan.md` | Rarest-first scheduler over N peers, rate limits, stats display. |

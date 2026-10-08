@@ -18,7 +18,7 @@
 - **Scheduler invariants (binding).** A piece in `requested` is not claimable; on peer disconnect/corruption every piece it claimed returns to `missing` (partial blocks retained if already written-through); a peer slot is freed and reused to bound memory at `--max-peers`.
 - **Timing (binding).** Monotonic ms via `std.time.ticksMs`; all elapsed-time math is unsigned subtraction (wraps correctly). Token bucket refills every 100 ms with `rate/10`, burst = `rate`. The bucket is **global** (shared across peers).
 - **Tier-2 only.** No Win9x here (M4).
-- Build recipe / counts / gitignore / edit rules / no-push / no-compression as M1. Reports under `.superpowers/sdd/2026-10-08-z9torr-m3-multi-peer-plan/`.
+- Build recipe / gitignore / edit rules / no-push / no-compression as M1. **No compiler gate:** the compiler is untouched; gates are the example's own tier tests, not the fixed point / dump-MD5 / corpus classify. Reports under `.superpowers/sdd/2026-10-08-z9torr-m3-multi-peer-plan/`.
 - Z98 rules: no method syntax; no generics; strict `@intCast`; `switch` needs `else`; string literals via `var s: []const u8 = "x";`.
 
 ## File Structure
@@ -95,7 +95,7 @@
 - Record: `.superpowers/sdd/2026-10-08-z9torr-m3-multi-peer-plan/task-4-report.md`
 
 - [ ] **Step 1: Extend `tier2.sh`:** start 4 `mock_peer`s; download `t2_single_25m`; assert exit 0 + SHA-1; assert scheduler unit invariant (no double-request); run the resume test again (now multi-peer).
-- [ ] **Step 2: Gates.** Rebuild seed; `verify_stdlib` unchanged; corpus classify unchanged except z9torr; 8 dump-MD5 pins unchanged; fixed point UNMOVED.
+- [ ] **Step 2: Gate (example-only).** `bash examples/z98/z9torr/tests/tier2.sh` → all PASS (multi-peer download + no double-request + resume). No compiler-only gates — the compiler is untouched.
 - [ ] **Step 3: Docs + commit + report.** Update `demo/README.md`/`NOTES.md`. Ledger line.
 - [ ] **Step 4: Next plan.** State that M4 (`2026-10-08-z9torr-m4-win9x-plan.md`) is next.
 

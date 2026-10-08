@@ -16,7 +16,7 @@
 
 - **Depends on M0.** `/tmp/z9_m0_seed/zig1_5_clean` (or a fresh seed build) must include `std_bencode.zig`/`std_http.zig`/the `std_net` additions in its sibling `lib/`.
 - **Example build recipe (binding).** `timeout 120 "$ZIG" -ffast -o <tmp> examples/z98/z9torr/main.zig`, then the binding gcc flag-set `-m32 -std=c89 -O0 -Wall -Wno-long-long -Wno-pointer-sign -Wno-implicit-function-declaration -I <tmp> -c`, then `sh <tmp>/build_target.sh linux <tmp>/prog`.
-- **Corpus.** Adding `examples/z98/z9torr/main.zig` auto-joins `scripts/corpus/list_corpus_dirs.sh`. Update the hardcoded counts: `README.md:39,257` ("21") and the `docs/sf/QUICK_REF.md` examples baseline (24 → 25).
+- **Corpus (discovery only).** Adding `examples/z98/z9torr/main.zig` auto-joins `scripts/corpus/list_corpus_dirs.sh` (the example becomes discoverable). Doc-count updates (`README.md:39,257`, QUICK_REF baseline) are optional hygiene and NOT a gate. Do NOT run the corpus classify — it is a compiler-regression gate and the compiler is untouched.
 - **INFO_HASH (binding).** `info_hash = sha1(exact info bytes)`; no re-encode, no normalize. Fixtures rejected if this differs.
 - **Sample of record.** Existing reference programs under `examples/z98/` are the pattern (`main.zig` + `NOTES.md` required; `README.md` conventional; `demo/` goldens).
 - Text files (`*.txt`) are gitignored — commit goldens/fixtures with `git add -f`.
@@ -144,9 +144,8 @@
 - Modify: `README.md`, `docs/sf/QUICK_REF.md`, `examples/z98/z9torr/NOTES.md`
 - Record: `.superpowers/sdd/2026-10-08-z9torr-m1-core-plan/task-5-report.md`
 
-- [ ] **Step 1: Counts.** Update `README.md:39,257` and the QUICK_REF examples baseline (24 → 25); record the new `--dump-c89` md5 in `NOTES.md`.
-- [ ] **Step 2: Gates.** Rebuild the seed compiler; `scripts/corpus/classify` (the new dir classifies; totals update by exactly the expected entry); `verify_stdlib` unchanged from M0; 8 dump-MD5 pins unchanged; `list_corpus_dirs.sh` lists z9torr.
-- [ ] **Step 3: Fixed point UNMOVED.** If moved, STOP-present.
+- [ ] **Step 1: Docs.** Record the `--dump-c89` md5 in `NOTES.md`; optionally update `README.md:39,257` and the QUICK_REF examples baseline (24 → 25).
+- [ ] **Step 2: Gate (example-only).** `bash examples/z98/z9torr/tests/tier1.sh` → all PASS (bind-recipe build + parse/round-trip/ref_check/malformed/determinism). `bash scripts/corpus/list_corpus_dirs.sh | grep z9torr` lists the dir. `verify_stdlib` unchanged from M0 (the example does not touch std). No compiler-only gates (fixed point / dump-MD5 / corpus classify) — the compiler is untouched.
 - [ ] **Step 4: Report + commit.** Commit docs + report. Ledger line.
 - [ ] **Step 5: Next plan.** State that M2 (`2026-10-08-z9torr-m2-single-peer-download-plan.md`) is next.
 

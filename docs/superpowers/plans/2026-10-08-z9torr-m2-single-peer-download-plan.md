@@ -18,7 +18,7 @@
 - **Wire endianness (binding).** Every multi-byte wire integer is big-endian. Provide `readU32BE`/`writeU32BE`/`readU16BE`/`writeU16BE` once (in `wire.zig`) and use them everywhere. Message length prefix and `have`/`request`/`piece`/`cancel` payloads are BE (spec/blueprint §3).
 - **Message caps (binding).** Max message 64 KB; per-peer read buffer 16 KB. A length prefix > 64 KB is a protocol error.
 - **RESUME (binding).** Write-through blocks + verify-on-complete + re-hash on start + `.z9torr.resume` sidecar. A restart must not re-fetch verified pieces, and must resume a partially-received piece (spec §7).
-- **Build recipe / counts / gitignore / edit rules / no-push / no-compression** as M1.
+- **Build recipe / gitignore / edit rules / no-push / no-compression** as M1. **No compiler gate:** the compiler is untouched; gates are the example's own tier tests, not the fixed point / dump-MD5 / corpus classify.
 - Reports under `.superpowers/sdd/2026-10-08-z9torr-m2-single-peer-download-plan/`.
 - Z98 rules: no method syntax; no generics; strict `@intCast`; `switch` needs `else`; string literals via `var s: []const u8 = "x";`.
 
@@ -141,7 +141,7 @@
   6. Malformed-peer cases: `--mode wrong-info-hash` (client rejects, exits 4), `--mode bad-bitfield-length` (rejected).
 - [ ] **Step 2: Run tier2.sh; all PASS.**
 - [ ] **Step 3: Write `demo/README.md`** with exact commands, fixture SHA-1s, and the resume evidence; record the `--dump-c89` md5 in `NOTES.md`.
-- [ ] **Step 4: Gates.** Rebuild seed; `verify_stdlib` unchanged; corpus classify (z9torr still classifies; tools are not corpus entries); 8 dump-MD5 pins unchanged; fixed point UNMOVED (STOP if moved).
+- [ ] **Step 4: Gate (example-only).** `bash examples/z98/z9torr/tests/tier2.sh` → all PASS (download t1/t2 + interrupt-restart resume + malformed-peer). No compiler-only gates (fixed point / dump-MD5 / corpus classify) — the compiler is untouched.
 - [ ] **Step 5: Commit + report.** Ledger line.
 - [ ] **Step 6: Next plan.** State that M3 (`2026-10-08-z9torr-m3-multi-peer-plan.md`) is next.
 

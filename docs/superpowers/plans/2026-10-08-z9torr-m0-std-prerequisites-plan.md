@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add the three std-lib modules the z9torr client needs — `std_net` socket primitives, `std_bencode`, `std_http` — each with R7 fixtures and the required copy-list/doc updates, leaving the compiler fixed point **unmoved**.
+**Goal:** Add the three std-lib modules the z9torr client needs — `std_net` socket primitives, `std_bencode`, `std_http` — each with R7 fixtures and the required copy-list/doc updates. The compiler is not modified; the std lib's own harness is the measure.
 
 **Architecture:** Each module is a new/edited `sf/src/std_*.zig` (never imported by the compiler, so no fixed-point movement) plus one or more `repro/mi_matrix/stdlib_<module>_<name>_xmod/` fixtures. Every module is registered in the two seed copy lists and the QUICK_REF inventory in the **same commit** that adds it, and each new fixture dir is added to `scripts/stdlib/expected_dirs.txt`.
 
-**Tech Stack:** Z98 (`zig1`), C89 emission, `gcc -m32`, the seed-built `zig1_5_clean` + sibling `lib/`, `scripts/stdlib/run_fixtures.sh`, `scripts/corpus/classify`.
+**Tech Stack:** Z98 (`zig1`), C89 emission, `gcc -m32`, the seed-built `zig1_5_clean` + sibling `lib/`, `scripts/stdlib/run_fixtures.sh`.
 
 **Spec:** `docs/superpowers/specs/2026-10-08-z9torr-bittorrent-client-design.md` (binding; §4 defines the exact signatures).
 
@@ -15,7 +15,7 @@
 ## Global Constraints
 
 - **Seed model.** At execution start, read the head of `release/seed/CHANGELOG.md` for the current seed and fixed point. Build the compiler-under-test with `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/z9_m0_seed` **without** `FIXED_POINT_MD5`; the two-hop closure (`hop1 == hop2`) must hold. The result is `/tmp/z9_m0_seed/zig1_5_clean`; its sibling `lib/` is what fixture runs use.
-- **Fixed point UNMOVED (binding).** The compiler imports zero std modules. If any std addition moves the self-compile fixed point, **STOP and present** — do not re-baseline.
+- **No compiler gate (operator amendment 2026-10-08).** This plan modifies no compiler source, so the compiler fixed point cannot move. Do NOT re-verify the fixed point, the 8 dump-MD5 pins, or run the corpus classify — those are compiler-regression gates and are out of scope. The success measure is the std-lib's own harness: full `scripts/stdlib/verify_stdlib.sh` plus the new R7 fixtures.
 - **Conventions.** std-lib R1–R8 (`2026-09-17-std-lib-extension-program-design.md` §5). Every allocating function takes `arena: *std.arena.Arena` first; one named error set per module; modules are imported by path, **not** added to `std.zig`.
 - **Copy-list discipline.** Adding a module requires appending it to the `lib/` copy list in **both** `scripts/seed/build_from_seed.sh` (line ~145) and `scripts/seed/archive_seed.sh` (line ~115, and the doc comment ~28–35), and to the `docs/sf/QUICK_REF.md` inventory (~line 152) — same commit.
 - **Fixture pin.** Every new `repro/mi_matrix/stdlib_*` dir must be added to `scripts/stdlib/expected_dirs.txt`, or `run_fixtures.sh` discovery mode FAILS.
@@ -41,7 +41,7 @@
 - Record: `.superpowers/sdd/2026-10-08-z9torr-m0-std-prerequisites-plan/task-0-report.md`
 
 **Interfaces:**
-- Produces: the baseline fixed point, `verify_stdlib` result, corpus classify baseline, and the 8 dump-MD5 pins for later tasks.
+- Produces: the baseline fixed point, the `verify_stdlib` PASS count (the measure), and the build's hop1/hop2 lines. (The corpus classify and the 8 dump-MD5 pins are recorded for reference only — later tasks do NOT gate on them.)
 
 - [ ] **Step 1: Read the current seed.** Record `release/seed/CHANGELOG.md` head: seed version, HEAD, fixed point, archive md5.
 - [ ] **Step 2: Build the compiler under test.**
@@ -85,9 +85,9 @@
   Review each `expected.txt` against the contract in Step 1, then re-run without `--capture` and confirm `4 PASS / 0 FAIL`.
 - [ ] **Step 5: Add the fixture dirs to the pin.** Append the four dirs to `scripts/stdlib/expected_dirs.txt` (sorted position). Re-run discovery mode:
   `bash scripts/stdlib/verify_stdlib.sh /tmp/z9_m0_seed/zig1_5_clean` → expect `STDLIB GATE OK` and `<old+4> PASS / 0 FAIL`.
-- [ ] **Step 6: Proving-tree gate + commit.** Rebuild `/tmp/z9_m0_seed2` and confirm `hop1 == hop2 == <baseline fixed point>` (unmoved). Commit `sf/src/std_net.zig`, the four fixture dirs, and `expected_dirs.txt`:
+- [ ] **Step 6: Verify + commit.** Full `bash scripts/stdlib/verify_stdlib.sh /tmp/z9_m0_seed/zig1_5_clean` → `STDLIB GATE OK` with the four new dirs (`<old+4> PASS / 0 FAIL`). Commit `sf/src/std_net.zig`, the four fixture dirs, and `expected_dirs.txt`:
   `git add sf/src/std_net.zig repro/mi_matrix/stdlib_net_* scripts/stdlib/expected_dirs.txt && git commit -m "feat(std_net): add resolve/connectToIp/checkSoError/shutdown (+fixtures)"`
-- [ ] **Step 7: Report.** Status, files, fixture PASS lines, fixed-point evidence, concerns. Ledger line.
+- [ ] **Step 7: Report.** Status, files, fixture PASS lines, verify_stdlib count, concerns. Ledger line.
 
 ---
 
@@ -95,7 +95,7 @@
 
 **Files:**
 - Create: `sf/src/std_bencode.zig` (decode half)
-- Create: `repro/mi_matrix/stdlib_bencode_decode_xmod/`, `…limits_xmod/`
+- Create: `repro/mi_matrix/stdlib_bencode_decode_xmod/`, `…limits_xmod/`, `…dictspan_xmod/`
 - Modify: `scripts/stdlib/expected_dirs.txt`, `scripts/seed/build_from_seed.sh`, `scripts/seed/archive_seed.sh`, `docs/sf/QUICK_REF.md`
 
 **Interfaces:**
@@ -104,12 +104,13 @@
 - [ ] **Step 1: Write the fixtures.**
   - `stdlib_bencode_decode_xmod/main.zig`: decode a nested fixture string (`d1:ai1e1:b3:xyzl1:iee` style) and print each field; contract is a deterministic multi-line report ending `decode ok`.
   - `stdlib_bencode_limits_xmod/main.zig`: feed `i04e`, `i-0e`, `i99999999999999999999e`, a duplicate-key dict, a 101-deep list, a string whose length exceeds remaining input; each must return the documented error (print the error name); contract ends `limits ok`.
+  - `stdlib_bencode_dictspan_xmod/main.zig`: `dictValueSpan` on `d4:infoli1ei2eee4:name3:abce` returns the exact span of the `info` value (and `null` for an absent key); print the span offsets and the captured bytes; contract ends `dictspan ok`.
 - [ ] **Step 2: Verify FAIL (uncaptured)** as Task 1 Step 2.
 - [ ] **Step 3: Implement decode.** Recursive-descent over the byte slice with an out-of-band depth counter (cap 100), key count per dict (cap 1024), per-value cap 32 MB, total 64 MB; reject duplicate keys; check string length ≤ remaining; `i64` via `std_parse.parseInt64` with overflow → `Overflow`. Track each value's start/end offsets for `dictValueSpan`. Arena-allocate lists/dicts/`Value` arrays.
 - [ ] **Step 4: Implement `dictValueSpan`.** Walk only the top-level dict: parse `d`, then repeatedly parse a key string and skip its value while recording the top-level `info` value's start/end; return `Span{start,end}` with `u32` offsets (reject inputs > 4 GB). Must not allocate.
 - [ ] **Step 5: Capture goldens + review; run PASS.**
-- [ ] **Step 6: Register the module (same commit).** Append `sf/src/std_bencode.zig` to the `lib/` copy lists in `scripts/seed/build_from_seed.sh` and `scripts/seed/archive_seed.sh` (and the archive_seed doc comment), and add a row to the `docs/sf/QUICK_REF.md` std inventory. Add the two fixture dirs to `expected_dirs.txt`.
-- [ ] **Step 7: Proving-tree gate + commit.** Rebuild, confirm fixed point unmoved. Commit `sf/src/std_bencode.zig`, both fixture dirs, `expected_dirs.txt`, both seed scripts, `QUICK_REF.md`:
+- [ ] **Step 6: Register the module (same commit).** Append `sf/src/std_bencode.zig` to the `lib/` copy lists in `scripts/seed/build_from_seed.sh` and `scripts/seed/archive_seed.sh` (and the archive_seed doc comment), and add a row to the `docs/sf/QUICK_REF.md` std inventory. Add the three fixture dirs to `expected_dirs.txt`.
+- [ ] **Step 7: Verify + commit.** Full `verify_stdlib` PASS. Commit `sf/src/std_bencode.zig`, the three fixture dirs, `expected_dirs.txt`, both seed scripts, `QUICK_REF.md`:
   `git commit -m "feat(std_bencode): add bencode decode + dictValueSpan (+fixtures)"`
 - [ ] **Step 8: Report.** Ledger line.
 
@@ -133,7 +134,7 @@
 - [ ] **Step 3: Implement `encode`.** Recursive writer over a `std_buf.Buf`-style arena buffer: `i<n>e`, `<len>:<bytes>`, `l…e`, `d…e`; integers via `std_parse.itoa64` (handle negatives). Keys emitted in stored order.
 - [ ] **Step 4: Capture goldens + review; PASS.**
 - [ ] **Step 5: Add the two dirs to `expected_dirs.txt`; full `verify_stdlib` PASS.**
-- [ ] **Step 6: Proving-tree gate + commit.**
+- [ ] **Step 6: Verify + commit.** Full `verify_stdlib` PASS.
   `git commit -m "feat(std_bencode): add bencode encode (+fixtures)"`
 - [ ] **Step 7: Report.** Ledger line.
 
@@ -165,7 +166,7 @@
 - [ ] **Step 6: Module-header DEFERRED note (binding).** The first comment block of `sf/src/std_http.zig` MUST state: `HTTP/1.1, no TLS. DEFERRED: chunked transfer-encoding and keep-alive are not implemented; requires Content-Length or a close-delimited body.`
 - [ ] **Step 7: Capture goldens + review; PASS.**
 - [ ] **Step 8: Register the module (same commit).** Append `sf/src/std_http.zig` to both seed copy lists (+ archive_seed doc comment) and the QUICK_REF inventory; add the five dirs to `expected_dirs.txt`; full `verify_stdlib` PASS.
-- [ ] **Step 9: Proving-tree gate + commit.**
+- [ ] **Step 9: Verify + commit.** Full `verify_stdlib` PASS.
   `git commit -m "feat(std_http): add HTTP/1.1 GET client (+fixtures; chunked/keep-alive deferred)"`
 - [ ] **Step 10: Report.** Ledger line.
 
@@ -177,8 +178,8 @@
 - Modify: `docs/sf/QUICK_REF.md` (std inventory final reconcile)
 - Record: `.superpowers/sdd/2026-10-08-z9torr-m0-std-prerequisites-plan/task-5-report.md`
 
-- [ ] **Step 1: Full battery.** Rebuild clean; `verify_stdlib` `<old+13> PASS / 0 FAIL`; corpus classify totals unchanged except any expected movement; 8 dump-MD5 pins unchanged (gol/lisp/json/mud × `-fsafe`/`-ffast`); `scripts/check_emit_support.sh` 7/7.
-- [ ] **Step 2: Fixed point UNMOVED.** `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/z9_m0_close` → `hop1 == hop2 == <Task 0 fixed point>`. If moved, **STOP-present**.
+- [ ] **Step 1: Full std-lib gate.** `bash scripts/stdlib/verify_stdlib.sh /tmp/z9_m0_seed/zig1_5_clean` → `STDLIB GATE OK`, **`280 PASS / 0 FAIL`** (266 baseline + 14 new fixtures). Compiler-only gates (fixed point, dump-MD5, corpus classify) are intentionally not run — the compiler is untouched (operator amendment 2026-10-08).
+- [ ] **Step 2: Registration check.** Confirm `sf/src/std_bencode.zig`, `sf/src/std_http.zig`, and every new fixture dir appear in both seed copy lists + `expected_dirs.txt` + the QUICK_REF inventory.
 - [ ] **Step 3: QUICK_REF reconcile.** Confirm all three modules appear in the copy list and inventory; note the `std_http` defers.
 - [ ] **Step 4: Report + commit.** Commit the QUICK_REF reconcile and the report. Ledger line.
 - [ ] **Step 5: Next plan.** State that M1 (`2026-10-08-z9torr-m1-core-plan.md`) is next.

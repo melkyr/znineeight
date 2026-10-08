@@ -64,7 +64,7 @@
 
 - [ ] **Step 1: Write the T5 procedure.** Exact steps: copy `z9torr.exe` + the mock binaries (or use a Linux peer), a `.torrent`, run `z9torr.exe file.torrent`, and the expected console output (including the `\r` progress line and the `GetFileType` line-per-refresh fallback when redirected). Note the FAT no-sparse-file write behaviour (zeros up to the offset) and the `MAX_PATH`/reserved-name handling already enforced in M1.
 - [ ] **Step 2: NOTES.md/README.md.** Record the `-osw` emit md5, the mingw build command, and that T4 is a Wine smoke (T5 manual).
-- [ ] **Step 3: Gates.** `cross_nocrt.sh`-style no-CRT cleanliness if applicable; confirm the Linux T1/T2 gates still pass and the compiler fixed point is UNMOVED.
+- [ ] **Step 3: Gate (example-only).** Confirm the Linux `tier1.sh`/`tier2.sh` still PASS; `cross_nocrt.sh`-style no-CRT cleanliness if applicable. No compiler-only gates (fixed point / dump-MD5 / corpus classify) — the compiler is untouched.
 - [ ] **Step 4: Commit + report.** Ledger line; declare M4 complete and the `z9torr` example delivered.
 
 ## Self-Review
