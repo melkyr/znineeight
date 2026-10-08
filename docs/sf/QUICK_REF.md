@@ -541,6 +541,8 @@ fixture); the new fixed point (moving point hop1 == hop2, explicit
 `FIXED_POINT_MD5` gate) is **`2719c55740724c2eb06b58c3e4ab970f`**; seed v90 NOT
 rotated.
 
+**z9torr M1 closeout (2026-10-08; example-plan, compiler UNTOUCHED).** Adds the 25th `examples/z98/` entry `z9torr` (single-file torrent parse + metadata summary; `tests/tier1.sh` `15 passed, 0 failed / TIER1 PASS`; emitted-C md5 `b0e8496d741aa130b7252bd7ebefe985`). Full example matrix re-measured over all 25 `examples/z98/*/` dirs with the binding seed `/tmp/z9_m0_seed/zig1_5_clean` (`-ffast -o <out>` + `build_target.sh linux`, dump+gcc+link): **25/25 rc=0** (the dated entries above keep their contemporaneous 24/24). `verify_stdlib` **280 PASS / 0 FAIL** (unchanged). No compiler-only gates (fixed point / 8 dump-MD5 pins / corpus classify) — no `sf/**` change.
+
 - Self-consistency gate: compare current zig1 `--dump-c89` against a pre-captured reference .c file. If the reference .c is outdated (intentional baseline change), re-capture via `cp /tmp/new.c /tmp/ref.c`. Never compare against parent-zig1 output directly — parent builds may fail silently.
 - Do **NOT** compare `zig1 --dump-c89` output against `zig0`'s C output. `zig0` emits a legacy bootstrap format that is byte-level incompatible with zig1.
 

@@ -36,7 +36,7 @@ timeout 120 /tmp/z9_m0_seed/zig1_5_clean --dump-c89 examples/z98/z9torr/main.zig
 ```
 
 - md5: `b0e8496d741aa130b7252bd7ebefe985` (stable 3×)
-- command: `timeout 120 /tmp/z9_m0_seed/zig1_5_clean -ffast -o <out> examples/z98/z9torr/main.zig`
+- command: `timeout 120 /tmp/z9_m0_seed/zig1_5_clean --dump-c89 examples/z98/z9torr/main.zig | md5sum`
 
 ## Fixtures and `info_hash`
 

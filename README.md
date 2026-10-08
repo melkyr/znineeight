@@ -36,7 +36,7 @@ compiles itself to become the fully self-hosted compiler, **zig1** — the subje
 The **self-hosted milestone is complete**: `zig1` compiles itself, the compilation is
 **deterministic to a fixed point** (self-compile binary md5 `553a39b4…`; committed seed **v27**,
 `release/seed/zig1-seed.tgz`), the 4-program emission gate is byte-identical (see
-[Determinism](#determinism)), and the maintained example matrix is **21/21** dump/gcc/link. The
+[Determinism](#determinism)), and the maintained example matrix is **25/25** dump/gcc/link. The
 mi_matrix corpus at `-s0` is enumerated by the canonical generator
 [`scripts/corpus/list_corpus_dirs.sh`](scripts/corpus/list_corpus_dirs.sh); the documented
 expected-fail / correctly-rejected fixtures are maintained in
@@ -115,7 +115,7 @@ All four hashes byte-exact vs the recorded constraints (lisp emits `warning[3037
 stderr; they do not contaminate the stdout hash). Corpus/golden summary: the corpus universe is
 enumerated by `scripts/corpus/list_corpus_dirs.sh` (per the manifest
 `repro/mi_matrix/EXPECTED_FAIL.md`, v130) — no total is asserted; golden fixtures 9/9; example
-matrix 21/21.
+matrix 25/25.
 
 ## Build Machine & Toolchain
 > AMD Ryzen 7 7700X 8-core/16-thread up to ~5.58 GHz, 32 GB RAM, Debian; gcc/g++ 12.2.0;
@@ -256,7 +256,7 @@ Runtime safety defaults to `-fsafe`. The compiler self-build passes `-ffast`, so
 - **Corpus gate**: the corpus universe is listed by `scripts/corpus/list_corpus_dirs.sh`
   (manifest `repro/mi_matrix/EXPECTED_FAIL.md`, v130) — run `zig1 --dump-c89` + gcc `-c` per dir,
   classified OK/FAIL/GREEN per the QUICK_REF classifier. No corpus total is asserted.
-- **Example matrix**: 21 `examples/z98` programs, 21/21 dump/gcc/link.
+- **Example matrix**: 25 `examples/z98` programs, 25/25 dump/gcc/link.
 - **Golden fixtures**: 9/9 golden outputs.
 - **Upgraded-showcase gate**: `scripts/closeout/verify_upgraded.sh` (A1–B7) gates
   `lisp_interpreter_upgraded` and `rogue_mud_upgraded` against their committed canonical/demo
@@ -301,7 +301,7 @@ domain's detailed doc:
 - [STD_README.MD](STD_README.MD) — the Z98 standard library guide and index.
 
 ## Example Showcase
-`examples/z98/` carries the maintained example suite (matrix 21/21 dump/gcc/link), including
+`examples/z98/` carries the maintained example suite (matrix 25/25 dump/gcc/link), including
 complete programs that exercise the language-wins features and the PAL/networking runtime:
 - **`game_of_life`** — interactive simulation on the PAL UI layer.
 - **`lisp_interpreter_curr`** and the upgraded **`lisp_interpreter_upgraded`** — a complete Lisp
