@@ -8,11 +8,11 @@
 // where <body> is a fixed compact bencoded announce response pointing at the
 // mock peer:
 //
-//   d8:intervali1800e5:peers6:<4-byte IP><2-byte BE port>e
+//   d8:intervali1800e5:peers<6*N>:<N * (4-byte IP + 2-byte BE port)>e
 //
 // or the raw bytes of a --response <file> when given.
 //
-// Flags: --port <n>  --peer <ip:port>  --response <file>
+// Flags: --port <n>  --peer <ip:port> (repeatable)  --peers a,b,c  --response <file>
 //
 // Build (binding recipe):
 //   mkdir -p out
@@ -29,10 +29,16 @@ const std_file = @import("std_file");
 const DEFAULT_PORT: u32 = 6969;
 const REQ_BUF: usize = 8192;
 const RESP_MAX: usize = 65536;
+const MAX_PEERS: usize = 64;
 
 // Fixed work buffers (no per-connection allocation).
 var g_body: [RESP_MAX]u8 = undefined;
 var g_arena_buf: [65536]u8 = undefined;
+
+// Accumulated compact peers (D2: fixed arrays, never a slice of a synthetic).
+var g_ips: [MAX_PEERS][4]u8 = undefined;
+var g_ports: [MAX_PEERS]u16 = undefined;
+var g_npeers: usize = 0;
 
 fn out(s: []const u8) void {
     std.io.write(s);
@@ -109,6 +115,32 @@ fn parsePeer(s: []const u8, ip: *[4]u8, port: *u16) bool {
     return false;
 }
 
+fn addPeerStr(s: []const u8) bool {
+    if (g_npeers >= MAX_PEERS) return false;
+    var ip: [4]u8 = undefined;
+    var port: u16 = 0;
+    if (!parsePeer(s, &ip, &port)) return false;
+    g_ips[g_npeers] = ip;
+    g_ports[g_npeers] = port;
+    g_npeers += 1;
+    return true;
+}
+
+// Split a comma-separated list and append each "ip:port".
+fn addPeerList(list: []const u8) bool {
+    var start: usize = 0;
+    var i: usize = 0;
+    while (i <= list.len) : (i += 1) {
+        if (i == list.len or list[i] == ',') {
+            var tok: []const u8 = list[start..i];
+            if (tok.len == 0) return false;
+            if (!addPeerStr(tok)) return false;
+            start = i + 1;
+        }
+    }
+    return true;
+}
+
 fn sendAll(fd: i32, data: []const u8) bool {
     var off: usize = 0;
     while (off < data.len) {
@@ -161,24 +193,31 @@ fn writeU64(dst: []u8, v_in: u64) usize {
     return n;
 }
 
-// Build the default compact announce body into g_body; return its length.
-fn buildBody(ip: [4]u8, port: u16) usize {
-    var prefix: []const u8 = "d8:intervali1800e5:peers6:";
+// Build the compact announce body for every accumulated peer into g_body and
+// return its length. `peers` is a byte string of exactly 6*N bytes.
+fn buildBody() usize {
+    var prefix: []const u8 = "d8:intervali1800e5:peers";
     var len: usize = 0;
     var i: usize = 0;
     while (i < prefix.len) : (i += 1) {
         g_body[len] = prefix[i];
         len += 1;
     }
-    i = 0;
-    while (i < 4) : (i += 1) {
-        g_body[len] = ip[i];
+    len += writeU64(g_body[len..], @intCast(u64, g_npeers * 6));
+    g_body[len] = ':';
+    len += 1;
+    var k: usize = 0;
+    while (k < g_npeers) : (k += 1) {
+        i = 0;
+        while (i < 4) : (i += 1) {
+            g_body[len] = g_ips[k][i];
+            len += 1;
+        }
+        g_body[len] = @intCast(u8, (g_ports[k] >> 8) & @intCast(u16, 0xFF));
+        len += 1;
+        g_body[len] = @intCast(u8, g_ports[k] & @intCast(u16, 0xFF));
         len += 1;
     }
-    g_body[len] = @intCast(u8, (port >> 8) & @intCast(u16, 0xFF));
-    len += 1;
-    g_body[len] = @intCast(u8, port & @intCast(u16, 0xFF));
-    len += 1;
     g_body[len] = 'e';
     len += 1;
     return len;
@@ -208,7 +247,6 @@ fn handle(fd: i32, body: []const u8) void {
 
 pub fn main(argc: i32, argv: [*][*]u8) void {
     var port: u32 = DEFAULT_PORT;
-    var peer_str: []const u8 = "127.0.0.1:6970";
     var response_path: []const u8 = "";
     var have_response: bool = false;
 
@@ -229,14 +267,26 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         } else if (eq(tok, "--peer")) {
             i += 1;
             if (i >= n) { out("mock_tracker: --peer needs a value\n"); std.os.exit(1); return; }
-            peer_str = argAt(argv, i);
+            if (!addPeerStr(argAt(argv, i))) {
+                out("mock_tracker: bad --peer (want ip:port)\n");
+                std.os.exit(1);
+                return;
+            }
+        } else if (eq(tok, "--peers")) {
+            i += 1;
+            if (i >= n) { out("mock_tracker: --peers needs a value\n"); std.os.exit(1); return; }
+            if (!addPeerList(argAt(argv, i))) {
+                out("mock_tracker: bad --peers (want ip:port,ip:port,...)\n");
+                std.os.exit(1);
+                return;
+            }
         } else if (eq(tok, "--response")) {
             i += 1;
             if (i >= n) { out("mock_tracker: --response needs a value\n"); std.os.exit(1); return; }
             response_path = argAt(argv, i);
             have_response = true;
         } else if (eq(tok, "--help") or eq(tok, "-h")) {
-            var u: []const u8 = "usage: mock_tracker [--port N] [--peer IP:PORT] [--response FILE]\n";
+            var u: []const u8 = "usage: mock_tracker [--port N] [--peer IP:PORT]... [--peers a,b,c] [--response FILE]\n";
             out(u);
             std.os.exit(0);
             return;
@@ -251,12 +301,12 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         return;
     }
 
-    var ip: [4]u8 = [4]u8{ 127, 0, 0, 1 };
-    var peer_port: u16 = 6970;
-    if (!parsePeer(peer_str, &ip, &peer_port)) {
-        out("mock_tracker: bad --peer (want ip:port)\n");
-        std.os.exit(1);
-        return;
+    if (g_npeers == 0) {
+        if (!addPeerStr("127.0.0.1:6970")) {
+            out("mock_tracker: default peer setup failed\n");
+            std.os.exit(1);
+            return;
+        }
     }
 
     var arena = std.arena.init(g_arena_buf[0..]);
@@ -269,7 +319,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         };
         body = data;
     } else {
-        const blen = buildBody(ip, peer_port);
+        const blen = buildBody();
         body = g_body[0..blen];
     }
 
