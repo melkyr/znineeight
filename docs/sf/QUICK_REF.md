@@ -106,8 +106,8 @@ point is unmoved), via
 The type-registry `Type` record (`sf/src/type_registry.zig`) is **20 B**; its four
 ceiling columns are `name_id`/`payload_idx` = **u32** and `module_id`/`alignment` =
 **u16**. The only residual ceilings are the u16 pair — **65,535** modules / alignment
-value — and both are **effectively unreachable** (`name_id`/`payload_idx` are back to
-the pre-plan u32 width; only u32-sized inputs could exceed them).
+value — and both are **effectively unreachable** (no program reaches 65,535 modules or
+such alignment values; `name_id`/`payload_idx` are back to the pre-plan u32 width).
 
 The earlier structural-narrowing `Type` 32 B→16 B shrink had created real user-facing
 ceilings that the **type-limit widening** (2026-10-08) raised: `name_id` u16 (65,535
