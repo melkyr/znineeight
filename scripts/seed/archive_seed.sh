@@ -32,7 +32,7 @@ set -euo pipefail
 #               std_file.zig, std_file_pal.zig, std_stdin.zig,
 #               std_stdin_pal.zig, std_stream.zig, std_crypto.zig,
 #               std_parse.zig, std_bencode.zig, std_map.zig, std_sort.zig, std_heap.zig,
-#               std_rle.zig, std_base64.zig, std_hex.zig, std_utf8.zig}
+#               std_rle.zig, std_base64.zig, std_hex.zig, std_utf8.zig, std_http.zig}
 #   SEED_README.txt  provenance + rebuild recipes + canonical flag-set rule
 #
 # Before packing, the archive's C is gcc-rebuilt self-contained in a scratch dir
@@ -112,7 +112,7 @@ else
         cp "$ROOT/sf/src/include/$f" "$SEED/runtime/"
     done
 fi
-for f in std.zig std_io.zig std_fmt.zig std_arena.zig std_net.zig std_str.zig std_mem.zig std_math.zig std_debug.zig std_async.zig std_bits.zig std_os.zig std_os_pal.zig std_time.zig std_time_pal.zig std_buf.zig std_file.zig std_file_pal.zig std_stdin.zig std_stdin_pal.zig std_stream.zig std_crypto.zig std_parse.zig std_bencode.zig std_map.zig std_sort.zig std_heap.zig std_rle.zig std_base64.zig std_hex.zig std_utf8.zig; do
+for f in std.zig std_io.zig std_fmt.zig std_arena.zig std_net.zig std_str.zig std_mem.zig std_math.zig std_debug.zig std_async.zig std_bits.zig std_os.zig std_os_pal.zig std_time.zig std_time_pal.zig std_buf.zig std_file.zig std_file_pal.zig std_stdin.zig std_stdin_pal.zig std_stream.zig std_crypto.zig std_parse.zig std_bencode.zig std_map.zig std_sort.zig std_heap.zig std_rle.zig std_base64.zig std_hex.zig std_utf8.zig std_http.zig; do
     cp "$ROOT/sf/src/$f" "$SEED/lib/"
 done
 
@@ -159,7 +159,7 @@ zig1-seed/runtime/    link/include sources needed to compile gen/:
                       mode-specific support so a gcc-only rebuild reproduces
                       the seed binary's fixed point; canonical repo copies for
                       pre-EMITEMIT gen dirs)
-zig1-seed/lib/        the 30 std .zig (std.zig, std_io.zig, std_fmt.zig,
+zig1-seed/lib/        the 32 std .zig (std.zig, std_io.zig, std_fmt.zig,
                       std_arena.zig, std_net.zig, std_str.zig, std_mem.zig,
                       std_math.zig, std_debug.zig, std_async.zig, std_bits.zig,
                       std_os.zig, std_os_pal.zig, std_time.zig,
@@ -167,7 +167,7 @@ zig1-seed/lib/        the 30 std .zig (std.zig, std_io.zig, std_fmt.zig,
                       std_file_pal.zig, std_stdin.zig, std_stdin_pal.zig,
                       std_stream.zig, std_crypto.zig, std_parse.zig, std_bencode.zig,
                       std_map.zig, std_sort.zig, std_heap.zig, std_rle.zig,
-                      std_base64.zig, std_hex.zig, std_utf8.zig)
+                      std_base64.zig, std_hex.zig, std_utf8.zig, std_http.zig)
 zig1-seed/SEED_README.txt  this file
 
 (net_prelude.h / net_runtime.h / net_runtime.c / optstar_repro.h are NOT
