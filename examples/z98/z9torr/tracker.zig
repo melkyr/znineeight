@@ -9,8 +9,8 @@
 //   &left=<l>&compact=1[&event=started|completed]
 // `info_hash` and `peer_id` are 20 raw bytes and MUST be percent-encoded
 // (every byte outside `[A-Za-z0-9._~-]` -> `%XX`); `left` is derived as
-// `total_length - downloaded` (clamped at 0). `event` is derived from `stats`:
-// nothing downloaded -> `started`, all downloaded -> `completed`, else omitted.
+// `total_length - downloaded` (clamped at 0). `event` is the caller-supplied
+// `AnnounceEvent`; `.none` omits the `event` field entirely.
 //
 // Response: HTTP 200 with a bencoded dict. A top-level `failure reason` key is
 // a tracker failure, not a success (`TrackerError.FailureReason`; the string is
@@ -40,8 +40,11 @@ pub const PeerId = [20]u8;
 // path via htons). See the header for the `ip_be` representation.
 pub const PeerAddr = struct { ip_be: u32, port: u16 };
 
+// Announce `event` query value (brief Step 1). `.none` omits the field entirely.
+pub const AnnounceEvent = enum(u8) { none = 0, started = 1, completed = 2 };
+
 // Spec §6 `Stats`. M2 has no stats module yet, so the tracker owns the type it
-// consumes; M3 relocates it to `stats.zig` (M3 Task 1) and may alias this.
+// consumes; M3 imports `tracker.Stats` (operator ruling I1=A, 2026-10-08).
 pub const Stats = struct {
     downloaded: u64,
     uploaded: u64,
@@ -124,21 +127,6 @@ fn intToU32(v: i64, out: *u32) bool {
     return true;
 }
 
-// `started` on the first announce (nothing downloaded yet), `completed` once
-// every byte is present, otherwise no event.
-fn eventName(t: torrentlib.Torrent, stats: Stats) []const u8 {
-    if (stats.downloaded == 0) {
-        var started: []const u8 = "started";
-        return started;
-    }
-    if (stats.downloaded >= t.total_length) {
-        var completed: []const u8 = "completed";
-        return completed;
-    }
-    var none: []const u8 = "";
-    return none;
-}
-
 fn allocPeers(arena: *std.arena.Arena, n: usize) TrackerError![]PeerAddr {
     var raw = std.arena.alloc(arena, n * @sizeOf(PeerAddr)) catch return error.OutOfMemory;
     return @ptrCast([*]PeerAddr, raw)[0..n];
@@ -152,7 +140,7 @@ fn appendByte(b: *std.buf.Buf, c: u8) TrackerError!void {
     std.buf.appendByte(b, c) catch return error.OutOfMemory;
 }
 
-pub fn announce(arena: *std.arena.Arena, t: torrentlib.Torrent, peer_id: PeerId, port: u16, stats: Stats) TrackerError!AnnounceResult {
+pub fn announce(arena: *std.arena.Arena, t: torrentlib.Torrent, peer_id: PeerId, port: u16, event: AnnounceEvent, stats: Stats) TrackerError!AnnounceResult {
     g_failure_len = 0;
 
     var enc_ih: []u8 = std_http.percentEncode(arena, t.info_hash[0..HASH_LEN]) catch |e| {
@@ -186,10 +174,14 @@ pub fn announce(arena: *std.arena.Arena, t: torrentlib.Torrent, peer_id: PeerId,
     try appendStr(&b, "&left=");
     try appendStr(&b, parse.utoa64(nbuf[0..], left));
     try appendStr(&b, "&compact=1");
-    var ev: []const u8 = eventName(t, stats);
-    if (ev.len > 0) {
-        try appendStr(&b, "&event=");
-        try appendStr(&b, ev);
+    switch (event) {
+        .started => {
+            try appendStr(&b, "&event=started");
+        },
+        .completed => {
+            try appendStr(&b, "&event=completed");
+        },
+        else => {},
     }
     var url: []u8 = std.buf.slice(&b);
 
