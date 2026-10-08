@@ -20,6 +20,7 @@
 
 const std = @import("std");
 const parse = @import("std_parse.zig");
+const buf_mod = @import("std_buf.zig");
 
 pub const Value = union(enum) {
     int_val: i64,
@@ -266,4 +267,56 @@ pub fn dictValueSpan(bytes: []const u8, key: []const u8) BencodeError!?Span {
         }
     }
     return null;
+}
+
+// Serialize `value` canonically (spec §4.2): `i<n>e` (with '-' for negatives),
+// `<len>:<bytes>`, `l…e`, `d…e`; dict keys are emitted in stored (insertion)
+// order. Output is allocated solely from `arena`; any allocation failure
+// propagates as error.OutOfMemory.
+fn encodeValue(b: *buf_mod.Buf, value: Value) BencodeError!void {
+    switch (value) {
+        .int_val => |n| {
+            try buf_mod.appendByte(b, 'i');
+            var tmp: [24]u8 = undefined;
+            const s = parse.itoa64(tmp[0..], n);
+            try buf_mod.append(b, s);
+            try buf_mod.appendByte(b, 'e');
+        },
+        .bytes => |s| {
+            var tmp: [24]u8 = undefined;
+            const l = parse.itoa64(tmp[0..], @intCast(i64, s.len));
+            try buf_mod.append(b, l);
+            try buf_mod.appendByte(b, ':');
+            try buf_mod.append(b, s);
+        },
+        .list => |items| {
+            try buf_mod.appendByte(b, 'l');
+            var i: usize = 0;
+            while (i < items.len) : (i += 1) {
+                try encodeValue(b, items[i]);
+            }
+            try buf_mod.appendByte(b, 'e');
+        },
+        .dict => |entries| {
+            try buf_mod.appendByte(b, 'd');
+            var i: usize = 0;
+            while (i < entries.len) : (i += 1) {
+                const e = entries[i];
+                var tmp: [24]u8 = undefined;
+                const l = parse.itoa64(tmp[0..], @intCast(i64, e.key.len));
+                try buf_mod.append(b, l);
+                try buf_mod.appendByte(b, ':');
+                try buf_mod.append(b, e.key);
+                try encodeValue(b, e.value);
+            }
+            try buf_mod.appendByte(b, 'e');
+        },
+        else => {},
+    }
+}
+
+pub fn encode(arena: *std.arena.Arena, value: Value) BencodeError![]u8 {
+    var b = buf_mod.init(arena);
+    try encodeValue(&b, value);
+    return buf_mod.slice(&b);
 }

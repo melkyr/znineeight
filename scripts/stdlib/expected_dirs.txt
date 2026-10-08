@@ -46,7 +46,9 @@ repro/mi_matrix/stdlib_base64_roundtrip_xmod
 repro/mi_matrix/stdlib_base64_stress_xmod
 repro/mi_matrix/stdlib_bencode_decode_xmod
 repro/mi_matrix/stdlib_bencode_dictspan_xmod
+repro/mi_matrix/stdlib_bencode_encode_xmod
 repro/mi_matrix/stdlib_bencode_limits_xmod
+repro/mi_matrix/stdlib_bencode_oom_xmod
 repro/mi_matrix/stdlib_bits_extract_trap_xmod
 repro/mi_matrix/stdlib_bits_insert_trap_xmod
 repro/mi_matrix/stdlib_bits_stress_xmod
