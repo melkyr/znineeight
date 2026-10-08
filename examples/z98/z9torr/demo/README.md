@@ -1,8 +1,10 @@
 # z9torr — demo golden
 
-`z9torr <file.torrent>` parses a single-file torrent and prints a metadata
-summary. This directory records the golden commands, the emitted-C89 md5, and
-the committed fixture `info_hash` values used by `tests/tier1.sh`.
+`z9torr <file.torrent>` parses a single-file torrent, announces to the tracker,
+and downloads the payload from one peer (verifying every piece by SHA-1, with
+cross-restart resume). This directory records the golden commands, the
+emitted-C89 md5, the committed fixture hashes, and the
+`tests/tier1.sh`/`tests/tier2.sh` gates.
 
 ## Build and run (binding seed recipe)
 
@@ -35,7 +37,7 @@ cd /workspace/znineeight
 timeout 120 /tmp/z9_m0_seed/zig1_5_clean --dump-c89 examples/z98/z9torr/main.zig | md5sum
 ```
 
-- md5: `b0e8496d741aa130b7252bd7ebefe985` (stable 3×)
+- md5: `b6595db02d0a4fadb497a1becdb703cd` (stable 3×)
 - command: `timeout 120 /tmp/z9_m0_seed/zig1_5_clean --dump-c89 examples/z98/z9torr/main.zig | md5sum`
 
 ## Fixtures and `info_hash`
@@ -80,3 +82,41 @@ expected hash to compare against, so it correctly exits 0 (hash
 gate instead mutates an `info` byte to trip a real typed check: `t1.bin` →
 `/1.bin`, whose leading path separator fails the single-file path-safety check
 (`BadFilePath`) while still exercising the exact `info`-span bytes.
+
+## Tier-2 gate (download + resume)
+
+```bash
+bash examples/z98/z9torr/tests/tier2.sh
+```
+
+Builds `z9torr` + `mock_tracker` (`:6969`) + `mock_peer` (`:6970`) with the
+binding recipe, generates the two golden payloads with the `tests/mkfixture.sh`
+`awk srand` recipe, and asserts:
+
+| case | assertion | observed |
+|---|---|---|
+| `t1_single_1m` download | exit 0 + `sha1sum` == `7a985d40cf76ef129b2889fa5bfce75304067dc9` | `summary: fetched=1048576 requests=64` |
+| `t2_single_25m` download | exit 0 + `sha1sum` == `00fcf3e712b1271e12542032a2797248590673d3` | `summary: fetched=26214400 requests=1600` |
+| interrupt + restart `t2` | exit 0 + sha1 == expected + non-empty sidecar `partial[]` + fetched < cold | cold `26214400` → restart `25870336` (requests `1600` → `1579`) |
+| `mock_peer --mode bad-bitfield-length` | exit 4 | `z9torr: peer error` |
+| `mock_peer --mode wrong-info-hash` | exit 4 | `z9torr: peer error` |
+
+Summary: `15 passed, 0 failed` → `TIER2 PASS`.
+
+### Resume evidence
+
+The resume case runs `t2` under a fresh `mock_peer`, waits until
+`.z9torr.resume` has ≥1 verified piece (`completed_bits` non-zero) **and** a
+non-empty `partial[]` (bencoded `7:partialld…`), then `kill -9`s the client and
+restarts it against a fresh `mock_peer`. The restart's `summary: fetched=` is
+strictly less than the cold run's — the partial piece's already-written 16 KiB
+blocks are seeded from the sidecar `block_mask` and not re-requested:
+
+```
+cold    summary: fetched=26214400 requests=1600
+restart summary: fetched=25870336 requests=1579
+```
+
+Both SHA-1 to `testdata/expected/t2_single_25m.sha1` (`00fcf3e7…`). The gate runs
+each client in a fresh temp CWD (`$OUT/run.*`), so no `t1.bin`/`t2.bin`/
+`.z9torr.resume` leaks into the repository.

@@ -4,9 +4,9 @@
 
 **Entry file:** `main.zig`
 
-**Working commit:** `83881722`
+**Working commit:** `808a3b93` (M2 source; Task 5 docs on top)
 
-**MD5 (`--dump-c89`):** `b4403decb51c775075fb1beb89a35c73` (seed `zig1_5_clean`; stable 3×; M1a amendment)
+**MD5 (`--dump-c89`):** `b6595db02d0a4fadb497a1becdb703cd` (seed `zig1_5_clean`; stable 3×; M2)
 
 ## Build Recipes
 
@@ -21,7 +21,7 @@ sh /tmp/z9_m1_out/build_target.sh linux /tmp/z9_m1_out/prog
 ### seed zig1_5_clean (dump C89) — for the MD5 above
 ```bash
 timeout 120 /tmp/z9_m0_seed/zig1_5_clean --dump-c89 examples/z98/z9torr/main.zig | md5sum
-# b4403decb51c775075fb1beb89a35c73  -
+# b6595db02d0a4fadb497a1becdb703cd  -
 ```
 
 ## Expected Output
@@ -71,3 +71,23 @@ The seed `lib/std.zig` does not re-export `file`, so `std_file` is imported by p
 is subject to the 16-bit command-line length limit and Win9x quoting rules. The parser
 consumes the `argv` the runtime supplies and never re-tokenizes the raw command line, so
 Win9x argument handling matches the CRT's, not a custom splitter.
+
+**M2 (single-peer download + resume) is complete (2026-10-08).** New modules:
+`wire.zig` (BE framing + handshake), `tracker.zig` (HTTP announce + compact
+peers), `disk.zig` (single-file write-through + read-back), `resume.zig`
+(fastresume sidecar `.z9torr.resume` + re-hash), `piece.zig` (depth-4 request
+pipeline + SHA-1 verify), `peer.zig` (one peer coroutine), and
+`tools/mock_tracker.zig` (`:6969`) + `tools/mock_peer.zig` (`:6970`). `main`
+announces, downloads, verifies, and prints a `summary: fetched=<bytes>
+requests=<n>` line at exit.
+
+Resume uses the sidecar's `completed_bits` plus a `partial` list of
+`{index, block_mask}` entries (one per half-downloaded piece); on restart the
+present 16 KiB blocks are seeded as already-received so only the missing blocks
+are requested. A `bitfield` whose body is not exactly `ceil(n_pieces/8)` bytes
+rejects the peer (exit 4).
+
+Tests: `tests/tier1.sh` (15/0; parse + `ref_check`), `tests/tier1_cli.sh` (CLI
+shapes), `tests/tier2.sh` (15/0; download `t1`/`t2`, interrupt+restart resume
+with strictly-fewer fetched bytes, malformed-peer rejection). The `--dump-c89`
+md5 above is stable 3× for the M2 source.
