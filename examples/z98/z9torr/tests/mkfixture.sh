@@ -118,7 +118,10 @@ build_fixture() {
         printf 'e'
     } > "$info"
 
-    announce='http://tracker.example.com/announce'
+    # tier2/tier4 reach the local mock_tracker (default port 6969; see
+    # testdata/ports.txt). `announce` is OUTSIDE the `info` dict, so this does
+    # not affect the info_hash or payload SHA-1 goldens.
+    announce='http://127.0.0.1:6969/announce'
     alen="$(str_len "$announce")"
 
     torrent="$TDIR/$name.torrent"

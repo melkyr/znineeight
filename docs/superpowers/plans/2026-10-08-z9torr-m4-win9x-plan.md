@@ -15,7 +15,8 @@
 ## Global Constraints
 
 - **Does not gate on real hardware.** T4 = Wine smoke; T5 = documented manual Win98 procedure with expected output. The Win98 VM is outside the repo.
-- **No source changes** unless a Win9x seam is genuinely broken; any such fix is a STOP-present with evidence (spec §12 risk 2).
+- **No compiler/source changes** unless a Win9x seam is genuinely broken; any such fix is a STOP-present with evidence (spec §12 risk 2).
+- **Amendment lift — std change authorized (operator ruling, 2026-10-08).** The M0–M4 "example-only" restriction is lifted for **`sf/src/std_file.zig` + `sf/src/std_file_pal.zig`**: M4 adds **64-bit file offsets** (POSIX `lseek64`/`_llseek`/`pread64`; Windows already uses `SetFilePointerEx` i64) so payloads > 2 GiB work on the Linux host (spec §12 risk 7). Compiler fixed point untouched; `scripts/stdlib/verify_stdlib.sh` MUST stay green — add a `repro/mi_matrix` fixture + the M0-style registration.
 - **parity checks are LF-normalized** (`cross_parity.sh` semantics).
 - Build/counts/gitignore/edit/no-push/no-compression rules as M1. Reports under `.superpowers/sdd/2026-10-08-z9torr-m4-win9x-plan/`.
 - Z98 rules: no method syntax; no generics; strict `@intCast`; `switch` needs `else`.
@@ -28,7 +29,19 @@
 
 ---
 
-### Task 0: Windows emission + mingw build
+### Task 0: 64-bit file offsets in `std_file` (amendment lift)
+
+**Files:**
+- Modify (std, amendment lift): `sf/src/std_file.zig`, `sf/src/std_file_pal.zig`
+- Create/register: `repro/mi_matrix/stdlib_file_seek64_xmod` fixture + seed-script/`QUICK_REF.md`/`expected_dirs.txt` registration (M0 pattern)
+
+- [ ] **Step 1: Add 64-bit seek.** Widen `seekHandle`/`sizeHandle` to 64-bit offsets: POSIX use `lseek64`/`_llseek` (or `pread64`) and drop the 2 GiB rejection at `sf/src/std_file.zig:158-160`; Windows already uses `SetFilePointerEx` (i64) / `GetFileSizeEx`. Keep the same `seek`/`size` API (no signature change).
+- [ ] **Step 2: Fixture + gate.** A `repro/mi_matrix` fixture seeks past the 2 GiB mark (sparse, no payload written) and asserts `size`/`seek` report the 64-bit offset; register it; `bash scripts/stdlib/verify_stdlib.sh` → green. Compiler untouched.
+- [ ] **Step 3: Commit + report.** `git commit -m "feat(std_file): 64-bit file offsets (amendment lift)"`
+
+---
+
+### Task 1: Windows emission + mingw build
 
 **Files:**
 - Create: `examples/z98/z9torr/tests/tier4_wine.sh` (build half)
@@ -42,7 +55,7 @@
 
 ---
 
-### Task 1: Wine smoke against host mocks
+### Task 2: Wine smoke against host mocks
 
 **Files:**
 - Modify: `examples/z98/z9torr/tests/tier4_wine.sh` (run half)
@@ -56,7 +69,7 @@
 
 ---
 
-### Task 2: Manual Win98 procedure + docs
+### Task 3: Manual Win98 procedure + docs
 
 **Files:**
 - Create: `examples/z98/z9torr/demo/win9x_README.txt`
@@ -69,6 +82,6 @@
 
 ## Self-Review
 
-- **Spec coverage:** §12 risk 2 (non-blocking connect on Win9x) → Task 1 Step 4; risk 5 (`FD_SETSIZE`) → Task 1 Step 2/4; T4/T5 tiers → Tasks 1–2.
+- **Spec coverage:** §12 risk 2 (non-blocking connect on Win9x) → Task 2 Step 4; risk 5 (`FD_SETSIZE`) → Task 2 Step 2/4; risk 7 (> 2 GiB POSIX seek) → Task 0; T4/T5 tiers → Tasks 2–3.
 - **Placeholder scan:** no TBDs; the smoke has an explicit hash assertion.
 - **Type consistency:** no new public types; reuses M2/M3 modules.

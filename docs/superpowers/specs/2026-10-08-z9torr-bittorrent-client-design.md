@@ -336,6 +336,8 @@ Single-file only, so resume is one output file plus a small sidecar.
   `total_length`, and the output file's mtime all match; otherwise the re-hash
   result is used. This is what resumes a **half-downloaded piece** across a
   restart (the block mask says which 16 KB blocks are already on disk).
+  The mtime is read via a `std_file` file-mtime capability added in M2
+  (operator amendment lift, 2026-10-08; see the M2 plan).
 
 ## §8 Errors and exit codes
 
@@ -398,12 +400,13 @@ hygiene, not a gate.)
   resume** test (kill mid-download, re-run, confirm it finishes and both the
   completed pieces and the partial piece were reused — asserted via the
   client's own progress output and total bytes fetched).
-- **Gates (per plan; operator amendment 2026-10-08):** the compiler and its
-  sources are not modified, so compiler-only gates (fixed point, dump-MD5,
-  corpus classify) are intentionally not run. M0's measure is the std lib's
-  own harness — `scripts/stdlib/verify_stdlib.sh`, 266→280 PASS / 0 FAIL — with
-  its R7 fixtures. M1–M4's measure is the example's own `tests/tier1.sh`
-  (parse/ref_check), `tests/tier2.sh` (download + resume), and
+- **Gates (per plan; operator amendment 2026-10-08; amended for the M2/M4 std
+  lifts):** the **compiler** is not modified, so compiler-only gates (fixed
+  point, dump-MD5, corpus classify) are intentionally not run. Std-lib changes
+  ARE authorized in M2 (`std_file` file mtime) and M4 (64-bit file seek)
+  (amendment lift, 2026-10-08) — those keep `scripts/stdlib/verify_stdlib.sh`
+  green (M0 baseline 280 PASS). M1–M4's measure is the example's own
+  `tests/tier1.sh` (parse/ref_check), `tests/tier2.sh` (download + resume), and
   `tests/tier4_wine.sh` (Wine smoke).
 
 ## §11 Milestones and plan index
@@ -437,6 +440,11 @@ header names its predecessor/successor.
 6. **`std_http` `get` needs a live server** for a fixture; M0 fixtures drive
    the pure `parseUrl`/`percentEncode`/`parseResponse` seam and the full path
    is proven in M2.
+7. **Large payloads (> 2 GiB) on the Linux host.** `std_file.seekHandle`
+   rejects POSIX offsets > 2 GiB (`sf/src/std_file.zig:158-160`); write-through
+   for a > 2 GiB payload fails on T1/T2 (Windows uses `SetFilePointerEx`, OK).
+   M2's tests are ≤ 25 MB; **M4 is amended to add 64-bit file offsets**
+   (operator amendment lift, 2026-10-08).
 
 ## §13 Out of scope
 

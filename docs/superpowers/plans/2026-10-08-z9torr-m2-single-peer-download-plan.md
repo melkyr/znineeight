@@ -19,6 +19,9 @@
 - **Message caps (binding).** Max message 64 KB; per-peer read buffer 16 KB. A length prefix > 64 KB is a protocol error.
 - **RESUME (binding).** Write-through blocks + verify-on-complete + re-hash on start + `.z9torr.resume` sidecar. A restart must not re-fetch verified pieces, and must resume a partially-received piece (spec §7).
 - **Build recipe / gitignore / edit rules / no-push / no-compression** as M1. **No compiler gate:** the compiler is untouched; gates are the example's own tier tests, not the fixed point / dump-MD5 / corpus classify.
+- **Amendment lift — std change authorized (operator ruling, 2026-10-08).** The M0–M4 "example-only" restriction is lifted for **`sf/src/std_file.zig` + `sf/src/std_file_pal.zig`**: M2 adds a **file modification-time** capability (e.g. `pub fn mtime(path: []const u8) FileError!i64`; POSIX via `stat`/`fstat`, Windows via `GetFileAttributesExA`) so the resume sidecar's mtime validation (spec §7) is implementable. The compiler fixed point is still untouched, but because **std** changes, `scripts/stdlib/verify_stdlib.sh` MUST stay green — add a `repro/mi_matrix` fixture for the new capability and register it exactly as M0 did (`scripts/seed/build_from_seed.sh`, `scripts/seed/archive_seed.sh`, `docs/sf/QUICK_REF.md`, `scripts/stdlib/expected_dirs.txt`).
+- **Fixtures point at the mock tracker (operator ruling, 2026-10-08).** `tests/mkfixture.sh` now writes `announce='http://127.0.0.1:6969/announce'`, and the committed `testdata/*.torrent` were regenerated with it. `announce` is outside the `info` dict, so `expected/*.{sha1,infohash}` are **unchanged** (verified).
+- **P3 (recorded; fixed in M4).** `std_file.seekHandle` rejects POSIX offsets > 2 GiB (`sf/src/std_file.zig:158-160`), so payloads > 2 GiB fail on the Linux host. M2's tests are ≤ 25 MB and unaffected; M4 is amended to add 64-bit file offsets.
 - Reports under `.superpowers/sdd/2026-10-08-z9torr-m2-single-peer-download-plan/`.
 - Z98 rules: no method syntax; no generics; strict `@intCast`; `switch` needs `else`; string literals via `var s: []const u8 = "x";`.
 
@@ -88,11 +91,15 @@
 **Files:**
 - Create: `examples/z98/z9torr/disk.zig`, `examples/z98/z9torr/resume.zig`
 - Modify: `examples/z98/z9torr/main.zig` (wire resume load after parse)
+- Modify (std, amendment lift): `sf/src/std_file.zig`, `sf/src/std_file_pal.zig` — add the file-mtime capability
+- Create/register: `repro/mi_matrix/stdlib_file_mtime_xmod` fixture + seed-script/`QUICK_REF.md`/`expected_dirs.txt` registration (M0 pattern)
 
 **Interfaces:**
 - Consumes: `std_file` (`open/read/write/seek/size`), `std_crypto.sha1`, `std_bencode.encode/decode`.
 - Produces: `disk.openTarget(arena, t) !File`; `disk.writeBlock(f, t, piece_index, block_begin, bytes) !void`; `disk.readPiece(f, t, index, out: []u8) !usize`; `resume.load(arena, t, out_file) ResumeState`; `resume.rehash(arena, t, f, state) !void`; `resume.save(arena, t, state) !void`; `ResumeState = struct { completed_bits: []u8, partial: []PartialPiece }`.
 
+- [ ] **Step 0: Add the file-mtime capability to `std_file` (amendment lift).**
+  `pub fn mtime(path: []const u8) FileError!i64` (seconds since epoch; POSIX `stat`/`fstat`, Windows `GetFileAttributesExA`/`GetFileTime`), with the PAL extern(s) in `std_file_pal.zig`. Add a `repro/mi_matrix` fixture that writes a file and asserts its reported mtime (and the missing-file error), plus the seed-script/`QUICK_REF.md`/`expected_dirs.txt` registration. `bash scripts/stdlib/verify_stdlib.sh` → green including the new fixture. Compiler untouched.
 - [ ] **Step 1: Implement `disk.zig` (single-file).**
   - `openTarget`: create/open `t.name` (sanitized) in the output dir; ensure size `t.total_length` (seek to end-1 + write a zero, portable to FAT). Reject a `name` that is a directory or reserved/illegal on Win9x (already sanitized in M1) with `DiskError`.
   - `writeBlock`: `seek(piece_index * piece_length + block_begin)` then write. `readPiece`: `seek(index*piece_length)` then read `min(piece_length, total_length - index*piece_length)` bytes.
