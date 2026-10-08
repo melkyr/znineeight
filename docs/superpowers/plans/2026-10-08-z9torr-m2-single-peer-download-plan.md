@@ -133,6 +133,22 @@
 
 ---
 
+### Task 4b: Partial-piece resume + malformed-peer rejection + fetch metric
+
+**Files:**
+- Modify: `examples/z98/z9torr/peer.zig`, `examples/z98/z9torr/resume.zig`, `examples/z98/z9torr/main.zig`
+
+**Interfaces:**
+- Produces: partial-piece resume (persist/consume the sidecar `partial[]` `block_mask`), `bitfield` length validation (`ceil(n_pieces/8)`, else reject the peer), and a one-line fetched-bytes/request summary on stdout.
+
+- [ ] **Step 1: Malformed-peer rejection (operator ruling B1=A).** On a `bitfield` message, require payload length `== ceil(n_pieces/8)`; otherwise reject/drop that peer so the run exits 4.
+- [ ] **Step 2: Partial-piece resume (operator ruling B2=A).** Persist each in-flight piece's received-block mask in the sidecar `partial[]`; on load, seed those blocks as already-received and skip them, so only the missing 16 KB blocks are requested. Keep the sidecar `mtime` current by saving whenever a partial-piece block is written (spec §7 cadence amended 2026-10-08).
+- [ ] **Step 3: Fetch metric (operator ruling B3=A).** Print a one-line fetched-bytes/request summary at exit (from `peer.up_bytes`) so tier2 can assert a resumed run re-fetches strictly fewer bytes than a cold start.
+- [ ] **Step 4: Prove.** `bad-bitfield-length` peer → exit 4; a killed-then-restarted `t2` resumes the partial piece and re-fetches strictly fewer bytes; cold `t1`/`t2` downloads still match the goldens; `tier1.sh` 15/0. Commit `git commit -m "example(z9torr): partial-piece resume + malformed-peer rejection + fetch metric"`.
+- [ ] **Step 5: Report.** Ledger line.
+
+---
+
 ### Task 5: tier2 + closeout
 
 **Files:**

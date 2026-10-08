@@ -338,8 +338,10 @@ Single-file only, so resume is one output file plus a small sidecar.
   the always-available fallback and needs no sidecar.
 - **Fastresume sidecar `.z9torr.resume`** (bencode-encoded using
   `std_bencode`): `{ info_hash, total_length, mtime, completed_bits,
-  partial: [ { index, block_mask } ] }`. Written after each verified piece and
-  on clean completion. On load it is trusted only if `info_hash`,
+  `partial: [ { index, block_mask } ] }`. Written after each verified piece,
+  whenever a block is written to a still-incomplete (partial) piece, and on
+  clean completion (so the recorded `mtime` stays current and the partial
+  `block_mask` is durable across a restart). On load it is trusted only if `info_hash`,
   `total_length`, and the output file's mtime all match; otherwise the re-hash
   result is used. This is what resumes a **half-downloaded piece** across a
   restart (the block mask says which 16 KB blocks are already on disk).
