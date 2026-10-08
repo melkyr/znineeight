@@ -19,6 +19,10 @@ const pal = @import("std_file_pal.zig");
 @cInclude("<std_os_prelude.h>");
 @cInclude("<fcntl.h>");
 @cInclude("<stdio.h>");
+// <sys/stat.h> supplies the POSIX stat(2) prototype for the mtime capability
+// below (the Z98 extern live in std_file_pal.zig; the C prototype must be
+// visible in this module's emitted C). Portable across the win32 branch too.
+@cInclude("<sys/stat.h>");
 
 // One error set per module (R2). OutOfMemory is readAll's arena error (R1).
 pub const FileError = error{ OpenFailed, ReadFailed, WriteFailed, SeekFailed, SizeFailed, FlushFailed, RemoveFailed, RenameFailed, OutOfMemory };
@@ -65,6 +69,31 @@ const SEEK_SET_I32: i32 = 0;
 const SEEK_CUR_I32: i32 = 1;
 const SEEK_END_I32: i32 = 2;
 
+// --- file modification time (mtime) ---------------------------------------
+// `struct stat` is ABI-specific, so the PAL passes an opaque byte buffer and the
+// fields are read at probed offsets (the same S2-I layout-probe pattern std_time
+// uses for struct timeval). Probe (2026-10-08, `gcc 12.2 -m32` / glibc 2.36,
+// i386, no _FILE_OFFSET_BITS):
+//   sizeof(struct stat) == 88
+//   offsetof(struct stat, st_mtime) == 64   (32-bit time_t, 4 bytes)
+//   offsetof(struct stat, st_size)  == 44
+// The buffer is rounded up so a struct stat that later grows still fits; only
+// the pinned i386 non-LFS layout is supported.
+const STAT_BUF_BYTES: usize = 256;
+const STAT_MTIME_OFFSET: usize = 64;
+
+// win32 WIN32_FILE_ATTRIBUTE_DATA (x86): dwFileAttributes (4), ftCreationTime
+// (8), ftLastAccessTime (8), ftLastWriteTime (8), dwFileSizeHigh/Low (8). A
+// FILETIME is two DWORDs, so ftLastWriteTime.dwLowDateTime is at offset 20.
+const WIN_FILE_ATTR_BYTES: usize = 40;
+const WIN_FT_LASTWRITE_OFF: usize = 20;
+const GET_FILEEX_INFO_STANDARD: u32 = 0;
+
+// FILETIME counts 100-ns ticks from 1601-01-01; the Unix epoch is this many
+// seconds later.
+const FILETIME_TICKS_PER_SEC: i64 = 10000000;
+const WINDOWS_EPOCH_DELTA_SECS: i64 = 11644473600;
+
 // The null `void*` for the optional out-params (security attributes, overlapped,
 // template file). Z98 `null` is optional-only; the same construction std_net /
 // std_time use.
@@ -82,6 +111,17 @@ fn cstr(path: []const u8, out: []u8) bool {
     }
     out[path.len] = 0;
     return true;
+}
+
+// Little-endian 32-bit read from `b` at `off`, widened to i64 (no alignment
+// assumption). Used for struct stat.st_mtime (i32 time_t) and for each half of a
+// win32 FILETIME (two DWORDs).
+fn leU32At(b: []const u8, off: usize) i64 {
+    var v: i64 = @intCast(i64, b[off]);
+    v = v | (@intCast(i64, b[off + 1]) << 8);
+    v = v | (@intCast(i64, b[off + 2]) << 16);
+    v = v | (@intCast(i64, b[off + 3]) << 24);
+    return v;
 }
 
 // --- handle-level core (no File wrapper; writeAll has no arena) -------------
@@ -231,6 +271,28 @@ pub fn exists(path: []const u8) bool {
         return pal.GetFileAttributesA(@ptrCast([*]const u8, &cbuf[0])) != INVALID_FILE_ATTRIBUTES_U;
     } else {
         return pal.access(@ptrCast([*]const u8, &cbuf[0]), @intCast(i32, 0)) == 0;
+    }
+}
+
+// Modification time in seconds since the Unix epoch. POSIX: stat(2) into an
+// opaque buffer and read st_mtime at STAT_MTIME_OFFSET; win32:
+// GetFileAttributesExA + ftLastWriteTime (FILETIME 100-ns ticks). A missing or
+// un-statable path is OpenFailed (the granularity `open` uses). Used by the
+// z9torr resume sidecar's mtime validation (spec 2026-10-08 §7).
+pub fn mtime(path: []const u8) FileError!i64 {
+    var cbuf: [PATH_BUF]u8 = undefined;
+    if (!cstr(path, cbuf[0..])) return error.OpenFailed;
+    if (@isWindows()) {
+        var info: [WIN_FILE_ATTR_BYTES]u8 = undefined;
+        if (pal.GetFileAttributesExA(@ptrCast([*]const u8, &cbuf[0]), GET_FILEEX_INFO_STANDARD, @ptrCast(*void, &info[0])) == 0) return error.OpenFailed;
+        var lo: i64 = leU32At(info[0..], WIN_FT_LASTWRITE_OFF);
+        var hi: i64 = leU32At(info[0..], WIN_FT_LASTWRITE_OFF + 4);
+        var ticks: i64 = (hi << 32) | lo;
+        return ticks / FILETIME_TICKS_PER_SEC - WINDOWS_EPOCH_DELTA_SECS;
+    } else {
+        var stbuf: [STAT_BUF_BYTES]u8 = undefined;
+        if (pal.stat(@ptrCast([*]const u8, &cbuf[0]), @ptrCast(*void, &stbuf[0])) != 0) return error.OpenFailed;
+        return leU32At(stbuf[0..], STAT_MTIME_OFFSET);
     }
 }
 

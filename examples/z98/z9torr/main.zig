@@ -2,6 +2,8 @@ const std = @import("std");
 const cli = @import("cli.zig");
 const filemod = @import("std_file.zig");
 const torrentlib = @import("torrent.zig");
+const diskmod = @import("disk.zig");
+const resumemod = @import("resume.zig");
 const hexmod = @import("std_hex.zig");
 const parse = @import("std_parse.zig");
 
@@ -71,6 +73,29 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         std.os.exit(@intCast(i32, cli.exitCodeFor(cli.FailureClass.torrent)));
         return;
     };
+
+    // M2 Task 3 resume hook. If a previous run left the output file, reconstruct
+    // the completed-piece set (sidecar + re-hash). The full download loop (M2
+    // Task 4) consumes this state; here it is computed and discarded so M1's
+    // metadata-only output is byte-identical (the file is never created when it
+    // is absent, so M1's tier1 gate sees no side effects).
+    if (filemod.exists(t.name)) {
+        var out = diskmod.openTarget(&arena, t) catch {
+            var dmsg: []const u8 = "z9torr: disk error\n";
+            std.io.write(dmsg);
+            std.os.exit(@intCast(i32, cli.exitCodeFor(cli.FailureClass.disk)));
+            return;
+        };
+        var rstate = resumemod.load(&arena, t, &out);
+        resumemod.rehash(&arena, t, &out, rstate) catch {
+            filemod.close(&out);
+            var dmsg2: []const u8 = "z9torr: disk error\n";
+            std.io.write(dmsg2);
+            std.os.exit(@intCast(i32, cli.exitCodeFor(cli.FailureClass.disk)));
+            return;
+        };
+        filemod.close(&out);
+    }
 
     var l_name: []const u8 = "name: ";
     writeText(l_name);

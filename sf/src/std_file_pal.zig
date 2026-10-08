@@ -31,6 +31,12 @@ pub extern "stdcall" fn CloseHandle(hObject: *void) i32;
 pub extern "stdcall" fn GetFileAttributesA(lpFileName: [*]const u8) u32;
 pub extern "stdcall" fn DeleteFileA(lpFileName: [*]const u8) i32;
 pub extern "stdcall" fn MoveFileA(lpExistingFileName: [*]const u8, lpNewFileName: [*]const u8) i32;
+// win32: attributes + last-write time WITHOUT opening the file (the mtime
+// capability). fInfoLevelId is GET_FILEEX_INFO_LEVELS (GetFileExInfoStandard ==
+// 0); lpFileInformation points at the caller's byte buffer for
+// WIN32_FILE_ATTRIBUTE_DATA (read at a probed offset; see std_file.zig). Return
+// is BOOL (0 on failure).
+pub extern "stdcall" fn GetFileAttributesExA(lpFileName: [*]const u8, fInfoLevelId: u32, lpFileInformation: *void) i32;
 
 // --- POSIX ----------------------------------------------------------------
 // open flags are hardcoded by the caller (no dependence on the fcntl.h macro
@@ -44,3 +50,12 @@ pub extern "c" fn fsync(fd: i32) i32;
 pub extern "c" fn unlink(path: [*]const u8) i32;
 pub extern "c" fn rename(old_path: [*]const u8, new_path: [*]const u8) i32;
 pub extern "c" fn access(path: [*]const u8, mode: i32) i32;
+// POSIX stat(2)/fstat(2) for the file modification-time capability (mtime). The
+// out-buffer is *void: the caller supplies a byte buffer sized for the target's
+// `struct stat` and reads st_mtime at a probed offset (the S2-I opaque-layout
+// pattern; see std_file.zig). The C prototype comes from <sys/stat.h>
+// (@cInclude'd by std_file.zig); the plain `stat`/`fstat` names resolve to the
+// glibc 2.33+ exported symbols under -m32 (probe 2026-10-08: links against
+// stat@GLIBC_2.33 / fstat@GLIBC_2.33 on glibc 2.36/i386).
+pub extern "c" fn stat(path: [*]const u8, buf: *void) i32;
+pub extern "c" fn fstat(fd: i32, buf: *void) i32;

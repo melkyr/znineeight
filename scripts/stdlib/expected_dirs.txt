@@ -102,6 +102,7 @@ repro/mi_matrix/stdlib_f32_print_xmod
 repro/mi_matrix/stdlib_file_close_xmod
 repro/mi_matrix/stdlib_file_exists_xmod
 repro/mi_matrix/stdlib_file_flush_xmod
+repro/mi_matrix/stdlib_file_mtime_xmod
 repro/mi_matrix/stdlib_file_open_xmod
 repro/mi_matrix/stdlib_file_openerr_xmod
 repro/mi_matrix/stdlib_file_read_xmod
