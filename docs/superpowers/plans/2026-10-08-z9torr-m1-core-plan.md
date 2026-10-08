@@ -62,7 +62,7 @@
 - Create: `examples/z98/z9torr/tests/tier1_cli.sh`
 
 **Interfaces:**
-- Produces: `Args = struct { torrent_path: []const u8, max_peers: u32, max_up: u32, max_down: u32 }`; `pub fn parseArgs(argc: i32, argv: [][*]u8) Args`; `pub fn usage() void`; `pub fn exitCodeFor(e: anyerror) u8` (or a fixed mapping per spec §8).
+- Produces: `Args = struct { torrent_path: []const u8, max_peers: u32, max_up: u32, max_down: u32 }`; `pub fn parseArgs(argc: i32, argv: [*][*]u8) Args` (M1a: many-pointer, no `[]synthetic` — D2); `pub fn usage() void`; `pub fn exitCodeFor(e: anyerror) u8` (or a fixed mapping per spec §8).
 
 - [ ] **Step 1: Write the tier1 CLI test first.** `tests/tier1_cli.sh` builds the program, then runs 6 shapes:
   `--help` → exit 0 + usage on stdout; no args → exit 1; unknown flag → exit 1; `--max-peers 101` → exit 1; valid `file.torrent` (missing file) → exit 2; `--max-down 70000` → exit 1. Assert exit codes with `test $? -eq N`.
@@ -83,7 +83,7 @@
 
 **Interfaces:**
 - Consumes: `std_bencode.decode`, `std_bencode.dictValueSpan`, `std_crypto.sha1Init/Update/Final`.
-- Produces: `Torrent` (spec §6, single-file: `announce`, `announce_list`, `info_hash: [20]u8`, `name`, `piece_length: u32`, `piece_hashes: []const u8` (flat, 20 B/piece — amended 2026-10-08), `total_length: u64`); `TorrentError = error{ MalformedBencode, MissingField, BadInfoHash, BadPieceCount, BadFilePath, TooLarge, OutOfMemory }`; `pub fn load(arena, file_bytes) TorrentError!Torrent`.
+- Produces: `Torrent` (spec §6, single-file: `announce`, `announce_list: [8][]const u8` + `announce_count: u32` (M1a, D2-safe; extras dropped — never `[][]const u8`), `info_hash: [20]u8`, `name`, `piece_length: u32`, `piece_hashes: []const u8` (flat, 20 B/piece — amended 2026-10-08), `total_length: u64`); `TorrentError = error{ MalformedBencode, MissingField, BadInfoHash, BadPieceCount, BadFilePath, TooLarge, OutOfMemory }`; M1a adds `MAX_TORRENT_BYTES = 3145728` (3 MiB metadata cap) and derives `MAX_PIECES = MAX_TORRENT_BYTES / 20`; `load` rejects oversized metadata with `TooLarge`; `pub fn load(arena, file_bytes) TorrentError!Torrent`.
 
 - [ ] **Step 1: Implement `load`.**
   - `decode` the whole file to a `Value`; require a top-level dict with `announce` (bytes), `info` (dict), optional `announce-list`.

@@ -19,9 +19,7 @@ fn writeU64(v: u64) void {
 }
 
 pub fn main(argc: i32, argv: [*][*]u8) void {
-    const n: usize = @intCast(usize, argc);
-    var av: [][*]u8 = argv[0..n];
-    var args: cli.Args = cli.parseArgs(argc, av);
+    var args: cli.Args = cli.parseArgs(argc, argv);
     if (!filemod.exists(args.torrent_path)) {
         var msg: []const u8 = "z9torr: cannot read torrent file\n";
         std.io.write(msg);
@@ -29,6 +27,37 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     }
 
     var arena: std.arena.Arena = std.arena.init(g_arena_buf[0..]);
+
+    // E2 (M1a): cap the .torrent metadata before reading it into the arena.
+    // The downloaded payload (`total_length`) is unbounded and streamed to
+    // disk; only the metadata file is capped (spec §9).
+    var szf = filemod.open(&arena, args.torrent_path, filemod.Mode.Read) catch {
+        var msg: []const u8 = "z9torr: cannot read torrent file\n";
+        std.io.write(msg);
+        std.os.exit(@intCast(i32, cli.exitCodeFor(cli.FailureClass.torrent)));
+        return;
+    };
+    var sz: i64 = filemod.size(&szf) catch {
+        filemod.close(&szf);
+        var msg: []const u8 = "z9torr: cannot read torrent file\n";
+        std.io.write(msg);
+        std.os.exit(@intCast(i32, cli.exitCodeFor(cli.FailureClass.torrent)));
+        return;
+    };
+    filemod.close(&szf);
+    if (sz < 0) {
+        var msg: []const u8 = "z9torr: cannot read torrent file\n";
+        std.io.write(msg);
+        std.os.exit(@intCast(i32, cli.exitCodeFor(cli.FailureClass.torrent)));
+        return;
+    }
+    if (@intCast(usize, sz) > torrentlib.MAX_TORRENT_BYTES) {
+        var msg: []const u8 = "z9torr: torrent too large\n";
+        std.io.write(msg);
+        std.os.exit(@intCast(i32, cli.exitCodeFor(cli.FailureClass.torrent)));
+        return;
+    }
+
     var bytes: []u8 = filemod.readAll(&arena, args.torrent_path) catch {
         var msg: []const u8 = "z9torr: cannot read torrent file\n";
         std.io.write(msg);

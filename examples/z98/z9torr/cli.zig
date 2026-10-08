@@ -24,7 +24,7 @@ fn eq(a: []const u8, b: []const u8) bool {
     return true;
 }
 
-fn argAt(argv: [][*]u8, i: usize) []const u8 {
+fn argAt(argv: [*][*]u8, i: usize) []const u8 {
     const p: [*]const u8 = @ptrCast([*]const u8, argv[i]);
     var n: usize = 0;
     while (p[n] != 0) : (n += 1) {}
@@ -62,7 +62,7 @@ fn usageError() void {
     std.os.exit(1);
 }
 
-pub fn parseArgs(argc: i32, argv: [][*]u8) Args {
+pub fn parseArgs(argc: i32, argv: [*][*]u8) Args {
     var a: Args = Args{
         .torrent_path = "",
         .max_peers = 50,

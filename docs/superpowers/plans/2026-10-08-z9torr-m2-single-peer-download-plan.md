@@ -150,3 +150,4 @@
 - **Spec coverage:** §3 wiring → Tasks 1/4; §4.3 `std_http` in tracker → Task 2; §6 structs → Tasks 1/3/4; §7 resume → Task 3 (+ tier2 resume test); §8 errors/exit codes → Tasks 1/2/4; §10 mocks/tier2 → Tasks 0/5.
 - **Placeholder scan:** no TBDs; every module has named signatures; the resume test asserts reused pieces, not just completion.
 - **Type consistency:** `Handshake`/`MsgType`/`Message`, `PeerAddr`/`AnnounceResult`, `PieceState`/`Request`/`RequestQueue`, `ResumeState` match the spec and M1's `Torrent`.
+- **D2 rule (M1a amendment, 2026-10-08):** M1's `Torrent.announce_list` is the fixed `[8][]const u8` + `announce_count: u32` (extras dropped), never `[][]const u8`. A Z98 slice `[]T` is safe only when `T` is primitive or a *named* type (struct/union/enum); never `[]` a *synthetic* type (slice/array/pointer/optional/tuple). M2's `[]PeerAddr`, `[]PieceState`, `[]BlockState` are slices of named structs (safe) — M2 adds no `[]synthetic` type.

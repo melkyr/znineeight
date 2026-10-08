@@ -253,7 +253,8 @@ const Args = struct { torrent_path: []const u8, max_peers: u32, max_up: u32, max
 
 const Torrent = struct {
     announce: []const u8,
-    announce_list: [][]const u8,      // flattened tiers; empty if absent
+    announce_list: [8][]const u8,      // fixed cap; up to 8 flattened tier URLs, extras dropped (D2-safe)
+    announce_count: u32,               // entries actually stored in announce_list
     info_hash: [20]u8,
     name: []const u8,                 // pass-through bytes; sanitized for disk
     piece_length: u32,
@@ -302,15 +303,17 @@ const Stats = struct { downloaded: u64, uploaded: u64, left: u64, peer_count: u3
                        window_down: [5]u32, window_up: [5]u32, window_idx: u32 };
 ```
 
-> **Amendment — M1 Task 2 (2026-10-08):** `piece_hashes` is a **flat**
+> **Amendment — M1 Task 2 / M1a (2026-10-08):** `piece_hashes` is a **flat**
 > `[]const u8` (concatenated SHA-1s, 20 bytes per piece; `piece_hashes.len ==
-> 20 * piece_count`) rather than `[][20]u8`. Reason: Z98 compiler defect **D2**
-> (`examples/torrent_example_defects.md`) — two different nested-slice types
-> (`[][]const u8` and `[][20]u8`) emit the *same* C slice typedef, so the
-> second field is declared with the first's element type. A flat byte string
-> avoids the collision; `announce_list` stays `[][]const u8` (the sole
-> nested-slice type, and therefore the correct owner of the typedef).
-> `info_hash` semantics are unchanged.
+> 20 * piece_count`) rather than `[][20]u8`, and `announce_list` is the fixed
+> `[8][]const u8` + `announce_count: u32` rather than `[][]const u8`. Reason:
+> Z98 compiler defect **D2** (`examples/torrent_example_defects.md`) — a slice
+> `[]T` emits its element's C name from the element's `name_id`, which is `0`
+> for every *synthetic* type (slice/array/pointer/optional/tuple), so two
+> different `[]synthetic` types collapse to one C typedef. **Rule:** a Z98
+> slice `[]T` is safe only when `T` is a primitive or a *named* type
+> (struct/union/enum); never `[]` a synthetic type — use flat bytes, a fixed
+> `[N]T`, or a named wrapper. `info_hash` semantics are unchanged.
 
 ## §7 Resume
 
@@ -360,6 +363,12 @@ The user sees one human-readable line; detail goes to stderr under
 - Peak budget: the example's own arenas must stay well under the 16 MB target;
   measured with `zig1 --markers --track-memory` (note: `--track-memory`
   requires `--markers`). A tier1/tier2 check records peaks.
+- **`.torrent` metadata cap (M1a, 2026-10-08):** the metadata file is capped at
+  `MAX_TORRENT_BYTES ≈ 3 MiB` (`3145728`; spec §9 arena-bound — the load arena
+  is 4 MiB) and rejected with a distinct `z9torr: torrent too large` (exit 2)
+  *before* `readAll`. `MAX_PIECES = MAX_TORRENT_BYTES / 20` follows from it. The
+  **downloaded payload is unbounded** (`total_length`, streamed to disk), so
+  this cap constrains only the small `.torrent` metadata, never the content.
 - Determinism: `Z9TORR_SEED` (env) seeds the PRNG and therefore `peer_id` and
   `--mode` mock behaviour, so tests can assert exact wire bytes. Production
   seeds from `std.time.ticksMs` + pid.

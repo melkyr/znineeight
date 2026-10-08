@@ -165,11 +165,33 @@ typedef struct { zT_8F083A69_Slice_zT_0B42B2F8_u* ptr; unsigned int len; }
     zT_9DFA8D74_Slice_zT_811C9DC5_;
 ```
 
-**Workaround (used by z9torr, spec amendment 2026-10-08).** Keep at most one
-"slice of a synthetic composite" type in the program. `piece_hashes` becomes a
-flat `[]const u8` (20 bytes per piece) instead of `[][20]u8`, leaving
-`announce_list: [][]const u8` as the only nested-slice type — and therefore the
-correct owner of the shared typedef. Semantics unchanged; `info_hash` unaffected.
+**Variants the compiler fix must cover.** `sf/src/main.zig:93`
+(`include_dirs: [16][]const u8`) proves arrays-of-slices are fine — the
+collision is on the element side of a *slice* `[]T` when `T` itself is
+synthetic:
+- `[][]const u8` — slice of slice (the original reproducer).
+- `[][20]u8` — slice of array.
+- `[][*]u8` — slice of many-pointer (z9torr argv; fixed in M1a).
+- `[]?T` — slice of optional (expected to collide the same way).
+- `[]tuple` — slice of tuple (expected to collide the same way).
+
+All collapse to the same `…Slice_zT_811C9DC5_` typedef because each element type
+is synthetic and therefore has `name_id == 0`.
+
+**Design rule (safe/unsafe).** A Z98 slice `[]T` is safe **iff** `T` is a
+primitive or a *named* type (struct/union/enum). It is **unsafe** when `T` is a
+synthetic type (slice/array/pointer/optional/tuple): two different `[]synthetic`
+types alias. To hold composites, use flat bytes (`[]const u8` + manual stride),
+a fixed `[N]T` (the array branch recurses correctly), or a *named* wrapper
+struct.
+
+**Workaround (used by z9torr, spec amendments 2026-10-08 / M1a).** Remove every
+`[]`-of-synthetic type by design: `piece_hashes` is a flat `[]const u8` (20
+bytes per piece) instead of `[][20]u8`; `announce_list` is the fixed
+`[8][]const u8` + `announce_count: u32` (extras dropped) instead of
+`[][]const u8`; argv is `[*][*]u8` instead of `[][*]u8`. No slice whose element
+is synthetic remains, so no shared typedef can be mis-applied. Semantics
+unchanged; `info_hash` unaffected.
 
 **Proper fix (not done; would rotate the seed).** Recursively derive the slice
 element's C name as the array branch already does. A targeted form — recurse
