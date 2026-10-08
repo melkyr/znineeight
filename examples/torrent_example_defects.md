@@ -349,11 +349,24 @@ before the global store in the async lowering.
 
 ## How these defects are exposed
 
-Each entry above pairs a **minimal Z98 program** with the **emit + gcc
+**D1/D2** each pair a **standalone minimal Z98 program** with the **emit + gcc
 commands** and the **exact compiler/gcc failure**, so the defect is
-reproducible in isolation, outside the example. When a workaround is adopted,
-the example's source and its spec are updated and the entry records the
-workaround + commit; the defect itself stays listed as OPEN until (and unless)
-the compiler is fixed.
+reproducible in isolation, outside the example.
 
-_(Add new entries as D2, D3, … as they are found during M1–M4.)_
+**D3/D4 are NOT reducible to a standalone minimal program.** Both are
+deferred-frame-save temp-declaration defects that depend on the enclosing
+coroutine step-function's **total temp count and ordering**, not on any single
+construct: six standalone variants (a global `std_stream.MsgReader`, a global
+struct with slice fields, a two-step cross-module wrapper, a multi-slice struct
+plus a local struct, …) all linked cleanly. D3/D4 therefore ship the smallest
+reliable **in-example patch reproducer** (the two-line change to
+`examples/z98/z9torr/peer.zig`) together with the exact build/emit/link
+commands and the observed `gcc` failure. This limitation is recorded explicitly
+in each of the D3/D4 "Reduction attempts" / "Cause" notes. A true standalone
+minimal reproducer would require matching the emitted temp layout.
+
+When a workaround is adopted, the example's source and its spec are updated and
+the entry records the workaround + commit; the defect itself stays listed as
+OPEN until (and unless) the compiler is fixed.
+
+_(Add new entries as D5, … as they are found during M1–M4.)_
