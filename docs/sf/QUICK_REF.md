@@ -627,6 +627,8 @@ sh DIR/build_target.sh         # (./DIR/build_target.sh after the first run)
 Use `edit` (exact strings) or `fastedit` (line ranges, see AGENTS.md §X.7 — re-read the region
 immediately before each edit; edit bottom-to-top). No `sed`/python/bulk transforms.
 
+**HARD RULE — destructive git is PROHIBITED (every agent + controller).** Never run `git reset --hard`, `git reset --keep`, `git checkout -- <file>`, `git restore`, `git clean`, `git stash drop/clear`, force-push, or any other history-rewriting / work-discarding command. A 2026-10-08 `git reset --hard` silently destroyed uncommitted edits to two tracked ledger files. If you need to move off the current commit, **STOP and report to the controller — do not reset/clean.** Undo a mistaken commit with a NEW commit (or `git revert`), never by discarding state. `git commit --amend` on your OWN just-created commit is the only rewrite permitted, and only when nothing else is uncommitted. When in doubt: **stop and report, do not act.**
+
 ---
 
 
