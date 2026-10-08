@@ -31,6 +31,22 @@ z9torr
 ```
 
 ## Notes
-Single-file skeleton. Task 0 of M1. `main.zig` imports the canonical `std` root package
-and writes the literal `z9torr\n` to stdout via `std.io.write`. No sub-modules yet.
+Task 1 of M1 adds `cli.zig` (argv parsing, `usage`, `exitCodeFor`) and wires `main.zig`
+to it. `main` now has `pub fn main(argc: i32, argv: [*][*]u8) void` so the emitted C
+wrapper forwards `argc`/`argv`; the return type stays `void`. `parseArgs` takes the Z98
+slice form `[][*]u8` (the generated main cast for a slice param is invalid C, so `main`
+converts from the many-pointer with `argv[0..n]`).
+
+Exit codes per spec §8: 0 success, 1 usage, 2 torrent/file, 3 tracker/net, 4 peer,
+5 disk. The seed compiler has no `anyerror`, so `exitCodeFor` uses the brief-authorized
+fixed-mapping alternative: it takes a concrete `FailureClass` enum (usage=1..disk=5).
+
+The seed `lib/std.zig` does not re-export `file`, so `std_file` is imported by path
+(`@import("std_file.zig")`). Tests: `tests/tier1_cli.sh` (CLI shapes).
+
+**Win9x argv caveat:** on Windows 9x the CRT builds `argv` from `GetCommandLineA`, which
+is subject to the 16-bit command-line length limit and Win9x quoting rules. The parser
+consumes the `argv` the runtime supplies and never re-tokenizes the raw command line, so
+Win9x argument handling matches the CRT's, not a custom splitter.
+
 MD5 not baselined in Task 0 (TBD).
