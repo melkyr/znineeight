@@ -153,7 +153,7 @@ reused so all error normalization stays in one place.
 
 ```zig
 pub const Value = union(enum) {
-    int: i64,
+    int_val: i64,   // spelled `int_val`, not `int`: Z98 emits union tags verbatim as C members and `int` is a C keyword
     bytes: []const u8,
     list: []Value,
     dict: []Entry,

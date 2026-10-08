@@ -99,7 +99,7 @@
 - Modify: `scripts/stdlib/expected_dirs.txt`, `scripts/seed/build_from_seed.sh`, `scripts/seed/archive_seed.sh`, `docs/sf/QUICK_REF.md`
 
 **Interfaces:**
-- Produces: `Value`, `Entry`, `Span`, `BencodeError` (spec §4.2); `pub fn decode(arena, bytes) BencodeError!Value`; `pub fn dictValueSpan(bytes, key) BencodeError!?Span`.
+- Produces: `Value`, `Entry`, `Span`, `BencodeError` (spec §4.2); `pub fn decode(arena, bytes) BencodeError!Value`; `pub fn dictValueSpan(bytes, key) BencodeError!?Span`. The `Value` integer tag is spelled **`int_val`** (not `int`) — Z98 emits union tags verbatim as C members and `int` is a C keyword (confirmed by Task 2's de-risk gate).
 
 - [ ] **Step 1: Write the fixtures.**
   - `stdlib_bencode_decode_xmod/main.zig`: decode a nested fixture string (`d1:ai1e1:b3:xyzl1:iee` style) and print each field; contract is a deterministic multi-line report ending `decode ok`.
