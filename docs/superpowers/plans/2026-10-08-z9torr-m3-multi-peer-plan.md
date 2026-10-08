@@ -48,7 +48,7 @@
 - Create: `examples/z98/z9torr/stats.zig`
 
 **Interfaces:**
-- Produces: `Stats` (spec §6); `pub fn statsRender(s: *Stats, out_buf) []const u8` producing one line `NN.N% [####----] 1.2MB/25.0MB 340KB/s peers=4 eta=1m02s`, using integer math + a manual decimal point (no float printf dependency).
+- Produces: `pub fn statsRender(s: *tracker.Stats, out_buf) []const u8` producing one line `NN.N% [####----] 1.2MB/25.0MB 340KB/s peers=4 eta=1m02s`, using integer math + a manual decimal point (no float printf dependency). **`Stats` is owned by `tracker.zig` (M2) — import `tracker.Stats` here; do NOT redefine it** (operator ruling I1=A, 2026-10-08).
 
 - [ ] **Step 1: Implement** byte formatting (`MB = bytes/1048576`, `frac = (bytes%1048576)*100/1048576`), a 40-char progress bar, a 5-sample rolling rate window, and ETA guarded against `down_rate == 0`.
 - [ ] **Step 2: Snapshot test.** On a synthetic `Stats` sequence, the rendered lines are byte-stable; refresh at 1 Hz.
@@ -79,7 +79,7 @@
 - Modify: `examples/z98/z9torr/{main.zig,tests/tier2.sh}`
 
 **Interfaces:**
-- Consumes: `Scheduler`, `TokenBucket`, `Stats`, `tracker.announce`.
+- Consumes: `Scheduler`, `TokenBucket`, `Stats` (= `tracker.Stats`, imported — not redefined), `tracker.announce`.
 
 - [ ] **Step 1: `main.zig`.** Announce, create the scheduler with `args.max_peers`, spawn one peer coroutine per `AnnounceResult.peers` entry (capped), run the `std.async` tick loop, and on completion announce `event=completed`. Gate every send through the global bucket at `args.max_down`/`args.max_up` (0 = unlimited).
 - [ ] **Step 2: CLI flags honoured.** `--max-peers` caps slots; `--max-up`/`--max-down` set the bucket rates; `--help`/usage unchanged.

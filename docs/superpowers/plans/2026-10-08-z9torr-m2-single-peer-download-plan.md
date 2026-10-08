@@ -76,9 +76,9 @@
 
 **Interfaces:**
 - Consumes: `std_http.get`, `std_http.percentEncode`, `std_bencode.decode`.
-- Produces: `PeerId = [20]u8`; `PeerAddr = struct { ip_be: u32, port: u16 }`; `AnnounceResult` (spec §6); `TrackerError = error{ HttpFailed, BadResponse, FailureReason, OutOfMemory }`; `pub fn announce(arena, t: Torrent, peer_id: PeerId, port: u16, stats: Stats) TrackerError!AnnounceResult`.
+- Produces: `PeerId = [20]u8`; `PeerAddr = struct { ip_be: u32, port: u16 }`; `AnnounceEvent = enum(u8) { none=0, started=1, completed=2 }`; `AnnounceResult` (spec §6); `TrackerError = error{ HttpFailed, BadResponse, FailureReason, OutOfMemory }`; `pub fn announce(arena, t: Torrent, peer_id: PeerId, port: u16, event: AnnounceEvent, stats: Stats) TrackerError!AnnounceResult`.
 
-- [ ] **Step 1: Build the query string.** `info_hash=` + `percentEncode`(raw 20 bytes) + `&peer_id=` + `percentEncode` + `&port=` + `&uploaded=` + `&downloaded=` + `&left=` + `&compact=1` + event (`started` first / `completed` / none). Percent-encoding of the raw bytes is mandatory.
+- [ ] **Step 1: Build the query string.** `info_hash=` + `percentEncode`(raw 20 bytes) + `&peer_id=` + `percentEncode` + `&port=` + `&uploaded=` + `&downloaded=` + `&left=` + `&compact=1` + `&event=` from the `event` parameter (`started` / `completed`; omit the field when `event == .none`). Percent-encoding of the raw bytes is mandatory.
 - [ ] **Step 2: Call `std_http.get`** on `torrent.announce + "?" + query`; parse the bencoded body with `std_bencode.decode`; if a top-level `failure reason` key exists → `TrackerError.FailureReason` (with the string).
 - [ ] **Step 3: Parse compact peers.** `peers` must be a `bytes` value of length `6*N`; split into `{ip_be, port}` pairs (network-order IP + big-endian port). `interval`/`min_interval`/`complete`/`incomplete` from the dict; `tracker id` optional.
 - [ ] **Step 4: Verify against `mock_tracker`.** A tier-2 micro-test starts the mock, calls `announce`, asserts one peer parsed at the mock peer's address.
@@ -126,7 +126,7 @@
 
 - [ ] **Step 1: Implement `piece.zig`.** Block bookkeeping per spec; `onBlock` writes the block through `disk.writeBlock`, and when all blocks of a piece are present, `disk.readPiece` + SHA-1 → `Complete` or `Corrupt` (mark `failed`, re-queue, disconnect from this peer).
 - [ ] **Step 2: Implement `peer.zig`** as a coroutine. Non-blocking socket (`std_net.setNonBlocking`); on `WouldBlock`, `@asyncSuspend(null)`. Enforce keep-alive send after 120 s idle and disconnect an idle peer.
-- [ ] **Step 3: Wire `main.zig`:** parse → resume → announce → run one peer coroutine under `std.async` until all pieces verified → on completion announce `event=completed` → print a final one-line summary + exit 0.
+- [ ] **Step 3: Wire `main.zig`:** parse → resume → announce `event=started` → run one peer coroutine under `std.async` until all pieces verified → on completion announce `event=completed` → print a final one-line summary + exit 0.
 - [ ] **Step 4: Manual download test** against `mock_peer` serving `t1_single_1m.torrent`; `sha1sum` the output file and compare to `expected/t1_single_1m.sha1`.
 - [ ] **Step 5: Commit.** `git commit -m "example(z9torr): add single-peer piece exchange with verify + resume"`
 - [ ] **Step 6: Report.** Ledger line.
