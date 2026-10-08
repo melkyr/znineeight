@@ -201,6 +201,152 @@ program hits this today.
 
 ---
 
+## D3 — A module-global struct whose address is passed to a suspending call emits a frame-save from an undeclared temp
+
+**Status:** OPEN (compiler gap). Workaround in the example; no compiler change.
+
+**Symptom.** In a coroutine that passes the address of a module-global
+`std_stream.MsgReader` to a suspending, cross-module call
+(`wire.readMessageAsync`), the deferred-frame save emitted for the caller
+performs a struct assignment **from a temporary that the emitter never
+declares**. `zig1` accepts the program; `gcc` rejects the emitted C:
+
+```
+peer_07FFFED1.c:865:15: error: 'zT_144' undeclared (first use in this function); did you mean 'zT_194'?
+```
+
+Line 865 is inside the frame-save block (`*zT_455 = zT_144;`, where `zT_455`
+is a `MsgReader *` into the coroutine frame and `zT_144` should be a
+`MsgReader` value). `zT_144` is never declared; a sibling step function in the
+same module declares an unrelated `zT_144`, so the temp-id counter appears to
+collide across `__Z98Step_*` bodies.
+
+**Reproducer (in-example; see note).** The defect is sensitive to the
+enclosing step-function temp layout — it was **not** reducible to a
+standalone two-function program (see "Reduction attempts"). The smallest
+reliable reproducer is the two-line change to
+`examples/z98/z9torr/peer.zig` at commit `a1e83657` that reverts the D3
+workaround: make the `MsgReader` a **module global** and pass `&g_reader` to
+`wire.readMessageAsync`:
+
+```diff
+--- a/examples/z98/z9torr/peer.zig
++++ b/examples/z98/z9torr/peer.zig
+@@ var g_ps: piece.PieceState = undefined;
++var g_reader: std_stream.MsgReader = undefined;
+ var g_ps: piece.PieceState = undefined;
+@@ -225,4 +226,4 @@
+-    var reader: std_stream.MsgReader = undefined;
+-    reader.src = &peer.sock;
+-    reader.buf = peer.read_buf[0..];
+-    reader.pending = peer.read_buf[0..0];
++    g_reader.src = &peer.sock;
++    g_reader.buf = peer.read_buf[0..];
++    g_reader.pending = peer.read_buf[0..0];
+@@
+-        wire.readMessageAsync(&reader, &msg) catch break;
++        wire.readMessageAsync(&g_reader, &msg) catch break;
+```
+
+```
+# from the repo root, with the patch applied to examples/z98/z9torr/peer.zig:
+mkdir -p /tmp/d3out
+/tmp/z9_m0_seed/zig1_5_clean -ffast -o /tmp/d3out examples/z98/z9torr/main.zig   # rc 0
+# link (emits *.c then gcc -m32 -std=c89):
+sh /tmp/d3out/build_target.sh linux /tmp/d3out/prog
+# -> peer_*.c:<n>: error: 'zT_NNN' undeclared (first use in this function)
+```
+
+Exact observed (throwaway run `/tmp/z9_d3full_out`):
+
+```
+$ sh /tmp/z9_d3full_out/build_target.sh linux /tmp/z9_d3full_out/prog
+env -u LD ... gcc -m32 -std=c89 ... peer_07FFFED1.c ...
+peer_07FFFED1.c:865:15: error: 'zT_144' undeclared (first use in this function); did you mean 'zT_194'?
+```
+
+**Reduction attempts.** Standalone programs of the form "coroutine caller
+passes `&g` (a global named struct) to a suspending callee" — including a
+global `std_stream.MsgReader` (`/tmp/d3b.zig`, `/tmp/d3g.zig`), a global struct
+with slice fields (`/tmp/d3e.zig`), a two-step cross-module wrapper
+(`/tmp/d3g.zig` + `d3wrap.zig`), and a global struct with multiple slice fields
+plus a local struct (`/tmp/d3h.zig`) — all **linked cleanly** (`gcc` rc 0).
+The collision is therefore a function of the caller's total temp count and
+ordering, not of any single construct; a minimal standalone reproducer would
+require matching the emitted temp layout.
+
+**Workaround (used by z9torr, M2 Task 4).** Keep the `MsgReader` a
+**coroutine local** (`var reader: std_stream.MsgReader`), field-initialised in
+place, and pass `&reader` to the suspending call. This lowers correctly and is
+the form committed in `peer.zig`.
+
+**Proper fix (not done; would rotate the seed).** In the async frame-save pass
+(`sf/src/c89_emit.zig`), declare every temp that the save/restore emits for a
+frame slot (do not assume a temp id is already declared from a sibling step
+function's preamble), or allocate frame slots without a by-value struct temp.
+
+---
+
+## D4 — A by-value struct-return temporary assigned to a module global in a suspending function emits a frame-save from an undeclared temp
+
+**Status:** OPEN (compiler gap). Workaround in the example; no compiler change.
+
+**Symptom.** Assigning a **struct-returning call's result** directly to a
+module-global inside a suspending function (here
+`g_reader = std_stream.initMsgReader(...)`) makes the caller's frame-save
+reference an undeclared temp of the returned struct type. Same emitted-C
+symptom as D3, different trigger. `gcc`:
+
+```
+peer_E7BBEDD8.c:1804:15: error: 'zT_135' undeclared (first use in this function)
+```
+
+(`*zT_446 = zT_135;`, `zT_446` a `MsgReader *` frame slot.)
+
+**Reproducer.** Same in-example patch as D3 but restore the **global
+struct-return assignment** form instead of field-initialising:
+
+```diff
+-    var reader: std_stream.MsgReader = undefined;
+-    reader.src = &peer.sock;
+-    reader.buf = peer.read_buf[0..];
+-    reader.pending = peer.read_buf[0..0];
++    g_reader = std_stream.initMsgReader(&peer.sock, peer.read_buf[0..]);
+```
+
+```
+mkdir -p /tmp/d4out
+/tmp/z9_m0_seed/zig1_5_clean -ffast -o /tmp/d4out examples/z98/z9torr/main.zig   # rc 0
+sh /tmp/d4out/build_target.sh linux /tmp/d4out/prog
+# -> peer_*.c:<n>: error: 'zT_NNN' undeclared (first use in this function)
+```
+
+Observed (first build of the Task-4 `peer.zig`):
+```
+peer_E7BBEDD8.c:1804:15: error: 'zT_135' undeclared (first use in this function)
+```
+(Removing the struct-return temp while keeping the global reader moved the
+error to `zT_141`, i.e. D3's trigger; with a coroutine-local, field-initialised
+reader the module links clean.)
+
+**Cause.** Same deferred-frame-save temp-declaration defect as D3. A
+by-value temporary produced by a struct-returning call is not declared in the
+emitted function preamble, yet the frame-save block stores it into a
+frame slot. It is filed separately because the trigger (a struct-return temp)
+is independent of D3's (a global's address passed to a suspending call), and
+both were observed while bringing up `peer.zig`.
+
+**Workaround (used by z9torr, M2 Task 4).** Do not route a struct-return
+temporary through a global in the coroutine: initialise the `MsgReader` field
+by field (`reader.src = ...; reader.buf = ...; reader.pending = ...;`) on a
+coroutine local.
+
+**Proper fix (not done; would rotate the seed).** Declare frame-save temps in
+the emitted preamble; or materialise struct-return temps into a named local
+before the global store in the async lowering.
+
+---
+
 ## How these defects are exposed
 
 Each entry above pairs a **minimal Z98 program** with the **emit + gcc

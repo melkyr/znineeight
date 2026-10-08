@@ -195,8 +195,76 @@ pub fn readHandshake(sock: std_net.Socket, expected_info_hash: []const u8, out: 
     }
 }
 
-// --- message framing --------------------------------------------------------
+// --- async handshake (non-blocking, for the peer coroutine) -----------------
 
+// One non-blocking receive attempt. Returns 1 with the byte count in `out_n`
+// (0 = EOF) on success, 0 when the socket would block (caller yields).
+fn tryRecvAsync(sock: *std_net.Socket, buf: []u8, out_n: *usize) PeerError!u8 {
+    const got = std_net.recvNonBlocking(sock, buf) catch |e| {
+        if (e == error.WouldBlock) return 0;
+        return error.NetFailed;
+    };
+    out_n.* = got;
+    return 1;
+}
+
+// Cooperative-yield exact read: suspend on WouldBlock until `buf` is full.
+// `buf` aliases caller (not local-array) memory so nothing large spans a
+// suspension.
+fn recvExactAsync(sock: std_net.Socket, buf: []u8) PeerError!void {
+    var s: std_net.Socket = sock;
+    var off: usize = 0;
+    while (off < buf.len) {
+        var n: usize = 0;
+        const st = try tryRecvAsync(&s, buf[off..], &n);
+        if (st == 0) {
+            _ = @asyncSuspend(null);
+        } else {
+            if (n == 0) return error.PeerClosed;
+            off += n;
+        }
+    }
+}
+
+// Read and validate a peer handshake WITHOUT blocking: the counterpart of
+// `readHandshake` for `peer.zig`'s non-blocking socket. The 68-byte record is
+// read straight into `out`'s fields (no local array spans a suspend). Same
+// rules as `readHandshake`: pstrlen == 19, pstr match, zero reserved, and
+// `info_hash` match else `PeerError.InfoHashMismatch`.
+//
+// NOTE: `expected_info_hash` is `[]const u8` (length 20), matching the ratified
+// blocking `readHandshake` (Task-1 ruling A). A by-value `[20]u8` parameter is
+// un-emittable here: this is a suspending (cross-module coroutine) callee, and
+// the emitter copies the array argument into the child frame with a C array
+// assignment, which C89 rejects (`assignment to expression with array type`).
+pub fn readHandshakeAsync(sock: std_net.Socket, expected_info_hash: []const u8, out: *Handshake) PeerError!void {
+    if (expected_info_hash.len != HASH_LEN) return error.HandshakeFailed;
+    // The leading pstrlen byte has no `Handshake` field; land it in
+    // `out.info_hash[0]` as scratch (that field is fully overwritten below).
+    try recvExactAsync(sock, out.info_hash[0..1]);
+    if (out.info_hash[0] != @intCast(u8, PSTR_LEN)) return error.HandshakeFailed;
+
+    try recvExactAsync(sock, out.pstr[0..]);
+    try recvExactAsync(sock, out.reserved[0..]);
+    try recvExactAsync(sock, out.info_hash[0..]);
+    try recvExactAsync(sock, out.peer_id[0..]);
+
+    var pstr: []const u8 = "BitTorrent protocol";
+    var i: usize = 0;
+    while (i < PSTR_LEN) : (i += 1) {
+        if (out.pstr[i] != pstr[i]) return error.HandshakeFailed;
+    }
+    i = 0;
+    while (i < RESERVED_LEN) : (i += 1) {
+        if (out.reserved[i] != 0) return error.HandshakeFailed;
+    }
+    i = 0;
+    while (i < HASH_LEN) : (i += 1) {
+        if (out.info_hash[i] != expected_info_hash[i]) return error.InfoHashMismatch;
+    }
+}
+
+// --- message framing --------------------------------------------------------
 fn decodeMsgType(id: u8, out: *MsgType) bool {
     switch (id) {
         0 => {

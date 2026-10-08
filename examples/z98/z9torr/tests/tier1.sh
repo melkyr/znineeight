@@ -2,8 +2,10 @@
 # tier1.sh — z9torr M1 end-to-end gate (task 4).
 #
 # Builds z9torr with the binding seed recipe, then:
-#   1. per fixture (t1/t2/t5): exit 0, printed info_hash == testdata/expected
-#      and == ref_check --infohash;
+#   1. per fixture (t1/t2/t5): printed info_hash == testdata/expected and ==
+#      ref_check --infohash, and exit 3 — the client now ALWAYS attempts the
+#      tracker (spec §8); with no mock_tracker running the announce fails and
+#      the spec-correct exit is 3 (tracker/network);
 #   2. malformed inputs (truncated / bad piece count / mutated info byte):
 #      exit 2 + typed message;
 #   3. determinism: each fixture 3x byte-identical stdout.
@@ -75,10 +77,10 @@ for name in $FIXTURES; do
 
     "$PROG" "$FIX" >"$OUT/$name.out" 2>"$OUT/$name.err"
     rc=$?
-    if [ "$rc" -eq 0 ]; then
-        pass_case "$name: z9torr exit 0"
+    if [ "$rc" -eq 3 ]; then
+        pass_case "$name: z9torr exit 3 (tracker unreachable)"
     else
-        fail_case "$name: z9torr exit 0 (got $rc)"
+        fail_case "$name: z9torr exit 3 (tracker unreachable) (got $rc)"
     fi
 
     GOT="$(awk '/^info_hash: /{print $2}' "$OUT/$name.out" | head -n1)"

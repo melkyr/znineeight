@@ -11,16 +11,23 @@
 //      (write-through + SHA-1 verify) until every piece is verified.
 //
 // The socket is non-blocking, so every wait yields via `@asyncSuspend(null)`
-// (directly, or through `std_stream.readMsgAsync`). All coroutine-live state
-// lives in file-scope globals or the caller-owned `Peer`/`RunCtx` (spec §12
-// risk 1: keep large state out of coroutine locals).
+// (directly in `wire.recvExactAsync`, or through `std_stream.readMsgAsync`).
+// All coroutine-live state lives in file-scope globals or the caller-owned
+// `Peer`/`RunCtx` (spec §12 risk 1: keep large state out of coroutine locals).
 //
-// NOTE (documented deviation): `wire.readHandshake` is blocking (`recvAll` ->
-// `std_net.recv`), but `connectToIp` leaves the socket O_NONBLOCK, so calling
-// it would race on a not-yet-arrived handshake. `readHandshakeAsync` below
-// therefore re-reads the 68-byte record in the coroutine with the same
-// validation rules as `wire.readHandshake`. `writeHandshake`/`writeInterested`/
-// `writeRequest`/`writeKeepAlive` are used unchanged (small sends on loopback).
+// The handshake is read with `wire.readHandshakeAsync` (the non-blocking
+// counterpart of `wire.readHandshake` added under D-c).
+//
+// `peerRun` returns `void`, not `!void`: the landed `std.async` drive loop
+// consumes only `@asyncResume`'s `?*void` step status, so a coroutine cannot
+// surface an error to its caller (the same reason `std_stream`'s async readers
+// split their work into scalar-status helpers). The outcome is therefore
+// reported through `RunCtx`:
+//   * `ok == true`                 -> every piece is verified;
+//   * `ok == false`                -> failure, with `exit_class` set to the
+//     spec §8 class (`4` peer/protocol, including a bad handshake or a SHA-1
+//     mismatch; `5` disk). `peerRun` handles every `PeerError` internally and
+//     never lets it escape the frame.
 //
 // Z98 rules: free functions only, no generics, strict `@intCast`, `switch`
 // needs `else`. D2: `[]u8`/`[]const u8` plus `[]piece.PieceState` (named).
@@ -96,71 +103,9 @@ fn makeHandshake(t: torrent.Torrent, peer_id: [20]u8, out: *wire.Handshake) void
     }
 }
 
-// Parse a raw 68-byte handshake record with the same rules as
-// `wire.readHandshake`. `expected` is the 20-byte info_hash.
-fn parseHandshake(h: []const u8, expected: []const u8, out: *wire.Handshake) PeerError!void {
-    if (h.len != HANDSHAKE_LEN or expected.len != 20) return error.HandshakeFailed;
-    if (h[0] != @intCast(u8, 19)) return error.HandshakeFailed;
+// The handshake read/validation now lives in `wire.readHandshakeAsync` (D-c);
+// this module no longer carries a private copy.
 
-    var pstr: []const u8 = "BitTorrent protocol";
-    var i: usize = 0;
-    while (i < 19) : (i += 1) {
-        if (h[1 + i] != pstr[i]) return error.HandshakeFailed;
-    }
-    i = 0;
-    while (i < 8) : (i += 1) {
-        if (h[20 + i] != 0) return error.HandshakeFailed;
-    }
-    i = 0;
-    while (i < 20) : (i += 1) {
-        if (h[28 + i] != expected[i]) return error.InfoHashMismatch;
-    }
-
-    i = 0;
-    while (i < 19) : (i += 1) {
-        out.pstr[i] = h[1 + i];
-    }
-    i = 0;
-    while (i < 8) : (i += 1) {
-        out.reserved[i] = h[20 + i];
-    }
-    i = 0;
-    while (i < 20) : (i += 1) {
-        out.info_hash[i] = h[28 + i];
-        out.peer_id[i] = h[48 + i];
-    }
-}
-
-// One non-blocking receive attempt. Returns 1 with the byte count in `out_n`
-// (0 = EOF) on success, 0 when the socket would block (caller yields).
-fn tryRecv(sock: *std_net.Socket, buf: []u8, out_n: *usize) PeerError!u8 {
-    const got = std_net.recvNonBlocking(sock, buf) catch |e| {
-        if (e == error.WouldBlock) return 0;
-        return error.NetFailed;
-    };
-    out_n.* = got;
-    return 1;
-}
-
-// Cooperative-yield exact read: suspend on WouldBlock until `buf` is full.
-fn recvExactAsync(sock: *std_net.Socket, buf: []u8) PeerError!void {
-    var off: usize = 0;
-    while (off < buf.len) {
-        var n: usize = 0;
-        const st = try tryRecv(sock, buf[off..], &n);
-        if (st == 0) {
-            _ = @asyncSuspend(null);
-        } else {
-            if (n == 0) return error.PeerClosed;
-            off += n;
-        }
-    }
-}
-
-fn readHandshakeAsync(peer: *Peer, expected: []const u8, out: *wire.Handshake) PeerError!void {
-    try recvExactAsync(&peer.sock, peer.read_buf[0..HANDSHAKE_LEN]);
-    try parseHandshake(peer.read_buf[0..HANDSHAKE_LEN], expected, out);
-}
 
 // Fill the request window from `ps` and send the requests (no-op while the
 // peer is choking). Small messages go through the blocking wire writers.
@@ -212,7 +157,7 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
         return;
     };
 
-    readHandshakeAsync(peer, ctx.t.info_hash[0..], &g_rhs) catch {
+    wire.readHandshakeAsync(peer.sock, ctx.t.info_hash[0..], &g_rhs) catch {
         std_net.close(peer.sock);
         return;
     };

@@ -209,19 +209,25 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     writeText(nl);
 
     // ---- M2 Task 4: single-peer download ----------------------------------
-    // The metadata above is always printed (M1 contract; tier1). If a tracker
-    // answers the announce, run one peer coroutine to completion; otherwise
-    // (no tracker reachable, e.g. the M1 tier1 gate) stop here with exit 0.
+    // The metadata above is always printed (M1 contract). The client always
+    // attempts the tracker: an announce failure is a tracker/network error
+    // (spec §8 exit 3); a tracker that yields no peers is a peer error (exit 4).
     _ = std_net.init();
     var peer_id: [20]u8 = undefined;
     makePeerId(&peer_id);
     var stats = zeroStats();
     var ann = trackerlib.announce(&arena, t, peer_id, @intCast(u16, 6881), trackerlib.AnnounceEvent.started, stats) catch {
         std_net.cleanup();
+        var tmsg: []const u8 = "z9torr: tracker error\n";
+        std.io.write(tmsg);
+        std.os.exit(@intCast(i32, cli.exitCodeFor(cli.FailureClass.tracker)));
         return;
     };
     if (ann.peers.len == 0) {
         std_net.cleanup();
+        var nmsg: []const u8 = "z9torr: peer error\n";
+        std.io.write(nmsg);
+        std.os.exit(@intCast(i32, cli.exitCodeFor(cli.FailureClass.peer)));
         return;
     }
 
