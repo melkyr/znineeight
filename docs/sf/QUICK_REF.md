@@ -24,20 +24,20 @@ in the next section; that is the only supported path.
 `release/seed/CHANGELOG.md`, full recipes + current md5s in
 `release/seed/SEED_README.txt`).
 
-**Current seed: v93.** Archive md5 `e1955908f3aa58992592f9c021c36d42`; archived binary md5
-(= v93's rotation fixed point) `639902d5146233091f6b2f98508ce3eb`; `gen/` 45 `.c` + 46 `.h`;
+**Current seed: v94.** Archive md5 `16ca54bd63320a4ec1d8e8aee3fe2c43`; archived binary md5
+(= v94's rotation fixed point) `296c48f676deec290387b57132e4e2bd`; `gen/` 45 `.c` + 46 `.h`;
 `lib/` 30 std `.zig`. **This block is updated at every plan closeout that rotates the seed**;
 the branch's in-progress fixed point is recorded in the active plan's workspace ledger.
 The FX14-F–FX17-F notes below record each amendment's own fixed point and its
 "seed v88 NOT rotated (closeout-only)" status at the time; the Volume II Task 22
 closeout (2026-09-30) rotated the seed to v89; the Amendment A1 closeout
 (2026-10-03) rotated it to v90; the Volume IV Task 26 closeout (2026-10-05)
-rotated it to v91; the 2026-10-06 rotation moved it to v92; and the zig1
-structural live-set reduction closeout (2026-10-07) rotated it to v93; the
-final-review fix wave (guard the narrowed `Type.payload_idx`/`Type.alignment`
-casts, `sf/src/type_registry.zig`) moved v93's fixed point `44b8e7ff…` →
-`639902d5…` — the `-s0` self-compile now carves pool ≈11,965 K with peak RSS
-median ≈16.0 MB (down from the post-L3 14,924 K / ≈17.4 MB).
+rotated it to v91; the 2026-10-06 rotation moved it to v92; the zig1
+structural live-set reduction closeout (2026-10-07) rotated it to v93; and the
+zig1 type-limit widening closeout (2026-10-08) rotated it to v94 (widened the
+`Type` ceiling columns 16 B→20 B: `name_id`/`payload_idx` u16→u32,
+`module_id`/`alignment` u8→u16; guards removed) — the `-s0` self-compile carves
+pool ≈11,958 K with peak RSS median ≈15.1 MB (down from v93's ≈16.0 MB).
 
 Top-level `zig1-seed/`: `zig1` (reference binary), `gen/` (its self-emission C89
 module set — 45 `.c` + 46 `.h`, including `zig_special_types.h`; the emitted
@@ -100,6 +100,25 @@ point is unmoved), via
 (gcc-rebuilds the archive C self-contained to the NEW fixed point + prepends the provenance entry to
 `release/seed/CHANGELOG.md`). The seed lives at `release/seed/` (tracked), never `/tmp`.
 
+
+### Compiler limits — `Type`-column ceilings  [added: 2026-10-08]
+
+The type-registry `Type` record (`sf/src/type_registry.zig`) is **20 B**; its four
+ceiling columns are `name_id`/`payload_idx` = **u32** and `module_id`/`alignment` =
+**u16**. The only residual ceilings are the u16 pair — **65,535** modules / alignment
+value — and both are **effectively unreachable** (`name_id`/`payload_idx` are back to
+the pre-plan u32 width; only u32-sized inputs could exceed them).
+
+The earlier structural-narrowing `Type` 32 B→16 B shrink had created real user-facing
+ceilings that the **type-limit widening** (2026-10-08) raised: `name_id` u16 (65,535
+distinct interned strings — a **global** interner id, not a type count), `payload_idx`
+u16 (65,535 entries in one payload array), `module_id` u8 (256 modules) and `alignment`
+u8 (255). The widening removed those and deleted the
+`typeDbCeiling`/`typeNarrowU16`/`typeNarrowU8` guards.
+
+The string interner imposes **no** ceiling: its buckets auto-migrate u16→u32 when the
+u16 range is exhausted (`sf/src/string_interner.zig`), so a wide program keeps interning.
+No `Type`-column user ceiling remains in practice.
 
 ### Calling convention (Win9x) — `extern "stdcall"` / `extern "cdecl"`  [added: 2026-09-14]
 
