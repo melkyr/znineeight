@@ -16,6 +16,7 @@
 
 - **Depends on M2.** Single-peer download + resume must pass tier2.
 - **Scheduler invariants (binding).** A piece in `requested` is not claimable; on peer disconnect/corruption every piece it claimed returns to `missing` (partial blocks retained if already written-through); a peer slot is freed and reused to bound memory at `--max-peers`.
+- **Multi-peer retry + determinism (binding; spec §7/§9 M3).** Corruption/disconnect returns a piece to `missing` (blocks retained) and re-requests — normally from another peer; exit 4 only when no usable peer remains. Rarest-first ties break by lowest piece index; scans ascend by index.
 - **Timing (binding).** Monotonic ms via `std.time.ticksMs`; all elapsed-time math is unsigned subtraction (wraps correctly). Token bucket refills every 100 ms with `rate/10`, burst = `rate`. The bucket is **global** (shared across peers).
 - **Tier-2 only.** No Win9x here (M4).
 - Build recipe / gitignore / edit rules / no-push / no-compression as M1. **No compiler gate:** the compiler is untouched; gates are the example's own tier tests, not the fixed point / dump-MD5 / corpus classify. Reports under `.superpowers/sdd/2026-10-08-z9torr-m3-multi-peer-plan/`.
@@ -28,17 +29,19 @@
 
 ---
 
-### Task 0: Token-bucket rate limiter
+### Task 0: Token-bucket rate limiter + multi-peer mock tracker
 
 **Files:**
 - Create: `examples/z98/z9torr/ratelimit.zig`
+- Modify: `examples/z98/z9torr/tools/mock_tracker.zig`, `examples/z98/z9torr/testdata/ports.txt`
 
 **Interfaces:**
 - Produces: `TokenBucket = struct { tokens: u32, capacity: u32, rate: u32, last_refill_ms: u32 }`; `pub fn bucketInit(rate: u32) TokenBucket`; `pub fn refill(b: *TokenBucket, now_ms: u32) void`; `pub fn take(b: *TokenBucket, n: u32) bool`.
 
 - [ ] **Step 1: Implement.** `refill`: `elapsed = now - last` (unsigned); add `rate * elapsed / 1000`, cap at `capacity = rate`; update `last`. `take(n)`: if `tokens >= n`, subtract + true; else false (the peer coroutine yields and retries next tick).
 - [ ] **Step 2: Unit harness.** Synthetic sequence with a fixed clock: a 10 KB/s bucket over 60 s admits 600,000 ±10% bytes; no over-admit. Assert with a small deterministic test program under `testdata/` or inline.
-- [ ] **Step 3: Commit + report.** `git commit -m "example(z9torr): add token-bucket rate limiter"`
+- [ ] **Step 2b: Multi-peer `mock_tracker` (operator ruling: fold into M3 Task 0).** Extend `tools/mock_tracker.zig` to advertise N compact peers (`peers` = `6*N` bytes; make `--peer` repeatable, or add `--peers a,b,c,d`), and update `testdata/ports.txt` for the 4 peer ports the M3 tiers use. Prove the announce parses to N peers.
+- [ ] **Step 3: Commit + report.** `git commit -m "example(z9torr): add token-bucket rate limiter + multi-peer mock tracker"`
 
 ---
 
@@ -65,7 +68,8 @@
 **Interfaces:**
 - Produces: `Scheduler` (spec §6); `pub fn schedulerInit(arena, t, max_peers) !Scheduler`; `pub fn pickPiece(s, peer) ?u32` (rarest-first: scan for the rarest piece this peer has and that is `missing`); `pub fn claim(s, index) void`; `pub fn release(s, peer) void` (re-queue every piece that peer held); `pub fn addPeer(s, addr) bool` (reuse a free slot; skip duplicate recently-seen addresses); `pub fn removePeer(s, peer) void`.
 
-- [ ] **Step 1: Implement rarest-first without sorting.** Maintain `piece_rarest[i]` = count of connected peers with bit `i`; on `have`/bitfield update increment, on disconnect decrement (assert no underflow). `pickPiece` linear-scans eligible pieces for the minimum count.
+- [ ] **Step 0: Per-peer state + bitfield/`have` (spec §6 M3 amendment).** Move the M2 file-scope coroutine scratch (`g_ps`/`g_io`/`g_hs`/`g_rhs`) into per-peer state so N peers run concurrently; add `Peer.bitfield: []u8` and handle `have` messages (update `piece_rarest`). This is prerequisite to the rarest-first logic below.
+- [ ] **Step 1: Implement rarest-first without sorting.** Maintain `piece_rarest[i]` = count of connected peers with bit `i`; on `have`/bitfield update increment, on disconnect decrement (assert no underflow). `pickPiece` linear-scans eligible pieces for the minimum count, ties breaking by lowest piece index (spec §9 M3 determinism).
 - [ ] **Step 2: Claim/release.** `claim` marks the piece's owning peer; `release` returns the peer's claimed pieces to `missing` (retaining written-through blocks).
 - [ ] **Step 3: Slot reuse + dedupe.** A small ring of recently-seen `PeerAddr`s skips duplicates; a freed slot is reused.
 - [ ] **Step 4: Unit test.** Two mock peers with overlapping bitfields: assert `pickPiece` never returns a `requested` piece and prefers the rarer one.
@@ -81,7 +85,7 @@
 **Interfaces:**
 - Consumes: `Scheduler`, `TokenBucket`, `Stats` (= `tracker.Stats`, imported — not redefined), `tracker.announce`.
 
-- [ ] **Step 1: `main.zig`.** Announce, create the scheduler with `args.max_peers`, spawn one peer coroutine per `AnnounceResult.peers` entry (capped), run the `std.async` tick loop, and on completion announce `event=completed`. Gate every send through the global bucket at `args.max_down`/`args.max_up` (0 = unlimited).
+- [ ] **Step 1: `main.zig`.** Announce, create the scheduler with `args.max_peers`, spawn one peer coroutine per `AnnounceResult.peers` entry (capped), run the `std.async` tick loop, and on completion announce `event=completed`. Gate every send through the global bucket at `args.max_down`/`args.max_up` (0 = unlimited). Download-only semantics (spec §9 M3 clarification): `--max-down` bounds received `piece` payloads; `--max-up` bounds request/handshake bytes (no peer upload). Exit 4 only when no usable peer remains; on peer loss/corruption the scheduler re-queues its pieces (spec §7).
 - [ ] **Step 2: CLI flags honoured.** `--max-peers` caps slots; `--max-up`/`--max-down` set the bucket rates; `--help`/usage unchanged.
 - [ ] **Step 3: Manual test** with 4 `mock_peer`s on distinct ports serving `t2_single_25m`; assert SHA-1 and that no two peers are asked for the same piece in a tick (log + assert).
 - [ ] **Step 4: Commit + report.** `git commit -m "example(z9torr): multi-peer download with rate limits + stats"`
@@ -91,10 +95,11 @@
 ### Task 4: tier2 multi-peer + closeout
 
 **Files:**
-- Modify: `examples/z98/z9torr/{tests/tier2.sh,demo/README.md,NOTES.md}`
+- Modify: `examples/z98/z9torr/{tests/tier2.sh,tests/tier1.sh,demo/README.md,NOTES.md}`
 - Record: `.superpowers/sdd/2026-10-08-z9torr-m3-multi-peer-plan/task-4-report.md`
 
 - [ ] **Step 1: Extend `tier2.sh`:** start 4 `mock_peer`s; download `t2_single_25m`; assert exit 0 + SHA-1; assert scheduler unit invariant (no double-request); run the resume test again (now multi-peer).
+- [ ] **Step 1b: Harden `tests/tier1.sh` (spec §12 item 9).** Make it fail closed if its tracker port (`:6969`) is already listening, instead of silently expecting exit 3.
 - [ ] **Step 2: Gate (example-only).** `bash examples/z98/z9torr/tests/tier2.sh` → all PASS (multi-peer download + no double-request + resume). No compiler-only gates — the compiler is untouched.
 - [ ] **Step 3: Docs + commit + report.** Update `demo/README.md`/`NOTES.md`. Ledger line.
 - [ ] **Step 4: Next plan.** State that M4 (`2026-10-08-z9torr-m4-win9x-plan.md`) is next.

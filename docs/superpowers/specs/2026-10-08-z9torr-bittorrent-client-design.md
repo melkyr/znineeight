@@ -321,6 +321,16 @@ const Stats = struct { downloaded: u64, uploaded: u64, left: u64, peer_count: u3
 > when the declared length exceeds `buf.len`). Separately, `Message` gains an explicit
 > `is_keep_alive: bool`; a BitTorrent keep-alive is a length-0 frame with no id, so
 > `MsgType` remains the spec's 0..8 and is **not** extended.
+>
+> **Amendment — M3 (2026-10-08):** multi-peer scheduling requires per-peer runtime
+> state to live in `Peer` (or a per-peer ctx) — the M2 single-peer code kept
+> coroutine-live scratch at file scope (`peer.zig` globals `g_ps`/`g_io`/`g_hs`/
+> `g_rhs`), which cannot be shared across N concurrent peers; M3 moves it into
+> `Peer`. `Peer` therefore carries `bitfield: []u8` + per-peer request tracking
+> (as listed in §6) and the peer loop handles `have` (updating `piece_rarest`) as
+> well as `bitfield`. Plan-level types `AnnounceEvent = enum(u8){none,started,
+> completed}` (M2 Task 2) and `RunCtx` (M2 Task 4) remain; `RunCtx` is generalized
+> per peer with a shared `Scheduler`/driver.
 
 ## §7 Resume
 
@@ -347,6 +357,14 @@ Single-file only, so resume is one output file plus a small sidecar.
   restart (the block mask says which 16 KB blocks are already on disk).
   The mtime is read via a `std_file` file-mtime capability added in M2
   (operator amendment lift, 2026-10-08; see the M2 plan).
+
+- **Multi-peer corruption/retry (M3, 2026-10-08):** a piece that fails SHA-1
+  (`Corrupt`), or is lost when its claiming peer disconnects, returns to
+  `missing` (written-through blocks retained) and is re-requested — normally
+  from a different peer. The run exits **4** only when no usable peer remains
+  and pieces are still missing (spec §8). `Scheduler.release(peer)` returns that
+  peer's claimed pieces to `missing` **without dropping their `block_mask`**, so
+  the resume sidecar's `partial[]` survives claim/release.
 
 ## §8 Errors and exit codes
 
@@ -383,6 +401,8 @@ The user sees one human-readable line; detail goes to stderr under
 - Determinism: `Z9TORR_SEED` (env) seeds the PRNG and therefore `peer_id` and
   `--mode` mock behaviour, so tests can assert exact wire bytes. Production
   seeds from `std.time.ticksMs` + pid.
+- **Scheduler determinism (M3, 2026-10-08):** rarest-first ties break by **lowest piece index**, and eligible pieces are scanned in ascending index order, so a seeded run's request order is reproducible. `piece_rarest[i]` is updated on `bitfield`/`have`/disconnect in a fixed order.
+- **Rate limits (M3 clarification, 2026-10-08):** the client is download-only (spec §13), so `--max-down` bounds received `piece` payloads via the global bucket; `--max-up` bounds only request/handshake bytes sent (there is no peer upload). `0` means unlimited.
 
 ## §10 Test infrastructure (repository conventions)
 
@@ -454,6 +474,14 @@ header names its predecessor/successor.
    for a > 2 GiB payload fails on T1/T2 (Windows uses `SetFilePointerEx`, OK).
    M2's tests are ≤ 25 MB; **M4 is amended to add 64-bit file offsets**
    (operator amendment lift, 2026-10-08).
+8. **Multi-peer slot reuse + address dedupe (M3).** A freed `Peer` slot is
+   reused; a small ring of recently-seen `PeerAddr`s skips duplicate
+   connections. This is behavior beyond the §6 `Scheduler` fields (detailed in
+   the M3 plan).
+9. **`tier1.sh` port hermeticity.** M1's `tier1` assumes `127.0.0.1:6969` is
+   closed (it expects a tracker-failure exit 3); a leftover tracker yields exit
+   4. M3's `tier2` guards its ports; either harden `tier1` the same way or
+   document the dependency.
 
 ## §13 Out of scope
 
