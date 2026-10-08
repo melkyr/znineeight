@@ -96,6 +96,89 @@ tag→name table), so any legal Z98 identifier tag compiles.
 
 ---
 
+## D2 — A slice whose element is a synthetic composite aliases another nested-slice C typedef
+
+**Status:** OPEN (compiler gap). Workaround in the example; no compiler change.
+
+**Symptom.** Two different nested-slice types emit the *same* C slice typedef
+name, so the second field is declared with the first's element pointer type.
+`gcc` accepts it with a warning (`-Wincompatible-pointer-types`), and the value
+is correct only by luck of the emitted temporary. A struct with both a
+`[][]const u8` field and a `[][20]u8` field triggers it.
+
+**Cause.** In `sf/src/c89_emit.zig`, `getCTypeName` derives a slice's C name
+from its element's **name id**:
+
+```zig
+// slice branch, ~c89_emit.zig:1028-1035
+var elem_ty2 = reg.types_items[sp.elem];
+var elem_mid2 = nameManglerMangle(mangler, elem_ty2.name_id, 2, 0);  // <-- name_id
+```
+
+Every *synthetic* type (slice/array/tuple/optional) has `name_id == 0`, so a
+slice whose element is itself a synthetic composite gets its element name from
+id 0 — the same mangled string (`…Slice_zT_811C9DC5_`, the hash of the empty
+string) for every such element kind. The **array** branch of the same function
+recurses correctly (`c89_emit.zig:959-966`, `getCTypeName(reg, mangler,
+ap.elem)`), and the tuple branch already sidesteps this with a per-type id.
+
+**Minimal reproducer.**
+
+```zig
+// repro.zig
+const std = @import("std.zig");
+
+pub const T = struct {
+    announce_list: [][]const u8,
+    piece_hashes: [][20]u8,
+};
+
+pub fn main() void {
+    var buf: [64]u8 = undefined;
+    var inner: []const u8 = buf[0..4];
+    var list: [1][]const u8 = undefined;
+    list[0] = inner;
+    var hashes: [1][20]u8 = undefined;
+    var t: T = .{ .announce_list = list[0..1], .piece_hashes = hashes[0..1] };
+    std.io.printInt(@intCast(i32, t.piece_hashes.len));
+    std.io.write("\n");
+}
+```
+
+```
+zig1 -ffast -o /tmp/d2repro/out repro.zig
+cd /tmp/d2repro/out && sh build_target.sh linux prog
+# -> repro_*.c: warning: assignment to
+#    'zT_..._Slice_zT_0B42B2F8_u *' from incompatible pointer type
+#    'unsigned char (*)[20]' [-Wincompatible-pointer-types]
+```
+
+Emitted `zig_special_types.h` shows the collapse — the `[][]const u8` typedef is
+reused for the `[][20]u8` field:
+
+```c
+/* []const u8 */
+typedef struct { unsigned char* ptr; unsigned int len; }
+    zT_8F083A69_Slice_zT_0B42B2F8_u;
+/* [][]const u8 AND [][20]u8 share this one */
+typedef struct { zT_8F083A69_Slice_zT_0B42B2F8_u* ptr; unsigned int len; }
+    zT_9DFA8D74_Slice_zT_811C9DC5_;
+```
+
+**Workaround (used by z9torr, spec amendment 2026-10-08).** Keep at most one
+"slice of a synthetic composite" type in the program. `piece_hashes` becomes a
+flat `[]const u8` (20 bytes per piece) instead of `[][20]u8`, leaving
+`announce_list: [][]const u8` as the only nested-slice type — and therefore the
+correct owner of the shared typedef. Semantics unchanged; `info_hash` unaffected.
+
+**Proper fix (not done; would rotate the seed).** Recursively derive the slice
+element's C name as the array branch already does. A targeted form — recurse
+only when the element's `name_id == 0` — leaves primitive slices (`[]u8`,
+`[]i32`) byte-identical and fixes only nested-composite slices. Any `[][]T`
+program hits this today.
+
+---
+
 ## How these defects are exposed
 
 Each entry above pairs a **minimal Z98 program** with the **emit + gcc

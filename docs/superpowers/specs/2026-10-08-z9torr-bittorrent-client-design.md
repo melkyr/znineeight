@@ -257,7 +257,7 @@ const Torrent = struct {
     info_hash: [20]u8,
     name: []const u8,                 // pass-through bytes; sanitized for disk
     piece_length: u32,
-    piece_hashes: [][20]u8,
+    piece_hashes: []const u8,          // flat: concatenated SHA-1s, 20 bytes/piece (amended 2026-10-08 — see note)
     total_length: u64,
 };
 
@@ -302,6 +302,16 @@ const Stats = struct { downloaded: u64, uploaded: u64, left: u64, peer_count: u3
                        window_down: [5]u32, window_up: [5]u32, window_idx: u32 };
 ```
 
+> **Amendment — M1 Task 2 (2026-10-08):** `piece_hashes` is a **flat**
+> `[]const u8` (concatenated SHA-1s, 20 bytes per piece; `piece_hashes.len ==
+> 20 * piece_count`) rather than `[][20]u8`. Reason: Z98 compiler defect **D2**
+> (`examples/torrent_example_defects.md`) — two different nested-slice types
+> (`[][]const u8` and `[][20]u8`) emit the *same* C slice typedef, so the
+> second field is declared with the first's element type. A flat byte string
+> avoids the collision; `announce_list` stays `[][]const u8` (the sole
+> nested-slice type, and therefore the correct owner of the typedef).
+> `info_hash` semantics are unchanged.
+
 ## §7 Resume
 
 Single-file only, so resume is one output file plus a small sidecar.
@@ -310,7 +320,8 @@ Single-file only, so resume is one output file plus a small sidecar.
   `piece_index*piece_length + block_begin` in the target file and write it
   immediately.
 - **Verify-on-complete:** when all blocks of a piece are present, read the
-  piece back, `sha1Init/sha1Update/sha1Final`, compare to `piece_hashes[i]`;
+  piece back, `sha1Init/sha1Update/sha1Final`, compare to the 20-byte slice
+  `piece_hashes[i*20 .. i*20+20]`;
   match → `verified`; mismatch → `missing` (re-request) and drop the region.
 - **Re-hash on start:** if the target file exists and its size equals
   `total_length`, SHA-1 each piece region and mark matches `verified`. This is

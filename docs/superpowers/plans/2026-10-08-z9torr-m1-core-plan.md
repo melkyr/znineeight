@@ -83,13 +83,13 @@
 
 **Interfaces:**
 - Consumes: `std_bencode.decode`, `std_bencode.dictValueSpan`, `std_crypto.sha1Init/Update/Final`.
-- Produces: `Torrent` (spec §6, single-file: `announce`, `announce_list`, `info_hash: [20]u8`, `name`, `piece_length: u32`, `piece_hashes: [][20]u8`, `total_length: u64`); `TorrentError = error{ MalformedBencode, MissingField, BadInfoHash, BadPieceCount, BadFilePath, TooLarge, OutOfMemory }`; `pub fn load(arena, file_bytes) TorrentError!Torrent`.
+- Produces: `Torrent` (spec §6, single-file: `announce`, `announce_list`, `info_hash: [20]u8`, `name`, `piece_length: u32`, `piece_hashes: []const u8` (flat, 20 B/piece — amended 2026-10-08), `total_length: u64`); `TorrentError = error{ MalformedBencode, MissingField, BadInfoHash, BadPieceCount, BadFilePath, TooLarge, OutOfMemory }`; `pub fn load(arena, file_bytes) TorrentError!Torrent`.
 
 - [ ] **Step 1: Implement `load`.**
   - `decode` the whole file to a `Value`; require a top-level dict with `announce` (bytes), `info` (dict), optional `announce-list`.
   - `info_hash`: `dictValueSpan(file_bytes, "info")` → SHA-1 over `file_bytes[span.start..span.end]`. (Never re-encode.)
   - From `info`: `name` (bytes; pass through), `piece length` (int → `u32`), `pieces` (bytes; split into `[20]u8` entries), `length` (int → `u64`) for single-file.
-  - Checks: `ceil(total_length / piece_length) == piece_hashes.len`; `piece_length` in a sane range (e.g. 16 KiB..16 MiB); reject `length` absent (single-file only) with `MissingField` (multi-file is out of scope).
+  - Checks: `piece_hashes.len == 20 * ceil(total_length / piece_length)` (flat, 20 B/piece); `piece_length` in a sane range (e.g. 16 KiB..16 MiB); reject `length` absent (single-file only) with `MissingField` (multi-file is out of scope).
   - Path safety: reject `name` containing `/`, `\`, `..`, or a leading `/` (single-file output name).
 - [ ] **Step 2: Wire `main.zig`** to load the file (`std_file.readAll` / `std.io` read) and print a summary: `name`, `length`, `piece length`, `pieces`, `info_hash` (40 hex, using a small hex helper or `std_hex.encodeLower` if importable by path).
 - [ ] **Step 3: Manually verify** against a hand-made torrent (see Task 3) and a known info_hash.
