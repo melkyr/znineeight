@@ -66,8 +66,10 @@ gcc -std=c89 -O0 -Wall -o /tmp/ref_check examples/z98/z9torr/tools/ref_check.c
 bash examples/z98/z9torr/tests/tier1.sh
 ```
 
-Builds via the recipe above, then asserts per fixture: exit 0, printed
-`info_hash` == committed expected == `ref_check`, and 3× byte-identical stdout.
+Builds via the recipe above, then asserts per fixture: exit 3 (the fixture's
+tracker is unreachable, so the run stops after printing the metadata, per spec
+§8), printed `info_hash` == committed expected == `ref_check`, and 3×
+byte-identical stdout.
 Malformed inputs (truncated file, bad piece count, mutated `info` byte) must
 each exit 2 with the typed `z9torr: malformed torrent` message. Summary:
 `15 passed, 0 failed` → `TIER1 PASS`.
@@ -97,7 +99,7 @@ binding recipe, generates the two golden payloads with the `tests/mkfixture.sh`
 |---|---|---|
 | `t1_single_1m` download | exit 0 + `sha1sum` == `7a985d40cf76ef129b2889fa5bfce75304067dc9` | `summary: fetched=1048576 requests=64` |
 | `t2_single_25m` download | exit 0 + `sha1sum` == `00fcf3e712b1271e12542032a2797248590673d3` | `summary: fetched=26214400 requests=1600` |
-| interrupt + restart `t2` | exit 0 + sha1 == expected + non-empty sidecar `partial[]` + fetched < cold | cold `26214400` → restart `25870336` (requests `1600` → `1579`) |
+| interrupt + restart `t2` | exit 0 + sha1 == expected + non-empty sidecar `partial[]` + fetched < cold | cold `26214400` → restart `25755648` (requests `1600` → `1572`; run-specific) |
 | `mock_peer --mode bad-bitfield-length` | exit 4 | `z9torr: peer error` |
 | `mock_peer --mode wrong-info-hash` | exit 4 | `z9torr: peer error` |
 
@@ -114,8 +116,12 @@ blocks are seeded from the sidecar `block_mask` and not re-requested:
 
 ```
 cold    summary: fetched=26214400 requests=1600
-restart summary: fetched=25870336 requests=1579
+restart summary: fetched=25755648 requests=1572
 ```
+
+(These are one observed run; the restart figures vary with the kill point,
+i.e. how many pieces/blocks were already on disk. The cold run always fetches
+the full payload, `26214400` bytes / `1600` requests.)
 
 Both SHA-1 to `testdata/expected/t2_single_25m.sha1` (`00fcf3e7…`). The gate runs
 each client in a fresh temp CWD (`$OUT/run.*`), so no `t1.bin`/`t2.bin`/
