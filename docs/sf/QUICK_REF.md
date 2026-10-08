@@ -56,6 +56,7 @@ runtime/support sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/`
 the core **13** names (`io/fmt/arena/str/mem/math/debug/net/async/bits/os/time/buf`);
 the higher-layer modules (L3-L6) are imported by path, not re-exported.
 `scripts/seed/build_from_seed.sh` installs all 32 into the rebuilt compiler's `lib/`.
+**`std_http` deferral:** HTTP/1.1, no TLS; chunked transfer-encoding and keep-alive are **DEFERRED** (not implemented) — `parseResponse` requires a `Content-Length` or a close-delimited body and rejects `Transfer-Encoding: chunked` with `BadResponse` (binding note in `sf/src/std_http.zig`).
 
 - **Compiler↔std separation:** the compiler's import graph reaches **no std module** —
   the transitive `@import` closure from `sf/src/main.zig` is zero std modules. The std lib is
