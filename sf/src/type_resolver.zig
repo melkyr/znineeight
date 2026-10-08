@@ -295,15 +295,15 @@ fn layoutCompute(registry: *TypeRegistry, tid: u32) void {
                 }
             }
             ty.size = alignUp(offset, max_align);
-            ty.alignment = type_mod.typeNarrowU8("alignment", max_align);
-            if (ty.size == @intCast(u32, 0)) { ty.size = @intCast(u32, 1); ty.alignment = type_mod.typeNarrowU8("alignment", 1); }
+            ty.alignment = @intCast(u16, max_align);
+            if (ty.size == @intCast(u32, 0)) { ty.size = @intCast(u32, 1); ty.alignment = @intCast(u16, 1); }
             registry.types_items[idx] = ty;
         }
     } else if (ty.kind == TypeKind.enum_type) {
         var ep = registry.en_items[@intCast(usize, ty.payload_idx)];
         var bt = registry.types_items[@intCast(usize, ep.backing_type)];
         ty.size = bt.size;
-        ty.alignment = type_mod.typeNarrowU8("alignment", bt.alignment);
+        ty.alignment = @intCast(u16, bt.alignment);
         registry.types_items[idx] = ty;
     } else if (ty.kind == TypeKind.union_type) {
         var up = registry.un_items[@intCast(usize, ty.payload_idx)];
@@ -321,8 +321,8 @@ fn layoutCompute(registry: *TypeRegistry, tid: u32) void {
             }
         }
         ty.size = alignUp(max_sz, max_align);
-        ty.alignment = type_mod.typeNarrowU8("alignment", max_align);
-        if (ty.size == @intCast(u32, 0)) { ty.size = @intCast(u32, 1); ty.alignment = type_mod.typeNarrowU8("alignment", 1); }
+        ty.alignment = @intCast(u16, max_align);
+        if (ty.size == @intCast(u32, 0)) { ty.size = @intCast(u32, 1); ty.alignment = @intCast(u16, 1); }
         registry.types_items[idx] = ty;
      } else if (ty.kind == TypeKind.packed_union_type) {
         type_mod.typeRegistryComputePackedUnionLayout(registry, tid);
@@ -349,14 +349,14 @@ fn layoutCompute(registry: *TypeRegistry, tid: u32) void {
         total = alignUp(total, max_pa);
         total += alignUp(max_ps, max_pa);
         ty.size = alignUp(total, overall_align);
-        ty.alignment = type_mod.typeNarrowU8("alignment", overall_align);
+        ty.alignment = @intCast(u16, overall_align);
         registry.types_items[idx] = ty;
     } else if (ty.kind == TypeKind.optional_type) {
         var op = registry.opt_items[@intCast(usize, ty.payload_idx)];
         var pt = registry.types_items[@intCast(usize, op.payload)];
         var pay_align: u32 = if (@intCast(u32, pt.alignment) > @intCast(u32, 4)) @intCast(u32, pt.alignment) else @intCast(u32, 4);
         ty.size = alignUp(alignUp(pt.size, @intCast(u32, 4)) + @intCast(u32, 4), pay_align);
-        ty.alignment = type_mod.typeNarrowU8("alignment", pay_align);
+        ty.alignment = @intCast(u16, pay_align);
         registry.types_items[idx] = ty;
     } else if (ty.kind == TypeKind.error_union_type) {
         var ep = registry.eu_items[@intCast(usize, ty.payload_idx)];
@@ -366,13 +366,13 @@ fn layoutCompute(registry: *TypeRegistry, tid: u32) void {
         var total = alignUp(union_sz, union_align);
         total = alignUp(total, @intCast(u32, 4)) + @intCast(u32, 4);
         ty.size = alignUp(total, union_align);
-        ty.alignment = type_mod.typeNarrowU8("alignment", union_align);
+        ty.alignment = @intCast(u16, union_align);
         registry.types_items[idx] = ty;
     } else if (ty.kind == TypeKind.array_type) {
         var ap = registry.array_items[@intCast(usize, ty.payload_idx)];
         var et = registry.types_items[@intCast(usize, ap.elem)];
         ty.size = et.size * ap.length;
-        ty.alignment = type_mod.typeNarrowU8("alignment", et.alignment);
+        ty.alignment = @intCast(u16, et.alignment);
         registry.types_items[idx] = ty;
     } else if (ty.kind == TypeKind.tuple_type) {
         var tp = registry.tup_items[@intCast(usize, ty.payload_idx)];
@@ -389,8 +389,8 @@ fn layoutCompute(registry: *TypeRegistry, tid: u32) void {
             if (et.alignment > max_align) max_align = et.alignment;
         }
         ty.size = alignUp(offset, max_align);
-        ty.alignment = type_mod.typeNarrowU8("alignment", max_align);
-        if (ty.size == @intCast(u32, 0)) { ty.size = @intCast(u32, 1); ty.alignment = type_mod.typeNarrowU8("alignment", 1); }
+        ty.alignment = @intCast(u16, max_align);
+        if (ty.size == @intCast(u32, 0)) { ty.size = @intCast(u32, 1); ty.alignment = @intCast(u16, 1); }
         registry.types_items[idx] = ty;
     }
 }
@@ -578,7 +578,7 @@ pub fn typeResolverResolve(self: *TypeResolver) void {
                 @intCast(u32, 0), @intCast(u32, 0), msg);
             ty.kind = TypeKind.void_type;
             ty.size = @intCast(u32, 0);
-            ty.alignment = type_mod.typeNarrowU8("alignment", 1);
+            ty.alignment = @intCast(u16, 1);
             ty.state = @intCast(u8, 2);
             self.registry.types_items[ci] = ty;
         }
@@ -1599,7 +1599,7 @@ pub fn registerContainerType(env: *TypeResolveEnv, node_idx: u32, kind: AstKind,
                 });
                 var tup_tidx: u32 = @intCast(u32, env.typereg.tup_len - @intCast(usize, 1));
                 var tup_ty = env.typereg.types_items[@intCast(usize, tid)];
-                tup_ty.payload_idx = type_mod.typeNarrowU16("payload_idx", tup_tidx);
+                tup_ty.payload_idx = tup_tidx;
                 env.typereg.types_items[@intCast(usize, tid)] = tup_ty;
             }
         }
@@ -1635,7 +1635,7 @@ pub fn registerContainerType(env: *TypeResolveEnv, node_idx: u32, kind: AstKind,
                 });
                 var sd_st_idx: u32 = @intCast(u32, env.typereg.st_len - @intCast(usize, 1));
                 var sd_ty = env.typereg.types_items[@intCast(usize, tid)];
-                sd_ty.payload_idx = type_mod.typeNarrowU16("payload_idx", sd_st_idx);
+                sd_ty.payload_idx = sd_st_idx;
                 env.typereg.types_items[@intCast(usize, tid)] = sd_ty;
             }
         }
@@ -1678,7 +1678,7 @@ pub fn registerContainerType(env: *TypeResolveEnv, node_idx: u32, kind: AstKind,
                     });
                     var un_tu_idx: u32 = @intCast(u32, env.typereg.tu_len - @intCast(usize, 1));
                     var un_tu_ty = env.typereg.types_items[@intCast(usize, tid)];
-                    un_tu_ty.payload_idx = type_mod.typeNarrowU16("payload_idx", un_tu_idx);
+                    un_tu_ty.payload_idx = un_tu_idx;
                     env.typereg.types_items[@intCast(usize, tid)] = un_tu_ty;
                 } else {
                     type_mod.unAppend(env.typereg, type_mod.UnionPayload{
@@ -1688,7 +1688,7 @@ pub fn registerContainerType(env: *TypeResolveEnv, node_idx: u32, kind: AstKind,
                     });
                     var un_un_idx: u32 = @intCast(u32, env.typereg.un_len - @intCast(usize, 1));
                     var un_un_ty = env.typereg.types_items[@intCast(usize, tid)];
-                    un_un_ty.payload_idx = type_mod.typeNarrowU16("payload_idx", un_un_idx);
+                    un_un_ty.payload_idx = un_un_idx;
                     env.typereg.types_items[@intCast(usize, tid)] = un_un_ty;
                 }
             }
