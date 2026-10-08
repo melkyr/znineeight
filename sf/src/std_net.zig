@@ -27,6 +27,7 @@ pub const NetError = error {
     NotConnected,
     AddrInUse,
     InvalidAddr,
+    ResolveFailed,
     Io,
 };
 
@@ -532,3 +533,138 @@ const TimeVal = struct {
     tv_sec: i32,
     tv_usec: i32,
 };
+
+// --- z9torr M0 primitives (design spec §4.1) ---------------------------------
+//
+// resolve/tcpSocket/connectToIp/checkSoError/shutdown: the last OS socket
+// calls the BitTorrent client needs. gethostbyname/getsockopt are declared
+// under their own names; netdb.h/sys/socket.h (via net_prelude.h) already
+// declare them, so the emitted call sites resolve.
+//
+// shutdown is the OS symbol itself, declared `pub extern` with the §4.1
+// signature (how: 0=recv, 1=send, 2=both). A Z98 wrapper body + a same-named
+// extern cannot coexist: whichever top-level decl is first wins the module
+// namespace, so the importer either saw the non-pub extern (extern first) or
+// the wrapper recursed into itself (wrapper first). The _os alias route would
+// need a new `#define shutdown_os shutdown` in net_prelude.h, which is part of
+// the compiler's emitted support (emit_support.zig) and is frozen for this
+// task (operator: the compiler is NOT modified). Declaring the extern pub is
+// compiler-neutral: the call lowers to the libc/winsock `shutdown` symbol and
+// the importer's call site sees the exact §4.1 signature.
+
+// hostent layout is target-specific: glibc uses int h_addrtype/h_length
+// (h_addr_list @16); Winsock 1.1 uses short (h_addr_list @12). Both layouts are
+// declared and gethostbyname's pointer is round-tripped as usize; the
+// @isWindows() branch in resolve selects the matching cast.
+const HostEnt = struct {
+    h_name: [*]u8,
+    h_aliases: [*][*]u8,
+    h_addrtype: i32,
+    h_length: i32,
+    h_addr_list: [*][*]u8,
+};
+
+const HostEntWin = struct {
+    h_name: [*]u8,
+    h_aliases: [*][*]u8,
+    h_addrtype: i16,
+    h_length: i16,
+    h_addr_list: [*][*]u8,
+};
+
+// gethostbyname returns `struct hostent*`; declared as usize (0 = not found)
+// because the emitter does not lower an optional-pointer extern return: a
+// `?*void` return compiled the optional-struct result into an invalid `(void*)`
+// cast. The call site round-trips through @intToPtr, which is how the module
+// already models raw addresses.
+extern "stdcall" fn gethostbyname(name: [*]const u8) usize;
+extern "stdcall" fn getsockopt(s: i32, level: i32, optname: i32, optval: *void, optlen: *void) i32;
+
+// A non-blocking connect reports "still in progress" as EINPROGRESS (POSIX) or
+// WSAEWOULDBLOCK/WSAEINPROGRESS (Winsock). These are the only codes for which
+// connectToIp waits on select; every other failure is real and maps via mapErr.
+fn isInProgress(code: i32) bool {
+    if (@isWindows()) {
+        return code == 10035 or code == 10036;
+    } else {
+        return code == 11 or code == 115;
+    }
+}
+
+pub fn resolve(host: []const u8) NetError!u32 {
+    // gethostbyname needs a NUL-terminated name; `host` is an arbitrary slice
+    // (e.g. a sub-slice of a URL), so copy it into a bounded stack buffer
+    // exactly as std_file's cstr does. The hostent is static, so the address
+    // is copied below before any further libc call.
+    var nbuf: [256]u8 = undefined;
+    if (host.len >= @intCast(usize, 256)) return error.ResolveFailed;
+    var i: usize = 0;
+    while (i < host.len) : (i += 1) {
+        nbuf[i] = host[i];
+    }
+    nbuf[host.len] = 0;
+    const hv = gethostbyname(@ptrCast([*]const u8, &nbuf[0]));
+    if (hv == @intCast(usize, 0)) return error.ResolveFailed;
+    if (@isWindows()) {
+        var h: *HostEntWin = @intToPtr(*HostEntWin, hv);
+        if (h.h_addrtype != @intCast(i16, 2)) return error.ResolveFailed;
+        var p: [*]u8 = h.h_addr_list[0];
+        return @intCast(u32, p[0]) | (@intCast(u32, p[1]) << 8) | (@intCast(u32, p[2]) << 16) | (@intCast(u32, p[3]) << 24);
+    } else {
+        var h: *HostEnt = @intToPtr(*HostEnt, hv);
+        if (h.h_addrtype != @intCast(i32, 2)) return error.ResolveFailed;
+        var p: [*]u8 = h.h_addr_list[0];
+        return @intCast(u32, p[0]) | (@intCast(u32, p[1]) << 8) | (@intCast(u32, p[2]) << 16) | (@intCast(u32, p[3]) << 24);
+    }
+}
+
+pub fn tcpSocket() NetError!Socket {
+    const s = socket(@intCast(i32, 2), @intCast(i32, 1), @intCast(i32, 6));
+    if (s < 0) return mapErr(lastErr());
+    return s;
+}
+
+pub fn checkSoError(s: Socket) NetError!void {
+    var err: i32 = @intCast(i32, 0);
+    var len: i32 = @intCast(i32, 4);
+    var level: i32 = @intCast(i32, 1);
+    var optname: i32 = @intCast(i32, 4);
+    if (@isWindows()) {
+        level = @intCast(i32, 65535);
+        optname = @intCast(i32, 4103);
+    }
+    const rc = getsockopt(s, level, optname, @ptrCast(*void, &err), @ptrCast(*void, &len));
+    if (rc < 0) return mapErr(lastErr());
+    if (err != @intCast(i32, 0)) return mapErr(err);
+    return;
+}
+
+pub fn connectToIp(s: Socket, ip_be: u32, port: u16, timeout_ms: u32) NetError!void {
+    var sock: Socket = s;
+    try setNonBlocking(&sock);
+    var addr = emptySockAddr();
+    addr.sin_port = htons(port);
+    addr.sin_addr = ip_be;
+    const rc = connect_os(sock, @ptrCast(*const void, &addr), @intCast(i32, 16));
+    if (rc != 0) {
+        const e = lastErr();
+        if (!isInProgress(e)) return mapErr(e);
+        var fds: fd_set = undefined;
+        fdZero(@ptrCast(*u8, &fds));
+        fdSet(sock, @ptrCast(*u8, &fds));
+        const sr = select(sock + 1, null, @ptrCast(*u8, &fds), null, @intCast(i32, timeout_ms));
+        if (sr == 0) {
+            close(sock);
+            return error.Timeout;
+        }
+        if (sr < 0) {
+            const se = lastErr();
+            close(sock);
+            return mapErr(se);
+        }
+    }
+    return checkSoError(sock);
+}
+
+pub extern "stdcall" fn shutdown(s: Socket, how: i32) void;
+
