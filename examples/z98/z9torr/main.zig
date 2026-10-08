@@ -281,6 +281,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         .t = t,
         .f = &out,
         .verified_bits = rstate.completed_bits,
+        .partial = rstate.partial,
         .n_pieces = n_pieces,
         .verified_count = verified_count,
         .ok = false,
@@ -321,6 +322,18 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
 
     var okline: []const u8 = "z9torr: download complete\n";
     std.io.write(okline);
+
+    // B3=A: one-line fetch metric for tier2's resume gate. `down_bytes` is the
+    // received `piece` payload total for this run; `up_bytes` is 13 bytes per
+    // request message (peer.zig sendRequests), so requests = up_bytes / 13.
+    var sline: []const u8 = "summary: fetched=";
+    writeText(sline);
+    writeU64(g_peer.down_bytes);
+    var rline: []const u8 = " requests=";
+    writeText(rline);
+    writeU64(g_peer.up_bytes / 13);
+    writeText(nl);
+
     std_net.cleanup();
     std.os.exit(0);
 }

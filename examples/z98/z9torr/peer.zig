@@ -74,6 +74,7 @@ pub const RunCtx = struct {
     t: torrent.Torrent,
     f: *filemod.File,
     verified_bits: []u8,
+    partial: []resumemod.PartialPiece,
     n_pieces: u32,
     verified_count: u32,
     ok: bool,
@@ -130,11 +131,70 @@ fn nextMissing(ctx: *RunCtx) u32 {
     return ctx.n_pieces;
 }
 
-// Re-encode + write the resume sidecar from the shared verified bitset.
-fn saveResume(ctx: *RunCtx) void {
+// Seed `ps`'s block states from the loaded sidecar's partial mask for this
+// piece: blocks the previous run wrote through are already on disk, so mark
+// them `received` and let `nextRequests` request only the missing 16 KB blocks
+// (B2=A — half-downloaded piece resume). A mask mismatch simply re-requests.
+fn seedPartial(ctx: *RunCtx, ps: *piece.PieceState) void {
+    var i: usize = 0;
+    while (i < ctx.partial.len) : (i += 1) {
+        var pp = ctx.partial[i];
+        if (pp.index == ps.index) {
+            var b: u32 = 0;
+            while (b < ps.nblocks) : (b += 1) {
+                var byte: usize = @intCast(usize, b / 8);
+                var sh: u8 = @intCast(u8, b % 8);
+                if (byte < pp.block_mask.len) {
+                    var bit: u8 = (pp.block_mask[byte] >> sh) & @intCast(u8, 1);
+                    if (bit == @intCast(u8, 1)) {
+                        ps.blocks[@intCast(usize, b)] = piece.BlockState.received;
+                    }
+                }
+            }
+            return;
+        }
+    }
+}
+
+// Re-encode + write the resume sidecar: the shared verified bitset plus, if
+// `ps` is a half-downloaded piece, its received-block mask. Called after each
+// verified piece, after every block written to a still-incomplete piece (so
+// the recorded mtime stays current across write-through, spec §7), and on
+// clean completion.
+fn saveResume(ctx: *RunCtx, ps: *piece.PieceState) void {
     std.arena.reset(ctx.save_arena);
     var empty: [1]resumemod.PartialPiece = undefined;
-    var st = resumemod.ResumeState{ .completed_bits = ctx.verified_bits, .partial = empty[0..0] };
+    var partial_arr: []resumemod.PartialPiece = empty[0..0];
+    if (ps.state != piece.BlockState.verified) {
+        var any: bool = false;
+        var i: u32 = 0;
+        while (i < ps.nblocks) : (i += 1) {
+            if (ps.blocks[@intCast(usize, i)] == piece.BlockState.received) any = true;
+        }
+        if (any) {
+            var mbytes: usize = (@intCast(usize, ps.nblocks) + 7) / 8;
+            var mraw = std.arena.alloc(ctx.save_arena, mbytes) catch return;
+            var mask: []u8 = mraw[0..mbytes];
+            var z: usize = 0;
+            while (z < mbytes) : (z += 1) {
+                mask[z] = 0;
+            }
+            i = 0;
+            while (i < ps.nblocks) : (i += 1) {
+                if (ps.blocks[@intCast(usize, i)] == piece.BlockState.received) {
+                    var byte: usize = @intCast(usize, i / 8);
+                    var sh: u8 = @intCast(u8, i % 8);
+                    var bit: u8 = @intCast(u8, 1) << sh;
+                    mask[byte] = mask[byte] | bit;
+                }
+            }
+            var praw = std.arena.alloc(ctx.save_arena, @sizeOf(resumemod.PartialPiece)) catch return;
+            var pp: []resumemod.PartialPiece = @ptrCast([*]resumemod.PartialPiece, praw)[0..1];
+            pp[0] = resumemod.PartialPiece{ .index = ps.index, .block_mask = mask };
+            partial_arr = pp;
+        }
+    }
+    var st = resumemod.ResumeState{ .completed_bits = ctx.verified_bits, .partial = partial_arr };
     resumemod.save(ctx.save_arena, ctx.t, st) catch {};
 }
 
@@ -187,6 +247,7 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
             std_net.close(peer.sock);
             return;
         };
+        seedPartial(ctx, &g_ps);
         have_piece = true;
         sendRequests(peer, &g_ps);
     } else {
@@ -216,6 +277,16 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
                 .choke => {
                     peer.peer_choking = true;
                 },
+                .bitfield => {
+                    // B1=A: the peer's bitfield body must be exactly
+                    // ceil(n_pieces/8) bytes; otherwise the peer is malformed
+                    // and the run fails (spec §8 exit 4).
+                    var need: usize = (@intCast(usize, ctx.n_pieces) + 7) / 8;
+                    if (msg.payload.len != need) {
+                        ctx.exit_class = 4;
+                        stop = true;
+                    }
+                },
                 .piece => {
                     if (!have_piece) {
                         // no piece requested yet; ignore
@@ -225,6 +296,7 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
                         var idx: u32 = wire.readU32BE(msg.payload[0..4]);
                         var begin: u32 = wire.readU32BE(msg.payload[4..8]);
                         var data: []const u8 = msg.payload[8..];
+                        peer.down_bytes += @intCast(u64, data.len);
                         if (idx != g_ps.index) {
                             // foreign piece; ignore
                         } else {
@@ -232,12 +304,13 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
                             var r = piece.onBlock(&g_ps, begin, data, &g_io) catch piece.BlockResult.Corrupt;
                             switch (r) {
                                 .Continue => {
+                                    saveResume(ctx, &g_ps);
                                     sendRequests(peer, &g_ps);
                                 },
                                 .Complete => {
                                     piece.bitSet(ctx.verified_bits, idx);
                                     ctx.verified_count += 1;
-                                    saveResume(ctx);
+                                    saveResume(ctx, &g_ps);
                                     cur = nextMissing(ctx);
                                     if (cur >= ctx.n_pieces) {
                                         ctx.ok = true;
@@ -246,7 +319,10 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
                                             ctx.exit_class = 5;
                                             stop = true;
                                         };
-                                        sendRequests(peer, &g_ps);
+                                        if (!stop) {
+                                            seedPartial(ctx, &g_ps);
+                                            sendRequests(peer, &g_ps);
+                                        }
                                     }
                                 },
                                 .Corrupt => {
