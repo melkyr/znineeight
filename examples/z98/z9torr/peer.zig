@@ -37,6 +37,7 @@ const std_net = @import("std_net");
 const std_stream = @import("std_stream.zig");
 const wire = @import("wire.zig");
 const piece = @import("piece.zig");
+const scheduler = @import("scheduler.zig");
 const torrent = @import("torrent.zig");
 const tracker = @import("tracker.zig");
 const resumemod = @import("resume.zig");
@@ -61,6 +62,27 @@ pub const Peer = struct {
     down_bytes: u64,
     up_bytes: u64,
     read_buf: [65536]u8,
+    // --- M3 Task 2: per-peer coroutine state (moved from file scope) ---------
+    // The M2 file-scope scratch (`g_ps`/`g_io`/`g_hs`/`g_rhs`) lived in one
+    // copy, so N concurrent peers would clobber each other; M3 moves it into
+    // the caller-owned `Peer` (spec §6 M3 amendment / §12 risk 1).
+    ps: piece.PieceState,
+    io: piece.PieceIO,
+    hs: wire.Handshake,
+    rhs: wire.Handshake,
+    // Peer availability bitfield (ceil(n_pieces/8) bytes; filled by the peer
+    // loop from `bitfield`/`have`).
+    bitfield: []u8,
+    // Alias into the owning `Scheduler.piece_rarest` (empty when no scheduler).
+    rarest: []u32,
+    // Owning scheduler (null in the M2 single-peer path).
+    sched: ?*scheduler.Scheduler,
+    // Slot index within the scheduler's peer array.
+    slot: u32,
+    // True while this peer holds a claimed piece.
+    have_piece: bool,
+    // True while this slot is in use by the scheduler.
+    active: bool,
 };
 
 // Caller-owned download context. `arena` holds durable piece state (block
@@ -81,11 +103,50 @@ pub const RunCtx = struct {
     exit_class: u8,
 };
 
-// Coroutine-live scratch state kept at file scope (see header note).
-var g_ps: piece.PieceState = undefined;
-var g_io: piece.PieceIO = undefined;
-var g_hs: wire.Handshake = undefined;
-var g_rhs: wire.Handshake = undefined;
+// Zero-length slices returned to callers that need a valid-but-empty slice
+// (the M2 single-peer path has no scheduler, so `rarest`/`bitfield` start
+// empty). D2: `[]u8`/`[]u32` are primitive-element slices.
+var g_empty_u8: [1]u8 = undefined;
+var g_empty_u32: [1]u32 = undefined;
+var g_empty_blockstate: [1]piece.BlockState = undefined;
+
+pub fn emptyU8() []u8 {
+    return g_empty_u8[0..0];
+}
+
+pub fn emptyU32() []u32 {
+    return g_empty_u32[0..0];
+}
+
+fn emptyBlockStates() []piece.BlockState {
+    return g_empty_blockstate[0..0];
+}
+
+// Zero-value constructors for the nested named-struct `Peer` fields. A struct
+// literal field of a nested named-struct type cannot be `undefined` in Z98
+// emission (it lowers to `0`, a C type error), so `main.zig` initialises those
+// fields through these helpers. All are overwritten before use (`makeHandshake`,
+// `readHandshakeAsync`, `pieceInit`, the explicit `io` assignments).
+pub fn zeroPieceState() piece.PieceState {
+    var x: piece.PieceState = undefined;
+    x.index = 0;
+    x.state = piece.BlockState.missing;
+    x.blocks = emptyBlockStates();
+    x.received_bytes = 0;
+    x.length = 0;
+    x.nblocks = 0;
+    return x;
+}
+
+pub fn zeroPieceIO() piece.PieceIO {
+    var x: piece.PieceIO = undefined;
+    return x;
+}
+
+pub fn zeroHandshake() wire.Handshake {
+    var x: wire.Handshake = undefined;
+    return x;
+}
 
 fn makeHandshake(t: torrent.Torrent, peer_id: [20]u8, out: *wire.Handshake) void {
     var pstr: []const u8 = "BitTorrent protocol";
@@ -129,6 +190,39 @@ fn nextMissing(ctx: *RunCtx) u32 {
         if (!piece.bitGet(ctx.verified_bits, i)) return i;
     }
     return ctx.n_pieces;
+}
+
+// Pick the next piece for `peer`: the shared rarest-first `Scheduler` when one
+// is attached (multi-peer), else the M2 lowest-missing-index scan. In the
+// scheduler path the piece is immediately claimed (no suspension in between, so
+// `pending_owner` recorded by `pickPiece` is this peer's).
+fn chooseNext(ctx: *RunCtx, peer: *Peer) ?u32 {
+    if (peer.sched) |sc| {
+        var picked: ?u32 = scheduler.pickPiece(sc, peer);
+        if (picked) |idx| {
+            scheduler.claim(sc, idx);
+            return idx;
+        }
+        return null;
+    }
+    var nxt: u32 = nextMissing(ctx);
+    if (nxt >= ctx.n_pieces) return null;
+    return nxt;
+}
+
+// Acquire + start a piece for `peer`. Returns 0 = have one, 1 = none available
+// now, 2 = disk failure initialising the piece.
+fn acquirePiece(ctx: *RunCtx, peer: *Peer) u8 {
+    if (peer.have_piece) return 0;
+    var picked: ?u32 = chooseNext(ctx, peer);
+    if (picked) |cur| {
+        piece.pieceInit(ctx.arena, ctx.t, &peer.ps, cur) catch return 2;
+        seedPartial(ctx, &peer.ps);
+        peer.have_piece = true;
+        sendRequests(peer, &peer.ps);
+        return 0;
+    }
+    return 1;
 }
 
 // Seed `ps`'s block states from the loaded sidecar's partial mask for this
@@ -211,13 +305,13 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
         return;
     };
 
-    makeHandshake(ctx.t, peer.peer_id, &g_hs);
-    wire.writeHandshake(peer.sock, &g_hs) catch {
+    makeHandshake(ctx.t, peer.peer_id, &peer.hs);
+    wire.writeHandshake(peer.sock, &peer.hs) catch {
         std_net.close(peer.sock);
         return;
     };
 
-    wire.readHandshakeAsync(peer.sock, ctx.t.info_hash[0..], &g_rhs) catch {
+    wire.readHandshakeAsync(peer.sock, ctx.t.info_hash[0..], &peer.rhs) catch {
         std_net.close(peer.sock);
         return;
     };
@@ -236,21 +330,34 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
     peer.last_recv_ms = now;
     peer.last_send_ms = now;
 
-    g_io.arena = ctx.work_arena;
-    g_io.t = ctx.t;
-    g_io.f = ctx.f;
+    peer.io.arena = ctx.work_arena;
+    peer.io.t = ctx.t;
+    peer.io.f = ctx.f;
 
-    var have_piece: bool = false;
-    var cur: u32 = nextMissing(ctx);
-    if (cur < ctx.n_pieces) {
-        piece.pieceInit(ctx.arena, ctx.t, &g_ps, cur) catch {
+    // M3: allocate this peer's availability bitset (zeroed; empty in the M2
+    // path where n_pieces is 0).
+    var need_bf: usize = (@intCast(usize, ctx.n_pieces) + 7) / 8;
+    if (need_bf > 0) {
+        var raw_bf = std.arena.alloc(ctx.arena, need_bf) catch {
             std_net.close(peer.sock);
             return;
         };
-        seedPartial(ctx, &g_ps);
-        have_piece = true;
-        sendRequests(peer, &g_ps);
+        peer.bitfield = raw_bf[0..need_bf];
+        var zb: usize = 0;
+        while (zb < need_bf) : (zb += 1) {
+            peer.bitfield[zb] = 0;
+        }
     } else {
+        peer.bitfield = emptyU8();
+    }
+
+    peer.have_piece = false;
+    var st0: u8 = acquirePiece(ctx, peer);
+    if (st0 == 2) {
+        std_net.close(peer.sock);
+        return;
+    }
+    if (st0 == 1 and ctx.verified_count >= ctx.n_pieces) {
         ctx.ok = true;
     }
 
@@ -260,6 +367,20 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
         if (now - peer.last_send_ms > KEEPALIVE_MS) {
             wire.writeKeepAlive(peer.sock) catch break;
             peer.last_send_ms = now;
+        }
+
+        // A peer that finished (or could not claim) a piece retries once a new
+        // message (`unchoke`/`have`/`bitfield`) may have made a piece eligible.
+        if (!peer.have_piece) {
+            var st1: u8 = acquirePiece(ctx, peer);
+            if (st1 == 2) {
+                ctx.exit_class = 5;
+                break;
+            }
+            if (st1 == 1 and ctx.verified_count >= ctx.n_pieces) {
+                ctx.ok = true;
+                break;
+            }
         }
 
         var msg: wire.Message = undefined;
@@ -272,7 +393,7 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
             switch (msg.id) {
                 .unchoke => {
                     peer.peer_choking = false;
-                    if (have_piece) sendRequests(peer, &g_ps);
+                    if (peer.have_piece) sendRequests(peer, &peer.ps);
                 },
                 .choke => {
                     peer.peer_choking = true;
@@ -280,15 +401,45 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
                 .bitfield => {
                     // B1=A: the peer's bitfield body must be exactly
                     // ceil(n_pieces/8) bytes; otherwise the peer is malformed
-                    // and the run fails (spec §8 exit 4).
+                    // and the run fails (spec §8 exit 4). Valid bits record the
+                    // peer's availability and bump the rarest counts.
                     var need: usize = (@intCast(usize, ctx.n_pieces) + 7) / 8;
                     if (msg.payload.len != need) {
                         ctx.exit_class = 4;
                         stop = true;
+                    } else {
+                        var bi: u32 = 0;
+                        while (bi < ctx.n_pieces) : (bi += 1) {
+                            if (piece.bitGet(msg.payload, bi)) {
+                                // With a scheduler the shared `noteHave` sets
+                                // the bit and bumps `piece_rarest`; without one
+                                // the M2 path only records the bit locally.
+                                if (peer.sched) |sc| {
+                                    scheduler.noteHave(sc, peer, bi);
+                                } else if (!piece.bitGet(peer.bitfield, bi)) {
+                                    piece.bitSet(peer.bitfield, bi);
+                                }
+                            }
+                        }
+                    }
+                },
+                .have => {
+                    // M3: a `have` marks one more available piece.
+                    if (msg.payload.len < 4) {
+                        stop = true;
+                    } else {
+                        var hi: u32 = wire.readU32BE(msg.payload[0..4]);
+                        if (hi < ctx.n_pieces) {
+                            if (peer.sched) |sc| {
+                                scheduler.noteHave(sc, peer, hi);
+                            } else if (!piece.bitGet(peer.bitfield, hi)) {
+                                piece.bitSet(peer.bitfield, hi);
+                            }
+                        }
                     }
                 },
                 .piece => {
-                    if (!have_piece) {
+                    if (!peer.have_piece) {
                         // no piece requested yet; ignore
                     } else if (msg.payload.len < 8) {
                         stop = true;
@@ -297,37 +448,46 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
                         var begin: u32 = wire.readU32BE(msg.payload[4..8]);
                         var data: []const u8 = msg.payload[8..];
                         peer.down_bytes += @intCast(u64, data.len);
-                        if (idx != g_ps.index) {
+                        if (idx != peer.ps.index) {
                             // foreign piece; ignore
                         } else {
                             std.arena.reset(ctx.work_arena);
-                            var r = piece.onBlock(&g_ps, begin, data, &g_io) catch piece.BlockResult.Corrupt;
+                            var r = piece.onBlock(&peer.ps, begin, data, &peer.io) catch piece.BlockResult.Corrupt;
                             switch (r) {
                                 .Continue => {
-                                    saveResume(ctx, &g_ps);
-                                    sendRequests(peer, &g_ps);
+                                    saveResume(ctx, &peer.ps);
+                                    sendRequests(peer, &peer.ps);
                                 },
                                 .Complete => {
                                     piece.bitSet(ctx.verified_bits, idx);
                                     ctx.verified_count += 1;
-                                    saveResume(ctx, &g_ps);
-                                    cur = nextMissing(ctx);
-                                    if (cur >= ctx.n_pieces) {
+                                    if (peer.sched) |sc| {
+                                        scheduler.complete(sc, idx);
+                                    }
+                                    peer.have_piece = false;
+                                    saveResume(ctx, &peer.ps);
+                                    if (ctx.verified_count >= ctx.n_pieces) {
                                         ctx.ok = true;
                                     } else {
-                                        piece.pieceInit(ctx.arena, ctx.t, &g_ps, cur) catch {
+                                        var stc: u8 = acquirePiece(ctx, peer);
+                                        if (stc == 2) {
                                             ctx.exit_class = 5;
                                             stop = true;
-                                        };
-                                        if (!stop) {
-                                            seedPartial(ctx, &g_ps);
-                                            sendRequests(peer, &g_ps);
                                         }
                                     }
                                 },
                                 .Corrupt => {
-                                    ctx.exit_class = 4;
-                                    stop = true;
+                                    if (peer.sched) |sc| {
+                                        // Return the piece to `missing` (blocks
+                                        // retained) so another peer can fetch it,
+                                        // and drop this peer (spec §7).
+                                        scheduler.corrupt(sc, idx);
+                                        peer.have_piece = false;
+                                        stop = true;
+                                    } else {
+                                        ctx.exit_class = 4;
+                                        stop = true;
+                                    }
                                 },
                                 else => {},
                             }
@@ -341,5 +501,10 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
         if (stop) break;
     }
 
+    // Hand any claimed piece back so other peers may take it.
+    if (peer.sched) |sc| {
+        scheduler.release(sc, peer);
+    }
     std_net.close(peer.sock);
+
 }

@@ -251,6 +251,16 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         .down_bytes = 0,
         .up_bytes = 0,
         .read_buf = undefined,
+        .ps = peermod.zeroPieceState(),
+        .io = peermod.zeroPieceIO(),
+        .hs = peermod.zeroHandshake(),
+        .rhs = peermod.zeroHandshake(),
+        .bitfield = peermod.emptyU8(),
+        .rarest = peermod.emptyU32(),
+        .sched = null,
+        .slot = 0,
+        .have_piece = false,
+        .active = true,
     };
     g_pctx = peermod.RunCtx{
         .arena = &arena,

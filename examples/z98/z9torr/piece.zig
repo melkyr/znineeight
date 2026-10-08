@@ -77,7 +77,7 @@ fn pieceHashOffset(index: u32) usize {
 
 // --- completed-piece bitset helpers (shared by peer.zig and main.zig) -------
 
-pub fn bitGet(bits: []u8, i: u32) bool {
+pub fn bitGet(bits: []const u8, i: u32) bool {
     var byte: usize = @intCast(usize, i / 8);
     var sh: u8 = @intCast(u8, i % 8);
     return ((bits[byte] >> sh) & @intCast(u8, 1)) == @intCast(u8, 1);
