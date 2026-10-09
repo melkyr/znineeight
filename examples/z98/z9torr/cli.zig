@@ -49,7 +49,7 @@ pub fn usage() void {
     std.io.write(l1);
     var l2: []const u8 = "  -h, --help       show this help\n";
     std.io.write(l2);
-    var l3: []const u8 = "  --max-peers N    max concurrent peers (reject > 100)\n";
+    var l3: []const u8 = "  --max-peers N    concurrent peers (1..16; larger values are clamped to 16)\n";
     std.io.write(l3);
     var l4: []const u8 = "  --max-up N       upload limit in bytes/s\n";
     std.io.write(l4);

@@ -402,7 +402,7 @@ The user sees one human-readable line; detail goes to stderr under
   `--mode` mock behaviour, so tests can assert exact wire bytes. Production
   seeds from `std.time.ticksMs` + pid.
 - **Scheduler determinism (M3, 2026-10-08):** rarest-first ties break by **lowest piece index**, and eligible pieces are scanned in ascending index order, so a seeded run's request order is reproducible. `piece_rarest[i]` is updated on `bitfield`/`have`/disconnect in a fixed order.
-- **Rate limits (M3 clarification, 2026-10-08):** the client is download-only (spec §13), so `--max-down` bounds received `piece` payloads via the global bucket; `--max-up` bounds only request/handshake bytes sent (there is no peer upload). `0` means unlimited.
+- **Rate limits (M3 clarification, 2026-10-08):** the client is download-only (spec §13), so `--max-down` bounds received `piece` payloads via the global bucket; `--max-up` bounds only `request` bytes sent (handshake/`interested`/keep-alive are not rate-limited; there is no peer upload). `0` means unlimited.
 
 ## §10 Test infrastructure (repository conventions)
 

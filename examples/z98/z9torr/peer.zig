@@ -113,6 +113,10 @@ pub const RunCtx = struct {
     down_bucket: *ratelimit.TokenBucket,
     up_bucket: *ratelimit.TokenBucket,
 };
+// Severity order (most-severe-wins): 5 disk > 4 peer > 3 tracker > 2 parse > 1 usage.
+fn raiseExit(ctx: *RunCtx, c: u8) void {
+    if (c > ctx.exit_class) ctx.exit_class = c;
+}
 
 // Zero-length slices returned to callers that need a valid-but-empty slice
 // (the M2 single-peer path has no scheduler, so `rarest`/`bitfield` start
@@ -357,7 +361,7 @@ fn saveResume(ctx: *RunCtx, ps: *piece.PieceState) void {
 // or on any failure (`ctx.exit_class` = 4 peer, 5 disk).
 pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
     ctx.ok = false;
-    ctx.exit_class = 4;
+    raiseExit(ctx, 4);
 
     peer.sock = std_net.tcpSocket() catch return;
     std_net.connectToIp(peer.sock, peer.addr.ip_be, peer.addr.port, CONNECT_TIMEOUT_MS) catch {
@@ -446,7 +450,7 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
         if (!peer.have_piece) {
             var st1: u8 = acquirePiece(ctx, peer);
             if (st1 == 2) {
-                ctx.exit_class = 5;
+                raiseExit(ctx, 5);
                 break;
             }
             if (st1 == 1 and ctx.verified_count >= ctx.n_pieces) {
@@ -477,7 +481,7 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
                     // peer's availability and bump the rarest counts.
                     var need: usize = (@intCast(usize, ctx.n_pieces) + 7) / 8;
                     if (msg.payload.len != need) {
-                        ctx.exit_class = 4;
+                        raiseExit(ctx, 4);
                         stop = true;
                     } else {
                         var bi: u32 = 0;
@@ -543,7 +547,7 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
                                     } else {
                                         var stc: u8 = acquirePiece(ctx, peer);
                                         if (stc == 2) {
-                                            ctx.exit_class = 5;
+                                            raiseExit(ctx, 5);
                                             stop = true;
                                         }
                                     }
@@ -557,7 +561,7 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
                                         peer.have_piece = false;
                                         stop = true;
                                     } else {
-                                        ctx.exit_class = 4;
+                                        raiseExit(ctx, 4);
                                         stop = true;
                                     }
                                 },
