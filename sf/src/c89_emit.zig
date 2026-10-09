@@ -921,6 +921,22 @@ fn syntheticTypeName(mangler: *NameMangler, prefix: []const u8, elem_name: []con
     return interner_mod.stringInternerGet(mangler.interner, mid);
 }
 
+// F2 (D2): a slice's C name must distinguish synthetic elements. The slice
+// branch historically derived its element name from `elem.name_id`; every
+// synthetic element (slice/array/pointer/optional/tuple/error-union) has
+// `name_id == 0`, so `[][]const u8`, `[][20]u8`, `[][*]u8`, `[]?T`, `[]tuple`
+// all collapsed onto the empty-name mangle. For a synthetic element recurse
+// (matching `emitArrayType`); a primitive/named element keeps the exact
+// `name_id` mangle so `[]u8`/`[]i32`/`[]Struct` stay byte-identical.
+fn sliceElementName(reg: *TypeRegistry, mangler: *NameMangler, elem_tid: u32) []const u8 {
+    var elem_ty = reg.types_items[@intCast(usize, elem_tid)];
+    if (elem_ty.name_id == @intCast(u32, 0)) {
+        return getCTypeName(reg, mangler, elem_tid);
+    }
+    var elem_mid = nameManglerMangle(mangler, elem_ty.name_id, @intCast(u8, 2), @intCast(u32, 0));
+    return interner_mod.stringInternerGet(mangler.interner, elem_mid);
+}
+
 fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 {
     var ty = reg.types_items[@intCast(usize, tid)];
     if (tid >= @intCast(u32, 20)) {
@@ -1042,9 +1058,7 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
     if (ty.kind == TypeKind.null_type) { var nul_m: []const u8 = "NUL:TYnul "; pal.markerWrite(nul_m); var s: []const u8 = "int"; return s; }
     if (ty.kind == TypeKind.slice_type) {
         var sp = reg.slice_items[@intCast(usize, ty.payload_idx)];
-        var elem_ty2 = reg.types_items[@intCast(usize, sp.elem)];
-        var elem_mid2 = nameManglerMangle(mangler, elem_ty2.name_id, @intCast(u8, 2), @intCast(u32, 0));
-        var elem_mangled2 = interner_mod.stringInternerGet(mangler.interner, elem_mid2);
+        var elem_mangled2 = sliceElementName(reg, mangler, sp.elem);
         var s_empty: []const u8 = "";
         var s_pref: []const u8 = "Slice_";
         return syntheticTypeName(mangler, s_pref, elem_mangled2, s_empty, @intCast(usize, 63));
@@ -2346,12 +2360,7 @@ fn emitSliceType(emitter: *C89Emitter, tid: u32) void {
     var ty = reg.types_items[@intCast(usize, tid)];
     var sp = reg.slice_items[@intCast(usize, ty.payload_idx)];
     var elem_c_name = getCTypeName(reg, emitter.mangler, sp.elem);
-    var elem_ty = reg.types_items[@intCast(usize, sp.elem)];
-    var elem_mid = nameManglerMangle(emitter.mangler, elem_ty.name_id, @intCast(u8, 2), @intCast(u32, 0));
-    var elem_mangled = interner_mod.stringInternerGet(emitter.interner, elem_mid);
-    var sl_empty: []const u8 = "";
-    var sl_pref: []const u8 = "Slice_";
-    var mangled_c_name = syntheticTypeName(emitter.mangler, sl_pref, elem_mangled, sl_empty, @intCast(usize, 63));
+    var mangled_c_name = getCTypeName(reg, emitter.mangler, tid);
     var pa: []const u8 = "typedef struct { ";
     bufferedWriterWrite(&emitter.writer, pa);
     bufferedWriterWrite(&emitter.writer, elem_c_name);
