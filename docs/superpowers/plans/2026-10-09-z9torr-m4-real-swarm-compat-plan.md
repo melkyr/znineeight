@@ -57,7 +57,7 @@
 
 ### Task 2: MSE / PE encrypted handshake
 
-**Files:** Create `examples/z98/z9torr/mse.zig`, `tools/mock_mse_peer.zig`, `tests/tier3_encrypted.sh`; Modify `wire.zig`, `peer.zig`; Record `task-2-report.md`
+**Files:** Create `examples/z98/z9torr/mse.zig`, `tools/mock_mse_peer.zig`, `tests/tier3_encrypted.sh`; Modify `wire.zig`, `peer.zig`, `tests/tier2.sh` (operator ruling 2026-10-09, option C: the encrypted-first reconnect + plaintext fallback may require tier2 harness changes to reflect the client's real behavior; `tools/mock_peer.zig` stays one-shot); Record `task-2-report.md`
 
 **Interfaces:**
 - Consumes: `std_crypto` RC4 + SHA-1 (Task 1); the existing plaintext `wire.readHandshakeAsync`/`writeHandshake`/message framing.
@@ -65,7 +65,7 @@
 - Produces: `mock_mse_peer.zig` (a Z98 peer that requires MSE) for the gate.
 
 - [ ] **Step 1 (INVESTIGATE):** pin the MSE byte layout (Ya/Yb, `HASH('req1'|S)`, `HASH('req2'|info_hash)`, `HASH('req3'|S)`, method negotiation) with at least one external reference vector.
-- [ ] **Step 2:** Implement `mse.zig`; wire `peer.zig` to encrypt-first with a bounded plaintext fallback; keep the RC4 transform inside the existing framing (no message-path rewrite).
+- [ ] **Step 2:** Implement `mse.zig`; wire `peer.zig` to encrypt-first with a bounded plaintext fallback; keep the RC4 transform inside the existing framing (no message-path rewrite). RC4 keys are `SHA1('keyA'||S||info_hash)` / `SHA1('keyB'||S||info_hash)` (SKEY = the torrent info_hash; corrected 2026-10-09 per operator ruling — the canonical MSE/PE derivation includes SKEY).
 - [ ] **Step 3:** `tests/tier3_encrypted.sh` runs the client against `mock_mse_peer` and confirms a completed download; all prior gates stay green.
 - [ ] **Step 4: Commit + report.** `git commit -m "feat(z9torr): MSE/PE encrypted peer handshake (M4)"`.
 

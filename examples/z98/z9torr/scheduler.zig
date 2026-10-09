@@ -159,6 +159,7 @@ pub fn schedulerInit(arena: *std.arena.Arena, t: torrent.Torrent, max_peers: u32
             p.bitfield = emptyBits();
             p.rarest = rar;
             p.sock = @intCast(i32, -1);
+            p.encrypted = false;
             peers[@intCast(usize, j)] = p;
         }
     }
@@ -314,6 +315,7 @@ pub fn addPeer(s: *Scheduler, addr: tracker.PeerAddr) bool {
             p.bitfield = emptyBits();
             p.rarest = s.piece_rarest;
             p.sched = s;
+            p.encrypted = false;
             s.active_peer_count += 1;
             rememberAddr(s, addr);
             return true;

@@ -38,7 +38,7 @@ Separately, a latent bug was found: z9torr sends an **all-zero peer_id** — `sc
 - Register any new std module exactly as M0 did (both seed copy lists, `docs/sf/QUICK_REF.md`, `scripts/stdlib/expected_dirs.txt`) and keep `scripts/stdlib/verify_stdlib.sh` green (M0 baseline 280; currently 281 with the mtime fixture). The **compiler fixed point must stay untouched**.
 
 ### §4.2 MSE / PE (encrypted handshake)
-- Outbound MSE (BitTorrent Protocol Encryption): Diffie-Hellman exchange `Ya = g^Xa mod P`, `Yb`, derive `S = Yb^Xa mod P`, RC4 keys `HASH('keyA'|S)`, `HASH('keyB'|S)`; send/verify `HASH('req1'|S)`, `HASH('req2'|info_hash)`, `HASH('req3'|S)`; then the normal handshake and messages are RC4-encrypted.
+- Outbound MSE (BitTorrent Protocol Encryption): Diffie-Hellman exchange `Ya = g^Xa mod P`, `Yb`, derive `S = Yb^Xa mod P`, RC4 keys `HASH('keyA'|S|SKEY)`, `HASH('keyB'|S|SKEY)` where `SKEY = info_hash` (corrected 2026-10-09 per operator ruling: canonical MSE/PE includes SKEY in the RC4 key derivation); send/verify `HASH('req1'|S)`, `HASH('req2'|info_hash)`, `HASH('req3'|S)`; then the normal handshake and messages are RC4-encrypted.
 - Policy: **encrypted-first**, with a bounded plaintext fallback for peers that accept it (keeps the mock/diagnostic path working).
 - Support the common MSE crypto options negotiated in the `HASH('req1')` block (plaintext and RC4; reject unknown methods with a clean error).
 

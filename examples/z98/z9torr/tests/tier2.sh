@@ -158,8 +158,23 @@ start_tracker() {
 # exactly ONE connection, so a connect probe would consume it; wait briefly on
 # process liveness instead (bind+listen precede accept, and the client spends
 # longer than this in its tracker announce).
+#
+# M4 (operator ruling 2026-10-09, option C): the client is encrypted-first, so
+# its MSE probe consumes one connection before falling back to a plaintext
+# reconnect. Keep the one-shot mock alive by restarting it after every
+# connection, so the fallback reconnect is served. The wrapper is killed as a
+# unit (its TERM trap stops the in-flight mock child).
 start_peer_port() {
-    timeout 300 "$PEER" --port "$1" --file "$2" --piece-length 262144 --mode "$3" >"$OUT/pe_$1.log" 2>&1 &
+    (
+        _child=""
+        trap 'if [ -n "$_child" ]; then kill "$_child" 2>/dev/null; fi; exit 0' TERM INT HUP
+        while :; do
+            timeout 300 "$PEER" --port "$1" --file "$2" --piece-length 262144 --mode "$3" &
+            _child=$!
+            wait "$_child"
+            _child=""
+        done
+    ) >"$OUT/pe_$1.log" 2>&1 &
     _pid=$!
     PEER_PIDS="$PEER_PIDS $_pid"
     sleep 0.5

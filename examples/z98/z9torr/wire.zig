@@ -29,6 +29,7 @@ const std = @import("std");
 const std_net = @import("std_net");
 const std_stream = @import("std_stream.zig");
 const logmod = @import("log.zig");
+const std_crypto = @import("std_crypto");
 
 pub const MsgReader = std_stream.MsgReader;
 
@@ -535,4 +536,166 @@ pub fn writePiece(sock: std_net.Socket, index: u32, begin: u32, data: []const u8
     writeU32BE(hdr[9..13], begin);
     try sendAll(sock, hdr[0..]);
     try sendAll(sock, data);
+}
+
+// --- MSE/PE encrypted framing (initiator side) ------------------------------
+//
+// After `mse.mseConnect` negotiates RC4, every wire byte that follows the MSE
+// handshake is RC4-transformed. Outbound frames are encrypted in place before
+// `sendAll`; inbound bytes are decrypted as they arrive (a stream cipher's state
+// must advance in exact wire order, so the reader decrypts each received chunk
+// immediately). The plaintext framing above is untouched; the peer's message
+// state machine only swaps which reader/writer it calls.
+//
+// D3/D4: `dec` always points at the caller-owned per-peer `Peer.enc` contexts,
+// never at module scratch; the readers return `void`/errors and write into
+// caller-owned `out`/`Message`, so no struct-return temporary spans a suspend.
+
+// One non-blocking read attempt, decrypting exactly the bytes received.
+fn recvDecChunk(sock: *std_net.Socket, dec: *std_crypto.Rc4, dst: []u8, out_n: *usize) PeerError!u8 {
+    const got = std_net.recvNonBlocking(sock, dst) catch |e| {
+        if (e == error.WouldBlock) return 0;
+        return error.NetFailed;
+    };
+    std_crypto.rc4Apply(dec, dst[0..got]);
+    out_n.* = got;
+    return 1;
+}
+
+// Suspending exact read of decrypted bytes (counterpart of `recvExactAsync`).
+fn awaitDecRead(sock: *std_net.Socket, dec: *std_crypto.Rc4, dst: []u8, out_n: *usize) PeerError!void {
+    while (true) {
+        const st = try recvDecChunk(sock, dec, dst, out_n);
+        if (st == 1) return;
+        _ = @asyncSuspend(null);
+    }
+}
+
+// Deadline-bounded exact read of decrypted bytes into a caller-owned slice.
+fn recvExactEncAsync(sock: std_net.Socket, dec: *std_crypto.Rc4, buf: []u8, start_ms: u32) PeerError!void {
+    var s: std_net.Socket = sock;
+    var off: usize = 0;
+    while (off < buf.len) {
+        if (std.time.ticksMs() - start_ms >= HANDSHAKE_DEADLINE_MS) return error.Timeout;
+        var n: usize = 0;
+        const st = try recvDecChunk(&s, dec, buf[off..], &n);
+        if (st == 0) {
+            _ = @asyncSuspend(null);
+        } else {
+            if (n == 0) return error.PeerClosed;
+            off += n;
+        }
+    }
+}
+
+// Encrypted counterpart of `readHandshakeAsync`. Same validation; bytes are
+// decrypted in stream order. The leading pstrlen lands in `out.info_hash[0]` as
+// scratch (overwritten by the real info_hash read below), as in the plaintext
+// reader.
+pub fn readHandshakeAsyncEnc(sock: std_net.Socket, dec: *std_crypto.Rc4, expected_info_hash: []const u8, out: *Handshake) PeerError!void {
+    if (expected_info_hash.len != HASH_LEN) return error.HandshakeFailed;
+    var start_ms: u32 = std.time.ticksMs();
+
+    recvExactEncAsync(sock, dec, out.info_hash[0..1], start_ms) catch |e| return e;
+    if (out.info_hash[0] != @intCast(u8, PSTR_LEN)) return error.HandshakeFailed;
+
+    recvExactEncAsync(sock, dec, out.pstr[0..], start_ms) catch |e| return e;
+    recvExactEncAsync(sock, dec, out.reserved[0..], start_ms) catch |e| return e;
+    recvExactEncAsync(sock, dec, out.info_hash[0..], start_ms) catch |e| return e;
+    recvExactEncAsync(sock, dec, out.peer_id[0..], start_ms) catch |e| return e;
+
+    var pstr: []const u8 = "BitTorrent protocol";
+    var i: usize = 0;
+    while (i < PSTR_LEN) : (i += 1) {
+        if (out.pstr[i] != pstr[i]) return error.HandshakeFailed;
+    }
+    i = 0;
+    while (i < RESERVED_LEN) : (i += 1) {
+        if (out.reserved[i] != 0) return error.HandshakeFailed;
+    }
+    i = 0;
+    while (i < HASH_LEN) : (i += 1) {
+        if (out.info_hash[i] != expected_info_hash[i]) return error.InfoHashMismatch;
+    }
+}
+
+// Encrypted write of our 68-byte handshake.
+pub fn writeHandshakeEnc(sock: std_net.Socket, enc: *std_crypto.Rc4, hs: *const Handshake) PeerError!void {
+    var h: [HANDSHAKE_LEN]u8 = undefined;
+    h[0] = @intCast(u8, PSTR_LEN);
+    var i: usize = 0;
+    while (i < PSTR_LEN) : (i += 1) {
+        h[1 + i] = hs.pstr[i];
+    }
+    i = 0;
+    while (i < RESERVED_LEN) : (i += 1) {
+        h[20 + i] = hs.reserved[i];
+    }
+    i = 0;
+    while (i < HASH_LEN) : (i += 1) {
+        h[28 + i] = hs.info_hash[i];
+    }
+    i = 0;
+    while (i < HASH_LEN) : (i += 1) {
+        h[48 + i] = hs.peer_id[i];
+    }
+    std_crypto.rc4Apply(enc, h[0..]);
+    try sendAll(sock, h[0..]);
+}
+
+// Encrypted simple message (choke/unchoke/interested/...).
+pub fn writeSimpleEnc(sock: std_net.Socket, enc: *std_crypto.Rc4, id: MsgType) PeerError!void {
+    var b: [5]u8 = undefined;
+    writeU32BE(b[0..4], @intCast(u32, 1));
+    b[4] = @intCast(u8, @enumToInt(id));
+    std_crypto.rc4Apply(enc, b[0..]);
+    try sendAll(sock, b[0..]);
+}
+
+pub fn writeInterestedEnc(sock: std_net.Socket, enc: *std_crypto.Rc4) PeerError!void {
+    try writeSimpleEnc(sock, enc, MsgType.interested);
+}
+
+pub fn writeKeepAliveEnc(sock: std_net.Socket, enc: *std_crypto.Rc4) PeerError!void {
+    var b: [4]u8 = undefined;
+    writeU32BE(b[0..4], @intCast(u32, 0));
+    std_crypto.rc4Apply(enc, b[0..]);
+    try sendAll(sock, b[0..]);
+}
+
+pub fn writeRequestEnc(sock: std_net.Socket, enc: *std_crypto.Rc4, index: u32, begin: u32, length: u32) PeerError!void {
+    var b: [17]u8 = undefined;
+    writeU32BE(b[0..4], @intCast(u32, 13));
+    b[4] = @intCast(u8, @enumToInt(MsgType.request));
+    writeU32BE(b[5..9], index);
+    writeU32BE(b[9..13], begin);
+    writeU32BE(b[13..17], length);
+    std_crypto.rc4Apply(enc, b[0..]);
+    try sendAll(sock, b[0..]);
+}
+
+// Encrypted counterpart of `readMessageAsync`: decrypt the 4-byte length prefix
+// and body in stream order, then decode. Same keep-alive/error semantics.
+pub fn readMessageAsyncEnc(mr: *MsgReader, dec: *std_crypto.Rc4, out: *Message) PeerError!void {
+    if (mr.buf.len == 0) return error.PeerClosed;
+    var raw: u32 = 0;
+    var rp: [*]u8 = @ptrCast([*]u8, &raw);
+    var got: usize = 0;
+    while (got < 4) {
+        var n: usize = 0;
+        try awaitDecRead(mr.src, dec, mr.buf[0..1], &n);
+        if (n == 0) return error.PeerClosed;
+        rp[got] = mr.buf[0];
+        got += 1;
+    }
+    const len: u32 = std_net.htonl(raw);
+    if (@intCast(usize, len) > mr.buf.len) return error.BadMessage;
+    mr.pending = mr.buf[0..0];
+    while (mr.pending.len < @intCast(usize, len)) {
+        var n2: usize = 0;
+        try awaitDecRead(mr.src, dec, mr.buf[mr.pending.len..@intCast(usize, len)], &n2);
+        if (n2 == 0) return error.PeerClosed;
+        mr.pending = mr.buf[0 .. mr.pending.len + n2];
+    }
+    try decodeFrame(mr.pending, out);
 }

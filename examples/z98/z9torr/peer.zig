@@ -36,6 +36,7 @@ const std = @import("std");
 const std_net = @import("std_net");
 const std_stream = @import("std_stream.zig");
 const wire = @import("wire.zig");
+const mse = @import("mse.zig");
 const piece = @import("piece.zig");
 const scheduler = @import("scheduler.zig");
 const torrent = @import("torrent.zig");
@@ -84,6 +85,12 @@ pub const Peer = struct {
     io: piece.PieceIO,
     hs: wire.Handshake,
     rhs: wire.Handshake,
+    // --- M4: per-peer MSE/PE state (D3/D4: caller-owned, stable address) -----
+    // `enc` holds the two RC4 contexts (out = keyA, in = keyB) once the MSE
+    // handshake has succeeded; `encrypted` selects the encrypted framing. Both
+    // are overwritten in `peerRun` before use, so an uninitialised slot is safe.
+    enc: mse.Rc4Pair,
+    encrypted: bool,
     // Peer availability bitfield (ceil(n_pieces/8) bytes; filled by the peer
     // loop from `bitfield`/`have`).
     bitfield: []u8,
@@ -124,6 +131,8 @@ pub const RunCtx = struct {
     // the sidecar's `partial[]` lists every in-flight partial piece across all
     // peers, not just the calling one (spec §7).
     peers: []Peer,
+    // M4: deterministic ephemeral MSE key material (Z9TORR_SEED or the clock).
+    mse_seed: u32,
 };
 // Severity order (most-severe-wins): 5 disk > 4 peer > 3 tracker > 2 parse > 1 usage.
 fn raiseExit(ctx: *RunCtx, c: u8) void {
@@ -214,6 +223,61 @@ fn makeHandshake(t: torrent.Torrent, peer_id: [20]u8, out: *wire.Handshake) void
     }
 }
 
+// Name for an `mse.MseError` in the peer trace.
+fn mseErrorName(e: mse.MseError) []const u8 {
+    if (e == error.MseFailed) return "MseFailed";
+    if (e == error.BadMethod) return "BadMethod";
+    if (e == error.Timeout) return "Timeout";
+    if (e == error.PeerClosed) return "PeerClosed";
+    if (e == error.NetFailed) return "NetFailed";
+    return "Unknown";
+}
+
+// Encrypted-first step: run the outbound MSE/PE handshake and, on success, copy
+// the two RC4 contexts into `peer.enc`. Returns false on any failure (logged);
+// the caller then falls back to a fresh plaintext connection. Non-suspending
+// (`mse.mseConnect` uses select(2)-gated blocking I/O).
+fn mseHandshake(ctx: *RunCtx, peer: *Peer) bool {
+    var pair: mse.Rc4Pair = undefined;
+    pair = mse.mseConnect(peer.sock, ctx.t.info_hash[0..], ctx.mse_seed) catch |me| {
+        logmod.s("peer slot=");
+        logmod.u32v(peer.slot);
+        logmod.s(" mse-fail err=");
+        logmod.s(mseErrorName(me));
+        logmod.nl();
+        return false;
+    };
+    peer.enc = pair;
+    return true;
+}
+
+// Bounded plaintext fallback: close the (now unusable) MSE socket and open a
+// fresh one, retrying briefly while the tier2 harness (re)starts the one-shot
+// plaintext mock. Blocking, like `connectToIp`; bounded to ~3 s.
+fn plainReconnect(ctx: *RunCtx, peer: *Peer) bool {
+    _ = ctx;
+    std_net.close(peer.sock);
+    peer.sock = @intCast(i32, -1);
+    var start: u32 = std.time.ticksMs();
+    var attempt: u32 = 0;
+    while (attempt < 100) : (attempt += 1) {
+        if (std.time.ticksMs() - start > 3000) return false;
+        peer.sock = std_net.tcpSocket() catch {
+            peer.sock = @intCast(i32, -1);
+            std.time.sleepMs(20);
+            continue;
+        };
+        std_net.connectToIp(peer.sock, peer.addr.ip_be, peer.addr.port, CONNECT_TIMEOUT_MS) catch {
+            std_net.close(peer.sock);
+            peer.sock = @intCast(i32, -1);
+            std.time.sleepMs(20);
+            continue;
+        };
+        return true;
+    }
+    return false;
+}
+
 // The handshake read/validation now lives in `wire.readHandshakeAsync` (D-c);
 // this module no longer carries a private copy.
 
@@ -270,7 +334,11 @@ fn sendRequests(ctx: *RunCtx, peer: *Peer, ps: *piece.PieceState) bool {
             return sent > 0;
         }
 
-        wire.writeRequest(peer.sock, r.index, r.begin, r.length) catch return true;
+        if (peer.encrypted) {
+            wire.writeRequestEnc(peer.sock, &peer.enc.out, r.index, r.begin, r.length) catch return true;
+        } else {
+            wire.writeRequest(peer.sock, r.index, r.begin, r.length) catch return true;
+        }
         peer.last_send_ms = std.time.ticksMs();
         peer.up_bytes += 13;
         sent += 1;
@@ -494,40 +562,91 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
     logmod.nl();
 
     makeHandshake(ctx.t, peer.peer_id, &peer.hs);
-    wire.writeHandshake(peer.sock, &peer.hs) catch {
-        logmod.s("peer slot=");
-        logmod.u32v(peer.slot);
-        logmod.s(" handshake-write-fail");
-        logmod.nl();
-        std_net.close(peer.sock);
-        logPeerEnd(peer);
-        return;
-    };
 
-    wire.readHandshakeAsync(peer.sock, ctx.t.info_hash[0..], &peer.rhs) catch |e| {
-        logmod.s("peer slot=");
-        logmod.u32v(peer.slot);
-        logmod.s(" handshake-fail err=");
-        logmod.s(wire.peerErrorName(e));
-        logmod.nl();
-        std_net.close(peer.sock);
-        logPeerEnd(peer);
-        return;
-    };
+    // Encrypted-first (spec §4.2): attempt MSE/PE; on success the rest of the
+    // connection is RC4-wrapped. On failure, fall back to a fresh plaintext
+    // socket (the MSE probe consumed the one-shot plaintext mock's connection).
+    if (mseHandshake(ctx, peer)) {
+        peer.encrypted = true;
+        wire.writeHandshakeEnc(peer.sock, &peer.enc.out, &peer.hs) catch {
+            logmod.s("peer slot=");
+            logmod.u32v(peer.slot);
+            logmod.s(" handshake-write-fail");
+            logmod.nl();
+            std_net.close(peer.sock);
+            logPeerEnd(peer);
+            return;
+        };
+        wire.readHandshakeAsyncEnc(peer.sock, &peer.enc.in, ctx.t.info_hash[0..], &peer.rhs) catch |e| {
+            logmod.s("peer slot=");
+            logmod.u32v(peer.slot);
+            logmod.s(" handshake-fail err=");
+            logmod.s(wire.peerErrorName(e));
+            logmod.nl();
+            std_net.close(peer.sock);
+            logPeerEnd(peer);
+            return;
+        };
+    } else {
+        peer.encrypted = false;
+        if (!plainReconnect(ctx, peer)) {
+            logmod.s("peer slot=");
+            logmod.u32v(peer.slot);
+            logmod.s(" reconnect-fail");
+            logmod.nl();
+            logPeerEnd(peer);
+            return;
+        }
+        wire.writeHandshake(peer.sock, &peer.hs) catch {
+            logmod.s("peer slot=");
+            logmod.u32v(peer.slot);
+            logmod.s(" handshake-write-fail");
+            logmod.nl();
+            std_net.close(peer.sock);
+            logPeerEnd(peer);
+            return;
+        };
+        wire.readHandshakeAsync(peer.sock, ctx.t.info_hash[0..], &peer.rhs) catch |e| {
+            logmod.s("peer slot=");
+            logmod.u32v(peer.slot);
+            logmod.s(" handshake-fail err=");
+            logmod.s(wire.peerErrorName(e));
+            logmod.nl();
+            std_net.close(peer.sock);
+            logPeerEnd(peer);
+            return;
+        };
+    }
     logmod.s("peer slot=");
     logmod.u32v(peer.slot);
-    logmod.s(" handshake ok");
+    if (peer.encrypted) {
+        logmod.s(" handshake ok enc");
+    } else {
+        logmod.s(" handshake ok plain");
+    }
     logmod.nl();
 
-    wire.writeInterested(peer.sock) catch {
-        logmod.s("peer slot=");
-        logmod.u32v(peer.slot);
-        logmod.s(" interested-write-fail");
-        logmod.nl();
-        std_net.close(peer.sock);
-        logPeerEnd(peer);
-        return;
-    };
+    if (peer.encrypted) {
+        wire.writeInterestedEnc(peer.sock, &peer.enc.out) catch {
+            logmod.s("peer slot=");
+            logmod.u32v(peer.slot);
+            logmod.s(" interested-write-fail");
+            logmod.nl();
+            std_net.close(peer.sock);
+            logPeerEnd(peer);
+            return;
+        };
+    } else {
+        wire.writeInterested(peer.sock) catch {
+            logmod.s("peer slot=");
+            logmod.u32v(peer.slot);
+            logmod.s(" interested-write-fail");
+            logmod.nl();
+            std_net.close(peer.sock);
+            logPeerEnd(peer);
+            return;
+        };
+    }
 
     var reader: std_stream.MsgReader = undefined;
     reader.src = &peer.sock;
@@ -590,10 +709,17 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
             break;
         }
         if (now - peer.last_send_ms > KEEPALIVE_MS) {
-            wire.writeKeepAlive(peer.sock) catch {
-                break_reason = "keepalive-write-fail";
-                break;
-            };
+            if (peer.encrypted) {
+                wire.writeKeepAliveEnc(peer.sock, &peer.enc.out) catch {
+                    break_reason = "keepalive-write-fail";
+                    break;
+                };
+            } else {
+                wire.writeKeepAlive(peer.sock) catch {
+                    break_reason = "keepalive-write-fail";
+                    break;
+                };
+            }
             peer.last_send_ms = now;
         }
 
@@ -626,10 +752,17 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
         }
 
         var msg: wire.Message = undefined;
-        wire.readMessageAsync(&reader, &msg) catch {
-            break_reason = "read-error";
-            break;
-        };
+        if (peer.encrypted) {
+            wire.readMessageAsyncEnc(&reader, &peer.enc.in, &msg) catch {
+                break_reason = "read-error";
+                break;
+            };
+        } else {
+            wire.readMessageAsync(&reader, &msg) catch {
+                break_reason = "read-error";
+                break;
+            };
+        }
         peer.last_recv_ms = std.time.ticksMs();
 
         var stop: bool = false;

@@ -336,6 +336,14 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         }
     }
 
+    // M4: ephemeral MSE key seed. Deterministic under Z9TORR_SEED, else the
+    // millisecond clock (same convention as `makePeerId`).
+    var mse_seed: u32 = std.time.ticksMs();
+    if (std.os.env("Z9TORR_SEED")) |sv| {
+        var s = parseSeed(sv);
+        if (s != 0) mse_seed = s;
+    }
+
     g_pctx = peermod.RunCtx{
         .arena = &arena,
         .work_arena = &g_work_arena,
@@ -351,6 +359,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         .down_bucket = &g_down_bucket,
         .up_bucket = &g_up_bucket,
         .peers = g_sched.peers,
+        .mse_seed = mse_seed,
     };
 
     if (std.os.env("Z9TORR_CLAIM_LOG")) |ev| {
