@@ -1,4 +1,4 @@
-# 12 — Async / Coroutines (`@async*` + `std.async`) [updated: 2026-09-20 — refreshed against current source; line references removed]
+# 12 — Async / Coroutines (`@async*` + `std.async`) [updated: 2026-10-09 — added the D3/D4 frame-save undeclared-temp limitation (see §8)]
 
 > Covers: `async_analysis.zig`, `async_frame_layout.zig`, `async_state_machine.zig`, `std_async.zig`
 
@@ -306,3 +306,18 @@ normal `(ctx, args)` signature.
 - **`*T`→`[*]T` at return/call-arg.** This coercion remains tolerated (not promoted to a hard
   `error[3000]`) because the compiler's valid array→pointer idiom (`&arr[0]`) relies on it; it is a
   declared residual from the Track-4 coercion work.
+- **Undeclared frame-save temp for a by-value struct live across a suspension (D3/D4).** A
+  suspending function that (D3) passes the address of a module-global struct to a suspending
+  cross-module call, or (D4) assigns a by-value struct-return temporary to a module global, can
+  emit a `saveAllFields` block whose source is a temp the emitter never declares. `saveAllFields`
+  /`reloadAllFields` store the **raw** `fld.temp_id + base` (`sf/src/async_state_machine.zig:254-280`)
+  and the emitter's DCE suppresses that temp's stack declaration — treating it as a `load_global`
+  alias (`sf/src/c89_emit.zig:3800-3909`, suppression at `:3709-3713`/`:3571`/`:8910`/`:8998`/
+  `:3485`) — while `resolveTempName` (`:6614-6628`) substitutes the real name only from
+  `temp_global_map`, which is populated **lazily during body emission** (`:7414-7418`, reset at
+  `:9095-9099`). If the frame save is emitted **before** the defining `.load_global`, substitution
+  misses and the output references an undeclared `zT_N` (`gcc: 'zT_NNN' undeclared`). D3 and D4
+  hit the **same site** (the `MsgReader`-value frame slots at offsets 376/424 in `z9torr`
+  `peerRun`), differing only in the trigger. Proper fix (open, F3): declare every temp the
+  save/restore stores, or allocate the frame slot without a by-value struct temp. In-example
+  reproducer + exact commands: `repro/mi_matrix/async_frame_global_xmod/NOTES.md`.
