@@ -446,9 +446,10 @@ hygiene, not a gate.)
 | **M1 — core (pure)** | `docs/superpowers/plans/2026-10-08-z9torr-m1-core-plan.md` | Example skeleton + CLI + torrent parse + testdata/ref_check/tier1; `z9torr <file>` reports torrent metadata. |
 | **M2 — single-peer download + resume** | `docs/superpowers/plans/2026-10-08-z9torr-m2-single-peer-download-plan.md` | Protocol modules + mock peer/tracker + tier2; downloads a single-file torrent end-to-end with cross-restart resume. |
 | **M3 — multi-peer** | `docs/superpowers/plans/2026-10-08-z9torr-m3-multi-peer-plan.md` | Rarest-first scheduler over N peers, rate limits, stats display. |
-| **M4 — Win9x cross** | `docs/superpowers/plans/2026-10-08-z9torr-m4-win9x-plan.md` | mingw/Wine smoke via `scripts/win32_cross/`; documented Win98 procedure. |
+| **M4 — real-swarm compatibility** | `docs/superpowers/plans/2026-10-09-z9torr-m4-real-swarm-compat-plan.md` | MSE/PE encryption + UDP tracker (BEP 15) + DHT/PEX; `peer_id` fix; real-swarm best-effort. |
+| **M5 — Win9x cross** | `docs/superpowers/plans/2026-10-08-z9torr-m5-win9x-plan.md` | mingw/Wine smoke via `scripts/win32_cross/`; documented Win98 procedure (was M4). |
 
-Sequence: M0 → M1 → M2 → M3 → M4. M1 has no socket dependency; M2 depends on
+Sequence: M0 → M1 → M2 → M3 → M4 → M5. M1 has no socket dependency; M2 depends on
 M0's `std_http`/`std_net`/`std_bencode` and M1's `torrent.zig`. Each plan's
 header names its predecessor/successor.
 

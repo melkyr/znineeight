@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-08-z9torr-bittorrent-client-design.md` (binding; §6, §8, §9, §10).
 
-**Sequence:** PREVIOUS: `docs/superpowers/plans/2026-10-08-z9torr-m2-single-peer-download-plan.md`. NEXT: `docs/superpowers/plans/2026-10-08-z9torr-m4-win9x-plan.md`.
+**Sequence:** PREVIOUS: `docs/superpowers/plans/2026-10-08-z9torr-m2-single-peer-download-plan.md`. NEXT: `docs/superpowers/plans/2026-10-09-z9torr-m4-real-swarm-compat-plan.md`.
 
 ## Global Constraints
 
@@ -18,7 +18,7 @@
 - **Scheduler invariants (binding).** A piece in `requested` is not claimable; on peer disconnect/corruption every piece it claimed returns to `missing` (partial blocks retained if already written-through); a peer slot is freed and reused to bound memory at `--max-peers`.
 - **Multi-peer retry + determinism (binding; spec §7/§9 M3).** Corruption/disconnect returns a piece to `missing` (blocks retained) and re-requests — normally from another peer; exit 4 only when no usable peer remains. Rarest-first ties break by lowest piece index; scans ascend by index.
 - **Timing (binding).** Monotonic ms via `std.time.ticksMs`; all elapsed-time math is unsigned subtraction (wraps correctly). Token bucket refills every 100 ms with `rate/10`, burst = `rate`. The bucket is **global** (shared across peers).
-- **Tier-2 only.** No Win9x here (M4).
+- **Tier-2 only.** No Win9x here (M5).
 - Build recipe / gitignore / edit rules / no-push / no-compression as M1. **No compiler gate:** the compiler is untouched; gates are the example's own tier tests, not the fixed point / dump-MD5 / corpus classify. Reports under `.superpowers/sdd/2026-10-08-z9torr-m3-multi-peer-plan/`.
 - Z98 rules: no method syntax; no generics; strict `@intCast`; `switch` needs `else`; string literals via `var s: []const u8 = "x";`.
 
@@ -102,7 +102,7 @@
 - [ ] **Step 1b: Harden `tests/tier1.sh` (spec §12 item 9).** Make it fail closed if its tracker port (`:6969`) is already listening, instead of silently expecting exit 3.
 - [ ] **Step 2: Gate (example-only).** `bash examples/z98/z9torr/tests/tier2.sh` → all PASS (multi-peer download + no double-request + resume). No compiler-only gates — the compiler is untouched.
 - [ ] **Step 3: Docs + commit + report.** Update `demo/README.md`/`NOTES.md`. Ledger line.
-- [ ] **Step 4: Next plan.** State that M4 (`2026-10-08-z9torr-m4-win9x-plan.md`) is next.
+- [ ] **Step 4: Next plan.** State that M4 (`2026-10-09-z9torr-m4-real-swarm-compat-plan.md`) is next.
 
 ## Self-Review
 
