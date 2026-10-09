@@ -78,6 +78,8 @@ repro/mi_matrix/stdlib_const_decay_ok_xmod
 repro/mi_matrix/stdlib_const_field_decay_ok_xmod
 repro/mi_matrix/stdlib_crypto_crc32_xmod
 repro/mi_matrix/stdlib_crypto_md5_xmod
+repro/mi_matrix/stdlib_crypto_modpow_xmod
+repro/mi_matrix/stdlib_crypto_rc4_xmod
 repro/mi_matrix/stdlib_crypto_sha1_xmod
 repro/mi_matrix/stdlib_crypto_sha256_xmod
 repro/mi_matrix/stdlib_crypto_stress_xmod

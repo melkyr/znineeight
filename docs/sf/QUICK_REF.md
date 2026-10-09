@@ -59,6 +59,7 @@ modules enter the archive at a future seed rotation), and `SEED_README.txt`.
 the core **13** names (`io/fmt/arena/str/mem/math/debug/net/async/bits/os/time/buf`);
 the higher-layer modules (L3-L6) are imported by path, not re-exported.
 `scripts/seed/build_from_seed.sh` installs all 32 into the rebuilt compiler's `lib/`.
+**`std_crypto` (M4):** carries streaming SHA-1/SHA-256/MD5 + CRC-32 plus RC4 (`rc4Init`/`rc4Apply`, RFC 6229 vectors) and modular exponentiation (`modpow`, fixed 32-bit limbs sized for the MSE/PE 768-bit Diffie-Hellman prime) for the encrypted handshake.
 **`std_http` deferral:** HTTP/1.1, no TLS; chunked transfer-encoding and keep-alive are **DEFERRED** (not implemented) — `parseResponse` requires a `Content-Length` or a close-delimited body and rejects `Transfer-Encoding: chunked` with `BadResponse` (binding note in `sf/src/std_http.zig`).
 
 - **Compiler↔std separation:** the compiler's import graph reaches **no std module** —

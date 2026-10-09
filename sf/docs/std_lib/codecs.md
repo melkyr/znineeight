@@ -26,7 +26,8 @@ imports, no allocation) and deterministic (R6). `std_utf8` validates and
 iterates UTF-8 per RFC 3629: continuation bytes must be `0x80..0xBF`, and
 overlong forms, UTF-16 surrogates (`U+D800..U+DFFF`), and code points above
 `U+10FFFF` are rejected. `std_crypto` is a streaming hash suite — SHA-1,
-SHA-256, MD5, and CRC-32 — with a caller-provided state: `*Init` returns a
+SHA-256, MD5, and CRC-32, plus RC4 and modular exponentiation for the MSE/PE
+encrypted handshake — with a caller-provided state: `*Init` returns a
 value-type state, `*Update` takes `*State` and may be called any number of times
 with any chunk sizes, and `*Final` writes into a caller array (or, for CRC-32,
 returns the finished `u32`).
@@ -772,6 +773,77 @@ const crc = std_crypto.crc32Final(std_crypto.crc32Update(std_crypto.crc32Init(),
 
 **Gotchas** — returns a `u32`, not bytes; format it yourself (e.g. with
 `std_hex`). Do not continue updating after finalizing.
+
+#### `Rc4` + `rc4Init` + `rc4Apply`
+
+**Purpose** — RC4 stream cipher, used by the MSE/PE encrypted BitTorrent
+handshake: `rc4Init` runs the key-scheduling algorithm (KSA) and `rc4Apply`
+runs the pseudo-random generation algorithm (PRGA), XORing the keystream in
+place over a caller buffer.
+
+**When to use** — after negotiating an MSE `Rc4` crypto method; call
+`rc4Init` once per direction, then `rc4Apply` over each outgoing/incoming
+chunk.
+
+**Signatures**
+- `pub const Rc4 = struct { s: [256]u8, i: u8, j: u8 };`
+- `pub fn rc4Init(key: []const u8, out: *Rc4) void`
+- `pub fn rc4Apply(ctx: *Rc4, buf: []u8) void`
+
+**Parameters**
+- `key` — the RC4 key bytes (MSE uses the 20-byte SHA-1 digest). Any length;
+  an empty key degenerates to the all-zero-key schedule.
+- `out` — caller storage for the cipher state.
+- `ctx` — initialized state; `buf` is encrypted/decrypted in place.
+
+**Returns** — nothing.
+
+**Errors** — none.
+
+**Example**
+```zig
+var ctx: std_crypto.Rc4 = undefined;
+std_crypto.rc4Init(key[0..], &ctx);
+std_crypto.rc4Apply(&ctx, plaintext[0..]);
+```
+
+**Gotchas** — the state carries across calls, so chunked `rc4Apply` calls are
+byte-identical to one call over the concatenation. MSE/PE requires discarding
+the first 1024 keystream bytes; that is the caller's job, not this primitive.
+
+#### `modpow`
+
+**Purpose** — big-integer modular exponentiation: `out = base^exp mod modulus`
+over big-endian byte slices, with fixed 32-bit limbs sized for the MSE/PE
+768-bit Diffie-Hellman prime.
+
+**When to use** — the MSE handshake (`Ya = g^Xa mod P` and the shared secret
+`S = Yb^Xa mod P`).
+
+**Signature** — `pub fn modpow(base: []const u8, exp: []const u8, modulus: []const u8, out: []u8) void`
+
+**Parameters**
+- `base` — base, big-endian; any length (reduced mod `modulus` internally).
+- `exp` — exponent, big-endian; any length (up to a full-width secret).
+- `modulus` — big-endian; non-zero and at most 96 bytes (768 bits). Any
+  modulus (odd or even).
+- `out` — receives `base^exp mod modulus` big-endian; its length MUST equal
+  `modulus.len`.
+
+**Returns** — nothing; the result is written to `out`.
+
+**Errors** — none. If `modulus.len` is 0 or exceeds 96 bytes, or
+`out.len != modulus.len`, `out` is zero-filled.
+
+**Example**
+```zig
+var out: [96]u8 = undefined;
+std_crypto.modpow(g[0..], secret[0..], prime[0..], out[0..]);
+```
+
+**Gotchas** — width is bounded at 96 bytes; `out` must match the modulus
+length exactly. Exponents are processed MSB-first, so leading zero bytes are
+harmless.
 
 ### `std_parse`
 

@@ -1,11 +1,13 @@
-// std_crypto.zig — Z98 std lib L5: streaming hashes + CRC-32.
+// std_crypto.zig — Z98 std lib L5: streaming hashes + CRC-32 + RC4 + modexp.
 //
 // Contract (blueprint §3 L5): alloc no | errors no | coroutine no. Pure (no
 // imports at all). Caller-provided state: every Init returns a value-type
 // state, every Update takes *State, every Final writes into a caller array.
 // Update may be called any number of times with any chunk sizes. Test vectors
 // are RFC/FIPS normative (RFC 3174 SHA-1, FIPS 180-4 SHA-256, RFC 1321 MD5,
-// IEEE 802.3 CRC-32).
+// IEEE 802.3 CRC-32, RFC 6229 RC4). RC4 (`rc4Init`/`rc4Apply`) and modular
+// exponentiation (`modpow`, fixed 32-bit limbs sized for the MSE 768-bit DH
+// prime) support the MSE/PE encrypted handshake.
 //
 // All modular arithmetic uses the explicit wrap operators (`+%`, `*%`) so the
 // default -fsafe build does not trap on the (expected) mod-2^32 additions.
@@ -510,4 +512,246 @@ pub fn crc32Update(state: u32, data: []const u8) u32 {
 
 pub fn crc32Final(state: u32) u32 {
     return state ^ 0xFFFFFFFF;
+}
+
+// ---------------------------------------------------------------------------
+// RC4 (RFC 6229; used by the MSE/PE encrypted handshake)
+// ---------------------------------------------------------------------------
+//
+// rc4Init runs the standard key-scheduling algorithm (KSA) over the caller's
+// key; rc4Apply runs the pseudo-random generation algorithm (PRGA) XORed in
+// place over a caller buffer. The MSE/PE layer discards the first 1024
+// keystream bytes itself (not this primitive) before using the stream.
+
+pub const Rc4 = struct {
+    s: [256]u8,
+    i: u8,
+    j: u8,
+};
+
+pub fn rc4Init(key: []const u8, out: *Rc4) void {
+    var x: usize = 0;
+    while (x < 256) : (x += 1) {
+        out.s[x] = @intCast(u8, x);
+    }
+    var j: usize = 0;
+    var k: usize = 0;
+    var y: usize = 0;
+    while (y < 256) : (y += 1) {
+        var keybyte: u8 = 0;
+        if (key.len != 0) {
+            keybyte = key[k];
+            k += 1;
+            if (k == key.len) k = 0;
+        }
+        j = (j + @intCast(usize, out.s[y]) + @intCast(usize, keybyte)) & 255;
+        var tmp: u8 = out.s[y];
+        out.s[y] = out.s[j];
+        out.s[j] = tmp;
+    }
+    out.i = 0;
+    out.j = 0;
+}
+
+pub fn rc4Apply(ctx: *Rc4, buf: []u8) void {
+    var i: u8 = ctx.i;
+    var j: u8 = ctx.j;
+    var n: usize = 0;
+    while (n < buf.len) : (n += 1) {
+        i = i +% 1;
+        var si: usize = @intCast(usize, i);
+        j = j +% ctx.s[si];
+        var sj: usize = @intCast(usize, j);
+        var tmp: u8 = ctx.s[si];
+        ctx.s[si] = ctx.s[sj];
+        ctx.s[sj] = tmp;
+        var k: u8 = ctx.s[si] +% ctx.s[sj];
+        var sk: usize = @intCast(usize, k);
+        buf[n] = buf[n] ^ ctx.s[sk];
+    }
+    ctx.i = i;
+    ctx.j = j;
+}
+
+// ---------------------------------------------------------------------------
+// Modular exponentiation (big-endian byte slices, fixed 32-bit limbs)
+// ---------------------------------------------------------------------------
+//
+// Width is sized for the MSE/PE Diffie-Hellman 768-bit prime (96-byte
+// modulus, big-endian).  Limbs are little-endian u32 words; the modulus may
+// be any non-zero length up to 96 bytes, and is not required to be odd (the
+// reducer is generic).  The exponent is a big-endian byte slice of any length
+// (the MSE handshake uses up to a 96-byte secret).  `out` must be the same
+// byte length as `modulus`; it receives base^exp mod modulus big-endian.
+// Square-and-multiply over exponent bits (MSB first); each modular multiply
+// is a left-to-right binary double-and-add over the multiplier bits, so all
+// reduction is by conditional subtraction of the modulus.
+
+const MpMaxBytes: usize = 96;
+const MpMaxWords: usize = 24;
+
+fn mpCmp(a: []const u32, b: []const u32, nw: usize) i32 {
+    var i: usize = nw;
+    while (i > 0) {
+        i -= 1;
+        if (a[i] > b[i]) return 1;
+        if (a[i] < b[i]) return -1;
+    }
+    return 0;
+}
+
+fn mpSub(a: []u32, b: []const u32, nw: usize) void {
+    var borrow: u32 = 0;
+    var i: usize = 0;
+    while (i < nw) : (i += 1) {
+        var av: u64 = @intCast(u64, a[i]);
+        var bv: u64 = @intCast(u64, b[i]) + @intCast(u64, borrow);
+        a[i] = @intCast(u32, (av -% bv) & 0xFFFFFFFF);
+        if (av < bv) borrow = 1 else borrow = 0;
+    }
+}
+
+fn mpDouble(x: []u32, m: []const u32, nw: usize) void {
+    var carry: u32 = 0;
+    var i: usize = 0;
+    while (i < nw) : (i += 1) {
+        var v: u64 = (@intCast(u64, x[i]) << 1) | @intCast(u64, carry);
+        x[i] = @intCast(u32, v & 0xFFFFFFFF);
+        carry = @intCast(u32, v >> 32);
+    }
+    if (carry != 0) {
+        mpSub(x, m, nw);
+    } else if (mpCmp(x, m, nw) >= 0) {
+        mpSub(x, m, nw);
+    }
+}
+
+fn mpAddSmall(x: []u32, m: []const u32, nw: usize, add: u32) void {
+    var carry: u64 = @intCast(u64, add);
+    var i: usize = 0;
+    while (i < nw and carry != 0) : (i += 1) {
+        var v: u64 = @intCast(u64, x[i]) + carry;
+        x[i] = @intCast(u32, v & 0xFFFFFFFF);
+        carry = v >> 32;
+    }
+    if (mpCmp(x, m, nw) >= 0) {
+        mpSub(x, m, nw);
+    }
+}
+
+fn mpAddMod(r: []u32, a: []const u32, m: []const u32, nw: usize) void {
+    var carry: u64 = 0;
+    var i: usize = 0;
+    while (i < nw) : (i += 1) {
+        var v: u64 = @intCast(u64, r[i]) + @intCast(u64, a[i]) + carry;
+        r[i] = @intCast(u32, v & 0xFFFFFFFF);
+        carry = v >> 32;
+    }
+    if (carry != 0) {
+        mpSub(r, m, nw);
+    } else if (mpCmp(r, m, nw) >= 0) {
+        mpSub(r, m, nw);
+    }
+}
+
+fn mpBytesToWords(src: []const u8, dst: []u32, nw: usize) void {
+    var i: usize = 0;
+    while (i < nw) : (i += 1) {
+        dst[i] = 0;
+    }
+    var b: usize = 0;
+    while (b < src.len) : (b += 1) {
+        var from_lsb: usize = src.len - 1 - b;
+        var word: usize = from_lsb / 4;
+        var sh: u32 = @intCast(u32, (from_lsb % 4) * 8);
+        dst[word] = dst[word] | (@intCast(u32, src[b]) << sh);
+    }
+}
+
+fn mpWordsToBytes(src: []const u32, nw: usize, dst: []u8) void {
+    var i: usize = 0;
+    while (i < dst.len) : (i += 1) {
+        dst[i] = 0;
+    }
+    var b: usize = 0;
+    while (b < dst.len) : (b += 1) {
+        var from_lsb: usize = dst.len - 1 - b;
+        var word: usize = from_lsb / 4;
+        var sh: u32 = @intCast(u32, (from_lsb % 4) * 8);
+        if (word < nw) {
+            dst[b] = @intCast(u8, (src[word] >> sh) & 0xFF);
+        }
+    }
+}
+
+fn mpReduceBytes(src: []const u8, m: []const u32, nw: usize, out: []u32) void {
+    var i: usize = 0;
+    while (i < nw) : (i += 1) out[i] = 0;
+    var bi: usize = 0;
+    while (bi < src.len) : (bi += 1) {
+        var k: u32 = 0;
+        while (k < 8) : (k += 1) {
+            mpDouble(out, m, nw);
+            var bit: u32 = (@intCast(u32, src[bi]) >> (7 - k)) & 1;
+            if (bit != 0) mpAddSmall(out, m, nw, 1);
+        }
+    }
+}
+
+fn mpMulMod(a: []const u32, b: []const u32, m: []const u32, nw: usize, out: []u32) void {
+    var r: [MpMaxWords]u32 = undefined;
+    var i: usize = 0;
+    while (i < nw) : (i += 1) r[i] = 0;
+    var wi: usize = nw;
+    while (wi > 0) {
+        wi -= 1;
+        var k: u32 = 32;
+        while (k > 0) {
+            k -= 1;
+            mpDouble(r[0..], m, nw);
+            var bit: u32 = (b[wi] >> k) & 1;
+            if (bit != 0) mpAddMod(r[0..], a, m, nw);
+        }
+    }
+    i = 0;
+    while (i < nw) : (i += 1) out[i] = r[i];
+}
+
+pub fn modpow(base: []const u8, exp: []const u8, modulus: []const u8, out: []u8) void {
+    if (modulus.len == 0 or modulus.len > MpMaxBytes or out.len != modulus.len) {
+        var z: usize = 0;
+        while (z < out.len) : (z += 1) out[z] = 0;
+        return;
+    }
+    var nw: usize = (modulus.len + 3) / 4;
+    var m: [MpMaxWords]u32 = undefined;
+    var i: usize = 0;
+    while (i < nw) : (i += 1) m[i] = 0;
+    mpBytesToWords(modulus, m[0..], nw);
+
+    var bm: [MpMaxWords]u32 = undefined;
+    mpReduceBytes(base, m[0..], nw, bm[0..]);
+
+    var res: [MpMaxWords]u32 = undefined;
+    i = 0;
+    while (i < nw) : (i += 1) res[i] = 0;
+    res[0] = 1;
+    if (mpCmp(res[0..], m[0..], nw) >= 0) mpSub(res[0..], m[0..], nw);
+
+    var tmp: [MpMaxWords]u32 = undefined;
+    var ei: usize = 0;
+    while (ei < exp.len) : (ei += 1) {
+        var k: u32 = 0;
+        while (k < 8) : (k += 1) {
+            mpMulMod(res[0..], res[0..], m[0..], nw, tmp[0..]);
+            var q: usize = 0;
+            while (q < nw) : (q += 1) res[q] = tmp[q];
+            if (((@intCast(u32, exp[ei]) >> (7 - k)) & 1) != 0) {
+                mpMulMod(res[0..], bm[0..], m[0..], nw, tmp[0..]);
+                q = 0;
+                while (q < nw) : (q += 1) res[q] = tmp[q];
+            }
+        }
+    }
+    mpWordsToBytes(res[0..], nw, out);
 }
