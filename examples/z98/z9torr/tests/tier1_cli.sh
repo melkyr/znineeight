@@ -84,6 +84,22 @@ else
     fail_case "--max-down 70000 exit 1"
 fi
 
+# 7. --max-down 100 -> exit 1 (nonzero below one 16384-byte block)
+"$PROG" --max-down 100 some.torrent >"$OUT/downmin.out" 2>&1
+if test $? -eq 1; then
+    pass_case "--max-down 100 exit 1"
+else
+    fail_case "--max-down 100 exit 1"
+fi
+
+# 8. --max-up 5 -> exit 1 (nonzero below one 13-byte request)
+"$PROG" --max-up 5 some.torrent >"$OUT/upmin.out" 2>&1
+if test $? -eq 1; then
+    pass_case "--max-up 5 exit 1"
+else
+    fail_case "--max-up 5 exit 1"
+fi
+
 if [ "$fails" -ne 0 ]; then
     echo "== tier1_cli: $fails FAILED =="
     exit 1

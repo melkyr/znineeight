@@ -213,14 +213,20 @@ fn sendRequests(ctx: *RunCtx, peer: *Peer, ps: *piece.PieceState) bool {
     while (i < q.tail) : (i += 1) {
         var r = q.in_flight[@intCast(usize, i)];
 
+        // Buckets are refilled centrally by the driver every 100 ms (spec §9);
+        // here we only charge. A request that cannot be afforded consumes
+        // nothing: the up charge is refunded when the down charge then fails.
         var afford: bool = true;
         if (ctx.up_bucket.rate != 0) {
-            ratelimit.refill(ctx.up_bucket, std.time.ticksMs());
             if (!ratelimit.take(ctx.up_bucket, @intCast(u32, 13))) afford = false;
         }
         if (afford and ctx.down_bucket.rate != 0) {
-            ratelimit.refill(ctx.down_bucket, std.time.ticksMs());
-            if (!ratelimit.take(ctx.down_bucket, r.length)) afford = false;
+            if (!ratelimit.take(ctx.down_bucket, r.length)) {
+                if (ctx.up_bucket.rate != 0) {
+                    ratelimit.refund(ctx.up_bucket, @intCast(u32, 13));
+                }
+                afford = false;
+            }
         }
         if (!afford) {
             var k: u32 = i;
@@ -418,6 +424,9 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
     peer.have_piece = false;
     var st0: u8 = acquirePiece(ctx, peer);
     if (st0 == 2) {
+        // Disk failure initialising the first piece: exit 5 (spec §8), matching
+        // the loop's later disk paths.
+        raiseExit(ctx, 5);
         std_net.close(peer.sock);
         return;
     }

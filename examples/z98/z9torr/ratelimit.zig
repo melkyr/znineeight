@@ -55,3 +55,14 @@ pub fn take(b: *TokenBucket, n: u32) bool {
     }
     return false;
 }
+
+// Return `n` tokens that were charged but not used, capped at `capacity`. Used
+// when a multi-bucket charge is aborted after a partial take, so a request that
+// is never sent consumes nothing from either bucket. Widened to u64 for the add.
+pub fn refund(b: *TokenBucket, n: u32) void {
+    var total: u64 = @intCast(u64, b.tokens) + @intCast(u64, n);
+    if (total > @intCast(u64, b.capacity)) {
+        total = @intCast(u64, b.capacity);
+    }
+    b.tokens = @intCast(u32, total);
+}

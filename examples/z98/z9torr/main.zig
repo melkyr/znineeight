@@ -384,8 +384,17 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     var last_down_bytes: u64 = 0;
     var last_up_bytes: u64 = 0;
     var win_idx: u32 = 0;
+    // Global buckets refill on a 100 ms cadence (spec §9); the per-send path
+    // only charges, so a low rate is not lost to per-call integer truncation.
+    var last_refill_ms: u32 = now0;
 
     while (true) {
+        var nowr: u32 = std.time.ticksMs();
+        if (nowr - last_refill_ms >= 100) {
+            ratelimit.refill(&g_down_bucket, nowr);
+            ratelimit.refill(&g_up_bucket, nowr);
+            last_refill_ms = nowr;
+        }
         std.async.tick(&sched) catch {};
 
         if (g_pctx.verified_count != last_verified) {

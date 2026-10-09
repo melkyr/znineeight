@@ -15,6 +15,11 @@ pub const FailureClass = enum(u8) {
     disk = 5,
 };
 
+// Smallest non-zero rate that can fund one request: 16384 = one block payload
+// (`piece.BLOCK_SIZE`), 13 = one request frame (`wire.zig` request message).
+const MIN_MAX_DOWN_BYTES: u32 = 16384;
+const MIN_MAX_UP_BYTES: u32 = 13;
+
 fn eq(a: []const u8, b: []const u8) bool {
     if (a.len != b.len) return false;
     var i: usize = 0;
@@ -51,9 +56,9 @@ pub fn usage() void {
     std.io.write(l2);
     var l3: []const u8 = "  --max-peers N    concurrent peers (1..16; larger values are clamped to 16)\n";
     std.io.write(l3);
-    var l4: []const u8 = "  --max-up N       upload limit in bytes/s\n";
+    var l4: []const u8 = "  --max-up N       upload limit in bytes/s (0 or >= 13)\n";
     std.io.write(l4);
-    var l5: []const u8 = "  --max-down N     download limit in bytes/s (reject > 65535)\n";
+    var l5: []const u8 = "  --max-down N     download limit in bytes/s (0 or 16384..65535)\n";
     std.io.write(l5);
 }
 
@@ -111,6 +116,10 @@ pub fn parseArgs(argc: i32, argv: [*][*]u8) Args {
             have_path = true;
         }
     }
+    // A nonzero rate below one request/block quantum can never afford a send, so
+    // it is a usage error; `0` still means unlimited.
+    if (a.max_down != 0 and a.max_down < MIN_MAX_DOWN_BYTES) usageError();
+    if (a.max_up != 0 and a.max_up < MIN_MAX_UP_BYTES) usageError();
     if (!have_path) usageError();
     return a;
 }
