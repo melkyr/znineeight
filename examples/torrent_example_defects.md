@@ -329,12 +329,16 @@ peer_E7BBEDD8.c:1804:15: error: 'zT_135' undeclared (first use in this function)
 error to `zT_141`, i.e. D3's trigger; with a coroutine-local, field-initialised
 reader the module links clean.)
 
-**Cause.** Same deferred-frame-save temp-declaration defect as D3. A
-by-value temporary produced by a struct-returning call is not declared in the
-emitted function preamble, yet the frame-save block stores it into a
-frame slot. It is filed separately because the trigger (a struct-return temp)
-is independent of D3's (a global's address passed to a suspending call), and
-both were observed while bringing up `peer.zig`.
+**Cause (corrected 2026-10-09, I4).** Same frame-save temp-declaration defect as
+D3. The undeclared temp is **not** the struct-return temporary — that one *is*
+materialised and declared (`zT_398`). It is the **loop-carried `load_global`
+alias of the module global** (`g_reader`), lowered by `lowerLValueAddr`
+(`sf/src/lower.zig:2264-2268`) → `lowerGlobalRef:3931-3932`, then suppressed by the
+declaration loop (`sf/src/c89_emit.zig:3800-3909`) while `temp_global_map`
+(`resolveTempName:6614-6628`) is still empty at the frame-save site. Observed
+trigger: `g_reader = std_stream.initMsgReader(...)` inside a suspending function
+followed by two `&g_reader` call sites in a loop. D3 and D4 share one fix
+(operator ruling 2026-10-09).
 
 **Workaround (used by z9torr, M2 Task 4).** Do not route a struct-return
 temporary through a global in the coroutine: initialise the `MsgReader` field

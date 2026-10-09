@@ -127,26 +127,23 @@
 
 ---
 
-### Task F3: Fix D3 (undeclared frame-save temp — global struct address)
+### Task F3: Fix D3 + D4 (merged — shared async frame-save root cause)
 
-**Files:** Modify `sf/src/c89_emit.zig` (frame-save temp declaration discipline) and/or `sf/src/async_state_machine.zig`; Modify `sf/docs/tech_docs/12_async_coroutines.md`; Test the I3 reproducer
+**Files:** Modify `sf/src/c89_emit.zig` (frame-save/decl temp discipline) and/or `sf/src/async_state_machine.zig`; Modify `sf/docs/tech_docs/12_async_coroutines.md`; Test `repro/mi_matrix/async_frame_structret_xmod/` (D4, standalone) + the D3 in-example patch
 
-- [ ] **Step 1: Red** — the D3 in-example patch emits `'zT_NNN' undeclared`. **Step 2: Implement** — declare every temp the frame save/restore stores (do not assume a sibling step function declared it). **Step 3: Green** — the D3 patch now links clean, and `examples/z98/z9torr` (with the workaround reverted in a scratch copy) links clean.
-- [ ] **Step 4: Battery** (`12_async_coroutines.md`; corpus includes the async `stdlib_async_*` fixtures — must stay green; dump-MD5 re-baseline if async output changes).
-- [ ] **Step 5: Tech doc → FIXED; commit** `fix: async frame save declares its temps (D3)`.
+**Context (I3/I4, operator ruling 2026-10-09 — one fix):** `saveAllFields` (`async_state_machine.zig:254-265`) stores a raw `fld.temp_id + base`; the decl loop (`c89_emit.zig:3800-3909`) suppresses that temp as a **`load_global` alias** while `temp_map`/`messageMap` state is empty at the save site. D3 = a module-global struct address crossing a suspension; D4 = the loop-carried `load_global` alias of a module global (D4's repro is standalone: `async_frame_structret_xmod`).
 
-**Gate:** D3 reproducer links clean; async corpus green; battery green; pins explained. If I3≡I4, note the operator ruling (one commit vs two).
+- [ ] **Step 1: Red** — D4 standalone repro emits `main_*.c:621 'zT_20' undeclared`; D3 in-example patch emits `'zT_NNN' undeclared`. **Step 2: Implement** — make the save/decl discipline declare the stored temp (or route the value so the temp is not suppressed): the fix must name the `load_global`-alias temp at the save site (resolve `temp_map`/global-alias before the save), mirroring how a local is handled. **Step 3: Green** — BOTH the D4 standalone and the D3 in-example patch link clean; and `examples/z98/z9torr` with the M2 workarounds reverted (in a scratch copy) links clean.
+- [ ] **Step 4: Battery** (the async `stdlib_async_*` corpus fixtures must stay GREEN; the D3 NOTES-only guard stays NOTES-only; dump-MD5 re-baseline if async output changed, with runtime proof).
+- [ ] **Step 5: Tech doc → FIXED; commit** `fix: async frame save declares the stored temp — D3+D4 (async_frame_structret_xmod)`.
+
+**Gate:** D4 standalone + D3 in-example patch link clean; async corpus green; battery green; pins explained.
 
 ---
 
-### Task F4: Fix D4 (undeclared frame-save temp — struct-return temp)
+### Task F4: [MERGED INTO F3 — do NOT execute separately]
 
-**Files:** Modify `sf/src/c89_emit.zig`/`sf/src/lower.zig` (materialise struct-return temp to a named local before the frame store); Modify `sf/docs/tech_docs/12_async_coroutines.md`; Test the I4 reproducer
-
-- [ ] **Step 1: Red. Step 2: Implement. Step 3: Green** (D4 patch links clean).
-- [ ] **Step 4: Battery. Step 5: Tech doc → FIXED; commit** `fix: struct-return temp materialised before async frame save (D4)`.
-
-**Gate:** as F3.
+Operator ruling 2026-10-09: D3 and D4 share one root cause and are fixed by a single task (F3). F4's content is folded into F3 above. The task numbering F5.. stays as written (F5 = D5).
 
 ---
 

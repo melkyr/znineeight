@@ -46,9 +46,9 @@ Five defects, each fixed to reproduce **Zig semantics**:
 - **Repro:** in-example patch reproducer (the D3 two-line `peer.zig` change) — not reducible to a standalone program (recorded).
 
 ### D4 — undeclared frame-save temp (struct-return temp across a suspension)
-- **Current:** same frame-save machinery; the trigger is a by-value **struct-return temporary** (`g_reader = initMsgReader(...)`) assigned to a module global inside a suspending function.
-- **Fix:** materialise a struct-return temporary into a named local **before** the global store / frame save, so the saved value is a declared temp.
-- **Repro:** in-example patch reproducer (the D4 one-line `peer.zig` change).
+- **Current (corrected 2026-10-09 per I4):** same frame-save machinery. The undeclared temp is **not** the struct-return temporary (that one IS materialised and declared) — it is the **loop-carried `load_global` alias of the module global** (lowered by `lowerLValueAddr` `lower.zig:2264-2268` → `lowerGlobalRef:3931-3932`), suppressed by the decl loop and unresolved at the save site. Observed trigger: `g_reader = std_stream.initMsgReader(...)` inside a suspending function followed by two `&g_reader` call sites in a loop.
+- **Fix:** shared with D3 (task F3) — the frame-save/decl discipline must name/declare the suppressed `load_global`-alias temp at the save site.
+- **Repro:** standalone `repro/mi_matrix/async_frame_structret_xmod/` (`main_*.c:621 'zT_20' undeclared`; classify FAIL pre-fix).
 
 ### D5 — lost store through a slice-index aggregate lvalue
 - **Current:** `sf/src/lower.zig` `lowerAssignLValue` `index_access` arm **`:2484-2531`** lowers the base by **value** (`lowerExpr` `:2487`) and only takes an address for the *tuple* sub-case (`:2493-2508`); the correct sibling `lowerFieldStore` addresses nested bases at **`:2878-2928`**. Emission then chains value copies (`emitBaseIdxAccess` **`c89_emit.zig:204-267`**, `load_index` `:7593-7596`, `load_field` `:7456-7513`, `assign_index` `:7226-7271`).
@@ -58,11 +58,11 @@ Five defects, each fixed to reproduce **Zig semantics**:
 ## §4 Correlation hypothesis (to be confirmed by the I-tasks)
 
 The five I-tasks run **before any fix** so we can confirm/refute correlation:
-- **D3 + D4** are expected to share one root cause (the async frame-save temp-declaration discipline) and may collapse to one fix.
+- **D3 ≡ D4 — CONFIRMED** (I3/I4). One root cause: the async frame save stores a raw `fld.temp_id + base` (`async_state_machine.zig:254-265`) while the declaration loop (`c89_emit.zig:3800-3909`) suppresses that temp as a **`load_global` alias** and `temp_global_map` (`resolveTempName:6614-6628`) is empty at the save site → `*slot = zT_N` undeclared. **Operator ruling (2026-10-09): fix once — task F3 covers D3+D4 (F4 merged).**
 - **D5** is a distinct **lvalue-lowering** defect (not the same subsystem as D1/D2).
 - **D1** (union member naming) and **D2** (slice element naming) are both **C-identifier/type-name emission** but otherwise independent.
 
-If the I-tasks show D3≡D4 (same site), the operator rules whether to fix once or keep two commits.
+Resolved: D3≡D4 share the site; the operator ruled fix-once (F3+F4 merged).
 
 ## §5 Gates (all apply to every compiler-moving F-task)
 
