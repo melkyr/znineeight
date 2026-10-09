@@ -314,10 +314,10 @@ fn emitFieldAssign(writer: *BufferedWriter, indent_val: u32, registry: *TypeRegi
             var efa_name: u32 = @intCast(u32, 0);
             var efa_tid: u32 = @intCast(u32, 0);
             var efa_mode: u32 = @intCast(u32, 45);
-            if (resolveFieldAccess(writer, registry, interner, current_fn, base_ty, field_id, efa_mode, src_temp, &efa_name, &efa_tid) != @intCast(u8, 0)) {
+            if (resolveFieldAccess(writer, registry, interner, mangler, current_fn, base_ty, field_id, efa_mode, src_temp, &efa_name, &efa_tid) != @intCast(u8, 0)) {
                 found = @intCast(u8, 1);
                 var efa_empty: []const u8 = ""; fn_prefix = efa_empty;
-                if (efa_name != @intCast(u32, 0)) { fld_name_val = interner_mod.stringInternerGet(interner, efa_name); }
+                if (efa_name != @intCast(u32, 0)) { fld_name_val = if (bty.kind == TypeKind.union_type) cUnionMemberName(interner, mangler, efa_name) else interner_mod.stringInternerGet(interner, efa_name); }
                 if (bty.kind == TypeKind.slice_type) {
                     if (field_id == type_mod.SLICE_FIELD_PTR) {
                         var efa_el = registry.slice_items[@intCast(usize, bty.payload_idx)].elem;
@@ -416,7 +416,7 @@ fn emitFieldAssign(writer: *BufferedWriter, indent_val: u32, registry: *TypeRegi
 // matches a variant field of the union whose payload index is `tu_payload_idx`,
 // else the bare `.payload`. Shared by emitFieldAssign / .load_field /
 // .store_field (each passes its own source/value/result temp).
-fn emitVariantFieldPayload(writer: *BufferedWriter, registry: *TypeRegistry, interner: *StringInterner, current_fn: *LirFunction, tu_payload_idx: u32, src_temp: u32) void {
+fn emitVariantFieldPayload(writer: *BufferedWriter, registry: *TypeRegistry, interner: *StringInterner, mangler: *NameMangler, current_fn: *LirFunction, tu_payload_idx: u32, src_temp: u32) void {
     var evp_src_ty: u32 = @intCast(u32, 0xFFFFFFFF);
     var evp_stj: usize = @intCast(usize, 0);
     while (evp_stj < current_fn.hoisted_temps.len) : (evp_stj += @intCast(usize, 1)) {
@@ -432,7 +432,7 @@ fn emitVariantFieldPayload(writer: *BufferedWriter, registry: *TypeRegistry, int
             if (evp_vfe.type_id == evp_src_ty) {
                 evp_vfound = @intCast(u8, 1);
                 var evp_pld: []const u8 = ".payload."; bufferedWriterWrite(writer, evp_pld);
-                var evp_vname = interner_mod.stringInternerGet(interner, evp_vfe.name_id);
+                var evp_vname = cUnionMemberName(interner, mangler, evp_vfe.name_id);
                 bufferedWriterWrite(writer, evp_vname);
                 var evp_dot: []const u8 = "._"; bufferedWriterWrite(writer, evp_dot);
                 var evp_sfe_idx: u32 = @intCast(u32, 0);
@@ -456,7 +456,7 @@ fn emitVariantFieldPayload(writer: *BufferedWriter, registry: *TypeRegistry, int
 // named/tuple index; 32 ptr -> struct ("->name"); 64 ptr -> union/packed;
 // 128 ptr -> tuple ("->_N"); 256 ptr -> tagged tag ("->tag"); 512 arrow-only
 // (addr_of_field: a value struct/union/tuple base is an address temp -> "->").
-fn resolveFieldAccess(writer: *BufferedWriter, registry: *TypeRegistry, interner: *StringInterner, current_fn: *LirFunction, base_ty: u32, field_id: u32, mode: u32, payload_temp: u32, name_out: *u32, fld_tid_out: *u32) u8 {
+fn resolveFieldAccess(writer: *BufferedWriter, registry: *TypeRegistry, interner: *StringInterner, mangler: *NameMangler, current_fn: *LirFunction, base_ty: u32, field_id: u32, mode: u32, payload_temp: u32, name_out: *u32, fld_tid_out: *u32) u8 {
     name_out.* = @intCast(u32, 0);
     fld_tid_out.* = @intCast(u32, 0);
     var rfa_bty = registry.types_items[@intCast(usize, base_ty)];
@@ -474,7 +474,7 @@ fn resolveFieldAccess(writer: *BufferedWriter, registry: *TypeRegistry, interner
             var au_up = registry.un_items[@intCast(usize, rfa_bty.payload_idx)];
             var au_fe = registry.fe_items[@intCast(usize, au_up.fields_start) + @intCast(usize, field_id)];
             var au_r: []const u8 = "->"; bufferedWriterWrite(writer, au_r);
-            var au_nm = interner_mod.stringInternerGet(interner, au_fe.name_id);
+            var au_nm = cUnionMemberName(interner, mangler, au_fe.name_id);
             bufferedWriterWrite(writer, au_nm);
             name_out.* = au_fe.name_id; fld_tid_out.* = au_fe.type_id;
             return @intCast(u8, 1);
@@ -496,7 +496,7 @@ fn resolveFieldAccess(writer: *BufferedWriter, registry: *TypeRegistry, interner
     if (rfa_bty.kind == type_mod.TypeKind.tagged_union_type) {
         if ((mode & @intCast(u32, 8)) != @intCast(u32, 0)) {
             if (field_id == type_mod.TU_FIELD_TAG) { var rfa_tt: []const u8 = ".tag"; bufferedWriterWrite(writer, rfa_tt); return @intCast(u8, 1); }
-            if (field_id == type_mod.TU_FIELD_PAYLOAD) { emitVariantFieldPayload(writer, registry, interner, current_fn, rfa_bty.payload_idx, payload_temp); return @intCast(u8, 1); }
+            if (field_id == type_mod.TU_FIELD_PAYLOAD) { emitVariantFieldPayload(writer, registry, interner, mangler, current_fn, rfa_bty.payload_idx, payload_temp); return @intCast(u8, 1); }
         }
         return @intCast(u8, 0);
     }
@@ -521,7 +521,7 @@ fn resolveFieldAccess(writer: *BufferedWriter, registry: *TypeRegistry, interner
             if (rp_bounds == @intCast(u8, 0) or @intCast(usize, field_id) < @intCast(usize, rp_up.fields_count)) {
                 var rp_fe = registry.fe_items[@intCast(usize, rp_up.fields_start) + @intCast(usize, field_id)];
                 var rp_r: []const u8 = "->"; bufferedWriterWrite(writer, rp_r);
-                var rp_nm = interner_mod.stringInternerGet(interner, rp_fe.name_id);
+                var rp_nm = if (rp_pty.kind == type_mod.TypeKind.union_type) cUnionMemberName(interner, mangler, rp_fe.name_id) else interner_mod.stringInternerGet(interner, rp_fe.name_id);
                 bufferedWriterWrite(writer, rp_nm);
                 name_out.* = rp_fe.name_id; fld_tid_out.* = rp_fe.type_id;
             }
@@ -555,7 +555,7 @@ fn resolveFieldAccess(writer: *BufferedWriter, registry: *TypeRegistry, interner
         if ((mode & @intCast(u32, 16)) == @intCast(u32, 0) or @intCast(usize, field_id) < vn_fcount) {
             var vn_fe = registry.fe_items[vn_fstart + @intCast(usize, field_id)];
             var vn_d: []const u8 = "."; bufferedWriterWrite(writer, vn_d);
-            var vn_nm = interner_mod.stringInternerGet(interner, vn_fe.name_id);
+            var vn_nm = if (rfa_bty.kind == type_mod.TypeKind.union_type) cUnionMemberName(interner, mangler, vn_fe.name_id) else interner_mod.stringInternerGet(interner, vn_fe.name_id);
             bufferedWriterWrite(writer, vn_nm);
             name_out.* = vn_fe.name_id; fld_tid_out.* = vn_fe.type_id;
             return @intCast(u8, 1);
@@ -583,6 +583,21 @@ fn mangleC89Keyword(self: *NameMangler, name: []const u8) u32 {
         buf[i + @intCast(usize, 2)] = name[i];
     }
     return interner_mod.stringInternerIntern(self.interner, buf[0 .. i + @intCast(usize, 2)]);
+}
+
+// D1: a `union(enum)` tag or a bare-union member may be any Zig identifier
+// (C keywords such as `int` are not Zig keywords), so the emitted C union
+// member must be a valid C89 identifier. Reuse the existing `z_` C-keyword
+// escape; every non-keyword name is returned byte-identical. Shared by the
+// declaration (emitTaggedUnionType / emitUnionType) and every access site
+// (emitVariantFieldPayload / resolveFieldAccess) so the two cannot drift.
+fn cUnionMemberName(interner: *StringInterner, mangler: *NameMangler, name_id: u32) []const u8 {
+    if (isC89Keyword(mangler, name_id) != @intCast(u8, 0)) {
+        var cun_raw = interner_mod.stringInternerGet(interner, name_id);
+        var cun_mid = mangleC89Keyword(mangler, cun_raw);
+        return interner_mod.stringInternerGet(interner, cun_mid);
+    }
+    return interner_mod.stringInternerGet(interner, name_id);
 }
 
 fn nameManglerPopulateKeywords(self: *NameMangler) void {
@@ -2010,7 +2025,7 @@ fn emitTaggedUnionType(emitter: *C89Emitter, tid: u32) void {
         var fe = reg.fe_items[fstart + fi];
         var ft = reg.types_items[@intCast(usize, fe.type_id)];
         if (ft.kind != TypeKind.void_type) {
-            var fe_name = interner_mod.stringInternerGet(emitter.interner, fe.name_id);
+            var fe_name = cUnionMemberName(emitter.interner, emitter.mangler, fe.name_id);
             var si1: []const u8 = "\t\tstruct { ";
             bufferedWriterWrite(&emitter.writer, si1);
             var fi_type = getCTypeName(reg, emitter.mangler, fe.type_id);
@@ -2101,7 +2116,7 @@ fn emitUnionType(emitter: *C89Emitter, tid: u32) void {
     while (i < fcount) : (i += 1) {
         var fe = reg.fe_items[fstart + i];
         if (fe.type_id != type_mod.TYPE_VOID) {
-            var fname = interner_mod.stringInternerGet(emitter.interner, fe.name_id);
+            var fname = cUnionMemberName(emitter.interner, emitter.mangler, fe.name_id);
             var ftype = getCTypeName(reg, emitter.mangler, fe.type_id);
             var es1: []const u8 = "\t"; bufferedWriterWrite(&emitter.writer, es1);
             bufferedWriterWrite(&emitter.writer, ftype);
@@ -6342,7 +6357,7 @@ fn emitAggPrinterDef(emitter: *C89Emitter, tid: u32) void {
                 var neq: []const u8 = " = \");\n"; bufferedWriterWrite(&emitter.writer, neq);
                 var abuf: [kAggAccessCap]u8 = undefined;
                 var ap = aggAccessAppend(&abuf, @intCast(usize, 0), "v.payload.");
-                ap = aggAccessAppend(&abuf, ap, fname);
+                ap = aggAccessAppend(&abuf, ap, cUnionMemberName(emitter.interner, emitter.mangler, fe.name_id));
                 ap = aggAccessAppend(&abuf, ap, "._0");
                 bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
                 emitAggValue(emitter, fe.type_id, abuf[0..ap]);
@@ -7488,7 +7503,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                   var lf_rname: u32 = @intCast(u32, 0);
                   var lf_rtid: u32 = @intCast(u32, 0);
                   var lf_mode: u32 = @intCast(u32, 255);
-                  if (resolveFieldAccess(&emitter.writer, emitter.registry, emitter.interner, emitter.current_fn, lf_base_ty, lf.field_id, lf_mode, lf.result, &lf_rname, &lf_rtid) != @intCast(u8, 0)) {
+                  if (resolveFieldAccess(&emitter.writer, emitter.registry, emitter.interner, emitter.mangler, emitter.current_fn, lf_base_ty, lf.field_id, lf_mode, lf.result, &lf_rname, &lf_rtid) != @intCast(u8, 0)) {
                       field_name_resolved = @intCast(u8, 1);
                   }
               }
@@ -7527,7 +7542,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                   var sf_rname: u32 = @intCast(u32, 0);
                   var sf_rtid: u32 = @intCast(u32, 0);
                   var sf_mode: u32 = @intCast(u32, 495);
-                  if (resolveFieldAccess(&emitter.writer, emitter.registry, emitter.interner, emitter.current_fn, sf_base_ty, sf.field_id, sf_mode, sf.value, &sf_rname, &sf_rtid) != @intCast(u8, 0)) {
+                  if (resolveFieldAccess(&emitter.writer, emitter.registry, emitter.interner, emitter.mangler, emitter.current_fn, sf_base_ty, sf.field_id, sf_mode, sf.value, &sf_rname, &sf_rtid) != @intCast(u8, 0)) {
                       found2 = @intCast(u8, 1);
                   }
                   if (bty.kind == type_mod.TypeKind.slice_type) {
@@ -7675,7 +7690,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                     var af_rname: u32 = @intCast(u32, 0);
                     var af_rtid: u32 = @intCast(u32, 0);
                     var af_mode: u32 = @intCast(u32, 736);
-                    if (resolveFieldAccess(&emitter.writer, emitter.registry, emitter.interner, emitter.current_fn, pointee, af.field_id, af_mode, @intCast(u32, 0), &af_rname, &af_rtid) != @intCast(u8, 0)) {
+                    if (resolveFieldAccess(&emitter.writer, emitter.registry, emitter.interner, emitter.mangler, emitter.current_fn, pointee, af.field_id, af_mode, @intCast(u32, 0), &af_rname, &af_rtid) != @intCast(u8, 0)) {
                         af_found = @intCast(u8, 1);
                     }
             }

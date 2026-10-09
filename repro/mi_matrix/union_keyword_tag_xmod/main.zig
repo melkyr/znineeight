@@ -6,6 +6,11 @@ const V = union(enum) {
     flag: bool,
 };
 
+const P = union(enum) {
+    int: i64,
+    flag: bool,
+};
+
 pub fn main() void {
     var v: V = V{ .int = 3 };
     switch (v) {
@@ -23,4 +28,7 @@ pub fn main() void {
         else => {},
     }
     std.io.writeByte('\n');
+    var p: P = P{ .int = 7 };
+    std.io.print("P=", .{});
+    std.io.print("{}\n", .{p});
 }

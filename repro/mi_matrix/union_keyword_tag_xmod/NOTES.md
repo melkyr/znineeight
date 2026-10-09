@@ -5,7 +5,14 @@ A tagged union whose variant tag is a **C keyword**: `int`. In Zig/Z98 any
 identifier is a legal `union(enum)` tag (`int`, `long`, `switch`, … are not Zig
 keywords), so `V = union(enum) { int: i64, bytes: []const u8, flag: bool }` is
 valid Z98. It constructs `V{ .int = 3 }`, switches on all three variants, prints
-`3`, and writes a newline. Expected stdout after a correct fix: `3\n`.
+`3`, and writes a newline. It also constructs `P = union(enum) { int: i64, flag:
+bool }` and **prints it** through the generated aggregate printer — exercising the
+`emitAggPrinterDef` tagged-union payload designator (`v.payload.<tag>._0`), a
+second access site caught by the F1 review. Expected stdout after a correct fix:
+`P=.{ .int = 7 }\n3\n` (the direct `std_print` write precedes the stdio-buffered
+`printInt`; md5 `5a9d10a37f83b96e371183be870935fa` under a pipe). The printed
+label stays the raw Zig tag (`int = `) while the C payload designator is mangled
+(`z_int`).
 
 ## Zig semantics (the reference)
 Zig permits any identifier as a tagged-union tag; the C89 backend must therefore
