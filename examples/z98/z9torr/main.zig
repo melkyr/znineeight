@@ -10,6 +10,7 @@ const std_net = @import("std_net");
 const piecemod = @import("piece.zig");
 const peermod = @import("peer.zig");
 const trackerlib = @import("tracker.zig");
+const udptracker = @import("udp_tracker.zig");
 const schedmod = @import("scheduler.zig");
 const ratelimit = @import("ratelimit.zig");
 const statsmod = @import("stats.zig");
@@ -96,6 +97,37 @@ fn zeroStats() trackerlib.Stats {
         .window_up = [5]u32{ 0, 0, 0, 0, 0 },
         .window_idx = 0,
     };
+}
+
+fn startsWithPrefix(s: []const u8, p: []const u8) bool {
+    if (s.len < p.len) return false;
+    var i: usize = 0;
+    while (i < p.len) : (i += 1) {
+        if (s[i] != p[i]) return false;
+    }
+    return true;
+}
+
+// M4: the first `udp://` announce (primary URL, then the announce-list tiers),
+// or null so the caller falls back to the M0 HTTP tracker.
+fn findUdpAnnounce(t: torrentlib.Torrent) ?[]const u8 {
+    var pre: []const u8 = "udp://";
+    if (startsWithPrefix(t.announce, pre)) return t.announce;
+    var i: u32 = 0;
+    while (i < t.announce_count) : (i += 1) {
+        var u: []const u8 = t.announce_list[@intCast(usize, i)];
+        if (startsWithPrefix(u, pre)) return u;
+    }
+    return null;
+}
+
+// Announce through the UDP tracker (BEP 15) when the torrent lists one, else the
+// existing HTTP tracker. Both yield the same `AnnounceResult` for the scheduler.
+fn announceTracked(arena: *std.arena.Arena, t: torrentlib.Torrent, peer_id: [20]u8, port: u16, event: trackerlib.AnnounceEvent, stats: trackerlib.Stats) trackerlib.TrackerError!trackerlib.AnnounceResult {
+    if (findUdpAnnounce(t)) |url| {
+        return udptracker.announceUdp(arena, url, t.info_hash[0..20], peer_id[0..20], port, event, stats);
+    }
+    return trackerlib.announce(arena, t, peer_id, port, event, stats);
 }
 
 // Index of the first inactive scheduler peer slot (== `peers.len` if full).
@@ -255,7 +287,8 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     var peer_id: [20]u8 = undefined;
     makePeerId(&peer_id);
     var stats = zeroStats();
-    var ann = trackerlib.announce(&arena, t, peer_id, @intCast(u16, 6881), trackerlib.AnnounceEvent.started, stats) catch {
+    stats.left = t.total_length;
+    var ann = announceTracked(&arena, t, peer_id, @intCast(u16, 6881), trackerlib.AnnounceEvent.started, stats) catch {
         std_net.cleanup();
         var tmsg: []const u8 = "z9torr: tracker error\n";
         std.io.write(tmsg);
@@ -540,7 +573,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
 
     var stats2 = zeroStats();
     stats2.downloaded = t.total_length;
-    _ = trackerlib.announce(&arena, t, peer_id, @intCast(u16, 6881), trackerlib.AnnounceEvent.completed, stats2) catch {};
+    _ = announceTracked(&arena, t, peer_id, @intCast(u16, 6881), trackerlib.AnnounceEvent.completed, stats2) catch {};
     logmod.s("completed");
     logmod.nl();
 

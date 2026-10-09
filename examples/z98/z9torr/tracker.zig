@@ -94,7 +94,13 @@ pub fn failureReason() []const u8 {
     return g_failure_buf[0..g_failure_len];
 }
 
-fn storeFailureReason(s: []const u8) void {
+// Clear the stored `failure reason` (called at the start of every announce, so
+// a stale message never leaks into a later result).
+pub fn clearFailureReason() void {
+    g_failure_len = 0;
+}
+
+pub fn storeFailureReason(s: []const u8) void {
     var n: usize = s.len;
     if (n > FAILURE_MAX) n = FAILURE_MAX;
     var i: usize = 0;
@@ -133,6 +139,29 @@ fn allocPeers(arena: *std.arena.Arena, n: usize) TrackerError![]PeerAddr {
     return @ptrCast([*]PeerAddr, raw)[0..n];
 }
 
+// Parse a compact tracker peer byte string (`6*N` bytes: 4-byte network-order
+// IPv4 + 2-byte big-endian port) into the shared `PeerAddr` representation.
+// Both the HTTP (M0/M2) and UDP (M4/BEP 15) tracker paths use this so the
+// `ip_be` byte order handed to `std_net.connectToIp` stays identical; see the
+// module header for the `ip_be` convention.
+pub fn parseCompactPeers(arena: *std.arena.Arena, pbytes: []const u8) TrackerError![]PeerAddr {
+    if (pbytes.len % PEER_ENTRY_LEN != 0) return error.BadResponse;
+    var count: usize = pbytes.len / PEER_ENTRY_LEN;
+    var peers = try allocPeers(arena, count);
+    var k: usize = 0;
+    while (k < count) : (k += 1) {
+        var off: usize = k * PEER_ENTRY_LEN;
+        var b0: u32 = @intCast(u32, pbytes[off]);
+        var b1: u32 = @intCast(u32, pbytes[off + 1]);
+        var b2: u32 = @intCast(u32, pbytes[off + 2]);
+        var b3: u32 = @intCast(u32, pbytes[off + 3]);
+        var ip_be: u32 = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+        var p: u16 = (@intCast(u16, pbytes[off + 4]) << 8) | @intCast(u16, pbytes[off + 5]);
+        peers[k] = PeerAddr{ .ip_be = ip_be, .port = p };
+    }
+    return peers;
+}
+
 fn appendStr(b: *std.buf.Buf, s: []const u8) TrackerError!void {
     std.buf.append(b, s) catch return error.OutOfMemory;
 }
@@ -155,7 +184,7 @@ fn logPeerIp(ip_be: u32) void {
 }
 
 pub fn announce(arena: *std.arena.Arena, t: torrentlib.Torrent, peer_id: PeerId, port: u16, event: AnnounceEvent, stats: Stats) TrackerError!AnnounceResult {
-    g_failure_len = 0;
+    clearFailureReason();
 
     var enc_ih: []u8 = std_http.percentEncode(arena, t.info_hash[0..HASH_LEN]) catch |e| {
         if (e == error.OutOfMemory) return error.OutOfMemory;
@@ -289,21 +318,8 @@ pub fn announce(arena: *std.arena.Arena, t: torrentlib.Torrent, peer_id: PeerId,
         },
         else => return error.BadResponse,
     }
-    if (pbytes.len % PEER_ENTRY_LEN != 0) return error.BadResponse;
-
-    var count: usize = pbytes.len / PEER_ENTRY_LEN;
-    result.peers = try allocPeers(arena, count);
-    var k: usize = 0;
-    while (k < count) : (k += 1) {
-        var off: usize = k * PEER_ENTRY_LEN;
-        var b0: u32 = @intCast(u32, pbytes[off]);
-        var b1: u32 = @intCast(u32, pbytes[off + 1]);
-        var b2: u32 = @intCast(u32, pbytes[off + 2]);
-        var b3: u32 = @intCast(u32, pbytes[off + 3]);
-        var ip_be: u32 = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
-        var p: u16 = (@intCast(u16, pbytes[off + 4]) << 8) | @intCast(u16, pbytes[off + 5]);
-        result.peers[k] = PeerAddr{ .ip_be = ip_be, .port = p };
-    }
+    result.peers = try parseCompactPeers(arena, pbytes);
+    var count: usize = result.peers.len;
     // Env-gated diagnostic: raw compact-peer bytes + each parsed IPv4:port, so
     // the real-swarm announce can be checked for IPv4 vs IPv6/count.
     logmod.s("tracker peers bytes=");
