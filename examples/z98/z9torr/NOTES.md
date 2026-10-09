@@ -4,9 +4,9 @@
 
 **Entry file:** `main.zig`
 
-**Working commit:** `808a3b93` (M2 source; Task 5 docs on top)
+**Working commit:** `b71088ed` (M3 sources Task 0–3; Task 4 multi-peer tier2 + `removePeer` wiring + docs on top)
 
-**MD5 (`--dump-c89`):** `b6595db02d0a4fadb497a1becdb703cd` (seed `zig1_5_clean`; stable 3×; M2)
+**MD5 (`--dump-c89`):** `5fe4a00979e129c39c2ffec0a7bec792` (seed `zig1_5_clean`; stable 3×; M3 Task 4)
 
 ## Build Recipes
 
@@ -21,7 +21,7 @@ sh /tmp/z9_m1_out/build_target.sh linux /tmp/z9_m1_out/prog
 ### seed zig1_5_clean (dump C89) — for the MD5 above
 ```bash
 timeout 120 /tmp/z9_m0_seed/zig1_5_clean --dump-c89 examples/z98/z9torr/main.zig | md5sum
-# b6595db02d0a4fadb497a1becdb703cd  -
+# 5fe4a00979e129c39c2ffec0a7bec792  -
 ```
 
 ## Expected Output
@@ -91,3 +91,36 @@ Tests: `tests/tier1.sh` (15/0; parse + `ref_check`), `tests/tier1_cli.sh` (CLI
 shapes), `tests/tier2.sh` (15/0; download `t1`/`t2`, interrupt+restart resume
 with strictly-fewer fetched bytes, malformed-peer rejection). The `--dump-c89`
 md5 above is stable 3× for the M2 source.
+
+## M3 — multi-peer + scheduler + rate limits (2026-10-08)
+
+New modules: `scheduler.zig` (rarest-first `Scheduler` + `addPeer`/`removePeer`),
+`ratelimit.zig` (`TokenBucket`), `stats.zig` (`statsRender`); `main.zig` now
+spawns one coroutine per announced peer (up to the 16-slot runtime cap) and
+shares two global token buckets refilled on a 100 ms cadence. `mock_tracker.zig`
+advertises N compact peers via `--peers a,b,c` / repeatable `--peer`.
+
+Flags (from `cli.usage`): `--max-peers N` (1..100 accepted; runtime clamps to
+`MAX_RUNTIME_PEERS = 16` and to the announced count), `--max-up N` (`0` or
+`>= 13`), `--max-down N` (`0` or `16384..65535`). A nonzero rate below one
+request/block quantum is a usage error (exit 1).
+
+Operator ruling #3: the `main.zig` drive loop calls
+`scheduler.removePeer(&g_sched, &g_sched.peers[slot])` for every spawned slot
+whose task is `done`/`cancelled` after each `tick`, so finished peers stop
+inflating `piece_rarest` and the stats peer count. `removePeer` early-returns on
+an inactive slot (repeat-safe) and is never called on a live task.
+
+Tests: `tests/tier2.sh` now runs 4 `mock_peer`s on the declared ports
+(`testdata/ports.txt` = tracker `6969`, peers `6970`–`6973`) and asserts, for
+`t2_single_25m`: exit 0 + SHA-1; the no-double-request invariant via
+`Z9TORR_CLAIM_LOG=1` (100 claims / 100 unique pieces); that >1 peer slot worked
+(observed 4); and a multi-peer interrupt/restart resume with strictly-fewer
+fetched bytes. `tests/tier1.sh` fails closed if `127.0.0.1:6969` is already
+listening (spec §12 item 9). Gates: tier1 `15/0`, tier1_cli all pass, tier2
+`17/0`.
+
+The `--dump-c89` md5 above is stable 3× for the M3 Task 4 source; refresh with
+`timeout 120 /tmp/z9_m0_seed/zig1_5_clean --dump-c89 examples/z98/z9torr/main.zig | md5sum`.
+
+Next: M4 (`2026-10-08-z9torr-m4-win9x-plan.md`).

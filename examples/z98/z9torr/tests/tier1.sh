@@ -44,6 +44,19 @@ if [ ! -x "$ZIG" ]; then
     exit 1
 fi
 
+# Fail closed if the tracker port is already listening. This gate asserts an
+# unreachable tracker (exit 3); a leftover mock_tracker would instead produce a
+# peer error (exit 4) and silently misread as a peer failure. Mirrors tier2.sh.
+port_busy() {
+    bash -c "exec 3<>/dev/tcp/127.0.0.1/$1" 2>/dev/null
+}
+if port_busy 6969; then
+    echo "FAIL: tracker port 127.0.0.1:6969 already in use"
+    echo "      tier1 expects the tracker unreachable (exit 3); stop the leftover"
+    echo "      mock_tracker and re-run"
+    exit 1
+fi
+
 rm -rf "$OUT"
 mkdir -p "$OUT"
 

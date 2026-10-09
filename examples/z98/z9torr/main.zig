@@ -397,6 +397,19 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         }
         std.async.tick(&sched) catch {};
 
+        // Operator ruling #3: retire every peer whose task has finished so its
+        // availability bits stop inflating `piece_rarest` and the stats peer
+        // count tracks live peers only. `removePeer` returns early when the
+        // slot is already inactive, so repeated calls are safe; a peer whose
+        // task is still live is left untouched.
+        var rj: usize = 0;
+        while (rj < @intCast(usize, n_spawned)) : (rj += 1) {
+            var rts = g_tasks[rj].state;
+            if (rts == std.async.TaskState.done or rts == std.async.TaskState.cancelled) {
+                schedmod.removePeer(&g_sched, &g_sched.peers[rj]);
+            }
+        }
+
         if (g_pctx.verified_count != last_verified) {
             last_verified = g_pctx.verified_count;
             last_progress_ms = std.time.ticksMs();

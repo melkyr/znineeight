@@ -1,17 +1,20 @@
 #!/bin/sh
-# tier2.sh — z9torr M2 end-to-end gate (Task 5): download + interrupt/restart
-# resume + malformed-peer rejection.
+# tier2.sh — z9torr M3 end-to-end gate: multi-peer download + no-double-request
+# + interrupt/restart resume + malformed-peer rejection.
 #
 # POSIX sh. Run from anywhere (paths resolved from this script). Steps:
 #   1. refuse to run if the declared ports (testdata/ports.txt) are busy;
 #   2. build z9torr, mock_tracker, mock_peer with the binding seed recipe;
 #   3. generate the golden payloads (mkfixture.sh awk recipe) and check them;
-#   4. start mock_tracker + mock_peer (timeout-guarded; trap teardown);
-#   5. download t1_single_1m and t2_single_25m: exit 0 + sha1sum == expected;
-#   6. resume: kill a t2 run with >=1 verified piece and a non-empty sidecar
-#      partial[] mask, restart, assert exit 0 + sha1 + strictly fewer fetched
-#      bytes than the cold run's `summary: fetched=` line;
-#   7. malformed peers: wrong-info-hash and bad-bitfield-length each exit 4.
+#   4. start mock_tracker (advertising every declared peer port) + mock_peers;
+#   5. download t1_single_1m (single-peer shape) and t2_single_25m (multi-peer,
+#      all declared ports): exit 0 + sha1sum == expected;
+#   6. assert the multi-peer scheduler invariant via Z9TORR_CLAIM_LOG: exactly
+#      one claim per piece (no duplicate piece indices) and >1 peer slot worked;
+#   7. resume: kill a multi-peer t2 run with >=1 verified piece and a non-empty
+#      sidecar partial[] mask, restart, assert exit 0 + sha1 + strictly fewer
+#      fetched bytes than the cold run's `summary: fetched=` line;
+#   8. malformed peers: wrong-info-hash and bad-bitfield-length each exit 4.
 # Exits non-zero and prints a PASS/FAIL summary on any failure.
 
 set -u
@@ -35,29 +38,45 @@ rm -rf "$OUT"
 mkdir -p "$OUT/work"
 WORK="$OUT/work"
 
-# --- declared ports (one per line; default 6969/6970) -----------------------
+# --- declared ports (tracker on line 1; peer ports on lines 2..N) -----------
 P_TRACKER="$(sed -n '1p' "$FIXDIR/ports.txt" | tr -d ' ')"
-P_PEER="$(sed -n '2p' "$FIXDIR/ports.txt" | tr -d ' ')"
 P_TRACKER="${P_TRACKER:-6969}"
-P_PEER="${P_PEER:-6970}"
+PEER_PORTS="$(sed -n '2,$p' "$FIXDIR/ports.txt" | tr -d ' ')"
+if [ -z "$PEER_PORTS" ]; then PEER_PORTS="6970"; fi
+# The first declared peer port is the single-peer shape's server.
+P_PEER=""
+for _pp in $PEER_PORTS; do P_PEER="$_pp"; break; done
+# Comma-separated compact list the tracker advertises.
+TRACKER_PEERS=""
+for _pp in $PEER_PORTS; do
+    if [ -z "$TRACKER_PEERS" ]; then TRACKER_PEERS="127.0.0.1:$_pp"
+    else TRACKER_PEERS="$TRACKER_PEERS,127.0.0.1:$_pp"; fi
+done
 
 # A connect attempt is the only busy-port probe available here (no ss/lsof/fuser).
 port_busy() {
     bash -c "exec 3<>/dev/tcp/127.0.0.1/$1" 2>/dev/null
 }
 
-if port_busy "$P_TRACKER" || port_busy "$P_PEER"; then
-    echo "FAIL: declared port already in use (tracker=$P_TRACKER peer=$P_PEER)"
-    echo "      free it (stop leftover mock_tracker/mock_peer) and re-run"
+if port_busy "$P_TRACKER"; then
+    echo "FAIL: declared tracker port already in use (tracker=$P_TRACKER)"
+    echo "      free it (stop leftover mock_tracker) and re-run"
     exit 1
 fi
+for _pp in $PEER_PORTS; do
+    if port_busy "$_pp"; then
+        echo "FAIL: declared peer port already in use (peer=$_pp)"
+        echo "      free it (stop leftover mock_peer) and re-run"
+        exit 1
+    fi
+done
 
 TR_PID=""
-PE_PID=""
+PEER_PIDS=""
 CLIENT_PID=""
 cleanup() {
     [ -n "$CLIENT_PID" ] && kill "$CLIENT_PID" 2>/dev/null
-    [ -n "$PE_PID" ] && kill "$PE_PID" 2>/dev/null
+    for _pid in $PEER_PIDS; do kill "$_pid" 2>/dev/null; done
     [ -n "$TR_PID" ] && kill "$TR_PID" 2>/dev/null
     return 0
 }
@@ -121,7 +140,7 @@ check_payload t2_single_25m "$WORK/t2.payload"
 
 # --- mock lifecycle ---------------------------------------------------------
 start_tracker() {
-    timeout 300 "$TRACKER" --port "$P_TRACKER" --peer "127.0.0.1:$P_PEER" >"$OUT/tr.log" 2>&1 &
+    timeout 300 "$TRACKER" --port "$P_TRACKER" --peers "$TRACKER_PEERS" >"$OUT/tr.log" 2>&1 &
     TR_PID=$!
     # The mock's stdout is block-buffered, so poll the listen port with a
     # connect attempt (safe: mock_tracker loops over connections).
@@ -135,23 +154,38 @@ start_tracker() {
     return 1
 }
 
-start_peer() {
-    timeout 300 "$PEER" --port "$P_PEER" --file "$1" --piece-length 262144 --mode "$2" >"$OUT/pe.log" 2>&1 &
-    PE_PID=$!
-    # mock_peer accepts exactly ONE connection, so a connect probe would consume
-    # it; wait briefly on process liveness instead (bind+listen precede accept,
-    # and the client spends longer than this in its tracker announce).
+# Start one mock_peer on port `$1` serving `$2` in mode `$3`. mock_peer accepts
+# exactly ONE connection, so a connect probe would consume it; wait briefly on
+# process liveness instead (bind+listen precede accept, and the client spends
+# longer than this in its tracker announce).
+start_peer_port() {
+    timeout 300 "$PEER" --port "$1" --file "$2" --piece-length 262144 --mode "$3" >"$OUT/pe_$1.log" 2>&1 &
+    _pid=$!
+    PEER_PIDS="$PEER_PIDS $_pid"
     sleep 0.5
-    if kill -0 "$PE_PID" 2>/dev/null; then return 0; fi
+    if kill -0 "$_pid" 2>/dev/null; then return 0; fi
     return 1
 }
 
-stop_peer() {
-    if [ -n "$PE_PID" ]; then
-        kill "$PE_PID" 2>/dev/null
-        wait "$PE_PID" 2>/dev/null
-        PE_PID=""
-    fi
+# Single-peer shape: only the first declared port serves (the tracker still
+# advertises all of them, but the absent ones simply refuse the connection).
+start_first_peer() {
+    start_peer_port "$P_PEER" "$1" "$2"
+}
+
+# Multi-peer: one mock_peer per declared port, all serving the same file.
+start_all_peers() {
+    _bad=0
+    for _pp in $PEER_PORTS; do
+        start_peer_port "$_pp" "$1" "$2" || _bad=1
+    done
+    return $_bad
+}
+
+stop_peers() {
+    for _pid in $PEER_PIDS; do kill "$_pid" 2>/dev/null; done
+    for _pid in $PEER_PIDS; do wait "$_pid" 2>/dev/null; done
+    PEER_PIDS=""
     sleep 0.5
 }
 
@@ -185,7 +219,7 @@ fi
 # --- 1. t1 download ---------------------------------------------------------
 echo "== download t1_single_1m =="
 D1="$(fresh_dir t1)"
-if start_peer "$WORK/t1.payload" normal; then
+if start_first_peer "$WORK/t1.payload" normal; then
     ( cd "$D1" && env Z9TORR_SEED="$SEED" "$PROG" "$FIXDIR/t1_single_1m.torrent" >"$D1/out.txt" 2>&1 )
     RC=$?
     if [ "$RC" -eq 0 ]; then pass_case "t1 download exit 0"; else fail_case "t1 download exit 0 (got $RC)"; fi
@@ -195,14 +229,14 @@ if start_peer "$WORK/t1.payload" normal; then
 else
     fail_case "t1: mock_peer started"
 fi
-stop_peer
+stop_peers
 
-# --- 2. t2 download (cold reference) ---------------------------------------
-echo "== download t2_single_25m (cold) =="
+# --- 2. t2 download (cold reference; multi-peer) ---------------------------
+echo "== download t2_single_25m (cold, all declared peers) =="
 D2="$(fresh_dir t2)"
 COLD_FETCHED=""
-if start_peer "$WORK/t2.payload" normal; then
-    ( cd "$D2" && env Z9TORR_SEED="$SEED" "$PROG" "$FIXDIR/t2_single_25m.torrent" >"$D2/out.txt" 2>&1 )
+if start_all_peers "$WORK/t2.payload" normal; then
+    ( cd "$D2" && env Z9TORR_SEED="$SEED" Z9TORR_CLAIM_LOG=1 "$PROG" "$FIXDIR/t2_single_25m.torrent" >"$D2/out.txt" 2>&1 )
     RC=$?
     if [ "$RC" -eq 0 ]; then pass_case "t2 download exit 0"; else fail_case "t2 download exit 0 (got $RC)"; fi
     GOT="$(sha1sum "$D2/t2.bin" 2>/dev/null | awk '{print $1}')"
@@ -210,15 +244,33 @@ if start_peer "$WORK/t2.payload" normal; then
     if [ "$GOT" = "$WANT" ]; then pass_case "t2 output sha1 == expected"; else fail_case "t2 output sha1 got '$GOT' want '$WANT'"; fi
     COLD_FETCHED="$(fetched_of "$D2/out.txt")"
     if [ -n "$COLD_FETCHED" ]; then pass_case "t2 cold summary: fetched=$COLD_FETCHED"; else fail_case "t2 cold summary: fetched present"; fi
+
+    # No-double-request invariant (deferred from Task 0): every piece is claimed
+    # exactly once, so 100 claims cover 100 distinct piece indices. The distinct
+    # slots in the same log prove more than one peer actually did work.
+    grep -o 'claim slot=[0-9]* piece=[0-9]*' "$D2/out.txt" >"$D2/claims.txt" 2>/dev/null || true
+    NCLAIM="$(wc -l <"$D2/claims.txt" | tr -d ' ')"
+    NPIECE="$(sed 's/.*piece=//' "$D2/claims.txt" | sort -n | uniq | wc -l | tr -d ' ')"
+    NSLOT="$(sed 's/claim slot=//; s/ .*//' "$D2/claims.txt" | sort -u | wc -l | tr -d ' ')"
+    if [ "$NCLAIM" -eq 100 ] && [ "$NPIECE" -eq 100 ]; then
+        pass_case "t2 no double-request: $NCLAIM claims / $NPIECE unique pieces"
+    else
+        fail_case "t2 no double-request: claims=$NCLAIM unique=$NPIECE (want 100/100)"
+    fi
+    if [ "$NSLOT" -gt 1 ]; then
+        pass_case "t2 multi-peer: $NSLOT peer slots claimed work"
+    else
+        fail_case "t2 multi-peer: $NSLOT peer slot(s) claimed work (want >1)"
+    fi
 else
     fail_case "t2: mock_peer started"
 fi
-stop_peer
+stop_peers
 
 # --- 3. interrupt + restart resume -----------------------------------------
 echo "== resume: interrupt t2 + restart =="
 DR="$(fresh_dir resume)"
-if start_peer "$WORK/t2.payload" normal; then
+if start_all_peers "$WORK/t2.payload" normal; then
     ( cd "$DR" && exec env Z9TORR_SEED="$SEED" "$PROG" "$FIXDIR/t2_single_25m.torrent" ) >"$DR/out1.txt" 2>&1 &
     CLIENT_PID=$!
     S="$DR/.z9torr.resume"
@@ -249,9 +301,9 @@ if start_peer "$WORK/t2.payload" normal; then
 else
     fail_case "resume: mock_peer started (interrupt run)"
 fi
-stop_peer
+stop_peers
 
-if start_peer "$WORK/t2.payload" normal; then
+if start_all_peers "$WORK/t2.payload" normal; then
     ( cd "$DR" && env Z9TORR_SEED="$SEED" "$PROG" "$FIXDIR/t2_single_25m.torrent" >"$DR/out2.txt" 2>&1 )
     RC2=$?
     if [ "$RC2" -eq 0 ]; then pass_case "resume restart exit 0"; else fail_case "resume restart exit 0 (got $RC2)"; fi
@@ -268,29 +320,29 @@ if start_peer "$WORK/t2.payload" normal; then
 else
     fail_case "resume: mock_peer started (restart run)"
 fi
-stop_peer
+stop_peers
 
 # --- 4. malformed peers -----------------------------------------------------
 echo "== malformed peers =="
 DB="$(fresh_dir badbf)"
-if start_peer "$WORK/t1.payload" bad-bitfield-length; then
+if start_first_peer "$WORK/t1.payload" bad-bitfield-length; then
     ( cd "$DB" && env Z9TORR_SEED="$SEED" "$PROG" "$FIXDIR/t1_single_1m.torrent" >"$DB/out.txt" 2>&1 )
     RC=$?
     if [ "$RC" -eq 4 ]; then pass_case "bad-bitfield-length rejected (exit 4)"; else fail_case "bad-bitfield-length rejected (got $RC, want 4)"; fi
 else
     fail_case "bad-bitfield-length: mock_peer started"
 fi
-stop_peer
+stop_peers
 
 DW="$(fresh_dir wronginfo)"
-if start_peer "$WORK/t1.payload" wrong-info-hash; then
+if start_first_peer "$WORK/t1.payload" wrong-info-hash; then
     ( cd "$DW" && env Z9TORR_SEED="$SEED" "$PROG" "$FIXDIR/t1_single_1m.torrent" >"$DW/out.txt" 2>&1 )
     RC=$?
     if [ "$RC" -eq 4 ]; then pass_case "wrong-info-hash rejected (exit 4)"; else fail_case "wrong-info-hash rejected (got $RC, want 4)"; fi
 else
     fail_case "wrong-info-hash: mock_peer started"
 fi
-stop_peer
+stop_peers
 
 # --- summary ----------------------------------------------------------------
 echo
