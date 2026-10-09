@@ -38,7 +38,7 @@ cd /workspace/znineeight
 timeout 120 /tmp/z9_m0_seed/zig1_5_clean --dump-c89 examples/z98/z9torr/main.zig | md5sum
 ```
 
-- md5: `5fe4a00979e129c39c2ffec0a7bec792` (stable 3×; M3 Task 4 multi-peer)
+- md5: `b24be5e55c6a885d40d85fce97c97fcc` (stable 3×; M3 Task 4 + stats-delta guard)
 - command: `timeout 120 /tmp/z9_m0_seed/zig1_5_clean --dump-c89 examples/z98/z9torr/main.zig | md5sum`
 
 ## Fixtures and `info_hash`

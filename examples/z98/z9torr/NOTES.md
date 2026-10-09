@@ -6,7 +6,7 @@
 
 **Working commit:** `b71088ed` (M3 sources Task 0–3; Task 4 multi-peer tier2 + `removePeer` wiring + docs on top)
 
-**MD5 (`--dump-c89`):** `5fe4a00979e129c39c2ffec0a7bec792` (seed `zig1_5_clean`; stable 3×; M3 Task 4)
+**MD5 (`--dump-c89`):** `b24be5e55c6a885d40d85fce97c97fcc` (seed `zig1_5_clean`; stable 3×; M3 Task 4 + stats-delta guard)
 
 ## Build Recipes
 
@@ -21,7 +21,7 @@ sh /tmp/z9_m1_out/build_target.sh linux /tmp/z9_m1_out/prog
 ### seed zig1_5_clean (dump C89) — for the MD5 above
 ```bash
 timeout 120 /tmp/z9_m0_seed/zig1_5_clean --dump-c89 examples/z98/z9torr/main.zig | md5sum
-# 5fe4a00979e129c39c2ffec0a7bec792  -
+# b24be5e55c6a885d40d85fce97c97fcc  -
 ```
 
 ## Expected Output
@@ -120,7 +120,8 @@ fetched bytes. `tests/tier1.sh` fails closed if `127.0.0.1:6969` is already
 listening (spec §12 item 9). Gates: tier1 `15/0`, tier1_cli all pass, tier2
 `17/0`.
 
-The `--dump-c89` md5 above is stable 3× for the M3 Task 4 source; refresh with
+The `--dump-c89` md5 above is stable 3× for the M3 Task 4 source plus the
+stats-delta guard; refresh with
 `timeout 120 /tmp/z9_m0_seed/zig1_5_clean --dump-c89 examples/z98/z9torr/main.zig | md5sum`.
 
 Next: M4 (`2026-10-08-z9torr-m4-win9x-plan.md`).

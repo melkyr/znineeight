@@ -438,8 +438,18 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
                     pc += 1;
                 }
             }
-            var ddelta: u64 = dsum - last_down_bytes;
-            var udelta: u64 = usum - last_up_bytes;
+            // Clamp to zero: `removePeer` (ruling #3) drops a retired peer's
+            // bytes out of the active-only sum, and a reused slot starts at
+            // zero, so the new sample can fall below the previous one. An
+            // unsigned subtraction would underflow into a garbage rate.
+            var ddelta: u64 = 0;
+            if (dsum >= last_down_bytes) {
+                ddelta = dsum - last_down_bytes;
+            }
+            var udelta: u64 = 0;
+            if (usum >= last_up_bytes) {
+                udelta = usum - last_up_bytes;
+            }
             last_down_bytes = dsum;
             last_up_bytes = usum;
             st.window_down[@intCast(usize, win_idx)] = @intCast(u32, ddelta);
