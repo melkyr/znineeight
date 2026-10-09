@@ -4,9 +4,9 @@
 
 **Entry file:** `main.zig`
 
-**Working commit:** `b71088ed` (M3 sources Task 0–3; Task 4 multi-peer tier2 + `removePeer` wiring + docs on top)
+**Working commit:** `3dcaedf3` (M4 sources Task 0–4; Task 5 real-swarm tier + docs on top)
 
-**MD5 (`--dump-c89`):** `b24be5e55c6a885d40d85fce97c97fcc` (seed `zig1_5_clean`; stable 3×; M3 Task 4 + stats-delta guard)
+**MD5 (`--dump-c89`):** `c59e32198110b96da4d7df2c0d99d87a` (seed `zig1_5_clean`; stable 3×; M4 MSE/UDP/DHT/PEX + peer_id)
 
 ## Build Recipes
 
@@ -124,4 +124,54 @@ The `--dump-c89` md5 above is stable 3× for the M3 Task 4 source plus the
 stats-delta guard; refresh with
 `timeout 120 /tmp/z9_m0_seed/zig1_5_clean --dump-c89 examples/z98/z9torr/main.zig | md5sum`.
 
-Next: M4 (`2026-10-08-z9torr-m4-win9x-plan.md`).
+## M4 — real-swarm compatibility (2026-10-09)
+
+M4 makes z9torr able to join real public swarms. New modules:
+`mse.zig` (BitTorrent Protocol Encryption, MSE/PE: DH-768 + RC4 + `req1`/`req2`/
+`req3` verification, `crypto_provide`/`crypto_select`, 1024-byte RC4 discard),
+`udp_tracker.zig` (BEP 15 connect/announce with the explicit BEP 15↔HTTP event
+map), `dht.zig` (BEP 5 KRPC `ping`/`find_node`/`get_peers`/`announce_peer` +
+bounded routing table; env-gated in-process self-test), and `pex.zig` (BEP 10
+extension handshake + BEP 11 `ut_pex` add/drop feeding the scheduler; env-gated
+self-test), plus `tools/mock_mse_peer.zig` and `tools/mock_udp_tracker.zig`.
+`std_crypto` gained RC4 + `modpow` (Task 1).
+
+Key changes:
+- **peer_id fix (Task 0):** `main.zig` copies the real `makePeerId` value into
+  every `Peer.peer_id`, so outgoing handshakes no longer carry all zeros.
+- **Encrypted-first transport (Task 2):** `peer.zig` attempts MSE first and, on
+  failure, does a bounded plaintext reconnect; after an MSE handshake the whole
+  `wire.zig` framing runs through the two RC4 contexts. RC4 keys are
+  `SHA1("keyA"||S||info_hash)` / `SHA1("keyB"||S||info_hash)` (SKEY =
+  info_hash).
+- **UDP tracker (Task 3):** `main.zig` prefers the first `udp://` announce (primary
+  or announce-list), else the HTTP tracker.
+- **DHT + PEX (Task 4):** `Z9TORR_DHT=host[:port],...` merges DHT-discovered
+  peers into the candidate list; PEX-learned peers are dynamically spawned
+  mid-run through the same `spawnPeerAt` path (`main.zig`), with a `g_started`
+  slot flag.
+
+Gates (all PASS): tier1 `16/0`, tier1_cli `8/8`, tier1_unit `3/3`, tier2 `17/0`,
+`tier3_encrypted` `5/0` (MSE download), `tier_udp_tracker` `7/0`,
+`tier_dht` `4/0` (real two-node `get_peers`), `tier_pex` `11/0` (control vs
+injection proves a PEX peer is dialed). `scripts/stdlib/verify_stdlib.sh` is
+green (`283 PASS / 0 FAIL`; Task 1 registered the RC4 + modpow fixtures) and the
+compiler fixed point is untouched (`hop1 == hop2 ==
+296c48f676deec290387b57132e4e2bd`). The `--dump-c89` md5 below was refreshed for
+the M4 source and is stable 3×.
+
+**`tests/tier_real.sh` (best-effort, NOT a hard gate).** It builds z9torr and
+runs it against a real torrent (default: the `lin_bin/` Debian torrent, or
+`Z9TORR_REAL_TORRENT`), with MSE always, a UDP tracker whenever the torrent
+lists `udp://`, and public DHT bootstrap routers (disable with
+`Z9TORR_REAL_DHT=`). It exits `0` only on measured payload progress, `77` with an
+explicit classified `SKIP: <reason>` when the client exits a recognized
+environmental code (2 parse / 3 tracker / 4 peer / 5 disk / 124 bounded-timeout)
+because the environment denies reachability (no torrent / no egress / tracker
+unreachable / peers unreachable), and `1` on a build error, an unexpected
+internal state, or any other (crash/signal) client exit — it never passes
+silently. In the build sandbox the
+tracker returns peers and DHT is attempted, but peers close at the MSE handshake
+(matches the M3 `lin_bin/` diagnostic), so it reports `SKIP` (exit 77).
+
+Next: M5 — Win9x cross-compat (`docs/superpowers/plans/2026-10-08-z9torr-m5-win9x-plan.md`).

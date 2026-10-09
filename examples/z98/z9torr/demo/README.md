@@ -1,11 +1,13 @@
 # z9torr — demo golden
 
-`z9torr <file.torrent>` parses a single-file torrent, announces to the tracker,
-and downloads the payload from up to `--max-peers` peers (rarest-first, one
-coroutine per announced peer, verifying every piece by SHA-1, with
-cross-restart resume). This directory records the golden commands, the
-emitted-C89 md5, the committed fixture hashes, and the
-`tests/tier1.sh`/`tests/tier2.sh` gates.
+`z9torr <file.torrent>` parses a single-file torrent, announces to the tracker
+(HTTP, or UDP/BEP 15 when the torrent lists a `udp://` announce), and downloads
+the payload from up to `--max-peers` peers (rarest-first, one coroutine per
+announced peer, verifying every piece by SHA-1, with cross-restart resume). M4
+adds MSE/PE protocol encryption (encrypted-first, plaintext fallback), DHT
+(BEP 5) + PEX (BEP 11) discovery, and fixes the all-zero `peer_id`. This
+directory records the golden commands, the emitted-C89 md5, the committed
+fixture hashes, and the gates.
 
 ## Build and run (binding seed recipe)
 
@@ -38,7 +40,7 @@ cd /workspace/znineeight
 timeout 120 /tmp/z9_m0_seed/zig1_5_clean --dump-c89 examples/z98/z9torr/main.zig | md5sum
 ```
 
-- md5: `b24be5e55c6a885d40d85fce97c97fcc` (stable 3×; M3 Task 4 + stats-delta guard)
+- md5: `c59e32198110b96da4d7df2c0d99d87a` (stable 3×; M4 MSE/UDP/DHT/PEX + peer_id)
 - command: `timeout 120 /tmp/z9_m0_seed/zig1_5_clean --dump-c89 examples/z98/z9torr/main.zig | md5sum`
 
 ## Fixtures and `info_hash`
@@ -161,3 +163,42 @@ usage error: exit 1):
   `65535` is a usage error.
 - `--max-up N` — upload limit in bytes/s. `0` means unlimited; a nonzero value
   below one 13-byte request frame (`--max-up >= 13`) is a usage error.
+
+## M4 gates (real-swarm compatibility)
+
+The M4 hard gates all PASS from the repo root:
+
+| gate | what it proves | result |
+|---|---|---|
+| `tests/tier3_encrypted.sh` | MSE/PE download from `mock_mse_peer` (trace shows `handshake ok enc`) | `5/0` |
+| `tests/tier_udp_tracker.sh` | BEP 15 `connect`/`announce`, BEP 15 event codes `2` then `1` | `7/0` |
+| `tests/tier_dht.sh` | two in-process DHT nodes, real `get_peers` discovery | `4/0` |
+| `tests/tier_pex.sh` | BEP 10/11 peer injection is dynamically spawned/dialed | `11/0` |
+
+The pre-M4 gates stay green: `tier1.sh` `16/0`, `tier1_cli.sh` `8/8`,
+`tier1_unit.sh` `3/3`, `tier2.sh` `17/0`.
+
+### `tests/tier_real.sh` (best-effort, not a hard gate)
+
+`bash examples/z98/z9torr/tests/tier_real.sh` builds the client and runs it
+against a real single-file torrent with MSE always, a UDP tracker whenever the
+torrent lists `udp://`, and public DHT bootstrap routers (override the torrent
+with `Z9TORR_REAL_TORRENT`, disable DHT with `Z9TORR_REAL_DHT=`, bound the run
+with `Z9TORR_REAL_TIMEOUT`). It never passes silently:
+
+- exit `0` — a real attempt produced measurable payload progress;
+- exit `77` — the client exited with a recognized environmental code (`2` parse,
+  `3` tracker, `4` peer, `5` disk, or `124` bounded-timeout) and prints
+  `SKIP: <reason>` (no torrent / no egress / tracker unreachable / peers
+  unreachable / peers rejected the handshake);
+- exit `1` — build/link failure, an unexpected internal state, or any other
+  nonzero client exit (crash/signal such as `139`, or an unknown code); a defect
+  is never masked as an environmental SKIP.
+
+In the build sandbox the tracker returns peers and DHT is attempted, but the
+peers close at the MSE handshake (the same M3 `lin_bin/` diagnostic), so the tier
+reports `SKIP` (exit 77) with a classified reason.
+
+## Next
+
+M5 — Win9x cross-compat (`docs/superpowers/plans/2026-10-08-z9torr-m5-win9x-plan.md`).
