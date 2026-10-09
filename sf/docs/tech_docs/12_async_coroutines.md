@@ -1,4 +1,4 @@
-# 12 — Async / Coroutines (`@async*` + `std.async`) [updated: 2026-10-09 — added the D3/D4 frame-save undeclared-temp limitation (see §8)]
+# 12 — Async / Coroutines (`@async*` + `std.async`) [updated: 2026-10-09 — added the D3/D4 frame-save undeclared-temp limitation; I4 pinned the D4 locus + standalone repro (see §8)]
 
 > Covers: `async_analysis.zig`, `async_frame_layout.zig`, `async_state_machine.zig`, `std_async.zig`
 
@@ -306,18 +306,26 @@ normal `(ctx, args)` signature.
 - **`*T`→`[*]T` at return/call-arg.** This coercion remains tolerated (not promoted to a hard
   `error[3000]`) because the compiler's valid array→pointer idiom (`&arr[0]`) relies on it; it is a
   declared residual from the Track-4 coercion work.
-- **Undeclared frame-save temp for a by-value struct live across a suspension (D3/D4).** A
-  suspending function that (D3) passes the address of a module-global struct to a suspending
-  cross-module call, or (D4) assigns a by-value struct-return temporary to a module global, can
-  emit a `saveAllFields` block whose source is a temp the emitter never declares. `saveAllFields`
-  /`reloadAllFields` store the **raw** `fld.temp_id + base` (`sf/src/async_state_machine.zig:254-280`)
-  and the emitter's DCE suppresses that temp's stack declaration — treating it as a `load_global`
-  alias (`sf/src/c89_emit.zig:3800-3909`, suppression at `:3709-3713`/`:3571`/`:8910`/`:8998`/
-  `:3485`) — while `resolveTempName` (`:6614-6628`) substitutes the real name only from
-  `temp_global_map`, which is populated **lazily during body emission** (`:7414-7418`, reset at
-  `:9095-9099`). If the frame save is emitted **before** the defining `.load_global`, substitution
-  misses and the output references an undeclared `zT_N` (`gcc: 'zT_NNN' undeclared`). D3 and D4
-  hit the **same site** (the `MsgReader`-value frame slots at offsets 376/424 in `z9torr`
-  `peerRun`), differing only in the trigger. Proper fix (open, F3): declare every temp the
-  save/restore stores, or allocate the frame slot without a by-value struct temp. In-example
-  reproducer + exact commands: `repro/mi_matrix/async_frame_global_xmod/NOTES.md`.
+- **Undeclared frame-save temp for a loop-carried module-global alias across a suspension
+  (D3/D4).** A suspending function that takes the address of a **module-global struct** and passes
+  it to a suspending call (D3: a field-initialised global; D4: a global assigned from a by-value
+  struct-return) can emit a `saveAllFields` block whose source is a temp the emitter never
+  declares. `saveAllFields`/`reloadAllFields` store the **raw** `fld.temp_id + base`
+  (`sf/src/async_state_machine.zig:254-280`); the `.load_global` result temp produced by lowering
+  `&g` (`sf/src/lower.zig:2264-2268` → `lowerGlobalRef` `:3931-3932`) is **loop-carried live** when
+  the `&g` sits inside a loop, so the frame-layout pass hoists it as an `ASYNC_FIELD_LIVE` field
+  (`sf/src/async_frame_layout.zig:585-623`). The emitter's DCE suppresses that temp's stack
+  declaration, treating it as a `load_global` alias (`sf/src/c89_emit.zig:3800-3909`; suppression
+  at `:3709-3713`/`:3571`/`:8910`/`:8998`/`:3485`), and `resolveTempName` (`:6614-6628`)
+  substitutes the real name only from `temp_global_map`, which is populated **lazily in block
+  emission order** (`:7414-7418`, reset at `:9095-9099`). The frame save is emitted **before** the
+  defining `.load_global`, so substitution misses and the output references an undeclared `zT_N`
+  (`gcc: 'zT_NNN' undeclared`). D3 and D4 hit the **same site** (the two `MsgReader`-value frame
+  slots at offsets 376/424 in `z9torr` `peerRun`); in D4 the by-value struct-return temporary is
+  itself **materialised as a declared local** — the undeclared temp is the loop-carried
+  `load_global` alias of the global, not the struct-return temp. Proper fix (open, F3/F4): declare
+  every temp the save/restore stores, or resolve/populate the `load_global` alias before the save
+  block; one fix covers D3+D4. Standalone reproducer (pre-fix `FAIL` → `OK`): 
+  `repro/mi_matrix/async_frame_structret_xmod/`; in-example patches + exact commands:
+  `repro/mi_matrix/async_frame_global_xmod/NOTES.md` (D3) and
+  `repro/mi_matrix/async_frame_structret_xmod/NOTES.md` (D4).
