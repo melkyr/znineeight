@@ -347,6 +347,67 @@ before the global store in the async lowering.
 
 ---
 
+## D5 — A store through a slice-index aggregate lvalue is silently lost (writes into a by-value copy)
+
+**Status:** OPEN (compiler gap). Discovered 2026-10-09 while diagnosing the real-swarm
+failure (commit `13f660de`); workaround pending; no compiler change yet.
+
+**Symptom.** Writing a nested aggregate field through a slice/array index compiles
+and links, but the store is **lost**: the emitter materialises a *by-value copy* of
+the element struct and writes into the copy. `z9torr` hit this writing the client
+peer_id into a scheduler slot:
+
+```zig
+// examples/z98/z9torr/main.zig (spawnPeerAt)
+g_sched.peers[slot].peer_id[pid_i] = peer_id[pid_i];
+```
+
+Emitted C (`/tmp/z9_linbin/main_B8D622A5.c`, `spawnPeerAt`):
+
+```c
+zT_11 = zT_10[slot];      /* Peer copied BY VALUE into a local temp */
+zT_12 = zT_11.peer_id;    /* pointer into the LOCAL copy */
+zT_12[pid_i] = zT_7;      /* the store lands in the temp, not g_sched.peers[slot] */
+```
+
+So `g_sched.peers[slot].peer_id` stays zero and every outgoing handshake
+advertises an all-zero peer_id (visible in `lin_bin/z9torr.log`). No gate caught it
+because the mocks validate only `info_hash`.
+
+**Zig semantics (the reference).** In real Zig, index/field chains are **lvalues**:
+`arr[i].field[j] = x` writes through the address `&arr[i].field[j]`. Z98 must
+reproduce that, not copy.
+
+**Root cause.** The by-value materialisation happens in lowering, not (only) in
+emission:
+
+- `sf/src/lower.zig` `lowerAssignLValue`, `index_access` arm — **`:2484-2531`**: the
+  base is lowered with a **value read** (`lowerExpr(...)` at `:2487`) instead of an
+  address; the address path exists only for the *tuple* sub-case (`:2493-2508`).
+  Contrast the correct sibling `lowerFieldStore`, which takes nested bases by address
+  at **`:2878-2928`** (`index_access` base ptr+idx / `load_index{decay=1}`
+  `:2878-2909`; field/deref/paren base `lowerLValueAddr` `:2910-2928`).
+- The emission side then chains value copies: `emitBaseIdxAccess` **`c89_emit.zig:204-267`**
+  (`load` `:229-251` value-copies the element; `assign` `:252-266`), `load_index`
+  **`:7593-7596`**, `load_field` **`:7456-7513`**, `assign_index` **`:7226-7271`**,
+  `store_field` **`:7514-7591`**, `addr_of_field` **`:7655-7694`**.
+
+**Reproducer.** A standalone op in which a store through `slice[i].field[j]` must be
+observed by a subsequent read/print (a runtime assertion — the compile-only corpus
+classify cannot see a lost write):
+`repro/mi_matrix/slice_index_field_store_xmod/`.
+
+**Fix (proper Zig semantics).** Route non-tuple index-assign bases through
+address-taking exactly as `lowerFieldStore` already does, so the whole chain
+`(slice.ptr + idx)->field[...]` is addressed once and the store lands in the element.
+The array branch is already correct.
+
+**Equivalence gate.** The repro's runtime output changes from wrong→correct; the
+z9torr `peer_id` becomes the real `-Z9T01-…`; all compiler gates (fixed point,
+corpus, stdlib, examples, dump-MD5 re-baseline) apply.
+
+---
+
 ## How these defects are exposed
 
 **D1/D2** each pair a **standalone minimal Z98 program** with the **emit + gcc
