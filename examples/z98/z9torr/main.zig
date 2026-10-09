@@ -13,6 +13,7 @@ const trackerlib = @import("tracker.zig");
 const schedmod = @import("scheduler.zig");
 const ratelimit = @import("ratelimit.zig");
 const statsmod = @import("stats.zig");
+const logmod = @import("log.zig");
 
 // One torrent arena (spec §9), backed by a static buffer. Never reset.
 var g_arena_buf: [4194304]u8 = undefined;
@@ -67,6 +68,19 @@ fn writeU64(v: u64) void {
     var buf: [24]u8 = undefined;
     var n = parse.itoa64(buf[0..], @intCast(i64, v));
     std.io.write(n);
+}
+
+// Log the exit code + a short reason, then close the log file and exit. Placed
+// at every `main` exit site so a `Z9TORR_LOG` run records why it stopped; the
+// logging itself is a strict no-op when the env var is unset.
+fn logExitAnd(code: i32, reason: []const u8) void {
+    logmod.s("exit code=");
+    logmod.i32v(code);
+    logmod.s(" reason=");
+    logmod.s(reason);
+    logmod.nl();
+    logmod.end();
+    std.os.exit(code);
 }
 
 fn zeroStats() trackerlib.Stats {
@@ -147,10 +161,11 @@ fn makePeerId(out: *[20]u8) void {
 
 pub fn main(argc: i32, argv: [*][*]u8) void {
     var args: cli.Args = cli.parseArgs(argc, argv);
+    logmod.begin();
     if (!filemod.exists(args.torrent_path)) {
         var msg: []const u8 = "z9torr: cannot read torrent file\n";
         std.io.write(msg);
-        std.os.exit(@intCast(i32, cli.exitCodeFor(cli.FailureClass.torrent)));
+        logExitAnd(@intCast(i32, cli.exitCodeFor(cli.FailureClass.torrent)), "cannot read torrent file: missing");
     }
 
     var arena: std.arena.Arena = std.arena.init(g_arena_buf[0..]);
@@ -161,41 +176,41 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     var szf = filemod.open(&arena, args.torrent_path, filemod.Mode.Read) catch {
         var msg: []const u8 = "z9torr: cannot read torrent file\n";
         std.io.write(msg);
-        std.os.exit(@intCast(i32, cli.exitCodeFor(cli.FailureClass.torrent)));
+        logExitAnd(@intCast(i32, cli.exitCodeFor(cli.FailureClass.torrent)), "cannot read torrent file: open");
         return;
     };
     var sz: i64 = filemod.size(&szf) catch {
         filemod.close(&szf);
         var msg: []const u8 = "z9torr: cannot read torrent file\n";
         std.io.write(msg);
-        std.os.exit(@intCast(i32, cli.exitCodeFor(cli.FailureClass.torrent)));
+        logExitAnd(@intCast(i32, cli.exitCodeFor(cli.FailureClass.torrent)), "cannot read torrent file: size");
         return;
     };
     filemod.close(&szf);
     if (sz < 0) {
         var msg: []const u8 = "z9torr: cannot read torrent file\n";
         std.io.write(msg);
-        std.os.exit(@intCast(i32, cli.exitCodeFor(cli.FailureClass.torrent)));
+        logExitAnd(@intCast(i32, cli.exitCodeFor(cli.FailureClass.torrent)), "cannot read torrent file: bad size");
         return;
     }
     if (@intCast(usize, sz) > torrentlib.MAX_TORRENT_BYTES) {
         var msg: []const u8 = "z9torr: torrent too large\n";
         std.io.write(msg);
-        std.os.exit(@intCast(i32, cli.exitCodeFor(cli.FailureClass.torrent)));
+        logExitAnd(@intCast(i32, cli.exitCodeFor(cli.FailureClass.torrent)), "torrent too large");
         return;
     }
 
     var bytes: []u8 = filemod.readAll(&arena, args.torrent_path) catch {
         var msg: []const u8 = "z9torr: cannot read torrent file\n";
         std.io.write(msg);
-        std.os.exit(@intCast(i32, cli.exitCodeFor(cli.FailureClass.torrent)));
+        logExitAnd(@intCast(i32, cli.exitCodeFor(cli.FailureClass.torrent)), "cannot read torrent file: readAll");
         return;
     };
 
     const t: torrentlib.Torrent = torrentlib.load(&arena, bytes) catch {
         var msg: []const u8 = "z9torr: malformed torrent\n";
         std.io.write(msg);
-        std.os.exit(@intCast(i32, cli.exitCodeFor(cli.FailureClass.torrent)));
+        logExitAnd(@intCast(i32, cli.exitCodeFor(cli.FailureClass.torrent)), "malformed torrent: parse");
         return;
     };
 
@@ -226,7 +241,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     const hex: []u8 = hexmod.encodeLower(&arena, t.info_hash[0..20]) catch {
         var msg: []const u8 = "z9torr: malformed torrent\n";
         std.io.write(msg);
-        std.os.exit(@intCast(i32, cli.exitCodeFor(cli.FailureClass.torrent)));
+        logExitAnd(@intCast(i32, cli.exitCodeFor(cli.FailureClass.torrent)), "malformed torrent: info_hash encode");
         return;
     };
     writeText(hex);
@@ -244,21 +259,26 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         std_net.cleanup();
         var tmsg: []const u8 = "z9torr: tracker error\n";
         std.io.write(tmsg);
-        std.os.exit(@intCast(i32, cli.exitCodeFor(cli.FailureClass.tracker)));
+        logExitAnd(@intCast(i32, cli.exitCodeFor(cli.FailureClass.tracker)), "tracker error");
         return;
     };
+    logmod.s("announce peers=");
+    logmod.u32v(@intCast(u32, ann.peers.len));
+    logmod.s(" interval=");
+    logmod.u32v(ann.interval);
+    logmod.nl();
     if (ann.peers.len == 0) {
         std_net.cleanup();
         var nmsg: []const u8 = "z9torr: peer error\n";
         std.io.write(nmsg);
-        std.os.exit(@intCast(i32, cli.exitCodeFor(cli.FailureClass.peer)));
+        logExitAnd(@intCast(i32, cli.exitCodeFor(cli.FailureClass.peer)), "peer error: tracker returned no peers");
         return;
     }
 
     var out = diskmod.openTarget(&arena, t) catch {
         var dmsg: []const u8 = "z9torr: disk error\n";
         std.io.write(dmsg);
-        std.os.exit(@intCast(i32, cli.exitCodeFor(cli.FailureClass.disk)));
+        logExitAnd(@intCast(i32, cli.exitCodeFor(cli.FailureClass.disk)), "disk error: open target");
         return;
     };
     var rstate = resumemod.load(&arena, t, &out);
@@ -266,7 +286,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         filemod.close(&out);
         var dmsg2: []const u8 = "z9torr: disk error\n";
         std.io.write(dmsg2);
-        std.os.exit(@intCast(i32, cli.exitCodeFor(cli.FailureClass.disk)));
+        logExitAnd(@intCast(i32, cli.exitCodeFor(cli.FailureClass.disk)), "disk error: rehash");
         return;
     };
 
@@ -306,7 +326,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         std_net.cleanup();
         var omsg: []const u8 = "z9torr: disk error\n";
         std.io.write(omsg);
-        std.os.exit(@intCast(i32, cli.exitCodeFor(cli.FailureClass.disk)));
+        logExitAnd(@intCast(i32, cli.exitCodeFor(cli.FailureClass.disk)), "disk error: scheduler init");
         return;
     };
     var seed_i: u32 = 0;
@@ -363,12 +383,15 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         g_task_ptrs[slot] = &g_tasks[slot];
         n_spawned += 1;
     }
+    logmod.s("spawn=");
+    logmod.u32v(n_spawned);
+    logmod.nl();
     if (n_spawned == 0) {
         filemod.close(&out);
         std_net.cleanup();
         var zmsg: []const u8 = "z9torr: peer error\n";
         std.io.write(zmsg);
-        std.os.exit(@intCast(i32, cli.exitCodeFor(cli.FailureClass.peer)));
+        logExitAnd(@intCast(i32, cli.exitCodeFor(cli.FailureClass.peer)), "peer error: no peers spawned");
         return;
     }
 
@@ -496,13 +519,15 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         std_net.cleanup();
         var emsg: []const u8 = "z9torr: peer error\n";
         std.io.write(emsg);
-        std.os.exit(@intCast(i32, g_pctx.exit_class));
+        logExitAnd(@intCast(i32, g_pctx.exit_class), "peer incomplete");
         return;
     }
 
     var stats2 = zeroStats();
     stats2.downloaded = t.total_length;
     _ = trackerlib.announce(&arena, t, peer_id, @intCast(u16, 6881), trackerlib.AnnounceEvent.completed, stats2) catch {};
+    logmod.s("completed");
+    logmod.nl();
 
     var okline: []const u8 = "\nz9torr: download complete\n";
     std.io.write(okline);
@@ -525,7 +550,12 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     writeText(rline);
     writeU64(total_up / 13);
     writeText(nl);
+    logmod.s("summary fetched=");
+    logmod.u64v(total_down);
+    logmod.s(" requests=");
+    logmod.u64v(total_up / 13);
+    logmod.nl();
 
     std_net.cleanup();
-    std.os.exit(0);
+    logExitAnd(0, "ok");
 }

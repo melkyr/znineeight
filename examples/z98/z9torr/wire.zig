@@ -28,6 +28,7 @@
 const std = @import("std");
 const std_net = @import("std_net");
 const std_stream = @import("std_stream.zig");
+const logmod = @import("log.zig");
 
 pub const MsgReader = std_stream.MsgReader;
 
@@ -77,6 +78,11 @@ pub const PeerError = error{
 };
 
 pub const HANDSHAKE_LEN: usize = 68;
+// Absolute deadline (ms) for the async handshake exchange: a peer that TCP
+// connects but never sends its 68-byte record fails as `PeerError.Timeout`
+// instead of parking the coroutine until the 60 s stall watchdog. Handshake
+// path only; the shared message framing/blocking read are untouched.
+const HANDSHAKE_DEADLINE_MS: u32 = 3000;
 const PSTR_LEN: usize = 19;
 const RESERVED_LEN: usize = 8;
 const HASH_LEN: usize = 20;
@@ -127,6 +133,45 @@ fn recvAll(sock: std_net.Socket, buf: []u8) PeerError!void {
     }
 }
 
+// --- env-gated handshake trace (Z9TORR_LOG) ---------------------------------
+
+// Name for a `PeerError` in the handshake trace. `readHandshakeAsync` collapses
+// transport and protocol failures, so the log records which concrete member
+// fired. Strictly a formatter; safe to call when logging is off.
+pub fn peerErrorName(e: PeerError) []const u8 {
+    if (e == error.HandshakeFailed) return "HandshakeFailed";
+    if (e == error.InfoHashMismatch) return "InfoHashMismatch";
+    if (e == error.BadMessage) return "BadMessage";
+    if (e == error.Timeout) return "Timeout";
+    if (e == error.BadHash) return "BadHash";
+    if (e == error.PeerClosed) return "PeerClosed";
+    if (e == error.NetFailed) return "NetFailed";
+    return "Unknown";
+}
+
+// `hs fd=<n> stage=<name> recv=<hex>` — the bytes received for one handshake
+// stage. The fd ties the line back to the owning `peer slot=`/`fd=` line.
+fn hsLogRecv(fd: std_net.Socket, stage: []const u8, data: []const u8) void {
+    logmod.s("hs fd=");
+    logmod.i32v(fd);
+    logmod.s(" stage=");
+    logmod.s(stage);
+    logmod.s(" recv=");
+    logmod.hex(data);
+    logmod.nl();
+}
+
+// `hs fd=<n> stage=<name> err=<PeerError>` — a handshake stage failure.
+fn hsLogFail(fd: std_net.Socket, stage: []const u8, e: PeerError) void {
+    logmod.s("hs fd=");
+    logmod.i32v(fd);
+    logmod.s(" stage=");
+    logmod.s(stage);
+    logmod.s(" err=");
+    logmod.s(peerErrorName(e));
+    logmod.nl();
+}
+
 // --- handshake --------------------------------------------------------------
 
 pub fn writeHandshake(sock: std_net.Socket, hs: *const Handshake) PeerError!void {
@@ -148,6 +193,11 @@ pub fn writeHandshake(sock: std_net.Socket, hs: *const Handshake) PeerError!void
     while (i < HASH_LEN) : (i += 1) {
         h[48 + i] = hs.peer_id[i];
     }
+    logmod.s("hs fd=");
+    logmod.i32v(sock);
+    logmod.s(" sent=");
+    logmod.hex(h[0..]);
+    logmod.nl();
     try sendAll(sock, h[0..]);
 }
 
@@ -210,11 +260,15 @@ fn tryRecvAsync(sock: *std_net.Socket, buf: []u8, out_n: *usize) PeerError!u8 {
 
 // Cooperative-yield exact read: suspend on WouldBlock until `buf` is full.
 // `buf` aliases caller (not local-array) memory so nothing large spans a
-// suspension.
-fn recvExactAsync(sock: std_net.Socket, buf: []u8) PeerError!void {
+// suspension. `start_ms` is the `ticksMs` value captured at the start of the
+// handshake; the read fails as `PeerError.Timeout` once the absolute
+// `HANDSHAKE_DEADLINE_MS` budget elapses (a silent peer must not park the
+// coroutine until the stall watchdog).
+fn recvExactAsync(sock: std_net.Socket, buf: []u8, start_ms: u32) PeerError!void {
     var s: std_net.Socket = sock;
     var off: usize = 0;
     while (off < buf.len) {
+        if (std.time.ticksMs() - start_ms >= HANDSHAKE_DEADLINE_MS) return error.Timeout;
         var n: usize = 0;
         const st = try tryRecvAsync(&s, buf[off..], &n);
         if (st == 0) {
@@ -239,29 +293,69 @@ fn recvExactAsync(sock: std_net.Socket, buf: []u8) PeerError!void {
 // assignment, which C89 rejects (`assignment to expression with array type`).
 pub fn readHandshakeAsync(sock: std_net.Socket, expected_info_hash: []const u8, out: *Handshake) PeerError!void {
     if (expected_info_hash.len != HASH_LEN) return error.HandshakeFailed;
+    var start_ms: u32 = std.time.ticksMs();
     // The leading pstrlen byte has no `Handshake` field; land it in
     // `out.info_hash[0]` as scratch (that field is fully overwritten below).
-    try recvExactAsync(sock, out.info_hash[0..1]);
-    if (out.info_hash[0] != @intCast(u8, PSTR_LEN)) return error.HandshakeFailed;
+    recvExactAsync(sock, out.info_hash[0..1], start_ms) catch |e| {
+        hsLogFail(sock, "pstrlen", e);
+        return e;
+    };
+    hsLogRecv(sock, "pstrlen", out.info_hash[0..1]);
+    if (out.info_hash[0] != @intCast(u8, PSTR_LEN)) {
+        hsLogFail(sock, "pstrlen", error.HandshakeFailed);
+        return error.HandshakeFailed;
+    }
 
-    try recvExactAsync(sock, out.pstr[0..]);
-    try recvExactAsync(sock, out.reserved[0..]);
-    try recvExactAsync(sock, out.info_hash[0..]);
-    try recvExactAsync(sock, out.peer_id[0..]);
+    recvExactAsync(sock, out.pstr[0..], start_ms) catch |e| {
+        hsLogFail(sock, "pstr", e);
+        return e;
+    };
+    hsLogRecv(sock, "pstr", out.pstr[0..]);
+
+    recvExactAsync(sock, out.reserved[0..], start_ms) catch |e| {
+        hsLogFail(sock, "reserved", e);
+        return e;
+    };
+    hsLogRecv(sock, "reserved", out.reserved[0..]);
+
+    recvExactAsync(sock, out.info_hash[0..], start_ms) catch |e| {
+        hsLogFail(sock, "info_hash", e);
+        return e;
+    };
+    hsLogRecv(sock, "info_hash", out.info_hash[0..]);
+
+    recvExactAsync(sock, out.peer_id[0..], start_ms) catch |e| {
+        hsLogFail(sock, "peer_id", e);
+        return e;
+    };
+    hsLogRecv(sock, "peer_id", out.peer_id[0..]);
 
     var pstr: []const u8 = "BitTorrent protocol";
     var i: usize = 0;
     while (i < PSTR_LEN) : (i += 1) {
-        if (out.pstr[i] != pstr[i]) return error.HandshakeFailed;
+        if (out.pstr[i] != pstr[i]) {
+            hsLogFail(sock, "pstr", error.HandshakeFailed);
+            return error.HandshakeFailed;
+        }
     }
     i = 0;
     while (i < RESERVED_LEN) : (i += 1) {
-        if (out.reserved[i] != 0) return error.HandshakeFailed;
+        if (out.reserved[i] != 0) {
+            hsLogFail(sock, "reserved", error.HandshakeFailed);
+            return error.HandshakeFailed;
+        }
     }
     i = 0;
     while (i < HASH_LEN) : (i += 1) {
-        if (out.info_hash[i] != expected_info_hash[i]) return error.InfoHashMismatch;
+        if (out.info_hash[i] != expected_info_hash[i]) {
+            hsLogFail(sock, "info_hash", error.InfoHashMismatch);
+            return error.InfoHashMismatch;
+        }
     }
+    logmod.s("hs fd=");
+    logmod.i32v(sock);
+    logmod.s(" ok");
+    logmod.nl();
 }
 
 // --- message framing --------------------------------------------------------

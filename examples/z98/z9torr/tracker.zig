@@ -33,6 +33,7 @@ const std_http = @import("std_http.zig");
 const bencode = @import("std_bencode.zig");
 const parse = @import("std_parse.zig");
 const torrentlib = @import("torrent.zig");
+const logmod = @import("log.zig");
 
 pub const PeerId = [20]u8;
 
@@ -138,6 +139,19 @@ fn appendStr(b: *std.buf.Buf, s: []const u8) TrackerError!void {
 
 fn appendByte(b: *std.buf.Buf, c: u8) TrackerError!void {
     std.buf.appendByte(b, c) catch return error.OutOfMemory;
+}
+
+// Render a compact tracker peer's network-order IPv4 (`ip_be`: first octet in
+// the low byte) as a dotted quad, after the caller's `ip=` prefix.
+fn logPeerIp(ip_be: u32) void {
+    var m: u32 = @intCast(u32, 255);
+    logmod.u32v(ip_be & m);
+    logmod.s(".");
+    logmod.u32v((ip_be >> 8) & m);
+    logmod.s(".");
+    logmod.u32v((ip_be >> 16) & m);
+    logmod.s(".");
+    logmod.u32v((ip_be >> 24) & m);
 }
 
 pub fn announce(arena: *std.arena.Arena, t: torrentlib.Torrent, peer_id: PeerId, port: u16, event: AnnounceEvent, stats: Stats) TrackerError!AnnounceResult {
@@ -289,6 +303,24 @@ pub fn announce(arena: *std.arena.Arena, t: torrentlib.Torrent, peer_id: PeerId,
         var ip_be: u32 = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
         var p: u16 = (@intCast(u16, pbytes[off + 4]) << 8) | @intCast(u16, pbytes[off + 5]);
         result.peers[k] = PeerAddr{ .ip_be = ip_be, .port = p };
+    }
+    // Env-gated diagnostic: raw compact-peer bytes + each parsed IPv4:port, so
+    // the real-swarm announce can be checked for IPv4 vs IPv6/count.
+    logmod.s("tracker peers bytes=");
+    logmod.u32v(@intCast(u32, pbytes.len));
+    logmod.s(" hex=");
+    logmod.hex(pbytes);
+    logmod.nl();
+    var lk: usize = 0;
+    while (lk < count) : (lk += 1) {
+        var lp = result.peers[lk];
+        logmod.s("tracker peer=");
+        logmod.u32v(@intCast(u32, lk));
+        logmod.s(" ip=");
+        logPeerIp(lp.ip_be);
+        logmod.s(" port=");
+        logmod.u32v(@intCast(u32, lp.port));
+        logmod.nl();
     }
     return result;
 }

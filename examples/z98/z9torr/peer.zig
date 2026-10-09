@@ -43,6 +43,7 @@ const tracker = @import("tracker.zig");
 const resumemod = @import("resume.zig");
 const filemod = @import("std_file.zig");
 const ratelimit = @import("ratelimit.zig");
+const logmod = @import("log.zig");
 
 pub const PeerError = wire.PeerError;
 
@@ -127,6 +128,28 @@ pub const RunCtx = struct {
 // Severity order (most-severe-wins): 5 disk > 4 peer > 3 tracker > 2 parse > 1 usage.
 fn raiseExit(ctx: *RunCtx, c: u8) void {
     if (c > ctx.exit_class) ctx.exit_class = c;
+}
+
+// Diagnostic helpers for the `Z9TORR_LOG` peer trace. `logPeerIp` renders the
+// network-order IPv4 in `PeerAddr.ip_be` (b0 in the low byte) as a dotted quad
+// after the caller's `ip=` prefix. `logPeerEnd` writes the end-of-peer line.
+fn logPeerIp(ip_be: u32) void {
+    var m: u32 = @intCast(u32, 255);
+    logmod.u32v(ip_be & m);
+    logmod.s(".");
+    logmod.u32v((ip_be >> 8) & m);
+    logmod.s(".");
+    logmod.u32v((ip_be >> 16) & m);
+    logmod.s(".");
+    logmod.u32v((ip_be >> 24) & m);
+}
+
+fn logPeerEnd(peer: *Peer) void {
+    logmod.s("peer slot=");
+    logmod.u32v(peer.slot);
+    logmod.s(" end down=");
+    logmod.u64v(peer.down_bytes);
+    logmod.nl();
 }
 
 // Zero-length slices returned to callers that need a valid-but-empty slice
@@ -428,26 +451,81 @@ fn saveResume(ctx: *RunCtx, ps: *piece.PieceState) void {
 pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
     ctx.ok = false;
     raiseExit(ctx, 4);
+    logmod.s("peer slot=");
+    logmod.u32v(peer.slot);
+    logmod.s(" start ip=");
+    logPeerIp(peer.addr.ip_be);
+    logmod.s(" port=");
+    logmod.u32v(@intCast(u32, peer.addr.port));
+    logmod.nl();
 
-    peer.sock = std_net.tcpSocket() catch return;
-    std_net.connectToIp(peer.sock, peer.addr.ip_be, peer.addr.port, CONNECT_TIMEOUT_MS) catch {
-        std_net.close(peer.sock);
+    peer.sock = std_net.tcpSocket() catch {
+        logmod.s("peer slot=");
+        logmod.u32v(peer.slot);
+        logmod.s(" socket-fail");
+        logmod.nl();
+        logPeerEnd(peer);
         return;
     };
+    std_net.connectToIp(peer.sock, peer.addr.ip_be, peer.addr.port, CONNECT_TIMEOUT_MS) catch |e| {
+        var nm: []const u8 = "other";
+        if (e == error.Timeout) nm = "timeout";
+        if (e == error.ConnRefused) nm = "refused";
+        if (e == error.ConnReset) nm = "reset";
+        if (e == error.NotConnected) nm = "notconnected";
+        if (e == error.WouldBlock) nm = "wouldblock";
+        if (e == error.ResolveFailed) nm = "resolvefailed";
+        if (e == error.InvalidAddr) nm = "invalidaddr";
+        if (e == error.Io) nm = "io";
+        logmod.s("peer slot=");
+        logmod.u32v(peer.slot);
+        logmod.s(" connect-fail err=");
+        logmod.s(nm);
+        logmod.nl();
+        std_net.close(peer.sock);
+        logPeerEnd(peer);
+        return;
+    };
+
+    logmod.s("peer slot=");
+    logmod.u32v(peer.slot);
+    logmod.s(" fd=");
+    logmod.i32v(peer.sock);
+    logmod.nl();
 
     makeHandshake(ctx.t, peer.peer_id, &peer.hs);
     wire.writeHandshake(peer.sock, &peer.hs) catch {
+        logmod.s("peer slot=");
+        logmod.u32v(peer.slot);
+        logmod.s(" handshake-write-fail");
+        logmod.nl();
         std_net.close(peer.sock);
+        logPeerEnd(peer);
         return;
     };
 
-    wire.readHandshakeAsync(peer.sock, ctx.t.info_hash[0..], &peer.rhs) catch {
+    wire.readHandshakeAsync(peer.sock, ctx.t.info_hash[0..], &peer.rhs) catch |e| {
+        logmod.s("peer slot=");
+        logmod.u32v(peer.slot);
+        logmod.s(" handshake-fail err=");
+        logmod.s(wire.peerErrorName(e));
+        logmod.nl();
         std_net.close(peer.sock);
+        logPeerEnd(peer);
         return;
     };
+    logmod.s("peer slot=");
+    logmod.u32v(peer.slot);
+    logmod.s(" handshake ok");
+    logmod.nl();
 
     wire.writeInterested(peer.sock) catch {
+        logmod.s("peer slot=");
+        logmod.u32v(peer.slot);
+        logmod.s(" interested-write-fail");
+        logmod.nl();
         std_net.close(peer.sock);
+        logPeerEnd(peer);
         return;
     };
 
@@ -469,7 +547,12 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
     var need_bf: usize = (@intCast(usize, ctx.n_pieces) + 7) / 8;
     if (need_bf > 0) {
         var raw_bf = std.arena.alloc(ctx.arena, need_bf) catch {
+            logmod.s("peer slot=");
+            logmod.u32v(peer.slot);
+            logmod.s(" bitfield-alloc-fail");
+            logmod.nl();
             std_net.close(peer.sock);
+            logPeerEnd(peer);
             return;
         };
         peer.bitfield = raw_bf[0..need_bf];
@@ -487,18 +570,30 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
         // Disk failure initialising the first piece: exit 5 (spec §8), matching
         // the loop's later disk paths.
         raiseExit(ctx, 5);
+        logmod.s("peer slot=");
+        logmod.u32v(peer.slot);
+        logmod.s(" disk-piece-alloc");
+        logmod.nl();
         std_net.close(peer.sock);
+        logPeerEnd(peer);
         return;
     }
     if (st0 == 1 and ctx.verified_count >= ctx.n_pieces) {
         ctx.ok = true;
     }
 
+    var break_reason: []const u8 = "end";
     while (!ctx.ok) {
         now = std.time.ticksMs();
-        if (now - peer.last_recv_ms > KEEPALIVE_MS) break; // idle: disconnect
+        if (now - peer.last_recv_ms > KEEPALIVE_MS) {
+            break_reason = "idle-timeout";
+            break;
+        }
         if (now - peer.last_send_ms > KEEPALIVE_MS) {
-            wire.writeKeepAlive(peer.sock) catch break;
+            wire.writeKeepAlive(peer.sock) catch {
+                break_reason = "keepalive-write-fail";
+                break;
+            };
             peer.last_send_ms = now;
         }
 
@@ -520,16 +615,21 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
             var st1: u8 = acquirePiece(ctx, peer);
             if (st1 == 2) {
                 raiseExit(ctx, 5);
+                break_reason = "disk-piece-alloc";
                 break;
             }
             if (st1 == 1 and ctx.verified_count >= ctx.n_pieces) {
                 ctx.ok = true;
+                break_reason = "completion";
                 break;
             }
         }
 
         var msg: wire.Message = undefined;
-        wire.readMessageAsync(&reader, &msg) catch break;
+        wire.readMessageAsync(&reader, &msg) catch {
+            break_reason = "read-error";
+            break;
+        };
         peer.last_recv_ms = std.time.ticksMs();
 
         var stop: bool = false;
@@ -551,6 +651,7 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
                     var need: usize = (@intCast(usize, ctx.n_pieces) + 7) / 8;
                     if (msg.payload.len != need) {
                         raiseExit(ctx, 4);
+                        break_reason = "bad-bitfield";
                         stop = true;
                     } else {
                         var bi: u32 = 0;
@@ -571,6 +672,7 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
                 .have => {
                     // M3: a `have` marks one more available piece.
                     if (msg.payload.len < 4) {
+                        break_reason = "bad-have-msg";
                         stop = true;
                     } else {
                         var hi: u32 = wire.readU32BE(msg.payload[0..4]);
@@ -587,6 +689,7 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
                     if (!peer.have_piece) {
                         // no piece requested yet; ignore
                     } else if (msg.payload.len < 8) {
+                        break_reason = "bad-piece-msg";
                         stop = true;
                     } else {
                         var idx: u32 = wire.readU32BE(msg.payload[0..4]);
@@ -617,6 +720,7 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
                                         var stc: u8 = acquirePiece(ctx, peer);
                                         if (stc == 2) {
                                             raiseExit(ctx, 5);
+                                            break_reason = "disk-piece-alloc";
                                             stop = true;
                                         }
                                     }
@@ -628,9 +732,11 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
                                         // and drop this peer (spec §7).
                                         scheduler.corrupt(sc, idx);
                                         peer.have_piece = false;
+                                        break_reason = "corrupt";
                                         stop = true;
                                     } else {
                                         raiseExit(ctx, 4);
+                                        break_reason = "corrupt";
                                         stop = true;
                                     }
                                 },
@@ -646,10 +752,18 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
         if (stop) break;
     }
 
+    if (ctx.ok) break_reason = "completion";
+    logmod.s("peer slot=");
+    logmod.u32v(peer.slot);
+    logmod.s(" break reason=");
+    logmod.s(break_reason);
+    logmod.nl();
+
     // Hand any claimed piece back so other peers may take it.
     if (peer.sched) |sc| {
         scheduler.release(sc, peer);
     }
     std_net.close(peer.sock);
+    logPeerEnd(peer);
 
 }
