@@ -37,9 +37,10 @@ pub const MsgReader = std_stream.MsgReader;
 // is a protocol error (`PeerError.BadMessage`).
 pub const MAX_MESSAGE_SIZE: usize = 65536;
 
-// Wire message ids (spec §6). This enum is EXACTLY 0..8; a keep-alive (a
-// length-0 frame with no id) is not an id and is surfaced via
-// `Message.is_keep_alive` instead.
+// Wire message ids (spec §6). This enum is EXACTLY 0..8 plus the BEP 10
+// `extended` id (20); a keep-alive (a length-0 frame with no id) is not an id
+// and is surfaced via `Message.is_keep_alive` instead. An extended message's
+// `payload` starts with a one-byte extended id followed by its bencoded body.
 pub const MsgType = enum(u8) {
     choke = 0,
     unchoke = 1,
@@ -50,6 +51,7 @@ pub const MsgType = enum(u8) {
     request = 6,
     piece = 7,
     cancel = 8,
+    extended = 20,
 };
 
 pub const Handshake = struct {
@@ -202,9 +204,28 @@ pub fn writeHandshake(sock: std_net.Socket, hs: *const Handshake) PeerError!void
     try sendAll(sock, h[0..]);
 }
 
+// A reserved field is accepted when it sets only the two extension bits this
+// client understands: the BEP 10 extension-protocol bit (reserved[5], 0x10) and
+// the BEP 5 DHT bit (reserved[7], 0x01). Any other bit is a protocol error, as
+// is any non-zero byte outside 5/7. M0/M2 peers send all-zero reserved, which
+// this still accepts (the M4 real-swarm goal needs extension-aware peers).
+fn reservedAccepted(r: []const u8) bool {
+    var i: usize = 0;
+    while (i < RESERVED_LEN) : (i += 1) {
+        if (i == 5) {
+            if ((r[i] & @intCast(u8, 0xEF)) != 0) return false;
+        } else if (i == 7) {
+            if ((r[i] & @intCast(u8, 0xFE)) != 0) return false;
+        } else {
+            if (r[i] != 0) return false;
+        }
+    }
+    return true;
+}
+
 // Read and validate a peer handshake. `expected_info_hash` is the caller's
 // 20-byte info_hash (a `[]const u8` of length 20, D2-safe). Rejects a bad
-// pstrlen/pstr (`HandshakeFailed`), a non-zero reserved field
+// pstrlen/pstr (`HandshakeFailed`), an unknown reserved bit
 // (`HandshakeFailed`) and a mismatching info_hash (`InfoHashMismatch`).
 pub fn readHandshake(sock: std_net.Socket, expected_info_hash: []const u8, out: *Handshake) PeerError!void {
     if (expected_info_hash.len != HASH_LEN) return error.HandshakeFailed;
@@ -219,10 +240,7 @@ pub fn readHandshake(sock: std_net.Socket, expected_info_hash: []const u8, out: 
     while (i < PSTR_LEN) : (i += 1) {
         if (h[1 + i] != pstr[i]) return error.HandshakeFailed;
     }
-    i = 0;
-    while (i < RESERVED_LEN) : (i += 1) {
-        if (h[20 + i] != 0) return error.HandshakeFailed;
-    }
+    if (!reservedAccepted(h[20..28])) return error.HandshakeFailed;
     i = 0;
     while (i < HASH_LEN) : (i += 1) {
         if (h[28 + i] != expected_info_hash[i]) return error.InfoHashMismatch;
@@ -339,12 +357,9 @@ pub fn readHandshakeAsync(sock: std_net.Socket, expected_info_hash: []const u8, 
             return error.HandshakeFailed;
         }
     }
-    i = 0;
-    while (i < RESERVED_LEN) : (i += 1) {
-        if (out.reserved[i] != 0) {
-            hsLogFail(sock, "reserved", error.HandshakeFailed);
-            return error.HandshakeFailed;
-        }
+    if (!reservedAccepted(out.reserved[0..])) {
+        hsLogFail(sock, "reserved", error.HandshakeFailed);
+        return error.HandshakeFailed;
     }
     i = 0;
     while (i < HASH_LEN) : (i += 1) {
@@ -396,6 +411,10 @@ fn decodeMsgType(id: u8, out: *MsgType) bool {
         },
         8 => {
             out.* = MsgType.cancel;
+            return true;
+        },
+        20 => {
+            out.* = MsgType.extended;
             return true;
         },
         else => return false,
@@ -538,6 +557,52 @@ pub fn writePiece(sock: std_net.Socket, index: u32, begin: u32, data: []const u8
     try sendAll(sock, data);
 }
 
+// --- BEP 10 extension messages ----------------------------------------------
+//
+// An extended message is framed like any other (4-byte length, id 20), then a
+// one-byte extended id and the bencoded body. `payload` here is the body only;
+// the caller passes the extended id separately.
+
+pub fn writeExtended(sock: std_net.Socket, ext_id: u8, payload: []const u8) PeerError!void {
+    const total: usize = 2 + payload.len;
+    try checkLen(total);
+    var hdr: [6]u8 = undefined;
+    writeU32BE(hdr[0..4], @intCast(u32, total));
+    hdr[4] = @intCast(u8, @enumToInt(MsgType.extended));
+    hdr[5] = ext_id;
+    try sendAll(sock, hdr[0..]);
+    try sendAll(sock, payload);
+}
+
+// Encrypted counterpart of `writeExtended`: RC4 is a stream cipher, so the
+// header and body are transformed in exact wire order. The body is encrypted in
+// bounded chunks (a copy into scratch, transformed, sent) so no large temporary
+// is needed and the keystream stays continuous.
+pub fn writeExtendedEnc(sock: std_net.Socket, enc: *std_crypto.Rc4, ext_id: u8, payload: []const u8) PeerError!void {
+    const total: usize = 2 + payload.len;
+    try checkLen(total);
+    var hdr: [6]u8 = undefined;
+    writeU32BE(hdr[0..4], @intCast(u32, total));
+    hdr[4] = @intCast(u8, @enumToInt(MsgType.extended));
+    hdr[5] = ext_id;
+    std_crypto.rc4Apply(enc, hdr[0..]);
+    try sendAll(sock, hdr[0..]);
+
+    var off: usize = 0;
+    var scratch: [256]u8 = undefined;
+    while (off < payload.len) {
+        var n: usize = payload.len - off;
+        if (n > scratch.len) n = scratch.len;
+        var i: usize = 0;
+        while (i < n) : (i += 1) {
+            scratch[i] = payload[off + i];
+        }
+        std_crypto.rc4Apply(enc, scratch[0..n]);
+        try sendAll(sock, scratch[0..n]);
+        off += n;
+    }
+}
+
 // --- MSE/PE encrypted framing (initiator side) ------------------------------
 //
 // After `mse.mseConnect` negotiates RC4, every wire byte that follows the MSE
@@ -609,10 +674,7 @@ pub fn readHandshakeAsyncEnc(sock: std_net.Socket, dec: *std_crypto.Rc4, expecte
     while (i < PSTR_LEN) : (i += 1) {
         if (out.pstr[i] != pstr[i]) return error.HandshakeFailed;
     }
-    i = 0;
-    while (i < RESERVED_LEN) : (i += 1) {
-        if (out.reserved[i] != 0) return error.HandshakeFailed;
-    }
+    if (!reservedAccepted(out.reserved[0..])) return error.HandshakeFailed;
     i = 0;
     while (i < HASH_LEN) : (i += 1) {
         if (out.info_hash[i] != expected_info_hash[i]) return error.InfoHashMismatch;

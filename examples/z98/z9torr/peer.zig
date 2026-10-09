@@ -37,6 +37,7 @@ const std_net = @import("std_net");
 const std_stream = @import("std_stream.zig");
 const wire = @import("wire.zig");
 const mse = @import("mse.zig");
+const pex = @import("pex.zig");
 const piece = @import("piece.zig");
 const scheduler = @import("scheduler.zig");
 const torrent = @import("torrent.zig");
@@ -91,6 +92,9 @@ pub const Peer = struct {
     // are overwritten in `peerRun` before use, so an uninitialised slot is safe.
     enc: mse.Rc4Pair,
     encrypted: bool,
+    // M4: per-peer BEP 10/11 peer-exchange negotiation state (ut_pex id). Set by
+    // `pexInit` at the top of `peerRun` before any extended message is parsed.
+    pex: pex.PexState,
     // Peer availability bitfield (ceil(n_pieces/8) bytes; filled by the peer
     // loop from `bitfield`/`have`).
     bitfield: []u8,
@@ -133,6 +137,9 @@ pub const RunCtx = struct {
     peers: []Peer,
     // M4: deterministic ephemeral MSE key material (Z9TORR_SEED or the clock).
     mse_seed: u32,
+    // M4: scratch arena for decoding BEP 10/11 extended messages. Reset before
+    // each extended message; owned by main (never a module global, D3/D4).
+    pex_arena: *std.arena.Arena,
 };
 // Severity order (most-severe-wins): 5 disk > 4 peer > 3 tracker > 2 parse > 1 usage.
 fn raiseExit(ctx: *RunCtx, c: u8) void {
@@ -216,6 +223,10 @@ fn makeHandshake(t: torrent.Torrent, peer_id: [20]u8, out: *wire.Handshake) void
     while (i < 8) : (i += 1) {
         out.reserved[i] = 0;
     }
+    // Advertise the two reserved bits we understand: BEP 10 extension protocol
+    // (reserved[5] bit 0x10) and BEP 5 DHT (reserved[7] bit 0x01).
+    out.reserved[5] = @intCast(u8, 0x10);
+    out.reserved[7] = @intCast(u8, 0x01);
     i = 0;
     while (i < 20) : (i += 1) {
         out.info_hash[i] = t.info_hash[i];
@@ -626,6 +637,30 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
     }
     logmod.nl();
 
+    // BEP 10: if the peer advertises the extension protocol, announce `ut_pex`
+    // in our extended handshake. A peer that leaves the bit clear gets no
+    // extended traffic (the tier2/tier3 mocks advertise none).
+    pex.pexInit(&peer.pex);
+    if ((peer.rhs.reserved[5] & @intCast(u8, 0x10)) != 0) {
+        std.arena.reset(ctx.pex_arena);
+        var ext_body: []u8 = pex.pexBuildHandshake(ctx.pex_arena, 0);
+        if (peer.encrypted) {
+            wire.writeExtendedEnc(peer.sock, &peer.enc.out, 0, ext_body) catch {};
+        } else {
+            wire.writeExtended(peer.sock, 0, ext_body) catch {};
+        }
+    }
+
+    // M4 test hook (tests/tier_pex.sh): synthesize a received `ut_pex` naming one
+    // peer so PEX -> scheduler -> dynamic-spawn can be exercised end-to-end
+    // without a purpose-built PEX mock. Gated by Z9TORR_PEX_INJECT=ip[:port].
+    if (std.os.env("Z9TORR_PEX_INJECT")) |spec| {
+        if (peer.sched) |sc| {
+            std.arena.reset(ctx.pex_arena);
+            _ = pex.pexInjectPeer(ctx.pex_arena, &peer.pex, sc, spec);
+        }
+    }
+
     if (peer.encrypted) {
         wire.writeInterestedEnc(peer.sock, &peer.enc.out) catch {
             logmod.s("peer slot=");
@@ -876,6 +911,15 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
                                 else => {},
                             }
                         }
+                    }
+                },
+                .extended => {
+                    // BEP 10/11: negotiate ut_pex, then feed `added` peers to
+                    // the scheduler. A peer that never negotiates is ignored by
+                    // `pexOnExtended` (non-zero ext id with negotiated=false).
+                    if (peer.sched) |sc| {
+                        std.arena.reset(ctx.pex_arena);
+                        _ = pex.pexOnExtended(ctx.pex_arena, &peer.pex, sc, msg.payload);
                     }
                 },
                 else => {},

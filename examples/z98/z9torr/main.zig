@@ -11,6 +11,8 @@ const piecemod = @import("piece.zig");
 const peermod = @import("peer.zig");
 const trackerlib = @import("tracker.zig");
 const udptracker = @import("udp_tracker.zig");
+const dhtmod = @import("dht.zig");
+const pexmod = @import("pex.zig");
 const schedmod = @import("scheduler.zig");
 const ratelimit = @import("ratelimit.zig");
 const statsmod = @import("stats.zig");
@@ -29,6 +31,9 @@ var g_arena_buf: [4194304]u8 = undefined;
 // Static arenas total 10 MiB (torrent 4 + work 1 + save 0.25 + ctx/frame 0.75 +
 // scheduler 4), under the 16 MB target.
 const MAX_RUNTIME_PEERS: usize = 16;
+// M4: bounded merge pool for tracker + DHT candidate addresses (spawn cap is
+// still MAX_RUNTIME_PEERS).
+const MAX_CANDIDATES: usize = 64;
 const PEER_CTX_U64: usize = 4096;       // 32 KiB child-frame pool per peer
 const PEER_CTX_BYTES: usize = PEER_CTX_U64 * 8;
 const PEER_FRAME_U64: usize = 2048;     // 16 KiB root frame per peer
@@ -42,6 +47,8 @@ var g_ctx_buf: [MAX_RUNTIME_PEERS * PEER_CTX_U64]u64 = undefined;
 var g_frame_buf: [MAX_RUNTIME_PEERS * PEER_FRAME_U64]u64 = undefined;
 var g_work_buf: [1048576]u8 = undefined;
 var g_save_buf: [262144]u8 = undefined;
+// M4: scratch arena for BEP 10/11 extended-message decoding (reset per message).
+var g_pex_buf: [131072]u8 = undefined;
 // Dedicated scheduler arena. `schedulerInit` carves three per-piece arrays
 // (PieceStatus: 8 B/piece; piece_rarest + piece_owner: 4 B each) plus
 // `max_peers * sizeof(Peer)` (≈64 KiB each). At the parser's `MAX_PIECES`
@@ -51,6 +58,7 @@ var g_sched_buf: [4194304]u8 = undefined;
 var g_work_arena: std.arena.Arena = undefined;
 var g_save_arena: std.arena.Arena = undefined;
 var g_sched_arena: std.arena.Arena = undefined;
+var g_pex_arena: std.arena.Arena = undefined;
 var g_pctx: peermod.RunCtx = undefined;
 var g_sched: schedmod.Scheduler = undefined;
 var g_down_bucket: ratelimit.TokenBucket = undefined;
@@ -60,6 +68,10 @@ const PeerArgs = struct { ctx: *peermod.RunCtx, peer: *peermod.Peer };
 var g_peer_args: [MAX_RUNTIME_PEERS]PeerArgs = undefined;
 var g_tasks: [MAX_RUNTIME_PEERS]std.async.Task = undefined;
 var g_task_ptrs: [MAX_RUNTIME_PEERS]*std.async.Task = undefined;
+var g_cand: [MAX_CANDIDATES]tracker.PeerAddr = undefined;
+// M4: per-slot "a coroutine task exists" flag, so PEX-learned peers added mid-
+// run can be spawned with the same code path as the startup candidates.
+var g_started: [MAX_RUNTIME_PEERS]bool = undefined;
 
 fn writeText(s: []const u8) void {
     std.io.write(s);
@@ -139,6 +151,30 @@ fn firstInactiveSlot() usize {
     return g_sched.peers.len;
 }
 
+// Create + register the peer coroutine for an already-active scheduler `slot`.
+// Shared by the startup candidate loop and the mid-run PEX dynamic-spawn path,
+// so PEX-learned peers are dialed by exactly the same mechanism as DHT/tracker
+// peers. The client's real peer_id is copied into the slot for `makeHandshake`.
+fn spawnPeerAt(slot: usize, peer_id: [20]u8) void {
+    var pid_i: usize = 0;
+    while (pid_i < 20) : (pid_i += 1) {
+        g_sched.peers[slot].peer_id[pid_i] = peer_id[pid_i];
+    }
+    g_peer_args[slot] = PeerArgs{ .ctx = &g_pctx, .peer = &g_sched.peers[slot] };
+    var ctx_slice: []u8 = @ptrCast([*]u8, &g_ctx_buf)[slot * PEER_CTX_BYTES .. (slot + 1) * PEER_CTX_BYTES];
+    var async_ctx: *std.async.Context = std.async.contextInit(ctx_slice);
+    var frame_ptr: [*]u8 = @ptrCast([*]u8, &g_frame_buf) + slot * PEER_FRAME_BYTES;
+    g_tasks[slot].frame = @asyncInit(async_ctx, frame_ptr, peermod.peerRun, @ptrCast(*const void, &g_peer_args[slot]));
+    g_tasks[slot].ctx = async_ctx;
+    g_tasks[slot].arg = @ptrCast(*void, &g_peer_args[slot]);
+    g_tasks[slot].result = @ptrCast(*void, &g_peer_args[slot]);
+    g_tasks[slot].state = std.async.TaskState.ready;
+    g_tasks[slot].cancel_requested = false;
+    g_tasks[slot].waiting_on = &g_tasks[slot];
+    g_tasks[slot].has_waiting_on = false;
+    g_task_ptrs[slot] = &g_tasks[slot];
+}
+
 // Bytes covered by the verified pieces in `bits` (for the progress line).
 fn verifiedBytes(t: torrentlib.Torrent, bits: []u8, n: u32) u64 {
     var total: u64 = 0;
@@ -192,6 +228,14 @@ fn makePeerId(out: *[20]u8) void {
 }
 
 pub fn main(argc: i32, argv: [*][*]u8) void {
+    // M4 Task 4: in-process DHT/PEX self-tests, gated by env so they never run
+    // in normal operation. They exit before any torrent/arg processing.
+    if (std.os.env("Z9TORR_DHT_SELFTEST")) |_| {
+        std.os.exit(dhtmod.selfTest());
+    }
+    if (std.os.env("Z9TORR_PEX_SELFTEST")) |_| {
+        std.os.exit(pexmod.selfTest());
+    }
     var args: cli.Args = cli.parseArgs(argc, argv);
     logmod.begin();
     if (!filemod.exists(args.torrent_path)) {
@@ -336,6 +380,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
 
     g_work_arena = std.arena.init(g_work_buf[0..]);
     g_save_arena = std.arena.init(g_save_buf[0..]);
+    g_pex_arena = std.arena.init(g_pex_buf[0..]);
 
     // Global token buckets (spec §6/§9 M3). `0` = unlimited; `last_refill_ms`
     // starts at "now" so the first refill credits no startup burst.
@@ -345,16 +390,18 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     ratelimit.refill(&g_down_bucket, now0);
     ratelimit.refill(&g_up_bucket, now0);
 
-    // Scheduler over up to `--max-peers` slots, clamped to the runtime cap and
-    // the announced peer count. Seed `piece_state` from the resume bits so
-    // rarest-first never re-picks an already-verified piece (T2 concern 1).
-    var want: u32 = args.max_peers;
-    if (want == 0) want = 1;
-    if (want > @intCast(u32, MAX_RUNTIME_PEERS)) want = @intCast(u32, MAX_RUNTIME_PEERS);
-    if (@intCast(usize, want) > ann.peers.len) want = @intCast(u32, ann.peers.len);
+    // Scheduler slot capacity = the configured concurrent-peer cap (clamped),
+    // NOT the startup candidate count: PEX peers discovered mid-run must have
+    // free slots to claim. `want` limits only how many startup candidates are
+    // spawned (clamped to the merged candidate count below). Seed `piece_state`
+    // from the resume bits so rarest-first never re-picks a verified piece.
+    var sched_slots: u32 = args.max_peers;
+    if (sched_slots == 0) sched_slots = 1;
+    if (sched_slots > @intCast(u32, MAX_RUNTIME_PEERS)) sched_slots = @intCast(u32, MAX_RUNTIME_PEERS);
+    var want: u32 = sched_slots;
 
     g_sched_arena = std.arena.init(g_sched_buf[0..]);
-    g_sched = schedmod.schedulerInit(&g_sched_arena, t, want) catch {
+    g_sched = schedmod.schedulerInit(&g_sched_arena, t, sched_slots) catch {
         filemod.close(&out);
         std_net.cleanup();
         var omsg: []const u8 = "z9torr: disk error\n";
@@ -367,6 +414,17 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         if (piecemod.bitGet(rstate.completed_bits, seed_i)) {
             g_sched.piece_state[@intCast(usize, seed_i)].state = piecemod.BlockState.verified;
         }
+    }
+
+    // M4: zero every slot's byte counters and clear the started flags. Idle
+    // slots are otherwise undefined (schedulerInit leaves nested `Peer` fields
+    // undefined), and PEX may activate them mid-run; zeroing keeps the run-wide
+    // byte sums well-defined.
+    var zs: usize = 0;
+    while (zs < g_sched.peers.len) : (zs += 1) {
+        g_sched.peers[zs].down_bytes = 0;
+        g_sched.peers[zs].up_bytes = 0;
+        g_started[zs] = false;
     }
 
     // M4: ephemeral MSE key seed. Deterministic under Z9TORR_SEED, else the
@@ -393,6 +451,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         .up_bucket = &g_up_bucket,
         .peers = g_sched.peers,
         .mse_seed = mse_seed,
+        .pex_arena = &g_pex_arena,
     };
 
     if (std.os.env("Z9TORR_CLAIM_LOG")) |ev| {
@@ -400,35 +459,45 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         peermod.log_claims = true;
     }
 
-    // Spawn one peer coroutine per announced address (capped). `addPeer` picks
+    // M4: merge the tracker peers with optional bootstrap DHT peers into one
+    // bounded candidate list. `Z9TORR_DHT` is a comma-separated `host[:port]`
+    // bootstrap list; unset it to keep the M3 tracker-only behavior. DHT is
+    // best-effort: a failed lookup simply contributes no candidates.
+    var n_cand: usize = 0;
+    var ci: usize = 0;
+    while (ci < ann.peers.len and n_cand < MAX_CANDIDATES) : (ci += 1) {
+        g_cand[n_cand] = ann.peers[ci];
+        n_cand += 1;
+    }
+    if (std.os.env("Z9TORR_DHT")) |boot| {
+        var nd: u32 = dhtmod.dhtDiscover(&arena, boot, peer_id, t.info_hash[0..20], g_cand[n_cand..]);
+        if (@intCast(usize, nd) > MAX_CANDIDATES - n_cand) nd = @intCast(u32, MAX_CANDIDATES - n_cand);
+        n_cand += @intCast(usize, nd);
+        logmod.s("dht peers=");
+        logmod.u32v(nd);
+        logmod.nl();
+    }
+    if (@intCast(usize, want) > n_cand) want = @intCast(u32, n_cand);
+    if (want == 0) {
+        filemod.close(&out);
+        std_net.cleanup();
+        var zmsg0: []const u8 = "z9torr: peer error\n";
+        std.io.write(zmsg0);
+        logExitAnd(@intCast(i32, cli.exitCodeFor(cli.FailureClass.peer)), "peer error: no candidate peers");
+        return;
+    }
+
+    // Spawn one peer coroutine per candidate address (capped). `addPeer` picks
     // the first free slot and rejects duplicate/recent addresses; the slot it
     // uses is the first inactive slot found immediately before the call.
     var n_spawned: u32 = 0;
     var ai: usize = 0;
-    while (ai < ann.peers.len and n_spawned < want) : (ai += 1) {
+    while (ai < n_cand and n_spawned < want) : (ai += 1) {
         var slot: usize = firstInactiveSlot();
         if (slot >= g_sched.peers.len) break;
-        if (!schedmod.addPeer(&g_sched, ann.peers[ai])) continue;
-        // Carry the client's real peer_id (same value sent to the tracker) into
-        // the claimed slot so `makeHandshake` no longer emits an all-zero id.
-        var pid_i: usize = 0;
-        while (pid_i < 20) : (pid_i += 1) {
-            g_sched.peers[slot].peer_id[pid_i] = peer_id[pid_i];
-        }
-        g_peer_args[slot] = PeerArgs{ .ctx = &g_pctx, .peer = &g_sched.peers[slot] };
-
-        var ctx_slice: []u8 = @ptrCast([*]u8, &g_ctx_buf)[slot * PEER_CTX_BYTES .. (slot + 1) * PEER_CTX_BYTES];
-        var async_ctx: *std.async.Context = std.async.contextInit(ctx_slice);
-        var frame_ptr: [*]u8 = @ptrCast([*]u8, &g_frame_buf) + slot * PEER_FRAME_BYTES;
-        g_tasks[slot].frame = @asyncInit(async_ctx, frame_ptr, peermod.peerRun, @ptrCast(*const void, &g_peer_args[slot]));
-        g_tasks[slot].ctx = async_ctx;
-        g_tasks[slot].arg = @ptrCast(*void, &g_peer_args[slot]);
-        g_tasks[slot].result = @ptrCast(*void, &g_peer_args[slot]);
-        g_tasks[slot].state = std.async.TaskState.ready;
-        g_tasks[slot].cancel_requested = false;
-        g_tasks[slot].waiting_on = &g_tasks[slot];
-        g_tasks[slot].has_waiting_on = false;
-        g_task_ptrs[slot] = &g_tasks[slot];
+        if (!schedmod.addPeer(&g_sched, g_cand[ai])) continue;
+        spawnPeerAt(slot, peer_id);
+        g_started[slot] = true;
         n_spawned += 1;
     }
     logmod.s("spawn=");
@@ -443,10 +512,12 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         return;
     }
 
-    var sched = std.async.schedulerInit(g_task_ptrs[0..@intCast(usize, n_spawned)]);
+    // The async scheduler is sized to the full slot capacity so PEX dynamic
+    // spawns can register new tasks later; only started slots are added now.
+    var sched = std.async.schedulerInit(g_task_ptrs[0..g_sched.peers.len]);
     var ti: usize = 0;
-    while (ti < @intCast(usize, n_spawned)) : (ti += 1) {
-        _ = std.async.addTask(&sched, g_task_ptrs[ti]);
+    while (ti < g_sched.peers.len) : (ti += 1) {
+        if (g_started[ti]) _ = std.async.addTask(&sched, g_task_ptrs[ti]);
     }
 
     // Drive the peers. `tick` resumes every live peer once; stop as soon as all
@@ -480,10 +551,30 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         // slot is already inactive, so repeated calls are safe; a peer whose
         // task is still live is left untouched.
         var rj: usize = 0;
-        while (rj < @intCast(usize, n_spawned)) : (rj += 1) {
+        while (rj < g_sched.peers.len) : (rj += 1) {
+            if (!g_started[rj]) continue;
             var rts = g_tasks[rj].state;
             if (rts == std.async.TaskState.done or rts == std.async.TaskState.cancelled) {
                 schedmod.removePeer(&g_sched, &g_sched.peers[rj]);
+                g_started[rj] = false;
+            }
+        }
+
+        // M4: PEX adds peers to the scheduler via `scheduler.addPeer` mid-run.
+        // Spawn a coroutine for every active slot that has none yet, using the
+        // same `spawnPeerAt` path as the startup candidates, so discovered peers
+        // are actually dialed (not merely added).
+        var ds: usize = 0;
+        while (ds < g_sched.peers.len) : (ds += 1) {
+            if (g_sched.peers[ds].active and !g_started[ds]) {
+                spawnPeerAt(ds, peer_id);
+                g_started[ds] = true;
+                _ = std.async.addTask(&sched, g_task_ptrs[ds]);
+                logmod.s("dyn spawn slot=");
+                logmod.u32v(@intCast(u32, ds));
+                logmod.s(" port=");
+                logmod.u32v(@intCast(u32, g_sched.peers[ds].addr.port));
+                logmod.nl();
             }
         }
 
@@ -492,12 +583,13 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             last_progress_ms = std.time.ticksMs();
         }
         // Fix 2: a slow/throttled run that is still receiving bytes must not
-        // trip the stall detector. Sum received payload across every spawned
-        // slot (no slot is reused mid-run, so this is monotonic) and treat any
-        // increase as progress. The `!=` test keeps the u64 math underflow-safe.
+        // trip the stall detector. Sum received payload across every slot (idle
+        // slots are zero; a PEX-reused slot restarts at zero, so the sum can
+        // drop) and treat any change as progress. The `!=` test keeps the u64
+        // math underflow-safe.
         var dnow: u64 = 0;
         var dj: usize = 0;
-        while (dj < @intCast(usize, n_spawned)) : (dj += 1) {
+        while (dj < g_sched.peers.len) : (dj += 1) {
             dnow += g_sched.peers[dj].down_bytes;
         }
         if (dnow != last_progress_bytes) {
@@ -509,7 +601,8 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
 
         var live: bool = false;
         var lt: usize = 0;
-        while (lt < @intCast(usize, n_spawned)) : (lt += 1) {
+        while (lt < g_sched.peers.len) : (lt += 1) {
+            if (!g_started[lt]) continue;
             var ts = g_tasks[lt].state;
             if (ts != std.async.TaskState.done and ts != std.async.TaskState.cancelled) live = true;
         }
@@ -521,7 +614,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             var usum: u64 = 0;
             var pc: u32 = 0;
             var pj: usize = 0;
-            while (pj < @intCast(usize, n_spawned)) : (pj += 1) {
+            while (pj < g_sched.peers.len) : (pj += 1) {
                 if (g_sched.peers[pj].active) {
                     dsum += g_sched.peers[pj].down_bytes;
                     usum += g_sched.peers[pj].up_bytes;
@@ -582,12 +675,13 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
 
     // B3=A: one-line fetch metric for tier2's resume gate. `down_bytes` is the
     // received `piece` payload total; `up_bytes` is 13 bytes per request message
-    // (peer.zig sendRequests), so requests = up_bytes / 13. Both are summed over
-    // the peers spawned this run.
+    // (peer.zig sendRequests), so requests = up_bytes / 13. Sum over every slot
+    // (idle slots were zeroed at startup; a retired peer's bytes are retained
+    // unless its slot was reused).
     var total_down: u64 = 0;
     var total_up: u64 = 0;
     var sj: usize = 0;
-    while (sj < @intCast(usize, n_spawned)) : (sj += 1) {
+    while (sj < g_sched.peers.len) : (sj += 1) {
         total_down += g_sched.peers[sj].down_bytes;
         total_up += g_sched.peers[sj].up_bytes;
     }
