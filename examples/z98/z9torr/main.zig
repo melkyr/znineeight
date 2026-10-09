@@ -367,6 +367,12 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         var slot: usize = firstInactiveSlot();
         if (slot >= g_sched.peers.len) break;
         if (!schedmod.addPeer(&g_sched, ann.peers[ai])) continue;
+        // Carry the client's real peer_id (same value sent to the tracker) into
+        // the claimed slot so `makeHandshake` no longer emits an all-zero id.
+        var pid_i: usize = 0;
+        while (pid_i < 20) : (pid_i += 1) {
+            g_sched.peers[slot].peer_id[pid_i] = peer_id[pid_i];
+        }
         g_peer_args[slot] = PeerArgs{ .ctx = &g_pctx, .peer = &g_sched.peers[slot] };
 
         var ctx_slice: []u8 = @ptrCast([*]u8, &g_ctx_buf)[slot * PEER_CTX_BYTES .. (slot + 1) * PEER_CTX_BYTES];
