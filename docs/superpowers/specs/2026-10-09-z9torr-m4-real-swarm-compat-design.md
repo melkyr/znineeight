@@ -43,7 +43,7 @@ Separately, a latent bug was found: z9torr sends an **all-zero peer_id** — `sc
 - Support the common MSE crypto options negotiated in the `HASH('req1')` block (plaintext and RC4; reject unknown methods with a clean error).
 
 ### §4.3 UDP tracker (BEP 15)
-- Over `std_net` UDP: `connect` (get 64-bit `connection_id`), `announce`, parse compact peer list; retry/timeout policy; falls back to the HTTP tracker (M0) when absent.
+- Over `std_net` UDP: `connect` (get 64-bit `connection_id`), `announce`, parse compact peer list; retry/timeout policy; falls back to the HTTP tracker (M0) when absent. The UDP announce carries the same `started`/`completed` events as HTTP, converted to BEP 15 codes (`1=completed, 2=started, 3=stopped`) via an explicit map — NOT a raw `AnnounceEvent` cast (the two numberings are opposite). (Corrected 2026-10-09 per operator ruling A.)
 
 ### §4.4 DHT (BEP 5) + PEX (BEP 11)
 - DHT: a bootstrap node list; `ping`, `find_node`, `get_peers`, `announce_peer` over KRPC (bencoded, `std_bencode`); a minimal routing table; feed discovered peers into the scheduler. Bootstrap-grade only.

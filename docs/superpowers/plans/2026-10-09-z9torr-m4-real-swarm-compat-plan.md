@@ -77,7 +77,7 @@
 
 **Interfaces:**
 - Consumes: `std_net` UDP (`udpBind`/`udpSendTo`/`udpRecvFrom`/`udpSetTimeout`), `std_bencode`.
-- Produces: `pub fn announceUdp(arena, tracker_url, info_hash, peer_id, port, stats) TrackerError!AnnounceResult` implementing connect/announce; `main.zig` prefers UDP trackers when the torrent lists them, else HTTP.
+- Produces: `pub fn announceUdp(arena, tracker_url, info_hash, peer_id, port, event: tracker.AnnounceEvent, stats) TrackerError!AnnounceResult` implementing connect/announce; `main.zig` prefers UDP trackers when the torrent lists them, else HTTP, and passes `started`/`completed` over UDP exactly as it does over HTTP. BEP 15 event codes are `1=completed, 2=started, 3=stopped` — the OPPOSITE of the HTTP/`AnnounceEvent` numbering — so convert with an explicit map (started→2, completed→1), never a raw enum cast. (Corrected 2026-10-09 per operator ruling A.)
 
 - [ ] **Step 1:** Implement the BEP 15 connect/announce with transaction ids, retries, and timeout; parse compact peers.
 - [ ] **Step 2:** `tests/tier_udp_tracker.sh` runs against `mock_udp_tracker`; a torrent with a `udp://` announce downloads via the scheduler.
