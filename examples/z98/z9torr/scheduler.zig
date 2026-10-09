@@ -19,16 +19,15 @@
 // peer's slot to `missing` (block state is retained; the resume sidecar's
 // `partial[]` survives claim/release, spec §7).
 //
-// `piece_state` is the authoritative per-piece status array; its `blocks`
-// vector is intentionally left empty here because the working block state lives
-// in the owning peer's `Peer.ps` (spec §6 M3 amendment). Callers that already
-// verified pieces from a resume sidecar must set those entries `.verified`
-// after `schedulerInit`.
+// `piece_state` is the authoritative per-piece status array (`PieceStatus`:
+// only {index, state}); the working block state lives in the owning peer's
+// `Peer.ps` (spec §6 M3 amendment). Callers that already verified pieces from a
+// resume sidecar must set those entries `.verified` after `schedulerInit`.
 //
 // Z98 rules: free functions only, no generics/`anytype`, strict `@intCast`,
 // `switch` needs `else`, string literals via `var s: []const u8 = "x";`.
 // D2: every slice is a primitive element (`[]u8`/`[]u32`), a named element
-// (`[]Peer`, `[]PieceState`), or a fixed array of a named type.
+// (`[]Peer`, `[]PieceStatus`), or a fixed array of a named type.
 
 const std = @import("std");
 const piece = @import("piece.zig");
@@ -45,9 +44,20 @@ const SEEN_RING: u32 = 8;
 
 pub const SchedulerError = error{OutOfMemory};
 
+// Minimal per-piece status the scheduler needs: spec §6 `PieceState` minus the
+// per-peer working fields (`blocks` lives in the owning `Peer.ps`; `hash`/
+// `received_bytes`/`length`/`nblocks` are only read by the piece pipeline).
+// Keeping only {index, state} lets the arena fit the parser's `MAX_PIECES`
+// (157286) inside the 16 MB target: 157286 * 8 B ≈ 1.2 MiB (vs ~7.2 MiB for
+// the full `PieceState`). The authoritative block state remains per-peer.
+pub const PieceStatus = struct {
+    index: u32,
+    state: piece.BlockState,
+};
+
 pub const Scheduler = struct {
     // Spec §6 fields.
-    piece_state: []piece.PieceState,
+    piece_state: []PieceStatus,
     piece_rarest: []u32,
     peers: []peer.Peer,
     active_peer_count: u32,
@@ -63,8 +73,7 @@ pub const Scheduler = struct {
 // and fixed arrays of named types only).
 var g_empty_bits: [1]u8 = undefined;
 var g_empty_u32: [1]u32 = undefined;
-var g_empty_blocks: [1]piece.BlockState = undefined;
-var g_empty_piece_state: [1]piece.PieceState = undefined;
+var g_empty_piece_status: [1]PieceStatus = undefined;
 var g_empty_peer: [1]peer.Peer = undefined;
 
 fn emptyBits() []u8 {
@@ -75,12 +84,8 @@ fn emptyU32() []u32 {
     return g_empty_u32[0..0];
 }
 
-fn emptyBlocks() []piece.BlockState {
-    return g_empty_blocks[0..0];
-}
-
-fn emptyPieceStates() []piece.PieceState {
-    return g_empty_piece_state[0..0];
+fn emptyPieceStatuses() []PieceStatus {
+    return g_empty_piece_status[0..0];
 }
 
 fn emptyPeers() []peer.Peer {
@@ -101,22 +106,17 @@ pub fn schedulerInit(arena: *std.arena.Arena, t: torrent.Torrent, max_peers: u32
         n_pieces = @intCast(u32, (t.total_length + pl - 1) / pl);
     }
 
-    // Per-piece status array. `blocks` is deliberately empty: block state is
+    // Per-piece status array. `blocks` is deliberately absent: block state is
     // owned by each peer's `Peer.ps` (spec §6 M3 amendment).
-    var ps: []piece.PieceState = emptyPieceStates();
+    var ps: []PieceStatus = emptyPieceStatuses();
     if (n_pieces > 0) {
-        var raw = std.arena.alloc(arena, @intCast(usize, n_pieces) * @sizeOf(piece.PieceState)) catch return error.OutOfMemory;
-        ps = @ptrCast([*]piece.PieceState, raw)[0..@intCast(usize, n_pieces)];
+        var raw = std.arena.alloc(arena, @intCast(usize, n_pieces) * @sizeOf(PieceStatus)) catch return error.OutOfMemory;
+        ps = @ptrCast([*]PieceStatus, raw)[0..@intCast(usize, n_pieces)];
         var i: u32 = 0;
         while (i < n_pieces) : (i += 1) {
-            ps[@intCast(usize, i)] = piece.PieceState{
+            ps[@intCast(usize, i)] = PieceStatus{
                 .index = i,
                 .state = piece.BlockState.missing,
-                .blocks = emptyBlocks(),
-                .received_bytes = 0,
-                .hash = undefined,
-                .length = 0,
-                .nblocks = 0,
             };
         }
     }

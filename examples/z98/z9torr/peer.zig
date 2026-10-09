@@ -48,7 +48,14 @@ pub const PeerError = wire.PeerError;
 
 const HANDSHAKE_LEN: usize = 68;
 const KEEPALIVE_MS: u32 = 120000;
-const CONNECT_TIMEOUT_MS: u32 = 10000;
+// Per-peer connect budget. `std_net.connectToIp` blocks the whole run for up to
+// this long on a dead peer (the scheduler's `tick` resumes one coroutine at a
+// time), so the swarm's worst-case serial connect time is
+// `MAX_RUNTIME_PEERS * CONNECT_TIMEOUT_MS`. Bound it well under `STALL_MS`
+// (60 s): 16 * 1000 ms = 16 s << 60 s, so dead peers cannot by themselves trip
+// the stall detector (spec §7/§8; M3 final-review fix 3). The std-lib connect
+// stays untouched — this is an example-local bound.
+const CONNECT_TIMEOUT_MS: u32 = 1000;
 
 // Debug switch (wired by main from Z9TORR_CLAIM_LOG): when set, each scheduler
 // claim prints one `claim slot=.. piece=..` line so a test can assert no two
@@ -112,6 +119,10 @@ pub const RunCtx = struct {
     // start time so the first refill does not credit a startup burst.
     down_bucket: *ratelimit.TokenBucket,
     up_bucket: *ratelimit.TokenBucket,
+    // Live scheduler peer slots (set in `main.zig`). `saveResume` walks these so
+    // the sidecar's `partial[]` lists every in-flight partial piece across all
+    // peers, not just the calling one (spec §7).
+    peers: []Peer,
 };
 // Severity order (most-severe-wins): 5 disk > 4 peer > 3 tracker > 2 parse > 1 usage.
 fn raiseExit(ctx: *RunCtx, c: u8) void {
@@ -320,45 +331,94 @@ fn seedPartial(ctx: *RunCtx, ps: *piece.PieceState) void {
     }
 }
 
-// Re-encode + write the resume sidecar: the shared verified bitset plus, if
-// `ps` is a half-downloaded piece, its received-block mask. Called after each
-// verified piece, after every block written to a still-incomplete piece (so
-// the recorded mtime stays current across write-through, spec §7), and on
-// clean completion.
-fn saveResume(ctx: *RunCtx, ps: *piece.PieceState) void {
-    std.arena.reset(ctx.save_arena);
-    var empty: [1]resumemod.PartialPiece = undefined;
-    var partial_arr: []resumemod.PartialPiece = empty[0..0];
-    if (ps.state != piece.BlockState.verified) {
-        var any: bool = false;
-        var i: u32 = 0;
-        while (i < ps.nblocks) : (i += 1) {
-            if (ps.blocks[@intCast(usize, i)] == piece.BlockState.received) any = true;
-        }
-        if (any) {
-            var mbytes: usize = (@intCast(usize, ps.nblocks) + 7) / 8;
-            var mraw = std.arena.alloc(ctx.save_arena, mbytes) catch return;
-            var mask: []u8 = mraw[0..mbytes];
-            var z: usize = 0;
-            while (z < mbytes) : (z += 1) {
-                mask[z] = 0;
-            }
-            i = 0;
-            while (i < ps.nblocks) : (i += 1) {
-                if (ps.blocks[@intCast(usize, i)] == piece.BlockState.received) {
-                    var byte: usize = @intCast(usize, i / 8);
-                    var sh: u8 = @intCast(u8, i % 8);
-                    var bit: u8 = @intCast(u8, 1) << sh;
-                    mask[byte] = mask[byte] | bit;
-                }
-            }
-            var praw = std.arena.alloc(ctx.save_arena, @sizeOf(resumemod.PartialPiece)) catch return;
-            var pp: []resumemod.PartialPiece = @ptrCast([*]resumemod.PartialPiece, praw)[0..1];
-            pp[0] = resumemod.PartialPiece{ .index = ps.index, .block_mask = mask };
-            partial_arr = pp;
+// True if `ps` holds at least one received (written-through) block.
+fn hasReceived(ps: *piece.PieceState) bool {
+    var i: u32 = 0;
+    while (i < ps.nblocks) : (i += 1) {
+        if (ps.blocks[@intCast(usize, i)] == piece.BlockState.received) return true;
+    }
+    return false;
+}
+
+// True if the partial list `pp[0..count]` already holds `index`.
+fn indexIn(pp: []resumemod.PartialPiece, count: usize, index: u32) bool {
+    var i: usize = 0;
+    while (i < count) : (i += 1) {
+        if (pp[i].index == index) return true;
+    }
+    return false;
+}
+
+// Encode `ps`'s received-block mask into the save arena and write the entry
+// into `dst`. Returns false on arena exhaustion (caller aborts the save).
+fn fillMask(ctx: *RunCtx, ps: *piece.PieceState, dst: *resumemod.PartialPiece) bool {
+    var mbytes: usize = (@intCast(usize, ps.nblocks) + 7) / 8;
+    var mraw = std.arena.alloc(ctx.save_arena, mbytes) catch return false;
+    var mask: []u8 = mraw[0..mbytes];
+    var z: usize = 0;
+    while (z < mbytes) : (z += 1) {
+        mask[z] = 0;
+    }
+    var i: u32 = 0;
+    while (i < ps.nblocks) : (i += 1) {
+        if (ps.blocks[@intCast(usize, i)] == piece.BlockState.received) {
+            var byte: usize = @intCast(usize, i / 8);
+            var sh: u8 = @intCast(u8, i % 8);
+            var bit: u8 = @intCast(u8, 1) << sh;
+            mask[byte] = mask[byte] | bit;
         }
     }
-    var st = resumemod.ResumeState{ .completed_bits = ctx.verified_bits, .partial = partial_arr };
+    dst.index = ps.index;
+    dst.block_mask = mask;
+    return true;
+}
+
+// Re-encode + write the resume sidecar: the shared verified bitset plus a
+// `partial[]` entry for EVERY in-flight partial piece across all live peer
+// slots, and, for pieces no peer currently holds, the loaded `ctx.partial`. The
+// calling peer's `ps` is included even when it is not in `ctx.peers` (the M2
+// single-peer path). Live masks take precedence over the loaded sidecar so the
+// newer block state wins. Called after each verified piece, after every block
+// written to a still-incomplete piece (so the recorded mtime stays current
+// across write-through, spec §7), and on clean completion.
+fn saveResume(ctx: *RunCtx, ps: *piece.PieceState) void {
+    std.arena.reset(ctx.save_arena);
+    var cap: usize = ctx.partial.len + ctx.peers.len + 1;
+    var praw = std.arena.alloc(ctx.save_arena, cap * @sizeOf(resumemod.PartialPiece)) catch return;
+    var pp: []resumemod.PartialPiece = @ptrCast([*]resumemod.PartialPiece, praw)[0..cap];
+    var count: usize = 0;
+
+    // 1. Live peers' working pieces (newest masks).
+    var pi: usize = 0;
+    while (pi < ctx.peers.len) : (pi += 1) {
+        var lpe = &ctx.peers[pi];
+        if (!lpe.active) continue;
+        if (lpe.ps.state == piece.BlockState.verified) continue;
+        if (lpe.ps.nblocks == 0) continue;
+        if (!hasReceived(&lpe.ps)) continue;
+        if (indexIn(pp, count, lpe.ps.index)) continue;
+        if (!fillMask(ctx, &lpe.ps, &pp[count])) return;
+        count += 1;
+    }
+
+    // 2. The calling peer (M2 path where it is not in `ctx.peers`).
+    if (ps.state != piece.BlockState.verified and ps.nblocks > 0 and hasReceived(ps)) {
+        if (!indexIn(pp, count, ps.index)) {
+            if (!fillMask(ctx, ps, &pp[count])) return;
+            count += 1;
+        }
+    }
+
+    // 3. Loaded partials for pieces no live peer is working (older masks).
+    var li: usize = 0;
+    while (li < ctx.partial.len) : (li += 1) {
+        var lp = ctx.partial[li];
+        if (indexIn(pp, count, lp.index)) continue;
+        pp[count] = lp;
+        count += 1;
+    }
+
+    var st = resumemod.ResumeState{ .completed_bits = ctx.verified_bits, .partial = pp[0..count] };
     resumemod.save(ctx.save_arena, ctx.t, st) catch {};
 }
 

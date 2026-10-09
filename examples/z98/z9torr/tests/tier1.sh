@@ -157,6 +157,13 @@ else
     fail_case "mutated info byte: could not locate name field"
 fi
 
+echo "== unit harnesses (tier1_unit.sh) =="
+if sh "$SCRIPT_DIR/tier1_unit.sh"; then
+    pass_case "unit harnesses (ratelimit/scheduler/stats)"
+else
+    fail_case "unit harnesses (ratelimit/scheduler/stats)"
+fi
+
 echo
 echo "== tier1 summary: $PASSES passed, $FAILS failed =="
 if [ "$FAILS" -ne 0 ]; then

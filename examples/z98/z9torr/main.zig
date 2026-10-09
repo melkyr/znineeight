@@ -23,8 +23,9 @@ var g_arena_buf: [4194304]u8 = undefined;
 // state lives in file-scope storage (spec §12 risk 1) so its pointers stay
 // stable across suspensions.
 // `sizeof(Peer)` is ~64.4 KiB (the embedded 64 KiB `read_buf`), so 16 peers
-// need ~1.03 MiB of the 2 MiB scheduler arena; the frame pools add 768 KiB. The
-// whole run stays well under the 16 MB target.
+// need ~1.03 MiB of the 4 MiB scheduler arena; the frame pools add 768 KiB.
+// Static arenas total 10 MiB (torrent 4 + work 1 + save 0.25 + ctx/frame 0.75 +
+// scheduler 4), under the 16 MB target.
 const MAX_RUNTIME_PEERS: usize = 16;
 const PEER_CTX_U64: usize = 4096;       // 32 KiB child-frame pool per peer
 const PEER_CTX_BYTES: usize = PEER_CTX_U64 * 8;
@@ -39,9 +40,12 @@ var g_ctx_buf: [MAX_RUNTIME_PEERS * PEER_CTX_U64]u64 = undefined;
 var g_frame_buf: [MAX_RUNTIME_PEERS * PEER_FRAME_U64]u64 = undefined;
 var g_work_buf: [1048576]u8 = undefined;
 var g_save_buf: [262144]u8 = undefined;
-// Dedicated scheduler arena: `schedulerInit` carves `max_peers * sizeof(Peer)`
-// (≈64 KiB each) here, keeping the torrent arena free for metadata/piece state.
-var g_sched_buf: [2097152]u8 = undefined;
+// Dedicated scheduler arena. `schedulerInit` carves three per-piece arrays
+// (PieceStatus: 8 B/piece; piece_rarest + piece_owner: 4 B each) plus
+// `max_peers * sizeof(Peer)` (≈64 KiB each). At the parser's `MAX_PIECES`
+// (157286) that is ≈ 157286*(8+4+4) ≈ 2.4 MiB plus ≈ 1.0 MiB of peers ≈ 3.4 MiB,
+// so 4 MiB fits the largest torrent the parser accepts (M3 final-review fix 4).
+var g_sched_buf: [4194304]u8 = undefined;
 var g_work_arena: std.arena.Arena = undefined;
 var g_save_arena: std.arena.Arena = undefined;
 var g_sched_arena: std.arena.Arena = undefined;
@@ -326,6 +330,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         .exit_class = 4,
         .down_bucket = &g_down_bucket,
         .up_bucket = &g_up_bucket,
+        .peers = g_sched.peers,
     };
 
     if (std.os.env("Z9TORR_CLAIM_LOG")) |ev| {
@@ -378,6 +383,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     // A 1 Hz sampled progress line renders through `statsRender`.
     var last_progress_ms: u32 = std.time.ticksMs();
     var last_verified: u32 = g_pctx.verified_count;
+    var last_progress_bytes: u64 = 0;
     var line_buf: [statsmod.STATS_LINE_MAX]u8 = undefined;
     var st: trackerlib.Stats = zeroStats();
     var last_sample_ms: u32 = std.time.ticksMs();
@@ -412,6 +418,19 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
 
         if (g_pctx.verified_count != last_verified) {
             last_verified = g_pctx.verified_count;
+            last_progress_ms = std.time.ticksMs();
+        }
+        // Fix 2: a slow/throttled run that is still receiving bytes must not
+        // trip the stall detector. Sum received payload across every spawned
+        // slot (no slot is reused mid-run, so this is monotonic) and treat any
+        // increase as progress. The `!=` test keeps the u64 math underflow-safe.
+        var dnow: u64 = 0;
+        var dj: usize = 0;
+        while (dj < @intCast(usize, n_spawned)) : (dj += 1) {
+            dnow += g_sched.peers[dj].down_bytes;
+        }
+        if (dnow != last_progress_bytes) {
+            last_progress_bytes = dnow;
             last_progress_ms = std.time.ticksMs();
         }
         if (g_pctx.verified_count >= n_pieces) break;
