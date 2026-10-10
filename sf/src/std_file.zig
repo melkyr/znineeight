@@ -9,9 +9,11 @@
 //
 // Win32 opens through CreateFileA, never fopen; size uses GetFileSizeEx, not
 // ftell; read returns 0 at EOF, not an error; write may return fewer bytes, so
-// writeAll loops. POSIX uses open/read/write/lseek/fsync/close/unlink/rename.
-// On the pinned i386 target off_t is 32-bit, so seek rejects offsets outside
-// the i32 range rather than silently truncating.
+// writeAll loops. POSIX uses open/read/write/fsync/close/unlink/rename plus the
+// _llseek syscall for 64-bit seeking. The pinned i386 target has a 32-bit
+// off_t, so the POSIX side seeks via _llseek (with O_LARGEFILE at open) and
+// reports i64 offsets; Windows already uses SetFilePointerEx (i64) /
+// GetFileSizeEx. Payloads > 2 GiB work.
 
 const arena_mod = @import("std_arena.zig");
 const pal = @import("std_file_pal.zig");
@@ -50,6 +52,9 @@ const O_RDWR: i32 = 2;
 const O_CREAT: i32 = 64;
 const O_TRUNC: i32 = 512;
 const O_APPEND: i32 = 1024;
+// O_LARGEFILE (0100000): let a 32-bit process create/use files > 2 GiB. Without
+// it a write past the 2 GiB mark fails EFBIG even after a 64-bit lseek.
+const O_LARGEFILE: i32 = 32768;
 const POSIX_MODE_0644: i32 = 420;
 
 // win32 CreateFileA constants (winnt.h values).
@@ -68,6 +73,10 @@ const INVALID_FILE_ATTRIBUTES_U: u32 = 4294967295;
 const SEEK_SET_I32: i32 = 0;
 const SEEK_CUR_I32: i32 = 1;
 const SEEK_END_I32: i32 = 2;
+
+// i386 Linux _llseek syscall number (__NR__llseek). The pinned target is
+// i386, so this one constant carries the 64-bit seek on the POSIX side.
+const SYS_LLSEEK: i32 = 140;
 
 // --- file modification time (mtime) ---------------------------------------
 // `struct stat` is ABI-specific, so the PAL passes an opaque byte buffer and the
@@ -145,10 +154,10 @@ fn openHandle(path: []const u8, mode: Mode) FileError!*void {
         }
         return h;
     } else {
-        var flags: i32 = O_RDONLY;
-        if (mode == Mode.Write) { flags = O_WRONLY | O_CREAT | O_TRUNC; }
-        if (mode == Mode.Append) { flags = O_WRONLY | O_CREAT | O_APPEND; }
-        if (mode == Mode.ReadWrite) { flags = O_RDWR | O_CREAT; }
+        var flags: i32 = O_RDONLY | O_LARGEFILE;
+        if (mode == Mode.Write) { flags = O_WRONLY | O_CREAT | O_TRUNC | O_LARGEFILE; }
+        if (mode == Mode.Append) { flags = O_WRONLY | O_CREAT | O_APPEND | O_LARGEFILE; }
+        if (mode == Mode.ReadWrite) { flags = O_RDWR | O_CREAT | O_LARGEFILE; }
         const fd = pal.open(@ptrCast([*]const u8, &cbuf[0]), flags, POSIX_MODE_0644);
         if (fd < 0) return error.OpenFailed;
         return @intToPtr(*void, @intCast(usize, fd));
@@ -189,18 +198,31 @@ fn writeHandle(h: *void, buf: []const u8) FileError!usize {
     }
 }
 
+// POSIX 64-bit seek. The i64 offset is split into the _llseek syscall's
+// unsigned high/low words; the syscall writes the resulting absolute offset
+// through an out-parameter, so the full i64 survives even though the C call is
+// made through an implicit declaration (see std_file_pal.zig: a directly
+// declared 64-bit-returning lseek64 has no author C prototype under the pinned
+// -std=c89/no-LFS compilation and would truncate). whence is SEEK_SET/_CUR/_END.
+fn llseekHandle(fd: i32, offset: i64, whence: i32) FileError!i64 {
+    var high: u32 = @intCast(u32, (offset >> 32) & 4294967295);
+    var low: u32 = @intCast(u32, offset & 4294967295);
+    var res: i64 = 0;
+    const r = pal.syscall(SYS_LLSEEK, fd, high, low, &res, whence);
+    if (r != @intCast(i32, 0)) return error.SeekFailed;
+    return res;
+}
+
 fn seekHandle(h: *void, offset: i64, whence: i32) FileError!i64 {
     if (@isWindows()) {
         var np: i64 = 0;
         if (pal.SetFilePointerEx(h, offset, &np, @intCast(u32, whence)) == 0) return error.SeekFailed;
         return np;
     } else {
-        // off_t is 32-bit: reject offsets that would truncate under @intCast.
-        if (offset < @intCast(i64, 0) - @intCast(i64, 2147483648)) return error.SeekFailed;
-        if (offset > @intCast(i64, 2147483647)) return error.SeekFailed;
-        const r = pal.lseek(@intCast(i32, @ptrToInt(h)), @intCast(i32, offset), whence);
-        if (r < 0) return error.SeekFailed;
-        return @intCast(i64, r);
+        // 64-bit offset (the lseek64 equivalent via the _llseek syscall): a
+        // payload may seek past the 2 GiB i32 off_t boundary. open() also passes
+        // O_LARGEFILE so a 32-bit process may grow the file past 2 GiB.
+        return llseekHandle(@intCast(i32, @ptrToInt(h)), offset, whence);
     }
 }
 
@@ -211,12 +233,17 @@ fn sizeHandle(h: *void) FileError!i64 {
         return sz;
     } else {
         const fd = @intCast(i32, @ptrToInt(h));
-        const cur = pal.lseek(fd, @intCast(i32, 0), SEEK_CUR_I32);
-        if (cur < 0) return error.SizeFailed;
-        const end = pal.lseek(fd, @intCast(i32, 0), SEEK_END_I32);
-        if (end < 0) return error.SizeFailed;
-        _ = pal.lseek(fd, cur, SEEK_SET_I32);
-        return @intCast(i64, end);
+        const cur = llseekHandle(fd, @intCast(i64, 0), SEEK_CUR_I32) catch {
+            return error.SizeFailed;
+        };
+        const end = llseekHandle(fd, @intCast(i64, 0), SEEK_END_I32) catch {
+            return error.SizeFailed;
+        };
+        const restored = llseekHandle(fd, cur, SEEK_SET_I32) catch {
+            return error.SizeFailed;
+        };
+        _ = restored;
+        return end;
     }
 }
 

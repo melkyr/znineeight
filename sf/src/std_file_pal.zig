@@ -40,11 +40,20 @@ pub extern "stdcall" fn GetFileAttributesExA(lpFileName: [*]const u8, fInfoLevel
 
 // --- POSIX ----------------------------------------------------------------
 // open flags are hardcoded by the caller (no dependence on the fcntl.h macro
-// values); off_t is 32-bit on the pinned i386 target, so lseek's offset is i32.
+// values); the pinned i386 target has a 32-bit off_t. 64-bit seeking goes
+// through the generic syscall(2) entry point: glibc declares no author
+// lseek64/_llseek prototype under the pinned -std=c89 (no _LARGEFILE64_SOURCE)
+// compilation, and Z98 emits no extern prototypes (C declarations come only
+// from the headers it @cIncludes), so a 64-bit-returning lseek64 would be
+// called through an implicit `int` declaration and truncate the offset.
+// syscall(2) returns `long` (32-bit on i386) and the _llseek syscall
+// (i386 __NR__llseek == 140, supplied by the caller) writes the full 64-bit
+// offset through `result`. The caller passes O_LARGEFILE so the file may grow
+// past 2 GiB. The fixed arg list mirrors that syscall.
 pub extern "c" fn open(path: [*]const u8, flags: i32, mode: i32) i32;
 pub extern "c" fn read(fd: i32, buf: [*]u8, count: u32) i32;
 pub extern "c" fn write(fd: i32, buf: [*]const u8, count: u32) i32;
-pub extern "c" fn lseek(fd: i32, offset: i32, whence: i32) i32;
+pub extern "c" fn syscall(number: i32, fd: i32, offset_high: u32, offset_low: u32, result: *i64, whence: i32) i32;
 pub extern "c" fn close(fd: i32) i32;
 pub extern "c" fn fsync(fd: i32) i32;
 pub extern "c" fn unlink(path: [*]const u8) i32;
