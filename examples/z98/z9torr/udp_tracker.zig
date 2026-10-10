@@ -70,8 +70,9 @@ fn nextTxn() u32 {
     if (s == 0) {
         s = std.time.ticksMs() | @intCast(u32, 1);
     }
-    // Wraps by C semantics after lowering (same idiom as main.makePeerId).
-    s = s * @intCast(u32, 1664525) + @intCast(u32, 1013904223);
+    // Wrapping LCG (matches mse.makeSecret / main.makePeerId); `-fsafe` traps
+    // on the checked form because the u32 product overflows by design.
+    s = s *% @intCast(u32, 1664525) +% @intCast(u32, 1013904223);
     g_txn = s;
     return s | @intCast(u32, 1);
 }

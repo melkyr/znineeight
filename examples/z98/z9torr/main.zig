@@ -222,7 +222,7 @@ fn makePeerId(out: *[20]u8) void {
     var st: u32 = seed;
     if (st == 0) st = 1;
     while (i < 20) : (i += 1) {
-        st = st * @intCast(u32, 1664525) + @intCast(u32, 1013904223);
+        st = st *% @intCast(u32, 1664525) +% @intCast(u32, 1013904223);
         out[i] = @intCast(u8, (st >> 16) & @intCast(u32, 0xFF));
     }
 }

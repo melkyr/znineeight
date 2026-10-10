@@ -438,3 +438,71 @@ reducible to the standalone `repro/mi_matrix/async_frame_structret_xmod`, whose
 classify class flipped FAIL→OK at F3.)
 
 _(Add new entries as D5, … as they are found during M1–M4.)_
+
+---
+
+## D6 — `@ptrFromInt` with a type argument is silently miscompiled instead of rejected
+
+**Status:** OPEN (filed 2026-10-10 during the M5 `-fsafe` work). This is a
+**compiler validation / wrong-accept** defect, **not** the anticipated `-fsafe`
+failure: there is **no `-fsafe`/`-ffast` divergence** (both modes emit the same
+wrong code). It did not block the M5 `-fsafe` mission — the example uses the
+correct one-argument `@ptrFromInt(expr)` form — but it is filed here per the
+standing rule that any compiler (not example) defect is recorded, never silently
+skipped.
+
+**Symptom.** Z98's language spec (`docs/reference/Language_Spec_Z98.md` §4) and
+manual define `@ptrFromInt(expr)` — **one** argument, result type from context;
+the two-argument form is `@intToPtr(T, value)`. `@ptrFromInt` with an explicit
+type argument (`@ptrFromInt(*T, value)`) is nevertheless **accepted** and emits
+wrong code: the cast's source operand is the **destination variable itself**
+(an uninitialised local), not the constant/expression. The intended `value` is
+dropped. The compiler should reject the extra argument with a diagnostic.
+
+**Minimal reproducer.**
+
+```zig
+// repro.zig
+const std = @import("std");
+pub fn main() void {
+    var p: *u8 = @ptrFromInt(*u8, 7);
+    std.io.printInt(@intCast(i32, @intFromPtr(p)));
+    std.io.write("\n");
+}
+```
+
+```
+zig1 -fsafe -o /tmp/d6out repro.zig
+cd /tmp/d6out && sh build_target.sh linux /tmp/d6out/prog
+/tmp/d6out/prog          # prints garbage (observed `1`), not `7`
+zig1 -ffast -o /tmp/d6outf repro.zig   # identical emitted C
+```
+
+**Emitted C (both `-fsafe` and `-ffast`, byte-identical for this function).**
+
+```c
+void zF_EA90E208_main(void) {
+    unsigned char* zT_1;
+    ...
+    unsigned char* p;
+    zT_1 = (unsigned char*)(unsigned int)p;   /* reads p (uninitialised) -- should be 7 */
+    p = zT_1;
+    ...
+}
+```
+
+`value` (`7`) never appears; the `@ptrFromInt` type argument is consumed and the
+integer argument is lost, so the lowering's `int_to_ptr.value` temp resolves to
+the result variable's slot. `@ptrFromInt(7)` (one argument) and
+`@intToPtr(*u8, 7)` (two arguments, old spelling) both emit correct code
+(`zT_1 = (unsigned char*)(unsigned int)zT_2;` with `zT_2 = 7;`), so the defect is
+specific to `@ptrFromInt` receiving an extra type argument.
+
+**Workaround (used by the M5 fix).** Use the documented one-argument
+`@ptrFromInt(expr)` (result type inferred from the annotated target) or the
+two-argument `@intToPtr(T, value)`. `peer.zig`'s `zeroPieceIO` uses
+`@ptrFromInt(0)`.
+
+**Proper fix (not done; compiler frozen during this task).** Diagnose an
+`@ptrFromInt` call whose argument count exceeds one, or lower the extra type
+argument explicitly if the two-argument spelling is meant to be supported.

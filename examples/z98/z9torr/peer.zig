@@ -284,9 +284,11 @@ fn emptyBlockStates() []piece.BlockState {
 
 // Zero-value constructors for the nested named-struct `Peer` fields. A struct
 // literal field of a nested named-struct type cannot be `undefined` in Z98
-// emission (it lowers to `0`, a C type error), so `main.zig` initialises those
-// fields through these helpers. All are overwritten before use (`makeHandshake`,
-// `readHandshakeAsync`, `pieceInit`, the explicit `io` assignments).
+// emission (it lowers to `0`, a C type error). `-fsafe` poisons `undefined`
+// with 0xAA, so these fully initialise every field (never `return undefined`)
+// and no poisoned field is ever read; callers still overwrite the fields before
+// use (`makeHandshake`, `readHandshakeAsync`, `pieceInit`, the explicit `io`
+// assignments).
 pub fn zeroPieceState() piece.PieceState {
     var x: piece.PieceState = undefined;
     x.index = 0;
@@ -298,13 +300,55 @@ pub fn zeroPieceState() piece.PieceState {
     return x;
 }
 
+// All-zero `torrent.Torrent` for `zeroPieceIO` (its slices/arrays must be
+// written, not left `undefined`, so no poisoned field is ever read).
+fn zeroTorrent() torrent.Torrent {
+    var ih: [20]u8 = undefined;
+    var i: usize = 0;
+    while (i < 20) : (i += 1) {
+        ih[i] = 0;
+    }
+    var alist: [8][]const u8 = undefined;
+    var e: []const u8 = "";
+    i = 0;
+    while (i < 8) : (i += 1) {
+        alist[i] = e;
+    }
+    return torrent.Torrent{
+        .announce = e,
+        .announce_list = alist,
+        .announce_count = 0,
+        .info_hash = ih,
+        .name = e,
+        .piece_length = 0,
+        .piece_hashes = e,
+        .total_length = 0,
+    };
+}
+
 pub fn zeroPieceIO() piece.PieceIO {
     var x: piece.PieceIO = undefined;
+    x.arena = @ptrFromInt(0);
+    x.t = zeroTorrent();
+    x.f = @ptrFromInt(0);
     return x;
 }
 
 pub fn zeroHandshake() wire.Handshake {
     var x: wire.Handshake = undefined;
+    var i: usize = 0;
+    while (i < 19) : (i += 1) {
+        x.pstr[i] = 0;
+    }
+    i = 0;
+    while (i < 8) : (i += 1) {
+        x.reserved[i] = 0;
+    }
+    i = 0;
+    while (i < 20) : (i += 1) {
+        x.info_hash[i] = 0;
+        x.peer_id[i] = 0;
+    }
     return x;
 }
 

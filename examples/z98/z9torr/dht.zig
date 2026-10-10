@@ -667,7 +667,7 @@ fn fillId(id: *[20]u8, seed: u32) void {
     if (st == 0) st = 1;
     var i: usize = 0;
     while (i < 20) : (i += 1) {
-        st = st * @intCast(u32, 1664525) + @intCast(u32, 1013904223);
+        st = st *% @intCast(u32, 1664525) +% @intCast(u32, 1013904223);
         id[i] = @intCast(u8, (st >> 16) & @intCast(u32, 0xFF));
     }
 }
