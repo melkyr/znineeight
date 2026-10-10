@@ -29,10 +29,12 @@
 // B->A RC4 context), consuming PadB unencrypted, then advances the RC4 context
 // past the VC. PadA/PadC/PadD are sent as zero length.
 //
-// The handshake is BLOCKING (select(2)-gated on the non-blocking socket, with a
-// fixed deadline), matching `wire.readHandshake`/`writeHandshake`; it does not
-// use `@asyncSuspend`, so it is safe to call from `peerRun` before the message
-// loop and avoids the D3/D4 coroutine-frame hazards.
+// The handshake is COROUTINE-AWARE (M4.1 Task 4): every transport helper yields
+// on `WouldBlock` via `@asyncSuspend`, bounded by the absolute `DEADLINE_MS`, so
+// one silent/dead peer never blocks the single-threaded scheduler. It is called
+// only from `peerRun`'s coroutine; the RC4 contexts and all scratch buffers are
+// caller-owned (`peer.enc`/`peer.msesc`) so no state crosses a suspension in the
+// frame — D3/D4 discipline.
 //
 // Z98 rules: free functions only, no generics/`anytype`, strict `@intCast`,
 // every `switch` has `else`, string literals via `var s: []const u8`. D2: every
@@ -63,6 +65,31 @@ pub const HASH_LEN: usize = 20;
 pub const VC_LEN: usize = 8;
 pub const PAD_MAX: u32 = 512;
 pub const DISCARD: usize = 1024;
+
+// Per-peer MSE handshake scratch, owned by the caller (`peer.msesc`) so no
+// fixed-size array lives in the coroutine frame across a suspension: the
+// emitter saves a frame array with a C array assignment, which C89 rejects (the
+// same reason `wire.readHandshakeAsync` takes slices, not `[20]u8`). The RC4
+// contexts stay frame locals (struct assignment is valid C89).
+pub const MseScratch = struct {
+    xa: [HASH_LEN]u8,
+    ya: [DH_LEN]u8,
+    yb: [DH_LEN]u8,
+    s: [DH_LEN]u8,
+    key_a: [HASH_LEN]u8,
+    key_b: [HASH_LEN]u8,
+    req1: [HASH_LEN]u8,
+    r2: [HASH_LEN]u8,
+    r3: [HASH_LEN]u8,
+    req2x: [HASH_LEN]u8,
+    blk: [VC_LEN + 4 + 2 + 2]u8,
+    enc_vc: [VC_LEN]u8,
+    win: [VC_LEN]u8,
+    sel_b: [4]u8,
+    pdl_b: [2]u8,
+    one: [1]u8,
+    b: [1]u8,
+};
 
 // MSE crypto method bitfield bits (spec §4.2).
 pub const CRYPTO_PLAINTEXT: u32 = 0x01;
@@ -171,38 +198,20 @@ fn burn1024(ctx: *std_crypto.Rc4) void {
     std_crypto.rc4Apply(ctx, burn[0..]);
 }
 
-// --- blocking, select-gated transport ---------------------------------------
-
-fn waitReadable(sock: std_net.Socket, remaining_ms: i32) MseError!void {
-    var s: std_net.Socket = sock;
-    var fds: std_net.fd_set = undefined;
-    std_net.fdZero(@ptrCast(*u8, &fds));
-    std_net.fdSet(s, @ptrCast(*u8, &fds));
-    const sr = std_net.select(s + 1, @ptrCast(*u8, &fds), null, null, remaining_ms);
-    if (sr == 0) return error.Timeout;
-    if (sr < 0) return error.NetFailed;
-}
-
-fn waitWritable(sock: std_net.Socket, remaining_ms: i32) MseError!void {
-    var s: std_net.Socket = sock;
-    var fds: std_net.fd_set = undefined;
-    std_net.fdZero(@ptrCast(*u8, &fds));
-    std_net.fdSet(s, @ptrCast(*u8, &fds));
-    const sr = std_net.select(s + 1, null, @ptrCast(*u8, &fds), null, remaining_ms);
-    if (sr == 0) return error.Timeout;
-    if (sr < 0) return error.NetFailed;
-}
+// --- coroutine-aware transport ----------------------------------------------
+// Every helper yields on `WouldBlock` via `@asyncSuspend` and fails with
+// `MseError.Timeout` once the absolute `start_ms + DEADLINE_MS` budget elapses.
+// The scheduler therefore keeps running other peers while one probe waits on a
+// silent socket (the blocking `select(2)` sits removed).
 
 fn sendAllMse(sock: std_net.Socket, data: []const u8, start_ms: u32) MseError!void {
     var s: std_net.Socket = sock;
     var off: usize = 0;
     while (off < data.len) {
-        var now: u32 = std.time.ticksMs();
-        if (now - start_ms >= DEADLINE_MS) return error.Timeout;
-        var rem: i32 = @intCast(i32, DEADLINE_MS - (now - start_ms));
+        if (std.time.ticksMs() - start_ms >= DEADLINE_MS) return error.Timeout;
         const n = std_net.sendNonBlocking(&s, data[off..]) catch |e| {
             if (e == error.WouldBlock) {
-                try waitWritable(sock, rem);
+                _ = @asyncSuspend(null);
                 continue;
             }
             return error.NetFailed;
@@ -216,12 +225,10 @@ fn recvExactMse(sock: std_net.Socket, dst: []u8, start_ms: u32) MseError!void {
     var s: std_net.Socket = sock;
     var off: usize = 0;
     while (off < dst.len) {
-        var now: u32 = std.time.ticksMs();
-        if (now - start_ms >= DEADLINE_MS) return error.Timeout;
-        var rem: i32 = @intCast(i32, DEADLINE_MS - (now - start_ms));
+        if (std.time.ticksMs() - start_ms >= DEADLINE_MS) return error.Timeout;
         const n = std_net.recvNonBlocking(&s, dst[off..]) catch |e| {
             if (e == error.WouldBlock) {
-                try waitReadable(sock, rem);
+                _ = @asyncSuspend(null);
                 continue;
             }
             return error.NetFailed;
@@ -277,108 +284,99 @@ fn stageFail(label: []const u8, e: MseError) MseError {
 }
 
 // Outbound MSE/PE handshake: send Ya, read Yb, sync on the responder's VC, and
-// return the two RC4 contexts (already advanced past the 1024-byte discard and
-// the 8-byte VC). We offer RC4 only; a responder that selects anything else is
-// `MseError.BadMethod`, and the caller falls back to a plaintext reconnect.
-pub fn mseConnect(sock: std_net.Socket, info_hash: []const u8, seed: u32) MseError!Rc4Pair {
+// write the two RC4 contexts (already advanced past the 1024-byte discard and
+// the 8-byte VC) through `out`. We offer RC4 only; a responder that selects
+// anything else is `MseError.BadMethod`, and the caller falls back to a
+// plaintext reconnect. Coroutine-aware (M4.1 Task 4): every byte of I/O yields
+// on `WouldBlock` via `@asyncSuspend` and gives up at the absolute deadline, so
+// a silent/dead peer never blocks the single-threaded scheduler. `out` and `sc`
+// are caller-owned (`peer.enc`/`peer.msesc`); no module globals cross a
+// suspension — D3/D4 discipline.
+pub fn mseConnectAsync(sock: std_net.Socket, info_hash: []const u8, seed: u32, out: *Rc4Pair, sc: *MseScratch) MseError!void {
     if (info_hash.len != HASH_LEN) return error.MseFailed;
     var start_ms: u32 = std.time.ticksMs();
 
     // step 1: ephemeral key + Ya (PadA empty).
-    var xa: [HASH_LEN]u8 = undefined;
-    makeSecret(seed, xa[0..]);
-    var ya: [DH_LEN]u8 = undefined;
-    dhPublic(xa[0..], ya[0..]);
+    makeSecret(seed, sc.xa[0..]);
+    dhPublic(sc.xa[0..], sc.ya[0..]);
     logmod.s("mse stage=ya len=");
     logmod.u32v(@intCast(u32, DH_LEN));
     logmod.s(" hex=");
-    logmod.hex(ya[0..]);
+    logmod.hex(sc.ya[0..]);
     logmod.nl();
-    sendAllMse(sock, ya[0..], start_ms) catch |e| return stageFail("ya", e);
+    sendAllMse(sock, sc.ya[0..], start_ms) catch |e| return stageFail("ya", e);
 
     // step 2: read Yb (PadB is handled by the VC scan below).
-    var yb: [DH_LEN]u8 = undefined;
-    recvExactMse(sock, yb[0..], start_ms) catch |e| return stageFail("yb", e);
+    recvExactMse(sock, sc.yb[0..], start_ms) catch |e| return stageFail("yb", e);
     logmod.s("mse stage=yb len=");
     logmod.u32v(@intCast(u32, DH_LEN));
     logmod.s(" hex=");
-    logmod.hex(yb[0..]);
+    logmod.hex(sc.yb[0..]);
     logmod.nl();
 
-    var s: [DH_LEN]u8 = undefined;
-    dhShared(yb[0..], xa[0..], s[0..]);
+    dhShared(sc.yb[0..], sc.xa[0..], sc.s[0..]);
 
-    var key_a: [HASH_LEN]u8 = undefined;
-    var key_b: [HASH_LEN]u8 = undefined;
-    deriveKeys(s[0..], info_hash, &key_a, &key_b);
+    deriveKeys(sc.s[0..], info_hash, &sc.key_a, &sc.key_b);
     logmod.s("mse stage=keys key_a=");
-    logmod.hex(key_a[0..]);
+    logmod.hex(sc.key_a[0..]);
     logmod.s(" key_b=");
-    logmod.hex(key_b[0..]);
+    logmod.hex(sc.key_b[0..]);
     logmod.nl();
 
     var rc4_out: std_crypto.Rc4 = undefined;
     var rc4_in: std_crypto.Rc4 = undefined;
-    std_crypto.rc4Init(key_a[0..], &rc4_out);
-    std_crypto.rc4Init(key_b[0..], &rc4_in);
+    std_crypto.rc4Init(sc.key_a[0..], &rc4_out);
+    std_crypto.rc4Init(sc.key_b[0..], &rc4_in);
     burn1024(&rc4_out);
     burn1024(&rc4_in);
 
     // step 3: req1, req2xor, ENCRYPT_A(VC, provide, len(PadC)=0, len(IA)=0).
-    var req1: [HASH_LEN]u8 = undefined;
-    hash2("req1", s[0..], &req1);
-    var r2: [HASH_LEN]u8 = undefined;
-    hash2("req2", info_hash, &r2);
-    var r3: [HASH_LEN]u8 = undefined;
-    hash2("req3", s[0..], &r3);
-    var req2x: [HASH_LEN]u8 = undefined;
+    hash2("req1", sc.s[0..], &sc.req1);
+    hash2("req2", info_hash, &sc.r2);
+    hash2("req3", sc.s[0..], &sc.r3);
     var i: usize = 0;
-    while (i < HASH_LEN) : (i += 1) req2x[i] = r2[i] ^ r3[i];
+    while (i < HASH_LEN) : (i += 1) sc.req2x[i] = sc.r2[i] ^ sc.r3[i];
     logmod.s("mse stage=req1 hex=");
-    logmod.hex(req1[0..]);
+    logmod.hex(sc.req1[0..]);
     logmod.nl();
     logmod.s("mse stage=req2xor hex=");
-    logmod.hex(req2x[0..]);
+    logmod.hex(sc.req2x[0..]);
     logmod.nl();
-    sendAllMse(sock, req1[0..], start_ms) catch |e| return stageFail("req1", e);
-    sendAllMse(sock, req2x[0..], start_ms) catch |e| return stageFail("req2xor", e);
+    sendAllMse(sock, sc.req1[0..], start_ms) catch |e| return stageFail("req1", e);
+    sendAllMse(sock, sc.req2x[0..], start_ms) catch |e| return stageFail("req2xor", e);
 
-    var blk: [VC_LEN + 4 + 2 + 2]u8 = undefined;
     i = 0;
-    while (i < VC_LEN) : (i += 1) blk[i] = 0;
-    writeU32BE(blk[VC_LEN..VC_LEN + 4], CRYPTO_RC4);
-    writeU16BE(blk[VC_LEN + 4 .. VC_LEN + 6], 0); // len(PadC)
-    writeU16BE(blk[VC_LEN + 6 .. VC_LEN + 8], 0); // len(IA)
-    std_crypto.rc4Apply(&rc4_out, blk[0..]);
+    while (i < VC_LEN) : (i += 1) sc.blk[i] = 0;
+    writeU32BE(sc.blk[VC_LEN..VC_LEN + 4], CRYPTO_RC4);
+    writeU16BE(sc.blk[VC_LEN + 4 .. VC_LEN + 6], 0); // len(PadC)
+    writeU16BE(sc.blk[VC_LEN + 6 .. VC_LEN + 8], 0); // len(IA)
+    std_crypto.rc4Apply(&rc4_out, sc.blk[0..]);
     logmod.s("mse stage=provide_enc hex=");
-    logmod.hex(blk[0..]);
+    logmod.hex(sc.blk[0..]);
     logmod.nl();
-    sendAllMse(sock, blk[0..], start_ms) catch |e| return stageFail("provide", e);
+    sendAllMse(sock, sc.blk[0..], start_ms) catch |e| return stageFail("provide", e);
 
     // step 4: scan the raw B->A bytes for ENCRYPT_B(VC).
     var peeker: std_crypto.Rc4 = rc4_in;
-    var enc_vc: [VC_LEN]u8 = undefined;
     i = 0;
-    while (i < VC_LEN) : (i += 1) enc_vc[i] = 0;
-    std_crypto.rc4Apply(&peeker, enc_vc[0..]);
+    while (i < VC_LEN) : (i += 1) sc.enc_vc[i] = 0;
+    std_crypto.rc4Apply(&peeker, sc.enc_vc[0..]);
     logmod.s("mse stage=enc_vc hex=");
-    logmod.hex(enc_vc[0..]);
+    logmod.hex(sc.enc_vc[0..]);
     logmod.nl();
 
-    var win: [VC_LEN]u8 = undefined;
     i = 0;
-    while (i < VC_LEN) : (i += 1) win[i] = 0;
+    while (i < VC_LEN) : (i += 1) sc.win[i] = 0;
     var cnt: usize = 0;
     var found: bool = false;
     var scanned: u32 = 0;
     while (scanned < SCAN_MAX and !found) : (scanned += 1) {
-        var b: [1]u8 = undefined;
-        recvExactMse(sock, b[0..], start_ms) catch |e| return stageFail("vcscan", e);
+        recvExactMse(sock, sc.b[0..], start_ms) catch |e| return stageFail("vcscan", e);
         var k: usize = 0;
-        while (k + 1 < VC_LEN) : (k += 1) win[k] = win[k + 1];
-        win[VC_LEN - 1] = b[0];
+        while (k + 1 < VC_LEN) : (k += 1) sc.win[k] = sc.win[k + 1];
+        sc.win[VC_LEN - 1] = sc.b[0];
         cnt += 1;
-        if (cnt >= VC_LEN and eq8(win[0..], enc_vc[0..])) found = true;
+        if (cnt >= VC_LEN and eq8(sc.win[0..], sc.enc_vc[0..])) found = true;
     }
     logmod.s("mse stage=vcsync found=");
     if (found) {
@@ -392,33 +390,31 @@ pub fn mseConnect(sock: std_net.Socket, info_hash: []const u8, seed: u32) MseErr
     if (!found) return error.MseFailed;
 
     // Advance the real B->A context past the 8-byte VC.
-    std_crypto.rc4Apply(&rc4_in, enc_vc[0..]);
+    std_crypto.rc4Apply(&rc4_in, sc.enc_vc[0..]);
 
     // crypto_select (u32) + len(PadD)(u16) + PadD.
-    var sel_b: [4]u8 = undefined;
-    recvDecMse(sock, &rc4_in, sel_b[0..], start_ms) catch |e| return stageFail("select", e);
-    var method: u32 = readU32BE(sel_b[0..]);
+    recvDecMse(sock, &rc4_in, sc.sel_b[0..], start_ms) catch |e| return stageFail("select", e);
+    var method: u32 = readU32BE(sc.sel_b[0..]);
     logmod.s("mse stage=select method=");
     logmod.u32v(method);
     logmod.nl();
     if (method != CRYPTO_RC4) return error.BadMethod;
 
-    var pdl_b: [2]u8 = undefined;
-    recvDecMse(sock, &rc4_in, pdl_b[0..], start_ms) catch |e| return stageFail("padd_len", e);
-    var pad_d_len: u32 = @intCast(u32, readU16BE(pdl_b[0..]));
+    recvDecMse(sock, &rc4_in, sc.pdl_b[0..], start_ms) catch |e| return stageFail("padd_len", e);
+    var pad_d_len: u32 = @intCast(u32, readU16BE(sc.pdl_b[0..]));
     logmod.s("mse stage=padd len=");
     logmod.u32v(pad_d_len);
     logmod.nl();
     var skipped: u32 = 0;
     while (skipped < pad_d_len) : (skipped += 1) {
-        var one: [1]u8 = undefined;
-        recvDecMse(sock, &rc4_in, one[0..], start_ms) catch |e| return stageFail("padd_body", e);
+        recvDecMse(sock, &rc4_in, sc.one[0..], start_ms) catch |e| return stageFail("padd_body", e);
     }
 
     logmod.s("mse stage=done");
     logmod.nl();
-    var pair: Rc4Pair = undefined;
-    pair.out = rc4_out;
-    pair.in = rc4_in;
-    return pair;
+    // Write the two contexts through the caller-owned out-param (D4: no
+    // struct-return temp crosses a suspension in this coroutine).
+    out.out = rc4_out;
+    out.in = rc4_in;
+    return;
 }

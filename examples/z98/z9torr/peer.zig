@@ -2,21 +2,22 @@
 //
 // Spec 2026-10-08 §3/§6/§7/§8, blueprint `peer` section. `peerRun` is a
 // suspending function driven by the caller's `std.async` scheduler. It:
-//   1. connects (`std_net.connectToIp`, which leaves the socket non-blocking);
-//   2. writes our handshake and reads/validates the peer's (info_hash must
-//      match — `PeerError.InfoHashMismatch`);
+//   1. connects with `connectAsync` — a non-blocking `connect(2)` that yields on
+//      WouldBlock (M4.1 Task 4), so a dead peer cannot freeze the scheduler;
+//   2. runs the MSE/PE probe (`mse.mseConnectAsync`, also coroutine-aware),
+//      then writes our handshake and reads/validates the peer's (info_hash must
+//      match — `PeerError.InfoHashMismatch`), falling back to a fresh plaintext
+//      connection if the probe fails;
 //   3. sends `interested`, then reads `bitfield`/`have`, and waits for
 //      `unchoke`;
 //   4. pumps depth-4 `request`s and feeds each `piece` to `piece.onBlock`
 //      (write-through + SHA-1 verify) until every piece is verified.
 //
 // The socket is non-blocking, so every wait yields via `@asyncSuspend(null)`
-// (directly in `wire.recvExactAsync`, or through `std_stream.readMsgAsync`).
-// All coroutine-live state lives in file-scope globals or the caller-owned
-// `Peer`/`RunCtx` (spec §12 risk 1: keep large state out of coroutine locals).
-//
-// The handshake is read with `wire.readHandshakeAsync` (the non-blocking
-// counterpart of `wire.readHandshake` added under D-c).
+// (directly in `wire.recvExactAsync`, in `connectAsync`/`mse`, or through
+// `std_stream.readMsgAsync`). All coroutine-live state lives in file-scope
+// globals or the caller-owned `Peer`/`RunCtx` (spec §12 risk 1: keep large
+// state out of coroutine locals — e.g. the MSE scratch is `peer.msesc`).
 //
 // `peerRun` returns `void`, not `!void`: the landed `std.async` drive loop
 // consumes only `@asyncResume`'s `?*void` step status, so a coroutine cannot
@@ -51,14 +52,27 @@ pub const PeerError = wire.PeerError;
 
 const HANDSHAKE_LEN: usize = 68;
 const KEEPALIVE_MS: u32 = 120000;
-// Per-peer connect budget. `std_net.connectToIp` blocks the whole run for up to
-// this long on a dead peer (the scheduler's `tick` resumes one coroutine at a
-// time), so the swarm's worst-case serial connect time is
-// `MAX_RUNTIME_PEERS * CONNECT_TIMEOUT_MS`. Bound it well under `STALL_MS`
-// (60 s): 16 * 1000 ms = 16 s << 60 s, so dead peers cannot by themselves trip
-// the stall detector (spec §7/§8; M3 final-review fix 3). The std-lib connect
-// stays untouched — this is an example-local bound.
+// Per-peer connect budget. `connectAsync` issues a non-blocking connect and
+// yields via `@asyncSuspend` until the socket reports writable (or this deadline
+// elapses), so a dead/unresponsive peer costs the scheduler only a tick per
+// retry instead of freezing `tick` inside a blocking `select(2)`. Bound it well
+// under `STALL_MS` (60 s) so dead peers cannot by themselves trip the stall
+// detector (spec §7/§8; M3 final-review fix 3).
 const CONNECT_TIMEOUT_MS: u32 = 1000;
+
+// IPv4 sockaddr for the raw `connect(2)`. Same layout std_net uses internally
+// (`SockAddrIn` is private there), so the example can issue the non-blocking
+// connect without an sf/src change (post-D1–D5 freeze).
+const SockAddrIn = struct {
+    sin_family: u16,
+    sin_port: u16,
+    sin_addr: u32,
+    sin_zero: [8]u8,
+};
+
+// net_prelude.h aliases `connect_os` to the OS `connect`, matching std_net's own
+// extern; `peer`'s generated TU sees that prelude through std_net.h.
+extern "stdcall" fn connect_os(s: i32, name: *const void, namelen: i32) i32;
 
 // Debug switch (wired by main from Z9TORR_CLAIM_LOG): when set, each scheduler
 // claim prints one `claim slot=.. piece=..` line so a test can assert no two
@@ -92,6 +106,9 @@ pub const Peer = struct {
     // are overwritten in `peerRun` before use, so an uninitialised slot is safe.
     enc: mse.Rc4Pair,
     encrypted: bool,
+    // M4.1 Task 4: caller-owned MSE handshake scratch (fixed arrays cannot live
+    // in the coroutine frame across a suspension — see `mse.MseScratch`).
+    msesc: mse.MseScratch,
     // M4: per-peer BEP 10/11 peer-exchange negotiation state (ut_pex id). Set by
     // `pexInit` at the top of `peerRun` before any extended message is parsed.
     pex: pex.PexState,
@@ -244,49 +261,132 @@ fn mseErrorName(e: mse.MseError) []const u8 {
     return "Unknown";
 }
 
-// Encrypted-first step: run the outbound MSE/PE handshake and, on success, copy
-// the two RC4 contexts into `peer.enc`. Returns false on any failure (logged);
-// the caller then falls back to a fresh plaintext connection. Non-suspending
-// (`mse.mseConnect` uses select(2)-gated blocking I/O).
-fn mseHandshake(ctx: *RunCtx, peer: *Peer) bool {
-    var pair: mse.Rc4Pair = undefined;
-    pair = mse.mseConnect(peer.sock, ctx.t.info_hash[0..], ctx.mse_seed) catch |me| {
+// Coroutine-aware non-blocking connect. Issues `connect(2)` on the already
+// non-blocking socket, then yields until the socket reports writable; a real
+// failure surfaces through `checkSoError` (SO_ERROR), a still-in-progress one
+// keeps yielding until `deadline_ms` elapses (`error.Timeout`). No blocking
+// `select(2)` timeout, so the scheduler keeps running other peers.
+fn connectAsync(sock: std_net.Socket, ip_be: u32, port: u16, deadline_ms: u32) std_net.NetError!void {
+    var s: std_net.Socket = sock;
+    try std_net.setNonBlocking(&s);
+    var addr = SockAddrIn{
+        .sin_family = @intCast(u16, 2),
+        .sin_port = std_net.htons(port),
+        .sin_addr = ip_be,
+        .sin_zero = [8]u8{ 0, 0, 0, 0, 0, 0, 0, 0 },
+    };
+    // Non-blocking: 0 = connected immediately, -1 = in progress (or a real
+    // error the SO_ERROR poll reports). errno is private to std_net, so the
+    // outcome is read from the socket with `select` + `checkSoError`.
+    _ = connect_os(s, @ptrCast(*const void, &addr), @intCast(i32, 16));
+    var start: u32 = std.time.ticksMs();
+    var done: bool = false;
+    while (!done) {
+        var wfds: std_net.fd_set = undefined;
+        std_net.fdZero(@ptrCast(*u8, &wfds));
+        std_net.fdSet(s, @ptrCast(*u8, &wfds));
+        const sr = std_net.select(s + 1, null, @ptrCast(*u8, &wfds), null, @intCast(i32, 0));
+        if (sr > 0) {
+            try std_net.checkSoError(s);
+            done = true;
+        } else if (sr < 0) {
+            return error.Io;
+        } else if (std.time.ticksMs() - start >= deadline_ms) {
+            return error.Timeout;
+        } else {
+            _ = @asyncSuspend(null);
+        }
+    }
+}
+
+// Socket + initial connect for one peer, with the peer trace. Void return
+// (success in `ok_out`) so `peerRun` sees only void implicit awaits from the
+// connect path and keeps one common parent_result type for the async transform.
+fn connectPeer(peer: *Peer, deadline_ms: u32, ok_out: *bool) void {
+    peer.sock = std_net.tcpSocket() catch {
+        logmod.s("peer slot=");
+        logmod.u32v(peer.slot);
+        logmod.s(" socket-fail");
+        logmod.nl();
+        ok_out.* = false;
+        return;
+    };
+    connectAsync(peer.sock, peer.addr.ip_be, peer.addr.port, deadline_ms) catch |e| {
+        var nm: []const u8 = "other";
+        if (e == error.Timeout) nm = "timeout";
+        if (e == error.ConnRefused) nm = "refused";
+        if (e == error.ConnReset) nm = "reset";
+        if (e == error.NotConnected) nm = "notconnected";
+        if (e == error.WouldBlock) nm = "wouldblock";
+        if (e == error.ResolveFailed) nm = "resolvefailed";
+        if (e == error.InvalidAddr) nm = "invalidaddr";
+        if (e == error.Io) nm = "io";
+        logmod.s("peer slot=");
+        logmod.u32v(peer.slot);
+        logmod.s(" connect-fail err=");
+        logmod.s(nm);
+        logmod.nl();
+        std_net.close(peer.sock);
+        ok_out.* = false;
+        return;
+    };
+    logmod.s("peer slot=");
+    logmod.u32v(peer.slot);
+    logmod.s(" fd=");
+    logmod.i32v(peer.sock);
+    logmod.nl();
+    ok_out.* = true;
+}
+
+// Encrypted-first step: run the outbound MSE/PE handshake into `peer.enc`.
+// Success is written to `ok_out` (false on any failure, logged); the caller then
+// falls back to a fresh plaintext connection. Coroutine-aware: `mseConnectAsync`
+// yields on WouldBlock. Void return for the same async parent_result reason.
+fn mseHandshake(ctx: *RunCtx, peer: *Peer, ok_out: *bool) void {
+    mse.mseConnectAsync(peer.sock, ctx.t.info_hash[0..], ctx.mse_seed, &peer.enc, &peer.msesc) catch |me| {
         logmod.s("peer slot=");
         logmod.u32v(peer.slot);
         logmod.s(" mse-fail err=");
         logmod.s(mseErrorName(me));
         logmod.nl();
-        return false;
+        ok_out.* = false;
+        return;
     };
-    peer.enc = pair;
-    return true;
+    ok_out.* = true;
 }
 
 // Bounded plaintext fallback: close the (now unusable) MSE socket and open a
-// fresh one, retrying briefly while the tier2 harness (re)starts the one-shot
-// plaintext mock. Blocking, like `connectToIp`; bounded to ~3 s.
-fn plainReconnect(ctx: *RunCtx, peer: *Peer) bool {
+// fresh one, retrying while the tier2 harness (re)starts the one-shot plaintext
+// mock. Coroutine-aware: `connectAsync` yields, and the inter-attempt pause is a
+// cooperative `@asyncSuspend` rather than `sleepMs`, so it never blocks the
+// scheduler. Bounded to ~3 s. Void return (success in `ok_out`) so `peerRun`'s
+// implicit awaits keep one common parent_result type (zig1 async P2/P4 order).
+fn plainReconnect(ctx: *RunCtx, peer: *Peer, ok_out: *bool) void {
     _ = ctx;
+    ok_out.* = false;
     std_net.close(peer.sock);
     peer.sock = @intCast(i32, -1);
     var start: u32 = std.time.ticksMs();
     var attempt: u32 = 0;
     while (attempt < 100) : (attempt += 1) {
-        if (std.time.ticksMs() - start > 3000) return false;
+        var elapsed: u32 = std.time.ticksMs() - start;
+        if (elapsed > 3000) return;
         peer.sock = std_net.tcpSocket() catch {
             peer.sock = @intCast(i32, -1);
-            std.time.sleepMs(20);
+            _ = @asyncSuspend(null);
             continue;
         };
-        std_net.connectToIp(peer.sock, peer.addr.ip_be, peer.addr.port, CONNECT_TIMEOUT_MS) catch {
+        var rem: u32 = 3000 - elapsed;
+        if (rem > CONNECT_TIMEOUT_MS) rem = CONNECT_TIMEOUT_MS;
+        connectAsync(peer.sock, peer.addr.ip_be, peer.addr.port, rem) catch {
             std_net.close(peer.sock);
             peer.sock = @intCast(i32, -1);
-            std.time.sleepMs(20);
+            _ = @asyncSuspend(null);
             continue;
         };
-        return true;
+        ok_out.* = true;
+        return;
     }
-    return false;
 }
 
 // The handshake read/validation now lives in `wire.readHandshakeAsync` (D-c);
@@ -538,46 +638,22 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
     logmod.u32v(@intCast(u32, peer.addr.port));
     logmod.nl();
 
-    peer.sock = std_net.tcpSocket() catch {
-        logmod.s("peer slot=");
-        logmod.u32v(peer.slot);
-        logmod.s(" socket-fail");
-        logmod.nl();
+    var cok: bool = false;
+    connectPeer(peer, CONNECT_TIMEOUT_MS, &cok);
+    if (!cok) {
         logPeerEnd(peer);
         return;
-    };
-    std_net.connectToIp(peer.sock, peer.addr.ip_be, peer.addr.port, CONNECT_TIMEOUT_MS) catch |e| {
-        var nm: []const u8 = "other";
-        if (e == error.Timeout) nm = "timeout";
-        if (e == error.ConnRefused) nm = "refused";
-        if (e == error.ConnReset) nm = "reset";
-        if (e == error.NotConnected) nm = "notconnected";
-        if (e == error.WouldBlock) nm = "wouldblock";
-        if (e == error.ResolveFailed) nm = "resolvefailed";
-        if (e == error.InvalidAddr) nm = "invalidaddr";
-        if (e == error.Io) nm = "io";
-        logmod.s("peer slot=");
-        logmod.u32v(peer.slot);
-        logmod.s(" connect-fail err=");
-        logmod.s(nm);
-        logmod.nl();
-        std_net.close(peer.sock);
-        logPeerEnd(peer);
-        return;
-    };
+    }
 
-    logmod.s("peer slot=");
-    logmod.u32v(peer.slot);
-    logmod.s(" fd=");
-    logmod.i32v(peer.sock);
-    logmod.nl();
 
     makeHandshake(ctx.t, peer.peer_id, &peer.hs);
 
     // Encrypted-first (spec §4.2): attempt MSE/PE; on success the rest of the
     // connection is RC4-wrapped. On failure, fall back to a fresh plaintext
     // socket (the MSE probe consumed the one-shot plaintext mock's connection).
-    if (mseHandshake(ctx, peer)) {
+    var mse_ok: bool = false;
+    mseHandshake(ctx, peer, &mse_ok);
+    if (mse_ok) {
         peer.encrypted = true;
         wire.writeHandshakeEnc(peer.sock, &peer.enc.out, &peer.hs) catch {
             logmod.s("peer slot=");
@@ -600,7 +676,9 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
         };
     } else {
         peer.encrypted = false;
-        if (!plainReconnect(ctx, peer)) {
+        var r_ok: bool = false;
+        plainReconnect(ctx, peer, &r_ok);
+        if (!r_ok) {
             logmod.s("peer slot=");
             logmod.u32v(peer.slot);
             logmod.s(" reconnect-fail");
