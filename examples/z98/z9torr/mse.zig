@@ -41,6 +41,7 @@
 const std = @import("std");
 const std_net = @import("std_net");
 const std_crypto = @import("std_crypto");
+const logmod = @import("log.zig");
 
 pub const MseError = error{
     MseFailed,
@@ -254,6 +255,27 @@ fn eq8(a: []const u8, b: []const u8) bool {
 
 // --- initiator handshake ----------------------------------------------------
 
+// Name for an `mse.MseError` in the `Z9TORR_LOG` stage trace.
+fn mseErrName(e: MseError) []const u8 {
+    if (e == error.MseFailed) return "MseFailed";
+    if (e == error.BadMethod) return "BadMethod";
+    if (e == error.Timeout) return "Timeout";
+    if (e == error.PeerClosed) return "PeerClosed";
+    if (e == error.NetFailed) return "NetFailed";
+    return "Unknown";
+}
+
+// `mse stage=<label> fail err=<name>` — record the exact failing stage then
+// return the error unchanged. Strictly a formatter (no-op when logging is off).
+fn stageFail(label: []const u8, e: MseError) MseError {
+    logmod.s("mse stage=");
+    logmod.s(label);
+    logmod.s(" fail err=");
+    logmod.s(mseErrName(e));
+    logmod.nl();
+    return e;
+}
+
 // Outbound MSE/PE handshake: send Ya, read Yb, sync on the responder's VC, and
 // return the two RC4 contexts (already advanced past the 1024-byte discard and
 // the 8-byte VC). We offer RC4 only; a responder that selects anything else is
@@ -267,11 +289,21 @@ pub fn mseConnect(sock: std_net.Socket, info_hash: []const u8, seed: u32) MseErr
     makeSecret(seed, xa[0..]);
     var ya: [DH_LEN]u8 = undefined;
     dhPublic(xa[0..], ya[0..]);
-    try sendAllMse(sock, ya[0..], start_ms);
+    logmod.s("mse stage=ya len=");
+    logmod.u32v(@intCast(u32, DH_LEN));
+    logmod.s(" hex=");
+    logmod.hex(ya[0..]);
+    logmod.nl();
+    sendAllMse(sock, ya[0..], start_ms) catch |e| return stageFail("ya", e);
 
     // step 2: read Yb (PadB is handled by the VC scan below).
     var yb: [DH_LEN]u8 = undefined;
-    try recvExactMse(sock, yb[0..], start_ms);
+    recvExactMse(sock, yb[0..], start_ms) catch |e| return stageFail("yb", e);
+    logmod.s("mse stage=yb len=");
+    logmod.u32v(@intCast(u32, DH_LEN));
+    logmod.s(" hex=");
+    logmod.hex(yb[0..]);
+    logmod.nl();
 
     var s: [DH_LEN]u8 = undefined;
     dhShared(yb[0..], xa[0..], s[0..]);
@@ -279,6 +311,11 @@ pub fn mseConnect(sock: std_net.Socket, info_hash: []const u8, seed: u32) MseErr
     var key_a: [HASH_LEN]u8 = undefined;
     var key_b: [HASH_LEN]u8 = undefined;
     deriveKeys(s[0..], info_hash, &key_a, &key_b);
+    logmod.s("mse stage=keys key_a=");
+    logmod.hex(key_a[0..]);
+    logmod.s(" key_b=");
+    logmod.hex(key_b[0..]);
+    logmod.nl();
 
     var rc4_out: std_crypto.Rc4 = undefined;
     var rc4_in: std_crypto.Rc4 = undefined;
@@ -297,8 +334,14 @@ pub fn mseConnect(sock: std_net.Socket, info_hash: []const u8, seed: u32) MseErr
     var req2x: [HASH_LEN]u8 = undefined;
     var i: usize = 0;
     while (i < HASH_LEN) : (i += 1) req2x[i] = r2[i] ^ r3[i];
-    try sendAllMse(sock, req1[0..], start_ms);
-    try sendAllMse(sock, req2x[0..], start_ms);
+    logmod.s("mse stage=req1 hex=");
+    logmod.hex(req1[0..]);
+    logmod.nl();
+    logmod.s("mse stage=req2xor hex=");
+    logmod.hex(req2x[0..]);
+    logmod.nl();
+    sendAllMse(sock, req1[0..], start_ms) catch |e| return stageFail("req1", e);
+    sendAllMse(sock, req2x[0..], start_ms) catch |e| return stageFail("req2xor", e);
 
     var blk: [VC_LEN + 4 + 2 + 2]u8 = undefined;
     i = 0;
@@ -307,7 +350,10 @@ pub fn mseConnect(sock: std_net.Socket, info_hash: []const u8, seed: u32) MseErr
     writeU16BE(blk[VC_LEN + 4 .. VC_LEN + 6], 0); // len(PadC)
     writeU16BE(blk[VC_LEN + 6 .. VC_LEN + 8], 0); // len(IA)
     std_crypto.rc4Apply(&rc4_out, blk[0..]);
-    try sendAllMse(sock, blk[0..], start_ms);
+    logmod.s("mse stage=provide_enc hex=");
+    logmod.hex(blk[0..]);
+    logmod.nl();
+    sendAllMse(sock, blk[0..], start_ms) catch |e| return stageFail("provide", e);
 
     // step 4: scan the raw B->A bytes for ENCRYPT_B(VC).
     var peeker: std_crypto.Rc4 = rc4_in;
@@ -315,6 +361,9 @@ pub fn mseConnect(sock: std_net.Socket, info_hash: []const u8, seed: u32) MseErr
     i = 0;
     while (i < VC_LEN) : (i += 1) enc_vc[i] = 0;
     std_crypto.rc4Apply(&peeker, enc_vc[0..]);
+    logmod.s("mse stage=enc_vc hex=");
+    logmod.hex(enc_vc[0..]);
+    logmod.nl();
 
     var win: [VC_LEN]u8 = undefined;
     i = 0;
@@ -324,13 +373,22 @@ pub fn mseConnect(sock: std_net.Socket, info_hash: []const u8, seed: u32) MseErr
     var scanned: u32 = 0;
     while (scanned < SCAN_MAX and !found) : (scanned += 1) {
         var b: [1]u8 = undefined;
-        try recvExactMse(sock, b[0..], start_ms);
+        recvExactMse(sock, b[0..], start_ms) catch |e| return stageFail("vcscan", e);
         var k: usize = 0;
         while (k + 1 < VC_LEN) : (k += 1) win[k] = win[k + 1];
         win[VC_LEN - 1] = b[0];
         cnt += 1;
         if (cnt >= VC_LEN and eq8(win[0..], enc_vc[0..])) found = true;
     }
+    logmod.s("mse stage=vcsync found=");
+    if (found) {
+        logmod.s("1");
+    } else {
+        logmod.s("0");
+    }
+    logmod.s(" scanned=");
+    logmod.u32v(scanned);
+    logmod.nl();
     if (!found) return error.MseFailed;
 
     // Advance the real B->A context past the 8-byte VC.
@@ -338,19 +396,27 @@ pub fn mseConnect(sock: std_net.Socket, info_hash: []const u8, seed: u32) MseErr
 
     // crypto_select (u32) + len(PadD)(u16) + PadD.
     var sel_b: [4]u8 = undefined;
-    try recvDecMse(sock, &rc4_in, sel_b[0..], start_ms);
+    recvDecMse(sock, &rc4_in, sel_b[0..], start_ms) catch |e| return stageFail("select", e);
     var method: u32 = readU32BE(sel_b[0..]);
+    logmod.s("mse stage=select method=");
+    logmod.u32v(method);
+    logmod.nl();
     if (method != CRYPTO_RC4) return error.BadMethod;
 
     var pdl_b: [2]u8 = undefined;
-    try recvDecMse(sock, &rc4_in, pdl_b[0..], start_ms);
+    recvDecMse(sock, &rc4_in, pdl_b[0..], start_ms) catch |e| return stageFail("padd_len", e);
     var pad_d_len: u32 = @intCast(u32, readU16BE(pdl_b[0..]));
+    logmod.s("mse stage=padd len=");
+    logmod.u32v(pad_d_len);
+    logmod.nl();
     var skipped: u32 = 0;
     while (skipped < pad_d_len) : (skipped += 1) {
         var one: [1]u8 = undefined;
-        try recvDecMse(sock, &rc4_in, one[0..], start_ms);
+        recvDecMse(sock, &rc4_in, one[0..], start_ms) catch |e| return stageFail("padd_body", e);
     }
 
+    logmod.s("mse stage=done");
+    logmod.nl();
     var pair: Rc4Pair = undefined;
     pair.out = rc4_out;
     pair.in = rc4_in;

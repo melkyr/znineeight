@@ -668,6 +668,11 @@ pub fn readHandshakeAsyncEnc(sock: std_net.Socket, dec: *std_crypto.Rc4, expecte
     recvExactEncAsync(sock, dec, out.reserved[0..], start_ms) catch |e| return e;
     recvExactEncAsync(sock, dec, out.info_hash[0..], start_ms) catch |e| return e;
     recvExactEncAsync(sock, dec, out.peer_id[0..], start_ms) catch |e| return e;
+    logmod.s("hsenc reserved=");
+    logmod.hex(out.reserved[0..]);
+    logmod.s(" peer_id=");
+    logmod.hex(out.peer_id[0..]);
+    logmod.nl();
 
     var pstr: []const u8 = "BitTorrent protocol";
     var i: usize = 0;
@@ -751,6 +756,9 @@ pub fn readMessageAsyncEnc(mr: *MsgReader, dec: *std_crypto.Rc4, out: *Message) 
         got += 1;
     }
     const len: u32 = std_net.htonl(raw);
+    logmod.s("enc frame len=");
+    logmod.u32v(len);
+    logmod.nl();
     if (@intCast(usize, len) > mr.buf.len) return error.BadMessage;
     mr.pending = mr.buf[0..0];
     while (mr.pending.len < @intCast(usize, len)) {
@@ -760,4 +768,12 @@ pub fn readMessageAsyncEnc(mr: *MsgReader, dec: *std_crypto.Rc4, out: *Message) 
         mr.pending = mr.buf[0 .. mr.pending.len + n2];
     }
     try decodeFrame(mr.pending, out);
+    if (out.is_keep_alive) {
+        logmod.s("enc frame keepalive");
+        logmod.nl();
+    } else {
+        logmod.s("enc frame id=");
+        logmod.u32v(@intCast(u32, @enumToInt(out.id)));
+        logmod.nl();
+    }
 }
