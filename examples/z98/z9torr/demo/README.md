@@ -205,13 +205,12 @@ with `Z9TORR_REAL_TIMEOUT`). It never passes silently:
   is never masked as an environmental SKIP.
 
 In the build sandbox the tracker returns peers and DHT is attempted; with the
-M4.1 client a real MSE handshake completes (`handshake ok enc`) and the plaintext
-fallback also succeeds (`handshake ok plain`), but the reachable peers then close
-or are rejected on reserved bits, so no payload arrives and the tier reports
-`SKIP` (exit 77) with a classified reason.
+M4-polished client real MSE and plaintext handshakes complete (`handshake ok
+enc` / `handshake ok plain`), unknown reserved bits are ignored per BEP 3, and
+the live retest fetched real payload (`tier_real` now reports measurable
+progress when the swarm serves).
 
 ## Next
 
-Resume M4 polish (relax unknown reserved bits in `wire.reservedAccepted` per BEP
-3), then M5 — Win9x cross-compat
+M5 — Win9x cross-compat
 (`docs/superpowers/plans/2026-10-08-z9torr-m5-win9x-plan.md`).

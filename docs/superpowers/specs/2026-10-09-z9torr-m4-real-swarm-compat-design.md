@@ -1,6 +1,6 @@
 # z9torr M4 — Real-Swarm Compatibility — Design
 
-**Status:** Approved (operator, 2026-10-09)
+**Status:** Approved (operator, 2026-10-09); **M4 polished 2026-10-10** — the peer handshake now ignores unknown reserved bits per BEP 3 (the strict `wire.reservedAccepted` predicate is removed), closing the last real-peer compatibility gap after M4.1.
 **Goal:** Make the z9torr example able to connect to and download from **real public BitTorrent swarms** — by adding BitTorrent Protocol Encryption (MSE/PE), UDP trackers (BEP 15), and DHT (BEP 5) + PEX (BEP 11) peer discovery — on top of M0–M3.
 **Blueprint:** `examples/ztorr_blp.txt`
 **Base spec of record:** `docs/superpowers/specs/2026-10-08-z9torr-bittorrent-client-design.md`

@@ -265,7 +265,7 @@ else
         [ -n "$RES" ] && note "aria2: $RES"
         if grep -aq 'handshake-fail err=HandshakeFailed' "$D/z9torr.log" 2>/dev/null \
             && [ -n "$RES" ]; then
-            note "aria2: DIVERGENCE — wire.reservedAccepted rejects the peer reserved"
+            note "aria2: DIVERGENCE — the peer handshake rejected the reserved"
             note "aria2:         bits (Fast Extension 0x04 in reserved[7]) -> HandshakeFailed."
             pass_case "aria2: reproduced localized reserved-bit divergence"
         elif grep -aq 'handshake ok enc' "$D/z9torr.log" 2>/dev/null; then

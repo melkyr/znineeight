@@ -217,7 +217,7 @@ if [ "$FAILS" -ne 0 ]; then
     if grep -aq 'handshake-fail err=HandshakeFailed' "$LOG" 2>/dev/null; then
         RES="$(grep -a 'hsenc reserved=' "$LOG" 2>/dev/null | tail -1)"
         note "pre-fix divergence: $RES -> HandshakeFailed"
-        note "  cause = wire.reservedAccepted rejects the Fast Extension bit (reserved[7]=0x04)."
+        note "  cause = the peer handshake rejected the Fast Extension bit (reserved[7]=0x04)."
     elif grep -aq 'mse stage=done' "$LOG" 2>/dev/null; then
         note "pre-fix divergence: MSE handshake done but no byte-verified download."
     fi

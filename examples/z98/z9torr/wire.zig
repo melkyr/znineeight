@@ -5,7 +5,8 @@
 //
 //   offset 0      : pstrlen = 19 (single byte)
 //   offset 1..20  : pstr    = "BitTorrent protocol" (19 bytes)
-//   offset 20..28 : reserved (8 bytes; MUST be zero for v1 — BEP 10 signalling)
+//   offset 20..28 : reserved (8 bytes; feature flags, see BEP 10/BEP 5/BEP 6.
+//                   BEP 3: ignore unknown reserved bits — never reject on them)
 //   offset 28..48 : info_hash (20 bytes)
 //   offset 48..68 : peer_id   (20 bytes)
 //
@@ -204,30 +205,19 @@ pub fn writeHandshake(sock: std_net.Socket, hs: *const Handshake) PeerError!void
     try sendAll(sock, h[0..]);
 }
 
-// A reserved field is accepted when it sets only the extension bits this client
-// understands: the BEP 10 extension-protocol bit (reserved[5], 0x10), the BEP 5
-// DHT bit (reserved[7], 0x01), and the BEP 6 Fast Extension bit (reserved[7],
-// 0x04 — e.g. aria2c). Any other bit is a protocol error, as is any non-zero
-// byte outside 5/7. M0/M2 peers send all-zero reserved, which this still
-// accepts (the M4 real-swarm goal needs extension-aware peers).
-fn reservedAccepted(r: []const u8) bool {
-    var i: usize = 0;
-    while (i < RESERVED_LEN) : (i += 1) {
-        if (i == 5) {
-            if ((r[i] & @intCast(u8, 0xEF)) != 0) return false;
-        } else if (i == 7) {
-            if ((r[i] & @intCast(u8, 0xFA)) != 0) return false;
-        } else {
-            if (r[i] != 0) return false;
-        }
-    }
-    return true;
-}
+// Reserved bits (BEP 3): a peer's 8-byte reserved field carries optional
+// feature flags — BEP 10 extension protocol (reserved[5], 0x10), BEP 5 DHT
+// (reserved[7], 0x01), BEP 6 Fast Extension (reserved[7], 0x04), and others.
+// Per BEP 3 a client MUST ignore reserved bits it does not understand, so this
+// field never rejects a handshake: it is stored verbatim in
+// `Handshake.reserved` and callers may inspect it for capability detection
+// (e.g. `peer.zig` tests reserved[5] & 0x10 for BEP 10). We advertise our own
+// bits in `peer.zig`; peers that set bits we do not know are still accepted.
 
 // Read and validate a peer handshake. `expected_info_hash` is the caller's
 // 20-byte info_hash (a `[]const u8` of length 20, D2-safe). Rejects a bad
-// pstrlen/pstr (`HandshakeFailed`), an unknown reserved bit
-// (`HandshakeFailed`) and a mismatching info_hash (`InfoHashMismatch`).
+// pstrlen/pstr (`HandshakeFailed`) and a mismatching info_hash
+// (`InfoHashMismatch`); reserved bits are ignored per BEP 3.
 pub fn readHandshake(sock: std_net.Socket, expected_info_hash: []const u8, out: *Handshake) PeerError!void {
     if (expected_info_hash.len != HASH_LEN) return error.HandshakeFailed;
 
@@ -241,7 +231,6 @@ pub fn readHandshake(sock: std_net.Socket, expected_info_hash: []const u8, out: 
     while (i < PSTR_LEN) : (i += 1) {
         if (h[1 + i] != pstr[i]) return error.HandshakeFailed;
     }
-    if (!reservedAccepted(h[20..28])) return error.HandshakeFailed;
     i = 0;
     while (i < HASH_LEN) : (i += 1) {
         if (h[28 + i] != expected_info_hash[i]) return error.InfoHashMismatch;
@@ -303,8 +292,8 @@ fn recvExactAsync(sock: std_net.Socket, buf: []u8, start_ms: u32) PeerError!void
 // Read and validate a peer handshake WITHOUT blocking: the counterpart of
 // `readHandshake` for `peer.zig`'s non-blocking socket. The 68-byte record is
 // read straight into `out`'s fields (no local array spans a suspend). Same
-// rules as `readHandshake`: pstrlen == 19, pstr match, zero reserved, and
-// `info_hash` match else `PeerError.InfoHashMismatch`.
+// rules as `readHandshake`: pstrlen == 19, pstr match, info_hash match else
+// `PeerError.InfoHashMismatch`; reserved bits are ignored per BEP 3.
 //
 // NOTE: `expected_info_hash` is `[]const u8` (length 20), matching the ratified
 // blocking `readHandshake` (Task-1 ruling A). A by-value `[20]u8` parameter is
@@ -357,10 +346,6 @@ pub fn readHandshakeAsync(sock: std_net.Socket, expected_info_hash: []const u8, 
             hsLogFail(sock, "pstr", error.HandshakeFailed);
             return error.HandshakeFailed;
         }
-    }
-    if (!reservedAccepted(out.reserved[0..])) {
-        hsLogFail(sock, "reserved", error.HandshakeFailed);
-        return error.HandshakeFailed;
     }
     i = 0;
     while (i < HASH_LEN) : (i += 1) {
@@ -680,7 +665,6 @@ pub fn readHandshakeAsyncEnc(sock: std_net.Socket, dec: *std_crypto.Rc4, expecte
     while (i < PSTR_LEN) : (i += 1) {
         if (out.pstr[i] != pstr[i]) return error.HandshakeFailed;
     }
-    if (!reservedAccepted(out.reserved[0..])) return error.HandshakeFailed;
     i = 0;
     while (i < HASH_LEN) : (i += 1) {
         if (out.info_hash[i] != expected_info_hash[i]) return error.InfoHashMismatch;

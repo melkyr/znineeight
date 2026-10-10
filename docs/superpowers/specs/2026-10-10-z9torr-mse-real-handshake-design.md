@@ -2,8 +2,9 @@
 
 **Status:** Done (operator, 2026-10-10) — M4.1 complete; see
 `docs/superpowers/plans/2026-10-10-z9torr-mse-real-handshake-plan.md` Task 5.
-NEXT: resume z9torr M4 polish (relax unknown reserved bits in
-`wire.reservedAccepted` per BEP 3), then M5 (Win9x).
+NEXT (done 2026-10-10): z9torr M4 polish relaxed the handshake to ignore
+unknown reserved bits per BEP 3 (the `wire.reservedAccepted` predicate was
+removed); then M5 (Win9x).
 **Goal:** Make z9torr complete a **real** MSE/PE encrypted handshake and download, verified against real reference implementations, then against the live swarm.
 **Driver:** the 2026-10-10 live run (`lin_bin/`): 50 tracker peers, 12/16 TCP timeouts (sandbox egress), 4 connected — 3 `mse-fail` (`PeerClosed`/`Timeout`), 1 `handshake-fail HandshakeFailed`; all plaintext fallbacks failed; 0 bytes. The compiler D5 fix is confirmed good (handshake now carries the real `-Z9T01-…` peer_id).
 **Sequence:** after the compiler codegen-defect fixes (D1–D5). Before resuming “point 3” polish.

@@ -26,7 +26,8 @@ all-zero `peer_id`.
   `tier3_encrypted.sh`, `tier_udp_tracker.sh`, `tier_dht.sh`, `tier_pex.sh`,
   `tier_stall.sh` (non-blocking probe), `tier_fallback.sh` (encrypted-first
   plaintext fallback), `tier_refseed.sh`/`tier_refseed_py.sh` (real
-  aria2c / Python MSE responders) (hard gates) and `tier_real.sh` (best-effort
+  aria2c / Python MSE responders), `tier_mse_diag.sh` (MSE against aria2c +
+  Python) (hard gates) and `tier_real.sh` (best-effort
   real swarm).
 - `testdata/`, `demo/`: committed fixtures, goldens, and golden commands.
 - `NOTES.md`, `README.md`: build recipes, expected output, and status.
@@ -53,17 +54,20 @@ With no torrent path (or `--help`) it prints the `usage:` block and exits 1
 (0 for `--help`).
 
 ## Status
-**M4.1 "real MSE/PE handshake" complete** (2026-10-10). The encrypted handshake
-now completes against real implementations (aria2c 1.36.0 and an independent
-Python MSE responder), and the encrypted-first **plaintext fallback** works: its
-retry loop was capped at 100 attempts, which exhausted in microseconds after the
-MSE probe became coroutine-aware, so a peer that became reachable shortly after
-the probe was never reconnected. It is now wall-clock throttled across the full
-~3 s window. Hash gates (all PASS, from the repo root): `tier1.sh` `16/0`,
-`tier1_cli.sh` `8/8`, `tier1_unit.sh` `3/3`, `tier2.sh` `17/0`,
-`tier3_encrypted.sh` `5/0`, `tier_udp_tracker.sh` `7/0`, `tier_dht.sh` `4/0`,
-`tier_pex.sh` `11/0`, `tier_stall.sh` `8/0`, `tier_fallback.sh` `8/0` (new),
-`tier_refseed_py.sh` `6/0`, `tier_refseed.sh` `6/0`. Compiler/seed unchanged
+**M4 polished** (2026-10-10): **M4.1 "real MSE/PE handshake"** is complete — the
+encrypted handshake now completes against real implementations (aria2c 1.36.0
+and an independent Python MSE responder), and the encrypted-first **plaintext
+fallback** works (its retry loop was capped at 100 attempts, which exhausted in
+microseconds after the MSE probe became coroutine-aware; it is now wall-clock
+throttled across the full ~3 s window). The M4 polish closes the last
+compatibility gap: the peer handshake now **ignores unknown reserved bits per
+BEP 3** (the strict `wire.reservedAccepted` predicate is gone), so real peers
+that advertise bits we do not implement are no longer rejected. Hash gates (all
+PASS, from the repo root): `tier1.sh` `16/0`, `tier1_cli.sh` `8/8`,
+`tier1_unit.sh` `3/3`, `tier2.sh` `17/0`, `tier3_encrypted.sh` `5/0`,
+`tier_udp_tracker.sh` `7/0`, `tier_dht.sh` `4/0`, `tier_pex.sh` `11/0`,
+`tier_stall.sh` `8/0`, `tier_fallback.sh` `8/0`, `tier_refseed_py.sh` `6/0`,
+`tier_refseed.sh` `6/0`, `tier_mse_diag.sh` `11/0`. Compiler/seed unchanged
 (seed v96, closure `46e3e7af98af3b5ff2a960c7c96025e3`).
 
 `tier_real.sh` is a **best-effort** real-swarm tier (not part of the hard gate
@@ -73,7 +77,10 @@ classified `SKIP: <reason>` when the client exits a recognized environmental cod
 `1` on a build error, an unexpected internal state, or any other (crash/signal)
 client exit.
 
-Known next step (M4 polish): real peers set reserved bits z9torr still rejects
-(qBittorrent `reserved[5]=0x18`); relax `wire.reservedAccepted` to ignore unknown
-bits per BEP 3. Then M5 — Win9x cross-compat
+Best-effort live Debian retest with the fixed client (`lin_bin/`): 50 tracker
+peers, 7 TCP connects, 7 `handshake ok` (2 encrypted + 5 plaintext); the exact
+qBittorrent `reserved=0000000000180005` handshake now succeeds, and
+**~37.75 MiB (4.9 %) was fetched** before the bounded 100 s window.
+
+Next: M5 — Win9x cross-compat
 (`docs/superpowers/plans/2026-10-08-z9torr-m5-win9x-plan.md`).

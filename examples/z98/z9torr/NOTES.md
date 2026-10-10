@@ -183,8 +183,9 @@ plan `docs/superpowers/plans/2026-10-10-z9torr-mse-real-handshake-plan.md`.
 - **MSE correctness (Task 3):** `piece.bitGet`/`bitSet` now decode the BEP 3
   bitfield MSB-first (was LSB-first, so the client saw an empty peer and never
   sent requests); `resume.zig`'s private bitmap helpers flipped to match the
-  shared `completed_bits`; `wire.reservedAccepted` now allows the BEP 6 Fast
-  Extension reserved bit (`reserved[7]`, `0x04`, e.g. aria2c).
+  shared `completed_bits`; `wire.reservedAccepted` was loosened to allow the
+  BEP 6 Fast Extension reserved bit (`reserved[7]`, `0x04`, e.g. aria2c) (the
+  predicate was later removed entirely by the M4 polish below).
 - **Non-blocking connect + MSE probe (Task 4):** `peer.zig` gained `connectAsync`
   (raw non-blocking `connect(2)` that yields on WouldBlock), and `mse.zig`
   became `mseConnectAsync`, so one silent peer no longer freezes the
@@ -205,24 +206,32 @@ plan `docs/superpowers/plans/2026-10-10-z9torr-mse-real-handshake-plan.md`.
 Gates (run from the repo root with the binding seed, all PASS): tier1 `16/0`,
 tier1_cli `8/8`, tier1_unit `3/3`, tier2 `17/0`, tier3_encrypted `5/0`,
 tier_udp_tracker `7/0`, tier_dht `4/0`, tier_pex `11/0`, tier_stall `8/0`,
-**tier_fallback `8/0` (new)**, tier_refseed_py `6/0` (independent Python MSE
-responder), tier_refseed `6/0` (real aria2c 1.36.0, forced encryption). No
-compiler/seed change (closure `46e3e7af98af3b5ff2a960c7c96025e3`, seed v96).
+tier_fallback `8/0`, tier_refseed_py `6/0` (independent Python MSE responder),
+tier_refseed `6/0` (real aria2c 1.36.0, forced encryption), tier_mse_diag
+`11/0`. No compiler/seed change (closure `46e3e7af98af3b5ff2a960c7c96025e3`,
+seed v96).
+
+## M4 polish — ignore unknown reserved bits (BEP 3) (2026-10-10)
+
+The M4.1 finding was that real peers set reserved bits the strict
+`wire.reservedAccepted` predicate rejected (qBittorrent/libtorrent
+`reserved[5]=0x18`, `0000000000180005`), so a successful MSE handshake was
+followed by `HandshakeFailed`. Fixed: the predicate is removed and the peer
+handshake no longer rejects on reserved bits (BEP 3: a client MUST ignore
+reserved bits it does not understand). The field is still stored verbatim in
+`Handshake.reserved`, so capability detection is preserved — `peer.zig` still
+tests `reserved[5] & 0x10` for BEP 10, and we continue advertising our own
+BEP 10 / BEP 5 bits. `tier_mse_diag.sh` now reaches `aria2: encrypted BT
+handshake accepted` (aria2c `reserved[7]=0x04` Fast Extension) instead of the
+pre-fix reserved-bit divergence; no tier asserted reserved-bit rejection.
 
 **Live Debian retest (best-effort, `lin_bin/`, fixed client):** 50 tracker
-peers, 16 spawned, 7 TCP connects, and — for the first time — a real
-**`handshake ok enc`** (MSE `stage=done`) plus a real plaintext fallback
-**`handshake ok plain`** (no `reconnect-fail`). The remaining reachable peers
-closed at/after the transport handshake or were rejected by the strict reserved
-bits (see below); 0 payload bytes were fetched in this sandbox. Exit 4 (peer).
+peers, 7 TCP connects, **7 `handshake ok`** (2 encrypted + 5 plaintext); the
+exact qBittorrent `reserved=0000000000180005` handshake now succeeds
+(`handshake ok enc`, MSE `stage=done`). The 3 handshake failures were
+transport-level (`PeerClosed`/`NetFailed`), none reserved-bit. First real
+payload progress in this sandbox: **~37.75 MiB / 4.9 %** at ~1 MiB/s before the
+bounded 100 s window (exit 124, resume sidecar written; see `z9torr.log`).
 
-**Finding for the next M4 polish pass:** real peers set reserved bits z9torr
-still rejects — e.g. qBittorrent/libtorrent `reserved[5]=0x18`
-(`0000000000180005`, `reserved[7]=0x05`) — so `wire.reservedAccepted` returns
-`HandshakeFailed` and `peer slot=0/2 handshake-fail`. BEP 3 says unknown
-reserved bits MUST be ignored; relaxing this (ignore, don't reject, all bits we
-don't understand) is the next compatibility step and is deliberately out of
-M4.1's fallback scope.
-
-Next: resume z9torr M4 polish (relax unknown reserved bits), then M5 — Win9x
-cross-compat (`docs/superpowers/plans/2026-10-08-z9torr-m5-win9x-plan.md`).
+Next: M5 — Win9x cross-compat
+(`docs/superpowers/plans/2026-10-08-z9torr-m5-win9x-plan.md`).
