@@ -6,20 +6,22 @@
 # re-queue) rejects a peer that serves a corrupt piece, and that a multi-peer
 # download still yields the correct full-file SHA-1.
 #
-# Case A (corrupt + good, multi-peer): a `corrupt-piece` mock_peer sits on the
-#   first declared port (slot 0, so the scheduler's lowest-index tie-break makes
-#   it claim piece 0) and one `normal` peer serves the next declared port. Run
-#   z9torr on t1_single_1m. Assertions (all non-vacuous):
+# Case A (corrupt + >=3 good, general swarm): a `corrupt-piece` mock_peer sits
+#   on the first declared port (slot 0, so the scheduler's lowest-index
+#   tie-break makes it claim piece 0) and every remaining declared port serves
+#   `normal`. Run z9torr on t1_single_1m. With >=4 live peers and 4 pieces every
+#   good peer finishes its single piece and goes idle before the corrupt piece
+#   is re-queued; recovery therefore requires the client to WAKE an idle peer
+#   when `scheduler.corrupt` puts piece 0 back to `missing`, not merely to rely
+#   on a peer that still had unclaimed work. Assertions (all non-vacuous):
 #     - exit 0 and `sha1sum t1.bin == testdata/expected/t1_single_1m.sha1`;
+#     - all declared peers dialed (`spawn=N`);
 #     - the corrupt peer's log shows it actually served a corrupt piece
 #       (`mock_peer corrupt piece=0 begin=...`);
 #     - the client log shows it detected + dropped the corrupt peer
-#       (`break reason=corrupt`).
+#       (`break reason=corrupt`) and then completed the download.
 #   A client that trusted corrupt bytes would either complete with a wrong
 #   SHA-1 or fail; this case proves detection AND recovery from a good peer.
-#   (Exactly one good peer is used: t1 has 4 pieces, so with >=4 live peers a
-#   good peer finishes its single piece and idles before the corrupt piece is
-#   re-queued; see the port-derivation comment below.)
 #
 # Case B (control, corrupt-only): start ONLY the `corrupt-piece` peer and run
 #   z9torr. Assertions:
@@ -60,20 +62,13 @@ P_TRACKER="${P_TRACKER:-6969}"
 PEER_PORTS="$(sed -n '2,$p' "$FIXDIR/ports.txt" | tr -d ' ')"
 if [ -z "$PEER_PORTS" ]; then PEER_PORTS="6970"; fi
 
-# The first declared peer port is the CORRUPT peer. Case A pairs it with exactly
-# ONE good peer (the first remaining declared port). t1 has only 4 pieces: with
-# >=4 live peers every good peer finishes its single piece and goes idle before
-# the corrupt piece is re-queued (an idle peer waiting on its socket is not
-# re-driven into `acquirePiece`), so the download never recovers. A single good
-# peer always has unclaimed pieces (2 and 3) keeping it active until the corrupt
-# peer is dropped and piece 0 is re-queued, which it then picks up. This is
-# still a genuine multi-peer (2 peer slots) download.
+# The first declared peer port is the CORRUPT peer; every remaining declared
+# port is a good `normal` peer. Case A is a general multi-peer swarm: with a
+# 4-peer / 4-piece workload (1 corrupt + 3 good) every good peer finishes its
+# single piece and idles before the corrupt piece is re-queued, so the fix under
+# test (wake an idle peer on re-queue) is required for the run to recover.
 P_CORRUPT=""
 for _pp in $PEER_PORTS; do P_CORRUPT="$_pp"; break; done
-P_GOOD=""
-for _pp in $PEER_PORTS; do
-    if [ "$_pp" != "$P_CORRUPT" ]; then P_GOOD="$_pp"; break; fi
-done
 GOOD_PORTS=""
 for _pp in $PEER_PORTS; do
     if [ "$_pp" != "$P_CORRUPT" ]; then
@@ -81,13 +76,24 @@ for _pp in $PEER_PORTS; do
     fi
 done
 
-# Case A advertises the corrupt peer + the single good peer (corrupt first, so it
-# is slot 0 and claims piece 0). Case B advertises only the corrupt peer.
-TRACKER_PEERS_A="127.0.0.1:$P_CORRUPT,127.0.0.1:$P_GOOD"
+# Count the declared peers and build the comma-separated tracker peer list in
+# declared order (corrupt first, so it is slot 0 and claims piece 0).
+N_PEERS=0
+TRACKER_PEERS_A=""
+for _pp in $PEER_PORTS; do
+    N_PEERS=$((N_PEERS + 1))
+    if [ -z "$TRACKER_PEERS_A" ]; then TRACKER_PEERS_A="127.0.0.1:$_pp"
+    else TRACKER_PEERS_A="$TRACKER_PEERS_A,127.0.0.1:$_pp"; fi
+done
+# Case B advertises only the corrupt peer.
 TRACKER_PEERS_B="127.0.0.1:$P_CORRUPT"
 
-if [ -z "$P_GOOD" ]; then
-    echo "FAIL: Case A needs >=2 declared peer ports (ports.txt)"
+if [ "$N_PEERS" -lt 4 ]; then
+    echo "FAIL: Case A needs >=4 declared peer ports (1 corrupt + >=3 good)"
+    exit 1
+fi
+if [ -z "$GOOD_PORTS" ]; then
+    echo "FAIL: Case A needs >=1 good peer port (ports.txt)"
     exit 1
 fi
 
@@ -221,8 +227,8 @@ fresh_dir() {
     printf '%s' "$_d"
 }
 
-# --- Case A: multi-peer, corrupt + good -------------------------------------
-echo "== Case A: multi-peer (corrupt peer + one good peer) =="
+# --- Case A: general multi-peer swarm, corrupt + >=3 good -------------------
+echo "== Case A: general multi-peer swarm (corrupt + $((N_PEERS - 1)) good) =="
 DA="$(fresh_dir caseA)"
 if start_tracker "$TRACKER_PEERS_A"; then
     if start_peer_port "$P_CORRUPT" "$WORK/t1.payload" corrupt-piece "--corrupt-piece 0"; then
@@ -230,11 +236,13 @@ if start_tracker "$TRACKER_PEERS_A"; then
     else
         fail_case "Case A: corrupt peer started on $P_CORRUPT"
     fi
-    if start_peer_port "$P_GOOD" "$WORK/t1.payload" normal ""; then
-        pass_case "Case A: good peer started on $P_GOOD"
-    else
-        fail_case "Case A: good peer started on $P_GOOD"
-    fi
+    for _gp in $GOOD_PORTS; do
+        if start_peer_port "$_gp" "$WORK/t1.payload" normal ""; then
+            pass_case "Case A: good peer started on $_gp"
+        else
+            fail_case "Case A: good peer started on $_gp"
+        fi
+    done
     ( cd "$DA" && env Z9TORR_SEED="$SEED" Z9TORR_LOG=1 timeout 40 "$PROG" "$FIXDIR/t1_single_1m.torrent" >"$DA/out.txt" 2>&1 )
     RC=$?
     CLIENT_PID=""
@@ -249,10 +257,10 @@ if start_tracker "$TRACKER_PEERS_A"; then
         fail_case "Case A: output sha1 got '$GOT' want '$WANT'"
     fi
 
-    if grep -aq '^spawn=2$' "$LOG" 2>/dev/null; then
-        pass_case "Case A: multi-peer (spawn=2 slots)"
+    if grep -aq "^spawn=$N_PEERS\$" "$LOG" 2>/dev/null; then
+        pass_case "Case A: multi-peer (spawn=$N_PEERS slots)"
     else
-        fail_case "Case A: multi-peer (spawn=2 slots)"
+        fail_case "Case A: multi-peer (spawn=$N_PEERS slots)"
     fi
 
     if grep -aq 'mock_peer corrupt piece=' "$DA/corrupt-peer.log" 2>/dev/null; then

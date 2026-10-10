@@ -720,6 +720,21 @@ fn saveResume(ctx: *RunCtx, ps: *piece.PieceState) void {
     resumemod.save(ctx.save_arena, ctx.t, st) catch {};
 }
 
+// True when `sock` has at least one readable byte (a zero-timeout `select`).
+// Used by the peer loop as a non-blocking wake gate: a peer with no claimed
+// piece must never park in `readMessageAsync`, because `scheduler.corrupt` can
+// return a piece to `missing` after this peer went idle, and a parked peer is
+// not re-driven into `acquirePiece` until a message arrives. When nothing is
+// readable the caller yields and re-checks the scheduler on the next tick.
+fn socketReadable(sock: std_net.Socket) bool {
+    if (sock < 0) return false;
+    var rfds: std_net.fd_set = undefined;
+    std_net.fdZero(@ptrCast(*u8, &rfds));
+    std_net.fdSet(sock, @ptrCast(*u8, &rfds));
+    const sr = std_net.select(sock + 1, @ptrCast(*u8, &rfds), null, null, @intCast(i32, 0));
+    return sr > 0;
+}
+
 // The coroutine. `ctx`/`peer` come from the caller's args record via
 // `@asyncInit`. Returns to the scheduler when every piece is verified (`ctx.ok`)
 // or on any failure (`ctx.exit_class` = 4 peer, 5 disk).
@@ -966,6 +981,17 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
                 break_reason = "completion";
                 break;
             }
+        }
+
+        // Wake gate (corrupt-piece re-queue): a peer with nothing claimed must
+        // not park in the blocking message read. When its socket has no pending
+        // bytes, yield and re-check `acquirePiece` next tick, so a piece that
+        // `scheduler.corrupt` returned to `missing` after this peer went idle
+        // is picked up and re-fetched from a good peer. A peer holding a piece
+        // still blocks on the read: it has block data to receive.
+        if (!peer.have_piece and !socketReadable(peer.sock)) {
+            _ = @asyncSuspend(null);
+            continue;
         }
 
         var msg: wire.Message = undefined;
