@@ -3,9 +3,10 @@
 This log records **compiler defects / gaps discovered while building the
 `z9torr` BitTorrent example** (`examples/z98/z9torr/`), each with a minimal
 reproducer, the exact failure, and the workaround the example uses. The
-workarounds are example/spec-level; the underlying defects are compiler gaps
-and remain **OPEN** (fixing them would change the compiler and rotate the
-seed).
+workarounds are example/spec-level. **All five defects (D1–D5) are now FIXED**
+in the compiler (plan `2026-10-09-zig1-codegen-defects-plan`, seed v95 rotated
+2026-10-10); each entry below records its fix commit id and a note that the fix
+reproduces **Zig semantics**, not merely `gcc` acceptance.
 
 Related: `docs/superpowers/specs/2026-10-08-z9torr-bittorrent-client-design.md`
 (the example's binding spec).
@@ -14,9 +15,9 @@ Related: `docs/superpowers/specs/2026-10-08-z9torr-bittorrent-client-design.md`
 
 ## D1 — A C keyword as a `union(enum)` tag emits invalid C89
 
-**Status:** OPEN (compiler gap). Workaround in the example; no compiler change.
+**Status:** FIXED (F1, commit `69e82cd8`, 2026-10-09). Union member names are C-keyword-mangled consistently at the declaration and every access site, so any valid Z98 tag compiles. The fix reproduces Zig semantics (any identifier is a valid tag), not merely `gcc` acceptance.
 
-**Symptom.** A tagged union whose variant tag is a C keyword compiles as Zig
+**Symptom (pre-fix).** A tagged union whose variant tag is a C keyword compiles as Zig
 (Z98) but produces C that `gcc` rejects. The `std_bencode` `Value` type hit
 this with the tag `int`:
 
@@ -98,9 +99,9 @@ tag→name table), so any legal Z98 identifier tag compiles.
 
 ## D2 — A slice whose element is a synthetic composite aliases another nested-slice C typedef
 
-**Status:** OPEN (compiler gap). Workaround in the example; no compiler change.
+**Status:** FIXED (F2, commit `e21dd31b`, 2026-10-09). A slice whose element is synthetic now recurses to derive a distinct element C name, so `[][]const u8`, `[][20]u8`, etc. get distinct typedefs (primitive/named element slices stay byte-identical). The fix reproduces Zig semantics (each `[]synthetic` is a distinct type), not merely `gcc` acceptance.
 
-**Symptom.** Two different nested-slice types emit the *same* C slice typedef
+**Symptom (pre-fix).** Two different nested-slice types emit the *same* C slice typedef
 name, so the second field is declared with the first's element pointer type.
 `gcc` accepts it with a warning (`-Wincompatible-pointer-types`), and the value
 is correct only by luck of the emitted temporary. A struct with both a
@@ -203,9 +204,9 @@ program hits this today.
 
 ## D3 — A module-global struct whose address is passed to a suspending call emits a frame-save from an undeclared temp
 
-**Status:** OPEN (compiler gap). Workaround in the example; no compiler change.
+**Status:** FIXED (F3, commit `06a7a793`, merged D3+D4, 2026-10-09). The shared frame-save fix pre-resolves the suppressed `load_global` alias (`temp_global_map`) before the save block, so the frame save/restore names a declared temp. The fix reproduces Zig semantics (a coroutine captures referenced state across a suspension; a save stores a declared temp/global), not merely `gcc` acceptance.
 
-**Symptom.** In a coroutine that passes the address of a module-global
+**Symptom (pre-fix).** In a coroutine that passes the address of a module-global
 `std_stream.MsgReader` to a suspending, cross-module call
 (`wire.readMessageAsync`), the deferred-frame save emitted for the caller
 performs a struct assignment **from a temporary that the emitter never
@@ -289,9 +290,9 @@ function's preamble), or allocate frame slots without a by-value struct temp.
 
 ## D4 — A by-value struct-return temporary assigned to a module global in a suspending function emits a frame-save from an undeclared temp
 
-**Status:** OPEN (compiler gap). Workaround in the example; no compiler change.
+**Status:** FIXED (F3, commit `06a7a793`, merged D3+D4, 2026-10-09). Same shared frame-save fix as D3 (the undeclared temp is the loop-carried `load_global` alias of the module global). The fix reproduces Zig semantics (the by-value struct-return is materialised and the aliased global is named), not merely `gcc` acceptance.
 
-**Symptom.** Assigning a **struct-returning call's result** directly to a
+**Symptom (pre-fix).** Assigning a **struct-returning call's result** directly to a
 module-global inside a suspending function (here
 `g_reader = std_stream.initMsgReader(...)`) makes the caller's frame-save
 reference an undeclared temp of the returned struct type. Same emitted-C
@@ -353,8 +354,7 @@ before the global store in the async lowering.
 
 ## D5 — A store through a slice-index aggregate lvalue is silently lost (writes into a by-value copy)
 
-**Status:** OPEN (compiler gap). Discovered 2026-10-09 while diagnosing the real-swarm
-failure (commit `13f660de`); workaround pending; no compiler change yet.
+**Status:** FIXED (F5, commit `ae156d26`, 2026-10-09). Non-tuple index-assign bases now route through address-taking exactly as `lowerFieldStore` does, so the chain `(slice.ptr + idx)->field[...]` is addressed once and the store lands in the element. The fix reproduces Zig semantics (index/field chains are lvalues) — the runtime repro output flips wrong→correct — not merely `gcc` acceptance.
 
 **Symptom.** Writing a nested aggregate field through a slice/array index compiles
 and links, but the store is **lost**: the emitter materialises a *by-value copy* of
@@ -431,7 +431,10 @@ in each of the D3/D4 "Reduction attempts" / "Cause" notes. A true standalone
 minimal reproducer would require matching the emitted temp layout.
 
 When a workaround is adopted, the example's source and its spec are updated and
-the entry records the workaround + commit; the defect itself stays listed as
-OPEN until (and unless) the compiler is fixed.
+the entry records the workaround + commit; the defect itself is listed **FIXED**
+once the compiler is fixed. All five (D1–D5) are now FIXED; each entry records
+its fix commit and that the fix reproduces Zig semantics. (D4 later became
+reducible to the standalone `repro/mi_matrix/async_frame_structret_xmod`, whose
+classify class flipped FAIL→OK at F3.)
 
 _(Add new entries as D5, … as they are found during M1–M4.)_

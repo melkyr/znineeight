@@ -1,6 +1,6 @@
 # async_frame_global_xmod — D3 undeclared frame-save temp (global struct address across a suspension)
 
-**Status:** OPEN compiler defect (investigated by I3, 2026-10-09). No compiler change (fix is F3).
+**Status:** FIXED (F3, commit `06a7a793`, 2026-10-09). The shared D3/D4 fix pre-populates the emitter's `temp_global_map` for every `.load_global` result before body emission, so the frame save/restore at the suspend site resolves the suppressed `load_global` alias to the global name instead of the undeclared `zT_N`. The fix reproduces Zig semantics (a frame save must store a declared temp/global), not merely `gcc` acceptance. (History: investigated by I3, 2026-10-09.)
 **Corpus:** NOTES-only. This dir has **no `main.zig`**, so `scripts/corpus/list_corpus_dirs.sh`
 does not list it and `scripts/corpus/classify` never sees it — the corpus tally is unchanged.
 **Why no standalone:** D3 is temp-layout sensitive; it was **not** reducible to a standalone

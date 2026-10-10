@@ -1,6 +1,6 @@
 # zig1 C89-codegen defect fixes — Design
 
-**Status:** Approved (operator, 2026-10-09)
+**Status:** Implemented (operator, 2026-10-10). D1–D5 fixed; seed v95 rotated. Closeout report: `.superpowers/sdd/2026-10-09-zig1-codegen-defects-plan/closeout-report.md`.
 **Goal:** Fix five confirmed `zig1` (Z98→C89) compiler defects so the emitted C **matches proper Zig semantics** — not merely so `gcc` accepts it — and so `z9torr` can download from real swarms.
 **Driver:** `examples/torrent_example_defects.md` (D1–D5).
 **Sequence:** enables the parked `z9torr` M4 items (MSE real-peer diagnostics, non-blocking handshake).
@@ -69,7 +69,7 @@ Resolved: D3≡D4 share the site; the operator ruled fix-once (F3+F4 merged).
 Compiler is not `main`-frozen now; the battery is:
 
 1. **Seed rebuild:** `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out>` → `<out>/zig1_5_clean`; two-hop closure `hop1 == hop2`.
-2. **Corpus:** `bash scripts/corpus/classify <zig1> <outfile>` → baseline **1097 = 923 OK / 58 GREEN / 116 FAIL / 0 ICE / 0 CRASH**; **FAIL must not increase**; new repros are added as corpus dirs (auto-discovered, no manifest).
+2. **Corpus:** `bash scripts/corpus/classify <zig1> <outfile>` → baseline **1120 = 946 OK / 58 GREEN / 116 FAIL / 0 ICE / 0 CRASH** (closeout-measured, seed-built binary `/tmp/z9_v95_seed/zig1_5_clean`; the earlier `1097 = 923…` was stale); **FAIL must not increase**; new repros are added as corpus dirs (auto-discovered, no manifest).
 3. **Stdlib:** `bash scripts/stdlib/verify_stdlib.sh <zig1>` → **283 PASS / 0 FAIL**.
 4. **Examples matrix:** all `examples/z98/*/` (currently **25**) dump+gcc+link clean.
 5. **Runtime goldens:** gol / lisp / json / mud byte-identical.

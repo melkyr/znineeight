@@ -24,9 +24,10 @@ in the next section; that is the only supported path.
 `release/seed/CHANGELOG.md`, full recipes + current md5s in
 `release/seed/SEED_README.txt`).
 
-**Current seed: v94.** Archive md5 `16ca54bd63320a4ec1d8e8aee3fe2c43`; archived binary md5
-(= v94's rotation fixed point) `296c48f676deec290387b57132e4e2bd`; `gen/` 45 `.c` + 46 `.h`;
-`lib/` 30 std `.zig`. **This block is updated at every plan closeout that rotates the seed**;
+**Current seed: v95** (rotated 2026-10-10 by the zig1 codegen-defect-fixes closeout; D1–D5
+fixed). Archive md5 `ee4e9763d51f76b2b2058dd254377b20`; archived binary md5
+(= v95's rotation fixed point) `6efc9524c6caf0bb9484565082170ed5`; `gen/` 45 `.c` + 46 `.h`;
+`lib/` 32 std `.zig`. **This block is updated at every plan closeout that rotates the seed**;
 the branch's in-progress fixed point is recorded in the active plan's workspace ledger.
 The FX14-F–FX17-F notes below record each amendment's own fixed point and its
 "seed v88 NOT rotated (closeout-only)" status at the time; the Volume II Task 22
@@ -37,17 +38,20 @@ structural live-set reduction closeout (2026-10-07) rotated it to v93; and the
 zig1 type-limit widening closeout (2026-10-08) rotated it to v94 (widened the
 `Type` ceiling columns 16 B→20 B: `name_id`/`payload_idx` u16→u32,
 `module_id`/`alignment` u8→u16; guards removed) — the `-s0` self-compile carves
-pool ≈11,958 K with peak RSS median ≈15.1 MB (down from v93's ≈16.0 MB).
+pool ≈11,958 K with peak RSS median ≈15.1 MB (down from v93's ≈16.0 MB); and the
+zig1 codegen-defect-fixes closeout (2026-10-10) rotated it to v95 (D1–D5 fixed;
+fixed point / archived binary md5 `6efc9524c6caf0bb9484565082170ed5`).
 
 Top-level `zig1-seed/`: `zig1` (reference binary), `gen/` (its self-emission C89
 module set — 45 `.c` + 46 `.h`, including `zig_special_types.h`; the emitted
 runtime/support sources are NOT in `gen/`), top-level `c_exit.c`, `runtime/`
 (the emitted 5: `zig_compat.h`, `zig_runtime.h`, `zig_special_types.h`,
 `zig_runtime.c`, `zig_pal.c` — NO `net_prelude.h`), `lib/` (the tracked seed
-archive is **v94, predating M0: 30 std `.zig` = `std.zig` plus 29 `std_*.zig`**;
-a fresh `scripts/seed/build_from_seed.sh` copies the current `sf/src` set
-(31 `std_*.zig` + `std.zig` = 32) into the produced compiler's `lib/`, and those
-modules enter the archive at a future seed rotation), and `SEED_README.txt`.
+archive **v95 carries the full 32 std `.zig`** = `std.zig` plus 31 `std_*.zig`;
+the earlier v94 archive predated M0 with only 30 — from v95 onward
+`scripts/seed/build_from_seed.sh` and `archive_seed.sh` install the current
+`sf/src` set (31 `std_*.zig` + `std.zig` = 32) into the produced compiler's
+`lib/` and the archive), and `SEED_README.txt`.
 
 **Std-module inventory:** the `sf/src` std set is **31** `std_*.zig` + `std.zig`
 (`std_io`, `std_fmt`, `std_arena`, `std_str`, `std_mem`, `std_math`, `std_debug`,
@@ -227,11 +231,18 @@ statement handler stored in `AnalyzerContext.on_stmt_cb` (`sf/src/analyzer.zig:3
 
 ### Byte-identical gate (mud / gol / lisp / json) — z98-only, self-consistency check
 
-Gate entries (`examples/z98/` paths, NOT `examples/zig0/`):
+Gate entries (`examples/z98/` paths, NOT `examples/zig0/`). The gate compiler is the
+**seed-built `zig1`** — the release path is retired (`sf/build/out_release/zig1` does not exist
+and cannot build current `sf/src`; zig0 aborts), so build the seed first:
 ```bash
-sf/build/out_release/zig1 --dump-c89 <ENTRY> > /tmp/new.c
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/z9_seed
+# <mode> = -fsafe (default) or -ffast; <ENTRY> = the examples/z98 gate program
+/tmp/z9_seed/zig1_5_clean <mode> --dump-c89 <ENTRY> > /tmp/new.c
 diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prior gate baseline)
+/tmp/z9_seed/zig1_5_clean <mode> --dump-c89 <ENTRY> | md5sum   # compare to the 8-pin table below
 ```
+This is the command that reproduces the 8-pin table below (the retired
+`sf/build/out_release/zig1` path is NOT used by any current gate).
 
 **Gate-program runtime outputs** (stable byte-identity reference; runtime behavior is the gate — dump byte-identity alone is not sufficient):
 - `game_of_life` (100 generations) stdout: `fcbf7e7cead5082f0a8caadd5a8f0ff9`
@@ -240,21 +251,30 @@ diff /tmp/ref.c /tmp/new.c   # compare against reference (ref.c captured at prio
 - `mud_server` server stdout: `66c8f0abb926cca7baf9a0d1692ab318` / client bytes: `93147d0f0bbd983a9d844fea8b7a6fa7` (canonical session via `demo/session.sh`, rc 0)
 - `scripts/closeout/verify_upgraded.sh` runs the whole battery and prints `CLOSEOUT OK` (A1-A5, B1-B7) on success.
 
-| Entry Path | Reference md5 (default `-fsafe`; authoritative) | Historical `-ffast` byte-anchor (not re-measured since the C89-AHEAD split) |
+**8-pin table (re-baselined 2026-10-10, zig1 codegen-defect-fixes closeout).** Measured with
+the seed-built fixed compiler `/tmp/z9_v95_seed/zig1_5_clean`:
+`/tmp/z9_v95_seed/zig1_5_clean <mode> --dump-c89 <ENTRY> | md5sum` from the repo root. The
+absolute pin values are **compiler-build dependent** (each compiler build pairs a `lib/` std
+set; the binary's own path is irrelevant — verified), so only same-build comparisons are
+meaningful. Runtime goldens below are byte-identical PRE↔POST, so this is an emitted-C
+re-baseline only.
+
+| Entry Path | `-fsafe` md5 (authoritative) | `-ffast` md5 |
 |---|---|---|
-| `examples/z98/mud_server/main.zig` | `f3be9bb9ebc0c1c9799da2181e2fa7e8` | `ac1579907ce84efa2f9014187070bf94` |
-| `examples/z98/game_of_life/main.zig` | `6df1e4d2e9afa0f4163a7053f67384be` | `e023d3cd0bfb23346ac800725c5192f1` |
-| `examples/z98/lisp_interpreter_curr/main.zig` | `e27b7c35678974deb130cfc77cb08686` | `21747e2acf177947ad499149bb3fdc98` |
-| `examples/z98/json_parser/main.zig` | `d51f17aebdabcd009e453adb2e286d4e` | `2f08bf260bf2b6813fa4d70ffbc88aa9` |
+| `examples/z98/mud_server/main.zig` | `0615c9fb04c526cd305455224b54ee2c` | `e1f60dd325e41f70f2c470f33c265362` |
+| `examples/z98/game_of_life/main.zig` | `6a9518e77f68cabbf86a356afebe2157` | `12a230e214f6407c9a1bb6faaf2d4ca8` |
+| `examples/z98/lisp_interpreter_curr/main.zig` | `e7a8e48da407e8a7a87282ea35d886f9` | `e5b74f4f5326ee65ec2afe61d629affc` |
+| `examples/z98/json_parser/main.zig` | `6eb0c0f8699bba517ac43ad2b28f85a9` | `5daac4a3cd2133fb00da3efda5b877df` |
 
 Re-baselined by the FX5 `-fsafe` slice-bounds guards (2026-09-28), then by the
 FX14 layout-model pin (2026-09-29, operator ruling A): every gate dump embeds
 the per-program 64-bit carrier typedef lines, which gained ` Z98_ALIGN8`, plus
-the new f64 carrier, so **both modes move 8/8**. Current live `-ffast` pins are
-gol `98e934f3e15be355d47e26ded595dc8a`, lisp
-`2514f8b5ddceacba67203af37a7346c3`, json
-`e1cc386e9d09e322a068731cb2061621`, mud
-`66d547d4a076fc2ce44d6d3aa3092c1d`. FX14 runtime-output identity PRE↔POST was
+the new f64 carrier, so **both modes moved 8/8** at FX14. **Current live `-ffast`
+pins** (closeout 2026-10-10, seed-built `/tmp/z9_v95_seed/zig1_5_clean`): gol
+`12a230e214f6407c9a1bb6faaf2d4ca8`, lisp
+`e5b74f4f5326ee65ec2afe61d629affc`, json
+`5daac4a3cd2133fb00da3efda5b877df`, mud
+`e1f60dd325e41f70f2c470f33c265362`. FX14 runtime-output identity PRE↔POST was
 re-proven by execution in both modes and is byte-identical (gol `fcbf7e7c…`,
 lisp `(+ 1 2)` `b3d9f897…`, json `8bda3d5a…`, mud
 `66c8f0ab…`/`93147d0f…`). The FX14-F fixed point (moving point hop1 != hop2 ==
@@ -543,6 +563,8 @@ fixture); the new fixed point (moving point hop1 == hop2, explicit
 rotated.
 
 **z9torr M1 closeout (2026-10-08; example-plan, compiler UNTOUCHED).** Adds the 25th `examples/z98/` entry `z9torr` (single-file torrent parse + metadata summary; `tests/tier1.sh` `15 passed, 0 failed / TIER1 PASS`; emitted-C md5 `b0e8496d741aa130b7252bd7ebefe985`). Full example matrix re-measured over all 25 `examples/z98/*/` dirs with the binding seed `/tmp/z9_m0_seed/zig1_5_clean` (`-ffast -o <out>` + `build_target.sh linux`, dump+gcc+link): **25/25 rc=0** (the dated entries above keep their contemporaneous 24/24). `verify_stdlib` **280 PASS / 0 FAIL** (unchanged). No compiler-only gates (fixed point / 8 dump-MD5 pins / corpus classify) — no `sf/**` change.
+
+**zig1 codegen-defect-fixes closeout (2026-10-10; `sf/src` CHANGED; seed v94 → v95).** Fixes D1 (`69e82cd8`), D2 (`e21dd31b`), D3+D4 (`06a7a793`), D5 (`ae156d26`); repros `union_keyword_tag_xmod`, `slice_of_slice/array_xmod`, `async_frame_structret_xmod`, `slice_index_field_store_xmod`. Full battery on the seed-built fixed compiler `/tmp/z9_v95_seed/zig1_5_clean`: seed two-hop closure **`6efc9524c6caf0bb9484565082170ed5`** (hop1==hop2); corpus `-s0` **1120 = 946 OK / 58 GREEN / 116 FAIL / 0 ICE / 0 CRASH** (the plan-start `1115 = 941…` predated the I-task repro additions; the earlier `1097 = 923…` was stale — operator accepted the correction); stdlib **283 PASS / 0 FAIL / STDLIB GATE OK**; example matrix **25/25 rc=0**; runtime goldens byte-identical (gol `fcbf7e7c…`, lisp `(+ 1 2)` `b3d9f897…`, json `8bda3d5a…`, mud `66c8f0ab…`/`93147d0f…`); `verify_upgraded.sh` **CLOSEOUT OK**; `check_emit_support.sh` **7/7**; all 8 z9torr tiers PASS (tier1 / tier1_cli / tier1_unit / tier2 / tier3_encrypted / tier_udp_tracker / tier_dht / tier_pex). The **8 dump-MD5 pins were re-baselined** (see the 8-pin table above; compiler-build dependent) and the seed rotated to **v95** (archive md5 `ee4e9763d51f76b2b2058dd254377b20`, archived binary / fixed point `6efc9524…`, verified self-consistent hop1==hop2). Next: parked z9torr M4 items (MSE real-peer diagnostics; non-blocking handshake).
 
 - Self-consistency gate: compare current zig1 `--dump-c89` against a pre-captured reference .c file. If the reference .c is outdated (intentional baseline change), re-capture via `cp /tmp/new.c /tmp/ref.c`. Never compare against parent-zig1 output directly — parent builds may fail silently.
 - Do **NOT** compare `zig1 --dump-c89` output against `zig0`'s C output. `zig0` emits a legacy bootstrap format that is byte-level incompatible with zig1.
