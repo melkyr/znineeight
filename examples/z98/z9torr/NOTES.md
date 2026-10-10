@@ -4,9 +4,9 @@
 
 **Entry file:** `main.zig`
 
-**Working commit:** `3dcaedf3` (M4 sources Task 0–4; Task 5 real-swarm tier + docs on top)
+**Working commit:** `f2d627a3` (M4.1 sources Task 0–4 + Task 5 fallback fix; M4.1 Task 5 docs on top)
 
-**MD5 (`--dump-c89`):** `c59e32198110b96da4d7df2c0d99d87a` (seed `zig1_5_clean`; stable 3×; M4 MSE/UDP/DHT/PEX + peer_id)
+**MD5 (`--dump-c89`):** `14fae4e8c108d5d60944faba604ae343` (seed `zig1_5_clean`; stable 3×; M4.1 non-blocking MSE + plaintext-fallback retry fix)
 
 ## Build Recipes
 
@@ -174,4 +174,55 @@ silently. In the build sandbox the
 tracker returns peers and DHT is attempted, but peers close at the MSE handshake
 (matches the M3 `lin_bin/` diagnostic), so it reports `SKIP` (exit 77).
 
-Next: M5 — Win9x cross-compat (`docs/superpowers/plans/2026-10-08-z9torr-m5-win9x-plan.md`).
+## M4.1 — real MSE/PE handshake (2026-10-10)
+
+M4.1 makes the encrypted handshake actually work against real implementations
+and fixes the fallback. Spec `docs/superpowers/specs/2026-10-10-z9torr-mse-real-handshake-design.md`,
+plan `docs/superpowers/plans/2026-10-10-z9torr-mse-real-handshake-plan.md`.
+
+- **MSE correctness (Task 3):** `piece.bitGet`/`bitSet` now decode the BEP 3
+  bitfield MSB-first (was LSB-first, so the client saw an empty peer and never
+  sent requests); `resume.zig`'s private bitmap helpers flipped to match the
+  shared `completed_bits`; `wire.reservedAccepted` now allows the BEP 6 Fast
+  Extension reserved bit (`reserved[7]`, `0x04`, e.g. aria2c).
+- **Non-blocking connect + MSE probe (Task 4):** `peer.zig` gained `connectAsync`
+  (raw non-blocking `connect(2)` that yields on WouldBlock), and `mse.zig`
+  became `mseConnectAsync`, so one silent peer no longer freezes the
+  single-threaded scheduler. New `tests/tier_stall.sh` (black-hole first,
+  healthy MSE peer second) proves completion in <500 ms where the blocking
+  probe serialized the 3 s deadline.
+- **Fallback policy A + fix (Task 5):** encrypted-first, plaintext reconnect on
+  MSE failure (operator ruling). **Fix:** `plainReconnect` was capped at 100
+  attempts; after Task 4 replaced its 20 ms `sleepMs` pause with `@asyncSuspend`,
+  those attempts exhausted in microseconds, so any peer that became reachable
+  shortly after the probe got `reconnect-fail` — the fallback "never succeeded".
+  The retry loop is now wall-clock throttled (`FALLBACK_RETRY_MS`) and bounded
+  only by `FALLBACK_WINDOW_MS` (3 s), so it keeps trying and succeeds. New
+  `tests/tier_fallback.sh` (8/0): the existing one-shot plaintext `mock_peer`
+  behind a 200 ms restart gap, against which the encrypted-first client must
+  fail MSE, then complete a byte-verified plaintext download.
+
+Gates (run from the repo root with the binding seed, all PASS): tier1 `16/0`,
+tier1_cli `8/8`, tier1_unit `3/3`, tier2 `17/0`, tier3_encrypted `5/0`,
+tier_udp_tracker `7/0`, tier_dht `4/0`, tier_pex `11/0`, tier_stall `8/0`,
+**tier_fallback `8/0` (new)**, tier_refseed_py `6/0` (independent Python MSE
+responder), tier_refseed `6/0` (real aria2c 1.36.0, forced encryption). No
+compiler/seed change (closure `46e3e7af98af3b5ff2a960c7c96025e3`, seed v96).
+
+**Live Debian retest (best-effort, `lin_bin/`, fixed client):** 50 tracker
+peers, 16 spawned, 7 TCP connects, and — for the first time — a real
+**`handshake ok enc`** (MSE `stage=done`) plus a real plaintext fallback
+**`handshake ok plain`** (no `reconnect-fail`). The remaining reachable peers
+closed at/after the transport handshake or were rejected by the strict reserved
+bits (see below); 0 payload bytes were fetched in this sandbox. Exit 4 (peer).
+
+**Finding for the next M4 polish pass:** real peers set reserved bits z9torr
+still rejects — e.g. qBittorrent/libtorrent `reserved[5]=0x18`
+(`0000000000180005`, `reserved[7]=0x05`) — so `wire.reservedAccepted` returns
+`HandshakeFailed` and `peer slot=0/2 handshake-fail`. BEP 3 says unknown
+reserved bits MUST be ignored; relaxing this (ignore, don't reject, all bits we
+don't understand) is the next compatibility step and is deliberately out of
+M4.1's fallback scope.
+
+Next: resume z9torr M4 polish (relax unknown reserved bits), then M5 — Win9x
+cross-compat (`docs/superpowers/plans/2026-10-08-z9torr-m5-win9x-plan.md`).

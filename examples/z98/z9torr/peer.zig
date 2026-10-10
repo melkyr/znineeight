@@ -60,6 +60,19 @@ const KEEPALIVE_MS: u32 = 120000;
 // detector (spec §7/§8; M3 final-review fix 3).
 const CONNECT_TIMEOUT_MS: u32 = 1000;
 
+// Plaintext-fallback reconnect budget + retry cadence. After an MSE probe
+// fails, `plainReconnect` retries a fresh plaintext connect for the WHOLE
+// `FALLBACK_WINDOW_MS`; the retry is cooperatively throttled to one attempt per
+// `FALLBACK_RETRY_MS` (no blocking `sleepMs` — M4.1 Task 4), so a fast-failing
+// connect neither spins thousands of syscalls nor exhausts a fixed attempt count
+// before the window elapses. This is the M4.1 Task 5 fix: Task 4 replaced the
+// old 20 ms `sleepMs` pause with `@asyncSuspend`, which (with the then-100
+// attempt cap) made the fallback give up in microseconds — a plaintext peer
+// that only became reachable shortly after the MSE probe never got a second
+// connection.
+const FALLBACK_WINDOW_MS: u32 = 3000;
+const FALLBACK_RETRY_MS: u32 = 20;
+
 // IPv4 sockaddr for the raw `connect(2)`. Same layout std_net uses internally
 // (`SockAddrIn` is private there), so the example can issue the non-blocking
 // connect without an sf/src change (post-D1–D5 freeze).
@@ -356,32 +369,42 @@ fn mseHandshake(ctx: *RunCtx, peer: *Peer, ok_out: *bool) void {
 }
 
 // Bounded plaintext fallback: close the (now unusable) MSE socket and open a
-// fresh one, retrying while the tier2 harness (re)starts the one-shot plaintext
-// mock. Coroutine-aware: `connectAsync` yields, and the inter-attempt pause is a
-// cooperative `@asyncSuspend` rather than `sleepMs`, so it never blocks the
-// scheduler. Bounded to ~3 s. Void return (success in `ok_out`) so `peerRun`'s
-// implicit awaits keep one common parent_result type (zig1 async P2/P4 order).
+// fresh one, retrying for the WHOLE `FALLBACK_WINDOW_MS` while the peer (or the
+// tier's one-shot plaintext mock) becomes reachable again. Coroutine-aware
+// (M4.1 Task 4): `connectAsync` yields, and the inter-attempt pause is a
+// cooperative `@asyncSuspend` rather than a blocking `sleepMs`, so it never
+// freezes the scheduler. The retry is wall-clock throttled to one connect per
+// `FALLBACK_RETRY_MS` (M4.1 Task 5) instead of a fixed attempt count, so the
+// full budget is honored even when connects fail instantly. Void return (success
+// in `ok_out`) so `peerRun`'s implicit awaits keep one common parent_result type
+// (zig1 async P2/P4 order).
 fn plainReconnect(ctx: *RunCtx, peer: *Peer, ok_out: *bool) void {
     _ = ctx;
     ok_out.* = false;
     std_net.close(peer.sock);
     peer.sock = @intCast(i32, -1);
     var start: u32 = std.time.ticksMs();
-    var attempt: u32 = 0;
-    while (attempt < 100) : (attempt += 1) {
+    var next_try: u32 = start;
+    while (true) {
         var elapsed: u32 = std.time.ticksMs() - start;
-        if (elapsed > 3000) return;
-        peer.sock = std_net.tcpSocket() catch {
-            peer.sock = @intCast(i32, -1);
+        if (elapsed > FALLBACK_WINDOW_MS) return;
+        // Cooperative throttle: yield (no blocking sleep) but attempt a connect
+        // at most once per retry interval, so an immediate ECONNREFUSED cannot
+        // burn the whole budget in a spin.
+        if (std.time.ticksMs() < next_try) {
             _ = @asyncSuspend(null);
             continue;
+        }
+        next_try = std.time.ticksMs() + FALLBACK_RETRY_MS;
+        peer.sock = std_net.tcpSocket() catch {
+            peer.sock = @intCast(i32, -1);
+            continue;
         };
-        var rem: u32 = 3000 - elapsed;
+        var rem: u32 = FALLBACK_WINDOW_MS - elapsed;
         if (rem > CONNECT_TIMEOUT_MS) rem = CONNECT_TIMEOUT_MS;
         connectAsync(peer.sock, peer.addr.ip_be, peer.addr.port, rem) catch {
             std_net.close(peer.sock);
             peer.sock = @intCast(i32, -1);
-            _ = @asyncSuspend(null);
             continue;
         };
         ok_out.* = true;

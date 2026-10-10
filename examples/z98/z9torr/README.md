@@ -23,8 +23,11 @@ all-zero `peer_id`.
   `stats.zig`: rarest-first scheduler, pipeline, disk, resume, rates, stats.
 - `tools/`: C89 `ref_check` plus the mock tracker/peer/MSE/UDP-tracker.
 - `tests/`: `tier1.sh`, `tier1_cli.sh`, `tier1_unit.sh`, `tier2.sh`,
-  `tier3_encrypted.sh`, `tier_udp_tracker.sh`, `tier_dht.sh`, `tier_pex.sh`
-  (hard gates) and `tier_real.sh` (best-effort real swarm).
+  `tier3_encrypted.sh`, `tier_udp_tracker.sh`, `tier_dht.sh`, `tier_pex.sh`,
+  `tier_stall.sh` (non-blocking probe), `tier_fallback.sh` (encrypted-first
+  plaintext fallback), `tier_refseed.sh`/`tier_refseed_py.sh` (real
+  aria2c / Python MSE responders) (hard gates) and `tier_real.sh` (best-effort
+  real swarm).
 - `testdata/`, `demo/`: committed fixtures, goldens, and golden commands.
 - `NOTES.md`, `README.md`: build recipes, expected output, and status.
 
@@ -50,16 +53,27 @@ With no torrent path (or `--help`) it prints the `usage:` block and exits 1
 (0 for `--help`).
 
 ## Status
-M4 "real-swarm compatibility" complete. Hard gates (all PASS, run from the repo
-root): `tier1.sh` `16/0`, `tier1_cli.sh` `8/8`, `tier1_unit.sh` `3/3`,
-`tier2.sh` `17/0`, `tier3_encrypted.sh` `5/0`, `tier_udp_tracker.sh` `7/0`,
-`tier_dht.sh` `4/0`, `tier_pex.sh` `11/0`. `scripts/stdlib/verify_stdlib.sh` is
-green (`283 PASS / 0 FAIL`) and the compiler fixed point is untouched.
+**M4.1 "real MSE/PE handshake" complete** (2026-10-10). The encrypted handshake
+now completes against real implementations (aria2c 1.36.0 and an independent
+Python MSE responder), and the encrypted-first **plaintext fallback** works: its
+retry loop was capped at 100 attempts, which exhausted in microseconds after the
+MSE probe became coroutine-aware, so a peer that became reachable shortly after
+the probe was never reconnected. It is now wall-clock throttled across the full
+~3 s window. Hash gates (all PASS, from the repo root): `tier1.sh` `16/0`,
+`tier1_cli.sh` `8/8`, `tier1_unit.sh` `3/3`, `tier2.sh` `17/0`,
+`tier3_encrypted.sh` `5/0`, `tier_udp_tracker.sh` `7/0`, `tier_dht.sh` `4/0`,
+`tier_pex.sh` `11/0`, `tier_stall.sh` `8/0`, `tier_fallback.sh` `8/0` (new),
+`tier_refseed_py.sh` `6/0`, `tier_refseed.sh` `6/0`. Compiler/seed unchanged
+(seed v96, closure `46e3e7af98af3b5ff2a960c7c96025e3`).
 
 `tier_real.sh` is a **best-effort** real-swarm tier (not part of the hard gate
 set): it exits `0` only on measured payload progress, `77` with an explicit
 classified `SKIP: <reason>` when the client exits a recognized environmental code
 (parse/tracker/peer/disk/timeout) because the network denies reachability, and
 `1` on a build error, an unexpected internal state, or any other (crash/signal)
-client exit. Next: M5 — Win9x cross-compat
+client exit.
+
+Known next step (M4 polish): real peers set reserved bits z9torr still rejects
+(qBittorrent `reserved[5]=0x18`); relax `wire.reservedAccepted` to ignore unknown
+bits per BEP 3. Then M5 — Win9x cross-compat
 (`docs/superpowers/plans/2026-10-08-z9torr-m5-win9x-plan.md`).

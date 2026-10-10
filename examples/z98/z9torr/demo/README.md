@@ -40,7 +40,7 @@ cd /workspace/znineeight
 timeout 120 /tmp/z9_m0_seed/zig1_5_clean --dump-c89 examples/z98/z9torr/main.zig | md5sum
 ```
 
-- md5: `c59e32198110b96da4d7df2c0d99d87a` (stable 3×; M4 MSE/UDP/DHT/PEX + peer_id)
+- md5: `14fae4e8c108d5d60944faba604ae343` (stable 3×; M4.1 non-blocking MSE + fallback retry fix)
 - command: `timeout 120 /tmp/z9_m0_seed/zig1_5_clean --dump-c89 examples/z98/z9torr/main.zig | md5sum`
 
 ## Fixtures and `info_hash`
@@ -175,6 +175,15 @@ The M4 hard gates all PASS from the repo root:
 | `tests/tier_dht.sh` | two in-process DHT nodes, real `get_peers` discovery | `4/0` |
 | `tests/tier_pex.sh` | BEP 10/11 peer injection is dynamically spawned/dialed | `11/0` |
 
+### M4.1 gates (real MSE/PE handshake)
+
+| gate | what it proves | result |
+|---|---|---|
+| `tests/tier_stall.sh` | a black-hole peer no longer freezes the scheduler (completes in <500 ms vs the 3 s blocking deadline) | `8/0` |
+| `tests/tier_fallback.sh` | encrypted-first client falls back to a byte-verified plaintext download from a plaintext-only `mock_peer` (with a restart gap) | `8/0` |
+| `tests/tier_refseed_py.sh` | real encrypted download from the independent Python MSE responder | `6/0` |
+| `tests/tier_refseed.sh` | real encrypted download from aria2c 1.36.0 (`--bt-require-crypto=true`) | `6/0` |
+
 The pre-M4 gates stay green: `tier1.sh` `16/0`, `tier1_cli.sh` `8/8`,
 `tier1_unit.sh` `3/3`, `tier2.sh` `17/0`.
 
@@ -195,10 +204,14 @@ with `Z9TORR_REAL_TIMEOUT`). It never passes silently:
   nonzero client exit (crash/signal such as `139`, or an unknown code); a defect
   is never masked as an environmental SKIP.
 
-In the build sandbox the tracker returns peers and DHT is attempted, but the
-peers close at the MSE handshake (the same M3 `lin_bin/` diagnostic), so the tier
-reports `SKIP` (exit 77) with a classified reason.
+In the build sandbox the tracker returns peers and DHT is attempted; with the
+M4.1 client a real MSE handshake completes (`handshake ok enc`) and the plaintext
+fallback also succeeds (`handshake ok plain`), but the reachable peers then close
+or are rejected on reserved bits, so no payload arrives and the tier reports
+`SKIP` (exit 77) with a classified reason.
 
 ## Next
 
-M5 — Win9x cross-compat (`docs/superpowers/plans/2026-10-08-z9torr-m5-win9x-plan.md`).
+Resume M4 polish (relax unknown reserved bits in `wire.reservedAccepted` per BEP
+3), then M5 — Win9x cross-compat
+(`docs/superpowers/plans/2026-10-08-z9torr-m5-win9x-plan.md`).
