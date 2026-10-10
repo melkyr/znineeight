@@ -1,5 +1,7 @@
 # union_keyword_tag_xmod — D1 repro (C keyword as a `union(enum)` tag)  [Task I1, 2026-10-09]
 
+**Status:** FIXED (F1 `69e82cd8`, 2026-10-09). Union member names are C-keyword-mangled consistently at the declaration and every access site; the repro compiles, links, and runs (reproduces Zig semantics — any identifier is a valid tag), not merely `gcc` acceptance.
+
 ## What it tests
 A tagged union whose variant tag is a **C keyword**: `int`. In Zig/Z98 any
 identifier is a legal `union(enum)` tag (`int`, `long`, `switch`, … are not Zig

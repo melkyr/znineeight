@@ -1,7 +1,10 @@
 # slice_index_field_store_xmod — D5 lost store through a slice-index aggregate lvalue  [Task I5, 2026-10-09]
 
-**Status:** OPEN compiler defect (investigated by I5; read-only on the compiler). No
-`sf/src/**` change (fix is F5, planned).
+**Status:** FIXED (F5 `ae156d26`; `-fsafe` root-index bounds check restored by F6 `94eb3567`). The
+D5 store-through-address path makes the lost write land in the element (reproduces Zig lvalue
+semantics — `arr[i].field[j] = x` writes through the address); the follow-up F6 restores the
+`-fsafe` bounds check on that chain's ROOT index (see `slice_index_field_store_oob_xmod`).
+(History: investigated by I5, 2026-10-09.)
 **Corpus:** standalone reproducer. `main.zig` is auto-discovered by
 `scripts/corpus/list_corpus_dirs.sh`. This is a **runtime** defect: pre-fix it emits C
 that `gcc` accepts, so the compile-only classify is **OK** (it does **not** add a FAIL).

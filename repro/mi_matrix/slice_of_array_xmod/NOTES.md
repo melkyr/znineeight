@@ -1,5 +1,7 @@
 # slice_of_array_xmod — D2 repro (slice whose element is a synthetic composite)  [Task I2, 2026-10-09]
 
+**Status:** FIXED (F2 `e21dd31b`, 2026-10-09). A slice of a synthetic element recurses to derive a distinct element C name, so `[][]const u8` and `[][20]u8` get distinct typedefs (reproduces Zig semantics — each is a distinct type); the repro is warning-free and green, not merely `gcc`-accepted.
+
 ## What it tests
 Same two distinct nested-slice types as `slice_of_slice_xmod`, but with the
 **field order reversed** so the emitter registers the slice-of-array element

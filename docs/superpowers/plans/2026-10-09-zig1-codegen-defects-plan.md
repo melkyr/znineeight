@@ -2,9 +2,11 @@
 
 **Status:** Implemented (2026-10-10, operator). All five defects D1–D5 fixed
 (F1 `69e82cd8`, F2 `e21dd31b`, F3 `06a7a793` = D3+D4, F5 `ae156d26`; F4 merged
-into F3); seed rotated **v94 → v95** (fixed point / archive binary md5
-`6efc9524c6caf0bb9484565082170ed5`, archive md5
-`ee4e9763d51f76b2b2058dd254377b20`). Closeout report:
+into F3). A final-review Critical regression was then fixed by **F6 `94eb3567`**
+(restores the `-fsafe` bounds check for the D5 chain root index), and the seed was
+rotated **v94 → v95 → v96** (v96 fixed point / archive binary md5
+`46e3e7af98af3b5ff2a960c7c96025e3`, archive md5
+`b55f6140612196e4baf86d5deaca66ec`). Closeout report:
 `.superpowers/sdd/2026-10-09-zig1-codegen-defects-plan/closeout-report.md`.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -24,7 +26,7 @@ into F3); seed rotated **v94 → v95** (fixed point / archive binary md5
 - **The spec is binding; each fix must reproduce Zig semantics (§2 of the spec), not merely satisfy `gcc`.** Plan says A → do A; if you believe X/Y is better, STOP and present.
 - **Compiler is no longer frozen.** `sf/src/**` may change. The seed rotates only at closeout.
 - **Seed under test:** rebuild with `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz <out>` (no `FIXED_POINT_MD5` pin) → `<out>/zig1_5_clean`; gate `hop1 == hop2`. Seed **v94** at plan start (fixed point `296c48f676deec290387b57132e4e2bd`); **rotated to v95 at closeout** (fixed point / archive binary md5 `6efc9524c6caf0bb9484565082170ed5`, archive md5 `ee4e9763d51f76b2b2058dd254377b20`).
-- **Compiler-moving battery (every F-task, and the closeout):** (1) seed rebuild `hop1==hop2`; (2) `bash scripts/corpus/classify <zig1> <out>` → baseline **1120 = 946 OK / 58 GREEN / 116 FAIL / 0 ICE / 0 CRASH** (closeout-measured with the seed-built binary; the plan-start `1115 = 941…` at HEAD `395d12ff` predated the I-task repro additions; **FAIL must not increase**); (3) `bash scripts/stdlib/verify_stdlib.sh <zig1>` → **283 PASS / 0 FAIL**; (4) the `examples/z98/*/` matrix (currently 25) dump+gcc+link clean; (5) runtime goldens gol/lisp/json/mud byte-identical; (6) the **8 `--dump-c89` MD5 pins** (4 programs × `-fsafe`/`-ffast`) — **re-baseline only with operator authorization + runtime-golden proof**; (7) `bash scripts/closeout/verify_upgraded.sh` `CLOSEOUT OK` + `scripts/check_emit_support.sh` 7/7; (8) the z9torr tiers that are in scope for the fix.
+- **Compiler-moving battery (every F-task, and the closeout):** (1) seed rebuild `hop1==hop2`; (2) `bash scripts/corpus/classify <zig1> <out>` → baseline **1121 = 947 OK / 58 GREEN / 116 FAIL / 0 ICE / 0 CRASH** (closeout-measured with the seed-built binary; was `1120 = 946 OK / …` at v95 before F6 `94eb3567` added the `slice_index_field_store_oob_xmod` OK repro; the plan-start `1115 = 941…` at HEAD `395d12ff` predated the I-task repro additions; **FAIL must not increase**); (3) `bash scripts/stdlib/verify_stdlib.sh <zig1>` → **283 PASS / 0 FAIL**; (4) the `examples/z98/*/` matrix (currently 25) dump+gcc+link clean; (5) runtime goldens gol/lisp/json/mud byte-identical; (6) the **8 `--dump-c89` MD5 pins** (4 programs × `-fsafe`/`-ffast`) — **re-baseline only with operator authorization + runtime-golden proof**; (7) `bash scripts/closeout/verify_upgraded.sh` `CLOSEOUT OK` + `scripts/check_emit_support.sh` 7/7; (8) the z9torr tiers that are in scope for the fix.
 - **Repro producers live in `repro/mi_matrix/<name>_xmod/`** (`main.zig` + optional `expected*.txt/.rc` + `NOTES.md`); they are auto-discovered by `scripts/corpus/list_corpus_dirs.sh` — **no manifest**. Stdlib fixtures (the `stdlib_*_xmod` names) are pinned in `scripts/stdlib/expected_dirs.txt`; these defect repros are **not** stdlib fixtures.
 - **A D5-class defect is a runtime defect** — the compile-only corpus classify cannot see a lost write; such repros carry a runtime assertion (print + expected output) and are gated by running, not only compiling.
 - **Editing:** `edit`/`fastedit` only (re-read the region immediately before each edit; bottom-to-top; INSERT = replace anchor line with `[new content + original anchor line]`). No `sed`/python/bulk transforms. No scope creep.
@@ -42,7 +44,7 @@ into F3); seed rotated **v94 → v95** (fixed point / archive binary md5
 
 **Interfaces:** Produces the D1 reproducer + the exact emission site + the Zig-semantics statement + correlation notes.
 
-- [x] **Step 1: Baseline (first task only).** Record HEAD, seed v94 fixed point, the 8 dump-MD5 pins, corpus `1097=923/58/116/0/0` (closeout-corrected to `1120=946/58/116/0/0`), stdlib `283/0`, examples matrix count (25). (These are the references every later task diffs against.)
+- [x] **Step 1: Baseline (first task only).** Record HEAD, seed v94 fixed point, the 8 dump-MD5 pins, corpus `1097=923/58/116/0/0` (closeout-corrected to `1120=946/58/116/0/0`, then `1121=947/58/116/0/0` at v96 after F6 `94eb3567`), stdlib `283/0`, examples matrix count (25). (These are the references every later task diffs against.)
 - [ ] **Step 2: Write the reproducer.** `union(enum){ int: i64, bytes: []const u8 }` + a `switch`/construction that a pre-fix build emits as `struct{ long long _0; } int;` (gcc `expected identifier before 'int'`). Include the exact emit+gcc commands in `NOTES.md`.
 - [ ] **Step 3: Confirm the pre-fix failure** on the seed-built compiler; classify the repro (it is expected to be a genuine FAIL pre-fix — record it; it must go green after F1).
 - [ ] **Step 4: Localize.** Read `sf/src/c89_emit.zig` `~:2008-2024` (union member emission) and every access site; state the Zig semantics (any identifier is a valid tag). Note whether member names appear elsewhere (init/switch/`==`).
@@ -171,9 +173,9 @@ Operator ruling 2026-10-09: D3 and D4 share one root cause and are fixed by a si
 
 **Files:** Modify `examples/torrent_example_defects.md` (mark D1–D5 FIXED with commit ids + the Zig-semantics note); Modify `docs/sf/QUICK_REF.md` (corpus baseline + MD5 table + seed); rotate `release/seed/zig1-seed.tgz` via `bash scripts/seed/archive_seed.sh <zig1> <gen> release/seed/zig1-seed.tgz --update-changelog`; Report `closeout-report.md`
 
-- [x] **Step 1:** Full battery on the final compiler (all 8 items) + the z9torr tier set; runtime goldens; `verify_upgraded` `CLOSEOUT OK`. → seed closure `6efc9524…`; corpus `1120 = 946/58/116/0/0`; stdlib 283/0; matrix 25/25; goldens reproduced; `verify_upgraded` CLOSEOUT OK; emit support 7/7; all 8 z9torr tiers PASS.
+- [x] **Step 1:** Full battery on the final compiler (all 8 items) + the z9torr tier set; runtime goldens; `verify_upgraded` `CLOSEOUT OK`. → seed closure `6efc9524…` at v95 (`46e3e7af…` at v96 after F6); corpus `1121 = 947/58/116/0/0`; stdlib 283/0; matrix 25/25; goldens reproduced; `verify_upgraded` CLOSEOUT OK; emit support 7/7; all 8 z9torr tiers PASS.
 - [x] **Step 2:** Re-baseline the 8 dump-MD5 pins (operator-authorized, measured with the seed-built binary `/tmp/z9_v95_seed/zig1_5_clean`) and record each old→new with runtime proof (gol/lisp/json/mud runtime goldens byte-identical).
-- [x] **Step 3:** Update the defect ledger (D1–D5 FIXED) + QUICK_REF (baseline corrected to `1120 = 946/58/116/0/0`, seed v95).
+- [x] **Step 3:** Update the defect ledger (D1–D5 FIXED; F6 `94eb3567` + v96 in closeout part 2) + QUICK_REF (baseline corrected to `1121 = 947/58/116/0/0`, seed v96).
 - [x] **Step 4:** Rotate the seed **v94 → v95**; verified the archived binary rebuilds to itself (`hop1==hop2 == 6efc9524…`); fixed point / archive binary md5 `6efc9524c6caf0bb9484565082170ed5`, archive md5 `ee4e9763d51f76b2b2058dd254377b20`.
 - [x] **Step 5:** Commit `docs: zig1 codegen defect fixes closeout + seed v95`; next work = the parked z9torr M4 items.
 

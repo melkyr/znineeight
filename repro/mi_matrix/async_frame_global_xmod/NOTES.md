@@ -135,7 +135,11 @@ peer_E0C135AE.c:4438:16: error: 'zT_577' undeclared (first use in this function)
 - D4: undeclared `MsgReader` values at frame offsets **376** and **424** (`zT_563`, `zT_577`).
 
 Same `saveAllFields`/`reloadAllFields` site, same emitter declaration-suppression +
-`resolveTempName` path, same "by-value struct live temp stored by the frame save is undeclared"
-defect. The **trigger** differs (D3 = global address/value crossing a suspension; D4 = by-value
-struct-return temp assigned to a module global) but the defect locus is shared, so one fix is
-expected to cover both (spec §4).
+`resolveTempName` path. Root cause (corrected per I4/F3): the undeclared temp is the
+**loop-carried `load_global` alias of the module global** whose declaration the DCE suppressed
+(`d4_nodecl`) while `temp_global_map` was still empty at the save site — **not** a by-value
+struct live temp. The **trigger** differs (D3 = a module-global struct address crossing a
+suspension; D4 = the same alias reached by assigning a by-value struct-return to the module
+global) but the locus is shared, so one fix covers both. F3 (`06a7a793`) pre-populates
+`temp_global_map` before body emission so the save resolves to the global name (spec §4;
+operator ruled fix-once).

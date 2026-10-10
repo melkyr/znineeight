@@ -178,3 +178,78 @@ bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/z9_seed
 
 `git diff` for this round touches **only** `docs/sf/QUICK_REF.md` (plus this
 report). No push.
+
+---
+
+## Closeout part 2 (F6 + seed v96)
+
+**Context.** The final milestone review found a Critical regression: the F5 D5
+address-taking path bypassed the by-value element read that carried the `-fsafe`
+bounds check, so the chain ROOT index of `s[i].field[j] = x` was not trapped when
+out of range. Operator authorized fix task **F6 `94eb3567`** ("restore `-fsafe`
+bounds check for D5 chain root index"), which changed the compiler. This part-2
+closeout re-rotates the seed and folds the remaining doc fixes.
+
+### Seed rotation v95 → v96
+
+```
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/z9_v96_seed
+  -> hop1 == hop2 == 46e3e7af98af3b5ff2a960c7c96025e3
+bash scripts/seed/archive_seed.sh \
+  /tmp/z9_v96_seed/zig1_5_clean \
+  /tmp/z9_v96_seed/hop2 \
+  release/seed/zig1-seed.tgz --update-changelog
+```
+
+- archive md5: **`b55f6140612196e4baf86d5deaca66ec`**
+- archived binary md5 == self-emission fixed point:
+  **`46e3e7af98af3b5ff2a960c7c96025e3`**
+- archive payload: `gen/` 45 `.c` + 46 `.h`; `lib/` 32 std `.zig`.
+- CHANGELOG: NEW v96 entry prepended (dated 2026-10-10, HEAD `94eb3567`); the v95
+  entry is **not** rewritten.
+- self-consistency:
+  `build_from_seed.sh release/seed/zig1-seed.tgz /tmp/z9_v96_verify`
+  → **hop1 == hop2 == `46e3e7af98af3b5ff2a960c7c96025e3`**.
+
+### Corpus baseline (re-measured, seed-built v96)
+
+`bash scripts/corpus/classify /tmp/z9_v96_seed/zig1_5_clean /tmp/z9_v96_corpus.txt`
+→ **1121 = 947 OK / 58 GREEN / 116 FAIL / 0 ICE / 0 CRASH** (was `1120 = 946 OK
+/ …` at v95; FAIL unchanged; +1 OK = the new
+`repro/mi_matrix/slice_index_field_store_oob_xmod`).
+
+### Doc updates
+
+- `docs/sf/QUICK_REF.md`: Current-seed block v95 → **v96** (fixed point + archive
+  md5 + gen counts), rotation-history prose appended; the "Compile + RUN a
+  program" recipe now builds the seed and invokes the seed-built binary (the
+  retired `sf/build/out_release/zig1` removed); every `1120 = …` baseline mention
+  updated to `1121 = …` with the F6/v96 note.
+- `docs/superpowers/specs/2026-10-09-zig1-codegen-defects-design.md`: Status notes
+  F6 `94eb3567` + v96; §5 baseline → `1121`.
+- `docs/superpowers/plans/2026-10-09-zig1-codegen-defects-plan.md`: Status notes F6
+  + v96; Global Constraints + closeout baselines → `1121`.
+- `sf/docs/tech_docs/08_c89_emission.md`: F6 `emitSafeCheckIndex` call citation
+  corrected `:2230` → **`:2235`** (header line 1 + §1.13), verified against
+  `sf/src/lower.zig:2235`; the D2 pin-movement example corrected — the bogus
+  `game_of_life []([]const u8)` / `[]Task` replaced by the real cause (std modules
+  define `[][]const u8`: `std_str.zig` `split`/`splitLines`/`join`, `std_sort.zig`
+  `StrBox`/`sortStr`).
+- Repro NOTES statuses: `union_keyword_tag_xmod` (FIXED F1 `69e82cd8`),
+  `slice_of_slice_xmod` / `slice_of_array_xmod` (FIXED F2 `e21dd31b`),
+  `slice_index_field_store_xmod` (FIXED F5 `ae156d26`, safe check restored F6
+  `94eb3567`); `slice_index_field_store_oob_xmod` already consistent. The
+  `async_frame_global_xmod` D3 correlation text corrected from "by-value struct
+  live temp" to the `load_global`-alias root cause (D3/D4 shared, F3 `06a7a793`).
+
+### Commit
+
+`docs: zig1 codegen closeout part 2 — F6 + seed v96` (doc edits + CHANGELOG +
+rotated `release/seed/zig1-seed.tgz`). **No push.**
+
+### Concerns
+
+- None material. The v95 closeout entry in QUICK_REF had its baseline mention
+  annotated (`was 1120 … F6 added …`) per the "update every corpus-baseline
+  mention" instruction rather than silently rewritten; the CHANGELOG keeps
+  separate, unrewritten v95 and v96 entries.

@@ -24,11 +24,12 @@ in the next section; that is the only supported path.
 `release/seed/CHANGELOG.md`, full recipes + current md5s in
 `release/seed/SEED_README.txt`).
 
-**Current seed: v95** (rotated 2026-10-10 by the zig1 codegen-defect-fixes closeout; D1–D5
-fixed). Archive md5 `ee4e9763d51f76b2b2058dd254377b20`; archived binary md5
-(= v95's rotation fixed point) `6efc9524c6caf0bb9484565082170ed5`; `gen/` 45 `.c` + 46 `.h`;
-`lib/` 32 std `.zig`. **This block is updated at every plan closeout that rotates the seed**;
-the branch's in-progress fixed point is recorded in the active plan's workspace ledger.
+**Current seed: v96** (rotated 2026-10-10 by the zig1 codegen-defects closeout part 2; D1–D5
+fixed + F6 `-fsafe` root-index check restored). Archive md5 `b55f6140612196e4baf86d5deaca66ec`;
+archived binary md5 (= v96's rotation fixed point) `46e3e7af98af3b5ff2a960c7c96025e3`; `gen/`
+45 `.c` + 46 `.h`; `lib/` 32 std `.zig`. **This block is updated at every plan closeout that
+rotates the seed**; the branch's in-progress fixed point is recorded in the active plan's
+workspace ledger.
 The FX14-F–FX17-F notes below record each amendment's own fixed point and its
 "seed v88 NOT rotated (closeout-only)" status at the time; the Volume II Task 22
 closeout (2026-09-30) rotated the seed to v89; the Amendment A1 closeout
@@ -40,7 +41,10 @@ zig1 type-limit widening closeout (2026-10-08) rotated it to v94 (widened the
 `module_id`/`alignment` u8→u16; guards removed) — the `-s0` self-compile carves
 pool ≈11,958 K with peak RSS median ≈15.1 MB (down from v93's ≈16.0 MB); and the
 zig1 codegen-defect-fixes closeout (2026-10-10) rotated it to v95 (D1–D5 fixed;
-fixed point / archived binary md5 `6efc9524c6caf0bb9484565082170ed5`).
+fixed point / archived binary md5 `6efc9524c6caf0bb9484565082170ed5`); and the
+zig1 codegen-defects closeout part 2 (2026-10-10) rotated it to v96 (F6
+`94eb3567` restored the `-fsafe` root-index check for the D5 chain; fixed point /
+archived binary md5 `46e3e7af98af3b5ff2a960c7c96025e3`).
 
 Top-level `zig1-seed/`: `zig1` (reference binary), `gen/` (its self-emission C89
 module set — 45 `.c` + 46 `.h`, including `zig_special_types.h`; the emitted
@@ -141,7 +145,9 @@ No `Type`-column user ceiling remains in practice.
 
 ### Compile + RUN a program (repro or example) with zig1  — VERIFIED RECIPE
 ```bash
-sf/build/out_release/zig1 --dump-c89 <FILE.zig> > /tmp/x.c 2>/tmp/x.err ; echo "dump rc=$?"
+# the gate compiler is the seed-built zig1; sf/build/out_release/zig1 is retired (cannot build)
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/z9_seed
+/tmp/z9_seed/zig1_5_clean --dump-c89 <FILE.zig> > /tmp/x.c 2>/tmp/x.err ; echo "dump rc=$?"
 gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include \
     /tmp/x.c sf/src/include/zig_runtime.c sf/src/include/zig_pal.c -o /tmp/x ; echo "gcc rc=$?"
 /tmp/x ; echo "run rc=$?"
@@ -564,7 +570,7 @@ rotated.
 
 **z9torr M1 closeout (2026-10-08; example-plan, compiler UNTOUCHED).** Adds the 25th `examples/z98/` entry `z9torr` (single-file torrent parse + metadata summary; `tests/tier1.sh` `15 passed, 0 failed / TIER1 PASS`; emitted-C md5 `b0e8496d741aa130b7252bd7ebefe985`). Full example matrix re-measured over all 25 `examples/z98/*/` dirs with the binding seed `/tmp/z9_m0_seed/zig1_5_clean` (`-ffast -o <out>` + `build_target.sh linux`, dump+gcc+link): **25/25 rc=0** (the dated entries above keep their contemporaneous 24/24). `verify_stdlib` **280 PASS / 0 FAIL** (unchanged). No compiler-only gates (fixed point / 8 dump-MD5 pins / corpus classify) — no `sf/**` change.
 
-**zig1 codegen-defect-fixes closeout (2026-10-10; `sf/src` CHANGED; seed v94 → v95).** Fixes D1 (`69e82cd8`), D2 (`e21dd31b`), D3+D4 (`06a7a793`), D5 (`ae156d26`); repros `union_keyword_tag_xmod`, `slice_of_slice/array_xmod`, `async_frame_structret_xmod`, `slice_index_field_store_xmod`. Full battery on the seed-built fixed compiler `/tmp/z9_v95_seed/zig1_5_clean`: seed two-hop closure **`6efc9524c6caf0bb9484565082170ed5`** (hop1==hop2); corpus `-s0` **1120 = 946 OK / 58 GREEN / 116 FAIL / 0 ICE / 0 CRASH** (the plan-start `1115 = 941…` predated the I-task repro additions; the earlier `1097 = 923…` was stale — operator accepted the correction); stdlib **283 PASS / 0 FAIL / STDLIB GATE OK**; example matrix **25/25 rc=0**; runtime goldens byte-identical (gol `fcbf7e7c…`, lisp `(+ 1 2)` `b3d9f897…`, json `8bda3d5a…`, mud `66c8f0ab…`/`93147d0f…`); `verify_upgraded.sh` **CLOSEOUT OK**; `check_emit_support.sh` **7/7**; all 8 z9torr tiers PASS (tier1 / tier1_cli / tier1_unit / tier2 / tier3_encrypted / tier_udp_tracker / tier_dht / tier_pex). The **8 dump-MD5 pins were re-baselined** (see the 8-pin table above; compiler-build dependent) and the seed rotated to **v95** (archive md5 `ee4e9763d51f76b2b2058dd254377b20`, archived binary / fixed point `6efc9524…`, verified self-consistent hop1==hop2). Next: parked z9torr M4 items (MSE real-peer diagnostics; non-blocking handshake).
+**zig1 codegen-defect-fixes closeout (2026-10-10; `sf/src` CHANGED; seed v94 → v95).** Fixes D1 (`69e82cd8`), D2 (`e21dd31b`), D3+D4 (`06a7a793`), D5 (`ae156d26`); repros `union_keyword_tag_xmod`, `slice_of_slice/array_xmod`, `async_frame_structret_xmod`, `slice_index_field_store_xmod`. Full battery on the seed-built fixed compiler `/tmp/z9_v95_seed/zig1_5_clean`: seed two-hop closure **`6efc9524c6caf0bb9484565082170ed5`** (hop1==hop2); corpus `-s0` **1121 = 947 OK / 58 GREEN / 116 FAIL / 0 ICE / 0 CRASH** (was `1120 = 946 OK / …` at v95; F6/task `94eb3567` added the `slice_index_field_store_oob_xmod` OK repro and, with it, seed v96; the plan-start `1115 = 941…` predated the I-task repro additions; the earlier `1097 = 923…` was stale — operator accepted the correction); stdlib **283 PASS / 0 FAIL / STDLIB GATE OK**; example matrix **25/25 rc=0**; runtime goldens byte-identical (gol `fcbf7e7c…`, lisp `(+ 1 2)` `b3d9f897…`, json `8bda3d5a…`, mud `66c8f0ab…`/`93147d0f…`); `verify_upgraded.sh` **CLOSEOUT OK**; `check_emit_support.sh` **7/7**; all 8 z9torr tiers PASS (tier1 / tier1_cli / tier1_unit / tier2 / tier3_encrypted / tier_udp_tracker / tier_dht / tier_pex). The **8 dump-MD5 pins were re-baselined** (see the 8-pin table above; compiler-build dependent) and the seed rotated to **v95** (archive md5 `ee4e9763d51f76b2b2058dd254377b20`, archived binary / fixed point `6efc9524…`, verified self-consistent hop1==hop2). Next: parked z9torr M4 items (MSE real-peer diagnostics; non-blocking handshake).
 
 - Self-consistency gate: compare current zig1 `--dump-c89` against a pre-captured reference .c file. If the reference .c is outdated (intentional baseline change), re-capture via `cp /tmp/new.c /tmp/ref.c`. Never compare against parent-zig1 output directly — parent builds may fail silently.
 - Do **NOT** compare `zig1 --dump-c89` output against `zig0`'s C output. `zig0` emits a legacy bootstrap format that is byte-level incompatible with zig1.
