@@ -18,8 +18,13 @@
 //   disconnect-after-N    after N received messages, close
 //   bad-bitfield-length   send a bitfield one byte too long
 //   wrong-info-hash       reply-handshake with one mutated info_hash byte, close
+//   corrupt-piece         like normal, but flip the first byte of every block
+//                         served for piece `--corrupt-piece` (default 0) so the
+//                         client's per-piece SHA-1 verification fails; logs
+//                         `mock_peer corrupt piece=<i> begin=<b>` as evidence
 //
 // Flags: --port <n>  --file <path>  --piece-length <n>  --mode <mode>
+//        --corrupt-piece <n>
 // Determinism: Z9TORR_SEED (env) seeds the generated peer_id.
 //
 // Build (binding recipe):
@@ -41,6 +46,7 @@ const M_CHOKE: u8 = 1;
 const M_DISCONNECT: u8 = 2;
 const M_BAD_BITFIELD: u8 = 3;
 const M_WRONG_INFO: u8 = 4;
+const M_CORRUPT: u8 = 5;
 
 var g_body: [MAX_MESSAGE]u8 = undefined;
 var g_out: [MAX_MESSAGE]u8 = undefined;
@@ -94,6 +100,7 @@ fn parseMode(s: []const u8, kind: *u8, n: *u32) bool {
     if (eq(s, "normal")) { kind.* = M_NORMAL; n.* = 0; return true; }
     if (eq(s, "wrong-info-hash")) { kind.* = M_WRONG_INFO; n.* = 0; return true; }
     if (eq(s, "bad-bitfield-length")) { kind.* = M_BAD_BITFIELD; n.* = 0; return true; }
+    if (eq(s, "corrupt-piece")) { kind.* = M_CORRUPT; n.* = 0; return true; }
     var cp: []const u8 = "choke-after-";
     if (hasPrefix(s, cp)) {
         kind.* = M_CHOKE;
@@ -224,7 +231,7 @@ fn sendPiece(fd: i32, index: u32, begin: u32, data: []const u8) bool {
 }
 
 fn serve(fd: i32, f: *std_file.File, piece_length: u32, bits: []const u8,
-         mode_kind: u8, mode_n: u32, peer_id: []const u8) void {
+         mode_kind: u8, mode_n: u32, corrupt_piece: u32, peer_id: []const u8) void {
     var hs: [68]u8 = undefined;
     if (!recvExact(fd, hs[0..], 68)) return;
 
@@ -271,6 +278,17 @@ fn serve(fd: i32, f: *std_file.File, piece_length: u32, bits: []const u8,
                 const blen_us: usize = @intCast(usize, blen);
                 const off: u64 = @intCast(u64, idx) * @intCast(u64, piece_length) + @intCast(u64, begin);
                 if (fileReadAt(f, @intCast(i64, off), g_out[0..blen_us])) {
+                    if (mode_kind == M_CORRUPT and idx == corrupt_piece and blen_us > 0) {
+                        g_out[0] = g_out[0] ^ @intCast(u8, 0xFF);
+                        var cl: []const u8 = "mock_peer corrupt piece=";
+                        out(cl);
+                        std.io.printInt(@intCast(i32, idx));
+                        var cb: []const u8 = " begin=";
+                        out(cb);
+                        std.io.printInt(@intCast(i32, begin));
+                        var cnl: []const u8 = "\n";
+                        out(cnl);
+                    }
                     _ = sendPiece(fd, idx, begin, g_out[0..blen_us]);
                 }
             }
@@ -291,6 +309,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     var piece_length: u32 = DEFAULT_PIECE_LENGTH;
     var mode_kind: u8 = M_NORMAL;
     var mode_n: u32 = 0;
+    var corrupt_piece: u32 = 0;
 
     const n: usize = @intCast(usize, argc);
     var i: usize = 1;
@@ -329,8 +348,18 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
                 std.os.exit(1);
                 return;
             }
+        } else if (eq(tok, "--corrupt-piece")) {
+            i += 1;
+            if (i >= n) { out("mock_peer: --corrupt-piece needs a value\n"); std.os.exit(1); return; }
+            if (parseU32(argAt(argv, i))) |cpv| {
+                corrupt_piece = cpv;
+            } else {
+                out("mock_peer: bad --corrupt-piece\n");
+                std.os.exit(1);
+                return;
+            }
         } else if (eq(tok, "--help") or eq(tok, "-h")) {
-            var u: []const u8 = "usage: mock_peer --file F [--port N] [--piece-length N] [--mode M]\n";
+            var u: []const u8 = "usage: mock_peer --file F [--port N] [--piece-length N] [--mode M] [--corrupt-piece N]\n";
             out(u);
             std.os.exit(0);
             return;
@@ -417,7 +446,7 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
 
     const c = std_net.accept(srv);
     if (c >= 0) {
-        serve(c, &f, piece_length, bits_send, mode_kind, mode_n, peer_id[0..]);
+        serve(c, &f, piece_length, bits_send, mode_kind, mode_n, corrupt_piece, peer_id[0..]);
         std_net.close(c);
     }
 
