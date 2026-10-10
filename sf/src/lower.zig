@@ -2199,7 +2199,7 @@ fn lowerFindFieldOrdinal(self: *LirLowerer, container_tid: u32, field_name_id: u
     return @intCast(u32, 0xFFFFFFFF);
 }
 
-fn lowerLValueAddr(self: *LirLowerer, lv_node_idx: u32, result_type: u32) u32 {
+fn lowerLValueAddr(self: *LirLowerer, lv_node_idx: u32, result_type: u32, safe_check: u8) u32 {
     var store = self.ctx.store;
     var lv_node = ast_mod.astStoreNodeAt(store, lv_node_idx);
     if (lv_node.kind == AstKind.index_access) {
@@ -2216,7 +2216,7 @@ fn lowerLValueAddr(self: *LirLowerer, lv_node_idx: u32, result_type: u32) u32 {
                 var lv_ix_ord = hash_mod.u32ToU32MapGet(self.ctx.tuple_index_table, lv_node_idx);
                 if (lv_ix_ord) |lv_io| {
                     var lv_ix_ptr_ty = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, lv_ix_bt, false);
-                    var lv_ix_addr = lowerLValueAddr(self, lv_node.child_0, lv_ix_ptr_ty);
+                    var lv_ix_addr = lowerLValueAddr(self, lv_node.child_0, lv_ix_ptr_ty, safe_check);
                     var lv_ix_tid = nextTemp(self, result_type);
                     emitInst(self, LirInst{ .addr_of_field = .{ .base = lv_ix_addr, .field_id = lv_io, .result = lv_ix_tid } });
                     return lv_ix_tid;
@@ -2226,6 +2226,13 @@ fn lowerLValueAddr(self: *LirLowerer, lv_node_idx: u32, result_type: u32) u32 {
         var base_temp = lv_ix_base;
         base_temp = maybeExtractSlicePtr(self, lv_node.child_0, base_temp);
         var idx_temp = lowerExpr(self, lv_node.child_1);
+        // D5/F6: restore the `-fsafe` bounds check for an index in an
+        // address-taken aggregate l-value chain. The D5 path bypasses the
+        // by-value element read (which used to carry the check), so
+        // `s[i].field[j] = x` lost the root-index trap under `-fsafe`. The
+        // caller opts in (`safe_check`); every other address-of path keeps its
+        // previous output.
+        if (safe_check != @intCast(u8, 0)) emitSafeCheckIndex(self, lv_ix_base, lv_node.child_0, idx_temp);
         // Task 2f-F: `&g[i][j]` where the base expression `g[i]` is a fixed
         // array (decayed to a row pointer) must take the element address
         // `&(*base)[j]`; a plain `base + j` would scale by the whole row.
@@ -2272,7 +2279,7 @@ fn lowerLValueAddr(self: *LirLowerer, lv_node_idx: u32, result_type: u32) u32 {
         return lowerExpr(self, lv_node.child_0);
     }
     if (lv_node.kind == AstKind.paren_expr) {
-        return lowerLValueAddr(self, lv_node.child_0, result_type);
+        return lowerLValueAddr(self, lv_node.child_0, result_type, safe_check);
     }
     if (lv_node.kind == AstKind.field_access) {
         var field_name_id: u32 = ast_mod.astStoreNodePayload(store, lv_node_idx);
@@ -2315,7 +2322,7 @@ fn lowerLValueAddr(self: *LirLowerer, lv_node_idx: u32, result_type: u32) u32 {
             base_addr = lowerExpr(self, base_node_idx);
         } else if (base_ty != type_mod.TYPE_UNDEFINED and base_ty != type_mod.TYPE_VOID) {
             var ptr_to_base = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, base_ty, false);
-            base_addr = lowerLValueAddr(self, base_node_idx, ptr_to_base);
+            base_addr = lowerLValueAddr(self, base_node_idx, ptr_to_base, safe_check);
         }
         var pointee_ty = base_ty;
         if (base_is_ptr == @intCast(u8, 1)) {
@@ -2497,7 +2504,7 @@ fn lowerAssignLValue(self: *LirLowerer, lv_node_idx: u32, value_temp: u32, diag_
             if (d5BaseChainHasIndex(self, lv_node.child_0)) {
                 if (d5IndexAssignArrayType(self, lv_node.child_0)) |d5_t| {
                     var d5_ptr_ty = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, d5_t, false);
-                    var d5_addr = lowerLValueAddr(self, lv_node.child_0, d5_ptr_ty);
+                    var d5_addr = lowerLValueAddr(self, lv_node.child_0, d5_ptr_ty, @intCast(u8, 1));
                     var d5_idx = lowerExpr(self, lv_node.child_1);
                     emitSafeCheckIndex(self, d5_addr, lv_node.child_0, d5_idx);
                     emitInst(self, LirInst{ .assign_index = .{ .name_id = @intCast(u32, 0), .base = d5_addr, .index = d5_idx, .src = value_temp } });
@@ -2520,7 +2527,7 @@ fn lowerAssignLValue(self: *LirLowerer, lv_node_idx: u32, value_temp: u32, diag_
                     var ait_bn = ast_mod.astStoreNodeAt(store, lv_node.child_0);
                     if (ait_bn.kind == AstKind.field_access or ait_bn.kind == AstKind.index_access or ait_bn.kind == AstKind.deref or ait_bn.kind == AstKind.paren_expr) {
                         var ait_ptr_ty = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, ait_bt, false);
-                        ait_base = lowerLValueAddr(self, lv_node.child_0, ait_ptr_ty);
+                        ait_base = lowerLValueAddr(self, lv_node.child_0, ait_ptr_ty, @intCast(u8, 0));
                         ait_nid = @intCast(u32, 0);
                     }
                     emitInst(self, LirInst{ .store_field = .{ .name_id = ait_nid, .base = ait_base, .field_id = ait_ord, .value = value_temp } });
@@ -3010,7 +3017,7 @@ fn lowerFieldStore(self: *LirLowerer, fa_node_idx: u32, value_temp: u32, diag_no
             resolved_base = nested_base_ty;
         } else {
             var ptr_type = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, if (nested_base_ty) |et| et else type_mod.TYPE_VOID, false);
-            base_temp = lowerLValueAddr(self, fa_node.child_0, ptr_type);
+            base_temp = lowerLValueAddr(self, fa_node.child_0, ptr_type, @intCast(u8, 0));
             resolved_base = ptr_type;
         }
     } else {
@@ -4648,7 +4655,7 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
         var rt_ao = resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx);
         var ao_box: [1]u32 = [1]u32{type_mod.TYPE_UNDEFINED};
         if (rt_ao) |t| { if (t != type_mod.TYPE_UNDEFINED) { ao_box[0] = t; } } else { var rtm_ao: []const u8 = "RTMISS:n"; pal.markerWrite(rtm_ao); var rtmb_ao: [10]u8 = undefined; var rtml_ao = itoa_mod.itoa(node_idx, rtmb_ao[0..]); var rtms_ao: usize = @intCast(usize, 9) - @intCast(usize, rtml_ao); pal.markerWrite(rtmb_ao[rtms_ao..@intCast(usize, 9)]); var rtmnl_ao: []const u8 = "\n"; pal.markerWrite(rtmnl_ao); }
-        return lowerLValueAddr(self, node.child_0, ao_box[0]);
+        return lowerLValueAddr(self, node.child_0, ao_box[0], @intCast(u8, 0));
     } else if (node.kind == AstKind.index_access) {
         // FX5: `pa.*[i]` indexes the dereferenced array; lower the POINTER so
         // the emitter renders `(*pa)[i]` instead of gcc-invalid `zT = *pa;`.
