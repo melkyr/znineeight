@@ -42,12 +42,12 @@ const Ctx = struct { used: u32, capacity: u32, oom: u8 };
 
 pub fn main() void {
     var result: u32 = 0;
-    var cbuf: [256]u8 = undefined;
-    var fbuf: [256]u8 = undefined;
+    var cbuf: [1024]u8 = undefined;
+    var fbuf: [1024]u8 = undefined;
     var ca: CArgs = CArgs{ .out = &result };
     var ctxp: *void = @ptrCast(*void, &cbuf);
     var ctxv: *Ctx = @ptrCast(*Ctx, &cbuf);
-    ctxv.capacity = 256;
+    ctxv.capacity = 1024;
     var args: *const void = @ptrCast(*const void, &ca);
     var frame: *void = @asyncInit(ctxp, &fbuf, caller, args);
     var more: ?*void = @asyncResume(frame, null);

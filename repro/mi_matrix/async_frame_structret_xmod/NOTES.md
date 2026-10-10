@@ -1,10 +1,17 @@
 # async_frame_structret_xmod — D4 undeclared frame-save temp (by-value struct-return into a module global across a suspension)  [Task I4, 2026-10-09]
 
-**Status:** OPEN compiler defect (investigated by I4; read-only on the compiler). No `sf/src/**` change (fix is F3/F4).
+**Status:** FIXED (F3, 2026-10-09). The shared D3/D4 fix pre-populates the emitter's
+`temp_global_map` for every `.load_global` result before body emission
+(`sf/src/c89_emit.zig` `emitFunctionBody`), so the frame save/restore at the save
+site resolves the suppressed `load_global` alias to the global name (exactly as a
+local is handled) instead of the undeclared `zT_N`. Post-fix the dir classifies
+**OK** and the program compiles, links, and prints `5`.
 **Corpus:** standalone reproducer. `main.zig` is auto-discovered by
-`scripts/corpus/list_corpus_dirs.sh`; pre-fix it is classified **FAIL** (emits C but
-`gcc` rejects it) and is expected to move **FAIL→OK** after the shared fix. This
-adds one expected pre-fix `FAIL` (the same convention as the D1/D2 repros).
+`scripts/corpus/list_corpus_dirs.sh`; pre-fix it was classified **FAIL** (emits C but
+`gcc` rejects it) and flips **FAIL→OK** after the shared fix.
+**F3 note:** the driver buffers were sized `[256]u8` but `@asyncFrameSize(caller)`
+exceeds 256, so the pre-F3 guard stack-corrupted at runtime; F3 enlarged the
+`cbuf`/`fbuf`/capacity to 1024 so the runtime assertion actually runs.
 
 ## What it tests
 
@@ -142,9 +149,9 @@ sh "$O/build_target.sh" linux "$O/prog"
 
 In Zig a coroutine captures referenced state correctly across a suspension; the
 emitted frame save must store a **declared** temp (or the global name). Emitted C
-must never reference an undeclared `zT_N`. Proper fix (open, F3/F4): declare every
-temp the save/restore stores, or populate/pre-resolve the `load_global` alias
-before the save block, so the save resolves to the global.
+must never reference an undeclared `zT_N`. Fix applied by F3: populate/pre-resolve
+the `load_global` alias (`temp_global_map`, `sf/src/c89_emit.zig` `emitFunctionBody`)
+before the save block, so the save resolves to the global name.
 
 ## Correlation vs D3 — **YES (one fix)**
 

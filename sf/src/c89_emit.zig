@@ -9121,6 +9121,22 @@ fn dceReleaseOperands(max_temp: u32, tid_to_pos: [*]u32, read_count: [*]u32, ins
     while (tg_cap < emitter.temp_global_map.capacity) : (tg_cap += @intCast(usize, 1)) {
         emitter.temp_global_map.occupied[tg_cap] = @intCast(u8, 0);
     }
+    var tg_pre_bb: usize = @intCast(usize, 0);
+    while (tg_pre_bb < lir_fn.blocks.len) : (tg_pre_bb += @intCast(usize, 1)) {
+        var tg_pre_b = &lir_fn.blocks.items[tg_pre_bb];
+        var tg_pre_ii: usize = @intCast(usize, 0);
+        while (tg_pre_ii < tg_pre_b.insts.len) : (tg_pre_ii += @intCast(usize, 1)) {
+            var tg_pre_inst = tg_pre_b.insts.items[tg_pre_ii];
+            switch (tg_pre_inst) {
+                .load_global => |lg_pre| {
+                    var lg_pre_tid = hoistedTypeId(emitter, lg_pre.result);
+                    var lg_pre_mid = nameManglerMangleGlobal(emitter.mangler, emitter.registry, lg_pre.name_id, lg_pre.module_id, lg_pre_tid);
+                    hash_mod.u32ToU32MapPut(&emitter.temp_global_map, lg_pre.result, lg_pre_mid);
+                },
+                else => {},
+            }
+        }
+    }
     if (emitter.dl_hoisted == @intCast(u8, 0)) {
         var bb_idx: usize = @intCast(usize, 0);
         while (bb_idx < lir_fn.blocks.len) : (bb_idx += @intCast(usize, 1)) {
