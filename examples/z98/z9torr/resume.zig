@@ -64,20 +64,20 @@ fn bitsBytes(n: u32) usize {
 
 fn bitGet(bits: []u8, i: u32) bool {
     var byte: usize = @intCast(usize, i / BITS_PER_BYTE);
-    var sh: u8 = @intCast(u8, i % BITS_PER_BYTE);
+    var sh: u8 = @intCast(u8, BITS_PER_BYTE - 1 - (i % BITS_PER_BYTE));
     return ((bits[byte] >> sh) & @intCast(u8, 1)) == @intCast(u8, 1);
 }
 
 fn bitSet(bits: []u8, i: u32) void {
     var byte: usize = @intCast(usize, i / BITS_PER_BYTE);
-    var sh: u8 = @intCast(u8, i % BITS_PER_BYTE);
+    var sh: u8 = @intCast(u8, BITS_PER_BYTE - 1 - (i % BITS_PER_BYTE));
     var mask: u8 = @intCast(u8, 1) << sh;
     bits[byte] = bits[byte] | mask;
 }
 
 fn bitClear(bits: []u8, i: u32) void {
     var byte: usize = @intCast(usize, i / BITS_PER_BYTE);
-    var sh: u8 = @intCast(u8, i % BITS_PER_BYTE);
+    var sh: u8 = @intCast(u8, BITS_PER_BYTE - 1 - (i % BITS_PER_BYTE));
     var mask: u8 = @intCast(u8, 1) << sh;
     bits[byte] = bits[byte] & ~mask;
 }

@@ -76,16 +76,21 @@ fn pieceHashOffset(index: u32) usize {
 }
 
 // --- completed-piece bitset helpers (shared by peer.zig and main.zig) -------
+//
+// Bit `i` is MSB-first (BEP 3 bitfield order): byte `i / 8`, mask
+// `1 << (7 - (i % 8))`. The peer's `bitfield` message and the client's own
+// completed-piece bitset use the same order; `resume.zig`'s bitmap helpers
+// mirror this so the shared `completed_bits` buffer is decoded identically.
 
 pub fn bitGet(bits: []const u8, i: u32) bool {
     var byte: usize = @intCast(usize, i / 8);
-    var sh: u8 = @intCast(u8, i % 8);
+    var sh: u8 = @intCast(u8, 7 - (i % 8));
     return ((bits[byte] >> sh) & @intCast(u8, 1)) == @intCast(u8, 1);
 }
 
 pub fn bitSet(bits: []u8, i: u32) void {
     var byte: usize = @intCast(usize, i / 8);
-    var sh: u8 = @intCast(u8, i % 8);
+    var sh: u8 = @intCast(u8, 7 - (i % 8));
     var mask: u8 = @intCast(u8, 1) << sh;
     bits[byte] = bits[byte] | mask;
 }

@@ -204,18 +204,19 @@ pub fn writeHandshake(sock: std_net.Socket, hs: *const Handshake) PeerError!void
     try sendAll(sock, h[0..]);
 }
 
-// A reserved field is accepted when it sets only the two extension bits this
-// client understands: the BEP 10 extension-protocol bit (reserved[5], 0x10) and
-// the BEP 5 DHT bit (reserved[7], 0x01). Any other bit is a protocol error, as
-// is any non-zero byte outside 5/7. M0/M2 peers send all-zero reserved, which
-// this still accepts (the M4 real-swarm goal needs extension-aware peers).
+// A reserved field is accepted when it sets only the extension bits this client
+// understands: the BEP 10 extension-protocol bit (reserved[5], 0x10), the BEP 5
+// DHT bit (reserved[7], 0x01), and the BEP 6 Fast Extension bit (reserved[7],
+// 0x04 — e.g. aria2c). Any other bit is a protocol error, as is any non-zero
+// byte outside 5/7. M0/M2 peers send all-zero reserved, which this still
+// accepts (the M4 real-swarm goal needs extension-aware peers).
 fn reservedAccepted(r: []const u8) bool {
     var i: usize = 0;
     while (i < RESERVED_LEN) : (i += 1) {
         if (i == 5) {
             if ((r[i] & @intCast(u8, 0xEF)) != 0) return false;
         } else if (i == 7) {
-            if ((r[i] & @intCast(u8, 0xFE)) != 0) return false;
+            if ((r[i] & @intCast(u8, 0xFA)) != 0) return false;
         } else {
             if (r[i] != 0) return false;
         }

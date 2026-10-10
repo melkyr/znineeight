@@ -158,13 +158,18 @@ fi
 echo "== starting aria2c forced-encryption seeder =="
 mkdir -p "$OUT/aria/dl"
 cp "$WORK/t1.payload" "$OUT/aria/dl/t1.bin"
+# --check-integrity=true makes aria2 hash-check the pre-seeded payload and mark
+# it complete, so aria2 becomes a real SEEDER. Without it aria2 treats the copied
+# file as absent (announces left=<size>, has 0 completed pieces) and, being a
+# non-Fast-Extension leecher, sends no bitfield -> the client stalls.
 env LD_LIBRARY_PATH="$ARIA_LD" timeout 120 "$ARIA2" \
-    --seed-time=1 --bt-require-crypto=true --bt-min-crypto-level=arc4 \
+    --seed-time=1 --check-integrity=true --bt-require-crypto=true \
+    --bt-min-crypto-level=arc4 \
     --enable-dht=false --bt-enable-lpd=false --enable-rpc=false \
     --listen-port="$P_ARIA" --dht-listen-port="$P_ARIA_DHT" --console-log-level=warn \
     -d "$OUT/aria/dl" --allow-overwrite=true "$TORRENT" >"$OUT/aria/aria.log" 2>&1 &
 ARIA_PID=$!
-sleep 2
+sleep 3
 if ! kill -0 "$ARIA_PID" 2>/dev/null; then
     echo "FAIL: aria2c seeder exited early (see $OUT/aria/aria.log)"
     exit 1
