@@ -197,6 +197,63 @@ fn logPeerEnd(peer: *Peer) void {
     logmod.u64v(peer.down_bytes);
     logmod.nl();
 }
+// M4 CP P3: env-gated per-peer wire-frame trace (Z9TORR_LOG). `id` is the
+// `wire.MsgType` id and `body_len` the frame body length (id byte + payload);
+// keep-alives carry no id and are rendered explicitly. These attribute a
+// post-handshake close to the exact sent/received frame and peer slot. Every
+// helper is a strict no-op when `Z9TORR_LOG` is unset (log.zig gates on
+// `g_enabled`); free functions, no generics (Z98), caller-owned `Peer`/`Message`
+// (D3/D4).
+fn logFrameTx(peer: *Peer, id: u8, body_len: u32) void {
+    logmod.s("peer slot=");
+    logmod.u32v(peer.slot);
+    logmod.s(" frame tx id=");
+    logmod.u32v(@intCast(u32, id));
+    logmod.s(" len=");
+    logmod.u32v(body_len);
+    logmod.nl();
+}
+
+fn logFrameTxFail(peer: *Peer, id: u8) void {
+    logmod.s("peer slot=");
+    logmod.u32v(peer.slot);
+    logmod.s(" frame tx-fail id=");
+    logmod.u32v(@intCast(u32, id));
+    logmod.nl();
+}
+
+fn logFrameTxKeepalive(peer: *Peer) void {
+    logmod.s("peer slot=");
+    logmod.u32v(peer.slot);
+    logmod.s(" frame tx keepalive len=0");
+    logmod.nl();
+}
+
+fn logFrameRx(peer: *Peer, msg: *const wire.Message) void {
+    if (msg.is_keep_alive) {
+        logmod.s("peer slot=");
+        logmod.u32v(peer.slot);
+        logmod.s(" frame rx keepalive len=0");
+        logmod.nl();
+        return;
+    }
+    logmod.s("peer slot=");
+    logmod.u32v(peer.slot);
+    logmod.s(" frame rx id=");
+    logmod.u32v(@intCast(u32, @enumToInt(msg.id)));
+    logmod.s(" len=");
+    logmod.u32v(@intCast(u32, msg.payload.len + 1));
+    logmod.nl();
+}
+
+fn logFrameRxErr(peer: *Peer, e: wire.PeerError) void {
+    logmod.s("peer slot=");
+    logmod.u32v(peer.slot);
+    logmod.s(" frame rx error=");
+    logmod.s(wire.peerErrorName(e));
+    logmod.nl();
+}
+
 
 // Zero-length slices returned to callers that need a valid-but-empty slice
 // (the M2 single-peer path has no scheduler, so `rarest`/`bitfield` start
@@ -473,6 +530,7 @@ fn sendRequests(ctx: *RunCtx, peer: *Peer, ps: *piece.PieceState) bool {
         } else {
             wire.writeRequest(peer.sock, r.index, r.begin, r.length) catch return true;
         }
+        logFrameTx(peer, @intCast(u8, 6), 13);
         peer.last_send_ms = std.time.ticksMs();
         peer.up_bytes += 13;
         sent += 1;
@@ -745,10 +803,16 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
     if ((peer.rhs.reserved[5] & @intCast(u8, 0x10)) != 0) {
         std.arena.reset(ctx.pex_arena);
         var ext_body: []u8 = pex.pexBuildHandshake(ctx.pex_arena, 0);
+        var ext_ok: bool = true;
         if (peer.encrypted) {
-            wire.writeExtendedEnc(peer.sock, &peer.enc.out, 0, ext_body) catch {};
+            wire.writeExtendedEnc(peer.sock, &peer.enc.out, 0, ext_body) catch { ext_ok = false; };
         } else {
-            wire.writeExtended(peer.sock, 0, ext_body) catch {};
+            wire.writeExtended(peer.sock, 0, ext_body) catch { ext_ok = false; };
+        }
+        if (ext_ok) {
+            logFrameTx(peer, @intCast(u8, 20), @intCast(u32, 2 + ext_body.len));
+        } else {
+            logFrameTxFail(peer, @intCast(u8, 20));
         }
     }
 
@@ -783,6 +847,7 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
             return;
         };
     }
+    logFrameTx(peer, @intCast(u8, 2), 1);
 
     var reader: std_stream.MsgReader = undefined;
     reader.src = &peer.sock;
@@ -856,6 +921,7 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
                     break;
                 };
             }
+            logFrameTxKeepalive(peer);
             peer.last_send_ms = now;
         }
 
@@ -889,17 +955,20 @@ pub fn peerRun(ctx: *RunCtx, peer: *Peer) void {
 
         var msg: wire.Message = undefined;
         if (peer.encrypted) {
-            wire.readMessageAsyncEnc(&reader, &peer.enc.in, &msg) catch {
+            wire.readMessageAsyncEnc(&reader, &peer.enc.in, &msg) catch |e| {
+                logFrameRxErr(peer, e);
                 break_reason = "read-error";
                 break;
             };
         } else {
-            wire.readMessageAsync(&reader, &msg) catch {
+            wire.readMessageAsync(&reader, &msg) catch |e| {
+                logFrameRxErr(peer, e);
                 break_reason = "read-error";
                 break;
             };
         }
         peer.last_recv_ms = std.time.ticksMs();
+        logFrameRx(peer, &msg);
 
         var stop: bool = false;
 

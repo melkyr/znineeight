@@ -6,7 +6,7 @@
 
 **Working commit:** `f2d627a3` (M4.1 sources Task 0–4 + Task 5 fallback fix; M4.1 Task 5 docs on top)
 
-**MD5 (`--dump-c89`):** `14fae4e8c108d5d60944faba604ae343` (seed `zig1_5_clean`; stable 3×; M4.1 non-blocking MSE + plaintext-fallback retry fix)
+**MD5 (`--dump-c89`):** `fe6d03eb517d042c149b24a418a69d52` (seed `zig1_5_clean`; stable 3×; CP P3 BEP 5 PORT fix + per-peer frame trace)
 
 ## Build Recipes
 
@@ -20,8 +20,8 @@ sh /tmp/z9_m1_out/build_target.sh linux /tmp/z9_m1_out/prog
 
 ### seed zig1_5_clean (dump C89) — for the MD5 above
 ```bash
-timeout 120 /tmp/z9_m0_seed/zig1_5_clean --dump-c89 examples/z98/z9torr/main.zig | md5sum
-# b24be5e55c6a885d40d85fce97c97fcc  -
+timeout 120 /tmp/z9_m41_seed/zig1_5_clean --dump-c89 examples/z98/z9torr/main.zig | md5sum
+# fe6d03eb517d042c149b24a418a69d52  -
 ```
 
 ## Expected Output
@@ -232,6 +232,40 @@ exact qBittorrent `reserved=0000000000180005` handshake now succeeds
 transport-level (`PeerClosed`/`NetFailed`), none reserved-bit. First real
 payload progress in this sandbox: **~37.75 MiB / 4.9 %** at ~1 MiB/s before the
 bounded 100 s window (exit 124, resume sidecar written; see `z9torr.log`).
+
+## CP P3 — post-handshake peer drops on the BEP 5 PORT message (2026-10-10)
+
+Real peers (qBittorrent/libtorrent) closed the connection immediately after a
+successful handshake. Diagnosis (env-gated per-peer frame trace in `peer.zig`:
+`peer slot=<n> frame tx|rx id=<id> len=<len>`, `frame rx error=<PeerError>`;
+strict no-op when `Z9TORR_LOG` is unset):
+
+- **Root cause (CLIENT-side):** we advertise the BEP 5 DHT reserved bit
+  (`reserved[7]=0x01`), so a DHT-enabled peer sends its DHT `PORT` message
+  (wire id **9**, 3-byte frame). `wire.decodeMsgType` mapped only 0..8 and 20,
+  so `decodeFrame` returned `PeerError.BadMessage` and `peerRun` broke with
+  `read-error` on the first PORT — dropping a healthy peer. The pre-fix live
+  log fingerprint is `enc frame len=3` with **no** following `id=` line (the
+  length is logged before `decodeFrame`; the id only after it succeeds),
+  immediately followed by `break reason=read-error`; the one peer that served
+  data was the one that never sent PORT.
+- **Hermetic repro:** a throwaway local peer that handshakes, sends
+  bitfield+unchoke, then a PORT frame made the pre-fix client close the
+  connection right after PORT (`frame rx error=BadMessage`); post-fix the
+  client reads `frame rx id=9 len=3` and keeps the connection open.
+- **Fix (minimal):** `wire.MsgType` gains `port = 9` and `decodeMsgType`
+  decodes it; `peer.zig`'s existing `else => {}` ignores it (we neither use nor
+  reply to PORT). Behavioral change only; no protocol/format change to frames
+  we emit.
+
+**Live Debian retest (best-effort, `lin_bin/`, fixed client):** 50 tracker
+peers, 16 spawned, 18 connects; **5 `handshake ok`** (4 encrypted + 1
+plaintext) and **all 5 stayed connected** to the bounded window — `0`
+post-handshake `read-error` (pre-fix: 6 of 7 dropped). Three peers sent
+`frame rx id=9 len=3`; all were tolerated. **~42.75 MiB** fetched at ~1.0 MiB/s
+with `peers=5`, 4177 `piece` frames (exit 124, 100 s window; see
+`lin_bin/z9torr.log`). New `--dump-c89` md5
+`fe6d03eb517d042c149b24a418a69d52`.
 
 Next: M5 — Win9x cross-compat
 (`docs/superpowers/plans/2026-10-08-z9torr-m5-win9x-plan.md`).

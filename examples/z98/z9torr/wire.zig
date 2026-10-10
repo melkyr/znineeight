@@ -38,10 +38,13 @@ pub const MsgReader = std_stream.MsgReader;
 // is a protocol error (`PeerError.BadMessage`).
 pub const MAX_MESSAGE_SIZE: usize = 65536;
 
-// Wire message ids (spec §6). This enum is EXACTLY 0..8 plus the BEP 10
-// `extended` id (20); a keep-alive (a length-0 frame with no id) is not an id
-// and is surfaced via `Message.is_keep_alive` instead. An extended message's
-// `payload` starts with a one-byte extended id followed by its bencoded body.
+// Wire message ids (spec §6). This enum is 0..9 plus the BEP 10 `extended` id
+// (20): 0..8 are the base BitTorrent messages and 9 is the BEP 5 DHT `port`
+// message (a DHT-supporting peer sends it because we advertise the DHT reserved
+// bit; we accept and ignore it). A keep-alive (a length-0 frame with no id) is
+// not an id and is surfaced via `Message.is_keep_alive` instead. An extended
+// message's `payload` starts with a one-byte extended id followed by its
+// bencoded body.
 pub const MsgType = enum(u8) {
     choke = 0,
     unchoke = 1,
@@ -52,6 +55,7 @@ pub const MsgType = enum(u8) {
     request = 6,
     piece = 7,
     cancel = 8,
+    port = 9,
     extended = 20,
 };
 
@@ -397,6 +401,10 @@ fn decodeMsgType(id: u8, out: *MsgType) bool {
         },
         8 => {
             out.* = MsgType.cancel;
+            return true;
+        },
+        9 => {
+            out.* = MsgType.port;
             return true;
         },
         20 => {
