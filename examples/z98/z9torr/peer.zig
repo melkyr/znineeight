@@ -55,10 +55,14 @@ const KEEPALIVE_MS: u32 = 120000;
 // Per-peer connect budget. `connectAsync` issues a non-blocking connect and
 // yields via `@asyncSuspend` until the socket reports writable (or this deadline
 // elapses), so a dead/unresponsive peer costs the scheduler only a tick per
-// retry instead of freezing `tick` inside a blocking `select(2)`. Bound it well
-// under `STALL_MS` (60 s) so dead peers cannot by themselves trip the stall
-// detector (spec §7/§8; M3 final-review fix 3).
-const CONNECT_TIMEOUT_MS: u32 = 1000;
+// retry instead of freezing `tick` inside a blocking `select(2)`. Because the
+// connect no longer serializes the single-threaded scheduler (M4.1 Task 4), the
+// budget does not need to be tiny: the old 1 s value spuriously dropped
+// reachable-but-slow peers (7/16 connect timeouts in the live run), so this is
+// raised to a realistic 10 s while staying well under `STALL_MS` (60 s) so dead
+// peers cannot by themselves trip the stall detector (spec §7/§8; M3
+// final-review fix 3; CP P2).
+const CONNECT_TIMEOUT_MS: u32 = 10000;
 
 // Plaintext-fallback reconnect budget + retry cadence. After an MSE probe
 // fails, `plainReconnect` retries a fresh plaintext connect for the WHOLE
