@@ -2484,6 +2484,27 @@ fn lowerAssignLValue(self: *LirLowerer, lv_node_idx: u32, value_temp: u32, diag_
     } else if (lv_node.kind == AstKind.index_access) {
         // FX5: `pa.*[i] = v` stores through the dereferenced array; lower the
         // pointer operand so the emitter renders `(*pa)[i] = v`.
+        // D5 (F5): `s[i].field[j] = x` / `a[i].field[j] = x` indexes into a
+        // fixed-array field of an element that the value path copies BY VALUE,
+        // so the store lands in the copy and is lost. When the indexed base is
+        // an array-typed l-value chain (field/index/deref/paren), take the
+        // whole chain by ADDRESS exactly as `lowerFieldStore` does, so
+        // `(…)->field[j]` is addressed once and the store reaches the element.
+        // Slice/pointer bases keep the value path: their pointer already
+        // targets the real storage.
+        var d5_bn = ast_mod.astStoreNodeAt(store, lv_node.child_0);
+        if (d5_bn.kind == AstKind.field_access or d5_bn.kind == AstKind.index_access or d5_bn.kind == AstKind.deref or d5_bn.kind == AstKind.paren_expr) {
+            if (d5BaseChainHasIndex(self, lv_node.child_0)) {
+                if (d5IndexAssignArrayType(self, lv_node.child_0)) |d5_t| {
+                    var d5_ptr_ty = type_mod.typeRegistryGetOrCreatePtr(self.ctx.registry, d5_t, false);
+                    var d5_addr = lowerLValueAddr(self, lv_node.child_0, d5_ptr_ty);
+                    var d5_idx = lowerExpr(self, lv_node.child_1);
+                    emitSafeCheckIndex(self, d5_addr, lv_node.child_0, d5_idx);
+                    emitInst(self, LirInst{ .assign_index = .{ .name_id = @intCast(u32, 0), .base = d5_addr, .index = d5_idx, .src = value_temp } });
+                    return;
+                }
+            }
+        }
         var base_temp = lowerExpr(self, indexBaseAfterArrayDeref(self, lv_node.child_0));
         // FB (D4): `t[ord] = value` is the field store `t._<ord> = value`
         // (same mechanism as `.0`/`._0`). A base that is itself an l-value
@@ -2538,6 +2559,72 @@ fn lowerAssignLValue(self: *LirLowerer, lv_node_idx: u32, value_temp: u32, diag_
     } else {
         iceAssignLValueUnsupported(self, diag_node_idx);
     }
+}
+// D5 (F5): the declared ARRAY type of an index-assign base that is an aggregate
+// l-value chain, or null. `semanticAnalyzerResolveFieldAccess` decays an array
+// field to a bare ELEMENT pointer, so `resolvedTypeTableGet` reports a pointer
+// for `s[i].field`; the field's declared array type is recovered from the
+// container's field table (mirroring `fieldStaticLenForBase`).
+fn d5IndexAssignArrayType(self: *LirLowerer, node_idx: u32) ?u32 {
+    var store = self.ctx.store;
+    var node = ast_mod.astStoreNodeAt(store, node_idx);
+    if (node.kind == AstKind.paren_expr) return d5IndexAssignArrayType(self, node.child_0);
+    if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx)) |rt| {
+        if (rt != type_mod.TYPE_UNDEFINED and rt != type_mod.TYPE_VOID and @intCast(usize, rt) < self.ctx.registry.types_len and self.ctx.registry.types_items[@intCast(usize, rt)].kind == type_mod.TypeKind.array_type) {
+            return rt;
+        }
+    }
+    if (node.kind != AstKind.field_access) return null;
+    var field_name_id: u32 = ast_mod.astStoreNodePayload(store, node_idx);
+    var cid: u32 = undefined;
+    if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node.child_0)) |ctv| {
+        cid = ctv;
+    } else return null;
+    if (cid == type_mod.TYPE_UNDEFINED or cid == type_mod.TYPE_VOID) return null;
+    if (@intCast(usize, cid) >= self.ctx.registry.types_len) return null;
+    var cty = self.ctx.registry.types_items[@intCast(usize, cid)];
+    if (cty.kind == type_mod.TypeKind.ptr_type or cty.kind == type_mod.TypeKind.many_ptr_type) {
+        cid = self.ctx.registry.ptr_items[@intCast(usize, cty.payload_idx)].base;
+        if (@intCast(usize, cid) >= self.ctx.registry.types_len) return null;
+        cty = self.ctx.registry.types_items[@intCast(usize, cid)];
+    }
+    if (cty.kind != type_mod.TypeKind.struct_type and cty.kind != type_mod.TypeKind.union_type and cty.kind != type_mod.TypeKind.packed_union_type) return null;
+    var fields: []FieldEntry = undefined;
+    if (cty.kind == type_mod.TypeKind.union_type or cty.kind == type_mod.TypeKind.packed_union_type) {
+        type_mod.typeRegistryGetUnionFields(self.ctx.registry, cid, &fields);
+    } else {
+        type_mod.typeRegistryGetStructFields(self.ctx.registry, cid, &fields);
+    }
+    var fi: usize = 0;
+    while (fi < fields.len) : (fi += 1) {
+        if (fields[fi].name_id == field_name_id) {
+            var ft = fields[fi].type_id;
+            if (ft != type_mod.TYPE_UNDEFINED and ft != type_mod.TYPE_VOID and @intCast(usize, ft) < self.ctx.registry.types_len and self.ctx.registry.types_items[@intCast(usize, ft)].kind == type_mod.TypeKind.array_type) {
+                return ft;
+            }
+            return null;
+        }
+    }
+    return null;
+}
+
+// D5 (F5): true when the base l-value chain roots at an `index_access` (an
+// element read that the value path materialises as a by-value copy). A plain
+// local/parameter aggregate base has no index and keeps the value path.
+fn d5BaseChainHasIndex(self: *LirLowerer, node_idx: u32) bool {
+    var store = self.ctx.store;
+    var cur = node_idx;
+    var guard: u32 = @intCast(u32, 0);
+    while (guard < @intCast(u32, 64)) : (guard += 1) {
+        var n = ast_mod.astStoreNodeAt(store, cur);
+        if (n.kind == AstKind.index_access) return true;
+        if (n.kind == AstKind.field_access or n.kind == AstKind.deref or n.kind == AstKind.paren_expr) {
+            cur = n.child_0;
+            continue;
+        }
+        return false;
+    }
+    return false;
 }
 
 
