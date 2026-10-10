@@ -169,6 +169,25 @@ pub fn makeSecret(seed: u32, out: []u8) void {
     if (any == 0) out[0] = 1;
 }
 
+// Per-connection ephemeral seed (CP P1): mix the run-wide base seed with the
+// peer's slot, address and a per-connection nonce (the slot's monotonic MSE
+// attempt counter) so every connection derives an independent `Xa` and sends a
+// distinct `Ya` — including a re-dialed (slot, address) pair. Deterministic per
+// input: the same base+identity+nonce always yields the same secret, so
+// `Z9TORR_SEED` runs stay reproducible; the base is clock-derived when the env
+// var is unset. XOR-multiply only; the DH/modpow math and `makeSecret` itself
+// are unchanged.
+pub fn mixPeerSeed(base: u32, slot: u32, ip_be: u32, port: u32, nonce: u32) u32 {
+    var h: u32 = base;
+    h = (h ^ slot) *% @intCast(u32, 2654435761);
+    h = (h ^ ip_be) *% @intCast(u32, 2654435761);
+    h = (h ^ port) *% @intCast(u32, 2654435761);
+    h = (h ^ nonce) *% @intCast(u32, 2654435761);
+    h = h ^ (h >> 16);
+    if (h == 0) h = 1;
+    return h;
+}
+
 // --- local byte helpers -----------------------------------------------------
 fn readU32BE(b: []const u8) u32 {
     return (@intCast(u32, b[0]) << 24) | (@intCast(u32, b[1]) << 16) |

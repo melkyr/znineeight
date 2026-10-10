@@ -160,6 +160,7 @@ pub fn schedulerInit(arena: *std.arena.Arena, t: torrent.Torrent, max_peers: u32
             p.rarest = rar;
             p.sock = @intCast(i32, -1);
             p.encrypted = false;
+            p.mse_attempts = 0;
             peers[@intCast(usize, j)] = p;
         }
     }

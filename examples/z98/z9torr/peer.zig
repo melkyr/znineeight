@@ -123,6 +123,10 @@ pub const Peer = struct {
     // are overwritten in `peerRun` before use, so an uninitialised slot is safe.
     enc: mse.Rc4Pair,
     encrypted: bool,
+    // CP P1: monotonic per-slot MSE attempt counter. Mixed into the ephemeral
+    // seed so a re-dialed (slot, address) pair still derives a fresh `Xa`; it is
+    // initialised once by `schedulerInit` and never reset on slot reuse.
+    mse_attempts: u32,
     // M4.1 Task 4: caller-owned MSE handshake scratch (fixed arrays cannot live
     // in the coroutine frame across a suspension — see `mse.MseScratch`).
     msesc: mse.MseScratch,
@@ -417,7 +421,14 @@ fn connectPeer(peer: *Peer, deadline_ms: u32, ok_out: *bool) void {
 // falls back to a fresh plaintext connection. Coroutine-aware: `mseConnectAsync`
 // yields on WouldBlock. Void return for the same async parent_result reason.
 fn mseHandshake(ctx: *RunCtx, peer: *Peer, ok_out: *bool) void {
-    mse.mseConnectAsync(peer.sock, ctx.t.info_hash[0..], ctx.mse_seed, &peer.enc, &peer.msesc) catch |me| {
+    // CP P1: derive a per-connection seed from the run base seed + this peer's
+    // slot/address + a monotonic per-slot attempt counter, so each connection
+    // sends a distinct `Ya` (independent `Xa`) — including a re-dialed
+    // (slot, address) pair. Same inputs -> same secret: hermetic `Z9TORR_SEED`
+    // runs stay deterministic.
+    peer.mse_attempts = peer.mse_attempts +% 1;
+    var pseed: u32 = mse.mixPeerSeed(ctx.mse_seed, peer.slot, peer.addr.ip_be, @intCast(u32, peer.addr.port), peer.mse_attempts);
+    mse.mseConnectAsync(peer.sock, ctx.t.info_hash[0..], pseed, &peer.enc, &peer.msesc) catch |me| {
         logmod.s("peer slot=");
         logmod.u32v(peer.slot);
         logmod.s(" mse-fail err=");
