@@ -205,12 +205,19 @@ fn writeHandle(h: *void, buf: []const u8) FileError!usize {
 // declared 64-bit-returning lseek64 has no author C prototype under the pinned
 // -std=c89/no-LFS compilation and would truncate). whence is SEEK_SET/_CUR/_END.
 fn llseekHandle(fd: i32, offset: i64, whence: i32) FileError!i64 {
-    var high: u32 = @intCast(u32, (offset >> 32) & 4294967295);
-    var low: u32 = @intCast(u32, offset & 4294967295);
-    var res: i64 = 0;
-    const r = pal.syscall(SYS_LLSEEK, fd, high, low, &res, whence);
-    if (r != @intCast(i32, 0)) return error.SeekFailed;
-    return res;
+    if (@isWindows()) {
+        // POSIX-only helper: the Windows 64-bit seek is SetFilePointerEx in
+        // seekHandle. This branch is pruned under -osw so the emitted C carries
+        // no `syscall` reference (mingw has no such symbol).
+        return error.SeekFailed;
+    } else {
+        var high: u32 = @intCast(u32, (offset >> 32) & 4294967295);
+        var low: u32 = @intCast(u32, offset & 4294967295);
+        var res: i64 = 0;
+        const r = pal.syscall(SYS_LLSEEK, fd, high, low, &res, whence);
+        if (r != @intCast(i32, 0)) return error.SeekFailed;
+        return res;
+    }
 }
 
 fn seekHandle(h: *void, offset: i64, whence: i32) FileError!i64 {
