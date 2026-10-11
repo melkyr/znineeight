@@ -1,12 +1,12 @@
 # z9play — Z98 Example
 
-**Status:** M0 in progress (Task 0 complete)
+**Status:** M0 complete (Tasks 0–5)
 
-**Entry file:** `main.zig` (arrives in Task 5; not present yet)
+**Entry file:** `main.zig`
 
-**Working commit:** _(set at M0 closeout)_
+**Working commit:** M0 Task 5 (this commit; short hash pinned at M0 closeout)
 
-**MD5 (`--dump-c89`):** _(set at M0 closeout)_
+**MD5 (`--dump-c89`):** `ba86cbe8b2229667f4c8084a0b0e75da` (seed `zig1_5_clean`, seed **v97**; stable 3×; M0 `--info` CLI + `tier_info` gate)
 
 Spec: `docs/superpowers/specs/2026-10-11-z9play-ogg-player-design.md` (binding).
 M0 plan: `docs/superpowers/plans/2026-10-11-z9play-m0-ogg-container-plan.md`.
@@ -27,6 +27,31 @@ sh /tmp/z9play_out/build_target.sh linux /tmp/z9play_out/prog
 
 All tiers run under **`-fsafe`**.
 
+### `--info` usage (M0)
+
+```bash
+/tmp/z9play_out/prog --info examples/z98/z9play/testdata/tagged_unicode.ogg
+# channels=2
+# sample_rate=44100
+# duration_s=1.000
+# TITLE=Café déjà vu
+# ARTIST=Naïve 日本
+# ALBUM=Ünïcodé
+```
+
+The output is a fixed `key=value` block (LF-terminated) in the same format as
+the committed `testdata/expected/*.meta` goldens; `TITLE`/`ARTIST`/`ALBUM` are
+emitted only when the stream carries them (raw UTF-8 value bytes). Exit codes:
+`0` ok, `1` arguments, `2` open, `3` decoder (malformed container/header, or a
+non-Vorbis stream). `--help` and `--version` exit `0`.
+
+### `--dump-c89` (for the MD5 above)
+
+```bash
+timeout 120 /tmp/z9play_seed/zig1_5_clean --dump-c89 examples/z98/z9play/main.zig | md5sum
+# ba86cbe8b2229667f4c8084a0b0e75da  -
+```
+
 ## Baseline (Task 0)
 
 - Seed build succeeded and reached the expected fixed point
@@ -37,7 +62,9 @@ All tiers run under **`-fsafe`**.
   `examples/z98/z9play/` currently has **no** `.zig` entry, so it is not yet
   listed; with a `main.zig` present it is listed as
   `examples/z98/z9play/` (verified with a throwaway stub, removed immediately).
-  Task 5 adds `main.zig`, at which point discovery succeeds.
+  **Task 5 update:** `main.zig` now exists, so `examples/z98/z9play/` is listed
+  with `main.zig` as the resolved entry; the `examples/z98/` corpus count is now
+  **26** (was 25).
 
 ## Fixtures and goldens (Task 0)
 
@@ -118,9 +145,25 @@ round-trip mismatch, proving the guard.
 
 ## Milestone Log
 
-### M0 — OGG container + Vorbis headers + `--info` (in progress)
+### M0 — OGG container + Vorbis headers + `--info` (complete)
 
 - **Task 0 (preflight) — DONE.** `tests/get_vorbis_tools.sh` (no-root
   acquisition) and `tests/mkfixtures.sh` (deterministic fixtures + goldens);
-  skeleton docs; baseline seed build + corpus-discovery check. Next: Task 1
-  (`ogg.zig` page parse + packet reassembly).
+  skeleton docs; baseline seed build + corpus-discovery check.
+- **Task 1 — DONE.** `ogg.zig`: 27-byte page header + segment-table parse,
+  page walk, local OGG CRC-32 verify, packet reassembly; `tests/ogg_test.zig`.
+- **Task 2 — DONE.** `vorbis_info.parseId` + `IdHeader`; malformed cases reject.
+- **Task 3 — DONE.** `vorbis_info.parseComment` + `Comment`/`Tag` (uppercased
+  keys, arena-owned slices, raw UTF-8 value bytes).
+- **Task 4 — DONE.** `ogg.lastGranule` + `ogg.durationMs`.
+- **Task 5 — DONE.** `cli.zig` (`--info`/`--help`/`--version`, exit 1 on a
+  malformed command line) + `main.zig` (fixed `key=value` info block; exit 2
+  open / 3 decoder); `tests/tier_info.sh` (5 fixtures vs golden + exit codes,
+  non-vacuous negatives). Seed v97; `--dump-c89` md5
+  `ba86cbe8b2229667f4c8084a0b0e75da` (stable 3×); `ogg_test` + `info_test` PASS.
+
+  ```
+  $ sh examples/z98/z9play/tests/tier_info.sh
+  == tier_info summary: 20 passed, 0 failed ==
+  TIER_INFO PASS
+  ```

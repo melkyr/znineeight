@@ -9,25 +9,25 @@ M0 plan: `docs/superpowers/plans/2026-10-11-z9play-m0-ogg-container-plan.md`.
 
 ## Status
 
-**M0 (OGG container + Vorbis headers + `z9play --info`) — in progress.**
-Task 0 (preflight) is complete: the fixture set + golden metadata are committed,
-the no-root `vorbis-tools` acquisition helper is in place, and the baseline seed
-is built. The container parser, Vorbis id/comment parsers, and the `--info` CLI
-land in Tasks 1–5; `main.zig` does not exist yet (Task 5).
+**M0 (OGG container + Vorbis headers + `z9play --info`) — complete.**
+Tasks 0–5 are done: deterministic fixtures + goldens, the no-root
+`vorbis-tools` acquisition helper, the OGG container parser (`ogg.zig`), the
+Vorbis id/comment parsers (`vorbis_info.zig`), and the `--info` CLI
+(`cli.zig`/`main.zig`). The M0 gate `tests/tier_info.sh` is green (20/20).
 
 ## Files
 
-M0 (planned; `[x]` = present in Task 0):
+M0 (all present; `[x]` = landed in M0):
 
 - `[x]` `tests/get_vorbis_tools.sh` — no-root `vorbis-tools` acquisition
   (`oggenc`/`ogginfo`), private apt state/cache + `dpkg-deb -x`.
 - `[x]` `tests/mkfixtures.sh` — deterministic fixture + golden generator.
 - `testdata/*.ogg` — committed fixtures; `testdata/expected/*.meta` — goldens.
-- `[ ]` `ogg.zig` — OGG page parser + packet iterator (Task 1).
-- `[ ]` `vorbis_info.zig` — Vorbis id + comment header parsers; `Info` struct
-  (Tasks 2–4).
-- `[ ]` `cli.zig`, `main.zig` — `--info`/`--help`/`--version` CLI (Task 5).
-- `[ ]` `tests/tier_info.sh` — the M0 gate (Task 5).
+- `[x]` `ogg.zig` — OGG page parser + packet reassembly (Task 1) + duration
+  (Task 4).
+- `[x]` `vorbis_info.zig` — Vorbis id + comment header parsers (Tasks 2–3).
+- `[x]` `cli.zig`, `main.zig` — `--info`/`--help`/`--version` CLI (Task 5).
+- `[x]` `tests/tier_info.sh` — the M0 gate (Task 5).
 - `[x]` `NOTES.md`, `README.md`.
 
 ## Build and Run
@@ -43,7 +43,25 @@ sh /tmp/z9play_out/build_target.sh linux /tmp/z9play_out/prog
 /tmp/z9play_out/prog --info examples/z98/z9play/testdata/tagged_unicode.ogg
 ```
 
-(The `main.zig` step arrives in Task 5.)
+`--info <file.ogg>` prints a fixed `key=value` block matching the golden
+`testdata/expected/*.meta`:
+
+```
+channels=2
+sample_rate=44100
+duration_s=1.000
+TITLE=Café déjà vu
+ARTIST=Naïve 日本
+ALBUM=Ünïcodé
+```
+
+`TITLE`/`ARTIST`/`ALBUM` are printed only when the stream carries them (raw
+UTF-8 bytes). Exit codes: `0` ok, `1` arguments, `2` open, `3` decoder
+(malformed/non-Vorbis); `--help`/`--version` exit `0`. The M0 gate:
+
+```bash
+ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_info.sh
+```
 
 ## Fixtures
 
@@ -62,5 +80,6 @@ the golden `.meta` format and the determinism contract.
 
 ## Notes
 
-`NOTES.md` holds the build recipe, the `--dump-c89` md5, the golden format, and
-the milestone log.
+`NOTES.md` holds the build recipe, the `--dump-c89` md5
+(`ba86cbe8b2229667f4c8084a0b0e75da`, seed v97), the golden format, and the
+milestone log.
