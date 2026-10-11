@@ -580,9 +580,13 @@ whose methods return `ErrorSet!T` (the shape the z9play spec, blueprint §2.2,
 mandates for `platform/audio` and `platform/console`).
 
 **Reproducer (3 modules; `a.zig` defines the vtable, `b.zig` returns it,
-`main.zig` uses it).** A 2-module variant (vtable + the returning function in
-the same module as the caller) links cleanly; the third module that *defines a
-function returning the vtable* is required to trigger it.
+`main.zig` uses it).** The trigger is emitting an aggregate that carries the
+error-union-returning function-pointer typedef: a function that **returns** the
+vtable struct, or (refined at M4 T3, see below) a struct that **embeds** the
+vtable struct as a field. A single-file/no-import program hits it too — the
+"multi-module shared header" framing in the title is about the *emission site*,
+not a module-count precondition (the T1 deferred note asked for this
+correction).
 
 ```zig
 // a.zig
@@ -656,6 +660,23 @@ residual seen while landing this workaround (a mis-emitted `catch` result temp
 when a `catch` arm is a bare `noreturn` call, observed at v97 in the same
 multi-module shape) was avoided by using the established `catch { fail(...);
 return X; }` block form; it is noted here but not yet isolated as its own entry.
+
+**Trigger refinement + workaround (M4 Task 3, `player.zig`).** A function
+*returning* the vtable is sufficient but **not necessary**: a struct that
+**embeds** the vtable struct as a field (by value) re-triggers the same
+mis-ordering, even with no function returning it. `player.Player` embeds
+`Decoder` and `audio.AudioOut` (blueprint §3.1), which re-broke the shared
+header at M4 T3 — the fnptr typedefs (`zig_special_types.h:123-137`) were
+emitted before their error unions (`:246-254`), and the T1 workaround
+(free functions + caller-assembled literal) was therefore **insufficient**.
+The minimal example-only fix is to hold the vtables **by pointer**
+(`player.decoder: *const Decoder`, `player.audio: *const audio.AudioOut`) and
+initialise a **caller-owned** `*Player` (`playerInit(p: *Player, …) PlayerError!void`),
+never returning the struct by value. This links cleanly, keeps the binding
+vtables' ABI unchanged, and is the general rule for a player/core struct: **no
+vtable struct may cross a function boundary or an aggregate field by value.**
+A caller-owned (rather than returned) `Player` was also needed because the
+defect fires for any aggregate that carries the fnptr typedef.
 
 **Proper fix (TODO, later compiler pass).** Add an `fn_type` branch to
 `tstEdgesWalk` (`sf/src/c89_emit.zig`) that records the function type's
