@@ -18,6 +18,7 @@
 const std = @import("std");
 const filemod = @import("std_file");
 const ogg = @import("../ogg.zig");
+const vi = @import("../vorbis_info.zig");
 
 // Backing store for the read/reassembly arena; module-global so it does not
 // sit on the 32-bit stack. 4 MiB is far above this ~11 KiB fixture's needs.
@@ -78,6 +79,48 @@ fn crcAllPages(path: []const u8) bool {
     return true;
 }
 
+// Assert the duration derived from `path`'s last audio granule is within
+// `tol_ms` of `want_ms`. The sample rate comes from the Vorbis identification
+// header of the reassembled first packet (container + id integration).
+fn checkDuration(path: []const u8, want_ms: u64, tol_ms: u64) void {
+    var arena = std.arena.init(arena_buf[0..]);
+    var data: []u8 = filemod.readAll(&arena, path) catch {
+        fail("cannot read fixture for duration");
+        return;
+    };
+    var g: u64 = ogg.lastGranule(&arena, data) catch {
+        fail("lastGranule failed");
+        return;
+    };
+    var packets: []ogg.Packet = ogg.reassemble(&arena, data) catch {
+        fail("reassemble for duration failed");
+        return;
+    };
+    if (packets.len < 1) {
+        fail("no reassembled packets for duration");
+        return;
+    }
+    var id: vi.IdHeader = vi.parseId(packets[0].bytes) catch {
+        fail("parseId for duration failed");
+        return;
+    };
+    var d: u64 = ogg.durationMs(g, id.sample_rate);
+    var diff: u64 = 0;
+    if (d >= want_ms) {
+        diff = d - want_ms;
+    } else {
+        diff = want_ms - d;
+    }
+    if (diff > tol_ms) {
+        var msg: []const u8 = "duration mismatch for ";
+        std.io.write(msg);
+        std.io.write(path);
+        var nl: []const u8 = "\n";
+        std.io.write(nl);
+        fail("duration out of tolerance");
+    }
+}
+
 pub fn main(argc: i32, argv: [*][*]u8) void {
     _ = argc;
     _ = argv;
@@ -131,6 +174,21 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     if (!crcAllPages(f_48000)) fail("crcOk failed on sine_stereo_48000.ogg");
     if (!crcAllPages(f_tagged)) fail("crcOk failed on tagged_unicode.ogg");
     if (!crcAllPages(f_short)) fail("crcOk failed on short.ogg");
+
+    // (d) duration: last-page granule of the audio logical stream / sample rate.
+    // sine_stereo_44100.ogg is asserted exactly (88200 samples @ 44100 Hz =
+    // 2000 ms); the others allow +/-1 ms for granule rounding.
+    var d_stereo: []const u8 = "examples/z98/z9play/testdata/sine_stereo_44100.ogg";
+    var d_mono: []const u8 = "examples/z98/z9play/testdata/sine_mono_44100.ogg";
+    var d_48000: []const u8 = "examples/z98/z9play/testdata/sine_stereo_48000.ogg";
+    var d_tagged: []const u8 = "examples/z98/z9play/testdata/tagged_unicode.ogg";
+    var d_short: []const u8 = "examples/z98/z9play/testdata/short.ogg";
+    checkDuration(d_stereo, 2000, 0);
+    checkDuration(d_mono, 1000, 1);
+    checkDuration(d_48000, 1000, 1);
+    checkDuration(d_tagged, 1000, 1);
+    checkDuration(d_short, 300, 1);
+    if (ogg.durationMs(500, 0) != 0) fail("durationMs did not guard a zero sample rate");
 
     var ok: []const u8 = "ogg_test: PASS pages=";
     std.io.write(ok);

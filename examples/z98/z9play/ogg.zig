@@ -208,3 +208,60 @@ pub fn reassemble(arena: *std.arena.Arena, data: []const u8) OggError![]Packet {
     }
     return packets[0..count];
 }
+
+// True when the page's first packet body begins with `prefix`. Valid for a
+// page whose first packet starts at its bodystart (no carry-in from a previous
+// page) — i.e. a BOS page such as the Vorbis identification page.
+fn pageStartsWith(data: []const u8, page: Page, prefix: []const u8) bool {
+    var bs: usize = @intCast(usize, page.body_start);
+    if (bs + prefix.len > data.len) return false;
+    var i: usize = 0;
+    while (i < prefix.len) : (i += 1) {
+        if (data[bs + i] != prefix[i]) return false;
+    }
+    return true;
+}
+
+// Duration in milliseconds of a stream with `last_granule` audio samples at
+// `sample_rate` Hz. The Vorbis granule is the count of samples in the logical
+// stream, so duration = granule / sample_rate seconds; integer math truncates
+// toward zero. A zero rate (malformed id header) yields 0, never a trap.
+pub fn durationMs(last_granule: u64, sample_rate: u32) u64 {
+    if (sample_rate == 0) return 0;
+    return last_granule * 1000 / @intCast(u64, sample_rate);
+}
+
+// Highest granule position among the pages of the Vorbis (audio) logical
+// stream — the end-of-stream sample count used to derive the duration. The
+// audio serial is the one whose BOS page carries the Vorbis identification
+// header (`\x01vorbis`). Chained/multiplexed OGG is out of scope, but
+// restricting to that serial keeps a stray non-audio logical stream from
+// inflating the result. The arena is reserved for a future streaming form; the
+// scan is currently allocation-free.
+pub fn lastGranule(arena: *std.arena.Arena, data: []const u8) OggError!u64 {
+    _ = arena;
+    var id: []const u8 = "\x01vorbis";
+    var serial: u32 = 0;
+    var found: bool = false;
+    var off: usize = 0;
+    while (off < data.len) {
+        var page = try pageAt(data, off);
+        if (!found and (page.header_type & 0x02) != 0 and pageStartsWith(data, page, id)) {
+            serial = page.serial;
+            found = true;
+        }
+        off = nextPage(data, page);
+    }
+    if (!found) return error.BadCapture;
+
+    var max_granule: u64 = 0;
+    var off2: usize = 0;
+    while (off2 < data.len) {
+        var page2 = try pageAt(data, off2);
+        if (page2.serial == serial and page2.granule != 0xFFFFFFFFFFFFFFFF and page2.granule > max_granule) {
+            max_granule = page2.granule;
+        }
+        off2 = nextPage(data, page2);
+    }
+    return max_granule;
+}
