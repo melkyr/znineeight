@@ -1,22 +1,33 @@
-// main.zig — z9play entry point (z9play M0: `--info` metadata query).
+// main.zig — z9play entry point (z9play M0/M1: `--info` metadata query and
+// `--dump-setup` setup summary).
 //
 // Pure Z98: free functions, no generics, no @cImport, strict @intCast, string
-// literals via `var s: []const u8 = "..."`. M0 reads one OGG file, reassembles
-// its packets (ogg.zig), parses the Vorbis identification + comment headers
-// (vorbis_info.zig), derives the duration from the last audio granule, and
-// prints a FIXED info block in the same `key=value` line format as the
-// committed goldens (testdata/expected/*.meta):
+// literals via `var s: []const u8 = "..."`. Reads one OGG file and reassembles
+// its packets (ogg.zig), then dispatches on the cli mode:
 //
-//   channels=<n>
-//   sample_rate=<rate>
-//   duration_s=<sec>.<mmm>       (3 decimal places)
-//   TITLE=<raw bytes>            (only when the tag is present)
-//   ARTIST=<raw bytes>           (only when the tag is present)
-//   ALBUM=<raw bytes>            (only when the tag is present)
+//   --info        parse the Vorbis identification + comment headers
+//                 (vorbis_info.zig), derive the duration from the last audio
+//                 granule, and print a FIXED info block in the same `key=value`
+//                 line format as the committed goldens
+//                 (testdata/expected/*.meta):
+//
+//                   channels=<n>
+//                   sample_rate=<rate>
+//                   duration_s=<sec>.<mmm>       (3 decimal places)
+//                   TITLE=<raw bytes>            (only when the tag is present)
+//                   ARTIST=<raw bytes>           (only when the tag is present)
+//                   ALBUM=<raw bytes>            (only when the tag is present)
+//
+//   --dump-setup  parse the setup header (vorbis_setup.zig, forwarding the
+//                 identification header's channel count) and print one FIXED
+//                 summary line in the same format as the committed goldens
+//                 (testdata/expected/*.setup):
+//
+//                   codebooks=<n> floors=<n> residues=<n> mappings=<n> modes=<n>
 //
 // Exit codes (design spec §5): 0 ok / 1 args (cli.zig) / 2 open / 3 decoder
-// (malformed container, header, or a non-Vorbis stream). No audio, no playback
-// — that is M4/M5.
+// (malformed container, header, setup, or a non-Vorbis stream). No audio, no
+// playback — that is M4/M5.
 //
 // Build/run from the repo root (binding seed recipe):
 //   mkdir -p out
@@ -30,6 +41,7 @@ const cli = @import("cli.zig");
 const filemod = @import("std_file");
 const ogg = @import("ogg.zig");
 const vi = @import("vorbis_info.zig");
+const vs = @import("vorbis_setup.zig");
 
 // Backing store for the read/reassembly/comment arena; module-global so it does
 // not sit on the 32-bit stack (~11 KiB fixtures need a small fraction of this).
@@ -109,7 +121,7 @@ fn writeTagLine(tags: []vi.Tag, key: []const u8) void {
 }
 
 pub fn main(argc: i32, argv: [*][*]u8) void {
-    var args: cli.InfoArgs = cli.parseArgs(argc, argv);
+    var args: cli.Args = cli.parseArgs(argc, argv);
 
     var arena = std.arena.init(arena_buf[0..]);
     var data: []u8 = filemod.readAll(&arena, args.path) catch {
@@ -138,6 +150,40 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         std.os.exit(3);
         return;
     };
+
+    if (args.mode == cli.MODE_DUMP_SETUP) {
+        if (packets.len < 3) {
+            var msg: []const u8 = "z9play: missing Vorbis setup header\n";
+            std.io.write(msg);
+            std.os.exit(3);
+            return;
+        }
+        var setup: vs.Setup = vs.parseSetup(&arena, packets[2].bytes, @intCast(u32, id.channels)) catch {
+            var msg: []const u8 = "z9play: bad Vorbis setup header\n";
+            std.io.write(msg);
+            std.os.exit(3);
+            return;
+        };
+        var l_cb: []const u8 = "codebooks=";
+        std.io.write(l_cb);
+        writeU64(@intCast(u64, setup.codebooks.len));
+        var l_fl: []const u8 = " floors=";
+        std.io.write(l_fl);
+        writeU64(@intCast(u64, setup.floors.len));
+        var l_rs: []const u8 = " residues=";
+        std.io.write(l_rs);
+        writeU64(@intCast(u64, setup.residues.len));
+        var l_mp: []const u8 = " mappings=";
+        std.io.write(l_mp);
+        writeU64(@intCast(u64, setup.mappings.len));
+        var l_mo: []const u8 = " modes=";
+        std.io.write(l_mo);
+        writeU64(@intCast(u64, setup.modes.len));
+        writeNl();
+        std.os.exit(0);
+        return;
+    }
+
     var comment: vi.Comment = vi.parseComment(&arena, packets[1].bytes) catch {
         var msg: []const u8 = "z9play: bad Vorbis comment header\n";
         std.io.write(msg);

@@ -1,12 +1,12 @@
 # z9play — Z98 Example
 
-**Status:** M0 complete (Tasks 0–5)
+**Status:** M0 complete (Tasks 0–5). M1 Tasks 1–4 complete: setup header parse + codebook construction, exposed via `--dump-setup`.
 
 **Entry file:** `main.zig`
 
-**Working commit:** `27b1fddf` (M0 Task 5, `example(z9play): z9play --info CLI + tier_info gate`; pinned at M0 closeout). M1 amendment review (Task 6): no amendment needed.
+**Working commit:** M1 Task 4 (this commit; short hash pinned at M1 closeout). M0 closeout commit: `27b1fddf` (`example(z9play): z9play --info CLI + tier_info gate`).
 
-**MD5 (`--dump-c89`):** `ba86cbe8b2229667f4c8084a0b0e75da` (seed `zig1_5_clean`, seed **v97**; stable 3×; M0 `--info` CLI + `tier_info` gate)
+**MD5 (`--dump-c89`):** `344c26ed89dd0830443fa5e16b870ec0` (seed `zig1_5_clean`, seed **v97**; stable 3×; M1 `--info` + `--dump-setup` CLI + gates). M0 `--info`-only md5 was `ba86cbe8b2229667f4c8084a0b0e75da`.
 
 Spec: `docs/superpowers/specs/2026-10-11-z9play-ogg-player-design.md` (binding).
 M0 plan: `docs/superpowers/plans/2026-10-11-z9play-m0-ogg-container-plan.md`.
@@ -45,11 +45,33 @@ emitted only when the stream carries them (raw UTF-8 value bytes). Exit codes:
 `0` ok, `1` arguments, `2` open, `3` decoder (malformed container/header, or a
 non-Vorbis stream). `--help` and `--version` exit `0`.
 
+### `--dump-setup` usage (M1)
+
+```bash
+/tmp/z9play_out/prog --dump-setup examples/z98/z9play/testdata/tagged_unicode.ogg
+# codebooks=38 floors=2 residues=2 mappings=2 modes=2
+```
+
+`--dump-setup <file.ogg>` parses the OGG container, the identification header
+(for the channel count the mapping parser needs), and the Vorbis setup header
+(packet index 2, `\x05vorbis`), then prints exactly ONE fixed, LF-terminated
+summary line:
+
+```
+codebooks=<n> floors=<n> residues=<n> mappings=<n> modes=<n>
+```
+
+The count is each header object's parsed list length (`Setup.codebooks` /
+`.floors` / `.residues` / `.mappings` / `.modes`). The line is compared
+byte-for-byte against the committed `testdata/expected/*.setup` goldens. Exit
+codes mirror `--info`: `0` ok, `1` arguments, `2` open, `3` decoder (malformed
+container / identification / setup header, or a non-Vorbis stream).
+
 ### `--dump-c89` (for the MD5 above)
 
 ```bash
 timeout 120 /tmp/z9play_seed/zig1_5_clean --dump-c89 examples/z98/z9play/main.zig | md5sum
-# ba86cbe8b2229667f4c8084a0b0e75da  -
+# 344c26ed89dd0830443fa5e16b870ec0  -
 ```
 
 ## Baseline (Task 0)
@@ -166,4 +188,31 @@ round-trip mismatch, proving the guard.
   $ sh examples/z98/z9play/tests/tier_info.sh
   == tier_info summary: 20 passed, 0 failed ==
   TIER_INFO PASS
+  ```
+
+### M1 — Setup header + codebooks (Tasks 1–4 complete)
+
+- **Task 1 — DONE.** `vorbis_setup.zig`: setup skeleton + codebook dimensions
+  (count, per-codebook `BCV` sync / dimensions / entries / flags / lengths);
+  `tests/setup_test.zig`. Plan Task 2 bit-order amended (byte reader is
+  LSB-first).
+- **Task 2 — DONE.** `codebook.zig`: canonical Huffman decode tables
+  (`buildDecodeTable` / `decodeScalar`) + VQ vector unpack
+  (`entryToVector` / `decodeVector`, lookup types 1/2, basic f64 scaling).
+- **Task 3 — DONE.** `vorbis_setup.zig`: time count, floors (0/1), residues
+  (0/1/2), mappings (coupling/submaps/mux), modes, framing. `parseSetup` gained
+  a `channels` parameter (`parseSetup(arena, packet, channels)`), forwarded from
+  the identification header's channel count.
+- **Task 4 — DONE.** `cli.zig` (`--dump-setup` mode; conflicting/duplicate
+  requests exit 1) + `main.zig` (`codebooks=<n> floors=<n> residues=<n>
+  mappings=<n> modes=<n>` summary; exit 2 open / 3 decoder);
+  `testdata/expected/*.setup` goldens + `tests/tier_setup.sh` (5 fixtures vs
+  golden + argument/open/decoder exit codes). Seed v97; `--dump-c89` md5
+  `344c26ed89dd0830443fa5e16b870ec0` (stable 3×); `ogg_test` + `info_test` +
+  `setup_test` + `tier_info` (20/20) + `tier_setup` (21/21) PASS.
+
+  ```
+  $ sh examples/z98/z9play/tests/tier_setup.sh
+  == tier_setup summary: 21 passed, 0 failed ==
+  TIER_SETUP PASS
   ```

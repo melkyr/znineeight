@@ -15,6 +15,12 @@ Tasks 0–5 are done: deterministic fixtures + goldens, the no-root
 Vorbis id/comment parsers (`vorbis_info.zig`), and the `--info` CLI
 (`cli.zig`/`main.zig`). The M0 gate `tests/tier_info.sh` is green (20/20).
 
+**M1 (Vorbis setup header + codebooks + `z9play --dump-setup`) — Tasks 1–4
+complete.** `vorbis_setup.zig` parses the setup header (codebooks, floors,
+residues, mappings, modes); `codebook.zig` builds the canonical Huffman decode
+tables and VQ vectors. `z9play --dump-setup <file.ogg>` prints a fixed summary
+of the setup object counts. The M1 gate `tests/tier_setup.sh` is green (21/21).
+
 ## Files
 
 M0 (all present; `[x]` = landed in M0):
@@ -26,13 +32,23 @@ M0 (all present; `[x]` = landed in M0):
 - `[x]` `ogg.zig` — OGG page parser + packet reassembly (Task 1) + duration
   (Task 4).
 - `[x]` `vorbis_info.zig` — Vorbis id + comment header parsers (Tasks 2–3).
-- `[x]` `cli.zig`, `main.zig` — `--info`/`--help`/`--version` CLI (Task 5).
+- `[x]` `cli.zig`, `main.zig` — `--info`/`--dump-setup`/`--help`/`--version` CLI
+  (M0 Task 5; M1 Task 4).
+
+M1 (Tasks 1–4 landed):
+
+- `[x]` `vorbis_setup.zig` — setup-header parser (`Setup`, `Codebook`, `Floor`,
+  `Residue`, `Mapping`, `Mode`; `parseSetup`).
+- `[x]` `codebook.zig` — canonical Huffman decode tables + VQ vector unpack.
+- `[x]` `tests/setup_test.zig` — M1 unit harness.
+- `testdata/expected/*.setup` — `--dump-setup` goldens.
+- `[x]` `tests/tier_setup.sh` — the M1 gate (Task 4).
 - `[x]` `tests/tier_info.sh` — the M0 gate (Task 5).
 - `[x]` `NOTES.md`, `README.md`.
 
 ## Build and Run
 
-M0 uses the seed built from `release/seed/zig1-seed.tgz` (current seed v97):
+M0/M1 use the seed built from `release/seed/zig1-seed.tgz` (current seed v97):
 
 ```bash
 bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/z9play_seed
@@ -41,6 +57,7 @@ timeout 120 /tmp/z9play_seed/zig1_5_clean -fsafe -o /tmp/z9play_out \
     examples/z98/z9play/main.zig
 sh /tmp/z9play_out/build_target.sh linux /tmp/z9play_out/prog
 /tmp/z9play_out/prog --info examples/z98/z9play/testdata/tagged_unicode.ogg
+/tmp/z9play_out/prog --dump-setup examples/z98/z9play/testdata/tagged_unicode.ogg
 ```
 
 `--info <file.ogg>` prints a fixed `key=value` block matching the golden
@@ -57,10 +74,21 @@ ALBUM=Ünïcodé
 
 `TITLE`/`ARTIST`/`ALBUM` are printed only when the stream carries them (raw
 UTF-8 bytes). Exit codes: `0` ok, `1` arguments, `2` open, `3` decoder
-(malformed/non-Vorbis); `--help`/`--version` exit `0`. The M0 gate:
+(malformed/non-Vorbis); `--help`/`--version` exit `0`.
+
+`--dump-setup <file.ogg>` parses the setup header and prints exactly one fixed,
+LF-terminated summary line matching the golden `testdata/expected/*.setup`:
+
+```
+codebooks=38 floors=2 residues=2 mappings=2 modes=2
+```
+
+The counts are the parsed header-object list lengths. Exit codes mirror
+`--info` (`0`/`1`/`2`/`3`). Gates:
 
 ```bash
 ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_info.sh
+ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_setup.sh
 ```
 
 ## Fixtures
@@ -81,5 +109,5 @@ the golden `.meta` format and the determinism contract.
 ## Notes
 
 `NOTES.md` holds the build recipe, the `--dump-c89` md5
-(`ba86cbe8b2229667f4c8084a0b0e75da`, seed v97), the golden format, and the
-milestone log.
+(`344c26ed89dd0830443fa5e16b870ec0`, seed v97; M0 `--info`-only md5 was
+`ba86cbe8b2229667f4c8084a0b0e75da`), the golden formats, and the milestone log.
