@@ -12,6 +12,8 @@
 
 **Sequence:** FIRST milestone of z9play. NEXT: `2026-10-11-z9play-m1-setup-codebooks-plan.md`.
 
+**M0 status: complete (Tasks 0–6).** All checkboxes below are done. Fresh closeout gates: seed closure `bafbba9454cd2b134bdc3d50c65384e0`; `tests/tier_info.sh` 20/20 PASS; `tests/ogg_test.zig` + `tests/info_test.zig` PASS; `scripts/corpus/list_corpus_dirs.sh` lists `examples/z98/z9play/`; `--dump-c89` md5 `ba86cbe8b2229667f4c8084a0b0e75da` (seed v97). Task 6 verdict: **no M1 amendment needed** (see `task-6-closeout-report.md`).
+
 ## Global Constraints
 
 - **Example-only edits** under `examples/z98/z9play/**`. **No compiler changes** (`sf/src/**` untouched). No seed rotation.
@@ -43,10 +45,10 @@
 **Interfaces:**
 - Produces: `tests/get_vorbis_tools.sh` prints the `oggenc`/`ogginfo` path + required `LD_LIBRARY_PATH`; `tests/mkfixtures.sh` writes `testdata/*.ogg` and `testdata/expected/*.meta`.
 
-- [ ] **Step 1: Acquisition helper.** `tests/get_vorbis_tools.sh` — mirror `examples/z98/z9torr/tests/get_aria2.sh`: writable apt state/cache under `$TMP`, `apt-get update` + `apt-get install --download-only --no-install-recommends -y vorbis-tools`, `dpkg-deb -x` into a prefix, print `oggenc`/`ogginfo` paths + `LD_LIBRARY_PATH`. Gate: `oggenc --version` runs.
-- [ ] **Step 2: Fixture generator.** `tests/mkfixtures.sh` — generate a deterministic set: `sine_mono_44100.ogg` (1.0 s), `sine_stereo_44100.ogg` (2.0 s), `sine_stereo_48000.ogg`; a tagged file `tagged_unicode.ogg` (title/artist/album incl. a non-ASCII tag); and `short.ogg` (~0.3 s). Use a generated WAV (deterministic) → `oggenc`. Write `testdata/expected/<name>.meta` from `ogginfo` (channels, sample rate, duration seconds, tags) in a fixed line format.
-- [ ] **Step 3: Baseline.** Build the current seed; confirm `examples/z98/z9play/` is discoverable by `scripts/corpus/list_corpus_dirs.sh` once `main.zig` exists (added later in Task 5).
-- [ ] **Step 4: Commit** `test(z9play): fixtures + vorbis-tools acquisition (M0)`. Report.
+- [x] **Step 1: Acquisition helper.** `tests/get_vorbis_tools.sh` — mirror `examples/z98/z9torr/tests/get_aria2.sh`: writable apt state/cache under `$TMP`, `apt-get update` + `apt-get install --download-only --no-install-recommends -y vorbis-tools`, `dpkg-deb -x` into a prefix, print `oggenc`/`ogginfo` paths + `LD_LIBRARY_PATH`. Gate: `oggenc --version` runs.
+- [x] **Step 2: Fixture generator.** `tests/mkfixtures.sh` — generate a deterministic set: `sine_mono_44100.ogg` (1.0 s), `sine_stereo_44100.ogg` (2.0 s), `sine_stereo_48000.ogg`; a tagged file `tagged_unicode.ogg` (title/artist/album incl. a non-ASCII tag); and `short.ogg` (~0.3 s). Use a generated WAV (deterministic) → `oggenc`. Write `testdata/expected/<name>.meta` from `ogginfo` (channels, sample rate, duration seconds, tags) in a fixed line format.
+- [x] **Step 3: Baseline.** Build the current seed; confirm `examples/z98/z9play/` is discoverable by `scripts/corpus/list_corpus_dirs.sh` once `main.zig` exists (added later in Task 5).
+- [x] **Step 4: Commit** `test(z9play): fixtures + vorbis-tools acquisition (M0)`. Report.
 
 **Gate:** `get_vorbis_tools.sh` yields runnable `oggenc`/`ogginfo`; `mkfixtures.sh` produces the fixtures + goldens deterministically (re-run byte-identical).
 
@@ -67,11 +69,11 @@
   - `pub fn crcOk(data: []const u8, page: Page) bool` (CRC-32 over the page with the CRC field zeroed) — CRC via `std_crypto` CRC-32 if suitable, else a local table.
   - A packet reassembler: `pub fn reassemble(arena, data) OggError![]Packet` per logical stream (accumulates segment bodies until a segment `< 255` terminates a packet; handles pages split across packets).
 
-- [ ] **Step 1: Write the failing unit test** `tests/ogg_test.zig`: page count + first/last granule for `testdata/sine_stereo_44100.ogg`; that reassembly yields the three Vorbis headers as the first packets (packet 0 begins `\x01vorbis`, packet 1 `\x03vorbis`, packet 2 `\x05vorbis`).
-- [ ] **Step 2: Run it** (`-fsafe`) — expect FAIL (not implemented).
-- [ ] **Step 3: Implement `ogg.zig`** (page header 27 bytes + segment table; little-endian fields; CRC verify; reassembly).
-- [ ] **Step 4: Run the test** — expect PASS.
-- [ ] **Step 5: Commit** `example(z9play): OGG container page parse + packet reassembly`.
+- [x] **Step 1: Write the failing unit test** `tests/ogg_test.zig`: page count + first/last granule for `testdata/sine_stereo_44100.ogg`; that reassembly yields the three Vorbis headers as the first packets (packet 0 begins `\x01vorbis`, packet 1 `\x03vorbis`, packet 2 `\x05vorbis`).
+- [x] **Step 2: Run it** (`-fsafe`) — expect FAIL (not implemented).
+- [x] **Step 3: Implement `ogg.zig`** (page header 27 bytes + segment table; little-endian fields; CRC verify; reassembly).
+- [x] **Step 4: Run the test** — expect PASS.
+- [x] **Step 5: Commit** `example(z9play): OGG container page parse + packet reassembly`.
 
 **Gate:** unit test PASS under `-fsafe`; CRC verify true on all fixture pages; re-run deterministic.
 
@@ -84,11 +86,11 @@
 **Interfaces:**
 - Produces: `pub const IdHeader = struct { version: u32, channels: u8, sample_rate: u32, bitrate_max: i32, bitrate_nom: i32, bitrate_min: i32, blocksize_0: u8, blocksize_1: u8 };` and `pub fn parseId(packet: []const u8) OggError!IdHeader`.
 
-- [ ] **Step 1: Failing test** — `parseId` on packet 0 → exact `channels`/`sample_rate`/bitrates/blocksize exponents for `sine_stereo_44100.ogg` (values from the golden).
-- [ ] **Step 2: Run** — FAIL.
-- [ ] **Step 3: Implement `parseId`** (`\x01vorbis` + version u32 LE + channels u8 + sample_rate u32 LE + 3×i32 LE + blocksize byte (low nibble = exp0, high = exp1) + framing bit set; validate framing).
-- [ ] **Step 4: Run** — PASS.
-- [ ] **Step 5: Commit** `example(z9play): parse Vorbis identification header`.
+- [x] **Step 1: Failing test** — `parseId` on packet 0 → exact `channels`/`sample_rate`/bitrates/blocksize exponents for `sine_stereo_44100.ogg` (values from the golden).
+- [x] **Step 2: Run** — FAIL.
+- [x] **Step 3: Implement `parseId`** (`\x01vorbis` + version u32 LE + channels u8 + sample_rate u32 LE + 3×i32 LE + blocksize byte (low nibble = exp0, high = exp1) + framing bit set; validate framing).
+- [x] **Step 4: Run** — PASS.
+- [x] **Step 5: Commit** `example(z9play): parse Vorbis identification header`.
 
 **Gate:** exact field values vs golden; malformed framing/version → error.
 
@@ -101,11 +103,11 @@
 **Interfaces:**
 - Produces: `pub const Comment = struct { vendor: []const u8, tags: []Tag };` `pub const Tag = struct { key: []const u8, value: []const u8 };` and `pub fn parseComment(arena, packet: []const u8) OggError!Comment` (`\x03vorbis`; vendor length+bytes; count; each `len=key=value`; framing bit). Tags stored uppercased-key per Vorbis convention (`TITLE`, `ARTIST`, `ALBUM`, …).
 
-- [ ] **Step 1: Failing test** — `parseComment` on packet 1 of `tagged_unicode.ogg` → vendor present; `TITLE`/`ARTIST`/`ALBUM` match the golden including the non-ASCII value bytes.
-- [ ] **Step 2: Run** — FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run** — PASS.
-- [ ] **Step 5: Commit** `example(z9play): parse Vorbis comment header (tags)`.
+- [x] **Step 1: Failing test** — `parseComment` on packet 1 of `tagged_unicode.ogg` → vendor present; `TITLE`/`ARTIST`/`ALBUM` match the golden including the non-ASCII value bytes.
+- [x] **Step 2: Run** — FAIL.
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run** — PASS.
+- [x] **Step 5: Commit** `example(z9play): parse Vorbis comment header (tags)`.
 
 **Gate:** exact tags incl. Unicode bytes; malformed → error.
 
@@ -118,11 +120,11 @@
 **Interfaces:**
 - Produces: `pub fn durationMs(packets_pages: ...) u64` — last page's granule (of the audio logical stream) ÷ sample_rate × 1000. Implement as `pub fn lastGranule(arena, data) OggError!u64` (scan pages, keep the max granule for the audio serial), then `duration_ms = last_granule * 1000 / sample_rate`.
 
-- [ ] **Step 1: Failing test** — duration within the golden tolerance (exact for `sine_stereo_44100` 2.0 s).
-- [ ] **Step 2: Run** — FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run** — PASS.
-- [ ] **Step 5: Commit** `example(z9play): derive duration from last-page granule`.
+- [x] **Step 1: Failing test** — duration within the golden tolerance (exact for `sine_stereo_44100` 2.0 s).
+- [x] **Step 2: Run** — FAIL.
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run** — PASS.
+- [x] **Step 5: Commit** `example(z9play): derive duration from last-page granule`.
 
 **Gate:** duration matches golden for all fixtures.
 
@@ -136,11 +138,11 @@
 - Produces: `main(argc, argv)` dispatching `--info <file.ogg>` → prints a fixed info block (rates/channels/duration/tags); `--help`/`--version`; exit codes 0 ok / 1 args / 2 open / 3 decoder.
 - Consumes: `ogg.zig`, `vorbis_info.zig`.
 
-- [ ] **Step 1: Implement `cli.zig` + `main.zig`** (`--info`, `--help`, `--version`; `std_file` open/read; error → exit code).
-- [ ] **Step 2: `tests/tier_info.sh`** — build with the seed (`-fsafe`); for each fixture, assert the `--info` output fields against `testdata/expected/*.meta`; assert exit codes. Non-vacuous (missing file → 2; a non-OGG file → 3).
-- [ ] **Step 3: Run the tier** — expect PASS.
-- [ ] **Step 4: Docs** — `NOTES.md` (build recipe, working commit, `--dump-c89` md5), `README.md`.
-- [ ] **Step 5: Commit** `example(z9play): M0 --info CLI + tier_info`.
+- [x] **Step 1: Implement `cli.zig` + `main.zig`** (`--info`, `--help`, `--version`; `std_file` open/read; error → exit code).
+- [x] **Step 2: `tests/tier_info.sh`** — build with the seed (`-fsafe`); for each fixture, assert the `--info` output fields against `testdata/expected/*.meta`; assert exit codes. Non-vacuous (missing file → 2; a non-OGG file → 3).
+- [x] **Step 3: Run the tier** — expect PASS.
+- [x] **Step 4: Docs** — `NOTES.md` (build recipe, working commit, `--dump-c89` md5), `README.md`.
+- [x] **Step 5: Commit** `example(z9play): M0 --info CLI + tier_info`.
 
 **Gate:** `tests/tier_info.sh` green; corpus discovery lists `examples/z98/z9play/`; `--dump-c89` md5 recorded.
 
@@ -150,8 +152,8 @@
 
 **Files:** Modify `docs/superpowers/plans/2026-10-11-z9play-m1-setup-codebooks-plan.md` only if an amendment is required; Report.
 
-- [ ] **Step 1:** Read the M1 plan (`...-m1-setup-codebooks-plan.md`). Judge whether M0's implementation invalidates any M1 assumption: the `ogg.zig` packet API shape (does M1 get the setup packet as `[]const u8` the same way?), the `OggError`/arena conventions, the fixture set (does M1 need more fixtures?), the build recipe, and the tier conventions.
-- [ ] **Step 2:** If an amendment is required — **STOP and present it to the operator** before M1 executes; apply only on approval. If none — record "no amendment needed" in the report.
+- [x] **Step 1:** Read the M1 plan (`...-m1-setup-codebooks-plan.md`). Judge whether M0's implementation invalidates any M1 assumption: the `ogg.zig` packet API shape (does M1 get the setup packet as `[]const u8` the same way?), the `OggError`/arena conventions, the fixture set (does M1 need more fixtures?), the build recipe, and the tier conventions.
+- [x] **Step 2:** If an amendment is required — **STOP and present it to the operator** before M1 executes; apply only on approval. If none — record "no amendment needed" in the report.
 
 **Gate:** either an operator-approved M1 amendment is committed, or the report records a justified "no amendment needed".
 

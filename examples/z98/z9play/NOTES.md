@@ -4,7 +4,7 @@
 
 **Entry file:** `main.zig`
 
-**Working commit:** M0 Task 5 (this commit; short hash pinned at M0 closeout)
+**Working commit:** `27b1fddf` (M0 Task 5, `example(z9play): z9play --info CLI + tier_info gate`; pinned at M0 closeout). M1 amendment review (Task 6): no amendment needed.
 
 **MD5 (`--dump-c89`):** `ba86cbe8b2229667f4c8084a0b0e75da` (seed `zig1_5_clean`, seed **v97**; stable 3×; M0 `--info` CLI + `tier_info` gate)
 
