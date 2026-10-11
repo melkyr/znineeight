@@ -553,3 +553,113 @@ does not collide with any imported name: `Mode` → `VorbisMode`, keeping
 **Proper fix (TODO, later compiler pass).** Resolve unqualified type names
 lexically (module scope first), or emit a diagnostic on a same-named
 cross-module collision.
+
+---
+
+## D8 — A function-pointer typedef that returns an error union is emitted before the error-union typedef it references (multi-module shared header)
+
+**Status:** DOCUMENTED / OPEN (not fixed; filed doc-only per operator ruling
+2026-10-11 — this class of cumulative compiler defects is collected and solved in
+a later compiler pass). Discovered 2026-10-11 while building `examples/z98/z9play/`
+M4 Task 1 (`platform/audio.zig`, the blueprint §2.2 `AudioOut` vtable).
+
+**Symptom.** In a **multi-module** build, `zig_special_types.h` emits a
+function-pointer typedef whose **return type is an error union** before the
+error-union typedef itself, so the C is invalid:
+
+```
+zig_special_types.h:52: typedef zT_D078880E_EU_46 (*zT_DBCAABE4_FP_zT_D078880E_EU_4)(unsigned int, unsigned char);
+...
+zig_special_types.h:9x: typedef struct { union { void* payload; int err; } data; int is_error; } zT_D078880E_EU_46;
+```
+
+`gcc -m32 -std=c89` rejects the earlier typedef:
+`error: expected declaration specifiers or '...' before '*' token` (and a later
+`unknown type name 'zT_..._FP_zT_..._EU_*'`). This blocks any app-level vtable
+whose methods return `ErrorSet!T` (the shape the z9play spec, blueprint §2.2,
+mandates for `platform/audio` and `platform/console`).
+
+**Reproducer (3 modules; `a.zig` defines the vtable, `b.zig` returns it,
+`main.zig` uses it).** A 2-module variant (vtable + the returning function in
+the same module as the caller) links cleanly; the third module that *defines a
+function returning the vtable* is required to trigger it.
+
+```zig
+// a.zig
+pub const E = error{ Bad };
+pub const V = struct {
+    open_fn: fn (u32, u8) E!*void,
+    write_fn: fn (*void, []const i16) E!usize,
+    close_fn: fn (*void) void,
+    drain_fn: fn (*void) E!void,
+    state: *void,
+};
+```
+```zig
+// b.zig
+const a = @import("a.zig");
+var ctx: u32 = 0;
+fn o(r: u32, c: u8) a.E!*void { _ = r; _ = c; return @ptrCast(*void, &ctx); }
+fn w(s: *void, d: []const i16) a.E!usize { _ = s; return d.len; }
+fn cl(s: *void) void { _ = s; }
+fn dr(s: *void) a.E!void { _ = s; }
+pub fn open(r: u32, c: u8) a.E!a.V {
+    var p: *void = try o(r, c);
+    return a.V{ .open_fn = o, .write_fn = w, .close_fn = cl, .drain_fn = dr, .state = p };
+}
+```
+```zig
+// main.zig
+const std = @import("std");
+const a = @import("a.zig");
+const b = @import("b.zig");
+pub fn main() void {
+    var v: a.V = b.open(44100, 2) catch { return; };
+    var z: [2]i16 = .{ 1, 2 };
+    var n: usize = v.write_fn(v.state, z[0..]) catch 0;
+    std.io.printInt(@intCast(i32, n));
+    var nl: []const u8 = "\n";
+    std.io.write(nl);
+}
+```
+```
+mkdir -p out
+timeout 120 /tmp/z9play_seed/zig1_5_clean -fsafe -o out main.zig        # rc 0
+sh out/build_target.sh linux out/prog                                   # gcc errors as above
+```
+
+**Cause.** The C89 emitter's topological-sort edge walker `tstEdgesWalk`
+(`sf/src/c89_emit.zig`, ~line 1363) has branches for struct / tagged union /
+array / error union / optional / slice / union / tuple **but not `fn_type`**, so
+a function-pointer type never gains a dependency edge to its return type.
+`emitTypePasses` (~line 1808) then emits sub-pass 2a (all `pointer_only_map`
+types) before sub-pass 2b, and both the fn-pointer and its error-union return
+type are pointer-only; they are written in `sorted` order. In the multi-module
+path the fn-pointer's type id precedes its return error union's id, and
+`emitDepMember` (~line 1656) emits a struct's fn-pointer field typedef **without
+first emitting that function type's return-type typedef**, so the fn-pointer
+typedef is written first and references the not-yet-defined error union.
+
+**Workaround (used by z9play M4 Task 1).** The trigger is a function whose
+*return type is the vtable struct*; if no module exposes such a function the
+multi-module emission of the function-pointer and error-union typedefs lands in
+a valid order. So the backend keeps the **exact blueprint §2.2 vtable ABI**
+(`fn(...) ErrorSet!T` entries) and instead exposes them as public free functions
+(`audio_wavfile.open`/`write`/`close`/`drain`); the caller assembles the
+`AudioOut` literal inline (`audio.AudioOut{ .open_fn = wav.open, …, .state = ctx }`
+with `ctx = wav.open(rate, ch)`), and no backend function returns `AudioOut`.
+Naming the error-union result types via aliases (`pub const OpenResult =
+AudioError!*void`) does **not** help — the ordering defect is independent of
+spelling — so it is not used. This is example-only and leaves the binding ABI
+unchanged; it only moves the vtable-assembly point to the caller. A related
+residual seen while landing this workaround (a mis-emitted `catch` result temp
+when a `catch` arm is a bare `noreturn` call, observed at v97 in the same
+multi-module shape) was avoided by using the established `catch { fail(...);
+return X; }` block form; it is noted here but not yet isolated as its own entry.
+
+**Proper fix (TODO, later compiler pass).** Add an `fn_type` branch to
+`tstEdgesWalk` (`sf/src/c89_emit.zig`) that records the function type's
+return-type dependency, and emit that dependency from `emitDepMember` before a
+function-pointer field typedef. Fixes the ordering without any ABI or example
+change; requires the operator to authorize a compiler change, which the
+example-only milestones deliberately avoid.
