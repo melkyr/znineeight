@@ -21,6 +21,14 @@ floors, residues, mappings, modes); `codebook.zig` builds the canonical Huffman 
 tables and VQ vectors. `z9play --dump-setup <file.ogg>` prints a fixed summary
 of the setup object counts. The M1 gate `tests/tier_setup.sh` is green (21/21).
 
+**M2 (native pure-Z98 `std_math` f64 `sqrt`/`sin`/`cos`) — complete (Tasks 0–6,
+closed out).** This milestone edits the **standard library** (`sf/src/std_math.zig`),
+not the example: fdlibm-port `sin`/`cos` (Cody–Waite reduction, ≤1 ULP over
+`|x| ≤ ~1.65e6`, NaN beyond) and a correctly-rounded integer-seed `sqrt`; no libm,
+no compiler builtins. The M2 gate `tests/tier_math.sh` is green (8/8) and
+`verify_stdlib` is 285/0 (`STDLIB GATE OK`). Its Task 6 M3 amendment review found
+**no amendment needed**.
+
 ## Files
 
 M0 (all present; `[x]` = landed in M0):
@@ -109,5 +117,7 @@ the golden `.meta` format and the determinism contract.
 ## Notes
 
 `NOTES.md` holds the build recipe, the `--dump-c89` md5
-(`344c26ed89dd0830443fa5e16b870ec0`, seed v97; M0 `--info`-only md5 was
+(`88ad559ce5e4a3dae6f11a0c52b35792`, seed v97; M2's `std_math` is embedded in the
+`std` module the dump emits, so it changed from the M1 value
+`344c26ed89dd0830443fa5e16b870ec0`; M0 `--info`-only md5 was
 `ba86cbe8b2229667f4c8084a0b0e75da`), the golden formats, and the milestone log.

@@ -1,12 +1,12 @@
 # z9play — Z98 Example
 
-**Status:** M0 complete (Tasks 0–5). M1 complete (Tasks 0–5, closed out): setup header parse + codebook construction, exposed via `--dump-setup`. M2 (native pure-Z98 `std_math` f64 `sqrt`/`sin`/`cos`) complete on the z9play side (Tasks 3–5): std fixture registered, `tests/tier_math.sh` gate + docs.
+**Status:** M0 complete (Tasks 0–5). M1 complete (Tasks 0–5, closed out): setup header parse + codebook construction, exposed via `--dump-setup`. M2 (native pure-Z98 `std_math` f64 `sqrt`/`sin`/`cos`) complete and closed out (Tasks 0–6): std fixture registered, `tests/tier_math.sh` gate green, docs, and the Task 6 M3 amendment review.
 
 **Entry file:** `main.zig`
 
-**Working commit:** `100c35ce` (`example(z9play): M1 --dump-setup + tier_setup`; the current M1 implementation commit, pinned at M1 closeout). M0 closeout commit: `27b1fddf` (`example(z9play): z9play --info CLI + tier_info gate`).
+**Working commit:** `b5ca08d2` (`feat(std_math): f64 sin/cos (pure Z98)`; the M2 `std_math` implementation commit — the last commit of the `std_math` surface, pinned at M2 closeout). The full M2 commit chain is `4d6fb5dd` (f64 `sqrt`) → `b5ca08d2` (f64 `sin`/`cos`) → `52958705` (`tests/tier_math.sh`) → `6844aad5` (docs). Prior closeouts: M1 `100c35ce` (`example(z9play): M1 --dump-setup + tier_setup`); M0 `27b1fddf` (`example(z9play): z9play --info CLI + tier_info gate`).
 
-**MD5 (`--dump-c89`):** `344c26ed89dd0830443fa5e16b870ec0` (seed `zig1_5_clean`, seed **v97**; stable 3×; M1 `--info` + `--dump-setup` CLI + gates). M0 `--info`-only md5 was `ba86cbe8b2229667f4c8084a0b0e75da`.
+**MD5 (`--dump-c89`):** `88ad559ce5e4a3dae6f11a0c52b35792` (seed `zig1_5_clean`, seed **v97**; stable 3×; M2). **M2 changed this value** (M1 was `344c26ed89dd0830443fa5e16b870ec0`): `--dump-c89` for `main.zig` transitively emits the whole imported `std` module, including `std_math.zig`, and the binding seed recipe rebuilds the compiler's `lib/` from the current `sf/src` — so M2's new `std_math` f64 functions appear in the dump even though no M3 code calls them yet. The z9play **example source** is unchanged (M2 is std-only, no compiler change; fixed point stays `bafbba9454cd2b134bdc3d50c65384e0`). M0 `--info`-only md5 was `ba86cbe8b2229667f4c8084a0b0e75da`.
 
 Spec: `docs/superpowers/specs/2026-10-11-z9play-ogg-player-design.md` (binding).
 M0 plan: `docs/superpowers/plans/2026-10-11-z9play-m0-ogg-container-plan.md`.
@@ -71,7 +71,8 @@ container / identification / setup header, or a non-Vorbis stream).
 
 ```bash
 timeout 120 /tmp/z9play_seed/zig1_5_clean --dump-c89 examples/z98/z9play/main.zig | md5sum
-# 344c26ed89dd0830443fa5e16b870ec0  -
+# 88ad559ce5e4a3dae6f11a0c52b35792  -
+# (M1, before the M2 std_math f64 functions: 344c26ed89dd0830443fa5e16b870ec0)
 ```
 
 ## Baseline (Task 0)
@@ -275,3 +276,29 @@ not the example: pure-Z98 f64 math so the Vorbis IMDCT/window can run on Win9x
 - **Regression:** `tier_info` 20/20, `tier_setup` 21/21; seed closure unchanged
   `bafbba9454cd2b134bdc3d50c65384e0`. (The M3 amendment review is M2 Task 6, a
   separate dispatch.)
+
+### Task 6 — M3 amendment review + M2 closeout — DONE
+
+- **Part A (M3 amendment review) — no amendment needed.** M3's only
+  transcendental consumer is the Task 1 `dsp.zig` window/IMDCT, which uses
+  exactly `sin` (Vorbis window `sin(π/2·sin²(π/(2n)·(i+0.5)))`) and `cos` (the
+  inverse-MDCT basis `cos(π/n·(2i+1+n/2)(2k+1))`), plus the baseline f64
+  `+ - * /`. `π` is a local compile-time constant, not a std function. The
+  floor1 path uses the committed static `floor1_inverse_dB_table` + linear
+  interpolation; residue/VQ/coupling use only baseline f64 arithmetic; floor0
+  (`exp`/`log`/`atan` `bark()`) is rejected in v1 (`error.UnsupportedFloor`).
+  So M3 needs no `exp`/`log`/`pow`/`atan2`/`floor`; M2's `sqrt` is not on any
+  M3 path but is harmless. **Angle-domain check:** the M2 `sin`/`cos` cap is
+  `~1.647e6` rad (NaN beyond). The largest phase on any M3 path is the IMDCT:
+  for the maximum Vorbis block `n = 8192`, `max|arg| ≈ π/n·(2n-1+n/2)·(n-1) ≈
+  6.4e4` rad; the window outer argument is ≤ `π/2`. Both are ≥ 25× inside the
+  cap, so no M3 block size reaches the NaN region.
+- **Part B (M2 closeout).** Working commit pinned to the M2 `std_math`
+  implementation commit `b5ca08d2` (`feat(std_math): f64 sin/cos (pure Z98)`);
+  full M2 chain recorded above. Gates re-run under seed v97 (`-fsafe`,
+  example-only, no compiler/seed change): `tier_math` 8/8, `verify_stdlib`
+  285/0 `STDLIB GATE OK`, `tier_setup` 21/21, `tier_info` 20/20; two-hop seed
+  closure `bafbba9454cd2b134bdc3d50c65384e0`. `--dump-c89` md5 re-pinned to the
+  true M2 value `88ad559ce5e4a3dae6f11a0c52b35792` (see the MD5 note above:
+  M2's `std_math` is embedded in the `std` module the dump emits, so the md5
+  **did** change from the M1 value `344c26ed89dd0830443fa5e16b870ec0`).
