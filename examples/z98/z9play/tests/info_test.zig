@@ -43,6 +43,23 @@ fn copyInto(dst: []u8, src: []const u8) void {
     while (i < src.len) : (i += 1) dst[i] = src[i];
 }
 
+// True when parseComment rejects `pkt` (the malformed cases).
+fn commentFails(arena: *std.arena.Arena, pkt: []const u8) bool {
+    var r: vi.Comment = vi.parseComment(arena, pkt) catch return true;
+    _ = r;
+    return false;
+}
+
+// The value for `key` (already uppercase) among `tags`, or "" when absent.
+fn tagValue(tags: []vi.Tag, key: []const u8) []const u8 {
+    var i: usize = 0;
+    while (i < tags.len) : (i += 1) {
+        if (std.str.eql(tags[i].key, key)) return tags[i].value;
+    }
+    var empty: []const u8 = "";
+    return empty;
+}
+
 pub fn main(argc: i32, argv: [*][*]u8) void {
     _ = argc;
     _ = argv;
@@ -92,6 +109,55 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     copyInto(bad3[0..], packets[0].bytes[0..30]);
     bad3[1] = 'X';
     if (!parseFails(bad3[0..])) fail("accepted bad capture signature");
+
+    // --- Task 3: comment header (tags) for tagged_unicode.ogg packet 1. ---
+    // The fixture carries real UTF-8 tag bytes; expectations are spelled with
+    // \x escapes so the source stays byte-exact regardless of encoding.
+    var exp_vendor: []const u8 = "Xiph.Org libVorbis I 20200704 (Reducing Environment)";
+    var exp_title: []const u8 = "Caf\xc3\xa9 d\xc3\xa9j\xc3\xa0 vu";
+    var exp_artist: []const u8 = "Na\xc3\xafve \xe6\x97\xa5\xe6\x9c\xac";
+    var exp_album: []const u8 = "\xc3\x9cn\xc3\xafcod\xc3\xa9";
+
+    var tpath: []const u8 = "examples/z98/z9play/testdata/tagged_unicode.ogg";
+    var tdata: []u8 = filemod.readAll(&arena, tpath) catch {
+        fail("cannot read fixture tagged_unicode.ogg");
+        return;
+    };
+    var tpackets: []ogg.Packet = ogg.reassemble(&arena, tdata) catch {
+        fail("reassemble(tagged_unicode) failed");
+        return;
+    };
+    if (tpackets.len < 2) fail("tagged_unicode has fewer than 2 packets");
+
+    var c: vi.Comment = vi.parseComment(&arena, tpackets[1].bytes) catch {
+        fail("parseComment failed on packet 1");
+        return;
+    };
+    if (!std.str.eql(c.vendor, exp_vendor)) fail("comment vendor mismatch");
+    if (c.tags.len != 3) fail("comment tag count != 3");
+    if (!std.str.eql(tagValue(c.tags, "TITLE"), exp_title)) fail("TITLE mismatch");
+    if (!std.str.eql(tagValue(c.tags, "ARTIST"), exp_artist)) fail("ARTIST mismatch");
+    if (!std.str.eql(tagValue(c.tags, "ALBUM"), exp_album)) fail("ALBUM mismatch");
+
+    // Malformed: wrong packet-type signature (0x02).
+    var cbad: []const u8 = "\x02vorbis\x00\x00\x00\x00\x00\x00\x00\x00\x01";
+    if (!commentFails(&arena, cbad)) fail("accepted bad comment signature");
+
+    // Malformed: framing bit clear.
+    var cbad2: []const u8 = "\x03vorbis\x00\x00\x00\x00\x00\x00\x00\x00\x00";
+    if (!commentFails(&arena, cbad2)) fail("accepted cleared comment framing bit");
+
+    // Malformed: truncated before the vendor length.
+    var cbad3: []const u8 = "\x03vorbis\x00\x00\x00";
+    if (!commentFails(&arena, cbad3)) fail("accepted truncated comment header");
+
+    // Malformed: comment count overflow (0xFFFFFFFF).
+    var cbad4: []const u8 = "\x03vorbis\x00\x00\x00\x00\xff\xff\xff\xff\x01";
+    if (!commentFails(&arena, cbad4)) fail("accepted overflowing comment count");
+
+    // Malformed: comment length overflow (0xFFFFFFFF).
+    var cbad5: []const u8 = "\x03vorbis\x00\x00\x00\x00\x01\x00\x00\x00\xff\xff\xff\xff\x01";
+    if (!commentFails(&arena, cbad5)) fail("accepted overflowing comment length");
 
     var ok: []const u8 = "info_test: PASS channels=2 sample_rate=44100 blocksize_0=8 blocksize_1=11\n";
     std.io.write(ok);
