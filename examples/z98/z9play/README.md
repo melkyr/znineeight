@@ -41,7 +41,7 @@ Its Task 6 M4 amendment review found **no amendment needed** (`decodePacket` is
 already streaming-capable with caller-owned `DecoderState`; M4 drives it per
 packet).
 
-**M4 (audio output + ring buffer + Player core) — complete (Tasks 0–5, closed
+**M4 (audio output + ring buffer + Player core) — complete (Tasks 0–6, closed
 out).** An application-level `AudioOut` vtable (`platform/audio.zig`) with two
 backends — a hermetic WAV/null sink (`platform/audio_wavfile.zig`) and a Linux
 OSS `/dev/dsp` backend (`platform/audio_oss.zig` + its C-extern PAL
@@ -53,7 +53,11 @@ driving the whole path into the hermetic sink; `tests/tier_audio.sh` is green
 tolerance vs the M3 goldens, 3× determinism, and the OSS `OpenFailed` contract).
 Example-only; no compiler/seed change (compiler defect D8 is worked around by
 holding the vtables **by pointer** and assembling them at the caller — see
-`examples/torrent_example_defects.md`).
+`examples/torrent_example_defects.md`). Its Task 6 M5 CLI-plan amendment review
+found **no amendment needed** (M4's public `Player` `state`/`volume` fields and
+`playerPositionMs` cover the status line, keys, volume and clean stop; the
+`AudioOut` vtable and the D8 caller-owned/pointer-vtable shape carry over — M5
+adds its own volume scaling, `--start` skip and `--loop` reset).
 
 ## Files
 

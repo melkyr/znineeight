@@ -1,6 +1,6 @@
 # z9play — Z98 Example
 
-**Status:** M0 complete (Tasks 0–5). M1 complete (Tasks 0–5, closed out): setup header parse + codebook construction, exposed via `--dump-setup`. M2 (native pure-Z98 `std_math` f64 `sqrt`/`sin`/`cos`) complete and closed out (Tasks 0–6): std fixture registered, `tests/tier_math.sh` gate green, docs, and the Task 6 M3 amendment review. M3 (audio decode → interleaved s16 PCM) complete and closed out (Tasks 0–6): `dsp`/`floor`/`residue`/`decode`, `z9play --pcm <in.ogg> <out.wav>` (canonical 44-byte-header PCM WAV), `tests/tier_decode.sh` (tolerance + 3× determinism vs the `oggdec` goldens), and the Task 6 M4 amendment review (no amendment needed). M4 (audio output + ring buffer + Player core) complete and closed out (Tasks 0–5): the `AudioOut` vtable (`platform/audio.zig`), the hermetic WAV sink (`platform/audio_wavfile.zig`) and Linux OSS `/dev/dsp` backend (`platform/audio_oss.zig`/`audio_oss_pal.zig`), the shared `Player` + double-buffer `RingBuffer` (`player.zig`), the `z9play --wav <in.ogg> <out.wav>` gate subcommand, and `tests/tier_audio.sh` (tolerance + completion/monotonicity + 3× determinism vs the M3 goldens; 27/27).
+**Status:** M0 complete (Tasks 0–5). M1 complete (Tasks 0–5, closed out): setup header parse + codebook construction, exposed via `--dump-setup`. M2 (native pure-Z98 `std_math` f64 `sqrt`/`sin`/`cos`) complete and closed out (Tasks 0–6): std fixture registered, `tests/tier_math.sh` gate green, docs, and the Task 6 M3 amendment review. M3 (audio decode → interleaved s16 PCM) complete and closed out (Tasks 0–6): `dsp`/`floor`/`residue`/`decode`, `z9play --pcm <in.ogg> <out.wav>` (canonical 44-byte-header PCM WAV), `tests/tier_decode.sh` (tolerance + 3× determinism vs the `oggdec` goldens), and the Task 6 M4 amendment review (no amendment needed). M4 (audio output + ring buffer + Player core) complete and closed out (Tasks 0–6): the `AudioOut` vtable (`platform/audio.zig`), the hermetic WAV sink (`platform/audio_wavfile.zig`) and Linux OSS `/dev/dsp` backend (`platform/audio_oss.zig`/`audio_oss_pal.zig`), the shared `Player` + double-buffer `RingBuffer` (`player.zig`), the `z9play --wav <in.ogg> <out.wav>` gate subcommand, and `tests/tier_audio.sh` (tolerance + completion/monotonicity + 3× determinism vs the M3 goldens; 27/27). M4's Task 6 closeout (below) records the M5 CLI-plan amendment review: **no amendment needed** — M4's caller-owned, field-exposed `Player` API plus the `AudioOut` vtable cover the CLI's status line, keys, volume, clean stop, and the D8 pointer-vtable shape.
 
 **Entry file:** `main.zig`
 
@@ -520,6 +520,55 @@ carries the fnptr field by value triggers D8.
   `bafbba9454cd2b134bdc3d50c65384e0`; `--dump-c89` md5
   `d695bf99dadb7f6dbbc0f2a94bb42f43` (stable 2×). M4 chain: `f1044ec6` (audio
   vtable + WAV sink) → `6a66afd9` (OSS `/dev/dsp` backend) → `0fcc5f41` (Player
-  core + double-buffer ring) → `61e93e72` (M4 `--wav` + `tier_audio`; the M4
-  working commit) → this docs commit (version bump + MD5 re-pin). The M4 plan
-  carries no status field, so there is nothing to flip to "done".
+   core + double-buffer ring) → `61e93e72` (M4 `--wav` + `tier_audio`; the M4
+   working commit) → this docs commit (version bump + MD5 re-pin). The M4 plan
+   carries no status field, so there is nothing to flip to "done".
+
+### Task 6 — M5 amendment review + M4 closeout — DONE
+
+- **Part A (M5 amendment review) — no amendment needed.** M5's CLI plan does not
+  name any `Player` operation M4 lacks; it "drives `Player` (M4)" and its Task 0
+  explicitly defers the API to this review. M4 exposes everything the CLI reads
+  or writes:
+  - the `\r` status line `mm:ss / mm:ss  vol N%  [####----]` needs
+    `playerPositionMs(p)` (position), `p.duration_ms` (duration) and `p.volume`
+    (volume) — all present;
+  - the keys act on the public `Player` fields: `p.state = .paused` / `.playing`
+    for space (`playerPump` early-returns unless `state == .playing`; because
+    `position_ms` is sample-based, not clock-based, a pause simply stops
+    advancing, so no `started_ms`/offset bookkeeping is needed for v1);
+    `p.volume` for `+`/`-`; `p.state = .stopped` + leaving the loop for
+    `q`/Ctrl-C; and the CLI already holds the vtable pointer (`p.audio`), so
+    `drain_fn`/`close_fn` give the clean stop/device release;
+  - the `Player` is **caller-owned** and its vtables are held **by pointer** (the
+    D8 workaround). M5's sketched `main(argc, argv)` + formatter + `termios`
+    calls reuse exactly that shape (assemble the `AudioOut`/`Decoder` literals at
+    the caller as `main.zig --wav` already does; never return/embed a vtable by
+    value), so D8 does not bite M5; `playerInit(p: *Player, …)`, `playerPump(p)`
+    and `playerPositionMs(p)` remain the right calls;
+  - **no `playerSetVolume`/`playerPause`/`playerStop` functions exist, and none
+    is required**: Z98 struct fields are public, so M5 mutates them directly;
+    function helpers would be optional sugar, not a missing API;
+  - the `AudioOut` vtable (`open_fn`/`write_fn`/`close_fn`/`drain_fn` + `state`)
+    is sufficient — it carries no volume method because volume is a
+    Player/frontend concern, not a backend one.
+  - **Additive M5 work explicitly noted (not amendments; no M4 assumption
+    broken):** M4 only *carries* `volume`, it does not scale the PCM it flushes,
+    so M5 must apply the volume (e.g. in its own flush/sink path) for `+`/`-` to
+    change output; `--start SEC` needs a sample-skip (M4 has the reserved
+    `started_ms` field but no seek logic); `--loop` needs a decoder reset/re-init
+    (the `Player` ends and stops; `VorbisCtx.next_packet` must be reset). All are
+    example-only extensions in `player.zig`/`cli.zig`, consistent with the
+    milestone sequence; M5's plan does not assume M4 already does them.
+- **Part B (M4 closeout).** Working commit pinned to `61e93e72`
+  (`example(z9play): M4 audio tier`); M4 chain `f1044ec6` (audio vtable + WAV
+  sink) → `6a66afd9` (OSS `/dev/dsp` backend) → `0fcc5f41` (Player core +
+  double-buffer ring) → `61e93e72` (M4 `--wav` + `tier_audio`) → the docs commit.
+  Gates re-run under seed v97 (`-fsafe`, example-only, no compiler/seed change):
+  `tier_audio` 27/27, `tier_info` 20/20, `tier_setup` 21/21, `tier_math` 8/8,
+  `tier_decode` 24/24; unit tests
+  `ogg_test`/`info_test`/`setup_test`/`dsp_test`/`floor_test`/`residue_test`/
+  `decode_test`/`audio_test`/`player_test`/`oss_test` all PASS; two-hop seed
+  closure `bafbba9454cd2b134bdc3d50c65384e0`; `--dump-c89` md5
+  `d695bf99dadb7f6dbbc0f2a94bb42f43` (unchanged — this is a docs-only commit).
+  The M4 plan carries no status field, so there is nothing to flip to "done".
