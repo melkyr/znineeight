@@ -62,7 +62,7 @@ pub fn usage() void {
 }
 
 pub fn version() void {
-    var s: []const u8 = "z9play 0.1.0 (M3)\n";
+    var s: []const u8 = "z9play 0.1.0 (M4)\n";
     std.io.write(s);
 }
 

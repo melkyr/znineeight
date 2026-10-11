@@ -556,14 +556,15 @@ cross-module collision.
 
 ---
 
-## D8 — A function-pointer typedef that returns an error union is emitted before the error-union typedef it references (multi-module shared header)
+## D8 — A function-pointer typedef that returns an error union is emitted before the error-union typedef it references (an aggregate carrying the fnptr field by value)
 
 **Status:** DOCUMENTED / OPEN (not fixed; filed doc-only per operator ruling
 2026-10-11 — this class of cumulative compiler defects is collected and solved in
 a later compiler pass). Discovered 2026-10-11 while building `examples/z98/z9play/`
 M4 Task 1 (`platform/audio.zig`, the blueprint §2.2 `AudioOut` vtable).
 
-**Symptom.** In a **multi-module** build, `zig_special_types.h` emits a
+**Symptom.** In a build with a shared `zig_special_types.h` (multi-module, or a
+single-file program that reaches the same emission path), it emits a
 function-pointer typedef whose **return type is an error union** before the
 error-union typedef itself, so the C is invalid:
 
@@ -579,14 +580,15 @@ zig_special_types.h:9x: typedef struct { union { void* payload; int err; } data;
 whose methods return `ErrorSet!T` (the shape the z9play spec, blueprint §2.2,
 mandates for `platform/audio` and `platform/console`).
 
-**Reproducer (3 modules; `a.zig` defines the vtable, `b.zig` returns it,
-`main.zig` uses it).** The trigger is emitting an aggregate that carries the
-error-union-returning function-pointer typedef: a function that **returns** the
-vtable struct, or (refined at M4 T3, see below) a struct that **embeds** the
-vtable struct as a field. A single-file/no-import program hits it too — the
-"multi-module shared header" framing in the title is about the *emission site*,
-not a module-count precondition (the T1 deferred note asked for this
-correction).
+**Reproducer (`a.zig` defines the vtable; `b.zig` returns one; `main.zig` uses
+it).** The trigger is emitting — with any module count — an aggregate that
+carries the error-union-returning function-pointer typedef **by value**: either
+a function that **returns** such an aggregate, or (refined at M4 T3, see below)
+a struct that **embeds** the vtable struct as a field. The defect is a property
+of the emission path (a shared `zig_special_types.h`), not of the number of
+modules: a single-file/no-import program reaches it too, and holding a vtable
+**by pointer** is clean (nothing then carries the fnptr field by value). The
+"multi-module" framing here is about the *emission site* only.
 
 ```zig
 // a.zig
@@ -644,9 +646,9 @@ path the fn-pointer's type id precedes its return error union's id, and
 first emitting that function type's return-type typedef**, so the fn-pointer
 typedef is written first and references the not-yet-defined error union.
 
-**Workaround (used by z9play M4 Task 1).** The trigger is a function whose
-*return type is the vtable struct*; if no module exposes such a function the
-multi-module emission of the function-pointer and error-union typedefs lands in
+**Workaround (used by z9play M4 Task 1).** At T1 the observed trigger was a
+function whose *return type is the vtable struct*; if no module exposes such a
+function, the emission of the function-pointer and error-union typedefs lands in
 a valid order. So the backend keeps the **exact blueprint §2.2 vtable ABI**
 (`fn(...) ErrorSet!T` entries) and instead exposes them as public free functions
 (`audio_wavfile.open`/`write`/`close`/`drain`); the caller assembles the
@@ -673,10 +675,14 @@ The minimal example-only fix is to hold the vtables **by pointer**
 (`player.decoder: *const Decoder`, `player.audio: *const audio.AudioOut`) and
 initialise a **caller-owned** `*Player` (`playerInit(p: *Player, …) PlayerError!void`),
 never returning the struct by value. This links cleanly, keeps the binding
-vtables' ABI unchanged, and is the general rule for a player/core struct: **no
-vtable struct may cross a function boundary or an aggregate field by value.**
-A caller-owned (rather than returned) `Player` was also needed because the
-defect fires for any aggregate that carries the fnptr typedef.
+vtables' ABI unchanged, and is the general rule for a player/core struct: **hold
+vtables by pointer — a struct must not embed (nor a function return) an
+aggregate that carries the error-union-returning function-pointer field by
+value.** Holding or passing a vtable *by pointer* is clean; only an aggregate
+that *contains* the fnptr field by value (as a struct field or a function
+result) triggers the emission mis-order. A caller-owned (rather than returned)
+`Player` was also needed because the defect fires for any aggregate that carries
+the fnptr typedef.
 
 **Proper fix (TODO, later compiler pass).** Add an `fn_type` branch to
 `tstEdgesWalk` (`sf/src/c89_emit.zig`) that records the function type's

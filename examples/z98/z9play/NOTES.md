@@ -1,12 +1,12 @@
 # z9play — Z98 Example
 
-**Status:** M0 complete (Tasks 0–5). M1 complete (Tasks 0–5, closed out): setup header parse + codebook construction, exposed via `--dump-setup`. M2 (native pure-Z98 `std_math` f64 `sqrt`/`sin`/`cos`) complete and closed out (Tasks 0–6): std fixture registered, `tests/tier_math.sh` gate green, docs, and the Task 6 M3 amendment review. M3 (audio decode → interleaved s16 PCM) complete and closed out (Tasks 0–6): `dsp`/`floor`/`residue`/`decode`, `z9play --pcm <in.ogg> <out.wav>` (canonical 44-byte-header PCM WAV), `tests/tier_decode.sh` (tolerance + 3× determinism vs the `oggdec` goldens), and the Task 6 M4 amendment review (no amendment needed).
+**Status:** M0 complete (Tasks 0–5). M1 complete (Tasks 0–5, closed out): setup header parse + codebook construction, exposed via `--dump-setup`. M2 (native pure-Z98 `std_math` f64 `sqrt`/`sin`/`cos`) complete and closed out (Tasks 0–6): std fixture registered, `tests/tier_math.sh` gate green, docs, and the Task 6 M3 amendment review. M3 (audio decode → interleaved s16 PCM) complete and closed out (Tasks 0–6): `dsp`/`floor`/`residue`/`decode`, `z9play --pcm <in.ogg> <out.wav>` (canonical 44-byte-header PCM WAV), `tests/tier_decode.sh` (tolerance + 3× determinism vs the `oggdec` goldens), and the Task 6 M4 amendment review (no amendment needed). M4 (audio output + ring buffer + Player core) complete and closed out (Tasks 0–5): the `AudioOut` vtable (`platform/audio.zig`), the hermetic WAV sink (`platform/audio_wavfile.zig`) and Linux OSS `/dev/dsp` backend (`platform/audio_oss.zig`/`audio_oss_pal.zig`), the shared `Player` + double-buffer `RingBuffer` (`player.zig`), the `z9play --wav <in.ogg> <out.wav>` gate subcommand, and `tests/tier_audio.sh` (tolerance + completion/monotonicity + 3× determinism vs the M3 goldens; 27/27).
 
 **Entry file:** `main.zig`
 
-**Working commit:** `c7af78ac` (`example(z9play): M3 --pcm + tier_decode`; the M3 `--pcm` + `tier_decode` commit — the last commit of the M3 decode surface, pinned at M3 closeout). Prior closeouts: M2 `b5ca08d2` (`feat(std_math): f64 sin/cos (pure Z98)`; the last `std_math` surface commit; full M2 chain `4d6fb5dd` (f64 `sqrt`) → `b5ca08d2` (f64 `sin`/`cos`) → `52958705` (`tests/tier_math.sh`) → `6844aad5` (docs)); M1 `100c35ce` (`example(z9play): M1 --dump-setup + tier_setup`); M0 `27b1fddf` (`example(z9play): z9play --info CLI + tier_info gate`). **M3 decode chain:** `bb211810` (IMDCT + window + overlap-add) → `b497323a` (floor1) → `d925cb55` (residue type 0/1/2) → `16ae3eea` (packet → PCM) → `de48b5cf` (docs: D7 + cumulative-defect warning) → `c7af78ac` (M3 `--pcm` + `tier_decode`; this closeout).
+**Working commit:** `61e93e72` (`example(z9play): M4 audio tier`; the last commit of the M4 audio surface, pinned at M4 closeout; the docs commit that follows also bumps the `--version` string to `(M4)`, so the recorded MD5 is measured at that closeout tree, not at `61e93e72`). Prior closeouts: M3 `c7af78ac` (`example(z9play): M3 --pcm + tier_decode`; the M3 `--pcm` + `tier_decode` commit — the last commit of the M3 decode surface, pinned at M3 closeout); M2 `b5ca08d2` (`feat(std_math): f64 sin/cos (pure Z98)`; the last `std_math` surface commit; full M2 chain `4d6fb5dd` (f64 `sqrt`) → `b5ca08d2` (f64 `sin`/`cos`) → `52958705` (`tests/tier_math.sh`) → `6844aad5` (docs)); M1 `100c35ce` (`example(z9play): M1 --dump-setup + tier_setup`); M0 `27b1fddf` (`example(z9play): z9play --info CLI + tier_info gate`). **M3 decode chain:** `bb211810` (IMDCT + window + overlap-add) → `b497323a` (floor1) → `d925cb55` (residue type 0/1/2) → `16ae3eea` (packet → PCM) → `de48b5cf` (docs: D7 + cumulative-defect warning) → `c7af78ac` (M3 `--pcm` + `tier_decode`; this closeout).
 
-**MD5 (`--dump-c89`):** `a5f208b5c8034e9c9f2be9c6800913f4` (seed `zig1_5_clean`, seed **v97**; stable 3×; M3). **M3 changed this value** (M2 was `88ad559ce5e4a3dae6f11a0c52b35792`): `--dump-c89` for `main.zig` transitively emits every imported module, and M3 makes `main.zig` import `decode.zig` (and its closure `codebook.zig`/`dsp.zig`/`floor.zig`/`residue.zig`), so the whole M3 decode graph now appears in the dump, alongside the `std_math.zig` functions M2 added. The z9play **build seed / fixed point is unchanged** (`bafbba9454cd2b134bdc3d50c65384e0`; M3 is example-only, no compiler change). Prior: M2 `88ad559ce5e4a3dae6f11a0c52b35792`, M1 `344c26ed89dd0830443fa5e16b870ec0`, M0 `--info`-only `ba86cbe8b2229667f4c8084a0b0e75da`.
+**MD5 (`--dump-c89`):** `d695bf99dadb7f6dbbc0f2a94bb42f43` (seed `zig1_5_clean`, seed **v97**; stable 2×; M4). **M4 changed this value** (M3 was `a5f208b5c8034e9c9f2be9c6800913f4`): `--dump-c89` for `main.zig` transitively emits every imported module, and M4 makes `main.zig` import the audio/player closure — `platform/audio.zig`, `platform/audio_wavfile.zig`, `platform/audio_oss.zig`, `platform/audio_oss_pal.zig`, and `player.zig` — and adds the `--wav` subcommand, so the whole M4 audio graph now appears in the dump (alongside the M3 decode closure and the M2 `std_math` functions). The docs commit also bumps the `--version` string `(M3)`→`(M4)` in `cli.zig`, a same-length literal change that likewise shifts the dump content; the value above is measured at that closeout tree. The z9play **build seed / fixed point is unchanged** (`bafbba9454cd2b134bdc3d50c65384e0`; M4 is example-only, no compiler change). Prior: M3 `a5f208b5c8034e9c9f2be9c6800913f4`, M2 `88ad559ce5e4a3dae6f11a0c52b35792`, M1 `344c26ed89dd0830443fa5e16b870ec0`, M0 `--info`-only `ba86cbe8b2229667f4c8084a0b0e75da`.
 
 Spec: `docs/superpowers/specs/2026-10-11-z9play-ogg-player-design.md` (binding).
 M0 plan: `docs/superpowers/plans/2026-10-11-z9play-m0-ogg-container-plan.md`.
@@ -94,12 +94,45 @@ $ sh examples/z98/z9play/tests/tier_decode.sh
 TIER_DECODE PASS
 ```
 
+### `--wav` usage (M4)
+
+```bash
+/tmp/z9play_out/prog --wav examples/z98/z9play/testdata/sine_stereo_44100.ogg /tmp/out.wav
+# wav: ended frames=88200 pos_ms=2000 monotonic=1
+```
+
+`--wav <in.ogg> <out.wav>` drives the whole M4 player path — decode → the
+double-buffer PCM ring (`player.zig`) → the `AudioOut` vtable
+(`platform/audio.zig`) — into the hermetic WAV sink
+(`platform/audio_wavfile.zig`); **no audio device is touched**. It writes a
+canonical 44-byte-header PCM WAV with the same shape and granule trim as `--pcm`,
+and prints exactly one line:
+
+```
+wav: ended frames=<n> pos_ms=<n> monotonic=<0|1>
+```
+
+i.e. the Player reached `ended` with no error (`frames` = frames handed to the
+audio backend, `pos_ms` = the final `playerPositionMs`), and `monotonic=1` means
+`playerPositionMs` never went backwards. It is the M4 gate subcommand
+(`tests/tier_audio.sh`); the Linux OSS `/dev/dsp` backend
+(`platform/audio_oss.zig`) is best-effort and device-dependent — v1 uses the WAV
+sink for the gate, not a `--wav` device path. Exit codes mirror
+`--info`/`--pcm`: `0` ok, `1` arguments, `2` open, `3` decoder/player.
+
+```
+$ sh examples/z98/z9play/tests/tier_audio.sh
+== tier_audio summary: 27 passed, 0 failed ==
+TIER_AUDIO PASS
+```
+
 ### `--dump-c89` (for the MD5 above)
 
 ```bash
 timeout 120 /tmp/z9play_seed/zig1_5_clean --dump-c89 examples/z98/z9play/main.zig | md5sum
-# a5f208b5c8034e9c9f2be9c6800913f4  -
-# (M2, before M3's decode.zig import closure: 88ad559ce5e4a3dae6f11a0c52b35792;
+# d695bf99dadb7f6dbbc0f2a94bb42f43  -
+# (M3, before M4's audio/player import closure + the (M4) version bump: a5f208b5c8034e9c9f2be9c6800913f4;
+#  M2, before M3's decode.zig import closure: 88ad559ce5e4a3dae6f11a0c52b35792;
 #  M1, before the M2 std_math f64 functions: 344c26ed89dd0830443fa5e16b870ec0)
 ```
 
@@ -406,3 +439,87 @@ change.
   `bafbba9454cd2b134bdc3d50c65384e0`; `--dump-c89` md5
   `a5f208b5c8034e9c9f2be9c6800913f4` (stable). The M3 plan carries no status
   field, so there is nothing to flip to "done".
+
+### M4 — Audio output + ring buffer + Player core (`platform/audio*`, `player.zig`; Tasks 0–5) — DONE
+
+Plan: `docs/superpowers/plans/2026-10-11-z9play-m4-audio-out-plan.md`. Example-only
+(no compiler/seed change). M4 splits audio output from the decoder: an
+application-level `AudioOut` vtable (`platform/audio.zig`), two backends
+(`platform/audio_wavfile.zig` hermetic WAV/null sink, `platform/audio_oss.zig`
+Linux OSS `/dev/dsp` + its C-extern PAL `platform/audio_oss_pal.zig`), and the
+shared `Player` core + double-buffer `RingBuffer` (`player.zig`) that drives
+decode → ring → audio.
+
+- **Task 1 (`platform/audio.zig` + `audio_wavfile.zig`) — DONE.** `AudioError`
+  (`error{ OpenFailed, WriteFailed, ConfigUnsupported, DeviceError }`) and the
+  blueprint §2.2 `AudioOut` vtable (`open_fn`/`write_fn`/`close_fn`/`drain_fn` +
+  `state`, methods returning `AudioError!T`). `audio_wavfile` implements it as a
+  canonical 44-byte-header PCM WAV writer (header written with zeroed size
+  fields, patched in `close`); the destination path comes from a setter
+  (`setOutputPath`, `Z9PLAY_WAV_OUT` env fallback). First D8 contact.
+- **Task 2 (`audio_oss.zig` + `audio_oss_pal.zig`) — DONE.** Linux OSS
+  `/dev/dsp` backend: `extern "c"` `open`/`ioctl`/`write`/`close` plus the
+  numeric `SNDCTL_DSP_{SETFMT,CHANNELS,SPEED,SYNC}` ioctls (hardcoded for the
+  pinned i386 target, so `<sys/soundcard.h>` need not be installed); configures
+  AFMT_S16_LE at the requested rate/channels, blocking `write`. Best-effort: on
+  a device-less host `open` returns `error.OpenFailed` cleanly (`tests/oss_test.zig`;
+  the WAV sink stays the gate backend). The C externs live in the PAL module
+  because an `extern "c" fn open` cannot share a module with the required
+  `pub fn open` (same-name collision), the same split `std_file`/`std_file_pal` uses.
+- **Task 3 (`player.zig`) — DONE.** `Player` + `RingBuffer` (2 × 0.5 s @
+  44.1 kHz stereo s16 = 176,400 bytes = 88,200 interleaved i16, allocated once
+  from the player arena); blocking v1 loop — `playerPump` decodes one block when
+  the ring has room, flushes a half (`flush_threshold = capacity/2`) or the tail
+  at end of stream; `playerPositionMs` monotonic. The `Decoder` vtable abstracts
+  the codec; the M3 Vorbis backend (`vorbisCreate`/`vorbisNext`) implements it and
+  resets its per-packet scratch arena on every call (the M3 `entryToVector`
+  per-codeword arena-scratch residual). The Player stops handing samples to audio
+  at exactly `decoder.total_frames` (granule trim), so its output matches M3's
+  `--pcm`. vtables are held **by pointer** and the `Player` is **caller-owned**
+  (`playerInit(p: *Player, …)`) — the D8 refinement (see below).
+- **Task 4 (`--wav` + `tests/tier_audio.sh`) — DONE.** `z9play --wav <in.ogg>
+  <out.wav>` drives the whole M4 path (decode → double-buffer ring → `AudioOut`)
+  into the hermetic WAV sink (no device touched) and prints `wav: ended …
+  monotonic=1`. New gate `tests/tier_audio.sh`: for all 5 fixtures — exit 0 +
+  completion + position monotonicity, canonical WAV header + payload size == the
+  M3 `--pcm` golden, tolerance vs the `oggdec` golden (max |Δ| = 1 LSB, RMS
+  34–39), 3× determinism — plus `oss_test` asserting the OSS backend reports
+  `OpenFailed` cleanly when `/dev/dsp` is absent. Green (27/27).
+- **Task 5 (docs) — DONE (this commit).** `NOTES.md`/`README.md` document the
+  M4 audio layer + `--wav`; the user-facing version string is bumped to
+  `z9play 0.1.0 (M4)` (was `(M3)`); the `--dump-c89` md5 re-pinned (below).
+
+#### D8 workaround (vtables held by pointer)
+
+The blueprint §2.2 vtable methods return `AudioError!T`. Emitting an aggregate
+that carries the error-union-returning function-pointer typedef **by value** —
+either a function *returning* the vtable struct, or (T3 refinement) a struct that
+*embeds* a vtable struct as a field — makes the C89 emitter write the
+function-pointer typedef before the error-union typedef it references (invalid
+C89). This is compiler defect **D8**, recorded in
+`examples/torrent_example_defects.md`.
+
+Workaround (example-only; the vtable ABI is unchanged): backends expose their
+vtable entries as **public free functions** (`open`/`write`/`close`/`drain`) and
+the **caller assembles the vtable literal**
+(`audio.AudioOut{ .open_fn = wav.open, …, .state = ctx }`); `player.Player` holds
+its vtables **by pointer** (`decoder: *const Decoder`, `audio: *const audio.AudioOut`)
+and is **caller-owned** (`playerInit(p: *Player, …)`), never returned by value.
+Holding vtables by pointer is clean; only embedding/returning an aggregate that
+carries the fnptr field by value triggers D8.
+
+  ```
+  $ sh examples/z98/z9play/tests/tier_audio.sh
+  == tier_audio summary: 27 passed, 0 failed ==
+  TIER_AUDIO PASS
+  ```
+
+  Regression: `tier_info` 20/20, `tier_setup` 21/21, `tier_math` 8/8,
+  `tier_decode` 24/24, `tier_audio` 27/27; unit tests `audio_test`/`player_test`/
+  `oss_test` PASS (plus all earlier harnesses); seed closure unchanged
+  `bafbba9454cd2b134bdc3d50c65384e0`; `--dump-c89` md5
+  `d695bf99dadb7f6dbbc0f2a94bb42f43` (stable 2×). M4 chain: `f1044ec6` (audio
+  vtable + WAV sink) → `6a66afd9` (OSS `/dev/dsp` backend) → `0fcc5f41` (Player
+  core + double-buffer ring) → `61e93e72` (M4 `--wav` + `tier_audio`; the M4
+  working commit) → this docs commit (version bump + MD5 re-pin). The M4 plan
+  carries no status field, so there is nothing to flip to "done".
