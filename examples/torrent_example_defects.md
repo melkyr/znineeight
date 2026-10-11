@@ -3,9 +3,10 @@
 This log records **compiler defects / gaps discovered while building the
 `z9torr` BitTorrent example** (`examples/z98/z9torr/`), each with a minimal
 reproducer, the exact failure, and the workaround the example uses. The
-workarounds are example/spec-level. **All five defects (D1–D5) are now FIXED**
-in the compiler (plan `2026-10-09-zig1-codegen-defects-plan`, seed v95 rotated
-2026-10-10); each entry below records its fix commit id and a note that the fix
+workarounds are example/spec-level. **All six defects (D1–D6) are now FIXED**
+in the compiler (D1–D5 via plan `2026-10-09-zig1-codegen-defects-plan`, seed
+v95/v96 rotated 2026-10-10; D6 via commit `875b9a9e`, seed v97 rotated
+2026-10-11); each entry below records its fix commit id and a note that the fix
 reproduces **Zig semantics**, not merely `gcc` acceptance.
 
 Related: `docs/superpowers/specs/2026-10-08-z9torr-bittorrent-client-design.md`
@@ -432,7 +433,7 @@ minimal reproducer would require matching the emitted temp layout.
 
 When a workaround is adopted, the example's source and its spec are updated and
 the entry records the workaround + commit; the defect itself is listed **FIXED**
-once the compiler is fixed. All five (D1–D5) are now FIXED; each entry records
+once the compiler is fixed. All six (D1–D6) are now FIXED; each entry records
 its fix commit and that the fix reproduces Zig semantics. (D4 later became
 reducible to the standalone `repro/mi_matrix/async_frame_structret_xmod`, whose
 classify class flipped FAIL→OK at F3.)
@@ -443,7 +444,13 @@ _(Add new entries as D5, … as they are found during M1–M4.)_
 
 ## D6 — `@ptrFromInt` with a type argument is silently miscompiled instead of rejected
 
-**Status:** OPEN (filed 2026-10-10 during the M5 `-fsafe` work). This is a
+**Status:** FIXED (commit `875b9a9e`, 2026-10-11; seed v97). The semantic analyzer
+now rejects an `@ptrFromInt` call whose argument count is not exactly one,
+emitting `ERR_3000_TYPE_MISMATCH` (the same enum member as the sibling "cannot
+infer pointer type" diagnostic) with message `@ptrFromInt requires exactly one
+argument: @ptrFromInt(expr)` and returning `TYPE_UNDEFINED`; one-arg
+`@ptrFromInt(expr)` and two-arg `@intToPtr(T, v)` are unchanged. Filed
+2026-10-10 during the M5 `-fsafe` work. This is a
 **compiler validation / wrong-accept** defect, **not** the anticipated `-fsafe`
 failure: there is **no `-fsafe`/`-ffast` divergence** (both modes emit the same
 wrong code). It did not block the M5 `-fsafe` mission — the example uses the
@@ -503,6 +510,7 @@ specific to `@ptrFromInt` receiving an extra type argument.
 two-argument `@intToPtr(T, value)`. `peer.zig`'s `zeroPieceIO` uses
 `@ptrFromInt(0)`.
 
-**Proper fix (not done; compiler frozen during this task).** Diagnose an
-`@ptrFromInt` call whose argument count exceeds one, or lower the extra type
-argument explicitly if the two-argument spelling is meant to be supported.
+**Proper fix (DONE, `875b9a9e`, 2026-10-11).** The semantic analyzer diagnoses an
+`@ptrFromInt` call whose argument count is not exactly one (rejected with 0 `.c`
+emitted), mirroring the existing `@ptrCast` arity-reject arm. The compiler no
+longer silently miscompiles the two-argument spelling.
