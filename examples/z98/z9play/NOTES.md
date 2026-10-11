@@ -1,6 +1,6 @@
 # z9play — Z98 Example
 
-**Status:** M0 complete (Tasks 0–5). M1 complete (Tasks 0–5, closed out): setup header parse + codebook construction, exposed via `--dump-setup`.
+**Status:** M0 complete (Tasks 0–5). M1 complete (Tasks 0–5, closed out): setup header parse + codebook construction, exposed via `--dump-setup`. M2 (native pure-Z98 `std_math` f64 `sqrt`/`sin`/`cos`) complete on the z9play side (Tasks 3–5): std fixture registered, `tests/tier_math.sh` gate + docs.
 
 **Entry file:** `main.zig`
 
@@ -234,3 +234,44 @@ round-trip mismatch, proving the guard.
   21/21; two-hop seed closure `bafbba9454cd2b134bdc3d50c65384e0`; `--dump-c89`
   md5 `344c26ed89dd0830443fa5e16b870ec0`. The M1 plan carries no status field,
   so there is nothing to flip to "done".
+
+### M2 — Native float math (`std_math` f64; Tasks 3–5) — DONE
+
+Plan: `docs/superpowers/plans/2026-10-11-z9play-m2-native-math-plan.md`. This is
+the one z9play milestone that edits the **standard library** (`sf/src/std_math.zig`),
+not the example: pure-Z98 f64 math so the Vorbis IMDCT/window can run on Win9x
+(no libm).
+
+- **Tasks 1–2 (`std_math`) — DONE (prior commits).** `4d6fb5dd`
+  `feat(std_math): f64 sqrt (pure Z98)` and `b5ca08d2`
+  `feat(std_math): f64 sin/cos (pure Z98)`. `sqrt` is correctly rounded (exact
+  integer square root of the significand: 0 ULP); `sin`/`cos` use a Cody-Waite
+  argument reduction (split `2/pi`) + fdlibm `__kernel_sin`/`__kernel_cos`,
+  <= 1 ULP vs the glibc/python oracle over `|x| <= 2^20*(pi/2) ≈ 1.65e6`, NaN
+  outside that domain (no Payne-Hanek). No libm, no compiler math builtins.
+- **Task 3 (fixture registration) — already registered, no change.** The std
+  fixture `repro/mi_matrix/stdlib_math_f64_xmod/` (`main.zig` + `expected.txt` +
+  `expected.rc`) is pinned in `scripts/stdlib/expected_dirs.txt` (added by the
+  Task 1 commit `4d6fb5dd`, adjacent to `stdlib_math_xmod`; no duplicate).
+  `bash scripts/stdlib/verify_stdlib.sh /tmp/z9play_seed/zig1_5_clean` →
+  `285 PASS / 0 FAIL`, `STDLIB GATE OK` (284 baseline + the new f64 fixture).
+  Nothing to change, so no commit ("already registered").
+- **Task 4 (z9play math tier) — DONE.** `mathtest.zig` + `tests/tier_math.sh` +
+  `tests/mathtest.expected` (8 checks): builds the z9play-local probe under
+  `-fsafe`, diffs stdout against the committed oracle (identical to the std
+  fixture's `expected.txt`), and asserts the linked binary imports **no libm**
+  (`nm -u` has no undefined `sqrt`/`sin`/`cos`/`pow`; DT_NEEDED is libc only; a
+  real `-lm` control binary is flagged non-vacuously).
+
+  ```
+  $ sh examples/z98/z9play/tests/tier_math.sh
+  == tier_math summary: 8 passed, 0 failed ==
+  TIER_MATH PASS
+  ```
+
+- **Task 5 (docs) — DONE.** `docs/sf/QUICK_REF.md` notes the `std_math` f64
+  surface (`sqrt`/`sin`/`cos`, the `~1.65e6` argument-reduction domain cap, pure
+  Z98 / no libm).
+- **Regression:** `tier_info` 20/20, `tier_setup` 21/21; seed closure unchanged
+  `bafbba9454cd2b134bdc3d50c65384e0`. (The M3 amendment review is M2 Task 6, a
+  separate dispatch.)
