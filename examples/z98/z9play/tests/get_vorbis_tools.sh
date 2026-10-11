@@ -14,10 +14,12 @@
 # stdout (parseable lines):
 #   oggenc: <path>
 #   ogginfo: <path>
-#   LD_LIBRARY_PATH: <colon-separated dirs>   (required for both to run)
+#   oggdec: <path>
+#   LD_LIBRARY_PATH: <colon-separated dirs>   (required for all to run)
 #   oggenc_version: <first line of `oggenc --version`>
+#   oggdec_version: <first line of `oggdec --version`>
 #
-# Exits non-zero if oggenc/ogginfo cannot be produced or run.
+# Exits non-zero if oggenc/ogginfo/oggdec cannot be produced or run.
 #
 # Usage:  TMP=/tmp/vorbis sh get_vorbis_tools.sh
 #         TMP=/tmp/vorbis SYS=/tmp/vorbis/sys sh get_vorbis_tools.sh   # stable prefix
@@ -56,7 +58,8 @@ done
 
 OGGENC="$SYS/usr/bin/oggenc"
 OGGINFO="$SYS/usr/bin/ogginfo"
-for b in "$OGGENC" "$OGGINFO"; do
+OGGDEC="$SYS/usr/bin/oggdec"
+for b in "$OGGENC" "$OGGINFO" "$OGGDEC"; do
     if [ ! -x "$b" ]; then
         echo "get_vorbis_tools: not produced at $b" >&2
         exit 1
@@ -80,7 +83,18 @@ env LD_LIBRARY_PATH="$LD" "$OGGINFO" -h >/dev/null 2>&1 || {
     exit 1
 }
 
+DV="$(env LD_LIBRARY_PATH="$LD" "$OGGDEC" --version 2>&1 | head -n1)"
+case "$DV" in
+    *oggdec*) ;;
+    *)
+        echo "get_vorbis_tools: oggdec did not run (got '$DV')" >&2
+        exit 1
+        ;;
+esac
+
 echo "oggenc: $OGGENC"
 echo "ogginfo: $OGGINFO"
+echo "oggdec: $OGGDEC"
 echo "LD_LIBRARY_PATH: $LD"
 echo "oggenc_version: $VER"
+echo "oggdec_version: $DV"

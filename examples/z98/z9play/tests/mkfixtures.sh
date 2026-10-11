@@ -2,9 +2,9 @@
 # mkfixtures.sh -- generate the z9play OGG testdata fixtures + goldens
 # DETERMINISTICALLY.
 #
-# POSIX sh + python3 (PCM generation) + oggenc/ogginfo (vorbis-tools).
-# oggenc/ogginfo are acquired without root by tests/get_vorbis_tools.sh (run
-# automatically if not already present).
+# POSIX sh + python3 (PCM generation) + oggenc/ogginfo/oggdec (vorbis-tools).
+# oggenc/ogginfo/oggdec are acquired without root by tests/get_vorbis_tools.sh
+# (run automatically if not already present).
 #
 # Produces, under ../testdata/:
 #   sine_mono_44100.ogg       1 ch, 44100 Hz, 1.0 s, 440 Hz
@@ -23,12 +23,21 @@
 #     `channels`/`sample_rate`/`duration_s` come from ogginfo; tag lines are
 #     parsed from the ACTUAL comment packet stored in the .ogg (uppercase keys,
 #     raw bytes, fixed TITLE/ARTIST/ALBUM order, present only when set).
+#   <name>.pcm                golden raw PCM (the M3 decode reference):
+#     signed 16-bit little-endian interleaved, HEADERLESS (no WAV header).
+#     Produced by oggdec (vorbis-tools), invoked EXACTLY as:
+#       oggdec -Q -R -b 16 -e 0 -s 1 -o <name>.pcm <name>.ogg
+#     i.e. --quiet --raw --bits 16 --endianness 0 (little) --sign 1 (signed);
+#     `--raw` suppresses oggdec's default WAV header. Frame count =
+#     filesize / (channels * 2); rate/channels/duration live in <name>.meta.
 #
-# DETERMINISM. Two sources of run-to-run variability are removed:
+# DETERMINISM. Three sources of run-to-run variability are removed:
 #   1. samples are computed in Python (no random); the committed `.ogg` bytes,
 #      not this script, are the source of truth;
 #   2. oggenc's per-run random Ogg bitstream serial is pinned with `-s <serial>`
-#      (a fixed serial per fixture), so re-running yields byte-identical .ogg.
+#      (a fixed serial per fixture), so re-running yields byte-identical .ogg;
+#   3. oggdec/libvorbis is deterministic for a fixed input; write_pcm decodes
+#      each fixture twice and asserts byte-identical output before committing.
 #
 # LOCALE. oggenc converts non-ASCII tag arguments using the locale; under a
 # non-UTF-8 locale (e.g. C) it substitutes each non-ASCII byte with '#' at
@@ -43,7 +52,7 @@
 #
 # Usage:  sh mkfixtures.sh
 # Env:    VORBIS_TMP (default /tmp/vorbis)  where get_vorbis_tools.sh extracts
-#         OGGENC/OGGINFO/LD_LIBRARY_PATH   override the acquired binaries
+#         OGGENC/OGGINFO/OGGDEC/LD_LIBRARY_PATH   override the acquired binaries
 #         UTF8_LC                          force the oggenc locale (optional)
 
 set -eu
@@ -69,20 +78,23 @@ fi
     exit 1; }
 
 
-# --- locate (or acquire) oggenc/ogginfo -------------------------------------
+# --- locate (or acquire) oggenc/ogginfo/oggdec ------------------------------
 if [ -z "${OGGENC:-}" ] || [ ! -x "${OGGENC:-}" ] || \
-   [ -z "${OGGINFO:-}" ] || [ ! -x "${OGGINFO:-}" ]; then
+   [ -z "${OGGINFO:-}" ] || [ ! -x "${OGGINFO:-}" ] || \
+   [ -z "${OGGDEC:-}" ] || [ ! -x "${OGGDEC:-}" ]; then
     echo "== acquiring vorbis-tools (no root) ==" >&2
     _out="$(TMP="$VORBIS_TMP" sh "$SCRIPT_DIR/get_vorbis_tools.sh")"
     OGGENC="$(printf '%s\n' "$_out" | LC_ALL=C awk -F': ' '/^oggenc: /{print $2; exit}')"
     OGGINFO="$(printf '%s\n' "$_out" | LC_ALL=C awk -F': ' '/^ogginfo: /{print $2; exit}')"
+    OGGDEC="$(printf '%s\n' "$_out" | LC_ALL=C awk -F': ' '/^oggdec: /{print $2; exit}')"
     LD_LIBRARY_PATH="$(printf '%s\n' "$_out" | LC_ALL=C awk -F': ' '/^LD_LIBRARY_PATH: /{print $2; exit}')"
 fi
-# Safe under `set -u` when the caller overrides OGGENC/OGGINFO without a lib path.
+# Safe under `set -u` when the caller overrides OGGENC/OGGINFO/OGGDEC without a lib path.
 LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
 export LD_LIBRARY_PATH
 [ -x "${OGGENC:-}" ] || { echo "mkfixtures: oggenc not runnable: ${OGGENC:-unset}" >&2; exit 1; }
 [ -x "${OGGINFO:-}" ] || { echo "mkfixtures: ogginfo not runnable: ${OGGINFO:-unset}" >&2; exit 1; }
+[ -x "${OGGDEC:-}" ] || { echo "mkfixtures: oggdec not runnable: ${OGGDEC:-unset}" >&2; exit 1; }
 command -v python3 >/dev/null 2>&1 || { echo "mkfixtures: python3 required" >&2; exit 1; }
 echo "== locale for oggenc: $UTF8_LC ==" >&2
 
@@ -180,6 +192,33 @@ write_meta() {
     } > "$EDIR/$_name.meta"
 }
 
+# --- golden .pcm: oggdec -> raw s16 LE interleaved, headerless ----------------
+# write_pcm <name> <ogg> -- decode the fixture with oggdec to $EDIR/<name>.pcm.
+# The flags are pinned so the layout is EXACTLY the documented golden:
+#   -Q  --quiet          no console output
+#   -R  --raw            headerless output (oggdec writes a WAV header otherwise)
+#   -b  --bits 16        signed 16-bit samples
+#   -e  --endianness 0   little-endian
+#   -s  --sign 1         signed (not unsigned)
+# The file is therefore raw signed-16 LE interleaved PCM; its frame count is
+# filesize / (channels * 2) and rate/channels/duration live in <name>.meta.
+# oggdec/libvorbis is deterministic for a fixed input; a run-twice self-check
+# asserts byte-identical output so the committed goldens are reproducible.
+write_pcm() {
+    _name="$1"; _ogg="$2"
+    _pcm="$EDIR/$_name.pcm"
+    env LC_ALL=C LD_LIBRARY_PATH="$LD_LIBRARY_PATH" "$OGGDEC" \
+        -Q -R -b 16 -e 0 -s 1 -o "$_pcm" "$_ogg"
+    [ -s "$_pcm" ] || { echo "mkfixtures: $_pcm not produced" >&2; exit 1; }
+
+    _pcm2="$WORK/$_name.pcm.2"
+    env LC_ALL=C LD_LIBRARY_PATH="$LD_LIBRARY_PATH" "$OGGDEC" \
+        -Q -R -b 16 -e 0 -s 1 -o "$_pcm2" "$_ogg"
+    cmp -s "$_pcm" "$_pcm2" || {
+        echo "mkfixtures: oggdec non-deterministic for $_name" >&2; exit 1; }
+    rm -f "$_pcm2"
+}
+
 # --- emit: WAV -> oggenc (fixed serial, UTF-8 locale) + golden + self-check --
 # emit <name> <serial> <rate> <ch> <seconds> <freq_l> <freq_r> [title artist album]
 # Title/artist/album are passed as separate positional args (not KEY=value) so
@@ -205,6 +244,9 @@ emit() {
     # Golden tags are read back from the ACTUAL stored comment packet.
     write_meta "$_name" "$_ogg"
 
+    # Golden raw PCM (M3 decode reference) + its run-twice determinism check.
+    write_pcm "$_name" "$_ogg"
+
     # Self-check: the stored bytes must round-trip to the requested values, and
     # the non-ASCII TITLE must appear verbatim in the file (guards the
     # encode-time "#" substitution regression).
@@ -220,7 +262,7 @@ emit() {
             echo "mkfixtures: $_name missing verbatim TITLE bytes" >&2; exit 1
         fi
     fi
-    echo "== $_name: $(LC_ALL=C wc -c < "$_ogg" | tr -d ' ') bytes, $(cat "$EDIR/$_name.meta" | tr '\n' ' ')" >&2
+    echo "== $_name: $(LC_ALL=C wc -c < "$_ogg" | tr -d ' ') ogg bytes, $(LC_ALL=C wc -c < "$EDIR/$_name.pcm" | tr -d ' ') pcm bytes, $(cat "$EDIR/$_name.meta" | tr '\n' ' ')" >&2
 }
 
 # UTF-8 tag values as explicit octal escapes (locale-independent).
