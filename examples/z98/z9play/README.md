@@ -15,9 +15,9 @@ Tasks 0–5 are done: deterministic fixtures + goldens, the no-root
 Vorbis id/comment parsers (`vorbis_info.zig`), and the `--info` CLI
 (`cli.zig`/`main.zig`). The M0 gate `tests/tier_info.sh` is green (20/20).
 
-**M1 (Vorbis setup header + codebooks + `z9play --dump-setup`) — Tasks 1–4
-complete.** `vorbis_setup.zig` parses the setup header (codebooks, floors,
-residues, mappings, modes); `codebook.zig` builds the canonical Huffman decode
+**M1 (Vorbis setup header + codebooks + `z9play --dump-setup`) — complete
+(Tasks 0–5, closed out).** `vorbis_setup.zig` parses the setup header (codebooks,
+floors, residues, mappings, modes); `codebook.zig` builds the canonical Huffman decode
 tables and VQ vectors. `z9play --dump-setup <file.ogg>` prints a fixed summary
 of the setup object counts. The M1 gate `tests/tier_setup.sh` is green (21/21).
 

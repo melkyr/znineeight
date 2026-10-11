@@ -1,10 +1,10 @@
 # z9play — Z98 Example
 
-**Status:** M0 complete (Tasks 0–5). M1 Tasks 1–4 complete: setup header parse + codebook construction, exposed via `--dump-setup`.
+**Status:** M0 complete (Tasks 0–5). M1 complete (Tasks 0–5, closed out): setup header parse + codebook construction, exposed via `--dump-setup`.
 
 **Entry file:** `main.zig`
 
-**Working commit:** M1 Task 4 (this commit; short hash pinned at M1 closeout). M0 closeout commit: `27b1fddf` (`example(z9play): z9play --info CLI + tier_info gate`).
+**Working commit:** `100c35ce` (`example(z9play): M1 --dump-setup + tier_setup`; the current M1 implementation commit, pinned at M1 closeout). M0 closeout commit: `27b1fddf` (`example(z9play): z9play --info CLI + tier_info gate`).
 
 **MD5 (`--dump-c89`):** `344c26ed89dd0830443fa5e16b870ec0` (seed `zig1_5_clean`, seed **v97**; stable 3×; M1 `--info` + `--dump-setup` CLI + gates). M0 `--info`-only md5 was `ba86cbe8b2229667f4c8084a0b0e75da`.
 
@@ -190,7 +190,7 @@ round-trip mismatch, proving the guard.
   TIER_INFO PASS
   ```
 
-### M1 — Setup header + codebooks (Tasks 1–4 complete)
+### M1 — Setup header + codebooks (Tasks 0–5 complete; closed out)
 
 - **Task 1 — DONE.** `vorbis_setup.zig`: setup skeleton + codebook dimensions
   (count, per-codebook `BCV` sync / dimensions / entries / flags / lengths);
@@ -216,3 +216,21 @@ round-trip mismatch, proving the guard.
   == tier_setup summary: 21 passed, 0 failed ==
   TIER_SETUP PASS
   ```
+
+### Task 5 — M2 amendment review + M1 closeout — DONE
+
+- **Part A (M2 amendment review) — no amendment needed.** M1's `Setup` /
+  `Codebook` / bit-reader output is independent of M2 (`std_math` f64): M2
+  consumes no M1 structure, so M1's actual output invalidates no M2 assumption.
+  M3's window/IMDCT math needs `sin` (Vorbis window `sin(π/2·sin²(π/(2n)·(i+.5)))`)
+  and `cos` (IMDCT basis); the residue/VQ/coupling paths need only the baseline
+  f64 `+ - * /` M1 already uses. `π` is a compile-time constant local to the
+  example. `floor0` (`exp`/`log`/`atan` `bark()`) is rejected in v1 (M3 Task 2 →
+  `error.UnsupportedFloor`); `pow`/`atan`/`atan2`/`floor` are on no M3 path. So
+  M2's declared set `{sqrt, sin, cos}` fully covers M3's exact function needs.
+- **Part B (M1 closeout).** Working commit pinned to `100c35ce`
+  (`example(z9play): M1 --dump-setup + tier_setup`). Gates re-run under seed v97:
+  `ogg_test`, `info_test`, `setup_test` PASS; `tier_info` 20/20; `tier_setup`
+  21/21; two-hop seed closure `bafbba9454cd2b134bdc3d50c65384e0`; `--dump-c89`
+  md5 `344c26ed89dd0830443fa5e16b870ec0`. The M1 plan carries no status field,
+  so there is nothing to flip to "done".
