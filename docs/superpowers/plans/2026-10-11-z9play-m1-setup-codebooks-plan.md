@@ -4,7 +4,7 @@
 
 **Goal:** Parse the Vorbis **setup** header (`\x05vorbis`) — codebooks, time-domain transforms, floors, residues, mappings, modes — and construct the codebook decode structures, exposed via `z9play --dump-setup <file.ogg>`.
 
-**Architecture:** Extend `vorbis_info.zig` with a `setup.zig` parser + a codebook builder. Pure byte/integer work: no floating point, no trig (that is M2), no PCM. The deliverable is a validated in-memory `Setup` that M3 consumes.
+**Architecture:** Extend `vorbis_info.zig` with a `setup.zig` parser + a codebook builder. Pure byte/integer work plus basic `f64` arithmetic for VQ value scaling (`min + delta*multiplicand`, operator-approved 2026-10-11); no transcendentals/math-library, no trig (that is M2), no PCM. The deliverable is a validated in-memory `Setup` that M3 consumes.
 
 **Tech Stack:** Z98 (`zig1`, `gcc -m32`, `-fsafe`), `std_file`/`std_mem`/`std_arena`/`std_io.print`; fixtures + goldens from `vorbis-tools`.
 
