@@ -38,6 +38,7 @@ const filemod = @import("std_file");
 const ogg = @import("../ogg.zig");
 const vs = @import("../vorbis_setup.zig");
 const cbk = @import("../codebook.zig");
+const vi = @import("../vorbis_info.zig");
 
 
 // Backing store for the read/reassembly/parse arena; module-global so it does
@@ -58,7 +59,7 @@ fn fail(msg: []const u8) void {
 
 // True when parseSetup rejects `pkt` (the malformed cases).
 fn setupFails(arena: *std.arena.Arena, pkt: []const u8) bool {
-    var s: vs.Setup = vs.parseSetup(arena, pkt) catch return true;
+    var s: vs.Setup = vs.parseSetup(arena, pkt, 1) catch return true;
     _ = s;
     return false;
 }
@@ -67,7 +68,7 @@ fn setupFails(arena: *std.arena.Arena, pkt: []const u8) bool {
 // True when parseSetup rejects `pkt` specifically with OutOfMemory (used by the
 // crafted overflow-header test, so a truncated-packet error cannot pass it).
 fn setupOutOfMemory(arena: *std.arena.Arena, pkt: []const u8) bool {
-    var s: vs.Setup = vs.parseSetup(arena, pkt) catch |err| return err == error.OutOfMemory;
+    var s: vs.Setup = vs.parseSetup(arena, pkt, 1) catch |err| return err == error.OutOfMemory;
     _ = s;
     return false;
 }
@@ -91,7 +92,11 @@ fn checkFixture(path: []const u8, want_count: usize, want_dims: u16, want_entrie
         fail("fewer than 3 packets (no setup header)");
         return;
     }
-    var setup: vs.Setup = vs.parseSetup(&arena, packets[2].bytes) catch {
+    var id: vi.IdHeader = vi.parseId(packets[0].bytes) catch {
+        fail("cannot parse identification header");
+        return;
+    };
+    var setup: vs.Setup = vs.parseSetup(&arena, packets[2].bytes, @intCast(u32, id.channels)) catch {
         fail("parseSetup failed");
         return;
     };
@@ -270,7 +275,11 @@ fn roundTripFixture(path: []const u8) u32 {
         fail("no setup packet (codebook)");
         return 0;
     }
-    var setup: vs.Setup = vs.parseSetup(&arena, packets[2].bytes) catch {
+    var id: vi.IdHeader = vi.parseId(packets[0].bytes) catch {
+        fail("cannot parse identification header (codebook)");
+        return 0;
+    };
+    var setup: vs.Setup = vs.parseSetup(&arena, packets[2].bytes, @intCast(u32, id.channels)) catch {
         fail("parseSetup failed (codebook)");
         return 0;
     };
@@ -280,6 +289,114 @@ fn roundTripFixture(path: []const u8) u32 {
         used += roundTripCodebook(&arena, setup.codebooks[c]);
     }
     return used;
+}
+
+// Reassemble `path`, parse its setup packet, and assert the Task 3 structures
+// (floor/residue/mapping/mode) against independently derived expectations.
+// Every fixture shares: one time transform, two floor-1s, two residues, two
+// mappings, two modes with blockflags [0,1] and framing 1. `want_res_type` is
+// the shared residue type; `want_coupling` the per-mapping coupling-step count;
+// `want_end0`/`want_end1` the two residue band ends.
+fn checkFixtureSetup(path: []const u8, want_res_type: u16, want_coupling: u32, want_end0: u32, want_end1: u32) void {
+    var arena = std.arena.init(arena_buf[0..]);
+    var data: []u8 = filemod.readAll(&arena, path) catch {
+        fail("cannot read fixture (setup)");
+        return;
+    };
+    var packets: []ogg.Packet = ogg.reassemble(&arena, data) catch {
+        fail("reassemble failed (setup)");
+        return;
+    };
+    if (packets.len < 3) {
+        fail("no setup packet (setup)");
+        return;
+    }
+    var id: vi.IdHeader = vi.parseId(packets[0].bytes) catch {
+        fail("cannot parse identification header (setup)");
+        return;
+    };
+    var s: vs.Setup = vs.parseSetup(&arena, packets[2].bytes, @intCast(u32, id.channels)) catch {
+        fail("parseSetup failed (setup)");
+        return;
+    };
+    if (s.time_count != 1) {
+        fail("time_count != 1");
+        return;
+    }
+    if (s.floors.len != 2) {
+        fail("floor count != 2");
+        return;
+    }
+    if (s.floors[0].floor_type != 1 or s.floors[1].floor_type != 1) {
+        fail("fixture floor type != 1");
+        return;
+    }
+    if (s.floors[0].multiplier != 4 or s.floors[1].multiplier != 2) {
+        fail("floor multiplier mismatch");
+        return;
+    }
+    if (s.floors[0].rangebits != 7 or s.floors[1].rangebits != 10) {
+        fail("floor rangebits mismatch");
+        return;
+    }
+    if (s.floors[0].partition_count != 2 or s.floors[1].partition_count != 8) {
+        fail("floor partition count mismatch");
+        return;
+    }
+    if (s.residues.len != 2) {
+        fail("residue count != 2");
+        return;
+    }
+    if (s.residues[0].residue_type != want_res_type or s.residues[1].residue_type != want_res_type) {
+        fail("residue type mismatch");
+        return;
+    }
+    if (s.residues[0].partition_size != 16 or s.residues[1].partition_size != 32) {
+        fail("residue partition_size mismatch");
+        return;
+    }
+    if (s.residues[0].end != want_end0 or s.residues[1].end != want_end1) {
+        fail("residue end mismatch");
+        return;
+    }
+    if (s.mappings.len != 2) {
+        fail("mapping count != 2");
+        return;
+    }
+    if (s.mappings[0].submaps != 1 or s.mappings[1].submaps != 1) {
+        fail("mapping submaps != 1");
+        return;
+    }
+    if (s.mappings[0].coupling_steps != want_coupling or s.mappings[1].coupling_steps != want_coupling) {
+        fail("mapping coupling_steps mismatch");
+        return;
+    }
+    if (want_coupling == 1) {
+        if (s.mappings[0].coupling_magnitude[0] != 0 or s.mappings[0].coupling_angle[0] != 1) {
+            fail("mapping coupling pair mismatch");
+            return;
+        }
+    }
+    if (s.mappings[0].submap_floor[0] != 0 or s.mappings[1].submap_floor[0] != 1) {
+        fail("mapping submap floor mismatch");
+        return;
+    }
+    if (s.mappings[0].submap_residue[0] != 0 or s.mappings[1].submap_residue[0] != 1) {
+        fail("mapping submap residue mismatch");
+        return;
+    }
+    if (s.modes.len != 2) {
+        fail("mode count != 2");
+        return;
+    }
+    if (s.modes[0].blockflag) {
+        fail("mode[0].blockflag set");
+        return;
+    }
+    if (!s.modes[1].blockflag) {
+        fail("mode[1].blockflag clear");
+        return;
+    }
 }
 
 
@@ -301,9 +418,25 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     checkFixture(f_tagged, 38, 1, 64);
     checkFixture(f_short, 35, 1, 64);
 
+    // --- committed fixtures: Task 3 floors/residues/mappings/modes. ---
+    // Expected values derived independently of vorbis_setup.zig by a python3
+    // LSB-first setup-header reader (spec 4.2.4 / 6.2.1 / 7.2.2 / 8.6.1) over
+    // packet index 2 of each fixture; cross-checked against libvorbis
+    // res0_unpack / floor1_unpack / mapping0_unpack and spec errata.
+    //   mono (sine_mono_44100, short): residue type 1, no coupling,
+    //     residue ends 112 / 800.
+    //   stereo (sine_stereo_44100, sine_stereo_48000, tagged_unicode):
+    //     residue type 2, 1 coupling step (0,1), residue ends 208 / 1600
+    //     (48000: 192 / 1472).
+    checkFixtureSetup(f_mono, 1, 0, 112, 800);
+    checkFixtureSetup(f_short, 1, 0, 112, 800);
+    checkFixtureSetup(f_stereo, 2, 1, 208, 1600);
+    checkFixtureSetup(f_tagged, 2, 1, 208, 1600);
+    checkFixtureSetup(f_48000, 2, 1, 192, 1472);
+
     // --- synthetic: ordered codebook (no fixture has one). ---
-    var p_ordered: []const u8 = "\x05\x76\x6f\x72\x62\x69\x73\x00\x42\x43\x56\x04\x00\x03\x00\x00\x83\x01";
-    var so: vs.Setup = vs.parseSetup(&arena, p_ordered) catch {
+    var p_ordered: []const u8 = "\x05\x76\x6f\x72\x62\x69\x73\x00\x42\x43\x56\x04\x00\x03\x00\x00\x83\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x10";
+    var so: vs.Setup = vs.parseSetup(&arena, p_ordered, 1) catch {
         fail("synthetic ordered parse failed");
         return;
     };
@@ -316,8 +449,8 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     if (so.codebooks[0].lengths[2] != 3) fail("ordered: lengths[2] != 3");
 
     // --- synthetic: lookup type 2 followed by a second codebook. ---
-    var p_lookup2: []const u8 = "\x05\x76\x6f\x72\x62\x69\x73\x01\x42\x43\x56\x01\x00\x02\x00\x00\x00\x20\x00\x00\x00\x00\x00\x00\x00\x00\x03\x40\x68\xc8\xea\x00\xa0\x00\x00\x00\x00\x00\x00\x00";
-    var sl: vs.Setup = vs.parseSetup(&arena, p_lookup2) catch {
+    var p_lookup2: []const u8 = "\x05\x76\x6f\x72\x62\x69\x73\x01\x42\x43\x56\x01\x00\x02\x00\x00\x00\x20\x00\x00\x00\x00\x00\x00\x00\x00\x03\x40\x68\xc8\xea\x00\xa0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x08";
+    var sl: vs.Setup = vs.parseSetup(&arena, p_lookup2, 1) catch {
         fail("synthetic lookup2 parse failed");
         return;
     };
@@ -402,8 +535,8 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     // (d) lookup type 1 VQ vector unpack (fixtures are all lookup 0).
     //     synth: dims 2, entries 4 (all len 2), lookup 1, min 0, delta 1,
     //     multiplicands [5,9] -> entry e = [m[e%2], m[(e/2)%2]].
-    var p_type1: []const u8 = "\x05\x76\x6f\x72\x62\x69\x73\x00\x42\x43\x56\x02\x00\x04\x00\x00\x84\x10\x42\x00\x00\x00\x00\x04\x00\x00\x8a\x8d\x4a";
-    var s1: vs.Setup = vs.parseSetup(&arena, p_type1) catch {
+    var p_type1: []const u8 = "\x05\x76\x6f\x72\x62\x69\x73\x00\x42\x43\x56\x02\x00\x04\x00\x00\x84\x10\x42\x00\x00\x00\x00\x04\x00\x00\x8a\x8d\x4a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x40";
+    var s1: vs.Setup = vs.parseSetup(&arena, p_type1, 1) catch {
         fail("type1: parseSetup failed");
         return;
     };
@@ -448,8 +581,8 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     // (e) lookup type 2 sequence VQ vector unpack.
     //     synth: dims 2, entries 2 (all len 1), lookup 2, min 0, delta 1,
     //     sequence_p set, multiplicands [1,2,3,4] -> entry 0 [1,3], 1 [3,7].
-    var p_type2: []const u8 = "\x05\x76\x6f\x72\x62\x69\x73\x00\x42\x43\x56\x02\x00\x02\x00\x00\x00\x20\x00\x00\x00\x00\x01\x00\x80\x62\x33\x64\x08";
-    var s2: vs.Setup = vs.parseSetup(&arena, p_type2) catch {
+    var p_type2: []const u8 = "\x05\x76\x6f\x72\x62\x69\x73\x00\x42\x43\x56\x02\x00\x02\x00\x00\x00\x20\x00\x00\x00\x00\x01\x00\x80\x62\x33\x64\x08\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x10";
+    var s2: vs.Setup = vs.parseSetup(&arena, p_type2, 1) catch {
         fail("type2: parseSetup failed");
         return;
     };
@@ -477,8 +610,64 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     // must be a clean error, never a -fsafe trap (Task 2 amendment).
     if (!setupOutOfMemory(&arena, buildOverflowPacket())) fail("overflow lookup-2 header was not rejected as OutOfMemory");
 
+    // --- synthetic Task 3: floor type 0 + residue type 0 (no fixture uses
+    //     either; fixtures are floor 1 / residue 1 or 2). The packet was
+    //     emitted by an independent python3 LSB-first bit-writer. ---
+    var p_floor0: []const u8 = "\x05\x76\x6f\x72\x62\x69\x73\x00\x42\x43\x56\x01\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x80\x02\x32\x00\x64\x00\xe3\x20\x00\x00\x00\x00\x80\x00\x00\x00\x01\x00\x00\x01\x00\x80\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x40";
+    var sf0: vs.Setup = vs.parseSetup(&arena, p_floor0, 1) catch {
+        fail("floor0: parseSetup failed");
+        return;
+    };
+    if (sf0.floors.len != 1) fail("floor0: floor count != 1");
+    if (sf0.floors[0].floor_type != 0) fail("floor0: type != 0");
+    if (sf0.floors[0].order != 5) fail("floor0: order != 5");
+    if (sf0.floors[0].rate != 100) fail("floor0: rate != 100");
+    if (sf0.floors[0].bark_map_size != 200) fail("floor0: bark_map_size != 200");
+    if (sf0.floors[0].amplitude_bits != 6) fail("floor0: amplitude_bits != 6");
+    if (sf0.floors[0].amplitude_offset != 7) fail("floor0: amplitude_offset != 7");
+    if (sf0.floors[0].floor0_book_count != 2) fail("floor0: book_count != 2");
+    if (sf0.floors[0].floor0_books[0] != 0) fail("floor0: books[0] != 0");
+    if (sf0.floors[0].floor0_books[1] != 0) fail("floor0: books[1] != 0");
+    if (sf0.residues.len != 1) fail("floor0: residue count != 1");
+    if (sf0.residues[0].residue_type != 0) fail("floor0: residue type != 0");
+    if (sf0.residues[0].begin != 1) fail("floor0: residue begin != 1");
+    if (sf0.residues[0].end != 2) fail("floor0: residue end != 2");
+    if (sf0.residues[0].partition_size != 3) fail("floor0: residue partition_size != 3");
+    if (sf0.residues[0].classifications != 2) fail("floor0: classifications != 2");
+    if (sf0.residues[0].classbook != 0) fail("floor0: classbook != 0");
+    if (sf0.residues[0].cascade[0] != 0) fail("floor0: cascade[0] != 0");
+    if (sf0.residues[0].cascade[1] != 1) fail("floor0: cascade[1] != 1");
+    if (sf0.residues[0].books[8] != 0) fail("floor0: books[1][0] != 0");
+    if (sf0.modes.len != 1) fail("floor0: mode count != 1");
+    if (sf0.modes[0].blockflag) fail("floor0: mode blockflag set");
 
-    var ok: []const u8 = "setup_test: PASS fixtures=5 stereo_codebooks=38 mono_codebooks=35 cb0_dim=1 cb0_entries=64 ordered=ok lookup2=ok cbtables=ok\n";
+    // --- synthetic Task 3: 2-submap mapping with mux and one coupling step
+    //     (fixtures only exercise single-submap mappings). ---
+    var p_mux: []const u8 = "\x05\x76\x6f\x72\x62\x69\x73\x01\x42\x43\x56\x01\x00\x01\x00\x00\x00\x10\x1a\xb2\x0a\x00\x08\x00\x00\x00\x00\x00\x00\x00\x00\x00\x04\x28\x00\x50\x00\x08\x03\x00\x00\x00\x00\x00\x00\x00\x10\x00\x00\x0c\x00\x00\x00\x00\x00\x00\x00\x8c\x00\x02\x01\x00\x00\x00\x00\x00\x10\x00\x00\x00\x00\x00\x08\x00\x00\x00\x00\x10";
+    var sm: vs.Setup = vs.parseSetup(&arena, p_mux, 2) catch {
+        fail("mux: parseSetup failed");
+        return;
+    };
+    if (sm.mappings.len != 1) fail("mux: mapping count != 1");
+    if (sm.mappings[0].submaps != 2) fail("mux: submaps != 2");
+    if (sm.mappings[0].coupling_steps != 1) fail("mux: coupling_steps != 1");
+    if (sm.mappings[0].coupling_magnitude[0] != 0) fail("mux: coupling_magnitude[0] != 0");
+    if (sm.mappings[0].coupling_angle[0] != 1) fail("mux: coupling_angle[0] != 1");
+    if (sm.mappings[0].mux[0] != 0) fail("mux: mux[0] != 0");
+    if (sm.mappings[0].mux[1] != 1) fail("mux: mux[1] != 1");
+    if (sm.mappings[0].submap_floor[1] != 0) fail("mux: submap_floor[1] != 0");
+    if (sm.mappings[0].submap_residue[1] != 0) fail("mux: submap_residue[1] != 0");
+    if (sm.modes.len != 2) fail("mux: mode count != 2");
+
+    // --- synthetic Task 3 negatives: an illegal floor type and a nonzero
+    //     mapping reserved field are BadVersion, not crashes. ---
+    var p_badfloor: []const u8 = "\x05\x76\x6f\x72\x62\x69\x73\x00\x42\x43\x56\x01\x00\x01\x00\x00\x00\x00\x00\x00\x00\x01\x00";
+    if (!setupFails(&arena, p_badfloor)) fail("accepted floor type 2");
+    var p_badmap: []const u8 = "\x05\x76\x6f\x72\x62\x69\x73\x00\x42\x43\x56\x01\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x80\x00\x05\x00\x0a\x00\x61\x00\x00\x00\x00\x00\x00\x00\x00\x02\x00\x80\x01\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x00\x00\x00\x00\x00\x04";
+    if (!setupFails(&arena, p_badmap)) fail("accepted nonzero mapping reserved field");
+
+
+    var ok: []const u8 = "setup_test: PASS fixtures=5 stereo_codebooks=38 mono_codebooks=35 cb0_dim=1 cb0_entries=64 ordered=ok lookup2=ok cbtables=ok setup=ok\n";
     std.io.write(ok);
     std.os.exit(0);
 }
