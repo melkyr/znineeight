@@ -3,11 +3,14 @@
 This log records **compiler defects / gaps discovered while building the
 `z9torr` BitTorrent example** (`examples/z98/z9torr/`), each with a minimal
 reproducer, the exact failure, and the workaround the example uses. The
-workarounds are example/spec-level. **All six defects (D1–D6) are now FIXED**
-in the compiler (D1–D5 via plan `2026-10-09-zig1-codegen-defects-plan`, seed
-v95/v96 rotated 2026-10-10; D6 via commit `875b9a9e`, seed v97 rotated
-2026-10-11); each entry below records its fix commit id and a note that the fix
-reproduces **Zig semantics**, not merely `gcc` acceptance.
+workarounds are example/spec-level. **D1–D6 are now FIXED** in the compiler
+(D1–D5 via plan `2026-10-09-zig1-codegen-defects-plan`, seed v95/v96 rotated
+2026-10-10; D6 via commit `875b9a9e`, seed v97 rotated 2026-10-11); each fixed
+entry records its fix commit id and a note that the fix reproduces **Zig
+semantics**, not merely `gcc` acceptance. **D7 (see below) is documented as an
+OPEN, unfixed compiler defect** — filed doc-only per operator ruling
+2026-10-11; this class of cumulative compiler defects will be collected and
+solved in a later compiler pass.
 
 Related: `docs/superpowers/specs/2026-10-08-z9torr-bittorrent-client-design.md`
 (the example's binding spec).
@@ -433,12 +436,13 @@ minimal reproducer would require matching the emitted temp layout.
 
 When a workaround is adopted, the example's source and its spec are updated and
 the entry records the workaround + commit; the defect itself is listed **FIXED**
-once the compiler is fixed. All six (D1–D6) are now FIXED; each entry records
+once the compiler is fixed. D1–D6 are now FIXED; each fixed entry records
 its fix commit and that the fix reproduces Zig semantics. (D4 later became
 reducible to the standalone `repro/mi_matrix/async_frame_structret_xmod`, whose
 classify class flipped FAIL→OK at F3.)
 
-_(Add new entries as D5, … as they are found during M1–M4.)_
+_(Add new entries as D7, the next free slot, as they are found while building the
+examples; entries are doc-only unless a compiler fix is separately authorized.)_
 
 ---
 
@@ -514,3 +518,38 @@ two-argument `@intToPtr(T, value)`. `peer.zig`'s `zeroPieceIO` uses
 `@ptrFromInt` call whose argument count is not exactly one (rejected with 0 `.c`
 emitted), mirroring the existing `@ptrCast` arity-reject arm. The compiler no
 longer silently miscompiles the two-argument spelling.
+
+---
+
+## D7 — An unqualified type name / `@sizeOf(T)` inside a module resolves to a same-named type imported from another module
+
+**Status:** DOCUMENTED / OPEN (not fixed; filed doc-only per operator ruling
+2026-10-11 — this class of cumulative compiler defects will be collected and
+solved in a later compiler pass). Discovered 2026-10-11 while building
+`examples/z98/z9play/` (M3 audio decode).
+
+**Symptom.** Inside a module, an unqualified type name (and its `@sizeOf`)
+resolves to a *same-named* type imported from **another** module, not the
+module's own type — i.e. type-name resolution is flat/name-based rather than
+lexical. In `examples/z98/z9play/vorbis_setup.zig`, `@sizeOf(Mode)` (the
+module's own 8-byte struct) resolved to `std_file.Mode` (a 4-byte enum) once
+`std_file` was imported. The `modes` array was therefore under-allocated, a
+later field write corrupted an adjacent value, and the decoder selected the
+wrong mapping and produced garbage PCM (`max|Δ| ≈ 49307` vs the golden).
+
+**Reproducer.**
+```zig
+// inside examples/z98/z9play/vorbis_setup.zig, with `const std_file = @import("std_file.zig");`
+//   @sizeOf(Mode)     -> 4   (wrongly resolves to std_file.Mode, an enum)
+//   @sizeOf(vs.Mode)  -> 8   (qualified: the module's own struct)
+// remove the `std_file` import:
+//   @sizeOf(Mode)     -> 8   (correct)
+```
+
+**Workaround (used by z9play M3 Task 4).** Rename the module's own type so it
+does not collide with any imported name: `Mode` → `VorbisMode`, keeping
+`pub const Mode = VorbisMode;` so the public API is unchanged.
+
+**Proper fix (TODO, later compiler pass).** Resolve unqualified type names
+lexically (module scope first), or emit a diagnostic on a same-named
+cross-module collision.

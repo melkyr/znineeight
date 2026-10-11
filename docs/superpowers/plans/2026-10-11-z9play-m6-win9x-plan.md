@@ -14,7 +14,7 @@
 
 ## Global Constraints
 
-Same as prior milestones: example-only `examples/z98/z9play/**`; **no compiler change**; no seed rotation; Z98 rules (`@isWindows()` must have an explicit `else` so both arms emit valid C; NOTE 2026-10-11: compiler defects D1–D6 are FIXED in seed v97 — no workarounds needed); `-fsafe`; `edit`/`fastedit` only; **NO push**; git hard rule; plan is the only authority (STOP-present). Reports under `.superpowers/sdd/2026-10-11-z9play-m6-win9x-plan/`. Reuse `scripts/win32_cross/cross_build_run.sh` (as z9torr M5 did) for the mingw+wine path.
+Same as prior milestones: example-only `examples/z98/z9play/**`; **no compiler change**; no seed rotation; Z98 rules (`@isWindows()` must have an explicit `else` so both arms emit valid C; NOTE 2026-10-11: compiler defects D1–D6 are FIXED in seed v97 — no workarounds needed for those; but this class of cumulative compiler defects can still surface (e.g. D7, an unqualified type name / `@sizeOf` colliding with a same-named imported type) — if one is hit, STOP-present, apply a minimal example-only workaround, and record it in `examples/torrent_example_defects.md` for a later compiler pass); `-fsafe`; `edit`/`fastedit` only; **NO push**; git hard rule; plan is the only authority (STOP-present). Reports under `.superpowers/sdd/2026-10-11-z9play-m6-win9x-plan/`. Reuse `scripts/win32_cross/cross_build_run.sh` (as z9torr M5 did) for the mingw+wine path.
 
 ## File Structure
 
