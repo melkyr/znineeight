@@ -18,7 +18,7 @@ M8 is **optional**. It begins only if the operator confirms it after the M7 Task
 
 ## Global Constraints
 
-Same as prior milestones: example-only `examples/z98/z9play/**`; **no compiler change**; no seed rotation; Z98 rules (D1/D2/D3/D4); `-fsafe`; `edit`/`fastedit` only; **NO push**; git hard rule; plan is the only authority (STOP-present). Reports under `.superpowers/sdd/2026-10-11-z9play-m8-flac-plan/`.
+Same as prior milestones: example-only `examples/z98/z9play/**`; **no compiler change**; no seed rotation; Z98 rules (NOTE 2026-10-11: compiler defects D1–D6 are FIXED in seed v97 — no workarounds needed); `-fsafe`; `edit`/`fastedit` only; **NO push**; git hard rule; plan is the only authority (STOP-present). Reports under `.superpowers/sdd/2026-10-11-z9play-m8-flac-plan/`.
 
 ## File Structure
 

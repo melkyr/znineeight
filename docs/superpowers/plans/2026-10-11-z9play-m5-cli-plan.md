@@ -14,7 +14,7 @@
 
 ## Global Constraints
 
-Same as prior milestones: example-only `examples/z98/z9play/**`; no compiler change; Z98 rules; build `-fsafe`; `edit`/`fastedit` only; **NO push**; git hard rule; plan is the only authority (STOP-present). Reports under `.superpowers/sdd/2026-10-11-z9play-m5-cli-plan/`.
+Same as prior milestones: example-only `examples/z98/z9play/**`; no compiler change; Z98 rules (NOTE 2026-10-11: compiler defects D1–D6 are FIXED in seed v97 — no workarounds needed); build `-fsafe`; `edit`/`fastedit` only; **NO push**; git hard rule; plan is the only authority (STOP-present). Reports under `.superpowers/sdd/2026-10-11-z9play-m5-cli-plan/`.
 
 ## File Structure
 

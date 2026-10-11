@@ -16,7 +16,7 @@
 
 - Modify **only** `sf/src/std_file.zig` (+ `std_file_pal.zig` if needed) in `sf/src` (+ its fixture + `scripts/stdlib/expected_dirs.txt`); **no compiler change**; compiler fixed point unchanged.
 - `scripts/stdlib/verify_stdlib.sh` MUST stay green.
-- Example-only otherwise under `examples/z98/z9play/**`. Z98 rules; `-fsafe`; `edit`/`fastedit` only; **NO push**; git hard rule; plan is the only authority (STOP-present). Reports under `.superpowers/sdd/2026-10-11-z9play-m7-tui-plan/`.
+- Example-only otherwise under `examples/z98/z9play/**`. Z98 rules (NOTE 2026-10-11: compiler defects D1–D6 are FIXED in seed v97 — no workarounds needed); `-fsafe`; `edit`/`fastedit` only; **NO push**; git hard rule; plan is the only authority (STOP-present). Reports under `.superpowers/sdd/2026-10-11-z9play-m7-tui-plan/`.
 
 ## File Structure
 

@@ -14,7 +14,7 @@
 
 ## Global Constraints
 
-Same as M0: example-only `examples/z98/z9play/**`; **no compiler change**; no seed rotation; Z98 rules (free functions, no generics, `@intCast`, every `switch` has `else`, D1/D2/D3/D4); build `-fsafe`; `edit`/`fastedit` only; **NO push**; git hard rule; the plan is the only authority (STOP-present on divergence). Reports under `.superpowers/sdd/2026-10-11-z9play-m1-setup-codebooks-plan/`.
+Same as M0: example-only `examples/z98/z9play/**`; **no compiler change**; no seed rotation; Z98 rules (free functions, no generics, `@intCast`, every `switch` has `else`; NOTE 2026-10-11: compiler defects D1–D6 — C-keyword union tags, slice-of-synthetic typedefs, async frame-save temps, slice-index aggregate lvalue stores, two-arg `@ptrFromInt` — are all FIXED in seed v97, so those workarounds are no longer needed); build `-fsafe`; `edit`/`fastedit` only; **NO push**; git hard rule; the plan is the only authority (STOP-present on divergence). Reports under `.superpowers/sdd/2026-10-11-z9play-m1-setup-codebooks-plan/`.
 
 ## File Structure
 

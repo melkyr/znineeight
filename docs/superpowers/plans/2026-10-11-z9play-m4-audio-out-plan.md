@@ -14,7 +14,7 @@
 
 ## Global Constraints
 
-Same as prior milestones: example-only `examples/z98/z9play/**`; no compiler change; Z98 rules (free functions, `@intCast`, `switch` `else`, D1/D2/D3/D4); build `-fsafe`; `edit`/`fastedit` only; **NO push**; git hard rule; plan is the only authority (STOP-present). Reports under `.superpowers/sdd/2026-10-11-z9play-m4-audio-out-plan/`.
+Same as prior milestones: example-only `examples/z98/z9play/**`; no compiler change; Z98 rules (free functions, `@intCast`, `switch` `else`; NOTE 2026-10-11: compiler defects D1–D6 are FIXED in seed v97 — no workarounds needed); build `-fsafe`; `edit`/`fastedit` only; **NO push**; git hard rule; plan is the only authority (STOP-present). Reports under `.superpowers/sdd/2026-10-11-z9play-m4-audio-out-plan/`.
 
 ## File Structure
 

@@ -16,7 +16,7 @@
 
 - Modify **only** `sf/src/std_math.zig` (+ its fixture + registration). **No compiler change** (`sf/src` main closure, `c89_emit`, `lower`, `pal`, `emit_support`, `include` untouched) → the compiler fixed point must stay unchanged.
 - `scripts/stdlib/verify_stdlib.sh <seed-built zig1>` MUST stay green.
-- Z98 rules as in M0/M1. Build `-fsafe`. `edit`/`fastedit` only. **NO push.** git hard rule. Plan is the only authority (STOP-present).
+- Z98 rules as in M0/M1 (NOTE 2026-10-11: compiler defects D1–D6 are FIXED in seed v97 — no union-tag/synthetic-slice/async-frame/lvalue/`@ptrFromInt` workarounds are needed). Build `-fsafe`. `edit`/`fastedit` only. **NO push.** git hard rule. Plan is the only authority (STOP-present).
 - Reports under `.superpowers/sdd/2026-10-11-z9play-m2-native-math-plan/`.
 
 ## File Structure
