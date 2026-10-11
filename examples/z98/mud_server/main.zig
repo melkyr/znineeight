@@ -109,7 +109,7 @@ pub fn main() !void {
     i = 0;
     while (i < MAX_CLIENTS) {
         client_task_ptrs[i] = &client_tasks[i];
-        client_task_ptrs[i].frame = @ptrFromInt(*void, 0);
+        client_task_ptrs[i].frame = @intToPtr(*void, 0);
         client_task_ptrs[i].state = .done;
         client_task_ptrs[i].cancel_requested = false;
         i += 1;

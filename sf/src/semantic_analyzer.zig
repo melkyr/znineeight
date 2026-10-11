@@ -4794,6 +4794,11 @@ pub fn semanticAnalyzerResolveExpr(self: *SemanticAnalyzer, node_idx: u32) u32 {
         } else if (node.child_0 == self.ptrtoint_name_id or node.child_0 == self.int_from_ptr_name_id) {
             semanticAnalyzerResolveBuiltinArgs(self, node_idx, ec_n, 1);
             result = type_mod.TYPE_USIZE;
+        } else if (node.child_0 == self.ptr_from_int_name_id and ec_n != @intCast(usize, 1)) {
+            var pfi_arity_msg: []const u8 = "@ptrFromInt requires exactly one argument: @ptrFromInt(expr)";
+            _ = diag_mod.diagnosticCollectorAdd(self.diag, @intCast(u8, 0), @intCast(u16, @enumToInt(diag_mod.ErrorCode.ERR_3000_TYPE_MISMATCH)), self.source_file_id, node.span_start, node.span_start + @intCast(u32, node.span_len), pfi_arity_msg);
+            if (ec_n >= @intCast(usize, 1)) { _ = semanticAnalyzerResolveExpr(self, ast_mod.astStoreNodeExtraChildAt(self.store, node_idx, @intCast(u32, 0))); }
+            result = type_mod.TYPE_UNDEFINED;
         } else if (node.child_0 == self.ptr_from_int_name_id) {
             var pfi_res: u32 = @intCast(u32, type_mod.TYPE_VOID);
             if (ec_n >= @intCast(usize, 1)) {
