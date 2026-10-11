@@ -152,6 +152,7 @@ repro/mi_matrix/stdlib_map_map32x32_xmod
 repro/mi_matrix/stdlib_map_mapstrptr_xmod
 repro/mi_matrix/stdlib_map_oom_xmod
 repro/mi_matrix/stdlib_map_stress_xmod
+repro/mi_matrix/stdlib_math_f64_xmod
 repro/mi_matrix/stdlib_math_xmod
 repro/mi_matrix/stdlib_mem_xmod
 repro/mi_matrix/stdlib_method_syntax_ok_xmod
