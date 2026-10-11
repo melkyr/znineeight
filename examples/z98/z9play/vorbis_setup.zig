@@ -22,34 +22,49 @@ const ogg = @import("ogg.zig");
 // entry: the raw 1-based code length, or 0 for an unused (sparse) entry.
 // `ordered`/`sparse` record how the lengths were encoded (needed by the Task 2
 // Huffman builder). `dimensions` and `entries` are the canonical fields.
+//
+// The VQ lookup fields are retained for the Task 2 decode tables. `lookup_type`
+// is 0 (scalar only), 1 (lattice/tessellation) or 2 (explicit/sequence). Types
+// 1/2 also carry `min_bits`/`delta_bits` (raw packed Vorbis float32),
+// `value_bits`, `sequence_p`, `lookup_values`, and that many `multiplicands`.
 pub const Codebook = struct {
     dimensions: u16,
     entries: u32,
     ordered: bool,
     sparse: bool,
     lengths: []u8,
+    lookup_type: u32,
+    value_bits: u32,
+    sequence_p: bool,
+    min_bits: u32,
+    delta_bits: u32,
+    lookup_values: u32,
+    multiplicands: []u32,
 };
+
 
 // Parsed setup header. Task 3 grows this with floors/residues/mappings/modes.
 pub const Setup = struct {
     codebooks: []Codebook,
 };
 
-// LSB-first bit reader over the setup packet tail (the bytes after the
-// "\x05vorbis" signature). `nbits` is the total readable bit count; any read
-// or skip past it reports Truncated.
-const BitReader = struct {
+// LSB-first bit reader over a Vorbis packet (the setup tail or, later, an
+// audio packet). `nbits` is the total readable bit count; any read or skip past
+// it reports Truncated. Decode codebooks and later milestones share it.
+pub const BitReader = struct {
     data: []const u8,
     nbits: usize,
     pos: usize,
 };
 
-fn brInit(data: []const u8) BitReader {
+pub fn brInit(data: []const u8) BitReader {
     return BitReader{ .data = data, .nbits = data.len * 8, .pos = 0 };
 }
 
+
 // Read `n` bits (n <= 32) LSB-first. Returns Truncated on a short packet.
-fn brRead(br: *BitReader, n: u32) ogg.OggError!u32 {
+pub fn brRead(br: *BitReader, n: u32) ogg.OggError!u32 {
+
     if (br.pos + @intCast(usize, n) > br.nbits) return error.Truncated;
     var v: u32 = 0;
     var i: u32 = 0;
@@ -65,10 +80,11 @@ fn brRead(br: *BitReader, n: u32) ogg.OggError!u32 {
 }
 
 // Advance `n` bits without materializing them. Truncated on a short packet.
-fn brSkip(br: *BitReader, n: u32) ogg.OggError!void {
+pub fn brSkip(br: *BitReader, n: u32) ogg.OggError!void {
     if (br.pos + @intCast(usize, n) > br.nbits) return error.Truncated;
     br.pos += @intCast(usize, n);
 }
+
 
 // Number of bits needed to represent `x` (0 -> 0, 1 -> 1, 2/3 -> 2, ...).
 // Matches the Vorbis `ilog` used to size the ordered-codebook run counts.
@@ -166,21 +182,43 @@ pub fn parseSetup(arena: *std.arena.Arena, packet: []const u8) ogg.OggError!Setu
             }
         }
 
-        // Lookup tail: type 0 is empty; types 1/2 carry two 32-bit floats, a
-        // value-bit width, a sequence flag and lookup_values * value_bits.
+        // Lookup tail. Type 0 has no VQ table. Types 1/2 carry the two packed
+        // 32-bit floats (minimum_value / delta_value), a value-bit width, a
+        // sequence flag, and lookup_values multiplicands; decodeVector (Task 2)
+        // needs all of them, so they are retained. The lookup count is computed
+        // in u64 so a crafted header cannot trap a u32 multiply under -fsafe.
         var lookup: u32 = try brRead(&br, 4);
+        if (lookup > 2) return error.BadVersion;
+        var value_bits: u32 = 0;
+        var sequence_p: bool = false;
+        var min_bits: u32 = 0;
+        var delta_bits: u32 = 0;
+        var lookup_values: u64 = 0;
+        var empty_raw: [*]u8 = std.arena.alloc(arena, 0) catch return error.OutOfMemory;
+        var multiplicands: []u32 = @ptrCast([*]u32, empty_raw)[0..0];
         if (lookup == 1 or lookup == 2) {
-            try brSkip(&br, 32);
-            try brSkip(&br, 32);
-            var value_bits: u32 = (try brRead(&br, 4)) + 1;
-            _ = try brRead(&br, 1);
-            var lv: u32 = 0;
+            min_bits = try brRead(&br, 32);
+            delta_bits = try brRead(&br, 32);
+            value_bits = (try brRead(&br, 4)) + 1;
+            sequence_p = ((try brRead(&br, 1)) == 1);
             if (lookup == 1) {
-                lv = lookup1Values(entries, dims);
+                lookup_values = @intCast(u64, lookup1Values(entries, dims));
             } else {
-                lv = entries * dims;
+                var e64: u64 = @intCast(u64, entries);
+                var d64: u64 = @intCast(u64, dims);
+                lookup_values = e64 * d64;
             }
-            try brSkip(&br, value_bits * lv);
+            // Reject un-representable sizes cleanly (never a @intCast trap)
+            // before allocating; a representable but huge count just exhausts
+            // the arena and reports OutOfMemory.
+            if (lookup_values > 0xffffffff) return error.OutOfMemory;
+            var lv: usize = @intCast(usize, lookup_values);
+            var mul_raw: [*]u8 = std.arena.alloc(arena, lv * @sizeOf(u32)) catch return error.OutOfMemory;
+            multiplicands = @ptrCast([*]u32, mul_raw)[0..lv];
+            var mi: u64 = 0;
+            while (mi < lookup_values) : (mi += 1) {
+                multiplicands[@intCast(usize, mi)] = try brRead(&br, value_bits);
+            }
         }
 
         cbs[c] = Codebook{
@@ -189,7 +227,15 @@ pub fn parseSetup(arena: *std.arena.Arena, packet: []const u8) ogg.OggError!Setu
             .ordered = ordered,
             .sparse = sparse,
             .lengths = lengths,
+            .lookup_type = lookup,
+            .value_bits = value_bits,
+            .sequence_p = sequence_p,
+            .min_bits = min_bits,
+            .delta_bits = delta_bits,
+            .lookup_values = @intCast(u32, lookup_values),
+            .multiplicands = multiplicands,
         };
+
     }
 
     return Setup{ .codebooks = cbs[0..@intCast(usize, count)] };
