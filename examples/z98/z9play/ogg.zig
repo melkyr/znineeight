@@ -150,7 +150,10 @@ pub fn crcOk(data: []const u8, page: Page) bool {
 // of consecutive segment bodies; a segment length < 255 terminates the packet,
 // and 255 means the packet continues (possibly onto the next page). Packet
 // bytes are copied segment-by-segment into one contiguous arena block, so
-// packets that span pages do not pick up the interstitial page headers.
+// packets that span pages do not pick up the interstitial page headers. A
+// stream that ends with an unterminated (still-open) packet is malformed and
+// returns error.Truncated; the copy pass is additionally bounded so it can
+// never write past the allocation.
 pub fn reassemble(arena: *std.arena.Arena, data: []const u8) OggError![]Packet {
     // Pass 1: count packets and total packet bytes.
     var count: usize = 0;
@@ -173,6 +176,10 @@ pub fn reassemble(arena: *std.arena.Arena, data: []const u8) OggError![]Packet {
             }
             off = nextPage(data, page);
         }
+        // A packet still open at EOF (the stream ended on a 255 lace with no
+        // <255 terminator) is malformed; reject it before any allocation so the
+        // copy pass below can never write past `total`.
+        if (cur != 0) return error.Truncated;
     }
 
     var raw_p: [*]u8 = std.arena.alloc(arena, count * @sizeOf(Packet)) catch return error.OutOfMemory;
@@ -194,6 +201,10 @@ pub fn reassemble(arena: *std.arena.Arena, data: []const u8) OggError![]Packet {
             var lace: usize = @intCast(usize, data[seg_off + i]);
             var k: usize = 0;
             while (k < lace) : (k += 1) {
+                // Defensive bound: never write past the allocation sized for
+                // terminated packets (pass 1 already rejected an unterminated
+                // tail, so this is unreachable for accepted input).
+                if (w >= total) return error.Truncated;
                 blob[w] = data[body_off + k];
                 w += 1;
             }

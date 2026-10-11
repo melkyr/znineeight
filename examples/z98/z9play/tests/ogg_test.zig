@@ -121,6 +121,99 @@ fn checkDuration(path: []const u8, want_ms: u64, tol_ms: u64) void {
     }
 }
 
+// Write the 27-byte OGG page header for a page with `nseg` segments and
+// `header_type` into `buf` at `off`; returns the segment-table offset. Granule,
+// serial, sequence and CRC are left zero — reassemble does not consult them.
+fn wrPageHdr(buf: []u8, off: usize, header_type: u8, nseg: u8) usize {
+    buf[off] = 'O';
+    buf[off + 1] = 'g';
+    buf[off + 2] = 'g';
+    buf[off + 3] = 'S';
+    buf[off + 4] = 0;
+    buf[off + 5] = header_type;
+    var z: usize = 6;
+    while (z < 26) : (z += 1) {
+        buf[off + z] = 0;
+    }
+    buf[off + 26] = nseg;
+    return off + 27;
+}
+
+// (e) A packet whose segments span two pages (page A ends in a 255 lace with
+// the continuation flag; page B closes it) must reassemble to the exact 300
+// concatenated bytes, with a following short packet intact. This exercises the
+// cross-page-carry path the fixtures do not hit.
+fn testContinuationReassembly() void {
+    var buf: [1024]u8 = undefined;
+    var off: usize = 0;
+    // Page A (BOS): a single 255-byte segment -> packet continues.
+    var st: usize = wrPageHdr(buf[0..], off, 0x02, 1);
+    buf[st] = 255;
+    var body: usize = st + 1;
+    var i: usize = 0;
+    while (i < 255) : (i += 1) {
+        buf[body + i] = 0xAA;
+    }
+    off = body + 255;
+    // Page B (continued): laces [45, 3] -> closes the 255+45=300-byte packet,
+    // then a second 3-byte packet.
+    st = wrPageHdr(buf[0..], off, 0x01, 2);
+    buf[st] = 45;
+    buf[st + 1] = 3;
+    body = st + 2;
+    i = 0;
+    while (i < 45) : (i += 1) {
+        buf[body + i] = 0xBB;
+    }
+    buf[body + 45] = 'x';
+    buf[body + 46] = 'y';
+    buf[body + 47] = 'z';
+    off = body + 48;
+
+    var arena = std.arena.init(arena_buf[0..]);
+    var data: []const u8 = buf[0..off];
+    var pk: []ogg.Packet = ogg.reassemble(&arena, data) catch {
+        fail("continuation reassemble errored");
+        return;
+    };
+    if (pk.len != 2) fail("continuation: packet count != 2");
+    if (pk[0].bytes.len != 300) fail("continuation: packet 0 length != 300");
+    if (pk[0].bytes[0] != 0xAA) fail("continuation: byte 0 != 0xAA");
+    if (pk[0].bytes[254] != 0xAA) fail("continuation: byte 254 != 0xAA");
+    if (pk[0].bytes[255] != 0xBB) fail("continuation: byte 255 != 0xBB");
+    if (pk[0].bytes[299] != 0xBB) fail("continuation: byte 299 != 0xBB");
+    if (pk[1].bytes.len != 3) fail("continuation: packet 1 length != 3");
+    if (pk[1].bytes[0] != 'x') fail("continuation: packet 1 byte 0 != 'x'");
+}
+
+// (f) A stream whose final packet is never terminated (ends on a 255 lace at
+// EOF) is malformed: reassemble must return a clean OggError (Truncated), never
+// write past the terminated-packet allocation. The single page below closes one
+// 3-byte packet and then leaves a 255-byte tail open.
+fn testUnterminatedReassembly() void {
+    var buf: [512]u8 = undefined;
+    var st: usize = wrPageHdr(buf[0..], 0, 0x04, 2);
+    buf[st] = 3;
+    buf[st + 1] = 255;
+    var body: usize = st + 2;
+    buf[body] = 'a';
+    buf[body + 1] = 'b';
+    buf[body + 2] = 'c';
+    var i: usize = 0;
+    while (i < 255) : (i += 1) {
+        buf[body + 3 + i] = 0xDD;
+    }
+    var end: usize = body + 3 + 255;
+
+    var arena = std.arena.init(arena_buf[0..]);
+    var data: []const u8 = buf[0..end];
+    var saw_err: bool = false;
+    ogg.reassemble(&arena, data) catch |err| {
+        if (err == error.Truncated) saw_err = true;
+    };
+    if (!saw_err) fail("unterminated trailing packet did not return Truncated");
+}
+
 pub fn main(argc: i32, argv: [*][*]u8) void {
     _ = argc;
     _ = argv;
@@ -189,6 +282,11 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     checkDuration(d_tagged, 1000, 1);
     checkDuration(d_short, 300, 1);
     if (ogg.durationMs(500, 0) != 0) fail("durationMs did not guard a zero sample rate");
+
+    // (e) cross-page continuation packet reassembles exactly.
+    testContinuationReassembly();
+    // (f) an unterminated trailing packet is a clean error, never an OOB write.
+    testUnterminatedReassembly();
 
     var ok: []const u8 = "ogg_test: PASS pages=";
     std.io.write(ok);
