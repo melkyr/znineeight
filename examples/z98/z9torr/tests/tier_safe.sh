@@ -1,20 +1,17 @@
 #!/bin/sh
 # tier_safe.sh — z9torr `-fsafe` end-to-end gate (M5 UB fix).
 #
-# The M2/M3/M5 tiers all build the client with `-ffast`, which hides example
-# undefined behaviour (checked-integer overflow and `undefined` poison reads).
-# The Wine tier was originally made to build `-ffast` to dodge two `-fsafe`
-# traps; the operator ruled that unacceptable. This tier is the gate that stops
-# UB from hiding again: it builds the client with **`-fsafe`** (checked
-# arithmetic + 0xAA-poisons `undefined`) and requires a real single-peer
-# download of `t1_single_1m` to complete with the golden SHA-1.
+# Original M5 gate: `-ffast` hid example undefined behaviour (checked-integer
+# overflow and `undefined` poison reads), so this tier builds the client with
+# **`-fsafe`** (checked arithmetic + 0xAA-poisons `undefined`) and requires a
+# real single-peer download of `t1_single_1m` to complete with the golden SHA-1.
+# S2 extended the same mode to EVERY tier and to the mock tools.
 #
 # Steps:
 #   1. refuse to run if the declared ports (testdata/ports.txt) are busy;
 #   2. build z9torr with `-fsafe` and assert the emitted C actually carries
 #      overflow checks (`zig_overflow_flag_*`), i.e. the mode is not vacuous;
-#   3. build mock_tracker/mock_peer with `-ffast` (unchanged tool recipe — this
-#      gate is about the client, not the mocks);
+#   3. build mock_tracker/mock_peer with `-fsafe` too (whole test surface safe);
 #   4. generate the t1 payload and check its SHA-1;
 #   5. start mock_tracker + one mock_peer, run the `-fsafe` client, assert
 #      exit 0, output SHA-1 == expected, and "download complete";
@@ -111,11 +108,11 @@ build_bin() {
     return 0
 }
 
-echo "== building client (-fsafe), mock_tracker, mock_peer (tool recipe) =="
+echo "== building client + mocks (-fsafe) =="
 cd "$ROOT" || exit 1
 build_bin "$OUT/z9" "examples/z98/z9torr/main.zig" "z9torr(-fsafe)" "-fsafe" || exit 1
-build_bin "$OUT/tr" "examples/z98/z9torr/tools/mock_tracker.zig" "mock_tracker" "-ffast" || exit 1
-build_bin "$OUT/pe" "examples/z98/z9torr/tools/mock_peer.zig" "mock_peer" "-ffast" || exit 1
+build_bin "$OUT/tr" "examples/z98/z9torr/tools/mock_tracker.zig" "mock_tracker" "-fsafe" || exit 1
+build_bin "$OUT/pe" "examples/z98/z9torr/tools/mock_peer.zig" "mock_peer" "-fsafe" || exit 1
 PROG="$OUT/z9/prog"
 TRACKER="$OUT/tr/prog"
 PEER="$OUT/pe/prog"

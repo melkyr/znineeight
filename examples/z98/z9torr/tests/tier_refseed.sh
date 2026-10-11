@@ -84,7 +84,7 @@ fi
 build_bin() {
     _dir="$1"; _entry="$2"; _name="$3"
     mkdir -p "$_dir"
-    if ! timeout 120 "$ZIG" -ffast -o "$_dir" "$_entry" >"$_dir/zig.log" 2>&1; then
+    if ! timeout 120 "$ZIG" -fsafe -o "$_dir" "$_entry" >"$_dir/zig.log" 2>&1; then
         echo "FAIL: zig compile $_name (see $_dir/zig.log)"
         return 1
     fi

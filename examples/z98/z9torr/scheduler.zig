@@ -148,9 +148,13 @@ pub fn schedulerInit(arena: *std.arena.Arena, t: torrent.Torrent, max_peers: u32
         peers = @ptrCast([*]peer.Peer, rawp)[0..@intCast(usize, max_peers)];
         var j: u32 = 0;
         while (j < max_peers) : (j += 1) {
-            // `sock`/`addr`/`ps`/`io`/`hs`/`rhs`/`peer_id`/`read_buf` stay
-            // uninitialised until `addPeer`/`peerRun` set them (a struct literal
-            // cannot `undefined` a nested named-struct field in Z98 emission).
+            // `ps`/`io` are fully zero-initialised: `saveResume` walks every
+            // ACTIVE peer slot and reads `ps` before `peerRun` has acquired a
+            // piece (`pieceInit`), so an undefined `ps` would poison-read (and
+            // `-fsafe` traps/segfaults on `blocks`). `sock`/`addr`/`hs`/`rhs`/
+            // `peer_id`/`read_buf` stay uninitialised until `addPeer`/`peerRun`
+            // set them (a struct literal cannot `undefined` a nested named-struct
+            // field in Z98 emission).
             var p: peer.Peer = undefined;
             p.active = false;
             p.slot = j;
@@ -161,6 +165,8 @@ pub fn schedulerInit(arena: *std.arena.Arena, t: torrent.Torrent, max_peers: u32
             p.sock = @intCast(i32, -1);
             p.encrypted = false;
             p.mse_attempts = 0;
+            p.ps = peer.zeroPieceState();
+            p.io = peer.zeroPieceIO();
             peers[@intCast(usize, j)] = p;
         }
     }

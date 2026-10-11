@@ -30,7 +30,7 @@ fails=0
 for name in $UNITS; do
     dir="$OUT/$name"
     mkdir -p "$dir"
-    if ! timeout 120 "$ZIG" -ffast -o "$dir" "examples/z98/z9torr/testdata/$name.zig" >"$dir/zig.log" 2>&1; then
+    if ! timeout 120 "$ZIG" -fsafe -o "$dir" "examples/z98/z9torr/testdata/$name.zig" >"$dir/zig.log" 2>&1; then
         echo "FAIL - $name: zig compile (see $dir/zig.log)"
         fails=$((fails + 1))
         continue

@@ -39,7 +39,7 @@ mkdir -p "$OUT"
 # --- build (binding recipe) -------------------------------------------------
 echo "== building z9torr (binding recipe) =="
 cd "$ROOT" || exit 1
-if ! timeout 120 "$ZIG" -ffast -o "$OUT" "examples/z98/z9torr/main.zig" >"$OUT/zig.log" 2>&1; then
+if ! timeout 120 "$ZIG" -fsafe -o "$OUT" "examples/z98/z9torr/main.zig" >"$OUT/zig.log" 2>&1; then
     echo "FAIL: zig compile z9torr (see $OUT/zig.log)"
     exit 1
 fi

@@ -11,8 +11,8 @@
 #      unconditional -lwsock32);
 #   3. sanity: `file` reports a PE32 executable, and `objdump -p` / `nm` shows
 #      the wsock32 import;
-#   4. build the -ffast RUN exe (z9torr_run.exe) with the emitted
-#      build_target.sh mingw branch (see the run-half comment for why -ffast);
+#   4. build the -fsafe RUN exe (z9torr_run.exe) with the emitted
+#      build_target.sh mingw branch (see the run-half comment);
 #   5. 32-bit wine probe (SKIP-with-reason if the runtime is absent);
 #   6. build + start the tier2 mocks (mock_tracker + mock_peer via ports.txt);
 #   7. download t1_single_1m under wine and assert exit 0 + output SHA-1 ==
@@ -132,11 +132,10 @@ fi
 # assertion. Wine sees the Linux loopback as 127.0.0.1, so only the torrent
 # path argument needs translating to a Wine-visible path (winepath -w).
 #
-# Build mode: the committed cross recipe (Step 2) emits SAFE-mode C. Every
-# z9torr tier builds with -ffast (the client's LCG/bitset paths assume
-# wrapping/fast mode): a safe-mode exe traps in makePeerId (overflow) and later
-# page-faults in peer.zig under wine. So the RUN exe is built with -ffast via
-# the compiler's own emitted build_target.sh (mingw branch); Steps 2/3 keep the
+# Build mode: S2 flipped every tier (and mock) build to -fsafe; the example UB
+# that used to trap in makePeerId (checked LCG overflow) or read 0xAA poison in
+# peer.zig is fixed, so the RUN exe is built the same safe way (via the
+# compiler's own emitted build_target.sh mingw branch); Steps 2/3 keep the
 # committed-recipe link/PE32/wsock32 evidence.
 # ===========================================================================
 
@@ -149,17 +148,17 @@ WINEARCH="${WINEARCH:-win32}"
 WINE_RUN_TIMEOUT="${WINE_RUN_TIMEOUT:-180}"
 T1_LEN=1048576
 
-echo "== step 4: build the -ffast run exe (emitted build_target.sh mingw) =="
+echo "== step 4: build the -fsafe run exe (emitted build_target.sh mingw) =="
 RUNWIN="$OUT/runwin"
 EXE_RUN="$OUT/z9torr_run.exe"
 rm -rf "$RUNWIN"
 mkdir -p "$RUNWIN"
-if timeout 200 "$ZIG" -ffast -osw -o "$RUNWIN" "$ENTRY" >"$OUT/runemit.log" 2>&1 \
+if timeout 200 "$ZIG" -fsafe -osw -o "$RUNWIN" "$ENTRY" >"$OUT/runemit.log" 2>&1 \
    && sh "$RUNWIN/build_target.sh" mingw "$EXE_RUN" >"$OUT/runbuild.log" 2>&1 \
    && [ -f "$EXE_RUN" ]; then
-    pass_case "-ffast run exe produced (z9torr_run.exe)"
+    pass_case "-fsafe run exe produced (z9torr_run.exe)"
 else
-    fail_case "-ffast run exe produced (see $OUT/runemit.log / $OUT/runbuild.log)"
+    fail_case "-fsafe run exe produced (see $OUT/runemit.log / $OUT/runbuild.log)"
 fi
 
 # --- 32-bit wine runtime probe (SKIP-with-reason, never a silent pass) ------
@@ -221,7 +220,7 @@ trap cleanup EXIT INT TERM
 build_bin() {
     _dir="$1"; _entry="$2"; _name="$3"
     mkdir -p "$_dir"
-    if ! timeout 120 "$ZIG" -ffast -o "$_dir" "$_entry" >"$_dir/zig.log" 2>&1; then
+    if ! timeout 120 "$ZIG" -fsafe -o "$_dir" "$_entry" >"$_dir/zig.log" 2>&1; then
         echo "FAIL: zig compile $_name (see $_dir/zig.log)"
         return 1
     fi

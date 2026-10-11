@@ -18,7 +18,7 @@ fi
 
 echo "== building z9torr CLI =="
 mkdir -p "$OUT"
-if ! timeout 120 "$ZIG" -ffast -o "$OUT" "$Z9DIR/main.zig"; then
+if ! timeout 120 "$ZIG" -fsafe -o "$OUT" "$Z9DIR/main.zig"; then
     echo "FAIL: zig compile"
     exit 1
 fi

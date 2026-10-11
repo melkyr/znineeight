@@ -91,7 +91,7 @@ fi
 build_bin() {
     _dir="$1"; _entry="$2"; _name="$3"
     mkdir -p "$_dir"
-    if ! timeout 120 "$ZIG" -ffast -o "$_dir" "$_entry" >"$_dir/zig.log" 2>&1; then
+    if ! timeout 120 "$ZIG" -fsafe -o "$_dir" "$_entry" >"$_dir/zig.log" 2>&1; then
         echo "FAIL: zig compile $_name (see $_dir/zig.log)"
         return 1
     fi
@@ -291,7 +291,11 @@ if start_all_peers "$WORK/t2.payload" normal; then
     S="$DR/.z9torr.resume"
     _i=0
     READY=1
-    while [ "$_i" -lt 200 ]; do
+    # The window must exceed the encrypted-first MSE-probe + plaintext-fallback
+    # latency across all declared peers. That latency is mode-independent (it is
+    # the mock peers not speaking MSE), and measures ~10.5s here, so allow up to
+    # 30s for the first verified piece plus a non-empty partial[] to appear.
+    while [ "$_i" -lt 600 ]; do
         if [ -f "$S" ] && grep -aq 'partialld' "$S" && have_verified_piece "$S"; then
             READY=0
             break

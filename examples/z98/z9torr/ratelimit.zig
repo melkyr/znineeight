@@ -36,7 +36,7 @@ pub fn bucketInit(rate: u32) TokenBucket {
 // Refill by the wall time elapsed since the last call. `now_ms - last` is
 // unsigned (wraps); the add is widened to u64 and capped at capacity.
 pub fn refill(b: *TokenBucket, now_ms: u32) void {
-    var elapsed: u32 = now_ms - b.last_refill_ms;
+    var elapsed: u32 = now_ms -% b.last_refill_ms;
     var add: u64 = (@intCast(u64, b.rate) * @intCast(u64, elapsed)) / @intCast(u64, 1000);
     var total: u64 = @intCast(u64, b.tokens) + add;
     if (total > @intCast(u64, b.capacity)) {

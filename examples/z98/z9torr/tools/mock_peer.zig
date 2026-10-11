@@ -177,7 +177,7 @@ fn makePeerId(seed_in: u32, dst: []u8) void {
     var st: u32 = seed_in;
     if (st == 0) st = 1;
     while (i < dst.len) : (i += 1) {
-        st = st * @intCast(u32, 1664525) + @intCast(u32, 1013904223);
+        st = st *% @intCast(u32, 1664525) +% @intCast(u32, 1013904223);
         dst[i] = @intCast(u8, (st >> 16) & @intCast(u32, 0xFF));
     }
 }
