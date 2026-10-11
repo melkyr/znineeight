@@ -6,7 +6,7 @@
 
 **Working commit:** `f2d627a3` (M4.1 sources Task 0–4 + Task 5 fallback fix; M4.1 Task 5 docs on top)
 
-**MD5 (`--dump-c89`):** `fe6d03eb517d042c149b24a418a69d52` (seed `zig1_5_clean`; stable 3×; CP P3 BEP 5 PORT fix + per-peer frame trace)
+**MD5 (`--dump-c89`):** `739f5d2d69667ae3f8b758219c7d3248` (seed `zig1_5_clean`; stable 3×; M5 T3b console-redirect fallback + Win9x MAX_PATH/reserved-name validation)
 
 ## Build Recipes
 
@@ -21,7 +21,7 @@ sh /tmp/z9_m1_out/build_target.sh linux /tmp/z9_m1_out/prog
 ### seed zig1_5_clean (dump C89) — for the MD5 above
 ```bash
 timeout 120 /tmp/z9_m41_seed/zig1_5_clean --dump-c89 examples/z98/z9torr/main.zig | md5sum
-# fe6d03eb517d042c149b24a418a69d52  -
+# 739f5d2d69667ae3f8b758219c7d3248  -
 ```
 
 ## Expected Output
@@ -265,7 +265,7 @@ post-handshake `read-error` (pre-fix: 6 of 7 dropped). Three peers sent
 `frame rx id=9 len=3`; all were tolerated. **~42.75 MiB** fetched at ~1.0 MiB/s
 with `peers=5`, 4177 `piece` frames (exit 124, 100 s window; see
 `lin_bin/z9torr.log`). New `--dump-c89` md5
-`fe6d03eb517d042c149b24a418a69d52`.
+`739f5d2d69667ae3f8b758219c7d3248`.
 
 ## M5 — Win9x cross-compat (2026-10-11)
 
@@ -281,7 +281,7 @@ M5 builds the example for Win9x and documents the manual run.
     ```bash
     timeout 120 /tmp/z9_m5_seed/zig1_5_clean -osw --dump-c89 \
         examples/z98/z9torr/main.zig | md5sum
-    # 52ac7ecf85d11c79817c55288ec6636e  -   (stable 3×)
+    # 4a330207a420462a9ad4376ace7d0a63  -   (stable 3×)
     ```
   - mingw build: `zig1 -fsafe -osw -o <dir> examples/z98/z9torr/main.zig` then
     `sh <dir>/build_target.sh mingw <dir>/z9torr.exe` (or the committed
@@ -289,7 +289,7 @@ M5 builds the example for Win9x and documents the manual run.
 - **T4 (automated):** `tests/tier4_wine.sh` is a **Wine smoke** — emit `-osw`,
   mingw cross-build, then run `z9torr_run.exe` under 32-bit Wine against the
   host `mock_tracker`/`mock_peer`; it asserts exit 0 + the t1 golden SHA-1 and
-  records `PARITY=OK` (observed `18/0`). It is a smoke, not real hardware.
+  records `PARITY=OK` (observed `19/0`). It is a smoke, not real hardware.
 - **T5 (manual):** the real Win98 run is **manual** and documented in
   `demo/win9x_README.txt` (copy `z9torr.exe` + the mocks + a `.torrent`, run
   `z9torr.exe file.torrent`). The Win98 VM is outside the repo, so T5 is
@@ -297,11 +297,28 @@ M5 builds the example for Win9x and documents the manual run.
 - **Build mode:** since M5 S1/S2 the client builds and runs **`-fsafe`** (the
   example UB that `-ffast` hid is fixed); every tier and every mock is
   `-fsafe`. The example's build-command recipes no longer say `-ffast`.
+- **T3b — Win9x runtime behaviours (example-only).** Two behaviours the plan
+  claimed are now implemented and gated:
+  - *stdout redirect fallback (`console.zig`).* `stdoutIsConsole()` uses
+    `GetFileType(GetStdHandle(STD_OUTPUT_HANDLE)) == FILE_TYPE_CHAR` on Windows
+    and `isatty(1)` on POSIX (the externs are declared in the example;
+    `@isWindows()` prunes the other branch). The 1 Hz progress line uses an
+    in-place `\r` only on a console and one line per refresh (`\n`) when stdout
+    is redirected. Gated by `tests/tier_win9x_io.sh` (redirected: progress
+    present + no bare CR; pty: CR bytes present) and by tier4's Wine assertion
+    (redirected Win32 output has no bare CR).
+  - *MAX_PATH + reserved names (`torrent.zig`).* `torrent.load` rejects an
+    `info.name` over `MAX_PATH` (260) / 255 per component, and Win9x reserved
+    DOS device names (`CON`, `PRN`, `AUX`, `NUL`, `COM1..COM9`, `LPT1..LPT9`,
+    case-insensitive, with or without extension), with the existing
+    `BadFilePath` name error (exit 2) before any disk access. Gated by the new
+    `tests/tier1.sh` name cases.
 
 Gates (example-only; from the repo root with
-`ZIG=/tmp/z9_m5_seed/zig1_5_clean`): `tests/tier1.sh` `16/0`,
-`tests/tier2.sh` `17/0`; `tests/tier4_wine.sh` `18/0` under Wine. This task
-(T3) changes only `examples/z98/z9torr/` docs and header comments; the compiler
-and seed are untouched.
+`ZIG=/tmp/z9_m5_seed/zig1_5_clean`): `tests/tier1.sh` `21/0`,
+`tests/tier2.sh` `17/0`, `tests/tier4_wine.sh` `19/0` under Wine, and the new
+`tests/tier_win9x_io.sh` `3/0`. T3b (console fallback + Win9x name validation)
+changes only `examples/z98/z9torr/`; `sf/src` is byte-identical (the compiler and
+seed are untouched).
 
 Next: none (M5 is the final milestone; `z9torr` is delivered).

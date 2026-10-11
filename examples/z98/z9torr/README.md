@@ -23,14 +23,17 @@ all-zero `peer_id`.
 - `dht.zig` / `pex.zig`: DHT (BEP 5) and PEX (BEP 11) peer discovery.
 - `scheduler.zig` / `piece.zig` / `disk.zig` / `resume.zig` / `ratelimit.zig` /
   `stats.zig`: rarest-first scheduler, pipeline, disk, resume, rates, stats.
+- `console.zig`: stdout console/redirect probe for the 1 Hz progress line (M5
+  T3b; `GetFileType`/`isatty`, `@isWindows()`).
 - `tools/`: C89 `ref_check` plus the mock tracker/peer/MSE/UDP-tracker.
 - `tests/`: `tier1.sh`, `tier1_cli.sh`, `tier1_unit.sh`, `tier2.sh`,
   `tier3_encrypted.sh`, `tier_udp_tracker.sh`, `tier_dht.sh`, `tier_pex.sh`,
   `tier_stall.sh` (non-blocking probe), `tier_fallback.sh` (encrypted-first
   plaintext fallback), `tier_refseed.sh`/`tier_refseed_py.sh` (real
   aria2c / Python MSE responders), `tier_mse_diag.sh` (MSE against aria2c +
-  Python) (hard gates), `tier_real.sh` (best-effort real swarm) and
-  `tier4_wine.sh` (M5 `-osw` + mingw build + Wine smoke).
+  Python) (hard gates), `tier_real.sh` (best-effort real swarm),
+  `tier4_wine.sh` (M5 `-osw` + mingw build + Wine smoke) and
+  `tier_win9x_io.sh` (M5 T3b redirected-vs-console progress gate).
 - `testdata/`, `demo/`: committed fixtures, goldens, and golden commands;
   `demo/win9x_README.txt` is the manual Win98 (T5) procedure.
 - `NOTES.md`, `README.md`: build recipes, expected output, and status.
@@ -59,11 +62,13 @@ With no torrent path (or `--help`) it prints the `usage:` block and exits 1
 ## Status
 **M5 "Win9x cross-compat"** (2026-10-11): the client builds with `-fsafe -osw`
 and links with mingw (PE32; `-lwsock32`), and `tests/tier4_wine.sh` passes
-`18/0` as a Wine smoke against the host mocks (`PARITY=OK`). The real Win98 run
+`19/0` as a Wine smoke against the host mocks (`PARITY=OK`). The real Win98 run
 is manual (`demo/win9x_README.txt`). M5 Task 0 (amendment lift) added 64-bit
 file offsets in `sf/src/std_file.zig` (POSIX `lseek`/`_llseek`; Windows already
-`SetFilePointerEx`). The pre-M5 gates stay green: `tier1.sh` `16/0`,
-`tier2.sh` `17/0`.
+`SetFilePointerEx`). T3b adds the stdout redirect fallback and Win9x
+`MAX_PATH`/reserved-name validation (both example-only; `sf/src` untouched).
+The pre-M5 gates stay green: `tier1.sh` `21/0`, `tier2.sh` `17/0`,
+`tier4_wine.sh` `19/0`, `tier_win9x_io.sh` `3/0`.
 
 **M4 polished** (2026-10-10): **M4.1 "real MSE/PE handshake"** is complete — the
 encrypted handshake now completes against real implementations (aria2c 1.36.0
@@ -103,7 +108,7 @@ M5 makes the client build and run for Win9x.
   `-ffast`.
 - **Windows build:** emit with `-osw`, cross-link with mingw. The win32 link
   line always adds `-lwsock32` (Winsock 1.1). `-osw` emit md5
-  `52ac7ecf85d11c79817c55288ec6636e` (stable 3×):
+  `4a330207a420462a9ad4376ace7d0a63` (stable 3×):
   ```bash
   timeout 120 /tmp/z9_m5_seed/zig1_5_clean -osw --dump-c89 \
       examples/z98/z9torr/main.zig | md5sum
@@ -117,7 +122,15 @@ M5 makes the client build and run for Win9x.
 - **T4 — automated Wine smoke:** `tests/tier4_wine.sh` emits `-osw`, mingw
   cross-builds, and runs `z9torr_run.exe` under 32-bit Wine against the host
   mocks; it asserts exit 0 + the t1 golden SHA-1 (`PARITY=OK`, observed
-  `18/0`). It is a smoke, not real hardware.
+  `19/0`) and that the redirected Win32 progress uses one line per refresh (no
+  bare CR). It is a smoke, not real hardware.
+- **T3b — Win9x runtime behaviours:** `console.zig` detects an interactive
+  stdout (`GetFileType`/`FILE_TYPE_CHAR` on Windows, `isatty(1)` on POSIX) so
+  the progress line uses an in-place `\r` only on a console and one line per
+  refresh (`\n`) when redirected (`tests/tier_win9x_io.sh`). `torrent.load`
+  rejects an `info.name` over `MAX_PATH`/255 and Win9x reserved device names
+  (CON/PRN/AUX/NUL/COM1-9/LPT1-9, case-insensitive, with or without extension)
+  as the typed name error (exit 2).
 - **T5 — manual Win98 run:** documented in `demo/win9x_README.txt` (copy the
   exe + the mocks + a `.torrent`, run `z9torr.exe file.torrent`, with the
   expected console output, the FAT no-sparse-file note, and MAX_PATH/reserved

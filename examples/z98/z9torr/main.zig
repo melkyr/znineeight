@@ -17,6 +17,7 @@ const schedmod = @import("scheduler.zig");
 const ratelimit = @import("ratelimit.zig");
 const statsmod = @import("stats.zig");
 const logmod = @import("log.zig");
+const consolemod = @import("console.zig");
 
 // One torrent arena (spec §9), backed by a static buffer. Never reset.
 var g_arena_buf: [4194304]u8 = undefined;
@@ -238,6 +239,9 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     }
     var args: cli.Args = cli.parseArgs(argc, argv);
     logmod.begin();
+    // M5 T3b: probe once whether stdout is an interactive console, so the 1 Hz
+    // progress line can pick the in-place '\r' (console) or a redirected '\n'.
+    var stdout_console: bool = consolemod.stdoutIsConsole();
     if (!filemod.exists(args.torrent_path)) {
         var msg: []const u8 = "z9torr: cannot read torrent file\n";
         std.io.write(msg);
@@ -647,9 +651,17 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             st.up_rate = @intCast(u32, udelta);
             st.started_ms = now0;
             var ln: []const u8 = statsmod.statsRender(&st, line_buf[0..]);
-            var cr: []const u8 = "\r";
-            std.io.write(cr);
-            std.io.write(ln);
+            // Console: rewrite the line in place with '\r'. Redirected: one
+            // line per refresh ('\n') so the log is not a stream of raw CRs.
+            if (stdout_console) {
+                var cr: []const u8 = "\r";
+                std.io.write(cr);
+                std.io.write(ln);
+            } else {
+                std.io.write(ln);
+                var lf: []const u8 = "\n";
+                std.io.write(lf);
+            }
             last_sample_ms = nowm;
         }
     }
@@ -670,8 +682,16 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
     logmod.s("completed");
     logmod.nl();
 
-    var okline: []const u8 = "\nz9torr: download complete\n";
-    std.io.write(okline);
+    // Redirected stdout ends every progress line with '\n', so the success
+    // line needs no leading '\n' (the console path terminates the in-place
+    // progress line with one).
+    if (stdout_console) {
+        var okline: []const u8 = "\nz9torr: download complete\n";
+        std.io.write(okline);
+    } else {
+        var okline2: []const u8 = "z9torr: download complete\n";
+        std.io.write(okline2);
+    }
 
     // B3=A: one-line fetch metric for tier2's resume gate. `down_bytes` is the
     // received `piece` payload total; `up_bytes` is 13 bytes per request message

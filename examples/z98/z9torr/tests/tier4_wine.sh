@@ -320,6 +320,19 @@ if [ -z "$WTOR" ]; then WTOR="$FIXDIR/t1_single_1m.torrent"; fi
       wine "$EXE_RUN" "$WTOR" >"$RUN/out.raw" 2>"$RUN/err.txt" )
 WRC=$?
 tr -d '\r' <"$RUN/out.raw" >"$RUN/out.norm"
+
+# M5 T3b: the Win32 stdout here is redirected to out.raw, so the progress line
+# must use GetFileType != FILE_TYPE_CHAR and emit one line per refresh ('\n'),
+# not a bare '\r' prefix. Wine renders every LF as CRLF on a redirected
+# console, so a CRLF line end is legitimate; a bare CR is one NOT immediately
+# followed by LF. out.raw must contain a progress line and no bare CR.
+PROG_COUNT="$(grep -c 'KB/s peers=' "$RUN/out.raw" 2>/dev/null)"
+if [ "$PROG_COUNT" -gt 0 ] && ! LC_ALL=C grep -q "$(printf '\r')." "$RUN/out.raw"; then
+    pass_case "win32 redirected progress is line-per-refresh (no bare CR; $PROG_COUNT lines)"
+else
+    fail_case "win32 redirected progress is line-per-refresh (progress=$PROG_COUNT bare_cr=yes)"
+fi
+
 echo "  WINE_RC=$WRC"
 echo "  torrent (wine path): $WTOR"
 echo "  run dir: $RUN"

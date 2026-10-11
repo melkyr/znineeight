@@ -40,7 +40,7 @@ cd /workspace/znineeight
 timeout 120 /tmp/z9_m0_seed/zig1_5_clean --dump-c89 examples/z98/z9torr/main.zig | md5sum
 ```
 
-- md5: `14fae4e8c108d5d60944faba604ae343` (stable 3×; M4.1 non-blocking MSE + fallback retry fix)
+- md5: `739f5d2d69667ae3f8b758219c7d3248` (stable 3×; M5 T3b console-redirect fallback + Win9x MAX_PATH/reserved-name validation)
 - command: `timeout 120 /tmp/z9_m0_seed/zig1_5_clean --dump-c89 examples/z98/z9torr/main.zig | md5sum`
 
 ## Fixtures and `info_hash`
@@ -74,8 +74,11 @@ tracker is unreachable, so the run stops after printing the metadata, per spec
 §8), printed `info_hash` == committed expected == `ref_check`, and 3×
 byte-identical stdout.
 Malformed inputs (truncated file, bad piece count, mutated `info` byte) must
-each exit 2 with the typed `z9torr: malformed torrent` message. Summary:
-`15 passed, 0 failed` → `TIER1 PASS`. The gate fails closed if
+each exit 2 with the typed `z9torr: malformed torrent` message, as must
+over-length names (> 255) and Win9x reserved device names (`CON`, `nul.txt`,
+`Lpt9`); a non-reserved name (`console`) is not rejected (it proceeds to the
+unreachable tracker, exit 3). Summary: `21 passed, 0 failed` → `TIER1 PASS`.
+The gate fails closed if
 `127.0.0.1:6969` is already listening (spec §12 item 9): a leftover
 `mock_tracker` would turn the intended tracker-unreachable exit 3 into a peer
 error and silently misread, so the guard aborts with exit 1 instead.

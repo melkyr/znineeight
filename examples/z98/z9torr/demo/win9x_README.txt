@@ -50,7 +50,7 @@ same.
     cd /workspace/znineeight
     timeout 120 /tmp/z9_m5_seed/zig1_5_clean -osw --dump-c89 \
         examples/z98/z9torr/main.zig | md5sum
-    # 52ac7ecf85d11c79817c55288ec6636e  -
+    # 4a330207a420462a9ad4376ace7d0a63  -
 
 (stable 3x for the M5 source. The `-osw -o` tree carries the module .c/.h plus
 build_target.sh, build_target.bat, build_owc.bat and net_prelude.h.)
@@ -132,31 +132,36 @@ counts down), then a newline and:
 The client exits 0 and `t1.bin` in the current directory SHA-1s to
 7a985d40cf76ef129b2889fa5bfce75304067dc9.
 
-Captured Win32 sample (the T4 Wine smoke; stdout redirected, so the CR bytes
-show literally as ^M at the start of each refresh):
+Captured Win32 sample (the T4 Wine smoke; stdout redirected to a file, so this
+run uses the line-per-refresh `\n` path; Wine renders each LF as CRLF, shown
+here as ^M at the END of every line):
 
-    name: t1.bin
-    length: 1048576
-    piece length: 262144
-    pieces: 4
-    info_hash: 5bb27f309ea4f5a0a1bf338c0cf2462295d694b5
-    ^M0.0% [----------------------------------------] 0.00MB/1.00MB 0KB/s peers=4 eta=--^M0.0% [----------------------------------------] 0.00MB/1.00MB 0KB/s peers=4 eta=--^M0.0% [----------------------------------------] 0.00MB/1.00MB 0KB/s peers=4 eta=--
-    z9torr: download complete
-    summary: fetched=1048576 requests=64
+    name: t1.bin^M
+    length: 1048576^M
+    piece length: 262144^M
+    pieces: 4^M
+    info_hash: 5bb27f309ea4f5a0a1bf338c0cf2462295d694b5^M
+    0.0% [----------------------------------------] 0.00MB/1.00MB 0KB/s peers=4 eta=--^M
+    0.0% [----------------------------------------] 0.00MB/1.00MB 0KB/s peers=4 eta=--^M
+    0.0% [----------------------------------------] 0.00MB/1.00MB 0KB/s peers=4 eta=--^M
+    z9torr: download complete^M
+    summary: fetched=1048576 requests=64^M
 
-Carriage-return progress and redirection (the "GetFileType" fallback):
+Carriage-return progress and redirection (the GetFileType/isatty fallback):
   - Attached to a Win9x console, stdout is a character device and `\r` returns
     the cursor to column 0, so each refresh overwrites the previous line in
-    place (what you see in this section).
-  - Redirected to a file (`z9torr.exe file.torrent > log.txt`), `\r` does NOT
-    overwrite: each refresh is appended as bytes CR + text, so the log carries
-    raw CR bytes (the ^M above) rather than a clean one-line-per-refresh file.
-    The M5 blueprint (examples/ztorr_blp.txt) recommends detecting this with
-    GetFileType(GetStdHandle(STD_OUTPUT_HANDLE)) and falling back to one line
-    per refresh. The M5 example does NOT implement that probe: the runtime
-    stdout path is WriteConsoleA and then WriteFile
-    (sf/src/include/zig_pal.c:100). To see the in-place progress line, run the
-    client attached to a real console, not redirected.
+    place (what you see in section 4 above).
+  - Redirected to a file (`z9torr.exe file.torrent > log.txt`), `\r` would NOT
+    overwrite, so the client detects the redirect and emits one line per
+    refresh (`\n`) instead. The M5 example implements the probe in
+    `console.zig`: `GetFileType(GetStdHandle(STD_OUTPUT_HANDLE)) ==
+    FILE_TYPE_CHAR` on Windows and `isatty(1)` on POSIX, chosen at compile time
+    by `@isWindows()` (the externs live in the example, not sf/src). The
+    redirected sample above is therefore line-per-refresh, not a stream of
+    CR-prefixed refreshes. `tests/tier_win9x_io.sh` gates the POSIX side
+    (redirected: no bare CR; pty: CR present) and `tests/tier4_wine.sh` the
+    Win32 side; Wine itself renders LF as CRLF on a redirected console, which is
+    why ^M sits at the line end here.
 
 Runtime notes: sockets are Winsock 1.1 (wsock32). The non-blocking connect
 checks WSAGetLastError and, after select() reports the socket writable, reads
@@ -191,15 +196,20 @@ clusters for the whole extent immediately. Consequences on Win9x:
 6. Path handling: MAX_PATH and reserved names
 ---------------------------------------------
 
-M1's `torrent.load` sanitizes `info.name` (examples/z98/z9torr/torrent.zig:129):
-it rejects an empty name, any '/', any '\', and a ".." component. That is the
-only up-front name validation.
+M1's `torrent.load` sanitizes `info.name` (examples/z98/z9torr/torrent.zig): it
+rejects an empty name, any '/', any '\', and a ".." component. M5 T3b extends
+that same name check (still the `BadFilePath` error, exit 2) to reject, before
+any disk access:
 
-MAX_PATH (260 bytes) and the Win9x reserved device names (CON, PRN, AUX, NUL,
-COM1..COM9, LPT1..LPT9) are NOT checked by z9torr. `std_file.open` copies the
-path into a 4096-byte stack buffer (sf/src/std_file.zig:45) and calls
-CreateFileA, so an over-length path (> MAX_PATH) or a reserved name is handed to
-Win9x, which fails the open; z9torr maps that to DiskError.OpenFailed and exits
-5. Keep the torrent and payload in a short path such as C:\z9 and avoid
-reserved names when picking an output name; the committed fixture name `t1.bin`
-is safe.
+  - a name over MAX_PATH (260 bytes) or over 255 bytes for a single component
+    (the name has no path separators, so it is one component); and
+  - a Win9x reserved DOS device name (CON, PRN, AUX, NUL, COM1..COM9,
+    LPT1..LPT9), case-insensitive and with or without an extension (the stem
+    before the first '.' is matched, so `NUL.txt` is reserved and `NULlog.txt`
+    is not).
+
+A name that passes is opened by `std_file.open` (which copies it into a
+4096-byte stack buffer and calls CreateFileA); any remaining OS-level failure (a
+directory, a full/locked filesystem) still maps to DiskError.OpenFailed and
+exit 5. Keep the torrent and payload in a short path such as C:\z9; the
+committed fixture name `t1.bin` is safe.

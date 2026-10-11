@@ -39,6 +39,17 @@ mutate_byte() {
     } >"$_out"
 }
 
+# Build a minimal valid single-file .torrent whose info.name is exactly NAME
+# (length 0, no pieces). Used by the (B) Win9x name-validation reject cases.
+make_named_torrent() {
+    _name="$1"; _out="$2"
+    _ann="http://127.0.0.1:6969/announce"
+    _alen=$(printf '%s' "$_ann" | wc -c | tr -d ' ')
+    _nlen=$(printf '%s' "$_name" | wc -c | tr -d ' ')
+    printf 'd8:announce%s:%s4:infod6:lengthi0e4:name%s:%s12:piece lengthi16384e6:pieces0:ee' \
+        "$_alen" "$_ann" "$_nlen" "$_name" > "$_out"
+}
+
 if [ ! -x "$ZIG" ]; then
     echo "FAIL: compiler not found: $ZIG"
     exit 1
@@ -155,6 +166,29 @@ if [ -n "$nmoff" ]; then
     expect_exit2 "mutated info byte" "$OUT/mal_badname.torrent"
 else
     fail_case "mutated info byte: could not locate name field"
+fi
+
+# (B) Win9x name validation (M5 T3b): a name over MAX_PATH / 255 per-component,
+# or a reserved DOS device name (CON/PRN/AUX/NUL/COM1-9/LPT1-9,
+# case-insensitive, with or without extension), is rejected by torrent.load's
+# name check (exit 2) before any disk access. A non-reserved name is not
+# rejected; it proceeds to the unreachable tracker (exit 3).
+LONGNAME="$(awk 'BEGIN{for(i=0;i<260;i++)printf "a"}')"
+make_named_torrent "CON" "$OUT/name_con.torrent"
+expect_exit2 "reserved device name CON" "$OUT/name_con.torrent"
+make_named_torrent "nul.txt" "$OUT/name_nul_ext.torrent"
+expect_exit2 "reserved device name nul.txt" "$OUT/name_nul_ext.torrent"
+make_named_torrent "Lpt9" "$OUT/name_lpt9.torrent"
+expect_exit2 "reserved device name Lpt9" "$OUT/name_lpt9.torrent"
+make_named_torrent "$LONGNAME" "$OUT/name_long.torrent"
+expect_exit2 "over-length name (260)" "$OUT/name_long.torrent"
+make_named_torrent "console" "$OUT/name_ok.torrent"
+"$PROG" "$OUT/name_ok.torrent" >"$OUT/name_ok.out" 2>&1
+_rc=$?
+if [ "$_rc" -eq 3 ]; then
+    pass_case "non-reserved name 'console' accepted (exit 3)"
+else
+    fail_case "non-reserved name 'console' accepted (got $_rc, want 3)"
 fi
 
 echo "== unit harnesses (tier1_unit.sh) =="

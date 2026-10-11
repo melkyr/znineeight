@@ -55,6 +55,12 @@ const HASH_LEN: usize = 20;
 // Piece-count cap consistent with the metadata cap above.
 const MAX_PIECES: usize = MAX_TORRENT_BYTES / HASH_LEN;
 
+// Windows MAX_PATH (260) and the per-component limit (255). `result.name` has
+// no path separators (validated below), so it is a single component; the
+// tighter component bound is the binding one.
+const MAX_PATH: usize = 260;
+const MAX_COMPONENT: usize = 255;
+
 fn eqBytes(a: []const u8, b: []const u8) bool {
     if (a.len != b.len) return false;
     var i: usize = 0;
@@ -62,6 +68,54 @@ fn eqBytes(a: []const u8, b: []const u8) bool {
         if (a[i] != b[i]) return false;
     }
     return true;
+}
+
+fn lowerAscii(c: u8) u8 {
+    if (c >= 'A' and c <= 'Z') return c + 32;
+    return c;
+}
+
+fn eqBytesIgnoreCase(a: []const u8, b: []const u8) bool {
+    if (a.len != b.len) return false;
+    var i: usize = 0;
+    while (i < a.len) : (i += 1) {
+        if (lowerAscii(a[i]) != lowerAscii(b[i])) return false;
+    }
+    return true;
+}
+
+fn isDigit1to9(c: u8) bool {
+    return c >= '1' and c <= '9';
+}
+
+// Win9x reserved DOS device names (case-insensitive), with or without an
+// extension: CON, PRN, AUX, NUL, COM1..COM9, LPT1..LPT9. Only the stem before
+// the first '.' is examined, so "NUL.txt" is reserved and "NULlog.txt" is not.
+fn isReservedDeviceName(name: []const u8) bool {
+    var stem_len: usize = name.len;
+    var i: usize = 0;
+    while (i < name.len) : (i += 1) {
+        if (name[i] == '.') {
+            stem_len = i;
+            break;
+        }
+    }
+    var stem: []const u8 = name[0..stem_len];
+    var c_con: []const u8 = "CON";
+    var c_prn: []const u8 = "PRN";
+    var c_aux: []const u8 = "AUX";
+    var c_nul: []const u8 = "NUL";
+    if (eqBytesIgnoreCase(stem, c_con)) return true;
+    if (eqBytesIgnoreCase(stem, c_prn)) return true;
+    if (eqBytesIgnoreCase(stem, c_aux)) return true;
+    if (eqBytesIgnoreCase(stem, c_nul)) return true;
+    if (stem.len == 4) {
+        var c_com: []const u8 = "COM";
+        var c_lpt: []const u8 = "LPT";
+        if (eqBytesIgnoreCase(stem[0..3], c_com) and isDigit1to9(stem[3])) return true;
+        if (eqBytesIgnoreCase(stem[0..3], c_lpt) and isDigit1to9(stem[3])) return true;
+    }
+    return false;
 }
 
 fn findIndex(entries: []bencode.Entry, key: []const u8) ?usize {
@@ -137,6 +191,14 @@ pub fn load(arena: *std.arena.Arena, file_bytes: []const u8) TorrentError!Torren
     while (ci + 1 < result.name.len) : (ci += 1) {
         if (result.name[ci] == '.' and result.name[ci + 1] == '.') return error.BadFilePath;
     }
+    // Windows path limits + reserved device names (plan Task 3 / spec §12).
+    // The output path is `result.name` itself (disk.openTarget opens it
+    // relative to cwd), so bounding the name bounds the derived path. Reject
+    // here, before disk.openTarget, so the failure is the typed name error
+    // (exit 2), not a delegated Win9x CreateFileA failure (exit 5).
+    if (result.name.len > MAX_PATH) return error.BadFilePath;
+    if (result.name.len > MAX_COMPONENT) return error.BadFilePath;
+    if (isReservedDeviceName(result.name)) return error.BadFilePath;
 
     // --- piece length (required, int -> u32) ---
     if (findIndex(info_entries, "piece length")) |pli| {
