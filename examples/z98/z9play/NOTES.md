@@ -1,10 +1,10 @@
 # z9play — Z98 Example
 
-**Status:** M0 complete (Tasks 0–5). M1 complete (Tasks 0–5, closed out): setup header parse + codebook construction, exposed via `--dump-setup`. M2 (native pure-Z98 `std_math` f64 `sqrt`/`sin`/`cos`) complete and closed out (Tasks 0–6): std fixture registered, `tests/tier_math.sh` gate green, docs, and the Task 6 M3 amendment review. M3 (audio decode → interleaved s16 PCM) complete (Tasks 0–5): `dsp`/`floor`/`residue`/`decode`, `z9play --pcm <in.ogg> <out.wav>` (canonical 44-byte-header PCM WAV), and `tests/tier_decode.sh` (tolerance + 3× determinism vs the `oggdec` goldens).
+**Status:** M0 complete (Tasks 0–5). M1 complete (Tasks 0–5, closed out): setup header parse + codebook construction, exposed via `--dump-setup`. M2 (native pure-Z98 `std_math` f64 `sqrt`/`sin`/`cos`) complete and closed out (Tasks 0–6): std fixture registered, `tests/tier_math.sh` gate green, docs, and the Task 6 M3 amendment review. M3 (audio decode → interleaved s16 PCM) complete and closed out (Tasks 0–6): `dsp`/`floor`/`residue`/`decode`, `z9play --pcm <in.ogg> <out.wav>` (canonical 44-byte-header PCM WAV), `tests/tier_decode.sh` (tolerance + 3× determinism vs the `oggdec` goldens), and the Task 6 M4 amendment review (no amendment needed).
 
 **Entry file:** `main.zig`
 
-**Working commit:** `b5ca08d2` (`feat(std_math): f64 sin/cos (pure Z98)`; the M2 `std_math` implementation commit — the last commit of the `std_math` surface, pinned at M2 closeout). The full M2 commit chain is `4d6fb5dd` (f64 `sqrt`) → `b5ca08d2` (f64 `sin`/`cos`) → `52958705` (`tests/tier_math.sh`) → `6844aad5` (docs). Prior closeouts: M1 `100c35ce` (`example(z9play): M1 --dump-setup + tier_setup`); M0 `27b1fddf` (`example(z9play): z9play --info CLI + tier_info gate`). **M3 decode chain:** `bb211810` (IMDCT + window + overlap-add) → `b497323a` (floor1) → `d925cb55` (residue type 0/1/2) → `16ae3eea` (packet → PCM) → `de48b5cf` (docs: D7 + cumulative-defect warning) → this M3 closeout commit (`example(z9play): M3 --pcm + tier_decode`).
+**Working commit:** `c7af78ac` (`example(z9play): M3 --pcm + tier_decode`; the M3 `--pcm` + `tier_decode` commit — the last commit of the M3 decode surface, pinned at M3 closeout). Prior closeouts: M2 `b5ca08d2` (`feat(std_math): f64 sin/cos (pure Z98)`; the last `std_math` surface commit; full M2 chain `4d6fb5dd` (f64 `sqrt`) → `b5ca08d2` (f64 `sin`/`cos`) → `52958705` (`tests/tier_math.sh`) → `6844aad5` (docs)); M1 `100c35ce` (`example(z9play): M1 --dump-setup + tier_setup`); M0 `27b1fddf` (`example(z9play): z9play --info CLI + tier_info gate`). **M3 decode chain:** `bb211810` (IMDCT + window + overlap-add) → `b497323a` (floor1) → `d925cb55` (residue type 0/1/2) → `16ae3eea` (packet → PCM) → `de48b5cf` (docs: D7 + cumulative-defect warning) → `c7af78ac` (M3 `--pcm` + `tier_decode`; this closeout).
 
 **MD5 (`--dump-c89`):** `a5f208b5c8034e9c9f2be9c6800913f4` (seed `zig1_5_clean`, seed **v97**; stable 3×; M3). **M3 changed this value** (M2 was `88ad559ce5e4a3dae6f11a0c52b35792`): `--dump-c89` for `main.zig` transitively emits every imported module, and M3 makes `main.zig` import `decode.zig` (and its closure `codebook.zig`/`dsp.zig`/`floor.zig`/`residue.zig`), so the whole M3 decode graph now appears in the dump, alongside the `std_math.zig` functions M2 added. The z9play **build seed / fixed point is unchanged** (`bafbba9454cd2b134bdc3d50c65384e0`; M3 is example-only, no compiler change). Prior: M2 `88ad559ce5e4a3dae6f11a0c52b35792`, M1 `344c26ed89dd0830443fa5e16b870ec0`, M0 `--info`-only `ba86cbe8b2229667f4c8084a0b0e75da`.
 
@@ -370,3 +370,39 @@ change.
   Regression: `tier_info` 20/20, `tier_setup` 21/21, `tier_math` 8/8; unit tests
   `ogg_test`/`info_test`/`setup_test`/`dsp_test`/`floor_test`/`residue_test`/
   `decode_test` all PASS.
+
+### Task 6 — M4 amendment review + M3 closeout — DONE
+
+- **Part A (M4 amendment review) — no amendment needed.** M3's
+  `decode.zig` output contract is already streaming-shaped:
+  `decodePacket(arena, setup, *DecoderState, packet, pcm_out) !usize` decodes
+  **one audio packet per call**, returns the finished frame count (samples per
+  channel; `0` for the priming packet), writes interleaved s16 L,R,… into the
+  caller's `pcm_out`, and keeps all cross-packet state (codebook tables,
+  previous block size, per-channel overlap tail) in the caller-owned
+  `DecoderState`. The only whole-stream buffering lives in `main.zig`'s `--pcm`
+  path (one `big` buffer + 16 MiB `dec_arena_buf`), and that is a CLI
+  convenience, not the decoder contract. M4's `Player`/double-buffer ring is
+  designed to "decode one block when room" (`playerPump`) and its Task 3 test
+  compares the WAV-sink bytes to the **same** `--pcm` output byte-for-byte —
+  which matches exactly because `--pcm` itself drives `decodePacket`
+  packet-by-packet with one `DecoderState`, so a ring that concatenates the
+  same per-packet outputs reproduces the identical PCM sequence. Variable
+  per-packet framing (short/long blocks, the priming packet emitting nothing) is
+  absorbed by `playerPump`'s "decode one packet, append `frames*channels`"
+  loop; the granule trim M3 does at WAV-write time becomes M4's
+  length/duration bookkeeping, already in the M4 `Player` fields. Therefore M3's
+  actual output invalidates no M4 `Player`/ring-buffer/audio-out assumption.
+  (Non-assertion note, not an amendment: M3 flags that `residue.zig`'s
+  `entryToVector` allocates per-codeword arena scratch, so a long-running player
+  should reset a per-packet scratch arena or reuse buffers; M4's unit gate is a
+  2 s fixture, so this does not block it.)
+- **Part B (M3 closeout).** Working commit pinned to `c7af78ac`
+  (`example(z9play): M3 --pcm + tier_decode`); full M3 chain recorded above.
+  Gates re-run under seed v97 (`-fsafe`, example-only, no compiler/seed change):
+  `tier_decode` 24/24, `tier_info` 20/20, `tier_setup` 21/21, `tier_math` 8/8;
+  unit tests `ogg_test`/`info_test`/`setup_test`/`dsp_test`/`floor_test`/
+  `residue_test`/`decode_test` all PASS; two-hop seed closure
+  `bafbba9454cd2b134bdc3d50c65384e0`; `--dump-c89` md5
+  `a5f208b5c8034e9c9f2be9c6800913f4` (stable). The M3 plan carries no status
+  field, so there is nothing to flip to "done".

@@ -29,7 +29,7 @@ no compiler builtins. The M2 gate `tests/tier_math.sh` is green (8/8) and
 `verify_stdlib` is 285/0 (`STDLIB GATE OK`). Its Task 6 M3 amendment review found
 **no amendment needed**.
 
-**M3 (audio decode to interleaved s16 PCM) — complete (Tasks 0–5).** Window +
+**M3 (audio decode to interleaved s16 PCM) — complete (Tasks 0–6, closed out).** Window +
 inverse MDCT + overlap-add (`dsp.zig`), floor1 (`floor.zig`), residue type 0/1/2
 (`residue.zig`), and the packet→PCM driver (`decode.zig`), exposed as
 `z9play --pcm <in.ogg> <out.wav>` (canonical 44-byte-header PCM WAV). The M3 gate
@@ -37,6 +37,9 @@ inverse MDCT + overlap-add (`dsp.zig`), floor1 (`floor.zig`), residue type 0/1/2
 (`max |Δ| = 1 LSB`, RMS 0.034–0.039 LSB) and 3× deterministically vs the `oggdec`
 goldens. Example-only; no compiler/seed change (the open defect D7 is worked
 around in `vorbis_setup.zig`, recorded in `examples/torrent_example_defects.md`).
+Its Task 6 M4 amendment review found **no amendment needed** (`decodePacket` is
+already streaming-capable with caller-owned `DecoderState`; M4 drives it per
+packet).
 
 ## Files
 
