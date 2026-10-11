@@ -39,7 +39,7 @@ Same as M0: example-only `examples/z98/z9play/**`; **no compiler change**; no se
 
 **Files:** `codebook.zig`.
 **Interfaces:** `pub fn buildDecodeTable(arena, cb) !DecodeTable`; `pub fn decodeScalar(dt, bits: *BitReader) i32` and `pub fn decodeVector(...)`; lookup types 1 (tessellation) + 2 (sequence) + scalar.
-- [ ] Failing test: build all fixture codebooks; assert canonical Huffman codes are decode-unique (round-trip encode→decode on synthetic bit patterns). Implement (MSB-first bit reader). PASS. Commit `example(z9play): build codebook Huffman decode tables`.
+- [ ] Failing test: build all fixture codebooks; assert canonical Huffman codes are decode-unique (round-trip encode→decode on synthetic bit patterns). Implement — **bit order (operator-approved amendment 2026-10-11): the byte-level bit reader is LSB-first (Vorbis `oggpack`), NOT MSB-first as originally written; the only "MSB-first" in Vorbis is the canonical-codeword index orientation (apply bit-reversal to the codeword index only, if a table-based decoder is used).** Also: grow `Codebook`/parser to retain lookup type / `value_bits` / `sequence_p` / `min` / `delta` / multiplicands (Task 1 discarded them; Task 2 `decodeVector` needs them); widen the lookup-type-2 tail multiplies (`entries*dims`, `value_bits*lv`) to u64 (a crafted ~80 KB header currently traps rc 133 under `-fsafe`); add a lookup-type-1 test vector. PASS. Commit `example(z9play): build codebook Huffman decode tables`.
 
 ### Task 3: Time-domain transforms, floors, residues, mappings, modes
 
