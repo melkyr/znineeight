@@ -29,6 +29,15 @@ no compiler builtins. The M2 gate `tests/tier_math.sh` is green (8/8) and
 `verify_stdlib` is 285/0 (`STDLIB GATE OK`). Its Task 6 M3 amendment review found
 **no amendment needed**.
 
+**M3 (audio decode to interleaved s16 PCM) — complete (Tasks 0–5).** Window +
+inverse MDCT + overlap-add (`dsp.zig`), floor1 (`floor.zig`), residue type 0/1/2
+(`residue.zig`), and the packet→PCM driver (`decode.zig`), exposed as
+`z9play --pcm <in.ogg> <out.wav>` (canonical 44-byte-header PCM WAV). The M3 gate
+`tests/tier_decode.sh` is green (24/24): all five fixtures decode within tolerance
+(`max |Δ| = 1 LSB`, RMS 0.034–0.039 LSB) and 3× deterministically vs the `oggdec`
+goldens. Example-only; no compiler/seed change (the open defect D7 is worked
+around in `vorbis_setup.zig`, recorded in `examples/torrent_example_defects.md`).
+
 ## Files
 
 M0 (all present; `[x]` = landed in M0):
@@ -54,6 +63,18 @@ M1 (Tasks 1–4 landed):
 - `[x]` `tests/tier_info.sh` — the M0 gate (Task 5).
 - `[x]` `NOTES.md`, `README.md`.
 
+M3 (Tasks 1–5 landed):
+
+- `[x]` `dsp.zig` — window slope, unnormalized inverse MDCT, overlap-add.
+- `[x]` `floor.zig` — floor1 decode (floor0 rejected).
+- `[x]` `residue.zig` — residue type 0/1/2 decode.
+- `[x]` `decode.zig` — audio packet → interleaved s16 PCM (`decodePacket` +
+  caller-owned `DecoderState`).
+- `[x]` `main.zig`/`cli.zig` — `--pcm <in.ogg> <out.wav>`.
+- `[x]` `tests/decode_test.zig` — M3 Task 4 golden gate.
+- `[x]` `tests/tier_decode.sh` — the M3 gate (Task 5).
+- `testdata/expected/*.pcm` — `oggdec` golden raw s16 LE PCM.
+
 ## Build and Run
 
 M0/M1 use the seed built from `release/seed/zig1-seed.tgz` (current seed v97):
@@ -66,6 +87,7 @@ timeout 120 /tmp/z9play_seed/zig1_5_clean -fsafe -o /tmp/z9play_out \
 sh /tmp/z9play_out/build_target.sh linux /tmp/z9play_out/prog
 /tmp/z9play_out/prog --info examples/z98/z9play/testdata/tagged_unicode.ogg
 /tmp/z9play_out/prog --dump-setup examples/z98/z9play/testdata/tagged_unicode.ogg
+/tmp/z9play_out/prog --pcm examples/z98/z9play/testdata/sine_stereo_44100.ogg /tmp/out.wav
 ```
 
 `--info <file.ogg>` prints a fixed `key=value` block matching the golden
@@ -92,11 +114,19 @@ codebooks=38 floors=2 residues=2 mappings=2 modes=2
 ```
 
 The counts are the parsed header-object list lengths. Exit codes mirror
-`--info` (`0`/`1`/`2`/`3`). Gates:
+`--info` (`0`/`1`/`2`/`3`).
+
+`--pcm <in.ogg> <out.wav>` (`M3`) decodes the whole stream and writes a canonical
+44-byte-header PCM WAV (16-bit, the fixture's channels/sample-rate) whose `data`
+payload is the decoded interleaved s16 LE frames, trimmed to the stream granule
+so it lines up with the `oggdec` golden `testdata/expected/*.pcm`. Exit codes:
+`0` ok, `1` arguments (incl. a missing output path), `2` open, `3` decoder
+(malformed container/header/packet, or floor-0/unsupported).
 
 ```bash
 ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_info.sh
 ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_setup.sh
+ZIG=/tmp/z9play_seed/zig1_5_clean sh examples/z98/z9play/tests/tier_decode.sh
 ```
 
 ## Fixtures
@@ -117,7 +147,8 @@ the golden `.meta` format and the determinism contract.
 ## Notes
 
 `NOTES.md` holds the build recipe, the `--dump-c89` md5
-(`88ad559ce5e4a3dae6f11a0c52b35792`, seed v97; M2's `std_math` is embedded in the
-`std` module the dump emits, so it changed from the M1 value
-`344c26ed89dd0830443fa5e16b870ec0`; M0 `--info`-only md5 was
-`ba86cbe8b2229667f4c8084a0b0e75da`), the golden formats, and the milestone log.
+(`a5f208b5c8034e9c9f2be9c6800913f4`, seed v97; M3 makes `main.zig` import the
+whole `decode.zig` closure, so it changed from the M2 value
+`88ad559ce5e4a3dae6f11a0c52b35792`; prior M1 `344c26ed89dd0830443fa5e16b870ec0`,
+M0 `--info`-only `ba86cbe8b2229667f4c8084a0b0e75da`), the golden formats, and the
+milestone log.

@@ -1,5 +1,5 @@
-// main.zig — z9play entry point (z9play M0/M1: `--info` metadata query and
-// `--dump-setup` setup summary).
+// main.zig — z9play entry point (z9play M0/M1/M3: `--info` metadata query,
+// `--dump-setup` setup summary, and `--pcm` decode-to-WAV).
 //
 // Pure Z98: free functions, no generics, no @cImport, strict @intCast, string
 // literals via `var s: []const u8 = "..."`. Reads one OGG file and reassembles
@@ -42,10 +42,17 @@ const filemod = @import("std_file");
 const ogg = @import("ogg.zig");
 const vi = @import("vorbis_info.zig");
 const vs = @import("vorbis_setup.zig");
+const dec = @import("decode.zig");
 
 // Backing store for the read/reassembly/comment arena; module-global so it does
 // not sit on the 32-bit stack (~11 KiB fixtures need a small fraction of this).
 var arena_buf: [4 * 1024 * 1024]u8 = undefined;
+
+// Separate arena for `--pcm` decode scratch. Decoding a whole file builds the
+// codebook decode tables and the residue decoder's per-codeword vectors, which
+// accumulate over the stream; the read/reassembly arena above is reused for the
+// container and must stay intact. Module-global so it is off the 32-bit stack.
+var dec_arena_buf: [16 * 1024 * 1024]u8 = undefined;
 
 fn writeText(s: []const u8) void {
     std.io.write(s);
@@ -120,6 +127,50 @@ fn writeTagLine(tags: []vi.Tag, key: []const u8) void {
     writeNl();
 }
 
+// Little-endian writers for the canonical WAV header (the fixtures' golden PCM
+// is raw s16 LE, so the header byte order is fixed regardless of host).
+fn putLe16(buf: []u8, off: usize, v: u16) void {
+    buf[off] = @intCast(u8, v & 0xff);
+    buf[off + 1] = @intCast(u8, (v >> 8) & 0xff);
+}
+
+fn putLe32(buf: []u8, off: usize, v: u32) void {
+    buf[off] = @intCast(u8, v & 0xff);
+    buf[off + 1] = @intCast(u8, (v >> 8) & 0xff);
+    buf[off + 2] = @intCast(u8, (v >> 16) & 0xff);
+    buf[off + 3] = @intCast(u8, (v >> 24) & 0xff);
+}
+
+// Write the canonical 44-byte PCM WAV header for `data_bytes` bytes of
+// interleaved s16 data at `channels`/`sample_rate` into buf[0..44].
+fn writeWavHeader(buf: []u8, data_bytes: u32, channels: u16, sample_rate: u32) void {
+    buf[0] = 'R';
+    buf[1] = 'I';
+    buf[2] = 'F';
+    buf[3] = 'F';
+    putLe32(buf, 4, 36 + data_bytes);
+    buf[8] = 'W';
+    buf[9] = 'A';
+    buf[10] = 'V';
+    buf[11] = 'E';
+    buf[12] = 'f';
+    buf[13] = 'm';
+    buf[14] = 't';
+    buf[15] = ' ';
+    putLe32(buf, 16, 16);
+    putLe16(buf, 20, 1);
+    putLe16(buf, 22, channels);
+    putLe32(buf, 24, sample_rate);
+    putLe32(buf, 28, sample_rate * @intCast(u32, channels) * 2);
+    putLe16(buf, 32, channels * 2);
+    putLe16(buf, 34, 16);
+    buf[36] = 'd';
+    buf[37] = 'a';
+    buf[38] = 't';
+    buf[39] = 'a';
+    putLe32(buf, 40, data_bytes);
+}
+
 pub fn main(argc: i32, argv: [*][*]u8) void {
     var args: cli.Args = cli.parseArgs(argc, argv);
 
@@ -180,6 +231,97 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
         std.io.write(l_mo);
         writeU64(@intCast(u64, setup.modes.len));
         writeNl();
+        std.os.exit(0);
+        return;
+    }
+
+    if (args.mode == cli.MODE_PCM) {
+        if (packets.len < 3) {
+            var msg: []const u8 = "z9play: missing Vorbis setup header\n";
+            std.io.write(msg);
+            std.os.exit(3);
+            return;
+        }
+        var darena = std.arena.init(dec_arena_buf[0..]);
+        var setup: vs.Setup = vs.parseSetup(&darena, packets[2].bytes, @intCast(u32, id.channels)) catch {
+            var msg: []const u8 = "z9play: bad Vorbis setup header\n";
+            std.io.write(msg);
+            std.os.exit(3);
+            return;
+        };
+        var state: dec.DecoderState = dec.initDecoderState(&darena, setup, id.channels, id.blocksize_0, id.blocksize_1) catch {
+            var msg: []const u8 = "z9play: cannot initialize the decoder\n";
+            std.io.write(msg);
+            std.os.exit(3);
+            return;
+        };
+        var ch: usize = @intCast(usize, id.channels);
+        var n1: u32 = @intCast(u32, 1) << @intCast(u32, id.blocksize_1);
+        var audio_count: usize = packets.len - 3;
+        var frames_cap: usize = audio_count * @intCast(usize, n1 / 2);
+        if (frames_cap == 0) frames_cap = 1;
+
+        // Per-packet scratch: a block emits at most n1/2 frames = n1*ch samples.
+        var tr: [*]u8 = std.arena.alloc(&darena, @intCast(usize, n1) * ch * @sizeOf(i16)) catch {
+            var msg: []const u8 = "z9play: out of memory\n";
+            std.io.write(msg);
+            std.os.exit(3);
+            return;
+        };
+        var tmp: []i16 = @ptrCast([*]i16, tr)[0 .. @intCast(usize, n1) * ch];
+        var br: [*]u8 = std.arena.alloc(&darena, frames_cap * ch * @sizeOf(i16)) catch {
+            var msg: []const u8 = "z9play: out of memory\n";
+            std.io.write(msg);
+            std.os.exit(3);
+            return;
+        };
+        var big: []i16 = @ptrCast([*]i16, br)[0 .. frames_cap * ch];
+
+        var total: usize = 0;
+        var p: usize = 3;
+        while (p < packets.len) : (p += 1) {
+            var f: usize = dec.decodePacket(&darena, setup, &state, packets[p].bytes, tmp) catch {
+                var msg: []const u8 = "z9play: corrupt or unsupported audio packet\n";
+                std.io.write(msg);
+                std.os.exit(3);
+                return;
+            };
+            var q: usize = 0;
+            while (q < f * ch) : (q += 1) {
+                big[total * ch + q] = tmp[q];
+            }
+            total += f;
+        }
+
+        // Trim the last page's granule padding: the golden payload is the first
+        // `granule` frames (the priming frame emits nothing).
+        var last: u64 = ogg.lastGranule(&arena, data) catch 0;
+        var out_frames: usize = total;
+        if (last > 0 and last <= @intCast(u64, total)) out_frames = @intCast(usize, last);
+
+        var data_bytes: usize = out_frames * ch * 2;
+        var wlen: usize = 44 + data_bytes;
+        var wr: [*]u8 = std.arena.alloc(&darena, wlen) catch {
+            var msg: []const u8 = "z9play: out of memory\n";
+            std.io.write(msg);
+            std.os.exit(3);
+            return;
+        };
+        var wbuf: []u8 = wr[0..wlen];
+        writeWavHeader(wbuf[0..44], @intCast(u32, data_bytes), @intCast(u16, ch), id.sample_rate);
+
+        var k: usize = 0;
+        while (k < out_frames * ch) : (k += 1) {
+            var u: u16 = @bitCast(u16, big[k]);
+            wbuf[44 + k * 2] = @intCast(u8, u & 0xff);
+            wbuf[44 + k * 2 + 1] = @intCast(u8, (u >> 8) & 0xff);
+        }
+        filemod.writeAll(args.out_path, wbuf) catch {
+            var msg: []const u8 = "z9play: cannot write output file\n";
+            std.io.write(msg);
+            std.os.exit(2);
+            return;
+        };
         std.os.exit(0);
         return;
     }

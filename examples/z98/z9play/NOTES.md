@@ -1,12 +1,12 @@
 # z9play — Z98 Example
 
-**Status:** M0 complete (Tasks 0–5). M1 complete (Tasks 0–5, closed out): setup header parse + codebook construction, exposed via `--dump-setup`. M2 (native pure-Z98 `std_math` f64 `sqrt`/`sin`/`cos`) complete and closed out (Tasks 0–6): std fixture registered, `tests/tier_math.sh` gate green, docs, and the Task 6 M3 amendment review.
+**Status:** M0 complete (Tasks 0–5). M1 complete (Tasks 0–5, closed out): setup header parse + codebook construction, exposed via `--dump-setup`. M2 (native pure-Z98 `std_math` f64 `sqrt`/`sin`/`cos`) complete and closed out (Tasks 0–6): std fixture registered, `tests/tier_math.sh` gate green, docs, and the Task 6 M3 amendment review. M3 (audio decode → interleaved s16 PCM) complete (Tasks 0–5): `dsp`/`floor`/`residue`/`decode`, `z9play --pcm <in.ogg> <out.wav>` (canonical 44-byte-header PCM WAV), and `tests/tier_decode.sh` (tolerance + 3× determinism vs the `oggdec` goldens).
 
 **Entry file:** `main.zig`
 
-**Working commit:** `b5ca08d2` (`feat(std_math): f64 sin/cos (pure Z98)`; the M2 `std_math` implementation commit — the last commit of the `std_math` surface, pinned at M2 closeout). The full M2 commit chain is `4d6fb5dd` (f64 `sqrt`) → `b5ca08d2` (f64 `sin`/`cos`) → `52958705` (`tests/tier_math.sh`) → `6844aad5` (docs). Prior closeouts: M1 `100c35ce` (`example(z9play): M1 --dump-setup + tier_setup`); M0 `27b1fddf` (`example(z9play): z9play --info CLI + tier_info gate`).
+**Working commit:** `b5ca08d2` (`feat(std_math): f64 sin/cos (pure Z98)`; the M2 `std_math` implementation commit — the last commit of the `std_math` surface, pinned at M2 closeout). The full M2 commit chain is `4d6fb5dd` (f64 `sqrt`) → `b5ca08d2` (f64 `sin`/`cos`) → `52958705` (`tests/tier_math.sh`) → `6844aad5` (docs). Prior closeouts: M1 `100c35ce` (`example(z9play): M1 --dump-setup + tier_setup`); M0 `27b1fddf` (`example(z9play): z9play --info CLI + tier_info gate`). **M3 decode chain:** `bb211810` (IMDCT + window + overlap-add) → `b497323a` (floor1) → `d925cb55` (residue type 0/1/2) → `16ae3eea` (packet → PCM) → `de48b5cf` (docs: D7 + cumulative-defect warning) → this M3 closeout commit (`example(z9play): M3 --pcm + tier_decode`).
 
-**MD5 (`--dump-c89`):** `88ad559ce5e4a3dae6f11a0c52b35792` (seed `zig1_5_clean`, seed **v97**; stable 3×; M2). **M2 changed this value** (M1 was `344c26ed89dd0830443fa5e16b870ec0`): `--dump-c89` for `main.zig` transitively emits the whole imported `std` module, including `std_math.zig`, and the binding seed recipe rebuilds the compiler's `lib/` from the current `sf/src` — so M2's new `std_math` f64 functions appear in the dump even though no M3 code calls them yet. The z9play **example source** is unchanged (M2 is std-only, no compiler change; fixed point stays `bafbba9454cd2b134bdc3d50c65384e0`). M0 `--info`-only md5 was `ba86cbe8b2229667f4c8084a0b0e75da`.
+**MD5 (`--dump-c89`):** `a5f208b5c8034e9c9f2be9c6800913f4` (seed `zig1_5_clean`, seed **v97**; stable 3×; M3). **M3 changed this value** (M2 was `88ad559ce5e4a3dae6f11a0c52b35792`): `--dump-c89` for `main.zig` transitively emits every imported module, and M3 makes `main.zig` import `decode.zig` (and its closure `codebook.zig`/`dsp.zig`/`floor.zig`/`residue.zig`), so the whole M3 decode graph now appears in the dump, alongside the `std_math.zig` functions M2 added. The z9play **build seed / fixed point is unchanged** (`bafbba9454cd2b134bdc3d50c65384e0`; M3 is example-only, no compiler change). Prior: M2 `88ad559ce5e4a3dae6f11a0c52b35792`, M1 `344c26ed89dd0830443fa5e16b870ec0`, M0 `--info`-only `ba86cbe8b2229667f4c8084a0b0e75da`.
 
 Spec: `docs/superpowers/specs/2026-10-11-z9play-ogg-player-design.md` (binding).
 M0 plan: `docs/superpowers/plans/2026-10-11-z9play-m0-ogg-container-plan.md`.
@@ -67,12 +67,40 @@ byte-for-byte against the committed `testdata/expected/*.setup` goldens. Exit
 codes mirror `--info`: `0` ok, `1` arguments, `2` open, `3` decoder (malformed
 container / identification / setup header, or a non-Vorbis stream).
 
+### `--pcm` usage (M3)
+
+```bash
+/tmp/z9play_out/prog --pcm examples/z98/z9play/testdata/sine_stereo_44100.ogg /tmp/out.wav
+# writes a canonical 44-byte-header PCM WAV (RIFF/WAVE, fmt 16, audio format 1
+# (PCM), the fixture's channels/sample-rate, 16 bits/sample, block align
+# channels*2), whose `data` payload is the decoded interleaved s16 LE frames.
+```
+
+`--pcm <in.ogg> <out.wav>` parses the container, the identification/comment/
+setup headers, then decodes every audio packet (`7. 3.0` in `decode.zig`,
+`DecoderState` carried across packets) to interleaved signed-16-bit PCM and
+writes it with a canonical 44-byte WAV header. The payload is **trimmed to the
+stream granule** (`testdata/expected/*.pcm` has no padding) so it lines up with
+the `oggdec` golden. A correct float decoder is not required to be bit-identical
+to libvorbis: the gate `tests/tier_decode.sh` compares the payload to the golden
+by tolerance (per-sample max |Δ| and RMS LSB) and additionally asserts 3×
+determinism (identical SHA-1), reporting exact-match SHA-1 as informational.
+Exit codes mirror `--info`: `0` ok, `1` arguments (incl. a missing output path),
+`2` open, `3` decoder (malformed container/header/packet, or floor-0/unsupported).
+
+```
+$ sh examples/z98/z9play/tests/tier_decode.sh
+== tier_decode summary: 24 passed, 0 failed ==
+TIER_DECODE PASS
+```
+
 ### `--dump-c89` (for the MD5 above)
 
 ```bash
 timeout 120 /tmp/z9play_seed/zig1_5_clean --dump-c89 examples/z98/z9play/main.zig | md5sum
-# 88ad559ce5e4a3dae6f11a0c52b35792  -
-# (M1, before the M2 std_math f64 functions: 344c26ed89dd0830443fa5e16b870ec0)
+# a5f208b5c8034e9c9f2be9c6800913f4  -
+# (M2, before M3's decode.zig import closure: 88ad559ce5e4a3dae6f11a0c52b35792;
+#  M1, before the M2 std_math f64 functions: 344c26ed89dd0830443fa5e16b870ec0)
 ```
 
 ## Baseline (Task 0)
@@ -302,3 +330,43 @@ not the example: pure-Z98 f64 math so the Vorbis IMDCT/window can run on Win9x
   true M2 value `88ad559ce5e4a3dae6f11a0c52b35792` (see the MD5 note above:
   M2's `std_math` is embedded in the `std` module the dump emits, so the md5
   **did** change from the M1 value `344c26ed89dd0830443fa5e16b870ec0`).
+
+### M3 — Audio decode to PCM (`dsp`/`floor`/`residue`/`decode`; Tasks 0–5) — DONE
+
+Plan: `docs/superpowers/plans/2026-10-11-z9play-m3-audio-decode-plan.md`. Largely
+example-only; the only compiler-adjacent interaction is the documented open
+defect D7 (see `examples/torrent_example_defects.md`), worked around in
+`vorbis_setup.zig` (mode struct renamed `VorbisMode`) rather than by a compiler
+change.
+
+- **Task 0 (preflight) — DONE.** `mkfixtures.sh` extended to also run `oggdec`
+  (`-Q -R -b 16 -e 0 -s 1`) → `testdata/expected/<name>.pcm` (raw s16 LE,
+  headerless); run-twice self-check proves libvorbis determinism.
+- **Task 1 (`dsp.zig`) — DONE.** Window slope + direct unnormalized inverse MDCT
+  (analytic unit check) + overlap-add (TDAC closing test).
+- **Task 2 (`floor.zig`) — DONE.** floor1 decode (`decodeY`/`renderLine`, the
+  committed `floor1_inverse_dB_table`); floor0 → `error.UnsupportedFloor`.
+- **Task 3 (`residue.zig`) — DONE.** residue type 0/1/2, partitioned vectors
+  over the affected channels, type-0 EOP rule, do-not-decode skip.
+- **Task 4 (`decode.zig`) — DONE.** packet → interleaved s16 (`decodePacket`
+  driven by a caller-owned `DecoderState`). Golden gate `decode_test`:
+  `frames=88640 golden_frames=88200 max_delta=1 rms_milli=36`, 3× deterministic
+  (decoded SHA-1 `f891394376e3012753ddcb6e4a18cf1cfe321b14`).
+- **Task 5 (--pcm + gate) — DONE (this commit).** `cli.zig`/`main.zig` gained
+  `--pcm <in.ogg> <out.wav>`, decoding the whole file and writing a canonical
+  44-byte-header PCM WAV (payload trimmed to the stream granule). New gate
+  `tests/tier_decode.sh`: for all 5 fixtures, header/size check, tolerance vs the
+  `oggdec` golden (`max |Δ| = 1 LSB`, `rms_milli` 34–39), 3× determinism, and the
+  non-vacuous negative exit codes (args 1 / open 2 / decoder 3); exact-match
+  SHA-1 vs golden reported informationally. Seed v97; `--dump-c89` md5
+  `a5f208b5c8034e9c9f2be9c6800913f4` (stable 3×).
+
+  ```
+  $ sh examples/z98/z9play/tests/tier_decode.sh
+  == tier_decode summary: 24 passed, 0 failed ==
+  TIER_DECODE PASS
+  ```
+
+  Regression: `tier_info` 20/20, `tier_setup` 21/21, `tier_math` 8/8; unit tests
+  `ogg_test`/`info_test`/`setup_test`/`dsp_test`/`floor_test`/`residue_test`/
+  `decode_test` all PASS.

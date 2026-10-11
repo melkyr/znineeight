@@ -1,5 +1,5 @@
-// cli.zig — z9play command-line parsing (z9play M0/M1: --info/--dump-setup/
-// --help/--version).
+// cli.zig — z9play command-line parsing (z9play M0/M1/M3: --info/--dump-setup/
+// --pcm/--help/--version).
 //
 // Pure Z98: free functions, no generics, strict @intCast, string literals via
 // `var s: []const u8 = "..."`. M0 exposes the metadata query; M1 adds the
@@ -15,12 +15,14 @@ const std = @import("std");
 // Request mode selectors. `mode` is never 0 in a value returned by parseArgs.
 pub const MODE_INFO: u8 = 1;
 pub const MODE_DUMP_SETUP: u8 = 2;
+pub const MODE_PCM: u8 = 3;
 
-// Parsed arguments: exactly one request (`--info` or `--dump-setup`) and its
-// target file path.
+// Parsed arguments: exactly one request (`--info`, `--dump-setup` or `--pcm`)
+// and its target file path(s). `out_path` is empty except for `--pcm`.
 pub const Args = struct {
     mode: u8,
     path: []const u8,
+    out_path: []const u8,
 };
 
 fn eq(a: []const u8, b: []const u8) bool {
@@ -47,14 +49,16 @@ pub fn usage() void {
     std.io.write(l2);
     var l3: []const u8 = "  --dump-setup <file.ogg>  print the Vorbis setup summary (counts of codebooks/floors/residues/mappings/modes)\n";
     std.io.write(l3);
-    var l4: []const u8 = "  -h, --help               show this help\n";
+    var l4: []const u8 = "  --pcm <in.ogg> <out.wav> decode to a canonical 44-byte-header PCM WAV (s16, interleaved)\n";
     std.io.write(l4);
-    var l5: []const u8 = "  --version                show version\n";
+    var l5: []const u8 = "  -h, --help               show this help\n";
     std.io.write(l5);
+    var l6: []const u8 = "  --version                show version\n";
+    std.io.write(l6);
 }
 
 pub fn version() void {
-    var s: []const u8 = "z9play 0.1.0 (M1)\n";
+    var s: []const u8 = "z9play 0.1.0 (M3)\n";
     std.io.write(s);
 }
 
@@ -66,10 +70,11 @@ fn usageError() void {
 // Parse one request. `--help`/`--version` print and exit 0; a malformed command
 // line (unknown flag, a request with no/empty file, a conflicting or duplicate
 // request, or no request) prints usage and exits 1. On success returns the
-// selected mode and its target path.
+// selected mode and its target path (plus the output path for `--pcm`).
 pub fn parseArgs(argc: i32, argv: [*][*]u8) Args {
     const n: usize = @intCast(usize, argc);
     var path: []const u8 = "";
+    var out_path: []const u8 = "";
     var mode: u8 = 0;
     var i: usize = 1;
     while (i < n) : (i += 1) {
@@ -94,10 +99,21 @@ pub fn parseArgs(argc: i32, argv: [*][*]u8) Args {
             path = argAt(argv, i);
             if (path.len == 0) usageError();
             mode = MODE_DUMP_SETUP;
+        } else if (eq(tok, "--pcm")) {
+            if (mode != 0) usageError();
+            i += 1;
+            if (i >= n) usageError();
+            path = argAt(argv, i);
+            if (path.len == 0) usageError();
+            i += 1;
+            if (i >= n) usageError();
+            out_path = argAt(argv, i);
+            if (out_path.len == 0) usageError();
+            mode = MODE_PCM;
         } else {
             usageError();
         }
     }
     if (mode == 0) usageError();
-    return Args{ .mode = mode, .path = path };
+    return Args{ .mode = mode, .path = path, .out_path = out_path };
 }
