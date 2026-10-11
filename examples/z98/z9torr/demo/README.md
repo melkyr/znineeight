@@ -15,7 +15,7 @@ From the repository root:
 
 ```bash
 mkdir -p /tmp/z9torr_demo
-timeout 120 /tmp/z9_m0_seed/zig1_5_clean -ffast -o /tmp/z9torr_demo examples/z98/z9torr/main.zig
+timeout 120 /tmp/z9_m0_seed/zig1_5_clean -fsafe -o /tmp/z9torr_demo examples/z98/z9torr/main.zig
 sh /tmp/z9torr_demo/build_target.sh linux /tmp/z9torr_demo/prog
 /tmp/z9torr_demo/prog examples/z98/z9torr/testdata/t1_single_1m.torrent
 ```

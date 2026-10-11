@@ -19,7 +19,7 @@
 //
 // Build (binding recipe):
 //   mkdir -p out
-//   timeout 120 /tmp/z9_m0_seed/zig1_5_clean -ffast -o out tools/mock_mse_peer.zig
+//   timeout 120 /tmp/z9_m0_seed/zig1_5_clean -fsafe -o out tools/mock_mse_peer.zig
 //   sh out/build_target.sh linux out/prog
 
 const std = @import("std");

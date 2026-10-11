@@ -2,7 +2,9 @@
 
 z9torr — a BitTorrent client example for the Z98 bootstrap compiler.
 
-This is the **M4 "real-swarm compatibility"** milestone. `z9torr <file.torrent>`
+This is the **M5 "Win9x cross-compat"** milestone (M5 builds the client for
+Win9x with `-osw` + mingw, smoke-tests it under Wine, and documents the manual
+Win98 procedure; see the M5 section below). `z9torr <file.torrent>`
 parses a single-file torrent, announces to a tracker (UDP `udp://` when present,
 else HTTP), and downloads from up to `--max-peers` peers (rarest-first, one
 coroutine per announced peer, verifying every piece by SHA-1, with
@@ -27,16 +29,17 @@ all-zero `peer_id`.
   `tier_stall.sh` (non-blocking probe), `tier_fallback.sh` (encrypted-first
   plaintext fallback), `tier_refseed.sh`/`tier_refseed_py.sh` (real
   aria2c / Python MSE responders), `tier_mse_diag.sh` (MSE against aria2c +
-  Python) (hard gates) and `tier_real.sh` (best-effort
-  real swarm).
-- `testdata/`, `demo/`: committed fixtures, goldens, and golden commands.
+  Python) (hard gates), `tier_real.sh` (best-effort real swarm) and
+  `tier4_wine.sh` (M5 `-osw` + mingw build + Wine smoke).
+- `testdata/`, `demo/`: committed fixtures, goldens, and golden commands;
+  `demo/win9x_README.txt` is the manual Win98 (T5) procedure.
 - `NOTES.md`, `README.md`: build recipes, expected output, and status.
 
 ## Build and Run
 
 ```bash
 mkdir -p /tmp/z9_m1_out
-timeout 120 /tmp/z9_m0_seed/zig1_5_clean -ffast -o /tmp/z9_m1_out examples/z98/z9torr/main.zig
+timeout 120 /tmp/z9_m0_seed/zig1_5_clean -fsafe -o /tmp/z9_m1_out examples/z98/z9torr/main.zig
 sh /tmp/z9_m1_out/build_target.sh linux /tmp/z9_m1_out/prog
 /tmp/z9_m1_out/prog examples/z98/z9torr/testdata/t1_single_1m.torrent
 ```
@@ -54,6 +57,14 @@ With no torrent path (or `--help`) it prints the `usage:` block and exits 1
 (0 for `--help`).
 
 ## Status
+**M5 "Win9x cross-compat"** (2026-10-11): the client builds with `-fsafe -osw`
+and links with mingw (PE32; `-lwsock32`), and `tests/tier4_wine.sh` passes
+`18/0` as a Wine smoke against the host mocks (`PARITY=OK`). The real Win98 run
+is manual (`demo/win9x_README.txt`). M5 Task 0 (amendment lift) added 64-bit
+file offsets in `sf/src/std_file.zig` (POSIX `lseek`/`_llseek`; Windows already
+`SetFilePointerEx`). The pre-M5 gates stay green: `tier1.sh` `16/0`,
+`tier2.sh` `17/0`.
+
 **M4 polished** (2026-10-10): **M4.1 "real MSE/PE handshake"** is complete — the
 encrypted handshake now completes against real implementations (aria2c 1.36.0
 and an independent Python MSE responder), and the encrypted-first **plaintext
@@ -82,5 +93,34 @@ peers, 7 TCP connects, 7 `handshake ok` (2 encrypted + 5 plaintext); the exact
 qBittorrent `reserved=0000000000180005` handshake now succeeds, and
 **~37.75 MiB (4.9 %) was fetched** before the bounded 100 s window.
 
-Next: M5 — Win9x cross-compat
-(`docs/superpowers/plans/2026-10-08-z9torr-m5-win9x-plan.md`).
+## M5 — Win9x cross-compat (2026-10-11)
+
+M5 makes the client build and run for Win9x.
+
+- **Build mode:** the client is built and run with **`-fsafe`** (checked
+  arithmetic). Since M5 S1/S2 every tier and every mock is `-fsafe`; the UB that
+  `-ffast` used to hide is fixed, and the example's build recipes no longer say
+  `-ffast`.
+- **Windows build:** emit with `-osw`, cross-link with mingw. The win32 link
+  line always adds `-lwsock32` (Winsock 1.1). `-osw` emit md5
+  `52ac7ecf85d11c79817c55288ec6636e` (stable 3×):
+  ```bash
+  timeout 120 /tmp/z9_m5_seed/zig1_5_clean -osw --dump-c89 \
+      examples/z98/z9torr/main.zig | md5sum
+  ```
+  ```bash
+  mkdir -p /tmp/z9torr_win
+  timeout 120 /tmp/z9_m5_seed/zig1_5_clean -fsafe -osw -o /tmp/z9torr_win \
+      examples/z98/z9torr/main.zig
+  sh /tmp/z9torr_win/build_target.sh mingw /tmp/z9torr_win/z9torr.exe
+  ```
+- **T4 — automated Wine smoke:** `tests/tier4_wine.sh` emits `-osw`, mingw
+  cross-builds, and runs `z9torr_run.exe` under 32-bit Wine against the host
+  mocks; it asserts exit 0 + the t1 golden SHA-1 (`PARITY=OK`, observed
+  `18/0`). It is a smoke, not real hardware.
+- **T5 — manual Win98 run:** documented in `demo/win9x_README.txt` (copy the
+  exe + the mocks + a `.torrent`, run `z9torr.exe file.torrent`, with the
+  expected console output, the FAT no-sparse-file note, and MAX_PATH/reserved
+  names). The Win98 machine is outside the repo, so T5 is manual only.
+
+Next: none (M5 is the final milestone; `z9torr` is delivered).

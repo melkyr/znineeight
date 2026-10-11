@@ -12,7 +12,7 @@
 //
 // Build (binding recipe):
 //   mkdir -p out
-//   timeout 120 /tmp/z9_m41_seed/zig1_5_clean -ffast -o out tools/mock_blackhole_peer.zig
+//   timeout 120 /tmp/z9_m41_seed/zig1_5_clean -fsafe -o out tools/mock_blackhole_peer.zig
 //   sh out/build_target.sh linux out/prog
 //
 // Z98 rules apply: free functions only, no generics, strict @intCast, switch

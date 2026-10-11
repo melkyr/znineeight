@@ -13,7 +13,7 @@
 ### seed zig1_5_clean (build + run) — binding
 ```bash
 mkdir -p /tmp/z9_m1_out
-timeout 120 /tmp/z9_m0_seed/zig1_5_clean -ffast -o /tmp/z9_m1_out examples/z98/z9torr/main.zig
+timeout 120 /tmp/z9_m0_seed/zig1_5_clean -fsafe -o /tmp/z9_m1_out examples/z98/z9torr/main.zig
 sh /tmp/z9_m1_out/build_target.sh linux /tmp/z9_m1_out/prog
 /tmp/z9_m1_out/prog examples/z98/z9torr/testdata/t1_single_1m.torrent
 ```
@@ -267,5 +267,41 @@ with `peers=5`, 4177 `piece` frames (exit 124, 100 s window; see
 `lin_bin/z9torr.log`). New `--dump-c89` md5
 `fe6d03eb517d042c149b24a418a69d52`.
 
-Next: M5 — Win9x cross-compat
-(`docs/superpowers/plans/2026-10-08-z9torr-m5-win9x-plan.md`).
+## M5 — Win9x cross-compat (2026-10-11)
+
+M5 builds the example for Win9x and documents the manual run.
+
+- **Task 0 (amendment lift, `sf/src`):** `std_file.zig` + `std_file_pal.zig`
+  now use 64-bit file offsets (POSIX `lseek`/`_llseek`; Windows already uses
+  `SetFilePointerEx`, i64) so payloads > 2 GiB work on the Linux host
+  (spec §12 risk 7).
+- **Windows emission + mingw build:** emit with `-osw`, link with mingw. The
+  win32 link line always adds `-lwsock32` (Winsock 1.1).
+  - `-osw` emit md5:
+    ```bash
+    timeout 120 /tmp/z9_m5_seed/zig1_5_clean -osw --dump-c89 \
+        examples/z98/z9torr/main.zig | md5sum
+    # 52ac7ecf85d11c79817c55288ec6636e  -   (stable 3×)
+    ```
+  - mingw build: `zig1 -fsafe -osw -o <dir> examples/z98/z9torr/main.zig` then
+    `sh <dir>/build_target.sh mingw <dir>/z9torr.exe` (or the committed
+    `scripts/win32_cross/cross_build_run.sh`). `file` reports a PE32 console exe.
+- **T4 (automated):** `tests/tier4_wine.sh` is a **Wine smoke** — emit `-osw`,
+  mingw cross-build, then run `z9torr_run.exe` under 32-bit Wine against the
+  host `mock_tracker`/`mock_peer`; it asserts exit 0 + the t1 golden SHA-1 and
+  records `PARITY=OK` (observed `18/0`). It is a smoke, not real hardware.
+- **T5 (manual):** the real Win98 run is **manual** and documented in
+  `demo/win9x_README.txt` (copy `z9torr.exe` + the mocks + a `.torrent`, run
+  `z9torr.exe file.torrent`). The Win98 VM is outside the repo, so T5 is
+  expected-output documentation only, not a gate.
+- **Build mode:** since M5 S1/S2 the client builds and runs **`-fsafe`** (the
+  example UB that `-ffast` hid is fixed); every tier and every mock is
+  `-fsafe`. The example's build-command recipes no longer say `-ffast`.
+
+Gates (example-only; from the repo root with
+`ZIG=/tmp/z9_m5_seed/zig1_5_clean`): `tests/tier1.sh` `16/0`,
+`tests/tier2.sh` `17/0`; `tests/tier4_wine.sh` `18/0` under Wine. This task
+(T3) changes only `examples/z98/z9torr/` docs and header comments; the compiler
+and seed are untouched.
+
+Next: none (M5 is the final milestone; `z9torr` is delivered).

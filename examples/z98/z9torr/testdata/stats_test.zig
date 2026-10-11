@@ -8,7 +8,7 @@
 //
 // Build (binding recipe), entry is this file:
 //   mkdir -p out
-//   timeout 120 /tmp/z9_m0_seed/zig1_5_clean -ffast -o out testdata/stats_test.zig
+//   timeout 120 /tmp/z9_m0_seed/zig1_5_clean -fsafe -o out testdata/stats_test.zig
 //   sh out/build_target.sh linux out/prog
 //   ./out/prog
 //
