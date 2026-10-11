@@ -103,12 +103,19 @@ pub const Mapping = struct {
 
 // One mode (Task 3): block size selector plus the mapping it uses. In Vorbis I
 // `window_type`/`transform_type` are always 0.
-pub const Mode = struct {
+// The mode struct is named `VorbisMode` (not `Mode`) because @sizeOf("Mode")
+// inside this module resolves to an unrelated same-named type elsewhere in the
+// program (the std_file.Mode enum, whose size is 4); that mis-sized the mode
+// array and let its tail write into the next arena allocation. `Mode` remains
+// as a public alias for API compatibility.
+pub const VorbisMode = struct {
     blockflag: bool,
     window_type: u16,
     transform_type: u16,
     mapping: u8,
 };
+
+pub const Mode = VorbisMode;
 
 // Parsed setup header. Task 1/2 filled `codebooks`; Task 3 adds the time-domain
 // transform count and the floor/residue/mapping/mode lists. All slices are
@@ -119,7 +126,7 @@ pub const Setup = struct {
     floors: []Floor,
     residues: []Residue,
     mappings: []Mapping,
-    modes: []Mode,
+    modes: []VorbisMode,
 };
 
 // LSB-first bit reader over a Vorbis packet (the setup tail or, later, an
@@ -440,13 +447,13 @@ fn parseMapping(arena: *std.arena.Arena, br: *BitReader, m: *Mapping, channels: 
 
 // Parse one mode (spec 4.2.4) into `m`. Vorbis I requires both the window type
 // and the transform type to be 0.
-fn parseMode(br: *BitReader, m: *Mode) ogg.OggError!void {
+fn parseMode(br: *BitReader, m: *VorbisMode) ogg.OggError!void {
     var bf: u32 = try brRead(br, 1);
     var wt: u32 = try brRead(br, 16);
     var tt: u32 = try brRead(br, 16);
     var mp: u32 = try brRead(br, 8);
     if (wt != 0 or tt != 0) return error.BadVersion;
-    m.* = Mode{
+    m.* = VorbisMode{
         .blockflag = (bf == 1),
         .window_type = @intCast(u16, wt),
         .transform_type = @intCast(u16, tt),
@@ -624,8 +631,8 @@ pub fn parseSetup(arena: *std.arena.Arena, packet: []const u8, channels: u32) og
 
     // --- modes, then the framing bit ---
     var mode_count: u32 = (try brRead(&br, 6)) + 1;
-    var raw_mo: [*]u8 = std.arena.alloc(arena, @intCast(usize, mode_count) * @sizeOf(Mode)) catch return error.OutOfMemory;
-    var modes: [*]Mode = @ptrCast([*]Mode, raw_mo);
+    var raw_mo: [*]u8 = std.arena.alloc(arena, @intCast(usize, mode_count) * @sizeOf(VorbisMode)) catch return error.OutOfMemory;
+    var modes: [*]VorbisMode = @ptrCast([*]VorbisMode, raw_mo);
     var moi: u32 = 0;
     while (moi < mode_count) : (moi += 1) {
         try parseMode(&br, &modes[moi]);
