@@ -16,9 +16,11 @@ const std = @import("std");
 pub const MODE_INFO: u8 = 1;
 pub const MODE_DUMP_SETUP: u8 = 2;
 pub const MODE_PCM: u8 = 3;
+pub const MODE_WAV: u8 = 4;
 
-// Parsed arguments: exactly one request (`--info`, `--dump-setup` or `--pcm`)
-// and its target file path(s). `out_path` is empty except for `--pcm`.
+// Parsed arguments: exactly one request (`--info`, `--dump-setup`, `--pcm` or
+// `--wav`) and its target file path(s). `out_path` is empty except for
+// `--pcm`/`--wav`.
 pub const Args = struct {
     mode: u8,
     path: []const u8,
@@ -51,6 +53,8 @@ pub fn usage() void {
     std.io.write(l3);
     var l4: []const u8 = "  --pcm <in.ogg> <out.wav> decode to a canonical 44-byte-header PCM WAV (s16, interleaved)\n";
     std.io.write(l4);
+    var l4b: []const u8 = "  --wav <in.ogg> <out.wav> play through the Player core into the hermetic WAV sink (M4 gate)\n";
+    std.io.write(l4b);
     var l5: []const u8 = "  -h, --help               show this help\n";
     std.io.write(l5);
     var l6: []const u8 = "  --version                show version\n";
@@ -110,6 +114,17 @@ pub fn parseArgs(argc: i32, argv: [*][*]u8) Args {
             out_path = argAt(argv, i);
             if (out_path.len == 0) usageError();
             mode = MODE_PCM;
+        } else if (eq(tok, "--wav")) {
+            if (mode != 0) usageError();
+            i += 1;
+            if (i >= n) usageError();
+            path = argAt(argv, i);
+            if (path.len == 0) usageError();
+            i += 1;
+            if (i >= n) usageError();
+            out_path = argAt(argv, i);
+            if (out_path.len == 0) usageError();
+            mode = MODE_WAV;
         } else {
             usageError();
         }

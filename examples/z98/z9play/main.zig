@@ -1,5 +1,6 @@
 // main.zig — z9play entry point (z9play M0/M1/M3: `--info` metadata query,
-// `--dump-setup` setup summary, and `--pcm` decode-to-WAV).
+// `--dump-setup` setup summary, and `--pcm` decode-to-WAV; M4: `--wav` Player
+// playback into the hermetic WAV sink).
 //
 // Pure Z98: free functions, no generics, no @cImport, strict @intCast, string
 // literals via `var s: []const u8 = "..."`. Reads one OGG file and reassembles
@@ -25,9 +26,18 @@
 //
 //                   codebooks=<n> floors=<n> residues=<n> mappings=<n> modes=<n>
 //
+//   --pcm <in> <out>  decode every audio packet to a canonical 44-byte-header
+//                 PCM WAV (the M3 decode reference).
+//
+//   --wav <in> <out>  drive the M4 Player core (decode -> double-buffer ring ->
+//                 the platform `AudioOut` vtable) into the hermetic WAV sink
+//                 (platform/audio_wavfile.zig). No audio device is used. On
+//                 success it prints `wav: ended frames=<n> pos_ms=<n>
+//                 monotonic=<0|1>`; this is the path tests/tier_audio.sh gates.
+//
 // Exit codes (design spec §5): 0 ok / 1 args (cli.zig) / 2 open / 3 decoder
-// (malformed container, header, setup, or a non-Vorbis stream). No audio, no
-// playback — that is M4/M5.
+// (malformed container, header, setup, or a non-Vorbis stream) or a playback /
+// audio failure.
 //
 // Build/run from the repo root (binding seed recipe):
 //   mkdir -p out
@@ -43,6 +53,9 @@ const ogg = @import("ogg.zig");
 const vi = @import("vorbis_info.zig");
 const vs = @import("vorbis_setup.zig");
 const dec = @import("decode.zig");
+const audio = @import("platform/audio.zig");
+const wav = @import("platform/audio_wavfile.zig");
+const player = @import("player.zig");
 
 // Backing store for the read/reassembly/comment arena; module-global so it does
 // not sit on the 32-bit stack (~11 KiB fixtures need a small fraction of this).
@@ -53,6 +66,13 @@ var arena_buf: [4 * 1024 * 1024]u8 = undefined;
 // accumulate over the stream; the read/reassembly arena above is reused for the
 // container and must stay intact. Module-global so it is off the 32-bit stack.
 var dec_arena_buf: [16 * 1024 * 1024]u8 = undefined;
+
+// `--wav` (M4 Player) backing stores: `wav_scratch_buf` is the per-packet decode
+// scratch (reset by vorbisNext each packet, so it stays small); `wav_player_buf`
+// backs the Player's double-buffer ring + one-block scratch. Both are module-
+// global to keep them off the 32-bit stack.
+var wav_scratch_buf: [8 * 1024 * 1024]u8 = undefined;
+var wav_player_buf: [2 * 1024 * 1024]u8 = undefined;
 
 fn writeText(s: []const u8) void {
     std.io.write(s);
@@ -322,6 +342,132 @@ pub fn main(argc: i32, argv: [*][*]u8) void {
             std.os.exit(2);
             return;
         };
+        std.os.exit(0);
+        return;
+    }
+
+    // --wav <in.ogg> <out.wav>: drive the M4 Player core (decode -> double
+    // buffer ring -> audio vtable) into the hermetic WAV sink. This is the M4
+    // gate path (tests/tier_audio.sh): it exercises the real Player + audio
+    // output layer with no device dependency. Exit codes follow the spec:
+    // 3 = malformed stream / decode / audio failure, 2 = sink open failure.
+    if (args.mode == cli.MODE_WAV) {
+        if (packets.len < 3) {
+            var msg: []const u8 = "z9play: missing Vorbis setup header\n";
+            std.io.write(msg);
+            std.os.exit(3);
+            return;
+        }
+
+        // Persistent decode state (setup, DecoderState, the VorbisCtx and its
+        // one-block scratch) off the 32-bit stack; `scratch` is reset per packet
+        // by vorbisNext; `par` backs the Player ring + block buffer. `darena`
+        // reuses the --pcm decode arena (mutually exclusive modes).
+        var darena = std.arena.init(dec_arena_buf[0..]);
+        var scratch = std.arena.init(wav_scratch_buf[0..]);
+        var par = std.arena.init(wav_player_buf[0..]);
+
+        var setup: vs.Setup = vs.parseSetup(&darena, packets[2].bytes, @intCast(u32, id.channels)) catch {
+            var msg: []const u8 = "z9play: bad Vorbis setup header\n";
+            std.io.write(msg);
+            std.os.exit(3);
+            return;
+        };
+        var state: dec.DecoderState = dec.initDecoderState(&darena, setup, id.channels, id.blocksize_0, id.blocksize_1) catch {
+            var msg: []const u8 = "z9play: cannot initialize the decoder\n";
+            std.io.write(msg);
+            std.os.exit(3);
+            return;
+        };
+        var last: u64 = ogg.lastGranule(&arena, data) catch {
+            var msg: []const u8 = "z9play: cannot locate the audio granule\n";
+            std.io.write(msg);
+            std.os.exit(3);
+            return;
+        };
+        var vc: *player.VorbisCtx = player.vorbisCreate(&darena, &scratch, packets, setup, state, 3, id.sample_rate, id.channels, last) catch {
+            var msg: []const u8 = "z9play: cannot initialize the player decoder\n";
+            std.io.write(msg);
+            std.os.exit(3);
+            return;
+        };
+        var decv: player.Decoder = player.Decoder{
+            .ctx = @ptrCast(*void, vc),
+            .next_fn = player.vorbisNext,
+            .max_frames = vc.max_frames,
+            .sample_rate = vc.sample_rate,
+            .channels = vc.channels,
+            .total_frames = vc.total_frames,
+        };
+
+        wav.setOutputPath(args.out_path);
+        var actx: *void = wav.open(id.sample_rate, id.channels) catch {
+            var msg: []const u8 = "z9play: cannot open the WAV sink\n";
+            std.io.write(msg);
+            std.os.exit(2);
+            return;
+        };
+        var ao: audio.AudioOut = audio.AudioOut{
+            .open_fn = wav.open,
+            .write_fn = wav.write,
+            .close_fn = wav.close,
+            .drain_fn = wav.drain,
+            .state = actx,
+        };
+        var meta: player.Meta = player.Meta{ .title = null, .artist = null, .album = null };
+
+        var pl: player.Player = undefined;
+        player.playerInit(&pl, &par, &decv, &ao, meta) catch {
+            var msg: []const u8 = "z9play: cannot initialize the player\n";
+            std.io.write(msg);
+            std.os.exit(3);
+            return;
+        };
+
+        // Pump to completion; assert the reported position is monotonic.
+        var monotonic: bool = true;
+        var prev_ms: u64 = 0;
+        while (pl.state == player.PlayerState.playing) {
+            player.playerPump(&pl) catch {
+                var msg: []const u8 = "z9play: playback failed\n";
+                std.io.write(msg);
+                std.os.exit(3);
+                return;
+            };
+            var pos_ms: u64 = player.playerPositionMs(&pl);
+            if (pos_ms < prev_ms) monotonic = false;
+            prev_ms = pos_ms;
+        }
+        if (pl.state != player.PlayerState.ended) {
+            var msg: []const u8 = "z9play: playback did not end cleanly\n";
+            std.io.write(msg);
+            std.os.exit(3);
+            return;
+        }
+        pl.audio.drain_fn(pl.audio.state) catch {
+            var msg: []const u8 = "z9play: audio drain failed\n";
+            std.io.write(msg);
+            std.os.exit(3);
+            return;
+        };
+        pl.audio.close_fn(pl.audio.state);
+
+        var l_end: []const u8 = "wav: ended frames=";
+        writeText(l_end);
+        writeU64(pl.frames_written);
+        var l_pos: []const u8 = " pos_ms=";
+        writeText(l_pos);
+        writeU64(prev_ms);
+        var l_mono: []const u8 = " monotonic=";
+        writeText(l_mono);
+        if (monotonic) {
+            var t: []const u8 = "1";
+            writeText(t);
+        } else {
+            var f: []const u8 = "0";
+            writeText(f);
+        }
+        writeNl();
         std.os.exit(0);
         return;
     }
