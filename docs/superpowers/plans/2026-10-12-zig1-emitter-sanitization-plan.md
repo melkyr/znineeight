@@ -10,7 +10,9 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-12-zig1-emitter-sanitization-design.md` (binding). Prior art: `docs/superpowers/plans/2026-10-09-zig1-codegen-defects-plan.md`; `examples/torrent_example_defects.md` (D1–D8).
 
-**Sequence:** PREVIOUS: z9play M0–M4 (`examples/z98/z9play/**`). Branch `zig1_improvements`, base seed **v97** (`bafbba9454cd2b134bdc3d50c65384e0`). NEXT: resume z9play M5 (Win9x), then M6+.
+**Sequence:** PREVIOUS: z9play M0–M4 (`examples/z98/z9play/**`). Branch `zig1_improvements`, base seed **v97** (`bafbba9454cd2b134bdc3d50c65384e0`).
+
+**z9play is PAUSED for this milestone.** **After this emitter-sanitization milestone is complete, the NEXT plan is to CONTINUE the z9play plan at M5** (`docs/superpowers/plans/2026-10-11-z9play-m5-cli-plan.md` — the CLI frontend), then M6+ (Win9x, TUI, optional FLAC).
 
 ## Global Constraints
 

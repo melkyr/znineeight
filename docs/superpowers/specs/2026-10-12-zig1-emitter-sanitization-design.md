@@ -86,4 +86,4 @@ Per increment (and at closeout) the **runtime** battery of §1. Because emitted 
 Language semantics; new features; z9play M5+; the parked D7/D8 example workarounds (they become unnecessary once P7/P2 land, but the examples need not change); performance tuning unrelated to a relocated responsibility.
 
 ## §9 Milestone index (updated)
-`2026-10-12 zig1 emitter sanitization & compiler-debt` → `docs/superpowers/plans/2026-10-12-zig1-emitter-sanitization-plan.md`. Ordered P0→P10→closeout; **Task 0 (preflight) fixes the execution order** and finalizes the runtime-equivalence battery. NEXT after it: resume z9play M5 (Win9x) then M6+.
+`2026-10-12 zig1 emitter sanitization & compiler-debt` → `docs/superpowers/plans/2026-10-12-zig1-emitter-sanitization-plan.md`. Ordered P0→P10→closeout; **Task 0 (preflight) fixes the execution order** and finalizes the runtime-equivalence battery. **z9play is PAUSED**; **after this milestone the next plan is to continue the z9play plan at M5** (`docs/superpowers/plans/2026-10-11-z9play-m5-cli-plan.md`, the CLI frontend), then M6+.
