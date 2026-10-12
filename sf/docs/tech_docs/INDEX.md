@@ -144,7 +144,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `aggAccessAppend` | c89_emit.zig |
 | `aggAccessAppendIndex` | c89_emit.zig |
 | `aggIndentStmt` | c89_emit.zig |
-| `aggPackedScratchName` | c89_emit.zig |
+| `aggPackedScratchName` → `nameManglerMintIndexName` (P1) | name_mangler.zig |
 | `aggPrinterName` | c89_emit.zig |
 | `aggregateKeyword` | c89_emit.zig |
 | `alignUp` | type_registry.zig |
@@ -580,7 +580,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `isAlphaNum` | lexer.zig |
 | `isBShapeMismatch` | semantic_analyzer.zig |
 | `isBasePtrToArray` | c89_emit.zig |
-| `isC89Keyword` | c89_emit.zig |
+| `isC89Keyword` | name_mangler.zig |
 | `isCompoundTypeExprKind` | type_resolver.zig |
 | `isContainerDeclKind` | type_resolver.zig |
 | `isDeadLocalName` | c89_emit.zig |
@@ -590,7 +590,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `isIdentExpr` | analyzer.zig |
 | `isMarkersEnabled` | pal.zig |
 | `isNullExpr` | analyzer.zig |
-| `isTempOrBuiltin` | c89_emit.zig |
+| `isTempOrBuiltin` | name_mangler.zig |
 | `isU64MaxLiteral` | lexer.zig |
 | `isValueDependency` | type_registry.zig |
 | `itoa` | util/itoa.zig |
@@ -677,9 +677,9 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `main` | main_exp.zig |
 | `main` | strip_main.zig |
 | `mainCRTStartup` | include/zig_pal.c |
-| `mangleC89Keyword` | c89_emit.zig |
-| `mangleLocalName` | c89_emit.zig |
-| `mangleTempName` | c89_emit.zig |
+| `mangleC89Keyword` | name_mangler.zig |
+| `mangleLocalName` → `nameManglerMintLocal` (P1) | name_mangler.zig |
+| `mangleTempName` → `nameManglerMintTemp` (P1) | name_mangler.zig |
 | `mapCapacityFromHint` | util/hash.zig |
 | `markerWrite` | pal.zig |
 | `markerWriteInt` | pal.zig |
@@ -734,10 +734,10 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `moduleResolverTryDir` | module_registry.zig |
 | `nameCacheGet` | type_registry.zig |
 | `nameCachePut` | type_registry.zig |
-| `nameManglerInit` | c89_emit.zig |
-| `nameManglerInit` | name_mangler.zig |
-| `nameManglerMangle` | c89_emit.zig |
-| `nameManglerMangleGlobal` | c89_emit.zig |
+| `nameManglerInit` | name_mangler.zig (+ `c89_emit.zig` forwarder) |
+| `nameManglerMangle` | name_mangler.zig (+ `c89_emit.zig` forwarder) |
+| `nameManglerMangleGlobal` | name_mangler.zig (+ `c89_emit.zig` forwarder) |
+| `nameManglerMintField` / `nameManglerMintIndexName` / `nameManglerMintLocal` / `nameManglerMintMember` / `nameManglerMintModuleStem` / `nameManglerMintSyntheticType` / `nameManglerMintTemp` / `nameManglerFnScope` | name_mangler.zig |
 | `namePrinterName` | c89_emit.zig |
 | `nestEmitBinExpr` | c89_emit.zig |
 | `nestEmitDefRvalue` | c89_emit.zig |
@@ -1216,7 +1216,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `tuAppend` | type_registry.zig |
 | `tupAppend` | type_registry.zig |
 | `typeDbOom` | type_registry.zig |
-| `typeIdName` | c89_emit.zig |
+| `typeIdName` → `nameManglerMintIndexName` (P1) | name_mangler.zig |
 | `typeKindIntWidthBytes` | type_registry.zig |
 | `typeKindIsSignedIntBase` | type_registry.zig |
 | `typeKindIsUnsignedIntBase` | type_registry.zig |
@@ -1339,7 +1339,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `worklistPush` | type_resolver.zig |
 | `write` | extern_c.zig |
 | `writeBytes` | std_fmt.zig |
-| `writeHex` | c89_emit.zig |
+| `writeHex` | name_mangler.zig |
 | `writeHexDigitsU32` | std_fmt.zig |
 | `writeHexDigitsU64` | std_fmt.zig |
 | `writeLit` | std_fmt.zig |
@@ -1527,7 +1527,7 @@ primitive while `FIRST_USER_TYPE` read 20); the source constant is left unchange
 | `U32ArrayList` / `U8ArrayList` | growable_array.zig | Generic dynamic u32 / u8 arrays |
 | `PtrPayload`, `ArrayPayload`, `SlicePayload` | type_registry.zig | Type payload structs |
 | `PackedBitField` / `PackedStructInfo` | type_registry.zig | Packed layout side tables |
-| `NameMangler` | c89_emit.zig | C89 name mangling (inline; `name_mangler.zig` is a minimal counter) |
+| `NameMangler` | name_mangler.zig | C-identifier minting authority (P1; `c89_emit.zig` keeps thin `pub` forwarders) |
 | `BufferedWriter` | c89_emit.zig | 4 KB buffered C89 output writer (fd sink) |
 | `AsyncFrameLayout` | async_frame_layout.zig | Async frame layout (fields, size, state widths) |
 | `AsyncTransformCtx` | async_state_machine.zig | Async step-machine transform context |

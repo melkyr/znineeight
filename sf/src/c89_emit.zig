@@ -15,6 +15,7 @@ const hash_mod = @import("util/hash.zig");
 const interner_mod = @import("string_interner.zig");
 const type_mod = @import("type_registry.zig");
 const mr_mod = @import("module_registry.zig");
+const nm_mod = @import("name_mangler.zig");
 
 const type_resolver = @import("type_resolver.zig");
 const itoa_mod = @import("util/itoa.zig");
@@ -91,48 +92,22 @@ fn dbgPrintU32(val: u32) void {
     pal.markerWrite(buf[sbase .. send]);
 }
 
-pub const NameMangler = struct {
-    hash_seed: u32,
-    cache: U64ToU32Map,
-    keyword_set: U32ToU32Map,
-    collision_mod: U32ToU32Map,
-    collision_name: U32ToU32Map,
-    interner: *StringInterner,
-    exported: ?*U64ToU32Map,
-};
+// P1 (emitter sanitization): the minting authority lives in name_mangler.zig.
+// These thin pub forwarders are the emitter's compatibility surface for
+// external callers (main.zig's emission phase, sf/src/tests/test_name_mangle_bin.zig);
+// the minting LOGIC exists only in name_mangler.zig.
+pub const NameMangler = nm_mod.NameMangler;
 
-
-fn writeHex(buf: []u8, pos: *usize, value: u32) void {
-    var v = value;
-    var hex_buf: [8]u8 = undefined;
-    var i: u32 = @intCast(u32, 8);
-    while (i > @intCast(u32, 0)) {
-        i -= @intCast(u32, 1);
-        var nibble = v & @intCast(u32, 0xF);
-        if (nibble < @intCast(u32, 10)) {
-            hex_buf[@intCast(usize, i)] = @intCast(u8, '0') + @intCast(u8, nibble);
-        } else {
-            hex_buf[@intCast(usize, i)] = @intCast(u8, 'A') + @intCast(u8, nibble - @intCast(u32, 10));
-        }
-        v = v >> @intCast(u32, 4);
-    }
-    var j: usize = @intCast(usize, 0);
-    while (j < @intCast(usize, 8)) : (j += @intCast(usize, 1)) {
-        buf[@intCast(usize, pos.*) + j] = hex_buf[j];
-    }
-    pos.* += @intCast(usize, 8);
+pub fn nameManglerInit(interner: *StringInterner, alloc: *Sand, cache_hint: usize) NameMangler {
+    return nm_mod.nameManglerInit(interner, alloc, cache_hint);
 }
 
-fn isTempOrBuiltin(name: []const u8) u8 {
-    if (name.len < @intCast(usize, 5)) return @intCast(u8, 0);
-    if (name[0] != '_' or name[1] != '_') return @intCast(u8, 0);
-    if (name[2] == 't' and name[3] == 'm' and name[4] == 'p') return @intCast(u8, 1);
-    if (name[2] == 'r' and name[3] == 'e' and name[4] == 't') return @intCast(u8, 1);
-    if (name.len >= @intCast(usize, 11) and name[2] == 'b' and name[3] == 'o' and name[4] == 'o' and
-        name[5] == 't' and name[6] == 's' and name[7] == 't' and name[8] == 'r' and name[9] == 'a' and name[10] == 'p') {
-        return @intCast(u8, 1);
-    }
-    return @intCast(u8, 0);
+pub fn nameManglerMangle(self: *NameMangler, name_id: u32, kind: u8, module_id: u32) u32 {
+    return nm_mod.nameManglerMangle(self, name_id, kind, module_id);
+}
+
+pub fn nameManglerMangleGlobal(self: *NameMangler, registry: *TypeRegistry, name_id: u32, module_id: u32, type_id: u32) u32 {
+    return nm_mod.nameManglerMangleGlobal(self, registry, name_id, module_id, type_id);
 }
 
 // D1-3: the single "is this the entry point name `main`" truth table. Used by
@@ -141,11 +116,6 @@ fn isTempOrBuiltin(name: []const u8) u8 {
 fn isMainName(name: []const u8) u8 {
     if (name.len != @intCast(usize, 4)) return @intCast(u8, 0);
     if (name[0] == 'm' and name[1] == 'a' and name[2] == 'i' and name[3] == 'n') return @intCast(u8, 1);
-    return @intCast(u8, 0);
-}
-
-fn isC89Keyword(self: *NameMangler, name_id: u32) u8 {
-    if (hash_mod.u32ToU32MapGet(&self.keyword_set, name_id)) |_| return @intCast(u8, 1);
     return @intCast(u8, 0);
 }
 
@@ -318,7 +288,7 @@ fn emitFieldAssign(writer: *BufferedWriter, indent_val: u32, registry: *TypeRegi
             if (resolveFieldAccess(writer, registry, interner, mangler, current_fn, base_ty, field_id, efa_mode, src_temp, &efa_name, &efa_tid) != @intCast(u8, 0)) {
                 found = @intCast(u8, 1);
                 var efa_empty: []const u8 = ""; fn_prefix = efa_empty;
-                if (efa_name != @intCast(u32, 0)) { fld_name_val = if (bty.kind == TypeKind.union_type) cUnionMemberName(interner, mangler, efa_name) else interner_mod.stringInternerGet(interner, efa_name); }
+                if (efa_name != @intCast(u32, 0)) { fld_name_val = if (bty.kind == TypeKind.struct_type) nm_mod.nameManglerMintField(mangler, efa_name, base_ty) else nm_mod.nameManglerMintMember(mangler, efa_name, base_ty); }
                 if (bty.kind == TypeKind.slice_type) {
                     if (field_id == type_mod.SLICE_FIELD_PTR) {
                         var efa_el = registry.slice_items[@intCast(usize, bty.payload_idx)].elem;
@@ -414,10 +384,10 @@ fn emitFieldAssign(writer: *BufferedWriter, indent_val: u32, registry: *TypeRegi
 
 // D7-2/D2-3: emit the tagged-union payload designator for `src_temp`,
 // reproducing `.payload.<variant-name>._<sub-field>` when `src_temp`'s type
-// matches a variant field of the union whose payload index is `tu_payload_idx`,
+// matches a variant field of the union whose type id is `tu_tid`,
 // else the bare `.payload`. Shared by emitFieldAssign / .load_field /
 // .store_field (each passes its own source/value/result temp).
-fn emitVariantFieldPayload(writer: *BufferedWriter, registry: *TypeRegistry, interner: *StringInterner, mangler: *NameMangler, current_fn: *LirFunction, tu_payload_idx: u32, src_temp: u32) void {
+fn emitVariantFieldPayload(writer: *BufferedWriter, registry: *TypeRegistry, interner: *StringInterner, mangler: *NameMangler, current_fn: *LirFunction, tu_tid: u32, src_temp: u32) void {
     var evp_src_ty: u32 = @intCast(u32, 0xFFFFFFFF);
     var evp_stj: usize = @intCast(usize, 0);
     while (evp_stj < current_fn.hoisted_temps.len) : (evp_stj += @intCast(usize, 1)) {
@@ -426,14 +396,15 @@ fn emitVariantFieldPayload(writer: *BufferedWriter, registry: *TypeRegistry, int
     }
     var evp_vfound: u8 = @intCast(u8, 0);
     if (evp_src_ty != @intCast(u32, 0xFFFFFFFF) and evp_src_ty != type_mod.TYPE_VOID) {
-        var evp_tp = registry.tu_items[@intCast(usize, tu_payload_idx)];
+        var evp_ty = registry.types_items[@intCast(usize, tu_tid)];
+        var evp_tp = registry.tu_items[@intCast(usize, evp_ty.payload_idx)];
         var evp_vfi: usize = @intCast(usize, 0);
         while (evp_vfi < @intCast(usize, evp_tp.fields_count) and evp_vfound == @intCast(u8, 0)) : (evp_vfi += @intCast(usize, 1)) {
             var evp_vfe = registry.fe_items[@intCast(usize, evp_tp.fields_start) + evp_vfi];
             if (evp_vfe.type_id == evp_src_ty) {
                 evp_vfound = @intCast(u8, 1);
                 var evp_pld: []const u8 = ".payload."; bufferedWriterWrite(writer, evp_pld);
-                var evp_vname = cUnionMemberName(interner, mangler, evp_vfe.name_id);
+                var evp_vname = nm_mod.nameManglerMintMember(mangler, evp_vfe.name_id, tu_tid);
                 bufferedWriterWrite(writer, evp_vname);
                 var evp_dot: []const u8 = "._"; bufferedWriterWrite(writer, evp_dot);
                 var evp_sfe_idx: u32 = @intCast(u32, 0);
@@ -466,7 +437,7 @@ fn resolveFieldAccess(writer: *BufferedWriter, registry: *TypeRegistry, interner
             var ar_st = registry.st_items[@intCast(usize, rfa_bty.payload_idx)];
             var ar_fe = registry.fe_items[@intCast(usize, ar_st.fields_start) + @intCast(usize, field_id)];
             var ar_r: []const u8 = "->"; bufferedWriterWrite(writer, ar_r);
-            var ar_nm = interner_mod.stringInternerGet(interner, ar_fe.name_id);
+            var ar_nm = nm_mod.nameManglerMintField(mangler, ar_fe.name_id, base_ty);
             bufferedWriterWrite(writer, ar_nm);
             name_out.* = ar_fe.name_id; fld_tid_out.* = ar_fe.type_id;
             return @intCast(u8, 1);
@@ -475,7 +446,7 @@ fn resolveFieldAccess(writer: *BufferedWriter, registry: *TypeRegistry, interner
             var au_up = registry.un_items[@intCast(usize, rfa_bty.payload_idx)];
             var au_fe = registry.fe_items[@intCast(usize, au_up.fields_start) + @intCast(usize, field_id)];
             var au_r: []const u8 = "->"; bufferedWriterWrite(writer, au_r);
-            var au_nm = cUnionMemberName(interner, mangler, au_fe.name_id);
+            var au_nm = nm_mod.nameManglerMintMember(mangler, au_fe.name_id, base_ty);
             bufferedWriterWrite(writer, au_nm);
             name_out.* = au_fe.name_id; fld_tid_out.* = au_fe.type_id;
             return @intCast(u8, 1);
@@ -497,7 +468,7 @@ fn resolveFieldAccess(writer: *BufferedWriter, registry: *TypeRegistry, interner
     if (rfa_bty.kind == type_mod.TypeKind.tagged_union_type) {
         if ((mode & @intCast(u32, 8)) != @intCast(u32, 0)) {
             if (field_id == type_mod.TU_FIELD_TAG) { var rfa_tt: []const u8 = ".tag"; bufferedWriterWrite(writer, rfa_tt); return @intCast(u8, 1); }
-            if (field_id == type_mod.TU_FIELD_PAYLOAD) { emitVariantFieldPayload(writer, registry, interner, mangler, current_fn, rfa_bty.payload_idx, payload_temp); return @intCast(u8, 1); }
+            if (field_id == type_mod.TU_FIELD_PAYLOAD) { emitVariantFieldPayload(writer, registry, interner, mangler, current_fn, base_ty, payload_temp); return @intCast(u8, 1); }
         }
         return @intCast(u8, 0);
     }
@@ -511,7 +482,7 @@ fn resolveFieldAccess(writer: *BufferedWriter, registry: *TypeRegistry, interner
             if (rp_bounds == @intCast(u8, 0) or @intCast(usize, field_id) < @intCast(usize, rp_st.fields_count)) {
                 var rp_fe = registry.fe_items[@intCast(usize, rp_st.fields_start) + @intCast(usize, field_id)];
                 var rp_r: []const u8 = "->"; bufferedWriterWrite(writer, rp_r);
-                var rp_nm = interner_mod.stringInternerGet(interner, rp_fe.name_id);
+                var rp_nm = nm_mod.nameManglerMintField(mangler, rp_fe.name_id, rp_pointee);
                 bufferedWriterWrite(writer, rp_nm);
                 name_out.* = rp_fe.name_id; fld_tid_out.* = rp_fe.type_id;
             }
@@ -522,7 +493,7 @@ fn resolveFieldAccess(writer: *BufferedWriter, registry: *TypeRegistry, interner
             if (rp_bounds == @intCast(u8, 0) or @intCast(usize, field_id) < @intCast(usize, rp_up.fields_count)) {
                 var rp_fe = registry.fe_items[@intCast(usize, rp_up.fields_start) + @intCast(usize, field_id)];
                 var rp_r: []const u8 = "->"; bufferedWriterWrite(writer, rp_r);
-                var rp_nm = if (rp_pty.kind == type_mod.TypeKind.union_type) cUnionMemberName(interner, mangler, rp_fe.name_id) else interner_mod.stringInternerGet(interner, rp_fe.name_id);
+                var rp_nm = nm_mod.nameManglerMintMember(mangler, rp_fe.name_id, rp_pointee);
                 bufferedWriterWrite(writer, rp_nm);
                 name_out.* = rp_fe.name_id; fld_tid_out.* = rp_fe.type_id;
             }
@@ -556,7 +527,7 @@ fn resolveFieldAccess(writer: *BufferedWriter, registry: *TypeRegistry, interner
         if ((mode & @intCast(u32, 16)) == @intCast(u32, 0) or @intCast(usize, field_id) < vn_fcount) {
             var vn_fe = registry.fe_items[vn_fstart + @intCast(usize, field_id)];
             var vn_d: []const u8 = "."; bufferedWriterWrite(writer, vn_d);
-            var vn_nm = if (rfa_bty.kind == type_mod.TypeKind.union_type) cUnionMemberName(interner, mangler, vn_fe.name_id) else interner_mod.stringInternerGet(interner, vn_fe.name_id);
+            var vn_nm = if (rfa_bty.kind == type_mod.TypeKind.struct_type) nm_mod.nameManglerMintField(mangler, vn_fe.name_id, base_ty) else nm_mod.nameManglerMintMember(mangler, vn_fe.name_id, base_ty);
             bufferedWriterWrite(writer, vn_nm);
             name_out.* = vn_fe.name_id; fld_tid_out.* = vn_fe.type_id;
             return @intCast(u8, 1);
@@ -575,179 +546,6 @@ fn resolveFieldAccess(writer: *BufferedWriter, registry: *TypeRegistry, interner
     return @intCast(u8, 0);
 }
 
-fn mangleC89Keyword(self: *NameMangler, name: []const u8) u32 {
-    var buf: [33]u8 = undefined;
-    buf[0] = @intCast(u8, 'z');
-    buf[1] = @intCast(u8, '_');
-    var i: usize = @intCast(usize, 0);
-    while (i < name.len and i + @intCast(usize, 2) < @intCast(usize, 33)) : (i += @intCast(usize, 1)) {
-        buf[i + @intCast(usize, 2)] = name[i];
-    }
-    return interner_mod.stringInternerIntern(self.interner, buf[0 .. i + @intCast(usize, 2)]);
-}
-
-// D1: a `union(enum)` tag or a bare-union member may be any Zig identifier
-// (C keywords such as `int` are not Zig keywords), so the emitted C union
-// member must be a valid C89 identifier. Reuse the existing `z_` C-keyword
-// escape; every non-keyword name is returned byte-identical. Shared by the
-// declaration (emitTaggedUnionType / emitUnionType) and every access site
-// (emitVariantFieldPayload / resolveFieldAccess) so the two cannot drift.
-fn cUnionMemberName(interner: *StringInterner, mangler: *NameMangler, name_id: u32) []const u8 {
-    if (isC89Keyword(mangler, name_id) != @intCast(u8, 0)) {
-        var cun_raw = interner_mod.stringInternerGet(interner, name_id);
-        var cun_mid = mangleC89Keyword(mangler, cun_raw);
-        return interner_mod.stringInternerGet(interner, cun_mid);
-    }
-    return interner_mod.stringInternerGet(interner, name_id);
-}
-
-fn nameManglerPopulateKeywords(self: *NameMangler) void {
-    var k0: []const u8 = "auto";
-    var k1: []const u8 = "break";
-    var k2: []const u8 = "case";
-    var k3: []const u8 = "char";
-    var k4: []const u8 = "const";
-    var k5: []const u8 = "continue";
-    var k6: []const u8 = "default";
-    var k7: []const u8 = "do";
-    var k8: []const u8 = "double";
-    var k9: []const u8 = "else";
-    var k10: []const u8 = "enum";
-    var k11: []const u8 = "extern";
-    var k12: []const u8 = "float";
-    var k13: []const u8 = "for";
-    var k14: []const u8 = "goto";
-    var k15: []const u8 = "if";
-    var k16: []const u8 = "int";
-    var k17: []const u8 = "long";
-    var k18: []const u8 = "register";
-    var k19: []const u8 = "return";
-    var k20: []const u8 = "short";
-    var k21: []const u8 = "signed";
-    var k22: []const u8 = "sizeof";
-    var k23: []const u8 = "static";
-    var k24: []const u8 = "struct";
-    var k25: []const u8 = "switch";
-    var k26: []const u8 = "typedef";
-    var k27: []const u8 = "union";
-    var k28: []const u8 = "unsigned";
-    var k29: []const u8 = "void";
-    var k30: []const u8 = "volatile";
-    var k31: []const u8 = "while";
-    var keywords: [32][]const u8 = [32][]const u8{ k0, k1, k2, k3, k4, k5, k6, k7, k8, k9, k10, k11, k12, k13, k14, k15, k16, k17, k18, k19, k20, k21, k22, k23, k24, k25, k26, k27, k28, k29, k30, k31 };
-    var ki: usize = @intCast(usize, 0);
-    while (ki < keywords.len) : (ki += @intCast(usize, 1)) {
-        hash_mod.u32ToU32MapPut(&self.keyword_set, interner_mod.stringInternerIntern(self.interner, keywords[ki]), @intCast(u32, 1));
-    }
-}
-
-pub fn nameManglerInit(interner: *StringInterner, alloc: *Sand, cache_hint: usize) NameMangler {
-    var mangler = NameMangler{
-        .hash_seed = @intCast(u32, 0),
-        .cache = hash_mod.u64ToU32MapInitCap(alloc, cache_hint),
-        .keyword_set = hash_mod.u32ToU32MapInitCap(alloc, @intCast(usize, 32)),
-        .collision_mod = hash_mod.u32ToU32MapInit(alloc),
-        .collision_name = hash_mod.u32ToU32MapInit(alloc),
-        .interner = interner,
-        .exported = null,
-    };
-    nameManglerPopulateKeywords(&mangler);
-    return mangler;
-}
-
-pub fn nameManglerMangle(self: *NameMangler, name_id: u32, kind: u8, module_id: u32) u32 {
-    var name = interner_mod.stringInternerGet(self.interner, name_id);
-    if (isTempOrBuiltin(name) != @intCast(u8, 0)) return name_id;
-    if (isC89Keyword(self, name_id) != @intCast(u8, 0)) return mangleC89Keyword(self, name);
-    var key: u64 = (@intCast(u64, module_id) << @intCast(u64, 35)) | (@intCast(u64, kind) << @intCast(u64, 32)) | @intCast(u64, name_id);
-    if (self.exported) |exp_map| {
-        if (hash_mod.u64ToU32MapGet(exp_map, key)) |_| return name_id;
-    }
-    if (hash_mod.u64ToU32MapGet(&self.cache, key)) |cached| {
-        return cached;
-    }
-    var hash = hash_mod.fnv1a(name);
-    var kind_char: u8 = @intCast(u8, 'L');
-    if (kind == @intCast(u8, 0)) { kind_char = @intCast(u8, 'F'); }
-    else if (kind == @intCast(u8, 1)) { kind_char = @intCast(u8, 'G'); }
-    else if (kind == @intCast(u8, 2)) { kind_char = @intCast(u8, 'T'); }
-    var buf: [32]u8 = undefined;
-    var p: usize = @intCast(usize, 0);
-    buf[p] = @intCast(u8, 'z'); p += @intCast(usize, 1);
-    buf[p] = kind_char;          p += @intCast(usize, 1);
-    buf[p] = @intCast(u8, '_');  p += @intCast(usize, 1);
-    writeHex(buf[0..], &p, hash);
-    buf[p] = @intCast(u8, '_');  p += @intCast(usize, 1);
-    var prefix_end = p;
-    var idx: usize = @intCast(usize, 0);
-    while (idx < name.len and p < @intCast(usize, 31)) : (idx += @intCast(usize, 1)) {
-        buf[p] = name[idx];
-        p += @intCast(usize, 1);
-    }
-    if (p > @intCast(usize, 31)) p = @intCast(usize, 31);
-    var mangled_id = interner_mod.stringInternerIntern(self.interner, buf[0..p]);
-    // Collision resolution: if mangled_id already used by a different (module_id,name_id),
-    // append _N suffix, truncating base name to fit within 31-char C89 limit.
-    // Digit count computed dynamically to avoid truncation inside the suffix number.
-    var counter: u32 = @intCast(u32, 0);
-    while (true) {
-        var existing_mod = hash_mod.u32ToU32MapGet(&self.collision_mod, mangled_id);
-        if (existing_mod) |_| {
-            counter += @intCast(u32, 1);
-            p = prefix_end;
-            var cnt = counter;
-            var dc: u32 = @intCast(u32, 1);
-            while (cnt >= @intCast(u32, 10)) : (cnt /= @intCast(u32, 10)) {
-                dc += @intCast(u32, 1);
-            }
-            var max_nc: usize = @intCast(usize, 31) - prefix_end - @intCast(usize, 1) - @intCast(usize, dc);
-            var ci: usize = @intCast(usize, 0);
-            while (ci < name.len and p < prefix_end + max_nc) : (ci += @intCast(usize, 1)) {
-                buf[p] = name[ci];
-                p += @intCast(usize, 1);
-            }
-            buf[p] = @intCast(u8, '_'); p += @intCast(usize, 1);
-            var cv = counter;
-            var cd: [4]u8 = undefined;
-            var di: u32 = @intCast(u32, 0);
-            while (cv > @intCast(u32, 0)) {
-                cd[@intCast(usize, di)] = @intCast(u8, '0') + @intCast(u8, cv % @intCast(u32, 10));
-                cv /= @intCast(u32, 10);
-                di += @intCast(u32, 1);
-            }
-            if (di == @intCast(u32, 0)) {
-                buf[p] = @intCast(u8, '0'); p += @intCast(usize, 1);
-            } else {
-                var dk: u32 = di;
-                while (dk > @intCast(u32, 0)) {
-                    dk -= @intCast(u32, 1);
-                    buf[p] = cd[@intCast(usize, dk)]; p += @intCast(usize, 1);
-                }
-            }
-            if (p > @intCast(usize, 31)) p = @intCast(usize, 31);
-            mangled_id = interner_mod.stringInternerIntern(self.interner, buf[0..p]);
-        } else {
-            break;
-        }
-    }
-    hash_mod.u32ToU32MapPut(&self.collision_mod, mangled_id, module_id);
-    hash_mod.u32ToU32MapPut(&self.collision_name, mangled_id, name_id);
-    hash_mod.u64ToU32MapPut(&self.cache, key, mangled_id);
-    return mangled_id;
-}
-
-pub fn nameManglerMangleGlobal(self: *NameMangler, registry: *TypeRegistry, name_id: u32, module_id: u32, type_id: u32) u32 {
-    if (type_id < @intCast(u32, registry.types_len)) {
-        var ty = registry.types_items[@intCast(usize, type_id)];
-        if (ty.name_id != @intCast(u32, 0) and ty.name_id == name_id) {
-            // Type-storage global: identity = the stored type (name + owning module),
-            // so every module aliasing this type agrees on ONE C symbol.
-            return nameManglerMangle(self, ty.name_id, @intCast(u8, 1), ty.module_id);
-        }
-    }
-    // User module global: keep per-module keying.
-    return nameManglerMangle(self, name_id, @intCast(u8, 1), module_id);
-}
 
  pub const C89Emitter = struct {
      writer: BufferedWriter,
@@ -761,6 +559,7 @@ pub fn nameManglerMangleGlobal(self: *NameMangler, registry: *TypeRegistry, name
      switch_cases: *SwitchCaseArrayList,
      call_args: *U32ArrayList,
      current_fn: *LirFunction,
+     current_fn_scope: u32,
      spill: *lir_stream_mod.LirStream,
      fn_slots: [*]lir_mod.LirSlot,
      fn_slots_start: usize,
@@ -835,6 +634,7 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
          .switch_cases = sc,
          .call_args = ca,
          .current_fn = undefined,
+         .current_fn_scope = @intCast(u32, 0),
          .spill = undefined,
          .fn_slots = undefined,
          .fn_slots_start = @intCast(usize, 0),
@@ -890,38 +690,6 @@ fn aggregateKeyword(kind: TypeKind) []const u8 {
     var s: []const u8 = "struct "; return s;
 }
 
-// D5-5: one synthetic type-name builder for the array/slice/optional/tuple
-// C names. Shape: `prefix + transformed(elem_name)` then, when `len_text` is
-// non-empty, `"_" + len_text` (with the `_` only when an element name was
-// present). `transformed` maps ' ' and '*' to '_'. The interned buffer is
-// mangled at module 0, byte-identical to the prior per-kind builders.
-fn syntheticTypeName(mangler: *NameMangler, prefix: []const u8, elem_name: []const u8, len_text: []const u8, cap: usize) []const u8 {
-    var buf: [128]u8 = undefined;
-    var p: usize = @intCast(usize, 0);
-    var i: usize = @intCast(usize, 0);
-    while (i < prefix.len and p < cap) : (i += @intCast(usize, 1)) {
-        buf[p] = prefix[i]; p += @intCast(usize, 1);
-    }
-    i = @intCast(usize, 0);
-    while (i < elem_name.len and p < cap) : (i += @intCast(usize, 1)) {
-        var c = elem_name[i];
-        if (c == @intCast(u8, 32) or c == @intCast(u8, 42)) { c = @intCast(u8, 95); }
-        buf[p] = c; p += @intCast(usize, 1);
-    }
-    if (len_text.len > @intCast(usize, 0)) {
-        if (elem_name.len > @intCast(usize, 0) and p < cap) {
-            buf[p] = @intCast(u8, 95); p += @intCast(usize, 1);
-        }
-        i = @intCast(usize, 0);
-        while (i < len_text.len and p < cap) : (i += @intCast(usize, 1)) {
-            buf[p] = len_text[i]; p += @intCast(usize, 1);
-        }
-    }
-    var nid = interner_mod.stringInternerIntern(mangler.interner, buf[0..p]);
-    var mid = nameManglerMangle(mangler, nid, @intCast(u8, 2), @intCast(u32, 0));
-    return interner_mod.stringInternerGet(mangler.interner, mid);
-}
-
 // F2 (D2): a slice's C name must distinguish synthetic elements. The slice
 // branch historically derived its element name from `elem.name_id`; every
 // synthetic element (slice/array/pointer/optional/tuple/error-union) has
@@ -934,7 +702,7 @@ fn sliceElementName(reg: *TypeRegistry, mangler: *NameMangler, elem_tid: u32) []
     if (elem_ty.name_id == @intCast(u32, 0)) {
         return getCTypeName(reg, mangler, elem_tid);
     }
-    var elem_mid = nameManglerMangle(mangler, elem_ty.name_id, @intCast(u8, 2), @intCast(u32, 0));
+    var elem_mid = nm_mod.nameManglerMangle(mangler, elem_ty.name_id, @intCast(u8, 2), @intCast(u32, 0));
     return interner_mod.stringInternerGet(mangler.interner, elem_mid);
 }
 
@@ -953,14 +721,14 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
     if (ty.kind == TypeKind.i16_type) { var s: []const u8 = "short"; return s; }
     if (ty.kind == TypeKind.i32_type) { var s: []const u8 = "int"; return s; }
     if (ty.kind == TypeKind.i64_type) {
-        var mid = nameManglerMangle(mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
+        var mid = nm_mod.nameManglerMangle(mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
         return interner_mod.stringInternerGet(mangler.interner, mid);
     }
     if (ty.kind == TypeKind.u8_type) { var s: []const u8 = "unsigned char"; return s; }
     if (ty.kind == TypeKind.u16_type) { var s: []const u8 = "unsigned short"; return s; }
     if (ty.kind == TypeKind.u32_type) { var s: []const u8 = "unsigned int"; return s; }
     if (ty.kind == TypeKind.u64_type) {
-        var mid = nameManglerMangle(mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
+        var mid = nm_mod.nameManglerMangle(mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
         return interner_mod.stringInternerGet(mangler.interner, mid);
     }
     if (ty.kind == TypeKind.arb_uint_type) {
@@ -977,7 +745,7 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
     }
     if (ty.kind == TypeKind.f32_type) { var s: []const u8 = "float"; return s; }
     if (ty.kind == TypeKind.f64_type) {
-        var mid = nameManglerMangle(mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
+        var mid = nm_mod.nameManglerMangle(mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
         return interner_mod.stringInternerGet(mangler.interner, mid);
     }
     if (ty.kind == TypeKind.usize_type) { var s: []const u8 = "unsigned int"; return s; }
@@ -985,7 +753,7 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
     if (ty.kind == TypeKind.c_char_type) { var s: []const u8 = "char"; return s; }
     if (ty.kind == TypeKind.va_list_type) { var s: []const u8 = "va_list"; return s; }
     if (ty.kind == TypeKind.enum_type) {
-        var mid = nameManglerMangle(mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
+        var mid = nm_mod.nameManglerMangle(mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
         return interner_mod.stringInternerGet(mangler.interner, mid);
     }
     if (ty.kind == TypeKind.array_type) {
@@ -995,7 +763,7 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
         var a_dl = itoa_mod.itoa(ap.length, a_dig[0..]);
         var a_ds: usize = @intCast(usize, 16) - @intCast(usize, 1) - @intCast(usize, a_dl);
         var a_pref: []const u8 = "Arr_";
-        return syntheticTypeName(mangler, a_pref, e_cname, a_dig[a_ds..@intCast(usize, 16) - @intCast(usize, 1)], @intCast(usize, 127));
+        return nm_mod.nameManglerMintSyntheticType(mangler, a_pref, e_cname, a_dig[a_ds..@intCast(usize, 16) - @intCast(usize, 1)], @intCast(usize, 127));
     }
     // Task 4 (z98-print-formatting): tuple types are synthetic (name_id 0), so
     // the generic name_id fallback would collapse every tuple onto the empty-name
@@ -1007,7 +775,7 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
         var t_ds: usize = @intCast(usize, 16) - @intCast(usize, 1) - @intCast(usize, t_dl);
         var t_empty: []const u8 = "";
         var t_pref: []const u8 = "Tup_";
-        return syntheticTypeName(mangler, t_pref, t_empty, t_dig[t_ds..@intCast(usize, 16) - @intCast(usize, 1)], @intCast(usize, 31));
+        return nm_mod.nameManglerMintSyntheticType(mangler, t_pref, t_empty, t_dig[t_ds..@intCast(usize, 16) - @intCast(usize, 1)], @intCast(usize, 31));
     }
     if (ty.kind == TypeKind.ptr_type or ty.kind == TypeKind.many_ptr_type) {
         var pp = reg.ptr_items[@intCast(usize, ty.payload_idx)];
@@ -1062,7 +830,7 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
         var elem_mangled2 = sliceElementName(reg, mangler, sp.elem);
         var s_empty: []const u8 = "";
         var s_pref: []const u8 = "Slice_";
-        return syntheticTypeName(mangler, s_pref, elem_mangled2, s_empty, @intCast(usize, 63));
+        return nm_mod.nameManglerMintSyntheticType(mangler, s_pref, elem_mangled2, s_empty, @intCast(usize, 63));
     }
     if (ty.kind == TypeKind.optional_type) {
         var op = reg.opt_items[@intCast(usize, ty.payload_idx)];
@@ -1071,7 +839,7 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
         var o_ds: usize = @intCast(usize, 9) - @intCast(usize, o_dl);
         var o_empty: []const u8 = "";
         var o_pref: []const u8 = "Opt_";
-        return syntheticTypeName(mangler, o_pref, o_empty, o_dig[o_ds..@intCast(usize, 9)], @intCast(usize, 63));
+        return nm_mod.nameManglerMintSyntheticType(mangler, o_pref, o_empty, o_dig[o_ds..@intCast(usize, 9)], @intCast(usize, 63));
     }
     var c_nid = type_mod.typeRegistryCNameIdGet(reg, tid);
     if (c_nid != 0) {
@@ -1092,7 +860,7 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
             if (di >= @intCast(usize, 63)) break;
         }
         p = di;
-        var eu_nid = nameManglerMangle(mangler, interner_mod.stringInternerIntern(mangler.interner, buf[0..p]), @intCast(u8, 2), @intCast(u32, 0));
+        var eu_nid = nm_mod.nameManglerMangle(mangler, interner_mod.stringInternerIntern(mangler.interner, buf[0..p]), @intCast(u8, 2), @intCast(u32, 0));
         return interner_mod.stringInternerGet(mangler.interner, eu_nid);
     }
     if (ty.kind == TypeKind.fn_type) {
@@ -1142,7 +910,7 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
             }
         }
         var fp_nid = interner_mod.stringInternerIntern(mangler.interner, fbuf[0..fpos]);
-        var fp_mid = nameManglerMangle(mangler, fp_nid, @intCast(u8, 2), @intCast(u32, 0));
+        var fp_mid = nm_mod.nameManglerMangle(mangler, fp_nid, @intCast(u8, 2), @intCast(u32, 0));
         return interner_mod.stringInternerGet(mangler.interner, fp_mid);
     }
     if (ty.kind == TypeKind.error_set_type) {
@@ -1160,13 +928,13 @@ fn getCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []const u8 
                 if (di >= @intCast(usize, 63)) break;
             }
             p = di;
-            var es_nid = nameManglerMangle(mangler, interner_mod.stringInternerIntern(mangler.interner, buf[0..p]), @intCast(u8, 2), @intCast(u32, 0));
+            var es_nid = nm_mod.nameManglerMangle(mangler, interner_mod.stringInternerIntern(mangler.interner, buf[0..p]), @intCast(u8, 2), @intCast(u32, 0));
             return interner_mod.stringInternerGet(mangler.interner, es_nid);
         }
-        var mid = nameManglerMangle(mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
+        var mid = nm_mod.nameManglerMangle(mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
         return interner_mod.stringInternerGet(mangler.interner, mid);
     }
-    var mid = nameManglerMangle(mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
+    var mid = nm_mod.nameManglerMangle(mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
     return interner_mod.stringInternerGet(mangler.interner, mid);
 }
 
@@ -1952,7 +1720,7 @@ fn emitTaggedUnionType(emitter: *C89Emitter, tid: u32) void {
     var reg = emitter.registry;
     var ty = reg.types_items[@intCast(usize, tid)];
     var tp = reg.tu_items[@intCast(usize, ty.payload_idx)];
-    var base_mid = nameManglerMangle(emitter.mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
+    var base_mid = nm_mod.nameManglerMangle(emitter.mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
     var base_str = interner_mod.stringInternerGet(emitter.interner, base_mid);
     var tag_ty = reg.types_items[@intCast(usize, tp.tag_type)];
     var fstart: usize = @intCast(usize, tp.fields_start);
@@ -1972,7 +1740,7 @@ fn emitTaggedUnionType(emitter: *C89Emitter, tid: u32) void {
     }
     if (np > @intCast(usize, 63)) np = @intCast(usize, 63);
     var struct_nid = interner_mod.stringInternerIntern(emitter.interner, name_buf[0..np]);
-    var struct_mid = nameManglerMangle(emitter.mangler, struct_nid, @intCast(u8, 2), @intCast(u32, 0));
+    var struct_mid = nm_mod.nameManglerMangle(emitter.mangler, struct_nid, @intCast(u8, 2), @intCast(u32, 0));
     var struct_name = interner_mod.stringInternerGet(emitter.interner, struct_mid);
     var tag_pref_buf: [64]u8 = undefined;
     var tp_pos: usize = @intCast(usize, 0);
@@ -2040,7 +1808,7 @@ fn emitTaggedUnionType(emitter: *C89Emitter, tid: u32) void {
         var fe = reg.fe_items[fstart + fi];
         var ft = reg.types_items[@intCast(usize, fe.type_id)];
         if (ft.kind != TypeKind.void_type) {
-            var fe_name = cUnionMemberName(emitter.interner, emitter.mangler, fe.name_id);
+            var fe_name = nm_mod.nameManglerMintMember(emitter.mangler, fe.name_id, tid);
             var si1: []const u8 = "\t\tstruct { ";
             bufferedWriterWrite(&emitter.writer, si1);
             var fi_type = getCTypeName(reg, emitter.mangler, fe.type_id);
@@ -2059,7 +1827,7 @@ fn emitTaggedUnionType(emitter: *C89Emitter, tid: u32) void {
 fn emitStructType(emitter: *C89Emitter, tid: u32) void {
     var reg = emitter.registry;
     var ty = reg.types_items[@intCast(usize, tid)];
-    var mangled_id = nameManglerMangle(emitter.mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
+    var mangled_id = nm_mod.nameManglerMangle(emitter.mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
     var mangled_name = interner_mod.stringInternerGet(emitter.interner, mangled_id);
     if (type_mod.typeRegistryIsPacked(reg, tid)) {
         var psz: u32 = ty.size;
@@ -2089,7 +1857,7 @@ fn emitStructType(emitter: *C89Emitter, tid: u32) void {
         var fe_m: []const u8 = "FE:"; pal.measureMarkerWrite(fe_m);
         var fe_nb: [10]u8 = undefined; var fe_nl = itoa_mod.itoa(fe.name_id, fe_nb[0..]); var fe_ns: usize = @intCast(usize, 9) - @intCast(usize, fe_nl); pal.measureMarkerWrite(fe_nb[fe_ns..@intCast(usize, 9)]);
         var fe_c: []const u8 = ":"; pal.measureMarkerWriteInt(fe_c, fe.type_id);
-        var fname = interner_mod.stringInternerGet(emitter.interner, fe.name_id);
+        var fname = nm_mod.nameManglerMintField(emitter.mangler, fe.name_id, tid);
         var ftype = getCTypeName(reg, emitter.mangler, fe.type_id);
         if (fe.type_id != type_mod.TYPE_VOID) {
             var es1: []const u8 = "\t"; bufferedWriterWrite(&emitter.writer, es1);
@@ -2106,7 +1874,7 @@ fn emitStructType(emitter: *C89Emitter, tid: u32) void {
 fn emitUnionType(emitter: *C89Emitter, tid: u32) void {
     var reg = emitter.registry;
     var ty = reg.types_items[@intCast(usize, tid)];
-    var mangled_id = nameManglerMangle(emitter.mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
+    var mangled_id = nm_mod.nameManglerMangle(emitter.mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
     var mangled_name = interner_mod.stringInternerGet(emitter.interner, mangled_id);
     if (ty.kind == TypeKind.packed_union_type) {
         var psz: u32 = ty.size;
@@ -2131,7 +1899,7 @@ fn emitUnionType(emitter: *C89Emitter, tid: u32) void {
     while (i < fcount) : (i += 1) {
         var fe = reg.fe_items[fstart + i];
         if (fe.type_id != type_mod.TYPE_VOID) {
-            var fname = cUnionMemberName(emitter.interner, emitter.mangler, fe.name_id);
+            var fname = nm_mod.nameManglerMintMember(emitter.mangler, fe.name_id, tid);
             var ftype = getCTypeName(reg, emitter.mangler, fe.type_id);
             var es1: []const u8 = "\t"; bufferedWriterWrite(&emitter.writer, es1);
             bufferedWriterWrite(&emitter.writer, ftype);
@@ -2152,7 +1920,7 @@ fn emitArrayType(emitter: *C89Emitter, tid: u32) void {
     var ll2 = itoa_mod.itoa(ap.length, lbuf2[0..]);
     var lst2: usize = @intCast(usize, 16) - @intCast(usize, 1) - @intCast(usize, ll2);
     var ar_pref: []const u8 = "Arr_";
-    var aname = syntheticTypeName(emitter.mangler, ar_pref, ename, lbuf2[lst2..@intCast(usize, 16) - @intCast(usize, 1)], @intCast(usize, 127));
+    var aname = nm_mod.nameManglerMintSyntheticType(emitter.mangler, ar_pref, ename, lbuf2[lst2..@intCast(usize, 16) - @intCast(usize, 1)], @intCast(usize, 127));
     var a0: []const u8 = "typedef "; bufferedWriterWrite(&emitter.writer, a0);
     bufferedWriterWrite(&emitter.writer, ename);
     var a1: []const u8 = " "; bufferedWriterWrite(&emitter.writer, a1);
@@ -2304,7 +2072,7 @@ fn emitErrorCodePrologue(emitter: *C89Emitter) void {
 
 fn emitEnumType(emitter: *C89Emitter, tid: u32) void {
     var ty = emitter.registry.types_items[@intCast(usize, tid)];
-    var mangled_id = nameManglerMangle(emitter.mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
+    var mangled_id = nm_mod.nameManglerMangle(emitter.mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
     var mangled_name = interner_mod.stringInternerGet(emitter.interner, mangled_id);
     var ep = emitter.registry.en_items[@intCast(usize, ty.payload_idx)];
     var ctype = getCTypeName(emitter.registry, emitter.mangler, ep.backing_type);
@@ -2331,7 +2099,7 @@ fn emitEnumType(emitter: *C89Emitter, tid: u32) void {
 // layout on every supported host compiler.
 fn emitInt64Type(emitter: *C89Emitter, tid: u32) void {
     var ty = emitter.registry.types_items[@intCast(usize, tid)];
-    var mangled_id = nameManglerMangle(emitter.mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
+    var mangled_id = nm_mod.nameManglerMangle(emitter.mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
     var mangled_name = interner_mod.stringInternerGet(emitter.interner, mangled_id);
     var td: []const u8 = "typedef long long "; bufferedWriterWrite(&emitter.writer, td);
     bufferedWriterWrite(&emitter.writer, mangled_name);
@@ -2340,7 +2108,7 @@ fn emitInt64Type(emitter: *C89Emitter, tid: u32) void {
 
 fn emitUint64Type(emitter: *C89Emitter, tid: u32) void {
     var ty = emitter.registry.types_items[@intCast(usize, tid)];
-    var mangled_id = nameManglerMangle(emitter.mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
+    var mangled_id = nm_mod.nameManglerMangle(emitter.mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
     var mangled_name = interner_mod.stringInternerGet(emitter.interner, mangled_id);
     var td: []const u8 = "typedef unsigned long long "; bufferedWriterWrite(&emitter.writer, td);
     bufferedWriterWrite(&emitter.writer, mangled_name);
@@ -2349,7 +2117,7 @@ fn emitUint64Type(emitter: *C89Emitter, tid: u32) void {
 
 fn emitF64Type(emitter: *C89Emitter, tid: u32) void {
     var ty = emitter.registry.types_items[@intCast(usize, tid)];
-    var mangled_id = nameManglerMangle(emitter.mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
+    var mangled_id = nm_mod.nameManglerMangle(emitter.mangler, ty.name_id, @intCast(u8, 2), ty.module_id);
     var mangled_name = interner_mod.stringInternerGet(emitter.interner, mangled_id);
     var td: []const u8 = "typedef double "; bufferedWriterWrite(&emitter.writer, td);
     bufferedWriterWrite(&emitter.writer, mangled_name);
@@ -2382,7 +2150,7 @@ fn emitOptionalType(emitter: *C89Emitter, tid: u32) void {
     var ot_s: usize = @intCast(usize, 9) - @intCast(usize, ot_len);
     var ot_empty: []const u8 = "";
     var ot_pref: []const u8 = "Opt_";
-    var mangled_c_name = syntheticTypeName(emitter.mangler, ot_pref, ot_empty, ot_b[ot_s..@intCast(usize, 9)], @intCast(usize, 63));
+    var mangled_c_name = nm_mod.nameManglerMintSyntheticType(emitter.mangler, ot_pref, ot_empty, ot_b[ot_s..@intCast(usize, 9)], @intCast(usize, 63));
     if (pay_ty.kind == type_mod.TypeKind.void_type) {
         var vfov_m: []const u8 = "VFLOW:opV\n"; pal.markerWrite(vfov_m);
         var s1: []const u8 = "typedef struct { int has_value; } ";
@@ -2427,22 +2195,6 @@ fn emitErrorUnionType(emitter: *C89Emitter, tid: u32) void {
         bufferedWriterWrite(&emitter.writer, s3);
     }
     type_mod.typeRegistryCNameIdSet(reg, tid, interner_mod.stringInternerIntern(emitter.interner, mangled_c_name));
-}
-
-fn mangleLocalName(mangler: *NameMangler, interner: *StringInterner, name_id: u32) []const u8 {
-    var name = interner_mod.stringInternerGet(interner, name_id);
-    if (hash_mod.u32ToU32MapGet(&mangler.keyword_set, name_id)) |_| {
-        var buf: [64]u8 = undefined;
-        buf[0] = @intCast(u8, 'z');
-        buf[1] = @intCast(u8, '_');
-        var i: usize = @intCast(usize, 0);
-        while (i < name.len and i + @intCast(usize, 2) < @intCast(usize, 64)) : (i += @intCast(usize, 1)) {
-            buf[i + @intCast(usize, 2)] = name[i];
-        }
-        var mid = interner_mod.stringInternerIntern(interner, buf[0 .. i + @intCast(usize, 2)]);
-        return interner_mod.stringInternerGet(interner, mid);
-    }
-    return name;
 }
 
 fn emitCallConv(emitter: *C89Emitter, call_conv: u8) void {
@@ -2517,7 +2269,7 @@ fn emitCalleeExpr(emitter: *C89Emitter, fn_type_id: u32, name: []const u8) void 
 // D3-7: shared parameter-list emitter. `want_names`=0 reproduces the forward
 // declaration (types only); 1 reproduces the definition (`<ctype> <name>`).
 // Empty list emits `...`/`void`; a non-empty variadic list gets a `, ...` tail.
-fn emitParamList(emitter: *C89Emitter, params: []LirParam, is_variadic: u8, want_names: u8) void {
+fn emitParamList(emitter: *C89Emitter, params: []LirParam, is_variadic: u8, want_names: u8, fn_scope: u32) void {
     if (params.len == @intCast(usize, 0)) {
         if (is_variadic != @intCast(u8, 0)) {
             var vd0: []const u8 = "...";
@@ -2540,7 +2292,7 @@ fn emitParamList(emitter: *C89Emitter, params: []LirParam, is_variadic: u8, want
         if (want_names != @intCast(u8, 0)) {
             var sp2: []const u8 = " ";
             bufferedWriterWrite(&emitter.writer, sp2);
-            var pn = mangleLocalName(emitter.mangler, emitter.interner, param.name_id);
+            var pn = nm_mod.nameManglerMintLocal(emitter.mangler, param.name_id, fn_scope);
             bufferedWriterWrite(&emitter.writer, pn);
         }
     }
@@ -2556,7 +2308,7 @@ pub fn emitFunctionSignature(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     var orig = interner_mod.stringInternerGet(emitter.interner, lir_fn.name_id);
 
      var fwdm: []const u8 = "FWD:n="; pal.measureMarkerWrite(fwdm); var fwdnb: [10]u8 = undefined; var fwdnl = itoa_mod.itoa(lir_fn.name_id, fwdnb[0..]); var fwdns: usize = @intCast(usize, 9) - @intCast(usize, fwdnl); pal.measureMarkerWrite(fwdnb[fwdns..@intCast(usize, 9)]); var fwdmm: []const u8 = " m="; pal.measureMarkerWrite(fwdmm); var fwdmb: [10]u8 = undefined; var fwdml = itoa_mod.itoa(lir_fn.module_id, fwdmb[0..]); var fwdms: usize = @intCast(usize, 9) - @intCast(usize, fwdml); pal.measureMarkerWrite(fwdmb[fwdms..@intCast(usize, 9)]); var fwdnl2: []const u8 = "\n"; pal.measureMarkerWrite(fwdnl2);
-    var fn_mid = nameManglerMangle(emitter.mangler, lir_fn.name_id, @intCast(u8, 0), lir_fn.module_id);
+    var fn_mid = nm_mod.nameManglerMangle(emitter.mangler, lir_fn.name_id, @intCast(u8, 0), lir_fn.module_id);
     var fn_name = interner_mod.stringInternerGet(emitter.interner, fn_mid);
      if (lir_fn.is_extern == @intCast(u8, 1)) { fn_name = orig; }
 
@@ -2578,7 +2330,7 @@ pub fn emitFunctionSignature(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     var op: []const u8 = "(";
     bufferedWriterWrite(&emitter.writer, op);
 
-    emitParamList(emitter, lir_fn.params.items[0..lir_fn.params.len], lir_fn.is_variadic, @intCast(u8, 1));
+    emitParamList(emitter, lir_fn.params.items[0..lir_fn.params.len], lir_fn.is_variadic, @intCast(u8, 1), nm_mod.nameManglerFnScope(emitter.mangler, lir_fn.name_id, lir_fn.module_id));
 
     var cl: []const u8 = ") {\n";
     bufferedWriterWrite(&emitter.writer, cl);
@@ -2591,7 +2343,7 @@ fn emitFunctionForwardDecl(emitter: *C89Emitter, lir_fn: LirFunction) void {
     var sp: []const u8 = " ";
     bufferedWriterWrite(&emitter.writer, sp);
     emitCallConv(emitter, lir_fn.call_conv);
-    var fn_mid = nameManglerMangle(emitter.mangler, lir_fn.name_id, @intCast(u8, 0), lir_fn.module_id);
+    var fn_mid = nm_mod.nameManglerMangle(emitter.mangler, lir_fn.name_id, @intCast(u8, 0), lir_fn.module_id);
     var fn_name = interner_mod.stringInternerGet(emitter.interner, fn_mid);
     if (lir_fn.is_extern == @intCast(u8, 1)) {
         var orig_c = interner_mod.stringInternerGet(emitter.interner, lir_fn.name_id);
@@ -2600,7 +2352,7 @@ fn emitFunctionForwardDecl(emitter: *C89Emitter, lir_fn: LirFunction) void {
     bufferedWriterWrite(&emitter.writer, fn_name);
     var op: []const u8 = "(";
     bufferedWriterWrite(&emitter.writer, op);
-    emitParamList(emitter, lir_fn.params.items[0..lir_fn.params.len], lir_fn.is_variadic, @intCast(u8, 0));
+    emitParamList(emitter, lir_fn.params.items[0..lir_fn.params.len], lir_fn.is_variadic, @intCast(u8, 0), nm_mod.nameManglerFnScope(emitter.mangler, lir_fn.name_id, lir_fn.module_id));
     var rp: []const u8 = ");\n";
     bufferedWriterWrite(&emitter.writer, rp);
 }
@@ -2796,44 +2548,7 @@ fn emitModuleFooter(emitter: *C89Emitter) void {
 pub fn moduleQualifiedName(emitter: *C89Emitter, module_id: u32) []const u8 {
     var mods = mr_mod.moduleRegistryGetModules(emitter.module_reg);
     var path_str = interner_mod.stringInternerGet(emitter.interner, mods[@intCast(usize, module_id)].path_id);
-    var last_slash: usize = @intCast(usize, 0);
-    var has_slash: u8 = @intCast(u8, 0);
-    var ps_i: usize = @intCast(usize, 0);
-    while (ps_i < path_str.len) : (ps_i += @intCast(usize, 1)) {
-        if (path_str[ps_i] == @intCast(u8, '/')) { last_slash = ps_i; has_slash = @intCast(u8, 1); }
-    }
-    var base: []const u8 = undefined;
-    if (has_slash != @intCast(u8, 0)) {
-        var dbl_start: usize = last_slash + @intCast(usize, 1);
-        base = path_str[dbl_start..path_str.len];
-    } else {
-        base = path_str;
-    }
-    var bl = base.len;
-    if (bl >= @intCast(usize, 4) and base[bl - @intCast(usize, 4)] == @intCast(u8, '.') and base[bl - @intCast(usize, 3)] == @intCast(u8, 'z') and base[bl - @intCast(usize, 2)] == @intCast(u8, 'i') and base[bl - @intCast(usize, 1)] == @intCast(u8, 'g')) {
-        var bl4: usize = bl - @intCast(usize, 4);
-        base = base[0..bl4];
-    } else if (bl >= @intCast(usize, 4) and base[bl - @intCast(usize, 4)] == @intCast(u8, '.') and base[bl - @intCast(usize, 3)] == @intCast(u8, 'z') and base[bl - @intCast(usize, 2)] == @intCast(u8, '9') and base[bl - @intCast(usize, 1)] == @intCast(u8, '8')) {
-        var bl4: usize = bl - @intCast(usize, 4);
-        base = base[0..bl4];
-    }
-    bl = base.len;
-    if (bl > @intCast(usize, 64)) {
-        base = base[0..@intCast(usize, 64)];
-    }
-    var hash = hash_mod.fnv1a(path_str);
-    var buf: [96]u8 = undefined;
-    var pos: usize = @intCast(usize, 0);
-    var bi: usize = @intCast(usize, 0);
-    while (bi < base.len) : (bi += @intCast(usize, 1)) {
-        buf[pos] = base[bi];
-        pos += @intCast(usize, 1);
-    }
-    buf[pos] = @intCast(u8, '_');
-    pos += @intCast(usize, 1);
-    writeHex(buf[0..], &pos, hash);
-    var qid = interner_mod.stringInternerIntern(emitter.interner, buf[0..pos]);
-    return interner_mod.stringInternerGet(emitter.interner, qid);
+    return nm_mod.nameManglerMintModuleStem(emitter.mangler, path_str);
 }
 
 // D1-4: global extern-declaration emission shared by `emitModuleHeaderFile`
@@ -2861,7 +2576,7 @@ fn emitGlobalExternDecls(emitter: *C89Emitter, module_id: u32, all: u8, want_ext
         } else {
             if (all == @intCast(u8, 0) and g.module_id != module_id) continue;
         }
-        var gmid = nameManglerMangleGlobal(emitter.mangler, emitter.registry, g.name_id, g.module_id, g.type_id);
+        var gmid = nm_mod.nameManglerMangleGlobal(emitter.mangler, emitter.registry, g.name_id, g.module_id, g.type_id);
         if (hash_mod.u32ToU32MapGet(seen, gmid) != null) continue;
         hash_mod.u32ToU32MapPut(seen, gmid, @intCast(u32, 1));
         var gname = interner_mod.stringInternerGet(emitter.interner, gmid);
@@ -2886,7 +2601,7 @@ fn emitGlobalExternDecls(emitter: *C89Emitter, module_id: u32, all: u8, want_ext
         if (all == @intCast(u8, 0)) {
             if (module_id != tsty.module_id) continue;
         }
-        var tsgmid = nameManglerMangleGlobal(emitter.mangler, emitter.registry, tsty.name_id, tsty.module_id, tsgi);
+        var tsgmid = nm_mod.nameManglerMangleGlobal(emitter.mangler, emitter.registry, tsty.name_id, tsty.module_id, tsgi);
         if (hash_mod.u32ToU32MapGet(seen, tsgmid) != null) continue;
         hash_mod.u32ToU32MapPut(seen, tsgmid, @intCast(u32, 1));
         var tsgname = interner_mod.stringInternerGet(emitter.interner, tsgmid);
@@ -3066,7 +2781,7 @@ pub fn emitModule(emitter: *C89Emitter, name: []const u8, c_includes: []u32, ptr
 fn emitMainWrapper(emitter: *C89Emitter, func: LirFunction) void {
     var wur_name = interner_mod.stringInternerGet(emitter.interner, func.name_id);
     if (isMainName(wur_name) != @intCast(u8, 0)) {
-        var wfn_mid = nameManglerMangle(emitter.mangler, func.name_id, @intCast(u8, 0), func.module_id);
+        var wfn_mid = nm_mod.nameManglerMangle(emitter.mangler, func.name_id, @intCast(u8, 0), func.module_id);
         var wfn_name = interner_mod.stringInternerGet(emitter.interner, wfn_mid);
         var wrty = emitter.registry.types_items[@intCast(usize, func.return_type)];
         var wsig0: []const u8 = "int main(void) {\n";
@@ -3168,7 +2883,7 @@ fn emitModuleInitCalls(emitter: *C89Emitter) void {
         if (moduleHasRuntimeInit(emitter, mid)) {
             var mi_s: []const u8 = "__module_init";
             var mi_id = interner_mod.stringInternerIntern(emitter.interner, mi_s);
-            var mi_mid = nameManglerMangle(emitter.mangler, mi_id, @intCast(u8, 0), mid);
+            var mi_mid = nm_mod.nameManglerMangle(emitter.mangler, mi_id, @intCast(u8, 0), mid);
             var mi_name = interner_mod.stringInternerGet(emitter.interner, mi_mid);
             bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
             bufferedWriterWrite(&emitter.writer, mi_name);
@@ -3193,25 +2908,9 @@ pub fn emitModuleFile(emitter: *C89Emitter, module_id: u32, mod_name: []const u8
     emitModuleFooter(emitter);
 }
 
-fn mangleTempName(interner: *StringInterner, temp_id: u32) []const u8 {
-    var buf: [20]u8 = undefined;
-    buf[0] = @intCast(u8, 'z');
-    buf[1] = @intCast(u8, 'T');
-    buf[2] = @intCast(u8, '_');
-    var len = itoa_mod.itoa(temp_id, buf[3..]);
-    var dig_start: usize = @intCast(usize, 19) - @intCast(usize, len);
-    var di: usize = @intCast(usize, 3);
-    var i: usize = @intCast(usize, 0);
-    while (i < @intCast(usize, len)) : (i += @intCast(usize, 1)) {
-        buf[di + i] = buf[dig_start + i];
-    }
-    var end: usize = di + @intCast(usize, len);
-    var mid = interner_mod.stringInternerIntern(interner, buf[0..end]);
-    return interner_mod.stringInternerGet(interner, mid);
-}
-
 pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     emitter.current_fn = lir_fn;
+    emitter.current_fn_scope = nm_mod.nameManglerFnScope(emitter.mangler, lir_fn.name_id, lir_fn.module_id);
     var max_temp: u32 = @intCast(u32, 256);
     var hti: usize = @intCast(usize, 0);
     while (hti < lir_fn.hoisted_temps.len) : (hti += @intCast(usize, 1)) {
@@ -3638,7 +3337,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     var dbg_li: u32 = @intCast(u32, 0);
     while (dbg_li < local_count) : (dbg_li += @intCast(u32, 1)) {
         if (local_read_arr[@intCast(usize, dbg_li)] == @intCast(u8, 0) and dbg_li >= @intCast(u32, lir_fn.params.len)) {
-            var dbg_nm = mangleLocalName(emitter.mangler, emitter.interner, emitter.fl_name_ids[@intCast(usize, dbg_li)]);
+            var dbg_nm = nm_mod.nameManglerMintLocal(emitter.mangler, emitter.fl_name_ids[@intCast(usize, dbg_li)], emitter.current_fn_scope);
             var dbg_m: []const u8 = "DBGDEAD:"; pal.markerWrite(dbg_m);
             pal.markerWrite(dbg_nm);
             var dbg_t: []const u8 = " t="; pal.markerWrite(dbg_t);
@@ -3778,7 +3477,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
      while (di < lir_fn.hoisted_temps.len) : (di += @intCast(usize, 1)) {
          var td = lir_fn.hoisted_temps.items[di];
          if (td.temp_id < @intCast(u32, lir_fn.params.len)) { continue; }
-        var tn = mangleTempName(emitter.interner, td.temp_id);
+        var tn = nm_mod.nameManglerMintTemp(emitter.mangler, td.temp_id);
         var wf = written_flag[@intCast(usize, di)];
         if (wf == @intCast(u8, 0)) {
             if (td.type_id != type_mod.TYPE_UNDEFINED) {
@@ -3887,7 +3586,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
          }
         var ty = emitter.registry.types_items[@intCast(usize, eff_type)];
           var c_type = getCTypeName(emitter.registry, emitter.mangler, eff_type);
-          var tn = mangleTempName(emitter.interner, td.temp_id);
+          var tn = nm_mod.nameManglerMintTemp(emitter.mangler, td.temp_id);
         var dht: []const u8 = "HT:"; pal.markerWrite(dht);
         pal.markerWrite(tn);
         var dsep3: []const u8 = "("; pal.markerWrite(dsep3);
@@ -3935,7 +3634,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
          while (poison_i < lir_fn.hoisted_temps.len) : (poison_i += @intCast(usize, 1)) {
              if (poison_arr[@intCast(usize, poison_i)] != @intCast(u8, 0)) {
                  var ptd = lir_fn.hoisted_temps.items[poison_i];
-                 var ptn = mangleTempName(emitter.interner, ptd.temp_id);
+                 var ptn = nm_mod.nameManglerMintTemp(emitter.mangler, ptd.temp_id);
                  bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                  var pf0: []const u8 = "zig_poison_fill((void*)&";
                  bufferedWriterWrite(&emitter.writer, pf0);
@@ -4302,7 +4001,7 @@ fn nestEmitDefRvalue(emitter: *C89Emitter, inst: lir_mod.LirInst, depth: u32) vo
         },
         .enum_const => |ec| {
             var ety = emitter.registry.types_items[@intCast(usize, ec.type_id)];
-            var e_mid = nameManglerMangle(emitter.mangler, ety.name_id, @intCast(u8, 2), ety.module_id);
+            var e_mid = nm_mod.nameManglerMangle(emitter.mangler, ety.name_id, @intCast(u8, 2), ety.module_id);
             var e_name = interner_mod.stringInternerGet(emitter.interner, e_mid);
             bufferedWriterWrite(&emitter.writer, e_name);
             var us: []const u8 = "_";
@@ -5403,7 +5102,7 @@ fn printFnSourceName(reg: *TypeRegistry, tid: u32, fmt: u8) []const u8 {
 fn stdFmtSourceSymbol(emitter: *C89Emitter, src: []const u8) []const u8 {
     if (emitter.std_fmt_module_id == @intCast(u32, 0xFFFFFFFF)) return src;
     var src_id = interner_mod.stringInternerIntern(emitter.interner, src);
-    var mangled_id = nameManglerMangle(emitter.mangler, src_id, @intCast(u8, 0), emitter.std_fmt_module_id);
+    var mangled_id = nm_mod.nameManglerMangle(emitter.mangler, src_id, @intCast(u8, 0), emitter.std_fmt_module_id);
     return interner_mod.stringInternerGet(emitter.interner, mangled_id);
 }
 
@@ -5464,27 +5163,12 @@ fn printValueRoute(k: TypeKind) u8 {
     return kPrintRouteScalar;
 }
 
-// prefix + decimal type id, interned (the generated printer/table naming rule).
-fn typeIdName(emitter: *C89Emitter, prefix: []const u8, tid: u32) []const u8 {
-    var buf: [64]u8 = undefined;
-    var p: usize = @intCast(usize, 0);
-    var i: usize = @intCast(usize, 0);
-    while (i < prefix.len and p < @intCast(usize, 63)) : (i += @intCast(usize, 1)) { buf[p] = prefix[i]; p += @intCast(usize, 1); }
-    var db: [16]u8 = undefined;
-    var dl = itoa_mod.itoa(tid, db[0..]);
-    var ds: usize = @intCast(usize, 15) - @intCast(usize, dl);
-    var j: usize = ds;
-    while (j < @intCast(usize, 15) and p < @intCast(usize, 63)) : (j += @intCast(usize, 1)) { buf[p] = db[j]; p += @intCast(usize, 1); }
-    var nid = interner_mod.stringInternerIntern(emitter.interner, buf[0..p]);
-    return interner_mod.stringInternerGet(emitter.interner, nid);
-}
-
 // z98_printEnum_<tid> / z98_printErrorSet_<tid>.
 fn namePrinterName(emitter: *C89Emitter, tid: u32) []const u8 {
     var ty = emitter.registry.types_items[@intCast(usize, tid)];
     var prefix: []const u8 = "z98_printEnum_";
     if (ty.kind == TypeKind.error_set_type) { var p2: []const u8 = "z98_printErrorSet_"; prefix = p2; }
-    return typeIdName(emitter, prefix, tid);
+    return nm_mod.nameManglerMintIndexName(emitter.mangler, prefix, tid);
 }
 
 // z98_printStruct_<tid> / printUnion_ / printTaggedUnion_ / printPackedUnion_ /
@@ -5497,7 +5181,7 @@ fn aggPrinterName(emitter: *C89Emitter, tid: u32) []const u8 {
     else if (ty.kind == TypeKind.tagged_union_type) { var p3: []const u8 = "z98_printTaggedUnion_"; prefix = p3; }
     else if (ty.kind == TypeKind.packed_union_type) { var p4: []const u8 = "z98_printPackedUnion_"; prefix = p4; }
     else if (ty.kind == TypeKind.tuple_type) { var p5: []const u8 = "z98_printTuple_"; prefix = p5; }
-    return typeIdName(emitter, prefix, tid);
+    return nm_mod.nameManglerMintIndexName(emitter.mangler, prefix, tid);
 }
 
 fn aggAccessAppend(buf: *[kAggAccessCap]u8, pos: usize, s: []const u8) usize {
@@ -5553,22 +5237,6 @@ fn emitAggValue(emitter: *C89Emitter, tid: u32, access: []const u8) void {
 fn aggIndentStmt(emitter: *C89Emitter, s: []const u8) void {
     bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
     bufferedWriterWrite(&emitter.writer, s);
-}
-
-// Scratch-local C declaration name for a packed field extraction.
-fn aggPackedScratchName(emitter: *C89Emitter, field_idx: u32) []const u8 {
-    var buf: [24]u8 = undefined;
-    var p: usize = @intCast(usize, 0);
-    var pfx: []const u8 = "zT_pkf";
-    var i: usize = @intCast(usize, 0);
-    while (i < pfx.len and p < @intCast(usize, 23)) : (i += @intCast(usize, 1)) { buf[p] = pfx[i]; p += @intCast(usize, 1); }
-    var db: [16]u8 = undefined;
-    var dl = itoa_mod.itoa(field_idx, db[0..]);
-    var ds: usize = @intCast(usize, 15) - @intCast(usize, dl);
-    var j: usize = ds;
-    while (j < @intCast(usize, 15) and p < @intCast(usize, 23)) : (j += @intCast(usize, 1)) { buf[p] = db[j]; p += @intCast(usize, 1); }
-    var nid = interner_mod.stringInternerIntern(emitter.interner, buf[0..p]);
-    return interner_mod.stringInternerGet(emitter.interner, nid);
 }
 
 // ============================================================================
@@ -5696,13 +5364,13 @@ fn emitNamePrinterDef(emitter: *C89Emitter, tid: u32) void {
     var off_n: []const u8 = "";
     var len_n: []const u8 = "";
     if (ty.kind == TypeKind.enum_type) {
-        tab_n = typeIdName(emitter, "z98_etab_", tid);
-        off_n = typeIdName(emitter, "z98_eoff_", tid);
-        len_n = typeIdName(emitter, "z98_elen_", tid);
+        tab_n = nm_mod.nameManglerMintIndexName(emitter.mangler, "z98_etab_", tid);
+        off_n = nm_mod.nameManglerMintIndexName(emitter.mangler, "z98_eoff_", tid);
+        len_n = nm_mod.nameManglerMintIndexName(emitter.mangler, "z98_elen_", tid);
     } else {
-        tab_n = typeIdName(emitter, "z98_estab_", tid);
-        off_n = typeIdName(emitter, "z98_esoff_", tid);
-        len_n = typeIdName(emitter, "z98_eslen_", tid);
+        tab_n = nm_mod.nameManglerMintIndexName(emitter.mangler, "z98_estab_", tid);
+        off_n = nm_mod.nameManglerMintIndexName(emitter.mangler, "z98_esoff_", tid);
+        len_n = nm_mod.nameManglerMintIndexName(emitter.mangler, "z98_eslen_", tid);
     }
 
     emitNameBlob(emitter, tab_n, ty.kind, count, start);
@@ -5710,7 +5378,7 @@ fn emitNamePrinterDef(emitter: *C89Emitter, tid: u32) void {
 
     var val_n: []const u8 = "";
     if (ty.kind == TypeKind.enum_type) {
-        val_n = typeIdName(emitter, "z98_eval_", tid);
+        val_n = nm_mod.nameManglerMintIndexName(emitter.mangler, "z98_eval_", tid);
         var v0: []const u8 = "static const unsigned long long "; bufferedWriterWrite(&emitter.writer, v0);
         bufferedWriterWrite(&emitter.writer, val_n);
         var v1: []const u8 = "[] = { "; bufferedWriterWrite(&emitter.writer, v1);
@@ -5723,7 +5391,7 @@ fn emitNamePrinterDef(emitter: *C89Emitter, tid: u32) void {
         }
         var v2: []const u8 = " };\n"; bufferedWriterWrite(&emitter.writer, v2);
     } else {
-        val_n = typeIdName(emitter, "z98_escode_", tid);
+        val_n = nm_mod.nameManglerMintIndexName(emitter.mangler, "z98_escode_", tid);
         var c0: []const u8 = "static const int "; bufferedWriterWrite(&emitter.writer, c0);
         bufferedWriterWrite(&emitter.writer, val_n);
         var c1: []const u8 = "[] = { "; bufferedWriterWrite(&emitter.writer, c1);
@@ -6171,7 +5839,7 @@ fn emitAggPrinterDef(emitter: *C89Emitter, tid: u32) void {
         while (pki < pk_fcount and pki < pk_fields.len) : (pki += 1) {
             var pfe = reg.fe_items[pk_fstart + pki];
             if (pfe.type_id == type_mod.TYPE_VOID) continue;
-            var pscratch = aggPackedScratchName(emitter, @intCast(u32, pki));
+            var pscratch = nm_mod.nameManglerMintIndexName(emitter.mangler, "zT_pkf", @intCast(u32, pki));
             bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
             var pct = getCTypeName(reg, emitter.mangler, pfe.type_id);
             bufferedWriterWrite(&emitter.writer, pct);
@@ -6205,7 +5873,7 @@ fn emitAggPrinterDef(emitter: *C89Emitter, tid: u32) void {
                 bufferedWriterWrite(&emitter.writer, fname);
                 var feq: []const u8 = " = \");\n"; bufferedWriterWrite(&emitter.writer, feq);
                 if (have_pk != @intCast(u8, 0)) {
-                    var fscratch = aggPackedScratchName(emitter, @intCast(u32, fidx));
+                    var fscratch = nm_mod.nameManglerMintIndexName(emitter.mangler, "zT_pkf", @intCast(u32, fidx));
                     if (fidx < pk_fields.len) {
                         var pkf = pk_fields[fidx];
                         var fsig: u8 = @intCast(u8, 0);
@@ -6220,7 +5888,7 @@ fn emitAggPrinterDef(emitter: *C89Emitter, tid: u32) void {
                 } else {
                     var abuf: [kAggAccessCap]u8 = undefined;
                     var ap = aggAccessAppend(&abuf, @intCast(usize, 0), "v.");
-                    ap = aggAccessAppend(&abuf, ap, fname);
+                    ap = aggAccessAppend(&abuf, ap, nm_mod.nameManglerMintField(emitter.mangler, fe.name_id, tid));
                     bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
                     emitAggValue(emitter, fe.type_id, abuf[0..ap]);
                 }
@@ -6265,7 +5933,7 @@ fn emitAggPrinterDef(emitter: *C89Emitter, tid: u32) void {
                     var fs: []const u8 = "std_print(\"."; bufferedWriterWrite(&emitter.writer, fs);
                     bufferedWriterWrite(&emitter.writer, fname);
                     var feq: []const u8 = " = \");\n"; bufferedWriterWrite(&emitter.writer, feq);
-                    var fscratch = aggPackedScratchName(emitter, @intCast(u32, fidx));
+                    var fscratch = nm_mod.nameManglerMintIndexName(emitter.mangler, "zT_pkf", @intCast(u32, fidx));
                     if (have_pk != @intCast(u8, 0) and fidx < pk_fields.len) {
                         var pkf = pk_fields[fidx];
                         var fsig2: u8 = @intCast(u8, 0);
@@ -6304,7 +5972,7 @@ fn emitAggPrinterDef(emitter: *C89Emitter, tid: u32) void {
                 var neq: []const u8 = " = \");\n"; bufferedWriterWrite(&emitter.writer, neq);
                 var abuf: [kAggAccessCap]u8 = undefined;
                 var ap = aggAccessAppend(&abuf, @intCast(usize, 0), "v.payload.");
-                ap = aggAccessAppend(&abuf, ap, cUnionMemberName(emitter.interner, emitter.mangler, fe.name_id));
+                ap = aggAccessAppend(&abuf, ap, nm_mod.nameManglerMintMember(emitter.mangler, fe.name_id, tid));
                 ap = aggAccessAppend(&abuf, ap, "._0");
                 bufferedWriterWriteIndent(&emitter.writer, @intCast(u32, 1));
                 emitAggValue(emitter, fe.type_id, abuf[0..ap]);
@@ -6579,13 +6247,13 @@ fn emitCStringLiteral(writer: *BufferedWriter, str: []const u8) void {
          var rst_m: []const u8 = "RST:t"; pal.markerWrite(rst_m);
          var rst_tb: [10]u8 = undefined; var rst_tl = itoa_mod.itoa(temp_id, rst_tb[0..]); var rst_ts: usize = @intCast(usize, 9) - @intCast(usize, rst_tl); pal.markerWrite(rst_tb[rst_ts..@intCast(usize, 9)]);
          var rst_nm: []const u8 = "N"; pal.markerWriteInt(rst_nm, emitter.fl_name_ids[@intCast(usize, rti)]);
-         return mangleLocalName(emitter.mangler, emitter.interner, emitter.fl_name_ids[@intCast(usize, rti)]); } }
+         return nm_mod.nameManglerMintLocal(emitter.mangler, emitter.fl_name_ids[@intCast(usize, rti)], emitter.current_fn_scope); } }
      var tgn_r = hash_mod.u32ToU32MapGet(&emitter.temp_global_map, temp_id);
      if (tgn_r) |tgi| {
          return interner_mod.stringInternerGet(emitter.interner, tgi);
      }
      var vflow_rnt: []const u8 = "VFLOW:rnt"; pal.markerWriteInt(vflow_rnt, temp_id);
-     return mangleTempName(emitter.interner, temp_id);
+     return nm_mod.nameManglerMintTemp(emitter.mangler, temp_id);
  }
 
  fn emitFwriteCall(emitter: *C89Emitter, ptr: u32, len: u32, is_stdout: u8) void {
@@ -7109,10 +6777,10 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             var mkend: []const u8 = "==*/\n";
             bufferedWriterWrite(&emitter.writer, mkend);
             }
-            var dst = if (a.name_id != @intCast(u32, 0)) mangleLocalName(emitter.mangler, emitter.interner, a.name_id) else resolveTempName(emitter, a.dst);
+            var dst = if (a.name_id != @intCast(u32, 0)) nm_mod.nameManglerMintLocal(emitter.mangler, a.name_id, emitter.current_fn_scope) else resolveTempName(emitter, a.dst);
             var src = resolveTempName(emitter, a.src);
             var rfli: u32 = emitter.fl_count;
-            while (rfli > @intCast(u32, 0)) { rfli = rfli - @intCast(u32, 1); if (emitter.fl_temps[@intCast(usize, rfli)] == a.dst) { dst = mangleLocalName(emitter.mangler, emitter.interner, emitter.fl_name_ids[@intCast(usize, rfli)]); break; } }
+            while (rfli > @intCast(u32, 0)) { rfli = rfli - @intCast(u32, 1); if (emitter.fl_temps[@intCast(usize, rfli)] == a.dst) { dst = nm_mod.nameManglerMintLocal(emitter.mangler, emitter.fl_name_ids[@intCast(usize, rfli)], emitter.current_fn_scope); break; } }
             var as_dname: u32 = @intCast(u32, 0);
             if (a.name_id != @intCast(u32, 0)) { as_dname = a.name_id; }
             else if (rfli < emitter.fl_count and emitter.fl_temps[@intCast(usize, rfli)] == a.dst) { as_dname = emitter.fl_name_ids[@intCast(usize, rfli)]; }
@@ -7172,7 +6840,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             }
         },
           .assign_field => |a| {
-              var base: []const u8 = if (a.name_id != @intCast(u32, 0)) mangleLocalName(emitter.mangler, emitter.interner, a.name_id) else resolveTempName(emitter, a.base);
+              var base: []const u8 = if (a.name_id != @intCast(u32, 0)) nm_mod.nameManglerMintLocal(emitter.mangler, a.name_id, emitter.current_fn_scope) else resolveTempName(emitter, a.base);
               var src = resolveTempName(emitter, a.src);
               bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
               if (dceFieldIsArray(emitter.registry, emitter.current_fn, a.base, a.field_id)) {
@@ -7193,7 +6861,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             var adm2s2: []const u8 = "s"; pal.markerWrite(adm2s2);
             var adm2sb: [10]u8 = undefined; var adm2sl = itoa_mod.itoa(a.src, adm2sb[0..]); var adm2ss: usize = @intCast(usize, 9) - @intCast(usize, adm2sl); pal.markerWrite(adm2sb[adm2ss..@intCast(usize, 9)]);
             var adm2nl2: []const u8 = " "; pal.markerWrite(adm2nl2);
-            var base: []const u8 = if (a.name_id != @intCast(u32, 0)) mangleLocalName(emitter.mangler, emitter.interner, a.name_id) else resolveTempName(emitter, a.base);
+            var base: []const u8 = if (a.name_id != @intCast(u32, 0)) nm_mod.nameManglerMintLocal(emitter.mangler, a.name_id, emitter.current_fn_scope) else resolveTempName(emitter, a.base);
             var idx = resolveTempName(emitter, a.index);
             var src = resolveTempName(emitter, a.src);
             var src_name = resolveTempName(emitter, a.src);
@@ -7279,7 +6947,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
         },
         .load_local => |ll| {
             var result = resolveTempName(emitter, ll.result);
-            var name = mangleLocalName(emitter.mangler, emitter.interner, ll.name_id);
+            var name = nm_mod.nameManglerMintLocal(emitter.mangler, ll.name_id, emitter.current_fn_scope);
             var llm: []const u8 = "LL:n"; pal.markerWrite(llm);
             var llnb: [10]u8 = undefined; var llnl = itoa_mod.itoa(ll.name_id, llnb[0..]); var llns: usize = @intCast(usize, 9) - @intCast(usize, llnl); pal.markerWrite(llnb[llns..@intCast(usize, 9)]);
             var llrm: []const u8 = "r"; pal.markerWriteInt(llrm, ll.result);
@@ -7309,7 +6977,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
               var stl_nb: [10]u8 = undefined; var stl_nl = itoa_mod.itoa(sl.name_id, stl_nb[0..]); var stl_ns: usize = @intCast(usize, 9) - @intCast(usize, stl_nl); pal.markerWrite(stl_nb[stl_ns..@intCast(usize, 9)]);
               var stl_vm: []const u8 = "v"; pal.markerWriteInt(stl_vm, sl.value);
              var val = resolveTempName(emitter, sl.value);
-            var name = mangleLocalName(emitter.mangler, emitter.interner, sl.name_id);
+            var name = nm_mod.nameManglerMintLocal(emitter.mangler, sl.name_id, emitter.current_fn_scope);
             var stln_m: []const u8 = "STN:"; pal.markerWrite(stln_m);
             pal.markerWrite(name);
             var stln_c: []const u8 = "="; pal.markerWrite(stln_c);
@@ -7375,13 +7043,13 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
         },
         .load_global => |lg| {
             var lg_tid = hoistedTypeId(emitter, lg.result);
-            var gmid = nameManglerMangleGlobal(emitter.mangler, emitter.registry, lg.name_id, lg.module_id, lg_tid);
+            var gmid = nm_mod.nameManglerMangleGlobal(emitter.mangler, emitter.registry, lg.name_id, lg.module_id, lg_tid);
             hash_mod.u32ToU32MapPut(&emitter.temp_global_map, lg.result, gmid);
         },
         .store_global => |sg| {
             var sg_tid = hoistedTypeId(emitter, sg.value);
             var val = resolveTempName(emitter, sg.value);
-            var sgmid = nameManglerMangleGlobal(emitter.mangler, emitter.registry, sg.name_id, sg.module_id, sg_tid);
+            var sgmid = nm_mod.nameManglerMangleGlobal(emitter.mangler, emitter.registry, sg.name_id, sg.module_id, sg_tid);
             var name = interner_mod.stringInternerGet(emitter.interner, sgmid);
             var sg_is_arr: u8 = @intCast(u8, 0);
             var sg_arr_len: u32 = @intCast(u32, 0);
@@ -7416,7 +7084,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             }
         },
            .load_field => |lf| {
-               var base = if (lf.name_id != @intCast(u32, 0) and lf.name_id != @intCast(u32, 0xFFFFFFFF)) mangleLocalName(emitter.mangler, emitter.interner, lf.name_id) else resolveTempName(emitter, lf.base);
+               var base = if (lf.name_id != @intCast(u32, 0) and lf.name_id != @intCast(u32, 0xFFFFFFFF)) nm_mod.nameManglerMintLocal(emitter.mangler, lf.name_id, emitter.current_fn_scope) else resolveTempName(emitter, lf.base);
                var result = resolveTempName(emitter, lf.result);
                var lfd_m: []const u8 = "LFD:b"; pal.markerWrite(lfd_m);
                var lfd_bb: [10]u8 = undefined; var lfd_bl = itoa_mod.itoa(lf.base, lfd_bb[0..]); var lfd_bs: usize = @intCast(usize, 9) - @intCast(usize, lfd_bl); pal.markerWrite(lfd_bb[lfd_bs..@intCast(usize, 9)]);
@@ -7474,7 +7142,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                 }
            },
         .store_field => |sf| {
-            var base = if (sf.name_id != @intCast(u32, 0) and sf.name_id != @intCast(u32, 0xFFFFFFFF)) mangleLocalName(emitter.mangler, emitter.interner, sf.name_id) else resolveTempName(emitter, sf.base);
+            var base = if (sf.name_id != @intCast(u32, 0) and sf.name_id != @intCast(u32, 0xFFFFFFFF)) nm_mod.nameManglerMintLocal(emitter.mangler, sf.name_id, emitter.current_fn_scope) else resolveTempName(emitter, sf.base);
               var val = resolveTempName(emitter, sf.value);
              var is_arr2: u8 = @intCast(u8, 0);
              var arr_len2: u32 = @intCast(u32, 0);
@@ -7780,7 +7448,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             var s: []const u8 = " = ";
             bufferedWriterWrite(&emitter.writer, s);
             var ety = emitter.registry.types_items[@intCast(usize, ec.type_id)];
-            var e_mid = nameManglerMangle(emitter.mangler, ety.name_id, @intCast(u8, 2), ety.module_id);
+            var e_mid = nm_mod.nameManglerMangle(emitter.mangler, ety.name_id, @intCast(u8, 2), ety.module_id);
             var e_name = interner_mod.stringInternerGet(emitter.interner, e_mid);
             bufferedWriterWrite(&emitter.writer, e_name);
             var us: []const u8 = "_";
@@ -8031,7 +7699,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             var mkend: []const u8 = "==*/\n";
             bufferedWriterWrite(&emitter.writer, mkend);
             }
-             var mangled_id = nameManglerMangle(emitter.mangler, c.name_id, @intCast(u8, 0), c.module_id);
+             var mangled_id = nm_mod.nameManglerMangle(emitter.mangler, c.name_id, @intCast(u8, 0), c.module_id);
              var fn_name = interner_mod.stringInternerGet(emitter.interner, mangled_id);
               if (c.is_extern == @intCast(u8, 1)) { var orig_c = interner_mod.stringInternerGet(emitter.interner, c.name_id); fn_name = orig_c; }
               var cd_callee_tid = findCalleeFnTypeId(emitter, c.name_id, c.module_id, c.call_conv);
@@ -8165,7 +7833,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             if (tc.is_indirect == @intCast(u8, 1)) {
                 fn_name = resolveTempName(emitter, tc.callee);
             } else {
-                var mangled_id = nameManglerMangle(emitter.mangler, tc.callee, @intCast(u8, 0), tc.module_id);
+                var mangled_id = nm_mod.nameManglerMangle(emitter.mangler, tc.callee, @intCast(u8, 0), tc.module_id);
                 fn_name = interner_mod.stringInternerGet(emitter.interner, mangled_id);
             }
             if (tc.is_extern == @intCast(u8, 1)) {
@@ -8704,7 +8372,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             if (fr_is_extern != @intCast(u8, 0) and fr_is_stdcall != @intCast(u8, 0)) {
                 fr_name = interner_mod.stringInternerGet(emitter.interner, fr.name_id);
             } else {
-                var fr_mangled = nameManglerMangle(emitter.mangler, fr.name_id, @intCast(u8, 0), fr.module_id);
+                var fr_mangled = nm_mod.nameManglerMangle(emitter.mangler, fr.name_id, @intCast(u8, 0), fr.module_id);
                 fr_name = interner_mod.stringInternerGet(emitter.interner, fr_mangled);
             }
             emitCalleeExpr(emitter, fr_tid, fr_name);
@@ -9053,6 +8721,7 @@ fn dceReleaseOperands(max_temp: u32, tid_to_pos: [*]u32, read_count: [*]u32, ins
     bufferedWriterFlush(&emitter.writer);
     var bfn_m: []const u8 = "BFN:p"; pal.markerWriteInt(bfn_m, @intCast(u32, emitter.writer.pos));
     emitter.current_fn = lir_fn;
+    emitter.current_fn_scope = nm_mod.nameManglerFnScope(emitter.mangler, lir_fn.name_id, lir_fn.module_id);
     emitter.dedup_count = @intCast(u32, 0);
     emitter.temp_global_map.count = @intCast(usize, 0);
     var tg_cap: usize = @intCast(usize, 0);
@@ -9068,7 +8737,7 @@ fn dceReleaseOperands(max_temp: u32, tid_to_pos: [*]u32, read_count: [*]u32, ins
             switch (tg_pre_inst) {
                 .load_global => |lg_pre| {
                     var lg_pre_tid = hoistedTypeId(emitter, lg_pre.result);
-                    var lg_pre_mid = nameManglerMangleGlobal(emitter.mangler, emitter.registry, lg_pre.name_id, lg_pre.module_id, lg_pre_tid);
+                    var lg_pre_mid = nm_mod.nameManglerMangleGlobal(emitter.mangler, emitter.registry, lg_pre.name_id, lg_pre.module_id, lg_pre_tid);
                     hash_mod.u32ToU32MapPut(&emitter.temp_global_map, lg_pre.result, lg_pre_mid);
                 },
                 else => {},
@@ -9113,7 +8782,7 @@ fn dceReleaseOperands(max_temp: u32, tid_to_pos: [*]u32, read_count: [*]u32, ins
                              var t4u_dl_m: []const u8 = "T4U:dl\n"; pal.markerWrite(t4u_dl_m);
                              var instb_ed_m: []const u8 = "INSTB:edl\n"; pal.markerWrite(instb_ed_m);
                          }
-                         var dl_name = mangleLocalName(emitter.mangler, emitter.interner, dl.name_id);
+                         var dl_name = nm_mod.nameManglerMintLocal(emitter.mangler, dl.name_id, emitter.current_fn_scope);
                         if (dl.type_id != @intCast(u32, 1)) {
                         bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                         bufferedWriterWrite(&emitter.writer, dl_type);
@@ -9175,7 +8844,7 @@ fn dceReleaseOperands(max_temp: u32, tid_to_pos: [*]u32, read_count: [*]u32, ins
     var upi: u32 = @intCast(u32, 0);
     while (upi < @intCast(u32, lir_fn.params.len)) : (upi += @intCast(u32, 1)) {
         if (isLocalPosUsed(emitter, upi) == @intCast(u8, 0)) {
-            var up_name = mangleLocalName(emitter.mangler, emitter.interner, lir_fn.params.items[@intCast(usize, upi)].name_id);
+            var up_name = nm_mod.nameManglerMintLocal(emitter.mangler, lir_fn.params.items[@intCast(usize, upi)].name_id, emitter.current_fn_scope);
             bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
             var up0: []const u8 = "(void)";
             bufferedWriterWrite(&emitter.writer, up0);
