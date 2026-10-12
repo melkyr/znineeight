@@ -75,6 +75,11 @@ Task 0: deferred minor (out-of-scope): task-0-report.md:336 §2.1 struct-field r
 Task 0: deferred minor: inventory "upstream owner" column sometimes names the owning increment rather than the upstream stage (review round-0 Minor 5)
 Task 0: deferred minor: P5→P2 dependency justification overstated (P2 consumes kind/structure predicates, not P5's int-kind/scalar set) — order still coherent on risk grounds (review round-0 Minor 6)
 Task 0: complete (commits f96e1206..d743468b, review clean)
-Task P5: dispatched (2026-10-12) — brief `task-P5-brief.md`, report `task-P5-report.md`; exec order 1/10 (Predicates + promotion centralized)
-Task P5: DONE (2026-10-12). 8 canonical `type_registry` predicates exposed + `coercion.coercionUsualArithPromote`; emitter truth tables (9 fns) deleted, 24 call sites rewired + promotion delegated; tech docs 03/05/08/INDEX updated. Full runtime battery green: corpus class UNCHANGED (per-dir list byte-identical to Appendix A, md5 518eca1a…), goldens 5/5, mi_matrix 25+oob MATCH, examples 26/26 build+run, stdlib 285/0 STDLIB GATE OK; hop1==hop2 with fixed point bafbba9454cd2b134bdc3d50c65384e0 -> e81d9266955caaad6873fb728d7f494e (moved, recorded old->new); 8 dump pins delta 0/8 (recorded old==new); markers UNCHANGED 3,241 lines / 36,038 B. Full evidence: `task-P5-report.md`. Seed NOT rotated.
-Task P5: complete (commits `refactor(c89_emit): P5 — predicates + promotion centralized` + `docs(sdd): P5 report`)
+Task P5: complete (commits d743468b..fd63c77a, review clean) — 9078b5f2 refactor(c89_emit): P5 + fd63c77a docs(sdd) report; battery green (corpus class byte-identical to Appendix A, goldens 5/5, mi_matrix 25+oob MATCH, examples 26/26, stdlib 285/0, hop1==hop2, fixed point bafbba94…→e81d9266955caaad6873fb728d7f494e recorded, pins 0/8 delta, markers unchanged 3241/36038); membership-identical relocation verified by review
+Task P5: deferred minor: coercion.zig + 05_semantic_analysis.md say "relocated verbatim" but promotion body is decision-faithful restructure (0/1/2 return) — wording overclaims
+Task P5: deferred minor: D3 residual blank lines at c89_emit deletion sites (whitespace only, disclosed)
+Task P5: deferred minor: report semantic checks 3/4 state grep results inline without fenced command output (claims verified true by reviewer)
+Task P5: deferred minor: report markers "top prefixes" tally lacks command/output (only 3241/36038 gate evidenced)
+Task P5: deferred minor: battery transcripts abbreviate commands (`<ENTRY>` placeholders, 23/25 dirs elided with …)
+P1 dispatch note: P5 shifted c89_emit.zig line numbers (net ~-120 in deleted regions) — P1 Investigate must re-derive all sites (Task 0 verified cites were exact at f96e1206 only)
+
