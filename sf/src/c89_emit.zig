@@ -27,6 +27,7 @@ const LirFunction = @import("lir.zig").LirFunction;
 const LirParam = @import("lir.zig").LirParam;
 const lir_stream_mod = @import("lir_stream.zig");
 const lir_opt_mod = @import("lir_opt_pass.zig");
+const coercion_mod = @import("coercion.zig");
 const emit_support = @import("emit_support.zig");
 
 pub const BufferedWriter = struct {
@@ -298,7 +299,7 @@ fn emitFieldAssign(writer: *BufferedWriter, indent_val: u32, registry: *TypeRegi
                 fn_prefix = interner_mod.stringInternerGet(interner, tname);
                 fld_name_val = fn_prefix[1..];
                 found = @intCast(u8, 1);
-                if (typeIsPtrKind(registry, tfe_tid) != @intCast(u8, 0)) { cast_name = getCTypeName(registry, mangler, tfe_tid); }
+                if (type_mod.typeRegistryIsPointer(registry, tfe_tid)) { cast_name = getCTypeName(registry, mangler, tfe_tid); }
                 if (tfe_ty.kind == TypeKind.array_type) {
                     var tafap: type_mod.ArrayPayload = registry.array_items[@intCast(usize, tfe_ty.payload_idx)];
                     is_arr[0] = @intCast(u32, 1);
@@ -324,7 +325,7 @@ fn emitFieldAssign(writer: *BufferedWriter, indent_val: u32, registry: *TypeRegi
                         cast_name = ptrCTypeNameFromElem(registry, mangler, efa_el);
                     }
                 } else if (efa_tid != @intCast(u32, 0) and (bty.kind == TypeKind.struct_type or bty.kind == TypeKind.union_type or bty.kind == TypeKind.packed_union_type)) {
-                    if (typeIsPtrKind(registry, efa_tid) != @intCast(u8, 0)) { cast_name = getCTypeName(registry, mangler, efa_tid); }
+                    if (type_mod.typeRegistryIsPointer(registry, efa_tid)) { cast_name = getCTypeName(registry, mangler, efa_tid); }
                     var efa_fety: type_mod.Type = registry.types_items[@intCast(usize, efa_tid)];
                     if (efa_fety.kind == TypeKind.array_type) {
                         var efa_ap: type_mod.ArrayPayload = registry.array_items[@intCast(usize, efa_fety.payload_idx)];
@@ -396,7 +397,7 @@ fn emitFieldAssign(writer: *BufferedWriter, indent_val: u32, registry: *TypeRegi
         if (cast_name.len != @intCast(usize, 0)) {
             var fa_src_ty: u32 = @intCast(u32, 0xFFFFFFFF);
             var fa_ssg: u8 = @intCast(u8, 0);
-            if (getTempEffType(emitter2, src_temp, &fa_src_ty, &fa_ssg) == @intCast(u8, 1) and typeIsIntKind(registry, fa_src_ty) != @intCast(u8, 0)) {
+            if (getTempEffType(emitter2, src_temp, &fa_src_ty, &fa_ssg) == @intCast(u8, 1) and type_mod.typeRegistryIsIntKind(registry, fa_src_ty) != @intCast(u8, 0)) {
                 fa_cast = cast_name;
             }
         }
@@ -3911,7 +3912,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                    poison_arr[@intCast(usize, i)] = @intCast(u8, 1);
                    var sm: []const u8 = ";\n";
                    bufferedWriterWrite(&emitter.writer, sm);
-              } else if (retTypeIsScalarC(emitter.registry, eff_type) == @intCast(u8, 1)) {
+              } else if (type_mod.typeRegistryIsScalarC(emitter.registry, eff_type) == @intCast(u8, 1)) {
                   var sm: []const u8 = " = 0;\n";
                   bufferedWriterWrite(&emitter.writer, sm);
               } else {
@@ -3981,7 +3982,7 @@ fn nestScalarEffTid(emitter: *C89Emitter, temp_id: u32) u32 {
     if (getTempEffType(emitter, temp_id, &tyid, &sg) == @intCast(u8, 1)) {
         var ty = emitter.registry.types_items[@intCast(usize, tyid)];
         var k = ty.kind;
-        if (intKindIsSignedBase(k) != @intCast(u8, 0) or intKindIsUnsignedBase(k) != @intCast(u8, 0) or
+        if (type_mod.typeKindIsSignedIntBase(k) != @intCast(u8, 0) or type_mod.typeKindIsUnsignedIntBase(k) != @intCast(u8, 0) or
             k == TypeKind.c_char_type or k == TypeKind.bool_type or
             k == TypeKind.f32_type or k == TypeKind.f64_type or
             k == TypeKind.ptr_type or k == TypeKind.many_ptr_type or k == TypeKind.enum_type or
@@ -4022,19 +4023,19 @@ fn nestShapeOk(emitter: *C89Emitter, inst: lir_mod.LirInst, result_t: u32) u8 {
             if (b.op >= @intCast(u8, 19)) return @intCast(u8, 0);
             var bwt = getTempTypeByIndex(emitter, b.result);
             if (bwt != @intCast(u32, 0xFFFFFFFF)) {
-                if (intTypeNeedsWidthWrap(emitter.registry, bwt) != @intCast(u8, 0)) return @intCast(u8, 0);
+                if (type_mod.typeRegistryIntNeedsWidthWrap(emitter.registry, bwt) != @intCast(u8, 0)) return @intCast(u8, 0);
             }
             return @intCast(u8, 1);
         },
         .unary => |u| {
             var uwt = getTempTypeByIndex(emitter, u.result);
             if (uwt != @intCast(u32, 0xFFFFFFFF)) {
-                if (intTypeNeedsWidthWrap(emitter.registry, uwt) != @intCast(u8, 0)) return @intCast(u8, 0);
+                if (type_mod.typeRegistryIntNeedsWidthWrap(emitter.registry, uwt) != @intCast(u8, 0)) return @intCast(u8, 0);
             }
             return @intCast(u8, 1);
         },
         .int_cast => |c| {
-            if (intTypeNeedsWidthWrap(emitter.registry, c.target) != @intCast(u8, 0)) return @intCast(u8, 0);
+            if (type_mod.typeRegistryIntNeedsWidthWrap(emitter.registry, c.target) != @intCast(u8, 0)) return @intCast(u8, 0);
             return @intCast(u8, 1);
         },
         .ptr_cast => |pc| { return @intCast(u8, 1); },
@@ -4394,26 +4395,17 @@ fn emitBinRvalueText(emitter: *C89Emitter, op: u8, lhs_t: u32, rhs_t: u32, lhs_n
     var lhs_cast: []const u8 = "";
     var rhs_cast: []const u8 = "";
     if (op >= @intCast(u8, 10)) {
-        var l_sgn: i8 = @intCast(i8, -1);
-        var r_sgn: i8 = @intCast(i8, -1);
         var l_tyid: u32 = @intCast(u32, 0);
         var r_tyid: u32 = @intCast(u32, 0);
         var l_sg: u8 = @intCast(u8, 0);
         var r_sg: u8 = @intCast(u8, 0);
-        if (getTempEffType(emitter, lhs_t, &l_tyid, &l_sg) == @intCast(u8, 1)) {
-            l_sgn = classifyIntSignedness(emitter.registry, l_tyid);
-        }
-        if (getTempEffType(emitter, rhs_t, &r_tyid, &r_sg) == @intCast(u8, 1)) {
-            r_sgn = classifyIntSignedness(emitter.registry, r_tyid);
-        }
-        if (l_sgn == @intCast(i8, 1) and r_sgn == @intCast(i8, 0)) {
-            if (intTypeByteWidth(emitter.registry, r_tyid) >= intTypeByteWidth(emitter.registry, l_tyid)) {
-                lhs_cast = getCTypeName(emitter.registry, emitter.mangler, r_tyid);
-            }
-        } else if (l_sgn == @intCast(i8, 0) and r_sgn == @intCast(i8, 1)) {
-            if (intTypeByteWidth(emitter.registry, l_tyid) >= intTypeByteWidth(emitter.registry, r_tyid)) {
-                rhs_cast = getCTypeName(emitter.registry, emitter.mangler, l_tyid);
-            }
+        _ = getTempEffType(emitter, lhs_t, &l_tyid, &l_sg);
+        _ = getTempEffType(emitter, rhs_t, &r_tyid, &r_sg);
+        var prom_side = coercion_mod.coercionUsualArithPromote(emitter.registry, l_tyid, r_tyid);
+        if (prom_side == @intCast(u8, 0)) {
+            lhs_cast = getCTypeName(emitter.registry, emitter.mangler, r_tyid);
+        } else if (prom_side == @intCast(u8, 1)) {
+            rhs_cast = getCTypeName(emitter.registry, emitter.mangler, l_tyid);
         }
     }
     if (lhs_cast.len != @intCast(usize, 0)) {
@@ -4496,7 +4488,7 @@ fn writeIntConstRvalue(emitter: *C89Emitter, value: u64, temp_type_id: u32, pref
     var ict_bty = emitter.registry.types_items[@intCast(usize, temp_type_id)];
     var is_signed: u8 = @intCast(u8, 0);
     var width_bits: u32 = @intCast(u32, 32);
-    if (ict_bty.kind == type_mod.TypeKind.i8_type or ict_bty.kind == type_mod.TypeKind.i16_type or ict_bty.kind == type_mod.TypeKind.i32_type or ict_bty.kind == type_mod.TypeKind.i64_type or ict_bty.kind == type_mod.TypeKind.isize_type or ict_bty.kind == type_mod.TypeKind.arb_int_type) {
+    if (type_mod.typeKindIsSignedIntBase(ict_bty.kind) != @intCast(u8, 0)) {
         is_signed = @intCast(u8, 1);
     }
     if (ict_bty.kind == type_mod.TypeKind.arb_uint_type or ict_bty.kind == type_mod.TypeKind.arb_int_type) {
@@ -4701,7 +4693,7 @@ fn getUnsignedCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []c
     if (k == TypeKind.null_type or k == TypeKind.undefined_type) {
         return getCTypeName(reg, mangler, tid);
     }
-    var w = intKindWidthBytes(k);
+    var w = type_mod.typeKindIntWidthBytes(k);
     if (w == @intCast(u32, 1)) { var s: []const u8 = "unsigned char"; return s; }
     if (w == @intCast(u32, 2)) { var s: []const u8 = "unsigned short"; return s; }
     if (w == @intCast(u32, 4)) { var s: []const u8 = "unsigned int"; return s; }
@@ -4709,25 +4701,6 @@ fn getUnsignedCTypeName(reg: *TypeRegistry, mangler: *NameMangler, tid: u32) []c
     return getCTypeName(reg, mangler, tid);
 }
 
-fn classifyIntSignedness(reg: *TypeRegistry, tyid: u32) i8 {
-    if (tyid == type_mod.TYPE_VOID) { return @intCast(i8, -1); }
-    var k = reg.types_items[@intCast(usize, tyid)].kind;
-    if (intKindIsSignedBase(k) != @intCast(u8, 0) or k == TypeKind.c_char_type or
-        k == TypeKind.integer_literal_type or k == TypeKind.undefined_type or
-        k == TypeKind.null_type) { return @intCast(i8, 1); }
-    if (intKindIsUnsignedBase(k) != @intCast(u8, 0) or k == TypeKind.bool_type) { return @intCast(i8, 0); }
-    return @intCast(i8, -1);
-}
-
-fn intTypeNeedsWidthWrap(reg: *TypeRegistry, tyid: u32) u8 {
-    if (tyid == type_mod.TYPE_VOID) { return @intCast(u8, 0); }
-    var ty = reg.types_items[@intCast(usize, tyid)];
-    if (ty.kind != TypeKind.arb_uint_type and ty.kind != TypeKind.arb_int_type) { return @intCast(u8, 0); }
-    var w = type_mod.typeRegistryIntWidthBits(reg, tyid);
-    var cb: u32 = @intCast(u32, ty.size * @intCast(u32, 8));
-    if (@intCast(u32, w) < @intCast(u32, 1) or @intCast(u32, w) >= cb) { return @intCast(u8, 0); }
-    return @intCast(u8, 1);
-}
 
 fn writeSatNegDecimal(v: u64, buf: []u8) []const u8 {
     var ib: [24]u8 = undefined;
@@ -4892,41 +4865,6 @@ fn writeWidthSignBitString(writer: *BufferedWriter, width_bits: u32) void {
 
 
 
-fn intTypeByteWidth(reg: *TypeRegistry, tyid: u32) u32 {
-    if (tyid == type_mod.TYPE_VOID) { return @intCast(u32, 0); }
-    var k = reg.types_items[@intCast(usize, tyid)].kind;
-    var w = intKindWidthBytes(k);
-    if (w != @intCast(u32, 0)) { return w; }
-    return reg.types_items[@intCast(usize, tyid)].size;
-}
-
-fn typeIsIntKind(reg: *TypeRegistry, tid: u32) u8 {
-    if (tid == type_mod.TYPE_VOID) { return @intCast(u8, 0); }
-    var k = reg.types_items[@intCast(usize, tid)].kind;
-    if (intKindIsSignedBase(k) != @intCast(u8, 0) or intKindIsUnsignedBase(k) != @intCast(u8, 0) or
-        k == TypeKind.c_char_type or k == TypeKind.bool_type or k == TypeKind.integer_literal_type or
-        k == TypeKind.undefined_type or k == TypeKind.null_type) { return @intCast(u8, 1); }
-    return @intCast(u8, 0);
-}
-
-fn retTypeIsScalarC(reg: *TypeRegistry, tid: u32) u8 {
-    if (tid == type_mod.TYPE_VOID or tid == type_mod.TYPE_UNDEFINED or tid == @intCast(u32, 0)) { return @intCast(u8, 0); }
-    var rv_k = reg.types_items[@intCast(usize, tid)].kind;
-    if (intKindIsSignedBase(rv_k) != @intCast(u8, 0) or intKindIsUnsignedBase(rv_k) != @intCast(u8, 0) or
-        rv_k == TypeKind.c_char_type or rv_k == TypeKind.integer_literal_type or rv_k == TypeKind.bool_type or
-        rv_k == TypeKind.null_type or rv_k == TypeKind.f32_type or rv_k == TypeKind.f64_type or
-        rv_k == TypeKind.enum_type or rv_k == TypeKind.error_set_type or rv_k == TypeKind.ptr_type or
-        rv_k == TypeKind.many_ptr_type or rv_k == TypeKind.fn_type) { return @intCast(u8, 1); }
-    return @intCast(u8, 0);
-}
-
-fn typeIsPtrKind(reg: *TypeRegistry, tid: u32) u8 {
-    if (tid == type_mod.TYPE_UNDEFINED or tid == type_mod.TYPE_VOID or tid == @intCast(u32, 0)) { return @intCast(u8, 0); }
-    var ty = reg.types_items[@intCast(usize, tid)];
-    var k = ty.kind;
-    if (k == TypeKind.ptr_type or k == TypeKind.many_ptr_type) { return @intCast(u8, 1); }
-    return @intCast(u8, 0);
-}
 
 fn isLocalPosUsed(emitter: *C89Emitter, pos: u32) u8 {
     if (pos >= emitter.fl_count) { return @intCast(u8, 1); }
@@ -4980,7 +4918,7 @@ fn getTempEffType(emitter: *C89Emitter, temp_id: u32, out_type: *u32, out_signed
             if (eff != @intCast(u32, 0xFFFFFFFF) and eff != type_mod.TYPE_VOID) {
                 out_type.* = eff;
                 var bty = emitter.registry.types_items[@intCast(usize, eff)];
-                if (intKindIsSignedBase(bty.kind) != @intCast(u8, 0) or bty.kind == TypeKind.undefined_type or bty.kind == TypeKind.null_type) {
+                if (type_mod.typeKindIsSignedIntBase(bty.kind) != @intCast(u8, 0) or bty.kind == TypeKind.undefined_type or bty.kind == TypeKind.null_type) {
                     out_signed.* = @intCast(u8, 1);
                 } else {
                     out_signed.* = @intCast(u8, 0);
@@ -4998,7 +4936,7 @@ fn getTempTypeInfoResolve(emitter: *C89Emitter, temp_id: u32, out_type: *u32, ou
     if (resolved != @intCast(u32, 0)) {
         var bty = emitter.registry.types_items[@intCast(usize, resolved)];
         out_type.* = resolved;
-        if (intKindIsSignedBase(bty.kind) != @intCast(u8, 0)) {
+        if (type_mod.typeKindIsSignedIntBase(bty.kind) != @intCast(u8, 0)) {
             out_signed.* = @intCast(u8, 1);
         } else {
             out_signed.* = @intCast(u8, 0);
@@ -5420,8 +5358,8 @@ fn emitSatBinary(emitter: *C89Emitter, op: u8, lhs: []const u8, rhs: []const u8,
 // slices keep their explicit arms; any other kind keeps the defensive printI32
 // fallback (Task 3 adds the validator that rejects those arguments).
 fn printKindIsIntegerLike(k: TypeKind) bool {
-    if (intKindIsSignedBase(k) != @intCast(u8, 0)) return true;
-    if (intKindIsUnsignedBase(k) != @intCast(u8, 0)) return true;
+    if (type_mod.typeKindIsSignedIntBase(k) != @intCast(u8, 0)) return true;
+    if (type_mod.typeKindIsUnsignedIntBase(k) != @intCast(u8, 0)) return true;
     if (k == TypeKind.c_char_type or k == TypeKind.enum_type or k == TypeKind.integer_literal_type) return true;
     return false;
 }
@@ -7123,7 +7061,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             if (rv_rt == type_mod.TYPE_VOID or rv_rt == type_mod.TYPE_UNDEFINED or rv_rt == @intCast(u32, 0)) {
                 var s: []const u8 = "return;\n";
                 bufferedWriterWrite(&emitter.writer, s);
-            } else if (retTypeIsScalarC(emitter.registry, rv_rt) == @intCast(u8, 1)) {
+            } else if (type_mod.typeRegistryIsScalarC(emitter.registry, rv_rt) == @intCast(u8, 1)) {
                 var s: []const u8 = "return 0;\n";
                 bufferedWriterWrite(&emitter.writer, s);
             } else {
@@ -7212,10 +7150,10 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                 var as_cast: []const u8 = "";
                 var as_dty: u32 = @intCast(u32, 0xFFFFFFFF);
                 var as_dsg: u8 = @intCast(u8, 0);
-                if (getTempEffType(emitter, a.dst, &as_dty, &as_dsg) == @intCast(u8, 1) and typeIsPtrKind(emitter.registry, as_dty) != @intCast(u8, 0)) {
+                if (getTempEffType(emitter, a.dst, &as_dty, &as_dsg) == @intCast(u8, 1) and type_mod.typeRegistryIsPointer(emitter.registry, as_dty)) {
                     var as_sty: u32 = @intCast(u32, 0xFFFFFFFF);
                     var as_ssg: u8 = @intCast(u8, 0);
-                    if (getTempEffType(emitter, a.src, &as_sty, &as_ssg) == @intCast(u8, 1) and typeIsIntKind(emitter.registry, as_sty) != @intCast(u8, 0)) {
+                    if (getTempEffType(emitter, a.src, &as_sty, &as_ssg) == @intCast(u8, 1) and type_mod.typeRegistryIsIntKind(emitter.registry, as_sty) != @intCast(u8, 0)) {
                         as_cast = getCTypeName(emitter.registry, emitter.mangler, as_dty);
                     }
                 }
@@ -7410,10 +7348,10 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                     if (stl_ltid != @intCast(u32, 0xFFFFFFFF)) {
                         var stl_ty: u32 = @intCast(u32, 0xFFFFFFFF);
                         var stl_sg: u8 = @intCast(u8, 0);
-                        if (getTempEffType(emitter, stl_ltid, &stl_ty, &stl_sg) == @intCast(u8, 1) and typeIsPtrKind(emitter.registry, stl_ty) != @intCast(u8, 0)) {
+                        if (getTempEffType(emitter, stl_ltid, &stl_ty, &stl_sg) == @intCast(u8, 1) and type_mod.typeRegistryIsPointer(emitter.registry, stl_ty)) {
                             var stl_vty: u32 = @intCast(u32, 0xFFFFFFFF);
                             var stl_vsg: u8 = @intCast(u8, 0);
-                            if (getTempEffType(emitter, sl.value, &stl_vty, &stl_vsg) == @intCast(u8, 1) and typeIsIntKind(emitter.registry, stl_vty) != @intCast(u8, 0)) {
+                            if (getTempEffType(emitter, sl.value, &stl_vty, &stl_vsg) == @intCast(u8, 1) and type_mod.typeRegistryIsIntKind(emitter.registry, stl_vty) != @intCast(u8, 0)) {
                                 stl_cast = getCTypeName(emitter.registry, emitter.mangler, stl_ty);
                             }
                         }
@@ -7560,7 +7498,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                           sf_cast = ptrCTypeNameFromElem(emitter.registry, emitter.mangler, sf_el);
                       }
                   } else if (sf_rtid != @intCast(u32, 0)) {
-                      if (typeIsPtrKind(emitter.registry, sf_rtid) != @intCast(u8, 0)) { sf_cast = getCTypeName(emitter.registry, emitter.mangler, sf_rtid); }
+                      if (type_mod.typeRegistryIsPointer(emitter.registry, sf_rtid)) { sf_cast = getCTypeName(emitter.registry, emitter.mangler, sf_rtid); }
                       if (bty.kind == type_mod.TypeKind.struct_type) {
                           var sf_fety = emitter.registry.types_items[@intCast(usize, sf_rtid)];
                           if (sf_fety.kind == type_mod.TypeKind.array_type) {
@@ -7600,7 +7538,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                  if (sf_cast.len != @intCast(usize, 0)) {
                      var sf_src_ty: u32 = @intCast(u32, 0xFFFFFFFF);
                      var sf_ssg: u8 = @intCast(u8, 0);
-                     if (getTempEffType(emitter, sf.value, &sf_src_ty, &sf_ssg) == @intCast(u8, 1) and typeIsIntKind(emitter.registry, sf_src_ty) != @intCast(u8, 0)) {
+                     if (getTempEffType(emitter, sf.value, &sf_src_ty, &sf_ssg) == @intCast(u8, 1) and type_mod.typeRegistryIsIntKind(emitter.registry, sf_src_ty) != @intCast(u8, 0)) {
                          sf_cast_name = sf_cast;
                      }
                  }
@@ -7639,10 +7577,10 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                 var st_pt = emitter.registry.types_items[@intCast(usize, st_pty)];
                 if (st_pt.kind == type_mod.TypeKind.ptr_type or st_pt.kind == type_mod.TypeKind.many_ptr_type) {
                     var st_base = emitter.registry.ptr_items[@intCast(usize, st_pt.payload_idx)].base;
-                    if (typeIsPtrKind(emitter.registry, st_base) != @intCast(u8, 0)) {
+                    if (type_mod.typeRegistryIsPointer(emitter.registry, st_base)) {
                         var st_vty: u32 = @intCast(u32, 0xFFFFFFFF);
                         var st_vsg: u8 = @intCast(u8, 0);
-                        if (getTempEffType(emitter, s.value, &st_vty, &st_vsg) == @intCast(u8, 1) and typeIsIntKind(emitter.registry, st_vty) != @intCast(u8, 0)) {
+                        if (getTempEffType(emitter, s.value, &st_vty, &st_vsg) == @intCast(u8, 1) and type_mod.typeRegistryIsIntKind(emitter.registry, st_vty) != @intCast(u8, 0)) {
                             st_cast = getCTypeName(emitter.registry, emitter.mangler, st_base);
                         }
                     }
@@ -9467,33 +9405,6 @@ pub fn emitBuildScripts(emitter: *C89Emitter, dir_path: []const u8, target_is_wi
     }
 }
 
-// Task 2b3 D1-2: shared int-kind truth-table primitives. The per-caller
-// predicates below keep their exact prior membership by composing these bases
-// with their own explicit extras; no caller set is widened or narrowed.
-fn intKindIsSignedBase(k: TypeKind) u8 {
-    if (k == TypeKind.i8_type or k == TypeKind.i16_type or k == TypeKind.i32_type or
-        k == TypeKind.i64_type or k == TypeKind.isize_type or k == TypeKind.arb_int_type) return @intCast(u8, 1);
-    return @intCast(u8, 0);
-}
-
-fn intKindIsUnsignedBase(k: TypeKind) u8 {
-    if (k == TypeKind.u8_type or k == TypeKind.u16_type or k == TypeKind.u32_type or
-        k == TypeKind.u64_type or k == TypeKind.usize_type or k == TypeKind.arb_uint_type) return @intCast(u8, 1);
-    return @intCast(u8, 0);
-}
-
-// Byte width used by intTypeByteWidth / getUnsignedCTypeName; 0 = not an
-// integer kind handled by those tables (caller keeps its own fallback).
-fn intKindWidthBytes(k: TypeKind) u32 {
-    if (k == TypeKind.i8_type or k == TypeKind.u8_type or k == TypeKind.c_char_type) return @intCast(u32, 1);
-    if (k == TypeKind.i16_type or k == TypeKind.u16_type) return @intCast(u32, 2);
-    if (k == TypeKind.bool_type) return @intCast(u32, 1);
-    if (k == TypeKind.i32_type or k == TypeKind.u32_type or k == TypeKind.isize_type or
-        k == TypeKind.usize_type or k == TypeKind.integer_literal_type or k == TypeKind.null_type or
-        k == TypeKind.undefined_type) return @intCast(u32, 4);
-    if (k == TypeKind.i64_type or k == TypeKind.u64_type) return @intCast(u32, 8);
-    return @intCast(u32, 0);
-}
 
 // Task 2b3 D3-3: shared def-result temp extraction for the result insts that
 // nestDefTempId and dceResultPos have in common. Each caller adds its own

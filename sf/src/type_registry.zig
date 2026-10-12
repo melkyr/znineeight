@@ -1058,6 +1058,88 @@ pub fn typeRegistryGetPointeeType(self: *TypeRegistry, tid: u32) ?u32 {
     return self.ptr_items[ty.payload_idx].base;
 }
 
+// P5 (emitter sanitization): canonical int-kind/signedness/width/scalar
+// predicates, relocated verbatim from c89_emit.zig's truth tables. Per-caller
+// membership is preserved exactly (the "Task 2b3 D1-2" composition rule: these
+// bases + each caller's own explicit extras); no caller set is widened or
+// narrowed. `typeRegistryIntSignednessClass` is the C-codegen signedness class
+// (tri-state; c_char/integer_literal/undefined/null count signed, bool
+// unsigned) and intentionally differs from `typeRegistryIntIsSigned` (semantic
+// signedness, enum-backing aware).
+
+pub fn typeKindIsSignedIntBase(k: TypeKind) u8 {
+    if (k == TypeKind.i8_type or k == TypeKind.i16_type or k == TypeKind.i32_type or
+        k == TypeKind.i64_type or k == TypeKind.isize_type or k == TypeKind.arb_int_type) return @intCast(u8, 1);
+    return @intCast(u8, 0);
+}
+
+pub fn typeKindIsUnsignedIntBase(k: TypeKind) u8 {
+    if (k == TypeKind.u8_type or k == TypeKind.u16_type or k == TypeKind.u32_type or
+        k == TypeKind.u64_type or k == TypeKind.usize_type or k == TypeKind.arb_uint_type) return @intCast(u8, 1);
+    return @intCast(u8, 0);
+}
+
+// Byte width used by typeRegistryIntByteWidth / emitter C-name width routes;
+// 0 = not an integer kind handled by those tables (caller keeps its fallback).
+pub fn typeKindIntWidthBytes(k: TypeKind) u32 {
+    if (k == TypeKind.i8_type or k == TypeKind.u8_type or k == TypeKind.c_char_type) return @intCast(u32, 1);
+    if (k == TypeKind.i16_type or k == TypeKind.u16_type) return @intCast(u32, 2);
+    if (k == TypeKind.bool_type) return @intCast(u32, 1);
+    if (k == TypeKind.i32_type or k == TypeKind.u32_type or k == TypeKind.isize_type or
+        k == TypeKind.usize_type or k == TypeKind.integer_literal_type or k == TypeKind.null_type or
+        k == TypeKind.undefined_type) return @intCast(u32, 4);
+    if (k == TypeKind.i64_type or k == TypeKind.u64_type) return @intCast(u32, 8);
+    return @intCast(u32, 0);
+}
+
+pub fn typeRegistryIntSignednessClass(self: *TypeRegistry, tyid: u32) i8 {
+    if (tyid == TYPE_VOID) { return @intCast(i8, -1); }
+    var k = self.types_items[@intCast(usize, tyid)].kind;
+    if (typeKindIsSignedIntBase(k) != @intCast(u8, 0) or k == TypeKind.c_char_type or
+        k == TypeKind.integer_literal_type or k == TypeKind.undefined_type or
+        k == TypeKind.null_type) { return @intCast(i8, 1); }
+    if (typeKindIsUnsignedIntBase(k) != @intCast(u8, 0) or k == TypeKind.bool_type) { return @intCast(i8, 0); }
+    return @intCast(i8, -1);
+}
+
+pub fn typeRegistryIntNeedsWidthWrap(self: *TypeRegistry, tyid: u32) u8 {
+    if (tyid == TYPE_VOID) { return @intCast(u8, 0); }
+    var ty = self.types_items[@intCast(usize, tyid)];
+    if (ty.kind != TypeKind.arb_uint_type and ty.kind != TypeKind.arb_int_type) { return @intCast(u8, 0); }
+    var w = typeRegistryIntWidthBits(self, tyid);
+    var cb: u32 = @intCast(u32, ty.size * @intCast(u32, 8));
+    if (@intCast(u32, w) < @intCast(u32, 1) or @intCast(u32, w) >= cb) { return @intCast(u8, 0); }
+    return @intCast(u8, 1);
+}
+
+pub fn typeRegistryIntByteWidth(self: *TypeRegistry, tyid: u32) u32 {
+    if (tyid == TYPE_VOID) { return @intCast(u32, 0); }
+    var k = self.types_items[@intCast(usize, tyid)].kind;
+    var w = typeKindIntWidthBytes(k);
+    if (w != @intCast(u32, 0)) { return w; }
+    return self.types_items[@intCast(usize, tyid)].size;
+}
+
+pub fn typeRegistryIsIntKind(self: *TypeRegistry, tid: u32) u8 {
+    if (tid == TYPE_VOID) { return @intCast(u8, 0); }
+    var k = self.types_items[@intCast(usize, tid)].kind;
+    if (typeKindIsSignedIntBase(k) != @intCast(u8, 0) or typeKindIsUnsignedIntBase(k) != @intCast(u8, 0) or
+        k == TypeKind.c_char_type or k == TypeKind.bool_type or k == TypeKind.integer_literal_type or
+        k == TypeKind.undefined_type or k == TypeKind.null_type) { return @intCast(u8, 1); }
+    return @intCast(u8, 0);
+}
+
+pub fn typeRegistryIsScalarC(self: *TypeRegistry, tid: u32) u8 {
+    if (tid == TYPE_VOID or tid == TYPE_UNDEFINED or tid == @intCast(u32, 0)) { return @intCast(u8, 0); }
+    var rv_k = self.types_items[@intCast(usize, tid)].kind;
+    if (typeKindIsSignedIntBase(rv_k) != @intCast(u8, 0) or typeKindIsUnsignedIntBase(rv_k) != @intCast(u8, 0) or
+        rv_k == TypeKind.c_char_type or rv_k == TypeKind.integer_literal_type or rv_k == TypeKind.bool_type or
+        rv_k == TypeKind.null_type or rv_k == TypeKind.f32_type or rv_k == TypeKind.f64_type or
+        rv_k == TypeKind.enum_type or rv_k == TypeKind.error_set_type or rv_k == TypeKind.ptr_type or
+        rv_k == TypeKind.many_ptr_type or rv_k == TypeKind.fn_type) { return @intCast(u8, 1); }
+    return @intCast(u8, 0);
+}
+
 /// If `tid` is a concrete array type, returns its total size in bytes
 /// (`elem_size * length`); otherwise null. Used by the `-fsafe` `@asyncInit`
 /// buffer-length check to recover a compile-time byte length from `&arr`.

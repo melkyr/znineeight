@@ -223,3 +223,35 @@ pub fn classifyCoercion(reg: *type_mod.TypeRegistry, source: TypeId, target: Typ
 
     return CoercionKind.none;
 }
+
+// P5 (emitter sanitization): C usual-arithmetic conversions for a binary
+// operator's two integer operands, relocated verbatim from c89_emit.zig
+// `emitBinRvalueText`'s mixed-sign promotion block. Each operand is classified
+// with `typeRegistryIntSignednessClass`; when exactly one operand is unsigned
+// and the unsigned operand is at least as wide (`typeRegistryIntByteWidth`) as
+// the signed one, the signed operand must be cast to the unsigned operand's C
+// type. A TypeId of 0 (operand has no resolved type) classifies as
+// unclassified, matching the emitter's unresolved-temp path. Returns which
+// side takes the cast: 0 = cast LHS to RHS's type; 1 = cast RHS to LHS's
+// type; 2 = no explicit promotion (same signedness class, an unclassified
+// operand, or the signed operand is wider).
+pub fn coercionUsualArithPromote(reg: *type_mod.TypeRegistry, l_tyid: TypeId, r_tyid: TypeId) u8 {
+    var l_sgn: i8 = @intCast(i8, -1);
+    var r_sgn: i8 = @intCast(i8, -1);
+    if (l_tyid != @intCast(u32, 0)) {
+        l_sgn = type_mod.typeRegistryIntSignednessClass(reg, l_tyid);
+    }
+    if (r_tyid != @intCast(u32, 0)) {
+        r_sgn = type_mod.typeRegistryIntSignednessClass(reg, r_tyid);
+    }
+    if (l_sgn == @intCast(i8, 1) and r_sgn == @intCast(i8, 0)) {
+        if (type_mod.typeRegistryIntByteWidth(reg, r_tyid) >= type_mod.typeRegistryIntByteWidth(reg, l_tyid)) {
+            return @intCast(u8, 0);
+        }
+    } else if (l_sgn == @intCast(i8, 0) and r_sgn == @intCast(i8, 1)) {
+        if (type_mod.typeRegistryIntByteWidth(reg, l_tyid) >= type_mod.typeRegistryIntByteWidth(reg, r_tyid)) {
+            return @intCast(u8, 1);
+        }
+    }
+    return @intCast(u8, 2);
+}
