@@ -39,7 +39,7 @@ Task 0 fix-round-1 "brief cites exact, no drift" held at `f96e1206`; P5 shifted 
 
 **union-member** — `cUnionMemberName:595` (escape, **no collision check** = D1 concern 2), calls `:321` (`emitFieldAssign`), `:436` (`emitVariantFieldPayload`), `:478/:525/:559` (`resolveFieldAccess`), `:2043` (TU decl), `:2134` (union decl), `:6307` (printer TU access).
 
-**struct-field (RAW — the D1 latent class)** — `:2092` (decl) + access `:469` (addr-of struct), `:514` (ptr->struct), `:525`-else (ptr->packed_union), `:559`-else (value struct/packed), `:321`-else (`emitFieldAssign`), **plus `:6221` (`emitAggPrinterDef` `v.<fname>`) — a sibling the plan list missed**. All routed.
+**struct-field (RAW — the D1 latent class)** — `:2092` (decl) + access `:469` (addr-of struct), `:514` (ptr->struct), `:525`-else (ptr->packed_union), `:559`-else (value struct/packed), `:321`-else (`emitFieldAssign`), **plus `:6221` (`emitAggPrinterDef` `v.<fname>`) — a sibling the plan list missed**, plus 4 more the round-0 census missed: the `.undefined_const` array-of-struct zeroing reads in `emitFlagOp` (`sfe.name_id` at `:7579/:7589/:7604/:7612`, raw `result[_i].<field>` designators). **Fix round 1 (truth-up): round-0's "All routed" was FALSE — the 4 `.undefined_const` reads were still raw; routed in Fix round 1 via `nm_mod.nameManglerMintField(mangler, sfe.name_id, uap.elem)`. Post-fix truth: ALL struct-field mint sites routed** (grep-verified, `## Fix round 1`).
 
 **synthetic-type** — `syntheticTypeName:898` (pure 3-part rule; callers `:998/:1010/:1065/:1074/:2155/:2385`), `sliceElementName:932`, and the ad-hoc builders inside `getCTypeName:941`: `EU_` `:1078-1096`, `FP_` `:1098-1146`, `ES_` `:1148-1165`, plus the `TU_` builder `:1963-1975`. **P1/P3 seam (disclosed):** composition of type-structure -> name-material is P3's `typeCName` residue ("P3 later closes the full typeCName residue"); P1 owns the mint tail (every final identifier is produced by `name_mangler.zig`).
 
@@ -310,4 +310,142 @@ No gate failed; no observation diverges from the plan. Runtime behavior unchange
 2. **Compat surface** (disclosed design decision, within the touch set): `c89_emit.zig` keeps 4 thin `pub` forwarders so `main.zig:1197-1199` and `sf/src/tests/test_name_mangle_bin.zig` (outside the approved touch set) keep compiling unchanged. No minting logic is duplicated.
 3. **P1/P3 seam** (disclosed): the `EU_`/`ES_`/`FP_`/`TU_` name-material COMPOSITIONS stay in `getCTypeName`/`emitTaggedUnionType` (P3 relocates the derivation to `type_registry.typeCName`); every one of those names is finalized through the authority's `nameManglerMangle` — no listed-category identifier is produced outside `name_mangler.zig`.
 4. **Fixed point moved** `e81d9266…` → `f8912bbd39083dba727b5f2c55072d6c` (module split; expected per the brief). Seed not rotated per controller resolution; rotate at closeout (Task C).
+
+## Fix round 1
+
+Review findings: **Important 1** (authority bypass — struct-field mint missed in `.undefined_const` zeroing) + **Minor 2** (fold-in: `emitFieldAssign`'s `fld_name_val` wrong kind+scope pair for pointer bases). Minor 1 (`MintRaw` collision-suffix compounding) and Minor 3 (transcript style) DEFERRED to final review per instruction — not addressed.
+
+### What was fixed
+
+1. **Important 1** — `emitFlagOp`'s `.undefined_const` array-of-struct zeroing arm wrote `interner_mod.stringInternerGet(emitter.interner, sfe.name_id)` directly into `result[_i].<field>` C designators at 4 sites. All four routed through `nm_mod.nameManglerMintField(emitter.mangler, sfe.name_id, uap.elem)` (scope = the struct type id = `uap.elem`, exactly the `tid` `emitStructType` mints with):
+   - `:7579` `slpfn` (array-typed field: `result[_i].<f>[_k] = 0`)
+   - `:7589` `slfnp` (slice field: `result[_i].<f>.ptr/.len = 0` — one mint, two writes)
+   - `:7604` `slfno` (optional field: `result[_i].<f>.has_value = 0`)
+   - `:7612` `slfn` (scalar field: `result[_i].<f> = 0`)
+2. **Minor 2** — `emitFieldAssign`'s `fld_name_val` mint (`c89_emit.zig:291`) now runs only for value-aggregate bases (`struct_type` → `MintField(mangler, efa_name, base_ty)`; `union_type`/`packed_union_type` → `MintMember(mangler, efa_name, base_ty)`) — the exact kind+scope pairs `resolveFieldAccess` mints under mode 45 and the only pairs consumed under `is_arr`. Pointer/slice/TU bases no longer mint at all (`fld_name_val` is unreachable there: `is_arr` is set solely by the tuple arm and the value-aggregate arm), so `raw_cache_member` is no longer polluted with pointer-type-id scope keys.
+3. **Truth-ups:** report §1 struct-field census row (round-0 "All routed" was FALSE — the 4 `.undefined_const` reads are now listed and marked fixed) and doc 08 §3's "no minting logic remains in the emitter" claim (now precisely scoped: the only raw name reads left are printer display labels, prefixed macro composites, and the `is_extern` overrides — none mint a listed-category identifier).
+
+### Re-verification (command + observed)
+
+**(a) amended sites grep-verified routed through `MintField`:**
+```bash
+grep -n "sfe.name_id" sf/src/c89_emit.zig
+```
+```
+7579:  var slpfn: []const u8 = nm_mod.nameManglerMintField(emitter.mangler, sfe.name_id, uap.elem);
+7589:  var slfnp: []const u8 = nm_mod.nameManglerMintField(emitter.mangler, sfe.name_id, uap.elem);
+7604:  var slfno: []const u8 = nm_mod.nameManglerMintField(emitter.mangler, sfe.name_id, uap.elem);
+7612:  var slfn: []const u8 = nm_mod.nameManglerMintField(emitter.mangler, sfe.name_id, uap.elem);
+```
+Residual raw field-name reads (all classes) — empty:
+```bash
+grep -n "stringInternerGet(emitter.interner, sfe" sf/src/c89_emit.zig        # (no output)
+grep -n "stringInternerGet(interner, efa_name\|…ar_fe\|…rp_fe\|…vn_fe\|…au_fe" sf/src/c89_emit.zig   # (no output)
+```
+
+**(b) report/doc truth-up lines:** report §1 struct-field row now reads "…plus 4 more the round-0 census missed: the `.undefined_const` … `sfe.name_id` at `:7579/:7589/:7604/:7612` … **Fix round 1 (truth-up): round-0's "All routed" was FALSE … Post-fix truth: ALL struct-field mint sites routed**"; doc 08 §3 now reads "…no minting logic remains in the emitter (Fix round 1 truth-up: … routed through `nameManglerMintField(mangler, sfe.name_id, uap.elem)`; post-fix the only raw name reads left … DISPLAY labels … macro composites … `is_extern` overrides …)".
+
+### Covering tests
+
+**C1 — targeted repro of both Important-1 consequences** (`/tmp/p1_work/fix1/undefined_repro.zig`, evidence-only, not committed): a struct with the escape-collision pair `int`+`z_int` plus array/slice/optional fields, `var a: [2]S = undefined;` under `-ffast` (exercises all 4 zeroing arms):
+
+```zig
+pub const S = struct { int: i32, z_int: i32, arr: [2]i32, sl: []u8, opt: ?i32 };
+pub fn main() void { var a: [2]S = undefined; a[0].int = 7; … }
+```
+BEFORE (round-0 compiler `/tmp/p1_work/seed/zig1_5_clean`, i.e. pre-fix state):
+```bash
+/tmp/p1_work/seed/zig1_5_clean -ffast --dump-c89 …/undefined_repro.zig > before.c
+grep -n "\[_i\]\." before.c
+# 68:  zT_1[_i].int = 0;
+# 69:  zT_1[_i].z_int = 0;      <- raw designators; decl had minted z_int / z_int_1
+# gcc -fsyntax-only … before.c
+# before.c:68:18: error: expected identifier before 'int'
+```
+(The decl was already minted `int z_int; int z_int_1;` by round-0 P1 — the zero-fill wrote `int`/`z_int`, the exact wrong-member + invalid-C89 pair the finding describes.)
+
+AFTER (fixed compiler `/tmp/p1_work/seed_fix/zig1_5_clean`):
+```bash
+/tmp/p1_work/seed_fix/zig1_5_clean -ffast --dump-c89 …/undefined_repro.zig > after.c
+grep -n "\[_i\]\." after.c
+# 68:  zT_1[_i].z_int = 0;
+# 69:  zT_1[_i].z_int_1 = 0;    <- matches the minted decl exactly
+# 72:  zT_1[_i].arr[_k] = 0;    (slpfn)
+# 75:  zT_1[_i].sl.ptr = 0; zT_1[_i].sl.len = 0;   (slfnp)
+# 76:  zT_1[_i].opt.has_value = 0;   (slfno)
+gcc -m32 -std=c89 … after.c zig_runtime.c zig_pal.c -o repro   # gcc rc=0
+./repro; echo $?                                                           # run rc=0
+```
+**C2 — `tests/test_name_mangle_bin.zig`** (compat + minter semantics) built with the fixed compiler and run: `NameMangle tests passed.` (14/14 ok).
+
+### Runtime battery (re-run, fixed compiler `/tmp/p1_work/seed_fix/zig1_5_clean`; anchors = `progress.md` `## Task 0` + `task-0-report.md` §1 / Appendix A)
+
+**1. Seed rebuild + two-hop closure**
+```bash
+bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/p1_work/seed_fix
+# [seed] hop1 binary md5: 973a831a8efc5998bec45470001cb008
+# [seed] hop2 binary md5: 973a831a8efc5998bec45470001cb008
+# [seed] two-hop closure OK: hop1 == hop2 == 973a831a8efc5998bec45470001cb008
+# === [seed] Done: /tmp/p1_work/seed_fix ===
+```
+**Fixed point old→new: `f8912bbd39083dba727b5f2c55072d6c` (round-0) → `973a831a8efc5998bec45470001cb008` — MOVED (the fix amends emission on `.undefined_const` paths + the source delta moves the self-emission C). hop1 == hop2 — MATCH.** Seed NOT rotated.
+
+**2. Corpus classify**
+```bash
+bash scripts/corpus/classify /tmp/p1_work/seed_fix/zig1_5_clean /tmp/p1_work/fix1/corpus.txt
+# wrote …: 1124 dirs
+md5sum /tmp/p1_work/appx_a.txt /tmp/p1_work/fix1/corpus.txt
+# 518eca1a9b5d3e1cc5a48abce214abd8  appx_a.txt
+# 518eca1a9b5d3e1cc5a48abce214abd8  corpus.txt
+diff …   # EMPTY
+awk '{print $2}' corpus.txt | sort | uniq -c   # 116 FAIL / 58 GREEN / 950 OK
+```
+**BYTE-IDENTICAL to Appendix A; 1124 = 950/58/116/0/0; no class mover. UNCHANGED.**
+
+**3. Runtime goldens** — build recipe identical to round 0 (4 dumps + gcc, rc=0 ×4):
+| golden | observed md5 | expected | match |
+|---|---|---|---|
+| gol (100 gens) | `fcbf7e7cead5082f0a8caadd5a8f0ff9` | same | YES |
+| lisp `(+ 1 2)` | `b3d9f8974da24ddbf9d389f3d7d97322` | same | YES |
+| json | `8bda3d5a1ec07d14a301bc343df32bf8` | same | YES |
+| mud server | `66c8f0abb926cca7baf9a0d1692ab318` | same | YES |
+| mud client | `93147d0f0bbd983a9d844fea8b7a6fa7` | same | YES |
+**5/5 MATCH.**
+
+**4. mi_matrix anchors** — `bash scripts/stdlib/run_fixtures.sh /tmp/p1_work/seed_fix/zig1_5_clean <the frozen 25-dir list>` → `run_fixtures: 25 PASS / 0 FAIL over 25 dirs`; oob trap: `-fsafe` dump rc=0, build rc=0, `./prog` **rc=133**, stdout 0 bytes, md5 `d41d8cd98f00b204e9800998ecf8427e` (= `expected.txt`); D1 sibling `union_keyword_tag_xmod` → `P=.{ .int = 7 }` / `3` rc=0. **25/25 + oob MATCH; sibling MATCH.**
+
+**5. examples/z98 matrix** — 26/26 dump rc=0 + build rc=0 (`.c` counts 7/6/6/7/6/7/9/9/9/14/15/15/15/8/6/9/6/6/21/20/6/6/7/7/25/38 = §1.4); 26/26 runs: every stdout md5 (16) + rc identical to the frozen §1.4 table (incl. `mud_server` rc=124 `9545fe1d245293ef`, `z9play`/`z9torr` rc=1 `2016494de476fcb6`/`f666af15cf2625b3`). **26/26 build + 26/26 run correct.**
+
+**6. Stdlib gate** — `bash scripts/stdlib/verify_stdlib.sh /tmp/p1_work/seed_fix/zig1_5_clean` → `run_fixtures: 285 PASS / 0 FAIL over 285 dirs` / `STDLIB GATE OK`. **285/0 MATCH.**
+
+**7. The 8 `--dump-c89` pins** (`/tmp/p1_work/seed_fix/zig1_5_clean <mode> --dump-c89 <ENTRY> | md5sum`):
+| entry | mode | round-0 | fix-1 | delta |
+|---|---|---|---|---|
+| mud_server | `-fsafe` | `498b90f191b544655a1b731ef480709d` | `498b90f191b544655a1b731ef480709d` | unchanged |
+| mud_server | `-ffast` | `50dbf5f02c1a5de920e158cab7f2f29b` | `50dbf5f02c1a5de920e158cab7f2f29b` | unchanged |
+| game_of_life | `-fsafe` | `52c5feb5f158e2af7b32a0509b43d4c6` | `52c5feb5f158e2af7b32a0509b43d4c6` | unchanged |
+| game_of_life | `-ffast` | `7271960fc6375ed1dee34b7abfb6325b` | `7271960fc6375ed1dee34b7abfb6325b` | unchanged |
+| lisp_interpreter_curr | `-fsafe` | `e6f96b81f00e678eeaaa1ea7ed7c2359` | `e6f96b81f00e678eeaaa1ea7ed7c2359` | unchanged |
+| lisp_interpreter_curr | `-ffast` | `ec82996028671a52a0a3d52ad307edf1` | `ec82996028671a52a0a3d52ad307edf1` | unchanged |
+| json_parser | `-fsafe` | `48eedfc0243431693f65518646ad280c` | `48eedfc0243431693f65518646ad280c` | unchanged |
+| json_parser | `-ffast` | `04124b2675e77020933cbfab20f883e1` | `04124b2675e77020933cbfab20f883e1` | unchanged |
+**Pin delta: 0/8** (the pin programs carry no keyword/colliding struct fields on `.undefined_const` paths; the fix is name-preserving for them).
+
+**8. `--markers` telemetry** — `grep -ac '^' mk_gol.bin` **3436** / `wc -c` **38378**; prefix tally `INT:new` 2005, `DC:k` 423, `FE:p` 240, `FWD:n=` 195, `P0:lc` 195, `RaD` 122, `MT` 86 — **UNCHANGED vs round 0** (the fix adds no interns).
+
+### Fix-round-1 verdict
+
+| gate | observed | verdict |
+|---|---|---|
+| covering tests | repro before=invalid C/after=valid + correct names; `test_name_mangle_bin` 14/14 | PASS |
+| seed two-hop | hop1 == hop2 == `973a831a8efc5998bec45470001cb008` (from `f8912bbd…`) | MATCH (moved, recorded) |
+| corpus classify | byte-identical md5 `518eca1a…`, no mover | UNCHANGED |
+| goldens | 5/5 | MATCH |
+| mi_matrix | 25/25 + oob + sibling | MATCH |
+| examples | 26/26 build + run | MATCH |
+| stdlib | 285/0 | MATCH |
+| pins | 0/8 delta | recorded |
+| markers | 3436/38378 unchanged | recorded |
+
+No gate failed; no design change was needed. Deferred per instruction (NOT addressed): Minor 1 (`MintRaw` collision-suffix compounding `z_int_1_2` vs `nameManglerMangle`'s `z_int_2` — cosmetic divergence between the two collision loops, deterministic and terminating) and Minor 3 (transcript placeholder style).
 
