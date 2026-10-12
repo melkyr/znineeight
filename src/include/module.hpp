@@ -28,9 +28,11 @@ class SymbolTable;
 struct Module {
     const char* name;     /* Interned module name */
     const char* filename; /* Original filename */
+    const char* canonical_path; /* absolute, normalized, interned path */
     ASTNode* ast_root;    /* Root of the AST for this module */
     u32 file_id;          /* ID in SourceManager */
     SymbolTable* symbols; /* Per-module symbol table */
+    ArenaAllocator* mod_arena;   /* owns AST nodes only */
     DynamicArray<const char*> imports;
     DynamicArray<ASTNode*> import_nodes;
     DynamicArray<Type*> header_types;
@@ -66,9 +68,11 @@ struct Module {
           indirect_call_catalogue(arena) {
         name = NULL;
         filename = NULL;
+        canonical_path = NULL;
         ast_root = NULL;
         file_id = 0;
         symbols = NULL;
+        mod_arena = NULL;
         is_analyzed = false;
         anon_counter = 0;
     }

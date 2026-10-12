@@ -1190,7 +1190,7 @@ pub const TypeResolver = struct {
 | From | To | Kind | Implementation |
 |---|---|---|---|
 | `T` | `?T` | Implicit | Wrap in optional struct |
-| `null` | `?T` | Implicit | Zero-init optional struct |
+| `null` | `?T` | Implicit | Zero-init optional struct (lowers via `set_optional_null`, `has_value = 0`; cf. `T → ?T` uses `wrap_optional`, `has_value = 1`) |
 | `*T` | `?*T` | Implicit | Wrap non-null pointer in optional |
 | `T` | `E!T` | Implicit | Wrap in error union (success) |
 | `error.X` | `E!T` | Implicit | Wrap in error union (error) |
@@ -1383,6 +1383,7 @@ Coercions are recorded as a side-table, NOT as AST mutations:
 pub const CoercionKind = enum(u8) {
     none,
     wrap_optional,          // T → ?T
+    wrap_optional_null,     // null → ?T
     wrap_error_success,     // T → !T (success)
     wrap_error_err,         // error.X → !T (error)
     unwrap_optional,        // if-capture: ?T → T
@@ -1538,6 +1539,7 @@ pub const LirInst = union(enum) {
 
     // === Coercions (explicit) ===
     wrap_optional: struct { value: u32, result: u32, type_id: TypeId },
+    set_optional_null: struct { result: u32, type_id: TypeId },   // null → ?T coercion (result.has_value = 0)
     unwrap_optional: struct { value: u32, result: u32 },
     check_optional: struct { value: u32, result: u32 },        // result = has_value flag
     wrap_error_ok: struct { value: u32, result: u32, type_id: TypeId },
@@ -1577,6 +1579,8 @@ pub const LirInst = union(enum) {
 ```
 
 **Note**: `switch_br` stores `cases_start` and `cases_count` as indices into a separate `ArrayList(SwitchCase)` on the `LirFunction`, avoiding variable-length data inside the union.
+
+**Note on `check_optional` usage:** Beyond `if`/`while`/`orelse` optional-condition paths, `check_optional` also implements `optional == null` / `!= null` comparison lowering. When one operand is a `null_literal` and the other is an optional type, the lowerer emits `check_optional(opt_val, has_val)`, then `== null` → `unary(Not, has_val, result)`, `!= null` → return `has_val` directly. No new LIR instruction is required.
 
 ### 8.3 Lowering: Key Transformations
 

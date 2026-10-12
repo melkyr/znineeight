@@ -226,6 +226,18 @@ This bypass is implemented in `C89Emitter::getC89GlobalName` and `CVariableAlloc
 
 ## 4. Emission Strategies
 
+### 4.0 Main Function with Arguments
+The Z98 compiler supports the standard Zig idiom for a `main` function that receives command-line arguments:
+```zig
+pub fn main(argc: i32, argv: [*]*const u8) void { ... }
+```
+(Note: `!void` return type is also supported).
+
+When the `C89Emitter` encounters a function named `main` with this specific signature, it overrides the standard `int main(void)` or `int main(int argc, char* argv[])` emission to ensure C89 compatibility:
+- **Signature Detection**: Handled by `TypeChecker::isMainWithArgs`.
+- **C Prototype**: Emitted as `int main(int argc, char* argv[])`.
+- **Variable Allocation**: The `C89Emitter` uses `CVariableAllocator::force_allocate` to ensure the internal Zig parameters are mapped to the C names `argc` and `argv`.
+
 ### 4.1 Multi-Module Generation
 The compiler generates a pair of files for each Zig module (e.g., `foo.zig`):
 1. **`foo.c`**: Contains the full implementation. Includes `zig_runtime.h`. Private symbols are `static`.

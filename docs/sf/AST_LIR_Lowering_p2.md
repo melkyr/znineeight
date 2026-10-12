@@ -110,6 +110,24 @@ pub fn lowerFunction(self: *LirLowerer, fn_decl_idx: u32) !void {
 }
 ```
 
+### 2.2 Var-Decl Lowering
+
+`var x: T = init_expr;` lowers through the following general contract:
+
+1. Allocate a temp for the local: `dl_temp = nextTemp(self, decl_type)`.
+2. Emit `decl_local(name_id, decl_type, dl_temp)` — binds the name to the temp.
+3. Register the local: `addLocalDecl(name_id, decl_type, dl_temp)`.
+4. Lower `init_expr` to a result temp (`init_val`).
+5. Apply the recorded coercion from the `CoercionTable` (may mint a fresh temp via `materializeInto`).
+6. Store the (possibly-coerced) result into the local via `assign(dst = dl_temp, src = init_val)`.
+
+**Invariant:** The store's source temp (`init_val`) is the lowered init/coercion result, **never** the local's own `dl_temp`. No self-assign (`p = p;`) is ever emitted.
+
+**`?T = null` fast-path:** The lowerer recognizes `var x: ?T = null;` as a special case:
+- Emit `set_optional_null(result = dl_temp, type_id = decl_type)` — targets the local's registered temp directly.
+- Emit `store_local(name_id, value = dl_temp)` — registers the local for emitter name resolution.
+- **No** separate `assign` is emitted; the `set_optional_null` writes `has_value = 0` onto the local's own temp, which the C89 emitter resolves to the local name (`p.has_value = 0;` via `resolveTempName`, not `mangleTempName`), since the result temp IS a local.
+
 ---
 
 ## 3. Expression Lowering
@@ -143,7 +161,8 @@ The following table defines the exact LIR sequence for every `AstKind` that can 
 | `.add`, `.sub`, `.mul`, `.div`, `.mod_op` | `binary(op, lhs_temp, rhs_temp, result)` |
 | `.bit_and`, `.bit_or`, `.bit_xor`, `.shl`, `.shr` | `binary(op, lhs_temp, rhs_temp, result)` |
 | `.bool_and`, `.bool_or` | Lower as short‑circuit; generates temporary branches (see Section 4.1.3) |
-| `.cmp_eq`, `.cmp_ne`, `.cmp_lt`, `.cmp_le`, `.cmp_gt`, `.cmp_ge` | `binary(cmp_op, lhs_temp, rhs_temp, result)` |
+| `.cmp_eq`, `.cmp_ne` with `optional` vs `null` | **Special case.** When one operand is `AstKind.null_literal` and the other resolves to an optional type, do NOT emit raw `binary(cmp_op, ...)`. Instead lower the optional operand, emit `check_optional(opt_val, has_val)` to read the `has_value` flag, then: `opt == null` → `unary(Not, has_val, result)` (inverted: true when `has_value==0`), `opt != null` → return `has_val` directly (true when `has_value==1`). This mirrors the `if`/`while`/`orelse` optional-condition path. No new LIR instruction. |
+| `.cmp_eq`, `.cmp_ne` (non‑optional), `.cmp_lt`, `.cmp_le`, `.cmp_gt`, `.cmp_ge` | `binary(cmp_op, lhs_temp, rhs_temp, result)` |
 | `.assign` | `assign(dst_temp, src_temp)` |
 | `.negate` | `unary(Negate, operand_temp, result)` |
 | `.bool_not` | `unary(Not, operand_temp, result)` |

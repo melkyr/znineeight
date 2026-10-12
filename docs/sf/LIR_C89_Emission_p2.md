@@ -132,6 +132,13 @@ fn emitSpecialTypes(emitter: *C89Emitter, reg: *TypeRegistry) !void {
 | `enum(T)` | `typedef T E_Name; #define E_Name_Member N` | Backing type + preprocessor constants |
 | Empty struct/union | `typedef struct { char _dummy; } zS_Empty;` | C89 forbids empty aggregates |
 
+> **Tagged-union payload variant selection (design intent):** The
+> emitter selects the payload union member by matching the source
+> value's `type_id` against variant field `type_id`s (exact match).
+> This depends on the invariant that the payload value carries the
+> variant field's exact type. The semantic analyzer and lowerer are
+> responsible for upholding this invariant.
+
 ### 3.3 Forward Declaration Logic
 
 ```zig
@@ -329,7 +336,7 @@ fn emitCoercion(self: *C89Emitter, inst: LirInst) !void {
         .wrap_optional => |w| {
             const dst = self.resolveTemp(w.result);
             const src = self.resolveTemp(w.value);
-            try self.writer.writeFmt("%s.has_value = 1;\n", dst);
+            try self.writer.writeFmt("%s.has_value = 1;\n", dst);   // payload present; cf. set_optional_null → has_value = 0
             try self.writer.writeFmt("%s.value = %s;\n", dst, src);
         },
         .make_slice => |s| {
@@ -625,7 +632,8 @@ The architecture is explicitly backend-agnostic:
 | `load_index`/`store_index` | `res = base[i];` / `base[i] = val;` | Direct |
 | `load`/`store` | `res = *ptr;` / `*ptr = val;` | Direct |
 | `addr_of` | `res = &operand;` | Direct |
-| `wrap_optional` | `res.has_value = 1; res.value = val;` | Struct field assignment |
+| `wrap_optional` | `res.has_value = 1; res.value = val;` | Struct field assignment (T → ?T payload present)
+| `set_optional_null` | `res.has_value = 0;` | Zero-init for null → ?T coercion; no value field written |
 | `check_optional` | `res = val.has_value;` | Flag extraction |
 | `make_slice` | `res.ptr = p; res.len = l;` | Struct construction |
 | `int_cast` | `res = (T)val;` or `__bootstrap_checked_cast...` | Checked vs unchecked |

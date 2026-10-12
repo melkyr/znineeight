@@ -49,6 +49,8 @@ static void append_u32(DynamicArray<char>& buffer, u32 value) {
 }
 
 void ErrorHandler::report(ErrorCode code, SourceLocation location, const char* message, const char* hint) {
+    plat_printf_debug("[ERROR_REPORTED] %s at line %d: %s\n",
+        getMessage(code), location.line, message ? message : "");
     ErrorReport new_report;
     new_report.code = code;
     new_report.location = location;

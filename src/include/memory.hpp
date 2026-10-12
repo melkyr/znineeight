@@ -141,7 +141,7 @@ public:
      */
     ArenaAllocator(size_t capacity_cap)
         : head(NULL), total_cap(capacity_cap), total_allocated_from_os(0), total_used_for_stats(0),
-          peak_allocated_(0), hard_limit_(16 * 1024 * 1024) {}
+          peak_allocated_(0), hard_limit_(24 * 1024 * 1024) {}
 
     /**
      * @brief Destroys the ArenaAllocator, freeing all memory chunks.
@@ -160,7 +160,11 @@ public:
      * @return A pointer to the allocated memory, or NULL if the allocation fails.
      */
     void* alloc(size_t size) {
-        return alloc_aligned(size, 8);
+        void* ptr = alloc_aligned(size, 8);
+        if (ptr) {
+            plat_memset(ptr, 0, size);
+        }
+        return ptr;
     }
 
     /**

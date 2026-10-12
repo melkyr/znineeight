@@ -827,6 +827,12 @@ pub const ResolvedTypeTable = struct {
 };
 ```
 
+> **NOTE (current reality):** Coverage is DEMAND-DRIVEN, not guaranteed. A node gets an entry only
+> if a handler resolves it or the statement worklist reaches it (§7.3). Positions that historically
+> lacked entries: slice-expr bounds (now resolved), binary/unary operands, index operands,
+> array/tuple elements. Lowering treats a missing entry as a gap (falls back to TYPE_U32/UNDEFINED
+> or drops the load/wrap) — the current sema bug class.
+
 ---
 
 ## 5. Coercion Rules and Table
@@ -1157,7 +1163,7 @@ Pass 4: Type Resolution (Kahn's Algorithm)
     │   Compute size, alignment, field offsets.
     │   Detect cycles.
     ▼
-Pass 5: Semantic Analysis
+Pass 5: Semantic Analysis (worklist-driven — §7.3; recursive visitor superseded, Appendix B.1)
     │   5a: Comptime Evaluation (@sizeOf, @alignOf, constant folding)
     │   5b: Constraint Checking (assignments, calls, operators, control flow)
     │   5c: Coercion Insertion (build CoercionTable side-table)
@@ -1221,98 +1227,33 @@ fn registerTopLevelSymbols(ctx: *SemanticContext, module_root_idx: u32) !void {
 }
 ```
 
-### 7.3 Pass 5: Semantic Analysis — The Core Visitor
+### 7.3 Pass 5: Semantic Analysis — Worklist-Driven Traversal
 
-The semantic analyzer walks each function body iteratively, visiting statements in order and building the `ResolvedTypeTable` and `CoercionTable`.
+> The original recursive core visitor is SUPERSEDED (see Appendix B.1) — it produced a
+> traversal-order fallback-chain and blew up NxN on deeply-nested code past the 16 MB budget.
+> The current design unifies statement traversal into a worklist.
 
-```zig
-pub const SemanticAnalyzer = struct {
-    ctx: *SemanticContext,
-    type_table: *ResolvedTypeTable,
-    coercion_table: *CoercionTable,
-    expected_type_stack: ArrayList(TypeId),
-    current_fn_return: TypeId,
-    current_fn_name: u32,
+**Statement worklist.** Function bodies are walked by a LIFO worklist
+(`semanticAnalyzerResolveStmtIter`, `sf/src/semantic_analyzer.zig:~1336-1470`) over
+`stmt_work_items`. A `block` pushes its children in reverse order; `if_stmt`/`while_stmt`/
+`for_stmt`/`catch_expr` resolve their header then push their body/else onto the worklist. This
+bounds stack depth and fits the 16 MB peak-RAM budget where deep recursion did not.
 
-    /// Resolve the type of an expression node. Stores result in type_table.
-    fn resolveExpr(self: *SemanticAnalyzer, node_idx: u32) !TypeId {
-        if (node_idx == 0) return TYPE_VOID;
-        const node = self.ctx.store.nodes.items[node_idx];
+**Expression resolution.** Individual expressions are still resolved by the recursive dispatch
+`semanticAnalyzerResolveExpr` (`sf/src/semantic_analyzer.zig:993`), which ends with a UNIVERSAL
+BACKSTOP `type_table.set(node_idx, result)` (line ~1203) for every node that ENTERS it.
 
-        const result: TypeId = switch (node.kind) {
-            // ═══ Literals ═══
-            .int_literal => TYPE_INT_LIT,
-            .float_literal => TYPE_F64,
-            .string_literal => try self.resolveStringLiteral(node),
-            .char_literal => TYPE_U8,
-            .bool_literal => TYPE_BOOL,
-            .null_literal => TYPE_NULL,
-            .undefined_literal => TYPE_UNDEFINED,
-            .unreachable_expr => TYPE_NORETURN,
-            .enum_literal => try self.resolveEnumLiteral(node, node_idx),
-            .error_literal => try self.resolveErrorLiteral(node),
+**Demand-driven gap class (IMPORTANT).** Resolution is DEMAND-DRIVEN: a node gets a resolved type
+only if a handler recurses into it or the worklist enqueues it. There is NO exhaustive walk. A
+handler that fails to recurse into a structurally-present operand leaves it untyped → it silently
+resolves to VOID/UNDEFINED downstream → the current bug family (missing coercions / dropped loads
+in lowering). Closing these = REFINING the worklist / handler recursion, NOT restoring the
+recursive visitor. Known instances: slice-expr bound operands (now resolved — the handler recurses
+into child_1/child_2); error literals outside the return position (§11.2); error-union structural
+identity (§5.1).
 
-            // ═══ Identifiers ═══
-            .ident_expr => try self.resolveIdentifier(node),
-            .field_access => try self.resolveFieldAccess(node, node_idx),
-            .index_access => try self.resolveIndexAccess(node),
-            .slice_expr => try self.resolveSliceExpr(node),
-            .deref => try self.resolveDeref(node),
-            .address_of => try self.resolveAddressOf(node),
-            .fn_call => try self.resolveFnCall(node, node_idx),
-            .builtin_call => try self.resolveBuiltinCall(node, node_idx),
-
-            // ═══ Binary ops ═══
-            .add, .sub, .mul, .div, .mod_op => try self.resolveArithmetic(node),
-            .bit_and, .bit_or, .bit_xor, .shl, .shr => try self.resolveBitwise(node),
-            .bool_and, .bool_or => try self.resolveLogical(node),
-            .cmp_eq, .cmp_ne, .cmp_lt, .cmp_le, .cmp_gt, .cmp_ge => try self.resolveComparison(node),
-            .assign, .add_assign, .sub_assign, .mul_assign, .div_assign, .mod_assign,
-            .shl_assign, .shr_assign, .and_assign, .xor_assign, .or_assign,
-            => try self.resolveAssignment(node),
-
-            // ═══ Unary ops ═══
-            .negate => try self.resolveNegate(node),
-            .bool_not => try self.resolveBoolNot(node),
-            .bit_not => try self.resolveBitNot(node),
-
-            // ═══ Error/Optional ═══
-            .try_expr => try self.resolveTryExpr(node),
-            .catch_expr => try self.resolveCatchExpr(node),
-            .orelse_expr => try self.resolveOrelseExpr(node),
-
-            // ═══ Control flow expressions ═══
-            .if_expr => try self.resolveIfExpr(node),
-            .switch_expr => try self.resolveSwitchExpr(node, node_idx),
-
-            // ═══ Aggregate literals ═══
-            .tuple_literal => try self.resolveTupleLiteral(node, node_idx),
-            .struct_init => try self.resolveStructInit(node, node_idx),
-
-            // ═══ Type expressions (resolve to TYPE_TYPE) ═══
-            .ptr_type, .many_ptr_type, .array_type, .slice_type,
-            .optional_type, .error_union_type, .fn_type,
-            => TYPE_TYPE,
-
-            .paren_expr => try self.resolveExpr(node.child_0),
-            .import_expr => try self.resolveImport(node),
-
-            else => blk: {
-                try self.ctx.diag.diagnostics.append(.{
-                    .level = 0, .file_id = 0,
-                    .span_start = node.span_start, .span_end = node.span_end,
-                    .message = "cannot resolve type of expression",
-                });
-                break :blk TYPE_VOID;
-            },
-        };
-
-        try self.type_table.set(node_idx, result);
-        return result;
-    }
-};
-```
-
+**Sub-passes** (unchanged): 5a comptime evaluation, 5b constraint checking, 5c coercion insertion,
+5d `std.debug.print` decomposition.
 ### 7.4 Key Resolution Methods
 
 #### Arithmetic (`+`, `-`, `*`, `/`, `%`)
@@ -1475,6 +1416,26 @@ fn resolveStructInit(self: *SemanticAnalyzer, node: AstNode, node_idx: u32) !Typ
     return target_type;
 }
 ```
+
+### 7.5 Slice-Expression Const-ness Semantics
+
+A slice-expression `base[a..b]` preserves the const-ness of the
+base's element type:
+
+- If the base is `[]const T`, `*const T`, or a `const [N]T` array,
+  the resulting slice is `[]const T`.
+- If the base is `[]T`, `*T`, or a mutable `[N]T`, the result is `[]T`.
+- The slice's element type `T` is determined from the base (array elem,
+  slice elem, or pointer pointee).
+
+This is a **semantic** property, independent of the C89 backend (which
+may emit both with the same `{ptr, len}` layout). The semantic analyzer
+MUST set `is_const` from the base type's `flags` bit0 rather than
+hardcoding `false`.
+
+The `slice_cache` key is `(elem << 1) | is_const` (Task 154), so
+`[]T` and `[]const T` are distinct `TypeId`s, and every downstream pass
+(including tagged-union member selection) sees the correct type.
 
 ---
 
@@ -1664,6 +1625,14 @@ pub const GlobalErrorRegistry = struct {
 
 ### 11.2 Implicit Wrapping Rules
 
+> **KNOWN DEVIATION (current impl):** `error.X` literals currently resolve to `TYPE_VOID`
+> (`sf/src/semantic_analyzer.zig:1022`) and are repaired to the function's `error_set` ONLY at the
+> return position (`errLitSrcType`, :567/:598). At every other coercion site (assignment, var-decl
+> init, call args, struct-init fields, switch prongs, if-expr arms) the raw VOID prevents
+> `classifyCoercion` from recognizing `error.X → E!T` (§5.1 requires `src.kind == error_set_type`)
+> → the wrap is dropped. Per §5.1's own rule the intended typing IS the error-set; this
+> VOID + return-only-repair is a fallback band-aid (tracked as ROOT A).
+
 | From | To | Allowed? |
 |---|---|---|
 | `T` | `!T` | Yes (success wrapping) |
@@ -1731,3 +1700,107 @@ Desugar `expr.method(args)` → `Type.method(expr, args)` during semantic analys
 | `try` (prefix) | `!T` | — | T | Error propagation |
 | `catch` (infix) | `!T` | T / block | T | Error fallback |
 | `orelse` (infix) | `?T` | T / block | T | Optional fallback |
+
+---
+
+## Appendix B: Superseded Designs
+
+### B.1 Pass 5 Recursive Core Visitor (SUPERSEDED — see §7.3)
+
+> **DEPRECATED.** This recursive-descent `resolveExpr` visitor was the ORIGINAL intended sema
+> traversal. It was replaced by the worklist-driven model (§7.3) because, in practice, the
+> recursion's node-visitation ORDER became unmanageable: nodes reached out-of-order or
+> not-in-traversal silently resolved to VOID/UNDEFINED, spawning a "fallback-chain" (it reached
+> 3 fallbacks with a 4th pending). On deeply-nested real code — e.g. lisp: a nested-if ×4 that
+> contains a switch which is the contained payload of a nested capture that has an optional wrap —
+> the case matrix blew up NxN and exceeded the 16 MB peak-RAM budget. Retained here for history.
+
+The semantic analyzer walks each function body iteratively, visiting statements in order and building the `ResolvedTypeTable` and `CoercionTable`.
+
+```zig
+pub const SemanticAnalyzer = struct {
+    ctx: *SemanticContext,
+    type_table: *ResolvedTypeTable,
+    coercion_table: *CoercionTable,
+    expected_type_stack: ArrayList(TypeId),
+    current_fn_return: TypeId,
+    current_fn_name: u32,
+
+    /// Resolve the type of an expression node. Stores result in type_table.
+    fn resolveExpr(self: *SemanticAnalyzer, node_idx: u32) !TypeId {
+        if (node_idx == 0) return TYPE_VOID;
+        const node = self.ctx.store.nodes.items[node_idx];
+
+        const result: TypeId = switch (node.kind) {
+            // ═══ Literals ═══
+            .int_literal => TYPE_INT_LIT,
+            .float_literal => TYPE_F64,
+            .string_literal => try self.resolveStringLiteral(node),
+            .char_literal => TYPE_U8,
+            .bool_literal => TYPE_BOOL,
+            .null_literal => TYPE_NULL,
+            .undefined_literal => TYPE_UNDEFINED,
+            .unreachable_expr => TYPE_NORETURN,
+            .enum_literal => try self.resolveEnumLiteral(node, node_idx),
+            .error_literal => try self.resolveErrorLiteral(node),
+
+            // ═══ Identifiers ═══
+            .ident_expr => try self.resolveIdentifier(node),
+            .field_access => try self.resolveFieldAccess(node, node_idx),
+            .index_access => try self.resolveIndexAccess(node),
+            .slice_expr => try self.resolveSliceExpr(node),
+            .deref => try self.resolveDeref(node),
+            .address_of => try self.resolveAddressOf(node),
+            .fn_call => try self.resolveFnCall(node, node_idx),
+            .builtin_call => try self.resolveBuiltinCall(node, node_idx),
+
+            // ═══ Binary ops ═══
+            .add, .sub, .mul, .div, .mod_op => try self.resolveArithmetic(node),
+            .bit_and, .bit_or, .bit_xor, .shl, .shr => try self.resolveBitwise(node),
+            .bool_and, .bool_or => try self.resolveLogical(node),
+            .cmp_eq, .cmp_ne, .cmp_lt, .cmp_le, .cmp_gt, .cmp_ge => try self.resolveComparison(node),
+            .assign, .add_assign, .sub_assign, .mul_assign, .div_assign, .mod_assign,
+            .shl_assign, .shr_assign, .and_assign, .xor_assign, .or_assign,
+            => try self.resolveAssignment(node),
+
+            // ═══ Unary ops ═══
+            .negate => try self.resolveNegate(node),
+            .bool_not => try self.resolveBoolNot(node),
+            .bit_not => try self.resolveBitNot(node),
+
+            // ═══ Error/Optional ═══
+            .try_expr => try self.resolveTryExpr(node),
+            .catch_expr => try self.resolveCatchExpr(node),
+            .orelse_expr => try self.resolveOrelseExpr(node),
+
+            // ═══ Control flow expressions ═══
+            .if_expr => try self.resolveIfExpr(node),
+            .switch_expr => try self.resolveSwitchExpr(node, node_idx),
+
+            // ═══ Aggregate literals ═══
+            .tuple_literal => try self.resolveTupleLiteral(node, node_idx),
+            .struct_init => try self.resolveStructInit(node, node_idx),
+
+            // ═══ Type expressions (resolve to TYPE_TYPE) ═══
+            .ptr_type, .many_ptr_type, .array_type, .slice_type,
+            .optional_type, .error_union_type, .fn_type,
+            => TYPE_TYPE,
+
+            .paren_expr => try self.resolveExpr(node.child_0),
+            .import_expr => try self.resolveImport(node),
+
+            else => blk: {
+                try self.ctx.diag.diagnostics.append(.{
+                    .level = 0, .file_id = 0,
+                    .span_start = node.span_start, .span_end = node.span_end,
+                    .message = "cannot resolve type of expression",
+                });
+                break :blk TYPE_VOID;
+            },
+        };
+
+        try self.type_table.set(node_idx, result);
+        return result;
+    }
+};
+```

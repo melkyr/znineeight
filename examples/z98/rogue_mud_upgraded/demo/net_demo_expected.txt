@@ -1,0 +1,13 @@
+Welcome to Rogue MUD!
+Generating dungeon...
+Random_range error: min=4 max=3
+Random_range error: min=1 max=0
+Game started! Use WASD to move, Q to quit, L to look, V to save, B to load.
+--- zig1 demo ---
+off Entity.hp=4 off Entity.x=8 size Entity=16 bits bool=1 off Room_t.h=3
+bitcast(i32,0xFFFFFFFF)=-1
+container-of=true
+render_calls=0
+110
+20
+--- end demo ---

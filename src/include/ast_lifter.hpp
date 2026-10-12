@@ -25,10 +25,25 @@ public:
     ControlFlowLifter(ArenaAllocator* arena, StringInterner* interner, ErrorHandler* error_handler);
 
     /**
+     * @brief Constructs a new ControlFlowLifter.
+     * @param ast_arena The arena allocator to use for new AST nodes.
+     * @param perm_arena The arena allocator to use for permanent objects (types, symbols).
+     * @param interner The string interner for generating temporary variable names.
+     * @param error_handler The error handler for reporting internal errors.
+     */
+    ControlFlowLifter(ArenaAllocator* ast_arena, ArenaAllocator* perm_arena, StringInterner* interner, ErrorHandler* error_handler);
+
+    /**
      * @brief Entry point for the lifting pass.
      * @param unit The compilation unit to transform.
      */
     void lift(CompilationUnit* unit);
+
+    /**
+     * @brief Entry point for per-module lifting.
+     * @param mod The module to transform.
+     */
+    void lift(Module* mod);
 
     /**
      * @brief Enables or disables verbose debug logging.
@@ -189,7 +204,8 @@ private:
     bool isOptionalPointer(Type* t);
 
     // Context Stacks
-    ArenaAllocator* arena_;
+    ArenaAllocator* ast_arena_;
+    ArenaAllocator* perm_arena_;
     StringInterner* interner_;
     ErrorHandler* error_handler_;
     CompilationUnit* unit_;

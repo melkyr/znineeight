@@ -65,6 +65,8 @@ enum NodeType {
     NODE_FLOAT_CAST,      ///< A floating-point cast expression (@floatCast).
     NODE_INT_TO_FLOAT,    ///< An integer-to-float cast expression (@intToFloat).
     NODE_OFFSET_OF,       ///< A field offset expression (@offsetOf).
+    NODE_AS_EXPR,         ///< An @as expression.
+    NODE_PANIC,           ///< A @panic expression.
 
     // ~~~~~~~~~~~~~~~~~~~~ Declarations ~~~~~~~~~~~~~~~~~~~~~~~
     NODE_VAR_DECL,        ///< A variable or constant declaration.
@@ -159,6 +161,8 @@ struct ASTComptimeBlockNode;
 struct ASTPtrCastNode;
 struct ASTNumericCastNode;
 struct ASTOffsetOfNode;
+struct ASTAsExprNode;
+struct ASTPanicNode;
 struct ASTFunctionCallNode;
 struct ASTArrayAccessNode;
 struct ASTArraySliceNode;
@@ -703,6 +707,26 @@ struct ASTOffsetOfNode {
     const char* field_name;
 };
 
+/**
+ * @struct ASTAsExprNode
+ * @brief Represents an explicit type coercion (@as).
+ * @var ASTAsExprNode::target_type The target type expression.
+ * @var ASTAsExprNode::expr The expression being coerced.
+ */
+struct ASTAsExprNode {
+    ASTNode* target_type;
+    ASTNode* expr;
+};
+
+/**
+ * @struct ASTPanicNode
+ * @brief Represents a @panic expression.
+ * @var ASTPanicNode::expr The panic message expression.
+ */
+struct ASTPanicNode {
+    ASTNode* expr;
+};
+
 
 // --- Declaration Nodes ---
 
@@ -972,6 +996,8 @@ struct ASTNode {
         ASTPtrCastNode* ptr_cast; // Out-of-line
         ASTNumericCastNode* numeric_cast; // Out-of-line
         ASTOffsetOfNode* offset_of; // Out-of-line
+        ASTAsExprNode* as_expr; // Out-of-line
+        ASTPanicNode* panic; // Out-of-line
 
         // Error Handling
         ASTTryExprNode try_expr;

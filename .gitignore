@@ -54,8 +54,13 @@ test_runner_batch*
 # Temporary binaries
 test_multi_file
 tr*
-zig0
+/zig0
 zig0.exe
+
+# Zig self-hosted compiler spill files
+.zig1_ast.tmp
+.zig1_hash.tmp
+.zig1_lir.tmp
 
 # Generated C89 files
 temp_codegen_*.c
@@ -84,3 +89,13 @@ examples/**/Makefile
 temp_*.c
 temp_*.h
 .opencode/*
+node_modules/*
+bun.lock
+zig0.new
+package.json
+sf/build/*
+out/*
+sf_out/*
+repro_out/*
+out_*/
+release/staging/

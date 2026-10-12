@@ -35,6 +35,11 @@ In Z98, `SYMBOL_FLAG_LOCAL` is set for all symbols in a function's activation re
 - **Slices**: Understands that slicing an array (`arr[0..5]`) results in a slice whose lifetime is tied to that array's storage.
 - **Composition**: Handles nested structures like `&outer.inner.field`.
 
+#### Post-Check Safety
+Static analyzers must rely on pre-resolved AST metadata (specifically `node->symbol` and `node->resolved_type`) instead of querying the `SymbolTable` via `findInAnyScope`. This is enforced by a `Z98_ASSERT` in the symbol table that fires if a lookup is attempted during the post-check phase.
+
+To facilitate this, the `getRootSymbol(ASTNode*)` helper (declared in `ast_utils.hpp`) is used to extract the `Symbol*` from an expression by recursively unwrapping unary operators (`&`, `*`) and member accesses. This ensures that analyzers can identify the underlying variable without performing any scope-based lookups.
+
 ### Checks
 - **Returning Local Address**: Rejects returning the address of a local variable or parameter (`return &x;`).
 - **Returning Pointer to Local Storage**: Rejects returning a pointer or slice that refers to the internal storage of a local variable or by-value parameter.

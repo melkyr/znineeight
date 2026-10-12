@@ -22,6 +22,16 @@ public:
      */
     void run();
 
+    /**
+     * @brief Performs global metadata preparation (placeholders and layout).
+     */
+    void prepareGlobalMetadata();
+
+    /**
+     * @brief Performs per-module metadata preparation (collecting reachable types).
+     */
+    void prepareModuleMetadata(Module* mod);
+
 private:
     CompilationUnit& unit_;
 

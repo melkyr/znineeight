@@ -914,7 +914,7 @@ fn runAllAnalyzers(ctx: *AnalyzerContext, module_root: u32) !void {
     while (i < decls.len) : (i += 1) {
         const decl = ctx.store.nodes.items[decls[i]];
         if (decl.kind != .fn_decl) continue;
-        if (decl.child_1 == 0) continue; // extern — no body
+        if (decl.child_0 == 0) continue; // extern — no body
 
         ctx.current_fn_name = ctx.store.fn_protos.items[decl.payload].name_id;
 
@@ -922,17 +922,27 @@ fn runAllAnalyzers(ctx: *AnalyzerContext, module_root: u32) !void {
         try runSignatureAnalyzer(ctx, decls[i]);
         ctx.allocator.reset();
 
-        try runNullAnalyzer(ctx, decl.child_1);
+        try runNullAnalyzer(ctx, decl.child_0);
         ctx.allocator.reset();
 
-        try runLifetimeAnalyzer(ctx, decl, decl.child_1);
+        try runLifetimeAnalyzer(ctx, decl, decl.child_0);
         ctx.allocator.reset();
 
-        try runDoubleFreeAnalyzer(ctx, decl.child_1);
+        try runDoubleFreeAnalyzer(ctx, decl.child_0);
         ctx.allocator.reset();
     }
 }
 ```
+**Live behavior (2026-07-31):** After the `child_0` guard fix and the
+`ident_expr` name-id resolution fix (bug #2 — identifiers-index stored in
+payload, not raw name_id), the analyzers now run on all functions with bodies.
+The signature analyzer detects incomplete types, void params, and large
+returns. The leak checker (`checkLeaksOnScopeExit`) emits `WARN_6005` for
+allocated pointers not freed at scope exit. The null/lifetime/doublefree
+*detection* paths remain dead: `visitStatement` (branching/merge logic) and
+`handleFreeCall` (double-free emission) have zero production callers. These
+require separate wiring (see follow-up tasks).
+
 
 ### 7.3 CLI Flags
 

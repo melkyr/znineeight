@@ -40,13 +40,13 @@ public:
             return true;
         }
 
-        TypeRegistry::InsertStatus status = registry_ref.insert(owner, name, created_type, true);
+        TypeRegistry::InsertStatus status = registry_ref.insert(owner ? owner->canonical_path : NULL, name, created_type, true);
         if (status == TypeRegistry::OK) {
             committed = true;
             return true;
         } else if (status == TypeRegistry::DUPLICATE) {
             // Return existing one instead
-            created_type = registry_ref.find(owner, name);
+            created_type = registry_ref.find(owner ? owner->canonical_path : NULL, name);
             committed = true;
             return true;
         } else {

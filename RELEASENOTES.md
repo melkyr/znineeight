@@ -1,44 +1,107 @@
-# Z98 0.12.1 “Isophthalic anhydride” Release Notes
+# Z98 0.20.0 "Oxalic Acid" Release Notes
 
-We are proud to announce the release of Z98 version **0.12.1**, codenamed **“Isophthalic anhydride”**.
+We are proud to announce the release of Z98 version **0.20.0**, codenamed **"Oxalic Acid"** — a **major** release and the first fully self-hosted release of Z98. The self-hosted `zig1` compiler — written in Z98 itself and running from the ANSI C89 it emits — now builds itself, deterministically. The 0.20.0 binaries in this release are produced entirely by the self-hosted chain (Z98 source emitted to C89, compiled with `gcc`); the C++98 bootstrap compiler (`zig0`) is no longer part of building the compiler.
 
-As an anhydride is the dehydrated form of an acid, this patch release represents a "drier," more refined version of our previous "Isophthalic acid" release. Version 0.12.1 focuses on hardening the `zig0` bootstrap compiler by resolving critical C89 compatibility edge cases and improving the robustness of our type system and code generation.
+## 🚀 Timeline
 
-## 🏗️ Hardening C89 Compatibility
+- **2025-12-07** — repository created and the bootstrap (`zig0`) era begins (`b1ad10be` "Initial commit").
+- **2026-04-27** — bootstrap era ends and zig1 development begins: the `zig1_start` branch is created from `main` (the last `main` commit is the same day), and the first self-hosted commit `cb11d5c6` ("Self hosting initial milestone0 commit") lands.
+- **2026-09-06** — today: **1500** commits on `zig1_start` since `main`.
 
-The primary focus of this release is ensuring that Z98 remains the most compatible Zig-to-C89 compiler for legacy environments like MSVC 6.0 and OpenWatcom.
+Elapsed: the project overall spans 2025-12-07 → 2026-09-06 (~9 months). The bootstrap era ran ~4.7 months (2025-12-07 → 2026-04-27). The self-hosted / 0.20.0 development window ran ~4.3 months (2026-04-27 → 2026-09-06).
+
+## ✨ Headline Capabilities
+
+- **Deterministic self-hosting**: `zig1` self-compiles to a byte-identical fixed point. The 4-program dump gate (game_of_life, lisp_interpreter_curr, json_parser, mud_server) is byte-stable, the goldens are 9/9 and the target matrix 21/21, and the corpus (428 repros, `-s0`) stands at OK=406 / FAIL=13 / GREEN=9 (EXPECTED_FAIL v70). The emission chain gen-0 → zig1 → self-emission → fixed point (`9c1d956a` → `e791ffd2` → `c0102983` → `10f0ca2b`) is byte-identical at every hop.
+- **Language builtins**: `@offsetOf` / `@bitSizeOf` / `@bitOffsetOf`, `@intFromPtr` / `@ptrFromInt` / `@fieldParentPtr`, `@bitCast`; `export fn` / `export var`; cross-module `pub var` stores; `switch` case ranges; clean diagnostics.
+- **Target model**: `-osl` (linux) / `-osw` (windows) with the `--target linux|windows` alias select the compile target; `@isWindows()` is target-aware.
+- **std_net**: rewritten as target-selected extern `wsock32` (windows) / libc (POSIX) bindings with `WSAStartup` initialisation, `createTcpClient`, and `htonsManual` / `htonlManual`; the 11 `@socket*` builtins were removed from the compiler, so networking programs now use the std library.
+- **Upgraded showcase examples**: `lisp_interpreter_upgraded` and `rogue_mud_upgraded` (with committed canonical and demo goldens) plus a net demo client and the `verify_upgraded.sh` closeout harness.
+
+## 🛠️ Build Machine & Toolchain
+
+The 0.20.0 binaries were built on an **AMD Ryzen 7 7700X 8-core/16-thread up to ~5.58 GHz, 32 GB RAM, Debian** box with **gcc/g++ 12.2.0** and **i686-w64-mingw32-gcc 12-win32**. Linux artifacts are `gcc -m32` builds; Windows artifacts are cross-built with `i686-w64-mingw32-gcc` in the `-osw` target flavour. Linux-facing archives are `.tgz`; the win-facing archives are `.zip` so they unpack directly on the win9x-era targets.
+
+## 💾 Minimum Requirements
+
+Running `zig1` fits within ~16 MB at `-s0`: the self-compile pool measures ≈14.5 MB and the measured peak RSS is ~13 MB. Building the compiler from source is dominated by the gcc backend, which needs ~80 MB when compiling and linking the emitted C89 (~85 MB measured peak for the gen-0 hop; the g++ bootstrap step measures ~182 MB). The next-generation (`zig1_5`) hop — gcc over zig1's own self-emitted C89, a ~2.3× larger C set — measures **~166 MB peak at 3.46 s** and is the figure that applies to every self-host next-generation build. A 16 MB machine can run `zig1`, but it cannot build the compiler from source.
+
+Wall-clock and peak RAM were re-measured on the build machine (median of 3 under `/usr/bin/time -v`):
+
+| Build step | Wall (s) | Peak RAM |
+|---|---|---|
+| g++ → zig0 (bootstrap) | 1.52 | ~182 MB |
+| zig0 → emitted C89 | 3.10 | ~46 MB |
+| gcc compile+link → zig1 | 1.87 | ~85 MB |
+| zig1 `-s0` self-compile | 1.12 | ~13 MB |
+| gcc compile+link of zig1's self-emitted C89 → zig1_5 | 3.46 | ~166 MB |
+
+Clock-scaled engineering estimates for period hardware (PII ~300–450 MHz, PIII ~700–1000 MHz; method as in the README) put the whole battery at ~1.1–1.7 min on a PII and ~30–44 s on a PIII at the clock-only lower bound, with the memory-bound phases (gcc, g++) scaling worse (1.5–3×). These are estimates for the operator's real VM, not measurements.
+
+## 📦 Release Artifacts
+
+Eight artifacts plus MANIFEST.txt are staged for this release (git-ignored `release/staging/`):
+
+- `zig0_linux32`, `zig0_w32.exe` — the C++98 bootstrap, retained for the bootstrap-era build path.
+- `zig1_linux32` — the self-hosted compiler; its md5 `10f0ca2b…` reproduces the recorded self-compile fixed point byte-for-byte.
+- `zig1_w32.exe` — the self-hosted compiler, Windows (`-osw`) flavour.
+- `src_c_zig1_linux.tgz`, `src_c_zig1_w32.zip` — the fixed-point self-emission C89 set (83 files; byte-identical across both target flavours).
+- `zig1_src.tgz`, `zig1_src.zip` — the Z98 source tree (`sf/src/*.zig` + `sf/src/include/`) plus `RELEASE_README.txt`; both formats carry identical content.
+
+Win-facing artifacts are `.zip` (win9x-unpackable). There is no `zig0` source archive in this release: `zig1_src` is compiled with a `zig0_linux32` / `zig0_w32.exe` bootstrap binary from the same release (exact steps in the archive's `RELEASE_README.txt`), observing the gcc ~80 MB memory caveat above.
+
+## 👥 Contributors
+Z98 is made possible by the dedicated work of its contributors.
+
+*@melkyr-Andres Hernandez*
+*Zni005 (DeepseekV4+Opencode)*
+
+---
+
+# Z98 0.13.0 “2-Propanol” Release Notes
+
+We are proud to announce the release of Z98 version **0.13.0**, codenamed **“2-Propanol”**.
+
+Version 0.13.0 represents the most stable and robust version of the Z98 bootstrap compiler to date. This release focuses on "Hardening" the core semantic engine and implementing critical memory optimizations, ensuring stable multi-module compilation for large-scale projects like the stage 1 Zig compiler.
+
+## 🚀 Memory Optimization Excellence
+
+Version 0.13.0 brings several critical memory optimizations that further solidify Z98's ability to run on 16MB-64MB Pentium I/II hardware.
+- **Token Arena Reset**: The token arena is now reset immediately after parsing all modules. This frees approximately **1MB** of memory that is no longer needed during semantic analysis.
+- **Shared Emitter Buffer**: We've refactored the `C89Emitter` to use a single shared buffer across all generated files. This eliminates the 128KB-per-file static overhead, saving up to **2.8MB** in large projects.
+- **AST Block Reuse**: The `ControlFlowLifter` now reuses existing block nodes instead of cloning them during expression-to-statement transformation, reducing peak memory usage by approximately **0.5MB**.
+- **Chunk Size Tuning**: The default arena chunk size has been tuned to 256KB to minimize internal fragmentation and improve memory granularity.
+
+## 🛡️ Systemic Symbol Table Hardening
+
+We have resolved a critical class of bugs related to "Symbol Corruption" that occurred during complex cross-module imports.
+- **Preserved Type Metadata**: `Scope::insert` is now hardened to preserve existing type metadata. If an incoming symbol lacks type information, the existing resolved type is maintained, ensuring that once a type is resolved, it remains stable.
+- **Pre-Insertion Strategy**: Local variables are now inserted into the symbol table *before* their initializers are resolved. This ensures the variable's name is known even if the initializer contains an error, preventing confusing "undeclared identifier" cascades.
+- **Forced Resolution Pass**: At the end of every block, the compiler performs a second pass on any variables that still have an undefined type, ensuring every local variable has a concrete type before static analysis.
+
+## 🏗️ Production-Grade Module Identity
+
+We have overhauled how the compiler tracks and identifies modules to ensure 100% reliable type deduplication across complex import graphs.
+- **Canonical Module Identity**: The `TypeRegistry` now uses **Canonical Module Paths** (absolute, normalized, and case-insensitive) as unique keys for type lookups, ensuring that `std.zig` is always `std.zig`, regardless of how it was imported.
+
+## 🛠️ Robust Alias & Placeholder Resolution
+
+The resolution of transitive type aliases and mutually recursive structures has been significantly strengthened.
+- **Fixed-Point Placeholder Resolution**: Phase 0.5 now utilizes a **Fixed-Point Iteration** strategy, iterating until convergence to handle even the deepest chains of cross-module type aliases.
+- **Deep Alias Unwrapping**: The compiler now deeply unwraps `TYPE_TYPE` chains during type constant resolution, allowing the `TypeChecker` to see through alias layers immediately.
+
+## 📦 Hardening C89 Compatibility
 
 ### 📦 Aggregate Initializer Lifting
-We have addressed a significant C89 compatibility gap regarding aggregate initializers (structs, unions, and tuples) in expression contexts.
-- **The Issue**: Previously, passing a struct literal directly to a function (e.g., `func(.{ .x = 1 })`) would sometimes emit invalid C99 compound literals or braced initializers in an expression context, which legacy compilers reject with `error C2059: syntax error : '{'`.
-- **The Solution**: The `ControlFlowLifter` now automatically identifies aggregate literals in non-constant expression contexts and "lifts" them into uniquely named temporary variables. These variables are then decomposed into field-by-field assignments, ensuring 100% ANSI C89 compliance.
+The `ControlFlowLifter` now automatically identifies aggregate literals (structs, unions, tuples) in non-constant expression contexts and "lifts" them into uniquely named temporary variables. These are then decomposed into field-by-field assignments, ensuring 100% ANSI C89 compliance.
 
 ### 🏷️ Enhanced Tagged Union Coercion
-Z98 now supports distributed coercion for tagged unions within control-flow expressions.
-- You can now return "naked" tag literals (e.g., `.Alive`) from different branches of an `if` or `switch` expression, provided the expected result type is a tagged union.
-- The `TypeChecker` now proactively unifies branch types by coercing literals into their full tagged union representations before final validation, simplifying the implementation of complex state machines.
+Z98 now supports distributed coercion for tagged unions within control-flow expressions. You can return "naked" tag literals (e.g., `.Alive`) from branches of an `if` or `switch`, provided the expected result type is a tagged union.
 
-## 🛠️ Internal Compiler Improvements
+## 🔍 Static Analyzer Decoupling
 
-### 🧬 Standardized Identifier Mangling
-We have refined our internal mangling strategy to better support compiler-generated symbols.
-- Identifiers starting with `__` (reserved for internal use) are now bypassed by the module-prefixing and keyword-mangling logic.
-- This ensures that internal runtime helpers and compiler-generated temporaries maintain consistent names across translation units, resolving several "undeclared identifier" issues in complex multi-module builds.
-
-### 🌐 Cross-Module Type Visibility
-Following an investigation into cross-module resolution failures, we have improved how the compiler handles qualified member access for types and modules.
-- The `TypeChecker` now more robustly unwraps meta-types and resolves placeholders when accessing union tags and type aliases across module boundaries (e.g., `Module.Union.Tag`).
-- Structural equality checks have been enhanced to account for nominal type identity in cross-module contexts, preventing spurious "type mismatch" errors.
-
-## 🔌 Platform & Runtime
-- **Standardized Print IO**: Unified all `plat_print_*` functions to route through the global `Logger` instance, improving consistency across 32-bit targets.
-- **`@intToPtr` Support**: Added support for the `@intToPtr` builtin to assist with low-level memory mapping and driver development.
-
-## 📂 New Documentation
-- **[Z98 Bootstrap Manual](docs/reference/z98_bootstrap_manual.md)**: A new comprehensive guide detailing idiomatic patterns, subset constraints, and the PAL API, with extensive examples from the `rogue_mud` and `lisp_interpreter_curr` projects.
-
-## 📜 100% Test Stability
-The Z98 test suite continues to pass at 100% stability across all **82 batches**. This release includes new integration tests (Batches 9b and 61) specifically targeting the new lifting and coercion logic.
+The `LifetimeAnalyzer` and `NullPointerAnalyzer` have been decoupled from the lexical scoping system to improve reliability.
+- **Post-Check Safety**: Analyzers now rely on the `getRootSymbol` utility, which extracts variable identity directly from AST metadata, ensuring stability even after lexical scopes are discarded.
 
 ## 👥 Contributors
 Z98 is made possible by the dedicated work of its contributors.

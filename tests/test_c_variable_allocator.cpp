@@ -50,24 +50,24 @@ TEST_FUNC(CVariableAllocator_Truncation) {
     CVariableAllocator alloc(arena);
 
     Symbol s1;
-    s1.name = "this_is_a_very_long_variable_name_that_exceeds_31_chars";
+    s1.name = "this_is_a_very_long_variable_name_that_exceeds_sixty_three_characters_limit_test";
     s1.mangled_name = "";
 
     const char* name = alloc.allocate(&s1);
-    ASSERT_EQ(31, (int)plat_strlen(name));
-    ASSERT_TRUE(plat_strncmp(name, s1.name, 31) == 0);
+    ASSERT_EQ(63, (int)plat_strlen(name));
+    ASSERT_TRUE(plat_strncmp(name, s1.name, 63) == 0);
 
     // Collision after truncation
     Symbol s2;
-    s2.name = "this_is_a_very_long_variable_name_that_exceeds_31_chars";
+    s2.name = "this_is_a_very_long_variable_name_that_exceeds_sixty_three_characters_limit_test";
     s2.mangled_name = "";
     const char* name2 = alloc.allocate(&s2);
-    ASSERT_EQ(31, (int)plat_strlen(name2));
-    // name is "this_is_a_very_long_variable_na"
-    // suffix "_1" is len 2. base_len = 31 - 2 = 29.
-    // base[29] = "this_is_a_very_long_variable_"
-    // name2 = "this_is_a_very_long_variable__1"
-    ASSERT_EQ(0, plat_strcmp(name2, "this_is_a_very_long_variable__1"));
+    ASSERT_EQ(63, (int)plat_strlen(name2));
+    // name is "this_is_a_very_long_variable_name_that_exceeds_sixty_three_char"
+    // suffix "_1" is len 2. base_len = 63 - 2 = 61.
+    // base[61] = "this_is_a_very_long_variable_name_that_exceeds_sixty_three_ch"
+    // name2 = "this_is_a_very_long_variable_name_that_exceeds_sixty_three_ch_1"
+    ASSERT_EQ(0, plat_strcmp(name2, "this_is_a_very_long_variable_name_that_exceeds_sixty_three_ch_1"));
 
     return true;
 }

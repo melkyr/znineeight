@@ -115,15 +115,11 @@ bool test_length_limit() {
     unit.setTestMode(false);
     NameMangler mangler(arena, interner, unit);
 
-    const char* long_name = "this_is_a_very_long_function_name_that_exceeds_thirty_one_characters";
+    const char* long_name = "this_is_a_very_long_function_name_that_exceeds_sixty_three_characters_and_more_than_that";
     const char* mangled = mangler.mangleFunction(long_name, NULL, 0);
 
-    ASSERT_TRUE(plat_strlen(mangled) <= 31);
-    // zF_44e31f_ (10 chars)
-    // local_name must be truncated to 21 chars.
-    // mangler uses suffix of local_name: 31 - hp_len = 21 chars.
-    // "this_is_a_very_long_function_name_that_exceeds_thirty_one_characters" is way longer.
-    // suffix of 21 chars of long_name.
+    ASSERT_TRUE(plat_strlen(mangled) <= 63);
+    // zF_8hex_8hex_31chars = 2 + 8 + 1 + 8 + 1 + 31 = 51 characters approx.
 
     return true;
 }
