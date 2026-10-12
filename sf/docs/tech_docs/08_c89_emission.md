@@ -1193,7 +1193,13 @@ mint helper (moved verbatim from `c89_emit.zig` where they previously lived): `n
 `MintModuleStem`, `nameManglerFnScope`). The emitter's `c89_emit.zig` keeps 4 thin `pub`
 forwarders (`NameMangler`, `nameManglerInit`, `nameManglerMangle`, `nameManglerMangleGlobal`) as
 its external compatibility surface and calls `nm_mod.*` at every mint site; no minting logic
-remains in the emitter. Consumable from outside the emitter (P6 lowerer). The dead 7-line counter
+remains in the emitter (Fix round 1 truth-up: the `.undefined_const` array-of-struct zeroing path
+`emitFlagOp` had 4 raw `stringInternerGet(sfe.name_id)` struct-field reads — routed through
+`nameManglerMintField(mangler, sfe.name_id, uap.elem)`; post-fix the only raw name reads left in
+the emitter are printer DISPLAY labels (`std_print` string literals, source names by design),
+prefixed macro composites (`zTU_*`, enum/error tag macros — keyword-safe by construction), and the
+`is_extern` source-name overrides (hard boundary) — none of which mint a listed-category C
+identifier). Consumable from outside the emitter (P6 lowerer). The dead 7-line counter
 stub this file used to be is gone. See §1.3.
 
 ---

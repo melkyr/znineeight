@@ -288,7 +288,7 @@ fn emitFieldAssign(writer: *BufferedWriter, indent_val: u32, registry: *TypeRegi
             if (resolveFieldAccess(writer, registry, interner, mangler, current_fn, base_ty, field_id, efa_mode, src_temp, &efa_name, &efa_tid) != @intCast(u8, 0)) {
                 found = @intCast(u8, 1);
                 var efa_empty: []const u8 = ""; fn_prefix = efa_empty;
-                if (efa_name != @intCast(u32, 0)) { fld_name_val = if (bty.kind == TypeKind.struct_type) nm_mod.nameManglerMintField(mangler, efa_name, base_ty) else nm_mod.nameManglerMintMember(mangler, efa_name, base_ty); }
+                if (efa_name != @intCast(u32, 0) and (bty.kind == TypeKind.struct_type or bty.kind == TypeKind.union_type or bty.kind == TypeKind.packed_union_type)) { fld_name_val = if (bty.kind == TypeKind.struct_type) nm_mod.nameManglerMintField(mangler, efa_name, base_ty) else nm_mod.nameManglerMintMember(mangler, efa_name, base_ty); }
                 if (bty.kind == TypeKind.slice_type) {
                     if (field_id == type_mod.SLICE_FIELD_PTR) {
                         var efa_el = registry.slice_items[@intCast(usize, bty.payload_idx)].elem;
@@ -7576,7 +7576,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                               bufferedWriterWrite(&emitter.writer, result);
                               var slpd: []const u8 = "[_i].";
                               bufferedWriterWrite(&emitter.writer, slpd);
-                              var slpfn: []const u8 = interner_mod.stringInternerGet(emitter.interner, sfe.name_id);
+                              var slpfn: []const u8 = nm_mod.nameManglerMintField(emitter.mangler, sfe.name_id, uap.elem);
                               bufferedWriterWrite(&emitter.writer, slpfn);
                               var slpb3: []const u8 = "[_k] = 0;\n        _k++;\n    }\n";
                               bufferedWriterWrite(&emitter.writer, slpb3);
@@ -7586,7 +7586,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                               bufferedWriterWrite(&emitter.writer, result);
                               var sldp: []const u8 = "[_i].";
                               bufferedWriterWrite(&emitter.writer, sldp);
-                              var slfnp: []const u8 = interner_mod.stringInternerGet(emitter.interner, sfe.name_id);
+                              var slfnp: []const u8 = nm_mod.nameManglerMintField(emitter.mangler, sfe.name_id, uap.elem);
                               bufferedWriterWrite(&emitter.writer, slfnp);
                               var slepp: []const u8 = ".ptr = 0; ";
                               bufferedWriterWrite(&emitter.writer, slepp);
@@ -7601,7 +7601,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                               bufferedWriterWrite(&emitter.writer, result);
                               var sldo: []const u8 = "[_i].";
                               bufferedWriterWrite(&emitter.writer, sldo);
-                              var slfno: []const u8 = interner_mod.stringInternerGet(emitter.interner, sfe.name_id);
+                              var slfno: []const u8 = nm_mod.nameManglerMintField(emitter.mangler, sfe.name_id, uap.elem);
                               bufferedWriterWrite(&emitter.writer, slfno);
                               var sleo: []const u8 = ".has_value = 0;\n        ";
                               bufferedWriterWrite(&emitter.writer, sleo);
@@ -7609,7 +7609,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                               bufferedWriterWrite(&emitter.writer, result);
                               var sld: []const u8 = "[_i].";
                               bufferedWriterWrite(&emitter.writer, sld);
-                              var slfn: []const u8 = interner_mod.stringInternerGet(emitter.interner, sfe.name_id);
+                              var slfn: []const u8 = nm_mod.nameManglerMintField(emitter.mangler, sfe.name_id, uap.elem);
                               bufferedWriterWrite(&emitter.writer, slfn);
                               var sle: []const u8 = " = 0;\n        ";
                               bufferedWriterWrite(&emitter.writer, sle);
