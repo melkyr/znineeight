@@ -582,6 +582,9 @@ fn resolveFieldAccess(writer: *BufferedWriter, registry: *TypeRegistry, interner
      emitted_type_set: U32ToU32Map,
      fwd_decl_set: U32ToU32Map,
       pointer_only_map: U32ToU32Map,
+      // P4: the resolver classification's needs-definition group (typedef
+      // emitted) — replaces the deleted `shouldSkipTypeEmission`.
+      needs_def_map: U32ToU32Map,
        shared_set: U32ToU32Map,
        // Task 4 (z98-print-formatting): tuple types that hold a runtime value
        // (hoisted temp / global). Tuple typedefs are emitted ONLY for these —
@@ -621,7 +624,7 @@ fn resolveFieldAccess(writer: *BufferedWriter, registry: *TypeRegistry, interner
       safe_checks: bool,
    };
 
-pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *NameMangler, diag: *DiagnosticCollector, sc: *SwitchCaseArrayList, ca: *U32ArrayList, alloc: *Sand, persist_alloc: *Sand, error_code_reg: *hash_mod.U32ToU32Map, pointer_only_len: u32, safe_checks: bool) C89Emitter {
+pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *NameMangler, diag: *DiagnosticCollector, sc: *SwitchCaseArrayList, ca: *U32ArrayList, alloc: *Sand, persist_alloc: *Sand, error_code_reg: *hash_mod.U32ToU32Map, pointer_only_map: U32ToU32Map, needs_def_map: U32ToU32Map, shared_map: U32ToU32Map, safe_checks: bool) C89Emitter {
     return C89Emitter{
         .writer = bufferedWriterInit(),
         .indent = @intCast(u32, 0),
@@ -656,8 +659,11 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
          .nest_inl = undefined,
          .emitted_type_set = hash_mod.u32ToU32MapInitCap(persist_alloc, reg.types_len),
          .fwd_decl_set = hash_mod.u32ToU32MapInitCap(persist_alloc, reg.types_len),
-         .pointer_only_map = hash_mod.u32ToU32MapInitCap(persist_alloc, @intCast(usize, pointer_only_len)),
-         .shared_set = hash_mod.u32ToU32MapInit(persist_alloc),
+         // P4: the three classification groups arrive fully populated from
+         // the resolver's `classifyTypeEmissionGroups` (`ClassificationResult`).
+         .pointer_only_map = pointer_only_map,
+         .needs_def_map = needs_def_map,
+         .shared_set = shared_map,
          .needed_tuple_set = hash_mod.u32ToU32MapInit(persist_alloc),
          .need_fhex32 = @intCast(u8, 0),
          .need_fhex64 = @intCast(u8, 0),
@@ -1103,130 +1109,35 @@ fn emitTypeDeps(emitter: *C89Emitter, tid: u32, seen: *U32ToU32Map, gated: u8) v
     }
 }
 
-pub fn computeSharedSet(reg: *TypeRegistry, emitter: *C89Emitter, alloc: *Sand) void {
-    var ti: u32 = @intCast(u32, 0);
-    while (@intCast(usize, ti) < reg.types_len) : (ti += 1) {
-        var ty = reg.types_items[@intCast(usize, ti)];
-        var is_synthetic: u8 = @intCast(u8, 0);
-        if (ty.name_id == @intCast(u32, 0)) {
-            if (ty.kind == TypeKind.slice_type or
-                ty.kind == TypeKind.optional_type or
-                ty.kind == TypeKind.error_union_type or
-                ty.kind == TypeKind.error_set_type or
-                ty.kind == TypeKind.tagged_union_type or
-                ty.kind == TypeKind.union_type or
-                ty.kind == TypeKind.array_type or
-                ty.kind == TypeKind.fn_type)
-            {
-                is_synthetic = @intCast(u8, 1);
-            }
-            // Task 4: a needed tuple lives in the shared header; joining the
-            // shared set lets the closure below promote any pointer-only named
-            // element type into the shared header too (its full definition must
-            // precede the tuple typedef).
-            if (ty.kind == TypeKind.tuple_type and hash_mod.u32ToU32MapGet(&emitter.needed_tuple_set, ti) != null) {
-                is_synthetic = @intCast(u8, 1);
-            }
-        }
-        var is_clsv: u8 = @intCast(u8, 0);
-        if (hash_mod.u32ToU32MapGet(&emitter.pointer_only_map, ti) == null) {
-            is_clsv = @intCast(u8, 1);
-        }
-        var is_carrier64: u8 = @intCast(u8, 0);
-        if (ty.kind == TypeKind.i64_type or ty.kind == TypeKind.u64_type or ty.kind == TypeKind.f64_type) {
-            is_carrier64 = @intCast(u8, 1);
-        }
-        var is_fn_named: u8 = @intCast(u8, 0);
-        if (ty.kind == TypeKind.fn_type and ty.name_id != @intCast(u32, 0)) {
-            is_fn_named = @intCast(u8, 1);
-        }
-        if (is_synthetic != @intCast(u8, 0) or is_clsv != @intCast(u8, 0) or is_carrier64 != @intCast(u8, 0) or is_fn_named != @intCast(u8, 0)) {
-            hash_mod.u32ToU32MapPut(&emitter.shared_set, ti, @intCast(u32, 1));
-        }
-    }
-    var changed: u32 = @intCast(u32, 1);
-    while (changed != @intCast(u32, 0)) {
-        changed = @intCast(u32, 0);
-        var ti2: u32 = @intCast(u32, 0);
-        while (@intCast(usize, ti2) < reg.types_len) : (ti2 += 1) {
-            var ty2 = reg.types_items[@intCast(usize, ti2)];
-            if (ty2.name_id == @intCast(u32, 0)) continue;
-            if (hash_mod.u32ToU32MapGet(&emitter.shared_set, ti2) != null) continue;
-            if (ty2.kind != TypeKind.struct_type and
-                ty2.kind != TypeKind.tagged_union_type and
-                ty2.kind != TypeKind.union_type and
-                ty2.kind != TypeKind.packed_union_type and
-                ty2.kind != TypeKind.enum_type and
-                ty2.kind != TypeKind.error_set_type) continue;
-            if (hash_mod.u32ToU32MapGet(&emitter.pointer_only_map, ti2) == null) continue;
-            var sj: u32 = @intCast(u32, 0);
-            while (@intCast(usize, sj) < reg.types_len) : (sj += 1) {
-                if (hash_mod.u32ToU32MapGet(&emitter.shared_set, sj) == null) continue;
-                if (type_mod.typeRefsContains(reg, sj, ti2)) {
-                    hash_mod.u32ToU32MapPut(&emitter.shared_set, ti2, @intCast(u32, 1));
-                    changed = @intCast(u32, 1);
-                    break;
-                }
-            }
-        }
-    }
-}
-
-// D6-1: the shared type-kind skip list for the two type-emission passes.
-// 0=emit; 1=void (skip); 2=unnamed non-emitable; 3=silent skip. `skip_arb`
-// drops arb_int/arb_uint (shared-header path); the single-file path lets them
-// fall through to the unnamed check, exactly as before.
-fn shouldSkipTypeEmission(ty: type_mod.Type, skip_arb: u8) u8 {
-    if (ty.kind == TypeKind.void_type) return @intCast(u8, 1);
-    if (ty.kind == TypeKind.bool_type) return @intCast(u8, 3);
-    if (ty.kind == TypeKind.noreturn_type) return @intCast(u8, 3);
-    if (ty.kind == TypeKind.null_type) return @intCast(u8, 3);
-    if (ty.kind == TypeKind.undefined_type) return @intCast(u8, 3);
-    if (ty.kind == TypeKind.integer_literal_type) return @intCast(u8, 3);
-    if (ty.kind == TypeKind.type_type) return @intCast(u8, 3);
-    if (ty.kind == TypeKind.module_type) return @intCast(u8, 3);
-    if (skip_arb != @intCast(u8, 0)) {
-        if (ty.kind == TypeKind.arb_uint_type or ty.kind == TypeKind.arb_int_type) return @intCast(u8, 3);
-    }
-    if (ty.name_id == @intCast(u32, 0)) {
-        if (ty.kind != TypeKind.slice_type and
-            ty.kind != TypeKind.optional_type and
-            ty.kind != TypeKind.error_union_type and
-            ty.kind != TypeKind.error_set_type and
-            ty.kind != TypeKind.tagged_union_type and
-            ty.kind != TypeKind.union_type and
-            ty.kind != TypeKind.array_type and
-            ty.kind != TypeKind.fn_type)
-        {
-            return @intCast(u8, 2);
-        }
-    }
-    return @intCast(u8, 0);
-}
-
 // D3-5: the three emission sub-passes shared by `emitSharedHeader`
-// (`use_emitted_set`=0: local fwd/emit dedup maps, shared-set membership, arb
-// skip, no D2 marker, gated #ifndef guards) and `emitSpecialTypes`
-// (`use_emitted_set`=1: persistent emitter maps, no shared filter, arb
-// fall-through, D2 measure marker, gated=0). Emission order is `sorted`.
+// (`use_emitted_set`=0: local fwd/emit dedup maps, shared-set membership
+// filter, no D2 marker, gated #ifndef guards) and `emitSpecialTypes`
+// (`use_emitted_set`=1: persistent emitter maps, no shared filter, D2 measure
+// marker, gated=0). Emission order is `sorted`. P4: the emit-vs-skip decision
+// is the resolver classification's `needs_def_map` group (the former
+// `shouldSkipTypeEmission` is deleted); `skip_arb` is gone with it (its arb
+// arm was unreachable-equivalent — see `classificationNeedsDef`).
 fn emitTypePasses(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32, gated: u8, use_emitted_set: u8) void {
     var lfwd: hash_mod.U32ToU32Map = undefined;
     var lemit: hash_mod.U32ToU32Map = undefined;
     var fwd_ptr: *U32ToU32Map = &lfwd;
     var emit_ptr: *U32ToU32Map = &lemit;
     var require_shared: u8 = @intCast(u8, 1);
-    var skip_arb: u8 = @intCast(u8, 1);
     var d2_marker: u8 = @intCast(u8, 0);
     if (use_emitted_set != @intCast(u8, 0)) {
         fwd_ptr = &emitter.fwd_decl_set;
         emit_ptr = &emitter.emitted_type_set;
         require_shared = @intCast(u8, 0);
-        skip_arb = @intCast(u8, 0);
         d2_marker = @intCast(u8, 1);
     } else {
         lfwd = hash_mod.u32ToU32MapInitCap(emitter.alloc, reg.types_len);
         lemit = hash_mod.u32ToU32MapInitCap(emitter.alloc, reg.types_len);
     }
+    // P4: finalize the resolver classification at emission (step 2 — the old
+    // `computeSharedSet` call site / live `shouldSkipTypeEmission` evaluation
+    // point): types registered after the step-1 snapshot + the needed-tuple
+    // shared seed + the shared closure. Idempotent; both pass paths run it.
+    type_resolver.classifyTypeEmissionFinalize(reg, &emitter.shared_set, &emitter.pointer_only_map, &emitter.needs_def_map, &emitter.needed_tuple_set);
 
     // Pass 1: forward typedefs for named aggregates.
     var tsi: usize = @intCast(usize, 0);
@@ -1260,9 +1171,7 @@ fn emitTypePasses(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32, gate
         if (require_shared != @intCast(u8, 0)) {
             if (hash_mod.u32ToU32MapGet(&emitter.shared_set, tid) == null) continue;
         }
-        var ty = reg.types_items[@intCast(usize, tid)];
-        var sk = shouldSkipTypeEmission(ty, skip_arb);
-        if (sk != @intCast(u8, 0)) continue;
+        if (hash_mod.u32ToU32MapGet(&emitter.needs_def_map, tid) == null) continue;
         emitTypeDeps(emitter, tid, emit_ptr, gated);
         emitTypeDefOnce(emitter, tid, emit_ptr, gated);
     }
@@ -1283,8 +1192,7 @@ fn emitTypePasses(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32, gate
                 var d2mm: []const u8 = "m"; pal.measureMarkerWriteInt(d2mm, ty.module_id);
             }
         }
-        var sk2 = shouldSkipTypeEmission(ty, skip_arb);
-        if (sk2 != @intCast(u8, 0)) continue;
+        if (hash_mod.u32ToU32MapGet(&emitter.needs_def_map, tid) == null) continue;
         emitTypeDeps(emitter, tid, emit_ptr, gated);
         emitTypeDefOnce(emitter, tid, emit_ptr, gated);
     }
@@ -1292,7 +1200,6 @@ fn emitTypePasses(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32, gate
 }
 
 pub fn emitSharedHeader(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32) void {
-    computeSharedSet(reg, emitter, emitter.alloc);
     var fg0: []const u8 = "#ifndef ZIG_SPECIAL_TYPES_H\n";
     bufferedWriterWrite(&emitter.writer, fg0);
     var fg1: []const u8 = "#define ZIG_SPECIAL_TYPES_H\n";
@@ -2377,11 +2284,10 @@ fn emitFunctionSet(emitter: *C89Emitter, module_id: u32, all: u8) void {
     }
 }
 
-pub fn emitModule(emitter: *C89Emitter, name: []const u8, c_includes: []u32, ptr_only_ids: [*]u32, ptr_only_len: u32) void {
-    var poi: u32 = @intCast(u32, 0);
-    while (poi < ptr_only_len) : (poi += 1) {
-        hash_mod.u32ToU32MapPut(&emitter.pointer_only_map, ptr_only_ids[@intCast(usize, poi)], @intCast(u32, 1));
-    }
+// P4: the classification maps (`pointer_only_map`/`needs_def_map`/`shared_set`)
+// arrive fully populated from the resolver's `classifyTypeEmissionGroups`
+// (loaded in `c89EmitterInit`); the former `ptr_only_ids` fill loop is gone.
+pub fn emitModule(emitter: *C89Emitter, name: []const u8, c_includes: []u32) void {
     var sorted: [*]u32 = tstTopologicalSort(emitter.registry, emitter.alloc);
     emitErrorCodePrologue(emitter);
     emitSpecialTypes(emitter, emitter.registry, sorted);

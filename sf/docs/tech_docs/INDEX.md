@@ -251,6 +251,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `classifyCoercion` | coercion.zig |
 | `classifyExpr` | analyzer.zig |
 | `classifyProvenance` | analyzer.zig |
+| `classifyTypeEmissionFinalize` | type_resolver.zig |
 | `classifyTypeEmissionGroups` | type_resolver.zig |
 | `coalesceArgCopies` | lir_opt_pass.zig |
 | `coalesceJoinCopies` | lir_opt_pass.zig |
@@ -318,7 +319,6 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `computeNestMetadata` | lir_opt_pass.zig |
 | `collectNeededTuples` | c89_emit.zig |
 | `collectPrintRoots` | c89_emit.zig |
-| `computeSharedSet` | c89_emit.zig |
 | `constAliasPrepass` | const_alias_prepass.zig |
 | `containerAnonNameId` | type_resolver.zig |
 | `containerFieldCount` | type_resolver.zig |

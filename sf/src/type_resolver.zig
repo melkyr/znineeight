@@ -169,8 +169,11 @@ pub fn localConstScopeLookup(scope: *LocalConstScope, name_id: u32) ?u32 {
 }
 
 pub const ClassificationResult = struct {
-    ids: [*]u32,
-    len: u32,
+    // P4 (single classification pass; spec §4 "Type classification" row as
+    // amended 2026-10-12): the three emission groups, consumed by the emitter.
+    pointer_only: hash_mod.U32ToU32Map,
+    needs_def: hash_mod.U32ToU32Map,
+    shared: hash_mod.U32ToU32Map,
 };
 
 pub const TypeResolver = struct {
@@ -589,7 +592,8 @@ pub fn typeResolverResolve(self: *TypeResolver) void {
 // classification predicates deliberately differ (do not blind-merge): only
 // `fieldEmbedsByValue` treats `enum`/`error_set` as by-value aggregates; only
 // `requiresFullDef` adds `optional`/`error_union`. They feed
-// `classifyTypeEmissionGroups` (pointer-only classification, P4's scope) and
+// `classifyTypeEmissionGroups` (the P4 single emission classification —
+// pointer-only / needs-definition / shared-header groups) and
 // are NOT the ordering relation — typedef ordering derives from
 // `type_registry.typeRefs`/`typeNeedsFullDef` (P2). The former third sibling
 // `layoutFieldNeedsEdge` + `layoutAddTypeEdge`/`layoutAddFieldEdges` were the
@@ -826,16 +830,42 @@ pub fn classifyTypeEmissionGroups(self: *TypeResolver, perm_alloc: *Sand) Classi
         }
     }
 
-    var ids_raw = alloc_mod.sandAlloc(perm_alloc, 4 * tl, 4) catch unreachable;
-    var ids: [*]u32 = @ptrCast([*]u32, ids_raw);
+    // P4 (single classification pass): the three emission groups as maps —
+    // pointer-only (E1), needs-definition (E8/E9/E11 via
+    // `classificationNeedsDef`) and shared-header (E2/E3'/E5/E6 seeds). The
+    // emission-time finalize (E4 + post-snapshot registrations; step 2,
+    // `classifyTypeEmissionFinalize`) completes both rule sets where the data
+    // exists; the E7 closure runs here and again in step 2 (one helper,
+    // monotone).
+    var po_map = hash_mod.u32ToU32MapInitCap(perm_alloc, tl);
+    var nd_map = hash_mod.u32ToU32MapInitCap(perm_alloc, tl);
+    var sh_map = hash_mod.u32ToU32MapInitCap(perm_alloc, tl);
     var plen: u32 = @intCast(u32, 0);
     ti = 0;
     while (ti < tl) : (ti += 1) {
+        var ty = self.registry.types_items[ti];
         if (pointer_only[ti] != @intCast(u8, 0)) {
-            ids[@intCast(usize, plen)] = @intCast(u32, ti);
+            hash_mod.u32ToU32MapPut(&po_map, @intCast(u32, ti), @intCast(u32, 1));
             plen += @intCast(u32, 1);
         }
+        if (classificationNeedsDef(ty)) {
+            hash_mod.u32ToU32MapPut(&nd_map, @intCast(u32, ti), @intCast(u32, 1));
+        }
+        var is_synthetic: u8 = @intCast(u8, 0);
+        if (ty.name_id == @intCast(u32, 0)) {
+            if (classificationIsSyntheticEmittable(ty.kind)) is_synthetic = @intCast(u8, 1);
+        }
+        var is_clsv: u8 = @intCast(u8, 0);
+        if (pointer_only[ti] == @intCast(u8, 0)) is_clsv = @intCast(u8, 1);
+        var is_carrier64: u8 = @intCast(u8, 0);
+        if (ty.kind == TypeKind.i64_type or ty.kind == TypeKind.u64_type or ty.kind == TypeKind.f64_type) is_carrier64 = @intCast(u8, 1);
+        var is_fn_named: u8 = @intCast(u8, 0);
+        if (ty.kind == TypeKind.fn_type and ty.name_id != @intCast(u32, 0)) is_fn_named = @intCast(u8, 1);
+        if (is_synthetic != @intCast(u8, 0) or is_clsv != @intCast(u8, 0) or is_carrier64 != @intCast(u8, 0) or is_fn_named != @intCast(u8, 0)) {
+            hash_mod.u32ToU32MapPut(&sh_map, @intCast(u32, ti), @intCast(u32, 1));
+        }
     }
+    classificationSharedClosure(self.registry, &sh_map, &po_map);
 
     var cls_m: []const u8 = "CLS:c"; pal_mod.markerWrite(cls_m); markerU32(plen); var cls_nl: []const u8 = "\n"; pal_mod.markerWrite(cls_nl);
     ti = 0;
@@ -852,7 +882,122 @@ pub fn classifyTypeEmissionGroups(self: *TypeResolver, perm_alloc: *Sand) Classi
         var cnl: []const u8 = "\n"; pal_mod.markerWrite(cnl);
     }
 
-    return ClassificationResult{ .ids = ids, .len = plen };
+    return ClassificationResult{ .pointer_only = po_map, .needs_def = nd_map, .shared = sh_map };
+}
+
+// P4 (emitter sanitization, single classification pass): the eight
+// synthetic-emittable kinds — the kinds that may be emitted unnamed (a
+// synthetic C name is minted for them). Shared by the needs-definition rule
+// (`classificationNeedsDef`) and the shared-header synthetic seed
+// (`classifyTypeEmissionGroups`); the same list lived twice in the deleted
+// emitter `computeSharedSet`/`shouldSkipTypeEmission`.
+fn classificationIsSyntheticEmittable(kind: TypeKind) bool {
+    return kind == TypeKind.slice_type or
+        kind == TypeKind.optional_type or
+        kind == TypeKind.error_union_type or
+        kind == TypeKind.error_set_type or
+        kind == TypeKind.tagged_union_type or
+        kind == TypeKind.union_type or
+        kind == TypeKind.array_type or
+        kind == TypeKind.fn_type;
+}
+
+// P4: the needs-definition group (spec §4 "Type classification" row) — types
+// whose typedef must be emitted. Verbatim relocation of the deleted emitter
+// `shouldSkipTypeEmission` skip decision (the E8/E9/E11 rows of the P4
+// equivalence map) as its positive complement. The deleted function's
+// `skip_arb` arm (E10) is intentionally absent: it was unreachable-equivalent
+// — named arb_int/arb_uint never join the shared set (no seed covers the arb
+// kinds; the closure promotes only aggregate kinds) and are filtered by the
+// require_shared/po filters before any skip check, and the single-file path
+// ran with skip_arb=0 (emit). See the P4 report O1.
+fn classificationNeedsDef(ty: type_mod.Type) bool {
+    if (ty.kind == TypeKind.void_type) return false;
+    if (ty.kind == TypeKind.bool_type) return false;
+    if (ty.kind == TypeKind.noreturn_type) return false;
+    if (ty.kind == TypeKind.null_type) return false;
+    if (ty.kind == TypeKind.undefined_type) return false;
+    if (ty.kind == TypeKind.integer_literal_type) return false;
+    if (ty.kind == TypeKind.type_type) return false;
+    if (ty.kind == TypeKind.module_type) return false;
+    if (ty.name_id == @intCast(u32, 0)) {
+        if (!classificationIsSyntheticEmittable(ty.kind)) return false;
+    }
+    return true;
+}
+
+// P4: the shared-header closure (E7) — promote pointer-only named aggregates
+// referenced (by the P2 type-reference relation) from a shared member.
+// Verbatim map-based relocation of the deleted emitter `computeSharedSet`
+// closure; used by BOTH classification steps (step 1 seeds, step 2's
+// needed-tuple seed).
+fn classificationSharedClosure(reg: *TypeRegistry, shared: *hash_mod.U32ToU32Map, po: *hash_mod.U32ToU32Map) void {
+    var changed: u32 = @intCast(u32, 1);
+    while (changed != @intCast(u32, 0)) {
+        changed = @intCast(u32, 0);
+        var ti2: u32 = @intCast(u32, 0);
+        while (@intCast(usize, ti2) < reg.types_len) : (ti2 += 1) {
+            var ty2 = reg.types_items[@intCast(usize, ti2)];
+            if (ty2.name_id == @intCast(u32, 0)) continue;
+            if (hash_mod.u32ToU32MapGet(shared, ti2) != null) continue;
+            if (ty2.kind != TypeKind.struct_type and
+                ty2.kind != TypeKind.tagged_union_type and
+                ty2.kind != TypeKind.union_type and
+                ty2.kind != TypeKind.packed_union_type and
+                ty2.kind != TypeKind.enum_type and
+                ty2.kind != TypeKind.error_set_type) continue;
+            if (hash_mod.u32ToU32MapGet(po, ti2) == null) continue;
+            var sj: u32 = @intCast(u32, 0);
+            while (@intCast(usize, sj) < reg.types_len) : (sj += 1) {
+                if (hash_mod.u32ToU32MapGet(shared, sj) == null) continue;
+                if (type_mod.typeRefsContains(reg, sj, ti2)) {
+                    hash_mod.u32ToU32MapPut(shared, ti2, @intCast(u32, 1));
+                    changed = @intCast(u32, 1);
+                    break;
+                }
+            }
+        }
+    }
+}
+
+// P4 step 2 (operator amendment B1 + registration-timing discovery): the
+// emission-time FINALIZE of the same classification mechanism, called by the
+// emitter at the point the remaining inputs exist — (a) `needed_tuple_set`
+// (LIR-derived hoisted temps / globals, collected by `collectNeededTuples` in
+// `phase_C89Emission`) and (b) types registered AFTER the step-1 snapshot
+// (`front_resolution`/sema/lowering call `typeRegistryGetOrCreate*`; the old
+// emitter's `shouldSkipTypeEmission`/`computeSharedSet` evaluated their rules
+// LIVE at emission and covered them via the po-map fallthrough — a type
+// absent from `po` counts as value-embedding/shared). Re-applies the SAME
+// rule helpers (idempotent) over the current registry: needs-definition,
+// shared seeds (is_clsv = po MAP MEMBERSHIP), the needed-tuple shared seed,
+// and the shared closure. One copy of each rule; this is its second
+// application where the data is complete.
+pub fn classifyTypeEmissionFinalize(reg: *TypeRegistry, shared: *hash_mod.U32ToU32Map, po: *hash_mod.U32ToU32Map, nd: *hash_mod.U32ToU32Map, needed: *hash_mod.U32ToU32Map) void {
+    var ti: u32 = @intCast(u32, 0);
+    while (@intCast(usize, ti) < reg.types_len) : (ti += 1) {
+        var ty = reg.types_items[@intCast(usize, ti)];
+        if (classificationNeedsDef(ty)) {
+            hash_mod.u32ToU32MapPut(nd, ti, @intCast(u32, 1));
+        }
+        var is_synthetic: u8 = @intCast(u8, 0);
+        if (ty.name_id == @intCast(u32, 0)) {
+            if (classificationIsSyntheticEmittable(ty.kind)) is_synthetic = @intCast(u8, 1);
+            if (ty.kind == TypeKind.tuple_type and hash_mod.u32ToU32MapGet(needed, ti) != null) {
+                is_synthetic = @intCast(u8, 1);
+            }
+        }
+        var is_clsv: u8 = @intCast(u8, 0);
+        if (hash_mod.u32ToU32MapGet(po, ti) == null) is_clsv = @intCast(u8, 1);
+        var is_carrier64: u8 = @intCast(u8, 0);
+        if (ty.kind == TypeKind.i64_type or ty.kind == TypeKind.u64_type or ty.kind == TypeKind.f64_type) is_carrier64 = @intCast(u8, 1);
+        var is_fn_named: u8 = @intCast(u8, 0);
+        if (ty.kind == TypeKind.fn_type and ty.name_id != @intCast(u32, 0)) is_fn_named = @intCast(u8, 1);
+        if (is_synthetic != @intCast(u8, 0) or is_clsv != @intCast(u8, 0) or is_carrier64 != @intCast(u8, 0) or is_fn_named != @intCast(u8, 0)) {
+            hash_mod.u32ToU32MapPut(shared, ti, @intCast(u32, 1));
+        }
+    }
+    classificationSharedClosure(reg, shared, po);
 }
 
 fn growWpEdges(perm_a: *Sand, wp_to_ptr: *[*]u32, wp_next_ptr: *[*]u32, cap_ptr: *usize, count: u32) void {

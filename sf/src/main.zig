@@ -115,8 +115,9 @@ pub const CompilerContext = struct {
     call_arg_types: hash_mod.U32ToU32Map,
     call_param_map: hash_mod.U32ToU32Map,
     comptime_folds: ce_mod.ComptimeFoldTable,
-    pointer_only_ids: [*]u32,
-    pointer_only_len: u32,
+    // P4: the resolver classification's three emission groups (filled in
+    // `phase_TypeResolution`, consumed by `phase_C89Emission`).
+    cls: type_resolver.ClassificationResult,
     global_decls: lir_mod.GlobalDeclArrayList,
 
     exported: hash_mod.U64ToU32Map,
@@ -309,6 +310,8 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
      var call_arg_types = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
      var call_param_map = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
      var comptime_folds = ce_mod.comptimeFoldTableInitSized(&compiler_alloc.module, @intCast(usize, fold_hint));
+     // P4: classification placeholder (filled in `phase_TypeResolution`).
+     var cls_init: type_resolver.ClassificationResult = undefined;
      var exported = hash_mod.u64ToU32MapInit(&compiler_alloc.emission);
      var suspending_fns = hash_mod.u64ToU32MapInit(&compiler_alloc.module);
      var frame_sizes = hash_mod.u64ToU32MapInit(&compiler_alloc.module);
@@ -352,8 +355,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         .parent_result_start = parent_result_start,
         .parent_result_count = parent_result_count,
         .async_layouts = async_layouts,
-        .pointer_only_ids = undefined,
-        .pointer_only_len = @intCast(u32, 0),
+        .cls = cls_init,
         .global_decls = lir_mod.globalDeclArrayListInit(&compiler_alloc.emission),
         // Task 9 fix round 3 (Q7): module-init dependency edges (referrer << 32
         // | dependency -> referencing decl) and the resulting stable emitted
@@ -572,8 +574,10 @@ fn phase_TypeResolution(ctx: *CompilerContext) void {
     // an unfoldable initializer or a duplicate tag is a clean ERR_3055.
     type_resolver.enumReevaluateAll(ctx.store, ctx.typereg, ctx.symbol_reg, ctx.interner, ctx.module_reg, ctx.diag);
     var ptr_grp = type_resolver.classifyTypeEmissionGroups(&tr, &ctx.alloc.permanent);
-    ctx.pointer_only_ids = ptr_grp.ids;
-    ctx.pointer_only_len = ptr_grp.len;
+    // P4: the single classification pass — three emission groups (pointer-only /
+    // needs-definition / shared-header; the shared group's needed-tuple seed is
+    // completed at emission time via `classifyTypeEmissionSharedTuples`).
+    ctx.cls = ptr_grp;
     if (mods.len > @intCast(usize, 0) and mods[0].ast_root != @intCast(u32, 0)) {
         var tr2 = ast_mod.astStoreNodeAt(ctx.store, mods[0].ast_root);
         if (tr2.kind == AstKind.module_root) {
@@ -1190,7 +1194,7 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
     var p_msg: []const u8 = "C\n"; pal.markerWrite(p_msg);
     if (!ctx.cli.dump_c89 and !ctx.cli.output_dir_set) return;
     var mangler: c89_mod.NameMangler = undefined;
-    var mangler_hint: usize = ctx.lir_slots.len + ctx.global_decls.len + @intCast(usize, ctx.pointer_only_len) + @intCast(usize, 32);
+    var mangler_hint: usize = ctx.lir_slots.len + ctx.global_decls.len + ctx.cls.pointer_only.count + @intCast(usize, 32);
     mangler = c89_mod.nameManglerInit(ctx.interner, &ctx.alloc.emission, mangler_hint);
     mangler.exported = &ctx.exported;
     var emitter: c89_mod.C89Emitter = undefined;
@@ -1204,7 +1208,9 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
         &ctx.alloc.scratch,
         &ctx.alloc.emission,
         &ctx.error_code_registry,
-        ctx.pointer_only_len,
+        ctx.cls.pointer_only,
+        ctx.cls.needs_def,
+        ctx.cls.shared,
         ctx.cli.safe_checks,
     );
     emitter.module_reg = ctx.module_reg;
@@ -1368,10 +1374,8 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
     emitter.reachable = reachable;
 
     if (ctx.cli.output_dir_set) {
-        var poi: u32 = @intCast(u32, 0);
-        while (poi < ctx.pointer_only_len) : (poi += 1) {
-            hash_mod.u32ToU32MapPut(&emitter.pointer_only_map, ctx.pointer_only_ids[@intCast(usize, poi)], @intCast(u32, 1));
-        }
+        // P4: the classification maps are loaded at `c89EmitterInit` from
+        // `ctx.cls` (the former `pointer_only_ids` fill loop is gone).
         var sorted: [*]u32 = c89_mod.tstTopologicalSort(ctx.typereg, &ctx.alloc.emission);
         var hpath: [512]u8 = undefined;
         var hp: usize = @intCast(usize, 0);
@@ -1548,7 +1552,7 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
     c89_mod.bufferedWriterFlush(&cwriter);
 
     var c_incs = cinclude.cincludeUnionAll(ctx.module_reg, &ctx.alloc.emission);
-    c89_mod.emitModule(&emitter, module_name, c_incs, ctx.pointer_only_ids, ctx.pointer_only_len);
+    c89_mod.emitModule(&emitter, module_name, c_incs);
     var ff_m: []const u8 = "FINAL_FLUSH\n"; pal.markerWrite(ff_m);
     c89_mod.bufferedWriterFlush(&emitter.writer);
     lir_stream.lirStreamEndRead(&ctx.lir_stream);
