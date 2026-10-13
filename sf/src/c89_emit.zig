@@ -1092,7 +1092,7 @@ pub fn emitSupportFiles(emitter: *C89Emitter, dir_path: []const u8) void {
 
 // P2 (emitter sanitization, D8 root cause): typedef ordering derives from the
 // single type-reference relation in `type_registry.zig` (`typeRefs` /
-// `typeRefs` / `typeRefsContains` / `typeNeedsFullDef`). The former
+// `typeRefsContains` / `typeNeedsFullDef`). The former
 // hand-rolled edge machinery (`c89NeedsEmitEdge`, `tstEdgesWalk`,
 // `tstSeenInRange`, `tstEdgesCount`, `tstEdgesFill`, `tstIsDep`) is deleted —
 // no divergent kind membership remains. The relation covers ALL kinds, incl.
@@ -1112,6 +1112,10 @@ pub fn tstTopologicalSort(reg: *TypeRegistry, alloc: *Sand) [*]u32 {
     var result: [*]u32 = @ptrCast([*]u32, result_raw);
     var queue_raw = alloc_mod.sandAlloc(alloc, 4 * tl, 4) catch unreachable;
     var queue: [*]u32 = @ptrCast([*]u32, queue_raw);
+    var popped_raw = alloc_mod.sandAlloc(alloc, 1 * tl, 1) catch unreachable;
+    var popped: [*]u8 = @ptrCast([*]u8, popped_raw);
+    var zi: usize = @intCast(usize, 0);
+    while (zi < tl) : (zi += 1) { popped[zi] = @intCast(u8, 0); }
     var qhead: usize = 0;
     var qtail: usize = 0;
     ti = @intCast(u32, 0);
@@ -1124,6 +1128,7 @@ pub fn tstTopologicalSort(reg: *TypeRegistry, alloc: *Sand) [*]u32 {
     while (qhead < qtail) {
         var cur = queue[qhead]; qhead += 1;
         result[ri] = cur; ri += 1;
+        popped[@intCast(usize, cur)] = @intCast(u8, 1);
         var tj: u32 = @intCast(u32, 0);
         while (@intCast(usize, tj) < tl) : (tj += 1) {
             if (type_mod.typeRefsContains(reg, tj, cur)) {
@@ -1133,6 +1138,22 @@ pub fn tstTopologicalSort(reg: *TypeRegistry, alloc: *Sand) [*]u32 {
                     queue[qtail] = tj; qtail += 1;
                 }
             }
+        }
+    }
+    // P2 fix round 1 (controller ruling — APPEND variant): Kahn leaves any
+    // cycle residue (nodes whose indegree never reaches 0) out of `result`, and
+    // the type-emission passes walk `sorted[0..types_len]` — an uncovered tail
+    // reads uninitialized arena memory. Append the residue in stable
+    // ascending-tid order so `sorted` ALWAYS covers all `types_len` entries
+    // (no garbage reads possible). For acyclic programs this is a no-op (ri ==
+    // tl already). A post-resolve cyclic type still emits (possibly invalid C)
+    // instead of clean-rejecting — the pre-P2 behavior class; the diagnose/
+    // reject variant is rejected by ruling (no new error codes).
+    var ai: usize = @intCast(usize, 0);
+    while (ai < tl) : (ai += 1) {
+        if (popped[ai] == @intCast(u8, 0)) {
+            result[ri] = @intCast(u32, ai);
+            ri += 1;
         }
     }
     return result;

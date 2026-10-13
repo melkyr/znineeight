@@ -42,6 +42,12 @@ spill-backed function-slot list.
 
 #### Type Topological Sort
 
+**[updated: 2026-10-12 — P2 fix round 1]** `tstTopologicalSort` now APPENDS any Kahn cycle
+residue (nodes whose indegree never reaches 0) in stable ascending-tid order, so `sorted`
+ALWAYS covers all `types_len` entries and the emission passes' `tsi < types_len` walk can never
+read uninitialized arena memory (the append is a no-op for acyclic programs). A post-resolve
+cyclic type still emits — possibly invalid C — instead of clean-rejecting (the pre-P2 behavior
+class; the diagnose/reject variant is ruled out — no new error codes).
 **[updated: 2026-10-12 — P2, D8]** Types are emitted in dependency order using Kahn's
 algorithm (`tstTopologicalSort`), with the edge set derived from the SINGLE type-reference
 relation in `type_registry.zig` (`typeRefs` / `typeRefsContains` / `typeNeedsFullDef` — doc 03).
@@ -54,6 +60,7 @@ Input: TypeRegistry (all types 0..types_len-1)
 2. Enqueue all types with indegree 0
 3. Dequeue → add to result → for every tj with typeRefsContains(tj, cur): decrement → enqueue 0s
 4. Result order: every referenced typedef before its referrer
+5. Append cycle residue (unpopped nodes) in ascending-tid order → sorted covers types_len (P2 fix round 1)
 ```
 
 The relation (`type_registry.zig`, kind-by-kind table in the P2 SDD report): by-value positions
