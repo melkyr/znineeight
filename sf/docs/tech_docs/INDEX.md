@@ -248,6 +248,9 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `checkReturnProvenance` | analyzer.zig |
 | `checkReturnType` | constraint_checker.zig |
 | `cincludeUnionAll` | cinclude.zig |
+| `classificationIsSyntheticEmittable` | type_resolver.zig |
+| `classificationNeedsDef` | type_resolver.zig |
+| `classificationSharedClosure` | type_resolver.zig |
 | `classifyCoercion` | coercion.zig |
 | `classifyExpr` | analyzer.zig |
 | `classifyProvenance` | analyzer.zig |

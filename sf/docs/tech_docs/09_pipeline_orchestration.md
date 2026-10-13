@@ -781,7 +781,7 @@ runCompiler(ctx)
     ├─ phase_ImportResolution     → ModuleRegistry populated
     ├─ phase_SymbolRegistration   → SymbolRegistry populated
     ├─ suspensionAnalysisRun      → suspending_fns
-    ├─ phase_TypeResolution       → TypeRegistry, ResolvedTypeTable, cls (P4 classification)
+    ├─ phase_TypeResolution       → TypeRegistry, ResolvedTypeTable, emission_classif (P4 classification)
     ├─ phase_FrontResolution      → module-init/type-annotation resolution
     ├─ phase_ComptimeEvaluation   → comptime_folds table
     ├─ phase_SemanticAnalysis     → CoercionTable, resolved_types, enum_value_table
@@ -814,7 +814,7 @@ runCompiler(ctx)
 | `resolved_types` | `phase_FrontResolution`, `phase_TypeResolution` | `phase_LIRLowering`, emission |
 | `coercion_table` | Init | `phase_FrontResolution`, `phase_SemanticAnalysis`, `phase_LIRLowering` |
 | `comptime_folds` | `phase_ComptimeEvaluation` | `phase_LIRLowering` |
-| `cls` (P4 classification) | `phase_TypeResolution` | `phase_C89Emission` |
+| `emission_classif` (P4 classification) | `phase_TypeResolution` (groups) + `phase_EmissionClassification` (completion) | `phase_C89Emission` |
 | `lir_stream` / `lir_slots` | `phase_LIRLowering` | `phase_C89Emission` |
 | `global_decls` | `phase_LIRLowering` | `phase_C89Emission` |
 | async maps (`frame_sizes`, `state_widths`, …) | `phase_AsyncFrameSize` | `phase_LIRLowering` (async phase A/B) |
@@ -851,7 +851,7 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
 }
 ```
 
-Note: Skipping phases breaks downstream consumers. For example, skipping TypeResolution means `cls` stays undefined, which crashes C89Emission.
+Note: Skipping phases breaks downstream consumers. For example, skipping TypeResolution means `emission_classif` stays unfilled (empty maps), which crashes C89Emission.
 
 ### Phase Isolation
 

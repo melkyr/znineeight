@@ -76,8 +76,11 @@ gone with the walk).
 
 #### Pointer-only vs Value-embedding Split
 
-`emitModule` receives a `ptr_only_ids` array from the caller (calculated in `phase_C89Emission` in
-`main.zig`). Types in this set have all their field dependencies reachable through pointers — only
+The classification's `pointer_only` group (`classif.pointer_only_map`; computed in
+`phase_TypeResolution` by `classifyTypeEmissionGroups`, completed at the pre-emit
+`phase_EmissionClassification` boundary — `emitModule` receives no id arrays
+(**P4 fix round 2**; the `ptr_only_ids` parameter is long deleted)). Types in this set have all
+their field dependencies reachable through pointers — only
 a forward declaration is needed for C89 correctness. The split prevents redundant full type
 definitions:
 
@@ -670,7 +673,8 @@ not flag it UNWRITTEN.
 
 ### 1.10 emitModule — Top-Level Orchestration
 
-`emitModule(emitter, name, c_includes, ptr_only_ids, ptr_only_len)` drives one module's output
+`emitModule(emitter, name, c_includes)` (P4 fix round 2: the `ptr_only_ids`/`ptr_only_len`
+parameters are deleted — the classification maps arrive on `emitter.classif`) drives one module's output
 for the **stdout single-file path** (bare `--dump-c89`). With `--dump-c89 --output-dir DIR` (or
 `-o DIR`), `phase_C89Emission` instead writes `zig_special_types.h` once via `emitSharedHeader`,
 then loops modules emitting per-module `.h`/`.c` via `emitModuleHeaderFile`/`emitModuleFile`
@@ -1036,8 +1040,10 @@ prints `.{ ... }` (Zig never reads an untagged field).
   `typedef struct { <e0> _0; ... } <cname>;`; `ctypeGuardWrite` uses
   `ZIG_TUPLE_`; `tstEdgesCount`/`tstEdgesFill`/`tstIsDep` gained tuple element
   arms. Tuple typedefs are emitted ONLY for `C89Emitter.needed_tuple_set`
-  (runtime hoisted temps / globals, collected in `phase_C89Emission` by
-  `collectNeededTuples`; `emitNeededTupleTypes` runs at the end of
+  (runtime hoisted temps / globals, collected at the pre-emit
+  `phase_EmissionClassification` boundary by
+  `type_resolver.collectNeededTuples` — P4 fix round 2 (was mid-`phase_C89Emission`);
+  `emitNeededTupleTypes` runs at the end of
   `emitSpecialTypes` / `emitSharedHeader`): registry-only print-args tuples must
   not add C, or the 4-MD5 single-file dumps move. Needed tuples also join
   the shared group (**P4**: via `classifyTypeEmissionFinalize`) so the closure

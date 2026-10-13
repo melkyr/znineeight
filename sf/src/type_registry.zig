@@ -1241,7 +1241,7 @@ pub fn typeRegistryRegisterNamedType(self: *TypeRegistry, module_id: u32, name_i
 // by BOTH graphs — the resolver dependency graph
 // (`typeResolverBuildDependencyGraph`) and the emitter's typedef ordering
 // (`tstTopologicalSort`, plus the P4 classification's shared-set closure
-// `classifyTypeEmissionGroups`/`classifyTypeEmissionSharedTuples`). It
+// `classificationSharedClosure` in `type_resolver.zig`). It
 // replaces the three divergent
 // memberships: the dead `isValueDependency` (was here), the emitter's
 // `c89NeedsEmitEdge`, and the resolver's `layoutFieldNeedsEdge`.
