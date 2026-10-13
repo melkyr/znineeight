@@ -1,6 +1,6 @@
 # P4 report — Single classification pass (execution order 5/10 per Task 0)
 
-**Status:** BLOCKED at Investigate (plan-level divergence — equivalence-map evidence below). No source edit made; no compiler-moving commit; battery not run (tree unchanged at `b33ae234`, fixed point `25f246289f655f1692657da5cdf124a7` unaffected).
+**Status:** DONE (battery all green; pins 0/8; corpus 0 movers). Round 1 STOPPED at Investigate (equivalence-map gaps filed below, kept verbatim as the record); operator RULING 2026-10-13 chose **option (a) — Extend + re-time**, and the resumed round implemented it (§ "Operator ruling" onward). One in-flight defect found and fixed during implementation (registration-timing gap — see I.5).
 **Scope (plan text):** "P4: Single classification pass. Remove emitter `computeSharedSet:1702`/`shouldSkipTypeEmission:1775`; consume the resolver `classifyTypeEmissionGroups`. Gate: runtime battery."
 **Tree at start:** `b33ae234` (P3 report), pins = P2-recorded values (P3 was 0/8 delta).
 **Binding rule invoked (brief Investigate + controller resolution 6):** "if the resolver classification lacks a decision the emitter makes today (a real semantic gap, not a naming difference), that is a plan-level divergence — STOP/BLOCKED with the evidence — do not improvise a bridge."
@@ -85,13 +85,139 @@ Concrete divergence witnesses (same classification group, different emitter trea
 
 ---
 
-## Implement
+## Operator ruling (2026-10-13) — option (a) Extend + re-time (BINDING)
 
-Not reached — blocked at Investigate (I.3). No source edit, no tech-docs edit, no compiler-moving commit.
+The controller relayed the operator's ruling: the STOP was correct and is recorded; P4 resumes under this amendment:
 
-## Runtime battery
+1. Grow `classifyTypeEmissionGroups` to carry ALL 11 decisions of the I.2 map — pointer-only + shared-set seeds (synthetic/carrier64/named-fn/typeRefs-closure) + skip decisions (void/bool/…/unnamed-non-special). The spec §4 "Type classification" row is amended accordingly (**recorded in `sf/docs/tech_docs/03_type_resolution.md` + `08_c89_emission.md` header notes and here**; closeout will note it).
+2. B1 needed-tuple seed: re-time `collectNeededTuples` earlier, OR defer to a second step of the SAME resolver-owned mechanism (a resolver function the emitter calls at the point the data exists) — implementer picks the smaller-risk variant and documents why.
+3. `computeSharedSet` + `shouldSkipTypeEmission` DELETED (no dead copies); the emitter CONSUMES the resolver mechanism; `main.zig` authorized in-touch-set for classification plumbing ONLY.
+4. Everything else in the brief stands. Commits: (a) `refactor(type_resolver): P4 — single classification pass` (sf/src/** + sf/docs/tech_docs/**), (b) `docs(sdd): P4 report`.
 
-Not run — no source change; the tree at `b33ae234` and the Task-0 frozen anchors are untouched (`git status` at report time: only pre-existing dirty `progress.md` ledger + untracked `run.err` root stray, both not ours).
+### B1 variant chosen: SECOND STEP (amendment variant 2), not re-timing
+
+Variant 1 (re-time `collectNeededTuples` earlier) is **infeasible without a semantic change**: the set is derived from LIR hoisted temps + global decls (`collectNeededTuples` walks `ts_fn.hoisted_temps` / `ctx.global_decls`), which only exist after `phase_LIRLowering` — six phases after `phase_TypeResolution` where the classification runs. Moving the collection earlier would have to approximate the set from pre-LIR state (e.g. all tuple types), which changes which tuples get typedefs (the comment at `collectNeededTuples` pins the exact membership: "registry-only print-args tuples must not produce C"). Variant 2 (second step of the same mechanism, called where the data exists) preserves the exact input. **Cost if wrong:** none identified — variant 2 is what the amendment describes verbatim.
+
+### I.5 Registration-timing discovery (in-flight defect found + fixed during implementation)
+
+The first option-(a) build (strict snapshot whitelists for `needs_def`/`shared`) compiled and self-hosted but emitted **broken C**: a minimal repro (`fn use() void { var parts: [3][]u8 = undefined; ... }`) lost both typedefs (`Arr_…Sli` / `Slice_…_u`), and hop1's self-emission dropped 423/465 `ZIG_ARRAY_*` guard blocks. Root cause (evidence chain kept in the session; key commands below):
+
+- **Types are registered AFTER `phase_TypeResolution`.** `front_resolution`/sema/lowering call `typeRegistryGetOrCreate*` (`sf/src/lower.zig:2159/:2218/:2324/:2506/:4247/:6166` … — `typeRegistryGetOrCreatePtr`/`Array`/`Optional` during LIR lowering). Any type born after the classification snapshot was missing from the strict `needs_def`/`shared` whitelists → skipped by both pass filters → never emitted (while still used in bodies → gcc `unknown type name`).
+- **Why the pre-P4 code never showed this:** `shouldSkipTypeEmission` and `computeSharedSet` evaluated their rules **LIVE at emission**, and `pointer_only_map` has always been a *snapshot* whose ABSENCE means value-embedding/shared (`is_clsv = pointer_only_map miss`) — the historical fallthrough covered post-snapshot types automatically.
+- **Minimal repro evidence** (seed compiler = pre-P4 semantics vs the first P4 build vs the fixed build):
+  - pre-P4 (`_unpack/zig1-seed/zig1 -ffast --dump-c89 main.zig`): `typedef … zT_8F083A69_Slice_zT_0B42B2F8_u;` + `typedef … zT_4C214FEE_Arr_zT_8F083A69_Sli[3];` present.
+  - first P4 build: both absent (only the i64/u64/f64 carriers emitted).
+  - fixed P4 build: `diff out_old.c out_fix.c` → **IDENTICAL**.
+
+**Fix (still amendment-shaped):** step 2 became `classifyTypeEmissionFinalize(reg, shared, po, nd, needed)` — the SAME resolver-owned mechanism's second step, called by the emitter from `emitTypePasses` (the point where `needed_tuple_set` is complete AND the registry is final): it re-applies the same rule helpers (idempotent) over the current registry — `classificationNeedsDef` → `needs_def`; the shared seeds with **`is_clsv = po MAP MEMBERSHIP`** (preserving the snapshot fallthrough exactly) + the E4 needed-tuple seed; then `classificationSharedClosure`. One copy of each rule; step 1 computes the groups for the snapshot (the amendment's "carry ALL 11"), step 2 completes them where the data exists. `pointer_only` deliberately stays the step-1 snapshot (a type registered later must remain value-embedding for byte-identical 2a/2b placement — the old `pointer_only_map` had exactly this semantics).
+
+## Implement (one compiler-moving commit)
+
+Source edits via `edit`/`fastedit` only (X.7; `fastedit` crashed once on the `return ClassificationResult{…}` line — `undefined is not an object (evaluating 'code.matchAll')` — chunked `edit` used per P3 precedent; one anchor-line typo `*[*]u32` → `[*][*]u32` on `growWpEdges` was introduced and immediately fixed before any build).
+
+**`sf/src/type_resolver.zig`** (the classification, now the single mechanism):
+- `ClassificationResult` (`:171`): `ids/len` → three maps `pointer_only` / `needs_def` / `shared` (`hash_mod.U32ToU32Map`).
+- `classifyTypeEmissionGroups` (`:640`): PO algorithm + CLS markers **verbatim**; the old ids-collection loop is replaced by the group-map build (E1 po map + count `plen`; E8/E9/E11 via `classificationNeedsDef`; E2/E3'/E5/E6 shared seeds) + `classificationSharedClosure`; returns the three maps.
+- New helpers (single copy of each rule): `classificationIsSyntheticEmittable` (the 8-kind list that lived twice in the deleted emitter functions), `classificationNeedsDef` (positive complement of `shouldSkipTypeEmission`'s E8/E9/E11; E10 `skip_arb` intentionally absent — unreachable-equivalent, O1), `classificationSharedClosure` (verbatim map-based port of `computeSharedSet`'s E7 closure, probes `typeRefsContains`), `pub classifyTypeEmissionFinalize` (step 2 — see I.5).
+- `hash_mod` import: the file already had one (`:23`) — no new import (a duplicate I added was removed).
+
+**`sf/src/c89_emit.zig`** (pure consumption):
+- **DELETED:** `computeSharedSet` (was `:1106-1172`), `shouldSkipTypeEmission` (was `:1179-1205`), the D6-1 comment, the `skip_arb` local (0 remaining references — grep-verified).
+- `C89Emitter` gains `needs_def_map: U32ToU32Map` (`:584`); `c89EmitterInit` takes `pointer_only_map, needs_def_map, shared_map` by value (the `pointer_only_len` hint param is gone; the maps are allocated by the classification).
+- `emitTypePasses` (`:1122`): opens with `type_resolver.classifyTypeEmissionFinalize(reg, &emitter.shared_set, &emitter.pointer_only_map, &emitter.needs_def_map, &emitter.needed_tuple_set)`; the two `shouldSkipTypeEmission` call sites become `if (u32ToU32MapGet(&emitter.needs_def_map, tid) == null) continue;` at the **same filter positions** (2a after the po/shared checks, 2b after the d2 block).
+- `emitSharedHeader`: the `computeSharedSet` call is gone (finalize lives in `emitTypePasses`, which both pass paths run).
+- `emitModule`: signature drops `ptr_only_ids/ptr_only_len`; the id→map fill loop is deleted (maps arrive pre-loaded).
+
+**`sf/src/main.zig`** (classification plumbing ONLY, per amendment 3):
+- `CompilerContext.pointer_only_ids/pointer_only_len` → `cls: type_resolver.ClassificationResult` (placeholder local `cls_init` — Z98: struct fields cannot init to `undefined`; the first build failed `incompatible types … from type 'int'` at that line and the Init-pattern local fixed it).
+- `phase_TypeResolution` stores `ctx.cls = ptr_grp`; `phase_C89Emission` passes `ctx.cls.pointer_only/needs_def/shared` to `c89EmitterInit`; both old fill loops deleted; `emitModule` call updated; `mangler_hint` reads `ctx.cls.pointer_only.count`.
+
+**`sf/src/type_registry.zig`** (comment-only): the P2 relation doc-comment's `computeSharedSet` mention now names the P4 classification closure.
+
+**`sf/docs/tech_docs/`**: `03_type_resolution.md`, `08_c89_emission.md`, `09_pipeline_orchestration.md`, `INDEX.md` updated (signatures, data flow, fn tables, `[updated: 2026-10-12 — P4 …]` notes) — including the **spec §4 "Type classification" row amendment** record (row's `pointer-only / value-embeds / needs-definition` → the three emission groups `pointer_only` / `needs_def` / `shared`, value-embeds = pointer-only complement; closeout will note it).
+
+## Runtime battery (FULL; every claim = command + observed output)
+
+Final binary `/tmp/opencode_p4/s4/zig1_5_clean` from `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/opencode_p4/s4` (repo root).
+
+### 1. Seed rebuild + two-hop closure
+
+```
+[seed] hop1 binary md5: fd6c32cb3039cbf26f76a6372a3e3c32
+[seed] hop2 binary md5: fd6c32cb3039cbf26f76a6372a3e3c32
+[seed] two-hop closure OK: hop1 == hop2 == fd6c32cb3039cbf26f76a6372a3e3c32
+=== [seed] Done: /tmp/opencode_p4/s4 ===
+```
+Fixed point `25f246289f655f1692657da5cdf124a7` → **`fd6c32cb3039cbf26f76a6372a3e3c32`** (moved — expected: `sf/src` changed; hop1==hop2 proven). Seed NOT rotated (closeout-only).
+
+### 2. Corpus classify (vs frozen Appendix A)
+
+```
+$ bash scripts/corpus/classify /tmp/opencode_p4/s4/zig1_5_clean /tmp/opencode_p4/corpus_p4.txt
+wrote /tmp/opencode_p4/corpus_p4.txt: 1124 dirs
+$ md5sum /tmp/opencode_p4/corpus_p4.txt /tmp/task0_work/corpus_baseline.txt
+518eca1a9b5d3e1cc5a48abce214abd8  /tmp/opencode_p4/corpus_p4.txt
+518eca1a9b5d3e1cc5a48abce214abd8  /tmp/task0_work/corpus_baseline.txt
+$ diff /tmp/task0_work/corpus_baseline.txt /tmp/opencode_p4/corpus_p4.txt → rc=0, 0 lines
+$ awk '{print $2}' … | sort | uniq -c
+    116 FAIL
+     58 GREEN
+    950 OK
+```
+**1124 = 950 OK / 58 GREEN / 116 FAIL / 0 ICE / 0 CRASH — byte-identical to frozen Appendix A. 0 class movers.**
+
+### 3. Runtime goldens (5 md5s, byte-identical)
+
+Build (Task 0 §1.3 recipe): `zig1_5_clean --dump-c89 <ENTRY> > gold/<n>.c` + `gcc -m32 -std=c89 -Wno-long-long -Wno-pointer-sign -I sf/src/include gold/<n>.c sf/src/include/zig_runtime.c sf/src/include/zig_pal.c -o gold/<n>` — all 4: dump rc=0, gcc rc=0, 0 `error:` (gol 13924-line dump / lisp 19277 / json 15596 / mud 14789 — line counts match the P3 record).
+
+| golden | command | observed md5 | frozen | match |
+|---|---|---|---|---|
+| gol (100 gens) | `timeout 120 ./gol > gol.out` (rc=0) | `fcbf7e7cead5082f0a8caadd5a8f0ff9` | `fcbf7e7c…` | YES |
+| lisp `(+ 1 2)` | `printf '(+ 1 2)\n' \| timeout 60 ./lisp` (rc=0) | `b3d9f8974da24ddbf9d389f3d7d97322` | `b3d9f897…` | YES |
+| json | `cd examples/z98/json_parser && timeout 60 gold/json` (rc=0) | `8bda3d5a1ec07d14a301bc343df32bf8` | `8bda3d5a…` | YES |
+| mud server | `bash examples/z98/mud_server/demo/session.sh gold/mud srv.out cli.out` (rc=0) | `66c8f0abb926cca7baf9a0d1692ab318` | `66c8f0ab…` | YES |
+| mud client | (same session) | `93147d0f0bbd983a9d844fea8b7a6fa7` | `93147d0f…` | YES |
+
+**5/5 byte-identical.**
+
+### 4. mi_matrix runtime anchors (25 + oob)
+
+Anchor set re-enumerated by the frozen definition (non-`stdlib_*` ∧ non-empty `expected.txt` ∧ `expected.rc=0`): `for d in repro/mi_matrix/*/; … | wc -l` → **25**. Harness: `bash scripts/stdlib/run_fixtures.sh /tmp/opencode_p4/s4/zig1_5_clean <the 25 dirs>` → **`run_fixtures: 25 PASS / 0 FAIL over 25 dirs`** (incl. `slice_index_field_store_xmod`).
+
+Trap fixture (`-fsafe`): `slice_index_field_store_oob_xmod` — dump rc=0, build rc=0, **run rc=133** (Trace/breakpoint trap), stdout 0 bytes, md5 `d41d8cd98f00b204e9800998ecf8427e` = `expected.txt` md5; `expected.rc` = `133`. **MATCH.**
+
+### 5. `examples/z98/*/` matrix (26 build + 26 run)
+
+Build per dir (`zig1_5_clean -ffast -o matrix/<n> <entry>` + `sh build_target.sh linux matrix/<n>/prog`, entry = `main.zig` → `<n>.zig` → first `*.zig`; output dir pre-created): **26/26 dump=0 / build=0**; per-dir `.c` counts identical to Task 0 §1.4 (7/6/6/7/6/7/9/9/9/14/15/15/15/8/6/9/6/6/21/20/6/6/7/7/25/38).
+
+Run per dir (CWD = example dir, `timeout 25` except mud_server 8; stdin `/dev/null` except rogue* `q\n`): **26/26 rc + stdout md5_16 IDENTICAL to the §1.4 table** — days_in_month `8c0d394cbc6e7f36`, fibonacci `b53b3a3d6ab90ce0`, func_ptr_return `f6a5477970a87a1c`, game_of_life `fcbf7e7cead5082f`, heapsort `8cf0a7844206319d`, hello `746308829575e17c`, json_parser(+upgraded) `8bda3d5a1ec07d14`, json_parser_workaround `dc22fa473650bd3d`, lisp×4 `1c1f0a417d5e9434`, lzw `c3c7765e6faf7b70`, mandelbrot `d596677501e36537`, mud_server rc=124 `9545fe1d245293ef`, prime `d095a94d20dcaf7a`, quicksort `45d2f0fb6fc40654`, rogue×2 `3fb6709e7bbd8964`, sort_strings `c6c047cbc13cdd4f`, tco_defer `264ea6b106a51dde`, tco_factorial `3d70c50b5a37d549`, tco_return_try `7421137aa2d104b4`, z9play rc=1 `2016494de476fcb6`, z9torr rc=1 `f666af15cf2625b3`.
+
+### 6. Stdlib gate
+
+```
+$ bash scripts/stdlib/verify_stdlib.sh /tmp/opencode_p4/s4/zig1_5_clean
+run_fixtures: 285 PASS / 0 FAIL over 285 dirs
+STDLIB GATE OK
+```
+
+### 7. The 8 `--dump-c89` pins (old → new; record only)
+
+| entry | mode | old (P2 fix round 1 = P3, `25f24628…`) | P4 (`fd6c32cb…`) | delta |
+|---|---|---|---|---|
+| mud_server | `-fsafe` | `8b3c3d72ab59a9ae3c971c6a7759c7c0` | `8b3c3d72ab59a9ae3c971c6a7759c7c0` | 0 |
+| mud_server | `-ffast` | `fa346108ed00d03a037c2f9331d3bdf8` | `fa346108ed00d03a037c2f9331d3bdf8` | 0 |
+| game_of_life | `-fsafe` | `1b5d49b141ee9c664a82c270454bd75b` | `1b5d49b141ee9c664a82c270454bd75b` | 0 |
+| game_of_life | `-ffast` | `01a4e2265b33c97a8ca6ff3dfa551231` | `01a4e2265b33c97a8ca6ff3dfa551231` | 0 |
+| lisp_interpreter_curr | `-fsafe` | `8e5f2bc288d1dc75d7aee284cb35c291` | `8e5f2bc288d1dc75d7aee284cb35c291` | 0 |
+| lisp_interpreter_curr | `-ffast` | `e3970e33ac09c8dfaa316d2d69bf61ec` | `e3970e33ac09c8dfaa316d2d69bf61ec` | 0 |
+| json_parser | `-fsafe` | `2a12d0aac24d5bcdd694f05e04a4f029` | `2a12d0aac24d5bcdd694f05e04a4f029` | 0 |
+| json_parser | `-ffast` | `24e0e812e7dffa5a43750135405ffe3f` | `24e0e812e7dffa5a43750135405ffe3f` | 0 |
+
+**Pin delta: 0/8 — emitted C byte-identical**, as the amendment's "byte-identical for currently-working programs" required. Command per row: `zig1_5_clean <mode> --dump-c89 examples/z98/<entry>/main.zig 2>/dev/null | md5sum`.
+
+### 8. `--markers` telemetry
+
+`zig1_5_clean --markers --dump-c89 examples/z98/game_of_life/main.zig > mk_gol.c 2> mk_gol.bin` — dump rc=0; stderr **3,436 marker lines / 38,378 B** — **identical counts to the P3 record** (P2/P3: 3,436 / 38,378). Prefix histogram: `INT:new` 2005, `DC:k` 423, `FE:p` 240, `P` 195, `FWD:n=` 195, `RaD` 122, `MT` 86, `FE:` 69, `X:` 17, `IRP:p/n/m` 17 — matches the P3 histogram. The CLS block is emitted verbatim (no marker deltas from P4 by design).
 
 ---
 
@@ -100,3 +226,8 @@ Not run — no source change; the tree at `b33ae234` and the Task-0 frozen ancho
 - **O1:** the `skip_arb` arm (`shouldSkipTypeEmission:1188-1190`) is unreachable-equivalent today: named arb_int/arb_uint types exist (`registerPrimitiveName` sets `name_id`, `type_registry.zig:1101-1108/:1152`) but no `computeSharedSet` seed covers the arb kinds and the closure promotes only aggregate kinds (`:1155-1159`) — so arb types are never in `shared_set` and the shared-header passes filter them at `:1262`/`:1275` before the skip call, while the single-file passes call with `skip_arb=0` (emit). The mode-dependent difference never fires; the shared-vs-single emission difference for arb comes from the `require_shared` filter, not the skip rule. Recorded as evidence for the map, not a defect fix.
 - **O2:** P3 deferred residue (dead `TU_` composition `c89_emit.zig:~1603-1615`, `getUnsignedCTypeName` literal duplication) untouched, as directed.
 - **O3:** `computeSharedSet`'s `is_clsv` (E2) is the only literal overlap between the emitter functions and the resolver classification — the overlap the spec's category-4 name suggests — but it is already a consumption of `pointer_only_map`, not a duplicate computation. The other named overlaps (skip list ↔ synthetic-kind list) are duplication **between the two emitter functions**, not with the resolver.
+- **O4 (in-flight defect, FIXED — see I.5):** the first option-(a) shape (strict snapshot whitelists) silently dropped typedefs for types registered after `phase_TypeResolution`; caught by a minimal repro before any commit; fixed by `classifyTypeEmissionFinalize`. The pre-P4 po-map snapshot fallthrough (absent = value-embedding) is preserved deliberately.
+- **O5 (in-flight compile failure, fixed — disclosed):** Z98 cannot initialize a struct-typed ctx field to `undefined` in the `CompilerContext` literal (emits `= 0` for a struct → gcc `incompatible types`); fixed with the codebase's `var x: T = undefined;` placeholder-local pattern (`cls_init`). First build log: `main_9472B9CB.c:1436:18: error: incompatible types when assigning to type 'zT_010C8DF0_ClassificationResul' from type 'int'`.
+- **O6 (tooling, disclosed):** `fastedit` crashed once (`undefined is not an object (evaluating 'code.matchAll')`) — chunked `edit` used (P3 precedent); one anchor-line transcription typo (`*[*]u32` → `[*][*]u32` on `growWpEdges`) was caught in the diff preview and fixed immediately (no build ever ran on it).
+- **O7 (pre-existing, report-only):** named tuple types get no typedef in the multi-file path (no shared seed covers `name_id != 0` tuples and `emitModuleHeaderFile` handles only {struct,tu,union,pu,enum,es}); they are emitted only in the single-file path (2a). Unchanged by P4 (membership-preserving), noted for the whole-branch review.
+- **O8 (context):** the v97 committed seed's self-emission dump of the current `sf/src` differs from the P4 compiler's dump in typedef placement/ordering (e.g. named enums like `ErrorCode` land in the shared header vs module headers) — that is the ACCUMULATED P1–P4 emission evolution vs the pre-milestone seed, not a P4 delta; the P4 gate surfaces (8 example pins 0/8, corpus byte-identical, goldens 5/5, hop1==hop2) are clean.
