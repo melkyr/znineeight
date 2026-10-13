@@ -534,7 +534,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `fwrite` | pal.zig |
 | `getBinOpStr` | c89_emit.zig |
 | `getByte` | main_dump.zig |
-| `getCTypeName` | c89_emit.zig |
+| `getCTypeName` → `typeCName` (P3; pure consumer wrapper) | c89_emit.zig |
 | `getCheckedCastFnName` | c89_emit.zig |
 | `getDefaultLibPath` | pal.zig |
 | `getInfixInfo` | parser.zig |
@@ -1215,6 +1215,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `tstTopologicalSort` | c89_emit.zig |
 | `tuAppend` | type_registry.zig |
 | `tupAppend` | type_registry.zig |
+| `typeCName` | type_registry.zig |
 | `typeDbOom` | type_registry.zig |
 | `typeHasForwardDecl` | type_registry.zig |
 | `typeIdName` → `nameManglerMintIndexName` (P1) | name_mangler.zig |
@@ -1295,6 +1296,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `typeResolverResolve` | type_resolver.zig |
 | `typeResolverResolveLayout` | type_resolver.zig |
 | `typeResolverResolveNames` | type_resolver.zig |
+| `typeSliceElementName` | type_registry.zig |
 | `typeWidthBitsForKind` | type_registry.zig |
 | `u32ArrayListAppend` | growable_array.zig |
 | `u32ArrayListAppendInner` | ast.zig |
