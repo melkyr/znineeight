@@ -294,7 +294,7 @@ The only invocation is `phase_EmissionClassification` (main.zig:1227) — the em
 
 **3. The snapshot-workaround deletion:** the emit-time finalize call + comment (P4's "Re-applies … at emission (step 2 …)" block) is deleted from `c89_emit.zig` (grep above: 0 hits in `c89_emit.zig`); the finalize body walks `0..reg.types_len` at the boundary (full registry) — `type_resolver.zig:1006`. `emitTypePasses` (`c89_emit.zig:1107+`) contains only the po/shared/needs_def map filters.
 
-**4. Decision-equivalence spot-checks:** the I.2 rules are verbatim (`classificationNeedsDef`/`classificationIsSyntheticEmittable`/`classificationSharedClosure` untouched; `collectNeededTuples` body byte-move; the finalize body = local aliases + unchanged loop). The decisive checks are the gates: **pins 0/8** (below) and **corpus byte-identical** — the emitted C for every corpus dir and the 4 pin programs is bit-for-bit the P2/P3/P4-recorded output.
+**4. Decision-equivalence spot-checks:** the I.2 rules are verbatim (`classificationNeedsDef`/`classificationIsSyntheticEmittable`/`classificationSharedClosure` untouched; `collectNeededTuples` body byte-move; the finalize body = local aliases + unchanged loop). The decisive checks are the gates: **pins 0/8** (below) — emitted C byte-identical for the 4 pin programs (8 dumps) — and the **corpus classify class file byte-identical** (the `corpus_p4.txt` per-dir FAIL/GREEN/OK strings, md5 `518eca1a…` = the frozen Appendix A baseline; the corpus gate compares the class file, NOT emitted C). (Fix round 1: this sentence previously claimed the corpus gate proved emitted-C byte-identity — it does not; C byte-identity is evidenced by the 8 pins + goldens only.)
 
 **5. Emitter reads only:** `grep -c "emitter.classif\." sf/src/c89_emit.zig` → `11`; `grep -n "emitter\.pointer_only_map\|emitter\.shared_set\|emitter\.needs_def_map\|emitter\.needed_tuple_set" sf/src/c89_emit.zig` → 0 hits.
 
@@ -352,3 +352,64 @@ $ diff → rc=0, 0 lines
 - **O9:** `phase_EmissionClassification` deliberately emits no phase marker (the `T\n`/`C\n` convention) — a marker would move the `--markers` stream (+1 line); placement-only wins. If telemetry visibility of the boundary is wanted later, add it as a telemetry-only change.
 - **O10:** the two `collectNeededTuples` call loops now walk the LIR a second time (the boundary walk is separate from `phase_C89Emission`'s reachability walk) — `lirStreamReadFunction` resets its dst arena per call, so no growth concern; measured marker/telemetry and memory gates unchanged.
 - O1–O8 above stand unchanged.
+
+---
+
+## Fix round 1 (review items) — docs/comment truth-up only
+
+**Status:** DONE — 7/7 items fixed (1 Important + 6 Minors). Zero behavior change: the only source touch is ONE comment line in `sf/src/type_registry.zig` (per contract); everything else is `task-P4-report.md` + `sf/docs/tech_docs/*.md`. Deferred per contract (NOT addressed): step-1 nd/sh seed loop dead-work cleanup; `phase_EmissionClassification` running when emission is skipped.
+
+### Important — report overclaims corpus evidence (fixed)
+
+`task-P4-report.md` §P4-fix-round-2 evidence item 4 claimed "corpus byte-identical — the emitted C for every corpus dir and the 4 pin programs is bit-for-bit the P2/P3/P4-recorded output". FALSE for the corpus half: the corpus gate compares the classify CLASS FILE (per-dir FAIL/GREEN/OK strings), not emitted C. Corrected text now reads: "**pins 0/8** (below) — emitted C byte-identical for the 4 pin programs (8 dumps) — and the **corpus classify class file byte-identical** (the `corpus_p4.txt` per-dir FAIL/GREEN/OK strings, md5 `518eca1a…` = the frozen Appendix A baseline; the corpus gate compares the class file, NOT emitted C)". Verification:
+```
+$ grep -c "the emitted C for every corpus dir" .superpowers/sdd/.../task-P4-report.md
+0
+$ grep -n "corpus classify class file byte-identical" .superpowers/sdd/.../task-P4-report.md
+297:…the **corpus classify class file byte-identical** (the `corpus_p4.txt` per-dir FAIL/GREEN/OK strings, md5 `518eca1a…` = the frozen Appendix A baseline; the corpus gate compares the class file, NOT emitted C)…
+```
+The decision-identity case itself stands (pins 0/8 = emitted-C byte-identity for the 8 dumps; goldens 5/5 = runtime byte-identity; corpus class file = no class movers).
+
+### Minors (folded in)
+
+1. **`sf/src/type_registry.zig:1244` comment named nonexistent `classifyTypeEmissionSharedTuples`** (that name was renamed away in the P4 landing; the real closure is `classificationSharedClosure`, `type_resolver.zig:941` — the review cited `:922`, pre-P4r2-edit line). Comment now reads "`classificationSharedClosure` in `type_resolver.zig`". Verification:
+```
+$ grep -n "classificationSharedClosure\|classifyTypeEmissionSharedTuples" sf/src/type_registry.zig
+1244:// `classificationSharedClosure` in `type_resolver.zig`). It
+```
+(one hit — the dead name is gone).
+
+2. **`08_c89_emission.md` §1.1 stale prose** — "`emitModule` receives a `ptr_only_ids` array from the caller (calculated in `phase_C89Emission` in `main.zig`)": the parameter is deleted (`emitModule(emitter, name, c_includes)`, `c89_emit.zig:2272`) and the group was always computed in `phase_TypeResolution`. Reworded to point at `classif.pointer_only_map` and note the parameter is long deleted. The same stale signature also sat in §1.10 (`emitModule(emitter, name, c_includes, ptr_only_ids, ptr_only_len)` — one line above its already-updated call block); corrected there too (same finding class). Verification:
+```
+$ grep -n "ptr_only_ids" sf/docs/tech_docs/08_c89_emission.md
+1:…(the former `ptr_only_ids`/`pointer_only_len` args and both id→map fill loops are deleted)…   ← historical [updated:] entry
+82:(**P4 fix round 2**; the `ptr_only_ids` parameter is long deleted))…
+676:`emitModule(emitter, name, c_includes)` (P4 fix round 2: the `ptr_only_ids`/`ptr_only_len`
+```
+(only the historical changelog entry + the two "long deleted" clarifications remain; the live signature is the 3-arg form.)
+
+3. **`08_c89_emission.md` §1.18 stale** — tuples "collected in `phase_C89Emission` by `collectNeededTuples`". Now: "collected at the pre-emit `phase_EmissionClassification` boundary by `type_resolver.collectNeededTuples` — P4 fix round 2 (was mid-`phase_C89Emission`)". Verification: `grep -n "collected in .phase_C89Emission" sf/docs/tech_docs/08_c89_emission.md` → 0 live hits (the phrase is gone).
+
+4. **`09_pipeline_orchestration.md` `cls` leftovers** — the phase-outputs flow diagram (`phase_TypeResolution → … cls`), the producers/consumers table row, and the debug note ("skipping TypeResolution means `cls` stays undefined") all said the round-0 name. All three now say `emission_classif` (the flow row also credits the completion at `phase_EmissionClassification`; the debug note says "stays unfilled (empty maps)" — the maps are init'd at ctx construction and filled later). Verification:
+```
+$ grep -on "ctx\.cls\|\`cls\`\| cls \|cls (" sf/docs/tech_docs/09_pipeline_orchestration.md
+1:ctx.cls
+$ grep -c "emission_classif" sf/docs/tech_docs/09_pipeline_orchestration.md
+6
+```
+The single remaining `ctx.cls` is inside the dated P4 `[updated:]` changelog entry on line 1 (period-accurate history, consistent with the chain's convention of naming things as they were — the same entry also names the since-replaced `ClassificationResult`); every live surface is consistent.
+
+5. **`INDEX.md` missing helper rows** — added `classificationIsSyntheticEmittable` / `classificationNeedsDef` / `classificationSharedClosure` → `type_resolver.zig`, alphabetically before `classifyCoercion` (peers `growWpEdges:547`/`fieldEmbedsByValue:502` were already indexed). Verification:
+```
+$ grep -n "classificationIsSyntheticEmittable\|classificationNeedsDef\|classificationSharedClosure" sf/docs/tech_docs/INDEX.md
+251:| `classificationIsSyntheticEmittable` | type_resolver.zig |
+252:| `classificationNeedsDef` | type_resolver.zig |
+253:| `classificationSharedClosure` | type_resolver.zig |
+```
+
+6. **`03_type_resolution.md` `EmissionClassification` row used short names** (`pointer_only`/`needs_def`/`shared`) vs the actual struct fields — now lists the real fields `shared_set`, `pointer_only_map`, `needs_def_map`, `needed_tuple_set`. Verification: `grep -n "actual fields" sf/docs/tech_docs/03_type_resolution.md` → `275: … — actual fields: `shared_set`, `pointer_only_map` …, `needs_def_map` …, `needed_tuple_set` (E4 seed). …`.
+
+### Re-verification (docs-only delta)
+
+- `git diff --stat` for this round: `task-P4-report.md`, `sf/docs/tech_docs/{03,08,09,INDEX}.md`, and a 2-line comment block in `sf/src/type_registry.zig` — no code statements touched (`git diff sf/src/type_registry.zig` = comment lines only).
+- Runtime battery unchanged from the P4 fix round 2 run (no code change; the previous binary `/tmp/opencode_p4/r2a/zig1_5_clean` evidence stands: pins 0/8, corpus class file `518eca1a…`, goldens 5/5, mi 25+oob, examples 26/26+26/26, stdlib 285/0, hop1==hop2 `9ced323b…`). The seed build is not re-run for a comment/docs delta — zero statement changes (the one source edit is `//`-line content).
