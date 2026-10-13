@@ -308,3 +308,99 @@ Reproducer (verbatim from `examples/torrent_example_defects.md` §D8: `a.zig` vt
 5. **Task-6 site patches (`emitDepMember`/`emitPointeeDep`/`emitTypeDeps`) unchanged** — with the relation's ptr-leaf coverage they are redundant for ordering (every name they patch is an edge target) but remain as a safety net; folding them into the relation is a P4/P6-shaped cleanup (observation).
 6. **`pruneTypeMarkByValue` (`main.zig:1112`) and `collectNeededTuples`** are separate walks with their own semantics, outside the plan's P2 text — untouched (observation).
 7. Pre-existing uncommitted `.superpowers/sdd/…/progress.md` change (6 lines, not P2's) left uncommitted; `run.err` stray at repo root not ours (not swept).
+
+---
+
+## Fix round 1 (controller review: Important 1 + Minor 2)
+
+### Important 1 — cycle residue → uninitialized `sorted` tail (APPEND variant per ruling)
+
+**Accepted as stated.** Name-position/ptr-leaf edges make the emission graph cyclic-capable where the old by-value graph was acyclic by construction; `tstTopologicalSort` returned `[*]u32` with no length and Kahn drops cycle nodes, while `emitTypePasses` walks `sorted[0..types_len]` → `types_items[garbage tid]` OOB (the flaky-SEGV class of Ruling 2). Mitigation for pre-resolve types (`typeResolverResolve`'s ERR_3005 void-fallback + `main.zig:381-384` rc=2 exit) does not cover types registered AFTER `typeResolverResolve` (sema `registerContainerType`/`layoutEnsure`).
+
+**Ruling shape applied (APPEND variant, controller-ruled — recorded here):** after Kahn, any unpopped nodes (cycle residue) are appended in stable ascending-tid order, so `sorted` ALWAYS covers all `types_len` entries — no garbage reads possible. **Diagnose/reject variant REJECTED** (would add new reject behavior/diagnostic semantics the plan does not authorize — "no new error codes"; runtime behavior must not change for programs that compile today). **Cost if wrong:** a post-resolve cyclic type still emits (possibly invalid C) instead of clean-rejecting — the pre-P2 behavior class, and strictly better than the UB. The P2 report's Concern 3 ("unemittable cycles") stands, now with the UB path closed.
+
+**Fix (`sf/src/c89_emit.zig` `tstTopologicalSort`):** a `popped: [*]u8` bitmap (explicitly zeroed — `sandAlloc` is a non-zeroing bump allocator), set when Kahn writes `result`, then a final ascending-tid sweep appends every unpopped tid. Comment typo (Minor 2) fixed in the same fn's doc comment: `typeRefs` listed twice → `typeRefs` / `typeRefsContains` / `typeNeedsFullDef`.
+
+**Contract line updated:** `sf/docs/tech_docs/08_c89_emission.md` §1.1 Type Topological Sort — algorithm step 5 + `[updated: 2026-10-12 — P2 fix round 1]` note (the residue-append contract). No other doc line mentions the sort's length contract.
+
+### Evidence (a) — the UB path
+
+**Not constructible in a user program** (attempted; documented):
+
+```
+# a.zig — function-local packed struct with self-referential fnptr field
+$ zig1_5_clean -fsafe --dump-c89 a.zig > a.c   # P2-fix compiler
+rc=0
+# the self-reference does not resolve at registration time (localTypeScope is
+# pushed AFTER registerContainerType returns) — the field is silently dropped:
+$ grep -n "typedef\|struct" a.c
+typedef struct { unsigned char _[1]; } zT_6B7025D5_anon_7;   # empty body, no fn typedef
+```
+
+```
+# self.zig — module-level packed struct with self-referential fnptr field
+const P = packed struct { cb: fn (*P) void };
+$ zig1_5_clean -fsafe --dump-c89 self.zig
+rc=2
+error[24]: circular type dependency detected (type refers to itself)
+# pre-resolve mitigation fires (ERR_3005 path) — never reaches the sort
+```
+
+Mutual shapes fail identically (locals register sequentially; the forward name is unresolved). So the post-resolve window's cyclic shape cannot be written as a user program today — the residual exposure is theoretical (and the append closes the UB regardless).
+
+**Trace demonstration (unit-level; temporary instrumented builds — NOT committed):** the instrumented `tstTopologicalSort` (measure markers `SRT:tl`/`SRT:ri`/`SRT:cov` (1 = every tid in `sorted` exactly once) + `SRT:t0`/`SRT:t1` (tail entries)) was built twice and run with `--markers`; instrumentation removed before commit (final tree re-verified clean: `grep SRT:|measureMarkerWriteInt` → only pre-existing markers; final build md5 equals the pre-instrumentation build).
+
+| run (trace build A — unmodified graph) | `SRT:tl` | `SRT:ri` | `SRT:cov` | tail `t0`,`t1` | verdict |
+|---|---|---|---|---|---|
+| D8 reproducer (`-fsafe`) | 431 | 431 | 1 | 159, 198 (ascending) | append no-op (residue 0); `sorted` covers `types_len` exactly once per tid |
+| `examples/z98/hello` (`-ffast`) | 405 | 405 | 1 | 138, 139 (ascending) | same |
+| self-compile (`sf/src/main.zig`, `-ffast`) | 2518 | 2518 | 1 | 1899, 1901 (ascending) | same |
+
+| run (trace build B — 2 nodes forced never-popped: `indegree[7] += 1; indegree[11] += 1` before Kahn; carrier tids 7/11 are never edge targets so exactly {7,11} are residue) | `SRT:tl` | `SRT:ri` | `SRT:cov` | tail `t0`,`t1` | verdict |
+|---|---|---|---|---|---|
+| D8 reproducer (`-fsafe`) | 431 | 431 | **1** | **7, 11** (ascending) | residue appended in stable ascending-tid order at the tail; every tid present exactly once — the garbage-tail read is impossible |
+
+(The forced build's hop2 gcc failure is expected — the hack deliberately orders carriers last; only hop1 of that throwaway build was used for the trace.)
+
+### Evidence (b) — amended comment line
+
+```
+$ sed -n '1092,1095p' sf/src/c89_emit.zig
+// P2 (emitter sanitization, D8 root cause): typedef ordering derives from the
+// single type-reference relation in `type_registry.zig` (`typeRefs` /
+// `typeRefsContains` / `typeNeedsFullDef`). The former
+```
+(was `typeRefs` / `typeRefs` / `typeRefsContains` — Minor 2 fixed.)
+
+### Evidence (c) — FULL runtime battery (8 items vs frozen Task 0 anchors)
+
+Final binary: `/tmp/taskP2fix_work/seed/zig1_5_clean` (`bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/taskP2fix_work/seed`).
+
+1. **Seed rebuild:** `hop2 binary md5: 687bdbaa71c76436da9ba0935608b319` / `two-hop closure OK: hop1 == hop2 == 687bdbaa71c76436da9ba0935608b319` / `=== [seed] Done ===`. Fixed point `ccfd5c58371218034716c84e42913289` → **`687bdbaa71c76436da9ba0935608b319`** (moved — the fix adds the `popped` bitmap + append sweep to the self-emitted compiler; hop1==hop2 proven). Rebuild of the same tree reproduced the identical md5.
+2. **Corpus classify:** `wrote /tmp/taskP2fix_work/corpus_fix.txt: 1124 dirs`; tally `950 OK / 58 GREEN / 116 FAIL`; `diff /tmp/task0_work/corpus_baseline.txt corpus_fix.txt` → **rc=0, 0 lines** (baseline md5 `518eca1a9b5d3e1cc5a48abce214abd8`). **Byte-identical to frozen Appendix A — 0 movers.**
+3. **Runtime goldens (5 md5s):** all 4 gcc rc=0 / 0 `error:`; gol `fcbf7e7cead5082f0a8caadd5a8f0ff9` (rc=0), lisp `(+ 1 2)` `b3d9f8974da24ddbf9d389f3d7d97322` (rc=0), json `8bda3d5a1ec07d14a301bc343df32bf8` (rc=0), mud `66c8f0abb926cca7baf9a0d1692ab318` / `93147d0f0bbd983a9d844fea8b7a6fa7` (session rc=0) + `cmp` canonicals `IDENTICAL`/`IDENTICAL`. **5/5 byte-identical.**
+4. **mi_matrix (25 + oob):** `run_fixtures: 25 PASS / 0 FAIL over 25 dirs`; oob trap `slice_index_field_store_oob_xmod` dump rc=0 / build rc=0 / run rc=133 / stdout 0 bytes / md5 `d41d8cd98f00b204e9800998ecf8427e` = `expected.txt`. **MATCH.**
+5. **Examples matrix:** 26/26 dump=0 / ≥1 `.c` / build=0 (per-dir `.c` counts identical to §1.4); runs **26/26 identical to the §1.4 table** (rc + md5_16 every row — e.g. `func_ptr_return` `f6a5477970a87a1c`, `z9play` rc=1 `2016494de476fcb6`, `mud_server` rc=124 `9545fe1d245293ef`).
+6. **Stdlib:** `run_fixtures: 285 PASS / 0 FAIL over 285 dirs` / `STDLIB GATE OK`.
+7. **8 `--dump-c89` pins (old → P2 → fix round 1):**
+
+| entry | mode | Task 0 frozen | P2 (`ccfd5c58…`) | fix round 1 (`687bdbaa…`) | delta vs P2 |
+|---|---|---|---|---|---|
+| mud_server | `-fsafe` | `498b90f191b544655a1b731ef480709d` | `8b3c3d72ab59a9ae3c971c6a7759c7c0` | `8b3c3d72ab59a9ae3c971c6a7759c7c0` | 0 |
+| mud_server | `-ffast` | `50dbf5f02c1a5de920e158cab7f2f29b` | `fa346108ed00d03a037c2f9331d3bdf8` | `fa346108ed00d03a037c2f9331d3bdf8` | 0 |
+| game_of_life | `-fsafe` | `52c5feb5f158e2af7b32a0509b43d4c6` | `1b5d49b141ee9c664a82c270454bd75b` | `1b5d49b141ee9c664a82c270454bd75b` | 0 |
+| game_of_life | `-ffast` | `7271960fc6375ed1dee34b7abfb6325b` | `01a4e2265b33c97a8ca6ff3dfa551231` | `01a4e2265b33c97a8ca6ff3dfa551231` | 0 |
+| lisp_interpreter_curr | `-fsafe` | `e6f96b81f00e678eeaaa1ea7ed7c2359` | `8e5f2bc288d1dc75d7aee284cb35c291` | `8e5f2bc288d1dc75d7aee284cb35c291` | 0 |
+| lisp_interpreter_curr | `-ffast` | `ec82996028671a52a0a3d52ad307edf1` | `e3970e33ac09c8dfaa316d2d69bf61ec` | `e3970e33ac09c8dfaa316d2d69bf61ec` | 0 |
+| json_parser | `-fsafe` | `48eedfc0243431693f65518646ad280c` | `2a12d0aac24d5bcdd694f05e04a4f029` | `2a12d0aac24d5bcdd694f05e04a4f029` | 0 |
+| json_parser | `-ffast` | `04124b2675e77020933cbfab20f883e1` | `24e0e812e7dffa5a43750135405ffe3f` | `24e0e812e7dffa5a43750135405ffe3f` | 0 |
+
+**Pin delta vs P2: 0/8 (append is a no-op for acyclic programs, as designed).** Runtime proof = items 3–6 all green. One transient note: the first batch measurement of `json_parser -ffast` printed the empty-stream md5 `d41d8cd9…` (stderr suppressed in that loop); standalone + 5 repeat + full-batch re-runs all give `24e0e812…` (6/6, stderr 0 bytes) — process-level flake, not reproducible, not a code delta (observation).
+
+8. **Markers telemetry:** `--markers --dump-c89 examples/z98/game_of_life/main.zig` → stderr **3,436 marker lines / 38,378 B** — identical to the P2 values (full-prefix histogram `diff` vs the P2 capture: empty). The fix adds no marker traffic.
+
+**D8 sanity (fix binary):** reproducer dump rc=0 / build rc=0 / run rc=0 prints `2` — P2's D8 fix unaffected.
+
+### Verdict
+
+Important 1 fixed (APPEND variant, controller-ruled; UB path closed by construction; cost-if-wrong recorded above). Minor 2 fixed in the same surface. Minors 3–6 untouched (deferred to final review, per instruction). Battery fully green; pins unchanged vs P2.
