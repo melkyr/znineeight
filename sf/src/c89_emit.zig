@@ -1090,173 +1090,23 @@ pub fn emitSupportFiles(emitter: *C89Emitter, dir_path: []const u8) void {
 }
 
 
-fn c89NeedsEmitEdge(kind: TypeKind) bool {
-    if (kind == TypeKind.slice_type) return true;
-    if (kind == TypeKind.struct_type) return true;
-    if (kind == TypeKind.union_type) return true;
-    if (kind == TypeKind.tagged_union_type) return true;
-    if (kind == TypeKind.array_type) return true;
-    if (kind == TypeKind.optional_type) return true;
-    if (kind == TypeKind.error_union_type) return true;
-    if (kind == TypeKind.enum_type) return true;            // ADD — embeddable by value
-    if (kind == TypeKind.error_set_type) return true;       // ADD — embeddable by value
-    // Task 6 (z98-print-formatting): a fn-pointer type is embeddable by value
-    // (a struct field, tuple element, array element, ...). Without the edge the
-    // topological sort can emit an aggregate that references the `fn` typedef
-    // before the typedef itself (gcc: unknown type name), which the aggregate
-    // printer's fn-pointer field route would otherwise hit.
-    if (kind == TypeKind.fn_type) return true;              // ADD — embeddable by value
-    if (kind == TypeKind.tuple_type) return true;
-    if (kind == TypeKind.unresolved_name) return true;
-    return false;
-}
-
-
-
-
-fn tstSeenInRange(reg: *TypeRegistry, start: u32, count: u32, tid: u32) bool {
-    var j: usize = @intCast(usize, 0);
-    while (j < @intCast(usize, count)) : (j += 1) {
-        if (reg.fe_items[@intCast(usize, start) + j].type_id == tid) return true;
-    }
-    return false;
-}
-
-// D3-2/D2-1: the single deduped value-embedding edge walker shared by
-// count / fill / membership. When `has_out` is non-zero the walk writes the
-// ordered deduped edge list at `tgt[start..]`; the return is the edge count.
-// When `probe` is non-zero the walk returns 1 as soon as `probe_target` is a
-// member (skipping the dedup work, since membership is dedup-invariant) and 0
-// otherwise. Callers that do not write pass a throwaway one-word buffer.
-// Order is preserved exactly as the former `tstEdgesFill`.
-fn tstEdgesWalk(reg: *TypeRegistry, ti: u32, tgt: [*]u32, start: u32, has_out: u8, probe: u32, probe_target: u32) u32 {
-    var out: [*]u32 = tgt;
-    var ty = reg.types_items[@intCast(usize, ti)];
-    var off: u32 = start;
-    if (ty.kind == TypeKind.struct_type) {
-        var sp = reg.st_items[@intCast(usize, ty.payload_idx)];
-        var i: usize = @intCast(usize, 0);
-        while (i < @intCast(usize, sp.fields_count)) : (i += 1) {
-            var ft = reg.fe_items[@intCast(usize, sp.fields_start) + i].type_id;
-            if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) {
-                if (probe != @intCast(u32, 0)) {
-                    if (ft == probe_target) return @intCast(u32, 1);
-                } else if (!tstSeenInRange(reg, sp.fields_start, @intCast(u32, i), ft)) {
-                    if (has_out != @intCast(u8, 0)) { out[@intCast(usize, off)] = ft; }
-                    off += 1;
-                }
-            }
-        }
-    } else if (ty.kind == TypeKind.tagged_union_type) {
-        var tp = reg.tu_items[@intCast(usize, ty.payload_idx)];
-        var i: usize = @intCast(usize, 0);
-        while (i < @intCast(usize, tp.fields_count)) : (i += 1) {
-            var ft = reg.fe_items[@intCast(usize, tp.fields_start) + i].type_id;
-            if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) {
-                if (probe != @intCast(u32, 0)) {
-                    if (ft == probe_target) return @intCast(u32, 1);
-                } else if (!tstSeenInRange(reg, tp.fields_start, @intCast(u32, i), ft)) {
-                    if (has_out != @intCast(u8, 0)) { out[@intCast(usize, off)] = ft; }
-                    off += 1;
-                }
-            }
-        }
-        if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, tp.tag_type)].kind) and tp.tag_type != ti) {
-            if (probe != @intCast(u32, 0)) {
-                if (tp.tag_type == probe_target) return @intCast(u32, 1);
-            } else if (!tstSeenInRange(reg, tp.fields_start, tp.fields_count, tp.tag_type)) {
-                if (has_out != @intCast(u8, 0)) { out[@intCast(usize, off)] = tp.tag_type; }
-                off += 1;
-            }
-        }
-    } else if (ty.kind == TypeKind.array_type) {
-        var et = reg.array_items[@intCast(usize, ty.payload_idx)].elem;
-        if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, et)].kind) and et != ti) {
-            if (probe != @intCast(u32, 0)) { if (et == probe_target) return @intCast(u32, 1); }
-            else { if (has_out != @intCast(u8, 0)) { out[@intCast(usize, off)] = et; } off += 1; }
-        }
-    } else if (ty.kind == TypeKind.error_union_type) {
-        var eup = reg.eu_items[@intCast(usize, ty.payload_idx)].payload;
-        if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, eup)].kind) and eup != ti) {
-            if (probe != @intCast(u32, 0)) { if (eup == probe_target) return @intCast(u32, 1); }
-            else { if (has_out != @intCast(u8, 0)) { out[@intCast(usize, off)] = eup; } off += 1; }
-        }
-    } else if (ty.kind == TypeKind.optional_type) {
-        var op = reg.opt_items[@intCast(usize, ty.payload_idx)].payload;
-        if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, op)].kind) and op != ti) {
-            if (probe != @intCast(u32, 0)) { if (op == probe_target) return @intCast(u32, 1); }
-            else { if (has_out != @intCast(u8, 0)) { out[@intCast(usize, off)] = op; } off += 1; }
-        }
-    } else if (ty.kind == TypeKind.slice_type) {
-        var se = reg.slice_items[@intCast(usize, ty.payload_idx)].elem;
-        var sek = reg.types_items[@intCast(usize, se)].kind;
-        if (c89NeedsEmitEdge(sek) and se != ti and (sek == TypeKind.enum_type or sek == TypeKind.error_set_type)) {
-            if (probe != @intCast(u32, 0)) { if (se == probe_target) return @intCast(u32, 1); }
-            else { if (has_out != @intCast(u8, 0)) { out[@intCast(usize, off)] = se; } off += 1; }
-        }
-    } else if (ty.kind == TypeKind.union_type) {
-        var up = reg.un_items[@intCast(usize, ty.payload_idx)];
-        var i: usize = @intCast(usize, 0);
-        while (i < @intCast(usize, up.fields_count)) : (i += 1) {
-            var ft = reg.fe_items[@intCast(usize, up.fields_start) + i].type_id;
-            if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, ft)].kind) and ft != ti) {
-                if (probe != @intCast(u32, 0)) {
-                    if (ft == probe_target) return @intCast(u32, 1);
-                } else if (!tstSeenInRange(reg, up.fields_start, @intCast(u32, i), ft)) {
-                    if (has_out != @intCast(u8, 0)) { out[@intCast(usize, off)] = ft; }
-                    off += 1;
-                }
-            }
-        }
-    } else if (ty.kind == TypeKind.tuple_type) {
-        var tup = reg.tup_items[@intCast(usize, ty.payload_idx)];
-        var i: usize = @intCast(usize, 0);
-        while (i < @intCast(usize, tup.elems_count)) : (i += 1) {
-            var et = reg.xt_items[@intCast(usize, tup.elems_start) + i];
-            if (c89NeedsEmitEdge(reg.types_items[@intCast(usize, et)].kind) and et != ti) {
-                if (probe != @intCast(u32, 0)) {
-                    if (et == probe_target) return @intCast(u32, 1);
-                } else {
-                    var dup: u8 = @intCast(u8, 0);
-                    var j: usize = @intCast(usize, 0);
-                    while (j < i) : (j += 1) {
-                        if (reg.xt_items[@intCast(usize, tup.elems_start) + j] == et) { dup = @intCast(u8, 1); break; }
-                    }
-                    if (dup == @intCast(u8, 0)) {
-                        if (has_out != @intCast(u8, 0)) { out[@intCast(usize, off)] = et; }
-                        off += 1;
-                    }
-                }
-            }
-        }
-    }
-    if (probe != @intCast(u32, 0)) return @intCast(u32, 0);
-    return off - start;
-}
-
-fn tstEdgesCount(reg: *TypeRegistry, ti: u32) u32 {
-    var dummy: [1]u32 = undefined;
-    return tstEdgesWalk(reg, ti, @ptrCast([*]u32, &dummy[0]), @intCast(u32, 0), @intCast(u8, 0), @intCast(u32, 0), @intCast(u32, 0));
-}
-
-fn tstEdgesFill(reg: *TypeRegistry, ti: u32, tgt: [*]u32, start: u32) void {
-    _ = tstEdgesWalk(reg, ti, tgt, start, @intCast(u8, 1), @intCast(u32, 0), @intCast(u32, 0));
-}
-
-fn tstIsDep(reg: *TypeRegistry, ti: u32, target: u32) bool {
-    var dummy: [1]u32 = undefined;
-    if (!c89NeedsEmitEdge(reg.types_items[@intCast(usize, target)].kind) or target == ti) return false;
-    if (tstEdgesWalk(reg, ti, @ptrCast([*]u32, &dummy[0]), @intCast(u32, 0), @intCast(u8, 0), @intCast(u32, 1), target) != @intCast(u32, 0)) return true;
-    return false;
-}
-
+// P2 (emitter sanitization, D8 root cause): typedef ordering derives from the
+// single type-reference relation in `type_registry.zig` (`typeRefs` /
+// `typeRefs` / `typeRefsContains` / `typeNeedsFullDef`). The former
+// hand-rolled edge machinery (`c89NeedsEmitEdge`, `tstEdgesWalk`,
+// `tstSeenInRange`, `tstEdgesCount`, `tstEdgesFill`, `tstIsDep`) is deleted —
+// no divergent kind membership remains. The relation covers ALL kinds, incl.
+// `fn_type` return/param refs (D8: a fn-ptr typedef now follows its return
+// typedef) and `packed_union`.
 pub fn tstTopologicalSort(reg: *TypeRegistry, alloc: *Sand) [*]u32 {
     var tl: usize = reg.types_len;
     var indegree_raw = alloc_mod.sandAlloc(alloc, 4 * tl, 4) catch unreachable;
     var indegree: [*]u32 = @ptrCast([*]u32, indegree_raw);
     var ti: u32 = @intCast(u32, 0);
+    var edge_raw = alloc_mod.sandAlloc(alloc, 4 * tl, 4) catch unreachable;
+    var edge_buf: [*]u32 = @ptrCast([*]u32, edge_raw);
     while (@intCast(usize, ti) < tl) : (ti += 1) {
-        indegree[@intCast(usize, ti)] = tstEdgesCount(reg, ti);
+        indegree[@intCast(usize, ti)] = type_mod.typeRefs(reg, ti, edge_buf);
     }
     var result_raw = alloc_mod.sandAlloc(alloc, 4 * tl, 4) catch unreachable;
     var result: [*]u32 = @ptrCast([*]u32, result_raw);
@@ -1276,7 +1126,7 @@ pub fn tstTopologicalSort(reg: *TypeRegistry, alloc: *Sand) [*]u32 {
         result[ri] = cur; ri += 1;
         var tj: u32 = @intCast(u32, 0);
         while (@intCast(usize, tj) < tl) : (tj += 1) {
-            if (tstIsDep(reg, tj, cur)) {
+            if (type_mod.typeRefsContains(reg, tj, cur)) {
                 var idx = @intCast(usize, tj);
                 indegree[idx] = indegree[idx] - @intCast(u32, 1);
                 if (indegree[idx] == 0) {
@@ -1527,7 +1377,7 @@ pub fn computeSharedSet(reg: *TypeRegistry, emitter: *C89Emitter, alloc: *Sand) 
             var sj: u32 = @intCast(u32, 0);
             while (@intCast(usize, sj) < reg.types_len) : (sj += 1) {
                 if (hash_mod.u32ToU32MapGet(&emitter.shared_set, sj) == null) continue;
-                if (tstIsDep(reg, sj, ti2)) {
+                if (type_mod.typeRefsContains(reg, sj, ti2)) {
                     hash_mod.u32ToU32MapPut(&emitter.shared_set, ti2, @intCast(u32, 1));
                     changed = @intCast(u32, 1);
                     break;

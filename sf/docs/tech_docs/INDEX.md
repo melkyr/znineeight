@@ -233,7 +233,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `byteArrayListGrow` | growable_array.zig |
 | `byteArrayListInit` | growable_array.zig |
 | `c89EmitterInit` | c89_emit.zig |
-| `c89NeedsEmitEdge` | c89_emit.zig |
+| `c89NeedsEmitEdge` → `typeNeedsFullDef`/`typeRefs` (P2) | type_registry.zig |
 | `c_exit` | c_exit.c |
 | `c_exit` | pal.zig |
 | `canLiteralFitInType` | type_registry.zig |
@@ -592,13 +592,13 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `isNullExpr` | analyzer.zig |
 | `isTempOrBuiltin` | name_mangler.zig |
 | `isU64MaxLiteral` | lexer.zig |
-| `isValueDependency` | type_registry.zig |
+| `isValueDependency` → deleted (P2, dead) | type_registry.zig |
 | `itoa` | util/itoa.zig |
 | `itoa64` | util/itoa.zig |
 | `joinPath` | module_registry.zig |
-| `layoutAddFieldEdges` | type_resolver.zig |
-| `layoutAddTypeEdge` | type_resolver.zig |
-| `layoutFieldNeedsEdge` | type_resolver.zig |
+| `layoutAddFieldEdges` → `typeRefs` (P2) | type_registry.zig |
+| `layoutAddTypeEdge` → `typeRefs` (P2) | type_registry.zig |
+| `layoutFieldNeedsEdge` → `typeNeedsFullDef` (P2) | type_registry.zig |
 | `lexerAdvance` | lexer.zig |
 | `lexerInit` | lexer.zig |
 | `lexerIsAtEnd` | lexer.zig |
@@ -1208,20 +1208,29 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `trackingReset` | allocator.zig |
 | `tryRecordCoercion` | semantic_analyzer.zig |
 | `tupleElemArrayUnsupported` | type_resolver.zig (FB: a spelled tuple type with an array element is a level-0 `error[3000]` clean reject) |
-| `tstEdgesCount` | c89_emit.zig |
-| `tstEdgesFill` | c89_emit.zig |
-| `tstIsDep` | c89_emit.zig |
-| `tstSeenInRange` | c89_emit.zig |
+| `tstEdgesCount` → `typeRefs` (P2) | type_registry.zig |
+| `tstEdgesFill` → `typeRefs` (P2) | type_registry.zig |
+| `tstIsDep` → `typeRefsContains` (P2) | type_registry.zig |
+| `tstSeenInRange` → deleted (P2; target-dedup inside `typeRefs`) | type_registry.zig |
 | `tstTopologicalSort` | c89_emit.zig |
 | `tuAppend` | type_registry.zig |
 | `tupAppend` | type_registry.zig |
 | `typeDbOom` | type_registry.zig |
+| `typeHasForwardDecl` | type_registry.zig |
 | `typeIdName` → `nameManglerMintIndexName` (P1) | name_mangler.zig |
 | `typeKindIntWidthBytes` | type_registry.zig |
 | `typeKindIsSignedIntBase` | type_registry.zig |
 | `typeKindIsUnsignedIntBase` | type_registry.zig |
 | `typeKindSrcStr` | diagnostics.zig |
 | `typeKindTgtStr` | diagnostics.zig |
+| `typeNeedsFullDef` | type_registry.zig |
+| `typeRefEdgeTarget` | type_registry.zig |
+| `typeRefPtrLeaf` | type_registry.zig |
+| `typeRefs` | type_registry.zig |
+| `typeRefsContains` | type_registry.zig |
+| `typeRefsNote` | type_registry.zig |
+| `typeRefsSeenOut` | type_registry.zig |
+| `typeRefsWalk` | type_registry.zig |
 | `typeRegistryAppend` | type_registry.zig |
 | `typeRegistryArrayByteSize` | type_registry.zig |
 | `typeRegistryComputePackedLayout` | type_registry.zig |
@@ -1281,7 +1290,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `typeResolverBuildDependencyGraph` | type_resolver.zig |
 | `typeResolverCheckMemberVisibility` | type_resolver.zig |
 | `typeResolverDiagnoseSignatureType` | type_resolver.zig |
-| `typeResolverGetSorted` | type_resolver.zig |
+| `typeResolverGetSorted` → deleted (P2, dead) | type_resolver.zig |
 | `typeResolverInit` | type_resolver.zig |
 | `typeResolverResolve` | type_resolver.zig |
 | `typeResolverResolveLayout` | type_resolver.zig |

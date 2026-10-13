@@ -585,11 +585,15 @@ pub fn typeResolverResolve(self: *TypeResolver) void {
     }
 }
 
-// D1-2: the six kinds shared by every aggregate-layout category below. The
-// three category predicates deliberately differ (do not blind-merge): only
+// D1-2: the six kinds shared by every aggregate-layout category below. The two
+// classification predicates deliberately differ (do not blind-merge): only
 // `fieldEmbedsByValue` treats `enum`/`error_set` as by-value aggregates; only
-// `requiresFullDef` adds `optional`/`error_union`; `layoutFieldNeedsEdge` is
-// the union of the other two plus `enum`.
+// `requiresFullDef` adds `optional`/`error_union`. They feed
+// `classifyTypeEmissionGroups` (pointer-only classification, P4's scope) and
+// are NOT the ordering relation — typedef ordering derives from
+// `type_registry.typeRefs`/`typeNeedsFullDef` (P2). The former third sibling
+// `layoutFieldNeedsEdge` + `layoutAddTypeEdge`/`layoutAddFieldEdges` were the
+// divergent resolver edge predicates and are deleted with it.
 fn kindIsAggregateCore(kind: TypeKind) bool {
     return kind == TypeKind.struct_type or kind == TypeKind.tagged_union_type or
         kind == TypeKind.union_type or kind == TypeKind.packed_union_type or
@@ -606,55 +610,25 @@ fn requiresFullDef(kind: TypeKind) bool {
         kind == TypeKind.error_union_type;
 }
 
-fn layoutFieldNeedsEdge(kind: TypeKind) bool {
-    return kindIsAggregateCore(kind) or kind == TypeKind.enum_type or
-        kind == TypeKind.optional_type or kind == TypeKind.error_union_type;
-}
-
-fn layoutAddTypeEdge(self: *TypeResolver, field_type: u32, container_tid: u32) void {
-    if (field_type >= @intCast(u32, self.registry.types_len)) return;
-    var ft = self.registry.types_items[@intCast(usize, field_type)];
-    if (layoutFieldNeedsEdge(ft.kind)) {
-        typeResolverAddEdge(self, field_type, container_tid);
-    }
-}
-
-fn layoutAddFieldEdges(self: *TypeResolver, fstart: u32, fcount: u16, container_tid: u32) void {
-    var fi: usize = 0;
-    while (fi < @intCast(usize, fcount)) : (fi += 1) {
-        layoutAddTypeEdge(self, self.registry.fe_items[@intCast(usize, fstart) + fi].type_id, container_tid);
-    }
-}
-
+// P2 (emitter sanitization, D8): the resolver dependency graph derives from the
+// single type-reference relation (`type_registry.typeRefs` / `typeNeedsFullDef`)
+// — the same edges the emitter's typedef ordering uses (one source, D8 closed
+// by construction). For every type each ordering ref `R` of `ti` contributes
+// the historical `from=R, to=ti` edge (the ref resolves / lays out before its
+// referrer). The former kind-switch + `layoutFieldNeedsEdge`/`layoutAddTypeEdge`
+// helpers are deleted; `fn_type` return/param refs and `packed_union` are now
+// covered like every other kind.
 pub fn typeResolverBuildDependencyGraph(self: *TypeResolver) void {
+    var tl = self.registry.types_len;
+    if (tl == @intCast(usize, 0)) return;
+    var raw = alloc_mod.sandAlloc(self.alloc, tl * @intCast(usize, 4), @intCast(usize, 4)) catch unreachable;
+    var buf: [*]u32 = @ptrCast([*]u32, raw);
     var ti: usize = 0;
-    while (ti < self.registry.types_len) : (ti += 1) {
-        var ty = self.registry.types_items[ti];
-        var container_tid = @intCast(u32, ti);
-        if (ty.kind == TypeKind.struct_type) {
-            var sp = self.registry.st_items[@intCast(usize, ty.payload_idx)];
-            layoutAddFieldEdges(self, sp.fields_start, sp.fields_count, container_tid);
-        } else if (ty.kind == TypeKind.tagged_union_type) {
-            var tp = self.registry.tu_items[@intCast(usize, ty.payload_idx)];
-            layoutAddFieldEdges(self, tp.fields_start, tp.fields_count, container_tid);
-        } else if (ty.kind == TypeKind.union_type) {
-            var up = self.registry.un_items[@intCast(usize, ty.payload_idx)];
-            layoutAddFieldEdges(self, up.fields_start, up.fields_count, container_tid);
-        } else if (ty.kind == TypeKind.packed_union_type) {
-            var pup = self.registry.un_items[@intCast(usize, ty.payload_idx)];
-            layoutAddFieldEdges(self, pup.fields_start, pup.fields_count, container_tid);
-        } else if (ty.kind == TypeKind.array_type) {
-            layoutAddTypeEdge(self, self.registry.array_items[@intCast(usize, ty.payload_idx)].elem, container_tid);
-        } else if (ty.kind == TypeKind.tuple_type) {
-            var tp = self.registry.tup_items[@intCast(usize, ty.payload_idx)];
-            var ei: usize = 0;
-            while (ei < @intCast(usize, tp.elems_count)) : (ei += 1) {
-                layoutAddTypeEdge(self, self.registry.xt_items[@intCast(usize, tp.elems_start) + ei], container_tid);
-            }
-        } else if (ty.kind == TypeKind.optional_type) {
-            layoutAddTypeEdge(self, self.registry.opt_items[@intCast(usize, ty.payload_idx)].payload, container_tid);
-        } else if (ty.kind == TypeKind.error_union_type) {
-            layoutAddTypeEdge(self, self.registry.eu_items[@intCast(usize, ty.payload_idx)].payload, container_tid);
+    while (ti < tl) : (ti += 1) {
+        var n = type_mod.typeRefs(self.registry, @intCast(u32, ti), buf);
+        var k: u32 = @intCast(u32, 0);
+        while (k < n) : (k += 1) {
+            typeResolverAddEdge(self, buf[@intCast(usize, k)], @intCast(u32, ti));
         }
     }
 }
@@ -886,9 +860,6 @@ fn growWpEdges(perm_a: *Sand, wp_to_ptr: *[*]u32, wp_next_ptr: *[*]u32, cap_ptr:
     nameScopeGrowPair(perm_a, wp_to_ptr, wp_next_ptr, @intCast(usize, count), cap_ptr, @intCast(usize, 0));
 }
 
-pub fn typeResolverGetSorted(self: *TypeResolver) []u32 {
-    return self.sorted_items[0..self.sorted_len];
-}
 
 // Task 2b-F (#1): resolve the module a field-access base expression denotes,
 // walking a module-alias chain (`mid` -> `mid.leaf` -> ...). A base is a module

@@ -977,16 +977,221 @@ pub fn typeRegistryRegisterNamedType(self: *TypeRegistry, module_id: u32, name_i
     return tid;
 }
 
-pub fn isValueDependency(kind: TypeKind) bool {
+// P2 (emitter sanitization, D8): the SINGLE type-reference relation, consumed
+// by BOTH graphs — the resolver dependency graph
+// (`typeResolverBuildDependencyGraph`) and the emitter's typedef ordering
+// (`tstTopologicalSort` / `computeSharedSet`). It replaces the three divergent
+// memberships: the dead `isValueDependency` (was here), the emitter's
+// `c89NeedsEmitEdge`, and the resolver's `layoutFieldNeedsEdge`.
+//
+// `typeNeedsFullDef(tid)`: a typedef-ordering reference to this type requires
+// this type's definition (its typedef) before the referrer — a forward
+// declaration does not suffice. Membership = the historical `c89NeedsEmitEdge`
+// set PLUS `packed_union_type` (the kind that predicate missed).
+//
+// `typeHasForwardDecl(tid)`: the type's C name is already declared by the
+// emitter's Pass-1 forward typedefs (`typedef struct|union C C;`) — exactly
+// named (`name_id != 0`) non-packed `struct` / `tagged_union` / `union`
+// (mirrors `emitTypePasses` Pass 1 in c89_emit.zig).
+//
+// `typeRefs(tid)`: the edge targets typedef-ordering requires before `tid`
+// (distinct, first-occurrence, self-references excluded — one Kahn decrement
+// per entry). By-value positions (aggregate fields incl. packed_union,
+// tagged-union tag, array elem, tuple elems, optional / error-union payload)
+// contribute every `typeNeedsFullDef(R)` ref. Name-spelling positions (fn
+// return, fn params, slice elem — the C declarator spells the ref's typedef
+// NAME) additionally require NOT `typeHasForwardDecl(R)`: a name with no
+// forward typedef needs its definition first. D8 is exactly a missed
+// name-position ref (a fn-ptr typedef spells its error-union return name). A
+// pointer / many-pointer reference contributes a name-visibility edge to its
+// chain-leaf (see `typeRefPtrLeaf` — the pointer's C name spells the leaf's
+// name; `struct { next: *Node }` is safe because `Node` HAS a forward
+// typedef). An error union's `error_set` member is spelled `int` and needs no
+// edge.
+fn typeHasForwardDecl(self: *TypeRegistry, tid: u32) bool {
+    if (@intCast(usize, tid) >= self.types_len) return false;
+    var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.name_id == @intCast(u32, 0)) return false;
+    if (ty.kind == TypeKind.tagged_union_type) return true;
+    if (ty.kind == TypeKind.union_type) return true;
+    if (ty.kind == TypeKind.struct_type) {
+        if (typeRegistryIsPacked(self, tid)) return false;
+        return true;
+    }
+    return false;
+}
+
+pub fn typeNeedsFullDef(self: *TypeRegistry, tid: u32) bool {
+    if (@intCast(usize, tid) >= self.types_len) return false;
+    var kind = self.types_items[@intCast(usize, tid)].kind;
+    if (kind == TypeKind.slice_type) return true;
     if (kind == TypeKind.struct_type) return true;
     if (kind == TypeKind.union_type) return true;
     if (kind == TypeKind.tagged_union_type) return true;
-
     if (kind == TypeKind.array_type) return true;
     if (kind == TypeKind.optional_type) return true;
     if (kind == TypeKind.error_union_type) return true;
+    if (kind == TypeKind.enum_type) return true;
+    if (kind == TypeKind.error_set_type) return true;
+    if (kind == TypeKind.fn_type) return true;
     if (kind == TypeKind.tuple_type) return true;
     if (kind == TypeKind.unresolved_name) return true;
+    // P2: packed_union was the missing kind in the old emitter predicate.
+    if (kind == TypeKind.packed_union_type) return true;
+    return false;
+}
+
+// P2 (design amendment, D8 evidence): the chain-leaf of a pointer reference —
+// `getCTypeName` renders `*fn` as the fn typedef NAME itself and `*T` as
+// `<T-cname>*` (plus one star per extra pointer), so a pointer reference
+// spells the C name of the first NON-pointer type at the base of its chain
+// (the Task-6 site-patch walk `emitPointeeDep` mirrors this chain). Ptr chains
+// are acyclic by construction (a pointer's base is fixed at creation).
+fn typeRefPtrLeaf(self: *TypeRegistry, tid: u32) u32 {
+    var cur = tid;
+    var steps: u32 = @intCast(u32, 0);
+    while (steps < @intCast(u32, 64)) : (steps += 1) {
+        if (@intCast(usize, cur) >= self.types_len) return cur;
+        var ty = self.types_items[@intCast(usize, cur)];
+        if (ty.kind != TypeKind.ptr_type and ty.kind != TypeKind.many_ptr_type) return cur;
+        cur = self.ptr_items[@intCast(usize, ty.payload_idx)].base;
+    }
+    return cur;
+}
+
+// P2: the typedef-ordering EDGE TARGET of one `tid` -> `ref` reference, or
+// 0xFFFFFFFF when the reference needs no edge. `name_pos` = 1 in name-spelling
+// positions (fn return, fn params, slice elem), 0 in by-value positions
+// (aggregate fields incl. packed_union, tagged-union tag, array elem, tuple
+// elems, optional / error-union payload). A pointer reference is ALWAYS a
+// name-visibility edge to its chain-leaf (the pointer itself is complete; its
+// C name spells the leaf's name — the D8 shape: a ptr-to-fn struct field makes
+// the container's typedef spell the fn typedef name, and the fn typedef in
+// turn spells its return/param names). A non-pointer by-value reference needs
+// the ref's FULL definition; a non-pointer name-spelling reference needs only
+// its name, and only when no Pass-1 forward typedef declares that name.
+fn typeRefEdgeTarget(self: *TypeRegistry, tid: u32, ref: u32, name_pos: u8) u32 {
+    if (ref == tid) return @intCast(u32, 0xFFFFFFFF);
+    if (@intCast(usize, ref) >= self.types_len) return @intCast(u32, 0xFFFFFFFF);
+    var ref_ty = self.types_items[@intCast(usize, ref)];
+    var tgt: u32 = ref;
+    var tgt_name_pos: u8 = name_pos;
+    if (ref_ty.kind == TypeKind.ptr_type or ref_ty.kind == TypeKind.many_ptr_type) {
+        tgt = typeRefPtrLeaf(self, ref);
+        tgt_name_pos = @intCast(u8, 1);
+    }
+    if (tgt == tid) return @intCast(u32, 0xFFFFFFFF);
+    if (!typeNeedsFullDef(self, tgt)) return @intCast(u32, 0xFFFFFFFF);
+    if (tgt_name_pos != @intCast(u8, 0)) {
+        if (typeHasForwardDecl(self, tgt)) return @intCast(u32, 0xFFFFFFFF);
+    }
+    return tgt;
+}
+
+fn typeRefsSeenOut(out: [*]u32, start: u32, off: u32, tgt: u32) bool {
+    var j: u32 = start;
+    while (j < off) : (j += 1) {
+        if (out[@intCast(usize, j)] == tgt) return true;
+    }
+    return false;
+}
+
+// Note one reference: probe mode returns 1 at the first hit on `probe_target`
+// (dedup-invariant); fill mode appends the edge target to the first-occurrence
+// list at `out[start..off)` (dedup by TARGET, so the list holds distinct edge
+// targets — exactly one Kahn decrement per entry).
+fn typeRefsNote(self: *TypeRegistry, tid: u32, ref: u32, name_pos: u8, out: [*]u32, off: *u32, start: u32, probe: u32, probe_target: u32) u32 {
+    var etgt = typeRefEdgeTarget(self, tid, ref, name_pos);
+    if (etgt == @intCast(u32, 0xFFFFFFFF)) return @intCast(u32, 0);
+    if (probe != @intCast(u32, 0)) {
+        if (etgt == probe_target) return @intCast(u32, 1);
+        return @intCast(u32, 0);
+    }
+    if (!typeRefsSeenOut(out, start, off.*, etgt)) {
+        out[@intCast(usize, off.*)] = etgt;
+        off.* += @intCast(u32, 1);
+    }
+    return @intCast(u32, 0);
+}
+
+// ONE walk over the ordering refs of `tid` (see the relation comments above).
+// `probe` non-zero: return 1 at the first reference whose edge target is
+// `probe_target`, else 0. Otherwise write the target-deduped first-occurrence
+// list at `out[start..]` and return the count. The fill and the probe agree:
+// the list holds DISTINCT edge targets and each target pops exactly once in
+// the Kahn sort (exactly one decrement per entry).
+fn typeRefsWalk(self: *TypeRegistry, tid: u32, out: [*]u32, start: u32, probe: u32, probe_target: u32) u32 {
+    var off: u32 = start;
+    var ty = self.types_items[@intCast(usize, tid)];
+    if (ty.kind == TypeKind.struct_type or ty.kind == TypeKind.union_type or ty.kind == TypeKind.packed_union_type) {
+        var fstart: u32 = @intCast(u32, 0);
+        var fcount: u16 = @intCast(u16, 0);
+        if (ty.kind == TypeKind.struct_type) {
+            var sp = self.st_items[@intCast(usize, ty.payload_idx)];
+            fstart = sp.fields_start; fcount = sp.fields_count;
+        } else {
+            var up = self.un_items[@intCast(usize, ty.payload_idx)];
+            fstart = up.fields_start; fcount = up.fields_count;
+        }
+        var i: usize = @intCast(usize, 0);
+        while (i < @intCast(usize, fcount)) : (i += 1) {
+            var ft = self.fe_items[@intCast(usize, fstart) + i].type_id;
+            if (typeRefsNote(self, tid, ft, @intCast(u8, 0), out, &off, start, probe, probe_target) != @intCast(u32, 0)) return @intCast(u32, 1);
+        }
+    } else if (ty.kind == TypeKind.tagged_union_type) {
+        var tp = self.tu_items[@intCast(usize, ty.payload_idx)];
+        var i: usize = @intCast(usize, 0);
+        while (i < @intCast(usize, tp.fields_count)) : (i += 1) {
+            var ft = self.fe_items[@intCast(usize, tp.fields_start) + i].type_id;
+            if (typeRefsNote(self, tid, ft, @intCast(u8, 0), out, &off, start, probe, probe_target) != @intCast(u32, 0)) return @intCast(u32, 1);
+        }
+        if (typeRefsNote(self, tid, tp.tag_type, @intCast(u8, 0), out, &off, start, probe, probe_target) != @intCast(u32, 0)) return @intCast(u32, 1);
+    } else if (ty.kind == TypeKind.array_type) {
+        var et = self.array_items[@intCast(usize, ty.payload_idx)].elem;
+        if (typeRefsNote(self, tid, et, @intCast(u8, 0), out, &off, start, probe, probe_target) != @intCast(u32, 0)) return @intCast(u32, 1);
+    } else if (ty.kind == TypeKind.error_union_type) {
+        var eup = self.eu_items[@intCast(usize, ty.payload_idx)].payload;
+        if (typeRefsNote(self, tid, eup, @intCast(u8, 0), out, &off, start, probe, probe_target) != @intCast(u32, 0)) return @intCast(u32, 1);
+    } else if (ty.kind == TypeKind.optional_type) {
+        var op = self.opt_items[@intCast(usize, ty.payload_idx)].payload;
+        if (typeRefsNote(self, tid, op, @intCast(u8, 0), out, &off, start, probe, probe_target) != @intCast(u32, 0)) return @intCast(u32, 1);
+    } else if (ty.kind == TypeKind.slice_type) {
+        var se = self.slice_items[@intCast(usize, ty.payload_idx)].elem;
+        if (typeRefsNote(self, tid, se, @intCast(u8, 1), out, &off, start, probe, probe_target) != @intCast(u32, 0)) return @intCast(u32, 1);
+    } else if (ty.kind == TypeKind.tuple_type) {
+        var tp = self.tup_items[@intCast(usize, ty.payload_idx)];
+        var i: usize = @intCast(usize, 0);
+        while (i < @intCast(usize, tp.elems_count)) : (i += 1) {
+            var et = self.xt_items[@intCast(usize, tp.elems_start) + i];
+            if (typeRefsNote(self, tid, et, @intCast(u8, 0), out, &off, start, probe, probe_target) != @intCast(u32, 0)) return @intCast(u32, 1);
+        }
+    } else if (ty.kind == TypeKind.fn_type) {
+        var fp = self.fn_items[@intCast(usize, ty.payload_idx)];
+        // D8: the return-type ref comes first (the fn-ptr typedef spells
+        // `typedef RET (*NAME)(PARAMS);`), then the params; each is a
+        // name-spelling position (name_pos = 1).
+        if (typeRefsNote(self, tid, fp.return_type, @intCast(u8, 1), out, &off, start, probe, probe_target) != @intCast(u32, 0)) return @intCast(u32, 1);
+        var fpend: usize = @intCast(usize, fp.params_start) + @intCast(usize, fp.params_count);
+        if (fpend <= self.xt_len) {
+            var pi: usize = @intCast(usize, fp.params_start);
+            while (pi < fpend) : (pi += @intCast(usize, 1)) {
+                if (typeRefsNote(self, tid, self.xt_items[pi], @intCast(u8, 1), out, &off, start, probe, probe_target) != @intCast(u32, 0)) return @intCast(u32, 1);
+            }
+        }
+    }
+    if (probe != @intCast(u32, 0)) return @intCast(u32, 0);
+    return off - start;
+}
+
+pub fn typeRefs(self: *TypeRegistry, tid: u32, out: [*]u32) u32 {
+    return typeRefsWalk(self, tid, out, @intCast(u32, 0), @intCast(u32, 0), @intCast(u32, 0));
+}
+
+pub fn typeRefsContains(self: *TypeRegistry, tid: u32, target: u32) bool {
+    if (target == tid) return false;
+    if (!typeNeedsFullDef(self, target)) return false;
+    var dummy: [1]u32 = undefined;
+    if (typeRefsWalk(self, tid, @ptrCast([*]u32, &dummy[0]), @intCast(u32, 0), @intCast(u32, 1), target) != @intCast(u32, 0)) return true;
     return false;
 }
 
