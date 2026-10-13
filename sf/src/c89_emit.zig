@@ -581,16 +581,11 @@ fn resolveFieldAccess(writer: *BufferedWriter, registry: *TypeRegistry, interner
        nest_inl: [*]u8,
      emitted_type_set: U32ToU32Map,
      fwd_decl_set: U32ToU32Map,
-      pointer_only_map: U32ToU32Map,
-      // P4: the resolver classification's needs-definition group (typedef
-      // emitted) — replaces the deleted `shouldSkipTypeEmission`.
-      needs_def_map: U32ToU32Map,
-       shared_set: U32ToU32Map,
-       // Task 4 (z98-print-formatting): tuple types that hold a runtime value
-       // (hoisted temp / global). Tuple typedefs are emitted ONLY for these —
-       // the registry also holds print-args tuple types that never become
-       // values, and emitting those would move the 4-MD5 single-file dumps.
-        needed_tuple_set: U32ToU32Map,
+      // P4 fix round 2: the completed emission classification (type_resolver
+      // `EmissionClassification`, owned by `CompilerContext`; filled at the
+      // pre-emit `phase_EmissionClassification` boundary). The emitter READS
+      // only — never classifies (Decision-vs-spelling rule).
+      classif: *type_resolver.EmissionClassification,
         // Task 6 (z98-print-formatting): float `{x}` prints a hand-rolled C89
         // hex-float. The helper is compiler-generated static C emitted on
         // demand — adding a function to std_fmt would move the four pinned
@@ -624,7 +619,7 @@ fn resolveFieldAccess(writer: *BufferedWriter, registry: *TypeRegistry, interner
       safe_checks: bool,
    };
 
-pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *NameMangler, diag: *DiagnosticCollector, sc: *SwitchCaseArrayList, ca: *U32ArrayList, alloc: *Sand, persist_alloc: *Sand, error_code_reg: *hash_mod.U32ToU32Map, pointer_only_map: U32ToU32Map, needs_def_map: U32ToU32Map, shared_map: U32ToU32Map, safe_checks: bool) C89Emitter {
+pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *NameMangler, diag: *DiagnosticCollector, sc: *SwitchCaseArrayList, ca: *U32ArrayList, alloc: *Sand, persist_alloc: *Sand, error_code_reg: *hash_mod.U32ToU32Map, classif: *type_resolver.EmissionClassification, safe_checks: bool) C89Emitter {
     return C89Emitter{
         .writer = bufferedWriterInit(),
         .indent = @intCast(u32, 0),
@@ -659,12 +654,10 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
          .nest_inl = undefined,
          .emitted_type_set = hash_mod.u32ToU32MapInitCap(persist_alloc, reg.types_len),
          .fwd_decl_set = hash_mod.u32ToU32MapInitCap(persist_alloc, reg.types_len),
-         // P4: the three classification groups arrive fully populated from
-         // the resolver's `classifyTypeEmissionGroups` (`ClassificationResult`).
-         .pointer_only_map = pointer_only_map,
-         .needs_def_map = needs_def_map,
-         .shared_set = shared_map,
-         .needed_tuple_set = hash_mod.u32ToU32MapInit(persist_alloc),
+         // P4 fix round 2: the completed classification state (the emitter
+         // READS it; it is filled at the pre-emit `phase_EmissionClassification`
+         // boundary, never here).
+         .classif = classif,
          .need_fhex32 = @intCast(u8, 0),
          .need_fhex64 = @intCast(u8, 0),
          .module_reg = undefined,
@@ -1133,11 +1126,6 @@ fn emitTypePasses(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32, gate
         lfwd = hash_mod.u32ToU32MapInitCap(emitter.alloc, reg.types_len);
         lemit = hash_mod.u32ToU32MapInitCap(emitter.alloc, reg.types_len);
     }
-    // P4: finalize the resolver classification at emission (step 2 — the old
-    // `computeSharedSet` call site / live `shouldSkipTypeEmission` evaluation
-    // point): types registered after the step-1 snapshot + the needed-tuple
-    // shared seed + the shared closure. Idempotent; both pass paths run it.
-    type_resolver.classifyTypeEmissionFinalize(reg, &emitter.shared_set, &emitter.pointer_only_map, &emitter.needs_def_map, &emitter.needed_tuple_set);
 
     // Pass 1: forward typedefs for named aggregates.
     var tsi: usize = @intCast(usize, 0);
@@ -1167,11 +1155,11 @@ fn emitTypePasses(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32, gate
     tsi = @intCast(usize, 0);
     while (tsi < reg.types_len) : (tsi += 1) {
         var tid = sorted[tsi];
-        if (hash_mod.u32ToU32MapGet(&emitter.pointer_only_map, tid) == null) continue;
+        if (hash_mod.u32ToU32MapGet(&emitter.classif.pointer_only_map, tid) == null) continue;
         if (require_shared != @intCast(u8, 0)) {
-            if (hash_mod.u32ToU32MapGet(&emitter.shared_set, tid) == null) continue;
+            if (hash_mod.u32ToU32MapGet(&emitter.classif.shared_set, tid) == null) continue;
         }
-        if (hash_mod.u32ToU32MapGet(&emitter.needs_def_map, tid) == null) continue;
+        if (hash_mod.u32ToU32MapGet(&emitter.classif.needs_def_map, tid) == null) continue;
         emitTypeDeps(emitter, tid, emit_ptr, gated);
         emitTypeDefOnce(emitter, tid, emit_ptr, gated);
     }
@@ -1181,7 +1169,7 @@ fn emitTypePasses(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32, gate
     while (tsi < reg.types_len) : (tsi += 1) {
         var tid = sorted[tsi];
         emitNeededTupleAt(emitter, tid, emit_ptr);
-        if (hash_mod.u32ToU32MapGet(&emitter.pointer_only_map, tid) != null) continue;
+        if (hash_mod.u32ToU32MapGet(&emitter.classif.pointer_only_map, tid) != null) continue;
         var ty = reg.types_items[@intCast(usize, tid)];
         if (d2_marker != @intCast(u8, 0)) {
             if (ty.kind == TypeKind.tagged_union_type) {
@@ -1192,7 +1180,7 @@ fn emitTypePasses(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32, gate
                 var d2mm: []const u8 = "m"; pal.measureMarkerWriteInt(d2mm, ty.module_id);
             }
         }
-        if (hash_mod.u32ToU32MapGet(&emitter.needs_def_map, tid) == null) continue;
+        if (hash_mod.u32ToU32MapGet(&emitter.classif.needs_def_map, tid) == null) continue;
         emitTypeDeps(emitter, tid, emit_ptr, gated);
         emitTypeDefOnce(emitter, tid, emit_ptr, gated);
     }
@@ -2204,8 +2192,8 @@ pub fn emitModuleHeaderFile(emitter: *C89Emitter, module_id: u32, mod_name: []co
         if (ty.name_id == @intCast(u32, 0)) continue;
         if (ty.module_id != module_id) continue;
         if (ty.kind != TypeKind.struct_type and ty.kind != TypeKind.tagged_union_type and ty.kind != TypeKind.union_type and ty.kind != TypeKind.packed_union_type and ty.kind != TypeKind.enum_type and ty.kind != TypeKind.error_set_type) continue;
-        if (hash_mod.u32ToU32MapGet(&emitter.pointer_only_map, tid) == null) continue;
-        if (hash_mod.u32ToU32MapGet(&emitter.shared_set, tid) != null) continue;
+        if (hash_mod.u32ToU32MapGet(&emitter.classif.pointer_only_map, tid) == null) continue;
+        if (hash_mod.u32ToU32MapGet(&emitter.classif.shared_set, tid) != null) continue;
         var cname = getCTypeName(emitter.registry, emitter.mangler, tid);
         var dedup_key = cnameDedupKey(cname);
         if (hash_mod.u32ToU32MapGet(&emitter.emitted_type_set, dedup_key)) |_| continue;
@@ -2284,9 +2272,10 @@ fn emitFunctionSet(emitter: *C89Emitter, module_id: u32, all: u8) void {
     }
 }
 
-// P4: the classification maps (`pointer_only_map`/`needs_def_map`/`shared_set`)
-// arrive fully populated from the resolver's `classifyTypeEmissionGroups`
-// (loaded in `c89EmitterInit`); the former `ptr_only_ids` fill loop is gone.
+// P4 fix round 2: the classification state (`classif` — pointer_only_map /
+// needs_def_map / shared_set / needed_tuple_set) is loaded at `c89EmitterInit`
+// from the `CompilerContext` and completed at the pre-emit boundary; the
+// emitter reads only (the former `ptr_only_ids` fill loop is long gone).
 pub fn emitModule(emitter: *C89Emitter, name: []const u8, c_includes: []u32) void {
     var sorted: [*]u32 = tstTopologicalSort(emitter.registry, emitter.alloc);
     emitErrorCodePrologue(emitter);
@@ -5653,25 +5642,6 @@ pub fn emitGeneratedPrinters(emitter: *C89Emitter) void {
     }
 }
 
-// Collect every tuple type that holds a runtime value (a hoisted temp or a
-// global); tuple typedefs are emitted only for these. Registry-only print-args
-// tuples must not produce C (the 4-MD5 single-file dumps are pinned).
-pub fn collectNeededTuples(reg: *TypeRegistry, set: *U32ToU32Map, tid: u32) void {
-    if (@intCast(usize, tid) >= reg.types_len) return;
-    var ty = reg.types_items[@intCast(usize, tid)];
-    if (ty.kind != TypeKind.tuple_type) return;
-    if (hash_mod.u32ToU32MapGet(set, tid) != null) return;
-    hash_mod.u32ToU32MapPut(set, tid, @intCast(u32, 1));
-    var tup = reg.tup_items[@intCast(usize, ty.payload_idx)];
-    var i: usize = @intCast(usize, 0);
-    while (i < @intCast(usize, tup.elems_count)) : (i += 1) {
-        var et = reg.xt_items[@intCast(usize, tup.elems_start) + i];
-        if (@intCast(usize, et) < reg.types_len) {
-            if (reg.types_items[@intCast(usize, et)].kind == TypeKind.tuple_type) collectNeededTuples(reg, set, et);
-        }
-    }
-}
-
 fn emitNeededTupleRec(emitter: *C89Emitter, seen: *U32ToU32Map, tid: u32) void {
     var reg = emitter.registry;
     if (@intCast(usize, tid) >= reg.types_len) return;
@@ -5683,7 +5653,7 @@ fn emitNeededTupleRec(emitter: *C89Emitter, seen: *U32ToU32Map, tid: u32) void {
         var et = reg.xt_items[@intCast(usize, tup.elems_start) + i];
         if (@intCast(usize, et) < reg.types_len) {
             if (reg.types_items[@intCast(usize, et)].kind == TypeKind.tuple_type and
-                hash_mod.u32ToU32MapGet(&emitter.needed_tuple_set, et) != null) {
+                hash_mod.u32ToU32MapGet(&emitter.classif.needed_tuple_set, et) != null) {
                 emitNeededTupleRec(emitter, seen, et);
             }
         }
@@ -5698,10 +5668,10 @@ fn emitNeededTupleRec(emitter: *C89Emitter, seen: *U32ToU32Map, tid: u32) void {
 // so a tuple already emitted there (FB: aggregates that embed a tuple by value
 // need the tuple's typedef earlier than this trailing pass) is not duplicated.
 pub fn emitNeededTupleTypes(emitter: *C89Emitter, seen: *U32ToU32Map) void {
-    if (emitter.needed_tuple_set.count == @intCast(usize, 0)) return;
+    if (emitter.classif.needed_tuple_set.count == @intCast(usize, 0)) return;
     var ti: u32 = @intCast(u32, 0);
     while (@intCast(usize, ti) < emitter.registry.types_len) : (ti += 1) {
-        if (hash_mod.u32ToU32MapGet(&emitter.needed_tuple_set, ti) == null) continue;
+        if (hash_mod.u32ToU32MapGet(&emitter.classif.needed_tuple_set, ti) == null) continue;
         emitNeededTupleRec(emitter, seen, ti);
     }
 }
@@ -5712,7 +5682,7 @@ pub fn emitNeededTupleTypes(emitter: *C89Emitter, seen: *U32ToU32Map) void {
 // for every needed tuple they reach. Without it a struct field of tuple type
 // emitted before the tuple typedef (gcc: unknown type name).
 fn emitNeededTupleAt(emitter: *C89Emitter, tid: u32, seen: *U32ToU32Map) void {
-    if (hash_mod.u32ToU32MapGet(&emitter.needed_tuple_set, tid) == null) return;
+    if (hash_mod.u32ToU32MapGet(&emitter.classif.needed_tuple_set, tid) == null) return;
     if (@intCast(usize, tid) >= emitter.registry.types_len) return;
     if (emitter.registry.types_items[@intCast(usize, tid)].kind != TypeKind.tuple_type) return;
     emitTypeDeps(emitter, tid, seen, @intCast(u8, 1));

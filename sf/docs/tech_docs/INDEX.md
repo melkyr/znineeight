@@ -317,7 +317,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `comptimeIntUntypedType` | comptime_eval.zig |
 | `comptimeValStoreU64` | comptime_eval.zig |
 | `computeNestMetadata` | lir_opt_pass.zig |
-| `collectNeededTuples` | c89_emit.zig |
+| `collectNeededTuples` | type_resolver.zig |
 | `collectPrintRoots` | c89_emit.zig |
 | `constAliasPrepass` | const_alias_prepass.zig |
 | `containerAnonNameId` | type_resolver.zig |

@@ -168,12 +168,17 @@ pub fn localConstScopeLookup(scope: *LocalConstScope, name_id: u32) ?u32 {
     return nameScopeLookup(scope.names, scope.nodes, scope.count, name_id);
 }
 
-pub const ClassificationResult = struct {
-    // P4 (single classification pass; spec §4 "Type classification" row as
-    // amended 2026-10-12): the three emission groups, consumed by the emitter.
-    pointer_only: hash_mod.U32ToU32Map,
-    needs_def: hash_mod.U32ToU32Map,
-    shared: hash_mod.U32ToU32Map,
+// P4 fix round 2: the completed emission classification state (spec §4 "Type
+// classification" row as amended 2026-10-12) — owned by `CompilerContext`,
+// maps on the permanent arena; the emitter holds `classif: *EmissionClassification`
+// and READS only. Filled by `classifyTypeEmissionGroups` (resolution-time) and
+// completed by `classifyTypeEmissionFinalize` + `collectNeededTuples` at the
+// backend-neutral `phase_EmissionClassification` boundary.
+pub const EmissionClassification = struct {
+    shared_set: hash_mod.U32ToU32Map,
+    pointer_only_map: hash_mod.U32ToU32Map,
+    needs_def_map: hash_mod.U32ToU32Map,
+    needed_tuple_set: hash_mod.U32ToU32Map,
 };
 
 pub const TypeResolver = struct {
@@ -637,7 +642,7 @@ pub fn typeResolverBuildDependencyGraph(self: *TypeResolver) void {
     }
 }
 
-pub fn classifyTypeEmissionGroups(self: *TypeResolver, perm_alloc: *Sand) ClassificationResult {
+pub fn classifyTypeEmissionGroups(self: *TypeResolver, classif: *EmissionClassification, perm_alloc: *Sand) void {
     var tl: usize = self.registry.types_len;
 
     var po_raw = alloc_mod.sandAlloc(perm_alloc, 1 * tl, 1) catch unreachable;
@@ -833,9 +838,9 @@ pub fn classifyTypeEmissionGroups(self: *TypeResolver, perm_alloc: *Sand) Classi
     // P4 (single classification pass): the three emission groups as maps —
     // pointer-only (E1), needs-definition (E8/E9/E11 via
     // `classificationNeedsDef`) and shared-header (E2/E3'/E5/E6 seeds). The
-    // emission-time finalize (E4 + post-snapshot registrations; step 2,
-    // `classifyTypeEmissionFinalize`) completes both rule sets where the data
-    // exists; the E7 closure runs here and again in step 2 (one helper,
+    // boundary completion (E4 + full-registry walk; `classifyTypeEmissionFinalize`,
+    // at `phase_EmissionClassification`) completes both rule sets where the data
+    // exists; the E7 closure runs here and again at the boundary (one helper,
     // monotone).
     var po_map = hash_mod.u32ToU32MapInitCap(perm_alloc, tl);
     var nd_map = hash_mod.u32ToU32MapInitCap(perm_alloc, tl);
@@ -882,7 +887,9 @@ pub fn classifyTypeEmissionGroups(self: *TypeResolver, perm_alloc: *Sand) Classi
         var cnl: []const u8 = "\n"; pal_mod.markerWrite(cnl);
     }
 
-    return ClassificationResult{ .pointer_only = po_map, .needs_def = nd_map, .shared = sh_map };
+    classif.pointer_only_map = po_map;
+    classif.needs_def_map = nd_map;
+    classif.shared_set = sh_map;
 }
 
 // P4 (emitter sanitization, single classification pass): the eight
@@ -960,20 +967,47 @@ fn classificationSharedClosure(reg: *TypeRegistry, shared: *hash_mod.U32ToU32Map
     }
 }
 
-// P4 step 2 (operator amendment B1 + registration-timing discovery): the
-// emission-time FINALIZE of the same classification mechanism, called by the
-// emitter at the point the remaining inputs exist — (a) `needed_tuple_set`
-// (LIR-derived hoisted temps / globals, collected by `collectNeededTuples` in
-// `phase_C89Emission`) and (b) types registered AFTER the step-1 snapshot
-// (`front_resolution`/sema/lowering call `typeRegistryGetOrCreate*`; the old
-// emitter's `shouldSkipTypeEmission`/`computeSharedSet` evaluated their rules
-// LIVE at emission and covered them via the po-map fallthrough — a type
-// absent from `po` counts as value-embedding/shared). Re-applies the SAME
-// rule helpers (idempotent) over the current registry: needs-definition,
-// shared seeds (is_clsv = po MAP MEMBERSHIP), the needed-tuple shared seed,
-// and the shared closure. One copy of each rule; this is its second
-// application where the data is complete.
-pub fn classifyTypeEmissionFinalize(reg: *TypeRegistry, shared: *hash_mod.U32ToU32Map, po: *hash_mod.U32ToU32Map, nd: *hash_mod.U32ToU32Map, needed: *hash_mod.U32ToU32Map) void {
+// P4 fix round 2: collect every tuple type that holds a runtime value (a
+// hoisted temp or a global); tuple typedefs are emitted only for these.
+// Registry-only print-args tuples must not produce C (the 4-MD5 single-file
+// dumps are pinned). Moved verbatim from `c89_emit.zig` — it is a pure
+// registry walk (Decision-vs-spelling: the decision belongs to the
+// classification boundary, not the emitter).
+pub fn collectNeededTuples(reg: *TypeRegistry, set: *hash_mod.U32ToU32Map, tid: u32) void {
+    if (@intCast(usize, tid) >= reg.types_len) return;
+    var ty = reg.types_items[@intCast(usize, tid)];
+    if (ty.kind != TypeKind.tuple_type) return;
+    if (hash_mod.u32ToU32MapGet(set, tid) != null) return;
+    hash_mod.u32ToU32MapPut(set, tid, @intCast(u32, 1));
+    var tup = reg.tup_items[@intCast(usize, ty.payload_idx)];
+    var i: usize = @intCast(usize, 0);
+    while (i < @intCast(usize, tup.elems_count)) : (i += 1) {
+        var et = reg.xt_items[@intCast(usize, tup.elems_start) + i];
+        if (@intCast(usize, et) < reg.types_len) {
+            if (reg.types_items[@intCast(usize, et)].kind == TypeKind.tuple_type) collectNeededTuples(reg, set, et);
+        }
+    }
+}
+
+// P4 fix round 2: the boundary COMPLETION step of the classification — called
+// by `phase_EmissionClassification` (backend-neutral, between `phase_LIRLowering`
+// and `phase_C89Emission`), NEVER by the emitter (Decision-vs-spelling rule:
+// a helper invoked at emit time whose output selects between semantics is
+// forbidden). At the boundary all inputs exist: the full registry (types
+// registered after the resolution-time step are included — `front_resolution`/
+// sema/lowering call `typeRegistryGetOrCreate*`) and `needed_tuple_set` (the E4
+// seed, LIR-derived, collected by `collectNeededTuples` at the same boundary).
+// Re-applies the SAME rule helpers (idempotent) over the full registry:
+// needs-definition, shared seeds (is_clsv = po MAP MEMBERSHIP — the E1/E2
+// snapshot semantics: a type absent from `po` counts as value-embedding), the
+// needed-tuple shared seed, and the shared closure. One copy of each rule.
+// The former emit-time invocation (the P4 in-flight late-type patch) is
+// deleted; this walk replaces it and completes `classifyTypeEmissionGroups`.
+pub fn classifyTypeEmissionFinalize(reg: *TypeRegistry, classif: *EmissionClassification) void {
+    var shared = &classif.shared_set;
+    var po = &classif.pointer_only_map;
+    var nd = &classif.needs_def_map;
+    var needed = &classif.needed_tuple_set;
     var ti: u32 = @intCast(u32, 0);
     while (@intCast(usize, ti) < reg.types_len) : (ti += 1) {
         var ty = reg.types_items[@intCast(usize, ti)];

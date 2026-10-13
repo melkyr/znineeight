@@ -115,9 +115,11 @@ pub const CompilerContext = struct {
     call_arg_types: hash_mod.U32ToU32Map,
     call_param_map: hash_mod.U32ToU32Map,
     comptime_folds: ce_mod.ComptimeFoldTable,
-    // P4: the resolver classification's three emission groups (filled in
-    // `phase_TypeResolution`, consumed by `phase_C89Emission`).
-    cls: type_resolver.ClassificationResult,
+    // P4 fix round 2: the completed emission classification (shared_set /
+    // pointer_only_map / needs_def_map / needed_tuple_set) — filled by the
+    // resolver-owned mechanism (`phase_TypeResolution` + the pre-emit
+    // `phase_EmissionClassification` boundary), read by `phase_C89Emission`.
+    emission_classif: type_resolver.EmissionClassification,
     global_decls: lir_mod.GlobalDeclArrayList,
 
     exported: hash_mod.U64ToU32Map,
@@ -310,8 +312,16 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
      var call_arg_types = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
      var call_param_map = hash_mod.u32ToU32MapInit(&compiler_alloc.module);
      var comptime_folds = ce_mod.comptimeFoldTableInitSized(&compiler_alloc.module, @intCast(usize, fold_hint));
-     // P4: classification placeholder (filled in `phase_TypeResolution`).
-     var cls_init: type_resolver.ClassificationResult = undefined;
+     // P4 fix round 2: the emission classification state (maps on the
+     // permanent arena; the three group maps are re-inited at capacity and
+     // assigned by `classifyTypeEmissionGroups`, `needed_tuple_set` is filled
+     // at the `phase_EmissionClassification` boundary).
+     var emission_classif = type_resolver.EmissionClassification{
+         .shared_set = hash_mod.u32ToU32MapInit(&compiler_alloc.permanent),
+         .pointer_only_map = hash_mod.u32ToU32MapInit(&compiler_alloc.permanent),
+         .needs_def_map = hash_mod.u32ToU32MapInit(&compiler_alloc.permanent),
+         .needed_tuple_set = hash_mod.u32ToU32MapInit(&compiler_alloc.permanent),
+     };
      var exported = hash_mod.u64ToU32MapInit(&compiler_alloc.emission);
      var suspending_fns = hash_mod.u64ToU32MapInit(&compiler_alloc.module);
      var frame_sizes = hash_mod.u64ToU32MapInit(&compiler_alloc.module);
@@ -355,7 +365,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         .parent_result_start = parent_result_start,
         .parent_result_count = parent_result_count,
         .async_layouts = async_layouts,
-        .cls = cls_init,
+        .emission_classif = emission_classif,
         .global_decls = lir_mod.globalDeclArrayListInit(&compiler_alloc.emission),
         // Task 9 fix round 3 (Q7): module-init dependency edges (referrer << 32
         // | dependency -> referencing decl) and the resulting stable emitted
@@ -407,6 +417,7 @@ fn runCompiler(ctx: *CompilerContext) void {
     }
     resolved_type_table.resolvedTypeTableClose(ctx.resolved_types); // flush + close dense resolved-type spill (no reads post-lowering)
     alloc_mod.sandReset(&ctx.alloc.module); // free the dead analysis arena at lowering→emission boundary
+    phase_EmissionClassification(ctx);
     phase_C89Emission(ctx);
     alloc_mod.checkCombinedPeak(ctx.alloc);
     if ((ctx.cli.warnings_as_errors or ctx.cli.warn_error) and diag_mod.diagnosticCollectorWarningCount(ctx.diag) > 0) {
@@ -573,11 +584,9 @@ fn phase_TypeResolution(ctx: *CompilerContext) void {
     // the registration-time stored values with a fresh auto-increment cascade;
     // an unfoldable initializer or a duplicate tag is a clean ERR_3055.
     type_resolver.enumReevaluateAll(ctx.store, ctx.typereg, ctx.symbol_reg, ctx.interner, ctx.module_reg, ctx.diag);
-    var ptr_grp = type_resolver.classifyTypeEmissionGroups(&tr, &ctx.alloc.permanent);
-    // P4: the single classification pass — three emission groups (pointer-only /
-    // needs-definition / shared-header; the shared group's needed-tuple seed is
-    // completed at emission time via `classifyTypeEmissionSharedTuples`).
-    ctx.cls = ptr_grp;
+    // P4: the resolution-time classification step (E1 snapshot + groups);
+    // completed at the pre-emit `phase_EmissionClassification` boundary.
+    type_resolver.classifyTypeEmissionGroups(&tr, &ctx.emission_classif, &ctx.alloc.permanent);
     if (mods.len > @intCast(usize, 0) and mods[0].ast_root != @intCast(u32, 0)) {
         var tr2 = ast_mod.astStoreNodeAt(ctx.store, mods[0].ast_root);
         if (tr2.kind == AstKind.module_root) {
@@ -1190,11 +1199,39 @@ fn moduleIdForBasename(mods: []mr_mod.ModuleEntry, interner: *StringInterner, ba
     return @intCast(u32, 0xFFFFFFFF);
 }
 
+// P4 fix round 2: the backend-neutral pre-emit classification boundary —
+// between `phase_LIRLowering` and `phase_C89Emission`, BEFORE any backend
+// runs (the Decision-vs-spelling rule: the emitter never decides; classification
+// completes HERE). Drives the resolver-owned mechanism: `collectNeededTuples`
+// over the LIR hoisted inventory + module globals (the classification inputs
+// that only exist after lowering), then `classifyTypeEmissionFinalize` — the
+// full-registry completion walk (needed-tuple shared seed E4 included). No
+// marker emitted: the `--markers` stream stays byte-identical (placement-only
+// change; the phase reuses the LIR read view exactly as `phase_C89Emission`'s
+// reachability walk does).
+fn phase_EmissionClassification(ctx: *CompilerContext) void {
+    lir_stream.lirStreamBeginRead(&ctx.lir_stream, &ctx.alloc.emission);
+    var ec_fi: usize = @intCast(usize, 0);
+    while (ec_fi < ctx.lir_slots.len) : (ec_fi += @intCast(usize, 1)) {
+        var ec_fn = lir_stream.lirStreamReadFunction(&ctx.lir_stream, ctx.lir_slots.items[ec_fi], &ctx.alloc.lir_read);
+        var ec_hi: usize = @intCast(usize, 0);
+        while (ec_hi < ec_fn.hoisted_temps.len) : (ec_hi += @intCast(usize, 1)) {
+            type_resolver.collectNeededTuples(ctx.typereg, &ctx.emission_classif.needed_tuple_set, ec_fn.hoisted_temps.items[ec_hi].type_id);
+        }
+    }
+    lir_stream.lirStreamEndRead(&ctx.lir_stream);
+    var ec_gi: usize = @intCast(usize, 0);
+    while (ec_gi < ctx.global_decls.len) : (ec_gi += @intCast(usize, 1)) {
+        type_resolver.collectNeededTuples(ctx.typereg, &ctx.emission_classif.needed_tuple_set, ctx.global_decls.items[ec_gi].type_id);
+    }
+    type_resolver.classifyTypeEmissionFinalize(ctx.typereg, &ctx.emission_classif);
+}
+
 fn phase_C89Emission(ctx: *CompilerContext) void {
     var p_msg: []const u8 = "C\n"; pal.markerWrite(p_msg);
     if (!ctx.cli.dump_c89 and !ctx.cli.output_dir_set) return;
     var mangler: c89_mod.NameMangler = undefined;
-    var mangler_hint: usize = ctx.lir_slots.len + ctx.global_decls.len + ctx.cls.pointer_only.count + @intCast(usize, 32);
+    var mangler_hint: usize = ctx.lir_slots.len + ctx.global_decls.len + ctx.emission_classif.pointer_only_map.count + @intCast(usize, 32);
     mangler = c89_mod.nameManglerInit(ctx.interner, &ctx.alloc.emission, mangler_hint);
     mangler.exported = &ctx.exported;
     var emitter: c89_mod.C89Emitter = undefined;
@@ -1208,9 +1245,7 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
         &ctx.alloc.scratch,
         &ctx.alloc.emission,
         &ctx.error_code_registry,
-        ctx.cls.pointer_only,
-        ctx.cls.needs_def,
-        ctx.cls.shared,
+        &ctx.emission_classif,
         ctx.cli.safe_checks,
     );
     emitter.module_reg = ctx.module_reg;
@@ -1246,9 +1281,6 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
         while (ts_tti < ts_fn.hoisted_temps.len) : (ts_tti += @intCast(usize, 1)) {
             var ts_hty = ts_fn.hoisted_temps.items[ts_tti];
             pruneTypeMarkByValue(&ref_edges, ctx.typereg, &type_visited, ts_src, ts_hty.type_id);
-            // Task 4 (z98-print-formatting): tuple types that hold a runtime
-            // value get a C typedef; registry-only print-args tuples do not.
-            c89_mod.collectNeededTuples(ctx.typereg, &emitter.needed_tuple_set, ts_hty.type_id);
         }
         if (ts_fn.return_type < @intCast(u32, ctx.typereg.types_len)) {
             pruneTypeMarkByValue(&ref_edges, ctx.typereg, &type_visited, ts_src, ts_fn.return_type);
@@ -1344,7 +1376,6 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
         var gt_g = ctx.global_decls.items[gt_i];
         if (gt_g.type_id >= @intCast(u32, ctx.typereg.types_len)) continue;
         var gt_ty = ctx.typereg.types_items[@intCast(usize, gt_g.type_id)];
-        c89_mod.collectNeededTuples(ctx.typereg, &emitter.needed_tuple_set, gt_g.type_id);
         if (gt_ty.name_id != @intCast(u32, 0) and gt_ty.name_id == gt_g.name_id) continue;
         pruneTypeMarkByValue(&ref_edges, ctx.typereg, &type_visited, gt_g.module_id, gt_g.type_id);
     }
@@ -1374,8 +1405,9 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
     emitter.reachable = reachable;
 
     if (ctx.cli.output_dir_set) {
-        // P4: the classification maps are loaded at `c89EmitterInit` from
-        // `ctx.cls` (the former `pointer_only_ids` fill loop is gone).
+        // P4 fix round 2: the classification state (`ctx.emission_classif`) is
+        // completed at the pre-emit `phase_EmissionClassification` boundary and
+        // loaded at `c89EmitterInit` (the emitter reads only).
         var sorted: [*]u32 = c89_mod.tstTopologicalSort(ctx.typereg, &ctx.alloc.emission);
         var hpath: [512]u8 = undefined;
         var hp: usize = @intCast(usize, 0);
