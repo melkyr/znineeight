@@ -231,3 +231,124 @@ STDLIB GATE OK
 - **O6 (tooling, disclosed):** `fastedit` crashed once (`undefined is not an object (evaluating 'code.matchAll')`) — chunked `edit` used (P3 precedent); one anchor-line transcription typo (`*[*]u32` → `[*][*]u32` on `growWpEdges`) was caught in the diff preview and fixed immediately (no build ever ran on it).
 - **O7 (pre-existing, report-only):** named tuple types get no typedef in the multi-file path (no shared seed covers `name_id != 0` tuples and `emitModuleHeaderFile` handles only {struct,tu,union,pu,enum,es}); they are emitted only in the single-file path (2a). Unchanged by P4 (membership-preserving), noted for the whole-branch review.
 - **O8 (context):** the v97 committed seed's self-emission dump of the current `sf/src` differs from the P4 compiler's dump in typedef placement/ordering (e.g. named enums like `ErrorCode` land in the shared header vs module headers) — that is the ACCUMULATED P1–P4 emission evolution vs the pre-milestone seed, not a P4 delta; the P4 gate surfaces (8 example pins 0/8, corpus byte-identical, goldens 5/5, hop1==hop2) are clean.
+
+---
+
+## P4 fix round 2 — placement correction (Decision-vs-spelling)
+
+**Status:** DONE (battery all green; pins 0/8; corpus 0 movers; markers byte-identical). Operator ruling 2026-10-12: the landed P4 shape (emitter-invoked `classifyTypeEmissionFinalize` at `c89_emit.zig:1140`, result maps on `C89Emitter`, `collectNeededTuples` in `c89_emit.zig`) is a **Decision-vs-spelling deviation** — "a helper invoked at emit time whose output selects between semantics is FORBIDDEN; its decision must be recorded at its owning phase." This round corrects PLACEMENT only; zero decision-logic change (every rule body verbatim; I.2 map E1–E11 outputs identical — proven by pins 0/8 + corpus byte-identical).
+
+### Target shape (controller-approved; plan P4 fix round 2, `task-P4r2-brief.md`)
+
+1. New backend-neutral phase `phase_EmissionClassification(ctx)` in `sf/src/main.zig`, between `phase_LIRLowering` and `phase_C89Emission` — classification completes here, BEFORE any backend runs.
+2. `type_resolver.EmissionClassification{ shared_set, pointer_only_map, needs_def_map, needed_tuple_set }` (plain Z98; the brief's exact fields) on `CompilerContext`, maps on the permanent arena. `C89Emitter` holds `classif: *EmissionClassification` — READS only.
+3. `classifyTypeEmissionFinalize` invocation moves OUT of `emitTypePasses` into the boundary step. `emitTypePasses` retains ZERO classification calls.
+4. `collectNeededTuples` moves to `sf/src/type_resolver.zig` (verbatim); its two call loops (formerly `main.zig:1251/:1347`, mid-`phase_C89Emission`) run in the boundary step over the same sources (`LirFunction.hoisted_temps` via `ctx.lir_stream`/`ctx.lir_slots`, and `ctx.global_decls`) — no emitter data needed.
+5. The late-type "snapshot whitelist" workaround (the P4 in-flight emit-time patch, I.5) is deleted: the finalize walks the FULL registry at the boundary where all types exist.
+6. Placement change only — zero decision-logic change; pins 0/8 expected.
+
+### Design decisions (Investigate, read-only before edits)
+
+- **Placement-only reading (points 3+5+6).** `classifyTypeEmissionGroups` stays at `phase_TypeResolution` with its rules VERBATIM (the E1 po snapshot is the recorded decision: "a type absent from `po` counts as value-embedding"; recomputing po at the boundary would flip late types ve→po and move 2a/2b placement — NOT decision-identical, so po stays resolution-time per the amended plan's "`classifyTypeEmissionGroups` (resolution-time) plus `classifyTypeEmissionFinalize` completed at … boundary"). The finalize body is verbatim (same nd/sh/tuple/closure rules). What is DELETED is the emit-time invocation — the in-flight late-type patch — and its "re-application at emit time" framing; the boundary walk replaces it (the I.5 workaround narrative dies with the emit-time call).
+- **B1/needed-tuple placement (unchanged decision):** `needed_tuple_set` is collected at the boundary from LIR/ctx — the same inputs and the same `collectNeededTuples` code as the former mid-emission loops. The finalize sees the complete set exactly as the old emit-time finalize did.
+- **Why the boundary walk is decision-identical to the old emit-time walk:** the registry is frozen between the boundary and the old finalize point (`emitTypePasses` top) — `phase_C89Emission`'s preamble (`c89EmitterInit`, `errorCodeRegistryFinalize`, the reachability walk `pruneTypeMarkByValue` — pure walk, no registrations — and the globals loop) registers nothing; emission-time `typeRegistryGetOrCreatePtr` sites (`c89_emit.zig:2632`, the P6 getTemp re-derivation) fire after BOTH old and new finalize points and produce only unnamed ptr types (needs_def=false → never emitted). The nd/sh/closure rules are pure functions of registry state + po-map membership + needed_tuple_set → identical maps.
+- **`is_clsv = po MAP MEMBERSHIP`** (absent = clsv) stays verbatim — it IS the E2 decision given E1's snapshot semantics (not a workaround).
+- **No phase marker** on `phase_EmissionClassification` — keeps the `--markers` stream byte-identical (placement-only; documented in the fn comment).
+
+### Implement (per file)
+
+**`sf/src/type_resolver.zig`:**
+- `ClassificationResult` → `EmissionClassification{ shared_set, pointer_only_map, needs_def_map, needed_tuple_set }` (the brief's exact shape; home = the classification owner).
+- `classifyTypeEmissionGroups(self, classif: *EmissionClassification, perm_alloc) void` — body verbatim (PO algorithm + CLS markers + group maps + closure); the return becomes three field assignments into `classif`.
+- `classifyTypeEmissionFinalize(reg, classif: *EmissionClassification) void` — body verbatim (local aliases `shared/po/nd/needed` over the struct maps); comment reframed (boundary completion; the emit-time patch deleted).
+- `collectNeededTuples(reg, set, tid)` — verbatim move from `c89_emit.zig:5659` (P4's version).
+
+**`sf/src/c89_emit.zig`:**
+- `C89Emitter`: the four map fields (`pointer_only_map`/`needs_def_map`/`shared_set`/`needed_tuple_set`) → `classif: *type_resolver.EmissionClassification` (reads only).
+- `c89EmitterInit`: the three map parameters + the internal `needed_tuple_set` init → the single `classif` pointer.
+- All 11 map reads rewired `emitter.classif.*` (2a/2b filters `:1170-:1195`, `emitModuleHeaderFile:2207-2208`, `emitNeededTupleRec/Types/At`).
+- **DELETED:** the `type_resolver.classifyTypeEmissionFinalize(...)` call at `emitTypePasses` (was `:1140`) + its comment — `emitTypePasses` now has ZERO classification calls.
+- **DELETED:** `collectNeededTuples` (moved to `type_resolver.zig`).
+
+**`sf/src/main.zig`:**
+- `CompilerContext.cls: ClassificationResult` → `emission_classif: type_resolver.EmissionClassification` (4 maps init'd on `&compiler_alloc.permanent`).
+- NEW `phase_EmissionClassification(ctx)` (between `phase_LIRLowering` and `phase_C89Emission`; `runCompiler` call inserted): `lirStreamBeginRead` → per-slot `lirStreamReadFunction(…, &ctx.alloc.lir_read)` → `collectNeededTuples` per hoisted temp → `lirStreamEndRead`; then `collectNeededTuples` per `ctx.global_decls` entry; then `classifyTypeEmissionFinalize(ctx.typereg, &ctx.emission_classif)`. (BeginRead/EndRead pair is safe in both spill backends: ram `spillClose` only clears `opened`, disk closes/reopens.)
+- `phase_TypeResolution`: `classifyTypeEmissionGroups(&tr, &ctx.emission_classif, &ctx.alloc.permanent)` (the `ptr_grp` plumbing gone).
+- `phase_C89Emission`: the two `collectNeededTuples` calls removed (their loops keep the reachability duties); `c89EmitterInit(…, &ctx.emission_classif, …)`; `mangler_hint` reads `ctx.emission_classif.pointer_only_map.count`.
+
+**`sf/docs/tech_docs/`:** `03_type_resolution.md`, `08_c89_emission.md`, `09_pipeline_orchestration.md`, `INDEX.md` updated (`[updated: 2026-10-12 — P4 fix round 2 …]` notes; `EmissionClassification` rows; the 11-phase flow; `collectNeededTuples` → `type_resolver.zig` in INDEX Table B).
+
+### Evidence (command + observed output per claim)
+
+**1. The moved call — `emitTypePasses` retains ZERO classification calls:**
+```
+$ grep -rn "classifyTypeEmission\|collectNeededTuples" sf/src/c89_emit.zig
+(no output)
+$ grep -rn "classifyTypeEmissionFinalize" sf/src/*.zig
+sf/src/main.zig:1227:    type_resolver.classifyTypeEmissionFinalize(ctx.typereg, &ctx.emission_classif);
+sf/src/type_resolver.zig:1006:pub fn classifyTypeEmissionFinalize(...)
+```
+The only invocation is `phase_EmissionClassification` (main.zig:1227) — the emitter never calls it.
+
+**2. The boundary phase** (`sf/src/main.zig:1198-1228`): `phase_EmissionClassification` — `collectNeededTuples` loops (LIR hoisted temps + `ctx.global_decls`) + `classifyTypeEmissionFinalize`; called from `runCompiler` between `phase_LIRLowering` and `phase_C89Emission` (`main.zig:410`).
+
+**3. The snapshot-workaround deletion:** the emit-time finalize call + comment (P4's "Re-applies … at emission (step 2 …)" block) is deleted from `c89_emit.zig` (grep above: 0 hits in `c89_emit.zig`); the finalize body walks `0..reg.types_len` at the boundary (full registry) — `type_resolver.zig:1006`. `emitTypePasses` (`c89_emit.zig:1107+`) contains only the po/shared/needs_def map filters.
+
+**4. Decision-equivalence spot-checks:** the I.2 rules are verbatim (`classificationNeedsDef`/`classificationIsSyntheticEmittable`/`classificationSharedClosure` untouched; `collectNeededTuples` body byte-move; the finalize body = local aliases + unchanged loop). The decisive checks are the gates: **pins 0/8** (below) and **corpus byte-identical** — the emitted C for every corpus dir and the 4 pin programs is bit-for-bit the P2/P3/P4-recorded output.
+
+**5. Emitter reads only:** `grep -c "emitter.classif\." sf/src/c89_emit.zig` → `11`; `grep -n "emitter\.pointer_only_map\|emitter\.shared_set\|emitter\.needs_def_map\|emitter\.needed_tuple_set" sf/src/c89_emit.zig` → 0 hits.
+
+### Runtime battery (FULL; every claim = command + observed output)
+
+Final binary `/tmp/opencode_p4/r2a/zig1_5_clean` from `bash scripts/seed/build_from_seed.sh release/seed/zig1-seed.tgz /tmp/opencode_p4/r2a` (repo root).
+
+**1. Seed rebuild + two-hop closure:**
+```
+[seed] hop1 binary md5: 9ced323b892fa3e1bc4eb0b1598a416a
+[seed] hop2 binary md5: 9ced323b892fa3e1bc4eb0b1598a416a
+[seed] two-hop closure OK: hop1 == hop2 == 9ced323b892fa3e1bc4eb0b1598a416a
+=== [seed] Done: /tmp/opencode_p4/r2a ===
+```
+Fixed point `fd6c32cb3039cbf26f76a6372a3e3c32` → **`9ced323b892fa3e1bc4eb0b1598a416a`** (moved — `sf/src` changed; hop1==hop2 proven). Seed NOT rotated.
+
+**2. Corpus classify (vs frozen Appendix A):**
+```
+$ bash scripts/corpus/classify /tmp/opencode_p4/r2a/zig1_5_clean /tmp/opencode_p4/corpus_r2.txt
+wrote /tmp/opencode_p4/corpus_r2.txt: 1124 dirs
+$ md5sum /tmp/opencode_p4/corpus_r2.txt /tmp/task0_work/corpus_baseline.txt
+518eca1a9b5d3e1cc5a48abce214abd8  /tmp/opencode_p4/corpus_r2.txt
+518eca1a9b5d3e1cc5a48abce214abd8  /tmp/task0_work/corpus_baseline.txt
+$ diff → rc=0, 0 lines
+```
+**1124 = 950 OK / 58 GREEN / 116 FAIL / 0 ICE / 0 CRASH — byte-identical. 0 class movers.**
+
+**3. Runtime goldens (5/5 byte-identical):** builds 13924/19277/15596/14789 lines, 0 gcc errors; gol `fcbf7e7cead5082f0a8caadd5a8f0ff9`, lisp `b3d9f8974da24ddbf9d389f3d7d97322`, json `8bda3d5a1ec07d14a301bc343df32bf8`, mud session rc=0 server `66c8f0abb926cca7baf9a0d1692ab318` / client `93147d0f0bbd983a9d844fea8b7a6fa7` — all match the frozen values.
+
+**4. mi_matrix anchors (25 + oob):** `run_fixtures.sh /tmp/opencode_p4/r2a/zig1_5_clean <25 dirs>` → `run_fixtures: 25 PASS / 0 FAIL over 25 dirs`; oob trap `slice_index_field_store_oob_xmod` — dump/build rc=0, run **rc=133**, stdout 0 bytes md5 `d41d8cd98f00b204e9800998ecf8427e` = `expected.txt` (`expected.rc`=133). **MATCH.**
+
+**5. `examples/z98/*/` matrix:** build **26/26** (dump=0, build=0; `.c` counts identical to §1.4: 7/6/6/7/6/7/9/9/9/14/15/15/15/8/6/9/6/6/21/20/6/6/7/7/25/38); run **26/26** rc + stdout md5_16 identical to the §1.4 table (same 26 values as the P4 round).
+
+**6. Stdlib gate:** `run_fixtures: 285 PASS / 0 FAIL over 285 dirs` / `STDLIB GATE OK`.
+
+**7. The 8 `--dump-c89` pins (old = P2-fix-round-1/P3/P4 values → new):**
+
+| entry | mode | old | P4 fix round 2 | delta |
+|---|---|---|---|---|
+| mud_server | `-fsafe` | `8b3c3d72ab59a9ae3c971c6a7759c7c0` | `8b3c3d72ab59a9ae3c971c6a7759c7c0` | 0 |
+| mud_server | `-ffast` | `fa346108ed00d03a037c2f9331d3bdf8` | `fa346108ed00d03a037c2f9331d3bdf8` | 0 |
+| game_of_life | `-fsafe` | `1b5d49b141ee9c664a82c270454bd75b` | `1b5d49b141ee9c664a82c270454bd75b` | 0 |
+| game_of_life | `-ffast` | `01a4e2265b33c97a8ca6ff3dfa551231` | `01a4e2265b33c97a8ca6ff3dfa551231` | 0 |
+| lisp_interpreter_curr | `-fsafe` | `8e5f2bc288d1dc75d7aee284cb35c291` | `8e5f2bc288d1dc75d7aee284cb35c291` | 0 |
+| lisp_interpreter_curr | `-ffast` | `e3970e33ac09c8dfaa316d2d69bf61ec` | `e3970e33ac09c8dfaa316d2d69bf61ec` | 0 |
+| json_parser | `-fsafe` | `2a12d0aac24d5bcdd694f05e04a4f029` | `2a12d0aac24d5bcdd694f05e04a4f029` | 0 |
+| json_parser | `-ffast` | `24e0e812e7dffa5a43750135405ffe3f` | `24e0e812e7dffa5a43750135405ffe3f` | 0 |
+
+**Pin delta: 0/8.** Command per row: `zig1_5_clean <mode> --dump-c89 examples/z98/<entry>/main.zig 2>/dev/null | md5sum`.
+
+**8. `--markers` telemetry:** `zig1_5_clean --markers --dump-c89 examples/z98/game_of_life/main.zig` — stderr **3,436 marker lines / 38,378 B — byte-identical counts to the P4/P3 record** (no new phase marker by design); prefix histogram identical (`INT:new` 2005, `DC:k` 423, `FE:p` 240, `P` 195, `FWD:n=` 195, `RaD` 122, `MT` 86, `FE:` 69).
+
+### Observations (report-only)
+
+- **O9:** `phase_EmissionClassification` deliberately emits no phase marker (the `T\n`/`C\n` convention) — a marker would move the `--markers` stream (+1 line); placement-only wins. If telemetry visibility of the boundary is wanted later, add it as a telemetry-only change.
+- **O10:** the two `collectNeededTuples` call loops now walk the LIR a second time (the boundary walk is separate from `phase_C89Emission`'s reachability walk) — `lirStreamReadFunction` resets its dst arena per call, so no growth concern; measured marker/telemetry and memory gates unchanged.
+- O1–O8 above stand unchanged.
