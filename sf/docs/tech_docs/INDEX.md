@@ -240,6 +240,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `cancel` | std_async.zig |
 | `cancelAll` | std_async.zig |
 | `captureShadowShouldRedirect` | lower.zig |
+| `carrierFromFacts` | c89_plan.zig (P6-pre fix round 1: THE facts->carrier map — (32,1)->i32, (32,0)->u32, (64,1)->i64, (64,0)->u64; called by `deriveConstCarrier` only for fact-carryed (`width_bits != 0`) untyped materializations) |
 | `checkArgReturnIntFits` | lower.zig |
 | `checkCombinedPeak` | allocator.zig |
 | `checkFoldedIntFits` | lower.zig |
@@ -349,7 +350,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `depGraphFinalize` | symbol_registrator.zig |
 | `depGraphInit` | symbol_registrator.zig |
 | `dependEnsureCapacity` | type_resolver.zig |
-| `deriveConstCarrier` | c89_plan.zig (P6-pre: THE const-carrier derivation — semantic int facts (type/width/signedness/value) -> i32/u32/i64/u64 C carrier; the relocated `intConstTypeForValue` rule; filled into `C89SpellPlan` at the `phase_EmissionClassification` boundary) |
+| `deriveConstCarrier` | c89_plan.zig (P6-pre fix round 1: THE carrier derivation — `deriveConstCarrier(reg, semantic_tid, value, width_bits, is_signed)`; hoisted-kind gate: `integer_literal_type` + `width_bits != 0` takes `carrierFromFacts` (the sign disambiguation lives on the LIR facts), bare untyped keeps the historical value rule (I32/U32/U64 — no i64 arm; the `:45-47` text preserved), `undefined_type` -> usize, else identity; filled into `C89SpellPlan` at the `phase_EmissionClassification` boundary) |
 | `detectNullGuard` | analyzer.zig |
 | `detectorVisit` | analyzer.zig |
 | `diagnosticArrayListAppend` | diagnostics.zig |
@@ -429,6 +430,8 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `emitInst` | c89_emit.zig |
 | `emitInst` | lower.zig |
 | `emitInt64Type` | c89_emit.zig |
+| `emitIntConst` | lower.zig (P6-pre fix round 1: typed-const + bare-untyped `int_const` emit — the facts are the carried temp result type's semantic width/signedness (TYPE_INT_LIT / non-int kinds give (0,0) via `typeWidthBitsForKind`)) |
+| `emitIntConstFacts` | lower.zig (P6-pre fix round 1: the `int_const` construction writing all four fact fields value/result/width_bits/is_signed) |
 | `emitMainDriver` | async_state_machine.zig |
 | `emitMainWrapper` | c89_emit.zig |
 | `emitModule` | c89_emit.zig |
@@ -500,6 +503,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `f64ArrayListEnsureCapacity` | growable_array.zig |
 | `f64ArrayListGetSlice` | growable_array.zig |
 | `f64ArrayListInit` | growable_array.zig |
+| `factCarrierOfTemp` | c89_emit.zig (P6-pre fix round 1: bounds-checked `d4_fcar` read — the planned carrier of a fact-carryed materialization; null for Class A bare untyped literals and typed consts) |
 | `faultIn` | c89_emit.zig |
 | `fclose` | pal.zig |
 | `feAppend` | type_registry.zig |
@@ -657,8 +661,8 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `lowerExprImpl` | lower.zig |
 | `lowerFieldStore` | lower.zig |
 | `lowerFn` | lower.zig |
-| `lowerFoldedIntConst` | lower.zig |
-| `lowerExactIntArg` | lower.zig (FB2: exact untyped integer expression -> value-chosen carrier i32/u32/i64/u64; shared by the print-argument literal route and the inferred-tuple construction arm; in-i32 returns TEMP_NONE, >64-bit reports `error[3000]`. P6-pre: the carrier derivation moved to `c89_plan.untypedIntCarrier` — lowering records the semantic width/signedness, the C carrier is planned at the boundary) |
+| `lowerFoldedIntConst` | lower.zig (P6-pre fix round 1: untyped arm records the exact value's semantic width/signedness on the int_const (temp TYPE_INT_LIT, `emitIntConstFacts`); typed arm unchanged (fit check + typed facts via `emitIntConst`); planner derives the C carrier at the boundary) |
+| `lowerExactIntArg` | lower.zig (FB2: exact untyped integer expression -> fact-carrying materialization const; shared by the print-argument literal route and the inferred-tuple construction arm; i32/signed class returns TEMP_NONE, >64-bit reports `error[3000]`. P6-pre fix round 1: FACTS ONLY — records (width_bits, is_signed) via `lowerUntypedIntFacts`; the materialization temp is TYPE_INT_LIT and the C carrier is derived by the planner at the boundary) |
 | `lowerLValueAddr` | lower.zig |
 | `lowerModuleInit` | lower.zig |
 | `lowerPackedChainAnalyze` | lower.zig |
@@ -674,6 +678,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `lowerSwitchCaseItemMemberValue` | lower.zig (D2: member name -> condition enum `member.value` / TU field index) |
 | `lowerSwitchCaseItemValue` | lower.zig (D2/FX1: int/char/`bool` literal, `enum_literal`, `error_literal`, `field_access`, `ident_expr` const/member; `?u64`) |
 | `lowerTupleElemRead` | lower.zig (FB: read tuple element `ord` of a base temp via the shared `load_field`; array elements decay to `*elem`) |
+| `lowerUntypedIntFacts` | lower.zig (P6-pre fix round 1: the sign-collision disambiguator — exact ComptimeInt -> semantic (width_bits, is_signed) via the shared `comptimeIntFitsType` windows (I32/U32/I64/U64 narrowest fit, exactly `comptimeIntUntypedType`'s classes); false outside the 64-bit window -> `error[3000]`) |
 | `lowererInit` | lower.zig |
 | `main` | ast_dump_main.zig |
 | `main` | main.zig |
@@ -1142,7 +1147,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `spellInstOrd` | c89_plan.zig (P6-pre: const-id encoding — flattened (bb,ii) inst ordinal, stable across the emit-time `lirOptRun`) |
 | `spellPlanCarrier` | c89_plan.zig (P6-pre: spell-time side-table read (fn-key, inst-ordinal) -> planned carrier) |
 | `spellPlanInit` | c89_plan.zig (P6-pre: `C89SpellPlan` init at the `phase_EmissionClassification` boundary) |
-| `spellPlanPlanFn` | c89_plan.zig (P6-pre: per-fn boundary fill — `deriveConstCarrier` for every inst kind that is/becomes an `int_const`) |
+| `spellPlanPlanFn` | c89_plan.zig (P6-pre fix round 1: per-fn boundary fill — `deriveConstCarrier` for every inst kind that is/becomes an `int_const`; the `.int_const` arm passes the record's `width_bits`/`is_signed`, the fold-capable kinds pass 0/0) |
 | `spillBackendFor` | spill_store.zig |
 | `spillReadAt` | spill_store.zig |
 | `spillSeek` | spill_store.zig |
@@ -1338,7 +1343,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `u64ToU32MapPut` | util/hash.zig |
 | `unAppend` | type_registry.zig |
 | `unrAppend` | type_registry.zig |
-| `untypedIntCarrier` | c89_plan.zig (P6-pre: THE untyped-exact-int i32/u32/i64/u64 carrier derivation entry (moved out of `lowerExactIntArg`/lowering); width/signedness semantics shared with sema via `comptimeIntUntypedType`) |
+| `untypedIntCarrier` | c89_plan.zig (P6-pre: the untyped-exact-int carrier derivation entry — **deleted (P6-pre fix round 1)**: replaced by fact recording (`lowerUntypedIntFacts`) + boundary derivation (`deriveConstCarrier`/`carrierFromFacts`)) |
 | `vaListArgTemp` | lower.zig |
 | `validateLocalEnum` | type_resolver.zig |
 | `validateSignatureType` | analyzer.zig |

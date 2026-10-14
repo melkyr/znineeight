@@ -11,7 +11,6 @@
 const TypeRegistry = @import("type_registry.zig").TypeRegistry;
 const TypeKind = @import("type_registry.zig").TypeKind;
 const type_mod = @import("type_registry.zig");
-const ce_mod = @import("comptime_eval.zig");
 const LirFunction = @import("lir.zig").LirFunction;
 const hash_mod = @import("util/hash.zig");
 const Sand = @import("allocator.zig").Sand;
@@ -29,41 +28,30 @@ pub const C89SpellPlan = struct {
     fn_cap: usize,
 };
 
-// The carrier derivation (moved from `intConstTypeForValue`, c89_emit.zig —
-// the emit-time deciding helper this planner replaces). `semantic_tid` is the
-// const's LIR semantic type (its hoisted temp type today; P6 later adds
-// explicit int-const width/signedness fields). Rules (decision-identical to
-// the historical emitter helper): an UNTYPED (`integer_literal_type`) const
-// takes the value-chosen carrier at the historical thresholds (i32 at
-// v <= 2^31-1, u32 at v <= 2^32-1, else u64 — there is no i64 arm; negative
-// exact values are typed at lowering, see `untypedIntCarrier`); an
-// `undefined_type` const materializes as usize; every other const keeps its
-// semantic type (identity — the typedef spelling is `typeCName`).
-pub fn deriveConstCarrier(reg: *TypeRegistry, semantic_tid: u32, value: u64) u32 {
+// THE derivation (facts -> carrier). width_bits == 0 is never passed here
+// (the caller keeps the historical value rule for that class).
+fn carrierFromFacts(width_bits: u8, is_signed: u8) u32 {
+    if (width_bits == @intCast(u8, 32)) {
+        if (is_signed != @intCast(u8, 0)) { return type_mod.TYPE_I32; }
+        return type_mod.TYPE_U32;
+    }
+    if (is_signed != @intCast(u8, 0)) { return type_mod.TYPE_I64; }
+    return type_mod.TYPE_U64;
+}
+
+pub fn deriveConstCarrier(reg: *TypeRegistry, semantic_tid: u32, value: u64, width_bits: u8, is_signed: u8) u32 {
     var hty = reg.types_items[@intCast(usize, semantic_tid)];
     if (hty.kind == TypeKind.integer_literal_type) {
+        // UNTYPED hoisted: a fact-carryed exact-value materialization takes the
+        // facts (the sign disambiguation lives here); a bare untyped literal
+        // keeps the historical value rule (I32/U32/U64 — no i64 arm).
+        if (width_bits != @intCast(u8, 0)) { return carrierFromFacts(width_bits, is_signed); }
         if (value <= @intCast(u64, 2147483647)) { return type_mod.TYPE_I32; }
         if (value <= @intCast(u64, 4294967295)) { return type_mod.TYPE_U32; }
         return type_mod.TYPE_U64;
     }
     if (semantic_tid == type_mod.TYPE_UNDEFINED) { return type_mod.TYPE_USIZE; }
     return semantic_tid;
-}
-
-// The i32/u32/i64/u64 carrier derivation for an UNTYPED exact integer
-// (moved out of `lowerExactIntArg`/lowering — lower.zig keeps zero carrier
-// rule code). The width/signedness semantics of an exact `ComptimeInt`
-// (negative -> signed, non-negative -> narrowest fit; null outside the 64-bit
-// window) is the shared comptime primitive also used by sema's untyped
-// binding typing; the C-carrier entry is the planner's. Callers at lowering
-// record the result as the const's semantic width/signedness on the LIR temp
-// (spec §4 "Lowerer-carried decisions"); the C typedef carrier is derived
-// from those facts at the boundary and read from the side table at spell
-// time. Sign evidence (why value alone is insufficient): the u64 bit pattern
-// cannot distinguish e.g. ComptimeInt -3000000000 from the literal
-// 18446744070697051616 (both 0xFFFFFFFF4D9F2FFF) whose carriers differ.
-pub fn untypedIntCarrier(v: ce_mod.ComptimeInt) ?u32 {
-    return ce_mod.comptimeIntUntypedType(v);
 }
 
 // Const-id ordinal encoding: the flattened inst position in a fn's block
@@ -131,11 +119,15 @@ pub fn spellPlanPlanFn(plan: *C89SpellPlan, alloc: *Sand, reg: *TypeRegistry, fn
             var inst = bb.insts.items[ii];
             var result: u32 = @intCast(u32, 0xFFFFFFFF);
             var value: u64 = @intCast(u64, 0);
+            var ic_width: u8 = @intCast(u8, 0);
+            var ic_signed: u8 = @intCast(u8, 0);
             var plan_kind: u8 = @intCast(u8, 0);
             switch (inst) {
                 .int_const => |ic| {
                     result = ic.result;
                     value = ic.value;
+                    ic_width = ic.width_bits;
+                    ic_signed = ic.is_signed;
                     plan_kind = @intCast(u8, 1);
                 },
                 .binary => |b| { result = b.result; plan_kind = @intCast(u8, 1); },
@@ -153,7 +145,7 @@ pub fn spellPlanPlanFn(plan: *C89SpellPlan, alloc: *Sand, reg: *TypeRegistry, fn
                     }
                 }
                 if (ht != @intCast(u32, 0xFFFFFFFF)) {
-                    var carrier = deriveConstCarrier(reg, ht, value);
+                    var carrier = deriveConstCarrier(reg, ht, value, ic_width, ic_signed);
                     hash_mod.u32ToU32MapPut(&plan.fn_maps[fi], @intCast(u32, ord), carrier);
                 }
             }

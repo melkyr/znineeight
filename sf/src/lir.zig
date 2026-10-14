@@ -71,7 +71,7 @@ pub const LirInst = union(enum) {
     int_to_float: struct { value: u32, target: TypeId, result: u32 },
     ptr_to_int: struct { value: u32, result: u32 },
     int_to_ptr: struct { value: u32, target: TypeId, result: u32 },
-    int_const: struct { value: u64, result: u32 },
+    int_const: struct { value: u64, result: u32, width_bits: u8, is_signed: u8 },
     float_const: struct { value: f64, result: u32 },
     string_const: struct { string_id: u32, result: u32 },
      null_const: struct { result: u32 },

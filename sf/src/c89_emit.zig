@@ -566,9 +566,10 @@ fn resolveFieldAccess(writer: *BufferedWriter, registry: *TypeRegistry, interner
      fn_slots_start: usize,
      fn_slots_len: usize,
      spill_arena: *Sand,
-     d4_wtype: [*]u32,
-     d4_wflag: [*]u8,
-     d4_t2p: [*]u32,
+    d4_wtype: [*]u32,
+    d4_wflag: [*]u8,
+    d4_fcar: [*]u32,
+    d4_t2p: [*]u32,
       d4_dead: [*]u8,
       d4_max_temp: u32,
       d4_local: [*]u8,
@@ -648,6 +649,7 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
          .spill_arena = undefined,
          .d4_wtype = undefined,
          .d4_wflag = undefined,
+         .d4_fcar = undefined,
          .d4_t2p = undefined,
          .d4_dead = undefined,
          .d4_max_temp = @intCast(u32, 0),
@@ -2442,6 +2444,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     }
     var raw_t2p = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, 4) * max_temp, @intCast(usize, 4)) catch unreachable;
     var raw_wt = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, 4) * max_temp, @intCast(usize, 4)) catch unreachable;
+    var raw_fc = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, 4) * max_temp, @intCast(usize, 4)) catch unreachable;
     var raw_wf = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, 1) * max_temp, @intCast(usize, 1)) catch unreachable;
     var raw_rc = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, 4) * max_temp, @intCast(usize, 4)) catch unreachable;
     var raw_dd = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, 1) * max_temp, @intCast(usize, 1)) catch unreachable;
@@ -2452,6 +2455,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     var raw_pz = alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, 1) * max_temp, @intCast(usize, 1)) catch unreachable;
     var tid_to_pos = @ptrCast([*]u32, raw_t2p);
     var written_type = @ptrCast([*]u32, raw_wt);
+    var fact_carrier = @ptrCast([*]u32, raw_fc);
     var written_flag = @ptrCast([*]u8, raw_wf);
     var read_count = @ptrCast([*]u32, raw_rc);
     var dead_arr = @ptrCast([*]u8, raw_dd);
@@ -2464,6 +2468,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     while (tp < max_temp) : (tp += @intCast(u32, 1)) {
         tid_to_pos[@intCast(usize, tp)] = @intCast(u32, 0xFFFFFFFF);
         written_type[@intCast(usize, tp)] = @intCast(u32, 0xFFFFFFFF);
+        fact_carrier[@intCast(usize, tp)] = @intCast(u32, 0xFFFFFFFF);
         written_flag[@intCast(usize, tp)] = @intCast(u8, 0);
         read_count[@intCast(usize, tp)] = @intCast(u32, 0);
         dead_arr[@intCast(usize, tp)] = @intCast(u8, 0);
@@ -2485,6 +2490,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
     }
     emitter.d4_wtype = written_type;
     emitter.d4_wflag = written_flag;
+    emitter.d4_fcar = fact_carrier;
     emitter.d4_t2p = tid_to_pos;
     var local_name_ids = @ptrCast([*]u32, alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, 128) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable);
     var local_types = @ptrCast([*]u32, alloc_mod.sandAlloc(emitter.alloc, @intCast(usize, 128) * @intCast(usize, @sizeOf(u32)), @intCast(usize, 4)) catch unreachable);
@@ -2609,6 +2615,9 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                         if (dp != @intCast(u32, 0xFFFFFFFF)) {
                             written_type[@intCast(usize, dp)] = planConstCarrierAt(emitter, bb_idx, ii, lir_fn.hoisted_temps.items[@intCast(usize, dp)].type_id);
                             written_flag[@intCast(usize, dp)] = @intCast(u8, 1);
+                            if (ic.width_bits != @intCast(u8, 0) and lir_fn.hoisted_temps.items[@intCast(usize, dp)].type_id == type_mod.TYPE_INT_LIT) {
+                                fact_carrier[@intCast(usize, dp)] = written_type[@intCast(usize, dp)];
+                            }
                         }
                     }
                 },
@@ -3198,6 +3207,20 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
 const kEmitNestDepthCap: u32 = 32;
 
 
+// P6-pre fix: the planned carrier of a FACT-CARRYED int materialization
+// (d4_fcar is filled only for `ic.width_bits != 0` consts on TYPE_INT_LIT
+// hoisted temps). Bounds-checked; null for Class A bare untyped literals and
+// typed consts (no table entry — the 0xFFFFFFFF sentinel).
+fn factCarrierOfTemp(emitter: *C89Emitter, temp_id: u32) ?u32 {
+    if (temp_id >= emitter.d4_max_temp) return null;
+    var pos = emitter.d4_t2p[@intCast(usize, temp_id)];
+    if (pos == @intCast(u32, 0xFFFFFFFF)) return null;
+    if (pos >= emitter.d4_max_temp) return null;
+    var fc = emitter.d4_fcar[@intCast(usize, pos)];
+    if (fc == @intCast(u32, 0xFFFFFFFF)) return null;
+    return fc;
+}
+
 fn nestScalarEffTid(emitter: *C89Emitter, temp_id: u32) u32 {
     var tyid: u32 = @intCast(u32, 0);
     var sg: u8 = @intCast(u8, 0);
@@ -3212,6 +3235,10 @@ fn nestScalarEffTid(emitter: *C89Emitter, temp_id: u32) u32 {
             return tyid;
         }
     }
+    // P6-pre fix: a fact-carryed materialization is a scalar of its planned
+    // carrier (Class A bare untyped / typed consts have no d4_fcar entry and
+    // keep the historical 0xFFFFFFFF non-inlinable result).
+    if (factCarrierOfTemp(emitter, temp_id)) |fc| { return fc; }
     return @intCast(u32, 0xFFFFFFFF);
 }
 
@@ -4576,11 +4603,10 @@ fn emitSatBinary(emitter: *C89Emitter, op: u8, lhs: []const u8, rhs: []const u8,
 // integer_literal) route by width/signedness via typeRegistryIntWidthBits /
 // typeRegistryIntIsSigned (frozen table task-0-report.md rows A7-A17). usize is
 // 32-bit unsigned in Z98; a 33..64-bit type takes the U64/I64 routes. An
-// untyped integer_literal argument is materialised by lowering into its
-// value-chosen carrier (i32/u32/i64/u64 — the semantic width/signedness the
-// planner's `c89_plan.untypedIntCarrier` derives; P6-pre: the C carrier is
-// planned at the pre-emit boundary and read from `C89SpellPlan` at spell
-// time), so this arm's
+// untyped integer_literal argument is materialised by lowering as a
+// fact-carryed const (P6-pre fix: the C carrier is planned at the boundary
+// and read from `C89SpellPlan`; the print route reads the same planned
+// carrier for fact-carryed materializations), so this arm's
 // 32-bit signed fallback only sees a non-folded untyped temp whose exact value
 // already fits i32 (e.g. some builtin results). f32/f64, bool, u8{c} and
 // slices keep their explicit arms; any other kind keeps the defensive printI32
@@ -7597,7 +7623,9 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
                 bufferedWriterWrite(&emitter.writer, ");\n");
             } else {
                 var val = resolveTempName(emitter, p.value);
-                var fn_name = getPrintFnName(emitter, p.type_id, p.fmt);
+                var route_tid: u32 = p.type_id;
+                if (factCarrierOfTemp(emitter, p.value)) |fc| { route_tid = fc; }
+                var fn_name = getPrintFnName(emitter, route_tid, p.fmt);
                 var is_slice: u8 = if (ty.kind == TypeKind.slice_type) @intCast(u8, 1) else @intCast(u8, 0);
                 bufferedWriterWriteIndent(&emitter.writer, emitter.indent);
                 bufferedWriterWrite(&emitter.writer, fn_name);
