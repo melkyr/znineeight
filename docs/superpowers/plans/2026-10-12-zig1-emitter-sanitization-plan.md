@@ -50,7 +50,7 @@
 
 ---
 
-### Tasks P1–P12 (incl. P6-pre, P11, P12 — added 2026-10-12): The increments (execute in the recorded order — Task 0 order as amended 2026-10-12: P5, P1, P2, P3, P4, P4-fix-2, P6-pre, P12, P6, P11, P10, P9, P8, P7)
+### Tasks P1–P12 (incl. P6-pre, P11, P12 — added 2026-10-12): The increments (execute in the recorded order — Task 0 order as amended 2026-10-12 + the 2026-10-14 amendment: P5, P1, P2, P3, P4, P4-fix-2, P6-pre, P12, **combined fix (P6-pre-f3 + P12-f1, one battery) + one review**, P6, P11, P10, P9, P8, P7)
 
 Each increment is **one responsibility**: an **Investigate** (read-only census + precise edit plan) then an **Implement** (compiler-moving, one commit), always followed by the **runtime battery** and an old→new md5 record. Files below are the expected touch set; the Investigate step confirms them.
 
@@ -70,6 +70,8 @@ Each increment is **one responsibility**: an **Investigate** (read-only census +
 - [ ] **P10: Lvalue unification.** `sf/src/lower.zig`: one checked address-taking path for aggregate/index/field/deref chains; add the `-fsafe` root-index check to the sibling `lowerFieldStore` index arm. Closes D5 residue. Gate: runtime battery.
 
 **Per-increment commit:** `refactor(<file>): <increment one-line>` (compiler source only + tech docs).
+
+**Amendment (operator, 2026-10-14):** P6-pre fix round 3 + P12 fix round 1 execute as **ONE combined fix dispatch with ONE battery/gates run**. Contents: **H1** — `width_bits`/`is_signed` populated at EVERY `.int_const` construction site (`lir_opt_pass.zig:2021/:2034/:2042` folds = folded op's width/sign; ~23 `async_state_machine.zig` own-consts = concrete temp type's width/sign; census for strays; copiers already fixed) — structurally completes "LIR carries semantic int facts only"; the hoist-gate argument is retired as insufficient ("non-exercised today" optimism). **H2** — `emitModuleHeaderFile` walk + any sibling live-bounded walker over `sorted` bounded on the sort snapshot length (named owner of the P2 deferred follow-up) — the over-read class becomes structurally impossible. **H3** — `type_registry.zig:1243` comment truth-up (planner attribution). Then ONE review covering the combined diff + P12 round-0 (two verdicts). **Ruling (b) SUPERSEDED:** the facts fill is NOT P6 scope — **P6 stays lean** (original `lower.zig` + `lir.zig` touch set).
 
 ---
 
