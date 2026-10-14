@@ -1839,9 +1839,11 @@ fn lowerPrintFmt(self: *LirLowerer, fmt_node_idx: u32, fmt: []const u8, tuple_no
                         pvt = elem_tid;
                     } else {
                         arg_node = ast_mod.astStoreNodeExtraChildAt(self.ctx.store, tuple_node_idx, @intCast(u32, ai));
-                        // Finding 1 fix: an exact untyped integer argument takes
-                        // its value-chosen carrier (and a value-chosen int_const
-                        // temp) instead of a runtime 32-bit literal expression.
+                        // Finding 1 fix: an exact untyped integer argument
+                        // records semantic int facts on its int_const temp
+                        // instead of a runtime 32-bit literal expression; the
+                        // carrier is derived by c89_plan.deriveConstCarrier at
+                        // the phase_EmissionClassification boundary.
                         pv = lowerExactIntArg(self, arg_node);
                         if (pv == TEMP_NONE) {
                             pv = lowerExpr(self, arg_node);
@@ -6979,11 +6981,14 @@ fn lowerExprImpl(self: *LirLowerer, node_idx: u32) u32 {
                 var ei: usize = @intCast(usize, 0);
                 while (ei < @intCast(usize, ec_n)) : (ei += @intCast(usize, 1)) {
                     var elem_node = ast_mod.astStoreNodeExtraChildAt(store, node_idx, @intCast(u32, ei));
-                    // FB2: an exact untyped integer element materialises into
-                    // its value-chosen carrier (the same route as the print
-                    // argument), so a >i32 element value is not truncated by
-                    // the element temp's C type; in-i32 values keep the legacy
-                    // lowering (TEMP_NONE) and stay byte-identical.
+                    // FB2: an exact untyped integer element records semantic
+                    // int facts on its int_const temp (the same route as the
+                    // print argument), so a >i32 element value is not
+                    // truncated by the element temp's C type; the carrier is
+                    // derived by c89_plan.deriveConstCarrier at the
+                    // phase_EmissionClassification boundary; in-i32 values
+                    // keep the legacy lowering (TEMP_NONE) and stay
+                    // byte-identical.
                     var val_temp = lowerExactIntArg(self, elem_node);
                     if (val_temp == TEMP_NONE) {
                         val_temp = lowerExpr(self, elem_node);
