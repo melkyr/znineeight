@@ -409,3 +409,9 @@ $ awk '{print $2}' … | sort | uniq -c → 116 FAIL / 58 GREEN / 950 OK
 
 1. **O5 above** — plan-invariant tension documented; not blocking (edit sites verbatim; battery decision-identity holds: probe byte-identical, pins 0/8).
 2. **Out-of-touch-set indeterminate facts** (§5.3 residue, by contract): a P6/follow-up sweep should fill `width_bits`/`is_signed` in `async_state_machine.zig`/`lir_opt_pass.zig` when those files are in scope (currently safe by the read gates; recorded in the §5.2/§5.3 grep check).
+
+## Doc sweep (O6 + §3.4)
+
+- **O6 truth-up (2/2):** the two stale `lowerExactIntArg` call-site comments (`sf/src/lower.zig` `:1841`/`:6983` regions — the O6 `:1814`/`:6946` regions, drifted by fix-round-1 comment insertions) now say the post-fix truth: the result records semantic int facts on its `int_const` temp; the carrier is derived by `c89_plan.deriveConstCarrier` at the `phase_EmissionClassification` boundary. Grep `value-chosen carrier` in `sf/src/lower.zig` → 0 hits (comment text only; zero behavior change).
+- **§3.4 invariant line reworded:** plan `task-P6pre-fix1-plan.md` §3.4 expected grep outcome no longer claims EMPTY — it now states the accurate invariant (zero carrier-rule APPLICATIONS `untypedIntCarrier`/`deriveConstCarrier`/`intConstTypeForValue` in lowering, excluding doc-comment mentions and the blessed semantic site S3 `lower.zig:8351` unannotated-binding slot typing), closing O5's plan-internal tension.
+- **No battery re-run:** comment/doc-text-only edits cannot change emission (no token reaches codegen); the fix-round-1 battery at fixed point `0c2a83ebe85ff2e61216c966c2d537c5` stands unchanged.

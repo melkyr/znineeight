@@ -229,7 +229,7 @@ fn lowerFoldedIntConst(self: *LirLowerer, node_idx: u32, rtype: u32, check_fit: 
 
 ```bash
 grep -n "untypedIntCarrier\|comptimeIntUntypedType\|deriveConstCarrier\|intConstTypeForValue\|c89_plan" sf/src/lower.zig
-→ EMPTY (no carrier-rule code in any lowering site)
+→ zero carrier-rule APPLICATIONS (`untypedIntCarrier`/`deriveConstCarrier`/`intConstTypeForValue` in lowering), excluding doc-comment mentions and the blessed semantic site S3 (`lower.zig:8351` unannotated-binding slot typing)
 ```
 
 Note: the >64-bit dummy `nextTemp(self, type_mod.TYPE_I32)` (error path) is a diagnostic placeholder, not a carrier decision (no const recorded) — historical, unchanged.
