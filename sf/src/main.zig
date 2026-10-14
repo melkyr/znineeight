@@ -122,8 +122,9 @@ pub const CompilerContext = struct {
     // `phase_EmissionClassification` boundary), read by `phase_C89Emission`.
     emission_classif: type_resolver.EmissionClassification,
     // P6-pre: the C89 spelling planner state (per-const carrier side tables at
-    // the `phase_EmissionClassification` boundary; P12 adds typedef order to
-    // the same mechanism). The emitter reads it at spell time only.
+    // the `phase_EmissionClassification` boundary; P12: `typedef_order`, the
+    // typedef emission order, is planned by the same mechanism). The emitter
+    // reads it at spell time only.
     spell_plan: c89_plan.C89SpellPlan,
     global_decls: lir_mod.GlobalDeclArrayList,
 
@@ -1222,9 +1223,9 @@ fn moduleIdForBasename(mods: []mr_mod.ModuleEntry, interner: *StringInterner, ba
 fn phase_EmissionClassification(ctx: *CompilerContext) void {
     // P6-pre: the C89 spelling planner step (same boundary) — per-const carrier
     // derivation into `ctx.spell_plan` side-table state; the emitter reads it at
-    // spell time (Decision-vs-spelling). P12 later adds typedef-order state to
-    // the same mechanism. No marker emitted (the `--markers` stream stays
-    // byte-identical).
+    // spell time (Decision-vs-spelling). P12: the same mechanism plans the
+    // typedef order (`spellPlanPlanTypeOrder`, below). No marker emitted (the
+    // `--markers` stream stays byte-identical).
     c89_plan.spellPlanInit(&ctx.spell_plan, &ctx.alloc.permanent, ctx.lir_slots.len);
     lir_stream.lirStreamBeginRead(&ctx.lir_stream, &ctx.alloc.emission);
     var ec_fi: usize = @intCast(usize, 0);
@@ -1242,6 +1243,11 @@ fn phase_EmissionClassification(ctx: *CompilerContext) void {
         type_resolver.collectNeededTuples(ctx.typereg, &ctx.emission_classif.needed_tuple_set, ctx.global_decls.items[ec_gi].type_id);
     }
     type_resolver.classifyTypeEmissionFinalize(ctx.typereg, &ctx.emission_classif);
+    // P12: the typedef emission order, planned ONCE here at the backend-neutral
+    // boundary and carried in `ctx.spell_plan.typedef_order` (the P2
+    // popped/append derivation runs inside); the emitter walks the carried
+    // order and never sorts.
+    c89_plan.spellPlanPlanTypeOrder(&ctx.spell_plan, &ctx.alloc.permanent, ctx.typereg);
 }
 
 fn phase_C89Emission(ctx: *CompilerContext) void {
@@ -1426,7 +1432,10 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
         // P4 fix round 2: the classification state (`ctx.emission_classif`) is
         // completed at the pre-emit `phase_EmissionClassification` boundary and
         // loaded at `c89EmitterInit` (the emitter reads only).
-        var sorted: [*]u32 = c89_mod.tstTopologicalSort(ctx.typereg, &ctx.alloc.emission);
+        // P12: the typedef order is planned ONCE at the same boundary
+        // (`ctx.spell_plan.typedef_order`); this consumer region reads the
+        // carried order and never sorts.
+        var sorted: [*]u32 = ctx.spell_plan.typedef_order;
         var hpath: [512]u8 = undefined;
         var hp: usize = @intCast(usize, 0);
         var od = ctx.cli.output_dir;

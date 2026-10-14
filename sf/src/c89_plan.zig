@@ -6,8 +6,9 @@
 // carriers from those facts at the backend-neutral `phase_EmissionClassification
 // boundary, stores them as side-table state (`C89SpellPlan`), and the emitter
 // reads them at spell time (Decision-vs-spelling: the emitter spells, never
-// decides). P12 (typedef ordering) and P11 (UAC cast direction) later add
-// their state to the same `C89SpellPlan`.
+// decides). P12 (typedef ordering — `typedef_order`, planned ONCE at the same
+// boundary; the emitter walks the carried order and never sorts) joins the
+// same `C89SpellPlan`; P11 (UAC cast direction) later adds its state here too.
 const TypeRegistry = @import("type_registry.zig").TypeRegistry;
 const TypeKind = @import("type_registry.zig").TypeKind;
 const type_mod = @import("type_registry.zig");
@@ -19,13 +20,15 @@ const alloc_mod = @import("allocator.zig");
 // Per-fn const-carrier maps: `fn_keys[i]` identifies fn `i` by its LIR spill
 // slot offset (unique per fn; stable across the emission-time `lir_slots`
 // regrouping), `fn_maps[i]` maps the fn-local flattened inst ordinal (see
-// `spellInstOrd`) to the planned carrier type id. P12 adds typedef-order state
-// here (same boundary, same mechanism).
+// `spellInstOrd`) to the planned carrier type id. P12: `typedef_order` is the
+// typedef emission order (planned ONCE at the boundary; see
+// `spellPlanPlanTypeOrder`).
 pub const C89SpellPlan = struct {
     fn_keys: [*]u32,
     fn_maps: [*]hash_mod.U32ToU32Map,
     fn_count: usize,
     fn_cap: usize,
+    typedef_order: [*]u32,
 };
 
 // THE derivation (facts -> carrier). width_bits == 0 is never passed here
@@ -88,6 +91,7 @@ pub fn spellPlanInit(plan: *C89SpellPlan, alloc: *Sand, fn_hint: usize) void {
     plan.fn_maps = undefined;
     plan.fn_count = @intCast(usize, 0);
     plan.fn_cap = @intCast(usize, 0);
+    plan.typedef_order = undefined;
     if (fn_hint != @intCast(usize, 0)) {
         var raw_keys = alloc_mod.sandAlloc(alloc, @intCast(usize, 4) * fn_hint, @intCast(usize, 4)) catch unreachable;
         var raw_maps = alloc_mod.sandAlloc(alloc, @intCast(usize, @sizeOf(hash_mod.U32ToU32Map)) * fn_hint, @intCast(usize, 4)) catch unreachable;
@@ -164,4 +168,90 @@ pub fn spellPlanCarrier(plan: *C89SpellPlan, fn_key: u32, inst_ord: u32) ?u32 {
         }
     }
     return null;
+}
+
+// P2 (emitter sanitization, D8 root cause): typedef ordering derives from the
+// single type-reference relation in `type_registry.zig` (`typeRefs` /
+// `typeRefsContains` / `typeNeedsFullDef`). The former
+// hand-rolled edge machinery (`c89NeedsEmitEdge`, `tstEdgesWalk`,
+// `tstSeenInRange`, `tstEdgesCount`, `tstEdgesFill`, `tstIsDep`) is deleted —
+// no divergent kind membership remains. The relation covers ALL kinds, incl.
+// `fn_type` return/param refs (D8: a fn-ptr typedef now follows its return
+// typedef) and `packed_union`.
+// P12: moved here verbatim from `c89_emit.zig` (the ordering DECISION is the
+// planner's; the emitter walks the carried order and never sorts). The five
+// `sandAlloc`s stay consecutive — `result` is immediately followed by `queue`
+// in the bump arena, and the emission passes' pre-existing live-`types_len`
+// walks over-read into that `queue` buffer exactly as before (P2 deferred
+// minor: bounded harm; the follow-up "bound on snapshot length" is unchanged
+// and NOT taken here).
+fn tstTopologicalSort(reg: *TypeRegistry, alloc: *Sand) [*]u32 {
+    var tl: usize = reg.types_len;
+    var indegree_raw = alloc_mod.sandAlloc(alloc, 4 * tl, 4) catch unreachable;
+    var indegree: [*]u32 = @ptrCast([*]u32, indegree_raw);
+    var ti: u32 = @intCast(u32, 0);
+    var edge_raw = alloc_mod.sandAlloc(alloc, 4 * tl, 4) catch unreachable;
+    var edge_buf: [*]u32 = @ptrCast([*]u32, edge_raw);
+    while (@intCast(usize, ti) < tl) : (ti += 1) {
+        indegree[@intCast(usize, ti)] = type_mod.typeRefs(reg, ti, edge_buf);
+    }
+    var result_raw = alloc_mod.sandAlloc(alloc, 4 * tl, 4) catch unreachable;
+    var result: [*]u32 = @ptrCast([*]u32, result_raw);
+    var queue_raw = alloc_mod.sandAlloc(alloc, 4 * tl, 4) catch unreachable;
+    var queue: [*]u32 = @ptrCast([*]u32, queue_raw);
+    var popped_raw = alloc_mod.sandAlloc(alloc, 1 * tl, 1) catch unreachable;
+    var popped: [*]u8 = @ptrCast([*]u8, popped_raw);
+    var zi: usize = @intCast(usize, 0);
+    while (zi < tl) : (zi += 1) { popped[zi] = @intCast(u8, 0); }
+    var qhead: usize = 0;
+    var qtail: usize = 0;
+    ti = @intCast(u32, 0);
+    while (@intCast(usize, ti) < tl) : (ti += 1) {
+        if (indegree[@intCast(usize, ti)] == 0) {
+            queue[qtail] = ti; qtail += 1;
+        }
+    }
+    var ri: usize = 0;
+    while (qhead < qtail) {
+        var cur = queue[qhead]; qhead += 1;
+        result[ri] = cur; ri += 1;
+        popped[@intCast(usize, cur)] = @intCast(u8, 1);
+        var tj: u32 = @intCast(u32, 0);
+        while (@intCast(usize, tj) < tl) : (tj += 1) {
+            if (type_mod.typeRefsContains(reg, tj, cur)) {
+                var idx = @intCast(usize, tj);
+                indegree[idx] = indegree[idx] - @intCast(u32, 1);
+                if (indegree[idx] == 0) {
+                    queue[qtail] = tj; qtail += 1;
+                }
+            }
+        }
+    }
+    // P2 fix round 1 (controller ruling — APPEND variant): Kahn leaves any
+    // cycle residue (nodes whose indegree never reaches 0) out of `result`, and
+    // the type-emission passes walk `sorted[0..types_len]` — an uncovered tail
+    // reads uninitialized arena memory. Append the residue in stable
+    // ascending-tid order so `sorted` ALWAYS covers all `types_len` entries
+    // (no garbage reads possible). For acyclic programs this is a no-op (ri ==
+    // tl already). A post-resolve cyclic type still emits (possibly invalid C)
+    // instead of clean-rejecting — the pre-P2 behavior class; the diagnose/
+    // reject variant is rejected by ruling (no new error codes).
+    var ai: usize = @intCast(usize, 0);
+    while (ai < tl) : (ai += 1) {
+        if (popped[ai] == @intCast(u8, 0)) {
+            result[ri] = @intCast(u32, ai);
+            ri += 1;
+        }
+    }
+    return result;
+}
+
+// P12: THE typedef emission order, planned ONCE at the
+// `phase_EmissionClassification` boundary from the P2 relation (ordering is on
+// the "emitter never decides" list — the emitter walks `typedef_order` and
+// never sorts). Deterministic (same registry → same order every compilation);
+// covers every `types_len` tid exactly once at planning time. No marker
+// emitted (the `--markers` stream stays byte-identical).
+pub fn spellPlanPlanTypeOrder(plan: *C89SpellPlan, alloc: *Sand, reg: *TypeRegistry) void {
+    plan.typedef_order = tstTopologicalSort(reg, alloc);
 }

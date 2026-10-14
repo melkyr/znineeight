@@ -593,6 +593,9 @@ fn resolveFieldAccess(writer: *BufferedWriter, registry: *TypeRegistry, interner
       // slot offset, set at fn entry in `emitFunctionSet`). The emitter READS
       // carriers at spell time only — never derives them (Decision-vs-spelling:
       // `intConstTypeForValue` is deleted; the derivation lives in `c89_plan`).
+      // P12: the same state carries `typedef_order` (the typedef emission
+      // order, planned ONCE at the boundary); the emitter walks it and never
+      // sorts.
       plan: *c89_plan.C89SpellPlan,
       plan_fn_key: u32,
         // Task 6 (z98-print-formatting): float `{x}` prints a hand-rolled C89
@@ -865,74 +868,11 @@ pub fn emitSupportFiles(emitter: *C89Emitter, dir_path: []const u8) void {
 }
 
 
-// P2 (emitter sanitization, D8 root cause): typedef ordering derives from the
-// single type-reference relation in `type_registry.zig` (`typeRefs` /
-// `typeRefsContains` / `typeNeedsFullDef`). The former
-// hand-rolled edge machinery (`c89NeedsEmitEdge`, `tstEdgesWalk`,
-// `tstSeenInRange`, `tstEdgesCount`, `tstEdgesFill`, `tstIsDep`) is deleted —
-// no divergent kind membership remains. The relation covers ALL kinds, incl.
-// `fn_type` return/param refs (D8: a fn-ptr typedef now follows its return
-// typedef) and `packed_union`.
-pub fn tstTopologicalSort(reg: *TypeRegistry, alloc: *Sand) [*]u32 {
-    var tl: usize = reg.types_len;
-    var indegree_raw = alloc_mod.sandAlloc(alloc, 4 * tl, 4) catch unreachable;
-    var indegree: [*]u32 = @ptrCast([*]u32, indegree_raw);
-    var ti: u32 = @intCast(u32, 0);
-    var edge_raw = alloc_mod.sandAlloc(alloc, 4 * tl, 4) catch unreachable;
-    var edge_buf: [*]u32 = @ptrCast([*]u32, edge_raw);
-    while (@intCast(usize, ti) < tl) : (ti += 1) {
-        indegree[@intCast(usize, ti)] = type_mod.typeRefs(reg, ti, edge_buf);
-    }
-    var result_raw = alloc_mod.sandAlloc(alloc, 4 * tl, 4) catch unreachable;
-    var result: [*]u32 = @ptrCast([*]u32, result_raw);
-    var queue_raw = alloc_mod.sandAlloc(alloc, 4 * tl, 4) catch unreachable;
-    var queue: [*]u32 = @ptrCast([*]u32, queue_raw);
-    var popped_raw = alloc_mod.sandAlloc(alloc, 1 * tl, 1) catch unreachable;
-    var popped: [*]u8 = @ptrCast([*]u8, popped_raw);
-    var zi: usize = @intCast(usize, 0);
-    while (zi < tl) : (zi += 1) { popped[zi] = @intCast(u8, 0); }
-    var qhead: usize = 0;
-    var qtail: usize = 0;
-    ti = @intCast(u32, 0);
-    while (@intCast(usize, ti) < tl) : (ti += 1) {
-        if (indegree[@intCast(usize, ti)] == 0) {
-            queue[qtail] = ti; qtail += 1;
-        }
-    }
-    var ri: usize = 0;
-    while (qhead < qtail) {
-        var cur = queue[qhead]; qhead += 1;
-        result[ri] = cur; ri += 1;
-        popped[@intCast(usize, cur)] = @intCast(u8, 1);
-        var tj: u32 = @intCast(u32, 0);
-        while (@intCast(usize, tj) < tl) : (tj += 1) {
-            if (type_mod.typeRefsContains(reg, tj, cur)) {
-                var idx = @intCast(usize, tj);
-                indegree[idx] = indegree[idx] - @intCast(u32, 1);
-                if (indegree[idx] == 0) {
-                    queue[qtail] = tj; qtail += 1;
-                }
-            }
-        }
-    }
-    // P2 fix round 1 (controller ruling — APPEND variant): Kahn leaves any
-    // cycle residue (nodes whose indegree never reaches 0) out of `result`, and
-    // the type-emission passes walk `sorted[0..types_len]` — an uncovered tail
-    // reads uninitialized arena memory. Append the residue in stable
-    // ascending-tid order so `sorted` ALWAYS covers all `types_len` entries
-    // (no garbage reads possible). For acyclic programs this is a no-op (ri ==
-    // tl already). A post-resolve cyclic type still emits (possibly invalid C)
-    // instead of clean-rejecting — the pre-P2 behavior class; the diagnose/
-    // reject variant is rejected by ruling (no new error codes).
-    var ai: usize = @intCast(usize, 0);
-    while (ai < tl) : (ai += 1) {
-        if (popped[ai] == @intCast(u8, 0)) {
-            result[ri] = @intCast(u32, ai);
-            ri += 1;
-        }
-    }
-    return result;
-}
+// P12: the typedef emission order (and the P2 popped/append cycle-residue
+// derivation) is planned at the pre-emit `phase_EmissionClassification`
+// boundary — `c89_plan.tstTopologicalSort` / `c89_plan.spellPlanPlanTypeOrder`;
+// the emitter walks the carried `c89_plan.C89SpellPlan.typedef_order` and
+// never sorts (Decision-vs-spelling).
 
 fn ctypeGuardWrite(writer: *BufferedWriter, kind: TypeKind) void {
     if (kind == TypeKind.struct_type or kind == TypeKind.tagged_union_type) {
@@ -1118,7 +1058,10 @@ fn emitTypeDeps(emitter: *C89Emitter, tid: u32, seen: *U32ToU32Map, gated: u8) v
 // (`use_emitted_set`=0: local fwd/emit dedup maps, shared-set membership
 // filter, no D2 marker, gated #ifndef guards) and `emitSpecialTypes`
 // (`use_emitted_set`=1: persistent emitter maps, no shared filter, D2 measure
-// marker, gated=0). Emission order is `sorted`. P4: the emit-vs-skip decision
+// marker, gated=0). Emission order is `sorted` — the P12 carried typedef
+// order (planned ONCE at the `phase_EmissionClassification` boundary into
+// `c89_plan.C89SpellPlan.typedef_order`; the emitter walks it and never
+// sorts). P4: the emit-vs-skip decision
 // is the resolver classification's `needs_def_map` group (the former
 // `shouldSkipTypeEmission` is deleted); `skip_arb` is gone with it (its arb
 // arm was unreachable-equivalent — see `classificationNeedsDef`).
@@ -2292,7 +2235,10 @@ fn emitFunctionSet(emitter: *C89Emitter, module_id: u32, all: u8) void {
 // from the `CompilerContext` and completed at the pre-emit boundary; the
 // emitter reads only (the former `ptr_only_ids` fill loop is long gone).
 pub fn emitModule(emitter: *C89Emitter, name: []const u8, c_includes: []u32) void {
-    var sorted: [*]u32 = tstTopologicalSort(emitter.registry, emitter.alloc);
+    // P12: the typedef order is planned ONCE at the pre-emit
+    // `phase_EmissionClassification` boundary (`c89_plan`); this consumer
+    // region reads the carried order and never sorts.
+    var sorted: [*]u32 = emitter.plan.typedef_order;
     emitErrorCodePrologue(emitter);
     emitSpecialTypes(emitter, emitter.registry, sorted);
     emitModuleHeader(emitter, name, c_includes);
