@@ -349,7 +349,7 @@ fn remapInst(b: *Build, inst: LirInst, sw_off: u32) LirInst {
         .int_to_float => |x| return LirInst{ .int_to_float = .{ .value = x.value + b.base, .target = x.target, .result = x.result + b.base } },
         .ptr_to_int => |x| return LirInst{ .ptr_to_int = .{ .value = x.value + b.base, .result = x.result + b.base } },
         .int_to_ptr => |x| return LirInst{ .int_to_ptr = .{ .value = x.value + b.base, .target = x.target, .result = x.result + b.base } },
-        .int_const => |x| return LirInst{ .int_const = .{ .value = x.value, .result = x.result + b.base } },
+        .int_const => |x| return LirInst{ .int_const = .{ .value = x.value, .result = x.result + b.base, .width_bits = x.width_bits, .is_signed = x.is_signed } },
         .float_const => |x| return LirInst{ .float_const = .{ .value = x.value, .result = x.result + b.base } },
         .string_const => |x| return LirInst{ .string_const = .{ .string_id = x.string_id, .result = x.result + b.base } },
         .null_const => |x| return LirInst{ .null_const = .{ .result = x.result + b.base } },
