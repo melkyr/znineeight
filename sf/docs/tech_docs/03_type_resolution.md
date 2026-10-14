@@ -397,8 +397,9 @@ field → `alignUp(0,0)=0` → the `size==0 → 1/1` clamp → `@sizeOf`/`@align
 
 Fix (general, ordering-only): **build the real graph after field types are resolved.**
 **[updated: 2026-10-12 — P2]** `typeResolverBuildDependencyGraph` now derives EVERY edge from
-the single type-reference relation `type_registry.typeRefs` (the same edges the emitter's
-typedef ordering uses — one source; closes D8): by-value positions, name-spelling positions
+the single type-reference relation `type_registry.typeRefs` (the same edges the planner's
+typedef ordering uses — `c89_plan.zig` `spellPlanPlanTypeOrder`/`tstTopologicalSort` (P12 moved
+the sort out of the emitter; combined fix H3 truth-up) — one source; closes D8): by-value positions, name-spelling positions
 (fn return/params, slice elem), `packed_union`, and pointer chain-leaf name refs. The former
 F5 edge rule (`layoutFieldNeedsEdge`: struct/tagged_union/union/packed_union/enum/array/
 tuple/optional/error_union) and its `layoutAddTypeEdge`/`layoutAddFieldEdges` helpers are

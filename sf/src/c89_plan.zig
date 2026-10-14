@@ -21,14 +21,17 @@ const alloc_mod = @import("allocator.zig");
 // slot offset (unique per fn; stable across the emission-time `lir_slots`
 // regrouping), `fn_maps[i]` maps the fn-local flattened inst ordinal (see
 // `spellInstOrd`) to the planned carrier type id. P12: `typedef_order` is the
-// typedef emission order (planned ONCE at the boundary; see
-// `spellPlanPlanTypeOrder`).
+// typedef emission order (planned ONCE at the same boundary; see
+// `spellPlanPlanTypeOrder`); `typedef_order_len` is its plan-time snapshot
+// length (`reg.types_len` at planning) — every emitter `sorted` walker is
+// bounded on it (combined fix H2), never on live `types_len`.
 pub const C89SpellPlan = struct {
     fn_keys: [*]u32,
     fn_maps: [*]hash_mod.U32ToU32Map,
     fn_count: usize,
     fn_cap: usize,
     typedef_order: [*]u32,
+    typedef_order_len: usize,
 };
 
 // THE derivation (facts -> carrier). width_bits == 0 is never passed here
@@ -92,6 +95,7 @@ pub fn spellPlanInit(plan: *C89SpellPlan, alloc: *Sand, fn_hint: usize) void {
     plan.fn_count = @intCast(usize, 0);
     plan.fn_cap = @intCast(usize, 0);
     plan.typedef_order = undefined;
+    plan.typedef_order_len = @intCast(usize, 0);
     if (fn_hint != @intCast(usize, 0)) {
         var raw_keys = alloc_mod.sandAlloc(alloc, @intCast(usize, 4) * fn_hint, @intCast(usize, 4)) catch unreachable;
         var raw_maps = alloc_mod.sandAlloc(alloc, @intCast(usize, @sizeOf(hash_mod.U32ToU32Map)) * fn_hint, @intCast(usize, 4)) catch unreachable;
@@ -183,8 +187,9 @@ pub fn spellPlanCarrier(plan: *C89SpellPlan, fn_key: u32, inst_ord: u32) ?u32 {
 // `sandAlloc`s stay consecutive — `result` is immediately followed by `queue`
 // in the bump arena, and the emission passes' pre-existing live-`types_len`
 // walks over-read into that `queue` buffer exactly as before (P2 deferred
-// minor: bounded harm; the follow-up "bound on snapshot length" is unchanged
-// and NOT taken here).
+// minor: bounded harm; the follow-up "bound on snapshot length" is TAKEN in
+// the combined fix (P6-pre-f3+P12-f1) H2: every `sorted` walker is bounded on
+// `C89SpellPlan.typedef_order_len`, the plan-time snapshot).
 fn tstTopologicalSort(reg: *TypeRegistry, alloc: *Sand) [*]u32 {
     var tl: usize = reg.types_len;
     var indegree_raw = alloc_mod.sandAlloc(alloc, 4 * tl, 4) catch unreachable;
@@ -229,7 +234,8 @@ fn tstTopologicalSort(reg: *TypeRegistry, alloc: *Sand) [*]u32 {
     }
     // P2 fix round 1 (controller ruling — APPEND variant): Kahn leaves any
     // cycle residue (nodes whose indegree never reaches 0) out of `result`, and
-    // the type-emission passes walk `sorted[0..types_len]` — an uncovered tail
+    // the type-emission passes walk `sorted[0..typedef_order_len]` (the
+    // plan-time snapshot) — an uncovered tail
     // reads uninitialized arena memory. Append the residue in stable
     // ascending-tid order so `sorted` ALWAYS covers all `types_len` entries
     // (no garbage reads possible). For acyclic programs this is a no-op (ri ==
@@ -254,4 +260,5 @@ fn tstTopologicalSort(reg: *TypeRegistry, alloc: *Sand) [*]u32 {
 // emitted (the `--markers` stream stays byte-identical).
 pub fn spellPlanPlanTypeOrder(plan: *C89SpellPlan, alloc: *Sand, reg: *TypeRegistry) void {
     plan.typedef_order = tstTopologicalSort(reg, alloc);
+    plan.typedef_order_len = reg.types_len;
 }

@@ -210,6 +210,17 @@ fn newTemp(b: *Build, type_id: u32) u32 {
     return tid;
 }
 
+// Combined fix H1 (P6-pre-f3): the uniform facts rule — an `int_const`'s
+// semantic width/signedness is its result temp type's (P5 predicates; non-int
+// kinds / out-of-range tids give (0,0)). Matches lower.zig `emitIntConst`.
+fn intFactWidthBits(reg: *TypeRegistry, temp_type: u32) u8 {
+    return type_mod.typeRegistryIntWidthBits(reg, temp_type);
+}
+
+fn intFactIsSigned(reg: *TypeRegistry, temp_type: u32) u8 {
+    return @intCast(u8, if (type_mod.typeRegistryIntIsSigned(reg, temp_type)) @intCast(u8, 1) else @intCast(u8, 0));
+}
+
 fn emit(b: *Build, blk: u32, inst: LirInst) void {
     lir_mod.lirInstArrayListAppend(&b.step.blocks.items[@intCast(usize, blk)].insts, inst);
 }
@@ -218,7 +229,7 @@ fn fieldPtrBase(b: *Build, blk: u32, base_temp: u32, offset: u32, field_type: u3
     var pi = newTemp(b, type_mod.TYPE_USIZE);
     emit(b, blk, LirInst{ .ptr_to_int = .{ .value = base_temp, .result = pi } });
     var off = newTemp(b, type_mod.TYPE_USIZE);
-    emit(b, blk, LirInst{ .int_const = .{ .value = @intCast(u64, offset), .result = off } });
+    emit(b, blk, LirInst{ .int_const = .{ .value = @intCast(u64, offset), .result = off, .width_bits = intFactWidthBits(b.reg, type_mod.TYPE_USIZE), .is_signed = intFactIsSigned(b.reg, type_mod.TYPE_USIZE) } });
     var addr = newTemp(b, type_mod.TYPE_USIZE);
     emit(b, blk, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = pi, .rhs = off, .result = addr } });
     var pt_type = type_mod.typeRegistryGetOrCreatePtr(b.reg, field_type, false);
@@ -466,15 +477,15 @@ fn emitAwait(b: *Build, blk: u32, cd: lir_mod.CallDirectData, state: u32, alloc_
     // multiple of 8, so the stored `used` (and every later child) stays
     // 8-aligned. `used_r = (used + 7) & ~7`.
     var align7 = newTemp(b, type_mod.TYPE_USIZE);
-    emit(b, blk, LirInst{ .int_const = .{ .value = @intCast(u64, 7), .result = align7 } });
+    emit(b, blk, LirInst{ .int_const = .{ .value = @intCast(u64, 7), .result = align7, .width_bits = intFactWidthBits(b.reg, type_mod.TYPE_USIZE), .is_signed = intFactIsSigned(b.reg, type_mod.TYPE_USIZE) } });
     var used_p7 = newTemp(b, type_mod.TYPE_USIZE);
     emit(b, blk, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = used, .rhs = align7, .result = used_p7 } });
     var align_mask = newTemp(b, type_mod.TYPE_USIZE);
-    emit(b, blk, LirInst{ .int_const = .{ .value = ~@intCast(u64, 7), .result = align_mask } });
+    emit(b, blk, LirInst{ .int_const = .{ .value = ~@intCast(u64, 7), .result = align_mask, .width_bits = intFactWidthBits(b.reg, type_mod.TYPE_USIZE), .is_signed = intFactIsSigned(b.reg, type_mod.TYPE_USIZE) } });
     var used_r = newTemp(b, type_mod.TYPE_USIZE);
     emit(b, blk, LirInst{ .binary = .{ .op = BIN_AND, .lhs = used_p7, .rhs = align_mask, .result = used_r } });
     var fsz_t = newTemp(b, type_mod.TYPE_USIZE);
-    emit(b, blk, LirInst{ .int_const = .{ .value = fsz, .result = fsz_t } });
+    emit(b, blk, LirInst{ .int_const = .{ .value = fsz, .result = fsz_t, .width_bits = intFactWidthBits(b.reg, type_mod.TYPE_USIZE), .is_signed = intFactIsSigned(b.reg, type_mod.TYPE_USIZE) } });
     var need = newTemp(b, type_mod.TYPE_USIZE);
     emit(b, blk, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = used_r, .rhs = fsz_t, .result = need } });
     var over = newTemp(b, type_mod.TYPE_U8);
@@ -489,7 +500,7 @@ fn emitAwait(b: *Build, blk: u32, cd: lir_mod.CallDirectData, state: u32, alloc_
     var ctx_int = newTemp(b, type_mod.TYPE_USIZE);
     emit(b, alloc_blk, LirInst{ .ptr_to_int = .{ .value = ctx, .result = ctx_int } });
     var pool_off_t = newTemp(b, type_mod.TYPE_USIZE);
-    emit(b, alloc_blk, LirInst{ .int_const = .{ .value = @intCast(u64, CTX_POOL_OFF), .result = pool_off_t } });
+    emit(b, alloc_blk, LirInst{ .int_const = .{ .value = @intCast(u64, CTX_POOL_OFF), .result = pool_off_t, .width_bits = intFactWidthBits(b.reg, type_mod.TYPE_USIZE), .is_signed = intFactIsSigned(b.reg, type_mod.TYPE_USIZE) } });
     var pool = newTemp(b, type_mod.TYPE_USIZE);
     emit(b, alloc_blk, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = ctx_int, .rhs = pool_off_t, .result = pool } });
     var used_p = fieldPtrBase(b, alloc_blk, ctx, CTX_USED_OFF, type_mod.TYPE_USIZE);
@@ -522,7 +533,7 @@ fn emitAwait(b: *Build, blk: u32, cd: lir_mod.CallDirectData, state: u32, alloc_
     }
     storeFieldBase(b, alloc_blk, child, c_ctx_off, ptrVoid(reg), ctx);
     var zero_st = newTemp(b, c_state_type);
-    emit(b, alloc_blk, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = zero_st } });
+    emit(b, alloc_blk, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = zero_st, .width_bits = intFactWidthBits(b.reg, c_state_type), .is_signed = intFactIsSigned(b.reg, c_state_type) } });
     storeFieldBase(b, alloc_blk, child, c_state_off, c_state_type, zero_st);
     // (6) copy call args into g's param offsets (natural layout order).
     var arg_i: u32 = @intCast(u32, 0);
@@ -542,7 +553,7 @@ fn emitAwait(b: *Build, blk: u32, cd: lir_mod.CallDirectData, state: u32, alloc_
             var fi = newTemp(b, type_mod.TYPE_USIZE);
             emit(b, alloc_blk, LirInst{ .ptr_to_int = .{ .value = b.frame_temp, .result = fi } });
             var poff = newTemp(b, type_mod.TYPE_USIZE);
-            emit(b, alloc_blk, LirInst{ .int_const = .{ .value = @intCast(u64, b.pr_off[@intCast(usize, k)]), .result = poff } });
+            emit(b, alloc_blk, LirInst{ .int_const = .{ .value = @intCast(u64, b.pr_off[@intCast(usize, k)]), .result = poff, .width_bits = intFactWidthBits(b.reg, type_mod.TYPE_USIZE), .is_signed = intFactIsSigned(b.reg, type_mod.TYPE_USIZE) } });
             var paddr = newTemp(b, type_mod.TYPE_USIZE);
             emit(b, alloc_blk, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = fi, .rhs = poff, .result = paddr } });
             var pr = newTemp(b, ptrVoid(reg));
@@ -550,7 +561,7 @@ fn emitAwait(b: *Build, blk: u32, cd: lir_mod.CallDirectData, state: u32, alloc_
             storeFieldBase(b, alloc_blk, child, c_result_off, ptrVoid(reg), pr);
         } else {
             var nptr = newTemp(b, ptrVoid(reg));
-            emit(b, alloc_blk, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = nptr } });
+            emit(b, alloc_blk, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = nptr, .width_bits = intFactWidthBits(b.reg, ptrVoid(reg)), .is_signed = intFactIsSigned(b.reg, ptrVoid(reg)) } });
             storeFieldBase(b, alloc_blk, child, c_result_off, ptrVoid(reg), nptr);
         }
     }
@@ -563,7 +574,7 @@ fn emitAwait(b: *Build, blk: u32, cd: lir_mod.CallDirectData, state: u32, alloc_
     // (9) yield block.
     saveAllFields(b, yield_blk, b.actx.layout);
     var sv = newTemp(b, b.state_type);
-    emit(b, yield_blk, LirInst{ .int_const = .{ .value = @intCast(u64, state), .result = sv } });
+    emit(b, yield_blk, LirInst{ .int_const = .{ .value = @intCast(u64, state), .result = sv, .width_bits = intFactWidthBits(b.reg, b.state_type), .is_signed = intFactIsSigned(b.reg, b.state_type) } });
     storeField(b, yield_blk, b.state_off, b.state_type, sv);
     var yld = newTemp(b, b.opt);
     emit(b, yield_blk, LirInst{ .wrap_optional = .{ .value = @intCast(u32, 0), .result = yld, .type_id = b.opt } });
@@ -580,7 +591,7 @@ fn emitAwait(b: *Build, blk: u32, cd: lir_mod.CallDirectData, state: u32, alloc_
     var used_after = newTemp(b, type_mod.TYPE_USIZE);
     emit(b, after, LirInst{ .load = .{ .ptr = used_p_after, .result = used_after } });
     var fsz_t2 = newTemp(b, type_mod.TYPE_USIZE);
-    emit(b, after, LirInst{ .int_const = .{ .value = fsz, .result = fsz_t2 } });
+    emit(b, after, LirInst{ .int_const = .{ .value = fsz, .result = fsz_t2, .width_bits = intFactWidthBits(b.reg, type_mod.TYPE_USIZE), .is_signed = intFactIsSigned(b.reg, type_mod.TYPE_USIZE) } });
     var mark = newTemp(b, type_mod.TYPE_USIZE);
     emit(b, after, LirInst{ .binary = .{ .op = BIN_SUB, .lhs = used_after, .rhs = fsz_t2, .result = mark } });
     emit(b, after, LirInst{ .store = .{ .ptr = used_p_after, .value = mark } });
@@ -662,7 +673,7 @@ fn fiStoreAt(step: *LirFunction, hoisted: *lir_mod.TempDeclArrayList, next: *u32
     var pi = fiNewTemp(step, hoisted, next, type_mod.TYPE_USIZE);
     fiEmit(step, blk, LirInst{ .ptr_to_int = .{ .value = base_temp, .result = pi } });
     var off = fiNewTemp(step, hoisted, next, type_mod.TYPE_USIZE);
-    fiEmit(step, blk, LirInst{ .int_const = .{ .value = @intCast(u64, offset), .result = off } });
+    fiEmit(step, blk, LirInst{ .int_const = .{ .value = @intCast(u64, offset), .result = off, .width_bits = intFactWidthBits(reg, type_mod.TYPE_USIZE), .is_signed = intFactIsSigned(reg, type_mod.TYPE_USIZE) } });
     var addr = fiNewTemp(step, hoisted, next, type_mod.TYPE_USIZE);
     fiEmit(step, blk, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = pi, .rhs = off, .result = addr } });
     var pt_type = type_mod.typeRegistryGetOrCreatePtr(reg, field_type, false);
@@ -681,9 +692,9 @@ pub fn asyncEmitFrameInit(step: *LirFunction, hoisted: *lir_mod.TempDeclArrayLis
     var cur = start_blk;
     if (fsz > @intCast(u32, 0)) {
         var size_t = fiNewTemp(step, hoisted, &next, type_mod.TYPE_USIZE);
-        fiEmit(step, cur, LirInst{ .int_const = .{ .value = @intCast(u64, fsz), .result = size_t } });
+        fiEmit(step, cur, LirInst{ .int_const = .{ .value = @intCast(u64, fsz), .result = size_t, .width_bits = intFactWidthBits(reg, type_mod.TYPE_USIZE), .is_signed = intFactIsSigned(reg, type_mod.TYPE_USIZE) } });
         var i_t = fiNewTemp(step, hoisted, &next, type_mod.TYPE_USIZE);
-        fiEmit(step, cur, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = i_t } });
+        fiEmit(step, cur, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = i_t, .width_bits = intFactWidthBits(reg, type_mod.TYPE_USIZE), .is_signed = intFactIsSigned(reg, type_mod.TYPE_USIZE) } });
         var hdr = fiCreateBlock(step);
         var body = fiCreateBlock(step);
         var done = fiCreateBlock(step);
@@ -702,10 +713,10 @@ pub fn asyncEmitFrameInit(step: *LirFunction, hoisted: *lir_mod.TempDeclArrayLis
         var u8p = fiNewTemp(step, hoisted, &next, u8p_t);
         fiEmit(step, cur, LirInst{ .int_to_ptr = .{ .value = addr, .target = u8p_t, .result = u8p } });
         var byte0 = fiNewTemp(step, hoisted, &next, type_mod.TYPE_U8);
-        fiEmit(step, cur, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = byte0 } });
+        fiEmit(step, cur, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = byte0, .width_bits = intFactWidthBits(reg, type_mod.TYPE_U8), .is_signed = intFactIsSigned(reg, type_mod.TYPE_U8) } });
         fiEmit(step, cur, LirInst{ .store = .{ .ptr = u8p, .value = byte0 } });
         var one = fiNewTemp(step, hoisted, &next, type_mod.TYPE_USIZE);
-        fiEmit(step, cur, LirInst{ .int_const = .{ .value = @intCast(u64, 1), .result = one } });
+        fiEmit(step, cur, LirInst{ .int_const = .{ .value = @intCast(u64, 1), .result = one, .width_bits = intFactWidthBits(reg, type_mod.TYPE_USIZE), .is_signed = intFactIsSigned(reg, type_mod.TYPE_USIZE) } });
         var i2 = fiNewTemp(step, hoisted, &next, type_mod.TYPE_USIZE);
         fiEmit(step, cur, LirInst{ .binary = .{ .op = BIN_ADD, .lhs = i_t, .rhs = one, .result = i2 } });
         fiEmit(step, cur, LirInst{ .assign = .{ .name_id = @intCast(u32, 0), .dst = i_t, .src = i2 } });
@@ -723,7 +734,7 @@ pub fn asyncEmitFrameInit(step: *LirFunction, hoisted: *lir_mod.TempDeclArrayLis
     fiStoreAt(step, hoisted, &next, cur, buf, hdr_offs.step_off, type_mod.TYPE_USIZE, sf_i, reg);
     fiStoreAt(step, hoisted, &next, cur, buf, hdr_offs.ctx_off, ptr_void, ctx, reg);
     var zero_st = fiNewTemp(step, hoisted, &next, state_type);
-    fiEmit(step, cur, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = zero_st } });
+        fiEmit(step, cur, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = zero_st, .width_bits = intFactWidthBits(reg, state_type), .is_signed = intFactIsSigned(reg, state_type) } });
     fiStoreAt(step, hoisted, &next, cur, buf, hdr_offs.state_off, state_type, zero_st, reg);
     var pk: usize = @intCast(usize, 0);
     while (pk < params.len) : (pk += @intCast(usize, 1)) {
@@ -850,13 +861,13 @@ fn emitMainDriver(actx: *AsyncTransformCtx, lf: *LirFunction) void {
     // `__az_pool + CTX_POOL_OFF` (derived by the await site). Caller-side, like
     // the `@asyncInit` lowering.
     var z_usize = newTemp(&b, type_mod.TYPE_USIZE);
-    emit(&b, blk0, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = z_usize } });
+    emit(&b, blk0, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = z_usize, .width_bits = intFactWidthBits(reg, type_mod.TYPE_USIZE), .is_signed = intFactIsSigned(reg, type_mod.TYPE_USIZE) } });
     storeFieldBase(&b, blk0, pool, CTX_USED_OFF, type_mod.TYPE_USIZE, z_usize);
     var cap_t = newTemp(&b, type_mod.TYPE_USIZE);
-    emit(&b, blk0, LirInst{ .int_const = .{ .value = @intCast(u64, ASYNC_ROOT_POOL_BYTES - CTX_POOL_OFF), .result = cap_t } });
+    emit(&b, blk0, LirInst{ .int_const = .{ .value = @intCast(u64, ASYNC_ROOT_POOL_BYTES - CTX_POOL_OFF), .result = cap_t, .width_bits = intFactWidthBits(reg, type_mod.TYPE_USIZE), .is_signed = intFactIsSigned(reg, type_mod.TYPE_USIZE) } });
     storeFieldBase(&b, blk0, pool, CTX_CAP_OFF, type_mod.TYPE_USIZE, cap_t);
     var z_oom = newTemp(&b, type_mod.TYPE_U8);
-    emit(&b, blk0, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = z_oom } });
+    emit(&b, blk0, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = z_oom, .width_bits = intFactWidthBits(reg, type_mod.TYPE_U8), .is_signed = intFactIsSigned(reg, type_mod.TYPE_U8) } });
     storeFieldBase(&b, blk0, pool, CTX_OOM_OFF, type_mod.TYPE_U8, z_oom);
 
     // Params from the authoritative layout (offset/type/value temp).
@@ -1122,7 +1133,7 @@ pub fn asyncTransform(lf: *LirFunction, actx: *AsyncTransformCtx) bool {
     var st = loadField(&b, @intCast(u32, 0), state_off, state_type);
     if (actx.safe_checks) {
         var lim = newTemp(&b, state_type);
-        emit(&b, @intCast(u32, 0), LirInst{ .int_const = .{ .value = @intCast(u64, total_states), .result = lim } });
+        emit(&b, @intCast(u32, 0), LirInst{ .int_const = .{ .value = @intCast(u64, total_states), .result = lim, .width_bits = intFactWidthBits(reg, state_type), .is_signed = intFactIsSigned(reg, state_type) } });
         var stok = newTemp(&b, state_type);
         emit(&b, @intCast(u32, 0), LirInst{ .binary = .{ .op = BIN_LE, .lhs = st, .rhs = lim, .result = stok } });
         emit(&b, @intCast(u32, 0), LirInst{ .check_trap = .{ .cond = stok, .kind = @intCast(u8, 4) } });
@@ -1168,7 +1179,7 @@ pub fn asyncTransform(lf: *LirFunction, actx: *AsyncTransformCtx) bool {
     }
     if (b.child_present) {
         var cz = newTemp(&b, ptr_void);
-        emit(&b, entry_seg, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = cz } });
+        emit(&b, entry_seg, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = cz, .width_bits = intFactWidthBits(reg, ptr_void), .is_signed = intFactIsSigned(reg, ptr_void) } });
         emit(&b, entry_seg, LirInst{ .assign = .{ .dst = b.child_temp, .src = cz, .name_id = @intCast(u32, 0) } });
     }
 
@@ -1188,7 +1199,7 @@ pub fn asyncTransform(lf: *LirFunction, actx: *AsyncTransformCtx) bool {
                 if (kk == @intCast(u8, 1)) {
                     saveAllFields(&b, cur, actx.layout);
                     var sv = newTemp(&b, state_type);
-                    emit(&b, cur, LirInst{ .int_const = .{ .value = @intCast(u64, state), .result = sv } });
+                    emit(&b, cur, LirInst{ .int_const = .{ .value = @intCast(u64, state), .result = sv, .width_bits = intFactWidthBits(reg, state_type), .is_signed = intFactIsSigned(reg, state_type) } });
                     storeField(&b, cur, state_off, state_type, sv);
                     var yld = newTemp(&b, opt);
                     emit(&b, cur, LirInst{ .wrap_optional = .{ .value = @intCast(u32, 0), .result = yld, .type_id = opt } });
@@ -1241,7 +1252,7 @@ pub fn asyncTransform(lf: *LirFunction, actx: *AsyncTransformCtx) bool {
             var rpi = newTemp(&b, type_mod.TYPE_USIZE);
             emit(&b, ep_store_id, LirInst{ .ptr_to_int = .{ .value = rp, .result = rpi } });
             var zero = newTemp(&b, type_mod.TYPE_USIZE);
-            emit(&b, ep_store_id, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = zero } });
+            emit(&b, ep_store_id, LirInst{ .int_const = .{ .value = @intCast(u64, 0), .result = zero, .width_bits = intFactWidthBits(reg, type_mod.TYPE_USIZE), .is_signed = intFactIsSigned(reg, type_mod.TYPE_USIZE) } });
             var nz = newTemp(&b, type_mod.TYPE_U8);
             emit(&b, ep_store_id, LirInst{ .binary = .{ .op = BIN_NE, .lhs = rpi, .rhs = zero, .result = nz } });
             emit(&b, ep_store_id, LirInst{ .branch = .{ .cond = nz, .then_bb = ep_dostore_id, .else_bb = ep_ret_id } });

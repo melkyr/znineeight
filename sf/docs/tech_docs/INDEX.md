@@ -583,6 +583,10 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `initArray` | type_registry.zig |
 | `initCompilerAlloc` | allocator.zig |
 | `initKeywordTable` | token.zig |
+| `intFactIsSigned` | async_state_machine.zig (combined fix (P6-pre-f3+P12-f1) H1: uniform facts rule — `int_const.is_signed` byte (1/0) from the result temp type's semantic signedness (P5 `typeRegistryIntIsSigned`; non-int kinds 0); twin in lir_opt_pass.zig) |
+| `intFactIsSigned` | lir_opt_pass.zig (combined fix (P6-pre-f3+P12-f1) H1: see the async_state_machine.zig row) |
+| `intFactWidthBits` | async_state_machine.zig (combined fix (P6-pre-f3+P12-f1) H1: uniform facts rule — `int_const.width_bits` from the result temp type (P5 `typeRegistryIntWidthBits`; non-int kinds 0); twin in lir_opt_pass.zig) |
+| `intFactWidthBits` | lir_opt_pass.zig (combined fix (P6-pre-f3+P12-f1) H1: see the async_state_machine.zig row) |
 | `isAllocCall` | analyzer.zig |
 | `isAlpha` | lexer.zig |
 | `isAlphaNum` | lexer.zig |
@@ -1148,7 +1152,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `spellPlanCarrier` | c89_plan.zig (P6-pre: spell-time side-table read (fn-key, inst-ordinal) -> planned carrier) |
 | `spellPlanInit` | c89_plan.zig (P6-pre: `C89SpellPlan` init at the `phase_EmissionClassification` boundary) |
 | `spellPlanPlanFn` | c89_plan.zig (P6-pre fix round 1: per-fn boundary fill — `deriveConstCarrier` for every inst kind that is/becomes an `int_const`; the `.int_const` arm passes the record's `width_bits`/`is_signed`, the fold-capable kinds pass 0/0) |
-| `spellPlanPlanTypeOrder` | c89_plan.zig (P12: THE typedef-order boundary fill — `C89SpellPlan.typedef_order = tstTopologicalSort(reg)`, called ONCE from `phase_EmissionClassification`; ordering is planned here, the emitter walks the carried order and never sorts) |
+| `spellPlanPlanTypeOrder` | c89_plan.zig (P12: THE typedef-order boundary fill — `C89SpellPlan.typedef_order = tstTopologicalSort(reg)` + `typedef_order_len = reg.types_len` (the plan-time snapshot; combined fix H2 bounds every emitter `sorted` walker on it), called ONCE from `phase_EmissionClassification`; ordering is planned here, the emitter walks the carried order and never sorts) |
 | `spillBackendFor` | spill_store.zig |
 | `spillReadAt` | spill_store.zig |
 | `spillSeek` | spill_store.zig |

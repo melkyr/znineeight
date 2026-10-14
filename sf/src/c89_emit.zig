@@ -1084,7 +1084,7 @@ fn emitTypePasses(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32, gate
 
     // Pass 1: forward typedefs for named aggregates.
     var tsi: usize = @intCast(usize, 0);
-    while (tsi < reg.types_len) : (tsi += 1) {
+    while (tsi < emitter.plan.typedef_order_len) : (tsi += 1) {
         var tid = sorted[tsi];
         var ty = reg.types_items[@intCast(usize, tid)];
         if (ty.kind == TypeKind.struct_type or ty.kind == TypeKind.tagged_union_type or ty.kind == TypeKind.union_type or ty.kind == TypeKind.packed_union_type) {
@@ -1108,7 +1108,7 @@ fn emitTypePasses(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32, gate
 
     // Sub-pass 2a: pointer-only types.
     tsi = @intCast(usize, 0);
-    while (tsi < reg.types_len) : (tsi += 1) {
+    while (tsi < emitter.plan.typedef_order_len) : (tsi += 1) {
         var tid = sorted[tsi];
         if (hash_mod.u32ToU32MapGet(&emitter.classif.pointer_only_map, tid) == null) continue;
         if (require_shared != @intCast(u8, 0)) {
@@ -1121,7 +1121,7 @@ fn emitTypePasses(emitter: *C89Emitter, reg: *TypeRegistry, sorted: [*]u32, gate
 
     // Sub-pass 2b: value-embedding types.
     tsi = @intCast(usize, 0);
-    while (tsi < reg.types_len) : (tsi += 1) {
+    while (tsi < emitter.plan.typedef_order_len) : (tsi += 1) {
         var tid = sorted[tsi];
         emitNeededTupleAt(emitter, tid, emit_ptr);
         if (hash_mod.u32ToU32MapGet(&emitter.classif.pointer_only_map, tid) != null) continue;
@@ -2141,7 +2141,7 @@ pub fn emitModuleHeaderFile(emitter: *C89Emitter, module_id: u32, mod_name: []co
     var dn: []const u8 = "\n";
     bufferedWriterWrite(&emitter.writer, dn);
     var tsi: usize = @intCast(usize, 0);
-    while (tsi < emitter.registry.types_len) : (tsi += @intCast(usize, 1)) {
+    while (tsi < emitter.plan.typedef_order_len) : (tsi += @intCast(usize, 1)) {
         var tid = sorted[tsi];
         var ty = emitter.registry.types_items[@intCast(usize, tid)];
         if (ty.name_id == @intCast(u32, 0)) continue;

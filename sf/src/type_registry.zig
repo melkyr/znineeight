@@ -1239,8 +1239,10 @@ pub fn typeRegistryRegisterNamedType(self: *TypeRegistry, module_id: u32, name_i
 
 // P2 (emitter sanitization, D8): the SINGLE type-reference relation, consumed
 // by BOTH graphs — the resolver dependency graph
-// (`typeResolverBuildDependencyGraph`) and the emitter's typedef ordering
-// (`tstTopologicalSort`, plus the P4 classification's shared-set closure
+// (`typeResolverBuildDependencyGraph`) and the planner's typedef ordering
+// (`c89_plan.zig` `spellPlanPlanTypeOrder`/`tstTopologicalSort` — P12 moved
+// the sort into the planner; the emitter walks the carried order), plus the
+// P4 classification's shared-set closure
 // `classificationSharedClosure` in `type_resolver.zig`). It
 // replaces the three divergent
 // memberships: the dead `isValueDependency` (was here), the emitter's

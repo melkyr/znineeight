@@ -2001,6 +2001,17 @@ fn tryFoldIntCast(c: *Ctx, inst: LirInst, out_value: *u64) u8 {
     }
 }
 
+// Combined fix H1 (P6-pre-f3): the uniform facts rule — an `int_const`'s
+// semantic width/signedness is its result temp type's (P5 predicates; non-int
+// kinds / out-of-range tids give (0,0)). Matches lower.zig `emitIntConst`.
+fn intFactWidthBits(reg: *TypeRegistry, temp_type: u32) u8 {
+    return type_mod.typeRegistryIntWidthBits(reg, temp_type);
+}
+
+fn intFactIsSigned(reg: *TypeRegistry, temp_type: u32) u8 {
+    return @intCast(u8, if (type_mod.typeRegistryIntIsSigned(reg, temp_type)) @intCast(u8, 1) else @intCast(u8, 0));
+}
+
 fn runConstFold(c: *Ctx) u8 {
     var changed: u8 = @intCast(u8, 0);
     var bi: usize = @intCast(usize, 0);
@@ -2018,7 +2029,7 @@ fn runConstFold(c: *Ctx) u8 {
                             var bv: u8 = if (v != @intCast(u64, 0)) @intCast(u8, 1) else @intCast(u8, 0);
                             bb.insts.items[ii] = LirInst{ .bool_const = .{ .value = bv, .result = b.result } };
                         } else {
-                            bb.insts.items[ii] = LirInst{ .int_const = .{ .value = v, .result = b.result } };
+                            bb.insts.items[ii] = LirInst{ .int_const = .{ .value = v, .result = b.result, .width_bits = intFactWidthBits(c.reg, tempDeclTypeId(c, b.result)), .is_signed = intFactIsSigned(c.reg, tempDeclTypeId(c, b.result)) } };
                         }
                         changed = @intCast(u8, 1);
                     }
@@ -2031,7 +2042,7 @@ fn runConstFold(c: *Ctx) u8 {
                             var bv: u8 = if (v != @intCast(u64, 0)) @intCast(u8, 1) else @intCast(u8, 0);
                             bb.insts.items[ii] = LirInst{ .bool_const = .{ .value = bv, .result = u.result } };
                         } else {
-                            bb.insts.items[ii] = LirInst{ .int_const = .{ .value = v, .result = u.result } };
+                            bb.insts.items[ii] = LirInst{ .int_const = .{ .value = v, .result = u.result, .width_bits = intFactWidthBits(c.reg, tempDeclTypeId(c, u.result)), .is_signed = intFactIsSigned(c.reg, tempDeclTypeId(c, u.result)) } };
                         }
                         changed = @intCast(u8, 1);
                     }
@@ -2039,7 +2050,7 @@ fn runConstFold(c: *Ctx) u8 {
                 .int_cast => |ic| {
                     var v: u64 = @intCast(u64, 0);
                     if (tryFoldIntCast(c, inst, &v) == @intCast(u8, 1)) {
-                        bb.insts.items[ii] = LirInst{ .int_const = .{ .value = v, .result = ic.result } };
+                        bb.insts.items[ii] = LirInst{ .int_const = .{ .value = v, .result = ic.result, .width_bits = intFactWidthBits(c.reg, tempDeclTypeId(c, ic.result)), .is_signed = intFactIsSigned(c.reg, tempDeclTypeId(c, ic.result)) } };
                         changed = @intCast(u8, 1);
                     }
                 },
