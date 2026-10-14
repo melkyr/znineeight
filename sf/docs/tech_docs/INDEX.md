@@ -349,6 +349,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `depGraphFinalize` | symbol_registrator.zig |
 | `depGraphInit` | symbol_registrator.zig |
 | `dependEnsureCapacity` | type_resolver.zig |
+| `deriveConstCarrier` | c89_plan.zig (P6-pre: THE const-carrier derivation — semantic int facts (type/width/signedness/value) -> i32/u32/i64/u64 C carrier; the relocated `intConstTypeForValue` rule; filled into `C89SpellPlan` at the `phase_EmissionClassification` boundary) |
 | `detectNullGuard` | analyzer.zig |
 | `detectorVisit` | analyzer.zig |
 | `diagnosticArrayListAppend` | diagnostics.zig |
@@ -657,7 +658,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `lowerFieldStore` | lower.zig |
 | `lowerFn` | lower.zig |
 | `lowerFoldedIntConst` | lower.zig |
-| `lowerExactIntArg` | lower.zig (FB2: exact untyped integer expression -> value-chosen carrier i32/u32/i64/u64; shared by the print-argument literal route and the inferred-tuple construction arm; in-i32 returns TEMP_NONE, >64-bit reports `error[3000]`) |
+| `lowerExactIntArg` | lower.zig (FB2: exact untyped integer expression -> value-chosen carrier i32/u32/i64/u64; shared by the print-argument literal route and the inferred-tuple construction arm; in-i32 returns TEMP_NONE, >64-bit reports `error[3000]`. P6-pre: the carrier derivation moved to `c89_plan.untypedIntCarrier` — lowering records the semantic width/signedness, the C carrier is planned at the boundary) |
 | `lowerLValueAddr` | lower.zig |
 | `lowerModuleInit` | lower.zig |
 | `lowerPackedChainAnalyze` | lower.zig |
@@ -909,6 +910,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `pkStructAppend` | type_registry.zig |
 | `pkUnSetFields` | type_registry.zig |
 | `pkUnStructAppend` | type_registry.zig |
+| `planConstCarrierAt` | c89_emit.zig (P6-pre: spell-time carrier READ — `C89SpellPlan` lookup by (fn, const-id); replaces the deleted emit-time deciding helper `intConstTypeForValue`) |
 | `pointerQualifiersMonotone` | type_registry.zig |
 | `poolPeak` | allocator.zig |
 | `poolPtr` | allocator.zig |
@@ -1137,6 +1139,10 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `sourceManagerGetSourceContent` | source_manager.zig |
 | `sourceManagerInit` | source_manager.zig |
 | `sourceManagerResetFaults` | source_manager.zig |
+| `spellInstOrd` | c89_plan.zig (P6-pre: const-id encoding — flattened (bb,ii) inst ordinal, stable across the emit-time `lirOptRun`) |
+| `spellPlanCarrier` | c89_plan.zig (P6-pre: spell-time side-table read (fn-key, inst-ordinal) -> planned carrier) |
+| `spellPlanInit` | c89_plan.zig (P6-pre: `C89SpellPlan` init at the `phase_EmissionClassification` boundary) |
+| `spellPlanPlanFn` | c89_plan.zig (P6-pre: per-fn boundary fill — `deriveConstCarrier` for every inst kind that is/becomes an `int_const`) |
 | `spillBackendFor` | spill_store.zig |
 | `spillReadAt` | spill_store.zig |
 | `spillSeek` | spill_store.zig |
@@ -1332,6 +1338,7 @@ Full alphabetical index of documented functions across all phases and modules, e
 | `u64ToU32MapPut` | util/hash.zig |
 | `unAppend` | type_registry.zig |
 | `unrAppend` | type_registry.zig |
+| `untypedIntCarrier` | c89_plan.zig (P6-pre: THE untyped-exact-int i32/u32/i64/u64 carrier derivation entry (moved out of `lowerExactIntArg`/lowering); width/signedness semantics shared with sema via `comptimeIntUntypedType`) |
 | `vaListArgTemp` | lower.zig |
 | `validateLocalEnum` | type_resolver.zig |
 | `validateSignatureType` | analyzer.zig |

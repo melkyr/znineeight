@@ -16,6 +16,7 @@ const interner_mod = @import("string_interner.zig");
 const type_mod = @import("type_registry.zig");
 const mr_mod = @import("module_registry.zig");
 const nm_mod = @import("name_mangler.zig");
+const c89_plan = @import("c89_plan.zig");
 
 const type_resolver = @import("type_resolver.zig");
 const itoa_mod = @import("util/itoa.zig");
@@ -586,6 +587,13 @@ fn resolveFieldAccess(writer: *BufferedWriter, registry: *TypeRegistry, interner
       // pre-emit `phase_EmissionClassification` boundary). The emitter READS
       // only — never classifies (Decision-vs-spelling rule).
       classif: *type_resolver.EmissionClassification,
+      // P6-pre: the C89 spelling planner state (per-const carrier side tables,
+      // filled at the same boundary) + the current fn's plan key (its LIR spill
+      // slot offset, set at fn entry in `emitFunctionSet`). The emitter READS
+      // carriers at spell time only — never derives them (Decision-vs-spelling:
+      // `intConstTypeForValue` is deleted; the derivation lives in `c89_plan`).
+      plan: *c89_plan.C89SpellPlan,
+      plan_fn_key: u32,
         // Task 6 (z98-print-formatting): float `{x}` prints a hand-rolled C89
         // hex-float. The helper is compiler-generated static C emitted on
         // demand — adding a function to std_fmt would move the four pinned
@@ -619,7 +627,7 @@ fn resolveFieldAccess(writer: *BufferedWriter, registry: *TypeRegistry, interner
       safe_checks: bool,
    };
 
-pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *NameMangler, diag: *DiagnosticCollector, sc: *SwitchCaseArrayList, ca: *U32ArrayList, alloc: *Sand, persist_alloc: *Sand, error_code_reg: *hash_mod.U32ToU32Map, classif: *type_resolver.EmissionClassification, safe_checks: bool) C89Emitter {
+pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *NameMangler, diag: *DiagnosticCollector, sc: *SwitchCaseArrayList, ca: *U32ArrayList, alloc: *Sand, persist_alloc: *Sand, error_code_reg: *hash_mod.U32ToU32Map, classif: *type_resolver.EmissionClassification, plan: *c89_plan.C89SpellPlan, safe_checks: bool) C89Emitter {
     return C89Emitter{
         .writer = bufferedWriterInit(),
         .indent = @intCast(u32, 0),
@@ -658,6 +666,8 @@ pub fn c89EmitterInit(reg: *TypeRegistry, interner: *StringInterner, mangler: *N
          // READS it; it is filled at the pre-emit `phase_EmissionClassification`
          // boundary, never here).
          .classif = classif,
+         .plan = plan,
+         .plan_fn_key = @intCast(u32, 0),
          .need_fhex32 = @intCast(u8, 0),
          .need_fhex64 = @intCast(u8, 0),
          .module_reg = undefined,
@@ -2243,6 +2253,9 @@ fn emitFunctionSet(emitter: *C89Emitter, module_id: u32, all: u8) void {
     while (i < emitter.fn_slots_len) : (i += @intCast(usize, 1)) {
         alloc_mod.sandReset(emitter.alloc);
         var func = faultIn(emitter, i);
+        // P6-pre: the current fn's spelling-plan key (its LIR spill slot offset —
+        // unique per fn, stable across the `lir_slots` regrouping).
+        emitter.plan_fn_key = emitter.fn_slots[emitter.fn_slots_start + i].disk_offset;
         if (all == @intCast(u8, 0)) {
             if (func.module_id != module_id) continue;
             if (func.is_extern != @intCast(u8, 0)) continue;
@@ -2594,7 +2607,7 @@ pub fn emitHoistedDecls(emitter: *C89Emitter, lir_fn: *LirFunction) void {
                     if (ic.result < max_temp) {
                         var dp = tid_to_pos[@intCast(usize, ic.result)];
                         if (dp != @intCast(u32, 0xFFFFFFFF)) {
-                            written_type[@intCast(usize, dp)] = intConstTypeForValue(emitter.registry, ic.value, lir_fn.hoisted_temps.items[@intCast(usize, dp)].type_id);
+                            written_type[@intCast(usize, dp)] = planConstCarrierAt(emitter, bb_idx, ii, lir_fn.hoisted_temps.items[@intCast(usize, dp)].type_id);
                             written_flag[@intCast(usize, dp)] = @intCast(u8, 1);
                         }
                     }
@@ -3457,12 +3470,12 @@ fn emitValueExpr(emitter: *C89Emitter, temp_id: u32, depth: u32) void {
     bufferedWriterWrite(&emitter.writer, ctype);
     var rp1: []const u8 = ")(";
     bufferedWriterWrite(&emitter.writer, rp1);
-    nestEmitDefRvalue(emitter, definst, depth + @intCast(u32, 1));
+    nestEmitDefRvalue(emitter, definst, depth + @intCast(u32, 1), dfbb, dfii);
     var rp2: []const u8 = ")";
     bufferedWriterWrite(&emitter.writer, rp2);
 }
 
-fn nestEmitDefRvalue(emitter: *C89Emitter, inst: lir_mod.LirInst, depth: u32) void {
+fn nestEmitDefRvalue(emitter: *C89Emitter, inst: lir_mod.LirInst, depth: u32, def_bb: u32, def_ii: u32) void {
     switch (inst) {
         .binary => |b| { nestEmitBinExpr(emitter, b.op, b.lhs, b.rhs, b.result, depth); },
         .unary => |u| { emitUnaryRvalue(emitter, u.op, u.operand, u.result, depth); },
@@ -3492,7 +3505,7 @@ fn nestEmitDefRvalue(emitter: *C89Emitter, inst: lir_mod.LirInst, depth: u32) vo
         },
         .int_const => |ic| {
             var ic_ht = hoistedTypeOf(emitter, ic.result);
-            var ic_tid = intConstTypeForValue(emitter.registry, ic.value, ic_ht);
+            var ic_tid = planConstCarrierAt(emitter, @intCast(usize, def_bb), @intCast(usize, def_ii), ic_ht);
             writeIntConstRvalue(emitter, ic.value, ic_tid, "");
         },
         .bool_const => |bc| {
@@ -3863,15 +3876,20 @@ fn intLitSuffixNeg(v: u64) []const u8 {
     var s: []const u8 = "LL"; return s;
 }
 
-fn intConstTypeForValue(reg: *TypeRegistry, v: u64, hoisted_tid: u32) u32 {
-    var hty = reg.types_items[@intCast(usize, hoisted_tid)];
-    if (hty.kind == type_mod.TypeKind.integer_literal_type) {
-        if (v <= @intCast(u64, 2147483647)) { return type_mod.TYPE_I32; }
-        if (v <= @intCast(u64, 4294967295)) { return type_mod.TYPE_U32; }
-        return type_mod.TYPE_U64;
+// P6-pre: the const's C carrier is DERIVED at the pre-emit boundary
+// (`c89_plan.deriveConstCarrier`, the relocated `intConstTypeForValue` rule)
+// and stored as `C89SpellPlan` side-table state keyed by (fn, const-id). This
+// is the spell-time READ — the emitter never derives carriers
+// (Decision-vs-spelling). The fallback (a plan miss) spells the const's
+// semantic type (a LIR fact, not a decision); every post-`lirOptRun` int_const
+// has a planned entry (`c89_plan` covers the const-fold and copy-coalescing
+// rewrite population), so the fallback is unreachable by construction.
+fn planConstCarrierAt(emitter: *C89Emitter, bb_idx: usize, ii: usize, semantic_tid: u32) u32 {
+    var ord = c89_plan.spellInstOrd(emitter.current_fn, bb_idx, ii);
+    if (c89_plan.spellPlanCarrier(emitter.plan, emitter.plan_fn_key, ord)) |c| {
+        return c;
     }
-    if (hoisted_tid == type_mod.TYPE_UNDEFINED) { return type_mod.TYPE_USIZE; }
-    return hoisted_tid;
+    return semantic_tid;
 }
 
 fn isAtomicCOperand(s: []const u8) bool {
@@ -4559,7 +4577,10 @@ fn emitSatBinary(emitter: *C89Emitter, op: u8, lhs: []const u8, rhs: []const u8,
 // typeRegistryIntIsSigned (frozen table task-0-report.md rows A7-A17). usize is
 // 32-bit unsigned in Z98; a 33..64-bit type takes the U64/I64 routes. An
 // untyped integer_literal argument is materialised by lowering into its
-// value-chosen carrier (i32/u32/i64/u64; `lowerExactIntArg`), so this arm's
+// value-chosen carrier (i32/u32/i64/u64 — the semantic width/signedness the
+// planner's `c89_plan.untypedIntCarrier` derives; P6-pre: the C carrier is
+// planned at the pre-emit boundary and read from `C89SpellPlan` at spell
+// time), so this arm's
 // 32-bit signed fallback only sees a non-folded untyped temp whose exact value
 // already fits i32 (e.g. some builtin results). f32/f64, bool, u8{c} and
 // slices keep their explicit arms; any other kind keeps the defensive printI32
@@ -6188,7 +6209,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
 
 
 
- fn emitInst(emitter: *C89Emitter, inst: LirInst) void {
+ fn emitInst(emitter: *C89Emitter, inst: LirInst, inst_bb: usize, inst_ii: usize) void {
     var ins: []const u8 = "I\n"; pal.markerWrite(ins);
     switch (inst) {
         .nop => {},
@@ -6919,7 +6940,7 @@ fn emitFlagOp(emitter: *C89Emitter, op: u8, lhs: u32, rhs: u32, result: u32, w: 
             ht_found_tid = type_mod.TYPE_USIZE;
             var ict_found = hoistedTypeOf(emitter, ic.result);
             if (ict_found != @intCast(u32, 0)) { ht_found_tid = ict_found; }
-            var temp_type_id = intConstTypeForValue(emitter.registry, ic.value, ht_found_tid);
+            var temp_type_id = planConstCarrierAt(emitter, inst_bb, inst_ii, ht_found_tid);
             var ict_bty = emitter.registry.types_items[@intCast(usize, temp_type_id)];
             var ict_prefix: []const u8 = " = ";
             if (ict_bty.kind == type_mod.TypeKind.tagged_union_type) {
@@ -8369,7 +8390,7 @@ fn dceReleaseOperands(max_temp: u32, tid_to_pos: [*]u32, read_count: [*]u32, ins
                     if (nt < emitter.nest_max and emitter.nest_inl[@intCast(usize, nt)] == @intCast(u8, 1)) { continue; }
                 }
             }
-            emitInst(emitter, inst);
+            emitInst(emitter, inst, bb_idx, inst_idx);
         }
     }
     emitter.indent -= @intCast(u32, 1);

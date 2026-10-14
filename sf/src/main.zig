@@ -24,6 +24,7 @@ const sym_mod = @import("symbol_table.zig");
 const type_mod = @import("type_registry.zig");
 const TypeRegistry = type_mod.TypeRegistry;
 const c89_mod = @import("c89_emit.zig");
+const c89_plan = @import("c89_plan.zig");
 const lower_mod = @import("lower.zig");
 const SemanticContext = lower_mod.SemanticContext;
 const LirLowerer = lower_mod.LirLowerer;
@@ -120,6 +121,10 @@ pub const CompilerContext = struct {
     // resolver-owned mechanism (`phase_TypeResolution` + the pre-emit
     // `phase_EmissionClassification` boundary), read by `phase_C89Emission`.
     emission_classif: type_resolver.EmissionClassification,
+    // P6-pre: the C89 spelling planner state (per-const carrier side tables at
+    // the `phase_EmissionClassification` boundary; P12 adds typedef order to
+    // the same mechanism). The emitter reads it at spell time only.
+    spell_plan: c89_plan.C89SpellPlan,
     global_decls: lir_mod.GlobalDeclArrayList,
 
     exported: hash_mod.U64ToU32Map,
@@ -322,6 +327,10 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
          .needs_def_map = hash_mod.u32ToU32MapInit(&compiler_alloc.permanent),
          .needed_tuple_set = hash_mod.u32ToU32MapInit(&compiler_alloc.permanent),
      };
+     // P6-pre: the C89 spelling planner state — filled at the
+     // `phase_EmissionClassification` boundary (placeholder-local init per the
+     // struct-literal rule; maps land on the permanent arena there).
+     var spell_plan_ph: c89_plan.C89SpellPlan = undefined;
      var exported = hash_mod.u64ToU32MapInit(&compiler_alloc.emission);
      var suspending_fns = hash_mod.u64ToU32MapInit(&compiler_alloc.module);
      var frame_sizes = hash_mod.u64ToU32MapInit(&compiler_alloc.module);
@@ -366,6 +375,7 @@ pub fn main(argc: i32, argv: [*]*const u8) void {
         .parent_result_count = parent_result_count,
         .async_layouts = async_layouts,
         .emission_classif = emission_classif,
+        .spell_plan = spell_plan_ph,
         .global_decls = lir_mod.globalDeclArrayListInit(&compiler_alloc.emission),
         // Task 9 fix round 3 (Q7): module-init dependency edges (referrer << 32
         // | dependency -> referencing decl) and the resulting stable emitted
@@ -1210,6 +1220,12 @@ fn moduleIdForBasename(mods: []mr_mod.ModuleEntry, interner: *StringInterner, ba
 // change; the phase reuses the LIR read view exactly as `phase_C89Emission`'s
 // reachability walk does).
 fn phase_EmissionClassification(ctx: *CompilerContext) void {
+    // P6-pre: the C89 spelling planner step (same boundary) — per-const carrier
+    // derivation into `ctx.spell_plan` side-table state; the emitter reads it at
+    // spell time (Decision-vs-spelling). P12 later adds typedef-order state to
+    // the same mechanism. No marker emitted (the `--markers` stream stays
+    // byte-identical).
+    c89_plan.spellPlanInit(&ctx.spell_plan, &ctx.alloc.permanent, ctx.lir_slots.len);
     lir_stream.lirStreamBeginRead(&ctx.lir_stream, &ctx.alloc.emission);
     var ec_fi: usize = @intCast(usize, 0);
     while (ec_fi < ctx.lir_slots.len) : (ec_fi += @intCast(usize, 1)) {
@@ -1218,6 +1234,7 @@ fn phase_EmissionClassification(ctx: *CompilerContext) void {
         while (ec_hi < ec_fn.hoisted_temps.len) : (ec_hi += @intCast(usize, 1)) {
             type_resolver.collectNeededTuples(ctx.typereg, &ctx.emission_classif.needed_tuple_set, ec_fn.hoisted_temps.items[ec_hi].type_id);
         }
+        c89_plan.spellPlanPlanFn(&ctx.spell_plan, &ctx.alloc.permanent, ctx.typereg, ctx.lir_slots.items[ec_fi].disk_offset, &ec_fn);
     }
     lir_stream.lirStreamEndRead(&ctx.lir_stream);
     var ec_gi: usize = @intCast(usize, 0);
@@ -1246,6 +1263,7 @@ fn phase_C89Emission(ctx: *CompilerContext) void {
         &ctx.alloc.emission,
         &ctx.error_code_registry,
         &ctx.emission_classif,
+        &ctx.spell_plan,
         ctx.cli.safe_checks,
     );
     emitter.module_reg = ctx.module_reg;

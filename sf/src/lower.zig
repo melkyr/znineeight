@@ -36,6 +36,7 @@ const async_analysis = @import("async_analysis.zig");
 const async_state_machine = @import("async_state_machine.zig");
 const mr_mod = @import("module_registry.zig");
 const ce_mod = @import("comptime_eval.zig");
+const c89_plan = @import("c89_plan.zig");
 
 pub const SrcIntent = enum(u8) { value, null_src, error_src };
 
@@ -1615,7 +1616,10 @@ fn printFmtCheck(self: *LirLowerer, arg_node_idx: u32, tid: u32, spec_fmt: u8, h
 // obtained the same way the unannotated-local slot type already is (fold table
 // first, then the FITS_ARG literal/negate/paren recursion, then the exact
 // ComptimeInt evaluator for a literal-only expression) and materialised into
-// the value-chosen carrier (`comptimeIntUntypedType`: i32/u32/i64/u64). A value
+// the value-chosen carrier (`c89_plan.untypedIntCarrier`: i32/u32/i64/u64 —
+// P6-pre: the derivation lives in the C89 spelling planner; lowering records
+// the semantic width/signedness on the temp and the emitter reads the planned
+// C carrier at spell time). A value
 // that fits i32 keeps the legacy `integer_literal` temp, so in-range literals
 // emit byte-identical C.
 fn foldPrintArgIntExact(self: *LirLowerer, node_idx: u32) ?ce_mod.ComptimeVal {
@@ -1657,7 +1661,7 @@ fn lowerExactIntArg(self: *LirLowerer, node_idx: u32) u32 {
     if (resolved_mod.resolvedTypeTableGet(self.ctx.resolved_types, node_idx)) |rt| rtid = rt;
     if (rtid != type_mod.TYPE_INT_LIT) return TEMP_NONE;
     var fv = foldPrintArgIntExact(self, node_idx) orelse return TEMP_NONE;
-    var ut = ce_mod.comptimeIntUntypedType(fv.v) orelse {
+    var ut = c89_plan.untypedIntCarrier(fv.v) orelse {
         reportComptimeIntFits(self, node_idx);
         return nextTemp(self, type_mod.TYPE_I32);
     };
@@ -3615,7 +3619,7 @@ fn lowerFoldedIntConst(self: *LirLowerer, node_idx: u32, rtype: u32, check_fit: 
         if (fv.kind != ce_mod.KIND_INT) return null;
         var ft: u32 = rtype;
         if (rtype == type_mod.TYPE_INT_LIT or rtype == type_mod.TYPE_UNDEFINED) {
-            if (ce_mod.comptimeIntUntypedType(fv.v)) |ut| {
+            if (c89_plan.untypedIntCarrier(fv.v)) |ut| {
                 ft = ut;
             } else {
                 reportComptimeIntFits(self, node_idx);
